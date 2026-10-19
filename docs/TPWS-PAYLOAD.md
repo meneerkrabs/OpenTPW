@@ -234,7 +234,7 @@ last position and stores the constant 6 into both state and saved state (6 in ev
   destination, clears the links, the flag, the destination and the queue position, and returns the guest to state 6. `SaveGuest` refuses any other flag value.
 - `mQNext`/`mQPrev` are the thing ids of the neighbours in the attraction's queue (0 ends the chain). The unlink `0x4DDD20` rewrites both neighbours (or the ride's head); the needs phase at `0x501971` clears only the guest's own links when its state is outside 11..14.
 - `mQueuePos` (+0x1F1) is the recorded queue position (0 = the front, written by `0x501160` before routing), except in state 14: the state-14 entry (`0x501EF8` → `0x4E2670`) stores the sideshow-win draw there, so the byte is the win flag (`SaveGuest.SideshowWon`), and the queue re-evaluation `0x501390` exempts state 14.
-- The happiness at queue join (guest +0x20C, a float) is not saved: the thing-list loader zeroes it right after the constructor (`0x51861E`).
+- The happiness at queue join (guest +0x20C, a float) is not saved: the thing-list loader zeroes it right after the constructor (`0x51861C`).
 - `mSavedState` is the state to resume after a spot animation: `0x4FC800` copies the state into it, stamps `mTimeOfLastSpotAnim` (+0x208) with the world tick and enters state 8 through the state setter
   `0x501DB0`. All 52 call sites of that setter pass at most 0x15, so states are 0 to 21 (`SaveGuest.MaximumState`; the reader refuses more). The setter itself does not guard the range: it stores the state at `0x501DBF` before its `ja` at `0x501DC5`.
 - `mLastPosX`/`mLastPosY` are the balloon sprite's previous position: `0x4FE900` moves the balloon script (+0x210) from them to the new point and stores it (0 without a balloon).

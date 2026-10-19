@@ -11,7 +11,7 @@ namespace OpenTPW;
 /// <c>+0x200</c> opening wait, <c>+0x204</c> paid admission, <c>+0x208</c> spot animation stamp, <c>+0x210</c> balloon script, <c>+0x214</c> balloon life, <c>+0x218</c>/<c>+0x21C</c> last position,
 /// <c>+0x220</c> state, <c>+0x224</c> saved state, <c>+0x228</c>/<c>+0x22A</c> queue next/previous. The guest constructor <c>0x4FAEC0</c> zeroes the links, admission flag, destinations and last position
 /// and stores the constant 6 into both state and saved state. The guest word <c>+0x20C</c> (the happiness at queue join, a float the state-10 join stores and the
-/// use satisfaction <c>0x4FDA1B</c> reads) is not saved: the thing-list loader zeroes it right after the constructor (<c>0x51861E</c>).
+/// use satisfaction <c>0x4FDA1B</c> reads) is not saved: the thing-list loader zeroes it right after the constructor (<c>0x51861C</c>).
 /// </summary>
 public sealed record SaveGuest( int Id, SavePerson Person )
 {

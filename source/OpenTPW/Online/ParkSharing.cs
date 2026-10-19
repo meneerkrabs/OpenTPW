@@ -49,7 +49,9 @@ public static class ParkSharing
 	{
 		// [EXT:pools-save] opentpw.pools counts only while the park has pool cells or a changing room, as a save records it (ParkResumeMods.Capture); [EXT:umbrellas-save] opentpw.umbrellas likewise while it has a brolly shop or an umbrella
 		var placed = level?.Objects?.Objects.Where( item => !item.IsDeleted ).Select( item => item.Entry ).ToArray() ?? Array.Empty<ObjectCatalogEntry>();
-		var inUse = ParkResumeMods.InUse( level?.Guests?.Grid.Cells, placed.Any( ParkResumeMods.IsPoolsObject ), ParkResumeMods.UmbrellasInUse( placed, level?.Guests ), ParkResumeMods.WinterInUse( placed, level?.Guests ) );
+		// [EXT:evening-torches-save] opentpw.evening counts only while the park holds a torch
+		var inUse = ParkResumeMods.InUse( level?.Guests?.Grid.Cells, placed.Any( ParkResumeMods.IsPoolsObject ), ParkResumeMods.UmbrellasInUse( placed, level?.Guests ), ParkResumeMods.WinterInUse( placed, level?.Guests ),
+			evening: ParkResumeMods.EveningInUse( placed ) );
 		var mods = ParkResumeMods.RecordableMods( OpenTPW.Mods.OpenTpwExtensions.Active ).Where( mod => !ParkResumeMods.UsedOnlyExtensionIds.Contains( mod.Id ) || inUse.Contains( mod.Id ) ).ToArray();
 		return mods.Length == 0 ? null
 			: $"This park records mods ({string.Join( ", ", mods.Select( mod => $"{mod.Id} {mod.Version}" ) )}) and cannot be exported yet; turn them off to share a park without mods.";

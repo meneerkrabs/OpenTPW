@@ -218,7 +218,7 @@ public class OriginalSaveImportTests
 		Assert.AreNotEqual( 0, attractions.Length );
 		foreach ( var line in attractions )
 		{
-			foreach ( var value in new[] { "open word ", "name \"", "queue size ", "first ", "back ", "called ", "mesh instance ", "flags 0x" } )
+			foreach ( var value in new[] { "open word ", "name \"", "queue size ", "first ", "back-of-queue cell ", "called ", "mesh instance ", "flags 0x" } )
 				StringAssert.Contains( line, value );
 		}
 		StringAssert.Contains( Line( "Attraction walk-away counts " ), "imported" );

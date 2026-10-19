@@ -85,7 +85,7 @@ public static partial class Program
 		return true;
 	}
 
-	/// <summary>Holds the evening look for the session ("night", "dusk", "day"), or switches the evening extension "off" or "on"; false for another value (see <c>Level.PerfEvening</c>).</summary>
+	/// <summary>Holds the evening look for the session ("night", "dusk", "day"), or turns the cycle and its lamps "off" or back "on" (the extension stays in the mod set); false for another value (see <c>Level.PerfEvening</c>).</summary>
 	[JSExport]
 	public static bool PerfEvening( string mode ) => Level.PerfEvening( mode );
 

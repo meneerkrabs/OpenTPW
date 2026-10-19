@@ -252,7 +252,7 @@ name is cut), `level` one of the original levels a game can build (`jungle`, `ha
 `space`; left out or any other, the satellite's default level), `parkId` a published park's id, and
 a `description` of at most 512 characters (left out, the park's own). The file is re-read when it
 changes; an entry without a valid id or name is left out, as is a malformed park id or description
-of an entry, and a file without any valid entry gives the defaults. A satellite's visit of a
+of an entry, and a file without any valid entry gives the defaults. A field of the wrong JSON type (such as a number for `level`) makes the whole file unreadable, so all five satellites get the defaults until it is fixed. A satellite's visit of a
 published park walks in the satellite's room, so it has no vote and is not counted at the park
 itself. The defaults put the five satellites in the four themes:
 

@@ -216,13 +216,13 @@ The globe's five satellites are parks, not rooms of their own.
   loads `online_Standard.sam` for the park's theme (record +0x4C) with the downloaded save, and every
   game of type 1 enters the chat mode (0x54ED1E → 0x48A410 → 0x4BF460).
 - **The room**: after "Created a player, let's join a park." the answer handler 0x4E6790 sends the
-  only `CreateRoom` (0x4E6A69): the park's name, an empty wide string, the city's name, "%d" of the
+  only `CreateRoom` (0x4E6A67): the park's name, an empty wide string, the city's name, "%d" of the
   park id and 0x100. A satellite's park, a visited park and a goto (0x4E96B7 → 0x5B87E0) all enter
   the park's own room. The only success answer is 0x36 ("The park has been created successfully"),
   so the server must have given it for a room that already existed.
 - **Entering**: 0x4E5EF0 places the player's own online person at the centre of entrance 0's cell
   (0x4D8690(0): FixedItemInfo.EntranceA, 0x7855BC/0x7855C0; most likely the level's entrance, read
-  before the save is merged in) with the teleport 0x4F7E20, and sends `MovePlayer(x·256+128, y·256+128, 1)`,
+  before the save is merged in) with the teleport 0x4F7E20, and sends `MovePlayer(x·256+128, y·256+128, 1)` — only when that cell's type byte is 0x12 (0x4E5FFE; otherwise neither the teleport nor the first move happens; OpenTPW always does both),
   then `NotAFK`, `SetHearingRange(0xA00)` and `EnumPlayers`. The relayed-move handler skips the
   player's own person (0x4E72CA), so the server never placed it.
 - There is no "publish as chat park": the upload (0x5B7E88) carries city, theme, a setting byte,

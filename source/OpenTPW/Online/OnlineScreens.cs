@@ -254,7 +254,7 @@ public sealed class OnlineScreens
 	/// room in the overhead chat view.
 	/// </summary>
 	// [BIN:TPW-EXE:0x4C0880 park details enter] Enter (0xE592E) runs the visit as for any park (0x5B86A0 → 0x5B8910: the download and MarkParkVisited, then game type 1
-	// and the chat mode, 0x54ED1E → 0x4BF460), and the chat connection then creates the park's own room ("%d" of the park id, CreateRoom at 0x4E6A69)
+	// and the chat mode, 0x54ED1E → 0x4BF460), and the chat connection then creates the park's own room ("%d" of the park id, CreateRoom at 0x4E6A67)
 	// [EXT:online-chat-park-scene] a chat park's visit joins its satellite's standing room, the room older games enter in the overhead view and the satellite's
 	// count counts; a satellite without a published park visits the starting park of its server-named level
 	private void EnterChatPark( ChatParkScene scene )

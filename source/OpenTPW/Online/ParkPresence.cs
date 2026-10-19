@@ -166,7 +166,8 @@ public sealed class ParkPresence : IVisitPresence, IChatPanelSource, IDisposable
 
 	/// <summary>Where the player's figure appears: at the centre of the park entrance's first cell, or the park's middle when the level has none.</summary>
 	// [BIN:TPW-EXE:0x4E5EF0 own person] entering the park places the player's own online person at the centre of entrance 0's cell (0x4D8690(0): FixedItemInfo.EntranceA,
-	// 0x7855BC/0x7855C0) with the teleport 0x4F7E20 and sends it as MovePlayer(x·256+128, y·256+128, 1)
+	// 0x7855BC/0x7855C0) with the teleport 0x4F7E20 and sends it as MovePlayer(x·256+128, y·256+128, 1), when that cell's type byte is 0x12 (0x4E5FFE; otherwise it
+	// places and sends nothing); [EXT:online-avatar-start] OpenTPW always starts there and always sends the teleport
 	// [EXT:online-avatar-start] a level whose entrance A lies outside its cell map starts the figure in the park's middle
 	internal static (float X, float Y) StartOf( GuestSettings? settings, ParkCellMap cells ) =>
 		settings?.EntranceA is { } a && cells.InBounds( a.X, a.Y ) ? (a.X + 0.5f, a.Y + 0.5f) : (cells.Width / 2f, cells.Height / 2f);

@@ -5,7 +5,7 @@ with the room's players as figures that walk, teleport and ride, as in a visited
 
 This follows tp.exe, where the satellites were parks, not rooms of their own: they showed the parks of a city of their own (city 1's park list, entry *i* on
 satellite *i*; 0x5B7610), a click opened that park's details (0x4C56E0 → 0x4C0AE0) and Enter visited it like any park, in the chat mode and the park's own room
-(0x4C0880 → 0x5B8910, `CreateRoom` at 0x4E6A69). OpenTPW shows the details in the short variant tp.exe uses for such a park: the name as the title, "Theme : …"
+(0x4C0880 → 0x5B8910, `CreateRoom` at 0x4E6A67). OpenTPW shows the details in the short variant tp.exe uses for such a park: the name as the title, "Theme : …"
 (UITEXT 271 with the theme's name, formatted "%s : %s" as 0x4C0AE0 does), the description and Enter, with the owner's action disabled
 (`[EXT:online-chat-park-details]`). docs/reverse/ONLINE-VISIT.md "Chat satellites (tp.exe)" records the traced list, counts, click, details, visit and room.
 
@@ -25,3 +25,5 @@ is unpublished, the scenes route's login, the satellite's count, a satellite's d
 answer that comes after the globe closed, a satellite the server keeps no chat park for, and — with the game data — Enter visiting a level's starting park and a
 published park in the satellite's room through a real server), `ParkPresenceTests` and `ParkPresenceStateTests` (the entry as a teleport). The front-end smoke
 captures the chat park details (`online-chat-park.png`) and checks the theme row is drawn.
+
+Review changes: CreateRoom is cited at its call 0x4E6A67; the docs note that tp.exe sends the entry teleport only when the entrance cell is of type 0x12; a satellite has exactly one room name (`satellite:01` is refused); SERVER.md says a wrongly typed field resets `chatparks.json` to the defaults.

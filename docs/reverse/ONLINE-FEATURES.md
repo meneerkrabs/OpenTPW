@@ -144,6 +144,6 @@ S5 the TPW-SE roadmap).
   shows it: a satellite opens its park's details in their short variant (tp.exe 0x4C0AE0,
   ONLINE-VISIT.md "Chat satellites").
 - On the PC the satellites are the parks of a city of their own (city 1), visited like any park in
-  the park's own room (tp.exe 0x5B7610, 0x4C56E0, 0x4E6A69).
+  the park's own room (tp.exe 0x5B7610, 0x4C56E0, 0x4E6A67).
 - The original's service structure (S5) matches the client's own progress strings (UITEXT 243-255):
   news server, city server (city/theme/ride/logical-server lists, top-10, search), chat server.

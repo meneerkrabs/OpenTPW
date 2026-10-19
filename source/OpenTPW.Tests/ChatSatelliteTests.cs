@@ -346,4 +346,16 @@ public class ChatSatelliteTests
 		Assert.AreEqual( (64f, 64f), ParkPresence.StartOf( new GuestSettings { EntranceA = (200, 101) }, cells ), "an entrance outside the map: the park's middle" );
 		Assert.AreEqual( (64f, 64f), ParkPresence.StartOf( null, cells ) );
 	}
+
+	[TestMethod]
+	public void EachSatelliteHasExactlyOneRoomName()
+	{
+		Assert.AreEqual( 1, ChatProtocol.SatelliteIndexOf( "satellite:1" ) );
+		Assert.AreEqual( 5, ChatProtocol.SatelliteIndexOf( "satellite:5" ) );
+		Assert.IsNull( ChatProtocol.SatelliteIndexOf( "satellite:01" ), "a leading zero would be a second room the satellite does not count" );
+		Assert.IsNull( ChatProtocol.SatelliteIndexOf( "satellite:6" ) );
+		Assert.IsNull( ChatProtocol.SatelliteIndexOf( "satellite:" ) );
+		Assert.IsFalse( ChatProtocol.IsValidRoom( "satellite:001" ) );
+		Assert.IsTrue( ChatProtocol.IsValidRoom( ChatProtocol.SatelliteRoom( 3 ) ) );
+	}
 }

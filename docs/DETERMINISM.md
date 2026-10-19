@@ -95,7 +95,7 @@ this order (`Level.AdvanceSimulation`, `ParkObjects.Simulate`, `SimulationSubste
    pass when its TURBO byte (opcode 51) is nonzero; a script's WAIT therefore wakes on the first slice after its time;
    after its slice (run or skipped) the pass walks the script's object records: a kept sound with a key is moved to its node only when
    `(script id xor pass counter) & 7 == 0` again (`0x551A1F`, built: `OriginalObjectRuntime.FollowHeldSounds`, once per pass), while a kept particle effect moves in every pass, which OpenTPW runs on every 60 Hz tick (DET-013);
-5. on even substeps the tour cars (`0x55ABF0`, `0x54F5D7`) and the effects update `0x475360`, which OpenTPW runs per 60 Hz tick (DET-013);
+5. on even substeps the tour cars (`0x55ABF0`, `0x54F5D7`) and the sprite scheduler `0x475360`. Visitor body players now use these opportunities with an explicit fixed-60Hz host sample (see [Visitor sprites](VISITOR-SPRITES.md)); staff retains its renderer-driven adapter. Other effects remain DET-013;
 6. on every eighth substep (`0x54F668`) the park turn (the order below).
 
 The 60 Hz tick (`EXT:fixed-60hz-clock`) derives its substep from the park's own tick count: substep *n* ends in the first tick whose
@@ -305,9 +305,12 @@ Other OpenTPW state that is **not in the hash**:
 | Sound chooser seed | presentation, see above |
 | `ParkSaveFile.Data.AnalyserCaches` (the analyser's cached readings) | saved for an exact continuation, but a reading aid that no simulation step reads; removed from the economy digest |
 | `ParkSaveFile.Data.StatisticsHistory` (the monthly rings of `ParkStatisticsHistory`) | only the park information window's graph reads them, no simulation step does; removed from the economy digest |
+| `ParkSaveFile.ResearchData.RecentItems` (TPW buy-list stars) | only the buy list reads the four rings; just this nested presentation property is removed from the economy digest. Completed projects, progress, effort and every other research field stay hashed. Raw ring state remains saved; no schema or canonical pin changes |
 
-A change to any of these does not change the hash. Adding one means bumping
-`SchemaVersion` and re-pinning the fixed-run hash.
+A change to any of these excluded fields does not change the hash. Adding an
+excluded presentation-only field does not require a schema or pin change. Bringing
+one of these fields into the canonical hash requires bumping `SchemaVersion` and
+re-pinning the fixed-run hash.
 
 ### Weather timing (October 14)
 

@@ -169,6 +169,11 @@ screens, options), `FrontEnd/`, `Hud/`, `World/Lobby/LobbyScene.cs`,
   it, and plays its `<mesh>m1` wing cycle in a loop; all draws come from the lobby generator.
   Island clips (tp.exe `0x5E11D0`): every island model whose clip has under 1 ms left plays
   its `M1` or `M2` at random (C `rand() & 1`, a local stand-in stream), once.
+  Signs (tp.exe `0x5E1A44`, `0x409B10`, `LobbySigns`): the four models with `sign1`/`sign2` faces
+  (`Jun_isle`, `Hal_isle`, `Fan_gate`, `Spa_gate`) show their theme gate's default lines (the gate's
+  OBJECT_NAMES row, not a saved park name) drawn with their own `<model>.sgn`; they are composed one per
+  frame after the lobby appears, show a plain board until then (or when one cannot be drawn), and are
+  kept for the session, so a later lobby binds them at once.
   Enter sequence (tp.exe `0x5e0490` states 1 and 2, `LobbyCameraMode.BeginEnter`): choosing a
   start in an island's menu hides the lobby UI, turns the camera to the island's angle + π at 0.05 × step a
   frame the short way round, plays the gate's `M1` clip, then zooms in (radius × (1 − 0.07 × step), height

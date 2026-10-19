@@ -6,10 +6,12 @@ A report showed the Jungle park gate's board with the shipped placeholder "SIGN1
 shipped sign art then, commits 520eaaabc and 3d9d547da), for instance a cached older build.
 
 What changed so the placeholder cannot come back through the paths found:
-- One rule for every `sign1`/`sign2` slot (`SignSlotPlan`): the gate (found by its archive, with the sign of its own level) shows the park name, or a plain brown board when its sign is missing, failed or not yet built (the order of a park built
-  over frames); any other fixed item draws its own sign or the board; a placed object draws its own sign. The board is one shared texture.
+- One rule for every `sign1`/`sign2` slot (`SignSlotPlan`): the gate (found by the level's `ParkName.GateObjectId`, with the sign of its own level, which is made before the level's objects)
+  shows the park name, or a plain brown board when its sign is missing or failed; any other fixed item draws its own sign or the board; a placed object draws its own sign. The board is one
+  shared texture that is never released.
 - Creating the gate sign no longer stops a park for the unexpected read failures (arguments, platform support, state, access), and a half-built gate sign entity no longer breaks its own deletion.
-- An object type's sign that could not be read (I/O, access) or whose archive had no files yet (the browser copies a theme's files when a park starts) is no longer remembered as missing for the session; failures that repeat stay cached.
-- Coaster pieces and tour cars draw their object's sign on `sign1`/`sign2` instead of the shipped art.
+- An object type's sign that could not be read (I/O, access) is tried again up to three times (logged once) and one whose archive had no files yet (the browser copies a theme's files when a
+  park starts) is not remembered as missing for the session; failures that repeat (bad data, a missing key or a bad argument in the sign data) stay cached.
+- Track pieces, vehicles, coaster cars and tour cars are unchanged: none of the shipped ones has a sign face (`LobbySignCorpusTests`).
 
 Not changed: a placed object without any `.sgn` (a mod's) keeps the art it ships; that and the drawing itself (pixels) are not covered by the tests, which check the choice of texture source, the cache rule and the failure filter.

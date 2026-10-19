@@ -69,12 +69,103 @@ public sealed class LobbyScene : OriginalModelScene
 					flyerModels[group] = models;
 				}
 			}
+			QueueSigns();
 		}
 		catch
 		{
 			Delete();
 			throw;
 		}
+	}
+
+	/// <summary>A sign model of the scene and the lines and <c>.sgn</c> it is drawn with.</summary>
+	private sealed record SignJob( string Model, string SignPath, ParkNameLines Lines );
+
+	private readonly Queue<SignJob> pendingSigns = new();
+	private readonly Dictionary<string, ObjectSignImages> signs = new( StringComparer.OrdinalIgnoreCase );
+	private readonly Dictionary<string, (Texture Left, Texture Right)> signTextures = new( StringComparer.OrdinalIgnoreCase );
+
+	/// <summary>
+	/// Queues the sign of every island and gate model with sign slots: its theme's gate lines on its own <c>.sgn</c> (<see cref="LobbySigns"/>). A sign the session has
+	/// composed before is bound at once; the others are composed one per frame (<see cref="Animate"/>), so the lobby appears without waiting for them (a sign
+	/// costs about 0.2 s in the browser).
+	/// </summary>
+	private void QueueSigns()
+	{
+		string[] files;
+		try
+		{
+			files = FileSystem.GetFiles( TerrainDirectory ).ToArray();
+		}
+		catch ( Exception exception ) when ( exception is IOException or InvalidOperationException )
+		{
+			Log?.Warning( $"Lobby signs: {exception.Message}" );
+			return;
+		}
+		var queued = new HashSet<string>( StringComparer.OrdinalIgnoreCase );
+		foreach ( var (island, _) in Slots )
+		{
+			foreach ( var model in new[] { island.IslandModel, island.GateModel } )
+			{
+				if ( !HasSignSlots( model ) || !queued.Add( model ) )
+					continue;
+				var member = files.FirstOrDefault( file => file.EndsWith( ".sgn", StringComparison.OrdinalIgnoreCase )
+					&& string.Equals( Path.GetFileNameWithoutExtension( file ), model, StringComparison.OrdinalIgnoreCase ) );
+				if ( member == null )
+				{
+					Log?.Warning( $"Lobby sign: {TerrainDirectory} has no {model}.sgn; the board stays plain." );
+					continue;
+				}
+				var job = new SignJob( model, $"{TerrainDirectory}/{Path.GetFileName( member )}", LobbySigns.Lines( island ) );
+				if ( LobbySigns.TryGetCached( job.SignPath, job.Lines, out var cached ) )
+					Apply( job.Model, cached );
+				else
+					pendingSigns.Enqueue( job );
+			}
+		}
+	}
+
+	/// <summary>Composes the next queued sign and binds it; false when none is left.</summary>
+	public bool ComposeNextSign()
+	{
+		if ( !pendingSigns.TryDequeue( out var job ) )
+			return false;
+		Apply( job.Model, LobbySigns.Compose( job.SignPath, job.Lines ) );
+		return true;
+	}
+
+	private void Apply( string model, ObjectSignImages? images )
+	{
+		if ( images == null )
+			return;
+		signs[model] = images;
+		RebindSigns( model );
+	}
+
+	protected override ObjectSignImages? SignOf( string model ) => signs.TryGetValue( model, out var images ) ? images : null;
+
+	protected override Texture? SignTexture( string model, int side )
+	{
+		if ( !signs.TryGetValue( model, out var images ) || side is not (0 or 1) )
+			return null;
+		// the scene's own textures from the session's composed halves: another lobby scene (the city lobby) may draw the same sign, and each releases its own
+		if ( !signTextures.TryGetValue( model, out var textures ) )
+			signTextures[model] = textures = (new Texture( images.Left, SignSurfaceComposer.HalfWidth, SignSurfaceComposer.Height ),
+				new Texture( images.Right, SignSurfaceComposer.HalfWidth, SignSurfaceComposer.Height ));
+		return side == 0 ? textures.Left : textures.Right;
+	}
+
+	protected override void OnDelete()
+	{
+		base.OnDelete();
+		pendingSigns.Clear();
+		foreach ( var (left, right) in signTextures.Values )
+		{
+			left.ReleaseOwned();
+			right.ReleaseOwned();
+		}
+		signTextures.Clear();
+		signs.Clear();
 	}
 
 	public LobbyDefinition Definition { get; }
@@ -139,6 +230,8 @@ public sealed class LobbyScene : OriginalModelScene
 	/// </summary>
 	public void Animate( float seconds )
 	{
+		// one sign per frame: the lobby is drawn from its first frame and the signs replace the plain board as they are composed
+		ComposeNextSign();
 		if ( !float.IsFinite( seconds ) || seconds < 0 )
 			return;
 		foreach ( var group in FlyingMeshes?.Groups ?? Array.Empty<LobbyFlyingMeshes.Group>() )
@@ -220,7 +313,7 @@ public sealed class LobbyScene : OriginalModelScene
 			}
 		}
 		var animatedMeshes = clips.Any( clip => clip?.Tracks.Any( track => track.VertexAnimation != null || track.UvAnimation != null ) == true );
-		var model = AddAnimatedModel( new ModelFile( path ), animatedMeshes );
+		var model = AddAnimatedModel( new ModelFile( path ), animatedMeshes, name );
 		model.Placement = placement;
 		model.UpdateParts();
 		return (model, clips);

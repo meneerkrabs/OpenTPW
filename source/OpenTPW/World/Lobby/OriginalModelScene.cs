@@ -124,12 +124,45 @@ public abstract class OriginalModelScene : Entity
 	{
 		if ( name.Length == 0 )
 			return Texture.Missing;
+		// the shipped sign1/sign2 art is the magenta "SIGN1 SIGN2" placeholder the game draws over at run time: a sign slot of a model without a runtime sign shows the plain board
+		if ( ObjectSigns.IsSignSlot( name ) )
+			return SignSlotPlan.FallbackBoard;
 		if ( textures.TryGetValue( name, out var texture ) )
 			return texture;
 		var path = OpenTPW.UI.Original.UiImages.Resolve( name, TextureDirectory );
 		texture = path == null ? Texture.Missing : new Texture( path, TextureFlags.Repeat );
 		textures[name] = texture;
 		return texture;
+	}
+
+	private readonly List<(string Model, int Side, Material Material, int Index)> signSlots = new();
+
+	/// <summary>
+	/// The runtime sign of the scene's model <paramref name="model"/> (its file name without extension), or null while it has none (not composed yet, or
+	/// it cannot be): its sign1/sign2 slots then show the plain board, never the shipped placeholder.
+	/// </summary>
+	protected virtual ObjectSignImages? SignOf( string model ) => null;
+
+	/// <summary>The texture of one side (0 <c>sign1</c>, 1 <c>sign2</c>) of a model's runtime sign; the scene owns it and releases it with itself.</summary>
+	protected virtual Texture? SignTexture( string model, int side ) => null;
+
+	private Texture SignSlotTexture( string? model, string textureName )
+	{
+		var plan = SignSlotPlan.ForScene( model == null ? null : SignOf( model ) );
+		return plan.SourceOf( textureName ) == SignSlotSource.RuntimeSign && model != null && SignTexture( model, ObjectSigns.SlotOf( textureName ) ) is { } sign
+			? sign
+			: SignSlotPlan.FallbackBoard;
+	}
+
+	/// <summary>Whether the scene has a model <paramref name="model"/> with sign slots.</summary>
+	protected bool HasSignSlots( string model ) => signSlots.Any( slot => string.Equals( slot.Model, model, StringComparison.OrdinalIgnoreCase ) );
+
+	/// <summary>Binds the sign slots of <paramref name="model"/> to its sign as it is now (after it was composed).</summary>
+	protected void RebindSigns( string model )
+	{
+		foreach ( var (owner, side, material, index) in signSlots )
+			if ( string.Equals( owner, model, StringComparison.OrdinalIgnoreCase ) )
+				material.SetTextureArrayElement( "Color", index, SignSlotTexture( owner, side == 0 ? "sign1" : "sign2" ) );
 	}
 
 	/// <summary>
@@ -144,7 +177,7 @@ public abstract class OriginalModelScene : Entity
 		private readonly OriginalModelScene scene;
 		private bool shown = true;
 
-		internal AnimatedModel( OriginalModelScene scene, ModelFile file, bool animatedMeshes )
+		internal AnimatedModel( OriginalModelScene scene, ModelFile file, bool animatedMeshes, string? name )
 		{
 			this.scene = scene;
 			scene.animatedModels.Add( this );
@@ -171,9 +204,15 @@ public abstract class OriginalModelScene : Entity
 				{
 					var slots = new Texture[MaximumTextureSlots];
 					for ( var index = 0; index < slots.Length; index++ )
-						slots[index] = index < textures.Length ? scene.LoadTexture( textures[index] ) : slots[0] ?? Texture.Missing;
+						slots[index] = index >= textures.Length ? slots[0] ?? Texture.Missing
+							: ObjectSigns.IsSignSlot( textures[index] ) ? scene.SignSlotTexture( name, textures[index] )
+							: scene.LoadTexture( textures[index] );
 					var material = new Material<ObjectUniformBuffer>( "content/shaders/test.shader" );
 					material.Set( "Color", slots );
+					if ( name != null )
+						for ( var index = 0; index < textures.Length && index < slots.Length; index++ )
+							if ( ObjectSigns.SlotOf( textures[index] ) is >= 0 and var side )
+								scene.signSlots.Add( (name, side, material, index) );
 					var model = new Model( vertices, indices, material, animatedMeshes );
 					scene.models.Add( model );
 					var entity = new ModelEntity { Model = model, Name = $"{scene.GetType().Name} part {scene.parts.Count}" };
@@ -238,8 +277,11 @@ public abstract class OriginalModelScene : Entity
 		}
 	}
 
-	/// <summary>Adds an animated model (see <see cref="AnimatedModel"/>); <paramref name="animatedMeshes"/> makes its vertices rewritable.</summary>
-	protected AnimatedModel AddAnimatedModel( ModelFile file, bool animatedMeshes ) => new( this, file, animatedMeshes );
+	/// <summary>
+	/// Adds an animated model (see <see cref="AnimatedModel"/>); <paramref name="animatedMeshes"/> makes its vertices rewritable. A model with a
+	/// <paramref name="name"/> (its file name without extension) gets its runtime sign on its sign slots (<see cref="SignOf"/>), the others the plain board.
+	/// </summary>
+	protected AnimatedModel AddAnimatedModel( ModelFile file, bool animatedMeshes, string? name = null ) => new( this, file, animatedMeshes, name );
 
 	/// <summary>Removes one part and frees its buffers.</summary>
 	protected void RemovePart( ModelEntity part )
@@ -261,6 +303,7 @@ public abstract class OriginalModelScene : Entity
 		foreach ( var part in parts )
 			part.Delete();
 		parts.Clear();
+		signSlots.Clear();
 		foreach ( var model in models )
 			Free( model );
 		models.Clear();

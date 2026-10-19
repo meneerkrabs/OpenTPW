@@ -15,11 +15,11 @@ public class WinterWeatherTests
 {
 	private static SamSettings Keys( string text ) => new( new[] { SamDocument.Parse( text, "test" ) } );
 
-	private static SamSettings Hallow() => Keys(
+	internal static SamSettings Hallow() => Keys(
 		"WeatherEffects.QualityForSnowLow\t0\nWeatherEffects.QualityForSnowHigh\t25\nWeatherEffects.QualityForRainLow\t15\nWeatherEffects.QualityForRainHigh\t45\n" +
 		"WeatherEffects.QualityForLightningLow\t0\nWeatherEffects.QualityForLightningHigh\t25\nWeatherEffects.MaxRaindrops\t600\nWeather.DaysOfWarning\t4\nWeather.DaysBetweenChanges\t7\nWeather.SpeedOfChange\t20\n" );
 
-	private static SamSettings Space() => Keys(
+	internal static SamSettings Space() => Keys(
 		"WeatherEffects.QualityForSnowLow\t-1\nWeatherEffects.QualityForSnowHigh\t-1\nWeatherEffects.QualityForRainLow\t-1\nWeatherEffects.QualityForRainHigh\t-1\n" +
 		"WeatherEffects.QualityForLightningLow\t0\nWeatherEffects.QualityForLightningHigh\t15\nWeatherEffects.MaxRaindrops\t600\nWeather.DaysOfWarning\t4\nWeather.DaysBetweenChanges\t7\nWeather.SpeedOfChange\t20\n" );
 
@@ -142,9 +142,9 @@ public class WinterWeatherTests
 	// ---- The calendar ----------------------------------------------------------------------------------------------
 
 	/// <summary>One weather run: the state of every park turn over <paramref name="days"/> days (quality, flags, drops) hashed in order, and the days (0-based, from 2000-01-01) on which it snowed.</summary>
-	private static (ulong Hash, SortedSet<int> SnowDays, SortedSet<int> RainDays) Run( SamSettings settings, ulong seed, bool wintry, int days )
+	internal static (ulong Hash, SortedSet<int> SnowDays, SortedSet<int> RainDays) Run( SamSettings settings, ulong seed, bool wintry, int days, bool alwaysWinter = false )
 	{
-		var weather = new ParkWeather( settings, seed, 10, 10, wintry );
+		var weather = new ParkWeather( settings, seed, 10, 10, wintry, alwaysWinter );
 		var hash = 14695981039346656037UL;
 		var snow = new SortedSet<int>();
 		var rain = new SortedSet<int>();
@@ -166,8 +166,8 @@ public class WinterWeatherTests
 	}
 
 	/// <summary>The weather's first 400 days (to the end of the first February: the first December starts on day 335).</summary>
-	private const int RunDays = 400;
-	private const int FirstDecemberDay = 335;
+	internal const int RunDays = 400;
+	internal const int FirstDecemberDay = 335;
 
 	[TestMethod]
 	public void TheJungleNeverSnowsWithTheOptionOffAndSnowsOnlyFromDecemberRollsWithItOn()

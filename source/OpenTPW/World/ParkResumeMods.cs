@@ -30,12 +30,12 @@ internal static class ParkResumeMods
 	public static IReadOnlySet<string> UsedOnlyExtensionIds { get; } = new HashSet<string>( StringComparer.Ordinal ) { OfficialExtensions.Pools.Id, OfficialExtensions.Umbrellas.Id, OfficialExtensions.Winter.Id };
 
 	/// <summary>
-	/// The simulation-changing mods of <paramref name="active"/> that a save or an export counts: all of them, except that <c>opentpw.rain-mood</c>, <c>opentpw.winter-weather</c> and <c>opentpw.winter-cold</c> are left out in a Theme Park Inc run, where their
-	/// edition gates are off (<see cref="FeatureGates.RainMood"/>, <see cref="FeatureGates.WinterWeather"/>, <see cref="FeatureGates.WinterCold"/>) and they change nothing, so recording them would only refuse a load or an export for no reason.
+	/// The simulation-changing mods of <paramref name="active"/> that a save or an export counts: all of them, except that <c>opentpw.rain-mood</c>, <c>opentpw.winter-weather</c>, <c>opentpw.winter-cold</c> and <c>opentpw.winter-always</c> are left out in a Theme Park Inc run, where their
+	/// edition gates are off (<see cref="FeatureGates.RainMood"/>, <see cref="FeatureGates.WinterWeather"/>, <see cref="FeatureGates.WinterCold"/>, <see cref="FeatureGates.WinterAlways"/>) and they change nothing, so recording them would only refuse a load or an export for no reason.
 	/// </summary>
 	// [EXT:rain-mood-extension] the extension is not offered in a Theme Park Inc run, so an enabled flag there must not leave a trace in what is recorded; [EXT:winter-weather] likewise (a Theme Park Inc park has no weather of this kind)
 	public static IEnumerable<SimulationMod> RecordableMods( ModSet active ) =>
-		active.SimulationMods.Where( mod => (mod.Id != OfficialExtensions.RainMood.Id && mod.Id != OfficialExtensions.WinterWeather.Id && mod.Id != OfficialExtensions.WinterCold.Id) || !GameEditions.IsThemeParkInc );
+		active.SimulationMods.Where( mod => (mod.Id != OfficialExtensions.RainMood.Id && mod.Id != OfficialExtensions.WinterWeather.Id && mod.Id != OfficialExtensions.WinterCold.Id && mod.Id != OfficialExtensions.WinterAlways.Id) || !GameEditions.IsThemeParkInc );
 
 	/// <summary>
 	/// The records of the simulation-changing mods in <paramref name="active"/> in load order, or null when it has none. A used-only extension

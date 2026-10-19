@@ -63,8 +63,9 @@ internal sealed class AdvisorArrivalRing
 
 	/// <summary>
 	/// A stand-in for a ring that was never recorded, not a port of the original's filled flag (<c>+0x216F8</c>): an OpenTPW save from before the ring was saved has no sizes, and a park with admissions has had arrival groups,
-	/// so the ring is taken as full. The missing entries read as groups of 0, which the hype (124) and big busload (140) lines never score, so only the count the first-group line (281) tests changes; the real sizes replace
-	/// them as groups arrive. A legacy park saved after one to four groups loses the 281 the original would still say. Parks from original saves read their saved ring instead (<see cref="SaveArrivalRing"/>).
+	/// so the ring is taken as full with zero-size stand-ins. Neither the real group count nor its sizes can be reconstructed from admissions: exactly-one-group advice (281) can differ if the missing history held exactly one group,
+	/// and hype (124) or big-busload (140) scores can differ until real arrivals replace the relevant unknown values. At attachment, validated original-save rings replace this stand-in, including a known empty ring
+	/// (<see cref="SaveArrivalRing"/>, <see cref="SaveThemeParkIncArrivalRing"/>). The separate advisor snapshot restore policy still applies this fallback to null or explicitly empty histories when admissions exist.
 	/// </summary>
 	// [APPROX:ADVISOR-028] the ring of a legacy OpenTPW save is unknown: full when the park has had admissions, where tp.exe's saved ring holds the real sizes (0x4CE660)
 	public void AssumeFilled()

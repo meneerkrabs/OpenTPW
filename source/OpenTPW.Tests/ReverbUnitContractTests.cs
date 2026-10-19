@@ -6,13 +6,14 @@ namespace OpenTPW.Tests;
 
 /// <summary>
 /// Characterization contracts for <see cref="ReverbUnit"/> at the current head. The signals are synthetic and the sample rate is supplied directly to the
-/// constructor; nothing here claims that the network, its constants or its output matches the original audio device or backend. These tests were authored
-/// without a dotnet SDK in the audit environment and have not been executed.
+/// constructor; nothing here claims that the network, its constants or its output matches the original audio device or backend. The whole-versus-partitioned
+/// additions below require exact-head CI; this revision was not executed in the audit environment.
 /// </summary>
 [TestClass]
 public class ReverbUnitContractTests
 {
 	private const int SampleRate = 44100;
+	private static readonly int[] BlockCuts = { 0, 1, 17, 255, 256, 257, 1115, 1116, 1139, 1140, 4096, 8192 };
 
 	private static uint Bits( float value ) => BitConverter.SingleToUInt32Bits( value );
 
@@ -60,6 +61,38 @@ public class ReverbUnitContractTests
 			sum += left * left + right * right;
 		}
 		return sum;
+	}
+
+	/// <summary>Renders one input as one block and as the same cuts on a second fresh unit, then checks the current block-boundary invariant.</summary>
+	private static float[] AssertWholeMatchesPartitioned( ReverbSettings settings, float[] send, int frames )
+	{
+		var originalSend = (float[])send.Clone();
+		var whole = new float[frames * 2];
+		var wholeUnit = new ReverbUnit( SampleRate );
+		wholeUnit.Set( settings );
+		wholeUnit.Process( send, whole, frames );
+
+		var guarded = new float[frames * 2 + 4];
+		guarded[0] = guarded[1] = 123.5f;
+		guarded[guarded.Length - 2] = guarded[guarded.Length - 1] = -123.5f;
+		var partitioned = guarded.AsSpan( 2, frames * 2 );
+		var partitionedUnit = new ReverbUnit( SampleRate );
+		partitionedUnit.Set( settings );
+		for ( var index = 0; index < BlockCuts.Length - 1; index++ )
+		{
+			var start = BlockCuts[index];
+			var length = BlockCuts[index + 1] - start;
+			partitionedUnit.Process( send.AsSpan( start * 2, length * 2 ), partitioned.Slice( start * 2, length * 2 ), length );
+		}
+		for ( var index = 0; index < whole.Length; index++ )
+			Assert.AreEqual( whole[index], partitioned[index], 0f, $"sample {index}" );
+		Assert.AreEqual( 123.5f, guarded[0], 0f, "guarded prefix" );
+		Assert.AreEqual( 123.5f, guarded[1], 0f, "guarded prefix" );
+		Assert.AreEqual( -123.5f, guarded[guarded.Length - 2], 0f, "guarded suffix" );
+		Assert.AreEqual( -123.5f, guarded[guarded.Length - 1], 0f, "guarded suffix" );
+		for ( var index = 0; index < send.Length; index++ )
+			Assert.AreEqual( originalSend[index], send[index], 0f, $"send sample {index}" );
+		return whole;
 	}
 
 	/// <summary>Two settings that clamp to the same values must produce the same samples from the same synthetic input.</summary>
@@ -231,5 +264,41 @@ public class ReverbUnitContractTests
 	{
 		AssertSameOutput( Preset( room: -10000, reverb: -10000 ), Preset( room: -20000, reverb: 0 ), "sums at or below -10000 mB are floored" );
 		AssertSameOutput( Preset( room: -15000, reverb: -5000 ), Preset( room: -10000, reverb: -10000 ), "the floor applies to the room-plus-reverb sum" );
+	}
+
+	[TestMethod]
+	public void WholeAndPartitionedBlocksMatchThroughAStereoSyntheticImpulse()
+	{
+		const int frames = 8192;
+		var send = new float[frames * 2];
+		send[0] = send[1] = 10000f;
+		var output = AssertWholeMatchesPartitioned(
+			Preset( size: 7.5f, room: 0, decay: 4f, decayHf: 1f, reflections: 0, reflectionsDelay: 0f, reverb: 0, reverbDelay: 0f ),
+			send,
+			frames );
+
+		// Mono impulse 10000 * (0.5 / 8) = 625; four fresh allpasses negate four times, and wet gain 0.25 gives 156.25.
+		Assert.AreEqual( 156.25f, output[1116 * 2], 0f, "first left output at the shortest left comb" );
+		Assert.AreEqual( 156.25f, output[1139 * 2 + 1], 0f, "first right output at the shortest right comb" );
+		Assert.AreEqual( 0f, output[1116 * 2 + 1], 0f, "the right side has not arrived at frame 1116" );
+		Assert.AreEqual( 0f, output[1139 * 2], 0f, "the left side is silent at frame 1139" );
+	}
+
+	[TestMethod]
+	public void WholeAndPartitionedBlocksMatchThroughAZeroSendTail()
+	{
+		const int frames = 8192;
+		var send = new float[frames * 2];
+		for ( var frame = 0; frame < 256; frame++ )
+		{
+			send[frame * 2] = (frame % 2 == 0) ? 8000f : -8000f;
+			send[frame * 2 + 1] = ((frame / 2) % 2 == 0) ? 6000f : -6000f;
+		}
+		var output = AssertWholeMatchesPartitioned(
+			Preset( size: 7.5f, room: 0, decay: 4f, decayHf: 1f, reflections: 0, reflectionsDelay: 0f, reverb: 0, reverbDelay: 0f ),
+			send,
+			frames );
+
+		Assert.IsTrue( Energy( output, 256, frames ) > 0, "the zero send after frame 255 leaves a genuine nonzero tail" );
 	}
 }

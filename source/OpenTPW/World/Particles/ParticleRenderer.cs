@@ -28,6 +28,9 @@ public sealed class ParticleRenderer : Entity
 	private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<Level, ParticleRenderer> byLevel = new();
 
 	/// <summary>The renderer of a level, or null.</summary>
+	/// <summary>True once the atlas's CPU pixels were dropped after the GPU upload (smoke tests).</summary>
+	internal bool AtlasPixelsReleased => atlas.Pixels.Length == 0;
+
 	public static ParticleRenderer? For( Level level ) => level != null && byLevel.TryGetValue( level, out var renderer ) ? renderer : null;
 
 	private readonly ParticleSystem system;
@@ -71,6 +74,8 @@ public sealed class ParticleRenderer : Entity
 		{
 			// one atlas texture shared by the three materials; a failure leaves no half-built entity or assets behind
 			atlasTexture = new Texture( atlas.Pixels, atlas.Width, atlas.Height );
+			// uploaded: this renderer reads only the frame positions from now on
+			atlas.ReleasePixels();
 			alphaMaterial = Prepare( atlasTexture, MaterialFlags.DisableDepthWrite | MaterialFlags.DoubleSided );
 			additiveMaterial = Prepare( atlasTexture, MaterialFlags.DisableDepthWrite | MaterialFlags.DoubleSided | MaterialFlags.AdditiveBlend );
 			oneOneMaterial = Prepare( atlasTexture, MaterialFlags.DisableDepthWrite | MaterialFlags.DoubleSided | MaterialFlags.OneOneBlend );

@@ -319,14 +319,14 @@ public sealed partial class RideVM
 		// [BIN:TPW-EXE:0x551719 slice loop] while the counter is above 0 and the pc is valid, one instruction runs (0x551cb0) and the counter falls by one only while the flag is 0 (0x551724..0x551730): CRIT_LOCK (0x551D44) sets the flag, so instructions from the lock on are free, and CRIT_UNLOCK (0x551D59) clears it and zeroes the counter (+0x98), ENDSLICE (0x5542A8) zeroes it too, and a wait rewinds the pc and ends the slice
 		while ( !yieldRequested && State == RideVMState.Running && budget > 0 )
 		{
-			if ( executed >= MaximumInstructionsPerSlice )
-			{
-				Fault( $"slice exceeded {MaximumInstructionsPerSlice} instructions inside a critical section" );
-				break;
-			}
 			if ( ProgramCounter >= instructions.Length )
 			{
 				State = RideVMState.Halted;
+				break;
+			}
+			if ( executed >= MaximumInstructionsPerSlice )
+			{
+				Fault( $"slice exceeded {MaximumInstructionsPerSlice} instructions inside a critical section" );
 				break;
 			}
 

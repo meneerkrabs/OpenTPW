@@ -336,7 +336,7 @@ that uses none of them saves, loads and exports identically with them on or off 
 (on the Extensions and mods screen, or by the load dialog below) becomes active **without a restart**, at a moment when no park simulates: at once in the lobby, else when the running park is left or
 another park is loaded or started (a Restart Park reloads the same park and keeps its set; a park started from inside a park while a choice waits is built in one go, so the running park never
 simulates with the new set). `ModStartup.ApplyExtensions` makes the switched set active: the feature gates read it at once, the official
-extensions' objects (pools, umbrellas, winter) are listed in the theme catalogs again (`ModContentRoots.Activate`; the catalog cache is keyed by those roots), and everything else that depends on an
+extensions' objects (pools, umbrellas, winter, the evening torches) are listed in the theme catalogs again (`ModContentRoots.Activate`; the catalog cache is keyed by those roots), and everything else that depends on an
 extension reads the set when a park is built: the guest simulation's rules and decision policy, the weather, the pools tool, slides and HUD rows, the guest sprites (`PoolGuestSprites`, the umbrella
 and warm-item renderers), the evening lamps and the snow. In the browser the page fetches the pools sprite sets when the extension comes on after the start. The set's order is the one a new start with
 the same choices resolves (`ModSet.WithExtensions`), so a park saved after a switch loads after the next start.

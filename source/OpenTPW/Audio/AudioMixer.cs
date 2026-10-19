@@ -220,7 +220,7 @@ public sealed class AudioMixer : IDisposable
 	public IReadOnlyList<AudioVoice> Voices => voices;
 
 	/// <summary>
-	/// The reverb of the held <c>SndReverb.map</c> preset ([APPROX:AUDIO-039]): the positioned voices of the effects channel are sent through it and its return is added to the mix; flat voices, speech and music stay dry.
+	/// The reverb of the held <c>SndReverb.map</c> preset (OpenTPW's own stand-in, the audio-reverb extension): the positioned voices of the effects channel are sent through it and its return is added to the mix; flat voices, speech and music stay dry.
 	/// </summary>
 	public ReverbUnit Reverb { get; } = new( OutputRate );
 

@@ -56,8 +56,14 @@ internal sealed class BFSTReader
 		{
 			var offset = BinaryPrimitives.ReadInt32LittleEndian( buffer.AsSpan( HeaderLength + i * 4, 4 ) );
 			var position = (long)HeaderLength + offset;
+			// The next distinct record start bounds this record: its 4-byte header and its first text run must fit before it,
+			// so a length that overruns the record cannot read the next record's bytes (least of all a two-byte trail byte).
+			var next = NextRecordStart( starts, position );
 			if ( offset < 0 || position + 4 > buffer.Length )
 				throw new InvalidDataException( $"String {i} offset {offset} is outside the file." );
+
+			if ( position + 4 > next )
+				throw new InvalidDataException( $"String {i} header at {position} does not fit before the next record at {next}." );
 
 			if ( buffer[position] != 1 )
 				throw new InvalidDataException( $"String {i} marker is {buffer[position]} instead of 1 at position {position}." );
@@ -66,6 +72,9 @@ internal sealed class BFSTReader
 			position += 4;
 			if ( position + length > buffer.Length )
 				throw new InvalidDataException( $"String {i} length {length} runs past the end of the file." );
+
+			if ( position + length > next )
+				throw new InvalidDataException( $"String {i} length {length} runs past the next record at {next}." );
 
 			builder.Clear();
 			for ( var j = 0; j < length; )
@@ -82,11 +91,17 @@ internal sealed class BFSTReader
 			}
 
 			output[i] = builder.ToString();
-			var next = Array.BinarySearch( starts, position - 4 ) is var at and >= 0 && at + 1 < starts.Length ? starts[at + 1] : buffer.Length;
 			templates[i] = ReadTemplate( output[i], position + length, next );
 		}
 
 		return (output, templates);
+	}
+
+	/// <summary>The next distinct record start after <paramref name="position"/>, or the end of the file when this is the last record.</summary>
+	private long NextRecordStart( long[] starts, long position )
+	{
+		var at = Array.BinarySearch( starts, position );
+		return at >= 0 && at + 1 < starts.Length ? starts[at + 1] : buffer.Length;
 	}
 
 	private bool TryDecode( int start, int length, int offset, out char character, out int taken )

@@ -118,6 +118,8 @@ public partial class Level
 			Weather = Weather?.CaptureSnapshot(),
 			Gate = Gate?.CaptureSnapshot(),
 			ParkName = ParkName is { } name ? new ParkNameSaveData( name.Line1, name.Line2 ) : null,
+			// [EXT:winter-snow-save] optional and unhashed: null (left out of the file) without snow
+			SnowCover = CaptureSnowCover(),
 			Staff = StaffWorld?.CaptureSnapshot(),
 			Advisor = advisor?.CaptureSnapshot( advisorMaySpeak ),
 			Coasters = CaptureCoastersSnapshot(),
@@ -181,6 +183,9 @@ public partial class Level
 		{
 			Weather = new ParkWeather( Park.Economy.Settings.Standard, Seed.WeatherStream, Guests.Grid.CountX, Guests.Grid.CountY, FeatureGates.WinterWeather );
 			Weather.RestoreSnapshot( snapshot.Weather );
+			// [EXT:winter-snow-save] a resumed park keeps its snow (ignored while the extension is off)
+			resumedSnowCover = snapshot.SnowCover;
+			AttachSnow();
 		}
 		// the particle pool's emitters and effectors (no particles), rebuilt by the renderer module when the host draws
 		if ( snapshot.Particles != null )

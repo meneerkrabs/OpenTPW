@@ -84,11 +84,28 @@ public class UmbrellasTuningMeasureTests
 	}
 
 	[TestMethod]
-	public void TheKidScoreOf75PercentSellsNoMoreThanOf100()
+	public void TheKidScoreOnlyMattersThroughBalloonHoldersAndSellsFewerUmbrellasAt75Percent()
 	{
-		var seventyFive = Measure( WorldSeed.DefaultValue, shop: true, kidScore: 75, rainMood: false );
-		var hundred = Measure( WorldSeed.DefaultValue, shop: true, kidScore: 100, rainMood: false );
-		Assert.IsTrue( seventyFive.Buyers <= hundred.Buyers + 2, $"75 %: {seventyFive.Buyers}, 100 %: {hundred.Buyers}" );
+		var seeds = new[] { WorldSeed.DefaultValue, WorldSeed.DefaultValue ^ 0x11, WorldSeed.DefaultValue ^ 0x22, WorldSeed.DefaultValue ^ 0x33 };
+		int buyers75 = 0, buyers100 = 0, released75 = 0, released100 = 0;
+		foreach ( var seed in seeds )
+		{
+			// with nobody holding a balloon the shop's score never decides a purchase, so the two values play out the same
+			var plain75 = Measure( seed, shop: true, kidScore: 75, rainMood: false, balloonEvery: 0 );
+			var plain100 = Measure( seed, shop: true, kidScore: 100, rainMood: false, balloonEvery: 0 );
+			Assert.AreEqual( (plain100.Buyers, plain100.Balance, plain100.RainHappiness), (plain75.Buyers, plain75.Balance, plain75.RainHappiness), $"seed {seed:X}: no balloons, so the same run" );
+
+			var seventyFive = Measure( seed, shop: true, kidScore: 75, rainMood: false );
+			var hundred = Measure( seed, shop: true, kidScore: 100, rainMood: false );
+			Assert.IsTrue( seventyFive.Buyers <= hundred.Buyers, $"seed {seed:X}: 75 %: {seventyFive.Buyers}, 100 %: {hundred.Buyers}" );
+			buyers75 += seventyFive.Buyers;
+			buyers100 += hundred.Buyers;
+			released75 += seventyFive.BalloonsReleased;
+			released100 += hundred.BalloonsReleased;
+		}
+		// measured over these four seeds: 50 against 55 buyers, 16 against 28 balloons let go; the extra sales at 100 % are balloon holders trading a balloon in
+		Assert.IsTrue( buyers75 < buyers100, $"75 %: {buyers75} buyers, 100 %: {buyers100}" );
+		Assert.IsTrue( released75 < released100, $"balloons let go, 75 %: {released75}, 100 %: {released100}" );
 	}
 
 	[TestMethod]

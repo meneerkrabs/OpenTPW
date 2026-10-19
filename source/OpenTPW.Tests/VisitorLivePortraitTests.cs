@@ -672,17 +672,20 @@ public class VisitorLivePortraitTests
 	[DataRow( true, 2048, 1536 )]
 	[DataRow( false, 1920, 1080 )]
 	[DataRow( true, 1920, 1080 )]
-	public void ActualHireAndEmployeeFiguresKeepTheirDefaultFeetAndScaleWhenDrawing( bool employee, int width, int height )
+	public void ActualHireAndEmployeeFiguresKeepTheirSeparateGeometryWhenDrawing( bool employee, int width, int height )
 	{
 		var economy = EconomyTestData.Park(); var member = EconomyTestData.HireBest( economy, StaffType.Handyman );
 		var hud = StaffWindowTests.Hud( economy );
 		if ( employee ) Assert.IsTrue( hud.OpenEmployeeWindow( member ) ); else hud.OpenStaffWindow();
-		var figure = Figure( hud ); Assert.AreEqual( 3.2f, figure.CanvasUnitsPerPixel ); Assert.IsNull( figure.FeetInCanvas );
+		var figure = Figure( hud ); Assert.AreEqual( employee ? 3.2f : 2.4f, figure.CanvasUnitsPerPixel );
+		if ( employee ) Assert.IsNull( figure.FeetInCanvas );
+		else Assert.AreEqual( new N.Vector2( 626, 362 ), figure.FeetInCanvas!.Value );
 		var texture = TextureSentinel(); var frame = new UiSpriteFrame( texture.NativeTexture, 128, 64, 10, 20, 3, 5, 2, -4, true, 2, 0.5f );
 		// Test the actual screen's existing widget with a managed frame; live staff callbacks have their own integration tests.
 		figure.Frame = () => frame; var context = Context( width: width, height: height ); figure.Draw( context, false, false );
-		var bounds = context.Canvas.Map( figure.Bounds, figure.Anchor ); var feet = UiSpriteFigure.Feet( bounds );
-		var pixel = 3.2f * bounds.Width / figure.Bounds.Width; var draw = context.Batch.Draws.Single();
+		var bounds = context.Canvas.Map( figure.Bounds, figure.Anchor );
+		var feet = employee ? UiSpriteFigure.Feet( bounds ) : context.Canvas.Map( new N.Vector2( 626, 362 ), UiAnchor.Center );
+		var pixel = (employee ? 3.2f : 2.4f) * bounds.Width / figure.Bounds.Width; var draw = context.Batch.Draws.Single();
 		AssertPoint( new N.Vector2( feet.X - 5 * pixel * 2, feet.Y - 4 * pixel * 0.5f ), draw.Vertices[0].Position );
 		AssertPoint( new N.Vector2( feet.X - 2 * pixel * 2, feet.Y + pixel * 0.5f ), draw.Vertices[5].Position );
 		Assert.AreSame( texture.NativeTexture, draw.Texture.Rendered ); Assert.AreEqual( 6, draw.Vertices.Count );

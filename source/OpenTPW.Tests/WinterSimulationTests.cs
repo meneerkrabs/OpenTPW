@@ -8,14 +8,14 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 namespace OpenTPW.Tests;
 
 /// <summary>
-/// The winter extension in the guest simulation (docs/WINTER.md, phase W3): the kiosk's gate and score, the glühwein stall's percentages, a purchase (a head item, then mittens, no random draw), the colours, the saved items and
+/// The winter extension in the guest simulation (docs/WINTER.md, phase W3): the kiosk's score (it sells all year, a guest with full slots scores 0), the glühwein stall's percentages, a purchase (a head item, then mittens, no random draw), the colours, the saved items and
 /// the state hash. A headless park, no original game data. Nothing of it is Theme Park World's behaviour, so every rule under test is the extension's own (<c>[EXT:winter-*]</c>).
 /// </summary>
 // [EXT:winter-extension] OpenTPW's own extension; Theme Park World has neither the shops nor the items
 [TestClass]
 public class WinterSimulationTests
 {
-	private static readonly WinterShopTerms KioskTerms = new( 0, 0, 200, 100, 0, 0, 0 );
+	private static readonly WinterShopTerms KioskTerms = new( 0, 0, 200, 150, 60, 20, 60 );
 	private static readonly WinterShopTerms StallTerms = new( 130, 130, 250, 150, 60, 20, 60 );
 	private const double TurnSeconds = ParkCalendar.TurnMilliseconds / 1000.0;
 
@@ -80,7 +80,7 @@ public class WinterSimulationTests
 			WinterSeason.Autumn, WinterSeason.Autumn, WinterSeason.Autumn, WinterSeason.Winter, WinterSeason.None };
 		for ( var month = 0; month <= 13; month++ )
 			Assert.AreEqual( expected[month], WinterRules.SeasonOf( month ), $"month {month}" );
-		CollectionAssert.AreEqual( new[] { 1, 2, 12 }, Enumerable.Range( 0, 14 ).Where( WinterRules.IsWinterMonth ).OrderBy( month => month ).ToArray() );
+		CollectionAssert.AreEqual( new[] { 1, 2, 12 }, Enumerable.Range( 0, 14 ).Where( month => WinterRules.SeasonOf( month ) == WinterSeason.Winter ).OrderBy( month => month ).ToArray() );
 		var terms = new WinterShopTerms( 1, 2, 3, 40, 50, 60, 70 );
 		CollectionAssert.AreEqual( new[] { 0, 40, 40, 50, 60, 70, 0 }, new[] { 0, 1, 2, 4, 7, 10, 13 }.Select( terms.SeasonPercentOf ).ToArray(), "month 0 and 13 are no month; January and February winter, April spring, July summer, October autumn" );
 		Assert.AreEqual( (0, 1, 2, 3), (terms.WeatherPercentOf( UmbrellaRules.WeatherNone ), terms.WeatherPercentOf( UmbrellaRules.WeatherRain ), terms.WeatherPercentOf( UmbrellaRules.WeatherStorm ), terms.WeatherPercentOf( UmbrellaRules.WeatherSnow )) );
@@ -88,18 +88,33 @@ public class WinterSimulationTests
 	}
 
 	[TestMethod]
-	public void TheKioskScoresZeroUnlessItSnowsOrItIsDecemberToFebruaryAndNotToAGuestWithFullSlots()
+	public void TheKioskScoresZeroOnlyForAGuestWithFullSlotsAndHasNoSeasonOrWeatherGate()
 	{
-		foreach ( var month in Enumerable.Range( 0, 14 ) )
-			foreach ( var weather in new[] { UmbrellaRules.WeatherNone, UmbrellaRules.WeatherRain, UmbrellaRules.WeatherStorm, UmbrellaRules.WeatherSnow, UmbrellaRules.WeatherHeatWave } )
-			{
-				var open = weather == UmbrellaRules.WeatherSnow || month is 12 or 1 or 2;
-				Assert.AreEqual( !open, WinterRules.KioskScoresZero( 0, weather, month ), $"empty slots, weather {weather}, month {month}" );
-				Assert.IsTrue( WinterRules.KioskScoresZero( WinterRules.AllItems & ~WinterRules.Earmuffs, weather, month ), "both slots full: never" );
-			}
-		Assert.IsFalse( WinterRules.KioskScoresZero( WinterRules.Hat, UmbrellaRules.WeatherSnow, 7 ), "a head item alone leaves the mittens to buy" );
-		Assert.IsFalse( WinterRules.KioskScoresZero( WinterRules.Mittens, UmbrellaRules.WeatherNone, 1 ), "mittens alone leave the head to dress" );
-		Assert.IsTrue( WinterRules.KioskScoresZero( WinterRules.Earmuffs | WinterRules.Mittens, UmbrellaRules.WeatherSnow, 1 ) );
+		// [EXT:winter-kiosk] the user's decision of 2026-10-18/19 ("Het hele jaar, vraag via seizoen"): the kiosk sells all year; only a guest with a head item and mittens has nothing left to buy
+		Assert.IsFalse( WinterRules.KioskScoresZero( 0 ), "an empty guest: the kiosk scores in every month and weather" );
+		Assert.IsFalse( WinterRules.KioskScoresZero( WinterRules.Hat ), "a head item alone leaves the mittens to buy" );
+		Assert.IsFalse( WinterRules.KioskScoresZero( WinterRules.Earmuffs ) );
+		Assert.IsFalse( WinterRules.KioskScoresZero( WinterRules.Mittens ), "mittens alone leave the head to dress" );
+		Assert.IsTrue( WinterRules.KioskScoresZero( WinterRules.Hat | WinterRules.Mittens ) );
+		Assert.IsTrue( WinterRules.KioskScoresZero( WinterRules.Earmuffs | WinterRules.Mittens ) );
+	}
+
+	[TestMethod]
+	public void TheWinterShopsReadSnowAsSnowEvenWithLightningWhereTheUmbrellasReadAStorm()
+	{
+		// Halloween's snow band equals its lightning band, so its snowfall has both flags
+		Assert.AreEqual( UmbrellaRules.WeatherStorm, UmbrellaRules.WeatherStateOf( false, true, true ), "the umbrellas' and the rain mood's map is unchanged" );
+		Assert.AreEqual( UmbrellaRules.WeatherSnow, WinterRules.WeatherStateOf( false, true, true ), "the winter shops see the snow" );
+		Assert.AreEqual( UmbrellaRules.WeatherSnow, WinterRules.WeatherStateOf( false, false, true ) );
+		Assert.AreEqual( UmbrellaRules.WeatherStorm, WinterRules.WeatherStateOf( true, true, false ) );
+		Assert.AreEqual( UmbrellaRules.WeatherStorm, WinterRules.WeatherStateOf( false, true, false ) );
+		Assert.AreEqual( UmbrellaRules.WeatherRain, WinterRules.WeatherStateOf( true, false, false ) );
+		Assert.AreEqual( UmbrellaRules.WeatherNone, WinterRules.WeatherStateOf( false, false, false ) );
+		foreach ( var rain in new[] { false, true } )
+			foreach ( var lightning in new[] { false, true } )
+				Assert.AreEqual( UmbrellaRules.WeatherStateOf( rain, lightning, false ), WinterRules.WeatherStateOf( rain, lightning, false ), "without snow the two maps agree" );
+		foreach ( var rain in new[] { false, true } )
+			Assert.AreEqual( UmbrellaRules.WeatherStateOf( rain, false, true ), WinterRules.WeatherStateOf( rain, false, true ), "snow without lightning (a wintry December) is the same in both" );
 	}
 
 	[TestMethod]
@@ -110,8 +125,9 @@ public class WinterSimulationTests
 		Assert.AreEqual( 21u, WinterRules.ApplyTerms( 27, UmbrellaRules.WeatherStorm, 10, StallTerms ), "storm like rain; autumn 60" );
 		Assert.AreEqual( 5u, WinterRules.ApplyTerms( 27, UmbrellaRules.WeatherNone, 7, StallTerms ), "27 x 20 / 100 = 5: summer" );
 		Assert.AreEqual( 27u, WinterRules.ApplyTerms( 27, UmbrellaRules.WeatherNone, 0, StallTerms ), "no weather and no month: no change" );
-		Assert.AreEqual( 54u, WinterRules.ApplyTerms( 27, UmbrellaRules.WeatherSnow, 7, KioskTerms ), "snow 200, a summer percentage of 0 leaves it" );
-		Assert.AreEqual( 27u, WinterRules.ApplyTerms( 27, UmbrellaRules.WeatherNone, 12, KioskTerms ), "winter 100 = unchanged" );
+		Assert.AreEqual( 10u, WinterRules.ApplyTerms( 27, UmbrellaRules.WeatherSnow, 7, KioskTerms ), "snow 200 = 54, summer 20 = 10" );
+		Assert.AreEqual( 40u, WinterRules.ApplyTerms( 27, UmbrellaRules.WeatherNone, 12, KioskTerms ), "winter 150 = 40" );
+		Assert.AreEqual( 5u, WinterRules.ApplyTerms( 27, UmbrellaRules.WeatherRain, 7, KioskTerms ), "the kiosk's rain percentage is 0: only the season, summer 20" );
 	}
 
 	[TestMethod]
@@ -177,40 +193,66 @@ public class WinterSimulationTests
 	// ---- The shops' score --------------------------------------------------------------------------------------------
 
 	[TestMethod]
-	public void TheKioskScoresTheGamesScoreInSnowAndInTheWinterMonthsAndNeverToAGuestWithFullSlots()
+	public void TheKioskSellsAllYearItsDemandFollowsTheSeasonAndTheSnowAndAGuestWithFullSlotsScoresZero()
 	{
 		var (rig, shop, guest) = ScoringPark();
 		var plain = ScoringPark( new RideVisitorBridge( 2, "Shop", RideVisitorKind.Shop, 1, 60, 30 ) { EntranceCell = (10, 9), ExitCell = (10, 9) } );
 		Assert.AreEqual( 27u, plain.Rig.Simulation.ScoreAttraction( plain.Guest, plain.Shop ), "the game's own score of a guest beside an empty queue" );
 		rig.Weather = UmbrellaRules.WeatherNone;
 		rig.Month = 6;
-		Assert.AreEqual( 0u, rig.Simulation.ScoreAttraction( guest, shop ), "a clear day in June: the kiosk scores 0" );
+		Assert.AreEqual( 5u, rig.Simulation.ScoreAttraction( guest, shop ), "a clear day in June: it still sells, at the summer percentage of 20 (27 x 20 / 100)" );
 		rig.Weather = UmbrellaRules.WeatherRain;
-		Assert.AreEqual( 0u, rig.Simulation.ScoreAttraction( guest, shop ), "rain is no snow" );
+		Assert.AreEqual( 5u, rig.Simulation.ScoreAttraction( guest, shop ), "the kiosk's rain percentage is 0, so rain leaves the season's score" );
 		rig.Weather = UmbrellaRules.WeatherSnow;
-		Assert.AreEqual( 54u, rig.Simulation.ScoreAttraction( guest, shop ), "snow in June: 27 x 200 / 100" );
+		Assert.AreEqual( 10u, rig.Simulation.ScoreAttraction( guest, shop ), "snow in June: 27 x 200 / 100 = 54, x 20 / 100 = 10" );
 		rig.Weather = UmbrellaRules.WeatherNone;
 		foreach ( var month in new[] { 12, 1, 2 } )
 		{
 			rig.Month = month;
-			Assert.AreEqual( 27u, rig.Simulation.ScoreAttraction( guest, shop ), $"month {month}: the winter percentage of 100 leaves the game's 27" );
+			Assert.AreEqual( 40u, rig.Simulation.ScoreAttraction( guest, shop ), $"month {month}: the winter percentage of 150" );
 		}
-		rig.Month = 3;
-		Assert.AreEqual( 0u, rig.Simulation.ScoreAttraction( guest, shop ), "March is no winter month" );
+		foreach ( var month in new[] { 3, 4, 5, 9, 10, 11 } )
+		{
+			rig.Month = month;
+			Assert.AreEqual( 16u, rig.Simulation.ScoreAttraction( guest, shop ), $"month {month}: spring or autumn, 60" );
+		}
 		rig.Simulation.WinterMonth = null;
-		Assert.AreEqual( 0u, rig.Simulation.ScoreAttraction( guest, shop ), "no month source: only snow opens the kiosk" );
+		Assert.AreEqual( 27u, rig.Simulation.ScoreAttraction( guest, shop ), "no month source: no season percentage, and no gate either" );
 		rig.Weather = UmbrellaRules.WeatherSnow;
 		Assert.AreEqual( 54u, rig.Simulation.ScoreAttraction( guest, shop ) );
 		rig.Simulation.UmbrellaWeatherState = null;
-		Assert.AreEqual( 0u, rig.Simulation.ScoreAttraction( guest, shop ), "no weather source and no month: nothing" );
+		Assert.AreEqual( 27u, rig.Simulation.ScoreAttraction( guest, shop ), "no weather source and no month: the game's score" );
 		rig.Simulation.UmbrellaWeatherState = () => rig.Weather;
 		rig.Simulation.WinterMonth = () => rig.Month;
 		rig.Weather = UmbrellaRules.WeatherSnow;
 		rig.Month = 12;
+		Assert.AreEqual( 81u, rig.Simulation.ScoreAttraction( guest, shop ), "snow in December: 54 x 150 / 100" );
 		rig.Simulation.SetWarmItemsForTest( guest, WinterRules.Hat );
-		Assert.AreEqual( 54u, rig.Simulation.ScoreAttraction( guest, shop ), "a head item alone: mittens are still to buy" );
+		Assert.AreEqual( 81u, rig.Simulation.ScoreAttraction( guest, shop ), "a head item alone: mittens are still to buy" );
 		rig.Simulation.SetWarmItemsForTest( guest, WinterRules.Hat | WinterRules.Mittens );
 		Assert.AreEqual( 0u, rig.Simulation.ScoreAttraction( guest, shop ), "full slots: nothing left to buy" );
+		rig.Month = 7;
+		rig.Weather = UmbrellaRules.WeatherNone;
+		Assert.AreEqual( 0u, rig.Simulation.ScoreAttraction( guest, shop ), "in every month and weather" );
+	}
+
+	[TestMethod]
+	public void TheShopsTakeTheirOwnSnowSignalAndTheUmbrellaMapIsLeftToTheUmbrellas()
+	{
+		var (rig, shop, guest) = ScoringPark();
+		rig.Month = 6;
+		// Halloween's snowfall: lightning and snow at once. The umbrella map reads a storm; the winter signal reads the snow
+		rig.Weather = UmbrellaRules.WeatherStorm;
+		rig.Simulation.WinterWeatherState = () => UmbrellaRules.WeatherSnow;
+		Assert.AreEqual( 10u, rig.Simulation.ScoreAttraction( guest, shop ), "the kiosk's snow percentage of 200 applies although the umbrella map says storm: 54 x 20 / 100" );
+		rig.Simulation.WinterWeatherState = null;
+		Assert.AreEqual( 5u, rig.Simulation.ScoreAttraction( guest, shop ), "without the winter signal the umbrella map is used (kiosk storm 0)" );
+		var stall = ScoringPark( Stall() );
+		stall.Rig.Month = 12;
+		stall.Rig.Weather = UmbrellaRules.WeatherStorm;
+		Assert.AreEqual( 52u, stall.Rig.Simulation.ScoreAttraction( stall.Guest, stall.Shop ), "the stall reads the storm: 27 x 130 / 100 = 35, x 150 / 100 = 52" );
+		stall.Rig.Simulation.WinterWeatherState = () => UmbrellaRules.WeatherSnow;
+		Assert.AreEqual( 100u, stall.Rig.Simulation.ScoreAttraction( stall.Guest, stall.Shop ), "and the snow when the winter signal says snow: 27 x 250 / 100 = 67, x 150 / 100 = 100" );
 	}
 
 	[TestMethod]
@@ -239,7 +281,7 @@ public class WinterSimulationTests
 		var (rig, _, guest) = ScoringPark( imposter );
 		rig.Weather = UmbrellaRules.WeatherNone;
 		rig.Month = 6;
-		Assert.AreEqual( 27u, rig.Simulation.ScoreAttraction( guest, imposter ), "an object that merely says AppearanceEffect 4 is no winter kiosk: no gate" );
+		Assert.AreEqual( 27u, rig.Simulation.ScoreAttraction( guest, imposter ), "an object that merely says AppearanceEffect 4 is no winter kiosk: the game's score" );
 		rig.Weather = UmbrellaRules.WeatherSnow;
 		rig.Month = 12;
 		Assert.AreEqual( 27u, rig.Simulation.ScoreAttraction( guest, imposter ), "and no percentages: the keys are read for the extension's objects only" );
@@ -296,7 +338,7 @@ public class WinterSimulationTests
 	}
 
 	[TestMethod]
-	public void TheHolderCountFollowsPurchaseDepartureAndRestoreSoTheParkKnowsWhetherItUsesWinter()
+	public void TheSimulationsOwnWinterUseFollowsPurchaseAndRestore()
 	{
 		var rig = new Rig();
 		var guest = rig.Simulation.SpawnInPark( 6, 5 );

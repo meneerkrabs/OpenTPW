@@ -37,7 +37,7 @@ const SELECTIONS = [['Rides', 'Belly Bounce'], ['Shops', 'Balloon Shop'], ['Shop
 function parseArguments(argv) {
 	const options = {
 		web: null, game: null, label: 'unlabelled', out: null, chrome: process.env.CHROME ?? DEFAULT_CHROME, headed: false,
-		scenarios: ['start', 'lobby', 'jungle', 'buy', 'digest'], window: 30, memoryMinutes: 10, music: false, width: 1280, height: 900, runs: 1, frameCap: 0, keep: 'off', zoom: null, shot: null, crowd: 400, evening: null, eveningLamps: 0,
+		scenarios: ['start', 'lobby', 'jungle', 'buy', 'digest'], window: 30, memoryMinutes: 10, music: false, width: 1280, height: 900, runs: 1, frameCap: 0, keep: 'off', zoom: null, shot: null, crowd: 400, cover: 1, evening: null, eveningLamps: 0,
 	};
 	for (let index = 2; index < argv.length; index++) {
 		const [flag, inline] = argv[index].split(/=(.*)/s);
@@ -60,6 +60,7 @@ function parseArguments(argv) {
 			case '--zoom': options.zoom = Number(value()); break;
 			case '--crowd': options.crowd = Number(value()); break;
 			case '--shot': options.shot = value(); break;
+			case '--cover': options.cover = Math.min(1, Math.max(0, Number(value()))); break;
 			case '--evening': options.evening = value(); break;
 			case '--evening-lamps': options.eveningLamps = Math.max(0, Number(value()) || 0); break;
 			case '--help': case '-h': console.log(usage()); process.exit(0);
@@ -77,13 +78,14 @@ function usage() {
 	return `Usage: node tools/web-perf/run.mjs --web <published wwwroot> --game <Theme Park World folder> [options]
   --label <name>          build label in the report (interpreter, aot, ...)
   --out <file.json>       report path (default reports/web-perf/<date>-<label>.json)
-  --scenarios <list>      comma list of start,lobby,jungle,buy,umbrellas,umbrellaCost,memory,switch,revisit,digest (default start,lobby,jungle,buy,digest)
+  --scenarios <list>      comma list of start,lobby,jungle,buy,umbrellas,snow,winter,umbrellaCost,memory,switch,revisit,digest (default start,lobby,jungle,buy,digest)
   --window <seconds>      steady window length (default 30)
   --memory-minutes <n>    memory scenario length (default 10)
   --music                 keep music and speech on (default: muted, effects on, as on 11 October)
   --size <w>x<h>          window size (default 1280x900)
   --crowd <n>             umbrellaCost: extra guests staged in the Jungle park (default 400)
-  --shot <file>           umbrellas, winter: where the screenshot goes
+  --shot <file>           umbrellas, snow, winter: where the screenshot goes
+  --cover <0..1>          snow: the settled snow cover to hold (default 1)
   --zoom <value>          jungle: after the steady window, hold the park camera at this zoom value (40..300 with the wide zoom option) and measure a second window
   --evening <mode>        jungle: after the steady window, hold the evening look (night, dusk, day) or switch the extension off, and measure a second window
   --evening-lamps <n>     with --evening: add n extra lamp lights around the camera target (the browser twin of the desktop's --debug-evening-lamps) for the second window
@@ -356,6 +358,22 @@ const scenarios = {
 		const file = options.shot ?? path.join(os.tmpdir(), 'opentpw-winter.png');
 		await fs.writeFile(file, Buffer.from(shot.data, 'base64'));
 		return { zoom, drawnWinterItems: drawn, screenshot: file };
+	},
+
+	/** [EXT:debug-snow-cover] After jungle: holds the park's settled snow cover (--cover, default 1) and saves a screenshot (--shot, default opentpw-snow.png in the temp dir): the browser build's check that test.shader's snow compiles and draws. */
+	async snow(page, options) {
+		if (!(await page.state()).hud)
+			throw new Error('The snow scenario needs a park: run it after jungle');
+		const held = await page.eval(`opentpwPerf.program.PerfSnow(${options.cover})`);
+		if (!held)
+			throw new Error('The park has no snow cover (the opentpw.winter-snow extension is off, or the park has no weather yet)');
+		if (options.zoom != null)
+			await page.eval(`opentpwPerf.program.PerfZoom(${options.zoom})`);
+		await sleep(4000);
+		const shot = await page.send('Page.captureScreenshot', { format: 'png' });
+		const file = options.shot ?? path.join(os.tmpdir(), 'opentpw-snow.png');
+		await fs.writeFile(file, Buffer.from(shot.data, 'base64'));
+		return { cover: options.cover, screenshot: file };
 	},
 
 	async buy(page) {

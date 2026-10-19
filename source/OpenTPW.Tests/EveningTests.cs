@@ -25,6 +25,7 @@ public class EveningTests
 	internal static ModSet Set( bool evening ) => ModSet.Resolve( Array.Empty<DiscoveredMod>(),
 		new ModSettings { Enabled = new Dictionary<string, bool> { [OfficialExtensions.Evening.Id] = evening } }, null, GameEdition.ThemeParkWorld, OfficialExtensions.All );
 
+	// the checkout's root (the source files are not copied to the test output, unlike content/, which RepositoryRoot finds in the output first)
 	private static string SourceRoot()
 	{
 		var directory = new DirectoryInfo( AppContext.BaseDirectory );
@@ -485,6 +486,43 @@ public class EveningTests
 		StringAssert.Contains( text.Substring( Math.Max( 0, peak - 300 ), 300 ), "vAmbientTint.x + vAmbientTint.y + vAmbientTint.z > 0.0 )", "the shoulder sits behind the dusk and night check" );
 	}
 
+	/// <summary>The shoulder of <c>test.shader</c> in C#: weighted by the ambient that has fallen away, so the first dusk frame looks like the last day frame.</summary>
+	private static NVector3 Shouldered( NVector3 colour, EveningLook look )
+	{
+		if ( look.AmbientColourUniform == NVector3.Zero )
+			return colour;
+		var peak = MaxOf( colour );
+		var shouldered = colour * ( peak > 0.4f ? ( 0.4f + ( peak - 0.4f ) * 0.25f ) / peak : 1f );
+		return NVector3.Lerp( colour, shouldered, Math.Clamp( ( 1f - look.AmbientUniform ) / 0.65f, 0f, 1f ) );
+	}
+
+	[TestMethod]
+	public void TheShoulderFadesInWithTheDuskSoALitSurfaceNeverJumps()
+	{
+		var text = ShaderText( "test.shader" );
+		StringAssert.Contains( text, "clamp( ( 1.0 - g_oUbo.g_flAmbientLevel ) / 0.65, 0.0, 1.0 )", "the shader weights the shoulder like this test" );
+		foreach ( var brightness in new[] { 0.5f, 0.8f, 1.0f } )
+		{
+			var lit = new NVector3( brightness );
+			var day = Shouldered( lit, EveningLook.At( 1f ) );
+			var firstDusk = Shouldered( lit, EveningLook.At( 0.99f ) );
+			Assert.AreEqual( brightness, day.X, 1e-6f, "full day is untouched" );
+			Assert.IsTrue( Math.Abs( firstDusk.X - day.X ) < 0.02f, $"{brightness}: {day.X} at day, {firstDusk.X} on the first dusk frame" );
+			// whole at full night: the ambient left is NightAmbient there
+			var night = Shouldered( lit, EveningLook.At( 0f ) );
+			var full = brightness > 0.4f ? 0.4f + ( brightness - 0.4f ) * 0.25f : brightness;
+			Assert.AreEqual( full, night.X, 1e-4f, $"{brightness}: the whole shoulder at night" );
+			// and never a step anywhere along the way
+			var previous = day.X;
+			for ( var step = 99; step >= 0; step-- )
+			{
+				var value = Shouldered( lit, EveningLook.At( step / 100f ) ).X;
+				Assert.IsTrue( Math.Abs( value - previous ) < 0.03f, $"{brightness}: {previous} to {value} at daylight {step / 100f}" );
+				previous = value;
+			}
+		}
+	}
+
 	[TestMethod]
 	public void TheSplashAndSmokeParticlesTakeTheSpriteTint()
 	{
@@ -651,7 +689,7 @@ public class EveningTests
 				{
 					// inside the object's 10 x 10 cell and not under the ground, in model units: where the light stands is a place the object occupies
 					// (the underwater light stands a little below the object's ground level on purpose: it is in the water, so it lights the basin and the water's edge and little of the dry ground)
-					Assert.IsTrue( lamp.Local.X is >= 0 and <= 10 && lamp.Local.Y is >= 0 and <= 25 && lamp.Local.Z >= ( extra == 6 ? -8f : 0f ) && lamp.Local.Z <= 14, $"{theme}/{name}: {lamp.Local}" );
+					Assert.IsTrue( lamp.Local.X is >= 0 and <= 10 && lamp.Local.Y is >= 0 && lamp.Local.Y <= ( extra == 6 ? 25f : 10f ) && lamp.Local.Z >= ( extra == 6 ? -8f : 0f ) && lamp.Local.Z <= 14, $"{theme}/{name}: {lamp.Local}" );
 				}
 			}
 		}

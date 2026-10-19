@@ -96,6 +96,9 @@ code from a data table**, `content/data/evening-lights.json`, not by changing an
 | `offset` | three numbers added to the anchor, in model units in the engine's frame (ground in XY, up in Z; a model unit is 0.2 engine units, a cell is 10) |
 | `colour` | linear red, green and blue from 0 to 4, not all 0 |
 | `radius` | 1 to 200 model units: full colour at the centre, nothing at the radius (`PointLightMath`) |
+| `flicker` | optional, 0 to 0.5: the share by which the light dips with the [torches' flicker](#torches) (0, the default, is steady) |
+
+A row may also name a `flame`: a model node the extension moves as a flame ([Torches](#torches)).
 
 A bad row refuses the whole table with a reason (`EveningLampTable.Parse`); a missing or damaged file logs a warning and gives no lamps. A node a model does not have leaves that light out and is logged once. At night a lamp's colour is the table's
 colour times the lamp level.
@@ -149,6 +152,17 @@ The user asked on October 19, 2026 for a torch in all four themes, available by 
 **Lamps.** Four rows of `content/data/evening-lights.json` match `{ "mod": "opentpw.evening", "theme": <theme>, "archive": "torch" }` (the new match key `mod` compares the id of the content root that lists the object, so an original or a mod's object named `torch` never gets
 the light) and give one light on the `flame` node's centre, radius 40 model units: warm orange (1.0, 0.62, 0.28) in the jungle, (1.0, 0.55, 0.18) in Halloween, blue (0.35, 0.62, 1.0) in space and pink (1.0, 0.45, 0.78) in fantasy.
 
+**The flicker and the flame** (`[EXT:evening-torches-flicker]`, user-approved 2026-10-19: "Alleen licht en sfeer", a deterministic flicker preferred). Both are presentation only: nothing reads or writes the simulation, a save or a state hash.
+
+- A row may name a `flame` node and a light may have a `flicker` (0 to 0.5): the four torch rows have `"flame": "flame"` and `"flicker": 0.25`; every other row is steady and names no flame.
+- `TorchFlicker.At(seconds, seed)` is a fixed sum of three sines, `0.5 + 0.28 sin(2 pi 0.9 t + p1) + 0.14 sin(2 pi 2.3 t + p2) + 0.08 sin(2 pi 4.7 t + p3)`, 0 to 1, 0.5 on average; a gentle flicker that changes by at most a tenth between two frames at 60 frames a second. The phases come from a seed of the
+  torch's cell (`SeedOf(x, y)`), so the same torch flickers the same way in every run and torches side by side do not pulse together.
+- The clock is the extension's own play time (`Level.EveningFlameSeconds`): the frame time while the park runs, a quarter of a second at most per frame, standing still while the park is paused, at every pace including the fixed looks; it is not saved (a resumed park starts it again).
+- A flickering light's colour is the table's colour times the lamp level times `1 - flicker (1 - f)`: a torch's light dips by up to a quarter, in step with its flame.
+- The flame (`EveningFlames`): each frame, every placed object whose row names a flame node has that node's part drawn with `TorchFlicker.FlameMatrix`, in the node's own frame about its origin (the flame's base): its height 1 plus or minus 0.14 times `2 f - 1`, its width
+  half that the other way, and a slow lean of at most 0.06 radians (about 3.4 degrees) at 0.9 and 1.3 Hz. It runs by day too (a torch burns all day; only its light waits for dusk). The transform is set on the drawn parts only
+  (`OriginalObject.SetPresentationNodeTransform`): the animator's node transforms, which the lamps, the snow cover and the simulation read, do not change. The torches are cached and rebuilt only when the placed set changes, as the lamp source does.
+
 **Browser.** `OpenTPW.Web.csproj` embeds `content/evening` (347,862 bytes) and its `RequireExtensionContent` target fails the build without `content/evening/objects.json`; the server image copies the folder (`source/OpenTPW.Server/Dockerfile`).
 
 **Captures** (Debug builds): `--debug-torches N` places N of the theme's torches through the level's own placement on the free cells nearest the camera target (`--capture-camera`'s when given), a cell apart; with `--evening-pace dusk|night` and `--capture-world`. `[EXT:debug-evening]`
@@ -159,6 +173,7 @@ the light) and give one light on the `flame` node's centre, radius 40 model unit
 | --- | --- | --- |
 | `[EXT:evening-torches]` | the torches: content, catalog root, price, the lamp rows and the `mod` match key, the extension becoming a simulation extension | user-approved 2026-10-19 |
 | `[EXT:evening-torches-save]` | `opentpw.evening` recorded only while the park holds a torch | user-approved 2026-10-19 |
+| `[EXT:evening-torches-flicker]` | the deterministic flicker of a torch's light and the movement of its flame, presentation only | user-approved 2026-10-19 |
 
 ## The option and its file
 
@@ -274,7 +289,8 @@ at `--evening-pace night` (the lamp source registered, 3 point lights in view) a
 ## Tests
 
 `EveningTorchTests` (no game data): the torches' ids, range and names, their catalog entries (feature, price 50, no upkeep, no research, no attraction value), the models (a lit body and a self-lit flame node), textures and script, the listing only while the extension is on
-and never in a Theme Park Inc run, the used-only save (byte-identical without a torch, recorded and refused with the extension off with one, the placed torches' asset keys only), the lamp rows and the browser build's embedding and the server image's copy.
+and never in a Theme Park Inc run, the used-only save (byte-identical without a torch, recorded and refused with the extension off with one, the placed torches' asset keys only), the lamp rows, the flicker (deterministic, bounded, smooth, 0.5 on average, different for neighbouring
+torches), the flame's transform (its base fixed, its height within the stretch, a small lean), only the torch rows flickering and naming a flame, bad `flicker` and `flame` values refused, the flame cache following placement and removal, and the browser build's embedding and the server image's copy.
 `EveningTests` (no GPU; the data test is inconclusive without `OPENTPW_GAME_PATH`): the daylight curve (full around noon, zero at night, mirrored, monotone, no jumps, wrapping), that **full day is the original's look exactly** (every uniform
 and tint, byte for byte), the clock (pace lengths, wrapping, bad steps), the level's step (pausing stops it, a hitch is capped, off creates nothing, null-safe for a level built without its constructor), the options value (default, round trip by
 name, unknown values, `CopyFrom`, `Normalized`, the row on the OpenTPW page: cycling, OK and Cancel), every interface language of every text, the extension's registration (on by default, a simulation extension since the torches but recorded in a save only while the park holds one, selectable), the

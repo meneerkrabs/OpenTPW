@@ -403,7 +403,35 @@ public class OriginalObject : Entity, IPointLightSource
 		{
 			if ( hidden && node >= 0 )
 				entity.Hidden = animator.IsNodeHidden( node );
-			var transform = node < 0 ? placement : ObjectPlacement.SwapAxes( nodes[node] ) * placement;
+			var transform = node < 0 ? placement : ObjectPlacement.SwapAxes( PresentationPose( node, nodes[node] ) ) * placement;
+			entity.TransformOverride = transform;
+			entity.Position = new Vector3( transform.M41, transform.M42, transform.M43 );
+		}
+	}
+
+	// [EXT:evening-torches-flicker] presentation-only local transforms of model nodes (the evening torches' flames, EveningFlames): applied on the drawn parts only, never to the animator, the runtime, the lights or a save
+	private Dictionary<int, Matrix4x4>? presentationNodes;
+
+	private Matrix4x4 PresentationPose( int node, Matrix4x4 pose ) => presentationNodes != null && presentationNodes.TryGetValue( node, out var local ) ? local * pose : pose;
+
+	/// <summary>
+	/// [EXT:evening-torches-flicker] Draws the parts of model node <paramref name="node"/> with <paramref name="local"/> applied in the node's own frame before its pose (a flame scaled about its base). Presentation only: the
+	/// animator's node transforms, which the lamps, the snow and the simulation read, are unchanged.
+	/// </summary>
+	internal void SetPresentationNodeTransform( int node, Matrix4x4 local )
+	{
+		if ( deleted || node < 0 )
+			return;
+		var nodes = Runtime.Animator.NodeTransforms;
+		if ( node >= nodes.Count )
+			return;
+		( presentationNodes ??= new Dictionary<int, Matrix4x4>() )[node] = local;
+		var placement = Placement.ModelToEngine;
+		foreach ( var (entity, index) in parts )
+		{
+			if ( index != node )
+				continue;
+			var transform = ObjectPlacement.SwapAxes( local * nodes[node] ) * placement;
 			entity.TransformOverride = transform;
 			entity.Position = new Vector3( transform.M41, transform.M42, transform.M43 );
 		}

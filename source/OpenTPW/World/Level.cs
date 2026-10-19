@@ -196,6 +196,13 @@ public partial class Level : IDisposable
 	/// </summary>
 	public ParkVisitInfo? Visit { get; }
 	public bool IsReadOnlyVisit => Visit != null;
+
+	/// <summary>
+	/// The Sound block of the original save the park was started from: a player's own save (<c>--original-save</c>, the TPWS import) or the level's shipped
+	/// <c>Easymode.TPWI</c> (Instant Action, the reference start); null for a new Full Simulation park, a resumed OpenTPW park and a read-only visit.
+	/// </summary>
+	// [BIN:TPW-EXE:0x5ACCF0 park entry load] park entry (state 9 of 0x54E360) loads the newest file in the player's folder of the park through 0x414D40; an Instant Action player's folder holds the copy of the level's easymode.TPWI (0x5C8190 copies it when the player is created), so its Sound block plays as a loaded save's does
+	public SaveSoundData? OriginalSaveSound => !IsReadOnlyVisit && incLayout == null ? OriginalPark?.Save?.Sound : null;
 	/// <summary>True while this level runs the experimental Theme Park Inc slice: only the money economy (no staff, research or challenges), no HUD or advisor of the reference game.</summary>
 	public bool IsThemeParkIncSlice => GameEditions.IsThemeParkInc && OriginalPark != null;
 	/// <summary>The version 2 layout a visit applies instead of the shipped level import; null for version 1 packages and own parks.</summary>

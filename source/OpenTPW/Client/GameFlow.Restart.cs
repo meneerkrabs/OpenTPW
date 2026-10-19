@@ -50,6 +50,8 @@ internal sealed partial class GameFlow
 	/// <param name="overFrames">Serialize the detached copy on later updates; the live capture still finishes before this call returns.</param>
 	internal void TakeRestartSnapshot( Level level, IReadOnlyDictionary<string, string>? verifiedAssets = null, bool overFrames = false )
 	{
+		// the sound values the park started with go with its snapshot (none for a resumed OpenTPW park, whose save has no Sound block)
+		restartSound = TakesRestartSnapshot( level ) ? level.OriginalSaveSound : null;
 		if ( !TakesRestartSnapshot( level ) )
 			return;
 		FlushRestartSnapshot();
@@ -81,6 +83,13 @@ internal sealed partial class GameFlow
 	}
 
 	private RestartSnapshotWrite? restartWrite;
+
+	/// <summary>
+	/// The Sound block of the original save the restart snapshot's park started from, applied again when Restart Park reloads the snapshot: the original's restart.INTS
+	/// carries the sound-service values the park started with and its reload runs the Sound block loader again.
+	/// </summary>
+	// [BIN:TPW-EXE:0x550B30 restart save] state 15 writes <save>\restart.INTS through the payload writer 0x4164C0 (Sound block 0x51C350: the shadows at 0x803AA0 as the park started); the restart (state 14) reloads it through 0x414D40, whose Sound block loader 0x51C400 copies them back
+	private SaveSoundData? restartSound;
 	internal bool RestartSnapshotPending => restartWrite != null;
 
 	/// <summary>One serialization slice per frame, after a capture on an earlier frame.</summary>

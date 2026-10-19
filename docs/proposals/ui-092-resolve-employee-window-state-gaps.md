@@ -30,6 +30,19 @@ The employee portrait control's +0xE0 is UI depth, converted by `0x476A70`; it i
 
 Live-portrait changes were deferred from the navigation/rename/locator slice. The subsequent live-output accessor does not invoke mutating world animation selection from UI draw: repeated portrait reads cannot tick, restart, consume movement or alter the simulation. Static follow-on tracing establishes same-frame world-before-HUD ordering and an independently scheduled native clone whose refresh omits its clock/state/stack. Script writes can change its screen-space flags after source loss. The subsequent slice validates current host source availability and texture generations; cloned-VM behavior, native source-loss/refresh lifecycle and full depth/occlusion still need separate implementation and review. No invented fallback loop or complete UI-092 retirement is justified by the navigation/rename/locator work.
 
+## Employee-only geometry correction
+
+The [employee portrait geometry](../EMPLOYEE-PORTRAITS.md#employee-only-nominal-geometry) uses
+the layout control's inherited inner rectangle `(386,280,264,264)`, signed integer authored feet
+`(526,476)` and nominal scale 2.4. The frame artwork keeps its original outer rectangle. The
+employee clone helper's scale-8 Y offset is -2; hire's separate creator has no such offset and
+visitor scale 12 uses -3. No shared renderer, live source, fallback clock or lifetime code changes.
+
+Synthetic CPU tests exercise the real employee callback and Draw, nonzero live/non-walk and
+fallback phases, densities/mirroring/viewports, observational reads and independent actual
+hire/visitor/default Draw controls. These tests do not establish original raster or clone parity.
+UI-092 remains open for the VM/lifecycle/depth/rendering qualifications above.
+
 ## Verification boundary
 
-Record executed tests and exact published commit in the PR and progress fragment. Static code/table reconstruction and synthetic tests do not demonstrate original rendered-pixel equivalence. Original assets remain private; UI-082 dimensions and generic UI model/depth behavior retain their own qualifications.
+Record executed tests and exact published commit in the PR and progress fragment. Static code/table reconstruction and synthetic tests do not demonstrate original rendered-pixel equivalence. Original assets remain private; UI-082 owns hire dimensions only. Employee viewport/raster parity and generic UI model/depth behavior retain their qualifications.

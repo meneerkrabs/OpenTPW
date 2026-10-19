@@ -1,4 +1,4 @@
-# Employee portraits: bounded live world output
+# Employee portraits: bounded live world output and nominal geometry
 
 The employee window now prefers the selected member's latest successful world sprite output.
 It reads that member's emitted slot, step and raw heading, resolving the sprite bank with a
@@ -60,8 +60,32 @@ without its source, and script writes can overwrite its screen-space flags. Neit
 visible animation nor a frozen portrait after source loss follows from that fact alone.
 Missing-source creation epochs, source return, full-refresh clone replacement, complete VM/flag
 history, native depth/occlusion and rendered-pixel equivalence remain open under UI-092.
-UI-082 is the hire window only; the employee window's size is UI-092: OpenTPW draws its figure at 3.2 where scale 8.0 through `0x486530` gives a nominal 2.4 (the visitor's 12.0 gives 3.6 through the same path). The existing render-driven staff animation timing qualifications
-also remain in force.
+The existing render-driven staff animation timing qualifications also remain in force.
+
+## Employee-only nominal geometry
+
+The employee portrait now uses its own nominal 2.4 canvas units per reference sprite pixel.
+The authoritative layout node `0x511` has no explicit inner override. The original type-1
+control copies its outer endpoints into its inner rectangle on construction, so `Inner ?? Rect`
+gives `(386,280,264,264)`. Frame artwork stays at those same outer bounds and Center anchor.
+No hire or visitor inset is substituted.
+
+Signed integer endpoint arithmetic precedes viewport mapping: feet X is
+`left + ((right - left) >> 1) + 8`; feet Y is `bottom - ((bottom - top) >> 2) - 2`.
+The employee's scale-8 clone helper supplies that final two-unit upward offset, giving authored
+feet `(526,476)`. Its nominal pixel factor is `8 * 0.05 * (1536 / 2) / 128 = 2.4`.
+The unchanged shared draw applies each frame's `128/A` and `128/B` to both hotspot offsets
+and dimensions, including mirrored left edges and reversed U coordinates.
+
+The hire window has its own inner bounds and feet `(626,362)` at 2.4 with no clone-helper
+Y offset. The visitor keeps `(598,450)` at 3.6, including its three-unit upward offset.
+Generic figures retain 3.2 and rectangle-relative feet. UI-082 owns hire geometry only;
+UI-092 owns employee geometry and its remaining qualifications.
+
+This correction applies equally to a live frame and the existing unavailable-source fallback.
+It changes no accessor, animation clock, publication, lifetime or source-loss behavior. Static
+layout/helper tracing supports nominal geometry, not exact x87/viewport/raster output, independent
+clone VM timing, script flag history, native rotation/depth or GPU rendered-pixel parity.
 
 ## Verification
 
@@ -77,3 +101,13 @@ submission, disposal or visual equivalence.
 read-only boundary. These source checks do not replace the C# tests. Run the focused C# class
 and full CPU suite on the exact proposed head before merging. Real-data GPU/visual comparison
 remains a separate verification requirement; this change includes no original assets.
+
+`EmployeePortraitGeometryTests` adds actual employee callback/Draw checks with synthetic 5- and
+8-direction banks, mirrored and unmirrored headings, unequal A/B densities, non-square art and
+negative origins. Its independent arithmetic oracle checks all six positions/UVs, texture identity
+and exactly one quad across authored, small, wide, square, odd-sized and minimum-scale viewports.
+A nonzero non-walk live phase and the established source-loss fallback phase share the corrected
+geometry. Repeated actual reads/draws are compared with a no-read world control, including save,
+RNG, player, pending movement and next world vertices. Actual hire, employee and visitor widgets,
+plus a generic default figure, have separate Draw controls so equal hire/employee scales cannot
+hide a wrong hotspot. The additional source guard is `tools/test_employee_portrait_geometry_contract.py`.

@@ -564,6 +564,30 @@ Review fix of the umbrella modifier: in Theme Park Inc only a guest who is alrea
 
 The kid-score change above was recomputed for the shop run of this section too: `RainMoodWithUmbrellasFixedRunHash` stays `0xADEE2FA6AFC2ACE3` (it was `0xADEE2FA6AFC2ACE3` at a kid score of 100). `RainMoodFixedRunHash` stays `0x3697B9094432D152`; that run has no brolly shop, so the kid score is not read.
 
+## Winter
+
+The `opentpw.winter` extension ([WINTER.md](WINTER.md#simulation-phase-w3), `[EXT:winter-save]`) adds a winter kiosk, a glühwein stall and the guest fields `WarmItems` and `WarmUntilDay`. A park without a winter shop and without a guest with an item is untouched by all of it: the host score reads the extension's percentages for its own objects only, the kiosk's
+purchase is the only writer of `WarmItems` and takes **no draw from any stream** (the head item and the colours are hashes of the guest id, `WinterRules.HeadItemOf`, `WinterRules.ColourOf`), and the fields join the canonical hash, the guests' own digest and the guest snapshot only while they are set, so such a park keeps its bytes and its pins.
+`DeterminismTests.EveryExistingPinIsUnchangedWithTheWinterExtensionAndTheWinterWeatherOnOrOffAndNoWinterShop` runs the fixed run, the changing-room run, the umbrellas run and the rain mood run with the extension and the wintry Decembers option each on and off and gets the same hashes (no baseline moved). A park save records the extension only while it uses it
+(`ParkResumeMods.WinterInUse`).
+
+A new pin covers a park with winter shops: `DeterminismTests.WinterFixedRunHash` = `0xD4E2340C99394B73`, the fixed synthetic run plus a winter kiosk at (10, 1) and a glühwein stall at (10, 8), paid through the economy like the drinks shop, a snowfall from the 20th to the 80th second and from the 140th to the 200th
+(`GuestSimulation.UmbrellaWeatherState`, which the level reads from `ParkWeather`) and a calendar that is May for the first 100 seconds and December after it (`GuestSimulation.WinterMonth`): 53 guests buy a hat or earmuffs or mittens (6 are fully dressed), the kiosk sells 61 times and the stall 67. A park saved mid-snow with items and resumed into a fresh instance
+continues with the same hash (`WinterSimulationTests.AParkSavedMidSnowWithItemsContinuesIdenticallyAfterAResume`).
+
+**Re-pin, 2026-10-19.** `WinterFixedRunHash` moved from `0x8F7023321586F670` (49 buyers, kiosk 50 sales, stall 70) to `0xD4E2340C99394B73`. Cause: the user's decision that the winter kiosk sells all year ("Het hele jaar, vraag via seizoen"; the snow or December-to-February gate is gone) and the kiosk's new season terms
+(winter 150, spring and autumn 60, summer 20, snow 200; the `.sam` and the fixture's terms), plus the fixture's calendar now running May first and December after it, so the kiosk's second purchase (mittens) still happens (with the kiosk open in May at a low demand, December first left no guest a mittens purchase in the 200 seconds); the fixture also samples the items every tick now. The weather pins, the umbrellas, rain mood and changing-room
+pins and the fixed run did not move: the kiosk's terms are read for the extension's own objects only. The winter shops' own weather signal (snow even with lightning) changes nothing in any pin, since the umbrellas and the rain mood keep the shared map and no fixture has Halloween snow with a winter shop.
+
+## Wintry Decembers
+
+The `opentpw.winter-weather` option ([WINTER.md](WINTER.md#simulation-phase-w3), `[EXT:winter-weather]`) is off by default; the level hands it to `ParkWeather` when it builds the weather. The weather is outside the canonical hash ("Weather timing"), but what the guests read from it is not: the umbrella rules, the rain mood and the winter shops see snow instead of a
+thunderstorm or rain in a December of the jungle and fantasy parks (the whole rain band: plain rain and thunderstorms). The converter draws nothing for the change (the roll's draws and the tie-break are the same), but with no lightning the lightning clock's draws stop, so the weather stream moves on from the first wintry spell: a park with the option on is another weather from its first December, which is why a save always records
+the option while it is on. The roll's month is derived from the forecast's apply time (`applyAt - DaysOfWarning` days), so the weather snapshot gains nothing and a resume mid-snow continues exactly (`WinterWeatherTests.AWintryWeatherSavedMidSnowContinuesIdenticallyAfterAResume`).
+Two pins cover the jungle's weather turn by turn over its first 400 days under seed 21: `WinterWeatherTests.JungleSeed21OffHash` = `0x58F5D2429FDCADAA` (the original's weather, option off) and `JungleSeed21WintryHash` = `0x2DC4898B7594C4FA` (option on; 29 snowy days, the first on day 343). Halloween and space run the same weather with the option on or off.
+
+The guests' side of the option has a pin of its own, because the two weather pins hash only the weather: `DeterminismTests.UmbrellasAndRainMoodUnderTheJungleWeatherAcrossDecemberArePinnedWithWintryDecembersOffAndOn` runs the synthetic park with a brolly shop and the rain mood on, driven by the jungle's real `ParkWeather` (seed 21) from park day 320 over 35 days across the first December: `JungleDecemberOffFixedRunHash` = `0xF4A00471E60B9535` (option off: rain, then a thunderstorm in December) and `JungleDecemberWintryFixedRunHash` = `0x296DA4DA6A8BE323` (option on: rain, then snow). `EveryExistingPinIsUnchangedWithTheWinterExtensionAndTheWinterWeatherOnOrOffAndNoWinterShop` builds that weather with the option's real gate and also covers `RainMoodWithUmbrellasFixedRunHash`. The forecast follows the option (`ParkWeather.ForecastBands`) and takes no draw.
+
 ## Tests
 
 `DeterminismTests` (no game data needed):

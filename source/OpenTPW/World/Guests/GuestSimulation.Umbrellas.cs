@@ -32,6 +32,9 @@ public sealed partial class GuestSimulation
 	// [EXT:umbrellas-balloon-gate] a balloon shop scores 0 for a balloon holder only in a park that uses umbrellas (a brolly shop, or a guest with an umbrella): tp.exe's own score reads no appearance word, so every other park keeps its balloon shops as they were
 	internal uint HostScore( Guest guest, IRideVisitorBridge attraction, uint score )
 	{
+		// [EXT:winter-extension] a winter kiosk or glühwein stall (the extension's own objects) has its own gate and percentages (GuestSimulation.Winter.cs)
+		if ( attraction.WinterTerms is { } winterTerms )
+			return WinterHostScore( guest, attraction, score, winterTerms );
 		if ( attraction.UmbrellaTerms is { } terms )
 		{
 			var weather = UmbrellaWeatherState?.Invoke() ?? UmbrellaRules.WeatherNone;

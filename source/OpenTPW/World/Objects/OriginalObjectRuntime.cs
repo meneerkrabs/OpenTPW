@@ -586,7 +586,9 @@ public sealed partial class OriginalObjectRuntime
 			// [EXT:pools-changing-room] OpenTPW's own key: the object is a pool complex's changing room (docs/POOLS.md)
 			IsChangingRoom = FeatureGates.Pools && PoolChangingRooms.IsChangingRoom( entry ),
 			// [EXT:umbrellas-extension] the umbrellas extension's own objects carry Theme Park Inc's weather and generation percentages, which the host score applies for them alone; every other object keeps the game's score
-			UmbrellaTerms = UmbrellaShopTermsOf( entry )
+			UmbrellaTerms = UmbrellaShopTermsOf( entry ),
+			// [EXT:winter-extension] likewise the winter extension's own objects carry weather and season percentages for the host score
+			WinterTerms = WinterShopTermsOf( entry )
 		};
 	}
 
@@ -603,6 +605,21 @@ public sealed partial class OriginalObjectRuntime
 		int Percentage( string key, int fallback ) => settings.Has( key ) ? settings.GetInt( key ) : fallback;
 		return new UmbrellaShopTerms( Percentage( "WeatherModifier.RainPercentage", 0 ), Percentage( "WeatherModifier.StormPercentage", 0 ), Percentage( "WeatherModifier.SnowPercentage", 0 ),
 			Percentage( "WeatherModifier.HeatWavePercentage", 0 ), Percentage( "GenerationModifier.KidScorePercentage", 100 ) );
+	}
+
+	/// <summary>
+	/// The weather and season percentages of an object of the winter extension (docs/WINTER.md, "Demand"): <c>WeatherModifier.Rain/Storm/SnowPercentage</c> and <c>SeasonModifier.Winter/Spring/Summer/AutumnPercentage</c> of its .sam; null
+	/// for any other object and while the extension is off. A key a .sam leaves out is 0 (no change).
+	/// </summary>
+	// [EXT:winter-season-terms] the weather keys are Theme Park Inc's names (tp.exe does not read them), the season keys are the extension's own: only the extension's objects use them
+	private static WinterShopTerms? WinterShopTermsOf( ObjectCatalogEntry entry )
+	{
+		if ( !ParkResumeMods.IsWinterObject( entry ) || !FeatureGates.Winter )
+			return null;
+		var settings = entry.Settings;
+		int Percentage( string key ) => settings.Has( key ) ? settings.GetInt( key ) : 0;
+		return new WinterShopTerms( Percentage( "WeatherModifier.RainPercentage" ), Percentage( "WeatherModifier.StormPercentage" ), Percentage( "WeatherModifier.SnowPercentage" ),
+			Percentage( "SeasonModifier.WinterPercentage" ), Percentage( "SeasonModifier.SpringPercentage" ), Percentage( "SeasonModifier.SummerPercentage" ), Percentage( "SeasonModifier.AutumnPercentage" ) );
 	}
 
 	private static float StandFraction( ObjectSettings settings, string key ) =>

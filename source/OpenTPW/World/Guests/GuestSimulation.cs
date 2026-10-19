@@ -288,6 +288,8 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		attractions.Add( attraction );
 		if ( attraction.IsUmbrellaShop )
 			umbrellaShops++;
+		if ( attraction.WinterTerms != null )
+			winterShops++;
 		attractions.Sort( ( a, b ) => a.AttractionId.CompareTo( b.AttractionId ) );
 		// A queue from a save made before queue cells were linked gets the links the queue tool writes (QueuePaths.RebuildMissingLinks).
 		if ( attraction is RideVisitorBridge ride && ride.HasQueue )
@@ -312,6 +314,8 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			return;
 		if ( attraction.IsUmbrellaShop )
 			umbrellaShops--;
+		if ( attraction.WinterTerms != null )
+			winterShops--;
 		SmarterGuests?.Throughputs.Remove( attraction.AttractionId );
 		foreach ( var guest in guests )
 		{
@@ -3331,6 +3335,9 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		// [EXT:umbrellas-extension] the brolly shop's AppearanceEffect 3: one world draw for the colour and an open umbrella (the shop's other effects are those of any shop)
 		if ( ride.IsUmbrellaShop )
 			GiveUmbrella( guest );
+		// [EXT:winter-items] the winter kiosk's AppearanceEffect 4: a head item first, then mittens, no draw (the shop's other effects are those of any shop)
+		if ( ride.IsWinterKiosk )
+			GiveWarmItem( guest );
 		if ( ride.ProvidesRelief )
 		{
 			// [BIN:TPW-EXE:0x004FE1E0 relief visit] for an object with the relief flag: the toilet wears by the guest's toilet meter as a byte (0x004E2440), the meter goes to 0, and an illness byte above 90 goes to 0 as well
@@ -3588,6 +3595,8 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			UmbrellaType = guest.UmbrellaType,
 			UmbrellaDueTurn = guest.UmbrellaDueTurn,
 			RainMoodDay = guest.RainMoodDay,
+			WarmItems = guest.WarmItems,
+			WarmUntilDay = guest.WarmUntilDay,
 			RainMoodAgeStartTurn = guest.RainMoodAgeStartTurn,
 			QueueJoinHappiness = guest.QueueJoinHappiness,
 			QueueCellIndex = guest.QueueCellIndex,
@@ -3862,6 +3871,12 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 				Error( $"Guest {guest.Id} umbrella colour {guest.UmbrellaType} is not 0 to {UmbrellaRules.Colours - 1} (and 0 without an umbrella)." );
 			if ( guest.UmbrellaDueTurn < 0 || guest.UmbrellaDueTurn % 4 != 0 || (guest.UmbrellaDueTurn != 0 && guest.UmbrellaState is not (UmbrellaRules.StateClosing or UmbrellaRules.StateOpening)) )
 				Error( $"Guest {guest.Id} umbrella due turn {guest.UmbrellaDueTurn} is negative, not a multiple of four, or set without a pending open or close." );
+			// [EXT:winter-save] the optional warm items: only the defined bits and at most one head item
+			if ( !WinterRules.IsValidItems( guest.WarmItems ) )
+				Error( $"Guest {guest.Id} warm items {guest.WarmItems} are not a combination of hat (1) or earmuffs (2), not both, and mittens (4)." );
+			// [EXT:winter-save] the optional day a glühwein's warmth lasts until: never negative
+			if ( guest.WarmUntilDay < 0 )
+				Error( $"Guest {guest.Id} warm-until day {guest.WarmUntilDay} is negative." );
 			// [EXT:rain-mood-once-per-day] the optional day of the rule's last application: never negative
 			if ( guest.RainMoodDay < 0 )
 				Error( $"Guest {guest.Id} rain mood day {guest.RainMoodDay} is negative." );
@@ -4260,6 +4275,8 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		guest.UmbrellaType = snapshot.UmbrellaType;
 		guest.UmbrellaDueTurn = snapshot.UmbrellaDueTurn;
 		guest.RainMoodDay = snapshot.RainMoodDay;
+		guest.WarmItems = snapshot.WarmItems;
+		guest.WarmUntilDay = snapshot.WarmUntilDay;
 		guest.RainMoodAgeStartTurn = snapshot.RainMoodAgeStartTurn;
 		guest.QueueJoinHappiness = snapshot.QueueJoinHappiness;
 		guest.QueueCellIndex = snapshot.QueueCellIndex;
@@ -4407,6 +4424,11 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			// [EXT:rain-mood-once-per-day] the day of the rule's last application joins the digest only once it has applied (every park without the extension keeps its pins)
 			if ( guest.RainMoodDay != 0 )
 				hash.Add( 0x5241494EL + guest.RainMoodDay );
+			// [EXT:winter-save] the warm items join the digest only while a guest wears one (every park without one keeps its pins)
+			if ( guest.WarmItems != 0 )
+				hash.Add( 0x57494E54L + guest.WarmItems );
+			if ( guest.WarmUntilDay != 0 )
+				hash.Add( 0x5741524DL + guest.WarmUntilDay );
 			if ( guest.RainMoodAgeStartTurn is { } rainMoodAgeStart )
 				hash.Add( 0x52414153L + rainMoodAgeStart );
 			hash.Add( guest.QueuePosition );
@@ -4520,6 +4542,11 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			}
 			if ( guest.RainMoodDay != 0 )
 				Add( 0x5241494EL + guest.RainMoodDay );
+			// [EXT:winter-save] only while a guest wears a warm item (every park without one keeps its pins)
+			if ( guest.WarmItems != 0 )
+				Add( 0x57494E54L + guest.WarmItems );
+			if ( guest.WarmUntilDay != 0 )
+				Add( 0x5741524DL + guest.WarmUntilDay );
 			if ( guest.RainMoodAgeStartTurn is { } rainMoodAgeStart )
 				Add( 0x52414153L + rainMoodAgeStart );
 			AddFloat( guest.Happiness );

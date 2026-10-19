@@ -33,6 +33,7 @@ public sealed class ParkWeather
 
 	private readonly WeatherSettings settings;
 	private readonly DeterministicRandom random;
+	private readonly bool wintryDecembers;
 	private readonly int groundX;
 	private readonly int groundZ;
 	private readonly Queue<Vector3> strikes = new();
@@ -56,9 +57,13 @@ public sealed class ParkWeather
 	/// </summary>
 	public static event Action<ParkWeather>? Created;
 
-	/// <summary>The park's weather keys (<c>Standard.sam</c>, layered over the global ones).</summary>
-	public ParkWeather( SamSettings standard, ulong seed, int cellsX, int cellsY )
+	/// <summary>
+	/// The park's weather keys (<c>Standard.sam</c>, layered over the global ones). <paramref name="wintryDecembers"/> ([EXT:winter-weather], <c>opentpw.winter-weather</c>, off by default) turns a December roll's rain and thunderstorm
+	/// into snow in a park whose own snow band is empty (jungle and fantasy; see <see cref="ApplyQuality"/>).
+	/// </summary>
+	public ParkWeather( SamSettings standard, ulong seed, int cellsX, int cellsY, bool wintryDecembers = false )
 	{
+		this.wintryDecembers = wintryDecembers;
 		settings = WeatherSettings.From( standard );
 		random = new DeterministicRandom( seed );
 		groundX = cellsX * 10;
@@ -130,6 +135,24 @@ public sealed class ParkWeather
 		quality >= settings.SnowLow && quality <= settings.SnowHigh,
 		quality >= settings.RainLow && quality <= settings.RainHigh,
 		quality >= settings.LightningLow && quality <= settings.LightningHigh );
+
+	/// <summary>
+	/// The bands the pending forecast will apply as: <see cref="BandsOf"/> of <see cref="Forecast"/>, except that a forecast the wintry Decembers option will turn into snow (the roll was made in December, a rain band, and the park's own snow band is
+	/// empty: see <see cref="ApplyQuality"/>) reads as plain snow, so the forecast does not announce thunderstorms and then snow. Default bands while no forecast is pending.
+	/// </summary>
+	// [EXT:winter-weather] the forecast follows the option: it says what the converter will make of the quality
+	internal WeatherQualityBands ForecastBands => pendingQuality is { } quality ? ForecastBandsOf( quality, applyAt ) : default;
+
+	/// <summary>The bands a forecast of <paramref name="quality"/> applying at <paramref name="applyAtSeconds"/> will have (see <see cref="ForecastBands"/>).</summary>
+	internal WeatherQualityBands ForecastBandsOf( int quality, long applyAtSeconds )
+	{
+		var bands = BandsOf( quality );
+		return bands.Rain && IsWintryRoll( applyAtSeconds ) && settings.SnowBandIsEmpty ? new WeatherQualityBands( true, false, false ) : bands;
+	}
+
+	/// <summary>Whether the wintry Decembers option is on and the roll of the forecast applying at <paramref name="applyAtSeconds"/> was made in December (the roll is <c>DaysOfWarning</c> days before the apply, so no month needs saving).</summary>
+	private bool IsWintryRoll( long applyAtSeconds ) =>
+		wintryDecembers && ParkCalendar.Epoch.AddSeconds( applyAtSeconds - settings.DaysOfWarning * ParkCalendar.SecondsPerDay ).Month == 12;
 
 	/// <summary>
 	/// Smoke-only (<c>[EXT:debug-forecast]</c>): posts a forecast of <paramref name="quality"/> the warning
@@ -353,7 +376,8 @@ public sealed class ParkWeather
 		{
 			pendingQuality = null;
 			lastChanged = now;
-			ApplyQuality( next );
+			// [EXT:winter-weather] the roll that made the forecast was DaysOfWarning days before it applies (the forecast's apply time is the roll's time plus the warning), so its month needs nothing saved
+			ApplyQuality( next, IsWintryRoll( applyAt ) );
 			nextRollAt = lastChanged + Math.Max( 0, settings.DaysBetweenChanges - settings.DaysOfWarning ) * ParkCalendar.SecondsPerDay;
 		}
 		// [BIN:TPW-EXE:0x51295c weather roll] with no forecast pending (also in the tick that just applied one) the roll is due at lastChanged + max(0, DaysBetweenChanges - DaysOfWarning) days
@@ -400,22 +424,32 @@ public sealed class ParkWeather
 		return Math.Clamp( quality, 1, 100 );
 	}
 
-	/// <summary>The converter (<c>sub_103910</c>): the quality's bands, the rain target and the lightning flag.</summary>
-	internal void ApplyQuality( int quality )
+	/// <summary>
+	/// The converter (<c>sub_103910</c>): the quality's bands, the rain target and the lightning flag. <paramref name="wintryDecember"/> is true only when the wintry Decembers option is on and the roll was made in December
+	/// ([EXT:winter-weather]): a quality in the rain band with no snow band of the park's own (jungle and fantasy: snow -1..-1) is then snow, not rain, and without lightning, so the weather is a snowfall instead of a thunderstorm. The
+	/// drops follow the rain band's intensity exactly as the storm's did, so the arrival factor is unchanged, and the converter draws nothing for it (the lightning clock's draws stop with the lightning, so the weather stream moves on from then).
+	/// </summary>
+	// [EXT:winter-weather] OpenTPW's own option; tp.exe's converter (0x512f00) has no such branch, and the original's jungle and fantasy parks never snow
+	internal void ApplyQuality( int quality, bool wintryDecember = false )
 	{
 		var snowBand = quality >= settings.SnowLow && quality <= settings.SnowHigh;
 		var rainBand = quality >= settings.RainLow && quality <= settings.RainHigh;
 		var snow = snowBand && (!rainBand || random.Next( 2 ) == 0);
+		// only a park whose own snow band holds no quality at all (jungle and fantasy: -1..-1); the Halloween park snows by its own band, so its December rolls are left as they are
+		var wintry = wintryDecembers && wintryDecember && settings.SnowBandIsEmpty && rainBand;
+		snow |= wintry;
 		Quality = quality;
 		Snow = snow;
 		Rain = rainBand && !snow;
-		Lightning = quality >= settings.LightningLow && quality <= settings.LightningHigh;
+		Lightning = !wintry && quality >= settings.LightningLow && quality <= settings.LightningHigh;
 		TargetDrops = 0;
 		// Both bands compute the target the same way from their own range (0x103a90..0x103afc snow, 0x103b18..0x103b80 rain); only rain starts the rain voice.
 		if ( Snow || Rain )
 		{
-			var low = Snow ? settings.SnowLow : settings.RainLow;
-			var width = (Snow ? settings.SnowHigh : settings.RainHigh) - low;
+			// a wintry December's snow has no band of its own: it takes the rain band's range, so its drops are the storm's
+			var snowRange = Snow && !wintry;
+			var low = snowRange ? settings.SnowLow : settings.RainLow;
+			var width = (snowRange ? settings.SnowHigh : settings.RainHigh) - low;
 			var intensity = width == 0 ? 100 : (quality - low) * 100 / width;
 			TargetDrops = Math.Min( (100 - intensity) * settings.MaxRaindrops / 100, settings.MaxRaindrops );
 		}
@@ -474,6 +508,9 @@ public sealed class ParkWeather
 		private static readonly int[] DefaultAverages = { 75, 80, 90, 50 };
 		private static readonly int[] DefaultTolerances = { 25, 20, 10, 15 };
 		private static readonly int[] DefaultChances = { 10, 10, 5, 10 };
+
+		/// <summary>Whether no quality from 1 to 100 lies in the snow band: the park never snows by its own weather (the shipped jungle and fantasy keys are -1 and -1).</summary>
+		public bool SnowBandIsEmpty => SnowHigh < SnowLow || SnowHigh < 1 || SnowLow > 100;
 
 		public static WeatherSettings From( SamSettings standard )
 		{

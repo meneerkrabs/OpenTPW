@@ -39,6 +39,18 @@ public static class FeatureGates
 	/// </summary>
 	public static bool RainMood => OpenTpwExtensions.IsEnabled( OfficialExtensions.RainMood ) && !GameEditions.IsThemeParkInc;
 
+	/// <summary>
+	/// [EXT:winter-extension] The <c>opentpw.winter</c> extension is on for this run: the winter kiosks and glühwein stalls are listed in the theme catalogs and the guests' warm items apply (docs/WINTER.md). It is on by default, but not in a
+	/// Theme Park Inc run, which has its own shops and no weather of Theme Park World's kind.
+	/// </summary>
+	public static bool Winter => OpenTpwExtensions.IsEnabled( OfficialExtensions.Winter ) && !GameEditions.IsThemeParkInc;
+
+	/// <summary>
+	/// [EXT:winter-weather] The <c>opentpw.winter-weather</c> option is on for this run: December's rain and thunderstorms are snow in the jungle and fantasy parks (docs/WINTER.md, "Wintry Decembers"). Off by default, and not in a Theme Park Inc run,
+	/// which has no Theme Park World weather.
+	/// </summary>
+	public static bool WinterWeather => OpenTpwExtensions.IsEnabled( OfficialExtensions.WinterWeather ) && !GameEditions.IsThemeParkInc;
+
 	/// <summary>The <c>opentpw.pools-guest-art</c> extension is on: the land guests use the pools extension's 2x kid and head sets (docs/POOLS.md), when the pools extension is on too.</summary>
 	public static bool PoolGuestArt => OpenTpwExtensions.IsEnabled( OfficialExtensions.PoolGuestArt );
 

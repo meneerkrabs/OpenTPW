@@ -627,8 +627,9 @@ load flag set it skips the slot, the trains, the seat split and the station node
 7. resolves every node's collision ordinals to node pointers with `0x43E520`, which walks the head (`ctl+0x54`)
    that many times along `+0x64`: the ordinals are chain positions (S0 = 0, S1 = 1, S2 = 2, the pylons in saved
    order, then the end node);
-8. restores the cut (wire 0x2: `ctl+0x60` the cut-end node, default S2, and `ctl+0x64` the cut-start node,
-   default the last node) and the track flags (`0x4380D4..0x438335`);
+8. restores the cut (wire 0x2, `0x4382A5`: `ctl+0x60` the cut-end node, default S2, and `ctl+0x64` the cut-start
+   node, default the chain's tail `ctl+0x58` as read at `0x437CEC`, before the sections were added: S2 again) and the
+   track flags (`0x4382D1..0x438335`);
 9. restores the controller words (`0x438340..0x43837D`): header `+4` → `+8`, `+0x12` → `+0x2C`, `+0x18` → `+0xF4`,
    `+0x1A` → `+0xF0`, `+0x1C` → `+0x140`; header `+8`, `+0xE` and `+0x10` are never written back;
 10. reads every one of the type's train slots (27 bytes, the loader ORs train flag 0x4) and each car of the train
@@ -692,8 +693,9 @@ saved run state (`Level.ImportOriginalCoasters`, after `ImportOriginalScripts`).
    stores them as bank and incline on a node without flag 0x40, or as the loop rotate on a loop node. Wire 0x1, 0x2 and
    0x4 become the manual yaw, incline and bank flags. The zero-bank mark of a stack's lower nodes is the knot pass's stack
    pass here, as for a track the tool builds.
-3. **End node and cut.** A complete track (wire 0x1) gets its one pylon-less end node (type flag 0x20, always set). A cut
-   (wire 0x2) runs from the last section with wire 0x40, or S2, to the last section with wire 0x80, or the last node;
+3. **End node and cut.** A complete track (wire 0x1) gets its one pylon-less end node (type flag 0x20, always set; `0x4380D4`). A cut
+   (wire 0x2, restored at `0x4382A5`) runs from the last section with wire 0x40, or S2, to the last section with wire
+   0x80, or the chain's tail as it stood before the sections were added (`0x437CEC`), which is S2 again;
    the two must be neighbours, as the cut `0x446740` leaves them, and their link bits 0x40000/0x80000 come only with the
    cut markers (closing the circuit, `0x442C70`, clears both).
 4. **Controller words.** The state (low nibble of `+4`), the ride mode (0x10, 0x40 the breakdown, 0x20), the power factor,
@@ -703,14 +705,31 @@ saved run state (`Level.ImportOriginalCoasters`, after `ImportOriginalScripts`).
    reference car's position (`+0x74`), the speed (`+0x78`) and the train flags 0x10..0x80. The first rebuild after a load
    does the same: the rating pass `0x43C450`, called only from the rebuild `0x43EB70`, skips the train count, the slot
    set-up and the layout while the loader's flag 0x4000 is set. Each in-service slot must be set up (bit 0) and hold the
-   type's car count.
+   type's car count. That first frame's coaster update then runs the controller's first motion tick, which takes no
+   time (`0x43CE85`: the tick that finds controller flag 0x10 clear sets it and its clock word first, and the loader
+   leaves the flag clear): the trains stay where they were saved, while a speed above the cap is capped, one below 2.0
+   decays by 0.95 and one below 0.01 stops (`CoasterRide.UpdateFirstFrameAfterLoad`). A newly built controller's first
+   tick is the same.
 6. **Script binding.** When the station's saved script holds this coaster's slot (script `+0xE0`, `COAST 8` stored it),
-   the coaster counts as created by its script, and the script loop's speed setter (`0x5516B0` → `0x43B2B0` →
-   `0x43C3D0`) applies the script's speed word (`+0xC0`) at its first pass. When the word differs from 60, the rebuild
-   that follows has 0x4000 clear, so the track is rated at the script's cap and the trains are laid out again from
-   train 0's last car (`0x43C1F0`). After a load the main loop restarts its substep clock (`0x415140` sets `0x879070`),
-   so the first frame runs its coaster update before any script pass, unless the clock advances a millisecond between
-   its two reads of the frame time.
+   the coaster counts as created by its script. The script loop's speed setter (`0x5516B0` → `0x43B2B0` → `0x43C3D0`)
+   runs in the tail of every slice the cadence selects (one pass in eight by script id unless the TURBO byte is set,
+   `0x5516E1`; the call at `0x5517EA`), so it applies the script's speed word (`+0xC0`) after the script's first slice
+   after the load (`OriginalObjectEffects.AfterSlice`). When the word differs from 60, the rebuild that follows has
+   0x4000 clear, so the track is rated at the script's cap and the trains are laid out again from train 0's last car
+   (`0x43C1F0`).
+7. **The first frame's order.** In tp.exe the order of the first frame after a load depends on the wall clock. The load
+   path that sets `0x879070` (the save loader `0x414D40` in mode 2 calls `0x415140`; the paths through `0x5ACCF0` and
+   `0x5AC650` load in mode 2) makes the running case of the main loop `0x54E360` restart its substep clock at the
+   frame's own time: it reads the clock into `0x878C74`, then reads it again after the pause handling and `0x473440`,
+   and runs a substep (and with it the script pass) only when the second read is later. Usually it is not, and the
+   frame's coaster update (`0x435A30`, once per frame after the substep loop) runs first: its rebuild keeps the saved
+   trains and clears 0x4000, and the speed word re-lays them later. When the clock ticks between the two reads, one
+   substep runs first, and if the station script's slice falls on that pass, the speed word applies before the first
+   rebuild, which then rates at the script's cap but keeps the saved trains (no re-lay). OpenTPW takes the usual order.
+   A third load path (`0x54F113`, the save loader in mode 1 on the file of the online object `0xF7D88C`, built by
+   `0x5B50B0`, whose code logs "ONLINE_NEWS" and "ONLINE_FTPDOWNLOAD", followed by `0x404140`) does not set `0x879070`
+   and runs eight script passes before the first frame (`0x4041D0`), so every script's slice, and with it the speed word,
+   comes before the first rebuild there. That is the online park download, not the load of a saved park.
 
 Checked but not imported (evidence lines in the import report):
 

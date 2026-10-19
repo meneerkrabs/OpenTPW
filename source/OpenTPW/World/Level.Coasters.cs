@@ -406,6 +406,8 @@ public partial class Level
 				throw new InvalidDataException( $"The save's coaster of station mesh {saved.StationMeshInstanceId} binds to attraction thing {attraction.Id} (Info.Id {attraction.InfoId}), which this park does not place as a coaster station; the original would crash here (0x437CD5)." );
 			var plan = OriginalCoasterImport.Map( saved, ride );
 			ride.ImportOriginal( plan.Track, plan.State, plan.BreakdownState, plan.SeatsPerTrain, plan.Trains );
+			// the first frame after the load: no substep runs (0x415140), its coaster update rebuilds keeping the saved trains and runs the controller's first motion tick, which takes no time
+			ride.UpdateFirstFrameAfterLoad();
 			var lines = plan.Evidence.Concat( OriginalCoasterImport.Compare( saved, ride ) ).ToList();
 			// [BIN:TPW-EXE:0x468760 coaster slot] the header's +0xC goes to the slot allocator as the preferred slot, which stores the controller in 0x790BD0[slot]: a station script whose +0xE0 holds that slot reaches this controller
 			var owners = scripts.Where( record => record.ThingId == station.ThingId ).ToList();
@@ -413,7 +415,7 @@ public partial class Level
 			{
 				if ( owners[0].Coast != saved.Slot )
 					throw new InvalidDataException( $"The save's station script {owners[0].ScriptId} of attraction thing {attraction.Id} holds coaster slot {owners[0].Coast}, but its coaster's block holds slot {saved.Slot}." );
-				ride.BindImportedScript( station.Script?.SpeedBias ?? owners[0].Speed );
+				ride.BindImportedScript();
 			}
 			lines.Insert( 0, $"Coaster imported for attraction thing {attraction.Id} (Info.Id {attraction.InfoId}): {ride.Track.PylonCount} pylons, {(ride.Track.IsComplete ? ride.Track.IsCut ? "complete, cut open" : "complete" : "incomplete")}, state {(int)ride.State}, {ride.Trains.Count} trains, speed setting {ride.SpeedSetting}." );
 			foreach ( var line in lines )

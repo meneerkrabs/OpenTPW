@@ -861,9 +861,43 @@ public class CoasterTests
 		var train = ride.Trains[0];
 		// A placed train starts at the mean rated speed under its cars (0x43cc8a); this test starts one from rest.
 		train.Speed = 0;
+		// The controller's first motion tick takes no time (0x43ce85): the train at rest stays at rest.
+		ride.Advance( Tick );
+		Assert.AreEqual( 0f, train.Speed, "the first motion tick takes no time" );
 		ride.Advance( Tick );
 		var minimum = ride.Definition.MinSpeed * ride.PowerFactor;
 		Assert.IsTrue( train.Speed > 0 && train.Speed < minimum / 2, $"first frame: speed {train.Speed}, M {minimum}" );
+	}
+
+	/// <summary>
+	/// The first motion tick of a newly built controller takes no time (<c>0x43ce85</c>: the clock word is set on the tick that finds bit 0x10 clear): every train makes
+	/// one partial hop of no length, so it stays where the rating pass laid it out, while its speed is capped, decays ×0.95 below 2.0 and stops below 0.01. The next tick
+	/// moves the trains by its whole step.
+	/// </summary>
+	[TestMethod]
+	public void TheFirstMotionTickOfANewlyBuiltCoasterTakesNoTime()
+	{
+		var (builder, _) = NewCoaster();
+		BuildCircuit( builder );
+		Assert.AreEqual( CoasterPlaceResult.Ok, CloseAndComplete( builder ) );
+		var ride = builder.Ride;
+		Assert.IsFalse( ride.MotionClockStarted, "a new controller's motion tick has not run" );
+		Assert.IsTrue( ride.Trains.Count >= 2, $"the circuit places several trains ({ride.Trains.Count})" );
+		ride.Trains[0].Speed = 1.5f;
+		ride.Trains[1].Speed = 0.005f;
+		var expected = ride.Trains.Select( train =>
+		{
+			var speed = MathF.Min( train.Speed, ride.SpeedCap );
+			if ( speed < CoasterRide.DecayBelow )
+				speed *= CoasterRide.Decay;
+			return (train.Position % ride.Samples.Count, speed < CoasterRide.StopBelow ? 0f : speed);
+		} ).ToList();
+		ride.Advance( Tick );
+		Assert.IsTrue( ride.MotionClockStarted );
+		CollectionAssert.AreEqual( expected, ride.Trains.Select( train => (train.Position, train.Speed) ).ToList(), "no train moved; the speeds were capped and decayed" );
+		var before = ride.Trains[0].Position;
+		ride.Advance( Tick );
+		Assert.AreNotEqual( before, ride.Trains[0].Position, "the second tick moves the train" );
 	}
 
 	[TestMethod]

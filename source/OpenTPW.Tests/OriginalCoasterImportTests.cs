@@ -68,6 +68,14 @@ public class OriginalCoasterImportTests
 		return (ride, plan);
 	}
 
+	/// <summary>The import as the level runs it: the loader, then the first frame's coaster update after the load (no substep, a motion tick that takes no time).</summary>
+	private static (CoasterRide Ride, OriginalCoasterImport.Plan Plan) Load( SaveCoaster saved, CoasterDefinition definition, CoasterWorld? world = null )
+	{
+		var (ride, plan) = Import( saved, definition, world );
+		ride.UpdateFirstFrameAfterLoad();
+		return (ride, plan);
+	}
+
 	private static ulong TrackHash( CoasterTrack track )
 	{
 		var hash = new StateHasher();
@@ -144,18 +152,51 @@ public class OriginalCoasterImportTests
 		Assert.AreEqual( TrackHash( native.Track ), TrackHash( imported.Track ) );
 	}
 
+	/// <summary>
+	/// A loaded coaster continues as the built one does once the built one has taken the same first frame after a load: the loaded controller's first motion tick takes no
+	/// time (0x43ce85), which is all that tells the loaded park from the one that kept running.
+	/// </summary>
 	[TestMethod]
 	public void AnImportedCoasterContinuesAsTheBuiltOneDoes()
 	{
 		var definition = Definition();
 		var native = RunningCircuit( definition );
-		var (imported, _) = Import( RoundTrip( native ), definition );
+		var (imported, _) = Load( RoundTrip( native ), definition );
+		Assert.IsTrue( imported.MotionClockStarted );
+		native.UpdateFirstFrameAfterLoad();
+		AssertSameCoaster( native, imported );
 		for ( var tick = 0; tick < 60 * FixedStepClock.TicksPerSecond; tick++ )
 		{
 			native.Advance( Tick );
 			imported.Advance( Tick );
 		}
 		AssertSameCoaster( native, imported );
+	}
+
+	/// <summary>
+	/// The first frame after a load runs the loaded controller's first motion tick, which takes no time (the clock word is set on the tick that finds bit 0x10 clear,
+	/// 0x43ce85; the loader leaves the bit clear): the saved trains stay where they were saved, a speed above the cap is capped, one below 2.0 decays by 0.95 and one
+	/// below 0.01 stops.
+	/// </summary>
+	[TestMethod]
+	public void TheFirstFrameAfterALoadMovesNoTrainButCapsAndDecaysTheSpeeds()
+	{
+		var definition = Definition();
+		var saved = RoundTrip( RunningCircuit( definition ) );
+		Assert.IsTrue( saved.TrainsInService >= 1 );
+		foreach ( var speed in new[] { 1.5f, 0.005f, 1000f } )
+		{
+			var slow = saved with { TrainSlots = saved.TrainSlots!.Select( ( slot, index ) => index == 0 ? slot with { Word78 = BitConverter.SingleToUInt32Bits( speed ) } : slot ).ToList() };
+			var (imported, _) = Import( slow, definition );
+			Assert.IsFalse( imported.MotionClockStarted, "the loader leaves bit 0x10 clear" );
+			var positions = imported.Trains.Select( train => train.Position ).ToList();
+			imported.UpdateFirstFrameAfterLoad();
+			CollectionAssert.AreEqual( positions, imported.Trains.Select( train => train.Position ).ToList(), $"no train moved (speed {speed})" );
+			var expected = speed switch { 1.5f => 1.5f * CoasterRide.Decay, 0.005f => 0f, _ => imported.SpeedCap };
+			Assert.AreEqual( expected, imported.Trains[0].Speed, $"speed {speed}: capped, decayed below 2.0, stopped below 0.01" );
+			Assert.AreEqual( 0d, imported.TimeSeconds, "the frame adds no simulation time" );
+			Assert.IsTrue( imported.MotionClockStarted );
+		}
 	}
 
 	/// <summary>
@@ -168,11 +209,15 @@ public class OriginalCoasterImportTests
 		var definition = Definition();
 		var native = RunningCircuit( definition );
 		var saved = RoundTrip( native );
-		var (imported, _) = Import( saved, definition );
+		var (imported, _) = Load( saved, definition );
+		native.UpdateFirstFrameAfterLoad();
 		var leadCar = definition.CarCount - 1;
 		var lead = imported.CarCoordinate( imported.Trains[0], leadCar );
-		imported.BindImportedScript( 50 );
+		imported.BindImportedScript();
 		Assert.IsTrue( imported.Initialised );
+		Assert.AreEqual( CoasterRide.DefaultSpeedSetting, imported.SpeedSetting, "binding alone applies no speed word: the slice tail after the script's first slice does" );
+		// the station script's first slice after the load: its tail passes the speed word (0x5517D7 → 0x43B2B0, OriginalObjectEffects.AfterSlice)
+		imported.ApplyScriptSpeed( 50 );
 		Assert.AreEqual( 50, imported.SpeedSetting );
 		Assert.AreEqual( CoasterRide.SpeedCapFor( definition, 50 ), imported.SpeedCap );
 		native.ApplyScriptSpeed( 50 );
@@ -180,7 +225,7 @@ public class OriginalCoasterImportTests
 		Assert.AreEqual( lead, imported.CarCoordinate( imported.Trains[0], leadCar ), 1e-4f, "train 0 keeps its last car where it stood" );
 		// The setting is the script's now: the same word again changes nothing.
 		var hash = Hash( imported );
-		imported.BindImportedScript( 50 );
+		imported.ApplyScriptSpeed( 50 );
 		Assert.AreEqual( hash, Hash( imported ) );
 	}
 
@@ -235,7 +280,7 @@ public class OriginalCoasterImportTests
 		Assert.AreEqual( 0, imported.Trains.Count );
 	}
 
-	/// <summary>A cut whose first end is the station node S2: S2 is never a section, so the block names it by default (0x43806E), and the loader marks it 0x50000.</summary>
+	/// <summary>A cut whose first end is the station node S2: S2 is never a section, so the block names it by default (0x437CE6, restored at 0x4382A5), and the loader marks it 0x50000.</summary>
 	[TestMethod]
 	public void ACutAfterTheStationsLastNodeImportsWithTheDefaultCutEnd()
 	{
@@ -281,26 +326,34 @@ public class OriginalCoasterImportTests
 		Assert.AreEqual( Hash( imported ), Hash( resumed ), "the continuation is deterministic" );
 	}
 
-	/// <summary>The fixed run of an imported synthetic coaster: the canonical state after a minute of ticks (docs/DETERMINISM.md, "Original coaster import").</summary>
+	/// <summary>
+	/// The fixed run of an imported synthetic coaster (the first frame after the load, the speed word 50, a minute of ticks) repeats exactly and ends where the built coaster
+	/// ends that took the same first frame and speed word. No digest is pinned: the coaster's curve and rating call libm functions (Atan2, Sin, Cos, Acos), and its content
+	/// hashes differently on macOS arm64 and on the x64 runners (docs/DETERMINISM.md, "Original coaster import"), so the coaster tests assert relations.
+	/// </summary>
 	[TestMethod]
 	public void AnImportedSyntheticCoasterRunsDeterministically()
 	{
-		ulong Run()
+		(ulong Imported, ulong Native) Run()
 		{
 			var definition = Definition();
-			var (imported, _) = Import( RoundTrip( RunningCircuit( definition ) ), definition );
-			imported.BindImportedScript( 50 );
+			var native = RunningCircuit( definition );
+			var (imported, _) = Load( RoundTrip( native ), definition );
+			imported.BindImportedScript();
+			imported.ApplyScriptSpeed( 50 );
+			native.UpdateFirstFrameAfterLoad();
+			native.ApplyScriptSpeed( 50 );
 			for ( var tick = 0; tick < 60 * FixedStepClock.TicksPerSecond; tick++ )
+			{
 				imported.Advance( Tick );
-			return Hash( imported );
+				native.Advance( Tick );
+			}
+			AssertSameCoaster( native, imported );
+			return (Hash( imported ), Hash( native ));
 		}
 		var first = Run();
-		Assert.AreEqual( first, Run() );
-		Assert.AreEqual( ImportedCoasterPin, first, $"pinned 0x{first:X16}" );
+		Assert.AreEqual( first, Run(), "the run repeats" );
 	}
-
-	/// <summary>The pinned digest of <see cref="AnImportedSyntheticCoasterRunsDeterministically"/>.</summary>
-	private const ulong ImportedCoasterPin = 0x0B6F305C6589A229UL;
 
 	[TestMethod]
 	public void RidersOnTheSavedTrainsAreReportedAndNotRestored()

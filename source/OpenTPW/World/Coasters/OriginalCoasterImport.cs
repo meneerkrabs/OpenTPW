@@ -36,7 +36,7 @@ internal static class OriginalCoasterImport
 			throw new InvalidDataException( $"{what} holds {slots.Count} train slots; the coaster type has {definition.MaxTrains} (uiMaxTrains)." );
 		var evidence = new List<string>();
 
-		// [BIN:TPW-EXE:0x437B60 coaster loader] header +0 bit 0x1 is controller +0x3C bit 0 (the end node is built, 0x437F5E) and bit 0x2 bit 1 (the circuit is cut open: +0x60/+0x64 are restored, 0x43806E); the cut 0x446740 sets bit 1 only on a complete track and a cut that reaches the chain's end clears both, so a cut without completion is no shape the original leaves
+		// [BIN:TPW-EXE:0x437B60 coaster loader] header +0 bit 0x1 is controller +0x3C bit 0 (the end node is built, 0x4380D4) and bit 0x2 bit 1 (the circuit is cut open: +0x60/+0x64 are restored, 0x4382A5); the demolish button that cuts (0x446740) is enabled only on a complete track whose circuit is not cut open (the button mask 0x445910 clears bit 0x40 on any other track), and a cut that reaches the chain's end clears both bits (0x4469FF), so a cut without completion is no shape the original leaves
 		var complete = (saved.Flags & 0x1) != 0;
 		var cut = (saved.Flags & 0x2) != 0;
 		if ( cut && !complete )
@@ -101,7 +101,7 @@ internal static class OriginalCoasterImport
 				Yaw: section.Yaw, Incline: loopNode ? 0f : second ) );
 		}
 
-		// [BIN:TPW-EXE:0x437F5E end node] with wire 0x1 the loader sets controller +0x3C bit 0 and, with type flag 0x20 (which the type loader always sets, 0x42F390 ORs 0xA0), builds one pylon-less end node at the station's first node's pylon track dummy with the creation parameters 0x144
+		// [BIN:TPW-EXE:0x4380D4 end node] with wire 0x1 the loader sets controller +0x3C bit 0 (0x4380E7) and, with type flag 0x20 (which the type loader always sets, 0x42F390 ORs 0xA0), builds one pylon-less end node at the station's first node's pylon track dummy with the creation parameters 0x144
 		if ( complete )
 		{
 			var head = nodes[0];
@@ -111,8 +111,8 @@ internal static class OriginalCoasterImport
 		int? cutAfter = null;
 		if ( cut )
 		{
-			// [BIN:TPW-EXE:0x43806E cut restore] the cut's end node is the last section with wire 0x40, else the third station node S2 (which then gets 0x50000), and its start the last section with wire 0x80, else the chain's last node; the cut 0x446740 always marks the two nodes that border the removed range, so they are neighbours
-			var start = cutStart ?? nodes.Count - 1;
+			// [BIN:TPW-EXE:0x4382A5 cut restore] the cut's end node (+0x60) is the last section with wire 0x40, else the third station node S2 (0x437CE6; S2 then gets 0x50000, 0x4382C3), and its start (+0x64) the last section with wire 0x80, else the chain's tail as it stood before the sections were added (+0x58 read at 0x437CEC), which is S2 again; the cut 0x446740 always marks the two nodes that border the removed range, so they are neighbours and a cut whose start no section names is no shape the original leaves
+			var start = cutStart ?? CoasterTrack.StationNodeCount - 1;
 			if ( start != cutEnd + 1 || nodes[start].IsStationEnd )
 				throw new InvalidDataException( $"{what} is cut open between chain nodes {cutEnd} and {start}, which are not neighbouring pylon nodes." );
 			cutAfter = cutEnd;

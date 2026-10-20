@@ -52,8 +52,10 @@ internal sealed record CoasterTrackSaveData( (int X, int Y)? DepartCell, (int X,
 /// <param name="LeadCarCoordinate">Where train 0's last car stood when the trains were last taken off (<see cref="CoasterRide.LeadCarCoordinate"/>); null in an older save (0).</param>
 /// <param name="KnotPass">The knot pass the saved trains stood on (<see cref="CoasterRide.KnotPassVersion"/>: 2 = the pylon models' posed track tags); null in a save from before it, whose curve had one knot per node.</param>
 /// <param name="MotionClockStarted">Whether the controller's motion tick has run (<see cref="CoasterRide.MotionClockStarted"/>); null in a save from before it, which counts it started on a track that runs.</param>
+/// <param name="MotionClockLagSeconds">The simulation time since the last motion tick (<see cref="CoasterRide.MotionClockLagSeconds"/>); null in a save from before the catch-up (0).</param>
+/// <param name="SpeedSetByReplay">Controller bit 0x8000 (<see cref="CoasterRide.SpeedSetByReplay"/>); null in a save from before it (clear).</param>
 internal sealed record CoasterRideSaveData( int AttractionId, CoasterTrackSaveData Track, bool Initialised, bool Closed, int BreakdownState, int SpeedSetting, int SeatsPerTrain, float SpeedCap, long PaidCost, double TimeSeconds, double? LastDispatch, List<CoasterTrainSaveData> Trains, List<int> Leaving,
-	List<int>? Admission = null, int? State = null, float? LeadCarCoordinate = null, int? KnotPass = null, bool? MotionClockStarted = null );
+	List<int>? Admission = null, int? State = null, float? LeadCarCoordinate = null, int? KnotPass = null, bool? MotionClockStarted = null, double? MotionClockLagSeconds = null, bool? SpeedSetByReplay = null );
 
 /// <summary>The coasters of one saved park (the park-resume envelope's optional coaster part): every live coaster in creation order, which is attraction-id order.</summary>
 internal sealed record CoasterWorldSaveData
@@ -130,6 +132,6 @@ internal static class CoasterSave
 			new CoasterTrackSaveData( track.DepartCell, track.ReturnCell, track.IsClosed, track.IsComplete, track.Version, nodes, track.CutAfter ),
 			ride.Initialised, ride.Closed, ride.BreakdownState, ride.SpeedSetting, ride.SeatsPerTrain, ride.SpeedCap, ride.PaidCost, ride.TimeSeconds,
 			null,
-			trains, ride.LeavingRiders.ToList(), ride.AdmissionGuests.ToList(), (int)ride.State, ride.LeadCarCoordinate, CoasterRide.KnotPassVersion, ride.MotionClockStarted );
+			trains, ride.LeavingRiders.ToList(), ride.AdmissionGuests.ToList(), (int)ride.State, ride.LeadCarCoordinate, CoasterRide.KnotPassVersion, ride.MotionClockStarted, ride.MotionClockLagSeconds, ride.SpeedSetByReplay );
 	}
 }

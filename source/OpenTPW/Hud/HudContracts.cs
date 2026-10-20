@@ -2,22 +2,24 @@ namespace OpenTPW.Hud;
 
 /// <summary>
 /// The online players of a visited park, as the visit's HUD uses them (<see cref="ParkPresence"/>): a click on the park's ground walks the player's
-/// figure, and Enter opens a chat line to the park's room.
+/// figure, and the original chat overlay shows the park's room (<see cref="Chat"/>).
 /// </summary>
 public interface IVisitPresence
 {
-	/// <summary>A click on the park's ground at (<paramref name="cellX"/>, <paramref name="cellY"/>) that hit no object: the figure walks there, or teleports on a double click.</summary>
+	/// <summary>A click on the park's ground at (<paramref name="cellX"/>, <paramref name="cellY"/>): the figure walks there, or teleports on a double click.</summary>
 	void Click( float cellX, float cellY );
 	/// <summary>Whether a chat line can be said now (connected and in the park's room).</summary>
 	bool CanChat { get; }
 	/// <summary>Whether the figures are shown and a ground click walks the player's (the server relays movement in park rooms).</summary>
 	bool Walks { get; }
-	/// <summary>Says a chat line (or runs a chat command) in the park's room.</summary>
-	void Say( string line );
+	/// <summary>The server refused the park's room (the park was unpublished, or its chat satellite is gone): the visit has no other players.</summary>
+	bool Refused { get; }
 	/// <summary>The players' names and where their figures stand, drawn by the HUD under its windows.</summary>
 	IEnumerable<VisitPresenceName> Names { get; }
-	/// <summary>The park room's chat lines, oldest first.</summary>
-	IReadOnlyList<string> ChatLines { get; }
+	/// <summary>The park room's chat for the chat overlay; it sends only while the visit is in the room (<see cref="CanChat"/>).</summary>
+	IChatPanelSource Chat { get; }
+	/// <summary>Takes the player's figure to another player in the park (a name popup's goto).</summary>
+	void GoTo( string name );
 }
 
 /// <summary>A player's name over their figure in a visited park: the player's own name or another's, and the figure's feet (engine position).</summary>

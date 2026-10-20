@@ -1,0 +1,3 @@
+## Every automated run is silent (October 19, 2026)
+
+Tests and agents no longer play game sound on a developer machine. The native `[EXT:silent-automated-runs]` rule now silences every automated mode (`--tpi-smoke-test`, `--perf-*`, every `--debug-*` capture option, `--offscreen` or `OPENTPW_OFFSCREEN=1`, `--headless`, `--smoke-presence`, the gates and guest reports, besides the smokes and captures it already covered), with `--audible` (or `--smoke-audio`) as the opt-in. `tools/web-perf` starts Chrome with `--mute-audio` by default, also headed, with `--audible` to listen; `--music` still exercises the game's audio decode path because muting only affects the speakers. No game logic, timing or pin changed.

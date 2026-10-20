@@ -85,6 +85,14 @@ public static partial class Program
 		return true;
 	}
 
+	/// <summary>Holds the evening look for the session ("night", "dusk", "day"), or turns the cycle and its lamps "off" or back "on" (the extension stays in the mod set); false for another value (see <c>Level.PerfEvening</c>).</summary>
+	[JSExport]
+	public static bool PerfEvening( string mode ) => Level.PerfEvening( mode );
+
+	/// <summary>Adds <paramref name="count"/> debug lamp lights around the park camera's target (the browser twin of <c>--debug-evening-lamps</c>); 0 removes them; -1 outside a park (see <c>Level.PerfEveningLamps</c>).</summary>
+	[JSExport]
+	public static int PerfEveningLamps( int count ) => Level.PerfEveningLamps( count );
+
 	/// <summary>Holds the park camera at a zoom value (the wide range reaches 40..300 with the option on) and returns the zoom it ended at; -1 outside a park.</summary>
 	[JSExport]
 	public static double PerfZoom( double zoom )
@@ -94,6 +102,134 @@ public static partial class Program
 		camera.SetPose( camera.Target, (float)zoom, camera.Yaw );
 		return camera.Height;
 	}
+
+	private static Action? umbrellaHook;
+
+	/// <summary>
+	/// [EXT:debug-umbrellas] The browser twin of the desktop's Debug-build <c>--debug-umbrellas</c> (a capture aid for tools/web-perf, scenario <c>umbrellas</c>): gives every guest an open umbrella (colour from its id) and keeps it open every frame,
+	/// and when <paramref name="zoom"/> is above zero holds the park camera on the lowest-numbered visible guest at that zoom value and <paramref name="yaw"/> (degrees). The guests' own umbrella fields are written directly, so a run that calls this is not the
+	/// park's own simulation and nothing may be saved from it. Returns false outside a park or when the umbrellas extension has no renderer.
+	/// </summary>
+	[JSExport]
+	public static bool PerfUmbrellas( double zoom, double yaw )
+	{
+		if ( flow?.Level is not { UmbrellaRenderer: not null } || renderer == null )
+			return false;
+		if ( umbrellaHook != null )
+			renderer.PostUpdate -= umbrellaHook;
+		umbrellaHook = () =>
+		{
+			if ( flow?.Level is not { Guests: { } simulation } level )
+				return;
+			if ( zoom > 0 && Camera.Mode is ParkCameraMode camera && level.OriginalPark is { } park )
+				if ( simulation.Guests.Where( candidate => candidate.IsVisible && float.IsFinite( candidate.DrawX ) ).OrderBy( candidate => candidate.Id ).FirstOrDefault() is { } followed )
+				{
+					var spot = GuestRenderer.CellToEngine( park.Heightfield, followed.DrawX, followed.DrawY );
+					camera.SetPose( new System.Numerics.Vector3( spot.X, spot.Y, 0 ), (float)zoom, (float)yaw );
+				}
+			foreach ( var guest in simulation.Guests )
+			{
+				if ( guest.UmbrellaState == UmbrellaRules.StateOpen )
+					continue;
+				guest.UmbrellaState = UmbrellaRules.StateOpen;
+				guest.UmbrellaType = guest.Id % UmbrellaRules.Colours;
+				guest.UmbrellaDueTurn = 0;
+			}
+		};
+		renderer.PostUpdate += umbrellaHook;
+		return true;
+	}
+
+	/// <summary>
+	/// [EXT:debug-umbrellas] Stops <see cref="PerfUmbrellas"/> holding every umbrella open and holding the camera (the umbrellas stay as they are until the simulation or <see cref="PerfUmbrellaCrowd"/> changes them): the winterCost
+	/// scenario holds them open for its measured windows and lets go of them before its screenshot.
+	/// </summary>
+	[JSExport]
+	public static void PerfUmbrellasOff()
+	{
+		if ( umbrellaHook != null && renderer != null )
+			renderer.PostUpdate -= umbrellaHook;
+		umbrellaHook = null;
+	}
+
+	/// <summary>Whether it rains in the park now (the weather's rain flag), so a measured window can say whether it ran in rain.</summary>
+	[JSExport]
+	public static bool PerfRaining() => flow?.Level?.Weather?.Rain == true;
+
+	private static Action? winterHook;
+
+	/// <summary>
+	/// [EXT:debug-winter] The browser twin of the desktop's Debug-build <c>--debug-winter</c> (a capture aid for tools/web-perf, scenario <c>winter</c>): dresses every guest in a head item (by its id) and mittens (all but every fourth guest) every frame,
+	/// and when <paramref name="zoom"/> is above zero holds the park camera on a visible guest at that zoom value and <paramref name="yaw"/> (degrees): the lowest-numbered one, or the one <paramref name="follow"/> places further up the order, counted from the
+	/// highest-numbered guest down when it is negative (a staged crowd starts under the entrance canopy, and its later guests are those furthest down the road). The guests' item field is written directly, so a run that calls this is not the
+	/// park's own simulation and nothing may be saved from it. Returns false outside a park or when the winter extension has no renderer.
+	/// </summary>
+	[JSExport]
+	public static bool PerfWinter( double zoom, double yaw, int follow )
+	{
+		if ( flow?.Level is not { WarmItemRenderer: not null } || renderer == null )
+			return false;
+		if ( winterHook != null )
+			renderer.PostUpdate -= winterHook;
+		winterHook = () =>
+		{
+			if ( flow?.Level is not { Guests: { } simulation } level )
+				return;
+			if ( zoom > 0 && Camera.Mode is ParkCameraMode camera && level.OriginalPark is { } park )
+				if ( simulation.Guests.Where( candidate => candidate.IsVisible && float.IsFinite( candidate.DrawX ) ).OrderBy( candidate => follow < 0 ? -candidate.Id : candidate.Id ).Skip( Math.Abs( follow ) ).FirstOrDefault() is { } followed )
+				{
+					var spot = GuestRenderer.CellToEngine( park.Heightfield, followed.DrawX, followed.DrawY );
+					camera.SetPose( new System.Numerics.Vector3( spot.X, spot.Y, 0 ), (float)zoom, (float)yaw );
+				}
+			foreach ( var guest in simulation.Guests )
+				guest.WarmItems = WinterRules.HeadItemOf( guest.Id ) | (guest.Id % 4 == 3 ? 0 : WinterRules.Mittens);
+		};
+		renderer.PostUpdate += winterHook;
+		return true;
+	}
+
+	/// <summary>How many warm items the renderer drew in the last frame, or -1 without one.</summary>
+	[JSExport]
+	public static int PerfDrawnWinterItems() => flow?.Level?.WarmItemRenderer?.DrawnItems ?? -1;
+
+	private static Action? snowHook;
+
+	/// <summary>
+	/// [EXT:debug-snow-cover] The browser twin of the desktop's <c>--debug-snow-cover</c> (docs/WINTER.md): holds the settled snow cover of the park at <paramref name="cover"/> (0..1) every frame, so a capture shows the snow in
+	/// the browser build without a snowing sky. Presentation only. Returns false outside a park or while the winter-snow extension is off (no cover exists).
+	/// </summary>
+	[JSExport]
+	public static bool PerfSnow( double cover )
+	{
+		if ( flow?.Level?.Snow == null || renderer == null )
+			return false;
+		if ( snowHook != null )
+			renderer.PostUpdate -= snowHook;
+		snowHook = () => flow?.Level?.Snow?.Set( cover );
+		renderer.PostUpdate += snowHook;
+		return true;
+	}
+
+	/// <summary>How many umbrellas the renderer drew in the last frame, or -1 without one.</summary>
+	[JSExport]
+	public static int PerfDrawnUmbrellas() => flow?.Level?.UmbrellaRenderer?.DrawnUmbrellas ?? -1;
+
+	/// <summary>
+	/// [EXT:umbrellas-tuning] Fills the park with up to <paramref name="crowd"/> extra guests, applies the weather quality (30 is rain) and gives every guest an open umbrella, or none: the umbrellaCost scenario of the harness
+	/// (<see cref="UmbrellaPerf"/>). Returns the result as JSON; the park is no longer a real run afterwards.
+	/// </summary>
+	[JSExport]
+	public static string PerfUmbrellaCrowd( int crowd, int quality, bool umbrellas )
+	{
+		if ( flow?.Level is not { Guests: { } guests } level )
+			return "null";
+		var result = UmbrellaPerf.Stage( guests, level.Weather, crowd, quality, umbrellas );
+		return new JsonObject { ["guests"] = result.Guests, ["spawned"] = result.Spawned, ["umbrellas"] = result.Umbrellas, ["rain"] = result.Rain, ["renderer"] = level.UmbrellaRenderer != null }.ToJsonString();
+	}
+
+	/// <summary>[EXT:umbrellas-tuning] Umbrellas drawn in the last frame (0 without the umbrella renderer).</summary>
+	[JSExport]
+	public static int PerfUmbrellaCrowdDrawn() => flow?.Level?.UmbrellaRenderer?.DrawnUmbrellas ?? 0;
 
 	/// <summary>The items of a buy-window category (Rides, Shops, Sideshows, Features) as JSON: archive name and shown name.</summary>
 	[JSExport]
@@ -167,22 +303,22 @@ public static partial class Program
 		result["textureMs"] = watch.ElapsedMilliseconds;
 
 		watch.Restart();
-		var seed = new WorldSeed( 2026 );
-		var original = OriginalPark.Load( theme );
-		var park = ParkEconomyRuntime.ForOriginalLevel( original, ParkStartKind.OriginalSaveReference, seed );
-		var guests = new GuestSimulation( GuestPathGrid.FromOriginal( original.Map, original.Save, original.Heightfield ), GuestSettings.Load( theme ), seed.GuestStream );
-		park.AttachGuests( guests );
-		var streams = new ParkWorldStreams( seed, park, guests, new RideScriptWorld( seed.ScriptStream, RideScriptWorld.FixedClock ), new SoundEventSystem( new AudioMixer( null ), seed.SoundStream ) ).LinkGenerator();
-		park.Economy.Speed = GameSpeed.Fastest;
-		for ( var tick = 0; tick < 3000; tick++ )
-		{
-			guests.Tick( 1f / FixedStepClock.TicksPerSecond );
-			park.Economy.Advance( (int)park.Economy.Speed );
-		}
-		result["simulationHash"] = streams.ComputeStateHash().ToString( "X16" );
+		var simulationHash = CrossRuntimeDigest.FixedParkRun( theme, hireStaff: false );
+		result["simulationHash"] = simulationHash.ToString( "X16" );
 		result["simulationMs"] = watch.ElapsedMilliseconds;
 		return result.ToJsonString();
 	}
+
+	/// <summary>
+	/// The cross-runtime digest of <paramref name="theme"/> (<see cref="CrossRuntimeDigest"/>, docs/DETERMINISM.md "Browser and native"): the same work as the desktop's
+	/// <c>--determinism-digest</c>, as JSON, to compare value by value. The theme's files must be loaded (<see cref="PerfLevelLoaded"/>); the call blocks the page for minutes.
+	/// </summary>
+	[JSExport]
+	public static string PerfDeterminismDigest( string theme, bool includeM4 ) => CrossRuntimeDigest.Compute( theme, includeM4 ).ToJsonString();
+
+	/// <summary>Whether the page has copied the files of <paramref name="level"/> (after <c>opentpwPerf.loadLevel</c>).</summary>
+	[JSExport]
+	public static bool PerfLevelLoaded( string level ) => loadedLevels.Contains( level );
 
 	/// <summary>Every .wct below <paramref name="directory"/>, archives included, as the file system lists them.</summary>
 	private static void CollectTextures( string directory, List<string> found )
@@ -227,13 +363,65 @@ public static partial class Program
 		return result.ToJsonString();
 	}
 
+	/// <summary>
+	/// The GPU bytes (RGBA8 with its mip chain) of the distinct textures in <see cref="Asset.All"/>, grouped like <see cref="PerfTextureGroups"/>, as JSON
+	/// <c>{ group: { count, megabytes } }</c>, largest first; the harness's memory scenarios read it.
+	/// </summary>
+	[JSExport]
+	public static string PerfTextureBytes()
+	{
+		var result = new JsonObject();
+		var seen = new HashSet<Veldrid.Texture>();
+		var groups = Asset.All.OfType<Texture>().Where( texture => texture.NativeTexture != null && seen.Add( texture.NativeTexture ) ).GroupBy( texture => string.IsNullOrEmpty( texture.Path ) ? "(no path)"
+			: string.Join( '/', texture.Path.Replace( '\\', '/' ).Split( '/', StringSplitOptions.RemoveEmptyEntries ).Take( 2 ) ) )
+			.Select( group => (group.Key, Count: group.Count(), Bytes: group.Sum( texture => (long)texture.Width * texture.Height * 4 * 4 / 3 ) ) ).OrderByDescending( group => group.Bytes );
+		foreach ( var group in groups )
+			result[group.Key] = new JsonObject { ["count"] = group.Count, ["megabytes"] = Math.Round( group.Bytes / 1048576d, 2 ) };
+		// the largest single textures with their size and where they came from (Origin needs PerfTrackTextureOrigins)
+		var largest = new JsonArray();
+		foreach ( var texture in Asset.All.OfType<Texture>().Where( texture => texture.NativeTexture != null ).DistinctBy( texture => texture.NativeTexture ).OrderByDescending( texture => (long)texture.Width * texture.Height ).Take( 12 ) )
+			largest.Add( $"{texture.Width}x{texture.Height} {(string.IsNullOrEmpty( texture.Path ) ? texture.Origin ?? "(no path)" : texture.Path)}" );
+		result["(largest)"] = largest;
+		return result.ToJsonString();
+	}
+
 	/// <summary>The static fields holding the most array bytes (<see cref="PerfReachability.BytesByStaticRoot"/>), as JSON.</summary>
 	[JSExport]
 	public static string PerfMemoryRoots()
 	{
 		var result = new JsonObject();
-		foreach ( var (root, bytes) in PerfReachability.BytesByStaticRoot() )
-			result[root] = root.StartsWith( "(objects" ) ? bytes : Math.Round( bytes / 1048576d, 1 );
+		try
+		{
+			foreach ( var (root, bytes) in PerfReachability.BytesByStaticRoot() )
+				result[root] = root.StartsWith( "(objects" ) ? bytes : Math.Round( bytes / 1048576d, 1 );
+		}
+		catch ( Exception exception )
+		{
+			// a diagnostic: say what went wrong rather than lose the other counters of the step
+			result["(error)"] = exception.ToString();
+		}
+		return result.ToJsonString();
+	}
+
+	/// <summary>The array bytes behind the assets in <see cref="Asset.All"/> by type (<see cref="PerfReachability.BytesByAssetType"/>), as JSON <c>{ type: { count, megabytes } }</c>.</summary>
+	[JSExport]
+	public static string PerfAssetBytes()
+	{
+		var result = new JsonObject();
+		try
+		{
+			foreach ( var (type, count, bytes) in PerfReachability.BytesByAssetType() )
+				result[type] = new JsonObject { ["count"] = count, ["megabytes"] = Math.Round( bytes / 1048576d, 2 ) };
+		}
+		catch ( Exception exception )
+		{
+			result["(error)"] = exception.ToString();
+		}
+		// the shaders by file: every material compiles its own copy, so a count that grows from park to park names the shader of what is not released
+		var shaders = new JsonObject();
+		foreach ( var group in Asset.All.OfType<Shader>().GroupBy( shader => System.IO.Path.GetFileName( shader.Path ) ).OrderByDescending( group => group.Count() ) )
+			shaders[group.Key] = group.Count();
+		result["(shaders by file)"] = shaders;
 		return result.ToJsonString();
 	}
 
@@ -274,8 +462,12 @@ public static partial class Program
 			["archiveBytes"] = archives,
 			["archiveMemberBytes"] = members,
 			["decodedSampleBytes"] = GameAudio.DecodedSampleBytes,
+			["gpuTextureBytes"] = Veldrid.Texture.LiveGpuBytes,
+			["gpuTextures"] = Veldrid.Texture.LiveGpuTextures,
 			["managedBytes"] = GC.GetTotalMemory( false ),
 			["heapBytes"] = info.HeapSizeBytes,
+			["committedBytes"] = info.TotalCommittedBytes,
+			["fragmentedBytes"] = info.FragmentedBytes,
 			["allocatedBytes"] = GC.GetTotalAllocatedBytes(),
 			["gen0"] = GC.CollectionCount( 0 ),
 			["gen1"] = GC.CollectionCount( 1 ),
@@ -303,31 +495,56 @@ internal static class PerfReachability
 		{
 			if ( !seen.Add( value ) )
 				continue;
-			long bytes = 0;
-			var queue = new Queue<object>();
-			queue.Enqueue( value );
-			while ( queue.Count > 0 && seen.Count < maximumObjects )
-			{
-				var current = queue.Dequeue();
-				if ( current is string text )
-				{
-					bytes += text.Length * 2L;
-					continue;
-				}
-				// Arrays of numbers count their bytes; arrays of structs (a dictionary's entries) are followed into their fields.
-				if ( current is Array array && array.GetType().GetElementType() is { IsPrimitive: true } element )
-				{
-					bytes += (long)array.Length * System.Runtime.InteropServices.Marshal.SizeOf( element );
-					continue;
-				}
-				foreach ( var child in Children( current, maximumObjects - seen.Count ) )
-					if ( seen.Count < maximumObjects && seen.Add( child ) )
-						queue.Enqueue( child );
-			}
-			totals.Add( (root, bytes) );
+			totals.Add( (root, ArrayBytesFrom( value, seen, maximumObjects )) );
 		}
 		totals.Add( ($"(objects visited{(seen.Count >= maximumObjects ? ", cut off" : "")})", seen.Count) );
 		return totals.OrderByDescending( entry => entry.Bytes ).Take( top ).ToList();
+	}
+
+	/// <summary>
+	/// Bytes of the arrays of numbers (and strings) reachable from <paramref name="value"/>, counting only objects not yet in <paramref name="seen"/> (which it fills), so a
+	/// caller walking several roots counts every object once.
+	/// </summary>
+	private static long ArrayBytesFrom( object value, HashSet<object> seen, int maximumObjects )
+	{
+		long bytes = 0;
+		var queue = new Queue<object>();
+		queue.Enqueue( value );
+		while ( queue.Count > 0 && seen.Count < maximumObjects )
+		{
+			var current = queue.Dequeue();
+			if ( current is string text )
+			{
+				bytes += text.Length * 2L;
+				continue;
+			}
+			// Arrays of numbers count their bytes; arrays of structs (a dictionary's entries) are followed into their fields.
+			if ( current is Array array && array.GetType().GetElementType() is { IsPrimitive: true } element )
+			{
+				bytes += (long)array.Length * System.Runtime.InteropServices.Marshal.SizeOf( element );
+				continue;
+			}
+			foreach ( var child in Children( current, maximumObjects - seen.Count ) )
+				if ( seen.Count < maximumObjects && seen.Add( child ) )
+					queue.Enqueue( child );
+		}
+		return bytes;
+	}
+
+	/// <summary>The array bytes behind the assets in <see cref="Asset.All"/>, by the asset's type (textures, materials, models, shaders), largest first.</summary>
+	public static List<(string Type, int Count, long Bytes)> BytesByAssetType( int maximumObjects = 30_000_000 )
+	{
+		var seen = new HashSet<object>( ReferenceEqualityComparer.Instance );
+		var totals = new List<(string Type, int Count, long Bytes)>();
+		foreach ( var group in Asset.All.ToList().GroupBy( asset => asset.GetType().Name ) )
+		{
+			long bytes = 0;
+			foreach ( var asset in group )
+				if ( seen.Add( asset ) )
+					bytes += ArrayBytesFrom( asset, seen, maximumObjects );
+			totals.Add( (group.Key, group.Count(), bytes) );
+		}
+		return totals.OrderByDescending( entry => entry.Bytes ).ToList();
 	}
 
 	private static IEnumerable<(string Root, object Value)> StaticRoots()

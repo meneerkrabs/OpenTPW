@@ -17,13 +17,18 @@ public sealed partial class GuestSimulation
 		// [EXT:smarter-guests-paths] the guest's last complaint about its path, for a policy that weighs the path's comfort
 		decisions.UsesPathComfort && SmarterGuests is { } paths ? paths.Complaints.Of( guest.BirthId ) : -1 );
 
+	/// <summary>The score's eligibility only: preserve connected fallbacks, and opt in to a disconnected back only when it is a real raw queue cell.</summary>
+	private bool HasScoreBackCell( IRideVisitorBridge attraction ) => attraction.JoinCell != null
+		|| decisions.ScoresDisconnectedQueues && attraction.QueueCells.Count > 0
+			&& Grid.Cells.RawTypeAt( attraction.QueueCells[^1].X, attraction.QueueCells[^1].Y ) == (byte)ParkCellType.Queue;
+
 	/// <summary>
-	/// <paramref name="attraction"/> as <paramref name="guest"/> sees it: every value the original score reads, taken now. An attraction without a join cell carries identity and flags only
-	/// (the original scores it 0 without reading anything else).
+	/// <paramref name="attraction"/> as <paramref name="guest"/> sees it: every value the score reads, taken now. An opted-in disconnected typed back carries real facts while
+	/// <see cref="AttractionView.HasJoinCell"/> remains false. An unsupported back, or a policy without that capability, retains the identity-and-flags-only fallback.
 	/// </summary>
 	internal AttractionView ViewOf( IRideVisitorBridge attraction, Guest guest, bool reservations = true )
 	{
-		if ( attraction.JoinCell == null )
+		if ( !HasScoreBackCell( attraction ) )
 			return new AttractionView( attraction.AttractionId, attraction.TypeId, attraction.Kind, false, default, attraction.EntranceCell, 0, attraction.QueueLength, attraction.QueueSizeInCells,
 				attraction.QueueLimit, 0, 0, 0, 0, attraction.ProvidesRelief, 0, false, 0, 0, attraction.IsOpen, attraction.IsBrokenDown, false );
 		var sameType = guest.UsedHistory[0] != 0 && FindAttraction( guest.UsedHistory[0] ) is { } last && last.TypeId == attraction.TypeId;
@@ -43,7 +48,7 @@ public sealed partial class GuestSimulation
 			cycle = SmarterGuestsRules.CycleTurns256Of( interval, capacity );
 		}
 		// built once, whatever the policy asks for: the view is a large struct and a copy per rule is a cost per candidate per decision
-		return new AttractionView( attraction.AttractionId, attraction.TypeId, attraction.Kind, true, back, attraction.EntranceCell, modifier, attraction.QueueLength, attraction.QueueSizeInCells,
+		return new AttractionView( attraction.AttractionId, attraction.TypeId, attraction.Kind, attraction.JoinCell != null, back, attraction.EntranceCell, modifier, attraction.QueueLength, attraction.QueueSizeInCells,
 			attraction.QueueLimit, attraction.LiveExcitement, attraction.StaticExcitementLevel, attraction.ThirstEffect, attraction.HungerEffect, attraction.ProvidesRelief, attraction.AgeDays,
 			attraction.IsIndoors, attraction.GoldenTicketCost, attraction.UpgradeCost, attraction.IsOpen, attraction.IsBrokenDown, sameType, price, willingness, walkers, interval, cycle );
 	}

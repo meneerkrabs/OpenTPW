@@ -233,13 +233,13 @@ public sealed class UiContext
 		return (layout.InkLeft, Math.Min( layout.InkTop, letters.Top ), layout.InkRight + extra, Math.Max( layout.InkBottom, letters.Bottom ) + extra);
 	}
 
-	/// <summary>Draws a model frame stretched so its bounds fill <paramref name="rect"/>.</summary>
+	/// <summary>Draws a model frame stretched so its selected-mesh fit bounds fill <paramref name="rect"/>.</summary>
 	public void DrawFrame( UiModelFrame frame, UiRect rect, RgbaByte? tint = null )
 	{
-		if ( frame.Width <= 0 || frame.Height <= 0 )
+		if ( !frame.TryGetFitBounds( out var fit ) )
 			return;
-		var scaleX = rect.Width / frame.Width;
-		var scaleY = rect.Height / frame.Height;
+		var scaleX = rect.Width / fit.Width;
+		var scaleY = rect.Height / fit.Height;
 		var color = tint ?? RgbaByte.White;
 		foreach ( var part in frame.Parts )
 		{
@@ -247,7 +247,7 @@ public sealed class UiContext
 			UiVertex Convert( int index )
 			{
 				var vertex = part.Vertices[index];
-				return new UiVertex( new NVector2( rect.X + (vertex.Position.X - frame.MinX) * scaleX, rect.Y + (vertex.Position.Y - frame.MinY) * scaleY ), vertex.TexCoords, color );
+				return new UiVertex( new NVector2( rect.X + (vertex.Position.X - fit.X) * scaleX, rect.Y + (vertex.Position.Y - fit.Y) * scaleY ), vertex.TexCoords, color );
 			}
 			for ( var index = 0; index + 2 < part.Indices.Count; index += 3 )
 				Batch.AddTriangle( texture, Convert( part.Indices[index] ), Convert( part.Indices[index + 1] ), Convert( part.Indices[index + 2] ) );
@@ -303,6 +303,8 @@ public abstract class UiElement
 	public Func<string?>? HelpSource { get; set; }
 	public string? CurrentHelp => HelpSource?.Invoke() ?? Help;
 	public virtual bool Focusable => false;
+	/// <summary>Whether the element keeps a click at <paramref name="point"/> (framebuffer pixels) off the park: anywhere in its box, unless it is shaped.</summary>
+	public virtual bool CoversPoint( UiCanvas canvas, NVector2 point ) => ScreenRect( canvas ).Contains( point );
 
 	public UiRect ScreenRect( UiCanvas canvas ) => canvas.Map( Bounds, Anchor );
 	public abstract void Draw( UiContext context, bool focused, bool pressed );
@@ -321,6 +323,11 @@ public sealed class UiLabelGroup
 
 public sealed class UiLabel : UiElement
 {
+	/// <summary>Optional title action, preserving label art and text layout; ordinary labels remain inert.</summary>
+	public Action? Clicked { get; set; }
+	public override bool Focusable => Visible && Enabled && Clicked != null;
+	public override void Activate() { if ( Visible && Enabled ) Clicked?.Invoke(); }
+
 	public Func<string> Text { get; set; } = () => "";
 	public Func<UiFonts, FontAtlas> Font { get; set; } = fonts => fonts.Label;
 	public RgbaByte Color { get; set; } = UiColors.Text;
@@ -372,6 +379,42 @@ public sealed class UiModelImage : UiElement
 	public RgbaByte? Tint { get; set; }
 	/// <summary>Name of a local art override (<see cref="UiArtOverrides"/>) drawn instead of the model when present.</summary>
 	public string? ArtOverride { get; set; }
+	/// <summary>
+	/// Whether the image keeps clicks off the park only on its model's triangles, not over its whole box (a frame round the park view: the chat frame's
+	/// panels, not its opening). The shape is the frame it last drew, so before its first draw, or without its model, it covers nothing.
+	/// </summary>
+	public bool CoversShape { get; init; }
+	private UiModelFrame? drawnShape;
+
+	public override bool CoversPoint( UiCanvas canvas, NVector2 point )
+	{
+		if ( !CoversShape )
+			return base.CoversPoint( canvas, point );
+		var rect = ScreenRect( canvas );
+		if ( drawnShape is not { } shape || !shape.TryGetFitBounds( out var fit ) || rect.Width <= 0 || rect.Height <= 0 )
+			return false;
+		// the point in the model's own units, as DrawFrame maps the frame onto the box
+		var at = new NVector2( fit.X + (point.X - rect.X) * fit.Width / rect.Width, fit.Y + (point.Y - rect.Y) * fit.Height / rect.Height );
+		foreach ( var part in shape.Parts )
+		{
+			for ( var index = 0; index + 2 < part.Indices.Count; index += 3 )
+			{
+				if ( InTriangle( at, part.Vertices[part.Indices[index]].Position, part.Vertices[part.Indices[index + 1]].Position, part.Vertices[part.Indices[index + 2]].Position ) )
+					return true;
+			}
+		}
+		return false;
+	}
+
+	/// <summary>Whether <paramref name="point"/> lies in the triangle or on its edge; a triangle without area holds no point.</summary>
+	private static bool InTriangle( NVector2 point, NVector2 a, NVector2 b, NVector2 c )
+	{
+		float Side( NVector2 from, NVector2 to ) => (to.X - from.X) * (point.Y - from.Y) - (to.Y - from.Y) * (point.X - from.X);
+		float ab = Side( a, b ), bc = Side( b, c ), ca = Side( c, a );
+		if ( ab == 0 && bc == 0 && ca == 0 )
+			return false;
+		return ab >= 0 && bc >= 0 && ca >= 0 || ab <= 0 && bc <= 0 && ca <= 0;
+	}
 
 	public override void Draw( UiContext context, bool focused, bool pressed )
 	{
@@ -387,6 +430,8 @@ public sealed class UiModelImage : UiElement
 		}
 		if ( !context.DrawModel( Model, Frame(), ScreenRect( context.Canvas ), Tint ) )
 			context.Batch.AddRectangle( ScreenRect( context.Canvas ), UiColors.HelpBackground );
+		else if ( CoversShape )
+			drawnShape = context.Models.Get( Model )?.GetFrame( Frame() );
 	}
 }
 
@@ -463,7 +508,7 @@ public sealed class UiImageElement : UiElement
 }
 
 /// <summary>The timer of a repeating button: after <see cref="Delay"/> held it calls <see cref="Start"/>, then <see cref="Tick"/> every time more than <see cref="Interval"/> has passed.</summary>
-// [BIN:TPW-EXE:0x668dd9 button hold timer] the per-frame message 0x1e of a pressed button with style bit 0x20 (+0x48): state +0x15a 1 waits until now - +0x144 >= +0x13c (the delay), then sets state 2 and posts 0x10009 to the parent; state 2 posts 0x10008 each time now - +0x144 > +0x140 (the interval); both only while the button's pressed bit (+0x138 & 2) is set, and they restart +0x144; the press 0x668ecf sets state 1 and +0x144, the release 0x668eff clears the state and the click (0x100) follows only when it was not 2
+// [BIN:TPW-EXE:0x668dd9 button hold timer] the per-frame message 0x1e of a pressed button with style bit 0x20 (+0x48): state +0x15a 1 waits until now - +0x144 >= +0x13c (the delay), then sets state 2 and posts 0x10009 to the parent; state 2 posts 0x10008 each time now - +0x144 > +0x140 (the interval); both only while the button's pressed bit (+0x138 & 2) is set, and they restart +0x144; the ctor 0x6688b3 stores +0x13c = 500 ms and +0x140 = 0x7d = 125 ms for every button, and only a button with style bit 0x20 repeats (the scroll arrows are style 0x21); the press 0x668ecf sets state 1 and +0x144, the release 0x668eff clears the state and the click (0x100) follows only when it was not 2
 public sealed record UiButtonRepeat( float Delay, float Interval, Action Start, Action Tick );
 
 /// <summary>
@@ -490,6 +535,22 @@ public sealed class UiButton : UiElement
 	/// <see cref="UiScreen"/> runs it while the button is held (<see cref="UiButtonRepeat"/>).
 	/// </summary>
 	public UiButtonRepeat? Repeat { get; set; }
+	/// <summary>
+	/// The <c>cat_ui</c> event a release plays. Defaults to <see cref="GameAudio.ClickEvent"/>. A button whose parent has style bit 0x10
+	/// plays <see cref="GameAudio.SelectClickEvent"/> (<see cref="LayoutTable.ClickSoundFor"/>).
+	/// </summary>
+	public uint ClickSound { get; set; } = GameAudio.ClickEvent;
+	/// <summary>First repeat of a held scroll arrow, in seconds (button ctor <c>0x6688b3</c> stores +0x13c = 500 for every button; only style bit 0x20 repeats).</summary>
+	public const float ScrollArrowDelay = 0.5f;
+	/// <summary>Later repeats of a held scroll arrow, in seconds (the same ctor stores +0x140 = 0x7d = 125).</summary>
+	public const float ScrollArrowInterval = 0.125f;
+
+	/// <summary>
+	/// Hold-repeat for a list arrow: the first step after <see cref="ScrollArrowDelay"/>, then one every time more than
+	/// <see cref="ScrollArrowInterval"/> has passed (timer <c>0x668dd9</c>). The release <c>0x668eff</c> posts no 0x100 once the hold
+	/// state is 2, so a release after repeating has started plays nothing. <paramref name="step"/> scrolls one row and plays no sound of its own.
+	/// </summary>
+	public static UiButtonRepeat ScrollArrowRepeat( Action step ) => new( ScrollArrowDelay, ScrollArrowInterval, step, step );
 	/// <summary>The hold state of a repeating button (the original's byte +0x15a): 0 idle, 1 pressed and waiting for the delay, 2 repeating.</summary>
 	internal int HoldState { get; set; }
 	/// <summary>The time of the press, then of the last start or tick, in seconds of <see cref="UiContext.Time"/> (the original's +0x144).</summary>
@@ -516,9 +577,9 @@ public sealed class UiButton : UiElement
 	{
 		if ( !Enabled || Inert )
 			return;
-		// [BIN:TPW-EXE:0x485780 UI message hook] a global hook, installed once by the UI init 0x489ca0 (via 0x6590ea, stored at 0xfaa5fc) and never removed, is called by the dispatchers 0x658d9f and 0x658e42 for every control message before the control's own procedure (unless the control's destroyed byte +4 is set); for message 0x100 on any control it plays cat_ui 0x1F (0xBD when the control's style word +0x48 has bit 0x10, 0x4857cb), so every activated button plays it, front end included
-		// [APPROX:AUDIO-004] 0xBD plays for a control whose construction style (+0x48, tp.exe 0x65bcad arg 2) has bit 0x10; the creation sites with that bit are the list row templates (0x4938c0, 0x4944d0, 0x496cea, 0x4b4c70) and the table builder's type 3 controls (0x6604a1-0x661144), the traced button sites use styles 0, 1 and 0x21; the type 3 controls are the lists' sliders (table builder case 9, 0x65fd58, in list containers of types 4 and 7); whether a press on a slider or a row child sends the activate message 0x100 is not read, so no OpenTPW control plays it
-		GameAudio.PlayUi( GameAudio.ClickEvent );
+		// [BIN:TPW-EXE:0x485780 UI message hook] installed once by the UI init 0x489ca0 (via 0x6590ea, stored at 0xfaa5fc) and called for every control message by the dispatcher 0x658d9f and the queue pump 0x658e42 (the call at 0x658eb2) before the control's own procedure. Message 0x100 plays cat_ui 0x1F, or 0xBD when the receiver's style word +0x48 has bit 0x10 (the choice at 0x4857cb). The button class 0x668f9c is the only sender of 0x100 for a mouse release over a button: it posts to the button's parent ([+0x60]) at 0x6691eb through the queue 0x658ccc, on a release over the button that was pressed. Window procedures also send 0x100 to their own window (0x48d83b, 0x49973e, 0x49ec53, 0x4a6df5 (via the dispatcher 0x658d9f), 0x4b640a, 0x4b9f06, 0x4bb020 and 0x4bfc29; ids -1, -2 and 0xe059, on 0x802 or 0x804), and the hook clicks for those too by that window's own style (style 1 in all eight: 0x1F); OpenTPW's dialogs route Enter to their tick's Activate there (docs/AUDIO.md, "List owners"). A release after auto-repeat has started (hold state +0x15a is 2, 0x668eff) returns false and posts no 0x100, so the sound is skipped then too.
+		if ( HoldState != 2 )
+			GameAudio.PlayUi( ClickSound );
 		Clicked?.Invoke();
 	}
 
@@ -787,24 +848,3 @@ public sealed class UiOptionRow : UiElement
 	}
 }
 
-/// <summary>A selectable line in a list (load screen).</summary>
-public sealed class UiListItem : UiElement
-{
-	public Func<string> Text { get; set; } = () => "";
-	public Action? Clicked { get; set; }
-	public override bool Focusable => Visible && Enabled;
-	// [BIN:TPW-EXE:0x485780 UI message hook] the hook sees every control's activation, so the front end's list lines click like its buttons
-	public override void Activate()
-	{
-		GameAudio.PlayUi( GameAudio.ClickEvent );
-		Clicked?.Invoke();
-	}
-
-	public override void Draw( UiContext context, bool focused, bool pressed )
-	{
-		var rect = ScreenRect( context.Canvas );
-		if ( focused )
-			context.Batch.AddRectangle( rect, new RgbaByte( 60, 90, 200, 160 ) );
-		context.DrawText( context.Fonts.Label, Text(), new UiRect( rect.X + rect.Height * 0.3f, rect.Y, rect.Width, rect.Height ), focused ? UiColors.Highlight : UiColors.Text );
-	}
-}

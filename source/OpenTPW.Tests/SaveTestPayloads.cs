@@ -255,6 +255,10 @@ internal static class SaveTestPayloads
 		public ushort BaseSpeed { get; init; } = 100;
 		public uint EspSprite { get; init; }
 		public uint PreviousSpeed { get; init; } = 0x3F800000;
+		/// <summary>The walk mask nav_mode of the navigation state (navigation +48, walk +0xB4, person +0x188).</summary>
+		public int NavMode { get; init; }
+		/// <summary>mStrandedTime (person +0x198), after mPreviousSpeed, mPreviousX and mPreviousY.</summary>
+		public uint StrandedTime { get; init; }
 		public uint BalloonScript { get; init; }
 		public int Cash { get; init; } = 500;
 		public int ExitLevel { get; init; } = 90;
@@ -310,7 +314,9 @@ internal static class SaveTestPayloads
 		BinaryPrimitives.WriteUInt16LittleEndian( person.AsSpan( 26 ), fields.BaseSpeed );
 		BinaryPrimitives.WriteUInt32LittleEndian( person.AsSpan( 29 ), fields.EspSprite );
 		// the navigation block (177 bytes) follows mLastRecordedMapId at 33; mPreviousSpeed comes after it
+		BinaryPrimitives.WriteInt32LittleEndian( person.AsSpan( 35 + 48 ), fields.NavMode );
 		BinaryPrimitives.WriteUInt32LittleEndian( person.AsSpan( 35 + 177 ), fields.PreviousSpeed );
+		BinaryPrimitives.WriteUInt32LittleEndian( person.AsSpan( 35 + 177 + 12 ), fields.StrandedTime );
 		// the thought block (0x50BAD0) closes the person block: head, 32 ring slots, mLastThought, mThoughtScript, mTimeBubbleShown
 		var thought = SaveThingChain.PersonBytes - (4 + 4 * 32 + 12);
 		BinaryPrimitives.WriteUInt32LittleEndian( person.AsSpan( thought ), fields.ActionHistIndex );
@@ -365,7 +371,7 @@ internal static class SaveTestPayloads
 
 	/// <summary>The 64 bytes of World variables, version <paramref name="version"/>; IDs default to none.</summary>
 	public static byte[] Variables( uint version = 2, ushort bank = 0, uint gameTick = 755, uint parkClosed = 0, ushort researchLab = 0, ushort staffHq = 0,
-		ushort firstResearcher = 0, ushort firstObject = 0, uint randomSeed = 0x3F416BBA )
+		ushort firstResearcher = 0, ushort firstObject = 0, uint randomSeed = 0x3F416BBA, uint worldState = 0 )
 	{
 		using var stream = new MemoryStream();
 		using var writer = new BinaryWriter( stream );
@@ -380,7 +386,7 @@ internal static class SaveTestPayloads
 		writer.Write( (ushort)0 );
 		writer.Write( randomSeed );
 		writer.Write( new ushort[] { researchLab, staffHq, 0, 0, 0 }.SelectMany( BitConverter.GetBytes ).ToArray() );
-		writer.Write( 0u );
+		writer.Write( worldState );
 		writer.Write( new ushort[] { 0, 0, 0, 0, firstResearcher, firstObject }.SelectMany( BitConverter.GetBytes ).ToArray() );
 		writer.Flush();
 		return stream.ToArray();
@@ -591,6 +597,6 @@ internal static class SaveTestPayloads
 		(1, (uint)SaveThingModel.StaffHq, Fixed( SaveThingModel.StaffHq )),
 	};
 
-	public static byte[] ParkVariables( uint gameTick = 755, uint parkClosed = 0 ) =>
-		Variables( bank: 8, gameTick: gameTick, parkClosed: parkClosed, researchLab: 6, staffHq: 1, firstResearcher: 30, firstObject: 12 );
+	public static byte[] ParkVariables( uint gameTick = 755, uint parkClosed = 0, uint worldState = 0 ) =>
+		Variables( bank: 8, gameTick: gameTick, parkClosed: parkClosed, researchLab: 6, staffHq: 1, firstResearcher: 30, firstObject: 12, worldState: worldState );
 }

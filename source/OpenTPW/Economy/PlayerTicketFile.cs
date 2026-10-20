@@ -49,6 +49,13 @@ internal static partial class PlayerTicketFile
 		/// <summary>Optional: the park holding each global ticket and its record (absent in files written before it existed, which load with unknown holders).</summary>
 		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
 		public List<HolderData>? GlobalHolders { get; init; }
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+		public List<PurchaseData>? KnownPurchases { get; init; }
+	}
+	private sealed record PurchaseData
+	{
+		public required int InfoId { get; init; }
+		public required int Cost { get; init; }
 	}
 	private sealed record HolderData
 	{
@@ -60,13 +67,17 @@ internal static partial class PlayerTicketFile
 	{
 		public required string? Theme { get; init; }
 		public required GoldenTicketKind Kind { get; init; }
+		/// <summary>[EXT:cheats-ticket-provenance] A cheat awarded this ticket; absent for a ticket the park won.</summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingDefault )]
+		public bool Cheated { get; init; }
 	}
 
 	public static byte[] Serialize( PlayerTicketSnapshot snapshot )
 	{
 		var copy = PlayerTicketLedger.Restore( snapshot ).Capture();
-		return JsonSerializer.SerializeToUtf8Bytes( new Data { Format = FormatName, Version = 1, Mode = copy.Mode, ExtraKeys = copy.ExtraKeys,
-			SpentTickets = copy.SpentTickets, Earned = copy.Earned.Select( item => new TicketData { Theme = item.Theme, Kind = item.Kind } ).ToList(),
+		return JsonSerializer.SerializeToUtf8Bytes( new Data { Format = FormatName, Version = copy.KnownPurchases == null ? 1 : 2, Mode = copy.Mode, ExtraKeys = copy.ExtraKeys,
+			SpentTickets = copy.SpentTickets, Earned = copy.Earned.Select( item => new TicketData { Theme = item.Theme, Kind = item.Kind, Cheated = copy.Cheated?.Contains( item ) == true } ).ToList(),
+			KnownPurchases = copy.KnownPurchases?.Select( item => new PurchaseData { InfoId = item.InfoId, Cost = item.Cost } ).ToList(),
 			GlobalHolders = copy.Holders?.Select( item => new HolderData { Kind = item.Kind, Theme = item.Theme, Record = item.Record } ).ToList() }, Context.Data );
 	}
 
@@ -76,11 +87,17 @@ internal static partial class PlayerTicketFile
 		Data? data;
 		try { data = JsonSerializer.Deserialize( bytes, Context.Data ); }
 		catch ( JsonException exception ) { throw new InvalidDataException( "Malformed own player progress.", exception ); }
-		if ( data == null || data.Format != FormatName || data.Version != 1 || data.Earned == null || data.Earned.Count > PlayerTicketLedger.MaximumIdentities || data.Earned.Any( item => item == null ) || data.GlobalHolders?.Count > 4 )
+		if ( data == null || data.Format != FormatName || data.Version is not (1 or 2) || data.Earned == null || data.Earned.Count > PlayerTicketLedger.MaximumIdentities || data.Earned.Any( item => item == null ) || data.GlobalHolders?.Count > 4 )
 			throw new InvalidDataException( "Invalid own player progress envelope." );
+		// Version 1 remains byte/shape compatible when no purchase identities are known. Old strict readers reject version 2.
+		if ( data.Version == 1 ? data.KnownPurchases != null : data.KnownPurchases == null || data.KnownPurchases.Count == 0 )
+			throw new InvalidDataException( "Invalid purchase history version." );
+		if ( data.KnownPurchases?.Count > PlayerTicketLedger.MaximumIdentities ) throw new InvalidDataException( "Too many known ticket purchases." );
 		return PlayerTicketLedger.Restore( new( data.Mode, data.ExtraKeys, data.SpentTickets,
 			data.Earned.Select( item => new EarnedTicketIdentity( item.Theme, item.Kind ) ).ToArray(),
-			data.GlobalHolders?.Select( item => item == null ? throw new InvalidDataException( "Invalid own player progress envelope." ) : new GlobalTicketHolder( item.Kind, item.Theme, item.Record ) ).ToArray() ) );
+			data.GlobalHolders?.Select( item => item == null ? throw new InvalidDataException( "Invalid own player progress envelope." ) : new GlobalTicketHolder( item.Kind, item.Theme, item.Record ) ).ToArray(),
+			data.Earned.Any( item => item.Cheated ) ? data.Earned.Where( item => item.Cheated ).Select( item => new EarnedTicketIdentity( item.Theme, item.Kind ) ).ToArray() : null,
+			data.KnownPurchases?.Select( item => item == null ? throw new InvalidDataException( "Invalid known ticket purchase." ) : new KnownTicketPurchase( item.InfoId, item.Cost ) ).ToArray() ) );
 	}
 
 	public static void Save( string path, PlayerTicketSnapshot snapshot )

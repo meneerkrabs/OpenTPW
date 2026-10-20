@@ -1,7 +1,8 @@
 # UI-095: Trace ride-exit camera links
 
 ## Status and classification
-- Plan-only draft proposal; no implementation, tests-run claim, retirement or merge.
+- Bounded implementation added on 2026-10-20; remains draft pending CI. No local test-pass, full-fidelity retirement or merge is claimed.
+- The original audit below is historical. [Independent native evidence and correction](../progress/2026-10-20-ride-exit-cell-direction.md) supersede its owner-anchor/link premise: the native consumer requires entrance ownership, targets mExitPos, and reads the exit direction byte +0x0D, not neighbour links +0x0C.
 - Classification: `missing_behavior`.
 - Baseline: `meneerkrabs/OpenTPW` main `5ccddcab` (2026-10-18).
 - One ID per proposal; shared dependencies are coordination edges, not duplicated ownership.

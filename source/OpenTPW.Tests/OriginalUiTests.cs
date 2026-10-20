@@ -22,7 +22,7 @@ public class OriginalUiTests
 		new[] { "Lost Kingdom", "Halloween World", "Wonder Land", "Space Zone" },
 		Enumerable.Range( 0, 374 ).Select( index => $"object{index}" ).ToArray() );
 
-	private static UiContext FakeContext( int width = 1024, int height = 768 ) => new( FakeStrings(), null!, new UiModels( name => throw new FileNotFoundException( name ) ) )
+	internal static UiContext FakeContext( int width = 1024, int height = 768 ) => new( FakeStrings(), null!, new UiModels( name => throw new FileNotFoundException( name ) ) )
 	{
 		Canvas = new UiCanvas( width, height )
 	};
@@ -389,14 +389,14 @@ public class OriginalUiTests
 		Assert.AreEqual( "ui315", ((UiLabel)screen.Find( "gpuLabel" )!).Text() );
 		Assert.AreEqual( "ui347ui348", ((UiLabel)screen.Find( "videocardLabel" )!).Text() );
 		Assert.AreEqual( "ui318ui342", ((UiLabel)screen.Find( "resolutionLabel" )!).Text() );
-		Assert.AreEqual( "ui319 100 %", ((UiLabel)screen.Find( "audioLabel" )!).Text() );
+		Assert.AreEqual( "ui319 " + GameAudio.ResolveSoundQuality( new GameOptions() ) + " %", ((UiLabel)screen.Find( "audioLabel" )!).Text() );
 		Assert.AreEqual( "ui320 75 %", ((UiLabel)screen.Find( "effectsLabel" )!).Text() );
 		Assert.AreEqual( "ui324ui334", ((UiLabel)screen.Find( "advisorLabel" )!).Text() );
 		Assert.AreEqual( "ui350ui352", ((UiLabel)screen.Find( "rotationLabel" )!).Text(), "90 degs is the default" );
 		Assert.AreEqual( "ui353ui354", ((UiLabel)screen.Find( "scrollLabel" )!).Text() );
 		foreach ( var id in new[] { "gpu", "videocard" } )
 			Assert.IsFalse( screen.Find( id )!.Enabled, id );
-		Assert.IsFalse( screen.Find( "audio" )!.Enabled );
+		Assert.IsTrue( screen.Find( "audio" )!.Enabled );
 		Assert.AreEqual( new UiRect( 962, 331, 319, 135 ), screen.Find( "resolution" )!.Bounds, "slider hit region of the table" );
 		Assert.IsNull( screen.Find( "windowMode" ), "OpenTPW rows moved to the OpenTPW page" );
 		foreach ( var id in new[] { "ok", "cancel", "openTpw" } )
@@ -456,10 +456,11 @@ public class OriginalUiTests
 		stack.Update( context, UiInput.Key( UiKeys.Left ) );
 		Assert.AreEqual( 98, options.MusicVolume, "Left steps the focused slider" );
 
-		// A disabled slider (audio quality) takes no input and is not hit.
+		// The existing audio quality row now edits the recovered fade setting.
 		var audio = (UiSlider)screen.Find( "audio" )!;
 		stack.Update( context, UiInput.Click( Pixel( context.Canvas, audio.Track.X, audio.Bounds.Y + 10 ) ) );
-		Assert.AreEqual( 100, audio.Value() );
+		Assert.AreEqual( 0, audio.Value() );
+		Assert.AreEqual( 0, options.SoundQuality );
 	}
 
 	[TestMethod]
@@ -479,6 +480,8 @@ public class OriginalUiTests
 		}
 		var screen = Open();
 		((UiSlider)screen.Find( "effects" )!).Adjust( 1 );
+		((UiSlider)screen.Find( "audio" )!).Adjust( 1 );
+		Assert.IsNotNull( options.SoundQuality );
 		screen.Find( "musicOn" )!.Activate();
 		screen.Find( "advisor" )!.Activate();
 		screen.Find( "tutorial" )!.Activate();
@@ -748,9 +751,9 @@ public class OriginalUiTests
 				var text = SupplementaryStrings.Get( key, language );
 				Assert.IsFalse( string.IsNullOrWhiteSpace( text ), $"{key} {language}" );
 				CollectionAssert.AreEqual( placeholders, System.Text.RegularExpressions.Regex.Matches( text, @"\{\d\}" ).Select( match => match.Value ).OrderBy( value => value ).ToArray(), $"{key} {language}" );
-				// words that are the same in the language: Spanish "Original", "(experimental)", "Incompatible"; Polish "Folder"; "Menu" in Dutch, Danish, French and Polish
+				// words that are the same in the language: Dutch and German "Winter"; Spanish "Original", "(experimental)", "Incompatible"; Polish "Folder"; "Menu" in Dutch, Danish, French and Polish; Dutch "bus"; German "Ticket"
 				if ( language != "English" && key is not (OpenTpwText.UpscaleLinear or OpenTpwText.UpscaleNative or OpenTpwText.OpenTpwPage or OpenTpwText.EditionThemeParkWorld or OpenTpwText.TpiItemPriced)
-					&& !(language == "Spanish" && key is OpenTpwText.TexturePackOriginal or OpenTpwText.EditionThemeParkInc or OpenTpwText.ModIncompatible) && !(language == "Polish" && key == OpenTpwText.ModFolderLabel) && !(language is "Dutch" or "Danish" or "French" or "Polish" && key == OpenTpwText.TpiMenu) )
+					&& !(language == "Spanish" && key is OpenTpwText.TexturePackOriginal or OpenTpwText.EditionThemeParkInc or OpenTpwText.ModIncompatible) && !(language == "Polish" && key == OpenTpwText.ModFolderLabel) && !(language is "Dutch" or "German" && key == OpenTpwText.ExtensionWinterName) && !(language is "Dutch" or "Danish" or "French" or "Polish" && key == OpenTpwText.TpiMenu) && !(language == "Dutch" && key == OpenTpwText.CheatBus) && !(language == "German" && key == OpenTpwText.CheatTicketLabel) )
 					Assert.AreNotEqual( english, text, $"{key} is translated to {language}" );
 			}
 		}
@@ -775,10 +778,11 @@ public class OriginalUiTests
 		Assert.IsTrue( status.HasEconomy );
 		Assert.AreEqual( first.Balance, status.Money );
 		Assert.AreEqual( first.Date, status.Date );
-		status.Speed = GameSpeed.Paused;
-		Assert.AreEqual( GameSpeed.Paused, first.Speed );
+		// the speed is the economy's; a status bound to a level sets it through the level's commands (ParkSettingCommandTests)
+		first.Speed = GameSpeed.Paused;
+		Assert.AreEqual( GameSpeed.Paused, status.Speed );
 		Assert.AreEqual( 0f, status.TimeScale );
-		status.Speed = GameSpeed.Fastest;
+		first.Speed = GameSpeed.Fastest;
 		Assert.AreEqual( 4f, status.TimeScale, "the speed is the clock scale of the whole simulation: rides and guests run at it too" );
 		first.AdvanceDays( 31 );
 		Assert.AreEqual( first.Date, status.Date );

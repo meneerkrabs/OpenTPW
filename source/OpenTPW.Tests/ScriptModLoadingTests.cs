@@ -193,7 +193,7 @@ public class ScriptModLoadingTests
 		var mod = set.Mods.Single();
 		Assert.IsTrue( mod.AffectsSimulation );
 		Assert.IsTrue( ModSet.AffectsSimulation( mod.Manifest, new[] { "main.tps" } ) );
-		Assert.AreEqual( "community.sim", set.SimulationMods.Single( simulation => simulation.Id != OfficialExtensions.Pools.Id ).Id );
+		Assert.AreEqual( "community.sim", set.SimulationMods.Single( simulation => simulation.Id != OfficialExtensions.Pools.Id && simulation.Id != OfficialExtensions.Umbrellas.Id && simulation.Id != OfficialExtensions.Winter.Id && simulation.Id != OfficialExtensions.Evening.Id ).Id );
 		var saved = ParkResumeMods.Capture( set );
 		Assert.AreEqual( mod.ContentSha256, saved!.Single().ContentSha256 );
 		Assert.AreEqual( 0, ParkResumeMods.Unmet( saved, set ).Count );

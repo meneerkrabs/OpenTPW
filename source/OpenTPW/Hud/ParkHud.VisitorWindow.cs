@@ -14,7 +14,9 @@ namespace OpenTPW.Hud;
 // applies the sort word 0x7508bc, adds a row for every guest thing (0x481bc0 with mask 0x40 → 0x493800), selects the visitor it was opened on, titles the
 // headers 0x10-0x15 with UITEXT 0x71-0x76 (help 0x81-0x86), arms the 2000 ms timer 0x80083 and posts help 0x11e; message 0x15 titles 0x1e498 with UITEXT 0x70
 // [EXT:list-selection-by-id] the selected row follows its visitor while rows are added or removed, where the original keeps the selected position (+0x14c, 0x66525c) — a design choice that keeps a live list from highlighting another visitor
-// [BIN:TPW-EXE:0x6644ea row refresh, 0x66403b sorted row insert] the 2000 ms refresh rewrites the cells in place and never moves a row, a new row is inserted by the list's sorted insert (ListRowOrder), and the first row added selects row 0 (0x66403b → 0x66525c); [APPROX:UI-907] the rides column is centred, where its cell (0x48fde0, no 0x65c428 call) never writes the alignment byte +0xd8 of the text control (0x48f830 reads 0 left, 1 centre, 2 right; the constructor 0x48fe28 of another cell writes 0; 0x48fde0 and its base 0x48f150 write none) — evidence needed: the value that cell holds
+// [BIN:TPW-EXE:0x6644ea row refresh, 0x66403b sorted row insert] the 2000 ms refresh rewrites the cells in place and never moves a row, a new row is inserted by the list's sorted insert (ListRowOrder), and the first row added selects row 0 (0x66403b → 0x66525c)
+// [BIN:TPW-EXE:0x48fde0 rides cell, 0x48fe28 alignment] the zero alignment store is inside the rides-cell constructor; the row factory leaves it unchanged, unlike number/time/cash
+// [APPROX:UI-907] the source-backed rides-column left-alignment correction is implemented, but the actual-draw fixture and exact-head CI have not executed; retain this ID pending that validation
 public sealed partial class ParkHud
 {
 	private static LayoutTable VisitorTable => OriginalLayoutTables.VisitorsWindow;
@@ -245,14 +247,21 @@ public sealed partial class ParkHud
 		screen.Add( new VisitorList( this ) { Id = "visitorList", Help = strings.Help( VisitorListNode.Help ), Bounds = VisitorContent, Anchor = UiAnchor.Center } );
 		var slider = VisitorSlider;
 		screen.Add( new VisitorScrollBar( this ) { Id = "visitorScroll", Bounds = slider.Rect, Anchor = UiAnchor.Center } );
-		screen.Add( new UiButton { Id = "scrollUp", Model = "b_up", Clicked = () => ScrollVisitors( -1 ),
-			Bounds = slider.Children.Single( node => node.Model == "b_up" ).Rect, Anchor = UiAnchor.Center } );
-		screen.Add( new UiButton { Id = "scrollDown", Model = "b_down", Clicked = () => ScrollVisitors( 1 ),
-			Bounds = slider.Children.Single( node => node.Model == "b_down" ).Rect, Anchor = UiAnchor.Center } );
+		// The arrows' parent is the type 3 slider, style 0x10, so they play 0xBD (LayoutTable.ClickSoundOf). A held arrow repeats at 500 ms then 125 ms and a release after that is silent.
+		void ScrollArrow( LayoutNode node, int step )
+		{
+			void Scroll() => ScrollVisitors( step );
+			screen.Add( new UiButton { Id = step < 0 ? "scrollUp" : "scrollDown", Model = node.Model, ClickSound = table.ClickSoundOf( node ),
+				Clicked = Scroll, Repeat = UiButton.ScrollArrowRepeat( Scroll ), Bounds = node.Rect, Anchor = UiAnchor.Center } );
+		}
+		ScrollArrow( slider.Children.Single( node => node.Model == "b_up" ), -1 );
+		ScrollArrow( slider.Children.Single( node => node.Model == "b_down" ), 1 );
 		// [BIN:TPW-EXE:0x004933dc visitors buttons] the tick (-2) closes the window; b_pkinfo (0x1e499) opens the park information (0x4a52a0), b_allstaff (0x1e49a)
 		// the All Staff window (0x496620) and b_allthings (0x1e49b) the attractions window (0x495aa0), each with the last category and replacing this one
 		var okay = table.Model( "b_okay" );
-		screen.Add( new UiButton { Id = "exit", Model = okay.Model, Help = strings.Help( okay.Help ), Clicked = CloseVisitorWindow, Bounds = okay.Rect, Anchor = UiAnchor.Center } );
+		// The tick's parent is the window (style 0x1, no bit 0x10), so it plays the ordinary 0x1F.
+		screen.Add( new UiButton { Id = "exit", Model = okay.Model, Help = strings.Help( okay.Help ), ClickSound = table.ClickSoundOf( okay ),
+			Clicked = CloseVisitorWindow, Bounds = okay.Rect, Anchor = UiAnchor.Center } );
 		var parkInfo = table.Model( "b_pkinfo" );
 		screen.Add( new UiButton { Id = "parkInfo", Model = parkInfo.Model, Help = strings.Help( parkInfo.Help ), Bounds = parkInfo.Rect, Anchor = UiAnchor.Center,
 			Clicked = () => { CloseVisitorWindow(); OpenParkInfoWindow(); } } );
@@ -374,7 +383,12 @@ public sealed partial class ParkHud
 		private readonly int column;
 		public VisitorHeader( ParkHud owner, int column ) { this.owner = owner; this.column = column; }
 		public override bool Focusable => Visible && Enabled;
-		public override void Activate() => owner.SortVisitors( column );
+		// The header's parent is list 0x1E497 (type 7, style 0x291), which has bit 0x10, so the hook plays 0xBD.
+		public override void Activate()
+		{
+			GameAudio.PlayUi( LayoutTable.ClickSoundFor( VisitorListNode ) );
+			owner.SortVisitors( column );
+		}
 		public override void Draw( UiContext context, bool focused, bool pressed ) =>
 			context.DrawFittedText( context.Fonts.Label, owner.strings[ParkVisitorRoster.Columns[column].Header],
 				ScreenRect( context.Canvas ), focused ? UiColors.Highlight : UiColors.Text, UiAlign.Center );

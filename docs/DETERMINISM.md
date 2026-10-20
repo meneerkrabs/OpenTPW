@@ -76,7 +76,7 @@ chooser and a script made with a seed.
 
 What is still unlike the original, and recorded in DET-013 to DET-015: the guest and staff sites with no counterpart here
 (the arrival lane picks of later states, the gate wait, the won sideshow's tail, the staff constructors' draws), the
-scripts of an imported original save (the animations, nodes and child scripts of their records, below), scripts created with an explicit seed (tests and
+scripts of an imported original save (the animations and nodes of their records, a script with a saved child or sound child, and the saved child records its parent recreates, below), scripts created with an explicit seed (tests and
 older saves), and the weather, which keeps its own stream (`[EXT:weather-stream]`). The advisor takes no draw: its pick is
 sequential for every message (below).
 
@@ -85,8 +85,10 @@ sequential for every message (below).
 The original's main loop (tp.exe `0x54F4BF`) runs a 31 ms substep, and every eighth substep is a park turn. Each substep, in
 this order (`Level.AdvanceSimulation`, `ParkObjects.Simulate`, `SimulationSubstep`):
 
-1. the substep counter (`0x877D34`) and the scaled clock (`0x878C74`, +0x1F) rise at `0x54F4C4`..`0x54F4D6`, before the pause test (`0x54F4D4`); a paused park then skips the body (`0x54F8CD`), so its scripts, bump
-   module, tour cars and turns stand still with its calendar. The original's counter would keep rising for as long as its timer runs while paused; OpenTPW's 60 Hz clock does not run while paused, so the counter simply stops (an approximation of the pause's wall-clock phase only);
+1. the substep counter (`0x877D34`) and the scaled clock (`0x878C74`, +0x1F) rise at `0x54F4C4`..`0x54F4D6`, before the inactive-application test (`0x54F4D4`): the body is skipped
+   (`0x54F8CD`) only while the application is inactive (`0x7A1A14` bit 3 clear, kept by the main window procedure `0x46B600`) and the option bit `0x7A1A8C` bit 0 is set (its default,
+   `0xC0E15` at `0x449E1C`). The game pause (`0x4092A0`) freezes the clock object `0x785970` that drives the substep loop (`0x54F47F`..`0x54F4AF`), so a paused park runs no
+   substep at all: its scripts, bump module, tour cars and turns stand still with its calendar and its counter stands, as OpenTPW's 60 Hz clock does while paused;
 2. the effects system (`0x520130`, not modelled);
 3. the bump module tick (`0x546C80`, `0x54F55F`): once per substep, whichever rides exist;
 4. the script pass (`0x5516B0`, `0x54F56B`): the pass counter (`0x8791A4`) rises, then the scripts run **newest first** (a
@@ -95,7 +97,7 @@ this order (`Level.AdvanceSimulation`, `ParkObjects.Simulate`, `SimulationSubste
    pass when its TURBO byte (opcode 51) is nonzero; a script's WAIT therefore wakes on the first slice after its time;
    after its slice (run or skipped) the pass walks the script's object records: a kept sound with a key is moved to its node only when
    `(script id xor pass counter) & 7 == 0` again (`0x551A1F`, built: `OriginalObjectRuntime.FollowHeldSounds`, once per pass), while a kept particle effect moves in every pass, which OpenTPW runs on every 60 Hz tick (DET-013);
-5. on even substeps the tour cars (`0x55ABF0`, `0x54F5D7`) and the effects update `0x475360`, which OpenTPW runs per 60 Hz tick (DET-013);
+5. on even substeps the tour cars (`0x55ABF0`, `0x54F5D7`) and the sprite scheduler `0x475360`. Visitor body players now use these opportunities with an explicit fixed-60Hz host sample (see [Visitor sprites](VISITOR-SPRITES.md)); staff retains its renderer-driven adapter. Other effects remain DET-013;
 6. on every eighth substep (`0x54F668`) the park turn (the order below).
 
 The 60 Hz tick (`EXT:fixed-60hz-clock`) derives its substep from the park's own tick count: substep *n* ends in the first tick whose
@@ -190,9 +192,147 @@ checks that different files, other clock expressions, appended expressions and
 a weakened edition gate remain forbidden.
 
 `SourceGuardCatchesEachForbiddenForm` checks each form against sample lines,
-and each was also checked by inserting it into a scanned source file. Not
-forbidden: `Guid.NewGuid` (temp file names) and `Parallel` (unused). Client
-code (`GameFlow`, the M3 gate) is not scanned.
+and each was also checked by inserting it into a scanned source file. `Guid.NewGuid`
+and `Parallel` are banned by the second scan below. Client code (`GameFlow`, the M3
+gate) is not scanned.
+
+## Browser and native
+
+A co-op session (docs/ONLINE.md; the user chose lockstep with the host ordering commands, and browsers that join and host) needs the
+browser build and every desktop to compute the same simulation bits. This section is the gate (co-op phase C1b).
+
+### What can differ
+
+The CLR's `Math.Sin`, `Math.Atan2`, `Math.Pow` and their relatives, `MathF`'s, and the System.Numerics builders that use them (rotation
+matrices, quaternion slerp) call the C library of the runtime: MSVC's on Windows, glibc on Linux, Apple's libm on macOS, and
+emscripten's musl in the browser (Mono, AOT or interpreter). They are not correctly rounded, and they disagree in the last bit. Over
+the 20,000 fixed inputs per function of `CrossRuntimeMathProbe`, Apple's libm (macOS arm64) and the browser's musl (Chrome, Mono AOT)
+differ in:
+
+| Function | Inputs that differ |
+| --- | ---: |
+| `Math.Sin` / `Math.Cos` | 895 / 894 |
+| `Math.Atan` / `Math.Atan2` / `Math.Acos` | 715 / 3,483 / 3,439 |
+| `Math.Pow` / `Math.Log2` | 1,994 / 39 against FreeBSD's routines (musl uses Arm's table routines, which glibc shares) |
+| `MathF.Sin` / `MathF.Cos` / `MathF.Atan2` / `MathF.Acos` | 418 / 230 / 1,150 / 228 against the double result rounded once |
+
+Square root, fused multiply-add, the four arithmetic operations, rounding and conversions are exact in IEEE 754 and gave the same
+digests in both (pinned in `DetMathTests.CorrectlyRoundedPlatformFunctionsArePinned`).
+
+System.Numerics' `Vector2`/`Vector3`/`Vector4.Lerp`, `Transform` and `TransformNormal` and the `Matrix4x4` product are another possible
+source: .NET evaluates them with `MultiplyAddEstimate`, which fuses the multiply and the add where the processor has fused multiply-add.
+On macOS arm64 (.NET 11 RC2) `Vector3.Transform` equals `fma(z, m31, fma(y, m21, x * m11)) + m41` for every one of 200,000 random inputs
+and differs from the unfused sum for a quarter of them; a runtime that does not fuse rounds twice. `Dot`, `Cross`, `Length`, `Normalize`
+and `Distance` are not fused. The browser's Mono AOT build computes other values for them than the desktops (below). The guard below does not ban these operations, and a source
+scan cannot find the matrix product. `DetMatrix` (`source/OpenTPW/Utils/DetMatrix.cs`) has the plain versions (product, point
+transform, lerp, and a slerp with DetMath's acos and sin), every product and sum rounded left to right. `CoasterPylonRig` composes its
+tag matrices with them and blends its clips' keys with them, and the coaster station frame (`CoasterStationLayout.FromModel`)
+composes a dummy's parent chain (`ObjectAnimator.LocalTransforms`) and the placement with them ("Cross-platform coaster pins" below).
+`CrossRuntimeMathProbe` reports the System.Numerics operations and `DetMatrix`'s over fixed inputs:
+`DetMathTests.DetMatrixDigestsArePinned` pins `DetMatrix`'s on every runtime. `FusedSystemNumericsOperationsArePinned` holds the
+fused System.Numerics values that Windows, Linux and macOS compute; the browser's Mono AOT build computes others (its interpreter
+matches the desktops), so that comparison is informative in the browser check, like the platform library's, and documents why
+simulation code must not use those operations.
+
+### DetMath
+
+`DetMath` and `DetMathF` (`source/OpenTPW/Utils/DetMath.cs`) are C# ports of FreeBSD's msun as musl ships them: sin, cos
+(with the Cody-Waite and Payne-Hanek reductions), atan, atan2, acos, pow and log2, with a fixed order of IEEE double operations, so
+every runtime computes the same bits. The single-precision versions evaluate in double and round once. Over the probe, sin, cos,
+atan, atan2 and acos equal the browser's musl bit for bit, and every function is within one unit in the last place of Apple's libm
+(`DetMathIsWithinOneUlpOfThePlatformLibrary`). `DetMathTests.DetMathDigestsArePinned` pins their results; CI checks the pins on
+Windows, Linux and macOS, and the browser check checks them in WebAssembly.
+
+Simulation code calls DetMath for every elementary function. `[EXT:deterministic-math]` (user decision, 2026-10-19: "Als EXT:
+deterministic-math"): tp.exe evaluates them on the x87 in extended precision (`fsin`, `fpatan`, `fyl2x`) or through its C runtime
+(`pow`, `acos`). OpenTPW evaluated them before through the platform's double `Math`, and now through DetMath. That is the same
+double precision, now identical everywhere, and the change moved no pin. The x87 control-word questions of `COAST-032` and
+`ECON-059` are unchanged. The call sites:
+
+| Site | Function | Original |
+| --- | --- | --- |
+| `LoanMath.MonthlyRepayment` | pow | the instalment `0xcb7a8` |
+| `CoasterRating` swing | atan2 | fpatan `0x43c918` |
+| `HermiteCoasterCurve.Orientation`, `SecondRailAngle` | atan2 | `0x41e24` |
+| `CoasterTrack.TurnAngle`, `TurnAngleXZ`, loop knot axis, `TagRoll`, `PcOrientation`, `ApplyManualPose` | acos, sin, cos, atan2 | `0x36a50`, `0x31984`, `0x4324a0`, `0x43e590` |
+| `CoasterCollision` angle sum | acos | the crossing test |
+| `TourController` approach and steering | atan2 | the tour cars |
+| `BumpMath.HeadingOf`, `SteerAngle`, `ReflectAngle` | atan2 | the bump module |
+| `WalkerBodies.HeadingOf` | atan2 | fpatan `0x5570C2` |
+| `HeadingAngle.Facing` | sin, cos | the turn `0x4FEF25` |
+| `GuestSimulation` queue facing change | sin, cos | `0x4FFFF0` |
+| `SideshowWin.HappinessGain` | log2 | fyl2x `0x4FE835` |
+
+The start-up tables are built with DetMath too and equal the platform libraries' tables entry for entry
+(`DetMathTests.LookupTablesBuiltWithDetMathEqualThePlatformLibrarysTables`; pinned in `LookupTablesArePinned`). They keep their
+binary-evidence labels: the coaster and PC sine tables (`0xa3cc8`, `0x4708D0`), `OriginalSineTable`, the tour table, the bump
+table `0x5442E0`, the slide's quarter sine, the bounce riders' table and the heading arctangent table `0x6E71B4`, whose 257 words
+equal the executable's. Every loan offer's instalment is the same with DetMath as with the platform's `pow`
+(`LoanInstalmentsWithDetMathEqualThePlatformLibrarys`). `RideMotion` (the unused prototype ride) uses DetMath as well.
+
+Presentation keeps the platform functions: renderers, meshes, cameras, the sky and lobby, particles, the evening, the drawn boat and
+kart poses (`TrackSurface`), the drawn pool waves and feet heights, the coaster car bend and rig, and the coaster tool's camera yaw
+input. A difference there changes a pixel, not the park.
+
+### The guard
+
+`DeterminismTests.SimulationCodeUsesNoPlatformMathGuidsOrParallelism` scans every file below `VM`, `Scripting`, `Economy` and
+`World` (all folders). It forbids `Math.`, `MathF.`, `double.` and `float.` elementary functions (sin to atan2pi, exp, log, pow, cbrt,
+hypot, rootn), `Matrix4x4`/`Matrix3x2.CreateRotation*`, `CreateFromYawPitchRoll`, `CreateFromAxisAngle`, `Quaternion.Slerp`,
+`Guid.NewGuid`, `Parallel.` and `.AsParallel(`. Exempt are:
+
+- the presentation files and folders it lists (`PresentationMathFiles`);
+- a line marked `[DET:presentation]` with its reason;
+- the atomic writes' temporary file names (`Guid.NewGuid().ToString( "N" ) + ".tmp"`).
+
+`PlatformMathGuardCatchesEachForbiddenForm` checks the forms and the exemptions.
+
+### The browser check
+
+`tools/web-determinism/run.mjs` runs the asset-free tests that pin simulation results inside the browser build. They cover the
+economy, guests, pools, umbrellas, winter, the weather, rain mood, smarter guests, script mods, cheats, coasters, tours, bump rides,
+track rides, staff, loans and DetMath. The page is published with `-p:OpenTpwDeterminismPins=true`, which compiles the tests into the
+page's own assembly with the page's settings (the published page never sets it). The check runs the tests one by one in headless,
+muted Chrome, where each test asserts the constant the desktop test asserts.
+
+- Skipped: two tests that read the repository's own sources or shaders.
+- Informative only: the comparisons with the runtime's own C library (`TestCategory("PlatformLibrary")`).
+- Gate: the `Browser determinism` workflow runs the check on every pull request and on main, for Mono AOT (as published) and the
+  interpreter.
+
+The with-data twin is `CrossRuntimeDigest`: per theme it gives the browser digest's fixed park run (economy and guests), the same run
+with one employee of every role, two park years of the level's weather, and the M4 gate's scenario as its list of state hashes. The
+M4 scenario covers every supported ride, shop, sideshow and feature with its object scripts and guests, and the track rides'
+stations. Run it on the desktop with `--determinism-digest [--out native.json]` and in the browser with tools/web-perf's
+`determinism` scenario, then compare with `tools/web-determinism/compare-digest.mjs`.
+
+### Results (October 19, 2026; macOS arm64, Chrome 155 headless, .NET 11 RC2)
+
+| Run | Before DetMath | After DetMath |
+| --- | --- | --- |
+| Asset-free pins in the browser, Mono AOT (29 s of tests) | 631 passed, 0 failed (7 inconclusive for want of data, 2 skipped) | 632 passed, 0 failed (the new source scan is inconclusive without sources) |
+| Asset-free pins in the browser, interpreter | 631 passed, 0 failed | 632 passed, 0 failed |
+| With data, four themes, browser AOT against desktop: fixed run, with staff, weather, M4 (692, 692, 677, 659 state hashes) | identical | identical |
+| The same with data, browser interpreter against desktop | not run | identical |
+| Desktop pins (2,050 tests of the simulation classes) | pass | pass, no pin moved |
+
+The desktop digests are the same before and after: jungle `ECB0C5BC6BFC46B9`, hallow `4B56CE11D7E43D7A`, space `69BBE374CB405BD0`,
+fantasy `9DC0B98B9C6BB2E9` (fixed run); M4 `9689EA415EBCD10C`, `7E6304824ABCA32A`, `B272F3F44E867B4E`, `B50BBEAFFD13640E`. So the
+browser already computed the desktop's bits for everything these runs cover, although the libraries disagree in the last bit for
+thousands of inputs. DetMath removes that dependency, so a later change cannot start to depend on it.
+
+Still outside these runs, and so not proven identical:
+
+- the state that is not hashed (above: placed-object animator poses, the guest economy bridge map);
+- the work `Level.Update` does by wall time outside the fixed tick (`SceneClock`, `RefreshPools`, `UpdateEvening`, `UpdateSnow`);
+- the per-frame staff calls of `Level.Update` outside the tick: `StaffWorld.Synchronize` (the tick repeats it before it moves anyone) and
+  `StaffPlacement.Reconcile`, which returns a picked-up member that no local tool carries to idle;
+- `FlatRideBounceRiders.Prepare` (`Level.AdvanceSimulation`, via `PrepareRideBodyPoses`), which runs once per frame after that frame's ticks and
+  changes the guests' ride-body state, so its result depends on how ticks are batched into frames;
+- the `Update()` of every entity (`Entity.All`), which runs after the simulation each frame;
+- a NaN that reaches hashed state, whose sign and payload differ between x86, ARM and WebAssembly.
+
+The co-op hash check covers the unhashed state only once it reaches hashed state.
 
 ## Park save
 
@@ -259,7 +399,7 @@ arrival timer's start turn and group flag instead of its countdown, version 11 t
 | `thing_table_digest` | guests in id order (every field the tick reads, including navigation and timers), including each guest's walk speed and steering state and its queue fields, the queue edge detectors, then attractions with queue cells, the queue list, admission state and counters, riders, limbo and bounce lists (each bounce slot with its deadline and start) | yes (order is id order, not the original's newest first) |
 | (cell map) | `ParkCellMap` of the guest grid: every non-empty cell in row order with its type, flags, placement counter, links and queue link (paths built by the path tool included) | yes (extra, after the thing table) |
 | `script_table_digest` | the script world's scheduler clock, then every live script in id order: id, name, parent, state, PC, flags, call stack, variables, clock origin, clock, wake time, timers, WAIT4ANIM deadline, LOOPANIM and TRIGWAITANIM tokens, instruction and slice counts, seed and RNG call count; for a root object script also its animator channels (AnimID, variant, loop, speed, start, ended, tick, deferred clip) and clock | yes |
-| (coasters) | `RideScriptWorld.Coasters`: the coaster generator, then every coaster in creation order: station ends, closed and complete flags, nodes (cell, height, t, pylon kind, stack index, station end, flags, bank, loop rotate, the exact position of the middle station node), controller state (initialised, the state 1/2/4/8, ride mode, speed setting, seats, speed cap, the lead car coordinate a reopened track keeps for the next train placement, net track money, time, braking start, station window, self-intersection count), samples (flags, height, roll, speed), rating, winch sections, trains (position, speed, train flags, boarding span, the riders of the lap and the guests seated at the station per car), the admission ring and the riders waiting to leave | yes (extra, after the script digest) |
+| (coasters) | `RideScriptWorld.Coasters`: the coaster generator, then every coaster in creation order: station ends, closed and complete flags, nodes (cell, height, t, pylon kind, stack index, station end, flags, bank, loop rotate, the exact position of the middle station node), controller state (initialised, the state 1/2/4/8, ride mode, speed setting, seats, speed cap, the lead car coordinate a reopened track keeps for the next train placement, net track money, time, whether the motion tick has run, braking start, station window, self-intersection count), samples (flags, height, roll, speed), rating, winch sections, trains (position, speed, train flags, boarding span, the riders of the lap and the guests seated at the station per car), the admission ring and the riders waiting to leave | yes (extra, after the script digest) |
 | (tracks) | the track layer after the cell map (every track cell: type, mask, link, flags, piece, parent, rotation, overlap, segment) and `RideScriptWorld.Bumpers`: the cosmetic LCG, then every controller (type, laps, performance, phase, state, validity, tick count and clock, station, sections, waiting and leaving guests, every boat's slot, flags, position, velocity, heading, spin, target buoy, laps and rider count) — both only while a track or controller exists, so every park without one keeps its earlier digests and the schema stays 14 (TRACKS.md); bumper cars add the chase target and the drawn heading and yaw to their boats' fields (the same conditional extension: only while a controller exists, no schema bump, as for the water and kart fields); boats draw their aiming jitter from the script stream (`RideScriptWorld.NextWorldDraw`, DET-013) | yes (extra, after the coasters) |
 | `economy_digest` | the park save's economy part as canonical JSON (sorted keys) | yes |
 | `input_log_cursor` | no input log | **missing** |
@@ -290,7 +430,10 @@ import") sets the economy's tick, bank, loans, objects and staff before its firs
 tick. All of it is in the economy digest, and the run that the pinned hash
 covers starts no original save, so the pin is not affected by it. The
 save's `mRandomSeed` is imported (SAVE-001 retired): it is the state of the one world generator (`0x516330`, saved raw at world `+0x1DA708`,
-written at `0x517123` and read back at `0x517DFC`), and the park continues the saved stream.
+written at `0x517123` and read back at `0x517DFC`), and the park continues the saved stream. A saved WAIT4ANIM deadline
+that is not ahead of the saved clock imports as 0 (October 18; it was -1, which the script snapshot rejects): the script's
+hashed state differs from before until it next runs an animation opcode, and tp.exe treats 0 and a reached deadline alike
+(`0x5538EB`). Only Jungle's shipped save holds such a deadline, and no pinned run starts from it.
 
 Other OpenTPW state that is **not in the hash**:
 
@@ -300,9 +443,30 @@ Other OpenTPW state that is **not in the hash**:
 | `GuestEconomyBridge` attraction → economy instance map | not yet part of the canonical state; the economy objects themselves are in the economy digest |
 | `FixedStepClock` pending time (`PendingSeconds`) | frame timing, below one tick; the substep scheduler is DET-I2 |
 | Sound chooser seed | presentation, see above |
+| `ParkSaveFile.Data.AnalyserCaches` (the analyser's cached readings) | saved for an exact continuation, but a reading aid that no simulation step reads; removed from the economy digest |
+| `ParkSaveFile.Data.StatisticsHistory` (the monthly rings, including independent rating, of `ParkStatisticsHistory`) | only the park information window's graph reads them, no simulation step does; removed from the economy digest |
+| `ParkSaveFile.ResearchData.RecentItems` (TPW buy-list stars) | only the buy list reads the four rings; just this nested presentation property is removed from the economy digest. Completed projects, progress, effort and every other research field stay hashed. Raw ring state remains saved; no schema or canonical pin changes |
+| `ParkSaveFile.StaffData.RoleOrder` (locator role sequences) | presentation-only member-ID order for the five staff radios; only this nested staff property is removed from the economy digest. Members, training budgets, `HaveEverTrained`, strikes and every other staff/gameplay field stay hashed. The roster and global ThingPool order are not changed; no schema or canonical pin change is required |
 
-A change to any of these does not change the hash. Adding one means bumping
-`SchemaVersion` and re-pinning the fixed-run hash.
+A change to any of these excluded fields does not change the hash. Adding an
+excluded presentation-only field does not require a schema or pin change. Bringing
+one of these fields into the canonical hash requires bumping `SchemaVersion` and
+re-pinning the fixed-run hash.
+
+### Staff locator role order (October 19)
+
+The own save records five independent role-ID sequences in `StaffData.RoleOrder`. This presentation owner
+is separate from member iteration and the global ThingPool used chain; neither gameplay traversal is
+reordered to emulate locator order. Valid original role chains are preserved independently, while malformed
+original chains and older own saves use explicitly documented [compatibility policies](PARK-SAVES.md#staff-locator-order-and-compatibility).
+Role-order reads and captures consume no randomness and do not materialize a legacy fallback. A hire/fire
+materializes that fallback before its intentional prepend/splice, without introducing a new random draw.
+
+Canonical JSON removes only `StaffData.RoleOrder`, not the `Staff` object or another staff field. Changing
+only locator order must leave the hash identical; changing gameplay data, including `HaveEverTrained`, must
+still affect it (`StaffRoleOrderTests` pins that with `HaveEverTrained` as the example). `HaveEverTrained` is read only by the advisor's train-your-staff line and no simulation step reads it, so it could leave the hash like `StatisticsHistory` did; it stays in on purpose, because the role-order contract above and its test name it as hashed gameplay data and no pin sets a training budget, so dropping it later is a deliberate, separate change that moves no pin. `StaffRoleOrderTests` and `LocatorStaffRoleOrderTests` exercise this boundary and read/capture
+immutability. Their C# execution awaits exact-head CI because no local dotnet SDK is available;
+`tools/test_staff_role_order_contract.py` is a source-integration guard, not a substitute for those runs.
 
 ### Weather timing (October 14)
 
@@ -440,7 +604,8 @@ the same seed as well.
 
 ## Mods
 
-Extensions and mods (MODS.md) are resolved once at startup and never change during a run. With no files-based mods
+Extensions and mods (MODS.md) are resolved at startup, and nothing changes while a park simulates: the files-based mods stay as resolved for the whole run, and an official extension
+switched afterwards (the Extensions and mods screen, or a park load, [below](#switched-parks); `[EXT:extensions-apply-at-load]`) takes effect only for the next park built, never for a running one. With no files-based mods
 and the default extensions nothing in the simulation changes: the online extension `opentpw.online` touches no
 simulation state, and `DeterminismTests.TogglingOnlyTheOnlineExtensionKeepsThePinnedDigests` runs the pinned fixed
 run (`FixedRunHash`) and the guest-pathing run with it on and off and gets the same digests. The M4 gate and the
@@ -476,6 +641,24 @@ park of another version is refused. A script's `rng` is a stateless hash of (par
 on every platform: `DeterminismTests.ScriptModsFixedRunHash` (the shipped example mod) and `ScriptModsAllHooksFixedRunHash` (all four hooks, state and `rng`); a resumed park continues equal to the uninterrupted one
 (`ScriptModsSaveTests.AResumedParkWithScriptModsContinuesLikeTheUninterruptedOne`).
 
+### Switched parks
+
+`[EXT:save-extension-switch]` (user-approved 2026-10-19, "Ook ontbrekende extensie aanzetten"): a player who loads an own park save whose official extensions differ from the active ones is asked
+instead of refused, in two cases only (MODS.md, [Loading a park with other extensions](MODS.md#loading-a-park-with-other-extensions)): a **rule-only** extension (`ParkExtensionSwitch.RuleOnlyExtensionIds`:
+`opentpw.rain-mood`, `opentpw.winter-weather`, `opentpw.winter-cold`, `opentpw.winter-always`, `opentpw.smarter-guests`) that is on now and was not then, off now and was then, or of another version,
+continues under the active set; a **content** extension the park uses that is off now (`ParkResumeMods.UsedOnlyExtensionIds`: pools, umbrellas, winter, cheats and the evening extension with its torches) is switched on for the run
+(`[EXT:extensions-apply-at-load]`) and in `mods.json`. The confirmed switch rewrites the loaded snapshot for the switched set (`ParkExtensionSwitch.Apply`): its `Mods` become the records a park saved
+now would hold, the smarter guests' section starts fresh (the park seed, no birth ids yet) when that extension comes on, and loses the extension's own state (stalls, throughputs, meals, complaints;
+the guest identity script mods share stays) when it goes off or continues in another version (whose rules wrote that state with their own meaning). The rewritten snapshot then passes the **unchanged strict validation**. A rule's per-guest day marks (`RainMoodDay`, `ColdMoodDay`,
+`WarmUntilDay`) and the weather it shaped stay in the guest and weather state as they were; every build reads them with the rule on or off.
+
+**A switched park is a new run from the switch point.** It is not a replay of the saved run: the rule set that drives it from that tick on is another, so its state hashes from then on are not comparable
+with a run that kept the old set, and its next save records the set it now runs under. Nothing about it is pinned; a park whose sets agree takes the strict path, so every existing pin, save byte and resume
+test is unchanged (a switch is only ever made from the interactive load dialog; `ResumePark` without a confirmed switch, `--park-resume-smoke`, the tests, the online server and co-op, community
+mods of another version or content, the cross-edition objects extension and the original-format export stay strict). A content extension switched on reproduces the save exactly, because the park
+already used it: `OPENTPW_SMOKE_SWITCH=pools` on the restore phase of the native park-resume smoke loads the pools variant's save with the extension switched off and back on through the dialog's path
+and compares every continuation tick with the capture phase (`SaveExtensionSwitchTests` covers the planning, the rewrite, the dialog and the revert of a failed load headless).
+
 A run with a mod that brings Theme Park Inc rides is as deterministic as any other: the M3 gate with such a ride as its attraction gives the same guest and state hashes in two runs
 (`TpiRidesEndToEndTests`, over the install named by `OPENTPW_TPI_PATH`), and the extension is recorded in the save, so a park saved with it loads only with it.
 
@@ -505,11 +688,144 @@ presentation and reads nothing the simulation hashes.
 
 **Water slides (P4).** A park with a water slide has its own pin, `PoolSlideActivityTests.PoolsSlidesFixedRunHash` = `0xB6C14C9856DF363A` (it was `0x5B4437FD295E3DFF` before the spacing of bodies in the water: the swimmers on their way to the stairs keep 0.7 cell from every body and the pool takes one body per water cell; six still ride, three wait at the busiest moment): the swim session's test rig (a changing room, a pool of 6 x 6 cells, the paths and queue of `QueueTests.Rig`) with a tower at (3, 5) and a seven-piece slide into the pool cell (6, 3), six guests sent in one after the other (60 park turns apart, capacity 3) and 2,160 park turns in all; six of them ride and (since the spacing) three wait in the tower at the busiest moment (earlier versions of the pin: `0x91710DEE845F2503`, before the host's offer interval went from 45 to 90 turns, and `0x8FDB7A3F30ACC019`, before the climb followed the model's stairs and the waiting spots moved onto the deck, which change the guests' places in the hash, and before a launch also waited for the landing water to be free). The slide world has **no random state** and only the swimmers' own steering step on the way to the stairs draws (one draw of the swimmer's own stream per turn, as in the water); the ride is a table of positions per turn from integer physics (speed += slope x 100 / 1000 - speed / 8), a rider saves only its turn counter, the line in the tower orders by turns waited and guest id, and a launch needs the start clear of riders under 1.5 cells down the track and no swimmer within 0.6 cell of the landing point (positions only: no draw, the guests read in list order). The slides join the canonical hash only when there are any (`PoolSlideWorld.AddCanonicalState`, called from `GuestSimulation.AddCanonicalState`: key, profile, start, heading, heights and pieces in tower order), and the guests' activity fields only while a guest does one (the host's rule), so every park without a slide keeps its pins, and a slide world without slides leaves hash and swim streams exactly as they were (`PoolSlideActivityTests.ASlideWorldWithoutSlidesAddsNothingToTheHashAndDrawsNothingFromTheSwimmersStream`). A save in the middle of a ride restores and continues with the same hash (`ASaveInTheMiddleOfARideRestoresAndTheRideContinuesWithTheSameHash`).
 
-**Water attractions, waves and the lazy river (P5).** `DeterminismTests.PoolsAttractionsFixedRunHash` = `0x6FE6C8B4BDCD0FED` (it was `0x3FEC2717D892094A` before the spa took one seat, in the middle of its tub, instead of eight on a circle: an occupied spa now declines the next swimmer, so the offers, and with them every draw after them, differ; before that `0x79EEF3026A22FE72` before the hiring pool's candidates kept their sprite variant, which the digest's park save holds; **the spacing work then moved it from main's `0xC7370809D0D43A0B`**: the river floaters keep a gap, the jets give each guest a spot it steps onto, the rope swing waits for its landing, and the swimmers and the approaches keep 0.7 cell from every body in the water; 93 swims, jets 12, river 10, rope swing 6, spa 11 starts) pins the same fixed run on a pool that is a lazy river **channel one cell wide round an island of two land cells** (10 cells, x 6 to 9, y 7 to 9, the changing room's back cell (6, 8) in it: the hard case, whose bends cut the corner squares that are coping), the wave settings of a wave machine in its access cell (on, medium height, short interval) and a rope swing, water jets and a spa pool beside the water, given as sites as the level derives them from placed objects: 91 swims, and every kind of activity is used (jets 17, river 41, rope swing 8, spa 25 starts, counted as a guest first seen in an activity at samples 30 ticks apart). History of the value: first `0xF633A268183A1635`, then `0x924D021F9CC1347D` when the host's `OfferIntervalTurns` went from 45 to 90 (which changes every swimmer's offer draws), now `0x79EEF3026A22FE72` because the review made the float follow the lane's middle line round bends (it no longer ends at the first bend), moved the wave settings from the pool's first cell to the machine's access cell, and the scenario became the channel. None of it draws from the world generator. Every activity draws only from the swimmer's own stream (`SwimRandom`, which the host passes): the approach to an attraction draws as every swimmer's step does; the jets then draw the length of the stay and the pose, the spa the length of the sit, the river the length of the float; the rope swing draws nothing more. Its state is the guest's generic activity fields (`PoolActivityPhase`, `PoolActivityTurns`, `PoolActivityX/Y`) plus its position, all already in the swim hash while a guest is in an activity. The river's current is `PoolRiverMap.Float`, integer 16.16 arithmetic on the guest's position: it keeps the way it came in by until the middle of the cell and then takes the cell's flow, a step of 1/14 cell, and loses an eighth of the offset across the lane (arithmetic shifts). Rings are derived from the flags on the pool cells (row-by-row order). A float is paid only when it ran its drawn turns. The waves a swimmer is paid for come from `PoolWaves.HappinessGain`, a turn count and integer arithmetic (`turn % 24`, a constant times the height) added with `MeterMath.Add`; which settings apply is the wave machine with the lowest object id whose settings are on in the swimmer's pool (`PoolWaveSettings.ActiveIn`), and a pool with no machine has no waves. The surface waves, the swimmers' bob (`PoolWaves.SmoothWave`, floating point, the presentation clock), the spray and the flow of the water are presentation only: they change no position, state or hash and are not in any pin. The wave settings, the river flags and the objects are in the cell map and object saves, hashed with them. A park without a river, a wave machine or a water attraction has no offer from them, takes no draw and hashes nothing extra: every earlier pin, `PoolsChangingRoomFixedRunHash` included, is unchanged, also with the full registry registered (`FixedRunWithAPoolAndAChangingRoomIsUnchangedByTheFullActivityRegistryWithNothingToOffer`, `NoRiverNoOfferAndNoDrawFromTheSwimmersStream`).
+**Water attractions, waves and the lazy river (P5).** The wave pool's ring floaters (`waves.ring`, POOLS.md "Ring floaters") are offered only while a pool's waves run (with at least 40 turns of the run left), never in or beside a river lane or beside the steps and up to the pool's rings, draw only the float's length from the swimmer's own stream, pay the waves' happiness once per period like a free swimmer and move the floater by `PoolWaves.Sway` and a paddle in integer 16.16 arithmetic; every pin below is unchanged by them (the water-attractions run's pool is all lazy river, so no ring is offered there), and `ASaveOnARingRestoresAndContinuesIdentically` checks a save in the middle of a float. `DeterminismTests.PoolsAttractionsFixedRunHash` = `0x2D7EE079E5A9B09F` (it was `0xD9F94E889BDAB453` before the waves also carried the lazy river's floaters: after its float step a floater takes the push's projection on its cell's flow axis (`RiverActivity.WavePush`), only into its own cell or that cell's next or previous cell of the same ring, in free water and clear of the other bodies; the fixed run's channel is a river in a pool with a wave machine, so its floats move; 90 swims, jets 12, river 12, rope swing 4, spa 6 starts; and `0x5232DC9F32832BC6` before the waves pushed the free swimmers: `PoolWaves.Push`, integer 16.16 arithmetic from the turn, the swimmer's 16.16 point, the envelope and the height, with the sine from the swimmers' 64-step heading table, carries a swimmer along +x +y while a crest passes, after its stroke and only where the water and the other bodies leave room (`PoolSwimming.Drift`); the carried distance is no stroke (it adds nothing to the distance walked); it takes no random number, but the moved swimmers reach their goals at other turns, so their goal draws and every later draw move; 92 swims, jets 12, river 13, rope swing 5, spa 3 starts. Before that `0x6FE6C8B4BDCD0FED`, which was `0x3FEC2717D892094A` before the spa took one seat, in the middle of its tub, instead of eight on a circle: an occupied spa now declines the next swimmer, so the offers, and with them every draw after them, differ; before that `0x79EEF3026A22FE72` before the hiring pool's candidates kept their sprite variant, which the digest's park save holds; **the spacing work then moved it from main's `0xC7370809D0D43A0B`**: the river floaters keep a gap, the jets give each guest a spot it steps onto, the rope swing waits for its landing, and the swimmers and the approaches keep 0.7 cell from every body in the water; 93 swims, jets 12, river 10, rope swing 6, spa 11 starts) pins the same fixed run on a pool that is a lazy river **channel one cell wide round an island of two land cells** (10 cells, x 6 to 9, y 7 to 9, the changing room's back cell (6, 8) in it: the hard case, whose bends cut the corner squares that are coping), the wave settings of a wave machine in its access cell (on, medium height, short interval) and a rope swing, water jets and a spa pool beside the water, given as sites as the level derives them from placed objects, and every kind of activity is used (the test asserts at least one start of each; the counts of the current pin are given above). History of the value: first `0xF633A268183A1635`, then `0x924D021F9CC1347D` when the host's `OfferIntervalTurns` went from 45 to 90 (which changes every swimmer's offer draws), now `0x79EEF3026A22FE72` because the review made the float follow the lane's middle line round bends (it no longer ends at the first bend), moved the wave settings from the pool's first cell to the machine's access cell, and the scenario became the channel. None of it draws from the world generator. Every activity draws only from the swimmer's own stream (`SwimRandom`, which the host passes): the approach to an attraction draws as every swimmer's step does; the jets then draw the length of the stay and the pose, the spa the length of the sit, the river the length of the float; the rope swing draws nothing more. Its state is the guest's generic activity fields (`PoolActivityPhase`, `PoolActivityTurns`, `PoolActivityX/Y`) plus its position, all already in the swim hash while a guest is in an activity. The river's current is `PoolRiverMap.Float`, integer 16.16 arithmetic on the guest's position: it keeps the way it came in by until the middle of the cell and then takes the cell's flow, a step of 1/14 cell, and loses an eighth of the offset across the lane (arithmetic shifts). Rings are derived from the flags on the pool cells (row-by-row order). A float is paid only when it ran its drawn turns. The waves a swimmer is paid for come from `PoolWaves.HappinessGain`, a turn count and integer arithmetic (`turn % 24`, a constant times the height) added with `MeterMath.Add`; which settings apply is the wave machine with the lowest object id whose settings are on in the swimmer's pool (`PoolWaveSettings.ActiveIn`), and a pool with no machine has no waves. The waves' push on the free swimmers (`PoolWaves.Push`) is simulation and in the pin; the surface waves, the swimmers' bob (`PoolWaves.SmoothWave`, floating point, the presentation clock), the spray and the flow of the water are presentation only: they change no position, state or hash and are not in any pin. The wave settings, the river flags and the objects are in the cell map and object saves, hashed with them. A park without a river, a wave machine or a water attraction has no offer from them, takes no draw and hashes nothing extra: every earlier pin, `PoolsChangingRoomFixedRunHash` included, is unchanged, also with the full registry registered (`FixedRunWithAPoolAndAChangingRoomIsUnchangedByTheFullActivityRegistryWithNothingToOffer`, `NoRiverNoOfferAndNoDrawFromTheSwimmersStream`).
 
 A new pin covers a park with pools: `DeterminismTests.PoolsFixedRunHash` = `0x3492A988F0EF4AD7` (it was `0x4EEF5812C3D8023D` before the hiring pool's candidates kept their sprite variant, which the digest's park save holds), the fixed synthetic run (the same park, shop, scripts and 14,400 ticks as `FixedRunHash`) on a cross park that also has
 a 4 x 2 and a 3 x 3 block of pool cells (17 cells) painted through `PoolBuilder` before the first tick. It differs from `FixedRunHash` because the pool cells and the block stamps their writes leave are part of the
 digest and because the walks keep out of the water (the first versions of the pin, `0x51B905DC5CF06BC6` and `0xC53F22BFFA12A843`, were taken before walkers that leave the paths were kept out of pool cells and before main's substep scheduler re-pin, which moves the run underneath); no random draw is added or removed.
+
+## Umbrellas
+
+The `opentpw.umbrellas` extension ([UMBRELLAS.md](UMBRELLAS.md), `[EXT:umbrellas-save]`) adds a brolly shop, a guest umbrella state and its weather rule. A park without a brolly shop and without a guest with an umbrella is untouched by all of it: nobody owns an umbrella, so the weather rule
+and the speed term never run, the host score changes no score (the shop's percentages are read for the extension's own objects only, and the balloon-holder refusal of a balloon shop applies only in a park with a brolly shop or an umbrella), and no draw is taken. **Every pin stands with the extension at its default (on)**, and
+`DeterminismTests.EveryExistingPinIsUnchangedWithTheUmbrellasExtensionOnOrOffAndNoBrollyShop` runs the fixed run (`FixedRunHash`) and the changing-room run with the extension on and off and gets the same hashes. The umbrella fields (state, colour, due turn) join the canonical hash and the guests' own digest only for a
+guest that has an umbrella, and the guest snapshot writes them only then (schema unchanged, older saves load), so a park without one has the same bytes. A park save records the extension only while it has a brolly shop or an umbrella (`ParkResumeMods.UsedOnlyExtensionIds`).
+
+A new pin covers a park with a brolly shop: `DeterminismTests.UmbrellasFixedRunHash` = `0xE912E7E5D5B6E612`, the fixed synthetic run (the same park, shop, scripts and 14,400 ticks as `FixedRunHash`) plus a brolly shop at (10, 1) paid through the economy like the drinks shop and a weather
+that rains from the 20th to the 80th second and from the 140th to the 200th (`GuestSimulation.UmbrellaWeatherState`, which the level reads from `ParkWeather`'s rain, lightning and snow flags): 45 guests buy an umbrella and every state of the machine is seen. Its moves of the stream: the decisions (the shop scores in the rain), the sales,
+and **one world draw per purchase** for the umbrella's colour (taken only at a brolly shop); the reaction delay is a per-guest hash of (guest id, park turn) and takes no draw (`APPROX:UMB-001`). A park saved mid-rain with umbrellas in every state and resumed into a fresh instance continues with the same hash tick by tick
+(`UmbrellasSimulationTests.AParkSavedMidRainWithUmbrellasInEveryStateContinuesIdenticallyAfterAResume`).
+
+Review fixes of the same phase did not move `UmbrellasFixedRunHash` (still `0xE912E7E5D5B6E612`): the balloon gate is now per park (a holder count the simulation keeps, no scan), and the purchase mirrors the state-3-then-4 sprite test of `TPI-EXE:0x612ea9`, a branch the run never reaches because entering the shop closes a drawn umbrella first.
+
+The owner then chose Theme Park Inc's kid score of 75 % for the shipped shops (it had been OpenTPW's 100). `SyntheticPark`'s `brollyKidScore` defaults to that 75 so the synthetic brolly shop mirrors the `.sam` data. Recomputed on purpose: `UmbrellasFixedRunHash` stays `0xE912E7E5D5B6E612` (it was `0xE912E7E5D5B6E612` at 100). The pinned run gives nobody a balloon, and the U5 week showed that 75 % and 100 % sell the same then, so the decisions, the sales and the colour draws do not move.
+
+## Rain mood
+
+The `opentpw.rain-mood` extension ([UMBRELLAS.md](UMBRELLAS.md#the-rain-mood-rule-phase-u4), `[EXT:rain-mood-once-per-day]`) is off by default. The level hands the rule to the guest simulation only while the extension is on (`GuestSimulation.RainMood`, null otherwise), so with it off nothing runs, no draw is taken
+and no hash part is added: **every existing pin stands, including `UmbrellasFixedRunHash`** (`DeterminismTests.EveryExistingPinIsUnchangedWhateverTheRainMoodSwitchWhileTheSyntheticParksSetTheRuleByHand`, and `RainMoodTests.WithTheRuleOffTheWeatherChangesNothingAboutAGuestWithoutAnUmbrella`). The rule itself draws from no stream; it only moves happiness, thirst
+and hunger, which moves the decisions and so the run. The guest's last rule day (`Guest.RainMoodDay`) joins the canonical hash and the guests' own digest only once it is set, and the snapshot writes it only then.
+
+Two new pins cover the rule, on the same fixed synthetic run and the weather of the umbrellas pin (rain from the 20th to the 80th second and from the 140th to the 200th): `DeterminismTests.RainMoodFixedRunHash` = `0x3697B9094432D152` (the fixed run, no brolly shop, the rule on; 102 guests changed by it) and
+`DeterminismTests.RainMoodWithUmbrellasFixedRunHash` = `0xADEE2FA6AFC2ACE3` (the brolly shop of the umbrellas pin and the rule both on; 104 guests changed). A park saved mid-rain and resumed into a fresh instance continues with the same hash (`RainMoodTests.AParkSavedMidRainContinuesIdenticallyAfterAResume`).
+
+Review fix of the umbrella modifier: in Theme Park Inc only a guest who is already open (state 4) when the rule starts gets it (`TPI-EXE:0x611334`), not one whose umbrella the same step opens (1 to 4 at `0x6111E3`, a due 3 through `0x402d8d`). That moved `RainMoodWithUmbrellasFixedRunHash` from `0xF599E7E8B09C0FB7` to `0xADEE2FA6AFC2ACE3` (104 guests changed, as before); `RainMoodFixedRunHash` (no shop, so no umbrella) and every other pin stand. The optional `Guest.RainMoodAgeStartTurn` (the load turn of an imported guest without a time in the park, `[EXT:rain-mood-imported-age]`) joins the canonical hash and the guests' own digest only when set, which only an import with the extension on does, so no pin is affected.
+
+The kid-score change above was recomputed for the shop run of this section too: `RainMoodWithUmbrellasFixedRunHash` stays `0xADEE2FA6AFC2ACE3` (it was `0xADEE2FA6AFC2ACE3` at a kid score of 100). `RainMoodFixedRunHash` stays `0x3697B9094432D152`; that run has no brolly shop, so the kid score is not read.
+
+## Winter cold
+
+The `opentpw.winter-cold` extension ([WINTER.md](WINTER.md#cold-mood-extwinter-cold-phase-w5), `[EXT:winter-cold]`) is off by default. The level hands the rule to the guest simulation only while the extension is on (`GuestSimulation.WinterCold`, null otherwise), so with it off nothing runs, no draw is taken and no hash part is added: **every existing pin stands**
+(`DeterminismTests.EveryExistingPinIsUnchangedWhateverTheColdSwitchWhileTheSyntheticParksSetTheRuleByHand`). The rule draws from no stream; it only moves happiness (and, through the glühwein stall, `WarmUntilDay`), which moves the decisions and so the run. The guest's last rule day (`Guest.ColdMoodDay`)
+joins the canonical hash and the guests' own digest only once it is set, and the snapshot writes it only then.
+
+Two new pins on the fixed synthetic run, in a weather that snows from the 20th to the 80th second and from the 140th to the 200th: `DeterminismTests.WinterColdFixedRunHash` = `0x9E74A906AB249401` (no shop, the rule on; 97 guests changed by it) and `DeterminismTests.WinterColdEverythingFixedRunHash` = `0x45FCB3FC30C601FC` (was `0xCCEA2E164DF6888A`, moved by the kiosk's return rule, see the winter section, and before it `0x7589B229530055D6`, moved by the winter base: the kiosk sells all year with its season terms and the harness's calendar is now May for the first 100 seconds and December after it; the cold rule's own code did not move it, `WinterColdFixedRunHash` is unchanged; the rule, the rain mood, the brolly shop and the winter
+shops on: the harness's winter shops, a kiosk at (10, 1) and a glühwein stall at (10, 8); 100 guests changed, 68 wore an item or were warmed). With the rain mood on, the cold rule replaces only the happiness of the row the rain mood would use in snow: the +1 of its snow row, or in Halloween, where the snowfall has lightning and the map reads a storm, the storm row's -1 (`[EXT:winter-cold-replaces-snow-cheer]`, the user's decisions, "Kou vervangt storm-humeur"), so this run differs from a plain sum of the two. The Halloween decision moved no pin: the harness's weather has no lightning (its map and the winter signal both say snow), and with cold off nothing changed; the Halloween case is covered by `WinterColdTests.InHalloweenSnowColdReplacesTheStormMoodAndTheStormsThirstAndHungerStay` and by the measured week in docs/WINTER.md. The glühwein warms for the rest of its day plus the next game day (`[EXT:winter-cold-warm-window]`, the user's decision), so this run differs from a plain sum of the two. The cold step reads the winter shops' own weather signal (`GuestSimulation.WinterWeatherState`, falling back to the umbrellas' map), so Halloween's snow, which comes with lightning, counts as snow for it (`WinterColdTests.HalloweenSnowWithLightningIsSnowForTheColdRuleButAStormForTheUmbrellasMap`); the harness sets only the umbrellas' map, so no pin moved because of it. A park saved mid-snow and resumed into a fresh instance continues with the same hash
+(`WinterColdTests.AParkSavedMidSnowContinuesIdenticallyAfterAResume`).
+
+## Winter
+
+The `opentpw.winter` extension ([WINTER.md](WINTER.md#simulation-phase-w3), `[EXT:winter-save]`) adds a winter kiosk, a glühwein stall and the guest fields `WarmItems` and `WarmUntilDay`. A park without a winter shop and without a guest with an item is untouched by all of it: the host score reads the extension's percentages for its own objects only, the kiosk's
+purchase is the only writer of `WarmItems` and takes **no draw from any stream** (the head item and the colours are hashes of the guest id, `WinterRules.HeadItemOf`, `WinterRules.ColourOf`), and the fields join the canonical hash, the guests' own digest and the guest snapshot only while they are set, so such a park keeps its bytes and its pins.
+`DeterminismTests.EveryExistingPinIsUnchangedWithTheWinterExtensionAndTheWinterWeatherOnOrOffAndNoWinterShop` runs the fixed run, the changing-room run, the umbrellas run and the rain mood run with the extension and the wintry Decembers option each on and off and gets the same hashes (no baseline moved). A park save records the extension only while it uses it
+(`ParkResumeMods.WinterInUse`).
+
+A new pin covers a park with winter shops: `DeterminismTests.WinterFixedRunHash` = `0xA66540FF8C2AC6DE` (see the re-pin of 2026-10-19 below), the fixed synthetic run plus a winter kiosk at (10, 1) and a glühwein stall at (10, 8), paid through the economy like the drinks shop, a snowfall from the 20th to the 80th second and from the 140th to the 200th
+(`GuestSimulation.UmbrellaWeatherState`, which the level reads from `ParkWeather`) and a calendar that is May for the first 100 seconds and December after it (`GuestSimulation.WinterMonth`): 51 guests buy a hat or earmuffs or mittens (10 are fully dressed), the kiosk sells 63 times and the stall 67. A park saved mid-snow with items and resumed into a fresh instance
+continues with the same hash (`WinterSimulationTests.AParkSavedMidSnowWithItemsContinuesIdenticallyAfterAResume`).
+
+**Re-pin, 2026-10-19.** `WinterFixedRunHash` moved from `0x8F7023321586F670` (49 buyers, kiosk 50 sales, stall 70) to `0xD4E2340C99394B73`. Cause: the user's decision that the winter kiosk sells all year ("Het hele jaar, vraag via seizoen"; the snow or December-to-February gate is gone) and the kiosk's new season terms
+(winter 150, spring and autumn 60, summer 20, snow 200; the `.sam` and the fixture's terms), plus the fixture's calendar now running May first and December after it, so the kiosk's second purchase (mittens) still happens (with the kiosk open in May at a low demand, December first left no guest a mittens purchase in the 200 seconds); the fixture also samples the items every tick now. The weather pins, the umbrellas, rain mood and changing-room
+pins and the fixed run did not move: the kiosk's terms are read for the extension's own objects only. The winter shops' own weather signal (snow even with lightning) changes nothing in any pin, since the umbrellas and the rain mood keep the shared map and no fixture has Halloween snow with a winter shop.
+
+**Re-pin, 2026-10-19 (kiosk return, `[EXT:winter-kiosk-return]`).** User decision, asked directly: "Laten terugkomen". A guest whose slots are not full no longer counts a winter kiosk as recently used (`GuestSimulation.WinterScoreOf`), so a guest with a hat can come back for mittens; before it, no guest in about 1,740 measured ever bought a second item, because the kiosk, the last thing the guest used, scored 0 by the game's same-type rule and was then divided by 5, 4, 3 or 2 by the used history (both had to go; either alone changed nothing, see [WINTER.md](WINTER.md#returning-for-the-second-item-extwinter-kiosk-return)). Three pins moved, every one of them a park with a winter kiosk and guests who lack an item:
+
+| Pin | Old | New | What changed in the run |
+| --- | --- | --- | --- |
+| `WinterFixedRunHash` | `0xD4E2340C99394B73` | `0xA66540FF8C2AC6DE` | 53 buyers, 6 fully dressed, kiosk 61 sales, stall 67 became 51 buyers, 10 fully dressed, 130 admitted, kiosk 63, stall 67 |
+| `WinterAlwaysFixedRunHash` | `0xAD0FF92A6B42F187` | `0x5F767F69EF5CBF07` | 55 umbrella buyers, 47 warm item buyers, 127 changed by the rain mood became 50, 45 and 122 |
+| `WinterColdEverythingFixedRunHash` | `0xCCEA2E164DF6888A` | `0x45FCB3FC30C601FC` | 103 changed, 74 with an item or warmed became 100 and 68 |
+
+No pin of a park without a winter kiosk moved, and nothing else changed: `WinterColdFixedRunHash` (no shop), the weather pins, the umbrellas, rain mood, changing-room and fixed-run pins and the December guest pins all stand (the "every existing pin is unchanged" tests pass with only these three constants edited). The rule takes no draw from any stream: a guest with a free slot is scored from views without the kiosk in its used history, and a guest with full slots still scores the kiosk 0.
+
+**No re-pin, 2026-10-19 (the kiosk's price, [WINTER.md](WINTER.md#price-extwinter-tuning)).** The return rule now also requires that the guest could pay the kiosk's price (`QueueJoinRules.TooExpensive`, the pure test), and the measurement harness can give the winter shops their shipped price terms (`SyntheticPark`'s `winterPrices`). No pin moved: the pins' winter shops keep no price terms (no `winterPrices`: the price test reads a price of 0 and never refuses), so the new condition is always true there, and no `.sam` changed.
+
+## Wintry Decembers
+
+The `opentpw.winter-weather` option ([WINTER.md](WINTER.md#simulation-phase-w3), `[EXT:winter-weather]`) is off by default; the level hands it to `ParkWeather` when it builds the weather. The weather is outside the canonical hash ("Weather timing"), but what the guests read from it is not: the umbrella rules, the rain mood and the winter shops see snow instead of a
+thunderstorm or rain in a December of the jungle and fantasy parks (the whole rain band: plain rain and thunderstorms). The converter draws nothing for the change (the roll's draws and the tie-break are the same), but with no lightning the lightning clock's draws stop, so the weather stream moves on from the first wintry spell: a park with the option on is another weather from its first December, which is why a save always records
+the option while it is on. The roll's month is derived from the forecast's apply time (`applyAt - DaysOfWarning` days), so the weather snapshot gains nothing and a resume mid-snow continues exactly (`WinterWeatherTests.AWintryWeatherSavedMidSnowContinuesIdenticallyAfterAResume`).
+Two pins cover the jungle's weather turn by turn over its first 400 days under seed 21: `WinterWeatherTests.JungleSeed21OffHash` = `0x58F5D2429FDCADAA` (the original's weather, option off) and `JungleSeed21WintryHash` = `0x2DC4898B7594C4FA` (option on; 29 snowy days, the first on day 343). Halloween and space run the same weather with the option on or off.
+
+The guests' side of the option has a pin of its own, because the two weather pins hash only the weather: `DeterminismTests.UmbrellasAndRainMoodUnderTheJungleWeatherAcrossDecemberArePinnedWithWintryDecembersOffAndOn` runs the synthetic park with a brolly shop and the rain mood on, driven by the jungle's real `ParkWeather` (seed 21) from park day 320 over 35 days across the first December: `JungleDecemberOffFixedRunHash` = `0xF4A00471E60B9535` (option off: rain, then a thunderstorm in December) and `JungleDecemberWintryFixedRunHash` = `0x296DA4DA6A8BE323` (option on: rain, then snow). `EveryExistingPinIsUnchangedWithTheWinterExtensionAndTheWinterWeatherOnOrOffAndNoWinterShop` builds that weather with the option's real gate and also covers `RainMoodWithUmbrellasFixedRunHash`. The forecast follows the option (`ParkWeather.ForecastBands`) and takes no draw.
+
+## Always winter
+
+The `opentpw.winter-always` option ([WINTER.md](WINTER.md#always-winter-extwinter-always), `[EXT:winter-always]`) is off by default; the level hands it to `ParkWeather` when it builds the weather and to the guests (`GuestSimulation.WinterAlways`). With it on, every roll uses December's season row in a park that can snow from it
+(jungle, fantasy and Halloween; space keeps its own seasons) and every roll is wintry, so the rain band is snow without lightning all year; the winter shops' season terms read December. The roll's draws are the same in number and kind (only the row changes), the conversion draws nothing, and with no lightning in the
+jungle the lightning clock takes no draws at all, so the weather stream is another one from the first roll. Nothing new is saved in the weather snapshot (the row and the wintry flag follow from the option), and a resume mid-snow in July continues exactly (`WinterAlwaysTests.AnAlwaysWinterWeatherSavedMidSnowInJulyContinuesIdenticallyAfterAResume`).
+The option implies the wintry Decembers: both on is the same weather and the same guest run as Always winter alone. With it off **every existing pin stands**: the weather pins `JungleSeed21OffHash` and `JungleSeed21WintryHash` (`WinterAlwaysTests.TheJungleWeatherOfAFixedSeedIsPinnedWithTheOptionOn`), the December guest pins built with the option's real gate,
+and the fixed, umbrellas, rain mood and winter runs (`DeterminismTests.EveryExistingPinIsUnchangedWithTheAlwaysWinterOptionOff`). The option is always recorded in a save while it is on.
+
+Two new pins. The weather: `WinterAlwaysTests.JungleSeed21AlwaysWinterHash` = `0x71A3DF8635ACF9B9`, the jungle's first 400 days under seed 21 with the option on (378 snowy days, the first on day 4; no rainy day). The guests: `DeterminismTests.WinterAlwaysFixedRunHash` = `0x5F767F69EF5CBF07` (was `0xAD0FF92A6B42F187`, moved by the kiosk's return rule, see the winter section)
+(`ShopsAndRainMoodUnderTheJungleWeatherFromMayArePinnedWithAlwaysWinterOn`), the synthetic park with a brolly shop, the winter shops (a kiosk and a glühwein stall) and the rain mood on, driven by the jungle's real `ParkWeather` (seed 21) from the first of May over 168 days, four weather turns to each park turn, so the
+guests meet May to mid-October, with the shops reading the weather's own calendar month: snow in 230 of its 240 samples (one dry spell), 50 umbrella buyers, 45 warm item buyers and 122 guests changed by the rain mood. The same run with the option off (no pin) never snows and differs. The cold rule is off in this run, so the
+cold mood's replacement of the rain mood's snow and storm happiness (Winter cold) does not enter it.
+
+## Cheats
+
+A park's cheats ([CHEATS.md](CHEATS.md), `ParkCheats`) live in the park economy: the original's cheat mode (`CHTS` byte 0), the record of every applied cheat (turn, kind, argument; at most 4,096 entries, older ones dropped and
+counted) and the actions waiting for the next turn. Every cheat the player asks for, through the original's secret park name and Alt keys or the extension's window, is **queued and applied at the start of the next park turn**
+(`ParkEconomy.AdvanceTurn`, before the turn's thing sweep with its weather and arrival updates; in a level whose turns are not swept, a paused economy's or one without pooled guests, the tick's guests and objects have run
+before the economy's turn, and only the weather follows), in a fixed order of kinds (`CheatKind`), and **takes no draw from any random stream** (`[EXT:cheats-turn-boundary]`). So a run with the same
+cheats at the same turns is the same run; the record in the save names those turns. The record does not replay itself; the cheats the player asks for are commands, like the park's other
+edits, and their command log replays ([Commands](#commands)).
+
+The record is part of the park save (`ParkSaveFile.Data.Cheats`) only when the park has cheated or has a cheat waiting; otherwise it is left out, so **a park that never cheated keeps its save bytes and its hash** whether the
+`opentpw.cheats` extension is on or off. Because the economy digest of the canonical hash is that save's text, the record joins the hash exactly when it is present; `WorldStateHash.SchemaVersion` did not move.
+`CheatsTests.EveryExistingPinAndTheSaveBytesAreUnchangedWithTheExtensionOnOrOff` runs the fixed run (`FixedRunHash`) with the extension off and on and gets the same hash and the same save bytes. A world save records
+`opentpw.cheats` only once the park has used one of the extension's own cheats (`ParkCheats.UsesExtension`, `ParkResumeMods.UsedOnlyExtensionIds`); a park cheated through the original's cheat mode alone does not record it
+and loads with the extension off.
+
+The original's cheats (K2) change only economy state: Alt+1 credits through the ledger, Alt+R adds the objects to `Research.CheatAvailable` (saved, and hashed through the economy digest only
+once the list has an entry), and the ticket cheats add to the park's ticket set (and the player's ledger, which is outside the hash). None of them draws. Importing an original save applies
+its `CHTS` byte 0, but a park started from the jungle's shipped `Easymode.TPWI` (which carries `01 01`) is not marked (`[EXT:cheats-shipped-seed]`), so every Instant Action and
+reference start keeps its save bytes and its pins.
+
+The extension's own cheats (K3) are the arrival and the weather. Both apply at the turn boundary through the level (`IParkCheatHost`) and take no draw: the arrival's group size is the next
+natural group's size moved into the chosen vehicle's band (computed from the park's points and the weather, as the natural size is, with no draw), and the weather cheat sets its kind,
+quality and drop target explicitly and skips the converter's tie-break draw. A cheat the park cannot take at that turn (an arrival while a vehicle is at work) stays queued and is applied,
+and recorded, at a later turn boundary, so the turn in the record is the one it took effect; while an arrival waits, the arrival update starts no natural group and calls no vehicle for
+leaving guests (`GuestSimulation.ArrivalHeldForCheat`, read from the saved queue, so a resumed park holds the same turns). A pin covers a scripted sequence: `CheatsExtensionTests.CheatsFixedRunHash` =
+`0x5CBF8584199279AB`, the fixed synthetic run (the park, shop, scripts and 14,400 ticks of `FixedRunHash`) with the extension on, a jungle weather (seed 21) whose drops feed the guests'
+arrival factor, and money at turn 100, research at 200, the Visitors ticket at 300, a boat at 400, a bus asked for at 402 (it waits while the boat's group is delivered and applies at
+turn 462) and rain at 500 (the plan's bump-ride vehicle limit at turn 600 is K4's; this park has no bump ride). `AParkSavedMidSequenceContinuesIdentically` saves and loads the economy
+before the boat (with it queued), at turn 405 (the bus waiting across the save) and after the bus, and gets the same hash each time.
+
+The ride vehicle cheat (K4) raises a ride's limit at a turn boundary with no draw. A raised bump controller's limit and a raised tour controller's 40 slots join the hash only for a raised
+ride, and the runtime snapshot, the track and the tour parts write the raised state only then, so every other park keeps its pins and save bytes. A pin covers the scenario:
+`CheatsRideVehicleTests.CheatsBumperRaisedRunHash` = `0xDF2C86E99A8FB3C0`, the jungle bumper controller (template -1, world generator of seed 99) raised to 32 cars, loaded with 32 guests,
+run through a 30-second session and 600 more ticks.
+
+## Commands
+
+`[EXT:online-coop-commands]` The park's edits are commands ([COOP.md](COOP.md), `ParkCommands`): each applies before a stated simulation tick, the next one the fixed-step clock runs. In single
+player a command runs at once in the input handler, between two ticks before the frame's simulation, exactly where the edit ran before the command layer, so **no pin moved** and no
+save byte changed (the layer adds no saved or hashed state; the Move tool's carried entry is session state, not saved). Held commands (`ParkCommands.Schedule`, a replayed log) apply at
+the start of their tick inside `Level.AdvanceSimulation`, before the tick's economy sync. A command's executor reads only the command and the world, never a tool's state, and draws no
+random stream of its own beyond what the edit itself draws (a placement's script seed, as before). `ParkCommandLevelTests` records a build session on a no-data level and replays it on a
+twin with the same `WorldStateHash` after every tick; `ParkSettingCommandLevelTests` does the same for a session of the HUD windows' settings. A replay runs one tick per `AdvanceSimulation` call; the work a frame does outside its ticks (pool refresh, evening, snow, the scene
+clock, the body poses prepared after a frame's ticks) is not replayed, which C1b audits.
 
 ## Tests
 
@@ -662,7 +978,7 @@ mirrors the level (ten singletons, gates and lights first). Saves: guest snapsho
 
 | ID | Rule |
 | --- | --- |
-| DET-013 | scripts, bump and tour rides and rider heads draw from the one world generator with the original's projections, a park turn takes its draws in the original's thing-sweep order and the substep scheduler (script pass newest first, one slice per eight passes, tour cars on even substeps, bump module every substep) is ported; but a script created with an explicit seed (tests, older saves) keeps a private generator, an imported original save's scripts take its ids, list order and pass counter but restart their programs (the saved program counters, stacks, variables and waits are not imported), and the host's visitor step, the coasters, the animators and the effects system 0x520130 stay per 60 Hz tick |
+| DET-013 | scripts, bump and tour rides and rider heads draw from the one world generator with the original's projections, a park turn takes its draws in the original's thing-sweep order and the substep scheduler (script pass newest first, one slice per eight passes, tour cars on even substeps, bump module every substep) is ported; but a script created with an explicit seed (tests, older saves) keeps a private generator, an imported original save's scripts take its ids, list order, pass counter and run state on the saved game clock (the program counter, shared stack and heap, variables, limbo table, result register, TURBO/DIPMUSIC/reverb/speed words, WALKST_FLOAT state and the WAIT, WAITANIM, WAIT4ANIM and SETTIMER deadlines, `RideVM.ImportSavedRunState`), but not the animations playing on their objects, the object nodes, bounce and walk tables or the object lists, and a script with a saved child or sound child keeps its fresh state; saved child records are left for their parent to recreate, and the host's visitor step, the coasters, the animators and the effects system 0x520130 stay per 60 Hz tick |
 | DET-014 | guests draw from the world generator in the original's creation order and at the traced sites and reseed with their thing id (a slot of the park's thing pool, WALK-010), but take the entrance from lanes A and B and have no counterpart for the later arrival-lane picks, the gate wait and the sideshow tail |
 | DET-015 | the economy's staff pool and the staff walks draw from the world generator, but hired staff have no constructor draws, and the weather keeps its own stream ([EXT:weather-stream]); the advisor draws nothing (its pick is sequential in every row, retired from this entry) |
 
@@ -712,3 +1028,83 @@ Sign text round (October 17): the sign text raster is reduced as tp.exe 0x5EAFC3
 Sign text antialias model (October 17): the glyph coverage of sign text is now the documented GDI grayscale model (4x4 point samples per pixel, 17 levels, byte `(level * 255 + 8) / 16`, no gamma, no hinting; `TrueTypeRasterizer`, `CoverageModel.GdiGray4`) instead of 16 linear sub-scanlines with exact span ends, so the 150 left/right half hashes of the 75 frozen corpus signs, the five signs of `RidesRound2Tests` and the 75 text pixel counts were re-pinned deliberately (no line, `.sgn` hash, world hash or save changed; sign pixels never enter the world hash). The rasterizer is plain IEEE arithmetic with fixed sample positions, so the hashes stay deterministic. `TrueTypeFontTests` (original data, `OPENTPW_GAME_PATH`) was re-pinned for the same cause: the SHA-256 of the 32-pixel-em 'A' of each of the 17 original fonts and the hash of the 'Lost Kingdom' gate name line (Young Itch AOE, 144 px em, `SignTextLayout.Rasterize`; the TSV header does not cover it) moved with the coverage; the font file hashes, glyph metrics, bitmap sizes and origins did not. `TrueTypeRasterizerGoldenTests` now passes `CoverageModel.Linear` explicitly, so its goldens did not move.
 
 **Spacing of bodies in the water.** Free swimmers keep 0.7 cell (`MinimumDistance`) from every body in the water of their region and steer from 1.2 cells, the pool takes one body per water cell (at least 2), river floaters keep a gap along the lane, the jets give each guest a spot and the landings wait for a free zone (POOLS.md, "Spacing of bodies in the water"). All of it is integer or 16.16 arithmetic over positions and saved fields (the activities' `InWater` reads the guest's saved phase only), takes **no** random number (a wait is a counter in the saved turns, a jet spot comes from a fixed list), and the bodies are found through a per-tick cell lookup in guest-list order. `FixedRunHash` (`0x2A8418A90725699A`) and `PoolsFixedRunHash` (`0x3492A988F0EF4AD7`) stay at main's values (a park without a changing room reaches none of it). The three pool pins that run swimmers moved relative to main (after #358): `PoolsChangingRoomFixedRunHash` 0x42E916DFC15CED19 to 0xA83721661FA72F69, `PoolExtrasFixedRunHash` 0xD8806A8911B990C7 to 0xEEEDBDE12564B670, `PoolsAttractionsFixedRunHash` 0xC7370809D0D43A0B to 0x3FEC2717D892094A, for the reasons given with each pin above. `FixedRunWithAPoolAndAChangingRoomIsUnchangedByTheFullActivityRegistryWithNothingToOffer` still equals the changing-room pin, and the mid-swim save and load tests still match tick by tick.
+
+## Umbrellas tuning
+
+The canopy size, the pull cap, the renderer's per-frame work and the measurement aids of the umbrellas tuning (phase U5, [UMBRELLAS.md](UMBRELLAS.md#tuning-phase-u5)) are presentation or test code that reads the simulation and writes nothing into it, so they move no pin. The owner chose Theme Park Inc's kid score of 75 % over the 100 % OpenTPW had shipped. That value is now `GenerationModifier.KidScorePercentage` in the four `Brolly.sam` files and `tools/umbrellas/brolly.sam`, and `SyntheticPark`'s `brollyKidScore` defaults to 75 so a synthetic brolly shop mirrors the shipped data (the headless harness, `UmbrellasTuningMeasureTests`, still passes 75 and 100 explicitly and is not pinned). The shop pins were recomputed on purpose and held, because those runs give nobody a balloon and the measured week sells the same at 75 % and at 100 % then:
+
+| Pin | At kid score 100 | At kid score 75 |
+| --- | --- | --- |
+| `UmbrellasFixedRunHash` | `0xE912E7E5D5B6E612` | `0xE912E7E5D5B6E612` |
+| `RainMoodWithUmbrellasFixedRunHash` | `0xADEE2FA6AFC2ACE3` | `0xADEE2FA6AFC2ACE3` |
+
+`RainMoodFixedRunHash` (`0x3697B9094432D152`) and every pin with no brolly shop are unchanged: the kid score is read only for a brolly shop.
+
+## Original coaster import
+
+The original coaster import (October 19, `OriginalCoasterImport`, docs/TPWS-PAYLOAD.md "The import") moves no pin and
+adds none. Every original save in the corpus holds an empty Coasters block, so no park takes the new path. The import
+draws nothing from `World.Random` or the coaster generator (`CoasterWorld.Random`). It rates the track at the
+constructor's speed setting and keeps the saved trains. The first frame after the load then runs the controller's first
+motion tick, which takes no time. After the station script's first slice, the slice tail passes the script's speed word
+(`0x5517D7` → `0x43B2B0`, `OriginalObjectEffects.AfterSlice`), which re-rates the track and lays the trains out again when
+it differs from 60.
+
+The PR first pinned a fixed run of an imported synthetic coaster (`ImportedCoasterPin`, `0x0B6F305C6589A229`). That pin
+held on macOS arm64 only: the Linux and Windows x64 runners compute `0x43373F0B3F89E03C` for the same run. The coaster's
+curve, rating and collision pass called libm functions (`Atan2`, `Sin`, `Cos`, `Acos`), whose results are not bit-equal
+across platforms. The pin was removed then and is back since DetMath ("Cross-platform coaster pins" below).
+
+The same review ported the controller's first motion tick (`CoasterRide.MotionClockStarted`, controller flag `0x10`):
+tp.exe's motion tick `0x43CE20` takes the animation clock's time since its last run as the frame time, and the tick that
+finds flag `0x10` clear sets the flag and that clock word first, so it takes no time (`0x43CE85`). That is the first tick
+of every new or loaded controller. Every train makes one partial hop of no length: it stays where it stands, while its
+speed is capped, decays by 0.95 below 2.0 and stops below 0.01. Before, OpenTPW's first tick moved the trains by a whole
+step. The coaster hash content therefore changes twice: it holds the flag, and a coaster's trains run one step behind from
+their first tick on (any park with a running coaster hashes differently). No pinned golden or resume hash in the suite
+depends on a coaster's content, so no pin moved; `CoasterTests.ADepartureFromRestDoesNotReachTheMinimumSpeedInOneFrame`
+now measures the second tick. The park-resume save carries the flag (optional; a save from before it counts the flag set
+on a track that runs), so a resumed coaster continues as the one that kept running.
+
+The speed setter now runs after every slice of a station's root script that holds its coaster, as the original's loop
+does. For a coaster OpenTPW built, the speed word equals the setting after `COAST 8`, so nothing changes until an upgrade
+changes the script's speed word (RIDES-033); then the coaster takes the new speed after the script's next slice, as in
+the original, where OpenTPW before kept the old one. No pinned run upgrades a coaster.
+
+## Coaster clock catch-up
+
+The coaster's motion tick now takes as its frame time the fixed steps since its last motion tick
+(`CoasterRide.MotionClockLagSeconds`), as tp.exe's `0x43CE20` takes the scaled game clock since its clock word `ctl+0x120`
+(October 19). A running coaster's tick follows the one before it, so its frame time is one step, bit-equal to before
+(the lag is the sum of the steps in double precision, cast to single precision once). Only a coaster whose track stood cut or
+reopened (state 1, which runs no motion tick, `0x435AC9`) moves differently: the first tick after the track is completed
+again takes the whole stretch, so its trains run further in that tick and every later state differs from before. The
+fixed steps are the original's scaled game clock, as the substep scheduler maps it: they stop while the park is paused and
+multiply with the game speed. What stays OpenTPW's own (`EXT:coaster-fixed-step`) is the frame: one motion tick per 60 Hz
+step instead of one per rendered frame, and no zero-time ticks while the clock stands still (the original runs them on
+every paused frame).
+
+The coaster hash gains the lag and the speed setter's replay bit (`CoasterRide.SpeedSetByReplay`, controller bit `0x8000`,
+set only by the original's layout replay, which OpenTPW does not run), so any park with a coaster hashes differently from
+before. The park-resume save carries both (optional; a save from before them holds no lag and a clear bit). No pinned
+golden or resume hash in the suite depends on a coaster's content, so no pin moved.
+
+## Cross-platform coaster pins
+
+Since DetMath (#697) the coaster's curve, rating and collision pass evaluate their elementary functions identically everywhere,
+and the remaining System.Numerics arithmetic of the coaster's simulation path now goes through `DetMatrix` (October 20): the
+pylon rig's clip blending (`Vector3.Lerp` and the slerp's `MathF.Acos`/`Sin` before) and the station frame of a placed station
+model (`Matrix4x4`'s product before, which may fuse the multiply-add). A coaster's content is therefore a cross-platform digest,
+and it is pinned again:
+
+| Pin | Value | What |
+| --- | --- | --- |
+| `OriginalCoasterImportTests.AnImportedSyntheticCoasterRunsDeterministically` | `0x8A1279434220868B` | the imported synthetic coaster's minute (the #702 pin, `0x0B6F305C6589A229` on macOS and `0x43373F0B3F89E03C` on x64, moved with the coaster hash's two new fields, the motion clock lag and the replay bit) |
+| `CoasterTests.BuiltCoasterRunsArePinned` | `0x1ABA458D0079E09C` | a built synthetic circuit open for a minute with a guest on board |
+| `CoasterTests.BuiltCoasterRunsArePinned` | `0x045BFFE59994F3E7` | the same circuit reopened for three seconds at 20 s and completed again (the catch-up tick) |
+
+CI checks them on Windows, Linux and macOS and in both browser legs (Mono AOT and the interpreter). The synthetic coasters have no pylon or station models; a coaster built from game
+data adds the rig and the station frame, which `DetMatrix` covers. The rig's rest decomposition (`Matrix4x4.Decompose`) and its
+`Matrix4x4.CreateFromQuaternion` stay System.Numerics': they use the unfused `Dot`, `Cross`, `Length` and scalar arithmetic. The station frame's change from the fused product
+moves a station node's position by at most a few last bits; no pinned golden builds a coaster from game data, so no other pin moved.
+The animator itself (`ObjectAnimator`, presentation and the object scripts' poses) still uses System.Numerics.

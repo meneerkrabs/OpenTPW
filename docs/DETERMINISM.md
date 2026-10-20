@@ -344,7 +344,7 @@ the simulation was audited (co-op phase C1b, October 20, 2026):
 | `SceneClock` | presentation | Read by the sky's scroll and the coasters' scrolling textures only; not saved. |
 | `FlatRideBounceRiders.Prepare` | moved into the tick | Runs at the end of every tick (`Level.PrepareRideBodyPoses`), see below. |
 | `StaffPlacement.Reconcile`, `StaffWorld.Synchronize` | moved into the tick | Run at the start of every tick, after its commands, see below. |
-| `Entity.All` updates | presentation | The eight entity types with an update: the coaster renderer (meshes and cars from the track; its knot pass does not write the banks), the particle renderer, the pool, slide and bridge renderers (meshes, the drawn waves, the spray's water levels), the weather renderer and forecast presenter (their visual state and log lines) and the UI's root panel, whose panels edit the park only through the command funnel (`ParkCommandLayerTests`). `FrameBatchingTests.EveryEntityUpdateIsAnAuditedPresentationUpdate` fails when another entity type gains an update. |
+| `Entity.All` updates | presentation | The nine entity types with an update: the placed original objects (the ride hoarding's rise and fade, tp.exe `0x0044E410` → `0x004548F0`, advances its level by real frame time; the simulation only sets the hoarding's state and nothing it hashes or reads uses the level), the coaster renderer (meshes and cars from the track; its knot pass does not write the banks), the particle renderer, the pool, slide and bridge renderers (meshes, the drawn waves, the spray's water levels), the weather renderer and forecast presenter (their visual state and log lines) and the UI's root panel, whose panels edit the park only through the command funnel (`ParkCommandLayerTests`). `FrameBatchingTests.EveryEntityUpdateIsAnAuditedPresentationUpdate` fails when another entity type gains an update. |
 
 **The ride bodies' pose phase** (`FlatRideBounceRiders.Prepare`) asks the guests' body players (`VisitorSpriteState`) for templates, creates and deletes
 bodies and stores the walkers' headings. The body players are not hashed and the simulation never reads them, but a save keeps them, and run once per
@@ -363,7 +363,7 @@ so a path the same frame's input built before that tick can change the spawn cel
 
 What stays outside: the clock's banked fraction of a tick and its dropped-time total follow the frames' time feed (in a session the network clock
 feeds whole ticks, C2); the particle pool runs on the frame time, so the particle part of a save and the ADDOBJ records of effects that have ended
-(`OriginalObjectRuntime.ParticleObjects`) can differ between two players' saves, though neither is hashed nor returned to a script; and
+(`OriginalObjectRuntime.ParticleObjects`) and the ride hoarding's level can differ between two players' saves, though neither is hashed nor returned to a script; and
 `GameFlow.Update`'s work after the level's frame (the advisor, the autosave, the audio, the presence figures) is not part of this audit.
 
 The tests:

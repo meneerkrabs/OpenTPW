@@ -252,7 +252,9 @@ public class FrameBatchingTests
 	/// </summary>
 	private static readonly string[] AuditedEntityUpdates =
 	{
-		"OpenTPW.CoasterRenderer", "OpenTPW.ParticleRenderer", "OpenTPW.PoolBridgeRenderer", "OpenTPW.PoolRenderer", "OpenTPW.PoolSlideRenderer",
+		// OriginalObject: the ride hoarding's rise and fade (#721, tp.exe 0x0044E410 -> 0x004548F0) advances its level by real frame time; the simulation only sets the
+		// hoarding's state, and nothing it hashes or reads uses the level, which a save keeps like the particles (docs/DETERMINISM.md, "Frame batching").
+		"OpenTPW.CoasterRenderer", "OpenTPW.OriginalObject", "OpenTPW.ParticleRenderer", "OpenTPW.PoolBridgeRenderer", "OpenTPW.PoolRenderer", "OpenTPW.PoolSlideRenderer",
 		"OpenTPW.UI.RootPanel", "OpenTPW.WeatherForecastPresenter", "OpenTPW.WeatherRenderer",
 	};
 

@@ -96,7 +96,7 @@ function usage() {
   --music                 keep music and speech on (default: muted, effects on, as on 11 October)
   --size <w>x<h>          window size (default 1280x900)
   --crowd <n>             umbrellaCost, winterCost: extra guests staged in the Jungle park (default 400)
-  --shot <file>           umbrellas, snow, winter, winterCost: where the screenshot goes
+  --shot <file>           umbrellas, snow, winter, winterCost: where the screenshot goes; buy: one screenshot per row, named <file>-<row>.png
   --follow <n>            winter, winterCost: the screenshot follows the visible guest after skipping |n| of them by id, counted from the newest when negative (winter default 0, the lowest; winterCost default -250, a guest of a fresh crowd standing in the open and not under the entrance roofs)
   --cover <0..1>          snow: the settled snow cover to hold (default 1)
   --zoom <value>          jungle: after the steady window, hold the park camera at this zoom value (40..300 with the wide zoom option) and measure a second window
@@ -459,7 +459,7 @@ const scenarios = {
 		return { cover: options.cover, screenshot: file };
 	},
 
-	async buy(page) {
+	async buy(page, options) {
 		const state = await page.state();
 		if (!state.hud)
 			throw new Error('The buy scenario needs a park: run it after jungle');
@@ -475,6 +475,12 @@ const scenarios = {
 			}
 			result[name] = await page.action(name, () => page.call('PerfShowBuyItem', category, item.archive),
 				current => current.selected?.toLowerCase() === item.archive.toLowerCase());
+			// with --shot, the buy window with each row's preview (the depth-tested preview image), after its 500 ms preview delay
+			if (options.shot) {
+				await new Promise(resolve => setTimeout(resolve, 1500));
+				const shot = await page.send('Page.captureScreenshot', { format: 'png' });
+				await fs.writeFile(options.shot.replace(/\.png$/i, '') + `-${name.replace(/[^A-Za-z0-9]+/g, '-').toLowerCase()}.png`, Buffer.from(shot.data, 'base64'));
+			}
 		}
 		await page.call('PerfKey', 'Back');
 		return result;

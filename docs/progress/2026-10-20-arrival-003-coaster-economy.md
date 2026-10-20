@@ -1,0 +1,3 @@
+## Coaster economic eligibility without weakening admission (October 20, 2026)
+
+The [ARRIVAL-003 proposal](../proposals/arrival-003-bound-initial-ride-point-eligibility.md) now includes bounded static PC evidence and an economic-only host consumer of the native shared predicate. Complete, closed, non-intersecting, unedited coasters can count before samples exist; guest admission still requires safe samples. Synthetic tests cover actual level synchronization, numeric points, edits, missing controllers, reconstruction and import. Exact-head CI remains required; no native execution or full arrival parity is claimed. Kart/water first-walk timing remains unresolved and ARRIVAL-003 stays active.

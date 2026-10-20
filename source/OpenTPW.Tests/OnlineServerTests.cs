@@ -642,9 +642,88 @@ public class OnlineServerTests
 		}
 	}
 
+	[TestMethod]
+	public async Task PlayersJoiningARoomTogetherAllEndWithTheFullRoster()
+	{
+		// Each connection's requests are handled on their own thread, so joins of one room run side by side. A roster
+		// written after a newer one would leave a player believing others are absent (the flake of
+		// OnlineIntegrationTests.SessionWalksAChatParkAndReportsBuddyEntries): while players only arrive, each player's
+		// rosters of the room must grow, and the last one must name everyone.
+		await using var server = await LoopbackServer.StartAsync( options =>
+		{
+			options.AuthenticationsPerMinute = 100;
+			options.ChatBurst = 1000;
+			options.ChatMessagesPerSecond = 1000;
+		} );
+		var clients = new List<OnlineClient>();
+		var chats = new List<ChatConnection>();
+		try
+		{
+			const int players = 12;
+			for ( var index = 0; index < players; index++ )
+			{
+				var client = await server.LoginAsync( $"Player{index}" );
+				clients.Add( client );
+				var chat = await client.ConnectChatAsync();
+				chats.Add( chat );
+				await NextAsync( chat, item => item.Kind == ChatEventKind.Room );
+			}
+			var names = Enumerable.Range( 0, players ).Select( index => $"Player{index}" ).ToArray();
+			// the lobby between the parks, so each round starts from an empty room
+			var rooms = Enumerable.Range( 1, ChatProtocol.SatelliteRoomCount ).SelectMany( index => new[] { ChatProtocol.SatelliteRoom( index ), ChatProtocol.LobbyRoom } ).ToArray();
+			for ( var round = 0; round < 4 * rooms.Length; round++ )
+			{
+				var room = rooms[round % rooms.Length];
+				var rosters = chats.Select( _ => new List<IReadOnlyList<string>>() ).ToArray();
+				// A request handled after a join on the same connection is answered after everything that join wrote: the
+				// first marker, once every player has it, means every join of the round is done; the second, sent after
+				// that, comes after every roster the round wrote to that player.
+				async Task ReadUntilMarker( int index, string range )
+				{
+					while ( true )
+					{
+						var item = await NextAsync( chats[index] );
+						if ( item.Kind == ChatEventKind.Room && item.Room == room )
+							rosters[index].Add( item.Args! );
+						else if ( item.Kind == ChatEventKind.Notice && item.Notice == (int)ChatNotice.HearingRangeSet && item.Args?[0] == range )
+							return;
+					}
+				}
+				await Task.WhenAll( chats.Select( async ( chat, index ) =>
+				{
+					await chat.JoinAsync( room );
+					await chat.SendAsync( ChatCommand.Hearing, "1" );
+					await ReadUntilMarker( index, "1" );
+				} ) );
+				await Task.WhenAll( chats.Select( async ( chat, index ) =>
+				{
+					await chat.SendAsync( ChatCommand.Hearing, "2" );
+					await ReadUntilMarker( index, "2" );
+				} ) );
+				for ( var index = 0; index < players; index++ )
+				{
+					var seen = rosters[index];
+					var what = $"round {round}, {names[index]} in {room}: " + string.Join( " | ", seen.Select( roster => string.Join( ",", roster ) ) );
+					Assert.IsTrue( seen.Count > 0, what );
+					for ( var next = 1; next < seen.Count; next++ )
+						Assert.IsTrue( seen[next - 1].All( seen[next].Contains ), "a roster lost a player while players only arrived: " + what );
+					CollectionAssert.AreEquivalent( names, seen[^1].ToArray(), "the last roster does not name everyone: " + what );
+				}
+			}
+		}
+		finally
+		{
+			foreach ( var chat in chats )
+				await chat.DisposeAsync();
+			foreach ( var client in clients )
+				client.Dispose();
+			server.DeleteData();
+		}
+	}
+
 	private static async Task<ChatEvent> NextAsync( ChatConnection chat, Func<ChatEvent, bool>? match = null )
 	{
-		using var timeout = new CancellationTokenSource( TimeSpan.FromSeconds( 10 ) );
+		using var timeout = new CancellationTokenSource( OnlineIntegrationTests.Deadline );
 		while ( true )
 		{
 			var item = await chat.ReceiveAsync( timeout.Token ) ?? throw new AssertFailedException( "Chat closed." );

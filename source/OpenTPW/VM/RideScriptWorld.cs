@@ -9,9 +9,9 @@ namespace OpenTPW;
 /// </summary>
 public sealed class RideScriptWorld
 {
-	private readonly Dictionary<int, RideVM> scripts = new();
+	private Dictionary<int, RideVM> scripts = new();
 	/// <summary>The script list in the original's order (head first, 0x8791B0): a new script is linked at the head, the pass walks from the head.</summary>
-	private readonly List<RideVM> list = new();
+	private List<RideVM> list = new();
 	private readonly Func<DateTime>? civilTime;
 	private int nextId = 1;
 	private int nextAttractionId = 1;
@@ -224,6 +224,22 @@ public sealed class RideScriptWorld
 		scriptPass = savedPassCounter;
 	}
 
+	// All inputs were resolved and validated by the ordinary-only original graph importer. Allocate before commit.
+	internal Action PrepareOriginalGraphCommit( IReadOnlyList<(RideVM Vm, int Id)> nodes, int next, long pass, uint clock )
+	{
+		var imported = nodes.ToDictionary( pair => pair.Id, pair => pair.Vm );
+		var ordered = nodes.Reverse().Select( pair => pair.Vm ).ToList();
+		return () =>
+		{
+			foreach ( var (vm, id) in nodes ) vm.AdoptScriptId( id );
+			scripts = imported;
+			list = ordered;
+			nextId = next;
+			scriptPass = pass;
+			ClockMilliseconds = clock;
+		};
+	}
+
 	/// <summary>The scripts in the order the pass walks them (head of the list first).</summary>
 	internal IReadOnlyList<RideVM> ListOrder => list;
 
@@ -274,6 +290,7 @@ public sealed class RideScriptWorld
 			NextScriptId = nextId,
 			NextAttractionId = nextAttractionId,
 			PassCounter = scriptPass,
+			ListOrder = list.Select( vm => vm.ScriptId ).SequenceEqual( scripts.Keys.OrderByDescending( id => id ) ) ? null : list.Select( vm => vm.ScriptId ).ToArray(),
 			Scripts = scripts.Values.OrderBy( vm => vm.ScriptId ).Select( vm => vm.CaptureSnapshot() ).ToArray()
 		};
 	}
@@ -406,6 +423,9 @@ public sealed class RideScriptWorld
 				nodes[saved.ScriptId].AdoptChild( soundChild, sound: true );
 			}
 		}
+
+		// Original-save import can produce a non-ID scheduler order. Old snapshots retain their original restore path.
+		if ( snapshot.ListOrder != null ) list = snapshot.ListOrder.Select( id => nodes[id] ).ToList();
 
 		// Pass 3 — the world counters, then the post-condition: exactly the saved scripts stay registered.
 		RestoreCounters( snapshot.NextScriptId, snapshot.NextAttractionId, snapshot.ClockMilliseconds, snapshot.WorldGenerator, snapshot.CoasterRandomState, snapshot.PassCounter ?? 0 );

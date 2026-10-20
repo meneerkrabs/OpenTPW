@@ -2176,14 +2176,17 @@ into `ParkObjectState.QueueHasRoom` each tick, and `CountsForParkPoints` require
 longer counts. The flag is not saved; it is true until the first sync after a load or a purchase.
 
 **Fixed in C# (track types).** `CountsForParkPoints` now applies condition 6 too: a coaster counts only while
-`ParkObjectState.CoasterAcceptsGuests`, which the level syncs from `CoasterRide.AcceptsGuests` (no controller fails, as the
+`ParkObjectState.CoasterAcceptsGuests`, which the level syncs from `CoasterRide.CountsForParkPoints` (no controller fails, as the
 original's lookup `0x436860` returns 0), holds; the coaster test `0x441970` reads the controller's `+0x140` (its self-intersection
 count, which `0x439c40` increments for each crossing of the track with itself; not a rider count) and the `+0x3c` bits complete and
 closed. A kart or water ride counts only with `TrackValid`, the circuit walk's verdict; other types ignore both. The park points sum
 `0x4c8240` filters by the type's `Info.WhichUIType` (`+0x4ac`) 0 or 2, which C# now reads (`EconomyObjectInfo.RatingType`) instead
-of the object kind. Transcribed, the C# rule agrees on every input (`csharp-rule`). ARRIVAL-003 keeps two residuals: the C# coaster
-test also needs three track samples and has no edited-coaster term (`0x790fec`), and the track word starts false before a kart or water
-ride's first walk where the original's constructor stores 1 (`0x4db0df`).
+of the object kind. Transcribed, the C# rule agrees on every input (`csharp-rule`). A subsequent static inspection of the complete shared helper
+`0x441970`–`0x4419af` confirms the edited-controller exclusion (`0x790fec`) and no sample-count or controller-state term.
+The economic consumer now uses the flags/intersection/edit predicate without requiring three samples; actual guest admission
+retains that host safety guard. The edited-controller term was already wired through `BeingEdited`. This correction is static
+evidence plus synthetic coverage, not another native execution. ARRIVAL-003 retains the kart/water residual: the track word
+starts false before the first walk where the original's constructor stores 1 (`0x4db0df`).
 
 ### 7.12 Finding X16: guests test the price when they are called forward
 

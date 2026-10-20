@@ -343,9 +343,17 @@ shown without a costume; the seven hats, spatula, bow tie and blink meshes start
 composed through the shared MD2 hierarchy code (`ModelAnimationPlayer.ComputeRestTransforms`);
 with the root `Position Dummy` the model is Y-up facing −Z. Drawn without a camera,
 nothing mirrors it, and the MD2 corner order is already clockwise for the renderer's
-front faces. The advisor material is drawn double-sided: the original's Direct3D device sets
-D3DCULL_NONE once at device init (`0x566957`) and nothing else writes the cull mode, and the mesh path has no back-face test
-(`0x57A750`, `0x57AA10`, `0x574110`–`0x574660`), nor has the final submit `0x581CD0`, whose vertex transform (`[0x87B1D8]` vtable +8: `0x579250`, `0x5F4730`, `0x5F4F81`) applies the matrix only (ADVISOR-007 is retired). The bind pose is the base of the clips
+front faces. The advisor material culls the back faces (front faces clockwise on the screen), as the original's engine
+does in software: the Direct3D device sets D3DCULL_NONE once at device init (`0x566957`) and nothing else writes the cull mode,
+and neither the mesh path (`0x57A750`, `0x57AA10`, `0x574110`–`0x574660`) nor the submit `0x581CD0` (whose vertex transform,
+`[0x87B1D8]` vtable +8: `0x579250`, `0x5F4730`, `0x5F4F81`, applies the matrix only) tests faces, but the submit's queue
+(`[0x8BCBB8]`, filled only by `0x581CD0`, whose only caller is `0x57A530`) is flushed by the scene draw (`0x576A00` →
+`0x582170` → `0x581DB0`), and its primitive builder `0x580530` keeps a triangle only when the determinant of its corners'
+x, y and w is positive (`0x581320`, its only caller), after the advisor's own view `diag(1, −1, 1, 1)` (`0x57A260`) and
+the viewport `0x579690`, which scales y by the positive half height (`0x582F70`): the screen's y runs down, so a positive
+determinant means the corners run clockwise on the screen. Until October 20, 2026 OpenTPW drew the advisor double-sided, having missed that test;
+`AdvisorTests.TheOriginalsFaceTestKeepsTheAdvisorsFacesTowardsTheViewer` checks that the kept faces are the ones whose stored
+normals face the viewer in every advisor model (ADVISOR-007 stays retired). The bind pose is the base of the clips
 ("Clip timeline" below). All 15 `Advisorm*.MD2` clips decode completely: TRS tracks, quantised vertex
 groups and node-flag toggles (plus the never-read metadata bit 0x2000); the level
 advisors add texture-coordinate tracks and one clip with path parameters

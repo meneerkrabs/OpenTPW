@@ -1064,6 +1064,8 @@ internal sealed partial class GameFlow : IDisposable
 		DrawParkBuildProgress();
 		// the game's own pointer goes on top of every UI layer
 		Hud?.DrawCursor( Context );
+		// the model previews are drawn with a depth buffer into their own images, which the overlay pass shows in the batch's order
+		overlayRenderer.PrepareDepthImages( global::Global.Render.CommandList, Context.Batch, framebuffer );
 	}
 
 	/// <summary>Overlay pass (output pixels, possibly twice per frame when the output is captured).</summary>

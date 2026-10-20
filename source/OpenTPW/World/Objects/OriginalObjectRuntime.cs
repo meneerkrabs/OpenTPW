@@ -238,8 +238,11 @@ public sealed partial class OriginalObjectRuntime
 
 	public void Close()
 	{
-		if ( !stopped )
-			SetVariable( nameof( RideVariables.VAR_RIDECLOSED ), 1 );
+		if ( stopped )
+			return;
+		SetVariable( nameof( RideVariables.VAR_RIDECLOSED ), 1 );
+		// [BIN:TPW-EXE:0x004DF300 close] the close clears the loading slot +0x6C with the open word (RideVisitorBridge.ClearLoadingSlot)
+		Visitors.ClearLoadingSlot();
 	}
 
 	/// <summary>A common variable by name (scripts declare different subsets); 0 when the script has none.</summary>
@@ -658,6 +661,11 @@ public sealed partial class OriginalObjectRuntime
 		return new QueueParameters( entry.HasQueue, settings.GetBool( "Info.RunsContinuously" ), trackType is 2 or 3,
 			level?.GetFloat( "QueueWaitTimeConstant" ) ?? 0, initSpeed, initSpeed, capacity, duration, level?.GetInt( "InitDuration" ) ?? 0 );
 	}
+
+	// No delegate is invoked while validating original graph import provenance.
+	internal static bool HasCatalogResolver( RideVM vm, ObjectCatalogEntry entry ) =>
+		vm.Options.ResolveScript?.Target is OriginalObjectRuntime runtime && ReferenceEquals( runtime.Entry, entry ) && ReferenceEquals( runtime.Script, vm ) &&
+		vm.Options.ResolveScript == runtime.ResolveChildScript;
 
 	private RideScriptFile? ResolveChildScript( string fileName )
 	{

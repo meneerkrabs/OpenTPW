@@ -1298,9 +1298,10 @@ public sealed partial class ParkHud
 			return icon;
 		try
 		{
+			var clipMember = item.PreviewModel != null && item.Entry != null ? PreviewIcon.BuyClipMember( item.PreviewModel, item.Entry.Models ) : null;
 			icon = item.PreviewModel == null ? null : new PreviewIcon( LoadPreviewModel( item, item.PreviewModel ),
 				name => item.TextureDirectories.Select( directory => UiImages.Resolve( name, directory ) ).FirstOrDefault( path => path != null ),
-				RuntimeTexture( item ) );
+				RuntimeTexture( item ), clipMember == null ? null : LoadPreviewModel( item, clipMember.Path ).Clip, clipMember?.Name );
 		}
 		catch ( Exception exception ) when ( exception is IOException or InvalidDataException or NotSupportedException or InvalidOperationException )
 		{

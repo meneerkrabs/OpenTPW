@@ -1,6 +1,6 @@
 # Persistent visitor body sprites
 
-BOUNCE bodies consume a visitor-owned body player, rather than an animation step computed from bounce elapsed time. This implements a bounded part of HEADS-007. It does not establish original rendered equivalence or retire that register entry.
+BOUNCE and scripted WALK bodies consume a visitor-owned body player, rather than an animation step computed from ride elapsed time. This implements a bounded part of HEADS-007. It does not establish original rendered equivalence or retire that register entry.
 
 ## Program and wrapper rules
 
@@ -36,4 +36,4 @@ Only the new presentation fields stay outside the existing gameplay hashes. Stat
 
 `VisitorSpriteStateTests` and `VisitorSpriteIntegrationTests` use synthetic programs, clock samples, guests, bridges and a synthetic CPU model. They cover strict due/wrap, finite transitions, request ordering, lifetime, copied appearance, hidden/missing poses, host batching/pause/lost paths, read-only render consumption, save validation and gameplay/hash/RNG controls. They are not captures of the original executable.
 
-HEADS-007 remains bounded by current host inputs: queue move-up still lacks the original ToiletBonus reset, and queue interludes do not fully represent the original saved activity state. This change does not alter those gameplay decisions. Original wrapper/slot/program/clock import, swimming and generic teleport/control callbacks are outside the proved history. Ordinary walking and scripted WALK frame selection retain their previous rendering; staff retains its existing scheduler. Those independent approximations need separate work.
+HEADS-007 remains bounded by current host inputs: queue move-up still lacks the original ToiletBonus reset, and queue interludes do not fully represent the original saved activity state. This change does not alter those gameplay decisions. Original wrapper/slot/program/clock import, swimming and generic teleport/control callbacks are outside the proved history. Scripted WALK consumes the last emitted frame in the existing host pose phase, including initial invisibility, preserved output during queued template changes and finite-program stand tails. Provider-free geometry helpers retain their elapsed-time fallback. This does not change WALK movement, terrain height handling or the host clock approximation. Ordinary walking frame selection retains its previous rendering; staff retains its existing scheduler. Those independent approximations need separate work.

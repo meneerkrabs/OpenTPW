@@ -163,6 +163,7 @@ GUEST-001 docs/PROGRESS.md
 GUEST-003 docs/progress/2026-10-17-thing-pool-and-thing-ids.md
 GUEST-008 docs/PROGRESS.md
 GUEST-009 docs/PROGRESS.md
+GUEST-011 docs/CLOSED-RIDE-ADMISSION.md
 GUEST-012 docs/GUESTS.md
 GUEST-018 docs/GUESTS.md
 GUEST-022 docs/progress/2026-10-18-tpc-sprite-banks.md

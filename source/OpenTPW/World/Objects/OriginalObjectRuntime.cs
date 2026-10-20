@@ -238,8 +238,11 @@ public sealed partial class OriginalObjectRuntime
 
 	public void Close()
 	{
-		if ( !stopped )
-			SetVariable( nameof( RideVariables.VAR_RIDECLOSED ), 1 );
+		if ( stopped )
+			return;
+		SetVariable( nameof( RideVariables.VAR_RIDECLOSED ), 1 );
+		// [BIN:TPW-EXE:0x004DF300 close] the close clears the loading slot +0x6C with the open word (RideVisitorBridge.ClearLoadingSlot)
+		Visitors.ClearLoadingSlot();
 	}
 
 	/// <summary>A common variable by name (scripts declare different subsets); 0 when the script has none.</summary>

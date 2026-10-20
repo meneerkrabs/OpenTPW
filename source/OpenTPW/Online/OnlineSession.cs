@@ -517,6 +517,18 @@ public sealed class OnlineSession : IDisposable, IPresenceSession, IChatPanelSou
 		return "";
 	} );
 
+	/// <summary>
+	/// Fetches the chat parks' scenes for a satellite's park details (needs a login): <paramref name="onFetched"/> gets them on the game's thread, or null
+	/// from a server without them (an older OpenTPW server).
+	/// </summary>
+	public void FetchChatParkScenes( Action<IReadOnlyList<ChatParkScene>?> onFetched ) => WithClient( async client =>
+	{
+		Post( () => Status = OnlineStrings.Ui( OnlineStrings.GettingChatSatelliteList, "Getting Chat Satellite List" ) );
+		var scenes = await client.GetChatParkScenesAsync();
+		Post( () => onFetched( scenes?.Scenes ) );
+		return "";
+	} );
+
 	/// <summary>Fetches Game News and System News; no login needed.</summary>
 	public void FetchNews() => WithClient( async client =>
 	{

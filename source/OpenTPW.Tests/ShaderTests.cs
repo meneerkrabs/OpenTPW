@@ -38,6 +38,25 @@ public class ShaderTests
 		CollectionAssert.Contains( names, "s_Color" );
 	}
 
+	/// <summary>The depth-tested preview image's shader (ui-depth.shader) compiles for the native backends with its image bindings.</summary>
+	[DataTestMethod]
+	[DataRow( CrossCompileTarget.MSL )]
+	[DataRow( CrossCompileTarget.HLSL )]
+	[DataRow( CrossCompileTarget.GLSL )]
+	public void NativeUiDepthShaderCompilesForEveryBackend( CrossCompileTarget target )
+	{
+		if ( Environment.GetEnvironmentVariable( "OPENTPW_NATIVE_SHADER_TESTS" ) != "1" )
+			Assert.Inconclusive( "Set OPENTPW_NATIVE_SHADER_TESTS=1 with architecture-matching native SPIR-V libraries." );
+		Log = new();
+		var program = ShaderCompiler.CompileProgram( GetShaderPath( "ui-depth.shader" ), target );
+		var compiled = SpirvCompilation.CompileVertexFragment( program.Vertex, program.Fragment, target );
+		Assert.IsFalse( string.IsNullOrWhiteSpace( compiled.VertexShader ) );
+		Assert.IsFalse( string.IsNullOrWhiteSpace( compiled.FragmentShader ) );
+		var names = program.Reflection.ResourceLayouts.SelectMany( layout => layout.Elements ).Select( element => element.Name ).ToArray();
+		CollectionAssert.Contains( names, "Image" );
+		CollectionAssert.Contains( names, "s_Image" );
+	}
+
 	/// <summary>WebGL2 runs GLSL ES 3.00; every shader must cross-compile to it ahead of time (docs/WEB.md).</summary>
 	[DataTestMethod]
 	[DataRow( "3d.shader" )]
@@ -46,6 +65,7 @@ public class ShaderTests
 	[DataRow( "test.shader" )]
 	[DataRow( "text.shader" )]
 	[DataRow( "ui-batch.shader" )]
+	[DataRow( "ui-depth.shader" )]
 	[DataRow( "ui.shader" )]
 	[DataRow( "unlit.shader" )]
 	[DataRow( "water.shader" )]

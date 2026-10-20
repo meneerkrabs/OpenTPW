@@ -23,6 +23,8 @@ public static class ApiRoutes
 	public const string Cities = Prefix + "/cities";
 	/// <summary>The online world's chat parks (the globe's five satellites), with their player counts; public.</summary>
 	public const string ChatParks = Prefix + "/chat-parks";
+	/// <summary>The chat parks' scenes: what each satellite's park details show and the park its visit enters; needs a login.</summary>
+	public const string ChatParkScenes = ChatParks + "/scenes";
 	/// <summary>The players of the online world: search by name, and each player's own park page; public.</summary>
 	public const string Players = Prefix + "/players";
 	/// <summary>The public charts of the original website's pages: top parks, top players, richest players.</summary>
@@ -53,6 +55,15 @@ public sealed record CityList( IReadOnlyList<CityInfo> Cities );
 public sealed record ChatParkInfo( int Id, string Name, int Players );
 
 public sealed record ChatParkList( IReadOnlyList<ChatParkInfo> ChatParks );
+
+/// <summary>
+/// A chat park's scene (<see cref="ApiRoutes.ChatParkScenes"/>): its name and the description its satellite's park details show, and what its
+/// visit enters — the published <see cref="Park"/> the server names for it, or else the starting park of the original <see cref="Level"/>, which the
+/// game builds itself. A scene with neither has no park; the game enters its room in the overhead chat view.
+/// </summary>
+public sealed record ChatParkScene( int Id, string Name, string Description, string? Level, ParkSummary? Park );
+
+public sealed record ChatParkSceneList( IReadOnlyList<ChatParkScene> Scenes );
 
 /// <summary>The server's Game News and System News; empty text when the operator wrote none.</summary>
 public sealed record NewsInfo( string Game, string System, DateTimeOffset? UpdatedUtc );

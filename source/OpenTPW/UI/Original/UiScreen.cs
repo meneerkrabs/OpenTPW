@@ -216,6 +216,7 @@ public class UiScreen
 				Focused.Adjust( 1 );
 			// Enter activates, as for a text field: Space belongs to the park's map key
 			// (the original key table; ParkHud.ScreenShortcuts), not to the hovered element.
+			// [EXT:ui-key-navigation] the original has no key that activates a focused control (only the eight dialog Enter/Escape paths of docs/AUDIO.md, "List owners"), so a focused button's click on Enter (UiButton.Activate) is OpenTPW's; a focused list row stays silent
 			if ( input.Has( UiKeys.Accept ) && !input.Has( UiKeys.Space ) )
 				Focused.Activate();
 		}

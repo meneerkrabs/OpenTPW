@@ -77,7 +77,7 @@ public class ParkPresenceTests
 	{
 		var session = new FakeSession { Connection = connection };
 		var now = 0.0;
-		var presence = new ParkPresence( session, "park1", "Ann", new Ground( 100, 50 ), (10.5f, 5.5f), () => now );
+		var presence = new ParkPresence( session, ChatProtocol.ParkRoom( "park1" ), "Ann", new Ground( 100, 50 ), (10.5f, 5.5f), () => now );
 		return (presence, session, () => now += step);
 	}
 
@@ -148,7 +148,7 @@ public class ParkPresenceTests
 		presence.Ride = () => riding ? new ParkPresence.PresenceRide( (30.5f, 5.5f) ) : null;
 		session.Enter( new object() );
 		advance(); presence.Update( 0.1f );
-		CollectionAssert.AreEqual( new[] { ChatMoveMode.Walk }, session.MoveModes, "the arrival" );
+		CollectionAssert.AreEqual( new[] { ChatMoveMode.Teleport }, session.MoveModes, "the arrival puts the figure in the park (tp.exe 0x4E5EF0: mode 1)" );
 		riding = true;
 		advance(); presence.Update( 0.1f );
 		Assert.AreEqual( ChatMoveMode.Hide, session.MoveModes[^1], "boarding hides the figure at once" );
@@ -213,7 +213,7 @@ public class ParkPresenceTests
 		Assert.IsNull( openedSession.Connection );
 		// a connection the online screens were still opening when the visit began is theirs: it stays open
 		var openingSession = new FakeSession { ChatConnecting = true };
-		var opening = new ParkPresence( openingSession, "park1", "Ann", new Ground( 100, 50 ), (10.5f, 5.5f), () => 0 );
+		var opening = new ParkPresence( openingSession, ChatProtocol.ParkRoom( "park1" ), "Ann", new Ground( 100, 50 ), (10.5f, 5.5f), () => 0 );
 		openingSession.ChatConnecting = false;
 		openingSession.Enter( new object() );
 		opening.Dispose();

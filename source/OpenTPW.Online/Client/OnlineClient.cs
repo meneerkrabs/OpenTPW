@@ -103,6 +103,22 @@ public sealed class OnlineClient : IDisposable
 	}
 
 	/// <summary>
+	/// The chat parks' scenes: what each satellite's park details show and the park its visit enters (needs a login), or null from a server without them
+	/// (an older OpenTPW server, whose satellites are entered in the overhead chat view).
+	/// </summary>
+	public async Task<ChatParkSceneList?> GetChatParkScenesAsync( CancellationToken cancel = default )
+	{
+		try
+		{
+			return await GetJsonAsync<ChatParkSceneList>( ApiRoutes.ChatParkScenes, cancel );
+		}
+		catch ( OnlineException exception ) when ( exception.Status == HttpStatusCode.NotFound )
+		{
+			return null;
+		}
+	}
+
+	/// <summary>
 	/// A player's page: their published parks with visitors, votes, publish date, current and highest rank, and their
 	/// Platinum Tickets (the original website's "My Theme Park", docs/reverse/ONLINE-SOURCES.md S1). Without a login
 	/// only parks the author shows on the website are listed.

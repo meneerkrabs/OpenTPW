@@ -111,6 +111,12 @@ public sealed class Guest
 	/// <summary>Presentation position: interpolated between the last two steering steps (not simulation state).</summary>
 	public float DrawX { get; internal set; }
 	public float DrawY { get; internal set; }
+	/// <summary>
+	/// Where a body an object kept (state 16) was last placed by the guest update: the drawn position when the object took the guest. Presentation only, not saved or hashed; NaN outside such a use
+	/// (a loaded park draws the kept body at the guest's own position).
+	/// </summary>
+	public float KeptBodyX { get; internal set; } = float.NaN;
+	public float KeptBodyY { get; internal set; } = float.NaN;
 	/// <summary>Unit direction of the last movement (game cells).</summary>
 	public float HeadingX { get; internal set; } = 0;
 	public float HeadingY { get; internal set; } = 1;
@@ -231,9 +237,11 @@ public sealed class Guest
 	/// needs phase of the guest (every fourth park turn, 0.992 s: the .sam's "seconds"), in every state. It is a signed word and runs negative after 0.
 	/// </summary>
 	public int ExitLevel { get; internal set; }
-	/// <summary>Display-only simulated seconds since admission; null means the prior duration is unknown.
-	/// Seeded in-park guests start at zero. Outside travel and the queue before admission do not count.</summary>
+	/// <summary>Simulated seconds since creation, including the arrival and departure walk; null means the prior duration is unknown.
+	/// Retained for stay statistics and weather gates; new visitor displays use the independent integer-turn age.</summary>
 	public double? TimeInParkSeconds { get; internal set; }
+	/// <summary>Display-only age in unsigned 32-bit park turns, or null for a legacy seconds-based duration. Never used by gameplay.</summary>
+	public long? DisplayTimeInParkTurns { get; internal set; }
 	/// <summary>Own-format/display duration bound; no original timing limit is inferred.</summary>
 	public static double MaximumTimeInParkSeconds => TimeSpan.MaxValue.TotalSeconds;
 	public float SecondsSinceRide { get; internal set; }

@@ -86,7 +86,7 @@ public sealed class OriginalTerrain : Entity
 	public int PathCellCount { get; private set; }
 	private Dictionary<string, Texture>? heightfieldTextures;
 	private readonly List<ModelEntity> pathParts = new();
-	/// <summary>Path layer materials by texture set; reused when the layer is rebuilt, because materials are never disposed.</summary>
+	/// <summary>Path layer materials by texture set; kept when the layer is rebuilt, since a texture set that comes back is drawn by the same material; released with the terrain.</summary>
 	private readonly Dictionary<string, Material> pathMaterials = new();
 
 	/// <summary>Rebuilds the path layer so built and removed path cells show.</summary>
@@ -99,7 +99,12 @@ public sealed class OriginalTerrain : Entity
 			parts.Remove( old );
 			old.Delete();
 			if ( old.Model is { } model && models.Remove( model ) )
+			{
 				ScheduleDispose( model );
+				// a queue model's material is its own (made again with every rebuild), a path batch's is shared through pathMaterials and kept for the next one
+				if ( !pathMaterials.ContainsValue( model.Material ) )
+					model.Material.ReleaseOwnedResources();
+			}
 		}
 		pathParts.Clear();
 		RefreshHoles();
@@ -605,6 +610,12 @@ public sealed class OriginalTerrain : Entity
 		parts.Clear();
 		foreach ( var model in models )
 			ScheduleDispose( model );
+		// The materials are the terrain's own (each part made one, the path layer shares one per texture set, the heightfield keeps its own across hole changes) and carry a shader copy, a
+		// pipeline and a uniform buffer each: they leave with the entity, as an object's do (OriginalObject).
+		foreach ( var material in models.Select( model => model.Material ).Concat( pathMaterials.Values ).Concat( heightfieldMaterial != null ? new[] { heightfieldMaterial } : [] ).Distinct() )
+			material.ReleaseOwnedResources();
+		pathMaterials.Clear();
+		heightfieldMaterial = null;
 		models.Clear();
 	}
 }

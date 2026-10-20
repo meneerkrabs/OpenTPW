@@ -98,6 +98,107 @@ public class ObjectAccessCellsTests
 		}
 	}
 
+	[DataTestMethod, DataRow( 0 ), DataRow( 90 ), DataRow( 180 ), DataRow( 270 )]
+	public void TypedQueueRegistrationUsesLastOwnedEntranceAndRebindsAfterCellSave( int rotation )
+	{
+		var entry = Entry( 1235, 0, true, "*22" );
+		var rig = new Rig( entry );
+		var item = rig.Place( entry, 8, 8, rotation );
+		Assert.IsNotNull( item );
+		var entrances = item!.AccessPoints.Where( point => point.Kind == ObjectCellKind.Entrance ).ToArray();
+		Assert.AreEqual( 2, entrances.Length );
+		var last = entrances[^1];
+		var grid = new GuestPathGrid( rig.Cells );
+		grid.SetPath( 1, 1, true );
+		var simulation = new GuestSimulation( grid, GuestTests.CreateSettings(), 7 ) { ArrivalsEnabled = false };
+		Assert.IsTrue( Level.RegisterWithGuests( item.Runtime, item.AccessPoints, simulation, rotation,
+			Level.OwnerWord( item ), ownExitCell: true,
+			queueEntryResolver: () => Level.ResolveQueueEntrance( rig.Objects, rig.Cells, Level.OwnerWord( item ) ) ) );
+		Assert.AreEqual( (last.OutsideX, last.OutsideY), item.Visitors.QueueFrontCell!.Value );
+		Assert.AreNotEqual( (entrances[0].OutsideX, entrances[0].OutsideY), item.Visitors.QueueFrontCell.Value );
+		var saved = ParkResumeJson.Deserialize<ParkLayoutSnapshot.Data>( ParkResumeJson.Serialize( ParkLayoutSnapshot.CaptureSnapshot( rig.Cells, rig.Objects ) ) );
+		var restoredCells = ParkLayoutSnapshot.RestoreCellMap( saved );
+		item.Visitors.QueueEntryResolver = () => Level.ResolveQueueEntrance( rig.Objects, restoredCells, Level.OwnerWord( item ) );
+		item.Visitors.QueueFrontCell = (1, 1);
+		item.Visitors.RecomputeQueue( new GuestPathGrid( restoredCells ) );
+		Assert.AreEqual( (last.OutsideX, last.OutsideY), item.Visitors.QueueFrontCell!.Value );
+		restoredCells.SetOwner( last.X, last.Y, 0 );
+		Assert.IsNull( Level.ResolveQueueEntrance( rig.Objects, restoredCells, Level.OwnerWord( item ) ), "ownership validation belongs to entry reconstruction" );
+	}
+
+	[DataTestMethod, DataRow( 0 ), DataRow( 90 ), DataRow( 180 ), DataRow( 270 )]
+	public void RideExitUsesTheEntranceOwnerExitAndDirectionByteAfterRealPlacement( int rotation )
+	{
+		var entry = Entry( 1234, 0, true, "*2S" );
+		var rig = new Rig( entry );
+		var item = rig.Place( entry, 8, 8, rotation );
+		Assert.IsNotNull( item );
+		var entrance = item!.AccessPoints.Single( point => point.Kind == ObjectCellKind.Entrance );
+		var exit = item.AccessPoints.Single( point => point.Kind == ObjectCellKind.Exit );
+		Assert.AreEqual( (entrance.X, entrance.Y), Level.ResolveQueueEntrance( rig.Objects, rig.Cells, Level.OwnerWord( item ) )!.Value );
+		var expectedDirection = rig.Cells.QueueLinkAt( exit.X, exit.Y );
+		Assert.AreNotEqual( (byte)0, expectedDirection, "the real footprint writer supplies the exit direction" );
+		var importedCells = new ParkCellMap( rig.Cells.Width, rig.Cells.Height );
+		importedCells.WriteFootprint( item.Cells, Level.OwnerWord( item ), rotation );
+		Assert.AreEqual( (exit.X, exit.Y, expectedDirection), Level.ResolveRideExit( rig.Objects, importedCells, entrance.X, entrance.Y )!.Value, "the original import's footprint reconstruction supplies the same exit direction" );
+		var snapshot = ParkResumeJson.Deserialize<ParkLayoutSnapshot.Data>( ParkResumeJson.Serialize( ParkLayoutSnapshot.CaptureSnapshot( rig.Cells, rig.Objects ) ) );
+		var restoredCells = ParkLayoutSnapshot.RestoreCellMap( snapshot );
+		Assert.AreEqual( (exit.X, exit.Y, expectedDirection), Level.ResolveRideExit( rig.Objects, restoredCells, entrance.X, entrance.Y )!.Value, "a snapshot restores the direction independently of neighbours" );
+		var owner = rig.Cells.OwnerAt( entrance.X, entrance.Y );
+		rig.Cells.SetOwner( entrance.X, entrance.Y, 0 );
+		Assert.IsNull( Level.ResolveRideExit( rig.Objects, rig.Cells, entrance.X, entrance.Y ), "unowned entrance has no ride" );
+		rig.Cells.SetOwner( entrance.X, entrance.Y, ParkCellMap.CellWord( 20, 20 ) );
+		Assert.IsNull( Level.ResolveRideExit( rig.Objects, rig.Cells, entrance.X, entrance.Y ), "an unmatched owner cannot select a nearby ride" );
+		rig.Cells.SetOwner( entrance.X, entrance.Y, owner );
+		// Neighbour links deliberately disagree: recenter reads +0x0D, never +0x0C.
+		rig.Cells.SetLinks( exit.X, exit.Y, 0x55 );
+		Assert.AreEqual( (exit.X, exit.Y, expectedDirection), Level.ResolveRideExit( rig.Objects, rig.Cells, entrance.X, entrance.Y )!.Value );
+		Assert.IsNull( Level.ResolveRideExit( rig.Objects, rig.Cells, item.Placement.X, item.Placement.Y ), "the anchor is not an entrance" );
+		Assert.IsNull( Level.ResolveRideExit( rig.Objects, rig.Cells, exit.X, exit.Y ), "the exit is not the lookup entrance" );
+
+		var field = new ModelHeightfield( 32, 32, 10, 10, 0, 0, Array.Empty<uint>(), new float[33 * 33], new uint[32 * 32] );
+		var level = (Level)System.Runtime.CompilerServices.RuntimeHelpers.GetUninitializedObject( typeof( Level ) );
+		var park = (OriginalPark)System.Runtime.CompilerServices.RuntimeHelpers.GetUninitializedObject( typeof( OriginalPark ) );
+		var guests = (GuestSimulation)System.Runtime.CompilerServices.RuntimeHelpers.GetUninitializedObject( typeof( GuestSimulation ) );
+		void Set( object target, string property, object value ) => target.GetType().GetField( "<" + property + ">k__BackingField", BindingFlags.Instance | BindingFlags.NonPublic )!.SetValue( target, value );
+		Set( park, "Heightfield", field ); Set( level, "OriginalPark", park ); Set( level, "Objects", rig.Objects );
+		Set( guests, "Grid", new GuestPathGrid( rig.Cells ) ); Set( level, "Guests", guests );
+		var start = OriginalParkPlacement.GetCellCenter( field, entrance.X, entrance.Y );
+		var destination = OriginalParkPlacement.GetCellCenter( field, exit.X, exit.Y );
+		var camera = new ParkCameraMode();
+		camera.SetPose( new Vector3( start.X, start.Y, start.Z ), 90, -135 );
+		level.RecentreParkCamera( camera );
+		Assert.AreEqual( new Vector3( destination.X, destination.Y, destination.Z ), camera.Target );
+		var (dx, dy) = GuestPathGrid.Directions[Level.RideExitDirection( expectedDirection )];
+		var ahead = OriginalParkPlacement.GetCellCenter( field, exit.X + dx, exit.Y + dy );
+		var expected = new ParkCameraMode(); expected.SetPose( camera.Target, 90, -135 ); expected.LookAlong( new System.Numerics.Vector2( ahead.X - destination.X, ahead.Y - destination.Y ) );
+		Assert.AreEqual( expected.Yaw, camera.Yaw );
+		foreach ( byte direction in new byte[] { 0, 5, 0x55 } )
+		{
+			rig.Cells.SetQueueLink( exit.X, exit.Y, direction );
+			camera.SetPose( new Vector3( start.X, start.Y, start.Z ), 90, -135 );
+			var yaw = camera.Yaw;
+			level.RecentreParkCamera( camera );
+			Assert.AreEqual( new Vector3( destination.X, destination.Y, destination.Z ), camera.Target );
+			Assert.AreEqual( yaw, camera.Yaw, "zero or ambiguous cardinal direction preserves yaw" );
+		}
+		rig.Objects.Remove( item );
+		Assert.IsNull( Level.ResolveRideExit( rig.Objects, rig.Cells, entrance.X, entrance.Y ) );
+		Assert.AreEqual( (byte)0, rig.Cells.QueueLinkAt( exit.X, exit.Y ), "removal clears the exit direction" );
+	}
+
+	[TestMethod]
+	public void RideExitWithoutAnExitDoesNotInventTheAnchorAsDestination()
+	{
+		var entry = Entry( 1235, 0, true, "*2*" );
+		var rig = new Rig( entry );
+		var item = rig.Place( entry, 8, 8 );
+		Assert.IsNotNull( item );
+		var entrance = item!.AccessPoints.Single( point => point.Kind == ObjectCellKind.Entrance );
+		Assert.IsNull( Level.ResolveRideExit( rig.Objects, rig.Cells, entrance.X, entrance.Y ) );
+		Assert.IsNull( Level.ResolveRideExit( rig.Objects, rig.Cells, -1, -1 ) );
+	}
+
 	// The shape "*2S" on one row: entrance '2' opens towards −Y (outside cell (x + 1, y − 1)), exit 'S' towards +Y (outside cell (x + 2, y + 1)).
 
 	[TestMethod]

@@ -12,6 +12,9 @@ namespace OpenTPW;
 /// </summary>
 internal sealed class AdvisorRig : IDisposable
 {
+	/// <summary>The advisor meshes' material flags: back faces culled (the front faces run clockwise on the screen), as the original's face test 0x581320 drops them.</summary>
+	internal const MaterialFlags MeshMaterialFlags = MaterialFlags.None;
+
 	/// <summary>One mesh: its vertices in node space and the GPU model they are written to.</summary>
 	internal sealed class Part
 	{
@@ -151,10 +154,15 @@ internal sealed class AdvisorRig : IDisposable
 					}
 					textureSlots[slot] = texture;
 				}
-				// [BIN:TPW-EXE:0x00566957 device init] the only Direct3D CULLMODE write is D3DCULL_NONE; no other constant-state SetRenderState sets it and the register-driven setter 0x567A10 only toggles ALPHABLENDENABLE, so the original draws both faces
-				var material = new Material<ObjectUniformBuffer>( "content/shaders/advisor.shader", MaterialFlags.DoubleSided );
+				// [BIN:TPW-EXE:0x581320 face test] the engine drops a triangle itself unless its corners run clockwise on the screen: the batcher's primitive builder
+				// 0x580530 (the only caller of 0x581320, reached from the scene draw 0x576a00 → 0x582170 → 0x581db0) tests the determinant of each triangle's x, y
+				// and w after the advisor's own view (diag(1, -1, 1, 1), 0x57a260) and the viewport 0x579690, which scales y by the positive half height (0x582f70),
+				// so on the y-down screen a positive determinant means the corners run clockwise; the Direct3D cull mode D3DCULL_NONE (0x566957) is consistent with
+				// that, as the engine has already dropped those faces; so the material culls the faces that run anticlockwise on the screen (front faces clockwise,
+				// as for the park's objects)
+				var material = new Material<ObjectUniformBuffer>( "content/shaders/advisor.shader", MeshMaterialFlags );
 				material.Set( "Color", textureSlots );
-				// [BIN:TPW-EXE:0x581CD0 mesh submit] the submit queues the primitive (at most 0x1000, queue 0x8BCBB8) after transforming its vertices through [0x87B1D8] vtable +8, the per-CPU 4x4 transform chosen at 0x5781D0 (x87 0x579250, 3DNow 0x5F4730, 0x5F4F81) with no face test, and the batcher 0x581DB0 orders by state and texture only; the mesh path before it (0x57A750, 0x57AA10, 0x574110 through 0x574660) has no back-face test either, so the original draws both faces
+				// [BIN:TPW-EXE:0x581CD0 mesh submit] the submit (its only caller is 0x57a530) queues the primitive (at most 0x1000, queue [0x8BCBB8]) after transforming its vertices through [0x87B1D8] vtable +8, the per-CPU 4x4 transform chosen at 0x5781D0 (x87 0x579250, 3DNow 0x5F4730, 0x5F4F81); the scene draw flushes that queue through 0x581DB0, which orders by state and texture, and builds each primitive in 0x580530, which applies the face test above
 				var positions = new System.Numerics.Vector3[mesh.Vertices.Length];
 				var normals = new System.Numerics.Vector3[mesh.Vertices.Length];
 				for ( var index = 0; index < positions.Length; index++ )

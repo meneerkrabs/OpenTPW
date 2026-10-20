@@ -39,7 +39,8 @@ internal static class WalkerBodies
 	/// rounded eighth of a turn, ftol(0.5 - (6.28318 - (a - 1.570795)) x -1.2732406) (6 to 14), then <see cref="SignedLow3"/>.</summary>
 	// [BIN:TPW-EXE:0x005570C2 walk heading] fpatan of (z2 - z1, x2 - x1), fsub 1.570795 (0x700FE8), fsubr 6.28318 (0x700FF0), fmul -1.2732406 (0x700FF8, -4/pi), fsubr 0.5 (0x701000),
 	// __ftol, then the sign-keeping three-bit mask (0x005570E1); the on-board heading does the same (0x00557F52, mask 0x00557F74); the sprite pass keeps the low three bits (0x00542010)
-	public static int HeadingOf( float dx, float dz ) => SignedLow3( (int)(0.5 - (6.28318 - (Math.Atan2( dz, dx ) - 1.570795)) * -1.2732406201955062) );
+	// [EXT:deterministic-math] the x87's fpatan in IEEE double by DetMath, the same bits on every runtime, not in x87 extended precision (docs/DETERMINISM.md, "Browser and native")
+	public static int HeadingOf( float dx, float dz ) => SignedLow3( (int)(0.5 - (6.28318 - (DetMath.Atan2( dz, dx ) - 1.570795)) * -1.2732406201955062) );
 
 	/// <summary>The sprite sector a heading byte selects: its low three bits (a negative heading wraps).</summary>
 	public static int SectorOf( int heading ) => heading & 7;

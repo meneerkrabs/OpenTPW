@@ -93,8 +93,9 @@ public partial class Level
 		var placedEntries = Objects.Objects.Where( item => !item.IsDeleted ).Select( item => item.Entry ).ToArray();
 		// [EXT:winter-save] opentpw.winter likewise: recorded while the park has a winter kiosk or a glühwein stall or a guest with a warm item
 		// [EXT:cheats-save] opentpw.cheats likewise: recorded once the park has used one of the extension's own cheats
+		// [EXT:evening-torches-save] opentpw.evening likewise: recorded while the park holds a torch
 		var extensionsInUse = ParkResumeMods.InUse( Guests.Grid.Cells, placedEntries.Any( ParkResumeMods.IsPoolsObject ), ParkResumeMods.UmbrellasInUse( placedEntries, Guests ), ParkResumeMods.WinterInUse( placedEntries, Guests ),
-			Park.Economy.Cheats.UsesExtension );
+			Park.Economy.Cheats.UsesExtension, ParkResumeMods.EveningInUse( placedEntries ) );
 		var assets = ParkResumeMods.AssetsForUse( verifiedAssets ?? ParkResumeAssetManifest.Capture( Objects.Catalog, Park.Economy.Settings ), placedEntries );
 		var random = CaptureRandomState();
 		var snapshot = new ParkResumeSnapshot
@@ -127,6 +128,7 @@ public partial class Level
 			Coasters = CaptureCoastersSnapshot(),
 			Tracks = CaptureTracksSnapshot(),
 			PoolSlides = PoolSlides?.CaptureSnapshot(),
+			PoolBridges = PoolBridges?.CaptureSnapshot(),
 			Tours = CaptureToursSnapshot(),
 			Prototype = prototype,
 			Particles = ParticlesCaptured?.Invoke( this ),
@@ -174,7 +176,7 @@ public partial class Level
 		// and the guest restore to see it).
 		PlacedRide = RestorePrototypeRideSnapshot( snapshot.Prototype, roots );
 		Objects.ScriptWorld.RestoreSnapshot( snapshot.Scripts, roots );
-		ValidateResumeQueueGeometry( snapshot.Guests, Guests );
+		RestoreResumeRoutingGeometry( snapshot.Guests, snapshot.PoolBridges, Guests );
 		Guests.RestoreSnapshot( snapshot.Guests );
 		// [EXT:smarter-guests] the extension's birth ids, keyed by the guest ids the restore just rebuilt
 		SmarterGuestsSave.Restore( Guests, snapshot.SmarterGuests );
@@ -199,6 +201,7 @@ public partial class Level
 		// The coasters go last: their stations were placed above (each placement reset the track to its station
 		// node), and this restores the saved tracks, controller state, trains and riders over them.
 		RestoreCoastersSnapshot( snapshot.Coasters );
+		ValidateResumeBridgeCoasterGeometry( PoolBridges, Coasters );
 		RestoreTracksSnapshot( snapshot.Tracks );
 		// [EXT:pools-slides] the slides go back over their towers and the pool cells the layout restored
 		PoolSlides?.RestoreSnapshot( snapshot.PoolSlides );
@@ -259,6 +262,32 @@ public partial class Level
 		return ride;
 	}
 
+	/// <summary>Coaster nodes are restored after bridges; reject overlaps that the live placement tools would refuse.</summary>
+	internal static void ValidateResumeBridgeCoasterGeometry( PoolBridgeWorld? world, IEnumerable<CoasterRide> coasters )
+	{
+		if ( world is not { Count: > 0 } ) return;
+		foreach ( var ride in coasters )
+			foreach ( var node in ride.Track.Nodes )
+				if ( world.Reserves( node.X, node.Y ) )
+					throw new InvalidDataException( $"A saved coaster node at {node.X},{node.Y} overlaps a pool bridge or its end connection." );
+	}
+
+	/// <summary>Restore the elevated graph before validating queues: an underlying path may no longer accept a queue join.</summary>
+	internal static void RestoreResumeRoutingGeometry( GuestSimulationSnapshot snapshot, PoolBridgesSaveData? bridgeData, GuestSimulation target )
+	{
+		var world = target.Grid.Cells.PoolBridges;
+		if ( bridgeData != null )
+		{
+			if ( world == null ) throw new InvalidDataException( "The saved park's pool bridge world is unavailable." );
+			world.RestoreSnapshot( bridgeData );
+			foreach ( var ride in target.Attractions.OfType<RideVisitorBridge>() )
+				ride.RecomputeQueue( target.Grid );
+		}
+		ValidateResumeQueueGeometry( snapshot, target );
+		// Keep the original empty-bridge validation and restore order, including the saved map version.
+		if ( bridgeData == null ) world?.RestoreSnapshot( null );
+	}
+
 	/// <summary>Current cached queues must agree with the restored cells; a cache from before the last edit refreshes on the next tick.</summary>
 	internal static void ValidateResumeQueueGeometry( GuestSimulationSnapshot snapshot, GuestSimulation target )
 	{
@@ -271,7 +300,7 @@ public partial class Level
 		foreach ( var saved in snapshot.Attractions )
 		{
 			var bridge = bridges[saved.AttractionId];
-			if ( !saved.QueueCells.SequenceEqual( bridge.QueueCells ) || saved.JoinCell != bridge.JoinCell )
+			if ( !bridge.MatchesSnapshotQueueGeometry( target.Grid, saved ) )
 				throw new InvalidDataException( $"Attraction {saved.AttractionId}'s queue does not match the saved cell map." );
 		}
 	}

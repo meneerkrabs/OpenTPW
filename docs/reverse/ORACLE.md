@@ -1164,8 +1164,8 @@ change detection and the real-time rate of the turn counter. Four targets now ru
    2100's February and the year change (all three at turn 8,433). The one difference is the start: the constructor `0xe3c90` stores
    month 0, day -1 and year 0, so the **first update of a new calendar posts a day and a year message** (and a month message outside
    January) whatever the date, 503 of 503 constructed inputs. A loaded park save keeps the calendar's stored date, so a new park shows it (and, below, a loaded
-   restart save), and its effect on a new park is a day message and a year message at the first turn; the bank's year handler resets a profit that is 0 anyway. OpenTPW starts
-   synchronised and does not post them (`APPROX:ECON-063`); what the day listeners would do with a first message is unknown. On PC (tp.exe)
+   restart save), and its effect on a new park is a day message and a year message at the first turn; the bank's year handler resets a profit that is 0 anyway. Synthetic OpenTPW parks start
+   synchronised (`APPROX:ECON-063`). Supported TPW initial-calendar imports at turn 0 retain a pending day message: the first actual turn rolls the object histories and accumulates the running daily-average challenge before raising `DayEnded`; own saves preserve the pending state. No imported year cache is inferred. On PC (tp.exe)
    the world init `0x5156A0` syncs the month and year caches to turn 0 (`0x4D7AF0` → `0x4F85A0`) but leaves the day at -1, so a new park's
    first update posts a day message only; the loader `0x4F7F30` restores the saved caches, and the restart saves (`restart.INTS`), written
    before the first update, keep day -1, so their first update after a load posts the day message too.
@@ -2176,14 +2176,17 @@ into `ParkObjectState.QueueHasRoom` each tick, and `CountsForParkPoints` require
 longer counts. The flag is not saved; it is true until the first sync after a load or a purchase.
 
 **Fixed in C# (track types).** `CountsForParkPoints` now applies condition 6 too: a coaster counts only while
-`ParkObjectState.CoasterAcceptsGuests`, which the level syncs from `CoasterRide.AcceptsGuests` (no controller fails, as the
+`ParkObjectState.CoasterAcceptsGuests`, which the level syncs from `CoasterRide.CountsForParkPoints` (no controller fails, as the
 original's lookup `0x436860` returns 0), holds; the coaster test `0x441970` reads the controller's `+0x140` (its self-intersection
 count, which `0x439c40` increments for each crossing of the track with itself; not a rider count) and the `+0x3c` bits complete and
 closed. A kart or water ride counts only with `TrackValid`, the circuit walk's verdict; other types ignore both. The park points sum
 `0x4c8240` filters by the type's `Info.WhichUIType` (`+0x4ac`) 0 or 2, which C# now reads (`EconomyObjectInfo.RatingType`) instead
-of the object kind. Transcribed, the C# rule agrees on every input (`csharp-rule`). ARRIVAL-003 keeps two residuals: the C# coaster
-test also needs three track samples and has no edited-coaster term (`0x790fec`), and the track word starts false before a kart or water
-ride's first walk where the original's constructor stores 1 (`0x4db0df`).
+of the object kind. Transcribed, the C# rule agrees on every input (`csharp-rule`). A subsequent static inspection of the complete shared helper
+`0x441970`–`0x4419af` confirms the edited-controller exclusion (`0x790fec`) and no sample-count or controller-state term.
+The economic consumer now uses the flags/intersection/edit predicate without requiring three samples; actual guest admission
+retains that host safety guard. The edited-controller term was already wired through `BeingEdited`. This correction is static
+evidence plus synthetic coverage, not another native execution. ARRIVAL-003 retains the kart/water residual: the track word
+starts false before the first walk where the original's constructor stores 1 (`0x4db0df`).
 
 ### 7.12 Finding X16: guests test the price when they are called forward
 

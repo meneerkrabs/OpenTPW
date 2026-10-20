@@ -1,0 +1,3 @@
+## Save import follow-ups from post-merge reviews (October 19, 2026)
+
+From the post-merge reviews of the off-path guest import (#690) and the saved sound volumes (#693): the stranded-mark comment now says a mark at or below the loading process's route count is kept only while tp.exe's stranded test `0x4FA770` holds and that every walk step clears it (`0x4FA30B`); a new synthetic test imports a deciding guest standing on a queue cell where it stands and reports its cell type 3; and the slider comment in `SavedSoundVolumes` names both slider messages 0x800 and 0x801 and the 0x801 handler's skip while the option's on byte is clear (`0x4A2D6B`).

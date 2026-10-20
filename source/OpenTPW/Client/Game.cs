@@ -262,6 +262,12 @@ internal static class Game
 			Environment.ExitCode = M4Gate.RunCommand( args );
 			return;
 		}
+		// Headless cross-runtime determinism digest (docs/DETERMINISM.md, "Browser and native"): no window, renderer or audio.
+		if ( args.Contains( "--determinism-digest" ) )
+		{
+			Environment.ExitCode = CrossRuntimeDigest.RunCommand( args );
+			return;
+		}
 
 		// [EXT:extension-online-gate] with opentpw.online disabled the online command-line tools refuse and no online folder is set up
 		FeatureGates.RefuseOnlineCommandLine( args );
@@ -671,6 +677,36 @@ internal static class Game
 				Log.Trace( FormattableString.Invariant( $"--debug-light: a point light at {light.Position.X:0.##},{light.Position.Y:0.##},{light.Position.Z:0.##}, radius {light.Radius:0.##}, colour {colour.X:0.##},{colour.Y:0.##},{colour.Z:0.##}." ) );
 			}
 		}
+		// [EXT:debug-evening] smoke-only (Debug builds): --debug-torches N places N of the theme's torches (the evening extension's own, docs/EVENING.md "Torches") through the level's own placement, which charges them,
+		// on the free cells nearest the camera target (--capture-camera's when given) with three cells between them, so a capture shows the torches, their flames and each one's light
+		if ( GetOption( args, "--debug-torches", "the number of torches to place" ) is { } torchText && int.TryParse( torchText, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var torchCount ) && torchCount > 0 )
+		{
+			var torchCamera = GetOption( args, "--capture-camera", "x,y,height,yaw" )?.Split( ',' ).Select( value => float.Parse( value, System.Globalization.CultureInfo.InvariantCulture ) ).ToArray();
+			var torchFrames = 0;
+			Render.PostUpdate += PlaceDebugTorches;
+			void PlaceDebugTorches()
+			{
+				if ( flow.Level is not { OriginalPark: not null } level || Camera.Mode is not ParkCameraMode park || ++torchFrames < 5 )
+					return;
+				Render.PostUpdate -= PlaceDebugTorches;
+				var entry = level.Objects.Catalog.Entries.FirstOrDefault( ParkResumeMods.IsEveningObject );
+				var searchX = torchCamera is { Length: >= 2 } ? torchCamera[0] : park.Target.X;
+				var searchY = torchCamera is { Length: >= 2 } ? torchCamera[1] : park.Target.Y;
+				if ( entry == null || !level.TryGetGridCell( searchX, searchY, out var cellX, out var cellY ) )
+				{
+					Log.Warning( "--debug-torches: the opentpw.evening extension is off (it is on by default), this is a Theme Park Inc run, or the camera target is off the grid." );
+					return;
+				}
+				var placedTorches = new List<string>();
+				// three cells between neighbours, so each torch's pool of light shows on its own
+				for ( var radius = 0; radius < 24 && placedTorches.Count < torchCount; radius += 4 )
+					for ( var dx = -radius; dx <= radius && placedTorches.Count < torchCount; dx += 4 )
+						for ( var dy = -radius; dy <= radius && placedTorches.Count < torchCount; dy += 4 )
+							if ( Math.Max( Math.Abs( dx ), Math.Abs( dy ) ) == radius && level.CheckObject( entry, cellX + dx, cellY + dy, 0 ) == OriginalPlacementResult.Allowed && level.PlaceObject( entry, cellX + dx, cellY + dy, 0 ) is { } torch )
+								placedTorches.Add( FormattableString.Invariant( $"{torch.Placement.X},{torch.Placement.Y} (engine {torch.Placement.ModelToEngine.M41:0.#},{torch.Placement.ModelToEngine.M42:0.#})" ) );
+				Log.Trace( $"--debug-torches: placed {placedTorches.Count} of {torchCount} {entry.DisplayName}: {string.Join( "; ", placedTorches )}." );
+			}
+		}
 		// [EXT:debug-pool] smoke-only: once the original level is up and the opentpw.pools extension is on, paints pool cells through the pool tool's own builder
 		// (Level.PoolBuilder.PaintCells, charged as the tool does) at the first place near the camera target (--capture-camera's when given) where every cell of the shape can be painted, so a
 		// capture shows the water and the edges (docs/POOLS.md). The shape is rectangles "x,y,w,h" relative to that place, separated by ';' (default a 6 x 4 basin
@@ -727,6 +763,24 @@ internal static class Game
 							var centreX = grid.X + (originX + shape.Average( cell => cell.X ) + 0.5f) * ObjectPlacement.CellSize;
 							var centreY = grid.Y + (originY + shape.Average( cell => cell.Y ) + 0.5f) * ObjectPlacement.CellSize;
 							Log.Trace( FormattableString.Invariant( $"--debug-pool: painted {stroke.Cells.Count} cells at {originX},{originY} (engine centre {centreX:0.#},{centreY:0.#}), charged {stroke.Charged}, refusal {stroke.FirstRefusal?.Reason.ToString() ?? "none"}." ) );
+							// Place the bridge before swimmers: its normal standing guard must never be bypassed.
+							var bridgeCells = shape.Select( cell => (X: originX + cell.X, Y: originY + cell.Y) ).ToArray();
+							var bridgeDelay = GetOption( args, "--debug-bridge-delay", "frames to wait after swimmers exist before building the bridge" ) is { } delayText
+								&& int.TryParse( delayText, out var delay ) && delay > 0 ? delay : 0;
+							var debugBridge = args.Contains( "--debug-bridge" ) && bridgeDelay == 0 ? level.BuildDebugPoolBridge( bridgeCells ) : null;
+							if ( args.Contains( "--debug-bridge" ) && bridgeDelay > 0 )
+							{
+								var bridgeFrames = 0;
+								Render.PostUpdate += BuildLateBridge;
+								void BuildLateBridge()
+								{
+									if ( flow.Level != level ) { Render.PostUpdate -= BuildLateBridge; return; }
+									if ( level.SwimmerRenderer == null || ++bridgeFrames < bridgeDelay ) return;
+									Render.PostUpdate -= BuildLateBridge;
+									Log.Trace( $"--debug-bridge-delay: building after {bridgeFrames} frames with existing guest/staff/swimmer renderers; swimmers {level.Guests!.Guests.Count( guest => guest.IsSwimming )}." );
+									if ( level.BuildDebugPoolBridge( bridgeCells ) is { } lateBridge ) level.StartDebugBridgeWalkers( lateBridge );
+								}
+							}
 							// [EXT:debug-swimmers] smoke-only: --debug-swimmers N builds a changing room beside the pool (through the level's own placement, which charges it and needs the pool at its back) and
 							// puts N guests into the water at once, so a capture shows swimmers (docs/POOLS.md)
 							if ( GetOption( args, "--debug-swimmers", "guests to put into the pool" ) is { } swimText && int.TryParse( swimText, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var swimmerCount ) )
@@ -737,10 +791,42 @@ internal static class Game
 							// [EXT:debug-slide] smoke-only: --debug-slide flume|tube builds a slide tower beside the pool and lays a valid slide from it into the water (docs/POOLS.md, "Water slides")
 							if ( GetOption( args, "--debug-slide", "flume or tube" ) is { } slideText )
 								PlaceDebugSlide( level, shape.Select( cell => (X: originX + cell.X, Y: originY + cell.Y) ).ToArray(), slideText );
+							if ( debugBridge != null ) level.StartDebugBridgeWalkers( debugBridge );
 							return;
 						}
 				Log.Warning( "--debug-pool: no place near the camera target takes the whole shape." );
 			}
+		}
+		// [EXT:online-coop-commands] --record-commands <file> records the current park's commands and its world-hash checkpoints into a command log (docs/COOP.md, "Recording and replay"),
+		// written every ten seconds and when the park changes; each new park starts a new recording in the same file
+		if ( GetOption( args, "--record-commands", "a command log file to write" ) is { } recordPath )
+		{
+			Level? recording = null;
+			var frames = 0;
+			void WriteLog( Level level )
+			{
+				if ( level.CommandLog() is not { } log )
+					return;
+				var full = Path.GetFullPath( recordPath );
+				var temporary = full + ".tmp";
+				File.WriteAllBytes( temporary, log.Serialize() );
+				File.Move( temporary, full, overwrite: true );
+			}
+			Render.PostUpdate += () =>
+			{
+				var current = flow.Level is { OriginalPark: not null, IsReadOnlyVisit: false } live ? live : null;
+				if ( !ReferenceEquals( current, recording ) )
+				{
+					if ( recording != null )
+						WriteLog( recording );
+					recording = current;
+					recording?.StartCommandRecording();
+					frames = 0;
+				}
+				if ( recording != null && ++frames % 600 == 0 )
+					WriteLog( recording );
+			};
+			AppDomain.CurrentDomain.ProcessExit += ( _, _ ) => { if ( recording != null ) WriteLog( recording ); };
 		}
 		// [EXT:debug-sim-minutes] smoke-only: once the original level is up, runs its fixed-step simulation (guests, ride scripts, economy) for that many park minutes
 		// as fast as it goes and prints the scream statistics (docs/AUDIO.md "Scream diagnostics"); use it with --capture-world, which ends the run afterwards.
@@ -864,7 +950,7 @@ internal static class Game
 			}
 		}
 		// [EXT:debug-hud] smoke-only (Debug builds): once the park's HUD is up, runs a list of interface actions for captures (--capture-interface):
-		// staff and buy open those windows, msg:<text> posts a message, msgaction:<kind>+<kind> posts one with action buttons, pause and confirm open those menus, select:<n> selects the n-th placed object, waves opens the first wave machine's settings window (waves:select only selects it), help:<text> forces the popup help line, models:<a+b+c> draws ui.wad models.
+		// staff and buy open those windows, buyitem:<info id>[,<yaw degrees>] opens the buy window on that object type's row (making it available as the research cheat does when it is still in the lab, and holding its preview at that turn), msg:<text> posts a message, msgaction:<kind>+<kind> posts one with action buttons, pause and confirm open those menus, select:<n> selects the n-th placed object, waves opens the first wave machine's settings window (waves:select only selects it), help:<text> forces the popup help line, models:<a+b+c> draws ui.wad models.
 		var debugHud = GetOption( args, "--debug-hud", "a '|' separated action list for interface captures" );
 		if ( debugHud != null )
 		{
@@ -885,6 +971,28 @@ internal static class Game
 						case "infoseries": hud.SetParkInfoSeries( (OpenTPW.Hud.ParkInfoSeries)0x1f, false ); hud.SetParkInfoSeries( (OpenTPW.Hud.ParkInfoSeries)int.Parse( argument ), true ); break;
 						case "infoperiod": hud.SetParkInfoPeriod( int.Parse( argument ) ); break;
 						case "buy": hud.OpenBuyWindow(); break;
+						case "buyitem":
+							var buyParts = argument.Split( ',' );
+							float? buyYaw = buyParts.Length > 1 ? float.Parse( buyParts[1], System.Globalization.CultureInfo.InvariantCulture ) : null;
+							if ( !hud.DebugBuyItem( int.Parse( buyParts[0], System.Globalization.CultureInfo.InvariantCulture ), buyYaw ) )
+								Log.Warning( $"--debug-hud: no buy row for object type {buyParts[0]}." );
+							break;
+						// [EXT:debug-evening] the buy window on one of its tabs (rides, sideshows, shops, features), optionally with one row selected and scrolled into view ("buytab:features:Tiki Torch"), for captures such as the torches in the features
+						case "buytab":
+						{
+							var (tab, row) = argument.Split( ':', 2 ) is [var tabName, var rowName] ? (tabName, rowName) : (argument, null);
+							hud.OpenBuyWindow();
+							hud.SelectCategory( Enum.Parse<OpenTPW.Hud.BuildCategory>( tab, true ) );
+							var rowIndex = row == null ? -1 : hud.BuyItems.ToList().FindIndex( item => hud.ListName( item ) == row );
+							if ( rowIndex >= 0 )
+							{
+								hud.SelectBuyItem( rowIndex );
+								hud.SetBuyFirstRow( rowIndex - 4 );
+							}
+							else if ( row != null )
+								Log.Warning( $"--debug-hud: no row {row} in the buy window's {tab}." );
+							break;
+						}
 						case "msg": hud.PostGameMessage( argument ); break;
 						case "openmsg": hud.OpenPendingMessage( 0 ); break;
 						case "msgaction": hud.PostGameMessage( "A message with two actions", argument.Split( '+' ).Select( kind => new OpenTPW.Hud.GameMessageAction( Enum.Parse<OpenTPW.Hud.GameMessageKind>( kind, true ), () => { } ) ).ToArray() ); break;
@@ -982,13 +1090,27 @@ internal static class Game
 			Render.Run();
 	}
 
-	/// <summary>The CD launcher screen for the game's language, or null when it is disabled or the CD's Autorun files are absent.</summary>
 	/// <summary>
-	/// [EXT:silent-automated-runs] every automated run opens no audio device, so tests and agents on a developer machine make no sound:
-	/// smokes (<c>--smoke-test</c>, <c>--tpi-smoke-test</c>, <c>--park-resume-smoke</c>, <c>--smoke-presence</c>), captures (<c>--capture-*</c>), perf runs
-	/// (<c>--perf-*</c>), gates, guest reports, every <c>--debug-*</c> option (they exist for smoke captures and agent runs, none is a player option), <c>--offscreen</c> and <c>--headless</c>. <c>--smoke-audio</c> or <c>--audible</c>
-	/// opts back in to sound; <c>--silent</c> or <c>OPENTPW_SILENT=1</c> silences any run. A plain interactive launch is never silenced. The game logic
-	/// and its timing are unchanged.
+	/// The automated modes that [EXT:silent-automated-runs] and [EXT:offscreen-automated-runs] share, so the two rules cannot drift apart: smokes
+	/// (<c>--smoke-test</c>, <c>--tpi-smoke-test</c>, <c>--park-resume-smoke</c>, <c>--smoke-presence</c>), captures (<c>--capture-*</c>), perf runs
+	/// (<c>--perf-*</c>), gates, guest reports, asset validation, every <c>--debug-*</c> option (they exist for smoke captures and agent runs, none is a
+	/// player option), <c>--offscreen</c> and <c>--headless</c>. A plain interactive launch (the front end, <c>--sandbox</c>, <c>--load-original-level</c>,
+	/// <c>--play-movie</c> without <c>--smoke-test</c>, <c>--setup</c>) is none of them.
+	/// </summary>
+	internal static bool IsAutomatedRun( string[] args ) =>
+		args.Any( arg => arg.StartsWith( "--capture-", StringComparison.Ordinal ) || arg.StartsWith( "--perf-", StringComparison.Ordinal ) || arg.StartsWith( "--debug-", StringComparison.Ordinal ) )
+		|| args.Intersect( AutomatedFlags ).Any();
+
+	private static readonly string[] AutomatedFlags =
+	{
+		"--smoke-test", "--tpi-smoke-test", "--park-resume-smoke", "--smoke-presence", "--perf-run", "--perf-hash-tick",
+		"--offscreen", "--headless", "--m3-gate", "--m4-gate", "--determinism-digest", "--guest-report", "--guest-compare", "--validate-assets",
+	};
+
+	/// <summary>
+	/// [EXT:silent-automated-runs] every automated run (<see cref="IsAutomatedRun"/>) opens no audio device, so tests and agents on a developer machine make
+	/// no sound. <c>--smoke-audio</c> or <c>--audible</c> opts back in to sound; <c>--silent</c> or <c>OPENTPW_SILENT=1</c> silences any run, and so does
+	/// <c>OPENTPW_OFFSCREEN=1</c> unless the window is made visible. A plain interactive launch is never silenced. The game logic and its timing are unchanged.
 	/// </summary>
 	internal static bool IsSilentRun( string[] args, string? silentEnvironment, string? offscreenEnvironment = null )
 	{
@@ -996,30 +1118,29 @@ internal static class Game
 			return true;
 		if ( args.Contains( "--smoke-audio" ) || args.Contains( "--audible" ) )
 			return false;
-		return args.Any( arg => arg.StartsWith( "--capture-", StringComparison.Ordinal ) || arg.StartsWith( "--perf-", StringComparison.Ordinal ) || arg.StartsWith( "--debug-", StringComparison.Ordinal ) )
-			|| args.Intersect( AutomatedFlags ).Any()
-			|| (offscreenEnvironment == "1" && !args.Contains( "--no-offscreen" ));
+		return IsAutomatedRun( args ) || (offscreenEnvironment == "1" && !WantsVisibleWindow( args ));
 	}
 
-	private static readonly string[] AutomatedFlags =
-	{
-		"--smoke-test", "--tpi-smoke-test", "--park-resume-smoke", "--smoke-presence", "--perf-run", "--perf-hash-tick",
-		"--offscreen", "--headless", "--m3-gate", "--m4-gate", "--guest-report", "--guest-compare", "--validate-assets",
-	};
-
 	/// <summary>
-	/// [EXT:offscreen-automated-runs] smokes (<c>--smoke-test</c>, <c>--tpi-smoke-test</c>, <c>--park-resume-smoke</c>) create their window hidden and render into
-	/// an offscreen framebuffer, so no window appears, focus is not stolen and a locked screen does not matter. <c>--offscreen</c> or
-	/// <c>OPENTPW_OFFSCREEN=1</c> does the same for any run; <c>OPENTPW_OFFSCREEN=0</c> or <c>--no-offscreen</c> keeps the visible window.
+	/// [EXT:offscreen-automated-runs] every automated run (<see cref="IsAutomatedRun"/>: smokes, captures, perf runs, debug runs, gates and the rest) creates
+	/// its window hidden and renders into an offscreen framebuffer, so no window appears on the developer's display, focus is not stolen and a locked
+	/// screen does not matter (the user's request of 2026-10-19: smoke tests and agent runs on a virtual screen; macOS has no Xvfb, the hidden window and
+	/// its framebuffer are that virtual screen). Captures read the same render textures either way, and perf runs are paced at the 60 Hz the documented
+	/// baselines were measured with (docs/ENGINE-PERFORMANCE.md). <c>--offscreen</c> or <c>OPENTPW_OFFSCREEN=1</c> does the same for any run;
+	/// <c>--no-offscreen</c>, its alias <c>--visible</c> (the window's counterpart of <c>--audible</c>), or <c>OPENTPW_OFFSCREEN=0</c> keeps the visible
+	/// window. Sound is a separate choice (<see cref="IsSilentRun"/>): <c>--audible</c> does not show the window and <c>--visible</c> does not unmute.
 	/// </summary>
 	internal static bool IsOffscreenRun( string[] args, string? offscreenEnvironment )
 	{
-		if ( args.Contains( "--no-offscreen" ) || offscreenEnvironment == "0" )
+		if ( WantsVisibleWindow( args ) || offscreenEnvironment == "0" )
 			return false;
-		return args.Contains( "--offscreen" ) || offscreenEnvironment == "1"
-			|| args.Contains( "--smoke-test" ) || args.Contains( "--tpi-smoke-test" ) || args.Contains( "--park-resume-smoke" );
+		return offscreenEnvironment == "1" || IsAutomatedRun( args );
 	}
 
+	/// <summary>The opt-out of <see cref="IsOffscreenRun"/>: <c>--no-offscreen</c> or <c>--visible</c>.</summary>
+	private static bool WantsVisibleWindow( string[] args ) => args.Contains( "--no-offscreen" ) || args.Contains( "--visible" );
+
+	/// <summary>The CD launcher screen for the game's language, or null when it is disabled or the CD's Autorun files are absent.</summary>
 	private static AutorunScreen? CreateAutorun( string[] args, SetupSettings settings, string dataDirectory )
 	{
 		var cd = GetOption( args, "--cd-data", "the original CD's folder" ) ?? Environment.GetEnvironmentVariable( "OPENTPW_CD_DATA" );
@@ -1156,6 +1277,9 @@ internal static class Game
 					return args;
 				}
 			}
+			// [EXT:offscreen-automated-runs] an offscreen run cannot show the setup window (it would open visibly and wait for input): it stops instead
+			if ( Window.OffscreenRequested )
+				throw new DirectoryNotFoundException( "The saved Theme Park Inc folder or world is no longer available, and an offscreen run cannot open setup. Use --game-path or OPENTPW_GAME_PATH." );
 			Log?.Warning( "The saved Theme Park Inc folder or world is no longer available; opening setup." );
 			return RunStarter( args, saved, setupPath, null, runWizard );
 		}
@@ -1188,7 +1312,8 @@ internal static class Game
 		}
 		if ( resolved == null )
 		{
-			if ( !GamePathResolution.IsInteractive( args ) || DesktopSetupSelection.HasHeadlessGate( args ) )
+			// [EXT:offscreen-automated-runs] nor does an offscreen run open the setup window (it would appear and wait for input)
+			if ( !GamePathResolution.IsInteractive( args ) || DesktopSetupSelection.HasHeadlessGate( args ) || Window.OffscreenRequested )
 				throw new DirectoryNotFoundException( "Theme Park World data not found. Use --game-path or OPENTPW_GAME_PATH, or start OpenTPW without arguments to choose the folder in the setup window." );
 			return RunStarter( args, saved, setupPath, discovery, runWizard );
 		}

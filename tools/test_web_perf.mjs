@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, rm, symlink, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { chromeArguments, keyMetrics, listFiles, mainThreadBusy, median, medianResults, percentile, safeResolve, startServer, summarizeFrames } from './web-perf/lib.mjs';
+import { chromeArguments, keyMetrics, listFiles, loopbackOrigin, mainThreadBusy, median, medianResults, percentile, safeResolve, startServer, summarizeFrames } from './web-perf/lib.mjs';
 import { markdown } from './web-perf/report.mjs';
 
 // The browser performance harness (tools/web-perf/run.mjs) without a browser: its server, path handling, statistics and reports.
@@ -167,4 +167,32 @@ test('Chrome starts muted and headless unless a run asks for sound or a window',
 	const audible = chromeArguments('/tmp/profile', { audible: true, headed: true });
 	assert.ok(!audible.includes('--mute-audio'));
 	assert.ok(!audible.includes('--headless=new'));
+});
+
+test('the upstream is a loopback http origin only', () => {
+	assert.equal(loopbackOrigin('http://127.0.0.1:8080/ignored?x=1'), 'http://127.0.0.1:8080');
+	assert.equal(loopbackOrigin('http://localhost:9'), 'http://localhost:9');
+	assert.equal(loopbackOrigin('http://[::1]:5'), 'http://[::1]:5');
+	for (const value of ['http://example.com', 'https://127.0.0.1:1', 'http://10.0.0.1', 'file:///etc/passwd'])
+		assert.throws(() => loopbackOrigin(value), /loopback/);
+});
+
+test('a forwarded request keeps the upstream host, even with an absolute-form target', async () => {
+	const seen = [];
+	const { createServer } = await import('node:http');
+	const upstream = createServer((request, response) => { seen.push({ host: request.headers.host, url: request.url }); response.end('ok'); });
+	await new Promise(resolve => upstream.listen(0, '127.0.0.1', resolve));
+	const root = await mkdtemp(path.join(os.tmpdir(), 'web-perf-upstream-'));
+	const harness = await startServer(root, root, `http://127.0.0.1:${upstream.address().port}`);
+	try {
+		const { request } = await import('node:http');
+		const port = new URL(harness.origin).port;
+		// an absolute-form request target names another host; only its path and query may reach the upstream
+		await new Promise((resolve, reject) => request({ host: '127.0.0.1', port, path: 'http://example.com/elsewhere?q=1' }, response => { response.resume(); response.on('end', resolve); }).on('error', reject).end());
+		assert.deepEqual(seen, [{ host: `127.0.0.1:${upstream.address().port}`, url: '/elsewhere?q=1' }]);
+	} finally {
+		await harness.close();
+		await new Promise(resolve => upstream.close(resolve));
+		await rm(root, { recursive: true, force: true });
+	}
 });

@@ -54,8 +54,8 @@ public class TrackAddOnLevelTests
 			"/synthetic/script.RSE", Array.Empty<string>(), Array.Empty<ObjectAnimationFile>(), Array.Empty<string>(), Array.Empty<string>(), FileSystem, null );
 
 	/// <summary>A go-kart ride (the Dino Karts' controller type −4) and its jump (the Dino Karts Jump's footprint and Bumper.*Adjust).</summary>
-	private (ObjectCatalogEntry Ride, ObjectCatalogEntry Jump) Entries() =>
-		(Entry( ObjectCategory.Ride, "Info.Id 1150\nInfo.Name SyntheticKarts\nInfo.WhichUIType 0\nInfo.IsChoosable 1\nBumper.WhichTrackType 1\nBumper.BumperType -4\n", "*" ),
+	private (ObjectCatalogEntry Ride, ObjectCatalogEntry Jump) Entries( bool hasQueue = false ) =>
+		(Entry( ObjectCategory.Ride, "Info.Id 1150\nInfo.Name SyntheticKarts\nInfo.WhichUIType 0\nInfo.IsChoosable 1\nBumper.WhichTrackType 1\nBumper.BumperType -4\n" + (hasQueue ? "Info.HasQueue 1\n" : ""), "*" ),
 		Entry( ObjectCategory.Upgrade, "Info.Id 1500\nInfo.Name SyntheticJump\nInfo.WhichUIType 0\nAddOn.UpgradesId 1150\nAddOn.UpgradeType 1\nBumper.WhichTrackType 1\n"
 			+ "Bumper.NorthXAdjust 1\nBumper.NorthYAdjust 0\nBumper.EastXAdjust 0\nBumper.EastYAdjust 0\nBumper.SouthXAdjust 0\nBumper.SouthYAdjust -1\nBumper.WestXAdjust 1\nBumper.WestYAdjust -1\n", "++", "++" ));
 
@@ -65,9 +65,9 @@ public class TrackAddOnLevelTests
 	/// The level with the ride placed at (10, 9) (its station tiles (10, 10) and (12, 10)) and the long kart loop of <see cref="TrackAddOnTests"/>: the straights
 	/// (14, 10) … (28, 10) and (28, 14) … (10, 14) between the corners (30, 10), (30, 14), (8, 14) and (8, 10).
 	/// </summary>
-	private (Level Level, OriginalObject Ride, ObjectCatalogEntry Jump) World()
+	private (Level Level, OriginalObject Ride, ObjectCatalogEntry Jump) World( bool hasQueue = false )
 	{
-		var (rideEntry, jump) = Entries();
+		var (rideEntry, jump) = Entries( hasQueue );
 		var catalog = (ObjectCatalog)Activator.CreateInstance( typeof( ObjectCatalog ), Private, null, new object[] { "jungle", new[] { rideEntry, jump } }, null )!;
 		var level = (Level)RuntimeHelpers.GetUninitializedObject( typeof( Level ) );
 		var objects = new ParkObjects( catalog, new SandboxParkGrid() );
@@ -240,6 +240,112 @@ public class TrackAddOnLevelTests
 		level.RestoreTracksSnapshot( saved );
 		Assert.IsTrue( ride.Runtime.Bump!.IsTrackValid );
 		Assert.IsFalse( ride.IsOpen || ride.Visitors.IsOpen || state.IsOpen );
+	}
+
+	[DataTestMethod]
+	[DataRow( 0xc, true )]
+	[DataRow( 0, false )]
+	[DataRow( 0xf, false )]
+	[DataRow( 0x3c, false )]
+	public void OnlyExactlyCtrlKeepsACompletedTrackLineWithoutAStart( int modifiers, bool stays )
+	{
+		var (level, ride, _) = World();
+		AttachTrackEconomy( level, ride );
+		CutForLiveMend( level, ride );
+		var writer = level.CellTool.Writer;
+		var previousCommit = level.CellTool.LastCommit;
+		level.CellTool.Hover( (20, 14) );
+		Assert.IsNotNull( level.CellTool.Ghost );
+		Assert.IsTrue( level.ClickCellTool( (20, 14), modifiers )?.Completed == true );
+		Assert.IsTrue( ride.Runtime.Bump!.IsTrackValid );
+		Assert.AreEqual( stays, level.CellTool.IsActive );
+		Assert.IsNull( level.CellTool.Start );
+		Assert.IsNull( level.CellTool.Ghost );
+		if ( stays )
+			Assert.IsNull( level.CellTool.LastCommit, "the just-finished segment must not refill a reset tool" );
+		else
+			Assert.AreSame( previousCommit, level.CellTool.LastCommit, "ordinary End retains its existing last-commit behavior" );
+		Assert.AreEqual( 0, level.CellTool.SegmentCount );
+		Assert.IsFalse( level.CellTool.Undo(), "no stale line remains undoable" );
+		if ( stays )
+		{
+			Assert.AreSame( writer, level.CellTool.Writer, "same-writer reset is intentional" );
+			Assert.AreSame( ride, level.TrackToolStation );
+			Assert.IsNull( level.ClickCellTool( (20, 14) ), "the next click only picks a new start" );
+			Assert.AreEqual( (20, 14), level.CellTool.Start );
+			Assert.AreEqual( 0, level.CellTool.SegmentCount );
+		}
+	}
+
+	private static void CutForLiveMend( Level level, OriginalObject ride )
+	{
+		Assert.IsTrue( level.EnterTrackTool( ride ) );
+		level.ClickCellTool( (24, 14) );
+		level.ClickCellTool( (22, 14) );
+		Assert.AreEqual( CellToolMode.KartTrack, level.CellTool.Mode );
+		Assert.IsTrue( level.CellTool.Undo() );
+		Assert.AreEqual( (30, 14), level.CellTool.Start );
+	}
+
+	[TestMethod]
+	public void AFollowingQueueWinsOverExactlyCtrl()
+	{
+		var (level, ride, _) = World( hasQueue: true );
+		AttachTrackEconomy( level, ride );
+		ride.Visitors.HasCells = true;
+		ride.Visitors.QueueFrontCell = (4, 4);
+		CutForLiveMend( level, ride );
+		Assert.IsTrue( level.ClickCellTool( (20, 14), 0xc )?.Completed == true );
+		Assert.AreEqual( CellToolMode.Queue, level.CellTool.Mode );
+		Assert.AreEqual( (4, 4), level.CellTool.Start );
+		Assert.IsNull( level.TrackToolStation );
+	}
+
+	[DataTestMethod]
+	[DataRow( TrackWalkCause.Edit )]
+	[DataRow( TrackWalkCause.Restore )]
+	[DataRow( TrackWalkCause.Placement )]
+	public void ALaterNonLineWalkDoesNotInheritTheClickModifier( TrackWalkCause cause )
+	{
+		var (level, ride, _) = World();
+		AttachTrackEconomy( level, ride );
+		CutForLiveMend( level, ride );
+		level.ClickCellTool( (20, 14), 0xc );
+		Assert.IsTrue( level.CellTool.IsActive );
+		Assert.IsTrue( level.RewalkTrack( ride, cause ) is { IsValid: true } );
+		Assert.IsFalse( level.CellTool.IsActive );
+	}
+
+	[TestMethod]
+	public void HeadlessBuildAfterACtrlClickDoesNotInheritItsContinuation()
+	{
+		var (level, ride, _) = World();
+		AttachTrackEconomy( level, ride );
+		CutForLiveMend( level, ride );
+		level.ClickCellTool( (20, 14), 0xc );
+		Assert.IsTrue( level.CellTool.IsActive );
+		Assert.IsTrue( level.BuildTrack( ride, (22, 14), (20, 14) )?.Completed == true );
+		Assert.IsFalse( level.CellTool.IsActive );
+	}
+
+	[TestMethod]
+	public void AThrowingClickRestoresTheModifierScope()
+	{
+		var (level, ride, _) = World();
+		level.CellTool.Enter( new ThrowingLineWriter(), (0, 0) );
+		Assert.ThrowsException<InvalidOperationException>( () => level.ClickCellTool( (2, 0), 0xc ) );
+		Assert.AreEqual( false, typeof( Level ).GetField( "keepTrackToolAfterLine", Private )!.GetValue( level ) );
+		CutForLiveMend( level, ride );
+		Assert.IsTrue( level.BuildTrack( ride, (30, 14), (20, 14) )?.Completed == true );
+		Assert.IsFalse( level.CellTool.IsActive );
+	}
+
+	private sealed class ThrowingLineWriter : ICellLineWriter
+	{
+		public CellToolMode Mode => CellToolMode.KartTrack;
+		public SegmentResult Preview( (int X, int Y) start, (int X, int Y) end ) => throw new InvalidOperationException();
+		public SegmentResult Commit( (int X, int Y) start, (int X, int Y) end ) => throw new InvalidOperationException();
+		public void Undo( SegmentResult segment ) => throw new InvalidOperationException();
 	}
 
 }

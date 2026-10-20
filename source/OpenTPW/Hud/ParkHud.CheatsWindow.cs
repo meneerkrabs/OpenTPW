@@ -107,8 +107,8 @@ public sealed partial class ParkHud
 		bool Allowed() => Economy() is { } economy && (economy.Cheats.Mode || economy.Cheats.Pending.Any( action => action.Kind == CheatKind.Mode ));
 		void Queue( CheatAction action )
 		{
-			if ( Economy() is { } economy && Allowed() )
-				economy.QueueCheat( action );
+			if ( Economy() != null && Allowed() )
+				level.Commands.Issue( new QueueCheatCommand( action.Kind, action.Argument ) );
 		}
 		var buttons = new List<(UiButton Button, Func<bool> Enabled)>();
 		var rowIndex = 0;
@@ -125,7 +125,7 @@ public sealed partial class ParkHud
 		}
 		string Extra( OpenTpwText key ) => strings.Extra( key );
 		Row( "cheatMode", () => Extra( OpenTpwText.CheatModeLabel ) + strings[Allowed() ? UIStrings.On : UIStrings.Off],
-			() => { if ( !Allowed() ) Economy()?.QueueCheat( new CheatAction( CheatKind.Mode ) ); }, () => !Allowed() );
+			() => { if ( !Allowed() && Economy() != null ) level.Commands.Issue( new QueueCheatCommand( CheatKind.Mode ) ); }, () => !Allowed() );
 		Row( "vehicle", () => Extra( OpenTpwText.CheatArrivalLabel ) + Extra( VehicleText( cheatVehicle ) ),
 			() => cheatVehicle = (cheatVehicle + 1) % 3, () => true, direction => cheatVehicle = ((cheatVehicle + direction) % 3 + 3) % 3 );
 		Row( "arrival", () => Extra( OpenTpwText.CheatSendVisitors ),

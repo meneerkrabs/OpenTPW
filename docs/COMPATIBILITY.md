@@ -117,6 +117,12 @@ Formats and evidence:
   cmap are drawn as .notdef with a diagnostic. The native compositor still layers the
   material effects for the three signs (`hallow/c_scat`, `fantasy/jelly`, `space/zob`)
   whose paint styles are both zero.
+- The lobby's island and gate models are built with two explicit lines, the theme gate's OBJECT_NAMES
+  row (`0x409B10` per theme, `0x5DFA60` passes them to both models), so the four lobby sign models
+  (`Jun_isle`, `Hal_isle`, `Fan_gate`, `Spa_gate`) show the lines a new park's gate starts with, in the
+  player's language (English "LOST"/"Kingdom", "HALLOWEEN"/"World", "WONDER"/"Land", "SPACE"/"Zone"); `LobbySigns` draws them with the model's own
+  `lobby/terrain/<model>.sgn`. No track piece, vehicle, coaster car, pylon or tour car ships a sign
+  face (`LobbySignCorpusTests`).
 
 Which font the original uses where (slot 0 = first line, slot 1 = second line):
 

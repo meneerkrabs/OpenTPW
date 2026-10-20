@@ -73,7 +73,7 @@ public sealed partial class ParkHud
 	/// Direct load/save and postcard are excluded; load/save under Escape inherit the still-open pause screen.
 	/// </summary>
 	// [BIN:TPW-EXE:0x48c894 escape suspension] options 0x4a3a7b, map 0x5f0b8a and owned offline message boxes 0x47f27b also suspend.
-	// ECON-058/UI-096: no native activation hook is added; focus return must not be mistaken for original game resume.
+	// ECON-058/UI-096: the offline simulation focus-loss latch does not own these timers; focus return is not game resume.
 	// Other dialogs, online ownership gates and nested host screens are not claimed to reproduce the original's single global flag.
 	internal static bool ChallengeMessageSuspensionFor( bool userPaused, IEnumerable<string> screens ) => userPaused
 		|| screens.Any( name => name is PauseMenuScreen or MapScreenName or "options" or "confirmDelete" or "confirmDeleteAttraction" or "confirmDismissStaff" );
@@ -91,7 +91,16 @@ public sealed partial class ParkHud
 	/// <summary>The explicit pause key and host speed controls, rather than an arbitrary zero simulation scale, own user suspension.</summary>
 	internal void SetUserGameSpeed( GameSpeed speed )
 	{
-		Status.Speed = speed;
+		// an explicit speed choice also ends the focus-loss pause
+		applicationPaused = false;
+		// a park's speed is part of its state and goes through its commands; a park without an economy keeps its speed in the HUD's status
+		if ( level?.Park != null )
+		{
+			if ( !level.Commands.Issue( new SetGameSpeedCommand( speed ) ).Accepted )
+				return;
+		}
+		else
+			Status.Speed = speed;
 		challengeUserPaused = speed == GameSpeed.Paused;
 		SyncChallengeMessageSuspension();
 	}

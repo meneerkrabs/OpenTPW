@@ -286,7 +286,7 @@ public sealed class TrackEditor
 	private void Replay( (int X, int Y) start, byte heading, List<(int X, int Y)> cleared )
 	{
 		// the walk that collects the corners also resets the pass counters (corner or junction 1, any other tile 0) before the lines are replayed
-		var chain = new List<(int X, int Y)>();
+		var chain = new List<((int X, int Y) Tile, byte Heading, bool Crossing)>();
 		var position = start;
 		var limit = Tracks.Count + 16;
 		for ( var steps = 0; steps < limit; steps++ )
@@ -306,7 +306,7 @@ public sealed class TrackEditor
 				stop = (heading & cell.Mask) == 0;
 			}
 			Tracks.Set( position.X, position.Y, cell );
-			chain.Add( position );
+			chain.Add( (position, heading, cell.Mask == 0x55) );
 			if ( heading == 0 || stop )
 				break;
 			var next = Step( position, heading );
@@ -314,11 +314,24 @@ public sealed class TrackEditor
 				break;
 			position = next;
 		}
-		foreach ( var tile in chain )
+		foreach ( var (tile, traversed, crossing) in chain )
 		{
 			var cell = Tracks.Get( tile.X, tile.Y );
 			if ( !cell.IsOrigin )
 				continue;
+			// Preserve the other flow of a supported two-line crossing. Other replay shapes and contrary laid-flow directions keep the existing policy.
+			// [BIN:TPW-EXE:0x53B280 line step] with two or more link bits the line step clears dx -2 → 0x04, dx +2 → 0x40, dy -2 → 0x10, dy +2 → 0x01 from the link (0x5227f0) and both arms
+			// of the step's axis from the mask (0x522730), the bit opposite to the step (the per-tile driver 0x53aac0 steps from the anchor to the click, and 0x5370e0 maps dx -2 to heading 0x40);
+			// the replay 0x52FE50 pops the corner points the collector pushed in walk order (0x530830, 0x530B70: stack 0x81B740, count 0x820A8C) and runs each line from the later point
+			// back to the earlier one (mode 0x35: anchor = popped point, click = the point below it), so the cleared bit is the chain's own heading, the traversed heading here
+			var remaining = (byte)(cell.Link & ~traversed);
+			if ( crossing && IsJunction( cell.Mask ) && cell.Overlap == 1 && (traversed & ~0x55) == 0 && TrackHeading.Count( traversed ) == 1
+				&& (cell.Link & ~0x55) == 0 && TrackHeading.Count( cell.Link ) == 2 && (cell.Link & traversed) != 0
+				&& remaining != Opposite( traversed ) )
+			{
+				cell.Link = remaining;
+				Tracks.Set( tile.X, tile.Y, cell );
+			}
 			// a corner is an end of two replayed lines, so it is visited twice and its counter of 1 runs out; a plain tile is cleared on its one visit
 			if ( ClearCell( tile, pass: IsJunction( cell.Mask ), replay: true ) )
 				cleared.Add( tile );

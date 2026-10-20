@@ -101,3 +101,27 @@ export async function fetchSprites({ files, store, active = () => true, fetcher 
 	await Promise.all(Array.from({ length: Math.min(concurrency, files.length) }, worker));
 	return !stopped;
 }
+
+/**
+ * Runs `run` (an async function) one call at a time: a request while a run is going on is followed by exactly one more run once it ends, however many requests came
+ * meanwhile, and only while `active()` says the game still runs. The page fetches the sprite sets this way at the start and again when the game switches the pools
+ * extension or its guest art on later (a park load or the Extensions and mods screen, without a restart).
+ */
+export function serialRequests(run, active = () => true) {
+	let running = null, again = false;
+	const request = () => {
+		if (running) {
+			again = true;
+			return running;
+		}
+		running = Promise.resolve().then(run).finally(() => {
+			running = null;
+			if (again && active()) {
+				again = false;
+				request();
+			}
+		});
+		return running;
+	};
+	return request;
+}

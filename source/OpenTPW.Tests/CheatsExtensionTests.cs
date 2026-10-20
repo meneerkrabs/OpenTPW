@@ -189,6 +189,7 @@ public class CheatsExtensionTests
 			var economy = EconomyTestData.Park();
 			economy.CheatHost = new Host( guests, null );
 			hud.GetType().GetField( "<Status>k__BackingField", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic )!.SetValue( hud, new OpenTPW.Hud.EconomyParkStatus( () => economy ) );
+			CommandTestLevel.AttachPark( (Level)typeof( OpenTPW.Hud.ParkHud ).GetField( "level", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic )!.GetValue( hud )!, economy );
 			Assert.IsTrue( hud.CheatsWindowAvailable );
 			var window = hud.CreateCheatsWindow();
 			void Click( string id ) => ((OpenTPW.UI.Original.UiButton)window.Find( id )!).Clicked!();
@@ -381,7 +382,7 @@ public class CheatsExtensionTests
 	/// [EXT:cheats-turn-boundary] The pinned hash of <see cref="RunFixedParkWithCheats"/> (docs/DETERMINISM.md, "Cheats"). A deliberate change of a cheat's effect, of the order of the kinds, of the
 	/// arrival band or of the weather cheat's values changes this value.
 	/// </summary>
-	internal const ulong CheatsFixedRunHash = 0x5CBF8584199279ABUL;
+	internal const ulong CheatsFixedRunHash = 0x0FAA0BA10A2E2B43UL;
 
 	[TestMethod]
 	public void CheatsFixedRunHashIsTheSameInEveryProcessAndEveryCheatOfTheSequenceApplied()

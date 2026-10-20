@@ -55,6 +55,10 @@ public partial class Level : IDisposable
 	/// <summary>Park name on the gate sign of an imported original level (TrueType sign text demo).</summary>
 	public OriginalGateSign? GateSign { get; private set; }
 
+	/// <summary>The info id of the level's park gate (<c>global.sam</c> <c>ParkName.GateObjectId</c>), or null when the level names none; known whether or not its sign could be drawn.</summary>
+	// [DATA:levels/<level>/global.sam:ParkName.GateObjectId]
+	public int? GateInfoId => int.TryParse( Global?["ParkName.GateObjectId"], out var id ) ? id : null;
+
 	/// <summary>The park's name: the gate's two sign lines (saved with the park), or null for a level without a gate sign.</summary>
 	public ParkNameLines? ParkName { get; private set; }
 
@@ -73,6 +77,14 @@ public partial class Level : IDisposable
 	}
 
 	/// <summary>
+	/// The failures that leave a park without its gate sign (the gate then shows its plain board) instead of stopping it: data that cannot be read or decoded in this
+	/// file system. A disposed object or a null argument is a bug and is not hidden, although its type derives from one of these.
+	/// </summary>
+	internal static bool IsGateSignFailure( Exception exception ) =>
+		exception is not (ObjectDisposedException or ArgumentNullException)
+		&& exception is IOException or InvalidDataException or KeyNotFoundException or ArgumentException or NotSupportedException or InvalidOperationException or UnauthorizedAccessException;
+
+	/// <summary>
 	/// The park name and the gate sign of an original level: a resumed park keeps its saved lines, which the sign draws as the
 	/// original's rebuild after loading does (0x468500); a new park takes the gate's default lines.
 	/// </summary>
@@ -82,9 +94,10 @@ public partial class Level : IDisposable
 		if ( OriginalPark != null )
 		{
 			try { GateSign = OriginalGateSign.TryCreate( OriginalPark, Global, savedName, reloaded: savedName != null ); }
-			catch ( Exception exception ) when ( exception is IOException or InvalidDataException or KeyNotFoundException )
+			// the sign is decoration: a font or board that cannot be read in this file system must not stop the park, and the gate then shows its plain board (SignSlotPlan)
+			catch ( Exception exception ) when ( IsGateSignFailure( exception ) )
 			{
-				Log.Warning( $"Gate sign: {exception.Message}" );
+				Log.Warning( $"Gate sign: {exception.GetType().Name}: {exception.Message}" );
 			}
 		}
 		ParkName = savedName ?? GateSign?.Lines;
@@ -173,6 +186,8 @@ public partial class Level : IDisposable
 	public RideHeadRenderer? CostumeHeadRenderer { get; private set; }
 	/// <summary>Draws the guests' balloons.</summary>
 	public BalloonRenderer? BalloonRenderer { get; private set; }
+	/// <summary>The hoarding boards and textures the level's objects share (docs/OBJECTS.md, "Hoarding"); cleared in <see cref="Dispose"/>.</summary>
+	internal ObjectHoardingCache HoardingCache { get; } = new();
 	/// <summary>[EXT:umbrellas-draw] The guests' open umbrellas (<see cref="UmbrellaRenderer"/>); null without the extension, its content or guests.</summary>
 	public UmbrellaRenderer? UmbrellaRenderer { get; private set; }
 	/// <summary>[EXT:winter-draw] The warm items the guests wear (<see cref="WarmItemRenderer"/>); null without the extension, its content or guests.</summary>
@@ -196,6 +211,13 @@ public partial class Level : IDisposable
 	/// </summary>
 	public ParkVisitInfo? Visit { get; }
 	public bool IsReadOnlyVisit => Visit != null;
+
+	/// <summary>
+	/// The Sound block of the original save the park was started from: a player's own save (<c>--original-save</c>, the TPWS import) or the level's shipped
+	/// <c>Easymode.TPWI</c> (Instant Action, the reference start); null for a new Full Simulation park, a resumed OpenTPW park and a read-only visit.
+	/// </summary>
+	// [BIN:TPW-EXE:0x5ACCF0 park entry load] park entry (state 9 of 0x54E360) loads the newest file in the player's folder of the park through 0x414D40; an Instant Action player's folder holds the copy of the level's easymode.TPWI (0x5C8190 copies it when the player is created), so its Sound block plays as a loaded save's does
+	public SaveSoundData? OriginalSaveSound => !IsReadOnlyVisit && incLayout == null ? OriginalPark?.Save?.Sound : null;
 	/// <summary>True while this level runs the experimental Theme Park Inc slice: only the money economy (no staff, research or challenges), no HUD or advisor of the reference game.</summary>
 	public bool IsThemeParkIncSlice => GameEditions.IsThemeParkInc && OriginalPark != null;
 	/// <summary>The version 2 layout a visit applies instead of the shipped level import; null for version 1 packages and own parks.</summary>
@@ -421,7 +443,7 @@ public partial class Level : IDisposable
 				}
 			}
 			yield return 0.35f;
-			Blueprint = new BlueprintMarkers( OriginalPark.Heightfield );
+			Blueprint = new BlueprintMarkers( OriginalPark.Heightfield, BlueprintHeightOffset );
 			SetupParkName();
 			var origin = OriginalParkPlacement.GetOrigin( OriginalPark.Heightfield );
 			ParkCameraMode.TargetExtent = Math.Max( origin.X, origin.Y );
@@ -524,6 +546,9 @@ public partial class Level : IDisposable
 			ImportOriginalGuests();
 			ImportOriginalRideSettings();
 			ImportOriginalScripts();
+			ImportOriginalCoasters();
+			ImportOriginalRetainedRideStates();
+			ImportOriginalArrivals();
 			StartPlacedParticles();
 			ImportOriginalParticles();
 			if ( resumeState == null && !GameEditions.IsThemeParkInc && OriginalPark.Save != null && visitLayout == null )
@@ -562,6 +587,7 @@ public partial class Level : IDisposable
 			? new BuyLandTool( () => Guests?.Grid.Cells, () => Park?.Economy, ( x, y ) => ParkLand.IsBarrier( park.Map, park.Heightfield, x, y ) )
 			: null;
 		Guests = new GuestSimulation( grid, settings, Seed.GuestStream ) { OnlineVisit = Visit != null };
+		BindGuestThoughtPresentation( Guests );
 		// a visit has no economy, whose turn an own park's arrivals read (ParkEconomyRuntime.AttachGuests): its arrivals read the turn of the save it is built on
 		if ( Visit != null )
 			Guests.ArrivalClock = VisitArrivalClock( Guests, park.Save?.World.Variables.GameTick );
@@ -585,9 +611,11 @@ public partial class Level : IDisposable
 		var costumes = GuestSpriteAtlas.LoadCostumes( park.LevelName );
 		var costumeHeads = GuestSpriteAtlas.LoadCostumeHeads( park.LevelName );
 		// [EXT:pools-swim] swimmers are drawn by the pools' own renderer with the swim sprites (RefreshPools), whatever they wear
-		GuestRenderer = new GuestRenderer( Guests, park.Heightfield, sprites ) { Draws = guest => (!(guest.IsSwimming || guest.InPoolActivity) || SwimmerRenderer == null) && (costumes.Count == 0 || !guest.InCostume), DrawsRideBody = guest => costumes.Count == 0 || !guest.BodySpriteInCostume };
+		// Reserve opaque bridge draw slots before every guest and staff sprite, including bridges built after swimmers appear.
+		PoolBridgeRenderer = new PoolBridgeRenderer( () => PoolBridges, Objects.Grid.Origin, PoolStyles.ForTheme( park.LevelName ) );
+		GuestRenderer = new GuestRenderer( Guests, park.Heightfield, sprites ) { FeetChooser = BridgeGuestFeet, Draws = guest => (!(guest.IsSwimming || guest.InPoolActivity) || SwimmerRenderer == null) && (costumes.Count == 0 || !guest.InCostume), DrawsRideBody = guest => costumes.Count == 0 || !guest.BodySpriteInCostume };
 		if ( costumes.Count > 0 )
-			CostumeRenderer = new GuestRenderer( Guests, park.Heightfield, costumes ) { Draws = guest => guest.InCostume && (!(guest.IsSwimming || guest.InPoolActivity) || SwimmerRenderer == null), DrawsRideBody = guest => guest.BodySpriteInCostume };
+			CostumeRenderer = new GuestRenderer( Guests, park.Heightfield, costumes ) { FeetChooser = BridgeGuestFeet, Draws = guest => guest.InCostume && (!(guest.IsSwimming || guest.InPoolActivity) || SwimmerRenderer == null), DrawsRideBody = guest => guest.BodySpriteInCostume };
 		// the riders of the bounce rides are drawn as bodies on the ride (tp.exe 0x00557AB0, BounceRiders), by the set of the guest's own kind
 		var bounceRiders = rideBodyPoses = new FlatRideBounceRiders( Objects );
 		GuestRenderer.BounceRiders = bounceRiders;
@@ -652,8 +680,8 @@ public partial class Level : IDisposable
 
 	/// <summary>The visitor under the mouse, in or out of costume: the nearer of the two renderers' picks.</summary>
 	// [BIN:TPW-EXE:0x532bd0 sprite to thing] the sprite pass picks the nearest pickable sprite, and the visitor (a thing of type 1) that owns it is then looked up only in the hovered cell and its eight neighbours
-	// (offset table 0x81ed40, filled by 0x532b30: the cell itself first, then the others), so a visitor that is none of those cells is not picked, and the next best sprite is not tried; the hovered cell is the cursor ray's terrain hit
-	// (0x45d560), which a hill or a tall object between the camera and the visitor moves away. The gate runs on original levels, where a heightfield gives the ray a hit
+	// (offset table 0x81ed40, filled by 0x532b30: the cell itself first, then the others), so a visitor that is none of those cells is not picked, and the next best sprite is not tried; the hovered cell is the cell of the cursor ray's nearest hit
+	// (0x45d560: the terrain or an object's model, ObjectRayPick), which a hill or a tall object between the camera and the visitor moves away. The gate runs on original levels, where a heightfield gives the ray a hit
 	internal Guest? PickVisitor( System.Numerics.Vector2 mouse, System.Numerics.Vector2 viewport, System.Numerics.Matrix4x4 view, System.Numerics.Matrix4x4 projection )
 	{
 		float kidDepth = float.PositiveInfinity, costumeDepth = float.PositiveInfinity;
@@ -711,7 +739,7 @@ public partial class Level : IDisposable
 			else if ( item.Kind == ParkEventKind.CheatApplied && (cheatNotes ??= new()).Count < 64 )
 				cheatNotes.Add( item );
 			else if ( item.Kind is ParkEventKind.UpgradeBought or ParkEventKind.MaintenanceRequested )
-				CloseForUpgrade( item.InstanceId );
+				CloseForUpgrade( item.InstanceId, item.Kind == ParkEventKind.UpgradeBought );
 			else if ( item.Kind == ParkEventKind.MaintenanceCancelled )
 				OpenAfterCancelledCall( item.InstanceId );
 			else if ( item.Kind is ParkEventKind.ToiletCleaned or ParkEventKind.UpgradeCancelled )
@@ -770,11 +798,14 @@ public partial class Level : IDisposable
 	/// enforces too (<see cref="RideOpening.MayOpen"/>). Without this the ride kept taking guests while its wear was stopped for the upgrade.
 	/// </summary>
 	// [BIN:STP-PPC:0x100DF928 upgrade start] the upgrade start writes state 2, which clears the open word +100 and writes VAR_RIDECLOSED = 1 (0xe0c3c, ORACLE.md F27)
-	private void CloseForUpgrade( int instance )
+	// [BIN:TPW-EXE:0x004E0050 upgrade request's model call] the upgrade request's SetState(2) closes with 0x00454550(1) (0x004E101F) and then calls 0x00454550(8) (0x004E0098): the hoarding shows the upgrade set; the maintenance request 0x004DFE30(1) only closes, with mode 1 (0x004DFEED)
+	private void CloseForUpgrade( int instance, bool upgrade )
 	{
 		if ( AttractionRuntimeOf( instance ) is not { } runtime )
 			return;
 		runtime.Close();
+		if ( upgrade )
+			runtime.Hoarding.SetState( ObjectHoardingState.UpgradeMode );
 		SyncOpenState( runtime );
 	}
 
@@ -845,7 +876,11 @@ public partial class Level : IDisposable
 		if ( RideRepair.OpensAfterRepair( coaster ? RideOpening.CoasterTrackType : 0, !coaster || runtime.Coaster!.AcceptsGuests ) )
 			runtime.Open();
 		else
+		{
+			// [BIN:TPW-EXE:0x004DFC95 repair tail's model calls] the tail opens first (0x004547C0: the hoarding sinks) and its re-close then calls 0x00454550(1) (0x004DFD65), which shows the closed set over a sinking one
+			runtime.Hoarding.StartOpenFade();
 			runtime.Close();
+		}
 	}
 
 	/// <summary>Walkable path cell next to (or nearest to) a footprint; the prototype Totem has no catalog entrance cell yet.</summary>
@@ -984,31 +1019,6 @@ public partial class Level : IDisposable
 		// Riding follows the frame just simulated; park-camera input is consumed only by the earlier update.
 		if ( RideView != null && ReferenceEquals( Camera.Mode, RideView ) )
 			Camera.Update();
-	}
-
-	internal enum WorldClickAction { None, PlacePrototype, UseTool }
-
-	/// <summary>World input stays suspended in ride and walking views, including tools armed through the HUD.</summary>
-	internal static WorldClickAction WorldClick( bool riding, bool leftDown, bool previousLeftDown, bool mouseCaptured, bool placing ) =>
-		riding || !leftDown || previousLeftDown || mouseCaptured ? WorldClickAction.None
-			: placing ? WorldClickAction.PlacePrototype : WorldClickAction.UseTool;
-
-	/// <param name="modifierMask">The modifier mask held at the click (<see cref="Input.ModifierMask"/>: Shift 3, Ctrl 0xc, Alt 0x30); exactly Ctrl keeps the build tool armed after a placement.</param>
-	internal void UpdateWorldInput( bool leftDown, bool mouseCaptured, Vector2 mousePosition, Vector2 viewportSize, int modifierMask = 0 )
-	{
-		clickModifierMask = modifierMask;
-		switch ( WorldClick( RideView != null || FreeWalk != null, leftDown, wasMouseDown, mouseCaptured, IsPlacing ) )
-		{
-			case WorldClickAction.PlacePrototype:
-				if ( TryGetPlacementPosition( mousePosition, viewportSize, out var position ) )
-					PlaceRide( position );
-				break;
-			case WorldClickAction.UseTool:
-				HandleObjectClick( mousePosition, viewportSize );
-				break;
-		}
-		// Track the button in both cameras: a held click must not build when the player leaves a ride.
-		wasMouseDown = leftDown;
 	}
 
 	public bool PlaceRide( Vector3 position )
@@ -1203,6 +1213,8 @@ public partial class Level : IDisposable
 		DisposeSky();
 		DetachOverlay();
 		TextOverlay?.Dispose();
+		// a scene built without its constructor (the park-build tests make one) has no cache
+		HoardingCache?.Clear();
 	}
 
 	/// <summary>Invalidates per-world-pass observations even when an entity is absent from the render list.</summary>
@@ -1213,7 +1225,7 @@ public partial class Level : IDisposable
 		RenderPass++;
 		// [EXT:point-lights] the lights of the objects that have any, for every draw of this frame
 		PointLights?.Gather( Camera.ViewMatrix * Camera.ProjMatrix );
-		foreach ( var entity in Entity.All.ToArray() )
+		foreach ( var entity in WeatherAfterParticles( Entity.All.ToArray() ) )
 			entity.Render();
 	}
 }

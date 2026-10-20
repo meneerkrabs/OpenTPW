@@ -183,6 +183,58 @@ keep that player hidden afterwards, until a later walk-in ride's mode 3. Whether
 repaired that (re-sending the players to a client) is not known. OpenTPW hides a riding player for
 the room and always shows them again when the ride ends (`EXT:online-ride-hiding`, docs/ONLINE.md).
 
+## Chat satellites (tp.exe)
+
+The globe's five satellites are parks, not rooms of their own.
+
+- **The list**: every City connection also asks for the parks of city 1 (0x5B7610: the list's
+  request for city 1, which ends in `GetParkInCityList(0, 1, lastCRC, 0)` through 0x5BCB30; the
+  progress text is UITEXT 252 "Getting Chat Satellite List", the log line "ONLINE CITY: Chat
+  Satellites parks data downloaded ok"). Its entries are full park records like any park list's
+  (0x5BDE30: id, name, description, author, city, theme, visits, votes, the ride bitmap, file name,
+  e-mail, date, chart position and the instant-action flag); satellite *i* shows entry *i* in the
+  server's order, and only the first five are used.
+- **The counts**: a connection of their own ("ONLINE CHATELLITES", 0x4C4BB0) sends `RoomInfo` for
+  each park's room, "%d" of the park id; an answer 7 is matched to its satellite by park id
+  (0x4C4920), 0x2C counts 0, and the counts are written only after exactly five answers.
+- **The click** (0x4C56E0; the panel builder 0x4C4FB0 gives the satellite controls 0x16008-0x1600C
+  this handler and their index): with the city, theme, logical-server and satellite lists loaded
+  it calls 0x5B7910(i - 1), which reads entry *i* of the list without a request, hides the globe's
+  panels and opens the park details 0x4C0AE0 for it, with the lobby lists' success callback 0x4C0830;
+  their cancel (0x4C4FA0) brings the globe back.
+- **The details**: 0x4C0AE0 (table 0x759170) looks up the park's city (0x4C0C06, 0x5BC9C0). With that
+  city's flag +0x60 set it fills only the first row (0xE5937) with "%s : %s" (0x7593D4) of UITEXT 271
+  ("Theme") and the theme's name (0x5BD270), besides the park's name as the title (0xE5931) and its
+  description (0xE5930), and it disables the owner action (0xE592F); the statistics rows get no text
+  and no player count is shown. Whether city 1 had the flag is not known. UITEXT 284-291 ("Chat Park
+  Details", Name, Theme, Players at the park, Creator's name, Creator's email, Date published,
+  Description) are not used as texts, but for "Creator's name" (game id 0x121) in the postcard
+  recipient list of an online park whose creator has an e-mail (0x4A7B7C).
+- **Enter** (0xE592E, 0x4C0880 → 0x5B86A0, which asks for a login first when needed, → 0x5B8910) is a
+  visit like any: the child lock and the ride bitmap are checked, missing files are downloaded over
+  FTP and `MarkParkVisited` is sent; then 0x4C0830 sets game type 1, the level loader (0x5156A0)
+  loads `online_Standard.sam` for the park's theme (record +0x4C) with the downloaded save, and every
+  game of type 1 enters the chat mode (0x54ED1E → 0x48A410 → 0x4BF460).
+- **The room**: after "Created a player, let's join a park." the answer handler 0x4E6790 sends the
+  only `CreateRoom` (0x4E6A67): the park's name, an empty wide string, the city's name, "%d" of the
+  park id and 0x100. A satellite's park, a visited park and a goto (0x4E96B7 → 0x5B87E0) all enter
+  the park's own room. The only success answer is 0x36 ("The park has been created successfully"),
+  so the server must have given it for a room that already existed.
+- **Entering**: 0x4E5EF0 places the player's own online person at the centre of entrance 0's cell
+  (0x4D8690(0): FixedItemInfo.EntranceA, 0x7855BC/0x7855C0; most likely the level's entrance, read
+  before the save is merged in) with the teleport 0x4F7E20, and sends `MovePlayer(x·256+128, y·256+128, 1)` — only when that cell's type byte is 0x12 (0x4E5FFE; otherwise neither the teleport nor the first move happens; OpenTPW always does both),
+  then `NotAFK`, `SetHearingRange(0xA00)` and `EnumPlayers`. The relayed-move handler skips the
+  player's own person (0x4E72CA), so the server never placed it.
+- There is no "publish as chat park": the upload (0x5B7E88) carries city, theme, a setting byte,
+  name, description and author, and the publish globe's city filter (0x5DDAC0) leaves out cities
+  with the flag +0x60, which the world globe's (0x5DD810) ignores.
+
+Not settled statically: which parks the service kept in city 1 and whether city 1 had the flag
+(without city 1 in the city list the client would crash); what `CreateRoom`'s empty string and
+0x100 mean; the server's answer for a room that already exists; what the park record's flag at
++0x40 means (it selects child-lock bit 4 or bit 8). OpenTPW's chat parks follow the click, the
+details and the visit with the server's own list (docs/ONLINE.md, "Chat parks (the satellites)").
+
 ## Ride cameras and riding
 
 The original's manual sells the feature directly: "When you need a break, you can ride any ride in the

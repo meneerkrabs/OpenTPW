@@ -3,7 +3,8 @@ namespace OpenTPW;
 /// <summary>
 /// Walkable path cells and their cardinal connections, with cached breadth-first flow fields per target.
 /// A view over the shared <see cref="ParkCellMap"/> (PATH-plan §9.1), which is the source of truth: a cell is
-/// walkable when its type is path (1) and its links are the map's cardinal link bits (1, 4, 16, 64). Built from
+/// walkable when its type is path (1) or an elevated pool bridge covers it. Links combine the map and bridge's
+/// cardinal link bits (1, 4, 16, 64), with bridge edges restricted to their deck. Built from
 /// the original save grid (path flag + connection bits, docs/TPWS-PAYLOAD.md) or, without a save, from MAP
 /// InitialPath cells (4-neighbour adjacency). Coordinates are game cells (x, y). Queue cells (type 3,
 /// docs/reverse/QUEUE-plan.md §3.3) are not walkable for routing and carry a link byte that points back toward
@@ -17,12 +18,26 @@ public sealed class GuestPathGrid
 
 	private readonly Dictionary<int, int[]> fields = new();
 	private int fieldsVersion;
+	private int bridgeFieldsVersion;
 
 	public int CountX { get; }
 	public int CountY { get; }
 	/// <summary>Changes with every write to <see cref="Cells"/>; guests re-plan their queues when it moves.</summary>
 	public int Version => Cells.Version;
-	public int WalkableCount => Cells.CountOf( ParkCellType.Path );
+	public int WalkableCount
+	{
+		get
+		{
+			var count = Cells.CountOf( ParkCellType.Path );
+			if ( Cells.PoolBridges is not { Count: > 0 } bridges )
+				return count;
+			for ( var y = 0; y < CountY; y++ )
+				for ( var x = 0; x < CountX; x++ )
+					if ( bridges.Covers( x, y ) && Cells.TypeAt( x, y ) != ParkCellType.Path )
+						count++;
+			return count;
+		}
+	}
 	public int QueueCellCount => Cells.CountOf( ParkCellType.Queue );
 	/// <summary>The shared cell map of the path and queue tools, which this grid reads.</summary>
 	public ParkCellMap Cells { get; }
@@ -42,11 +57,15 @@ public sealed class GuestPathGrid
 		CountX = cells.Width;
 		CountY = cells.Height;
 		fieldsVersion = cells.Version;
+		bridgeFieldsVersion = cells.PoolBridges?.Version ?? 0;
 	}
 
 	public bool InBounds( int x, int y ) => (uint)x < (uint)CountX && (uint)y < (uint)CountY;
 	public int Index( int x, int y ) => y * CountX + x;
-	public bool IsWalkable( int x, int y ) => Cells.TypeAt( x, y ) == ParkCellType.Path;
+	public bool IsWalkable( int x, int y ) => Cells.TypeAt( x, y ) == ParkCellType.Path || Cells.PoolBridges?.Covers( x, y ) == true;
+
+	/// <summary>Ground and elevated walk links, in the original 1/4/16/64 format. Bridge edges still require <see cref="AreConnected"/>.</summary>
+	public byte LinksAt( int x, int y ) => (byte)(Cells.LinksAt( x, y ) | (Cells.PoolBridges?.LinksAt( x, y ) ?? 0));
 
 	/// <summary>
 	/// Marks a cell walkable (a path cell in <see cref="Cells"/>); <paramref name="connections"/> limits its links
@@ -154,6 +173,8 @@ public sealed class GuestPathGrid
 		var ny = y + dy;
 		if ( !IsWalkable( x, y ) || !IsWalkable( nx, ny ) )
 			return false;
+		if ( Cells.PoolBridges is { Count: > 0 } bridges && (bridges.Covers( x, y ) || bridges.Covers( nx, ny )) )
+			return bridges.Connects( x, y, direction );
 		return (Cells.LinksAt( x, y ) & LinkValue( direction )) != 0 || (Cells.LinksAt( nx, ny ) & LinkValue( (direction + 2) & 3 )) != 0;
 	}
 
@@ -177,10 +198,11 @@ public sealed class GuestPathGrid
 	/// <summary>Step count from every cell to the target (−1 unreachable). Cached until the grid changes.</summary>
 	public int[] GetFlowField( int targetX, int targetY )
 	{
-		if ( fieldsVersion != Cells.Version )
+		if ( fieldsVersion != Cells.Version || bridgeFieldsVersion != (Cells.PoolBridges?.Version ?? 0) )
 		{
 			fields.Clear();
 			fieldsVersion = Cells.Version;
+			bridgeFieldsVersion = Cells.PoolBridges?.Version ?? 0;
 		}
 		var key = Index( targetX, targetY );
 		if ( fields.TryGetValue( key, out var field ) )

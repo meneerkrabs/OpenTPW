@@ -185,6 +185,81 @@ public class RseFollowupAudioTests
 	}
 
 	[TestMethod]
+	public void APresentFirstWordMinusOneIsPhysicallyPresentButNotSelectable()
+	{
+		var map = SndReverbMap.Read( MapBytes( (true, 0xFFFFFFFFu), (false, 0u), (true, 7u) ) );
+
+		Assert.IsTrue( map.Contains( 0 ), "the presence byte still makes the sentinel entry physically present" );
+		Assert.AreEqual( 0xFFFFFFFFu, BitConverter.SingleToUInt32Bits( map.Single( 0, 0 ) ), "Single keeps raw word access" );
+		Assert.IsNull( map.Record( 0 ), "Record returns null for the first-word uint.MaxValue sentinel" );
+
+		Assert.IsFalse( map.Contains( 1 ) );
+		Assert.IsNull( map.Record( 1 ), "an absent entry has no record" );
+
+		Assert.IsTrue( map.Contains( 2 ) );
+		Assert.AreEqual( 7u, map.Record( 2 )![0] );
+		Assert.IsNull( map.Record( 3 ), "an out-of-range level has no record" );
+	}
+
+	[TestMethod]
+	public void AFirstWordMinusOnePresetDisablesTheHostReverbLikeAnAbsentPreset()
+	{
+		var before = AudioMixer.Current;
+		GameAudio.ResetReverb();
+		try
+		{
+			var mixer = new AudioMixer( null );
+			AudioMixer.Current = mixer;
+			var map = SndReverbMap.Read( MapBytes( (false, 0u), (true, 1u), (true, 0xFFFFFFFFu), (true, 3u), (false, 0u) ) );
+			for ( var word = 1; word < SndReverbMap.RecordWords; word++ )
+				Assert.AreEqual( map.Single( 1, word ), map.Single( 2, word ), $"the valid and sentinel presets differ at word {word}" );
+			GameAudio.ReverbMap = map;
+
+			GameAudio.SelectReverb( 1 );
+			Assert.AreEqual( 1, GameAudio.ReverbPreset );
+			Assert.AreEqual( 1, GameAudio.ReverbChanges );
+			Assert.AreEqual( 1u, GameAudio.ReverbRecord![0] );
+			Assert.IsTrue( mixer.Reverb.Active );
+
+			GameAudio.SelectReverb( 2 );
+			Assert.AreEqual( 2, GameAudio.ReverbPreset );
+			Assert.AreEqual( 2, GameAudio.ReverbChanges );
+			Assert.IsNull( GameAudio.ReverbRecord );
+			Assert.IsFalse( mixer.Reverb.Active, "the sentinel disables the current host effect just as an absent preset does" );
+
+			GameAudio.SelectReverb( 2 );
+			Assert.AreEqual( 2, GameAudio.ReverbPreset );
+			Assert.AreEqual( 2, GameAudio.ReverbChanges, "the same held preset does not send again" );
+			Assert.IsNull( GameAudio.ReverbRecord );
+			Assert.IsFalse( mixer.Reverb.Active );
+
+			GameAudio.SelectReverb( 3 );
+			Assert.AreEqual( 3, GameAudio.ReverbPreset );
+			Assert.AreEqual( 3, GameAudio.ReverbChanges );
+			Assert.AreEqual( 3u, GameAudio.ReverbRecord![0] );
+			Assert.IsTrue( mixer.Reverb.Active );
+
+			GameAudio.SelectReverb( 4 );
+			Assert.AreEqual( 4, GameAudio.ReverbPreset );
+			Assert.AreEqual( 4, GameAudio.ReverbChanges );
+			Assert.IsNull( GameAudio.ReverbRecord );
+			Assert.IsFalse( mixer.Reverb.Active, "an absent preset also disables the host effect" );
+
+			GameAudio.SelectReverb( 4 );
+			Assert.AreEqual( 4, GameAudio.ReverbPreset );
+			Assert.AreEqual( 4, GameAudio.ReverbChanges, "the same held absent preset does not send again" );
+			Assert.IsNull( GameAudio.ReverbRecord );
+			Assert.IsFalse( mixer.Reverb.Active );
+		}
+		finally
+		{
+			GameAudio.ResetReverb();
+			GameAudio.ReverbMap = null;
+			AudioMixer.Current = before;
+		}
+	}
+
+	[TestMethod]
 	public void TheHeldPresetsRecordComesFromTheMap()
 	{
 		GameAudio.ResetReverb();
@@ -214,7 +289,7 @@ public class RseFollowupAudioTests
 			AudioMixer.Current = mixer;
 			GameAudio.ReverbMap = SndReverbMap.Read( MapBytes( (true, 1), (true, 1) ) );
 			GameAudio.SelectReverb( 0 );
-			Assert.IsFalse( mixer.Reverb.Active, "[APPROX:AUDIO-039] the default preset 0 is not mixed" );
+			Assert.IsFalse( mixer.Reverb.Active, "[EXT:audio-reverb] the default preset 0 is not mixed" );
 			GameAudio.SelectReverb( 1 );
 			Assert.IsTrue( mixer.Reverb.Active );
 			GameAudio.SelectReverb( 0 );

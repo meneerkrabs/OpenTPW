@@ -1,0 +1,29 @@
+#
+#	OpenTPW evening extension: a torch (docs/EVENING.md, "Torches"), a feature of one cell that only gives light and mood.
+#	Every number marked "OpenTPW's own value" is a choice of this extension ([EXT:evening-torches], user-approved 2026-10-19). Nothing is read from Theme Park World's or Theme Park Inc's data.
+#
+Info.Id			63900		placeholder: objects.json replaces it with the object's own id
+Info.Name		"Torch"
+Info.IsChoosable	0		guests never choose a torch
+Info.HasQueue		0
+Info.WhichUIType	3		a feature (the build menu's Features tab)
+
+# The footprint: one cell, no entrance and no exit.
+Info.Shape
+---
+*
+---
+
+# Light and mood only (the user's decision of October 19, 2026, "Alleen licht en sfeer"): no attraction points, no new-attraction bonus,
+# so the torch never adds to anything the guests or the arrivals read (the theme's Features.sam would otherwise give 10 and a bonus)
+Info.AttractionValue		0
+Attraction[0].NewBonus		0
+Attraction[1].NewBonus		0
+Attraction[2].NewBonus		0
+
+# Cheap, like the cheapest shipped scenery (the user's decision of October 19, 2026, "Goedkoop, als een bankje"; Theme Park World has no bench), no upkeep
+Upgrades[0].CostOfUpgrade		50		OpenTPW's own value
+Upgrades[0].CostOfResearch		0		An object without research cost starts researched
+Upgrades[0].RunningCost		0		no upkeep (a Theme Park Inc key; the original does not read it)
+Research.Group		0		available from the start, no research
+Info.PreviewAnimNum		0

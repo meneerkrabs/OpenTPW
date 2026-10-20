@@ -88,6 +88,40 @@ public class ThemeParkIncSaveWorldTests
 		Assert.AreEqual( 30, parsed.Coasters[0].TrainSlots!.Count );
 	}
 
+	/// <summary>
+	/// Real-byte cross-check of the coaster import on the sibling game's prebuilt save, the only save with a coaster: its Coasters block has the Theme Park World layout
+	/// byte for byte, and its words are consistent with tp.exe's loader. The one saved pylon is the start of a cut (wire 0x80 with the link bit 0x200) after station node S2,
+	/// the track is complete and cut open (wire 0x3) in state 1 (the cut's state), and its three trains in service stay off a track that does not run. The coaster type
+	/// here is a stand-in with the block's 30 one-car train slots: Theme Park Inc's own coaster type and loader are not traced, so this is no Theme Park World proof.
+	/// </summary>
+	[TestMethod]
+	public void TheCoasterBlockReadsAndMapsAsTheTpwLoaderReadsIt()
+	{
+		Log = new();
+		var payload = Prebuilt();
+		var layout = SavePayloadLayout.ParseThemeParkInc( payload );
+		var settings = CoasterTests.PcSettings();
+		settings["sCoasterType.uiMaxTrains"] = "30";
+		settings["sTrainType.uiMaxCars"] = "1";
+		var definition = CoasterDefinition.FromValues( settings );
+		var coaster = SaveCoasterBlock.ParseBlock( layout.Slice( payload, SaveBlock.Coasters ), 128, 128, 0,
+			_ => new SaveCoasterTrainLayout( definition.MaxTrains, definition.CarCount ) ).Coasters.Single();
+		Assert.AreEqual( (0x3u, 0x11u, 1, 3), (coaster.Flags, coaster.Controller8, coaster.Sections.Count, (int)coaster.TrainsInService) );
+		Assert.AreEqual( SaveCoasterSectionWire.CutStart | SaveCoasterSectionWire.NoPreviousLink, coaster.Sections[0].Wire );
+		var ride = new CoasterRide( definition, new CoasterWorld( 1 ), "Stand-in" );
+		var builder = new CoasterBuilder( ride, new CoasterSite( 128, 128 ) );
+		CoasterTests.PlaceStation( builder, (60, 67) );
+		var plan = OriginalCoasterImport.Map( coaster, ride );
+		ride.ImportOriginal( plan.Track, plan.State, plan.BreakdownState, plan.SeatsPerTrain, plan.Trains );
+		Assert.AreEqual( (true, false, (int?)2), (ride.Track.IsComplete, ride.Track.IsClosed, ride.Track.CutAfter) );
+		Assert.AreEqual( 5, ride.Track.Nodes.Count, "three station nodes, the saved pylon and the end node" );
+		Assert.AreEqual( (65, 67), (ride.Track.Nodes[3].X, ride.Track.Nodes[3].Y) );
+		Assert.IsTrue( ride.Track.Nodes[2].Flags.HasFlag( CoasterNodeFlags.CutEnd ) && ride.Track.Nodes[3].Flags.HasFlag( CoasterNodeFlags.CutStart ) );
+		Assert.AreEqual( CoasterControllerState.Incomplete, ride.State );
+		Assert.AreEqual( 0, ride.Trains.Count );
+		Assert.IsTrue( plan.Evidence.Any( line => line.Contains( "3 trains in service on a track that does not run" ) ), string.Join( "\n", plan.Evidence ) );
+	}
+
 	[TestMethod]
 	public void DelimiterBytesInsideTracedBlocksAreData()
 	{

@@ -121,9 +121,9 @@ public class TpiRidesEndToEndTests
 	{
 		using var plain = ModContentRoots.Use( ModSet.Defaults( OfficialExtensions.All ), FileSystem );
 		// the default set includes the pools extension (on by default), whose own objects are external too and sit in their reserved ids: nothing else is listed
-		Assert.AreEqual( 0, ObjectCatalog.Load( "jungle" ).Entries.Count( entry => entry.IsExternal && entry.ModId != OfficialExtensions.Pools.Id && entry.ModId != OfficialExtensions.Umbrellas.Id && entry.ModId != OfficialExtensions.Winter.Id ) );
+		Assert.AreEqual( 0, ObjectCatalog.Load( "jungle" ).Entries.Count( entry => entry.IsExternal && entry.ModId != OfficialExtensions.Pools.Id && entry.ModId != OfficialExtensions.Umbrellas.Id && entry.ModId != OfficialExtensions.Winter.Id && entry.ModId != OfficialExtensions.Evening.Id ) );
 		Assert.IsFalse( ParkEconomy.CreateForTheme( "jungle", false ).Catalog.Objects.Any( info => info.InfoId >= CrossEditionObjects.FirstReservableId
-			&& info.InfoId is not (>= WinterContent.FirstReservedId and <= PoolContent.LastReservedId) ) );
+			&& info.InfoId is not (>= EveningContent.FirstReservedId and <= PoolContent.LastReservedId) ) );
 		Assert.IsNull( ContentSoundRoots.SourceOf( Entry( "jungle", 1100 ) ) );
 	}
 

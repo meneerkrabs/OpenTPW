@@ -1,5 +1,5 @@
-; Gluehwein stall script (OpenTPW winter extension), modelled on the pools' changing room: the shop has no animation, so a customer just disappears into the booth, is served, and comes out.
-; Guests go in and stay hidden (no head records, no ADDHEAD, UsageInfo.RideHandlesSprite 1). The fill loop waits up to half a second for the next customer, the serving takes a second and a half (the pot is ladled), then
+; Gluehwein stall script (OpenTPW winter extension), modelled on the pools' changing room: the shop has no animation; a customer is served at the counter and walks on.
+; UsageInfo.RideHandlesSprite 1 keeps the customer's body, so it stands in view at the stand point while it is served (no head records, no ADDHEAD; docs/GUESTS.md, "Shop customers"). The fill loop waits up to half a second for the next customer, the serving takes a second and a half (the pot is ladled), then
 ; the customers are released one by one. The stack size is also the size of the HUSH/HOP heap that holds their ids: it must be at least the capacity.
 .stack 20
 .timeslice 50

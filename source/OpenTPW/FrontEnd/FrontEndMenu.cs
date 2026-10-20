@@ -12,11 +12,17 @@ public enum GameMode { InstantAction, FullSimulation }
 /// <summary>A park that can be loaded from the Load Park screen.</summary>
 /// <param name="Sandbox">True for the OpenTPW sandbox save (jungle sandbox), false for an original read-only park.</param>
 /// <param name="Cheated">[EXT:cheats-publish] The saved park is marked as cheated (docs/CHEATS.md); the menu says so after its name.</param>
-public sealed record ParkLoadEntry( string Level, int ThemeNameIndex, bool Sandbox, string? OwnSavePath = null, string? DisplayName = null, DateTime? SavedAt = null, string? Requires = null, bool Cheated = false );
+public sealed record ParkLoadEntry( string Level, int ThemeNameIndex, bool Sandbox, string? OwnSavePath = null, string? DisplayName = null, DateTime? SavedAt = null, string? Requires = null, bool Cheated = false )
+{
+	/// <summary>[EXT:save-extension-switch] The extension switch the player confirmed for this load (<see cref="ParkExtensionSwitch"/>); null loads strictly.</summary>
+	public ParkExtensionSwitch? Switch { get; init; }
+}
 
 /// <summary>What the front-end screens ask of the game.</summary>
 public sealed class FrontEndActions
 {
+	/// <summary>Read-only saved Full Simulation key count, sampled after leaving the previous park; null when unavailable.</summary>
+	internal int? PlayerKeySnapshot { get; init; }
 	public Action<LobbyIslandInfo, GameMode> StartPark { get; init; } = ( _, _ ) => { };
 	public Action<ParkLoadEntry> Load { get; init; } = _ => { };
 	/// <summary>Lightweight own-save availability for the selected theme; assets are checked only on actual resume.</summary>
@@ -33,6 +39,11 @@ public sealed class FrontEndActions
 	public Func<IReadOnlyList<ParkLoadEntry>> LoadEntries { get; init; } = () => Array.Empty<ParkLoadEntry>();
 	/// <summary>Opens the online screens on the menu's stack (Go Online, UITEXT 1); null hides the button.</summary>
 	public Action<UiScreenStack>? GoOnline { get; init; }
+	/// <summary>
+	/// [EXT:save-extension-switch] Before an own save at the given path is loaded: asks whether to switch the extensions it differs in (<see cref="ParkExtensionSwitch"/>) and then calls the action with the confirmed
+	/// switch, or calls it at once with null when there is nothing to ask (the load then agrees, or refuses with its reasons). The default never asks.
+	/// </summary>
+	public Action<string?, Action<ParkExtensionSwitch?>> ConfirmExtensions { get; init; } = ( _, proceed ) => proceed( null );
 }
 
 /// <summary>
@@ -109,6 +120,7 @@ public sealed partial class FrontEndMenu
 		// [EXT:lobby-menu-hint] the original opens the lobby menu with Escape and its lobby table has no button or other mouse route for it that was found (callers of the pause menu 0x48c830 in the front-end handler 0x4be1a0 and 0x4be537 take no click); the hint tells a mouse user where it is
 		screen.Add( new UiLabel { Id = "menuHint", Text = () => strings.Extra( OpenTpwText.LobbyMenuHint ), Font = fonts => fonts.Small, Color = UiColors.Disabled, Align = UiAlign.Right,
 			Bounds = new UiRect( 1548, 1484, 480, 40 ), Anchor = UiAnchor.BottomRight } );
+		AddKeyCounter( screen );
 		screen.Back = ShowMenu;
 		screen.Focus( enter );
 		return screen;

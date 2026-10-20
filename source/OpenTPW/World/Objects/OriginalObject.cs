@@ -33,6 +33,14 @@ public readonly record struct ObjectPlacement( int X, int Y, int Rotation, Syste
 	}
 
 	/// <summary>
+	/// <see cref="ModelToEngine"/> composed with <see cref="DetMatrix.Multiply"/> (plain multiplies and adds), for simulation code that must compute the same bits on
+	/// every runtime (docs/DETERMINISM.md, "Browser and native").
+	/// </summary>
+	public Matrix4x4 DeterministicModelToEngine =>
+		DetMatrix.Multiply( DetMatrix.Multiply( DetMatrix.Multiply( CellRotation( Rotation ), Matrix4x4.CreateTranslation( X * 10, Y * 10, 0 ) ),
+			Matrix4x4.CreateScale( ModelScale ) ), Matrix4x4.CreateTranslation( GridOrigin.X, GridOrigin.Y, BaseHeight ) );
+
+	/// <summary>
 	/// The rigid turn of a model by <paramref name="rotation"/> degrees (0, 90, 180, 270) in model units with the ground in XY, about the
 	/// first cell (0..10, 0..10) so that cell maps onto itself (<see cref="ObjectFootprint.ToGrid(int,int,int,System.Numerics.Vector2)"/>).
 	/// </summary>
@@ -57,7 +65,7 @@ public readonly record struct ObjectPlacement( int X, int Y, int Rotation, Syste
 /// A placed original ride, shop, sideshow, feature or fixed item: its original model hierarchy rendered
 /// with original textures, animated by its original RSE script (<see cref="OriginalObjectRuntime"/>).
 /// </summary>
-public class OriginalObject : Entity, IPointLightSource
+public class OriginalObject : Entity, IPointLightSource, IObjectPickShape
 {
 	/// <summary>The material's texture-array binding the object renderer uses (BuildModels).</summary>
 	private const string TextureArrayName = "Color";
@@ -232,6 +240,19 @@ public class OriginalObject : Entity, IPointLightSource
 	/// <summary>Engine-space matrix of a model node (e.g. a seat dummy) for other systems.</summary>
 	public Matrix4x4 GetNodeTransform( int node ) => ObjectPlacement.SwapAxes( NodeTransforms[node] ) * Placement.ModelToEngine;
 
+	/// <summary>The engine height of the model's bounding-box minimum (the cursor pick's window, <see cref="IObjectPickShape.PickBottom"/>).</summary>
+	public float PickBottom => Runtime.Model.BoundsMin.Y * ObjectPlacement.ModelScale;
+
+	/// <summary>The first face of the object's model at its current pose that the line meets, in the original's walk order (<see cref="ObjectPickModel"/>).</summary>
+	public bool TryHitPickLine( System.Numerics.Vector3 origin, System.Numerics.Vector3 direction, out System.Numerics.Vector3 hit )
+	{
+		hit = default;
+		if ( deleted )
+			return false;
+		var animator = Runtime.Animator;
+		return ObjectPickModel.TryHitLine( Runtime.Model, NodeTransforms, animator.IsNodeHidden, animator.GetVertexPositions, Placement.ModelToEngine, origin, direction, out hit );
+	}
+
 	/// <summary>
 	/// The launch pad of a tour ride in the tour module's units (300 per model unit): the world position of the model's pad node (a dummy of class 0x800 and
 	/// number 99; the ride origin when it has none) with each coordinate truncated to whole model units first, as the original's creation command does, and the placement rotation.
@@ -260,7 +281,12 @@ public class OriginalObject : Entity, IPointLightSource
 	}
 
 	/// <summary>The station frame of a coaster station (<see cref="CoasterStationLayout.FromModel"/>) at the model's rest pose, or null when its model lacks a dummy.</summary>
-	internal CoasterStationLayout? ComputeCoasterStationLayout() => CoasterStationLayout.FromModel( Runtime.Model, NodeTransforms, Placement );
+	/// <remarks>
+	/// It reads <see cref="ObjectAnimator.LocalTransforms"/>, which hold the model's stored node matrices only until a clip moves a node; after that they are
+	/// System.Numerics products. The frame is taken when the station is placed (<c>Level.OnCoasterStationPlaced</c>), before any clip has run, so it composes
+	/// the exact stored matrices; a caller after the first animation tick would bring the platform's products into the pinned simulation.
+	/// </remarks>
+	internal CoasterStationLayout? ComputeCoasterStationLayout() => CoasterStationLayout.FromModel( Runtime.Model, Runtime.Animator.LocalTransforms, Placement );
 
 	/// <summary>One fixed simulation tick.</summary>
 	public void Simulate( double deltaSeconds ) => Simulate( deltaSeconds, null );

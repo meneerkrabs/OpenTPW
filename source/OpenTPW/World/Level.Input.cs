@@ -44,7 +44,7 @@ public partial class Level
 		else if ( IsCoasterToolActive && BuildEntry == null )
 			CoasterClick( x, y );
 		else if ( CellTool.IsActive && BuildEntry == null )
-			CellTool.Click( (x, y) );
+			ClickCellTool( (x, y), clickModifierMask );
 		else
 		{
 			KeepBuildToolOnPlace = KeepsBuildTool( clickModifierMask );
@@ -60,6 +60,23 @@ public partial class Level
 			{
 				KeepBuildToolOnPlace = false;
 			}
+		}
+	}
+
+	// A live track click's continuation choice is local tool state, never a command or world input.
+	private bool keepTrackToolAfterLine;
+
+	internal SegmentResult? ClickCellTool( (int X, int Y) cell, int modifierMask = 0 )
+	{
+		var previous = keepTrackToolAfterLine;
+		keepTrackToolAfterLine = KeepsBuildTool( modifierMask );
+		try
+		{
+			return CellTool.Click( cell );
+		}
+		finally
+		{
+			keepTrackToolAfterLine = previous;
 		}
 	}
 

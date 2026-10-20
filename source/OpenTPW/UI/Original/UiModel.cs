@@ -155,8 +155,7 @@ public sealed class UiModel
 		// [APPROX:UI-004] back-to-front by Z per texture group; the original's display object reserves a UI depth range in front of its scene ranges (0x5833c0), so it probably depth-tests (the device init 0x573080 enables Z test LESSEQUAL and Z write when the buffer is on) — evidence needed: the UI model draw call's own depth state and order
 		// Group triangles by material texture and order groups back to front (lower Z first), as the
 		// panels layer flat inner faces over their bevels.
-		var groups = new Dictionary<string, List<(float Depth, int A, int B, int C)>>( StringComparer.OrdinalIgnoreCase );
-		var transparent = new HashSet<string>( StringComparer.OrdinalIgnoreCase );
+		var groups = new Dictionary<string, List<(float Depth, int A, int B, int C, bool Transparent)>>( StringComparer.OrdinalIgnoreCase );
 		for ( var face = 0; face + 2 < mesh.Indices.Length; face += 3 )
 		{
 			var a = (int)mesh.Indices[face];
@@ -166,24 +165,39 @@ public sealed class UiModel
 				continue;
 			var material = mesh.Materials[(int)Math.Min( mesh.Vertices[a].TextureIndex, (uint)mesh.Materials.Length - 1 )];
 			var key = material.TextureIndex < 0 ? "" : material.Name;
-			if ( (material.Flags & UiImages.TransparentFlag) != 0 )
-				transparent.Add( key );
 			if ( !groups.TryGetValue( key, out var list ) )
 				groups[key] = list = new();
-			list.Add( ((vertices[a].Depth + vertices[b].Depth + vertices[c].Depth) / 3, a, b, c) );
+			list.Add( ((vertices[a].Depth + vertices[b].Depth + vertices[c].Depth) / 3, a, b, c, (material.Flags & UiImages.TransparentFlag) != 0) );
 		}
-		var parts = groups.Select( group =>
+		var parts = new List<UiModelPart>();
+		// Keep the existing texture-group and triangle painter order. A filename can belong to
+		// distinct slots: split only adjacent flag runs, rather than applying one slot's key to all.
+		foreach ( var group in groups.Select( group => (group.Key, Triangles: group.Value.OrderBy( triangle => triangle.Depth ).ToArray()) )
+			.OrderBy( group => group.Triangles.Average( triangle => triangle.Depth ) ) )
 		{
-			var triangles = group.Value.OrderBy( triangle => triangle.Depth ).ToList();
-			return (Depth: triangles.Average( triangle => triangle.Depth ), Part: new UiModelPart( group.Key, vertices,
-				triangles.SelectMany( triangle => new[] { triangle.A, triangle.B, triangle.C } ).ToArray(), transparent.Contains( group.Key ) ));
-		} ).OrderBy( part => part.Depth ).Select( part => part.Part ).ToArray();
+			var triangles = group.Triangles;
+			for ( var start = 0; start < triangles.Length; )
+			{
+				var end = start + 1;
+				while ( end < triangles.Length && triangles[end].Transparent == triangles[start].Transparent )
+					end++;
+				var indices = new int[(end - start) * 3];
+				for ( var index = start; index < end; index++ )
+				{
+					indices[(index - start) * 3] = triangles[index].A;
+					indices[(index - start) * 3 + 1] = triangles[index].B;
+					indices[(index - start) * 3 + 2] = triangles[index].C;
+				}
+				parts.Add( new UiModelPart( group.Key, vertices, indices, triangles[start].Transparent ) );
+				start = end;
+			}
+		}
 		// [BIN:TPW-EXE:0x476fd3..0x47708f selected-mesh fitting] transform only the two stored
 		// endpoints, then order X/Y. This is not the header box, a corner AABB or an eight-corner box.
 		// Keep them in exactly the same flattened space as the vertices above (UI-003 still applies).
 		var first = NVector3.Transform( mesh.BoundsMin.GetSystemVector3(), transform );
 		var second = NVector3.Transform( mesh.BoundsMax.GetSystemVector3(), transform );
-		return new UiModelFrame( nodeName, parts, minX, minY, maxX, maxY )
+		return new UiModelFrame( nodeName, parts.ToArray(), minX, minY, maxX, maxY )
 		{
 			FitBounds = new UiRect( Math.Min( first.X, second.X ), Math.Min( -first.Y, -second.Y ),
 				Math.Abs( second.X - first.X ), Math.Abs( second.Y - first.Y ) )

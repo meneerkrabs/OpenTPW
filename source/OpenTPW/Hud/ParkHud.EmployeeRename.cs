@@ -40,16 +40,19 @@ public sealed partial class ParkHud
 			// Host safety: a stale callback, replaced roster or read-only visit cannot write through the captured target.
 			if ( Stack.Top != screen || !ReferenceEquals( employeeRenameScreen, screen ) ) return;
 			if ( level.IsReadOnlyVisit || !TargetExists() ) { Cancel(); return; }
-			if ( !economy.Staff.Rename( member, field.Text ) ) return;
+			if ( !level.Commands.Issue( new RenameStaffCommand( member.Id, field.Text ) ).Accepted ) return;
 			RefreshEmployeeStats();
 			Cancel();
 		}
-		field.Submitted = Apply;
+		UiButton? tick = null;
 		foreach ( var (id, control, action) in new (string, uint, Action)[] { ("apply", uint.MaxValue, Apply), ("cancel", uint.MaxValue - 1, Cancel) } )
 		{
 			var node = table.Control( control );
-			screen.Add( new UiButton { Id = id, Model = node.Model, Bounds = node.Rect, Anchor = UiAnchor.Center, Clicked = action } );
+			var button = screen.Add( new UiButton { Id = id, Model = node.Model, Bounds = node.Rect, Anchor = UiAnchor.Center, Clicked = action } );
+			tick ??= button;
 		}
+		// [BIN:TPW-EXE:0x4b6400 rename Enter] the editor's Enter (0x802, edit key handler 0x667fee) makes the dialog procedure 0x4b6320 post 0x100 with control -1 to its own window (0x4b640a), so the hook clicks 0x1F by that window's style 1 and the tick applies; Escape (0x804) closes without a 0x100 and without a click
+		field.Submitted = tick!.Activate;
 		screen.Back = Cancel;
 		screen.Updating = _ =>
 		{

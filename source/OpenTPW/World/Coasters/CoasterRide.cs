@@ -223,6 +223,9 @@ public sealed class CoasterRide
 	/// <summary>Per node, the nodes whose links cross the link that starts at it (the original's per-node collision lists, <c>+0xb0</c>).</summary>
 	public IReadOnlyList<IReadOnlyList<int>> CollisionLists { get; private set; } = Array.Empty<IReadOnlyList<int>>();
 	public bool IsOperational => Track.IsRunnable && samples.Length >= 3;
+	/// <summary>The native shared predicate as used by the park-points counts-test, without the host admission sample-safety guard.</summary>
+	// [BIN:TPW-EXE:0x441970,0x4dd9ad] existing controller, +0x140 == 0, +0x3c bit 0 set/bit 1 clear, not global 0x790fec; no sample or controller-state test.
+	public bool CountsForParkPoints => Track.IsComplete && Track.IsClosed && IntersectionCount == 0 && !BeingEdited;
 	/// <summary>
 	/// The guest predicate <c>0x441970</c>: the coaster is complete, its track crosses itself nowhere (controller <c>+0x140 == 0</c>) and it is not the
 	/// coaster being edited; guests do not join or board a coaster that fails it, and queued guests at an unchanged place leave with thought 13.
@@ -704,12 +707,38 @@ public sealed class CoasterRide
 
 	/// <summary>
 	/// The ride-script loop's speed setter (<c>0x43b2b0</c>): a changed setting becomes the controller's speed setting and the
-	/// speed cap lerp(maxAtMin, maxAtMax, s/100) (<c>0x43c3d0</c>).
+	/// speed cap lerp(maxAtMin, maxAtMax, s/100) (<c>0x43c3d0</c>), unless a layout replay set the speed (<see cref="SpeedSetByReplay"/>) and no
+	/// layout replay runs now.
 	/// </summary>
-	// [BIN:TPW-EXE:0x43b2b0 coaster speed setter] the loop 0x5516b0 calls it after every slice its cadence selects (0x5517ea; OriginalObjectEffects.AfterSlice) with the signed 16-bit script bias at script +0xC0 (50 at creation, 0x558c3c); applied via 0x43c3d0 (setting +0x30, cap +0x34 = fmadds-style lerp of definition +0x4C and +0x50 by s·0.01, dirty flags 0x1001, the per-node pass 0x43afa0 on flag 8) when it differs from the setting and money is off (0x785a2c set) or controller +0 bit 0x8000 is clear; bit 0x8000 and the money switch are not modelled (treated as clear), and since the script's bias (RideVM.SpeedBias, the ride's InitSpeed) is written at ride init and when an upgrade completes (RIDES-033) it changes between passes only then, and the setter takes the new bias after the script's next slice
-	internal void ApplyScriptSpeed( int bias )
+	// [BIN:TPW-EXE:0x43b2b0 coaster speed setter] COAST 8 (0x554ab4, after 0x43b050 stored the slot at script +0xE0) and the loop 0x5516b0 after every slice its cadence selects (0x5517ea; OriginalObjectEffects.AfterSlice) call it with the signed 16-bit script bias at script +0xC0 (50 at creation, 0x558c3c); applied via 0x43c3d0 (setting +0x30, cap +0x34 = fmadds-style lerp of definition +0x4C and +0x50 by s·0.01, dirty flags 0x1001, the per-node pass 0x43afa0 on flag 8) when it differs from the setting (0x43b2c6) and either a layout replay runs (0x785a2c, the replay object 0x785a08 +0x24, set by 0x404140 and cleared at the replay's end in 0x4041d0) or controller +0 bit 0x8000 is clear (0x43b2d6); since the script's bias (RideVM.SpeedBias, the ride's InitSpeed) is written at ride init and when an upgrade completes (RIDES-033) it changes between passes only then, and the setter takes the new bias after the script's next slice
+	internal void ApplyScriptSpeed( int bias ) => ApplySpeed( bias, LayoutReplayRuns );
+
+	/// <summary>
+	/// Whether the original's layout replay (the action replayer <c>0x785a08</c>, which rebuilds a downloaded online park from its recorded actions) is running.
+	/// OpenTPW has no layout replay, so it never runs.
+	/// </summary>
+	internal const bool LayoutReplayRuns = false;
+
+	/// <summary>
+	/// Controller bit <c>0x8000</c>: a layout replay set this coaster's speed (<see cref="ApplyReplayedSpeed"/>); outside a replay the script's speed word
+	/// no longer changes it. Never set in OpenTPW, which runs no layout replay.
+	/// </summary>
+	// [BIN:TPW-EXE:0x447e30 replayed coaster speed] the only writer of controller +0 bit 0x8000: the replayer 0x4045b0 (one recorded action per call, from 0x4041d0) calls it for action 0x45 (69) with the slot and the speed; it calls 0x43b2b0 and then ORs 0x8000 into the controller word (0x790bd0[slot]); no code of the coaster module (0x42f000..0x449000) clears it, and the saver 0x437300 does not write it (ctl+0 bits 0x20..0x800 only), so a loaded controller has it clear
+	public bool SpeedSetByReplay { get; private set; }
+
+	/// <summary>The replayed coaster speed action (<c>0x447e30</c>): the speed setter (<see cref="ApplySpeed"/>), then bit <c>0x8000</c>.</summary>
+	internal void ApplyReplayedSpeed( int speed, bool layoutReplayRuns )
+	{
+		ApplySpeed( speed, layoutReplayRuns );
+		SpeedSetByReplay = true;
+	}
+
+	/// <summary>The speed setter <c>0x43b2b0</c> with the layout replay's state.</summary>
+	internal void ApplySpeed( int bias, bool layoutReplayRuns )
 	{
 		if ( bias == SpeedSetting )
+			return;
+		if ( !layoutReplayRuns && SpeedSetByReplay )
 			return;
 		SpeedSetting = bias;
 		SpeedCap = SpeedCapFor( Definition, bias );
@@ -954,13 +983,14 @@ public sealed class CoasterRide
 	/// </summary>
 	// [BIN:TPW-EXE:0x435ac9 controller tick] the motion tick runs when state & 0xE (2 built, 4 open, 8 closed); the station step (0x43b8b0, then 0x439570) only when state & 0xC and mode is not 0x40 (0x435cd1, 0x435cd5); the motion tick has no zero-speed branch, so a train in the station keeps the winch floor's speed
 	// [BIN:TPW-EXE:0x43ce40 frame time] the frame's time is the elapsed milliseconds of the cached animation clock (0x4709e0) since ctl+0x120 × 0.001, written to every train's +0x7c
-	// [EXT:coaster-fixed-step] OpenTPW runs the hops on the park's fixed 60 Hz simulation step instead of the original's frame time (docs/DETERMINISM.md: no simulation reads the wall clock; the original's frame coupling is the proposed DET-003 that DET-I2 registers with the substep scheduler, docs/reverse/DET-plan.md §2.2, §4.6); a sample read past the original's slot n (a stale lead coordinate beyond a shorter track's samples, a car laid out past the end of the list) wraps instead of reading past the list, and the hop time 0/0 of a hop of no length at no speed (impossible with samples 3 units apart), which the original's x87 compare takes as a full hop, is a partial one; the release walk of the train placement (0x43c1f0) over samples rated at speed 0 or infinity, where the original's sum turns NaN or never reaches the release time, stops after a lap that adds no time and takes the crossing sample itself
+	// [EXT:coaster-fixed-step] the motion tick's frame time is the scaled game clock since the last motion tick, as in the original, with the clock counted in fixed steps (MotionClockLagSeconds: a stretch in state 1 is caught up in one tick, as 0x43ce20 does); what stays OpenTPW's own is only the frame: the original runs one controller tick per rendered frame with that frame's whole milliseconds, OpenTPW one per 60 Hz simulation tick of 1/60 s (docs/DETERMINISM.md: no simulation reads the wall clock), so a frame longer or shorter than a tick hops in other slices, and while the game clock stands still (the game pause 0x4092a0, which freezes 0x785970) the original still runs a zero-time motion tick and the station step on every frame (the call 0x54fa8f to 0x435a30 is gated only by the test at 0x54f8e0: 0x7a1a14 bit 3, which the main window procedure 0x46b600 sets and clears with the application's activation, or 0x7a1a8c bit 0 clear; a zero-time tick caps every train's speed, decays it ×0.95 below 2.0 and stops it below 0.01), where OpenTPW, whose paused park runs no tick, runs none; a sample read past the original's slot n (a stale lead coordinate beyond a shorter track's samples, a car laid out past the end of the list) wraps instead of reading past the list, and the hop time 0/0 of a hop of no length at no speed (impossible with samples 3 units apart), which the original's x87 compare takes as a full hop, is a partial one; the release walk of the train placement (0x43c1f0) over samples rated at speed 0 or infinity, where the original's sum turns NaN or never reaches the release time, stops after a lap that adds no time and takes the crossing sample itself
 	public void Advance( double deltaSeconds )
 	{
 		if ( !(deltaSeconds > 0) )
 			return;
 		TimeSeconds += deltaSeconds;
-		Update( (float)deltaSeconds );
+		MotionClockLagSeconds += deltaSeconds;
+		Update();
 	}
 
 	/// <summary>
@@ -968,18 +998,31 @@ public sealed class CoasterRide
 	/// frame runs no substep and no script pass before it; its rebuild keeps the saved trains (<see cref="ImportOriginal"/>) and its motion tick is the controller's
 	/// first, which takes no time (<see cref="MotionClockStarted"/>). The park import runs it once per imported coaster, before the station script's first pass.
 	/// </summary>
-	internal void UpdateFirstFrameAfterLoad() => Update( 0f );
+	internal void UpdateFirstFrameAfterLoad() => Update();
 
 	/// <summary>Whether the controller's motion tick has run (controller flag <c>0x10</c>); the first one after the controller was made, built or loaded takes no time.</summary>
 	// [BIN:TPW-EXE:0x43ce85 motion clock] the motion tick 0x43ce20 takes as its frame time the animation clock's milliseconds since ctl+0x120 (0x43cea7) and stores the clock there at its end (0x43d8d3); when ctl+0 bit 0x10 is clear it first sets the bit and ctl+0x120 = now (0x43ce91..0x43ce9c), so that tick's time is 0: every train still makes one partial hop of no length, which takes its speed v_end = v to min(v, cap) (0x43d3a8..0x43d407, the floor store overwritten), decays it ×0.95 below 2.0 and stops it below 0.01 (0x43d4bc), runs the bump exchange 0x43cd60, wraps the position and the bumped-flag test; the constructor 0x4368f0 allocates the controller zeroed (0x45b9d0, GMEM_ZEROINIT), the Coasters loader 0x437b60 only ORs bits into ctl+0, and nothing in tp.exe clears bit 0x10 again, so the first tick of a new or a loaded controller (the first in state 2, 4 or 8, 0x435ac9) is the one
 	public bool MotionClockStarted { get; private set; }
 
-	private void Update( float frameSeconds )
+	/// <summary>
+	/// The simulation time since the controller's motion clock word (<c>ctl+0x120</c>) was last written: the fixed steps since the last motion tick. A tick
+	/// takes all of it as its frame time, so the first tick after a stretch in state 1 (a cut or reopened track runs no motion tick) catches the whole stretch up.
+	/// </summary>
+	// [BIN:TPW-EXE:0x43ce91 motion clock catch-up] 0x43ce20 takes as its frame time the unsigned (now − ctl+0x120) milliseconds (0x43cea7, loaded as a zero-extended qword) × 0.001 (0x6fe030) of the scaled game clock 0x7b496c (0x4709e0(0), refreshed once per frame by 0x473440 from the clock object 0x785970, the clock 0x4031e0 that also drives the substep clock 0x878c74), with no clamp, and writes every train's +0x7c with it once (0x43cedb); the trains then hop from the queue until each has spent all of it (0x43ced8), one tick, no substeps; ctl+0x120 is written only at the tick's end (0x43d8d3) and by the first tick (0x43ce9c); the controller tick 0x435a30 calls 0x43ce20 only in state 2, 4 or 8 (0x435ac9, state & 0xE), so in state 1 (the cut 0x446740, a reopen) the word stands while the clock runs, and the next tick after the track is completed again takes all the time since the last tick; the game pause (0x4092a0: the pause menu, the map, the postcard, message boxes, the pause key through 0x409350) freezes the clock, so a paused stretch adds nothing; OpenTPW's fixed steps are that scaled clock (they stop while paused and multiply with the game speed, as the substep scheduler maps 0x878c74), so the lag is the sum of the fixed steps since the last motion tick
+	public double MotionClockLagSeconds { get; private set; }
+
+	/// <summary>Test probe: the frame time the last motion tick gave every train (train <c>+0x7c</c> at the tick's start); derived, not saved or hashed.</summary>
+	internal float LastMotionFrameSeconds { get; private set; }
+
+	private void Update()
 	{
+		// state 1: no motion tick (0x435ac9), so the clock word stands and the lag keeps growing
 		if ( !IsOperational )
 			return;
-		var budget = MotionClockStarted ? frameSeconds : 0f;
+		var budget = MotionClockStarted ? (float)MotionClockLagSeconds : 0f;
 		MotionClockStarted = true;
+		MotionClockLagSeconds = 0;
+		LastMotionFrameSeconds = budget;
 		if ( trains.Count == 0 )
 			return;
 		MoveTrains( budget );
@@ -1251,6 +1294,8 @@ public sealed class CoasterRide
 		hash.Add( PaidCost );
 		hash.Add( TimeSeconds );
 		hash.Add( MotionClockStarted );
+		hash.Add( MotionClockLagSeconds );
+		hash.Add( SpeedSetByReplay );
 		hash.Add( BrakingStart );
 		hash.Add( StationWindow.Start );
 		hash.Add( StationWindow.End );
@@ -1339,6 +1384,9 @@ public sealed class CoasterRide
 		LeadCarCoordinate = 0;
 		// the loaded controller's bit 0x10 is clear (the loader only ORs bits into ctl+0): its first motion tick takes no time
 		MotionClockStarted = false;
+		MotionClockLagSeconds = 0;
+		// bit 0x8000 is not in the saved wire map (0x437300 writes ctl+0 bits 0x20..0x800), so a loaded controller has it clear
+		SpeedSetByReplay = false;
 		if ( !Track.IsRunnable )
 		{
 			RaiseTrackChanged();
@@ -1384,6 +1432,8 @@ public sealed class CoasterRide
 			throw new InvalidDataException( $"Coaster '{Name}' was saved on knot pass {knotPass}; this version knows {KnotPassVersion}." );
 		if ( saved.State is { } checkedState && !Enum.IsDefined( (CoasterControllerState)checkedState ) )
 			throw new InvalidDataException( $"Coaster '{Name}' holds the controller state {checkedState}, which is not 1, 2, 4 or 8." );
+		if ( saved.MotionClockLagSeconds is { } lag && !(double.IsFinite( lag ) && lag >= 0) )
+			throw new InvalidDataException( $"Coaster '{Name}' holds the motion clock lag {lag}, which is not a finite time of 0 or more." );
 		var migrated = Track.RestoreSnapshot( saved.Track );
 		Initialised = saved.Initialised;
 		// A save from before the controller state held only the closed flag: a finished track is open or closed, an unfinished one has no state to be in but 1.
@@ -1400,6 +1450,9 @@ public sealed class CoasterRide
 		LeadCarCoordinate = saved.LeadCarCoordinate ?? 0f;
 		// a park resume continues the controller (its motion clock too); a save from before the motion clock counts it started on a track that runs
 		MotionClockStarted = saved.MotionClockStarted ?? Track.IsRunnable;
+		// a save from before the catch-up holds no lag: the controller continues as if its last motion tick had just run
+		MotionClockLagSeconds = saved.MotionClockLagSeconds ?? 0;
+		SpeedSetByReplay = saved.SpeedSetByReplay ?? false;
 		if ( Track.IsRunnable )
 			Rebuild();
 		else

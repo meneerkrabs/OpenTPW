@@ -123,7 +123,7 @@ public partial class Level
 			if ( Camera.Mode is ParkCameraMode park )
 				return ParkCameraMode.OriginalYaw( park.Yaw );
 			var forward = Camera.Rotation.Forward;
-			return MathF.Atan2( forward.X, forward.Y );
+			return MathF.Atan2( forward.X, forward.Y ); // [DET:presentation] the camera yaw for the tilt drag, an input of the coaster tool
 		}
 	}
 

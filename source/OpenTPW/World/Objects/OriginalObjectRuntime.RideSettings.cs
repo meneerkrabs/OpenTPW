@@ -12,6 +12,12 @@ public sealed partial class OriginalObjectRuntime
 	/// <summary>The queue parameters the runtime published: the catalogue tier's, with the ride words a setter wrote.</summary>
 	private QueueParameters? PublishedParameters => liveParameters ?? catalogueParameters;
 
+	/// <summary>TRACK INCOMPLETE of the status banner (<c>0x485f60</c>): a track ride whose track is not valid (<c>+0x2c</c>), or a coaster without a complete, closed circuit (<c>0x441910</c>).</summary>
+	internal bool TrackIncomplete => Coaster != null ? !Coaster.IsOperational : Bump is { IsTrackValid: false };
+
+	/// <summary>TRACK INVALID of the status banner (<c>0x485f60</c>): a coaster whose track crosses itself (controller <c>+0x140</c>, <c>0x441940</c>).</summary>
+	internal bool TrackInvalid => Coaster is { IntersectionCount: > 0 };
+
 	/// <summary>The ride's operating settings: the live SPEED, CAPACITY and DURATION words (<see cref="RideVisitorBridge.Parameters"/>).</summary>
 	public RideSettingWords Settings => new( Visitors.Parameters.Speed, Visitors.Parameters.Capacity, Visitors.Parameters.Duration );
 

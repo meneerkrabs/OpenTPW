@@ -122,7 +122,7 @@ jobs:
       - name: Check patch comparison tool
         run: dotnet run --project tools/patch-analysis/PatchAnalysis.csproj --configuration Release -- --self-test
       - name: Check the browser page helpers, the kept game files and the performance harness
-        run: node --test tools/test_web_perf.mjs tools/test_web_originals.mjs tools/test_web_startup.mjs tools/test_web_inputs.mjs tools/test_web_pool_sprites.mjs tools/test_web_text.mjs
+        run: node --test tools/test_web_perf.mjs tools/test_web_determinism.mjs tools/test_web_originals.mjs tools/test_web_startup.mjs tools/test_web_inputs.mjs tools/test_web_pool_sprites.mjs tools/test_web_text.mjs
   server-image:
     needs: changes
     # Builds the self-hosting image, browser game included, and checks that it serves the page and the API.

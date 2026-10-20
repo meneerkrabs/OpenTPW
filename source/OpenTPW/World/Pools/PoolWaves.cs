@@ -137,7 +137,7 @@ public static class PoolWaves
 		if ( envelope == 0 )
 			return 0f;
 		var cycles = turn / PeriodTurns - (cellX + cellY) * PhasePerCell / 64.0;
-		return (float)(Math.Sin( 2 * Math.PI * cycles ) * envelope / 64.0);
+		return (float)(Math.Sin( 2 * Math.PI * cycles ) * envelope / 64.0); // [DET:presentation] the drawn wave
 	}
 
 	/// <summary>The drawn-height offset of a point (cells) at a fractional park turn, in engine units (<see cref="SmoothWave"/> times the bob height). Presentation only.</summary>

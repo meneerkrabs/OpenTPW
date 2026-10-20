@@ -46,6 +46,7 @@ AUDIO-035 docs/AUDIO.md
 AUDIO-036 docs/PROGRESS.md
 AUDIO-037 docs/AUDIO.md
 AUDIO-039 docs/AUDIO.md
+AUDIO-041 docs/AUDIO.md
 AUDIO-903 docs/AUDIO.md
 AUDIO-908 docs/AUDIO.md
 BLUEPRINT-002 docs/PROGRESS.md
@@ -162,9 +163,11 @@ GUEST-001 docs/PROGRESS.md
 GUEST-003 docs/progress/2026-10-17-thing-pool-and-thing-ids.md
 GUEST-008 docs/PROGRESS.md
 GUEST-009 docs/PROGRESS.md
+GUEST-011 docs/CLOSED-RIDE-ADMISSION.md
 GUEST-012 docs/GUESTS.md
 GUEST-018 docs/GUESTS.md
 GUEST-022 docs/progress/2026-10-18-tpc-sprite-banks.md
+GUEST-023 docs/DETERMINISM.md
 HEADS-001 docs/GUESTS.md
 HEADS-002 docs/PROGRESS.md
 HEADS-003 docs/PROGRESS.md
@@ -312,6 +315,7 @@ UI-020 docs/reverse/APPROX-TRACE.md
 UI-021 docs/reverse/APPROX-TRACE.md
 UI-022 docs/reverse/APPROX-TRACE.md
 UI-023 docs/reverse/APPROX-TRACE.md
+UI-027 docs/UI.md
 UI-028 docs/UI.md
 UI-029 docs/reverse/APPROX-TRACE.md
 UI-030 docs/reverse/APPROX-TRACE.md
@@ -356,6 +360,7 @@ UI-902 docs/PROGRESS.md
 UI-903 docs/PROGRESS.md
 UI-905 docs/progress/2026-10-18-round8-ui-windows.md
 UI-906 docs/PROGRESS.md
+UI-907 docs/UI.md
 UI-908 docs/PROGRESS.md
 UI-920 docs/PROGRESS.md
 UI-940 docs/UI.md

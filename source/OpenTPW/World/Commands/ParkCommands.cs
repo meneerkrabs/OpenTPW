@@ -40,7 +40,7 @@ public sealed class ParkCommands
 	private readonly Func<long> nextTick;
 	private readonly Func<ParkCommand, ParkCommandResult> execute;
 	private readonly Func<bool> refusesEdits;
-	private readonly List<ParkCommandLogEntry> log = new();
+	private readonly ParkCommandLogRing log = new( MaximumLog );
 	private readonly SortedDictionary<long, List<ParkCommand>> scheduled = new();
 	private int depth;
 
@@ -154,12 +154,72 @@ public sealed class ParkCommands
 
 	private void Record( ParkCommandLogEntry entry, ParkCommandResult result )
 	{
-		if ( log.Count >= MaximumLog )
-		{
-			log.RemoveAt( 0 );
+		if ( log.Add( entry ) )
 			DroppedLog++;
-		}
-		log.Add( entry );
 		Applied?.Invoke( entry, result );
 	}
+}
+
+/// <summary>
+/// The in-memory command log (<see cref="ParkCommands.Log"/>): a ring of at most <see cref="Capacity"/> entries, read oldest first. Adding to a full ring overwrites its oldest
+/// entry in constant time (a long bulldozer drag issues one command per cell), so the order and the kept entries are those of a list that drops its first entry when full.
+/// </summary>
+internal sealed class ParkCommandLogRing : IReadOnlyList<ParkCommandLogEntry>
+{
+	private readonly List<ParkCommandLogEntry> entries = new();
+	/// <summary>The slot of the oldest entry once the ring is full (0 until then).</summary>
+	private int oldest;
+	/// <summary>Bumped by every <see cref="Add"/>: an enumeration across an add fails, as a list's does.</summary>
+	private int version;
+
+	public ParkCommandLogRing( int capacity )
+	{
+		ArgumentOutOfRangeException.ThrowIfNegativeOrZero( capacity );
+		Capacity = capacity;
+	}
+
+	/// <summary>The most entries the ring keeps.</summary>
+	public int Capacity { get; }
+
+	public int Count => entries.Count;
+
+	public ParkCommandLogEntry this[int index]
+	{
+		get
+		{
+			if ( (uint)index >= (uint)entries.Count )
+				throw new ArgumentOutOfRangeException( nameof( index ) );
+			var slot = oldest + index;
+			return entries[slot >= entries.Count ? slot - entries.Count : slot];
+		}
+	}
+
+	/// <summary>Adds <paramref name="entry"/> as the newest entry; returns true when the ring was full and its oldest entry was dropped.</summary>
+	public bool Add( ParkCommandLogEntry entry )
+	{
+		version++;
+		if ( entries.Count < Capacity )
+		{
+			entries.Add( entry );
+			return false;
+		}
+		entries[oldest] = entry;
+		oldest = oldest + 1 == Capacity ? 0 : oldest + 1;
+		return true;
+	}
+
+	public IEnumerator<ParkCommandLogEntry> GetEnumerator()
+	{
+		var start = version;
+		for ( var index = 0; index < entries.Count; index++ )
+		{
+			if ( version != start )
+				throw new InvalidOperationException( "The command log changed during its enumeration." );
+			yield return this[index];
+		}
+		if ( version != start )
+			throw new InvalidOperationException( "The command log changed during its enumeration." );
+	}
+
+	System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
 }

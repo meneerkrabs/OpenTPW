@@ -153,6 +153,48 @@ public class CoasterSaveTests
 	}
 
 	/// <summary>
+	/// The motion clock's lag (<see cref="CoasterRide.MotionClockLagSeconds"/>) crosses the resume save: a coaster saved while its track stands cut open catches the
+	/// same stretch up after the resume as the one that kept running; a save from before the lag holds none.
+	/// </summary>
+	[TestMethod]
+	public void TheMotionClockLagCrossesTheResumeSave()
+	{
+		var (builder, ride, _) = NewCoaster();
+		BuildRunningCoaster( builder, ride );
+		for ( var tick = 0; tick < 60; tick++ )
+			ride.Advance( Tick );
+		Assert.IsTrue( builder.Reopen() );
+		for ( var tick = 0; tick < 90; tick++ )
+			ride.Advance( Tick );
+		var captured = ParkResumeJson.Deserialize<CoasterRideSaveData>( ParkResumeJson.Serialize( CoasterSave.CaptureRide( ride, attractionId: 7 ) ) );
+		Assert.AreEqual( ride.MotionClockLagSeconds, captured.MotionClockLagSeconds );
+		var resumed = new CoasterRide( ride.Definition, new CoasterWorld( 1 ), "Test Coaster" );
+		var other = new CoasterBuilder( resumed, new CoasterSite( 64, 64 ) );
+		CoasterTests.PlaceStation( other, Depart );
+		resumed.RestoreSnapshot( captured );
+		Assert.AreEqual( Hash( ride ), Hash( resumed ) );
+		Assert.AreEqual( CoasterPlaceResult.Ok, CoasterTests.CloseAndComplete( builder ) );
+		Assert.AreEqual( CoasterPlaceResult.Ok, CoasterTests.CloseAndComplete( other ) );
+		ride.Advance( Tick );
+		resumed.Advance( Tick );
+		Assert.AreEqual( ride.LastMotionFrameSeconds, resumed.LastMotionFrameSeconds );
+		Assert.IsTrue( ride.LastMotionFrameSeconds > 90 * Tick, "the catch-up crossed the save" );
+		Assert.AreEqual( Hash( ride ), Hash( resumed ) );
+
+		var older = new CoasterRide( ride.Definition, new CoasterWorld( 1 ), "Test Coaster" );
+		CoasterTests.PlaceStation( new CoasterBuilder( older, new CoasterSite( 64, 64 ) ), Depart );
+		older.RestoreSnapshot( captured with { MotionClockLagSeconds = null } );
+		Assert.AreEqual( 0d, older.MotionClockLagSeconds, "a save from before the lag holds none" );
+
+		foreach ( var bad in new[] { double.NaN, double.PositiveInfinity, -1d } )
+		{
+			var corrupt = new CoasterRide( ride.Definition, new CoasterWorld( 1 ), "Test Coaster" );
+			CoasterTests.PlaceStation( new CoasterBuilder( corrupt, new CoasterSite( 64, 64 ) ), Depart );
+			Assert.ThrowsException<InvalidDataException>( () => corrupt.RestoreSnapshot( captured with { MotionClockLagSeconds = bad } ), $"a lag of {bad} is refused" );
+		}
+	}
+
+	/// <summary>
 	/// A save from before the original's station rule (trains with a state and a boarding clock, no flags, no admission ring) still
 	/// loads: a boarding train keeps its guests at the station and they ride when it leaves; an unloading train hands its riders to the
 	/// leaving ring; a running or waiting train keeps them on the lap.

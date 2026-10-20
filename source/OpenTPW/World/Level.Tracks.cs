@@ -147,7 +147,7 @@ public partial class Level
 	// [BIN:STP-PPC:0x100748A0 ride demolition] the demolition replays the queue tool and the kart/water track tool from both station sides to clear the circuit, with one Spend of 2 × cell cost × 0x100E2424() / 100
 	// [BIN:TPW-EXE:0x00527EE0 ride demolition] the replays run with flag 0x81B46C = 1, so ClearCell 0x53B280 refunds every cleared kart or water tile (0x53B54A..0x53B57F: a tile whose overlap word +0x20 went negative is cleared and refunds unless it is an end of the replayed line while the flag is clear; the flag is set, the type 0x19 and online cases aside), and 0x5280F0..0x528179 then debits twice the cell cost × the scrap percentage / 100 once
 	// [BIN:TPW-EXE:0x00527EE0 demolition replays] the two replays of the track tool clear the chain of tiles from the station's exit to the open end of the track (0x530830, then the lines between its corner points) and the chain from the tile before the station (0x530B70), as TrackEditor.Demolish does: a tile no chain reaches stays in the park and refunds nothing, a tile a chain passes with a pass counter left (a junction) loses one pass only
-	// [APPROX:TRACK-007] the replay clears each line between two corner points through the click handler's mode 0x35, whose per-tile arm writes for the line's step (0x53B280 with the line's (±2, 0) or (0, ±2): the arm the line used goes, the other arm stays when a pass remains, a corner's second arm after its second visit) are modelled as one clear per tile in chain order; what a junction's remaining pass keeps in its arms and link after the replay is the pass rule of the cut (0x53B280 with (−1, −1)), not the line step's
+	// [APPROX:TRACK-007] the replay clears each line between two corner points through the click handler's mode 0x35, whose per-tile arm writes for the line's step (0x53B280 with the line's (±2, 0) or (0, ±2): the arm the line used goes, the other arm stays when a pass remains, a corner's second arm after its second visit) are modelled as one clear per tile in chain order; a two-line full crossing whose laid flow includes the chain's heading takes the line step's rule (the chain's link bit and that axis's arms go, TrackEditor.Replay), but any other junction keeps the pass rule of the cut (0x53B280 with (−1, −1)) for its arms and link, not the line step's
 	private void OnTrackStationRemoving( OriginalObject item )
 	{
 		if ( waterTracks == null || !trackStations.TryGetValue( item, out var station ) || BuilderOf( item ) is not { } builder )
@@ -177,7 +177,7 @@ public partial class Level
 
 	/// <summary>
 	/// Walks the circuit of <paramref name="item"/> again after a track edit: the controller takes the new sections and validity (the boats leave and the
-	/// ride closes, as a re-walk does in the original), and a valid circuit ends the track tool and starts the queue tool. <paramref name="cause"/> says which
+	/// ride closes, as a re-walk does in the original), and a valid circuit follows the queue or ends the tool, except the live exactly-Ctrl no-queue restart. <paramref name="cause"/> says which
 	/// of the original's walks this is, for the pieces' water clip: the ride's placement starts it on a valid circuit, a track line stops it.
 	/// </summary>
 	public TrackCircuit? RewalkTrack( OriginalObject item, TrackWalkCause cause = TrackWalkCause.Restore )
@@ -198,10 +198,18 @@ public partial class Level
 		// [BIN:TPW-EXE:0x00526D41 track tool help] the kart and water tool posts tool help 0xCC (204) only for a click with no line start (0x0081EDE4/E8 = −1), which sets the start (0x00525A1C → 0x00526CB3); the placement presets the start at the station's exit (0x0052A1A0), so it is reached only when the tool stays on without one after a line closes with exactly Ctrl and no queue to follow (0x00526FB3, UI-031); 0xB8, 0xD6 and 0x151 are the path and queue tool's help (0x005272F5, 0x00527351, 0x00527620)
 		if ( TrackToolStation == item )
 		{
+			var queueFollows = cause != TrackWalkCause.Edit && item.Entry.HasQueue && item.Runtime.IsAttraction && item.Visitors.HasCells;
+			// UI-031: the live line click with exactly Ctrl and no queue keeps this mode, with no start.
+			// The circuit refresh above is identical; only the issuer's local tool continuation differs.
+			if ( cause == TrackWalkCause.Line && keepTrackToolAfterLine && !queueFollows && CellTool.Writer is TrackLineWriter writer )
+			{
+				CellTool.Enter( writer, null );
+				return circuit;
+			}
 			CellTool.Cancel();
 			trackToolStation = null;
 			// [BIN:TPW-EXE:0x00526C70 edit walk end] a cut that leaves a valid circuit ends the tool (0x52F580(0), 0x526C6E): no queue tool follows, as it does a line that closes the circuit
-			if ( cause != TrackWalkCause.Edit && item.Entry.HasQueue && item.Runtime.IsAttraction && item.Visitors.HasCells )
+			if ( queueFollows )
 				EnterQueueTool( item.Visitors );
 		}
 		return circuit;

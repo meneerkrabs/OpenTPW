@@ -76,6 +76,19 @@ public class OriginalCoasterImportTests
 		return (ride, plan);
 	}
 
+	[TestMethod]
+	public void ImportedCompletedControllerHasEconomicEligibilityBeforeFirstMotion()
+	{
+		var definition = Definition();
+		var original = RunningCircuit( definition, seconds: 0 );
+		var (ride, _) = Import( RoundTrip( original ), definition );
+		Assert.IsTrue( ride.Track.IsComplete && ride.Track.IsClosed );
+		Assert.AreEqual( 0, ride.IntersectionCount );
+		Assert.IsTrue( ride.CountsForParkPoints );
+		Assert.IsTrue( ride.Samples.Count >= 3 && ride.AcceptsGuests, "import recomputes geometry; it does not bypass admission safety" );
+		Assert.IsFalse( ride.MotionClockStarted );
+	}
+
 	private static ulong TrackHash( CoasterTrack track )
 	{
 		var hash = new StateHasher();
@@ -344,8 +357,8 @@ public class OriginalCoasterImportTests
 
 	/// <summary>
 	/// The fixed run of an imported synthetic coaster (the first frame after the load, the speed word 50, a minute of ticks) repeats exactly and ends where the built coaster
-	/// ends that took the same first frame and speed word. No digest is pinned: the coaster's curve and rating call libm functions (Atan2, Sin, Cos, Acos), and its content
-	/// hashes differently on macOS arm64 and on the x64 runners (docs/DETERMINISM.md, "Original coaster import"), so the coaster tests assert relations.
+	/// ends that took the same first frame and speed word. Its digest is pinned: the coaster's curve, rating and collision pass call DetMath, not the platform's libm, so the
+	/// digest is the same on every runtime (docs/DETERMINISM.md, "Cross-platform coaster pins").
 	/// </summary>
 	[TestMethod]
 	public void AnImportedSyntheticCoasterRunsDeterministically()
@@ -369,6 +382,8 @@ public class OriginalCoasterImportTests
 		}
 		var first = Run();
 		Assert.AreEqual( first, Run(), "the run repeats" );
+		// Pinned on every runtime since the coaster's elementary functions are DetMath's (docs/DETERMINISM.md, "Cross-platform coaster pins").
+		Assert.AreEqual( "8A1279434220868B", first.Imported.ToString( "X16" ), "the imported coaster's fixed run" );
 	}
 
 	[TestMethod]

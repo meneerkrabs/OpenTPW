@@ -441,7 +441,7 @@ public partial class Level : IDisposable
 				}
 			}
 			yield return 0.35f;
-			Blueprint = new BlueprintMarkers( OriginalPark.Heightfield );
+			Blueprint = new BlueprintMarkers( OriginalPark.Heightfield, BlueprintHeightOffset );
 			SetupParkName();
 			var origin = OriginalParkPlacement.GetOrigin( OriginalPark.Heightfield );
 			ParkCameraMode.TargetExtent = Math.Max( origin.X, origin.Y );
@@ -545,6 +545,8 @@ public partial class Level : IDisposable
 			ImportOriginalRideSettings();
 			ImportOriginalScripts();
 			ImportOriginalCoasters();
+			ImportOriginalRetainedRideStates();
+			ImportOriginalArrivals();
 			StartPlacedParticles();
 			ImportOriginalParticles();
 			if ( resumeState == null && !GameEditions.IsThemeParkInc && OriginalPark.Save != null && visitLayout == null )
@@ -583,6 +585,7 @@ public partial class Level : IDisposable
 			? new BuyLandTool( () => Guests?.Grid.Cells, () => Park?.Economy, ( x, y ) => ParkLand.IsBarrier( park.Map, park.Heightfield, x, y ) )
 			: null;
 		Guests = new GuestSimulation( grid, settings, Seed.GuestStream ) { OnlineVisit = Visit != null };
+		BindGuestThoughtPresentation( Guests );
 		// a visit has no economy, whose turn an own park's arrivals read (ParkEconomyRuntime.AttachGuests): its arrivals read the turn of the save it is built on
 		if ( Visit != null )
 			Guests.ArrivalClock = VisitArrivalClock( Guests, park.Save?.World.Variables.GameTick );
@@ -675,8 +678,8 @@ public partial class Level : IDisposable
 
 	/// <summary>The visitor under the mouse, in or out of costume: the nearer of the two renderers' picks.</summary>
 	// [BIN:TPW-EXE:0x532bd0 sprite to thing] the sprite pass picks the nearest pickable sprite, and the visitor (a thing of type 1) that owns it is then looked up only in the hovered cell and its eight neighbours
-	// (offset table 0x81ed40, filled by 0x532b30: the cell itself first, then the others), so a visitor that is none of those cells is not picked, and the next best sprite is not tried; the hovered cell is the cursor ray's terrain hit
-	// (0x45d560), which a hill or a tall object between the camera and the visitor moves away. The gate runs on original levels, where a heightfield gives the ray a hit
+	// (offset table 0x81ed40, filled by 0x532b30: the cell itself first, then the others), so a visitor that is none of those cells is not picked, and the next best sprite is not tried; the hovered cell is the cell of the cursor ray's nearest hit
+	// (0x45d560: the terrain or an object's model, ObjectRayPick), which a hill or a tall object between the camera and the visitor moves away. The gate runs on original levels, where a heightfield gives the ray a hit
 	internal Guest? PickVisitor( System.Numerics.Vector2 mouse, System.Numerics.Vector2 viewport, System.Numerics.Matrix4x4 view, System.Numerics.Matrix4x4 projection )
 	{
 		float kidDepth = float.PositiveInfinity, costumeDepth = float.PositiveInfinity;
@@ -1211,7 +1214,7 @@ public partial class Level : IDisposable
 		RenderPass++;
 		// [EXT:point-lights] the lights of the objects that have any, for every draw of this frame
 		PointLights?.Gather( Camera.ViewMatrix * Camera.ProjMatrix );
-		foreach ( var entity in Entity.All.ToArray() )
+		foreach ( var entity in WeatherAfterParticles( Entity.All.ToArray() ) )
 			entity.Render();
 	}
 }

@@ -32,6 +32,8 @@ public sealed record SegmentResult( (int X, int Y) SnappedEnd, IReadOnlyList<(in
 {
 	/// <summary>The start of the line.</summary>
 	public (int X, int Y) Start { get; init; }
+	internal QueueSegmentReceipt? QueueReceipt { get; init; }
+	internal bool? QueueFinalEndsTool { get; init; }
 	/// <summary>Every cell of the snapped line, start and end included (what the preview shows).</summary>
 	public IReadOnlyList<(int X, int Y)> Line { get; init; } = Array.Empty<(int X, int Y)>();
 	/// <summary>Line cells that already had the type (placement counter bumped on commit, never charged).</summary>
@@ -42,6 +44,8 @@ public sealed record SegmentResult( (int X, int Y) SnappedEnd, IReadOnlyList<(in
 	public bool StoppedByOwnLimit { get; init; }
 	/// <summary>True for the ghost a click returns when the line had a refused cell and nothing was committed (tp.exe <c>0x524A63</c>).</summary>
 	public bool GhostRefused { get; init; }
+	/// <summary>A successful preview visited the path/queue validator's link branch; only completed ghosts expose it in the HUD.</summary>
+	public bool LinkPointer { get; init; }
 	/// <summary>True when no cell of the line was refused.</summary>
 	public bool Completed => StoppedBy is CellBuildResult.Ok or CellBuildResult.Existing;
 }
@@ -171,8 +175,11 @@ public sealed class ParkPathBuilder : ICellLineWriter
 	public CellBuildResult Validate( int x, int y, ParkCellType type, bool lastCell ) => Validate( x, y, type, lastCell, pending: 0 );
 
 	/// <param name="pending">The preview's line cost before this cell; null for a commit, whose money test is <c>SetCellType</c>'s in <see cref="WritePath"/>.</param>
-	private CellBuildResult Validate( int x, int y, ParkCellType type, bool lastCell, long? pending )
+	private CellBuildResult Validate( int x, int y, ParkCellType type, bool lastCell, long? pending ) => Validate( x, y, type, lastCell, pending, out _ );
+
+	private CellBuildResult Validate( int x, int y, ParkCellType type, bool lastCell, long? pending, out bool linkPointer )
 	{
+		linkPointer = false;
 		// The original's LayLine skips (does not stop at) cells outside its 128 × 128 array (0xd70d8); snapped tool ends are grid cells, so only the headless API can reach this (REVIEW-PATH N1).
 		if ( !Cells.InBounds( x, y ) || x >= Terrain.Width || y >= Terrain.Height )
 			return CellBuildResult.OutsideTerrain;
@@ -200,6 +207,7 @@ public sealed class ParkPathBuilder : ICellLineWriter
 		// [BIN:STP-PPC:0x10084550 placement validator] money test while game+36 == 0: the 32-bit pending line cost (this cell included) is refused when greater than the balance, a zero sum passes; the commit only runs SetCellType's test (WritePath)
 		if ( pending is { } before && Economy is { } park && !park.CanPreviewLine( before + CellCost ) )
 			return CellBuildResult.NotEnoughMoney;
+		linkPointer = type == ParkCellType.Path && old == (byte)ParkCellType.Queue;
 		return CellBuildResult.Ok;
 	}
 
@@ -237,6 +245,7 @@ public sealed class ParkPathBuilder : ICellLineWriter
 		var written = new List<(int X, int Y)>();
 		long charged = 0;
 		var stoppedBy = CellBuildResult.Ok;
+		var linkPointer = false;
 		(int X, int Y)? stoppedAt = null;
 		var last = line[^1];
 		var endedOnExisting = Cells.TypeAt( last.X, last.Y ) is ParkCellType.Path or ParkCellType.Queue;
@@ -244,7 +253,7 @@ public sealed class ParkPathBuilder : ICellLineWriter
 		{
 			var (x, y) = line[index];
 			// The end cell is written with the last-cell flag (data 0x84b2c) raised.
-			var check = Validate( x, y, ParkCellType.Path, lastCell: index == line.Count - 1, pending: write ? null : charged );
+			var check = Validate( x, y, ParkCellType.Path, lastCell: index == line.Count - 1, pending: write ? null : charged, out var cellLink );
 			if ( check == CellBuildResult.Existing )
 			{
 				existing.Add( (x, y) );
@@ -259,6 +268,7 @@ public sealed class ParkPathBuilder : ICellLineWriter
 				stoppedAt = (x, y);
 				break;
 			}
+			linkPointer |= !write && cellLink;
 			var cost = CellCost;
 			// [BIN:TPW-EXE:0x5344E5 cell op 0x87] the commit's first LayLine pass (0x524960: 0x536100(0x87, ...)) demolishes the owner of every type 4, 9 or 10 cell of the line whose priority 0x818C14 is below the tool's 0x818C10 (0x527EE0, crediting its scrap value) before the type pass
 			// tp.exe lets a line commit only when its ghost passed the money test, so nothing is demolished for a cell that cannot be paid for
@@ -297,7 +307,8 @@ public sealed class ParkPathBuilder : ICellLineWriter
 			Start = start,
 			Line = line,
 			Existing = existing,
-			StoppedAt = stoppedAt
+			StoppedAt = stoppedAt,
+			LinkPointer = linkPointer
 		};
 	}
 

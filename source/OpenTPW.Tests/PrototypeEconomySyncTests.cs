@@ -230,6 +230,46 @@ public class PrototypeEconomySyncTests
 		Assert.AreEqual( 2, economy.Objects.Count );
 	}
 
+	[TestMethod]
+	public void LevelSyncUsesEconomicCoasterPredicateAndTracksToolIdentity()
+	{
+		var info = EconomyTestData.Catalog().Objects.First( item => item.InfoId == 1100 ) with { TrackType = 3 };
+		economy = new ParkEconomy( EconomyTestData.Settings(), new EconomyObjectCatalog( new[] { info, info with { InfoId = PrototypeRide.InfoId } } ), ParkGameMode.FullSimulation, 7 );
+		ordinaryState = economy.RegisterExisting( 1100 );
+		prototypeState = economy.RegisterExisting( PrototypeRide.InfoId );
+		SetProperty( level, "Park", ParkEconomyRuntime.ForResume( economy, ParkStartKind.FullSimulation ) );
+		Field( typeof( Level ), "economyInstances" ).SetValue( level, new Dictionary<OriginalObject, int> { [ordinary] = ordinaryState.Id } );
+		Field( typeof( Level ), "prototypeInstance" ).SetValue( level, prototypeState.Id );
+		var (built, _) = CoasterCollisionTests.Build( CoasterTests.Circuit, 20 );
+		var ride = new CoasterRide( built.Definition, new CoasterWorld( 1 ) );
+		ride.Track.RestoreSnapshot( CoasterSave.CaptureRide( built, 7 ).Track );
+		Field( typeof( OriginalObjectRuntime ), "<Coaster>k__BackingField" ).SetValue( ordinary.Runtime, ride );
+		Field( typeof( OriginalObjectRuntime ), "<Coaster>k__BackingField" ).SetValue( prototype.Runtime, built );
+		Invoke( "SyncObjectEconomy" );
+		Assert.IsTrue( ordinaryState.CoasterAcceptsGuests, "actual level sync credits a complete controller before samples" );
+		Assert.IsFalse( ride.AcceptsGuests );
+		var bothPoints = economy.ParkPoints();
+		Assert.IsTrue( bothPoints > 0 );
+		Invoke( "SetCoasterToolStation", ordinary );
+		Invoke( "SyncObjectEconomy" );
+		Assert.IsFalse( ordinaryState.CoasterAcceptsGuests );
+		Assert.IsTrue( prototypeState.CoasterAcceptsGuests );
+		Assert.AreEqual( bothPoints / 2, economy.ParkPoints() );
+		Invoke( "SetCoasterToolStation", prototype );
+		Invoke( "SyncObjectEconomy" );
+		Assert.IsTrue( ordinaryState.CoasterAcceptsGuests );
+		Assert.IsFalse( prototypeState.CoasterAcceptsGuests );
+		Assert.AreEqual( bothPoints / 2, economy.ParkPoints() );
+		Invoke( "SetCoasterToolStation", new object[] { null! } );
+		Invoke( "SyncObjectEconomy" );
+		Assert.IsTrue( ordinaryState.CoasterAcceptsGuests && prototypeState.CoasterAcceptsGuests );
+		Assert.AreEqual( bothPoints, economy.ParkPoints() );
+		Field( typeof( OriginalObjectRuntime ), "<Coaster>k__BackingField" ).SetValue( ordinary.Runtime, null );
+		Invoke( "SyncObjectEconomy" );
+		Assert.IsFalse( ordinaryState.CoasterAcceptsGuests, "missing controller fails the actual sync" );
+		Assert.AreEqual( bothPoints / 2, economy.ParkPoints() );
+	}
+
 	private OriginalObjectRuntime Runtime( int infoId, RideScriptWorld world )
 	{
 		var settings = new ObjectSettings( new[] { new ObjectSettingsFile( $"Info.Id {infoId}\nInfo.Name Synthetic\nInfo.IsChoosable 1\n", "synthetic.sam" ) } );

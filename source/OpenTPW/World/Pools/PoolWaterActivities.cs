@@ -261,7 +261,7 @@ public sealed class RopeSwingActivity : IPoolActivity
 			// up the ladder from the deck to the platform
 			1 => heights.Deck + PoolAttractionSettings.SwingPlatformHeight * Math.Min( guest.PoolActivityTurns, PoolAttractionSettings.SwingClimbTurns ) / PoolAttractionSettings.SwingClimbTurns,
 			// down from the platform to the water in an arc, then the splash at the water's surface
-			2 => platform + (heights.Water - platform) * guest.PoolActivityTurns / PoolAttractionSettings.SwingTurns + 0.25f * MathF.Sin( MathF.PI * guest.PoolActivityTurns / PoolAttractionSettings.SwingTurns ),
+			2 => platform + (heights.Water - platform) * guest.PoolActivityTurns / PoolAttractionSettings.SwingTurns + 0.25f * MathF.Sin( MathF.PI * guest.PoolActivityTurns / PoolAttractionSettings.SwingTurns ), // [DET:presentation] the drawn feet height (PoolFeetHeight)
 			3 => heights.Water,
 			_ => null
 		};

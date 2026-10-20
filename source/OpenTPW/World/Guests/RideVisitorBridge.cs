@@ -182,6 +182,9 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	/// <summary>[EXT:pools-swim] The cells beyond the back of a changing room; set when the level registers it (geometry only: whether one is a pool cell is read when a guest swims).</summary>
 	public IReadOnlyList<(int X, int Y)> PoolAccessCandidates { get; set; } = Array.Empty<(int X, int Y)>();
 	public (float X, float Y) EntryCellStandPos { get; set; } = (0.5f, 0.5f);
+	public (float X, float Y) ExitCellAppearPos { get; set; } = (0.5f, 0.5f);
+	/// <summary>The object's own exit cell (<see cref="IRideVisitorBridge.ExitAccessCell"/>), set when the level registers a placed object; not saved (the level registers it again on load).</summary>
+	public (int X, int Y)? ExitAccessCell { get; set; }
 	public int Rotation { get; set; }
 	public bool HasCells { get; set; }
 	/// <summary>Queue rules from the object's .sam data (<see cref="QueueParameters"/>); defaults describe a queue-less object.</summary>
@@ -225,6 +228,15 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	public bool InBrokenState => brokenDown;
 	private bool condemned;
 	private bool brokenDown;
+
+	/// <summary>Restores a supported original retained state without admission, queue or script side effects.</summary>
+	internal void RestoreOriginalBrokenState( bool isCondemned, double lifeGauge )
+	{
+		brokenDown = true;
+		condemned = isCondemned;
+		LifeGauge = lifeGauge;
+	}
+
 	/// <summary>The original's ride-failure predicate <c>0xdfe34</c> (ORACLE.md F15): a relief object whose wear gauge, truncated to a byte, is below 25.</summary>
 	public bool ReliefWornOut => QueueJoinRules.ReliefFailed( ProvidesRelief, (float)WearGauge );
 	public bool IsRunning => vm != null && Get( RideVariables.VAR_RUNNING ) != 0;
@@ -355,6 +367,8 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 		Condemned = condemned ? true : null,
 		CalledTurn = calledTurn,
 		QueueCells = queueCells.ToArray(),
+		TypedQueueFront = QueueEntryResolver != null && QueueEntranceDirection >= 0 ? QueueFrontCell : null,
+		TypedQueueDirection = QueueEntryResolver != null && QueueFrontCell != null && QueueEntranceDirection >= 0 ? QueueEntranceDirection : null,
 		QueueEditCount = QueueEditCount,
 		JoinCell = JoinCell,
 		HeadNotReadyStreak = HeadNotReadyStreak,
@@ -388,6 +402,12 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 				listsMissing = true;
 			}
 		}
+		if ( snapshot.TypedQueueFront.HasValue != snapshot.TypedQueueDirection.HasValue )
+			Error( "the typed queue front and direction must be present together." );
+		if ( snapshot.TypedQueueFront is { } typedFront && (typedFront.X < 0 || typedFront.Y < 0) )
+			Error( "the typed queue front is outside the positive cell map." );
+		if ( snapshot.TypedQueueDirection is { } typedDirection && (typedDirection < 0 || typedDirection > 3) )
+			Error( "the typed queue direction is invalid." );
 		if ( snapshot.Condemned == true && !snapshot.BrokenDown )
 			Error( "a condemned ride (state 4) must be in the broken-down state." );
 		Require( snapshot.Queue, "queue list" );
@@ -546,6 +566,18 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 		calledTurn = snapshot.CalledTurn;
 		queueCells.Clear();
 		queueCells.AddRange( snapshot.QueueCells );
+		if ( snapshot.TypedQueueFront is { } savedFront )
+		{
+			QueueFrontCell = savedFront;
+			QueueEntranceDirection = snapshot.TypedQueueDirection!.Value;
+		}
+		else if ( QueueEntryResolver != null )
+		{
+			// Legacy snapshots never stored these caches: retain the old shape-registration reconstruction,
+			// not a guessed historical direction from newly edited links. The next normal grid sync may refresh.
+			QueueFrontCell = compatibilityQueueFront;
+			QueueEntranceDirection = compatibilityQueueDirection;
+		}
 		QueueEditCount = snapshot.QueueEditCount;
 		JoinCell = snapshot.JoinCell;
 		HeadNotReadyStreak = snapshot.HeadNotReadyStreak;
@@ -611,6 +643,41 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 
 	/// <summary>The entrance's outside cell (the original front cell), or null to use <see cref="EntranceCell"/>.</summary>
 	public (int X, int Y)? QueueFrontCell { get; set; }
+	/// <summary>Supported live typed entry reconstruction; rebound by the level, never persisted as a delegate. Untyped worlds retain their compatibility front.</summary>
+	private Func<(int X, int Y)?>? queueEntryResolver;
+	private (int X, int Y)? compatibilityQueueFront;
+	private int compatibilityQueueDirection = -1;
+	internal Func<(int X, int Y)?>? QueueEntryResolver
+	{
+		get => queueEntryResolver;
+		set
+		{
+			compatibilityQueueFront = QueueFrontCell;
+			compatibilityQueueDirection = QueueEntranceDirection;
+			queueEntryResolver = value;
+		}
+	}
+
+	/// <summary>Reads the native front from the entry's links, not its queue direction. Zero/unavailable entries retain the explicitly unsupported compatibility fallback.</summary>
+	// [BIN:TPW-EXE:0x004DE040] mEntryPos +0x36, Links +0x0C, priority 1,16,64,4; no neighbour type, owner or reciprocity filter.
+	internal bool RefreshTypedQueueFront( GuestPathGrid grid )
+	{
+		if ( QueueEntryResolver?.Invoke() is not { } entry || !grid.InBounds( entry.X, entry.Y ) ) return false;
+		var links = grid.Cells.LinksAt( entry.X, entry.Y );
+		foreach ( var direction in new[] { 0, 2, 3, 1 } )
+		{
+			if ( (links & GuestPathGrid.LinkValue( direction )) == 0 ) continue;
+			var (dx, dy) = GuestPathGrid.Directions[direction];
+			var front = (X: entry.X + dx, Y: entry.Y + dy);
+			// Out-of-map neighbours remain outside the supported host reconstruction, not a native type test.
+			if ( !grid.InBounds( front.X, front.Y ) ) return false;
+			QueueFrontCell = front;
+			QueueEntranceDirection = (direction + 2) & 3;
+			return true;
+		}
+		return false;
+	}
+
 	/// <summary><see cref="GuestPathGrid.Directions"/> index from the front cell toward the ride's entrance cell, or −1.</summary>
 	public int QueueEntranceDirection { get; set; } = -1;
 	/// <summary>Queue cells from the front (index 0) to the back; the front may be a path cell.</summary>
@@ -693,9 +760,10 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	{
 		var previous = queueCells.ToArray();
 		queueCells.Clear();
+		var typedFront = RefreshTypedQueueFront( grid );
 		var front = QueueFrontCell ?? EntranceCell;
 		// A front cell that is neither a queue nor a path cell falls back to EntranceCell, the nearest walkable path cell (a cell nothing laid: imports, restores, the gates), as a one-cell queue.
-		if ( !grid.IsQueue( front.X, front.Y ) && !grid.IsWalkable( front.X, front.Y ) )
+		if ( !typedFront && !grid.IsQueue( front.X, front.Y ) && !grid.IsWalkable( front.X, front.Y ) )
 			front = EntranceCell;
 		queueCells.Add( front );
 		var current = front;
@@ -712,6 +780,25 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 			return false;
 		QueueEditCount++;
 		return true;
+	}
+
+	/// <summary>Validates current-epoch save geometry without mutating live caches. Legacy snapshots use the pre-feature shape registration contract.</summary>
+	internal bool MatchesSnapshotQueueGeometry( GuestPathGrid grid, RideVisitorBridgeSnapshot saved )
+	{
+		var expected = this;
+		if ( saved.TypedQueueFront == null && QueueEntryResolver != null )
+		{
+			// Recompute only the old geometry, not guest/VM state. This isolated bridge never registers or writes the map.
+			expected = new RideVisitorBridge( AttractionId, Name, Kind, Capacity, excitementLevel, AttractionValue )
+			{
+				EntranceCell = EntranceCell, QueueFrontCell = compatibilityQueueFront,
+				QueueEntranceDirection = compatibilityQueueDirection
+			};
+			expected.RecomputeQueue( grid );
+		}
+		return saved.QueueCells.SequenceEqual( expected.QueueCells ) && saved.JoinCell == expected.JoinCell
+			&& (saved.TypedQueueFront == null || (saved.TypedQueueFront == expected.QueueFrontCell
+				&& saved.TypedQueueDirection == expected.QueueEntranceDirection));
 	}
 
 	/// <summary>Raised after an edit of this ride's queue cells (tp.exe's re-evaluation 0x004DE1F0), once the queue is recomputed.</summary>
@@ -751,7 +838,7 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	/// on a path; null when the queue is not connected to a path.
 	/// </summary>
 	// [BIN:TPW-EXE:0x004DE840 attached path] 0x4DEA2F..0x4DEA57: for the bits 1, 4, 16, 64 of the back cell's +0x0C (0x522770) the neighbour along it (0x4D97E0) is taken when it is type 1 (0x536310); none logs "No path attached to end of queue"
-	// [APPROX:QUEUE-003] guests walk to the join cell, the path cell attached to the back of the queue, and join from it; tp.exe's state-10 join (0x004FFBC0) needs the guest's own cell to be the back queue cell (0x004DE110 → 0x004DE130, else "The back of the queue has moved"), reached by the walk's edge test 0x4D8750 through the back cell's link, and uses the attached path cell only for the back cell's fourth place; OpenTPW's ride entrance cell keeps no link byte (its cells are not typed map cells, WALK-005), so the ride keeps its front in QueueFrontCell where tp.exe reads it from the entrance cell's bit (0x4DE040) — evidence needed: the route that walks a guest onto a queue cell (0x004FA5F0) on OpenTPW's walk (the edge test over OpenTPW's cell map, WALK-005)
+	// [APPROX:QUEUE-003] back-cell admission and fourth-slot path geometry are implemented. Supported live typed HasQueue entries select their nonzero front from +0x0C (0x4DE040). Linkless/unsupported entries and untyped worlds retain the host one-cell fallback; native zero-front/count semantics and divergent imported mEntryPos remain unsupported.
 	private (int X, int Y)? FindJoinCell( GuestPathGrid grid )
 	{
 		var back = queueCells[^1];
@@ -904,6 +991,18 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 		return true;
 	}
 
+	/// <summary>
+	/// The close (tp.exe <c>0x004DF300</c>, and <c>SetState</c> 1, 2 and 4): the loading slot <c>+0x6C</c> is cleared at once, so a guest that was called but has not yet written
+	/// its offer is no longer the pending visitor (its stand-point admission then refuses it while the ride is closed, or takes it once the ride has opened again). An offer
+	/// already written stays: tp.exe's AdmitPerson cleared the slot when it wrote VAR_LETMEON, and the close leaves VAR_LETMEON alone.
+	/// </summary>
+	// [BIN:TPW-EXE:0x004DF300 close clears the loading slot] "Object %d: Closing...": the open word +0x68 = 0, "person being loaded was %d (about to zeroise)", +0x6C = 0, script variable 6 (VAR_RIDECLOSED) = 1 and the model state call 0x00454550(1); no guest, flag or queue word is touched. Its callers are the park door 0x00519EF0, the coaster tool's entry 0x00447520 and the ride window's close 0x0048CCF0; SetState 1, 2 and 4 (0x004E0E92, 0x004E0FA0, 0x004E10A4) and the repair tail's re-close (0x004DFD3E) clear +0x6C the same way
+	public void ClearLoadingSlot()
+	{
+		if ( !letMeOnWritten )
+			called = 0;
+	}
+
 	private void Withdraw()
 	{
 		if ( letMeOnWritten && Get( RideVariables.VAR_LETMEON ) == called )
@@ -913,18 +1012,35 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	}
 
 	/// <summary>
-	/// The called guest reached the stand point (state 13, admission method <c>0xe03d0</c>): its id is written
-	/// to VAR_LETMEON only while that is 0. True when written (the guest then waits for the script).
+	/// The called guest reached the stand point (state 13, admission method AdmitPerson: Mac <c>0xe03d0</c>, PC <c>0x004E0900</c>): its id is written
+	/// to VAR_LETMEON only while that is 0 and the ride is open and outside its retained broken state. True when written (the guest then waits for the script);
+	/// false refuses the guest, which then walks back to its queue place (<see cref="GuestSimulation"/>'s state 13).
 	/// </summary>
 	public bool PresentForBoarding( int guestId )
 	{
-		if ( guestId == 0 || guestId != called || vm == null )
+		if ( guestId == 0 || vm == null )
+			return false;
+		// AdmitPerson admits whoever presents itself (it only logs "admitting wrong person" when +0x6C names someone else); OpenTPW calls only the queue head and only a
+		// standing head, so the presenting guest is the pending visitor or, once a close (ClearLoadingSlot) or a busy VAR_LETMEON has cleared it, nobody: any other id is refused
+		if ( called != 0 && guestId != called )
+			return false;
+		// Recheck the owner's open word and retained state at the stand point; the choice's coaster/track predicate does not apply here.
+		// [BIN:TPW-EXE:0x004E0900 AdmitPerson state/open test] AdmitPerson refuses a ride in state 1 (+0x19C), with the open word +0x68 = 0 or in state 4 before the loading-slot and VAR_LETMEON checks: it logs and returns 0 without touching the ride (0x004E0A30), so the pending visitor and VAR_LETMEON stay as they are
+		// IsBrokenDown stands for tp.exe's +0x19C test (states 1 and 4) only because every opener writes the open word 1 and VAR_RIDECLOSED 0 together with SetState(0)
+		// (the repair 0x004DF8F0, the open routine 0x004DF390, the queue edit's reopening 0x004DE1F0, the upgrade cancel 0x004E0050; see IsBrokenDown): an opener
+		// that wrote only the open word would leave tp.exe in state 1 while the bridge's retained state reads as left (ClosedRideAdmissionTests pins the runtime opener)
+		if ( !isOpen() || IsBrokenDown )
 			return false;
 		if ( letMeOnWritten )
 			return true;
+		// [BIN:TPW-EXE:0x004E09B0 AdmitPerson clears the loading slot] past the state/open test AdmitPerson logs a loading slot +0x6C that names someone else ("admitting wrong person", 0x004E0976: none after a close cleared it)
+		// and clears it before it reads VAR_LETMEON; a busy VAR_LETMEON then logs "script changed its mind about admission!" and returns 0 (0x004E09EC), leaving the variable alone, so the ride calls its head again at a later update
+		called = 0;
 		// [BIN:TPW-EXE:0x551724 critical flag] the original's host side never looks at the critical flag (its only reader is the slice loop); the admission method writes VAR_LETMEON whenever it is 0, whatever the script is doing
 		if ( Get( RideVariables.VAR_LETMEON ) != 0 )
 			return false;
+		// The written guest is kept as the bridge's pending visitor: OpenTPW's state 14 (HostStep, MarkBoarded) follows it there, where tp.exe's guest watches VAR_LETMEON itself
+		called = guestId;
 		Set( RideVariables.VAR_LETMEON, guestId );
 		letMeOnWritten = true;
 		return true;
@@ -963,12 +1079,7 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 		if ( called != 0 && letMeOnWritten && Get( RideVariables.VAR_LETMEON ) != called )
 			MarkBoarded( called );
 
-		var off = Get( RideVariables.VAR_LETMEOFF );
-		if ( off != 0 )
-		{
-			Set( RideVariables.VAR_LETMEOFF, 0 );
-			Release( off );
-		}
+		// [BIN:TPW-EXE:0x004E1410 script dismiss] VAR_LETMEOFF is read by the ride update of a park turn only (UpdateAdmission), not on every tick
 
 		if ( DefersAdmission )
 			return;
@@ -1008,6 +1119,7 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 			if ( IsBrokenDown )
 			{
 				DismissHead();
+				DismissLetOff();
 				return;
 			}
 			brokenDown = false;
@@ -1028,6 +1140,45 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 		// [BIN:TPW-EXE:0x004E1220 admission ignores the coaster predicate] the admission reads the open word +0x68, the script's LETMEON, capacity and running variables, the pending visitor and the queue head only, never the coaster test 0x00441970: an open ride whose coaster refuses guests still calls its head forward, and its queued guests leave through state 11's own exit (thought 13, 0x00500612)
 		if ( isOpen() )
 			CheckAdmission( turn );
+		// [BIN:TPW-EXE:0x004E159A state 0 dismiss] the state-0 update runs the admission (0x004E1220), reads VAR_BROKEN and, unless that sets state 1 or 4 and returns, the dismiss 0x004E1410
+		DismissLetOff();
+	}
+
+	/// <summary>
+	/// The ride update's dismiss (tp.exe <c>0x004E1410</c>): the guest in VAR_LETMEOFF runs ExitRide (<see cref="IRideVisitorHost.OnVisitorExitRide"/>); when it left, VAR_LETMEOFF is set to 0 and the ride
+	/// lets go of it, and when its exit is blocked the variable keeps it, the guest stays on the ride and the ride closes (<see cref="CloseForBlockedExit"/>), so the next ride update tries again.
+	/// </summary>
+	// [BIN:TPW-EXE:0x004E1410 script dismiss] script variable 1 (VAR_LETMEOFF, 0x0055A390) 0 does nothing; else the person's state is checked against 16 (a log, "trying to dismiss person %d, but they're not on this ride!", not a test) and ExitRide 0x005014E0 runs; a result of 1 writes 0 to the variable (0x004E14C3), 0 leaves it
+	// [BIN:TPW-EXE:0x004E0E27 dismiss in states 1, 2 and 4] the ride states 1, 2 and 4 run the head step 0x004E0450, then the same dismiss
+	private void DismissLetOff()
+	{
+		var off = Get( RideVariables.VAR_LETMEOFF );
+		if ( off == 0 )
+			return;
+		if ( !(Host?.OnVisitorExitRide( this, off ) ?? true) )
+		{
+			CloseForBlockedExit();
+			return;
+		}
+		Set( RideVariables.VAR_LETMEOFF, 0 );
+		LetGo( off );
+	}
+
+	/// <summary>Ride closings because a let-off guest's exit was blocked (diagnostics, not saved).</summary>
+	public int BlockedExitClosings { get; private set; }
+
+	/// <summary>
+	/// A let-off guest's exit is blocked (tp.exe <c>0x004DF150</c>): an open ride closes as the breakdown's SetState does, the pending visitor is let go and VAR_RIDECLOSED is set to 1.
+	/// </summary>
+	// [BIN:TPW-EXE:0x004DF150 close for a blocked exit] with the open word +0x68 set: message 0x14 on the bus 0x0040FB10 (its one direct subscriber, the tag system's handler 0x00509BF0, logs it as unknown and does nothing), "Object %d: Closing...", +0x68 = 0, the pending person +0x6C = 0 ("about to zeroise"), script variable 6 (VAR_RIDECLOSED) = 1 (0x0055A0B0) and the model call 0x00454550(1) that SetState 0x004E0E60 makes too; a closed ride does nothing
+	private void CloseForBlockedExit()
+	{
+		if ( !isOpen() || Get( RideVariables.VAR_RIDECLOSED ) != 0 )
+			return;
+		if ( called != 0 )
+			Withdraw();
+		Set( RideVariables.VAR_RIDECLOSED, 1 );
+		BlockedExitClosings++;
 	}
 
 	/// <summary>
@@ -1121,8 +1272,15 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 
 	private void Release( int guest )
 	{
+		if ( LetGo( guest ) )
+			Host?.OnVisitorReleased( this, guest );
+	}
+
+	/// <summary>The ride's own bookkeeping when a guest leaves it: its head slot, walk entry and bounce slot are freed. False when the ride does not hold the guest.</summary>
+	private bool LetGo( int guest )
+	{
 		if ( !onRide.Remove( guest ) )
-			return;
+			return false;
 		// Host cleanup: do not leave a presentation slot on the previous ride after release.
 		Heads?.Remove( guest );
 		for ( var slot = 0; slot < walkTable.Count; slot++ )
@@ -1132,7 +1290,7 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 			if ( bouncing[index].Guest == guest )
 				FreeBounceSlot( bouncing, index );
 		ReleasedTotal++;
-		Host?.OnVisitorReleased( this, guest );
+		return true;
 	}
 
 	/// <summary>Releases every held guest and turns the queue away (ride removed or script stopped).</summary>

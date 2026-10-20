@@ -303,22 +303,22 @@ public static partial class Program
 		result["textureMs"] = watch.ElapsedMilliseconds;
 
 		watch.Restart();
-		var seed = new WorldSeed( 2026 );
-		var original = OriginalPark.Load( theme );
-		var park = ParkEconomyRuntime.ForOriginalLevel( original, ParkStartKind.OriginalSaveReference, seed );
-		var guests = new GuestSimulation( GuestPathGrid.FromOriginal( original.Map, original.Save, original.Heightfield ), GuestSettings.Load( theme ), seed.GuestStream );
-		park.AttachGuests( guests );
-		var streams = new ParkWorldStreams( seed, park, guests, new RideScriptWorld( seed.ScriptStream, RideScriptWorld.FixedClock ), new SoundEventSystem( new AudioMixer( null ), seed.SoundStream ) ).LinkGenerator();
-		park.Economy.Speed = GameSpeed.Fastest;
-		for ( var tick = 0; tick < 3000; tick++ )
-		{
-			guests.Tick( 1f / FixedStepClock.TicksPerSecond );
-			park.Economy.Advance( (int)park.Economy.Speed );
-		}
-		result["simulationHash"] = streams.ComputeStateHash().ToString( "X16" );
+		var simulationHash = CrossRuntimeDigest.FixedParkRun( theme, hireStaff: false );
+		result["simulationHash"] = simulationHash.ToString( "X16" );
 		result["simulationMs"] = watch.ElapsedMilliseconds;
 		return result.ToJsonString();
 	}
+
+	/// <summary>
+	/// The cross-runtime digest of <paramref name="theme"/> (<see cref="CrossRuntimeDigest"/>, docs/DETERMINISM.md "Browser and native"): the same work as the desktop's
+	/// <c>--determinism-digest</c>, as JSON, to compare value by value. The theme's files must be loaded (<see cref="PerfLevelLoaded"/>); the call blocks the page for minutes.
+	/// </summary>
+	[JSExport]
+	public static string PerfDeterminismDigest( string theme, bool includeM4 ) => CrossRuntimeDigest.Compute( theme, includeM4 ).ToJsonString();
+
+	/// <summary>Whether the page has copied the files of <paramref name="level"/> (after <c>opentpwPerf.loadLevel</c>).</summary>
+	[JSExport]
+	public static bool PerfLevelLoaded( string level ) => loadedLevels.Contains( level );
 
 	/// <summary>Every .wct below <paramref name="directory"/>, archives included, as the file system lists them.</summary>
 	private static void CollectTextures( string directory, List<string> found )

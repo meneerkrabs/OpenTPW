@@ -28,10 +28,67 @@ public enum ParkCommandKind : byte
 	Backtrack = 14,
 	/// <summary>A click on a queue cell that starts editing the ride's queue (<see cref="EditQueueCommand"/>).</summary>
 	EditQueue = 15,
+	QueueSegment = 16,
+	UndoQueueSegment = 17,
 	/// <summary>Places the developer prototype ride (<see cref="PlacePrototypeCommand"/>).</summary>
 	PlacePrototype = 20,
 	/// <summary>Removes the developer prototype ride (<see cref="RemovePrototypeCommand"/>).</summary>
 	RemovePrototype = 21,
+	/// <summary>Opens or closes the developer prototype ride (<see cref="SetPrototypeRunningCommand"/>).</summary>
+	SetPrototypeRunning = 22,
+	/// <summary>The winning screen's exit: removes the Instant Action research finale (<see cref="DismissFinaleCommand"/>).</summary>
+	DismissFinale = 23,
+	/// <summary>The developer object panel's open-all and close-all (<see cref="SetAllObjectsOpenCommand"/>).</summary>
+	SetAllObjectsOpen = 25,
+	// the park's settings (C1 part 2, ParkSettingCommands.cs)
+	/// <summary>Opens or closes the park's door (<see cref="SetParkOpenCommand"/>).</summary>
+	SetParkOpen = 30,
+	/// <summary>The entrance fee (<see cref="SetEntranceFeeCommand"/>).</summary>
+	SetEntranceFee = 31,
+	/// <summary>Opens or closes an attraction (<see cref="SetAttractionOpenCommand"/>).</summary>
+	SetAttractionOpen = 32,
+	/// <summary>The ride window's speed, capacity and duration (<see cref="SetRideSettingsCommand"/>).</summary>
+	SetRideSettings = 33,
+	/// <summary>A shop's or sideshow's price (<see cref="SetPriceCommand"/>).</summary>
+	SetPrice = 34,
+	/// <summary>A winnable sideshow's price, prize and chance of losing (<see cref="SetGamePrizeCommand"/>).</summary>
+	SetGamePrize = 35,
+	/// <summary>A shop's quality of goods and ingredient amount (<see cref="SetShopSettingsCommand"/>).</summary>
+	SetShopSettings = 36,
+	/// <summary>A staff role's monthly training budget (<see cref="SetTrainingBudgetCommand"/>).</summary>
+	SetTrainingBudget = 37,
+	/// <summary>The research effort of a category (<see cref="SetResearchEffortCommand"/>).</summary>
+	SetResearchEffort = 38,
+	/// <summary>The research lab's workload (<see cref="SetResearchWorkloadCommand"/>).</summary>
+	SetResearchWorkload = 39,
+	/// <summary>Steps a category's current research project (<see cref="MoveResearchCommand"/>).</summary>
+	MoveResearch = 40,
+	/// <summary>Takes a loan (<see cref="TakeLoanCommand"/>).</summary>
+	TakeLoan = 41,
+	/// <summary>Pays off a loan (<see cref="RepayLoanCommand"/>).</summary>
+	RepayLoan = 42,
+	/// <summary>Asks for a ride's next upgrade (<see cref="BuyUpgradeCommand"/>).</summary>
+	BuyUpgrade = 43,
+	/// <summary>Cancels a ride's waiting upgrade (<see cref="CancelUpgradeCommand"/>).</summary>
+	CancelUpgrade = 44,
+	/// <summary>Calls a mechanic or handyman, or cancels the call (<see cref="RequestMaintenanceCommand"/>).</summary>
+	RequestMaintenance = 45,
+	/// <summary>Accepts or declines the challenge on offer (<see cref="AnswerChallengeCommand"/>).</summary>
+	AnswerChallenge = 46,
+	/// <summary>Renames an employee (<see cref="RenameStaffCommand"/>).</summary>
+	RenameStaff = 47,
+	/// <summary>Dismisses an employee (<see cref="FireStaffCommand"/>).</summary>
+	FireStaff = 48,
+	/// <summary>Sets or clears an employee's patrol area (<see cref="SetPatrolAreaCommand"/>).</summary>
+	SetPatrolArea = 49,
+	/// <summary>Renames the park (<see cref="RenameParkCommand"/>).</summary>
+	RenamePark = 50,
+	/// <summary>The game speed (<see cref="SetGameSpeedCommand"/>).</summary>
+	SetGameSpeed = 51,
+	/// <summary>Queues a cheat for the next park turn (<see cref="QueueCheatCommand"/>).</summary>
+	QueueCheat = 52,
+	/// <summary>The loans dialog's list build: every offer's credit test is stored (<see cref="RefreshLoanOffersCommand"/>).</summary>
+	RefreshLoanOffers = 53,
 }
 
 /// <summary>
@@ -231,5 +288,19 @@ public sealed record PlacePrototypeCommand( float X, float Y, float Z ) : ParkCo
 public sealed record RemovePrototypeCommand : ParkCommand
 {
 	public override ParkCommandKind Kind => ParkCommandKind.RemovePrototype;
+	internal override void WriteFields( ParkCommandWriter writer ) { }
+}
+
+/// <summary>[EXT:developer-prototype] Opens (<paramref name="Running"/> true) or closes the developer prototype ride: the developer panel's open and close button.</summary>
+public sealed record SetPrototypeRunningCommand( bool Running ) : ParkCommand
+{
+	public override ParkCommandKind Kind => ParkCommandKind.SetPrototypeRunning;
+	internal override void WriteFields( ParkCommandWriter writer ) => writer.Bool( Running );
+}
+
+/// <summary>The winning screen's exit (its Resume Game button and its Escape and right click): removes the Instant Action research finale's End object (<see cref="Level.DismissResearchFinale"/>).</summary>
+public sealed record DismissFinaleCommand : ParkCommand
+{
+	public override ParkCommandKind Kind => ParkCommandKind.DismissFinale;
 	internal override void WriteFields( ParkCommandWriter writer ) { }
 }

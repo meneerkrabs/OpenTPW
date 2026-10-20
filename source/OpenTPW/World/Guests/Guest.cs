@@ -111,6 +111,12 @@ public sealed class Guest
 	/// <summary>Presentation position: interpolated between the last two steering steps (not simulation state).</summary>
 	public float DrawX { get; internal set; }
 	public float DrawY { get; internal set; }
+	/// <summary>
+	/// Where a body an object kept (state 16) was last placed by the guest update: the drawn position when the object took the guest. Presentation only, not saved or hashed; NaN outside such a use
+	/// (a loaded park draws the kept body at the guest's own position).
+	/// </summary>
+	public float KeptBodyX { get; internal set; } = float.NaN;
+	public float KeptBodyY { get; internal set; } = float.NaN;
 	/// <summary>Unit direction of the last movement (game cells).</summary>
 	public float HeadingX { get; internal set; } = 0;
 	public float HeadingY { get; internal set; } = 1;

@@ -149,7 +149,7 @@ public class CoasterCollisionTests
 	/// <summary>A valid, completable track that crosses itself (found by search on the flat site; every pylon at height 20).</summary>
 	private static readonly (int X, int Y)[] FigureEight = { (5, -2), (0, -6), (-7, -6), (-12, -10), (-9, -14), (-5, -8), (-6, -2) };
 
-	private static (CoasterRide Ride, CoasterBuilder Builder) Build( (int X, int Y)[] circuit, float height )
+	internal static (CoasterRide Ride, CoasterBuilder Builder) Build( (int X, int Y)[] circuit, float height )
 	{
 		var ride = new CoasterRide( CoasterDefinition.FromValues( CoasterTests.PcSettings() ), new CoasterWorld( 1 ), "Test Coaster" );
 		var builder = new CoasterBuilder( ride, new CoasterSite( 64, 64 ) );
@@ -238,4 +238,48 @@ public class CoasterCollisionTests
 		Assert.AreEqual( 0, ride.IntersectionCount );
 		Assert.IsTrue( ride.AcceptsGuests );
 	}
+	[TestMethod]
+	public void EconomicEligibilityDoesNotDependOnSamplesButAdmissionStillDoes()
+	{
+		var (built, _) = Build( CoasterTests.Circuit, 20 );
+		var saved = CoasterSave.CaptureRide( built, 7 ).Track;
+		var ride = new CoasterRide( built.Definition, new CoasterWorld( 1 ) );
+		_ = new CoasterBuilder( ride, new CoasterSite( 64, 64 ) );
+		ride.Track.RestoreSnapshot( saved );
+		Assert.AreEqual( 0, ride.Samples.Count );
+		Assert.IsTrue( ride.CountsForParkPoints );
+		Assert.IsFalse( ride.IsOperational );
+		Assert.IsFalse( ride.AcceptsGuests, "economic credit must never make unsampled geometry admit guests" );
+		ride.Rebuild();
+		Assert.IsTrue( ride.Samples.Count >= 3 );
+		Assert.IsTrue( ride.CountsForParkPoints && ride.AcceptsGuests );
+
+		foreach ( var flags in new[] { (Complete: false, Closed: false), (false, true), (true, false) } )
+		{
+			ride.Track.RestoreSnapshot( saved with { IsComplete = flags.Item1, IsClosed = flags.Item2 } );
+			Assert.IsFalse( ride.CountsForParkPoints );
+			Assert.IsFalse( ride.AcceptsGuests );
+		}
+		// Normal interior cuts clear IsClosed; keep the operational cut guard even for inconsistent synthetic flags.
+		ride.Track.RestoreSnapshot( saved with { CutAfter = 3 } );
+		Assert.IsTrue( ride.CountsForParkPoints, "native helper reads flags, not a host cut marker" );
+		Assert.IsFalse( ride.IsOperational );
+		Assert.IsFalse( ride.AcceptsGuests );
+	}
+
+	[TestMethod]
+	public void EconomicEligibilityRejectsIntersectionsAndTheEditedController()
+	{
+		var (crossing, _) = Build( FigureEight, 20 );
+		Assert.IsTrue( crossing.IntersectionCount > 0 );
+		Assert.IsFalse( crossing.CountsForParkPoints );
+		var (ride, _) = Build( CoasterTests.Circuit, 20 );
+		Assert.IsTrue( ride.CountsForParkPoints );
+		ride.BeingEdited = true;
+		Assert.IsFalse( ride.CountsForParkPoints );
+		Assert.IsFalse( ride.AcceptsGuests );
+		ride.BeingEdited = false;
+		Assert.IsTrue( ride.CountsForParkPoints );
+	}
+
 }

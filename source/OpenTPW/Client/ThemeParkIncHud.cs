@@ -180,6 +180,8 @@ public sealed class ThemeParkIncHud
 			RowHeight = 52,
 			Visible = false,
 			RowActivated = index => ArmBuild( catalog.GetItems( category )[index].Entry! ),
+			// [EXT:tpi-text-hud] the text HUD's build list clicks like its buttons; no original Theme Park Inc list is claimed (Theme Park World's list rows are silent, UiScrollList.Activate)
+			ClicksOnActivate = true,
 			Bounds = new UiRect( 244, 380, 1560, 1000 ),
 			Anchor = UiAnchor.TopLeft
 		} );
@@ -431,7 +433,8 @@ public sealed class ThemeParkIncHud
 			cursorX = cursorY = -1;
 		var toolClick = UpdateCellTool( context, input, inPark );
 		UpdateBlueprint( inPark, context.Delta );
-		// [APPROX:UI-027] select by occupied grid cell; the original picks a ride, shop or other object by its pick sprite (0x5890e0, 0x532bd0, window 0x4b6080)
+		// [BIN:TPW-EXE:0x4879D0 object click] the click selects the owner of the hovered cell, the cell of the cursor ray's nearest hit on the terrain or an object's model (0x45bf90, ObjectRayPick),
+		// as the Theme Park World park click does (ParkHud)
 		if ( inPark && level.BuildEntry == null && !level.IsPlacing && !level.CellTool.IsActive && !level.IsRemovingObjects && input.LeftReleased && !toolPress )
 			selectedObject = level.Objects.FindAt( cursorX, cursorY );
 		if ( input.LeftReleased )

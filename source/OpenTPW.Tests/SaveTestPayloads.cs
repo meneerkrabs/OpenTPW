@@ -371,7 +371,7 @@ internal static class SaveTestPayloads
 
 	/// <summary>The 64 bytes of World variables, version <paramref name="version"/>; IDs default to none.</summary>
 	public static byte[] Variables( uint version = 2, ushort bank = 0, uint gameTick = 755, uint parkClosed = 0, ushort researchLab = 0, ushort staffHq = 0,
-		ushort firstResearcher = 0, ushort firstObject = 0, uint randomSeed = 0x3F416BBA )
+		ushort firstResearcher = 0, ushort firstObject = 0, uint randomSeed = 0x3F416BBA, uint worldState = 0 )
 	{
 		using var stream = new MemoryStream();
 		using var writer = new BinaryWriter( stream );
@@ -386,7 +386,7 @@ internal static class SaveTestPayloads
 		writer.Write( (ushort)0 );
 		writer.Write( randomSeed );
 		writer.Write( new ushort[] { researchLab, staffHq, 0, 0, 0 }.SelectMany( BitConverter.GetBytes ).ToArray() );
-		writer.Write( 0u );
+		writer.Write( worldState );
 		writer.Write( new ushort[] { 0, 0, 0, 0, firstResearcher, firstObject }.SelectMany( BitConverter.GetBytes ).ToArray() );
 		writer.Flush();
 		return stream.ToArray();
@@ -597,6 +597,6 @@ internal static class SaveTestPayloads
 		(1, (uint)SaveThingModel.StaffHq, Fixed( SaveThingModel.StaffHq )),
 	};
 
-	public static byte[] ParkVariables( uint gameTick = 755, uint parkClosed = 0 ) =>
-		Variables( bank: 8, gameTick: gameTick, parkClosed: parkClosed, researchLab: 6, staffHq: 1, firstResearcher: 30, firstObject: 12 );
+	public static byte[] ParkVariables( uint gameTick = 755, uint parkClosed = 0, uint worldState = 0 ) =>
+		Variables( bank: 8, gameTick: gameTick, parkClosed: parkClosed, researchLab: 6, staffHq: 1, firstResearcher: 30, firstObject: 12, worldState: worldState );
 }

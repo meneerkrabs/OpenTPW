@@ -238,8 +238,11 @@ public sealed partial class OriginalObjectRuntime
 
 	public void Close()
 	{
-		if ( !stopped )
-			SetVariable( nameof( RideVariables.VAR_RIDECLOSED ), 1 );
+		if ( stopped )
+			return;
+		SetVariable( nameof( RideVariables.VAR_RIDECLOSED ), 1 );
+		// [BIN:TPW-EXE:0x004DF300 close] the close clears the loading slot +0x6C with the open word (RideVisitorBridge.ClearLoadingSlot)
+		Visitors.ClearLoadingSlot();
 	}
 
 	/// <summary>A common variable by name (scripts declare different subsets); 0 when the script has none.</summary>
@@ -587,6 +590,8 @@ public sealed partial class OriginalObjectRuntime
 			Sideshow = new SideshowTerms( settings.GetInt( "UsageInfo.InitCostOfGoods" ), settings.GetInt( "UsageInfo.InitPricePerUse" ), settings.GetInt( "UsageInfo.InitChanceOfLoosing" ) ),
 			// [DATA:<object>.sam:UsageInfo.EntryCellStandPosX/Y] the jungle Rides.sam default is (0.5, 0.5); 0xde1d8 checks the range [0, 1] (a value outside it keeps the default here)
 			EntryCellStandPos = (StandFraction( settings, "UsageInfo.EntryCellStandPosX" ), StandFraction( settings, "UsageInfo.EntryCellStandPosY" )),
+			// [DATA:<object>.sam:UsageInfo.ExitCellAppearPosX/Y] type record +0xDC and +0xE0 (0.5 in every theme's base .sam); ExitRide's point 0x004DEDF0(1) logs a value outside 0..1 ("Dodgy X exit point in SAM file") and uses it
+			ExitCellAppearPos = (ExitFraction( settings, "UsageInfo.ExitCellAppearPosX" ), ExitFraction( settings, "UsageInfo.ExitCellAppearPosY" )),
 			// [EXT:pools-changing-room] OpenTPW's own key: the object is a pool complex's changing room (docs/POOLS.md)
 			IsChangingRoom = FeatureGates.Pools && PoolChangingRooms.IsChangingRoom( entry ),
 			// [EXT:umbrellas-extension] the umbrellas extension's own objects carry Theme Park Inc's weather and generation percentages, which the host score applies for them alone; every other object keeps the game's score
@@ -625,6 +630,8 @@ public sealed partial class OriginalObjectRuntime
 		return new WinterShopTerms( Percentage( "WeatherModifier.RainPercentage" ), Percentage( "WeatherModifier.StormPercentage" ), Percentage( "WeatherModifier.SnowPercentage" ),
 			Percentage( "SeasonModifier.WinterPercentage" ), Percentage( "SeasonModifier.SpringPercentage" ), Percentage( "SeasonModifier.SummerPercentage" ), Percentage( "SeasonModifier.AutumnPercentage" ) );
 	}
+
+	private static float ExitFraction( ObjectSettings settings, string key ) => settings.Has( key ) ? settings.GetFloat( key ) : 0.5f;
 
 	private static float StandFraction( ObjectSettings settings, string key ) =>
 		settings.Has( key ) && settings.GetFloat( key ) is var value and >= 0 and <= 1 ? value : 0.5f;

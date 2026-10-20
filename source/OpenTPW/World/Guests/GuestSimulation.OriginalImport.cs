@@ -8,6 +8,35 @@ namespace OpenTPW;
 public sealed partial class GuestSimulation
 {
 	/// <summary>
+	/// Attaches a saved TPW scheduler only when no vehicle has yet been cached or selected. Validation precedes every scheduler write;
+	/// importing does not dispatch, draw randomness or emit a group-history event. Cached/current vehicles require a separate identity-and-script restore.
+	/// </summary>
+	internal string ImportOriginalArrivals( SaveWorld world )
+	{
+		ArgumentNullException.ThrowIfNull( world );
+		var variables = world.Variables;
+		var saved = world.ArrivalState;
+		string? reason = null;
+		if ( OnlineVisit || ArrivalClock == null || ArrivalClock() != variables.GameTick )
+			reason = "the attached arrival clock is not the saved park turn";
+		else if ( saved.TimerStart > variables.GameTick )
+			reason = "the saved timer is ahead of the park turn";
+		else if ( variables.CurrentArrivalVehicle != 0 || variables.ArrivalVehicleSize1 != 0 || variables.ArrivalVehicleSize2 != 0 || variables.ArrivalVehicleSize3 != 0 )
+			reason = "cached or current vehicle identities and script continuation are not yet supported";
+		else if ( ArrivalVehicles == null )
+			reason = "no vehicle host is attached";
+		else if ( Enumerable.Range( 0, ArrivalVehicleKind.Names.Count ).Any( ArrivalVehicles.Exists ) )
+			reason = "the host already has a vehicle absent from the saved handles";
+		if ( reason != null )
+			return $"[APPROX:ARRIVAL-001] Saved arrival scheduler unchanged: {reason}.";
+		arrivalTimerStart = saved.TimerStart;
+		pendingArrivals = saved.PeopleOnBus;
+		deliveringArrivals = saved.Offloading;
+		arrivalVehicle = -1;
+		return $"Saved arrival scheduler imported with no cached/current vehicles: timer {saved.TimerStart}, signed group {saved.PeopleOnBus}, active {saved.Offloading}. [APPROX:ARRIVAL-001] Rate {saved.ArrivalRate}, target capacity {saved.TargetVehicleCapacity} and gates-open {saved.GatesOpen} are decoded but not applied.";
+	}
+
+	/// <summary>
 	/// Whether the import restores a guest in this saved state (guest <c>+0x220</c>, the <c>KIDSTATES</c> index): the arrival and departure states
 	/// 0–5, 18, 19 and 21, and the park states 6–10 (on a path or off the paths). The queue states 11–14, a guest leaving a ride (15), using an attraction (16) and one held by a
 	/// guard (17) are not restored.
@@ -179,6 +208,8 @@ public sealed partial class GuestSimulation
 			UpdatePresentation( guest );
 			Occupy( guest );
 			ReconstructBodySprite( guest, BodySpriteClockMilliseconds );
+			if ( guest.HasBalloon ) CreateBalloon( guest );
+			balloonHistoryReconstructed = true;
 			states.Add( $"{guest.Id}:{save.State}→{(int)guest.State}" );
 		}
 		evidence.Add( $"Guests imported: {guests.Count} of {saved.Count} ({(states.Count == 0 ? "none" : string.Join( ", ", states ))}, saved state → state)." );
@@ -289,8 +320,10 @@ public sealed partial class GuestSimulation
 			case 4:
 				guest.State = GuestState.AtTicketBooth;
 				guest.Paid = save.PaidAdmission != 0;
-				// an expensive verdict's wait is kept; a guest that has not been weighed yet is weighed at its next update
-				guest.BoothWait = (int)Math.Min( save.ParkOpeningWaitingTime, 2 * BoothVerdict.ExpensiveWaitBase );
+				// The host counts down through the verdict turn; imported positive counters exclude that final turn.
+				// Keep the existing input clamp, then translate once. Zero still means the next update.
+				var boothWait = (int)Math.Min( save.ParkOpeningWaitingTime, 2 * BoothVerdict.ExpensiveWaitBase );
+				guest.BoothWait = boothWait > 0 ? boothWait + 1 : 0;
 				guest.StateTimer = 0;
 				break;
 			case 5:

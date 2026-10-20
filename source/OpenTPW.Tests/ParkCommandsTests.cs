@@ -124,5 +124,42 @@ public class ParkCommandsTests
 		Assert.AreEqual( ParkCommands.MaximumLog, park.Commands.Log.Count );
 		Assert.AreEqual( 5, park.Commands.DroppedLog );
 		Assert.AreEqual( (ParkCommands.MaximumLog + 4) % 100, ((BacktrackCommand)park.Commands.Log[^1].Command).X );
+		Assert.AreEqual( 5 % 100, ((BacktrackCommand)park.Commands.Log[0].Command).X, "the oldest kept entry is the sixth issued" );
+		CollectionAssert.AreEqual( Enumerable.Range( 5, ParkCommands.MaximumLog ).Select( index => index % 100 ).ToArray(),
+			park.Commands.Log.Select( entry => ((BacktrackCommand)entry.Command).X ).ToArray(), "oldest first, as issued" );
+	}
+
+	/// <summary>The log's ring keeps exactly what a list that drops its first entry when full keeps, in the same order, through many wraps.</summary>
+	[TestMethod]
+	public void TheLogRingKeepsTheEntriesAndOrderOfAListThatDropsItsOldest()
+	{
+		foreach ( var capacity in new[] { 1, 2, 3, 7 } )
+		{
+			var ring = new ParkCommandLogRing( capacity );
+			var reference = new List<ParkCommandLogEntry>();
+			for ( var index = 0; index < capacity * 5 + 3; index++ )
+			{
+				var entry = new ParkCommandLogEntry( index, new BacktrackCommand( index, 0 ) );
+				reference.Add( entry );
+				var dropped = reference.Count > capacity;
+				if ( dropped )
+					reference.RemoveAt( 0 );
+				Assert.AreEqual( dropped, ring.Add( entry ), $"capacity {capacity}, entry {index}" );
+				Assert.AreEqual( reference.Count, ring.Count );
+				CollectionAssert.AreEqual( reference, ring.ToArray(), $"capacity {capacity}, entry {index}" );
+				for ( var at = 0; at < reference.Count; at++ )
+					Assert.AreEqual( reference[at], ring[at] );
+			}
+			Assert.ThrowsException<ArgumentOutOfRangeException>( () => ring[-1] );
+			Assert.ThrowsException<ArgumentOutOfRangeException>( () => ring[ring.Count] );
+		}
+		var changing = new ParkCommandLogRing( 2 );
+		changing.Add( new ParkCommandLogEntry( 0, new BacktrackCommand( 0, 0 ) ) );
+		Assert.ThrowsException<InvalidOperationException>( () =>
+		{
+			foreach ( var _ in changing )
+				changing.Add( new ParkCommandLogEntry( 1, new BacktrackCommand( 1, 0 ) ) );
+		}, "an add during an enumeration fails, as a list's does" );
+		Assert.ThrowsException<ArgumentOutOfRangeException>( () => new ParkCommandLogRing( 0 ) );
 	}
 }

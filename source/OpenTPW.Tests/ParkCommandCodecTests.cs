@@ -27,14 +27,44 @@ public class ParkCommandCodecTests
 		(new RemoveQueueCellCommand( 10, 11 ), "020d001416"),
 		(new BacktrackCommand( 1, 2 ), "020e000204"),
 		(new EditQueueCommand( 3, 3 ), "020f000606"),
+		(new QueueSegmentCommand( 9, 1, 2, 1, 9 ), "0410001202040212"),
+		(new UndoQueueSegmentCommand( 9, 1, 2, 1, 9 ), "0411001202040212"),
 		(new PlacePrototypeCommand( 1.5f, -2.25f, 0f ), "0214000000c03f000010c000000000"),
 		(new RemovePrototypeCommand(), "021500"),
+		(new DismissFinaleCommand(), "021700"),
+		(new SetPrototypeRunningCommand( true ) { Player = 1 }, "02160201"),
+		// the park's settings (C1 part 2)
+		(new SetParkOpenCommand( true ), "021e0001"),
+		(new SetEntranceFeeCommand( 35 ) { Player = 1 }, "021f0246"),
+		(new SetAttractionOpenCommand( 17, false ), "0220002200"),
+		(new SetRideSettingsCommand( 17, -12, 5, 30 ), "02210022170a3c"),
+		(new SetPriceCommand( 18, 120 ), "02220024f001"),
+		(new SetGamePrizeCommand( 19, 80, 300, 40 ), "02230026a001d80450"),
+		(new SetShopSettingsCommand( 18, 100, 70 ), "02240024c8018c01"),
+		(new SetTrainingBudgetCommand( StaffType.Mechanic, 250 ), "02250002f403"),
+		(new SetResearchEffortCommand( ResearchCategory.Shop, 60 ), "0226000278"),
+		(new SetResearchWorkloadCommand( 75 ), "0227009601"),
+		(new MoveResearchCommand( ResearchCategory.Ride, -1 ), "0228000001"),
+		(new TakeLoanCommand( 2, 18000 ), "02290004a09902"),
+		(new RepayLoanCommand( 2, 9000 ), "022a0004d08c01"),
+		(new BuyUpgradeCommand( 17 ), "022b0022"),
+		(new CancelUpgradeCommand( 17 ), "022c0022"),
+		(new RequestMaintenanceCommand( 17, true ), "022d002201"),
+		(new AnswerChallengeCommand( 3, 541, false ), "022e0006ba0800"),
+		(new RenameStaffCommand( 3, "Zo\u00EB" ) { Player = 2 }, "022f0406085a6fc3ab"),
+		(new FireStaffCommand( 3 ), "02300006"),
+		(new SetPatrolAreaCommand( 3, 20, 4, 12, 9 ), "023100062808181200"),
+		(new RenameParkCommand( "Kevin the", "Cosmic Cow" ), "023200124b6576696e2074686514436f736d696320436f77"),
+		(new SetGameSpeedCommand( GameSpeed.Fastest ), "02330008"),
+		(new QueueCheatCommand( CheatKind.Ticket, 4 ), "0234000608"),
+		(new RefreshLoanOffersCommand(), "023500"),
+		(new SetAllObjectsOpenCommand( true ), "02190001"),
 	};
 
 	[TestMethod]
 	public void EveryCommandKindHasPinnedBytesUnderTheCurrentVersion()
 	{
-		Assert.AreEqual( 1, ParkCommandCodec.Version, "a new version adds a new schema table beside this one" );
+		Assert.AreEqual( 2, ParkCommandCodec.Version, "a new version adds a new schema table beside this one" );
 		CollectionAssert.AreEquivalent( Enum.GetValues<ParkCommandKind>(), Schema.Select( row => row.Command.Kind ).ToArray(), "one schema row per kind, no kind without one" );
 		var types = typeof( ParkCommand ).Assembly.GetTypes().Where( type => type.IsSubclassOf( typeof( ParkCommand ) ) && !type.IsAbstract ).ToArray();
 		CollectionAssert.AreEquivalent( types, Schema.Select( row => row.Command.GetType() ).ToArray(), "every command type has a schema row" );
@@ -84,14 +114,15 @@ public class ParkCommandCodecTests
 				Assert.ThrowsException<InvalidDataException>( () => ParkCommandCodec.Decode( bytes.AsSpan( 0, length ) ), $"{command.Kind} cut to {length} bytes" );
 			Assert.ThrowsException<InvalidDataException>( () => ParkCommandCodec.Decode( bytes.Append( (byte)0 ).ToArray() ), $"{command.Kind} with a trailing byte" );
 			var otherVersion = bytes.ToArray();
-			otherVersion[0] = 4;
-			Assert.ThrowsException<InvalidDataException>( () => ParkCommandCodec.Decode( otherVersion ), $"{command.Kind} as version 2" );
+			otherVersion[0] = 6;
+			Assert.ThrowsException<InvalidDataException>( () => ParkCommandCodec.Decode( otherVersion ), $"{command.Kind} as version 3" );
 		}
 		var bad = new[]
 		{
 			"020000", // kind 0
 			"02ff00", // kind 255
-			"02160000", // a kind no command has
+			"02180000", // a kind no command has
+			"02160002", // a prototype run flag that is not a boolean
 			"02028000", // a padded player varint
 			"020201", // a negative player
 			"0202000608" + "", // valid, the control
@@ -114,6 +145,39 @@ public class ParkCommandCodecTests
 			new UndoLineCommand( CellToolMode.Path, -1, 0, 0, new[] { (-1, 0) }, Array.Empty<(int X, int Y)>() ),
 			new PlacePrototypeCommand( float.NaN, 0, 0 ),
 			new PlacePrototypeCommand( 0, float.PositiveInfinity, 0 ),
+			new SetEntranceFeeCommand( -1 ),
+			new SetAttractionOpenCommand( -1, true ),
+			new SetRideSettingsCommand( 1, short.MaxValue + 1, 0, 0 ),
+			new SetRideSettingsCommand( 1, 0, -1, 0 ),
+			new SetRideSettingsCommand( 1, 0, 0, 256 ),
+			new SetPriceCommand( 1, -1 ),
+			new SetPriceCommand( 1, OpenTPW.Hud.ParkHud.MaximumPrice + 1 ),
+			new SetGamePrizeCommand( 1, 0, OpenTPW.Hud.ParkHud.MaximumPrize + 1, 0 ),
+			new SetGamePrizeCommand( 1, 0, 0, 101 ),
+			new SetShopSettingsCommand( 1, 256, 0 ),
+			new SetShopSettingsCommand( 1, 0, 101 ),
+			new SetTrainingBudgetCommand( (StaffType)42, 1 ),
+			new SetTrainingBudgetCommand( StaffType.Guard, -1 ),
+			new SetResearchEffortCommand( ResearchCategory.Ride, 101 ),
+			new SetResearchEffortCommand( (ResearchCategory)77, 1 ),
+			new SetResearchWorkloadCommand( -1 ),
+			new MoveResearchCommand( ResearchCategory.Ride, 2 ),
+			new TakeLoanCommand( -1, 0 ),
+			new TakeLoanCommand( 1, -1 ),
+			new RepayLoanCommand( -1, 0 ),
+			new RepayLoanCommand( 1, -1 ),
+			new CancelUpgradeCommand( -1 ),
+			new AnswerChallengeCommand( -1, 0, true ),
+			new SetTrainingBudgetCommand( StaffType.Guard, OpenTPW.Hud.ParkHud.TrainingBudgetMaximum + 1 ),
+			new BuyUpgradeCommand( -1 ),
+			new RequestMaintenanceCommand( -1, true ),
+			new RenameStaffCommand( -1, "Ann" ),
+			new FireStaffCommand( -1 ),
+			new SetPatrolAreaCommand( 1, -1, 0, 0, 0 ),
+			new SetPatrolAreaCommand( 1, 0, 0, ParkCommandCodec.MaximumCoordinate, 0 ),
+			new SetPatrolAreaCommand( 1, 3, 0, 0, 0, Clear: true ),
+			new SetGameSpeedCommand( (GameSpeed)3 ),
+			new QueueCheatCommand( (CheatKind)99 ),
 		};
 		foreach ( var command in outOfRange )
 		{

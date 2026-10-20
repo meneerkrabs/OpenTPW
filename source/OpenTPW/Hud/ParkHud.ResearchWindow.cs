@@ -188,24 +188,17 @@ public sealed partial class ParkHud
 		ResearchFluid.StepFrames( researchFluidClock, researchFluids, delta );
 	}
 
-	public static bool TrySetResearchWorkload( ParkEconomy? economy, bool readOnly, int workload )
-	{
-		if ( readOnly || economy is not { Features.ResearchPanel: true } ) return false;
-		economy.Research.SetWorkload( workload );
-		return true;
-	}
+	/// <summary>Sets the lab's workload, clamped to the knob's 0..100 as the lab clamps it (<see cref="SetResearchWorkloadCommand"/>).</summary>
+	public static bool TrySetResearchWorkload( Level level, int workload ) =>
+		level.Commands.Issue( new SetResearchWorkloadCommand( Math.Clamp( workload, 0, 100 ) ) ).Accepted;
 
-	public static bool TryMoveResearchCurrent( ParkEconomy? economy, bool readOnly, ResearchCategory category, int direction )
-	{
-		if ( readOnly || economy is not { Features.ResearchPanel: true } || !Enum.IsDefined( category ) ) return false;
-		return economy.Research.MoveCurrent( category, direction );
-	}
+	/// <summary>Steps a category's current project one place (<see cref="MoveResearchCommand"/>).</summary>
+	public static bool TryMoveResearchCurrent( Level level, ResearchCategory category, int direction ) =>
+		level.Commands.Issue( new MoveResearchCommand( category, direction ) ).Accepted;
 
-	private void SetResearchEffort( ResearchCategory category, int effort )
-	{
-		if ( !level.IsReadOnlyVisit && ResearchEconomy is { Features: { ResearchPanel: true } } economy )
-			economy.SetResearchEffort( category, effort );
-	}
+	/// <summary>Sets a category's effort, clamped to 0..100 as the lab clamps it (<see cref="SetResearchEffortCommand"/>).</summary>
+	private void SetResearchEffort( ResearchCategory category, int effort ) =>
+		level.Commands.Issue( new SetResearchEffortCommand( category, Math.Clamp( effort, 0, 100 ) ) );
 
 	private UiScreen CreateResearchScreen()
 	{
@@ -232,10 +225,10 @@ public sealed partial class ParkHud
 			Model( $"icon{index}", icon, cells.Icon );
 			// [EXTENSION:UI] Cursor arrows select eligible research targets using the economy model.
 			screen.Add( new UiButton { Id = $"previous{index}", Model = "b_sleft", Enabled = false,
-				Clicked = () => TryMoveResearchCurrent( ResearchEconomy, level.IsReadOnlyVisit, category, -1 ),
+				Clicked = () => TryMoveResearchCurrent( level, category, -1 ),
 				Bounds = cells.Previous, Anchor = UiAnchor.Center } );
 			screen.Add( new UiButton { Id = $"next{index}", Model = "b_sright", Enabled = false,
-				Clicked = () => TryMoveResearchCurrent( ResearchEconomy, level.IsReadOnlyVisit, category, 1 ),
+				Clicked = () => TryMoveResearchCurrent( level, category, 1 ),
 				Bounds = cells.Next, Anchor = UiAnchor.Center } );
 			screen.Add( new UiLabel { Id = $"item{index}", Text = () => ResearchItemName( category ), Font = fonts => fonts.Label,
 				Color = UiColors.Text, Align = UiAlign.Center, Fit = true,
@@ -412,7 +405,7 @@ public sealed partial class ParkHud
 			var capped = Math.Min( value, Math.Max( 0, Limit ) );
 			Value = capped;
 			if ( positionBall || capped != value ) BallTop = WorkloadKnobTop( Value );
-			if ( !writeWorkload || TrySetResearchWorkload( owner.ResearchEconomy, owner.level.IsReadOnlyVisit, WorkloadFromKnob( Value, Limit ) ) )
+			if ( !writeWorkload || TrySetResearchWorkload( owner.level, WorkloadFromKnob( Value, Limit ) ) )
 				owner.SetResearchHum( Value );
 		}
 
@@ -421,7 +414,7 @@ public sealed partial class ParkHud
 		{
 			if ( !Editable ) return;
 			var workload = Math.Clamp( owner.ResearchEconomy!.Research.Workload + direction, MinimumKnobWorkload, MaximumKnobWorkload );
-			if ( !TrySetResearchWorkload( owner.ResearchEconomy, owner.level.IsReadOnlyVisit, workload ) ) return;
+			if ( !TrySetResearchWorkload( owner.level, workload ) ) return;
 			CancelInteraction();
 			SetValue( KnobFromWorkload( workload, Limit ), writeWorkload: false );
 		}

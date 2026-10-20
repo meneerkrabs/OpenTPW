@@ -12,7 +12,7 @@ namespace OpenTPW.Tests;
 public class GuestMeasurementTests
 {
 	/// <summary>The guests' state hash of <see cref="ScenarioRun"/>, pinned like the other determinism pins: a change moves the baseline of docs/SMARTER-GUESTS.md.</summary>
-	private const ulong ScenarioFixedRunHash = 0x383ECBB8309B25FDUL;
+	private const ulong ScenarioFixedRunHash = 0xA7A17A97F4D7F7D7UL;
 
 	private static ParkScenario ScenarioRun( ulong seed, IGuestObserver? observer = null, int ticks = 6000 )
 	{
@@ -72,10 +72,10 @@ public class GuestMeasurementTests
 	/// The scenario's guests with <c>opentpw.smarter-guests</c> 1.4.0 on (docs/SMARTER-GUESTS.md, phases 2 to 5; this scenario has no food shop and nobody near a need level at a decision, so phase 5 does not act in it; the pin has held since 1.2.0, because the queue patience rules of 1.3.0 do not act in this 12,000-tick run either). The scenario's dear shop (value for money) and its four rides (the queue estimate, the preference, the queue patience and the
 	/// hysteresis) are where the rules act, so unlike the synthetic park's pin this one moves with the rules: it is the on-path pin of the behaviour. A deliberate change of a rule constant changes this value (and bumps the extension's version).
 	/// </summary>
-	private const ulong ScenarioSmarterFixedRunHash = 0xF4F3CD74CD7253ABUL;
+	private const ulong ScenarioSmarterFixedRunHash = 0xBDC91FF7BA167AFFUL;
 
 	/// <summary>The same run with the path rules of 1.5.0 (phase 6) on, the shipped extension. Moved from <see cref="ScenarioSmarterFixedRunHash"/> (1.4.0's, which the rule sets without the path rules still reproduce) because the scenario's guests crowd the street and the rules move wander goals and complain; the stronger rule of the final sweep acts in this 12,000-tick run, which the first version did not.</summary>
-	private const ulong ScenarioSmarterPathsFixedRunHash = 0xDA1A5CD6C526A112UL;
+	private const ulong ScenarioSmarterPathsFixedRunHash = 0x37A002F5FE807C35UL;
 
 	[TestMethod]
 	public void ParkScenarioFixedRunHashWithTheSmarterGuestsExtensionOnIsPinned()
@@ -95,7 +95,7 @@ public class GuestMeasurementTests
 	/// The scenario with its food shop (<see cref="ParkScenarioOptions.FoodShop"/>) and the extension on (1.5.0, the path rules included, so the pin moved from main's 1.4.0 value with them): guests eat, so the meal rule (docs/SMARTER-GUESTS.md, phase 5) acts. The on-path pin of phase 5, which the scenario
 	/// pin above cannot be: it did not move, because the rules of phase 5 need a meal or a meter near a level. A deliberate change of a phase 5 constant changes this value (and bumps the extension's version).
 	/// </summary>
-	private const ulong ScenarioFoodSmarterFixedRunHash = 0x083802FC438DC19CUL;
+	private const ulong ScenarioFoodSmarterFixedRunHash = 0x04442F9535C03C94UL;
 
 	[TestMethod]
 	public void ParkScenarioWithAFoodShopAndTheSmarterGuestsExtensionOnIsPinned()
@@ -117,7 +117,7 @@ public class GuestMeasurementTests
 	/// on (1.6.0: the bin rule, phase 6b) and with 1.5.0's rules, which look three cells around for a bin where 1.6.0 looks eight. The bins stand beyond three cells of where the guests litter, so 1.5.0's guests drop everything; the pin of the
 	/// shipped rules is where the bin rule is held. A deliberate change of the radius changes it (and bumps the extension's version). Moved by nothing else: no other scenario, level or save has a bin the rule can reach.
 	/// </summary>
-	private const ulong ScenarioBinsSmarterFixedRunHash = 0xF43AEA85CC6DB665UL, ScenarioBinsPhase6FixedRunHash = 0x8E13F761512B0043UL;
+	private const ulong ScenarioBinsSmarterFixedRunHash = 0x5AC8D8A47AAC35D2UL, ScenarioBinsPhase6FixedRunHash = 0xEF00F0D64A9077FEUL;
 
 	[TestMethod]
 	public void ParkScenarioWithBinsAndTheSmarterGuestsExtensionOnIsPinned()
@@ -129,7 +129,7 @@ public class GuestMeasurementTests
 			var binned = 0L;
 			park.Guests.LitterBinned += ( _, _ ) => binned++;
 			park.Run( 24_000 );
-			return (park.Hash, binned);
+			return (GuestRefusedTargetTests.VerifyRetainedTargetHash( park.Guests, () => park.Hash ), binned);
 		}
 		var shipped = Run( SmarterRuleSet.All );
 		var before = Run( SmarterRuleSet.Phase6 );

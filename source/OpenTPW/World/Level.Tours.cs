@@ -22,16 +22,38 @@ public partial class Level
 	// [BIN:TPW-EXE:0x00452AE0 cell ground] the second-layer mesh instance (0x0053BF30) answers before the cell's owner object does
 	private float? TourObjectGround( int x, int y )
 	{
-		if ( waterTracks?.Tracks is { } layer )
-		{
-			foreach ( var family in TrackFamilies )
-			{
-				if ( family != TrackFamily.Bumper && TourGroundOf( family ) is { } renderer && renderer.PieceGround( layer, x, y ) is { } piece )
-					return piece;
-			}
-		}
+		if ( TrackPieceGround( x, y ) is { } piece )
+			return piece;
 		return Objects.FindAt( x, y ) is { } item ? tourHeightMaps.Height( item, x, y ) : null;
 	}
+
+	/// <summary>TPW blueprint offsets for verified ordinary object owners only; no track-priority or TPI parity claim.</summary>
+	private float? BlueprintHeightOffset( int x, int y )
+	{
+		if ( !TypesFootprints || Guests?.Grid.Cells is not { } cells ) return null;
+		return BlueprintHeights.Sample( cells, x, y, ( cx, cy ) =>
+		{
+			if ( Objects.FindAt( cx, cy ) is not { IsDeleted: false } item || cells.OwnerAt( cx, cy ) != OwnerWord( item ) ) return null;
+			// Null also covers missing/malformed/out-of-range maps. Keep that entire residual explicit rather than invent a surface.
+			return ObjectGround( item, cx, cy );
+		} );
+	}
+
+	/// <summary>The ground of the second-layer piece instance on a cell (a kart or water track tile), which the cell lookup 0x00452AE0 asks before the cell's owner; null without one.</summary>
+	private float? TrackPieceGround( int x, int y )
+	{
+		if ( waterTracks?.Tracks is not { } layer )
+			return null;
+		foreach ( var family in TrackFamilies )
+		{
+			if ( family != TrackFamily.Bumper && TourGroundOf( family ) is { } renderer && renderer.PieceGround( layer, x, y ) is { } piece )
+				return piece;
+		}
+		return null;
+	}
+
+	/// <summary>The height the cell lookup 0x00452AE0 gives the object that owns a cell, in model units, or null when it names none (the object has no height map).</summary>
+	private float? ObjectGround( OriginalObject item, int x, int y ) => tourHeightMaps.Height( item, x, y );
 
 	/// <summary>
 	/// The piece lookup of a track family for the tour cars' ground. It is the simulation's own (never the drawing's renderer, which exists only once a frame has drawn the tracks), so the cars fly the same

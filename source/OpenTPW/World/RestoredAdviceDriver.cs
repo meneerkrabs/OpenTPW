@@ -15,26 +15,18 @@ internal sealed class RestoredAdviceDriver
 	private readonly Func<uint> gameTick;
 	private readonly Func<int> gameType;
 	private readonly Func<bool> tutorialEnabled;
-	private readonly Func<int?>? playerKeys;
 	// where the poll goes on (one rule per scan call, like the scan's cursor); not saved
 	private int pollCursor;
 	// the kind of the arrival vehicle last seen at work (null: none yet) and whether the park has been observed; not saved
 	private int? lastVehicleKind;
 	private bool vehicleObserved;
-	// the golden tickets won and not yet told, and the player's keys as last seen; not saved
-	private readonly List<GoldenTicketKind> pendingTickets = new();
-	private int? lastKeys;
-	// the follow-up challenges met in a row; not saved
-	private int followups;
 
 	/// <param name="controller">The advisor's controller the messages are posted to.</param>
 	/// <param name="gameTick">The park turn the queue's history is stamped with.</param>
 	/// <param name="gameType">The original game type (2 = Instant Action).</param>
 	/// <param name="tutorialEnabled">The tutorial option.</param>
-	/// <param name="playerKeys">The player's golden keys (<see cref="PlayerTicketLedger.Keys"/>, as the HUD reads them); null when no progress is kept, which leaves the key lines unsaid.</param>
-	public RestoredAdviceDriver( AdvisorController controller, Func<uint> gameTick, Func<int> gameType, Func<bool> tutorialEnabled, Func<int?>? playerKeys = null )
+	public RestoredAdviceDriver( AdvisorController controller, Func<uint> gameTick, Func<int> gameType, Func<bool> tutorialEnabled )
 	{
-		this.playerKeys = playerKeys;
 		this.controller = controller ?? throw new ArgumentNullException( nameof( controller ) );
 		this.gameTick = gameTick ?? throw new ArgumentNullException( nameof( gameTick ) );
 		this.gameType = gameType ?? throw new ArgumentNullException( nameof( gameType ) );
@@ -56,9 +48,6 @@ internal sealed class RestoredAdviceDriver
 		pollCursor = 0;
 		lastVehicleKind = null;
 		vehicleObserved = false;
-		followups = 0;
-		pendingTickets.Clear();
-		lastKeys = null;
 	}
 
 	/// <summary>Posts a help message (the descriptor's help score), when the extension restores it and is on.</summary>
@@ -81,7 +70,7 @@ internal sealed class RestoredAdviceDriver
 	private static void Trace( int message, string source, AdvisorQueueAdmission? admission ) =>
 		Log.Trace( $"Advisor restored advice for {source}: message {message} {(admission is { } result ? $"{result.Eligibility}{(result.Stored ? $" in slot {result.Slot}" : result.Acknowledged ? ", queue full" : "")}" : "not posted (no score, descriptor or game mode)")}." );
 
-	/// <summary>The park events the extension answers: tickets and awards, upgrades, challenges.</summary>
+	/// <summary>The park events the extension answers: tickets and awards, upgrades.</summary>
 	public void OnParkEvent( ParkEvent item, ParkEconomy economy )
 	{
 		ArgumentNullException.ThrowIfNull( economy );
@@ -89,11 +78,9 @@ internal sealed class RestoredAdviceDriver
 			return;
 		switch ( item.Kind )
 		{
-			case ParkEventKind.GoldenTicketWon when Enum.IsDefined( (GoldenTicketKind)item.Amount ):
-				// the player's keys are the ledger's, which updates as the event is raised: the ticket is told on the next frame (ResolveTickets)
-				if ( RestoredAdvice.AwardMessage( (GoldenTicketKind)item.Amount ) is { } award )
-					Post( award, $"the {(GoldenTicketKind)item.Amount} award" );
-				pendingTickets.Add( (GoldenTicketKind)item.Amount );
+			// the ticket wins themselves are the original's (215-227, AutomaticAdvisor.Challenges), so the extension only adds the award of a global ticket
+			case ParkEventKind.GoldenTicketWon when Enum.IsDefined( (GoldenTicketKind)item.Amount ) && RestoredAdvice.AwardMessage( (GoldenTicketKind)item.Amount ) is { } award:
+				Post( award, $"the {(GoldenTicketKind)item.Amount} award" );
 				break;
 			// [EXT:restored-advice-upgrades] the purchase is queued whether or not a mechanic is hired (ParkEconomy.TryBuyUpgrade), so 130 and 131 are the advice that goes with it
 			case ParkEventKind.UpgradeBought when !economy.Staff.OfType( StaffType.Mechanic ).Any():
@@ -105,59 +92,7 @@ internal sealed class RestoredAdviceDriver
 			case ParkEventKind.ItemResearched when item.InstanceId == 1 && item.Amount > 0 && !economy.Staff.OfType( StaffType.Mechanic ).Any():
 				Post( 132, $"the upgrade {item.Detail} researched without a mechanic" );
 				break;
-			// [EXT:restored-advice-challenges] a met challenge with a follow-up is the double-or-nothing offer (the follow-up is current already when the event arrives, ParkObjectives.Update); the second in a row is 320
-			case ParkEventKind.ChallengeCompleted when item.Amount == 0 && economy.Objectives.Current is { Accepted: false }:
-				followups++;
-				Post( followups == 1 ? 319 : 320, "a challenge met with a follow-up offered" );
-				break;
-			case ParkEventKind.ChallengeCompleted:
-				followups = 0;
-				break;
-			// [EXT:restored-advice-tutorial] 344 (the first special challenge on offer): the tutorial group says it once
-			case ParkEventKind.ChallengeOffered:
-				Help( RestoredAdvice.FirstChallengeHelp, "a challenge being offered" );
-				break;
-		}
-	}
-
-	/// <summary>
-	/// Tells the golden tickets won since the last frame, by the keys the player has now against the keys seen before (the player-wide ledger the HUD shows, <see cref="PlayerTicketLedger.Keys"/>; the ledger updates as the win is
-	/// raised, so this runs a frame later). A ticket that earned no key says 99; the key that opens Wonderland (3) or Space Zone (5) says 165 or 164; any other key says the ticket's criterion line (218, 223 or 228, or the twin once the first
-	/// has been said, with the response that carries the ticket's caption). Without a ledger the keys are unknown and every ticket says 99, which claims no key.
-	/// </summary>
-	// [EXT:restored-advice-tickets] OpenTPW chooses the lines; tp.exe has no caller of 0x59B590 for 99, 164, 165, 218, 219, 223, 224, 228, 229 or 230 to 233 to learn them from
-	public void ResolveTickets()
-	{
-		if ( !RestoredAdvice.Enabled )
-		{
-			pendingTickets.Clear();
-			return;
-		}
-		var keys = playerKeys?.Invoke();
-		if ( pendingTickets.Count == 0 )
-		{
-			lastKeys = keys;
-			return;
-		}
-		var gained = keys is { } now && lastKeys is { } before ? Math.Max( 0, now - before ) : 0;
-		var tickets = pendingTickets.ToArray();
-		pendingTickets.Clear();
-		lastKeys = keys;
-		foreach ( var kind in tickets )
-		{
-			if ( gained <= 0 || keys is not { } total )
-			{
-				Post( 99, $"the {kind} ticket (no key)" );
-				continue;
-			}
-			gained--;
-			if ( RestoredAdvice.UnlockMessage( total ) is { } unlock )
-			{
-				Post( unlock, $"the {kind} ticket (key {total})" );
-				continue;
-			}
-			if ( RestoredAdvice.TicketMessage( kind ) is var (message, twin, variant) )
-				Post( controller.Queue.GetHistory( message ).HasBeenPlayed ? twin : message, $"the {kind} ticket (key {total})", variant );
+			// 344 (the first special challenge on offer) and 319/320 (a met challenge with a follow-up, the double-or-nothing offer) are the original's own now: the challenge offer posts 270 (344 for the first) and the win 272 (AutomaticAdvisor.Challenges), so the extension restores none of them
 		}
 	}
 

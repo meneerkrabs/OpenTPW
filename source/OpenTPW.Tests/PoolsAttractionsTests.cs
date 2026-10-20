@@ -5,6 +5,8 @@ using System.Linq;
 using System.Text;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using OpenTPW.Mods;
+using OpenTPW.UI.Original;
+using OpenTPW.Hud;
 using static OpenTPW.Tests.PoolsSwimSessionTests;
 
 namespace OpenTPW.Tests;
@@ -150,6 +152,31 @@ public class PoolsAttractionsTests
 		}
 		Assert.IsTrue( seen.Count > 30 && seen.Min() < -40 && seen.Max() > 40, $"the wave swings both ways ({seen.Count} values)" );
 		Assert.AreNotEqual( PoolWaves.SmoothWave( high, 60.0, 5f, 5f ), PoolWaves.SmoothWave( high, 60.0, 8f, 5f ), "the front travels: two points differ in phase" );
+	}
+
+	[TestMethod]
+	public void TheWaterSurfaceRisesWithTheWaveAndTheSwimmersRideIt()
+	{
+		// the shader raises the water mesh by kMaxHeave times its strength (the envelope times height / 3); a swimmer bobs by the same height, and a crest stays under the deck
+		Assert.IsTrue( PoolWaves.MaxHeave > 0f && PoolWaves.MaxHeave < PoolMeshOptions.Default.WaterDrop, "a crest never tops the coping" );
+		for ( var height = 1; height <= 3; height++ )
+			Assert.AreEqual( PoolWaves.MaxHeave * height / 3f, PoolWaves.BobHeights[height - 1], 1e-6f, $"height {height}: the bob is the surface's own rise" );
+		var shader = WaterShaderText();
+		StringAssert.Contains( shader, $"const float kMaxHeave = {PoolWaves.MaxHeave.ToString( System.Globalization.CultureInfo.InvariantCulture )};" );
+		StringAssert.Contains( shader, "pos.z += poolWave( pos.xy ) * kMaxHeave;", "the vertex shader heaves the surface" );
+		Assert.IsFalse( shader.Contains( "vertex \"" ), "the water has its own vertex shader, not the shared include" );
+		// the wave number per engine unit is the phase per cell over a period's 64 steps and the cell's width
+		StringAssert.Contains( shader, "const float kWaveNumber = 21.0 / 128.0;" );
+		Assert.AreEqual( 21.0 / 128.0, PoolWaves.PhasePerCell / 64.0 / OriginalParkPlacement.CellSize, 1e-9 );
+	}
+
+	private static string WaterShaderText()
+	{
+		var directory = new System.IO.DirectoryInfo( AppContext.BaseDirectory );
+		while ( directory != null && !System.IO.File.Exists( System.IO.Path.Combine( directory.FullName, "content", "shaders", "pool-water.shader" ) ) )
+			directory = directory.Parent;
+		Assert.IsNotNull( directory, "Repository shader assets must be available for this test." );
+		return System.IO.File.ReadAllText( System.IO.Path.Combine( directory!.FullName, "content", "shaders", "pool-water.shader" ) ).Replace( "\r\n", "\n" );
 	}
 
 	[TestMethod]
@@ -436,9 +463,10 @@ public class PoolsAttractionsTests
 	[TestMethod]
 	public void OnlyOneGuestIsOnARopeSwingAtATimeAndTheOthersSwimOn()
 	{
-		var rig = new Rig( capacity: 4 );
+		var rig = new Rig( capacity: 6 );
 		rig.Simulation.RegisterPoolActivity( new RopeSwingActivity( Sites( Rope ) ) );
-		var guests = Enumerable.Range( 0, 4 ).Select( _ => rig.Send() ).ToList();
+		// six swimmers: the room lets one off per park turn at most (tp.exe 0x004E1410), so enough of them must be in the water together for the swing to be wanted twice
+		var guests = Enumerable.Range( 0, 6 ).Select( _ => rig.Send() ).ToList();
 		var most = 0;
 		var joined = new HashSet<int>();
 		var users = new HashSet<int>();
@@ -509,9 +537,10 @@ public class PoolsAttractionsTests
 	[TestMethod]
 	public void SwimmersStandUnderTheJetsInUpToThreeAndLeaveHappier()
 	{
-		var rig = new Rig( capacity: 5 );
+		var rig = new Rig( capacity: 9 );
 		rig.Simulation.RegisterPoolActivity( new JetsActivity( Sites( Jets ) ) );
-		var guests = Enumerable.Range( 0, 5 ).Select( _ => rig.Send() ).ToList();
+		// nine swimmers: the room lets one off per park turn at most (tp.exe 0x004E1410), so enough of them must be in the water together to meet under the jets
+		var guests = Enumerable.Range( 0, 9 ).Select( _ => rig.Send() ).ToList();
 		var most = 0;
 		var joined = new HashSet<int>();
 		var slots = new HashSet<int>();
@@ -680,6 +709,128 @@ public class PoolsAttractionsTests
 		return rig;
 	}
 
+	/// <summary>[EXT:pools-waves] The river rig with a wave machine at the pool's north edge (its access cell is a river cell) and the water effects registered.</summary>
+	private static Rig RiverRigWithWaves( PoolWaveSettings settings )
+	{
+		var rig = RiverRig();
+		PoolWaveSettings.SetAt( rig.Cells, (6, 3), settings );
+		rig.Simulation.RegisterPoolActivity( new PoolWaterEffects( Sites( new PoolAttractionSite( 7001, PoolAttractionKind.WaveMachine, new[] { (6, 2) }, (6, 3) ) ) ) );
+		return rig;
+	}
+
+	[TestMethod]
+	public void TheWavesCarryTheFloatersInTheRiverAlongTheirLaneAndTheFloatsStillEnd()
+	{
+		var settings = new PoolWaveSettings( true, 3, 0 );
+		var calm = RiverRig();
+		var wavy = RiverRigWithWaves( settings );
+		for ( var i = 0; i < 12; i++ )
+		{
+			calm.Send();
+			wavy.Send();
+		}
+		var rivers = PoolRiverMap.Of( wavy.Cells );
+		var (floatingTurns, ended) = (0, 0);
+		var (calmOffset, wavyOffset) = (0, 0);
+		var floatingBefore = new HashSet<int>();
+		// how far a floater is from the middle line of its lane (across the cell's flow)
+		int Offset( Guest guest )
+		{
+			var cell = (X: guest.Navigation.X >> 16, Y: guest.Navigation.Y >> 16);
+			var centre = PoolSwimRegion.Centre( cell );
+			return rivers.FlowAt( cell.X, cell.Y ) is { } flow ? Math.Abs( flow.Dx != 0 ? guest.Navigation.Y - centre.Y : guest.Navigation.X - centre.X ) : 0;
+		}
+		for ( var turn = 0; turn < 3000; turn++ )
+		{
+			calm.Turns( 1 );
+			wavy.Turns( 1 );
+			foreach ( var floater in calm.Simulation.Guests.Where( guest => guest.State == GuestState.PoolActivity && guest.PoolActivityId == RiverActivity.ActivityId ) )
+				calmOffset = Math.Max( calmOffset, Offset( floater ) );
+			foreach ( var floater in wavy.Simulation.Guests.Where( guest => guest.State == GuestState.PoolActivity && guest.PoolActivityId == RiverActivity.ActivityId ) )
+			{
+				floatingTurns++;
+				Assert.IsTrue( rivers.IsRiver( floater.Navigation.X >> 16, floater.Navigation.Y >> 16 ), $"turn {turn}: guest {floater.Id} stays in the river" );
+				Assert.IsTrue( wavy.Region.IsWater( floater.Navigation.X, floater.Navigation.Y ), $"turn {turn}: guest {floater.Id} stays in free water" );
+				wavyOffset = Math.Max( wavyOffset, Offset( floater ) );
+			}
+			var floatingNow = wavy.Simulation.Guests.Where( guest => guest.State == GuestState.PoolActivity && guest.PoolActivityId == RiverActivity.ActivityId ).Select( guest => guest.Id ).ToHashSet();
+			ended += floatingBefore.Count( id => !floatingNow.Contains( id ) );
+			floatingBefore = floatingNow;
+		}
+		Assert.IsTrue( floatingTurns > 200, $"{floatingTurns} floating turns" );
+		Assert.IsTrue( ended > 0, "floats still end" );
+		// the push runs along the lane only: the floaters stay as close to the middle line as in a calm river (at a bend, before the middle of the cell, the cell's flow axis is across the way in,
+		// so a push there can add a sliver, never the half cell a push across the lane would)
+		Assert.IsTrue( wavyOffset <= calmOffset + Fixed16.One / 16, $"off the middle line: {wavyOffset} with waves, {calmOffset} without" );
+	}
+
+	[TestMethod]
+	public void AFloaterTakesTheWavesPushAlongItsLaneOnlyAndOnlyWithinItsRing()
+	{
+		var cells = RingMap( 4, 4, 11, 8 );
+		var rivers = PoolRiverMap.Of( cells );
+		const int a = 3000;
+		foreach ( var (cellX, cellY) in new[] { (6, 4), (11, 6), (6, 8), (4, 6) } )
+		{
+			var flow = rivers.FlowAt( cellX, cellY )!.Value;
+			var (x, y) = PoolSwimRegion.Centre( (cellX, cellY) );
+			var push = RiverActivity.WavePush( rivers, x, y, (a, a) );
+			// the waves run along +x +y: a lane along x keeps the x part, a lane along y the y part, whichever way it flows
+			Assert.AreEqual( flow.Dx != 0 ? (a, 0) : (0, a), push, $"cell ({cellX}, {cellY}) flowing ({flow.Dx}, {flow.Dy})" );
+		}
+		Assert.AreEqual( (0, 0), RiverActivity.WavePush( rivers, PoolSwimRegion.Centre( (6, 4) ).X, PoolSwimRegion.Centre( (6, 4) ).Y, (0, 0) ), "no waves" );
+		Assert.AreEqual( (0, 0), RiverActivity.WavePush( rivers, PoolSwimRegion.Centre( (7, 6) ).X, PoolSwimRegion.Centre( (7, 6) ).Y, (a, a) ), "not in a river cell" );
+		// a push that would land two cells on, outside the cell's neighbours in its ring, is not taken
+		var (edgeX, edgeY) = PoolSwimRegion.Centre( (6, 4) );
+		Assert.AreEqual( (0, 0), RiverActivity.WavePush( rivers, edgeX, edgeY, (2 * Fixed16.One, 2 * Fixed16.One) ) );
+	}
+
+	[TestMethod]
+	public void ARiverWithWavesThatAreOffFloatsExactlyAsAPoolWithoutWaves()
+	{
+		var calm = RiverRig();
+		var off = RiverRigWithWaves( new PoolWaveSettings( false, 3, 0 ) );
+		for ( var i = 0; i < 12; i++ )
+		{
+			calm.Send();
+			off.Send();
+		}
+		for ( var turn = 0; turn < 1500; turn++ )
+		{
+			calm.Turns( 1 );
+			off.Turns( 1 );
+			foreach ( var guest in calm.Simulation.Guests )
+			{
+				var twin = off.Simulation.Guests.Single( other => other.Id == guest.Id );
+				Assert.AreEqual( (guest.State, guest.Navigation.X, guest.Navigation.Y), (twin.State, twin.Navigation.X, twin.Navigation.Y), $"turn {turn}: guest {guest.Id}" );
+			}
+		}
+	}
+
+	[TestMethod]
+	public void ASaveWhileTheWavesCarryAFloaterRestoresAndContinuesIdentically()
+	{
+		var settings = new PoolWaveSettings( true, 3, 0 );
+		var rig = RiverRigWithWaves( settings );
+		var guest = SendAndWaitForAFloater( rig );
+		rig.Until( () => guest.State != GuestState.PoolActivity
+			|| PoolWaves.Push( settings, rig.Simulation.ParkTurn, guest.Navigation.X, guest.Navigation.Y ).X > 0, 400 );
+		Assert.AreEqual( GuestState.PoolActivity, guest.State );
+		var snapshot = ParkResumeJson.Deserialize<GuestSimulationSnapshot>( ParkResumeJson.Serialize( rig.Simulation.CaptureSnapshot() ) );
+		Assert.IsTrue( rig.Simulation.ValidateSnapshot( snapshot ).IsValid, string.Join( "; ", rig.Simulation.ValidateSnapshot( snapshot ).Errors ) );
+		var copy = RiverRigWithWaves( settings );
+		copy.Simulation.RestoreSnapshot( snapshot );
+		var twin = copy.Simulation.Guests.Single( other => other.Id == guest.Id );
+		Assert.AreEqual( HashOf( rig ), HashOf( copy ) );
+		for ( var tick = 0; tick < 4000 && (guest.InPoolActivity || twin.InPoolActivity); tick++ )
+		{
+			rig.Simulation.Tick( 1f / FixedStepClock.TicksPerSecond );
+			copy.Simulation.Tick( 1f / FixedStepClock.TicksPerSecond );
+			Assert.AreEqual( (guest.State, guest.PoolActivityTurns, guest.Navigation.X, guest.Navigation.Y), (twin.State, twin.PoolActivityTurns, twin.Navigation.X, twin.Navigation.Y), $"tick {tick}" );
+		}
+		Assert.AreEqual( HashOf( rig ), HashOf( copy ) );
+	}
+
 	[TestMethod]
 	public void ASwimmerThatReachesTheRiverFloatsRoundTheRingAtTheCurrentsSpeedThenSwimsOn()
 	{
@@ -777,7 +928,188 @@ public class PoolsAttractionsTests
 		var none = PoolActivityRegistry.Create().Select( activity => activity.Id ).OrderBy( id => id, StringComparer.Ordinal ).ToArray();
 		CollectionAssert.AreEqual( new[] { PoolWaterEffects.ActivityId, RiverActivity.ActivityId, "extra.board", "extra.ladder", "extra.lounger", "extra.shower", "slide.ride" }, none, "without the sites the river, the ambient effects and the extras" );
 		var all = PoolActivityRegistry.Create( Sites( Rope, Jets, Spa ) ).Select( activity => activity.Id ).OrderBy( id => id, StringComparer.Ordinal ).ToArray();
-		CollectionAssert.AreEqual( new[] { "ambient.water", "attraction.jets", "attraction.river", "attraction.ropeswing", "attraction.spa", "extra.board", "extra.ladder", "extra.lounger", "extra.shower", "slide.ride" }, all );
+		CollectionAssert.AreEqual( new[] { "ambient.water", "attraction.jets", "attraction.river", "attraction.ropeswing", "attraction.spa", "extra.board", "extra.ladder", "extra.lounger", "extra.shower", "slide.ride", "waves.ring" }, all );
+	}
+
+	// ---- The wave pool's ring floaters ------------------------------------------------------------------------------
+
+	/// <summary>[EXT:pools-waves] A rig whose changing room takes twelve, with a wave machine (when <paramref name="waves"/> is given), the water effects and the ring floaters registered, and twelve swimmers sent.</summary>
+	private static (Rig Rig, Guest First) RingRig( PoolWaveSettings? waves )
+	{
+		var rig = new Rig( capacity: 12 );
+		var all = new List<PoolAttractionSite>();
+		if ( waves is { } settings )
+		{
+			all.Add( new PoolAttractionSite( 7000, PoolAttractionKind.WaveMachine, new[] { (6, 2) }, (6, 3) ) );
+			PoolWaveSettings.SetAt( rig.Cells, (6, 3), settings );
+		}
+		EffectSites = Sites( all.ToArray() );
+		rig.Simulation.RegisterPoolActivity( new PoolWaterEffects( EffectSites ) );
+		rig.Simulation.RegisterPoolActivity( new WaveRingActivity( EffectSites ) );
+		var first = rig.Send( happiness: 10 );
+		for ( var i = 0; i < 11; i++ )
+			rig.Send( happiness: 10 );
+		return (rig, first);
+	}
+
+	private static Guest? RingFloater( Rig rig ) => rig.Simulation.Guests.FirstOrDefault( guest => guest.State == GuestState.PoolActivity && guest.PoolActivityId == WaveRingActivity.ActivityId );
+
+	[TestMethod]
+	public void ARingIsOfferedOnlyWhileThePoolsWavesRunAwayFromTheStepsAndUpToThePoolsRings()
+	{
+		var settings = new PoolWaveSettings( true, 3, 2 );
+		var (rig, _) = RingRig( settings );
+		var ring = rig.Simulation.PoolActivities.OfType<WaveRingActivity>().Single();
+		var (offeredTurns, restChecks) = (0, 0);
+		for ( var turn = 0; turn < PoolWaves.CycleTurns( settings ) * 2; turn++ )
+		{
+			rig.Turns( 1 );
+			var parkTurn = rig.Simulation.ParkTurn;
+			var running = PoolWaves.IsRunning( settings, parkTurn );
+			var left = running ? PoolWaves.RunTurns - (int)(parkTurn % PoolWaves.CycleTurns( settings )) : 0;
+			var floaters = rig.Simulation.Guests.Count( guest => guest.State == GuestState.PoolActivity && guest.PoolActivityId == WaveRingActivity.ActivityId );
+			Assert.IsTrue( floaters <= WaveRingActivity.RingsOf( rig.Region ), $"turn {parkTurn}: {floaters} floaters, the pool has {WaveRingActivity.RingsOf( rig.Region )} rings" );
+			foreach ( var swimmer in rig.Simulation.Guests.Where( guest => guest.State == GuestState.Swimming ) )
+			{
+				var offer = ring.Offer( rig.Simulation, swimmer, rig.Region );
+				if ( !running )
+					restChecks++;
+				if ( offer == null )
+					continue;
+				offeredTurns++;
+				Assert.IsTrue( running && left >= PoolWaveRingSettings.MinimumRunLeft, $"turn {parkTurn}: offered only while at least {PoolWaveRingSettings.MinimumRunLeft} turns of the run are left ({left})" );
+				Assert.AreEqual( 7000, offer.Value.TargetId, "the ring is the wave machine's" );
+				Assert.IsTrue( Math.Max( Math.Abs( swimmer.CellX - rig.Region.Access.X ), Math.Abs( swimmer.CellY - rig.Region.Access.Y ) ) > 1, "not beside the steps" );
+			}
+		}
+		Assert.IsTrue( offeredTurns > 0 && restChecks > 0, $"offers checked while running ({offeredTurns}) and in the rest ({restChecks})" );
+		var (flat, swimmer2) = RingRig( null );
+		flat.Until( () => swimmer2.IsSwimming, 400 );
+		Assert.IsNull( flat.Simulation.PoolActivities.OfType<WaveRingActivity>().Single().Offer( flat.Simulation, swimmer2, flat.Region ), "a pool without waves" );
+		var (off, other) = RingRig( new PoolWaveSettings( false, 3, 0 ) );
+		off.Until( () => other.IsSwimming, 400 );
+		Assert.IsNull( off.Simulation.PoolActivities.OfType<WaveRingActivity>().Single().Offer( off.Simulation, other, off.Region ), "waves that are off" );
+		// a lazy river lane keeps its own floaters: the pool's perimeter becomes a river ring, and a swimmer in or beside it is offered no ring
+		var (river, _) = RingRig( settings );
+		for ( var y = 3; y <= 8; y++ )
+			for ( var x = 5; x <= 10; x++ )
+				if ( x == 5 || x == 10 || y == 3 || y == 8 )
+					river.Cells.SetFlags( x, y, ParkCellFlags.PoolRiver );
+		var rivers = PoolRiverMap.Of( river.Cells );
+		var nearLane = 0;
+		for ( var turn = 0; turn < 600; turn++ )
+		{
+			river.Turns( 1 );
+			foreach ( var swimmer3 in river.Simulation.Guests.Where( guest => guest.State == GuestState.Swimming ) )
+			{
+				var beside = Enumerable.Range( -1, 3 ).Any( dy => Enumerable.Range( -1, 3 ).Any( dx => rivers.IsRiver( swimmer3.CellX + dx, swimmer3.CellY + dy ) ) );
+				if ( !beside )
+					continue;
+				nearLane++;
+				Assert.IsNull( river.Simulation.PoolActivities.OfType<WaveRingActivity>().Single().Offer( river.Simulation, swimmer3, river.Region ), "not in or beside a river lane" );
+			}
+		}
+		Assert.IsTrue( nearLane > 0, "some swimmer was in or beside the lane" );
+	}
+
+	[TestMethod]
+	public void ARingFloaterBobsWithTheWavesNearItsSpotWithinTheRunAndIsPaid()
+	{
+		var settings = new PoolWaveSettings( true, 3, 0 );
+		var (rig, _) = RingRig( settings );
+		rig.Until( () => RingFloater( rig ) != null, 4000 );
+		var floater = RingFloater( rig );
+		Assert.IsNotNull( floater, "a swimmer took a ring" );
+		Assert.AreEqual( PoolSwimSlots.FloatingInRing, rig.Simulation.PoolActivityOf( floater! )!.SpriteSlot( floater! ) );
+		var spot = (floater!.PoolActivityX, floater.PoolActivityY);
+		var happiness = floater.Happiness;
+		var (moved, farthest, turns) = (0, 0, 0);
+		var last = (floater.Navigation.X, floater.Navigation.Y);
+		while ( turns < 400 )
+		{
+			rig.Turns( 1 );
+			turns++;
+			if ( floater.State != GuestState.PoolActivity )
+				break;
+			Assert.IsTrue( PoolWaves.IsRunning( settings, rig.Simulation.ParkTurn - 1 ), $"turn {turns}: the float stays within the waves' run" );
+			Assert.IsTrue( rig.Region.IsWater( floater.Navigation.X, floater.Navigation.Y ), $"turn {turns}: in free water" );
+			if ( (floater.Navigation.X, floater.Navigation.Y) != last )
+				moved++;
+			last = (floater.Navigation.X, floater.Navigation.Y);
+			farthest = Math.Max( farthest, Fixed16.Length( floater.Navigation.X - spot.Item1, floater.Navigation.Y - spot.Item2 ) );
+		}
+		Assert.IsTrue( turns >= 1 && turns <= PoolWaveRingSettings.MinimumTurns + PoolWaveRingSettings.ExtraTurns + 1, $"floated {turns} turns" );
+		Assert.IsTrue( moved > turns / 3, $"the waves rock it ({moved} of {turns} turns it moved)" );
+		Assert.IsTrue( farthest < 2 * Fixed16.One, $"it stays near its spot (farthest {farthest / (double)Fixed16.One:F2} cells)" );
+		Assert.IsTrue( floater.Happiness >= happiness + PoolWaveRingSettings.HappinessGain - 0.01f, $"paid ({happiness} to {floater.Happiness})" );
+	}
+
+	[TestMethod]
+	public void WavesSwitchedOffEndARingFloatAtOnceWithoutTheBonus()
+	{
+		var settings = new PoolWaveSettings( true, 3, 0 );
+		var (rig, _) = RingRig( settings );
+		rig.Until( () => RingFloater( rig ) is { PoolActivityTurns: > 20 }, 4000 );
+		var floater = RingFloater( rig )!;
+		Assert.IsNotNull( floater );
+		var happiness = floater.Happiness;
+		// the machine is switched off: the pool has no waves
+		PoolWaveSettings.SetAt( rig.Cells, (6, 3), new PoolWaveSettings( false, 3, 0 ) );
+		rig.Turns( 2 );
+		Assert.AreNotEqual( WaveRingActivity.ActivityId, floater.PoolActivityId, "back in the water" );
+		Assert.IsTrue( floater.Happiness < happiness + PoolWaveRingSettings.HappinessGain - 0.01f, "without the bonus" );
+	}
+
+	[TestMethod]
+	public void ASaveOnARingRestoresAndContinuesIdentically()
+	{
+		var settings = new PoolWaveSettings( true, 3, 0 );
+		var (rig, _) = RingRig( settings );
+		rig.Until( () => RingFloater( rig ) is { PoolActivityTurns: > 30 }, 5000 );
+		var floater = RingFloater( rig )!;
+		Assert.IsNotNull( floater );
+		var snapshot = ParkResumeJson.Deserialize<GuestSimulationSnapshot>( ParkResumeJson.Serialize( rig.Simulation.CaptureSnapshot() ) );
+		Assert.IsTrue( rig.Simulation.ValidateSnapshot( snapshot ).IsValid, string.Join( "; ", rig.Simulation.ValidateSnapshot( snapshot ).Errors ) );
+		var (copy, _) = RingRig( settings );
+		copy.Simulation.RestoreSnapshot( snapshot );
+		var twin = copy.Simulation.Guests.Single( other => other.Id == floater.Id );
+		Assert.AreEqual( HashOf( rig ), HashOf( copy ) );
+		for ( var tick = 0; tick < 3000 && (floater.InPoolActivity || twin.InPoolActivity); tick++ )
+		{
+			rig.Simulation.Tick( 1f / FixedStepClock.TicksPerSecond );
+			copy.Simulation.Tick( 1f / FixedStepClock.TicksPerSecond );
+			Assert.AreEqual( (floater.State, floater.PoolActivityTurns, floater.Navigation.X, floater.Navigation.Y), (twin.State, twin.PoolActivityTurns, twin.Navigation.X, twin.Navigation.Y), $"tick {tick}" );
+		}
+		Assert.AreEqual( HashOf( rig ), HashOf( copy ) );
+	}
+
+	[TestMethod]
+	public void TheSwayIsThePushOnTheCrestAndAsMuchBackInTheTrough()
+	{
+		var settings = new PoolWaveSettings( true, 3, 0 );
+		var (x, y) = ((int)(3.5 * Fixed16.One), (int)(4.25 * Fixed16.One));
+		var (forward, back) = (0, 0);
+		for ( var turn = 0L; turn < PoolWaves.CycleTurns( settings ); turn++ )
+		{
+			var sway = PoolWaves.Sway( settings, turn, x, y );
+			var push = PoolWaves.Push( settings, turn, x, y );
+			Assert.AreEqual( sway.X, sway.Y, "along the diagonal" );
+			if ( sway.X > 0 )
+			{
+				forward++;
+				Assert.AreEqual( push, sway, $"turn {turn}: on the crest it is the push" );
+			}
+			else
+			{
+				Assert.AreEqual( (0, 0), push, $"turn {turn}: no push off the crest" );
+				if ( sway.X < 0 )
+					back++;
+			}
+			if ( !PoolWaves.IsRunning( settings, turn ) )
+				Assert.AreEqual( (0, 0), sway, "nothing in a rest" );
+		}
+		Assert.IsTrue( forward > 40 && back > 40 && Math.Abs( forward - back ) <= 6, $"to and fro: {forward} turns forward, {back} back" );
+		Assert.AreEqual( (0, 0), PoolWaves.Sway( new PoolWaveSettings( false, 3, 0 ), 60, x, y ), "off" );
 	}
 
 	[TestMethod]
@@ -948,26 +1280,105 @@ public class PoolsAttractionsTests
 	}
 
 	[TestMethod]
-	public void TheWavesPayASwimmerAndChangeNeitherItsMovementNorItsRandomStream()
+	public void TheWavesPayAndPushASwimmerAndWavesThatAreOffDoNothing()
 	{
 		var (waves, swimmerWaves) = EffectsRig( new PoolWaveSettings( true, 3, 0 ) );
 		var (flat, swimmerFlat) = EffectsRig( null );
 		var (off, swimmerOff) = EffectsRig( new PoolWaveSettings( false, 3, 0 ) );
-		var paid = 0f;
+		var apart = 0;
 		for ( var turn = 0; turn < 500; turn++ )
 		{
 			waves.Turns( 1 );
 			flat.Turns( 1 );
 			off.Turns( 1 );
+			if ( swimmerFlat.IsSwimming )
+				Assert.AreEqual( (swimmerFlat.Navigation.X, swimmerFlat.Navigation.Y, swimmerFlat.SwimRandom, swimmerFlat.Happiness),
+					(swimmerOff.Navigation.X, swimmerOff.Navigation.Y, swimmerOff.SwimRandom, swimmerOff.Happiness), $"turn {turn}: waves that are off move nobody, draw nothing and pay nothing" );
 			if ( swimmerWaves.IsSwimming )
 			{
-				Assert.AreEqual( (swimmerFlat.Navigation.X, swimmerFlat.Navigation.Y, swimmerFlat.SwimRandom), (swimmerWaves.Navigation.X, swimmerWaves.Navigation.Y, swimmerWaves.SwimRandom), $"turn {turn}: the waves move nobody and draw nothing" );
-				Assert.AreEqual( swimmerFlat.Happiness, swimmerOff.Happiness, "waves that are off pay nothing" );
+				Assert.IsTrue( waves.Region.IsWater( swimmerWaves.Navigation.X, swimmerWaves.Navigation.Y ), $"turn {turn}: the push keeps the swimmer in the water" );
+				if ( (swimmerWaves.Navigation.X, swimmerWaves.Navigation.Y) != (swimmerFlat.Navigation.X, swimmerFlat.Navigation.Y) )
+					apart++;
 			}
 		}
-		paid = swimmerWaves.Happiness - swimmerFlat.Happiness;
-		Assert.IsTrue( paid > 0.5f && paid < 12f, $"the waves paid {paid}" );
+		Assert.IsTrue( apart > 50, $"the waves move the swimmer ({apart} turns apart from the flat pool)" );
+		// at most 1.2 per 24 turns while they run (120 of every 160 turns): 500 turns pay at most about 18, and the pushed swimmer's other happiness may differ from the flat pool's
+		var paid = swimmerWaves.Happiness - swimmerFlat.Happiness;
+		Assert.IsTrue( paid > 0.5f && paid < 20f, $"the waves paid {paid}" );
 		Assert.AreEqual( 0, flat.Simulation.PoolActivities.Count( activity => activity.Id != PoolWaterEffects.ActivityId ) );
+	}
+
+	[TestMethod]
+	public void TheWavesPushAlongTheirWayOnTheCrestByHeightAndEnvelopeAndNotInATroughOrARest()
+	{
+		var high = new PoolWaveSettings( true, 3, 0 );
+		var low = new PoolWaveSettings( true, 1, 0 );
+		// a point in the middle of a cell, where the drawn crest is the swimmer's own (SmoothWave takes the point in cells)
+		foreach ( var (cellX, cellY) in new[] { (3.5f, 4.25f), (0.1f, 0.9f), (7.75f, 2.5f) } )
+		{
+			var (x, y) = ((int)(cellX * Fixed16.One), (int)(cellY * Fixed16.One));
+			for ( var run = 0; run < 2; run++ )
+			{
+				var crests = 0;
+				for ( var turn = run * (long)PoolWaves.CycleTurns( high ); turn < (run + 1) * (long)PoolWaves.CycleTurns( high ); turn++ )
+				{
+					var push = PoolWaves.Push( high, turn, x, y );
+					Assert.AreEqual( push.X, push.Y, "along the diagonal" );
+					Assert.IsTrue( push.X >= 0 && push.X <= PoolWaves.MaxPush, $"turn {turn}: {push.X}" );
+					if ( !PoolWaves.IsRunning( high, turn ) )
+						Assert.AreEqual( (0, 0), push, "nothing in a rest" );
+					if ( push.X > 0 )
+					{
+						crests++;
+						Assert.IsTrue( PoolWaves.SmoothWave( high, turn, cellX, cellY ) > 0f, $"({cellX}, {cellY}) turn {turn}: only while the drawn crest at the point is up" );
+						var weak = PoolWaves.Push( low, turn, x, y ).X;
+						Assert.IsTrue( weak > 0 && weak < push.X, "lower waves push less" );
+					}
+				}
+				// the crest is up for about half of every period of the 120-turn run (less while it swells in and out)
+				Assert.IsTrue( crests >= 45 && crests <= 60, $"({cellX}, {cellY}) run {run}: {crests} turns of push" );
+			}
+		}
+		var middle = PoolWaves.RunTurns / 2;
+		var peak = Enumerable.Range( 0, PoolWaves.PeriodTurns ).Max( offset => PoolWaves.Push( high, middle + offset, 3 * Fixed16.One, 4 * Fixed16.One ).X );
+		Assert.IsTrue( peak > PoolWaves.MaxPush * 6 / 10, $"a full crest at height 3 pushes about MaxPush times cos 45 ({peak})" );
+		Assert.AreEqual( (0, 0), PoolWaves.Push( new PoolWaveSettings( false, 3, 0 ), middle, 3 * Fixed16.One, 4 * Fixed16.One ), "off" );
+		// the drift stops at the wall and at another body, and moves where there is room, also away from a body it is already too close to
+		var region = new Rig().Region;
+		var start = PoolSwimRegion.Centre( region.Access );
+		var body = new PoolSwimBody { X = start.X, Y = start.Y };
+		Assert.IsTrue( PoolSwimming.Drift( region, ref body, 1000, 1000, ReadOnlySpan<(int X, int Y)>.Empty ) );
+		Assert.AreEqual( (start.X + 1000, start.Y + 1000), (body.X, body.Y) );
+		var blocked = body;
+		Assert.IsFalse( PoolSwimming.Drift( region, ref blocked, 40 * Fixed16.One, 0, ReadOnlySpan<(int X, int Y)>.Empty ), "not through the wall" );
+		Assert.AreEqual( (body.X, body.Y), (blocked.X, blocked.Y) );
+		var crowd = new[] { (body.X + 2000, body.Y + 2000) };
+		Assert.IsFalse( PoolSwimming.Drift( region, ref blocked, 1500, 1500, crowd ), "not into another body" );
+		Assert.IsTrue( PoolSwimming.Drift( region, ref blocked, -1500, -1500, crowd ), "but away from it" );
+	}
+
+	[TestMethod]
+	public void ASaveWhileTheWavesPushASwimmerRestoresAndContinuesIdentically()
+	{
+		var settings = new PoolWaveSettings( true, 3, 0 );
+		var (rig, guest) = EffectsRig( settings );
+		// in the middle of a run, while a swimmer is being pushed
+		rig.Until( () => guest.IsSwimming && PoolWaves.IsRunning( settings, rig.Simulation.ParkTurn ) && PoolWaves.Envelope( settings, rig.Simulation.ParkTurn ) == 64
+			&& PoolWaves.Push( settings, rig.Simulation.ParkTurn, guest.Navigation.X, guest.Navigation.Y ).X > 0, 2000 );
+		Assert.IsTrue( guest.IsSwimming );
+		var snapshot = ParkResumeJson.Deserialize<GuestSimulationSnapshot>( ParkResumeJson.Serialize( rig.Simulation.CaptureSnapshot() ) );
+		Assert.IsTrue( rig.Simulation.ValidateSnapshot( snapshot ).IsValid, string.Join( "; ", rig.Simulation.ValidateSnapshot( snapshot ).Errors ) );
+		var (copy, _) = EffectsRig( settings );
+		copy.Simulation.RestoreSnapshot( snapshot );
+		var twin = copy.Simulation.Guests.Single( other => other.Id == guest.Id );
+		Assert.AreEqual( HashOf( rig ), HashOf( copy ) );
+		for ( var tick = 0; tick < 3000 && (guest.IsSwimming || twin.IsSwimming); tick++ )
+		{
+			rig.Simulation.Tick( 1f / FixedStepClock.TicksPerSecond );
+			copy.Simulation.Tick( 1f / FixedStepClock.TicksPerSecond );
+			Assert.AreEqual( (guest.State, guest.Navigation.X, guest.Navigation.Y, guest.SwimRandom), (twin.State, twin.Navigation.X, twin.Navigation.Y, twin.SwimRandom), $"tick {tick}" );
+		}
+		Assert.AreEqual( HashOf( rig ), HashOf( copy ) );
 	}
 
 	[TestMethod]
@@ -1011,8 +1422,9 @@ public class PoolsAttractionsTests
 		for ( var i = 0; i < 5; i++ )
 			_ = PoolWaterEffects.Bob( rig.Simulation, guest, EffectSites );
 		Assert.AreEqual( hash, HashOf( rig ) );
+		// where in the wave the swimmer is depends on when it entered the water: sample a whole wave cycle (24 turns), not one window
 		var bobs = new List<float>();
-		for ( var i = 0; i < 20; i++ )
+		for ( var i = 0; i < 24 * 15; i++ )
 		{
 			bobs.Add( PoolWaterEffects.Bob( rig.Simulation, guest, EffectSites ) );
 			rig.Simulation.Tick( 1f / FixedStepClock.TicksPerSecond );
@@ -1023,6 +1435,11 @@ public class PoolsAttractionsTests
 		still.Until( () => sitter.IsSwimming, 400 );
 		Assert.AreEqual( 0f, PoolWaterEffects.Bob( still.Simulation, sitter, EffectSites ), "a pool without waves" );
 		Assert.AreEqual( 0f, PoolWaterEffects.Bob( rig.Simulation, new Guest( 999, 0 ), EffectSites ), "a guest who is not swimming" );
+		// the water level an activity draws its swimmer at rises with the same surface as a free swimmer's bob, and not without a region
+		var region = PoolActivityHelpers.RegionOf( rig.Simulation, guest );
+		Assert.IsNotNull( region );
+		Assert.AreEqual( PoolWaterEffects.Bob( rig.Simulation, guest, EffectSites ), PoolWaterEffects.SurfaceRise( rig.Simulation, guest, region, EffectSites ), 1e-6f );
+		Assert.AreEqual( 0f, PoolWaterEffects.SurfaceRise( rig.Simulation, guest, null, EffectSites ) );
 	}
 }
 
@@ -1331,6 +1748,118 @@ public class PoolsAttractionsLevelTests
 		} );
 		Assert.IsNull( level.CyclePoolWaves( one ), "and an ordinary object neither" );
 	}
+
+	[TestMethod]
+	public void TheWaveMachineWindowSetsOnOffHeightAndIntervalAndCancelLeavesThemAsTheyWere()
+	{
+		var wave = Entry( 1309, "wavemachine", "N", "**" );
+		var swing = Entry( 1310, "ropeswing", "N", "*" );
+		using var camera = ParkCamera();
+		With( () =>
+		{
+			level.PoolBuilder!.PaintCells( PoolBuilder.Rectangle( (4, 12), (9, 14) ) );
+			var machine = level.Objects.TryPlace( wave, 5, 15, 0, out _ )!;
+			var rope = level.Objects.TryPlace( swing, 8, 15, 0, out _ )!;
+			var region = PoolSwimRegion.Build( Cells, (4, 12) )!;
+			var hud = new ParkHud( level, OriginalUiTests.FakeStrings(), new EconomyParkStatus( () => null ), new UiTestCatalog(), new HudHost() );
+			Assert.AreEqual( PoolWaveSettings.Default, level.PoolWavesOf( machine ) );
+
+			// the window opens on the machine's settings, the choices show them, and the tick writes the edited copy to the machine
+			hud.SelectObject( machine );
+			hud.OpenWaveSettings( machine );
+			var screen = hud.Stack.Top!;
+			Assert.AreEqual( "waveSettings", screen.Name );
+			Assert.IsTrue( Selected( screen, "wavesOn" ) && Selected( screen, "height2" ) && Selected( screen, "interval1" ) );
+			Assert.IsFalse( Selected( screen, "wavesOff" ) || Selected( screen, "height3" ) || Selected( screen, "interval0" ) );
+			screen.Find( "height3" )!.Activate();
+			screen.Find( "interval0" )!.Activate();
+			Assert.AreEqual( PoolWaveSettings.Default, level.PoolWavesOf( machine ), "nothing is written before the tick" );
+			screen.Find( "apply" )!.Activate();
+			Assert.AreNotSame( screen, hud.Stack.Top, "the tick closes the window" );
+			Assert.AreEqual( new PoolWaveSettings( true, 3, 0 ), level.PoolWavesOf( machine ) );
+			Assert.AreEqual( new PoolWaveSettings( true, 3, 0 ), PoolWaveSettings.ActiveIn( level.PoolSites, Cells, region ), "the pool runs them" );
+
+			// an unchanged tick writes nothing
+			var flags = Cells.FlagsAt( level.PoolSites.Find( machine.ThingId )!.Access.X, level.PoolSites.Find( machine.ThingId )!.Access.Y );
+			hud.OpenWaveSettings( machine );
+			hud.Stack.Top!.Find( "apply" )!.Activate();
+			Assert.AreEqual( flags, Cells.FlagsAt( level.PoolSites.Find( machine.ThingId )!.Access.X, level.PoolSites.Find( machine.ThingId )!.Access.Y ) );
+
+			// off and a long rest, then the cross: nothing changes
+			hud.OpenWaveSettings( machine );
+			screen = hud.Stack.Top!;
+			screen.Find( "wavesOff" )!.Activate();
+			screen.Find( "interval2" )!.Activate();
+			screen.Find( "cancel" )!.Activate();
+			Assert.AreEqual( new PoolWaveSettings( true, 3, 0 ), level.PoolWavesOf( machine ), "the cross leaves them as they were" );
+			hud.OpenWaveSettings( machine );
+			screen = hud.Stack.Top!;
+			screen.Find( "wavesOff" )!.Activate();
+			screen.Find( "height1" )!.Activate();
+			screen.Find( "interval2" )!.Activate();
+			screen.Find( "apply" )!.Activate();
+			Assert.AreEqual( new PoolWaveSettings( false, 1, 2 ), level.PoolWavesOf( machine ) );
+			Assert.IsNull( PoolWaveSettings.ActiveIn( level.PoolSites, Cells, region ), "off: no waves" );
+
+			// only a wave machine has the window
+			var screens = hud.Stack.Screens.Count;
+			hud.OpenWaveSettings( rope );
+			hud.OpenWaveSettings( one );
+			Assert.AreEqual( screens, hud.Stack.Screens.Count );
+			Assert.IsNull( level.PoolWavesOf( rope ) );
+			Assert.IsFalse( level.SetPoolWaves( rope, PoolWaveSettings.Default ) );
+			return 0;
+		} );
+	}
+
+	[TestMethod]
+	public void TheWaveMachineWindowsChoicesFitItAndAreNamedInEveryLanguage()
+	{
+		var wave = Entry( 1311, "wavemachine", "N", "**" );
+		using var camera = ParkCamera();
+		With( () =>
+		{
+			level.PoolBuilder!.PaintCells( PoolBuilder.Rectangle( (4, 12), (9, 14) ) );
+			var machine = level.Objects.TryPlace( wave, 5, 15, 0, out _ )!;
+			var hud = new ParkHud( level, OriginalUiTests.FakeStrings(), new EconomyParkStatus( () => null ), new UiTestCatalog(), new HudHost() );
+			hud.OpenWaveSettings( machine );
+			var screen = hud.Stack.Top!;
+			var canvas = new UiCanvas( 2048, 1536 );
+			var window = screen.Find( "window" )!.ScreenRect( canvas );
+			foreach ( var element in screen.Elements.Where( element => element.Id != "window" ) )
+			{
+				var rect = element.ScreenRect( canvas );
+				Assert.IsTrue( rect.X >= window.X && rect.Y >= window.Y && rect.Right <= window.Right && rect.Bottom <= window.Bottom, $"{element.Id} lies inside the window" );
+			}
+			return 0;
+		} );
+		var keys = new[] { OpenTpwText.PoolWavesSettings, OpenTpwText.PoolWavesLow, OpenTpwText.PoolWavesMedium, OpenTpwText.PoolWavesHigh,
+			OpenTpwText.PoolWavesShort, OpenTpwText.PoolWavesNormal, OpenTpwText.PoolWavesLong };
+		foreach ( var language in SupplementaryStrings.SupportedLanguages )
+			foreach ( var key in keys )
+			{
+				var text = SupplementaryStrings.Get( key, language );
+				Assert.IsFalse( string.IsNullOrWhiteSpace( text ), $"{language} {key}" );
+				Assert.IsTrue( text.Length <= 24, $"{language} {key}: '{text}' fits a toggle" );
+			}
+	}
+
+	/// <summary>The park camera the settings window wants (it does not open while the camera rides or walks), restored on dispose.</summary>
+	private IDisposable ParkCamera()
+	{
+		// the fixture's level is made without its constructor; the window's input gate asks the cell tool whether it is armed
+		if ( level.CellTool == null )
+			typeof( Level ).GetField( "<CellTool>k__BackingField", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic )!.SetValue( level, new CellBuildTool() );
+		var previous = Camera.Mode;
+		Camera.Mode = new ParkCameraMode();
+		return new Restore( () => Camera.Mode = previous );
+	}
+
+	private sealed class Restore( Action action ) : IDisposable { public void Dispose() => action(); }
+
+	private static bool Selected( UiScreen screen, string id ) => ((UiButton)screen.Find( id )!).Selected!();
+
+	private sealed class UiTestCatalog : IBuildCatalog { public IReadOnlyList<BuildItem> GetItems( BuildCategory category ) => Array.Empty<BuildItem>(); }
 
 	[TestMethod]
 	public void TheSpaCellIsKeptWhileUsedAndRemovingTheSpaSendsItsGuestOut()

@@ -23,8 +23,8 @@ public enum BlueprintMarker
 /// <summary>
 /// The original's BlueprintMesh: build-tool ghosts drawn as blue (or red) squares over the cells of a path or queue
 /// line and over an object's footprint while it is being placed. Each cell gets a flat face 10 units square whose
-/// vertices follow the terrain, 1.5 above it, and ripple with a travelling sine (docs/reverse/BLUEPRINT.md). The geometry is rebuilt when
-/// the set of marked cells changes and, while the game runs, every frame (the ripple phase moves).
+/// vertices follow the terrain plus a supported occupied offset, 1.5 above it, and ripple with a travelling sine (docs/reverse/BLUEPRINT.md). The geometry is rebuilt when
+/// the set of marked cells or sampled occupied heights changes and, while the game runs, every frame (the ripple phase moves).
 /// </summary>
 // [BIN:STP-PPC:0x100BCB60 dynamic meshes] BlueprintMesh, WaterMesh, FlagsMesh; [BIN:STP-PPC:0x100BD3D4 AddFace] square faces of mesh 0 with a texture index; [BIN:STP-PPC:0x100BF540 square face] code 0 is the flat face at (x, y, z)-(x+10, y, z+10), codes 1/4/0x10/0x40 the vertical faces on the −Y/+X/+Y/−X edges, 10 high
 public sealed class BlueprintMarkers : ModelEntity
@@ -36,6 +36,9 @@ public sealed class BlueprintMarkers : ModelEntity
 	// [BIN:STP-PPC:0x100BF540 square face] DAT_101f1240 = 10.0
 	public const float FaceSize = 10f;
 
+	/// <summary>[EXT:evening] The placement markers keep their daylight look at night so they stay readable.</summary>
+	protected override bool FollowsTimeOfDay => false;
+
 	private const int TextureSlots = 16;
 	private static readonly string[] TextureNames = ["blue", "red"];
 	// [BIN:STP-PPC:0x1022C374 dynamic texture table] slots 3, 4, 6 and 7 are m_enter, m_exit, m_front and m_inout (docs/reverse/BLUEPRINT.md)
@@ -44,10 +47,13 @@ public sealed class BlueprintMarkers : ModelEntity
 	private readonly ModelHeightfield field;
 	private readonly Material material;
 	private (int X, int Y, BlueprintMarker Marker)[] shown = [];
+	private readonly Func<int, int, float?>? heightOffset;
+	private Dictionary<(int X, int Y), float?> shownHeights = [];
 
-	public BlueprintMarkers( ModelHeightfield field )
+	public BlueprintMarkers( ModelHeightfield field, Func<int, int, float?>? heightOffset = null )
 	{
 		this.field = field;
+		this.heightOffset = heightOffset;
 		Name = "blueprint markers";
 		Hidden = true;
 		material = new Material<ObjectUniformBuffer>( "content/shaders/test.shader" );
@@ -138,9 +144,11 @@ public sealed class BlueprintMarkers : ModelEntity
 			.Where( cell => cell.X >= 0 && cell.Y >= 0 && cell.X < field.CellCountX && cell.Y < field.CellCountZ )
 			.GroupBy( cell => (cell.X, cell.Y) ).Select( group => group.Last() ).ToArray();
 		var directionList = directions == null ? [] : unique.Where( cell => directions.ContainsKey( (cell.X, cell.Y) ) ).Select( cell => directions[(cell.X, cell.Y)] ).ToArray();
-		if ( unique.SequenceEqual( shown ) && directionList.AsSpan().SequenceEqual( shownDirectionList ) )
+		var heights = CaptureHeights( field, unique, heightOffset );
+		if ( unique.SequenceEqual( shown ) && directionList.AsSpan().SequenceEqual( shownDirectionList ) && heights.SequenceEqual( shownHeights ) )
 			return;
 		shown = unique;
+		shownHeights = heights;
 		shownDirectionList = directionList;
 		shownDirections = directions == null ? [] : directions.Where( pair => unique.Any( cell => (cell.X, cell.Y) == pair.Key ) ).ToDictionary();
 		Rebuild();
@@ -163,7 +171,7 @@ public sealed class BlueprintMarkers : ModelEntity
 		// instead of allocating a model and its buffers every frame.
 		if ( Model is { } model && model.HasDynamicVertices )
 		{
-			var (vertices, _) = BuildGeometry( field, shown, shownDirections, phase );
+			var (vertices, _) = BuildGeometry( field, shown, shownDirections, phase, shownHeights );
 			model.UpdateVertices( vertices );
 			return;
 		}
@@ -177,7 +185,7 @@ public sealed class BlueprintMarkers : ModelEntity
 		Hidden = shown.Length == 0;
 		if ( shown.Length > 0 )
 		{
-			var (vertices, indices) = BuildGeometry( field, shown, shownDirections, phase );
+			var (vertices, indices) = BuildGeometry( field, shown, shownDirections, phase, shownHeights );
 			Model = new Model( vertices, indices, material, dynamicVertices: true );
 		}
 		old?.ReleaseBuffers();
@@ -218,27 +226,67 @@ public sealed class BlueprintMarkers : ModelEntity
 	/// <c>SetCell</c> gives a plain cell height 0 and the vertex writer adds the terrain, so a plain marker drapes over the ground.
 	/// </summary>
 	// [BIN:TPW-EXE:0x005330A5 plain cell height] SetCell 0x532FC0 passes 0 for a plain cell; the face is added at y + 1.5 (0x5338E7, constant 0x700D5C = -1.5 subtracted) and 0x53DDD0 adds the terrain at the vertex and the ripple
-	// [APPROX:BLUEPRINT-001] the raise of a cell that already holds an object or track (map types 4, 7, 9, 10, 30; second layer 11, 12, 16, 17, 25: 10 x ((int)H + 9) / 10 of the cell height H) is not applied, because OpenTPW's cell map does not type the cells of objects and the ghost then shows the plain value
+	// [APPROX:BLUEPRINT-001] occupied offsets are supplied separately for proven TPW object cells; unsupported secondary cells, missing/invalid maps, types 7/30 and TPI retain the unraised fallback (docs/reverse/BLUEPRINT.md).
 	public static float VertexHeight( ModelHeightfield field, int cornerX, int cornerY, float phase ) =>
 		field.GetCornerHeight( cornerX, cornerY ) + Lift + Ripple( phase, cornerX * FaceSize, cornerY * FaceSize );
 
 	internal static (Vertex[] Vertices, uint[] Indices) BuildGeometry( ModelHeightfield field, IReadOnlyList<(int X, int Y, BlueprintMarker Marker)> cells,
-		IReadOnlyDictionary<(int X, int Y), byte>? directions = null, float phase = 0 )
+		IReadOnlyDictionary<(int X, int Y), byte>? directions = null, float phase = 0,
+		IReadOnlyDictionary<(int X, int Y), float?>? heights = null )
 	{
 		var vertices = new List<Vertex>();
 		var indices = new List<uint>();
 		foreach ( var (x, y, marker) in cells )
 		{
+			var offset = heights?.GetValueOrDefault( (x, y) );
+			var raised = offset ?? 0;
 			var left = x * FaceSize;
 			var front = y * FaceSize;
 			byte direction = 0;
 			if ( directions != null )
 				directions.TryGetValue( (x, y), out direction );
 			AddFace( vertices, indices, field, (int)marker, direction,
-				new( left, VertexHeight( field, x, y, phase ), front ), new( left + FaceSize, VertexHeight( field, x + 1, y, phase ), front ),
-				new( left, VertexHeight( field, x, y + 1, phase ), front + FaceSize ), new( left + FaceSize, VertexHeight( field, x + 1, y + 1, phase ), front + FaceSize ) );
+				new( left, raised + VertexHeight( field, x, y, phase ), front ), new( left + FaceSize, raised + VertexHeight( field, x + 1, y, phase ), front ),
+				new( left, raised + VertexHeight( field, x, y + 1, phase ), front + FaceSize ), new( left + FaceSize, raised + VertexHeight( field, x + 1, y + 1, phase ), front + FaceSize ) );
+
+			if ( offset is not { } current ) continue;
+			var wallMarker = marker == BlueprintMarker.Refused ? BlueprintMarker.Refused : marker == BlueprintMarker.Area ? BlueprintMarker.Area : BlueprintMarker.Allowed;
+			// PC SetCell 0x53336B–0x53391B: lower neighbour to current, step 10; no cell means no wall.
+			foreach ( var (dx, dy, ax, ay, bx, by) in Edges )
+			{
+				if ( heights?.GetValueOrDefault( (x + dx, y + dy) ) is not { } neighbour ) continue;
+				for ( var step = (long)neighbour; step < current; step += (int)FaceSize )
+				{
+					var a = new System.Numerics.Vector3( (x + ax) * FaceSize, step + VertexHeight( field, x + ax, y + ay, phase ), (y + ay) * FaceSize );
+					var b = new System.Numerics.Vector3( (x + bx) * FaceSize, step + VertexHeight( field, x + bx, y + by, phase ), (y + by) * FaceSize );
+					var up = new System.Numerics.Vector3( 0, FaceSize, 0 );
+					AddFace( vertices, indices, field, (int)wallMarker, 0, a, b, a + up, b + up );
+				}
+			}
 		}
 		return (vertices.ToArray(), indices.ToArray());
+	}
+
+	private static readonly (int Dx, int Dy, int Ax, int Ay, int Bx, int By)[] Edges =
+		[(0, -1, 0, 0, 1, 0), (1, 0, 1, 0, 1, 1), (0, 1, 1, 1, 0, 1), (-1, 0, 0, 1, 0, 0)];
+
+	// Snapshot the map (not just preview neighbours), so occupancy changes rebuild topology even while paused.
+	internal static Dictionary<(int X, int Y), float?> CaptureHeights( ModelHeightfield field,
+		IReadOnlyList<(int X, int Y, BlueprintMarker Marker)> cells, Func<int, int, float?>? sample )
+	{
+		var result = new Dictionary<(int X, int Y), float?>();
+		if ( sample == null ) return result;
+		foreach ( var (x, y, _) in cells )
+		{
+			Capture( x, y );
+			foreach ( var (dx, dy, _, _, _, _) in Edges ) Capture( x + dx, y + dy );
+		}
+		return result;
+		void Capture( int x, int y )
+		{
+			if ( !result.ContainsKey( (x, y) ) )
+				result[(x, y)] = x >= 0 && y >= 0 && x < field.CellCountX && y < field.CellCountZ ? sample( x, y ) : null;
+		}
 	}
 
 	/// <summary>

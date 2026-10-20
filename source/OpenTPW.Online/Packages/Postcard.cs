@@ -21,7 +21,7 @@ public sealed record PostcardManifest(
 /// [EXT:ONLINE-020] The <c>.tpwcard</c> postcard: a bounded ZIP with <c>card.json</c> and an optional
 /// <c>image.png</c>. The original sent postcards as e-mail (UITEXT "Send Postcard", "Message title",
 /// "Message text", "Email address(es)"; weamailr.dll SMTP-style DoFrom/DoTo/DoData); OpenTPW keeps the
-/// title/text/addressee shape but addresses players by name and sends files or server mail instead.
+/// title/text/addressee shape, with player inboxes and server-side e-mail delivery.
 /// </summary>
 public sealed record Postcard( PostcardManifest Manifest, byte[]? Image )
 {
@@ -103,15 +103,7 @@ public sealed record Postcard( PostcardManifest Manifest, byte[]? Image )
 		if ( m.CardId == Guid.Empty )
 			throw new InvalidDataException( "Postcard id is missing." );
 		OnlineText.RequirePlayerName( m.From, "Postcard sender" );
-		if ( m.To == null || m.To.Count is < 1 or > MaximumRecipients )
-			throw new InvalidDataException( $"A postcard needs 1-{MaximumRecipients} recipients." );
-		var recipients = new HashSet<string>( StringComparer.Ordinal );
-		foreach ( var name in m.To )
-		{
-			OnlineText.RequirePlayerName( name, "Postcard recipient" );
-			if ( !recipients.Add( OnlineText.NormalizeName( name ) ) )
-				throw new InvalidDataException( "Postcard lists a recipient twice." );
-		}
+		PostcardRecipient.RequireValid( m.To );
 		OnlineText.RequireText( m.Title, MaximumTitleLength, false, false, "Postcard title" );
 		OnlineText.RequireText( m.Text, MaximumTextLength, true, true, "Postcard text" );
 		if ( m.Language == null || m.Language.Length is < 1 or > 32 || !m.Language.All( char.IsAsciiLetter ) )

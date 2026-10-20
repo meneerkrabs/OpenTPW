@@ -27,6 +27,7 @@ ARRIVAL-004 docs/progress/2026-10-15-arrival-and-save-rules-settled-against-tp-e
 ARRIVAL-005 docs/GUESTS.md
 ARRIVAL-007 docs/progress/2026-10-15-arrival-and-save-rules-settled-against-tp-exe.md
 AUDIO-002 docs/AUDIO.md
+AUDIO-004 docs/AUDIO.md
 AUDIO-008 docs/AUDIO.md
 AUDIO-009 docs/AUDIO.md
 AUDIO-011 docs/AUDIO.md
@@ -44,6 +45,8 @@ AUDIO-034 docs/AUDIO.md
 AUDIO-035 docs/AUDIO.md
 AUDIO-036 docs/PROGRESS.md
 AUDIO-037 docs/AUDIO.md
+AUDIO-039 docs/AUDIO.md
+AUDIO-041 docs/AUDIO.md
 AUDIO-903 docs/AUDIO.md
 AUDIO-908 docs/AUDIO.md
 BLUEPRINT-002 docs/PROGRESS.md
@@ -163,6 +166,7 @@ GUEST-009 docs/PROGRESS.md
 GUEST-012 docs/GUESTS.md
 GUEST-018 docs/GUESTS.md
 GUEST-022 docs/progress/2026-10-18-tpc-sprite-banks.md
+GUEST-023 docs/DETERMINISM.md
 HEADS-001 docs/GUESTS.md
 HEADS-002 docs/PROGRESS.md
 HEADS-003 docs/PROGRESS.md
@@ -310,6 +314,7 @@ UI-020 docs/reverse/APPROX-TRACE.md
 UI-021 docs/reverse/APPROX-TRACE.md
 UI-022 docs/reverse/APPROX-TRACE.md
 UI-023 docs/reverse/APPROX-TRACE.md
+UI-027 docs/UI.md
 UI-028 docs/UI.md
 UI-029 docs/reverse/APPROX-TRACE.md
 UI-030 docs/reverse/APPROX-TRACE.md
@@ -326,6 +331,7 @@ UI-045 docs/PROGRESS.md
 UI-046 docs/progress/2026-10-18-round8-ui-windows.md
 UI-048 docs/PROGRESS.md
 UI-049 docs/PROGRESS.md
+UI-050 docs/UI.md
 UI-061 docs/UI.md
 UI-062 docs/PROGRESS.md
 UI-063 docs/progress/2026-10-16-interface-round-c.md

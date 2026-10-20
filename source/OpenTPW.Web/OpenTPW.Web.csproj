@@ -36,6 +36,71 @@
 		<Compile Include="$(GameSources)/**/*.cs" Link="Game/%(RecursiveDir)%(Filename)%(Extension)" Exclude="$(GameSources)/obj/**;$(GameSources)/bin/**;$(GameSources)/Formats/Model/**;&#xA;				$(GameSources)/Program.cs;&#xA;				$(GameSources)/Client/Game.cs;&#xA;				$(GameSources)/Client/GameDir.cs;&#xA;				$(GameSources)/Client/LegacySettings.cs;&#xA;				$(GameSources)/Settings.Designer.cs;&#xA;				$(GameSources)/UI/Cursor.cs;&#xA;				$(GameSources)/Client/TgqPngExport.cs;&#xA;				$(GameSources)/Client/SdtWavExport.cs;&#xA;				$(GameSources)/Client/LinuxNativeLibraries.cs;&#xA;				$(GameSources)/Render/Assets/TexturePackBuilder.cs;&#xA;				$(GameSources)/Render/Assets/ImagePrepass.cs;&#xA;				$(GameSources)/Render/ShaderCompiler.cs;&#xA;				$(GameSources)/Client/Setup/SetupWizard.cs;&#xA;				$(GameSources)/Client/Movie/SdlMovieAudioOutput.cs;&#xA;				$(GameSources)/Online/OnlinePanel.cs;&#xA;				$(GameSources)/UI/DisplaySettingsPanel.cs;&#xA;				$(GameSources)/UI/Layouts/ObjectBuildPanel.cs;&#xA;				$(GameSources)/UI/Layouts/ParkLayout.cs" />
 	</ItemGroup>
 
+	<!--
+	The cross-runtime determinism check (docs/DETERMINISM.md, "Browser and native"; tools/web-determinism): with
+	-p:OpenTpwDeterminismPins=true the page also carries the asset-free unit tests that pin simulation digests, compiled into this
+	same assembly with the same settings (AOT or interpreter) as the shipped page, and a JSExport that runs them. The published page
+	never sets the property, so nothing of it ships.
+	-->
+	<PropertyGroup Condition="'$(OpenTpwDeterminismPins)' == 'true'">
+		<DefineConstants>$(DefineConstants);OPENTPW_DETERMINISM_PINS</DefineConstants>
+		<NoWarn>$(NoWarn);CS0618;CS8602;CS8604;CS8618;CS8625;CS0162;CS0219;CS0168;CS1998;CS8619;CS8620;CS8603;CS8600;CS8601;CS8629;CS0649;CS0169;CS0414</NoWarn>
+	</PropertyGroup>
+	<!-- Test files that need the desktop or the server (ASP.NET Core, the content kit, desktop-only game files) and so cannot be compiled for the browser. -->
+	<ItemGroup>
+		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/ChatSatelliteTests.cs" />
+		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/ContentKitTests.cs" />
+		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/EmailRecoveryTests.cs" />
+		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/GltfSceneTests.cs" />
+		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/OnlineIntegrationTests.cs" />
+		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/OnlineServerTests.cs" />
+		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/PostcardEmailTests.cs" />
+		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/PoolSpriteDeliveryTests.cs" />
+		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/SecurityHardeningTests.cs" />
+		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/ServerBuildInfoTests.cs" />
+		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/TwoStepLoginTests.cs" />
+		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/UmbrellaAnchorMeasureTests.cs" />
+		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/WinterDrawingTests.cs" />
+		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/DesktopEditionStarterTests.cs" />
+		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/DesktopStarterCorrectionReviewTests.cs" />
+		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/LayerTwoCrcSpanTests.cs" />
+		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/Mpeg1JointWavTests.cs" />
+		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/Mpeg1LayerTwoWavExportTests.cs" />
+		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/SdtWavExportTests.cs" />
+		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/SdtWavIndependentReviewTests.cs" />
+		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/TexturePackTests.cs" />
+		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/WebShaderTests.cs" />
+		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/SilentRunTests.cs" />
+		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/OffscreenRunTests.cs" />
+		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/DesktopStarterIndependentReviewTests.cs" />
+		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/TpiMissionInspectionTests.cs" />
+		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/PortableFileSystemTests.cs" />
+		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/ObjectLightTests.cs" />
+		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/TgqPngExportTests.cs" />
+		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/ShaderTests.cs" />
+		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/InstallationDiscoveryTests.cs" />
+		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/MaterialRollbackTests.cs" />
+		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/LinuxNativeLibrariesTests.cs" />
+		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/FshPngExportTests.cs" />
+		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/FshPngExportReviewTests.cs" />
+		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/ObjectVertexAnimationTests.cs" />
+		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/MpegPartialTailReviewTests.cs" />
+		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/GlbBuilder.cs" />
+		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/GltfModelConverterTests.cs" />
+		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/WebClientTransportTests.cs" />
+		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/BrowserPinsExclusionTests.cs" />
+	</ItemGroup>
+	<ItemGroup Condition="'$(OpenTpwDeterminismPins)' == 'true'">
+		<Compile Include="../OpenTPW.Tests/**/*.cs" Exclude="../OpenTPW.Tests/obj/**;../OpenTPW.Tests/bin/**;@(DeterminismPinsExcludedTests)" Link="Tests/%(RecursiveDir)%(Filename)%(Extension)" />
+		<PackageReference Include="MSTest.TestFramework" Version="2.2.7" />
+		<!-- the shipped example script mod, which the pinned script-mod run switches on (DeterminismTests.ScriptModsFixedRunHash) -->
+		<EmbeddedResource Include="../../content/mods/opentpw.example.*/**/*" LogicalName="content/mods/%(RecursiveDir)%(Filename)%(Extension)" />
+	</ItemGroup>
+	<ItemGroup Condition="'$(OpenTpwDeterminismPins)' != 'true'">
+		<Compile Remove="Program.DeterminismPins.cs" />
+		<Compile Remove="Program.ParticleRenderOracle.cs" />
+	</ItemGroup>
+
 	<ItemGroup>
 		<PackageReference Include="Net.Codecrete.QrCodeGenerator" Version="3.2.1" />
 		<ProjectReference Include="../OpenTPW.Web.Veldrid/OpenTPW.Web.Veldrid.csproj" />
@@ -55,13 +120,36 @@
 		     read from content/pools below the program folder like on the desktop. The sprite sets themselves (esprites/, about 8.8 MB: the 2x guests and swimwear) are NOT embedded: they would cost every browser user about 6.5 MB Brotli even with the
 		     extension off. They are published as static files below pools-sprites/ (see below) and fetched in the background while the extension is on; the game keeps a file only when the manifest pins it (Browser delivery in docs/POOLS.md). -->
 		<EmbeddedResource Include="../../content/pools/**/*" Exclude="../../content/pools/esprites/**/*" LogicalName="content/pools/%(RecursiveDir)%(Filename)%(Extension)" />
+		<!-- The umbrellas extension's own content (docs/UMBRELLAS.md): the four brolly shops, the umbrella sprite set (29 KB, so it is embedded rather than fetched like the pools' sprites) and the hand anchor tables, read from content/umbrellas
+		     below the program folder like on the desktop. -->
+		<EmbeddedResource Include="../../content/umbrellas/**/*" LogicalName="content/umbrellas/%(RecursiveDir)%(Filename)%(Extension)" />
+		<!-- The winter extension's own content (docs/WINTER.md): the eight winter shops, the warm item sprite set (23 KB) and the anchor tables (the 2x kids' 108 KB and the original sets' head-only 19 KB), read from content/winter below the program
+		     folder like on the desktop. 1,322,442 bytes, about 406 KB deflated per file; downloaded also with the extension off. -->
+		<EmbeddedResource Include="../../content/winter/**/*" LogicalName="content/winter/%(RecursiveDir)%(Filename)%(Extension)" />
+		<!-- The evening extension's own content (docs/EVENING.md, "Torches"): the four torches (objects.json and their archive folders, 347,862 bytes), read from content/evening below the program folder like on the desktop. -->
+		<EmbeddedResource Include="../../content/evening/**/*" LogicalName="content/evening/%(RecursiveDir)%(Filename)%(Extension)" />
 	</ItemGroup>
+
+	<!-- A wildcard over a folder that is missing (a build context that does not copy it, as the server image's once did for umbrellas and winter) embeds nothing and still builds: the page then ships without the
+	     extension's shops. Fail the build instead. -->
+	<Target Name="RequireExtensionContent" BeforeTargets="BeforeBuild">
+		<Error Condition="!Exists('../../content/pools/objects.json')" Text="content/pools/objects.json is missing: the browser page would ship without the pools extension's objects." />
+		<Error Condition="!Exists('../../content/umbrellas/objects.json')" Text="content/umbrellas/objects.json is missing: the browser page would ship without the brolly shops." />
+		<Error Condition="!Exists('../../content/winter/objects.json')" Text="content/winter/objects.json is missing: the browser page would ship without the winter shops." />
+		<Error Condition="!Exists('../../content/evening/objects.json')" Text="content/evening/objects.json is missing: the browser page would ship without the evening extension's torches." />
+	</Target>
 
 	<!-- The pools sprite sets as static files of the site (wwwroot/pools-sprites/..., the same origin as the page). The page fetches them after the start (wwwroot/opentpw-pool-sprites.js). -->
 	<!-- Content linked into wwwroot becomes a static web asset: published (and served by the dev server) at pools-sprites/<path>, the same origin as the page. -->
 	<ItemGroup>
 		<Content Include="../../content/pools/esprites/**/*" Link="wwwroot/pools-sprites/%(RecursiveDir)%(Filename)%(Extension)" />
 	</ItemGroup>
+
+	<!-- The publish step stores a Brotli and a gzip copy of the files it knows to be compressible (js, css, json, wasm, dat, ...); the 8.2 MB of sprite files (.TPC, about 36 % smaller with Brotli) are not on its list, so they
+	     went out as they were. The server sends the copy the browser accepts (OpenTPW.Server/WebClient.cs). The 350-byte .ESP files stay as they are. -->
+	<PropertyGroup>
+		<CompressionIncludePatterns>$(CompressionIncludePatterns);**/*.TPC;**/*.tpc</CompressionIncludePatterns>
+	</PropertyGroup>
 
 	<!-- The file system creates archive handlers by reflection; keep the game whole when trimming. -->
 	<ItemGroup>

@@ -33,6 +33,8 @@ public sealed class ParkWeather
 
 	private readonly WeatherSettings settings;
 	private readonly DeterministicRandom random;
+	private readonly bool wintryDecembers;
+	private readonly bool alwaysWinter;
 	private readonly int groundX;
 	private readonly int groundZ;
 	private readonly Queue<Vector3> strikes = new();
@@ -56,9 +58,15 @@ public sealed class ParkWeather
 	/// </summary>
 	public static event Action<ParkWeather>? Created;
 
-	/// <summary>The park's weather keys (<c>Standard.sam</c>, layered over the global ones).</summary>
-	public ParkWeather( SamSettings standard, ulong seed, int cellsX, int cellsY )
+	/// <summary>
+	/// The park's weather keys (<c>Standard.sam</c>, layered over the global ones). <paramref name="wintryDecembers"/> ([EXT:winter-weather], <c>opentpw.winter-weather</c>, off by default) turns a December roll's rain and thunderstorm
+	/// into snow in a park whose own snow band is empty (jungle and fantasy; see <see cref="ApplyQuality"/>). <paramref name="alwaysWinter"/> ([EXT:winter-always], <c>opentpw.winter-always</c>, off by default) makes every roll of the
+	/// year December's (<see cref="Roll"/>) and wintry, in every park that can snow from it (jungle, fantasy and Halloween; not space, which has neither a rain nor a snow band); it implies the wintry Decembers, so both on is the same as it alone.
+	/// </summary>
+	public ParkWeather( SamSettings standard, ulong seed, int cellsX, int cellsY, bool wintryDecembers = false, bool alwaysWinter = false )
 	{
+		this.wintryDecembers = wintryDecembers;
+		this.alwaysWinter = alwaysWinter;
 		settings = WeatherSettings.From( standard );
 		random = new DeterministicRandom( seed );
 		groundX = cellsX * 10;
@@ -132,6 +140,49 @@ public sealed class ParkWeather
 		quality >= settings.LightningLow && quality <= settings.LightningHigh );
 
 	/// <summary>
+	/// The bands the pending forecast will apply as: <see cref="BandsOf"/> of <see cref="Forecast"/>, except that a forecast the wintry Decembers option will turn into snow (the roll was made in December, a rain band, and the park's own snow band is
+	/// empty: see <see cref="ApplyQuality"/>; with the always winter option, a roll of any month) reads as plain snow, so the forecast does not announce thunderstorms and then snow. Default bands while no forecast is pending.
+	/// </summary>
+	// [EXT:winter-weather] the forecast follows the option: it says what the converter will make of the quality; [EXT:winter-always] likewise in every month
+	internal WeatherQualityBands ForecastBands => pendingQuality is { } quality ? ForecastBandsOf( quality, applyAt ) : default;
+
+	/// <summary>The bands a forecast of <paramref name="quality"/> applying at <paramref name="applyAtSeconds"/> will have (see <see cref="ForecastBands"/>).</summary>
+	internal WeatherQualityBands ForecastBandsOf( int quality, long applyAtSeconds )
+	{
+		var bands = BandsOf( quality );
+		return bands.Rain && IsWintryRoll( applyAtSeconds ) && settings.SnowBandIsEmpty ? new WeatherQualityBands( true, false, false ) : AsWinterSnow( bands );
+	}
+
+	/// <summary>
+	/// The current weather's bands as the forecast presentation shows them: the applied flags, except that with the always winter option on snow with lightning and no rain (Halloween, whose snow band is its lightning band) reads as plain
+	/// snow, as <see cref="ForecastBandsOf"/> reads its forecast.
+	/// </summary>
+	internal WeatherQualityBands CurrentBands => AsWinterSnow( new WeatherQualityBands( Snow, Rain, Lightning ) );
+
+	/// <summary>
+	/// [EXT:winter-always] Snow with lightning and no rain reads as plain snow while the always winter option is on, so a Halloween park's winter does not announce thunderstorms all year. The winter shops read that weather as snow too
+	/// (<see cref="Winter.WinterRules.WeatherStateOf"/>); the umbrellas and the rain mood keep reading it as a storm. Off, the bands are returned unchanged (main's presentation, December included).
+	/// </summary>
+	// [EXT:winter-always] presentation only: the flags, the rolls and the pinned runs are untouched
+	private WeatherQualityBands AsWinterSnow( WeatherQualityBands bands ) =>
+		alwaysWinter && bands is { Snow: true, Lightning: true, Rain: false } ? new WeatherQualityBands( true, false, false ) : bands;
+
+	/// <summary>Whether the always winter option can hold a park with these weather keys on December's row: whether it can snow from that row (see <see cref="HoldsWinterRow"/>). Space cannot.</summary>
+	// [EXT:winter-always] the winter shops' all-year demand follows the same test, so space parks keep their month-by-month demand
+	public static bool CanSnowFromTheWinterRow( SamSettings standard ) => WeatherSettings.From( standard ).CanSnowFromTheWinterRow;
+
+	/// <summary>
+	/// Whether the roll of the forecast applying at <paramref name="applyAtSeconds"/> is wintry: always while the always winter option is on ([EXT:winter-always]), otherwise when the wintry Decembers option is on and the roll was made in
+	/// December (the roll is <c>DaysOfWarning</c> days before the apply, so no month needs saving).
+	/// </summary>
+	private bool IsWintryRoll( long applyAtSeconds ) =>
+		alwaysWinter || (wintryDecembers && ParkCalendar.Epoch.AddSeconds( applyAtSeconds - settings.DaysOfWarning * ParkCalendar.SecondsPerDay ).Month == 12);
+
+	/// <summary>Whether the always winter option holds this park's rolls on December's row: it is on and the park can snow from that row (a snow band of its own, or a rain band the wintry conversion turns into snow).</summary>
+	// [EXT:winter-always] space has neither band, so December's row would only give it dry lightning all year: its seasons are left alone
+	private bool HoldsWinterRow => alwaysWinter && settings.CanSnowFromTheWinterRow;
+
+	/// <summary>
 	/// Smoke-only (<c>[EXT:debug-forecast]</c>): posts a forecast of <paramref name="quality"/> the warning
 	/// distance ahead, exactly as the natural roll would, so captures can show the forecast presentation. The
 	/// countdown, apply and the weather itself still come from the normal machinery.
@@ -143,6 +194,33 @@ public sealed class ParkWeather
 		pendingQuality = Math.Clamp( quality, 1, 100 );
 		applyAt = lastTurn * ParkCalendar.SecondsPerTurn + settings.DaysOfWarning * ParkCalendar.SecondsPerDay;
 	}
+
+	/// <summary>
+	/// [EXT:cheats-weather] The weather cheat: a forecast with no warning, applied at once at park tick <paramref name="tick"/> with the bookkeeping of <see cref="Step"/>'s apply (the pending forecast is
+	/// replaced, the change is now, and the next roll comes <c>DaysBetweenChanges - DaysOfWarning</c> days later). The kind is set explicitly in every theme, snow too, with no tie-break draw; the drops
+	/// ramp toward the target at the usual <c>SpeedOfChange</c> a turn and lightning strikes on its own clock. False while the weather has not taken its first step.
+	/// </summary>
+	// [EXT:cheats-weather] the original's converter (0x512f00) derives the kind from a rolled quality and the park's bands (snow only where the park's snow band holds a quality, not in the jungle or fantasy); the cheat sets the kind and a fixed quality and drop target instead: clear 100 and none, rain half the drops, a thunderstorm three quarters with lightning, snow half
+	internal bool ApplyCheat( CheatWeather kind, long tick )
+	{
+		if ( !started || !Enum.IsDefined( kind ) )
+			return false;
+		pendingQuality = null;
+		lastChanged = ParkCalendar.Seconds( tick );
+		nextRollAt = lastChanged + Math.Max( 0, settings.DaysBetweenChanges - settings.DaysOfWarning ) * ParkCalendar.SecondsPerDay;
+		(Quality, Snow, Rain, Lightning, TargetDrops) = kind switch
+		{
+			CheatWeather.Clear => (100, false, false, false, 0),
+			CheatWeather.Rain => (CheatQuality( settings.RainLow, settings.RainHigh, 30 ), false, true, false, settings.MaxRaindrops / 2),
+			CheatWeather.Thunderstorm => (CheatQuality( settings.LightningLow, settings.LightningHigh, 10 ), false, true, true, settings.MaxRaindrops * 3 / 4),
+			_ => (CheatQuality( settings.SnowLow, settings.SnowHigh, 20 ), true, false, false, settings.MaxRaindrops / 2),
+		};
+		return true;
+	}
+
+	/// <summary>The middle of a band's qualities, or <paramref name="fallback"/> for a band that holds none (jungle snow); always 1..100.</summary>
+	private static int CheatQuality( int low, int high, int fallback ) =>
+		high < low || high < 1 || low > 100 ? fallback : Math.Clamp( (Math.Max( low, 1 ) + Math.Min( high, 100 )) / 2, 1, 100 );
 
 	/// <summary>Takes the bolt tops whose thunder has come due since the last call (the frame plays them).</summary>
 	public IReadOnlyList<Vector3> TakeThunder()
@@ -353,7 +431,8 @@ public sealed class ParkWeather
 		{
 			pendingQuality = null;
 			lastChanged = now;
-			ApplyQuality( next );
+			// [EXT:winter-weather] the roll that made the forecast was DaysOfWarning days before it applies (the forecast's apply time is the roll's time plus the warning), so its month needs nothing saved
+			ApplyQuality( next, IsWintryRoll( applyAt ) );
 			nextRollAt = lastChanged + Math.Max( 0, settings.DaysBetweenChanges - settings.DaysOfWarning ) * ParkCalendar.SecondsPerDay;
 		}
 		// [BIN:TPW-EXE:0x51295c weather roll] with no forecast pending (also in the tick that just applied one) the roll is due at lastChanged + max(0, DaysBetweenChanges - DaysOfWarning) days
@@ -364,13 +443,24 @@ public sealed class ParkWeather
 		}
 		Ramp();
 		Bolts();
+		TurnStepped?.Invoke( this );
 	}
 
-	/// <summary>The season's roll (<c>sub_1037d4</c>): exceptional weather with the season's chance, otherwise the season's average and tolerance.</summary>
+	/// <summary>
+	/// Raised at the end of every weather step (one park turn), after the drops and bolts moved. A presentation host (the snow cover, <see cref="SnowCover"/>) follows the weather's own turn
+	/// sequence through it; nothing in the simulation subscribes, and it is not part of snapshots.
+	/// </summary>
+	internal event Action<ParkWeather>? TurnStepped;
+
+	/// <summary>
+	/// The season's roll (<c>sub_1037d4</c>): exceptional weather with the season's chance, otherwise the season's average and tolerance. With the always winter option on ([EXT:winter-always]) every month takes December's row (row 4,
+	/// one past the table) in a park that can snow from it, so the whole year rolls like a December; the draws are the same in number and kind.
+	/// </summary>
 	internal int Roll( long tick )
 	{
 		var month = ParkCalendar.ToDate( tick ).Month;
-		var season = month / 3;
+		// [EXT:winter-always] the season index tp.exe derives from the FILETIME month (0x4f8770, read by the roll 0x512e10) is held at December's, whose row is the word at 0x7854f4 after the Seasons table at 0x7854c4 (12-byte rows)
+		var season = HoldsWinterRow ? DecemberSeason : month / 3;
 		int average, tolerance, chance;
 		if ( season < settings.Averages.Count )
 		{
@@ -393,22 +483,33 @@ public sealed class ParkWeather
 		return Math.Clamp( quality, 1, 100 );
 	}
 
-	/// <summary>The converter (<c>sub_103910</c>): the quality's bands, the rain target and the lightning flag.</summary>
-	internal void ApplyQuality( int quality )
+	/// <summary>
+	/// The converter (<c>sub_103910</c>): the quality's bands, the rain target and the lightning flag. <paramref name="wintryDecember"/> is true only when the wintry Decembers option is on and the roll was made in December
+	/// ([EXT:winter-weather]): a quality in the rain band with no snow band of the park's own (jungle and fantasy: snow -1..-1) is then snow, not rain, and without lightning, so the weather is a snowfall instead of a thunderstorm. The
+	/// drops follow the rain band's intensity exactly as the storm's did, so the arrival factor is unchanged, and the converter draws nothing for it (the lightning clock's draws stop with the lightning, so the weather stream moves on from then).
+	/// </summary>
+	// [EXT:winter-weather] OpenTPW's own option; tp.exe's converter (0x512f00) has no such branch, and the original's jungle and fantasy parks never snow
+	internal void ApplyQuality( int quality, bool wintryDecember = false )
 	{
+		// [EXT:winter-always] the always winter option makes every roll a wintry one (IsWintryRoll), through the same conversion, so with both options on nothing is converted twice
 		var snowBand = quality >= settings.SnowLow && quality <= settings.SnowHigh;
 		var rainBand = quality >= settings.RainLow && quality <= settings.RainHigh;
 		var snow = snowBand && (!rainBand || random.Next( 2 ) == 0);
+		// only a park whose own snow band holds no quality at all (jungle and fantasy: -1..-1); the Halloween park snows by its own band, so its December rolls are left as they are
+		var wintry = (wintryDecembers || alwaysWinter) && wintryDecember && settings.SnowBandIsEmpty && rainBand;
+		snow |= wintry;
 		Quality = quality;
 		Snow = snow;
 		Rain = rainBand && !snow;
-		Lightning = quality >= settings.LightningLow && quality <= settings.LightningHigh;
+		Lightning = !wintry && quality >= settings.LightningLow && quality <= settings.LightningHigh;
 		TargetDrops = 0;
 		// Both bands compute the target the same way from their own range (0x103a90..0x103afc snow, 0x103b18..0x103b80 rain); only rain starts the rain voice.
 		if ( Snow || Rain )
 		{
-			var low = Snow ? settings.SnowLow : settings.RainLow;
-			var width = (Snow ? settings.SnowHigh : settings.RainHigh) - low;
+			// a wintry December's snow has no band of its own: it takes the rain band's range, so its drops are the storm's
+			var snowRange = Snow && !wintry;
+			var low = snowRange ? settings.SnowLow : settings.RainLow;
+			var width = (snowRange ? settings.SnowHigh : settings.RainHigh) - low;
 			var intensity = width == 0 ? 100 : (quality - low) * 100 / width;
 			TargetDrops = Math.Min( (100 - intensity) * settings.MaxRaindrops / 100, settings.MaxRaindrops );
 		}
@@ -456,6 +557,9 @@ public sealed class ParkWeather
 			strikes.Enqueue( lastTop );
 	}
 
+	/// <summary>December's season index: <c>12 / 3</c>, one past the four rows of the shipped table (<see cref="Roll"/>).</summary>
+	private const int DecemberSeason = 4;
+
 	/// <summary>The weather keys the sim reads, with the shipped values where a layer does not set them.</summary>
 	private sealed record WeatherSettings(
 		IReadOnlyList<int> Averages, IReadOnlyList<int> Tolerances, IReadOnlyList<int> Chances,
@@ -467,6 +571,15 @@ public sealed class ParkWeather
 		private static readonly int[] DefaultAverages = { 75, 80, 90, 50 };
 		private static readonly int[] DefaultTolerances = { 25, 20, 10, 15 };
 		private static readonly int[] DefaultChances = { 10, 10, 5, 10 };
+
+		/// <summary>Whether no quality from 1 to 100 lies in the snow band: the park never snows by its own weather (the shipped jungle and fantasy keys are -1 and -1).</summary>
+		public bool SnowBandIsEmpty => SnowHigh < SnowLow || SnowHigh < 1 || SnowLow > 100;
+
+		/// <summary>Whether no quality from 1 to 100 lies in the rain band (the shipped space keys are -1 and -1).</summary>
+		public bool RainBandIsEmpty => RainHigh < RainLow || RainHigh < 1 || RainLow > 100;
+
+		/// <summary>[EXT:winter-always] Whether the park can snow at all under the always winter option: a snow band of its own (Halloween) or a rain band the wintry conversion turns into snow (jungle and fantasy). Space has neither.</summary>
+		public bool CanSnowFromTheWinterRow => !SnowBandIsEmpty || !RainBandIsEmpty;
 
 		public static WeatherSettings From( SamSettings standard )
 		{

@@ -251,7 +251,7 @@ public class ParkResumeSaveFileTests
 		Rejects( copy => copy.Remove( "Clock" ), "malformed" ); // a required member is missing
 		Rejects( copy => copy.Remove( "AssetHashes" ), "malformed" );
 		Rejects( copy => copy["Surprise"] = 1, "malformed" ); // an unknown member
-		Rejects( copy => copy["Version"] = 2, "Unsupported world save version 2" );
+		Rejects( copy => copy["Version"] = 99, "Unsupported world save version 99" );
 		Rejects( copy => copy["Version"] = 0, "Unsupported world save version 0" );
 		Rejects( copy => copy["Format"] = "opentpw-park", "Not an OpenTPW world save" ); // the reserved legacy format
 		Rejects( copy => copy["Format"] = "tpws", "Not an OpenTPW world save" );

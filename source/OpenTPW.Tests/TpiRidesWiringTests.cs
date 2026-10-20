@@ -189,7 +189,7 @@ public class TpiRidesWiringTests
 	}
 
 	// the pools extension (on by default) adds a root of its own; these tests are about the mods' roots
-	private static IReadOnlyList<CatalogContentRoot> CatalogRoots( ModSet set ) => ModContentRoots.CatalogRoots( set ).Where( contentRoot => contentRoot.ModId != OfficialExtensions.Pools.Id ).ToList();
+	private static IReadOnlyList<CatalogContentRoot> CatalogRoots( ModSet set ) => ModContentRoots.CatalogRoots( set ).Where( contentRoot => contentRoot.ModId != OfficialExtensions.Pools.Id && contentRoot.ModId != OfficialExtensions.Umbrellas.Id && contentRoot.ModId != OfficialExtensions.Winter.Id && contentRoot.ModId != OfficialExtensions.Evening.Id ).ToList();
 
 	// ---- Command line ----------------------------------------------------------------------------------------
 
@@ -274,8 +274,8 @@ public class TpiRidesWiringTests
 		using ( ModContentRoots.Use( Resolve( Install(), extension: true ), FileSystem ) )
 		{
 			var catalog = EconomyObjectCatalog.Load( "jungle", false );
-			// the pools extension (on by default) lists its own rooms (Info.Ids 65000 and up) in the same catalog
-			CollectionAssert.AreEqual( new[] { 1110, 40001 }, catalog.Objects.Select( info => info.InfoId ).Where( id => id < PoolContent.FirstReservedId ).ToArray(), "after the game's own objects" );
+			// the evening (63900 and up), winter (64010 and up), umbrellas (64500 and up) and pools (65000 and up) extensions, on by default, list their own objects in the same catalog
+			CollectionAssert.AreEqual( new[] { 1110, 40001 }, catalog.Objects.Select( info => info.InfoId ).Where( id => id < EveningContent.FirstReservedId ).ToArray(), "after the game's own objects" );
 			var info = catalog[40001];
 			Assert.AreEqual( 700, info.PurchaseCost );
 			Assert.AreEqual( "Gadget Ride", info.Name );

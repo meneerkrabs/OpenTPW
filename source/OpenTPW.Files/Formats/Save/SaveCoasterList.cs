@@ -81,9 +81,9 @@ public static class SaveCoasterSectionFlags
 /// <summary>
 /// One 34-byte saved track section of the Coasters block (loader 0x437B60, docs/TPWS-PAYLOAD.md "Coasters block"): the wire flags
 /// (<see cref="SaveCoasterSectionWire"/>), the node's mesh instance id, the descriptor's cell coordinates, the cell-stack insertion ordinal, five unaligned floats
-/// and the narrowed link count, followed by that many <c>u16</c> link ordinals (each its own 2-byte read, like the original). Link ordinals are node ordinals
-/// into the section list, resolved through the rebuilt topology; they are not validated against the section count because filtered nodes (descriptor flag
-/// 0x10) stay in the list.
+/// and the narrowed collision count, followed by that many <c>u16</c> collision ordinals (each its own 2-byte read, like the original). Only pylon nodes are saved:
+/// the saver 0x437300 skips every chain node whose descriptor (node <c>+0x100</c>) byte <c>+4</c> carries 0x10, which excludes the three station nodes
+/// (descriptor 0x12) and the end node (0x13), so section i is chain node 3 + i.
 /// <list type="bullet">
 /// <item><see cref="MeshInstanceId"/> is node <c>+0x70</c>, the node's pylon entry in the object table <c>0x7A4610</c>: the loader hands it to the node constructor
 /// (<c>0x435020</c> → <c>0x434060</c>), which re-attaches that instance through <c>0x463AB0</c> instead of creating one (the same pattern as a car's <c>+0xC</c>).</item>
@@ -91,11 +91,16 @@ public static class SaveCoasterSectionFlags
 /// <see cref="Incline"/> <c>+0xDC</c> (setter <c>0x444270</c>, kept only for a node that is not a loop node), <see cref="Yaw"/> <c>+0xE0</c> (setter <c>0x4441D0</c>) and
 /// <see cref="LoopRotate"/> <c>+0xF8</c> (the same setter given the record's last float when the node is a loop node, which then zeroes bank and incline; any
 /// other node clears <c>+0xF8</c> and takes bank and incline from the record).</item>
+/// <item><see cref="CollisionOrdinals"/> are the node's self-intersection collision list (count <c>+0xB0</c>, eight slots <c>+0xB4..+0xD4</c>, OpenTPW's
+/// <c>CoasterCollision</c>), not track topology: the chain's previous and next links are rebuilt by append order. Each value is the colliding node's chain
+/// position (the saver writes the linked node's <c>node+0</c>); after the stack pass the loader resolves them with <c>0x43E520</c>, which walks the head
+/// (controller <c>+0x54</c>) that many times along <c>+0x64</c>: S0 = 0, S1 = 1, S2 = 2, the pylons in saved order, then the end node. The loader stores the
+/// count without a bound, so more than <see cref="SaveCoasterBlock.CollisionListSlots"/> would overrun the native list; the reader refuses such a record.</item>
 /// </list>
 /// </summary>
 public readonly record struct SaveCoasterSection(
 	int Offset, uint Flags, uint MeshInstanceId, int CellX, int CellY, byte StackOrdinal,
-	float HeightParameter, float Bank, float Incline, float Yaw, float LoopRotate, ushort[] Links )
+	float HeightParameter, float Bank, float Incline, float Yaw, float LoopRotate, ushort[] CollisionOrdinals )
 {
 	public const int Bytes = 34;
 
@@ -107,27 +112,55 @@ public readonly record struct SaveCoasterSection(
 }
 
 /// <summary>
-/// One saved coaster of the Coasters block: its packed 32-byte header (the remapped controller flags, seven controller words, the power factor
-/// as <c>f32</c> at +18, the section count at +22 and the riders-on-board count at +28), the auxiliary link block the loader reads before any
-/// section record, the section records with their links, and the train payload that follows the topology (serializer 0x437300). The header's
-/// controller words keep their native offsets as names. <see cref="PowerFactor"/> is controller+44 (0 or 1, COAST-plan §17.4) and
-/// <see cref="RidersOnBoard"/> is controller+320. <see cref="Controller8"/> is the controller state word (the low nibble is
-/// <c>CoasterControllerState</c>: 1 incomplete, 2 built, 4 open, 8 closed) and <see cref="Controller16"/> the station's mesh instance id, which binds the
-/// block to the live coaster whose <c>+0x10</c> equals it (loader 0x437CBF). <see cref="Trains"/> are the train payload's bytes (exactly the payload when
-/// <see cref="TrainSlots"/> were decoded, else everything after the sections) and <see cref="TrainSlots"/> its decoded slots.
+/// One saved coaster of the Coasters block: its packed 32-byte header, the auxiliary block (the collision list of the third station node S2, which the
+/// saver writes where its chain walk meets the node with <c>node+0 == 2</c>, since station nodes are never saved as sections), the section records with
+/// their collision ordinals, and the train payload that follows the topology (saver 0x437300, loader 0x437B60, docs/TPWS-PAYLOAD.md "Coasters block").
+/// The header's controller words keep their native controller offsets (decimal) as names; the named accessors give their meaning:
+/// <list type="bullet">
+/// <item>header +4 → <see cref="Controller8"/>, controller <c>+8</c>, the state word (the low nibble is <c>CoasterControllerState</c>: 1 incomplete, 2 built,
+/// 4 open, 8 closed; the mode bits 0x10/0x20/0x40, 0x40 the breakdown; the constructor's value is 0x11), restored;</item>
+/// <item>header +8 → <see cref="Controller12"/>, controller <c>+0xC</c>, the coaster type id (<see cref="TypeId"/>); not restored, the constructor
+/// 0x4368F0 already stored it;</item>
+/// <item>header +0xA → <see cref="Controller16"/>, controller <c>+0x10</c>, the station's mesh instance id (<see cref="StationMeshInstanceId"/>), the key that
+/// binds the block to the live controller (0x437CBF);</item>
+/// <item>header +0xC → <see cref="Controller20"/>, controller <c>+0x14</c>, the coaster's slot in the table <c>0x790BD0</c> (<see cref="Slot"/>, the scripts'
+/// coaster handle): the only header word the loader hands to the slot allocator <c>0x468760</c>, which stores a slot other than -1 as given (no allocation or fallback);</item>
+/// <item>header +0xE/+0x10 → <see cref="Controller28"/>/<see cref="Controller32"/>, controller <c>+0x1C</c>/<c>+0x20</c>, the two values the placement
+/// routine <c>0x466F90</c> hands the constructor; not restored (the loader passes them to <c>0x436AC0</c>, which never reads them);</item>
+/// <item>header +0x12 → <see cref="PowerFactor"/>, controller <c>+0x2C</c> (0 or 1), restored;</item>
+/// <item>header +0x18 → <see cref="Controller244"/>, controller <c>+0xF4</c>, the trains in service (<see cref="TrainsInService"/>), restored;</item>
+/// <item>header +0x1A → <see cref="Controller240"/>, controller <c>+0xF0</c>, the seats per train (<see cref="SeatsPerTrain"/>), restored and copied by
+/// <c>0x43BA90</c> to the room capacity <c>+0xB8</c>;</item>
+/// <item>header +0x1C → <see cref="IntersectionCount"/>, controller <c>+0x140</c>: the track's self-intersection count (PC writers <c>0x439C40</c>, <c>0x43AD50</c>;
+/// docs/COASTERS.md), not a rider count, restored.</item>
+/// </list>
+/// <see cref="Trains"/> are the train payload's bytes (exactly the payload when <see cref="TrainSlots"/> were decoded, else everything after the sections) and
+/// <see cref="TrainSlots"/> its decoded slots.
 /// </summary>
 // [APPROX:SAVE-921] the header's flag word is kept raw: the saver (0x437300) writes controller +0x3C bits 0 and 1 as wire 0x1 and 0x2 (track complete, circuit cut open) and the track flags (+0) 0x20 to 0x800 as wire 0x4 to 0x100 (0x43743C..0x4374D0), the loader maps them back (0x4380D4..0x438335), and the meaning of the track flags 0x20, 0x80, 0x100, 0x200 and 0x400 is not traced (0x40 is the outside mode and 0x800 is cleared when the trains are removed, COAST-plan §22) — evidence needed: what sets and reads those track flags
-// [APPROX:SAVE-922] the header words +12, +20, +28, +32, +244 and +240 and the block's three globals are saved but only partly understood, they are reported raw: the loader hands +20 and +28 to the slot allocator 0x468760 with the three globals (0x790B04, 0x790B00, 0x791CE0, its state) and stores the slot it returns in the controller's +0x14, restores +240 to the controller's +0xF0 (0x438373), which 0x43BA90 copies to the room capacity +0xB8, and the saved +8 is the controller state word; the readers of +12, +32 and +244 and the allocator's use of +20 and +28 are not traced — evidence needed: the readers of the controller words +12, +32 and +244 in the original coaster module
+// [APPROX:SAVE-922] the header words +28 and +32 (controller +0x1C and +0x20) are kept raw: the constructor 0x4368F0 stores the two values the placement routine 0x466F90 computes there, and the loader never restores them (it passes them to the station-node builder 0x436AC0, which reads only its fifth argument, 0x436BFA); every other header word and the three globals are traced (type id +12 not restored, station mesh +16 the bind key, slot +20 the only word given to the slot allocator 0x468760, +244 the trains in service, +240 the seats, +320 the self-intersection count; the globals 0x790B04, 0x790B00 and 0x791CE0 are the allocator's used slots, free holes and next-slot cursor) — evidence needed: what 0x466F90 computes and who reads controller +0x1C and +0x20
 public sealed record SaveCoaster(
 	int Offset, uint Flags, uint Controller8, ushort Controller12, ushort Controller16, ushort Controller20,
 	ushort Controller28, ushort Controller32, float PowerFactor, ushort SectionCount, ushort Controller244,
-	ushort Controller240, uint RidersOnBoard, ushort[] AuxiliaryOrdinals, IReadOnlyList<SaveCoasterSection> Sections,
+	ushort Controller240, uint IntersectionCount, ushort[] AuxiliaryOrdinals, IReadOnlyList<SaveCoasterSection> Sections,
 	byte[] Trains, int TrainsOffset, IReadOnlyList<SaveCoasterTrain>? TrainSlots = null )
 {
 	public const int HeaderBytes = 32;
 
-	/// <summary>The station's mesh instance id (controller <c>+0x10</c>).</summary>
+	/// <summary>The coaster type id (controller <c>+0xC</c>); the loader does not restore it.</summary>
+	public ushort TypeId => Controller12;
+
+	/// <summary>The station's mesh instance id (controller <c>+0x10</c>), the loader's bind key.</summary>
 	public ushort StationMeshInstanceId => Controller16;
+
+	/// <summary>The coaster's slot in the table <c>0x790BD0</c> (controller <c>+0x14</c>), restored as given by the slot allocator <c>0x468760</c>.</summary>
+	public ushort Slot => Controller20;
+
+	/// <summary>The trains in service (controller <c>+0xF4</c>): the loop bound of the train passes (<c>0x435784</c>, <c>0x43BA35</c>, <c>0x43CD36</c>).</summary>
+	public ushort TrainsInService => Controller244;
+
+	/// <summary>The seats per train (controller <c>+0xF0</c>).</summary>
+	public ushort SeatsPerTrain => Controller240;
 
 	/// <summary>The controller state (<c>+8</c>, low nibble): 1 incomplete, 2 built, 4 open, 8 closed.</summary>
 	public uint State => Controller8 & 0xF;
@@ -142,12 +175,19 @@ public sealed record SaveCoaster(
 /// <summary>
 /// The Coasters block of a decoded save payload — the body between the stored <c>EMAK</c> (Camera) and
 /// <c>SAOC</c> (Coasters) delimiters, per the traced original coaster save/load contract (docs/reverse/PPC-rides.md,
-/// "Original TPW coaster save/load contract"): a linked-list coaster count, three globals whose semantics are
-/// unqualified, then per coaster a 32-byte header, one auxiliary link block, the section records with their links
-/// and the train payload. Read-only: no original coaster chunk is ever written. The layout is traced static
-/// evidence from the Mac PowerPC build; the only original Theme Park World fixture (jungle Easymode) holds the
-/// empty boundary (count 0, globals 0, 0, 1), so the nonempty shape is cross-checked on the sibling Theme Park
-/// Inc prebuilt save's bytes, whose coaster body follows this contract exactly (docs/TPWS-PAYLOAD.md).
+/// "Original TPW coaster save/load contract", and tp.exe's saver 0x437300 and loader 0x437B60, docs/TPWS-PAYLOAD.md "Coasters block"):
+/// a linked-list coaster count, three globals (<see cref="Global1"/> <c>0x790B04</c> the used slots, <see cref="Global2"/> <c>0x790B00</c> the free holes,
+/// <see cref="Global3"/> <c>0x791CE0</c> the next-slot cursor: the state of the coaster slot allocator <c>0x468760</c>, which the loader reads straight into
+/// those globals; an empty park holds 0, 0, 1), then per coaster a 32-byte header, the auxiliary block (station node S2's collision list), the section
+/// records with their collision ordinals and the train payload. Read-only: no original coaster chunk is ever written. The only original Theme Park World
+/// fixtures hold the empty boundary (count 0, globals 0, 0, 1), so the nonempty shape is cross-checked on the sibling Theme Park Inc prebuilt save's bytes,
+/// whose coaster body follows this contract exactly (docs/TPWS-PAYLOAD.md).
+/// <para>
+/// The loader does not create a coaster: the RideSystem loader <c>0x4647A0</c> already recreated the station's mesh instance through <c>0x463060</c> with
+/// the load flag, which built an empty controller (<c>0x4368F0</c> with load flag 1: no slot, no trains, no station nodes). Per saved coaster the loader
+/// walks the controller list <c>0x790FE0</c> for the one whose <c>+0x10</c> equals the header's station mesh id (<c>0x437CBF</c>); when none matches it
+/// dereferences the null pointer (<c>0x437CD5</c>), so the original crashes rather than skipping the block.
+/// </para>
 /// </summary>
 public sealed record SaveCoasterBlock( uint Count, uint Global1, uint Global2, uint Global3, IReadOnlyList<SaveCoaster> Coasters )
 {
@@ -158,10 +198,10 @@ public sealed record SaveCoasterBlock( uint Count, uint Global1, uint Global2, u
 	/// <summary>Largest representable section count in the serialized u16 field.</summary>
 	public const int MaximumSections = ushort.MaxValue;
 	/// <summary>
-	/// Bound on the auxiliary link block. The auxiliary ordinals land in an existing node's word-array slots whose
-	/// native storage size is not traced; beyond this bound the block is refused rather than guessed at.
+	/// The slots of a node's native collision list (count <c>+0xB0</c>, entries <c>+0xB4..+0xD4</c>), which both the auxiliary block and each section's
+	/// collision ordinals fill. The loader stores the saved count without a bound, so a larger count would overrun the list; the reader refuses it.
 	/// </summary>
-	public const int MaximumAuxiliaryLinks = 4096;
+	public const int CollisionListSlots = 8;
 
 	/// <summary>Parses the Coasters block of <paramref name="payload"/> as split by <paramref name="layout"/>.</summary>
 	public static SaveCoasterBlock Parse( ReadOnlySpan<byte> payload, SavePayloadLayout layout, int countX, int countY,
@@ -217,18 +257,18 @@ public sealed record SaveCoasterBlock( uint Count, uint Global1, uint Global2, u
 			var sectionCount = header.U16();
 			var controller244 = header.U16();
 			var controller240 = header.U16();
-			var riders = header.U32();
+			var intersections = header.U32();
 			if ( !float.IsFinite( power ) )
 				throw new InvalidDataException( $"Save {what} has a non-finite power factor {power}." );
-						var coasterOffset = reader.Position;
+			var coasterOffset = reader.Position;
 			reader.Skip( SaveCoaster.HeaderBytes );
 
-			// The loader reads one auxiliary block (a u32 count plus u16 ordinals into an existing node's link slots)
-			// before any ordinary section record; the saver writes it where the node walk meets ordinal 2.
-			var auxiliary = new SaveFieldReader( data, reader.Position, $"coasters block {what} auxiliary links" );
+			// The loader reads one auxiliary block (a u32 count plus u16 ordinals into the collision list of station node S2, the chain's third node)
+			// before any ordinary section record; the saver writes it where its chain walk meets the node with node+0 == 2, since station nodes are never sections.
+			var auxiliary = new SaveFieldReader( data, reader.Position, $"coasters block {what} auxiliary collision list" );
 			var auxiliaryCount = auxiliary.U32();
-			if ( auxiliaryCount > MaximumAuxiliaryLinks )
-				throw new InvalidDataException( $"Save {what} has {auxiliaryCount} auxiliary links; more than the bound of {MaximumAuxiliaryLinks}." );
+			if ( auxiliaryCount > CollisionListSlots )
+				throw new InvalidDataException( $"Save {what} has {auxiliaryCount} auxiliary collision ordinals; more than the bound of {CollisionListSlots} (the native collision list's slots)." );
 			var ordinals = new ushort[(int)auxiliaryCount];
 			for ( var link = 0; link < auxiliaryCount; link++ )
 				ordinals[link] = auxiliary.U16();
@@ -249,17 +289,19 @@ public sealed record SaveCoasterBlock( uint Count, uint Global1, uint Global2, u
 				var incline = record.F32();
 				var yaw = record.F32();
 				var loopRotate = record.F32();
-				var links = record.U8();
+				var collisions = record.U8();
 				if ( cellX >= countX || cellY >= countY )
 					throw new InvalidDataException( $"Save {what} section {section} stands at cell ({cellX}, {cellY}); outside the {countX}x{countY} grid." );
 				if ( !float.IsFinite( height ) || !float.IsFinite( bank ) || !float.IsFinite( incline ) || !float.IsFinite( yaw ) || !float.IsFinite( loopRotate ) )
 					throw new InvalidDataException( $"Save {what} section {section} has a non-finite height, bank, incline, yaw or loop rotation." );
-				var linkValues = new ushort[links];
-				for ( var link = 0; link < links; link++ )
-					linkValues[link] = record.U16();
+				if ( collisions > CollisionListSlots )
+					throw new InvalidDataException( $"Save {what} section {section} has {collisions} collision ordinals; more than the bound of {CollisionListSlots} (the native collision list's slots)." );
+				var collisionOrdinals = new ushort[collisions];
+				for ( var collision = 0; collision < collisions; collision++ )
+					collisionOrdinals[collision] = record.U16();
 				sections[section] = new SaveCoasterSection( baseOffset + sectionOffset, sectionFlags, meshInstance, cellX, cellY, stack,
-					height, bank, incline, yaw, loopRotate, linkValues );
-				reader.Skip( SaveCoasterSection.Bytes + 2 * links );
+					height, bank, incline, yaw, loopRotate, collisionOrdinals );
+				reader.Skip( SaveCoasterSection.Bytes + 2 * collisions );
 			}
 
 			// [BIN:TPW-EXE:0x437300 coaster saver] per train slot a 27-byte record (0x43783B) and per car an 11-byte record (0x4378A5) with the car's two lists counted by its bytes 4 and 5, which the loader reads back in the same order (0x43838C..)
@@ -281,7 +323,7 @@ public sealed record SaveCoasterBlock( uint Count, uint Global1, uint Global2, u
 				trainBytes = data[trainsOffset..].ToArray();
 			}
 			coasters[index] = new SaveCoaster( baseOffset + coasterOffset, flags, controller8, controller12, controller16,
-				controller20, controller28, controller32, power, sectionCount, controller244, controller240, riders,
+				controller20, controller28, controller32, power, sectionCount, controller244, controller240, intersections,
 				ordinals, sections, trainBytes, baseOffset + trainsOffset, slots );
 			if ( index + 1 >= count )
 			{

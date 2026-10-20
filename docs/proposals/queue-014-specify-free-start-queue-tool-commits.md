@@ -42,3 +42,15 @@ Plan queue-tool gesture state and cell transaction semantics; keep preview side-
 - Deliver the evidence ledger, agreed contract and concrete regression cases described above.
 - Keep this proposal draft while required original evidence or scope decisions are unavailable.
 - Any later implementation, approximation retirement and merge require separate verified results; this document performs none.
+
+## October 20 bounded implementation follow-up
+
+The historical plan above is retained for scope and ancestry. Its plan-only status
+is superseded for the secondary-empty queue-segment domain by the
+[ordered-pass contract](../reverse/QUEUE-014-segment-contract.md), with explicit
+command/replay semantics and strict own-save/TPI residue persistence. The code
+uses per-cell debit and preserves failure residue, not transaction rollback.
+Independent source review passed; executable tests and current-head CI remain
+separate gates. No full QUEUE-014 retirement is claimed. Free-start UI, secondary
+layers, original-save divergent entry positions, counter wrap and full guest
+presentation timing remain unsupported as detailed in that contract.

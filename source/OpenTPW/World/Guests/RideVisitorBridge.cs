@@ -154,6 +154,12 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	public int SpecialIngredient { get; set; }
 	/// <summary>The type's <c>UsageInfo.AppearanceEffect</c> (tp.exe <c>+0x15C</c>): 1 gives the guest a balloon, 2 puts on or returns a costume.</summary>
 	public int AppearanceEffect { get; set; }
+
+	/// <summary>[EXT:umbrellas-extension] The weather and generation percentages of a brolly shop, set only for the umbrellas extension's own objects (<see cref="IRideVisitorBridge.UmbrellaTerms"/>).</summary>
+	public UmbrellaShopTerms? UmbrellaTerms { get; set; }
+
+	/// <summary>[EXT:winter-extension] The weather and season percentages of a winter kiosk or a glühwein stall, set only for the winter extension's own objects (<see cref="IRideVisitorBridge.WinterTerms"/>).</summary>
+	public WinterShopTerms? WinterTerms { get; set; }
 	/// <summary>The ride's amount of the special ingredient (Mac <c>+404</c>, PC <c>+0x198</c> beside the price per use at <c>+0x194</c>; the serializer <c>0x004DB7D0</c> names it <c>mAmountOfSpecialIngredient</c>), 50 when the ride is built.</summary>
 	// [BIN:TPW-EXE:0x4b0aa0 ingredient amount] the amount is the economy record's (ParkObjectState.IngredientAmount): 50 when the ride is built (0x4db090 stores 0x32 at +0x198, 0x4db3b3), the shop window's 0..100 slider (range 0x4b06d2, shown for ingredients 1..4 by 0x4b0950) applied to the object (0x4b0aa0) or every object of the type (0x4b0ae0), saved with the park and imported as mAmountOfSpecialIngredient (0x4dcdc1); a Sugar visit adds trunc(6 x amount / 100) (0x4fe5f8)
 	// The level mirrors it from the object's economy record (ParkObjectState.IngredientAmount, saved) every tick; tests set it directly.
@@ -169,11 +175,16 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	public bool IsChangingRoom { get; set; }
 	/// <summary><c>UsageInfo.RequiresTeleport</c> (type record +0x100): a guest boarding or leaving beams (particle 19); set when the runtime creates the bridge.</summary>
 	public bool RequiresTeleport { get; set; }
+	/// <summary>UsageInfo.RideHandlesSprite (type +0x104), inherited from the object settings.</summary>
+	public bool RideHandlesSprite { get; set; }
 	/// <summary>[EXT:pools-swim] Set by the runtime when it stops (demolition) before it releases the guests, so a changing room's guests do not start a swim; not saved (a stopped runtime restores stopped).</summary>
 	public bool IsStopped { get; set; }
 	/// <summary>[EXT:pools-swim] The cells beyond the back of a changing room; set when the level registers it (geometry only: whether one is a pool cell is read when a guest swims).</summary>
 	public IReadOnlyList<(int X, int Y)> PoolAccessCandidates { get; set; } = Array.Empty<(int X, int Y)>();
 	public (float X, float Y) EntryCellStandPos { get; set; } = (0.5f, 0.5f);
+	public (float X, float Y) ExitCellAppearPos { get; set; } = (0.5f, 0.5f);
+	/// <summary>The object's own exit cell (<see cref="IRideVisitorBridge.ExitAccessCell"/>), set when the level registers a placed object; not saved (the level registers it again on load).</summary>
+	public (int X, int Y)? ExitAccessCell { get; set; }
 	public int Rotation { get; set; }
 	public bool HasCells { get; set; }
 	/// <summary>Queue rules from the object's .sam data (<see cref="QueueParameters"/>); defaults describe a queue-less object.</summary>
@@ -217,6 +228,15 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	public bool InBrokenState => brokenDown;
 	private bool condemned;
 	private bool brokenDown;
+
+	/// <summary>Restores a supported original retained state without admission, queue or script side effects.</summary>
+	internal void RestoreOriginalBrokenState( bool isCondemned, double lifeGauge )
+	{
+		brokenDown = true;
+		condemned = isCondemned;
+		LifeGauge = lifeGauge;
+	}
+
 	/// <summary>The original's ride-failure predicate <c>0xdfe34</c> (ORACLE.md F15): a relief object whose wear gauge, truncated to a byte, is below 25.</summary>
 	public bool ReliefWornOut => QueueJoinRules.ReliefFailed( ProvidesRelief, (float)WearGauge );
 	public bool IsRunning => vm != null && Get( RideVariables.VAR_RUNNING ) != 0;
@@ -747,13 +767,16 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	private (int X, int Y)? FindJoinCell( GuestPathGrid grid )
 	{
 		var back = queueCells[^1];
+		if ( grid.Cells.PoolBridges?.Covers( back.X, back.Y ) == true )
+			return null;
 		if ( grid.IsWalkable( back.X, back.Y ) )
 			return back;
 		var links = grid.Cells.LinksAt( back.X, back.Y );
 		for ( var direction = 0; direction < 4; direction++ )
 		{
 			var (dx, dy) = GuestPathGrid.Directions[direction];
-			if ( (links & GuestPathGrid.LinkValue( direction )) != 0 && grid.IsWalkable( back.X + dx, back.Y + dy ) )
+			if ( (links & GuestPathGrid.LinkValue( direction )) != 0 && grid.IsWalkable( back.X + dx, back.Y + dy )
+				&& grid.Cells.PoolBridges?.Covers( back.X + dx, back.Y + dy ) != true )
 				return (back.X + dx, back.Y + dy);
 		}
 		return null;
@@ -903,11 +926,14 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 
 	/// <summary>
 	/// The called guest reached the stand point (state 13, admission method <c>0xe03d0</c>): its id is written
-	/// to VAR_LETMEON only while that is 0. True when written (the guest then waits for the script).
+	/// to VAR_LETMEON only while that is 0 and the ride is open and outside its retained broken state. True when written (the guest then waits for the script).
 	/// </summary>
 	public bool PresentForBoarding( int guestId )
 	{
 		if ( guestId == 0 || guestId != called || vm == null )
+			return false;
+		// Recheck the owner's open word and retained state at the stand point; the choice's coaster/track predicate does not apply here.
+		if ( !isOpen() || IsBrokenDown )
 			return false;
 		if ( letMeOnWritten )
 			return true;
@@ -952,12 +978,7 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 		if ( called != 0 && letMeOnWritten && Get( RideVariables.VAR_LETMEON ) != called )
 			MarkBoarded( called );
 
-		var off = Get( RideVariables.VAR_LETMEOFF );
-		if ( off != 0 )
-		{
-			Set( RideVariables.VAR_LETMEOFF, 0 );
-			Release( off );
-		}
+		// [BIN:TPW-EXE:0x004E1410 script dismiss] VAR_LETMEOFF is read by the ride update of a park turn only (UpdateAdmission), not on every tick
 
 		if ( DefersAdmission )
 			return;
@@ -997,6 +1018,7 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 			if ( IsBrokenDown )
 			{
 				DismissHead();
+				DismissLetOff();
 				return;
 			}
 			brokenDown = false;
@@ -1017,6 +1039,45 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 		// [BIN:TPW-EXE:0x004E1220 admission ignores the coaster predicate] the admission reads the open word +0x68, the script's LETMEON, capacity and running variables, the pending visitor and the queue head only, never the coaster test 0x00441970: an open ride whose coaster refuses guests still calls its head forward, and its queued guests leave through state 11's own exit (thought 13, 0x00500612)
 		if ( isOpen() )
 			CheckAdmission( turn );
+		// [BIN:TPW-EXE:0x004E159A state 0 dismiss] the state-0 update runs the admission (0x004E1220), reads VAR_BROKEN and, unless that sets state 1 or 4 and returns, the dismiss 0x004E1410
+		DismissLetOff();
+	}
+
+	/// <summary>
+	/// The ride update's dismiss (tp.exe <c>0x004E1410</c>): the guest in VAR_LETMEOFF runs ExitRide (<see cref="IRideVisitorHost.OnVisitorExitRide"/>); when it left, VAR_LETMEOFF is set to 0 and the ride
+	/// lets go of it, and when its exit is blocked the variable keeps it, the guest stays on the ride and the ride closes (<see cref="CloseForBlockedExit"/>), so the next ride update tries again.
+	/// </summary>
+	// [BIN:TPW-EXE:0x004E1410 script dismiss] script variable 1 (VAR_LETMEOFF, 0x0055A390) 0 does nothing; else the person's state is checked against 16 (a log, "trying to dismiss person %d, but they're not on this ride!", not a test) and ExitRide 0x005014E0 runs; a result of 1 writes 0 to the variable (0x004E14C3), 0 leaves it
+	// [BIN:TPW-EXE:0x004E0E27 dismiss in states 1, 2 and 4] the ride states 1, 2 and 4 run the head step 0x004E0450, then the same dismiss
+	private void DismissLetOff()
+	{
+		var off = Get( RideVariables.VAR_LETMEOFF );
+		if ( off == 0 )
+			return;
+		if ( !(Host?.OnVisitorExitRide( this, off ) ?? true) )
+		{
+			CloseForBlockedExit();
+			return;
+		}
+		Set( RideVariables.VAR_LETMEOFF, 0 );
+		LetGo( off );
+	}
+
+	/// <summary>Ride closings because a let-off guest's exit was blocked (diagnostics, not saved).</summary>
+	public int BlockedExitClosings { get; private set; }
+
+	/// <summary>
+	/// A let-off guest's exit is blocked (tp.exe <c>0x004DF150</c>): an open ride closes as the breakdown's SetState does, the pending visitor is let go and VAR_RIDECLOSED is set to 1.
+	/// </summary>
+	// [BIN:TPW-EXE:0x004DF150 close for a blocked exit] with the open word +0x68 set: message 0x14 on the bus 0x0040FB10 (its one direct subscriber, the tag system's handler 0x00509BF0, logs it as unknown and does nothing), "Object %d: Closing...", +0x68 = 0, the pending person +0x6C = 0 ("about to zeroise"), script variable 6 (VAR_RIDECLOSED) = 1 (0x0055A0B0) and the model call 0x00454550(1) that SetState 0x004E0E60 makes too; a closed ride does nothing
+	private void CloseForBlockedExit()
+	{
+		if ( !isOpen() || Get( RideVariables.VAR_RIDECLOSED ) != 0 )
+			return;
+		if ( called != 0 )
+			Withdraw();
+		Set( RideVariables.VAR_RIDECLOSED, 1 );
+		BlockedExitClosings++;
 	}
 
 	/// <summary>
@@ -1110,8 +1171,15 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 
 	private void Release( int guest )
 	{
+		if ( LetGo( guest ) )
+			Host?.OnVisitorReleased( this, guest );
+	}
+
+	/// <summary>The ride's own bookkeeping when a guest leaves it: its head slot, walk entry and bounce slot are freed. False when the ride does not hold the guest.</summary>
+	private bool LetGo( int guest )
+	{
 		if ( !onRide.Remove( guest ) )
-			return;
+			return false;
 		// Host cleanup: do not leave a presentation slot on the previous ride after release.
 		Heads?.Remove( guest );
 		for ( var slot = 0; slot < walkTable.Count; slot++ )
@@ -1121,7 +1189,7 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 			if ( bouncing[index].Guest == guest )
 				FreeBounceSlot( bouncing, index );
 		ReleasedTotal++;
-		Host?.OnVisitorReleased( this, guest );
+		return true;
 	}
 
 	/// <summary>Releases every held guest and turns the queue away (ride removed or script stopped).</summary>
@@ -1503,9 +1571,11 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 /// Routes visitor opcodes to a <see cref="RideVisitorBridge"/> and everything else to <paramref name="inner"/>, including
 /// TRIGWAITANIM's AnimID query: the script has an object exactly when <paramref name="inner"/> answers it.
 /// </summary>
-public sealed class VisitorRideScriptEffects( RideVisitorBridge bridge, IRideScriptEffects inner ) : IRideScriptEffects, IRideAnimationQuery
+public sealed class VisitorRideScriptEffects( RideVisitorBridge bridge, IRideScriptEffects inner ) : IRideScriptEffects, IRideAnimationQuery, IRideSliceTail
 {
 	public int Perform( RideEffectCall call ) => bridge.TryPerform( call, out var result ) ? result : inner.Perform( call );
+
+	public void AfterSlice( RideVM vm ) => ( inner as IRideSliceTail )?.AfterSlice( vm );
 
 	public int GetAnimationId( RideVM vm, int channel ) =>
 		((IRideAnimationQuery)this).TryGetAnimationId( vm, channel, out var animationId ) ? animationId : ObjectAnimator.NoAnimation;

@@ -250,24 +250,22 @@ public class PoolsSwimSessionTests
 		var randomBefore = rig.Simulation.CaptureSnapshot().RandomState;
 		var swimmersBefore = rig.Simulation.Guests.Count( guest => guest.InSwimSession );
 		// OriginalObject.OnDelete -> OriginalObjectRuntime.Stop (marks the visitors stopped, then releases everyone aboard); then ParkObjects.ObjectRemoved -> GuestSimulation.Unregister
+		var happiness = aboard.Select( guest => guest.Happiness ).ToArray();
 		rig.Ride.IsStopped = true;
 		rig.Ride.ReleaseAll();
-		foreach ( var guest in aboard )
-		{
-			Assert.AreNotEqual( GuestState.Swimming, guest.State, "released by the demolition: it steps out like a rider of any attraction, no swim starts" );
-			Assert.AreEqual( GuestState.ExitingRide, guest.State );
-		}
 		Assert.AreEqual( randomBefore, rig.Simulation.CaptureSnapshot().RandomState, "no swim was seeded: the world generator was not drawn" );
-		var happiness = aboard.Select( guest => guest.Happiness ).ToArray();
-		rig.Simulation.Unregister( rig.Ride );
 		for ( var index = 0; index < aboard.Count; index++ )
 		{
-			// like a rider of any other attraction: already on the exit, no attraction named, and Unregister's happiness loss does not reach it a second time
-			Assert.AreEqual( GuestState.ExitingRide, aboard[index].State );
+			// tp.exe's removal (0x004FB360) runs no ExitRide and no use routine for a rider: the small happiness step, no attraction named, state 6 on the exit cell (QUEUE-010)
+			Assert.AreNotEqual( GuestState.Swimming, aboard[index].State, "released by the demolition: no swim starts" );
+			Assert.AreEqual( GuestState.DoingNothing, aboard[index].State );
 			Assert.AreEqual( 0, aboard[index].AttractionId );
 			Assert.AreEqual( (2, 0), aboard[index].Cell );
-			Assert.AreEqual( happiness[index], aboard[index].Happiness, "no second treatment by the unregistering" );
+			Assert.AreEqual( MeterMath.Add( happiness[index], -(float)(rig.Simulation.Settings.SmallHappinessChange & 0xFF) ), aboard[index].Happiness, "the removal's small step" );
 		}
+		var after = aboard.Select( guest => guest.Happiness ).ToArray();
+		rig.Simulation.Unregister( rig.Ride );
+		CollectionAssert.AreEqual( after, aboard.Select( guest => guest.Happiness ).ToArray(), "no second treatment by the unregistering" );
 		Assert.IsTrue( swimmersBefore >= 1 );
 		Assert.IsTrue( rig.Simulation.Guests.All( guest => !guest.InSwimSession ), "the swimmers who were in the water are out as well" );
 		Assert.IsFalse( rig.Simulation.IsChangingIn( changing ) || rig.Simulation.IsChangingIn( third ) );
@@ -353,7 +351,8 @@ public class PoolsSwimSessionTests
 		foreach ( var (x, y) in rig.Region.Cells.ToArray() )
 			rig.Cells.SetType( x, y, ParkCellType.Empty );
 		var dry = rig.Send();
-		rig.Until( () => dry.State is GuestState.ExitingRide or GuestState.DoingNothing || dry.State == GuestState.Swimming, 600 );
+		// ExitRide (0x005014E0) walks it out of the room to the exit cell (2, 0) in state 15, then it decides again
+		rig.Until( () => dry.State is GuestState.DoingNothing or GuestState.WalkingAround || dry.State == GuestState.Swimming, 900 );
 		Assert.AreNotEqual( GuestState.Swimming, dry.State );
 		Assert.AreEqual( (2, 0), dry.Cell );
 		Assert.AreEqual( 0, dry.AttractionId );

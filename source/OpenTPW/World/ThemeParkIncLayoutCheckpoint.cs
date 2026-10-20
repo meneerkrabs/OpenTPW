@@ -16,7 +16,7 @@ internal sealed record ThemeParkIncLayoutCheckpoint
 	public required IReadOnlyDictionary<string, string> AssetHashes { get; init; }
 
 	public const string FormatName = "opentpw-tpi-layout";
-	public const int CurrentVersion = 1;
+	public const int CurrentVersion = 2;
 	public const string FreshSession = "new-session";
 	public const int MaximumFileSize = ParkResumeSaveFile.MaximumFileSize;
 
@@ -89,6 +89,12 @@ internal sealed record ThemeParkIncLayoutCheckpoint
 			using var document = JsonDocument.Parse(bytes.ToArray(), new JsonDocumentOptions { MaxDepth = 32 });
 			RejectDuplicates(document.RootElement);
 			var snapshot = ParkResumeJson.Deserialize<ThemeParkIncLayoutCheckpoint>(bytes);
+			if (snapshot.Version == 1)
+			{
+				if (snapshot.Layout?.Cells == null || snapshot.Layout.Cells.QueuePassSchemaVersion != 0 || snapshot.Layout.Cells.QueuePassResidues != null)
+					throw new InvalidDataException("Legacy layout checkpoint contains unsupported queue pass fields.");
+				snapshot = snapshot with { Version = CurrentVersion };
+			}
 			snapshot.ValidateShape();
 			return snapshot;
 		}

@@ -11,11 +11,22 @@ public sealed class UiTextField : UiElement
 {
 	public string Text { get; set; } = "";
 	public int MaximumLength { get; set; } = 64;
+	/// <summary>Whether the initial text is selected for replacement by the next edit.</summary>
+	public bool AllSelected { get; private set; }
+	public void SelectAll() => AllSelected = true;
 	public bool Password { get; set; }
 	/// <summary>Left inset of the typed text in authored units; the original login fields carry their labels inside (data:0x505f4).</summary>
 	public float TextInset { get; set; }
 	/// <summary>Background model frame; null draws the plain help-box colour.</summary>
 	public string? Model { get; set; }
+	/// <summary>Whether a field without a model draws the plain box (off where the field lies on art of its own, the chat frame's entry).</summary>
+	public bool Background { get; set; } = true;
+	public Func<UiFonts, FontAtlas> Font { get; set; } = fonts => fonts.Label;
+	/// <summary>
+	/// Whether the field lies over the park view (the chat entry): the pointer resting on it takes the keys from nothing (only a click or Enter gives it
+	/// them), neither the arrows nor Tab move the focus onto it, and while it has the keys the screen leaves the pointer to the park outside its controls.
+	/// </summary>
+	public bool OverView { get; init; }
 	/// <summary>Text shown, dimmed, while the field is empty (the original's prompt texts); never part of <see cref="Text"/>.</summary>
 	public string? Placeholder { get; set; }
 	/// <summary>Called with Enter.</summary>
@@ -31,6 +42,13 @@ public sealed class UiTextField : UiElement
 	public void Type( string typed, int backspaces )
 	{
 		var text = Text;
+		if ( AllSelected && (backspaces > 0 || MaximumLength >= 1 && typed.Any( c => !char.IsControl( c ) && !char.IsSurrogate( c ) )
+			|| MaximumLength >= 2 && Enumerable.Range( 0, Math.Max( 0, typed.Length - 1 ) ).Any( i => char.IsSurrogatePair( typed, i ) )) )
+		{
+			text = "";
+			AllSelected = false;
+			backspaces = 0;
+		}
 		for ( var index = 0; index < backspaces && text.Length > 0; index++ )
 			text = text.Length >= 2 && char.IsLowSurrogate( text[^1] ) && char.IsHighSurrogate( text[^2] ) ? text[..^2] : text[..^1];
 		for ( var at = 0; at < typed.Length; at++ )
@@ -62,7 +80,7 @@ public sealed class UiTextField : UiElement
 	{
 		var rect = ScreenRect( context.Canvas );
 		// [EXT:ONLINE-UI] text field art and caret are OpenTPW's; the original field template is not decoded
-		if ( Model == null || !context.DrawModel( Model, 0, rect, focused ? new RgbaByte( 255, 255, 220, 255 ) : null ) )
+		if ( Model == null ? Background : !context.DrawModel( Model, 0, rect, focused ? new RgbaByte( 255, 255, 220, 255 ) : null ) )
 			context.Batch.AddRectangle( rect, focused ? new RgbaByte( 40, 50, 110, 220 ) : UiColors.HelpBackground );
 		var prompt = Text.Length == 0 && Placeholder is { Length: > 0 };
 		var shown = prompt ? Placeholder! : Password ? new string( '*', Text.Length ) : Text;
@@ -71,7 +89,11 @@ public sealed class UiTextField : UiElement
 			shown += "_";
 		var scale = rect.Height / Bounds.Height;
 		var inset = MathF.Max( rect.Height * 0.25f, TextInset * scale );
-		context.DrawText( context.Fonts.Label, shown, new UiRect( rect.X + inset, rect.Y, rect.Width - inset - rect.Height * 0.25f, rect.Height ), Enabled && !prompt ? UiColors.Value : UiColors.Disabled );
+		var textRect = new UiRect( rect.X + inset, rect.Y, rect.Width - inset - rect.Height * 0.25f, rect.Height );
+		// The selection wash/caret use the host text-field style, not original hilight-art pixel parity.
+		if ( focused && AllSelected && Text.Length > 0 )
+			context.Batch.AddRectangle( textRect, new RgbaByte( 60, 90, 200, 170 ) );
+		context.DrawText( Font( context.Fonts ), shown, textRect, Enabled && !prompt ? UiColors.Value : UiColors.Disabled );
 	}
 }
 
@@ -105,6 +127,17 @@ public interface IUiDragTarget
 	void DragBegin( UiCanvas canvas, System.Numerics.Vector2 point ) { }
 	/// <summary>The left button came up after a press that began on this element (called once, after the last <see cref="DragTo"/>).</summary>
 	void DragEnd( UiCanvas canvas, System.Numerics.Vector2 point ) { }
+}
+
+/// <summary>
+/// Opts into a qualified completed click delivered to the original press recipient and point, even if the pointer has left it.
+/// The screen calls this after DragEnd instead of its default click/activation path. Disabled, hidden, removed and NotClick targets are excluded.
+/// </summary>
+public interface IUiCapturedClickTarget
+{
+	void ClickCaptured( UiCanvas canvas, System.Numerics.Vector2 pressPoint );
+	/// <summary>The host lost, removed, hid or disabled this press before its qualified click.</summary>
+	void CancelCapturedClick() { }
 }
 
 /// <summary>A drag target that wants to know where the press landed, before the first <see cref="IUiDragTarget.DragTo"/> of that press.</summary>
@@ -141,8 +174,11 @@ public sealed class UiScrollList : UiElement, IUiRowList
 	public int Selected { get; set; } = -1;
 	public Action<int>? SelectionChanged { get; set; }
 	public Action<int>? RowActivated { get; set; }
-	/// <summary>Whether an activation plays the control click before <see cref="RowActivated"/>; off for an owner that may refuse and clicks itself.</summary>
-	public bool ClicksOnActivate { get; set; } = true;
+	/// <summary>
+	/// Whether an activation plays the control click before <see cref="RowActivated"/>. Off by default: no original list row clicks (see <see cref="Activate"/>);
+	/// only OpenTPW's own screens without an original counterpart opt in.
+	/// </summary>
+	public bool ClicksOnActivate { get; set; }
 	/// <summary>Whether new rows keep the view at the bottom (chat).</summary>
 	public bool FollowEnd { get; set; }
 	/// <summary>Whether the list draws its own background (off when an original frame model is drawn behind it).</summary>
@@ -186,7 +222,7 @@ public sealed class UiScrollList : UiElement, IUiRowList
 	{
 		if ( Selected < 0 || Selected >= Rows().Count || RowActivated == null )
 			return;
-		// [BIN:TPW-EXE:0x485780 UI message hook] a row activation is a control message like any other, so it clicks (unless the owner clicks itself once its activation is accepted)
+		// [BIN:TPW-EXE:0x665c35 type-7 procedure] row helpers notify the owner (activation 0x400, selection 0x401, other button 0x402), never the hook's button message 0x100, and the hook 0x485780 plays 0x1F/0xBD only for 0x100 (0x4857cb). The type-7 constructor 0x662562 is reached only through the factory 0x65dd7b from layout records (0x65fe40; the text-layout path 0x6607ca has no caller), and the 19 type-7 lists of the 18 layout tables belong to owners whose row handlers send no 0x100: the only 0x100 senders in tp.exe are the button release 0x6691eb and eight window keyboard paths (docs/AUDIO.md, "List owners"). So no original list row clicks; OpenTPW's own screens opt in.
 		if ( ClicksOnActivate )
 			GameAudio.PlayUi( GameAudio.ClickEvent );
 		RowActivated( Selected );

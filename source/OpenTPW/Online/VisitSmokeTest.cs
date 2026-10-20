@@ -16,6 +16,7 @@ internal sealed class VisitSmokeTest : IDisposable
 	/// <summary>What the ride step is waiting for, for the watchdog's message.</summary>
 	private volatile string waiting = "";
 	private readonly Action<OpenTPW.UI.Original.UiInput>? injectInput;
+	private readonly OpenTPW.UI.Original.UiContext? context;
 	/// <summary>The scripted online players (<c>--smoke-presence</c>), or null.</summary>
 	private readonly VisitPresenceSmoke? presence;
 	private bool ridePhaseDone;
@@ -24,11 +25,14 @@ internal sealed class VisitSmokeTest : IDisposable
 
 	/// <param name="injectInput">Hands the next frame's input to the flow (the online players' HUD click).</param>
 	/// <param name="attachPresence">Attaches the scripted online players to the flow (null: the visit has none).</param>
-	public VisitSmokeTest( Level level, OpenTPW.Hud.ParkHud? hud = null, Action<OpenTPW.UI.Original.UiInput>? injectInput = null, Func<Level, VisitPresenceSmoke?>? attachPresence = null )
+	/// <param name="context">The HUD's UI context (the online players' clicks on the chat overlay's rows).</param>
+	public VisitSmokeTest( Level level, OpenTPW.Hud.ParkHud? hud = null, Action<OpenTPW.UI.Original.UiInput>? injectInput = null, Func<Level, VisitPresenceSmoke?>? attachPresence = null,
+		OpenTPW.UI.Original.UiContext? context = null )
 	{
 		this.level = level;
 		this.hud = hud;
 		this.injectInput = injectInput;
+		this.context = context;
 		Require( level.IsReadOnlyVisit && level.Park == null, "shared visit has no economy" );
 		// A version 2 package must have rebuilt the owner's exact layout (digest check; docs/ONLINE.md).
 		// A package that publishes no digest (validation allows it) cannot be checked, only reported.
@@ -69,7 +73,7 @@ internal sealed class VisitSmokeTest : IDisposable
 
 	public void Update()
 	{
-		presence?.Update( Time.Delta, injectInput, hud );
+		presence?.Update( Time.Delta, injectInput, hud, context );
 		if ( ++frame < 8 || completed )
 			return;
 		if ( ridePhaseDone )

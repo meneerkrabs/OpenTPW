@@ -34,6 +34,10 @@ public sealed record M3GateOptions
 	/// </summary>
 	// [EXT:mods] OpenTPW's own mod system; the original game had no mods
 	public Func<ObjectCatalogEntry, bool>? AttractionFilter { get; init; }
+	/// <summary>Narrows the shops the run may place (the first researched, buyable shop that satisfies a need and fits); null keeps the gate's own choice, the Drinks Shop.</summary>
+	public Func<ObjectCatalogEntry, bool>? ShopFilter { get; init; }
+	/// <summary>The only rotation (0, 90, 180 or 270) the shop's site search tries; null tries all four.</summary>
+	public int? ShopRotation { get; init; }
 	/// <summary>The park's world seed (every random stream); null keeps the economy's default seed, so only <see cref="Seed"/> moves the guests' stream as before. The guest report sets it to vary the whole park.</summary>
 	public WorldSeed? WorldSeed { get; init; }
 	/// <summary>
@@ -49,6 +53,11 @@ public sealed record M3GateOptions
 	public Action<GuestSimulation>? BeforeTeardown { get; init; }
 	/// <summary>Called with the run's guests right after they are built, before anything runs (the guest report's litter-bin proxies, docs/SMARTER-GUESTS.md, phase 6b); null for the gate's own runs.</summary>
 	public Action<GuestSimulation>? GuestSetup { get; init; }
+	/// <summary>
+	/// Further objects placed after the gate's own, each the first researched, buyable object its predicate matches, beside the path as the shop is (a measurement's own shops, such as the winter extension's,
+	/// docs/WINTER.md, "Price"). Empty, the default, places nothing more, so the gate's park is unchanged.
+	/// </summary>
+	public IReadOnlyList<(string Role, Func<ObjectCatalogEntry, bool> Match)> ExtraObjects { get; init; } = Array.Empty<(string, Func<ObjectCatalogEntry, bool>)>();
 }
 
 public sealed record M3GateReport( M3GateOptions Options, JsonObject TimeMapping, IReadOnlyList<M3GateRow> Rows, double WallSeconds )
@@ -299,6 +308,8 @@ internal sealed class M3GateRun
 	public ulong GateHash { get; private set; }
 	public List<ulong> MinuteHashes { get; } = new();
 	public IReadOnlyList<int> AttractionIds => placed.Select( item => item.Runtime.Visitors.AttractionId ).ToList();
+	/// <summary>The attraction id of the object placed in <paramref name="role"/>, or null when none was placed.</summary>
+	internal int? AttractionIdOf( string role ) => placed.FirstOrDefault( item => item.Role == role )?.Runtime.Visitors.AttractionId;
 
 	private sealed record Placed( string Role, ObjectCatalogEntry Entry, int AnchorX, int AnchorY, int Rotation, OriginalObjectRuntime Runtime, int EconomyInstance );
 
@@ -344,8 +355,10 @@ internal sealed class M3GateRun
 		PlaceObject( "attraction", entry => entry.Category == ObjectCategory.Ride && entry.HasQueue && (options.AttractionFilter?.Invoke( entry ) ?? true) );
 		// Placing a HasQueue ride switches the HUD to the queue tool (ParkHud, BIN:STP-PPC:0x1007497C), so the queue comes next.
 		BuildQueue();
-		PlaceObject( "shop", entry => entry.Category == ObjectCategory.Shop && OriginalObjectRuntime.CreateVisitorBridge( entry, 1 ).Satisfies != GuestNeeds.None );
+		PlaceObject( "shop", entry => entry.Category == ObjectCategory.Shop && OriginalObjectRuntime.CreateVisitorBridge( entry, 1 ).Satisfies != GuestNeeds.None && (options.ShopFilter?.Invoke( entry ) ?? true) );
 		PlaceObject( "toilet", entry => OriginalObjectRuntime.CreateVisitorBridge( entry, 1 ).Satisfies.HasFlag( GuestNeeds.Toilet ) );
+		foreach ( var (role, match) in options.ExtraObjects )
+			PlaceObject( role, match );
 		// the gate registers its objects without a placement, so it lays the cell a called guest's search walks into (state 13) as a build lays an entrance
 		foreach ( var item in placed )
 		{
@@ -522,7 +535,7 @@ internal sealed class M3GateRun
 		foreach ( var entry in candidates )
 		{
 			var queueCells = role == "attraction" && entry.HasQueue ? QueueCellsFor( entry ) : 0;
-			var site = FindSite( entry, queueCells );
+			var site = FindSite( entry, queueCells, role == "shop" ? options.ShopRotation : null );
 			if ( site == null )
 				continue;
 			var (clickX, clickY, rotation, route) = site.Value;
@@ -596,7 +609,7 @@ internal sealed class M3GateRun
 	/// from it to a cell beside a path, where guests join; the exit with the shortest snap wins, then the front
 	/// nearest a path.
 	/// </summary>
-	private (int ClickX, int ClickY, int Rotation, List<(int X, int Y)>? Route)? FindSite( ObjectCatalogEntry entry, int queueCells )
+	private (int ClickX, int ClickY, int Rotation, List<(int X, int Y)>? Route)? FindSite( ObjectCatalogEntry entry, int queueCells, int? onlyRotation = null )
 	{
 		if ( spine.Count < 2 )
 			return null;
@@ -608,7 +621,7 @@ internal sealed class M3GateRun
 		var bestScore = (int.MaxValue, int.MaxValue);
 		var queueSites = new List<(int Snap, int Distance, int ClickX, int ClickY, int Rotation, (int X, int Y) Front, (int DX, int DY) Back, HashSet<(int X, int Y)> Footprint)>();
 		var goalDistance = queueCells > 0 ? QueueGoalDistances() : null;
-		foreach ( var rotation in new[] { 0, 90, 180, 270 } )
+		foreach ( var rotation in onlyRotation is int only ? new[] { only } : new[] { 0, 90, 180, 270 } )
 		{
 			for ( var clickY = minY; clickY <= maxY; clickY++ )
 			{

@@ -54,6 +54,10 @@ public static class ParkLayoutSnapshot
 		/// <summary><see cref="ParkCellMap.Version"/>: bumped by every write; restored exactly so cached walk state keeps the saved epoch.</summary>
 		public required int Version { get; init; }
 		public required List<CellData> Cells { get; init; }
+		[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault )]
+		public int QueuePassSchemaVersion { get; init; }
+		[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )]
+		public List<QueuePassResidue>? QueuePassResidues { get; init; }
 		/// <summary>
 		/// <see cref="ParkCellMap.BlockStamp"/> of every 16 × 16-cell block, row by row (the walk's changed-ground reroute, WALK-007); null
 		/// when no block is stamped, and in saves made before the stamps existed, which restore every block unstamped.
@@ -172,9 +176,12 @@ public static class ParkLayoutSnapshot
 				var placements = cells.PlacementCountAt( x, y );
 				var links = cells.LinksAt( x, y );
 				var queueLink = cells.QueueLinkAt( x, y );
-				if ( type == 0 && flags == 0 && placements == 0 && links == 0 && queueLink == 0 )
+				var residue = cells.HasQueuePassResidue( x, y );
+				if ( !residue && (type == 0 && cells.OwnerAt( x, y ) != 0 || type is 0 or 1 && queueLink != 0) )
+					throw new InvalidDataException( "Unclassified queue metadata cannot be saved as an ordinary cell." );
+				if ( !residue && type == 0 && flags == 0 && placements == 0 && links == 0 && queueLink == 0 )
 					continue;
-				cellRecords.Add( new CellData { X = x, Y = y, Type = type, Flags = flags, Placements = placements, Links = links, QueueLink = queueLink, Owner = cells.OwnerAt( x, y ) } );
+				cellRecords.Add( new CellData { X = x, Y = y, Type = type, Flags = flags, Placements = placements, Links = links, QueueLink = residue ? (byte)0 : queueLink, Owner = residue ? (ushort)0 : cells.OwnerAt( x, y ) } );
 			}
 		}
 		var objectRecords = new List<PlacedObjectData>( objects.Objects.Count );
@@ -203,7 +210,7 @@ public static class ParkLayoutSnapshot
 		var stamps = cells.CaptureBlockStamps();
 		return new Data
 		{
-			Cells = new CellMapData { Width = cells.Width, Height = cells.Height, Version = cells.Version, Cells = cellRecords, BlockStamps = stamps, StampCounter = stamps == null ? 0 : cells.StampCounter, Land = CaptureLand( cells ) },
+			Cells = new CellMapData { Width = cells.Width, Height = cells.Height, Version = cells.Version, Cells = cellRecords, QueuePassSchemaVersion = cells.HasQueuePassResidues ? 1 : 0, QueuePassResidues = cells.HasQueuePassResidues ? cells.CaptureQueuePassResidues().ToList() : null, BlockStamps = stamps, StampCounter = stamps == null ? 0 : cells.StampCounter, Land = CaptureLand( cells ) },
 			Objects = objectRecords,
 			NextSeed = objects.NextPlacementSeed,
 			NextAttractionId = objects.NextAttractionId,
@@ -288,6 +295,8 @@ public static class ParkLayoutSnapshot
 				Require( footprints.Add( (x, y) ), $"objects overlap at ({x}, {y})" );
 			}
 		}
+		Require( cellMap.QueuePassResidues == null || !cellMap.QueuePassResidues.Any( residue => footprints.Contains( (residue.X, residue.Y) ) ),
+			"queue pass residues overlap an unsupported object footprint" );
 		var previousAttraction = 0;
 		var thingIds = new HashSet<int>();
 		for ( var index = 0; index < objects.Count; index++ )
@@ -307,6 +316,31 @@ public static class ParkLayoutSnapshot
 		}
 	}
 
+	private static void ValidateQueuePassResidues( CellMapData map )
+	{
+		if ( map.QueuePassSchemaVersion == 0 && map.QueuePassResidues == null ) return;
+		if ( map.QueuePassSchemaVersion != 1 || map.QueuePassResidues is not { Count: > 0 } residues || residues.Count > (long)map.Width * map.Height )
+			throw new InvalidDataException( "Unsupported queue pass residue schema." );
+		var seen = new HashSet<(int, int)>();
+		var ordinary = new Dictionary<(int, int), CellData>();
+		foreach ( var cell in map.Cells )
+			if ( cell == null || !ordinary.TryAdd( (cell.X, cell.Y), cell ) )
+				throw new InvalidDataException( "Invalid ordinary cell records beside queue residues." );
+		foreach ( var residue in residues )
+		{
+			if ( residue == null || residue.X < 0 || residue.Y < 0 || residue.X >= map.Width || residue.Y >= map.Height
+				|| !seen.Add( (residue.X, residue.Y) ) || residue.Type is not (0 or 1)
+				|| residue.QueueLink is not (0 or 1 or 4 or 16 or 64) || residue.Owner > 128 * 128 )
+				throw new InvalidDataException( "Invalid queue pass residue." );
+			if ( !ordinary.TryGetValue( (residue.X, residue.Y), out var cell ) )
+				throw new InvalidDataException( "Queue residue must name exactly one ordinary cell record." );
+			if ( cell.Type != residue.Type || cell.Owner != 0 || cell.QueueLink != 0
+				|| (cell.Type == 0 && (cell.Placements != 0 || (cell.Flags & ~(ushort)ParkCellFlags.Unowned) != 0))
+				|| (cell.Type == 1 ? residue.QueueLink == 0 : cell.Links == 0 && residue.QueueLink == 0 && residue.Owner == 0) )
+				throw new InvalidDataException( "Queue residue contradicts its ordinary cell record." );
+		}
+	}
+
 	private static void ValidateCells( Data snapshot, ModSet? activeMods = null )
 	{
 		var cells = snapshot.Cells;
@@ -319,6 +353,7 @@ public static class ParkLayoutSnapshot
 		Require( cells.Version >= 0, "cell map version is negative" );
 		Require( cells.Cells != null, "the cell map has no cell records" );
 		Require( cells.Cells!.Count <= (long)cells.Width * cells.Height, "more cell records than cells" );
+		ValidateQueuePassResidues( cells );
 		var seen = new HashSet<(int, int)>();
 		for ( var index = 0; index < cells.Cells.Count; index++ )
 		{
@@ -431,6 +466,8 @@ public static class ParkLayoutSnapshot
 		}
 		else
 			newLand?.Invoke( cells );
+		foreach ( var residue in snapshot.Cells.QueuePassResidues ?? new List<QueuePassResidue>() )
+			cells.ApplyQueuePassMetadata( residue.X, residue.Y, residue.QueueLink, residue.Owner );
 		cells.RestoreVersion( snapshot.Cells.Version );
 		// The writes above stamped the blocks with restore-time versions; the saved stamps (none before WALK-007) replace them.
 		cells.RestoreBlockStamps( snapshot.Cells.StampCounter, snapshot.Cells.BlockStamps );

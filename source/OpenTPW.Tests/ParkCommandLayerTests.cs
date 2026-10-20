@@ -86,7 +86,7 @@ public class ParkCommandLayerTests
 		// the coaster tool: its builder's writes (the panel and the HUD hold the builder) and the controller's tool state
 		// any name a coaster builder goes by in the tool layer (the panel's builder, the level's coaster tool, the HUD's tool), its track and its ride, null-forgiving or not
 		new( "Coaster builder writes", @"\b(builder|Builder|tool|CoasterTool)[!?]*\.(Place|RemoveLast|Complete|CloseCircuit|Move|SetHeight|EndEdit|FinishEdit|ApplyEdit|EditLoft|EditYaw|EditBank|EditIncline|EditLoopRotate|EditMove|SwapStack|Cut|Reopen|Delete|OpenFailingClosure|SetStation)\s*\("
-			+ @"|\b(Track|Ride)[!?]*\.(Append|Replace|Relocate|RemoveLast|Cut|SwapStack|Clear|Complete|Reopen|SetStation|EnterState|ClearTrains|Rebuild)\s*\(|" + Call( "DeleteCoasterTrack" ) + "|" + Call( "AfterCoasterClick" ),
+			+ @"|\b(Track|Ride)[!?]*\.(Append|Replace|Relocate|RemoveLast|Cut|SwapStack|Clear|Complete|Close|OpenClosure|Reopen|Revalidate|SetStation|EnterState|ClearTrains|Rebuild)\s*\(|" + Call( "DeleteCoasterTrack" ) + "|" + Call( "AfterCoasterClick" ),
 			nameof( CoasterClickCommand ) ),
 		new( "Coaster tool state", @"\.EnterTool\s*\(|\bBeingEdited\s*=[^=]|" + Call( "SetBeingEdited" ) + "|" + Call( "ExecuteBeginCoasterTool" ) + "|" + Call( "ExecuteEndCoasterTool" ), nameof( BeginCoasterToolCommand ) ),
 	};
@@ -281,6 +281,9 @@ public class ParkCommandLayerTests
 		Assert.IsTrue( Caught( coaster, "ReportCoasterResult( tool.Place( cursorX, cursorY ), closing );" ) );
 		Assert.IsTrue( Caught( coaster, "builder.Track.Replace( index, node );" ) );
 		Assert.IsTrue( Caught( coaster, "station.Runtime.Coaster!.Ride.Rebuild();" ) );
+		Assert.IsTrue( Caught( coaster, "if ( closed && !builder.Track.Close() )" ), "the track's own close and its validator's marks" );
+		Assert.IsTrue( Caught( coaster, "builder.Track.OpenClosure();" ) );
+		Assert.IsTrue( Caught( coaster, "builder.Track.Revalidate( builder.Site, builder.Ride.World, builder.Ride );" ) );
 		Assert.IsTrue( Caught( coaster, "level.DeleteCoasterTrack( station );" ) );
 		Assert.IsFalse( Caught( coaster, "var closing = level.CoasterTool is { } tool && tool.Track.IsChainStart( cursorX, cursorY ) && !tool.Track.IsClosed;" ), "the HUD reads the track" );
 		Assert.IsFalse( Caught( coaster, "if ( builder.DragRange( node, dragKind ) is not { } range )" ) );
@@ -289,7 +292,7 @@ public class ParkCommandLayerTests
 		Assert.IsTrue( Caught( toolState, "ride.BeingEdited = true;" ) );
 		Assert.IsFalse( Caught( toolState, "if ( ride.BeingEdited == false )" ) );
 		Assert.IsTrue( Caught( toolState, "SetBeingEdited( station, true );" ) );
-		Assert.IsTrue( Caught( toolState, "level.ExecuteEndCoasterTool( id, 0 );" ) );
+		Assert.IsTrue( Caught( toolState, "level.ExecuteEndCoasterTool( id );" ) );
 	}
 
 	/// <summary>The command code itself keeps to the simulation's determinism rules (no process-wide randomness, clock or mutable statics), as the simulation folders do.</summary>

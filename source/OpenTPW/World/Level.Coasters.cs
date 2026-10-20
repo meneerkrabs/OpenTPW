@@ -271,6 +271,9 @@ public partial class Level
 
 	private void OnCoasterStationRemoved( OriginalObject item )
 	{
+		// [EXT:online-coop-commands] the drags on the station's track end with it, unsettled, as the track goes without a refund; before this machine's panel closes, whose close ends its drag through
+		// commands that would otherwise run inside a peer's removal on this machine alone
+		coasterEdits?.Drop( item.Runtime.AttractionId );
 		if ( CoasterToolStation == item )
 		{
 			// the tool's full clean-up for a station that goes (the ride object is deleted, so it is not opened again)
@@ -354,16 +357,16 @@ public partial class Level
 	}
 
 	/// <summary>
-	/// Runs an <see cref="EndCoasterToolCommand"/> of <paramref name="player"/>: the player's pylon edit on the coaster ends where it stands, the coaster is no longer being edited, and a ride the tool took
-	/// out of service (state 2) opens again.
+	/// Runs an <see cref="EndCoasterToolCommand"/>: the pylon edits on the coaster end where they stand, the coaster is no longer being edited, and a ride the tool took out of service (state 2) opens
+	/// again.
 	/// </summary>
-	internal ParkCommandResult ExecuteEndCoasterTool( int attraction, int player )
+	internal ParkCommandResult ExecuteEndCoasterTool( int attraction )
 	{
 		if ( ResolveCommandObject( attraction ) is not { Runtime.Coaster: { } ride } station )
 			return ParkCommandResult.Rejected( $"Attraction {attraction} is no coaster station." );
-		// the panel's own close releases its drag first (CoasterToolPanel.Close); an edit the command finds is a peer's whose panel went away
-		if ( CoasterEdits.Of( player ) is { } held && held.Station == attraction )
-			CoasterEdits.Release( player );
+		// the panel's own close releases its drag first (CoasterToolPanel.Close); an edit the command finds is a peer's, which the being-edited mark the exit clears ends too (it is the coaster's, not
+		// the player's: docs/COOP.md, "Known limits")
+		CoasterEdits.ReleaseAll( attraction );
 		SetBeingEdited( station, false );
 		if ( ride.State == CoasterControllerState.Built )
 			station.Open();

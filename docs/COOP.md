@@ -223,12 +223,17 @@ changes.
     (`EndCoasterNodeEditCommand`) that settles the money of a height or move drag. The stack buttons
     and the demolish button's cut are `SwapCoasterStackCommand` and `CutCoasterCommand`.
   - The commands keep the panel's rules. The press checks the pylon's controls and keeps the range
-    the panel clamps to (`CoasterBuilder.DragRange`); a step must be the drag's own value within that
-    range. A press releases the player's drag still held, and a command that removes or reorders
-    pylons (Backspace, the cut, the stack swap) releases every drag on the coaster first, so no drag
-    settles against another pylon. A click in loop mode needs the loop button, and while a loop pair
-    waits for its second pylon only that pylon may follow. Every panel command needs its coaster in the
-    tool, whose entry let the riders off.
+    the panel clamps to (`CoasterBuilder.DragRange`); a step must be the drag's own value and one the
+    clamp can give (an end of the range, or a value between its ends). A click in loop mode needs the
+    loop button; the click tests nothing else of the panel, as the original's click handler does not.
+    Every panel command needs its coaster in the tool, whose entry let the riders off.
+  - One drag runs on a coaster at a time, as one pointer gives in a game of one. A press releases the
+    player's own drag still held and waits while another player's drag runs; so do a stack swap (the
+    drag's release could change the stack it was asked on) and the completion (it ends the tool every
+    drag needs). A click that places a pylon, Backspace and the cut release the running drag first, as
+    its own release would, so no drag settles against a pylon list or a neighbour that changed under
+    it. The tool's exit ends the drags on its coaster, and a station that goes drops them unsettled
+    with its track.
   - The pylon a player is editing is the level's state (`CoasterEdits`), as the employee in hand is;
     the panel, its selection and the drag's pointer stay the issuer's. The height and loop mode a click
     carries are the issuer's panel state: the builder of a peer keeps its own, and the issuer's takes
@@ -242,8 +247,10 @@ pick-up and the drop keeps the employee picked up). `TrackAddOnLevelTests` appli
 logged lines, undo, cut, the line tool's reopening and Backspace after it to a twin whose track layer
 and ride controller match the issuer's. `CoasterCommandTests` runs a coaster tool session (clicks,
 Backspace, the panel's drags and a cut) and builds the same coaster (its pylons, its controller and
-the money paid) on a twin from the logged commands alone; `ParkToolCommandLevelTests` enters and
-leaves the coaster tool on a level through its commands. `PoolsTests` takes back a
+the money paid) on a twin from the logged commands alone, and fuzzes three players' panel commands on
+a coaster in each state the tool reaches (no refused command changes the coaster or the drags);
+`ParkToolCommandLevelTests` enters and leaves the coaster tool on a level through its commands and
+completes a coaster there that a twin completes from the log. `PoolsTests` takes back a
 stroke longer than a command in chunks, and `ParkLandTests` checks the land command's posts and
 verdict.
 
@@ -314,6 +321,13 @@ guarded list.
   is one flag per coaster, as the original's was one global: two players editing the same coaster
   clear it when the first one leaves the tool. C3 must keep a second player out of a coaster another
   edits, or count the editors.
+- A command a tool callback issues inside another command runs as part of it, with its player
+  (Nested edits). This machine's tools differ from a peer's, so a callback that only this machine's
+  tool makes must not write inside a peer's command, which every peer runs alike: C2 must refuse a
+  nested command whose outer command is not this machine's issue (`ParkCommands.IsIssuing`). The HUD's
+  follow-ups of its own placement already wait for its command to return (`ParkCommands.AfterIssue`),
+  and a coaster station that goes drops the drags on it before this machine's panel closes, so that
+  panel's release finds no drag to end.
 - The pylon each player is editing in a coaster panel drag (`CoasterEdits`) is not hashed, as the
   employees in hand are not; a session's join snapshot (C2) taken during a drag must carry it.
 - The developer and smoke options (`--perf-*`, `--debug-*`) set their parks up directly; a recording

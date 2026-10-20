@@ -172,6 +172,64 @@ public class ParkToolCommandLevelTests
 		Assert.AreEqual( before, twin.Level.ComputeStateHash() );
 	}
 
+	/// <summary>The no-data park with two coaster stations whose type has the PC coasters' pylons, the first one's station ends set as the coaster tests set theirs.</summary>
+	private ParkSettingCommandLevelTests.Park BuildableCoaster()
+	{
+		var pylons = string.Join( "\n", CoasterTests.PcSettings().Select( pair => $"{pair.Key} {pair.Value}" ) );
+		var park = NewPark( "Bumper.WhichTrackType 3\n" + pylons + "\n" );
+		typeof( Level ).GetField( "coasterBuilders", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic )!.SetValue( park.Level, new Dictionary<OriginalObject, CoasterBuilder>() );
+		CoasterTests.PlaceStation( park.Level.GetCoasterBuilder( park.One )!, (20, 20) );
+		return park;
+	}
+
+	/// <summary>
+	/// A coaster built, closed and completed in the tool on a level: the completion waits for another player's drag, then rates the coaster, ends the tool and the being-edited mark and opens the ride;
+	/// a twin that applies the logged commands builds the same coaster to the same hash. The tool's exit ends the drags on its coaster, a peer's too.
+	/// </summary>
+	[TestMethod]
+	public void ACoasterCompletedInTheToolIsCompletedOnTheTwin()
+	{
+		var park = BuildableCoaster();
+		var level = park.Level;
+		var id = park.One.Runtime.AttractionId;
+		var results = new List<bool>();
+		level.Commands.Applied += ( _, result ) => results.Add( result.Accepted );
+		Assert.IsTrue( level.EnterCoasterTool( park.One ) );
+		var builder = level.CoasterTool!;
+		builder.Height = 40;
+		foreach ( var (dx, dy) in CoasterTests.Circuit )
+			Assert.AreEqual( CoasterPlaceResult.Ok, level.CoasterClick( 20 + dx, 20 + dy ), $"pylon at offset ({dx}, {dy})" );
+		var back = builder.Track.ReturnCell!.Value;
+		Assert.AreEqual( CoasterPlaceResult.Ok, level.CoasterClick( back.X, back.Y ), "the chain start closes the circuit" );
+		Assert.IsTrue( level.Commands.Apply( new BeginCoasterNodeEditCommand( id, CoasterTrack.StationNodeCount, CoasterDrag.Rotate ) { Player = 1 } ).Accepted, "a peer presses a pylon" );
+		var open = level.ComputeStateHash();
+		Assert.AreNotEqual( CoasterPlaceResult.Ok, level.CoasterClick( back.X, back.Y ), "the completion waits for the peer's drag" );
+		Assert.AreEqual( open, level.ComputeStateHash() );
+		Assert.IsTrue( level.Commands.Apply( new EndCoasterNodeEditCommand( id ) { Player = 1 } ).Accepted );
+		Assert.AreEqual( CoasterPlaceResult.Ok, level.CoasterClick( back.X, back.Y ), "the next click completes the coaster" );
+		Assert.IsTrue( builder.Track.IsComplete );
+		Assert.IsNotNull( builder.Ride.Rating );
+		Assert.IsFalse( level.IsCoasterToolActive, "the completion ended the tool" );
+		Assert.IsFalse( park.One.Runtime.Coaster!.BeingEdited );
+
+		var twin = BuildableCoaster();
+		Replay( level.Commands.Log, twin.Level, results );
+		var built = twin.Level.GetCoasterBuilder( twin.One )!;
+		Assert.IsTrue( built.Track.IsComplete, "the twin completed the coaster" );
+		Assert.AreEqual( builder.Ride.Rating, built.Ride.Rating );
+		Assert.AreEqual( builder.Ride.PaidCost, built.Ride.PaidCost );
+		Assert.IsFalse( twin.One.Runtime.Coaster!.BeingEdited );
+		Assert.AreEqual( park.One.IsOpen, twin.One.IsOpen );
+		Assert.AreEqual( level.ComputeStateHash(), twin.Level.ComputeStateHash(), "the commands alone build, close, complete and open as the tool did" );
+
+		// a peer's drag the tool's exit finds ends with it: the being-edited mark the exit clears is the coaster's
+		Assert.IsTrue( level.EnterCoasterTool( park.One ) );
+		Assert.IsTrue( level.Commands.Apply( new BeginCoasterNodeEditCommand( id, CoasterTrack.StationNodeCount + 1, CoasterDrag.Height ) { Player = 1 } ).Accepted );
+		level.ExitCoasterTool();
+		Assert.IsNull( level.CoasterEdits.Of( 1 ), "the exit ended the peer's drag" );
+		Assert.IsFalse( park.One.Runtime.Coaster.BeingEdited );
+	}
+
 	/// <summary>
 	/// The coaster tool a placed station opens follows the HUD's own placement once its command has returned (<see cref="ParkCommands.AfterIssue"/>): the tool's entry is a command of its own, logged
 	/// after the placement, so a twin replaying the log marks the coaster being edited as the issuer's park does. The twin's HUD opens no tool for the replayed placement.

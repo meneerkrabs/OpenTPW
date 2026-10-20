@@ -66,3 +66,10 @@ still separate from this guard. Closing still withdraws the pending guest at
 the next queue-head dismissal. This change does not clear an already-written
 offer, alter the close/withdraw protocol, or implement the entrance-gate wait
 state. No approximation ID is retired.
+
+Until that withdrawal is ported, a guest refused at a closed ride walks back
+to its place still named as the ride's pending visitor (tp.exe's close
+`0x004DF300` would already have cleared `+0x6C`). The ride's next update
+dismisses it as the closed queue's head; a ride reopened before that update
+keeps the stale call, so its admission calls nobody until that guest leaves
+the queue through one of its own state-11 exits.

@@ -326,7 +326,8 @@ network reachable from EntranceA.
 **States** (`KIDSTATES` indices): bus stop → crossing (0, 1) → ticket booth (2, 4:
 the booth weighs the fee against the park, see [The ticket booth](#the-ticket-booth); 3: paid, waiting at the booth for the gate) → entering (5) → walking around (7)
 → going to a ride (10) → walking to a queue position (12) ⇄ standing in the queue
-(11) → called: walking to the stand point (13) → waiting to board (14) → using (16, hidden)
+(11) → called: walking to the stand point (13) → waiting to board (14) → using (16, hidden;
+a guest whose body the object keeps stays in view, see [Kept bodies](#kept-bodies))
 → exiting a ride (15) → … → leaving the park (18) → crossing (19) → waiting to go
 home (21) → removed.
 
@@ -976,6 +977,98 @@ of 128 pixels in clip space, and the projection builder 0x578BE0 runs a 90 degre
 A kid's set is the original's own draw at its creation, the world generator reseeded with its thing id and the first draw shifted right by 2 modulo the 8 sets (`GuestAppearance.KidSet`), not its peep type;
 a walking kid steps its 8-frame walk 20 times a cell (0x4FA2A0: the interval is 62 ms over twice the speed).
 Not drawn: shadows, riders' bodies on a ride (their heads are drawn, see below).
+
+### Kept bodies
+
+A guest an object is serving (state 16) stays in view when the object's `UsageInfo.RideHandlesSprite` is 1, whatever
+the object is. tp.exe's state-16 entry tests the thing flag `+0x32` bit `0x20`, which the object constructor sets from
+that key (`0x4DB41C`): clear deletes the guest's body (`0x4D4170` at `0x502147`), set keeps it, queues the stand
+template and sets `+0x28` = 1 (`0x50212B`..`0x50213D`). The test reads no object kind. The guest update places the
+body at the guest's position only while `+0x28` is 0 (`0x4FA087`); `+0x28` is `mSpriteUnderRideCtrl`, which the save
+writes and reads (`0x4F8B10`), the state-15 entry clears (`0x501F79`) and the removed object's message 10 clears
+(`0x4FB3DF`); no other guest code reads it. The sprite pass (`0x542010`) draws every sprite that has a frame at its
+stored position, whoever owns it, so the body stays drawn where it was last placed until the state-15 entry places it
+again.
+
+Which objects keep the body (the inherited key: `Shops.sam`, `Features.sam` and `Rides.sam` say 0, the `SideShow.sam`
+of fantasy, hallow and space say 1, jungle's 0):
+
+- **Shops**: in the jungle the Burger, Fries, Drinks, Ice Cream, Steak, Gift and Balloon shops; the Costume Shop keeps 0.
+- **Sideshows**: every fantasy, hallow and space sideshow but the fantasy and space Arcades and the Fortune Teller (which set 0);
+  in the jungle Laughing Hyenas, Jungle Spray, Giant Puzzle and Strength Bird.
+- **Toilets**: the fantasy Small and Super Toilets, the jungle and space Small Toilets.
+- **Rides**: the bounce rides and every ride whose script walks its riders (all of them run `WALKON` or `BOUNCE`).
+
+What the scripts do with the kept body (decoded from the shipped `.RSE`): nothing but the walk table. `WALKON`,
+`WALKOFF` and `WALKGET` walk it between the model's nodes and pose it on board ([TOURS.md](TOURS.md#the-walking-body-tour-011)):
+the sideshows Laughing Hyenas, Jungle Spray, Aqua Spray and Martian Mooners (cheer, action 6), Strength Bird, Fruit
+Shy and Strength Skull (the short gesture, action 5), and the hallow Arcade, the Super Toilet and the Steak, Gift,
+Balloon and Cauldron shops (action 1, which deletes the body on board, `0x4F9ED0`, until the walk-off draws it again).
+The rest of the scripts read and write the guest only through `VAR_LETMEON`, `VAR_PEEPID` and `VAR_LETMEOFF`
+(`TEST`/`COPY`; `HUSH`/`HOP` and the limbo table appear only in the walking scripts), which are script state, and use `EVENT`, `ADDOBJ` and `TRIGANIM` on the object's own effects, sounds
+and animations: the Small Toilets, the Giant Puzzles, the Strength Flower, the Ufo Blaster and the remaining shops leave
+the body standing where it stood, at the stand point it walked to. None of these objects sets `UsageInfo.RequiresTeleport`.
+
+OpenTPW draws such a guest (`GuestSimulation.ShowsKeptBody`) from the ride poses when the walk table or a bounce
+table holds it, and once its entry is gone (`WALKGET`, `UNBOUNCE`, a node the model lacks) where the walk or the bounce
+left it, with the frames its body plays (`FlatRideBounceRiders.HoldKeptBodies`); otherwise standing where it stood,
+in the stand pose, by the kids or costume renderer of its kept body's appearance. A body the script deleted is not
+drawn. Its balloon, thought bubble, pick and portrait stay off, as for any rider; an umbrella or warm items it holds
+stay with a body that stands in place (not with one a ride pose draws). A pools changing room still hides the guest
+(`[EXT:pools-swim]`). OpenTPW's own winter kiosk, glühwein stall and brolly shop set the key to 1 as well, so their
+customers stand at the counter too; the kiosk (capacity 5) and the brolly shop (capacity 10) can serve several at
+once, and those stand on the same stand point. Their `.sam` comments still say the script hides the customer: the
+shipped archives are pinned by the asset manifest of every park save that placed one, so the comment waits for a
+content change that has to touch them anyway. Before October 19, 2026 every served guest was hidden, so guests at the
+Burger Shop seemed to vanish into the hut, and the toilets' and the puzzles' users vanished too.
+
+### Leaving an object (ExitRide)
+
+A script lets a guest off by writing it to `VAR_LETMEOFF`. tp.exe reads that variable only in the ride update of a park
+turn (the dismiss `0x4E1410`): ride state 0 runs it after the admission (`0x4E1220`) and the breakdown test, unless that
+test sets state 1 or 4 (`0x4E159A`); states 1, 2 and 4 run it after the head step (`0x4E0E27`). So a use lasts the
+script's time plus up to one park turn (248 ms): the Burger Shop's `WAIT 1000` serves a customer 1.0 to 1.25 s. The
+dismiss runs ExitRide (`0x5014E0`) and writes 0 to the variable only when ExitRide succeeds.
+
+ExitRide:
+
+1. Puts the guest at `UsageInfo.ExitCellAppearPos` in the object's exit cell (`+0x38`; for an object without an exit
+   it is the entrance cell `+0x36`). The point `0x4DEDF0(1)` takes the bytes `ftol(255 x f)` after the object's
+   rotation, as the stand point does: 90 gives (y, 1 - x), 180 gives (1 - x, 1 - y), 270 gives (1 - y, x). The
+   teleport `0x4FA930` sets the position, zeroes the velocity and moves the guest to the cell's list.
+2. Takes the exit cell's link byte `+0x0D` (`0x522850`), reversed by `0x4D8C00` when the exit cell is the entrance
+   cell, and the neighbour along it (`0x4D97E0`).
+3. Calls the exit blocked when that neighbour is a queue cell (types 3 and 9, `0x536320`) or no route reaches it
+   (`0x4FA530`). It logs "SetDest on ride exit failed, exit of object %d is blocked!" and closes the ride
+   (`0x4DF150`): the open word, the pending visitor and `VAR_RIDECLOSED` = 1, as a breakdown's SetState does. The
+   guest stays on the ride (state 16) at the exit point, its kept body where it was, and `VAR_LETMEOFF` keeps it,
+   so every later ride update tries again.
+4. Otherwise runs the use routine (`0x4FD970`) and enters state 15.
+
+State 15 (`0x500900`) walks the guest to that neighbouring cell. A stuck walk clears its target and sends it to state 6;
+on arrival the guest decides again (state 6, "successfully left ride"). tp.exe first takes a major destination it set
+aside for a minor one; OpenTPW keeps none (`APPROX:GUEST-004`). `GuestSimulation.ExitRide`,
+`RideVisitorBridge.DismissLetOff` and `CloseForBlockedExit` port this.
+
+Some cell maps hold no exit cell with the link a placement writes:
+- the M3 and M4 gates, the measurement scenarios, test rigs and the developer prototype lay no access cells;
+- the Theme Park Inc slice and online visits keep no access-cell links.
+
+An attraction on such a map lets off in the cell it takes its guests in and routes to its `ExitCell`. Only a Theme
+Park World level types the footprints, so only there does ExitRide use the object's own exit cell
+(`Level.RegisterWithGuests`, `ownExitCell`).
+
+A guest the ride lets go of without a let-off leaves by ExitRide when it can. That happens when its script halted or
+faulted, or for a save's leftover rider. When ExitRide fails, the guest is set down beyond the exit, as a guest on a
+removed ride is (`QUEUE-010`).
+
+A demolished object's riders get neither ExitRide nor the use routine: tp.exe's removal message (`0x4FB360`) gives
+them their model back, the small happiness step and state 6 (`GuestSimulation.Unregister`). The pools changing room's
+swimmers keep their own exit (`[EXT:pools-swim]`).
+
+`ShopVisitAssetTests` runs the shipped Burger Shop in all four rotations: every customer is let off 1.0 to 1.3 s after
+the shop takes it, walks out of the hut, and no guest is lost. `ExitRideTests` covers the exit point, the reversal,
+the blocked exit and the state-15 walk.
 
 **Depth.** The quad is camera-facing, so all of it lies at the depth of the hotspot, and seen from above the ground just in front of the
 feet is nearer the camera than the hotspot: it hides whatever hangs below the hotspot. In the `.TPC` the soles of a standing kid end 3 to 5

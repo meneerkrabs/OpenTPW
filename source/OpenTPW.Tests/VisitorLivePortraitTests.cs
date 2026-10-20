@@ -174,6 +174,139 @@ public class VisitorLivePortraitTests
 			}
 	}
 
+	/// <summary>
+	/// A guest whose object's UsageInfo.RideHandlesSprite kept its body (tp.exe 0x0050212B, which tests no object kind, and 0x004FA087) is drawn standing where it stands while it uses the object, whether
+	/// a shop, a sideshow, a toilet or a ride without a pose; an object that deletes the body and a pools changing room draw nothing.
+	/// </summary>
+	[TestMethod]
+	public void AGuestWhoseBodyTheObjectKeepsIsDrawnStandingWhateverTheObjectsKind()
+	{
+		foreach ( var (kind, keeps, changingRoom, drawn) in new[] { (RideVisitorKind.Shop, true, false, 1), (RideVisitorKind.Shop, false, false, 0), (RideVisitorKind.Sideshow, true, false, 1), (RideVisitorKind.Sideshow, false, false, 0),
+			(RideVisitorKind.Facility, true, false, 1), (RideVisitorKind.Facility, false, false, 0), (RideVisitorKind.Ride, true, false, 1), (RideVisitorKind.Ride, false, false, 0), (RideVisitorKind.Shop, true, true, 0) } )
+		{
+			var guest = Visitor();
+			var rig = new Rig( guest );
+			var shop = new RideVisitorBridge( 7, "Kept body", kind, 1, 0, 0 ) { EntranceCell = (4, 4), ExitCell = (4, 4), RideHandlesSprite = keeps, IsChangingRoom = changingRoom };
+			rig.Simulation.Register( shop );
+			guest.State = GuestState.Using;
+			guest.AttractionId = shop.AttractionId;
+			if ( keeps )
+				guest.BodySprite.CreatePlayer( VisitorSpriteTemplate.Stand, 0 );
+			Assert.AreEqual( drawn == 1, rig.Simulation.ShowsKeptBody( guest ), $"{kind}, keeps {keeps}, changing room {changingRoom}" );
+			rig.Prepare( 2.25 );
+			Assert.AreEqual( drawn, rig.Renderer.DrawnGuests, $"{kind}, keeps {keeps}, changing room {changingRoom}" );
+		}
+	}
+
+	/// <summary>
+	/// A kept body stays where the walk update or the bounce pass last placed it once its entry is gone (tp.exe's sprite pass 0x00542010 draws a sprite at its stored position; only 0x004F9E60 and, after the
+	/// state-15 entry, 0x004FA087 store it), with its player's frames, until the guest is let off or the body is deleted.
+	/// </summary>
+	[TestMethod]
+	public void AKeptBodyStaysWhereItsWalkOrBounceLastPlacedIt()
+	{
+		foreach ( var kind in new[] { RideVisitorKind.Sideshow, RideVisitorKind.Shop, RideVisitorKind.Facility, RideVisitorKind.Ride } )
+		{
+			var guest = Visitor();
+			var rig = new Rig( guest );
+			Get<Dictionary<int, Guest>>( rig.Simulation, "byId" )[guest.Id] = guest;
+			var bridge = new RideVisitorBridge( 7, "Kept body", kind, 1, 0, 0 ) { EntranceCell = (4, 4), ExitCell = (4, 4), RideHandlesSprite = true };
+			rig.Simulation.Register( bridge );
+			guest.State = GuestState.Using;
+			guest.AttractionId = bridge.AttractionId;
+			guest.BodySprite.CreatePlayer( VisitorSpriteTemplate.Walk, 0 ); guest.BodySprite.Tick( 63 );
+			var output = guest.BodySprite.Player!.Output!.Value;
+			var walked = new BounceRiderPose( guest.Id, bridge.AttractionId, new N.Vector3( 3, 4, 5 ), 6, false, 2, GuestSpriteAtlas.WalkSlot );
+			var placed = new Dictionary<int, BounceRiderPose> { [guest.Id] = walked };
+			var prepared = new Dictionary<int, BounceRiderPose>();
+			FlatRideBounceRiders.HoldKeptBodies( prepared, placed, rig.Simulation );
+			Assert.AreEqual( walked with { Slot = output.Slot, Step = output.Frame, UsesSpriteState = true }, prepared[guest.Id], $"{kind}: held where it was placed, with the player's frame" );
+			Assert.AreEqual( prepared[guest.Id], placed[guest.Id], "the next pass holds it again" );
+			prepared.Clear();
+			FlatRideBounceRiders.HoldKeptBodies( prepared, placed, rig.Simulation );
+			Assert.AreEqual( new N.Vector3( 3, 4, 5 ), prepared[guest.Id].Feet, $"{kind}: still held" );
+			var posed = walked with { Feet = new N.Vector3( 7, 8, 9 ) };
+			prepared.Clear(); prepared[guest.Id] = posed;
+			FlatRideBounceRiders.HoldKeptBodies( prepared, placed, rig.Simulation );
+			Assert.AreEqual( posed, prepared[guest.Id], "a pose of this pass wins" );
+			prepared.Clear();
+			guest.State = GuestState.ExitingRide;
+			FlatRideBounceRiders.HoldKeptBodies( prepared, placed, rig.Simulation );
+			Assert.AreEqual( 0, prepared.Count, $"{kind}: the let-off ends the hold" );
+			Assert.AreEqual( 0, placed.Count );
+			guest.State = GuestState.Using;
+			placed[guest.Id] = walked;
+			guest.BodySprite.DeletePlayer();
+			FlatRideBounceRiders.HoldKeptBodies( prepared, placed, rig.Simulation );
+			Assert.AreEqual( 0, prepared.Count, $"{kind}: a deleted body is not held" );
+		}
+	}
+
+	/// <summary>A body the object does not keep is never held, and a pose of another attraction is not this guest's.</summary>
+	[TestMethod]
+	public void ABodyTheObjectDoesNotKeepOrAnotherAttractionsPoseIsNotHeld()
+	{
+		var guest = Visitor();
+		var rig = new Rig( guest );
+		Get<Dictionary<int, Guest>>( rig.Simulation, "byId" )[guest.Id] = guest;
+		var bridge = new RideVisitorBridge( 7, "Deletes", RideVisitorKind.Sideshow, 1, 0, 0 ) { EntranceCell = (4, 4), ExitCell = (4, 4), RideHandlesSprite = false };
+		rig.Simulation.Register( bridge );
+		guest.State = GuestState.Using;
+		guest.AttractionId = bridge.AttractionId;
+		guest.BodySprite.CreatePlayer( VisitorSpriteTemplate.Walk, 0 );
+		var prepared = new Dictionary<int, BounceRiderPose>();
+		var placed = new Dictionary<int, BounceRiderPose> { [guest.Id] = new BounceRiderPose( guest.Id, bridge.AttractionId, N.Vector3.One, 0, false, 0 ) };
+		FlatRideBounceRiders.HoldKeptBodies( prepared, placed, rig.Simulation );
+		Assert.AreEqual( 0, prepared.Count );
+		bridge.RideHandlesSprite = true;
+		placed[guest.Id] = new BounceRiderPose( guest.Id, 99, N.Vector3.One, 0, false, 0 );
+		FlatRideBounceRiders.HoldKeptBodies( prepared, placed, rig.Simulation );
+		Assert.AreEqual( 0, prepared.Count );
+	}
+
+	/// <summary>What a guest holds (umbrella, warm items) mounts on a kept body that stands where it stood, and not on one a ride pose draws, as for any rider.</summary>
+	[TestMethod]
+	public void AKeptBodyStandingInPlaceMountsAndAPosedOneDoesNot()
+	{
+		var guest = Visitor();
+		var rig = new Rig( guest );
+		var bridge = new RideVisitorBridge( 7, "Kept body", RideVisitorKind.Sideshow, 1, 0, 0 ) { EntranceCell = (4, 4), ExitCell = (4, 4), RideHandlesSprite = true };
+		rig.Simulation.Register( bridge );
+		guest.State = GuestState.Using;
+		guest.AttractionId = bridge.AttractionId;
+		guest.BodySprite.CreatePlayer( VisitorSpriteTemplate.Stand, 0 );
+		var (right, up, forward, eye) = (N.Vector3.UnitX, N.Vector3.UnitZ, N.Vector3.UnitY, new N.Vector3( 0, -50, 50 ));
+		Assert.IsTrue( rig.Renderer.TryMount( guest, right, up, forward, eye, out _ ), "standing in place" );
+		var source = new RiderSource { Pose = new BounceRiderPose( guest.Id, bridge.AttractionId, N.Vector3.Zero, 6, false, 0, GuestSpriteAtlas.WalkSlot ) };
+		rig.Renderer.BounceRiders = source;
+		Assert.IsFalse( rig.Renderer.TryMount( guest, right, up, forward, eye, out _ ), "posed by the walk" );
+		source.Pose = source.Pose with { AttractionId = 99 };
+		Assert.IsTrue( rig.Renderer.TryMount( guest, right, up, forward, eye, out _ ), "another attraction's pose is not this guest's" );
+		guest.BodySprite.DeletePlayer();
+		rig.Renderer.BounceRiders = null;
+		Assert.IsFalse( rig.Renderer.TryMount( guest, right, up, forward, eye, out _ ), "deleted" );
+	}
+
+	/// <summary>A kept body the script deleted (the hidden walk actions 1, 2 and 4, 0x004F9ED0) has no player and is not drawn, whatever the object.</summary>
+	[TestMethod]
+	public void AKeptBodyTheScriptDeletedIsNotDrawn()
+	{
+		foreach ( var kind in new[] { RideVisitorKind.Shop, RideVisitorKind.Sideshow, RideVisitorKind.Facility } )
+		{
+			var guest = Visitor();
+			var rig = new Rig( guest );
+			var shop = new RideVisitorBridge( 7, "Kept body", kind, 1, 0, 0 ) { EntranceCell = (4, 4), ExitCell = (4, 4), RideHandlesSprite = true };
+			rig.Simulation.Register( shop );
+			guest.State = GuestState.Using;
+			guest.AttractionId = shop.AttractionId;
+			guest.BodySprite.CreatePlayer( VisitorSpriteTemplate.Stand, 0 );
+			guest.BodySprite.DeletePlayer();
+			Assert.IsFalse( rig.Simulation.ShowsKeptBody( guest ), kind.ToString() );
+			rig.Prepare( 2.25 );
+			Assert.AreEqual( 0, rig.Renderer.DrawnGuests, kind.ToString() );
+		}
+	}
+
 	[TestMethod]
 	public void SelectionAloneAndMissingFirstOutputNeverPublishButTheFirstPreparedQuadIsImmediatelyReadable()
 	{

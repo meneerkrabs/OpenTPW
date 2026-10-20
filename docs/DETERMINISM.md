@@ -1107,3 +1107,30 @@ data adds the rig and the station frame, which `DetMatrix` covers. The rig's res
 `Matrix4x4.CreateFromQuaternion` stay System.Numerics': they use the unfused `Dot`, `Cross`, `Length` and scalar arithmetic. The station frame's change from the fused product
 moves a station node's position by at most a few last bits; no pinned golden builds a coaster from game data, so no other pin moved.
 The animator itself (`ObjectAnimator`, presentation and the object scripts' poses) still uses System.Numerics.
+
+## Retained full-room targets: bounded pin reconciliation (2026-10-20)
+
+GUEST-004 retains the refused full-room target until replacement or removal. `AttractionId` already participates in the canonical hash; the hash schema and production hashing are unchanged. The diagnostic head `c101b4abb9c54256ec6000d26035eec02d539d1b` projects only retained target identities to zero without advancing the simulation, restores them in `finally`, and leaves each actual pin assertion intact. All 30 failing assertions on each of macOS, Windows and Linux recovered their individual previous expected hashes under that projection (jobs `118523918197`, `118523918216`, `118523918184`, run `39391350115`). Browser interpreter actual hashes match the same observed mappings (job `118523539167`, run `39391350411`); its harness does not emit the projection log, so the retained projection assertions must establish that check in the next run. This is endpoint equivalence, not a claim of native-game parity. The default fixed run also has a paired per-tick legacy-cleared replay which checks complete world hashes and RNG and recovers its original pin.
+
+The following are the observed pin mappings. Test-only `VerifyRetainedTargetHash` retains each previous pin as a projection assertion while existing tests assert the new actual hash. No unobserved pin is replaced, no runtime hash field is ignored, and the historical pin narratives above remain historical. Cross-platform verification of this reconciliation is pending.
+
+| Pin | Previous target-cleared hash | Retained-target hash |
+| --- | --- | --- |
+| FixedRunHash | `0x5D8385D13CC3BB9B` | `0x60020C37ABCABF02` |
+| PoolsChangingRoomFixedRunHash | `0x2E9AA1D5A79E1FB2` | `0x4A5E388817DC9C20` |
+| UmbrellasFixedRunHash | `0xE912E7E5D5B6E612` | `0xFD4D4FA2BC53FB5A` |
+| WinterFixedRunHash | `0xA66540FF8C2AC6DE` | `0x04E34ADC1294F043` |
+| JungleDecemberOffFixedRunHash | `0xF4A00471E60B9535` | `0xD4B54BFD2A1A3B40` |
+| JungleDecemberWintryFixedRunHash | `0x296DA4DA6A8BE323` | `0xAFC63547CAB25B4D` |
+| WinterAlwaysFixedRunHash | `0x5F767F69EF5CBF07` | `0x5965F2218331DD31` |
+| RainMoodFixedRunHash | `0x3697B9094432D152` | `0xD07DB488E3A1FC4A` |
+| WinterColdEverythingFixedRunHash | `0x45FCB3FC30C601FC` | `0xB3D783A30895BD7C` |
+| PoolExtrasFixedRunHash | `0x20DED2AC4BEC293A` | `0x2006BE5B455712F4` |
+| PoolsAttractionsFixedRunHash | `0x2D7EE079E5A9B09F` | `0x0B29FCE4C3ADFA82` |
+| SmarterGuestsFixedRunHash | `0xE7D4BED7787E4748` | `0x0A277921CBEAB355` |
+| ScriptModsFixedRunHash | `0x8AB18F8AC449CC49` | `0xECA942D0405666C8` |
+| ScriptModsAllHooksFixedRunHash | `0x6B74FB3AE8A4937F` | `0x3F3FBCA22B2A3F26` |
+| PoolsFixedRunHash | `0x8EE352E1FD1EEAB3` | `0x24E20D8037EFED67` |
+| ScenarioBinsSmarterFixedRunHash | `0xF43AEA85CC6DB665` | `0xF0B70A41A0CF4F7A` |
+| ScenarioBinsPhase6FixedRunHash | `0x8E13F761512B0043` | `0x7F5CE116FCF4ACE2` |
+| CheatsFixedRunHash | `0x5CBF8584199279AB` | `0xC75F009A73FB11B7` |

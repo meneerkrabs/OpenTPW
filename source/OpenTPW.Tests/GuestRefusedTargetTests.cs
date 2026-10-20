@@ -146,7 +146,29 @@ public class GuestRefusedTargetTests
 		return resumed;
 	}
 
-	internal static ulong DiagnoseRetainedTargetHash( GuestSimulation simulation, Func<ulong> compute )
+	private static readonly Dictionary<ulong, ulong> LegacyPinByRetainedTargetPin = new()
+	{
+		[0x60020C37ABCABF02UL] = 0x5D8385D13CC3BB9BUL,
+		[0x4A5E388817DC9C20UL] = 0x2E9AA1D5A79E1FB2UL,
+		[0xFD4D4FA2BC53FB5AUL] = 0xE912E7E5D5B6E612UL,
+		[0x04E34ADC1294F043UL] = 0xA66540FF8C2AC6DEUL,
+		[0xD4B54BFD2A1A3B40UL] = 0xF4A00471E60B9535UL,
+		[0xAFC63547CAB25B4DUL] = 0x296DA4DA6A8BE323UL,
+		[0x5965F2218331DD31UL] = 0x5F767F69EF5CBF07UL,
+		[0xD07DB488E3A1FC4AUL] = 0x3697B9094432D152UL,
+		[0xB3D783A30895BD7CUL] = 0x45FCB3FC30C601FCUL,
+		[0x2006BE5B455712F4UL] = 0x20DED2AC4BEC293AUL,
+		[0x0B29FCE4C3ADFA82UL] = 0x2D7EE079E5A9B09FUL,
+		[0x0A277921CBEAB355UL] = 0xE7D4BED7787E4748UL,
+		[0xECA942D0405666C8UL] = 0x8AB18F8AC449CC49UL,
+		[0x3F3FBCA22B2A3F26UL] = 0x6B74FB3AE8A4937FUL,
+		[0x24E20D8037EFED67UL] = 0x8EE352E1FD1EEAB3UL,
+		[0xF0B70A41A0CF4F7AUL] = 0xF43AEA85CC6DB665UL,
+		[0x7F5CE116FCF4ACE2UL] = 0x8E13F761512B0043UL,
+		[0xC75F009A73FB11B7UL] = 0x5CBF8584199279ABUL,
+	};
+
+	internal static ulong VerifyRetainedTargetHash( GuestSimulation simulation, Func<ulong> compute )
 	{
 		var actual = compute();
 		var retained = simulation.Guests.Where( guest => guest.AttractionId != 0 && !guest.IsInQueue
@@ -157,7 +179,11 @@ public class GuestRefusedTargetTests
 		try { projected = compute(); }
 		finally { foreach ( var pair in retained ) pair.Guest.AttractionId = pair.Target; }
 		Assert.AreEqual( actual, compute(), "diagnostic projection restores the actual hash" );
-		if ( retained.Length > 0 ) Console.WriteLine( $"Retained-target diagnostic actual=0x{actual:X16} projected=0x{projected:X16} count={retained.Length}" );
+		if ( LegacyPinByRetainedTargetPin.TryGetValue( actual, out var legacy ) )
+		{
+			Assert.IsTrue( retained.Length > 0, "a repinned run must exercise retained targets" );
+			Assert.AreEqual( legacy, projected, "the previous scenario pin is recovered by target-only projection" );
+		}
 		return actual; // All existing pin assertions still compare the real, unmodified hash.
 	}
 

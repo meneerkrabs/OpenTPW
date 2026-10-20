@@ -349,8 +349,9 @@ and neither the mesh path (`0x57A750`, `0x57AA10`, `0x574110`–`0x574660`) nor 
 `[0x87B1D8]` vtable +8: `0x579250`, `0x5F4730`, `0x5F4F81`, applies the matrix only) tests faces, but the submit's queue
 (`[0x8BCBB8]`, filled only by `0x581CD0`, whose only caller is `0x57A530`) is flushed by the scene draw (`0x576A00` →
 `0x582170` → `0x581DB0`), and its primitive builder `0x580530` keeps a triangle only when the determinant of its corners'
-x, y and w is positive (`0x581320`, its only caller), i.e. when it runs clockwise on the screen after the advisor's own
-view `diag(1, −1, 1, 1)` (`0x57A260`). Until October 20, 2026 OpenTPW drew the advisor double-sided, having missed that test;
+x, y and w is positive (`0x581320`, its only caller), after the advisor's own view `diag(1, −1, 1, 1)` (`0x57A260`) and
+the viewport `0x579690`, which scales y by the positive half height (`0x582F70`): the screen's y runs down, so a positive
+determinant means the corners run clockwise on the screen. Until October 20, 2026 OpenTPW drew the advisor double-sided, having missed that test;
 `AdvisorTests.TheOriginalsFaceTestKeepsTheAdvisorsFacesTowardsTheViewer` checks that the kept faces are the ones whose stored
 normals face the viewer in every advisor model (ADVISOR-007 stays retired). The bind pose is the base of the clips
 ("Clip timeline" below). All 15 `Advisorm*.MD2` clips decode completely: TRS tracks, quantised vertex

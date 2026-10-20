@@ -182,8 +182,9 @@ public sealed class ChatHub
 			{
 				sessions.TryRemove( new KeyValuePair<string, ChatSession>( account.Key, session ) );
 				// The park the player left gets its roster without them, so the people list shows the parting.
+				var parted = RoomEvent( session.Room );
 				foreach ( var other in sessions.Values.Where( other => other.Room == session.Room ) )
-					Send( other, RoomEvent( session.Room ) );
+					Send( other, parted );
 			}
 			session.Outbox.Writer.TryComplete();
 			try { await writer; } catch ( Exception exception ) when ( exception is WebSocketException or OperationCanceledException ) { }
@@ -346,12 +347,14 @@ public sealed class ChatHub
 			session.Room = room;
 			session.Position = null;
 			session.Hidden = false;
-			Send( session, RoomEvent( room ) );
-			foreach ( var other in sessions.Values.Where( other => other.Room == room && other != session ) )
-				Send( other, RoomEvent( room ) );
+			// everyone in the room, the joiner included, gets the same roster, built once while the lock is held
+			var entered = RoomEvent( room );
+			foreach ( var other in sessions.Values.Where( other => other.Room == room ) )
+				Send( other, entered );
 			// The park the player walked out of gets its roster without them, as when they disconnect.
+			var parted = RoomEvent( left );
 			foreach ( var other in sessions.Values.Where( other => other.Room == left ) )
-				Send( other, RoomEvent( left ) );
+				Send( other, parted );
 		}
 		NotifyBuddiesOfEntry( session );
 	}

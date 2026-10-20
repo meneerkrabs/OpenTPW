@@ -1031,3 +1031,41 @@ RideSystem, attraction and economy readers over the second fixture set
   node-state flag meanings (the record frame, header and lengths are decoded) and the meaning of the unnamed RSSE struct words.
 - Saves with known ride wear to confirm the attraction gauges against the original wear rule.
 - Money/time/guest state needs known-state reference saves before import.
+
+
+## TrackRides structural reader (TRACK-032 remains open)
+
+`SaveTrackRideBlock.ParseContainer` accepts exactly the full type-1 container, including its 12-byte header.
+`ParseBody` accepts only subchunks, as stored in `OriginalSavePayload.TrackRides`; check `TrackRidesType == 1`
+and pass `TrackRidesWord` separately. Chunk offsets are always relative to the full container header.
+All header words, stream order, opaque payload bytes, duplicate identities/positions and repeated chunk-6 requests
+are preserved. A malformed later chunk returns no partial document. This does not establish runtime import atomicity.
+
+TPW writer shapes (12-byte framing included in total):
+
+| Chunk | Payload | Total | Contents |
+|---|---:|---:|---|
+| 3 | 40 | 52 | handle, ride +b4/+b8, +b0, +10, +1c, +14, +18, +4 duration, +50 |
+| 4 | 16 | 28 | handle, tile/type word, two coordinates |
+| 5 | 196 | 208 | handle, raw 0xac record, two fallback tile coordinates, waypoint owner handle and two waypoint coordinates |
+| 6 | 4 | 16 | ride handle requesting reference selection, not a section index |
+
+Evidence: writer `0x542b05..0x542bda`, `0x542ccb..0x542d06`, `0x542e3b..0x542f6c`, `0x54335b..0x5433b5`;
+reader dispatch `0x544124`. The reader requires these exact typed sizes as a **managed strict writer-shape policy**.
+Native reads may zero-fill short data and skip excess bytes, so this is not a claim about native corruption rejection.
+Other chunk types retain their opaque bytes; Theme Park Inc has not been verified for this typed contract.
+
+The 0xd0 ride size is an **in-memory stride**, not chunk 3's serialized width. Chunk 5's raw records come from the
+0x877b68 pool, in pool order, not circuit order. Their raw pointer-looking fields are not followed. Raw +0x34/+0x38
+locate a tile; trailing coordinates provide a fallback. The trailing waypoint key is resolved natively against an
+owner ride's separate +0xa8 chain by waypoint +8/+c coordinates (`0x543df6..0x543e48`): first match supplies +4,
+no match stores 0, and absent owner stores -1. The structural reader leaves every nonzero-owner key **unresolved**,
+even if a matching ride header exists. Duplicate raw positions are legitimate structural data, not duplicate waypoint identities.
+
+Chunk 3's `0x545890` creates station/grid waypoints; chunk 4's `0x54b2f0` appends derived waypoints
+(`0x54bae5..0x54bb49`). These are distinct 0x1c records at 0x877b78, not the raw 0xac records.
+Chunk 6 (`0x5439bb..0x5439e4`) scans from the head to the first flag-4 waypoint, **always advances once**, wraps a null
+successor to the head, and skips flag-2 candidates. The first scan has no wrap/null guard in the original.
+No reference index can be obtained from chunk-5 record order. Geometry-specific waypoint reconstruction, safe handling
+of malformed chains and runtime restore semantics remain future work; the structural reader does not fresh-walk a map
+or retire TRACK-032.

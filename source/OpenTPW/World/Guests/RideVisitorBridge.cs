@@ -922,21 +922,31 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	}
 
 	/// <summary>
-	/// The called guest reached the stand point (state 13, admission method <c>0xe03d0</c>): its id is written
-	/// to VAR_LETMEON only while that is 0 and the ride is open and outside its retained broken state. True when written (the guest then waits for the script).
+	/// The called guest reached the stand point (state 13, admission method AdmitPerson: Mac <c>0xe03d0</c>, PC <c>0x004E0900</c>): its id is written
+	/// to VAR_LETMEON only while that is 0 and the ride is open and outside its retained broken state. True when written (the guest then waits for the script);
+	/// false refuses the guest, which then walks back to its queue place (<see cref="GuestSimulation"/>'s state 13).
 	/// </summary>
 	public bool PresentForBoarding( int guestId )
 	{
 		if ( guestId == 0 || guestId != called || vm == null )
 			return false;
 		// Recheck the owner's open word and retained state at the stand point; the choice's coaster/track predicate does not apply here.
+		// [BIN:TPW-EXE:0x004E0900 AdmitPerson state/open test] AdmitPerson refuses a ride in state 1 (+0x19C), with the open word +0x68 = 0 or in state 4 before the loading-slot and VAR_LETMEON checks: it logs and returns 0 without touching the ride (0x004E0A30), so the pending visitor and VAR_LETMEON stay as they are
+		// IsBrokenDown stands for tp.exe's +0x19C test (states 1 and 4) only because every opener writes the open word 1 and VAR_RIDECLOSED 0 together with SetState(0)
+		// (the repair 0x004DF8F0, the open routine 0x004DF390, the queue edit's reopening 0x004DE1F0, the upgrade cancel 0x004E0050; see IsBrokenDown): an opener
+		// that wrote only the open word would leave tp.exe in state 1 while the bridge's retained state reads as left (ClosedRideAdmissionTests pins the runtime opener)
 		if ( !isOpen() || IsBrokenDown )
 			return false;
 		if ( letMeOnWritten )
 			return true;
 		// [BIN:TPW-EXE:0x551724 critical flag] the original's host side never looks at the critical flag (its only reader is the slice loop); the admission method writes VAR_LETMEON whenever it is 0, whatever the script is doing
 		if ( Get( RideVariables.VAR_LETMEON ) != 0 )
+		{
+			// [BIN:TPW-EXE:0x004E09B0 AdmitPerson clears the loading slot] past the state/open test AdmitPerson clears the person being loaded (+0x6C) before it reads VAR_LETMEON;
+			// a busy VAR_LETMEON then logs "script changed its mind about admission!" and returns 0 (0x004E09EC), leaving the variable alone, so the ride calls its head again at a later update
+			called = 0;
 			return false;
+		}
 		Set( RideVariables.VAR_LETMEON, guestId );
 		letMeOnWritten = true;
 		return true;

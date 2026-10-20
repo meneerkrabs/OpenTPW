@@ -2700,22 +2700,24 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// <summary>The destination for the guest's list position (<c>0xee604</c>): store the position and walk there (state 12).</summary>
 	private void MoveToQueuePosition( Guest guest, IRideVisitorBridge attraction )
 	{
-		var position = attraction.GetQueuePosition( guest.Id );
-		if ( position < 0 )
-		{
-			// a guest missing from the list cannot occur in the original (0x004DDF50 asserts, "Problem with a queue"); OpenTPW sends it away like state 11's lookup does
+		// [BIN:TPW-EXE:0x00501160 queue place route] the generic route request 0x004FA5F0 from wherever the guest stands to the place's slot: a route sets state 12; none leaves "Couldn't get to my intended queue position" (move-up, 0x004FFFF0) or "Couldn't get to my place" (the join, 0x004FFBC0) through the dismissal with no thought, 0x005004AA
+		if ( !TryRouteToQueuePlace( guest, attraction ) )
 			DismissFromQueue( guest, attraction, GuestThought.None, QueueEndReason.NoPlace );
-			return;
-		}
+	}
+
+	/// <summary>FindQueueDestination (tp.exe <c>0x00501160</c>): store the list position and route to its slot (state 12); false, with no state change, when the guest has no place or no route.</summary>
+	private bool TryRouteToQueuePlace( Guest guest, IRideVisitorBridge attraction )
+	{
+		var position = attraction.GetQueuePosition( guest.Id );
+		// a guest missing from the list cannot occur in the original (0x004DDF50 asserts, "Problem with a queue"); 0x00501160 returns 0 for it, and OpenTPW sends it away like state 11's lookup does
+		if ( position < 0 )
+			return false;
 		guest.QueuePosition = position;
 		var (index, x, y) = QueueSlotPoint( attraction, position, NextLateral() );
-		// [BIN:TPW-EXE:0x00501160 queue place route] the generic route request 0x004FA5F0 from wherever the guest stands to the place's slot: a route sets state 12; none leaves "Couldn't get to my intended queue position" (move-up, 0x004FFFF0) or "Couldn't get to my place" (the join, 0x004FFBC0) through the dismissal with no thought, 0x005004AA
 		if ( !SetQueueDestination( guest, attraction, index, (x, y), toEntrance: false ) )
-		{
-			DismissFromQueue( guest, attraction, GuestThought.None, QueueEndReason.NoPlace );
-			return;
-		}
+			return false;
 		EnterGuestState( guest, GuestState.MovingUpQueue );
+		return true;
 	}
 
 	/// <summary>
@@ -2875,7 +2877,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 				return;
 		}
 		else if ( turnStarted )
-			Step( guest ); // state 13 keeps stepping (braking) until the ride takes the guest's offer
+			Step( guest ); // a state-13 guest without a waypoint (a resumed park) steps (brakes) on a started turn, then presents
 		if ( guest.State == GuestState.MovingUpQueue )
 			EnterStanding( guest );
 		else if ( TooExpensive( guest, attraction ) )
@@ -2884,6 +2886,23 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			RefusePrice( guest, attraction );
 		else if ( attraction.PresentForBoarding( guest.Id ) )
 			EnterGuestState( guest, GuestState.WaitingToBoard );
+		else
+			RejoinQueuePlace( guest, attraction );
+	}
+
+	/// <summary>
+	/// The ride refused the guest at the stand point: it walks back to its queue place (state 12) and stands there again, or leaves the queue when
+	/// no route leads there. The price test and the presentation therefore run once per arrival at the stand point, not once per tick.
+	/// </summary>
+	private void RejoinQueuePlace( Guest guest, IRideVisitorBridge attraction )
+	{
+		// [BIN:TPW-EXE:0x005007E7 AdmitPerson refusal] a 0 from AdmitPerson (0x004E0900) calls FindQueueDestination 0x00501160 (the place's queue slot 0x004DDF50, 0x004DE7E0, the generic route 0x004FA5F0, state 12: MoveToQueuePosition);
+		// when that fails ("Couldn't rejoin FOQ even!", 0x0050082F) the guest is unlinked (0x004DDD20), dismissed (0x005012F0) with no thought and set to state 6 (0x00500824..0x00500865)
+		if ( !TryRouteToQueuePlace( guest, attraction ) )
+		{
+			Log?.Warning( "Couldn't rejoin FOQ even!" );
+			DismissFromQueue( guest, attraction, GuestThought.None, QueueEndReason.NoPlace );
+		}
 	}
 
 	/// <summary>A called guest refuses the price: two medium happiness drops (the refusal and the dismissal), then it leaves the queue.</summary>

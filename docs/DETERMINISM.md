@@ -85,8 +85,10 @@ sequential for every message (below).
 The original's main loop (tp.exe `0x54F4BF`) runs a 31 ms substep, and every eighth substep is a park turn. Each substep, in
 this order (`Level.AdvanceSimulation`, `ParkObjects.Simulate`, `SimulationSubstep`):
 
-1. the substep counter (`0x877D34`) and the scaled clock (`0x878C74`, +0x1F) rise at `0x54F4C4`..`0x54F4D6`, before the pause test (`0x54F4D4`); a paused park then skips the body (`0x54F8CD`), so its scripts, bump
-   module, tour cars and turns stand still with its calendar. The original's counter would keep rising for as long as its timer runs while paused; OpenTPW's 60 Hz clock does not run while paused, so the counter simply stops (an approximation of the pause's wall-clock phase only);
+1. the substep counter (`0x877D34`) and the scaled clock (`0x878C74`, +0x1F) rise at `0x54F4C4`..`0x54F4D6`, before the inactive-application test (`0x54F4D4`): the body is skipped
+   (`0x54F8CD`) only while the application is inactive (`0x7A1A14` bit 3 clear, kept by the main window procedure `0x46B600`) and the option bit `0x7A1A8C` bit 0 is set (its default,
+   `0xC0E15` at `0x449E1C`). The game pause (`0x4092A0`) freezes the clock object `0x785970` that drives the substep loop (`0x54F47F`..`0x54F4AF`), so a paused park runs no
+   substep at all: its scripts, bump module, tour cars and turns stand still with its calendar and its counter stands, as OpenTPW's 60 Hz clock does while paused;
 2. the effects system (`0x520130`, not modelled);
 3. the bump module tick (`0x546C80`, `0x54F55F`): once per substep, whichever rides exist;
 4. the script pass (`0x5516B0`, `0x54F56B`): the pass counter (`0x8791A4`) rises, then the scripts run **newest first** (a

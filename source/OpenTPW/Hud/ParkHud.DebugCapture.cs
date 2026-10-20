@@ -33,6 +33,29 @@ public sealed partial class ParkHud
 			Log.Trace( $"--debug-hud ride: riding {match.Entry.DisplayName}." );
 	}
 
+	/// <summary>The buy preview's fixed turn in radians for a capture (<see cref="DebugBuyItem"/>), or null for the clock's turn.</summary>
+	internal float? DebugBuyYaw { get; private set; }
+
+	/// <summary>
+	/// Opens the buy window on the row of the object type <paramref name="infoId"/> (its category, then its row) and, when <paramref name="yawDegrees"/> is given,
+	/// holds the preview at that turn, so a capture shows one object's preview at a known angle. False when no category lists the type.
+	/// </summary>
+	internal bool DebugBuyItem( int infoId, float? yawDegrees )
+	{
+		OpenBuyWindow();
+		DebugBuyYaw = yawDegrees * MathF.PI / 180;
+		foreach ( var category in Enum.GetValues<BuildCategory>() )
+		{
+			SelectCategory( category );
+			var index = BuyItems.ToList().FindIndex( item => item.InfoId == infoId );
+			if ( index < 0 )
+				continue;
+			SelectBuyItem( index );
+			return true;
+		}
+		return false;
+	}
+
 	/// <summary>Shows <paramref name="text"/> as if an element under the pointer had this help.</summary>
 	internal void DebugHelp( string? text ) => debugHelp = text;
 

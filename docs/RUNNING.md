@@ -98,7 +98,7 @@ or full gameplay and does not download proprietary game files.
 | `--mod-dir <folder>` | Adds one mod folder (with its `opentpw-mod.json`) ahead of the installed mods; repeatable. |
 | `OPENTPW_MOD_DIRS` | Mod folders separated by the platform's path separator (`:` or `;`), after `--mod-dir`. |
 
-The choices themselves live in `<config>/mods.json`; see [MODS.md](MODS.md). Changes apply at the next start.
+The choices themselves live in `<config>/mods.json`; see [MODS.md](MODS.md). Official extensions switched in the game apply to the next park started or loaded; mods and edits to the file apply at the next start ([When a change applies](MODS.md#when-a-change-applies)).
 
 `OPENTPW_TPI_PATH=/path/to/Theme\ Park\ Inc bash scripts/smoke-tpi-rides.sh '/path/to/Theme Park World'` runs the native smokes with the shipped Theme Park Inc rides mod (`opentpw.tpi-rides`)
 ([MODS.md](MODS.md#the-shipped-theme-park-inc-rides-mod)); it needs a window, so not while the screen is locked.
@@ -276,17 +276,42 @@ bash scripts/run.sh --game-path '/path/to/Theme Park World' --play-movie bf --sm
 Plays `Data/Movies/<name>.tgq` with SDL2 audio (`--mute` disables it); a key
 press or click skips.
 
-Automated runs are silent: `--smoke-test`, any `--capture-*` option and `--park-resume-smoke` open no audio
-device (the game runs on its wall clock exactly as without a sound card), so smokes and captures make no sound on a
-developer machine. Add `--smoke-audio` to hear one. `--silent` or `OPENTPW_SILENT=1` silences any run.
+Automated runs are silent: `--smoke-test`, `--tpi-smoke-test`, `--park-resume-smoke`, `--smoke-presence`, any `--capture-*` or
+`--perf-*` option, every `--debug-*` option (`--debug-sim-minutes`, `--debug-weather` and the other capture helpers), `--offscreen` (or `OPENTPW_OFFSCREEN=1`), `--headless`, the gates and the guest reports open no audio
+device (the game runs on its wall clock exactly as without a sound card), so tests and agents make no sound on a developer machine.
+Add `--smoke-audio` or `--audible` to hear one. `--silent` or `OPENTPW_SILENT=1` silences any run; a plain launch is never silenced.
+The browser perf tool (`tools/web-perf`) and the postcard smoke start Chrome with `--mute-audio`; pass `--audible` to `run.mjs` to listen.
+`--music` still measures decoding, since muting only silences the speakers.
 
-Automated runs are also offscreen: `--smoke-test`, `--tpi-smoke-test` and `--park-resume-smoke` create the window hidden, never show
+Automated runs are also offscreen (`[EXT:offscreen-automated-runs]`, extended on 2026-10-19 at the user's request that smoke tests and
+agent runs use a virtual screen instead of their display). The same modes that are silent, so the smokes, every `--capture-*`, `--perf-*`
+and `--debug-*` option, `--offscreen`, `--headless`, the gates, the guest reports and `--validate-assets`, create the window hidden, never show
 it and render into an offscreen framebuffer (a colour texture of the size the window would have had; the logical size and
-`OPENTPW_TEST_PIXEL_SCALE` apply as usual) instead of the swapchain, paced at 60 frames per second (`--no-vsync` unpaces it). No window appears, no focus is taken, and a locked screen does
-not matter. `--offscreen` or `OPENTPW_OFFSCREEN=1` does the same for any run; `OPENTPW_OFFSCREEN=0` (or `--no-offscreen`) keeps the
-visible window, which the OS-level fullscreen check needs: an offscreen window has no OS fullscreen state, so the sandbox smoke's
-fullscreen toggle then verifies the logical window size only and logs that the OS transition was skipped. Every offscreen run logs
-`Offscreen mode: window hidden ...` at start-up. Normal game runs stay visible.
+`OPENTPW_TEST_PIXEL_SCALE` apply as usual) instead of the swapchain, paced at 60 frames per second (`--no-vsync` unpaces it). macOS has no
+Xvfb; this hidden window with its framebuffer is the virtual screen. No window appears, no focus is taken, and a locked screen does
+not matter. `--offscreen` or `OPENTPW_OFFSCREEN=1` does the same for any run; `--visible` (or `--no-offscreen`, or `OPENTPW_OFFSCREEN=0`) keeps the
+visible window. Sound and window are separate choices: `--audible` brings the sound back but keeps the run offscreen, and `--visible`
+shows the window but keeps an automated run silent. To look at a `--debug-*` helper on screen (such as `--debug-light`), pass `--visible`: without a
+`--capture-*` such a run does not end by itself, and offscreen it would run unseen until closed. An offscreen run without usable game data stops with
+an error instead of opening the setup window. The interactive modes stay visible: a plain start, `--front-end`, `--sandbox`,
+`--load-original-level`, `--visit-park`, `--setup` and `--play-movie` (which is offscreen only as the movie smoke, `--play-movie <name> --smoke-test`).
+
+What changes offscreen, and what does not:
+
+- **Captures** read the renderer's own textures (the world, or the composed output with `--capture-interface`), not the window, so they are
+  the same either way: a Jungle capture at 800 x 500 (1600 x 1000 pixels, `OPENTPW_TEST_PIXEL_SCALE=2` offscreen against the Retina
+  window) with the frame cap at 60 was byte-identical offscreen and visible. Without a frame cap a visible window runs at the display's
+  refresh (up to 120 Hz on a ProMotion panel), so a capture after N frames shows an earlier moment of an animated scene than the
+  offscreen run's 60 Hz; the offscreen run gives the same picture on every machine. An offscreen window is never focused, so the
+  park camera never edge-scrolls towards the pointer.
+- **Perf runs** (`--perf-run`) stay offscreen by default. The baselines in [ENGINE-PERFORMANCE.md](ENGINE-PERFORMANCE.md) were measured
+  with `--offscreen`, so they remain comparable; a visible window's frame rate depends on the display and on macOS, which throttles the
+  Metal drawables of hidden, occluded or locked windows. Pass `--visible` to measure the presented path; those numbers are not comparable
+  to the offscreen baselines.
+- **The OS-level fullscreen check** needs a visible run: an offscreen window has no OS fullscreen state, so the sandbox smoke's
+  fullscreen toggle then verifies the logical window size only and logs that the OS transition was skipped.
+
+Every offscreen run logs `Offscreen mode: window hidden ...` at start-up. Normal game runs stay visible.
 
 A normal start (the front end, no `--smoke-test`) first plays the original's
 start-up movies: `bf`, then a trailer chosen by the day of the month, at the
@@ -314,7 +339,7 @@ bash scripts/run.sh --game-path '/path/to/Theme Park World' --fullscreen --upsca
 | `--ui-scale auto\|N` | Integer scale of the BF4 text UI (auto: 2 from 2560x1440, 3 at 4K; on HiDPI/Retina at least the pixel density, so 2 on Retina). |
 | `--no-vsync` | Presents frames as fast as they are made instead of at the display's refresh rate; for performance measurements. |
 | `--frame-stats` | Logs frames per second, average/p99/max frame time, CPU use, allocation rate and garbage collections every 5 seconds, and where a frame goes: the update (and inside it the simulation), the world drawing, the interface overlay, submit and present, the GPU wait and the whole `Renderer.Update` call. |
-| `--perf-run <frames>` | For performance runs ([ENGINE-PERFORMANCE.md](ENGINE-PERFORMANCE.md)): once the original level is up it hides the developer panels as a front-end park does, opens the park door, runs the simulation at `--perf-speed 1\|2\|4` (default 4) with a guest arriving every `--perf-arrivals N` turns, and closes the window after that many frames; `--perf-zoom <value>` holds the park camera at that zoom value (40 to 300 with the wide zoom range, 70 to 130 without). Combine it with `--load-original-level`, `--offscreen`, `--frame-stats` and, for CPU-bound frames, `--no-vsync`. |
+| `--perf-run <frames>` | For performance runs ([ENGINE-PERFORMANCE.md](ENGINE-PERFORMANCE.md)): once the original level is up it hides the developer panels as a front-end park does, opens the park door, runs the simulation at `--perf-speed 1\|2\|4` (default 4) with a guest arriving every `--perf-arrivals N` turns, and closes the window after that many frames; `--perf-zoom <value>` holds the park camera at that zoom value (40 to 300 with the wide zoom range, 70 to 130 without). Combine it with `--load-original-level`, `--frame-stats` and, for CPU-bound frames, `--no-vsync`; it is offscreen by default (`--visible` for the presented path, whose numbers are not comparable to the baselines). |
 | `--save-display-settings` | Also stores these values as the user's display settings. |
 | `--export-ps2 <ps2 DATA dir> <out dir>` | Lists the PS2 version's archives and exports its textures as PNG for viewing (PS2.md). |
 | `--debug-light x,y,height,radius[,red,green,blue]` | Smoke-only: once the original level is up, adds one fixed point light at x, y, height relative to the park camera's target (engine units, a cell is 2) with a radius in engine units (20 is the original engine's default of 100 model units) and an optional colour of three 0..1 channels; for captures and a look at what a light does ([LIGHTS.md](LIGHTS.md)). |

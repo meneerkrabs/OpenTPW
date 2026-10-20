@@ -10,8 +10,10 @@ public partial class Level
 		AttachCheatHost();
 		simulationClock.Advance( elapsedSeconds, deltaTime =>
 		{
-			// [EXT:online-coop-commands] the commands held for this tick apply before it (a replayed log; in single player the HUD's commands have run already)
+			// [EXT:online-coop-commands] the commands held for this tick apply before it (a replayed log; in single player the HUD's commands have run already); an edit issued
+			// while the tick itself runs is refused, since a peer would apply it a tick later
 			ApplyDueCommands();
+			using var tickScope = Commands.EnterTick();
 			SyncObjectEconomy();
 			// the substep this tick stands in (the park's own tick before the economy advances it): none while the park is paused
 			var substep = SimulationSubstep.ForTick( Park?.Economy.Tick ?? simulationClock.TickCount, Park == null || Park.Economy.Speed != GameSpeed.Paused );

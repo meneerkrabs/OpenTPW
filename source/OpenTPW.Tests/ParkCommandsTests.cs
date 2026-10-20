@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
@@ -21,6 +22,9 @@ public class ParkCommandsTests
 			Commands = new ParkCommands( () => Tick, command =>
 			{
 				Ran.Add( command );
+				// a command that writes, then throws (a rule its own checks missed)
+				if ( command is RemoveAtCommand { X: 66 } )
+					throw new InvalidDataException( "a missed rule" );
 				// a command whose run issues another (a tool callback inside an edit) runs that one inside itself
 				if ( command is RemoveAtCommand { X: 99 } )
 					Commands.Apply( new RemoveObjectAtCommand( 1, 1 ) );
@@ -111,6 +115,46 @@ public class ParkCommandsTests
 		park.Commands.ApplyDue( 0 );
 		CollectionAssert.AreEqual( new ParkCommand[] { new RemoveAtCommand( 88, 0 ), new RemoveObjectAtCommand( 3, 3 ) }, park.Ran, "the host's command and the one inside it, both player 0's" );
 		CollectionAssert.AreEqual( new[] { (0, ParkCommandKind.RemoveAt) }, rights.Asked, "the rights were asked of the outer command only" );
+	}
+
+	/// <summary>
+	/// [EXT:online-coop-commands] A command that throws is a rejection with what it wrote before the throw, logged like any other (a replay or a peer throws the same way at the same place);
+	/// the funnel goes on with the next command.
+	/// </summary>
+	[TestMethod]
+	public void ACommandThatThrowsIsALoggedRejectionAndTheFunnelGoesOn()
+	{
+		var park = new Park();
+		var applied = new List<ParkCommandResult>();
+		park.Commands.Applied += ( _, result ) => applied.Add( result );
+		var failed = park.Commands.Issue( new RemoveAtCommand( 66, 0 ) );
+		Assert.IsFalse( failed.Accepted );
+		Assert.IsInstanceOfType( failed.Error, typeof( InvalidDataException ) );
+		StringAssert.Contains( failed.Reason, "a missed rule" );
+		Assert.AreEqual( 1, park.Commands.Log.Count, "the failed command is logged" );
+		Assert.AreSame( failed, applied.Single() );
+		Assert.IsFalse( park.Commands.IsExecuting );
+		Assert.IsTrue( park.Commands.Issue( new RemoveAtCommand( 99, 0 ) ).Accepted, "the next command runs, with the one inside it" );
+		Assert.AreEqual( 3, park.Ran.Count, "the failed command, the next one and the one inside it" );
+	}
+
+	/// <summary>[EXT:online-coop-commands] An edit issued while a simulation tick runs is refused and left out of the log: a peer would apply it a tick later. The held commands still apply.</summary>
+	[TestMethod]
+	public void AnEditIssuedDuringATickIsRefusedAndHeldCommandsStillApply()
+	{
+		var park = new Park();
+		using ( park.Commands.EnterTick() )
+		{
+			Assert.IsTrue( park.Commands.IsInTick );
+			var refused = park.Commands.Issue( new RemoveAtCommand( 1, 1 ) );
+			Assert.IsFalse( refused.Accepted );
+			StringAssert.Contains( refused.Reason, "simulation tick" );
+			Assert.IsTrue( park.Commands.Apply( new RemoveAtCommand( 2, 2 ) ).Accepted, "a held command's apply is not an issue" );
+		}
+		Assert.IsFalse( park.Commands.IsInTick );
+		Assert.IsTrue( park.Commands.Issue( new RemoveAtCommand( 1, 1 ) ).Accepted );
+		CollectionAssert.AreEqual( new ParkCommand[] { new RemoveAtCommand( 2, 2 ), new RemoveAtCommand( 1, 1 ) }, park.Ran );
+		Assert.AreEqual( 2, park.Commands.Log.Count );
 	}
 
 	[TestMethod]

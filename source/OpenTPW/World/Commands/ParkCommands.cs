@@ -13,6 +13,9 @@ public interface IParkCommandRights
 /// <summary>What became of one command: accepted (it ran) or rejected (nothing changed), with the reason and the value the edit returns to its issuer.</summary>
 public sealed record ParkCommandResult( bool Accepted, string? Reason = null, object? Value = null )
 {
+	/// <summary>The exception a command threw (a rule its own checks missed): it is a rejection with whatever the command wrote before the throw, logged like any other.</summary>
+	public Exception? Error { get; init; }
+
 	public static ParkCommandResult Ok( object? value = null ) => new( true, null, value );
 	public static ParkCommandResult Rejected( string reason ) => new( false, reason );
 
@@ -47,6 +50,8 @@ public sealed class ParkCommands
 	/// <summary>The outermost command running now, whose player a command issued inside it takes.</summary>
 	private ParkCommand? running;
 	private bool issuing;
+	private bool inTick;
+	private readonly TickScope tickScope;
 
 	/// <param name="nextTick">The index of the next simulation tick (the fixed-step clock's tick count).</param>
 	/// <param name="execute">Runs one well-formed command on the park; a rejection must leave the park unchanged.</param>
@@ -56,6 +61,7 @@ public sealed class ParkCommands
 		this.nextTick = nextTick ?? throw new ArgumentNullException( nameof( nextTick ) );
 		this.execute = execute ?? throw new ArgumentNullException( nameof( execute ) );
 		this.refusesEdits = refusesEdits ?? throw new ArgumentNullException( nameof( refusesEdits ) );
+		tickScope = new TickScope( this );
 	}
 
 	/// <summary>The local player's id, put on the commands the HUD and the tools issue (<see cref="LocalPlayer"/> until a session gives this machine its slot).</summary>
@@ -101,7 +107,17 @@ public sealed class ParkCommands
 		if ( !command.IsWellFormed )
 			return ParkCommandResult.Rejected( $"The {command.Kind} command has fields out of range." );
 		var tick = nextTick();
-		var result = Run( command );
+		ParkCommandResult result;
+		try
+		{
+			result = Run( command );
+		}
+		catch ( Exception error ) when ( error is not OutOfMemoryException )
+		{
+			// [EXT:online-coop-commands] a command that throws (a rule its own checks missed) is a rejection with what it wrote before the throw: it is logged like any other, so a replay or a
+			// peer, which throws the same way at the same place, stays in step instead of losing the command
+			result = new ParkCommandResult( false, $"The {command.Kind} command failed: {error.GetType().Name}: {error.Message}" ) { Error = error };
+		}
 		Record( new ParkCommandLogEntry( tick, command ), result );
 		return result;
 	}
@@ -115,6 +131,9 @@ public sealed class ParkCommands
 		ArgumentNullException.ThrowIfNull( command );
 		if ( depth > 0 )
 			return Apply( command with { Player = running!.Player } );
+		// an edit issued while a simulation tick runs would apply before tick N here but before tick N + 1 on a peer: only the held commands apply inside a tick, at its start
+		if ( inTick )
+			return ParkCommandResult.Rejected( $"The {command.Kind} command was issued during a simulation tick." );
 		var outer = !issuing;
 		issuing = true;
 		try
@@ -177,6 +196,23 @@ public sealed class ParkCommands
 			foreach ( var command in first.Value )
 				Apply( command );
 		}
+	}
+
+	/// <summary>
+	/// Marks a simulation tick running, from after its held commands applied (<see cref="ApplyDue"/>) to the end of the returned scope: a command issued then is refused (<see cref="Issue"/>).
+	/// </summary>
+	public IDisposable EnterTick()
+	{
+		inTick = true;
+		return tickScope;
+	}
+
+	/// <summary>Whether a simulation tick is running (<see cref="EnterTick"/>).</summary>
+	public bool IsInTick => inTick;
+
+	private sealed class TickScope( ParkCommands owner ) : IDisposable
+	{
+		public void Dispose() => owner.inTick = false;
 	}
 
 	/// <summary>Drops every held command (a session that ends, a level that closes).</summary>

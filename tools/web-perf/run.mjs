@@ -459,7 +459,7 @@ const scenarios = {
 		return { cover: options.cover, screenshot: file };
 	},
 
-	async buy(page) {
+	async buy(page, options) {
 		const state = await page.state();
 		if (!state.hud)
 			throw new Error('The buy scenario needs a park: run it after jungle');

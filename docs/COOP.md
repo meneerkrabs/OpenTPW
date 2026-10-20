@@ -130,7 +130,9 @@ developer object panel's open-all and close-all.
 - The fields keep to the windows' ranges: prices 0 to 500, a prize's cost 0 to 10,000, chances,
   efforts, workloads and ingredients 0 to 100, the quality slider's three steps (0, 50, 100), a
   training budget up to the training window's 10,000, one step of a research project; a ride's speed
-  is held to its slider's `UsageInfo.MinSpeed..MaxSpeed`, as the window's load holds it. A name must be valid
+  is held to its slider's `UsageInfo.MinSpeed..MaxSpeed`, as the window's load holds it, and its
+  capacity and duration go to the ride's setters as they are (the setters clamp them, as before), so a
+  mod ride whose ranges pass the shipped ones applies as it did. A name must be valid
   UTF-16 whose UTF-8 fits the codec's 512-byte string, so it decodes to the same text; anything else
   is malformed and never logged.
 - The game speed: a park's is part of its state, so the speed buttons and keys and the HUD's status
@@ -148,6 +150,64 @@ replays a log of settings; `ParkSettingCommandLevelTests` checks the attraction 
 maintenance rules and an upgrade on placed rides, and replays a recorded session of settings on a twin
 park with the same hash after every tick. Shop and sideshow prices and prizes are exercised through
 their windows (`ShopPriceIngressTests`).
+
+### Tools
+
+The tools' writes are commands too (`ParkToolCommand`, `ParkToolCommands.cs`, `PoolCommands.cs`,
+`TrackCommands.cs`, kinds 54 to 83, C1 part 3): the land, the hire and the employee in hand, the pools
+extension's tool and wave machines, and the kart and water rides' track tools; the coaster tool follows
+in its own part. A tool keeps its own state between clicks (a stored fence post, a stroke and its undo
+stack, the candidate being placed or the employee in hand, a tile picked for a cut) and issues one
+command for each write it made before the command layer, at the same moment, so no single-player run
+changes.
+
+- **Land.** The Buy Land tool's second click is `BuyLandCommand`, with the post the first click stored
+  and the clicked one. The command checks that both are on the fence's post lattice (the tool snaps
+  every click there) and runs the validator again with the money test; its value is the verdict the
+  tool shows. A Theme Park Inc park sells no land: the command refuses it before its economy would
+  throw.
+- **Staff.** The hire button begins a placement (`BeginStaffHireCommand`: the candidate is marked as
+  being placed, so it does not expire); the Place tool's valid click hires it and puts the employee
+  down (`PlaceStaffCommand`); right click, Escape, another tool or a save end the placement
+  (`CancelStaffHireCommand`). The pick-up button puts an employee in the issuing player's hand
+  (`PickUpStaffCommand`), and the Carry tool's valid click or its cancel puts it down
+  (`DropStaffCommand`; a cancel and a save drop it back on the cell it came from). A level without
+  the Place tool (no guest world) hires nobody.
+  - The employee in a player's hand is the level's state (`StaffHands`), not the tool's: the frame's
+    reconcile (`StaffPlacement.Reconcile`, which frees a member an original save left picked up)
+    leaves a member a command picked up, on a peer and in a replay too.
+  - A full thing pool refuses a hire before the placement ends (the hire threw after it before).
+- **Pools.** Each cell a paint or erase stroke writes is a command (`PaintPoolCellCommand`,
+  `ErasePoolCellCommand`), as the tool wrote each cell while the drag crossed it; Backspace takes a
+  stroke back with one command that carries its cells (`UndoPoolStrokeCommand`). A stroke of more cells
+  than a command takes (4096) goes back in chunks that write in the one command's order (an erase
+  stroke's cells painted again in order, a paint stroke's river marks first and then its cells from
+  the end), and a repaint that runs out of money issues no further chunk. Each slide piece and
+  its undo (`LayPoolSlidePieceCommand`, `UndoPoolSlidePieceCommand`) and each bridge built or taken down
+  (`PlacePoolBridgeCommand`, `RemovePoolBridgeCommand`) are commands, and the wave machine window's tick
+  is `SetPoolWavesCommand` (an unchanged choice writes nothing). The strokes, the drag and the undo
+  stack stay the tool's; the builders' own checks refuse every write while the extension is off.
+- **Kart and water tracks.** Each line of a ride's track tool and each Backspace inside it is a command
+  (`LayTrackLineCommand`, `UndoTrackLineCommand`, through `ParkCommandTrackWriter`), and the edit
+  tool's second click cuts through `CutTrackCommand`. The command walks the circuit again
+  (`Level.WalkTrack`: the controller, the add-ons, the pieces and the ride's door); the tool's step after
+  a valid walk (it ends, the queue tool follows, or a line clicked with exactly Ctrl restarts it) is the
+  issuer's alone (`Level.ContinueTrackTool`), so a peer's or a replayed command moves no tool. A cut
+  needs a closed circuit and two tiles the edit tool's test accepts, as the tool does.
+  - The line tool on an open circuit starts from the walk to the track's open end
+    (`TrackEditor.FindOpenEnd`), which sets every walked tile's overlap word, the word Backspace reads
+    to decide whether a tile goes. So the walk is a command: `OpenTrackLineToolCommand` when the track
+    button opens the tool, and inside `CutTrackCommand` when the cut leaves the circuit open. The tool
+    takes only the corners the walk found.
+  - A track add-on's placement or removal walks the circuit inside its command, without the tool's
+    step (`Level.WalkTrack`).
+
+`ParkToolCommandLevelTests` drives the staff and pool tools on a level without game data and applies
+their logged commands to a twin park, which reaches the same hash (the twin's reconcile between the
+pick-up and the drop keeps the employee picked up). `TrackAddOnLevelTests` applies a kart ride's
+logged lines, undo, cut, the line tool's reopening and Backspace after it to a twin whose track layer
+and ride controller match the issuer's. `PoolsTests` takes back a stroke longer than a command in
+chunks, and `ParkLandTests` checks the land command's posts and verdict.
 
 ### Serialization
 
@@ -190,15 +250,17 @@ guarded list.
 | Developer prototype | place and remove the Totem, open and close it (the developer panel's button) | converted |
 | Winning screen | the Instant Action finale's dismissal (Resume Game, Escape, the right click) | converted |
 | Settings | park open and close, ride open and close, the ride window's settings, entrance fee, prices, prizes and shop settings, loans and the loans dialog's list build, dismissal, training budget, research, challenges, maintenance, ride upgrades, park and staff rename, patrol areas, cheats, speed, the developer panel's open-all and close-all | converted |
-| Tools | land, pools and waves, slides and pool attractions, pool bridges, kart and water tracks, coasters and the coaster panel's edits, staff hiring and placement | part 3 |
+| Tools | land, staff hiring and the employee in hand, pool strokes and their undo, wave machines, slide pieces, pool bridges, kart and water track lines, their undo, the edit tool's cut and the line tool's walk to the open end | converted |
+| Coasters | the coaster tool's pylons, the circuit's closing and completion, the coaster panel's edits | part 3 (coasters) |
 
 ## Known limits of C1
 
 - Wall-time updates outside the tick (`RefreshPools`, the evening, snow, the scene clock), the body
   pose preparation after a frame's ticks (`FlatRideBounceRiders.Prepare`, which changes the riders'
-  ride-body state), the staff placement and staff world updates at the start of a frame
-  (`StaffPlacement.Reconcile`, `StaffWorld.Synchronize`) and the entities' updates after the
-  simulation are not part of a replay; C1b audits them. A replay runs one
+  ride-body state), the staff world update at the start of a frame (`StaffWorld.Synchronize`) and the
+  entities' updates after the simulation are not part of a replay; C1b audits them. The staff
+  placement's reconcile at the start of a frame frees only a member an original save left picked up
+  with nobody holding it: the employees in hand are the level's state since part 3. A replay runs one
   tick per frame, the game several, so a recording made in play must be checked against its
   checkpoints, which the log carries.
 - A remote player's command will run the same presentation (the action message, sounds) as a local
@@ -218,9 +280,22 @@ guarded list.
 - A park call that throws after it began to change the park (an event listener of the economy, for
   example) is reported as a rejection with the change made. The throw is the same for the same park,
   so peers stay together, but only while no peer has a listener of its own that throws: presentation
-  listeners must never throw.
+  listeners must never throw. A tool that issued the command takes the rejection as no write (the
+  track line writer answers a stopped line, for example), so its undo stack misses what was written.
 - The secret park name ("Kevin the" / "Cosmic Cow") turns the cheat mode on inside `Level.RenamePark`,
   so a session that refuses the cheats (decision Q17) must refuse that name in `RenameParkCommand`
   too, not only `QueueCheatCommand`.
 - The developer panel's sandbox load (`Level.LoadSandbox`) replaces the park outside the commands; it is
   listed in the guard for C2, where a session replaces the park from the host.
+- The employees in the players' hands (`StaffHands`) are not hashed, as the Move tool's carried entry
+  is not. A save drops the employee in the saving machine's own hand first (a `DropStaffCommand`), so
+  that hand is empty in the save; another player's held employee is saved picked up. A session's join
+  snapshot (C2) must not drop it, since the snapshot is taken on the host only.
+- The staff tool's cancel ends the tool even when its drop is refused, as a player's rights could
+  refuse it mid-carry (C3): the employee then stays in that player's hand and the player's next
+  pick-up is refused. C3 must always allow the drop back to where the employee came from.
+- A hire's pending candidate (`ParkStaff.PendingPlacementId`) is one per park: two players placing hires
+  at once would take it from each other (C3 gives each player a placement).
+- Opening the queue tool (after a ride is placed or its track circuit closes) recomputes the ride's
+  queue on the issuer's machine (`Level.EnterQueueTool`), outside the commands; C2 makes that part of a
+  command or shows that it changes nothing.

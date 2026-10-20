@@ -16,7 +16,7 @@ public class ParkSettingCommandLevelTests
 	private AutomaticCheckpointCpuRendererScope? renderer;
 	private UpgradeCatalogueDefaultsTests? fixture;
 
-	private sealed record Park( Level Level, ParkEconomy Economy, OriginalObject One, OriginalObject Two, ParkObjectState State );
+	internal sealed record Park( Level Level, ParkEconomy Economy, OriginalObject One, OriginalObject Two, ParkObjectState State );
 
 	[TestInitialize]
 	public void Initialize()
@@ -33,7 +33,10 @@ public class ParkSettingCommandLevelTests
 		renderer?.Dispose();
 	}
 
-	private Park NewPark()
+	private Park NewPark() => NewPark( fixture! );
+
+	/// <summary>A level of <paramref name="fixture"/>'s with two placed rides, its staff, gate and paths set up, money in the bank, a mechanic and a full map's land (the tool commands' tests use it too).</summary>
+	internal static Park NewPark( UpgradeCatalogueDefaultsTests fixture )
 	{
 		var type = typeof( UpgradeCatalogueDefaultsTests );
 		// the rides' speed slider runs from 10 to 100 (the fixture's type names no range of its own)

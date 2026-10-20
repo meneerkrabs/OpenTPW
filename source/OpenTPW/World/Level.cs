@@ -583,8 +583,9 @@ public partial class Level : IDisposable
 			: visitLayout?.Cells != null
 			? new GuestPathGrid( SharedParkLayout.BuildCellMap( park.Map.CellCountX, park.Map.CellCountY, visitLayout.Cells ) )
 			: new GuestPathGrid( ParkCellMap.FromOriginal( park.Map, park.Save, land, park.Heightfield ) );
+		LandBarrier = ( x, y ) => ParkLand.IsBarrier( park.Map, park.Heightfield, x, y );
 		BuyLandTool = grid.Cells.Land != null && !IsReadOnlyVisit
-			? new BuyLandTool( () => Guests?.Grid.Cells, () => Park?.Economy, ( x, y ) => ParkLand.IsBarrier( park.Map, park.Heightfield, x, y ) )
+			? new BuyLandTool( () => Guests?.Grid.Cells, () => Park?.Economy, LandBarrier, command => Commands.Issue( command ) )
 			: null;
 		Guests = new GuestSimulation( grid, settings, Seed.GuestStream ) { OnlineVisit = Visit != null };
 		BindGuestThoughtPresentation( Guests );
@@ -665,6 +666,9 @@ public partial class Level : IDisposable
 
 	/// <summary>The Buy Land tool (tp.exe mouse mode 0x39); null for a level without land (no Hoardings.sam, Theme Park Inc, a visit).</summary>
 	public BuyLandTool? BuyLandTool { get; private set; }
+
+	/// <summary>Whether a cell is of the original types 7 or 0x1e, which no fence may cross (<see cref="ParkLand.CheckPurchase"/>); null for a level without an original map.</summary>
+	internal Func<int, int, bool>? LandBarrier { get; private set; }
 
 	/// <summary>The level's park fence: its gate posts beside the entrance cells and its <c>Hoardings.sam</c>; null without them.</summary>
 	private static ParkLandSetup? LandSetup( OriginalPark park, GuestSettings settings )
@@ -1165,6 +1169,8 @@ public partial class Level : IDisposable
 				Things.QueueDestroy( id );
 		}
 		StaffPlacement?.Abandon();
+		// the employees in the players' hands belong to the replaced economy
+		StaffHands?.Clear();
 		UpgradeBalloons?.Clear();
 		// the patrol tool's employee id belongs to the replaced economy
 		PatrolTool?.Cancel();

@@ -5,6 +5,8 @@ public partial class Level
 	public StaffWorldSimulation? StaffWorld { get; private set; }
 	/// <summary>The hire and pick-up tools of the staff (docs/STAFF-PLACEMENT.md); null without a park economy.</summary>
 	public StaffPlacement? StaffPlacement { get; private set; }
+	/// <summary>[EXT:online-coop-commands] What the staff commands act on, with the employee each player holds in hand.</summary>
+	public StaffHands? StaffHands { get; private set; }
 	/// <summary>The patrol area tool of the employee view (tp.exe mouse mode 0x36); null without a park economy.</summary>
 	public PatrolAreaTool? PatrolTool { get; private set; }
 	/// <summary>Draws the placed staff and the tool's dangling sprite.</summary>
@@ -39,7 +41,8 @@ public partial class Level
 				StaffWorld?.ReportPrank( Park.Economy, guest.Id );
 		};
 		AttachStaffWorld();
-		StaffPlacement = new StaffPlacement( () => Park?.Economy, () => Guests?.Grid.Cells, IsStaffDropBlocked );
+		StaffHands = new StaffHands( () => Park?.Economy, () => Guests?.Grid.Cells, IsStaffDropBlocked );
+		StaffPlacement = new StaffPlacement( () => Park?.Economy, () => Guests?.Grid.Cells, IsStaffDropBlocked, command => Commands.Issue( command ), StaffHands.IsCarried );
 		PatrolTool = new PatrolAreaTool( () => Park?.Economy, command => Commands.Issue( command ) );
 		if ( OriginalPark != null )
 		{

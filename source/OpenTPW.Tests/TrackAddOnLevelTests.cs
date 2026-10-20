@@ -15,7 +15,7 @@ namespace OpenTPW.Tests;
 /// without a GPU from its own track set-up, with the footprint handlers wired after it as the level wires them.
 /// </summary>
 [TestClass, DoNotParallelize]
-public class TrackAddOnLevelTests
+public partial class TrackAddOnLevelTests
 {
 	private const BindingFlags Private = BindingFlags.Instance | BindingFlags.NonPublic;
 	private string root = null!;
@@ -63,9 +63,9 @@ public class TrackAddOnLevelTests
 
 	/// <summary>
 	/// The level with the ride placed at (10, 9) (its station tiles (10, 10) and (12, 10)) and the long kart loop of <see cref="TrackAddOnTests"/>: the straights
-	/// (14, 10) … (28, 10) and (28, 14) … (10, 14) between the corners (30, 10), (30, 14), (8, 14) and (8, 10).
+	/// (14, 10) … (28, 10) and (28, 14) … (10, 14) between the corners (30, 10), (30, 14), (8, 14) and (8, 10). Without <paramref name="laid"/> the station stands alone.
 	/// </summary>
-	private (Level Level, OriginalObject Ride, ObjectCatalogEntry Jump) World( bool hasQueue = false )
+	private (Level Level, OriginalObject Ride, ObjectCatalogEntry Jump) World( bool hasQueue = false, bool laid = true )
 	{
 		var (rideEntry, jump) = Entries( hasQueue );
 		var catalog = (ObjectCatalog)Activator.CreateInstance( typeof( ObjectCatalog ), Private, null, new object[] { "jungle", new[] { rideEntry, jump } }, null )!;
@@ -90,6 +90,8 @@ public class TrackAddOnLevelTests
 		Assert.IsNotNull( ride?.Runtime.Bump, "the kart ride and its controller" );
 		var station = level.TrackStations[ride!];
 		Assert.AreEqual( (10, 10), station.First );
+		if ( !laid )
+			return (level, ride!, jump);
 		var writer = new TrackLineWriter( level.KartTracks!, null, level.KartTracks!.OwnerOf( station ) );
 		writer.Commit( (14, 10), (30, 10) );
 		writer.Commit( (30, 10), (30, 14) );

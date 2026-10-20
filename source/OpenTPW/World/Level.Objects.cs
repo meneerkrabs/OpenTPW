@@ -664,7 +664,7 @@ public partial class Level
 		if ( !IsReadOnlyVisit )
 		{
 			PoolBuilder = new PoolBuilder( Guests.Grid.Cells, () => Park?.Economy, Objects.Grid, IsPathBlocked, IsStoodOn, PoolEraseBlock );
-			PoolTool = new PoolTool( PoolBuilder );
+			PoolTool = new PoolTool( PoolBuilder, command => Commands.Issue( command ) );
 			PoolBuilder.Painted += PreloadSwimSprites;
 		}
 		SetupPoolSlides();

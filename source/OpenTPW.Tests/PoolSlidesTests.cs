@@ -499,7 +499,12 @@ public class PoolSlidesTests
 
 	// ---- The tool -----------------------------------------------------------------------------------------------------
 
-	private static PoolTool ToolFor( ParkCellMap cells, PoolSlideWorld world ) => new( new PoolBuilder( cells, () => null, new PoolsTests.FlatGrid( cells.Width, cells.Height ) ) ) { Slides = world };
+	private static PoolTool ToolFor( ParkCellMap cells, PoolSlideWorld world )
+	{
+		var tool = PoolToolRig.Create( new PoolBuilder( cells, () => null, new PoolsTests.FlatGrid( cells.Width, cells.Height ) ) );
+		tool.Slides = world;
+		return tool;
+	}
 
 	[TestMethod]
 	public void TheSlideModeOfThePoolToolLaysTheTrackByPressingAndDraggingAndEndsWithTheSplash()

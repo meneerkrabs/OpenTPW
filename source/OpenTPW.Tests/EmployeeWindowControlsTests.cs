@@ -361,7 +361,7 @@ public class EmployeeWindowControlsTests
 			var camera = new ParkCameraMode(); Camera.Mode = camera;
 			var (hud, economy, member) = Fixture(); AttachStaffWorld( hud, economy );
 			member.CellX = 2.5f; member.CellY = 3.5f;
-			var placement = new StaffPlacement( () => economy, () => LevelOf( hud ).Guests!.Grid.Cells, (_, _) => false );
+			var placement = StaffPlacementRig.Create( () => economy, () => LevelOf( hud ).Guests!.Grid.Cells, (_, _) => false );
 			Assert.IsTrue( placement.PickUp( member ) ); placement.SetCursor( 8, 9 );
 			Assert.IsTrue( hud.LocateEmployee() ); LocatorFrame( hud );
 			Assert.IsTrue( LevelOf( hud ).TryGetStaffWorldPosition( member.Id, out var retained ) );

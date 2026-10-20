@@ -107,9 +107,10 @@ public partial class Level
 	/// on a valid circuit and stop on an invalid one, and a valid ride opens when its state allows.
 	/// </summary>
 	// [BIN:TPW-EXE:0x00524B45 add-on click] with the upgrade selection set the build click finds the clicked tile's ride (its head's owner word, the thing table 0x7CFB90), ends its controller's vehicles (0x00545450), places the add-on (0x00528A70 with the type 4), walks the circuit (0x0052A970 at 0x00524D0A, the verdict to the ride's +0x2C), starts the pieces forward on a valid one (0x0052A490(ride, 1)) or stops them from both sides (0x0052A490 and 0x0052A700 with 0), and opens a valid ride whose guard allows it (0x004DF290, 0x004DF390); then a click without exactly Ctrl returns the tool to mode 0 and clears the selection (0x00524D6D..0x00524D81)
+	// [EXT:online-coop-commands] the walk runs inside the command that places or removes the add-on, on every peer: it moves no track tool (WalkTrack, not RewalkTrack's tool step)
 	private void WalkAfterAddOn( OriginalObject ride )
 	{
-		if ( RewalkTrack( ride, TrackWalkCause.AddOn ) is not { IsValid: true } )
+		if ( WalkTrack( ride, TrackWalkCause.AddOn ) is not { IsValid: true } )
 			return;
 		if ( Gate?.MayOpen( ride.Runtime ) == true )
 		{

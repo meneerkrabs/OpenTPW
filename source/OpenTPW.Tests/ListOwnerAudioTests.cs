@@ -464,14 +464,23 @@ public class ListOwnerAudioTests
 	}
 
 	[TestMethod]
-	public void FindParksEnterClicksOnceThroughTheSearchButton() => WithOnline( false, Parks(), ( stack, screen, _ ) =>
+	public void FindParksEnterClicksOnceThroughTheSearchButton()
 	{
-		var search = (UiTextField)screen.Find( "search" )!;
-		screen.Focus( search );
-		stack.Update( Context(), UiInput.Key( UiKeys.Accept ) );
-		Assert.AreSame( screen, stack.Top, "the search runs in place" );
-		Sounds( GameAudio.ClickEvent );
-	} );
+		// focusing the search field turns the global text entry on; restore it so later tests (the wave machine window) can open
+		var previousCapture = Input.TextEntryActive;
+		try
+		{
+			WithOnline( false, Parks(), ( stack, screen, _ ) =>
+			{
+				var search = (UiTextField)screen.Find( "search" )!;
+				screen.Focus( search );
+				stack.Update( Context(), UiInput.Key( UiKeys.Accept ) );
+				Assert.AreSame( screen, stack.Top, "the search runs in place" );
+				Sounds( GameAudio.ClickEvent );
+			} );
+		}
+		finally { Input.TextEntryActive = previousCapture; }
+	}
 
 	[TestMethod]
 	public void EmployeeRenameEnterClicksAndAppliesWhileEscapeClosesSilently()

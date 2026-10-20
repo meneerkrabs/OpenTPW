@@ -198,7 +198,7 @@ public static class ObjectRayPick
 		// threshold (with room for the float rounding) the angles do too; it spares the arc cosines of the faces the line passes far from
 		if ( MathF.PI * (MathF.Sqrt( MathF.Max( 0, (1 - ab) / 2 ) ) + MathF.Sqrt( MathF.Max( 0, (1 - bc) / 2 ) ) + MathF.Sqrt( MathF.Max( 0, (1 - ca) / 2 ) )) < InsideAngleSum - 1e-3f )
 			return false;
-		var sum = MathF.Acos( ab ) + MathF.Acos( bc ) + MathF.Acos( ca );
+		var sum = DetMathF.Acos( ab ) + DetMathF.Acos( bc ) + DetMathF.Acos( ca );
 		if ( !(sum >= InsideAngleSum) )
 			return false;
 		hit = point;

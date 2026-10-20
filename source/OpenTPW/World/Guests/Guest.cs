@@ -237,9 +237,11 @@ public sealed class Guest
 	/// needs phase of the guest (every fourth park turn, 0.992 s: the .sam's "seconds"), in every state. It is a signed word and runs negative after 0.
 	/// </summary>
 	public int ExitLevel { get; internal set; }
-	/// <summary>Display-only simulated seconds since admission; null means the prior duration is unknown.
-	/// Seeded in-park guests start at zero. Outside travel and the queue before admission do not count.</summary>
+	/// <summary>Simulated seconds since creation, including the arrival and departure walk; null means the prior duration is unknown.
+	/// Retained for stay statistics and weather gates; new visitor displays use the independent integer-turn age.</summary>
 	public double? TimeInParkSeconds { get; internal set; }
+	/// <summary>Display-only age in unsigned 32-bit park turns, or null for a legacy seconds-based duration. Never used by gameplay.</summary>
+	public long? DisplayTimeInParkTurns { get; internal set; }
 	/// <summary>Own-format/display duration bound; no original timing limit is inferred.</summary>
 	public static double MaximumTimeInParkSeconds => TimeSpan.MaxValue.TotalSeconds;
 	public float SecondsSinceRide { get; internal set; }

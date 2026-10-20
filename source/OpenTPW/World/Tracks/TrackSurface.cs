@@ -178,13 +178,13 @@ public sealed class TrackSurface
 	public static BoatPose Pose( float x, float y, int heading, float radius, Func<float, float, float> heightAt )
 	{
 		var angle = heading * 2 * MathF.PI / BumpMath.Turn;
-		var (forwardX, forwardY) = (MathF.Sin( angle ), MathF.Cos( angle ));
-		var (rightX, rightY) = (MathF.Cos( angle ), -MathF.Sin( angle ));
+		var (forwardX, forwardY) = (MathF.Sin( angle ), MathF.Cos( angle )); // [DET:presentation] the renderer's boat and kart pose
+		var (rightX, rightY) = (MathF.Cos( angle ), -MathF.Sin( angle )); // [DET:presentation] the renderer's boat and kart pose
 		var front = heightAt( x + forwardX * radius, y + forwardY * radius );
 		var back = heightAt( x - forwardX * radius, y - forwardY * radius );
 		var right = heightAt( x + rightX * radius, y + rightY * radius );
 		var left = heightAt( x - rightX * radius, y - rightY * radius );
-		return new BoatPose( (front + back + right + left) / 4, MathF.Atan2( front - back, 2 * radius ), MathF.Atan2( right - left, 2 * radius ) );
+		return new BoatPose( (front + back + right + left) / 4, MathF.Atan2( front - back, 2 * radius ), MathF.Atan2( right - left, 2 * radius ) ); // [DET:presentation] the renderer's boat and kart pose
 	}
 
 	/// <summary>
@@ -199,15 +199,15 @@ public sealed class TrackSurface
 	public static KartPose KartPose( float x, float y, int heading, float radius, bool hover, bool bank, int age, int yawRate, Func<float, float, float> heightAt )
 	{
 		var angle = heading * 2 * MathF.PI / BumpMath.Turn;
-		var (forwardX, forwardY) = (MathF.Sin( angle ), MathF.Cos( angle ));
-		var (rightX, rightY) = (MathF.Cos( angle ), -MathF.Sin( angle ));
+		var (forwardX, forwardY) = (MathF.Sin( angle ), MathF.Cos( angle )); // [DET:presentation] the renderer's boat and kart pose
+		var (rightX, rightY) = (MathF.Cos( angle ), -MathF.Sin( angle )); // [DET:presentation] the renderer's boat and kart pose
 		var front = heightAt( x + forwardX * radius, y + forwardY * radius );
 		var back = heightAt( x - forwardX * radius, y - forwardY * radius );
 		var right = heightAt( x + rightX * radius, y + rightY * radius );
 		var left = heightAt( x - rightX * radius, y - rightY * radius );
 		var mean = (front + back + right + left) / 4;
-		var pitch = MathF.Atan2( front - back, 2 * radius );
-		var roll = hover ? 0f : MathF.Atan2( right - left, 2 * radius );
+		var pitch = MathF.Atan2( front - back, 2 * radius ); // [DET:presentation] the renderer's boat and kart pose
+		var roll = hover ? 0f : MathF.Atan2( right - left, 2 * radius ); // [DET:presentation] the renderer's boat and kart pose
 		var height = hover ? (front + back) / 2 + HoverHeight + BumpMath.Sin( age * 6 ) * 0.0016666667f : mean;
 		if ( bank )
 			roll += -yawRate / 13f * MathF.PI / 2;

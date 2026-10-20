@@ -49,6 +49,19 @@ public class TrackSaveTests
 		StringAssert.Contains( Assert.ThrowsException<InvalidDataException>( () => ParkResumeSaveFile.ValidateShape( snapshot ) ).Message, message );
 
 	[TestMethod]
+	public void PreservedBaseTypesRequireAStationOrItsExtension()
+	{
+		var valid = WithTracks( part => part with { Cells = part.Cells.Select( cell => cell with { BaseType = 4 } ).ToList() } );
+		ParkResumeSaveFile.ValidateShape( valid );
+		ParkResumeSaveFile.ValidateShape( ParkResumeSaveFile.Deserialize( ParkResumeSaveFile.Serialize( valid ) ) );
+		Rejects( WithTracks( part => part with { Cells = part.Cells.Select( cell => cell.Type == TrackCellTypes.Extension ? cell with { BaseType = 4, Parent = 0 } : cell ).ToList() } ), "without a station origin" );
+		var ordinary = WithTracks( part => part with { Cells = part.Cells.Select( cell => cell.Type == TrackCellTypes.WaterStart ? cell with { Type = TrackCellTypes.WaterOrigin, BaseType = 4 } : cell ).ToList() } );
+		var index = ordinary.Layout.Cells.Cells.FindIndex( cell => cell.X == 4 && cell.Y == 2 );
+		ordinary.Layout.Cells.Cells[index] = ordinary.Layout.Cells.Cells[index] with { Type = TrackCellTypes.WaterOrigin };
+		Rejects( ordinary, "without a station origin" );
+	}
+
+	[TestMethod]
 	public void AWellFormedTrackPartPassesTheShapeCheckAndTheCodec()
 	{
 		var snapshot = WithTracks();

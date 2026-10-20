@@ -150,6 +150,14 @@ public static partial class Program
 		CompatibilityStartup.Initialize( Array.Empty<string>(), dataDirectory );
 		// [EXT:mods] The browser has the data mods shipped with the page (content/mods) and the official extensions, with the choices in /config/mods.json (docs/MODS.md).
 		OpenTPW.Mods.ModStartup.InitializeBrowser( Log.Trace, Log.Warning );
+		// [EXT:extensions-apply-at-load] a park load or the Extensions and mods screen switched the pools extension on after the start: the page fetches its sprite sets now (the start's fetch skipped them)
+		OpenTPW.Mods.ModStartup.ExtensionsSwitched += _ =>
+		{
+			if ( !FeatureGates.Pools )
+				return;
+			PoolSpriteDelivery.Retry();
+			Page.RequestPoolSprites();
+		};
 
 		// Sound plays through WebAudio (Browser/WebAudioOutput.cs); movies are not in the browser yet.
 		GameAudio.Enabled = true;
@@ -232,6 +240,10 @@ public static partial class Program
 	[JSExport]
 	public static bool AddPoolSpriteFile( string relativePath, byte[] contents )
 		=> FeatureGates.Pools && PoolSpriteDelivery.Store( relativePath, contents );
+
+	/// <summary>[EXT:extensions-apply-at-load] Whether a pinned sprite file is already stored, so a fetch started again after an extension switch skips it.</summary>
+	[JSExport]
+	public static bool PoolSpriteStored( string relativePath ) => PoolSpriteDelivery.IsStored( relativePath );
 
 	/// <summary>The page gave up fetching the sprite files (offline, not found, a wrong file): the swimmers and the land guests keep their fallbacks.</summary>
 	[JSExport]

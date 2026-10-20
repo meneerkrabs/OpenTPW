@@ -47,7 +47,7 @@ public static class PoolGuestSprites
 	private static bool Matches( IReadOnlyList<GuestSpriteAtlas> sets ) => sets.Count == KidSets && sets.Select( set => set.Name ).SequenceEqual( KidNames, StringComparer.OrdinalIgnoreCase );
 
 	/// <summary>Loads the <c>.ESP</c> sets of a folder with the bank each selects (sorted by name); the sets that fail are skipped with a warning. Empty when the folder is missing.</summary>
-	internal static List<GuestSpriteAtlas> LoadFolder( string? folder, string packFolder )
+	internal static List<GuestSpriteAtlas> LoadFolder( string? folder, string packFolder, string packRoot = "pools" )
 	{
 		var sets = new List<GuestSpriteAtlas>();
 		if ( folder == null || !System.IO.Directory.Exists( folder ) )
@@ -65,7 +65,7 @@ public static class PoolGuestSprites
 				if ( bank == null )
 					continue;
 				using var bankStream = File.OpenRead( Path.Combine( folder, bank ) );
-				sets.Add( new GuestSpriteAtlas( stem, new SpriteBankFile( bankStream ), animations, packFolder, "pools" ) );
+				sets.Add( new GuestSpriteAtlas( stem, new SpriteBankFile( bankStream ), animations, packFolder, packRoot ) );
 			}
 			catch ( Exception exception ) when ( exception is IOException or InvalidDataException or UnauthorizedAccessException )
 			{

@@ -18,7 +18,7 @@ A visit of a park downloaded from the server now shows the park's other visitors
 
 The chat session no longer sends joins, places and lines through the operation slot (`Busy`), which dropped them while a download, a vote or another request
 ran; they go out in order on their own chain, the newest place replacing places not yet sent. A room asked for before the connection opens is joined once it
-does, a reconnection returns to it, a join the rate limit dropped is sent again after three seconds, and a refused park is remembered. A roster update of the
+does, a reconnection returns to it, a join the rate limit dropped is sent again after five seconds, and a refused park is remembered. A roster update of the
 room the player is in no longer clears the room's places. The server answers each room's first movement with where everyone stands, not only a connection's
 first movement ever, and reports protocol version 4; visits draw figures only on such a server.
 

@@ -1,5 +1,11 @@
 # UI-034: Resolve UI black key state
 
+## Current bounded implementation (2026-10-20)
+
+Preserve per-slot transparency in contiguous UI material runs without changing painter order; native black-key thresholds remain open. See [implementation contract](../UI-MATERIAL-RUNS.md). Recovered the independently source-reviewed frozen change and integrated current main de0a3bff. Synthetic C# fixtures are included; exact-head CI and rendered validation are not yet claimed. No fidelity identifier is retired. The original plan below is historical and its plan-only description is superseded for this bounded slice; unresolved evidence gates remain.
+
+## Historical proposal
+
 ## Status and classification
 - Plan-only draft proposal; no implementation, tests-run claim, retirement or merge.
 - Classification: `approximation`.

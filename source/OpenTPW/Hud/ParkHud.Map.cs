@@ -235,6 +235,17 @@ public sealed partial class ParkHud
 		private readonly ParkMapMetrics.OutcomeScratch outcomeCells = new();
 		public ParkMapView( ParkHud owner ) => this.owner = owner;
 
+		/// <summary>Only the current level's exact object binding can supply a default repair colour.</summary>
+		private RgbaByte ObjectFill( OriginalObject item )
+		{
+			if ( !item.IsDeleted && !owner.level.IsReadOnlyVisit && owner.Status?.EconomySource is ParkEconomy economy
+				&& ReferenceEquals( economy, owner.level.Park?.Economy ) && owner.level.GetEconomyInstance( item ) is int instance
+				&& economy.TryGetObject( instance, out var state ) && state.Id == instance && state.InfoId == item.Entry.InfoId
+				&& ParkMapPalette.RepairFill( state.Repair ) is { } fill )
+				return fill;
+			return ParkMapPalette.UnavailableObject;
+		}
+
 		public override void Draw( UiContext context, bool focused, bool pressed )
 		{
 			var content = ScreenRect( context.Canvas );
@@ -272,7 +283,7 @@ public sealed partial class ParkHud
 					context.Batch.AddRectangle( new UiRect( left, top, right - left, bottom - top ), color );
 			}
 			// [BIN:TPW-EXE:0x5f2050 map cell classes] the writer gives a cell without an object the class 10 (path, 0x536310), 11 (queue, 0x536320) or 12 (unowned land, flag 0x40) in that order, filled with the records 0xf86b00 (31,166,31), 0xf86b24 (37,198,37) and 0xf86b6c (0,23,0 at alpha 128) by 0x5f2380
-			// [APPROX:UI-086] placed-object cells and footprints use one plain colour over the original map art (and the staff, visitor, track and happiness layers theirs); the original gives an object cell the class of its WhichUIType (1 rides, 2 shops, 3 sideshows, 4-7 features, 8 track cells), colours it from the 0xf86bd8/0xf86bfc/0xf86c20 ramp (red 0, orange 50, green 100, 0x5f09a0) of a value (+0x44 of its object record, not identified) and outlines it where a neighbour differs (0x5f2380); its footprints (kind 2 items, 0xf86b90 / 0xf86bb4) and the layer buttons' land and value modes (2444-2447, 2455-2457) are not ported
+			// [APPROX:UI-086] default live placed-object fills use the traced StateOfRepair ramp, but native cell-class/track priority, neighbour outlines, footprints and item dots remain incomplete. Native value modes 2/3 and their controls are not ported; the independent excitement, visitor-thought and happiness overlays retain their host precedence. Missing, read-only or mismatched economy state keeps the old plain fill; no original rendered equivalence is claimed.
 			if ( imagePath == null )
 			{
 				// [EXT:sandbox-map] the generic sandbox has no shipped theme map image; its live grid and heights form a simple terrain base (OpenTPW content)
@@ -290,8 +301,11 @@ public sealed partial class ParkHud
 							Mark( x, y, fill );
 			foreach ( var item in owner.level.Objects.Objects.Where( item => !item.IsDeleted &&
 				owner.MapShowsCategory( item.Entry.WhichUIType ) ) )
+			{
+				var fill = ObjectFill( item );
 				foreach ( var cell in item.Cells )
-					Mark( cell.X, cell.Y, new RgbaByte( 207, 67, 198, 235 ) );
+					Mark( cell.X, cell.Y, fill );
+			}
 			// [PROVISIONAL:MAP] Host overlay projects actual COAST samples (original x/z ground plane) onto map cells; unfinished tracks show the authored node chain.
 			if ( owner.mapTracks )
 				foreach ( var coaster in owner.level.Coasters )
@@ -360,14 +374,39 @@ internal readonly record struct MapViewState( float Zoom, NVector2 Cell )
 	}
 }
 
-/// <summary>Projects live park cells onto the shipped 512-pixel map image or a sandbox grid.</summary>
-/// <summary>The fills of the original map's cell classes 10 to 12.</summary>
+/// <summary>The original map's object-free fills and default placed-object repair ramp.</summary>
 // [BIN:TPW-EXE:0x5f0700 map colour records] the records 0xf86b00 (31,166,31,255), 0xf86b24 (37,198,37,255) and 0xf86b6c (0,23,0,128) are written by immediates in 0x5f0700-0x5f0964 through the helper 0x5f0970 (blue, green, red, alpha)
 internal static class ParkMapPalette
 {
 	public static readonly RgbaByte Path = new( 31, 166, 31, 255 );
 	public static readonly RgbaByte Queue = new( 37, 198, 37, 255 );
 	public static readonly RgbaByte Unowned = new( 0, 23, 0, 128 );
+	/// <summary>Existing host fill when no supported current repair state is available.</summary>
+	public static readonly RgbaByte UnavailableObject = new( 207, 67, 198, 235 );
+
+	/// <summary>The original stored float, truncated to an integer and masked to its low byte before the ramp clamp.</summary>
+	// [BIN:TPW-EXE:0x5f2602 default map repair] object +0x44 is SaveAttraction.StateOfRepair (OriginalEconomyImport -> Repair); the draw calls __ftol then AND 255 before 0x5f09a0. Other default object classes repeat this sequence.
+	public static RgbaByte? RepairFill( double repair )
+	{
+		var stored = (float)repair;
+		// Host malformed-input fallback, not an emulation of undefined x87 conversions. Widen for the bounds
+		// comparison: int.MaxValue rounds UP to 2147483648 as a float, which must not reach the integer cast.
+		if ( !float.IsFinite( stored ) || (double)stored < int.MinValue || (double)stored > int.MaxValue )
+			return null;
+		return RepairRamp( (int)stored & 255 );
+	}
+
+	/// <summary>Clamped integer map ramp, with a quantized 16.16 fraction and arithmetic channel shifts.</summary>
+	// [BIN:TPW-EXE:0x5f09a0 map gradient] constructor 0x5f08a5..0x5f08df supplies RGB (248,0,0), (248,200,0), (48,252,0); clamp 0..100, split at 50, fraction=(distance<<16)/50, signed channel products >>16, alpha 255.
+	public static RgbaByte RepairRamp( int value )
+	{
+		value = Math.Clamp( value, 0, 100 );
+		var upper = value >= 50;
+		var fraction = ((upper ? value - 50 : value) << 16) / 50;
+		return upper
+			? new RgbaByte( (byte)(248 + ((-200 * fraction) >> 16)), (byte)(200 + ((52 * fraction) >> 16)), 0, 255 )
+			: new RgbaByte( 248, (byte)((200 * fraction) >> 16), 0, 255 );
+	}
 
 	/// <summary>The fill of an object-free cell: a path, else a queue, else unowned land; null leaves the map art.</summary>
 	public static RgbaByte? CellFill( ParkCellType type, bool unowned ) => type switch

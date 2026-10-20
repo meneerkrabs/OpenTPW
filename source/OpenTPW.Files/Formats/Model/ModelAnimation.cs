@@ -181,6 +181,55 @@ public sealed class ModelAnimationTrack
 		return Slerp( key.Rotation, Rotations[segment + 1].Rotation, fraction );
 	}
 
+	/// <summary>
+	/// The rotation keys <see cref="SampleRotation"/> blends at a tick, with the eased fraction, for a caller that blends them with its own arithmetic
+	/// (simulation code, docs/DETERMINISM.md "Browser and native"); false where <see cref="SampleRotation"/> returns null. A fraction of 0 means <paramref name="from"/> holds.
+	/// </summary>
+	public bool TryRotationKeys( float tick, out Quaternion from, out Quaternion to, out float fraction )
+	{
+		from = to = Quaternion.Identity;
+		fraction = 0;
+		if ( Rotations.Count == 0 )
+			return false;
+		var segment = FindKey( new RotationTimes( Rotations ), tick, out fraction );
+		if ( segment < 0 )
+			return false;
+		var key = Rotations[segment];
+		from = to = key.Rotation;
+		if ( fraction <= 0 )
+		{
+			fraction = 0;
+			return true;
+		}
+		if ( key.Ease >= 0 )
+			fraction = Ease( EaseCurves[key.Ease], fraction );
+		to = Rotations[segment + 1].Rotation;
+		return true;
+	}
+
+	/// <summary>
+	/// The two position keys <see cref="SampleTranslation"/> blends linearly at a tick, for a caller that blends them with its own arithmetic; false where
+	/// <see cref="SampleTranslation"/> returns null or the track is a Bézier one (which has no linear blend). A fraction of 0 means <paramref name="from"/> holds.
+	/// </summary>
+	public bool TryLinearTranslationKeys( float tick, out NVector3 from, out NVector3 to, out float fraction )
+	{
+		from = to = NVector3.Zero;
+		fraction = 0;
+		if ( Position == null || Position.IsBezier )
+			return false;
+		var segment = FindKey( new PositionTimes( Position.Times ), tick, out fraction );
+		if ( segment < 0 )
+			return false;
+		from = to = Position.Points[segment];
+		if ( fraction <= 0 )
+		{
+			fraction = 0;
+			return true;
+		}
+		to = Position.Points[segment + 1];
+		return true;
+	}
+
 	/// <summary>Per-axis scale at a tick; null without keys or before the first key; the last key holds.</summary>
 	public NVector3? SampleScale( float tick )
 	{

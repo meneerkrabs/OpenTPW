@@ -55,7 +55,7 @@ internal interface IAdvisorParkState
 /// are recounted here and not written: the advisor's own calls do write them (<c>0x4C8D16</c>-<c>0x4C8D1D</c> for the blocks, <c>0x4C9F63</c>-<c>0x4C9F70</c> for the toilets), but <c>0x4C8C40</c> has the single caller <c>0x4C81B0</c>,
 /// used only by the two advisor callbacks with age 0, and nothing else reads the toilet cache, so a fresh count gives what the original's callbacks see.
 /// </summary>
-internal sealed class EconomyParkState : IAdvisorParkState
+internal sealed partial class EconomyParkState : IAdvisorParkState
 {
 	private readonly ParkEconomy economy;
 	private readonly long? objectStampTurn, hireStampTurn;

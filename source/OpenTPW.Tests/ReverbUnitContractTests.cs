@@ -51,6 +51,42 @@ public class ReverbUnitContractTests
 		return output;
 	}
 
+	private static ReverbUnit ImpulseUnit( ReverbSettings settings )
+	{
+		var unit = new ReverbUnit( SampleRate );
+		unit.Set( settings );
+		var impulse = new float[2];
+		impulse[0] = impulse[1] = 10000f;
+		unit.Process( impulse, new float[2], 1 );
+		return unit;
+	}
+
+	private static void AssertZeroInputMatchesFreshAfterSwitch( ReverbSettings source, ReverbSettings target, int frames )
+	{
+		var unit = ImpulseUnit( source );
+		unit.Set( target );
+		var after = new float[frames * 2];
+		unit.Process( new float[frames * 2], after, frames );
+
+		var fresh = new ReverbUnit( SampleRate );
+		fresh.Set( target );
+		var expected = new float[frames * 2];
+		fresh.Process( new float[frames * 2], expected, frames );
+
+		Assert.IsTrue( expected.All( value => value == 0f ), "the fresh zero-input reference is silent" );
+		for ( var index = 0; index < after.Length; index++ )
+			Assert.AreEqual( expected[index], after[index], 0f, $"post-change sample {index}" );
+	}
+
+	private static void AssertSwitchKeepsTail( ReverbSettings source, ReverbSettings target )
+	{
+		var unit = ImpulseUnit( source );
+		unit.Set( target );
+		var output = new float[10000 * 2];
+		unit.Process( new float[10000 * 2], output, 10000 );
+		Assert.IsTrue( output.Any( value => value != 0f ), "the held tail survives" );
+	}
+
 	private static double Energy( float[] output, int firstFrame, int lastFrame )
 	{
 		var sum = 0d;
@@ -201,6 +237,61 @@ public class ReverbUnitContractTests
 		var dropped = new float[4000 * 2];
 		changedSize.Process( new float[4000 * 2], dropped, 4000 );
 		Assert.IsTrue( dropped.All( value => value == 0f ), "a size change rebuilds the delay lines and drops the old tail" );
+	}
+
+	[TestMethod]
+	public void AnEffectiveSizeChangeDropsHeldPreDelay()
+	{
+		AssertZeroInputMatchesFreshAfterSwitch(
+			Preset( size: 7.5f, decay: 1f, decayHf: 1f, reverb: 600, reverbDelay: 0.1f ),
+			Preset( size: 30f, decay: 1f, decayHf: 1f, reverb: 600, reverbDelay: 0.1f ),
+			10000 );
+	}
+
+	[TestMethod]
+	public void AnEffectiveSizeChangeDropsHeldEarlyReflections()
+	{
+		AssertZeroInputMatchesFreshAfterSwitch(
+			Preset( size: 7.5f, decay: 1f, decayHf: 1f, reverb: 600, reflections: 500, reflectionsDelay: 0.05f ),
+			Preset( size: 30f, decay: 1f, decayHf: 1f, reverb: 600, reflections: 500, reflectionsDelay: 0.05f ),
+			10000 );
+	}
+
+	[TestMethod]
+	public void AnUnchangedSizeKeepsTheHeldTail()
+	{
+		var settings = Preset( size: 7.5f, decay: 1f, decayHf: 1f, reverb: 600, reverbDelay: 0.1f );
+		AssertSwitchKeepsTail( settings, settings );
+	}
+
+	[TestMethod]
+	public void ARawSizeChangeThatKeepsTheEffectiveScaleKeepsTheHeldTail()
+	{
+		var source = Preset( size: 100f, decay: 1f, decayHf: 1f, reverb: 600, reverbDelay: 0.1f );
+		AssertSwitchKeepsTail( source, source with { Size = 1000f } );
+	}
+
+	[TestMethod]
+	public void AUnitStillProcessesNewInputAfterAnEffectiveSizeChange()
+	{
+		var source = Preset( size: 7.5f, decay: 1f, decayHf: 1f, reverb: 600, reverbDelay: 0.1f );
+		var target = Preset( size: 30f, decay: 1f, decayHf: 1f, reverb: 600, reverbDelay: 0.1f );
+		var unit = ImpulseUnit( source );
+		unit.Set( target );
+
+		var send = new float[8000 * 2];
+		send[0] = send[1] = 10000f;
+		var after = new float[8000 * 2];
+		unit.Process( send, after, 8000 );
+
+		var fresh = new ReverbUnit( SampleRate );
+		fresh.Set( target );
+		var expected = new float[8000 * 2];
+		fresh.Process( send, expected, 8000 );
+
+		for ( var index = 0; index < after.Length; index++ )
+			Assert.AreEqual( expected[index], after[index], 0f, $"new-input sample {index}" );
+		Assert.IsTrue( after.Any( value => value != 0f ), "the reconfigured unit processes new input" );
 	}
 
 	[TestMethod]

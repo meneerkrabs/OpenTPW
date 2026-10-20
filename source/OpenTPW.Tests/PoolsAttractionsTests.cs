@@ -1136,7 +1136,7 @@ public class PoolsAttractionsTests
 		using var scope = OpenTpwExtensions.Use( PoolsTests.PoolsSet( true ) );
 		var cells = new ParkCellMap( 32, 32 );
 		var builder = Builder( cells, out _ );
-		var tool = new PoolTool( builder );
+		var tool = PoolToolRig.Create( builder );
 		Assert.IsTrue( tool.Begin( erase: false, river: true ) );
 		Assert.IsTrue( tool.IsRiver );
 		// a stroke round the perimeter of 6 x 4: press at the corner and drag round it

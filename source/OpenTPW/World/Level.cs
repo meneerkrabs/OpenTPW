@@ -186,6 +186,8 @@ public partial class Level : IDisposable
 	public RideHeadRenderer? CostumeHeadRenderer { get; private set; }
 	/// <summary>Draws the guests' balloons.</summary>
 	public BalloonRenderer? BalloonRenderer { get; private set; }
+	/// <summary>The hoarding boards and textures the level's objects share (docs/OBJECTS.md, "Hoarding"); cleared in <see cref="Dispose"/>.</summary>
+	internal ObjectHoardingCache HoardingCache { get; } = new();
 	/// <summary>[EXT:umbrellas-draw] The guests' open umbrellas (<see cref="UmbrellaRenderer"/>); null without the extension, its content or guests.</summary>
 	public UmbrellaRenderer? UmbrellaRenderer { get; private set; }
 	/// <summary>[EXT:winter-draw] The warm items the guests wear (<see cref="WarmItemRenderer"/>); null without the extension, its content or guests.</summary>
@@ -581,8 +583,9 @@ public partial class Level : IDisposable
 			: visitLayout?.Cells != null
 			? new GuestPathGrid( SharedParkLayout.BuildCellMap( park.Map.CellCountX, park.Map.CellCountY, visitLayout.Cells ) )
 			: new GuestPathGrid( ParkCellMap.FromOriginal( park.Map, park.Save, land, park.Heightfield ) );
+		LandBarrier = ( x, y ) => ParkLand.IsBarrier( park.Map, park.Heightfield, x, y );
 		BuyLandTool = grid.Cells.Land != null && !IsReadOnlyVisit
-			? new BuyLandTool( () => Guests?.Grid.Cells, () => Park?.Economy, ( x, y ) => ParkLand.IsBarrier( park.Map, park.Heightfield, x, y ) )
+			? new BuyLandTool( () => Guests?.Grid.Cells, () => Park?.Economy, LandBarrier, command => Commands.Issue( command ) )
 			: null;
 		Guests = new GuestSimulation( grid, settings, Seed.GuestStream ) { OnlineVisit = Visit != null };
 		BindGuestThoughtPresentation( Guests );
@@ -664,6 +667,9 @@ public partial class Level : IDisposable
 	/// <summary>The Buy Land tool (tp.exe mouse mode 0x39); null for a level without land (no Hoardings.sam, Theme Park Inc, a visit).</summary>
 	public BuyLandTool? BuyLandTool { get; private set; }
 
+	/// <summary>Whether a cell is of the original types 7 or 0x1e, which no fence may cross (<see cref="ParkLand.CheckPurchase"/>); null for a level without an original map.</summary>
+	internal Func<int, int, bool>? LandBarrier { get; private set; }
+
 	/// <summary>The level's park fence: its gate posts beside the entrance cells and its <c>Hoardings.sam</c>; null without them.</summary>
 	private static ParkLandSetup? LandSetup( OriginalPark park, GuestSettings settings )
 	{
@@ -737,7 +743,7 @@ public partial class Level : IDisposable
 			else if ( item.Kind == ParkEventKind.CheatApplied && (cheatNotes ??= new()).Count < 64 )
 				cheatNotes.Add( item );
 			else if ( item.Kind is ParkEventKind.UpgradeBought or ParkEventKind.MaintenanceRequested )
-				CloseForUpgrade( item.InstanceId );
+				CloseForUpgrade( item.InstanceId, item.Kind == ParkEventKind.UpgradeBought );
 			else if ( item.Kind == ParkEventKind.MaintenanceCancelled )
 				OpenAfterCancelledCall( item.InstanceId );
 			else if ( item.Kind is ParkEventKind.ToiletCleaned or ParkEventKind.UpgradeCancelled )
@@ -796,11 +802,14 @@ public partial class Level : IDisposable
 	/// enforces too (<see cref="RideOpening.MayOpen"/>). Without this the ride kept taking guests while its wear was stopped for the upgrade.
 	/// </summary>
 	// [BIN:STP-PPC:0x100DF928 upgrade start] the upgrade start writes state 2, which clears the open word +100 and writes VAR_RIDECLOSED = 1 (0xe0c3c, ORACLE.md F27)
-	private void CloseForUpgrade( int instance )
+	// [BIN:TPW-EXE:0x004E0050 upgrade request's model call] the upgrade request's SetState(2) closes with 0x00454550(1) (0x004E101F) and then calls 0x00454550(8) (0x004E0098): the hoarding shows the upgrade set; the maintenance request 0x004DFE30(1) only closes, with mode 1 (0x004DFEED)
+	private void CloseForUpgrade( int instance, bool upgrade )
 	{
 		if ( AttractionRuntimeOf( instance ) is not { } runtime )
 			return;
 		runtime.Close();
+		if ( upgrade )
+			runtime.Hoarding.SetState( ObjectHoardingState.UpgradeMode );
 		SyncOpenState( runtime );
 	}
 
@@ -871,7 +880,11 @@ public partial class Level : IDisposable
 		if ( RideRepair.OpensAfterRepair( coaster ? RideOpening.CoasterTrackType : 0, !coaster || runtime.Coaster!.AcceptsGuests ) )
 			runtime.Open();
 		else
+		{
+			// [BIN:TPW-EXE:0x004DFC95 repair tail's model calls] the tail opens first (0x004547C0: the hoarding sinks) and its re-close then calls 0x00454550(1) (0x004DFD65), which shows the closed set over a sinking one
+			runtime.Hoarding.StartOpenFade();
 			runtime.Close();
+		}
 	}
 
 	/// <summary>Walkable path cell next to (or nearest to) a footprint; the prototype Totem has no catalog entrance cell yet.</summary>
@@ -1156,6 +1169,8 @@ public partial class Level : IDisposable
 				Things.QueueDestroy( id );
 		}
 		StaffPlacement?.Abandon();
+		// the employees in the players' hands belong to the replaced economy
+		StaffHands?.Clear();
 		UpgradeBalloons?.Clear();
 		// the patrol tool's employee id belongs to the replaced economy
 		PatrolTool?.Cancel();
@@ -1204,6 +1219,8 @@ public partial class Level : IDisposable
 		DisposeSky();
 		DetachOverlay();
 		TextOverlay?.Dispose();
+		// a scene built without its constructor (the park-build tests make one) has no cache
+		HoardingCache?.Clear();
 	}
 
 	/// <summary>Invalidates per-world-pass observations even when an entity is absent from the render list.</summary>

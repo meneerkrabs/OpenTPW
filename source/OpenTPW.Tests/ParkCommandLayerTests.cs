@@ -71,6 +71,18 @@ public class ParkCommandLayerTests
 		// a method group handed on (a button's click, a callback) reaches the economy's mutators as surely as a call
 		new( "Settings mutators as method groups", @"(?<!InputButton)\.(OpenPark|ClosePark|SetEntranceFee|SetPrices|SetShopSettings|TakeLoan|TryRepayLoan|SetTrainingBudget|SetResearchEffort|AcceptChallenge|DeclineChallenge|RequestMaintenance|TryBuyUpgrade|TryCancelUpgrade|QueueCheat|RefreshLoanOffers)\b(?!\s*[(=])", nameof( ParkSettingCommand ) ),
 		new( "Loan list build", Call( "RefreshLoanOffers" ), nameof( RefreshLoanOffersCommand ) ),
+		// the park's tools (C1 part 3)
+		new( "Land", @"\.(ChargeLand|TryBuyCells|SetLand|ClaimEnclosedCells)\s*\(", nameof( BuyLandCommand ) ),
+		// the staff placement's own helpers are bare calls inside its file, so the bare form counts too
+		new( "ParkEconomy.Hire and the staff placement", @"\.(Hire|EndPlacement)\s*\(|" + Call( "PutDown" ) + "|" + Call( "ReleaseAssignments" ) + @"|\b(PendingPlacementId|PatrolArea|BubbleThought)\s*=[^=]",
+			nameof( PlaceStaffCommand ) ),
+		new( "Staff pick-up", @"\bState\s*=\s*StaffState\.PickedUp\b", nameof( PickUpStaffCommand ) ),
+		new( "Pools", @"\.(SetPoolWaves|CyclePoolWaves|PaintCells|EraseCells|Paint|Erase)\s*\(", nameof( PaintPoolCellCommand ) ),
+		new( "Pool river flags", @"\.Cells\??\.SetFlags\s*\(", nameof( UndoPoolStrokeCommand ) ),
+		new( "Pool slides", @"\bSlides\??!?\.(AddCell|RemoveLastPiece)\s*\(", nameof( LayPoolSlidePieceCommand ) ),
+		new( "Pool bridges", @"\bBridges\??!?\.(TryAdd|RemoveAt)\s*\(", nameof( PlacePoolBridgeCommand ) ),
+		// the cell tool commits every line through the writer it holds, a command writer for paths, queues and tracks alike; a track write of its own is refused
+		new( "Kart and water tracks", @"\.(BuildTrack|PlaceTile|RemoveTile|UndoLine|RepairStation|FindOpenEnd)\s*\(|\bnew\s+TrackLineWriter\s*\(|\.Cut\s*\([^)]*commit\s*:", nameof( LayTrackLineCommand ) ),
 	};
 
 	/// <summary>
@@ -79,16 +91,9 @@ public class ParkCommandLayerTests
 	/// </summary>
 	internal static readonly (Mutator Mutator, string Phase)[] Remaining =
 	{
-		(new( "ParkEconomy.Hire and the staff placement", @"\.(Hire|EndPlacement)\s*\(|\b(PendingPlacementId|PatrolArea)\s*=[^=]", "PlaceStaff" ), "C1 part 3 (tools)"),
-		(new( "Land", @"\.(ChargeLand|TryBuyCells|SetLand)\s*\(", "BuyLand" ), "C1 part 3 (tools)"),
-		(new( "Pools", @"\.(SetPoolWaves|CyclePoolWaves|PaintCells|EraseCells|Paint|Erase)\s*\(", "PaintPool" ), "C1 part 3 (tools)"),
 		(new( "Coasters", Call( "CoasterClick" ), "CoasterClick" ), "C1 part 3 (tools)"),
-		// the cell tool commits a path or queue line through its command writer, and a kart or water track's line straight through the track writer
-		(new( "Kart and water tracks", @"\bwriter\.Commit\s*\(", "LayTrackLine" ), "C1 part 3 (tools)"),
 		(new( "Developer sandbox load", Call( "LoadSandbox" ), "LoadSandbox" ), "C2 (a load replaces the park; a session replaces it from the host)"),
 		(new( "Coaster panel edits", @"\bbuilder\.RemoveLast\s*\(", "CoasterClick" ), "C1 part 3 (tools)"),
-		(new( "Pool slides", @"\bSlides\??!?\.(AddCell|RemoveLastPiece)\s*\(", "LaySlidePiece" ), "C1 part 3 (tools)"),
-		(new( "Pool bridges", @"\bBridges\??!?\.(TryAdd|RemoveAt)\s*\(", "PlacePoolBridge" ), "C1 part 3 (tools)"),
 	};
 
 	/// <summary>The starts of a bare call: a line start, an operator or bracket, or a keyword before an expression (a declaration has a type before the name instead).</summary>
@@ -224,6 +229,40 @@ public class ParkCommandLayerTests
 		Assert.IsTrue( Caught( prototype, "level.PlacedRide.Stop();" ) );
 		Assert.IsTrue( Caught( prototype, "level.PlacedRide?.Start();" ) );
 		Assert.IsFalse( Caught( prototype, "ImGui.Text( level.PlacedRide.IsOpen ? \"Ride: open\" : \"Ride: closed\" );" ) );
+		// the tools (C1 part 3)
+		var land = Converted.Single( mutator => mutator.Name == "Land" );
+		Assert.IsTrue( Caught( land, "map.SetLand( merged );" ) );
+		Assert.IsTrue( Caught( land, "merged.ClaimEnclosedCells( map );" ) );
+		Assert.IsTrue( Caught( land, "economy()?.ChargeLand( check.Cost, check.Cells );" ) );
+		Assert.IsFalse( Caught( land, "var check = land.CheckPurchase( map, corner, post, barrier, cost, balance );" ) );
+		var staff = Converted.Single( mutator => mutator.Name == "ParkEconomy.Hire and the staff placement" );
+		Assert.IsTrue( Caught( staff, "member = park.Hire( candidate.Id );" ) );
+		Assert.IsTrue( Caught( staff, "park.Staff.PendingPlacementId = candidate.Id;" ) );
+		Assert.IsTrue( Caught( staff, "member.PatrolArea = (0, 0, 127, 127);" ) );
+		Assert.IsFalse( Caught( staff, "if ( member.PatrolArea == area )" ) );
+		Assert.IsFalse( Caught( staff, "if ( !issue( new BeginStaffHireCommand( candidate.Id ) ).Accepted )" ) );
+		Assert.IsTrue( Caught( staff, "PutDown( member, x, y );" ), "the placement's helper, called bare inside its own file" );
+		Assert.IsTrue( Caught( staff, "ReleaseAssignments( park, member );" ) );
+		Assert.IsTrue( Caught( staff, "StaffPlacement.PutDown( member, X, Y );" ) );
+		Assert.IsFalse( Caught( staff, "internal static void PutDown( StaffMember member, int x, int y )" ), "the helper's declaration" );
+		Assert.IsTrue( Caught( staff, "member.BubbleThought = 0;" ) );
+		Assert.IsFalse( Caught( staff, "if ( member.BubbleThought != 0 && staffCell( member ) is { } cell )" ) );
+		var pickUp = Converted.Single( mutator => mutator.Name == "Staff pick-up" );
+		Assert.IsTrue( Caught( pickUp, "member.State = StaffState.PickedUp;" ) );
+		Assert.IsFalse( Caught( pickUp, "if ( member.State == StaffState.PickedUp )" ) );
+		var pools = Converted.Single( mutator => mutator.Name == "Pools" );
+		Assert.IsTrue( Caught( pools, "var result = IsErasing ? builder.Erase( x, y ) : builder.Paint( x, y, IsRiver );" ) );
+		Assert.IsTrue( Caught( pools, "level.SetPoolWaves( item, chosen );" ) );
+		Assert.IsFalse( Caught( pools, "level.Commands.Issue( new SetPoolWavesCommand( id, true, 2, 1 ) );" ) );
+		var river = Converted.Single( mutator => mutator.Name == "Pool river flags" );
+		Assert.IsTrue( Caught( river, "builder.Cells.SetFlags( x, y, flags );" ) );
+		Assert.IsFalse( Caught( river, "built.SetFlags( cell.X, cell.Y, flags );" ), "a visit's own copy of the shared map" );
+		var tracks = Converted.Single( mutator => mutator.Name == "Kart and water tracks" );
+		Assert.IsTrue( Caught( tracks, "level.BuildTrack( station, (14, 10), (20, 10) );" ) );
+		Assert.IsTrue( Caught( tracks, "var writer = new TrackLineWriter( builder, changed, owner );" ) );
+		Assert.IsTrue( Caught( tracks, "var cut = editor.Cut( a, b, commit: true );" ) );
+		Assert.IsTrue( Caught( tracks, "var open = editor.FindOpenEnd();" ), "the open-end walk writes the tiles' overlap words" );
+		Assert.IsFalse( Caught( tracks, "var result = writer.Commit( start, end );" ), "the cell tool commits through the command writer it holds" );
 	}
 
 	/// <summary>The command code itself keeps to the simulation's determinism rules (no process-wide randomness, clock or mutable statics), as the simulation folders do.</summary>

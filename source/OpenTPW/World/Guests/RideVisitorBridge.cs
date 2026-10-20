@@ -1178,8 +1178,15 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 		if ( called != 0 )
 			Withdraw();
 		Set( RideVariables.VAR_RIDECLOSED, 1 );
+		ModelState?.Invoke( ObjectHoardingState.CloseMode );
 		BlockedExitClosings++;
 	}
+
+	/// <summary>
+	/// The ride's model calls (tp.exe <c>0x00454550</c>) at the bridge's closings: the blocked exit's close and the breakdown's state change. The runtime
+	/// binds its hoarding (presentation only, docs/OBJECTS.md "Hoarding"); null in a bare bridge.
+	/// </summary>
+	internal Action<int>? ModelState { get; set; }
 
 	/// <summary>
 	/// <c>SetState(1)</c> (<c>0xe0ec4</c>): the head-guest step runs once, the pending visitor (ride <c>+104</c>) is zeroised and the open word and
@@ -1190,10 +1197,13 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 		brokenDown = true;
 		// [BIN:TPW-EXE:0x004E14E0 state 1 or 4] the ride update reads the life gauge +0x48 (fld, __ftol, test al) when it enters the state: a nonzero low byte gives state 1 ("Setting state BROKEN", SetState 0x004E0E60(1)), a zero byte state 4 ("Setting state CONDEMNED", SetState(4))
 		condemned = RideBreakdownRules.GaugeByte( (float)LifeGauge ) == 0;
+		// [BIN:TPW-EXE:0x004E1542 breakdown's model calls] "Setting state BROKEN" calls 0x00454550(2) and "Setting state CONDEMNED" 0x00454550(4) before SetState(1) or SetState(4), whose close calls 0x00454550(1) (0x004E0F20, 0x004E1123): the hoarding shows the broken-down or condemned set
+		ModelState?.Invoke( condemned ? ObjectHoardingState.CondemnMode : ObjectHoardingState.BreakdownMode );
 		DismissHead();
 		if ( called != 0 )
 			Withdraw();
 		Set( RideVariables.VAR_RIDECLOSED, 1 );
+		ModelState?.Invoke( ObjectHoardingState.CloseMode );
 	}
 
 	/// <summary>

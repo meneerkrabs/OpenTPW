@@ -96,7 +96,7 @@ public class EmployeePortraitGeometryTests
 			Sprites = (StaffSpriteSet)Activator.CreateInstance( typeof( StaffSpriteSet ), BindingFlags.Instance | BindingFlags.NonPublic, null,
 				new object[] { new[] { Atlas }, Enumerable.Repeat( (0, 1), 5 ).ToArray() }, null )!;
 			Renderer = new StaffRenderer( () => Economy.Staff.Members, new ModelHeightfield( 10, 10, 10, 10, 0, 0, Array.Empty<uint>(), new float[121], new uint[100] ),
-				StaffSpriteSet.Empty, new StaffPlacement( () => null, () => null, (_, _) => false ) );
+				StaffSpriteSet.Empty, StaffPlacementRig.Create( () => null, () => null, (_, _) => false ) );
 			Set( Renderer, "sprites", Sprites ); Set( Renderer, "material", Empty<Material<ObjectUniformBuffer>>() );
 			Textures.Add( TextureSentinel() ); Set( Level, "<StaffRenderer>k__BackingField", Renderer );
 			Assert.IsTrue( Hud.OpenEmployeeWindow( Member ) );

@@ -13,7 +13,9 @@ public class PoolBridgeToolTests
 	{
 		var cells = new ParkCellMap( 16, 16 );
 		var world = new PoolBridgeWorld( cells );
-		return (cells, world, new PoolTool( new PoolBuilder( cells, () => null, new PoolsTests.FlatGrid( 16, 16 ) ) ) { Bridges = world });
+		var tool = PoolToolRig.Create( new PoolBuilder( cells, () => null, new PoolsTests.FlatGrid( 16, 16 ) ) );
+		tool.Bridges = world;
+		return (cells, world, tool);
 	}
 
 	private static void Crossing( ParkCellMap cells, int x, int y, int direction )

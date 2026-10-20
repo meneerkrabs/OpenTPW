@@ -77,12 +77,18 @@ public sealed class StaffPlacement
 	private readonly Func<ParkEconomy?> economy;
 	private readonly Func<ParkCellMap?> cells;
 	private readonly Func<int, int, bool> occupied;
+	private readonly Func<ParkCommand, ParkCommandResult> issue;
+	private readonly Func<int, bool> isCarried;
 
-	public StaffPlacement( Func<ParkEconomy?> economy, Func<ParkCellMap?> cells, Func<int, int, bool> occupied )
+	/// <param name="issue">[EXT:online-coop-commands] Hands the tool's writes to the park's command funnel: the hire, the placement, the pick-up and the drop are commands.</param>
+	/// <param name="isCarried">Whether an employee is in a player's hand (<see cref="StaffHands.IsCarried"/>): <see cref="Reconcile"/> leaves those picked up.</param>
+	public StaffPlacement( Func<ParkEconomy?> economy, Func<ParkCellMap?> cells, Func<int, int, bool> occupied, Func<ParkCommand, ParkCommandResult> issue, Func<int, bool> isCarried )
 	{
 		this.economy = economy;
 		this.cells = cells;
 		this.occupied = occupied;
+		this.issue = issue ?? throw new ArgumentNullException( nameof( issue ) );
+		this.isCarried = isCarried ?? throw new ArgumentNullException( nameof( isCarried ) );
 	}
 
 	public StaffToolKind Kind { get; private set; }
@@ -130,9 +136,11 @@ public sealed class StaffPlacement
 			|| !park.Staff.CanHire( candidate.Type ) )
 			return false;
 		Cancel();
+		// [EXT:online-coop-commands] the pending flag is set by the command
+		if ( !issue( new BeginStaffHireCommand( candidate.Id ) ).Accepted )
+			return false;
 		Kind = StaffToolKind.Place;
 		Candidate = candidate;
-		park.Staff.PendingPlacementId = candidate.Id;
 		HoverCell = null;
 		HoverValid = false;
 		Cursor = null;
@@ -150,10 +158,9 @@ public sealed class StaffPlacement
 			return false;
 		var origin = StaffPlacementRules.CellOf( member )!.Value;
 		Cancel();
-		ReleaseAssignments( park, member );
-		member.State = StaffState.PickedUp;
-		// state 7 takes the thought bubble away (0x005054D0 → 0x0050C0D0)
-		member.BubbleThought = 0;
+		// [EXT:online-coop-commands] the pick-up's writes (the jobs released, the picked-up state) are the command's
+		if ( !issue( new PickUpStaffCommand( member.Id ) ).Accepted )
+			return false;
 		Kind = StaffToolKind.Carry;
 		Carried = member;
 		Origin = origin;
@@ -203,17 +210,20 @@ public sealed class StaffPlacement
 				Cancel();
 				return StaffClickResult.None;
 			}
-			park.Staff.EndPlacement( placed: true );
-			member = park.Hire( candidate.Id );
-			// [BIN:TPW-EXE:0x46c8e0 new member] position = cell centre (sub-cell 0x80), happiness and energy 100.0 (the member's own defaults), patrol rectangle = the whole map (+0x20a = 1, +0x20c = 0x4000: PatrolArea's default); each role then decides its first job (state 0 here, the state machines' search runs on the next update)
-			member.PatrolArea = (0, 0, ParkLitter.MapSize - 1, ParkLitter.MapSize - 1);
+			// [EXT:online-coop-commands] the hire and the placement are the command's (PlaceStaffCommand); one it refuses (a full thing pool) ends the tool
+			if ( issue( new PlaceStaffCommand( candidate.Id, x, y ) ).Value is not StaffMember hired )
+			{
+				Cancel();
+				return StaffClickResult.None;
+			}
+			member = hired;
 		}
 		else
 		{
+			if ( !issue( new DropStaffCommand( Carried!.Id, x, y ) ).Accepted )
+				return StaffClickResult.None;
 			member = Carried!;
-			ReleaseAssignments( park, member );
 		}
-		PutDown( member, x, y );
 		LastPlaced = member;
 		End();
 		return kind == StaffToolKind.Place ? StaffClickResult.Placed : StaffClickResult.Dropped;
@@ -225,13 +235,11 @@ public sealed class StaffPlacement
 	// [BIN:TPW-EXE:0x46c890 tool exit] cancelled → 0x5083b0(1) only clears the pending flag; [BIN:TPW-EXE:0x46cdc0 carry exit] a member still in hand "drops where he was before he was picked up"
 	public void Cancel()
 	{
-		if ( Kind == StaffToolKind.Carry && Carried is { } member && economy() is { } park && Origin is { } origin )
-		{
-			ReleaseAssignments( park, member );
-			PutDown( member, origin.X, origin.Y );
-		}
-		else if ( Kind == StaffToolKind.Place && economy() is { } pool )
-			pool.Staff.EndPlacement( placed: false );
+		// [EXT:online-coop-commands] the drop back and the placement's end are commands
+		if ( Kind == StaffToolKind.Carry && Carried is { } member && economy() is not null && Origin is { } origin )
+			issue( new DropStaffCommand( member.Id, origin.X, origin.Y ) );
+		else if ( Kind == StaffToolKind.Place && economy() is not null )
+			issue( new CancelStaffHireCommand() );
 		End();
 	}
 
@@ -256,8 +264,9 @@ public sealed class StaffPlacement
 	}
 
 	/// <summary>
-	/// A saved member still in state <see cref="StaffState.PickedUp"/> with no tool carrying it (an imported original save: nothing re-creates
-	/// the carry tool) is put back to <see cref="StaffState.Idle"/>, so the gate spawn and the state machines take it over.
+	/// A saved member still in state <see cref="StaffState.PickedUp"/> with no player carrying it (an imported original save: nothing re-creates
+	/// the carry tool) is put back to <see cref="StaffState.Idle"/>, so the gate spawn and the state machines take it over. A member a
+	/// <see cref="PickUpStaffCommand"/> put in a hand is the level's state, not the tool's, so a replayed or a peer's pick-up stays picked up.
 	/// </summary>
 	public void Reconcile()
 	{
@@ -267,7 +276,7 @@ public sealed class StaffPlacement
 		for ( var index = 0; index < members.Count; index++ )
 		{
 			var member = members[index];
-			if ( member.State == StaffState.PickedUp && !ReferenceEquals( member, Carried ) )
+			if ( member.State == StaffState.PickedUp && !isCarried( member.Id ) )
 				member.State = StaffState.Idle;
 		}
 	}
@@ -291,7 +300,7 @@ public sealed class StaffPlacement
 	/// job fields. The patrol rectangle is never touched.
 	/// </summary>
 	// [BIN:TPW-EXE:0x505ea0 drop] teleport to the cell centre (0x4fa930), SetState(0) idle and +0x200 = 0 (idle stamp reset); the pool's +0x60 is cleared
-	private static void PutDown( StaffMember member, int x, int y )
+	internal static void PutDown( StaffMember member, int x, int y )
 	{
 		member.CellX = x + 0.5f;
 		member.CellY = y + 0.5f;
@@ -308,7 +317,7 @@ public sealed class StaffPlacement
 	/// Clears the job a member holds: a handyman's litter and toilet claims, a mechanic's ride assignment (so the dispatch runs again).
 	/// </summary>
 	// [BIN:TPW-EXE:0x4dad20 drop mechanic] a dropped mechanic loses its ride assignment, then 0x4da5b0 dispatches again; the handyman's LitterCell and ToiletId are cleared (OffGridLeg is the road leg outside the park)
-	private static void ReleaseAssignments( ParkEconomy park, StaffMember member )
+	internal static void ReleaseAssignments( ParkEconomy park, StaffMember member )
 	{
 		if ( member.LitterCell is { } litter )
 		{

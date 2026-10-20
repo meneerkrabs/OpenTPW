@@ -18,7 +18,7 @@ public class StaffCarryCursorTests
 		for ( var x = 0; x < 16; x++ )
 			grid.SetPath( x, 5, true );
 		var economy = park = EconomyTestData.Park();
-		return new StaffPlacement( () => economy, () => grid.Cells, ( _, _ ) => false );
+		return StaffPlacementRig.Create( () => economy, () => grid.Cells, ( _, _ ) => false );
 	}
 
 	[TestMethod]
@@ -136,7 +136,7 @@ public class StaffCarryCursorTests
 		var economy = EconomyTestData.Park();
 		var hud = StaffWindowTests.Hud( economy );
 		var grid = new GuestPathGrid( 20, 20 );
-		var placement = new StaffPlacement( () => economy, () => grid.Cells, ( _, _ ) => false );
+		var placement = StaffPlacementRig.Create( () => economy, () => grid.Cells, ( _, _ ) => false );
 		var levelField = typeof( ParkHud ).GetField( "level", BindingFlags.Instance | BindingFlags.NonPublic )!;
 		var level = (Level)levelField.GetValue( hud )!;
 		void Set( string name, object? value ) => typeof( Level ).GetField( name, BindingFlags.Instance | BindingFlags.NonPublic )!.SetValue( level, value );

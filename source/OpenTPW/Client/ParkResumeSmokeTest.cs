@@ -649,7 +649,8 @@ internal sealed partial class ParkResumeSmokeTest : IDisposable
 			["layout"] = SectionSha256( snapshot.Layout ),
 			["guests"] = SectionSha256( snapshot.Guests ),
 			["scripts"] = SectionSha256( snapshot.Scripts ),
-			["runtimes"] = SectionSha256( snapshot.Runtimes ),
+			// the hoarding moves by real frame time (presentation, docs/DETERMINISM.md): the runtimes are compared without it
+			["runtimes"] = SectionSha256( snapshot.Runtimes.Select( runtime => runtime with { State = runtime.State with { Hoarding = null } } ).ToList() ),
 			["bindings"] = SectionSha256( snapshot.EconomyBindings ),
 			["clock"] = SectionSha256( snapshot.Clock ),
 			["weather"] = SectionSha256( snapshot.Weather ),

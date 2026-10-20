@@ -327,7 +327,7 @@ public class ParkResumeSaveFileTests
 			ParkResumeSaveFile.Load( save );
 
 			// A shape failure happens before a byte is written: the previous save survives, nothing temporary stays.
-			Assert.ThrowsException<InvalidDataException>( () => ParkResumeSaveFile.Save( save, snapshot with { Version = 2 } ) );
+			Assert.ThrowsException<InvalidDataException>( () => ParkResumeSaveFile.Save( save, snapshot with { Version = ParkResumeSaveFile.CurrentVersion + 1 } ) );
 			CollectionAssert.AreEqual( previous, File.ReadAllBytes( save ), "the previous save survives a failed write" );
 			Assert.AreEqual( "park.otpw", Directory.GetFiles( directory ).Select( Path.GetFileName ).Single(), "no temporary file is left behind" );
 

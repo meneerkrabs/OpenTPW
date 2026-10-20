@@ -1213,7 +1213,8 @@ public partial class Level : IDisposable
 		DisposeSky();
 		DetachOverlay();
 		TextOverlay?.Dispose();
-		HoardingCache.Clear();
+		// a scene built without its constructor (the park-build tests make one) has no cache
+		HoardingCache?.Clear();
 	}
 
 	/// <summary>Invalidates per-world-pass observations even when an entity is absent from the render list.</summary>

@@ -350,9 +350,10 @@ the simulation was audited (co-op phase C1b, October 20, 2026):
 bodies and stores the walkers' headings. The body players are not hashed and the simulation never reads them, but a save keeps them, and run once per
 frame after the frame's ticks they depended on how many ticks the frame ran. tp.exe runs the walk update (`0x00557AB0`) and the bounce pass once per
 rendered frame after the frame's substeps (`0x0054E360`, `0x0054FA08`); OpenTPW now runs them after every fixed tick (`[EXT:fixed-60hz-clock]`). A
-frame of one tick, 60 Hz at normal speed, is unchanged. A frame without a tick no longer runs the phase: the original's walk update on such a frame
-repeats the requests of the frame before, so nothing changes except after a load or an edit between two ticks, when a body now follows at the next
-tick's end instead of in the same frame.
+frame of one tick, 60 Hz at normal speed, is unchanged. A frame without a tick no longer runs the phase. tp.exe's walk update still runs on a frame
+without a substep and reads the free-running scaled timer `0x785970` (`0x00557AFF` → `0x00402D70`); OpenTPW's phase reads the script and body
+clocks, which only the ticks advance (`[EXT:fixed-60hz-clock]`, as before this change), so on such a frame it only repeated the requests of the frame
+before: nothing changes except after a load or an edit between two ticks, when a body now follows at the next tick's end instead of in the same frame.
 
 **The staff host's bookkeeping** ran once per frame before the world input. `StaffPlacement.Reconcile` returns a member left picked up with no hand
 holding him (an imported save) to idle; `StaffWorld.Synchronize` puts a member without a position (hired since the last tick, or loaded so) on the gate

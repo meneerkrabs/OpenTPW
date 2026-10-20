@@ -100,8 +100,9 @@ public partial class Level
 	/// </summary>
 	// [EXT:fixed-60hz-clock] tp.exe's main loop 0x0054E360 runs the walk update 0x00557AB0 and the bounce pass once per rendered frame, after the frame's substeps (none, one or several); OpenTPW
 	// runs them after every fixed tick, so the bodies a save keeps depend on the ticks, never on how they fall into frames (docs/DETERMINISM.md, "Frame batching"). A frame of one tick (60 Hz at
-	// normal speed) is unchanged. A frame without a tick runs no pose phase: the original's walk update on such a frame repeats the requests of the frame before, unless the park changed between
-	// the two (a load, an edit), when the bodies now follow at the next tick's end instead
+	// normal speed) is unchanged. A frame without a tick runs no pose phase: tp.exe's walk update still runs on a frame without a substep and reads the free-running scaled timer 0x785970
+	// (0x00557AFF -> 0x00402D70), but OpenTPW's phase reads the script and body clocks, which only the ticks advance, so on such a frame it only repeated the requests of the frame before, unless
+	// the park changed between the two (a load, an edit), when the bodies now follow at the next tick's end instead
 	private void PrepareRideBodyPoses()
 	{
 		if ( Guests != null && (Park == null || Park.Economy.Speed != GameSpeed.Paused) )

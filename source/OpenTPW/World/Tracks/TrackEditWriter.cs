@@ -11,18 +11,22 @@ public sealed class TrackEditWriter : ICellLineWriter
 	private readonly TrackFamily family;
 	private readonly Action<(int X, int Y)> cutDone;
 	private readonly Action refused;
+	private readonly Func<(int X, int Y), (int X, int Y), TrackCutResult?> cut;
 	private (int X, int Y)? first;
 
 	/// <param name="editor">The editor of the ride's track.</param>
 	/// <param name="family">Kart or water: the tool mode.</param>
 	/// <param name="cutDone">Called after a committed cut with the tile of the second click (the original's new line start, <c>0x81EDE4/E8</c>).</param>
 	/// <param name="refused">Called when the second click is no tile the cut can end on: the tool ends (<c>0x52F200</c>).</param>
-	public TrackEditWriter( TrackEditor editor, TrackFamily family, Action<(int X, int Y)> cutDone, Action refused )
+	/// <param name="cut">Makes the cut between the two picked tiles and answers it, or null when it is refused (the tool then ends); null cuts through <paramref name="editor"/> at once
+	/// (<see cref="Cut(TrackEditor, ValueTuple{int, int}, ValueTuple{int, int})"/>). [EXT:online-coop-commands] The level's tool hands it to its commands (<see cref="CutTrackCommand"/>).</param>
+	public TrackEditWriter( TrackEditor editor, TrackFamily family, Action<(int X, int Y)> cutDone, Action refused, Func<(int X, int Y), (int X, int Y), TrackCutResult?>? cut = null )
 	{
 		this.editor = editor ?? throw new ArgumentNullException( nameof( editor ) );
 		this.family = family;
 		this.cutDone = cutDone ?? throw new ArgumentNullException( nameof( cutDone ) );
 		this.refused = refused ?? throw new ArgumentNullException( nameof( refused ) );
+		this.cut = cut ?? (( a, b ) => Cut( editor, a, b ));
 	}
 
 	public CellToolMode Mode => family == TrackFamily.Water ? CellToolMode.WaterEdit : CellToolMode.KartEdit;
@@ -71,20 +75,31 @@ public sealed class TrackEditWriter : ICellLineWriter
 		var picked = first;
 		first = null;
 		var (result, tile) = editor.Pick( end.X, end.Y );
-		if ( picked is not { } low || result != TrackEditPick.Accepted || tile is not { } second )
+		if ( picked is not { } low || result != TrackEditPick.Accepted || tile is not { } second || cut( low, second ) is not { } done )
 		{
 			refused();
 			return Ghost( end, Array.Empty<(int X, int Y)>(), null, CellBuildResult.Ok );
 		}
-		var (a, b) = Ordered( low, second );
-		var cut = editor.Cut( a, b, commit: true );
-		editor.RepairStation();
 		cutDone( second );
-		return new SegmentResult( end, cut.Cleared, 0, CellBuildResult.Ok, false )
+		return new SegmentResult( end, done.Cleared, 0, CellBuildResult.Ok, false )
 		{
 			Start = start,
-			Line = cut.Path.SelectMany( step => TrackStation.TileCellsOf( step.X, step.Y ) ).ToArray()
+			Line = done.Path.SelectMany( step => TrackStation.TileCellsOf( step.X, step.Y ) ).ToArray()
 		};
+	}
+
+	/// <summary>
+	/// The cut between two tiles the edit tool's test accepts (<see cref="TrackEditor.Pick"/>), the lower step first (<c>0x526AF2</c>), and the station repair after it (<c>0x52FC80</c>); null, and nothing
+	/// changed, when the test refuses either tile. The tool's commit and the level's <see cref="CutTrackCommand"/> both cut this way.
+	/// </summary>
+	internal static TrackCutResult? Cut( TrackEditor editor, (int X, int Y) first, (int X, int Y) second )
+	{
+		if ( editor.Pick( first.X, first.Y ) is not (TrackEditPick.Accepted, { } a) || editor.Pick( second.X, second.Y ) is not (TrackEditPick.Accepted, { } b) )
+			return null;
+		var (low, high) = editor.StepOf( b ) < editor.StepOf( a ) ? (b, a) : (a, b);
+		var done = editor.Cut( low, high, commit: true );
+		editor.RepairStation();
+		return done;
 	}
 
 	public void Undo( SegmentResult segment )

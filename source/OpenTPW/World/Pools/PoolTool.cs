@@ -12,6 +12,7 @@ public sealed class PoolTool
 	public const int UndoCapacity = 64;
 
 	private readonly PoolBuilder builder;
+	private readonly Func<ParkCommand, ParkCommandResult> issue;
 	private readonly List<PoolStroke> strokes = new();
 	private readonly List<(int X, int Y)> pending = new();
 	private readonly List<(int X, int Y)> pendingMarked = new();
@@ -19,9 +20,12 @@ public sealed class PoolTool
 	private (int X, int Y)? last;
 	private (int X, int Y)? slideTower;
 
-	public PoolTool( PoolBuilder builder )
+	/// <param name="issue">[EXT:online-coop-commands] Hands each write to the park's command funnel: a painted or erased cell, a stroke's undo, a slide piece and a bridge are commands
+	/// (<see cref="PoolToolCommand"/>); the strokes, the drag and the undo stack stay the tool's.</param>
+	public PoolTool( PoolBuilder builder, Func<ParkCommand, ParkCommandResult> issue )
 	{
 		this.builder = builder ?? throw new ArgumentNullException( nameof( builder ) );
+		this.issue = issue ?? throw new ArgumentNullException( nameof( issue ) );
 	}
 
 	/// <summary>[EXT:pools-slides] The slides the tool lays in its slide mode; set by the level.</summary>
@@ -258,21 +262,18 @@ public sealed class PoolTool
 		if ( slideTower is { } tower )
 		{
 			last = null;
-			return Slides?.RemoveLastPiece( tower.X, tower.Y ) == true;
+			return Slides != null && issue( new UndoPoolSlidePieceCommand( tower.X, tower.Y ) ).Accepted;
 		}
 		if ( strokes.Count == 0 )
 			return false;
 		var stroke = strokes[^1];
 		strokes.RemoveAt( strokes.Count - 1 );
-		if ( stroke.Erase )
-			builder.PaintCells( stroke.Cells );
-		else
+		// [EXT:online-coop-commands] the stroke's cells are painted or erased again by commands (UndoPoolStrokeCommand): one, or chunks for a stroke longer than a command takes;
+		// a repaint that ran out of money ends the undo, as the one write did
+		foreach ( var chunk in UndoPoolStrokeCommand.For( stroke ) )
 		{
-			// [EXT:pools-river] cells that only got the river flag lose it; painted cells go (their flag with them)
-			foreach ( var (x, y) in stroke.RiverMarked )
-				if ( builder.Cells.RawTypeAt( x, y ) == ParkCellTypes.PoolWater )
-					builder.Cells.SetFlags( x, y, builder.Cells.FlagsAt( x, y ) & ~ParkCellFlags.PoolRiver );
-			builder.EraseCells( stroke.Cells.Reverse() );
+			if ( issue( chunk ).Value is PoolStroke { RanOutOfMoney: true } )
+				break;
 		}
 		last = null;
 		return true;
@@ -322,9 +323,11 @@ public sealed class PoolTool
 
 	private PoolBuildResult Write( int x, int y )
 	{
+		// [EXT:online-coop-commands] every write is a command; a command the funnel refuses on its own (a peer's rights) answers as a cell taken
 		if ( bridgeMode )
 		{
-			var bridge = IsErasing ? Bridges!.RemoveAt( x, y ) : Bridges!.TryAdd( x, y, bridgeDirection );
+			var bridge = issue( IsErasing ? new RemovePoolBridgeCommand( x, y ) : new PlacePoolBridgeCommand( x, y, bridgeDirection ) ).Value is PoolBridgeResult answer
+				? answer : PoolBridgeResult.Occupied;
 			var mapped = Map( bridge );
 			if ( bridge == PoolBridgeResult.Ok )
 				pending.Add( (x, y) );
@@ -339,11 +342,12 @@ public sealed class PoolTool
 		{
 			if ( Slides.Find( PoolSlide.KeyOf( tower.X, tower.Y ) ) is { IsComplete: true } )
 				return PoolBuildResult.Existing;
-			var slide = Slides.AddCell( tower.X, tower.Y, x, y );
+			var piece = issue( new LayPoolSlidePieceCommand( tower.X, tower.Y, x, y ) ).Value is PoolSlideWrite laid ? laid : new PoolSlideWrite( PoolSlideResult.Occupied, 0 );
+			var slide = piece.Result;
 			if ( slide == PoolSlideResult.Ok )
 			{
 				pending.Add( (x, y) );
-				pendingMoney += Slides.LastCharged;
+				pendingMoney += piece.Money;
 				return PoolBuildResult.Ok;
 			}
 			var mapped = Map( slide );
@@ -351,11 +355,13 @@ public sealed class PoolTool
 			LastSlideRefusal ??= slide;
 			return mapped;
 		}
-		var result = IsErasing ? builder.Erase( x, y ) : builder.Paint( x, y, IsRiver );
+		var write = issue( IsErasing ? new ErasePoolCellCommand( x, y ) : new PaintPoolCellCommand( x, y, IsRiver ) ).Value is PoolCellWrite written
+			? written : new PoolCellWrite( PoolBuildResult.Occupied, 0 );
+		var result = write.Result;
 		if ( result == PoolBuildResult.Ok )
 		{
 			pending.Add( (x, y) );
-			pendingMoney += builder.LastCharged;
+			pendingMoney += write.Money;
 		}
 		else if ( result == PoolBuildResult.RiverMarked )
 			pendingMarked.Add( (x, y) );

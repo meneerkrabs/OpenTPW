@@ -137,7 +137,7 @@ public sealed partial class ParkHud
 
 	/// <summary>
 	/// Hires the still-available selected applicant: the window closes and the Place tool starts with the applicant still in the pool; the employee
-	/// exists only after a click on a valid cell (docs/STAFF-PLACEMENT.md). Without a park view the economy hires at once.
+	/// exists only after a click on a valid cell (docs/STAFF-PLACEMENT.md). A level without the Place tool (no guest world) hires nobody.
 	/// </summary>
 	// [BIN:TPW-EXE:0x507bf0 hire] the hire creates no object, it builds the place tool; [BIN:TPW-EXE:0x49b9dd hire help] the handler closes the window (0x658d9f, message 4) and then posts advisor message 0x135
 	// [BIN:TPW-EXE:0x46c890 place tool end] the advisor help 0x135 (309) is posted after the window closes and withdrawn when the Place tool ends (ParkHud.StaffPlacementHelp); no message-area line
@@ -148,15 +148,11 @@ public sealed partial class ParkHud
 		var candidate = SelectedCandidate;
 		if ( candidate == null || !economy.Staff.CanHire( candidate.Type ) || economy.Staff.Candidates.All( item => item.Id != candidate.Id ) )
 			return false;
-		if ( level.StaffPlacement is { } placement && ReferenceEquals( level.Park?.Economy, economy ) )
-		{
-			if ( !placement.BeginHire( candidate.Id ) )
-				return false;
-			level.EndBuildTools();
-			CloseStaffWindow();
-		}
-		else
-			economy.Hire( candidate.Id );
+		// [EXT:online-coop-commands] the hire goes through the Place tool's commands (the tool exists wherever a park view does)
+		if ( level.StaffPlacement is not { } placement || !ReferenceEquals( level.Park?.Economy, economy ) || !placement.BeginHire( candidate.Id ) )
+			return false;
+		level.EndBuildTools();
+		CloseStaffWindow();
 		selectedStaffId = 0;
 		EnsureStaffSelection();
 		return true;

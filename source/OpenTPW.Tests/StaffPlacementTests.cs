@@ -43,7 +43,7 @@ public class StaffPlacementTests
 			Park.Litter.Cells = Grid.Cells;
 			World = new StaffWorldSimulation( Grid, () => Park.Staff.Members, _ => null, (0, 5) );
 			Park.StaffWorld = World;
-			Placement = new StaffPlacement( () => Park, () => Grid.Cells, ( x, y ) => Occupied.Contains( (x, y) ) );
+			Placement = StaffPlacementRig.Create( () => Park, () => Grid.Cells, ( x, y ) => Occupied.Contains( (x, y) ) );
 		}
 
 		public StaffMember Hire( StaffType type )
@@ -298,7 +298,7 @@ public class StaffPlacementTests
 			grid.SetPath( x, 1, true );
 		var world = new StaffWorldSimulation( grid, () => park.Staff.Members, id => id == ride.Id ? (7, 1) : null, (0, 1) );
 		park.MechanicJobWorld = world;
-		var placement = new StaffPlacement( () => park, () => grid.Cells, ( _, _ ) => false );
+		var placement = StaffPlacementRig.Create( () => park, () => grid.Cells, ( _, _ ) => false );
 		var mechanic = EconomyTestData.HireBest( park, StaffType.Mechanic );
 		world.Synchronize();
 		EconomyTestData.AdvanceToTurn( park, 1 );
@@ -368,7 +368,7 @@ public class StaffPlacementTests
 			var ride = park.RegisterExisting( 1100 );
 			var world = new StaffWorldSimulation( grid, () => park.Staff.Members, id => id == ride.Id ? (7, 1) : null, (0, 1) );
 			park.MechanicJobWorld = world;
-			var placement = new StaffPlacement( () => park, () => grid.Cells, ( _, _ ) => false );
+			var placement = StaffPlacementRig.Create( () => park, () => grid.Cells, ( _, _ ) => false );
 			var mechanic = EconomyTestData.HireBest( park, StaffType.Mechanic );
 			world.Synchronize();
 			Assert.IsTrue( placement.PickUp( mechanic ) );

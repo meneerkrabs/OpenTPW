@@ -89,6 +89,43 @@ public enum ParkCommandKind : byte
 	QueueCheat = 52,
 	/// <summary>The loans dialog's list build: every offer's credit test is stored (<see cref="RefreshLoanOffersCommand"/>).</summary>
 	RefreshLoanOffers = 53,
+	// the park's tools (C1 part 3, ParkToolCommands.cs)
+	/// <summary>Buys the land between two fence posts (<see cref="BuyLandCommand"/>).</summary>
+	BuyLand = 54,
+	/// <summary>The hire button: a candidate is being placed (<see cref="BeginStaffHireCommand"/>).</summary>
+	BeginStaffHire = 60,
+	/// <summary>Ends a hire's placement without hiring (<see cref="CancelStaffHireCommand"/>).</summary>
+	CancelStaffHire = 61,
+	/// <summary>Hires the candidate being placed onto a cell (<see cref="PlaceStaffCommand"/>).</summary>
+	PlaceStaff = 62,
+	/// <summary>Picks an employee up into the player's hand (<see cref="PickUpStaffCommand"/>).</summary>
+	PickUpStaff = 63,
+	/// <summary>Puts the employee in the player's hand down (<see cref="DropStaffCommand"/>).</summary>
+	DropStaff = 64,
+	/// <summary>Paints one pool cell (<see cref="PaintPoolCellCommand"/>).</summary>
+	PaintPoolCell = 70,
+	/// <summary>Erases one pool cell (<see cref="ErasePoolCellCommand"/>).</summary>
+	ErasePoolCell = 71,
+	/// <summary>Takes back a pool stroke (<see cref="UndoPoolStrokeCommand"/>).</summary>
+	UndoPoolStroke = 72,
+	/// <summary>A wave machine's settings (<see cref="SetPoolWavesCommand"/>).</summary>
+	SetPoolWaves = 73,
+	/// <summary>Lays one piece of a pool slide (<see cref="LayPoolSlidePieceCommand"/>).</summary>
+	LayPoolSlidePiece = 74,
+	/// <summary>Takes back a pool slide's last piece (<see cref="UndoPoolSlidePieceCommand"/>).</summary>
+	UndoPoolSlidePiece = 75,
+	/// <summary>Builds a pool bridge (<see cref="PlacePoolBridgeCommand"/>).</summary>
+	PlacePoolBridge = 76,
+	/// <summary>Takes a pool bridge down (<see cref="RemovePoolBridgeCommand"/>).</summary>
+	RemovePoolBridge = 77,
+	/// <summary>Lays one line of a kart or water ride's track (<see cref="LayTrackLineCommand"/>).</summary>
+	LayTrackLine = 80,
+	/// <summary>Takes back one line of a kart or water ride's track (<see cref="UndoTrackLineCommand"/>).</summary>
+	UndoTrackLine = 81,
+	/// <summary>Cuts a kart or water ride's closed circuit between two tiles (<see cref="CutTrackCommand"/>).</summary>
+	CutTrack = 82,
+	/// <summary>Opens a kart or water ride's line tool at its track's open end (<see cref="OpenTrackLineToolCommand"/>).</summary>
+	OpenTrackLineTool = 83,
 }
 
 /// <summary>

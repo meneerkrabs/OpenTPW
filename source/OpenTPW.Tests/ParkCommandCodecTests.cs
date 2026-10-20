@@ -59,6 +59,25 @@ public class ParkCommandCodecTests
 		(new QueueCheatCommand( CheatKind.Ticket, 4 ), "0234000608"),
 		(new RefreshLoanOffersCommand(), "023500"),
 		(new SetAllObjectsOpenCommand( true ), "02190001"),
+		// the park's tools (C1 part 3)
+		(new BuyLandCommand( 25, 11, 33, 21 ), "0236003216422a"),
+		(new BeginStaffHireCommand( 7 ), "023c000e"),
+		(new CancelStaffHireCommand() { Player = 1 }, "023d02"),
+		(new PlaceStaffCommand( 7, 30, 12 ), "023e000e3c18"),
+		(new PickUpStaffCommand( 3 ) { Player = 2 }, "023f0406"),
+		(new DropStaffCommand( 3, 10, 64 ), "02400006148001"),
+		(new PaintPoolCellCommand( 20, 21, true ), "024600282a01"),
+		(new ErasePoolCellCommand( 20, 21 ) { Player = 1 }, "024702282a"),
+		(new UndoPoolStrokeCommand( false, new[] { (20, 21), (21, 21) }, new[] { (22, 21) } ), "0248000004282a2a2a022c2a"),
+		(new SetPoolWavesCommand( 17, true, 3, 1 ), "02490022010602"),
+		(new LayPoolSlidePieceCommand( 30, 40, 31, 40 ), "024a003c503e50"),
+		(new UndoPoolSlidePieceCommand( 30, 40 ), "024b003c50"),
+		(new PlacePoolBridgeCommand( 12, 14, 1 ), "024c00181c02"),
+		(new RemovePoolBridgeCommand( 12, 14 ), "024d00181c"),
+		(new LayTrackLineCommand( 17, 40, 50, 40, 56 ), "0250002250645070"),
+		(new UndoTrackLineCommand( 17, 40, 50, 40, 56 ), "0251002250645070"),
+		(new CutTrackCommand( 17, 40, 50, 44, 50 ) { Player = 1 }, "0252022250645864"),
+		(new OpenTrackLineToolCommand( 17 ), "02530022"),
 	};
 
 	[TestMethod]
@@ -93,6 +112,8 @@ public class ParkCommandCodecTests
 			new PlaceObjectCommand( "mod:é/ü", ParkCommandCodec.MaximumCoordinate - 1, 0, 270, false, int.MaxValue ) { Player = int.MaxValue },
 			new UndoLineCommand( CellToolMode.Queue, int.MaxValue, 0, 0, Enumerable.Range( 0, ParkCommandCodec.MaximumCells ).Select( i => (i, i) ).ToArray(), Array.Empty<(int X, int Y)>() ),
 			new PlacePrototypeCommand( float.MaxValue, -0f, float.Epsilon ),
+			// a mod ride's window may go past the shipped speed, capacity and duration ranges: the setters take any value, as they did before the commands
+			new SetRideSettingsCommand( int.MaxValue, int.MinValue, int.MaxValue, 300 ),
 		};
 		foreach ( var command in edges )
 		{
@@ -147,9 +168,7 @@ public class ParkCommandCodecTests
 			new PlacePrototypeCommand( 0, float.PositiveInfinity, 0 ),
 			new SetEntranceFeeCommand( -1 ),
 			new SetAttractionOpenCommand( -1, true ),
-			new SetRideSettingsCommand( 1, short.MaxValue + 1, 0, 0 ),
-			new SetRideSettingsCommand( 1, 0, -1, 0 ),
-			new SetRideSettingsCommand( 1, 0, 0, 256 ),
+			new SetRideSettingsCommand( -1, 0, 0, 0 ),
 			new SetPriceCommand( 1, -1 ),
 			new SetPriceCommand( 1, OpenTPW.Hud.ParkHud.MaximumPrice + 1 ),
 			new SetGamePrizeCommand( 1, 0, OpenTPW.Hud.ParkHud.MaximumPrize + 1, 0 ),
@@ -178,6 +197,29 @@ public class ParkCommandCodecTests
 			new SetPatrolAreaCommand( 1, 3, 0, 0, 0, Clear: true ),
 			new SetGameSpeedCommand( (GameSpeed)3 ),
 			new QueueCheatCommand( (CheatKind)99 ),
+			new BuyLandCommand( -1, 0, 0, 0 ),
+			new BuyLandCommand( 0, 0, ParkCommandCodec.MaximumCoordinate, 0 ),
+			new BeginStaffHireCommand( 0 ),
+			new PlaceStaffCommand( 1, -1, 0 ),
+			new PlaceStaffCommand( 0, 1, 1 ),
+			new PickUpStaffCommand( -3 ),
+			new DropStaffCommand( 1, 0, -1 ),
+			new PaintPoolCellCommand( -1, 0, false ),
+			new ErasePoolCellCommand( 0, ParkCommandCodec.MaximumCoordinate ),
+			new UndoPoolStrokeCommand( true, new[] { (1, 1) }, new[] { (2, 2) } ),
+			new UndoPoolStrokeCommand( false, new[] { (-1, 1) }, Array.Empty<(int X, int Y)>() ),
+			new SetPoolWavesCommand( 1, true, 0, 1 ),
+			new SetPoolWavesCommand( 1, true, 2, 3 ),
+			new SetPoolWavesCommand( -1, false, 2, 1 ),
+			new LayPoolSlidePieceCommand( 0, 0, -1, 0 ),
+			new UndoPoolSlidePieceCommand( -1, 0 ),
+			new PlacePoolBridgeCommand( 1, 1, 4 ),
+			new RemovePoolBridgeCommand( 1, -1 ),
+			new LayTrackLineCommand( -1, 0, 0, 2, 0 ),
+			new UndoTrackLineCommand( 1, 0, 0, 2, 2 ),
+			new UndoTrackLineCommand( 1, 0, 0, 3, 0 ),
+			new CutTrackCommand( 1, 0, ParkCommandCodec.MaximumCoordinate, 0, 0 ),
+			new OpenTrackLineToolCommand( -1 ),
 		};
 		foreach ( var command in outOfRange )
 		{

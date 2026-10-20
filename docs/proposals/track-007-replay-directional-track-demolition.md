@@ -2,7 +2,7 @@
 
 ## Status and classification
 - Classification: approximation.
-- Plan-only local proposal: no runtime implementation, annotation retirement, publication or merge performed.
+- Original status: plan-only local proposal. Its bounded part merged in #593 on 2026-10-20 (exact-head CI green); see "October 20 bounded implementation" below. TRACK-007 is not retired.
 - Snapshot supplied as main 5ccddcab (export has no .git; commit not independently verified).
 - Existing PR: none mapped for this independent residual.
 - Draft eligibility: evidence/scope gates below must remain visible; this is not a completed feature.
@@ -39,4 +39,4 @@ Trace corner-stack replay boundaries and visit sequence; share clear primitives 
 
 ## October 20 bounded implementation
 
-TrackEditor now preserves the remaining flow of supported two-line full crossings when replaying the matching collected direction. TrackDemolitionFlowTests covers both collectors, kart/water families, rotation/save round trips, callbacks, add-on removal and the unchanged contrary-flow policy. This does not implement the complete native directional line replay, establish bank refund amounts or retire TRACK-007. No original-media or rendered validation is claimed; C# execution requires exact-head CI.
+TrackEditor now preserves the remaining flow of supported two-line full crossings when replaying the matching collected direction. TrackDemolitionFlowTests covers both collectors, kart/water families, rotation/save round trips, callbacks, add-on removal and the unchanged contrary-flow policy. This does not implement the complete native directional line replay, establish bank refund amounts or retire TRACK-007. The cleared bit is checked against tp.exe: with two or more link bits the line step `0x53B280` clears the bit opposite to the step (dx -2 → `0x04`, +2 → `0x40`, dy -2 → `0x10`, +2 → `0x01`) and both arms of the step's axis, and `0x52FE50` replays each line from the later collected corner point back to the earlier one, so the cleared bit is the chain's own heading, as `TrackEditor.Replay` clears it. The tests ran in exact-head CI before #593 merged; no original-media or rendered validation is claimed.

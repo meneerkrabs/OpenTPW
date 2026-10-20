@@ -10,7 +10,7 @@ namespace OpenTPW.Tests;
 /// [EXT:online-coop-commands] The coaster tool's writes as commands (docs/COOP.md, "Tools"), without game data: a whole session of clicks, Backspace and the panel's drags and cut leaves the tool as
 /// commands, and the commands alone build the same coaster (its nodes, flags, controller and paid cost) on a twin. The commands keep the panel's rules: a drag's steps stay within the range its press
 /// gave, one drag runs on a coaster at a time (a press releases the player's own drag still held and waits for another player's), a click that places a pylon, Backspace and the cut release the
-/// running drag first, a stack swap and the completion wait for it, and the loop button's gate holds.
+/// running drag first, a stack swap and a click on the chain start (the close and the completion) wait for it, and the loop button's gate holds.
 /// </summary>
 [TestClass]
 public class CoasterCommandTests
@@ -320,10 +320,11 @@ public class CoasterCommandTests
 
 	/// <summary>
 	/// One drag runs on a coaster at a time, as one pointer gives in a game of one: another player's press waits while a drag runs (the player's own second press releases the first), and so do a stack
-	/// swap (the release could change the stack it was asked on) and the completion (it ends the tool every drag needs). A command that waits changes nothing.
+	/// swap (the release could change the stack it was asked on), the close (it checks the last pylon, which a drag can hold) and the completion (it ends the tool every drag needs). A command that
+	/// waits changes nothing.
 	/// </summary>
 	[TestMethod]
-	public void APressASwapAndTheCompletionWaitForTheRunningDrag()
+	public void APressASwapTheCloseAndTheCompletionWaitForTheRunningDrag()
 	{
 		var rig = new Rig();
 		rig.Builder.Height = 20;
@@ -351,19 +352,25 @@ public class CoasterCommandTests
 		foreach ( var (dx, dy) in CoasterTests.Circuit )
 			closed.Click( 20 + dx, 20 + dy );
 		var back = closed.Builder.Track.ReturnCell!.Value;
+		Assert.IsTrue( closed.Issue( new BeginCoasterNodeEditCommand( 0, First + 5, CoasterDrag.Move ) { Player = 1 } ).Accepted, "player 1 picks up the last pylon" );
+		var open = closed.Hash();
+		Assert.IsTrue( closed.Click( back.X, back.Y ) is { Result: not CoasterPlaceResult.Ok, Completed: false }, "the close waits for player 1's drag" );
+		Assert.IsFalse( closed.Builder.Track.IsClosed );
+		Assert.AreEqual( open, closed.Hash() );
+		Assert.IsTrue( closed.Issue( new EndCoasterNodeEditCommand( 0 ) { Player = 1 } ).Accepted );
 		Assert.IsTrue( closed.Click( back.X, back.Y ) is { Result: CoasterPlaceResult.Ok, Completed: false } );
 		Assert.IsTrue( closed.Builder.Track.IsClosed );
 		Assert.IsTrue( closed.Issue( new BeginCoasterNodeEditCommand( 0, First, CoasterDrag.Height ) { Player = 1 } ).Accepted );
-		var open = closed.Hash();
+		var shut = closed.Hash();
 		Assert.IsTrue( closed.Click( back.X, back.Y ) is { Completed: false }, "the completion waits for player 1's drag" );
-		Assert.AreEqual( open, closed.Hash() );
+		Assert.AreEqual( shut, closed.Hash() );
 		Assert.IsTrue( closed.Issue( new EndCoasterNodeEditCommand( 0 ) { Player = 1 } ).Accepted );
 		Assert.IsTrue( closed.Click( back.X, back.Y ) is { Result: CoasterPlaceResult.Ok, Completed: true } );
 	}
 
 	/// <summary>
 	/// Random panel commands from three players on a coaster in each state the tool reaches (an open chain, a closed circuit, a finished one, a cut one): none throws, a refused one changes neither the
-	/// coaster nor the drags, and the logged commands alone leave a twin with the same coaster, money and drags.
+	/// coaster nor the drags, and a twin that applies each command in step answers it the same way and keeps the same coaster, money and drags after every command.
 	/// </summary>
 	[TestMethod]
 	public void RandomPanelCommandsFromThreePlayersReplayOnATwin()
@@ -391,6 +398,9 @@ public class CoasterCommandTests
 						Assert.IsTrue( rig.Issue( new CutCoasterCommand( 0, First + 1, First + 3 ) ).Accepted );
 					break;
 			}
+			var twin = new Rig();
+			foreach ( var command in rig.Log )
+				twin.Issue( command );
 			var random = new Random( 20261021 + seed );
 			var gap = new List<(int X, int Y)>();
 			for ( var step = 0; step < 600; step++ )
@@ -407,12 +417,9 @@ public class CoasterCommandTests
 				}
 				else
 					Assert.AreEqual( before, (rig.Hash(), rig.Drags()), $"{state} step {step}: the refused {command} ({result.Reason}) changed nothing" );
+				Assert.AreEqual( result.Accepted, twin.Issue( command ).Accepted, $"{state} step {step}: the twin answers {command} the same way" );
+				Assert.AreEqual( (rig.Hash(), rig.Drags()), (twin.Hash(), twin.Drags()), $"{state} step {step}: the same coaster, money and drags on the twin after {command}" );
 			}
-			var twin = new Rig();
-			foreach ( var command in rig.Log )
-				twin.Issue( command );
-			Assert.AreEqual( rig.Hash(), twin.Hash(), $"{state}: the same coaster and money on the twin" );
-			Assert.AreEqual( rig.Drags(), twin.Drags(), $"{state}: the same drags on the twin" );
 		}
 		var kinds = string.Join( ", ", accepted.OrderBy( pair => pair.Key ).Select( pair => $"{pair.Key} {pair.Value}" ) );
 		foreach ( var kind in new[] { ParkCommandKind.CoasterClick, ParkCommandKind.RemoveLastCoasterPylon, ParkCommandKind.BeginCoasterNodeEdit, ParkCommandKind.EditCoasterNode,

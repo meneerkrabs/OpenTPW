@@ -229,8 +229,8 @@ changes.
     Every panel command needs its coaster in the tool, whose entry let the riders off.
   - One drag runs on a coaster at a time, as one pointer gives in a game of one. A press releases the
     player's own drag still held and waits while another player's drag runs; so do a stack swap (the
-    drag's release could change the stack it was asked on) and the completion (it ends the tool every
-    drag needs). A click that places a pylon, Backspace and the cut release the running drag first, as
+    drag's release could change the stack it was asked on), the close (it checks the last pylon, which
+    a drag can hold) and the completion (it ends the tool every drag needs). A click that places a pylon, Backspace and the cut release the running drag first, as
     its own release would, so no drag settles against a pylon list or a neighbour that changed under
     it. The tool's exit ends the drags on its coaster, and a station that goes drops them unsettled
     with its track.

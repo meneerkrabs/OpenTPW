@@ -95,8 +95,8 @@ public abstract record CoasterPanelCommand( int Station ) : ParkToolCommand
 /// (<see cref="Level.CoasterClick"/>): a click on the closed circuit's station end completes the track (it is rated and its trains start; the coaster is then no longer being edited and the ride
 /// opens), any other places a pylon at the tool's <paramref name="Height"/> or closes the circuit on its open start (<see cref="CoasterBuilder.Place"/>). The loop edit mode and its pylons still to
 /// place (<paramref name="LoopMode"/>, <paramref name="LoopPylonsLeft"/>) are the issuer's panel state the placement reads: the loop mode needs the loop button (<see cref="CoasterBuilder.LoopUnlocked"/>).
-/// The builder of every peer keeps its own tool state. A click that places a pylon releases the drag running on the coaster first, as Backspace does; the completion waits until no drag runs (it ends the
-/// tool every drag needs). The value is <see cref="CoasterClickDone"/>.
+/// The builder of every peer keeps its own tool state. A click that places a pylon releases the drag running on the coaster first, as Backspace does; a click on the chain start waits until no drag runs
+/// (the close checks the last pylon, which a drag can hold, and the completion ends the tool every drag needs). The value is <see cref="CoasterClickDone"/>.
 /// </summary>
 public sealed record CoasterClickCommand( int Station, int X, int Y, float Height, bool LoopMode, int LoopPylonsLeft ) : CoasterPanelCommand( Station )
 {
@@ -116,13 +116,14 @@ public sealed record CoasterClickCommand( int Station, int X, int Y, float Heigh
 	{
 		var issued = new CoasterToolState( Height, LoopMode, LoopPylonsLeft );
 		var track = builder.Track;
-		if ( track.IsChainStart( X, Y ) && track.IsClosed )
+		var closing = track.IsChainStart( X, Y );
+		if ( closing && edits.Runs( Station ) )
 		{
-			if ( edits.Runs( Station ) )
-			{
-				const string waits = "Cannot complete the track while a pylon is dragged.";
-				return new ParkCommandResult( false, waits, new CoasterClickDone( CoasterPlaceResult.NotEditable, false, waits, issued ) );
-			}
+			var waits = track.IsClosed ? "Cannot complete the track while a pylon is dragged." : "Cannot close the circuit while a pylon is dragged.";
+			return new ParkCommandResult( false, waits, new CoasterClickDone( CoasterPlaceResult.NotEditable, false, waits, issued ) );
+		}
+		if ( closing && track.IsClosed )
+		{
 			var completed = builder.Complete();
 			if ( completed != CoasterPlaceResult.Ok )
 			{
@@ -133,7 +134,6 @@ public sealed record CoasterClickCommand( int Station, int X, int Y, float Heigh
 			return ParkCommandResult.Ok( new CoasterClickDone( completed, true,
 				$"Coaster complete (track ${builder.Ride.PaidCost}): excitement {rating.Excitement:F0}, sickness {rating.Sickness:F0}, {rating.Trains} train(s).", issued ) );
 		}
-		var closing = track.IsChainStart( X, Y );
 		// the panel's loop button exists only with the loop upgrade (CoasterToolPanel.EnabledMask)
 		if ( !closing && LoopMode && !builder.LoopUnlocked )
 			return ParkCommandResult.Rejected( "The coaster takes no loop pylons." );

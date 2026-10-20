@@ -227,9 +227,10 @@ transform, lerp, and a slerp with DetMath's acos and sin), every product and sum
 tag matrices with them and blends its clips' keys with them, and the coaster station frame (`CoasterStationLayout.FromModel`)
 composes a dummy's parent chain (`ObjectAnimator.LocalTransforms`) and the placement with them ("Cross-platform coaster pins" below).
 `CrossRuntimeMathProbe` reports the System.Numerics operations and `DetMatrix`'s over fixed inputs:
-`DetMathTests.DetMatrixDigestsArePinned` pins `DetMatrix`'s, and `FusedSystemNumericsOperationsArePinned` pins the fused
-System.Numerics values that Windows, Linux and macOS compute. A runtime that rounds twice fails the second test, which flags every
-other simulation use of those operations.
+`DetMathTests.DetMatrixDigestsArePinned` pins `DetMatrix`'s on every runtime. `FusedSystemNumericsOperationsArePinned` holds the
+fused System.Numerics values that Windows, Linux and macOS compute; the browser's Mono AOT build computes others (its interpreter
+matches the desktops), so that comparison is informative in the browser check, like the platform library's, and documents why
+simulation code must not use those operations.
 
 ### DetMath
 

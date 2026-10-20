@@ -67,11 +67,12 @@ public class DetMathTests
 
 	/// <summary>
 	/// System.Numerics' <c>Matrix4x4</c> product, <c>Vector3.Transform</c> and <c>Vector3.Lerp</c> evaluate with <c>MultiplyAddEstimate</c>, which fuses the multiply and
-	/// the add where the processor has fused multiply-add (Windows and Linux x64, macOS arm64) and rounds twice where it has not. Their digests are pinned at the
-	/// fused values, so a runtime that rounds twice (the browser's WebAssembly, an x64 without FMA) fails here: any simulation use of these operations then
-	/// has to move to <see cref="DetMatrix"/> (docs/DETERMINISM.md, "Browser and native").
+	/// the add where the processor has fused multiply-add (Windows and Linux x64, macOS arm64) and rounds twice where it has not. The digests are those of the
+	/// fused desktop runtimes. The browser's Mono AOT build computes other values (the interpreter matches), so this comparison is informative in the browser
+	/// check, like the platform library's: it documents the difference, and simulation code uses <see cref="DetMatrix"/> instead (docs/DETERMINISM.md, "Browser and native").
 	/// </summary>
 	[TestMethod]
+	[TestCategory( PlatformLibrary )]
 	public void FusedSystemNumericsOperationsArePinned()
 	{
 		var digests = CrossRuntimeMathProbe.Digests();

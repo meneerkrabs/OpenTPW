@@ -371,28 +371,26 @@ public class AudioRegisterRound2Tests
 	// ---- AUDIO-012 ----
 
 	[TestMethod]
-	public void EveryActivatedFrontEndControlPlaysTheClick()
+	public void ButtonsClickAndListRowsStaySilentUnlessAnOpenTpwScreenOptsIn()
 	{
-		// [BIN:TPW-EXE:0x485780] a global hook sees every control's message 0x100 before the control's own procedure
+		// [BIN:TPW-EXE:0x485780] button message 0x100 clicks; a type-7 list row posts 0x400, never 0x100 (ListOwnerAudioTests, docs/AUDIO.md "List owners").
 		Use( "Ui", Category( (GameAudio.ClickEvent, 0, 4) ) );
 		new UiButton { Bounds = new UiRect( 0, 0, 10, 10 ) }.Activate();
 		Assert.AreEqual( 1, mixer.Voices.Count, "a button" );
-		new UiListItem { Bounds = new UiRect( 0, 0, 10, 10 ) }.Activate();
-		Assert.AreEqual( 2, mixer.Voices.Count, "a list line (the load screen)" );
 		var rows = new UiScrollList { Bounds = new UiRect( 0, 0, 100, 100 ), Rows = () => new List<string> { "a", "b" }, RowActivated = _ => { } };
 		rows.Select( 1 );
 		rows.Activate();
-		Assert.AreEqual( 3, mixer.Voices.Count, "a selected row of a list" );
-		var silent = new UiScrollList { Bounds = new UiRect( 0, 0, 100, 100 ), Rows = () => new List<string> { "a" } };
+		Assert.AreEqual( 1, mixer.Voices.Count, "a list row activation plays no click by default" );
+		var silent = new UiScrollList { Bounds = new UiRect( 0, 0, 100, 100 ), Rows = () => new List<string> { "a" }, ClicksOnActivate = true };
 		silent.Select( 0 );
 		silent.Activate();
-		Assert.AreEqual( 3, mixer.Voices.Count, "a list with nothing to activate does not click" );
-		var refusing = new UiScrollList { Bounds = new UiRect( 0, 0, 100, 100 ), Rows = () => new List<string> { "a" }, ClicksOnActivate = false, RowActivated = _ => { } };
-		refusing.Select( 0 );
-		refusing.Activate();
-		Assert.AreEqual( 3, mixer.Voices.Count, "an owner that clicks itself after accepting the activation is not clicked for" );
+		Assert.AreEqual( 1, mixer.Voices.Count, "a list with nothing to activate does not click" );
+		var optedIn = new UiScrollList { Bounds = new UiRect( 0, 0, 100, 100 ), Rows = () => new List<string> { "a" }, ClicksOnActivate = true, RowActivated = _ => { } };
+		optedIn.Select( 0 );
+		optedIn.Activate();
+		Assert.AreEqual( 2, mixer.Voices.Count, "an OpenTPW screen without an original counterpart can opt in" );
 		new UiButton { Bounds = new UiRect( 0, 0, 10, 10 ), Enabled = false }.Activate();
-		Assert.AreEqual( 3, mixer.Voices.Count, "a disabled control sends no message" );
+		Assert.AreEqual( 2, mixer.Voices.Count, "a disabled control sends no message" );
 		Assert.IsTrue( mixer.Voices.All( voice => voice.Position == null ), "flat" );
 	}
 

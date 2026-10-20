@@ -238,18 +238,53 @@ distinct-visitor list stays separate for the "visited before" flag, and voting
 
 The globe's five chat satellites are the server's chat parks: standing chat rooms with live
 presence — everyone in one sees the others and their positions, which the server relays with a
-separate rate limit. `GET /api/v1/chat-parks` (public) lists them with their player counts. The
-operator renames them with `chatparks.json` in the data directory, an array of
-`{"id", "name"}` (ids 1-5, names at most 32 characters); it is re-read when the file changes and
-invalid entries fall back to the defaults. Parks published by players keep their own chat rooms
-(`park:<id>`) with the same behaviour; a visit of a published park joins its room and shows the
-other visitors walking (docs/ONLINE.md, "Players in a visited park").
+separate rate limit. `GET /api/v1/chat-parks` (public) lists them with their player counts.
+`GET /api/v1/chat-parks/scenes` (with a login, as a park summary needs one) lists what each
+satellite's park details show and the park its visit enters: its name, description and level, and
+the published park's summary while the satellite names one that is still published. A game visits
+that park, or else builds the starting park of the satellite's level from its own data; either way
+the visit walks in the satellite's room, which its count counts (docs/ONLINE.md, "Chat parks (the
+satellites)"). A server without the scenes route leaves games to show the room from above.
+
+The operator configures them with `chatparks.json` in the data directory, an array of
+`{"id", "name", "level", "parkId", "description"}`: ids 1-5, names at most 32 characters (a longer
+name is cut), `level` one of the original levels a game can build (`jungle`, `hallow`, `fantasy`,
+`space`; left out or any other, the satellite's default level), `parkId` a published park's id, and
+a `description` of at most 512 characters (left out, the park's own). The file is re-read when it
+changes; an entry without a valid id or name is left out, as is a malformed park id or description
+of an entry, and a file without any valid entry gives the defaults. A field of the wrong JSON type (such as a number for `level`) makes the whole file unreadable, so all five satellites get the defaults until it is fixed. A satellite's visit of a
+published park walks in the satellite's room, so it has no vote and is not counted at the park
+itself. The defaults put the five satellites in the four themes:
+
+| Satellite | Default name | Level |
+| --- | --- | --- |
+| 1 | The Meeting Place | `jungle` |
+| 2 | The Fairground | `fantasy` |
+| 3 | Coaster Corner | `hallow` |
+| 4 | The Lost Kingdom | `jungle` |
+| 5 | The Space Port | `space` |
+
+Parks published by players keep their own chat rooms (`park:<id>`) with the same behaviour; a
+visit of a published park joins its room and shows the other visitors walking (docs/ONLINE.md,
+"Players in a visited park").
 
 Movement is relayed only inside a park's room (the lobby's are dropped) and only to connections
 that have moved, so a client without a walking view never receives it. A player's first movement
 in each room is answered with where everyone else in the room stands; entering a room forgets the
 player's place there. Protocol version 4 (`GET /api/v1/server`) marks a server that answers each
 room's first movement this way; visits draw figures only on such a server.
+
+Protocol version 5 adds a movement's mode, the original's `BOSS_CHAT_MOVE` modes: `"mode"` is
+`"walk"`, `"teleport"`, `"hide"` (the player rides a ride) or `"unhide"` (the ride ended; the figure
+appears at the place). A game sends it only to a server of version 5 or later, and only after it
+has read that version for the open connection: a hide is held back until the read finishes, so a
+reconnect cannot show the rider as a plain place, and a failed read is tried again with a growing
+wait for as long as the connection stays open. A room change or refused join discards coalesced
+movement still waiting for that room; already queued sends retain their order before the join.
+The server sends a mode only to connections that
+sent one themselves, so neither older games nor older servers see a member they would refuse. A
+hidden player's movements reach no connection that reads no mode, the answer to a first movement
+leaves hidden players out, and the player's next movement of any other mode shows them again.
 
 Publishing a park masks swear words in its **name** with the server's word filter — the original
 showed them as asterisks — while a filtered **description** is refused outright. The publish limit
@@ -292,9 +327,13 @@ browser (CORS, GET only); the official server allows `https://opentpw.io` and
 
 - The game's files are served before the API's rate limiter: one page load fetches over a
   hundred files.
-- The publish step stores a Brotli copy beside each file; browsers that accept Brotli get it.
-- The runtime's fingerprinted files (`_framework/*.<hash>.*`) are cached for a year; the
-  page, its scripts and `dotnet.js` are revalidated on every load.
+- The publish step stores a Brotli and a gzip copy beside each compressible file (the pools sprite
+  `.TPC` files included); the server sends Brotli to a browser that accepts it, else gzip (a proxy such
+  as Caddy leaves a response that already has a `Content-Encoding` alone).
+- The runtime's fingerprinted files (`_framework/*.<hash>.*`) and the pools sprite files asked for by
+  their content hash (`pools-sprites/...?v=<first 16 hex digits of the file's SHA-256>`, checked by the server against the uncompressed file; any other `?v=` is revalidated) are cached for a year; the page, its
+  scripts and `dotnet.js` are revalidated on every load (ETag, answered 304).
+  Measurements: [BROWSER-PERFORMANCE.md](BROWSER-PERFORMANCE.md#transfer-and-memory-october-19-2026).
 - The page has a strict content security policy: scripts and connections only to its own
   address (WebAssembly compilation allowed), no inline scripts or styles, no framing.
 

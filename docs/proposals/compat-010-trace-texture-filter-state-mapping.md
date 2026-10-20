@@ -1,5 +1,11 @@
 # COMPAT-010: Trace texture filter state mapping
 
+## Current bounded implementation (2026-10-20)
+
+Independent host texture creation flags; native filtering/state mapping remains open. See [implementation contract](../TEXTURE-CREATION-FLAGS.md). Recovered the independently source-reviewed frozen change and integrated current main de0a3bff. Synthetic C# fixtures are included; exact-head CI and rendered validation are not yet claimed. No fidelity identifier is retired. The original plan below is historical and its plan-only description is superseded for this bounded slice; unresolved evidence gates remain.
+
+## Historical proposal
+
 ## Status and classification
 - Plan-only draft proposal; no implementation, tests-run claim, retirement or merge.
 - Classification: `approximation`.

@@ -90,7 +90,7 @@ public readonly record struct CoasterCarPose( NVector3 Position, float Yaw, floa
 // [BIN:TPW-EXE:0x43d8f0 car matrix] the car's model root node gets the rotation roll (+0xc), then pitch (+8), then yaw (+4) from identity, so the model's +Z runs along the track, and the root's translation (+0x40..+0x48) the car point plus the turned fYOffset (0x43d6b2)
 // [BIN:TPW-EXE:0x43ce20 wheel clip] a car of a type without the bend flag plays its model's animation id 5 (the member <model>m or <model>m1, sub 0, looping, 0x43be10 → 0x4732a0) at the type's +0x1c (0.1) × the train's speed, set every tick through 0x474050 (the clip's speed, slot +0xc); the PC clips animate the wheel meshes' texture coordinates, which WheelVertices applies per car
 // [BIN:TPW-EXE:0x438800 bend car] a car of a bBendCar type (the Croc and Maggot flume boats) bends every vertex of its mesh along the samples around it each tick (CoasterCarBend), where the other cars play the wheel clip
-// [APPROX:COAST-034] the wheel clip starts when the car is first drawn where the original starts clip 5 on every car at speed factor 1.0 in 0x43be10 (called by the state routine 0x435730 and the rating pass 0x43c450); the bend uses the samples' yaw of this build's curve and clamps a vertex beyond its tables; a rider's head socket is not bent with its boat
+// [APPROX:COAST-034] the bend uses the samples' yaw of this build's curve and clamps a vertex beyond its tables; a rider's head socket is not bent with its boat
 public sealed class CoasterCarRig
 {
 	public CoasterCarRig( ModelFile model )

@@ -221,9 +221,10 @@ public sealed class HermiteCoasterCurve : ICoasterCurve
 	// [BIN:STP-PPC:0x10041E24 sample yaw and pitch] yaw = atan2(T.x, T.z) of the derivative; T rotated by −yaw with the sine table; pitch = atan2(−T.y', T.z')
 	public static (float Yaw, float Pitch) Orientation( SVector3 tangent )
 	{
-		var yaw = MathF.Atan2( tangent.X, tangent.Z );
+		// [EXT:deterministic-math] fpatan in IEEE double by DetMath, the same bits on every runtime, not in x87 extended precision (docs/DETERMINISM.md, "Browser and native")
+		var yaw = DetMathF.Atan2( tangent.X, tangent.Z );
 		var z = MathF.FusedMultiplyAdd( tangent.X, CoasterTrig.Sin( yaw ), tangent.Z * CoasterTrig.Cos( yaw ) );
-		return (yaw, MathF.Atan2( -tangent.Y, z ));
+		return (yaw, DetMathF.Atan2( -tangent.Y, z ));
 	}
 
 	/// <summary>
@@ -282,7 +283,8 @@ public sealed class HermiteCoasterCurve : ICoasterCurve
 		var difference = secondPoint - firstPoint;
 		difference = CoasterTrack.TurnY( difference, -yaw );
 		difference = CoasterTrack.TurnX( difference, -pitch );
-		return Math.Atan2( -difference.X, difference.Y );
+		// [EXT:deterministic-math] fpatan in IEEE double by DetMath, the same bits on every runtime, not in x87 extended precision (docs/DETERMINISM.md, "Browser and native")
+		return DetMath.Atan2( -difference.X, difference.Y );
 	}
 
 	/// <summary>
@@ -496,7 +498,7 @@ public static class CoasterTrig
 	public static readonly float HalfPi = (float)(Math.PI / 2);
 	private static readonly float Scale = (float)Size / TwoPi;
 	// [BIN:STP-PPC:0x100A3CC8 sine table] 4096 entries sin(f32(f32(k / 4096) × 2π)) rounded to single; index trunc(a × 4096/2π) & 4095 (built from 0x1004B72C, size at 0x1004B720)
-	private static readonly float[] Table = Enumerable.Range( 0, Size ).Select( k => (float)Math.Sin( (float)((float)k / Size) * TwoPi ) ).ToArray();
+	private static readonly float[] Table = Enumerable.Range( 0, Size ).Select( k => (float)DetMath.Sin( (float)((float)k / Size) * TwoPi ) ).ToArray();
 
 	public static float Entry( int index ) => Table[index & (Size - 1)];
 	public static float Sin( float angle ) => Table[(int)(angle * Scale) & (Size - 1)];
@@ -509,7 +511,7 @@ public static class CoasterTrig
 	public static readonly float PcScale = 4096f * 0.15915494f;
 	/// <summary>The PC table: T[k] = f32(fsin(k/4096 · f32(2π))), the product exact in extended precision (<c>0x47090f..0x47092d</c>, [0x6feba0] = 0x40c90fdb).</summary>
 	// [BIN:TPW-EXE:0x47090f table entries] T[k] = f32(fsin(k / 4096.0f · [0x6feba0])), the division and the product in x87 extended precision (both exact for k < 4096)
-	private static readonly float[] PcTable = Enumerable.Range( 0, Size ).Select( k => (float)Math.Sin( (k / 4096.0) * (double)6.2831855f ) ).ToArray();
+	private static readonly float[] PcTable = Enumerable.Range( 0, Size ).Select( k => (float)DetMath.Sin( (k / 4096.0) * (double)6.2831855f ) ).ToArray();
 	/// <summary>−π/2 as single (<c>0x6fdf78</c>, <c>0x6fe040</c>), subtracted to turn a sine index into a cosine index.</summary>
 	private const float MinusHalfPi = -1.5707964f;
 

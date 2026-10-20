@@ -336,7 +336,7 @@ public partial class Level
 	/// </summary>
 	internal void ConfigureObjectHooks()
 	{
-		Objects.IsReserved = ( x, y ) => IsReservedByPrototype( x, y ) || Guests?.Grid.Cells.RawTypeAt( x, y ) is { } type && ReservesCell( type ) || (Guests != null && PoolSlides?.ReservesLand( x, y, Guests.Grid.Cells ) == true);
+		Objects.IsReserved = ( x, y ) => PoolBridges?.Reserves( x, y ) == true || IsReservedByPrototype( x, y ) || Guests?.Grid.Cells.RawTypeAt( x, y ) is { } type && ReservesCell( type ) || (Guests != null && PoolSlides?.ReservesLand( x, y, Guests.Grid.Cells ) == true);
 		Objects.IsUnowned = ( x, y ) => Guests?.Grid.Cells is { } cells && cells.InBounds( x, y ) && cells.FlagsAt( x, y ).HasFlag( ParkCellFlags.Unowned );
 		Objects.PathAt = ( x, y ) => Guests?.Grid.Cells is { } cells ? ObjectPathAt( cells, x, y ) : null;
 		Objects.ClearPath = ( x, y ) => Paths?.Remove( x, y );
@@ -427,6 +427,7 @@ public partial class Level
 	/// </summary>
 	internal PoolBuildResult? PoolEraseBlock( int x, int y )
 	{
+		if ( PoolBridges?.Covers( x, y ) == true ) return PoolBuildResult.Occupied;
 		if ( Guests?.IsSwimmerIn( x, y ) == true )
 			return PoolBuildResult.Swimmers;
 		foreach ( var item in Objects.Objects )
@@ -552,10 +553,11 @@ public partial class Level
 			RotatedSlots = PoolSwimSlots.Rotated,
 			DepthPulledSlots = PoolSwimSlots.FeetAnchored.Contains,
 			SlotChooser = guest => guest.InPoolActivity
-				? (guests.PoolActivityOf( guest )?.SpriteSlot( guest ) ?? PoolSwimSlots.TreadWater, (int)(guests.TimeSeconds * 6) + guest.Id)
+				? ActivitySlot( guests.PoolActivityOf( guest )?.SpriteSlot( guest ) ?? PoolSwimSlots.TreadWater, guests.TimeSeconds, guest.Id )
 				: (PoolSwimming.SpriteSlot( guest.SwimStroke ), (int)(guests.TimeSeconds * (guest.SwimStroke == 2 ? 3 : 6)) + guest.Id),
 			// [EXT:pools-slides] a rider lying in a flume is drawn pulled towards the camera by the trough's depth, so the curved bed does not cut its lower body (presentation only)
-			DepthPullChooser = guest => PoolSlideActivity.DepthPull( guests, guest ),
+			// [EXT:pools-extras] and a guest lying on a lounger, so the lounger's raised head end and the front of its seat do not hide it (presentation only)
+			DepthPullChooser = guest => PoolSlideActivity.DepthPull( guests, guest ) + LoungerActivity.DepthPull( guests, guest ),
 			FeetChooser = guest =>
 			{
 				var feet = GuestRenderer.CellToEngine( park.Heightfield, guest.DrawX, guest.DrawY );
@@ -566,10 +568,16 @@ public partial class Level
 				// [EXT:pools-activities] an activity may raise or set the drawn height (a board, a slide, a ladder between the water and the deck); presentation only
 				var region = guests.SwimRoomOf( guest ) is { } room ? guests.SwimRegionOf( room ) : null;
 				var water = region != null && PoolRenderer?.WaterLevelAt( region.Access.X, region.Access.Y ) is { } surface ? surface : height;
-				return new System.Numerics.Vector3( feet.X, feet.Y, guests.PoolFeetHeight( guest, new PoolFeetHeights( height, water, feet.Z ) ) );
+				// [EXT:pools-waves] the water level rides the swell the surface is drawn with, so a swimmer in an activity floats on it too (the deck and a slide's track do not move)
+				var rise = PoolWaterEffects.SurfaceRise( guests, guest, region, PoolSites );
+				var inWater = guests.Grid.Cells.RawTypeAt( guest.CellX, guest.CellY ) == ParkCellTypes.PoolWater;
+				return new System.Numerics.Vector3( feet.X, feet.Y, guests.PoolFeetHeight( guest, new PoolFeetHeights( inWater ? height + rise : height, water + rise, feet.Z ) ) );
 			}
 		};
 	}
+
+	/// <summary>[EXT:pools-render] A pool activity's slot and its animation step (<see cref="PoolSwimSlots.ActivityStep"/>); presentation only.</summary>
+	private static (int Slot, int Step) ActivitySlot( int slot, double seconds, int guestId ) => (slot, PoolSwimSlots.ActivityStep( slot, seconds, guestId ));
 
 	/// <summary>The path tiles' texture rolls (presentation; <see cref="PathTileVariants"/>).</summary>
 	public PathTileVariants PathVariants { get; } = new();
@@ -592,7 +600,7 @@ public partial class Level
 	/// <summary>The attraction whose queue the build tool lays (set after building a ride with <c>Info.HasQueue</c>).</summary>
 	public RideVisitorBridge? QueueToolRide
 	{
-		get => CellTool.Writer is QueueLineWriter queue ? queue.Ride : null;
+		get => ParkCommandLineWriter.Unwrap( CellTool.Writer ) is QueueLineWriter queue ? queue.Ride : null;
 		set
 		{
 			if ( value == null )
@@ -639,12 +647,15 @@ public partial class Level
 			PoolBuilder.Painted += PreloadSwimSprites;
 		}
 		SetupPoolSlides();
-		AreaClearTool = IsReadOnlyVisit ? null : new AreaClearTool( RemoveObjectAt, () => Guests?.Grid.Cells, RemovePathCell, TypesFootprints ? null : ( x, y ) => Objects.FindAt( x, y ) );
+		SetupPoolBridges();
+		// [EXT:online-coop-commands] the bulldozer's drag clears each object and path cell through a command of its own
+		AreaClearTool = IsReadOnlyVisit ? null : new AreaClearTool( ( x, y ) => Commands.Issue( new RemoveObjectAtCommand( x, y ) ).Accepted, () => Guests?.Grid.Cells,
+			( x, y ) => Commands.Issue( new RemovePathCellCommand( x, y ) ) is { Value: CellBuildResult result } ? result : CellBuildResult.NotPath, TypesFootprints ? null : ( x, y ) => Objects.FindAt( x, y ) );
 	}
 
 	// Objects, fixed items (the gate and entrance included) and the sandbox Totem block paths like their original cell types do; an object of a lower
 	// overwrite priority than the path's gives way instead (ParkPathBuilder.ObjectGivesWay).
-	private bool IsPathBlocked( int x, int y ) => Objects.FindAt( x, y ) != null || IsReservedByPrototype( x, y ) || (Guests != null && PoolSlides?.ReservesLand( x, y, Guests.Grid.Cells ) == true);
+	private bool IsPathBlocked( int x, int y ) => PoolBridges?.Reserves( x, y ) == true || Objects.FindAt( x, y ) != null || IsReservedByPrototype( x, y ) || (Guests != null && PoolSlides?.ReservesLand( x, y, Guests.Grid.Cells ) == true);
 
 	/// <summary>How the cell map holds a path for the object build rule: none, a plain path (cleared by the placement) or a NoModify one (refused).</summary>
 	internal static ObjectPathCell? ObjectPathAt( ParkCellMap cells, int x, int y )
@@ -679,7 +690,8 @@ public partial class Level
 		if ( IsReadOnlyVisit || Paths == null )
 			return false;
 		StaffPlacement?.Cancel();
-		CellTool.Enter( Paths, null );
+		// [EXT:online-coop-commands] the tool's previews read the path builder; each committed line is a command
+		CellTool.Enter( new ParkCommandLineWriter( Paths, Commands, -1 ), null );
 		CellTool.Hover( (x, y) );
 		refused = CellTool.Click( (x, y) );
 		if ( refused != null )
@@ -701,30 +713,17 @@ public partial class Level
 		var stack = Guests.Grid.IsQueue( front.X, front.Y ) && ride.QueueCells.Count >= 2 ? QueuePaths.CornerStack( Guests.Grid, ride ) : null;
 		if ( stack is not { Count: >= 2 } || stack[^1] != start )
 			stack = null;
-		CellTool.Enter( new QueueLineWriter( Guests.Grid, ride, ( x, y, pending ) => CheckQueueCell( ride, x, y, pending ),
-			( x, y ) => BuildQueueCell( ride, x, y ), RemoveQueueCell, () => Park?.Economy.CellCost( CellPurchase.Queue ) ?? 0 ), start,
+		// [EXT:online-coop-commands] the tool's previews read the ride's queue writer; each committed line is a command
+		CellTool.Enter( new ParkCommandLineWriter( CreateQueueWriter( ride ), Commands, ride.AttractionId ), start,
 			stack, stack == null ? null : QueuePaths.StackSegments( ride, stack ) );
 		return true;
 	}
 
-	/// <summary>
-	/// Starts the queue tool on the queue that holds (x, y): the original's hover for a queue cell reads
-	/// "Left-click to edit this queue" (help 444), and the tool then starts at that queue's back cell
-	/// (<see cref="EnterQueueTool"/>). False when the cell is not a queue cell of a HasQueue ride.
-	/// </summary>
-	// [DATA:UIHELPTEXT 444 "Left-click to edit this queue", 445 "Left-click to build the queue, click again to stop building / Click onto path to connect the queue to it"] [BIN:STP-PPC:0x139c64 park-view hover] queue cell → hover state 3 (PATH-plan §4.1)
-	// [EXT:queue-click-at-back-cell] a left click on a queue cell starts the queue tool at once at the ride's back cell (EnterQueueTool): an OpenTPW design choice, the first click is the whole edit gesture here
-	// [BIN:TPW-EXE:0x004879D0 queue click] the park-view click (hover state 3: a type-3 cell with an owning ride) builds tool 0x14, whose enter 0x0046D5A0 moves the cursor to the clicked cell (0x005234D0) and calls SetMode(0x14, 1) (0x0046D5F6); the next cell click in 0x00524960 (mode 0x14, 0x005260F7) walks the queue from the entrance into the corner list (0x00530120), runs the queue edit 0x004DE1F0 and enters mode 3 (0x0052F580), and 0x00530120 ends by setting the line start 0x81EDE4/0x81EDE8 to the queue's last corner (its tail, 0x00530120's last stores), so the line goes on from the queue's back cell, as EnterQueueTool starts it
-	public bool EditQueueAt( int x, int y )
-	{
-		if ( IsReadOnlyVisit || Guests == null || QueueRideAt( Guests.Grid, Guests.Attractions, x, y ) is not { } ride )
-			return false;
-		if ( !EnterQueueTool( ride ) )
-			return false;
-		// [BIN:TPW-EXE:0x00530379 corner walk link clear] the walk the click runs also takes the link between the queue's back cell and the path it ends on off both cells, and a cancel restores nothing (QueuePaths.DetachFromPath)
-		QueuePaths.DetachFromPath( Guests.Grid, ride );
-		return true;
-	}
+	/// <summary>The queue tool's line writer for <paramref name="ride"/>: its checks, its per-cell build with <c>Costs.QueueCell</c> and its removal.</summary>
+	private QueueLineWriter CreateQueueWriter( RideVisitorBridge ride ) =>
+		new( Guests!.Grid, ride, ( x, y, pending ) => CheckQueueCell( ride, x, y, pending ),
+			( x, y ) => BuildQueueCell( ride, x, y ), RemoveQueueCell, () => Park?.Economy.CellCost( CellPurchase.Queue ) ?? 0 );
+
 
 	/// <summary>
 	/// Removes the queue cell at (x, y): with its owner (<see cref="QueueRideAt"/>) that cell and every cell behind it
@@ -870,6 +869,7 @@ public partial class Level
 	{
 		if ( IsReadOnlyVisit || Paths == null )
 			return CellBuildResult.NotPath;
+		if ( PoolBridges?.Reserves( x, y ) == true ) return CellBuildResult.Occupied;
 		// [EXT:removable-access-cells] the path cell the placement laid outside an entrance or exit (flag 0x20) can be removed, where tp.exe's cell clear keeps a NoModify cell that has neighbours (the forced clear 0x5367A0(0, 0) refuses it with "Removing path cell with no neighbours but NOMODIFY set" otherwise); the map start's initial path stays fixed
 		var access = IsAccessCell( x, y );
 		var result = access ? Paths.RemoveFixed( x, y ) : Paths.Remove( x, y );
@@ -1012,7 +1012,7 @@ public partial class Level
 		if ( removed > 0 )
 		{
 			// the guests standing on the emptied cells leave the queue on the nearest path; the ride's entrance resolves again when it used one of them
-			Guests.SetDownOffQueueCells( removedCells );
+			Guests.SetDownOffQueueCells( removedCells, ride );
 			AfterAccessCellRemoved( removedCells );
 		}
 		if ( ride == null )
@@ -1111,27 +1111,6 @@ public partial class Level
 		return armsAt( x + exitX, y + exitY ) == 1 && armsAt( x + entryX, y + entryY ) == 1;
 	}
 
-	/// <summary>
-	/// The Move tool's pick-up (<c>0x48cfa0</c>): the object is demolished exactly as its window's erase button does (the same click handler 0x524960 in mode 0x33 runs the erase 0x527ee0, with its
-	/// scrap credit and its queue and track clearing), then the build tool arms the same type at the object's own angle in mode 0x3b. Nothing else of the object is kept: the state is the new
-	/// object's, and a cancel leaves the object gone.
-	/// </summary>
-	// [BIN:TPW-EXE:0x48cfa0 move pick-up] 0x48c940 holds the thing, 0x5276d0 takes its cell, a type with a footprint (+0x40) saves the queue's corner points (0x530120, 0x52fc30), mode 0x33 and the click 0x524960(cell, 0, 0) erase it (0x527ee0 with the last argument 0: the very call of the window's erase button 0x48cd10), 0x46c5a0(0x3b, type) builds the tool, 0x52f200(0x3b) sets the mode and 0x52f1b0 the angle (+0x10); 0x81b3ac and 0x81b14c are written and read nowhere, so the saved state is never restored
-	public bool BeginMove( OriginalObject item )
-	{
-		if ( IsReadOnlyVisit || item.IsDeleted || item.Entry.IsFixedItem || (PlacedRide != null && ReferenceEquals( item, PlacedRide )) || !CanMove( item ) )
-			return false;
-		var entry = item.Entry;
-		var rotation = item.Placement.Rotation;
-		if ( !RemoveAttraction( item ) )
-			return false;
-		IsRemovingObjects = false;
-		IsPlacing = false;
-		BuildEntry = entry;
-		IsMoving = true;
-		SetBuildRotation( rotation );
-		return true;
-	}
 
 	/// <summary>Returns the next built object to rotation 0, as leaving the build tool does.</summary>
 	// [BIN:TPW-EXE:0x52f3b6 leave build tool] leaving the tool through 0x52f200 (0x52f227: ebp = 0) stores 0 in the build angle (0x81d7a4)
@@ -1245,7 +1224,8 @@ public partial class Level
 		ParkObjectState? bought = null;
 		if ( Park != null )
 		{
-			var purchase = Park.Economy.TryBuild( entry.InfoId, out bought, IsMoving );
+			// a command's placement says itself whether it is the Move tool's ([EXT:online-coop-commands]: the executor reads no tool state)
+			var purchase = Park.Economy.TryBuild( entry.InfoId, out bought, commandPlacementMoving ?? IsMoving );
 			if ( purchase != ParkEconomy.PurchaseResult.Ok )
 			{
 				LastActionMessage = $"Cannot build {entry.DisplayName}: {purchase}.";
@@ -1335,6 +1315,15 @@ public partial class Level
 		return Objects.Check( entry, anchor.X, anchor.Y, rotation, out plan );
 	}
 
+	/// <summary>
+	/// Pure object-preview presentation shared by both HUDs, using their already-computed placement and colour decisions.
+	/// Add-on mode keeps its legacy fallback; this neither revalidates placement nor checks or spends money.
+	/// </summary>
+	public (List<(int X, int Y, BlueprintMarker Marker)> Cells, Dictionary<(int X, int Y), byte> Directions) ObjectBlueprint(
+		ObjectCatalogEntry entry, int anchorX, int anchorY, int rotation, OriginalPlacementResult placementResult, bool allowed ) =>
+		BlueprintGhosts.Footprint( entry.Shape, anchorX, anchorY, rotation, allowed, Objects.Grid,
+			entry.HasQueue && !entry.IsTool && BuildAddOnRide == null && !TrackAddOns.IsAddOn( entry ), placementResult );
+
 	/// <summary><see cref="CheckObject(ObjectCatalogEntry, int, int, int)"/> for a site that demolishes nothing and clears no path (<see cref="ParkObjects.CheckFree"/>).</summary>
 	public OriginalPlacementResult CheckFreeObject( ObjectCatalogEntry entry, int x, int y, int rotation )
 	{
@@ -1357,35 +1346,6 @@ public partial class Level
 		return true;
 	}
 
-	private void HandleObjectClick( System.Numerics.Vector2 mousePosition, System.Numerics.Vector2 viewportSize )
-	{
-		if ( IsReadOnlyVisit )
-			return;
-		if ( (BuildEntry == null && !IsRemovingObjects && !CellTool.IsActive && !IsCoasterToolActive) || !TryGetGridCell( mousePosition, viewportSize, out var x, out var y ) )
-			return;
-		// The remove tool comes first, so a path or queue cell under it is removed rather than built on (ParkHud stands aside for it too).
-		if ( IsRemovingObjects )
-			RemoveAt( x, y );
-		else if ( IsCoasterToolActive && BuildEntry == null )
-			CoasterClick( x, y );
-		else if ( CellTool.IsActive && BuildEntry == null )
-			CellTool.Click( (x, y) );
-		else
-		{
-			KeepBuildToolOnPlace = KeepsBuildTool( clickModifierMask );
-			try
-			{
-				// a track add-on goes to its hover position on its ride's track, at the angle of the tile's flow (TrackAddOns.HoverTarget); anything else stays at the cell
-				var (targetX, targetY, rotation) = BuildTarget( BuildEntry!, x, y );
-				SetBuildRotation( rotation );
-				PlaceBuildTarget( BuildEntry!, targetX, targetY, rotation );
-			}
-			finally
-			{
-				KeepBuildToolOnPlace = false;
-			}
-		}
-	}
 
 	/// <summary>The remove tool: the object under the cursor, else a queue cell, else a path cell.</summary>
 	// [EXT:dev-one-click-remove] the developer panel's one-click remove tool takes whatever stands on the clicked cell (an object, else a queue cell, else a path cell); the original removes each through its own tool (the bulldozer 0x52BDD0, the queue and path tools' undo, the sale of a ride) and has no combined click

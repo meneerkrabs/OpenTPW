@@ -124,7 +124,7 @@ public sealed class PoolSprayRenderer : Entity
 		var commandList = global::Global.Render.CommandList;
 		commandList.UpdateBuffer( vertexBuffer, 0, ref vertices[0], (uint)count * stride );
 		commandList.SetVertexBuffer( 0, vertexBuffer );
-		material.Set( "ObjectUniformBuffer", new ObjectUniformBuffer { g_mModel = System.Numerics.Matrix4x4.Identity, g_mView = Camera.ViewMatrix, g_mProj = Camera.ProjMatrix, g_vCameraPos = Camera.Position.GetSystemVector3(), g_flTime = Time.Now } );
+		material.Set( "ObjectUniformBuffer", new ObjectUniformBuffer { g_mModel = System.Numerics.Matrix4x4.Identity, g_mView = Camera.ViewMatrix, g_mProj = Camera.ProjMatrix, g_vCameraPos = Camera.Position.GetSystemVector3(), g_flTime = Time.Now }.WithSpriteTint( Level.Current?.Look ?? EveningLook.Day ) ); // [EXT:evening] the droplets take the sprite tint at dusk and night
 		commandList.SetPipeline( material.Pipeline );
 		var resourceSets = material.GetResourceSets();
 		for ( uint index = 0; index < resourceSets.Length; ++index )

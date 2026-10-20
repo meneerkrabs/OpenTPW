@@ -45,6 +45,86 @@ public static class RideOpening
 	public static bool ClosedByImportedOpenWord( uint openWord, int state ) => openWord == 0 && state == RideObjectStates.Idle;
 }
 
+/// <summary>How far the service an upgrading or called object waits for has come, as the status banner reads it (<c>0x485f60</c>).</summary>
+public enum RideServiceProgress
+{
+	/// <summary>Nobody of the role is hired (world <c>+0x1da73e</c> mechanics, <c>+0x1da73c</c> handymen).</summary>
+	NoneHired,
+	/// <summary>The role is on strike (<c>0x509990</c>).</summary>
+	OnStrike,
+	/// <summary>An employee has claimed the job (<c>+0x5e</c>) and is on the way.</summary>
+	OnTheWay,
+	/// <summary>The claimant works on the object (a mechanic in state 13 targeting it, a handyman in state 11).</summary>
+	AtWork,
+	/// <summary>Waiting for an employee.</summary>
+	Waiting,
+}
+
+/// <summary>What the object window's status banner reads of an object (<c>0x485f60</c> with mode 2).</summary>
+/// <param name="State">The ride state word (<see cref="RideObjectStates"/>).</param>
+/// <param name="TrackIncomplete">A track ride whose track is not valid (<c>+0x2c</c>), or a coaster without a complete, closed circuit (<c>0x441910</c>).</param>
+/// <param name="TrackInvalid">A coaster whose track crosses itself (controller <c>+0x140</c>, <c>0x441940</c>).</param>
+/// <param name="ServiceCalled">The player called a mechanic or a handyman (<c>+0x64</c>).</param>
+/// <param name="Relief">A relief object (a toilet, <c>+0x32</c> bit 0): its called service is a cleaning, not a repair.</param>
+/// <param name="Service">How far the upgrade's or the call's service has come.</param>
+/// <param name="QueueDetached">The object has a queue (<c>+0x32</c> bit 3) whose back no longer joins a path (<c>0x4de4a0</c>).</param>
+/// <param name="ExitDetached">A ride that is no add-on whose exit leads nowhere (<c>0x4de5a0</c>).</param>
+/// <param name="IsOpen">The open word (<c>+0x68</c>).</param>
+public readonly record struct RideStatusFacts( int State, bool TrackIncomplete, bool TrackInvalid, bool ServiceCalled, bool Relief, RideServiceProgress Service,
+	bool QueueDetached, bool ExitDetached, bool IsOpen );
+
+/// <summary>
+/// The status banner of the ride, shop and sideshow windows (<c>0x485f60</c> with mode 2): the first status that applies, as its UITEXT entry (table
+/// <c>0x74fbc0</c> holds the 1-based ids), or none for an open object with nothing to report. The window shows it in its "chev" control and greys the
+/// door for the two track statuses (<c>0x4ad4e0</c>).
+/// </summary>
+// [BIN:TPW-EXE:0x485f60 object status] condemned (state 4); TRACK INCOMPLETE (a track ride's +0x2c clear, a coaster failing 0x441910); TRACK INVALID (coaster +0x140 nonzero); an upgrade (state 2) by its mechanic: none hired, on strike, claimed (on the way), at work, waiting; a called service (+0x64) the same for the mechanics (a repair) or, for a relief object, the handymen (a cleaning); broken down (state 1), or REPAIRS IN PROGRESS while the claimant works; the queue (+0x32 bit 3, 0x4de4a0) open or closed; a ride's exit (0x4de5a0); CLOSED (+0x68 clear); the "waiting to be" entries 367, 373 and 379 are never returned
+public static class RideWindowStatus
+{
+	public static UIStrings? Of( in RideStatusFacts facts )
+	{
+		if ( facts.State == RideObjectStates.Condemned )
+			return UIStrings.Condemned;
+		if ( facts.TrackIncomplete )
+			return UIStrings.TrackIncomplete;
+		if ( facts.TrackInvalid )
+			return UIStrings.TrackInvalid;
+		if ( facts.State == RideObjectStates.Upgrading )
+			return facts.Service switch
+			{
+				RideServiceProgress.NoneHired => UIStrings.UpgradeNoMechanics,
+				RideServiceProgress.OnStrike => UIStrings.UpgradeMechanicsStrike,
+				RideServiceProgress.OnTheWay => UIStrings.UpgradeMechanicOnWay,
+				RideServiceProgress.AtWork => UIStrings.UpgradeInProgress,
+				_ => UIStrings.UpgradeWaitingForMechanic,
+			};
+		if ( facts.ServiceCalled )
+			return (facts.Relief, facts.Service) switch
+			{
+				(true, RideServiceProgress.NoneHired) => UIStrings.CleaningNoCleaners,
+				(true, RideServiceProgress.OnStrike) => UIStrings.CleaningCleanersStrike,
+				(true, RideServiceProgress.OnTheWay) => UIStrings.CleaningCleanerOnWay,
+				(true, RideServiceProgress.AtWork) => UIStrings.CleaningInProgress,
+				(true, _) => UIStrings.CleaningWaitingForCleaner,
+				(false, RideServiceProgress.NoneHired) => UIStrings.RepairNoMechanics,
+				(false, RideServiceProgress.OnStrike) => UIStrings.RepairMechanicsStrike,
+				(false, RideServiceProgress.OnTheWay) => UIStrings.RepairMechanicOnWay,
+				(false, RideServiceProgress.AtWork) => UIStrings.RepairsInProgress,
+				_ => UIStrings.RepairWaitingForMechanic,
+			};
+		if ( facts.State == RideObjectStates.BrokenDown )
+			return facts.Service == RideServiceProgress.AtWork ? UIStrings.RepairsInProgress : UIStrings.BrokenDown;
+		if ( facts.QueueDetached )
+			return facts.IsOpen ? UIStrings.QueueNotConnected : UIStrings.ClosedQueueNotConnected;
+		if ( facts.ExitDetached )
+			return UIStrings.ExitNotConnected;
+		return facts.IsOpen ? null : UIStrings.Closed;
+	}
+
+	/// <summary>Whether the window greys the door for <paramref name="status"/> whatever the open word (<c>0x4ad4e0</c>: the two track statuses).</summary>
+	public static bool LocksDoor( UIStrings? status ) => status is UIStrings.TrackIncomplete or UIStrings.TrackInvalid;
+}
+
 /// <summary>
 /// The breakdown part of the original ride update (<c>0xe077c</c>, fragment <c>0xe0800..0xe0970</c>, ORACLE.md F27) as pure functions.
 /// <see cref="ParkEconomy"/> applies them to the economy's rides; the oracle bridge calls them in the routine's order.

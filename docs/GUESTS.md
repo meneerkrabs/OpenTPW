@@ -1050,11 +1050,21 @@ on arrival the guest decides again (state 6, "successfully left ride"). tp.exe f
 aside for a minor one; OpenTPW keeps none (`APPROX:GUEST-004`). `GuestSimulation.ExitRide`,
 `RideVisitorBridge.DismissLetOff` and `CloseForBlockedExit` port this.
 
-An attraction registered without its placement has no exit cell of its own: the M3 and M4 gates, the measurement
-scenarios, test rigs and the developer prototype lay no access cells. It lets off in the cell it takes its guests in
-and routes to its `ExitCell`. A guest the ride lets go of without a let-off (its script stopped or faulted) leaves by
-ExitRide when it can; otherwise it is set down beyond the exit, as a guest on a removed ride is (`QUEUE-010`). The
-pools changing room's swimmers keep their own exit (`[EXT:pools-swim]`).
+Some cell maps hold no exit cell with the link a placement writes:
+- the M3 and M4 gates, the measurement scenarios, test rigs and the developer prototype lay no access cells;
+- the Theme Park Inc slice and online visits keep no access-cell links.
+
+An attraction on such a map lets off in the cell it takes its guests in and routes to its `ExitCell`. Only a Theme
+Park World level types the footprints, so only there does ExitRide use the object's own exit cell
+(`Level.RegisterWithGuests`, `ownExitCell`).
+
+A guest the ride lets go of without a let-off leaves by ExitRide when it can. That happens when its script halted or
+faulted, or for a save's leftover rider. When ExitRide fails, the guest is set down beyond the exit, as a guest on a
+removed ride is (`QUEUE-010`).
+
+A demolished object's riders get neither ExitRide nor the use routine: tp.exe's removal message (`0x4FB360`) gives
+them their model back, the small happiness step and state 6 (`GuestSimulation.Unregister`). The pools changing room's
+swimmers keep their own exit (`[EXT:pools-swim]`).
 
 `ShopVisitAssetTests` runs the shipped Burger Shop in all four rotations: every customer is let off 1.0 to 1.3 s after
 the shop takes it, walks out of the hut, and no guest is lost. `ExitRideTests` covers the exit point, the reversal,

@@ -463,8 +463,11 @@ moved with them:
    decides again. OpenTPW used to set it down on that cell and let it stand for `ExitRideSeconds`. The walk changes the
    guests' positions, the cell lists and the separation pushes, and with them every later draw.
 3. **A blocked exit closes the ride** (`0x4DF150`) and keeps the guest on it. No pinned run has one. The synthetic parks'
-   attractions have no placement, so they let off in their stand cell and route to their `ExitCell`. The M3 and M4 gates
-   register objects without laying their access cells and do the same.
+   attractions have no placement, so they let off in their stand cell and route to their `ExitCell`. The same holds for
+   the M3 and M4 gates (they lay no access cells), the Theme Park Inc slice and online visits (their cell maps keep no
+   access-cell links). Only a level that types the footprints passes `ownExitCell`.
+4. **A demolished object's riders** get the removal message's treatment (`0x4FB360`, `Unregister`). They no longer
+   get the use routine at the demolition.
 
 No schema or save field changed. The pools changing room's swimmers keep their `[EXT:pools-swim]` exit. The slide's
 landing test (`PoolSlideActivity.IsLandingClear`) now reads a rider not yet updated this turn where that turn's step

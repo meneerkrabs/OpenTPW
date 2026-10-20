@@ -138,7 +138,7 @@ public class ShopVisitAssetTests
 		cells.WriteFootprint( ObjectFootprint.GetCells( entry.Shape, site.X, site.Y, rotation ), owner, rotation );
 		ObjectAccessCells.Lay( cells, points, owner, entry.HasQueue );
 		var runtime = new OriginalObjectRuntime( entry, new RideScriptWorld(), seed: null, open: true );
-		Assert.IsTrue( Level.RegisterWithGuests( runtime, points, simulation, rotation, owner ) );
+		Assert.IsTrue( Level.RegisterWithGuests( runtime, points, simulation, rotation, owner, ownExitCell: true ) );
 		var shop = runtime.Visitors;
 		Assert.IsTrue( shop.RideHandlesSprite, "Burger.sam: UsageInfo.RideHandlesSprite 1" );
 		Assert.AreEqual( ParkCellTypes.Entrance, cells.RawTypeAt( GuestSimulation.StandCellOf( shop ).X, GuestSimulation.StandCellOf( shop ).Y ), "the stand point lies in the shop's own entrance cell" );

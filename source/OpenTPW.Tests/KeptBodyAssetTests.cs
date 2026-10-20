@@ -79,7 +79,7 @@ public class KeptBodyAssetTests
 		cells.WriteFootprint( ObjectFootprint.GetCells( entry.Shape, site.X, site.Y, 0 ), owner, 0 );
 		ObjectAccessCells.Lay( cells, points, owner, entry.HasQueue );
 		var runtime = new OriginalObjectRuntime( entry, new RideScriptWorld(), seed: null, open: true );
-		Assert.IsTrue( Level.RegisterWithGuests( runtime, points, simulation, 0, owner ) );
+		Assert.IsTrue( Level.RegisterWithGuests( runtime, points, simulation, 0, owner, ownExitCell: true ) );
 		var bridge = runtime.Visitors;
 		Assert.IsTrue( bridge.RideHandlesSprite, $"{name}: UsageInfo.RideHandlesSprite 1" );
 		var guests = Enumerable.Range( 0, 6 ).Select( _ => simulation.SpawnInPark( bridge.EntranceCell.X, bridge.EntranceCell.Y ) ).ToList();

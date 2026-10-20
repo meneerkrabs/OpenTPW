@@ -327,32 +327,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		{
 			if ( guest.AttractionId != attraction.AttractionId || attraction.AttractionId == 0 )
 				continue;
-			var cell = guest.State == GuestState.Using ? attraction.ExitCell : guest.IsInQueue ? JoinCellOf( attraction ) : (guest.CellX, guest.CellY);
-			if ( guest.State != GuestState.Using && guest.IsInQueue )
-				guest.Happiness = MeterMath.Add( guest.Happiness, -(float)(Settings.MediumHappinessChange & 0xFF) );
-			// [BIN:TPW-EXE:0x4fb3f5 rider voice] a guest in state 16 (on the ride) whose ride is removed gets its model back and plays cat_kids 0x80, whatever its thing id
-			if ( guest.State == GuestState.Using )
-			{
-				RemovedRideBodySprite( guest );
-				Voiced?.Invoke( guest, RideRemovedVoiceEvent );
-			}
-			NoteQueueEnd( guest, attraction.AttractionId, QueueEndReason.AttractionRemoved );
-			attraction.LeaveQueue( guest.Id );
-			ClearQueueState( guest );
-			guest.SideshowWon = null;
-			guest.Happiness = MeterMath.Add( guest.Happiness, -(float)(Settings.SmallHappinessChange & 0xFF) );
-			// [EXT:pools-swim] demolishing a changing room gets its swimmers out of the water: they step out on its path-side exit
-			if ( guest.InSwimSession )
-				EndSwimAtOnce( guest, attraction );
-			else if ( guest.State is GuestState.GoingToRide or GuestState.Using || guest.IsInQueue )
-				ReturnToPath( guest, cell );
-			else
-			{
-				guest.AttractionId = 0;
-				EnterGuestState( guest, GuestState.DoingNothing );
-			}
-			if ( !guest.InSwimSession )
-				guest.BodySprite.QueueTemplate( VisitorSpriteTemplate.Stand );
+			DropForRemovedAttraction( guest, attraction );
 		}
 		// every guest, targeting it or not, forgets it in its histories
 		foreach ( var guest in guests )
@@ -368,6 +343,37 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		if ( attraction.Host == this )
 			attraction.Host = null;
 		seenQueueEdits.Remove( attraction.AttractionId );
+	}
+
+	/// <summary>The removal message's treatment of one guest whose target the attraction is (tp.exe <c>0x004FB360</c>; see <see cref="Unregister"/>).</summary>
+	private void DropForRemovedAttraction( Guest guest, IRideVisitorBridge attraction )
+	{
+		var cell = guest.State == GuestState.Using ? attraction.ExitCell : guest.IsInQueue ? JoinCellOf( attraction ) : (guest.CellX, guest.CellY);
+		if ( guest.State != GuestState.Using && guest.IsInQueue )
+			guest.Happiness = MeterMath.Add( guest.Happiness, -(float)(Settings.MediumHappinessChange & 0xFF) );
+		// [BIN:TPW-EXE:0x4fb3f5 rider voice] a guest in state 16 (on the ride) whose ride is removed gets its model back and plays cat_kids 0x80, whatever its thing id
+		if ( guest.State == GuestState.Using )
+		{
+			RemovedRideBodySprite( guest );
+			Voiced?.Invoke( guest, RideRemovedVoiceEvent );
+		}
+		NoteQueueEnd( guest, attraction.AttractionId, QueueEndReason.AttractionRemoved );
+		attraction.LeaveQueue( guest.Id );
+		ClearQueueState( guest );
+		guest.SideshowWon = null;
+		guest.Happiness = MeterMath.Add( guest.Happiness, -(float)(Settings.SmallHappinessChange & 0xFF) );
+		// [EXT:pools-swim] demolishing a changing room gets its swimmers out of the water: they step out on its path-side exit
+		if ( guest.InSwimSession )
+			EndSwimAtOnce( guest, attraction );
+		else if ( guest.State is GuestState.GoingToRide or GuestState.Using || guest.IsInQueue )
+			ReturnToPath( guest, cell );
+		else
+		{
+			guest.AttractionId = 0;
+			EnterGuestState( guest, GuestState.DoingNothing );
+		}
+		if ( !guest.InSwimSession )
+			guest.BodySprite.QueueTemplate( VisitorSpriteTemplate.Stand );
 	}
 
 	/// <summary>
@@ -3260,13 +3266,20 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	}
 
 	/// <summary>
-	/// Host teardown: the ride lets go of a guest without the script's let-off (its script stopped or faulted, or a save's leftover rider). The guest leaves by ExitRide when its exit is free and is otherwise
-	/// set down on the cell beyond the exit, as a guest on a removed ride is (QUEUE-010).
+	/// Host teardown: the ride lets go of a guest without the script's let-off (its script halted or faulted, or a save's leftover rider). The guest leaves by ExitRide when its exit is free and is otherwise
+	/// set down on the cell beyond the exit, as a guest on a removed ride is (QUEUE-010). A demolished object's riders are left to the removal (<see cref="Unregister"/>).
 	/// </summary>
 	void IRideVisitorHost.OnVisitorReleased( IRideVisitorBridge ride, int guestId )
 	{
 		if ( Find( guestId ) is not { } guest )
 			return;
+		// [BIN:TPW-EXE:0x004FB360 object removed] a demolished object (its runtime stops before the level unregisters it) runs no ExitRide and no use routine for its riders: the removal message gives a rider in state 16 its model back, the small happiness step and state 6
+		if ( ride is RideVisitorBridge { IsStopped: true } )
+		{
+			if ( guest.AttractionId == ride.AttractionId && ride.AttractionId != 0 )
+				DropForRemovedAttraction( guest, ride );
+			return;
+		}
 		if ( !BeginSwim( guest, ride ) && !ExitRide( guest, ride ) )
 		{
 			ReturnToPath( guest, ride.ExitCell );

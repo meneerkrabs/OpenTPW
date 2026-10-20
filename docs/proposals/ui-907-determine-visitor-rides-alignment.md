@@ -1,8 +1,8 @@
 # UI-907: Determine visitor rides alignment
 
-## Current bounded implementation (2026-10-20)
+## Outcome (2026-10-20)
 
-This PR now corrects only the rides-column alignment and its provenance, with actual CPU row-draw fixtures described in [VISITOR-RIDES-ALIGNMENT](../VISITOR-RIDES-ALIGNMENT.md). The plan-only statements below are historical. Exact-head CI is pending; no executed C# or native rendered parity claim is made. UI-907 remains registered and full native pixel/font validation is not claimed.
+#495 (merged 2026-10-20, exact-head CI green) corrects the rides-column alignment and its provenance, with actual CPU row-draw fixtures described in [VISITOR-RIDES-ALIGNMENT](../VISITOR-RIDES-ALIGNMENT.md). The plan-only statements below are historical. tp.exe's rides cell constructor `0x48fde0` stores alignment 0 (left) at `0x48fe28`, and the row factory `0x4939d0` sends `0x65c428` with 1, 2 and 1 to the number, cash and time cells and none to the rides cell (`0x493b38`). UI-907 is retired; native pixel and font validation belong to other register IDs.
 
 ## Historical proposal status and classification
 - Plan-only draft proposal; no implementation, tests-run claim, retirement or merge.
@@ -47,6 +47,5 @@ All Visitors rides column is centered, but original cell constructor does not in
 - Evening #439 is an extension and is not proof of original lighting or behavior.
 
 ## Completion boundary
-- This deliverable is a documentation proposal only; no gameplay source files are changed by this PR.
-- Runtime work remains blocked on the evidence/ownership decisions listed above where applicable.
-- No approximation is retired by creating this plan; no PR is claimed implemented or ready to merge.
+- Superseded by the merged implementation above (#495), which changed the visitor list's rides alignment and added `VisitorRidesAlignmentTests`.
+- UI-907 is retired by the post-merge follow-up on the evidence above.

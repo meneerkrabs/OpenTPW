@@ -300,7 +300,7 @@ public partial class Level
 		foreach ( var saved in snapshot.Attractions )
 		{
 			var bridge = bridges[saved.AttractionId];
-			if ( !saved.QueueCells.SequenceEqual( bridge.QueueCells ) || saved.JoinCell != bridge.JoinCell )
+			if ( !bridge.MatchesSnapshotQueueGeometry( target.Grid, saved ) )
 				throw new InvalidDataException( $"Attraction {saved.AttractionId}'s queue does not match the saved cell map." );
 		}
 	}

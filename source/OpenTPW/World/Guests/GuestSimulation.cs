@@ -370,6 +370,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		else
 		{
 			guest.AttractionId = 0;
+			guest.Activity = GuestActivity.None;
 			EnterGuestState( guest, GuestState.DoingNothing );
 		}
 		if ( !guest.InSwimSession )
@@ -1973,6 +1974,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		if ( best is not { } found )
 			return false;
 		guest.BinId = found.Id;
+		guest.AttractionId = 0;
 		if ( lastFailed )
 			guest.HasWaypoint = false;
 		EnterGuestState( guest, GuestState.ThrowingAwayLitter );
@@ -2350,6 +2352,9 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	// [BIN:TPW-EXE:0x4ff419 major decision] once the turn is above +0x1FC + 30 the choice 0x4fcb10 runs; with no target the guest logs event 1, thinks 4, loses the small step (0x4fea70(0)) and is stamped; nothing in it tests time since a ride, and no instruction reads PeepTypes' BoredomThreshold (0x7850EC + 12 × type has no reference; excitement 0x7850E4 and cash 0x7850E8 have)
 	private IRideVisitorBridge? ChooseAttraction( Guest guest, bool setWalk = true )
 	{
+		// A real major choice replaces the retained target; observational PeekChoice does not.
+		if ( setWalk )
+			guest.AttractionId = 0;
 		// the host runs the choice loop: the policy scores and compares, the route request below is the host's alone (made exactly as the original makes it, for a candidate that beats the best)
 		var context = ContextNow();
 		var view = ViewOf( guest );
@@ -2503,14 +2508,15 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 				_ => GuestThought.QueueTooLong
 			} );
 		// [BIN:STP-PPC:0x100ECE18 refusal history] the queue-too-long path (0xece18) and both excitement refusals (0xecf3c) push the target's id into the temporary history (0xea290) before clearing the target
-		// [APPROX:GUEST-004] the full-room refusal keeps the target +0x1DC in tp.exe (the jump past 0x004FFEDA), which OpenTPW clears; the state-6 handler cannot tell (its only read, 0x004FF437, follows the choice 0x004FCB10, which clears the word first at 0x004FCB21), but the object-removal message handler 0x004FB360 still matches a stale target and costs the guest SmallHappinessChange (0x004FE980(0)) with a reset to state 6, which OpenTPW's removal (GuestSimulation.Unregister) cannot do for a cleared target — evidence needed: none (read)
+		// [BIN:TPW-EXE:0x004FFC4F full-room target] the jump past 0x004FFEDA retains +0x1DC; the next major choice clears it at 0x004FCB21. Object removal (0x004FB360) still matches it and applies the small happiness step.
 		if ( result2 is QueueJoinResult.QueueTooLong or QueueJoinResult.NotExcitingEnough or QueueJoinResult.TooExciting )
 			PushHistory( guest.TemporaryHistory, attraction.AttractionId );
 		// [BIN:TPW-EXE:0x004FFCF6 excitement refusal] the refusal clears the target and the decision stamp +0x1FC, so the next major decision is not held back 30 turns
 		if ( result2 is QueueJoinResult.NotExcitingEnough or QueueJoinResult.TooExciting )
 			guest.QueueStandingSinceTurn = 0;
 		guest.LastAttractionId = attraction.AttractionId;
-		guest.AttractionId = 0;
+		if ( result2 != QueueJoinResult.NoRoom )
+			guest.AttractionId = 0;
 		EnterGuestState( guest, GuestState.DoingNothing );
 	}
 
@@ -4011,6 +4017,8 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 					if ( !Grid.InBounds( x, y ) )
 						Error( $"Attraction {attractionSnapshot.AttractionId} queue cell {cell} ({x}, {y}) is outside the map." );
 				}
+			if ( attractionSnapshot.TypedQueueFront is { } typedFront && !Grid.InBounds( typedFront.X, typedFront.Y ) )
+				Error( $"Attraction {attractionSnapshot.AttractionId}'s typed queue front is outside the grid." );
 			if ( attractionSnapshot.JoinCell is { } join && !Grid.InBounds( join.X, join.Y ) )
 				Error( $"Attraction {attractionSnapshot.AttractionId} join cell ({join.X}, {join.Y}) is outside the map." );
 		}
@@ -4252,7 +4260,8 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			{
 				if ( !snapshotIds.Contains( guest.AttractionId ) )
 					Error( $"Guest {guest.Id} names attraction {guest.AttractionId}, which is not registered." );
-				else if ( !inQueue && guest.State is not (GuestState.GoingToRide or GuestState.Using or GuestState.Swimming or GuestState.ClimbingOut or GuestState.ChangingOut or GuestState.PoolActivity) )
+				else if ( !inQueue && !CanRetainRefusedTarget( guest.State, guest.Activity )
+					&& guest.State is not (GuestState.GoingToRide or GuestState.Using or GuestState.Swimming or GuestState.ClimbingOut or GuestState.ChangingOut or GuestState.PoolActivity) )
 					Error( $"Guest {guest.Id} is in state {guest.State} while bound to attraction {guest.AttractionId}." );
 			}
 			else if ( guest.State == GuestState.GoingToRide )
@@ -4267,6 +4276,11 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 
 		return new GuestSnapshotValidation( errors );
 	}
+
+	// A refused target can survive until a real major choice, including intervening activities and departure.
+	private static bool CanRetainRefusedTarget( GuestState state, GuestActivity activity ) =>
+		state == GuestState.DoingNothing && activity is (GuestActivity.None or GuestActivity.Cheering or GuestActivity.Vomiting)
+		|| state is GuestState.WalkingAround or GuestState.LeavingPark or GuestState.CrossingRoadHome or GuestState.WalkingToVehicle or GuestState.WaitingToGoHome;
 
 	/// <summary>Per-guest structure that needs the park's grid: arrival lane shape and position, cells, navigation buffers.</summary>
 	private void ValidateGuestStructure( GuestSnapshot guest, int schemaVersion, Action<string> error )

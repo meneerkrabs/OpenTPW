@@ -1,0 +1,46 @@
+# QUEUE-003: supported typed queue front
+
+Baseline: main 8382dea5. Static evidence: sp20_nocd/tp.exe SHA-256
+5472f97b5eb28f58b5a49f3a15f6f66adffa6b2625a623f503202c9696d1b805.
+No original executable was run. Regression fixtures are synthetic.
+
+The front selector 0x4DE040 reads the ride's mEntryPos (+0x36), then the
+entry cell's link byte (+0x0C, accessor 0x522770), not its queue direction
+(+0x0D). It chooses bits 1,16,64,4 in that order (-Y,+Y,-X,+X). It performs
+no neighbour type, ownership or reciprocal-link check. No cardinal bit
+returns native cell id 0. The back walker 0x4DE130 initializes count +0x40
+to zero and leaves it zero for that missing front.
+
+For live typed HasQueue objects, Level rebinds an entry resolver at object
+registration. It reuses the queue tool's owner-matched, last shape entrance
+reconstruction, requiring a type-9 entry with the matching owner. These are
+supported host reconstruction boundaries, not extra native selector tests.
+The bridge reads that entry's live links on queue recomputation and updates
+both front and direction. A selected in-map neighbour is retained even if
+it is empty, foreign-owned, or lacks a reciprocal link. Link edits use the
+existing grid-version queue refresh; no additional RNG draw or command is
+introduced. The resolver is not serialized. Registration rebinds it before
+queue restoration. Optional paired TypedQueueFront/TypedQueueDirection snapshot
+fields preserve the cached positive front/direction exactly, including saves after
+link edits but before queue sync. They are omitted for untyped bridges; existing
+canonical field ordering is unchanged. Partial pairs, invalid directions and
+out-of-map fronts are rejected. Legacy snapshots without the pair retain the old
+shape-registration cache reconstruction until a normal queue refresh; historical
+directions are not guessed from changed links. Existing cell-map/snapshot geometry
+checks remain strict, including rejection of unsupported mismatched current caches.
+
+This is not retirement of QUEUE-003. Linkless/diagonal-only entries, unavailable
+entry reconstruction and out-of-map results retain the existing host fallback,
+not native zero-front semantics. Queue arrays remain nonempty and existing
+snapshot validation is unchanged. Divergent imported mEntryPos and overlapping
+or deleted entry reconstruction remain unsupported. Untyped harnesses, TPI
+and read-only visits do not receive the provider. Back-cell admission and
+fourth-place geometry are unchanged. Native cached-back invalidation timing
+is not newly claimed here.
+
+Tests cover four rotations, mixed-bit priority, +0x0C versus +0x0D, stale
+fronts, last entrance selection, live link edits, positive snapshot restore,
+and canonical-state equivalence when replaying synthetic link edits. This
+input replay is not a claim of an original-game execution oracle or browser
+verification. Existing queue, resume and deterministic command tests remain
+required CI regressions.

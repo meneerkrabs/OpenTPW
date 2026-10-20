@@ -99,6 +99,34 @@ public class ObjectAccessCellsTests
 	}
 
 	[DataTestMethod, DataRow( 0 ), DataRow( 90 ), DataRow( 180 ), DataRow( 270 )]
+	public void TypedQueueRegistrationUsesLastOwnedEntranceAndRebindsAfterCellSave( int rotation )
+	{
+		var entry = Entry( 1235, 0, true, "*22" );
+		var rig = new Rig( entry );
+		var item = rig.Place( entry, 8, 8, rotation );
+		Assert.IsNotNull( item );
+		var entrances = item!.AccessPoints.Where( point => point.Kind == ObjectCellKind.Entrance ).ToArray();
+		Assert.AreEqual( 2, entrances.Length );
+		var last = entrances[^1];
+		var grid = new GuestPathGrid( rig.Cells );
+		grid.SetPath( 1, 1, true );
+		var simulation = new GuestSimulation( grid, GuestTests.CreateSettings(), 7 ) { ArrivalsEnabled = false };
+		Assert.IsTrue( Level.RegisterWithGuests( item.Runtime, item.AccessPoints, simulation, rotation,
+			Level.OwnerWord( item ), ownExitCell: true,
+			queueEntryResolver: () => Level.ResolveQueueEntrance( rig.Objects, rig.Cells, Level.OwnerWord( item ) ) ) );
+		Assert.AreEqual( (last.OutsideX, last.OutsideY), item.Visitors.QueueFrontCell!.Value );
+		Assert.AreNotEqual( (entrances[0].OutsideX, entrances[0].OutsideY), item.Visitors.QueueFrontCell.Value );
+		var saved = ParkResumeJson.Deserialize<ParkLayoutSnapshot.Data>( ParkResumeJson.Serialize( ParkLayoutSnapshot.CaptureSnapshot( rig.Cells, rig.Objects ) ) );
+		var restoredCells = ParkLayoutSnapshot.RestoreCellMap( saved );
+		item.Visitors.QueueEntryResolver = () => Level.ResolveQueueEntrance( rig.Objects, restoredCells, Level.OwnerWord( item ) );
+		item.Visitors.QueueFrontCell = (1, 1);
+		item.Visitors.RecomputeQueue( new GuestPathGrid( restoredCells ) );
+		Assert.AreEqual( (last.OutsideX, last.OutsideY), item.Visitors.QueueFrontCell!.Value );
+		restoredCells.SetOwner( last.X, last.Y, 0 );
+		Assert.IsNull( Level.ResolveQueueEntrance( rig.Objects, restoredCells, Level.OwnerWord( item ) ), "ownership validation belongs to entry reconstruction" );
+	}
+
+	[DataTestMethod, DataRow( 0 ), DataRow( 90 ), DataRow( 180 ), DataRow( 270 )]
 	public void RideExitUsesTheEntranceOwnerExitAndDirectionByteAfterRealPlacement( int rotation )
 	{
 		var entry = Entry( 1234, 0, true, "*2S" );

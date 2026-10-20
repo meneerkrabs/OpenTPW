@@ -324,6 +324,10 @@ public sealed class TrackEditor
 			if ( !cell.IsOrigin )
 				continue;
 			// Preserve the other flow of a supported two-line crossing. Other replay shapes and contrary laid-flow directions keep the existing policy.
+			// [BIN:TPW-EXE:0x53B280 line step] with two or more link bits the line step clears dx -2 → 0x04, dx +2 → 0x40, dy -2 → 0x10, dy +2 → 0x01 from the link (0x5227f0) and both arms
+			// of the step's axis from the mask (0x522730), the bit opposite to the step (the per-tile driver 0x53aac0 steps from the anchor to the click, and 0x5370e0 maps dx -2 to heading 0x40);
+			// the replay 0x52FE50 pops the corner points the collector pushed in walk order (0x530830, 0x530B70: stack 0x81B740, count 0x820A8C) and runs each line from the later point
+			// back to the earlier one (mode 0x35: anchor = popped point, click = the point below it), so the cleared bit is the chain's own heading, the traversed heading here
 			var remaining = (byte)(cell.Link & ~traversed);
 			if ( crossing && IsJunction( cell.Mask ) && cell.Overlap == 1 && (traversed & ~0x55) == 0 && TrackHeading.Count( traversed ) == 1
 				&& (cell.Link & ~0x55) == 0 && TrackHeading.Count( cell.Link ) == 2 && (cell.Link & traversed) != 0

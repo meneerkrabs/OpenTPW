@@ -268,6 +268,11 @@ public class OriginalObject : Entity, IPointLightSource
 	}
 
 	/// <summary>The station frame of a coaster station (<see cref="CoasterStationLayout.FromModel"/>) at the model's rest pose, or null when its model lacks a dummy.</summary>
+	/// <remarks>
+	/// It reads <see cref="ObjectAnimator.LocalTransforms"/>, which hold the model's stored node matrices only until a clip moves a node; after that they are
+	/// System.Numerics products. The frame is taken when the station is placed (<c>Level.OnCoasterStationPlaced</c>), before any clip has run, so it composes
+	/// the exact stored matrices; a caller after the first animation tick would bring the platform's products into the pinned simulation.
+	/// </remarks>
 	internal CoasterStationLayout? ComputeCoasterStationLayout() => CoasterStationLayout.FromModel( Runtime.Model, Runtime.Animator.LocalTransforms, Placement );
 
 	/// <summary>One fixed simulation tick.</summary>

@@ -20,6 +20,14 @@ internal interface IBounceRiderSource
 {
 	/// <summary>Adds the pose of every rider currently bouncing, keyed by guest id.</summary>
 	void Collect( Dictionary<int, BounceRiderPose> poses );
+
+	/// <summary>The pose of one rider, if the source poses it now.</summary>
+	bool TryGetPose( int guest, out BounceRiderPose pose )
+	{
+		var poses = new Dictionary<int, BounceRiderPose>();
+		Collect( poses );
+		return poses.TryGetValue( guest, out pose );
+	}
 }
 
 /// <summary>
@@ -96,6 +104,7 @@ internal sealed class FlatRideBounceRiders : IBounceRiderSource
 	private const int WalkNodeClass = 0x800;
 	private readonly ParkObjects objects;
 	private readonly Dictionary<int, BounceRiderPose> prepared = new();
+	private readonly Dictionary<int, BounceRiderPose> placed = new();
 	private readonly List<(int Guest, int Node, double Start)> scratch = new();
 	private readonly List<RideVisitorBridge.WalkerView> walkers = new();
 
@@ -107,6 +116,8 @@ internal sealed class FlatRideBounceRiders : IBounceRiderSource
 		foreach ( var (guest, pose) in prepared )
 			poses[guest] = pose;
 	}
+
+	public bool TryGetPose( int guest, out BounceRiderPose pose ) => prepared.TryGetValue( guest, out pose );
 
 	/// <summary>Post-substep pose phase. Positioning and template requests are separate from scheduler ticks and guest begin-turn application.</summary>
 	internal void Prepare( GuestSimulation guests )
@@ -126,6 +137,23 @@ internal sealed class FlatRideBounceRiders : IBounceRiderSource
 				( guest, template ) => guests.RequestRideBody( guest, ride.Runtime.Visitors.AttractionId, (VisitorSpriteTemplate)template ),
 				guest => guests.HideRideBody( guest, ride.Runtime.Visitors.AttractionId ) );
 		}
+		HoldKeptBodies( prepared, placed, guests );
+	}
+
+	/// <summary>
+	/// A kept body stays where the walk update or the bounce pass last placed it once its entry is gone (WALKGET took it out of the walk table, UNBOUNCE out of the bounce table) while the guest still uses
+	/// the object: it is drawn there, with the frames its player runs, until the guest is let off or the body is deleted. <paramref name="placed"/> carries the poses of the previous pass.
+	/// </summary>
+	// [BIN:TPW-EXE:0x00542010 sprite pass] a sprite is drawn every frame at its stored position (+0x88..+0x90) while it has a frame; the walk update and the bounce pass store it (0x004F9E60 through 0x00475480) only for the entries they pass, and the guest update stores it again only after the state-15 entry has cleared +0x28 (0x004FA087, 0x00501F79), so between the two the body stays where it was last placed
+	internal static void HoldKeptBodies( Dictionary<int, BounceRiderPose> prepared, Dictionary<int, BounceRiderPose> placed, GuestSimulation guests )
+	{
+		foreach ( var (id, pose) in placed )
+			if ( !prepared.ContainsKey( id ) && guests.Find( id ) is { } guest && RideHeadRenderer.CanDraw( guest, pose.AttractionId ) && guests.ShowsKeptBody( guest ) )
+				prepared[id] = guest.BodySprite.Player!.Output is { } frame ? pose with { Slot = frame.Slot, Step = frame.Frame, Visible = true, UsesSpriteState = true }
+					: pose with { Visible = false, UsesSpriteState = true };
+		placed.Clear();
+		foreach ( var (id, pose) in prepared )
+			placed[id] = pose;
 	}
 
 	internal static BounceRiderPose ApplyBodyOutput( GuestSimulation guests, BounceRiderPose pose )

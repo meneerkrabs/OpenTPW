@@ -111,6 +111,41 @@ public class VisitorSpriteIntegrationTests
 		}
 	}
 
+	/// <summary>
+	/// A shop whose UsageInfo.RideHandlesSprite keeps the body (the Burger Shop and every other shipped shop that sets it) serves its customer in view: through the whole use the guest stands still in its stand
+	/// cell with the body it boarded with (tp.exe 0x0050212B: kept, stand template, +0x28 = 1; 0x004FA087 then leaves it where it is), and the script's let-off puts it back among the walking guests.
+	/// </summary>
+	[TestMethod]
+	public void AShopThatKeepsTheBodyServesItsCustomerInViewAtTheStandPoint()
+	{
+		var rig = new QueueTests.Rig( satisfies: GuestNeeds.Hunger, capacity: 1, takesGuests: true, kind: RideVisitorKind.Shop );
+		rig.Ride.RideHandlesSprite = true;
+		var guest = rig.Send();
+		for ( var tick = 0; tick < 120 * 60 && guest.State != GuestState.Using; tick++ )
+			rig.Step();
+		Assert.AreEqual( GuestState.Using, guest.State, "the shop took the guest" );
+		var body = guest.BodySprite.Player;
+		Assert.IsNotNull( body, "the body is kept" );
+		var stand = GuestSimulation.StandCellOf( rig.Ride );
+		var (x, y) = (guest.X, guest.Y);
+		Assert.AreEqual( stand, guest.Navigation.Cell, "the customer stands in the entrance cell, at the stand point it walked to" );
+		var servedTicks = 0;
+		while ( guest.State == GuestState.Using && servedTicks < 10 * 60 )
+		{
+			Assert.IsTrue( rig.Simulation.ShowsKeptBody( guest ), $"in view after {servedTicks} ticks" );
+			Assert.IsFalse( guest.IsVisible, "still a rider for every other renderer (balloon, thought, pick)" );
+			Assert.AreEqual( (x, y), (guest.X, guest.Y), "the body does not move while it is served" );
+			Assert.AreSame( body, guest.BodySprite.Player );
+			rig.Step();
+			servedTicks++;
+		}
+		Assert.AreEqual( GuestState.ExitingRide, guest.State, "the let-off released the guest" );
+		Assert.IsTrue( servedTicks is >= 60 and <= 76, $"the script's WAIT 1000 and the next ride update (up to one 248 ms park turn, tp.exe 0x004E1410) serve the guest ({servedTicks} ticks)" );
+		Assert.IsFalse( rig.Simulation.ShowsKeptBody( guest ) );
+		Assert.IsTrue( guest.IsVisible );
+		Assert.AreSame( body, guest.BodySprite.Player, "the released guest walks on with the same body" );
+	}
+
 	[TestMethod]
 	public void BounceHeightTimeAndBrokenRequestsDoNotReplacePreviouslyEmittedOutput()
 	{
@@ -339,7 +374,7 @@ public class VisitorSpriteIntegrationTests
 		var simulation = Simulation();
 		simulation.SpawnInPark( 4, 5 );
 		var snapshot = simulation.CaptureSnapshot();
-		var older = snapshot with { BodySpriteClockMilliseconds = null, Guests = snapshot.Guests.Select( guest => guest with { BodySprite = null } ).ToArray() };
+		var older = snapshot with { BodySpriteClockMilliseconds = null, Balloons = null, Guests = snapshot.Guests.Select( guest => guest with { BodySprite = null } ).ToArray() };
 		var restored = Simulation();
 		restored.RestoreSnapshot( older );
 		var guest = restored.Guests.Single();
@@ -465,13 +500,16 @@ public class VisitorSpriteIntegrationTests
 		scene.Source.Collect( poses );
 		Assert.IsTrue( poses.ContainsKey( guest.Id ), "an unknown action makes no body call and leaves the prior BOUNCE pose" );
 		Assert.AreEqual( before, guest.BodySprite.CaptureSnapshot() );
+		var last = poses[guest.Id];
 		WalkTable( rig.Ride ).Clear();
 		typeof( ModelFile ).GetProperty( nameof( ModelFile.DummyAttributes ) )!.SetValue( scene.Runtime.Model, Array.Empty<ModelDummyAttribute>() );
 		scene.Source.Prepare( rig.Simulation );
 		poses.Clear();
 		scene.Source.Collect( poses );
-		Assert.AreEqual( 0, poses.Count );
-		Assert.AreEqual( before, guest.BodySprite.CaptureSnapshot() );
+		// tp.exe's bounce pass skips a slot whose node the model lacks (0x00557B26), so the kept body is not placed again and its sprite stays where it was last placed (0x00542010)
+		Assert.AreEqual( 1, poses.Count, "the kept body is held where the bounce last placed it" );
+		Assert.AreEqual( last.Feet, poses[guest.Id].Feet );
+		Assert.AreEqual( before, guest.BodySprite.CaptureSnapshot(), "holding makes no body request" );
 	}
 
 	[TestMethod]

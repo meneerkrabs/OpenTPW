@@ -129,6 +129,10 @@ public sealed class UmbrellaRenderer : Entity
 	/// (<c>min(0.1, 1.5 * ModelScale / depth)</c>);
 	/// a set without a table is held straight above the guest's position at <see cref="UmbrellaAnchors.FallbackLift"/>.
 	/// </summary>
+	// a kept body standing in place (state 16) is drawn where it was last placed, which a blocked exit may leave away from the guest's own position
+	private float GroundX( Guest guest ) => guest.IsVisible ? guest.DrawX : simulation.KeptBodyPosition( guest ).X;
+	private float GroundY( Guest guest ) => guest.IsVisible ? guest.DrawY : simulation.KeptBodyPosition( guest ).Y;
+
 	internal (SVector3 Hotspot, float Scale) Place( Guest guest, in GuestMount mount, SVector3 right, SVector3 up, SVector3 forward, SVector3 eye, Func<Guest, SVector3>? feetChooser = null )
 	{
 		SVector3 hand;
@@ -142,7 +146,7 @@ public sealed class UmbrellaRenderer : Entity
 			// An elevated walking layer supplies the same unpulled feet used by the guest sprite.
 			var above = feetChooser != null
 				? feetChooser( guest ) + SVector3.UnitZ * (UmbrellaAnchors.FallbackLift * OriginalParkPlacement.ModelScale)
-				: GuestRenderer.CellToEngine( field, guest.DrawX, guest.DrawY, UmbrellaAnchors.FallbackLift );
+				: GuestRenderer.CellToEngine( field, GroundX( guest ), GroundY( guest ), UmbrellaAnchors.FallbackLift );
 			hand = mount.Share < 1f && SVector3.Dot( above - eye, forward ) > 0f ? eye + (above - eye) * mount.Share : above;
 		}
 		var share = PullShare( SVector3.Dot( hand - eye, forward ) );

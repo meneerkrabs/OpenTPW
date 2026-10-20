@@ -19,7 +19,7 @@ namespace OpenTPW;
 internal static class ParkResumeSaveFile
 {
 	public const string FormatName = "opentpw-world";
-	public const int CurrentVersion = 1;
+	public const int CurrentVersion = 2;
 	/// <summary>
 	/// Hard cap on one world save: the compact envelope of a bounded initial park (the legacy economy-only save
 	/// caps at 16 MB indented — ≈ 4 MB compact; the whole world adds every guest, script and cell record) fits
@@ -70,6 +70,12 @@ internal static class ParkResumeSaveFile
 			throw new InvalidDataException( "The world save is null." );
 		if ( snapshot.Format != FormatName )
 			throw new InvalidDataException( $"Not an OpenTPW world save: '{snapshot.Format}'." );
+		if ( snapshot.Version == 1 )
+		{
+			if ( snapshot.Layout?.Cells == null || snapshot.Layout.Cells.QueuePassSchemaVersion != 0 || snapshot.Layout.Cells.QueuePassResidues != null )
+				throw new InvalidDataException( "Legacy world save contains unsupported queue pass fields." );
+			snapshot = snapshot with { Version = CurrentVersion };
+		}
 		if ( snapshot.Version != CurrentVersion )
 			throw new InvalidDataException( $"Unsupported world save version {snapshot.Version}." );
 		ValidateShape( snapshot );
@@ -521,6 +527,9 @@ internal static class ParkResumeSaveFile
 		// [EXT:pools-slides] the slides part: shape only (the rules need the towers, which the level checks while it restores)
 		if ( PoolBridgeWorld.ShapeProblem( snapshot.PoolBridges, snapshot.Mods ) is { } bridgeProblem )
 			throw new InvalidDataException( bridgeProblem );
+		if ( snapshot.Layout.Cells.QueuePassResidues is { } residues && snapshot.PoolBridges is { } bridges )
+			Require( !residues.Any( residue => bridges.Bridges.Any( bridge => bridge.Contains( residue.X, residue.Y ) ) ),
+				"queue pass residues overlap an unsupported pool bridge layer" );
 		if ( PoolSlideSaves.ShapeProblem( snapshot.PoolSlides, snapshot.Mods ) is { } slideProblem )
 			Require( false, slideProblem );
 

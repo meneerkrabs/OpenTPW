@@ -199,7 +199,7 @@ public partial class Level
 	/// </summary>
 	private void RegisterObjectWithGuests( OriginalObject item )
 	{
-		if ( Guests != null && RegisterWithGuests( item.Runtime, item.AccessPoints, Guests, item.Placement.Rotation, OwnerWord( item ) ) )
+		if ( Guests != null && RegisterWithGuests( item.Runtime, item.AccessPoints, Guests, item.Placement.Rotation, OwnerWord( item ), ownExitCell: TypesFootprints ) )
 		{
 			item.Runtime.Visitors.QueueEdited += () => ReevaluateQueuedRide( item.Runtime );
 			// [EXT:pools-changing-room] a changing room's pool-side cells follow from its footprint (geometry only: the water is read when a guest swims)
@@ -294,13 +294,16 @@ public partial class Level
 	/// Registers a placed object's visitor bridge with <paramref name="guests"/> the way the build flow does
 	/// (also used by the headless M3 gate): attractions only, cells from <see cref="ResolveVisitorCells"/>.
 	/// </summary>
-	internal static bool RegisterWithGuests( OriginalObjectRuntime runtime, IEnumerable<ObjectAccessPoint> accessPoints, GuestSimulation guests, int rotation = 0, ushort ownerWord = 0 )
+	/// <param name="ownExitCell">The object's own exit cell holds the link its placement wrote (a Theme Park World level, which types the footprints): the guests leave by it (ExitRide). Without one (the gates,
+	/// test harnesses, the Theme Park Inc slice and online visits, whose cell maps carry no access-cell links) the object lets off in the cell it takes its guests in and names <see cref="RideVisitorBridge.ExitCell"/> as the cell beyond.</param>
+	internal static bool RegisterWithGuests( OriginalObjectRuntime runtime, IEnumerable<ObjectAccessPoint> accessPoints, GuestSimulation guests, int rotation = 0, ushort ownerWord = 0, bool ownExitCell = false )
 	{
 		if ( !runtime.IsAttraction || ResolveVisitorCells( accessPoints, guests.Grid ) is not { } cells )
 			return false;
 		runtime.Visitors.OwnerWord = ownerWord;
 		runtime.Visitors.EntranceCell = cells.Entrance;
 		runtime.Visitors.ExitCell = cells.Exit;
+		runtime.Visitors.ExitAccessCell = ownExitCell ? ExitAccessCellOf( accessPoints ) : null;
 		runtime.Visitors.QueueFrontCell = cells.QueueFront;
 		runtime.Visitors.QueueEntranceDirection = cells.QueueEntranceDirection;
 		runtime.Visitors.Rotation = rotation;
@@ -313,6 +316,19 @@ public partial class Level
 	/// Walkable entrance and exit cells for an object's access points, plus the entrance's outside cell (the queue's
 	/// front cell) and the direction from it into the entrance; null when it has no entrance or the grid no path.
 	/// </summary>
+	/// <summary>The object's own exit cell (thing +0x38): the last exit cell of the shape the placement loop meets, else the last entrance cell; null without either.</summary>
+	// [BIN:TPW-EXE:0x005014E0 exit cell] ExitRide takes the exit cell index +0x38 and compares it with the entrance cell +0x36: an object without an exit has the same cell in both (0x00501587)
+	internal static (int X, int Y)? ExitAccessCellOf( IEnumerable<ObjectAccessPoint> accessPoints )
+	{
+		ObjectAccessPoint? entrance = null, exit = null;
+		foreach ( var point in accessPoints )
+			if ( point.Kind == ObjectCellKind.Exit )
+				exit = point;
+			else if ( point.Kind == ObjectCellKind.Entrance )
+				entrance = point;
+		return (exit ?? entrance) is { } cell ? (cell.X, cell.Y) : null;
+	}
+
 	internal static ((int X, int Y) Entrance, (int X, int Y) Exit, (int X, int Y) QueueFront, int QueueEntranceDirection)? ResolveVisitorCells( IEnumerable<ObjectAccessPoint> accessPoints, GuestPathGrid grid )
 	{
 		var points = accessPoints.ToArray();
@@ -721,8 +737,40 @@ public partial class Level
 
 	/// <summary>The queue tool's line writer for <paramref name="ride"/>: its checks, its per-cell build with <c>Costs.QueueCell</c> and its removal.</summary>
 	private QueueLineWriter CreateQueueWriter( RideVisitorBridge ride ) =>
-		new( Guests!.Grid, ride, ( x, y, pending ) => CheckQueueCell( ride, x, y, pending ),
-			( x, y ) => BuildQueueCell( ride, x, y ), RemoveQueueCell, () => Park?.Economy.CellCost( CellPurchase.Queue ) ?? 0 );
+		new QueueLineWriter( Guests!.Grid, ride, ( x, y, pending ) => CheckQueueCell( ride, x, y, pending ),
+			( x, y ) => BuildQueueCell( ride, x, y ), RemoveQueueCell, () => Park?.Economy.CellCost( CellPurchase.Queue ) ?? 0 )
+		.WithNativeReducer( new QueueSegmentReducer( Guests!.Grid.Cells, ride.OwnerWord,
+			( x, y ) => IsReadOnlyVisit || IsQueueBlocked( x, y ) || Objects.FindAt( x, y ) != null,
+			() => Park == null || Park.Economy.TrySpendCell( CellPurchase.Queue ) == ParkEconomy.PurchaseResult.Ok,
+			pending => Park == null || Park.Economy.CanPreviewLine( pending ),
+			() => Park?.Economy.CellCost( CellPurchase.Queue ) ?? 0,
+			RefundNativeQueueOwner,
+			() => { ride.RecomputeQueue( Guests.Grid ); ride.NotifyQueueEdited( Guests.Grid ); },
+			new LinkEffects( RefreshTile ), removed => { Guests.SetDownOffQueueCells( removed, ride ); AfterAccessCellRemoved( removed ); },
+			() => ResolveQueueEntrance( Objects, Guests.Grid.Cells, ride.OwnerWord ) ) );
+
+	/// <summary>Live shape reconstruction of native mEntryPos (+0x36); never the bridge's outside-cell adaptation.</summary>
+	internal static (int X, int Y)? ResolveQueueEntrance( ParkObjects objects, ParkCellMap cells, ushort owner )
+	{
+		if ( owner == 0 ) return null;
+		var item = objects.Objects.FirstOrDefault( item => !item.IsDeleted && OwnerWord( item ) == owner && item.Entry.HasQueue );
+		if ( item == null ) return null;
+		ObjectAccessPoint? entrance = null;
+		foreach ( var point in item.AccessPoints )
+			if ( point.Kind == ObjectCellKind.Entrance ) entrance = point;
+		return entrance is { } entry && cells.InBounds( entry.X, entry.Y )
+			&& cells.RawTypeAt( entry.X, entry.Y ) == ParkCellTypes.Entrance && cells.OwnerAt( entry.X, entry.Y ) == owner
+			? (entry.X, entry.Y) : null;
+	}
+
+	private void RefundNativeQueueOwner( ushort owner )
+	{
+		if ( owner == 0 || Guests == null || Park == null ) return;
+		var x = (owner - 1) % 128; var y = (owner - 1) / 128;
+		if ( !Guests.Grid.Cells.InBounds( x, y ) || Guests.Grid.Cells.RawTypeAt( x, y ) == 0 ) return;
+		var item = Objects.Objects.FirstOrDefault( item => OwnerWord( item ) == owner );
+		if ( item != null && GetEconomyInstance( item ) is int instance ) Park.Economy.RefundQueueCellNative( instance );
+	}
 
 
 	/// <summary>

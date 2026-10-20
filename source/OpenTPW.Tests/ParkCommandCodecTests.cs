@@ -27,6 +27,8 @@ public class ParkCommandCodecTests
 		(new RemoveQueueCellCommand( 10, 11 ), "020d001416"),
 		(new BacktrackCommand( 1, 2 ), "020e000204"),
 		(new EditQueueCommand( 3, 3 ), "020f000606"),
+		(new QueueSegmentCommand( 9, 1, 2, 1, 9 ), "0410001202040212"),
+		(new UndoQueueSegmentCommand( 9, 1, 2, 1, 9 ), "0411001202040212"),
 		(new PlacePrototypeCommand( 1.5f, -2.25f, 0f ), "0214000000c03f000010c000000000"),
 		(new RemovePrototypeCommand(), "021500"),
 		(new DismissFinaleCommand(), "021700"),
@@ -64,7 +66,6 @@ public class ParkCommandCodecTests
 		(new PlaceStaffCommand( 7, 30, 12 ), "023e000e3c18"),
 		(new PickUpStaffCommand( 3 ) { Player = 2 }, "023f0406"),
 		(new DropStaffCommand( 3, 10, 64 ), "02400006148001"),
-		(new HireStaffCommand( 9 ), "02410012"),
 		(new PaintPoolCellCommand( 20, 21, true ), "024600282a01"),
 		(new ErasePoolCellCommand( 20, 21 ) { Player = 1 }, "024702282a"),
 		(new UndoPoolStrokeCommand( false, new[] { (20, 21), (21, 21) }, new[] { (22, 21) } ), "0248000004282a2a2a022c2a"),
@@ -76,6 +77,7 @@ public class ParkCommandCodecTests
 		(new LayTrackLineCommand( 17, 40, 50, 40, 56 ), "0250002250645070"),
 		(new UndoTrackLineCommand( 17, 40, 50, 40, 56 ), "0251002250645070"),
 		(new CutTrackCommand( 17, 40, 50, 44, 50 ) { Player = 1 }, "0252022250645864"),
+		(new OpenTrackLineToolCommand( 17 ), "02530022"),
 		// the coaster tool (C1 part 3b)
 		(new BeginCoasterToolCommand( 17 ), "025a0022"),
 		(new EndCoasterToolCommand( 17 ) { Player = 1 }, "025b0222"),
@@ -91,7 +93,7 @@ public class ParkCommandCodecTests
 	[TestMethod]
 	public void EveryCommandKindHasPinnedBytesUnderTheCurrentVersion()
 	{
-		Assert.AreEqual( 1, ParkCommandCodec.Version, "a new version adds a new schema table beside this one" );
+		Assert.AreEqual( 2, ParkCommandCodec.Version, "a new version adds a new schema table beside this one" );
 		CollectionAssert.AreEquivalent( Enum.GetValues<ParkCommandKind>(), Schema.Select( row => row.Command.Kind ).ToArray(), "one schema row per kind, no kind without one" );
 		var types = typeof( ParkCommand ).Assembly.GetTypes().Where( type => type.IsSubclassOf( typeof( ParkCommand ) ) && !type.IsAbstract ).ToArray();
 		CollectionAssert.AreEquivalent( types, Schema.Select( row => row.Command.GetType() ).ToArray(), "every command type has a schema row" );
@@ -143,8 +145,8 @@ public class ParkCommandCodecTests
 				Assert.ThrowsException<InvalidDataException>( () => ParkCommandCodec.Decode( bytes.AsSpan( 0, length ) ), $"{command.Kind} cut to {length} bytes" );
 			Assert.ThrowsException<InvalidDataException>( () => ParkCommandCodec.Decode( bytes.Append( (byte)0 ).ToArray() ), $"{command.Kind} with a trailing byte" );
 			var otherVersion = bytes.ToArray();
-			otherVersion[0] = 4;
-			Assert.ThrowsException<InvalidDataException>( () => ParkCommandCodec.Decode( otherVersion ), $"{command.Kind} as version 2" );
+			otherVersion[0] = 6;
+			Assert.ThrowsException<InvalidDataException>( () => ParkCommandCodec.Decode( otherVersion ), $"{command.Kind} as version 3" );
 		}
 		var bad = new[]
 		{
@@ -212,7 +214,6 @@ public class ParkCommandCodecTests
 			new PlaceStaffCommand( 0, 1, 1 ),
 			new PickUpStaffCommand( -3 ),
 			new DropStaffCommand( 1, 0, -1 ),
-			new HireStaffCommand( 0 ),
 			new PaintPoolCellCommand( -1, 0, false ),
 			new ErasePoolCellCommand( 0, ParkCommandCodec.MaximumCoordinate ),
 			new UndoPoolStrokeCommand( true, new[] { (1, 1) }, new[] { (2, 2) } ),
@@ -228,6 +229,7 @@ public class ParkCommandCodecTests
 			new UndoTrackLineCommand( 1, 0, 0, 2, 2 ),
 			new UndoTrackLineCommand( 1, 0, 0, 3, 0 ),
 			new CutTrackCommand( 1, 0, ParkCommandCodec.MaximumCoordinate, 0, 0 ),
+			new OpenTrackLineToolCommand( -1 ),
 			new BeginCoasterToolCommand( -1 ),
 			new EndCoasterToolCommand( -1 ),
 			new CoasterClickCommand( 1, -1, 0, 10f, false, 0 ),

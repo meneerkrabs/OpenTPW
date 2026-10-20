@@ -28,6 +28,8 @@ public enum ParkCommandKind : byte
 	Backtrack = 14,
 	/// <summary>A click on a queue cell that starts editing the ride's queue (<see cref="EditQueueCommand"/>).</summary>
 	EditQueue = 15,
+	QueueSegment = 16,
+	UndoQueueSegment = 17,
 	/// <summary>Places the developer prototype ride (<see cref="PlacePrototypeCommand"/>).</summary>
 	PlacePrototype = 20,
 	/// <summary>Removes the developer prototype ride (<see cref="RemovePrototypeCommand"/>).</summary>
@@ -100,8 +102,6 @@ public enum ParkCommandKind : byte
 	PickUpStaff = 63,
 	/// <summary>Puts the employee in the player's hand down (<see cref="DropStaffCommand"/>).</summary>
 	DropStaff = 64,
-	/// <summary>Hires a candidate at once, without a placement (<see cref="HireStaffCommand"/>).</summary>
-	HireStaff = 65,
 	/// <summary>Paints one pool cell (<see cref="PaintPoolCellCommand"/>).</summary>
 	PaintPoolCell = 70,
 	/// <summary>Erases one pool cell (<see cref="ErasePoolCellCommand"/>).</summary>
@@ -124,6 +124,8 @@ public enum ParkCommandKind : byte
 	UndoTrackLine = 81,
 	/// <summary>Cuts a kart or water ride's closed circuit between two tiles (<see cref="CutTrackCommand"/>).</summary>
 	CutTrack = 82,
+	/// <summary>Opens a kart or water ride's line tool at its track's open end (<see cref="OpenTrackLineToolCommand"/>).</summary>
+	OpenTrackLineTool = 83,
 	/// <summary>The coaster tool's entry on a station (<see cref="BeginCoasterToolCommand"/>).</summary>
 	BeginCoasterTool = 90,
 	/// <summary>The coaster tool's exit (<see cref="EndCoasterToolCommand"/>).</summary>

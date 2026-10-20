@@ -75,8 +75,10 @@ public partial class Level
 			: ParkCommandResult.Rejected( $"No attraction {remove.Attraction}." ),
 		PickUpObjectCommand pickUp => ExecutePickUp( pickUp ),
 		LayLineCommand line => CommandLineWriter( line.Mode, line.Ride ) is { } writer
-			? ParkCommandResult.Ok( writer.Commit( (line.StartX, line.StartY), (line.EndX, line.EndY) ) )
+			? ParkCommandResult.Ok( writer is QueueLineWriter legacyQueue ? legacyQueue.CommitLegacy( (line.StartX, line.StartY), (line.EndX, line.EndY) ) : writer.Commit( (line.StartX, line.StartY), (line.EndX, line.EndY) ) )
 			: ParkCommandResult.Rejected( $"No {line.Mode} line can be laid here." ),
+		QueueSegmentCommand line => ExecuteQueueSegment( line ),
+		UndoQueueSegmentCommand undo => ExecuteQueueSegmentUndo( undo ),
 		UndoLineCommand undo => ExecuteUndoLine( undo ),
 		RemovePathCellCommand remove => RemovePathCell( remove.X, remove.Y ) is var result && result == CellBuildResult.Ok ? ParkCommandResult.Ok( result ) : new ParkCommandResult( false, $"No path cell removed: {result}.", result ),
 		RemoveQueueCellCommand remove => RemoveQueueCell( remove.X, remove.Y ) is var count and > 0 ? ParkCommandResult.Ok( count ) : ParkCommandResult.Rejected( "No queue cell here." ),
@@ -130,6 +132,24 @@ public partial class Level
 			return ParkCommandResult.Rejected( $"{entry.DisplayName} cannot be picked up." );
 		(carriedEntries ??= new Dictionary<int, string>())[pickUp.Player] = ParkCommandCodec.EntryKey( entry );
 		return ParkCommandResult.Ok( (entry, rotation) );
+	}
+
+	private ParkCommandResult ExecuteQueueSegment( QueueSegmentCommand line )
+	{
+		if ( ResolveCommandRide( line.Ride ) is not { } ride || Guests == null ) return ParkCommandResult.Rejected( "No queue ride." );
+		var writer = CreateQueueWriter( ride );
+		if ( !writer.SupportsNativeStart( (line.StartX, line.StartY) ) || !writer.SupportsNative( (line.StartX, line.StartY), (line.EndX, line.EndY) ) ) return ParkCommandResult.Rejected( "Unsupported native queue domain." );
+		// Even a partial type failure applied subsequent passes and must remain in the command log.
+		return ParkCommandResult.Ok( writer.CommitNative( (line.StartX, line.StartY), (line.EndX, line.EndY) ) );
+	}
+
+	private ParkCommandResult ExecuteQueueSegmentUndo( UndoQueueSegmentCommand undo )
+	{
+		if ( ResolveCommandRide( undo.Ride ) is not { } ride || Guests == null ) return ParkCommandResult.Rejected( "No queue ride." );
+		var writer = CreateQueueWriter( ride );
+		if ( !writer.SupportsNativeUndo( (undo.StartX, undo.StartY), (undo.EndX, undo.EndY) ) ) return ParkCommandResult.Rejected( "Unsupported native queue undo domain." );
+		writer.UndoNative( new( (undo.StartX, undo.StartY), (undo.EndX, undo.EndY) ) );
+		return ParkCommandResult.Ok();
 	}
 
 	private ParkCommandResult ExecuteUndoLine( UndoLineCommand undo )

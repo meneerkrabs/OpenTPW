@@ -104,7 +104,7 @@ public class OnlineIntegrationTests
 	private static ParkPresence Visit( OnlineSession session, string parkId, (float X, float Y) start )
 	{
 		var clock = System.Diagnostics.Stopwatch.StartNew();
-		return new ParkPresence( session, parkId, session.Settings.PlayerName!, new OpenGround(), start, () => clock.Elapsed.TotalSeconds );
+		return new ParkPresence( session, ChatProtocol.ParkRoom( parkId ), session.Settings.PlayerName!, new OpenGround(), start, () => clock.Elapsed.TotalSeconds );
 	}
 
 	/// <summary>

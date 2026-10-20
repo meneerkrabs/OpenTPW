@@ -96,9 +96,30 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 	private (uint Width, uint Height, uint Pixel) switchOriginal;
 	private TexturePackSwitch? textureSwitch;
 	private Asset[] firstParkHeadAssets = Array.Empty<Asset>();
+	/// <summary>Materials and shaders alive with the lobby up before the first park (<see cref="Asset.All"/>); -1 until taken.</summary>
+	private int lobbyMaterialsBeforePark = -1;
+	private static string ShaderCounts() => string.Join( ", ", Asset.All.OfType<Shader>().GroupBy( shader => System.IO.Path.GetFileName( shader.Path ) ).OrderBy( group => group.Key ).Select( group => $"{group.Key} {group.Count()}" ) );
+	private string lobbyShadersBeforePark = "";
+	private int lobbyTestShadersBeforePark = -1;
+	private static int TestShaderCount() => Asset.All.OfType<Shader>().Count( shader => System.IO.Path.GetFileName( shader.Path ) == "test.shader" );
 	private Asset[] secondParkHeadAssets = Array.Empty<Asset>();
 	private Asset[] firstParkGuestAssets = Array.Empty<Asset>();
 	private Asset[] secondParkGuestAssets = Array.Empty<Asset>();
+
+	/// <summary>
+	/// The lobby's four sign models (Jun_isle, Hal_isle, Fan_gate, Spa_gate) have composed their theme gate's lines within the frames waited, and every one of their
+	/// sign slots is bound to that runtime sign: not the plain board, never the shipped "SIGN1 SIGN2" art.
+	/// </summary>
+	private static void RequireLobbySigns( LobbyScene lobby )
+	{
+		Require( lobby.PendingSignCount == 0, $"the lobby has composed its signs ({lobby.PendingSignCount} pending)" );
+		Require( lobby.SignModels.Count == 4, $"the lobby has its four sign models ({string.Join( ", ", lobby.SignModels )})" );
+		foreach ( var model in lobby.SignModels )
+		{
+			var sources = lobby.SignSlotSources( model );
+			Require( sources.Count > 0 && sources.All( source => source == SignSlotSource.RuntimeSign ), $"{model}'s sign slots show its runtime sign ({string.Join( ", ", sources )})" );
+		}
+	}
 
 	private static bool RendererAssetsReleased( IEnumerable<Asset> assets ) => assets.All( asset => !Asset.All.Contains( asset ) && asset switch
 	{
@@ -269,6 +290,7 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 			Require( flow.Lobby!.FlyingMeshes is { } flyers && flyers.Groups.Count == 3 && flyers.Groups.Sum( group => group.Instances.Count ) == 70,
 				"the lobby flies its 70 bats and butterflies" );
 			Require( flow.Lobby.IslandClips.All( clip => clip is 1 or 2 ), "every island model plays its M1 or M2 clip" );
+			RequireLobbySigns( flow.Lobby );
 			var capture = CaptureFrame( "frontend.png" );
 			// [BIN:TPW-EXE:0x757f60 lobby panel] the lobby has no title and no menu column: the panel, its four buttons and the island name; Escape opens the menu
 			Require( flow.Menu!.Main.Find( "logo" ) == null && flow.Menu.Main.Find( "title" ) == null && flow.Menu.Main.Find( "quit" ) == null, "the lobby has no logo, title or menu column" );
@@ -395,6 +417,10 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 				("online-chat.png", screens => screens.ShowChat(), "chat",
 					// The original chat overlay (tp.exe table 0x758AE8) over the chat park view, which answers a click with a walk (UIHELPTEXT 401).
 					flow.Strings.Help( 401 )),
+				// A satellite's chat park in the park details' short variant (tp.exe 0x4C0AE0, a city with the flag +0x60): name, theme row, description, Enter.
+				("online-chat-park.png", screens => screens.ShowChatParkDetails( new Online.Api.ChatParkScene( 1, "The Meeting Place",
+					"The place to meet other players: walk around the park together and chat.", "jungle", null ) ), UI.OnlineScreens.ChatParkDetailsScreenName,
+					UI.OnlineScreens.ChatParkThemeRow( "jungle" )),
 				("online-import.png", screens => screens.ShowImport(), "import", null),
 				// A fixed example secret; the capture is checked by decoding its QR code (docs/ONLINE.md, "Two-step login").
 				("online-two-step.png", screens =>
@@ -458,6 +484,24 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 			VerifyText( capture, flow.Strings.Extra( OpenTpwText.ModsCommunity ), "community column" );
 			Click( mods, "cancel" );
 		} );
+		// [EXT:save-extension-switch] the load dialog for a park whose extensions differ: a rule played with that is off now, a rule on now it was played without, and a content extension to turn on
+		Do( "open extension switch", () =>
+		{
+			var active = OpenTPW.Mods.ModSet.Resolve( Array.Empty<OpenTPW.Mods.DiscoveredMod>(), new OpenTPW.Mods.ModSettings { Enabled = new Dictionary<string, bool>
+				{ [OpenTPW.Mods.OfficialExtensions.Pools.Id] = false, [OpenTPW.Mods.OfficialExtensions.RainMood.Id] = true } }, null, GameEdition.ThemeParkWorld, OpenTPW.Mods.OfficialExtensions.All );
+			var saved = new[] { new ParkModRecord( OpenTPW.Mods.OfficialExtensions.Pools.Id, "1.0.0", OpenTPW.Mods.ModSet.NoFilesSha256 ), new ParkModRecord( OpenTPW.Mods.OfficialExtensions.WinterCold.Id, "1.0.0", OpenTPW.Mods.ModSet.NoFilesSha256 ) };
+			var plan = ParkExtensionSwitch.Plan( saved, active, Array.Empty<string>() );
+			Require( plan is { CanSwitch: true } && plan.TurnOn.Count == 1 && plan.ContinueWith.Count == 1 && plan.ContinueWithout.Count == 1, "the switch dialog's plan turns pools on and switches two rules" );
+			flow.Menu!.Stack.Push( ExtensionSwitchDialog.Create( flow.Menu.Stack, flow.Strings, plan!, () => { } ) );
+		} );
+		Wait( "extension switch renders", 3 );
+		Do( "extension switch capture", () =>
+		{
+			Require( flow.Menu!.Stack.Top?.Name == "extensionSwitch", "the extension switch dialog opens" );
+			var capture = CaptureFrame( "extension-switch.png" );
+			VerifyText( capture, flow.Strings.Extra( OpenTpwText.ModsExtensions ), "extension switch caption" );
+			flow.Menu.Stack.Pop();
+		} );
 		Wait( "mods cancel", 3 );
 		Do( "mods closed", () => Require( flow.Menu!.Stack.Top?.Name != "mods", "cancel leaves the mods screen" ) );
 		PlanTexturePackSwitch();
@@ -510,6 +554,9 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 		{
 			Require( flow.Menu!.Stack.Top?.Name == "lobby" && GameOptions.Current.SoundEffectsVolume == stepState, "Escape cancels options and restores the volume" );
 			Require( !File.Exists( flow.OptionsPath ), "cancelled options are not written" );
+			lobbyMaterialsBeforePark = Asset.All.Count( asset => asset is Material or Shader );
+			lobbyShadersBeforePark = ShaderCounts();
+			lobbyTestShadersBeforePark = TestShaderCount();
 			flow.Menu.Main.Focus( flow.Menu.Main.Find( "enterPark" ) );
 			flow.InjectedInput = UiInput.Key( UiKeys.Accept );
 		} );
@@ -1344,15 +1391,29 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 			// Capture the current generations: lazy pack downloads may have replaced individual atlas textures.
 			firstParkHeadAssets = flow.Level!.RideHeadRenderer!.OwnedAssets.ToArray();
 			firstParkGuestAssets = flow.Level.GuestRenderer!.OwnedAssets.ToArray();
+			// rebuilding the path layer releases what it replaces: the same number of test.shader copies afterwards, however often it runs
+			var shadersBeforeRebuild = TestShaderCount();
+			flow.Level.OriginalTerrain!.RefreshPaths();
+			flow.Level.OriginalTerrain.RefreshPaths();
+			Require( TestShaderCount() == shadersBeforeRebuild, "rebuilding the terrain's path layer leaves no material of the replaced parts behind" );
+			Require( ParticleRenderer.For( flow.Level ) is not { AtlasPixelsReleased: false }, "the particle renderer dropped its CPU atlas pixels after the upload" );
 			Click( flow.Hud!.Stack.Top!, nameof( UIStrings.ExitToLobby ) );
 		} );
 		Wait( "lobby again", 20 );
 		Do( "back in lobby", () =>
 		{
 			Require( flow.Level == null && flow.Menu != null && flow.Lobby != null, "Exit To Lobby returns to the front end" );
+			RequireLobbySigns( flow.Lobby! );
 			Require( RendererAssetsReleased( firstParkHeadAssets ), "exit releases every head atlas, material and shader from the first park" );
 			Require( RendererAssetsReleased( firstParkGuestAssets ), "exit releases every guest atlas, material and shader from the first park" );
 			Log.Trace( "Guest lifecycle: first park exit released all ten owned guest assets." );
+			// The lobby scene and the terrain made a material (with its own copy of test.shader) per part and released only their buffers, so every lobby visit left about 160 behind. Exactly as many test.shader
+			// copies are alive as before the park; what a park creates for good (the advisor's 43 materials, the particles) stays and uses other shaders.
+			var lobbyMaterialsNow = Asset.All.Count( asset => asset is Material or Shader );
+			Log.Trace( $"Materials and shaders with the lobby up: {lobbyMaterialsBeforePark} before the first park ({lobbyShadersBeforePark}), {lobbyMaterialsNow} after it ({ShaderCounts()})." );
+			Require( lobbyMaterialsBeforePark >= 0 && TestShaderCount() == lobbyTestShadersBeforePark, $"leaving a park releases the materials of its terrain and the lobby's scene ({lobbyMaterialsBeforePark} materials and shaders before: {lobbyShadersBeforePark}; {lobbyMaterialsNow} after: {ShaderCounts()})" );
+			// Releasing a material frees only what it owns (its shader copy, pipeline, uniform buffer and layouts), never the textures it draws with: the shared white placeholder and the textures cached by path stay live.
+			Require( Texture.Missing.NativeTexture is { IsDisposed: false } && Asset.All.OfType<Texture>().All( texture => texture.NativeTexture is not { IsDisposed: true } ), "no live texture lost its GPU texture when the park's materials were released" );
 			if ( parkLanguage != null )
 				Require( string.Equals( GameLanguage.Current.Name, parkLanguage, StringComparison.OrdinalIgnoreCase ) && flow.Strings.Language == parkLanguage,
 					"a language chosen in the park applies once the park is left" );
@@ -1365,6 +1426,7 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 		{
 			Require( flow.StartKind == ParkStartKind.InstantAction && flow.Level!.Park!.Economy.Mode == ParkGameMode.InstantAction,
 				"selected Instant Action reaches the park economy" );
+			Require( Texture.Missing.NativeTexture is { IsDisposed: false } && Asset.All.OfType<Texture>().All( texture => texture.NativeTexture is not { IsDisposed: true } ), "the deferred release of the first park's materials left every live texture's GPU texture alone" );
 			secondParkHeadAssets = flow.Level!.RideHeadRenderer!.OwnedAssets.ToArray();
 			secondParkGuestAssets = flow.Level.GuestRenderer!.OwnedAssets.ToArray();
 			Require( secondParkGuestAssets.Length == 10 && secondParkGuestAssets.All( Asset.All.Contains ), "a second park owns a fresh guest atlas, material and shader set" );

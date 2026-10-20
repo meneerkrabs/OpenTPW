@@ -11,13 +11,16 @@ command-line options until the next start.
 
 The online screens support the server's Game News and System News, account registration/login, park export/publish/search/download,
 voting, read-only visits, local postcard composition, sending the outbox, fetching the
-inbox, and chat — including the globe's five **chat parks**, standing rooms with live
-presence: everyone in a chat park sees who is there and where they stand, and the server
-relays each player's movement. A visit of a published park shows the park's other visitors
-walking in it ([Players in a visited park](#players-in-a-visited-park)). Chat commands use the selected original `CHAT_COMMANDS.str`
+inbox, and chat — including the globe's five **chat parks**, parks the players visit
+together: everyone in a chat park sees who is there and where they stand, and the server
+relays each player's movement. A visit of a published park or a chat park shows the park's
+other visitors walking in it ([Players in a visited park](#players-in-a-visited-park)). Chat commands use the selected original `CHAT_COMMANDS.str`
 words; original text is used where verified and supplementary labels cover the six supported
 languages. Chat lines use the local `GAME8AA.bf4` font. What the original service had and
 where each piece stands is inventoried in [reverse/ONLINE-FEATURES.md](reverse/ONLINE-FEATURES.md).
+
+Building a park together (co-op, `[EXT:online-coop-*]`) is planned as host-sequenced lockstep; its approved design
+decisions and the command layer every park edit now goes through are in [COOP.md](COOP.md).
 
 ## Screens
 
@@ -95,14 +98,33 @@ the Publish Park dialog opens, 0x1018CE80). A server without cities skips the gl
 The five satellites are chat parks: standing chat rooms the server names (docs/SERVER.md), each
 showing how many players are in it — the original wrote each room's player count into its
 satellite control (STP-PPC 0x1b8808), and the manual says "The number displayed next to each
-satellite is the number of people currently in this chat park". A click enters the park. In a chat
-park the players are present together and **move around**: the chat screen shows the park from
-above with a marker per player, a click walks the player's marker there, and the server relays
-each position to everyone in the park. The original's three-dimensional chat-park scene is not
-decoded, so the overhead view is an OpenTPW design choice ([EXT:online-chat-park-view](#online-design-choices));
-the movement itself — one position per walk step, relayed to the room, rate-limited separately
-from chat — follows the manual ("Left click to walk to destination"). Any published park's chat
-room works the same way: joining a park's chat from its details dialog or the city lobby.
+satellite is the number of people currently in this chat park". In tp.exe a satellite is a
+**park**: the satellites show the parks of a city of their own (city 1's park list, entry *i* on
+satellite *i*), a click opens that park's details (0x4C56E0 → 0x4C0AE0) and Enter visits it like
+any park, in the chat mode ([reverse/ONLINE-VISIT.md](reverse/ONLINE-VISIT.md#chat-satellites-tpexe)).
+
+OpenTPW does the same. A click opens the chat park's details in the variant tp.exe shows for such a
+park — the name as the title, "Theme : …" (UITEXT 271 and the theme's name), the description and
+Enter, with the owner's action disabled and no statistics — and Enter visits its park in three
+dimensions with the room's other players walking in it, as [Players in a visited
+park](#players-in-a-visited-park) describes: the chat mode, the figures, walking, riding. The park
+is the published park the server names for the satellite, downloaded and reported as any visit,
+or else the starting park of the satellite's original level (jungle, hallow, fantasy or space),
+which the game builds from the level's own data. The visit walks in the satellite's standing room
+(`satellite:<n>`), so the satellite's count counts it.
+
+A room without a park to visit is shown from above: a marker per player, a click walks the player's
+marker there, and the server relays each position to everyone in the room. That is the view of a
+satellite on an older server (one without the satellites' scenes), and of a published park's chat
+joined from its details dialog. The movement itself — one position per walk step, relayed to the
+room, rate-limited separately from chat — follows the manual ("Left click to walk to
+destination"). Positions are fractions of the park in both views, so a player who sees the room
+from above walks among the park's visitors.
+
+| EXT label | OpenTPW decision | Known original evidence (not reproduced) |
+| --- | --- | --- |
+| `online-chat-park-scene` | The server names a published park or an original level for each satellite (`chatparks.json`, docs/SERVER.md), and the game asks for these scenes at the click. A satellite without a published park visits the starting park of its level, built by the game from the level's data once the level's files are there. The visit walks in the satellite's standing room, which an older game enters from above and the satellite's count counts; so a satellite's visit of a published park has no vote, as no chat park has, and its players are not counted at the park itself. | The satellites were the parks of city 1 (`GetParkInCityList(0, 1, …)`, tp.exe 0x5B7610 → 0x5BCB30), read from the client's copy of that list at the click (0x5B7910), and each was visited like any park in the park's own room ("%d" of its id, `CreateRoom` at 0x4E6A67). Which parks the service kept in city 1 is not known. |
+| `online-chat-park-details` | A satellite's details are always the short variant, titled with the chat park's name. | 0x4C0AE0 shows the short variant for a park whose city has the flag +0x60, titled with the park's name. Whether city 1 had that flag is not known. |
 
 ### City lobby
 
@@ -123,8 +145,9 @@ chat, import, account) are behind **OpenTPW online** at the top centre.
 ### The chat overlay
 
 Chat is the original chat overlay (tp.exe table `0x758ae8`, built by 0x4BF460 when a park enters chat
-mode), at its authored places over the chat frame (`f_chat`); a chat park shows it over the chat park
-view, a visit with other players over the visited park ([Players in a visited park](#players-in-a-visited-park)):
+mode), at its authored places over the chat frame (`f_chat`); a visit with other players shows it over
+the visited park ([Players in a visited park](#players-in-a-visited-park)), a room without a park to
+visit over the overhead view ([Chat parks](#chat-parks-the-satellites)):
 
 - **People list** at the left, with its two tabs: the players in the room and the buddies. The
   overlay asks the server for the buddy list as the chat connection opens and again on the buddy
@@ -334,9 +357,10 @@ parity remain unsupported.
 
 A visit of a park downloaded from the server (Find Parks, the park details or a city lobby's
 *Enter Park*) while logged in puts the player in the park's chat room (`park:<id>`), as the
-original's visit switched to chat mode on entering the park (manual p. 65). Every visitor of the
-park — and anyone in the park's room through the park details' *Chat* button — appears as a
-figure in the park (`ParkPresence`):
+original's visit switched to chat mode on entering the park (manual p. 65); a chat park's visit (a
+satellite's *Enter*) puts them in the satellite's room (`satellite:<n>`). Every visitor of the
+park — and anyone in its room through the park details' *Chat* button or the overhead view —
+appears as a figure in the park (`ParkPresence`):
 
 - **Figures**: each player is drawn with the guests' kid sprites (the pools extension's sets when
   it is on), walking or standing like a guest, with their name over their head on a dark plate —
@@ -360,9 +384,11 @@ figure in the park (`ParkPresence`):
   original's person route uses (0x50F8E0), and straight when there is no route. A spot the figure
   cannot reach at all (an island, a fenced corner) is known at once from the park's connected
   areas, which the first click labels, and a search gives up after 40,000 cells.
-- **Places**: the figure's place goes to the server as a fraction of the park's map (the chat
-  protocol's `move`), at most every 0.12 s while it walks, on arrival, and every ten seconds while
-  it stands; the server relays it to the room. The other figures follow the relayed places and
+- **Places**: the player's figure enters the park at the centre of the entrance's first cell, and
+  its first place goes out as a teleport, as the original's own person entered (tp.exe 0x4E5EF0:
+  entrance 0's cell, `MovePlayer(…, 1)`). The figure's place goes to the server as a fraction of the
+  park's map (the chat protocol's `move`), at most every 0.12 s while it walks, on arrival, and
+  every ten seconds while it stands; the server relays it to the room. The other figures follow the relayed places and
   jump when a place is more than three cells away (a player in the overhead chat view, whose
   square maps onto the same fractions), or when the movement was a teleport.
 - **Riding**: in the chat mode a rideable ride under the pointer shows its name with "Left-click
@@ -405,7 +431,7 @@ exit (`artifacts/native-smoke-online-visit-presence.png`, `native-smoke-online-v
 | `online-avatar-look` | A figure wears the guests' kid set chosen by an FNV-1a hash of the lower-case name, the same for every client. | The online person's own model (`MODEL_ONLINE_PERSON`) is not decoded. |
 | `online-avatar-walk` | The player's figure walks 1.2 cells a second, about a quick guest's pace. | The online person's walk step (0x4FA2A0 on its route) is not read. |
 | `online-avatar-route` | The cells a figure may cross: land, paths, queues, object entrances and exits and fixed walkways inside the park. | The route map the original passes to its route search (person +0xB4 → 0x511420) is not read. |
-| `online-avatar-start` | A figure appears between the park entrance's two cells. | The original's first place of an online person is not read (mode 3 unhides it at a relayed place). |
+| `online-avatar-start` | A level whose entrance A lies outside its cell map starts the player's figure in the park's middle. | The original's own person enters at the centre of entrance 0's cell (tp.exe 0x4E5EF0, 0x4D8690(0)), which every original level has; OpenTPW follows it. |
 | `online-avatar-click` | In the chat mode a click anywhere in the park but on a rideable ride walks the figure, in the HUD a ground click that hits no object; the ground's help is UIHELPTEXT 401 in both, and not while the chat entry takes the keys (the help box would cover it). | The chat mode panel's handler (0x4BD4A0) walks on a park click with help 401. |
 | `online-chat-ride-click` | In the chat mode a ride whose ride view opens (a camera seat or a running coaster) shows UIHELPTEXT 580 with its name and a click rides it. A feature's choosable bit is not tracked: a feature rides when its view opens. | Over a thing of type 3 that is no add-on (AddOn.UpgradesId 0) and of interface type 0, or 3 with the thing's choosable bit (+0x32 bit 0x10), the panel shows help 580 and a click runs the ride window's Ride it! (0x4BD7F4 → 0x4E15B0). |
 | `online-avatar-labels` | Names over the figures, the player's own in yellow, drawn under the HUD's windows. | The decoded online code draws no names over persons; the chat overlay's people list names them. |
@@ -520,7 +546,7 @@ The package/protocol/server code owns tags 001–059. The game adapters own:
 | 066 | ImGui Online panel (developer starts only; players use the original-style screens) |
 | 067 | Publish Park's website opt-in, off by default (the server's public website list is 057) |
 | 070 | Platinum Tickets shown from the player's own server page: one per recorded visit of their parks |
-| 071 | The five chat parks' default names; the original's room list is not recovered |
+| 071 | The five chat parks' default names, levels and descriptions; the original's list (the parks of city 1) is not recovered |
 | 072 | Walking in a chat park sends one position per step under its own rate limit (`MovementBurst`/`MovementsPerSecond`) |
 | 068 | The version 2 layout digest: FNV-1a 64 over the payload's cells, objects and coasters, written by the publisher and recomputed by the visit |
 | 069 | The visit's Ride action in the object panel (coasters, the prototype ride and the rides with a camera seat) and its exits |
@@ -554,7 +580,7 @@ Windows v2.0 executable.
 | `online-globe-edge-gate` | `APPROX:ONLINE-012` | Edge steering starts once the cursor has moved on the globe screen, so a cursor resting at an edge does not spin a globe that just opened. | The original has no per-screen gate: it reads the online front end's last mouse-move position (0x5D5DD0), the canvas centre until the first move after the front end starts (0x5D5770), so it steers at once when the cursor already rests at an edge (for example back from a city lobby). OpenTPW keeps no move history across the online screens. |
 | `online-globe-pin-radius` | `APPROX:ONLINE-013` | Pins stand on the mesh surface (radius 119.7) at the decoded (s, s, p) scale of their root node; the cities are the OpenTPW server's own list, since the original list is lost. | The original puts the pin's root node at the city record's position vector (0x5DC3E0 → 0x5D8190), which the city list from weacityr.dll fills; its radius is not decoded (a city list from the original service or a capture of its globe). |
 | `online-publish-globe-prompt` | `APPROX:ONLINE-017` | The publish globe shows UITEXT 419 ("Choose the city to publish in") in the city name label while no city is hovered. | Its panel is read (tp.exe 0x5DD910 → 0x4C4FB0(1): the worldlob table without the satellites, Find Parks and back, with the city labels); neither tp.exe nor the Mac publish globe code loads UITEXT 419 as an immediate, so where it showed is unknown. |
-| `online-chat-park-view` | `APPROX:ONLINE-019` | A chat park is a flat overhead view in which each player is a marker that the server's relayed movement moves; the player walks their own marker by clicking (one walk speed; the double-click teleport is not separated). | The original chat park's three-dimensional scene, avatar model and animation (manual pp. 63-68) are not decoded. |
+| `online-chat-park-view` | `APPROX:ONLINE-019` | A room without a park to visit (a satellite on an older server, a published park's chat from its details) is a flat overhead view in which each player is a marker that the server's relayed movement moves; the player walks their own marker by clicking (one walk speed; the double-click teleport is not separated). A satellite's park is visited in three dimensions ([Chat parks](#chat-parks-the-satellites)). | The original's chat rooms were parks: a satellite's park was visited like any park (tp.exe 0x4C0880 → 0x5B8910, the chat mode 0x4BF460), and a park's room was entered by visiting the park. |
 | `online-park-details-players` | `APPROX:ONLINE-020` | The park details' eighth label row shows the players currently in the park's chat room (UITEXT 273). | The original's last row showed the Instant action mode flag (UITEXT 282), which the package format does not record. |
 | `online-postcard-photo` | `APPROX:ONLINE-022` | The postcard photo attached by Send Postcard is the park's generated map thumbnail, and no park reference is attached (the live level has no package identity). | The original attached a camcorder snapshot of the visited park (manual pp. 51/67); its content and encoding are not decoded. |
 | `online-park-name-masking` | `APPROX:ONLINE-023` | Park names are masked with the word filter once, on the server at publish, and the stored masked name is what everyone sees. | The original masked at display on the client: the city lobby's park label (tp.exe 0x4B8850), the park details (0x4C0AE0), Find Parks (0x4BFC70) and the other-parks chart (0x4C1E40) pass the name through the filter 0x5D3230 while the filter flag (0x5B09B0) is set, with the local swears.txt/alloweds.txt (0x5AFD70, 0x5D3140). Still unknown: what sets the filter flag (the matching rules are under `online-word-filter`). |

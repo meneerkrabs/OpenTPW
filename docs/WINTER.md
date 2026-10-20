@@ -199,7 +199,7 @@ October 19, 2026. `opentpw.winter-always` 1.0.0 is an option, **off by default**
 repository; nothing in it comes from Theme Park World or Theme Park Inc, and no original bytes or derived pixels are read at any step.
 
 - `objects.json`: eight shops, one **winter kiosk** and one **glühwein stall** per Theme Park World theme, ids **64010 to 64017** inside the extension's own range **64010 to 64499** (jungle kiosk 64010, jungle stall 64011, hallow 64012 and
-  64013, space 64014 and 64015, fantasy 64016 and 64017), category `shops`, `"research": false`. The range sits below the umbrellas' 64500..64999 and the pools' 65000..65535 and above the Theme Park Inc rides' 40000..40499. The
+  64013, space 64014 and 64015, fantasy 64016 and 64017), category `shops`, `"research": false`. The range sits below the umbrellas' 64500..64999 and the pools' 65000..65535 and above the evening extension's torches' 63900..63999 ([EVENING.md](EVENING.md#torches)) and the Theme Park Inc rides' 40000..40499. The
   first ten ids of the 64000 block, 64000 to 64009, belong to the example lamp mod (`content/mods/opentpw.example.lamp-lights`), which is why the winter range starts at 64010. The extension's id is `opentpw.winter`, so a park save will name
   the files `mod:opentpw.winter:/...` (as [POOLS.md](POOLS.md#content-extpools-content)). Names in the eleven interface languages.
 - `objects/<theme>/<shop>/` (`kiosk` and `gluehwein`): the MD2 model, 8 or 9 64 x 64 TGA textures (`wk_` and `wg_` prefixes), `Kiosk.sam` / `Gluehwein.sam` and the shop script. Both are **2 x 2 market huts** whose entrance is the lower left cell:
@@ -207,6 +207,11 @@ repository; nothing in it comes from Theme Park World or Theme Park Inc, and no 
   lands on them with no extra work). The kiosk has a hat rack on the back wall with bobble hats on pegs, a mitten garland under the roof's front and folded scarves on the counter; the stall has a copper pot on a stove, mugs, a lit sign and a chimney.
   Themed textures as the pool cabins and the brolly shop: bamboo and thatch (jungle), dark mossy timber with purple shingles and a pumpkin on the ridge (hallow), riveted metal with cyan strips (space), pastel candy (fantasy).
   The walls, counter, posts and every hanging prop keep at least 1 unit from the footprint edge at a walker's height (the pools lesson, `[EXT:pools-model-inset]`); the roof reaches 1.0 from it. Backface culling is on for every material.
+  The roof is a closed prism, so each slope's tiles have the trim underside 0.55 below them. Until October 19, 2026 the buy window's preview (`PreviewIcon`, a painter-sorted CPU projection with no depth buffer, `[EXT:preview-icon-cpu-projection]`)
+  sorted back faces and front faces together, and an underside triangle whose centroid sorted nearer than its tile triangle covered it: every slope showed one triangle of tiles and one of trim stripes, split along the quad's diagonal (the user's capture
+  of the fantasy kiosk). The park view was never affected (its object renderer depth tests) and the content was right. The preview now draws the faces turned away from the viewer first and the faces towards it over them; it still draws both
+  faces, as the original does (D3DCULL_NONE, `0x566957`), so single-sided faces seen from behind, such as the ground plates of the space go-kart and water ride previews, stay visible. The same fault showed on the stall, the brolly shop, the pool
+  objects and many original previews. Nothing in `content/winter` changed. Captures before and after, in the buy window and the park, are in the notes folder (`winter-captures/texture-bug`).
 - The **`.sam`** (`tools/winter/kiosk.sam`, built from the keys of the original balloon shop; `tools/winter/gluehwein.sam`, from the original drinks shops): the kiosk has `AppearanceEffect` 4, `ShopType` 1 (a gift shop's kind; not 5, which
   would count as costumes), price 25, cost of goods 10, `HappinessEffect` 15, `LitterEffect` 5, thirst, hunger and vomit 0, `ISIndoors` 0, capacity 5, upgrade 1000, `RunningCost` 30, demand `WeatherModifier.SnowPercentage` 200 and
   `SeasonModifier.WinterPercentage` 150, spring and autumn 60 and summer 20 (it sells all year). The stall has `ShopType` 4 and `SpecialIngredient` 3, price 30, cost of goods 15, `ThirstEffect` 30, `HungerEffect` 5, **`VomitEffect` 5**, `HappinessEffect` 15, `LitterEffect` 40,
@@ -227,7 +232,7 @@ repository; nothing in it comes from Theme Park World or Theme Park Inc, and no 
 
 `WinterContentTests` load the committed files through the game's own pipelines (the object catalog with a content root made by the test, the sprite readers, the ride script VM) and check the ids and that no other content range overlaps, the `.sam`
 keys, the models, textures, footprint and wall gaps, the scripts, the sprite banks (slots, directions, frames, 256 ppu, hotspots inside the frames), the anchor table (every set, slot, frame and direction, agreement with the umbrellas' table, hands and
-head inside the shipped kid frames) (the wiring of the content is checked by `WinterWiringTests`).
+head inside the shipped kid frames), and that the buy window's preview shows roof tiles over the whole roof at every turn (no underside over a tile) (the wiring of the content is checked by `WinterWiringTests`).
 
 ## Simulation (phase W3)
 

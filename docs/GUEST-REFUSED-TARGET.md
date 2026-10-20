@@ -21,4 +21,4 @@ Source review and synthetic tests do not establish all original guest behavior.
 
 ## Deterministic hashes
 
-The retained target is already a hashed field. The historical pre-ExitRide mappings and the fresh joint-baseline diagnostic requirements are documented in [the determinism log](DETERMINISM.md#historical-pre-exitride-retained-target-diagnostics-2026-10-20). The historical mappings are not current pin evidence; current-main expected pins stay asserted until the joint behavior is verified. This does not retire the broader fidelity identifier.
+The retained target is already a hashed field. The historical pre-ExitRide mappings and the fresh joint-baseline diagnostic requirements are documented in [the determinism log](DETERMINISM.md#historical-pre-exitride-retained-target-diagnostics-2026-10-20). The historical mappings are not current pin evidence. The separately documented fresh joint-baseline mappings support only the bounded observed pin reconciliation; inverse projection and default paired-replay guards retain the main baseline, and fresh candidate CI remains required. This does not retire the broader fidelity identifier.

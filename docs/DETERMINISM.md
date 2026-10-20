@@ -1173,13 +1173,13 @@ The animator itself (`ObjectAnimator`, presentation and the object scripts' pose
 
 ## Historical pre-ExitRide retained-target diagnostics (2026-10-20)
 
-These mappings apply only to the pre-ExitRide diagnostic baseline. PR #678 changed the guest behavior and its pins; the current main default remains `0xF3F895E3EF2F969B`, schema 21. The joint retained-target/ExitRide mapping has not been established, so the current main pin assertions remain unchanged.
+These mappings apply only to the pre-ExitRide diagnostic baseline. PR #678 changed the guest behavior and its pins; the main baseline default is `0xF3F895E3EF2F969B`, schema 21. See the fresh joint-baseline reconciliation below; do not reuse the historical values as its oracle.
 
 GUEST-004 retains the refused full-room target until replacement or removal. `AttractionId` already participates in the canonical hash; the hash schema and production hashing are unchanged. The diagnostic head `c101b4abb9c54256ec6000d26035eec02d539d1b` projects only retained target identities to zero without advancing the simulation, restores them in `finally`, and leaves each actual pin assertion intact. All 30 failing assertions on each of macOS, Windows and Linux recovered their individual previous expected hashes under that projection (jobs `118523918197`, `118523918216`, `118523918184`, run `39391350115`). Browser interpreter actual hashes match the same observed mappings (job `118523539167`, run `39391350411`); its harness does not emit the projection log, so the retained projection assertions must establish that check in the next run. This is endpoint equivalence, not a claim of native-game parity. The default fixed run also has a paired per-tick legacy-cleared replay which checks complete world hashes and RNG and recovers its original pin.
 
-The obsolete pre-ExitRide executable lookup was removed because it is not a valid oracle for the new baseline. The diagnostic retains current-main expected pins, complete hash restoration and repeated-read checks, and the default paired replay asserts the current-main legacy-cleared pin. Direct concrete hash reads are compared with delegate reads before, during and after target projection; no joint-baseline actual pin has been substituted.
+The obsolete pre-ExitRide executable lookup was removed because it is not a valid oracle for the new baseline. The diagnostic retains current-main expected pins, complete hash restoration and repeated-read checks, and the default paired replay asserts the current-main legacy-cleared pin. Direct concrete hash reads are compared with delegate reads before, during and after target projection; the later joint-baseline reconciliation below uses only freshly observed values.
 
-The following historical mappings are not valid evidence for the post-ExitRide integration. No joint-baseline pin is replaced and no runtime hash field is ignored. Fresh cross-platform projection evidence is required.
+The following historical mappings are not valid evidence for the post-ExitRide integration. No runtime hash field is ignored. Fresh cross-platform projection evidence, rather than this historical table, governs joint-baseline pin changes.
 
 | Pin | Previous target-cleared hash | Retained-target hash |
 | --- | --- | --- |
@@ -1201,3 +1201,31 @@ The following historical mappings are not valid evidence for the post-ExitRide i
 | ScenarioBinsSmarterFixedRunHash | `0xF43AEA85CC6DB665` | `0xF0B70A41A0CF4F7A` |
 | ScenarioBinsPhase6FixedRunHash | `0x8E13F761512B0043` | `0x7F5CE116FCF4ACE2` |
 | CheatsFixedRunHash | `0x5CBF8584199279AB` | `0xC75F009A73FB11B7` |
+
+
+## Joint ExitRide retained-target pin reconciliation (2026-10-20)
+
+Baseline main `9b8943a9` includes ExitRide #678 and presentation-only balloons #532. Diagnostic head `0f619d6bd9485a6993002d82ef279b878691c429` recovered all 32 failing desktop pin assertions on each of Linux, macOS and Windows by clearing only retained refused target IDs at the endpoint. The 18 distinct mappings below agree across those runs. All 30 browser pin failures in each of normal interpreter, traces-off interpreter and AOT use the same observed actual values. Direct/delegate, repeated-read and full-restoration guards passed on this diagnostic source shape. This does not establish the cause of earlier interpreter-only instability or universal intermediate behavior equivalence. The default paired per-tick hash/RNG replay remains an independent guard against the original main default.
+
+Evidence: [desktop run](https://github.com/meneerkrabs/OpenTPW/actions/runs/39410581238), [browser run](https://github.com/meneerkrabs/OpenTPW/actions/runs/39410581259). The candidate updates exactly 18 observed constants and adds an inverse projection guard retaining each corresponding main value. Secondary values not reached by a failed pin assertion are deliberately excluded. Newly exposed later assertions and the new guard still require fresh CI. The candidate default is `0x29CE354FAB027ABF`, schema 21; production hash inputs remain unchanged.
+
+| Main baseline | Observed retained-target value |
+| --- | --- |
+| `0x18440BAB5DB3D443` | `0x0FAA0BA10A2E2B43` |
+| `0xF3F895E3EF2F969B` | `0x29CE354FAB027ABF` |
+| `0x347F0BA1F0DF5DFB` | `0x23A31F409845D585` |
+| `0x925B87221BE9AF53` | `0x9429690D329115B6` |
+| `0x8171CE2F7537C034` | `0x7B6BD0C81ED66C35` |
+| `0xC9F860B54E30EB11` | `0x6FDBB79D8B9377BB` |
+| `0x0C36671C5B99F0CD` | `0x4F2841D3F85402FC` |
+| `0xBCD73D82A2F5D0D4` | `0x4098DC9D36A6D8CD` |
+| `0x2C8B850C069307BB` | `0xEB1C231F596B30D2` |
+| `0x0E6B528D92E00145` | `0x547522BF092EEC0C` |
+| `0x2BCAC8B1DC03F064` | `0x48F18D1BED795051` |
+| `0x5CFE6494C7706870` | `0xE88AD1079B2559A5` |
+| `0x1B5829884FE0659C` | `0xBD827362B8D9DC5C` |
+| `0x1A54C3057DBEED2E` | `0x905024CE0B91E577` |
+| `0x995AD10275D35532` | `0xF85EB64C10598DB6` |
+| `0x2FB7EFA85DBAD719` | `0x3D741AAF6928D531` |
+| `0x7539BB3BB9729317` | `0x5AC8D8A47AAC35D2` |
+| `0x3BAFF5A07D0A82F6` | `0x4AAC7DD831EFD113` |

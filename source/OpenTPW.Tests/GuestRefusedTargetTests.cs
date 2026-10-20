@@ -146,6 +146,29 @@ public class GuestRefusedTargetTests
 		return resumed;
 	}
 
+	// Joint baseline: main 9b8943a9 (ExitRide + balloon presentation), observed on all desktop and browser modes.
+	private static readonly IReadOnlyDictionary<ulong, ulong> JointMainProjectionPins = new Dictionary<ulong, ulong>
+	{
+		[0x0FAA0BA10A2E2B43UL] = 0x18440BAB5DB3D443UL,
+		[0x29CE354FAB027ABFUL] = 0xF3F895E3EF2F969BUL,
+		[0x23A31F409845D585UL] = 0x347F0BA1F0DF5DFBUL,
+		[0x9429690D329115B6UL] = 0x925B87221BE9AF53UL,
+		[0x7B6BD0C81ED66C35UL] = 0x8171CE2F7537C034UL,
+		[0x6FDBB79D8B9377BBUL] = 0xC9F860B54E30EB11UL,
+		[0x4F2841D3F85402FCUL] = 0x0C36671C5B99F0CDUL,
+		[0x4098DC9D36A6D8CDUL] = 0xBCD73D82A2F5D0D4UL,
+		[0xEB1C231F596B30D2UL] = 0x2C8B850C069307BBUL,
+		[0x547522BF092EEC0CUL] = 0x0E6B528D92E00145UL,
+		[0x48F18D1BED795051UL] = 0x2BCAC8B1DC03F064UL,
+		[0xE88AD1079B2559A5UL] = 0x5CFE6494C7706870UL,
+		[0xBD827362B8D9DC5CUL] = 0x1B5829884FE0659CUL,
+		[0x905024CE0B91E577UL] = 0x1A54C3057DBEED2EUL,
+		[0xF85EB64C10598DB6UL] = 0x995AD10275D35532UL,
+		[0x3D741AAF6928D531UL] = 0x2FB7EFA85DBAD719UL,
+		[0x5AC8D8A47AAC35D2UL] = 0x7539BB3BB9729317UL,
+		[0x4AAC7DD831EFD113UL] = 0x3BAFF5A07D0A82F6UL,
+	};
+
 	internal static ulong VerifyRetainedTargetHash( GuestSimulation simulation, Func<ulong> compute, WorldStateSources? sources = null )
 	{
 		var actual = compute();
@@ -174,6 +197,8 @@ public class GuestRefusedTargetTests
 		Assert.AreEqual( projectedBeforeFinally, projected.ToString( "X16" ), "the first projected scalar survives finally and restoration" );
 		Assert.AreEqual( repeatedBeforeFinally, repeatedProjection.ToString( "X16" ), "the repeated projected scalar survives finally and restoration" );
 		Assert.AreEqual( projected, repeatedProjection, "target-only projection is stable while the selected IDs remain cleared" );
+		if ( JointMainProjectionPins.TryGetValue( actual, out var mainPin ) )
+			Assert.AreEqual( mainPin, projected, "target-only projection retains the independently observed joint-main baseline" );
 		Console.WriteLine( $"GUEST004_JOINT actual=0x{actual:X16} projected=0x{projected:X16} retained={retained.Length}" );
 		return actual; // All existing pin assertions still compare the real, unmodified hash.
 	}

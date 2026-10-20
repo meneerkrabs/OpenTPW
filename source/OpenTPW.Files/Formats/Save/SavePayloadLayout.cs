@@ -272,7 +272,8 @@ public sealed class SavePayloadLayout
 	private readonly ref struct DelimiterSearch
 	{
 		private readonly ReadOnlySpan<byte> payload;
-		private readonly List<int>[] occurrences = new List<int>[Delimiters.Count];
+		private readonly List<int>?[] occurrences = new List<int>?[Delimiters.Count];
+		private readonly int start;
 		private readonly Dictionary<(int, int), int> counts = new();
 		private readonly SavePayloadProfile profile;
 
@@ -280,25 +281,30 @@ public sealed class SavePayloadLayout
 		{
 			this.payload = payload;
 			this.profile = profile;
+			this.start = start;
+		}
+
+		private List<int> Occurrences( int index )
+		{
+			if ( occurrences[index] is { } known )
+				return known;
+			// Discover delimiter candidates only when an actual block needs fallback. Exact
+			// boundaries must not be rejected by delimiter-looking bytes in other blocks.
+			var foundOffsets = new List<int>();
 			Span<byte> stored = stackalloc byte[DelimiterBytes];
-			for ( var index = 0; index < Delimiters.Count; index++ )
+			Stored( Delimiters[index].Tag, stored );
+			for ( var position = start; position + DelimiterBytes <= payload.Length; )
 			{
-				occurrences[index] = new List<int>();
-				// Only the delimiter-located blocks search for their delimiter: a World block that reads as the original's does not.
-				if ( Delimiters[index].Block is not (SaveBlock.World or SaveBlock.Coasters) || Delimiters[index].Block == SaveBlock.World && TracedEnd( payload, SaveBlock.World, start, profile ) >= 0 )
-					continue;
-				Stored( Delimiters[index].Tag, stored );
-				for ( var position = start; position + DelimiterBytes <= payload.Length; )
-				{
-					var found = payload[position..].IndexOf( stored );
-					if ( found < 0 )
-						break;
-					if ( occurrences[index].Count == MaximumDelimiterOccurrences )
-						throw new InvalidDataException( $"Save payload holds the {Delimiters[index].Tag} delimiter bytes more than {MaximumDelimiterOccurrences} times." );
-					occurrences[index].Add( position + found );
-					position += found + 1;
-				}
+				var found = payload[position..].IndexOf( stored );
+				if ( found < 0 )
+					break;
+				if ( foundOffsets.Count == MaximumDelimiterOccurrences )
+					throw new InvalidDataException( $"Save payload holds the {Delimiters[index].Tag} delimiter bytes more than {MaximumDelimiterOccurrences} times." );
+				foundOffsets.Add( position + found );
+				position += found + 1;
 			}
+			occurrences[index] = foundOffsets;
+			return foundOffsets;
 		}
 
 		/// <summary>The delimiter offsets that can end block <paramref name="index"/> starting at <paramref name="offset"/>, in payload order.</summary>
@@ -321,10 +327,13 @@ public sealed class SavePayloadLayout
 					ends.Add( traced );
 				return ends;
 			}
-			var first = occurrences[index].BinarySearch( offset );
-			for ( var item = first < 0 ? ~first : first; item < occurrences[index].Count; item++ )
+			if ( block is not (SaveBlock.World or SaveBlock.Coasters) )
+				return ends;
+			var candidates = Occurrences( index );
+			var first = candidates.BinarySearch( offset );
+			for ( var item = first < 0 ? ~first : first; item < candidates.Count; item++ )
 			{
-				var end = occurrences[index][item];
+				var end = candidates[item];
 				if ( WidthError( payload, block, offset, end - offset ) == null )
 					ends.Add( end );
 			}

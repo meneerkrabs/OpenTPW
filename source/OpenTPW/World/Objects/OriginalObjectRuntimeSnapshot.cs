@@ -92,6 +92,13 @@ public sealed record OriginalObjectRuntimeSnapshot
 	/// </summary>
 	[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
 	public IReadOnlyList<ObjectLightRecord>? Lights { get; init; }
+	/// <summary>
+	/// The hoarding's thing flags (standing, rising, sinking and its texture set) and rise level (docs/OBJECTS.md, "Hoarding"), or null for an object whose
+	/// hoarding never stood (and every object without one: such a snapshot is byte-identical to one written before hoardings existed). Presentation only;
+	/// no hash reads it.
+	/// </summary>
+	[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+	public ObjectHoardingRecord? Hoarding { get; init; }
 	/// <summary>Whether the script's own view of its scream handle is set (the scream diagnostics follow it, with or without audio); null in older saves, which fall back to <see cref="HeldScream"/>. The restore takes this one when the two differ.</summary>
 	public bool? ScriptHoldsScream { get; init; }
 
@@ -138,6 +145,8 @@ public sealed record OriginalObjectRuntimeSnapshot
 			throw new InvalidDataException( "runtime snapshot writes a vehicle limit that was not raised." );
 		if ( Lights != null )
 			ObjectLightBank.ValidateRecords( Lights );
+		if ( Hoarding != null && ((Hoarding.Flags & ~ObjectHoardingState.SavedFlags) != 0 || !(Hoarding.Level >= 0f && Hoarding.Level <= 1f)) )
+			throw new InvalidDataException( "runtime snapshot has hoarding flags outside the saved bits or a hoarding level outside 0..1." );
 		if ( StoppedScriptFault != null && ( !Stopped || !HasScript ) )
 			throw new InvalidDataException( "runtime snapshot carries a stopped script fault without a stopped scripted runtime." );
 	}

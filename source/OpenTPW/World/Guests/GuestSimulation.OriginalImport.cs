@@ -59,6 +59,7 @@ public sealed partial class GuestSimulation
 			throw new InvalidOperationException( "Original guests are imported into an empty guest simulation only." );
 		var evidence = new List<string>();
 		BodySpriteClockMilliseconds = BodySpriteSampleAtTick( ParkCalendar.TickOfTurn( parkTurn ) );
+		displayTurnPhaseTicks = (int)((ParkCalendar.TickOfTurn( parkTurn ) % DisplayTurnPhasePeriodTicks - TickCount % DisplayTurnPhasePeriodTicks + DisplayTurnPhasePeriodTicks) % DisplayTurnPhasePeriodTicks);
 		// [BIN:TPW-EXE:0x00516C80 world variables] mNumberOfVisitorsToDate (+0x1DA714) is the park's visitor count, which 0x0051AAF0 counts up for each guest that walks into the park
 		VisitorCount = (int)Math.Min( visitorsToDate, int.MaxValue );
 		var adjusted = new List<string>();
@@ -197,7 +198,10 @@ public sealed partial class GuestSimulation
 				ImportInPark( guest, save, cell, destination, attraction, bin, adjusted, recovery );
 				// [BIN:TPW-EXE:0x4FD950 time in park] mArrivalDate (+0x1D4) is the world's game tick at the stamp and the hours the visitor lists show are (tick − stamp) >> 2 turns (the roster's cell); the saved stamp gives the elapsed park turns, a stamp after the save's own turn is not a date
 				if ( save.ArrivalDate <= parkTurn )
-					guest.TimeInParkSeconds = ((parkTurn - save.ArrivalDate) * ParkCalendar.TurnMilliseconds + 0.5) / 1000.0; // half a millisecond keeps the roster's floor(seconds × 1000 / 248) at the exact turn count
+				{
+					guest.TimeInParkSeconds = ((parkTurn - save.ArrivalDate) * ParkCalendar.TurnMilliseconds + 0.5) / 1000.0; // retained unchanged for statistics, weather gates and legacy duration consumers
+					guest.DisplayTimeInParkTurns = unchecked((uint)(parkTurn - save.ArrivalDate));
+				}
 			}
 			else
 				ImportOnMap( guest, save, cell, destination, adjusted );

@@ -139,6 +139,33 @@ public class RideUpgradeIngressTests
 		Assert.AreEqual( "hud", hud.Stack.Top!.Name ); Assert.AreEqual( cash, economy.Balance ); Assert.AreEqual( spent, state.TotalSpent ); Assert.AreEqual( 0, state.PendingLevel ); Assert.AreSame( p, owner.Visitors.Parameters ); CollectionAssert.AreEqual( vars, owner.Script.Variables );
 	}
 	[TestMethod]
+	public void AnUpgradeRequestRaisesTheUpgradeSetAndItsCancelSinksIt()
+	{
+		Fixture( BuildCategory.Rides, out var level, out var economy, out var owner, out var other, out _ ); Research( economy );
+		owner.Runtime.Hoarding.Present = true; other.Runtime.Hoarding.Present = true;
+		economy.TryGetObject( level.GetEconomyInstance( owner )!.Value, out var state );
+		// tp.exe 0x004E0050(1): SetState(2)'s close (0x00454550(1)), then 0x00454550(8)
+		Assert.AreEqual( ParkEconomy.PurchaseResult.Ok, economy.TryBuyUpgrade( state.Id ) );
+		var hoarding = owner.Runtime.Hoarding;
+		Assert.AreEqual( (true, 3), (hoarding.IsStanding, hoarding.Variant), "the upgrade set rises" );
+		Assert.AreNotEqual( 0u, hoarding.Flags & ObjectHoardingState.Rising );
+		Assert.IsFalse( other.Runtime.Hoarding.IsStanding );
+		// tp.exe 0x004E0050(0): 0x004547C0, then the opening's 0x004547C0
+		Assert.IsTrue( economy.TryCancelUpgrade( state.Id ) );
+		Assert.IsTrue( owner.IsOpen );
+		Assert.AreNotEqual( 0u, hoarding.Flags & ObjectHoardingState.Sinking, "the opening sinks it" );
+		Assert.AreEqual( 3, hoarding.Variant, "it sinks with the set it shows" );
+		// the player's close (0x004DF300) and open (0x004DF390)
+		other.Close();
+		Assert.AreEqual( (true, 0), (other.Runtime.Hoarding.IsStanding, other.Runtime.Hoarding.Variant) );
+		other.Open();
+		Assert.AreNotEqual( 0u, other.Runtime.Hoarding.Flags & ObjectHoardingState.Sinking );
+		// a loaded park's close writes the open word only
+		owner.Runtime.CloseLoaded();
+		Assert.AreNotEqual( 0u, hoarding.Flags & ObjectHoardingState.Sinking, "CloseLoaded makes no model call" );
+	}
+
+	[TestMethod]
 	public void ARideWaitingForAnUpgradeListsTheCancelRowWhichCancelsItAndOpensTheRide()
 	{
 		var hud = Fixture( BuildCategory.Rides, out var level, out var economy, out var owner, out _, out _ ); var context = Context(); Research( economy );

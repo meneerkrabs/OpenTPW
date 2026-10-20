@@ -167,6 +167,20 @@ public static class PoolSpriteDelivery
 			failed.Add( group );
 	}
 
+	/// <summary>[EXT:extensions-apply-at-load] Forgets that the page gave up, before it fetches the sets again (the extension was switched on after the start, whose fetch skipped them).</summary>
+	public static void Retry()
+	{
+		lock ( gate )
+			failed.Clear();
+	}
+
+	/// <summary>Whether a pinned file has been stored (<see cref="Store"/>).</summary>
+	public static bool IsStored( string relativePath )
+	{
+		lock ( gate )
+			return stored.Contains( relativePath );
+	}
+
 	/// <summary>Whether a group is not complete yet but may still arrive: files are delivered, the fetch has not given up and it is not finished.</summary>
 	public static bool IsPending( string group )
 	{

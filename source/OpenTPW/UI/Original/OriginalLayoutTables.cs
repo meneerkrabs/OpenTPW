@@ -401,6 +401,18 @@ public static class OriginalLayoutTables
 		} ),
 	} );
 
+	/// <summary>[BIN:TPW-EXE:0x7572e8] layout table EmployeeRenameDialog.</summary>
+	public static readonly LayoutTable EmployeeRenameDialog = new( "EmployeeRenameDialog", 0x7572E8, new LayoutNode[]
+	{
+		new( 1, 0x1u, 0x5DA9u, 500, 233, 1516, 830, -1, -1, "wdialogw", null, null, new LayoutNode[]
+		{
+			new( 1, 0x1u, 0x5DAAu, 655, 285, 1315, 365, -1, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
+			new( 5, 0x1u, 0x5DABu, 619, 486, 1342, 569, -1, -1, "!frame", null, new[] { 642, 503, 1328, 548 }, System.Array.Empty<LayoutNode>() ),
+			new( 2, 0x1u, 0xFFFFFFFFu, 1376, 524, 1460, 608, -1, -1, "b_okay", null, null, System.Array.Empty<LayoutNode>() ),
+			new( 2, 0x1u, 0xFFFFFFFEu, 1387, 613, 1470, 696, -1, -1, "b_exit", null, null, System.Array.Empty<LayoutNode>() ),
+		} ),
+	} );
+
 	/// <summary>[BIN:TPW-EXE:0x7575e0] layout table VisitorInfoWindow.</summary>
 	public static readonly LayoutTable VisitorInfoWindow = new( "VisitorInfoWindow", 0x7575E0, new LayoutNode[]
 	{
@@ -767,6 +779,74 @@ public static class OriginalLayoutTables
 				new( 6, 0x1u, 0x4A68D2u, 305, 646, 409, 726, -1, -1, "ti_hungry", null, null, System.Array.Empty<LayoutNode>() ),
 				new( 6, 0x1u, 0x4A68D3u, 432, 646, 536, 726, -1, -1, "ti_hungry", null, null, System.Array.Empty<LayoutNode>() ),
 				new( 6, 0x1u, 0x4A68D4u, 562, 646, 666, 726, -1, -1, "ti_hungry", null, null, System.Array.Empty<LayoutNode>() ),
+			} ),
+		} ),
+	} );
+
+	/// <summary>[BIN:TPW-EXE:0x758ae8] layout table ChatOverlay.</summary>
+	public static readonly LayoutTable ChatOverlay = new( "ChatOverlay", 0x758AE8, new LayoutNode[]
+	{
+		new( 1, 0x1u, 0xC3122u, 0, 0, 2048, 1536, -1, -1, null, null, null, new LayoutNode[]
+		{
+			new( 1, 0x1u, 0xC3123u, 0, 0, 2048, 1536, -1, -1, "chat", null, null, new LayoutNode[]
+			{
+				new( 7, 0x91u, 0xC3124u, 61, 30, 539, 1333, -1, -1, null, null, new[] { 53, 162, 423, 1300 }, new LayoutNode[]
+				{
+					new( 3, 0x10u, 0x1u, 457, 213, 516, 1270, -1, -1, null, "!slider", new[] { 457, 213, 516, 1270 }, new LayoutNode[]
+					{
+						new( 2, 0x21u, 0x1u, 456, 145, 516, 206, -1, -1, "b_up", null, null, System.Array.Empty<LayoutNode>() ),
+						new( 2, 0x1u, 0x3u, 448, 294, 516, 361, -1, -1, "b_scroller", null, null, System.Array.Empty<LayoutNode>() ),
+						new( 2, 0x21u, 0x2u, 456, 1271, 516, 1332, -1, -1, "b_down", null, null, System.Array.Empty<LayoutNode>() ),
+					} ),
+					new( 8, 0x11u, 0xC3125u, 129, 28, 347, 130, -1, -1, null, null, null, new LayoutNode[]
+					{
+						new( 2, 0x11u, 0xC3126u, 129, 28, 232, 130, -1, -1, "b_speeps", null, null, System.Array.Empty<LayoutNode>() ),
+						new( 2, 0x11u, 0xC3127u, 244, 28, 347, 130, -1, -1, "b_sbuddi", null, null, System.Array.Empty<LayoutNode>() ),
+					} ),
+					new( 2, 0x11u, 0xC3128u, 346, 1357, 500, 1511, -1, -1, "b_muff", null, null, System.Array.Empty<LayoutNode>() ),
+					new( 2, 0x1u, 0xC3129u, 187, 1357, 341, 1511, -1, -1, "b_vote", null, null, System.Array.Empty<LayoutNode>() ),
+					new( 2, 0x1u, 0xC312Au, 29, 1357, 183, 1511, -1, -1, "b_chtpcard", null, null, System.Array.Empty<LayoutNode>() ),
+				} ),
+				new( 7, 0x1u, 0xC312Bu, 543, 1150, 2005, 1426, -1, -1, null, null, new[] { 562, 1175, 1884, 1390 }, new LayoutNode[]
+				{
+					new( 3, 0x10u, 0x1u, 1928, 1176, 1987, 1412, -1, -1, null, "!slider", new[] { 1928, 1176, 1987, 1412 }, new LayoutNode[]
+					{
+						new( 2, 0x1u, 0x3u, 1920, 1201, 1987, 1268, -1, -1, "b_scroller", null, null, System.Array.Empty<LayoutNode>() ),
+					} ),
+					new( 5, 0x1u, 0xC312Cu, 561, 1441, 1979, 1486, -1, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
+				} ),
+			} ),
+		} ),
+	} );
+
+	/// <summary>[BIN:TPW-EXE:0x758cd8] layout table ChatBuddyPopup.</summary>
+	public static readonly LayoutTable ChatBuddyPopup = new( "ChatBuddyPopup", 0x758CD8, new LayoutNode[]
+	{
+		new( 1, 0x1u, 0x1788u, 0, 0, 2048, 1536, -1, -1, null, null, null, new LayoutNode[]
+		{
+			new( 1, 0x1u, 0x1789u, 0, 0, 1170, 192, -1, -1, "!f_plain", null, null, new LayoutNode[]
+			{
+				new( 2, 0x1u, 0x178Au, 708, 22, 861, 176, 414, -1, "b_bmark", null, null, System.Array.Empty<LayoutNode>() ),
+				new( 2, 0x1u, 0x178Bu, 199, 22, 353, 176, 417, -1, "b_gopeep", null, null, System.Array.Empty<LayoutNode>() ),
+				new( 2, 0x11u, 0x178Cu, 29, 22, 183, 176, 410, 411, "b_ignore", null, null, System.Array.Empty<LayoutNode>() ),
+				new( 2, 0x1u, 0x178Du, 973, 22, 1127, 176, 413, -1, "b_unbuddi", null, null, System.Array.Empty<LayoutNode>() ),
+				new( 2, 0x1u, 0x178Eu, 369, 22, 522, 176, 416, -1, "b_peeploc", null, null, System.Array.Empty<LayoutNode>() ),
+				new( 2, 0x1u, 0x178Fu, 538, 22, 692, 176, 415, -1, "b_page", null, null, System.Array.Empty<LayoutNode>() ),
+			} ),
+		} ),
+	} );
+
+	/// <summary>[BIN:TPW-EXE:0x758e18] layout table ChatPlayerPopup.</summary>
+	public static readonly LayoutTable ChatPlayerPopup = new( "ChatPlayerPopup", 0x758E18, new LayoutNode[]
+	{
+		new( 1, 0x1u, 0x3002u, 0, 0, 2048, 1536, -1, -1, null, null, null, new LayoutNode[]
+		{
+			new( 1, 0x1u, 0x3003u, 0, 0, 825, 192, -1, -1, "!f_plain", null, null, new LayoutNode[]
+			{
+				new( 2, 0x1u, 0x3004u, 385, 22, 538, 176, 414, -1, "b_bmark", null, null, System.Array.Empty<LayoutNode>() ),
+				new( 2, 0x1u, 0x3005u, 199, 22, 353, 176, 417, -1, "b_gopeep", null, null, System.Array.Empty<LayoutNode>() ),
+				new( 2, 0x11u, 0x3006u, 29, 22, 183, 176, 410, 411, "b_ignore", null, null, System.Array.Empty<LayoutNode>() ),
+				new( 2, 0x1u, 0x3007u, 648, 22, 801, 176, 412, -1, "b_unbuddi", null, null, System.Array.Empty<LayoutNode>() ),
 			} ),
 		} ),
 	} );

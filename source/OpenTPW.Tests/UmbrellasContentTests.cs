@@ -11,7 +11,7 @@ namespace OpenTPW.Tests;
 
 /// <summary>
 /// The umbrellas extension's shipped content (docs/UMBRELLAS.md): <c>content/umbrellas</c> holds the brolly shop of each theme, the umbrella sprite set and the hand anchors of the 2x kid sets, made by
-/// <c>tools/umbrellas/build-content.sh</c>. The content is not wired into the game yet (phase U2), so these tests load the committed files through the game's own pipelines (the object catalog, the sprite
+/// <c>tools/umbrellas/build-content.sh</c>. Most of these tests load the committed files through the game's own pipelines (the object catalog, the sprite
 /// readers, the ride script VM) with a content root made here, without any original game data.
 /// </summary>
 // [EXT:umbrellas-content] OpenTPW's own shipped content; neither Theme Park World nor Theme Park Inc ships anything of it
@@ -78,7 +78,7 @@ public class UmbrellasContentTests
 		CollectionAssert.AreEqual( Themes, file.Objects.Select( item => item.Theme ).ToArray() );
 		CollectionAssert.AreEqual( new[] { 64500, 64501, 64502, 64503 }, file.Objects.Select( item => item.InfoId ).ToArray() );
 		Assert.IsTrue( file.Objects.All( item => item.Category == ObjectCategory.Shop && item.Input == null && !item.Research ), "shops, our own files, no research item (decision of October 18, 2026)" );
-		Assert.IsTrue( file.Objects.All( item => item.Names.Count == 9 && item.Names["English"] == "Brolly Shop" ), "a name for each of the nine languages" );
+		Assert.IsTrue( file.Objects.All( item => item.Names.Count == 11 && item.Names["English"] == "Brolly Shop" ), "a name for each of the eleven languages" );
 	}
 
 	[TestMethod]
@@ -105,7 +105,7 @@ public class UmbrellasContentTests
 			Assert.AreEqual( 1, settings.GetInt( "UsageInfo.RideHandlesSprite" ) );
 			Assert.AreEqual( 0, settings.GetInt( "UsageInfo.ISIndoors", -1 ), "not indoors, so the original's indoor-in-rain bonus does not stack on the 200 %" );
 			Assert.AreEqual( (200, 200, 150, 5), (settings.GetInt( "WeatherModifier.RainPercentage" ), settings.GetInt( "WeatherModifier.StormPercentage" ), settings.GetInt( "WeatherModifier.SnowPercentage" ), settings.GetInt( "WeatherModifier.HeatWavePercentage" )) );
-			Assert.AreEqual( 100, settings.GetInt( "GenerationModifier.KidScorePercentage" ), "OpenTPW's own value: every Theme Park World guest is a kid" );
+			Assert.AreEqual( 75, settings.GetInt( "GenerationModifier.KidScorePercentage" ), "Theme Park Inc's value, per the owner's decision" );
 			Assert.AreEqual( 30, entry.Economy.PricePerUse, "as Theme Park Inc" );
 			Assert.AreEqual( 13, entry.Economy.CostOfGoods );
 			Assert.AreEqual( 1000, entry.BuildCost );
@@ -306,20 +306,166 @@ public class UmbrellasContentTests
 		}
 	}
 
-	// ---- The inert rule --------------------------------------------------------------------------------------------
+	// ---- The wiring ------------------------------------------------------------------------------------------------
+
+	private static ModSet UmbrellasSet( bool enabled ) => ModSet.Resolve( Array.Empty<DiscoveredMod>(),
+		new ModSettings { Enabled = new Dictionary<string, bool> { [ModId] = enabled } }, null, GameEdition.ThemeParkWorld, OfficialExtensions.All );
 
 	[TestMethod]
-	public void NothingOfTheContentIsWiredIntoTheGameYet()
+	public void TheExtensionIsRegisteredOnByDefaultAndRecordedLikeThePools()
 	{
-		Assert.IsNull( OfficialExtensions.All.FirstOrDefault( extension => extension.Id == ModId ), "the extension itself comes with phase U2; the content only sits in content/umbrellas" );
-		// the production path: the catalog roots of a default run (every official extension at its default) and the catalogs built from them name no brolly shop
-		var roots = ModContentRoots.CatalogRoots( ModSet.Defaults( OfficialExtensions.All ) );
-		Assert.IsFalse( roots.Any( root => root.Objects.Any( definition => definition.InfoId is >= 64500 and <= 64999 ) ), "no catalog root of a default run lists a brolly shop" );
-		using ( ModContentRoots.Use( ModSet.Defaults( OfficialExtensions.All ), null ) )
-			foreach ( var theme in Themes )
-				Assert.IsFalse( ObjectCatalog.Load( theme ).Entries.Any( entry => entry.InfoId is >= 64500 and <= 64999 ), $"{theme}: no brolly shop in the catalog of a default run" );
-		ObjectCatalog.SetContentRoots( Array.Empty<CatalogContentRoot>() );
-		foreach ( var theme in Themes )
-			Assert.IsFalse( ObjectCatalog.Load( theme ).Entries.Any( entry => entry.InfoId is >= 64500 and <= 64999 ), $"{theme}: no brolly shop in a catalog without the test's own root" );
+		var extension = OfficialExtensions.All.Single( candidate => candidate.Id == ModId );
+		Assert.AreSame( OfficialExtensions.Umbrellas, extension );
+		Assert.AreEqual( "1.0.0", extension.Version.ToString() );
+		Assert.IsTrue( extension.DefaultEnabled && extension.AffectsSimulation && extension.PlayerSelectable, "on by default, a simulation rule, selectable (decision of October 18, 2026)" );
+		Assert.IsTrue( ParkResumeMods.UsedOnlyExtensionIds.Contains( ModId ), "a save records it only while the park uses it (the pools rule)" );
+		using var scope = OpenTpwExtensions.Use( ModSet.Defaults( OfficialExtensions.All ) );
+		Assert.IsTrue( FeatureGates.Umbrellas );
+	}
+
+	[TestMethod]
+	public void TheBrollyShopsAreListedInEveryThemeCatalogWhileTheExtensionIsOnAndOnlyThen()
+	{
+		UmbrellaContent.DirectoryOverride = Folder;
+		try
+		{
+			foreach ( var enabled in new[] { true, false } )
+			{
+				var set = UmbrellasSet( enabled );
+				using var scope = OpenTpwExtensions.Use( set );
+				using var roots = ModContentRoots.Use( set, null );
+				foreach ( var theme in Themes )
+				{
+					var shops = ObjectCatalog.Load( theme ).Entries.Where( entry => entry.ModId == ModId ).ToArray();
+					if ( !enabled )
+					{
+						Assert.AreEqual( 0, shops.Length, $"{theme}: the extension is off, so the catalog lists no brolly shop (and is not the cached catalog of the run with it on)" );
+						continue;
+					}
+					Assert.AreEqual( 1, shops.Length, theme );
+					Assert.AreEqual( 64500 + Array.IndexOf( Themes, theme ), shops[0].InfoId );
+					Assert.AreEqual( 3, shops[0].Settings.GetInt( "UsageInfo.AppearanceEffect" ) );
+				}
+			}
+		}
+		finally
+		{
+			UmbrellaContent.DirectoryOverride = null;
+		}
+	}
+
+	[TestMethod]
+	public void AThemeParkIncRunHasNoBrollyShopEvenWithTheExtensionOn()
+	{
+		UmbrellaContent.DirectoryOverride = Folder;
+		var edition = GameEditions.Current;
+		try
+		{
+			using var scope = OpenTpwExtensions.Use( UmbrellasSet( true ) );
+			Assert.IsNotNull( UmbrellaContent.CatalogRoot( OpenTpwExtensions.Active ) );
+			GameEditions.Select( GameEdition.ThemeParkInc );
+			Assert.IsFalse( FeatureGates.Umbrellas, "Theme Park Inc has its own shop, art and rules" );
+			Assert.IsNull( UmbrellaContent.CatalogRoot( OpenTpwExtensions.Active ), "no brolly shop in a Theme Park Inc catalog" );
+		}
+		finally
+		{
+			GameEditions.Select( edition );
+			UmbrellaContent.DirectoryOverride = null;
+		}
+	}
+
+	[TestMethod]
+	public void ABrollyShopsBridgeCarriesItsWeatherAndGenerationPercentagesAndNoOtherObjectDoes()
+	{
+		var shop = ObjectCatalog.Load( "jungle" ).Entries.Single( entry => entry.ModId == ModId );
+		var bridge = OriginalObjectRuntime.CreateVisitorBridge( shop, 7 );
+		Assert.IsTrue( ((IRideVisitorBridge)bridge).IsUmbrellaShop );
+		Assert.AreEqual( new UmbrellaShopTerms( 200, 200, 150, 5, 75 ), bridge.UmbrellaTerms );
+		var totem = ObjectCatalog.Load( "jungle" ).Entries.First( entry => entry.ModId == null );
+		Assert.IsNull( OriginalObjectRuntime.CreateVisitorBridge( totem, 8 ).UmbrellaTerms, "an original object keeps the game's score: the keys are read for the extension's objects only" );
+	}
+
+	// ---- Saves -------------------------------------------------------------------------------------------------------------
+
+	[TestMethod]
+	public void ASaveHoldsTheBrollyShopsAssetKeysOfThePlacedShopsOnly()
+	{
+		var shop = ObjectCatalog.Load( "jungle" ).Get( 64500 );
+		var other = ObjectCatalog.Load( "hallow" ).Get( 64501 );
+		var manifest = new Dictionary<string, string>
+		{
+			["data:/levels/jungle/rides/totem/totem.sam"] = new string( 'a', 64 ),
+			["mod:opentpw.umbrellas:/objects/jungle/brolly/Brolly.sam"] = new string( 'b', 64 ),
+			["mod:opentpw.umbrellas:/objects/hallow/brolly/Brolly.sam"] = new string( 'e', 64 ),
+			["mod:opentpw.pools:/objects/jungle/cabin/Cabin.sam"] = new string( 'f', 64 )
+		};
+		var none = ParkResumeMods.AssetsForUse( manifest, Array.Empty<ObjectCatalogEntry>() );
+		CollectionAssert.AreEquivalent( new[] { "data:/levels/jungle/rides/totem/totem.sam" }, none.Keys.ToArray(), "no extension object placed: none of either extension's files" );
+		var placed = ParkResumeMods.AssetsForUse( manifest, new[] { shop } );
+		CollectionAssert.AreEquivalent( new[] { "data:/levels/jungle/rides/totem/totem.sam", "mod:opentpw.umbrellas:/objects/jungle/brolly/Brolly.sam" }, placed.Keys.ToArray(), "the placed shop's files only" );
+		Assert.IsTrue( ParkResumeMods.IsUmbrellasObject( shop ) && ParkResumeMods.IsUmbrellasObject( other ) );
+		Assert.IsFalse( ParkResumeMods.IsUmbrellasObject( ObjectCatalog.Load( "jungle" ).Entries.First( item => item.ModId == null ) ) );
+		StringAssert.Contains( ParkResumeMods.ShapeProblem( null, placed )!, "mod opentpw.umbrellas, which the save does not record" );
+		Assert.IsNull( ParkResumeMods.ShapeProblem( new[] { new ParkModRecord( ModId, "1.0.0", ModSet.NoFilesSha256 ) }, placed ) );
+	}
+
+	[TestMethod]
+	public void AParkUsesTheExtensionWithABrollyShopOrAnUmbrellaAndOtherwiseSavesAsIfItWereOff()
+	{
+		var shop = ObjectCatalog.Load( "jungle" ).Get( 64500 );
+		var ordinary = ObjectCatalog.Load( "jungle" ).Entries.First( item => item.ModId == null );
+		var cells = new ParkCellMap( 20, 10 );
+		CollectionAssert.AreEqual( Array.Empty<string>(), ParkResumeMods.InUse( cells ).ToArray() );
+		CollectionAssert.AreEqual( new[] { ModId }, ParkResumeMods.InUse( cells, umbrellas: true ).ToArray() );
+		var rig = new GuestSimulation( GuestTests.CreateCross(), GuestTests.CreateSettings(), 3 ) { ArrivalsEnabled = false };
+		var guest = rig.SpawnInPark( 10, 5 );
+		Assert.IsFalse( ParkResumeMods.UmbrellasInUse( new[] { ordinary }, rig ), "an ordinary object and a guest without an umbrella: not in use" );
+		Assert.IsTrue( ParkResumeMods.UmbrellasInUse( new[] { ordinary, shop }, rig ), "a brolly shop" );
+		guest.UmbrellaState = UmbrellaRules.StateClosed;
+		Assert.IsTrue( ParkResumeMods.UmbrellasInUse( Array.Empty<ObjectCatalogEntry>(), rig ), "a guest with an umbrella, the shop long sold" );
+		Assert.IsFalse( ParkResumeMods.UmbrellasInUse( Array.Empty<ObjectCatalogEntry>(), null ) );
+		// the capture follows the rule, with the extension on and off, and the park without either saves the same bytes
+		var plain = ParkResumeSaveFile.Serialize( ParkResumeSaveFileTests.Envelope() );
+		foreach ( var enabled in new[] { true, false } )
+		{
+			var set = UmbrellasSet( enabled );
+			using var scope = OpenTpwExtensions.Use( set );
+			var unused = ParkResumeMods.Capture( set, ParkResumeMods.InUse( cells ) );
+			Assert.IsNull( unused, $"extension {enabled}: nothing to record in a park that does not use it" );
+			Assert.IsTrue( ParkResumeSaveFile.Serialize( ParkResumeSaveFileTests.Envelope() with { Mods = unused } ).SequenceEqual( plain ), $"extension {enabled}: identical bytes" );
+			var used = ParkResumeMods.Capture( set, ParkResumeMods.InUse( cells, umbrellas: true ) );
+			if ( enabled )
+				Assert.AreEqual( ModId, used!.Single().Id );
+			else
+				Assert.IsNull( used, "an extension that is off records nothing" );
+		}
+	}
+
+	[TestMethod]
+	public void ASaveWithAnUmbrellaRecordsTheExtensionRoundTripsAndRefusesToLoadWithItOff()
+	{
+		var on = UmbrellasSet( true );
+		var off = UmbrellasSet( false );
+		var envelope = ParkResumeSaveFileTests.Envelope();
+		Assert.IsTrue( envelope.Guests.Guests.Length > 0, "the envelope holds guests" );
+		var carrying = envelope with { Guests = envelope.Guests with { Guests = envelope.Guests.Guests.Select( ( guest, index ) => index == 0 ? guest with { UmbrellaState = UmbrellaRules.StateClosing, UmbrellaType = 2, UmbrellaDueTurn = 400 } : guest ).ToArray() } };
+		// a save with an umbrella must record the extension: it cannot hide the state from the mod check
+		StringAssert.Contains( Assert.ThrowsException<InvalidDataException>( () => ParkResumeSaveFile.ValidateShape( carrying ) ).Message, "has an umbrella but the save does not record opentpw.umbrellas" );
+		var recorded = carrying with { Mods = ParkResumeMods.Capture( on, new HashSet<string> { ModId } ) };
+		ParkResumeSaveFile.ValidateShape( recorded );
+		var bytes = ParkResumeSaveFile.Serialize( recorded );
+		var text = System.Text.Encoding.UTF8.GetString( bytes );
+		StringAssert.Contains( text, "opentpw.umbrellas" );
+		StringAssert.Contains( text, "\"UmbrellaDueTurn\":400" );
+		var loaded = ParkResumeSaveFile.Deserialize( bytes );
+		Assert.IsTrue( ParkResumeSaveFile.Serialize( loaded ).SequenceEqual( bytes ), "byte-stable" );
+		Assert.AreEqual( (UmbrellaRules.StateClosing, 2, 400L), (loaded.Guests.Guests[0].UmbrellaState, loaded.Guests.Guests[0].UmbrellaType, loaded.Guests.Guests[0].UmbrellaDueTurn) );
+		ParkResumeMods.Require( loaded.Mods, on );
+		StringAssert.Contains( Assert.ThrowsException<InvalidDataException>( () => ParkResumeMods.Require( loaded.Mods, off ) ).Message, "needs opentpw.umbrellas 1.0.0" );
+		// the same park with another version of the extension is refused too
+		var other = new[] { new ParkModRecord( ModId, "1.1.0", ModSet.NoFilesSha256 ) };
+		StringAssert.Contains( Assert.ThrowsException<InvalidDataException>( () => ParkResumeMods.Require( other, on ) ).Message, "needs opentpw.umbrellas 1.1.0, not 1.0.0" );
+		// a save made without the extension in use loads with it on (a used-only extension that is not recorded is fine)
+		ParkResumeMods.Require( null, on );
 	}
 }

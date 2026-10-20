@@ -281,10 +281,11 @@ public sealed partial class ParkHud
 			if ( Stack.Top != screen || !level.RenamePark( first.Text, second.Text ) ) return;
 			Cancel();
 		}
-		first.Submitted = () => screen.Focus( second );
-		second.Submitted = Apply;
-		screen.Add( new UiButton { Id = "apply", Model = "b_okay", Clicked = Apply,
+		var tick = screen.Add( new UiButton { Id = "apply", Model = "b_okay", Clicked = Apply,
 			Bounds = new UiRect( window.X + 180, window.Bottom - 180, 200, 100 ), Anchor = UiAnchor.Center } );
+		// [BIN:TPW-EXE:0x4996ac rename Enter] Enter (0x802) in field 0x3943C only moves the focus to 0x3943D (0x499711, no 0x100); Enter in the other field makes the procedure 0x4993E0 post 0x100 with control -1 to its own window (0x49973e), so the hook clicks 0x1F by the window's style 1 and the tick applies; Escape (0x804) closes without a click. The gate's own rename dialog (0x48D370, table 0x750090, procedure 0x48D640) routes its keys the same way (0x48d83b)
+		first.Submitted = () => screen.Focus( second );
+		second.Submitted = tick.Activate;
 		screen.Add( new UiButton { Id = "cancel", Model = "b_exit", Help = strings.Help( 2 ), Clicked = Cancel,
 			Bounds = new UiRect( window.Right - 400, window.Bottom - 180, 200, 100 ), Anchor = UiAnchor.Center } );
 		screen.Back = Cancel;

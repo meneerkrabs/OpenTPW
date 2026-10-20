@@ -1,6 +1,10 @@
 # UI-013: Scope online pause layout state
 
-## Status and classification
+## Current bounded implementation (2026-10-20)
+
+This PR now implements the authenticated host-session pause-menu spacing adapter described in [AUTHENTICATED-PAUSE-LAYOUT](../AUTHENTICATED-PAUSE-LAYOUT.md), with synthetic lifecycle, geometry and hit-region fixtures. The plan-only statements below record the original proposal, not the current diff. Exact-head CI is pending; no executed C# or visual parity claim is made. UI-013 remains open for native online lifecycle and font-bank parity.
+
+## Historical proposal status and classification
 - Plan-only draft proposal; no implementation, tests-run claim, retirement or merge.
 - Classification: `approximation`.
 - Baseline: `meneerkrabs/OpenTPW` main `5ccddcab` (2026-10-18).

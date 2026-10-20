@@ -14,10 +14,14 @@ public sealed class ParkEconomyRuntime
 		Import = import;
 		Economy.EventRaised += LogEvent;
 		Economy.EventRaised += ForwardEvent;
+		Economy.Objectives.PresentationPosted += ForwardChallengePresentation;
 	}
 
 	/// <summary>Events of the running economy, followed across <see cref="Load"/>.</summary>
 	public event Action<ParkEvent>? EventRaised;
+
+	/// <summary>Immutable challenge presentation messages, followed across economy replacement without changing gameplay events.</summary>
+	public event Action<ChallengePresentation>? ChallengePresentationPosted;
 
 	public ParkEconomy Economy { get; private set; }
 	public OriginalEconomyImport? Import { get; }
@@ -45,6 +49,8 @@ public sealed class ParkEconomyRuntime
 		guests.ArrivalClock = () => Economy.Turn;
 		guests.ParkPoints = () => Economy.ParkPoints();
 		guests.ArrivalsHalted = () => Economy.IsBankrupt;
+		// [EXT:cheats-arrival] an arrival cheat waiting for the next free turn holds the natural groups and the pick-ups (docs/CHEATS.md)
+		guests.ArrivalHeldForCheat = () => Economy.Cheats.ArrivalPending;
 		Economy.GuestStatistics = Guests;
 		Economy.RideOperations = Guests;
 		AttachLitter( guests );
@@ -108,7 +114,7 @@ public sealed class ParkEconomyRuntime
 		var start = ParkStart.Resolve( kind, park.Save != null, BalanceSettings.HasEasyLayer( park.LevelName ) );
 		var easy = start.EasyBalance;
 		var economy = ParkEconomy.CreateForTheme( park.LevelName, easy, start.Mode, (seed ?? WorldSeed.Default).EconomyStream );
-		var import = start.ImportShippedSave ? OriginalEconomyImport.Apply( economy, park ) : null;
+		var import = start.ImportShippedSave ? OriginalEconomyImport.Apply( economy, park, shippedSeed: true ) : null;
 		Log.Trace( $"Park economy: {kind} start, {start.Mode} rules; {park.LevelName} {(easy ? "easy" : "standard")} balance from {string.Join( ", ", economy.Settings.Standard.Sources )}; "
 			+ $"cash ${economy.Balance}, entrance fee ${economy.EntranceFee}, {economy.Catalog.Objects.Count} catalogue objects, {economy.Research.Items.Count} research items." );
 		foreach ( var line in import?.Evidence ?? Array.Empty<string>() )
@@ -145,8 +151,8 @@ public sealed class ParkEconomyRuntime
 
 	/// <summary>
 	/// Creates the money economy of a Theme Park Inc <paramref name="park"/> (<see cref="EconomyRules.ThemeParkIncMoney"/>): Theme Park Inc's own settings and
-	/// object catalogue, no shipped-save import (its prebuilt save's economy is not traced), no staff, research or challenges. The prebuilt save's objects
-	/// register uncharged, like an imported park's.
+	/// object catalogue, no native economy/clock import, no staff, research or challenges. Saved analyser history is retained across this fresh host start;
+	/// its partial arrivals and recent stays contribute to the first new host month, not the remainder of the saved native month. Objects register uncharged.
 	/// </summary>
 	public static ParkEconomyRuntime ForThemeParkIncLevel( OriginalPark park, WorldSeed? seed = null )
 	{
@@ -155,6 +161,10 @@ public sealed class ParkEconomyRuntime
 		var settings = BalanceSettings.LoadThemeParkInc( park.LevelName );
 		var catalog = EconomyObjectCatalog.Load( park.LevelName, easy: false );
 		var economy = new ParkEconomy( settings, catalog, ParkGameMode.FullSimulation, (seed ?? WorldSeed.Default).EconomyStream, EconomyRules.ThemeParkIncMoney );
+		// [EXT:tpi-history-fresh-start] retain the saved numeric history and live inputs while this money-only path keeps its fresh clock/calendar and finance; the first host close crosses that boundary
+		// [EXT:tpi-history-five-series] the traced native TPI graph (0x5630B0) selects arrivals/people/rating; the shared host five-series state also retains separately proven happiness/stay measurements; this path adds no graph to the text-only TPI HUD
+		if ( park.Save?.Statistics is { } statistics )
+			economy.StatisticsHistory.RestoreOriginal( statistics );
 		Log.Trace( $"Park economy: Theme Park Inc money rules; {park.LevelName} balance from {string.Join( ", ", settings.Standard.Sources )}; "
 			+ $"cash ${economy.Balance}, entrance fee ${economy.EntranceFee}, {economy.Catalog.Objects.Count} catalogue objects, no staff, research or challenges." );
 		return new ParkEconomyRuntime( economy, import: null )
@@ -183,6 +193,8 @@ public sealed class ParkEconomyRuntime
 	public void FixedTick() => Economy.AdvanceFixedTick();
 
 	private void ForwardEvent( ParkEvent item ) => EventRaised?.Invoke( item );
+
+	private void ForwardChallengePresentation( ChallengePresentation message ) => ChallengePresentationPosted?.Invoke( message );
 
 	private void LogEvent( ParkEvent item )
 	{
@@ -227,9 +239,11 @@ public sealed class ParkEconomyRuntime
 			throw new InvalidDataException( $"The park save is a {loaded.Mode} park, not the running {Economy.Mode} park." );
 		Economy.EventRaised -= LogEvent;
 		Economy.EventRaised -= ForwardEvent;
+		Economy.Objectives.PresentationPosted -= ForwardChallengePresentation;
 		Economy = loaded;
 		Economy.EventRaised += LogEvent;
 		Economy.EventRaised += ForwardEvent;
+		Economy.Objectives.PresentationPosted += ForwardChallengePresentation;
 		if ( Guests != null )
 		{
 			Economy.GuestStatistics = Guests;

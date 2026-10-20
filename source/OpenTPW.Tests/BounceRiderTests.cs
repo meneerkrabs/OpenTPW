@@ -177,6 +177,7 @@ public class BounceRiderTests
 					var expectedNodeBase = setNode.Count > 0 ? 3 : RideVisitorBridge.DefaultBounceNodeBase;
 
 					var runtime = new OriginalObjectRuntime( entry, new RideScriptWorld(), 1 );
+					Assert.IsTrue( runtime.Visitors.RideHandlesSprite, $"{entry.DisplayName}: inherited boarding retains the pre-bounce body" );
 					for ( var tick = 0; tick < 60 && runtime.Visitors.BounceBaseHeight == 0; tick++ )
 						runtime.Simulate( Tick );
 					Assert.AreEqual( expectedNodeBase, runtime.Visitors.BounceNodeBase, entry.DisplayName );

@@ -488,10 +488,10 @@ active and free lists partition the 120 emitter slots and the 20 effector slots,
 
 **Mapping to the runtime.** `ParticleSystemState` (the park-resume part, PARTICLES.md "Saves") describes the same native structure, and `SaveParticleState.ToSystemState` copies the fields it has. The conversion is partial:
 
-- Not carried (no runtime field): the emitter's hold word, group, screen-space flag, ring mode, immortal word, word +0x2A, live particle count, first particle and bounds; the effector's group, mode and strength; the pool capacity, density and low-detail
-  flag; the saved template tables. `ParticleSystem.Restore` refills hold, group, screen-space and killed-on-load from the runtime's own Tp2.plb templates, so a save made with modified templates (Jungle's scratch templates 101 to 104) restores with the file's.
+- Not carried (no runtime field): the emitter's hold word, group, screen-space flag, ring mode, immortal word, word +0x2A, live particle count, first particle and bounds; the effector's group, mode and strength; the saved template tables. `ParticleSystem.Restore` refills hold, group, screen-space and killed-on-load from the runtime's own Tp2.plb templates, so a save made with modified templates (Jungle's scratch templates 101 to 104) restores with the file's.
   In the corpus every emitter uses effects 0 to 100 and its saved hold, group, screen-space, ring and immortal values equal the file's, so nothing is lost there.
 - Inferred: an effector slot stores no template id, so the id is matched on template bytes (group, mode, jitter, strength) that the tick does not write by direct displacement (writes through a base register were not checked); no match or several is refused. No corpus save has a live effector, so this is unexercised on real data.
+- Carried pool configuration: density is the signed interpretation of the saved word (including zero); low-detail preserves its zero/nonzero meaning; capacity must be 100..32767, the managed supported initialization domain. `ToSystemState` refuses other counts instead of clamping or allocating them. [Bounded load evidence](reverse/PARTICLE-POOL-SAVE-CONFIGURATION.md).
 - Conditional or capped: `VolumeExtent` is null when it equals the runtime template's; `TickCounter` is capped at `int.MaxValue`; a block with `ListProblems` is refused.
 
 The corpus test restores every save's pool into `ParticleSystem`, captures it back and compares every carried field (the post-load pass `0x5200B0` is the only difference, applied to the expectation). A level that starts from an original save restores the pool into its particle system
@@ -627,8 +627,9 @@ load flag set it skips the slot, the trains, the seat split and the station node
 7. resolves every node's collision ordinals to node pointers with `0x43E520`, which walks the head (`ctl+0x54`)
    that many times along `+0x64`: the ordinals are chain positions (S0 = 0, S1 = 1, S2 = 2, the pylons in saved
    order, then the end node);
-8. restores the cut (wire 0x2: `ctl+0x60` the cut-end node, default S2, and `ctl+0x64` the cut-start node,
-   default the last node) and the track flags (`0x4380D4..0x438335`);
+8. restores the cut (wire 0x2, `0x4382A5`: `ctl+0x60` the cut-end node, default S2, and `ctl+0x64` the cut-start
+   node, default the chain's tail `ctl+0x58` as read at `0x437CEC`, before the sections were added: S2 again) and the
+   track flags (`0x4382D1..0x438335`);
 9. restores the controller words (`0x438340..0x43837D`): header `+4` → `+8`, `+0x12` → `+0x2C`, `+0x18` → `+0xF4`,
    `+0x1A` → `+0xF0`, `+0x1C` → `+0x140`; header `+8`, `+0xE` and `+0x10` are never written back;
 10. reads every one of the type's train slots (27 bytes, the loader ORs train flag 0x4) and each car of the train
@@ -654,8 +655,7 @@ may pass each coaster's `SaveCoasterTrainLayout`, keyed by the header's controll
 `SaveCoasterTrain.ReadAll` decodes the train slots and cars exactly as the loader reads them, and
 a block of several coasters reads (`OriginalParkImport.Import` takes the type's counts from a
 callback and `OriginalPark` supplies them from the level's coaster `.sam`, finding the station as the
-saved attraction whose mesh instance equals the controller word); SAVE-920 is narrowed to the runtime
-restore, which is still refused. Without a layout only a single coaster's
+saved attraction whose mesh instance equals the controller word). Without a layout only a single coaster's
 train payload stays raw (the rest of the block) and a block with more coasters is refused, since the next
 header cannot be located. The section flag word follows the saver's
 and the loader's maps (`SaveCoasterSectionFlags`, `0x437615..0x4376e0`, `0x437ea6..0x437f58`): wire bits 0x1, 0x2, 0x4
@@ -672,10 +672,90 @@ split). `OriginalParkImport.Import` runs the reader on every save and exposes th
 and object `Info.Id` to attach attraction ids. Missing or ambiguous scene matches remain visible;
 header words and scene indices are never guessed as station ids. Only recognized scene kinds
 815/865 participate: kind 1018 pylons are not decoded by the existing scene parser.
-`ParkObjects.ImportOriginal` calls `RequireSupportedCoasterRuntime` before creating any objects:
-a nonempty original TPW controller is explicitly refused, even with no saved sections. Empty TPW
-parks continue through the existing importer. Structural inspection remains available; no runtime
-track, controller or train state is reconstructed. The separate TPI viewer is unchanged.
+`ParkObjects.ImportOriginal` calls `RequireSupportedCoasterRuntime` before creating any objects: it refuses a park
+only when a saved coaster's station mesh id names no single saved attraction thing, the case where tp.exe crashes
+(`0x437CD5`). The separate TPI viewer is unchanged.
+
+### The import (`OriginalCoasterImport`)
+
+A park started from an original save restores its coasters after the stations were placed and the scripts took their
+saved run state (`Level.ImportOriginalCoasters`, after `ImportOriginalScripts`). Per saved coaster, in block order:
+
+1. **Bind.** The block binds to the saved attraction thing whose mesh instance id is the header's `+0xA`, and through
+   its thing id to the placed station object. A station that is not placed as a coaster station refuses the park with
+   the reason, as does a placed station whose track holds anything but its three station nodes.
+2. **Nodes.** The station's three nodes are the placement's (the loader builds them from the station model with
+   `0x436AC0`). Section i becomes chain node 3 + i at its cell, with its stack ordinal, loft t (`0x444150`), height
+   h0 + t(h1 − h0) of its pylon control and yaw (`0x4441D0`). The loop mode starts on a section with wire 0x8 when the
+   coaster type has flag 2, which the type loader `0x42FAD0` sets when the LoopPylon control names a mesh; that node and
+   the next take the LoopPylon control, and a loop control (flag 0x4000) gives them the pair's node flags 0xE0 and 0x60
+   (`0x434060`). The bank setter `0x444270` gets (bank, incline), or (loop rotate, 0) for a section with wire 0x10, and
+   stores them as bank and incline on a node without flag 0x40, or as the loop rotate on a loop node. Wire 0x1, 0x2 and
+   0x4 become the manual yaw, incline and bank flags. The zero-bank mark of a stack's lower nodes is the knot pass's stack
+   pass here, as for a track the tool builds.
+3. **End node and cut.** A complete track (wire 0x1) gets its one pylon-less end node (type flag 0x20, always set; `0x4380D4`). A cut
+   (wire 0x2, restored at `0x4382A5`) runs from the last section with wire 0x40, or S2, to the last section with wire
+   0x80, or the chain's tail as it stood before the sections were added (`0x437CEC`), which is S2 again;
+   the two must be neighbours, as the cut `0x446740` leaves them, and their link bits 0x40000/0x80000 come only with the
+   cut markers (closing the circuit, `0x442C70`, clears both).
+4. **Controller words.** The state (low nibble of `+4`), the ride mode (0x10, 0x40 the breakdown, 0x20), the power factor,
+   which must match the mode, and the seats per train are restored. A coaster that never ran is saved in state 1 with power 0:
+   the constructor's controller is zero-filled (`0x4368F0`) and only the first 1→2 transition (`0x43577D`) or a 0x40→0x10/0x20
+   step (`0x435931`, `0x43597F`) sets 1.0, so state 1 in mode 16 or 32 accepts power 0 as well as 1. The speed setting is not in the block and stays the
+   constructor's 60.
+5. **Trains.** A runnable track is rated at that cap, and the trains in service (`+0x18`) keep their saved slots: the
+   reference car's position (`+0x74`), the speed (`+0x78`) and the train flags 0x10..0x80. The first rebuild after a load
+   does the same: the rating pass `0x43C450`, called only from the rebuild `0x43EB70`, skips the train count, the slot
+   set-up and the layout while the loader's flag 0x4000 is set. Each in-service slot must be set up (bit 0) and hold the
+   type's car count. That first frame's coaster update then runs the controller's first motion tick, which takes no
+   time (`0x43CE85`: the tick that finds controller flag 0x10 clear sets it and its clock word first, and the loader
+   leaves the flag clear): the trains stay where they were saved, while a speed above the cap is capped, one below 2.0
+   decays by 0.95 and one below 0.01 stops (`CoasterRide.UpdateFirstFrameAfterLoad`). A newly built controller's first
+   tick is the same.
+6. **Script binding.** When the station's saved script holds this coaster's slot (script `+0xE0`, `COAST 8` stored it),
+   the coaster counts as created by its script. The script loop's speed setter (`0x5516B0` → `0x43B2B0` → `0x43C3D0`)
+   runs in the tail of every slice the cadence selects (one pass in eight by script id unless the TURBO byte is set,
+   `0x5516E1`; the call at `0x5517EA`), so it applies the script's speed word (`+0xC0`) after the script's first slice
+   after the load (`OriginalObjectEffects.AfterSlice`). When the word differs from 60, the rebuild that follows has
+   0x4000 clear, so the track is rated at the script's cap and the trains are laid out again from train 0's last car
+   (`0x43C1F0`).
+7. **The first frame's order.** In tp.exe the order of the first frame after a load depends on the wall clock. The load
+   path that sets `0x879070` (the save loader `0x414D40` in mode 2 calls `0x415140`; the paths through `0x5ACCF0` and
+   `0x5AC650` load in mode 2) makes the running case of the main loop `0x54E360` restart its substep clock at the
+   frame's own time: it reads the clock into `0x878C74`, then reads it again after the pause handling and `0x473440`,
+   and runs a substep (and with it the script pass) only when the second read is later. Usually it is not, and the
+   frame's coaster update (`0x435A30`, once per frame after the substep loop) runs first: its rebuild keeps the saved
+   trains and clears 0x4000, and the speed word re-lays them later. When the clock ticks between the two reads, one
+   substep runs first, and if the station script's slice falls on that pass, the speed word applies before the first
+   rebuild, which then rates at the script's cap but keeps the saved trains (no re-lay). OpenTPW takes the usual order.
+   A third load path (`0x54F113`, the save loader in mode 1 on the file of the online object `0xF7D88C`, built by
+   `0x5B50B0`, whose code logs "ONLINE_NEWS" and "ONLINE_FTPDOWNLOAD", followed by `0x404140`) does not set `0x879070`
+   and runs eight script passes before the first frame (`0x4041D0`), so every script's slice, and with it the speed word,
+   comes before the first rebuild there. That is the online park download, not the load of a saved park.
+
+Checked but not imported (evidence lines in the import report):
+
+- the self-intersection count and the collision lists, including the auxiliary block, which the rebuild re-derives
+  (COAST-004);
+- the track flags (SAVE-921);
+- surplus set-up slots;
+- the riders on the trains. Each car's two guest lists and the train's rider count are dropped (SAVE-920), because the
+  guests riding or seated (states 15 and 16) are not imported (SAVE-002).
+
+Shapes the original's own editing never leaves are refused with the reason. Examples: a cut on an incomplete track, a
+state that does not fit the track, a word with bits beyond the state and the mode, a power factor that does not fit the
+mode, seats outside COAST 6's range, or an in-service slot that is not set up.
+
+**Verification status.** This mapping is verified against tp.exe's loader and against synthetic blocks only, **not
+against a real Theme Park World save with a coaster**: none of the local saves holds one. `OriginalCoasterImportTests`
+covers it. A test-only writer (`OriginalCoasterBlockWriter`) follows the decoded reader field for field. It writes
+coasters that OpenTPW built (a running circuit with a hand-rotated and a hand-tilted pylon, an unfinished chain with a
+loop pair and a stacked pylon, a cut in the middle and after S2, a breakdown) in the original layout. The production
+reader parses them and the import restores the same nodes, flags, circuit, state, samples, rating, collision lists,
+trains and seats. The imported coaster continues as the built one does and round-trips through OpenTPW's own save.
+Hand-made blocks cover the refusals and the loop-mode rule. A fixed run of an imported coaster is pinned
+(docs/DETERMINISM.md). The Theme Park Inc prebuilt block is a real-byte cross-check: it reads byte for byte and maps
+consistently (see below), but its coaster type is a stand-in.
 
 ### Evidence status
 
@@ -701,6 +781,12 @@ track, controller or train state is reconstructed. The separate TPI viewer is un
   a real-data cell association observation, but it is Theme Park Inc evidence: no Theme Park World proof, and no
   Theme Park Inc coaster chunk is inferred anywhere in production code (the reader runs on it only in
   a labelled test).
+  The decoded words are also consistent with tp.exe's loader. The one section is the start of a cut (wire 0x280:
+  0x80 with the link bit 0x200) after station node S2. The track is complete and cut open (wire 0x3) in state 1,
+  which is the cut's state. Three train slots are still set up (flags 0x1, cars hidden) on a track that does not run.
+  `ThemeParkIncSaveWorldTests.TheCoasterBlockReadsAndMapsAsTheTpwLoaderReadsIt` imports it onto a stand-in coaster
+  type with the block's 30 one-car slots: a complete track, cut after S2, with no trains. Theme Park Inc's own loader
+  is not traced, so this is a cross-check, not proof.
 - Station nodes are never sections: the saver `0x437300` skips every node whose descriptor byte `+4` carries 0x10
   (the station nodes 0x12 and the end node 0x13) and writes S2's collision list as the
   auxiliary block instead. Consumers still join sections to objects by cell.
@@ -945,3 +1031,41 @@ RideSystem, attraction and economy readers over the second fixture set
   node-state flag meanings (the record frame, header and lengths are decoded) and the meaning of the unnamed RSSE struct words.
 - Saves with known ride wear to confirm the attraction gauges against the original wear rule.
 - Money/time/guest state needs known-state reference saves before import.
+
+
+## TrackRides structural reader (TRACK-032 remains open)
+
+`SaveTrackRideBlock.ParseContainer` accepts exactly the full type-1 container, including its 12-byte header.
+`ParseBody` accepts only subchunks, as stored in `OriginalSavePayload.TrackRides`; check `TrackRidesType == 1`
+and pass `TrackRidesWord` separately. Chunk offsets are always relative to the full container header.
+All header words, stream order, opaque payload bytes, duplicate identities/positions and repeated chunk-6 requests
+are preserved. A malformed later chunk returns no partial document. This does not establish runtime import atomicity.
+
+TPW writer shapes (12-byte framing included in total):
+
+| Chunk | Payload | Total | Contents |
+|---|---:|---:|---|
+| 3 | 40 | 52 | handle, ride +b4/+b8, +b0, +10, +1c, +14, +18, +4 duration, +50 |
+| 4 | 16 | 28 | handle, tile/type word, two coordinates |
+| 5 | 196 | 208 | handle, raw 0xac record, two fallback tile coordinates, waypoint owner handle and two waypoint coordinates |
+| 6 | 4 | 16 | ride handle requesting reference selection, not a section index |
+
+Evidence: writer `0x542b05..0x542bda`, `0x542ccb..0x542d06`, `0x542e3b..0x542f6c`, `0x54335b..0x5433b5`;
+reader dispatch `0x544124`. The reader requires these exact typed sizes as a **managed strict writer-shape policy**.
+Native reads may zero-fill short data and skip excess bytes, so this is not a claim about native corruption rejection.
+Other chunk types retain their opaque bytes; Theme Park Inc has not been verified for this typed contract.
+
+The 0xd0 ride size is an **in-memory stride**, not chunk 3's serialized width. Chunk 5's raw records come from the
+0x877b68 pool, in pool order, not circuit order. Their raw pointer-looking fields are not followed. Raw +0x34/+0x38
+locate a tile; trailing coordinates provide a fallback. The trailing waypoint key is resolved natively against an
+owner ride's separate +0xa8 chain by waypoint +8/+c coordinates (`0x543df6..0x543e48`): first match supplies +4,
+no match stores 0, and absent owner stores -1. The structural reader leaves every nonzero-owner key **unresolved**,
+even if a matching ride header exists. Duplicate raw positions are legitimate structural data, not duplicate waypoint identities.
+
+Chunk 3's `0x545890` creates station/grid waypoints; chunk 4's `0x54b2f0` appends derived waypoints
+(`0x54bae5..0x54bb49`). These are distinct 0x1c records at 0x877b78, not the raw 0xac records.
+Chunk 6 (`0x5439bb..0x5439e4`) scans from the head to the first flag-4 waypoint, **always advances once**, wraps a null
+successor to the head, and skips flag-2 candidates. The first scan has no wrap/null guard in the original.
+No reference index can be obtained from chunk-5 record order. Geometry-specific waypoint reconstruction, safe handling
+of malformed chains and runtime restore semantics remain future work; the structural reader does not fresh-walk a map
+or retire TRACK-032.

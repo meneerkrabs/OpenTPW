@@ -308,14 +308,16 @@ public class OriginalCoasterSaveTests
 	}
 
 	[TestMethod]
-	public void RuntimeGuardAllowsEmptyParksButRefusesOpaqueOriginalControllers()
+	public void RuntimeGuardRefusesOnlyCoastersThatBindToNoStation()
 	{
 		Park().RequireSupportedCoasterRuntime();
 		var body = Header( new Body().U32( 1 ).U32( 0 ).U32( 0 ).U32( 1 ), sections: 0 ).U32( 0 );
 		var park = Park( body.ToArray() );
 		Assert.AreEqual( 1u, park.CoasterBlock!.Count );
 		var error = Assert.ThrowsException<InvalidDataException>( park.RequireSupportedCoasterRuntime );
-		StringAssert.Contains( error.Message, "no runtime track, controller or train is rebuilt" );
+		StringAssert.Contains( error.Message, "binds to station mesh 4, which no saved attraction carries" );
+		// a block that binds to its station's attraction thing passes the guard; the level restores it
+		Park( body.ToArray(), rideMeshInstance: 4 ).RequireSupportedCoasterRuntime();
 		// No catalog lookup or object mutation may precede the unsupported-data refusal.
 		var objects = new ParkObjects( null!, new SandboxParkGrid() );
 		Assert.ThrowsException<InvalidDataException>( () => objects.ImportOriginal( park ) );

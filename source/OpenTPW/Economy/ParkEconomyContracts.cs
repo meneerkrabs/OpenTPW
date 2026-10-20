@@ -306,7 +306,7 @@ public sealed class ParkObjectState
 	public bool TrackValid { get; set; } = true;
 	/// <summary>
 	/// A coaster's controller passes the counts-test's coaster test: it exists, crosses itself nowhere, and is complete and closed
-	/// (<c>CoasterRide.AcceptsGuests</c>). Read only for a coaster type (Bumper.WhichTrackType 3); mirrored each tick by the level, not
+	/// and is not being edited (<c>CoasterRide.CountsForParkPoints</c>), without the host admission sample guard. Read only for a coaster type (Bumper.WhichTrackType 3); mirrored each tick by the level, not
 	/// saved; true until the first sync.
 	/// </summary>
 	// [BIN:TPW-EXE:0x00441970 coaster test] the controller found by the thing's +0x20 (0x00436860, none: 0) must have +0x140 (its self-intersection count) 0, +0x3C bit 0 set and bit 1 clear, and must not be the coaster being edited (0x00790FEC)

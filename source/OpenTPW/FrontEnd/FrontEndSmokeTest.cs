@@ -96,6 +96,12 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 	private (uint Width, uint Height, uint Pixel) switchOriginal;
 	private TexturePackSwitch? textureSwitch;
 	private Asset[] firstParkHeadAssets = Array.Empty<Asset>();
+	/// <summary>Materials and shaders alive with the lobby up before the first park (<see cref="Asset.All"/>); -1 until taken.</summary>
+	private int lobbyMaterialsBeforePark = -1;
+	private static string ShaderCounts() => string.Join( ", ", Asset.All.OfType<Shader>().GroupBy( shader => System.IO.Path.GetFileName( shader.Path ) ).OrderBy( group => group.Key ).Select( group => $"{group.Key} {group.Count()}" ) );
+	private string lobbyShadersBeforePark = "";
+	private int lobbyTestShadersBeforePark = -1;
+	private static int TestShaderCount() => Asset.All.OfType<Shader>().Count( shader => System.IO.Path.GetFileName( shader.Path ) == "test.shader" );
 	private Asset[] secondParkHeadAssets = Array.Empty<Asset>();
 	private Asset[] firstParkGuestAssets = Array.Empty<Asset>();
 	private Asset[] secondParkGuestAssets = Array.Empty<Asset>();
@@ -548,6 +554,9 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 		{
 			Require( flow.Menu!.Stack.Top?.Name == "lobby" && GameOptions.Current.SoundEffectsVolume == stepState, "Escape cancels options and restores the volume" );
 			Require( !File.Exists( flow.OptionsPath ), "cancelled options are not written" );
+			lobbyMaterialsBeforePark = Asset.All.Count( asset => asset is Material or Shader );
+			lobbyShadersBeforePark = ShaderCounts();
+			lobbyTestShadersBeforePark = TestShaderCount();
 			flow.Menu.Main.Focus( flow.Menu.Main.Find( "enterPark" ) );
 			flow.InjectedInput = UiInput.Key( UiKeys.Accept );
 		} );
@@ -1382,6 +1391,12 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 			// Capture the current generations: lazy pack downloads may have replaced individual atlas textures.
 			firstParkHeadAssets = flow.Level!.RideHeadRenderer!.OwnedAssets.ToArray();
 			firstParkGuestAssets = flow.Level.GuestRenderer!.OwnedAssets.ToArray();
+			// rebuilding the path layer releases what it replaces: the same number of test.shader copies afterwards, however often it runs
+			var shadersBeforeRebuild = TestShaderCount();
+			flow.Level.OriginalTerrain!.RefreshPaths();
+			flow.Level.OriginalTerrain.RefreshPaths();
+			Require( TestShaderCount() == shadersBeforeRebuild, "rebuilding the terrain's path layer leaves no material of the replaced parts behind" );
+			Require( ParticleRenderer.For( flow.Level ) is not { AtlasPixelsReleased: false }, "the particle renderer dropped its CPU atlas pixels after the upload" );
 			Click( flow.Hud!.Stack.Top!, nameof( UIStrings.ExitToLobby ) );
 		} );
 		Wait( "lobby again", 20 );
@@ -1392,6 +1407,13 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 			Require( RendererAssetsReleased( firstParkHeadAssets ), "exit releases every head atlas, material and shader from the first park" );
 			Require( RendererAssetsReleased( firstParkGuestAssets ), "exit releases every guest atlas, material and shader from the first park" );
 			Log.Trace( "Guest lifecycle: first park exit released all ten owned guest assets." );
+			// The lobby scene and the terrain made a material (with its own copy of test.shader) per part and released only their buffers, so every lobby visit left about 160 behind. Exactly as many test.shader
+			// copies are alive as before the park; what a park creates for good (the advisor's 43 materials, the particles) stays and uses other shaders.
+			var lobbyMaterialsNow = Asset.All.Count( asset => asset is Material or Shader );
+			Log.Trace( $"Materials and shaders with the lobby up: {lobbyMaterialsBeforePark} before the first park ({lobbyShadersBeforePark}), {lobbyMaterialsNow} after it ({ShaderCounts()})." );
+			Require( lobbyMaterialsBeforePark >= 0 && TestShaderCount() == lobbyTestShadersBeforePark, $"leaving a park releases the materials of its terrain and the lobby's scene ({lobbyMaterialsBeforePark} materials and shaders before: {lobbyShadersBeforePark}; {lobbyMaterialsNow} after: {ShaderCounts()})" );
+			// Releasing a material frees only what it owns (its shader copy, pipeline, uniform buffer and layouts), never the textures it draws with: the shared white placeholder and the textures cached by path stay live.
+			Require( Texture.Missing.NativeTexture is { IsDisposed: false } && Asset.All.OfType<Texture>().All( texture => texture.NativeTexture is not { IsDisposed: true } ), "no live texture lost its GPU texture when the park's materials were released" );
 			if ( parkLanguage != null )
 				Require( string.Equals( GameLanguage.Current.Name, parkLanguage, StringComparison.OrdinalIgnoreCase ) && flow.Strings.Language == parkLanguage,
 					"a language chosen in the park applies once the park is left" );
@@ -1404,6 +1426,7 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 		{
 			Require( flow.StartKind == ParkStartKind.InstantAction && flow.Level!.Park!.Economy.Mode == ParkGameMode.InstantAction,
 				"selected Instant Action reaches the park economy" );
+			Require( Texture.Missing.NativeTexture is { IsDisposed: false } && Asset.All.OfType<Texture>().All( texture => texture.NativeTexture is not { IsDisposed: true } ), "the deferred release of the first park's materials left every live texture's GPU texture alone" );
 			secondParkHeadAssets = flow.Level!.RideHeadRenderer!.OwnedAssets.ToArray();
 			secondParkGuestAssets = flow.Level.GuestRenderer!.OwnedAssets.ToArray();
 			Require( secondParkGuestAssets.Length == 10 && secondParkGuestAssets.All( Asset.All.Contains ), "a second park owns a fresh guest atlas, material and shader set" );

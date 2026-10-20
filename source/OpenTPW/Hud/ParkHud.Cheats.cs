@@ -58,7 +58,7 @@ public sealed partial class ParkHud
 		if ( !allowed || level is not { IsReadOnlyVisit: false } || FinanceEconomy is not { } economy )
 			return;
 		foreach ( var action in CheatKeyActions( economy.Cheats.Mode, maskAtRelease, released ) )
-			economy.QueueCheat( action );
+			level.Commands.Issue( new QueueCheatCommand( action.Kind, action.Argument ) );
 	}
 
 	/// <summary>

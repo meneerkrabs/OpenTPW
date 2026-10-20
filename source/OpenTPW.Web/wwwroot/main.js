@@ -11,6 +11,10 @@ import { parseManifest, planSprites, fetchSprites, serialRequests } from './open
 // The game in the browser (docs/WEB.md): the player's own files go into the runtime's memory, then
 // the front end runs in the canvas, one Program.Frame per animation frame.
 const status = document.getElementById('status');
+// Harness experiment (loopback only, with ?perf=1): ?gc=<params> sets the runtime's garbage collector parameters (MONO_GC_PARAMS), to measure how they change the page's peak memory.
+const gcExperiment = ['127.0.0.1', 'localhost', '[::1]'].includes(location.hostname) && new URLSearchParams(location.search).get('perf') === '1' ? new URLSearchParams(location.search).get('gc') : null;
+if (gcExperiment)
+	dotnet.withEnvironmentVariable('MONO_GC_PARAMS', gcExperiment);
 const runtime = await dotnet.create();
 const { setModuleImports, getAssemblyExports, getConfig, runMain } = runtime;
 setModuleImports('opentpw-gl', webgl);
@@ -42,6 +46,8 @@ const perf = loopback && perfQuery.get('perf') === '1' ? {
 	counters: () => ({ ...JSON.parse(program.PerfCounters()), wasmBytes: runtime.localHeapViewU8().buffer.byteLength }),
 	take() { const frames = this.frames; this.frames = []; return frames; },
 	takeSkipped() { const skipped = this.skipped; this.skipped = 0; return skipped; },
+	// Copies a theme's files as a park start would (the determinism scenario's other themes); program.PerfLevelLoaded tells when they are in.
+	loadLevel: level => requestLevel(level),
 } : null;
 if (perf)
 	globalThis.opentpwPerf = perf;

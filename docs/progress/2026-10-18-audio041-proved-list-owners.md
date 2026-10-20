@@ -4,7 +4,7 @@ AUDIO-041 is narrowed to its remaining paths. Load, Find Parks and Other Parks n
 on row activation. Their type-7/base/owner routes send row notification 0x400 without synthesizing button 0x100
 or a dedicated row sound: Load owner `0x49e880`, Find Parks `0x4bf9f0`, Other Parks `0x4c1a10`, type-7 procedure
 `0x665c35`, base `0x65f6d1`, hook `0x485780`. The immediate load/details paths are covered by that static audit;
-[the audio guide](../AUDIO.md#three-proved-list-owners-october-18-2026) records the bounded evidence.
+[the audio guide](../AUDIO.md#list-owners-october-18-and-19-2026) records the bounded evidence.
 
 The Load ownership guard and approved select-then-load UX remain intact. Its separate EXT Load Park button
 keeps its own 0x1F and no longer receives a second click from the row callback. The two online lists retain

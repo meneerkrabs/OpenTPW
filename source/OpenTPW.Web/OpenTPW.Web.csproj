@@ -36,6 +36,71 @@
 		<Compile Include="$(GameSources)/**/*.cs" Link="Game/%(RecursiveDir)%(Filename)%(Extension)" Exclude="$(GameSources)/obj/**;$(GameSources)/bin/**;$(GameSources)/Formats/Model/**;&#xA;				$(GameSources)/Program.cs;&#xA;				$(GameSources)/Client/Game.cs;&#xA;				$(GameSources)/Client/GameDir.cs;&#xA;				$(GameSources)/Client/LegacySettings.cs;&#xA;				$(GameSources)/Settings.Designer.cs;&#xA;				$(GameSources)/UI/Cursor.cs;&#xA;				$(GameSources)/Client/TgqPngExport.cs;&#xA;				$(GameSources)/Client/SdtWavExport.cs;&#xA;				$(GameSources)/Client/LinuxNativeLibraries.cs;&#xA;				$(GameSources)/Render/Assets/TexturePackBuilder.cs;&#xA;				$(GameSources)/Render/Assets/ImagePrepass.cs;&#xA;				$(GameSources)/Render/ShaderCompiler.cs;&#xA;				$(GameSources)/Client/Setup/SetupWizard.cs;&#xA;				$(GameSources)/Client/Movie/SdlMovieAudioOutput.cs;&#xA;				$(GameSources)/Online/OnlinePanel.cs;&#xA;				$(GameSources)/UI/DisplaySettingsPanel.cs;&#xA;				$(GameSources)/UI/Layouts/ObjectBuildPanel.cs;&#xA;				$(GameSources)/UI/Layouts/ParkLayout.cs" />
 	</ItemGroup>
 
+	<!--
+	The cross-runtime determinism check (docs/DETERMINISM.md, "Browser and native"; tools/web-determinism): with
+	-p:OpenTpwDeterminismPins=true the page also carries the asset-free unit tests that pin simulation digests, compiled into this
+	same assembly with the same settings (AOT or interpreter) as the shipped page, and a JSExport that runs them. The published page
+	never sets the property, so nothing of it ships.
+	-->
+	<PropertyGroup Condition="'$(OpenTpwDeterminismPins)' == 'true'">
+		<DefineConstants>$(DefineConstants);OPENTPW_DETERMINISM_PINS</DefineConstants>
+		<NoWarn>$(NoWarn);CS0618;CS8602;CS8604;CS8618;CS8625;CS0162;CS0219;CS0168;CS1998;CS8619;CS8620;CS8603;CS8600;CS8601;CS8629;CS0649;CS0169;CS0414</NoWarn>
+	</PropertyGroup>
+	<!-- Test files that need the desktop or the server (ASP.NET Core, the content kit, desktop-only game files) and so cannot be compiled for the browser. -->
+	<ItemGroup>
+		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/ChatSatelliteTests.cs" />
+		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/ContentKitTests.cs" />
+		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/EmailRecoveryTests.cs" />
+		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/GltfSceneTests.cs" />
+		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/OnlineIntegrationTests.cs" />
+		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/OnlineServerTests.cs" />
+		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/PostcardEmailTests.cs" />
+		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/PoolSpriteDeliveryTests.cs" />
+		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/SecurityHardeningTests.cs" />
+		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/ServerBuildInfoTests.cs" />
+		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/TwoStepLoginTests.cs" />
+		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/UmbrellaAnchorMeasureTests.cs" />
+		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/WinterDrawingTests.cs" />
+		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/DesktopEditionStarterTests.cs" />
+		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/DesktopStarterCorrectionReviewTests.cs" />
+		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/LayerTwoCrcSpanTests.cs" />
+		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/Mpeg1JointWavTests.cs" />
+		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/Mpeg1LayerTwoWavExportTests.cs" />
+		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/SdtWavExportTests.cs" />
+		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/SdtWavIndependentReviewTests.cs" />
+		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/TexturePackTests.cs" />
+		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/WebShaderTests.cs" />
+		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/SilentRunTests.cs" />
+		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/OffscreenRunTests.cs" />
+		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/DesktopStarterIndependentReviewTests.cs" />
+		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/TpiMissionInspectionTests.cs" />
+		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/PortableFileSystemTests.cs" />
+		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/ObjectLightTests.cs" />
+		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/TgqPngExportTests.cs" />
+		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/ShaderTests.cs" />
+		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/InstallationDiscoveryTests.cs" />
+		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/MaterialRollbackTests.cs" />
+		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/LinuxNativeLibrariesTests.cs" />
+		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/FshPngExportTests.cs" />
+		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/FshPngExportReviewTests.cs" />
+		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/ObjectVertexAnimationTests.cs" />
+		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/MpegPartialTailReviewTests.cs" />
+		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/GlbBuilder.cs" />
+		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/GltfModelConverterTests.cs" />
+		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/WebClientTransportTests.cs" />
+		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/BrowserPinsExclusionTests.cs" />
+	</ItemGroup>
+	<ItemGroup Condition="'$(OpenTpwDeterminismPins)' == 'true'">
+		<Compile Include="../OpenTPW.Tests/**/*.cs" Exclude="../OpenTPW.Tests/obj/**;../OpenTPW.Tests/bin/**;@(DeterminismPinsExcludedTests)" Link="Tests/%(RecursiveDir)%(Filename)%(Extension)" />
+		<PackageReference Include="MSTest.TestFramework" Version="2.2.7" />
+		<!-- the shipped example script mod, which the pinned script-mod run switches on (DeterminismTests.ScriptModsFixedRunHash) -->
+		<EmbeddedResource Include="../../content/mods/opentpw.example.*/**/*" LogicalName="content/mods/%(RecursiveDir)%(Filename)%(Extension)" />
+	</ItemGroup>
+	<ItemGroup Condition="'$(OpenTpwDeterminismPins)' != 'true'">
+		<Compile Remove="Program.DeterminismPins.cs" />
+		<Compile Remove="Program.ParticleRenderOracle.cs" />
+	</ItemGroup>
+
 	<ItemGroup>
 		<PackageReference Include="Net.Codecrete.QrCodeGenerator" Version="3.2.1" />
 		<ProjectReference Include="../OpenTPW.Web.Veldrid/OpenTPW.Web.Veldrid.csproj" />
@@ -79,6 +144,12 @@
 	<ItemGroup>
 		<Content Include="../../content/pools/esprites/**/*" Link="wwwroot/pools-sprites/%(RecursiveDir)%(Filename)%(Extension)" />
 	</ItemGroup>
+
+	<!-- The publish step stores a Brotli and a gzip copy of the files it knows to be compressible (js, css, json, wasm, dat, ...); the 8.2 MB of sprite files (.TPC, about 36 % smaller with Brotli) are not on its list, so they
+	     went out as they were. The server sends the copy the browser accepts (OpenTPW.Server/WebClient.cs). The 350-byte .ESP files stay as they are. -->
+	<PropertyGroup>
+		<CompressionIncludePatterns>$(CompressionIncludePatterns);**/*.TPC;**/*.tpc</CompressionIncludePatterns>
+	</PropertyGroup>
 
 	<!-- The file system creates archive handlers by reflection; keep the game whole when trimming. -->
 	<ItemGroup>

@@ -175,14 +175,32 @@ public sealed class OriginalParkImport
 	/// Missing or ambiguous matches stay visible; neither record index nor header words are guessed as station ids.</summary>
 	public IReadOnlyList<ImportedCoasterSection> CoasterSections { get; } = Array.Empty<ImportedCoasterSection>();
 
-	/// <summary>Guard before constructing runtime objects from an original TPW park. Structural inspection remains
-	/// available, but nonempty original controllers cannot safely be resumed until station joins and train data are decoded.
-	/// Theme Park Inc has a separate viewer/import contract and is not inferred through this guard.</summary>
-	// [APPROX:SAVE-920] a park whose Coasters block lists a coaster is refused: the block is decoded (headers, sections, trains and cars) but no runtime coaster is rebuilt from it, where tp.exe's loader 0x437B60 binds each block to the empty controller the RideSystem loader made for its station (by the station mesh id, controller +0x10; none matching crashes the original at 0x437CD5) and restores its station nodes, slot, pylon nodes with their collision lists, end node, cut, trains and cars — evidence needed: a Theme Park World save with a built coaster and the restore of a CoasterRide from the decoded block
+	/// <summary>
+	/// The saved attraction thing a coaster block binds to: the one whose mesh instance id is the header's station mesh id (controller <c>+0x10</c>). Null when no
+	/// attraction or more than one carries it.
+	/// </summary>
+	public SaveAttraction? CoasterStation( SaveCoaster coaster )
+	{
+		ArgumentNullException.ThrowIfNull( coaster );
+		var matches = Attractions.Where( attraction => attraction.MeshInstanceId == coaster.StationMeshInstanceId ).Take( 2 ).ToList();
+		return matches.Count == 1 ? matches[0] : null;
+	}
+
+	/// <summary>
+	/// Guard before constructing runtime objects from an original TPW park: every saved coaster must bind to exactly one saved attraction thing by its station mesh id,
+	/// the controller the original's loader binds it to. Where tp.exe would crash the park is refused with the reason instead; the level restores the bound coasters.
+	/// Theme Park Inc has a separate viewer/import contract and is not inferred through this guard.
+	/// </summary>
+	// [BIN:TPW-EXE:0x437CBF coaster bind] the loader walks the controller list 0x790FE0 for the controller whose station mesh id (+0x10) is the header's +0xA, which the RideSystem loader 0x4647A0 made when it recreated the station's mesh instance; none matching dereferences a null pointer (0x437CD5), so the original crashes on such a park
 	public void RequireSupportedCoasterRuntime()
 	{
-		if ( CoasterBlock is { Count: > 0 } )
-			throw new InvalidDataException( "Original TPW coaster runtime import is unsupported: the saved controller, its track sections and its trains are decoded, but no runtime track, controller or train is rebuilt from them. Use the structural CoasterBlock and CoasterSections for inspection." );
+		if ( CoasterBlock is not { Count: > 0 } block )
+			return;
+		foreach ( var coaster in block.Coasters )
+		{
+			if ( CoasterStation( coaster ) == null )
+				throw new InvalidDataException( $"The save's coaster at offset {coaster.Offset} binds to station mesh {coaster.StationMeshInstanceId}, which {(Attractions.Any( attraction => attraction.MeshInstanceId == coaster.StationMeshInstanceId ) ? "more than one" : "no")} saved attraction carries; the original game would crash loading this park (0x437CD5), so it is refused." );
+		}
 	}
 
 	public bool IsOccupiedByObject( int x, int y )

@@ -85,8 +85,10 @@ sequential for every message (below).
 The original's main loop (tp.exe `0x54F4BF`) runs a 31 ms substep, and every eighth substep is a park turn. Each substep, in
 this order (`Level.AdvanceSimulation`, `ParkObjects.Simulate`, `SimulationSubstep`):
 
-1. the substep counter (`0x877D34`) and the scaled clock (`0x878C74`, +0x1F) rise at `0x54F4C4`..`0x54F4D6`, before the pause test (`0x54F4D4`); a paused park then skips the body (`0x54F8CD`), so its scripts, bump
-   module, tour cars and turns stand still with its calendar. The original's counter would keep rising for as long as its timer runs while paused; OpenTPW's 60 Hz clock does not run while paused, so the counter simply stops (an approximation of the pause's wall-clock phase only);
+1. the substep counter (`0x877D34`) and the scaled clock (`0x878C74`, +0x1F) rise at `0x54F4C4`..`0x54F4D6`, before the inactive-application test (`0x54F4D4`): the body is skipped
+   (`0x54F8CD`) only while the application is inactive (`0x7A1A14` bit 3 clear, kept by the main window procedure `0x46B600`) and the option bit `0x7A1A8C` bit 0 is set (its default,
+   `0xC0E15` at `0x449E1C`). The game pause (`0x4092A0`) freezes the clock object `0x785970` that drives the substep loop (`0x54F47F`..`0x54F4AF`), so a paused park runs no
+   substep at all: its scripts, bump module, tour cars and turns stand still with its calendar and its counter stands, as OpenTPW's 60 Hz clock does while paused;
 2. the effects system (`0x520130`, not modelled);
 3. the bump module tick (`0x546C80`, `0x54F55F`): once per substep, whichever rides exist;
 4. the script pass (`0x5516B0`, `0x54F56B`): the pass counter (`0x8791A4`) rises, then the scripts run **newest first** (a
@@ -190,9 +192,147 @@ checks that different files, other clock expressions, appended expressions and
 a weakened edition gate remain forbidden.
 
 `SourceGuardCatchesEachForbiddenForm` checks each form against sample lines,
-and each was also checked by inserting it into a scanned source file. Not
-forbidden: `Guid.NewGuid` (temp file names) and `Parallel` (unused). Client
-code (`GameFlow`, the M3 gate) is not scanned.
+and each was also checked by inserting it into a scanned source file. `Guid.NewGuid`
+and `Parallel` are banned by the second scan below. Client code (`GameFlow`, the M3
+gate) is not scanned.
+
+## Browser and native
+
+A co-op session (docs/ONLINE.md; the user chose lockstep with the host ordering commands, and browsers that join and host) needs the
+browser build and every desktop to compute the same simulation bits. This section is the gate (co-op phase C1b).
+
+### What can differ
+
+The CLR's `Math.Sin`, `Math.Atan2`, `Math.Pow` and their relatives, `MathF`'s, and the System.Numerics builders that use them (rotation
+matrices, quaternion slerp) call the C library of the runtime: MSVC's on Windows, glibc on Linux, Apple's libm on macOS, and
+emscripten's musl in the browser (Mono, AOT or interpreter). They are not correctly rounded, and they disagree in the last bit. Over
+the 20,000 fixed inputs per function of `CrossRuntimeMathProbe`, Apple's libm (macOS arm64) and the browser's musl (Chrome, Mono AOT)
+differ in:
+
+| Function | Inputs that differ |
+| --- | ---: |
+| `Math.Sin` / `Math.Cos` | 895 / 894 |
+| `Math.Atan` / `Math.Atan2` / `Math.Acos` | 715 / 3,483 / 3,439 |
+| `Math.Pow` / `Math.Log2` | 1,994 / 39 against FreeBSD's routines (musl uses Arm's table routines, which glibc shares) |
+| `MathF.Sin` / `MathF.Cos` / `MathF.Atan2` / `MathF.Acos` | 418 / 230 / 1,150 / 228 against the double result rounded once |
+
+Square root, fused multiply-add, the four arithmetic operations, rounding and conversions are exact in IEEE 754 and gave the same
+digests in both (pinned in `DetMathTests.CorrectlyRoundedPlatformFunctionsArePinned`).
+
+System.Numerics' `Vector2`/`Vector3`/`Vector4.Lerp`, `Transform` and `TransformNormal` and the `Matrix4x4` product are another possible
+source: .NET evaluates them with `MultiplyAddEstimate`, which fuses the multiply and the add where the processor has fused multiply-add.
+On macOS arm64 (.NET 11 RC2) `Vector3.Transform` equals `fma(z, m31, fma(y, m21, x * m11)) + m41` for every one of 200,000 random inputs
+and differs from the unfused sum for a quarter of them; a runtime that does not fuse rounds twice. `Dot`, `Cross`, `Length`, `Normalize`
+and `Distance` are not fused. The browser's Mono AOT build computes other values for them than the desktops (below). The guard below does not ban these operations, and a source
+scan cannot find the matrix product. `DetMatrix` (`source/OpenTPW/Utils/DetMatrix.cs`) has the plain versions (product, point
+transform, lerp, and a slerp with DetMath's acos and sin), every product and sum rounded left to right. `CoasterPylonRig` composes its
+tag matrices with them and blends its clips' keys with them, and the coaster station frame (`CoasterStationLayout.FromModel`)
+composes a dummy's parent chain (`ObjectAnimator.LocalTransforms`) and the placement with them ("Cross-platform coaster pins" below).
+`CrossRuntimeMathProbe` reports the System.Numerics operations and `DetMatrix`'s over fixed inputs:
+`DetMathTests.DetMatrixDigestsArePinned` pins `DetMatrix`'s on every runtime. `FusedSystemNumericsOperationsArePinned` holds the
+fused System.Numerics values that Windows, Linux and macOS compute; the browser's Mono AOT build computes others (its interpreter
+matches the desktops), so that comparison is informative in the browser check, like the platform library's, and documents why
+simulation code must not use those operations.
+
+### DetMath
+
+`DetMath` and `DetMathF` (`source/OpenTPW/Utils/DetMath.cs`) are C# ports of FreeBSD's msun as musl ships them: sin, cos
+(with the Cody-Waite and Payne-Hanek reductions), atan, atan2, acos, pow and log2, with a fixed order of IEEE double operations, so
+every runtime computes the same bits. The single-precision versions evaluate in double and round once. Over the probe, sin, cos,
+atan, atan2 and acos equal the browser's musl bit for bit, and every function is within one unit in the last place of Apple's libm
+(`DetMathIsWithinOneUlpOfThePlatformLibrary`). `DetMathTests.DetMathDigestsArePinned` pins their results; CI checks the pins on
+Windows, Linux and macOS, and the browser check checks them in WebAssembly.
+
+Simulation code calls DetMath for every elementary function. `[EXT:deterministic-math]` (user decision, 2026-10-19: "Als EXT:
+deterministic-math"): tp.exe evaluates them on the x87 in extended precision (`fsin`, `fpatan`, `fyl2x`) or through its C runtime
+(`pow`, `acos`). OpenTPW evaluated them before through the platform's double `Math`, and now through DetMath. That is the same
+double precision, now identical everywhere, and the change moved no pin. The x87 control-word questions of `COAST-032` and
+`ECON-059` are unchanged. The call sites:
+
+| Site | Function | Original |
+| --- | --- | --- |
+| `LoanMath.MonthlyRepayment` | pow | the instalment `0xcb7a8` |
+| `CoasterRating` swing | atan2 | fpatan `0x43c918` |
+| `HermiteCoasterCurve.Orientation`, `SecondRailAngle` | atan2 | `0x41e24` |
+| `CoasterTrack.TurnAngle`, `TurnAngleXZ`, loop knot axis, `TagRoll`, `PcOrientation`, `ApplyManualPose` | acos, sin, cos, atan2 | `0x36a50`, `0x31984`, `0x4324a0`, `0x43e590` |
+| `CoasterCollision` angle sum | acos | the crossing test |
+| `TourController` approach and steering | atan2 | the tour cars |
+| `BumpMath.HeadingOf`, `SteerAngle`, `ReflectAngle` | atan2 | the bump module |
+| `WalkerBodies.HeadingOf` | atan2 | fpatan `0x5570C2` |
+| `HeadingAngle.Facing` | sin, cos | the turn `0x4FEF25` |
+| `GuestSimulation` queue facing change | sin, cos | `0x4FFFF0` |
+| `SideshowWin.HappinessGain` | log2 | fyl2x `0x4FE835` |
+
+The start-up tables are built with DetMath too and equal the platform libraries' tables entry for entry
+(`DetMathTests.LookupTablesBuiltWithDetMathEqualThePlatformLibrarysTables`; pinned in `LookupTablesArePinned`). They keep their
+binary-evidence labels: the coaster and PC sine tables (`0xa3cc8`, `0x4708D0`), `OriginalSineTable`, the tour table, the bump
+table `0x5442E0`, the slide's quarter sine, the bounce riders' table and the heading arctangent table `0x6E71B4`, whose 257 words
+equal the executable's. Every loan offer's instalment is the same with DetMath as with the platform's `pow`
+(`LoanInstalmentsWithDetMathEqualThePlatformLibrarys`). `RideMotion` (the unused prototype ride) uses DetMath as well.
+
+Presentation keeps the platform functions: renderers, meshes, cameras, the sky and lobby, particles, the evening, the drawn boat and
+kart poses (`TrackSurface`), the drawn pool waves and feet heights, the coaster car bend and rig, and the coaster tool's camera yaw
+input. A difference there changes a pixel, not the park.
+
+### The guard
+
+`DeterminismTests.SimulationCodeUsesNoPlatformMathGuidsOrParallelism` scans every file below `VM`, `Scripting`, `Economy` and
+`World` (all folders). It forbids `Math.`, `MathF.`, `double.` and `float.` elementary functions (sin to atan2pi, exp, log, pow, cbrt,
+hypot, rootn), `Matrix4x4`/`Matrix3x2.CreateRotation*`, `CreateFromYawPitchRoll`, `CreateFromAxisAngle`, `Quaternion.Slerp`,
+`Guid.NewGuid`, `Parallel.` and `.AsParallel(`. Exempt are:
+
+- the presentation files and folders it lists (`PresentationMathFiles`);
+- a line marked `[DET:presentation]` with its reason;
+- the atomic writes' temporary file names (`Guid.NewGuid().ToString( "N" ) + ".tmp"`).
+
+`PlatformMathGuardCatchesEachForbiddenForm` checks the forms and the exemptions.
+
+### The browser check
+
+`tools/web-determinism/run.mjs` runs the asset-free tests that pin simulation results inside the browser build. They cover the
+economy, guests, pools, umbrellas, winter, the weather, rain mood, smarter guests, script mods, cheats, coasters, tours, bump rides,
+track rides, staff, loans and DetMath. The page is published with `-p:OpenTpwDeterminismPins=true`, which compiles the tests into the
+page's own assembly with the page's settings (the published page never sets it). The check runs the tests one by one in headless,
+muted Chrome, where each test asserts the constant the desktop test asserts.
+
+- Skipped: two tests that read the repository's own sources or shaders.
+- Informative only: the comparisons with the runtime's own C library (`TestCategory("PlatformLibrary")`).
+- Gate: the `Browser determinism` workflow runs the check on every pull request and on main, for Mono AOT (as published) and the
+  interpreter.
+
+The with-data twin is `CrossRuntimeDigest`: per theme it gives the browser digest's fixed park run (economy and guests), the same run
+with one employee of every role, two park years of the level's weather, and the M4 gate's scenario as its list of state hashes. The
+M4 scenario covers every supported ride, shop, sideshow and feature with its object scripts and guests, and the track rides'
+stations. Run it on the desktop with `--determinism-digest [--out native.json]` and in the browser with tools/web-perf's
+`determinism` scenario, then compare with `tools/web-determinism/compare-digest.mjs`.
+
+### Results (October 19, 2026; macOS arm64, Chrome 155 headless, .NET 11 RC2)
+
+| Run | Before DetMath | After DetMath |
+| --- | --- | --- |
+| Asset-free pins in the browser, Mono AOT (29 s of tests) | 631 passed, 0 failed (7 inconclusive for want of data, 2 skipped) | 632 passed, 0 failed (the new source scan is inconclusive without sources) |
+| Asset-free pins in the browser, interpreter | 631 passed, 0 failed | 632 passed, 0 failed |
+| With data, four themes, browser AOT against desktop: fixed run, with staff, weather, M4 (692, 692, 677, 659 state hashes) | identical | identical |
+| The same with data, browser interpreter against desktop | not run | identical |
+| Desktop pins (2,050 tests of the simulation classes) | pass | pass, no pin moved |
+
+The desktop digests are the same before and after: jungle `ECB0C5BC6BFC46B9`, hallow `4B56CE11D7E43D7A`, space `69BBE374CB405BD0`,
+fantasy `9DC0B98B9C6BB2E9` (fixed run); M4 `9689EA415EBCD10C`, `7E6304824ABCA32A`, `B272F3F44E867B4E`, `B50BBEAFFD13640E`. So the
+browser already computed the desktop's bits for everything these runs cover, although the libraries disagree in the last bit for
+thousands of inputs. DetMath removes that dependency, so a later change cannot start to depend on it.
+
+Still outside these runs, and so not proven identical:
+
+- the state that is not hashed (above: placed-object animator poses, the guest economy bridge map);
+- the work `Level.Update` does by wall time outside the fixed tick (`SceneClock`, `RefreshPools`, `UpdateEvening`, `UpdateSnow`);
+- the per-frame staff calls of `Level.Update` outside the tick: `StaffWorld.Synchronize` (the tick repeats it before it moves anyone) and
+  `StaffPlacement.Reconcile`, which returns a picked-up member that no local tool carries to idle;
+- `FlatRideBounceRiders.Prepare` (`Level.AdvanceSimulation`, via `PrepareRideBodyPoses`), which runs once per frame after that frame's ticks and
+  changes the guests' ride-body state, so its result depends on how ticks are batched into frames;
+- the `Update()` of every entity (`Entity.All`), which runs after the simulation each frame;
+- a NaN that reaches hashed state, whose sign and payload differ between x86, ARM and WebAssembly.
+
+The co-op hash check covers the unhashed state only once it reaches hashed state.
 
 ## Park save
 
@@ -259,7 +399,7 @@ arrival timer's start turn and group flag instead of its countdown, version 11 t
 | `thing_table_digest` | guests in id order (every field the tick reads, including navigation and timers), including each guest's walk speed and steering state and its queue fields, the queue edge detectors, then attractions with queue cells, the queue list, admission state and counters, riders, limbo and bounce lists (each bounce slot with its deadline and start) | yes (order is id order, not the original's newest first) |
 | (cell map) | `ParkCellMap` of the guest grid: every non-empty cell in row order with its type, flags, placement counter, links and queue link (paths built by the path tool included) | yes (extra, after the thing table) |
 | `script_table_digest` | the script world's scheduler clock, then every live script in id order: id, name, parent, state, PC, flags, call stack, variables, clock origin, clock, wake time, timers, WAIT4ANIM deadline, LOOPANIM and TRIGWAITANIM tokens, instruction and slice counts, seed and RNG call count; for a root object script also its animator channels (AnimID, variant, loop, speed, start, ended, tick, deferred clip) and clock | yes |
-| (coasters) | `RideScriptWorld.Coasters`: the coaster generator, then every coaster in creation order: station ends, closed and complete flags, nodes (cell, height, t, pylon kind, stack index, station end, flags, bank, loop rotate, the exact position of the middle station node), controller state (initialised, the state 1/2/4/8, ride mode, speed setting, seats, speed cap, the lead car coordinate a reopened track keeps for the next train placement, net track money, time, braking start, station window, self-intersection count), samples (flags, height, roll, speed), rating, winch sections, trains (position, speed, train flags, boarding span, the riders of the lap and the guests seated at the station per car), the admission ring and the riders waiting to leave | yes (extra, after the script digest) |
+| (coasters) | `RideScriptWorld.Coasters`: the coaster generator, then every coaster in creation order: station ends, closed and complete flags, nodes (cell, height, t, pylon kind, stack index, station end, flags, bank, loop rotate, the exact position of the middle station node), controller state (initialised, the state 1/2/4/8, ride mode, speed setting, seats, speed cap, the lead car coordinate a reopened track keeps for the next train placement, net track money, time, whether the motion tick has run, braking start, station window, self-intersection count), samples (flags, height, roll, speed), rating, winch sections, trains (position, speed, train flags, boarding span, the riders of the lap and the guests seated at the station per car), the admission ring and the riders waiting to leave | yes (extra, after the script digest) |
 | (tracks) | the track layer after the cell map (every track cell: type, mask, link, flags, piece, parent, rotation, overlap, segment) and `RideScriptWorld.Bumpers`: the cosmetic LCG, then every controller (type, laps, performance, phase, state, validity, tick count and clock, station, sections, waiting and leaving guests, every boat's slot, flags, position, velocity, heading, spin, target buoy, laps and rider count) — both only while a track or controller exists, so every park without one keeps its earlier digests and the schema stays 14 (TRACKS.md); bumper cars add the chase target and the drawn heading and yaw to their boats' fields (the same conditional extension: only while a controller exists, no schema bump, as for the water and kart fields); boats draw their aiming jitter from the script stream (`RideScriptWorld.NextWorldDraw`, DET-013) | yes (extra, after the coasters) |
 | `economy_digest` | the park save's economy part as canonical JSON (sorted keys) | yes |
 | `input_log_cursor` | no input log | **missing** |
@@ -313,6 +453,68 @@ excluded presentation-only field does not require a schema or pin change. Bringi
 one of these fields into the canonical hash requires bumping `SchemaVersion` and
 re-pinning the fixed-run hash.
 
+### The exit walk (October 20)
+
+`GUEST-023` is retired: a guest a ride, shop, sideshow or toilet lets off now leaves as tp.exe's ExitRide makes it leave
+([GUESTS.md](GUESTS.md#leaving-an-object-exitride)). Three things changed in the simulation, and every pinned run with guests
+moved with them:
+
+1. **The let-off is read once per park turn.** The ride update's dismiss (`0x4E1410`) reads `VAR_LETMEOFF` after the
+   admission (state 0, `0x4E159A`) or the head step (states 1, 2 and 4, `0x4E0E27`). OpenTPW used to read it on every
+   tick (`RideVisitorBridge.HostStep`). A use now lasts up to one park turn longer, and in the update that lets a guest
+   off, the next one is called before it (`GuestTests.QueueFeedsLetMeOnInOrderAndReleasesThroughLetMeOff`).
+2. **The guest walks out.** ExitRide (`0x5014E0`) puts it at `UsageInfo.ExitCellAppearPos` in the exit cell
+   (`0x4DEDF0(1)`, the teleport `0x4FA930`), and state 15 (`0x500900`) walks it to the cell beyond the exit before it
+   decides again. OpenTPW used to set it down on that cell and let it stand for `ExitRideSeconds`. The walk changes the
+   guests' positions, the cell lists and the separation pushes, and with them every later draw.
+3. **A blocked exit closes the ride** (`0x4DF150`) and keeps the guest on it. No pinned run has one. The synthetic parks'
+   attractions have no placement, so they let off in their stand cell and route to their `ExitCell`. The same holds for
+   the M3 and M4 gates (they lay no access cells), the Theme Park Inc slice and online visits (their cell maps keep no
+   access-cell links). Only a level that types the footprints passes `ownExitCell`.
+4. **A demolished object's riders** get the removal message's treatment (`0x4FB360`, `Unregister`). They no longer
+   get the use routine at the demolition.
+
+No schema or save field changed. The pools changing room's swimmers keep their `[EXT:pools-swim]` exit. The slide's
+landing test (`PoolSlideActivity.IsLandingClear`) now reads a rider not yet updated this turn where that turn's step
+takes it, so the test no longer depends on the update order. The later arrivals had exposed that dependence. The kept
+body's position (`Guest.KeptBodyX/Y`) is presentation: it is not saved and not hashed.
+
+Pins moved (old → new):
+
+| Pin | Before | After |
+| --- | --- | --- |
+| `DeterminismTests.FixedRunHash` | `0x5D8385D13CC3BB9B` | `0xF3F895E3EF2F969B` |
+| `PoolsFixedRunHash` (pool and changing room) | `0x2E9AA1D5A79E1FB2` | `0x347F0BA1F0DF5DFB` |
+| pool cells | `0x8EE352E1FD1EEAB3` | `0x3BAFF5A07D0A82F6` |
+| pool extras | `0x20DED2AC4BEC293A` | `0x5CFE6494C7706870` |
+| `PoolsAttractionsFixedRunHash` | `0x2D7EE079E5A9B09F` | `0x1B5829884FE0659C` |
+| `PoolSlideActivityTests.PoolsSlidesFixedRunHash` | `0xB6C14C9856DF363A` | `0x758CE71C17D724D0` |
+| `UmbrellasFixedRunHash` | `0xE912E7E5D5B6E612` | `0x925B87221BE9AF53` |
+| `RainMoodFixedRunHash` | `0x3697B9094432D152` | `0xBCD73D82A2F5D0D4` |
+| `RainMoodWithUmbrellasFixedRunHash` | `0xADEE2FA6AFC2ACE3` | `0x2C8B850C069307BB` |
+| `WinterColdFixedRunHash` | `0x9E74A906AB249401` | `0x0E6B528D92E00145` |
+| `WinterColdEverythingFixedRunHash` | `0x45FCB3FC30C601FC` | `0x2BCAC8B1DC03F064` |
+| `WinterFixedRunHash` (winter shops) | `0xA66540FF8C2AC6DE` | `0x8171CE2F7537C034` |
+| `JungleDecemberOffFixedRunHash` | `0xF4A00471E60B9535` | `0xC9F860B54E30EB11` |
+| `JungleDecemberWintryFixedRunHash` | `0x296DA4DA6A8BE323` | `0x071D0789F44BE723` |
+| `WinterAlwaysFixedRunHash` | `0x5F767F69EF5CBF07` | `0x0C36671C5B99F0CD` |
+| `SmarterGuestsFixedRunHash` | `0xE7D4BED7787E4748` | `0x1A54C3057DBEED2E` |
+| script mods | `0x8AB18F8AC449CC49` | `0x995AD10275D35532` |
+| script mods, every hook | `0x6B74FB3AE8A4937F` | `0x2FB7EFA85DBAD719` |
+| `CheatsExtensionTests` fixed run | `0x5CBF8584199279AB` | `0x18440BAB5DB3D443` |
+| `GuestMeasurementTests` scenario | `0x383ECBB8309B25FD` | `0xA7A17A97F4D7F7D7` |
+| scenario, smarter guests (1.4.0 rules) | `0xF4F3CD74CD7253AB` | `0xBDC91FF7BA167AFF` |
+| scenario, smarter guests with paths | `0xDA1A5CD6C526A112` | `0x37A002F5FE807C35` |
+| scenario, food shop | `0x083802FC438DC19C` | `0x04442F9535C03C94` |
+| scenario, bins | `0xF43AEA85CC6DB665` | `0x7539BB3BB9729317` |
+| scenario, bins, 1.5.0 rules | `0x8E13F761512B0043` | `0xD2AF869CDF9A7D3D` |
+
+The extension-off checks (umbrellas, winter, pools, rain mood, cold, online, mods, observer) compare against these
+pins and moved with them. Tests that sampled a run's state at a fixed time take a later or another sample of the same
+property:
+- the smarter guests' planning and capacity tests;
+- the pool swing, jets and bob tests (more swimmers, a whole wave cycle);
+- the pools changing room tests (the guest is at the exit point and walks out).
 ### Staff locator role order (October 19)
 
 The own save records five independent role-ID sequences in `StaffData.RoleOrder`. This presentation owner
@@ -648,7 +850,8 @@ A park's cheats ([CHEATS.md](CHEATS.md), `ParkCheats`) live in the park economy:
 counted) and the actions waiting for the next turn. Every cheat the player asks for, through the original's secret park name and Alt keys or the extension's window, is **queued and applied at the start of the next park turn**
 (`ParkEconomy.AdvanceTurn`, before the turn's thing sweep with its weather and arrival updates; in a level whose turns are not swept, a paused economy's or one without pooled guests, the tick's guests and objects have run
 before the economy's turn, and only the weather follows), in a fixed order of kinds (`CheatKind`), and **takes no draw from any random stream** (`[EXT:cheats-turn-boundary]`). So a run with the same
-cheats at the same turns is the same run; the record in the save names those turns. OpenTPW has no input log for other player actions, and the record does not replay itself.
+cheats at the same turns is the same run; the record in the save names those turns. The record does not replay itself; the cheats the player asks for are commands, like the park's other
+edits, and their command log replays ([Commands](#commands)).
 
 The record is part of the park save (`ParkSaveFile.Data.Cheats`) only when the park has cheated or has a cheat waiting; otherwise it is left out, so **a park that never cheated keeps its save bytes and its hash** whether the
 `opentpw.cheats` extension is on or off. Because the economy digest of the canonical hash is that save's text, the record joins the hash exactly when it is present; `WorldStateHash.SchemaVersion` did not move.
@@ -676,6 +879,16 @@ ride, and the runtime snapshot, the track and the tour parts write the raised st
 `CheatsRideVehicleTests.CheatsBumperRaisedRunHash` = `0xDF2C86E99A8FB3C0`, the jungle bumper controller (template -1, world generator of seed 99) raised to 32 cars, loaded with 32 guests,
 run through a 30-second session and 600 more ticks.
 
+## Commands
+
+`[EXT:online-coop-commands]` The park's edits are commands ([COOP.md](COOP.md), `ParkCommands`): each applies before a stated simulation tick, the next one the fixed-step clock runs. In single
+player a command runs at once in the input handler, between two ticks before the frame's simulation, exactly where the edit ran before the command layer, so **no pin moved** and no
+save byte changed (the layer adds no saved or hashed state; the Move tool's carried entry is session state, not saved). Held commands (`ParkCommands.Schedule`, a replayed log) apply at
+the start of their tick inside `Level.AdvanceSimulation`, before the tick's economy sync. A command's executor reads only the command and the world, never a tool's state, and draws no
+random stream of its own beyond what the edit itself draws (a placement's script seed, as before). `ParkCommandLevelTests` records a build session on a no-data level and replays it on a
+twin with the same `WorldStateHash` after every tick; `ParkSettingCommandLevelTests` does the same for a session of the HUD windows' settings. A replay runs one tick per `AdvanceSimulation` call; the work a frame does outside its ticks (pool refresh, evening, snow, the scene
+clock, the body poses prepared after a frame's ticks) is not replayed, which C1b audits.
+
 ## Tests
 
 `DeterminismTests` (no game data needed):
@@ -693,7 +906,7 @@ run through a 30-second session and 600 more ticks.
 - sound draws do not change the hash, and a run with a sound chooser hashes like
   a headless one;
 - a pinned hash of a fixed run, checked in every test process
-  (`0x5D8385D13CC3BB9B`, schema 21, fidelity round 8 (guests), on top of the previous pin `0x2A8418A90725699A`: the per-cell thing lists keep their order across the park turns instead of being rebuilt in guest order every turn, and separation visits each list head first, the guest that entered the cell last first (WALK-003; every guest saves its entry number, the optional `CellSerial`, and an older save starts the lists in guest order); the booth's first verdict is the guest's next update after the walk's arrival, not a second later (ARRIVAL-006, 61 to 62 admissions in the ownership-flip run); the bin search makes a route request for every candidate closer than the best and a failed one leaves the walk stuck, and a route request of a stranded guest refuses at once (GUEST-005, 0x00500DC0, 0x004FA530); a won sideshow pays its prize into the guest's purse and ends with the logarithmic happiness tail and one world draw (GUEST-005, 0x004FE1E0); a show or performer turn writes the 11-bit heading angle (GUEST-010, 0x006E7074); the balloon prankster's victim is the balloon holder that entered the cell last (GUEST-007). No draw order changed except the tail's one draw. The pins that followed moved with it: the pool changing room `0xA83721661FA72F69` to `0x2E9AA1D5A79E1FB2` (90 swims, 131 admitted), the pool extras `0xA07E1347C234D5E1` to `0x20DED2AC4BEC293A`, the water attractions `0x6FE6C8B4BDCD0FED` to `0x5232DC9F32832BC6`, the pool cells `0x3492A988F0EF4AD7` to `0x8EE352E1FD1EEAB3`, the smarter guests `0x64340E899EC258EB` to `0xF0B3F8366E2B73E4`, the script mods `0xC4BE433626584D47` to `0x8AB18F8AC449CC49` and with every hook `0x9F2877C39A19BD52` to `0x6B74FB3AE8A4937F`; `GuestMeasurementTests`' scenario pins `0xBD62B929BDB55659` to `0x383ECBB8309B25FD`, with the extension `0xC0344925E23A32C1` to `0xF4F3CD74CD7253AB` and with the food shop `0x336E044598FE1EBB` to `0x30C8AF969CFEF592`; the cross grid of `PathBuilderTests` `0x7E11BFA00FE093FD` to `0x9D34C006E9694818` (61 to 62 admissions) and, with game data, the Jungle guest run of `PathAssetTests` `0xBC02D81A5FC6621D` to `0xBE549F10640102B9` (20 to 22 admissions). Before that `0x2A8418A90725699A`, schema 21: the staff candidate's sprite variant (GUEST-014): the hiring pool's candidates keep the variant their constructor draws (the draw itself was always made, so no random stream moves), the park save lists it for every candidate and the digest hashes the park save, so the candidates of the synthetic park (their variants are the draw mod the role's bank count, 0 for the handymen, guards and researchers) change the digest and nothing else does; FINDSCRIPTRAND's walk from the list head (DET-013, `0x55605C`, `0x5560E2`) moves no pin, which the pins show: with the walk reverted to the lowest id first every pin below stays the same, and with the old walk and the variant removed every pin returns to its previous value, on top of the previous pin `0xA91A607272718E93`, schema 21: the substep scheduler (DET-013) on top of the pin before it `0xE48128553808938B`: the fixture runs Level's substeps, so the shop's and the dice scripts take one slice per eight substeps in the original's pass order (newest first, the id's pass) instead of one on every tick, and their draws, waits and every guest interaction after them move; the park's save carries the script pass counter, which joins the hash once a pass has run. Before that, `0xE48128553808938B`, schema 21, two causes that landed separately and now compose, on top of the previous pin `0x7A199E7425A19C8B`: the walk change of that pin (WALK-006, below; alone it gave `0x7A199E7425A19C8B`) and the park turn's order (DET-013; the sweep alone, on the base before the walk change, gave `0x497D46DEE19D3ABE`; both together give the new pin): the fixture runs Level's order, the substep's scripts and then the economy's turn with its thing sweep (guests newest first by the pool's list, the economy's staff, research, rides and challenges, the shop's ride update, the turn's destroys, the arrival update), and the ticks between turns free nothing, so the draws of guests, staff, scripts and the arrival group come in another order and every later draw moves. The fixture's clocks also changed to match the level's: the economy advances one tick for each guest tick (it ran four, at the old Fastest speed) and the run is 14,400 ticks, as many ticks of the economy as before, so the pin still crosses a month end. Intermediate value: the lockstep clocks with the old per-tick order and without that walk change give `0x86CBDABB37372FDA`; the sweep moves it to `0x497D46DEE19D3ABE`, and the walk change then to the new pin; the schema stays 21. Before that, `0x7A199E7425A19C8B`, schema 21, on top of the previous pin `0x188C45B21C1E15E8`: the called guest's last walk into the ride's entrance cell (WALK-006: the route request `0x4FA5F0` to the stand point of state 13, `0x4FFFF0`) is the search and edge-test walk of every other walk (`GuestNavigation.Navigate`) wherever the search can enter the cell, so the steering, timing and the guests' separation of the guests the synthetic park calls forward move, and a queue whose outside cell was removed has its guests stand in the path cell the queue now starts on; no draw from the world or guest generators is added or removed, no hashed field is added and the snapshot schema is unchanged, and the Jungle guest run `0xBC02D81A5FC6621D` and the cross grid `0x7E11BFA00FE093FD` of `PathBuilderTests` do not move (this change alone, on the base before the ride-script VM change, gave `0x625402703E4F66A7`; the VM change alone gave `0x188C45B21C1E15E8`). Before that, `0x188C45B21C1E15E8`, schema 21 (bumped: the script digest hashes the raw words of the shared stack/heap array and the bridge digest drops two lists), on top of the previous pin `0x3DA16AED71E2F1E4` (schema 20; the intermediate digests `0xA1A7D52EB51607D4` under schema 21 and `0x1B77FB29EC69D815` under schema 20 never shipped): the ride-script VM's internal semantics follow tp.exe (RSE-VM.md, "Original interpreter internals"): `CRIT_UNLOCK` ends the slice, the critical flag is cleared at every slice start and the slice budget does not count instructions inside a critical section, HUSH/HOP are the script's own heap and the LIMBO family its own table (the bridge no longer boards on HUSH/LIMBO and no longer keeps a limbo list or a hopped set, so those two lists leave the bridge's digest; the VM digest adds heap, limbo and TURBO byte only once a script uses them), and the bridge's host steps no longer wait for a script that ended its slice inside `CRIT_LOCK`. No draw from any random stream and no save schema changed; a save's script snapshot gains the shared stack/heap array, the limbo slots and the TURBO byte (older snapshots load). Before that, `0x3DA16AED71E2F1E4`, schema 20, the arrival walk (WALK-008, ARRIVAL-001) on top of the previous pin `0x5F177F986FADADB1`: a guest is made at the centre of the bus stop B cell and walks the cell map through states 0 to 5 (tp.exe `0x4FF520`, `0x4FF730`, `0x4FF7F0`, `0x4FFB20`), taking the draws the original takes (the booth side and the two sub-cell bytes of state 1, the gate wait `0x501E6E` of state 3, the booth, entrance and gate sides, the way home's side), the person constructor stores the speed term 25 (`0x4FB1C1`), a paid guest walks in only as the head of its cell's thing list, and the thought pick counts only guests on cells of type 0, 1, 3, 9 and 10 (`0x4FA990`), so every guest's route, timing and draws move; the guests' visitor numbers and the park's count (`0x51AAF0`) join the digest, and the guest snapshot is schema 9. The Jungle guest run `0x30F213E46933EB8C` → `0xBC02D81A5FC6621D` (21 → 20 admissions) and the cross grid of `PathBuilderTests` `0x397F3EC43F6F70C8` → `0x7E11BFA00FE093FD` (61 admissions, as before). Before that, `0x5F177F986FADADB1`, schema 20, two causes on top of the previous pin `0x01946A39A53F851E`: (1) guests take their ids from the park's one thing pool (WALK-010; tp.exe's allocator `0x516270` through the base constructor `0x50AFE0`), and the synthetic park builds the pool as Level does (the world's ten singletons, then the gates and the lights, so the first guest is thing 13 and not 1; this change alone gave `0xA7A559BCC863F8E2`): the reseed of every guest creation (`0x4FB19E`), the needs phase (`0x501676`), the prank flag and every other id-keyed rule read the thing id, and a leaving guest's slot is taken again by the next arrival (last in, first out after the turn's deferred destroy, `0x516310`); (2) the booth walk's speed term (`0x4FF730`: 25 for a thing id with its low two bits 0, 50 while the bus waits at status 3, otherwise 0, set on every park turn of state 2), which moves the guests' walks to the booth and with them the admissions. No hashed field is added and no draw from the world generator is added or removed: the pool's next free id joins the guest digest in place of the old counter. Before that, `0x01946A39A53F851E`, schema 20, on top of the previous pin `0x0487112FF9FF20DB`: a finished use now averages 3 x the guest's happiness byte change into the object's satisfaction ring (UI-024; tp.exe `0x4FD970` -> `0x4E1E00`), so the economy state the digest hashes holds the rings' values; the fields and the schema are unchanged, and no draw from the world or guest random streams was added. Before that, the pin `0x0487112FF9FF20DB`, schema 20, two causes on top of the previous pin `0xDB3EA9A7AF384B5B`: (1) a finished shop or sideshow visit no longer counts as a ride (the use routine `0x4FD9B1` sorts a visit by the type's `WhichUIType`, `+0x4AC`: 0 raises the rides counter `+0x1C4`, 1 the shops `+0x1C8`, 2 the sideshows `+0x1CC`, anything else counts nothing; SAVE-002), so the rides counter and the guests' ride counts move; (2) the three new counters (shops visited, sideshows visited, sideshows won) are hashed in the guest digest, and the park resume snapshot gains optional `ShopsVisited`, `SideshowsVisited` and `SideshowsWon` fields that older saves load as 0. Before that, the pin `0xDB3EA9A7AF384B5B`, schema 20, two causes on top of the previous pin `0x205523C08061A05D`: a guest walking to a ride runs the minor decision of tp.exe's `0x4FD570` every twelfth update (GUEST-018, retired; GUEST-019), which can switch the target, and the booth's expensive wait is counted in executed park turns (`0x4FF9D0`, ARRIVAL-006), so the guests' targets, the joins and the booth's timing move; the pin before that, `0x205523C08061A05D`, schema 20, two causes on top of the previous pin `0xC92A25B3D77EAE17`: (1) guests walk whole walks as tp.exe does: one destination for the whole walk to a ride (state 10, `0x4FFBC0` -> `0x4FA530` -> `0x510100`) and out of the park (state 18, `0x500A50`, walk mask 1), a guest leaving a queue stays where it stood until the decision (QUEUE-010), the guests leaving through the gate walk to the vehicle's stop cells (states 19 to 21, `0x500AD0`, `0x500BD0`, `0x51AAD0`: the cell pick and the two sub-cell bytes are draws of the shared world generator, in the original's order) and the guard release goes to the gate cell, so the guests' positions, the joins and the world stream move; without the rings below, this change alone gave `0x9DB7A7AAEA8D1CE2` on the world-generator tree (`0x7AED41D19433D4B2`). No save field is added by the walks (the walk's destination and route are the navigation state the guest save already carries, and the saved guest state gains the value 20, WalkingToVehicle, which the validators accept; older saves load unchanged). (2) The rings: ECON-057 below, which moved the pin from `0x7AED41D19433D4B2` to `0xC92A25B3D77EAE17` only through the saved `Rings` field in the economy digest. Before that, `0xC92A25B3D77EAE17`, schema 20: the attractions' six 30-day daily rings (ECON-057) join the economy digest through the park save's optional `Rings` field, written once a ring holds The same cause (the hashed candidate variants) moved the other pins that run a park: `SmarterGuestsFixedRunHash` 0xC8534726E08D0EC2 → 0x64340E899EC258EB, `ScriptModsFixedRunHash` 0xD7388BB84BBA0676 → 0xC4BE433626584D47, `ScriptModsAllHooksFixedRunHash` 0xC3190E46B1E70633 → 0x9F2877C39A19BD52, `PoolsChangingRoomFixedRunHash` 0xB5B033AE20AD9BA0 → 0x42E916DFC15CED19, `PoolExtrasFixedRunHash` 0x0C35A6A0F10D914E → 0xD8806A8911B990C7, `PoolsFixedRunHash` 0x4EEF5812C3D8023D → 0x3492A988F0EF4AD7, `PoolsAttractionsFixedRunHash` 0x79EEF3026A22FE72 → 0xC7370809D0D43A0B.
+  (`0xF3F895E3EF2F969B`, schema 21, the exit walk, see [The exit walk](#the-exit-walk-october-20); before it `0x5D8385D13CC3BB9B`, fidelity round 8 (guests), on top of the previous pin `0x2A8418A90725699A`: the per-cell thing lists keep their order across the park turns instead of being rebuilt in guest order every turn, and separation visits each list head first, the guest that entered the cell last first (WALK-003; every guest saves its entry number, the optional `CellSerial`, and an older save starts the lists in guest order); the booth's first verdict is the guest's next update after the walk's arrival, not a second later (ARRIVAL-006, 61 to 62 admissions in the ownership-flip run); the bin search makes a route request for every candidate closer than the best and a failed one leaves the walk stuck, and a route request of a stranded guest refuses at once (GUEST-005, 0x00500DC0, 0x004FA530); a won sideshow pays its prize into the guest's purse and ends with the logarithmic happiness tail and one world draw (GUEST-005, 0x004FE1E0); a show or performer turn writes the 11-bit heading angle (GUEST-010, 0x006E7074); the balloon prankster's victim is the balloon holder that entered the cell last (GUEST-007). No draw order changed except the tail's one draw. The pins that followed moved with it: the pool changing room `0xA83721661FA72F69` to `0x2E9AA1D5A79E1FB2` (90 swims, 131 admitted), the pool extras `0xA07E1347C234D5E1` to `0x20DED2AC4BEC293A`, the water attractions `0x6FE6C8B4BDCD0FED` to `0x5232DC9F32832BC6`, the pool cells `0x3492A988F0EF4AD7` to `0x8EE352E1FD1EEAB3`, the smarter guests `0x64340E899EC258EB` to `0xF0B3F8366E2B73E4`, the script mods `0xC4BE433626584D47` to `0x8AB18F8AC449CC49` and with every hook `0x9F2877C39A19BD52` to `0x6B74FB3AE8A4937F`; `GuestMeasurementTests`' scenario pins `0xBD62B929BDB55659` to `0x383ECBB8309B25FD`, with the extension `0xC0344925E23A32C1` to `0xF4F3CD74CD7253AB` and with the food shop `0x336E044598FE1EBB` to `0x30C8AF969CFEF592`; the cross grid of `PathBuilderTests` `0x7E11BFA00FE093FD` to `0x9D34C006E9694818` (61 to 62 admissions) and, with game data, the Jungle guest run of `PathAssetTests` `0xBC02D81A5FC6621D` to `0xBE549F10640102B9` (20 to 22 admissions). Before that `0x2A8418A90725699A`, schema 21: the staff candidate's sprite variant (GUEST-014): the hiring pool's candidates keep the variant their constructor draws (the draw itself was always made, so no random stream moves), the park save lists it for every candidate and the digest hashes the park save, so the candidates of the synthetic park (their variants are the draw mod the role's bank count, 0 for the handymen, guards and researchers) change the digest and nothing else does; FINDSCRIPTRAND's walk from the list head (DET-013, `0x55605C`, `0x5560E2`) moves no pin, which the pins show: with the walk reverted to the lowest id first every pin below stays the same, and with the old walk and the variant removed every pin returns to its previous value, on top of the previous pin `0xA91A607272718E93`, schema 21: the substep scheduler (DET-013) on top of the pin before it `0xE48128553808938B`: the fixture runs Level's substeps, so the shop's and the dice scripts take one slice per eight substeps in the original's pass order (newest first, the id's pass) instead of one on every tick, and their draws, waits and every guest interaction after them move; the park's save carries the script pass counter, which joins the hash once a pass has run. Before that, `0xE48128553808938B`, schema 21, two causes that landed separately and now compose, on top of the previous pin `0x7A199E7425A19C8B`: the walk change of that pin (WALK-006, below; alone it gave `0x7A199E7425A19C8B`) and the park turn's order (DET-013; the sweep alone, on the base before the walk change, gave `0x497D46DEE19D3ABE`; both together give the new pin): the fixture runs Level's order, the substep's scripts and then the economy's turn with its thing sweep (guests newest first by the pool's list, the economy's staff, research, rides and challenges, the shop's ride update, the turn's destroys, the arrival update), and the ticks between turns free nothing, so the draws of guests, staff, scripts and the arrival group come in another order and every later draw moves. The fixture's clocks also changed to match the level's: the economy advances one tick for each guest tick (it ran four, at the old Fastest speed) and the run is 14,400 ticks, as many ticks of the economy as before, so the pin still crosses a month end. Intermediate value: the lockstep clocks with the old per-tick order and without that walk change give `0x86CBDABB37372FDA`; the sweep moves it to `0x497D46DEE19D3ABE`, and the walk change then to the new pin; the schema stays 21. Before that, `0x7A199E7425A19C8B`, schema 21, on top of the previous pin `0x188C45B21C1E15E8`: the called guest's last walk into the ride's entrance cell (WALK-006: the route request `0x4FA5F0` to the stand point of state 13, `0x4FFFF0`) is the search and edge-test walk of every other walk (`GuestNavigation.Navigate`) wherever the search can enter the cell, so the steering, timing and the guests' separation of the guests the synthetic park calls forward move, and a queue whose outside cell was removed has its guests stand in the path cell the queue now starts on; no draw from the world or guest generators is added or removed, no hashed field is added and the snapshot schema is unchanged, and the Jungle guest run `0xBC02D81A5FC6621D` and the cross grid `0x7E11BFA00FE093FD` of `PathBuilderTests` do not move (this change alone, on the base before the ride-script VM change, gave `0x625402703E4F66A7`; the VM change alone gave `0x188C45B21C1E15E8`). Before that, `0x188C45B21C1E15E8`, schema 21 (bumped: the script digest hashes the raw words of the shared stack/heap array and the bridge digest drops two lists), on top of the previous pin `0x3DA16AED71E2F1E4` (schema 20; the intermediate digests `0xA1A7D52EB51607D4` under schema 21 and `0x1B77FB29EC69D815` under schema 20 never shipped): the ride-script VM's internal semantics follow tp.exe (RSE-VM.md, "Original interpreter internals"): `CRIT_UNLOCK` ends the slice, the critical flag is cleared at every slice start and the slice budget does not count instructions inside a critical section, HUSH/HOP are the script's own heap and the LIMBO family its own table (the bridge no longer boards on HUSH/LIMBO and no longer keeps a limbo list or a hopped set, so those two lists leave the bridge's digest; the VM digest adds heap, limbo and TURBO byte only once a script uses them), and the bridge's host steps no longer wait for a script that ended its slice inside `CRIT_LOCK`. No draw from any random stream and no save schema changed; a save's script snapshot gains the shared stack/heap array, the limbo slots and the TURBO byte (older snapshots load). Before that, `0x3DA16AED71E2F1E4`, schema 20, the arrival walk (WALK-008, ARRIVAL-001) on top of the previous pin `0x5F177F986FADADB1`: a guest is made at the centre of the bus stop B cell and walks the cell map through states 0 to 5 (tp.exe `0x4FF520`, `0x4FF730`, `0x4FF7F0`, `0x4FFB20`), taking the draws the original takes (the booth side and the two sub-cell bytes of state 1, the gate wait `0x501E6E` of state 3, the booth, entrance and gate sides, the way home's side), the person constructor stores the speed term 25 (`0x4FB1C1`), a paid guest walks in only as the head of its cell's thing list, and the thought pick counts only guests on cells of type 0, 1, 3, 9 and 10 (`0x4FA990`), so every guest's route, timing and draws move; the guests' visitor numbers and the park's count (`0x51AAF0`) join the digest, and the guest snapshot is schema 9. The Jungle guest run `0x30F213E46933EB8C` → `0xBC02D81A5FC6621D` (21 → 20 admissions) and the cross grid of `PathBuilderTests` `0x397F3EC43F6F70C8` → `0x7E11BFA00FE093FD` (61 admissions, as before). Before that, `0x5F177F986FADADB1`, schema 20, two causes on top of the previous pin `0x01946A39A53F851E`: (1) guests take their ids from the park's one thing pool (WALK-010; tp.exe's allocator `0x516270` through the base constructor `0x50AFE0`), and the synthetic park builds the pool as Level does (the world's ten singletons, then the gates and the lights, so the first guest is thing 13 and not 1; this change alone gave `0xA7A559BCC863F8E2`): the reseed of every guest creation (`0x4FB19E`), the needs phase (`0x501676`), the prank flag and every other id-keyed rule read the thing id, and a leaving guest's slot is taken again by the next arrival (last in, first out after the turn's deferred destroy, `0x516310`); (2) the booth walk's speed term (`0x4FF730`: 25 for a thing id with its low two bits 0, 50 while the bus waits at status 3, otherwise 0, set on every park turn of state 2), which moves the guests' walks to the booth and with them the admissions. No hashed field is added and no draw from the world generator is added or removed: the pool's next free id joins the guest digest in place of the old counter. Before that, `0x01946A39A53F851E`, schema 20, on top of the previous pin `0x0487112FF9FF20DB`: a finished use now averages 3 x the guest's happiness byte change into the object's satisfaction ring (UI-024; tp.exe `0x4FD970` -> `0x4E1E00`), so the economy state the digest hashes holds the rings' values; the fields and the schema are unchanged, and no draw from the world or guest random streams was added. Before that, the pin `0x0487112FF9FF20DB`, schema 20, two causes on top of the previous pin `0xDB3EA9A7AF384B5B`: (1) a finished shop or sideshow visit no longer counts as a ride (the use routine `0x4FD9B1` sorts a visit by the type's `WhichUIType`, `+0x4AC`: 0 raises the rides counter `+0x1C4`, 1 the shops `+0x1C8`, 2 the sideshows `+0x1CC`, anything else counts nothing; SAVE-002), so the rides counter and the guests' ride counts move; (2) the three new counters (shops visited, sideshows visited, sideshows won) are hashed in the guest digest, and the park resume snapshot gains optional `ShopsVisited`, `SideshowsVisited` and `SideshowsWon` fields that older saves load as 0. Before that, the pin `0xDB3EA9A7AF384B5B`, schema 20, two causes on top of the previous pin `0x205523C08061A05D`: a guest walking to a ride runs the minor decision of tp.exe's `0x4FD570` every twelfth update (GUEST-018, retired; GUEST-019), which can switch the target, and the booth's expensive wait is counted in executed park turns (`0x4FF9D0`, ARRIVAL-006), so the guests' targets, the joins and the booth's timing move; the pin before that, `0x205523C08061A05D`, schema 20, two causes on top of the previous pin `0xC92A25B3D77EAE17`: (1) guests walk whole walks as tp.exe does: one destination for the whole walk to a ride (state 10, `0x4FFBC0` -> `0x4FA530` -> `0x510100`) and out of the park (state 18, `0x500A50`, walk mask 1), a guest leaving a queue stays where it stood until the decision (QUEUE-010), the guests leaving through the gate walk to the vehicle's stop cells (states 19 to 21, `0x500AD0`, `0x500BD0`, `0x51AAD0`: the cell pick and the two sub-cell bytes are draws of the shared world generator, in the original's order) and the guard release goes to the gate cell, so the guests' positions, the joins and the world stream move; without the rings below, this change alone gave `0x9DB7A7AAEA8D1CE2` on the world-generator tree (`0x7AED41D19433D4B2`). No save field is added by the walks (the walk's destination and route are the navigation state the guest save already carries, and the saved guest state gains the value 20, WalkingToVehicle, which the validators accept; older saves load unchanged). (2) The rings: ECON-057 below, which moved the pin from `0x7AED41D19433D4B2` to `0xC92A25B3D77EAE17` only through the saved `Rings` field in the economy digest. Before that, `0xC92A25B3D77EAE17`, schema 20: the attractions' six 30-day daily rings (ECON-057) join the economy digest through the park save's optional `Rings` field, written once a ring holds The same cause (the hashed candidate variants) moved the other pins that run a park: `SmarterGuestsFixedRunHash` 0xC8534726E08D0EC2 → 0x64340E899EC258EB, `ScriptModsFixedRunHash` 0xD7388BB84BBA0676 → 0xC4BE433626584D47, `ScriptModsAllHooksFixedRunHash` 0xC3190E46B1E70633 → 0x9F2877C39A19BD52, `PoolsChangingRoomFixedRunHash` 0xB5B033AE20AD9BA0 → 0x42E916DFC15CED19, `PoolExtrasFixedRunHash` 0x0C35A6A0F10D914E → 0xD8806A8911B990C7, `PoolsFixedRunHash` 0x4EEF5812C3D8023D → 0x3492A988F0EF4AD7, `PoolsAttractionsFixedRunHash` 0x79EEF3026A22FE72 → 0xC7370809D0D43A0B.
   a running value or a day: the synthetic park's shop and its sales make today's customers, takings and costs non-zero, so the digest changes; the hash without the
   ring field is the previous pin `0x7AED41D19433D4B2`, so no simulated behaviour moved. The challenge system's exact times (`NextOfferSeconds`, `DeadlineSeconds`), the carried object and the
   challenge update on every park turn (ECON-055, ECON-058) add optional save fields that are written only when they differ from the defaults. Before that,
@@ -888,3 +1101,138 @@ The canopy size, the pull cap, the renderer's per-frame work and the measurement
 | `RainMoodWithUmbrellasFixedRunHash` | `0xADEE2FA6AFC2ACE3` | `0xADEE2FA6AFC2ACE3` |
 
 `RainMoodFixedRunHash` (`0x3697B9094432D152`) and every pin with no brolly shop are unchanged: the kid score is read only for a brolly shop.
+
+## Original coaster import
+
+The original coaster import (October 19, `OriginalCoasterImport`, docs/TPWS-PAYLOAD.md "The import") moves no pin and
+adds none. Every original save in the corpus holds an empty Coasters block, so no park takes the new path. The import
+draws nothing from `World.Random` or the coaster generator (`CoasterWorld.Random`). It rates the track at the
+constructor's speed setting and keeps the saved trains. The first frame after the load then runs the controller's first
+motion tick, which takes no time. After the station script's first slice, the slice tail passes the script's speed word
+(`0x5517D7` → `0x43B2B0`, `OriginalObjectEffects.AfterSlice`), which re-rates the track and lays the trains out again when
+it differs from 60.
+
+The PR first pinned a fixed run of an imported synthetic coaster (`ImportedCoasterPin`, `0x0B6F305C6589A229`). That pin
+held on macOS arm64 only: the Linux and Windows x64 runners compute `0x43373F0B3F89E03C` for the same run. The coaster's
+curve, rating and collision pass called libm functions (`Atan2`, `Sin`, `Cos`, `Acos`), whose results are not bit-equal
+across platforms. The pin was removed then and is back since DetMath ("Cross-platform coaster pins" below).
+
+The same review ported the controller's first motion tick (`CoasterRide.MotionClockStarted`, controller flag `0x10`):
+tp.exe's motion tick `0x43CE20` takes the animation clock's time since its last run as the frame time, and the tick that
+finds flag `0x10` clear sets the flag and that clock word first, so it takes no time (`0x43CE85`). That is the first tick
+of every new or loaded controller. Every train makes one partial hop of no length: it stays where it stands, while its
+speed is capped, decays by 0.95 below 2.0 and stops below 0.01. Before, OpenTPW's first tick moved the trains by a whole
+step. The coaster hash content therefore changes twice: it holds the flag, and a coaster's trains run one step behind from
+their first tick on (any park with a running coaster hashes differently). No pinned golden or resume hash in the suite
+depends on a coaster's content, so no pin moved; `CoasterTests.ADepartureFromRestDoesNotReachTheMinimumSpeedInOneFrame`
+now measures the second tick. The park-resume save carries the flag (optional; a save from before it counts the flag set
+on a track that runs), so a resumed coaster continues as the one that kept running.
+
+The speed setter now runs after every slice of a station's root script that holds its coaster, as the original's loop
+does. For a coaster OpenTPW built, the speed word equals the setting after `COAST 8`, so nothing changes until an upgrade
+changes the script's speed word (RIDES-033); then the coaster takes the new speed after the script's next slice, as in
+the original, where OpenTPW before kept the old one. No pinned run upgrades a coaster.
+
+## Coaster clock catch-up
+
+The coaster's motion tick now takes as its frame time the fixed steps since its last motion tick
+(`CoasterRide.MotionClockLagSeconds`), as tp.exe's `0x43CE20` takes the scaled game clock since its clock word `ctl+0x120`
+(October 19). A running coaster's tick follows the one before it, so its frame time is one step, bit-equal to before
+(the lag is the sum of the steps in double precision, cast to single precision once). Only a coaster whose track stood cut or
+reopened (state 1, which runs no motion tick, `0x435AC9`) moves differently: the first tick after the track is completed
+again takes the whole stretch, so its trains run further in that tick and every later state differs from before. The
+fixed steps are the original's scaled game clock, as the substep scheduler maps it: they stop while the park is paused and
+multiply with the game speed. What stays OpenTPW's own (`EXT:coaster-fixed-step`) is the frame: one motion tick per 60 Hz
+step instead of one per rendered frame, and no zero-time ticks while the clock stands still (the original runs them on
+every paused frame).
+
+The coaster hash gains the lag and the speed setter's replay bit (`CoasterRide.SpeedSetByReplay`, controller bit `0x8000`,
+set only by the original's layout replay, which OpenTPW does not run), so any park with a coaster hashes differently from
+before. The park-resume save carries both (optional; a save from before them holds no lag and a clear bit). No pinned
+golden or resume hash in the suite depends on a coaster's content, so no pin moved.
+
+## Cross-platform coaster pins
+
+Since DetMath (#697) the coaster's curve, rating and collision pass evaluate their elementary functions identically everywhere,
+and the remaining System.Numerics arithmetic of the coaster's simulation path now goes through `DetMatrix` (October 20): the
+pylon rig's clip blending (`Vector3.Lerp` and the slerp's `MathF.Acos`/`Sin` before) and the station frame of a placed station
+model (`Matrix4x4`'s product before, which may fuse the multiply-add). A coaster's content is therefore a cross-platform digest,
+and it is pinned again:
+
+| Pin | Value | What |
+| --- | --- | --- |
+| `OriginalCoasterImportTests.AnImportedSyntheticCoasterRunsDeterministically` | `0x8A1279434220868B` | the imported synthetic coaster's minute (the #702 pin, `0x0B6F305C6589A229` on macOS and `0x43373F0B3F89E03C` on x64, moved with the coaster hash's two new fields, the motion clock lag and the replay bit) |
+| `CoasterTests.BuiltCoasterRunsArePinned` | `0x1ABA458D0079E09C` | a built synthetic circuit open for a minute with a guest on board |
+| `CoasterTests.BuiltCoasterRunsArePinned` | `0x045BFFE59994F3E7` | the same circuit reopened for three seconds at 20 s and completed again (the catch-up tick) |
+
+CI checks them on Windows, Linux and macOS and in both browser legs (Mono AOT and the interpreter). The synthetic coasters have no pylon or station models; a coaster built from game
+data adds the rig and the station frame, which `DetMatrix` covers. The rig's rest decomposition (`Matrix4x4.Decompose`) and its
+`Matrix4x4.CreateFromQuaternion` stay System.Numerics': they use the unfused `Dot`, `Cross`, `Length` and scalar arithmetic. The station frame's change from the fused product
+moves a station node's position by at most a few last bits; no pinned golden builds a coaster from game data, so no other pin moved.
+The animator itself (`ObjectAnimator`, presentation and the object scripts' poses) still uses System.Numerics.
+
+## Historical pre-ExitRide retained-target diagnostics (2026-10-20)
+
+These mappings apply only to the pre-ExitRide diagnostic baseline. PR #678 changed the guest behavior and its pins; the main baseline default is `0xF3F895E3EF2F969B`, schema 21. See the fresh joint-baseline reconciliation below; do not reuse the historical values as its oracle.
+
+GUEST-004 retains the refused full-room target until replacement or removal. `AttractionId` already participates in the canonical hash; the hash schema and production hashing are unchanged. The diagnostic head `c101b4abb9c54256ec6000d26035eec02d539d1b` projects only retained target identities to zero without advancing the simulation, restores them in `finally`, and leaves each actual pin assertion intact. All 30 failing assertions on each of macOS, Windows and Linux recovered their individual previous expected hashes under that projection (jobs `118523918197`, `118523918216`, `118523918184`, run `39391350115`). Browser interpreter actual hashes match the same observed mappings (job `118523539167`, run `39391350411`); its harness does not emit the projection log, so the retained projection assertions must establish that check in the next run. This is endpoint equivalence, not a claim of native-game parity. The default fixed run also has a paired per-tick legacy-cleared replay which checks complete world hashes and RNG and recovers its original pin.
+
+The obsolete pre-ExitRide executable lookup was removed because it is not a valid oracle for the new baseline. The diagnostic retains current-main expected pins, complete hash restoration and repeated-read checks, and the default paired replay asserts the current-main legacy-cleared pin. Direct concrete hash reads are compared with delegate reads before, during and after target projection; the later joint-baseline reconciliation below uses only freshly observed values.
+
+The following historical mappings are not valid evidence for the post-ExitRide integration. No runtime hash field is ignored. Fresh cross-platform projection evidence, rather than this historical table, governs joint-baseline pin changes.
+
+| Pin | Previous target-cleared hash | Retained-target hash |
+| --- | --- | --- |
+| FixedRunHash | `0x5D8385D13CC3BB9B` | `0x60020C37ABCABF02` |
+| PoolsChangingRoomFixedRunHash | `0x2E9AA1D5A79E1FB2` | `0x4A5E388817DC9C20` |
+| UmbrellasFixedRunHash | `0xE912E7E5D5B6E612` | `0xFD4D4FA2BC53FB5A` |
+| WinterFixedRunHash | `0xA66540FF8C2AC6DE` | `0x04E34ADC1294F043` |
+| JungleDecemberOffFixedRunHash | `0xF4A00471E60B9535` | `0xD4B54BFD2A1A3B40` |
+| JungleDecemberWintryFixedRunHash | `0x296DA4DA6A8BE323` | `0xAFC63547CAB25B4D` |
+| WinterAlwaysFixedRunHash | `0x5F767F69EF5CBF07` | `0x5965F2218331DD31` |
+| RainMoodFixedRunHash | `0x3697B9094432D152` | `0xD07DB488E3A1FC4A` |
+| WinterColdEverythingFixedRunHash | `0x45FCB3FC30C601FC` | `0xB3D783A30895BD7C` |
+| PoolExtrasFixedRunHash | `0x20DED2AC4BEC293A` | `0x2006BE5B455712F4` |
+| PoolsAttractionsFixedRunHash | `0x2D7EE079E5A9B09F` | `0x0B29FCE4C3ADFA82` |
+| SmarterGuestsFixedRunHash | `0xE7D4BED7787E4748` | `0x0A277921CBEAB355` |
+| ScriptModsFixedRunHash | `0x8AB18F8AC449CC49` | `0xECA942D0405666C8` |
+| ScriptModsAllHooksFixedRunHash | `0x6B74FB3AE8A4937F` | `0x3F3FBCA22B2A3F26` |
+| PoolsFixedRunHash | `0x8EE352E1FD1EEAB3` | `0x24E20D8037EFED67` |
+| ScenarioBinsSmarterFixedRunHash | `0xF43AEA85CC6DB665` | `0xF0B70A41A0CF4F7A` |
+| ScenarioBinsPhase6FixedRunHash | `0x8E13F761512B0043` | `0x7F5CE116FCF4ACE2` |
+| CheatsFixedRunHash | `0x5CBF8584199279AB` | `0xC75F009A73FB11B7` |
+
+
+## Joint ExitRide retained-target pin reconciliation (2026-10-20)
+
+Baseline main `9b8943a9` includes ExitRide #678 and presentation-only balloons #532. Diagnostic head `0f619d6bd9485a6993002d82ef279b878691c429` recovered all 32 failing desktop pin assertions on each of Linux, macOS and Windows by clearing only retained refused target IDs at the endpoint. The 18 distinct mappings below agree across those runs. All 30 browser pin failures in each of normal interpreter, traces-off interpreter and AOT use the same observed actual values. Direct/delegate, repeated-read and full-restoration guards passed on this diagnostic source shape. This does not establish the cause of earlier interpreter-only instability or universal intermediate behavior equivalence. The default paired per-tick hash/RNG replay remains an independent guard against the original main default.
+
+Evidence: [desktop run](https://github.com/meneerkrabs/OpenTPW/actions/runs/39410581238), [browser run](https://github.com/meneerkrabs/OpenTPW/actions/runs/39410581259). The candidate updates exactly 18 observed constants and adds an inverse projection guard retaining each corresponding main value. Secondary values not reached by a failed pin assertion are deliberately excluded. Newly exposed later assertions and the new guard still require fresh CI. The candidate default is `0x29CE354FAB027ABF`, schema 21; production hash inputs remain unchanged.
+
+| Main baseline | Observed retained-target value |
+| --- | --- |
+| `0x18440BAB5DB3D443` | `0x0FAA0BA10A2E2B43` |
+| `0xF3F895E3EF2F969B` | `0x29CE354FAB027ABF` |
+| `0x347F0BA1F0DF5DFB` | `0x23A31F409845D585` |
+| `0x925B87221BE9AF53` | `0x9429690D329115B6` |
+| `0x8171CE2F7537C034` | `0x7B6BD0C81ED66C35` |
+| `0xC9F860B54E30EB11` | `0x6FDBB79D8B9377BB` |
+| `0x0C36671C5B99F0CD` | `0x4F2841D3F85402FC` |
+| `0xBCD73D82A2F5D0D4` | `0x4098DC9D36A6D8CD` |
+| `0x2C8B850C069307BB` | `0xEB1C231F596B30D2` |
+| `0x0E6B528D92E00145` | `0x547522BF092EEC0C` |
+| `0x2BCAC8B1DC03F064` | `0x48F18D1BED795051` |
+| `0x5CFE6494C7706870` | `0xE88AD1079B2559A5` |
+| `0x1B5829884FE0659C` | `0xBD827362B8D9DC5C` |
+| `0x1A54C3057DBEED2E` | `0x905024CE0B91E577` |
+| `0x995AD10275D35532` | `0xF85EB64C10598DB6` |
+| `0x2FB7EFA85DBAD719` | `0x3D741AAF6928D531` |
+| `0x7539BB3BB9729317` | `0x5AC8D8A47AAC35D2` |
+| `0x3BAFF5A07D0A82F6` | `0x4AAC7DD831EFD113` |
+
+The first reconciliation head `48314a81f1d59f4a8696330af00afcacae297dbc` passed those 18 inverse guards and exposed four later assertions covering exactly two additional constants. Each of Linux, macOS and Windows recovered all four by the same target-only projection; normal browser interpreter, traces-off interpreter and AOT agreed on the same actual values, with no guard failures. Evidence: [desktop run](https://github.com/meneerkrabs/OpenTPW/actions/runs/39413440835), [browser run](https://github.com/meneerkrabs/OpenTPW/actions/runs/39413440819). The followup changes only those two constants and adds their inverse guards; current-head CI remains required.
+
+| Additional main baseline | Observed retained-target value |
+| --- | --- |
+| `0x071D0789F44BE723` | `0x812FCC248B729C28` |
+| `0xD2AF869CDF9A7D3D` | `0xEF00F0D64A9077FE` |

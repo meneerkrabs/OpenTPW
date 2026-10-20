@@ -443,7 +443,7 @@ public class QueueTests
 		Assert.AreEqual( GuestThought.None, guest.Thought, "no thought" );
 		Assert.AreEqual( 60f, guest.Happiness, "no happiness change" );
 		Assert.IsTrue( guest.TemporaryHistory.All( id => id == 0 ), "no history push" );
-		Assert.AreEqual( 0, guest.AttractionId );
+		Assert.AreEqual( RideId, guest.AttractionId, "a full-room refusal keeps the target until the next major choice" );
 
 		var shop = new Rig( parameters: new QueueParameters( true, false, false, 10, 60, 60, 1, 30 ) ) { KeepNeedsEmpty = true };
 		Assert.IsTrue( Enumerable.Range( 100, (int)shop.Ride.QueueLimit ).All( shop.Ride.TryJoinQueue ), "the queue is at its limit" );

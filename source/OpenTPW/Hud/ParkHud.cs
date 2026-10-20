@@ -17,6 +17,8 @@ public sealed class HudHost
 	public Func<UiScreenStack, UiScreen>? CreateLoad { get; init; }
 	/// <summary>Opens the online screens (Go Online, UITEXT 1); null hides the entry.</summary>
 	public Action<UiScreenStack>? GoOnline { get; init; }
+	/// <summary>Existing authenticated session state, sampled when the park pause menu opens; null means offline.</summary>
+	public Func<bool>? IsLoggedIn { get; init; }
 	/// <summary>Restarts the park as it was started (the pause menu's Restart Park, after its confirmation); null disables the entry.</summary>
 	public Action? RestartPark { get; init; }
 	/// <summary>Opens the online Publish Park flow (the pause menu's Publish Park); null disables the entry.</summary>
@@ -125,7 +127,7 @@ public sealed partial class ParkHud
 		&& screen != attractionScreen && screen != visitorScreen && screen != chatModeScreen && screen.Name != OpenTPW.UI.ChatPanel.PopupScreenName );
 	public IReadOnlyList<string> Messages => messages.Select( message => message.Text ).ToArray();
 	/// <summary>The park simulation's time scale for the screens now open (see <see cref="TimeScaleFor"/>).</summary>
-	public float SimulationTimeScale => TimeScaleFor( Status.TimeScale, Stack.Screens.Select( screen => screen.Name ) );
+	public float SimulationTimeScale => TimeScaleFor( applicationPaused ? 0f : Status.TimeScale, Stack.Screens.Select( screen => screen.Name ) );
 
 	/// <summary>
 	/// The park simulation's time scale: the speed setting's <paramref name="speedScale"/>, or 0 while the pause menu is
@@ -139,7 +141,7 @@ public sealed partial class ParkHud
 	// scheduler's 31 ms substeps and park turns, together with the advisor's unscaled clock (0x10117AE8).
 	// [BIN:TPW-EXE:0x4092a0 game pause] the game pause (object 0x786b68, +0x1c = 1) is called by the pause menu 0x48c830 (0x48c87e, from Esc), by the full-screen map window 0x5f0b40 (0x5f0b7f, from Space) and by the postcard 0x4a9380 (0x4a93d7, Ctrl+P), by the generic message box 0x47f020 (0x47f26c), by the main window procedure 0x46b600 when the application is deactivated (0x46b74c) and by the three screens the pause menu's handler 0x48b6a0 opens (0x49efba, 0x49f29f, 0x4a3a6c); the park pauses here for the pause menu with the screens opened from it and for the map window
 	// [BIN:TPW-EXE:0x48cd10 delete confirmation] the delete confirmation of an object or staff member (the object windows 0x4af600, 0x4b0b30, 0x4b2150, the attractions window 0x497640 and the All Staff window 0x4b4fc0) is a generic message box 0x47f020 with UITEXT 0x18c and the b_exit and b_okay buttons when the Confirmations option is on, so it pauses (0x47f26c) and its close resumes (0x47eed0, message 0x14 → 0x409300); the postcard (Ctrl+P, 0x4a9380) pauses the same way: confirmDelete, confirmDeleteAttraction and the postcard screen stop the park here; the employee dismiss box (0x4b5e5d, UITEXT 0x18d) is a 0x47f020 caller too (its call at 0x4b5eac, yes callback 0x4b6070), so confirmDismissStaff stops it as well
-	// [APPROX:UI-096] the other message boxes (0x47f020's 27 call sites: the alert queue 0x47f620 that the goal and challenge code feeds through 0x47f410, the file errors of 0x4237f0, 0x4a77f0, the online notices 0x4bc500 and 0x4ec030) and the application's deactivation (WM_ACTIVATEAPP in 0x46b600, 0x46b74c) pause in the original and not here — evidence needed: which of OpenTPW's other dialogs (the loan boxes, the restart and quit boxes) correspond to those call sites, and what the deactivation's matching resume is
+	// [APPROX:UI-096] the other message boxes (0x47f020's 27 call sites: the alert queue 0x47f620 that the goal and challenge code feeds through 0x47f410, the file errors of 0x4237f0, 0x4a77f0, the online notices 0x4bc500 and 0x4ec030) pause in the original and not here; application deactivation has a bounded offline host focus-loss latch (ParkHud.ApplicationPause), not full native activation/modal/audio parity — evidence needed: which of OpenTPW's other dialogs (the loan boxes, the restart and quit boxes) correspond to those call sites, and the remaining native activation/modal ownership gates
 	// [EXT:texture-pack] A first-run download may take a long time; its modal keeps the park turn paused.
 	public static float TimeScaleFor( float speedScale, IEnumerable<string> openScreens ) =>
 		openScreens.Any( name => name is PauseMenuScreen or MapScreenName or "texturePackDownload" or PostcardScreen or "confirmDelete" or "confirmDeleteAttraction" or "confirmDismissStaff" ) ? 0 : speedScale;
@@ -319,7 +321,7 @@ public sealed partial class ParkHud
 				Text = () => label,
 				Font = fonts => fonts.Label,
 				Clicked = () => SetUserGameSpeed( speed ),
-				Selected = () => Status.Speed == speed,
+				Selected = () => DisplayedGameSpeed == speed,
 				Bounds = new UiRect( 1540 + index * 122, 1430, 116, 84 ),
 				Anchor = UiAnchor.BottomRight
 			} );
@@ -424,6 +426,7 @@ public sealed partial class ParkHud
 			GameAudio.PlayUi( GameAudio.ErrorEvent );
 			return;
 		}
+		// [BIN:TPW-EXE:0x4ac7f6 buy row refusal] on the PC the buy list's row activation (0x400, 0x4ac4f9) plays the error 0x1D (0x486ae0) when the money is below the price (0x4ac6c7) or a golden-ticket row cannot be paid (0x4ac5b0), and starts no tool; the row itself adds no click
 		if ( Status.HasEconomy && (Status.PriceOf( item ) ?? item.Cost) > Status.Money )
 		{
 			PostMessage( strings.Help( 152 ) );
@@ -547,11 +550,8 @@ public sealed partial class ParkHud
 			return;
 		if ( selectedObject is not { IsDeleted: false } item || !item.Runtime.IsAttraction )
 			return;
-		// [BIN:STP-PPC:0x1007159C open button] the open buttons call the reopening guard 0xde654 first and open only when it allows (ORACLE.md F27, ECON-049)
-		if ( item.IsOpen )
-			item.Close();
-		else if ( level.Gate?.MayOpen( item.Runtime ) ?? true )
-			item.Open();
+		// the command asks the reopening guard before it opens (SetAttractionOpenCommand)
+		level.Commands.Issue( new SetAttractionOpenCommand( item.Runtime.AttractionId, !item.IsOpen ) );
 	}
 
 	private void DeleteRide()
@@ -562,8 +562,8 @@ public sealed partial class ParkHud
 			return;
 		void Remove()
 		{
-			// Catalogue objects sell and unlink exactly once; the developer prototype removes through its own seam.
-			level.RemoveAttraction( item );
+			// Catalogue objects sell and unlink exactly once; the developer prototype removes through its own seam ([EXT:online-coop-commands]: one command either way).
+			level.Commands.Issue( new RemoveAttractionCommand( item.Runtime.AttractionId ) );
 			selectedObject = null;
 			SetInfoArm( false );
 		}
@@ -617,7 +617,7 @@ public sealed partial class ParkHud
 			(UIStrings.PublishPark, () => host.PublishPark?.Invoke( Stack )),
 			(UIStrings.Options, () => { if ( host.CreateOptions != null ) Stack.Push( host.CreateOptions( Stack, () => { } ) ); }),
 			(UIStrings.GoOnline, () => host.GoOnline?.Invoke( Stack )),
-			(UIStrings.ResumeGame, ClosePauseMenu),
+			(UIStrings.ResumeGame, ResumeGameAfterApplicationPause),
 			(UIStrings.ExitToLobby, () => { if ( menu is { IsRemoved: false } && ReferenceEquals( Stack.Top, menu ) ) host.ExitToLobby(); }),
 			(UIStrings.QuitGame, () => Stack.Push( UiDialogs.Message( "confirmQuit", () => strings[UIStrings.ConfirmQuit],
 				(() => strings.Value( UIStrings.Yes ), host.Quit), (() => strings.Value( UIStrings.No ), Stack.Pop) ) )),
@@ -634,7 +634,7 @@ public sealed partial class ParkHud
 			entries.RemoveAll( entry => entry.Label == UIStrings.GoOnline );
 		var items = entries.Select( entry => (Id: entry.Label.ToString(), Text: (Func<string>)(() => strings[entry.Label]), entry.Clicked,
 			Enabled: PauseMenuEntryEnabled( level.IsReadOnlyVisit, entry.Label, host.CreateLoad != null, host.CreateOptions != null, host.RestartPark != null, host.PublishPark != null )) ).ToList();
-		menu = UiDialogs.TextMenu( PauseMenuScreen, items, ClosePauseMenu, UIStrings.ResumeGame.ToString() );
+		menu = UiDialogs.TextMenu( PauseMenuScreen, items, ResumeGameAfterApplicationPause, UIStrings.ResumeGame.ToString(), compact: host.IsLoggedIn?.Invoke() == true );
 		Stack.Push( menu );
 	}
 
@@ -767,7 +767,7 @@ public sealed partial class ParkHud
 		// [BIN:TPW-EXE:0x6698e6 key delivery] a key event (0x1000a/b/c, posted to window 1 by 0x658c38/0x658c67/0x658c96) is handed to exactly one window: an accelerator-table window (0x65e640, list and edit controls) when the key is in its table, else the focus window (0x65e59b, [0xfaa5ec]) while its flag bit 0 is set, else the root ([0xfaa5dc]); nothing falls through to a second window
 		// [BIN:TPW-EXE:0x48ac40 ride view creation] the ride view window (flags 1) takes the focus (0x65e59b) and the HUD's own window handle [0x7c24c8] gets message 5 and is cleared, so the HUD's key groups (0x787c14, 0x787a60, 0x78721c at 0x488886) are never reached while it is open: the procedure 0x488a00 acts only on Escape, the C shortcut (action 0x10) and the postcard action (0xf), and the pause key and the park door shortcuts are not offered while riding
 		if ( !paused && !IsRiding && !Input.TextEntryActive && input.Has( UiKeys.Pause ) )
-			SetUserGameSpeed( Status.Speed == GameSpeed.Paused ? GameSpeed.Normal : GameSpeed.Paused );
+			ToggleUserPause();
 
 		if ( mouseCaptured == null || keyboardCaptured == null || textCaptured == null )
 		{
@@ -805,13 +805,13 @@ public sealed partial class ParkHud
 			if ( Input.Pressed( InputButton.OpenPark ) )
 			{
 				if ( !doorEconomy.IsParkOpen )
-					doorEconomy.OpenPark();
+					level.Commands.Issue( new SetParkOpenCommand( true ) );
 				host?.ParkDoorPressed?.Invoke( true );
 			}
 			if ( Input.Pressed( InputButton.ClosePark ) )
 			{
 				if ( doorEconomy.IsParkOpen )
-					doorEconomy.ClosePark();
+					level.Commands.Issue( new SetParkOpenCommand( false ) );
 				host?.ParkDoorPressed?.Invoke( false );
 			}
 		}
@@ -882,7 +882,12 @@ public sealed partial class ParkHud
 		}
 		UpdateBlueprint( inPark && !rideOwnsInput, context.Delta, paused || Status.Speed == GameSpeed.Paused );
 		// [BIN:TPW-EXE:0x487013 hover modes] with Shift alone, or with the visitor locator panel out, the hover handler picks visitors only (IsVisitorPickState) and no object mode is set
-		// [APPROX:UI-027] the object is the one occupying the cell of the cursor's terrain hit; the original picks a ride, shop or other object by its model's pick sprite (the sprite pass 0x5890e0, the thing in the 3 x 3 cells round the hovered cell 0x532bd0, the window 0x4b6080) — evidence needed: which instances carry a pickable sprite and its size and offset
+		// [BIN:TPW-EXE:0x4879D0 object click] the object a park click opens is the owner of the hovered cell: the hover handler 0x486d90 sets cursor mode 4 for a hovered cell of map type 4, 9 or 10
+		// with an owner thing (0x527e80; the cell-type switch 0x4875ae, mode 4 at 0x48769f) once no visitor or staff member is hovered, and the click dispatcher's mode 4 (switch 0x487a74) opens that thing's window (0x487c16: 0x486920 by its kind; the modes 8 to 0xc of a hovered staff member open 0x4b6080 instead, 0x487c77); the hovered
+		// cell 0x7b05cc is the cell of the cursor ray's nearest hit (0x45bf90 → 0x45d560, Level.TryGetGroundHit), which lands on an object's model before the terrain behind it (ObjectRayPick), so a
+		// click on the visible top of a tall ride, shop or feature picks that object; the pick sprites of the sprite pass (0x5890e0 → 0x532bd0) are the people's only: the owner search accepts
+		// thing types 1, 4 to 8 and 0x12 (visitors and staff, 0x532d14-0x532d2c; the hovered-thing filter 0x46c110), and the sprite scripts' FRAME op 0x476940 marks its sprite pickable (+0x114 = 1 through 0x540b90) for any frame
+		// but -1, so no ride or shop (thing type 3) is picked by a sprite
 		if ( inPark && !IsVisitorPickState( Locator.Mode, Input.ModifierMaskDown ) && level.BuildEntry == null && !level.IsPlacing && !level.CellTool.IsActive && !level.IsCoasterToolActive && level.StaffPlacement is not { IsActive: true } && level.PatrolTool is not { IsActive: true }
 			&& level.BuyLandTool is not { IsActive: true } && level.AreaClearTool is not { IsActive: true } && level.PoolTool is not { IsActive: true } && input.LeftReleased && !toolPress )
 			{
@@ -972,7 +977,8 @@ public sealed partial class ParkHud
 		}
 		// the sprite hangs at the exact ground point under the pointer every frame, also while the pointer is over the HUD (the original reads the mouse's world point, not the hover cell);
 		// a frame without a pointer (a key alone) keeps the last one
-		// [APPROX:GUEST-021] the terrain point only: tp.exe's picker (0x45BF90) takes the nearer hit on an object's model when there is one
+		// [BIN:TPW-EXE:0x45CD44 mouse point] the point is the picker's nearest hit, the terrain's or an object model's (0x45BF90 writes the same point to 0x7A1C90; Level.TryGetGroundHit)
+		// [APPROX:GUEST-021] where the original's cursor and the person's sprite anchor land on the screen
 		if ( input.Mouse.X >= 0 && input.Mouse.Y >= 0 )
 		{
 			if ( level.TryGetGroundCell( input.Mouse, viewport, out var groundX, out var groundY ) )
@@ -1022,7 +1028,7 @@ public sealed partial class ParkHud
 		if ( !tool.IsActive )
 		{
 			// Backspace over a path or queue cell with no tool on: the backtrack sound, then that cell is removed (GameAudio.BacktrackEvent; a queue is [EXT:queue-backtrack]).
-			if ( inPark && input.Backspaces > 0 && Stack.Screens.Count == 1 && !Input.TextEntryActive && Camera.Mode is ParkCameraMode && level.BacktrackAt( cursorX, cursorY ) )
+			if ( inPark && input.Backspaces > 0 && Stack.Screens.Count == 1 && !Input.TextEntryActive && Camera.Mode is ParkCameraMode && level.Commands.Issue( new BacktrackCommand( cursorX, cursorY ) ).Accepted )
 				return true;
 			if ( !inPark || !input.LeftPressed || level.IsReadOnlyVisit || level.Objects.FindAt( cursorX, cursorY ) != null )
 				return false;
@@ -1279,9 +1285,10 @@ public sealed partial class ParkHud
 			return icon;
 		try
 		{
+			var clipMember = item.PreviewModel != null && item.Entry != null ? PreviewIcon.BuyClipMember( item.PreviewModel, item.Entry.Models ) : null;
 			icon = item.PreviewModel == null ? null : new PreviewIcon( LoadPreviewModel( item, item.PreviewModel ),
 				name => item.TextureDirectories.Select( directory => UiImages.Resolve( name, directory ) ).FirstOrDefault( path => path != null ),
-				RuntimeTexture( item ) );
+				RuntimeTexture( item ), clipMember == null ? null : LoadPreviewModel( item, clipMember.Path ).Clip, clipMember?.Name );
 		}
 		catch ( Exception exception ) when ( exception is IOException or InvalidDataException or NotSupportedException or InvalidOperationException )
 		{

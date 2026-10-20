@@ -157,6 +157,10 @@ public sealed partial class ParkHud
 		{
 			BuyPreviewItem = buyPendingPreview;
 			buyPendingPreview = null;
+			// [BIN:TPW-EXE:0x4689f0 preview clip] each new preview object starts its clip from the beginning (0x4732a0); an icon not made yet starts
+			// its clip at its first draw
+			if ( BuyPreviewModelItem is { } shown && icons?.GetValueOrDefault( shown.Id ) is { } icon )
+				icon.StartBuyAnimation( time );
 		}
 	}
 
@@ -358,7 +362,7 @@ public sealed partial class ParkHud
 			// [BIN:TPW-EXE:0x468e50 buy preview turn] each update adds the clock's elapsed milliseconds (0x785970, 0x4031e0) x 0.0004 to the preview's angle (+0x48), and a
 			// new preview keeps the angle modulo 2 pi (0x468e2f), so the turn runs on across selections, as a clock-derived angle does
 			// [BIN:TPW-EXE:0x4ab1b0 buy preview] a selection makes the preview object (0x486410) in the inner rectangle (+0x2c, 0x65d4f6) of the preview frame 0x1ea, (437,202)-(797,565)
-			owner.GetIcon( item )?.DrawBuyPreview( context.Batch, ScreenRect( context.Canvas ), owner.DebugBuyYaw ?? context.Time * PreviewIcon.BuyTurnRate );
+			owner.GetIcon( item )?.DrawBuyPreview( context.Batch, ScreenRect( context.Canvas ), owner.DebugBuyYaw ?? context.Time * PreviewIcon.BuyTurnRate, context.Canvas.Scale, context.Time );
 		}
 	}
 

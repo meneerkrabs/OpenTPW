@@ -12,6 +12,9 @@
 //   switch  memory across park changes: Jungle, the lobby, the next island's park, the lobby, Jungle again
 //   revisit a second visit in the same profile without the served folder: Play starts from the files kept in the browser
 //           (needs --keep), then Jungle opens from them
+//   reload  a second load of the page in the same profile (the HTTP cache is warm): which files are asked again and which answer 304 (needs --upstream)
+//   transfer  the requests the page made to the served site, by the scenario they happened in, with status, Content-Encoding, Cache-Control and
+//           the bytes sent (needs --upstream; run it last)
 //   digest  deterministic work that must give the same result in every build (texture decoding, a fixed park run), timed
 //
 // The game files stay on this machine: they are read from --game and served to the local page only; nothing is uploaded
@@ -38,7 +41,7 @@ const SELECTIONS = [['Rides', 'Belly Bounce'], ['Shops', 'Balloon Shop'], ['Shop
 
 function parseArguments(argv) {
 	const options = {
-		web: null, game: null, label: 'unlabelled', out: null, chrome: process.env.CHROME ?? DEFAULT_CHROME, headed: false, audible: false,
+		web: null, game: null, upstream: null, trackOrigins: false, gc: null, label: 'unlabelled', out: null, chrome: process.env.CHROME ?? DEFAULT_CHROME, headed: false, audible: false,
 		scenarios: ['start', 'lobby', 'jungle', 'buy', 'digest'], window: 30, memoryMinutes: 10, music: false, width: 1280, height: 900, runs: 1, frameCap: 0, keep: 'off', zoom: null, shot: null, follow: null, crowd: 400, profile: false, soakSeconds: 90, advice: [], cover: 1, evening: null, eveningLamps: 0,
 	};
 	for (let index = 2; index < argv.length; index++) {
@@ -47,6 +50,9 @@ function parseArguments(argv) {
 		switch (flag) {
 			case '--web': options.web = value(); break;
 			case '--game': options.game = value(); break;
+			case '--upstream': options.upstream = value(); break;
+			case '--track-origins': options.trackOrigins = true; break;
+			case '--gc': options.gc = value(); break;
 			case '--label': options.label = value(); break;
 			case '--out': options.out = value(); break;
 			case '--chrome': options.chrome = value(); break;
@@ -84,9 +90,12 @@ function parseArguments(argv) {
 
 function usage() {
 	return `Usage: node tools/web-perf/run.mjs --web <published wwwroot> --game <Theme Park World folder> [options]
+  --upstream <url>        forward every request but /game/ to this server (the OpenTPW.Server that serves the page in production) and log its transport: scenarios transfer and reload
+  --gc <params>           an experiment: the runtime's garbage collector parameters (MONO_GC_PARAMS, for example soft-heap-limit=200m), to see how they change the peak wasm memory
+  --track-origins         jungle: record where the textures made from bytes come from (their stack), so the switch scenario names the largest ones (a few ms per texture)
   --label <name>          build label in the report (interpreter, aot, ...)
   --out <file.json>       report path (default reports/web-perf/<date>-<label>.json)
-  --scenarios <list>      comma list of start,lobby,jungle,buy,umbrellas,snow,winter,winterCost,umbrellaCost,events,memory,switch,revisit,digest (default start,lobby,jungle,buy,digest)
+  --scenarios <list>      comma list of start,lobby,jungle,buy,umbrellas,snow,winter,winterCost,umbrellaCost,events,memory,switch,revisit,digest,determinism,transfer,reload (default start,lobby,jungle,buy,digest)
   --window <seconds>      steady window length (default 30)
   --memory-minutes <n>    memory scenario length (default 10)
   --music                 keep music and speech on (default: muted, effects on, as on 11 October)
@@ -96,7 +105,7 @@ function usage() {
   --soak <seconds>        events: length of the closing soak at the fastest speed (default 90)
   --advice <ids>          events: advisor advice message ids to post and time, comma separated
   --crowd <n>             umbrellaCost, winterCost: extra guests staged in the Jungle park (default 400)
-  --shot <file>           umbrellas, snow, winter, winterCost: where the screenshot goes
+  --shot <file>           umbrellas, snow, winter, winterCost: where the screenshot goes; buy: one screenshot per row, named <file>-<row>.png
   --follow <n>            winter, winterCost: the screenshot follows the visible guest after skipping |n| of them by id, counted from the newest when negative (winter default 0, the lowest; winterCost default -250, a guest of a fresh crowd standing in the open and not under the entrance roofs)
   --cover <0..1>          snow: the settled snow cover to hold (default 1)
   --zoom <value>          jungle: after the steady window, hold the park camera at this zoom value (40..300 with the wide zoom option) and measure a second window
@@ -193,7 +202,16 @@ class Page {
 		const counters = await this.eval('opentpwPerf.counters()');
 		const metrics = await this.metrics();
 		const heap = metrics.metrics.find(metric => metric.name === 'JSHeapUsedSize')?.value ?? null;
-		return { ...counters, jsHeapBytes: heap };
+		// Resident memory of the largest renderer process (physical memory: a wasm memory that grew counts only the pages the page touched), where ps exists
+		let rssBytes = null;
+		try {
+			const processes = (await this.cdp.send('SystemInfo.getProcessInfo')).processInfo.filter(info => info.type === 'renderer');
+			const sizes = processes.map(info => Number(execFileSync('ps', ['-o', 'rss=', '-p', String(info.id)], { encoding: 'utf8' }).trim()) * 1024).filter(Number.isFinite);
+			rssBytes = sizes.length ? Math.max(...sizes) : null;
+		} catch {
+			// no SystemInfo domain or no ps: the other counters stand
+		}
+		return { ...counters, jsHeapBytes: heap, rssBytes };
 	}
 
 	/** The page's clock and the frames recorded since the last mark (which it drains): the boundaries of every interval. */
@@ -278,6 +296,8 @@ const scenarios = {
 			await page.send('Profiler.start');
 			coldProfile = await page.eval('performance.now()');
 		}
+		if (options.trackOrigins)
+			await page.eval('opentpwPerf.program.PerfTrackTextureOrigins(true)');
 		const cold = await page.action('the Jungle park', () => page.enterFullSimulation('jungle'),
 			current => current.hud && current.level === 'jungle', { timeoutMs: 300000, settleMs: 5000,
 				onReady: async () => ({
@@ -478,7 +498,7 @@ const scenarios = {
 		return eventsScenario(page, options);
 	},
 
-	async buy(page) {
+	async buy(page, options) {
 		const state = await page.state();
 		if (!state.hud)
 			throw new Error('The buy scenario needs a park: run it after jungle');
@@ -494,6 +514,12 @@ const scenarios = {
 			}
 			result[name] = await page.action(name, () => page.call('PerfShowBuyItem', category, item.archive),
 				current => current.selected?.toLowerCase() === item.archive.toLowerCase());
+			// with --shot, the buy window with each row's preview (the depth-tested preview image), after its 500 ms preview delay
+			if (options.shot) {
+				await new Promise(resolve => setTimeout(resolve, 1500));
+				const shot = await page.send('Page.captureScreenshot', { format: 'png' });
+				await fs.writeFile(options.shot.replace(/\.png$/i, '') + `-${name.replace(/[^A-Za-z0-9]+/g, '-').toLowerCase()}.png`, Buffer.from(shot.data, 'base64'));
+			}
 		}
 		await page.call('PerfKey', 'Back');
 		return result;
@@ -543,12 +569,61 @@ const scenarios = {
 		return { kept: keptText, playShownMs, firstFrameMs, lobbyMs, jungleReadyMs: Date.now() - park };
 	},
 
+	async reload(page, options, context) {
+		if (!options.upstream)
+			throw new Error('The reload scenario needs --upstream: it reads the transport of the production server');
+		await page.send('Page.navigate', { url: context.url });
+		await page.waitFor('the reloaded page', state => state.started, 120000);
+		return { requests: context.server.log.length - context.server.marks.at(-1)[1] };
+	},
+
+	async transfer(page, options, context) {
+		if (!options.upstream)
+			throw new Error('The transfer scenario needs --upstream: it reads the transport of the production server');
+		const { log, marks } = context.server;
+		const phaseOf = index => marks.filter(([, start]) => start <= index).at(-1)?.[0] ?? 'start';
+		const files = log.map((entry, index) => ({ phase: phaseOf(index), ...entry }));
+		const totals = {};
+		for (const file of files) {
+			const total = totals[file.phase] ??= { requests: 0, notModified: 0, bytes: 0 };
+			total.requests++;
+			total.notModified += file.status === 304 ? 1 : 0;
+			total.bytes += file.bytes;
+		}
+		return { totals, files };
+	},
+
 	async digest(page) {
 		const state = await page.state();
 		if (!state.level)
 			throw new Error('The digest needs the park\'s files: run it after jungle');
 		// One synchronous call: the page draws nothing meanwhile, so it gets a long deadline.
 		return JSON.parse(await page.eval(`opentpwPerf.program.PerfDigest(${JSON.stringify(state.level)})`, 900000));
+	},
+
+	/**
+	 * The cross-runtime digest of every theme (docs/DETERMINISM.md, "Browser and native"; CrossRuntimeDigest): the same work as the desktop's
+	 * --determinism-digest, to compare value by value with tools/web-determinism/compare-digest.mjs. After jungle: each other theme's files are
+	 * copied first. Minutes per theme; the page draws nothing meanwhile.
+	 */
+	async determinism(page) {
+		const state = await page.state();
+		if (!state.level)
+			throw new Error('The determinism digest needs the game files: run it after jungle');
+		const themes = [];
+		for (const theme of ['jungle', 'hallow', 'space', 'fantasy']) {
+			if (!await page.eval(`opentpwPerf.program.PerfLevelLoaded(${JSON.stringify(theme)})`)) {
+				await page.eval(`opentpwPerf.loadLevel(${JSON.stringify(theme)})`);
+				const deadline = Date.now() + 300000;
+				while (!await page.eval(`opentpwPerf.program.PerfLevelLoaded(${JSON.stringify(theme)})`)) {
+					if (Date.now() > deadline)
+						throw new Error(`The files of ${theme} were not copied within 300 s`);
+					await sleep(500);
+				}
+			}
+			themes.push(JSON.parse(await page.eval(`opentpwPerf.program.PerfDeterminismDigest(${JSON.stringify(theme)}, true)`, 3600000)));
+		}
+		return { themes };
 	},
 
 	async switch(page) {
@@ -562,8 +637,10 @@ const scenarios = {
 			const memory = await page.memory();
 			const stale = memory.levelsAlive > (name.startsWith('lobby') ? 0 : 1) ? JSON.parse(await page.eval('opentpwPerf.program.PerfStaleLevelPaths()', 120000)) : [];
 			const textureGroups = JSON.parse(await page.eval('opentpwPerf.program.PerfTextureGroups()'));
+			const textureBytes = JSON.parse(await page.eval('opentpwPerf.program.PerfTextureBytes()'));
 			const roots = name.startsWith('lobby') ? JSON.parse(await page.eval('opentpwPerf.program.PerfMemoryRoots()', 180000)) : undefined;
-			steps.push({ step: name, ...memory, textureGroups, ...(roots ? { roots } : {}), ...(stale.length ? { staleLevelPaths: stale } : {}) });
+			const assetBytes = JSON.parse(await page.eval('opentpwPerf.program.PerfAssetBytes()', 180000));
+			steps.push({ step: name, ...memory, textureGroups, textureBytes, assetBytes, ...(roots ? { roots } : {}), ...(stale.length ? { staleLevelPaths: stale } : {}) });
 		};
 		const toLobby = async () => {
 			await page.call('PerfOpenPauseMenu');
@@ -659,7 +736,7 @@ async function runSession(options, webRoot, gameRoot) {
 	const report = { date: new Date().toISOString(), results: {} };
 	let server, profile, chrome, cdp;
 	try {
-		server = await startServer(webRoot, gameRoot);
+		server = await startServer(webRoot, gameRoot, options.upstream);
 		profile = await fs.mkdtemp(path.join(os.tmpdir(), 'opentpw-web-perf-'));
 		const launched = await launchChrome(options.chrome, profile, options);
 		chrome = launched.chrome;
@@ -682,9 +759,9 @@ async function runSession(options, webRoot, gameRoot) {
 		if (options.frameCap)
 			seed['/config/display.json'] = JSON.stringify({ FrameCap: options.frameCap });
 		const encodedSeed = Buffer.from(JSON.stringify(seed)).toString('base64');
-		const query = new URLSearchParams({ perf: '1', data: '/game/', keep: options.keep, perfSeed: encodedSeed });
-		const context = { navigationStart: Date.now(), origin: server.origin, seed: encodedSeed };
-		await page.send('Page.navigate', { url: `${server.origin}/index.html?${query}` });
+		const query = new URLSearchParams({ perf: '1', data: '/game/', keep: options.keep, perfSeed: encodedSeed, ...(options.gc ? { gc: options.gc } : {}) });
+		const context = { navigationStart: Date.now(), origin: server.origin, seed: encodedSeed, server, url: `${server.origin}/index.html?${query}` };
+		await page.send('Page.navigate', { url: context.url });
 		report.renderer = await page.eval(`(() => { const gl = document.createElement('canvas').getContext('webgl2'); const info = gl?.getExtension('WEBGL_debug_renderer_info');
 			return info ? gl.getParameter(info.UNMASKED_RENDERER_WEBGL) : null; })()`).catch(() => null);
 		for (const name of options.scenarios) {
@@ -692,6 +769,7 @@ async function runSession(options, webRoot, gameRoot) {
 				report.results[name] = { error: 'unknown scenario' };
 				continue;
 			}
+			server.marks.push([name, server.log.length]);
 			process.stderr.write(`${name}…\n`);
 			try {
 				report.results[name] = await scenarios[name](page, options, context);

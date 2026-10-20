@@ -404,6 +404,11 @@ public sealed record RideVisitorBridgeSnapshot
 	public required long CalledTurn { get; init; }
 	/// <summary>Computed queue cells from the front (index 0) to the back.</summary>
 	public required (int X, int Y)[] QueueCells { get; init; }
+	/// <summary>Optional paired live typed-entry caches; absent in legacy snapshots. Preserve pre-sync link-edit history exactly.</summary>
+	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )]
+	public (int X, int Y)? TypedQueueFront { get; init; }
+	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )]
+	public int? TypedQueueDirection { get; init; }
 	public required int QueueEditCount { get; init; }
 	public required (int X, int Y)? JoinCell { get; init; }
 	public required long HeadNotReadyStreak { get; init; }
@@ -454,6 +459,9 @@ public sealed record GuestSimulationSnapshot
 	/// <summary>Presentation-only absolute int32 sample in the host fixed-clock epoch. Required when per-guest BodySprite history is present.</summary>
 	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )]
 	public int? BodySpriteClockMilliseconds { get; init; }
+	/// <summary>Optional versioned presentation history, excluded from gameplay hashes. Null means old/native reconstruction.</summary>
+	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )]
+	public BalloonPresentationSnapshot? Balloons { get; init; }
 	/// <summary>The id after the highest guest id (before the thing pool: the next guest id the counter handed out; with it the next id is the pool's, <see cref="Things"/>).</summary>
 	public required int NextGuestId { get; init; }
 	/// <summary>

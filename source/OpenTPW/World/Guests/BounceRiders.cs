@@ -20,6 +20,14 @@ internal interface IBounceRiderSource
 {
 	/// <summary>Adds the pose of every rider currently bouncing, keyed by guest id.</summary>
 	void Collect( Dictionary<int, BounceRiderPose> poses );
+
+	/// <summary>The pose of one rider, if the source poses it now.</summary>
+	bool TryGetPose( int guest, out BounceRiderPose pose )
+	{
+		var poses = new Dictionary<int, BounceRiderPose>();
+		Collect( poses );
+		return poses.TryGetValue( guest, out pose );
+	}
 }
 
 /// <summary>
@@ -38,7 +46,7 @@ public static class BounceRiders
 
 	/// <summary>The sine table of the original's builder: entry i is the sine of i / 4096 turns, rounded to a float.</summary>
 	// [BIN:TPW-EXE:0x004708D0 sine table] mask n - 1 (0x7B0960), index scale n x 1 / (2 pi) as a float (0x7B095C, constants 0x006FEB9C and 0x006FEBA0), entry i = fsin(i / n x 2 pi) stored as a float from 0x7B0968
-	private static readonly float[] Sine = Enumerable.Range( 0, SineTableSize ).Select( index => (float)Math.Sin( (float)index / SineTableSize * 6.2831854820251465 ) ).ToArray();
+	private static readonly float[] Sine = Enumerable.Range( 0, SineTableSize ).Select( index => (float)DetMath.Sin( (float)index / SineTableSize * 6.2831854820251465 ) ).ToArray();
 
 	/// <summary>Entry <paramref name="index"/> of the sine table (test seam).</summary>
 	internal static float SineAt( int index ) => Sine[index];
@@ -96,6 +104,7 @@ internal sealed class FlatRideBounceRiders : IBounceRiderSource
 	private const int WalkNodeClass = 0x800;
 	private readonly ParkObjects objects;
 	private readonly Dictionary<int, BounceRiderPose> prepared = new();
+	private readonly Dictionary<int, BounceRiderPose> placed = new();
 	private readonly List<(int Guest, int Node, double Start)> scratch = new();
 	private readonly List<RideVisitorBridge.WalkerView> walkers = new();
 
@@ -107,6 +116,8 @@ internal sealed class FlatRideBounceRiders : IBounceRiderSource
 		foreach ( var (guest, pose) in prepared )
 			poses[guest] = pose;
 	}
+
+	public bool TryGetPose( int guest, out BounceRiderPose pose ) => prepared.TryGetValue( guest, out pose );
 
 	/// <summary>Post-substep pose phase. Positioning and template requests are separate from scheduler ticks and guest begin-turn application.</summary>
 	internal void Prepare( GuestSimulation guests )
@@ -121,11 +132,28 @@ internal sealed class FlatRideBounceRiders : IBounceRiderSource
 			foreach ( var (guest, _, _) in scratch )
 				if ( prepared.TryGetValue( guest, out var pose ) && pose.AttractionId == ride.Runtime.Visitors.AttractionId )
 					prepared[guest] = ApplyBodyOutput( guests, pose );
-			// WALK keeps its existing rendering; its body requests still contribute to the shared pre-BOUNCE program history.
+			// WALK follows BOUNCE and consumes the same visitor-owned last emitted frame.
 			CollectWalkers( prepared, ride.Runtime, ride.GetNodeTransform, walkers,
 				( guest, template ) => guests.RequestRideBody( guest, ride.Runtime.Visitors.AttractionId, (VisitorSpriteTemplate)template ),
 				guest => guests.HideRideBody( guest, ride.Runtime.Visitors.AttractionId ) );
 		}
+		HoldKeptBodies( prepared, placed, guests );
+	}
+
+	/// <summary>
+	/// A kept body stays where the walk update or the bounce pass last placed it once its entry is gone (WALKGET took it out of the walk table, UNBOUNCE out of the bounce table) while the guest still uses
+	/// the object: it is drawn there, with the frames its player runs, until the guest is let off or the body is deleted. <paramref name="placed"/> carries the poses of the previous pass.
+	/// </summary>
+	// [BIN:TPW-EXE:0x00542010 sprite pass] a sprite is drawn every frame at its stored position (+0x88..+0x90) while it has a frame; the walk update and the bounce pass store it (0x004F9E60 through 0x00475480) only for the entries they pass, and the guest update stores it again only after the state-15 entry has cleared +0x28 (0x004FA087, 0x00501F79), so between the two the body stays where it was last placed
+	internal static void HoldKeptBodies( Dictionary<int, BounceRiderPose> prepared, Dictionary<int, BounceRiderPose> placed, GuestSimulation guests )
+	{
+		foreach ( var (id, pose) in placed )
+			if ( !prepared.ContainsKey( id ) && guests.Find( id ) is { } guest && RideHeadRenderer.CanDraw( guest, pose.AttractionId ) && guests.ShowsKeptBody( guest ) )
+				prepared[id] = guest.BodySprite.Player!.Output is { } frame ? pose with { Slot = frame.Slot, Step = frame.Frame, Visible = true, UsesSpriteState = true }
+					: pose with { Visible = false, UsesSpriteState = true };
+		placed.Clear();
+		foreach ( var (id, pose) in prepared )
+			placed[id] = pose;
 	}
 
 	internal static BounceRiderPose ApplyBodyOutput( GuestSimulation guests, BounceRiderPose pose )
@@ -141,8 +169,8 @@ internal sealed class FlatRideBounceRiders : IBounceRiderSource
 	/// </summary>
 	// [BIN:TPW-EXE:0x00557D80 walk update drawing] each entry draws its body through 0x005580A0 between the nodes of its state, by the share of the state's time spent, in template 1 (walking) while it walks on or off or waits at the fourth node; on board the head actions draw none and the actions 3, 5 and 6 draw templates 3, 8 and 5 at the second node
 	// [BIN:TPW-EXE:0x005580A0 body position] each node's position is read (0x00556B90: the class mask and number's first dummy, its matrix words +0x30..+0x38), and with bit 0 of the entry's last word (+0x1A, set by every shipped script) the height is taken from the nodes, else from the terrain (0x004511A0)
-	// [APPROX:TOUR-011] a body whose WALKON leaves bit 0 of its last word clear stands on the terrain in the original (0x004511A0, whose result is not modelled here: the bodies are drawn from the nodes' own heights), and scripted WALK rendering still uses its existing elapsed-time step (WalkerBodies.StepOf), although its requests now feed the decoded shared body history
-	internal static void CollectWalkers( Dictionary<int, BounceRiderPose> poses, OriginalObjectRuntime runtime, Func<int, System.Numerics.Matrix4x4> nodeWorld, List<RideVisitorBridge.WalkerView> scratch, Action<int, int>? requestBody = null, Action<int>? hideBody = null )
+	// [APPROX:TOUR-011] a body whose WALKON leaves bit 0 of its last word clear stands on the terrain in the original (0x004511A0, whose result is not modelled here: the bodies are drawn from the nodes' own heights), while the host pose phase consumes the shared body history on its existing approximate clock
+	internal static void CollectWalkers( Dictionary<int, BounceRiderPose> poses, OriginalObjectRuntime runtime, Func<int, System.Numerics.Matrix4x4> nodeWorld, List<RideVisitorBridge.WalkerView> scratch, Func<int, int, VisitorSpriteFrame?>? requestBody = null, Action<int>? hideBody = null )
 	{
 		if ( runtime.Script is not { } script )
 			return;
@@ -216,9 +244,12 @@ internal sealed class FlatRideBounceRiders : IBounceRiderSource
 			}
 			if ( feet is not { } point )
 				continue;
-			requestBody?.Invoke( walker.Guest, template );
+			var output = requestBody?.Invoke( walker.Guest, template );
 			runtime.Visitors.SetWalkHeading( walker.Guest, heading );
-			poses[walker.Guest] = new BounceRiderPose( walker.Guest, runtime.Visitors.AttractionId, point, WalkerBodies.SectorOf( heading ), false, WalkerBodies.StepOf( now, walker.Began ), WalkerBodies.SlotOf( template ) );
+			var pose = new BounceRiderPose( walker.Guest, runtime.Visitors.AttractionId, point, WalkerBodies.SectorOf( heading ), false, WalkerBodies.StepOf( now, walker.Began ), WalkerBodies.SlotOf( template ) );
+			poses[walker.Guest] = requestBody == null ? pose : output is { } frame
+				? pose with { Slot = frame.Slot, Step = frame.Frame, Visible = true, UsesSpriteState = true }
+				: pose with { Visible = false, UsesSpriteState = true };
 		}
 	}
 

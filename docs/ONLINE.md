@@ -19,6 +19,9 @@ words; original text is used where verified and supplementary labels cover the s
 languages. Chat lines use the local `GAME8AA.bf4` font. What the original service had and
 where each piece stands is inventoried in [reverse/ONLINE-FEATURES.md](reverse/ONLINE-FEATURES.md).
 
+Building a park together (co-op, `[EXT:online-coop-*]`) is planned as host-sequenced lockstep; its approved design
+decisions and the command layer every park edit now goes through are in [COOP.md](COOP.md).
+
 ## Screens
 
 Players open the online screens with **Go Online** (UITEXT 1), which OpenTPW adds to the

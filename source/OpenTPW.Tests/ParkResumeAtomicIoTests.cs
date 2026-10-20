@@ -39,7 +39,7 @@ public class ParkResumeAtomicIoTests
 		var previous = File.ReadAllBytes( save );
 		var foreign = save + "." + Guid.NewGuid().ToString( "N" ) + ".tmp";
 		File.WriteAllText( foreign, "another writer owns this file" );
-		Assert.ThrowsException<InvalidDataException>( () => ParkResumeSaveFile.Save( save, snapshot with { Version = 2 } ) );
+		Assert.ThrowsException<InvalidDataException>( () => ParkResumeSaveFile.Save( save, snapshot with { Version = ParkResumeSaveFile.CurrentVersion + 1 } ) );
 		CollectionAssert.AreEqual( previous, File.ReadAllBytes( save ) );
 		Assert.AreEqual( "another writer owns this file", File.ReadAllText( foreign ) );
 		Assert.AreEqual( 2, Directory.GetFiles( directory ).Length );

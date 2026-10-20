@@ -327,9 +327,13 @@ browser (CORS, GET only); the official server allows `https://opentpw.io` and
 
 - The game's files are served before the API's rate limiter: one page load fetches over a
   hundred files.
-- The publish step stores a Brotli copy beside each file; browsers that accept Brotli get it.
-- The runtime's fingerprinted files (`_framework/*.<hash>.*`) are cached for a year; the
-  page, its scripts and `dotnet.js` are revalidated on every load.
+- The publish step stores a Brotli and a gzip copy beside each compressible file (the pools sprite
+  `.TPC` files included); the server sends Brotli to a browser that accepts it, else gzip (a proxy such
+  as Caddy leaves a response that already has a `Content-Encoding` alone).
+- The runtime's fingerprinted files (`_framework/*.<hash>.*`) and the pools sprite files asked for by
+  their content hash (`pools-sprites/...?v=<first 16 hex digits of the file's SHA-256>`, checked by the server against the uncompressed file; any other `?v=` is revalidated) are cached for a year; the page, its
+  scripts and `dotnet.js` are revalidated on every load (ETag, answered 304).
+  Measurements: [BROWSER-PERFORMANCE.md](BROWSER-PERFORMANCE.md#transfer-and-memory-october-19-2026).
 - The page has a strict content security policy: scripts and connections only to its own
   address (WebAssembly compilation allowed), no inline scripts or styles, no framing.
 

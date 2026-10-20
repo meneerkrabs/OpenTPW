@@ -21,6 +21,8 @@ public sealed record ParkLoadEntry( string Level, int ThemeNameIndex, bool Sandb
 /// <summary>What the front-end screens ask of the game.</summary>
 public sealed class FrontEndActions
 {
+	/// <summary>Read-only saved Full Simulation key count, sampled after leaving the previous park; null when unavailable.</summary>
+	internal int? PlayerKeySnapshot { get; init; }
 	public Action<LobbyIslandInfo, GameMode> StartPark { get; init; } = ( _, _ ) => { };
 	public Action<ParkLoadEntry> Load { get; init; } = _ => { };
 	/// <summary>Lightweight own-save availability for the selected theme; assets are checked only on actual resume.</summary>
@@ -118,6 +120,7 @@ public sealed partial class FrontEndMenu
 		// [EXT:lobby-menu-hint] the original opens the lobby menu with Escape and its lobby table has no button or other mouse route for it that was found (callers of the pause menu 0x48c830 in the front-end handler 0x4be1a0 and 0x4be537 take no click); the hint tells a mouse user where it is
 		screen.Add( new UiLabel { Id = "menuHint", Text = () => strings.Extra( OpenTpwText.LobbyMenuHint ), Font = fonts => fonts.Small, Color = UiColors.Disabled, Align = UiAlign.Right,
 			Bounds = new UiRect( 1548, 1484, 480, 40 ), Anchor = UiAnchor.BottomRight } );
+		AddKeyCounter( screen );
 		screen.Back = ShowMenu;
 		screen.Focus( enter );
 		return screen;

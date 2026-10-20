@@ -43,6 +43,9 @@ public static class ParkSaveFile
 		/// </summary>
 		public bool SeedResearcherStandIn { get; init; }
 		public required long Tick { get; init; }
+		/// <summary>An imported TPW restart calendar awaiting its first actual turn. Absent in older saves: synchronized.</summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingDefault )]
+		public bool PendingInitialDay { get; init; }
 		public required GameSpeed Speed { get; init; }
 		/// <summary>The world generator's state as a number (written for older readers' sake); older saves hold the economy's own SplitMix64 stream here, which a load ignores (see <see cref="WorldGenerator"/>).</summary>
 		public required ulong RandomState { get; init; }
@@ -654,6 +657,7 @@ public static class ParkSaveFile
 			Mode = park.Mode,
 			SeedResearcherStandIn = false,
 			Tick = park.Tick,
+			PendingInitialDay = park.PendingInitialDay,
 			Speed = park.Speed,
 			RandomState = world?.Generator ?? park.World.State,
 			WorldGenerator = world?.Generator ?? park.World.State,
@@ -913,6 +917,7 @@ public static class ParkSaveFile
 				throw new InvalidDataException( $"Park save is inconsistent: {message}." );
 		}
 		Require( data.Tick >= 0 && Enum.IsDefined( data.Speed ) && Enum.IsDefined( data.Mode ), "clock" );
+		Require( !data.PendingInitialDay || data.Tick < ParkCalendar.TickOfTurn( 1 ), "pending initial calendar day" );
 		Require( data.EntranceFee >= 0 && data.MonthsInRed >= 0 && data.LitterScaled >= 0 && data.TicketsSpent >= 0, "park values" );
 		Require( data.TurnEnteredRed is not { } enteredRed || enteredRed >= 0 && enteredRed <= ParkCalendar.Turn( data.Tick ), "turn entered red" );
 		Require( data.BatchCredit >= 0, "batch credit" );
@@ -1022,11 +1027,14 @@ public static class ParkSaveFile
 	public static ParkEconomy Restore( Data data, BalanceSettings settings, IEconomyObjectCatalog catalog )
 	{
 		ArgumentNullException.ThrowIfNull( data );
+		if ( data.PendingInitialDay && (data.Tick < 0 || data.Tick >= ParkCalendar.TickOfTurn( 1 )) )
+			throw new InvalidDataException( "Park save is inconsistent: pending initial calendar day." );
 		if ( !string.Equals( settings.Theme, data.Theme, StringComparison.OrdinalIgnoreCase ) || settings.IsEasy != data.Easy )
 			throw new InvalidDataException( $"Park save is for {data.Theme}{(data.Easy ? " (easy)" : "")}, not {settings.Theme}{(settings.IsEasy ? " (easy)" : "")}." );
 		if ( data.Objectives.AdoptedChallenges is { } adopted )
 			settings.RestoreAdoptedChallenges( adopted.Select( entry => new ChallengeDefinition( entry[0], entry[1], entry[2], entry[3], entry[4], entry[5], entry[6], entry[7], entry[8], entry[9] != 0, entry[10] != 0 ) ).ToList() );
 		var park = new ParkEconomy( settings, catalog, data.Mode, 0 );
+		park.PendingInitialDay = data.PendingInitialDay;
 		// [EXT:legacy-generator-state] a save from before the world generator was ported has no state for it: it starts from the saved world seed (or from the old economy stream's state when the save has no world section), deterministically
 		park.World.Restore( data.WorldGenerator ?? (data.World is { } legacyWorld ? new WorldSeed( legacyWorld.Seed ).GeneratorState : WorldRng.StateFromSeed( data.RandomState )) );
 		park.Ledger.Restore( data.Ledger.Balance, data.Ledger.OpeningBalance, data.Ledger.MonthIndex, data.Ledger.CurrentTotals,
@@ -1133,11 +1141,9 @@ public static class ParkSaveFile
 			park.Staff.Strikes.Restore( strikes.Levels, strikes.Active, strikes.LastConsidered );
 		park.Research.Restore( data.Research.Completed.Select( key => (key[0], key[1]) ),
 			data.Research.Progress.Select( entry => (((int)entry[0], (int)entry[1]), entry[2]) ), data.Research.Effort,
-			data.Research.Current?.Select( entry => ((ResearchCategory)entry[0], entry[1], entry[2]) ), data.Research.UpgradeOrder?.Select( key => (key[0], key[1]) ).ToList() );
+			data.Research.Current?.Select( entry => ((ResearchCategory)entry[0], entry[1], entry[2]) ), data.Research.UpgradeOrder?.Select( key => (key[0], key[1]) ).ToList(), data.Research.HighestGroups );
 		park.Research.RestoreRecentItems( data.Research.RecentItems );
 		park.Research.RestoreCheatAvailable( data.Research.CheatAvailable );
-		if ( data.Research.HighestGroups is { } highestGroups )
-			park.Research.RestoreHighestGroups( highestGroups );
 		if ( data.Research.Workload is int workload )
 			park.Research.SetWorkload( workload );
 		park.Objectives.Restore( data.Objectives.NextOfferDay, data.Objectives.NextListPosition, data.Objectives.Current, data.Objectives.Declines, data.Objectives.Finished, data.Objectives.GoldenTickets,

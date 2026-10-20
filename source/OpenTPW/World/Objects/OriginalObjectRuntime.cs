@@ -238,8 +238,11 @@ public sealed partial class OriginalObjectRuntime
 
 	public void Close()
 	{
-		if ( !stopped )
-			SetVariable( nameof( RideVariables.VAR_RIDECLOSED ), 1 );
+		if ( stopped )
+			return;
+		SetVariable( nameof( RideVariables.VAR_RIDECLOSED ), 1 );
+		// [BIN:TPW-EXE:0x004DF300 close] the close clears the loading slot +0x6C with the open word (RideVisitorBridge.ClearLoadingSlot)
+		Visitors.ClearLoadingSlot();
 	}
 
 	/// <summary>A common variable by name (scripts declare different subsets); 0 when the script has none.</summary>
@@ -587,6 +590,8 @@ public sealed partial class OriginalObjectRuntime
 			Sideshow = new SideshowTerms( settings.GetInt( "UsageInfo.InitCostOfGoods" ), settings.GetInt( "UsageInfo.InitPricePerUse" ), settings.GetInt( "UsageInfo.InitChanceOfLoosing" ) ),
 			// [DATA:<object>.sam:UsageInfo.EntryCellStandPosX/Y] the jungle Rides.sam default is (0.5, 0.5); 0xde1d8 checks the range [0, 1] (a value outside it keeps the default here)
 			EntryCellStandPos = (StandFraction( settings, "UsageInfo.EntryCellStandPosX" ), StandFraction( settings, "UsageInfo.EntryCellStandPosY" )),
+			// [DATA:<object>.sam:UsageInfo.ExitCellAppearPosX/Y] type record +0xDC and +0xE0 (0.5 in every theme's base .sam); ExitRide's point 0x004DEDF0(1) logs a value outside 0..1 ("Dodgy X exit point in SAM file") and uses it
+			ExitCellAppearPos = (ExitFraction( settings, "UsageInfo.ExitCellAppearPosX" ), ExitFraction( settings, "UsageInfo.ExitCellAppearPosY" )),
 			// [EXT:pools-changing-room] OpenTPW's own key: the object is a pool complex's changing room (docs/POOLS.md)
 			IsChangingRoom = FeatureGates.Pools && PoolChangingRooms.IsChangingRoom( entry ),
 			// [EXT:umbrellas-extension] the umbrellas extension's own objects carry Theme Park Inc's weather and generation percentages, which the host score applies for them alone; every other object keeps the game's score
@@ -626,6 +631,8 @@ public sealed partial class OriginalObjectRuntime
 			Percentage( "SeasonModifier.WinterPercentage" ), Percentage( "SeasonModifier.SpringPercentage" ), Percentage( "SeasonModifier.SummerPercentage" ), Percentage( "SeasonModifier.AutumnPercentage" ) );
 	}
 
+	private static float ExitFraction( ObjectSettings settings, string key ) => settings.Has( key ) ? settings.GetFloat( key ) : 0.5f;
+
 	private static float StandFraction( ObjectSettings settings, string key ) =>
 		settings.Has( key ) && settings.GetFloat( key ) is var value and >= 0 and <= 1 ? value : 0.5f;
 
@@ -654,6 +661,11 @@ public sealed partial class OriginalObjectRuntime
 		return new QueueParameters( entry.HasQueue, settings.GetBool( "Info.RunsContinuously" ), trackType is 2 or 3,
 			level?.GetFloat( "QueueWaitTimeConstant" ) ?? 0, initSpeed, initSpeed, capacity, duration, level?.GetInt( "InitDuration" ) ?? 0 );
 	}
+
+	// No delegate is invoked while validating original graph import provenance.
+	internal static bool HasCatalogResolver( RideVM vm, ObjectCatalogEntry entry ) =>
+		vm.Options.ResolveScript?.Target is OriginalObjectRuntime runtime && ReferenceEquals( runtime.Entry, entry ) && ReferenceEquals( runtime.Script, vm ) &&
+		vm.Options.ResolveScript == runtime.ResolveChildScript;
 
 	private RideScriptFile? ResolveChildScript( string fileName )
 	{
@@ -724,7 +736,7 @@ public sealed partial class OriginalObjectRuntime
 /// TOUR/BUMP/COAST go to their controllers. The ride lights (ENABLELIGHT, DISABLELIGHT, SETLIGHT, COLOURLIGHT) act on the model's light dummies when it has them (<see cref="OriginalObjectRuntime.Lights"/>, docs/LIGHTS.md) and are a logged no-op when it does not. What stays an unimplemented effect (<see cref="RideVM.UnimplementedEffects"/>): the bounce rider opcodes where their object has no bounce
 /// rider rendering, and ADDOBJ/EVENT type 10 (the object type's own sound list). DIPMUSIC sets the sound service's music duck request; SETREVERB's level is read by <see cref="ReverbSelector"/>.
 /// </summary>
-public sealed class OriginalObjectEffects : IRideScriptEffects, IRideAnimationQuery, IRideCanonicalEffects, IRideScriptLifetime
+public sealed class OriginalObjectEffects : IRideScriptEffects, IRideAnimationQuery, IRideCanonicalEffects, IRideScriptLifetime, IRideSliceTail
 {
 	/// <summary>Channel of the plain animation opcodes: channel 0, the same record a _CH opcode addresses with channel 0.</summary>
 	// [BIN:STP-PPC:0x100A6CC0 animation trigger] the channel record is model +0x10 + channel × 0x38; TRIGANIM (0x100AFB10), WAITANIM (0x100AFC68), LOOPANIM (0x100AFD7C) and TRIGANIMSPEED (0x100B005C) pass channel 0, TRIGANIM_CH (0x100B01C4) its operand
@@ -746,6 +758,17 @@ public sealed class OriginalObjectEffects : IRideScriptEffects, IRideAnimationQu
 	private readonly List<AudioVoice> ownedEventLoops = new();
 
 	public OriginalObjectEffects( OriginalObjectRuntime ride ) => this.ride = ride;
+
+	/// <summary>
+	/// The script loop's speed setter after each slice of the station's root script (<c>0x5517D7</c> → <c>0x43B2B0</c>): once <c>COAST 8</c> bound the coaster (or the park import
+	/// bound a saved script that holds its slot), the script's speed word becomes the coaster's speed setting when it differs.
+	/// </summary>
+	public void AfterSlice( RideVM vm )
+	{
+		// the slot +0xE0 is the root script's: COAST 8 stores it there, and the station's root script is the one that runs it
+		if ( vm.Parent == null && ride.Coaster is { Initialised: true } coaster )
+			coaster.ApplyScriptSpeed( vm.SpeedBias );
+	}
 
 	/// <summary>Stops this runtime's chains, including handles lost by a refused STARTSCREAM, when the object is removed; its script holds no scream any more.</summary>
 	internal void StopSounds()

@@ -72,6 +72,40 @@ public class Texture : DeviceResource, BindableResource, MappableResource
 			_ => 8
 		};
 		Handle = Gl.CreateTexture( Formats.Texture( Format ).Internal, (int)Width, (int)Height, (int)MipLevels, samples );
+		gpuBytes = EstimateGpuBytes( Formats.Texture( Format ).BytesPerPixel, Width, Height, samples > 1 ? 1u : MipLevels, samples );
+		Interlocked.Add( ref liveGpuBytes, gpuBytes );
+		Interlocked.Increment( ref liveGpuTextures );
+	}
+
+	private readonly long gpuBytes;
+	private static long liveGpuBytes;
+	private static long liveGpuTextures;
+
+	/// <summary>
+	/// Estimated GPU memory of the live textures and renderbuffers made through this device (width x height x bytes per pixel over the mip chain, times the sample count),
+	/// for the browser harness's memory accounting (docs/BROWSER-PERFORMANCE.md). The driver's own padding is not seen.
+	/// </summary>
+	public static long LiveGpuBytes => Interlocked.Read( ref liveGpuBytes );
+
+	/// <summary>The number of live textures and renderbuffers behind <see cref="LiveGpuBytes"/>.</summary>
+	public static long LiveGpuTextures => Interlocked.Read( ref liveGpuTextures );
+
+	internal static long EstimateGpuBytes( int bytesPerPixel, uint width, uint height, uint mipLevels, int samples )
+	{
+		long total = 0;
+		for ( var level = 0; level < mipLevels; level++ )
+			total += (long)Math.Max( 1u, width >> level ) * Math.Max( 1u, height >> level ) * bytesPerPixel;
+		return total * Math.Max( 1, samples );
+	}
+
+	public override void Dispose()
+	{
+		if ( !IsDisposed && gpuBytes != 0 )
+		{
+			Interlocked.Add( ref liveGpuBytes, -gpuBytes );
+			Interlocked.Decrement( ref liveGpuTextures );
+		}
+		base.Dispose();
 	}
 }
 
@@ -135,7 +169,20 @@ public class Shader : DeviceResource
 	{
 		Stage = description.Stage;
 		EntryPoint = description.EntryPoint;
-		Source = System.Text.Encoding.UTF8.GetString( description.ShaderBytes );
+		Source = Shared( System.Text.Encoding.UTF8.GetString( description.ShaderBytes ) );
+	}
+
+	// Every material makes its own Shader from the same few files (a park holds about 170 of them over 8 distinct sources of 15 to 30 KB), so equal sources share one string.
+	private static readonly Dictionary<string, string> sources = new();
+
+	private static string Shared( string source )
+	{
+		lock ( sources )
+		{
+			if ( !sources.TryGetValue( source, out var shared ) )
+				sources[source] = shared = source;
+			return shared;
+		}
 	}
 
 	public override void Dispose() { }

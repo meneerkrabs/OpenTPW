@@ -677,9 +677,10 @@ public sealed class OnlineScreens
 		search.Text = cityId == null ? Session.Settings.PlayerName ?? "" : "";
 		void Refresh() => Guard( () => Session.RefreshParks( null, cityId == null ? "recent" : "votes", cityId,
 			search.Text.Trim().Length == 0 ? null : search.Text.Trim() ) );
-		search.Submitted = Refresh;
-		screen.Add( new UiButton { Id = "searchButton", Text = () => OnlineStrings.Ui( OnlineStrings.SearchName, "Search name" ), Clicked = Refresh,
+		var searchButton = screen.Add( new UiButton { Id = "searchButton", Text = () => OnlineStrings.Ui( OnlineStrings.SearchName, "Search name" ), Clicked = Refresh,
 			Bounds = new UiRect( 1179, 810, 153, 154 ), Anchor = UiAnchor.Center } );
+		// [BIN:TPW-EXE:0x4bfc04 search Enter] Enter in the search field (0x802) makes Find Parks' procedure 0x4bf9f0 post 0x100 with the search button's id 0xe059 to its own window (0x4bfc29) unless that button is held down (+0x138), so the hook clicks 0x1F by the window's style 1 and the search runs, as a click on the button does
+		search.Submitted = searchButton.Activate;
 		// [DATA:Mac UI table data:0x50f84] the six column headers (ids 16-21) at their authored x extents
 		var columns = new (float Offset, int Text)[]
 		{
@@ -831,8 +832,11 @@ public sealed class OnlineScreens
 				? new[] { OnlineStrings.Ui( OnlineStrings.NoSearchResults, "No search results" ) }
 				: (Session.CityParks ?? Array.Empty<ParkSummary>()).Select( ( park, index ) => $"{park.Name}\t{OnlineStrings.Theme( park.Level )}\t{index + 1}\t{park.Visits}\t{park.Votes}" ).ToArray(),
 		} );
-		var parks = Session.CityParks ?? Array.Empty<ParkSummary>();
-		ParkSummary? Selected() => list.Selected >= 0 && list.Selected < parks.Count ? parks[list.Selected] : null;
+		ParkSummary? Selected()
+		{
+			var parks = Session.CityParks ?? Array.Empty<ParkSummary>();
+			return list.Selected >= 0 && list.Selected < parks.Count ? parks[list.Selected] : null;
+		}
 		list.RowActivated = index => { if ( Selected() is { } park ) ShowParkDetails( park, index ); };
 		list.SelectionChanged = _ => { if ( Selected() is { } park ) ShowParkDetails( park, list.Selected ); };
 		AddCloseButton( screen, 1671, 820 );

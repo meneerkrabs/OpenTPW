@@ -439,13 +439,12 @@ public sealed partial class ParkHud
 			return null;
 		var relief = economy.Catalog.TryGet( record.InfoId, out var info ) && info.ProvidesRelief;
 		var state = ParkEconomy.ObjectState( record );
-		var coaster = item.Runtime.Coaster;
 		var guests = level.Guests;
 		// EXIT NOT CONNECTED is never shown (ECON-049, tagged at ParkGate.MayOpen): the exit test 0x4de5a0 steps from the exit cell by its link byte (+0xd) and walks the edge test 0x4d8750 from the cell in front, and OpenTPW's entrance and exit cells keep no link byte
 		return new RideStatusFacts(
 			state,
-			TrackIncomplete: coaster != null ? !coaster.IsOperational : item.Runtime.Bump is { IsTrackValid: false },
-			TrackInvalid: coaster is { IntersectionCount: > 0 },
+			TrackIncomplete: item.Runtime.TrackIncomplete,
+			TrackInvalid: item.Runtime.TrackInvalid,
 			ServiceCalled: record.MaintenanceRequested,
 			Relief: relief,
 			// an upgrade always waits for the mechanics; a toilet's call is the handymen's

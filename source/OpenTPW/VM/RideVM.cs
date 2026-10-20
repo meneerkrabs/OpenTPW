@@ -195,7 +195,7 @@ public sealed partial class RideVM
 	}
 
 	/// <summary>Called by the public constructors, by <see cref="SpawnChild"/> and by the snapshot restore (which passes an explicit parent).</summary>
-	internal RideVM( RideScriptFile script, RideVMOptions options, RideVM? parent )
+	internal RideVM( RideScriptFile script, RideVMOptions options, RideVM? parent, bool register = true )
 	{
 		ArgumentNullException.ThrowIfNull( script );
 		Script = script;
@@ -233,7 +233,7 @@ public sealed partial class RideVM
 			instructions[index] = new Instruction( index, source.WordOffset, source.Opcode, operands, definition );
 		}
 
-		ScriptId = World.Register( this );
+		if ( register ) ScriptId = World.Register( this );
 	}
 
 	public int this[RideVariables variable]
@@ -262,6 +262,7 @@ public sealed partial class RideVM
 			TimeMilliseconds += deltaSeconds * 1000;
 			World.ObserveClock( SchedulerMilliseconds );
 			RunSlice();
+			RunSliceTail();
 		}
 		if ( StopChildrenIfFaulted() )
 			return;
@@ -284,9 +285,20 @@ public sealed partial class RideVM
 			TimeMilliseconds += substepMilliseconds;
 			World.ObserveClock( SchedulerMilliseconds );
 			if ( TurboByte != 0 || ((ScriptId ^ (int)pass) & 7) == 0 )
+			{
 				RunSlice();
+				RunSliceTail();
+			}
 		}
 		StopChildrenIfFaulted();
+	}
+
+	/// <summary>The loop body's tail after the slice: the object's controller updates (<see cref="IRideSliceTail"/>); a script that faulted in its slice takes none.</summary>
+	// [BIN:TPW-EXE:0x5517D7 slice tail] after the slice loop (0x551719..0x55173C), on every pass the cadence 0x5516E1 selects, the loop body passes the script's words to its object's controllers whether or not instructions ran (a halted script reaches it through 0x5516FF): the speed word +0xC0 to the coaster in the slot +0xE0 (0x43B2B0, 0x5517EA), among others
+	private void RunSliceTail()
+	{
+		if ( State != RideVMState.Faulted )
+			( Effects as IRideSliceTail )?.AfterSlice( this );
 	}
 
 	private bool StopChildrenIfFaulted()

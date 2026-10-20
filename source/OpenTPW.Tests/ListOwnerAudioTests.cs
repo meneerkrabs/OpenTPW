@@ -6,6 +6,7 @@ using System.Reflection;
 using System.Runtime.CompilerServices;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using OpenTPW.FrontEnd;
+using OpenTPW.Hud;
 using OpenTPW.Mods;
 using OpenTPW.Online.Api;
 using OpenTPW.Online.Packages;
@@ -16,7 +17,7 @@ using NVector2 = System.Numerics.Vector2;
 namespace OpenTPW.Tests;
 
 /// <summary>
-/// AUDIO-041's three proved owners. Generated samples distinguish 0x1F from 0xBD in the real mixer;
+/// The list owners' and keyboard paths' sound policy (docs/AUDIO.md, "List owners"; AUDIO-041 is retired). Generated samples distinguish 0x1F from 0xBD in the real mixer;
 /// no original data, audio device or network is needed. Keyboard cases check the retained host UX, not original key parity.
 /// </summary>
 [TestClass, DoNotParallelize]
@@ -240,12 +241,15 @@ public class ListOwnerAudioTests
 		Sounds( GameAudio.SelectClickEvent );
 	}
 
-	private void WithOnline( bool other, ParkSummary[] parks, Action<UiScreenStack, UiScreen, List<int>> test, Action<int>? advice = null )
+	private void WithOnline( bool other, ParkSummary[]? parks, Action<UiScreenStack, UiScreen, List<int>> test, Action<int>? advice = null )
+		=> WithOnline( other, parks, ( _, stack, screen, advised ) => test( stack, screen, advised ), advice );
+
+	private void WithOnline( bool other, ParkSummary[]? parks, Action<OnlineSession, UiScreenStack, UiScreen, List<int>> test, Action<int>? advice = null )
 	{
 		var folders = new OnlineFolders( root );
 		folders.SaveSettings( new OnlineSettings( null, "synthetic-player" ) );
 		using var session = new OnlineSession( folders );
-		Set( session, other ? "CityParks" : "Parks", parks );
+		Set( session, other ? "CityParks" : "Parks", parks! );
 		var stack = new UiScreenStack();
 		stack.Push( new UiScreen( "synthetic-parent" ) );
 		var advised = new List<int>();
@@ -254,14 +258,22 @@ public class ListOwnerAudioTests
 			Session = session,
 			Advise = id => { advised.Add( id ); advice?.Invoke( id ); }
 		} );
-		if ( other ) screens.ShowOtherParks( new CityInfo( 7, "Synthetic city", "", 0, 0, parks.Length ) );
+		if ( other ) screens.ShowOtherParks( new CityInfo( 7, "Synthetic city", "", 0, 0, parks?.Length ?? 0 ) );
 		else screens.ShowFindParks();
-		test( stack, stack.Top!, advised );
+		test( session, stack, stack.Top!, advised );
 	}
 
 	private static ParkSummary[] Parks() => Enumerable.Range( 0, 2 ).Select( index => new ParkSummary(
 		"synthetic-" + index, "Synthetic park " + index, "Synthetic description", "synthetic-author", "synthetic-level", "English",
 		DateTimeOffset.UnixEpoch, 4, 2, false, false, 0, false, 0, 7 ) ).ToArray();
+
+	private static ParkSummary[] NamedParks( params string[] names ) => names.Select( name => new ParkSummary(
+		name, name, "Synthetic description", "synthetic-author", "synthetic-level", "English",
+		DateTimeOffset.UnixEpoch, 4, 2, false, false, 0, false, 0, 7 ) ).ToArray();
+
+	private static string RowName( UiScrollList list, int index ) => list.Rows()[index].Split( '\t' )[0];
+
+	private static string DetailsName( UiScreenStack stack ) => ((UiLabel)stack.Top!.Find( "parkName" )!).Text();
 
 	[DataTestMethod]
 	[DataRow( false )]
@@ -311,6 +323,85 @@ public class ListOwnerAudioTests
 		Sounds();
 	} );
 
+	[DataTestMethod]
+	[DataRow( false )]
+	[DataRow( true )]
+	public void OtherParksSelectionChangedUsesRowsThatReplaceAnEmptyList( bool initiallyNull )
+	{
+		WithOnline( true, initiallyNull ? null : Array.Empty<ParkSummary>(), ( session, stack, screen, advised ) =>
+		{
+			var list = List( screen );
+			Assert.AreEqual( 1, list.Rows().Count, "the empty list shows its placeholder" );
+			stack.Update( Context(), UiInput.Click( RowPoint( list, 0 ) ) );
+			Assert.AreEqual( "otherParks", stack.Top!.Name, "the placeholder is not a park" );
+			Assert.AreEqual( 0, advised.Count( id => id == RestoredAdvice.ParkDetailsHelp ) );
+			Set( session, "CityParks", NamedParks( "fresh-0", "fresh-1" ) );
+			Assert.AreEqual( "fresh-0", RowName( list, 0 ) );
+			stack.Update( Context(), UiInput.Click( RowPoint( list, 1 ) ) );
+			Assert.AreEqual( "fresh-1", DetailsName( stack ) );
+			Assert.AreEqual( 1, advised.Count( id => id == RestoredAdvice.OtherParksHelp ) );
+			Assert.AreEqual( 1, advised.Count( id => id == RestoredAdvice.ParkDetailsHelp ) );
+			Assert.AreEqual( 1, stack.Screens.Count( item => item.Name == "parkDetails" ) );
+			Sounds();
+		} );
+	}
+
+	[DataTestMethod]
+	[DataRow( false )]
+	[DataRow( true )]
+	public void OtherParksKeyboardAndMouseActivationUseTheReplacedRowAtTheSelectedIndex( bool mouse )
+	{
+		WithOnline( true, NamedParks( "old-2", "old-1", "old-0" ), ( session, stack, screen, advised ) =>
+		{
+			var list = List( screen );
+			list.Select( 1 );
+			Assert.AreEqual( "old-1", DetailsName( stack ) );
+			stack.Pop();
+			Set( session, "CityParks", NamedParks( "new-2", "new-1", "new-0" ) );
+			Assert.AreEqual( "new-1", RowName( list, 1 ) );
+			screen.Focus( list );
+			if ( mouse )
+				stack.Update( Context(), UiInput.Click( RowPoint( list, 1 ) ) );
+			else
+				stack.Update( Context(), UiInput.Key( UiKeys.Accept ) );
+			Assert.AreEqual( "new-1", DetailsName( stack ) );
+			Assert.AreEqual( 1, advised.Count( id => id == RestoredAdvice.OtherParksHelp ) );
+			Assert.AreEqual( 2, advised.Count( id => id == RestoredAdvice.ParkDetailsHelp ) );
+			Assert.AreEqual( 1, stack.Screens.Count( item => item.Name == "parkDetails" ) );
+			Sounds();
+		} );
+	}
+
+	[TestMethod]
+	public void OtherParksShrinkAndEmptyPlaceholderUseCurrentRowsAndStaySilent()
+	{
+		WithOnline( true, NamedParks( "old-0", "old-1", "old-2" ), ( session, stack, screen, advised ) =>
+		{
+			var list = List( screen );
+			list.Select( 1 );
+			Assert.AreEqual( "old-1", DetailsName( stack ) );
+			stack.Pop();
+			Set( session, "CityParks", NamedParks( "new-2", "new-1" ) );
+			Assert.AreEqual( "new-1", RowName( list, 1 ) );
+			screen.Focus( list );
+			stack.Update( Context(), UiInput.Key( UiKeys.Accept ) );
+			Assert.AreEqual( "new-1", DetailsName( stack ), "a shrink keeps the current row's identity" );
+			stack.Pop();
+			Set( session, "CityParks", Array.Empty<ParkSummary>() );
+			Assert.AreEqual( 1, list.Rows().Count, "the empty list shows its placeholder" );
+			Assert.AreNotEqual( "new-1", RowName( list, 0 ) );
+			screen.Focus( list );
+			stack.Update( Context(), UiInput.Key( UiKeys.Accept ) );
+			Assert.AreEqual( "otherParks", stack.Top!.Name, "an out-of-range selection must not activate" );
+			stack.Update( Context(), UiInput.Click( RowPoint( list, 0 ) ) );
+			Assert.AreEqual( "otherParks", stack.Top!.Name, "the placeholder is not a park" );
+			Assert.AreEqual( 1, advised.Count( id => id == RestoredAdvice.OtherParksHelp ) );
+			Assert.AreEqual( 2, advised.Count( id => id == RestoredAdvice.ParkDetailsHelp ) );
+			Assert.AreEqual( 0, stack.Screens.Count( item => item.Name == "parkDetails" ) );
+			Sounds();
+		} );
+	}
+
 	[TestMethod]
 	public void SilentRowsDoNotMuteTheLoadersOwnSound()
 	{
@@ -339,21 +430,135 @@ public class ListOwnerAudioTests
 	}, id => { if ( id == RestoredAdvice.ParkDetailsHelp ) GameAudio.PlayUi( GameAudio.SelectClickEvent ); } );
 
 	[TestMethod]
-	public void UnqualifiedAndOptedOutListsRetainTheirExplicitPolicies()
+	public void ListRowsAreSilentByDefaultAndOnlyAnOptedInScreenClicks()
 	{
 		var calls = 0;
 		var list = new UiScrollList { Rows = () => new[] { "Synthetic row" }, Selected = 0, RowActivated = _ => calls++ };
-		Assert.IsTrue( list.ClicksOnActivate );
+		Assert.IsFalse( list.ClicksOnActivate, "no original list row posts 0x100 (docs/AUDIO.md, \"List owners\")" );
 		list.Activate();
-		Sounds( GameAudio.ClickEvent );
-		list.ClicksOnActivate = false;
+		Assert.AreEqual( 1, calls );
+		Sounds();
+		list.ClicksOnActivate = true;
 		list.Activate();
 		Assert.AreEqual( 2, calls );
 		Sounds( GameAudio.ClickEvent );
-		list.ClicksOnActivate = true;
 		list.RowActivated = null;
 		list.Activate();
 		Sounds( GameAudio.ClickEvent );
+	}
+
+	[TestMethod]
+	public void TheThemeParkIncTextHudOptsItsBuildListIn()
+	{
+		var source = File.ReadAllText( Path.Combine( RepositoryRoot(), "source", "OpenTPW", "Client", "ThemeParkIncHud.cs" ) );
+		var list = source[source.IndexOf( "Id = \"buildList\"", StringComparison.Ordinal )..];
+		StringAssert.Contains( list[..list.IndexOf( "} );", StringComparison.Ordinal )], "ClicksOnActivate = true", "the EXT text HUD keeps its build list's click" );
+	}
+
+	private static string RepositoryRoot()
+	{
+		for ( var directory = new DirectoryInfo( AppContext.BaseDirectory ); directory != null; directory = directory.Parent )
+			if ( File.Exists( Path.Combine( directory.FullName, "source", "OpenTPW.sln" ) ) )
+				return directory.FullName;
+		throw new DirectoryNotFoundException( "repository root" );
+	}
+
+	[TestMethod]
+	public void FindParksEnterClicksOnceThroughTheSearchButton()
+	{
+		// focusing the search field turns the global text entry on; restore it so later tests (the wave machine window) can open
+		var previousCapture = Input.TextEntryActive;
+		try
+		{
+			WithOnline( false, Parks(), ( stack, screen, _ ) =>
+			{
+				var search = (UiTextField)screen.Find( "search" )!;
+				screen.Focus( search );
+				stack.Update( Context(), UiInput.Key( UiKeys.Accept ) );
+				Assert.AreSame( screen, stack.Top, "the search runs in place" );
+				Sounds( GameAudio.ClickEvent );
+			} );
+		}
+		finally { Input.TextEntryActive = previousCapture; }
+	}
+
+	[TestMethod]
+	public void EmployeeRenameEnterClicksAndAppliesWhileEscapeClosesSilently()
+	{
+		var previousCapture = Input.TextEntryActive;
+		try
+		{
+			foreach ( var escape in new[] { false, true } )
+			{
+				Input.TextEntryActive = false;
+				var economy = EconomyTestData.Park();
+				var member = EconomyTestData.HireBest( economy, StaffType.Handyman );
+				var hud = StaffWindowTests.Hud( economy );
+				hud.GetType().GetField( "lastLocatedStaff", BindingFlags.Instance | BindingFlags.NonPublic )!.SetValue( hud, new Dictionary<StaffType, int>() );
+				hud.OpenEmployeeWindow( member );
+				hud.Stack.Top!.Find( "title" )!.Activate();
+				var dialog = hud.Stack.Top!;
+				Assert.AreEqual( "employeeRename", dialog.Name );
+				fired.Clear();
+				dialog.Update( Context(), UiInput.Type( "Synthetic" ) );
+				dialog.Update( Context(), UiInput.Key( escape ? UiKeys.Back : UiKeys.Accept ) );
+				Assert.AreEqual( "employee", hud.Stack.Top!.Name );
+				Assert.AreEqual( escape ? null : "Synthetic", member.Name );
+				CollectionAssert.AreEqual( escape ? Array.Empty<uint>() : new[] { GameAudio.ClickEvent }, fired.ToArray(),
+					"Enter is the tick's 0x100 (0x4b640a, the window's style 1: 0x1F); Escape closes without one" );
+			}
+		}
+		finally { Input.TextEntryActive = previousCapture; }
+	}
+
+	[TestMethod]
+	public void ParkRenameEnterMovesToTheSecondLineAndThenClicksAndApplies()
+	{
+		var previousCapture = Input.TextEntryActive;
+		try
+		{
+			Input.TextEntryActive = false;
+			var hud = StaffWindowTests.Hud( EconomyTestData.Park() );
+			var level = (Level)typeof( ParkHud ).GetField( "level", BindingFlags.Instance | BindingFlags.NonPublic )!.GetValue( hud )!;
+			typeof( Level ).GetField( "<ParkName>k__BackingField", BindingFlags.Instance | BindingFlags.NonPublic )!.SetValue( level, new ParkNameLines( "Synthetic", "Park" ) );
+			hud.OpenParkRenameDialog();
+			var dialog = hud.Stack.Top!;
+			Assert.AreEqual( "parkRename", dialog.Name );
+			fired.Clear();
+			dialog.Update( Context(), UiInput.Key( UiKeys.Accept ) );
+			Assert.AreSame( dialog.Find( "line2" ), dialog.Focused, "Enter in the first line moves the focus (0x499711), no 0x100" );
+			Sounds();
+			dialog.Update( Context(), UiInput.Key( UiKeys.Accept ) );
+			Assert.AreNotSame( dialog, hud.Stack.Top, "the tick applied and closed" );
+			Assert.AreEqual( new ParkNameLines( "Synthetic", "Park" ), level.ParkName );
+			CollectionAssert.AreEqual( new[] { GameAudio.ClickEvent }, fired.ToArray(), "Enter in the second line is the tick's 0x100 (0x49973e): 0x1F" );
+		}
+		finally { Input.TextEntryActive = previousCapture; }
+	}
+
+	[TestMethod]
+	public void ARefusedHirePostsItsMessageWithoutAnErrorSound()
+	{
+		var hud = StaffWindowTests.Hud( EconomyTestData.Park() );
+		hud.OpenStaffWindow();
+		fired.Clear();
+		hud.RefuseHire();
+		Assert.IsTrue( hud.Messages.Count > 0, "the OpenTPW message stays" );
+		Assert.IsFalse( fired.Contains( GameAudio.ErrorEvent ), "the hire row (0x49b988) plays no cat_ui sound" );
+		Sounds();
+	}
+
+	[TestMethod]
+	public void AStillClickOnTheLoadListThumbIsSilent()
+	{
+		var stack = new UiScreenStack();
+		var screen = FrontEndMenu.CreateLoadScreen( stack, OriginalUiTests.FakeStrings(), Entries( 30 ), _ => { } );
+		stack.Push( screen );
+		var knob = screen.Find( "loadScroll" )!.ScreenRect( Context().Canvas );
+		var point = new NVector2( knob.Center.X, knob.Y + 2 );
+		stack.Update( Context(), new UiInput( point, true, true, false, false, UiKeys.None ) );
+		stack.Update( Context(), UiInput.Click( point ) );
+		Sounds();
 	}
 
 	[TestMethod]

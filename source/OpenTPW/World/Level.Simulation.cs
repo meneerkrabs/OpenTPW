@@ -10,6 +10,8 @@ public partial class Level
 		AttachCheatHost();
 		simulationClock.Advance( elapsedSeconds, deltaTime =>
 		{
+			// [EXT:online-coop-commands] the commands held for this tick apply before it (a replayed log; in single player the HUD's commands have run already)
+			ApplyDueCommands();
 			SyncObjectEconomy();
 			// the substep this tick stands in (the park's own tick before the economy advances it): none while the park is paused
 			var substep = SimulationSubstep.ForTick( Park?.Economy.Tick ?? simulationClock.TickCount, Park == null || Park.Economy.Speed != GameSpeed.Paused );
@@ -70,6 +72,7 @@ public partial class Level
 			// things share the level's pool frees them only at a turn: the substeps between turns leave the requests waiting
 			if ( !sweeping && (!pooled || guestsTurn || economyTurn) )
 				Things.DestroyQueued();
+			AfterCommandTick( simulationClock.TickCount + 1 );
 		} );
 		// A zero elapsed batch is the scene/HUD pause path; it must not create bodies, queue programs or change WALK headings.
 		if ( elapsedSeconds > 0 && Guests != null && (Park == null || Park.Economy.Speed != GameSpeed.Paused) )

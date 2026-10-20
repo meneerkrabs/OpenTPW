@@ -102,9 +102,10 @@ public class ShopVisitAssetTests
 		Assert.AreEqual( rotation, (int)shop.Evidence["rotation"]! );
 		var uses = tracker.Uses.Where( use => use.Attraction == shopId ).ToList();
 		Assert.IsTrue( uses.Count >= 100, $"the shop was used {uses.Count} times" );
-		Assert.IsTrue( uses.All( use => use.Seconds is > 0.9 and < 1.2 ), $"each use lasts the script's WAIT 1000: {uses.Min( use => use.Seconds ):F2}..{uses.Max( use => use.Seconds ):F2} s" );
+		// the script writes VAR_LETMEOFF after its WAIT 1000 and the ride update of the next park turn (248 ms) lets the guest off (tp.exe 0x004E1410)
+		Assert.IsTrue( uses.All( use => use.Seconds is > 1.0 and < 1.3 ), $"each use lasts the script's WAIT 1000 and up to one park turn: {uses.Min( use => use.Seconds ):F2}..{uses.Max( use => use.Seconds ):F2} s" );
 		Assert.IsTrue( uses.All( use => use.InView ), "every customer stands in view at the counter while it is served" );
-		Assert.IsTrue( still.Where( use => use.Attraction == shopId ).All( use => use.Seconds < 1.2 ), "nobody is left in the shop: " + string.Join( ", ", still ) );
+		Assert.IsTrue( still.Where( use => use.Attraction == shopId ).All( use => use.Seconds < 1.3 ), "nobody is left in the shop: " + string.Join( ", ", still ) );
 	}
 
 	/// <summary>
@@ -156,7 +157,7 @@ public class ShopVisitAssetTests
 		Assert.AreNotEqual( RideVMState.Faulted, runtime.Script!.State, runtime.Script.FaultMessage );
 		Assert.AreEqual( 10, shop.BoardedTotal, $"rotation {rotation}: every guest was served" );
 		Assert.AreEqual( 10, shop.ReleasedTotal, $"rotation {rotation}: every guest was let off" );
-		Assert.AreEqual( 10, tracker.Uses.Count( use => use.Attraction == shop.AttractionId && use.Seconds is > 0.9 and < 1.2 && use.InView ) );
+		Assert.AreEqual( 10, tracker.Uses.Count( use => use.Attraction == shop.AttractionId && use.Seconds is > 1.0 and < 1.3 && use.InView ) );
 		Assert.IsFalse( simulation.Guests.Any( guest => guest.State == GuestState.Using ), "nobody is left in the shop" );
 	}
 }

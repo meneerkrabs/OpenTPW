@@ -1022,11 +1022,43 @@ shipped archives are pinned by the asset manifest of every park save that placed
 content change that has to touch them anyway. Before October 19, 2026 every served guest was hidden, so guests at the
 Burger Shop seemed to vanish into the hut, and the toilets' and the puzzles' users vanished too.
 
-Then tp.exe's ExitRide (`0x5014E0`) puts the guest at `UsageInfo.ExitCellAppearPos` inside the exit cell (the
-entrance cell for a shop without an exit, `0x4DEDF0(1)`) and walks it to the cell beyond in state 15; OpenTPW sets
-it down on that cell beyond and lets it stand there for a second (`[APPROX:GUEST-023]`). `ShopVisitAssetTests`
-runs the shipped Burger Shop in all four rotations: every customer is let off about a second after the shop takes
-it and no guest is lost.
+### Leaving an object (ExitRide)
+
+A script lets a guest off by writing it to `VAR_LETMEOFF`. tp.exe reads that variable only in the ride update of a park
+turn (the dismiss `0x4E1410`): ride state 0 runs it after the admission (`0x4E1220`) and the breakdown test, unless that
+test sets state 1 or 4 (`0x4E159A`); states 1, 2 and 4 run it after the head step (`0x4E0E27`). So a use lasts the
+script's time plus up to one park turn (248 ms): the Burger Shop's `WAIT 1000` serves a customer 1.0 to 1.25 s. The
+dismiss runs ExitRide (`0x5014E0`) and writes 0 to the variable only when ExitRide succeeds.
+
+ExitRide:
+
+1. Puts the guest at `UsageInfo.ExitCellAppearPos` in the object's exit cell (`+0x38`; for an object without an exit
+   it is the entrance cell `+0x36`). The point `0x4DEDF0(1)` takes the bytes `ftol(255 x f)` after the object's
+   rotation, as the stand point does: 90 gives (y, 1 - x), 180 gives (1 - x, 1 - y), 270 gives (1 - y, x). The
+   teleport `0x4FA930` sets the position, zeroes the velocity and moves the guest to the cell's list.
+2. Takes the exit cell's link byte `+0x0D` (`0x522850`), reversed by `0x4D8C00` when the exit cell is the entrance
+   cell, and the neighbour along it (`0x4D97E0`).
+3. Calls the exit blocked when that neighbour is a queue cell (types 3 and 9, `0x536320`) or no route reaches it
+   (`0x4FA530`). It logs "SetDest on ride exit failed, exit of object %d is blocked!" and closes the ride
+   (`0x4DF150`): the open word, the pending visitor and `VAR_RIDECLOSED` = 1, as a breakdown's SetState does. The
+   guest stays on the ride (state 16) at the exit point, its kept body where it was, and `VAR_LETMEOFF` keeps it,
+   so every later ride update tries again.
+4. Otherwise runs the use routine (`0x4FD970`) and enters state 15.
+
+State 15 (`0x500900`) walks the guest to that neighbouring cell. A stuck walk clears its target and sends it to state 6;
+on arrival the guest decides again (state 6, "successfully left ride"). tp.exe first takes a major destination it set
+aside for a minor one; OpenTPW keeps none (`APPROX:GUEST-004`). `GuestSimulation.ExitRide`,
+`RideVisitorBridge.DismissLetOff` and `CloseForBlockedExit` port this.
+
+An attraction registered without its placement has no exit cell of its own: the M3 and M4 gates, the measurement
+scenarios, test rigs and the developer prototype lay no access cells. It lets off in the cell it takes its guests in
+and routes to its `ExitCell`. A guest the ride lets go of without a let-off (its script stopped or faulted) leaves by
+ExitRide when it can; otherwise it is set down beyond the exit, as a guest on a removed ride is (`QUEUE-010`). The
+pools changing room's swimmers keep their own exit (`[EXT:pools-swim]`).
+
+`ShopVisitAssetTests` runs the shipped Burger Shop in all four rotations: every customer is let off 1.0 to 1.3 s after
+the shop takes it, walks out of the hut, and no guest is lost. `ExitRideTests` covers the exit point, the reversal,
+the blocked exit and the state-15 walk.
 
 **Depth.** The quad is camera-facing, so all of it lies at the depth of the hotspot, and seen from above the ground just in front of the
 feet is nearer the camera than the hotspot: it hides whatever hangs below the hotspot. In the `.TPC` the soles of a standing kid end 3 to 5

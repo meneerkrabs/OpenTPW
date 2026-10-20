@@ -82,10 +82,18 @@ public sealed partial class GuestSimulation
 	private static void BoardBodySprite( Guest guest, IRideVisitorBridge ride )
 	{
 		if ( ride.RideHandlesSprite )
+		{
 			guest.BodySprite.QueueTemplate( VisitorSpriteTemplate.Stand );
+			// [BIN:TPW-EXE:0x004FA087 held body] from here the guest update no longer places the body, so it stays where it was last drawn, even when a blocked ExitRide moves the guest itself (0x004FA930)
+			(guest.KeptBodyX, guest.KeptBodyY) = (guest.DrawX, guest.DrawY);
+		}
 		else
 			guest.BodySprite.DeletePlayer();
 	}
+
+	/// <summary>Where a kept body that stands in place is drawn (cells): its last placement, or the guest's own position when that is not known (a loaded park).</summary>
+	public (float X, float Y) KeptBodyPosition( Guest guest ) =>
+		float.IsFinite( guest.KeptBodyX ) && float.IsFinite( guest.KeptBodyY ) ? (guest.KeptBodyX, guest.KeptBodyY) : (guest.DrawX, guest.DrawY);
 
 	/// <summary>
 	/// A guest whose body the object keeps in view while it uses it (state 16): every object whose <c>UsageInfo.RideHandlesSprite</c> is 1 kept the body at the entry, whatever its kind (shop, sideshow,
@@ -102,6 +110,7 @@ public sealed partial class GuestSimulation
 	/// <summary>State 15 follows the use effects: a retained body keeps its copied appearance, while a new one uses the person's updated category.</summary>
 	private void ReleaseBodySprite( Guest guest )
 	{
+		(guest.KeptBodyX, guest.KeptBodyY) = (float.NaN, float.NaN);
 		if ( guest.InSwimSession )
 			return; // Existing pools extension: no original lifecycle parity is claimed through swimming.
 		if ( guest.BodySprite.Player == null )
@@ -112,6 +121,7 @@ public sealed partial class GuestSimulation
 
 	private void RemovedRideBodySprite( Guest guest )
 	{
+		(guest.KeptBodyX, guest.KeptBodyY) = (float.NaN, float.NaN);
 		if ( guest.BodySprite.Player == null )
 			CreateBodySprite( guest, VisitorSpriteTemplate.Stand );
 		else

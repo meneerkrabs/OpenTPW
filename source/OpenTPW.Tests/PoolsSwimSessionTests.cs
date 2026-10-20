@@ -265,7 +265,8 @@ public class PoolsSwimSessionTests
 			// like a rider of any other attraction: already on the exit, no attraction named, and Unregister's happiness loss does not reach it a second time
 			Assert.AreEqual( GuestState.ExitingRide, aboard[index].State );
 			Assert.AreEqual( 0, aboard[index].AttractionId );
-			Assert.AreEqual( (2, 0), aboard[index].Cell );
+			// ExitRide (0x005014E0) puts it at the exit point in the room's own cell and it walks out to the exit cell (2, 0) in state 15
+			Assert.AreEqual( GuestSimulation.StandCellOf( rig.Ride ), aboard[index].Cell );
 			Assert.AreEqual( happiness[index], aboard[index].Happiness, "no second treatment by the unregistering" );
 		}
 		Assert.IsTrue( swimmersBefore >= 1 );
@@ -353,7 +354,8 @@ public class PoolsSwimSessionTests
 		foreach ( var (x, y) in rig.Region.Cells.ToArray() )
 			rig.Cells.SetType( x, y, ParkCellType.Empty );
 		var dry = rig.Send();
-		rig.Until( () => dry.State is GuestState.ExitingRide or GuestState.DoingNothing || dry.State == GuestState.Swimming, 600 );
+		// ExitRide (0x005014E0) walks it out of the room to the exit cell (2, 0) in state 15, then it decides again
+		rig.Until( () => dry.State is GuestState.DoingNothing or GuestState.WalkingAround || dry.State == GuestState.Swimming, 900 );
 		Assert.AreNotEqual( GuestState.Swimming, dry.State );
 		Assert.AreEqual( (2, 0), dry.Cell );
 		Assert.AreEqual( 0, dry.AttractionId );

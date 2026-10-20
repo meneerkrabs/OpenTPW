@@ -409,12 +409,19 @@ public sealed class GuestRenderer : Entity
 			return false;
 		var (atlasIndex, frameIndex, mirror, slot, direction, _, step) = SelectSpriteAndSlot( guest, right, forward, up );
 		var atlas = atlases[atlasIndex];
-		var feet = (FeetChooser?.Invoke( guest ) ?? CellToEngine( field, guest.DrawX, guest.DrawY )) + up * AnchorLift( atlasIndex, slot, direction ) - forward * (DepthPullChooser?.Invoke( guest ) ?? 0f);
+		var feet = (FeetChooser?.Invoke( guest ) ?? GroundPoint( guest, !guest.IsVisible )) + up * AnchorLift( atlasIndex, slot, direction ) - forward * (DepthPullChooser?.Invoke( guest ) ?? 0f);
 		var share = 1f;
 		if ( DepthPulledSlots?.Invoke( slot ) != false )
 			(feet, share) = PullTowardsEye( feet, eye, forward );
 		mount = new GuestMount( feet, share, atlas.Name, atlas.Frames[frameIndex], slot, direction, step, mirror );
 		return true;
+	}
+
+	/// <summary>The ground point a guest is drawn at: its own drawn position, or for a kept body standing in place where that body was last placed (<see cref="GuestSimulation.KeptBodyPosition"/>).</summary>
+	private SVector3 GroundPoint( Guest guest, bool keptInPlace )
+	{
+		var (x, y) = keptInPlace ? simulation.KeptBodyPosition( guest ) : (guest.DrawX, guest.DrawY);
+		return CellToEngine( field, x, y );
 	}
 
 	/// <summary>A guest in state 16 whose kept body stands where it stood: no ride pose (walk, bounce or a held one) draws it.</summary>
@@ -525,7 +532,7 @@ public sealed class GuestRenderer : Entity
 			var (atlasIndex, frameIndex, mirror, slot, direction, rotation, step) = SelectSpriteAndSlot( guest, right, forward, up, rider );
 			var atlas = atlases[atlasIndex];
 			var frame = atlas.Frames[frameIndex];
-			var feet = (rider?.Feet ?? FeetChooser?.Invoke( guest ) ?? CellToEngine( field, guest.DrawX, guest.DrawY )) + up * AnchorLift( atlasIndex, slot, direction ) - forward * (DepthPullChooser?.Invoke( guest ) ?? 0f);
+			var feet = (rider?.Feet ?? FeetChooser?.Invoke( guest ) ?? GroundPoint( guest, inPlace )) + up * AnchorLift( atlasIndex, slot, direction ) - forward * (DepthPullChooser?.Invoke( guest ) ?? 0f);
 			var share = 1f;
 			if ( DepthPulledSlots?.Invoke( slot ) != false )
 				(feet, share) = PullTowardsEye( feet, eye, forward );

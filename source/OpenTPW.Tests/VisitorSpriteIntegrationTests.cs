@@ -140,7 +140,7 @@ public class VisitorSpriteIntegrationTests
 			servedTicks++;
 		}
 		Assert.AreEqual( GuestState.ExitingRide, guest.State, "the let-off released the guest" );
-		Assert.IsTrue( servedTicks is >= 60 and <= 70, $"the script's WAIT 1000 serves the guest about a second ({servedTicks} ticks)" );
+		Assert.IsTrue( servedTicks is >= 60 and <= 76, $"the script's WAIT 1000 and the next ride update (up to one 248 ms park turn, tp.exe 0x004E1410) serve the guest ({servedTicks} ticks)" );
 		Assert.IsFalse( rig.Simulation.ShowsKeptBody( guest ) );
 		Assert.IsTrue( guest.IsVisible );
 		Assert.AreSame( body, guest.BodySprite.Player, "the released guest walks on with the same body" );

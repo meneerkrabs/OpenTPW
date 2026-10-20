@@ -301,6 +301,8 @@ public partial class Level
 		runtime.Visitors.OwnerWord = ownerWord;
 		runtime.Visitors.EntranceCell = cells.Entrance;
 		runtime.Visitors.ExitCell = cells.Exit;
+		// the object's own exit cell is the one its placement wrote (its owner word); a registration without one (the M3 and M4 gates and test harnesses, which lay no access cells) lets off as a bridge without a placement does
+		runtime.Visitors.ExitAccessCell = ownerWord != 0 ? ExitAccessCellOf( accessPoints ) : null;
 		runtime.Visitors.QueueFrontCell = cells.QueueFront;
 		runtime.Visitors.QueueEntranceDirection = cells.QueueEntranceDirection;
 		runtime.Visitors.Rotation = rotation;
@@ -313,6 +315,19 @@ public partial class Level
 	/// Walkable entrance and exit cells for an object's access points, plus the entrance's outside cell (the queue's
 	/// front cell) and the direction from it into the entrance; null when it has no entrance or the grid no path.
 	/// </summary>
+	/// <summary>The object's own exit cell (thing +0x38): the last exit cell of the shape the placement loop meets, else the last entrance cell; null without either.</summary>
+	// [BIN:TPW-EXE:0x005014E0 exit cell] ExitRide takes the exit cell index +0x38 and compares it with the entrance cell +0x36: an object without an exit has the same cell in both (0x00501587)
+	internal static (int X, int Y)? ExitAccessCellOf( IEnumerable<ObjectAccessPoint> accessPoints )
+	{
+		ObjectAccessPoint? entrance = null, exit = null;
+		foreach ( var point in accessPoints )
+			if ( point.Kind == ObjectCellKind.Exit )
+				exit = point;
+			else if ( point.Kind == ObjectCellKind.Entrance )
+				entrance = point;
+		return (exit ?? entrance) is { } cell ? (cell.X, cell.Y) : null;
+	}
+
 	internal static ((int X, int Y) Entrance, (int X, int Y) Exit, (int X, int Y) QueueFront, int QueueEntranceDirection)? ResolveVisitorCells( IEnumerable<ObjectAccessPoint> accessPoints, GuestPathGrid grid )
 	{
 		var points = accessPoints.ToArray();

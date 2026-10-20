@@ -26,14 +26,35 @@ public sealed class QueueLineWriter : ICellLineWriter
 		this.cellCost = cellCost;
 	}
 
+	private QueueSegmentReducer? native;
+	private bool nativeActive;
+	internal QueueLineWriter WithNativeReducer( QueueSegmentReducer reducer ) { native = reducer; return this; }
+	internal bool SupportsNativeStart( (int X, int Y) start ) => grid.Cells.InBounds( start.X, start.Y )
+		&& (grid.IsQueue( start.X, start.Y ) && (grid.Cells.OwnerAt( start.X, start.Y ) == 0 || grid.Cells.OwnerAt( start.X, start.Y ) == Ride.OwnerWord)
+			|| grid.Cells.HasQueuePassResidue( start.X, start.Y ) && grid.Cells.OwnerAt( start.X, start.Y ) == Ride.OwnerWord && grid.Cells.QueueLinkAt( start.X, start.Y ) != 0);
+	internal bool CanUseNative( (int X, int Y) start, (int X, int Y) end ) => native != null && native.SupportsUndo( start, end ) && SupportsNativeStart( start )
+		&& (nativeActive || grid.IsQueue( start.X, start.Y ));
+	public void ResetToolSession() => nativeActive = false;
+	internal void RememberNativeResult( SegmentResult result ) => nativeActive = result.QueueReceipt != null;
+	internal SegmentResult CommitNative( (int X, int Y) start, (int X, int Y) end )
+	{
+		var result = native!.Commit( start, end ); RememberNativeResult( result ); return result;
+	}
+	internal bool SupportsNative( (int X, int Y) start, (int X, int Y) end ) => native?.Supports( start, end ) == true;
+	internal bool SupportsNativeUndo( (int X, int Y) start, (int X, int Y) end ) => start != ParkPathBuilder.SnapEnd( start, end ) && native?.SupportsUndo( start, end ) == true;
+	internal void UndoNative( QueueSegmentReceipt receipt ) => native!.Undo( receipt );
+	internal SegmentResult CommitLegacy( (int X, int Y) start, (int X, int Y) end )
+	{ nativeActive = false; return Run( start, ParkPathBuilder.SnapEnd( start, end ), write: true ); }
+
 	public RideVisitorBridge Ride { get; }
 	public CellToolMode Mode => CellToolMode.Queue;
 
-	public SegmentResult Preview( (int X, int Y) start, (int X, int Y) cursor ) => Run( start, ParkPathBuilder.SnapEnd( start, cursor ), write: false );
-	public SegmentResult Commit( (int X, int Y) start, (int X, int Y) end ) => Run( start, ParkPathBuilder.SnapEnd( start, end ), write: true );
+	public SegmentResult Preview( (int X, int Y) start, (int X, int Y) cursor ) => CanUseNative( start, cursor ) ? native!.Preview( start, cursor ) : Run( start, ParkPathBuilder.SnapEnd( start, cursor ), write: false );
+	public SegmentResult Commit( (int X, int Y) start, (int X, int Y) end ) => CanUseNative( start, end ) ? CommitNative( start, end ) : CommitLegacy( start, end );
 
 	public void Undo( SegmentResult segment )
 	{
+		if ( segment.QueueReceipt is { } receipt && native != null ) { native.Undo( receipt ); return; }
 		if ( segment.Built.Count > 0 )
 			remove( segment.Built[0].X, segment.Built[0].Y );
 	}

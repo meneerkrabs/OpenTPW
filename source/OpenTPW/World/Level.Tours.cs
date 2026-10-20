@@ -27,6 +27,18 @@ public partial class Level
 		return Objects.FindAt( x, y ) is { } item ? tourHeightMaps.Height( item, x, y ) : null;
 	}
 
+	/// <summary>TPW blueprint offsets for verified ordinary object owners only; no track-priority or TPI parity claim.</summary>
+	private float? BlueprintHeightOffset( int x, int y )
+	{
+		if ( !TypesFootprints || Guests?.Grid.Cells is not { } cells ) return null;
+		return BlueprintHeights.Sample( cells, x, y, ( cx, cy ) =>
+		{
+			if ( Objects.FindAt( cx, cy ) is not { IsDeleted: false } item || cells.OwnerAt( cx, cy ) != OwnerWord( item ) ) return null;
+			// Null also covers missing/malformed/out-of-range maps. Keep that entire residual explicit rather than invent a surface.
+			return ObjectGround( item, cx, cy );
+		} );
+	}
+
 	/// <summary>The ground of the second-layer piece instance on a cell (a kart or water track tile), which the cell lookup 0x00452AE0 asks before the cell's owner; null without one.</summary>
 	private float? TrackPieceGround( int x, int y )
 	{

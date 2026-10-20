@@ -52,6 +52,38 @@ public class ParkCommandLevelTests
 		return new Park( world.Level, world.Economy, world.One, world.Two );
 	}
 
+	[TestMethod]
+	public void NativeQueueDispatchRejectsFreshStartsAndNoQueueButReplaysTypedFailedContinuation()
+	{
+		var park = NewPark(); var level = park.Level; var map = level.Guests!.Grid.Cells;
+		var ride = park.One.Visitors; ride.OwnerWord = Level.OwnerWord( park.One );
+		ParkCommandResult Decoded( ParkCommand command ) => level.Commands.Issue( ParkCommandCodec.Decode( ParkCommandCodec.Encode( command ) ) );
+		var balance = park.Economy.Balance; var version = map.Version;
+		Assert.IsFalse( Decoded( new QueueSegmentCommand( ride.AttractionId, 10, 20, 13, 20 ) ).Accepted );
+		Assert.AreEqual( version, map.Version ); Assert.AreEqual( balance, park.Economy.Balance );
+		map.SetType( 10, 20, ParkCellType.Path ); version = map.Version;
+		Assert.IsFalse( Decoded( new QueueSegmentCommand( ride.AttractionId, 10, 20, 13, 20 ) ).Accepted );
+		Assert.AreEqual( version, map.Version );
+		map.SetType( 10, 20, ParkCellType.Queue ); map.SetOwner( 10, 20, ride.OwnerWord );
+		var parameters = ride.Parameters; ride.Parameters = parameters with { HasQueue = false }; version = map.Version;
+		Assert.IsFalse( Decoded( new QueueSegmentCommand( ride.AttractionId, 10, 20, 13, 20 ) ).Accepted );
+		Assert.AreEqual( version, map.Version ); Assert.AreEqual( balance, park.Economy.Balance );
+		ride.Parameters = parameters;
+		Assert.IsFalse( Decoded( new UndoQueueSegmentCommand( ride.AttractionId, 10, 20, 10, 20 ) ).Accepted, "no active receipt exists for a singleton" );
+		Assert.AreEqual( version, map.Version ); Assert.AreEqual( balance, park.Economy.Balance );
+		park.Economy.Ledger.Post( LedgerCategory.OtherCosts, park.Economy.Balance );
+		var failed = Decoded( new QueueSegmentCommand( ride.AttractionId, 10, 20, 13, 20 ) );
+		Assert.IsTrue( failed.Accepted, failed.Reason );
+		Assert.AreEqual( CellBuildResult.NotEnoughMoney, failed.As<SegmentResult>()!.StoppedBy );
+		Assert.IsTrue( map.HasQueuePassResidue( 13, 20 ) );
+		Assert.AreEqual( ride.OwnerWord, map.OwnerAt( 13, 20 ) );
+		Assert.IsTrue( Decoded( new QueueSegmentCommand( ride.AttractionId, 13, 20, 13, 22 ) ).Accepted,
+			"typed same-owner residue admits failed-endpoint continuation without UI memory" );
+		var count = map.PlacementCountAt( 10, 20 );
+		Assert.IsTrue( Decoded( new LayLineCommand( CellToolMode.Queue, ride.AttractionId, 10, 20, 11, 20 ) ).Accepted );
+		Assert.AreEqual( count, map.PlacementCountAt( 10, 20 ), "legacy kind retains old per-cell behavior inside mixed execution" );
+	}
+
 	private static void Run( Level level, int ticks, List<ulong>? hashes )
 	{
 		for ( var tick = 0; tick < ticks; tick++ )
@@ -216,7 +248,7 @@ public class ParkCommandLevelTests
 		long Amount() => Pick( -1L, long.MinValue, long.MaxValue, 0L, 100L, 10_000L, 10_001L, 18_000L );
 		bool Flag() => random.Below( 2 ) == 0;
 		string Text() => Pick( "Ann", "", "A\u0007B", "\ud800", new string( 'a', 600 ), "Kevin the", "Cosmic Cow" );
-		ParkCommand Next() => random.Below( 59 ) switch
+		ParkCommand Next() => random.Below( 61 ) switch
 		{
 			0 => new PlaceObjectCommand( Entry(), Coordinate(), Coordinate(), Rotation(), random.Below( 4 ) == 0, Pick( -1, -2, Id() ) ),
 			1 => new RemoveAtCommand( Coordinate(), Coordinate() ),
@@ -278,6 +310,9 @@ public class ParkCommandLevelTests
 			55 => new LayTrackLineCommand( Id(), Coordinate(), Coordinate(), Coordinate(), Coordinate() ),
 			56 => new UndoTrackLineCommand( Id(), Coordinate(), Coordinate(), Coordinate(), Coordinate() ),
 			57 => new CutTrackCommand( Id(), Coordinate(), Coordinate(), Coordinate(), Coordinate() ),
+			// the native queue segments
+			58 => new QueueSegmentCommand( Id(), Coordinate(), Coordinate(), Coordinate(), Coordinate() ),
+			59 => new UndoQueueSegmentCommand( Id(), Coordinate(), Coordinate(), Coordinate(), Coordinate() ),
 			_ => new RemoveAttractionCommand( Pick( -1, int.MinValue, 99_999 ) ),
 		};
 		CollectionAssert.IsSubsetOf( Enum.GetValues<ParkCommandKind>(), Enumerable.Range( 0, 1024 ).Select( _ => Next().Kind ).Distinct().ToArray(), "the stream draws every kind" );

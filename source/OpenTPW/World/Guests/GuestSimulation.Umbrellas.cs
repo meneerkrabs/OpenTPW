@@ -80,7 +80,7 @@ public sealed partial class GuestSimulation
 	{
 		if ( !guest.HasBalloon && guest.BalloonLife <= 0 )
 			return;
-		guest.HasBalloon = false;
+		DeleteBalloon( guest ); // TPI float-away is not the TPW burst script.
 		guest.Happiness = MeterMath.Add( guest.Happiness, -(float)(Settings.MediumHappinessChange & 0xFF) );
 		guest.BalloonLife = 0;
 	}

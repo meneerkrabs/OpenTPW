@@ -12,7 +12,7 @@ public sealed record ParkCommandLogFile( string Theme, ulong Seed, long StartTic
 	/// <summary>The file's magic bytes, "OTPWCMDS".</summary>
 	public static ReadOnlySpan<byte> Magic => "OTPWCMDS"u8;
 	/// <summary>The file format version.</summary>
-	public const int FormatVersion = 1;
+	public const int FormatVersion = 2;
 
 	private const byte EndTag = 0;
 	private const byte CommandTag = 1;
@@ -61,7 +61,7 @@ public sealed record ParkCommandLogFile( string Theme, ulong Seed, long StartTic
 			throw new InvalidDataException( "Not an OpenTPW command log." );
 		var reader = new ParkCommandReader( bytes[Magic.Length..] );
 		var version = reader.Int();
-		if ( version != FormatVersion )
+		if ( version is not (1 or FormatVersion) )
 			throw new InvalidDataException( $"Command log format {version} is not {FormatVersion}." );
 		var theme = reader.String();
 		var seed = reader.UInt64();
@@ -84,7 +84,10 @@ public sealed record ParkCommandLogFile( string Theme, ulong Seed, long StartTic
 			switch ( tag )
 			{
 				case CommandTag:
-					entries.Add( new ParkCommandLogEntry( tick, ParkCommandCodec.Decode( reader.Bytes( ParkCommandCodec.MaximumBytes ) ) ) );
+					var command = ParkCommandCodec.Decode( reader.Bytes( ParkCommandCodec.MaximumBytes ) );
+					if ( version == 1 && ParkCommandCodec.IsNativeQueue( command ) )
+						throw new InvalidDataException( "Legacy command logs cannot contain native queue commands." );
+					entries.Add( new ParkCommandLogEntry( tick, command ) );
 					break;
 				case CheckpointTag:
 					checkpoints.Add( new ParkCommandHashCheckpoint( tick, reader.UInt64() ) );

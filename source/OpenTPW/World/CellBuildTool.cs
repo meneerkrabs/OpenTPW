@@ -32,6 +32,8 @@ public interface ICellLineWriter
 	bool CanStart( (int X, int Y) cell ) => true;
 	/// <summary>Whether a click is snapped to the line's axis (the line tools); the track edit tools take the clicked cell as it is.</summary>
 	bool SnapsToLine => true;
+	/// <summary>Discard issuer-local active-segment state when a tool is closed or entered anew.</summary>
+	void ResetToolSession() { }
 }
 
 /// <summary>
@@ -86,6 +88,8 @@ public sealed class CellBuildTool
 			throw new ArgumentException( "A stack of corner points has one segment between each two points.", nameof( segmentsBetween ) );
 		vertices.Clear();
 		segments.Clear();
+		Writer?.ResetToolSession();
+		writer.ResetToolSession();
 		Writer = writer;
 		Mode = writer.Mode;
 		Start = start;
@@ -163,7 +167,7 @@ public sealed class CellBuildTool
 		{
 			// [BIN:TPW-EXE:0x527517 end flag] after the commit LayLine (0x527429) the pass 0x81 returns 0 only when the commit reached the line's last cell and that cell was a path or queue cell before the write (SetCell's write branch sets 0x820ABC at 0x5345AD, case 0x81 reads it at 0x5340C1); then the tool ends (0x5275B1), as when the end is the start; otherwise the snapped end is the next start (0x527650), even after a refused commit
 			var reachedLast = result.Completed || (result.Line.Count > 0 && result.StoppedAt == result.Line[^1]);
-			if ( end == start || (result.EndedOnExisting && reachedLast) || !pushed )
+			if ( end == start || (result.QueueFinalEndsTool ?? (result.EndedOnExisting && reachedLast)) || !pushed )
 				End();
 			else
 				Start = end;
@@ -242,9 +246,11 @@ public sealed class CellBuildTool
 	{
 		var wasActive = IsActive;
 		Mode = CellToolMode.None;
+		Writer?.ResetToolSession();
 		Writer = null;
 		Start = null;
 		Ghost = null;
+		if ( LastCommit?.QueueReceipt != null ) LastCommit = LastCommit with { QueueReceipt = null };
 		vertices.Clear();
 		segments.Clear();
 		if ( wasActive )

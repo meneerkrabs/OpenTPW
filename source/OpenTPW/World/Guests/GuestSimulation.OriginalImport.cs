@@ -208,6 +208,8 @@ public sealed partial class GuestSimulation
 			UpdatePresentation( guest );
 			Occupy( guest );
 			ReconstructBodySprite( guest, BodySpriteClockMilliseconds );
+			if ( guest.HasBalloon ) CreateBalloon( guest );
+			balloonHistoryReconstructed = true;
 			states.Add( $"{guest.Id}:{save.State}→{(int)guest.State}" );
 		}
 		evidence.Add( $"Guests imported: {guests.Count} of {saved.Count} ({(states.Count == 0 ? "none" : string.Join( ", ", states ))}, saved state → state)." );

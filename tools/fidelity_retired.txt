@@ -166,6 +166,7 @@ GUEST-009 docs/PROGRESS.md
 GUEST-012 docs/GUESTS.md
 GUEST-018 docs/GUESTS.md
 GUEST-022 docs/progress/2026-10-18-tpc-sprite-banks.md
+GUEST-023 docs/DETERMINISM.md
 HEADS-001 docs/GUESTS.md
 HEADS-002 docs/PROGRESS.md
 HEADS-003 docs/PROGRESS.md

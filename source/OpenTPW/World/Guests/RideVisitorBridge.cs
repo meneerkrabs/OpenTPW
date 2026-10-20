@@ -182,6 +182,9 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	/// <summary>[EXT:pools-swim] The cells beyond the back of a changing room; set when the level registers it (geometry only: whether one is a pool cell is read when a guest swims).</summary>
 	public IReadOnlyList<(int X, int Y)> PoolAccessCandidates { get; set; } = Array.Empty<(int X, int Y)>();
 	public (float X, float Y) EntryCellStandPos { get; set; } = (0.5f, 0.5f);
+	public (float X, float Y) ExitCellAppearPos { get; set; } = (0.5f, 0.5f);
+	/// <summary>The object's own exit cell (<see cref="IRideVisitorBridge.ExitAccessCell"/>), set when the level registers a placed object; not saved (the level registers it again on load).</summary>
+	public (int X, int Y)? ExitAccessCell { get; set; }
 	public int Rotation { get; set; }
 	public bool HasCells { get; set; }
 	/// <summary>Queue rules from the object's .sam data (<see cref="QueueParameters"/>); defaults describe a queue-less object.</summary>
@@ -975,12 +978,7 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 		if ( called != 0 && letMeOnWritten && Get( RideVariables.VAR_LETMEON ) != called )
 			MarkBoarded( called );
 
-		var off = Get( RideVariables.VAR_LETMEOFF );
-		if ( off != 0 )
-		{
-			Set( RideVariables.VAR_LETMEOFF, 0 );
-			Release( off );
-		}
+		// [BIN:TPW-EXE:0x004E1410 script dismiss] VAR_LETMEOFF is read by the ride update of a park turn only (UpdateAdmission), not on every tick
 
 		if ( DefersAdmission )
 			return;
@@ -1020,6 +1018,7 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 			if ( IsBrokenDown )
 			{
 				DismissHead();
+				DismissLetOff();
 				return;
 			}
 			brokenDown = false;
@@ -1040,6 +1039,45 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 		// [BIN:TPW-EXE:0x004E1220 admission ignores the coaster predicate] the admission reads the open word +0x68, the script's LETMEON, capacity and running variables, the pending visitor and the queue head only, never the coaster test 0x00441970: an open ride whose coaster refuses guests still calls its head forward, and its queued guests leave through state 11's own exit (thought 13, 0x00500612)
 		if ( isOpen() )
 			CheckAdmission( turn );
+		// [BIN:TPW-EXE:0x004E159A state 0 dismiss] the state-0 update runs the admission (0x004E1220), reads VAR_BROKEN and, unless that sets state 1 or 4 and returns, the dismiss 0x004E1410
+		DismissLetOff();
+	}
+
+	/// <summary>
+	/// The ride update's dismiss (tp.exe <c>0x004E1410</c>): the guest in VAR_LETMEOFF runs ExitRide (<see cref="IRideVisitorHost.OnVisitorExitRide"/>); when it left, VAR_LETMEOFF is set to 0 and the ride
+	/// lets go of it, and when its exit is blocked the variable keeps it, the guest stays on the ride and the ride closes (<see cref="CloseForBlockedExit"/>), so the next ride update tries again.
+	/// </summary>
+	// [BIN:TPW-EXE:0x004E1410 script dismiss] script variable 1 (VAR_LETMEOFF, 0x0055A390) 0 does nothing; else the person's state is checked against 16 (a log, "trying to dismiss person %d, but they're not on this ride!", not a test) and ExitRide 0x005014E0 runs; a result of 1 writes 0 to the variable (0x004E14C3), 0 leaves it
+	// [BIN:TPW-EXE:0x004E0E27 dismiss in states 1, 2 and 4] the ride states 1, 2 and 4 run the head step 0x004E0450, then the same dismiss
+	private void DismissLetOff()
+	{
+		var off = Get( RideVariables.VAR_LETMEOFF );
+		if ( off == 0 )
+			return;
+		if ( !(Host?.OnVisitorExitRide( this, off ) ?? true) )
+		{
+			CloseForBlockedExit();
+			return;
+		}
+		Set( RideVariables.VAR_LETMEOFF, 0 );
+		LetGo( off );
+	}
+
+	/// <summary>Ride closings because a let-off guest's exit was blocked (diagnostics, not saved).</summary>
+	public int BlockedExitClosings { get; private set; }
+
+	/// <summary>
+	/// A let-off guest's exit is blocked (tp.exe <c>0x004DF150</c>): an open ride closes as the breakdown's SetState does, the pending visitor is let go and VAR_RIDECLOSED is set to 1.
+	/// </summary>
+	// [BIN:TPW-EXE:0x004DF150 close for a blocked exit] with the open word +0x68 set: message 0x14 on the bus 0x0040FB10 (its one direct subscriber, the tag system's handler 0x00509BF0, logs it as unknown and does nothing), "Object %d: Closing...", +0x68 = 0, the pending person +0x6C = 0 ("about to zeroise"), script variable 6 (VAR_RIDECLOSED) = 1 (0x0055A0B0) and the model call 0x00454550(1) that SetState 0x004E0E60 makes too; a closed ride does nothing
+	private void CloseForBlockedExit()
+	{
+		if ( !isOpen() || Get( RideVariables.VAR_RIDECLOSED ) != 0 )
+			return;
+		if ( called != 0 )
+			Withdraw();
+		Set( RideVariables.VAR_RIDECLOSED, 1 );
+		BlockedExitClosings++;
 	}
 
 	/// <summary>
@@ -1133,8 +1171,15 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 
 	private void Release( int guest )
 	{
+		if ( LetGo( guest ) )
+			Host?.OnVisitorReleased( this, guest );
+	}
+
+	/// <summary>The ride's own bookkeeping when a guest leaves it: its head slot, walk entry and bounce slot are freed. False when the ride does not hold the guest.</summary>
+	private bool LetGo( int guest )
+	{
 		if ( !onRide.Remove( guest ) )
-			return;
+			return false;
 		// Host cleanup: do not leave a presentation slot on the previous ride after release.
 		Heads?.Remove( guest );
 		for ( var slot = 0; slot < walkTable.Count; slot++ )
@@ -1144,7 +1189,7 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 			if ( bouncing[index].Guest == guest )
 				FreeBounceSlot( bouncing, index );
 		ReleasedTotal++;
-		Host?.OnVisitorReleased( this, guest );
+		return true;
 	}
 
 	/// <summary>Releases every held guest and turns the queue away (ride removed or script stopped).</summary>

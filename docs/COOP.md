@@ -211,11 +211,11 @@ chunks, and `ParkLandTests` checks the land command's posts and verdict.
 
 ### Serialization
 
-`ParkCommandCodec` writes a command as an envelope (format version 1, the kind's tag, the player) and
+`ParkCommandCodec` writes a command as an envelope (version1 for legacy kinds, version2 for native queue-segment kinds16/17, the kind's tag, the player) and
 its fields in declared order: integers as zigzag LEB128 varints in their shortest form, strings as a
 byte length and UTF-8 (at most 512 bytes), floats by their bit pattern, cell lists as a count and
 pairs (at most 4096). Coordinates are bounded by 4096 and rotations are the four build angles. The
-decoder refuses truncated bytes, trailing bytes, another version, an unknown kind, a padded varint and
+decoder refuses truncated bytes, trailing bytes, an unsupported version/kind combination, an unknown kind, a padded varint and
 out-of-range fields. Kind tags are never reused or renumbered. The schema test
 (`ParkCommandCodecTests`) pins the bytes of one sample of every kind; a change of any of them needs a
 new format version.
@@ -224,7 +224,7 @@ new format version.
 
 `ParkCommandRecorder` (`Level.StartCommandRecording`) records every applied command with its tick and
 the world hash (`WorldStateHash`) every 60 ticks. `ParkCommandLogFile` is its file: the magic
-`OTPWCMDS`, the format version, the theme, the world seed, the start tick and start hash, then the
+`OTPWCMDS`, format version2 (version1 logs remain readable but cannot contain new queue commands), the theme, the world seed, the start tick and start hash, then the
 commands and checkpoints in tick order and an end mark. `ParkCommandReplay.Run` schedules a log on a
 park that stands where the log started and runs it tick by tick, so each command lands where it was
 recorded; `FirstMismatch` compares the checkpoints.

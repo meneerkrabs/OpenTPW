@@ -28,6 +28,8 @@ public enum ParkCommandKind : byte
 	Backtrack = 14,
 	/// <summary>A click on a queue cell that starts editing the ride's queue (<see cref="EditQueueCommand"/>).</summary>
 	EditQueue = 15,
+	QueueSegment = 16,
+	UndoQueueSegment = 17,
 	/// <summary>Places the developer prototype ride (<see cref="PlacePrototypeCommand"/>).</summary>
 	PlacePrototype = 20,
 	/// <summary>Removes the developer prototype ride (<see cref="RemovePrototypeCommand"/>).</summary>

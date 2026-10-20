@@ -441,7 +441,7 @@ public partial class Level : IDisposable
 				}
 			}
 			yield return 0.35f;
-			Blueprint = new BlueprintMarkers( OriginalPark.Heightfield );
+			Blueprint = new BlueprintMarkers( OriginalPark.Heightfield, BlueprintHeightOffset );
 			SetupParkName();
 			var origin = OriginalParkPlacement.GetOrigin( OriginalPark.Heightfield );
 			ParkCameraMode.TargetExtent = Math.Max( origin.X, origin.Y );

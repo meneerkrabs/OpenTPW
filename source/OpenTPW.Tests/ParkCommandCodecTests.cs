@@ -27,6 +27,8 @@ public class ParkCommandCodecTests
 		(new RemoveQueueCellCommand( 10, 11 ), "020d001416"),
 		(new BacktrackCommand( 1, 2 ), "020e000204"),
 		(new EditQueueCommand( 3, 3 ), "020f000606"),
+		(new QueueSegmentCommand( 9, 1, 2, 1, 9 ), "0410001202040212"),
+		(new UndoQueueSegmentCommand( 9, 1, 2, 1, 9 ), "0411001202040212"),
 		(new PlacePrototypeCommand( 1.5f, -2.25f, 0f ), "0214000000c03f000010c000000000"),
 		(new RemovePrototypeCommand(), "021500"),
 		(new DismissFinaleCommand(), "021700"),
@@ -81,7 +83,7 @@ public class ParkCommandCodecTests
 	[TestMethod]
 	public void EveryCommandKindHasPinnedBytesUnderTheCurrentVersion()
 	{
-		Assert.AreEqual( 1, ParkCommandCodec.Version, "a new version adds a new schema table beside this one" );
+		Assert.AreEqual( 2, ParkCommandCodec.Version, "a new version adds a new schema table beside this one" );
 		CollectionAssert.AreEquivalent( Enum.GetValues<ParkCommandKind>(), Schema.Select( row => row.Command.Kind ).ToArray(), "one schema row per kind, no kind without one" );
 		var types = typeof( ParkCommand ).Assembly.GetTypes().Where( type => type.IsSubclassOf( typeof( ParkCommand ) ) && !type.IsAbstract ).ToArray();
 		CollectionAssert.AreEquivalent( types, Schema.Select( row => row.Command.GetType() ).ToArray(), "every command type has a schema row" );
@@ -133,8 +135,8 @@ public class ParkCommandCodecTests
 				Assert.ThrowsException<InvalidDataException>( () => ParkCommandCodec.Decode( bytes.AsSpan( 0, length ) ), $"{command.Kind} cut to {length} bytes" );
 			Assert.ThrowsException<InvalidDataException>( () => ParkCommandCodec.Decode( bytes.Append( (byte)0 ).ToArray() ), $"{command.Kind} with a trailing byte" );
 			var otherVersion = bytes.ToArray();
-			otherVersion[0] = 4;
-			Assert.ThrowsException<InvalidDataException>( () => ParkCommandCodec.Decode( otherVersion ), $"{command.Kind} as version 2" );
+			otherVersion[0] = 6;
+			Assert.ThrowsException<InvalidDataException>( () => ParkCommandCodec.Decode( otherVersion ), $"{command.Kind} as version 3" );
 		}
 		var bad = new[]
 		{

@@ -454,6 +454,9 @@ public sealed record GuestSimulationSnapshot
 	/// <summary>Presentation-only absolute int32 sample in the host fixed-clock epoch. Required when per-guest BodySprite history is present.</summary>
 	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )]
 	public int? BodySpriteClockMilliseconds { get; init; }
+	/// <summary>Optional versioned presentation history, excluded from gameplay hashes. Null means old/native reconstruction.</summary>
+	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )]
+	public BalloonPresentationSnapshot? Balloons { get; init; }
 	/// <summary>The id after the highest guest id (before the thing pool: the next guest id the counter handed out; with it the next id is the pool's, <see cref="Things"/>).</summary>
 	public required int NextGuestId { get; init; }
 	/// <summary>

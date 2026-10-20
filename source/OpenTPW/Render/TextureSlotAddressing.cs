@@ -18,6 +18,17 @@ public static class TextureSlotAddressing
 	/// </summary>
 	public const uint ClampFlag = 0x8000_0000;
 
+	/// <summary>
+	/// OpenTPW's vertex flag for a corner of a path-like material (the entrance plaza and its kerbs, path slabs of objects): under snow test.shader draws it as slush, like the path layer. Bit 30 is free like bit 31
+	/// (the corpus flags are 0x1..0x73); set by <see cref="IsPathLikeTexture"/>.
+	/// </summary>
+	// [EXT:winter-snow-paths] OpenTPW's presentation only
+	public const uint SlushFlag = 0x4000_0000;
+
+	/// <summary>Whether a material's texture name marks a walking surface: the shipped names contain path or pav (js_path, ss_PATH, grd_pav4) or are the entrance's centre and kerb strips (grd_ctr1, grd_krb1).</summary>
+	public static bool IsPathLikeTexture( string? name ) =>
+		name != null && ( name.Contains( "path", StringComparison.OrdinalIgnoreCase ) || name.Contains( "pav", StringComparison.OrdinalIgnoreCase ) || name.StartsWith( "grd_ctr", StringComparison.OrdinalIgnoreCase ) || name.StartsWith( "grd_krb", StringComparison.OrdinalIgnoreCase ) );
+
 	/// <summary>Whether tp.exe wraps a slot with these flags (else it clamps).</summary>
 	public static bool Wraps( uint slotFlags ) => (slotFlags & WrapFlags) != 0;
 

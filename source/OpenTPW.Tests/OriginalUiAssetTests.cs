@@ -183,6 +183,27 @@ public class OriginalUiAssetTests
 		Assert.IsTrue( barEnd.G > 240 && barEnd.R < 100, $"the gauge bar ends green, not {barEnd}" );
 	}
 
+	/// <summary>The chat overlay's frame keeps clicks off the park only with its panels, not over the opening the park shows through.</summary>
+	[TestMethod]
+	public void TheChatFrameCoversTheParkOnlyWithItsPanels()
+	{
+		var panel = new OpenTPW.UI.ChatPanel( OriginalUiTests.FakeStrings(), new UiScreenStack(), () => null );
+		var frame = (UiModelImage)panel.Elements.Single( element => element.Id == "chatFrame" );
+		foreach ( var canvas in new[] { new UiCanvas( 2048, 1536 ), new UiCanvas( 1280, 720 ) } )
+		{
+			var context = new UiContext( OriginalUiTests.FakeStrings(), null!, new UiModels() ) { Canvas = canvas };
+			frame.Draw( context, false, false );
+			System.Numerics.Vector2 At( float x, float y ) => canvas.Map( new UiRect( x, y, 0, 0 ), UiAnchor.TopLeft ).Center;
+			// [DATA:ui.wad:f_chat] the root mesh's parts: f_chat1 the left column (x 0..543, y 0..1150), f_chat2 under it (y 1150..1536) and f_chat3 the
+			// strip along the bottom (x 543..2048, y 1150..1536); the opening x 543..2048, y 0..1150 has no triangle
+			Assert.IsTrue( frame.CoversPoint( canvas, At( 300, 600 ) ), "the left column" );
+			Assert.IsTrue( frame.CoversPoint( canvas, At( 1200, 1400 ) ), "the bottom strip" );
+			Assert.IsTrue( frame.CoversPoint( canvas, At( 2040, 1160 ) ), "the strip's far corner" );
+			Assert.IsFalse( frame.CoversPoint( canvas, At( 1200, 500 ) ), "the park opening" );
+			Assert.IsFalse( frame.CoversPoint( canvas, At( 560, 1130 ) ), "the opening's corner by the panels" );
+		}
+	}
+
 	/// <summary>The research rows' tube art (res_pipe) is authored at the column the lab's rows draw it in.</summary>
 	[TestMethod]
 	public void TheResearchTubeIsAuthoredInTheRowColumn()

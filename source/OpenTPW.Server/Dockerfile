@@ -27,9 +27,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends python3 && rm -
     && dotnet workload install wasm-tools
 COPY content/shaders/ content/shaders/
 COPY content/data/ content/data/
-# The shipped data mods and the pools extension: embedded in the page (objects.json, the sprite manifest), and the pools sprite sets are published as static files (pools-sprites/).
+# The shipped data mods and the official extensions' own content: embedded in the page (objects.json, sprites, anchors; OpenTPW.Web.csproj checks that each folder is there), and the pools sprite sets are
+# published as static files (pools-sprites/).
 COPY content/mods/ content/mods/
 COPY content/pools/ content/pools/
+COPY content/umbrellas/ content/umbrellas/
+COPY content/winter/ content/winter/
+COPY content/evening/ content/evening/
 COPY source/ source/
 RUN dotnet publish source/OpenTPW.Web/OpenTPW.Web.csproj -c Release -p:RunAOTCompilation="$WEB_AOT" -o /web --nologo -p:SourceRevisionId="$BUILD_REVISION"
 

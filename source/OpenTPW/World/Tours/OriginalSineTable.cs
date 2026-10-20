@@ -14,7 +14,7 @@ internal static class OriginalSineTable
 	{
 		var table = new float[Size];
 		for ( var index = 0; index < Size; index++ )
-			table[index] = (float)Math.Sin( index / (double)Size * 6.2831855f );
+			table[index] = (float)DetMath.Sin( index / (double)Size * 6.2831855f );
 		return table;
 	}
 

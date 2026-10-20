@@ -142,6 +142,9 @@ public sealed class GuestEconomyBridge : IGuestPayments, IParkGuestStatistics, I
 		return CensusGuests.Count( guest => MeterMath.Byte( meter switch { GuestNeedMeter.Thirst => guest.Thirst, GuestNeedMeter.Hunger => guest.Hunger, _ => guest.Toilet } ) > limit );
 	}
 
+	// [BIN:TPW-EXE:0x004C91C0 guests at the gate] the guests waiting at the booth (state 3) on the two ticket booth cells
+	public int GuestsAtGate => Guests.GuestsWaitingAtBooths();
+
 	// [BIN:TPW-EXE:0x004C9530 balloons] the census guests with +0x210 nonzero
 	public int GuestsWithBalloons => CensusGuests.Count( guest => guest.HasBalloon );
 
@@ -163,6 +166,20 @@ public sealed class GuestEconomyBridge : IGuestPayments, IParkGuestStatistics, I
 			}
 			return count == 0 ? 0f : (float)sum / count;
 		}
+	}
+
+	// [BIN:TPW-EXE:0x004C9750 unhappy percent] every guest thing (type 1) on a census cell (0x004FA990) counts; the happiness (+0x19C) truncated to a byte is compared strictly below the argument (a signed compare), and the result is that count x 100 divided by the census guests (signed), 0 without guests
+	public int CensusPercentBelowHappiness( int happiness )
+	{
+		var total = 0;
+		var below = 0;
+		foreach ( var guest in CensusGuests )
+		{
+			total++;
+			if ( MeterMath.Byte( guest.Happiness ) < happiness )
+				below++;
+		}
+		return total == 0 ? 0 : unchecked( below * 100 ) / total;
 	}
 
 	/// <summary>The percentage of the in-park guests holding a balloon (challenge type 9).</summary>

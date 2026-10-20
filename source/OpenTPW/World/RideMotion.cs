@@ -42,6 +42,6 @@ public sealed class RideMotion
 
 		ElapsedSeconds += deltaTime;
 		Phase = (Phase + (double)deltaTime % CycleDuration / CycleDuration) % 1;
-		Height = (float)((1 - Math.Cos( Phase * Math.Tau )) * 0.5 * MaximumHeight);
+		Height = (float)((1 - DetMath.Cos( Phase * Math.Tau )) * 0.5 * MaximumHeight);
 	}
 }

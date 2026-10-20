@@ -23,7 +23,10 @@ public sealed class AudioVoice
 	private readonly int channels;
 	private double step;
 	private readonly int outputRate;
-	private double position;
+	// A catalogue loop keeps its public control handle while an out-of-range output is released.
+	// Re-admission creates a fresh cursor, rather than seeking or advancing the old output silently.
+	private sealed class SampleOutput { internal double Position; }
+	private SampleOutput? output = new();
 
 	public AudioVoice( Mp2Audio audio, AudioChannel channel, float gain, int outputRate )
 	{
@@ -51,6 +54,8 @@ public sealed class AudioVoice
 	public int PitchStep { get; private set; }
 	public int Frames { get; }
 	public float Gain { get; set; }
+	/// <summary>The logical sample already supplied final device gain, including its enabled groups.</summary>
+	internal bool HasDeviceGain { get; set; }
 	public bool IsFinished { get; private set; }
 	/// <summary>The output frame (mixer timeline) at which this voice's first frame was mixed, or -1 before that.</summary>
 	public long StartOutputFrame { get; internal set; } = -1;
@@ -62,7 +67,31 @@ public sealed class AudioVoice
 	public bool Loops { get; internal set; }
 	public event Action<AudioVoice>? Completed;
 
-	public void Stop() => IsFinished = true;
+	/// <summary>Whether this logical voice currently owns a sample output.</summary>
+	internal bool HasOutput => !IsFinished && output != null;
+
+	public void Stop()
+	{
+		IsFinished = true;
+		output = null;
+	}
+
+	/// <summary>Releases a loop's output without completing its logical owner or invoking a successor callback.</summary>
+	internal bool ReleaseLoopOutput()
+	{
+		if ( !Loops || !HasOutput ) return false;
+		output = null;
+		return true;
+	}
+
+	/// <summary>Creates a fresh output for an admitted loop; an explicit Stop is terminal.</summary>
+	internal void RestartLoopOutput()
+	{
+		if ( !Loops || IsFinished || output != null ) return;
+		output = new SampleOutput();
+		StartOutputFrame = -1;
+		BufferOffset = 0;
+	}
 
 	/// <summary>
 	/// The playback ratio of a pitch step: 1 for step 0, otherwise the float of the original's table, which holds 2^((|step| + 1) / 96) (or its inverse) so step 1 is already +25 cents.
@@ -103,13 +132,14 @@ public sealed class AudioVoice
 	/// <summary>Adds up to <paramref name="frames"/> output frames into <paramref name="mix"/> (interleaved stereo floats); returns the frames used before the voice ran out.</summary>
 	internal int MixInto( Span<float> mix, int frames, float gain )
 	{
+		if ( IsFinished || output is not { } sampleOutput ) return 0;
 		var total = gain * Gain;
 		var leftScale = 1f;
 		var rightScale = 1f;
 		if ( Position is { } place && Range > 0 )
 		{
 			var (distanceGain, pan) = AudioListener.Placement( place, Range );
-			// [EXT:inaudible-loop-advance] inaudible positioned voices advance silently; loops remain available when the listener returns, without recreating the event
+			// Range admission belongs to SoundEventSystem, not this distance/pan stage; a released loop output is not mixed.
 			// [BIN:QMIXER-DLL:0x18005830 volume and pan] tp.exe gives every voice the channel mode 0x1000000 (the software stage: 0x6bc61b ORs 1 into the request flags of every started sample, 0x6d23ab turns that into 0x1000000), whose buffer has no DirectSound 3D object (0x2000000 only): SetVolume(2000 log10(gain) hundredths of a decibel, 0x1800ca40) and, for a mono wave only (0x18005982 tests the wave format table 0x1803c6b4, 1 = mono), SetPan(44.444 x azimuth, mirrored behind the listener, 0x18005730)
 			// [APPROX:AUDIO-018] the pan takes the azimuth in the listener's camera basis; the voices placed flat with the any-distance flag (speech, music, most UI sounds) keep both channels at the voice's gain, as the unpositioned original submit leaves them, though the original hands them (0,1,0) through SetPosition (0x6bc51d, 0x6d2640) and how QMixer places such a source is not read
 			var levelled = AudioListener.DecibelGain( AudioListener.GainHundredthsOfDecibel( distanceGain ) );
@@ -119,15 +149,15 @@ public sealed class AudioVoice
 		}
 		for ( var frame = 0; frame < frames; frame++ )
 		{
-			if ( Loops && Frames > 0 && position >= Frames )
-				position %= Frames;
-			var index = (int)position;
+			if ( Loops && Frames > 0 && sampleOutput.Position >= Frames )
+				sampleOutput.Position %= Frames;
+			var index = (int)sampleOutput.Position;
 			if ( IsFinished || index >= Frames )
 			{
 				IsFinished = true;
 				return frame;
 			}
-			var fraction = (float)(position - index);
+			var fraction = (float)(sampleOutput.Position - index);
 			var next = Loops ? (index + 1) % Frames : Math.Min( index + 1, Frames - 1 );
 			float left, right;
 			if ( channels == 1 )
@@ -142,14 +172,18 @@ public sealed class AudioVoice
 			}
 			mix[2 * frame] += left * total * leftScale;
 			mix[2 * frame + 1] += right * total * rightScale;
-			position += step;
+			sampleOutput.Position += step;
 		}
-		if ( position >= Frames && !Loops )
+		if ( sampleOutput.Position >= Frames && !Loops )
 			IsFinished = true;
 		return frames;
 	}
 
-	internal void RaiseCompleted() => Completed?.Invoke( this );
+	internal void RaiseCompleted()
+	{
+		// Output release is not logical completion. A stale notification cannot finish a re-admitted loop.
+		if ( IsFinished ) Completed?.Invoke( this );
+	}
 
 	/// <summary>Frame within the buffer being mixed at which this voice starts (set for voices started by a completing voice).</summary>
 	internal int BufferOffset { get; set; }
@@ -201,25 +235,48 @@ public sealed class AudioMixer : IDisposable
 	public string? DeviceError { get; private init; }
 
 	/// <summary>Speech volume share applied to music and effects while a speech voice plays (0–1).</summary>
-	public float DuckingLevel { get; set; } = 1;
+	private float duckingLevel = 1;
+	public float DuckingLevel { get => duckingLevel; set { duckingLevel = Math.Clamp( value, 0, 1 ); GroupsChanged?.Invoke(); } }
+	private float masterGain = 1;
+	internal float MasterGain { get => masterGain; set { masterGain = Math.Clamp( value, 0, 1 ); GroupsChanged?.Invoke(); } }
+	internal event Action? GroupsChanged;
+	internal event Action<AudioChannel?>? Stopping;
 
 	/// <summary>
 	/// The music duck request word a ride script's DIPMUSIC sets (<see cref="GameAudio.SetMusicDuck"/>): while it is non-zero the music channel is silent.
 	/// </summary>
 	// [BIN:TPW-EXE:0x51BE5A music duck] the sound service (0x51BD70, applied from the main loop whenever one of its settings changed) compares the 16-bit request 0x803AD0 with 0: non-zero sends the music channel's volume as 0 (0x51BE62-0x51BE7E, or 0x51BDC2-0x51BDEC while speech ducks the others), zero sends the option volume 0x803AC0 (scaled by the speech duck 0x785914 percent in the ducking branch); the other three channels are not touched
-	public ushort MusicDuckRequest { get; set; }
+	private ushort musicDuckRequest;
+	public ushort MusicDuckRequest { get => musicDuckRequest; set { musicDuckRequest = value; GroupsChanged?.Invoke(); } }
 
 	public IReadOnlyList<AudioVoice> Voices => voices;
 
 	/// <summary>
-	/// The reverb of the held <c>SndReverb.map</c> preset ([APPROX:AUDIO-039]): the positioned voices of the effects channel are sent through it and its return is added to the mix; flat voices, speech and music stay dry.
+	/// The reverb of the held <c>SndReverb.map</c> preset (OpenTPW's own stand-in, the audio-reverb extension): the positioned voices of the effects channel are sent through it and its return is added to the mix; flat voices, speech and music stay dry.
 	/// </summary>
 	public ReverbUnit Reverb { get; } = new( OutputRate );
 
 	/// <summary>Output frames the listener has been given (the device's played frames, or the wall clock without a device).</summary>
 	public long PlayedFrames => output?.PlayedFrames ?? (long)(wallClock.Elapsed.TotalSeconds * OutputRate);
 
-	public void SetChannelGain( AudioChannel channel, float gain ) => channelGains[(int)channel] = Math.Clamp( gain, 0, 1 );
+	public void SetChannelGain( AudioChannel channel, float gain )
+	{
+		gain = Math.Clamp( gain, 0, 1 );
+		if ( channelGains[(int)channel] == gain ) return;
+		channelGains[(int)channel] = gain;
+		GroupsChanged?.Invoke();
+	}
+
+	// [BIN:TPW-EXE:0x6B98D0,0x51BD70] group order: master, music, speech, effects; ducking changes those same factors.
+	internal float GetGroupFactor( int index )
+	{
+		if ( index == 0 ) return masterGain;
+		var channel = index switch { 1 => AudioChannel.Music, 2 => AudioChannel.Speech, 3 => AudioChannel.Effects, _ => throw new ArgumentOutOfRangeException( nameof( index ) ) };
+		var gain = GetChannelGain( channel );
+		if ( channel == AudioChannel.Music && MusicDuckRequest != 0 ) return 0;
+		var speaking = voices.Any( voice => voice.Channel == AudioChannel.Speech && voice.HasOutput ) && GetChannelGain( AudioChannel.Speech ) > 0;
+		return speaking && channel != AudioChannel.Speech ? gain * DuckingLevel : gain;
+	}
 
 	public float GetChannelGain( AudioChannel channel ) => channelGains[(int)channel];
 
@@ -280,7 +337,8 @@ public sealed class AudioMixer : IDisposable
 		var buffer = mix.AsSpan( 0, frames * 2 );
 		buffer.Clear();
 		// [BIN:STP-PPC:0x100BB18C sound service] while speech plays (and speech is on with a volume above 0) music and the second user volume are set to volume × SoundInfo.DUCKINGLEVEL / 100
-		var speaking = voices.Any( voice => voice.Channel == AudioChannel.Speech && !voice.IsFinished ) && channelGains[(int)AudioChannel.Speech] > 0;
+		var speaking = voices.Any( voice => voice.Channel == AudioChannel.Speech && voice.HasOutput ) && channelGains[(int)AudioChannel.Speech] > 0;
+		GroupsChanged?.Invoke();
 		mixing = true;
 		var reverbOn = Reverb.Active;
 		if ( reverbOn )
@@ -294,18 +352,19 @@ public sealed class AudioMixer : IDisposable
 		for ( var index = 0; index < voices.Count; index++ )
 		{
 			var voice = voices[index];
-			if ( voice.IsFinished )
+			if ( !voice.HasOutput )
 				continue;
 			var offset = Math.Min( voice.BufferOffset, frames );
 			voice.BufferOffset = 0;
 			if ( voice.StartOutputFrame < 0 )
 				voice.StartOutputFrame = mixedFrames + offset;
-			var gain = channelGains[(int)voice.Channel];
+			var gain = masterGain * channelGains[(int)voice.Channel];
 			if ( voice.Channel == AudioChannel.Music && MusicDuckRequest != 0 )
 				gain = 0;
 			// [BIN:STP-PPC:0x100BB18C speech ducking] while speech plays, Music = settings+0x20 × duck / 100 and User2 = settings+0x1C × duck / 100 (TbSysCommand::SetMusicVolume / SetUser2Volume); +0x1C is fed from the SFX slider (profile +0x10, PC serializer 0x423E90), so the ducked second volume is the effects channel; master and speech stay
 			if ( speaking && voice.Channel != AudioChannel.Speech )
 				gain *= DuckingLevel;
+			if ( voice.HasDeviceGain ) gain = 1;
 			// the positioned effects (rides, screams, staff, guests, placed ambients) go to the reverb send instead of straight into the mix; the send is added back below. Flat voices (interface clicks, the weather's own rain) stay dry
 			var used = voice.MixInto( (reverbOn && voice.Channel == AudioChannel.Effects && voice.Position != null ? send : buffer)[(offset * 2)..], frames - offset, gain );
 			if ( voice.IsFinished )
@@ -332,11 +391,16 @@ public sealed class AudioMixer : IDisposable
 
 	public void StopAll( AudioChannel? channel = null )
 	{
+		Stopping?.Invoke( channel );
 		foreach ( var voice in voices.Where( voice => channel == null || voice.Channel == channel ) )
 			voice.Stop();
 	}
 
-	public void Dispose() => output?.Dispose();
+	public void Dispose()
+	{
+		StopAll();
+		output?.Dispose();
+	}
 }
 
 /// <summary>A process-wide creation counter for the sound voices (presentation only: not part of the world state or of any save).</summary>

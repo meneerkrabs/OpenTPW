@@ -49,6 +49,31 @@ internal sealed partial class ParkResumeSmokeTest : IDisposable
 	// [EXT:mods] OpenTPW's own mod system; the original game had no mods
 	internal static bool ModVariant => Environment.GetEnvironmentVariable( "OPENTPW_SMOKE_MODS" ) is "1" or "true";
 
+	/// <summary>
+	/// [EXT:save-extension-switch] The restore phase's switch variant (<c>OPENTPW_SMOKE_SWITCH=pools</c>, with <c>OPENTPW_SMOKE_POOLS=1</c> on both phases): the pools extension is switched off before the load, the load
+	/// asks through the extension switch dialog, its tick switches the extension back on ([EXT:extensions-apply-at-load], no restart) and the park loads; the boundary and every continuation tick must then
+	/// equal the capture phase's, because the park already used the extension.
+	/// </summary>
+	internal static bool SwitchVariant => Environment.GetEnvironmentVariable( "OPENTPW_SMOKE_SWITCH" ) is "pools";
+
+	/// <summary>[EXT:save-extension-switch] Switches the pools extension off, asks through the real dialog and confirms it with its tick; returns the confirmed switch.</summary>
+	private ParkExtensionSwitch ConfirmPoolsSwitch( string settingsPath )
+	{
+		Require( PoolsVariant, "OPENTPW_SMOKE_SWITCH=pools needs OPENTPW_SMOKE_POOLS on both phases" );
+		var pools = Mods.OfficialExtensions.Pools.Id;
+		Mods.ModStartup.ApplyExtensions( Mods.ModStartup.SwitchExtensions( Mods.OpenTpwExtensions.Active, new Dictionary<string, bool> { [pools] = false } ), Log.Trace );
+		Require( !FeatureGates.Pools, "the switch variant starts the load with the pools extension off" );
+		flow.ModSettingsPath = settingsPath;
+		var stack = new OpenTPW.UI.Original.UiScreenStack();
+		ParkExtensionSwitch? confirmed = null;
+		flow.ConfirmExtensions( savePath, change => confirmed = change, stack );
+		Require( stack.Top?.Name == "extensionSwitch" && confirmed == null, "a park that uses pools asks before it loads with the extension off" );
+		((OpenTPW.UI.Original.UiButton)stack.Top!.Find( "choice0" )!).Clicked!();
+		Require( confirmed is { CanSwitch: true } plan && plan.TurnOn.Select( extension => extension.Id ).SequenceEqual( new[] { pools } ) && stack.Top == null,
+			"the dialog's tick confirms turning the pools extension on" );
+		return confirmed!;
+	}
+
 	private readonly GameFlow flow;
 	private readonly string savePath;
 	private readonly string evidenceDirectory;
@@ -268,7 +293,14 @@ internal sealed partial class ParkResumeSmokeTest : IDisposable
 	private void LoadSavedPark()
 	{
 		// The actual menu load entry: the same ParkLoadEntry the load screen builds for an own-format save.
-		flow.LoadPark( new ParkLoadEntry( themeText, -1, false, savePath, "park-resume smoke" ) );
+		var entry = new ParkLoadEntry( themeText, -1, false, savePath, "park-resume smoke" );
+		var switchSettings = Path.Combine( evidenceDirectory, "mods-switch.json" );
+		if ( SwitchVariant )
+			entry = entry with { Switch = ConfirmPoolsSwitch( switchSettings ) };
+		flow.LoadPark( entry );
+		if ( SwitchVariant )
+			Require( FeatureGates.Pools && Mods.ModSettings.Load( switchSettings, new List<string>() ).IsEnabled( Mods.OfficialExtensions.Pools.Id, false ),
+				"the switched load turned the pools extension on for the run and in mods.json" );
 		level = flow.Level ?? throw new InvalidOperationException( "Native park-resume smoke test failed: the menu load left no level." );
 		Require( level.Park != null && level.Guests != null && level.Paths != null && level.OriginalPark != null, "the resumed park has its economy, guests, paths and original park" );
 		Require( ReferenceEquals( Level.Current, level ), "the resumed level is the current level" );
@@ -528,7 +560,7 @@ internal sealed partial class ParkResumeSmokeTest : IDisposable
 			"the sold shop's payment and economy links are removed" );
 		// Place a new object after the sale: the allocator still works and the new object binds.
 		var feature = level.Objects.Catalog.Buildable.First( entry => entry.Category == ObjectCategory.Feature
-			&& economy.Research.IsAvailable( entry.InfoId ) && economy.Balance >= entry.BuildCost && entry.ModId != OpenTPW.Mods.OfficialExtensions.Pools.Id );
+			&& economy.Research.IsAvailable( entry.InfoId ) && economy.Balance >= entry.BuildCost && entry.ModId != OpenTPW.Mods.OfficialExtensions.Pools.Id && entry.ModId != OpenTPW.Mods.OfficialExtensions.Evening.Id );
 		var featureSite = FindSite( feature, 0, near: FirstWalkable() );
 		var placed = level.PlaceObject( feature, featureSite.X, featureSite.Y, 0 );
 		Require( placed != null && level.GetEconomyInstance( placed! ) != null, "a new object placed after the sale binds to the economy" );

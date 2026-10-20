@@ -547,7 +547,9 @@ public class PoolsContentTests
 		var folder = PoolContent.Directory!;
 		var files = Directory.EnumerateFiles( folder, "*", SearchOption.AllDirectories ).ToArray();
 		var sprites = files.Where( file => file.Replace( '\\', '/' ).Contains( "/esprites/" ) ).ToArray();
-		Assert.IsTrue( files.Except( sprites ).Sum( file => new FileInfo( file ).Length ) < 2_600_000, "the objects (with the slide towers) and the sprite manifest (what the browser build embeds) stay small" );
+		var bridges = files.Where( file => file.Replace( '\\', '/' ).Contains( "/bridge/" ) ).ToArray();
+		Assert.IsTrue( bridges.Sum( file => new FileInfo( file ).Length ) < 600_000, "the original Blender bridge mesh and procedural textures have a separate startup budget" );
+		Assert.IsTrue( files.Except( sprites ).Except( bridges ).Sum( file => new FileInfo( file ).Length ) < 2_600_000, "the objects (with the slide towers) and the sprite manifest (what the browser build embeds) stay small" );
 		Assert.IsTrue( sprites.Sum( file => new FileInfo( file ).Length ) < 9_500_000, "the 2x sprite sets (shipped on the desktop, fetched on demand in the browser) have a budget too: the kids ship only the slots that are drawn" );
 		Assert.IsFalse( files.Any( file => file.EndsWith( ".wad", StringComparison.OrdinalIgnoreCase ) || file.EndsWith( ".wct", StringComparison.OrdinalIgnoreCase ) ), "no original archive or texture format file" );
 		Assert.IsTrue( files.All( file => Path.GetFileName( file ).Length <= 24 ) );

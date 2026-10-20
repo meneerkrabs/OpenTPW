@@ -1,0 +1,3 @@
+## Other Parks opens the park on the row you see (October 20, 2026)
+
+Opening a row in the online Other Parks list now uses the list as it is shown at that moment. Before, the screen kept a separate snapshot of the parks, so a row opened while the city's park list was still arriving could open nothing, or an older park after the list was replaced. tp.exe does the same: its list handler (`0x4C1A10`) reads the activated row's item from the list widget at activation time (`0x4C1B05`) and then opens Park Details (`0x4C0AE0`). Five regression tests in `ListOwnerAudioTests` cover an empty list that fills, a row replaced under the mouse and the keyboard, a list that shrinks, and the empty placeholder (#700; this entry was added after the merge).

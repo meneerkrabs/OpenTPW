@@ -86,7 +86,7 @@ public sealed class ThingPool
 	public bool IsUsed( int id ) => id is >= 1 and <= Capacity && used[id];
 
 	/// <summary>Whether a used slot's destruction has been asked for and waits for the turn's end: the park turn's thing sweep skips it (0x516380 tests the thing's destroyed byte +3).</summary>
-	// [BIN:TPW-EXE:0x0050B780 destroy request] the request sets the thing's byte +3 to 1 and its type byte to 2 before it queues the id (0x0050B8E9 and 0x0050B906); the thing sweep dispatches only things whose byte +3 is 0 (0x005163F0..0x005163F7), so a thing asked to go earlier in the turn is not updated again
+	// [BIN:TPW-EXE:0x0050B780 destroy request] the request sets the thing's byte +3 to 1 (0x0050B8E9), queues the id (0x0050B8FD), then sets its type byte to 2 (0x0050B906) before returning; the thing sweep dispatches only things whose byte +3 is 0 (0x005163F0..0x005163F7), so a thing asked to go earlier in the turn is not updated again
 	public bool IsQueued( int id ) => id is >= 1 and <= Capacity && used[id] && queued[id];
 
 	/// <summary>Whether a used slot holds a placeholder (<see cref="Hold"/>).</summary>

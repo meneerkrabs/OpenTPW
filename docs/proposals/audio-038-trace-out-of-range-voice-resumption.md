@@ -1,39 +1,50 @@
-# AUDIO-038: Trace out-of-range voice resumption
+# AUDIO-038: out-of-range loop output recreation
 
-## Status and classification
-- Classification: approximation.
-- Plan-only local proposal: no runtime implementation, annotation retirement, publication or merge performed.
-- Snapshot supplied as main 5ccddcab (export has no .git; commit not independently verified).
-- Existing PR: none mapped for this independent residual.
-- Draft eligibility: evidence/scope gates below must remain visible; this is not a completed feature.
+## Status and boundary
 
-## Current residual
-the voice pool of 12 (tp.exe 0x6b62b0) ranks the held chains (screams) with the running sentences, placed sounds and one-shots of the event system by priority and ground distance (0x6bb9f0), a voice entering only while its rank exceeds the pool's lowest (0x6b6bc0) and among equal ranks the newer voice keeping its slot (0x6b6a80 links a new voice at the head of the voice list); a voice out of range without the any-distance flag (event flag 0x200, voice flag 8 at 0x6bca44) has its sample stopped by mixer message 3 (0x6bca70 -> 0x6b8d60 -> 0x6bb7c0) and its handle at +0x24 left in place, and is not ticked: OpenTPW stops one-shots and sentence segments, and a chain starts no new child, but a chain's children already playing play out and looping voices are not stopped (nothing read restarts a stopped loop); how a stopped sentence resumes is not read and voices the mixer plays outside the event system, including the children a chain makes, do not compete
+PR #553 now contains a bounded loop-only correction, following independent static review of the native stop/restart contract. It does not retire AUDIO-038. Finite one-shot restart/expiry, sentence selected-descriptor timing, initial submission admission and the broader host group-enable model remain residuals. Held-chain child playback and sentence scheduling are unchanged.
 
-## Source inspection
-- `source/OpenTPW/Audio/SoundEvents.cs:157`: 158: private void StopVoicesOutOfRange(); 159: {; 160: foreach ( var (voice, _, flags, _) in oneShots ); 161: if ( !voice.Loops && voice.Position != null && voice.Range > 0 && (flags & AnyDistanceFlag) == 0 && !Audible( voice.Position, voice.Range ) )
-- `source/OpenTPW/Audio/SoundEvents.cs:1061`: 1062: if ( OutOfRange ); 1063: {; 1064: if ( voice is { IsFinished: false } playing ); 1065: {
+The implementation retains `AudioVoice` as the public logical Stop/move handle, but releases its per-output cursor when a catalogue loop leaves range. A later admitted tick creates a new output cursor at the selected source's beginning. Logical serial, selected PCM, parameter table and explicit-stop state survive independently of the output. A released loop does not mix, duck other channels, finish, or emit a segment-completion callback.
 
-## Bounded work
-Replace silent loop advance and sentence-next-segment assumptions only after determining stop/restart lifecycle; include already-playing chain children.
-- Preserve already-implemented behavior described above; restrict future changes to the named residual.
-- For evidence-only items, establish an oracle first and file implementation only if a behavioral difference is proven.
+## Native evidence
 
-## Missing evidence
-Find original restart path preserving handle +0x24 and whether stopped sentence resumes or advances.
-- Source annotations record prior reverse engineering; this audit checked adjacent implementation but did not execute the original.
+Static addresses below refer to `sp20_nocd/tp.exe`, SHA-256 `5472f97b5eb28f58b5a49f3a15f6f66adffa6b2625a623f503202c9696d1b805`. No executable execution or original-media capture is claimed.
 
-## Acceptance cases
-1. Exit/re-enter waterfall range mid-loop and compare playback phase, handle lifetime and restart count.
-2. Move out during a sentence and held chain; assert child stop behavior and resumed segment against trace.
-3. Add a reproducible synthetic fixture or reference trace identifying input, expected output, and affected function; a passing build alone is insufficient.
-4. Re-run focused regression tests for the listed source owner and document what remains unproven.
+- `0x6BCA10 -> 0x6BCA70`: range failure sets placeholder flag `0x800` before sending type-3 stop for sample handle `+0x24`. The immediate routine does not clear the handle.
+- `0x6B8D60 -> 0x6BAB50`: validate the output handle against its slot/nested stream. A valid handle reaches `0x6B7E60`; only successful backend stop reaches `0x6BB7C0`.
+- `0x6BB7C0 -> 0x6C6260 -> 0x6C8E50`: the output wrapper invokes owner virtual `+4`, passing output handle, logical owner handle and reason. It then clears its callback owner pointer.
+- `0x6BBE40`: a matching logical owner handle (`+0x2C`) clears output handle `+0x24` and playing bit 1. Range flag `0x800` prevents terminal bit `0x10` being set. This resolves the old incomplete inference that the range-stopped output handle necessarily remained alive. Invalid lookups and failed stops do not establish this acknowledgment.
+- `0x6B62B0`: group/range/admission precede pooled ticks. `0x6BD800` re-enters setup `0x6BC410` after the output callback clears playing state. `0x6BC410` reuses the selected sound/sample, evaluates volume, pitch and delay, and reinstalls the callback owner. `0x6B9AB0` calls `0x6B9A60` with existing handle zero. The source creation path builds a new output; the PCM source constructor `0x6C6E70` zeros its cursor/state.
+- The elapsed modulo in `0x6BC534–0x6BC55D` is a late-start eligibility test, not a seek offset. Event flag 8 makes an expiry-exempt loop. Native finite-source setup would redraw delay and recheck expiry against the original base deadline; this PR does not implement finite-source return.
+- `0x6BC760` muted-group handling additionally clears `+0x24` explicitly after stop dispatch. Zero host gain is not treated here as proof that this separate native group-enable switch is disabled.
 
-## Dependencies and ownership
-- World/audio implementation owner to be assigned; no runtime ownership claimed.
-- Original-executable or reference-capture evidence is unavailable in this read-only source audit; unresolved claims are hypotheses.
+### Sentences and held children are distinct
 
-## Review boundary
-- Stop at a reviewable design/evidence package; this draft authorizes no tag removal or parity claim.
-- Do not publish original media or private game data in fixtures, screenshots, or commits.
-- A future implementation needs its own reviewed evidence and acceptance results; do not treat this proposal as merge-ready.
+Sample-backed sentence tick `0x6BDF50` reuses `0x6BC410`, but refill callback `0x6BDE00` may already have replaced the placeholder's selected sample before the previous output audibly finishes. Recreating the selected descriptor therefore does not justify either “always replay the audible segment” or “always consume the prefetched segment.” Mapping the existing early-prefetch extension requires a separate controlled selection/refill fixture.
+
+Held-chain root tick `0x6BDAE0 -> 0x6BDB50` directly walks locally linked children. Creation `0x6BDBB0 -> 0x6B72F0 -> 0x6C3DE0` does not insert those children into the manager pool. Both child vtables `0x70A970` and `0x70A9E0` override sample setup to `0x6C3AE0`, without the callback-owner setup of `0x6BC410`. Root range exclusion prevents further child ticks/spawns, not a recursive output stop. Explicit stop `0x6BD9B0` is the separate cascade. Existing children continue playing out; they are not extra pool entries.
+
+## Implementation guardrails
+
+- Range release and explicit Stop are separate operations; explicit Stop and channel StopAll remain terminal even while no output exists.
+- Restart is gated by the same twelve-owner rank/newest selection and by held lifetime `CanAdmit`/`Suspended`. A non-admittable retained loop does not consume a candidate slot. Simultaneous loop restarts draw in admitted pool order.
+- Pool eviction alone does not release already-playing output. Restart does not renew serial or create another logical pool entry.
+- No sound/sample chooser runs on range return. Retained parameters re-evaluate volume, pitch, then delay. Held lifetime preserves its volume where its existing contract requires it and receives the new output reply.
+- Held fade StopPending/terminal gates remain authoritative. Range release loses physical output-reply availability; a later fade poll can end that owner before return.
+- The software mixer is synchronous on the audio host thread. Released output state is unreachable; active logical voices reject completion notifications. This is a managed safety property, not a claim that the native callback compares output tokens (it compares owner identity).
+- Raw mixer sources retain their existing behavior. Catalogue range admission is not added to held children or arbitrary mixer callers.
+
+## Synthetic acceptance and validation
+
+`AudioLoopRangeTests` uses synthetic PCM, fake catalogs, explicit mixer ticks and injected clocks. It covers fresh output phase and identity, owner retention, idempotence, unchanged sample choice, ordered volume/pitch/delay draws, simultaneous return order, any-distance/flat/zero-range exceptions, explicit/channel stop, twelve-slot and rank-zero admission, suspended-owner exclusion, placed parameter updates, held fade termination/group gain, released-speech ducking, and held-child cursor preservation. The prior pitch test is updated to distinguish retained logical owner from released output. The raw-mixer spatial test is explicitly scoped as raw mixer behavior.
+
+Local validation is limited to source review, whitespace checks and Python documentation/register validators. Local .NET execution was not attempted because of the existing execution restriction. Runtime acceptance requires successful focused/full test execution in the authorized exact-head CI and independent frozen-source review. No passing runtime result is claimed in this proposal.
+
+## Remaining work
+
+1. Finite one-shots: retain original expiry base, apply old-delay admission followed by new-delay expiry recheck, and preserve late-start rejection before enabling restart.
+2. Sentences: test selected S before refill versus selected T after refill, independent of the audible-buffer boundary, before changing early-prefetch mapping.
+3. Initial submission and general host group-enable parity remain outside this loop-return slice. Current host zero-gain behavior is preserved.
+4. Exact codec/device buffering has not been captured from the original. Synthetic fresh-source tests are not an acoustic cross-device parity claim.
+
+Do not publish original media or private game data in fixtures or commits. Keep the residual annotation and review/CI gates visible.

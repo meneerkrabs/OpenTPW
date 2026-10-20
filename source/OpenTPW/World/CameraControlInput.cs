@@ -7,6 +7,8 @@ public readonly record struct CameraControlInput
 	public bool CaptureMouse { get; init; }
 	public bool CaptureKeyboard { get; init; }
 	public bool TextEntry { get; init; }
+	/// <summary>The UI that captures the pointer leaves the screen's edge band to the camera: pushing the pointer there still scrolls (push-scroll mode).</summary>
+	public bool EdgeScrollOverUi { get; init; }
 	public bool Modal { get; init; }
 	public Vector2 MousePosition { get; init; }
 	/// <summary>Previous minus current position, matching Input.Mouse.Delta.</summary>

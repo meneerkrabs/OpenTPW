@@ -28,6 +28,9 @@ vertex {
         float blue = tint.z - alpha * 256.0;
         vs_out.vTexCoords = texCoords;
         vs_out.vColor = vec4( tint.x, tint.y, blue, alpha ) / 255.0;
+        // [EXT:evening] the sky is tinted at dusk and night through the unused light colour; every other particle draw leaves it zero, which keeps the colour as it was
+        if ( g_oUbo.g_vLightColor.x + g_oUbo.g_vLightColor.y + g_oUbo.g_vLightColor.z > 0.0 )
+            vs_out.vColor.rgb *= g_oUbo.g_vLightColor;
         gl_Position = g_oUbo.g_mProj * g_oUbo.g_mView * vec4( position, 1.0 );
     }
 }

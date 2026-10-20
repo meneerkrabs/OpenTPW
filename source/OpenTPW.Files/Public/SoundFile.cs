@@ -12,6 +12,7 @@ public class SoundFile : BaseFormat
 		ReadFromFile( path );
 	}
 
+	/// <summary>Reads the sound and takes ownership of <paramref name="stream"/>, disposing it when reading finishes.</summary>
 	public SoundFile( Stream stream )
 	{
 		ReadFromStream( stream );
@@ -29,15 +30,18 @@ public class SoundFile : BaseFormat
 		memoryStream.Dispose();
 	}
 
-	protected void ReadFromStream( Stream stream )
+	/// <summary>
+	/// Reads the remaining bytes of <paramref name="stream"/> from its current position and disposes it.
+	/// The stream is owned by this read path; callers must not use it afterwards.
+	/// </summary>
+	protected override void ReadFromStream( Stream stream )
 	{
-		// Set up read buffer
-		var tempStreamReader = new StreamReader( stream );
-		var fileLength = (int)tempStreamReader.BaseStream.Length;
-
-		buffer = new byte[fileLength];
-		tempStreamReader.BaseStream.Read( buffer, 0, fileLength );
-		tempStreamReader.Close();
+		using ( stream )
+		using ( var copy = new MemoryStream() )
+		{
+			stream.CopyTo( copy );
+			buffer = copy.ToArray();
+		}
 
 		memoryStream = new ExpandedMemoryStream( buffer );
 	}

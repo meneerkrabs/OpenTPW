@@ -27,6 +27,42 @@ public static class FeatureGates
 	/// </summary>
 	public static bool Pools => OpenTpwExtensions.IsEnabled( OfficialExtensions.Pools ) && !GameEditions.IsThemeParkInc;
 
+	/// <summary>
+	/// [EXT:umbrellas-extension] The <c>opentpw.umbrellas</c> extension is on for this run: the brolly shops are listed in the theme catalogs and the guests' umbrella rules apply (docs/UMBRELLAS.md). It is on by default, but not in a
+	/// Theme Park Inc run, which has its own shop, art and rules.
+	/// </summary>
+	public static bool Umbrellas => OpenTpwExtensions.IsEnabled( OfficialExtensions.Umbrellas ) && !GameEditions.IsThemeParkInc;
+
+	/// <summary>
+	/// [EXT:rain-mood-extension] The <c>opentpw.rain-mood</c> extension is on for this run: guests lose or gain happiness, thirst and hunger in rain, storm and snow (docs/UMBRELLAS.md). Off by default, and not in a Theme Park Inc
+	/// run, where OpenTPW does not implement the weather rule (the extension is only offered for Theme Park World parks).
+	/// </summary>
+	public static bool RainMood => OpenTpwExtensions.IsEnabled( OfficialExtensions.RainMood ) && !GameEditions.IsThemeParkInc;
+
+	/// <summary>
+	/// [EXT:winter-extension] The <c>opentpw.winter</c> extension is on for this run: the winter kiosks and glühwein stalls are listed in the theme catalogs and the guests' warm items apply (docs/WINTER.md). It is on by default, but not in a
+	/// Theme Park Inc run, which has its own shops and no weather of Theme Park World's kind.
+	/// </summary>
+	public static bool Winter => OpenTpwExtensions.IsEnabled( OfficialExtensions.Winter ) && !GameEditions.IsThemeParkInc;
+
+	/// <summary>
+	/// [EXT:winter-weather] The <c>opentpw.winter-weather</c> option is on for this run: December's rain and thunderstorms are snow in the jungle and fantasy parks (docs/WINTER.md, "Wintry Decembers"). Off by default, and not in a Theme Park Inc run,
+	/// which has no Theme Park World weather.
+	/// </summary>
+	public static bool WinterWeather => OpenTpwExtensions.IsEnabled( OfficialExtensions.WinterWeather ) && !GameEditions.IsThemeParkInc;
+
+	/// <summary>
+	/// [EXT:winter-cold] The <c>opentpw.winter-cold</c> option is on for this run: snow costs guests happiness once per qualifying day unless they are dressed warmly (docs/WINTER.md, "Cold mood"). Off by default, and not in a Theme Park Inc
+	/// run, which has no Theme Park World weather.
+	/// </summary>
+	public static bool WinterCold => OpenTpwExtensions.IsEnabled( OfficialExtensions.WinterCold ) && !GameEditions.IsThemeParkInc;
+
+	/// <summary>
+	/// [EXT:winter-always] The <c>opentpw.winter-always</c> option is on for this run: every weather roll uses December's season row and its rain and thunderstorms are snow, and the winter shops sell at their winter demand all year
+	/// (docs/WINTER.md, "Always winter"). Off by default, and not in a Theme Park Inc run, which has no Theme Park World weather.
+	/// </summary>
+	public static bool WinterAlways => OpenTpwExtensions.IsEnabled( OfficialExtensions.WinterAlways ) && !GameEditions.IsThemeParkInc;
+
 	/// <summary>The <c>opentpw.pools-guest-art</c> extension is on: the land guests use the pools extension's 2x kid and head sets (docs/POOLS.md), when the pools extension is on too.</summary>
 	public static bool PoolGuestArt => OpenTpwExtensions.IsEnabled( OfficialExtensions.PoolGuestArt );
 
@@ -43,6 +79,22 @@ public static class FeatureGates
 	/// It only reads park state and posts advice, so it is not a simulation extension.
 	/// </summary>
 	public static bool RestoredAdvice => OpenTpwExtensions.IsEnabled( OfficialExtensions.RestoredAdvice );
+
+	/// <summary>
+	/// [EXT:evening] The <c>opentpw.evening</c> extension is on for this run (on by default): the park has a day and night cycle and its lamps (docs/EVENING.md), which are presentation only, and the catalogs list the extension's torches (recorded in a save only while the park holds one).
+	/// </summary>
+	public static bool Evening => OpenTpwExtensions.IsEnabled( OfficialExtensions.Evening );
+
+	/// <summary>
+	/// [EXT:winter-snow] The <c>opentpw.winter-snow</c> extension is on for this run (on by default): snow settles on the park's ground, roofs and objects while it snows and melts afterwards (docs/WINTER.md). Presentation only.
+	/// </summary>
+	public static bool WinterSnow => OpenTpwExtensions.IsEnabled( OfficialExtensions.WinterSnow ) && !GameEditions.IsThemeParkInc;
+
+	/// <summary>
+	/// [EXT:cheats-extension] The <c>opentpw.cheats</c> extension is on for this run: the cheats window and OpenTPW's own cheats (docs/CHEATS.md). Off by default and not in a Theme Park Inc run. The original's cheat mode does not
+	/// read this gate: it works whether the extension is on or off.
+	/// </summary>
+	public static bool Cheats => OpenTpwExtensions.IsEnabled( OfficialExtensions.Cheats ) && !GameEditions.IsThemeParkInc;
 
 	/// <summary>Exporting, importing, visiting and postcards: the edition supports sharing and the online extension is on.</summary>
 	public static bool Sharing => GameEditions.Capabilities.Sharing && Online;

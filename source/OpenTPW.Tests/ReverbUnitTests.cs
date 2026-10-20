@@ -5,7 +5,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 namespace OpenTPW.Tests;
 
 /// <summary>
-/// The stand-in reverb ([APPROX:AUDIO-039]) that follows the held <c>SndReverb.map</c> record: the record's word order (tp.exe 0x6C46B0), the tail an impulse leaves,
+/// OpenTPW's own stand-in reverb (the audio-reverb extension) that follows the held <c>SndReverb.map</c> record: the record's word order (tp.exe 0x6C46B0), the tail an impulse leaves,
 /// and the mixer's send (the positioned effects only). Synthetic; needs no game data.
 /// </summary>
 [TestClass]

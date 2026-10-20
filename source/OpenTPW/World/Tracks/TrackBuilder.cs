@@ -215,10 +215,13 @@ public sealed class TrackBuilder
 			foreach ( var (cx, cy) in TrackStation.TileCellsOf( x, y ) )
 			{
 				ClearPath( cx, cy );
+				var previous = Tracks.Get( cx, cy );
+				var rawType = Cells.RawTypeAt( cx, cy );
+				var baseType = !previous.IsEmpty && rawType == previous.Type ? previous.BaseType : rawType;
 				var origin = (cx, cy) == (x, y);
 				Cells.SetType( cx, cy, origin ? StartType : TrackCellTypes.Extension );
 				// [BIN:TPW-EXE:0x00524F1E station link] the station tiles' flow link is the heading of the station's rotation (0x524EE9..0x524F19: 0 → 4, 90 → 1, 180 → 0x40, 270 → 0x10)
-				Tracks.Set( cx, cy, new TrackCell { Type = origin ? StartType : TrackCellTypes.Extension, Mask = origin ? axis : (byte)0, Link = origin ? station.Heading : (byte)0, Parent = origin ? -1 : originIndex, Owner = owner } );
+				Tracks.Set( cx, cy, new TrackCell { Type = origin ? StartType : TrackCellTypes.Extension, Mask = origin ? axis : (byte)0, Link = origin ? station.Heading : (byte)0, Parent = origin ? -1 : originIndex, Owner = owner, BaseType = baseType } );
 			}
 		}
 	}

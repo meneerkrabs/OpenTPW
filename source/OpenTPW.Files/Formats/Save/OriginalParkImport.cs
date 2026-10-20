@@ -123,6 +123,12 @@ public sealed class OriginalParkImport
 	public IReadOnlyList<SaveGuest> Guests { get; }
 	public SaveStaffHq? StaffHq { get; }
 	public SaveAdvisorController? Advisor { get; }
+	/// <summary>The referenced TPW analyser's recent-research rings; absent when no analyser is named, or for Theme Park Inc.</summary>
+	public IReadOnlyList<RecentResearchRing>? RecentResearch { get; private init; }
+	/// <summary>The referenced TPW or TPI analyser's validated monthly histories and host continuation inputs; null without an analyser.</summary>
+	public NativeParkStatistics? Statistics { get; private init; }
+	/// <summary>The referenced TPW or TPI analyser's signed arrival group sizes, oldest first (at most five); null without an analyser, an empty list for a known empty ring.</summary>
+	public IReadOnlyList<int>? ArrivalGroups { get; private init; }
 	/// <summary>
 	/// The advisor clock the save carries: the second word of the clock block that follows the MESS delimiter (writer 0x402E00 after the
 	/// snapshot 0x402E60, which stores the scaled clock at +0x4C and the advisor clock at +0x74; reader 0x402E30 behind the marker check 0x41555A).
@@ -157,6 +163,8 @@ public sealed class OriginalParkImport
 	public SaveRideSystemBlock? RideSystem { get; }
 	/// <summary>The clock, vanilla-time, game-system, cheat, advisor-scoring, camera and UI-count blocks of a Theme Park World save, read for the import report; null for Theme Park Inc.</summary>
 	public SaveRuntimeBlocks? RuntimeBlocks { get; private init; }
+	/// <summary>The Sound block (loader tp.exe 0x51C400), or null for the Theme Park Inc viewer and for a block that does not read as the original writer's.</summary>
+	public SaveSoundData? Sound { get; private init; }
 	/// <summary>The RSSE block's script records, read in full (null for the Theme Park Inc viewer).</summary>
 	public SaveRsseBlock? Rsse { get; private init; }
 	/// <summary>The Particles block (loader tp.exe 0x51F7A0): the pool's globals, emitters and effectors (null for the Theme Park Inc viewer).</summary>
@@ -167,14 +175,32 @@ public sealed class OriginalParkImport
 	/// Missing or ambiguous matches stay visible; neither record index nor header words are guessed as station ids.</summary>
 	public IReadOnlyList<ImportedCoasterSection> CoasterSections { get; } = Array.Empty<ImportedCoasterSection>();
 
-	/// <summary>Guard before constructing runtime objects from an original TPW park. Structural inspection remains
-	/// available, but nonempty original controllers cannot safely be resumed until station joins and train data are decoded.
-	/// Theme Park Inc has a separate viewer/import contract and is not inferred through this guard.</summary>
-	// [APPROX:SAVE-920] a park whose Coasters block lists a coaster is refused: the block is decoded (headers, sections, trains and cars) but no runtime coaster is rebuilt from it, where tp.exe's loader 0x437B60 restores each controller, its track nodes and links, its trains and cars — evidence needed: a Theme Park World save with a built coaster and the restore of a CoasterRide from the decoded block
+	/// <summary>
+	/// The saved attraction thing a coaster block binds to: the one whose mesh instance id is the header's station mesh id (controller <c>+0x10</c>). Null when no
+	/// attraction or more than one carries it.
+	/// </summary>
+	public SaveAttraction? CoasterStation( SaveCoaster coaster )
+	{
+		ArgumentNullException.ThrowIfNull( coaster );
+		var matches = Attractions.Where( attraction => attraction.MeshInstanceId == coaster.StationMeshInstanceId ).Take( 2 ).ToList();
+		return matches.Count == 1 ? matches[0] : null;
+	}
+
+	/// <summary>
+	/// Guard before constructing runtime objects from an original TPW park: every saved coaster must bind to exactly one saved attraction thing by its station mesh id,
+	/// the controller the original's loader binds it to. Where tp.exe would crash the park is refused with the reason instead; the level restores the bound coasters.
+	/// Theme Park Inc has a separate viewer/import contract and is not inferred through this guard.
+	/// </summary>
+	// [BIN:TPW-EXE:0x437CBF coaster bind] the loader walks the controller list 0x790FE0 for the controller whose station mesh id (+0x10) is the header's +0xA, which the RideSystem loader 0x4647A0 made when it recreated the station's mesh instance; none matching dereferences a null pointer (0x437CD5), so the original crashes on such a park
 	public void RequireSupportedCoasterRuntime()
 	{
-		if ( CoasterBlock is { Count: > 0 } )
-			throw new InvalidDataException( "Original TPW coaster runtime import is unsupported: the saved controller, its track sections and its trains are decoded, but no runtime track, controller or train is rebuilt from them. Use the structural CoasterBlock and CoasterSections for inspection." );
+		if ( CoasterBlock is not { Count: > 0 } block )
+			return;
+		foreach ( var coaster in block.Coasters )
+		{
+			if ( CoasterStation( coaster ) == null )
+				throw new InvalidDataException( $"The save's coaster at offset {coaster.Offset} binds to station mesh {coaster.StationMeshInstanceId}, which {(Attractions.Any( attraction => attraction.MeshInstanceId == coaster.StationMeshInstanceId ) ? "more than one" : "no")} saved attraction carries; the original game would crash loading this park (0x437CD5), so it is refused." );
+		}
 	}
 
 	public bool IsOccupiedByObject( int x, int y )
@@ -302,6 +328,12 @@ public sealed class OriginalParkImport
 			placed.Add( new ImportedParkObject( saveObject, minX, minY, maxX, maxY ) );
 		}
 		var span = payload.Span;
+		var analyserId = world.Variables.ParkAnalyser;
+		var analyser = analyserId == 0 ? (SaveThing?)null : world.Find( analyserId )
+			?? throw new InvalidDataException( "The save names no existing park analyser thing." );
+		var recentResearch = analyser is { } researchThing ? SaveRecentResearch.Read( span, researchThing ) : null;
+		var statistics = analyser is { } statisticsThing ? SaveParkStatistics.Read( span, statisticsThing ) : null;
+		var arrivalGroups = analyser is { } arrivalThing ? SaveArrivalRing.Read( span, arrivalThing ) : null;
 		var staff = world.Things.Where( thing => thing.Model is >= SaveThingModel.Mechanic and <= SaveThingModel.Researcher ).ToList()
 			.Select( thing => SaveStaff.Read( payload.Span, thing ) ).ToList();
 		var guests = world.OfModel( SaveThingModel.Guest ).ToList().Select( thing => SaveGuest.Read( payload.Span, thing ) ).ToList();
@@ -323,10 +355,14 @@ public sealed class OriginalParkImport
 			attractions, SaveEconomyRecords.Parse( span, world ), staff.AsReadOnly(), guests.AsReadOnly(), hq, advisor, lab, coasters, rideSystem )
 		{
 			RuntimeBlocks = SaveRuntimeBlocks.Read( span, layout ),
+			Sound = OriginalSavePayload.TryReadSound( span, layout ),
 			Rsse = SaveRsseBlock.Read( span, layout ),
 			Particles = SaveParticlesBlock.Parse( span, layout ),
 			Scripts = SaveScriptsBlock.Parse( span, layout ),
 			SavedAdvisorClockMilliseconds = savedClock,
+			RecentResearch = recentResearch,
+			Statistics = statistics,
+			ArrivalGroups = arrivalGroups,
 		};
 	}
 
@@ -346,6 +382,8 @@ public sealed class OriginalParkImport
 		ArgumentNullException.ThrowIfNull( map );
 		var layout = SavePayloadLayout.ParseThemeParkInc( payload.Span );
 		var tpiWorld = ThemeParkIncSaveWorld.Parse( payload, layout, map.CellCountX, map.CellCountY );
+		var statistics = SaveThemeParkIncStatistics.Read( tpiWorld );
+		var arrivalGroups = SaveThemeParkIncArrivalRing.Read( tpiWorld );
 		var cells = tpiWorld.Cells;
 		var paths = new List<(int X, int Y)>();
 		for ( var y = 0; y < map.CellCountY; y++ )
@@ -405,6 +443,8 @@ public sealed class OriginalParkImport
 		return new OriginalParkImport( map, layout, cells, paths.AsReadOnly(), placed.AsReadOnly(), fixedItems.AsReadOnly(), unresolved.AsReadOnly() )
 		{
 			ThemeParkIncWorld = tpiWorld,
+			Statistics = statistics,
+			ArrivalGroups = arrivalGroups,
 			ThemeParkIncObjects = joined.AsReadOnly(),
 			UnrecordedThemeParkIncAttractions = unrecorded.AsReadOnly(),
 		};

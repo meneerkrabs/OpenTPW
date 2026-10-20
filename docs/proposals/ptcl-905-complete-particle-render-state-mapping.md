@@ -1,5 +1,9 @@
 # PTCL-905: Complete particle render-state mapping
 
+## Harness-only update (October 20, 2026)
+
+This historical proposal now accompanies the [synthetic particle framebuffer diagnostic](../PARTICLE-RENDER-ORACLE.md). The opt-in harness uses the real ParticleRenderer and strict presented-pixel assertions across 17 cases. No particle runtime or material correction is included; the unfixed contract is expected to fail. Local Node acceptance-rule checks passed, but they are not GPU execution. C# compilation and browser pixel execution remain unverified at preparation. PTCL-905 remains unresolved. The historical scope and acceptance notes below are retained as evidence, not current implementation claims.
+
 ## Status and classification
 - Classification: approximation.
 - Plan-only local proposal: no runtime implementation, annotation retirement, publication or merge performed.

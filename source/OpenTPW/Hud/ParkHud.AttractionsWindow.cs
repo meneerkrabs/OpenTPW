@@ -307,8 +307,8 @@ public sealed partial class ParkHud
 			return;
 		void Remove()
 		{
-			// Catalogue objects sell and unlink exactly once; the developer prototype removes through its own seam.
-			level.RemoveAttraction( match );
+			// Catalogue objects sell and unlink exactly once; the developer prototype removes through its own seam ([EXT:online-coop-commands]: one command either way).
+			level.Commands.Issue( new RemoveAttractionCommand( match.Runtime.AttractionId ) );
 			selectedAttractionId = 0;
 			RefreshAttractionRows();
 			EnsureAttractionSelection();
@@ -351,7 +351,8 @@ public sealed partial class ParkHud
 		{
 			var category = tab;
 			var node = table.Control( category.Tab );
-			screen.Add( new UiButton { Id = $"category{category.Category}", Model = node.Model, Help = strings.Help( node.Help ),
+			// The tab's parent is the radio group 0x12C4B9 (type 8, style 0x11), so a press plays 0xBD even when the tab is already selected.
+			screen.Add( new UiButton { Id = $"category{category.Category}", Model = node.Model, Help = strings.Help( node.Help ), ClickSound = table.ClickSoundOf( node ),
 				Clicked = () => SelectAttractionCategory( category.Category ), Selected = () => attractionCategory == category.Category, Bounds = node.Rect, Anchor = UiAnchor.Center } );
 		}
 		// the headers of every category's columns; only the current category's are shown
@@ -366,14 +367,20 @@ public sealed partial class ParkHud
 		screen.Add( new AttractionList( this ) { Id = "attractionList", Bounds = AttractionContent( BuildCategory.Rides ), Anchor = UiAnchor.Center } );
 		var slider = AttractionSlider;
 		screen.Add( new AttractionScrollBar( this ) { Id = "attractionScroll", Bounds = slider.Rect, Anchor = UiAnchor.Center } );
-		screen.Add( new UiButton { Id = "scrollUp", Model = "b_up", Clicked = () => ScrollAttractions( -1 ),
-			Bounds = slider.Children.Single( node => node.Model == "b_up" ).Rect, Anchor = UiAnchor.Center } );
-		screen.Add( new UiButton { Id = "scrollDown", Model = "b_down", Clicked = () => ScrollAttractions( 1 ),
-			Bounds = slider.Children.Single( node => node.Model == "b_down" ).Rect, Anchor = UiAnchor.Center } );
+		// The shared arrows belong to RideShopList's type 3 slider (style 0x10); the sideshow and feature lists have the same parent bit. A held arrow repeats at 500 ms then 125 ms.
+		void ScrollArrow( LayoutNode node, int step )
+		{
+			void Scroll() => ScrollAttractions( step );
+			screen.Add( new UiButton { Id = step < 0 ? "scrollUp" : "scrollDown", Model = node.Model, ClickSound = OriginalLayoutTables.RideShopList.ClickSoundOf( node ),
+				Clicked = Scroll, Repeat = UiButton.ScrollArrowRepeat( Scroll ), Bounds = node.Rect, Anchor = UiAnchor.Center } );
+		}
+		ScrollArrow( slider.Children.Single( node => node.Model == "b_up" ), -1 );
+		ScrollArrow( slider.Children.Single( node => node.Model == "b_down" ), 1 );
 		// [BIN:TPW-EXE:0x004952b0 attractions buttons] the tick (-2) closes the window; b_pkinfo opens the park information (0x4a52a0), b_allstaff the all-staff window
 		// (0x496620) and b_kids the all-visitors window (0x493530), each replacing this one
 		var okay = table.Model( "b_okay" );
-		screen.Add( new UiButton { Id = "exit", Model = okay.Model, Help = strings.Help( okay.Help ), Clicked = CloseAttractionsWindow, Bounds = okay.Rect, Anchor = UiAnchor.Center } );
+		screen.Add( new UiButton { Id = "exit", Model = okay.Model, Help = strings.Help( okay.Help ), ClickSound = table.ClickSoundOf( okay ),
+			Clicked = CloseAttractionsWindow, Bounds = okay.Rect, Anchor = UiAnchor.Center } );
 		var parkInfo = table.Model( "b_pkinfo" );
 		screen.Add( new UiButton { Id = "parkInfo", Model = parkInfo.Model, Help = strings.Help( parkInfo.Help ), Bounds = parkInfo.Rect, Anchor = UiAnchor.Center,
 			Clicked = () => { CloseAttractionsWindow(); OpenParkInfoWindow(); } } );
@@ -524,8 +531,11 @@ public sealed partial class ParkHud
 		public override bool Focusable => Visible && Enabled && Current;
 		public override void Activate()
 		{
-			if ( Current )
-				owner.SortAttractions( column );
+			if ( !Current )
+				return;
+			// The header's parent is that category's list (type 7, style 0x291), which has bit 0x10, so the hook plays 0xBD.
+			GameAudio.PlayUi( LayoutTable.ClickSoundFor( AttractionListTable( category ).Root ) );
+			owner.SortAttractions( column );
 		}
 		// [BIN:TPW-EXE:0x00495020 attractions headers] each column header shows its UITEXT label in font slot 8 (0x750d58) and gets its help id (0x486660)
 		public override void Draw( UiContext context, bool focused, bool pressed )

@@ -109,6 +109,9 @@ public sealed class SoundEventSystem
 	/// <summary>Starts decoded segments that were waiting for an asynchronous decode; call once per frame.</summary>
 	public void Pump()
 	{
+		HeldSounds.RefreshGroups();
+		HeldSounds.Poll();
+		HeldSounds.ProcessStops();
 		foreach ( var placement in placements.ToArray() )
 		{
 			if ( placement.Pump() )
@@ -293,14 +296,18 @@ public sealed class SoundEventSystem
 		return PoolClock() + mixer.SecondsToFrames( length + ExpiryTailSeconds + delaySeconds );
 	}
 
-	public SoundEventSystem( AudioMixer mixer, uint seed = 1 )
+	public SoundEventSystem( AudioMixer mixer, uint seed = 1, Func<double>? monotonicMilliseconds = null )
 	{
 		this.mixer = mixer;
 		this.seed = seed;
 		PoolClock = () => mixer.PlayedFrames;
+		HeldSounds = new HeldSoundService( monotonicMilliseconds ?? (() => System.Diagnostics.Stopwatch.GetTimestamp() * 1000.0 / System.Diagnostics.Stopwatch.Frequency) );
+		mixer.GroupsChanged += HeldSounds.RefreshGroups;
+		mixer.Stopping += HeldSounds.StopAll;
 	}
 
 	public AudioMixer Mixer => mixer;
+	internal HeldSoundService HeldSounds { get; }
 
 	/// <summary>Current chooser seed (saved with the park; see <see cref="WorldRandomState"/>).</summary>
 	public uint Seed => seed;
@@ -601,7 +608,7 @@ public sealed class SoundEventSystem
 		var index = PickSample( sound.Samples, -1, avoidRepeat: false );
 		if ( index < 0 || Decode( category, sound.Samples[index] ) is not { } audio )
 			return null;
-		// [APPROX:AUDIO-003] the pitch and the delay are applied (Pitch, AudioVoice.SetPitch, DelaySeconds, ExpiryFrame); reverb (SndReverb.map, loaded at 0x6c5d20) is AUDIO-039, chain delays are milliseconds (video, 2026-10-15)
+		// [APPROX:AUDIO-003] the pitch and the delay are applied (Pitch, AudioVoice.SetPitch, DelaySeconds, ExpiryFrame); reverb (SndReverb.map, loaded at 0x6c5d20) is OpenTPW's stand-in (EXT:audio-reverb), chain delays are milliseconds (video, 2026-10-15)
 		// [BIN:TPW-EXE:0x6bc4e7 sample setup] the fixed (flat) branch and the positioned branch both reach the loop test 0x6bc621: a placeholder with flag 0x8 (+0x30 bit 4) loops its sample (0x6c5110, 9999 times), so a flat one-shot loops exactly as a positioned one does
 		// [EXT:inaudible-loop-advance] a loop whose source is inaudible is assumed to keep advancing silently and resume when the listener returns; the early exit 0x6bcb60 -> 0x6bc643 is the expiry test, which a loop (voice flags 6) is exempt from
 		// [BIN:TPW-EXE:0x006BBF60 placeholder setup] every placeholder class (vtables 0x70a338, 0x70a3e8, 0x70a440, 0x70a498, 0x70a7e0, 0x70a878, 0x70a8d0) sets up at +0x10 with 0x6BBF60 and queries at +0x40 with 0x6BC040: a one-shot whose event has a code or whose sound has a selector gets a table, and a bound volume or pitch reads its slot (0 with no parameter call)
@@ -656,7 +663,7 @@ public sealed class SoundEventSystem
 	/// <see cref="PlayAtWhenDecoded"/> for a sound that may have no place (a flat voice, the original's unpositioned submit); the held ADDOBJ sounds use it
 	/// (<see cref="PlayHeld"/>), because the script moves, parameterises and ends them later.
 	/// </summary>
-	internal PlacedSound? PlaceWhenDecoded( SoundCategory? category, uint eventId, AudioChannel channel, Vector3? position, float? range = null )
+	internal PlacedSound? PlaceWhenDecoded( SoundCategory? category, uint eventId, AudioChannel channel, Vector3? position, float? range = null, HeldSoundLifetime? lifetime = null )
 	{
 		Triggered?.Invoke( category?.Name, eventId, position );
 		var soundEvent = category?.Catalog.Find( eventId );
@@ -672,7 +679,7 @@ public sealed class SoundEventSystem
 		var volume = Volume( sound, table ) / 100f;
 		var pitch = Pitch( sound, table );
 		var placed = new PlacedSound( mixer, channel, volume, position, range ?? sound.Rolloff, (soundEvent.Flags & 0x8) != 0,
-			DecodeSentenceAsync( category, sound.Samples[index] ) ) { Priority = soundEvent.Priority, Flags = soundEvent.Flags, PitchValue = pitch, Delay = DelaySeconds( sound ), Parameters = new PlacedSoundParameters( this, sound, table ) };
+			DecodeSentenceAsync( category, sound.Samples[index] ) ) { Priority = soundEvent.Priority, Flags = soundEvent.Flags, PitchValue = pitch, Delay = DelaySeconds( sound ), Parameters = new PlacedSoundParameters( this, sound, table ), Lifetime = lifetime };
 		if ( !placed.Pump() )
 			placements.Add( placed );
 		else if ( placed.Voice is { } started )
@@ -692,9 +699,22 @@ public sealed class SoundEventSystem
 			Triggered?.Invoke( category?.Name, eventId, position );
 			return null;
 		}
+		// [BIN:TPW-EXE:0x6B87D0] queued flag 1 returns the prior handle (zero for fresh ADDOBJ).
+		if ( (soundEvent.Flags & 1) != 0 )
+		{
+			PlaceWhenDecoded( category, eventId, channel, position );
+			return null;
+		}
+		var lifetime = new HeldSoundLifetime( mixer, soundEvent.Player, soundEvent.GroupMask );
 		if ( soundEvent.Player != SoundEventPlayer.OneShot )
-			return StartSentence( category, eventId, channel, null, position, null ) is { } sentence ? new HeldSound( sentence ) : null;
-		return PlaceWhenDecoded( category, eventId, channel, position ) is { } placed ? new HeldSound( placed ) : null;
+		{
+			var sentence = StartSentence( category, eventId, channel, null, position, null );
+			if ( sentence == null ) return null;
+			sentence.Lifetime = lifetime;
+			return HeldSounds.Add( new HeldSound( sentence, HeldSounds, channel ) );
+		}
+		return PlaceWhenDecoded( category, eventId, channel, position, lifetime: lifetime ) is { } placed
+			? HeldSounds.Add( new HeldSound( placed, HeldSounds, channel ) ) : null;
 	}
 
 	/// <summary>Starts a sentence event; an optional chooser replaces only its sample draws. Null when the event is missing.</summary>
@@ -774,12 +794,12 @@ internal sealed class PlacedSoundParameters
 
 	/// <summary>Stores the value in every table slot coded <paramref name="code"/> and returns the re-evaluated (volume, pitch) when a slot of the sound's own bindings (1-3) matched, else null.</summary>
 	// [BIN:TPW-EXE:0x6bbb80 SetParameter] the table is created when missing (0x6b7150); the code is compared with all four slot codes and the byte value stored in each match; a match in slot 1-3, with placeholder flag 0x4000 clear, re-evaluates the volume and pitch (0x6bbbe0), as SoundSentence.SetParameter does for a sentence
-	public (float Volume, int Pitch)? Set( int code, int value )
+	public (float? Volume, int Pitch)? Set( int code, int value, bool fading = false )
 	{
 		table ??= new SoundParameterTable();
 		if ( !table.Set( unchecked((byte)code), unchecked((byte)value) ) )
 			return null;
-		return (system.Volume( sound, table ) / 100f, system.Pitch( sound, table ));
+		return (fading ? null : system.Volume( sound, table ) / 100f, system.Pitch( sound, table ));
 	}
 }
 
@@ -796,6 +816,7 @@ public sealed class PlacedSound
 	private readonly bool loops;
 	private readonly Task<Mp2Audio?> decoding;
 	private bool stopped;
+	internal HeldSoundLifetime? Lifetime { get; init; }
 	internal Vector3? Position => position;
 
 	/// <summary>Moves the sound, and its voice once it plays (a rectangle sound follows the listener each tick).</summary>
@@ -834,18 +855,19 @@ public sealed class PlacedSound
 	public AudioVoice? Voice { get; private set; }
 
 	/// <summary>Whether the sound has ended: stopped, or its voice has played out (a sample not decoded yet has not).</summary>
-	public bool IsFinished => stopped || Voice is { IsFinished: true, Loops: false };
+	public bool IsFinished => stopped || Lifetime is { Terminal: true } || Voice is { IsFinished: true };
 
 	/// <summary>The original's parameter call on the placed sound: the stored volume and pitch change, and a playing voice takes them at once.</summary>
 	internal void SetParameter( int code, int value )
 	{
-		if ( stopped || Parameters?.Set( code, value ) is not { } changed )
+		if ( stopped || Lifetime is { CanAdmit: false } || Parameters?.Set( code, value, Lifetime?.Fading ?? false ) is not { } changed )
 			return;
-		volume = changed.Volume;
+		if ( changed.Volume is { } updated ) volume = updated;
 		Pitch = changed.Pitch;
 		if ( Voice is { IsFinished: false } playing )
 		{
-			playing.Gain = volume;
+			if ( Lifetime is { IsContainer: false } logical ) logical.SetVolume( (int)MathF.Round( volume * 100 ) );
+			else if ( changed.Volume != null ) playing.Gain = volume;
 			playing.SetPitch( Pitch );
 		}
 	}
@@ -853,8 +875,9 @@ public sealed class PlacedSound
 	/// <summary>Starts the voice when the sample is ready; true once nothing is left to wait for.</summary>
 	internal bool Pump()
 	{
-		if ( stopped )
+		if ( stopped || Lifetime is { CanAdmit: false } )
 			return true;
+		if ( Voice != null ) return true;
 		if ( !decoding.IsCompleted )
 			return false;
 		if ( decoding.IsFaulted )
@@ -865,12 +888,15 @@ public sealed class PlacedSound
 			Voice.Serial = Serial;
 			Voice.SetPitch( Pitch );
 			Voice.Loops = loops;
+			Lifetime?.Admit( Voice, (int)MathF.Round( volume * 100 ) );
 		}
+		if ( Voice == null ) Stop();
 		return true;
 	}
 
 	public void Stop()
 	{
+		Lifetime?.End();
 		stopped = true;
 		Voice?.Stop();
 	}
@@ -890,6 +916,7 @@ public sealed class SoundSentence
 	private AudioVoice? voice;
 	private Task<(int Sound, int Sample, Mp2Audio? Audio)>? next;
 	private bool waiting;
+	internal HeldSoundLifetime? Lifetime { get; set; }
 	/// <summary>The placeholder's parameter table (+0x4C), null until the event's code, a sound's selector or a parameter call creates it.</summary>
 	private SoundParameterTable? parameters;
 
@@ -922,11 +949,12 @@ public sealed class SoundSentence
 	/// </summary>
 	// [BIN:TPW-EXE:0x6bbb80 SetParameter] the table is created when missing (0x6b7150); the code is compared with all four slot codes of the placeholder's table (+0x4C) and the byte value stored in each match; a match in slot 1-3, with placeholder flag 0x4000 clear, calls vf+0x34 (0x6bbbe0)
 	// [BIN:TPW-EXE:0x6bbf60 placeholder setup] slot 0 holds the event's code (event record +0x12), slots 1 and 2 the current sound's selectors +0x16 and +0x1A truncated to bytes and slot 3 is 0 (0x6bbf00, run again whenever the sentence moves to another sound, 0x6bc8d7); the volume query 0x6bc040 reads slot 1 under mask +0x18 and slot 2 under mask +0x1C
-	// [BIN:TPW-EXE:0x6bbbe0 re-evaluate] with a sample playing (+0x24) it recomputes the volume (0x6bc090) unless the fixed-volume flag 0x400 (set only by vf+0x30, 0x6b7130) is set, and always evaluates the pitch again (0x6bc170: the bound value, or a fresh draw for an unbound pitch), and sends both to the mixer; OpenTPW sets no fixed volume on a sentence and never suspends one (the 0x4000 flag marks a sample stopped by the options' sound switches, 0x6bc760), so neither flag applies
+	// [BIN:TPW-EXE:0x6BBBE0 re-evaluate] with a sample playing (+0x24), recomputes volume unless fade flag 0x400 is set (0x6BBC5E..0x6BBC98), and always evaluates pitch again (0x6BBC98..0x6BBCA4). The fade flag protects the current decaying sample volume; it does not mean an absolute fixed gain of 60 percent. Logical sample volume is preserved across host segment changes while fading.
 	// [BIN:TPW-EXE:0x006BDA90 sentence SetParameter] the sentence containers (vtables 0x70a390, 0x70a2e0) allocate the table in their constructor and override the call: 0x6bbb80, then the wait flag 0x40 (+0x30) is cleared unless slot 0's value is 0x7f; OpenTPW's waiting branching sentence is restarted by its callers' Resume after the call (GameAudio), and the 0x7f exception and what sets 0x40 are not read
 	// [BIN:TPW-EXE:0x006BDAC0 sentence re-evaluate] the container's vf+0x34 walks its child placeholders (+0x18 chain) and re-evaluates each, and a child's queries read the parent's table (0x6c3d80); OpenTPW's sentence holds the table and its one playing segment, so re-evaluating the segment is the same walk
 	public void SetParameter( int code, int value )
 	{
+		if ( IsStopped || Lifetime is { CanAdmit: false } ) return;
 		parameters ??= new SoundParameterTable();
 		// [BIN:TPW-EXE:0x006BE5E0 branch choice] the branch picker (0x6BE450) reads slot 0's value byte (table +4), which a call writes only when its code is the event's code (slot 0)
 		if ( unchecked((byte)code) == parameters.Code( 0 ) )
@@ -934,7 +962,12 @@ public sealed class SoundSentence
 		if ( !parameters.Set( unchecked((byte)code), unchecked((byte)value) ) || voice is not { IsFinished: false } playing )
 			return;
 		var sound = soundEvent.Sounds[soundIndex];
-		playing.Gain = system.Volume( sound, parameters ) / 100f;
+		if ( Lifetime?.Fading != true )
+		{
+			var volume = system.Volume( sound, parameters );
+			if ( Lifetime is { IsContainer: false } logical ) logical.SetVolume( volume );
+			else playing.Gain = volume / 100f;
+		}
 		playing.SetPitch( system.Pitch( sound, parameters ) );
 	}
 
@@ -959,6 +992,9 @@ public sealed class SoundSentence
 	public void Stop()
 	{
 		IsStopped = true;
+		Lifetime?.End();
+		next = null;
+		waiting = false;
 		voice?.Stop();
 		voice = null;
 	}
@@ -1004,24 +1040,26 @@ public sealed class SoundSentence
 	/// <summary>Plays the prefetched sample if it is decoded; returns false when it is not ready yet.</summary>
 	private bool TryPlayNext()
 	{
-		if ( IsStopped || next is not { IsCompleted: true } task )
+		if ( IsStopped || Lifetime is { CanAdmit: false } || next is not { IsCompleted: true } task )
 			return false;
 		next = null;
+		if ( !task.IsCompletedSuccessfully ) { Stop(); return true; }
 		var (sound, sample, audio) = task.Result;
-		if ( audio == null )
-			return true;
+		if ( audio == null ) { Stop(); return true; }
 		soundIndex = sound;
 		lastSample = sample;
 		// [BIN:TPW-EXE:0x6bc8d7 sound change] moving to a sound runs the placeholder's sound setup again (0x6bbf00): slots 1 and 2 take the new sound's selectors, the values stay
 		SoundParameterTable.SelectSound( ref parameters, soundEvent.Sounds[sound] );
 		// [BIN:TPW-EXE:0x6bc410 sample start] a new segment evaluates its volume (0x6bc090) and pitch (0x6bc170) with the values the slot table holds; a later parameter change re-evaluates them (SetParameter)
-		var gain = system.Volume( soundEvent.Sounds[sound], parameters ) / 100f;
+		var volume = Lifetime is { PreserveVolume: true } logical ? logical.OwnVolume : system.Volume( soundEvent.Sounds[sound], parameters );
+		var gain = volume / 100f;
 		var pitch = system.Pitch( soundEvent.Sounds[sound], parameters );
 		// [BIN:TPW-EXE:0x6bc4f4 sample start] the delay is drawn after the volume and the pitch at every segment; a sentence's voice is ranked as the sentence itself, so the draw is all of it that is observable here
 		_ = system.DelaySeconds( soundEvent.Sounds[sound] );
 		voice = Position is { } place ? system.Mixer.Play( audio, channel, gain, place, Range ) : system.Mixer.Play( audio, channel, gain );
+		Lifetime?.Admit( voice, volume );
 		voice.SetPitch( pitch );
-		voice.Completed += _ => OnCompleted();
+		voice.Completed += OnCompleted;
 		// [EXT:sentence-prefetch] a sentence's next segment is chosen and decoded ahead when the current one starts, so the draw and the parameter are taken one segment early; the original chooses when the current segment's data runs out (sound_shared GetDataChunk 0x10008CC4 -> 0x1001A1F0), but its chooser is the shared clock-seeded one (see Advance), so the draw's timing has no observable rule to match
 		var successor = Successor();
 		if ( successor >= 0 )
@@ -1029,10 +1067,11 @@ public sealed class SoundSentence
 		return true;
 	}
 
-	private void OnCompleted()
+	private void OnCompleted( AudioVoice completed )
 	{
+		if ( !ReferenceEquals( voice, completed ) ) return;
 		voice = null;
-		if ( IsStopped )
+		if ( IsStopped || Lifetime is { CanAdmit: false } )
 			return;
 		// a segment that ends (or is stopped) out of range starts nothing: Pump starts the next one when the listener is back
 		waiting = OutOfRange || !TryPlayNext();
@@ -1055,7 +1094,7 @@ public sealed class SoundSentence
 
 	internal void Pump()
 	{
-		if ( IsStopped )
+		if ( IsStopped || Lifetime is { CanAdmit: false } )
 			return;
 		// [BIN:TPW-EXE:0x6b62b0 sound manager tick] a voice out of range is not admitted to the pool (0x6bca10) and so not ticked, and its sample is stopped (0x6bca70, message 3)
 		// [APPROX:AUDIO-038] the sentence stands still until the listener is back, then starts the next segment; nothing read shows how the original resumes a stopped sentence
@@ -1064,6 +1103,7 @@ public sealed class SoundSentence
 			if ( voice is { IsFinished: false } playing )
 			{
 				playing.Stop();
+				Lifetime?.LoseOutputReply();
 				voice = null;
 				waiting = true;
 			}
@@ -1076,7 +1116,7 @@ public sealed class SoundSentence
 	/// <summary>Restarts a branching sentence that stopped for lack of a matching link (the original retries when the parameter changes).</summary>
 	public void Resume()
 	{
-		if ( IsStopped || next != null )
+		if ( IsStopped || Lifetime is { CanAdmit: false } || next != null )
 			return;
 		var successor = Successor();
 		if ( successor >= 0 )

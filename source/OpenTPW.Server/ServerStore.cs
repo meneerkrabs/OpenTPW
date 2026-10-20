@@ -92,7 +92,7 @@ public sealed record LoginOutcome( SessionToken? Session, TotpEnrollment? Enroll
 /// all state; meant for community-sized servers. Sessions are kept as token hashes in sessions.json, so a restart
 /// (a deploy) does not log players out.
 /// </summary>
-public sealed class ServerStore
+public sealed partial class ServerStore
 {
 	private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase, WriteIndented = true };
 	private static readonly JsonSerializerOptions LineOptions = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
@@ -169,6 +169,8 @@ public sealed class ServerStore
 		postcards = Load<List<PostcardRecord>>( "postcards.json" ).ToDictionary( item => item.Id );
 		foreach ( var session in Load<List<SessionRecord>>( "sessions.json" ).Where( session => session.Expires > this.clock() && accounts.ContainsKey( session.Key ) ) )
 			sessions[session.TokenHash] = (session.Key, session.Expires);
+		postcardDeliveries = Load<Dictionary<string, PostcardDeliveryRecord>>( "postcard-deliveries.json" );
+		postcardAttempts = Load<List<PostcardAttempt>>( "postcard-attempts.json" );
 		lastCodeSteps = Load<Dictionary<string, long>>( "totp-steps.json" ).Where( pair => accounts.ContainsKey( pair.Key ) ).ToDictionary( pair => pair.Key, pair => pair.Value );
 		// Created by the server, which owns it and can delete the operator's request files in it (docs/SERVER.md).
 		Directory.CreateDirectory( Path.Combine( Root, TotpResetDirectory ) );
@@ -997,34 +999,6 @@ public sealed class ServerStore
 	}
 
 	// ---- postcards ----
-
-	public (string Id, IReadOnlyList<string> Delivered) SendPostcard( AccountRecord sender, Postcard card, byte[] cardBytes )
-	{
-		lock ( gate )
-		{
-			var recipients = card.Manifest.To.Select( name => accounts.GetValueOrDefault( OnlineText.NormalizeName( name ) ) ).OfType<AccountRecord>().Distinct().ToList();
-			if ( recipients.Count == 0 )
-				throw new StoreException( 404, "Email recipient unknown." );
-			var delivered = new List<string>();
-			foreach ( var recipient in recipients )
-			{
-				if ( postcards.Values.Count( item => item.RecipientKey == recipient.Key ) >= options.MaximumInboxPostcards )
-					continue;
-				var record = new PostcardRecord
-				{
-					Id = NewId(), RecipientKey = recipient.Key, From = sender.Name, Title = card.Manifest.Title, SentUtc = clock(),
-					HasImage = card.Image != null, ParkName = card.Manifest.Park?.ParkName,
-				};
-				AtomicFile.Write( PostcardFile( record.Id ), cardBytes );
-				postcards.Add( record.Id, record );
-				delivered.Add( recipient.Name );
-			}
-			if ( delivered.Count == 0 )
-				throw new StoreException( 409, "The recipients' inboxes are full." );
-			Save( "postcards.json", postcards.Values.ToList() );
-			return (card.Id.ToString( "N" ), delivered);
-		}
-	}
 
 	public IReadOnlyList<PostcardSummary> Inbox( AccountRecord account )
 	{

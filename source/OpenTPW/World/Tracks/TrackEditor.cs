@@ -196,10 +196,12 @@ public sealed class TrackEditor
 	/// refund and add-on hooks. Re-entering recomputes the stack from the remaining track rather than retaining stale edit history.
 	/// </summary>
 	/// <param name="wrap">Wraps the line writer the tool holds ([EXT:online-coop-commands]: the level's commands, <see cref="ParkCommandTrackWriter"/>); null hands the tool the writer itself.</param>
-	public void EnterLineTool( CellBuildTool tool, Action? changed = null, Func<ICellLineWriter, ICellLineWriter>? wrap = null )
+	/// <param name="walked">The open end a command's walk found (<see cref="OpenTrackLineToolCommand"/>, <see cref="CutTrackCommand"/>): the walk writes the tiles' overlap words, so it runs in the
+	/// command on every peer and the tool only takes its corners; null walks here.</param>
+	public void EnterLineTool( CellBuildTool tool, Action? changed = null, Func<ICellLineWriter, ICellLineWriter>? wrap = null, TrackOpenEnd? walked = null )
 	{
 		ArgumentNullException.ThrowIfNull( tool );
-		var open = FindOpenEnd();
+		var open = walked ?? FindOpenEnd();
 		var corners = open.Corners;
 		// The shared tool has a smaller safe capacity than the original collector. If the collector overflowed, no captured point names the
 		// actual end; do not manufacture a straight segment across unrecorded corners. Otherwise retain the most recent complete segments.

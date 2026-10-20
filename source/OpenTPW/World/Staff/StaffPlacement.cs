@@ -81,7 +81,7 @@ public sealed class StaffPlacement
 	private readonly Func<int, bool> isCarried;
 
 	/// <param name="issue">[EXT:online-coop-commands] Hands the tool's writes to the park's command funnel: the hire, the placement, the pick-up and the drop are commands.</param>
-	/// <param name="isCarried">Whether an employee is in a player's hand (<see cref="Level.CarriedStaff"/>): <see cref="Reconcile"/> leaves those picked up.</param>
+	/// <param name="isCarried">Whether an employee is in a player's hand (<see cref="StaffHands.IsCarried"/>): <see cref="Reconcile"/> leaves those picked up.</param>
 	public StaffPlacement( Func<ParkEconomy?> economy, Func<ParkCellMap?> cells, Func<int, int, bool> occupied, Func<ParkCommand, ParkCommandResult> issue, Func<int, bool> isCarried )
 	{
 		this.economy = economy;

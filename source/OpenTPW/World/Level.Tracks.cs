@@ -325,7 +325,10 @@ public partial class Level
 		}
 		else
 		{
-			EnterTrackLineTool( station, editor );
+			// [EXT:online-coop-commands] the walk to the open end writes the tiles' overlap words: it is a command, and the tool takes its corners
+			if ( Commands.Issue( new OpenTrackLineToolCommand( station.Runtime.AttractionId ) ).Value is not TrackOpenEnd open )
+				return false;
+			EnterTrackLineTool( station, editor, open );
 		}
 		trackToolStation = station;
 		return true;
@@ -335,15 +338,15 @@ public partial class Level
 	/// The line tool from the open end of <paramref name="station"/>'s track; [EXT:online-coop-commands] its lines and their undo are commands (<see cref="ParkCommandTrackWriter"/>), and a walk that finds the
 	/// circuit valid moves the tool on (<see cref="ContinueTrackTool"/>).
 	/// </summary>
-	private void EnterTrackLineTool( OriginalObject station, TrackEditor editor ) =>
-		editor.EnterLineTool( CellTool, null, inner => new ParkCommandTrackWriter( inner, Commands, station.Runtime.AttractionId, () => ContinueTrackTool( station, TrackWalkCause.Line ) ) );
+	private void EnterTrackLineTool( OriginalObject station, TrackEditor editor, TrackOpenEnd open ) =>
+		editor.EnterLineTool( CellTool, null, inner => new ParkCommandTrackWriter( inner, Commands, station.Runtime.AttractionId, () => ContinueTrackTool( station, TrackWalkCause.Line ) ), open );
 
 	/// <summary>The edit tool's cut of <paramref name="station"/>'s track between two picked tiles, through the command; null when it is refused, which ends the tool.</summary>
 	private TrackCutResult? CutTrack( OriginalObject station, TrackEditor editor, (int X, int Y) first, (int X, int Y) second )
 	{
 		if ( Commands.Issue( new CutTrackCommand( station.Runtime.AttractionId, first.X, first.Y, second.X, second.Y ) ).Value is not TrackCutDone done )
 			return null;
-		FinishTrackEdit( station, editor, done.Valid );
+		FinishTrackEdit( station, editor, done );
 		return done.Cut;
 	}
 
@@ -378,15 +381,15 @@ public partial class Level
 	/// After a committed cut: the walk of the circuit again (the controller closes, the pieces start or stop) and, when the circuit is open, the line tool from the end of the track.
 	/// </summary>
 	// [BIN:TPW-EXE:0x00526BD0 cut finish] 0x52FC80(0) repairs the station, the picks are cleared, the new start is the second click's tile (0x81EDE4/E8), then the walk 0x52A970(0) sets the circuit word: valid, 0x52A490(ride, 1) starts the pieces and the tool ends; invalid, 0x52A490 and 0x52A700 stop them, 0x530830 finds the open end and the tool becomes the line tool (0x526C19..0x526C54)
-	private void FinishTrackEdit( OriginalObject station, TrackEditor editor, bool? valid )
+	private void FinishTrackEdit( OriginalObject station, TrackEditor editor, TrackCutDone done )
 	{
-		// the walk ran in the command (WalkTrack); the tool's step after it is the issuer's
-		if ( valid == true )
+		// the walks ran in the command (WalkTrack, and the open end's on an open circuit); the tool's step after them is the issuer's
+		if ( done.Valid == true )
 			ContinueTrackTool( station, TrackWalkCause.Edit );
-		if ( valid != false || !trackStations.ContainsKey( station ) || BuilderOf( station ) == null )
+		if ( done.Valid != false || done.Open is not { } open )
 			return;
 		CellTool.Cancel();
-		EnterTrackLineTool( station, editor );
+		EnterTrackLineTool( station, editor, open );
 		trackToolStation = station;
 	}
 
@@ -427,9 +430,27 @@ public partial class Level
 		// the edit tool runs on a closed circuit only (EnterTrackTool)
 		if ( station.Runtime.Bump is not { IsTrackValid: true } )
 			return ParkCommandResult.Rejected( $"The track of attraction {ride} is no closed circuit." );
-		if ( TrackEditWriter.Cut( TrackEditorOf( station, layout, builder ), first, second ) is not { } cut )
+		var editor = TrackEditorOf( station, layout, builder );
+		if ( TrackEditWriter.Cut( editor, first, second ) is not { } cut )
 			return ParkCommandResult.Rejected( "The edit tool's test refuses a tile of the cut." );
-		return ParkCommandResult.Ok( new TrackCutDone( cut, WalkTrack( station, TrackWalkCause.Edit )?.IsValid ) );
+		var valid = WalkTrack( station, TrackWalkCause.Edit )?.IsValid;
+		// an open circuit takes the line tool from its open end (FinishTrackEdit): the walk there writes the tiles' overlap words, so it runs here
+		var open = valid == false && trackStations.ContainsKey( station ) && BuilderOf( station ) != null ? editor.FindOpenEnd() : null;
+		return ParkCommandResult.Ok( new TrackCutDone( cut, valid, open ) );
+	}
+
+	/// <summary>
+	/// Runs an <see cref="OpenTrackLineToolCommand"/>: on the open circuit of the ride whose attraction id is <paramref name="ride"/>, the walk to the track's open end
+	/// (<see cref="TrackEditor.FindOpenEnd"/>), whose corners the line tool takes.
+	/// </summary>
+	internal ParkCommandResult ExecuteOpenTrackLine( int ride )
+	{
+		if ( waterTracks == null || ResolveCommandObject( ride ) is not { } station || !trackStations.TryGetValue( station, out var layout ) || BuilderOf( station ) is not { } builder )
+			return ParkCommandResult.Rejected( $"Attraction {ride} lays no kart or water track." );
+		// a closed circuit opens the edit tool instead (EnterTrackTool)
+		if ( station.Runtime.Bump is { IsTrackValid: true } )
+			return ParkCommandResult.Rejected( $"The track of attraction {ride} is a closed circuit." );
+		return ParkCommandResult.Ok( TrackEditorOf( station, layout, builder ).FindOpenEnd() );
 	}
 
 	/// <summary>

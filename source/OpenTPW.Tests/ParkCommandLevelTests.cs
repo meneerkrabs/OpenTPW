@@ -266,7 +266,7 @@ public class ParkCommandLevelTests
 			43 => new PlaceStaffCommand( Id(), Coordinate(), Coordinate() ),
 			44 => new PickUpStaffCommand( Id() ),
 			45 => new DropStaffCommand( Id(), Coordinate(), Coordinate() ),
-			46 => new HireStaffCommand( Id() ),
+			46 => new OpenTrackLineToolCommand( Id() ),
 			47 => new PaintPoolCellCommand( Coordinate(), Coordinate(), Flag() ),
 			48 => new ErasePoolCellCommand( Coordinate(), Coordinate() ),
 			49 => new UndoPoolStrokeCommand( Flag(), Cells(), random.Below( 3 ) == 0 ? Cells() : Array.Empty<(int X, int Y)>() ),

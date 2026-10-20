@@ -73,14 +73,16 @@ public class ParkCommandLayerTests
 		new( "Loan list build", Call( "RefreshLoanOffers" ), nameof( RefreshLoanOffersCommand ) ),
 		// the park's tools (C1 part 3)
 		new( "Land", @"\.(ChargeLand|TryBuyCells|SetLand|ClaimEnclosedCells)\s*\(", nameof( BuyLandCommand ) ),
-		new( "ParkEconomy.Hire and the staff placement", @"\.(Hire|EndPlacement|PutDown|ReleaseAssignments)\s*\(|\b(PendingPlacementId|PatrolArea)\s*=[^=]", nameof( PlaceStaffCommand ) ),
+		// the staff placement's own helpers are bare calls inside its file, so the bare form counts too
+		new( "ParkEconomy.Hire and the staff placement", @"\.(Hire|EndPlacement)\s*\(|" + Call( "PutDown" ) + "|" + Call( "ReleaseAssignments" ) + @"|\b(PendingPlacementId|PatrolArea|BubbleThought)\s*=[^=]",
+			nameof( PlaceStaffCommand ) ),
 		new( "Staff pick-up", @"\bState\s*=\s*StaffState\.PickedUp\b", nameof( PickUpStaffCommand ) ),
 		new( "Pools", @"\.(SetPoolWaves|CyclePoolWaves|PaintCells|EraseCells|Paint|Erase)\s*\(", nameof( PaintPoolCellCommand ) ),
 		new( "Pool river flags", @"\.Cells\??\.SetFlags\s*\(", nameof( UndoPoolStrokeCommand ) ),
 		new( "Pool slides", @"\bSlides\??!?\.(AddCell|RemoveLastPiece)\s*\(", nameof( LayPoolSlidePieceCommand ) ),
 		new( "Pool bridges", @"\bBridges\??!?\.(TryAdd|RemoveAt)\s*\(", nameof( PlacePoolBridgeCommand ) ),
 		// the cell tool commits every line through the writer it holds, a command writer for paths, queues and tracks alike; a track write of its own is refused
-		new( "Kart and water tracks", @"\.(BuildTrack|PlaceTile|RemoveTile|UndoLine|RepairStation)\s*\(|\bnew\s+TrackLineWriter\s*\(|\.Cut\s*\([^)]*commit\s*:", nameof( LayTrackLineCommand ) ),
+		new( "Kart and water tracks", @"\.(BuildTrack|PlaceTile|RemoveTile|UndoLine|RepairStation|FindOpenEnd)\s*\(|\bnew\s+TrackLineWriter\s*\(|\.Cut\s*\([^)]*commit\s*:", nameof( LayTrackLineCommand ) ),
 	};
 
 	/// <summary>
@@ -239,6 +241,12 @@ public class ParkCommandLayerTests
 		Assert.IsTrue( Caught( staff, "member.PatrolArea = (0, 0, 127, 127);" ) );
 		Assert.IsFalse( Caught( staff, "if ( member.PatrolArea == area )" ) );
 		Assert.IsFalse( Caught( staff, "if ( !issue( new BeginStaffHireCommand( candidate.Id ) ).Accepted )" ) );
+		Assert.IsTrue( Caught( staff, "PutDown( member, x, y );" ), "the placement's helper, called bare inside its own file" );
+		Assert.IsTrue( Caught( staff, "ReleaseAssignments( park, member );" ) );
+		Assert.IsTrue( Caught( staff, "StaffPlacement.PutDown( member, X, Y );" ) );
+		Assert.IsFalse( Caught( staff, "internal static void PutDown( StaffMember member, int x, int y )" ), "the helper's declaration" );
+		Assert.IsTrue( Caught( staff, "member.BubbleThought = 0;" ) );
+		Assert.IsFalse( Caught( staff, "if ( member.BubbleThought != 0 && staffCell( member ) is { } cell )" ) );
 		var pickUp = Converted.Single( mutator => mutator.Name == "Staff pick-up" );
 		Assert.IsTrue( Caught( pickUp, "member.State = StaffState.PickedUp;" ) );
 		Assert.IsFalse( Caught( pickUp, "if ( member.State == StaffState.PickedUp )" ) );
@@ -253,6 +261,7 @@ public class ParkCommandLayerTests
 		Assert.IsTrue( Caught( tracks, "level.BuildTrack( station, (14, 10), (20, 10) );" ) );
 		Assert.IsTrue( Caught( tracks, "var writer = new TrackLineWriter( builder, changed, owner );" ) );
 		Assert.IsTrue( Caught( tracks, "var cut = editor.Cut( a, b, commit: true );" ) );
+		Assert.IsTrue( Caught( tracks, "var open = editor.FindOpenEnd();" ), "the open-end walk writes the tiles' overlap words" );
 		Assert.IsFalse( Caught( tracks, "var result = writer.Commit( start, end );" ), "the cell tool commits through the command writer it holds" );
 	}
 

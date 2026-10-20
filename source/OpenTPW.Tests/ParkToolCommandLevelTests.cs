@@ -117,6 +117,32 @@ public class ParkToolCommandLevelTests
 	}
 
 	[TestMethod]
+	public void AFullThingPoolRefusesTheHireBeforeItsPlacementEnds()
+	{
+		var park = NewPark();
+		var level = park.Level;
+		var placement = level.StaffPlacement!;
+		var candidate = park.Economy.Staff.Candidates.First( item => park.Economy.Staff.CanHire( item.Type ) );
+		var valid = Cells( level ).First( cell => level.StaffHands!.IsValidCell( cell.X, cell.Y ) );
+		Assert.IsTrue( placement.BeginHire( candidate.Id ) );
+		// the no-data level's staff have no thing pool; a full one is attached
+		var things = new ThingPool();
+		park.Economy.Staff.AttachThings( things );
+		while ( things.NextId != 0 )
+			things.Allocate( SaveThingModel.Attraction );
+		var employed = park.Economy.Staff.Members.Count;
+		var before = level.ComputeStateHash();
+		Assert.IsFalse( level.Commands.Issue( new PlaceStaffCommand( candidate.Id, valid.X, valid.Y ) ).Accepted, "no thing id is left for the employee" );
+		Assert.AreEqual( before, level.ComputeStateHash(), "the refusal changed nothing" );
+		Assert.AreEqual( candidate.Id, park.Economy.Staff.PendingPlacementId, "the placement still runs" );
+		Assert.AreEqual( StaffClickResult.None, placement.Click( valid.X, valid.Y ), "the tool's click is refused, where the hire threw after the placement ended" );
+		Assert.IsFalse( placement.IsActive, "a refused hire ends the tool" );
+		Assert.AreEqual( 0, park.Economy.Staff.PendingPlacementId );
+		Assert.AreEqual( employed, park.Economy.Staff.Members.Count, "nobody was hired" );
+		Assert.IsTrue( park.Economy.Staff.Candidates.Any( item => item.Id == candidate.Id ), "the candidate stays in the pool" );
+	}
+
+	[TestMethod]
 	public void APoolStrokeAndItsUndoAreCommandsThatATwinFollows()
 	{
 		using var extensions = OpenTpwExtensions.Use( PoolsTests.PoolsSet( true ) );

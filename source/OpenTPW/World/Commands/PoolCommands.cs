@@ -99,6 +99,33 @@ public sealed record UndoPoolStrokeCommand( bool Erase, IReadOnlyList<(int X, in
 		return ParkCommandResult.Ok( builder.EraseCells( Cells.Reverse() ) );
 	}
 
+	/// <summary>
+	/// The commands that take <paramref name="stroke"/> back: one when both of its lists fit a command (<see cref="ParkCommandCodec.MaximumCells"/>), otherwise chunks that write in the order the one
+	/// command would. An erase stroke's cells are painted again in order, a chunk at a time, and the issuer stops after a chunk that ran out of money (<see cref="PoolStroke.RanOutOfMoney"/>); a paint stroke's
+	/// river marks go first, then its cells from the end, each chunk erased last first.
+	/// </summary>
+	public static IEnumerable<UndoPoolStrokeCommand> For( PoolStroke stroke )
+	{
+		ArgumentNullException.ThrowIfNull( stroke );
+		var size = ParkCommandCodec.MaximumCells;
+		var none = Array.Empty<(int X, int Y)>();
+		if ( stroke.Cells.Count <= size && stroke.RiverMarked.Count <= size )
+		{
+			yield return new UndoPoolStrokeCommand( stroke.Erase, stroke.Cells, stroke.RiverMarked );
+			yield break;
+		}
+		if ( stroke.Erase )
+		{
+			for ( var start = 0; start < stroke.Cells.Count; start += size )
+				yield return new UndoPoolStrokeCommand( true, stroke.Cells.Skip( start ).Take( size ).ToArray(), none );
+			yield break;
+		}
+		for ( var start = 0; start < stroke.RiverMarked.Count; start += size )
+			yield return new UndoPoolStrokeCommand( false, none, stroke.RiverMarked.Skip( start ).Take( size ).ToArray() );
+		for ( var end = stroke.Cells.Count; end > 0; end -= size )
+			yield return new UndoPoolStrokeCommand( false, stroke.Cells.Skip( Math.Max( 0, end - size ) ).Take( end - Math.Max( 0, end - size ) ).ToArray(), none );
+	}
+
 	/// <summary>Equal when every field and both cell lists are equal (a record compares lists by reference).</summary>
 	public bool Equals( UndoPoolStrokeCommand? other ) => other is not null && Player == other.Player && Erase == other.Erase && Cells.SequenceEqual( other.Cells )
 		&& RiverMarked.SequenceEqual( other.RiverMarked );

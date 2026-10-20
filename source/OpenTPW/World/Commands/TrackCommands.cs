@@ -3,8 +3,23 @@ namespace OpenTPW;
 /// <summary>What a track line command did (<see cref="LayTrackLineCommand"/>, <see cref="UndoTrackLineCommand"/>): the laid line (null for an undo), and whether the circuit was walked again and was then valid (null: no walk).</summary>
 public sealed record TrackLineDone( SegmentResult? Segment, bool? Valid );
 
-/// <summary>What a track cut did (<see cref="CutTrackCommand"/>): the cut, and whether the walk after it found a valid circuit (null: no walk).</summary>
-public sealed record TrackCutDone( TrackCutResult Cut, bool? Valid );
+/// <summary>
+/// What a track cut did (<see cref="CutTrackCommand"/>): the cut, whether the walk after it found a valid circuit (null: no walk), and on an open circuit the open end the line tool goes on from
+/// (the walk to it writes the tiles' overlap words, so it is the command's).
+/// </summary>
+public sealed record TrackCutDone( TrackCutResult Cut, bool? Valid, TrackOpenEnd? Open );
+
+/// <summary>
+/// The line tool's opening on a kart or water ride whose circuit is open (the track button, <see cref="Level.EnterTrackTool"/>): the walk from the station to the track's open end, which collects
+/// the corners the tool's Backspace takes back and sets every walked tile's overlap word (<see cref="TrackEditor.FindOpenEnd"/>). The value is the open end.
+/// </summary>
+public sealed record OpenTrackLineToolCommand( int Ride ) : ParkToolCommand
+{
+	public override ParkCommandKind Kind => ParkCommandKind.OpenTrackLineTool;
+	internal override bool IsWellFormed => Ride >= 0;
+	internal override void WriteFields( ParkCommandWriter writer ) => writer.Int( Ride );
+	internal override ParkCommandResult Execute( Level level ) => level.ExecuteOpenTrackLine( Ride );
+}
 
 /// <summary>
 /// One committed line of a kart or water ride's track tool (<see cref="TrackLineWriter"/>, the ride window's track button on an open circuit): from (<paramref name="StartX"/>, <paramref name="StartY"/>) toward

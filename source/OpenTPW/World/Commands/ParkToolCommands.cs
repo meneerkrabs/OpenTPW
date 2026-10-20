@@ -36,7 +36,6 @@ public abstract record ParkToolCommand : ParkCommand
 		ParkCommandKind.PlaceStaff => new PlaceStaffCommand( reader.Int(), reader.Int(), reader.Int() ),
 		ParkCommandKind.PickUpStaff => new PickUpStaffCommand( reader.Int() ),
 		ParkCommandKind.DropStaff => new DropStaffCommand( reader.Int(), reader.Int(), reader.Int() ),
-		ParkCommandKind.HireStaff => new HireStaffCommand( reader.Int() ),
 		ParkCommandKind.PaintPoolCell => new PaintPoolCellCommand( reader.Int(), reader.Int(), reader.Bool() ),
 		ParkCommandKind.ErasePoolCell => new ErasePoolCellCommand( reader.Int(), reader.Int() ),
 		ParkCommandKind.UndoPoolStroke => new UndoPoolStrokeCommand( reader.Bool(), reader.Cells(), reader.Cells() ),
@@ -48,6 +47,7 @@ public abstract record ParkToolCommand : ParkCommand
 		ParkCommandKind.LayTrackLine => new LayTrackLineCommand( reader.Int(), reader.Int(), reader.Int(), reader.Int(), reader.Int() ),
 		ParkCommandKind.UndoTrackLine => new UndoTrackLineCommand( reader.Int(), reader.Int(), reader.Int(), reader.Int(), reader.Int() ),
 		ParkCommandKind.CutTrack => new CutTrackCommand( reader.Int(), reader.Int(), reader.Int(), reader.Int(), reader.Int() ),
+		ParkCommandKind.OpenTrackLineTool => new OpenTrackLineToolCommand( reader.Int() ),
 		_ => null
 	};
 }
@@ -247,24 +247,5 @@ public sealed record DropStaffCommand( int Staff, int X, int Y ) : StaffToolComm
 		StaffPlacement.ReleaseAssignments( economy, member );
 		StaffPlacement.PutDown( member, X, Y );
 		return ParkCommandResult.Ok( member );
-	}
-}
-
-/// <summary>The hire window's hire when no Place tool runs (no park view): the candidate <paramref name="Candidate"/> is hired at once, with no position (the gate spawn places it).</summary>
-public sealed record HireStaffCommand( int Candidate ) : StaffToolCommand
-{
-	public override ParkCommandKind Kind => ParkCommandKind.HireStaff;
-	internal override bool IsWellFormed => Candidate > 0;
-	internal override void WriteFields( ParkCommandWriter writer ) => writer.Int( Candidate );
-
-	internal override ParkCommandResult Apply( StaffHands hands )
-	{
-		if ( hands.Economy is not { Rules.Staff: true } economy )
-			return NoStaff;
-		if ( Hireable( economy, Candidate ) is not { } candidate )
-			return ParkCommandResult.Rejected( $"Candidate {Candidate} cannot be hired." );
-		if ( economy.Staff.Things is { NextId: 0 } )
-			return ParkCommandResult.Rejected( $"The thing pool is full ({ThingPool.Capacity} things); no staff member can be hired." );
-		return ParkCommandResult.Ok( economy.Hire( candidate.Id ) );
 	}
 }

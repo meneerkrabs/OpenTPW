@@ -64,7 +64,6 @@ public class ParkCommandCodecTests
 		(new PlaceStaffCommand( 7, 30, 12 ), "023e000e3c18"),
 		(new PickUpStaffCommand( 3 ) { Player = 2 }, "023f0406"),
 		(new DropStaffCommand( 3, 10, 64 ), "02400006148001"),
-		(new HireStaffCommand( 9 ), "02410012"),
 		(new PaintPoolCellCommand( 20, 21, true ), "024600282a01"),
 		(new ErasePoolCellCommand( 20, 21 ) { Player = 1 }, "024702282a"),
 		(new UndoPoolStrokeCommand( false, new[] { (20, 21), (21, 21) }, new[] { (22, 21) } ), "0248000004282a2a2a022c2a"),
@@ -76,6 +75,7 @@ public class ParkCommandCodecTests
 		(new LayTrackLineCommand( 17, 40, 50, 40, 56 ), "0250002250645070"),
 		(new UndoTrackLineCommand( 17, 40, 50, 40, 56 ), "0251002250645070"),
 		(new CutTrackCommand( 17, 40, 50, 44, 50 ) { Player = 1 }, "0252022250645864"),
+		(new OpenTrackLineToolCommand( 17 ), "02530022"),
 	};
 
 	[TestMethod]
@@ -202,7 +202,6 @@ public class ParkCommandCodecTests
 			new PlaceStaffCommand( 0, 1, 1 ),
 			new PickUpStaffCommand( -3 ),
 			new DropStaffCommand( 1, 0, -1 ),
-			new HireStaffCommand( 0 ),
 			new PaintPoolCellCommand( -1, 0, false ),
 			new ErasePoolCellCommand( 0, ParkCommandCodec.MaximumCoordinate ),
 			new UndoPoolStrokeCommand( true, new[] { (1, 1) }, new[] { (2, 2) } ),
@@ -218,6 +217,7 @@ public class ParkCommandCodecTests
 			new UndoTrackLineCommand( 1, 0, 0, 2, 2 ),
 			new UndoTrackLineCommand( 1, 0, 0, 3, 0 ),
 			new CutTrackCommand( 1, 0, ParkCommandCodec.MaximumCoordinate, 0, 0 ),
+			new OpenTrackLineToolCommand( -1 ),
 		};
 		foreach ( var command in outOfRange )
 		{

@@ -349,6 +349,91 @@ public class PoolsTests
 		Assert.AreEqual( CellToolMode.None, tool.Mode );
 	}
 
+	/// <summary>
+	/// [EXT:online-coop-commands] A stroke longer than a command's cell list (<see cref="ParkCommandCodec.MaximumCells"/>) is taken back in chunks that each fit a command and write in the order one
+	/// write did, so a winding drag's Backspace still undoes it and a twin following the commands reaches the same map; a repaint that runs out of money stops the rest of the chunks.
+	/// </summary>
+	[TestMethod]
+	public void AStrokeLongerThanACommandIsUndoneInChunksThatATwinFollows()
+	{
+		using var scope = OpenTpwExtensions.Use( PoolsSet( true ) );
+		const int width = 128, height = 128, rows = 40;
+		ParkEconomy? economy = EconomyTestData.Park( initialCash: 500_000 );
+		var cells = new ParkCellMap( width, height );
+		var builder = new PoolBuilder( cells, () => economy, new FlatGrid( width, height ) );
+		var log = new List<ParkCommand>();
+		PoolTool tool = null!;
+		tool = new PoolTool( builder, command =>
+		{
+			log.Add( command );
+			return PoolToolCommand.ApplyTo( command, builder, tool.Slides, tool.Bridges );
+		} );
+		// the twin writes each stroke and its undo as one write of the builder, as the tool did before the commands
+		ParkEconomy? twinEconomy = EconomyTestData.Park( initialCash: 500_000 );
+		var twinCells = new ParkCellMap( width, height );
+		var twin = new PoolBuilder( twinCells, () => twinEconomy, new FlatGrid( width, height ) );
+		void Winding()
+		{
+			// row by row, back and forth: every cell of the first rows
+			for ( var y = 0; y < rows; y++ )
+			{
+				tool.Hover( y % 2 == 0 ? width - 1 : 0, y );
+				if ( y + 1 < rows )
+					tool.Hover( y % 2 == 0 ? width - 1 : 0, y + 1 );
+			}
+		}
+		void AssertTwin( string message )
+		{
+			var hash = new StateHasher();
+			cells.AddCanonicalState( hash );
+			var twinHash = new StateHasher();
+			twinCells.AddCanonicalState( twinHash );
+			Assert.AreEqual( twinHash.Value, hash.Value, message );
+			Assert.AreEqual( twinEconomy!.Balance, economy!.Balance, message );
+		}
+
+		Assert.IsTrue( tool.Begin( erase: false ) );
+		Assert.AreEqual( PoolBuildResult.Ok, tool.Press( 0, 0 ) );
+		Winding();
+		var paint = tool.Release()!;
+		Assert.AreEqual( width * rows, paint.Cells.Count, "the drag painted every cell of its rows" );
+		Assert.IsTrue( paint.Cells.Count > ParkCommandCodec.MaximumCells, "more cells than one command takes" );
+		log.Clear();
+		Assert.IsTrue( tool.Undo() );
+		Assert.AreEqual( 0, cells.CountOf( ParkCellType.PoolWater ), "Backspace took the whole stroke back" );
+		var chunks = log.OfType<UndoPoolStrokeCommand>().ToArray();
+		Assert.AreEqual( 2, chunks.Length, "two chunks" );
+		foreach ( var chunk in chunks )
+			Assert.IsTrue( chunk.IsWellFormed && ParkCommandCodec.Decode( ParkCommandCodec.Encode( chunk ) ).Equals( chunk ), "each chunk is a well-formed command" );
+		CollectionAssert.AreEqual( paint.Cells.Reverse().ToArray(), chunks.SelectMany( chunk => chunk.Cells.Reverse() ).ToArray(), "the cells go last first, as the one write erased them" );
+		twin.PaintCells( paint.Cells );
+		twin.EraseCells( paint.Cells.Reverse() );
+		AssertTwin( "the chunks erased what the one write erases" );
+
+		// an erase stroke's undo paints again in order; with too little money it stops inside the first chunk and issues no second one
+		var block = PoolBuilder.Rectangle( (0, 0), (width - 1, rows - 1) ).ToArray();
+		builder.PaintCells( block );
+		twin.PaintCells( block );
+		Assert.IsTrue( tool.Begin( erase: true ) );
+		tool.Press( 0, 0 );
+		Winding();
+		var erase = tool.Release()!;
+		Assert.AreEqual( width * rows, erase.Cells.Count );
+		twin.EraseCells( erase.Cells );
+		AssertTwin( "the erase stroke" );
+		// spend all but the money for a thousand cells on the free rows below
+		var keep = 1000 * builder.CellCost;
+		var below = PoolBuilder.Rectangle( (0, rows), (width - 1, height - 1) ).ToArray();
+		builder.PaintCells( below.TakeWhile( _ => economy!.Balance - builder.CellCost >= keep ) );
+		twin.PaintCells( below.TakeWhile( _ => twinEconomy!.Balance - twin.CellCost >= keep ) );
+		log.Clear();
+		Assert.IsTrue( tool.Undo() );
+		Assert.AreEqual( 1, log.Count, "the repaint ran out of money in the first chunk, so no second chunk followed" );
+		Assert.IsTrue( erase.Cells.Skip( ParkCommandCodec.MaximumCells ).All( cell => cells.TypeAt( cell.X, cell.Y ) == ParkCellType.Empty ), "nothing past the first chunk was painted" );
+		Assert.IsTrue( twin.PaintCells( erase.Cells ).RanOutOfMoney );
+		AssertTwin( "the chunks painted what the one write paints" );
+	}
+
 	[TestMethod]
 	public void TheEraseModeTakesPoolCellsBackAndRefundsThem()
 	{

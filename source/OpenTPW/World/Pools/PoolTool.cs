@@ -268,8 +268,13 @@ public sealed class PoolTool
 			return false;
 		var stroke = strokes[^1];
 		strokes.RemoveAt( strokes.Count - 1 );
-		// [EXT:online-coop-commands] the stroke's cells are painted or erased again by one command (UndoPoolStrokeCommand)
-		issue( new UndoPoolStrokeCommand( stroke.Erase, stroke.Cells, stroke.RiverMarked ) );
+		// [EXT:online-coop-commands] the stroke's cells are painted or erased again by commands (UndoPoolStrokeCommand): one, or chunks for a stroke longer than a command takes;
+		// a repaint that ran out of money ends the undo, as the one write did
+		foreach ( var chunk in UndoPoolStrokeCommand.For( stroke ) )
+		{
+			if ( issue( chunk ).Value is PoolStroke { RanOutOfMoney: true } )
+				break;
+		}
 		last = null;
 		return true;
 	}

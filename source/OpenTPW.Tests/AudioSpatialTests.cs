@@ -43,7 +43,7 @@ public class AudioSpatialTests
 	}
 
 	[TestMethod]
-	public void OutOfRangeLoopsAdvanceSilentlyAndBecomeAudibleAgain()
+	public void RawMixerLoopsKeepTheirCursorWithoutCatalogueRangeAdmission()
 	{
 		using var mixer = new AudioMixer( null );
 		AudioListener.Update( new Vector3( 100, 0, 0 ), new Vector3( 0, 0, 1 ) );
@@ -52,7 +52,7 @@ public class AudioSpatialTests
 		CollectionAssert.AreEqual( new short[6], mixer.Mix( 3 ) );
 		Assert.IsFalse( loop.IsFinished, "a inaudible loop remains available when the listener returns" );
 		AudioListener.Update( Vector3.Zero, new Vector3( 0, 0, 1 ) );
-		CollectionAssert.AreEqual( new short[] { 4000, 4000, 1000, 1000 }, mixer.Mix( 2 ), "phase advances while virtualized and then wraps" );
+		CollectionAssert.AreEqual( new short[] { 4000, 4000, 1000, 1000 }, mixer.Mix( 2 ), "a raw mixer source has no catalogue owner/range-stop policy" );
 		loop.Stop();
 		CollectionAssert.AreEqual( new short[2], mixer.Mix( 1 ) );
 	}

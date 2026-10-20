@@ -105,19 +105,22 @@ public static class UiDialogs
 
 	/// <summary>
 	/// A frameless menu of large text lines: no window, no title, each line cyan and white while focused, the screen dimmed behind it.
-	/// Each line's box is its measured text in the menu font, centred, the lines stacked from the top 5 units apart.
+	/// Each line's box is its measured text in the menu font, centred; the default lines are 5 units apart, or contiguous in compact mode.
 	/// </summary>
 	/// <param name="back">Escape and the right click.</param>
+	/// <param name="compact">Capture zero top and gap for the authenticated park menu; other callers retain the standard layout.</param>
 	// [DATA:video 27:42-27:47, 27:59-28:03] the pause menus have no window frame and no title
 	// [BIN:TPW-EXE:0x48c150 pause menu lines] the builder adds each line through 0x492f60(top, text, id, font slot 0, 128, 128, 128): the first at top 10 and each next at the
 	// previous line's bottom + 5 (0x48c240); 0x492f60 measures the text in the slot's font (0x4929f0) and makes the line (text width + 1) x 2048 / screen width wide and
 	// (text height + 5) x 1536 / screen height high, centred in its parent, the full-canvas lolight window (0,0)-(2047,1535) of 0x492e80
 	// [APPROX:UI-013] the line height follows OpenTPW's menu font, which is not the original's bank pick ([EXT:ui-font-tier-by-scale]);
-	// the park pause menu's top and gap are 0 instead of 5 while the net-session field +0x60 (0x5b6450) is non-zero (0x48c36c-0x48c4af), which needs the online reply state and is not followed; the measure 0x4929f0 is read (block box via 0x6ae1c0, no wrap without the wrap flag) and matched by OpenTPW's text layout box
+	// the park pause menu's top and gap are 0 instead of 10 and 5 while the net-session field +0x60 (0x5b6450) is non-zero (0x48c36c-0x48c4af), mapped by the park menu to the host's authenticated session captured on opening; the measure 0x4929f0 is read (block box via 0x6ae1c0, no wrap without the wrap flag) and matched by OpenTPW's text layout box
 	// [BIN:TPW-EXE:0x48b2a0 pause line ramp] the focused line's colour ramps from grey 0x21 in steps of 0x20 to white over eight frames (UiMenuItem, MenuLineRamp)
-	public static UiScreen TextMenu( string name, IReadOnlyList<(string Id, Func<string> Text, Action Clicked, bool Enabled)> items, Action back, string? focus = null )
+	public static UiScreen TextMenu( string name, IReadOnlyList<(string Id, Func<string> Text, Action Clicked, bool Enabled)> items, Action back, string? focus = null, bool compact = false )
 	{
-		var screen = new TextMenuScreen( name );
+		var screen = new TextMenuScreen( name, compact );
+		var top = compact ? 0 : TextMenuTop;
+		var gap = compact ? 0 : TextMenuGap;
 		for ( var index = 0; index < items.Count; index++ )
 		{
 			var item = items[index];
@@ -128,7 +131,7 @@ public static class UiDialogs
 				Font = fonts => fonts.Menu,
 				Clicked = item.Clicked,
 				Enabled = item.Enabled,
-				Bounds = new UiRect( (UiCanvas.VirtualWidth - TextMenuFallbackWidth) / 2, TextMenuTop + index * (TextMenuFallbackHeight + TextMenuGap),
+				Bounds = new UiRect( (UiCanvas.VirtualWidth - TextMenuFallbackWidth) / 2, top + index * (TextMenuFallbackHeight + gap),
 					TextMenuFallbackWidth, TextMenuFallbackHeight ),
 				Anchor = UiAnchor.Center
 			} );
@@ -145,23 +148,23 @@ public static class UiDialogs
 
 	/// <summary>
 	/// The canvas boxes of menu lines whose texts measure <paramref name="textPixels"/> font pixels, drawn at <paramref name="textScale"/> screen pixels per
-	/// font pixel on a canvas of <paramref name="canvasScale"/> screen pixels per unit: (width + 1) and (height + 5) font pixels, centred, from the top 10 units down, 5 apart.
+	/// font pixel on a canvas of <paramref name="canvasScale"/> screen pixels per unit: (width + 1) and (height + 5) font pixels, centred, from the top 10 units down, 5 apart (or zero top and gap for a compact menu).
 	/// </summary>
-	public static UiRect[] TextMenuLines( IReadOnlyList<(int Width, int Height)> textPixels, int textScale, float canvasScale )
+	public static UiRect[] TextMenuLines( IReadOnlyList<(int Width, int Height)> textPixels, int textScale, float canvasScale, bool compact = false )
 	{
 		var lines = new UiRect[textPixels.Count];
-		var top = TextMenuTop;
+		var top = compact ? 0 : TextMenuTop;
 		for ( var index = 0; index < lines.Length; index++ )
 		{
 			var width = (textPixels[index].Width + 1) * textScale / canvasScale;
 			var height = (textPixels[index].Height + 5) * textScale / canvasScale;
 			lines[index] = new UiRect( (UiCanvas.VirtualWidth - width) / 2, top, width, height );
-			top += height + TextMenuGap;
+			top += height + (compact ? 0 : TextMenuGap);
 		}
 		return lines;
 	}
 
-	private sealed class TextMenuScreen( string name ) : UiScreen( name )
+	private sealed class TextMenuScreen( string name, bool compact ) : UiScreen( name )
 	{
 		public override bool Update( UiContext context, UiInput input )
 		{
@@ -169,7 +172,7 @@ public static class UiDialogs
 			{
 				var items = Elements.OfType<UiMenuItem>().ToArray();
 				var sizes = items.Select( item => context.Layout( item.Font( context.Fonts ), item.Text() ) ).Select( layout => (layout.Width, layout.Height) ).ToArray();
-				var lines = TextMenuLines( sizes, context.Canvas.TextScale, context.Canvas.Scale );
+				var lines = TextMenuLines( sizes, context.Canvas.TextScale, context.Canvas.Scale, compact );
 				for ( var index = 0; index < items.Length; index++ )
 					items[index].Bounds = lines[index];
 			}

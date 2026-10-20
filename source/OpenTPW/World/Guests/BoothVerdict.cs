@@ -47,6 +47,27 @@ public static class BoothVerdict
 	// [BIN:TPW-EXE:0x4ff5b0 booth verdict] GP = S (0x4c8240) / (N + R % ((N >> 1) + 1)) + base, logged as "GP: %d, AF: %d" with AF the fee (bank +0x118); base < GP or base < AF selects the float bands k1 = +0x48, k2 = +0x4C, k3 = +0x44 of the settings at 0x785040
 	public static BoothVerdictKind Decide( uint points, uint fee, uint draw, GuestSettings settings ) => Decide( ParkValue( points, draw, settings ), fee, settings );
 
+	/// <summary>The perception ring the booth records its opinion in (<c>0x004C74B0</c> with category 0): the advisor's ticket price lines read its mean.</summary>
+	public const int OpinionCategory = 0;
+
+	/// <summary>The opinion byte a verdict records: far too expensive, expensive, cheap and fair take the four <c>PeepInfo.OpinionFor*</c> bytes in turn; null while the settings have none.</summary>
+	// [BIN:TPW-EXE:0x004FF67E booth opinion] the four exits record the byte of 0x007850CC (verdict 0), 0x007850D0 (1), 0x007850D4 (2) and 0x007850D8 (3) in category 0 of the park (0x00519510, 0x004C74B0) before returning
+	public static int? Opinion( BoothVerdictKind verdict, GuestSettings settings ) => verdict switch
+	{
+		BoothVerdictKind.FarTooExpensive => settings.OpinionForMuchTooHigh,
+		BoothVerdictKind.Expensive => settings.OpinionForTooHigh,
+		BoothVerdictKind.Cheap => settings.OpinionForTooLow,
+		_ => settings.OpinionForAboutRight,
+	};
+
+	/// <summary>Whether the verdict records its opinion: the early fair exit, taken when the park value and the fee are both at or below the minimum entry fee, records nothing.</summary>
+	// [BIN:TPW-EXE:0x004FF62E booth opinion] GP above the base falls through to the bands; otherwise a fee at or below the base returns 3 at 0x004FF71A without a record
+	public static bool RecordsOpinion( uint value, uint fee, GuestSettings settings )
+	{
+		var minimum = (uint)Math.Max( 0, settings.MinimumEntryFee );
+		return !(value <= minimum && fee <= minimum);
+	}
+
 	/// <summary>The verdict for a park value already worked out (<see cref="ParkValue"/>, or a policy's adjustment of it): the same bands as <see cref="Decide(uint, uint, uint, GuestSettings)"/>.</summary>
 	public static BoothVerdictKind Decide( uint value, uint fee, GuestSettings settings )
 	{

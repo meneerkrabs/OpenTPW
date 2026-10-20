@@ -41,3 +41,13 @@ Design typed entrance/back links and admission precondition shared with walking;
 - Deliver the evidence ledger, agreed contract and concrete regression cases described above.
 - Keep this proposal draft while required original evidence or scope decisions are unavailable.
 - Any later implementation, approximation retirement and merge require separate verified results; this document performs none.
+
+## October 20 bounded implementation follow-up
+
+The historical plan above is retained as scope history. Back-cell admission and
+fourth-place geometry were already implemented by other changes. The current
+[typed-front contract](../reverse/QUEUE-003-typed-front.md) narrows this change to
+nonzero front selection from supported live typed entries. Zero-front semantics,
+untyped compatibility, divergent imported mEntryPos and native cache timing remain
+explicit residuals. Synthetic source tests are added; runtime results await CI.
+This is not full QUEUE-003 retirement or original-game runtime verification.

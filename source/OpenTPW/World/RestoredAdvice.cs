@@ -37,7 +37,7 @@ internal sealed class RestoredAdviceSettings
 		"StaffSetGuardArea.MonthsIntoGameForConsideration", "StaffSetGuardArea.AtLeastThisMany", "StaffGuardCoverage.Score", "StaffGuardCoverage.ScorePerNonCoveredPercent",
 		"RidesNoUpgrades.MonthsIntoGameForConsideration", "RidesNoUpgrades.Score", "RideExitBlocked.Score", "RideCondemned.Score",
 		"FeaturesNoToilets.Score", "FeaturesNoToilets.NeedingMoreThan", "FeaturesNoToilets.MorePeopleThanThisNeeding", "FeaturesFarToToilets.Score",
-		"GoldTicketNearToXProfit.Score", "GeneralWonGoldenTicket.Score", "AwardGiven.Score", "Challenge.Score",
+		"GoldTicketNearToXProfit.Score", "GeneralWonGoldenTicket.Score", "AwardGiven.Score",
 		"UpgradeHireMechanic.Score", "UpgradeStikingMechanics.Score", "NewUpgradeNoMechanic.Score",
 		"BusArrived.Score", "PlaneArrived.Score", "BoatArrived.Score",
 	};
@@ -134,7 +134,7 @@ internal static class RestoredAdvice
 	};
 
 	/// <summary>The restored help messages a tool or a hook posts through <see cref="Hud.ParkHud"/>'s help channel.</summary>
-	public const int RotateBlueprintHelp = 202, TrackRideHelp = 204, CamcorderHelp = 306, MessageIconHelp = 322, PopUpHelpOffHelp = 283, FirstChallengeHelp = 344;
+	public const int RotateBlueprintHelp = 202, TrackRideHelp = 204, CamcorderHelp = 306, MessageIconHelp = 322, PopUpHelpOffHelp = 283;
 
 	/// <summary>The online screens' help messages (<see cref="OnlineScreenHelp"/>).</summary>
 	public const int PublishHelp = 328, ParkDetailsHelp = 329, OtherParksHelp = 331, FindPlayerHelp = 332, OutboxHelp = 333, WorldHelp = 334;
@@ -172,21 +172,10 @@ internal static class RestoredAdvice
 		Poll( 277, "tickets", null, ProfitHintScore, $"the year's profit is {ProfitHintPercent} percent or more of the profit ticket's threshold, below the near-ticket multiplier, and the ticket is not won" ),
 		Poll( 318, "tickets", "GoldTicketNearToXProfit.Score", 0, "the year's profit is at or above GoldTicketNearToXProfit.ProfitMultiplier x the profit ticket's threshold and the ticket is not won" ),
 		// ---- game events ----
-		Event( 99, "tickets", "GeneralWonGoldenTicket.Score", 0, "a golden ticket is won and does not earn a key" ),
-		Event( 164, "tickets", "GeneralWonGoldenTicket.Score", 0, "a golden ticket is won and the key it earns is the fifth (Space Zone's Keys.CostToEnter)" ),
-		Event( 165, "tickets", "GeneralWonGoldenTicket.Score", 0, "a golden ticket is won and the key it earns is the third (Wonderland's Keys.CostToEnter)" ),
-		Event( 218, "tickets", "GeneralWonGoldenTicket.Score", 0, "a local golden ticket (visitors, people, happiness, all items, profit, recent visitors) earns a key; the response is the ticket's own caption" ),
-		Event( 219, "tickets", "GeneralWonGoldenTicket.Score", 0, "the twin of 218 (same responses, captions and score), said when 218 has been said before in this park" ),
-		Event( 223, "tickets", "GeneralWonGoldenTicket.Score", 0, "a global golden ticket (coaster height, go-kart excitement, water length, big park) earns a key; the response is the ticket's own caption" ),
-		Event( 224, "tickets", "GeneralWonGoldenTicket.Score", 0, "the twin of 223, said when 223 has been said before" ),
-		Event( 228, "tickets", "GeneralWonGoldenTicket.Score", 0, "the secret camera golden ticket earns a key" ),
-		Event( 229, "tickets", "GeneralWonGoldenTicket.Score", 0, "the twin of 228, said when 228 has been said before" ),
 		Event( 230, "awards", "AwardGiven.Score", 0, "the park earns the coaster height award (a global ticket nobody held)" ),
 		Event( 231, "awards", "AwardGiven.Score", 0, "the park earns the go-kart excitement award" ),
 		Event( 232, "awards", "AwardGiven.Score", 0, "the park earns the water ride length award" ),
 		Event( 233, "awards", "AwardGiven.Score", 0, "the park earns the big park award" ),
-		Event( 319, "challenges", "Challenge.Score", 0, "a challenge is met and it carries a follow-up: the prize can be doubled (double or nothing)" ),
-		Event( 320, "challenges", "Challenge.Score", 0, "a second follow-up challenge in a row is met" ),
 		Event( 130, "upgrades", "UpgradeHireMechanic.Score", 0, "an upgrade is bought and no mechanic is hired", ModerateRepeatGroups ),
 		Event( 131, "upgrades", "UpgradeStikingMechanics.Score", 0, "an upgrade is bought while the mechanics are on strike", ModerateRepeatGroups ),
 		Event( 132, "upgrades", "NewUpgradeNoMechanic.Score", 0, "an upgrade is researched and no mechanic is hired", ModerateRepeatGroups ),
@@ -201,7 +190,6 @@ internal static class RestoredAdvice
 		Help( 283, "tutorial", "a park starts with the pop-up help option off" ),
 		Help( 306, "tutorial", "the camcorder is armed" ),
 		Help( 322, "tutorial", "the first message reaches the message tube" ),
-		Help( 344, "tutorial", "the first challenge is offered" ),
 		// ---- the online screens (the opt-in online extension's own screens) ----
 		Help( 328, "online", "the Publish Park screen opens" ),
 		Help( 329, "online", "a park's details open" ),
@@ -253,24 +241,7 @@ internal static class RestoredAdvice
 	/// <summary>The restored help messages the interface mode change withdraws (the tool they belong to has ended): the blueprint and roller coaster hints.</summary>
 	public static readonly IReadOnlyList<int> ModeHelp = new[] { RotateBlueprintHelp, TrackRideHelp };
 
-	/// <summary>The message a ticket of this kind said by the extension is told with (the kind's criterion message and the response that carries its caption), and its twin.</summary>
-	// [BIN:TPW-EXE:0x0076E300 ticket descriptors] 218 and 219 share the responses 458 to 463 (the captions of TAG_SYSTEM 180 to 185, the six local tickets in GoldenTicketKind order), 223 and 224 the responses 464 to 467 (186 to 189, the four global tickets), 228 and 229 the responses 468 and 469 (190 camera cover, 191 all land)
-	public static (int Message, int Twin, int Variant)? TicketMessage( GoldenTicketKind kind ) => kind switch
-	{
-		<= GoldenTicketKind.RecentVisitors => (218, 219, (int)kind),
-		<= GoldenTicketKind.BigPark => (223, 224, kind - GoldenTicketKind.CoasterHeight),
-		GoldenTicketKind.CamerasEverywhere => (228, 229, 0),
-		GoldenTicketKind.AllLandOwned => (228, 229, 1),
-		_ => null,
-	};
-
 	/// <summary>The award message of a global ticket (230 coaster height, 231 go-kart excitement, 232 water length, 233 big park); none for the others.</summary>
 	// [BIN:TPW-EXE:0x0076E300 award descriptors] 230 to 233 return AwardGiven.Score (0x59E8A0), the responses 470 to 473 are the height of the coaster, the excitement of the go-kart track, the length of the water ride and the size of the park
 	public static int? AwardMessage( GoldenTicketKind kind ) => kind is >= GoldenTicketKind.CoasterHeight and <= GoldenTicketKind.BigPark ? 230 + (kind - GoldenTicketKind.CoasterHeight) : null;
-
-	/// <summary>
-	/// The ticket's key message when the ticket earns the key of a theme park: 165 when the keys now are Wonderland's cost (3), 164 when they are Space Zone's (5); the parks' costs are
-	/// <c>Keys.CostToEnter</c> (1 jungle, 1 hallow, 3 fantasy, 5 space).
-	/// </summary>
-	public static int? UnlockMessage( int keys ) => keys switch { 3 => 165, 5 => 164, _ => null };
 }

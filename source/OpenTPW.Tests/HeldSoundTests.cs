@@ -284,8 +284,9 @@ public class HeldSoundTests
 	}
 
 	[TestMethod]
-	public void FadeObjStopsTheSoundExactlyAsKillObjDoesAndEndsTheParticleRecordsToo()
+	public void LowQualityFadeStopsTheSoundAndEndsTheParticleRecordsToo()
 	{
+		system.HeldSounds.Configure( new(), 0 );
 		// [BIN:TPW-EXE:0x5523D0 FADEOBJ] types 3-10: 0x51C300 -> 0x6B8930, which takes the stop call 0x6B89B0 while the library's 0x400 bit is clear (SoundQuality 0); types 1-2: 0x51FF70(handle, -2)
 		var killed = new List<int>();
 		var previousStarter = OriginalObjectRuntime.ParticleStarter;
@@ -317,8 +318,9 @@ public class HeldSoundTests
 	}
 
 	[TestMethod]
-	public void FadeObjOnASoundSlotEndsTheSoundsOfTheSameScript()
+	public void LowQualityFadeEndsTheSoundsOfTheSameScript()
 	{
+		system.HeldSounds.Configure( new(), 0 );
 		var placed = Placed();
 		var vm = Script( placed.Runtime, a => a.I( Opcode.ADDOBJ, 5, -1, 44, 500 ).I( Opcode.ADDOBJ, 5, -1, 43, 500 ).I( Opcode.ADDOBJ, 5, -1, 44, 501 ).I( Opcode.ENDSLICE ).I( Opcode.FADEOBJ, 500 ) );
 		var voices = mixer.Voices.ToArray();
@@ -328,6 +330,49 @@ public class HeldSoundTests
 		Assert.IsTrue( voices[0].IsFinished && voices[1].IsFinished );
 		Assert.IsFalse( voices[2].IsFinished, "slot 501 plays on" );
 		Assert.AreEqual( 0, vm.UnimplementedEffects.Count );
+	}
+
+	[TestMethod]
+	public void HighQualityFadeReleasesAllMatchingRecordsButServiceKeepsTheirTails()
+	{
+		system.HeldSounds.Configure( new(), 50 );
+		var placed = Placed();
+		var other = Script( placed.Runtime, a => a.I( Opcode.ADDOBJ, 5, -1, 44, 500 ) );
+		var vm = Script( placed.Runtime, a => a.I( Opcode.ADDOBJ, 5, -1, 44, 500 ).I( Opcode.ADDOBJ, 5, -1, 43, 500 ).I( Opcode.ADDOBJ, 5, -1, 44, 501 )
+			.I( Opcode.ENDSLICE ).I( Opcode.FADEOBJ, 500 ).I( Opcode.SETOBJPARAM, 500, 20, 100 ).I( Opcode.KILLOBJ, 500 ) );
+		var tails = placed.Runtime.HeldSounds.Where( record => record.ScriptId == vm.ScriptId && record.Slot == 500 ).Select( record => record.Sound ).ToArray();
+		var voices = tails.Select( tail => tail.Placed!.Voice! ).ToArray();
+		vm.Advance( FixedStepClock.TickDuration );
+		Assert.AreEqual( 0, placed.Runtime.HeldSounds.Count( record => record.ScriptId == vm.ScriptId && record.Slot == 500 ) );
+		Assert.AreEqual( 2, placed.Runtime.HeldSounds.Count );
+		Assert.IsTrue( tails.All( tail => tail.Lifetime.Fading && !tail.IsFinished ) );
+		Assert.IsTrue( voices.All( voice => voice.PitchStep == -24 ), "Released records cannot receive later parameter writes" );
+		vm.Stop();
+		Assert.IsTrue( tails.All( tail => !tail.IsFinished ), "Script destruction cannot lose service-owned tails" );
+		Assert.IsTrue( system.HeldSounds.Sounds.Contains( tails[0] ) );
+		mixer.StopAll();
+		Assert.IsTrue( tails.All( tail => tail.IsFinished ) );
+		Assert.IsNotNull( other );
+	}
+
+	[DataTestMethod]
+	[DataRow( true )]
+	[DataRow( false )]
+	public void LeaveParkAndSoundSwitchStopReleasedTails( bool leave )
+	{
+		// Each teardown gets its own initialized category: LeavePark forgets its decoded samples.
+		var placed = Placed();
+		var vm = Script( placed.Runtime, a => a.I( Opcode.ADDOBJ, 5, -1, 44, 500 ).I( Opcode.ENDSLICE ).I( Opcode.FADEOBJ, 500 ) );
+		var tail = placed.Runtime.HeldSounds.Single().Sound;
+		vm.Advance( FixedStepClock.TickDuration ); Assert.IsFalse( tail.IsFinished );
+		if ( leave ) GameAudio.LeavePark();
+		else
+		{
+			var wasEnabled = GameAudio.Enabled;
+			try { GameAudio.Enabled = false; } finally { GameAudio.Enabled = wasEnabled; }
+		}
+		Assert.IsTrue( tail.IsFinished );
+		Assert.AreEqual( 0, system.HeldSounds.Sounds.Count );
 	}
 
 	private void Pump( SoundSentence sentence )

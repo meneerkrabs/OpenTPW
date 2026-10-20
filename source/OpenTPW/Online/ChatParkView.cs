@@ -3,13 +3,13 @@ using OpenTPW.UI.Original;
 namespace OpenTPW.UI;
 
 /// <summary>
-/// The chat park seen from above: every player in the room is a marker at the position the server relayed, and a
-/// click walks the player's own marker there (manual p. 68: "Left click to walk to destination"). The original chat
-/// park was a three-dimensional park its visitors walked around in together; its scene, avatar model and animation
-/// are not decoded.
+/// A chat room seen from above: every player in the room is a marker at the position the server relayed, and a
+/// click walks the player's own marker there (manual p. 68: "Left click to walk to destination"). A satellite's
+/// chat park is visited in three dimensions like any park (OnlineScreens.EnterChatPark); this view shows a room
+/// entered without a park to visit: on an older server, or a published park's chat from its details.
 /// </summary>
-// [EXT:online-chat-park-view] a flat overhead view with a marker per player, walked by clicking at one speed, stands in for
-// the original's chat-park scene and avatars (not decoded; the original's double-click teleport is not separated)
+// [EXT:online-chat-park-view] a flat overhead view with a marker per player, walked by clicking at one speed, shows a room without a visited park
+// (the original's chat rooms were always parks: a satellite's park was visited, tp.exe 0x4C0880; the double-click teleport is not separated)
 public sealed class UiChatParkView : UiElement, IUiDragTarget
 {
 	private readonly OnlineSession session;
@@ -79,7 +79,8 @@ public sealed class UiChatParkView : UiElement, IUiDragTarget
 			// Nobody has moved yet: the room's title and how to walk.
 			context.DrawText( context.Fonts.Menu, OnlineStrings.Ui( OnlineStrings.PlayersAtThePark, "Players at the park" ),
 				new UiRect( rect.X, rect.Y + rect.Height * 0.4f, rect.Width, rect.Height * 0.1f ), UiColors.Text, UiAlign.Center );
-			context.DrawText( context.Fonts.Small, OnlineStrings.Get( OnlineLabel.WalkHint ),
+			// [BIN:TPW-EXE:0x4BD933 chat mode hover] the original's chat park says UIHELPTEXT 401, "Left-click to walk to this point"
+			context.DrawText( context.Fonts.Small, context.Strings.Help( 401 ),
 				new UiRect( rect.X, rect.Y + rect.Height * 0.52f, rect.Width, rect.Height * 0.1f ), UiColors.Text, UiAlign.Center );
 		}
 		var size = MathF.Max( 10f, rect.Width / 70f );

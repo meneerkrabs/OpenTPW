@@ -13,6 +13,38 @@ namespace OpenTPW.Tests;
 public class RideStateRulesTests
 {
 	[TestMethod]
+	public void TheStatusBannerTakesTheFirstStatusThatApplies()
+	{
+		var open = new RideStatusFacts( RideObjectStates.Idle, false, false, false, false, RideServiceProgress.Waiting, false, false, IsOpen: true );
+		Assert.IsNull( RideWindowStatus.Of( open ), "an open ride with nothing to report shows no banner" );
+		Assert.AreEqual( UIStrings.Closed, RideWindowStatus.Of( open with { IsOpen = false } ) );
+		// 0x485f60's order: condemned, the track, an upgrade, a called service, a breakdown, the queue, the exit, closed
+		var everything = open with { State = RideObjectStates.Condemned, TrackIncomplete = true, TrackInvalid = true, ServiceCalled = true, QueueDetached = true, ExitDetached = true, IsOpen = false };
+		Assert.AreEqual( UIStrings.Condemned, RideWindowStatus.Of( everything ) );
+		Assert.AreEqual( UIStrings.TrackIncomplete, RideWindowStatus.Of( everything with { State = RideObjectStates.Upgrading } ) );
+		Assert.AreEqual( UIStrings.TrackInvalid, RideWindowStatus.Of( everything with { State = RideObjectStates.Upgrading, TrackIncomplete = false } ) );
+		Assert.AreEqual( UIStrings.UpgradeWaitingForMechanic, RideWindowStatus.Of( everything with { State = RideObjectStates.Upgrading, TrackIncomplete = false, TrackInvalid = false } ), "an upgrade before a call" );
+		Assert.AreEqual( UIStrings.RepairWaitingForMechanic, RideWindowStatus.Of( everything with { State = RideObjectStates.BrokenDown, TrackIncomplete = false, TrackInvalid = false } ), "a call before a breakdown" );
+		var services = Enum.GetValues<RideServiceProgress>();
+		var upgrading = open with { State = RideObjectStates.Upgrading };
+		CollectionAssert.AreEqual( new UIStrings?[] { UIStrings.UpgradeNoMechanics, UIStrings.UpgradeMechanicsStrike, UIStrings.UpgradeMechanicOnWay, UIStrings.UpgradeInProgress, UIStrings.UpgradeWaitingForMechanic },
+			services.Select( service => RideWindowStatus.Of( upgrading with { Service = service } ) ).ToArray() );
+		var called = open with { ServiceCalled = true, IsOpen = false };
+		CollectionAssert.AreEqual( new UIStrings?[] { UIStrings.RepairNoMechanics, UIStrings.RepairMechanicsStrike, UIStrings.RepairMechanicOnWay, UIStrings.RepairsInProgress, UIStrings.RepairWaitingForMechanic },
+			services.Select( service => RideWindowStatus.Of( called with { Service = service } ) ).ToArray() );
+		CollectionAssert.AreEqual( new UIStrings?[] { UIStrings.CleaningNoCleaners, UIStrings.CleaningCleanersStrike, UIStrings.CleaningCleanerOnWay, UIStrings.CleaningInProgress, UIStrings.CleaningWaitingForCleaner },
+			services.Select( service => RideWindowStatus.Of( called with { Relief = true, Service = service } ) ).ToArray(), "a toilet's call is a cleaning" );
+		var broken = open with { State = RideObjectStates.BrokenDown };
+		Assert.AreEqual( UIStrings.BrokenDown, RideWindowStatus.Of( broken ) );
+		Assert.AreEqual( UIStrings.RepairsInProgress, RideWindowStatus.Of( broken with { Service = RideServiceProgress.AtWork } ), "the mechanic at work on the broken ride" );
+		Assert.AreEqual( UIStrings.QueueNotConnected, RideWindowStatus.Of( open with { QueueDetached = true } ) );
+		Assert.AreEqual( UIStrings.ClosedQueueNotConnected, RideWindowStatus.Of( open with { QueueDetached = true, IsOpen = false } ) );
+		Assert.AreEqual( UIStrings.ExitNotConnected, RideWindowStatus.Of( open with { ExitDetached = true, IsOpen = false } ) );
+		Assert.IsTrue( RideWindowStatus.LocksDoor( UIStrings.TrackIncomplete ) && RideWindowStatus.LocksDoor( UIStrings.TrackInvalid ), "0x4ad4e0 greys the door for the track statuses" );
+		Assert.IsFalse( RideWindowStatus.LocksDoor( UIStrings.Closed ) || RideWindowStatus.LocksDoor( null ) );
+	}
+
+	[TestMethod]
 	public void TheReopeningGuardReadsTheRideStateNotVarBroken()
 	{
 		Assert.IsTrue( RideOpening.MayOpen( RideObjectStates.Idle, false, true, 0, false ) );

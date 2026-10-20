@@ -64,12 +64,11 @@ public sealed class ObjectBuildPanel
 				level.BuildEntry = null;
 		}
 		ImGui.SameLine();
+		// [EXT:online-coop-commands] every object opens or closes through one command, as the buttons did
 		if ( ImGui.Button( "Open all" ) )
-			foreach ( var item in objects.Objects )
-				item.Open();
+			level.Commands.Issue( new SetAllObjectsOpenCommand( true ) );
 		ImGui.SameLine();
 		if ( ImGui.Button( "Close all" ) )
-			foreach ( var item in objects.Objects )
-				item.Close();
+			level.Commands.Issue( new SetAllObjectsOpenCommand( false ) );
 	}
 }

@@ -154,6 +154,57 @@ public class ArrivalVehicleTests
 		CollectionAssert.AreEqual( new[] { ArrivalVehicleKind.Bus }, unsaved.Vehicles.Created );
 	}
 
+	/// <summary>[EXT:cheats-arrival] While an arrival cheat waits (docs/CHEATS.md) no natural group starts; once it has applied the natural timer goes on.</summary>
+	[TestMethod]
+	public void AWaitingArrivalCheatHoldsTheNaturalGroup()
+	{
+		foreach ( var withVehicles in new[] { true, false } )
+		{
+			var park = new Park();
+			if ( !withVehicles ) park.Simulation.ArrivalVehicles = null;
+			var held = true;
+			park.Simulation.ArrivalHeldForCheat = () => held;
+			var groups = new List<int>();
+			park.Simulation.ArrivalGroupStarted += groups.Add;
+			park.Turns( 40 );
+			Assert.AreEqual( 0, groups.Count, "the timer is long past, but the waiting cheat holds the group" );
+			Assert.AreEqual( 0, park.Vehicles.Created.Count, "and calls no vehicle" );
+			held = false;
+			park.Turns( 1 );
+			Assert.AreEqual( 1, groups.Count, "released: the natural group starts at the next turn" );
+		}
+	}
+
+	[DataTestMethod]
+	[DataRow( false, false )]
+	[DataRow( false, true )]
+	[DataRow( true, false )]
+	[DataRow( true, true )]
+	public void BothArrivalUpdatesReportSignedGroupsAboveTheirParkLimit( bool online, bool withVehicles )
+	{
+		var park = new Park();
+		park.Simulation.OnlineVisit = online;
+		if ( !withVehicles ) park.Simulation.ArrivalVehicles = null;
+		var limit = online ? GuestSimulation.OnlineArrivalParkLimit : GuestSimulation.ArrivalParkLimit;
+		for ( var index = 0; index < limit + 3; index++ )
+			park.Simulation.SpawnInPark( 5, 5 );
+		var groups = new List<int>();
+		park.Simulation.ArrivalGroupStarted += groups.Add;
+		park.Turn = 100;
+		park.Turns( 1 );
+		CollectionAssert.AreEqual( new[] { -3 }, groups, "the actual update emits the signed remainder before handling an empty group" );
+		Assert.AreEqual( limit + 3, park.Arrived );
+		if ( withVehicles )
+		{
+			CollectionAssert.AreEqual( new[] { ArrivalVehicleKind.Bus }, park.Vehicles.Created );
+			park.Vehicles.SetStatus( ArrivalVehicleKind.Bus, 2 );
+		}
+		park.Turns( 1 );
+		Assert.AreEqual( limit + 3, park.Arrived, "neither update creates a guest for a negative group" );
+		Assert.IsFalse( park.Simulation.CaptureSnapshot().DeliveringArrivals );
+		CollectionAssert.AreEqual( new[] { -3 }, groups, "finishing the empty group does not append a clamped zero" );
+	}
+
 	[TestMethod]
 	public void NoGuestStepsOffBeforeTheVehicleReportsItsStop()
 	{
@@ -294,6 +345,120 @@ public class ArrivalVehicleTests
 		Assert.IsFalse( restored.Vehicles.Placed[ArrivalVehicleKind.Bus], "the new park holds no bus object" );
 		restored.Turns( 1 );
 		Assert.IsTrue( restored.Vehicles.Created.Contains( ArrivalVehicleKind.Bus ), "the group places its vehicle again" );
+	}
+
+	private static SaveWorld SavedArrivals( uint turn = 109, uint timer = 103, int group = 7, byte active = 0, int handle = -1 )
+	{
+		var map = OriginalParkImportTests.CreateMap( 3, 2, ( _, _ ) => 0 );
+		var variables = SaveTestPayloads.ParkVariables( gameTick: turn );
+		foreach ( var offset in new[] { 4, 6, 8, 12 } )
+			System.Buffers.Binary.BinaryPrimitives.WriteUInt16LittleEndian( variables.AsSpan( offset ), (ushort)(offset == handle ? 15 : 0) );
+		var calendar = SaveTestPayloads.CalendarAndArrivals();
+		System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian( calendar.AsSpan( 28 ), 91 );
+		System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian( calendar.AsSpan( 32 ), timer );
+		System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian( calendar.AsSpan( 36 ), 73 );
+		System.Buffers.Binary.BinaryPrimitives.WriteInt32LittleEndian( calendar.AsSpan( 40 ), group );
+		calendar[44] = active;
+		calendar[45] = 255;
+		var payload = SaveTestPayloads.Payload( SaveTestPayloads.World( variables, SaveTestPayloads.Grid( map ),
+			SaveTestPayloads.Things( SaveTestPayloads.ParkThings() ), calendar: calendar ) );
+		return SaveWorld.Parse( payload, SavePayloadLayout.Parse( payload ), map.CellCountX, map.CellCountY );
+	}
+
+	[TestMethod]
+	public void OriginalArrivalFieldsDecodeWithoutLosingSignedGroupsOrNoncanonicalFlags()
+	{
+		var saved = SavedArrivals( group: -7, active: 128 ).ArrivalState;
+		Assert.AreEqual( new SaveArrivals( 91, 103, 73, -7, true, true ), saved );
+		Assert.ThrowsException<ArgumentException>( () => SaveArrivals.Parse( new byte[17] ) );
+		Assert.ThrowsException<ArgumentException>( () => SaveArrivals.Parse( new byte[19] ) );
+	}
+
+	[TestMethod]
+	public void ImportedInactiveSchedulerUsesTheSavedTurnBoundaryWithoutDispatchingAtAttach()
+	{
+		var park = new Park { Turn = 109 };
+		var groups = new List<int>();
+		park.Simulation.ArrivalGroupStarted += groups.Add;
+		var random = park.Simulation.RandomState;
+		var report = park.Simulation.ImportOriginalArrivals( SavedArrivals() );
+		StringAssert.Contains( report, "scheduler imported" );
+		Assert.AreEqual( random, park.Simulation.RandomState );
+		Assert.AreEqual( 0, groups.Count );
+		Assert.AreEqual( 0, park.Vehicles.Created.Count );
+		Assert.AreEqual( 103L, park.Simulation.CaptureSnapshot().ArrivalTimerStart );
+		Assert.AreEqual( 7, park.Simulation.CaptureSnapshot().PendingArrivals );
+		park.Turns( 2 );
+		Assert.AreEqual( 0, groups.Count, "the separately shifted timer and current turn differ by exactly the interval" );
+		park.Turns( 1 );
+		Assert.AreEqual( 1, groups.Count );
+		CollectionAssert.AreEqual( new[] { ArrivalVehicleKind.Bus }, park.Vehicles.Created );
+	}
+
+	[DataTestMethod]
+	[DataRow( 50, ArrivalVehicleKind.Seaplane )]
+	[DataRow( 0, ArrivalVehicleKind.Bus )]
+	[DataRow( -3, ArrivalVehicleKind.Bus )]
+	public void ImportedActiveGroupContinuesOnTheNextNormalUpdateAndOwnSave( int group, int kind )
+	{
+		var park = new Park { Turn = 109 };
+		var groups = new List<int>();
+		park.Simulation.ArrivalGroupStarted += groups.Add;
+		var random = park.Simulation.RandomState;
+		StringAssert.Contains( park.Simulation.ImportOriginalArrivals( SavedArrivals( group: group, active: 1 ) ), "scheduler imported" );
+		Assert.AreEqual( random, park.Simulation.RandomState );
+		Assert.AreEqual( 0, park.Vehicles.Created.Count );
+		Assert.AreEqual( 0, groups.Count );
+		var snapshot = ParkResumeJson.Deserialize<GuestSimulationSnapshot>( ParkResumeJson.Serialize( park.Simulation.CaptureSnapshot() ) );
+		var resumed = new Park { Turn = park.Turn };
+		resumed.Simulation.RestoreSnapshot( snapshot );
+		park.Turns( 1 );
+		resumed.Turns( 1 );
+		CollectionAssert.AreEqual( new[] { kind }, park.Vehicles.Created );
+		Assert.AreEqual( random, park.Simulation.RandomState, "dispatch by saved group size consumes no random draw" );
+		Assert.AreEqual( group, park.Simulation.CaptureSnapshot().PendingArrivals );
+		Assert.AreEqual( 0, groups.Count, "an imported active group does not emit a second group-history event" );
+		park.Vehicles.SetStatus( kind, 2 );
+		resumed.Vehicles.SetStatus( kind, 2 );
+		park.Turns( 1 );
+		resumed.Turns( 1 );
+		Assert.AreEqual( group > 0 ? group - 1 : group, park.Simulation.CaptureSnapshot().PendingArrivals );
+		Assert.AreEqual( group > 0, park.Simulation.CaptureSnapshot().DeliveringArrivals );
+		Assert.AreEqual( group > 0 ? 1 : 0, park.Arrived );
+		Assert.AreEqual( group > 0 ? 103L : park.Turn, park.Simulation.CaptureSnapshot().ArrivalTimerStart );
+		CollectionAssert.AreEqual( ParkResumeJson.Serialize( park.Simulation.CaptureSnapshot() ), ParkResumeJson.Serialize( resumed.Simulation.CaptureSnapshot() ) );
+		Assert.AreEqual( 0, groups.Count );
+	}
+
+	[DataTestMethod]
+	[DataRow( "cache1", 4 )]
+	[DataRow( "cache2", 6 )]
+	[DataRow( "cache3", 8 )]
+	[DataRow( "current", 12 )]
+	[DataRow( "present", -1 )]
+	[DataRow( "future", -1 )]
+	[DataRow( "clock", -1 )]
+	[DataRow( "noclock", -1 )]
+	[DataRow( "nohost", -1 )]
+	[DataRow( "online", -1 )]
+	public void UnsupportedOriginalSchedulersLeaveTheCompleteStateUnchanged( string reason, int handle )
+	{
+		var park = new Park { Turn = 109 };
+		StringAssert.Contains( park.Simulation.ImportOriginalArrivals( SavedArrivals( timer: 97, group: 52, active: 1 ) ), "scheduler imported" );
+		if ( reason == "present" ) park.Vehicles.Placed[ArrivalVehicleKind.Ferry] = true;
+		if ( reason == "clock" ) park.Turn++;
+		if ( reason == "noclock" ) park.Simulation.ArrivalClock = null;
+		if ( reason == "nohost" ) park.Simulation.ArrivalVehicles = null;
+		if ( reason == "online" ) park.Simulation.OnlineVisit = true;
+		var groups = new List<int>();
+		park.Simulation.ArrivalGroupStarted += groups.Add;
+		var before = ParkResumeJson.Serialize( park.Simulation.CaptureSnapshot() );
+		var variables = park.Vehicles.Variables.SelectMany( values => values ).ToArray();
+		StringAssert.Contains( park.Simulation.ImportOriginalArrivals( SavedArrivals( timer: reason == "future" ? 110u : 103u, group: -7, active: 1, handle: handle ) ), "scheduler unchanged" );
+		CollectionAssert.AreEqual( before, ParkResumeJson.Serialize( park.Simulation.CaptureSnapshot() ), "including all scheduler fields and the RNG" );
+		CollectionAssert.AreEqual( variables, park.Vehicles.Variables.SelectMany( values => values ).ToArray() );
+		Assert.AreEqual( 0, groups.Count );
+		Assert.AreEqual( 0, park.Vehicles.Created.Count );
 	}
 
 	/// <summary>

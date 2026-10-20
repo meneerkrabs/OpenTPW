@@ -119,7 +119,7 @@ public readonly record struct SaveAttraction(
 			costs, takings, gauge48, lifeGauge, repair, level, reader.Position - offset )
 		{
 			Flags = flags, RideScriptHandle = scriptHandle, TrackRideHandle = trackHandle, TopLeft = topLeft, EntryPos = entryPos, Next = next,
-			AssignedStaffMember = assigned, BackOfQueue = backOfQueue, CanLoad = canLoad, ExitPos = exitPos, FirstInQueue = firstInQueue,
+			AssignedStaffMember = assigned, BackOfQueueCell = backOfQueue, CanLoad = canLoad, ExitPos = exitPos, FirstInQueue = firstInQueue,
 			IsTrackRideValid = trackValid, UpgradeParent = upgradeParent, Histories = histories, PersonBeingLoaded = personBeingLoaded,
 			AmountOfSpecialIngredient = ingredient, RequestedService = requested, TimeMarkedForMaintenance = marked, UpgradeBalloonSprite = balloonSprite,
 		};
@@ -137,8 +137,13 @@ public readonly record struct SaveAttraction(
 	public ushort Next { get; init; }
 	/// <summary><c>mAssignedStaffMember</c> (+0x5E): the staff thing that claimed the object (0x004E01F0), 0 when none.</summary>
 	public ushort AssignedStaffMember { get; init; }
-	/// <summary><c>mBackOfQueue</c> (+0x3A) and <c>mFirstInQ</c> (+0x3C): guest thing ids of the queue's ends.</summary>
-	public ushort BackOfQueue { get; init; }
+	/// <summary>
+	/// <c>mBackOfQueue</c> (+0x3A): the cell id (y × 128 + x + 1) of the cached back-of-queue cell, 0 when the cache is empty; not a guest. The back-of-queue
+	/// walk <c>0x4DE130</c> recomputes it (with <see cref="QueueSizeInCells"/>) only when the word is 0, the queue edit <c>0x4DE1F0</c> drops it, and the loader
+	/// keeps the saved value.
+	/// </summary>
+	public ushort BackOfQueueCell { get; init; }
+	/// <summary><c>mFirstInQ</c> (+0x3C): the thing id of the queue's head guest. There is no tail word: the join walks the guests' <c>mQNext</c> links to the tail.</summary>
 	public ushort FirstInQueue { get; init; }
 	/// <summary><c>mCanLoad</c> (+0x68): the open word; SetState (0x004E0E60) clears it for states 1, 2 and 4.</summary>
 	public uint CanLoad { get; init; }

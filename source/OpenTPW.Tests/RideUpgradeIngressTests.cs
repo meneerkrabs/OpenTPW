@@ -50,7 +50,7 @@ public class RideUpgradeIngressTests
 		var entry = new ObjectCatalogEntry( "jungle", category == BuildCategory.Shops ? ObjectCategory.Shop : category == BuildCategory.Sideshows ? ObjectCategory.Sideshow : ObjectCategory.Ride, "/synthetic", settings, new ObjectShape( new[] { "*" } ), "/model.MD2", null, "/script.RSE", Array.Empty<string>(), Array.Empty<ObjectAnimationFile>(), Array.Empty<string>(), Array.Empty<string>(), new BaseFileSystem( root ), null );
 		return new OriginalObject( entry, new ObjectPlacement( 1, 1, 0, N.Vector2.Zero, 0 ), world );
 	}
-	private ParkHud Fixture( BuildCategory category, out Level level, out ParkEconomy economy, out OriginalObject first, out OriginalObject second, out GuestEconomyBridge bridge, ParkGameMode mode = ParkGameMode.FullSimulation, string extra = "" ) =>
+	internal ParkHud Fixture( BuildCategory category, out Level level, out ParkEconomy economy, out OriginalObject first, out OriginalObject second, out GuestEconomyBridge bridge, ParkGameMode mode = ParkGameMode.FullSimulation, string extra = "" ) =>
 		FixtureWith( EconomyTestData.Park( mode: mode ), category, out level, out economy, out first, out second, out bridge, mode, extra );
 
 	/// <summary><see cref="Fixture"/> over a given economy and, when <paramref name="catalog"/> is given, an object catalog of those entries.</summary>
@@ -73,7 +73,7 @@ public class RideUpgradeIngressTests
 		var current = economy; bridge = new GuestEconomyBridge( () => current, guests ); bridge.Link( first.Runtime.AttractionId, one.Id ); bridge.Link( second.Runtime.AttractionId, two.Id );
 		var hud = new ParkHud( level, OriginalUiTests.FakeStrings(), new EconomyParkStatus( () => current ), new EmptyCatalog(), new HudHost() ); hud.SelectObject( first ); return hud;
 	}
-	private static UiContext Context()
+	internal static UiContext Context()
 	{
 		var font = new FontAtlas( FontAtlasTests.CreateFont( 8, new FontAtlasTests.SyntheticGlyph( 'A', 2, 2, 0, 0, 3 ) ) );
 		return new UiContext( OriginalUiTests.FakeStrings(), new UiFonts( _ => font ), new UiModels( n => throw new FileNotFoundException( n ) ) ) { Canvas = new UiCanvas( 2048, 1536 ), ResolveTexture = _ => null };

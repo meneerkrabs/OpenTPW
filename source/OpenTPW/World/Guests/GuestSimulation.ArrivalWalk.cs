@@ -49,6 +49,17 @@ public sealed partial class GuestSimulation
 	// [BIN:TPW-EXE:0x004D8610 ticket booth cell] side 0: (0x0078559C, 0x007855A0), else (0x007855A4, 0x007855A8), the cell id y × 128 + x + 1
 	private (int X, int Y)? BoothCell( int side ) => ArrivalLane( side ) is { } lane ? lane[3] : null;
 
+	/// <summary>The guests in state 3 (waiting at the booth) standing on the cell of either ticket booth, counted once per side as the original walks the two cells.</summary>
+	// [BIN:TPW-EXE:0x004C91C0 guests at the gate] for each of the two sides 0 and 1 it takes the booth cell (0x004D8610) and counts the things of type 1 on it whose state word (+0x220) is 3, adds both counts and caches the sum (park +0x1F0D4, stamp +0x1F0D0, never read back)
+	public int GuestsWaitingAtBooths()
+	{
+		var count = 0;
+		for ( var side = 0; side < 2; side++ )
+			if ( BoothCell( side ) is { } booth )
+				count += Guests.Count( guest => guest.State == GuestState.WaitingAtBooth && guest.Navigation.Cell == booth );
+		return count;
+	}
+
 	/// <summary>The entrance cell of a side (tp.exe <c>0x004D8690</c>: <c>FixedItemInfo.EntranceA</c> or <c>B</c>).</summary>
 	// [BIN:TPW-EXE:0x004D8690 entrance cell] side 0: (0x007855BC, 0x007855C0), else (0x007855C4, 0x007855C8)
 	private (int X, int Y)? ParkEntranceCell( int side ) => ArrivalLane( side ) is { } lane ? lane[4] : null;
@@ -87,7 +98,7 @@ public sealed partial class GuestSimulation
 		var sideways = (int)(random.NextWord() & 0xFF);
 		PlaceAtCentre( guest, stop );
 		var crossing = BusSideCrossingCell( side )!.Value;
-		guest.State = RouteToPoint( guest, crossing, sideways, ArrivalRowByte ) ? GuestState.CrossingRoad : GuestState.DoingNothing;
+		EnterGuestState( guest, RouteToPoint( guest, crossing, sideways, ArrivalRowByte ) ? GuestState.CrossingRoad : GuestState.DoingNothing );
 		return guest;
 	}
 
@@ -112,12 +123,12 @@ public sealed partial class GuestSimulation
 	{
 		if ( !guest.HasWaypoint )
 		{
-			guest.State = GuestState.CrossingRoadToPark;
+			EnterGuestState( guest, GuestState.CrossingRoadToPark );
 			return;
 		}
 		var result = MoveAlongStep( guest );
 		if ( result == WalkResult.Arrived )
-			guest.State = GuestState.CrossingRoadToPark;
+			EnterGuestState( guest, GuestState.CrossingRoadToPark );
 		else if ( result == WalkResult.Stuck )
 			guest.HasWaypoint = true;
 	}
@@ -136,11 +147,11 @@ public sealed partial class GuestSimulation
 		var byteY = (int)(random.NextWord() & 0xFF);
 		if ( BoothCell( side ) is not { } booth )
 		{
-			guest.State = GuestState.DoingNothing;
+			EnterGuestState( guest, GuestState.DoingNothing );
 			return;
 		}
 		RouteToPoint( guest, booth, byteX, byteY );
-		guest.State = GuestState.GoingToTicketBooth;
+		EnterGuestState( guest, GuestState.GoingToTicketBooth );
 	}
 
 	/// <summary>
@@ -172,7 +183,7 @@ public sealed partial class GuestSimulation
 			return;
 		}
 		// [BIN:TPW-EXE:0x004FF730 state 2 arrival] the walk's result 0 with the park open is SetState(4) (0x00501DB0 case 4: the animation 3 and, on the booth cell 0x004D8610(0), the facing 0x200); the verdict is the next update's
-		guest.State = GuestState.AtTicketBooth;
+		EnterGuestState( guest, GuestState.AtTicketBooth );
 		guest.StateTimer = 0;
 	}
 
@@ -180,7 +191,7 @@ public sealed partial class GuestSimulation
 	// [BIN:TPW-EXE:0x00501DB0 state 3 entry] the animation 3 (0x004217F0), then a world draw: +0x200 = R % 0x96 + 200
 	private void EnterWaitingAtBooth( Guest guest )
 	{
-		guest.State = GuestState.WaitingAtBooth;
+		EnterGuestState( guest, GuestState.WaitingAtBooth );
 		guest.BoothWait = (int)(random.NextWord() % 150) + 200;
 	}
 
@@ -210,14 +221,14 @@ public sealed partial class GuestSimulation
 			if ( target is { } booth )
 				RouteToCell( guest, booth );
 			guest.BoothWait = 0;
-			guest.State = GuestState.GoingToTicketBooth;
+			EnterGuestState( guest, GuestState.GoingToTicketBooth );
 			return;
 		}
 		if ( !HeadsItsCell( guest ) )
 			return;
 		if ( ParkEntranceCell( (int)(random.NextWord() & 1) ) is { } entrance )
 			RouteToCell( guest, entrance );
-		guest.State = GuestState.EnteringPark;
+		EnterGuestState( guest, GuestState.EnteringPark );
 	}
 
 	/// <summary>Whether the guest heads the thing list of the cell it stands on (the first of the cell's things in the original, the last of OpenTPW's occupant list; WALK-003).</summary>
@@ -236,7 +247,7 @@ public sealed partial class GuestSimulation
 		{
 			if ( BoothCell( (int)(random.NextWord() & 1) ) is { } booth )
 				RouteToCell( guest, booth );
-			guest.State = GuestState.GoingToTicketBooth;
+			EnterGuestState( guest, GuestState.GoingToTicketBooth );
 			return;
 		}
 		var arrived = !guest.HasWaypoint;
@@ -252,7 +263,7 @@ public sealed partial class GuestSimulation
 			}
 		}
 		guest.VisitorNumber = ++VisitorCount;
-		guest.State = GuestState.DoingNothing;
+		EnterGuestState( guest, GuestState.DoingNothing );
 	}
 
 	/// <summary>
@@ -276,7 +287,7 @@ public sealed partial class GuestSimulation
 	private void BeginLeaving( Guest guest, DepartureCause cause )
 	{
 		guest.ExitLevel = 0;
-		guest.State = GuestState.LeavingPark;
+		EnterGuestState( guest, GuestState.LeavingPark );
 		Observer?.Leaving( guest, cause );
 	}
 

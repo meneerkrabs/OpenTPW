@@ -13,7 +13,7 @@ public class Window
 	public Sdl2Window SdlWindow { get; private set; }
 
 	/// <summary>
-	/// Set before the renderer is created (<c>--offscreen</c>, <c>OPENTPW_OFFSCREEN=1</c>, or implied by a smoke flag):
+	/// Set before the renderer is created (<c>--offscreen</c>, <c>OPENTPW_OFFSCREEN=1</c>, or implied by an automated mode such as a smoke, capture or perf run):
 	/// the renderer then keeps its window hidden and draws into an offscreen target. See <see cref="IsOffscreen"/>.
 	/// </summary>
 	public static bool OffscreenRequested { get; set; }

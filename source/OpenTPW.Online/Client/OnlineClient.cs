@@ -103,6 +103,22 @@ public sealed class OnlineClient : IDisposable
 	}
 
 	/// <summary>
+	/// The chat parks' scenes: what each satellite's park details show and the park its visit enters (needs a login), or null from a server without them
+	/// (an older OpenTPW server, whose satellites are entered in the overhead chat view).
+	/// </summary>
+	public async Task<ChatParkSceneList?> GetChatParkScenesAsync( CancellationToken cancel = default )
+	{
+		try
+		{
+			return await GetJsonAsync<ChatParkSceneList>( ApiRoutes.ChatParkScenes, cancel );
+		}
+		catch ( OnlineException exception ) when ( exception.Status == HttpStatusCode.NotFound )
+		{
+			return null;
+		}
+	}
+
+	/// <summary>
 	/// A player's page: their published parks with visitors, votes, publish date, current and highest rank, and their
 	/// Platinum Tickets (the original website's "My Theme Park", docs/reverse/ONLINE-SOURCES.md S1). Without a login
 	/// only parks the author shows on the website are listed.
@@ -414,6 +430,9 @@ public sealed class ChatConnection : IAsyncDisposable, IDisposable
 
 	/// <summary>Moves the player's avatar in the chat park: a position in the park, both axes 0 to 1.</summary>
 	public Task MoveAsync( float x, float y, CancellationToken cancel = default ) => SendAsync( ChatRequest.ForMove( x, y ), cancel );
+
+	/// <summary>Moves the player's avatar with a mode (a server of <see cref="ChatProtocol.MoveModesVersion"/> or later): a walk, a teleport, hidden or shown again.</summary>
+	public Task MoveAsync( float x, float y, ChatMoveMode mode, CancellationToken cancel = default ) => SendAsync( ChatRequest.ForMove( x, y, mode ), cancel );
 
 	public async Task SendAsync( ChatRequest request, CancellationToken cancel = default )
 	{

@@ -64,18 +64,16 @@ public sealed partial class OriginalObjectRuntime
 	/// <c>KILLOBJ</c> and <c>FADEOBJ</c> on a slot: every sound record of the script with the slot ends and is freed.
 	/// </summary>
 	// [BIN:TPW-EXE:0x5522C5 KILLOBJ] types 3-10 call 0x51C2C0(handle): the library finds the voice by its handle (0x6B6830) and stops it at once (the type-3 message, 0x6B89B0), a handle already gone does nothing
-	// [BIN:TPW-EXE:0x5523D0 FADEOBJ] types 3-10 call 0x51C300(handle): message 0x700BAC {handle, 0x3C} runs 0x6B8930, which takes the "fade" call (0x6B65A0 -> the voice's vf+0x30 = 0x6B7130) only while bit 0x400 of the sound library's settings word (+0x28 of the object at library +0x24) is set, and otherwise the stop above (the library's vf+0x18 = 0x6B89B0, the very call KILLOBJ makes); particle types take 0x51FF70(handle, -2) as KILLOBJ does
-	// [BIN:TPW-EXE:0x6B85A0 library flag 0x400] the bit is the library's "SoundQuality above the threshold" mode: 0x51B920(SoundQuality) sends it as `level > [0x785920]` (message 0x700B48, 0x51BA77..0x51BAA9) from the options apply (0x4237F0, the `SoundQuality` key of the options file, 0x424530) and from the sound start (0x54DE0E, default [0x78591C]); none of the thresholds is ever written (BSS), so the bit is set exactly while SoundQuality is above 0
-	// [BIN:TPW-EXE:0x6B7130 voice fade call] the "fade" is not a ramp: it stores 0x3C as the voice's fixed volume byte (placeholder +0x44) and sets the fixed-volume flag 0x400 (+0x30); the manager tick (0x6B62B0) then re-applies that percentage to the playing sample every tick through vf+0x2C (0x6BCB80) while the manager byte +0x50 is set, and the record, and with it the handle, is freed, so the voice plays on at 60 % until its sample ends
-	// [APPROX:AUDIO-040] FADEOBJ stops the sound as KILLOBJ does, which is the original's behaviour at SoundQuality 0 (the value the options object starts with, 0x4236E0 reading the unwritten 0x78591C); OpenTPW has no SoundQuality option, and a player at SoundQuality 1 or more would hear the voice dimmed to 60 % where it plays on instead of ending
-	internal void EndHeldSounds( int scriptId, int slot )
+	// [BIN:TPW-EXE:0x5523D0 FADEOBJ,0x6B8930] quality > the configured threshold posts ratio 60; otherwise stop immediately.
+	// Both opcodes free every matching script record. The service owns any released fade independently.
+	internal void EndHeldSounds( int scriptId, int slot, bool fade = false )
 	{
 		for ( var index = heldSounds.Count - 1; index >= 0; index-- )
 		{
 			var record = heldSounds[index];
 			if ( record.ScriptId != scriptId || record.Slot != slot )
 				continue;
-			record.Sound.Stop();
+			if ( fade ) record.Sound.Fade(); else record.Sound.Stop();
 			heldSounds.RemoveAt( index );
 		}
 	}

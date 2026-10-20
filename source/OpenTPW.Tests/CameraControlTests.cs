@@ -28,6 +28,23 @@ public class CameraControlTests
 	}
 
 	[TestMethod]
+	public void AUiThatLeavesTheEdgeBandToTheCameraStillScrollsAtTheEdge()
+	{
+		// a UI under the pointer at the left edge keeps the camera still, unless it leaves the edge band to the camera (a visit's chat overlay)
+		var covered = Camera(); covered.Update( Frame( 0, 300 ) with { CaptureMouse = true }, Options() );
+		Assert.AreEqual( Vector3.Zero, covered.Target );
+		var park = Camera(); park.Update( Frame( 0, 300 ), Options() );
+		var overlay = Camera(); overlay.Update( Frame( 0, 300 ) with { CaptureMouse = true, EdgeScrollOverUi = true, Wheel = 1 }, Options() );
+		Assert.AreEqual( park.Target, overlay.Target, "the edge scrolls as over the park" );
+		Assert.AreEqual( ParkCameraMode.HomeHeight, overlay.Height, "the wheel stays the UI's" );
+		// the right-button mode has no edge band, and a field taking the pointer with the keys keeps the camera still
+		var drag = Camera(); drag.Update( Frame( 0, 300 ) with { CaptureMouse = true, EdgeScrollOverUi = true }, Options( ScrollMode.RightButton ) );
+		Assert.AreEqual( Vector3.Zero, drag.Target );
+		var typing = Camera(); typing.Update( Frame( 0, 300 ) with { CaptureMouse = true, EdgeScrollOverUi = true, TextEntry = true }, Options() );
+		Assert.AreEqual( Vector3.Zero, typing.Target );
+	}
+
+	[TestMethod]
 	public void LogicalCoordinatesIgnoreDrawableDensityAndScaleWithResolution()
 	{
 		var originalPixels = Screen.PixelSize;

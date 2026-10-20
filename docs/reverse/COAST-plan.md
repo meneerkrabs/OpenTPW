@@ -1002,3 +1002,14 @@ Read at the instruction level for the panel round; addresses are `[BIN:TPW-EXE]`
 - **Placement area.** `0x434f10` sets the box (reference node: the last node, `ctl+0x60` while cut open, the moved node's predecessor in a move) of half size `trunc(sqrt(pylon+0xa0)) + 1`; `0x5234d0` (tool mode `0x15`) draws face `0x115` on the hovered cell (red when `0x434740` returns 0) and face `0x11f` on every cell of the box (upper edges exclusive) that passes `0x434740`, has cell flag `0x40` clear, whose object (or the owner of a type `0xc`/`0x11` object, `0x53ad90`) is none of the types `0x19` and `0xb`, `0xd`, `0x10`, `0x12` (`0x53ad30`), and whose cell type is none of 9, 10, 3, 4, 7, `0x1e`, nor a type 1 cell with flag `0x20`.
 - **Delete last** `0x444f30` is called only from `0x52fe50` (tool mode `0x15`, the undo list of the ride removal `0x527ee0`); no key or button calling it was found. The `0x403be0`/`0x403d00`/`0x403ed0` calls in the handlers are action-record log writes (`"AR: %d"`), not sounds.
 - **Not traced.** The renderer's use of node flags `0x8000`/`0x4000`/`0x800000`; the picture of face `0x11f`; the clip angles; the panel window's position.
+
+### HUD action-cost visibility (UI-047, October 18 follow-up)
+
+Static caller inspection refines the formerly generic "placement-in-progress" label for bit 0 of `0x79C658`:
+
+- HUD cash refresh `0x4A0CEE` calls `0x447990` only for mode type 8; the latter returns bit 0. Mode type 3 is accepted separately.
+- Panel button handlers `0x498333` and `0x498383` enter Build/Loop through `0x497D20`, constructing the ordinary tool-mode object with tool `0x15`. Move at `0x498407` uses `0x497E10`, constructing the same mode class with tool `0x16`.
+- Height at `0x4984A4`, and the other edit buttons, enter `0x497BC0`, which constructs the mode-8 object through `0x46CFC0`.
+- Height handler `0x441A00` sets bit 0 at `0x441A5D` after its capability/selection checks, clears it at `0x441ADE` on the second action, and clears it on the failed-start path `0x441C27`. Rotation and tilt use different low bits, so a generic "any drag" predicate would be wrong.
+
+`CoasterToolPanel.ShowsActionCost` maps the existing host state to this distinction: Build/Loop/Move, or an active height drag. The HUD uses it only to hide control 48's cost; cost values, bank transactions and the separate cursor-cost presentation are unchanged. Initial/host mode-stack equivalence and the unidentified original type-4 mode remain UI-047 qualifications. No original execution or new rendered comparison is claimed.

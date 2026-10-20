@@ -81,7 +81,7 @@ public class AdvisorEventAdviceTests
 	public void TheEventMessagesTakeTheirControlsFromTheOriginalsDescriptorTable()
 	{
 		var rows = AdvisorDescriptorTable.Parse( File.ReadAllText( Shipped( AdvisorDescriptorTable.RelativePath ) ) );
-		Assert.AreEqual( 25 + 3 + 1 + 5 + 4 + 1 + 4, AdvisorTables.EventMessages.Count, "staff 33-57, 66/68/69, the condemned ride 258, research 93-97, groups 133-136, 167 and the golden-ticket moves 234-237" );
+		Assert.AreEqual( 25 + 3 + 1 + 5 + 4 + 1 + 4 + AdvisorChallengeMessages.EventScoreKeys.Count, AdvisorTables.EventMessages.Count, "staff 33-57, 66/68/69, the condemned ride 258, research 93-97, groups 133-136, 167, the golden-ticket moves 234-237 and the ticket wins, first-ticket lines and challenge lines (AdvisorChallengeMessages)" );
 		foreach ( var message in AdvisorTables.EventMessages )
 		{
 			var row = rows[message.MessageId];

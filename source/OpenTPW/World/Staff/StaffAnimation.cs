@@ -74,7 +74,7 @@ public static class StaffScripts
 }
 
 /// <summary>
-/// The sprite player's clock for one sprite (tp.exe <c>0x00475360</c>): once per rendered frame a script runs one step when the millisecond clock has passed the sprite's due time, and the due
+/// The sprite player's clock for one sprite (tp.exe <c>0x00475360</c>): the native scheduler runs on even 31 ms substeps. This staff adapter runs once per rendered frame, one step when the millisecond clock has passed the sprite's due time, and the due
 /// time becomes the clock plus the sprite's interval (62 ms when it is created, <c>0x004758F0</c>); there is no catching up. A person's walk step sets the interval from its speed
 /// (<see cref="IntervalFor"/>). Pure rules: no assets, no GPU.
 /// </summary>

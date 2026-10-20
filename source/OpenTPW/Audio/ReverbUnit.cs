@@ -21,9 +21,10 @@ public readonly record struct ReverbSettings( int Environment, float Size, float
 /// A stand-in for the listener reverb of the original sound service: a Freeverb-style network (eight damped combs and four allpasses per side, a mono send) whose
 /// decay time, high-frequency decay, diffusion, size, levels and delays follow a <see cref="ReverbSettings"/> record. The original has no software reverb to port:
 /// tp.exe sends the record to the audio device as an EAX 2.0 listener property set, or to a second backend whose QMixer.dll exports forward it to a COM object and
-/// contain no delay lines, combs or reverb constants. The network and its constants are OpenTPW's own ([APPROX:AUDIO-039]); the mapping from the record is the usual one
+/// contain no delay lines, combs or reverb constants. The network and its constants are OpenTPW's own by design (the audio-reverb extension); the mapping from the record is the usual one
 /// (comb feedback 10^(-3 D / RT60), a one-pole damping from the high-frequency decay ratio, levels from millibels).
 /// </summary>
+// [EXT:audio-reverb] the network, its constants, the size mapping and the voices it covers are OpenTPW's own stand-in by design (user decision 2026-10-19: "nagalm mag EXT"): the original's reverb lives in the sound device or driver behind the EAX 2.0 listener property set (tp.exe 0x6C46B0) or the COM object behind QMixer.dll (+0x10C, made at 0x1800B530), which holds no DSP, so there is nothing to port or capture statically
 public sealed class ReverbUnit
 {
 	// Freeverb's lengths at 44,100 Hz (Jezar, public domain): they are scaled to the mixer rate and by the environment size
@@ -196,7 +197,7 @@ public sealed class ReverbUnit
 
 	private void Configure( ReverbSettings value )
 	{
-		// [APPROX:AUDIO-039] the size scale is OpenTPW's choice: EAX's environment size (metres) stretches the room's delays, here the comb and allpass lengths by sqrt(size / 7.5), within a factor of two
+		// [EXT:audio-reverb] the size scale is OpenTPW's choice: EAX's environment size (metres) stretches the room's delays, here the comb and allpass lengths by sqrt(size / 7.5), within a factor of two
 		var scale = Math.Clamp( MathF.Sqrt( Math.Clamp( value.Size, 1.5f, 100f ) / 7.5f ), 0.5f, 1.5f );
 		if ( left.Combs.Length == 0 || scale != sizeScale )
 		{

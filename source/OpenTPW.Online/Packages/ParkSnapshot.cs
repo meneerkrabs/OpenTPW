@@ -58,6 +58,8 @@ public static class CompatibilityFlags
 	public const string NoEconomy = "no-economy";
 	/// <summary>Park is the OpenTPW generic sandbox rather than an imported original level.</summary>
 	public const string Sandbox = "sandbox";
+	/// <summary>[EXT:cheats-publish] Park was played with cheats (docs/CHEATS.md). Informational: such a park is shared, visited and ranked like any other.</summary>
+	public const string Cheated = "cheated";
 
-	public static readonly IReadOnlySet<string> Known = new HashSet<string>( StringComparer.Ordinal ) { ReadOnlyVisit, NoEconomy, Sandbox };
+	public static readonly IReadOnlySet<string> Known = new HashSet<string>( StringComparer.Ordinal ) { ReadOnlyVisit, NoEconomy, Sandbox, Cheated };
 }

@@ -88,7 +88,8 @@ remaining copies are listed under "Divergences from the player's build flow". If
    without a GPU).
 3. **Objects**: the lowest-Info.Id **researched, buyable** catalog entry per role:
    the first ride with `Info.HasQueue` (Belly Bounce, 1100), the first shop that
-   satisfies a need (Drinks Shop, 1203) and the first toilet (`ProvidesRelief`:
+   satisfies a need (Drinks Shop, 1203; `M3GateOptions.ShopFilter` and `ShopRotation` narrow the shop and its
+   rotation, as `ShopVisitAssetTests` does for the Burger Shop) and the first toilet (`ProvidesRelief`:
    Small Toilet, 1402). Each object goes through the HUD build flow's rules
    (`Level.PlaceObject`): the site search tries clicked cells near the path in all
    four rotations, turns each into an anchor with `Level.GetCentredAnchor` and

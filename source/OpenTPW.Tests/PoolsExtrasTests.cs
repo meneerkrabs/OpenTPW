@@ -163,6 +163,25 @@ public class PoolsExtrasTests
 		}
 	}
 
+	[TestMethod]
+	public void TheLoungersRaisedHeadEndIsAtTheFrontAwayFromItsBack()
+	{
+		// LoungerActivity.LieDirection lays a guest with its feet towards the lounger's back (PoolExtras.WaterDirection of its rotation, the model's +Z) and its head on the raised end: that end must be at the front
+		using var scope = Enabled( true, FileSystem );
+		for ( var theme = 0; theme < Themes.Length; theme++ )
+		{
+			var entry = ObjectCatalog.Load( Themes[theme] ).Get( IdOf( theme, PoolExtraKind.Lounger ) );
+			var model = ObjectAssets.LoadModel( entry.FileSystem, entry.ModelPath );
+			var composed = model.Meshes.SelectMany( mesh => mesh.Vertices.Select( vertex => System.Numerics.Vector3.Transform( vertex.Position.GetSystemVector3(), WorldOf( model, mesh.NodeIndex ) ) ) ).ToArray();
+			// the cushion's top is 3.4 model units above the deck; the raised head end rises to 5.8
+			var raised = composed.Where( p => p.Y > 4f ).ToArray();
+			Assert.IsTrue( raised.Length > 0, $"{Themes[theme]}: the lounger has a raised head end" );
+			Assert.IsTrue( raised.All( p => p.Z < 3.5f ), $"{Themes[theme]}: the raised end is at the front of the cell (Z {raised.Min( p => p.Z )} to {raised.Max( p => p.Z )}), the foot end towards the back" );
+			Assert.IsTrue( raised.Any( p => p.X < 10f ) && raised.Any( p => p.X > 10f ), $"{Themes[theme]}: one for each seat (the two cells along the model's X)" );
+			Assert.IsTrue( composed.Where( p => p.Y > 3.3f && p.Y < 3.5f ).Max( p => p.Z ) > 7f, $"{Themes[theme]}: the cushion runs to the back of the cell" );
+		}
+	}
+
 	private static System.Numerics.Matrix4x4 WorldOf( ModelFile model, int node )
 	{
 		var world = System.Numerics.Matrix4x4.Identity;
@@ -494,6 +513,83 @@ public class PoolsExtrasTests
 		Assert.IsTrue( bothAtOnce, "two guests lay on the lounger at once" );
 		Assert.IsTrue( seatCells.IsSubsetOf( new[] { (4, 5), (4, 6) } ) && seatCells.Count == 2, $"on both seats: {string.Join( ", ", seatCells )}" );
 		Assert.IsTrue( backInWater > 0 && ended > 0, $"both outcomes: {backInWater} back in the water, {ended} ended their session" );
+	}
+
+	/// <summary>
+	/// A lounger whose seat (4, 5) has the pool to its east, turned to each rotation: its back (the foot end) faces the water only at 90; at 0 and 180 the guest climbs out at the seat's side and at 270 at
+	/// its raised head end. The two seats lie side by side across the lying direction (the shape "**" turned), the second away from the pool.
+	/// </summary>
+	private static PoolExtraSite LoungerAt( int rotation )
+	{
+		var across = ObjectFootprint.RotateDirection( rotation, 1, 0 );
+		var other = (4 + across.X, 5 + across.Y).Item1 >= 5 ? (4 - across.X, 5 - across.Y) : (4 + across.X, 5 + across.Y);
+		return Site( 304, PoolExtraKind.Lounger, rotation, (4, 5), other );
+	}
+
+	[TestMethod]
+	public void AGuestLiesAlongTheLoungerWithItsFeetToTheFootEndWhicheverSideItClimbedOutOn()
+	{
+		foreach ( var rotation in new[] { 0, 90, 180, 270 } )
+		{
+			var site = LoungerAt( rotation );
+			var lie = PoolExtras.WaterDirection( rotation );
+			Assert.AreEqual( 0, lie.X * (site.Cells[1].X - site.Cells[0].X) + lie.Y * (site.Cells[1].Y - site.Cells[0].Y), $"rotation {rotation}: the seats lie side by side across the lying direction" );
+			var rig = ExtrasRig( site );
+			var guest = rig.Send();
+			rig.Until( () => guest.State == GuestState.Swimming, 400 );
+			Assert.IsTrue( rig.Simulation.DebugStartActivity( guest, LoungerActivity.ActivityId ), $"rotation {rotation}: the seat beside the water is offered" );
+			var side = PoolExtraMotion.WaterSide( guest );
+			Assert.AreEqual( (1, 0), side, $"rotation {rotation}: it climbs out on the pool's side of the seat" );
+			var lying = new List<(int X, int Y, float HeadingX, float HeadingY, float Feet)>();
+			var heights = new PoolFeetHeights( 3f, 2f, 3.5f );
+			rig.Until( () =>
+			{
+				if ( guest.PoolActivityId == LoungerActivity.ActivityId && rig.Simulation.PoolActivityOf( guest )!.SpriteSlot( guest ) == PoolSwimSlots.Lying )
+					lying.Add( (guest.Navigation.X, guest.Navigation.Y, guest.HeadingX, guest.HeadingY, rig.Simulation.PoolFeetHeight( guest, heights )) );
+				return lying.Count > 0 && guest.PoolActivityId != LoungerActivity.ActivityId;
+			}, 4000 );
+			Assert.IsTrue( lying.Count >= PoolExtraSettings.LoungerTurns - 1, $"rotation {rotation}: it lay for the lie's turns ({lying.Count})" );
+			var seat = PoolSwimRegion.Centre( (4, 5) );
+			Assert.IsTrue( lying.All( turn => (turn.X, turn.Y) == seat ), $"rotation {rotation}: it lies still in the middle of its seat" );
+			Assert.IsTrue( lying.All( turn => turn.HeadingX == lie.X && turn.HeadingY == lie.Y ),
+				$"rotation {rotation}: every lying turn, the first too, faces the foot end {lie} (not the side it climbed out on, {side}): {string.Join( " ", lying.Select( turn => (turn.HeadingX, turn.HeadingY) ).Distinct() )}" );
+			Assert.IsTrue( lying.All( turn => turn.Feet == heights.Deck + PoolExtraSettings.LoungerBedLift ), $"rotation {rotation}: on the cushion" );
+		}
+	}
+
+	[TestMethod]
+	public void ALyingGuestHoldsItsPoseAndIsDrawnInFrontOfTheLounger()
+	{
+		// the two lying frames are two resting poses: a pose is held for seconds, not flipped six times a second as the strokes' cycle
+		for ( var guestId = 0; guestId < 5; guestId++ )
+		{
+			var changes = 0;
+			for ( var tick = 1; tick <= 60 * 30; tick++ )
+				if ( PoolSwimSlots.ActivityStep( PoolSwimSlots.Lying, tick / 60.0, guestId ) != PoolSwimSlots.ActivityStep( PoolSwimSlots.Lying, (tick - 1) / 60.0, guestId ) )
+					changes++;
+			Assert.IsTrue( changes is >= 3 and <= 5, $"guest {guestId}: {changes} pose changes in 30 seconds" );
+		}
+		Assert.AreEqual( 6, PoolSwimSlots.ActivityStep( PoolSwimSlots.Walk, 1.01, 0 ), "the other activity slots still run at six frames a second" );
+		Assert.AreEqual( 9, PoolSwimSlots.ActivityStep( PoolSwimSlots.Dive, 1.01, 3 ), "offset by the guest's id" );
+
+		var rig = ExtrasRig( LoungerAt( 0 ) );
+		var guest = rig.Send();
+		rig.Until( () => guest.State == GuestState.Swimming, 400 );
+		Assert.IsTrue( rig.Simulation.DebugStartActivity( guest, LoungerActivity.ActivityId ) );
+		var pulls = new Dictionary<int, HashSet<float>>();
+		rig.Until( () =>
+		{
+			if ( guest.PoolActivityId != LoungerActivity.ActivityId )
+				return pulls.Count > 0;
+			var step = guest.PoolActivityPhase & 15;
+			if ( !pulls.TryGetValue( step, out var set ) )
+				pulls[step] = set = new HashSet<float>();
+			set.Add( LoungerActivity.DepthPull( rig.Simulation, guest ) );
+			return false;
+		}, 4000 );
+		CollectionAssert.AreEqual( new[] { PoolExtraSettings.LoungerDepthPull }, pulls[3].ToArray(), "lying, it is pulled towards the camera past the lounger's head end and seat" );
+		Assert.IsTrue( pulls.Where( pair => pair.Key != 3 ).All( pair => pair.Value.SetEquals( new[] { 0f } ) ), "and only then" );
+		Assert.AreEqual( 0f, LoungerActivity.DepthPull( rig.Simulation, guest ), "not after the lounger" );
 	}
 
 	[TestMethod]

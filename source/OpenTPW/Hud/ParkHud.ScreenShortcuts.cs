@@ -140,13 +140,15 @@ public sealed partial class ParkHud
 
 	/// <summary>
 	/// Whether the shortcut's key edge is down this frame. A plain shortcut needs that no Ctrl is held, so a KEYBOARD.str letter that equals a
-	/// Ctrl chord's letter (Dutch research O and Ctrl+O) cannot fire both; the Ctrl chords (help, locators) are exempt.
+	/// Ctrl chord's letter (Dutch research O and Ctrl+O) cannot fire both; the Ctrl chords (help, locators) are exempt. Nor may Alt be held: Alt+R and Alt+G are cheat keys, not the research and entry price windows.
 	/// </summary>
+	// [BIN:TPW-EXE:0x40C990 key dispatch] an entry matches only when both the key and the modifier mask (0x46B420: Shift 3, Ctrl 0xC, Alt 0x30) are equal, so a plain shortcut (mask 0) never fires with Alt held and the cheat context's Alt keys (mask 0x30) reach their own table
 	internal static bool PressedNow( HudScreenShortcut shortcut )
 	{
 		var chord = shortcut is HudScreenShortcut.ToggleHelpBar or HudScreenShortcut.LocateNextStaff or HudScreenShortcut.LocateNextVisitor;
 		var ctrl = Input.IsFrameKeyDown( Key.ControlLeft ) || Input.IsFrameKeyDown( Key.ControlRight );
-		return (chord || !ctrl) && RawPressed( shortcut );
+		var alt = Input.IsFrameKeyDown( Key.AltLeft ) || Input.IsFrameKeyDown( Key.AltRight );
+		return (chord || !ctrl && !alt) && RawPressed( shortcut );
 	}
 
 	private static bool RawPressed( HudScreenShortcut shortcut ) => shortcut switch
@@ -212,13 +214,13 @@ public sealed partial class ParkHud
 				ToggleWindow( VisitorWindowOpen, OpenVisitorWindow, CloseVisitorWindow );
 				break;
 			case HudScreenShortcut.TimeFaster:
-				Status.Speed = SteppedSpeed( Status.Speed, 1 );
+				SetUserGameSpeed( SteppedSpeed( Status.Speed, 1 ) );
 				break;
 			case HudScreenShortcut.TimeSlower:
-				Status.Speed = SteppedSpeed( Status.Speed, -1 );
+				SetUserGameSpeed( SteppedSpeed( Status.Speed, -1 ) );
 				break;
 			case HudScreenShortcut.TimeNormal:
-				Status.Speed = GameSpeed.Normal;
+				SetUserGameSpeed( GameSpeed.Normal );
 				break;
 			case HudScreenShortcut.TurnBlueprintLeft:
 			case HudScreenShortcut.TurnBlueprintRight:

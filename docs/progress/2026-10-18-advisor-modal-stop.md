@@ -1,0 +1,3 @@
+## Stop advisor responses for map and options (October 18, 2026)
+
+The existing window-open event now takes the advisor's silent stop path for the map and game options. It kills delayed or trailing model/effect presentation as well as active speech, without a slap. Paused updates no longer serve the advisor queue, so a modal cannot immediately start another response. Other window/help behavior is preserved. Added GPU-free modal-routing and paused-queue regression tests. ADVISOR-017 remains open for per-turn service and other pause/lifecycle residuals. C# test execution and runtime evidence are pending in this environment.

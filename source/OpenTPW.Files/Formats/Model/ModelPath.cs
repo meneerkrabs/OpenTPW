@@ -50,7 +50,8 @@ public sealed class ModelPath
 
 	/// <summary>
 	/// Position (in the path dummy's space) at <paramref name="percent"/> along the path, and the unit direction the
-	/// node faces with flag 0x400 (null when it has no length). False when the path has no segment.
+	/// node faces with flag 0x400 (null when it has no length). False when the path has no segment or when the float
+	/// polynomial does not keep the position finite (see the guard below).
 	/// </summary>
 	public bool TryEvaluate( float percent, out NVector3 position, out NVector3? direction )
 	{
@@ -66,6 +67,16 @@ public sealed class ModelPath
 		var fraction = (float)(scaled - segment);
 		var start = IsBezier ? segment * 3 + 1 : segment;
 		position = Point( start, fraction );
+		if ( !float.IsFinite( position.X ) || !float.IsFinite( position.Y ) || !float.IsFinite( position.Z ) )
+		{
+			// OpenTPW fail-closed guard, not original behaviour: a finite percent on finite points can still overflow
+			// the single-precision Horner form (control points within one factor of the float range), so refuse
+			// instead of returning a NaN/∞ position. The sampler then leaves the node at its sampled or rest
+			// translation (see ModelAnimationPlayer.LocalTransform).
+			position = default;
+			direction = null;
+			return false;
+		}
 		var tangent = IsBezier ? BezierDerivative( start, fraction )
 			: IsLinear ? At( start + 1 ) - At( start )
 			: Point( start, fraction + 0.1f );

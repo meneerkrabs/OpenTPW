@@ -6,8 +6,9 @@ namespace OpenTPW;
 /// One original object description file (<c>.sam</c>) as written by the designers: <c>Key Value comment</c>
 /// lines, <c>#</c> comments, quoted strings (<c>Info.Name "Inca Totem"</c>) and multi-line blocks between
 /// <c>---</c> markers (<c>Info.Shape</c>, <c>Info.Hoarding</c>). Values are kept raw; only the first
-/// token (or the quoted string) is the value, the rest of the line is the designers' comment.
-/// The generic <see cref="SettingsFile"/> does not handle quoted names or blocks, so objects use this reader.
+/// token (or the quoted string) is the value, an unquoted value ends at whitespace or <c>#</c>, and the rest
+/// of the line is the designers' comment. The generic <see cref="SettingsFile"/> now reads quoted values and
+/// skips block rows; this reader keeps the keyed block rows.
 /// </summary>
 public sealed class ObjectSettingsFile
 {
@@ -56,7 +57,7 @@ public sealed class ObjectSettingsFile
 			else
 			{
 				var valueEnd = 0;
-				while ( valueEnd < rest.Length && !char.IsWhiteSpace( rest[valueEnd] ) )
+				while ( valueEnd < rest.Length && !char.IsWhiteSpace( rest[valueEnd] ) && rest[valueEnd] != '#' )
 					valueEnd++;
 				value = rest[..valueEnd];
 			}

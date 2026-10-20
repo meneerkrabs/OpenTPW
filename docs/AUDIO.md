@@ -890,8 +890,8 @@ The eight self-senders, all on windows of style 1, so 0x1F:
 | Find Parks `0x4bf9f0` | 0x100 `0xe059` unless that button is held, 0x1F, search | not read | Find Parks: Enter is the search button |
 
 The shop window's price field and the other OpenTPW fields with no listed window send no 0x100 in the original, and OpenTPW's Enter there plays
-nothing. OpenTPW's host keyboard focus (Enter on a focused button, Enter on a focused list) has no original input: a focused button plays its
-own click, a list row stays silent.
+nothing. OpenTPW's host keyboard focus (Enter on a focused button, Enter on a focused list) has no original input (`[EXT:ui-key-navigation]`): a focused
+button plays its own click, a list row stays silent.
 
 **OpenTPW.** `UiScrollList` is silent by default (`ClicksOnActivate`); the Theme Park Inc text HUD (`[EXT:tpi-text-hud]`) and the Extensions and
 mods screen (`[EXT:mods]`) opt in, having no original screen. The hire refusal keeps its message and loses the error sound the original never

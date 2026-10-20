@@ -179,4 +179,52 @@ public class PreviewDepthOrderTests
 		Console.WriteLine( $"{withClip} previews have an animation 5 clip; {moved} of them change within two seconds" );
 		Assert.IsTrue( withClip > 0 && moved > 0, $"{withClip} with a clip, {moved} moved" );
 	}
+
+	[TestMethod]
+	public void TheSpaceRacersAndBlobulatorGroundPlatesShowAtEveryTurnAndEveryOtherFaceKeepsTheOriginalsTest()
+	{
+		// [EXT:preview-ground-plates]: the PURPLE_BASE plates face down, which tp.exe's face test (0x581320) drops seen from above; the preview draws them
+		// at the user's request, and only them
+		var frame = new UiRect( 437, 202, 360, 363 );
+		var plated = new System.Collections.Generic.HashSet<int>();
+		var withMaterial = new System.Collections.Generic.HashSet<int>();
+		foreach ( var (label, entry, icon) in Previews() )
+		{
+			for ( var step = 0; step < 16; step++ )
+			{
+				var arrangement = icon.ArrangeBuyPreview( frame, step * MathF.PI / 8, 1 );
+				foreach ( var triangle in arrangement.Triangles )
+				{
+					var clockwise = (triangle.B.X - triangle.A.X) * (triangle.C.Y - triangle.A.Y) - (triangle.C.X - triangle.A.X) * (triangle.B.Y - triangle.A.Y) > 0;
+					if ( PreviewIcon.IsShownGroundPlate( triangle.MaterialName ) )
+					{
+						withMaterial.Add( entry.InfoId );
+						Assert.IsTrue( triangle.FacesViewer, $"{label} at {step} x 22.5 degrees: the plate is drawn" );
+						// a plate that faces up passes the face test anyway (the preview looks from above): the exception changes only the downward plates
+						if ( triangle.ModelNormal.Y > 0 )
+							Assert.IsTrue( clockwise, $"{label} at {step} x 22.5 degrees: an upward plate passes the original's face test" );
+						else
+						{
+							Assert.IsFalse( clockwise, $"{label} at {step} x 22.5 degrees: the original's face test drops the downward plate" );
+							plated.Add( entry.InfoId );
+						}
+					}
+					else
+						Assert.AreEqual( clockwise, triangle.FacesViewer, $"{label} at {step} x 22.5 degrees, triangle {triangle.Index} ({triangle.MaterialName}): the original's face test" );
+				}
+				if ( !plated.Contains( entry.InfoId ) )
+					continue;
+				// the plate shows: it is the nearest kept face at some pixels of the image
+				var image = icon.ToDepthImage( arrangement );
+				var origin = new System.Numerics.Vector3( image.Rect.X, image.Rect.Y, 0 );
+				var raster = new DepthRaster( image.Width, image.Height );
+				foreach ( var triangle in arrangement.Triangles.Where( triangle => triangle.FacesViewer ) )
+					raster.Draw( triangle.Index, triangle.A - origin, triangle.B - origin, triangle.C - origin, single: false );
+				var plates = arrangement.Triangles.Where( triangle => PreviewIcon.IsShownGroundPlate( triangle.MaterialName ) && triangle.ModelNormal.Y < 0 ).Select( triangle => triangle.Index ).ToHashSet();
+				Assert.IsTrue( raster.Winner.Count( plates.Contains ) > image.Width * image.Height / 20, $"{label} at {step} x 22.5 degrees: the plate shows" );
+			}
+		}
+		Console.WriteLine( $"previews with the plate material: {string.Join( ", ", withMaterial.Order() )}; with a downward plate: {string.Join( ", ", plated.Order() )}" );
+		CollectionAssert.AreEquivalent( new[] { 3150, 3160 }, plated.ToArray(), "only the Space Racers and The Blobulator previews have a downward plate" );
+	}
 }

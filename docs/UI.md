@@ -789,7 +789,8 @@ screen and then with a depth buffer:
   (`UiDepthImage`, `UiRenderer.PrepareDepthImages`, shader `ui-depth.shader`) with a depth buffer cleared to the far
   value and LESSEQUAL, keyed texels discarded, and the interface draws that image where the preview stands
   (`[EXT:preview-icon-cpu-projection]`). The two preview models whose base plate faces down (`PURPLE_BASE` of the space
-  go-karts, *Space Racers*, and of the space water ride, *The Blobulator*) lose that plate to the face test, as in the original.
+  go-karts, *Space Racers*, and of the space water ride, *The Blobulator*) would lose that plate to the face test, as in the
+  original; the preview draws those plates anyway (`[EXT:preview-ground-plates]`, below).
 - **Animation.** Each new preview starts animation 5, variant 0 (the member `<model>m1`, else `<model>m`), looping at speed 1
   (`0x4732a0` from `0x4689f0`); the clip moves the nodes below the root, whose matrix is the preview's.
 - **Left open (UI-026).** The original lights the preview's vertices in its object pipeline (`0x57aa10`); the preview is drawn
@@ -797,7 +798,18 @@ screen and then with a depth buffer:
 
 `PreviewDepthOrderTests` compares the drawn image with a depth-tested reference over all 346 preview models (the 274 of the four
 themes and the extensions') at 16 turns: no pixel differs. The painter's order the preview used before put the wrong face in
-front on 3.1 % of the covered pixels, in 332 of the models.
+front on 3.2 % of the covered pixels, in 332 of the models.
+
+**Ground plates (`[EXT:preview-ground-plates]`).** The user's decision, October 20, 2026: "Grondplaten toch tonen (EXT)". The
+plates of the *Space Racers* and *The Blobulator* previews (`Pgokarts.md2`, `PWATERIDE.MD2`, two triangles of the material
+`PURPLE_BASE` each) face down, so tp.exe's face test drops them when the preview is seen from above; the preview draws every
+`PURPLE_BASE` triangle whichever way it faces. Eight other previews use that material (the Halloween and space previews
+2150, 2160, 2180, 2185, 2190, 3180, 3185 and 3190), all facing up, so the face test keeps them
+anyway and nothing changes there; every other triangle keeps the original's test
+(`PreviewDepthOrderTests.TheSpaceRacersAndBlobulatorGroundPlatesShowAtEveryTurnAndEveryOtherFaceKeepsTheOriginalsTest`). The
+Jurassic Tours preview (`Tourride.MD2`) has another downward pad (`JF_pad3`, six triangles under about four fifths of its
+footprint); it is not part of this exception.
+
 
 ### Object window (selected object)
 
@@ -953,6 +965,7 @@ is unchanged.
 | `challenge-offer-repost` | `APPROX:UI-025` (part) | A challenge offer whose message is deleted unanswered is posted again so the challenge system never stalls. |
 | `message-tube-art` | `APPROX:UI-025` (part) | The tube body is drawn as rectangles and its icons as discs. |
 | `preview-icon-cpu-projection` | `APPROX:UI-026` (part) | Build and object icons are projected on the CPU and their kept triangles drawn with a depth buffer into an image of their own, which the interface draws in its pass, rather than as instances in the engine's scene draw. The buy window's projection is the original's (see "The buy window's preview"); the object windows keep OpenTPW's orthographic 30° view centred in their frame. |
+| `preview-ground-plates` | — | The *Space Racers* and *The Blobulator* previews draw their downward `PURPLE_BASE` ground plates, which tp.exe's face test (`0x581320`) drops; the user's decision (October 20, 2026): "Grondplaten toch tonen (EXT)". |
 | `fit-button-text` | `APPROX:UI-032` (part) | The small-font fallback for a long single-line label. The rest of `APPROX:UI-032`, the formatter's greedy wrap (`0x6aec80`) and its glyph classes (`0x6aeab0`), is matched and retired. |
 | `options-slider-steps` | `APPROX:UI-036` (part) | OpenTPW's option sliders step through its own presets and 11 volume steps. The rest of `APPROX:UI-036`, the original slider class (value to thumb `0x66b088`, truncated drag `0x66af19`, page click `0x66b8aa`) and the options page's 0..100 range (`0x4a455a`, thumb left where it was dragged, `0x4a2e90`), is matched and retired. |
 | `option-label-fit` | `APPROX:UI-039` (part) | Option labels are sized by a shared 58 % letter box with a per-label drop to a size that fits, where the original does no fitting and lays an overflowing label out through the text library (wrapped into its rectangle, `0x6ae930`, `0x6aeb10`, `0x6aec80`), so this size choice stays a deliberate difference. The rest of `APPROX:UI-039`, the original's slot-6 label font (`0x4a443c`, tier pairing under `ui-font-tier-by-scale`), is matched and retired. |

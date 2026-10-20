@@ -331,7 +331,7 @@ public sealed class PreviewIcon
 			var uvs = posed.TexCoords;
 			NVector2 Uv( int vertex, NVector2 rest ) => uvs != null && vertex < uvs.Count ? new NVector2( uvs[vertex].X, 1 - uvs[vertex].Y ) : rest;
 			// [BIN:TPW-EXE:0x581320 face test] kept when the corners run clockwise on the screen (y down): the determinant of (x, y, w) is positive
-			var keeps = (b.X - a.X) * (c.Y - a.Y) - (c.X - a.X) * (b.Y - a.Y) > 0;
+			var keeps = (b.X - a.X) * (c.Y - a.Y) - (c.X - a.X) * (b.Y - a.Y) > 0 || IsShownGroundPlate( triangle.MaterialName );
 			arranged.Add( new ArrangedTriangle( index, triangle.MaterialName, a, b, c, NVector3.Cross( pointB - pointA, pointC - pointA ), keeps,
 				Uv( triangle.A, triangle.UvA ), Uv( triangle.B, triangle.UvB ), Uv( triangle.C, triangle.UvC ) ) );
 			near = Math.Min( near, Math.Min( a.Z, Math.Min( b.Z, c.Z ) ) );
@@ -339,6 +339,16 @@ public sealed class PreviewIcon
 		}
 		return new Arrangement( rect, arranged, near, far );
 	}
+
+	/// <summary>The material of the ground plates the preview shows from either side (<c>PURPLE_BASE</c>).</summary>
+	internal const string GroundPlateMaterial = "PURPLE_BASE";
+
+	/// <summary>Whether a triangle of <paramref name="material"/> is drawn whichever way it faces (the ground plates; see <see cref="GroundPlateMaterial"/>).</summary>
+	// [EXT:preview-ground-plates] the ground plates of the Space Racers and The Blobulator previews (Pgokarts.md2, PWATERIDE.MD2: two triangles of
+	// the material PURPLE_BASE each, the only previews that use it) face down, so tp.exe's face test (0x581320) drops them when the preview is seen
+	// from above; the preview draws them anyway, at the user's request ("Grondplaten toch tonen (EXT)", October 20, 2026); every other triangle
+	// keeps the original's face test
+	internal static bool IsShownGroundPlate( string material ) => string.Equals( material, GroundPlateMaterial, StringComparison.OrdinalIgnoreCase );
 
 	/// <summary>
 	/// The image the interface draws for <paramref name="arrangement"/>: the triangles the face test keeps, in an image covering their corners on whole pixels

@@ -70,6 +70,14 @@ public abstract record ParkSettingCommand : ParkCommand
 		return true;
 	}
 
+	/// <summary>
+	/// Whether <paramref name="item"/> is a ride whose window shows it condemned (<c>0x4ad4e0</c>, state 4): the window hides its door, call and upgrade buttons. Only a ride
+	/// with an economy record has a status, as the window reads it (<c>ParkHud.StatusFactsOf</c>).
+	/// </summary>
+	private protected static bool IsCondemnedRide( Level level, OriginalObject item ) =>
+		item.Entry.WhichUIType == (int)BuildCategory.Rides && level.Park?.Economy is { } economy && level.GetEconomyInstance( item ) is int instance
+		&& economy.TryGetObject( instance, out var state ) && ParkEconomy.ObjectState( state ) == RideObjectStates.Condemned;
+
 	/// <summary>Reads the fields of the setting command of <paramref name="kind"/> (<see cref="ParkCommandCodec.Decode"/>), or null for a kind that is not a setting.</summary>
 	internal static ParkSettingCommand? Read( ParkCommandKind kind, ParkCommandReader reader ) => kind switch
 	{
@@ -155,6 +163,12 @@ public sealed record SetAttractionOpenCommand( int Attraction, bool Open ) : Par
 	{
 		if ( level.ResolveCommandObject( Attraction ) is not { } item || !item.Runtime.IsAttraction )
 			return NoAttraction( Attraction );
+		// [BIN:TPW-EXE:0x4ad4e0 ride window refresh] a condemned ride's window hides its door, and the two track statuses grey it whatever the open word (ParkHud.ApplyObjectStatus)
+		if ( IsCondemnedRide( level, item ) )
+			return ParkCommandResult.Rejected( $"{item.Entry.DisplayName} is condemned." );
+		if ( item.Entry.WhichUIType == (int)BuildCategory.Rides && level.Park?.Economy is { } economy && level.GetEconomyInstance( item ) is int instance
+			&& economy.TryGetObject( instance, out _ ) && (item.Runtime.TrackIncomplete || item.Runtime.TrackInvalid) )
+			return ParkCommandResult.Rejected( $"{item.Entry.DisplayName}'s track is not finished." );
 		if ( Open == item.IsOpen )
 			return ParkCommandResult.Ok();
 		if ( !Open )
@@ -169,8 +183,9 @@ public sealed record SetAttractionOpenCommand( int Attraction, bool Open ) : Par
 }
 
 /// <summary>
-/// The ride window's apply for the ride <paramref name="Attraction"/> (<see cref="OriginalObjectRuntime.ApplyRideWindow"/>): the speed, the capacity, and the duration when
-/// its type has one. The capacity and duration setters clamp as the original's do; the speed is a signed 16-bit word, as the script's speed bias holds it.
+/// The ride window's apply for the placed ride <paramref name="Attraction"/> (<see cref="OriginalObjectRuntime.ApplyRideWindow"/>): the speed, the capacity, and the duration when
+/// its type has one. The capacity and duration setters clamp as the original's do; the speed is held to the speed slider's <c>UsageInfo.MinSpeed..MaxSpeed</c>, as the window's
+/// load holds it, and must fit the script's signed 16-bit speed bias.
 /// </summary>
 public sealed record SetRideSettingsCommand( int Attraction, int Speed, int Capacity, int Duration ) : ParkSettingCommand
 {
@@ -187,9 +202,11 @@ public sealed record SetRideSettingsCommand( int Attraction, int Speed, int Capa
 
 	internal override ParkCommandResult Execute( Level level )
 	{
-		if ( level.ResolveCommandObject( Attraction ) is not { } item || item.Entry.WhichUIType != (int)BuildCategory.Rides || item.Runtime.Script == null )
+		// the window applies to a placed ride only (ParkHud.CommitObjectSettings), not to the developer prototype
+		if ( level.ResolveCommandObject( Attraction ) is not { } item || item is PrototypeRide || item.Entry.WhichUIType != (int)BuildCategory.Rides || item.Runtime.Script == null )
 			return NoAttraction( Attraction );
-		item.Runtime.ApplyRideWindow( new RideSettingWords( Speed, Capacity, Duration ) );
+		var speed = ParkHud.SliderPosition( Speed, item.Entry.Settings.GetInt( "UsageInfo.MinSpeed" ), item.Entry.Settings.GetInt( "UsageInfo.MaxSpeed" ) );
+		item.Runtime.ApplyRideWindow( new RideSettingWords( speed, Capacity, Duration ) );
 		return ParkCommandResult.Ok();
 	}
 }
@@ -240,11 +257,11 @@ public sealed record SetGamePrizeCommand( int Attraction, int Price, int CostOfG
 	}
 }
 
-/// <summary>A shop's quality of goods (a byte) and the amount of its special ingredient (0 to 100): the shop window's apply.</summary>
+/// <summary>A shop's quality of goods (the quality slider's three steps: 0, 50 or 100) and the amount of its special ingredient (0 to 100): the shop window's apply.</summary>
 public sealed record SetShopSettingsCommand( int Attraction, int QualityOfGoods, int IngredientAmount ) : ParkSettingCommand
 {
 	public override ParkCommandKind Kind => ParkCommandKind.SetShopSettings;
-	internal override bool IsWellFormed => Attraction >= 0 && QualityOfGoods is >= 0 and <= byte.MaxValue && IngredientAmount is >= 0 and <= 100;
+	internal override bool IsWellFormed => Attraction >= 0 && QualityOfGoods is 0 or 50 or 100 && IngredientAmount is >= 0 and <= 100;
 
 	internal override void WriteFields( ParkCommandWriter writer )
 	{
@@ -408,8 +425,9 @@ public sealed record RefreshLoanOffersCommand : ParkSettingCommand
 
 	internal override ParkCommandResult Execute( Level level )
 	{
-		if ( level.Park?.Economy is not { } economy )
-			return NoEconomy;
+		// the loans dialog opens only in a mode with loans (ParkHud.OpenLoansWindow)
+		if ( level.Park?.Economy is not { Features.Loans: true } economy )
+			return ParkCommandResult.Rejected( "The park takes no loans." );
 		economy.RefreshLoanOffers();
 		return ParkCommandResult.Ok();
 	}
@@ -418,13 +436,21 @@ public sealed record RefreshLoanOffersCommand : ParkSettingCommand
 /// <summary>Asks for the next upgrade level of the ride <paramref name="Attraction"/> (its upgrade list); the result's value is the economy's <see cref="ParkEconomy.PurchaseResult"/>.</summary>
 public sealed record BuyUpgradeCommand( int Attraction ) : ParkSettingCommand
 {
+	/// <summary>
+	/// Whether the upgrade list may act on <paramref name="attraction"/> (<c>ParkHud.IsUpgradeListTarget</c>): a placed ride (not the developer prototype) whose economy record is a
+	/// ride of its own type and which is not condemned (its window then hides the upgrade button, <c>0x4ad4e0</c>).
+	/// </summary>
+	internal static bool IsUpgradeTarget( Level level, int attraction, out ParkEconomy economy, out ParkObjectState state ) =>
+		TryEconomyObject( level, attraction, out economy, out var item, out state, ParkObjectKind.Ride ) && item is not PrototypeRide
+		&& state.InfoId == item.Entry.InfoId && !IsCondemnedRide( level, item );
+
 	public override ParkCommandKind Kind => ParkCommandKind.BuyUpgrade;
 	internal override bool IsWellFormed => Attraction >= 0;
 	internal override void WriteFields( ParkCommandWriter writer ) => writer.Int( Attraction );
 
 	internal override ParkCommandResult Execute( Level level )
 	{
-		if ( !TryEconomyObject( level, Attraction, out var economy, out _, out var state ) )
+		if ( !IsUpgradeTarget( level, Attraction, out var economy, out var state ) )
 			return NoAttraction( Attraction );
 		var result = economy.TryBuyUpgrade( state.Id );
 		return result == ParkEconomy.PurchaseResult.Ok ? ParkCommandResult.Ok( result ) : new ParkCommandResult( false, $"The upgrade is refused: {result}.", result );
@@ -440,7 +466,7 @@ public sealed record CancelUpgradeCommand( int Attraction ) : ParkSettingCommand
 
 	internal override ParkCommandResult Execute( Level level )
 	{
-		if ( !TryEconomyObject( level, Attraction, out var economy, out _, out var state ) )
+		if ( !BuyUpgradeCommand.IsUpgradeTarget( level, Attraction, out var economy, out var state ) )
 			return NoAttraction( Attraction );
 		return economy.TryCancelUpgrade( state.Id ) ? ParkCommandResult.Ok() : ParkCommandResult.Rejected( "The ride waits for no upgrade." );
 	}
@@ -466,6 +492,9 @@ public sealed record RequestMaintenanceCommand( int Attraction, bool On ) : Park
 		if ( !TryEconomyObject( level, Attraction, out var economy, out var item, out var state ) || item is PrototypeRide
 			|| !economy.Catalog.TryGet( state.InfoId, out var info ) || (state.Kind != ParkObjectKind.Ride && !info.ProvidesRelief) )
 			return NoAttraction( Attraction );
+		// a condemned ride's window hides its call button (0x4ad4e0)
+		if ( IsCondemnedRide( level, item ) )
+			return ParkCommandResult.Rejected( $"{item.Entry.DisplayName} is condemned." );
 		var role = info.ProvidesRelief ? StaffType.Handyman : StaffType.Mechanic;
 		if ( On && !state.MaintenanceRequested && !economy.Staff.OfType( role ).Any() )
 			return ParkCommandResult.Rejected( $"The park has no {role} to call." );

@@ -180,10 +180,10 @@ public sealed partial class ParkHud
 			{
 				var delta = direction;
 				var button = new UiButton { Id = key + (delta < 0 ? "Decrease" : "Increase"), Model = delta < 0 ? "b_sleft" : "b_sright",
-					Clicked = () => { var current = value(); if ( delta < 0 ? current > 0 : current < (id == "entryPrice" ? int.MaxValue : long.MaxValue) ) change( current + delta ); },
+					Clicked = () => { var current = value(); if ( delta < 0 ? current > 0 : current < (id == "entryPrice" ? int.MaxValue : TrainingBudgetMaximum) ) change( current + delta ); },
 					Bounds = Rect( delta < 0 ? 1480 : 1580, y, delta < 0 ? 1563 : 1663, y + 83 ), Anchor = UiAnchor.Center };
 				screen.Add( button );
-				adjustmentButtons.Add( (button, () => delta < 0 ? value() > 0 : value() < (id == "entryPrice" ? int.MaxValue : long.MaxValue)) );
+				adjustmentButtons.Add( (button, () => delta < 0 ? value() > 0 : value() < (id == "entryPrice" ? int.MaxValue : TrainingBudgetMaximum)) );
 			}
 		}
 		UiButton? door = null;

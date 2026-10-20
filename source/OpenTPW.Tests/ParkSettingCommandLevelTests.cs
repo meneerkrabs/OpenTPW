@@ -36,7 +36,9 @@ public class ParkSettingCommandLevelTests
 	private Park NewPark()
 	{
 		var type = typeof( UpgradeCatalogueDefaultsTests );
-		var world = ((Level Level, ParkEconomy Economy, OriginalObject One, OriginalObject Two, ParkObjectState State))type.GetMethod( "World", BindingFlags.Instance | BindingFlags.NonPublic )!.Invoke( fixture, new object[] { "", 0, false } )!;
+		// the rides' speed slider runs from 10 to 100 (the fixture's type names no range of its own)
+		var world = ((Level Level, ParkEconomy Economy, OriginalObject One, OriginalObject Two, ParkObjectState State))type.GetMethod( "World", BindingFlags.Instance | BindingFlags.NonPublic )!.Invoke( fixture,
+			new object[] { "UsageInfo.MinSpeed 10\nUsageInfo.MaxSpeed 100\n", 0, false } )!;
 		type.GetMethod( "PrepareCapture", BindingFlags.Static | BindingFlags.NonPublic )!.Invoke( null, new object[] { world } );
 		typeof( Level ).GetMethod( "SetupStaff", BindingFlags.Instance | BindingFlags.NonPublic )!.Invoke( world.Level, null );
 		typeof( Level ).GetMethod( "SetupParkGate", BindingFlags.Instance | BindingFlags.NonPublic )!.Invoke( world.Level, null );
@@ -77,6 +79,11 @@ public class ParkSettingCommandLevelTests
 		Assert.IsTrue( level.Commands.Issue( new SetRideSettingsCommand( one, 60, 4, 30 ) ).Accepted );
 		Assert.AreEqual( 60, park.One.Runtime.Settings.Speed );
 		Assert.AreEqual( before, park.Two.Runtime.Settings, "the other ride keeps its settings" );
+		// the speed keeps to the slider's range, as the window's load holds it (a peer's or a log's value past it)
+		Assert.IsTrue( level.Commands.Issue( new SetRideSettingsCommand( one, 150, 4, 30 ) ).Accepted );
+		Assert.AreEqual( 100, park.One.Runtime.Settings.Speed );
+		Assert.IsTrue( level.Commands.Issue( new SetRideSettingsCommand( one, -5, 4, 30 ) ).Accepted );
+		Assert.AreEqual( 10, park.One.Runtime.Settings.Speed );
 		Assert.IsTrue( level.Commands.Issue( new RequestMaintenanceCommand( one, true ) ).Accepted );
 		Assert.IsTrue( park.State.MaintenanceRequested );
 		Assert.IsTrue( level.Commands.Issue( new RequestMaintenanceCommand( one, false ) ).Accepted );
@@ -88,6 +95,25 @@ public class ParkSettingCommandLevelTests
 		Assert.IsFalse( level.Commands.Issue( new SetAttractionOpenCommand( 9999, false ) ).Accepted );
 		Assert.IsFalse( level.Commands.Issue( new CancelUpgradeCommand( one ) ).Accepted, "no upgrade waits" );
 		Assert.AreEqual( hash, level.ComputeStateHash() );
+	}
+
+	[TestMethod]
+	public void ACondemnedRideRefusesItsDoorItsCallAndItsUpgrades()
+	{
+		var park = NewPark();
+		var level = park.Level;
+		var one = park.One.Runtime.AttractionId;
+		// a breakdown with a life gauge of 0 is a condemned ride (ParkEconomy.ObjectState)
+		park.State.IsBrokenDown = true;
+		park.State.LifeGauge = 0;
+		Assert.AreEqual( RideObjectStates.Condemned, ParkEconomy.ObjectState( park.State ) );
+		var hash = level.ComputeStateHash();
+		Assert.IsFalse( level.Commands.Issue( new SetAttractionOpenCommand( one, !park.One.IsOpen ) ).Accepted, "its window hides the door (0x4ad4e0)" );
+		Assert.IsFalse( level.Commands.Issue( new RequestMaintenanceCommand( one, true ) ).Accepted, "and the call button" );
+		Assert.IsFalse( level.Commands.Issue( new BuyUpgradeCommand( one ) ).Accepted, "and the upgrade button" );
+		Assert.IsFalse( level.Commands.Issue( new CancelUpgradeCommand( one ) ).Accepted );
+		Assert.AreEqual( hash, level.ComputeStateHash() );
+		Assert.IsTrue( level.Commands.Issue( new SetAttractionOpenCommand( park.Two.Runtime.AttractionId, false ) ).Accepted, "the other ride's door still works" );
 	}
 
 	[TestMethod]

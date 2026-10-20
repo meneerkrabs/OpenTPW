@@ -192,7 +192,7 @@ internal sealed class UiRenderer : IDisposable
 		var shaderInfo = ShaderCompiler.CompileShader( Path.GetFullPath( "content/shaders/ui-depth.shader", AppContext.BaseDirectory ) );
 		depthShader = shaderInfo;
 		// [BIN:TPW-EXE:0x567620 state word] the draw's state word turns the depth test (ZENABLE, bit 0x8000 clear) and depth writes (ZWRITEENABLE, bit 0x800
-		// clear) on; the device init (0x566910-0x5669c6) never sets ZFUNC, so it is Direct3D's default LESSEQUAL, and the cull mode is D3DCULL_NONE (0x566957)
+		// clear) on; the device init 0x573080 sets ZFUNC to D3DCMP_LESSEQUAL (4) with ZENABLE (0x57360f), and the cull mode is D3DCULL_NONE (0x566957)
 		depthPipeline = Device.ResourceFactory.CreateGraphicsPipeline( new GraphicsPipelineDescription(
 			BlendStateDescription.SingleDisabled,
 			new DepthStencilStateDescription( true, true, ComparisonKind.LessEqual ),

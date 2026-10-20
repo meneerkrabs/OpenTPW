@@ -16,7 +16,7 @@ namespace OpenTPW.Hud;
 // 0x57a260 multiplies by diag(1, -1, 1, 1) into the instance's own view (+0x10), and the scene's draw 0x57a750 takes that view instead of the
 // park camera's for a model with flag 0x200 (set by 0x45bed0), with the draw flag 0x2000000 (0x57a890); the frame's matrix then reaches the
 // screen through the viewport alone: 0x579690 maps x and y with the viewport's half size and centre (0x582f70, 0x8bcc00 and 0x8bcbf0) and,
-// for the flag 0x2000000 (mode 2), stores the depth as the matrix's depth times [0x8bcc20] = 0.1 (0x582db7) without the perspective divide
+// for the flag 0x2000000 (mode 2), stores the depth as the matrix's depth times [0x8bcc20] = 0.1 (set by 0x582ddf) without the perspective divide
 // [BIN:TPW-EXE:0x581320 face test] the batcher's primitive builder 0x580530 keeps a triangle only when the determinant of its corners' x, y
 // and w after the view (0x581320) is positive, i.e. when it runs clockwise on the screen; the Direct3D cull mode stays D3DCULL_NONE
 // (0x566957) because the engine has already dropped the others
@@ -345,7 +345,7 @@ public sealed class PreviewIcon
 
 	/// <summary>Whether a triangle of <paramref name="material"/> is drawn whichever way it faces (the ground plates; see <see cref="GroundPlateMaterial"/>).</summary>
 	// [EXT:preview-ground-plates] the ground plates of the Space Racers and The Blobulator previews (Pgokarts.md2, PWATERIDE.MD2: two triangles of
-	// the material PURPLE_BASE each, the only previews that use it) face down, so tp.exe's face test (0x581320) drops them when the preview is seen
+	// the material PURPLE_BASE each, the only previews where that material faces down) face down, so tp.exe's face test (0x581320) drops them when the preview is seen
 	// from above; the preview draws them anyway, at the user's request ("Grondplaten toch tonen (EXT)", October 20, 2026); every other triangle
 	// keeps the original's face test
 	internal static bool IsShownGroundPlate( string material ) => string.Equals( material, GroundPlateMaterial, StringComparison.OrdinalIgnoreCase );

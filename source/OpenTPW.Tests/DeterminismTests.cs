@@ -239,7 +239,7 @@ public class DeterminismTests
 			Streams.RestoreRandomState( world );
 		}
 
-		public ulong Hash => WorldStateHash.Compute( new WorldStateSources { Seed = Seed, Economy = Economy, Guests = Guests, Scripts = Scripts } );
+		public ulong Hash => GuestRefusedTargetTests.DiagnoseRetainedTargetHash( Guests, () => WorldStateHash.Compute( new WorldStateSources { Seed = Seed, Economy = Economy, Guests = Guests, Scripts = Scripts } ) );
 	}
 
 	private static RideVM Script( Asm asm, RideVMOptions options ) =>

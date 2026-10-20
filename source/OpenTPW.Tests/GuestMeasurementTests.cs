@@ -129,7 +129,7 @@ public class GuestMeasurementTests
 			var binned = 0L;
 			park.Guests.LitterBinned += ( _, _ ) => binned++;
 			park.Run( 24_000 );
-			return (park.Hash, binned);
+			return (GuestRefusedTargetTests.DiagnoseRetainedTargetHash( park.Guests, () => park.Hash ), binned);
 		}
 		var shipped = Run( SmarterRuleSet.All );
 		var before = Run( SmarterRuleSet.Phase6 );

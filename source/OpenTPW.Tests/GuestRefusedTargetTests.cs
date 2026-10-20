@@ -146,6 +146,21 @@ public class GuestRefusedTargetTests
 		return resumed;
 	}
 
+	internal static ulong DiagnoseRetainedTargetHash( GuestSimulation simulation, Func<ulong> compute )
+	{
+		var actual = compute();
+		var retained = simulation.Guests.Where( guest => guest.AttractionId != 0 && !guest.IsInQueue
+			&& RetainedStates.Contains( (guest.State, guest.Activity) ) )
+			.Select( guest => (Guest: guest, Target: guest.AttractionId) ).ToArray();
+		foreach ( var pair in retained ) pair.Guest.AttractionId = 0;
+		ulong projected;
+		try { projected = compute(); }
+		finally { foreach ( var pair in retained ) pair.Guest.AttractionId = pair.Target; }
+		Assert.AreEqual( actual, compute(), "diagnostic projection restores the actual hash" );
+		if ( retained.Length > 0 ) Console.WriteLine( $"Retained-target diagnostic actual=0x{actual:X16} projected=0x{projected:X16} count={retained.Length}" );
+		return actual; // All existing pin assertions still compare the real, unmodified hash.
+	}
+
 	[TestMethod]
 	public void FixedRunDiffersFromTheLegacyPinOnlyByRetainedTargetIdentity()
 	{
@@ -160,18 +175,19 @@ public class GuestRefusedTargetTests
 			foreach ( var guest in legacy.Guests.Guests.Where( HasRetainedTarget ) ) guest.AttractionId = 0;
 			var retained = current.Guests.Guests.Where( HasRetainedTarget ).Select( guest => (Guest: guest, Target: guest.AttractionId) ).ToArray();
 			retainedTicks += retained.Length;
-			var currentHash = current.Hash;
+			var currentHash = Hash( current );
 			foreach ( var pair in retained ) pair.Guest.AttractionId = 0;
 			try
 			{
-				Assert.AreEqual( legacy.Hash, current.Hash, $"tick {tick}: all world fields except retained target identity" );
+				Assert.AreEqual( Hash( legacy ), Hash( current ), $"tick {tick}: all world fields except retained target identity" );
 				Assert.AreEqual( legacy.Guests.RandomState, current.Guests.RandomState, $"tick {tick}: world RNG" );
 			}
 			finally { foreach ( var pair in retained ) pair.Guest.AttractionId = pair.Target; }
-			Assert.AreEqual( currentHash, current.Hash, "diagnostic projection must restore the entire current hash" );
+			Assert.AreEqual( currentHash, Hash( current ), "diagnostic projection must restore the entire current hash" );
 		}
 		Assert.IsTrue( retainedTicks > 0, "the fixed run must exercise full-room retained targets" );
-		Assert.AreEqual( 0x5D8385D13CC3BB9BUL, legacy.Hash, $"legacy replay: 0x{legacy.Hash:X16}" );
+		Assert.AreEqual( 0x5D8385D13CC3BB9BUL, Hash( legacy ), $"legacy replay: 0x{Hash( legacy ):X16}" );
+		static ulong Hash( DeterminismTests.SyntheticPark park ) => WorldStateHash.Compute( new WorldStateSources { Seed = park.Seed, Economy = park.Economy, Guests = park.Guests, Scripts = park.Scripts } );
 		static bool HasRetainedTarget( Guest guest ) => guest.AttractionId != 0 && !guest.IsInQueue
 			&& RetainedStates.Contains( (guest.State, guest.Activity) );
 	}

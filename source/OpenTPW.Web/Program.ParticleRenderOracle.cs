@@ -69,6 +69,13 @@ public static partial class Program
 		for ( var index = 0; index < spec.Length; index++ )
 			if ( (system.Create( index, (spec[index].Flags & 0x40000) != 0 ? (50000, 0, 37500) : (0, 0, spec[index].Z * 16) ) & 0xFFFF) != index )
 				throw new InvalidOperationException( "Unexpected emitter slot order." );
+		// Burst creation leaves emitter bounds empty; the normal simulation update computes them.
+		// Constant colour/size and zero velocity keep the requested fixture invariant.
+		system.Tick(); // The first pool tick is the normal startup skip.
+		system.Tick(); // The second tick updates particles and their bounds.
+		var bounds = new List<ParticleEmitterBounds>();
+		if ( system.CollectBounds( bounds ) != spec.Length )
+			throw new InvalidOperationException( "Synthetic emitter bounds were not populated by the simulation tick." );
 		var snapshot = new List<ParticleSprite>();
 		if ( system.Snapshot( snapshot ) != spec.Length || snapshot.Where( (sprite, index) =>
 			sprite.Emitter != index || sprite.Colour != spec[index].Colour || sprite.Size != ((spec[index].Flags & 0x40000) != 0 ? 16384 : 512) || sprite.FrameCount != 0
@@ -89,9 +96,10 @@ public static partial class Program
 				particles.Render();
 			};
 			var before = renderer.FramesDrawn;
-			if ( !renderer.Frame() || renderer.FramesDrawn != before + 1 || particles.DrawnParticles != spec.Length
+			var frameOpen = renderer.Frame();
+			if ( !frameOpen || renderer.FramesDrawn != before + 1 || particles.DrawnParticles != spec.Length
 				|| particles.DrawnScreenParticles != spec.Count( particle => (particle.Flags & 0x40000) != 0 ) )
-				throw new InvalidOperationException( "The requested particle frame did not draw exactly once." );
+				throw new InvalidOperationException( $"Particle frame {name}: open={frameOpen}, frames={before}->{renderer.FramesDrawn}, drawn={particles.DrawnParticles}/{spec.Length}, screen={particles.DrawnScreenParticles}/{spec.Count( particle => (particle.Flags & 0x40000) != 0 )}." );
 			return JsonSerializer.Serialize( new { name, frame = renderer.FramesDrawn, drawn = particles.DrawnParticles,
 				screen = particles.DrawnScreenParticles, width = renderer.MultisampledFramebuffer.Width,
 				height = renderer.MultisampledFramebuffer.Height, colours = snapshot.Select( sprite => sprite.Colour ).ToArray() } );

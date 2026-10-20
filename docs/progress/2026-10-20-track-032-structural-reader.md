@@ -1,4 +1,4 @@
-# TRACK-032 structural decoding, October 20
+## TRACK-032 structural decoding (October 20, 2026)
 
 Added `SaveTrackRideBlock` and synthetic malformed-input/field-preservation tests. Native evidence corrects two earlier descriptions:
 chunk 3 is 40 serialized bytes (0xd0 is the native ride stride), and chunk 6 selects from a distinct 0x1c waypoint chain reconstructed

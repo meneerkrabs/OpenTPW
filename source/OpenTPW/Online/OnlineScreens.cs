@@ -831,8 +831,11 @@ public sealed class OnlineScreens
 				? new[] { OnlineStrings.Ui( OnlineStrings.NoSearchResults, "No search results" ) }
 				: (Session.CityParks ?? Array.Empty<ParkSummary>()).Select( ( park, index ) => $"{park.Name}\t{OnlineStrings.Theme( park.Level )}\t{index + 1}\t{park.Visits}\t{park.Votes}" ).ToArray(),
 		} );
-		var parks = Session.CityParks ?? Array.Empty<ParkSummary>();
-		ParkSummary? Selected() => list.Selected >= 0 && list.Selected < parks.Count ? parks[list.Selected] : null;
+		ParkSummary? Selected()
+		{
+			var parks = Session.CityParks ?? Array.Empty<ParkSummary>();
+			return list.Selected >= 0 && list.Selected < parks.Count ? parks[list.Selected] : null;
+		}
 		list.RowActivated = index => { if ( Selected() is { } park ) ShowParkDetails( park, index ); };
 		list.SelectionChanged = _ => { if ( Selected() is { } park ) ShowParkDetails( park, list.Selected ); };
 		AddCloseButton( screen, 1671, 820 );

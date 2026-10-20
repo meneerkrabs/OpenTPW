@@ -215,7 +215,8 @@ public partial class Level
 	/// with a valid track (the track word <c>+0x2C</c>) is opened.
 	/// </summary>
 	// [BIN:TPW-EXE:0x004DE1F0 queue re-evaluation] the ride is skipped when its open word +0x68 is set or its state +0x19C is 1 or 4, +0x64 (the call) is set, state 2, or 0x4DE4A0 reports the queue unconnected; a type-3 ride (coaster) must pass 0x441970 and a kind 1, 2 or 3 ride needs its track word +0x2C; then +0x68 = 1, the script variable 6 (VAR_RIDECLOSED) = 0 and SetState(0) (0x4E0E60); +0x5E is cleared on every path
-	// [APPROX:QUEUE-023] the model call 0x4547C0 on the type's table entry 0x7A4610 that the opening makes (the open sound is not among the traced effects) is not made
+	// [BIN:TPW-EXE:0x004DE462 queue opening's model call] the opening calls 0x004547C0 on the ride's thing (table 0x007A4610 by the thing's +0x20): its hoarding sinks (OriginalObjectRuntime.Open)
+	// [APPROX:QUEUE-023] the re-evaluation runs on the queue tool's edits, a path laid over a queue cell and a queue cell's clear only, not at the click handler's own calls 0x52537A and 0x5259AE nor after the placements 0x528A70 and 0x52FE50
 	private void ReevaluateQueuedRide( OriginalObjectRuntime runtime )
 	{
 		if ( runtime.IsOpen || Gate?.MayOpen( runtime ) != true )
@@ -1370,6 +1371,9 @@ public partial class Level
 			{
 				layingAccessCells = false;
 			}
+			// [BIN:TPW-EXE:0x004DB78B built ride's hoarding] the constructor's close of a type with a queue calls 0x00454550(1) on the new thing: its hoarding rises with the closed set
+			if ( !BuiltObjectStartsOpen( entry ) )
+				placed.Runtime.Hoarding.SetState( ObjectHoardingState.CloseMode );
 			// [BIN:TPW-EXE:0x558e7c build effect] the type's CreateParticleEffect starts when the new object's script attaches, not when a park loads
 			placed.Runtime.StartObjectEffect( ObjectParticleEffect.Create );
 			// [BIN:TPW-EXE:0x528e30 placement cue] the commit pass of the placement plays its size-classed cat_ui cue
@@ -1622,7 +1626,8 @@ public partial class Level
 			// [BIN:TPW-EXE:0x004E0E60 SetState] the open word (mCanLoad, +0x68) is cleared by states 1, 2 and 4 (their import closes the ride already) and by the player's close or a maintenance call; an idle attraction saved with it clear stays closed until the door opens the park
 			if ( Park!.Economy.TryGetObject( instance, out var objectState ) && RideOpening.ClosedByImportedOpenWord( attraction.CanLoad, ParkEconomy.ObjectState( objectState ) ) && runtime.IsOpen )
 			{
-				runtime.Close();
+				// the loader writes the open word without a closing routine, so the hoarding keeps its saved state (ParkObjects.ImportOriginalSteps)
+				runtime.CloseLoaded();
 				SyncOpenState( runtime );
 				taken = taken.Concat( new[] { "closed (the saved open word is 0)" } ).ToList();
 			}

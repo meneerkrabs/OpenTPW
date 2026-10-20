@@ -250,6 +250,45 @@ and 3 fixed items with their models and scripts (no more orange markers); themes
 without a save get the Gates, Lights and Bus (the fixed items Easymode records;
 which fixed items the original spawns, and when, is unknown).
 
+## Hoarding (closed, broken down, condemned and upgrading)
+
+The original raises a hoarding of boards around an attraction whenever it closes, and lowers it again when the
+attraction opens (`ObjectHoardingGeometry`, `ObjectHoardingState`, `ObjectHoardingRenderer`). It is presentation only:
+the state lives in the object's runtime, no state hash reads it, and the park-resume snapshot keeps it
+(`OriginalObjectRuntimeSnapshot.Hoarding`, written only once a hoarding has stood).
+
+- **Boards.** The type loader (tp.exe `0x00413C10` → `0x004629D0`) builds one board per side bit of the object's
+  `Info.Hoarding` block for every type that is not a fixed item (`0x00452E70`). The block is read by the map parser
+  `0x00402720` with the hoarding table `0x007397B0` (`^` +V, `]` +U, `_` −V, `[` −U, `F`, `7`, `L`, `J` the corners, ...):
+  a space takes no column and the last text row is row 0. A board is a 10 × 10 unit quad on the cell's edge, drawn from
+  both sides, its ends pulled half-way to the second nearest vertex of the model's ground node (the node with most
+  vertices on the footprint's boundary corners at height 0, `0x0046A5A0` → `0x00469A80`); a 1 × 1 grid uses fixed pulls.
+  A type needs at least two such ground vertices. The boards are ordered by the angle of their middles round the grid's
+  centre, starting at the upper left and going counterclockwise (with +U to the right and +V up: the left side, the
+  bottom, the right side, the top), which is the order they rise in. All 129 shipped
+  types with an `Info.Hoarding` block get one.
+- **Terrain.** A placed object's boards stand with each end halfway between its base and the terrain corner the end maps
+  to over the footprint box (`0x00454190`, `0x00454050`: the fraction runs over the box's first and last cell indices).
+- **Texture sets.** Four textures of the level's `MiscMesh\textures` (`Closed`, `Hoarding`, `Condemn`, `Upgrade`; `.wct`
+  in Theme Park World, `.fsh` in Theme Park Inc). The model call `0x00454550(mode)` picks the set: 1 the closed set
+  (unless another set stands and is not sinking), 2 the broken-down set, 4 the condemned set and 8 the upgrade set.
+- **Who calls it.** Every closing that writes the open word 0 and `VAR_RIDECLOSED` 1 calls mode 1: the player's and the
+  park door's close (`0x004DF300`), a blocked exit (`0x004DF150`), the maintenance request (`0x004DFE30`), the repair
+  tail's re-close of a coaster (`0x004DFD62`), `SetState` 1, 2 and 4, and a built object with a queue
+  (`0x004DB78B`). The breakdown calls mode 2, or 4 when the ride is condemned, before its `SetState` (`0x004E14E0`),
+  and the upgrade request calls mode 8 after its `SetState(2)` (`0x004E0050`). Every opening calls `0x004547C0`
+  first: the queue re-evaluation `0x004DE1F0`, `0x004DF390`, the repair and upgrade end `0x004DF8F0`, the maintenance
+  cancel and the upgrade cancel.
+- **Rise and fall.** Each render frame (`0x0044E410` → `0x004548F0`, real time, on screen or not) a rising hoarding
+  gains 0.2 of its height per second and a sinking one loses 0.3. Board *i* of *n* stands at
+  clamp(1 − ((i / n)·0.8 − (level − 0.25))·4, 0, 1) of its height (odd boards are 0.8 boards), and its texture
+  rises with it (`0x004543C0`). A hoarding stops rising on the first frame after it is up, and leaves the scene, back on
+  the closed set, on the first frame after it is down.
+- **Saves.** An original save's RideSystem record keeps the flags and the level (`0x004647A0`: flag word bits 0..6,
+  dword +0x22), so an imported park shows its closed rides' hoardings as they were; the import's close of an
+  attraction saved closed makes no model call. A park without terrain (the sandbox) has no hoardings, as the type
+  loader's ground-node search needs the heightfield.
+
 ## Interfaces for other slices
 
 - Guests: `IRideVisitorBridge.Perform(ride, call)` receives every visitor opcode

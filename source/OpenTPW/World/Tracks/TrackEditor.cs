@@ -286,7 +286,7 @@ public sealed class TrackEditor
 	private void Replay( (int X, int Y) start, byte heading, List<(int X, int Y)> cleared )
 	{
 		// the walk that collects the corners also resets the pass counters (corner or junction 1, any other tile 0) before the lines are replayed
-		var chain = new List<(int X, int Y)>();
+		var chain = new List<((int X, int Y) Tile, byte Heading, bool Crossing)>();
 		var position = start;
 		var limit = Tracks.Count + 16;
 		for ( var steps = 0; steps < limit; steps++ )
@@ -306,7 +306,7 @@ public sealed class TrackEditor
 				stop = (heading & cell.Mask) == 0;
 			}
 			Tracks.Set( position.X, position.Y, cell );
-			chain.Add( position );
+			chain.Add( (position, heading, cell.Mask == 0x55) );
 			if ( heading == 0 || stop )
 				break;
 			var next = Step( position, heading );
@@ -314,11 +314,20 @@ public sealed class TrackEditor
 				break;
 			position = next;
 		}
-		foreach ( var tile in chain )
+		foreach ( var (tile, traversed, crossing) in chain )
 		{
 			var cell = Tracks.Get( tile.X, tile.Y );
 			if ( !cell.IsOrigin )
 				continue;
+			// Preserve the other flow of a supported two-line crossing. Other replay shapes and contrary laid-flow directions keep the existing policy.
+			var remaining = (byte)(cell.Link & ~traversed);
+			if ( crossing && IsJunction( cell.Mask ) && cell.Overlap == 1 && (traversed & ~0x55) == 0 && TrackHeading.Count( traversed ) == 1
+				&& (cell.Link & ~0x55) == 0 && TrackHeading.Count( cell.Link ) == 2 && (cell.Link & traversed) != 0
+				&& remaining != Opposite( traversed ) )
+			{
+				cell.Link = remaining;
+				Tracks.Set( tile.X, tile.Y, cell );
+			}
 			// a corner is an end of two replayed lines, so it is visited twice and its counter of 1 runs out; a plain tile is cleared on its one visit
 			if ( ClearCell( tile, pass: IsJunction( cell.Mask ), replay: true ) )
 				cleared.Add( tile );

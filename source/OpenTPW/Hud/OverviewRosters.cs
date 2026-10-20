@@ -174,7 +174,7 @@ internal static class ParkVisitorRoster
 		("headerNumber", UIStrings.VisitorNumber, 129, UiAlign.Center),
 		("headerCash", UIStrings.CashRemainingVisitor, 130, UiAlign.Right),
 		("headerTime", UIStrings.TimeInParkVisitor, 131, UiAlign.Center),
-		("headerRides", UIStrings.RidesRiddenVisitor, 132, UiAlign.Center),
+		("headerRides", UIStrings.RidesRiddenVisitor, 132, UiAlign.Left),
 		("headerThought", (UIStrings)117, 133, UiAlign.Center),
 		("headerHappiness", UIStrings.HappinessVisitor, 134, UiAlign.Center),
 	};

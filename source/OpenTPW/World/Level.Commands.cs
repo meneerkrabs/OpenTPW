@@ -86,6 +86,7 @@ public partial class Level
 		RemovePrototypeCommand => ExecuteRemovePrototype(),
 		DismissFinaleCommand => DismissResearchFinale() ? ParkCommandResult.Ok() : ParkCommandResult.Rejected( "No research finale to dismiss." ),
 		SetPrototypeRunningCommand running => ExecuteSetPrototypeRunning( running ),
+		ParkSettingCommand setting => ParkSettingCommand.Run( this, setting ),
 		_ => ParkCommandResult.Rejected( $"The park does not take {command.Kind} commands." )
 	};
 

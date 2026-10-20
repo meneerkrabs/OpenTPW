@@ -1,8 +1,10 @@
 # PTCL-905: Complete particle render-state mapping
 
-## Harness-only update (October 20, 2026)
+## Bounded runtime update (October 20, 2026)
 
-This historical proposal now accompanies the [synthetic particle framebuffer diagnostic](../PARTICLE-RENDER-ORACLE.md). The opt-in harness uses the real ParticleRenderer and strict presented-pixel assertions across 17 cases. No particle runtime or material correction is included; the unfixed contract is expected to fail. Local Node acceptance-rule checks passed, but they are not GPU execution. C# compilation and browser pixel execution remain unverified at preparation. PTCL-905 remains unresolved. The historical scope and acceptance notes below are retained as evidence, not current implementation claims.
+A bounded runtime follow-up now implements only untextured non-additive world alpha0/>=F0 opaque/depth state after interpreter and AOT both measured the same five failures across 17 cases. Strict acceptance remains unchanged and fresh execution is required. Textured/fractional/additive/screen behavior remains outside that correction; PTCL-905 stays open.
+
+The [synthetic particle framebuffer diagnostic](../PARTICLE-RENDER-ORACLE.md) uses the real ParticleRenderer and strict presented-pixel assertions across 17 cases. Its harness-only baseline was compiled and measured before this correction; fresh exact-head validation of the correction remains pending. Local Node acceptance-rule checks are not GPU execution. The original plan below is retained as historical evidence, not current implementation claims.
 
 ## Status and classification
 - Classification: approximation.

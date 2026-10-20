@@ -20,8 +20,10 @@ required checks and 60-minute job budget are unchanged. Both runtime legs use th
 already-built page and existing Chrome infrastructure. The extra step has a
 five-minute limit. Its JSON is retained alongside the ordinary pin report.
 
-**The current baseline is expected to fail.** This harness-only change does not
-implement the untextured opaque/depth contract. The strict diagnostic exits nonzero
+**The pre-correction baseline is expected to fail.** Exact head `0fc8390` was
+measured in interpreter and AOT: 17 cases, zero setup/readback errors and the same
+five opacity/depth mismatches. The bounded runtime correction now targets those
+failures; it is not a rendered pass until fresh exact-head execution proves it. The strict diagnostic exits nonzero
 on any contract mismatch or setup/readback failure; it has no measure/pass override.
 The artifact records actual pixels, frame/draw counts, mismatches and errors. A
 source-reviewed fixture is not a rendered pass. Once a separately reviewed runtime
@@ -54,3 +56,25 @@ matrices and its temporary render callback, deletes only its particle entities a
 their owned resources, and drains their deletion queue after device idle. The
 harness closes the isolated page/browser, which releases remaining renderer and
 context resources. No game storage or original media are read or uploaded.
+
+
+## Bounded runtime correction
+
+Only untextured, non-additive world particles with alpha 0 or >=0xF0 select opaque
+blending, with depth writes unless flag 0x4000 is set. This follows the existing
+public native contract (0x57C6FA–0x57C71B, additive override 0x57C7C8, no-write
+0x57C7F4). Adjacent complete-state runs preserve original submission order and
+world evening tint. New opaque materials retain normal depth testing and owned
+resource cleanup. Textured, fractional-alpha, additive and screen paths retain
+their previous behavior; no global depth-write or alpha-test switch is introduced.
+
+Opaque vertex alpha is set to 255 specifically because the host's final world
+composition alpha-blends its render target. This preserves opaque RGB through that
+host stage; it is not evidence of a native alpha-byte rewrite. PTCL-905 remains
+open for textured page modes, alpha thresholds, additive depth, point filtering,
+and screen/native pass semantics. No original-media parity is claimed.
+
+The initial harness execution failed before readback because burst creation leaves
+culling bounds empty. The fixture now performs the normal startup-skip tick and
+one update tick, then asserts populated bounds and the unchanged particle snapshot.
+Constant palette, equal birth/death sizes and zero motion preserve its inputs.

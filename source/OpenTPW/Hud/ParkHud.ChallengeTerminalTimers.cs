@@ -91,8 +91,16 @@ public sealed partial class ParkHud
 	/// <summary>The explicit pause key and host speed controls, rather than an arbitrary zero simulation scale, own user suspension.</summary>
 	internal void SetUserGameSpeed( GameSpeed speed )
 	{
+		// an explicit speed choice also ends the focus-loss pause
 		applicationPaused = false;
-		Status.Speed = speed;
+		// a park's speed is part of its state and goes through its commands; a park without an economy keeps its speed in the HUD's status
+		if ( level?.Park != null )
+		{
+			if ( !level.Commands.Issue( new SetGameSpeedCommand( speed ) ).Accepted )
+				return;
+		}
+		else
+			Status.Speed = speed;
 		challengeUserPaused = speed == GameSpeed.Paused;
 		SyncChallengeMessageSuspension();
 	}

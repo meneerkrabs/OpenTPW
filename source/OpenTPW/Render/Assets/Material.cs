@@ -19,7 +19,10 @@ public enum MaterialFlags
 	DoubleSided = 8,
 
 	/// <summary>Plain one-plus-one additive blending (the particles' render flag 0x4); wins over <see cref="AdditiveBlend"/>.</summary>
-	OneOneBlend = 16
+	OneOneBlend = 16,
+
+	/// <summary>Replace colour and alpha without blending; additive flags retain precedence.</summary>
+	OpaqueBlend = 32
 }
 
 public partial class Material : Asset
@@ -282,7 +285,8 @@ public partial class Material : Asset
 		var pipelineDescription = new GraphicsPipelineDescription()
 		{
 			BlendState = flags.HasFlag( MaterialFlags.OneOneBlend ) ? OneOneBlendState
-				: flags.HasFlag( MaterialFlags.AdditiveBlend ) ? BlendStateDescription.SingleAdditiveBlend : BlendStateDescription.SingleAlphaBlend,
+				: flags.HasFlag( MaterialFlags.AdditiveBlend ) ? BlendStateDescription.SingleAdditiveBlend
+				: flags.HasFlag( MaterialFlags.OpaqueBlend ) ? BlendStateDescription.SingleOverrideBlend : BlendStateDescription.SingleAlphaBlend,
 
 			DepthStencilState = new DepthStencilStateDescription(
 				!flags.HasFlag( MaterialFlags.DisableDepthTest ),

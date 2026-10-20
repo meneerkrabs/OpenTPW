@@ -45,6 +45,7 @@ public sealed class QueueLineWriter : ICellLineWriter
 		var existing = new List<(int X, int Y)>();
 		var stoppedBy = CellBuildResult.Ok;
 		var ownLimit = false;
+		var linkPointer = false;
 		(int X, int Y)? stoppedAt = null;
 		var last = line[^1];
 		// [BIN:TPW-EXE:0x5345A1 end flag] the last cell ends the tool when it held a path or any queue cell (type 1 or 3) before the write, this ride's own queue included
@@ -62,6 +63,7 @@ public sealed class QueueLineWriter : ICellLineWriter
 			// [BIN:TPW-EXE:0x00535C7E queue line validator] queue over a type-1 cell on the line's last cell (0x820AB8, while 0x816D50 is clear) returns 8; the commit's link pass then links that path cell to the queue cell before it (QueuePaths.Connect)
 			if ( result != QueueBuildResult.Ok && (x, y) == last && grid.IsWalkable( x, y ) )
 			{
+				linkPointer = !write;
 				if ( write && line.Count > 1 )
 					QueuePaths.Connect( grid, Ride, line[^2], (x, y) );
 				break;
@@ -86,7 +88,8 @@ public sealed class QueueLineWriter : ICellLineWriter
 			Line = line,
 			Existing = existing,
 			StoppedAt = stoppedAt,
-			StoppedByOwnLimit = ownLimit
+			StoppedByOwnLimit = ownLimit,
+			LinkPointer = linkPointer
 		};
 	}
 }

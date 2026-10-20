@@ -56,7 +56,7 @@ public class ShopPriceIngressTests
 		level=Empty<Level>(); var objects=new ParkObjects(null!,new SandboxParkGrid());
 		Set(level,"<Objects>k__BackingField",objects);Set(level,"<Guests>k__BackingField",guests);Set(level,"<CellTool>k__BackingField",new CellBuildTool());Set(level,"<LastActionMessage>k__BackingField","");
 		Set(level,"<Paths>k__BackingField",new ParkPathBuilder(guests.Grid.Cells,guests.Grid,(ParkEconomy?)null,new SandboxParkGrid()));
-		economy=EconomyTestData.Park(mode:mode);var info=category==BuildCategory.Shops?1203:category==BuildCategory.Sideshows?1303:1100;
+		economy=EconomyTestData.Park(mode:mode);CommandTestLevel.AttachPark(level,economy);var info=category==BuildCategory.Shops?1203:category==BuildCategory.Sideshows?1303:1100;
 		first=Object(info,category,objects.ScriptWorld);second=Object(info,category,objects.ScriptWorld);
 		((List<OriginalObject>)objects.Objects).AddRange(new[]{first,second});
 		var one=economy.RegisterExisting(info);var two=economy.RegisterExisting(info);

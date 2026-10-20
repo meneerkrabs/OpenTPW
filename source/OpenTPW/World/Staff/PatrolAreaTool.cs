@@ -7,8 +7,14 @@ namespace OpenTPW;
 public sealed class PatrolAreaTool
 {
 	private readonly Func<ParkEconomy?> economy;
+	private readonly Func<ParkCommand, ParkCommandResult> issue;
 
-	public PatrolAreaTool( Func<ParkEconomy?> economy ) => this.economy = economy;
+	/// <param name="issue">The park's commands (<see cref="ParkCommands.Issue"/>): the second click sets the area as a <see cref="SetPatrolAreaCommand"/>.</param>
+	public PatrolAreaTool( Func<ParkEconomy?> economy, Func<ParkCommand, ParkCommandResult> issue )
+	{
+		this.economy = economy;
+		this.issue = issue ?? throw new ArgumentNullException( nameof( issue ) );
+	}
 
 	/// <summary>The member whose area the tool draws, 0 when the tool is not running.</summary>
 	public int MemberId { get; private set; }
@@ -47,7 +53,7 @@ public sealed class PatrolAreaTool
 			FirstCorner = (x, y);
 			return true;
 		}
-		member.SetPatrolArea( first, (x, y) );
+		issue( new SetPatrolAreaCommand( member.Id, first.X, first.Y, x, y ) );
 		Cancel();
 		return true;
 	}

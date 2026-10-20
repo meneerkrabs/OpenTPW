@@ -18,6 +18,8 @@ public sealed class OptionsServices
 	/// the language changes at the next start.
 	/// </summary>
 	public Func<string, bool>? ApplyLanguage { get; init; }
+	/// <summary>[EXT:extensions-apply-at-load] Passed to the Extensions and mods screen (<see cref="ModsServices.ApplyExtensions"/>); null: every change there applies at the next start.</summary>
+	public Func<IReadOnlyDictionary<string, bool>, ExtensionChoiceTiming>? ApplyExtensions { get; init; }
 	/// <summary>Time to confirm a window size/mode change before it is reverted.</summary>
 	public TimeSpan ConfirmTimeout { get; init; } = TimeSpan.FromSeconds( 15 );
 	/// <summary>Graphics settings (enhanced textures row); null hides the row.</summary>
@@ -357,6 +359,8 @@ public static class OptionsScreen
 		void Accept()
 		{
 			services.SaveOptions();
+			// [BIN:TPW-EXE:0x4237F0 options OK] OK applies every profile volume and on-flag again (0x423DD0), ending a loaded original save's volumes
+			GameAudio.EndSavedVolumes();
 			var languageChanged = !string.Equals( state.Language, services.CurrentLanguage, StringComparison.OrdinalIgnoreCase );
 			// [EXT:live-language] the original read its language once; OpenTPW switches in the front end, and after the park
 			bool? languageNow = null;
@@ -587,7 +591,7 @@ public static class OptionsScreen
 		{
 			Id = "mods",
 			Text = () => strings.Extra( OpenTpwText.ModsPage ),
-			Clicked = () => stack.Push( ModsScreen.Create( stack, strings ) ),
+			Clicked = () => stack.Push( ModsScreen.Create( stack, strings, new ModsServices { ApplyExtensions = services.ApplyExtensions } ) ),
 			Bounds = Rect( 925, 1330, 1324, 1434 ),
 			Anchor = UiAnchor.Center
 		} );

@@ -7,7 +7,7 @@ internal sealed partial class GameFlow
 {
 	internal ParkContinueEntry? FindContinueEntry( string theme ) => ThemeContinuation.Probe( SaveFileSystem, theme );
 
-	internal void ContinuePark( ParkContinueEntry entry ) => TryContinuePark( entry, snapshot => ResumePark( snapshot ) );
+	internal void ContinuePark( ParkContinueEntry entry ) => TryContinuePark( entry, snapshot => ResumePark( snapshot, extensionSwitch: entry.Park.Switch ) );
 
 	/// <summary>The same activation path for the real staged resume and asset-free continuation integration tests.</summary>
 	internal bool TryContinuePark( ParkContinueEntry entry, Action<ParkResumeSnapshot> resume )

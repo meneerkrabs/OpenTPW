@@ -21,8 +21,11 @@ public sealed class ParticleSpriteAtlas
 
 	public int Width { get; }
 	public int Height { get; }
-	/// <summary>RGBA8, row-major.</summary>
-	public byte[] Pixels { get; }
+	/// <summary>RGBA8, row-major. Empty after <see cref="ReleasePixels"/>: a renderer drops it once the texture is uploaded (a park's and the lobby's renderer each held their own copy for as long as they lived).</summary>
+	public byte[] Pixels { get; private set; }
+
+	/// <summary>Forgets the CPU copy of the pixels after the GPU upload; the frames' positions stay.</summary>
+	public void ReleasePixels() => Pixels = Array.Empty<byte>();
 	/// <summary>An opaque white block, the frame of untextured particles.</summary>
 	public ParticleAtlasFrame White { get; }
 

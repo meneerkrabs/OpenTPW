@@ -147,7 +147,7 @@ internal static class ParticleRendererModule
 			renderer.Particles.Kill( handle );
 	}
 
-	/// <summary>The live emitters and effectors of the level's pool for a park-resume save, or null when there are none.</summary>
+	/// <summary>The initialized level pool for a park-resume save, including empty pools; null when no renderer is available.</summary>
 	private static ParticleSystemState? Capture( Level level ) => RendererOf( level )?.Particles.Capture();
 
 	/// <summary>Rebuilds the saved pool for a resumed park (no particles, as in the original's load): creates the renderer and restores it.</summary>

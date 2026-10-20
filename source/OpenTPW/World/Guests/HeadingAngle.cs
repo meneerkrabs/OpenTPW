@@ -10,7 +10,7 @@ public static class HeadingAngle
 	public const int Turn = 0x800;
 
 	// [BIN:TPW-EXE:0x006E71B4 arctangent table] 257 words, entry i = floor(atan(i / 256) × 1024 / π) (checked against all 257 words of the executable): 0 to 256, the angle of a ratio i / 256 in the same units
-	private static readonly ushort[] Table = Enumerable.Range( 0, 257 ).Select( index => (ushort)Math.Floor( Math.Atan( index / 256d ) * 1024d / Math.PI ) ).ToArray();
+	private static readonly ushort[] Table = Enumerable.Range( 0, 257 ).Select( index => (ushort)Math.Floor( DetMath.Atan( index / 256d ) * 1024d / Math.PI ) ).ToArray();
 
 	/// <summary>The table entry for the ratio <paramref name="numerator"/> / <paramref name="denominator"/> (the routine's <c>(n &lt;&lt; 8) / d</c>, an unsigned divide of the larger into the smaller).</summary>
 	private static int Entry( int numerator, int denominator ) => Table[(int)(((uint)numerator << 8) / (uint)denominator)];
@@ -53,6 +53,7 @@ public static class HeadingAngle
 	public static (float X, float Y) Facing( int dx, int dy )
 	{
 		var radians = Of( -dx, dy ) * (2 * Math.PI / Turn);
-		return ((float)-Math.Sin( radians ), (float)-Math.Cos( radians ));
+		// [EXT:deterministic-math] the sine and cosine of the quantised angle in IEEE double by DetMath, the same bits on every runtime, not in x87 extended precision (docs/DETERMINISM.md, "Browser and native")
+		return ((float)-DetMath.Sin( radians ), (float)-DetMath.Cos( radians ));
 	}
 }

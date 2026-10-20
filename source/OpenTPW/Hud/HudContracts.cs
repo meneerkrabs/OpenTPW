@@ -12,7 +12,7 @@ public interface IVisitPresence
 	bool CanChat { get; }
 	/// <summary>Whether the figures are shown and a ground click walks the player's (the server relays movement in park rooms).</summary>
 	bool Walks { get; }
-	/// <summary>The server refused the park's room (the park was unpublished): the visit has no other players.</summary>
+	/// <summary>The server refused the park's room (the park was unpublished, or its chat satellite is gone): the visit has no other players.</summary>
 	bool Refused { get; }
 	/// <summary>The players' names and where their figures stand, drawn by the HUD under its windows.</summary>
 	IEnumerable<VisitPresenceName> Names { get; }

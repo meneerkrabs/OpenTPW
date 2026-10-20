@@ -100,8 +100,7 @@ Open points (`BlueprintApproximations`):
   vertex writer `0x53DDD0` adds to every vertex of a texture 0–14 face the terrain at that vertex and `sine[round((phase + x + z) × 4096 / 2π) & 4095]`
   (table `0x7B0968` filled by `0x4708D0` with `sin(i / 4096 × 2π)`, phase `0x874FC0`, + 0.1 per unpaused frame at `0x53C762`), so the markers drape over the
   ground, 1.5 above it, and ripple by ±1 unit. October 16: OpenTPW does this for every cell (`BlueprintMarkers.VertexHeight`, `Ripple`, `Update`), steps the phase
-  0.1 per 1/30 s of real time (`[EXT:blueprint-phase-step]`, user approved: the original steps per rendered frame, which would tie the ripple speed to the frame rate), and has no walls (equal heights need none). Still open: the raise of a cell that already holds an
-  object or track (OpenTPW's cell map does not type those cells).
+  0.1 per 1/30 s of real time (`[EXT:blueprint-phase-step]`, user approved: the original steps per rendered frame, which would tie the ripple speed to the frame rate), and originally had no walls. October 20: bounded typed TPW object offsets and stepped walls are implemented below; unsupported/missing-map/secondary/TPI cases remain open. The earlier claim that the host never types object cells is obsolete.
 - BLUEPRINT-002 (retired October 14, 2026): texture coordinates. The PC table `0x871EE8` holds the unit square in entries 0–3 and (0.5, 0.5) in
   entry 4 (filled by `0x53C3F0`); entries 5–8 are the rotating ±0.4 square of the track symbols. The face builder `0x53DF30` uses the rotating set only
   for textures 8–14 and the unit square for all others, with the corner order by direction byte (default 0,1,2,3; `0x40`: 1,3,0,2; `0x10`: 3,2,1,0;
@@ -222,3 +221,35 @@ Synthetic regressions cover all rotations, non-square host bounds, entrance/exit
 ownership/occupancy refusal in both footprint and access cells, accepted/fallback output and repeated preview/cancel without
 cell-map writes, object changes or ledger charges. They use no original assets. Local .NET execution remains blocked by the
 missing SDK; the test command was attempted rather than reported as passed.
+
+## Bounded occupied-cell height implementation (October 20, 2026)
+
+Further read-only PC inspection resolves the top/wall contract independently of the PPC analysis.
+`0x5330C6`–`0x533189` uses `Q(H) = 10 * trunc0((trunc0(H) + 9) / 10)`; the float conversion helper
+`0x67A830` explicitly selects truncation toward zero, and the multiply-high/signed-shift correction implements
+signed division by ten. This is not mathematical ceiling: H = 0.9 gives 0, H = 10.9 gives 10, H = -18.9 gives 0,
+and H = -19 gives -10. Second-layer types 11/12/16/17/25 first set Q; base types 4/7/9/10/30 overwrite it using
+the same `0x452AE0(x,y,0)` sampler, not a sum or maximum. That sampler looks for a second-layer instance first,
+then the owner object, and finally terrain when no instance height map exists.
+
+The top face is Q + 1.5. Each of the four PC neighbour loops (`0x53323C`–`0x53391B`, and the refused duplicates
+`0x53397E`–`0x534007`) skips a missing neighbour and emits side quads only from lower neighbour Q to current Q,
+in ten-unit steps. Neighbours come from the map even when they are not preview cells. The face codes 1/4/16/64
+select the -Y/+X/+Y/-X sides in the PC face builder `0x53DF30`; subtracting the -10 constant at `0x700E1C`
+adds the vertical step. Allowed sides use blue, except an area top (texture 2) also has area sides; refused
+sides use red. Access/front arrows and their rotation do not propagate to side faces. `0x53DDD0` adds terrain
+at each vertex and ripple to both tops and walls, so Q is an additional offset, not a replacement terrain height.
+
+The host implementation deliberately supports only TPW ordinary primary cells 4/9/10 whose live owner word
+matches the footprint object and whose existing `ObjectHeightMaps.Height` supplies a valid map sample. Plain
+cells 0/1/3 have known zero offset. Any nonzero track/structure cell or fence post is excluded before owner
+sampling; it does not call the generic tour sampler or assert track-priority compatibility. Unsupported cells
+retain their old unraised top and do not acquire guessed walls. Missing, malformed, inaccessible or out-of-range
+height maps all remain unresolved here, including the native missing-map terrain-quantization branch. Types
+7/30, secondary-layer parity, and all TPI behavior remain open. BLUEPRINT-001 is not retired.
+
+Preview samples include the current cell and four map neighbours. They are captured when the preview is shown;
+a changed snapshot rebuilds topology even while paused, whereas ripple-only frame updates preserve the vertex
+count. Synthetic geometry cases cover both-sided stepped walls, all four sides, unequal/equal/higher/unknown
+neighbours, red/blue/area textures, arrow isolation, signed quantization and boundary sampling. No original assets
+or disassembly are published with this implementation; no BLUEPRINT-003 marker-selection behavior changes.

@@ -13,8 +13,17 @@ public sealed partial class RideVM
 	// [BIN:TPW-EXE:0x55641B SETTIMER] +0xC4 = clock + operand (absolute); GETTIMER (0x55644D) returns max(0, +0xC4 - clock), so a saved timer word counts from the saved clock like the waits
 	internal string? ImportSavedRunState( SaveRsseRecord record, uint clockWord )
 	{
+		var reason = PrepareSavedRunState( record, clockWord, false, true, out var apply );
+		if ( reason == null ) apply!();
+		return reason;
+	}
+
+	// Preparation owns the parsed words; graph import defers every live assignment and presentation callback.
+	internal string? PrepareSavedRunState( SaveRsseRecord record, uint clockWord, bool ordinaryGraph, bool notifyEffects, out Action? apply )
+	{
+		apply = null;
 		ArgumentNullException.ThrowIfNull( record );
-		if ( record.ChildScriptId != 0 || record.SoundScriptId != 0 )
+		if ( (!ordinaryGraph && record.ChildScriptId != 0) || record.SoundScriptId != 0 )
 			return $"the script has a child ({record.ChildScriptId}) or sound child ({record.SoundScriptId}) script whose run state is not restored";
 		if ( record.CodeWordCount != Script.CodeWordCount )
 			return $"the saved code is {record.CodeWordCount} words, this install's script {Script.CodeWordCount}";
@@ -35,6 +44,12 @@ public sealed partial class RideVM
 		if ( record.LimboInUse > limboValues.Length )
 			return $"the saved limbo count {record.LimboInUse} exceeds the table of {limboValues.Length}";
 
+		var stackWords = Enumerable.Range( 0, stack.Length ).Select( slot => System.Buffers.Binary.BinaryPrimitives.ReadInt32LittleEndian( record.Stack.AsSpan( slot * 4 ) ) ).ToArray();
+		var variableWords = Enumerable.Range( 0, Variables.Length ).Select( slot => System.Buffers.Binary.BinaryPrimitives.ReadInt32LittleEndian( record.Variables.AsSpan( slot * 4 ) ) ).ToArray();
+		var values = Enumerable.Range( 0, limboValues.Length ).Select( slot => System.Buffers.Binary.BinaryPrimitives.ReadInt32LittleEndian( record.Limbo.AsSpan( slot * 8 ) ) ).ToArray();
+		var expiries = Enumerable.Range( 0, limboValues.Length ).Select( slot => System.Buffers.Binary.BinaryPrimitives.ReadInt32LittleEndian( record.Limbo.AsSpan( slot * 8 + 4 ) ) ).ToArray();
+		record = record with { Raw = record.Raw.ToArray() };
+		var floatWords = unchecked( (int)System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian( record.Raw.AsSpan( 0x88 ) ) );
 		var wakes = false;
 		var wake = 0.0;
 		var resume = index;
@@ -56,43 +71,49 @@ public sealed partial class RideVM
 				triggerToken = 0;
 		}
 
-		ProgramCounter = resume;
-		State = wakes ? RideVMState.Waiting : resume >= instructions.Length ? RideVMState.Halted : RideVMState.Running;
-		FaultMessage = null;
-		for ( var slot = 0; slot < stack.Length; slot++ )
-			stack[slot] = System.Buffers.Binary.BinaryPrimitives.ReadInt32LittleEndian( record.Stack.AsSpan( slot * 4 ) );
-		stackPointer = pointer;
-		heapCount = heap;
-		for ( var slot = 0; slot < Variables.Length; slot++ )
-			Variables[slot] = System.Buffers.Binary.BinaryPrimitives.ReadInt32LittleEndian( record.Variables.AsSpan( slot * 4 ) );
-		for ( var slot = 0; slot < limboValues.Length; slot++ )
+		var savedLimboInUse = record.LimboInUse;
+		var savedResultRegister = record.ResultRegister;
+		var savedTurbo = record.Turbo;
+		var savedReverb = record.Reverb;
+		var savedSpeed = record.Speed;
+		var savedDipMusic = record.DipMusic;
+		var savedWalkFloat0 = record.WalkFloat0;
+		var savedWalkFloat1 = record.WalkFloat1;
+		var savedAnimationWait1 = record.AnimationWait1;
+		var savedAnimationWait0 = record.AnimationWait0;
+		var savedTimer = record.Timer;
+		apply = () =>
 		{
-			limboValues[slot] = System.Buffers.Binary.BinaryPrimitives.ReadInt32LittleEndian( record.Limbo.AsSpan( slot * SaveRsseRecord.LimboEntryBytes ) );
-			limboExpiries[slot] = System.Buffers.Binary.BinaryPrimitives.ReadInt32LittleEndian( record.Limbo.AsSpan( slot * SaveRsseRecord.LimboEntryBytes + 4 ) );
-		}
-		limboCount = (int)record.LimboInUse;
-		SetFlags( unchecked( (int)record.ResultRegister ) );
-		TurboByte = record.Turbo;
-		ReverbLevel = unchecked( (int)record.Reverb );
-		SpeedBias = record.Speed;
-		if ( record.DipMusic != 0 )
-		{
-			MusicDuckByte = record.DipMusic;
-			RequestMusicDuck( record.DipMusic );
-		}
-		walkFloatStart = record.WalkFloat0;
-		walkFloatDuration = unchecked( (int)record.WalkFloat1 );
-		walkFloatWords = unchecked( (int)System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian( record.Raw.AsSpan( 0x88 ) ) );
-		LoopAnimationToken = unchecked( (int)record.AnimationWait1 ) & 0xFFFF;
-		TriggerWaitToken = triggerToken;
-		// the deadlines are absolute in the saved clock, this script's clock starts at the import: a deadline is the difference to the clock as a signed word (GETTIMER's subtraction, 0x556468)
-		Wait4AnimDeadline = RelativeDeadline( record.AnimationWait0, clockWord );
-		timerEndMilliseconds = record.Timer == 0 ? 0 : unchecked( (int)(record.Timer - clockWord) );
-		WakeTimeMilliseconds = wake;
-		TimeMilliseconds = 0;
-		ClockOriginMilliseconds = clockWord;
-		InCriticalSection = false;
-		yieldRequested = false;
+			ProgramCounter = resume;
+			State = wakes ? RideVMState.Waiting : resume >= instructions.Length ? RideVMState.Halted : RideVMState.Running;
+			FaultMessage = null;
+			Array.Copy( stackWords, stack, stack.Length );
+			stackPointer = pointer;
+			heapCount = heap;
+			Array.Copy( variableWords, Variables, Variables.Length );
+			Array.Copy( values, limboValues, values.Length );
+			Array.Copy( expiries, limboExpiries, expiries.Length );
+			limboCount = (int)savedLimboInUse;
+			SetFlags( unchecked( (int)savedResultRegister ) );
+			TurboByte = savedTurbo;
+			ReverbLevel = unchecked( (int)savedReverb );
+			SpeedBias = savedSpeed;
+			if ( ordinaryGraph || savedDipMusic != 0 ) MusicDuckByte = savedDipMusic;
+			if ( notifyEffects && savedDipMusic != 0 ) RequestMusicDuck( savedDipMusic );
+			walkFloatStart = savedWalkFloat0;
+			walkFloatDuration = unchecked( (int)savedWalkFloat1 );
+			walkFloatWords = floatWords;
+			LoopAnimationToken = unchecked( (int)savedAnimationWait1 ) & 0xFFFF;
+			TriggerWaitToken = triggerToken;
+			// the deadlines are absolute in the saved clock, this script's clock starts at the import: a deadline is the difference to the clock as a signed word (GETTIMER's subtraction, 0x556468)
+			Wait4AnimDeadline = RelativeDeadline( savedAnimationWait0, clockWord );
+			timerEndMilliseconds = savedTimer == 0 ? 0 : unchecked( (int)(savedTimer - clockWord) );
+			WakeTimeMilliseconds = wake;
+			TimeMilliseconds = 0;
+			ClockOriginMilliseconds = clockWord;
+			InCriticalSection = false;
+			yieldRequested = false;
+		};
 		return null;
 	}
 

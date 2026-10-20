@@ -546,7 +546,7 @@ public sealed class ParkResearch
 	}
 
 	internal void Restore( IEnumerable<(int InfoId, int Level)> restoredCompleted, IEnumerable<((int InfoId, int Level) Key, long Points)> restoredProgress, IReadOnlyList<int> restoredEffort, IEnumerable<(ResearchCategory Category, int InfoId, int Level)>? restoredCurrent = null,
-		IReadOnlyList<(int InfoId, int Level)>? upgradeOrder = null )
+		IReadOnlyList<(int InfoId, int Level)>? upgradeOrder = null, IReadOnlyList<int>? restoredHighestGroups = null )
 	{
 		RestoreRecentItems( null );
 		selected.Clear();
@@ -561,6 +561,9 @@ public sealed class ParkResearch
 		RebuildGroupStats();
 		Array.Clear( highestGroup );
 		OpenGroups();
+		// Own saves can retain groups opened by an imported lab; validate their cursors against those groups.
+		if ( restoredHighestGroups != null )
+			RestoreHighestGroups( restoredHighestGroups );
 		progress.Clear();
 		foreach ( var (key, points) in restoredProgress )
 			progress[key] = points;

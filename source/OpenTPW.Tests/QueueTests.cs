@@ -443,7 +443,7 @@ public class QueueTests
 		Assert.AreEqual( GuestThought.None, guest.Thought, "no thought" );
 		Assert.AreEqual( 60f, guest.Happiness, "no happiness change" );
 		Assert.IsTrue( guest.TemporaryHistory.All( id => id == 0 ), "no history push" );
-		Assert.AreEqual( 0, guest.AttractionId );
+		Assert.AreEqual( RideId, guest.AttractionId, "a full-room refusal keeps the target until the next major choice" );
 
 		var shop = new Rig( parameters: new QueueParameters( true, false, false, 10, 60, 60, 1, 30 ) ) { KeepNeedsEmpty = true };
 		Assert.IsTrue( Enumerable.Range( 100, (int)shop.Ride.QueueLimit ).All( shop.Ride.TryJoinQueue ), "the queue is at its limit" );
@@ -1401,6 +1401,24 @@ public class QueueTests
 		Assert.AreEqual( (0L, 3L), (ride.CalledAgeTurns, ride.MaximumCalledAgeTurns), "boarding ends the age; the maximum stays" );
 		Assert.IsTrue( check.HeadNotReady, "guest 2 is the new head and is not standing yet" );
 		Assert.AreEqual( (1L, 5L), (ride.HeadNotReadyStreak, ride.MaximumHeadNotReadyStreak), "a new streak; the maximum stays" );
+	}
+
+	[TestMethod]
+	public void TheBreakdownsStateChangeMakesTheModelCallsOfItsSet()
+	{
+		// tp.exe 0x004E14E0: "Setting state BROKEN" calls 0x00454550(2) and "Setting state CONDEMNED" 0x00454550(4), then SetState's close calls 0x00454550(1)
+		foreach ( var (gauge, set) in new[] { (100.0, ObjectHoardingState.BreakdownMode), (0.0, ObjectHoardingState.CondemnMode) } )
+		{
+			var (ride, script, host) = CreateAdmission();
+			var calls = new List<int>();
+			ride.ModelState = calls.Add;
+			ride.LifeGauge = gauge;
+			script[RideVariables.VAR_BROKEN] = 1;
+			NextTurn( ride, host );
+			CollectionAssert.AreEqual( new[] { set, ObjectHoardingState.CloseMode }, calls, $"gauge {gauge}" );
+			NextTurn( ride, host );
+			Assert.AreEqual( 2, calls.Count, "the broken state makes no further model call" );
+		}
 	}
 
 	[TestMethod]

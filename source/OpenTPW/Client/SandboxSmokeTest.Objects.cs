@@ -143,11 +143,14 @@ internal sealed partial class SandboxSmokeTest
 	/// With a mod that adds objects (docs/MODS.md, <c>scripts/smoke-tpi-rides.sh</c>) the smoke also builds up to four of them through the park economy
 	/// and the normal placement path, opens them, and requires them to be drawn, linked to the economy and the guests and, with the checks that follow
 	/// for every placed object, to run their scripts without faults. Without such a mod nothing is placed and nothing changes. The pools extension's objects
-	/// (on by default) are left out: they need pool water beside them, which an original level does not have, and the pools smokes build them with their pool.
+	/// (on by default) are left out: they need pool water beside them, which an original level does not have, and the pools smokes build them with their pool. The umbrellas', winter and
+	/// evening extensions' own objects (the brolly shops, winter shops and torches, on by default) are left out too: placing one makes the park record its extension, and this smoke exports the park.
 	/// </summary>
 	/// <summary>A mod object this smoke builds: any mod's or extension's object except the pools extension's, which needs a pool (docs/POOLS.md).</summary>
 	// [EXT:pools-extension] the pools objects are on by default and have their own smokes (OPENTPW_SMOKE_POOLS)
-	private static bool IsSmokeModObject( ObjectCatalogEntry entry ) => entry.ModId != null && entry.ModId != OpenTPW.Mods.OfficialExtensions.Pools.Id && entry.ModId != OpenTPW.Mods.OfficialExtensions.Umbrellas.Id && entry.ModId != OpenTPW.Mods.OfficialExtensions.Winter.Id;
+	private static bool IsSmokeModObject( ObjectCatalogEntry entry ) => entry.ModId != null && entry.ModId != OpenTPW.Mods.OfficialExtensions.Pools.Id && entry.ModId != OpenTPW.Mods.OfficialExtensions.Umbrellas.Id && entry.ModId != OpenTPW.Mods.OfficialExtensions.Winter.Id
+		// [EXT:evening-torches-save] a torch makes the park record opentpw.evening, which the smoke's export of the park would refuse
+		&& entry.ModId != OpenTPW.Mods.OfficialExtensions.Evening.Id;
 
 	// [EXT:mods] OpenTPW's own mod system; the original game had no mods
 	private void PlaceModObjects( ParkEconomy? economy, int siteX, int siteY )

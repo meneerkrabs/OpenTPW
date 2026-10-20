@@ -108,6 +108,8 @@ public sealed partial class OriginalObjectRuntime
 				() => !(Coaster?.AcceptsGuests ?? true) || Bump is { IsWater: false, IsTrackValid: false } );
 			// [BIN:TPW-EXE:0x005571A0 WALKOFF] the walk takes ftol(the distance between the walker's two slot nodes) x 100 ms (100 ms for 0): the slot's start node (u3, class 0x800, or 0x80 for the head action 4) and end node (u4, class 0x800) are looked up in the ride model (0x0044B220: the first dummy whose class mask matches and whose number equals) and measured at the time of the WALKOFF (0x00556B90 reads the live node); the Star and Tweety Tours slots span 10 model units (1000 ms)
 			// [BIN:TPW-EXE:0x00556F40 WALKON] the walk-on's nodes are looked up in the ride model the same way (the first node of class 0x800, the second of class 0x80 for the head action 4, else 0x800), for every object that walks riders
+			// the bridge's closings make the model calls on this object's hoarding (presentation only)
+			Visitors.ModelState = Hoarding.SetState;
 			Visitors.WalkNodeDistance = WalkNodeDistance;
 			Visitors.WalkNodeClassDistance = WalkNodeDistance;
 			Visitors.WalkNodeHeading = WalkHeadingOf;
@@ -230,16 +232,39 @@ public sealed partial class OriginalObjectRuntime
 		CompletedCycles,
 		Script?.State ?? RideVMState.Halted );
 
+	/// <summary>
+	/// The object's hoarding (docs/OBJECTS.md, "Hoarding"): its texture set, standing and rise. Presentation only: not part of the canonical state a hash reads,
+	/// saved with the runtime snapshot. Its type's hoarding is bound by the placed object (<see cref="OriginalObject"/>); without one every call does nothing.
+	/// </summary>
+	public ObjectHoardingState Hoarding { get; } = new();
+
+	// [BIN:TPW-EXE:0x004DF390 open] every opening that writes the open word +0x68 = 1 and VAR_RIDECLOSED = 0 (0x004DE1F0, 0x004DF390, 0x004DF8F0, 0x004DFE30(0), 0x004E0050(0)) calls 0x004547C0 on the thing first: its hoarding sinks
 	public void Open()
 	{
-		if ( !stopped )
-			SetVariable( nameof( RideVariables.VAR_RIDECLOSED ), 0 );
+		if ( stopped )
+			return;
+		Hoarding.StartOpenFade();
+		SetVariable( nameof( RideVariables.VAR_RIDECLOSED ), 0 );
 	}
 
-	public void Close()
+	// [BIN:TPW-EXE:0x004DF300 close model call] every closing that writes the open word +0x68 = 0 and VAR_RIDECLOSED = 1 (0x004DF300, 0x004DF150, 0x004DFE30(1), the repair tail's re-close at 0x004DFD3E, SetState 1, 2 and 4, a built object with a queue at 0x004DB712) calls 0x00454550(1) after it: the hoarding rises with the closed set unless another set stands
+	public void Close() => Close( modelCall: true );
+
+	/// <summary>
+	/// A loaded park's close of an attraction saved closed: the original's attraction loader writes the open word without a closing routine, so the hoarding
+	/// keeps the state its save holds (<see cref="ObjectHoardingState.Restore"/>).
+	/// </summary>
+	internal void CloseLoaded() => Close( modelCall: false );
+
+	private void Close( bool modelCall )
 	{
-		if ( !stopped )
-			SetVariable( nameof( RideVariables.VAR_RIDECLOSED ), 1 );
+		if ( stopped )
+			return;
+		SetVariable( nameof( RideVariables.VAR_RIDECLOSED ), 1 );
+		// [BIN:TPW-EXE:0x004DF300 close] the close clears the loading slot +0x6C with the open word (RideVisitorBridge.ClearLoadingSlot)
+		Visitors.ClearLoadingSlot();
+		if ( modelCall )
+			Hoarding.SetState( ObjectHoardingState.CloseMode );
 	}
 
 	/// <summary>A common variable by name (scripts declare different subsets); 0 when the script has none.</summary>
@@ -428,7 +453,8 @@ public sealed partial class OriginalObjectRuntime
 			RideCapacity = capacityWord,
 			RideDuration = durationWord,
 			VehiclesRaised = VehiclesRaised ? true : null,
-			Lights = Lights?.Capture()
+			Lights = Lights?.Capture(),
+			Hoarding = Hoarding.Capture()
 		};
 	}
 
@@ -496,6 +522,9 @@ public sealed partial class OriginalObjectRuntime
 			if ( unknownLights.Count > 0 )
 				gaps.Add( $"'{Entry.ArchivePath}': saved light(s) {string.Join( ", ", unknownLights )} are not in the model any more and were dropped." );
 		}
+		// the hoarding's flags and level as saved; an older save, or an object whose hoarding never stood, keeps the fresh state
+		if ( snapshot.Hoarding is { } hoarding )
+			Hoarding.Restore( hoarding.Flags, hoarding.Level );
 		CompletedCycles = snapshot.CompletedCycles;
 		AnimationsPlayed = snapshot.AnimationsPlayed;
 		unresolvedAnimations.Clear();
@@ -587,6 +616,8 @@ public sealed partial class OriginalObjectRuntime
 			Sideshow = new SideshowTerms( settings.GetInt( "UsageInfo.InitCostOfGoods" ), settings.GetInt( "UsageInfo.InitPricePerUse" ), settings.GetInt( "UsageInfo.InitChanceOfLoosing" ) ),
 			// [DATA:<object>.sam:UsageInfo.EntryCellStandPosX/Y] the jungle Rides.sam default is (0.5, 0.5); 0xde1d8 checks the range [0, 1] (a value outside it keeps the default here)
 			EntryCellStandPos = (StandFraction( settings, "UsageInfo.EntryCellStandPosX" ), StandFraction( settings, "UsageInfo.EntryCellStandPosY" )),
+			// [DATA:<object>.sam:UsageInfo.ExitCellAppearPosX/Y] type record +0xDC and +0xE0 (0.5 in every theme's base .sam); ExitRide's point 0x004DEDF0(1) logs a value outside 0..1 ("Dodgy X exit point in SAM file") and uses it
+			ExitCellAppearPos = (ExitFraction( settings, "UsageInfo.ExitCellAppearPosX" ), ExitFraction( settings, "UsageInfo.ExitCellAppearPosY" )),
 			// [EXT:pools-changing-room] OpenTPW's own key: the object is a pool complex's changing room (docs/POOLS.md)
 			IsChangingRoom = FeatureGates.Pools && PoolChangingRooms.IsChangingRoom( entry ),
 			// [EXT:umbrellas-extension] the umbrellas extension's own objects carry Theme Park Inc's weather and generation percentages, which the host score applies for them alone; every other object keeps the game's score
@@ -626,6 +657,8 @@ public sealed partial class OriginalObjectRuntime
 			Percentage( "SeasonModifier.WinterPercentage" ), Percentage( "SeasonModifier.SpringPercentage" ), Percentage( "SeasonModifier.SummerPercentage" ), Percentage( "SeasonModifier.AutumnPercentage" ) );
 	}
 
+	private static float ExitFraction( ObjectSettings settings, string key ) => settings.Has( key ) ? settings.GetFloat( key ) : 0.5f;
+
 	private static float StandFraction( ObjectSettings settings, string key ) =>
 		settings.Has( key ) && settings.GetFloat( key ) is var value and >= 0 and <= 1 ? value : 0.5f;
 
@@ -654,6 +687,11 @@ public sealed partial class OriginalObjectRuntime
 		return new QueueParameters( entry.HasQueue, settings.GetBool( "Info.RunsContinuously" ), trackType is 2 or 3,
 			level?.GetFloat( "QueueWaitTimeConstant" ) ?? 0, initSpeed, initSpeed, capacity, duration, level?.GetInt( "InitDuration" ) ?? 0 );
 	}
+
+	// No delegate is invoked while validating original graph import provenance.
+	internal static bool HasCatalogResolver( RideVM vm, ObjectCatalogEntry entry ) =>
+		vm.Options.ResolveScript?.Target is OriginalObjectRuntime runtime && ReferenceEquals( runtime.Entry, entry ) && ReferenceEquals( runtime.Script, vm ) &&
+		vm.Options.ResolveScript == runtime.ResolveChildScript;
 
 	private RideScriptFile? ResolveChildScript( string fileName )
 	{
@@ -724,7 +762,7 @@ public sealed partial class OriginalObjectRuntime
 /// TOUR/BUMP/COAST go to their controllers. The ride lights (ENABLELIGHT, DISABLELIGHT, SETLIGHT, COLOURLIGHT) act on the model's light dummies when it has them (<see cref="OriginalObjectRuntime.Lights"/>, docs/LIGHTS.md) and are a logged no-op when it does not. What stays an unimplemented effect (<see cref="RideVM.UnimplementedEffects"/>): the bounce rider opcodes where their object has no bounce
 /// rider rendering, and ADDOBJ/EVENT type 10 (the object type's own sound list). DIPMUSIC sets the sound service's music duck request; SETREVERB's level is read by <see cref="ReverbSelector"/>.
 /// </summary>
-public sealed class OriginalObjectEffects : IRideScriptEffects, IRideAnimationQuery, IRideCanonicalEffects, IRideScriptLifetime
+public sealed class OriginalObjectEffects : IRideScriptEffects, IRideAnimationQuery, IRideCanonicalEffects, IRideScriptLifetime, IRideSliceTail
 {
 	/// <summary>Channel of the plain animation opcodes: channel 0, the same record a _CH opcode addresses with channel 0.</summary>
 	// [BIN:STP-PPC:0x100A6CC0 animation trigger] the channel record is model +0x10 + channel × 0x38; TRIGANIM (0x100AFB10), WAITANIM (0x100AFC68), LOOPANIM (0x100AFD7C) and TRIGANIMSPEED (0x100B005C) pass channel 0, TRIGANIM_CH (0x100B01C4) its operand
@@ -746,6 +784,17 @@ public sealed class OriginalObjectEffects : IRideScriptEffects, IRideAnimationQu
 	private readonly List<AudioVoice> ownedEventLoops = new();
 
 	public OriginalObjectEffects( OriginalObjectRuntime ride ) => this.ride = ride;
+
+	/// <summary>
+	/// The script loop's speed setter after each slice of the station's root script (<c>0x5517D7</c> → <c>0x43B2B0</c>): once <c>COAST 8</c> bound the coaster (or the park import
+	/// bound a saved script that holds its slot), the script's speed word becomes the coaster's speed setting when it differs.
+	/// </summary>
+	public void AfterSlice( RideVM vm )
+	{
+		// the slot +0xE0 is the root script's: COAST 8 stores it there, and the station's root script is the one that runs it
+		if ( vm.Parent == null && ride.Coaster is { Initialised: true } coaster )
+			coaster.ApplyScriptSpeed( vm.SpeedBias );
+	}
 
 	/// <summary>Stops this runtime's chains, including handles lost by a refused STARTSCREAM, when the object is removed; its script holds no scream any more.</summary>
 	internal void StopSounds()

@@ -162,13 +162,13 @@ public sealed partial class ParkHud
 		return true;
 	}
 
-	/// <summary>Feedback for a click that cannot hire (bankrupt, role full, read-only, no applicant): a message and the error sound instead of a silent select.</summary>
+	/// <summary>Feedback for a click that cannot hire (bankrupt, role full, read-only, no applicant): a message instead of a silent select.</summary>
+	// [BIN:TPW-EXE:0x49b988 hire row] the hire window's row activation (0x400) calls the hire 0x507bf0 (which returns 0 for an empty slot and builds the staff tool otherwise), closes the window and posts advisor help 0x135; no direct call chain from the window procedure 0x49b650 reaches a cat_ui sound, so the refusal plays no error sound (the message is OpenTPW's)
 	internal void RefuseHire()
 	{
 		if ( showingEmployedStaff )
 			return;
 		PostMessage( strings.Extra( OpenTpwText.NotAvailable ) );
-		GameAudio.PlayUi( GameAudio.ErrorEvent );
 	}
 
 	/// <summary>Opens the per-employee window on the employee view's selected employee (a click on the row, as the All Staff list does).</summary>

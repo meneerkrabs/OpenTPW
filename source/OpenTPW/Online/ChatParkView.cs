@@ -3,13 +3,13 @@ using OpenTPW.UI.Original;
 namespace OpenTPW.UI;
 
 /// <summary>
-/// The chat park seen from above: every player in the room is a marker at the position the server relayed, and a
-/// click walks the player's own marker there (manual p. 68: "Left click to walk to destination"). The original chat
-/// park was a three-dimensional park its visitors walked around in together; its scene, avatar model and animation
-/// are not decoded.
+/// A chat room seen from above: every player in the room is a marker at the position the server relayed, and a
+/// click walks the player's own marker there (manual p. 68: "Left click to walk to destination"). A satellite's
+/// chat park is visited in three dimensions like any park (OnlineScreens.EnterChatPark); this view shows a room
+/// entered without a park to visit: on an older server, or a published park's chat from its details.
 /// </summary>
-// [EXT:online-chat-park-view] a flat overhead view with a marker per player, walked by clicking at one speed, stands in for
-// the original's chat-park scene and avatars (not decoded; the original's double-click teleport is not separated)
+// [EXT:online-chat-park-view] a flat overhead view with a marker per player, walked by clicking at one speed, shows a room without a visited park
+// (the original's chat rooms were always parks: a satellite's park was visited, tp.exe 0x4C0880; the double-click teleport is not separated)
 public sealed class UiChatParkView : UiElement, IUiDragTarget
 {
 	private readonly OnlineSession session;

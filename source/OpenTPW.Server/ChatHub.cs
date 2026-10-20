@@ -38,6 +38,14 @@ public sealed class ChatHub
 	private readonly ChatParkDirectory chatParks;
 	private readonly CityDirectory cities;
 	private readonly ConcurrentDictionary<string, ChatSession> sessions = new();
+	/// <summary>
+	/// Held while a player enters, leaves or connects and while a roster is taken and queued. Each connection's
+	/// requests run on their own thread, so without it two players entering a room together could each take a roster
+	/// before the other's arrival and queue it after the other's newer one: a player would end with a roster that
+	/// leaves out someone in the room. Under the lock every outbox receives a room's rosters in the order its
+	/// membership changed.
+	/// </summary>
+	private readonly object rooms = new();
 	private volatile bool restarting;
 
 	public ChatHub( ServerStore store, ServerOptions options, WordFilter filter, ChatParkDirectory chatParks, CityDirectory cities )
@@ -134,7 +142,19 @@ public sealed class ChatHub
 	public async Task RunAsync( WebSocket socket, AccountRecord account, CancellationToken cancel, Func<bool>? stillAuthenticated = null )
 	{
 		var session = new ChatSession( account, options );
-		if ( sessions.Count >= options.MaximumChatConnections || !sessions.TryAdd( account.Key, session ) )
+		bool added;
+		lock ( rooms )
+		{
+			added = sessions.Count < options.MaximumChatConnections && sessions.TryAdd( account.Key, session );
+			if ( added )
+			{
+				Send( session, ChatEvent.ForNotice( ChatNotice.WelcomeThemeParkWorld ) );
+				if ( !string.IsNullOrWhiteSpace( options.Message ) )
+					Send( session, new ChatEvent( ChatEventKind.System, Text: ChatSystemKeys.ServerMessage, Args: new[] { options.Message } ) );
+				Send( session, RoomEvent( session.Room ) );
+			}
+		}
+		if ( !added )
 		{
 			session.Limiter.Dispose();
 			session.MovementLimiter.Dispose();
@@ -151,10 +171,6 @@ public sealed class ChatHub
 		var writer = Task.Run( () => WriteLoopAsync( socket, session, cancel ), cancel );
 		try
 		{
-			Send( session, ChatEvent.ForNotice( ChatNotice.WelcomeThemeParkWorld ) );
-			if ( !string.IsNullOrWhiteSpace( options.Message ) )
-				Send( session, new ChatEvent( ChatEventKind.System, Text: ChatSystemKeys.ServerMessage, Args: new[] { options.Message } ) );
-			Send( session, RoomEvent( session.Room ) );
 			await ReadLoopAsync( socket, session, cancel );
 		}
 		catch ( Exception exception ) when ( exception is WebSocketException or OperationCanceledException or InvalidDataException )
@@ -162,10 +178,14 @@ public sealed class ChatHub
 		}
 		finally
 		{
-			sessions.TryRemove( new KeyValuePair<string, ChatSession>( account.Key, session ) );
-			// The park the player left gets its roster without them, so the people list shows the parting.
-			foreach ( var other in sessions.Values.Where( other => other.Room == session.Room ) )
-				Send( other, RoomEvent( session.Room ) );
+			lock ( rooms )
+			{
+				sessions.TryRemove( new KeyValuePair<string, ChatSession>( account.Key, session ) );
+				// The park the player left gets its roster without them, so the people list shows the parting.
+				var parted = RoomEvent( session.Room );
+				foreach ( var other in sessions.Values.Where( other => other.Room == session.Room ) )
+					Send( other, parted );
+			}
 			session.Outbox.Writer.TryComplete();
 			try { await writer; } catch ( Exception exception ) when ( exception is WebSocketException or OperationCanceledException ) { }
 			session.Limiter.Dispose();
@@ -316,21 +336,26 @@ public sealed class ChatHub
 	/// </summary>
 	private void EnterRoom( ChatSession session, string room )
 	{
-		var left = session.Room;
-		if ( left == room )
+		lock ( rooms )
 		{
-			Send( session, RoomEvent( room ) );
-			return;
+			var left = session.Room;
+			if ( left == room )
+			{
+				Send( session, RoomEvent( room ) );
+				return;
+			}
+			session.Room = room;
+			session.Position = null;
+			session.Hidden = false;
+			// everyone in the room, the joiner included, gets the same roster, built once while the lock is held
+			var entered = RoomEvent( room );
+			foreach ( var other in sessions.Values.Where( other => other.Room == room ) )
+				Send( other, entered );
+			// The park the player walked out of gets its roster without them, as when they disconnect.
+			var parted = RoomEvent( left );
+			foreach ( var other in sessions.Values.Where( other => other.Room == left ) )
+				Send( other, parted );
 		}
-		session.Room = room;
-		session.Position = null;
-		session.Hidden = false;
-		Send( session, RoomEvent( room ) );
-		foreach ( var other in sessions.Values.Where( other => other.Room == room && other != session ) )
-			Send( other, RoomEvent( room ) );
-		// The park the player walked out of gets its roster without them, as when they disconnect.
-		foreach ( var other in sessions.Values.Where( other => other.Room == left ) )
-			Send( other, RoomEvent( left ) );
 		NotifyBuddiesOfEntry( session );
 	}
 
@@ -546,7 +571,8 @@ public sealed class ChatHub
 				break;
 			}
 			case ChatCommand.Who:
-				Send( session, RoomEvent( session.Room ) );
+				lock ( rooms )
+					Send( session, RoomEvent( session.Room ) );
 				break;
 			case ChatCommand.Page:
 			{

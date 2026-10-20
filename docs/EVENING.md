@@ -2,8 +2,9 @@
 
 October 18, 2026. The **evening and night extension** (`opentpw.evening`) gives the park a day and night cycle: the sun sets, the sky, the ground, the guests and the pool water darken, and lamps, pool lights and a few ride lights
 switch on as it gets dark. The original game's parks are always in daylight (its theme `.sam` files carry an ambient and a directional light level that tp.exe never changes over time), so everything on this page is an
-addition of this reimplementation, labelled `[EXT:evening]` in the code. It is **presentation only** and **on by default** (the user decided on October 18, 2026, after the tuning captures; it can be switched off on Options > OpenTPW > Extensions and mods): with it on or off the simulation, the economy, the guests, the saved parks, the world
-state hashes and the determinism pins are exactly the same (`AffectsSimulation` is false, so a park save does not record it, as for `opentpw.restored-advice`).
+addition of this reimplementation, labelled `[EXT:evening]` in the code. The cycle is **presentation only** and the extension is **on by default** (the user decided on October 18, 2026, after the tuning captures; it can be switched off on Options > OpenTPW > Extensions and mods): with it on or off the simulation, the economy, the guests, the
+world state hashes and the determinism pins are exactly the same. Since version 1.1.0 (October 19, 2026) the extension also brings a buildable **[torch](#torches)** per theme, an object with a price, so it is a simulation extension (`AffectsSimulation` is true) that a park save records **only
+while the park holds a torch**, like the pools, umbrellas and winter extensions: a park without a torch saves, loads and exports byte for byte as before, with the extension on or off.
 
 | Part | Where |
 | --- | --- |
@@ -11,12 +12,13 @@ state hashes and the determinism pins are exactly the same (`AffectsSimulation` 
 | The time of day: the clock, the curves, what each channel does | [The cycle](#the-cycle) |
 | What gets dark | [What gets dark](#what-gets-dark) |
 | The lamps and their table | [Lamps](#lamps) |
+| The buildable torches | [Torches](#torches) |
 | The options file, the browser, the command-line options, performance, tests | [Options](#the-option-and-its-file), [Browser](#the-browser), [Performance](#performance), [Tests](#tests) |
 | What nobody has looked at yet | [Not done](#not-done) |
 
 ## Using it
 
-- The extension is on by default. Switch it off in **Options > OpenTPW > Extensions and mods** ("Evening and night"; the change applies at the next start, [MODS.md](MODS.md)) or for one run with `--disable-extension opentpw.evening`.
+- The extension is on by default. Switch it off in **Options > OpenTPW > Extensions and mods** ("Evening and night"; the change applies to the next park you start or load, [MODS.md](MODS.md#when-a-change-applies)) or for one run with `--disable-extension opentpw.evening`.
 - Pick the pace on **Options > OpenTPW > Day cycle**: **10, 20 or 40 minutes** for one full day and night (20 is the default), or **always day**, **always dusk** or **always night**. The row's help text says it only matters while the
   extension is on. Its name, description and values are translated in all eleven interface languages like the other OpenTPW rows.
 - Always day is the original's look exactly (the extension then changes nothing and the lamps stay off).
@@ -84,8 +86,8 @@ The values were tuned by eye on offscreen captures of the jungle park and a pool
 The lamps are the point lights of [LIGHTS.md](LIGHTS.md): one `IPointLightSource` per park (`EveningLampSource`, registered in `Level.PointLights` while the extension is on), asked once a frame, which adds nothing at day. They are **attached in
 code from a data table**, `content/data/evening-lights.json`, not by changing any model: the pools extension's models and content build scripts are untouched, no original file is changed, and no guest sprite is rendered again.
 
-**The table.** Each row names objects with a `match` (any of `theme`, `category` as `ride`, `shop`, `sideshow` or `feature`, `archive` name, and `poolsExtra`, the pools extension's own `Pools.Extra` key of the object's `.sam`: 5 is the pool lamp,
-6 the underwater light; every field given must match) and the `lights` they get. A light has:
+**The table.** Each row names objects with a `match` (any of `theme`, `category` as `ride`, `shop`, `sideshow` or `feature`, `archive` name, `poolsExtra`, the pools extension's own `Pools.Extra` key of the object's `.sam`: 5 is the pool lamp,
+6 the underwater light, and `mod`, the id of the extension or mod whose content root lists the object, used for the [torches](#torches); every field given must match) and the `lights` they get. A light has:
 
 | Key | Meaning |
 | --- | --- |
@@ -94,11 +96,14 @@ code from a data table**, `content/data/evening-lights.json`, not by changing an
 | `offset` | three numbers added to the anchor, in model units in the engine's frame (ground in XY, up in Z; a model unit is 0.2 engine units, a cell is 10) |
 | `colour` | linear red, green and blue from 0 to 4, not all 0 |
 | `radius` | 1 to 200 model units: full colour at the centre, nothing at the radius (`PointLightMath`) |
+| `flicker` | optional, 0 to 0.5: the share by which the light dips with the [torches' flicker](#torches) (0, the default, is steady) |
+
+A row may also name a `flame`: a model node the extension moves as a flame ([Torches](#torches)).
 
 A bad row refuses the whole table with a reason (`EveningLampTable.Parse`); a missing or damaged file logs a warning and gives no lamps. A node a model does not have leaves that light out and is logged once. At night a lamp's colour is the table's
 colour times the lamp level.
 
-**The shipped rows** (21 rows and 34 lights: two rows for the pools extension, 19 for original objects):
+**The shipped rows** (25 rows and 38 lights: two rows for the pools extension, four for the [torches](#torches), 19 for original objects):
 
 | Object | Lights |
 | --- | --- |
@@ -114,9 +119,63 @@ colour times the lamp level.
 | Eruption (jungle ride), Pumpkin Castle (hallow ride) | the lava spurt, the ring of bulbs |
 | Escape Velocity, Star Tours (space rides) | the red and green beam lights, the red and green aerials |
 | Restaurant (hallow shop) | the green glow of the cauldron |
+| The torches (the evening extension's own, one per theme) | one light on the flame: warm orange (jungle, hallow), blue (space), pink (fantasy); radius 40 |
 
 The limit of the point lights holds: at most 16 lights reach one draw (the nearest to it; the one-mesh ground gets the 16 nearest the camera among those in view) and the lights are sorted into the renderer's grid as usual. A park full of lamps
 therefore lights the objects near the camera and not all of them at once; the lamps' own radii are small (4 to 12 engine units), so the nearest 16 are the ones that matter.
+
+## Torches
+
+The user asked on October 19, 2026 for a torch in all four themes, available by default, because a park can now be dark and the only light a player could build was the pool lamp. Their decisions, quoted in the labels:
+
+1. **Part of the evening extension** ("Onderdeel van de avondextensie"): the torches are listed while `opentpw.evening` is on, and a park save records the extension **only while the park holds a torch** (`ParkResumeMods.UsedOnlyExtensionIds`, `EveningInUse`, `[EXT:evening-torches-save]`).
+   A park without a torch records nothing and is the same bytes with the extension on or off (`EveningTorchTests`, and the default-set tests of the other extensions, which save no mod, still pass); a save with a torch records `opentpw.evening 1.1.0` and refuses to load
+   with the extension off (`needs opentpw.evening 1.1.0`), and holds the asset keys of the placed torches only. A park with a torch cannot be exported to a `.tpwpark` package (packages record no mods yet, [MODS.md](MODS.md)), as with a winter kiosk; visits open exported
+   packages, so they never meet one.
+2. **Light and mood only** ("Alleen licht en sfeer"): a torch has no attraction value and no new-attraction bonus (its `.sam` sets `Info.AttractionValue` and the three `Attraction[n].NewBonus` to 0 over the theme's `Features.sam` defaults), no guest chooses it (`Info.IsChoosable 0`), and its
+   script only waits. Its light is a row of the [lamp table](#lamps) on the flame node, so it shines at dusk and night only, like every lamp.
+3. **Themed variants** ("Themavarianten"), all OpenTPW's own art (MIT, like the other extension content): jungle a bamboo **Tiki Torch** with a woven cup, Halloween a wrought-iron **Pumpkin Torch** with a carved pumpkin head whose face glows, space a metal **Plasma Torch** with a
+   blue plasma flame, fantasy a striped **Candy Torch** with a pink flame.
+4. **Cheap, like a bench** ("Goedkoop, als een bankje"): Theme Park World has **no bench** (none of the four themes' features is one, and none of Theme Park Inc's file names); its cheapest shipped scenery is space's Small Bush at **50**, and most small scenery and the
+   litter bins cost 100. A torch costs **50**, has no upkeep (`Upgrades[0].RunningCost 0`) and no research (`"research": false`), so it is available from the start in every park. It is a feature (`Info.WhichUIType 3`, the Features tab, where the lamps and the litter bins are).
+
+**Content.** `content/evening` (built by `tools/evening/build-content.sh`; nothing in it comes from either original game):
+
+- `objects.json`: four torches, ids **63900** (jungle), **63901** (hallow), **63902** (space) and **63903** (fantasy) inside the extension's own range **63900 to 63999** (below the example lamp mod's 64000..64009 and the winter extension's 64010..64499; the table of
+  OpenTPW's ranges is in [MODS.md](MODS.md)), category `features`, names in all eleven interface languages (Tiki Torch, Pumpkin Torch, Plasma Torch, Candy Torch in English).
+- `objects/<theme>/torch/`: the MD2 model, five or six 64 x 64 TGA textures (`tt_` prefix), `Torch.sam` and `Torch.RSE` (a one-cell feature; the script waits in a loop). The model has two nodes: **`torch`** (a footing, the pole and the head, lit like any object) and
+  **`flame`** (a rounded teardrop of eight sides with a self-lit gradient material). The flame node's origin is the flame's base; the extension hides it by day and grows it with the lamp level ([below](#torches)), so a torch shows an empty cup by day and burns from dusk. The torch is about 15 model units tall (a guest is about 10).
+- Built by `tools/blender/opentpw_torches.py` (geometry and generated textures, reusing the changing room's texture generators and builder) and the content kit's `object` command with `tools/evening/torch.sam` and `tools/evening/torch.rse`.
+- `EveningContent` lists the folder as a content root of the id `opentpw.evening` while the extension is on and not in a Theme Park Inc run (its parks have other themes), so the asset keys are `mod:opentpw.evening:/objects/<theme>/torch/...`. The catalog cache key names the root
+  (as for the pools, umbrellas and winter roots), so a catalog loaded with the extension on is not reused with it off.
+
+**Lamps.** Four rows of `content/data/evening-lights.json` match `{ "mod": "opentpw.evening", "theme": <theme>, "archive": "torch" }` (the new match key `mod` compares the id of the content root that lists the object, so an original or a mod's object named `torch` never gets
+the light) and give one light on the `flame` node: warm orange (1.0, 0.55, 0.18), radius 40, at the flame's centre in Halloween; blue (0.35, 0.62, 1.0), radius 40, in space; and, because green grass reflects little red or blue (the first captures showed hardly any pool of
+light on the jungle and fantasy lawns, where Halloween's grey ground showed a clear one), a stronger light 4 model units below the flame's centre, radius 44, in the jungle (warm, 1.9, 0.88, 0.24) and in fantasy (pink, 2.1, 0.55, 1.6).
+
+**The flicker and the flame** (`[EXT:evening-torches-flicker]`, user-approved 2026-10-19: "Alleen licht en sfeer", a deterministic flicker preferred). Both are presentation only: nothing reads or writes the simulation, a save or a state hash.
+
+- A row may name a `flame` node and a light may have a `flicker` (0 to 0.5): the four torch rows have `"flame": "flame"` and `"flicker": 0.25`; every other row is steady and names no flame.
+- `TorchFlicker.At(seconds, seed)` is a fixed sum of three sines, `0.5 + 0.28 sin(2 pi 0.9 t + p1) + 0.14 sin(2 pi 2.3 t + p2) + 0.08 sin(2 pi 4.7 t + p3)`, 0 to 1, 0.5 on average; a gentle flicker that changes by at most a tenth between two frames at 60 frames a second. The phases come from a seed of the
+  torch's cell (`SeedOf(x, y)`), so the same torch flickers the same way in every run and torches side by side do not pulse together.
+- The clock is the extension's own play time (`Level.EveningFlameSeconds`): the frame time while the park runs, a quarter of a second at most per frame, standing still while the park is paused, at every pace including the fixed looks; it is not saved (a resumed park starts it again).
+- A flickering light's colour is the table's colour times the lamp level times `1 - flicker (1 - f)`: a torch's light dips by up to a quarter, in step with its flame.
+- The flame (`EveningFlames`): each frame, every placed object whose row names a flame node has that node's part drawn with `TorchFlicker.FlameMatrix`, in the node's own frame about its origin (the flame's base): its height 1 plus or minus 0.14 times `2 f - 1`, its width
+  half that the other way, and a slow lean of at most 0.06 radians (about 3.4 degrees) at 0.9 and 1.3 Hz, all scaled about the base by the lamp level (`TorchFlicker.FlameAt`): **by day the flame is hidden** (the torch shows an empty cup), it grows as the lamps come on at
+  dusk and burns at full size at night, as the torch's light does (chosen on October 19, 2026 over a flame drawn all day, after the first captures showed the self-lit flame a dull brown by day). The transform and the hiding are set on the drawn parts only
+  (`OriginalObject.SetPresentationNodeTransform`): the animator's node transforms, which the lamps, the snow cover and the simulation read, do not change. The torches are cached and rebuilt only when the placed set changes, as the lamp source does. When the cycle stops (the extension or the browser harness's look switched off) the flames get their model pose back.
+
+**Browser.** `OpenTPW.Web.csproj` embeds `content/evening` (347,862 bytes) and its `RequireExtensionContent` target fails the build without `content/evening/objects.json`; the server image copies the folder (`source/OpenTPW.Server/Dockerfile`).
+
+**Captures** (Debug builds): `--debug-torches N` places N of the theme's torches through the level's own placement on the free cells nearest the camera target (`--capture-camera`'s when given), three cells apart; with `--evening-pace dusk|night` and `--capture-world`; `--capture-interface --debug-hud "buytab:features:Tiki Torch"` shows the buy window's Features tab with that row selected. `[EXT:debug-evening]`
+
+**Labels.**
+
+| Label | What | Status |
+| --- | --- | --- |
+| `[EXT:evening-torches]` | the torches: content, catalog root, price, the lamp rows and the `mod` match key, the extension becoming a simulation extension | user-approved 2026-10-19 |
+| `[EXT:evening-torches-save]` | `opentpw.evening` recorded only while the park holds a torch | user-approved 2026-10-19 |
+| `[EXT:evening-torches-flicker]` | the deterministic flicker of a torch's light and the movement of its flame, presentation only | user-approved 2026-10-19 |
 
 ## The option and its file
 
@@ -128,7 +187,7 @@ room for the row.
 ## The browser
 
 Nothing in the extension needs the desktop: the shaders it changed (`test`, `pool-deck`, `pool-basin`, `sprite`, `particle`) are regenerated in `content/shaders/web` (the byte layout of the uniform block did not change, only a float that was
-padding is named), the lamp table is embedded with the other `content/data` files, and the options row and the mods screen are the same code. `source/OpenTPW.Web` builds.
+padding is named), the lamp table is embedded with the other `content/data` files, the torches with `content/evening` ([Torches](#torches)), and the options row and the mods screen are the same code. `source/OpenTPW.Web` builds.
 
 ## Tuning
 
@@ -199,7 +258,8 @@ The whole frame, jungle at night with the park's own lamps (3 lights in view), `
 
 Night against off is inside the spread of the runs both before and after (the earlier quiet-machine table above has the same shape: 1.37 ms at night against 1.40 ms off).
 
-**Browser.** `tools/web-perf/run.mjs --scenarios jungle --window 20 --evening night|day|off` measures a second 20-second window after the cold start with the evening look held at night or day, or the extension switched off (hook `Level.PerfEvening`, exported as `PerfEvening`). Published
+**Browser.** `tools/web-perf/run.mjs --scenarios jungle --window 20 --evening night|day|off` measures a second 20-second window after the cold start with the evening look held at night or day, or the cycle and its lamps switched off (hook `Level.PerfEvening`, exported as `PerfEvening`; since the torches made the
+extension a simulation one, "off" no longer takes it out of the run's mod set but sets the run-scoped `Level.EveningLookOff`, so the catalog and every other extension stay as they are). Published
 Release build, Chrome 155 headless, Apple M5 through ANGLE/Metal, 1280 x 900, Jungle, three runs per mode, medians:
 
 | Window | Main thread busy | fps | Frame p50 | Frame p95 | Frame p99 | Long tasks |
@@ -230,12 +290,15 @@ at `--evening-pace night` (the lamp source registered, 3 point lights in view) a
 
 ## Tests
 
+`EveningTorchTests` (no game data): the torches' ids, range and names, their catalog entries (feature, price 50, no upkeep, no research, no attraction value), the models (a lit body and a self-lit flame node), textures and script, the listing only while the extension is on
+and never in a Theme Park Inc run, the used-only save (byte-identical without a torch, recorded and refused with the extension off with one, the placed torches' asset keys only), the lamp rows, the flicker (deterministic, bounded, smooth, 0.5 on average, different for neighbouring
+torches), the flame's transform (its base fixed, its height within the stretch, a small lean), only the torch rows flickering and naming a flame, bad `flicker` and `flame` values refused, the flame cache following placement and removal, and the browser build's embedding and the server image's copy.
 `EveningTests` (no GPU; the data test is inconclusive without `OPENTPW_GAME_PATH`): the daylight curve (full around noon, zero at night, mirrored, monotone, no jumps, wrapping), that **full day is the original's look exactly** (every uniform
 and tint, byte for byte), the clock (pace lengths, wrapping, bad steps), the level's step (pausing stops it, a hitch is capped, off creates nothing, null-safe for a level built without its constructor), the options value (default, round trip by
-name, unknown values, `CopyFrom`, `Normalized`, the row on the OpenTPW page: cycling, OK and Cancel), every interface language of every text, the extension's registration (on by default, not simulation, selectable, never recorded in a save), the
+name, unknown values, `CopyFrom`, `Normalized`, the row on the OpenTPW page: cycling, OK and Cancel), every interface language of every text, the extension's registration (on by default, a simulation extension since the torches but recorded in a save only while the park holds one, selectable), the
 mods screen row, a park run's **world state hash equal with the extension on and off** (`EveningTests` on the economy and `DeterminismTests` on the full synthetic park with guests, scripts and pools, which also equals the plain run), the uniform
 layout (byte 204, the block still 272 bytes) and the shader text of the five changed shaders, the lamp table (the shipped one, every kind of bad row), the lamp resolution on a built model, the pool lamp and underwater light on their shipped models,
-and, with the game's data, that every row of the shipped table matches an original object and every node it names exists (44 lights resolved, counting each theme's copy of an object).
+and, with the game's data, that every row of the shipped table for original objects matches an original object and every node it names exists (44 lights resolved, counting each theme's copy of an object; the pools' and the torches' rows are checked on their own models).
 
 ## Not done
 

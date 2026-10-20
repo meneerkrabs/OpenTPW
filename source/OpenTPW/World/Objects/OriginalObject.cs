@@ -33,6 +33,14 @@ public readonly record struct ObjectPlacement( int X, int Y, int Rotation, Syste
 	}
 
 	/// <summary>
+	/// <see cref="ModelToEngine"/> composed with <see cref="DetMatrix.Multiply"/> (plain multiplies and adds), for simulation code that must compute the same bits on
+	/// every runtime (docs/DETERMINISM.md, "Browser and native").
+	/// </summary>
+	public Matrix4x4 DeterministicModelToEngine =>
+		DetMatrix.Multiply( DetMatrix.Multiply( DetMatrix.Multiply( CellRotation( Rotation ), Matrix4x4.CreateTranslation( X * 10, Y * 10, 0 ) ),
+			Matrix4x4.CreateScale( ModelScale ) ), Matrix4x4.CreateTranslation( GridOrigin.X, GridOrigin.Y, BaseHeight ) );
+
+	/// <summary>
 	/// The rigid turn of a model by <paramref name="rotation"/> degrees (0, 90, 180, 270) in model units with the ground in XY, about the
 	/// first cell (0..10, 0..10) so that cell maps onto itself (<see cref="ObjectFootprint.ToGrid(int,int,int,System.Numerics.Vector2)"/>).
 	/// </summary>
@@ -57,7 +65,7 @@ public readonly record struct ObjectPlacement( int X, int Y, int Rotation, Syste
 /// A placed original ride, shop, sideshow, feature or fixed item: its original model hierarchy rendered
 /// with original textures, animated by its original RSE script (<see cref="OriginalObjectRuntime"/>).
 /// </summary>
-public class OriginalObject : Entity, IPointLightSource
+public class OriginalObject : Entity, IPointLightSource, IObjectPickShape
 {
 	/// <summary>The material's texture-array binding the object renderer uses (BuildModels).</summary>
 	private const string TextureArrayName = "Color";
@@ -76,6 +84,8 @@ public class OriginalObject : Entity, IPointLightSource
 	}
 
 	private readonly List<(ModelEntity Entity, int NodeIndex)> parts = new();
+	/// <summary>The type's hoarding drawn at this object, or null when its type has none (docs/OBJECTS.md, "Hoarding").</summary>
+	private ObjectHoardingRenderer? hoarding;
 	private readonly List<Model> models = new();
 	/// <summary>Parts of vertex- or UV-animated meshes: their model, own vertex array and the pose version it shows.</summary>
 	private readonly List<(Model Model, int MeshIndex, Vertex[] Vertices, int Version)> vertexParts = new();
@@ -153,6 +163,9 @@ public class OriginalObject : Entity, IPointLightSource
 			Runtime.SetTourStation( ComputeTourStation );
 			Runtime.SetNodeEngine( GetNodeTransform );
 			BuildModels();
+			// the type's hoarding (docs/OBJECTS.md, "Hoarding"), on the level's terrain at this footprint; its state lives in the runtime
+			var level = Level ?? Level.Current;
+			hoarding = ObjectHoardingRenderer.Create( entry, Runtime.Model, placement, level?.OriginalPark?.Heightfield, level?.OriginalPark?.LevelName, Runtime.Hoarding, level?.HoardingCache );
 			UpdateTransforms();
 			// [EXT:object-lights] an object whose model has light dummies shows them through its level's point lights
 			if ( Runtime.Lights != null )
@@ -232,6 +245,19 @@ public class OriginalObject : Entity, IPointLightSource
 	/// <summary>Engine-space matrix of a model node (e.g. a seat dummy) for other systems.</summary>
 	public Matrix4x4 GetNodeTransform( int node ) => ObjectPlacement.SwapAxes( NodeTransforms[node] ) * Placement.ModelToEngine;
 
+	/// <summary>The engine height of the model's bounding-box minimum (the cursor pick's window, <see cref="IObjectPickShape.PickBottom"/>).</summary>
+	public float PickBottom => Runtime.Model.BoundsMin.Y * ObjectPlacement.ModelScale;
+
+	/// <summary>The first face of the object's model at its current pose that the line meets, in the original's walk order (<see cref="ObjectPickModel"/>).</summary>
+	public bool TryHitPickLine( System.Numerics.Vector3 origin, System.Numerics.Vector3 direction, out System.Numerics.Vector3 hit )
+	{
+		hit = default;
+		if ( deleted )
+			return false;
+		var animator = Runtime.Animator;
+		return ObjectPickModel.TryHitLine( Runtime.Model, NodeTransforms, animator.IsNodeHidden, animator.GetVertexPositions, Placement.ModelToEngine, origin, direction, out hit );
+	}
+
 	/// <summary>
 	/// The launch pad of a tour ride in the tour module's units (300 per model unit): the world position of the model's pad node (a dummy of class 0x800 and
 	/// number 99; the ride origin when it has none) with each coordinate truncated to whole model units first, as the original's creation command does, and the placement rotation.
@@ -260,7 +286,12 @@ public class OriginalObject : Entity, IPointLightSource
 	}
 
 	/// <summary>The station frame of a coaster station (<see cref="CoasterStationLayout.FromModel"/>) at the model's rest pose, or null when its model lacks a dummy.</summary>
-	internal CoasterStationLayout? ComputeCoasterStationLayout() => CoasterStationLayout.FromModel( Runtime.Model, NodeTransforms, Placement );
+	/// <remarks>
+	/// It reads <see cref="ObjectAnimator.LocalTransforms"/>, which hold the model's stored node matrices only until a clip moves a node; after that they are
+	/// System.Numerics products. The frame is taken when the station is placed (<c>Level.OnCoasterStationPlaced</c>), before any clip has run, so it composes
+	/// the exact stored matrices; a caller after the first animation tick would bring the platform's products into the pinned simulation.
+	/// </remarks>
+	internal CoasterStationLayout? ComputeCoasterStationLayout() => CoasterStationLayout.FromModel( Runtime.Model, Runtime.Animator.LocalTransforms, Placement );
 
 	/// <summary>One fixed simulation tick.</summary>
 	public void Simulate( double deltaSeconds ) => Simulate( deltaSeconds, null );
@@ -288,12 +319,13 @@ public class OriginalObject : Entity, IPointLightSource
 			Array.Fill( slots, Texture.Missing );
 			// Runtime sign faces replace the shipped placeholders, including fixed gate faces.
 			var hasSignSlot = part.Textures.Any( ObjectSigns.IsSignSlot );
-			var gateSign = hasSignSlot && Entry.IsFixedItem && Entry.ArchiveName.Equals( "gates", StringComparison.OrdinalIgnoreCase )
-				? Level.Current?.GateSign?.Images : null;
-			var sign = hasSignSlot ? gateSign ?? (!Entry.IsFixedItem ? ObjectSigns.Get( Entry ) : null) : null;
-			var fallbackBaseSign = gateSign == null && Entry.IsFixedItem && Entry.ArchiveName.Equals( "gates", StringComparison.OrdinalIgnoreCase )
-				&& hasSignSlot
-				? new Texture( [38, 28, 18, 255], 1, 1 ) : null;
+			// the object's own level: its gate and that gate's sign (made before the level's objects, SetupParkName then SetupObjects)
+			var level = Level ?? Level.Current;
+			var plan = hasSignSlot
+				? SignSlotPlan.For( Entry.IsFixedItem, Entry.InfoId, Entry.ArchivePath, level?.GateInfoId, level?.GateSign?.Images, () => ObjectSigns.Get( Entry ) )
+				: SignSlotPlan.None;
+			var sign = plan.Images;
+			var fallbackBaseSign = plan.UsesFallback ? SignSlotPlan.FallbackBoard : null;
 			if ( sign != null )
 				Sign = sign;
 			for ( var index = 0; index < part.Textures.Length; index++ )
@@ -402,8 +434,64 @@ public class OriginalObject : Entity, IPointLightSource
 		foreach ( var (entity, node) in parts )
 		{
 			if ( hidden && node >= 0 )
-				entity.Hidden = animator.IsNodeHidden( node );
-			var transform = node < 0 ? placement : ObjectPlacement.SwapAxes( nodes[node] ) * placement;
+				entity.Hidden = animator.IsNodeHidden( node ) || PresentationHidden( node );
+			var transform = node < 0 ? placement : ObjectPlacement.SwapAxes( PresentationPose( node, nodes[node] ) ) * placement;
+			entity.TransformOverride = transform;
+			entity.Position = new Vector3( transform.M41, transform.M42, transform.M43 );
+		}
+	}
+
+	// [EXT:evening-torches-flicker] presentation-only local transforms of model nodes (the evening torches' flames, EveningFlames), null for a node drawn hidden: applied on the drawn parts only, never to the animator, the runtime,
+	// the lights or a save
+	private Dictionary<int, Matrix4x4?>? presentationNodes;
+
+	private Matrix4x4 PresentationPose( int node, Matrix4x4 pose ) => presentationNodes != null && presentationNodes.TryGetValue( node, out var local ) && local is { } matrix ? matrix * pose : pose;
+
+	private bool PresentationHidden( int node ) => presentationNodes != null && presentationNodes.TryGetValue( node, out var local ) && local == null;
+
+	/// <summary>
+	/// [EXT:evening-torches-flicker] Draws the parts of model node <paramref name="node"/> with <paramref name="local"/> applied in the node's own frame before its pose (a flame scaled about its base), or hides them when it is null
+	/// (a flame by day). Only the node's own parts are changed, not its children's (a flame node has none). Presentation only: the animator's node transforms and hidden nodes, which the lamps, the snow and the simulation read, are unchanged.
+	/// </summary>
+	/// <summary>[EXT:evening-torches-flicker] Takes away the presentation transform of <paramref name="node"/> (<see cref="SetPresentationNodeTransform"/>): its parts are drawn at the animator's pose again, hidden only when the animator hides them.</summary>
+	internal void ClearPresentationNodeTransform( int node )
+	{
+		if ( deleted || presentationNodes == null || !presentationNodes.Remove( node ) )
+			return;
+		var animator = Runtime.Animator;
+		var nodes = animator.NodeTransforms;
+		if ( node < 0 || node >= nodes.Count )
+			return;
+		var placement = Placement.ModelToEngine;
+		foreach ( var (entity, index) in parts )
+		{
+			if ( index != node )
+				continue;
+			entity.Hidden = animator.IsNodeHidden( node );
+			var transform = ObjectPlacement.SwapAxes( nodes[node] ) * placement;
+			entity.TransformOverride = transform;
+			entity.Position = new Vector3( transform.M41, transform.M42, transform.M43 );
+		}
+	}
+
+	internal void SetPresentationNodeTransform( int node, Matrix4x4? local )
+	{
+		if ( deleted || node < 0 )
+			return;
+		var animator = Runtime.Animator;
+		var nodes = animator.NodeTransforms;
+		if ( node >= nodes.Count )
+			return;
+		( presentationNodes ??= new Dictionary<int, Matrix4x4?>() )[node] = local;
+		var placement = Placement.ModelToEngine;
+		foreach ( var (entity, index) in parts )
+		{
+			if ( index != node )
+				continue;
+			entity.Hidden = local == null || animator.IsNodeHidden( node );
+			if ( local is not { } matrix )
+				continue;
+			var transform = ObjectPlacement.SwapAxes( matrix * nodes[node] ) * placement;
 			entity.TransformOverride = transform;
 			entity.Position = new Vector3( transform.M41, transform.M42, transform.M43 );
 		}
@@ -469,9 +557,20 @@ public class OriginalObject : Entity, IPointLightSource
 		bank.AppendTo( into, NodeTransforms, Placement.ModelToEngine, hiddenTest );
 	}
 
+	/// <summary>A render frame: the hoarding rises or sinks by the frame's real time and shows its state (tp.exe <c>0x0044E410</c> → <c>0x004548F0</c>).</summary>
+	protected override void OnUpdate()
+	{
+		if ( deleted )
+			return;
+		Runtime.Hoarding.Advance( Time.Delta );
+		hoarding?.Update();
+	}
+
 	protected override void OnDelete()
 	{
 		deleted = true;
+		hoarding?.Delete();
+		hoarding = null;
 		Level?.PointLights?.Remove( this );
 		Runtime?.Stop();
 		foreach ( var (entity, _) in parts )

@@ -218,6 +218,42 @@ public class WinterContentTests
 		}
 	}
 
+	[TestMethod]
+	public void EveryWinterShopsBuyPreviewShowsTheRoofTilesOverTheWholeRoofAtEveryTurn()
+	{
+		// The buy window's preview used to be painter sorted without a depth buffer: when it sorted back faces with the front faces, the undersides of the roof
+		// slopes (trim, 0.55 below the tiles) won over one triangle of each slope quad, so the slopes showed half tiles and half trim stripes, split along their
+		// diagonals. The preview is now depth tested, and the original's face test drops the undersides seen from above.
+		var frame = new OpenTPW.UI.Original.UiRect( 437, 202, 360, 363 );
+		for ( var index = 0; index < Themes.Length; index++ )
+		{
+			foreach ( var shop in new[] { 0, 1 } )
+			{
+				var label = $"{Themes[index]} {Shops[shop]}";
+				var entry = ObjectCatalog.Load( Themes[index] ).Get( IdOf( index, shop ) );
+				var icon = new OpenTPW.Hud.PreviewIcon( ObjectAssets.LoadModel( entry.FileSystem, entry.PreviewModelPath ?? entry.ModelPath ), _ => null );
+				var slopes = 0;
+				for ( var step = 0; step < 16; step++ )
+				{
+					var yaw = step * MathF.PI / 8;
+					var drawn = icon.ArrangeBuyPreview( frame, yaw, 1 ).Triangles.Where( triangle => triangle.FacesViewer ).ToArray();
+					var roof = drawn.Where( triangle => triangle.MaterialName.EndsWith( "_roof", StringComparison.Ordinal ) && triangle.ModelNormal.Y > 0 ).ToArray();
+					// both slopes are less steep than the 45 degree tilt, so every tile triangle faces the viewer at every turn
+					Assert.AreEqual( 4, roof.Length, $"{label} at {step} x 22.5 degrees: the four tile triangles of the two slopes are kept" );
+					foreach ( var tile in roof )
+					{
+						var point = (tile.A2 + tile.B2 + tile.C2) / 3;
+						var top = PreviewDepthRaster.Nearest( drawn, point );
+						Assert.IsNotNull( top, label );
+						Assert.IsTrue( top.Value.ModelNormal.Y >= 0, $"{label} at {step} x 22.5 degrees: the middle of a roof tile triangle shows {top.Value.MaterialName}, a face turned down (normal {top.Value.ModelNormal})" );
+						slopes++;
+					}
+				}
+				Assert.AreEqual( 64, slopes, label );
+			}
+		}
+	}
+
 	private sealed class NoEffects : IRideScriptEffects
 	{
 		public int Perform( RideEffectCall call ) => 0;

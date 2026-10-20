@@ -74,6 +74,10 @@ public sealed class ObjectAnimator
 		public bool Ended { get; set; }
 		/// <summary>The hold route ended this channel (instance flag 0x10): AnimID 12 with flag 0x4 rather than AnimID 14.</summary>
 		public bool Held { get; set; }
+		/// <summary>The hold transition samples its endpoint once before native AnimID 12 stops writing textures.</summary>
+		public bool HeldTextureSamplePending { get; set; }
+		/// <summary>Replay/deferred cleanup happens in channel order immediately before its texture sample.</summary>
+		public bool TextureResetPending { get; set; }
 		/// <summary>DeferredAnimID/SubAnim/flags (+36/+40/+44) and speed; null = 12 (none).</summary>
 		public Clip? Deferred { get; set; }
 	}
@@ -92,6 +96,7 @@ public sealed class ObjectAnimator
 	private readonly Matrix4x4[] rest;
 	private readonly (NVector3 Scale, Quaternion Rotation, NVector3 Translation)[] restComponents;
 	private readonly Matrix4x4[] world;
+	private readonly Matrix4x4[] local;
 	private readonly int[] order;
 	private readonly int[] meshByNode;
 	private readonly ModelPath?[] pathByNode;
@@ -107,7 +112,6 @@ public sealed class ObjectAnimator
 	private readonly int[] sampledFrameBySlot;
 	private readonly bool[]?[] availableFramesBySlot;
 	private readonly bool[] slotAnimated;
-	private readonly bool[] slotAddressed;
 	private int textureFrameVersion;
 	private readonly SortedSet<string> vertexLimitations = new( StringComparer.Ordinal );
 	private readonly bool keepsPoseOnClipChange;
@@ -145,6 +149,7 @@ public sealed class ObjectAnimator
 		this.holdsLastFrameAtClipEnd = holdsLastFrameAtClipEnd;
 		rest = ModelAnimationPlayer.ComputeRestTransforms( model );
 		world = (Matrix4x4[])rest.Clone();
+		local = model.Nodes.Select( node => node.Transform ).ToArray();
 		restComponents = new (NVector3, Quaternion, NVector3)[model.Nodes.Count];
 		for ( var index = 0; index < restComponents.Length; index++ )
 		{
@@ -196,7 +201,6 @@ public sealed class ObjectAnimator
 		sampledFrameBySlot = new int[model.Textures.Count];
 		availableFramesBySlot = new bool[]?[model.Textures.Count];
 		slotAnimated = new bool[model.Textures.Count];
-		slotAddressed = new bool[model.Textures.Count];
 		// Node-state bit 0x10 starts as stored (clear in every corpus mesh record).
 		nodeStateBit = model.Nodes.Select( node => (node.Type & ModelAnimationTrack.ToggledNodeStateBit) != 0 ).ToArray();
 		nodePinned = new bool[model.Nodes.Count];
@@ -205,6 +209,11 @@ public sealed class ObjectAnimator
 	public IReadOnlyList<Matrix4x4> RestTransforms => rest;
 	/// <summary>Model-space node matrices of the current pose.</summary>
 	public IReadOnlyList<Matrix4x4> NodeTransforms => world;
+	/// <summary>
+	/// Each node's matrix relative to its parent in the current pose (the stored matrix while no clip moves it): <see cref="NodeTransforms"/> before the
+	/// parent chain is multiplied in, for simulation code that composes the chain with <see cref="DetMatrix"/>.
+	/// </summary>
+	public IReadOnlyList<Matrix4x4> LocalTransforms => local;
 	/// <summary>True while some channel plays a clip that has not ended.</summary>
 	public bool IsPlaying
 	{
@@ -298,11 +307,12 @@ public sealed class ObjectAnimator
 	/// The frame a texture slot of the model currently shows: 0 (the stored frame name) until a bound clip's
 	/// texture-frame track selects another, the highest channel writing the slot winning as for every node
 	/// component (a null sample before a track's first key leaves the slot unchanged). A frame index outside
-	/// the slot's frame names is never returned; a slot every clip stops addressing shows frame 0 again.
+	/// the slot's frame names is never returned; ordinary outgoing cleanup resets raw multi-frame slots,
+	/// while held-ID12 history survives until another writer or cleanup changes it.
 	/// </summary>
 	// [BIN:TPW-EXE:0x00470C90 texture-frame track write] per clip update, for each track entry (slot word, key count word, key array: time in the low word, frame in the high word) it scans the keys from the last backwards for the first whose time is <= the clip time and, when its frame differs from the slot record's frame (model+0x50 + slot*8, frame at +2), stores it and sets dirty bit 0x04 of byte +1; a clip time before the first key writes nothing, so the slot keeps its previous frame; tracks run in array order, so a later track of the same slot overwrites an earlier one; no slot or frame range check
-	// [APPROX:MD2-900] the key selection above is the original's writer; what is not traced is the reader of a slot's current frame (the draw path) and whether a slot that no bound clip addresses any more returns to frame 0 (the writer never resets a slot; OpenTPW resets it, as a mesh that loses its track returns to its stored positions), and the fixed-item pose hold is not extended to frames
-	// [APPROX:MD2-901] Frame indices outside the slot's frame-name list are ignored (no corpus case among 458 in-range tracks; the one out-of-range track, Pmegacostm slot 12, addresses a slot its base model does not have, which the bind also ignores) — the PC writer 0x470C90 stores whatever slot and frame the track holds (it does not check them against the slot array or the frame names), so the original's behaviour depends on the unread consumer of the slot record
+	// [APPROX:MD2-900] Ordinary set-mode replacement, unbind, replay and held/ended texture lifetimes follow PC 0x472310/0x472f60. The return-from-list-pass aggregate reset (0x44e3a0 → 0x4726d0) and header-flag-4 per-update restore remain outside this animator's always-posed set-mode route; see docs/reverse/TEXTURE-FRAME-LIFETIME.md and RIDES-032.
+	// [APPROX:MD2-901] Frame indices outside the slot's frame-name list are ignored (no corpus case among 458 in-range tracks; the one out-of-range track, Pmegacostm slot 12, addresses a slot its base model does not have, which the bind also ignores) — the PC writer 0x470C90 stores whatever slot and frame the track holds (it does not check them against the slot array or the frame names), so the original's out-of-range behavior through the slot consumer is not safely reproduced
 	public int GetTextureFrame( int slot )
 	{
 		if ( (uint)slot >= (uint)frameBySlot.Length )
@@ -322,7 +332,7 @@ public sealed class ObjectAnimator
 			frameBySlot[slot] = 0;
 			textureFrameVersion++;
 		}
-		UpdateTextureFrames();
+		// Registering art does not advance/resample the simulation (a cleanup boundary may differ).
 	}
 
 	/// <summary>Changes whenever <see cref="GetTextureFrame"/> of some slot changes.</summary>
@@ -423,8 +433,9 @@ public sealed class ObjectAnimator
 	/// <summary>Removes a channel and its clip (an OpenTPW reset; no script opcode does this).</summary>
 	public void Stop( int channel )
 	{
-		if ( channels.Remove( channel ) )
+		if ( channels.Remove( channel, out var removed ) )
 		{
+			ResetTextureFramesOnUnbind( removed );
 			ChannelsChanged();
 			Update();
 		}
@@ -433,6 +444,8 @@ public sealed class ObjectAnimator
 	/// <summary>Removes every channel (object deletion).</summary>
 	public void StopAll()
 	{
+		foreach ( var channel in ChannelList )
+			ResetTextureFramesOnUnbind( channel );
 		channels.Clear();
 		ChannelsChanged();
 		Update();
@@ -459,7 +472,7 @@ public sealed class ObjectAnimator
 				if ( channel.Deferred is { } next )
 				{
 					channel.Deferred = null;
-					Start( index, next, now );
+					Start( index, next, now, deferTextureReset: true );
 					continue;
 				}
 				if ( holdsLastFrameAtClipEnd )
@@ -467,10 +480,12 @@ public sealed class ObjectAnimator
 					// [BIN:TPW-EXE:0x4737D7 hold route] with instance flag 0x10 and 0x8 clear the end of a clip with nothing deferred (looping or not) sets the frame to the total, ORs 0x40400000 into the instance flags, clears channel flag 0x8 and, after the sampler has run on the last frame, restarts the channel as AnimID 12 with flags 0x4 (0x473a30: 0x472f60 with AnimID 0xc, sub 0, flags 4): ended (GETANIM -1) with the AnimID 12 the next start's copy-back skips. The flag is set by 0x473e30 (0x473f32) when only animation group 0 (AnimID 0, letter C) holds clips
 					channel.Ended = true;
 					channel.Held = true;
+					channel.HeldTextureSamplePending = true;
 					frame = duration;
 				}
 				else if ( channel.Clip.Loop )
 				{
+					channel.TextureResetPending = channel.Clip.Animation.TextureFramesEnabled;
 					channel.StartMilliseconds = now - GetCarryMilliseconds( frame - duration, duration, channel.Clip.Speed );
 					channel.Serial = ++serial;
 					ApplyNodeList( channel.Clip.Animation );
@@ -498,13 +513,20 @@ public sealed class ObjectAnimator
 		}
 	}
 
-	private void Start( int index, Clip clip, long now )
+	private void Start( int index, Clip clip, long now, bool deferTextureReset = false )
 	{
 		var state = BindChannel( clip );
 		state.Serial = ++serial;
 		state.StartMilliseconds = now;
 		// A start without flag 0x2 leaves the deferred slot (+36) as it was.
 		state.Deferred = channels.TryGetValue( index, out var previous ) ? previous.Deferred : null;
+		if ( previous != null )
+		{
+			if ( deferTextureReset )
+				state.TextureResetPending = !previous.Held && previous.Clip.Animation.TextureFramesEnabled;
+			else
+				ResetTextureFramesOnUnbind( previous );
+		}
 		channels[index] = state;
 		ChannelsChanged();
 		ApplyNodeList( clip.Animation );
@@ -710,7 +732,8 @@ public sealed class ObjectAnimator
 		clockMilliseconds = snapshot.ClockMilliseconds;
 		vertexLimitations.Clear();
 		vertexLimitations.UnionWith( snapshot.VertexLimitations );
-		Update();
+		// A saved post-cleanup texture state need not equal a fresh sampling pass.
+		Update( sampleTextureFrames: snapshot.TextureFrames == null );
 	}
 
 	private NVector3[] RestorePositions( float[] flat )
@@ -821,7 +844,7 @@ public sealed class ObjectAnimator
 		return track.VertexAnimation.GetPoseLimitation( model.Meshes[mesh].Positions.Length, duration );
 	}
 
-	private void Update()
+	private void Update( bool sampleTextureFrames = true )
 	{
 		settled = false;
 		poseVersion++;
@@ -874,55 +897,80 @@ public sealed class ObjectAnimator
 				if ( channel.Uvs[node] != null )
 					uvWinner = channel;
 			}
-			var local = !any ? model.Nodes[node].Transform
+			var relative = !any ? model.Nodes[node].Transform
 				: facing is { } facingRows ? Matrix4x4.CreateScale( facingScale ) * facingRows * Matrix4x4.CreateTranslation( translation )
 				: Matrix4x4.CreateScale( scale ) * Matrix4x4.CreateFromQuaternion( rotation ) * Matrix4x4.CreateTranslation( translation );
+			local[node] = relative;
 			var parent = model.Nodes[node].ParentIndex;
-			world[node] = parent < 0 ? local : local * world[parent];
+			world[node] = parent < 0 ? relative : relative * world[parent];
 			if ( meshByNode[node] >= 0 )
 				UpdateMesh( meshByNode[node], node, vertexWinner, uvWinner );
 		}
-		UpdateTextureFrames();
+		if ( sampleTextureFrames )
+			UpdateTextureFrames();
+	}
+
+	/// <summary>Ordinary native cleanup resets all multi-frame slots, even for fixed-item mesh pose hold.</summary>
+	private void ResetTextureFramesOnUnbind( Channel outgoing )
+	{
+		// 0x473126 skips cleanup after held AnimID 12; ended AnimID 14 retains the original bound ID.
+		// 0x47268B gates on the OLD trailer, then 0x4726A8 walks raw slot flag 0x40, not its track list.
+		if ( outgoing.Held || !outgoing.Clip.Animation.TextureFramesEnabled )
+			return;
+		for ( var slot = 0; slot < frameBySlot.Length; slot++ )
+		{
+			if ( (model.Textures[slot].Flags & 0x40) == 0 )
+				continue;
+			slotAnimated[slot] = false;
+			if ( frameBySlot[slot] == 0 )
+				continue;
+			frameBySlot[slot] = 0;
+			textureFrameVersion++;
+			updateEffects++;
+		}
 	}
 
 	/// <summary>
-	/// Resamples every slot a bound clip addresses (the sampler tail of the clip update 0xa56f8): channels mix in
-	/// ascending order, a non-null <see cref="ModelTextureFrameTrack.FrameAt"/> of a higher channel overwriting a
-	/// lower one, a null sample (before the first key) leaving the slot unchanged. A slot that no bound clip
-	/// addresses any more shows frame 0 again, like a mesh that loses its track shows its stored positions.
+	/// Samples bound texture writers in channel order. No applicable key retains current slot state;
+	/// resets belong to native cleanup events, not to a slot becoming unaddressed. Held AnimID 12
+	/// samples its endpoint once and then ceases writing; ended-but-bound AnimID 14 keeps writing.
 	/// </summary>
 	private void UpdateTextureFrames()
 	{
 		if ( model.Textures.Count == 0 )
 			return;
-		Array.Clear( slotAddressed, 0, slotAddressed.Length );
 		Array.Copy( frameBySlot, sampledFrameBySlot, frameBySlot.Length );
 		foreach ( var channel in ChannelList )
 		{
+			if ( channel.TextureResetPending )
+			{
+				channel.TextureResetPending = false;
+				for ( var slot = 0; slot < sampledFrameBySlot.Length; slot++ )
+					if ( (model.Textures[slot].Flags & 0x40) != 0 )
+					{
+						sampledFrameBySlot[slot] = 0;
+						slotAnimated[slot] = false;
+					}
+			}
+			if ( channel.Held && !channel.HeldTextureSamplePending )
+				continue;
+			channel.HeldTextureSamplePending = false;
 			foreach ( var track in channel.FrameTracks )
 			{
-				slotAddressed[track.Slot] = true;
 				slotAnimated[track.Slot] = true;
-				// A frame outside the slot's names is ignored (kept at the previous frame).
+				// Invalid or missing art remains a defensive host extension (MD2-901).
 				if ( track.FrameAt( channel.Player.Tick ) is { } frame && frame < model.Textures[track.Slot].FrameNames.Count
 					&& (availableFramesBySlot[track.Slot] == null || availableFramesBySlot[track.Slot]![frame]) )
 					sampledFrameBySlot[track.Slot] = frame;
 			}
 		}
-		for ( var slot = 0; slot < slotAddressed.Length; slot++ )
-		{
-			if ( slotAnimated[slot] && !slotAddressed[slot] )
-			{
-				slotAnimated[slot] = false;
-				sampledFrameBySlot[slot] = 0;
-			}
+		for ( var slot = 0; slot < frameBySlot.Length; slot++ )
 			if ( frameBySlot[slot] != sampledFrameBySlot[slot] )
 			{
 				frameBySlot[slot] = sampledFrameBySlot[slot];
 				textureFrameVersion++;
 				updateEffects++;
 			}
-		}
 	}
 
 	/// <summary>

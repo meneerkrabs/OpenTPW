@@ -128,6 +128,8 @@ public sealed class ParkPresenceState
 	{
 		this.ground = ground;
 		Own = new PresenceAvatar( playerName, true, start.X, start.Y ) { Target = start };
+		// [BIN:TPW-EXE:0x4E5EF0 own person] the figure enters the park as a teleport: MovePlayer(…, 1)
+		pendingMode = ChatMoveMode.Teleport;
 	}
 
 	public PresenceAvatar Own { get; }

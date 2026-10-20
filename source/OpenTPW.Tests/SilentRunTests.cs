@@ -30,6 +30,7 @@ public class SilentRunTests
 		Assert.IsFalse( Game.IsSilentRun( new[] { "--load-original-level", "jungle", "--debug-weather", "100", "--audible" }, null ) );
 		Assert.IsTrue( Game.IsSilentRun( new[] { "--game-path", "x" }, null, "1" ) );
 		Assert.IsFalse( Game.IsSilentRun( new[] { "--game-path", "x", "--no-offscreen" }, null, "1" ) );
+		Assert.IsFalse( Game.IsSilentRun( new[] { "--game-path", "x", "--visible" }, null, "1" ) );
 		Assert.IsTrue( Game.IsSilentRun( new[] { "--smoke-test", "--audible" }, "1" ) );
 	}
 

@@ -239,7 +239,14 @@ public class DeterminismTests
 			Streams.RestoreRandomState( world );
 		}
 
-		public ulong Hash => WorldStateHash.Compute( new WorldStateSources { Seed = Seed, Economy = Economy, Guests = Guests, Scripts = Scripts } );
+		public ulong Hash
+		{
+			get
+			{
+				var sources = new WorldStateSources { Seed = Seed, Economy = Economy, Guests = Guests, Scripts = Scripts };
+				return GuestRefusedTargetTests.VerifyRetainedTargetHash( Guests, () => WorldStateHash.Compute( sources ), sources );
+			}
+		}
 	}
 
 	private static RideVM Script( Asm asm, RideVMOptions options ) =>
@@ -436,7 +443,7 @@ public class DeterminismTests
 	}
 
 	/// <summary>[EXT:pools-swim] The pinned hash of <see cref="RunFixedParkWithPoolsAndAChangingRoom"/> (docs/DETERMINISM.md, "Pools").</summary>
-	internal const ulong PoolsChangingRoomFixedRunHash = 0x2E9AA1D5A79E1FB2UL;
+	internal const ulong PoolsChangingRoomFixedRunHash = 0x23A31F409845D585UL;
 
 	[TestMethod]
 	public void FixedRunWithAPoolAndAChangingRoomIsTheSameInEveryProcessAndGuestsSwim()
@@ -472,7 +479,7 @@ public class DeterminismTests
 	}
 
 	/// <summary>[EXT:umbrellas-extension] The pinned hash of <see cref="RunFixedParkWithABrollyShopInTheRain"/> (docs/DETERMINISM.md, "Umbrellas").</summary>
-	internal const ulong UmbrellasFixedRunHash = 0xE912E7E5D5B6E612UL;
+	internal const ulong UmbrellasFixedRunHash = 0x9429690D329115B6UL;
 
 	[TestMethod]
 	public void FixedRunWithABrollyShopInTheRainIsTheSameInEveryProcessAndGuestsCarryUmbrellas()
@@ -520,7 +527,7 @@ public class DeterminismTests
 	}
 
 	/// <summary>[EXT:winter-extension] The pinned hash of <see cref="RunFixedParkWithWinterShopsInTheSnow"/> (docs/DETERMINISM.md, "Winter").</summary>
-	internal const ulong WinterFixedRunHash = 0xA66540FF8C2AC6DEUL;
+	internal const ulong WinterFixedRunHash = 0x7B6BD0C81ED66C35UL;
 
 	[TestMethod]
 	public void FixedRunWithWinterShopsInTheSnowIsTheSameInEveryProcessAndGuestsWearTheirPurchases()
@@ -578,10 +585,10 @@ public class DeterminismTests
 	}
 
 	/// <summary>[EXT:winter-weather] The pinned hash of <see cref="RunFixedParkWithABrollyShopAndRainMoodInTheJungleWeatherAcrossDecember"/> with the option off: the original's weather across December (docs/DETERMINISM.md, "Wintry Decembers").</summary>
-	internal const ulong JungleDecemberOffFixedRunHash = 0xF4A00471E60B9535UL;
+	internal const ulong JungleDecemberOffFixedRunHash = 0x6FDBB79D8B9377BBUL;
 
 	/// <summary>[EXT:winter-weather] The pinned hash of the same run with the option on: December's rain bands are snow for the umbrellas and the rain mood (docs/DETERMINISM.md, "Wintry Decembers").</summary>
-	internal const ulong JungleDecemberWintryFixedRunHash = 0x296DA4DA6A8BE323UL;
+	internal const ulong JungleDecemberWintryFixedRunHash = 0x812FCC248B729C28UL;
 
 	[TestMethod]
 	public void UmbrellasAndRainMoodUnderTheJungleWeatherAcrossDecemberArePinnedWithWintryDecembersOffAndOn()
@@ -682,7 +689,7 @@ public class DeterminismTests
 	}
 
 	/// <summary>[EXT:winter-always] The pinned hash of <see cref="RunFixedParkWithShopsAndRainMoodInTheJungleWeatherFromMay"/> with the Always winter option on (docs/DETERMINISM.md, "Always winter").</summary>
-	internal const ulong WinterAlwaysFixedRunHash = 0x5F767F69EF5CBF07UL;
+	internal const ulong WinterAlwaysFixedRunHash = 0x4F2841D3F85402FCUL;
 
 	[TestMethod]
 	public void ShopsAndRainMoodUnderTheJungleWeatherFromMayArePinnedWithAlwaysWinterOn()
@@ -752,10 +759,10 @@ public class DeterminismTests
 	}
 
 	/// <summary>[EXT:rain-mood-extension] The pinned hash of <see cref="RunFixedParkInTheRainWithRainMood"/> without a brolly shop (docs/DETERMINISM.md, "Rain mood").</summary>
-	internal const ulong RainMoodFixedRunHash = 0x3697B9094432D152UL;
+	internal const ulong RainMoodFixedRunHash = 0x4098DC9D36A6D8CDUL;
 
 	/// <summary>[EXT:rain-mood-extension] The pinned hash of <see cref="RunFixedParkInTheRainWithRainMood"/> with the brolly shop: the umbrellas and the rain mood rule both on (docs/DETERMINISM.md, "Rain mood").</summary>
-	internal const ulong RainMoodWithUmbrellasFixedRunHash = 0xADEE2FA6AFC2ACE3UL;
+	internal const ulong RainMoodWithUmbrellasFixedRunHash = 0xEB1C231F596B30D2UL;
 
 	[TestMethod]
 	public void FixedRunInTheRainWithRainMoodIsTheSameInEveryProcessAndMovesTheRun()
@@ -825,10 +832,10 @@ public class DeterminismTests
 	}
 
 	/// <summary>[EXT:winter-cold] The pinned hash of <see cref="RunFixedParkInTheSnowWithCold"/> with only the cold rule on (docs/DETERMINISM.md, "Winter cold").</summary>
-	internal const ulong WinterColdFixedRunHash = 0x9E74A906AB249401UL;
+	internal const ulong WinterColdFixedRunHash = 0x547522BF092EEC0CUL;
 
 	/// <summary>[EXT:winter-cold] The pinned hash of <see cref="RunFixedParkInTheSnowWithCold"/> with the cold rule, the rain mood, the brolly shop and the winter shops all on (docs/DETERMINISM.md, "Winter cold").</summary>
-	internal const ulong WinterColdEverythingFixedRunHash = 0x45FCB3FC30C601FCUL;
+	internal const ulong WinterColdEverythingFixedRunHash = 0x48F18D1BED795051UL;
 
 	[TestMethod]
 	public void FixedRunInTheSnowWithColdIsTheSameInEveryProcessAndMovesTheRun()
@@ -917,7 +924,7 @@ public class DeterminismTests
 	}
 
 	/// <summary>[EXT:pools-extras] The pinned hash of <see cref="RunFixedParkWithPoolExtras"/> (docs/DETERMINISM.md, "Pools").</summary>
-	internal const ulong PoolExtrasFixedRunHash = 0x20DED2AC4BEC293AUL;
+	internal const ulong PoolExtrasFixedRunHash = 0xE88AD1079B2559A5UL;
 
 	[TestMethod]
 	public void FixedRunWithPoolExtrasIsTheSameInEveryProcessAndGuestsUseThem()
@@ -987,7 +994,7 @@ public class DeterminismTests
 	}
 
 	/// <summary>[EXT:pools-attractions] The pinned hash of <see cref="RunFixedParkWithWaterAttractions"/> (docs/DETERMINISM.md, "Pools").</summary>
-	internal const ulong PoolsAttractionsFixedRunHash = 0x2D7EE079E5A9B09FUL;
+	internal const ulong PoolsAttractionsFixedRunHash = 0xBD827362B8D9DC5CUL;
 
 	[TestMethod]
 	public void FixedRunWithWaterAttractionsIsTheSameInEveryProcessAndSwimmersUseThem()
@@ -1002,10 +1009,10 @@ public class DeterminismTests
 	}
 
 	/// <summary>[EXT:pools-save] The pinned hash of <see cref="RunFixedParkWithPools"/> (docs/DETERMINISM.md, "Pools").</summary>
-	internal const ulong PoolsFixedRunHash = 0x8EE352E1FD1EEAB3UL;
+	internal const ulong PoolsFixedRunHash = 0x4AAC7DD831EFD113UL;
 
 	/// <summary>The pinned hash of <see cref="HashOfAFixedRunIsTheSameInEveryProcess"/>'s run (docs/DETERMINISM.md).</summary>
-	internal const ulong FixedRunHash = 0x5D8385D13CC3BB9BUL;
+	internal const ulong FixedRunHash = 0x29CE354FAB027ABFUL;
 
 	/// <summary>
 	/// The pinned hash of the same run with <c>opentpw.smarter-guests</c> on (docs/SMARTER-GUESTS.md): in this run, whose one drinks shop is cheap enough that no guest is refused and which has no second attraction to choose
@@ -1013,7 +1020,7 @@ public class DeterminismTests
 	/// shop's throughput estimate (phase 3: its average, samples and silence clock) next to the birth ids. The scenario's pin (GuestMeasurementTests) is where the rules act. 1.5.0 (phase 6, clean and quiet paths) moved this pin from main's value for the 1.4.0 rules: the cross park's few path cells crowd (five guests in one cell), so guests complain of the crowd and the wander goal moves to a quieter candidate, which changes happiness and walks, and the complaint times join the hash (docs/DETERMINISM.md). A deliberate change of the
 	/// extension's state, of the rules or of a constant changes this value (and bumps the extension's version).
 	/// </summary>
-	internal const ulong SmarterGuestsFixedRunHash = 0xE7D4BED7787E4748UL;
+	internal const ulong SmarterGuestsFixedRunHash = 0x905024CE0B91E577UL;
 
 	[TestMethod]
 	public void SmarterGuestsFixedRunHashIsTheSameInEveryProcess()
@@ -1031,13 +1038,13 @@ public class DeterminismTests
 	/// guest identity state. CI runs it on Windows, macOS and Linux, so an equal value means the interpreter, the stateless <c>rng</c> and the hook wiring give the same park everywhere. A deliberate change
 	/// of the example, of the language, of a limit or of the hook wiring changes this value.
 	/// </summary>
-	internal const ulong ScriptModsFixedRunHash = 0x8AB18F8AC449CC49UL;
+	internal const ulong ScriptModsFixedRunHash = 0xF85EB64C10598DB6UL;
 
 	/// <summary>
 	/// The pinned hash of a run with a test mod that implements all four hooks, keeps counters in its state and draws with <c>rng</c> (the example uses neither <c>scoreAttraction</c>, <c>wanderGoal</c> nor
 	/// <c>rng</c>): the cross-platform pin of everything the example does not reach.
 	/// </summary>
-	internal const ulong ScriptModsAllHooksFixedRunHash = 0x6B74FB3AE8A4937FUL;
+	internal const ulong ScriptModsAllHooksFixedRunHash = 0x3D741AAF6928D531UL;
 
 	[TestMethod]
 	public void ScriptModsFixedRunHashIsTheSameInEveryProcess()
@@ -1394,6 +1401,112 @@ public class DeterminismTests
 			Assert.IsTrue( ForbiddenInSimulation.IsMatch( line ), line );
 			Assert.IsFalse( IsApprovedCivilTimeProvider( "VM/RideScriptWorld.cs", line ), line );
 		}
+	}
+
+	/// <summary>
+	/// Forbidden in simulation code because their results depend on the runtime (docs/DETERMINISM.md, "Browser and native"): the elementary
+	/// functions of <see cref="Math"/>, <see cref="MathF"/> and the generic-math statics of double and float, which call the platform's C
+	/// library (use <see cref="DetMath"/> and <see cref="DetMathF"/>); the System.Numerics builders that call them (rotations, quaternion
+	/// slerp); <see cref="Guid.NewGuid"/>; and <c>Parallel</c> or PLINQ, whose order is not fixed. Square root, fused multiply-add, rounding
+	/// and the other correctly rounded operations are allowed: IEEE 754 fixes their results.
+	/// </summary>
+	internal static readonly Regex ForbiddenPlatformMathInSimulation = new(
+		@"\b(Math|MathF|double|float|Double|Single)\s*\.\s*(Sin|Cos|Tan|Asin|Acos|Atan|Atan2|Sinh|Cosh|Tanh|Asinh|Acosh|Atanh|SinCos|SinPi|CosPi|TanPi|SinCosPi|AsinPi|AcosPi|AtanPi|Atan2Pi|Exp|Exp2|Exp10|ExpM1|Exp2M1|Exp10M1|Log|Log2|Log10|LogP1|Log2P1|Log10P1|Pow|Cbrt|Hypot|RootN)\s*\("
+		+ @"|\bQuaternion\s*\.\s*(Slerp|CreateFromYawPitchRoll|CreateFromAxisAngle)\b|\bMatrix(4x4|3x2)\s*\.\s*(CreateRotation[XYZ]?|CreateFromYawPitchRoll|CreateFromAxisAngle)\b"
+		+ @"|\bGuid\s*\.\s*NewGuid\b|\bParallel\s*\.|\.\s*AsParallel\s*\(",
+		RegexOptions.CultureInvariant );
+
+	/// <summary>
+	/// Presentation inside the simulation folders: whole files and folders that only draw, animate the camera or build meshes and textures.
+	/// A single presentation line in a simulation file carries the marker <c>[DET:presentation]</c> with its reason instead.
+	/// </summary>
+	internal static readonly string[] PresentationMathFiles =
+	{
+		"World/Lobby/", "World/Particles/", "World/Evening/",
+		"World/Advisor.cs", "World/AdvisorRig.cs", "World/Camera.cs", "World/FreeWalkCameraMode.cs", "World/GlobeCameraMode.cs", "World/LobbyCameraMode.cs",
+		"World/ParkCameraMode.cs", "World/RideCameraMode.cs", "World/Sky.cs", "World/Sun.cs", "World/OriginalProjection.cs",
+		"World/Coasters/CoasterCarBend.cs", "World/Coasters/CoasterCarRig.cs", "World/Coasters/CoasterToolPanel.cs", "World/Coasters/CoasterTrackMesh.cs",
+		"World/Coasters/CoasterRenderer.cs", "World/Coasters/CoasterPreview.cs",
+		"World/Guests/GuestRenderer.cs", "World/Guests/GuestSpriteAtlas.cs", "World/Guests/HeadPresentation.cs", "World/Guests/RideHeadRenderer.cs",
+		"World/Guests/SpriteScale.cs", "World/Guests/BalloonRenderer.cs", "World/Guests/ThoughtRenderer.cs",
+		"World/Original/BlueprintMarkers.cs", "World/Pools/PoolTextures.cs", "World/Pools/PoolMeshBuilder.cs", "World/Pools/PoolRenderer.cs",
+		"World/Pools/Slides/PoolSlideMesh.cs", "World/Tracks/TrackRenderer.cs", "World/Tours/TourRenderer.cs", "World/Staff/StaffRenderer.cs",
+		"World/Winter/SnowCover.cs", "World/Winter/WinterAnchors.cs", "World/Winter/WarmItemRenderer.cs", "World/Umbrellas/UmbrellaRenderer.cs",
+		"World/Weather/WeatherRenderer.cs",
+	};
+
+	private const string PresentationMarker = "[DET:presentation]";
+
+	/// <summary>A temporary file name for an atomic write (the save files): never part of the park's state.</summary>
+	private static readonly Regex TemporaryFileName = new( @"Guid\.NewGuid\(\)\.ToString\(\s*""N""\s*\)\s*\+\s*""\.tmp""", RegexOptions.CultureInvariant );
+
+	internal static bool IsPresentationMath( string relativePath, string line )
+	{
+		var path = relativePath.Replace( '\\', '/' );
+		return PresentationMathFiles.Any( entry => entry.EndsWith( '/' ) ? path.StartsWith( entry, StringComparison.Ordinal ) : path == entry )
+			|| line.Contains( PresentationMarker, StringComparison.Ordinal )
+			|| TemporaryFileName.IsMatch( line ) && !ForbiddenPlatformMathInSimulation.IsMatch( TemporaryFileName.Replace( line, "" ) );
+	}
+
+	/// <summary>
+	/// The simulation (the VM, the scripts, the economy and every World folder) uses no runtime-dependent mathematics, so the browser and every
+	/// desktop compute the same bits (docs/DETERMINISM.md, "Browser and native"); presentation files and marked lines are listed above.
+	/// </summary>
+	[TestMethod]
+	public void SimulationCodeUsesNoPlatformMathGuidsOrParallelism()
+	{
+		var root = new DirectoryInfo( AppContext.BaseDirectory );
+		while ( root != null && !File.Exists( Path.Combine( root.FullName, "docs", "DETERMINISM.md" ) ) )
+			root = root.Parent;
+		if ( root == null )
+			Assert.Inconclusive( "Repository sources are not next to the test binaries." );
+		var source = Path.Combine( root.FullName, "source", "OpenTPW" );
+		var files = new[] { "VM", "Scripting", "Economy", "World" }.SelectMany( folder => Directory.EnumerateFiles( Path.Combine( source, folder ), "*.cs", SearchOption.AllDirectories ) ).ToList();
+		Assert.IsTrue( files.Count > 300, $"{files.Count} files scanned" );
+		foreach ( var entry in PresentationMathFiles )
+			Assert.IsTrue( entry.EndsWith( '/' ) ? Directory.Exists( Path.Combine( source, entry ) ) : File.Exists( Path.Combine( source, entry ) ), $"{entry} is listed as presentation but does not exist" );
+		var hits = files.SelectMany( path => File.ReadLines( path ).Select( ( line, index ) => (path, line, index) ) )
+			.Where( item => ForbiddenPlatformMathInSimulation.IsMatch( StripComment( item.line ) ) && !IsPresentationMath( Path.GetRelativePath( source, item.path ), item.line ) )
+			.Select( item => $"{Path.GetRelativePath( root.FullName, item.path )}:{item.index + 1}: {item.line.Trim()}" ).ToList();
+		Assert.AreEqual( 0, hits.Count, "Use DetMath/DetMathF, or list presentation code:" + Environment.NewLine + string.Join( Environment.NewLine, hits ) );
+	}
+
+	/// <summary>The code of a line without a trailing // comment (a mention of Math.Sin in a comment is not a call).</summary>
+	private static string StripComment( string line )
+	{
+		var index = line.IndexOf( "//", StringComparison.Ordinal );
+		return index < 0 ? line : line[..index];
+	}
+
+	/// <summary>Each forbidden form is caught and the deterministic forms next to them are not (the guard's own mutation check).</summary>
+	[TestMethod]
+	public void PlatformMathGuardCatchesEachForbiddenForm()
+	{
+		var forbidden = new[]
+		{
+			"var s = Math.Sin( a );", "var c = MathF.Cos(a);", "var t = Math.Atan2( y, x );", "var a = MathF.Acos( d );", "var p = Math.Pow( b, e );",
+			"var l = Math.Log2( r );", "var e = Math.Exp( -k );", "var (s, c) = MathF.SinCos( a );", "var s = double.Sin( a );", "var s = float.Atan2( y, x );",
+			"var r = Math.Cbrt( v );", "var h = Math.Hypot( x, y );", "var m = Matrix4x4.CreateRotationY( a );", "var q = Quaternion.Slerp( a, b, t );",
+			"var q = Quaternion.CreateFromYawPitchRoll( y, p, r );", "var id = Guid.NewGuid();", "Parallel.For( 0, n, Step );", "var all = items.AsParallel().ToList();",
+			"var t = Math . Tan ( a );",
+		};
+		var allowed = new[]
+		{
+			"var s = DetMath.Sin( a );", "var c = DetMathF.Cos( a );", "var t = DetMath.Atan2( y, x );", "var r = Math.Sqrt( v );", "var r = MathF.Sqrt( v );",
+			"var f = MathF.FusedMultiplyAdd( a, b, c );", "var n = Math.Round( v );", "var a = Math.Abs( v );", "var m = Math.Max( a, b );", "var p = Math.PI;",
+			"var c = Math.Clamp( v, 0, 1 );", "var f = Math.Floor( v );", "var m = Matrix4x4.CreateTranslation( v );", "var s = Math.ScaleB( v, 3 );",
+		};
+		foreach ( var line in forbidden )
+			Assert.IsTrue( ForbiddenPlatformMathInSimulation.IsMatch( line ), line );
+		foreach ( var line in allowed )
+			Assert.IsFalse( ForbiddenPlatformMathInSimulation.IsMatch( line ), line );
+		Assert.IsTrue( IsPresentationMath( "World/Lobby/GlobeScene.cs", "var s = MathF.Sin( a );" ) );
+		Assert.IsTrue( IsPresentationMath( "World/Tracks/TrackSurface.cs", "var p = MathF.Atan2( a, b ); // [DET:presentation] the drawn pose" ) );
+		Assert.IsFalse( IsPresentationMath( "World/Tracks/TrackSurface.cs", "var p = MathF.Atan2( a, b );" ) );
+		Assert.IsFalse( IsPresentationMath( "World/Lobby.cs", "var s = MathF.Sin( a );" ), "a folder entry is not a file prefix" );
+		Assert.IsTrue( IsPresentationMath( "Economy/ParkSaveFile.cs", "var temporary = destination + \".\" + Guid.NewGuid().ToString( \"N\" ) + \".tmp\";" ) );
+		Assert.IsFalse( IsPresentationMath( "Economy/ParkSaveFile.cs", "var id = Guid.NewGuid();" ) );
+		Assert.IsFalse( IsPresentationMath( "Economy/ParkSaveFile.cs", "var name = Guid.NewGuid().ToString( \"N\" ) + \".tmp\" + Math.Sin( a );" ) );
 	}
 }
 

@@ -149,8 +149,14 @@ class TpiArrivalRingContract(unittest.TestCase):
         for capability in ("Advisor", "ParkSaves", "Staff", "Research", "Challenges", "Sharing", "OriginalHud"):
             self.assertIn(f"{capability} = false", capabilities)
         self.assertIn("ExperimentalHud = true", capabilities)
-        resume = method(read("source/OpenTPW/Client/GameFlow.Resume.cs"), "internal Level ResumePark(")
-        self.assertIn('if ( GameEditions.IsThemeParkInc ) throw new NotSupportedException( "Theme Park Inc park saves are not supported." );', resume)
+        refusal = 'if ( GameEditions.IsThemeParkInc ) throw new NotSupportedException( "Theme Park Inc park saves are not supported." );'
+        resume_source = read("source/OpenTPW/Client/GameFlow.Resume.cs")
+        # [EXT:extensions-apply-at-load] the entry refuses first, before a confirmed extension switch or a waiting extension choice is applied
+        entry = method(resume_source, "internal Level ResumePark(")
+        self.assertIn(refusal, entry.split("Level Resume()")[0])
+        # and the strict resume it calls still refuses before the economy is restored
+        resume = method(resume_source, "private Level ResumeStrict(")
+        self.assertIn(refusal, resume)
         self.assertLess(resume.index("GameEditions.IsThemeParkInc"), resume.index("ParkSaveFile.Restore"))
         capture = method(read("source/OpenTPW/World/Level.Resume.cs"), "internal ParkResumeSnapshot CaptureResumeSnapshotUnchecked(")
         self.assertIn("if ( IsReadOnlyVisit || GameEditions.IsThemeParkInc || OriginalPark == null || Park == null || Guests == null )", capture)

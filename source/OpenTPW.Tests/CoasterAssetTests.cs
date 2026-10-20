@@ -179,8 +179,14 @@ public class CoasterAssetTests
 			foreach ( var rotation in new[] { 0, 90, 180, 270 } )
 			{
 				var placement = new ObjectPlacement( 30, 30, rotation, System.Numerics.Vector2.Zero, 0f );
-				var layout = CoasterStationLayout.FromModel( runtime.Model, runtime.Animator.NodeTransforms, placement );
+				var layout = CoasterStationLayout.FromModel( runtime.Model, runtime.Animator.LocalTransforms, placement );
 				Assert.IsNotNull( layout, $"{entry.DisplayName}: the model holds dummies 1, 2 and 3 with attribute 0x400000" );
+				// The plain composition (DetMatrix) agrees with System.Numerics' world matrices up to the last bits of rounding.
+				var map = AdvisorNodeMap.From( runtime.Model );
+				var mid = (ObjectPlacement.SwapAxes( runtime.Animator.NodeTransforms[map.FindNode( 0x400000, 2 )] ) * placement.ModelToEngine).Translation;
+				Assert.AreEqual( mid.X / ObjectPlacement.ModelScale, layout!.Mid.X, 1e-2f, $"{entry.DisplayName} rotation {rotation}: Mid x" );
+				Assert.AreEqual( mid.Y / ObjectPlacement.ModelScale, layout.Mid.Z, 1e-2f, $"{entry.DisplayName} rotation {rotation}: Mid z" );
+				Assert.AreEqual( mid.Z / ObjectPlacement.ModelScale, layout.Mid.Y, 1e-2f, $"{entry.DisplayName} rotation {rotation}: Mid height" );
 				var (depart, back) = CoasterBuilder.StationEnds( entry.Shape, 30, 30, rotation )!.Value;
 				var step = (X: Math.Sign( depart.X - back.X ), Y: Math.Sign( depart.Y - back.Y ));
 				Assert.AreEqual( (back.X - step.X, back.Y - step.Y), (CoasterTrack.CellOf( layout!.End.X ), CoasterTrack.CellOf( layout.End.Z )), $"{entry.DisplayName} rotation {rotation}: S0 stands beyond the '<' cell" );

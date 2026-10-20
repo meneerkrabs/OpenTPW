@@ -14,6 +14,11 @@ public sealed class OnlineHost
 	public Func<Level?> Level { get; init; } = () => null;
 	/// <summary>Starts a read-only visit of a downloaded or imported park.</summary>
 	public Action<ParkVisitInfo>? Visit { get; init; }
+	/// <summary>
+	/// Starts a read-only visit of an original level's starting park (a chat park's, <see cref="ParkSharing.PrepareLevelVisit"/>): the factory builds the visit
+	/// once the level's files are there, as the browser copies a level's files only when it is first played.
+	/// </summary>
+	public Action<string, Func<ParkVisitInfo>>? VisitLevel { get; init; }
 	/// <summary>The online globe behind the Online World screen; null where it is not shown (in a park).</summary>
 	public Func<GlobeScene?> Globe { get; init; } = () => null;
 	/// <summary>[EXT:restored-advice-online] Tells the advisor that a screen opened (the message of <see cref="RestoredAdvice"/>: 328 publish, 329 park details, 331 other parks, 332 find parks, 333 outbox, 334 world); null where there is no advisor.</summary>
@@ -86,12 +91,11 @@ public sealed class OnlineScreens
 		{
 			var (x0, y0, x1, y1, countRegion, anchor) = satellites[index];
 			var number = index + 1;
-			var room = Online.Chat.ChatProtocol.SatelliteRoom( number );
 			var satellite = screen.Add( new UiButton { Id = $"satellite{number}", Model = "i_sat", Help = strings.Help( 423 ), Bounds = new UiRect( x0, y0, x1 - x0, y1 - y0 ), Anchor = anchor,
-				Clicked = () => Guard( () => { Session.JoinRoom( room ); ShowChat(); } ) } );
+				Clicked = () => Guard( () => ShowChatPark( number, screen ) ) } );
 			var count = screen.Add( new UiLabel { Id = $"satellite{number}Count", Font = fonts => fonts.Menu, Color = UiColors.Text, Align = UiAlign.Center,
 				Bounds = countRegion, Anchor = anchor,
-				Text = () => Session.ChatParks.Count >= number ? Session.ChatParks[number - 1].Players.ToString( System.Globalization.CultureInfo.InvariantCulture ) : "" } );
+				Text = () => Session.ChatParks.FirstOrDefault( park => park.Id == number ) is { } park ? park.Players.ToString( System.Globalization.CultureInfo.InvariantCulture ) : "" } );
 			screen.Updating += _ => satellite.Enabled = Session.IsLoggedIn && Session.Busy == 0;
 		}
 		AddCityLabels( screen, null );
@@ -176,6 +180,100 @@ public sealed class OnlineScreens
 		PanelButton( "rotateRight", "b_lobright", 307, 1201, 460, 1355, 425, () => GlobeCameraMode.Turn( 1, 0 ) );
 		PanelButton( "rotateDown", "b_lobdown", 184, 1327, 337, 1481, 427, () => GlobeCameraMode.Turn( 0, -1 ) );
 		return (findButton, zoom);
+	}
+
+	// ---- Chat parks (the satellites) -----------------------------------------------------------
+
+	/// <summary>The package author of a chat park built from an original level (<see cref="ParkSharing.PrepareLevelVisit"/>).</summary>
+	public const string ChatParkAuthor = "OpenTPW";
+
+	/// <summary>
+	/// A satellite's click on <paramref name="world"/>: its chat park's details (<see cref="ShowChatParkDetails"/>) from the scenes the server lists for the
+	/// satellites, while the globe is still open; a server without scenes (an older OpenTPW server) enters the satellite's room in the overhead chat view.
+	/// </summary>
+	// [BIN:TPW-EXE:0x4C56E0 satellite click] satellite i (controls 0x16008-0x1600C, the index stored by 0x4C4FB0) runs 0x5B7910(i - 1): entry i of the chat satellite
+	// list, read from the client's copy without a request, the globe's panels hidden and the park details 0x4C0AE0 opened for it; their cancel (0x4C4FA0) brings
+	// the globe back
+	// [EXT:online-chat-park-scene] OpenTPW asks the server for the satellites' scenes at the click
+	private void ShowChatPark( int number, UiScreen world ) => Session.FetchChatParkScenes( scenes =>
+	{
+		if ( !ReferenceEquals( stack.Top, world ) )
+			return;
+		if ( scenes == null )
+			Guard( () => EnterChatRoom( number ) );
+		else if ( scenes.FirstOrDefault( scene => scene.Id == number ) is { } scene )
+			ShowChatParkDetails( scene );
+		else
+			// the server keeps no chat park for this satellite (and refuses its room)
+			localStatus = OnlineStrings.ChatNotice( (int)Online.Chat.ChatNotice.NoPark, null );
+	} );
+
+	/// <summary>
+	/// A chat park's details as the original showed a satellite's park: the chat park's name as the title, its theme, its description and Enter (to its
+	/// park, <see cref="EnterChatPark"/>); the owner's action is shown disabled and the statistics rows stay empty.
+	/// </summary>
+	// [BIN:TPW-EXE:0x4C0AE0 park details] at 0x4C0C06 the dialog (table 0x759170, the Mac's data:0x51150) looks up the park's city (0x5BC9C0); with that city's flag
+	// +0x60 set it fills only the first row (0xE5937) with "%s : %s" (0x7593D4) of UITEXT 271 and the theme's name (0x5BD270), besides the description (0xE5930)
+	// and the park's name as the title (0xE5931), and disables the owner action (0xE592F); the statistics rows get no text
+	// [EXT:online-chat-park-details] the satellites' details are always this variant, titled with the chat park's name: whether city 1 carried the flag is not
+	// known, and OpenTPW's server names its chat parks, not their parks
+	public void ShowChatParkDetails( ChatParkScene scene )
+	{
+		host.Advise?.Invoke( RestoredAdvice.ParkDetailsHelp );
+		var screen = new UiScreen( ChatParkDetailsScreenName );
+		stack.RemoveWhere( other => other.Name == ChatParkDetailsScreenName );
+		var window = new UiRect( 248, 30, 1552, 977 );
+		screen.Add( new UiModelImage { Id = "window", Model = "w_big", Bounds = window, Anchor = UiAnchor.Center } );
+		screen.Add( new UiLabel { Id = "parkName", Font = fonts => fonts.Title, Color = UiColors.Title, Align = UiAlign.Center,
+			Bounds = new UiRect( 512, 75, 1024, 80 ), Anchor = UiAnchor.Center, Text = () => scene.Name } );
+		screen.Add( new UiLabel { Id = "theme", Font = fonts => fonts.Label, Bounds = new UiRect( 380, 233, 481, 45 ), Anchor = UiAnchor.Center,
+			Text = () => scene.Level is { } level ? ChatParkThemeRow( level ) : "" } );
+		screen.Add( new UiLabel { Id = "description", Wrap = true, Font = fonts => fonts.Small,
+			Bounds = new UiRect( 922, 207, 680, 448 ), Anchor = UiAnchor.Center, Text = () => scene.Description } );
+		var enter = screen.Add( new UiButton { Id = "visit", Text = () => OnlineStrings.Get( OnlineLabel.VisitReadOnly ),
+			Clicked = () => Guard( () => EnterChatPark( scene ) ),
+			Font = fonts => fonts.Label, Bounds = new UiRect( 1481, 800, 154, 153 ), Anchor = UiAnchor.Center } );
+		screen.Add( new UiButton { Id = "unpublish", Text = () => OnlineStrings.Get( OnlineLabel.Unpublish ), Enabled = false,
+			Font = fonts => fonts.Label, Bounds = new UiRect( 1322, 800, 154, 153 ), Anchor = UiAnchor.Center } );
+		AddCloseButton( screen, 1671, 820 );
+		AddStatus( screen, window );
+		screen.Updating += _ => enter.Enabled = Session.IsLoggedIn && Session.Busy == 0;
+		screen.Back = stack.Pop;
+		Push( screen );
+	}
+
+	/// <summary>The chat park details' screen name.</summary>
+	public const string ChatParkDetailsScreenName = "chatParkDetails";
+
+	/// <summary>The chat park details' theme row: "Theme : " and the theme's name, as tp.exe 0x4C0AE0 formats it ("%s : %s").</summary>
+	internal static string ChatParkThemeRow( string level ) => $"{OnlineStrings.Ui( OnlineStrings.ThemeLabel, "Theme" )} : {OnlineStrings.Theme( level )}";
+
+	/// <summary>
+	/// Enter in a chat park's details: the visit of its park, in its satellite's room — the published park the server names, downloaded as any visit, or
+	/// else the starting park of its original level, built when its files are there; without either (or outside the game flow, which starts visits) the
+	/// room in the overhead chat view.
+	/// </summary>
+	// [BIN:TPW-EXE:0x4C0880 park details enter] Enter (0xE592E) runs the visit as for any park (0x5B86A0 → 0x5B8910: the download and MarkParkVisited, then game type 1
+	// and the chat mode, 0x54ED1E → 0x4BF460), and the chat connection then creates the park's own room ("%d" of the park id, CreateRoom at 0x4E6A67)
+	// [EXT:online-chat-park-scene] a chat park's visit joins its satellite's standing room, the room older games enter in the overhead view and the satellite's
+	// count counts; a satellite without a published park visits the starting park of its server-named level
+	private void EnterChatPark( ChatParkScene scene )
+	{
+		var room = Online.Chat.ChatProtocol.SatelliteRoom( scene.Id );
+		if ( host.Visit != null && scene.Park is { } park )
+			Session.Download( park, path => Inspect( path, start: true, park.Id, room ) );
+		// the level comes from the server: only a theme's level is ever queued or read
+		else if ( host.VisitLevel is { } visitLevel && scene.Level is { } level && ParkSharing.IsThemeLevel( level ) )
+			visitLevel( level, () => ParkSharing.PrepareLevelVisit( level, scene.Name, scene.Description, ChatParkAuthor ) with { ChatRoom = room } );
+		else
+			EnterChatRoom( scene.Id );
+	}
+
+	/// <summary>A satellite's room in the overhead chat view (<see cref="ShowChat"/>).</summary>
+	private void EnterChatRoom( int number )
+	{
+		Session.JoinRoom( Online.Chat.ChatProtocol.SatelliteRoom( number ) );
+		ShowChat();
 	}
 
 	// ---- City lobby (Mac UI table data:0x50172) -----------------------------------------------
@@ -579,9 +677,10 @@ public sealed class OnlineScreens
 		search.Text = cityId == null ? Session.Settings.PlayerName ?? "" : "";
 		void Refresh() => Guard( () => Session.RefreshParks( null, cityId == null ? "recent" : "votes", cityId,
 			search.Text.Trim().Length == 0 ? null : search.Text.Trim() ) );
-		search.Submitted = Refresh;
-		screen.Add( new UiButton { Id = "searchButton", Text = () => OnlineStrings.Ui( OnlineStrings.SearchName, "Search name" ), Clicked = Refresh,
+		var searchButton = screen.Add( new UiButton { Id = "searchButton", Text = () => OnlineStrings.Ui( OnlineStrings.SearchName, "Search name" ), Clicked = Refresh,
 			Bounds = new UiRect( 1179, 810, 153, 154 ), Anchor = UiAnchor.Center } );
+		// [BIN:TPW-EXE:0x4bfc04 search Enter] Enter in the search field (0x802) makes Find Parks' procedure 0x4bf9f0 post 0x100 with the search button's id 0xe059 to its own window (0x4bfc29) unless that button is held down (+0x138), so the hook clicks 0x1F by the window's style 1 and the search runs, as a click on the button does
+		search.Submitted = searchButton.Activate;
 		// [DATA:Mac UI table data:0x50f84] the six column headers (ids 16-21) at their authored x extents
 		var columns = new (float Offset, int Text)[]
 		{
@@ -733,8 +832,11 @@ public sealed class OnlineScreens
 				? new[] { OnlineStrings.Ui( OnlineStrings.NoSearchResults, "No search results" ) }
 				: (Session.CityParks ?? Array.Empty<ParkSummary>()).Select( ( park, index ) => $"{park.Name}\t{OnlineStrings.Theme( park.Level )}\t{index + 1}\t{park.Visits}\t{park.Votes}" ).ToArray(),
 		} );
-		var parks = Session.CityParks ?? Array.Empty<ParkSummary>();
-		ParkSummary? Selected() => list.Selected >= 0 && list.Selected < parks.Count ? parks[list.Selected] : null;
+		ParkSummary? Selected()
+		{
+			var parks = Session.CityParks ?? Array.Empty<ParkSummary>();
+			return list.Selected >= 0 && list.Selected < parks.Count ? parks[list.Selected] : null;
+		}
 		list.RowActivated = index => { if ( Selected() is { } park ) ShowParkDetails( park, index ); };
 		list.SelectionChanged = _ => { if ( Selected() is { } park ) ShowParkDetails( park, list.Selected ); };
 		AddCloseButton( screen, 1671, 820 );
@@ -1119,9 +1221,9 @@ public sealed class OnlineScreens
 	// ---- Chat (the original chat overlay, tp.exe table 0x758AE8) ----------------------------------
 
 	/// <summary>
-	/// A chat park: the original chat overlay (<see cref="ChatPanel"/>: the people list with its tabs, the postcard, vote and earmuffs buttons, the
-	/// message list, the entry and the name popups) over the chat park view, with the room's name over the park; a visit's chat mode shows the same
-	/// overlay over the visited park.
+	/// The current room in the overhead chat view: the original chat overlay (<see cref="ChatPanel"/>: the people list with its tabs, the postcard, vote
+	/// and earmuffs buttons, the message list, the entry and the name popups) over the chat park view, with the room's name over the park. A visit's chat
+	/// mode shows the same overlay over the visited park, where a satellite's park is visited too (<see cref="EnterChatPark"/>).
 	/// </summary>
 	public void ShowChat()
 	{
@@ -1129,8 +1231,8 @@ public sealed class OnlineScreens
 			Guard( Session.ConnectChat );
 		var panel = new ChatPanel( strings, stack, () => Session ) { Postcard = ShowSendPostcard };
 		var screen = new ChatPanel.ChatScreen( ChatScreenName, panel );
-		// The park view over which the original drew its chat overlay; [EXT:online-chat-park-view] the original chat park
-		// was a three-dimensional park, whose scene is not decoded, so OpenTPW shows it from above.
+		// The park view over which the original drew its chat overlay; [EXT:online-chat-park-view] a room entered without a park to visit (an older server,
+		// a satellite without a scene, a published park's chat from its details) is shown from above.
 		var view = screen.Add( new UiChatParkView( Session ) { Id = "park", Bounds = new UiRect( 543, 30, 1462, 1120 ), Anchor = UiAnchor.TopLeft } );
 		panel.AddTo( screen );
 		// The room's name over the park view, where the original showed the park it sat on.
@@ -1174,12 +1276,13 @@ public sealed class OnlineScreens
 	}
 
 	/// <param name="parkId">The published park's id when the file was just downloaded from the server: the visit joins the park's chat room.</param>
-	private void Inspect( string path, bool start, string? parkId = null )
+	/// <param name="room">The chat room the visit joins instead (a chat satellite's, for the visit of its park).</param>
+	private void Inspect( string path, bool start, string? parkId = null, string? room = null )
 	{
 		inspected = null;
 		Guard( () =>
 		{
-			inspected = ParkSharing.PrepareVisit( ParkPackage.Load( path ) ) with { OnlineParkId = parkId };
+			inspected = ParkSharing.PrepareVisit( ParkPackage.Load( path ) ) with { OnlineParkId = parkId, ChatRoom = room };
 			if ( start && host.Visit != null )
 				host.Visit( inspected );
 		} );

@@ -229,7 +229,8 @@ public class PoolsLevelTests
 			Assert.IsTrue( level.Objects.Remove( one ) );
 			Assert.AreEqual( swimmer, level.Guests.Guests.Count( other => other.InSwimSession ), "no swim started for the guest that was changing" );
 			Assert.IsFalse( guest.InSwimSession );
-			Assert.AreEqual( GuestState.ExitingRide, guest.State, "it stepped out like a rider of any attraction" );
+			// the removal (0x004FB360) sets a rider of any attraction down in state 6, without ExitRide or a use
+			Assert.AreEqual( GuestState.DoingNothing, guest.State, "it stepped out like a rider of any removed attraction" );
 			Assert.AreEqual( 0, guest.AttractionId );
 			Assert.AreEqual( random, level.Guests.CaptureSnapshot().RandomState, "and the world generator was not drawn for one" );
 			return 0;

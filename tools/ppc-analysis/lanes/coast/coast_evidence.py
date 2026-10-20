@@ -175,10 +175,10 @@ FIELDS = (
     (0x37104, 32, (0, 3, 24), 'occupying pylon must use the same pylon control'),
     (0x37134, 32, (5, 3, 48), 'stack height of the occupying pylon'),
     (0x37138, 32, (0, 4, 204), 'uiMaxStackedPylons'),
-    # Track completion flag (controller +60 bit 0) and rider count (+320).
+    # Track completion flag (controller +60 bit 0) and the self-intersection count (+320; not riders, docs/COASTERS.md).
     (0x37f1c, 24, (0, 0, 1), 'complete track sets controller +60 bit 0'),
     (0x45da4, 32, (3, 3, 60), 'complete-track flags'),
-    (0x45edc, 32, (0, 29, 320), 'riders on board'),
+    (0x45edc, 32, (0, 29, 320), 'self-intersection count'),
     # Rating pass 0x3fc18 over the 56-byte samples.
     (0x3fc88, 48, (0, 24, 68), 'start speed fWinchSpeed'),
     (0x3fcac, 48, (0, 31, 52), 'speed cap controller +52'),

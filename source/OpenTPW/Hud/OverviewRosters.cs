@@ -174,7 +174,7 @@ internal static class ParkVisitorRoster
 		("headerNumber", UIStrings.VisitorNumber, 129, UiAlign.Center),
 		("headerCash", UIStrings.CashRemainingVisitor, 130, UiAlign.Right),
 		("headerTime", UIStrings.TimeInParkVisitor, 131, UiAlign.Center),
-		("headerRides", UIStrings.RidesRiddenVisitor, 132, UiAlign.Center),
+		("headerRides", UIStrings.RidesRiddenVisitor, 132, UiAlign.Left),
 		("headerThought", (UIStrings)117, 133, UiAlign.Center),
 		("headerHappiness", UIStrings.HappinessVisitor, 134, UiAlign.Center),
 	};
@@ -218,9 +218,10 @@ internal static class ParkVisitorRoster
 		return ParkCalendar.SecondsPerTurn * (refreshed ? steps << 2 : steps) / ParkCalendar.SecondsPerHour;
 	}
 
-	// [APPROX:GUEST-920] the turns since creation are the visitor's simulated seconds over the turn's 248 ms, floored, where the original subtracts two integer world turns (stamp +0x1d4, 0x4fd950)
+	// [BIN:TPW-EXE:0x004fd950] retained display age reproduces unsigned current-turn minus creation stamp, including the four-turn quantization above.
+	// [APPROX:GUEST-920] older own-format saves lack that integer provenance and retain their previous seconds-derived fallback. Roster membership is unchanged and unqualified.
 	private static long? Hours( Guest guest, bool refreshed ) => guest.TimeInParkSeconds is { } elapsed
-		? DisplayHours( (long)Math.Floor( elapsed * 1000 / ParkCalendar.TurnMilliseconds ), refreshed ) : null;
+		? DisplayHours( guest.DisplayTimeInParkTurns ?? (long)Math.Floor( elapsed * 1000 / ParkCalendar.TurnMilliseconds ), refreshed ) : null;
 
 	/// <summary>The UITEXT record of a time-in-park cell (<see cref="UiTextRecord"/>).</summary>
 	public static int DurationRecord( long hours ) => hours > 48 ? UiTextRecord.Days : hours > 24 ? UiTextRecord.Day : UiTextRecord.Hours;

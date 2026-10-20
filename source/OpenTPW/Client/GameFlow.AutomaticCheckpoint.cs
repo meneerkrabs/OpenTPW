@@ -103,13 +103,14 @@ internal sealed partial class GameFlow
 	{
 		var screen = menu.Stack.Top;
 		var offer = automaticOffer;
-		bool Current() => !ProgressCaptured() && offer.HasValue && ReferenceEquals( offer.Value.Entry, entry ) && ReferenceEquals( offer.Value.Menu, menu ) && ReferenceEquals( Menu, menu ) &&
+		// [EXT:save-extension-switch] a confirmed switch arrives as a copy of the offered entry that differs only in its switch
+		bool Current() => !ProgressCaptured() && offer.HasValue && (ReferenceEquals( offer.Value.Entry, entry ) || entry.Switch != null && offer.Value.Entry == entry with { Switch = null }) && ReferenceEquals( offer.Value.Menu, menu ) && ReferenceEquals( Menu, menu ) &&
 		 menu.Selected.Level == entry.Theme && screen != null && !screen.IsRemoved && ReferenceEquals( menu.Stack.Top, screen ) && ReferenceEquals( SaveFileSystem, entry.Namespace );
 		if ( BuildingPark || ProgressCaptured() || !Current() ) return;
 		try
 		{
 			ValidateAutomaticOffer( entry, offer!.Value.Binding.BoundProfileDigest );
-			QueueProgressLevel( entry.Theme, () => { if ( Current() ) TryAutomaticContinue( entry, offer.Value.Binding.BoundProfileDigest, snapshot => { if ( AutomaticResumeOverride != null ) AutomaticResumeOverride( snapshot ); else ResumePark( snapshot ); } ); } );
+			QueueProgressLevel( entry.Theme, () => { if ( Current() ) TryAutomaticContinue( entry, offer.Value.Binding.BoundProfileDigest, snapshot => { if ( AutomaticResumeOverride != null ) AutomaticResumeOverride( snapshot ); else ResumePark( snapshot, extensionSwitch: entry.Switch ); } ); } );
 		}
 		catch ( Exception error ) when ( ProgressFailure( error ) ) { ShowProgressFailure( error ); }
 	}

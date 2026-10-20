@@ -204,7 +204,7 @@ public class ParkPresenceStateTests
 	{
 		var state = new ParkPresenceState( new Ground( 100, 100 ), "Ann", (10.5f, 10.5f) );
 		Assert.IsNotNull( state.Advance( 0.016f, true, false ) );
-		Assert.AreEqual( ChatMoveMode.Walk, state.SentMode );
+		Assert.AreEqual( ChatMoveMode.Teleport, state.SentMode, "the figure enters the park as a teleport (tp.exe 0x4E5EF0)" );
 		state.WalkTo( 20.5f, 10.5f );
 		state.Advance( 1f, true, false );
 		var stood = (state.Own.X, state.Own.Y);

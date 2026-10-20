@@ -1,6 +1,7 @@
 # AUDIO-039: Bound device reverb fidelity
 
 ## Status and classification
+- **Superseded (October 19, 2026):** the user approved the reverb as a design choice ("nagalm mag EXT"). `APPROX:AUDIO-039` is retired and the stand-in is `[EXT:audio-reverb]` (docs/AUDIO.md, "Reverb"). The rest of this proposal is kept as history.
 - Classification: approximation; characterization-test and evidence update.
 - Current snapshot: public clone of `meneerkrabs/OpenTPW` main `cb625bfedb8bbcbf6d2e71e551a5772929700574` (as supplied for this task).
 - Deliverables in this task: created `source/OpenTPW.Tests/ReverbUnitContractTests.cs` and updated this proposal. No runtime source was edited, including `AudioMixer` or `GameAudio`; no register or `APPROX` annotation was retired; no commit or push was made.

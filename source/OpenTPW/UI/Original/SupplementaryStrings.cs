@@ -138,6 +138,14 @@ public enum OpenTpwText
 	// [EXT:pools-attractions] [EXT:pools-river] [EXT:pools-waves] the water attractions' refusals, the river option of the pool tool and the wave machine's settings (docs/POOLS.md)
 	PoolAttractionNeedsPool,
 	PoolAttractionNeedsWater,
+	PoolBridgeEast,
+	PoolBridgeSouth,
+	PoolBridgeErase,
+	PoolBridgeHelp,
+	PoolBridgeEraseHelp,
+	PoolBridgeNeedsWater,
+	PoolBridgeNotBridge,
+	PoolBridgeStanding,
 	PoolRowRiver,
 	PoolRiverHelp,
 	PoolRiverHint,
@@ -373,6 +381,28 @@ public enum OpenTpwText
 	ExtensionCheatsName,
 	/// <summary>[EXT:cheats-extension] The cheats extension's description on the Extensions and mods screen.</summary>
 	ExtensionCheatsDescription,
+	/// <summary>[EXT:save-extension-switch] The load dialog: the park was played without a rule extension that is on now ({0}: its names).</summary>
+	ExtensionSwitchPlayedWithout,
+	/// <summary>[EXT:save-extension-switch] The load dialog: the park was played with a rule extension that is off now ({0}: its names).</summary>
+	ExtensionSwitchPlayedWith,
+	/// <summary>[EXT:save-extension-switch] The load dialog: the park was played with another version of a rule extension ({0}: its names).</summary>
+	ExtensionSwitchOtherVersion,
+	/// <summary>[EXT:save-extension-switch] The load dialog: the park uses a content extension that is off now ({0}: its names).</summary>
+	ExtensionSwitchNeeds,
+	/// <summary>[EXT:save-extension-switch] The load dialog's closing line: the park continues with the extensions that are on now.</summary>
+	ExtensionSwitchNewRun,
+	/// <summary>[EXT:save-extension-switch] The load dialog's button that loads with the rule extensions switched.</summary>
+	ExtensionSwitchContinue,
+	/// <summary>[EXT:save-extension-switch] The load dialog's button that switches content extensions on and loads ({0}: their names).</summary>
+	ExtensionSwitchTurnOn,
+	/// <summary>[EXT:save-extension-switch] The pools extension's name in the load dialog.</summary>
+	ExtensionPoolsName,
+	/// <summary>[EXT:save-extension-switch] The load dialog's question that switches content extensions on and loads ({0}: their names).</summary>
+	ExtensionSwitchTurnOnQuestion,
+	/// <summary>[EXT:extensions-apply-at-load] The Extensions and mods screen's notice when only extensions changed and no park runs: they apply to the next park, no restart.</summary>
+	ModsSavedNextPark,
+	/// <summary>[EXT:extensions-apply-at-load] The same notice while a park runs: the changes apply when the player leaves it or loads another park.</summary>
+	ModsSavedAfterThisPark,
 }
 
 public static class SupplementaryStrings
@@ -635,6 +665,15 @@ public static class SupplementaryStrings
 		// [EXT:pools-attractions] [EXT:pools-river] [EXT:pools-waves] the water attractions' refusals, the river option and the wave machine's settings
 		[OpenTpwText.PoolAttractionNeedsPool] = new[] { "This must stand beside a pool", "Dette skal ligge ved siden af en pool", "Dit moet naast een zwembad staan", "Ceci doit se trouver à côté d'une piscine", "Das muss neben einem Pool stehen", "이것은 수영장 옆에 있어야 합니다", "To musi stać obok basenu", "Esto debe estar junto a una piscina", "Det här måste ligga bredvid en pool", "Deve stare accanto a una piscina", "זה חייב לעמוד ליד בריכה" },
 		[OpenTpwText.PoolAttractionNeedsWater] = new[] { "This attraction needs this pool water", "Denne attraktion har brug for dette poolvand", "Deze attractie heeft dit zwembadwater nodig", "Cette attraction a besoin de cette eau de piscine", "Diese Attraktion braucht dieses Poolwasser", "이 어트랙션에는 이 수영장 물이 필요합니다", "Ta atrakcja potrzebuje tej wody basenowej", "Esta atracción necesita esta agua de piscina", "Den här attraktionen behöver detta poolvatten", "Questa attrazione ha bisogno di quest'acqua della piscina", "המתקן הזה צריך את מי הבריכה האלה" },
+		// [EXT:pools-bridges] Build controls and placement feedback in every supported UI language.
+		[OpenTpwText.PoolBridgeEast] = new[] { "Pool bridge (east-west)", "Poolbro (øst-vest)", "Zwembadbrug (oost-west)", "Pont de piscine (est-ouest)", "Poolbrücke (Ost-West)", "수영장 다리 (동서)", "Most nad basenem (wschód-zachód)", "Puente de piscina (este-oeste)", "Poolbro (öst-väst)", "Ponte sulla piscina (est-ovest)", "גשר בריכה (מזרח-מערב)" },
+		[OpenTpwText.PoolBridgeSouth] = new[] { "Pool bridge (north-south)", "Poolbro (nord-syd)", "Zwembadbrug (noord-zuid)", "Pont de piscine (nord-sud)", "Poolbrücke (Nord-Süd)", "수영장 다리 (남북)", "Most nad basenem (północ-południe)", "Puente de piscina (norte-sur)", "Poolbro (nord-syd)", "Ponte sulla piscina (nord-sud)", "גשר בריכה (צפון-דרום)" },
+		[OpenTpwText.PoolBridgeErase] = new[] { "Remove pool bridge", "Fjern poolbro", "Zwembadbrug verwijderen", "Retirer le pont de piscine", "Poolbrücke entfernen", "수영장 다리 제거", "Usuń most nad basenem", "Retirar puente de piscina", "Ta bort poolbro", "Rimuovi ponte sulla piscina", "הסר גשר בריכה" },
+		[OpenTpwText.PoolBridgeHelp] = new[] { "Click the first land cell: 2 land, 3 water, 2 land; paths at both ends. Builds east or south. Use Remove pool bridge to undo. Right click or Escape leaves.", "Klik på første landfelt: 2 land, 3 vand, 2 land; stier i begge ender. Bygger mod øst eller syd. Brug Fjern poolbro for at fortryde. Højreklik eller Escape afslutter.", "Klik op het eerste landvak: 2 land, 3 water, 2 land; paden aan beide uiteinden. Bouwt naar het oosten of zuiden. Gebruik Zwembadbrug verwijderen om ongedaan te maken. Rechtsklik of Escape sluit af.", "Cliquez sur la première case de terre : 2 terre, 3 eau, 2 terre ; chemins aux deux extrémités. Construction vers l’est ou le sud. Retirez le pont pour annuler. Clic droit ou Échap pour quitter.", "Erstes Landfeld anklicken: 2 Land, 3 Wasser, 2 Land; Wege an beiden Enden. Bau nach Osten oder Süden. Zum Rückgängigmachen die Poolbrücke entfernen. Rechtsklick oder Escape beendet.", "첫 육지 칸을 클릭하세요: 육지 2칸, 물 3칸, 육지 2칸. 양 끝에 길이 필요합니다. 동쪽이나 남쪽으로 건설합니다. 취소하려면 다리를 제거하세요. 우클릭 또는 Escape로 종료합니다.", "Kliknij pierwsze pole lądu: 2 lądu, 3 wody, 2 lądu; ścieżki na obu końcach. Budowa na wschód lub południe. Aby cofnąć, usuń most. Prawy przycisk lub Escape kończy.", "Haz clic en la primera casilla de tierra: 2 de tierra, 3 de agua, 2 de tierra; caminos en ambos extremos. Construye hacia el este o el sur. Retira el puente para deshacer. Clic derecho o Escape para salir.", "Klicka på första landrutan: 2 land, 3 vatten, 2 land; gångvägar i båda ändar. Bygger österut eller söderut. Ta bort bron för att ångra. Högerklick eller Escape avslutar.", "Fai clic sulla prima casella di terra: 2 terra, 3 acqua, 2 terra; sentieri a entrambe le estremità. Costruisce verso est o sud. Rimuovi il ponte per annullare. Clic destro o Escape per uscire.", "לחץ על משבצת היבשה הראשונה: 2 יבשה, 3 מים, 2 יבשה; שבילים בשני הקצוות. הבנייה מזרחה או דרומה. הסר את הגשר כדי לבטל. לחיצה ימנית או Escape ליציאה." },
+		[OpenTpwText.PoolBridgeEraseHelp] = new[] { "Click any bridge cell to remove it. Right click or Escape leaves.", "Klik på et brofelt for at fjerne broen. Højreklik eller Escape afslutter.", "Klik op een brugvak om de brug te verwijderen. Rechtsklik of Escape sluit af.", "Cliquez sur une case du pont pour le retirer. Clic droit ou Échap pour quitter.", "Ein Brückenfeld zum Entfernen anklicken. Rechtsklick oder Escape beendet.", "다리 칸을 클릭하여 제거하세요. 우클릭 또는 Escape로 종료합니다.", "Kliknij pole mostu, aby go usunąć. Prawy przycisk lub Escape kończy.", "Haz clic en una casilla del puente para retirarlo. Clic derecho o Escape para salir.", "Klicka på en broruta för att ta bort bron. Högerklick eller Escape avslutar.", "Fai clic su una casella del ponte per rimuoverlo. Clic destro o Escape per uscire.", "לחץ על משבצת בגשר כדי להסיר אותו. לחיצה ימנית או Escape ליציאה." },
+		[OpenTpwText.PoolBridgeNeedsWater] = new[] { "A bridge needs a straight line of 2 land, 3 pool water, then 2 land cells, with paths at both ends.", "En bro kræver 2 landfelter, 3 poolvandfelter og 2 landfelter på en lige linje med stier i begge ender.", "Een brug vereist een rechte lijn van 2 landvakken, 3 zwembadwatervakken en 2 landvakken, met paden aan beide uiteinden.", "Un pont nécessite une ligne droite de 2 cases de terre, 3 d’eau de piscine puis 2 de terre, avec des chemins aux deux extrémités.", "Eine Brücke braucht eine gerade Reihe aus 2 Land-, 3 Poolwasser- und 2 Landfeldern mit Wegen an beiden Enden.", "다리는 일직선으로 육지 2칸, 수영장 물 3칸, 육지 2칸과 양 끝의 길이 필요합니다.", "Most wymaga prostej linii 2 pól lądu, 3 pól wody basenowej i 2 pól lądu oraz ścieżek na obu końcach.", "El puente necesita una línea recta de 2 casillas de tierra, 3 de agua de piscina y 2 de tierra, con caminos en ambos extremos.", "En bro kräver en rak rad med 2 landrutor, 3 poolvattenrutor och 2 landrutor, med gångvägar i båda ändar.", "Il ponte richiede una linea retta di 2 caselle di terra, 3 di acqua della piscina e 2 di terra, con sentieri a entrambe le estremità.", "גשר דורש קו ישר של 2 משבצות יבשה, 3 מי בריכה ואז 2 יבשה, עם שבילים בשני הקצוות." },
+		[OpenTpwText.PoolBridgeNotBridge] = new[] { "There is no pool bridge here.", "Der er ingen poolbro her.", "Hier is geen zwembadbrug.", "Il n’y a pas de pont de piscine ici.", "Hier gibt es keine Poolbrücke.", "여기에 수영장 다리가 없습니다.", "Nie ma tu mostu nad basenem.", "Aquí no hay un puente de piscina.", "Det finns ingen poolbro här.", "Qui non c’è un ponte sulla piscina.", "אין כאן גשר בריכה." },
+		[OpenTpwText.PoolBridgeStanding] = new[] { "Wait until everyone has left the bridge and its approaches.", "Vent, til alle har forladt broen og dens adgangsveje.", "Wacht tot iedereen de brug en de opritten heeft verlaten.", "Attendez que tout le monde ait quitté le pont et ses accès.", "Warten Sie, bis alle die Brücke und ihre Zugänge verlassen haben.", "모두 다리와 진입로를 벗어날 때까지 기다리세요.", "Poczekaj, aż wszyscy opuszczą most i dojścia do niego.", "Espera a que todos hayan salido del puente y sus accesos.", "Vänta tills alla har lämnat bron och dess tillfarter.", "Attendi che tutti abbiano lasciato il ponte e i suoi accessi.", "המתן עד שכולם יעזבו את הגשר ואת דרכי הגישה אליו." },
 		[OpenTpwText.PoolRowRiver] = new[] { "Lazy river water", "Doven flod", "Lazy river", "Rivière paresseuse", "Lazy River", "느린 강", "Leniwa rzeka", "Río lento", "Lat flod", "Acqua del fiume lento", "מי נהר עצל" },
 		[OpenTpwText.PoolRiverHelp] = new[] { "Click and drag to paint a ring of river water; its current carries swimmers round.", "Klik og træk for at male en ring af flodvand; strømmen fører svømmerne rundt.", "Klik en sleep om een ring rivierwater te schilderen; de stroming voert zwemmers rond.", "Cliquez et faites glisser pour peindre un anneau de rivière ; le courant emporte les nageurs.", "Klicken und ziehen, um einen Ring aus Flusswasser zu malen; die Strömung trägt Schwimmer herum.", "클릭하고 끌어서 강물 고리를 칠하십시오. 물살이 수영객을 실어 나릅니다.", "Kliknij i przeciągnij, aby namalować pierścień wody rzecznej; nurt niesie pływaków.", "Haz clic y arrastra para pintar un anillo de río; la corriente lleva a los nadadores.", "Klicka och dra för att måla en ring av flodvatten; strömmen bär simmarna runt.", "Fai clic e trascina per dipingere un anello d'acqua di fiume; la corrente trasporta i nuotatori in giro.", "לחץ וגרור כדי לצבוע טבעת של מי נהר; הזרם שלו סוחף את השחיינים סביב." },
 		[OpenTpwText.PoolRiverHint] = new[] { "Lazy river: press and drag to paint a ring one cell wide; right click to stop.", "Doven flod: tryk og træk for at male en ring, en celle bred; højreklik for at stoppe.", "Lazy river: houd ingedrukt en sleep om een ring van één vakje breed te schilderen; klik met rechts om te stoppen.", "Rivière paresseuse : appuyez et faites glisser pour peindre un anneau d'une case de large ; clic droit pour arrêter.", "Lazy River: drücken und ziehen, um einen Ring von einem Feld Breite zu malen; Rechtsklick beendet.", "느린 강: 누른 채 끌어서 한 칸 너비의 고리를 칠하십시오. 오른쪽 클릭하면 멈춥니다.", "Leniwa rzeka: naciśnij i przeciągnij, aby namalować pierścień szerokości jednego pola; PPM kończy.", "Río lento: pulsa y arrastra para pintar un anillo de una casilla de ancho; clic derecho para parar.", "Lat flod: tryck och dra för att måla en ring, en ruta bred; högerklicka för att sluta.", "Fiume lento: premi e trascina per dipingere un anello largo una casella; clic destro per smettere.", "נהר עצל: לחץ וגרור כדי לצבוע טבעת ברוחב משבצת אחת; לחיצה ימנית לסיום." },
@@ -802,15 +841,17 @@ public static class SupplementaryStrings
 		// [EXT:evening] the evening and night extension (docs/EVENING.md)
 		[OpenTpwText.ExtensionEveningName] = new[] { "Evening and night", "Aften og nat", "Avond en nacht", "Soir et nuit", "Abend und Nacht", "저녁과 밤", "Wieczór i noc", "Tarde y noche", "Kväll och natt", "Sera e notte", "ערב ולילה" },
 		[OpenTpwText.ExtensionEveningDescription] = new[] {
-			"A day and night cycle: the sun sets, the sky, ground and water darken, and lamps and pool lights switch on at dusk. It follows play time, not park speed, and pauses with the game. Display only.",
-			"En dag- og natcyklus: solen går ned, himlen, jorden og vandet bliver mørkere, og lamper og poollys tændes i skumringen. Følger spilletiden, ikke parkens hastighed, og står stille ved pause. Kun visning.",
-			"Een dag- en nachtcyclus: de zon gaat onder, lucht, grond en water worden donkerder en lampen en zwembadlichten gaan aan in de schemering. Volgt de speeltijd, niet de parksnelheid, en pauzeert met het spel. Alleen weergave.",
-			"Un cycle jour et nuit : le soleil se couche, le ciel, le sol et l'eau s'assombrissent, et les lampes et lumières de piscine s'allument au crépuscule. Suit le temps de jeu, pas la vitesse du parc, et s'arrête en pause. Affichage seulement.",
-			"Ein Tag-und-Nacht-Zyklus: Die Sonne geht unter, Himmel, Boden und Wasser werden dunkler, Lampen und Poolbeleuchtung gehen in der Dämmerung an. Folgt der Spielzeit, nicht der Parkgeschwindigkeit, und pausiert mit dem Spiel. Nur Anzeige.",
-			"낮과 밤의 주기: 해가 지면 하늘과 땅, 물이 어두워지고 해질녘에 가로등과 수영장 조명이 켜집니다. 공원 속도가 아니라 플레이 시간을 따르며 일시 정지하면 멈춥니다. 표시만 바꿉니다.",
-			"Cykl dnia i nocy: słońce zachodzi, niebo, ziemia i woda ciemnieją, a lampy i światła basenów zapalają się o zmierzchu. Zależy od czasu gry, nie od prędkości parku, i staje przy pauzie. Tylko wygląd.",
-			"Un ciclo de día y noche: el sol se pone, el cielo, el suelo y el agua se oscurecen, y las lámparas y luces de piscina se encienden al atardecer. Sigue el tiempo de juego, no la velocidad del parque, y se detiene en pausa. Solo visual.",
-			"En dag- och nattcykel: solen går ner, himlen, marken och vattnet blir mörkare, och lampor och poolbelysning tänds i skymningen. Följer speltiden, inte parkens hastighet, och står still vid paus. Bara visning.", "Un ciclo di giorno e notte: il sole tramonta, cielo, terreno e acqua si scuriscono, e lampioni e luci delle piscine si accendono al crepuscolo. Segue il tempo di gioco, non la velocità del parco, e si ferma in pausa. Solo aspetto.", "מחזור של יום ולילה: השמש שוקעת, השמיים, הקרקע והמים מחשיכים, ומנורות ואורות הבריכות נדלקים בשקיעה. עוקב אחרי זמן המשחק, לא אחרי מהירות הפארק, ונעצר בהשהיה. תצוגה בלבד." },
+			"A day and night cycle: the sun sets, sky, ground and water darken, and lamps and pool lights switch on at dusk. It follows play time and pauses with the game. Adds a torch to every theme; a park only records the extension while it has a torch.",
+			"En dag- og natcyklus: solen går ned, himmel, jord og vand bliver mørkere, og lamper og poollys tændes i skumringen. Følger spilletiden og står stille ved pause. Tilføjer en fakkel til hvert tema; en park gemmer kun udvidelsen, mens den har en fakkel.",
+			"Een dag- en nachtcyclus: de zon gaat onder, lucht, grond en water worden donkerder en lampen en zwembadlichten gaan aan in de schemering. Volgt de speeltijd en pauzeert met het spel. Voegt aan elk thema een fakkel toe; een park bewaart de uitbreiding alleen met een fakkel.",
+			"Un cycle jour et nuit : le soleil se couche, ciel, sol et eau s'assombrissent, et lampes et lumières de piscine s'allument au crépuscule. Suit le temps de jeu et s'arrête en pause. Ajoute une torche à chaque thème ; un parc n'enregistre l'extension que s'il a une torche.",
+			"Ein Tag-und-Nacht-Zyklus: Die Sonne geht unter, Himmel, Boden und Wasser werden dunkler, Lampen und Poollichter gehen in der Dämmerung an. Folgt der Spielzeit und pausiert mit dem Spiel. Fügt jedem Thema eine Fackel hinzu; ein Park speichert die Erweiterung nur mit einer Fackel.",
+			"낮과 밤의 주기: 해가 지면 하늘과 땅, 물이 어두워지고 해질녘에 가로등과 수영장 조명이 켜집니다. 공원 속도가 아니라 플레이 시간을 따르며 일시 정지하면 멈춥니다. 모든 테마에 횃불을 추가합니다. 공원은 횃불이 있을 때만 이 확장을 저장합니다.",
+			"Cykl dnia i nocy: słońce zachodzi, niebo, ziemia i woda ciemnieją, a lampy i światła basenów zapalają się o zmierzchu. Zależy od czasu gry i staje przy pauzie. Dodaje pochodnię do każdego motywu; park zapisuje rozszerzenie tylko wtedy, gdy ma pochodnię.",
+			"Un ciclo de día y noche: el sol se pone, cielo, suelo y agua se oscurecen, y lámparas y luces de piscina se encienden al atardecer. Sigue el tiempo de juego y se detiene en pausa. Añade una antorcha a cada tema; un parque solo registra la extensión si tiene una antorcha.",
+			"En dag- och nattcykel: solen går ner, himmel, mark och vatten blir mörkare, och lampor och poolbelysning tänds i skymningen. Följer speltiden och står still vid paus. Lägger till en fackla i varje tema; en park sparar tillägget bara så länge den har en fackla.",
+			"Un ciclo di giorno e notte: il sole tramonta, cielo, terreno e acqua si scuriscono, e lampioni e luci delle piscine si accendono al crepuscolo. Segue il tempo di gioco e si ferma in pausa. Aggiunge una torcia a ogni tema; un parco registra l'estensione solo se ha una torcia.",
+			"מחזור של יום ולילה: השמש שוקעת, השמיים, הקרקע והמים מחשיכים, ומנורות ואורות הבריכות נדלקים בשקיעה. עוקב אחרי זמן המשחק, לא אחרי מהירות הפארק, ונעצר בהשהיה. מוסיף לפיד לכל נושא; פארק שומר את ההרחבה רק כל עוד יש בו לפיד." },
 		// [EXT:winter-snow] the settling snow extension (docs/WINTER.md)
 		[OpenTpwText.ExtensionWinterSnowName] = new[] { "Settling snow", "Sne der lægger sig", "Blijvende sneeuw", "Neige qui se dépose", "Liegenbleibender Schnee", "쌓이는 눈", "Zalegający śnieg", "Nieve que cuaja", "Snö som lägger sig", "Neve che si posa", "שלג שנערם" },
 		[OpenTpwText.ExtensionWinterSnowDescription] = new[] {
@@ -896,6 +937,56 @@ public static class SupplementaryStrings
 			"La finestra dei trucchi (Alt+C in un parco): manda visitatori in autobus, aereo o barca, cambia il meteo, assegna un biglietto d'oro a scelta, aggiungi denaro, rendi tutto costruibile e dai più veicoli a un'attrazione. Un parco che usa i trucchi resta segnato per sempre; si può comunque pubblicare. I trucchi del gioco originale (il nome segreto del parco e i tasti Alt) funzionano anche senza.",
 			"חלון הצ'יטים (Alt+C בפארק): שליחת מבקרים באוטובוס, במטוס או בסירה, שינוי מזג האוויר, הענקת כרטיס זהב לבחירה, הוספת כסף, אפשרות לבנות הכול ויותר כלים למתקן. פארק שמשתמש בצ'יטים מסומן לתמיד; עדיין אפשר לפרסם אותו. הצ'יטים של המשחק המקורי (שם הפארק הסודי ומקשי Alt) פועלים גם בלעדיו.",
 		},
+		[OpenTpwText.ExtensionSwitchPlayedWithout] = new[] { "This park was played without {0}. Continue with {0}?", "Denne park blev spillet uden {0}. Fortsæt med {0}?", "Dit park is gespeeld zonder {0}. Verder spelen met {0}?",
+			"Ce parc a été joué sans {0}. Continuer avec {0} ?", "Dieser Park wurde ohne {0} gespielt. Mit {0} weiterspielen?", "이 공원은 {0} 없이 플레이했습니다. {0}을(를) 켠 채로 계속하시겠습니까?",
+			"Ten park był grany bez {0}. Kontynuować z {0}?", "Este parque se jugó sin {0}. ¿Continuar con {0}?", "Den här parken spelades utan {0}. Fortsätta med {0}?",
+			"Questo parco è stato giocato senza {0}. Continuare con {0}?", "הפארק הזה שוחק בלי {0}. להמשיך עם {0}?" },
+		[OpenTpwText.ExtensionSwitchPlayedWith] = new[] { "This park was played with {0}. Continue without {0}?", "Denne park blev spillet med {0}. Fortsæt uden {0}?", "Dit park is gespeeld met {0}. Verder spelen zonder {0}?",
+			"Ce parc a été joué avec {0}. Continuer sans {0} ?", "Dieser Park wurde mit {0} gespielt. Ohne {0} weiterspielen?", "이 공원은 {0}을(를) 켜고 플레이했습니다. {0} 없이 계속하시겠습니까?",
+			"Ten park był grany z {0}. Kontynuować bez {0}?", "Este parque se jugó con {0}. ¿Continuar sin {0}?", "Den här parken spelades med {0}. Fortsätta utan {0}?",
+			"Questo parco è stato giocato con {0}. Continuare senza {0}?", "הפארק הזה שוחק עם {0}. להמשיך בלי {0}?" },
+		[OpenTpwText.ExtensionSwitchOtherVersion] = new[] { "This park was played with another version of {0}. Continue with this version?", "Denne park blev spillet med en anden version af {0}. Fortsæt med denne version?",
+			"Dit park is gespeeld met een andere versie van {0}. Verder spelen met deze versie?", "Ce parc a été joué avec une autre version de {0}. Continuer avec cette version ?",
+			"Dieser Park wurde mit einer anderen Version von {0} gespielt. Mit dieser Version weiterspielen?", "이 공원은 다른 버전의 {0}(으)로 플레이했습니다. 이 버전으로 계속하시겠습니까?",
+			"Ten park był grany z inną wersją {0}. Kontynuować z tą wersją?", "Este parque se jugó con otra versión de {0}. ¿Continuar con esta versión?",
+			"Den här parken spelades med en annan version av {0}. Fortsätta med den här versionen?", "Questo parco è stato giocato con un'altra versione di {0}. Continuare con questa versione?",
+			"הפארק הזה שוחק עם גרסה אחרת של {0}. להמשיך עם הגרסה הזו?" },
+		[OpenTpwText.ExtensionSwitchNeeds] = new[] { "This park uses {0}, which is off.", "Denne park bruger {0}, som er slået fra.", "Dit park gebruikt {0}, dat uit staat.", "Ce parc utilise {0}, qui est désactivé.",
+			"Dieser Park verwendet {0}, das ausgeschaltet ist.", "이 공원은 꺼져 있는 {0}을(를) 사용합니다.", "Ten park używa {0}, które jest wyłączone.", "Este parque usa {0}, que está desactivado.",
+			"Den här parken använder {0}, som är avstängt.", "Questo parco usa {0}, che è disattivato.", "הפארק הזה משתמש ב-{0}, שכבוי כעת." },
+		[OpenTpwText.ExtensionSwitchNewRun] = new[] { "From here on the park plays with the extensions that are on now.", "Herfra spilles parken med de udvidelser, der er slået til nu.",
+			"Vanaf hier speelt het park met de extensies die nu aan staan.", "À partir d'ici, le parc utilise les extensions activées maintenant.", "Ab hier läuft der Park mit den Erweiterungen, die jetzt eingeschaltet sind.",
+			"지금부터 공원은 현재 켜져 있는 확장으로 진행됩니다.", "Od teraz park działa z rozszerzeniami, które są teraz włączone.", "A partir de aquí el parque usa las extensiones activadas ahora.",
+			"Härifrån spelas parken med de tillägg som är påslagna nu.", "Da qui il parco usa le estensioni attive ora.", "מכאן הפארק משוחק עם ההרחבות שפועלות עכשיו." },
+		[OpenTpwText.ExtensionSwitchContinue] = new[] { "Continue", "Fortsæt", "Verder spelen", "Continuer", "Weiterspielen", "계속", "Kontynuuj", "Continuar", "Fortsätt", "Continua", "המשך" },
+		[OpenTpwText.ExtensionSwitchTurnOn] = new[] { "Turn {0} on and load", "Slå {0} til og indlæs", "Zet {0} aan en laad", "Activer {0} et charger", "{0} einschalten und laden", "{0} 켜고 불러오기",
+			"Włącz {0} i wczytaj", "Activar {0} y cargar", "Slå på {0} och läs in", "Attiva {0} e carica", "הפעל את {0} וטען" },
+		[OpenTpwText.ExtensionSwitchTurnOnQuestion] = new[] { "Turn {0} on and load the park?", "Slå {0} til og indlæs parken?", "{0} aanzetten en het park laden?", "Activer {0} et charger le parc ?",
+			"{0} einschalten und den Park laden?", "{0}을(를) 켜고 공원을 불러오시겠습니까?", "Włączyć {0} i wczytać park?", "¿Activar {0} y cargar el parque?", "Slå på {0} och läsa in parken?",
+			"Attivare {0} e caricare il parco?", "להפעיל את {0} ולטעון את הפארק?" },
+		[OpenTpwText.ModsSavedNextPark] = new[] { "Extensions saved\n\nThe changes apply to the next park you start or load. No restart is needed.",
+			"Udvidelser gemt\n\nÆndringerne gælder for den næste park, du starter eller indlæser. Du behøver ikke genstarte.",
+			"Extensies opgeslagen\n\nDe wijzigingen gelden voor het volgende park dat je start of laadt. Opnieuw starten is niet nodig.",
+			"Extensions enregistrées\n\nLes changements s'appliquent au prochain parc que vous lancez ou chargez. Inutile de redémarrer.",
+			"Erweiterungen gespeichert\n\nDie Änderungen gelten für den nächsten Park, den Sie starten oder laden. Ein Neustart ist nicht nötig.",
+			"확장을 저장했습니다\n\n변경 사항은 다음에 시작하거나 불러오는 공원부터 적용됩니다. 다시 시작할 필요는 없습니다.",
+			"Rozszerzenia zapisane\n\nZmiany obowiązują od następnego parku, który uruchomisz lub wczytasz. Ponowne uruchomienie nie jest potrzebne.",
+			"Extensiones guardadas\n\nLos cambios se aplican al próximo parque que inicies o cargues. No hace falta reiniciar.",
+			"Tillägg sparade\n\nÄndringarna gäller nästa park du startar eller läser in. Du behöver inte starta om.",
+			"Estensioni salvate\n\nLe modifiche valgono dal prossimo parco che avvii o carichi. Non serve riavviare.",
+			"ההרחבות נשמרו\n\nהשינויים יחולו על הפארק הבא שתתחיל או תטען. אין צורך להפעיל מחדש." },
+		[OpenTpwText.ModsSavedAfterThisPark] = new[] { "Extensions saved\n\nThe changes apply when you leave this park or load another one. No restart is needed.",
+			"Udvidelser gemt\n\nÆndringerne gælder, når du forlader denne park eller indlæser en anden. Du behøver ikke genstarte.",
+			"Extensies opgeslagen\n\nDe wijzigingen gelden zodra je dit park verlaat of een ander laadt. Opnieuw starten is niet nodig.",
+			"Extensions enregistrées\n\nLes changements s'appliquent quand vous quittez ce parc ou en chargez un autre. Inutile de redémarrer.",
+			"Erweiterungen gespeichert\n\nDie Änderungen gelten, sobald Sie diesen Park verlassen oder einen anderen laden. Ein Neustart ist nicht nötig.",
+			"확장을 저장했습니다\n\n변경 사항은 이 공원을 떠나거나 다른 공원을 불러올 때 적용됩니다. 다시 시작할 필요는 없습니다.",
+			"Rozszerzenia zapisane\n\nZmiany zaczną obowiązywać, gdy opuścisz ten park lub wczytasz inny. Ponowne uruchomienie nie jest potrzebne.",
+			"Extensiones guardadas\n\nLos cambios se aplican cuando salgas de este parque o cargues otro. No hace falta reiniciar.",
+			"Tillägg sparade\n\nÄndringarna gäller när du lämnar den här parken eller läser in en annan. Du behöver inte starta om.",
+			"Estensioni salvate\n\nLe modifiche valgono quando lasci questo parco o ne carichi un altro. Non serve riavviare.",
+			"ההרחבות נשמרו\n\nהשינויים יחולו כשתצא מהפארק הזה או תטען פארק אחר. אין צורך להפעיל מחדש." },
+		[OpenTpwText.ExtensionPoolsName] = new[] { "Pools", "Svømmebassiner", "Zwembaden", "Piscines", "Schwimmbecken", "수영장", "Baseny", "Piscinas", "Pooler", "Piscine", "בריכות" },
 	};
 
 	public static IReadOnlyList<string> SupportedLanguages => Languages;

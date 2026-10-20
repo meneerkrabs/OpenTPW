@@ -117,6 +117,9 @@ public static class ModContentRoots
 		// [EXT:winter-content] the winter extension's own objects (the winter kiosks and glühwein stalls) follow as a root of the id opentpw.winter while the extension is on
 		if ( WinterContent.CatalogRoot( set ) is { } winter )
 			roots.Add( winter );
+		// [EXT:evening-torches] the evening extension's own objects (the torches) follow as a root of the id opentpw.evening while the extension is on
+		if ( EveningContent.CatalogRoot( set ) is { } evening )
+			roots.Add( evening );
 		return roots;
 	}
 

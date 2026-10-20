@@ -339,7 +339,7 @@ public static class GameAudio
 	/// <summary>The reverb preset the sound service holds (the original's 0x803AB4); -1 until the first <see cref="SelectReverb"/>.</summary>
 	public static int ReverbPreset { get; private set; } = -1;
 
-	/// <summary>The presets of <c>SndReverb.map</c>, when the host loaded the file from the game folder (it is not part of the mounted data); the mixer's ReverbUnit follows the held preset (AUDIO-039).</summary>
+	/// <summary>The presets of <c>SndReverb.map</c>, when the host loaded the file from the game folder (it is not part of the mounted data); the mixer's ReverbUnit follows the held preset (the audio-reverb extension).</summary>
 	public static SndReverbMap? ReverbMap { get; set; }
 
 	/// <summary>The record of the held preset, when the map has one (the original refuses a preset the map lacks).</summary>
@@ -352,7 +352,7 @@ public static class GameAudio
 	/// Holds a reverb preset (tp.exe <c>0x51C8D0</c>): a preset other than the held one is sent to the reverb device, the same one again is not.
 	/// </summary>
 	// [BIN:TPW-EXE:0x51C8D0 reverb preset] when the sound service is up and the preset differs from the held one (0x803AB4, -1 at start, 0 once the service started with sound on) the held one is replaced and the preset sent as a mixer command (0x700B30 → 0x6C6000, which fetches the SndReverb.map record and refuses an absent one)
-	// [APPROX:AUDIO-039] the held preset's record drives ReverbUnit, an OpenTPW network on the positioned effects: the original hands the record to the audio device's EAX 2.0 listener property set or to a COM object behind QMixer.dll (which holds no reverb DSP), neither of which OpenTPW reproduces
+	// [EXT:audio-reverb] the held preset's record drives ReverbUnit, OpenTPW's own network on the positioned effects by design: the original hands the record to the audio device's EAX 2.0 listener property set or to a COM object behind QMixer.dll (which holds no reverb DSP), whose sound lives in the device or driver
 	public static void SelectReverb( int preset )
 	{
 		if ( preset == ReverbPreset )
@@ -365,7 +365,7 @@ public static class GameAudio
 	/// <summary>
 	/// Hands the held preset's record to the mixer's reverb (none for a preset the map lacks, or without a map).
 	/// </summary>
-	// [APPROX:AUDIO-039] preset 0 (the default everywhere outside a ridden ride that sets a level) stays dry: its record asks for the device's full room level, which this stand-in would put on every positioned sound of the park; only the ride presets (1-14) are mixed
+	// [EXT:audio-reverb] preset 0 (the default everywhere outside a ridden ride that sets a level) stays dry: its record asks for the device's full room level, which this stand-in would put on every positioned sound of the park; only the ride presets (1-14) are mixed
 	private static void ApplyReverb() => AudioMixer.Current?.Reverb.Set( ReverbPreset > 0 ? ReverbSettings.FromRecord( ReverbRecord ) : null );
 
 	/// <summary>
@@ -397,6 +397,8 @@ public static class GameAudio
 
 	public static void LeavePark()
 	{
+		// [BIN:TPW-EXE:0x5C8650 park exit] state 12 of the park state machine 0x54E360 writes the profile (0x5AFC60 -> 0x5AFF50 -> 0x423E90), which ends in the options applier 0x423DD0
+		EndSavedVolumes();
 		events?.HeldSounds.StopAll();
 		// the park's scripts are destroyed with it, and each writes the duck request 0 (tp.exe 0x558513); the reverb returns to the default at the next frame outside a ride
 		SetMusicDuck( 0 );
@@ -1147,9 +1149,54 @@ public static class GameAudio
 
 	internal static void ApplyOptions( AudioMixer mixer, GameOptions options )
 	{
-		mixer.SetChannelGain( AudioChannel.Effects, options.SoundEffectsGain );
-		mixer.SetChannelGain( AudioChannel.Music, options.MusicGain );
-		mixer.SetChannelGain( AudioChannel.Speech, options.SpeechGain );
+		var saved = SavedVolumes;
+		mixer.SetChannelGain( AudioChannel.Effects, saved?.Gain( AudioChannel.Effects, options ) ?? options.SoundEffectsGain );
+		mixer.SetChannelGain( AudioChannel.Music, saved?.Gain( AudioChannel.Music, options ) ?? options.MusicGain );
+		mixer.SetChannelGain( AudioChannel.Speech, saved?.Gain( AudioChannel.Speech, options ) ?? options.SpeechGain );
+		if ( saved is { Holding: false } )
+			SavedVolumes = null;
+		var master = GameOptions.Gain( MasterVolume );
+		if ( mixer.MasterGain != master )
+			mixer.MasterGain = master;
+	}
+
+	/// <summary>
+	/// The mixer values of the original save the running park was loaded from (<see cref="ApplySavedSound"/>), per channel until the player's options take over;
+	/// null when none hold.
+	/// </summary>
+	public static SavedSoundVolumes? SavedVolumes { get; private set; }
+
+	/// <summary>
+	/// The master volume in percent. The original sets it to 100 at start-up and otherwise only a loaded save's Sound block changes it; no option drives it, so it
+	/// holds for the rest of the process (OpenTPW has no master slider either).
+	/// </summary>
+	// [BIN:TPW-EXE:0x54DE31 master volume] the start-up calls the master setter 0x51BB60 with 100; the options applier 0x423DD0 never sets it, so only a loaded save's +0x18 changes it
+	public static int MasterVolume { get; private set; } = GameOptions.MaximumVolume;
+
+	/// <summary>
+	/// Plays a park started from an original save (Level.OriginalSaveSound) at the volumes its Sound block holds, as tp.exe does after a load, without touching the player's options;
+	/// returns the import report's line.
+	/// </summary>
+	// [BIN:TPW-EXE:0x51C400 sound loader] the payload loader 0x415270 calls the Sound block loader at 0x415BA2; the copied shadows reach the mixer on the next tick 0x51BD70 (park entry sets the dirty word after the load, 0x54F3AE), and the post-load pass 0x415140 does not call the options applier 0x423DD0
+	public static string ApplySavedSound( SaveSoundData? sound, GameOptions options )
+	{
+		SavedVolumes = SavedSoundVolumes.FromSave( sound, options );
+		if ( SavedVolumes == null )
+			return $"Sound block: no 84-byte settings (length {sound?.Settings.Length.ToString() ?? "unreadable"}); the options' volumes play.";
+		MasterVolume = SavedVolumes.MasterVolume;
+		return $"Sound block: the save's volumes play until the options take over (OK on the options screen, a changed slider or toggle, or leaving the park): {SavedVolumes.Describe()}"
+			+ (SavedVolumes.MatchesOptions( options ) ? "; equal to the options, so nothing changes audibly." : "; the options file is not changed.");
+	}
+
+	/// <summary>Ends a loaded save's channel volumes: the options drive every channel again (the master volume stays, as in the original).</summary>
+	// [BIN:TPW-EXE:0x4237F0 options OK] OK on the options screen calls the applier 0x423DD0, which pushes every channel's profile volume and on-flag
+	public static void EndSavedVolumes() => SavedVolumes = null;
+
+	/// <summary>Forgets a loaded save's sound values, the master volume included (tests and a process restart).</summary>
+	internal static void ResetSavedSound()
+	{
+		SavedVolumes = null;
+		MasterVolume = GameOptions.MaximumVolume;
 	}
 
 	/// <summary>Plays a <c>cat_ui</c> event (control activation clicks, drawer and error feedback).</summary>

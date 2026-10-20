@@ -37,6 +37,15 @@ instead of 8 in Jungle, a 150 MB download after decompression); it is still abou
 experiments, not what the published page uses (docs/BROWSER-PERFORMANCE.md, "CoreCLR on WebAssembly"). Delete
 `source/OpenTPW.Web/obj` and `bin` when switching between runtimes, or the next publish fails to link.
 
+The cross-runtime determinism check (docs/DETERMINISM.md, "Browser and native") publishes the page with the asset-free pin tests
+compiled in and runs them in headless, muted Chrome. Delete `obj` and `bin` between an AOT and an interpreter publish here too: an
+AOT publish strips the method bodies that the interpreter needs.
+
+```sh
+dotnet publish source/OpenTPW.Web/OpenTPW.Web.csproj -c Release -p:RunAOTCompilation=true -p:OpenTpwDeterminismPins=true -o out/web-pins
+node tools/web-determinism/run.mjs out/web-pins/wwwroot
+```
+
 An OpenTPW server can serve the published `wwwroot` itself, beside its API
 (`OpenTPW:WebClientDirectory`, docs/SERVER.md). The page then offers its own address as the
 online server, and everything runs over one HTTPS address.
@@ -264,7 +273,8 @@ choices of `/config/mods.json`. The browser has no folders for community mods. T
 
 - **Settings.** `/config/mods.json` is one of the files the page keeps (the `/config` folder is mirrored into IndexedDB every five seconds
   and when the page is hidden, and put back before the game starts), so the choices of the **Extensions and mods** screen
-  (Options > OpenTPW) survive a reload. Changes apply at the next start, which in the browser means a reload.
+  (Options > OpenTPW) survive a reload. Official extensions switched there apply to the next park started or loaded, as on the desktop (the page then fetches the pools sprite sets if
+  pools came on); a change to a mod or its input applies at the next start, which in the browser means a reload ([MODS.md](MODS.md#when-a-change-applies)).
 - **The `tpi` input.** A mod input is a folder of the player's own files on the desktop. The browser holds the files of one original game
   beside the Theme Park World files in `/game`: the page copies them into the runtime's memory below `/inputs/theme-park-inc/Data/...`
   (`Program.AddInputFile`, validated by `BrowserModInputs`: only `Data/...` paths without `..`, at most 20000 files and 256 MB) and a mod's

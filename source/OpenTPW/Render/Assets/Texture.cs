@@ -19,14 +19,22 @@ public partial class Texture : Asset
 	/// </summary>
 	public static Texture Missing => missing.Value;
 
+	private static readonly Lazy<Texture> signBoard = new( () => new Texture( [38, 28, 18, 255], 1, 1 ) );
+
+	/// <summary>
+	/// The plain brown board a sign slot shows when its runtime sign cannot be drawn (<see cref="SignSlotPlan"/>): one texture shared by every
+	/// part, park and lobby and, like <see cref="Missing"/>, never released.
+	/// </summary>
+	internal static Texture SignBoard => signBoard.Value;
+
 	/// <summary>
 	/// Releases a texture its owner made from bytes and no one else uses: it leaves <see cref="Asset.All"/> and its GPU objects go
 	/// after the last frame that may draw them. Never for a texture loaded by path (those are shared through the cache) or for
-	/// <see cref="Missing"/>.
+	/// <see cref="Missing"/> and <see cref="SignBoard"/>.
 	/// </summary>
 	internal void ReleaseOwned()
 	{
-		if ( ReferenceEquals( this, missing.IsValueCreated ? missing.Value : null ) || !string.IsNullOrEmpty( Path ) )
+		if ( ReferenceEquals( this, missing.IsValueCreated ? missing.Value : null ) || ReferenceEquals( this, signBoard.IsValueCreated ? signBoard.Value : null ) || !string.IsNullOrEmpty( Path ) )
 			return;
 		Asset.All.Remove( this );
 		var (texture, view) = (NativeTexture, NativeTextureView);
@@ -316,7 +324,7 @@ public partial class Texture : Asset
 		return mipLevels;
 	}
 
-	private static void PreprocessTextureData( ref byte[] data, TextureFlags flags )
+	internal static void PreprocessTextureData( ref byte[] data, TextureFlags flags )
 	{
 		if ( flags == TextureFlags.None )
 			return;
@@ -338,6 +346,19 @@ public partial class Texture : Asset
 		}
 	}
 
+	/// <summary>CPU selection used by uncached texture creation; explicit addressing keeps its existing precedence.</summary>
+	internal static SamplerType SamplerForFlags( TextureFlags flags )
+	{
+		var sampler = SamplerType.AnisotropicRepeat;
+		if ( flags.HasFlag( TextureFlags.PointFilter ) )
+			sampler = SamplerType.Point;
+		if ( flags.HasFlag( TextureFlags.Wrap ) )
+			sampler = SamplerType.AnisotropicWrap;
+		if ( flags.HasFlag( TextureFlags.Repeat ) )
+			sampler = SamplerType.AnisotropicRepeat;
+		return sampler;
+	}
+
 	private void CreateTexture( string debugName, byte[] data, uint width, uint height, TextureFlags flags )
 	{
 		using var profile = LoadProfile.Measure( "texture-create" );
@@ -355,14 +376,7 @@ public partial class Texture : Asset
 
 		PreprocessTextureData( ref data, flags );
 
-		if ( flags.HasFlag( TextureFlags.PointFilter ) )
-			SamplerType = SamplerType.Point;
-
-		if ( flags.HasFlag( TextureFlags.Wrap ) )
-			SamplerType = SamplerType.AnisotropicWrap;
-
-		if ( flags.HasFlag( TextureFlags.Repeat ) )
-			SamplerType = SamplerType.AnisotropicRepeat;
+		SamplerType = SamplerForFlags( flags );
 
 		var (texture, textureView) = CreateNative( data, width, height );
 

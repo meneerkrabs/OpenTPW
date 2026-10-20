@@ -129,7 +129,11 @@ public sealed class UmbrellaRenderer : Entity
 	/// (<c>min(0.1, 1.5 * ModelScale / depth)</c>);
 	/// a set without a table is held straight above the guest's position at <see cref="UmbrellaAnchors.FallbackLift"/>.
 	/// </summary>
-	internal (SVector3 Hotspot, float Scale) Place( Guest guest, in GuestMount mount, SVector3 right, SVector3 up, SVector3 forward, SVector3 eye )
+	// a kept body standing in place (state 16) is drawn where it was last placed, which a blocked exit may leave away from the guest's own position
+	private float GroundX( Guest guest ) => guest.IsVisible ? guest.DrawX : simulation.KeptBodyPosition( guest ).X;
+	private float GroundY( Guest guest ) => guest.IsVisible ? guest.DrawY : simulation.KeptBodyPosition( guest ).Y;
+
+	internal (SVector3 Hotspot, float Scale) Place( Guest guest, in GuestMount mount, SVector3 right, SVector3 up, SVector3 forward, SVector3 eye, Func<Guest, SVector3>? feetChooser = null )
 	{
 		SVector3 hand;
 		if ( anchors.Hand( mount.SetName, mount.Frame.PixelsPerUnitX, mount.Slot, mount.Direction, mount.Step, mount.Mirror, SteadyHand ) is { } point )
@@ -139,7 +143,10 @@ public sealed class UmbrellaRenderer : Entity
 		}
 		else
 		{
-			var above = GuestRenderer.CellToEngine( field, guest.DrawX, guest.DrawY, UmbrellaAnchors.FallbackLift );
+			// An elevated walking layer supplies the same unpulled feet used by the guest sprite.
+			var above = feetChooser != null
+				? feetChooser( guest ) + SVector3.UnitZ * (UmbrellaAnchors.FallbackLift * OriginalParkPlacement.ModelScale)
+				: GuestRenderer.CellToEngine( field, GroundX( guest ), GroundY( guest ), UmbrellaAnchors.FallbackLift );
 			hand = mount.Share < 1f && SVector3.Dot( above - eye, forward ) > 0f ? eye + (above - eye) * mount.Share : above;
 		}
 		var share = PullShare( SVector3.Dot( hand - eye, forward ) );
@@ -168,13 +175,17 @@ public sealed class UmbrellaRenderer : Entity
 				continue;
 			GuestMount mount = default;
 			var mounted = false;
+			Func<Guest, SVector3>? feetChooser = null;
 			for ( var renderer = 0; renderer < guests.Count && !mounted; ++renderer )
+			{
 				mounted = guests[renderer].TryMount( guest, right, up, forward, eye, out mount );
+				if ( mounted ) feetChooser = guests[renderer].FeetChooser;
+			}
 			if ( !mounted )
 				continue;
 			var slot = atlas.HasArt( guest.UmbrellaType ) ? guest.UmbrellaType : GuestSpriteAtlas.StandSlot;
 			var (direction, mirror) = GuestSpriteAtlas.SelectOriginalDirection( guest.HeadingX, guest.HeadingY, yaw, atlas.DirectionsOf( slot ) );
-			var (hotspot, scale) = Place( guest, mount, right, up, forward, eye );
+			var (hotspot, scale) = Place( guest, mount, right, up, forward, eye, feetChooser );
 			AddSprite( ref count, atlas.Frames[atlas.GetFrame( slot, direction, 0 )], mirror, hotspot, scale, right, up, forward );
 			drawnGuests.Add( guest );
 		}

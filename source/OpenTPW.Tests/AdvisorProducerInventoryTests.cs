@@ -183,7 +183,15 @@ public class AdvisorProducerInventoryTests
 			{
 				Assert.IsTrue( row.Kind is "event" or "help" or "unused", $"{id}: the scan skips it, so game code posts it or nothing does" );
 				if ( descriptor.Callback == HelpCallback )
-					Assert.IsTrue( row.Kind is "help" or "unused", $"{id}: a context-help descriptor" );
+				{
+					if ( descriptor.MessageId == AdvisorChallengeMessages.FirstOfferMessage )
+					{
+						Assert.AreEqual( "event", row.Kind, $"{id}: the first challenge offer posts this help-scored descriptor" );
+						Assert.AreEqual( "wired", row.Status, id );
+					}
+					else
+						Assert.IsTrue( row.Kind is "help" or "unused", $"{id}: a context-help descriptor" );
+				}
 				else
 					Assert.AreNotEqual( "help", row.Kind, id );
 			}
@@ -239,6 +247,28 @@ public class AdvisorProducerInventoryTests
 			else
 				Assert.AreEqual( "wired", messages[id].Status, $"message {id} is defined and posted by OpenTPW" );
 		}
+	}
+
+	[TestMethod]
+	public void FirstChallengeOfferIsAnEventWithItsOriginalHelpScore()
+	{
+		var (_, messages) = Inventory();
+		var id = AdvisorChallengeMessages.FirstOfferMessage;
+		Assert.AreEqual( 344, id );
+		var row = messages[id];
+		Assert.AreEqual( "event", row.Kind );
+		Assert.AreEqual( "wired", row.Status );
+		Assert.AreEqual( "challenges", row.Batch );
+		Assert.AreEqual( "HelpMessage.Score", row.Score );
+		CollectionAssert.Contains( row.Inputs, "challenge" );
+		StringAssert.Contains( row.Producer_, "AdvisorChallengeMessages.FirstOfferMessage" );
+		StringAssert.Contains( row.Producer_, "LastOfferSwitchedOn" );
+		var descriptor = Descriptors().Single( item => item.MessageId == id );
+		Assert.AreEqual( HelpCallback, descriptor.Callback );
+		Assert.AreEqual( 606, descriptor.FirstResponseId );
+		Assert.IsFalse( RestoredAdvice.Entries.Any( item => item.MessageId == id ), "the real first-offer producer supersedes the old restored hint" );
+		Assert.AreEqual( 68, messages.Count( item => item.Kind == "event" ) );
+		Assert.AreEqual( 83, messages.Count( item => item.Kind == "unused" ) );
 	}
 
 	[TestMethod]

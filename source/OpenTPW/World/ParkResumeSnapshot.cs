@@ -120,6 +120,9 @@ internal sealed record ParkResumeSnapshot
 	/// </summary>
 	[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
 	public PoolSlidesSaveData? PoolSlides { get; init; }
+	/// <summary>[EXT:pools-bridges] Absent in parks without bridges, preserving their existing save bytes.</summary>
+	[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+	public PoolBridgesSaveData? PoolBridges { get; init; }
 	/// <summary>
 	/// The developer prototype Totem, or null when the park had none: where it stands, its runtime and script state
 	/// and its economy association, joined by attraction id (the part joined the envelope with the prototype slice;
@@ -127,7 +130,7 @@ internal sealed record ParkResumeSnapshot
 	/// </summary>
 	public PrototypeRideSaveData? Prototype { get; init; }
 	/// <summary>
-	/// The particle pool's live emitters and effectors with its generator, or null when none was live (an optional presentation part, like the
+	/// The initialized particle pool's configuration, emitters, effectors and generator, or null when no pool was available (an optional presentation part, like the
 	/// original's PART/PTCL save block: no particles are saved, screen-space emitters are killed on load; it is not part of the world hash).
 	/// </summary>
 	public ParticleSystemState? Particles { get; init; }

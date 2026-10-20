@@ -42,6 +42,8 @@ public class PathAssetTests
 	/// The booth walk's speed term (tp.exe 0x004FF730: 25 for a thing id with its low two bits 0, WALK-010) moved it again to 0x30F213E46933EB8C (21 admissions, as before).
 	/// The arrival walk over the cell map (WALK-008, ARRIVAL-001: guests made at the bus stop, state 3's wait and head-of-cell rule, tp.exe 0x004FF520 and the states around it) moved it to 0xBC02D81A5FC6621D (20 admissions).
 	/// Round 8 (the guests package: the booth's first verdict is the next turn's update, persistent head-first cell lists, the bin and prize rules) moved it to 0xBE549F10640102B9 and admits 22.
+	/// The import of the save's queue cells (tp.exe 0x4D0B30) moved it to 0x11C1DCF60A32B061 (23 admissions): the walk's edge test (0x4D8750) now meets the Belly Bounce's four queue
+	/// cells, which a step enters only along their link, where it met empty ground before (open to an off-path step, mask 1), so the guests' steps and separation round them move.
 	/// </summary>
 	[TestMethod]
 	public void OwnershipFlipKeepsTheJungleGuestRunIdentical()
@@ -54,8 +56,8 @@ public class PathAssetTests
 		var simulation = new GuestSimulation( GuestPathGrid.FromOriginal( park.Map, park.Save ), settings, 1 );
 		for ( var tick = 0; tick < 120 * 60; tick++ )
 			simulation.Tick( Tick );
-		Assert.AreEqual( 22, simulation.Admissions );
-		Assert.AreEqual( 0xBE549F10640102B9UL, simulation.ComputeStateHash(), $"0x{simulation.ComputeStateHash():X16}" );
+		Assert.AreEqual( 23, simulation.Admissions );
+		Assert.AreEqual( 0x11C1DCF60A32B061UL, simulation.ComputeStateHash(), $"0x{simulation.ComputeStateHash():X16}" );
 	}
 
 	[TestMethod]

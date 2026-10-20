@@ -404,6 +404,11 @@ public sealed record RideVisitorBridgeSnapshot
 	public required long CalledTurn { get; init; }
 	/// <summary>Computed queue cells from the front (index 0) to the back.</summary>
 	public required (int X, int Y)[] QueueCells { get; init; }
+	/// <summary>Optional paired live typed-entry caches; absent in legacy snapshots. Preserve pre-sync link-edit history exactly.</summary>
+	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )]
+	public (int X, int Y)? TypedQueueFront { get; init; }
+	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )]
+	public int? TypedQueueDirection { get; init; }
 	public required int QueueEditCount { get; init; }
 	public required (int X, int Y)? JoinCell { get; init; }
 	public required long HeadNotReadyStreak { get; init; }

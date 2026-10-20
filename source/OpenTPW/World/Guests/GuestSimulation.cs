@@ -4011,6 +4011,8 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 					if ( !Grid.InBounds( x, y ) )
 						Error( $"Attraction {attractionSnapshot.AttractionId} queue cell {cell} ({x}, {y}) is outside the map." );
 				}
+			if ( attractionSnapshot.TypedQueueFront is { } typedFront && !Grid.InBounds( typedFront.X, typedFront.Y ) )
+				Error( $"Attraction {attractionSnapshot.AttractionId}'s typed queue front is outside the grid." );
 			if ( attractionSnapshot.JoinCell is { } join && !Grid.InBounds( join.X, join.Y ) )
 				Error( $"Attraction {attractionSnapshot.AttractionId} join cell ({join.X}, {join.Y}) is outside the map." );
 		}

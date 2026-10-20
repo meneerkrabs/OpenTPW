@@ -46,9 +46,13 @@ internal sealed class UiRenderer : IDisposable
 	private const PixelFormat DepthImageDepthFormat = PixelFormat.D32_Float_S8_UInt;
 	private ShaderInfo? depthShader;
 	private Pipeline? depthPipeline;
+	// A target is at least as large as the images drawn into it, in steps of DepthTargetStep pixels, and grows only: a turning preview's image changes size
+	// by a few pixels a frame, so it is drawn into the target's top-left corner with a matching viewport and shown with the matching texture coordinates.
+	private const int DepthTargetStep = 64;
 	private sealed class DepthTarget( Veldrid.Texture color, Veldrid.Texture depth, Framebuffer framebuffer, ResourceSet set ) : IDisposable
 	{
 		public Veldrid.Texture Color { get; } = color;
+		public bool Fits( int width, int height ) => Color.Width >= (uint)width && Color.Height >= (uint)height;
 		public Framebuffer Framebuffer { get; } = framebuffer;
 		public ResourceSet Set { get; } = set;
 		public void Dispose()
@@ -116,30 +120,35 @@ internal sealed class UiRenderer : IDisposable
 			if ( preparedImages.ContainsKey( image ) )
 				continue;
 			if ( used == targets.Count )
-				targets.Add( CreateDepthTarget( image.Width, image.Height ) );
-			else if ( targets[used].Color.Width != (uint)image.Width || targets[used].Color.Height != (uint)image.Height )
+				targets.Add( CreateDepthTarget( Step( image.Width ), Step( image.Height ) ) );
+			else if ( !targets[used].Fits( image.Width, image.Height ) )
 			{
 				var old = targets[used];
 				Render.ScheduleDelete( old.Dispose );
-				targets[used] = CreateDepthTarget( image.Width, image.Height );
+				targets[used] = CreateDepthTarget( Math.Max( (int)old.Color.Width, Step( image.Width ) ), Math.Max( (int)old.Color.Height, Step( image.Height ) ) );
 			}
 			var target = targets[used++];
 			preparedImages[image] = target;
 			commands.SetFramebuffer( target.Framebuffer );
-			commands.SetFullViewports();
-			commands.SetFullScissorRects();
 			commands.ClearColorTarget( 0, RgbaFloat.Clear );
 			commands.ClearDepthStencil( 1 );
-			var count = image.Draws.Sum( draw => draw.Vertices.Count );
+			// the image's pixels are the target's top-left corner
+			commands.SetViewport( 0, new Viewport( 0, 0, image.Width, image.Height, 0, 1 ) );
+			commands.SetFullScissorRects();
+			var count = 0;
+			for ( var index = 0; index < image.Draws.Count; index++ )
+				count += image.Draws[index].Vertices.Count;
 			if ( count == 0 )
 				continue;
 			if ( depthVertices.Length < count )
 				depthVertices = new GpuDepthVertex[count];
 			var offset = 0;
-			foreach ( var draw in image.Draws )
+			for ( var drawIndex = 0; drawIndex < image.Draws.Count; drawIndex++ )
 			{
-				foreach ( var vertex in draw.Vertices )
+				var drawVertices = image.Draws[drawIndex].Vertices;
+				for ( var index = 0; index < drawVertices.Count; index++ )
 				{
+					var vertex = drawVertices[index];
 					var position = new System.Numerics.Vector3( vertex.Position.X * 2f / image.Width - 1, 1 - vertex.Position.Y * 2f / image.Height, vertex.Position.Z );
 					depthVertices[offset++] = new GpuDepthVertex( position, vertex.TexCoords );
 				}
@@ -158,8 +167,9 @@ internal sealed class UiRenderer : IDisposable
 			commands.SetPipeline( DepthPipeline( target.Framebuffer.OutputDescription ) );
 			commands.SetVertexBuffer( 0, buffer );
 			var start = 0u;
-			foreach ( var draw in image.Draws )
+			for ( var drawIndex = 0; drawIndex < image.Draws.Count; drawIndex++ )
 			{
+				var draw = image.Draws[drawIndex];
 				var set = GetResourceSet( draw.Texture );
 				if ( set != null )
 				{
@@ -173,6 +183,8 @@ internal sealed class UiRenderer : IDisposable
 		commands.SetFullViewports();
 		commands.SetFullScissorRects();
 	}
+
+	private static int Step( int pixels ) => Math.Max( 1, (pixels + DepthTargetStep - 1) / DepthTargetStep ) * DepthTargetStep;
 
 	private DepthTarget CreateDepthTarget( int width, int height )
 	{
@@ -218,11 +230,15 @@ internal sealed class UiRenderer : IDisposable
 		var offset = 0;
 		foreach ( var draw in batch.Draws )
 		{
+			// a depth-tested image fills the top-left corner of its target
+			var uvScale = draw.Texture.DepthImage is { } depthImage && preparedImages.TryGetValue( depthImage, out var depthTarget )
+				? new System.Numerics.Vector2( (float)depthImage.Width / depthTarget.Color.Width, (float)depthImage.Height / depthTarget.Color.Height )
+				: System.Numerics.Vector2.One;
 			foreach ( var vertex in draw.Vertices )
 			{
 				var position = new System.Numerics.Vector2( vertex.Position.X * 2f / framebufferWidth - 1, 1 - vertex.Position.Y * 2f / framebufferHeight );
 				var color = new System.Numerics.Vector4( vertex.Color.R, vertex.Color.G, vertex.Color.B, vertex.Color.A ) / 255f;
-				vertices[offset++] = new GpuVertex( position, vertex.TexCoords, color );
+				vertices[offset++] = new GpuVertex( position, vertex.TexCoords * uvScale, color );
 			}
 		}
 		var bytes = (uint)(count * GpuVertexSize);

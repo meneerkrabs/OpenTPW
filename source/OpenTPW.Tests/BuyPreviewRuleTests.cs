@@ -109,7 +109,7 @@ public class BuyPreviewRuleTests
 	}
 
 	[TestMethod]
-	public void TheBuyClipIsAnimationFiveVariantOneOfThePreviewModel()
+	public void TheBuyClipIsAnimationFiveVariantZeroOfThePreviewModel()
 	{
 		// the letter table's id 5 is m: <model>m1 before the unnumbered <model>m
 		Assert.AreEqual( "/r/Ptotemm1.md2", PreviewIcon.BuyClipMember( "/r/Ptotem.md2", new[] { "/r/Ptotem.md2", "/r/Ptotemm.md2", "/r/Ptotemm1.md2", "/r/Ptotemc1.md2" } )?.Path );

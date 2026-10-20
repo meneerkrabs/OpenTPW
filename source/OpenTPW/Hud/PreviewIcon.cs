@@ -36,9 +36,22 @@ public sealed class PreviewIcon
 	private readonly ModelAnimation? clip;
 	private readonly string clipName = "";
 	private double? animationClock;
+	// Per-frame work without per-frame allocations: the rest pose is computed once, the animated pose, the arrangement drawn and the texture
+	// grouping reuse their buffers (an arrangement drawn through Draw or DrawBuyPreview is consumed before the next one starts).
+	private readonly NVector3[]?[] restPoints;
+	private readonly IReadOnlyList<NVector2>?[] restTexCoords;
+	private NVector3[]?[]? animatedPoints;
+	private NVector3[]?[]? animatedBuffers;
+	private IReadOnlyList<NVector2>?[]? animatedTexCoords;
+	private readonly List<ArrangedTriangle> drawnTriangles = new();
+	private readonly UiTexture[] groupTextures;
+	private readonly int[] triangleGroups;
+	private readonly int[] groupCounts;
+	private readonly int[] groupOrder;
+	private readonly int[] groupFilled;
 
-	/// <summary>A drawn mesh: its index in the model, its node, its top node and that node's own matrix.</summary>
-	private sealed record MeshPart( int Mesh, int Node, int? Root, NMatrix4x4 RestWorld, NMatrix4x4 RootLocal );
+	/// <summary>A drawn mesh: its index in <see cref="meshes"/>, its index in the model, its node, its top node and that node's own matrix.</summary>
+	private sealed record MeshPart( int Index, int Mesh, int Node, int? Root, NMatrix4x4 RestWorld, NMatrix4x4 RootLocal );
 
 	/// <summary>A preview triangle: its mesh part, its corners' vertex indices, its texture coordinates (rest) and texture.</summary>
 	private readonly record struct Triangle( MeshPart Part, int A, int B, int C, NVector2 UvA, NVector2 UvB, NVector2 UvC, UiTexture? Texture, string MaterialName );
@@ -51,6 +64,7 @@ public sealed class PreviewIcon
 		this.model = model;
 		var min = new NVector3( float.MaxValue );
 		var max = new NVector3( float.MinValue );
+		var rest = new List<NVector3[]?>();
 		for ( var meshIndex = 0; meshIndex < model.Meshes.Count; meshIndex++ )
 		{
 			var mesh = model.Meshes[meshIndex];
@@ -58,16 +72,18 @@ public sealed class PreviewIcon
 				continue;
 			var world = OriginalTerrain.GetWorldMatrix( model, mesh.NodeIndex );
 			var root = RootOf( model, mesh.NodeIndex );
-			var part = new MeshPart( meshIndex, mesh.NodeIndex, root, world, root is { } top ? model.Nodes[top].Transform : NMatrix4x4.Identity );
+			var part = new MeshPart( meshes.Count, meshIndex, mesh.NodeIndex, root, world, root is { } top ? model.Nodes[top].Transform : NMatrix4x4.Identity );
 			meshes.Add( part );
 			var textures = new UiTexture?[mesh.Materials.Length];
 			var resolved = new bool[mesh.Materials.Length];
-			foreach ( var vertex in mesh.Vertices )
+			var points = new NVector3[mesh.Vertices.Length];
+			for ( var vertex = 0; vertex < points.Length; vertex++ )
 			{
-				var point = NVector3.Transform( vertex.Position.GetSystemVector3(), world );
+				var point = points[vertex] = NVector3.Transform( mesh.Vertices[vertex].Position.GetSystemVector3(), world );
 				min = NVector3.Min( min, point );
 				max = NVector3.Max( max, point );
 			}
+			rest.Add( points );
 			for ( var index = 0; index + 2 < mesh.Indices.Length; index += 3 )
 			{
 				int a = (int)mesh.Indices[index], b = (int)mesh.Indices[index + 1], c = (int)mesh.Indices[index + 2];
@@ -90,6 +106,26 @@ public sealed class PreviewIcon
 		radius = Math.Max( 1e-3f, (max - min).Length() / 2 );
 		minimum = min;
 		maximum = max;
+		restPoints = rest.ToArray();
+		restTexCoords = new IReadOnlyList<NVector2>?[meshes.Count];
+		// the texture groups of the depth image, in the order the triangles first use them
+		var groups = new Dictionary<UiTexture, int>();
+		var groupList = new List<UiTexture>();
+		triangleGroups = new int[triangles.Count];
+		for ( var index = 0; index < triangles.Count; index++ )
+		{
+			var texture = triangles[index].Texture ?? UiTexture.Solid;
+			if ( !groups.TryGetValue( texture, out var group ) )
+			{
+				groups[texture] = group = groupList.Count;
+				groupList.Add( texture );
+			}
+			triangleGroups[index] = group;
+		}
+		groupTextures = groupList.ToArray();
+		groupCounts = new int[groupTextures.Length];
+		groupOrder = new int[groupTextures.Length];
+		groupFilled = new int[groupTextures.Length];
 		if ( buyClip != null )
 		{
 			clip = buyClip;
@@ -135,37 +171,38 @@ public sealed class PreviewIcon
 	internal bool HasBuyClip => clip != null;
 
 	/// <summary>
-	/// The corners of every mesh in model space: the rest pose, or the clip's pose (the nodes below the root moved by the clip, the root keeping its own
-	/// matrix, and the mesh's own vertex positions when the clip moves them). Null entries are meshes the clip hides.
+	/// The corners of every mesh in model space, by <see cref="MeshPart.Index"/>: the rest pose, or the clip's pose (the nodes below the root moved by the clip,
+	/// the root keeping its own matrix, and the mesh's own vertex positions when the clip moves them), with the clip's texture coordinates (null: the rest's).
+	/// Null points are meshes the clip hides. The arrays are reused by the next call.
 	/// </summary>
-	private Dictionary<MeshPart, (NVector3[] Points, IReadOnlyList<NVector2>? TexCoords)?> Pose( bool animated )
+	private (NVector3[]?[] Points, IReadOnlyList<NVector2>?[] TexCoords) Pose( bool animated )
 	{
-		var pose = new Dictionary<MeshPart, (NVector3[] Points, IReadOnlyList<NVector2>? TexCoords)?>( meshes.Count );
+		if ( !animated || animator == null )
+			return (restPoints, restTexCoords);
+		animatedPoints ??= new NVector3[]?[meshes.Count];
+		animatedBuffers ??= new NVector3[]?[meshes.Count];
+		animatedTexCoords ??= new IReadOnlyList<NVector2>?[meshes.Count];
+		var nodes = animator.NodeTransforms;
 		foreach ( var part in meshes )
 		{
 			var mesh = model.Meshes[part.Mesh];
-			var world = part.RestWorld;
-			IReadOnlyList<NVector3>? positions = null;
-			IReadOnlyList<NVector2>? texCoords = null;
-			if ( animated && animator != null )
+			if ( part.Node >= 0 && part.Node < model.Nodes.Count && animator.IsNodeHidden( part.Node ) )
 			{
-				if ( part.Node >= 0 && part.Node < model.Nodes.Count && animator.IsNodeHidden( part.Node ) )
-				{
-					pose[part] = null;
-					continue;
-				}
-				var nodes = animator.NodeTransforms;
-				if ( part.Node >= 0 && part.Node < nodes.Count && part.Root is { } root && root < nodes.Count && NMatrix4x4.Invert( nodes[root], out var inverse ) )
-					world = nodes[part.Node] * inverse * part.RootLocal;
-				positions = animator.GetVertexPositions( part.Mesh );
-				texCoords = animator.GetTexCoords( part.Mesh );
+				animatedPoints[part.Index] = null;
+				animatedTexCoords[part.Index] = null;
+				continue;
 			}
-			var points = new NVector3[mesh.Vertices.Length];
+			var world = part.RestWorld;
+			if ( part.Node >= 0 && part.Node < nodes.Count && part.Root is { } root && root < nodes.Count && NMatrix4x4.Invert( nodes[root], out var inverse ) )
+				world = nodes[part.Node] * inverse * part.RootLocal;
+			var positions = animator.GetVertexPositions( part.Mesh );
+			var points = animatedBuffers[part.Index] ??= new NVector3[mesh.Vertices.Length];
 			for ( var index = 0; index < points.Length; index++ )
 				points[index] = NVector3.Transform( positions != null && index < positions.Count ? positions[index] : mesh.Vertices[index].Position.GetSystemVector3(), world );
-			pose[part] = (points, texCoords);
+			animatedPoints[part.Index] = points;
+			animatedTexCoords[part.Index] = animator.GetTexCoords( part.Mesh );
 		}
-		return pose;
+		return (animatedPoints, animatedTexCoords);
 	}
 
 	private static int? RootOf( ModelFile model, int nodeIndex )
@@ -188,7 +225,7 @@ public sealed class PreviewIcon
 	private static NVector2 Uv( ModelFile.Mesh mesh, int index ) => new( mesh.TexCoords[index].X, 1 - mesh.TexCoords[index].Y );
 
 	/// <summary>The object windows' preview: the model turned by <paramref name="yaw"/>, tilted 30 degrees and centred in <paramref name="rect"/>.</summary>
-	public void Draw( UiBatch batch, UiRect rect, float yaw ) => Add( batch, ArrangeObjectPreview( rect, yaw ) );
+	public void Draw( UiBatch batch, UiRect rect, float yaw ) => Add( batch, ArrangeObjectPreview( rect, yaw, drawnTriangles ) );
 
 	/// <summary>The buy window's preview tilt: 45 degrees (tp.exe 0x468e50 tilts by the sine-table entries of ±π/4, 0x6fe7e4 / 0x6fe7e8, through 0x46f240).</summary>
 	public const float BuyTilt = MathF.PI / 4;
@@ -219,7 +256,7 @@ public sealed class PreviewIcon
 	{
 		if ( clockSeconds is { } seconds )
 			AdvanceBuyAnimation( seconds );
-		Add( batch, ArrangeBuyPreview( rect, yaw, canvasScale, animated: clockSeconds != null ) );
+		Add( batch, ArrangeBuyPreview( rect, yaw, canvasScale, animated: clockSeconds != null, into: drawnTriangles ) );
 	}
 
 	/// <summary>
@@ -251,7 +288,8 @@ public sealed class PreviewIcon
 	// −π/4 (0x46f240), the translation row turning with it; then x gains left + width/2 − 0.75 (sin·hd + cos·hw) and y gains bottom + height/2 −
 	// 0.35·share·reach + 0.7 (sin·hw − cos·hd) (hw, hd the half extents), the three axis rows' x is scaled by 0.75 and the depth column, translation included,
 	// by 0.1
-	internal Arrangement ArrangeBuyPreview( UiRect rect, float yaw, float canvasScale, bool animated = false )
+	/// <param name="into">A list to fill instead of a new one (cleared first).</param>
+	internal Arrangement ArrangeBuyPreview( UiRect rect, float yaw, float canvasScale, bool animated = false, List<ArrangedTriangle>? into = null )
 	{
 		var (min, max) = (minimum, maximum);
 		var halfWidth = (max.X - min.X) / 2;
@@ -280,7 +318,7 @@ public sealed class PreviewIcon
 				offsetY - 768 * canvasScale * (axes.Y + translation.Y),
 				0.1f * 0.1f * (axes.Z + translation.Z) );
 		}
-		return Arrange( rect, Project, animated );
+		return Arrange( rect, Project, animated, into );
 	}
 
 	/// <summary>The yaw and the −π/4 tilt of 0x468e50 as one matrix (row vectors), with the original's sine table.</summary>
@@ -298,7 +336,7 @@ public sealed class PreviewIcon
 	}
 
 	/// <summary>The object windows' preview: OpenTPW's orthographic view, the model turned by <paramref name="yaw"/>, tilted 30 degrees and centred in <paramref name="rect"/>.</summary>
-	internal Arrangement ArrangeObjectPreview( UiRect rect, float yaw )
+	internal Arrangement ArrangeObjectPreview( UiRect rect, float yaw, List<ArrangedTriangle>? into = null )
 	{
 		// The same turn and tilt directions as the buy window's (PreviewTurn), so the same faces turn towards the viewer
 		var rotation = NMatrix4x4.CreateTranslation( -center ) * NMatrix4x4.CreateRotationY( yaw ) * NMatrix4x4.CreateRotationX( -30f * MathF.PI / 180 );
@@ -309,26 +347,27 @@ public sealed class PreviewIcon
 			var turned = NVector3.Transform( point, rotation );
 			return new NVector3( middle.X + turned.X * scale, middle.Y - turned.Y * scale, turned.Z / radius );
 		}
-		return Arrange( rect, Project, animated: false );
+		return Arrange( rect, Project, animated: false, into );
 	}
 
-	private Arrangement Arrange( UiRect rect, Func<NVector3, NVector3, NVector3> project, bool animated )
+	private Arrangement Arrange( UiRect rect, Func<NVector3, NVector3, NVector3> project, bool animated, List<ArrangedTriangle>? into )
 	{
-		var pose = Pose( animated );
-		var arranged = new List<ArrangedTriangle>( triangles.Count );
+		var (posePoints, poseTexCoords) = Pose( animated );
+		var arranged = into ?? new List<ArrangedTriangle>( triangles.Count );
+		arranged.Clear();
 		var near = float.MaxValue;
 		var far = float.MinValue;
 		for ( var index = 0; index < triangles.Count; index++ )
 		{
 			var triangle = triangles[index];
-			if ( pose[triangle.Part] is not { } posed )
+			if ( posePoints[triangle.Part.Index] is not { } points )
 				continue;
 			var rootTranslation = triangle.Part.RootLocal.Translation;
-			var (pointA, pointB, pointC) = (posed.Points[triangle.A], posed.Points[triangle.B], posed.Points[triangle.C]);
+			var (pointA, pointB, pointC) = (points[triangle.A], points[triangle.B], points[triangle.C]);
 			var a = project( pointA, rootTranslation );
 			var b = project( pointB, rootTranslation );
 			var c = project( pointC, rootTranslation );
-			var uvs = posed.TexCoords;
+			var uvs = poseTexCoords[triangle.Part.Index];
 			NVector2 Uv( int vertex, NVector2 rest ) => uvs != null && vertex < uvs.Count ? new NVector2( uvs[vertex].X, 1 - uvs[vertex].Y ) : rest;
 			// [BIN:TPW-EXE:0x581320 face test] kept when the corners run clockwise on the screen (y down): the determinant of (x, y, w) is positive
 			var keeps = (b.X - a.X) * (c.Y - a.Y) - (c.X - a.X) * (b.Y - a.Y) > 0 || IsShownGroundPlate( triangle.MaterialName );
@@ -359,12 +398,16 @@ public sealed class PreviewIcon
 	{
 		var low = new NVector2( float.MaxValue );
 		var high = new NVector2( float.MinValue );
-		foreach ( var triangle in arrangement.Triangles )
+		Array.Clear( groupCounts );
+		var kept = arrangement.Triangles;
+		for ( var index = 0; index < kept.Count; index++ )
 		{
+			var triangle = kept[index];
 			if ( !triangle.FacesViewer )
 				continue;
 			low = NVector2.Min( low, NVector2.Min( triangle.A2, NVector2.Min( triangle.B2, triangle.C2 ) ) );
 			high = NVector2.Max( high, NVector2.Max( triangle.A2, NVector2.Max( triangle.B2, triangle.C2 ) ) );
+			groupCounts[triangleGroups[triangle.Index]] += 3;
 		}
 		if ( low.X > high.X )
 			(low, high) = (new NVector2( arrangement.Rect.X, arrangement.Rect.Y ), new NVector2( arrangement.Rect.X + 1, arrangement.Rect.Y + 1 ));
@@ -374,25 +417,36 @@ public sealed class PreviewIcon
 		var height = Math.Clamp( (int)MathF.Ceiling( high.Y ) - (int)top, 1, MaximumImageSide );
 		// any affine map that keeps the order keeps the depth test's result; the margin keeps every depth strictly inside (0, 1)
 		var span = Math.Max( 1e-6f, arrangement.FarDepth - arrangement.NearDepth );
-		var draws = new Dictionary<UiTexture, List<UiDepthVertex>>();
-		var order = new List<UiTexture>();
-		UiDepthVertex Vertex( NVector3 corner, NVector2 uv ) => new( new NVector3( corner.X - left, corner.Y - top, 0.05f + 0.9f * (corner.Z - arrangement.NearDepth) / span ), uv );
-		foreach ( var triangle in arrangement.Triangles )
+		var near = arrangement.NearDepth;
+		UiDepthVertex Vertex( NVector3 corner, NVector2 uv ) => new( new NVector3( corner.X - left, corner.Y - top, 0.05f + 0.9f * (corner.Z - near) / span ), uv );
+		// one draw per texture, in the order the kept triangles first use them; each draw's triangles in the arrangement's order
+		var drawCount = 0;
+		Array.Fill( groupOrder, -1 );
+		var vertices = new UiDepthVertex[groupTextures.Length][];
+		Array.Clear( groupFilled );
+		for ( var index = 0; index < kept.Count; index++ )
 		{
+			var triangle = kept[index];
 			if ( !triangle.FacesViewer )
 				continue;
-			var source = triangles[triangle.Index];
-			var texture = source.Texture ?? UiTexture.Solid;
-			if ( !draws.TryGetValue( texture, out var vertices ) )
+			var group = triangleGroups[triangle.Index];
+			if ( groupOrder[group] < 0 )
 			{
-				draws[texture] = vertices = new List<UiDepthVertex>();
-				order.Add( texture );
+				groupOrder[group] = drawCount++;
+				vertices[group] = new UiDepthVertex[groupCounts[group]];
 			}
-			vertices.Add( Vertex( triangle.A, triangle.UvA ) );
-			vertices.Add( Vertex( triangle.B, triangle.UvB ) );
-			vertices.Add( Vertex( triangle.C, triangle.UvC ) );
+			var target = vertices[group];
+			var at = groupFilled[group];
+			target[at] = Vertex( triangle.A, triangle.UvA );
+			target[at + 1] = Vertex( triangle.B, triangle.UvB );
+			target[at + 2] = Vertex( triangle.C, triangle.UvC );
+			groupFilled[group] = at + 3;
 		}
-		return new UiDepthImage( new UiRect( left, top, width, height ), width, height, order.Select( texture => new UiDepthDraw( texture, draws[texture] ) ).ToArray() );
+		var draws = new UiDepthDraw[drawCount];
+		for ( var group = 0; group < groupTextures.Length; group++ )
+			if ( groupOrder[group] >= 0 )
+				draws[groupOrder[group]] = new UiDepthDraw( groupTextures[group], vertices[group] );
+		return new UiDepthImage( new UiRect( left, top, width, height ), width, height, draws );
 	}
 
 	/// <summary>The largest side of a preview's image in pixels.</summary>

@@ -320,6 +320,17 @@ public class ParkFinaleTests
 		previous.Back!(); Assert.IsTrue( level.ResearchFinaleActive ); Assert.AreEqual( "researchFinale", hud.Stack.Top!.Name );
 	}
 
+	/// <summary>[EXT:online-coop-commands] The winning screen's exit leaves the HUD as a <see cref="DismissFinaleCommand"/>; with no finale left a second one is refused and logged.</summary>
+	[TestMethod]
+	public void TheWinningScreensExitIsADismissFinaleCommand()
+	{
+		var level = LevelFor( Objects( Entry() ) ); Complete( level ); var hud = Hud( level ); var context = Context();
+		hud.Update( context, UiInput.Idle( new N.Vector2( -1 ) ), false, false, false );
+		hud.Update( context, UiInput.Click( new N.Vector2( 1000, 1440 ) ), false, false, false ); Assert.IsFalse( level.ResearchFinaleActive );
+		Assert.AreEqual( 1, level.Commands.Log.Count ); Assert.IsInstanceOfType( level.Commands.Log[0].Command, typeof( DismissFinaleCommand ) );
+		Assert.IsFalse( level.Commands.Issue( new DismissFinaleCommand() ).Accepted ); Assert.AreEqual( 2, level.Commands.Log.Count );
+	}
+
 	[TestMethod]
 	public void NativeInputCapturesCannotDismissTheFinale()
 	{

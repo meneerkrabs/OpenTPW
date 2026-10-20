@@ -588,7 +588,7 @@ public class DeterminismTests
 	internal const ulong JungleDecemberOffFixedRunHash = 0x6FDBB79D8B9377BBUL;
 
 	/// <summary>[EXT:winter-weather] The pinned hash of the same run with the option on: December's rain bands are snow for the umbrellas and the rain mood (docs/DETERMINISM.md, "Wintry Decembers").</summary>
-	internal const ulong JungleDecemberWintryFixedRunHash = 0x071D0789F44BE723UL;
+	internal const ulong JungleDecemberWintryFixedRunHash = 0x812FCC248B729C28UL;
 
 	[TestMethod]
 	public void UmbrellasAndRainMoodUnderTheJungleWeatherAcrossDecemberArePinnedWithWintryDecembersOffAndOn()

@@ -117,7 +117,7 @@ public class GuestMeasurementTests
 	/// on (1.6.0: the bin rule, phase 6b) and with 1.5.0's rules, which look three cells around for a bin where 1.6.0 looks eight. The bins stand beyond three cells of where the guests litter, so 1.5.0's guests drop everything; the pin of the
 	/// shipped rules is where the bin rule is held. A deliberate change of the radius changes it (and bumps the extension's version). Moved by nothing else: no other scenario, level or save has a bin the rule can reach.
 	/// </summary>
-	private const ulong ScenarioBinsSmarterFixedRunHash = 0x5AC8D8A47AAC35D2UL, ScenarioBinsPhase6FixedRunHash = 0xD2AF869CDF9A7D3DUL;
+	private const ulong ScenarioBinsSmarterFixedRunHash = 0x5AC8D8A47AAC35D2UL, ScenarioBinsPhase6FixedRunHash = 0xEF00F0D64A9077FEUL;
 
 	[TestMethod]
 	public void ParkScenarioWithBinsAndTheSmarterGuestsExtensionOnIsPinned()

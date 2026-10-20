@@ -167,6 +167,8 @@ public class GuestRefusedTargetTests
 		[0x3D741AAF6928D531UL] = 0x2FB7EFA85DBAD719UL,
 		[0x5AC8D8A47AAC35D2UL] = 0x7539BB3BB9729317UL,
 		[0x4AAC7DD831EFD113UL] = 0x3BAFF5A07D0A82F6UL,
+		[0x812FCC248B729C28UL] = 0x071D0789F44BE723UL,
+		[0xEF00F0D64A9077FEUL] = 0xD2AF869CDF9A7D3DUL,
 	};
 
 	internal static ulong VerifyRetainedTargetHash( GuestSimulation simulation, Func<ulong> compute, WorldStateSources? sources = null )

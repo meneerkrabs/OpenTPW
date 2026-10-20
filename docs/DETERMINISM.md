@@ -1229,3 +1229,10 @@ Evidence: [desktop run](https://github.com/meneerkrabs/OpenTPW/actions/runs/3941
 | `0x2FB7EFA85DBAD719` | `0x3D741AAF6928D531` |
 | `0x7539BB3BB9729317` | `0x5AC8D8A47AAC35D2` |
 | `0x3BAFF5A07D0A82F6` | `0x4AAC7DD831EFD113` |
+
+The first reconciliation head `48314a81f1d59f4a8696330af00afcacae297dbc` passed those 18 inverse guards and exposed four later assertions covering exactly two additional constants. Each of Linux, macOS and Windows recovered all four by the same target-only projection; normal browser interpreter, traces-off interpreter and AOT agreed on the same actual values, with no guard failures. Evidence: [desktop run](https://github.com/meneerkrabs/OpenTPW/actions/runs/39413440835), [browser run](https://github.com/meneerkrabs/OpenTPW/actions/runs/39413440819). The followup changes only those two constants and adds their inverse guards; current-head CI remains required.
+
+| Additional main baseline | Observed retained-target value |
+| --- | --- |
+| `0x071D0789F44BE723` | `0x812FCC248B729C28` |
+| `0xD2AF869CDF9A7D3D` | `0xEF00F0D64A9077FE` |

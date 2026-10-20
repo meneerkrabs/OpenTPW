@@ -71,10 +71,39 @@ public class ThemeParkIncLayoutCheckpointTests
 		cells.SetType(4, 5, ParkCellType.Queue); cells.SetQueueLink(4, 5, 64);
 		return new ThemeParkIncLayoutCheckpoint
 		{
-			Format = ThemeParkIncLayoutCheckpoint.FormatName, Version = 1, RestartPolicy = ThemeParkIncLayoutCheckpoint.FreshSession,
+			Format = ThemeParkIncLayoutCheckpoint.FormatName, Version = ThemeParkIncLayoutCheckpoint.CurrentVersion, RestartPolicy = ThemeParkIncLayoutCheckpoint.FreshSession,
 			Theme = "science", Seed = seed.Value, SavedUtc = DateTimeOffset.UnixEpoch,
 			Layout = ParkLayoutSnapshot.CaptureSnapshot(cells, objects), AssetHashes = assets
 		};
+	}
+
+	[TestMethod]
+	public void LegacyEnvelopeMigratesButCannotSmuggleNewQueueFields()
+	{
+		var source = Checkpoint() with { Version = 1 };
+		var migrated = ThemeParkIncLayoutCheckpoint.Deserialize(ParkResumeJson.Serialize(source));
+		Assert.AreEqual(ThemeParkIncLayoutCheckpoint.CurrentVersion, migrated.Version);
+		var cells = source.Layout.Cells with { QueuePassSchemaVersion = 1, QueuePassResidues = new() };
+		Assert.ThrowsException<InvalidDataException>(() => ThemeParkIncLayoutCheckpoint.Deserialize(ParkResumeJson.Serialize(source with { Layout = source.Layout with { Cells = cells } })));
+	}
+
+	[TestMethod]
+	public void VersionTwoRestoresResidueAfterActualObjectReconstruction()
+	{
+		var source = Checkpoint();
+		var map = ParkLayoutSnapshot.RestoreCellMap(source.Layout);
+		map.ApplyQueuePassMetadata(12, 12, 64, 17);
+		map.SetType(12, 13, ParkCellType.Path); map.ApplyQueuePassMetadata(12, 13, 1, 17);
+		var mapData = ParkLayoutSnapshot.CaptureSnapshot(map, new ParkObjects(catalog, new SandboxParkGrid(), seed)).Cells;
+		source = source with { Layout = source.Layout with { Cells = mapData } };
+		var loaded = ThemeParkIncLayoutCheckpoint.Deserialize(ThemeParkIncLayoutCheckpoint.Serialize(source));
+		var target = new ParkObjects(catalog, new SandboxParkGrid(), seed);
+		var restored = loaded.RestoreInto(target, assets, 16, 16);
+		Assert.AreEqual(1, target.Objects.Count);
+		Assert.AreEqual((byte)0, restored.RawTypeAt(12, 12));
+		Assert.AreEqual((ushort)17, restored.OwnerAt(12, 12));
+		Assert.AreEqual((byte)1, restored.QueueLinkAt(12, 13));
+		Assert.IsTrue(restored.HasQueuePassResidues);
 	}
 
 	[TestMethod]
@@ -147,8 +176,8 @@ public class ThemeParkIncLayoutCheckpointTests
 	{
 		var checkpoint = Checkpoint();
 		var json = Encoding.UTF8.GetString(ThemeParkIncLayoutCheckpoint.Serialize(checkpoint));
-		foreach (var invalid in new[] { json.Replace("\"Version\":1", "\"Version\":99"), json.Replace("\"Version\":1", "\"Version\":1,\"Version\":1"),
-			json.Replace("\"Version\":1", "\"Unknown\":1,\"Version\":1"), json.Replace("\"Version\":1,", ""), json.Replace("new-session", "resume"), "{" })
+		foreach (var invalid in new[] { json.Replace("\"Version\":2", "\"Version\":99"), json.Replace("\"Version\":2", "\"Version\":2,\"Version\":2"),
+			json.Replace("\"Version\":2", "\"Unknown\":1,\"Version\":2"), json.Replace("\"Version\":2,", ""), json.Replace("new-session", "resume"), "{" })
 			Assert.ThrowsException<InvalidDataException>(() => ThemeParkIncLayoutCheckpoint.Deserialize(Encoding.UTF8.GetBytes(invalid)));
 		foreach (var suffix in new[] { ".tpws", ".tpwi", ".gms", ".gmi", ".cos", ".json" })
 		{

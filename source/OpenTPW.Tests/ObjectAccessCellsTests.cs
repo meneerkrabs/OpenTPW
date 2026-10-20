@@ -107,6 +107,7 @@ public class ObjectAccessCellsTests
 		Assert.IsNotNull( item );
 		var entrance = item!.AccessPoints.Single( point => point.Kind == ObjectCellKind.Entrance );
 		var exit = item.AccessPoints.Single( point => point.Kind == ObjectCellKind.Exit );
+		Assert.AreEqual( (entrance.X, entrance.Y), Level.ResolveQueueEntrance( rig.Objects, rig.Cells, Level.OwnerWord( item ) )!.Value );
 		var expectedDirection = rig.Cells.QueueLinkAt( exit.X, exit.Y );
 		Assert.AreNotEqual( (byte)0, expectedDirection, "the real footprint writer supplies the exit direction" );
 		var importedCells = new ParkCellMap( rig.Cells.Width, rig.Cells.Height );

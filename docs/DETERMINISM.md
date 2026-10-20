@@ -366,7 +366,7 @@ stays off the map and out of the HUD's locator until the park runs again; an imp
 
 What stays outside: the clock's banked fraction of a tick and its dropped-time total follow the frames' time feed (in a session the network clock
 feeds whole ticks, C2); the particle pool runs on the frame time, so the particle part of a save and the ADDOBJ records of effects that have ended
-(`OriginalObjectRuntime.ParticleObjects`) and the ride hoarding's level can differ between two players' saves, though neither is hashed nor returned to a script; and
+(`OriginalObjectRuntime.ParticleObjects`) and the ride hoarding's level and shown set (a sunk hoarding goes back to the closed set at the frame its level reaches 0, which a later model call reads) can differ between two players' saves, though neither is hashed nor returned to a script; and
 `GameFlow.Update`'s work after the level's frame (the advisor, the autosave, the audio, the presence figures) is not part of this audit.
 
 The tests:

@@ -436,10 +436,20 @@ public sealed partial class OriginalEconomyImport
 			evidence.Add( $"Staff value adjusted on import: {adjustment}." );
 		foreach ( var job in jobs )
 			evidence.Add( job );
-		// [APPROX:SAVE-006] a staff claim no imported job holds is not imported — evidence needed: a save whose attraction is claimed by a staff member with no imported job on it
-		// [BIN:TPW-EXE:0x004E0220 claim lapse] a claim taken more than 100 turns ago lapses unless its claimant still targets the object: a claim whose claimant has no imported job on the object cannot be held again
+		// [BIN:TPW-EXE:0x004E0220 claim lapse] an otherwise unheld claim remains reserved through its saved turn + 100; only a later claimant query releases it.
 		foreach ( var held in save.Attractions.Where( item => item.AssignedStaffMember != 0 && !resumedClaims.Contains( item.Id ) ) )
-			evidence.Add( $"[APPROX:SAVE-006] Attraction thing {held.Id} (Info.Id {held.InfoId}) claim by thing {held.AssignedStaffMember} on turn {held.TimeMarkedForMaintenance} not imported: no imported job of that member targets it." );
+		{
+			if ( things.TryGetValue( held.Id, out var attraction ) && membersByThing.TryGetValue( held.AssignedStaffMember, out var claimant )
+				&& claimant.Type is StaffType.Mechanic or StaffType.Handyman && held.TimeMarkedForMaintenance <= economy.Turn )
+			{
+				attraction.MechanicId = claimant.Id;
+				attraction.ClaimTurn = held.TimeMarkedForMaintenance;
+				evidence.Add( $"Attraction thing {held.Id} claim by thing {held.AssignedStaffMember} on turn {held.TimeMarkedForMaintenance} imported for lazy expiry." );
+				continue;
+			}
+			// [APPROX:SAVE-006] unresolved attraction/claimant identities, unsupported claimant roles and future claim stamps have no supported ownership contract.
+			evidence.Add( $"[APPROX:SAVE-006] Attraction thing {held.Id} (Info.Id {held.InfoId}) claim by thing {held.AssignedStaffMember} on turn {held.TimeMarkedForMaintenance} not imported: unresolved attraction or staff, unsupported claimant role, or future claim turn." );
+		}
 		// [BIN:TPW-EXE:0x00504BDC staff constructor] mJobsDone (+0x204) is set to 0 here and otherwise touched only by the serializer (0x00504EFC, 0x005052ED): nothing reads it, so it needs no import
 		if ( imported != 0 )
 			evidence.Add( $"Staff jobs-done counts {string.Join( "/", save.Staff.Select( item => item.Staff.JobsDone ) )} need no import (nothing reads mJobsDone)." );
@@ -836,7 +846,8 @@ public sealed partial class OriginalEconomyImport
 		}
 		var variables = save.World.Variables;
 		var worldStateResidual = lostImported ? "" : $"world state {variables.WorldState}, ";
-		evidence.Add( $"[APPROX:SAVE-010] World values not imported: {worldStateResidual}arrival vehicle sizes {variables.ArrivalVehicleSize1}/{variables.ArrivalVehicleSize2}/{variables.ArrivalVehicleSize3}, current arrival vehicle thing {variables.CurrentArrivalVehicle} (its script state is not restored, [EXT:original-engine-state-dumps]), arrival bytes {Convert.ToHexString( save.World.Arrivals )}, calendar session start {save.World.Calendar.SessionStart}." );
+		evidence.Add( $"[APPROX:SAVE-010] World values not imported: {worldStateResidual}calendar session start {save.World.Calendar.SessionStart}." );
+		evidence.Add( "[APPROX:ARRIVAL-001] The saved arrival scheduler is attached by the level only for an exact park clock with no saved vehicle handles and no host vehicles; other vehicle continuations remain unsupported. The level reports the attachment outcome." );
 		if ( save.Advisor is { } advisor )
 		{
 			var current = advisor.Current;

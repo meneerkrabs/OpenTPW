@@ -40,9 +40,10 @@ public readonly record struct GuestView( int Id, ulong BirthId, int Type, float 
 	IReadOnlyList<int> UsedHistory, IReadOnlyList<int> TemporaryHistory, long MealTurn = -1, long PlanTurns256 = -1, long ComplaintTurn = -1 );
 
 /// <summary>
-/// An attraction as the policy sees it, built by the host for one guest: every value the original score reads, precomputed. An attraction without a join cell (<see cref="HasJoinCell"/> false)
-/// carries only its identity and flags.
+/// An attraction as the policy sees it, built by the host for one guest: every value the original score reads, precomputed. A policy that opts into
+/// <see cref="IGuestDecisions.ScoresDisconnectedQueues"/> also receives these facts for a real typed queue back without a join cell. Other disconnected views retain identity and flags only.
 /// </summary>
+/// <param name="HasJoinCell">Whether the queue has an attached walkable join cell; false even when an opted-in policy scores a disconnected typed back.</param>
 /// <param name="BackCell">The back-of-queue cell the guest would walk to (the last queue cell).</param>
 /// <param name="CellModifier">Component 4 of the environment record at <see cref="BackCell"/> (the fireworks' region effect), 0 elsewhere.</param>
 /// <param name="SameTypeAsLastUsed">The attraction the guest used last still exists and is of this one's type.</param>

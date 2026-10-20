@@ -8,8 +8,8 @@ namespace OpenTPW;
 /// <summary>
 /// Draws the guests' balloons (<see cref="Guest.HasBalloon"/>) as camera-facing quads of the original balloon sprite
 /// (<c>esprites.wad/Generic/Balloons/SPR_BL</c>), the way <see cref="GuestRenderer"/> draws the kids: the balloon trails its guest, dips while the guest
-/// walks and bobs (tp.exe <c>0x004FA030</c>); a balloon that bursts shows its burst frame for a moment. Presentation only: nothing here touches the
-/// simulation, and the colours come from a presentation hash.
+/// walks and bobs (tp.exe <c>0x004FA030</c>); a balloon that bursts shows its burst frame for a moment. Presentation only: it updates saved placement geometry but never gameplay or script lifecycle;
+/// the colours come from a presentation hash.
 /// </summary>
 public sealed class BalloonRenderer : Entity
 {
@@ -52,25 +52,13 @@ public sealed class BalloonRenderer : Entity
 		return step < 0 || step >= BurstSteps || alpha <= 8 ? null : alpha;
 	}
 
-	private sealed class BalloonView
-	{
-		public bool Held;
-		public int Slot;
-		public float X, Y, Lift;
-		public float LastX = float.NaN, LastY;
-		public float BurstAt = float.NegativeInfinity;
-	}
-
 	private readonly GuestSimulation simulation;
 	private readonly ModelHeightfield field;
 	private readonly GuestSpriteAtlas? atlas;
 	private readonly int[] slots;
 	private readonly Material<ObjectUniformBuffer>? material;
 	private Texture? texture;
-	private readonly Dictionary<Guest, BalloonView> views = new( ReferenceEqualityComparer.Instance );
-	private readonly HashSet<Guest> seen = new( ReferenceEqualityComparer.Instance );
 	private readonly List<Guest> order = new();
-	private readonly List<Guest> stale = new();
 	private int bobPhase;
 	private float bobAccumulator;
 	private DeviceBuffer? vertexBuffer;
@@ -130,6 +118,18 @@ public sealed class BalloonRenderer : Entity
 		return Rise - distance / DipDivisor + Bob[(int)((uint)(guestId + phase) % (uint)Bob.Length)] * BobScale;
 	}
 
+	/// <summary>Preserve guest-interleaved drawing; independent detached slots precede a replacement, and orphans follow.</summary>
+	internal static IEnumerable<BalloonSpriteState> InDrawOrder( IEnumerable<Guest> guests, IReadOnlyList<BalloonSpriteState> players )
+	{
+		var groups = players.ToLookup( player => player.ColourGuestId );
+		var emitted = new HashSet<long>();
+		foreach ( var guest in guests )
+			foreach ( var player in groups[guest.Id].OrderBy( player => player.Identity ) )
+				if ( emitted.Add( player.Identity ) ) yield return player;
+		foreach ( var player in players )
+			if ( emitted.Add( player.Identity ) ) yield return player;
+	}
+
 	protected override void OnRender()
 	{
 		DrawnBalloons = 0;
@@ -137,61 +137,40 @@ public sealed class BalloonRenderer : Entity
 			return;
 		var now = Time.Now;
 		// [BIN:TPW-EXE:0x00518F90 people list] the balloons are placed in the order tp.exe walks its live thing list (head 0x7CF56C, the newest thing first, class 1, 4 to 8 and 18 call the placement 0x004FA030), so each balloon takes the bob phase the original gives it
-		// [APPROX:GUEST-017] the burst's first frame shows at the burst, where the original's script starts at its next tick (evidence needed: when the sprite script player ticks a script started in the same frame)
+		// The simulation owns script lifecycle and due passes. Rendering only places held players and reads detached ones.
+		// [APPROX:GUEST-017] native imported script phase remains SAVE-013; fixed-60Hz/non-pooled host clock limitations remain.
 		var view = Camera.ViewMatrix;
 		var right = new SVector3( view.M11, view.M21, view.M31 );
 		var up = new SVector3( view.M12, view.M22, view.M32 );
 		var forward = -new SVector3( view.M13, view.M23, view.M33 );
-		seen.Clear();
 		var count = 0;
 		simulation.FillInThingListOrder( order );
-		foreach ( var guest in order )
+		var guests = order.ToDictionary( guest => guest.Id );
+		foreach ( var balloon in InDrawOrder( order, simulation.BalloonPlayers ) )
 		{
-			seen.Add( guest );
-			if ( !views.TryGetValue( guest, out var balloon ) )
+			if ( balloon.OwnerId is not int ownerId )
 			{
-				if ( !guest.HasBalloon )
-					continue;
-				views[guest] = balloon = new BalloonView();
+				if ( balloon.Visible ) DrawPlayer( balloon );
+				continue;
 			}
-			if ( guest.HasBalloon && !balloon.Held )
+			if ( !guests.TryGetValue( ownerId, out var guest ) ) continue;
+			if ( guest.IsVisible )
 			{
-				// A new balloon model (the shop, or back after a ride): the colour the guest's id draws (0x00541FD0) and no trail yet.
-				balloon.Held = true;
-				balloon.Slot = slots[GuestAppearance.BalloonColour( guest.Id, slots.Length ) % slots.Length];
-				balloon.LastX = float.NaN;
+				var (trailX, trailY) = simulation.DrawPositionBefore( guest, TrailTurns );
+				balloon.Lift = Lift( trailX, trailY, guest.DrawX, guest.DrawY, guest.Id, bobPhase );
+				(balloon.X, balloon.Y) = balloon.HasPosition ? (balloon.LastX, balloon.LastY) : (trailX, trailY);
+				(balloon.LastX, balloon.LastY) = (trailX, trailY);
+				balloon.HasPosition = true;
+				if ( balloon.Visible ) DrawPlayer( balloon );
 			}
-			else if ( !guest.HasBalloon && balloon.Held )
-			{
-				balloon.Held = false;
-				// A ride removes the model (0x00475550); a burst (0x004FE950) runs the burst script 0x0074F4C0 where the balloon was.
-				if ( guest.State is not (GuestState.Using or GuestState.Gone) )
-					balloon.BurstAt = now;
-			}
-			if ( balloon.Held )
-			{
-				if ( guest.IsVisible )
-				{
-					var (trailX, trailY) = simulation.DrawPositionBefore( guest, TrailTurns );
-					balloon.Lift = Lift( trailX, trailY, guest.DrawX, guest.DrawY, guest.Id, bobPhase );
-					(balloon.X, balloon.Y) = float.IsNaN( balloon.LastX ) ? (trailX, trailY) : (balloon.LastX, balloon.LastY);
-					(balloon.LastX, balloon.LastY) = (trailX, trailY);
-					AddSprite( ref count, atlas.GetFrame( balloon.Slot, 0, 0 ), balloon, right, up, forward, 0 );
-				}
-				// every balloon's placement, seen or not, advances the shared phase after its own lift was taken
-				(bobPhase, bobAccumulator) = AdvanceBob( bobPhase, bobAccumulator );
-			}
-			else if ( BurstAlpha( (int)MathF.Floor( (now - balloon.BurstAt) / ScriptStepSeconds ) ) is { } alpha )
-				AddSprite( ref count, atlas.GetFrame( balloon.Slot, 0, 1 ), balloon, right, up, forward, (uint)alpha );
-			else if ( !balloon.Held )
-				views.Remove( guest );
+			(bobPhase, bobAccumulator) = AdvanceBob( bobPhase, bobAccumulator );
 		}
-		stale.Clear();
-		foreach ( var guest in views.Keys )
-			if ( !seen.Contains( guest ) )
-				stale.Add( guest );
-		foreach ( var guest in stale )
-			views.Remove( guest );
+
+		void DrawPlayer( BalloonSpriteState balloon )
+		{
+			var slot = slots[GuestAppearance.BalloonColour( balloon.ColourGuestId, slots.Length ) % slots.Length];
+			AddSprite( ref count, atlas.GetFrame( slot, 0, balloon.Frame ), balloon, right, up, forward, balloon.Alpha == 255 ? 0u : (uint)balloon.Alpha );
+		}
 		if ( count == 0 )
 			return;
 
@@ -223,7 +202,7 @@ public sealed class BalloonRenderer : Entity
 	}
 
 	/// <summary>One camera-facing quad with the frame's hotspot at the balloon's point (both windings, as the guests').</summary>
-	private void AddSprite( ref int count, int frameIndex, BalloonView balloon, SVector3 right, SVector3 up, SVector3 forward, uint alpha )
+	private void AddSprite( ref int count, int frameIndex, BalloonSpriteState balloon, SVector3 right, SVector3 up, SVector3 forward, uint alpha )
 	{
 		if ( count + VerticesPerSprite > vertices.Length )
 			Array.Resize( ref vertices, Math.Max( 64 * VerticesPerSprite, vertices.Length * 2 ) );

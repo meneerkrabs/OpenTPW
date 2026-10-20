@@ -109,7 +109,8 @@ public sealed partial class ParkHud
 	// [BIN:TPW-EXE:0x004A06B0 loan tabs] the dialog's open and each tab button build the list again, which runs every offer's credit test (0x0049FA00 → 0x004D06B0)
 	private void SelectLoanTab( bool outstanding )
 	{
-		LoansEconomy?.RefreshLoanOffers();
+		if ( LoansEconomy != null )
+			level.Commands.Issue( new RefreshLoanOffersCommand() );
 		outstandingLoans = outstanding;
 		FillLoanList();
 	}
@@ -189,13 +190,13 @@ public sealed partial class ParkHud
 				{
 					if ( current.Loans.FirstOrDefault( loan => loan.OfferIndex == row.OfferIndex ) is not { } loan || loan.RemainingBalance != amount )
 						ShowLoanFailure( strings.Extra( OpenTpwText.NotAvailable ) );
-					else if ( !current.TryRepayLoan( row.OfferIndex ) )
+					else if ( !level.Commands.Issue( new RepayLoanCommand( row.OfferIndex, amount ) ).Accepted )
 						ShowLoanFailure( strings[UIStrings.InsufficientFunds] );
 				}
 				else if ( current.IsBankrupt || current.AvailableLoans.FirstOrDefault( offer => offer.Index == row.OfferIndex ) is not { } offer || offer.Amount != amount )
 					ShowLoanFailure( strings.Extra( OpenTpwText.NotAvailable ) );
 				else
-					current.TakeLoan( row.OfferIndex );
+					level.Commands.Issue( new TakeLoanCommand( row.OfferIndex, amount ) );
 				SelectLoan( 0 );
 			}),
 			(() => strings[UIStrings.No], () => Stack.Pop()) ) );

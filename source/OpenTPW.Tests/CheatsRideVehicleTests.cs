@@ -363,6 +363,7 @@ public class CheatsRideVehicleTests
 			var economy = EconomyTestData.Park();
 			economy.CheatHost = level;
 			hud.GetType().GetField( "<Status>k__BackingField", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic )!.SetValue( hud, new OpenTPW.Hud.EconomyParkStatus( () => economy ) );
+			CommandTestLevel.AttachPark( (Level)typeof( OpenTPW.Hud.ParkHud ).GetField( "level", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic )!.GetValue( hud )!, economy );
 			var window = hud.CreateCheatsWindow();
 			string Text( string id ) => ((OpenTPW.UI.Original.UiLabel)window.Find( id + "Label" )!).Text();
 			OpenTPW.UI.Original.UiButton Button( string id ) => (OpenTPW.UI.Original.UiButton)window.Find( id )!;

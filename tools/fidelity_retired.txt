@@ -166,6 +166,7 @@ GUEST-009 docs/PROGRESS.md
 GUEST-012 docs/GUESTS.md
 GUEST-018 docs/GUESTS.md
 GUEST-022 docs/progress/2026-10-18-tpc-sprite-banks.md
+GUEST-023 docs/DETERMINISM.md
 HEADS-001 docs/GUESTS.md
 HEADS-002 docs/PROGRESS.md
 HEADS-003 docs/PROGRESS.md
@@ -313,6 +314,7 @@ UI-020 docs/reverse/APPROX-TRACE.md
 UI-021 docs/reverse/APPROX-TRACE.md
 UI-022 docs/reverse/APPROX-TRACE.md
 UI-023 docs/reverse/APPROX-TRACE.md
+UI-027 docs/UI.md
 UI-028 docs/UI.md
 UI-029 docs/reverse/APPROX-TRACE.md
 UI-030 docs/reverse/APPROX-TRACE.md

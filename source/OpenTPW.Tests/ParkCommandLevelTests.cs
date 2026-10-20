@@ -211,7 +211,12 @@ public class ParkCommandLevelTests
 		// the prototype's Totem needs the game's catalogue, so its positions here are the ones it is refused for: non-finite, or off the terrain
 		float Position() => Pick( float.NaN, float.PositiveInfinity, float.NegativeInfinity, -1e9f, 1e9f, float.MaxValue, float.MinValue );
 		IReadOnlyList<(int X, int Y)> Cells() => Enumerable.Range( 0, random.Below( 5 ) ).Select( _ => (Coordinate(), Coordinate()) ).ToArray();
-		ParkCommand Next() => random.Below( 16 ) switch
+		// the settings' values: the windows' bounds, one past them, and the integers' ends
+		int Value() => Pick( -1, int.MinValue, int.MaxValue, 0, 1, 50, 100, 101, 255, 256, 500, 501, 10_000, 10_001, short.MaxValue + 1 );
+		long Amount() => Pick( -1L, long.MinValue, long.MaxValue, 0L, 100L, 10_000L, 10_001L, 18_000L );
+		bool Flag() => random.Below( 2 ) == 0;
+		string Text() => Pick( "Ann", "", "A\u0007B", "\ud800", new string( 'a', 600 ), "Kevin the", "Cosmic Cow" );
+		ParkCommand Next() => random.Below( 41 ) switch
 		{
 			0 => new PlaceObjectCommand( Entry(), Coordinate(), Coordinate(), Rotation(), random.Below( 4 ) == 0, Pick( -1, -2, Id() ) ),
 			1 => new RemoveAtCommand( Coordinate(), Coordinate() ),
@@ -228,9 +233,35 @@ public class ParkCommandLevelTests
 			12 => new RemovePrototypeCommand(),
 			13 => new SetPrototypeRunningCommand( random.Below( 2 ) == 0 ),
 			14 => new DismissFinaleCommand(),
+			// the park's settings (C1 part 2)
+			15 => new SetParkOpenCommand( Flag() ),
+			16 => new SetEntranceFeeCommand( Value() ),
+			17 => new SetAttractionOpenCommand( Id(), Flag() ),
+			18 => new SetRideSettingsCommand( Id(), Value(), Value(), Value() ),
+			19 => new SetPriceCommand( Id(), Value() ),
+			20 => new SetGamePrizeCommand( Id(), Value(), Value(), Value() ),
+			21 => new SetShopSettingsCommand( Id(), Value(), Value() ),
+			22 => new SetTrainingBudgetCommand( (StaffType)Pick( -1, 0, 1, 4, 5, 99 ), Amount() ),
+			23 => new SetResearchEffortCommand( (ResearchCategory)Pick( -1, 0, 4, 5 ), Value() ),
+			24 => new SetResearchWorkloadCommand( Value() ),
+			25 => new MoveResearchCommand( (ResearchCategory)Pick( -1, 0, 4, 5 ), Pick( -2, -1, 0, 1, 2 ) ),
+			26 => new TakeLoanCommand( Pick( -1, 0, 1, 2, 7, 99 ), Amount() ),
+			27 => new RepayLoanCommand( Pick( -1, 0, 1, 2, 99 ), Amount() ),
+			28 => new BuyUpgradeCommand( Id() ),
+			29 => new CancelUpgradeCommand( Id() ),
+			30 => new RequestMaintenanceCommand( Id(), Flag() ),
+			31 => new AnswerChallengeCommand( Pick( -1, 0, 1, 99 ), Amount(), Flag() ),
+			32 => new RenameStaffCommand( Id(), Text() ),
+			33 => new FireStaffCommand( Id() ),
+			34 => new SetPatrolAreaCommand( Id(), Coordinate(), Coordinate(), Coordinate(), Coordinate(), random.Below( 3 ) == 0 ),
+			35 => new RenameParkCommand( Text(), Text() ),
+			36 => new SetGameSpeedCommand( (GameSpeed)Pick( -1, 0, 1, 2, 3, 4, 5 ) ),
+			37 => new QueueCheatCommand( (CheatKind)Pick( -1, 0, 1, 2, 3, 99 ), Pick( -1, 0, 1, 9, 10, int.MaxValue ) ),
+			38 => new RefreshLoanOffersCommand(),
+			39 => new SetAllObjectsOpenCommand( Flag() ),
 			_ => new RemoveAttractionCommand( Pick( -1, int.MinValue, 99_999 ) ),
 		};
-		CollectionAssert.IsSubsetOf( Enum.GetValues<ParkCommandKind>(), Enumerable.Range( 0, 256 ).Select( _ => Next().Kind ).Distinct().ToArray(), "the stream draws every kind" );
+		CollectionAssert.IsSubsetOf( Enum.GetValues<ParkCommandKind>(), Enumerable.Range( 0, 1024 ).Select( _ => Next().Kind ).Distinct().ToArray(), "the stream draws every kind" );
 		var accepted = 0;
 		var refused = 0;
 		for ( var draw = 0; draw < 3000; draw++ )

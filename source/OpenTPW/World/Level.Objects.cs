@@ -199,7 +199,7 @@ public partial class Level
 	/// </summary>
 	private void RegisterObjectWithGuests( OriginalObject item )
 	{
-		if ( Guests != null && RegisterWithGuests( item.Runtime, item.AccessPoints, Guests, item.Placement.Rotation, OwnerWord( item ) ) )
+		if ( Guests != null && RegisterWithGuests( item.Runtime, item.AccessPoints, Guests, item.Placement.Rotation, OwnerWord( item ), ownExitCell: TypesFootprints ) )
 		{
 			item.Runtime.Visitors.QueueEdited += () => ReevaluateQueuedRide( item.Runtime );
 			// [EXT:pools-changing-room] a changing room's pool-side cells follow from its footprint (geometry only: the water is read when a guest swims)
@@ -294,13 +294,16 @@ public partial class Level
 	/// Registers a placed object's visitor bridge with <paramref name="guests"/> the way the build flow does
 	/// (also used by the headless M3 gate): attractions only, cells from <see cref="ResolveVisitorCells"/>.
 	/// </summary>
-	internal static bool RegisterWithGuests( OriginalObjectRuntime runtime, IEnumerable<ObjectAccessPoint> accessPoints, GuestSimulation guests, int rotation = 0, ushort ownerWord = 0 )
+	/// <param name="ownExitCell">The object's own exit cell holds the link its placement wrote (a Theme Park World level, which types the footprints): the guests leave by it (ExitRide). Without one (the gates,
+	/// test harnesses, the Theme Park Inc slice and online visits, whose cell maps carry no access-cell links) the object lets off in the cell it takes its guests in and names <see cref="RideVisitorBridge.ExitCell"/> as the cell beyond.</param>
+	internal static bool RegisterWithGuests( OriginalObjectRuntime runtime, IEnumerable<ObjectAccessPoint> accessPoints, GuestSimulation guests, int rotation = 0, ushort ownerWord = 0, bool ownExitCell = false )
 	{
 		if ( !runtime.IsAttraction || ResolveVisitorCells( accessPoints, guests.Grid ) is not { } cells )
 			return false;
 		runtime.Visitors.OwnerWord = ownerWord;
 		runtime.Visitors.EntranceCell = cells.Entrance;
 		runtime.Visitors.ExitCell = cells.Exit;
+		runtime.Visitors.ExitAccessCell = ownExitCell ? ExitAccessCellOf( accessPoints ) : null;
 		runtime.Visitors.QueueFrontCell = cells.QueueFront;
 		runtime.Visitors.QueueEntranceDirection = cells.QueueEntranceDirection;
 		runtime.Visitors.Rotation = rotation;
@@ -313,6 +316,19 @@ public partial class Level
 	/// Walkable entrance and exit cells for an object's access points, plus the entrance's outside cell (the queue's
 	/// front cell) and the direction from it into the entrance; null when it has no entrance or the grid no path.
 	/// </summary>
+	/// <summary>The object's own exit cell (thing +0x38): the last exit cell of the shape the placement loop meets, else the last entrance cell; null without either.</summary>
+	// [BIN:TPW-EXE:0x005014E0 exit cell] ExitRide takes the exit cell index +0x38 and compares it with the entrance cell +0x36: an object without an exit has the same cell in both (0x00501587)
+	internal static (int X, int Y)? ExitAccessCellOf( IEnumerable<ObjectAccessPoint> accessPoints )
+	{
+		ObjectAccessPoint? entrance = null, exit = null;
+		foreach ( var point in accessPoints )
+			if ( point.Kind == ObjectCellKind.Exit )
+				exit = point;
+			else if ( point.Kind == ObjectCellKind.Entrance )
+				entrance = point;
+		return (exit ?? entrance) is { } cell ? (cell.X, cell.Y) : null;
+	}
+
 	internal static ((int X, int Y) Entrance, (int X, int Y) Exit, (int X, int Y) QueueFront, int QueueEntranceDirection)? ResolveVisitorCells( IEnumerable<ObjectAccessPoint> accessPoints, GuestPathGrid grid )
 	{
 		var points = accessPoints.ToArray();
@@ -1146,15 +1162,85 @@ public partial class Level
 
 	internal bool TryGetGroundHit( System.Numerics.Vector2 mousePosition, System.Numerics.Vector2 viewportSize, System.Numerics.Matrix4x4 view, System.Numerics.Matrix4x4 projection, out Vector3 point )
 	{
+		// the HUD, the tools and the visitor pick ask for the same point several times a frame: the last answer stands while the frame, the ray and the objects are the same
+		var key = (mousePosition, viewportSize, view, projection, Time.Now, Objects?.Version ?? -1, PickShapeOf);
+		if ( lastGroundHit is { } last && last.Key.Equals( key ) )
+		{
+			point = last.Point;
+			return last.Found;
+		}
+		var found = ComputeGroundHit( mousePosition, viewportSize, view, projection, out point );
+		lastGroundHit = (key, found, point);
+		return found;
+	}
+
+	private ((System.Numerics.Vector2, System.Numerics.Vector2, System.Numerics.Matrix4x4, System.Numerics.Matrix4x4, float, int, Func<OriginalObject, IObjectPickShape?>?) Key, bool Found, Vector3 Point)? lastGroundHit;
+
+	private bool ComputeGroundHit( System.Numerics.Vector2 mousePosition, System.Numerics.Vector2 viewportSize, System.Numerics.Matrix4x4 view, System.Numerics.Matrix4x4 projection, out Vector3 point )
+	{
 		point = default;
-		if ( OriginalPark is not { } park )
-			return ParkPlacement.TryGetGroundPoint( mousePosition, viewportSize, view, projection, out point );
-		if ( !ParkPlacement.TryGetMouseRay( mousePosition, viewportSize, view, projection, out var origin, out var direction )
-			|| !TerrainRayPick.TryPick( park.Heightfield, origin, direction, out var hit ) )
+		if ( !ParkPlacement.TryGetMouseRay( mousePosition, viewportSize, view, projection, out var origin, out var direction ) )
 			return false;
-		point = hit;
+		System.Numerics.Vector3? terrain = null;
+		if ( OriginalPark is not { } park )
+		{
+			if ( ParkPlacement.TryGetGroundPoint( mousePosition, viewportSize, view, projection, out var plane ) )
+				terrain = plane.GetSystemVector3();
+		}
+		else if ( TerrainRayPick.TryPick( park.Heightfield, origin, direction, out var hit ) )
+			terrain = hit;
+		// the object half of the pick: the first object model the ray meets from the camera takes the point when it is nearer than the terrain (ObjectRayPick)
+		// [EXT:build-cursor-ground-plane] the generic sandbox's Z = 0 plane stands in for the terrain hit there
+		if ( TryPickObject( origin, direction, view, terrain, out var objectHit ) )
+		{
+			point = objectHit;
+			return true;
+		}
+		if ( terrain is not { } ground )
+			return false;
+		point = ground;
 		return true;
 	}
+
+	/// <summary>The cursor point on an object's model (<see cref="ObjectRayPick"/>) when the ray from the camera meets one before the terrain point.</summary>
+	private bool TryPickObject( System.Numerics.Vector3 origin, System.Numerics.Vector3 direction, System.Numerics.Matrix4x4 view, System.Numerics.Vector3? terrain, out System.Numerics.Vector3 hit )
+	{
+		hit = default;
+		if ( Objects is not { } objects || objects.Objects.Count == 0 )
+			return false;
+		// the walk starts at the camera's eye (tp.exe 0x790aa0), the view's inverse translation
+		if ( !System.Numerics.Matrix4x4.Invert( view, out var inverse ) )
+			return false;
+		var eye = inverse.Translation;
+		var grid = new ObjectRayPick.Grid( objects.Grid.Origin, ObjectPlacement.CellSize, objects.Grid.Width, objects.Grid.Height );
+		return ObjectRayPick.TryPick( eye, direction, terrain, grid, PickOwnerAt, out hit, out _ );
+	}
+
+	/// <summary>
+	/// The owner the cell lookup names for the cursor pick's walk (tp.exe 0x452ae0): none on a track tile's second-layer piece (its piece model is the instance
+	/// there), else the placed object on the cell when it has a height map, with the height the map gives it there.
+	/// </summary>
+	private ObjectRayPick.Owner? PickOwnerAt( int x, int y )
+	{
+		if ( Objects.FindAt( x, y ) is not { IsDeleted: false } item || HasTrackPieceInstance( x, y ) || ObjectGround( item, x, y ) is not { } top )
+			return null;
+		var shape = PickShapeOf?.Invoke( item ) ?? item;
+		return new ObjectRayPick.Owner( shape, top * ObjectPlacement.ModelScale );
+	}
+
+	/// <summary>Whether a kart or water track tile's piece instance stands on the cell (the second layer 0x53bf30 asks first): an origin tile with a piece that is no add-on's.</summary>
+	// [BIN:TPW-EXE:0x00452A60 add-on surface] a track tile whose tile holds no piece instance (an add-on's tile) leaves the cell to its owner thing
+	private bool HasTrackPieceInstance( int x, int y )
+	{
+		if ( waterTracks?.Tracks is not { } layer || !layer.InBounds( x, y ) || layer.Get( x, y ) is not { Type: not 0 } cell )
+			return false;
+		var (originX, originY) = cell.IsExtension ? layer.CellOf( cell.Parent ) : (x, y);
+		var tile = layer.Get( originX, originY );
+		return tile.IsOrigin && tile.Piece != 0 && (tile.Flags & TrackCell.FlagAddOn) == 0;
+	}
+
+	/// <summary>The model the cursor pick tests for an object; null: the object's own (tests stand in a shape for an object without drawn geometry).</summary>
+	internal Func<OriginalObject, IObjectPickShape?>? PickShapeOf { get; set; }
 
 	/// <summary>
 	/// Screen position of cell (x, y)'s centre on the surface the cursor picks (the terrain's mean corner height on an original level, Z = 0 in the sandbox; for build ghosts).
@@ -1203,7 +1289,8 @@ public partial class Level
 	/// economy must allow the purchase (research, golden tickets, money; ParkEconomy.TryBuild) and charges
 	/// <c>Upgrades[0].CostOfUpgrade</c>; the generic sandbox has no economy and builds for free.
 	/// </summary>
-	// [APPROX:RIDES-021] the clicked cell is the ray's terrain hit only: the original's nearest hit also includes the model triangles of the objects in the cells the ray crosses (0x45cdc0 → 0x45d090), so a ride or tree under the cursor takes the cell — the model test 0x45d090 is read (it walks a node's face records, 8 bytes each: a normal index and three vertex indices, unless the node state has 0x10 or 0x8210, and recurses into the children unless 0x20; a hit is the plane hit inside the triangle by the 2 pi angle sum, accepted only when nearer than the terrain hit), but which object a cell yields (0x452ae0), the distance window and the object skip rule (0x473c30) are not
+	// RIDES-021 (tagged at ObjectRayPick): the clicked cell is the cell of the cursor ray's nearest hit, the terrain's or the first object model's (ObjectRayPick); the walk's height window, the track tiles'
+	// second-layer piece instances and the instances' sub-instances are approximated or left out (see the register)
 	public OriginalObject? PlaceObject( ObjectCatalogEntry entry, int x, int y, int rotation )
 	{
 		if ( IsReadOnlyVisit )
@@ -1443,6 +1530,16 @@ public partial class Level
 			import.Report( line );
 			Log.Trace( $"Park economy import: {line}" );
 		}
+	}
+
+	/// <summary>Attaches the supported original arrival scheduler after objects and their scripts have been imported.</summary>
+	private void ImportOriginalArrivals()
+	{
+		if ( resumeState != null || GameEditions.IsThemeParkInc || visitLayout != null || Guests == null || OriginalPark?.Save is not { } save )
+			return;
+		var line = Guests.ImportOriginalArrivals( save.World );
+		Park?.Import?.Report( line );
+		Log.Trace( $"Park arrival import: {line}" );
 	}
 
 	/// <summary>

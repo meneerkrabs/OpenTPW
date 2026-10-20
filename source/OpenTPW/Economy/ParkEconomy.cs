@@ -591,6 +591,23 @@ public sealed class ParkEconomy : IParkEconomy
 		return item.MechanicId;
 	}
 
+	/// <summary>Headless assigned jobs retain their existing lifetime; other claims use the original's lazy expiry.</summary>
+	private int HeadlessClaimant( ParkObjectState item )
+	{
+		// Candidate-list construction also runs with a staff world attached, but no headless job can be assigned there.
+		// Do not introduce a new world claim-query phase merely by building that unused list.
+		if ( StaffWorld != null )
+			return item.MechanicId;
+		if ( item.MechanicId == 0 )
+			return 0;
+		var member = Staff.Members.FirstOrDefault( member => member.Id == item.MechanicId );
+		// CountDownJob keeps the assignment while its timer is nonzero, including awaiting arrival and the fix-animation retry.
+		// These jobs use AssignedInstanceId rather than the world's RideId/ToiletId checked by Claimant.
+		if ( member != null && !DrivenByWorld( member ) && member.AssignedInstanceId == item.Id && member.BusyTicks != 0 )
+			return member.Id;
+		return Claimant( item );
+	}
+
 	/// <summary>The mechanic HQ's cursor into the object list (<see cref="FindRideForMechanic"/>): the object a search last started at, 0 for none.</summary>
 	public int MechanicCursor { get; internal set; }
 
@@ -1095,7 +1112,7 @@ public sealed class ParkEconomy : IParkEconomy
 	/// </summary>
 	private void DispatchMechanics()
 	{
-		var jobs = objects.Values.Where( item => item.MechanicId == 0 && JobRank( item ) >= 0 )
+		var jobs = objects.Values.Where( item => JobRank( item ) >= 0 && HeadlessClaimant( item ) == 0 )
 			.OrderBy( JobRank ).ThenBy( item => item.StateOfRepair ).ThenBy( item => item.Id ).ToList();
 		if ( jobs.Count == 0 )
 			return;
@@ -1205,8 +1222,8 @@ public sealed class ParkEconomy : IParkEconomy
 				handyman.State = StaffState.Working;
 				continue;
 			}
-			dirty ??= objects.Values.Where( item => item.MechanicId == 0 && Catalog.TryGet( item.InfoId, out var info ) && info.ProvidesRelief
-				&& (QueueJoinRules.Truncate( (float)item.Repair ) & 0xFF) < DirtyToiletGauge ).OrderBy( item => item.Repair ).ThenBy( item => item.Id ).ToList();
+			dirty ??= objects.Values.Where( item => Catalog.TryGet( item.InfoId, out var info ) && info.ProvidesRelief
+				&& (QueueJoinRules.Truncate( (float)item.Repair ) & 0xFF) < DirtyToiletGauge && HeadlessClaimant( item ) == 0 ).OrderBy( item => item.Repair ).ThenBy( item => item.Id ).ToList();
 			if ( dirty.Count == 0 )
 				break;
 			var toilet = dirty[0];

@@ -123,7 +123,11 @@ public sealed class SoundEventSystem
 		}
 		var now = PoolClock();
 		oneShots.RemoveAll( entry => entry.ExpiresAt < 0 ? entry.Voice.IsFinished : now > entry.ExpiresAt );
-		foreach ( var voice in loopSamples.Keys.Where( voice => voice.IsFinished ).ToArray() ) loopSamples.Remove( voice );
+		finishedLoops.Clear();
+		foreach ( var voice in loopSamples.Keys )
+			if ( voice.IsFinished )
+				finishedLoops.Add( voice );
+		foreach ( var voice in finishedLoops ) loopSamples.Remove( voice );
 		StopVoicesOutOfRange();
 		foreach ( var sentence in sentences.ToArray() )
 			sentence.Pump();
@@ -160,10 +164,11 @@ public sealed class SoundEventSystem
 		foreach ( var (voice, _, flags, _) in oneShots )
 			if ( voice.Position != null && voice.Range > 0 && (flags & AnyDistanceFlag) == 0 && !Audible( voice.Position, voice.Range ) )
 			{
-				if ( voice.Loops )
+				// only a catalogue loop (one with its sample parameters) can be rebuilt later; any other voice stops as before
+				if ( voice.Loops && loopSamples.TryGetValue( voice, out var loop ) )
 				{
 					if ( voice.ReleaseLoopOutput() )
-						loopSamples.GetValueOrDefault( voice )?.Lifetime?.LoseOutputReply();
+						loop.Lifetime?.LoseOutputReply();
 				}
 				else voice.Stop();
 			}
@@ -217,6 +222,7 @@ public sealed class SoundEventSystem
 
 	private readonly List<(AudioVoice Voice, uint Priority, ushort Flags, long ExpiresAt)> oneShots = new();
 	private readonly Dictionary<AudioVoice, LoopSample> loopSamples = new();
+	private readonly List<AudioVoice> finishedLoops = new();
 
 	private void TrackOneShot( AudioVoice voice, uint priority, ushort flags, double delay, PlacedSoundParameters? parameters, HeldSoundLifetime? lifetime = null )
 	{
@@ -268,11 +274,19 @@ public sealed class SoundEventSystem
 	// [BIN:TPW-EXE:0x6bca44 any-distance admission] a voice with the any-distance flag is admitted whatever its distance
 	// [BIN:TPW-EXE:0x6b6bc0 equal ranks] among equal ranks the newer logical owner keeps its slot (ComparePoolOrder); recreating output does not renew its serial.
 	// [BIN:TPW-EXE:0x6BDB50,0x6BDBB0,0x6C3AE0] held-chain children are locally linked and ticked directly, with a distinct output setup; they are not extra manager pool entries.
+	private bool AnyLoopWithoutOutput()
+	{
+		foreach ( var loop in loopSamples.Values )
+			if ( !loop.Voice.HasOutput )
+				return true;
+		return false;
+	}
+
 	private void SelectPooledVoices()
 	{
 		pooledChains.Clear();
 		pooledLoops.Clear();
-		if ( chains.Count == 0 && !loopSamples.Values.Any( loop => !loop.Voice.HasOutput ) )
+		if ( chains.Count == 0 && !AnyLoopWithoutOutput() )
 			return;
 		poolCandidates.Clear();
 		foreach ( var sentence in sentences )

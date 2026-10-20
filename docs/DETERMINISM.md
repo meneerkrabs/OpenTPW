@@ -515,6 +515,23 @@ property:
 - the smarter guests' planning and capacity tests;
 - the pool swing, jets and bob tests (more swimmers, a whole wave cycle);
 - the pools changing room tests (the guest is at the exit point and walks out).
+### Imported queue cells (October 20)
+
+An imported park now keeps the save's queue cells (map type 3) with their link byte, queue link, owner word and
+NoModify flag, as tp.exe's cell load (`0x4D0B30`, mode 0) reads every cell record into the map
+(`ParkCellMap.FromOriginal`). Jungle Easymode has four, the Belly Bounce's queue. Before, those cells were empty
+ground, and since the typed queue front (QUEUE-003, #540) the ride's front was such an empty cell, so no guest could
+join it. No draw, hashed field or schema changed; the cell map holds four more queue cells. A run over the Jungle
+cell map moves because the walk's edge test (`0x4D8750`) enters a queue cell only along its link, where the empty
+ground was open to an off-path step (walk mask 1); with the edge test reading the four cells as ground again the
+Jungle guest run returns to 22 admissions, which isolates that cause.
+
+Pins moved (old → new):
+
+| Pin | Before | After |
+| --- | --- | --- |
+| `PathAssetTests` Jungle guest run (22 → 23 admissions) | `0xBE549F10640102B9` | `0x11C1DCF60A32B061` |
+
 ### Staff locator role order (October 19)
 
 The own save records five independent role-ID sequences in `StaffData.RoleOrder`. This presentation owner

@@ -316,10 +316,11 @@ the same `ComputeStateHash` (FNV-1a over all guest fields, RNG state, counters).
 **Path grid** (`GuestPathGrid`): walkable cells are save cells with the path flag,
 linked by their cardinal connection bits (`SavePathConnections`), plus MAP
 `InitialPath` cells (4-neighbour links) where no save exists (fantasy, space,
-hallow: their 10 entrance cells only). The save's queue cells (path-flag bit 1)
-are not imported. Queue cells built in OpenTPW (original map cell type 3, see
-[Queues](#queues)) are kept beside the path cells and are not walkable for
-routing. Routing uses breadth-first **flow fields** cached per target cell and
+hallow: their 10 entrance cells only). The save's queue cells (map type 3) are
+imported with their link byte, queue link, owner word and NoModify flag, as
+tp.exe's cell load 0x4D0B30 reads them (Jungle: the Belly Bounce's four cells).
+Queue cells (original map cell type 3, see [Queues](#queues)) are kept beside
+the path cells and are not walkable for routing. Routing uses breadth-first **flow fields** cached per target cell and
 invalidated on grid edits; `FindPath` follows the field. Jungle: 78 cells, one
 network reachable from EntranceA.
 
@@ -778,7 +779,7 @@ entrance (`QueueFrontCell`). The queue is the chain of type-3 cells whose link
 points back at the previous cell, followed from the front at most 1,000 steps
 (`RideVisitorBridge.RecomputeQueue`). That gives the back cell and the size in
 cells, at least 1. A front cell that is neither a queue nor a path cell falls
-back to the nearest walkable path cell as a one-cell queue (a cell nothing laid: an imported or restored park; a build lays the queue cell, see OBJECTS.md). Guests
+back to the nearest walkable path cell as a one-cell queue (a cell nothing laid: a restored park or a harness; a build lays the queue cell, see OBJECTS.md, and an import takes the saved ones). Guests
 step onto the back cell from the **join cell**, the path cell attached to the
 back cell: the first cardinal neighbour (order 1, 4, 16, 64) whose bit is set in
 the back cell's link byte `+0x0C` (tp.exe `0x4de840`). A queue whose back links
@@ -962,7 +963,7 @@ Retired: `APPROX:QUEUE-016` (admission and state 11 once per park turn: tp.exe `
 
 Not modelled: ride
 state `+408` (beyond the states 1 and 4 the bridge keeps), the price check at the stand
-point (guests pay when boarding, see Money), save/load of queues, and the import of the Easymode queue cells.
+point (guests pay when boarding, see Money) and save/load of queues.
 
 ## Rendering
 
@@ -1181,8 +1182,7 @@ current base at draw time). Jelly Bounce's slots 7 to 9 sit on nodes its model l
 Original arrival/need/decision formulas and units; staff interaction, litter,
 vomit puddles, prankster/stinkbomb behaviour; entry-fee opinion; shops and
 toilets (need the rides/objects slice to expose catalog attractions through
-`IRideVisitorBridge`); drawing built queue cells and importing the Easymode
-queue; seat attachment of riders;
+`IRideVisitorBridge`); drawing built queue cells; seat attachment of riders;
 costumes, thought bubbles, balloons; save/load of guest state;
 which `PeepTypes` entry uses which kid set.
 

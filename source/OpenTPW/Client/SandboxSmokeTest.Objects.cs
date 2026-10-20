@@ -25,9 +25,11 @@ internal sealed partial class SandboxSmokeTest
 				// Give every live imported attraction a visitor at its real path entrance. The normal queue,
 				// original RSE and payment bridge perform boarding; this avoids depending on which attraction
 				// the heuristic guest score happens to choose after the catalogue purchase mix changes.
+				// A ride whose saved queue cells the import restored (Belly Bounce) is entered from its join cell, the path cell attached to the back of that queue.
 				foreach ( var item in level.Objects.Objects.Where( item => item.Visitors.HasCells && item.Runtime.IsAttraction ) )
 				{
-					var entrance = item.Visitors.EntranceCell;
+					var entrance = item.Visitors.JoinCell is { } join && level.Guests.Grid.IsQueue( item.Visitors.EntranceCell.X, item.Visitors.EntranceCell.Y )
+						? join : item.Visitors.EntranceCell;
 					var guest = level.Guests.SpawnInPark( entrance.X, entrance.Y );
 					guest.AttractionId = item.Visitors.AttractionId;
 					guest.State = GuestState.GoingToRide;

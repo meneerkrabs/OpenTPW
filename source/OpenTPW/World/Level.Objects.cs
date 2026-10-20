@@ -758,9 +758,15 @@ public partial class Level
 	{
 		if ( owner == 0 ) return null;
 		var item = objects.Objects.FirstOrDefault( item => !item.IsDeleted && OwnerWord( item ) == owner && item.Entry.HasQueue );
-		if ( item == null ) return null;
+		return item == null ? null : ResolveQueueEntrance( item.AccessPoints, cells, owner );
+	}
+
+	/// <summary><see cref="ResolveQueueEntrance(ParkObjects, ParkCellMap, ushort)"/> for the access points of the owner's HasQueue object: its last entrance cell, when that cell is a type-9 cell of the owner.</summary>
+	internal static (int X, int Y)? ResolveQueueEntrance( IEnumerable<ObjectAccessPoint> accessPoints, ParkCellMap cells, ushort owner )
+	{
+		if ( owner == 0 ) return null;
 		ObjectAccessPoint? entrance = null;
-		foreach ( var point in item.AccessPoints )
+		foreach ( var point in accessPoints )
 			if ( point.Kind == ObjectCellKind.Entrance ) entrance = point;
 		return entrance is { } entry && cells.InBounds( entry.X, entry.Y )
 			&& cells.RawTypeAt( entry.X, entry.Y ) == ParkCellTypes.Entrance && cells.OwnerAt( entry.X, entry.Y ) == owner

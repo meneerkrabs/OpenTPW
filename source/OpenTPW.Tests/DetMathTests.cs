@@ -46,6 +46,41 @@ public class DetMathTests
 		Assert.AreEqual( "9EA201E6896D55B7", digests["MathF.FusedMultiplyAdd"], "MathF.FusedMultiplyAdd" );
 	}
 
+	/// <summary>
+	/// <see cref="DetMatrix"/>'s plain matrix and vector arithmetic over the probe's fixed inputs, pinned: the same on every runtime, whether or not it fuses
+	/// multiply-adds.
+	/// </summary>
+	[TestMethod]
+	public void DetMatrixDigestsArePinned()
+	{
+		var digests = CrossRuntimeMathProbe.Digests();
+		var pinned = new (string Name, string Digest)[]
+		{
+			("DetMatrix.Multiply", "FA3C778478B438C8"),
+			("DetMatrix.TransformPosition", "B966CD083F830EF7"),
+			("DetMatrix.Lerp", "22BC04FC179F5D91"),
+			("DetMatrix.Slerp", "D65FD1F808A2F9A0"),
+		};
+		foreach ( var (name, digest) in pinned )
+			Assert.AreEqual( digest, digests[name], name );
+	}
+
+	/// <summary>
+	/// System.Numerics' <c>Matrix4x4</c> product, <c>Vector3.Transform</c> and <c>Vector3.Lerp</c> evaluate with <c>MultiplyAddEstimate</c>, which fuses the multiply and
+	/// the add where the processor has fused multiply-add (Windows and Linux x64, macOS arm64) and rounds twice where it has not. The digests are those of the
+	/// fused desktop runtimes. The browser's Mono AOT build computes other values (the interpreter matches), so this comparison is informative in the browser
+	/// check, like the platform library's: it documents the difference, and simulation code uses <see cref="DetMatrix"/> instead (docs/DETERMINISM.md, "Browser and native").
+	/// </summary>
+	[TestMethod]
+	[TestCategory( PlatformLibrary )]
+	public void FusedSystemNumericsOperationsArePinned()
+	{
+		var digests = CrossRuntimeMathProbe.Digests();
+		Assert.AreEqual( "D7194F8E92CB6F70", digests["Matrix4x4.Multiply"], "Matrix4x4.Multiply" );
+		Assert.AreEqual( "E6741682D33CF59E", digests["Vector3.Transform"], "Vector3.Transform" );
+		Assert.AreEqual( "2E265BE756605AD5", digests["Vector3.Lerp"], "Vector3.Lerp" );
+	}
+
 	private static long UlpDistance( double a, double b )
 	{
 		if ( double.IsNaN( a ) || double.IsNaN( b ) )

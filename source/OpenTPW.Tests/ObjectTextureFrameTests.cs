@@ -208,14 +208,15 @@ public class ObjectTextureFrameTests
 		var model = new ModelFile( new MemoryStream( Geometry( frames: 4 ) ) );
 		var selected = Clip( 0, (0, 2) );
 		var holding = invalidKey ? Clip( 0, (0, 99) ) : Clip( 0, (10, 1) );
-		var animator = new ObjectAnimator( model );
+		var animator = new ObjectAnimator( model, holdsLastFrameAtClipEnd: true );
 		animator.Play( 0, selected, "selected", loop: false );
+		animator.Advance( 0.1 ); // Native held ID12: replacement skips outgoing cleanup.
 		animator.Play( 0, holding, "holding", loop: false );
 		Assert.AreEqual( 2, animator.GetTextureFrame( 0 ) );
 		var snapshot = ParkResumeJson.Deserialize<ObjectAnimatorSnapshot>( ParkResumeJson.Serialize( animator.CaptureSnapshot() ) );
-		var restored = new ObjectAnimator( model );
+		var restored = new ObjectAnimator( model, holdsLastFrameAtClipEnd: true );
 		restored.RestoreSnapshot( snapshot, identity => new ResolvedAnimatorClip( identity.Name, holding ) );
-		Assert.AreEqual( 2, restored.GetTextureFrame( 0 ), "a fresh animator must retain the previous clip's frame" );
+		Assert.AreEqual( 2, restored.GetTextureFrame( 0 ), "a fresh animator retains legitimate held-ID12 frame history" );
 		animator.Advance( FixedStepClock.TickDuration );
 		restored.Advance( FixedStepClock.TickDuration );
 		Assert.AreEqual( animator.GetTextureFrame( 0 ), restored.GetTextureFrame( 0 ) );
@@ -223,7 +224,7 @@ public class ObjectTextureFrameTests
 		var copy = snapshot.DeepCopy();
 		copy.TextureFrames!.Frames[0] = 1;
 		Assert.AreEqual( 2, snapshot.TextureFrames!.Frames[0], "capture and deep copy own their history arrays" );
-		var legacy = new ObjectAnimator( model );
+		var legacy = new ObjectAnimator( model, holdsLastFrameAtClipEnd: true );
 		legacy.RestoreSnapshot( snapshot with { TextureFrames = null }, identity => new ResolvedAnimatorClip( identity.Name, holding ) );
 		Assert.AreEqual( 0, legacy.GetTextureFrame( 0 ), "old saves without history keep their frame-0 initialization" );
 	}
@@ -282,18 +283,19 @@ public class ObjectTextureFrameTests
 		var model = new ModelFile( new MemoryStream( Geometry( frames: 4 ) ) );
 		var selected = Clip( 0, (0, 3) );
 		var holding = invalidKey ? Clip( 0, (0, 99), (10, 1) ) : Clip( 0, (10, 1) );
-		var headless = new ObjectAnimator( model );
+		var headless = new ObjectAnimator( model, holdsLastFrameAtClipEnd: true );
 		headless.Play( 0, selected, "selected", loop: false );
+		headless.Advance( 0.1 ); // Hold leaves slot history without an outgoing bound clip.
 		headless.Play( 0, holding, "holding", loop: false );
 		var saved = ParkResumeJson.Deserialize<ObjectAnimatorSnapshot>( ParkResumeJson.Serialize( headless.CaptureSnapshot() ) );
 		Assert.AreEqual( 3, saved.TextureFrames!.Frames[0], "headless consumers retain raw decoded selection" );
 
-		var rendered = new ObjectAnimator( model );
+		var rendered = new ObjectAnimator( model, holdsLastFrameAtClipEnd: true );
 		rendered.SetTextureFrameAvailability( 0, new[] { true, true, true, false } );
 		rendered.RestoreSnapshot( saved, identity => new ResolvedAnimatorClip( identity.Name, holding ) );
 		Assert.AreEqual( 0, rendered.GetTextureFrame( 0 ), "unavailable restored art starts at the base texture actually shown" );
 		Assert.AreEqual( saved.TextureFrames.Version + 1, rendered.TextureFrameVersion );
-		var lateRenderer = new ObjectAnimator( model );
+		var lateRenderer = new ObjectAnimator( model, holdsLastFrameAtClipEnd: true );
 		lateRenderer.RestoreSnapshot( saved, identity => new ResolvedAnimatorClip( identity.Name, holding ) );
 		lateRenderer.SetTextureFrameAvailability( 0, new[] { true, true, true, false } );
 		CollectionAssert.AreEqual( ParkResumeJson.Serialize( rendered.CaptureSnapshot() ), ParkResumeJson.Serialize( lateRenderer.CaptureSnapshot() ), "availability registration order preserves the complete resumed state" );
@@ -304,23 +306,142 @@ public class ObjectTextureFrameTests
 		Assert.AreEqual( 3, saved.TextureFrames.Frames[0], "restoring does not mutate saved history" );
 	}
 
+	[DataTestMethod]
+	[DataRow( false )]
+	[DataRow( true )]
+	public void OrdinaryReplacementResetsBeforeFirstKeyEvenForFixedItems( bool fixedItem )
+	{
+		var model = new ModelFile( new MemoryStream( Geometry( 4 ) ) );
+		var animator = new ObjectAnimator( model, keepsPoseOnClipChange: fixedItem );
+		animator.Play( 0, Clip( 0, (0, 2) ), "old", loop: false );
+		animator.Advance( 0.1 ); // Ended14 is still bound, not Held12.
+		Assert.AreEqual( 2, animator.GetTextureFrame( 0 ) );
+		animator.Play( 0, Clip( 0, (10, 1) ), "new", loop: false );
+		Assert.AreEqual( 0, animator.GetTextureFrame( 0 ), "cleanup runs before the new first key" );
+		animator.Advance( 0.334 );
+		Assert.AreEqual( 1, animator.GetTextureFrame( 0 ) );
+		animator.StopAll();
+		Assert.AreEqual( 0, animator.GetTextureFrame( 0 ) );
+	}
+
+	[DataTestMethod]
+	[DataRow( true, 0x71u, 0 )]
+	[DataRow( false, 0x71u, 2 )]
+	[DataRow( true, 0x31u, 2 )]
+	public void CleanupUsesOutgoingTrailerAndRawSlotFlagsNotAddressedTracks( bool outgoingEnabled, uint flags, int expected )
+	{
+		var model = new ModelFile( new MemoryStream( Geometry( 4, slots: 2, slotFlags: flags ) ) );
+		var animator = new ObjectAnimator( model, holdsLastFrameAtClipEnd: true );
+		animator.Play( 0, Clip( 0, outgoingEnabled, 100, (0, 1) ), "outgoing", loop: false );
+		animator.Play( 1, Clip( 1, (0, 2) ), "unrelated", loop: false );
+		animator.Advance( 0.1 ); // Slot1's channel becomes Held12 and ceases writing.
+		Assert.AreEqual( 2, animator.GetTextureFrame( 1 ) );
+		animator.Stop( 0 );
+		Assert.AreEqual( expected, animator.GetTextureFrame( 1 ), "reset walks all flagged slots, not outgoing slot0" );
+		animator.Advance( 0.1 );
+		Assert.AreEqual( expected, animator.GetTextureFrame( 1 ), "Held12 must not write its old texture again" );
+	}
+
+	[DataTestMethod]
+	[DataRow( false, 2 )]
+	[DataRow( true, 1 )]
+	public void HeldCeasesCompetingButEndedRemainsABoundTextureWriter( bool hold, int expected )
+	{
+		var model = new ModelFile( new MemoryStream( Geometry( 4 ) ) );
+		var animator = new ObjectAnimator( model, holdsLastFrameAtClipEnd: hold );
+		animator.Play( 0, Clip( 0, 100, (0, 0), (6, 1) ), "lower", loop: false );
+		animator.Play( 1, Clip( 0, (0, 2) ), "higher", loop: false );
+		animator.Advance( 0.1 );
+		Assert.AreEqual( 2, animator.GetTextureFrame( 0 ), "the hold transition still samples its final endpoint once" );
+		animator.Advance( 0.2 );
+		Assert.AreEqual( expected, animator.GetTextureFrame( 0 ) );
+		var snapshot = animator.CaptureSnapshot();
+		var restored = new ObjectAnimator( model, holdsLastFrameAtClipEnd: hold );
+		restored.RestoreSnapshot( snapshot, identity => new ResolvedAnimatorClip( identity.Name,
+			identity.Name == "lower" ? Clip( 0, 100, (0, 0), (6, 1) ) : Clip( 0, (0, 2) ) ) );
+		restored.Advance( 0.1 );
+		Assert.AreEqual( expected, restored.GetTextureFrame( 0 ), "restore must not replay a held endpoint" );
+	}
+
+	[TestMethod]
+	public void LoopReplayResetsBeforeItsFirstKeyAndDisabledReplacementStillCleansOldClip()
+	{
+		var model = new ModelFile( new MemoryStream( Geometry( 4 ) ) );
+		var animator = new ObjectAnimator( model );
+		animator.Play( 0, Clip( 0, (10, 2) ), "loop", loop: true );
+		animator.Advance( 0.334 );
+		Assert.AreEqual( 2, animator.GetTextureFrame( 0 ) );
+		animator.Advance( 0.1 );
+		Assert.AreEqual( 0, animator.GetTextureFrame( 0 ), "loop rebind resets before delayed first key" );
+		animator.Advance( 0.334 );
+		Assert.AreEqual( 2, animator.GetTextureFrame( 0 ) );
+		animator.Play( 0, Clip( 0, false, (0, 1) ), "disabled", loop: false );
+		Assert.AreEqual( 0, animator.GetTextureFrame( 0 ), "outgoing trailer controls cleanup, not incoming trailer" );
+	}
+
+	[TestMethod]
+	public void HigherChannelReplayCleanupRunsAfterLowerChannelSample()
+	{
+		var model = new ModelFile( new MemoryStream( Geometry( 4 ) ) );
+		var animator = new ObjectAnimator( model );
+		animator.Play( 0, Clip( 0, 100, (0, 1) ), "lower", loop: false );
+		animator.Play( 1, Clip( 0, (10, 2) ), "higher", loop: true );
+		animator.Advance( 0.334 );
+		Assert.AreEqual( 2, animator.GetTextureFrame( 0 ) );
+		animator.Advance( 0.1 );
+		Assert.AreEqual( 0, animator.GetTextureFrame( 0 ), "higher replay cleans the lower writer's earlier sample" );
+		var saved = animator.CaptureSnapshot();
+		var restored = new ObjectAnimator( model );
+		restored.RestoreSnapshot( saved, identity => new ResolvedAnimatorClip( identity.Name,
+			identity.Name == "lower" ? Clip( 0, 100, (0, 1) ) : Clip( 0, (10, 2) ) ) );
+		Assert.AreEqual( 0, restored.GetTextureFrame( 0 ), "restore preserves the post-cleanup boundary rather than resampling" );
+		restored.SetTextureFrameAvailability( 0, new[] { true, true, true, true } );
+		Assert.AreEqual( 0, restored.GetTextureFrame( 0 ), "renderer registration must not erase the cleanup boundary" );
+		var registeredFirst = new ObjectAnimator( model );
+		registeredFirst.SetTextureFrameAvailability( 0, new[] { true, true, true, true } );
+		registeredFirst.RestoreSnapshot( saved, identity => new ResolvedAnimatorClip( identity.Name,
+			identity.Name == "lower" ? Clip( 0, 100, (0, 1) ) : Clip( 0, (10, 2) ) ) );
+		CollectionAssert.AreEqual( ParkResumeJson.Serialize( registeredFirst.CaptureSnapshot() ),
+			ParkResumeJson.Serialize( restored.CaptureSnapshot() ), "availability registration order preserves saved boundary" );
+		animator.Advance( 0 );
+		restored.Advance( 0 );
+		Assert.AreEqual( 1, animator.GetTextureFrame( 0 ), "on the next pass without cleanup, lower contributes again" );
+		Assert.AreEqual( animator.GetTextureFrame( 0 ), restored.GetTextureFrame( 0 ) );
+	}
+
+	[TestMethod]
+	public void HigherDeferredReplacementCleansAfterLowerSample()
+	{
+		var model = new ModelFile( new MemoryStream( Geometry( 4 ) ) );
+		var animator = new ObjectAnimator( model );
+		animator.Play( 0, Clip( 0, 100, (0, 1) ), "lower", loop: false );
+		animator.Trigger( 1, Clip( 0, (0, 2) ), "outgoing", 0, 0, loop: false );
+		animator.Trigger( 1, Clip( 0, (10, 3) ), "deferred", 1, 0, loop: false, defer: true );
+		Assert.AreEqual( 2, animator.GetTextureFrame( 0 ) );
+		animator.Advance( 0.1 );
+		Assert.AreEqual( "deferred", animator.GetClip( 1 ) );
+		Assert.AreEqual( 0, animator.GetTextureFrame( 0 ), "deferred cleanup is in native channel order" );
+		animator.Advance( 0.334 );
+		Assert.AreEqual( 3, animator.GetTextureFrame( 0 ) );
+	}
+
 	// ---- synthetic files ----
 
 	/// <summary>
 	/// The synthetic geometry of Md2ModelFileTests (one textured quad, mesh node with one dummy child), with
 	/// the single texture slot holding <paramref name="frames"/> frame names.
 	/// </summary>
-	private static byte[] Geometry( int frames )
+	private static byte[] Geometry( int frames, int slots = 1, uint slotFlags = 0x71 )
 	{
-		int FlagTable = 0xB8, NameTable = FlagTable + 8, SlotTable = NameTable + frames * 20;
-		int Positions = SlotTable + 16, Normals = Positions + 48, Uvs = Normals + 72, Materials = Uvs + 32, Faces = Materials + 16, Order = Faces + 16;
+		int FlagTable = 0xB8, NameTable = FlagTable + slots * 8, SlotTable = NameTable + slots * frames * 20;
+		int Positions = SlotTable + slots * 16, Normals = Positions + 48, Uvs = Normals + 72, Materials = Uvs + 32, Faces = Materials + 16, Order = Faces + 16;
 		int MeshName = Order + 8, DummyName = MeshName + 5, Attributes = DummyName + 8, MeshTable = Attributes + 20, DummyTable = MeshTable + 160;
 		var data = new byte[DummyTable + 88];
 		W32( data, 0, ModelFile.Magic );
 		W32( data, 4, 221 );
 		W32( data, 8, 203 );
 		Encoding.ASCII.GetBytes( "synthtf.MD2" ).CopyTo( data, 0x18 );
-		ushort[] counts = { 1, 1, 1, 1, 2, 0, 2, 1, 1, 1, 6 };
+		ushort[] counts = { (ushort)slots, 1, 1, 1, 2, 0, 2, 1, 1, 1, 6 };
 		for ( var index = 0; index < counts.Length; index++ )
 			W16( data, 0x36 + index * 2, counts[index] );
 		int[] offsets = { FlagTable, SlotTable, Positions, Normals, Uvs, Materials, Faces, 0, MeshTable, DummyTable, MeshTable, Attributes };
@@ -328,11 +449,14 @@ public class ObjectTextureFrameTests
 			W32( data, 0x50 + index * 4, (uint)offsets[index] );
 		WF( data, 0x80, -1, -2, -3, 4, 5, 6 );
 
-		W32( data, FlagTable, 0x31 );
-		for ( var frame = 0; frame < frames; frame++ )
-			Encoding.ASCII.GetBytes( $"tex_a{frame}.tga\0" ).CopyTo( data, NameTable + frame * 20 );
-		W16( data, SlotTable + 10, (ushort)frames );
-		W32( data, SlotTable + 12, (uint)NameTable );
+		for ( var slot = 0; slot < slots; slot++ )
+		{
+			W32( data, FlagTable + slot * 8, slotFlags );
+			for ( var frame = 0; frame < frames; frame++ )
+				Encoding.ASCII.GetBytes( $"tex_a{frame}.tga\0" ).CopyTo( data, NameTable + (slot * frames + frame) * 20 );
+			W16( data, SlotTable + slot * 16 + 10, (ushort)frames );
+			W32( data, SlotTable + slot * 16 + 12, (uint)(NameTable + slot * frames * 20) );
+		}
 
 		// Positions (0,0,0) (1,0,0) (1,1,0) (0,1,0) as one X×4/Y×4/Z×4 block.
 		WF( data, Positions, 0, 1, 1, 0, 0, 0, 1, 1, 0, 0, 0, 0 );

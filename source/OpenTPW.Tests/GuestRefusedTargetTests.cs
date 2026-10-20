@@ -147,6 +147,36 @@ public class GuestRefusedTargetTests
 	}
 
 	[TestMethod]
+	public void FixedRunDiffersFromTheLegacyPinOnlyByRetainedTargetIdentity()
+	{
+		var current = new DeterminismTests.SyntheticPark( WorldSeed.Default );
+		var legacy = new DeterminismTests.SyntheticPark( WorldSeed.Default );
+		var retainedTicks = 0;
+		for ( var tick = 0; tick < DeterminismTests.PinnedRunTicks; tick++ )
+		{
+			current.Run( 1 );
+			legacy.Run( 1 );
+			// Test-only replay of the previous refusal's target clearing. Production hashing is unchanged.
+			foreach ( var guest in legacy.Guests.Guests.Where( HasRetainedTarget ) ) guest.AttractionId = 0;
+			var retained = current.Guests.Guests.Where( HasRetainedTarget ).Select( guest => (Guest: guest, Target: guest.AttractionId) ).ToArray();
+			retainedTicks += retained.Length;
+			var currentHash = current.Hash;
+			foreach ( var pair in retained ) pair.Guest.AttractionId = 0;
+			try
+			{
+				Assert.AreEqual( legacy.Hash, current.Hash, $"tick {tick}: all world fields except retained target identity" );
+				Assert.AreEqual( legacy.Guests.RandomState, current.Guests.RandomState, $"tick {tick}: world RNG" );
+			}
+			finally { foreach ( var pair in retained ) pair.Guest.AttractionId = pair.Target; }
+			Assert.AreEqual( currentHash, current.Hash, "diagnostic projection must restore the entire current hash" );
+		}
+		Assert.IsTrue( retainedTicks > 0, "the fixed run must exercise full-room retained targets" );
+		Assert.AreEqual( 0x5D8385D13CC3BB9BUL, legacy.Hash, $"legacy replay: 0x{legacy.Hash:X16}" );
+		static bool HasRetainedTarget( Guest guest ) => guest.AttractionId != 0 && !guest.IsInQueue
+			&& RetainedStates.Contains( (guest.State, guest.Activity) );
+	}
+
+	[TestMethod]
 	public void FullRoomRetainsTargetWithoutThoughtHistoryStampOrHappinessChanges()
 	{
 		var rig = FullQueue();

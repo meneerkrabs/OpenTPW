@@ -67,6 +67,22 @@ public static class CrossRuntimeMathProbe
 		var fmaB = Uniform( 14, -100, 100 );
 		var fmaC = Uniform( 15, -100, 100 );
 		ulong[] D( IEnumerable<double> values ) => values.Select( Bits ).ToArray();
+		var cells = Uniform( 16, -100, 100 ).Select( value => (float)value ).ToArray();
+		var fractions = Uniform( 17, 0, 1 ).Select( value => (float)value ).ToArray();
+		System.Numerics.Matrix4x4 MatrixAt( int index ) => new(
+			cells[index % Count], cells[(index + 1) % Count], cells[(index + 2) % Count], cells[(index + 3) % Count],
+			cells[(index + 4) % Count], cells[(index + 5) % Count], cells[(index + 6) % Count], cells[(index + 7) % Count],
+			cells[(index + 8) % Count], cells[(index + 9) % Count], cells[(index + 10) % Count], cells[(index + 11) % Count],
+			cells[(index + 12) % Count], cells[(index + 13) % Count], cells[(index + 14) % Count], cells[(index + 15) % Count] );
+		System.Numerics.Vector3 VectorAt( int index ) => new( cells[index % Count], cells[(index + 7) % Count], cells[(index + 13) % Count] );
+		System.Numerics.Quaternion QuaternionAt( int index ) => System.Numerics.Quaternion.Normalize( new( cells[index % Count], cells[(index + 3) % Count], cells[(index + 5) % Count], cells[(index + 11) % Count] ) );
+		IEnumerable<float> Elements( System.Numerics.Matrix4x4 m ) => new[] { m.M11, m.M12, m.M13, m.M14, m.M21, m.M22, m.M23, m.M24, m.M31, m.M32, m.M33, m.M34, m.M41, m.M42, m.M43, m.M44 };
+		IEnumerable<float> Components( System.Numerics.Vector3 v ) => new[] { v.X, v.Y, v.Z };
+		IEnumerable<float> QuaternionComponents( System.Numerics.Quaternion q ) => new[] { q.X, q.Y, q.Z, q.W };
+		var products = Enumerable.Range( 0, Count / 16 ).Select( index => (MatrixAt( index * 16 ), MatrixAt( index * 16 + 8 )) ).ToArray();
+		var points = Enumerable.Range( 0, Count / 4 ).Select( index => (VectorAt( index ), MatrixAt( index * 3 )) ).ToArray();
+		var blends = Enumerable.Range( 0, Count / 4 ).Select( index => (VectorAt( index ), VectorAt( index + 101 ), fractions[index]) ).ToArray();
+		var turns = Enumerable.Range( 0, Count / 4 ).Select( index => (QuaternionAt( index ), QuaternionAt( index + 37 ), fractions[index]) ).ToArray();
 		ulong[] F( IEnumerable<float> values ) => values.Select( Bits ).ToArray();
 		var pairs = ys.Zip( xs ).ToArray();
 		var powPairs = bases.Zip( exponents ).ToArray();
@@ -99,6 +115,13 @@ public static class CrossRuntimeMathProbe
 			("DetMath.CosF", F( Single( angles ).Select( DetMathF.Cos ) )),
 			("DetMath.Atan2F", F( pairs.Select( pair => DetMathF.Atan2( (float)pair.First, (float)pair.Second ) ) )),
 			("DetMath.AcosF", F( Single( unit ).Select( DetMathF.Acos ) )),
+			("Matrix4x4.Multiply", F( products.SelectMany( pair => Elements( pair.Item1 * pair.Item2 ) ) )),
+			("Vector3.Transform", F( points.SelectMany( pair => Components( System.Numerics.Vector3.Transform( pair.Item1, pair.Item2 ) ) ) )),
+			("Vector3.Lerp", F( blends.SelectMany( blend => Components( System.Numerics.Vector3.Lerp( blend.Item1, blend.Item2, blend.Item3 ) ) ) )),
+			("DetMatrix.Multiply", F( products.SelectMany( pair => Elements( DetMatrix.Multiply( pair.Item1, pair.Item2 ) ) ) )),
+			("DetMatrix.TransformPosition", F( points.SelectMany( pair => Components( DetMatrix.TransformPosition( pair.Item1, pair.Item2 ) ) ) )),
+			("DetMatrix.Lerp", F( blends.SelectMany( blend => Components( DetMatrix.Lerp( blend.Item1, blend.Item2, blend.Item3 ) ) ) )),
+			("DetMatrix.Slerp", F( turns.SelectMany( turn => QuaternionComponents( DetMatrix.Slerp( turn.Item1, turn.Item2, turn.Item3 ) ) ) )),
 		};
 	}
 

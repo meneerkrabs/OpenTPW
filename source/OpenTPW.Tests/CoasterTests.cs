@@ -991,6 +991,42 @@ public class CoasterTests
 		Assert.AreEqual( CoasterRide.SpeedCapFor( ride.Definition, 40 ), ride.SpeedCap );
 	}
 
+	/// <summary>
+	/// Built coasters' fixed runs, pinned on every runtime (docs/DETERMINISM.md, "Cross-platform coaster pins"): the synthetic circuit run open for a minute with a
+	/// guest on board, and the same circuit reopened for three seconds and completed again, whose first tick after the completion catches the three seconds up.
+	/// </summary>
+	[TestMethod]
+	public void BuiltCoasterRunsArePinned()
+	{
+		ulong Run( bool reopen )
+		{
+			var scripts = new RideScriptWorld( 99 );
+			var ride = new CoasterRide( CoasterDefinition.FromValues( PcSettings() ), scripts.Coasters );
+			var builder = new CoasterBuilder( ride, new CoasterSite( 64, 64 ) );
+			PlaceStation( builder, Depart );
+			BuildCircuit( builder );
+			CloseAndComplete( builder );
+			ride.Command( 8, 0 );
+			ride.Command( 5, 0 );
+			ride.Board( 7 );
+			for ( var tick = 0; tick < 60 * 60; tick++ )
+			{
+				if ( reopen && tick == 20 * 60 )
+				{
+					Assert.IsTrue( builder.Reopen() );
+					for ( var cut = 0; cut < 3 * 60; cut++ )
+						ride.Advance( Tick );
+					Assert.AreEqual( CoasterPlaceResult.Ok, CloseAndComplete( builder ) );
+					ride.Command( 5, 0 );
+				}
+				ride.Advance( Tick );
+			}
+			return WorldStateHash.Compute( new WorldStateSources { Scripts = scripts } );
+		}
+		Assert.AreEqual( "1ABA458D0079E09C", Run( reopen: false ).ToString( "X16" ), "the built coaster's fixed run" );
+		Assert.AreEqual( "045BFFE59994F3E7", Run( reopen: true ).ToString( "X16" ), "the reopened coaster's fixed run" );
+	}
+
 	[TestMethod]
 	public void CoasterStateIsInTheCanonicalHashAndReproducible()
 	{

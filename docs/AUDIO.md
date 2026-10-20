@@ -12,7 +12,7 @@ coaster trains that bump hard crash; the weather plays its rain and thunder; the
 state machines), the visitor click, the queue-joins-a-path cue and the advisor's speech and its two key sounds play; and the positioned
 effects go through a software reverb that follows the ridden ride's `SndReverb.map` preset (OpenTPW's own stand-in by design, `[EXT:audio-reverb]`). A button plays `cat_ui` 0xBD instead of 0x1F when its parent has style bit 0x10 (AUDIO-004 is retired; see "Triggered sounds"). Still not played:
 the custom-bank EVENT type 10 (no shipped script
-uses it). Load, Find Parks and Other Parks rows add no click, following their traced owners. Other row owners, still-thumb clicks and general keyboard/shortcut routing remain open (AUDIO-041). The slap reactions 639–641 of `cat_speech` are played by the
+uses it). No list row clicks: every list owner of tp.exe is traced and none turns a row into message 0x100; a still click on a scroll thumb plays nothing; and the keyboard clicks only where a dialog turns Enter in its text field (or the save screen's Escape) into its tick ("List owners"; AUDIO-041 is retired). The slap reactions 639–641 of `cat_speech` are played by the
 cut-off path in `AutomaticAdvisor.CutOffSpeech`: withdrawing a help message while its speech is still playing cuts the speech off and plays
 one of the three (`cat_speech` 0x27F + `rand() % 3`; tp.exe `0x5994E0`/`0x5995A4`;
 `AdvisorHelpTests.ACutOffSlapsOnlyWhileTheSpeechPlays`). No original data is in the repository.
@@ -376,7 +376,7 @@ global `cat_globallobbysfx` at 40, `0x100BC4C0` a level's `cat_locallobbymusic`/
 | Lobby ambience | `cat_locallobbysfx` 2 (sentence) of the selected level | as above, looping | `0x10095A50` |
 | Lobby island one-shots | `cat_locallobbysfx` 3, 4, 5 on the lobby generator's draws | the front end shows (see "Lobby effects") | `0x10095340`–`0x10095450` |
 | Start-up sound | `cat_ui` 0xD2 (flat one-shot, flags 0x200) | once, when the front end first shows (OpenTPW does not play it for a run that loads a park directly) | tp.exe `0x54de6a` (start-up init `0x54dcf0`, called from WinMain at `0x45abed`) |
-| Control click | `cat_ui` 0x1F, or 0xBD when the button's parent has style bit 0x10 | a button release (message 0x100 to its parent). 0xBD is the up and down arrows of a vertical list scroll bar (type 3, style 0x10), the column headers of a sortable list (type 7, styles 0x91 and 0x291) and the toggles of a radio group (type 8, style 0x11). Every other button plays 0x1F. A held arrow waits 500 ms, then steps every 125 ms, and the release after repeating has started plays nothing. Dragging the thumb or clicking the track plays nothing; a still click on the thumb is open (AUDIO-041). Window procedures also send 0x100 to their own window (0x48d83b, 0x49973e, 0x49ec53, 0x4a6df5 (via the dispatcher 0x658d9f), 0x4b640a, 0x4b9f06, 0x4bb020 and 0x4bfc29; ids -1, -2 and 0xe059, some on 0x802 or 0x804), and the hook clicks for those too by that window's own style; whether OpenTPW's keyboard paths match those clicks is not read. | tp.exe hook `0x485780`, the 0xBD/0x1F choice at `0x4857cb`; the button class `0x668f9c`, the only sender of 0x100 for a mouse release over a button, posts it to its parent (`[+0x60]`) at `0x6691eb` through the queue `0x658ccc`; window procedures `0x48d83b`, `0x49973e`, `0x49ec53`, `0x4a6df5` (via the dispatcher `0x658d9f`), `0x4b640a`, `0x4b9f06`, `0x4bb020` and `0x4bfc29`; the pump `0x658e42` calls the hook at `0x658eb2` (dispatcher `0x658d9f`); arrow ctor `0x6688b3` (+0x13c = 500, +0x140 = 125), timer `0x668dd9`, release `0x668eff`. Mac `0x10137FD0` |
+| Control click | `cat_ui` 0x1F, or 0xBD when the button's parent has style bit 0x10 | a button release (message 0x100 to its parent). 0xBD is the up and down arrows of a vertical list scroll bar (type 3, style 0x10), the column headers of a sortable list (type 7, styles 0x91 and 0x291) and the toggles of a radio group (type 8, style 0x11). Every other button plays 0x1F. A held arrow waits 500 ms, then steps every 125 ms, and the release after repeating has started plays nothing. Dragging the thumb, clicking the track and a still click on the thumb play nothing (the thumb's procedure `0x66bb9b` replaces the button class and answers its release with 0x802 to the slider). Window procedures also send 0x100 to their own window (0x48d83b, 0x49973e, 0x49ec53, 0x4a6df5 (via the dispatcher 0x658d9f), 0x4b640a, 0x4b9f06, 0x4bb020 and 0x4bfc29; ids -1, -2 and 0xe059, on 0x802 or 0x804), and the hook clicks for those too by that window's own style: style 1 in all eight, so 0x1F ("List owners" maps them to OpenTPW's dialogs). | tp.exe hook `0x485780`, the 0xBD/0x1F choice at `0x4857cb`; the button class `0x668f9c`, the only sender of 0x100 for a mouse release over a button, posts it to its parent (`[+0x60]`) at `0x6691eb` through the queue `0x658ccc`; window procedures `0x48d83b`, `0x49973e`, `0x49ec53`, `0x4a6df5` (via the dispatcher `0x658d9f`), `0x4b640a`, `0x4b9f06`, `0x4bb020` and `0x4bfc29`; the pump `0x658e42` calls the hook at `0x658eb2` (dispatcher `0x658d9f`); arrow ctor `0x6688b3` (+0x13c = 500, +0x140 = 125), timer `0x668dd9`, release `0x668eff`. Mac `0x10137FD0` |
 | Map/research drawer | `cat_ui` 0x1C open, 0x1C then 0xC2 close | the map and research windows | tp.exe `0x4a14f0` (open `0x4a1737`, close `0x4a186f`, slide end `0x4a1947`) |
 | Error feedback | `cat_ui` 0x1D | a rejected purchase or placement | `0x10139A40` (buy window callers `0x10163AFC`/`0x10163BFC`) |
 | Path tool | `cat_ui` 101 lay, 175 refused | a committed path line; a click on a refused path or queue ghost (or a refused track commit), at the clicked cell (x * 10, 0, z * 10) | `0x10070DE0` (commit), tp.exe `0x52496e` (refused `0xAF`, `0x524a80`, at the release that follows a park-view press (byte `0x8186d8`, set by the press handler `0x524790`) outside a layout replay (`0x785a2c`); AUDIO-022 is retired) |
@@ -790,7 +790,7 @@ implemented yet.
 
 AUDIO-039 is retired (October 19, 2026): the reverb is the user-approved design choice `[EXT:audio-reverb]` (see "Reverb").
 
-AUDIO-004 is retired. `cat_ui` 0xBD plays instead of 0x1F when the receiver of message 0x100 has style bit 0x10 (hook `0x485780`, the choice at `0x4857cb`, called by the dispatcher `0x658d9f` and the queue pump `0x658e42` at `0x658eb2`). The button class `0x668f9c` is the only sender of 0x100 for a mouse release over a button: it posts 0x100 to its parent (`[+0x60]`) at `0x6691eb` through the queue `0x658ccc`. Window procedures also send 0x100 to their own window (`0x48d83b`, `0x49973e`, `0x49ec53`, `0x4a6df5` (via the dispatcher `0x658d9f`), `0x4b640a`, `0x4b9f06`, `0x4bb020` and `0x4bfc29`; ids -1, -2 and 0xe059, some on 0x802 or 0x804), and the hook clicks for those too by that window's own style; whether OpenTPW's keyboard paths match those clicks is not read. Those parents are the vertical list scroll bars (type 3, style 0x10: their arrows), the sortable lists (type 7, styles 0x91 and 0x291: their header buttons) and the radio groups (type 8, style 0x11: their toggle tabs). A held arrow waits 500 ms and then steps every 125 ms (ctor `0x6688b3`, timer `0x668dd9`); the release `0x668eff` plays nothing once repeating has started. The three list owners traced below add no intrinsic row click. `UiScrollList` retains its default 0x1F for untraced/extension callers; AUDIO-041 remains open for the residual paths.
+AUDIO-004 is retired. `cat_ui` 0xBD plays instead of 0x1F when the receiver of message 0x100 has style bit 0x10 (hook `0x485780`, the choice at `0x4857cb`, called by the dispatcher `0x658d9f` and the queue pump `0x658e42` at `0x658eb2`). The button class `0x668f9c` is the only sender of 0x100 for a mouse release over a button: it posts 0x100 to its parent (`[+0x60]`) at `0x6691eb` through the queue `0x658ccc`. Window procedures also send 0x100 to their own window (`0x48d83b`, `0x49973e`, `0x49ec53`, `0x4a6df5` (via the dispatcher `0x658d9f`), `0x4b640a`, `0x4b9f06`, `0x4bb020` and `0x4bfc29`; ids -1, -2 and 0xe059, on 0x802 or 0x804), and the hook clicks for those too by that window's own style (style 1 in all eight: 0x1F). Those parents are the vertical list scroll bars (type 3, style 0x10: their arrows), the sortable lists (type 7, styles 0x91 and 0x291: their header buttons) and the radio groups (type 8, style 0x11: their toggle tabs). A held arrow waits 500 ms and then steps every 125 ms (ctor `0x6688b3`, timer `0x668dd9`); the release `0x668eff` plays nothing once repeating has started. No list owner adds a row click ("List owners" below); `UiScrollList` is silent by default and only OpenTPW's own screens opt in.
 
 | ID | Approximation | Evidence needed |
 | --- | --- | --- |
@@ -802,15 +802,24 @@ AUDIO-004 is retired. `cat_ui` 0xBD plays instead of 0x1F when the receiver of m
 | AUDIO-904 | The scene camera's 0.1 near plane (0.5 original units) clips the nearest drops; the original's near plane is 0.1 original units (`0x54e86f`, `0x42a990` -> `0x578be0`) and its clipper cuts the streaks there; the weather keeps the scene's near plane and a vertex buffer sized once (`[EXT:weather-near-plane]`) | A near clip of 0.1 original units for the weather without changing the scene's depth mapping |
 | AUDIO-040 | FADEOBJ now uses configured quality > threshold, service-owned integer-decay tails, shared 100/250 ms polls, subtype-specific stop/continuation and terminal cleanup. AUDIO-040 retains managed float32/nearest-even group quantization because the original caller-thread x87 control word is unresolved, plus the host monotonic startup phase and serialized poll/admission order; these are explicit compatibility policies, not observed original timing. Missing host SoundQuality uses loaded SAM DEFAULTQUALITY (supplied 50; FADETOGGLE 30), not a recovered saved user preference. AUDIO-038 admission/restart and existing general sentence approximations remain separate. | Establish the original caller-thread rounding/control word and runtime timing; see the [lifecycle contract](proposals/audio-040-plan-soundquality-fade-mode.md). |
 | AUDIO-038 | The voice pool of 12 (tp.exe `0x6b62b0`) ranks the held chains (screams) with the running sentences, placed sounds and one-shots of the event system by priority and ground distance (`0x6bb9f0`); a voice enters only while its rank exceeds the pool's lowest (`0x6b6bc0` compares strictly) and among equal ranks the newer voice keeps its slot (`0x6b6a80` links a new voice at the head of the voice list, the tick `0x6b62b0` meets it first, `ComparePoolOrder`); out-of-range voices without the any-distance flag have their sample stopped (`0x6bca70` → `0x6b8d60` → `0x6bb7c0`) and keep their handle at `+0x24`; OpenTPW stops one-shots and sentence segments and a chain starts no new child, but looping voices and a chain's playing children are not stopped | What restarts a stopped loop (the waterfall resumes) and how a stopped sentence resumes; the children of a chain and the mixer's other voices do not compete in OpenTPW's pool |
-| AUDIO-041 | Load, Find Parks and Other Parks row activation adds no intrinsic click, as their type-7/base/owner routes establish. Only those three instances opt out; the reusable default remains `cat_ui` 0x1F for untraced/extension callers. Other original owners/custom row classes and TPI/mod/debug UI are not covered. A still click on a slider thumb (`b_scroller`, type 2/style 1 under a style-0x10 slider) may send 0x100 and play 0xBD; general keyboard/shortcut self-0x100 routing is still unproved. Downstream domain/advisor sounds are not silenced. | Trace the remaining owners, still-thumb activation and window-specific keyboard/shortcut routes; the three-owner static audit below is sufficient only for its bounded row paths. |
 
-### Three proved list owners (October 18, 2026)
+### List owners (October 18 and 19, 2026)
 
-AUDIO-041 is narrowed, not retired. **Load, Find Parks and Other Parks have no intrinsic row-click event**:
+AUDIO-041 is retired (October 19, 2026): **no list row of tp.exe clicks**, a still click on a scroll thumb plays nothing, and the
+keyboard's clicks are mapped to OpenTPW's dialogs. Static evidence only (tp.exe); no runtime capture.
+
+**Why a row cannot click.** The hook `0x485780` plays 0x1F or 0xBD only for message 0x100 (`0x4857b8`, the choice at `0x4857cb`);
+no other site plays either id (every `0x51BFC0` call with `cat_ui` and every caller of the wrapper `0x485AA0` passes another id). The
+hook runs only in the dispatcher `0x658d9f` (`0x658dd0`) and the queue pump `0x658e42` (`0x658eb2`), and the queue is filled only by
+`0x658ccc` (`0x6697e3` has no other caller). Every message argument of those two senders is an immediate except five that forward or
+repost a message they received (`0x65dd0a` adds 0x1000; `0x6651ba`, `0x66bc42`; `0x4a2c82` and `0x4a3ae0` send 6). So the only 0x100
+senders are the button class's release (`0x6691eb`; the class `0x668f9c` is installed only by the type-2 constructor `0x6688b3`) and
+eight window procedures (below). The row path of the type-7 list never reaches them:
 
 - The type-7 constructor `0x662562` installs procedure `0x665c35` at instance `+0x114` (`0x662718`), also saving it
   at `+0x118`. Dispatch `0x65f697` calls that procedure; the screen builder `0x65fd0e` overrides the root only.
-  The list instances in all three screens retain the type-7 procedure.
+  The list instances keep the type-7 procedure; the one owner that installs its own on a list, the buy window (`0x4ad00d`:
+  `0x4aca60` on `0x1f8`), handles its category toggles (0x101) and passes the rest on (`0x65f66e`), sending no 0x100 and playing nothing.
 - Base `0x65f6d1` turns eligible pointer release/double-click into `0x10006`/`0x10007`; hit helper `0x65dcaf`
   reposts `0x11006`/`0x11007`. Type-7 helpers `0x6655a2` and `0x6656fa` notify the owner with activation `0x400`
   for a valid row. The common base tail (`0x665e6a`) does not convert these into button message `0x100`.
@@ -832,19 +841,62 @@ The immediate Park Details builder populates and focuses the window and posts ad
 synthesizing `0x100` or playing a UI click. This is **not** a claim that later loading, networking, advisor speech
 or gameplay activity is silent, and it is not an original runtime audio capture.
 
-OpenTPW keeps the approved select-then-load flow and the `TryBeginActivation` guard. The row callback no longer
-adds 0x1F; the separate EXT Load Park button still plays its own single 0x1F. Find/Other explicitly disable the
-list's generic click, keeping both selection and activation callbacks. Default lists and the TPI/mod extension
-callers keep their existing policy. The original type-7 key helper `0x665b51` handles style-`0x200` navigation;
-none of these three lists has that bit. The retained host Enter/selection UX does not establish original
-keyboard parity, and still-thumb, other-owner/custom-row and general keyboard/shortcut questions remain open.
+**Every owner.** The type-7 constructor `0x662562` has one caller, the control factory `0x65dd7b`, and no direct factory call asks for
+type 7: they come from layout records (the stream reader `0x65fd58`, `0x65fe40`; the text-layout reader `0x66080d` hangs off `0x6607ca`,
+which nothing calls). The 66 layout tables the window builders pass (`0x65fd0e`, `0x47ed80`, `0x48cea0`) hold 19 type-7 lists in 18 tables;
+each list's parent is its window, whose procedure is the one the builder installs. A walk of every direct call reachable from each
+procedure finds no 0x100 send except the two keyboard paths already excluded, and these `cat_ui` sounds only:
 
-`ListOwnerAudioTests` adds concrete-screen checks with generated, distinguishable 0x1F/0xBD samples and event/mixer
-assertions: silent row selection, mouse/direct/Enter activation, guarded invalid/empty/reentrant/cancelled/refused
-Load, the separate Load button, both online details owners, preserved downstream sounds, default/extension lists,
-and Load wheel/track/arrow behavior. Existing `SelectClickTests`, `LoadChooserScrollTests`,
-`LoadChooserOwnershipReviewTests` and `NativeWidgetTests` retain the independent button/navigation checks. These
-synthetic checks validate the implementation contract; the static route above is the original-behavior evidence.
+| Owner (procedure), list, style | Row messages | Sound on the row path | OpenTPW |
+| --- | --- | --- | --- |
+| Load `0x49e880`, `0x23bce0`, 0x81 | 0x400 loads | none (the load's own sounds are downstream) | Load screen, silent |
+| Save `0x49ea30`, `0x23bce0`, 0x81 | 0x400 picks the slot | none; Enter and Escape click (below) | no save screen (OpenTPW saves at once) |
+| Find Parks `0x4bf9f0`, `0xe05b`, 0x91 | 0x400 details | none; Enter in the search field clicks (below) | Find Parks, silent rows |
+| Other Parks `0x4c1a10`, `0x14beb`, 0x91 | 0x400 details | none | Other Parks, silent |
+| Visitors `0x493230`, `0x1e497`, 0x291 | 0x400 visitor window `0x4b79b0`, 0x402 locate and close, 0x406 sort | none | `VisitorList`, silent rows |
+| Overview item lists `0x4955e0`, `0x190`, 0x291 (three tables) | info, locate, sort | none | `AttractionList`, silent rows |
+| Staff `0x495da0`, `0x321`, 0x291 | 0x400 employee window | none | `StaffList` (employee view), silent |
+| Hire `0x49b650`, `0x248e`, 0x291 | 0x400 hire `0x507bf0`, close, help 0x135 | none | `StaffList` (applicants); the refusal's error sound is removed |
+| Loans `0x49f4e0`, `0x12c4bd`, 0x91 | 0x400 confirmation | none | `LoanList`, silent |
+| Buy `0x4ac270`, `0x1f8`, 0x91 | 0x400 buys (`0x4ac4f9`) | 0x1D when the money or tickets do not cover the row (`0x4ac7f6`) | `BuyItemList`, 0x1D on a refused purchase |
+| Upgrades `0x4ae430`, `0x1f4d`, 0x81 | 0x400 buys an add-on (`0x4af480`) | 0x1D when the money does not cover an add-on (`0x4af5d6`) | `UpgradeList`, 0x1D on a refused add-on |
+| Staff dialog `0x4b4fc0`, `0x1e7b`, 0x91 | rename, pick-up | the carry tool's own sounds downstream | no counterpart |
+| Postcard addresses `0x4a73d0`, `0x26`, 0x11 | 0x400 | none | online extension (EXT) |
+| Unsent postcards `0x4bbc20`, `0xee8`, 0x11 | 0x401 | none | Outbox, rows not activatable |
+| Visit chat `0x4bd4a0`, `0xc3124` 0x91 and `0xc312b` 0x1 | no row handler | none (its 0x95 at `0x4a9380` is a key command) | `ChatPanel` lists, silent |
+| Dial-up chooser `0x4ba530`, `0xc`, 0x1 | none read | none | no dial-up |
+| IME candidates `0x480d10` → `0x4809f0`, `0x7b79e3`, 0x81 | 0x400 picks the candidate (`ImmNotifyIME`) | none | no counterpart |
+
+The other control types (`0x65ab64`, `0x665fcd`, `0x66d9e0`, `0x66a1e8`, `0x66d750`, `0x66d0c0`, `0x66c970`, `0x66a4c0`, `0x66c7e0`) do not
+derive from the button constructor and send no 0x100, and the row templates that draw rows (`0x4938c0`, `0x4944d0`, `0x496cbd`, `0x4b4c70`)
+build types 1, 6 and 9 only, so no custom row class can click. The 0x1D refusals are downstream domain feedback, which OpenTPW already plays.
+
+**The scroll thumb.** The thumb (`b_scroller`, layout op 8: type 2, style 1, id 3) gets the procedure `0x66bb9b` (`0x65e526` overwrites
+the button procedure at `+0x114`); its press (0x10005) captures, its release (0x10004) sends 0x802 to the slider (`0x66b9ef`) and returns, so
+the button class never sees it and no 0x100 is posted. The slider (`0x66ba22`) has no 0x802 case and the base `0x65f6d1` forwards nothing.
+
+**The keyboard.** A text field's key handler `0x667fee` sends its window 0x802 for Enter (unless the field has style 0x80), 0x803 for Tab,
+0x804 for Escape and 0x806 for other keys; nothing else emits 0x802 except the slider thumb above. Park shortcuts call their commands directly
+(no 0x100), and the list key helper `0x665b51` (style 0x200 only) moves the selection with Home, End and the arrows, never activating a row.
+The eight self-senders, all on windows of style 1, so 0x1F:
+
+| Window (procedure) | Enter | Escape | OpenTPW |
+| --- | --- | --- | --- |
+| Gate rename `0x48d640` (table `0x750090`) and park rename `0x4993e0` (`0x751928`) | first line: focus moves to the second, no click; second line: 0x100 -1, 0x1F, apply | closes, no click | `OpenParkRenameDialog`: the second line's Enter is the tick |
+| Save `0x49ea30` | 0x100 -1, 0x1F | 0x100 -2, 0x1F | no save screen |
+| New player name `0x4a6d00` (`0x753f50`) | 0x100 -1 at once (`0x4a6df5`), 0x1F | closes, no click | Game Mode: Enter is the tick, as before |
+| Employee rename `0x4b6320` (`0x7572e8`) | 0x100 -1, 0x1F, apply | closes, no click | `OpenEmployeeRenameDialog`: Enter is the tick |
+| Dial-up details `0x4b9d00` (`0x7583e8`) and online login `0x4baf10` (`0x7585a8`) | in field `0x49`: focus to `0x4b`; else 0x100 -1, 0x1F | closes, no click | no dial-up; the online login is OpenTPW's own (EXT) |
+| Find Parks `0x4bf9f0` | 0x100 `0xe059` unless that button is held, 0x1F, search | not read | Find Parks: Enter is the search button |
+
+The shop window's price field and the other OpenTPW fields with no listed window send no 0x100 in the original, and OpenTPW's Enter there plays
+nothing. OpenTPW's host keyboard focus (Enter on a focused button, Enter on a focused list) has no original input (`[EXT:ui-key-navigation]`): a focused
+button plays its own click, a list row stays silent.
+
+**OpenTPW.** `UiScrollList` is silent by default (`ClicksOnActivate`); the Theme Park Inc text HUD (`[EXT:tpi-text-hud]`) and the Extensions and
+mods screen (`[EXT:mods]`) opt in, having no original screen. The hire refusal keeps its message and loses the error sound the original never
+plays there. `ListOwnerAudioTests` checks the default, the opt-ins, the Load, Find Parks and Other Parks rows, the Enter paths of Find Parks,
+the employee rename and the park rename, Escape, the hire refusal and a still thumb click, with generated, distinguishable 0x1F/0xBD samples.
 
 ### Register round 2 (October 14)
 
@@ -863,7 +915,8 @@ evidence as `[BIN:TPW-EXE:...]` notes.
 * **Retired, already matching**: 006 (the crowd count is the Chebyshev square of radius 4, `0x4c8d30`;
   capped at 100, 0 in world state 4), 010 (the lobby sentences restart with each island step,
   `0x5e1640`/`0x5e1730`, and on the `0x4a6a33` toggle), 012 (the global UI hook `0x485780` clicks for every
-  control; the front end's list lines and rows now click like its buttons).
+  control; the front end's list lines and rows were then made to click like its buttons, which "List owners" corrects: the hook
+  clicks only for message 0x100, and no list row sends it).
 * **Narrowed**: 003, 004, 008, 009, 011, 015, 022, 025, 026, 034, 036, 900 and 908 (rows above); the
   corrected readings are in the sections they belong to. Unchanged: 018, 023, 033, 901-904.
 * **Reclassified as documented OpenTPW decisions** (`[EXT:...]` markers in the code):

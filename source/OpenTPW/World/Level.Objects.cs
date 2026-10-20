@@ -1028,7 +1028,7 @@ public partial class Level
 		if ( removed > 0 )
 		{
 			// the guests standing on the emptied cells leave the queue on the nearest path; the ride's entrance resolves again when it used one of them
-			Guests.SetDownOffQueueCells( removedCells );
+			Guests.SetDownOffQueueCells( removedCells, ride );
 			AfterAccessCellRemoved( removedCells );
 		}
 		if ( ride == null )

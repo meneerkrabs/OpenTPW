@@ -3,6 +3,7 @@ using System.IO;
 using System.Linq;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using OpenTPW.Hud;
+using OpenTPW.UI.Original;
 
 namespace OpenTPW.Tests;
 

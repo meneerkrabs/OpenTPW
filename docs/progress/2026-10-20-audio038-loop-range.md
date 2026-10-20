@@ -1,0 +1,3 @@
+## Recreate range-stopped catalogue loop output (October 20, 2026)
+
+Traced the missing output acknowledgment for [AUDIO-038](../proposals/audio-038-trace-out-of-range-voice-resumption.md): native range stop clears the sample handle through its callback while retaining the logical owner, and a later admitted tick creates fresh output. Catalogue loops now retain their control handle, selected source, parameters and pool serial separately from the released output cursor, with terminal-stop and held-fade guards. Synthetic regression coverage targets phase, random order, pool admission, held lifetime and unchanged child playback. Sentence and finite-source timing remain explicit residuals; no original-media execution or local .NET test pass is claimed.

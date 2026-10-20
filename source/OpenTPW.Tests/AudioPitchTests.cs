@@ -134,7 +134,7 @@ public class AudioPitchTests
 	}
 
 	[TestMethod]
-	public void AOneShotOutOfRangeIsStoppedUnlessItIsHeardAtAnyDistanceOrLoops()
+	public void RangeExitStopsSamplesButRetainsTheLoopOwner()
 	{
 		// [BIN:TPW-EXE:0x6bca10] out of range without the any-distance flag 0x200: the sample is stopped (0x6bca70, message 3)
 		var far = new Vector3( 1000, 1000, 0 );
@@ -150,7 +150,8 @@ public class AudioPitchTests
 		Assert.IsTrue( stopped.IsFinished, "out of range: stopped" );
 		Assert.IsFalse( heard.IsFinished, "flag 0x200: heard at any distance" );
 		Assert.IsTrue( loop.Loops );
-		Assert.IsFalse( loop.IsFinished, "a looping voice keeps advancing (AUDIO-038)" );
+		Assert.IsFalse( loop.IsFinished, "a loop retains its logical owner for re-admission" );
+		Assert.IsFalse( loop.HasOutput, "its old sample output is released, not advanced silently" );
 		Assert.IsFalse( close.IsFinished, "in range: plays on" );
 	}
 

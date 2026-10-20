@@ -85,8 +85,10 @@ sequential for every message (below).
 The original's main loop (tp.exe `0x54F4BF`) runs a 31 ms substep, and every eighth substep is a park turn. Each substep, in
 this order (`Level.AdvanceSimulation`, `ParkObjects.Simulate`, `SimulationSubstep`):
 
-1. the substep counter (`0x877D34`) and the scaled clock (`0x878C74`, +0x1F) rise at `0x54F4C4`..`0x54F4D6`, before the pause test (`0x54F4D4`); a paused park then skips the body (`0x54F8CD`), so its scripts, bump
-   module, tour cars and turns stand still with its calendar. The original's counter would keep rising for as long as its timer runs while paused; OpenTPW's 60 Hz clock does not run while paused, so the counter simply stops (an approximation of the pause's wall-clock phase only);
+1. the substep counter (`0x877D34`) and the scaled clock (`0x878C74`, +0x1F) rise at `0x54F4C4`..`0x54F4D6`, before the inactive-application test (`0x54F4D4`): the body is skipped
+   (`0x54F8CD`) only while the application is inactive (`0x7A1A14` bit 3 clear, kept by the main window procedure `0x46B600`) and the option bit `0x7A1A8C` bit 0 is set (its default,
+   `0xC0E15` at `0x449E1C`). The game pause (`0x4092A0`) freezes the clock object `0x785970` that drives the substep loop (`0x54F47F`..`0x54F4AF`), so a paused park runs no
+   substep at all: its scripts, bump module, tour cars and turns stand still with its calendar and its counter stands, as OpenTPW's 60 Hz clock does while paused;
 2. the effects system (`0x520130`, not modelled);
 3. the bump module tick (`0x546C80`, `0x54F55F`): once per substep, whichever rides exist;
 4. the script pass (`0x5516B0`, `0x54F56B`): the pass counter (`0x8791A4`) rises, then the scripts run **newest first** (a
@@ -221,11 +223,16 @@ System.Numerics' `Vector2`/`Vector3`/`Vector4.Lerp`, `Transform` and `TransformN
 source: .NET evaluates them with `MultiplyAddEstimate`, which fuses the multiply and the add where the processor has fused multiply-add.
 On macOS arm64 (.NET 11 RC2) `Vector3.Transform` equals `fma(z, m31, fma(y, m21, x * m11)) + m41` for every one of 200,000 random inputs
 and differs from the unfused sum for a quarter of them; a runtime that does not fuse rounds twice. `Dot`, `Cross`, `Length`, `Normalize`
-and `Distance` are not fused. Whether the browser fuses was not measured. The guard below does not ban these operations, and a source
-scan cannot find the matrix product. `CoasterPylonRig` composes its tag matrices with plain multiplies and adds for this reason
-("Coaster register round 2" below), but the coaster station frame (`CoasterStationLayout.FromModel`) still multiplies a dummy's
-rest-pose matrix by the placement with `Matrix4x4`'s operator. The with-data runs below, whose M4 scenario builds those stations, gave
-the same state hashes in the browser and on macOS arm64.
+and `Distance` are not fused. The browser's Mono AOT build computes other values for them than the desktops (below). The guard below does not ban these operations, and a source
+scan cannot find the matrix product. `DetMatrix` (`source/OpenTPW/Utils/DetMatrix.cs`) has the plain versions (product, point
+transform, lerp, and a slerp with DetMath's acos and sin), every product and sum rounded left to right. `CoasterPylonRig` composes its
+tag matrices with them and blends its clips' keys with them, and the coaster station frame (`CoasterStationLayout.FromModel`)
+composes a dummy's parent chain (`ObjectAnimator.LocalTransforms`) and the placement with them ("Cross-platform coaster pins" below).
+`CrossRuntimeMathProbe` reports the System.Numerics operations and `DetMatrix`'s over fixed inputs:
+`DetMathTests.DetMatrixDigestsArePinned` pins `DetMatrix`'s on every runtime. `FusedSystemNumericsOperationsArePinned` holds the
+fused System.Numerics values that Windows, Linux and macOS compute; the browser's Mono AOT build computes others (its interpreter
+matches the desktops), so that comparison is informative in the browser check, like the platform library's, and documents why
+simulation code must not use those operations.
 
 ### DetMath
 
@@ -1044,10 +1051,8 @@ it differs from 60.
 
 The PR first pinned a fixed run of an imported synthetic coaster (`ImportedCoasterPin`, `0x0B6F305C6589A229`). That pin
 held on macOS arm64 only: the Linux and Windows x64 runners compute `0x43373F0B3F89E03C` for the same run. The coaster's
-curve, rating and collision pass call libm functions (`Atan2`, `Sin`, `Cos`, `Acos`), whose results are not bit-equal
-across platforms, so a coaster's content is not a cross-platform digest. That is why the earlier coaster rounds below
-assert relations and pin no coaster content. The pin was removed; `AnImportedSyntheticCoasterRunsDeterministically` now
-asserts that the run repeats and that it ends where the built coaster ends after the same first frame and speed word.
+curve, rating and collision pass called libm functions (`Atan2`, `Sin`, `Cos`, `Acos`), whose results are not bit-equal
+across platforms. The pin was removed then and is back since DetMath ("Cross-platform coaster pins" below).
 
 The same review ported the controller's first motion tick (`CoasterRide.MotionClockStarted`, controller flag `0x10`):
 tp.exe's motion tick `0x43CE20` takes the animation clock's time since its last run as the frame time, and the tick that
@@ -1064,3 +1069,41 @@ The speed setter now runs after every slice of a station's root script that hold
 does. For a coaster OpenTPW built, the speed word equals the setting after `COAST 8`, so nothing changes until an upgrade
 changes the script's speed word (RIDES-033); then the coaster takes the new speed after the script's next slice, as in
 the original, where OpenTPW before kept the old one. No pinned run upgrades a coaster.
+
+## Coaster clock catch-up
+
+The coaster's motion tick now takes as its frame time the fixed steps since its last motion tick
+(`CoasterRide.MotionClockLagSeconds`), as tp.exe's `0x43CE20` takes the scaled game clock since its clock word `ctl+0x120`
+(October 19). A running coaster's tick follows the one before it, so its frame time is one step, bit-equal to before
+(the lag is the sum of the steps in double precision, cast to single precision once). Only a coaster whose track stood cut or
+reopened (state 1, which runs no motion tick, `0x435AC9`) moves differently: the first tick after the track is completed
+again takes the whole stretch, so its trains run further in that tick and every later state differs from before. The
+fixed steps are the original's scaled game clock, as the substep scheduler maps it: they stop while the park is paused and
+multiply with the game speed. What stays OpenTPW's own (`EXT:coaster-fixed-step`) is the frame: one motion tick per 60 Hz
+step instead of one per rendered frame, and no zero-time ticks while the clock stands still (the original runs them on
+every paused frame).
+
+The coaster hash gains the lag and the speed setter's replay bit (`CoasterRide.SpeedSetByReplay`, controller bit `0x8000`,
+set only by the original's layout replay, which OpenTPW does not run), so any park with a coaster hashes differently from
+before. The park-resume save carries both (optional; a save from before them holds no lag and a clear bit). No pinned
+golden or resume hash in the suite depends on a coaster's content, so no pin moved.
+
+## Cross-platform coaster pins
+
+Since DetMath (#697) the coaster's curve, rating and collision pass evaluate their elementary functions identically everywhere,
+and the remaining System.Numerics arithmetic of the coaster's simulation path now goes through `DetMatrix` (October 20): the
+pylon rig's clip blending (`Vector3.Lerp` and the slerp's `MathF.Acos`/`Sin` before) and the station frame of a placed station
+model (`Matrix4x4`'s product before, which may fuse the multiply-add). A coaster's content is therefore a cross-platform digest,
+and it is pinned again:
+
+| Pin | Value | What |
+| --- | --- | --- |
+| `OriginalCoasterImportTests.AnImportedSyntheticCoasterRunsDeterministically` | `0x8A1279434220868B` | the imported synthetic coaster's minute (the #702 pin, `0x0B6F305C6589A229` on macOS and `0x43373F0B3F89E03C` on x64, moved with the coaster hash's two new fields, the motion clock lag and the replay bit) |
+| `CoasterTests.BuiltCoasterRunsArePinned` | `0x1ABA458D0079E09C` | a built synthetic circuit open for a minute with a guest on board |
+| `CoasterTests.BuiltCoasterRunsArePinned` | `0x045BFFE59994F3E7` | the same circuit reopened for three seconds at 20 s and completed again (the catch-up tick) |
+
+CI checks them on Windows, Linux and macOS and in both browser legs (Mono AOT and the interpreter). The synthetic coasters have no pylon or station models; a coaster built from game
+data adds the rig and the station frame, which `DetMatrix` covers. The rig's rest decomposition (`Matrix4x4.Decompose`) and its
+`Matrix4x4.CreateFromQuaternion` stay System.Numerics': they use the unfused `Dot`, `Cross`, `Length` and scalar arithmetic. The station frame's change from the fused product
+moves a station node's position by at most a few last bits; no pinned golden builds a coaster from game data, so no other pin moved.
+The animator itself (`ObjectAnimator`, presentation and the object scripts' poses) still uses System.Numerics.

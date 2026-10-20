@@ -1012,7 +1012,7 @@ public partial class Level
 		if ( removed > 0 )
 		{
 			// the guests standing on the emptied cells leave the queue on the nearest path; the ride's entrance resolves again when it used one of them
-			Guests.SetDownOffQueueCells( removedCells );
+			Guests.SetDownOffQueueCells( removedCells, ride );
 			AfterAccessCellRemoved( removedCells );
 		}
 		if ( ride == null )
@@ -1443,6 +1443,16 @@ public partial class Level
 			import.Report( line );
 			Log.Trace( $"Park economy import: {line}" );
 		}
+	}
+
+	/// <summary>Attaches the supported original arrival scheduler after objects and their scripts have been imported.</summary>
+	private void ImportOriginalArrivals()
+	{
+		if ( resumeState != null || GameEditions.IsThemeParkInc || visitLayout != null || Guests == null || OriginalPark?.Save is not { } save )
+			return;
+		var line = Guests.ImportOriginalArrivals( save.World );
+		Park?.Import?.Report( line );
+		Log.Trace( $"Park arrival import: {line}" );
 	}
 
 	/// <summary>

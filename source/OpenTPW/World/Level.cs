@@ -546,6 +546,7 @@ public partial class Level : IDisposable
 			ImportOriginalScripts();
 			ImportOriginalCoasters();
 			ImportOriginalRetainedRideStates();
+			ImportOriginalArrivals();
 			StartPlacedParticles();
 			ImportOriginalParticles();
 			if ( resumeState == null && !GameEditions.IsThemeParkInc && OriginalPark.Save != null && visitLayout == null )

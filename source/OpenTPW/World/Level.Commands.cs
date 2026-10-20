@@ -84,6 +84,8 @@ public partial class Level
 		EditQueueCommand edit => ExecuteEditQueue( edit ),
 		PlacePrototypeCommand prototype => Outcome( PlaceRide( new Vector3( prototype.X, prototype.Y, prototype.Z ) ) ),
 		RemovePrototypeCommand => ExecuteRemovePrototype(),
+		DismissFinaleCommand => DismissResearchFinale() ? ParkCommandResult.Ok() : ParkCommandResult.Rejected( "No research finale to dismiss." ),
+		SetPrototypeRunningCommand running => ExecuteSetPrototypeRunning( running ),
 		_ => ParkCommandResult.Rejected( $"The park does not take {command.Kind} commands." )
 	};
 
@@ -151,6 +153,17 @@ public partial class Level
 		if ( PlacedRide == null )
 			return ParkCommandResult.Rejected( "No prototype ride is placed." );
 		RemoveRide();
+		return ParkCommandResult.Ok();
+	}
+
+	private ParkCommandResult ExecuteSetPrototypeRunning( SetPrototypeRunningCommand running )
+	{
+		if ( PlacedRide == null )
+			return ParkCommandResult.Rejected( "No prototype ride is placed." );
+		if ( running.Running )
+			PlacedRide.Start();
+		else
+			PlacedRide.Stop();
 		return ParkCommandResult.Ok();
 	}
 }

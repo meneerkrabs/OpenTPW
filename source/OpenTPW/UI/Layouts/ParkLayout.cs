@@ -43,12 +43,7 @@ public sealed class ParkLayout
 				ImGui.Text( level.PlacedRide.IsOpen ? "Ride: open" : "Ride: closed" );
 				ImGui.Text( $"Script: {script.ScriptName}, {script.State}, VAR_RUNNING={script[RideVariables.VAR_RUNNING]}" );
 				if ( ImGui.Button( level.PlacedRide.IsOpen ? "Close ride" : "Open ride" ) )
-				{
-					if ( level.PlacedRide.IsOpen )
-						level.PlacedRide.Stop();
-					else
-						level.PlacedRide.Start();
-				}
+					level.Commands.Issue( new SetPrototypeRunningCommand( !level.PlacedRide.IsOpen ) );
 				ImGui.SameLine();
 				if ( ImGui.Button( "Remove ride" ) )
 					level.Commands.Issue( new RemovePrototypeCommand() );

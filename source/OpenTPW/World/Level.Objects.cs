@@ -1445,6 +1445,16 @@ public partial class Level
 		}
 	}
 
+	/// <summary>Attaches the supported original arrival scheduler after objects and their scripts have been imported.</summary>
+	private void ImportOriginalArrivals()
+	{
+		if ( resumeState != null || GameEditions.IsThemeParkInc || visitLayout != null || Guests == null || OriginalPark?.Save is not { } save )
+			return;
+		var line = Guests.ImportOriginalArrivals( save.World );
+		Park?.Import?.Report( line );
+		Log.Trace( $"Park arrival import: {line}" );
+	}
+
 	/// <summary>
 	/// An original save's RSSE block gives the imported objects' scripts their saved ids, list order and pass counter (<see cref="ParkObjects.ImportOriginalScripts"/>, DET-013): the
 	/// one slice per eight passes then falls on the passes the saved park ran it on. Only a park started from an original save does this; a resumed park restores its own scripts.

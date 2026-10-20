@@ -701,7 +701,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	// restarts the timer (0x0041A960), clears the active byte and dispatches with 0; the status 6 branch (0x004CF475) is unreachable, 0x0051A690 turning 6 into -1
 	// [BIN:TPW-EXE:0x004CF4B6 pick-up] then, when a leaving guest waits at the stop (0x0051A9D0), status -1 or 0, or 2 with the group exactly 0 (test at
 	// 0x004CF4E1), dispatches with 0; with none waiting, status 4 does
-	// [APPROX:ARRIVAL-001] a cell's thing list holds OpenTPW's guests only (WALK-003); a swept turn runs this update after the thing sweep and the turn's destroys, as the original does (the end of 0x516380, Level.RunThingSweep); an imported original save starts with no vehicle at work — evidence needed: the saved word +0x1DA72A and the places the world variables keep the vehicle handles
+	// [APPROX:ARRIVAL-001] a cell's thing list holds OpenTPW's guests only (WALK-003); a swept turn runs this update after the thing sweep and the turn's destroys, as the original does (the end of 0x516380, Level.RunThingSweep); original scheduler import supports only saves without cached/current vehicle handles; saved vehicle identity and script continuation remain unsupported
 	private void UpdateArrivalVehicle()
 	{
 		var turn = ArrivalClock?.Invoke() ?? ParkTurn;

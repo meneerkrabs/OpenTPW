@@ -252,7 +252,7 @@ public class FrameBatchingTests
 	/// </summary>
 	private static readonly string[] AuditedEntityUpdates =
 	{
-		"OpenTPW.CoasterRenderer", "OpenTPW.ParticleRenderer", "OpenTPW.PoolBridgeRenderer", "OpenTPW.PoolRenderer", "OpenTPW.PoolSlideRenderer",
+		"OpenTPW.CoasterRenderer", "OpenTPW.OriginalObject", "OpenTPW.ParticleRenderer", "OpenTPW.PoolBridgeRenderer", "OpenTPW.PoolRenderer", "OpenTPW.PoolSlideRenderer",
 		"OpenTPW.UI.RootPanel", "OpenTPW.WeatherForecastPresenter", "OpenTPW.WeatherRenderer",
 	};
 

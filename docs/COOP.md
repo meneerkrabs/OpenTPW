@@ -201,8 +201,8 @@ guarded list.
   bodies' pose phase (`FlatRideBounceRiders.Prepare`) at its end. The park after a tick therefore
   depends only on the ticks and the commands, so a replay may run its ticks in frames of any size
   (`FrameBatchingTests`, and with game data the park-resume smoke's restore phase). What stays
-  frame-coupled is presentation a save keeps but no hash or script reads: the particle pool and the
-  ADDOBJ records of ended effects, so two players' saves can differ there. The clock's remainder of a
+  frame-coupled is presentation a save keeps but no hash or script reads: the particle pool, the
+  ADDOBJ records of ended effects and the hoardings' rise, so two players' saves can differ there. The clock's remainder of a
   tick follows the frames' time; a session's network clock (C2) feeds whole ticks.
 - A remote player's command will run the same presentation (the action message, sounds) as a local
   one; C3 separates the issuer's feedback from everyone's.

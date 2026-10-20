@@ -15,8 +15,9 @@ namespace OpenTPW.Hud;
 // headers 0x10-0x15 with UITEXT 0x71-0x76 (help 0x81-0x86), arms the 2000 ms timer 0x80083 and posts help 0x11e; message 0x15 titles 0x1e498 with UITEXT 0x70
 // [EXT:list-selection-by-id] the selected row follows its visitor while rows are added or removed, where the original keeps the selected position (+0x14c, 0x66525c) — a design choice that keeps a live list from highlighting another visitor
 // [BIN:TPW-EXE:0x6644ea row refresh, 0x66403b sorted row insert] the 2000 ms refresh rewrites the cells in place and never moves a row, a new row is inserted by the list's sorted insert (ListRowOrder), and the first row added selects row 0 (0x66403b → 0x66525c)
-// [BIN:TPW-EXE:0x48fde0 rides cell, 0x48fe28 alignment] the zero alignment store is inside the rides-cell constructor; the row factory leaves it unchanged, unlike number/time/cash
-// [APPROX:UI-907] the source-backed rides-column left-alignment correction is implemented, but the actual-draw fixture and exact-head CI have not executed; retain this ID pending that validation
+// [BIN:TPW-EXE:0x48fe28 rides cell alignment] the rides cell's constructor 0x48fde0 stores 0 (left) in the alignment byte +0xd8 (0x48fe28); the row factory 0x4939d0 sends the alignment
+// call 0x65c428 with 1, 2 and 1 (centred, right, centred) to the number, cash and time cells (0x490c30, 0x490250, 0x490e60) and none to the rides cell it makes at 0x493b38, so the rides
+// column is left-aligned (ParkVisitorRoster.Columns, VisitorRidesAlignmentTests)
 public sealed partial class ParkHud
 {
 	private static LayoutTable VisitorTable => OriginalLayoutTables.VisitorsWindow;

@@ -359,6 +359,7 @@ UI-902 docs/PROGRESS.md
 UI-903 docs/PROGRESS.md
 UI-905 docs/progress/2026-10-18-round8-ui-windows.md
 UI-906 docs/PROGRESS.md
+UI-907 docs/UI.md
 UI-908 docs/PROGRESS.md
 UI-920 docs/PROGRESS.md
 UI-940 docs/UI.md

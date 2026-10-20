@@ -210,7 +210,7 @@ public sealed partial class ParkHud
 	private void AddParkInfoCounts( UiScreen screen, LayoutTable table, bool visit )
 	{
 		// [BIN:TPW-EXE:0x004A52A0 counts frame] the frame 0x4A68C9 holds the labels 0x4A68CB (UITEXT 0x97) and 0x4A68CD (UITEXT 0x9E) as text controls in font slot 6 and the values 0x4A68CC (people in the park) and 0x4A68CA (visitors) as count cells (0x48FDE0); none gets the centring call 0x65C428
-		// [APPROX:UI-914] the two values are drawn left-aligned: the count cell's constructor 0x48fde0 (and its base 0x48f150) never writes the alignment byte +0xd8 that the text drawer 0x48f830 switches on (0 left, 1 centred, 2 right), so the original's alignment is whatever the allocation held
+		// [BIN:TPW-EXE:0x48fe28 count cell alignment] the two values are drawn left-aligned: the count cell's constructor 0x48fde0 stores 0 in the alignment byte +0xd8 (0x48fe28) that the text drawer 0x48f830 switches on (0 left, 1 centred, 2 right), and only the centring call 0x65c428 (message 0xc00, handler 0x48fc40) would change it
 		var frame = table.Control( 0x4A68C9 );
 		screen.Add( new UiModelImage { Id = "countsFrame", Model = frame.Model!, Bounds = frame.Rect, Anchor = UiAnchor.Center } );
 		screen.Add( new UiLabel { Id = "peopleLabel", Text = () => strings[UIStrings.PeopleInPark], Font = fonts => fonts.Label, Color = UiColors.Text, Bounds = table.Control( 0x4A68CB ).Rect, Anchor = UiAnchor.Center } );

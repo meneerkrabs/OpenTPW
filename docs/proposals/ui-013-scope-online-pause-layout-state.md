@@ -2,7 +2,7 @@
 
 ## Current bounded implementation (2026-10-20)
 
-This PR now implements the authenticated host-session pause-menu spacing adapter described in [AUTHENTICATED-PAUSE-LAYOUT](../AUTHENTICATED-PAUSE-LAYOUT.md), with synthetic lifecycle, geometry and hit-region fixtures. The plan-only statements below record the original proposal, not the current diff. Exact-head CI is pending; no executed C# or visual parity claim is made. UI-013 remains open for native online lifecycle and font-bank parity.
+#470 (merged 2026-10-20, exact-head CI green) implements the authenticated host-session pause-menu spacing adapter described in [AUTHENTICATED-PAUSE-LAYOUT](../AUTHENTICATED-PAUSE-LAYOUT.md), with synthetic lifecycle, geometry and hit-region fixtures. The plan-only statements below record the original proposal, not the merged change. The native online lifecycle is read: tp.exe's net-session field `+0x60` is set only by the login reply "Authorization OK" (`0x5b6363`) and cleared by the login errors (`0x5b6375`-`0x5b63dd`) and the login teardown (`0x5b6588`), which is the logged-in state the adapter samples. No visual parity claim is made; UI-013 remains open for font-bank parity.
 
 ## Historical proposal status and classification
 - Plan-only draft proposal; no implementation, tests-run claim, retirement or merge.
@@ -47,6 +47,6 @@ Dialogs and load timestamps exist; pause menu height follows font-tier extension
 - Evening #439 is an extension and is not proof of original lighting or behavior.
 
 ## Completion boundary
-- This deliverable is a documentation proposal only; no gameplay source files are changed by this PR.
-- Runtime work remains blocked on the evidence/ownership decisions listed above where applicable.
-- No approximation is retired by creating this plan; no PR is claimed implemented or ready to merge.
+- Superseded by the merged bounded implementation above (#470), which changed `Hud/ParkHud.cs` and `UI/Original/UiDialogs.cs` and added `AuthenticatedPauseLayoutTests`.
+- The remaining UI-013 work (the menu font tier) is outside this proposal.
+- UI-013 is not retired.

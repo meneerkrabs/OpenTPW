@@ -19,6 +19,9 @@ focus-pause behavior are retained.
 Synthetic tests exercise the actual flow-to-HUD menu path with state-only online
 fixtures, measured and fallback rectangles, hit regions, snapshot/reopen behavior,
 and default callers. They do not perform authentication or contact a server.
-Source review and exact-head CI are required; no C# or rendered visual execution
-is claimed here. This is a host-session mapping, not complete native online-state
-or font-bank parity, and does not retire UI-013.
+The tests ran in exact-head CI before #470 merged; no rendered visual execution
+is claimed. The mapping follows tp.exe's own lifecycle: its net-session field
+`+0x60` (read by `0x5b6450` when the menu is built, `0x48c36c`) is set only by the
+login reply "Authorization OK" (`0x5b6363`) and cleared by the login errors and
+the login teardown (`0x5b6375`-`0x5b63dd`, `0x5b6588`). It is not font-bank
+parity and does not retire UI-013.

@@ -5,13 +5,15 @@ remain centred; cash remains right-aligned. Headers, values, sorting, refresh an
 selection are unchanged.
 
 The previous UI-907 explanation treated the alignment store as a different
-constructor. It is part of the rides-cell constructor. The row setup leaves that
-default in place while explicitly overriding the other text columns. This resolves
-the source uncertainty; it does not establish a rendered pass.
+constructor. It is part of the rides-cell constructor `0x48fde0`, which stores 0
+(left) in the alignment byte `+0xd8` at `0x48fe28`. The row factory `0x4939d0`
+sends the alignment call `0x65c428` with 1, 2 and 1 (centred, right, centred) to
+the number, cash and time cells and none to the rides cell it makes at
+`0x493b38`, so the original's rides column is left-aligned.
 
 `VisitorRidesAlignmentTests` draws the real visitor list into the existing CPU
 `UiBatch`, with synthetic digits and no original media. It checks the actual rides
 value and position, the other three text columns, two text scales and the existing
-RTL alignment mirroring. These assertions are authored and source-reviewed only
-until CI executes them. UI-907 remains registered pending execution; native pixels,
-font choice and the other visitor timing/membership gates are separate.
+RTL alignment mirroring. The tests ran in exact-head CI before #495 merged, and
+UI-907 is retired. Native pixels, font choice and the other visitor
+timing/membership gates are separate (their own register IDs).

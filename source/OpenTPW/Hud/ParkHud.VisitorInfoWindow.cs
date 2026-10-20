@@ -172,6 +172,8 @@ public sealed partial class ParkHud
 			Bounds = title.Rect, Anchor = UiAnchor.Center } );
 		// [BIN:TPW-EXE:0x004b6c20 stats labels] the labels take UITEXT 70 (0x372c), 71 (0x3725), 72 (0x3726), 75 (0x3727), 73 (0x3728), 74 (0x3729), 76 (0x372a) and 77 (0x372b); beside them
 		// 0x3724 is a money cell (0x490250), 0x372d a duration cell (0x490e60), 0x372e..0x3731 count cells (0x48fde0), 0x3732 the happiness bar (happygrad.wct, inset 0 and 10) and 0x3733 the status text
+		// [BIN:TPW-EXE:0x48fe28 value cell alignment] every value is drawn left-aligned: the three cell constructors store 0 (left) in the alignment byte +0xd8 (count 0x48fe28, money 0x490298,
+		// duration 0x490ea8) and the builder 0x4b6c20, unlike the All Visitors row factory 0x4939d0, sends none of them the alignment call 0x65c428
 		void Label( uint id, UIStrings text )
 		{
 			var node = table.Control( id );
@@ -189,13 +191,12 @@ public sealed partial class ParkHud
 		void Value( string id, uint control, UiAlign align, Func<VisitorInfoValues, string> text ) => screen.Add( new UiLabel { Id = id,
 			Text = () => InfoVisitor == null ? "" : text( visitorInfoShown ), Font = fonts => fonts.Label, Color = UiColors.Value, Align = align, Fit = true,
 			Bounds = table.Control( control ).Rect, Anchor = UiAnchor.Center } );
-		var columns = ParkVisitorRoster.Columns;
-		Value( "cash", 0x3724, columns[1].Align, values => FormatMoney( values.Cash ) );
-		Value( "timeInPark", 0x372D, columns[2].Align, values => values.Hours is { } hours ? VisitorDuration( hours ) : "—" );
-		Value( "rides", 0x372E, columns[3].Align, values => values.Rides.ToString( CultureInfo.InvariantCulture ) );
-		Value( "purchases", 0x372F, columns[3].Align, values => values.Purchases.ToString( CultureInfo.InvariantCulture ) );
-		Value( "sideshowsPlayed", 0x3730, columns[3].Align, values => values.SideshowsPlayed.ToString( CultureInfo.InvariantCulture ) );
-		Value( "sideshowsWon", 0x3731, columns[3].Align, values => values.SideshowsWon.ToString( CultureInfo.InvariantCulture ) );
+		Value( "cash", 0x3724, UiAlign.Left, values => FormatMoney( values.Cash ) );
+		Value( "timeInPark", 0x372D, UiAlign.Left, values => values.Hours is { } hours ? VisitorDuration( hours ) : "—" );
+		Value( "rides", 0x372E, UiAlign.Left, values => values.Rides.ToString( CultureInfo.InvariantCulture ) );
+		Value( "purchases", 0x372F, UiAlign.Left, values => values.Purchases.ToString( CultureInfo.InvariantCulture ) );
+		Value( "sideshowsPlayed", 0x3730, UiAlign.Left, values => values.SideshowsPlayed.ToString( CultureInfo.InvariantCulture ) );
+		Value( "sideshowsWon", 0x3731, UiAlign.Left, values => values.SideshowsWon.ToString( CultureInfo.InvariantCulture ) );
 		Value( "status", 0x3733, UiAlign.Left, values => values.Status );
 		screen.Add( new VisitorInfoBar { Id = "happinessBar", Value = () => InfoVisitor == null ? null : visitorInfoShown.HappinessGauge / (float)EmployeeWindowRules.GaugeFull,
 			Bounds = table.Control( 0x3732 ).Rect, Anchor = UiAnchor.Center } );

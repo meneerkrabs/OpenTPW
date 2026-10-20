@@ -106,15 +106,17 @@ public class ImportedQueueCellsTests
 	}
 
 	[TestMethod]
-	public void GuestsBoardTheImportedBellyBounce()
+	public void GuestsBoardTheImportedBellyBounce() => AssertGuestsBoard( LoadJungle() );
+
+	/// <summary>Sends guests to the Belly Bounce from its join cell, as the native jungle smoke does, and runs the ride's real script until one boards.</summary>
+	private static void AssertGuestsBoard( Jungle jungle )
 	{
-		var jungle = LoadJungle();
 		var world = new RideScriptWorld( 11 );
 		var simulation = new GuestSimulation( jungle.Grid, GuestSettings.Load( "jungle" ), 7 ) { ArrivalsEnabled = false };
 		var runtime = Register( jungle, simulation, world );
 		var bridge = runtime.Visitors;
+		Assert.AreEqual( 4, bridge.QueueSizeInCells, "the saved four-cell queue" );
 		var join = bridge.JoinCell ?? throw new AssertFailedException( "the imported queue has no join cell" );
-		// as the native jungle smoke does: visitors sent to the ride from its real path entrance, which the queue's back cell is attached to
 		for ( var index = 0; index < 8; index++ )
 		{
 			var guest = simulation.SpawnInPark( join.X, join.Y );
@@ -128,5 +130,73 @@ public class ImportedQueueCellsTests
 		}
 		Assert.AreNotEqual( RideVMState.Faulted, runtime.Script!.State, runtime.Script.FaultMessage );
 		Assert.IsTrue( bridge.BoardedTotal > 0, $"guests board the imported Belly Bounce through its queue (queue {bridge.QueueLength}, cells {bridge.QueueSizeInCells})" );
+	}
+
+	private static (int X, int Y)[] SavedQueueCells( SaveCellGrid saved ) =>
+		Enumerable.Range( 0, saved.CountX * saved.CountY ).Select( index => (X: index % saved.CountX, Y: index / saved.CountX) )
+			.Where( cell => saved[cell.X, cell.Y].MapType == (uint)ParkCellType.Queue ).ToArray();
+
+	/// <summary>
+	/// [EXT:legacy-save-queue-cells] A park saved by OpenTPW before the import took the queue cells holds empty ground there (the cell map is saved and resumed as it was); the load lays
+	/// them again from the shipped save, and the resumed Belly Bounce is joinable and boards guests.
+	/// </summary>
+	[TestMethod]
+	public void AParkSavedBeforeTheQueueImportResumesWithAJoinableBellyBounce()
+	{
+		var jungle = LoadJungle();
+		var cells = jungle.Grid.Cells;
+		var save = jungle.Park.Save!;
+		var queue = SavedQueueCells( save.Cells );
+		// the cells such a save holds: the map start's empty ground, no NoModify flag, no owner or links
+		foreach ( var (x, y) in queue )
+		{
+			cells.SetType( x, y, ParkCellType.Empty );
+			cells.SetFlags( x, y, cells.FlagsAt( x, y ) & ~ParkCellFlags.NoModify );
+		}
+		var record = jungle.Record;
+		var points = ObjectFootprint.GetAccessPoints( jungle.Entry.Shape, record.X, record.Y, record.Rotation ).ToArray();
+		var owner = ParkCellMap.CellWord( record.X, record.Y );
+		Assert.AreEqual( (52, 22), ObjectAccessCells.EmptyQueueFront( cells, points, owner ), "the entrance links into empty ground" );
+		var reads = 0;
+		var laid = Level.RestoreLegacySavedQueue( cells, points, BellyBounceInfoId, hasQueue: true, owner,
+			() => { reads++; return OriginalPark.ReadShippedSave( "jungle", jungle.Park.Map ); } );
+		Assert.AreEqual( 4, laid );
+		Assert.AreEqual( 1, reads );
+		foreach ( var (x, y) in queue )
+		{
+			var saved = save.Cells[x, y];
+			Assert.AreEqual( (byte)ParkCellType.Queue, cells.RawTypeAt( x, y ) );
+			Assert.AreEqual( (byte)saved.PathConnections, cells.LinksAt( x, y ) );
+			Assert.AreEqual( saved.Direction, cells.QueueLinkAt( x, y ) );
+			Assert.AreEqual( owner, cells.OwnerAt( x, y ) );
+			Assert.AreEqual( saved.OverlapCounter, cells.PlacementCountAt( x, y ) );
+			Assert.AreEqual( (ParkCellFlags)saved.MapFlags & ParkCellFlags.NoModify, cells.FlagsAt( x, y ) & ParkCellFlags.NoModify );
+		}
+		Assert.IsNull( ObjectAccessCells.EmptyQueueFront( cells, points, owner ), "a second load finds nothing to restore" );
+		AssertGuestsBoard( jungle );
+	}
+
+	/// <summary>[EXT:legacy-save-queue-cells] A park saved after the import holds the queue cells: the load reads no shipped save and writes no cell.</summary>
+	[TestMethod]
+	public void AParkSavedWithTheQueueCellsIsLeftAlone()
+	{
+		var jungle = LoadJungle();
+		var cells = jungle.Grid.Cells;
+		var record = jungle.Record;
+		var points = ObjectFootprint.GetAccessPoints( jungle.Entry.Shape, record.X, record.Y, record.Rotation ).ToArray();
+		var owner = ParkCellMap.CellWord( record.X, record.Y );
+		var version = cells.Version;
+		var reads = 0;
+		Assert.AreEqual( 0, Level.RestoreLegacySavedQueue( cells, points, BellyBounceInfoId, hasQueue: true, owner, () => { reads++; return null; } ) );
+		Assert.AreEqual( 0, reads, "nothing is read for a park that holds its queue" );
+		Assert.AreEqual( version, cells.Version, "no cell is written" );
+		// a newer save whose queue the player removed: the removal unlinks the cells on both sides (0x5367A0), so the entrance links into nothing and stays without a queue
+		foreach ( var (x, y) in SavedQueueCells( jungle.Park.Save!.Cells ) )
+			jungle.Grid.ClearQueue( x, y );
+		Assert.IsNull( ObjectAccessCells.EmptyQueueFront( cells, points, owner ) );
+		version = cells.Version;
+		Assert.AreEqual( 0, Level.RestoreLegacySavedQueue( cells, points, BellyBounceInfoId, hasQueue: true, owner, () => { reads++; return jungle.Park.Save; } ) );
+		Assert.AreEqual( 0, reads );
+		Assert.AreEqual( version, cells.Version );
 	}
 }

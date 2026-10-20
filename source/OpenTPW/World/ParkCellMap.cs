@@ -212,11 +212,7 @@ public sealed partial class ParkCellMap
 				else if ( inside && save != null && !GameEditions.IsThemeParkInc && save.Cells[x, y].MapType == (byte)ParkCellType.Queue )
 				{
 					var saved = save.Cells[x, y];
-					cells.SetType( x, y, ParkCellType.Queue );
-					cells.SetLinks( x, y, (byte)saved.PathConnections );
-					cells.SetQueueLink( x, y, saved.Direction );
-					cells.SetOwner( x, y, saved.MapParentId );
-					cells.SetPlacementCount( x, y, saved.OverlapCounter );
+					cells.TakeSavedQueueCell( x, y, saved );
 					savedFlags = (ParkCellFlags)saved.MapFlags & ParkCellFlags.NoModify;
 				}
 				else if ( initial )
@@ -407,6 +403,19 @@ public sealed partial class ParkCellMap
 					break;
 			}
 		}
+	}
+
+	/// <summary>
+	/// Makes (x, y) the queue cell a saved type-3 record describes: its type, link byte <c>+0x0C</c>, queue link <c>+0x0D</c>, owner word <c>+0x10</c> and placement counter <c>+0x20</c>
+	/// (the fields tp.exe's cell load 0x4D0B30 reads). The caller sets the record's NoModify flag with the cell's other flags.
+	/// </summary>
+	public void TakeSavedQueueCell( int x, int y, SaveCell saved )
+	{
+		SetType( x, y, ParkCellType.Queue );
+		SetLinks( x, y, (byte)saved.PathConnections );
+		SetQueueLink( x, y, saved.Direction );
+		SetOwner( x, y, saved.MapParentId );
+		SetPlacementCount( x, y, saved.OverlapCounter );
 	}
 
 	/// <summary>

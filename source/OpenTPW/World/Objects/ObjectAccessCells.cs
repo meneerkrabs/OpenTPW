@@ -149,6 +149,64 @@ public static class ObjectAccessCells
 		return repaired;
 	}
 
+	/// <summary>
+	/// The empty cell a HasQueue object's entrance links into, which needs <see cref="RestoreLegacySavedQueue"/>: the neighbour the typed front selector would take (bits 1, 16, 64, 4 of the
+	/// entrance cell's link byte, 0x4DE040), when the entrance is a type-9 cell of <paramref name="owner"/> and that neighbour is empty ground. Null when nothing needs restoring.
+	/// </summary>
+	public static (int X, int Y)? EmptyQueueFront( ParkCellMap cells, IEnumerable<ObjectAccessPoint> points, ushort owner )
+	{
+		ArgumentNullException.ThrowIfNull( cells );
+		if ( owner == 0 || Find( points ).Entrance is not { } enter || !cells.InBounds( enter.X, enter.Y )
+			|| cells.RawTypeAt( enter.X, enter.Y ) != ParkCellTypes.Entrance || cells.OwnerAt( enter.X, enter.Y ) != owner )
+			return null;
+		var links = cells.LinksAt( enter.X, enter.Y );
+		foreach ( var direction in new[] { 0, 2, 3, 1 } )
+		{
+			if ( (links & GuestPathGrid.LinkValue( direction )) == 0 )
+				continue;
+			var (dx, dy) = GuestPathGrid.Directions[direction];
+			var (x, y) = (enter.X + dx, enter.Y + dy);
+			return cells.InBounds( x, y ) && cells.RawTypeAt( x, y ) == 0 ? (x, y) : null;
+		}
+		return null;
+	}
+
+	/// <summary>
+	/// Lays the saved queue of <paramref name="owner"/> that a park resumed from an OpenTPW save made before the import took the save's queue cells lacks: from <paramref name="front"/>
+	/// (<see cref="EmptyQueueFront"/>) the chain of the original save's type-3 cells of the owner, each step to the neighbour whose saved queue link points back, each cell taken only
+	/// while the resumed map holds empty ground there. Returns the number of cells laid.
+	/// </summary>
+	// [EXT:legacy-save-queue-cells] an OpenTPW park save made before the import restored the shipped save's queue cells (#722) holds empty ground where the imported Belly Bounce's queue lies, so its typed front (0x4DE040) is an empty cell no guest can join; tp.exe's saves always hold the cells (0x4D0B30 reads each cell record whole), so the original needs no repair, and OpenTPW lays them at load from the level's shipped save, as the import now does, where the resumed cell is still empty ground and the entrance links into it. User-approved 2026-10-20 ("Herstel bij laden (EXT)").
+	public static int RestoreLegacySavedQueue( ParkCellMap cells, (int X, int Y) front, ushort owner, SaveCellGrid saved, LinkEffects? effects = null )
+	{
+		ArgumentNullException.ThrowIfNull( cells );
+		ArgumentNullException.ThrowIfNull( saved );
+		bool Takes( int x, int y ) => cells.InBounds( x, y ) && x < saved.CountX && y < saved.CountY && cells.RawTypeAt( x, y ) == 0
+			&& saved[x, y].MapType == (uint)ParkCellType.Queue && saved[x, y].MapParentId == owner;
+		var laid = 0;
+		var cell = front;
+		while ( laid < 1000 && Takes( cell.X, cell.Y ) )
+		{
+			var record = saved[cell.X, cell.Y];
+			cells.TakeSavedQueueCell( cell.X, cell.Y, record );
+			cells.SetFlags( cell.X, cell.Y, cells.FlagsAt( cell.X, cell.Y ) | ((ParkCellFlags)record.MapFlags & ParkCellFlags.NoModify) );
+			effects?.Refresh?.Invoke( cell.X, cell.Y );
+			laid++;
+			(int X, int Y)? next = null;
+			for ( var direction = 0; direction < 4 && next == null; direction++ )
+			{
+				var (dx, dy) = GuestPathGrid.Directions[direction];
+				var (nx, ny) = (cell.X + dx, cell.Y + dy);
+				if ( Takes( nx, ny ) && saved[nx, ny].Direction == GuestPathGrid.LinkValue( (direction + 2) & 3 ) )
+					next = (nx, ny);
+			}
+			if ( next is not { } step )
+				break;
+			cell = step;
+		}
+		return laid;
+	}
+
 	private static bool IsLinkless( ParkCellMap cells, int x, int y, byte type ) => cells.InBounds( x, y ) && cells.RawTypeAt( x, y ) == type && cells.LinksAt( x, y ) == 0;
 
 	/// <summary>The path writer from the outside path cell, which reaches the entrance or exit cell along its queue link; true when the cell took a bit.</summary>

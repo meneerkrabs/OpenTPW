@@ -8,3 +8,7 @@ smoke failed. The ride now has its saved four-cell queue (front `(52, 22)`, back
 `mQueueSizeInCells` and `mBackOfQueue`), and guests join from the path attached to its back. The Jungle
 smoke sends its visitors to such a ride from that join cell. New with-data tests
 (`ImportedQueueCellsTests`) cover the restored cells and boarding without the native smoke.
+
+A park saved by OpenTPW before this import gets those queue cells back at load from the level's shipped save
+(`[EXT:legacy-save-queue-cells]`, user-approved 2026-10-20), only where its cells are still empty ground and the
+ride's entrance links into them; newer saves are untouched.

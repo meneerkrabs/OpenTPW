@@ -209,8 +209,10 @@ public sealed class SaveWorld
 	/// <summary>The staff hiring pool before the calendar; null when the bytes there are too few or do not read as one.</summary>
 	public SaveStaffPool? StaffPool { get; }
 	public int ArrivalOffset { get; }
-	/// <summary>The <see cref="ArrivalBytes"/> raw arrival bytes at <see cref="ArrivalOffset"/> (field meanings not traced).</summary>
+	/// <summary>The <see cref="ArrivalBytes"/> raw arrival bytes at <see cref="ArrivalOffset"/>.</summary>
 	public byte[] Arrivals { get; }
+	/// <summary>The decoded arrival scheduler; its vehicle handles are in <see cref="Variables"/>.</summary>
+	public SaveArrivals ArrivalState => SaveArrivals.Parse( Arrivals );
 	public SaveCellGrid Cells { get; }
 	public uint UsedThingHead { get; }
 	/// <summary>Used things in list order.</summary>
@@ -311,7 +313,7 @@ public static class SaveThingChain
 		[SaveThingModel.MechanicHq] = 8 + 2,
 		[SaveThingModel.AdvisorController] = SaveAdvisorController.Bytes,
 		[SaveThingModel.TagSystem] = 8,
-		// Closure-derived only: the analyser's grid/region/history widths are not individually witnessed.
+		// [BIN:TPW-EXE:0x4C5D70 analyser serializer] grid, short rings, trackers, monthly/stay/byte rings and totals; SaveParkStatistics derives the same fixed body width.
 		[SaveThingModel.ParkAnalyser] = 73_536,
 		[SaveThingModel.ResearchLab] = SaveResearchLab.Bytes,
 		[SaveThingModel.Weather] = 8 + 4 + 8 + 8 + 13 + 4 + 4 + 1 + 4 + 4 + 4 + 12 + 4 + 4 + 4 + 4 + 1,

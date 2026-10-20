@@ -49,6 +49,7 @@ TABLES = [
     ('LobbyCity', 0x757D88, 0x49D4, (28, 541, 476, 1521), 0x757F5A, 9),
     ('TrainingBudget', 0x756400, 0x2D9, (208, 30, 1840, 1007), 0x756944, 40),
     ('EmployeeWindow', 0x756F48, 0x50A, (328, 130, 1720, 901), 0x7572E4, 25),
+    ('EmployeeRenameDialog', 0x7572E8, 0x5DA9, (500, 233, 1516, 830), 0x7573C2, 5),
     ('VisitorInfoWindow', 0x7575E0, 0x371F, (328, 130, 1720, 901), 0x7579C8, 27),
     ('PlayerScreen', 0x753C68, 0x7A13, (0, 0, 2048, 1536), 0x753F4E, 19),
     ('HudArm', 0x7529DC, 0x21, (331, 1069, 1006, 1495), 0x752C60, 12),
@@ -63,6 +64,9 @@ TABLES = [
     ('LoadDialog', 0x7523F0, 0x23BCDF, (248, 30, 1800, 1007), 0x752564, 10),
     ('PostcardWindow', 0x7540D8, 0x5D9D, (186, 30, 2018, 1007), 0x7542B4, 11),
     ('ParkInfoWindow', 0x7537D0, 0x4A68BA, (208, 30, 1840, 1007), 0x753C48, 28),
+    ('ChatOverlay', 0x758AE8, 0xC3122, (0, 0, 2048, 1536), 0x758CD6, 17),
+    ('ChatBuddyPopup', 0x758CD8, 0x1788, (0, 0, 2048, 1536), 0x758E14, 8),
+    ('ChatPlayerPopup', 0x758E18, 0x3002, (0, 0, 2048, 1536), 0x758F04, 6),
 ]
 # The second confirm-dialog table must be the same stream, byte for byte in its decoded tree.
 CONFIRM_TWIN = 0x7585A8
@@ -82,6 +86,7 @@ REQUIRED = {
     'Lobby': ['islandlob', 'b_entpark', 'b_worldview', 'b_lobleft', 'b_lobright'],
     'TrainingBudget': ['window3', 'b_okay', 'b_entry', 'b_finance', 'b_loans', 'f_train', 'b_minus', 'b_plus', 'h_handy', 'h_mech', 'h_enter', 'h_guard', 'h_resrcher'],
     'EmployeeWindow': ['window1', 'b_fire', 'b_pick', 'b_okay', 'b_arup', 'b_ardown', 'b_route', 'b_allstaff', 'b_locate'],
+    'EmployeeRenameDialog': ['wdialogw', '!frame', 'b_okay', 'b_exit'],
     'VisitorInfoWindow': ['window1', 'b_okay', 'b_arup', 'b_ardown', 'b_kids', 'b_locate', 'Ethoughts3', 'ti_hungry'],
     'PlayerScreen': ['b_login', 'b_dellog', 'e_joy', 'tpwlogo'],
     'HudArm': ['b_retract', 'b_buy', 'b_info', 'b_money', 'b_resrch', 'b_map', 'b_camera'],
@@ -98,6 +103,9 @@ REQUIRED = {
     'LoadDialog': ['window2', 'f_load', '!frame', 'b_up', 'b_down', 'b_scroller', 'b_exit', 'b_okay'],
     'PostcardWindow': ['window4', '!frame', 'b_address', 'b_clear', 'b_preview', 'b_okay', 'b_exit'],
     'ParkInfoWindow': ['window3', 'b_okay', 'graphpark', 'toughts', 'ti_hungry', 'b_kids', 'b_allstaff', 'b_allthings'],
+    'ChatOverlay': ['chat', 'b_up', 'b_down', 'b_scroller', 'b_speeps', 'b_sbuddi', 'b_muff', 'b_vote', 'b_chtpcard'],
+    'ChatBuddyPopup': ['!f_plain', 'b_bmark', 'b_gopeep', 'b_ignore', 'b_unbuddi', 'b_peeploc', 'b_page'],
+    'ChatPlayerPopup': ['!f_plain', 'b_bmark', 'b_gopeep', 'b_ignore', 'b_unbuddi'],
 }
 
 LOADER = 0x4899C0

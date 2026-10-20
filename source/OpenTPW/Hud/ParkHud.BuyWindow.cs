@@ -195,6 +195,10 @@ public sealed partial class ParkHud
 
 	public int NumberOwned( BuildItem item ) => level.Objects.Objects.Count( owned => !owned.IsDeleted && owned.Entry.InfoId == item.InfoId );
 
+	/// <summary>TPW buy-list model frame: owned tick wins over the recent-research star; auxiliary tool rows have neither.</summary>
+	public int BuyItemState( BuildItem item ) => IsLandRow( item ) ? 0 : NumberOwned( item ) > 0 ? 1
+		: Status.EconomySource is ParkEconomy economy && economy.Research.IsRecentlyResearched( (int)item.Category, item.InfoId ) ? 2 : 0;
+
 	/// <summary>The buy window's working-life gauge: the value 100 of 1024 it gets when the window is built (tp.exe 0x4abae0) and keeps.</summary>
 	public const float RideWorkingLifeGauge = 100 / 1024f;
 
@@ -285,16 +289,23 @@ public sealed partial class ParkHud
 		// [DATA:Mac buy table 0x4cd94:16,17] column header buttons (name, price) without a model; the third (18) has no text and no action
 		screen.Add( new BuyHeader( this, BuySortColumn.Name, () => strings[UIStrings.NameAttr] ) { Id = "headerName", Bounds = Rect( 1032, 317, 1454, 422 ), Anchor = UiAnchor.Center } );
 		screen.Add( new BuyHeader( this, BuySortColumn.Price, () => strings[UIStrings.Price] ) { Id = "headerPrice", Bounds = Rect( 1458, 317, 1664, 422 ), Anchor = UiAnchor.Center } );
-		// [DATA:Mac buy table 0x4cd94:1,2] b_up / b_down at their rectangles
-		screen.Add( new UiButton { Id = "scrollUp", Model = BuyUpModel, Clicked = () => ScrollBuyList( -1 ), Bounds = Rect( 1742, 318, 1803, 378 ), Anchor = UiAnchor.Center } );
-		screen.Add( new UiButton { Id = "scrollDown", Model = BuyDownModel, Clicked = () => ScrollBuyList( 1 ), Bounds = Rect( 1742, 809, 1803, 869 ), Anchor = UiAnchor.Center } );
+		// [DATA:Mac buy table 0x4cd94:1,2] b_up / b_down at their rectangles. The buy table 0x754cf8 is not generated; its list is type 7 style 0x91 and its slider is type 3 style 0x10, so the arrows and the headers play cat_ui 0xBD (parent style bit 0x10, hook 0x485780 at 0x4857cb). A held arrow repeats (500 ms, then 125 ms) and the release after that plays nothing.
+		void ScrollArrow( string id, string model, UiRect bounds, int step )
+		{
+			void Scroll() => ScrollBuyList( step );
+			screen.Add( new UiButton { Id = id, Model = model, ClickSound = GameAudio.SelectClickEvent, Clicked = Scroll,
+				Repeat = UiButton.ScrollArrowRepeat( Scroll ), Bounds = bounds, Anchor = UiAnchor.Center } );
+		}
+		ScrollArrow( "scrollUp", BuyUpModel, Rect( 1742, 318, 1803, 378 ), -1 );
+		ScrollArrow( "scrollDown", BuyDownModel, Rect( 1742, 809, 1803, 869 ), 1 );
 		foreach ( var entry in BuyCategories )
 		{
 			var category = entry;
+			// The four category buttons are the radio group (type 8, style 0x11) of table 0x754cf8, so a press plays 0xBD even when the tab is already selected.
 			screen.Add( new UiButton
 			{
-				Id = $"category{category.Category}", Model = category.Model, Help = strings.Help( category.Help ), Clicked = () => SelectCategory( category.Category ),
-				Selected = () => buy.Category == category.Category, Bounds = category.Rect, Anchor = UiAnchor.Center
+				Id = $"category{category.Category}", Model = category.Model, Help = strings.Help( category.Help ), ClickSound = GameAudio.SelectClickEvent,
+				Clicked = () => SelectCategory( category.Category ), Selected = () => buy.Category == category.Category, Bounds = category.Rect, Anchor = UiAnchor.Center
 			} );
 		}
 		// [DATA:Mac buy table 0x4cd94:-2,511] b_exit (help 2) closes; b_allstaff (help 153) opens the staff window.
@@ -347,7 +358,7 @@ public sealed partial class ParkHud
 			// [BIN:TPW-EXE:0x468e50 buy preview turn] each update adds the clock's elapsed milliseconds (0x785970, 0x4031e0) x 0.0004 to the preview's angle (+0x48), and a
 			// new preview keeps the angle modulo 2 pi (0x468e2f), so the turn runs on across selections, as a clock-derived angle does
 			// [BIN:TPW-EXE:0x4ab1b0 buy preview] a selection makes the preview object (0x486410) in the inner rectangle (+0x2c, 0x65d4f6) of the preview frame 0x1ea, (437,202)-(797,565)
-			owner.GetIcon( item )?.DrawBuyPreview( context.Batch, ScreenRect( context.Canvas ), context.Time * PreviewIcon.BuyTurnRate );
+			owner.GetIcon( item )?.DrawBuyPreview( context.Batch, ScreenRect( context.Canvas ), owner.DebugBuyYaw ?? context.Time * PreviewIcon.BuyTurnRate );
 		}
 	}
 
@@ -390,7 +401,12 @@ public sealed partial class ParkHud
 		}
 
 		public override bool Focusable => Visible && Enabled;
-		public override void Activate() => owner.SortBuyList( column );
+		// The header is a child of the sortable list (type 7, style 0x91). That parent receives 0x100, so the hook plays 0xBD (0x4857cb).
+		public override void Activate()
+		{
+			GameAudio.PlayUi( GameAudio.SelectClickEvent );
+			owner.SortBuyList( column );
+		}
 
 		public override void Draw( UiContext context, bool focused, bool pressed )
 		{
@@ -514,11 +530,11 @@ public sealed partial class ParkHud
 				}
 				context.DrawFittedText( context.Fonts.Label, owner.ListName( item ), Cell( 0 ), color, UiAlign.Left );
 				context.DrawFittedText( context.Fonts.Label, owner.PriceText( item ), Cell( 1 ), color, UiAlign.Right );
-				// [BIN:TPW-EXE:0x4ad340 row cell, 0x4aaf70 row state] the third column (1673,1724) is the model i_boxtick (frames: 0 the empty box, 1 the box with the tick, 2 the box with a star), drawn at the model's own 51 unit size; the row state is 1 when the park owns at least one of the item (0x4ca8c0), 0 otherwise
-				// [APPROX:UI-050] state 2 (the star: the item is one of the three most recent of its category, a per-category ring read by 0x4caa70 whose writer is not found) is not drawn; OpenTPW keeps no such ring
+				// The numeric third cell selects frame n directly: 0 empty, 1 owned tick, 2 recent-research star.
+				// Ownership masks history without clearing it. Keep the model's own 51-unit size.
 				var boxCell = Cell( 2 );
 				var box = TickBoxSize * canvas.Scale;
-				context.DrawModel( "i_boxtick", owner.NumberOwned( item ) > 0 ? 1 : 0, new UiRect( boxCell.X + (boxCell.Width - box) / 2, boxCell.Y + (boxCell.Height - box) / 2, box, box ) );
+				context.DrawModel( "i_boxtick", owner.BuyItemState( item ), new UiRect( boxCell.X + (boxCell.Width - box) / 2, boxCell.Y + (boxCell.Height - box) / 2, box, box ) );
 			}
 		}
 	}

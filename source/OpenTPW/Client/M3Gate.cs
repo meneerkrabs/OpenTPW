@@ -49,6 +49,11 @@ public sealed record M3GateOptions
 	public Action<GuestSimulation>? BeforeTeardown { get; init; }
 	/// <summary>Called with the run's guests right after they are built, before anything runs (the guest report's litter-bin proxies, docs/SMARTER-GUESTS.md, phase 6b); null for the gate's own runs.</summary>
 	public Action<GuestSimulation>? GuestSetup { get; init; }
+	/// <summary>
+	/// Further objects placed after the gate's own, each the first researched, buyable object its predicate matches, beside the path as the shop is (a measurement's own shops, such as the winter extension's,
+	/// docs/WINTER.md, "Price"). Empty, the default, places nothing more, so the gate's park is unchanged.
+	/// </summary>
+	public IReadOnlyList<(string Role, Func<ObjectCatalogEntry, bool> Match)> ExtraObjects { get; init; } = Array.Empty<(string, Func<ObjectCatalogEntry, bool>)>();
 }
 
 public sealed record M3GateReport( M3GateOptions Options, JsonObject TimeMapping, IReadOnlyList<M3GateRow> Rows, double WallSeconds )
@@ -299,6 +304,8 @@ internal sealed class M3GateRun
 	public ulong GateHash { get; private set; }
 	public List<ulong> MinuteHashes { get; } = new();
 	public IReadOnlyList<int> AttractionIds => placed.Select( item => item.Runtime.Visitors.AttractionId ).ToList();
+	/// <summary>The attraction id of the object placed in <paramref name="role"/>, or null when none was placed.</summary>
+	internal int? AttractionIdOf( string role ) => placed.FirstOrDefault( item => item.Role == role )?.Runtime.Visitors.AttractionId;
 
 	private sealed record Placed( string Role, ObjectCatalogEntry Entry, int AnchorX, int AnchorY, int Rotation, OriginalObjectRuntime Runtime, int EconomyInstance );
 
@@ -346,6 +353,8 @@ internal sealed class M3GateRun
 		BuildQueue();
 		PlaceObject( "shop", entry => entry.Category == ObjectCategory.Shop && OriginalObjectRuntime.CreateVisitorBridge( entry, 1 ).Satisfies != GuestNeeds.None );
 		PlaceObject( "toilet", entry => OriginalObjectRuntime.CreateVisitorBridge( entry, 1 ).Satisfies.HasFlag( GuestNeeds.Toilet ) );
+		foreach ( var (role, match) in options.ExtraObjects )
+			PlaceObject( role, match );
 		// the gate registers its objects without a placement, so it lays the cell a called guest's search walks into (state 13) as a build lays an entrance
 		foreach ( var item in placed )
 		{

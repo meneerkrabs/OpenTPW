@@ -106,6 +106,7 @@ internal sealed partial class AutomaticAdvisor : IDisposable
 		guests = started.Guests;
 		if ( guests != null )
 			guests.Pranked += OnPrank;
+		ChallengesAttached( guests );
 		staffWorld = started.StaffWorld;
 		if ( staffWorld != null )
 			staffWorld.MechanicOnTheWay += OnMechanicOnTheWay;
@@ -116,6 +117,11 @@ internal sealed partial class AutomaticAdvisor : IDisposable
 			import.Report( report );
 			Log.Trace( report );
 		}
+		// [BIN:TPW-EXE:0x4C5D70 analyser serializer] a park from an original save takes its saved arrival groups, including an authoritative empty ring, instead of the stand-in for an unrecorded one
+		// [EXT:tpi-arrival-readiness] manual attachment to the real TPI money runtime may use its source ring without fabricating an economy import. GameFlow still creates no advisor for TPI.
+		if ( started.OriginalPark?.Save is { ArrivalGroups: { } savedGroups } source
+			&& (started.Park?.Import is not null || started.Park?.Economy.Rules == EconomyRules.ThemeParkIncMoney && source.ThemeParkIncWorld is not null) )
+			arrivalRing.Restore( savedGroups );
 		// [BIN:TPW-EXE:0x00415270 clock load] behind the MESS marker check (0x41555A) the load reads the clock block (0x402E30): the scaled clock at +0x4C and the saved advisor clock, whose load sets the clock's offset so it reads the saved value from then on (0x402E80 -> 0x403160)
 		if ( started.Park?.Import is not null && started.OriginalPark?.Save?.SavedAdvisorClockMilliseconds is { } savedClock )
 			clock.RestoreMilliseconds( savedClock );
@@ -135,6 +141,7 @@ internal sealed partial class AutomaticAdvisor : IDisposable
 		}
 		if ( guests != null )
 			guests.Pranked -= OnPrank;
+		ChallengesDetached( guests );
 		guests = null;
 		if ( staffWorld != null )
 			staffWorld.MechanicOnTheWay -= OnMechanicOnTheWay;
@@ -199,6 +206,7 @@ internal sealed partial class AutomaticAdvisor : IDisposable
 		// [BIN:TPW-EXE:0x00503E8E all research done] 0x167 (167) is posted in Instant Action (the game-type word 0xFB3B7C is 2) without further test; in the full simulation only when the player's ledger has the flag +0xB9 of every park (0x5B0C40), which OpenTPW's ledger lacks
 		if ( item.Kind == ParkEventKind.ResearchAllDone && GameType == 2 )
 			PostEventAdvice( 167, "all research done" );
+		ChallengesOnParkEvent( item );
 		RestoredOnParkEvent( item );
 	}
 
@@ -229,11 +237,11 @@ internal sealed partial class AutomaticAdvisor : IDisposable
 	};
 
 	/// <summary>Advice posted by game code (the original builds the record through 0x59B590 with the descriptor's score and queues it through 0x59A940).</summary>
-	internal void PostEventAdvice( int message, string source )
+	internal void PostEventAdvice( int message, string source, int variant = -1 )
 	{
 		if ( level == null && detachedEconomy == null )
 			return;
-		var admission = Controller.Advise( message, GameTick, GameType, TutorialEnabled );
+		var admission = Controller.Advise( message, GameTick, GameType, TutorialEnabled, variant );
 		Log.Trace( $"Advisor advice for {source}: message {message} {(admission is { } result ? $"{result.Eligibility}{(result.Stored ? $" in slot {result.Slot}" : result.Acknowledged ? ", queue full" : "")}" : "not posted (game mode)")}." );
 	}
 
@@ -295,6 +303,10 @@ internal sealed partial class AutomaticAdvisor : IDisposable
 	{
 		if ( level == null )
 			return;
+		// [BIN:TPW-EXE:0x005F0B91 map / 0x004A3A92 options] these builders call the silent stop path 0x5996D0, before their window help is served.
+		// Kill also hides a response in its delayed start or animation tail, when no speech sound is active.
+		if ( window is Hud.ParkHud.MapScreenName or "options" )
+			StopSpeechSilently();
 		// the object window builders (0x4AF980, 0x4B0E30, 0x4B2430) only build the window and post its help; whether the window creator 0x48CEA0 changes the interface mode is not read, so the tools' help stays
 		if ( !window.StartsWith( ObjectInfoHelp.Prefix, StringComparison.Ordinal ) )
 			OnModeChanged();
@@ -389,7 +401,9 @@ internal sealed partial class AutomaticAdvisor : IDisposable
 	}
 
 	/// <summary>One controller update; call once per frame while a level runs.</summary>
-	public void Update( bool gamePaused = false )
+	/// <param name="gamePaused">The existing advisor-clock pause gate; some ordinary HUD windows set it without stopping the park.</param>
+	/// <param name="parkPaused">The park turn is stopped; queue service must wait even if a modal has just killed its speech.</param>
+	public void Update( bool gamePaused = false, bool parkPaused = false )
 	{
 		clock.SetPaused( gamePaused );
 		if ( level == null )
@@ -403,6 +417,8 @@ internal sealed partial class AutomaticAdvisor : IDisposable
 		if ( !GameOptions.Current.Advisor )
 		{
 			presentation?.Kill();
+			if ( parkPaused )
+				return;
 			Controller.Update( () => AdvisorClock, () => GameTick, responseId =>
 			{
 				PostCaption( responseId );
@@ -411,6 +427,9 @@ internal sealed partial class AutomaticAdvisor : IDisposable
 			return;
 		}
 		presentation?.Update();
+		// [BIN:TPW-EXE:0x0059A550 advisor queue] service belongs to the park turn; a paused modal must not start another response after its stop.
+		if ( parkPaused )
+			return;
 		Controller.Update( () => AdvisorClock, () => GameTick, Play );
 	}
 
@@ -419,7 +438,7 @@ internal sealed partial class AutomaticAdvisor : IDisposable
 	{
 		// [EXT:restored-advice] the extension's park view (null while it is off) and its per-frame observations
 		RestoredObserve();
-		return ScanTurns( new EconomyMoneyState( economy ), unchecked( (uint)economy.Turn ), economy.Mode == ParkGameMode.InstantAction ? 2 : 0, TutorialEnabled, gamePaused || economy.IsBankrupt, new EconomyParkState( economy, objectStampTurn, hireStampTurn ), RestoredState( economy ) );
+		return ScanTurns( new EconomyMoneyState( economy ), unchecked( (uint)economy.Turn ), economy.Mode == ParkGameMode.InstantAction ? 2 : 0, TutorialEnabled, gamePaused || economy.IsBankrupt, new EconomyParkState( economy, objectStampTurn, hireStampTurn ) { ArrivalWaves = arrivalRing.Waves, PlayerTickets = PlayerTickets }, RestoredState( economy ) );
 	}
 
 	/// <summary>
@@ -510,6 +529,12 @@ internal sealed partial class AutomaticAdvisor : IDisposable
 	{
 		if ( !IsSpeechActive )
 			return;
+		StopSpeechSilently();
+	}
+
+	/// <summary>The silent stop path; unlike a help withdrawal, it never plays a slap or draws its sound variant.</summary>
+	private void StopSpeechSilently()
+	{
 		if ( endSpeech != null ) endSpeech(); else presentation?.Kill();
 	}
 
@@ -529,7 +554,7 @@ internal sealed partial class AutomaticAdvisor : IDisposable
 	/// cannot resume — is rejected by validation instead of silently restoring a silent advisor. The
 	/// process-local presentation-failure flag and the pause state are re-established, not saved.
 	/// </summary>
-	internal sealed record AutomaticAdvisorSnapshot( AdvisorController.AdvisorControllerSnapshot Controller, uint AdvisorClockMilliseconds, bool SpeechWasActive, long? ObjectStampTurn = null, long? HireStampTurn = null );
+	internal sealed record AutomaticAdvisorSnapshot( AdvisorController.AdvisorControllerSnapshot Controller, uint AdvisorClockMilliseconds, bool SpeechWasActive, long? ObjectStampTurn = null, long? HireStampTurn = null, IReadOnlyList<int>? ArrivalWaves = null );
 
 	/// <summary>
 	/// The advisor's state for a park save; fails explicitly while a playback attempt is outstanding or a
@@ -540,7 +565,7 @@ internal sealed partial class AutomaticAdvisor : IDisposable
 	{
 		if ( IsSpeechActive && !whileSpeaking )
 			throw new InvalidOperationException( "Cannot capture the automatic advisor while a response is being spoken: the presentation's speech has no snapshot seam, so it cannot continue after a load." );
-		return new AutomaticAdvisorSnapshot( Controller.CaptureSnapshot(), AdvisorClock, SpeechWasActive: false, objectStampTurn, hireStampTurn );
+		return new AutomaticAdvisorSnapshot( Controller.CaptureSnapshot(), AdvisorClock, SpeechWasActive: false, objectStampTurn, hireStampTurn, arrivalRing.Waves.ToArray() );
 	}
 
 	/// <summary>
@@ -553,6 +578,9 @@ internal sealed partial class AutomaticAdvisor : IDisposable
 		if ( snapshot.SpeechWasActive )
 			throw new InvalidDataException( "Automatic advisor snapshot is inconsistent: it claims active speech, which cannot be restored." );
 		Controller.ValidateSnapshot( snapshot.Controller );
+		// A group cut above the park limit is negative; the ring and the hype callback keep that signed value.
+		if ( snapshot.ArrivalWaves is { } waves && waves.Count > AdvisorArrivalRing.Capacity )
+			throw new InvalidDataException( "Automatic advisor snapshot is inconsistent: its arrival history contains more than five group sizes." );
 	}
 
 	/// <summary>
@@ -571,6 +599,10 @@ internal sealed partial class AutomaticAdvisor : IDisposable
 		// a snapshot from before the stamps were kept leaves the ones derived at attach
 		objectStampTurn = snapshot.ObjectStampTurn ?? objectStampTurn;
 		hireStampTurn = snapshot.HireStampTurn ?? hireStampTurn;
+		// Existing host snapshot policy treats absent and explicitly empty records with admissions as unrecorded. Native empty data at AttachLevel is authoritative, but this later restore stage still applies that legacy heuristic.
+		arrivalRing.Restore( snapshot.ArrivalWaves ?? Array.Empty<int>() );
+		if ( snapshot.ArrivalWaves is null or { Count: 0 } )
+			AssumeEstablishedArrivalRing();
 		// The rebase, not an offset on the source: the destination's own elapsed time (construction, pause
 		// screens) must not shift the saved reservations.
 		clock.RestoreMilliseconds( snapshot.AdvisorClockMilliseconds );

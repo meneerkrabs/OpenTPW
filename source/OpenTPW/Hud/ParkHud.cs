@@ -17,6 +17,8 @@ public sealed class HudHost
 	public Func<UiScreenStack, UiScreen>? CreateLoad { get; init; }
 	/// <summary>Opens the online screens (Go Online, UITEXT 1); null hides the entry.</summary>
 	public Action<UiScreenStack>? GoOnline { get; init; }
+	/// <summary>Existing authenticated session state, sampled when the park pause menu opens; null means offline.</summary>
+	public Func<bool>? IsLoggedIn { get; init; }
 	/// <summary>Restarts the park as it was started (the pause menu's Restart Park, after its confirmation); null disables the entry.</summary>
 	public Action? RestartPark { get; init; }
 	/// <summary>Opens the online Publish Park flow (the pause menu's Publish Park); null disables the entry.</summary>
@@ -635,7 +637,7 @@ public sealed partial class ParkHud
 			entries.RemoveAll( entry => entry.Label == UIStrings.GoOnline );
 		var items = entries.Select( entry => (Id: entry.Label.ToString(), Text: (Func<string>)(() => strings[entry.Label]), entry.Clicked,
 			Enabled: PauseMenuEntryEnabled( level.IsReadOnlyVisit, entry.Label, host.CreateLoad != null, host.CreateOptions != null, host.RestartPark != null, host.PublishPark != null )) ).ToList();
-		menu = UiDialogs.TextMenu( PauseMenuScreen, items, ResumeGameAfterApplicationPause, UIStrings.ResumeGame.ToString() );
+		menu = UiDialogs.TextMenu( PauseMenuScreen, items, ResumeGameAfterApplicationPause, UIStrings.ResumeGame.ToString(), compact: host.IsLoggedIn?.Invoke() == true );
 		Stack.Push( menu );
 	}
 

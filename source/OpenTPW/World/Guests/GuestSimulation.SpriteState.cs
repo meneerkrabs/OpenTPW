@@ -17,12 +17,14 @@ public sealed partial class GuestSimulation
 	/// <summary>The host invokes this after even-substep tour work, before its pooled guest sweep. Hidden and lost-park players still run.</summary>
 	internal void ScheduleBodySprites()
 	{
+		ScheduleBalloons();
 		foreach ( var guest in guests )
 			guest.BodySprite.Tick( BodySpriteClockMilliseconds );
 	}
 
 	internal void ClearBodySprites()
 	{
+		balloonPlayers.Clear();
 		foreach ( var guest in guests )
 			guest.BodySprite.ResetForNewPerson();
 	}

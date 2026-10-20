@@ -574,6 +574,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// <summary>A gone guest leaves the simulation: it asks for its destruction and its slot is freed at the park turn's end.</summary>
 	private void RemoveGone( Guest guest )
 	{
+		RemoveBalloonPlayer( guest ); // Detached burst slots are independent of the departed/reused guest id.
 		guest.BodySprite.ResetForNewPerson();
 		Observer?.Departed( guest );
 		// [EXT:smarter-guests-value] a departing guest's run of price-emptied decisions goes with it, so the bookkeeping is bounded by the guests in the park
@@ -998,7 +999,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			}
 			// [BIN:TPW-EXE:0x00501932 balloon life] then +0x214 loses 1 when it is above 0, and at 0 the balloon goes (0x004FE950)
 			if ( guest.BalloonLife > 0 && --guest.BalloonLife == 0 )
-				guest.HasBalloon = false;
+				BurstBalloon( guest );
 		}
 		// [BIN:TPW-EXE:0x0050BE40 bubble timer] the needs phase ends with the thought object's update: a bubble whose stamp + 12 the turn has passed goes
 		if ( guest.BubbleThought != GuestThought.None && (ulong)(guest.BubbleTurn + GuestThoughts.BubbleTurns) < turn )
@@ -1155,7 +1156,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		guest.State = GuestState.HeldByGuard;
 		guest.BodySprite.DeletePlayer();
 		// [BIN:TPW-EXE:0x005022DA state 17 entry] a held guest's balloon bursts (0x004FE950); its life stays; the thought bubble goes (0x0050C0D0)
-		guest.HasBalloon = false;
+		BurstBalloon( guest );
 		guest.BubbleThought = GuestThought.None;
 	}
 
@@ -2021,7 +2022,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			}
 			if ( victim == null )
 				return false;
-			victim.HasBalloon = false;
+			BurstBalloon( victim );
 		}
 		else
 			// A littering prank counts even when the cell already holds litter (the drop is lost; tp.exe sets the prank flag after 0x004D93B0 either way).
@@ -3257,7 +3258,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		// [EXT:umbrellas-extension] a brolly shop takes a held balloon back for the happiness step, and any attraction closes an open umbrella (before the model of the balloon is put away as for every ride)
 		EnterAttraction( guest, ride );
 		// [BIN:TPW-EXE:0x00502156 state 16 entry] the balloon's model is destroyed (0x00475550) and +0x210 cleared; its life +0x214 stays; the thought bubble goes (0x0050C0D0)
-		guest.HasBalloon = false;
+		DeleteBalloon( guest );
 		guest.BubbleThought = GuestThought.None;
 		guest.AttractionId = ride.AttractionId;
 		guest.HasWaypoint = false;
@@ -3333,7 +3334,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			random.Reseed( (ushort)guest.Id );
 			random.NextWord();
 			random.NextWord();
-			guest.HasBalloon = true;
+			CreateBalloon( guest );
 		}
 	}
 
@@ -3478,7 +3479,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 				random.Reseed( (ushort)guest.Id );
 				random.NextWord();   // the balloon model's sprite set (0x00541F70 with 10) and its colour (0x00541FD0): both draws are taken, their values are not used (GUEST-017)
 				random.NextWord();
-				guest.HasBalloon = true;
+				CreateBalloon( guest );
 				guest.BalloonLife = GuestAppearance.BalloonLife( qualityOfGoods );
 				break;
 			case GuestAppearance.Costume:
@@ -3587,6 +3588,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			TickCount = TickCount,
 			TimeSeconds = TimeSeconds,
 			BodySpriteClockMilliseconds = BodySpriteClockMilliseconds,
+			Balloons = CaptureBalloons(),
 			NextGuestId = guests.Count == 0 ? 1 : guests.Max( guest => guest.Id ) + 1,
 			Things = ownsThings ? things.CaptureSnapshot() : null,
 			Admissions = Admissions,
@@ -3890,6 +3892,8 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			if ( attractionSnapshot.JoinCell is { } join && !Grid.InBounds( join.X, join.Y ) )
 				Error( $"Attraction {attractionSnapshot.AttractionId} join cell ({join.X}, {join.Y}) is outside the map." );
 		}
+
+		ValidateBalloons( snapshot, Error );
 
 		// Guests: identity, bounds and per-guest structure first, state cross-references after.
 		var poolIds = snapshot.SchemaVersion >= GuestSimulationSnapshot.ThingPoolSchemaVersion;
@@ -4245,6 +4249,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		TickCount = snapshot.TickCount;
 		TimeSeconds = snapshot.TimeSeconds;
 		BodySpriteClockMilliseconds = snapshot.BodySpriteClockMilliseconds ?? BodySpriteSampleAtTick( snapshot.TickCount );
+		RestoreBalloons( snapshot.Balloons );
 		Admissions = snapshot.Admissions;
 		Departed = snapshot.Departed;
 		VisitorCount = snapshot.VisitorCount;
@@ -4431,7 +4436,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	}
 
 	/// <summary>Thing-table part of <see cref="WorldStateHash"/>: gameplay fields, in id order.
-	/// TimeInParkSeconds is saved display metadata and is excluded, like interpolated draw positions.</summary>
+	/// TimeInParkSeconds and balloon/body sprite presentation are excluded, like interpolated draw positions.</summary>
 	internal void AddCanonicalState( StateHasher hash )
 	{
 		hash.Add( TickCount );
@@ -4600,7 +4605,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		Grid.Cells.PoolBridges?.AddCanonicalState( hash );
 	}
 
-	/// <summary>FNV-1a over guest gameplay state, the RNG and counters; display-only TimeInParkSeconds is excluded.</summary>
+	/// <summary>FNV-1a over guest gameplay state, the RNG and counters; display-only TimeInParkSeconds and balloon/body sprite presentation are excluded.</summary>
 	public ulong ComputeStateHash()
 	{
 		var hash = 14695981039346656037UL;

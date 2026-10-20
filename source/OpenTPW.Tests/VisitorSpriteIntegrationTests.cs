@@ -339,7 +339,7 @@ public class VisitorSpriteIntegrationTests
 		var simulation = Simulation();
 		simulation.SpawnInPark( 4, 5 );
 		var snapshot = simulation.CaptureSnapshot();
-		var older = snapshot with { BodySpriteClockMilliseconds = null, Guests = snapshot.Guests.Select( guest => guest with { BodySprite = null } ).ToArray() };
+		var older = snapshot with { BodySpriteClockMilliseconds = null, Balloons = null, Guests = snapshot.Guests.Select( guest => guest with { BodySprite = null } ).ToArray() };
 		var restored = Simulation();
 		restored.RestoreSnapshot( older );
 		var guest = restored.Guests.Single();

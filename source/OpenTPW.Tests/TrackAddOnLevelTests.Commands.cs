@@ -51,6 +51,7 @@ public partial class TrackAddOnLevelTests
 		foreach ( var entry in level.Commands.Log )
 			Assert.IsTrue( twin.Commands.Apply( entry.Command ).Accepted, entry.Command.ToString() );
 		Assert.AreEqual( TrackHash( level, ride ), TrackHash( twin, twinRide ), "the commands alone build the same track and controller" );
+		Assert.AreEqual( level.ComputeStateHash(), twin.ComputeStateHash(), "and the same world" );
 		Assert.IsFalse( twin.CellTool.IsActive, "a peer's or a replayed command moves no tool" );
 	}
 
@@ -79,6 +80,7 @@ public partial class TrackAddOnLevelTests
 			Assert.IsTrue( twin.Commands.Apply( entry.Command ).Accepted, entry.Command.ToString() );
 		Assert.AreEqual( level.KartTracks.IsTile( 20, 10 ), twin.KartTracks!.IsTile( 20, 10 ), "the joint goes on both or neither" );
 		Assert.AreEqual( TrackHash( level, ride ), TrackHash( twin, twinRide ), "the same overlap words and tiles" );
+		Assert.AreEqual( level.ComputeStateHash(), twin.ComputeStateHash(), "and the same world" );
 		Assert.AreEqual( level.Park?.Economy.Balance, twin.Park?.Economy.Balance, "the same refunds" );
 	}
 
@@ -104,6 +106,7 @@ public partial class TrackAddOnLevelTests
 		foreach ( var entry in level.Commands.Log )
 			Assert.IsTrue( twin.Commands.Apply( entry.Command ).Accepted, entry.Command.ToString() );
 		Assert.AreEqual( TrackHash( level, ride ), TrackHash( twin, twinRide ), "the same overlap words and tiles after the cut and its Backspace" );
+		Assert.AreEqual( level.ComputeStateHash(), twin.ComputeStateHash(), "and the same world" );
 		Assert.AreEqual( level.Park?.Economy.Balance, twin.Park?.Economy.Balance );
 	}
 

@@ -244,6 +244,12 @@ public class FrameBatchingTests
 		Assert.IsNotNull( seen );
 		Assert.AreNotEqual( StaffState.PickedUp, seen, "the tick after the stranded pick-up released him" );
 		level.TickCompleted = null;
+		// a member a pick-up command put in a hand (co-op part 3a: the hands are the level's state) stays picked up through the ticks' bookkeeping, in one frame of many ticks
+		var mechanic = members.First( member => member.Type == StaffType.Mechanic );
+		var pickUp = level.Commands.Issue( new PickUpStaffCommand( mechanic.Id ) );
+		Assert.IsTrue( pickUp.Accepted, pickUp.Reason );
+		level.AdvanceFrame( FixedStepClock.MaximumCatchUpTicks * FixedStepClock.TickDuration );
+		Assert.AreEqual( StaffState.PickedUp, mechanic.State, "the tick's reconcile leaves a member in a hand alone" );
 	}
 
 	/// <summary>

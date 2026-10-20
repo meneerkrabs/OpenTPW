@@ -92,6 +92,7 @@ public sealed class ObjectAnimator
 	private readonly Matrix4x4[] rest;
 	private readonly (NVector3 Scale, Quaternion Rotation, NVector3 Translation)[] restComponents;
 	private readonly Matrix4x4[] world;
+	private readonly Matrix4x4[] local;
 	private readonly int[] order;
 	private readonly int[] meshByNode;
 	private readonly ModelPath?[] pathByNode;
@@ -145,6 +146,7 @@ public sealed class ObjectAnimator
 		this.holdsLastFrameAtClipEnd = holdsLastFrameAtClipEnd;
 		rest = ModelAnimationPlayer.ComputeRestTransforms( model );
 		world = (Matrix4x4[])rest.Clone();
+		local = model.Nodes.Select( node => node.Transform ).ToArray();
 		restComponents = new (NVector3, Quaternion, NVector3)[model.Nodes.Count];
 		for ( var index = 0; index < restComponents.Length; index++ )
 		{
@@ -205,6 +207,11 @@ public sealed class ObjectAnimator
 	public IReadOnlyList<Matrix4x4> RestTransforms => rest;
 	/// <summary>Model-space node matrices of the current pose.</summary>
 	public IReadOnlyList<Matrix4x4> NodeTransforms => world;
+	/// <summary>
+	/// Each node's matrix relative to its parent in the current pose (the stored matrix while no clip moves it): <see cref="NodeTransforms"/> before the
+	/// parent chain is multiplied in, for simulation code that composes the chain with <see cref="DetMatrix"/>.
+	/// </summary>
+	public IReadOnlyList<Matrix4x4> LocalTransforms => local;
 	/// <summary>True while some channel plays a clip that has not ended.</summary>
 	public bool IsPlaying
 	{
@@ -874,11 +881,12 @@ public sealed class ObjectAnimator
 				if ( channel.Uvs[node] != null )
 					uvWinner = channel;
 			}
-			var local = !any ? model.Nodes[node].Transform
+			var relative = !any ? model.Nodes[node].Transform
 				: facing is { } facingRows ? Matrix4x4.CreateScale( facingScale ) * facingRows * Matrix4x4.CreateTranslation( translation )
 				: Matrix4x4.CreateScale( scale ) * Matrix4x4.CreateFromQuaternion( rotation ) * Matrix4x4.CreateTranslation( translation );
+			local[node] = relative;
 			var parent = model.Nodes[node].ParentIndex;
-			world[node] = parent < 0 ? local : local * world[parent];
+			world[node] = parent < 0 ? relative : relative * world[parent];
 			if ( meshByNode[node] >= 0 )
 				UpdateMesh( meshByNode[node], node, vertexWinner, uvWinner );
 		}

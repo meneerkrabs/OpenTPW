@@ -416,9 +416,9 @@ public sealed class CoasterPylonRig : ICoasterTagModel
 			{
 				if ( tracks[slot][node] is not { } track )
 					continue;
-				if ( track.SampleTranslation( ticks[slot] ) is { } move )
+				if ( SampleTranslation( track, ticks[slot] ) is { } move )
 					translation += move;
-				if ( track.SampleRotation( ticks[slot] ) is { } key )
+				if ( SampleRotation( track, ticks[slot] ) is { } key )
 					turned = Multiply( Matrix4x4.CreateFromQuaternion( key ), turned );
 			}
 			var local = Multiply( turned, Matrix4x4.CreateTranslation( translation ) );
@@ -428,27 +428,29 @@ public sealed class CoasterPylonRig : ICoasterTagModel
 	}
 
 	/// <summary>
-	/// Row-major 4x4 product with plain single-precision multiplies and adds. The pylon heights (h0, h1, the stack offset) feed the canonical
-	/// state hash, and <see cref="Matrix4x4"/>'s operator may fuse the multiply-add on hardware that has it (a CPU-dependent last bit), so the
+	/// Row-major 4x4 product with plain single-precision multiplies and adds (<see cref="DetMatrix.Multiply"/>). The pylon heights (h0, h1, the stack offset)
+	/// feed the canonical state hash, and <see cref="Matrix4x4"/>'s operator may fuse the multiply-add on hardware that has it (a CPU-dependent last bit), so the
 	/// heights are composed here instead.
 	/// </summary>
-	private static Matrix4x4 Multiply( in Matrix4x4 a, in Matrix4x4 b ) => new(
-		a.M11 * b.M11 + a.M12 * b.M21 + a.M13 * b.M31 + a.M14 * b.M41,
-		a.M11 * b.M12 + a.M12 * b.M22 + a.M13 * b.M32 + a.M14 * b.M42,
-		a.M11 * b.M13 + a.M12 * b.M23 + a.M13 * b.M33 + a.M14 * b.M43,
-		a.M11 * b.M14 + a.M12 * b.M24 + a.M13 * b.M34 + a.M14 * b.M44,
-		a.M21 * b.M11 + a.M22 * b.M21 + a.M23 * b.M31 + a.M24 * b.M41,
-		a.M21 * b.M12 + a.M22 * b.M22 + a.M23 * b.M32 + a.M24 * b.M42,
-		a.M21 * b.M13 + a.M22 * b.M23 + a.M23 * b.M33 + a.M24 * b.M43,
-		a.M21 * b.M14 + a.M22 * b.M24 + a.M23 * b.M34 + a.M24 * b.M44,
-		a.M31 * b.M11 + a.M32 * b.M21 + a.M33 * b.M31 + a.M34 * b.M41,
-		a.M31 * b.M12 + a.M32 * b.M22 + a.M33 * b.M32 + a.M34 * b.M42,
-		a.M31 * b.M13 + a.M32 * b.M23 + a.M33 * b.M33 + a.M34 * b.M43,
-		a.M31 * b.M14 + a.M32 * b.M24 + a.M33 * b.M34 + a.M34 * b.M44,
-		a.M41 * b.M11 + a.M42 * b.M21 + a.M43 * b.M31 + a.M44 * b.M41,
-		a.M41 * b.M12 + a.M42 * b.M22 + a.M43 * b.M32 + a.M44 * b.M42,
-		a.M41 * b.M13 + a.M42 * b.M23 + a.M43 * b.M33 + a.M44 * b.M43,
-		a.M41 * b.M14 + a.M42 * b.M24 + a.M43 * b.M34 + a.M44 * b.M44 );
+	private static Matrix4x4 Multiply( in Matrix4x4 a, in Matrix4x4 b ) => DetMatrix.Multiply( a, b );
+
+	/// <summary>A clip's position at a tick: Bézier keys as <see cref="ModelAnimationTrack.SampleTranslation"/> evaluates them (no fused operation), linear keys blended by <see cref="DetMatrix.Lerp"/>.</summary>
+	private static NVector3? SampleTranslation( ModelAnimationTrack track, float tick )
+	{
+		if ( track.Position is { IsBezier: true } )
+			return track.SampleTranslation( tick );
+		if ( !track.TryLinearTranslationKeys( tick, out var from, out var to, out var fraction ) )
+			return null;
+		return fraction <= 0 ? from : DetMatrix.Lerp( from, to, fraction );
+	}
+
+	/// <summary>A clip's rotation at a tick, the keys blended by <see cref="DetMatrix.Slerp"/> (DetMath's acos and sin instead of the platform's).</summary>
+	private static Quaternion? SampleRotation( ModelAnimationTrack track, float tick )
+	{
+		if ( !track.TryRotationKeys( tick, out var from, out var to, out var fraction ) )
+			return null;
+		return fraction <= 0 ? from : DetMatrix.Slerp( from, to, fraction );
+	}
 
 	private static ModelAnimationTrack?[] TracksByNode( ModelAnimation? clip, int count )
 	{

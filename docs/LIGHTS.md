@@ -11,16 +11,17 @@ as before.
 | Light dummies in object models, the four RSE opcodes, saves | [Lights on objects](#lights-on-objects) |
 | Content kit: `ModelBuilder`, glTF `KHR_lights_punctual` | [CONTENT-KIT.md](CONTENT-KIT.md) |
 | An example mod with a lamp that pulses | [The example mod](#the-example-mod) |
+| Lamps that light at dusk, from a data table, with a day and night cycle | [EVENING.md](EVENING.md) |
 
 ## What the original has
 
 tp.exe has a CPU, per-vertex light system (`TPLight.cpp`; the Mac build's `CLight`, `CLightParallel` and `CLightPoint`):
 
-- The factory `0x457E70` builds a light of type 1 (ambient), 2 (directional, `CLightParallel`) or 3 (point, `CLightPoint`). A point light's defaults are a **radius of 100.0** (record +0x44), its square (+0x48) and one over
+- The factory `0x457E70` builds a light of type 1 (ambient), 2 (directional, `CLightParallel`) or 3 (point, `CLightPoint`); these are the factory's case arguments (jump table `0x458300`, case 3 goes to `0x458113`), not the record's own type word: a point light's record has the **record type word 4** at +0x50, and the lighting `0x5741B0` dispatches on `type & 0xF` (2 directional, 4 point, 6 spot-like). A point light's defaults are a **radius of 100.0** (record +0x44), its square (+0x48) and one over
   the square (+0x4C); an **off flag** `0x10000000` sits in the type word (+0x50) and the colour is four floats at +0x04..+0x10 (which the lighting `0x5741B0` reads; a packed ARGB word at +0x54 is a second copy for other users).
 - `0x5744D0` links the lights without the off flag, `0x5743A0` moves them into a model's space, and the vertex lighting `0x5741B0` sums them per vertex: the ambient colour, the directional lights (`N . L`), the
   **point lights** (the vertex's squared distance `d2` to the light is compared with `r2`; a vertex at or beyond the radius gets nothing, else `(r2 - d2) x (1 / r2)` times the light colour is added, **with no normal
-  term**) and a sixth type. `0x574530` packs the vertex colours, `0x5836B0` marks lighting dirty (the meshes `0x57AA10` and the terrain `0x56EF10` are relit).
+  term**) and the spot-like type 6. `0x574530` packs the vertex colours, `0x5836B0` marks lighting dirty (the meshes `0x57AA10` and the terrain `0x56EF10` are relit).
 - Nothing creates a point light. The RSE opcodes `ENABLELIGHT`, `DISABLELIGHT`, `SETLIGHT` and `COLOURLIGHT` (`0x555C7A` to `0x555D9A`) look up the model's **light dummy** (node attribute class `0x20000`, the light
   number as value, `0x44B220`) and its light record (`0x4587B0`), but the instance builder `0x44A870` never fills that pointer, so a script that used them would fault. No data set (Theme Park World PC, CD,
   Mac, PS2, Theme Park Inc, Alpha 50, the bonus content) has a light dummy or uses the opcodes.
@@ -70,7 +71,7 @@ was taken for this feature: the identity rests on the CPU-side facts above and o
 
 **Looking at a light.** `--debug-light x,y,height,radius[,red,green,blue]` (smoke-only, `[EXT:debug-light]`) adds one fixed light a few frames after the original level is up, at x, y, height relative to
 the park camera's target in engine units (a cell is 2) and a radius in engine units (the default radius is 20); the colour is three 0..1 channels (white without). It lets someone look at what a light does
-without placing an object.
+without placing an object (pass `--visible` to see it on screen: `--debug-*` runs are offscreen by default). With `--capture-camera` the held camera's ground target is the origin (the live camera may not have moved there yet when the light is added).
 
 **Cost.** `Gather` runs once a frame and does nothing without sources. `Gather` also sorts the lights into a coarse XY grid (at most 64 x 64 cells, each light in every cell its sphere overlaps; from 8 lights up). A draw's `Select` looks only at the lights of the cells its box covers (a box covering more than 16 cells, such as the ground, scans every light) with a box-distance test and, per kept light, one insertion into 16 slots; the result is the same as scanning every light (a test checks it on random scenes). The draw's box is moved to world space as centre plus the absolute matrix times the half extents, and the 784-byte block is built only for a draw that a light reaches. The
 upload grows by 32 bytes per light. Nothing is allocated after the first frame. The per-pixel cost is a loop of at most 16 iterations of a dot product and a multiply-add, skipped by a uniform branch when
@@ -152,4 +153,5 @@ browser ships no `opentpw.example.*` mod).
 - How a light *looks* was not judged: nothing was looked at on screen, so the falloff against the sun and the 0.4 ambient, the example's radius and colours and the 16-light limit on the
   one-mesh ground are a first guess for someone to look at (`--debug-light`, or the example mod).
 - The sprites (guests, staff) and particles are not lit, as in the original; the pool water is not lit.
-- The renderer has no shadows and no light on the sky; the evening and night extension that would use these lights (lamps switching on at dusk, ride bulbs) is not built.
+- The renderer has no shadows and no light on the sky. The evening and night extension (`opentpw.evening`, on by default) uses these lights for lamps that switch on at dusk, from a data table, and darkens the sun, the ambient, the sky and
+  the sprites with the time of day: [EVENING.md](EVENING.md).

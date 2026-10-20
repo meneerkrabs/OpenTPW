@@ -387,7 +387,7 @@ public class WorldRngTests
 		}
 		files.AddRange( Directory.EnumerateFiles( Path.Combine( source, "World" ), "Advisor*.cs" ).Select( file => Path.GetRelativePath( source, file ) ) );
 		foreach ( var file in new[] { "World/ParkWeather.cs", "World/Original/PathTileVariants.cs", "World/Guests/GuestRenderer.cs", "World/Guests/BalloonRenderer.cs", "World/Sky.cs", "World/Sun.cs",
-			"Online/ParkPresence.cs", "Online/ParkPresenceState.cs", "Online/VisitPresenceSmoke.cs", "Hud/ParkHud.VisitChat.cs" } )
+			"Online/ParkPresence.cs", "Online/ParkPresenceState.cs", "Online/VisitPresenceSmoke.cs", "Hud/ParkHud.VisitChat.cs", "Online/ChatPanel.cs", "Online/ChatPanelModel.cs" } )
 		{
 			Assert.IsTrue( File.Exists( Path.Combine( source, file ) ), file );
 			files.Add( file );

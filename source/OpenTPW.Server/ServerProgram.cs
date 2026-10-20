@@ -19,8 +19,9 @@ public static class ServerProgram
 	/// <summary>
 	/// 2: registration may answer 202 with a two-step setup (docs/ONLINE.md, "Two-step login"). 4: the chat relays movement in park rooms and
 	/// answers each room's first movement with where everyone stands, which a visit's online players rely on (docs/ONLINE.md, "Players in a visited park").
+	/// 5: movements carry a mode (<see cref="ChatMoveMode"/>, <see cref="ChatProtocol.MoveModesVersion"/>), so a player riding a ride is hidden.
 	/// </summary>
-	public const int ProtocolVersion = 4;
+	public const int ProtocolVersion = 5;
 	private const string WebsitePolicy = "website";
 	/// <summary>File in the data folder that asks the host to update the server (deploy/opentpw-deploy.path).</summary>
 	public const string DeployRequestFile = ".deploy-requested";
@@ -165,7 +166,7 @@ public static class ServerProgram
 		}
 	}
 
-	private static bool IsId( string id ) => id.Length is >= 1 and <= 64 && id.All( char.IsAsciiLetterOrDigit );
+	internal static bool IsId( string id ) => id.Length is >= 1 and <= 64 && id.All( char.IsAsciiLetterOrDigit );
 
 	private static async Task<byte[]> ReadBodyAsync( HttpRequest request, int maximumBytes )
 	{
@@ -275,6 +276,10 @@ public static class ServerProgram
 
 		// The globe's five chat satellites: each chat park's room and the players in it (docs/SERVER.md).
 		app.MapGet( ApiRoutes.ChatParks, () => Ok( new ChatParkList( chatParks.WithPlayers( hub.PlayersIn ) ) ) );
+		// Their park details and the parks their visits enter; a login is needed, as for any park summary.
+		app.MapGet( ApiRoutes.ChatParkScenes, Handler( context => Guarded( context, store, true, user =>
+			Task.FromResult( Ok( new ChatParkSceneList( chatParks.Scenes( id => IsId( id ) && store.FindPark( id ) is { } park
+				? store.Summarize( park, user, hub.PlayersIn( Online.Chat.ChatProtocol.ParkRoom( park.Id ) ) ) : null ) ) ) ) ) ) );
 
 		// The original website's pages (docs/reverse/ONLINE-SOURCES.md S1), as public, privacy-respecting endpoints:
 		// only parks whose authors chose to show them on the website appear without a login.
@@ -493,8 +498,8 @@ public static class ServerProgram
 				throw new StoreException( StatusCodes.Status400BadRequest, "The postcard sender must be the logged-in player." );
 			RequireClean( filter, card.Manifest.Title, "Postcard title" );
 			RequireClean( filter, card.Manifest.Text, "Postcard text" );
-			var (id, delivered) = store.SendPostcard( user, card, bytes );
-			return Ok( new PostcardSent( id, delivered ), StatusCodes.Status201Created );
+			var sent = await store.SendPostcardAsync( user, card, emailSender, context.RequestAborted );
+			return Ok( sent, StatusCodes.Status201Created );
 		} ) ) ).RequireRateLimiting( "upload" );
 
 		app.MapGet( ApiRoutes.Inbox, Handler( context => Guarded( context, store, true, user =>

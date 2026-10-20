@@ -52,7 +52,7 @@ public class OriginalSaveImportTests
 	/// <paramref name="unverifiedFootprint"/> records Belly Bounce as 2×1 turned 90°, a footprint without a verified rule.
 	/// </summary>
 	internal static OriginalParkImport Park( BalanceSettings settings, byte[]? bank = null, uint parkClosed = 0, IEnumerable<(uint, uint, byte[])>? extraThings = null,
-		byte[]? researcher = null, byte[]? bellyBounce = null, byte[]? staffHq = null, bool unverifiedFootprint = false, byte[]? challenges = null, byte[]? staffPool = null, Func<int, int, byte[]?>? cellOverride = null )
+		byte[]? researcher = null, byte[]? bellyBounce = null, byte[]? staffHq = null, bool unverifiedFootprint = false, byte[]? challenges = null, byte[]? staffPool = null, Func<int, int, byte[]?>? cellOverride = null, uint gameTick = 755, byte[]? calendar = null, int placedInfoId = 1100 )
 	{
 		var map = OriginalParkImportTests.CreateMap( 3, 3, ( _, _ ) => 0 );
 		var things = SaveTestPayloads.ParkThings();
@@ -70,9 +70,9 @@ public class OriginalSaveImportTests
 		var rideSystem = SaveTestPayloads.RideSystem( new[]
 		{
 			SaveTestPayloads.RideSystemRecord( 1601, 0, 0, 1, 1, SaveObject.FixedItemKind, 1 ),
-			SaveTestPayloads.RideSystemRecord( 1100, 1, 1, unverifiedFootprint ? 2 : 1, 1, SaveObject.PlacedObjectKind, 2, rotation: unverifiedFootprint ? 90 : 0 ),
+			SaveTestPayloads.RideSystemRecord( placedInfoId, 1, 1, unverifiedFootprint ? 2 : 1, 1, SaveObject.PlacedObjectKind, 2, rotation: unverifiedFootprint ? 90 : 0 ),
 		} );
-		var payload = SaveTestPayloads.Payload( SaveTestPayloads.World( SaveTestPayloads.ParkVariables( parkClosed: parkClosed ), grid, SaveTestPayloads.Things( things ), opaque: staffPool ), rideSystem );
+		var payload = SaveTestPayloads.Payload( SaveTestPayloads.World( SaveTestPayloads.ParkVariables( gameTick: gameTick, parkClosed: parkClosed ), grid, SaveTestPayloads.Things( things ), opaque: staffPool, calendar: calendar ), rideSystem );
 		return OriginalParkImport.Import( payload, map );
 	}
 
@@ -198,8 +198,9 @@ public class OriginalSaveImportTests
 	{
 		string Line( string start ) => import.Evidence.Single( line => line.StartsWith( start, StringComparison.Ordinal ) );
 		var blocks = Line( "[APPROX:SAVE-010] Not imported:" );
-		foreach ( var model in new[] { "Weather", "ParkAnalyser", "TagSystem", "MechanicHq", "UIMsgReceiver" } )
+		foreach ( var model in new[] { "Weather", "TagSystem", "MechanicHq", "UIMsgReceiver" } )
 			StringAssert.Contains( blocks, $"{model} things (" );
+		StringAssert.Contains( blocks, "park analyser apart from its recent-research rings" );
 		var world = Line( "[APPROX:SAVE-010] World values not imported:" );
 		foreach ( var value in new[] { "world state ", "arrival vehicle sizes ", "current arrival vehicle thing ", "arrival bytes ", "calendar session start " } )
 			StringAssert.Contains( world, value );
@@ -217,7 +218,7 @@ public class OriginalSaveImportTests
 		Assert.AreNotEqual( 0, attractions.Length );
 		foreach ( var line in attractions )
 		{
-			foreach ( var value in new[] { "open word ", "name \"", "queue size ", "first ", "back ", "called ", "mesh instance ", "flags 0x" } )
+			foreach ( var value in new[] { "open word ", "name \"", "queue size ", "first ", "back-of-queue cell ", "called ", "mesh instance ", "flags 0x" } )
 				StringAssert.Contains( line, value );
 		}
 		StringAssert.Contains( Line( "Attraction walk-away counts " ), "imported" );

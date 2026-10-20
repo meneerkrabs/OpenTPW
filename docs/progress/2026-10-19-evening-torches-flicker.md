@@ -1,0 +1,10 @@
+## The torches' flicker and flame (October 19, 2026)
+
+The evening extension's torches ([EVENING.md](../EVENING.md#torches)) now burn: their flame moves and their light flickers, following the user's decision of October 19, 2026 ("Alleen licht en sfeer", a deterministic flicker preferred; `[EXT:evening-torches-flicker]`). Both are presentation only.
+
+- `TorchFlicker.At(seconds, seed)`: a fixed sum of three sines (0.9, 2.3 and 4.7 Hz, a gentle flicker) with phases from the torch's cell, so each torch flickers the same way in every run and neighbours do not pulse together. The clock is the extension's own play time, which stands still while the park is paused and is never saved.
+- The lamp table gains a per-light `flicker` (0 to 0.5) and a per-row `flame` node. The four torch rows flicker by a quarter (the light dips in step with its flame) and name their `flame` node; every other row stays steady.
+- `EveningFlames` draws each torch's flame node stretched (height 1 +/- 0.14) and leaning slowly (at most about 3.4 degrees) about its base every frame, scaled by the lamp level: hidden by day (an empty cup), growing at dusk, whole at night, like the light. It goes through a presentation-only transform on the drawn parts (`OriginalObject.SetPresentationNodeTransform`); the animator's node transforms and hidden nodes, the lamps, the snow cover and the simulation are untouched.
+- The jungle and fantasy torch lights are stronger (1.9, 0.88, 0.24 and 2.1, 0.55, 1.6), sit 4 model units lower and reach 44 model units, because their green lawns showed hardly any pool of light at the first values; Halloween and space keep theirs.
+
+Verification: five new `EveningTorchTests` (the flicker's determinism, bounds, smoothness and neighbour difference; the flame transform's fixed base, bounds and growth with the lamp level; the table's torch rows and refused values; the flame as its own render part; the flame cache following placement and removal and hiding by day), the evening world-hash tests unchanged, and captures of each theme at day, dusk and night outside the repository.

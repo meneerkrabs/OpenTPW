@@ -545,6 +545,7 @@ public partial class Level : IDisposable
 			ImportOriginalRideSettings();
 			ImportOriginalScripts();
 			ImportOriginalCoasters();
+			ImportOriginalRetainedRideStates();
 			ImportOriginalArrivals();
 			StartPlacedParticles();
 			ImportOriginalParticles();

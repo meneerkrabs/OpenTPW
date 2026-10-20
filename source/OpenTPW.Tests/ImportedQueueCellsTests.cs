@@ -81,6 +81,7 @@ public class ImportedQueueCellsTests
 			.Select( index => (X: index % save.Cells.CountX, Y: index / save.Cells.CountX) )
 			.Where( cell => save.Cells[cell.X, cell.Y].MapType == (uint)ParkCellType.Queue ).ToArray();
 		Assert.AreEqual( 4, saved.Length, "Easymode saves the Belly Bounce's four queue cells" );
+		Assert.AreEqual( (short)1, save.Cells[52, 22].OverlapCounter, "the front cell's saved mOverlapCounter" );
 		foreach ( var (x, y) in saved )
 		{
 			var record = save.Cells[x, y];
@@ -88,6 +89,7 @@ public class ImportedQueueCellsTests
 			Assert.AreEqual( (byte)record.PathConnections, cells.LinksAt( x, y ), $"({x}, {y}) link byte +0x0C" );
 			Assert.AreEqual( record.Direction, cells.QueueLinkAt( x, y ), $"({x}, {y}) queue link +0x0D" );
 			Assert.AreEqual( owner, cells.OwnerAt( x, y ), $"({x}, {y}) owner word +0x10" );
+			Assert.AreEqual( record.OverlapCounter, cells.PlacementCountAt( x, y ), $"({x}, {y}) placement counter +0x20" );
 			Assert.AreEqual( (ParkCellFlags)record.MapFlags & ParkCellFlags.NoModify, cells.FlagsAt( x, y ) & ParkCellFlags.NoModify, $"({x}, {y}) NoModify" );
 		}
 

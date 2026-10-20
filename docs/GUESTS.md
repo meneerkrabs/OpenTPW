@@ -317,7 +317,7 @@ the same `ComputeStateHash` (FNV-1a over all guest fields, RNG state, counters).
 linked by their cardinal connection bits (`SavePathConnections`), plus MAP
 `InitialPath` cells (4-neighbour links) where no save exists (fantasy, space,
 hallow: their 10 entrance cells only). The save's queue cells (map type 3) are
-imported with their link byte, queue link, owner word and NoModify flag, as
+imported with their link byte, queue link, placement counter, owner word and NoModify flag, as
 tp.exe's cell load 0x4D0B30 reads them (Jungle: the Belly Bounce's four cells).
 Queue cells (original map cell type 3, see [Queues](#queues)) are kept beside
 the path cells and are not walkable for routing. Routing uses breadth-first **flow fields** cached per target cell and

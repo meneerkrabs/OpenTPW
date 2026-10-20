@@ -31,6 +31,8 @@ public readonly struct SaveCell
 	public const int PathConnectionsOffset = 8;
 	/// <summary>The map cell's <c>mDirection</c> (the queue link <c>+0x0D</c>, the first byte of the cell base): on a queue cell the link toward the cell before it, toward the ride entrance.</summary>
 	public const int DirectionOffset = 1;
+	/// <summary>The map cell's <c>mOverlapCounter</c> (u16, the same-type placement counter <c>+0x20</c>).</summary>
+	public const int OverlapCounterOffset = 9;
 	public const int OccupancyOffset = 12;
 	public const int PathFlagsOffset = 13;
 	public const int PathTextureOffset = 17;
@@ -80,6 +82,9 @@ public readonly struct SaveCell
 
 	/// <summary>The map cell's <c>mDirection</c> (TPW records): the queue link <c>+0x0D</c> of a queue, entrance or exit cell (1, 4, 16 or 64), 0 for none.</summary>
 	public byte Direction => Record.Span[DirectionOffset];
+
+	/// <summary>The map cell's <c>mOverlapCounter</c> (TPW records): the cell's same-type placement counter <c>+0x20</c>.</summary>
+	public short OverlapCounter => BinaryPrimitives.ReadInt16LittleEndian( Record.Span.Slice( OverlapCounterOffset, 2 ) );
 
 	/// <summary>
 	/// On path cells, the index into the theme's <c>PathTex</c> list (byte 17); all 78 Easymode path cells

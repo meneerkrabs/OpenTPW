@@ -515,10 +515,11 @@ property:
 - the smarter guests' planning and capacity tests;
 - the pool swing, jets and bob tests (more swimmers, a whole wave cycle);
 - the pools changing room tests (the guest is at the exit point and walks out).
+
 ### Imported queue cells (October 20)
 
-An imported park now keeps the save's queue cells (map type 3) with their link byte, queue link, owner word and
-NoModify flag, as tp.exe's cell load (`0x4D0B30`, mode 0) reads every cell record into the map
+An imported park now keeps the save's queue cells (map type 3) with their link byte, queue link, placement counter,
+owner word and NoModify flag, as tp.exe's cell load (`0x4D0B30`, mode 0) reads every cell record into the map
 (`ParkCellMap.FromOriginal`). Jungle Easymode has four, the Belly Bounce's queue. Before, those cells were empty
 ground, and since the typed queue front (QUEUE-003, #540) the ride's front was such an empty cell, so no guest could
 join it. No draw, hashed field or schema changed; the cell map holds four more queue cells. A run over the Jungle

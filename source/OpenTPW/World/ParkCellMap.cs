@@ -206,8 +206,8 @@ public sealed partial class ParkCellMap
 					if ( !GameEditions.IsThemeParkInc )
 						savedFlags = (ParkCellFlags)save.Cells[x, y].MapFlags & ParkCellFlags.NoModify;
 				}
-				// [BIN:TPW-EXE:0x004D0B30 cell base serializer] the load (mode 0) reads mDirection (+0x0D), mFlags (+0x0E), mNeighbours (+0x0C), mParentID (+0x10) and mType (+8) of every
-				// cell straight into the map, so a saved queue cell (type 3) comes back with its links, its queue link toward the entrance, its ride's owner word and the NoModify flag the
+				// [BIN:TPW-EXE:0x004D0B30 cell base serializer] the load (mode 0) reads mDirection (+0x0D), mFlags (+0x0E), mNeighbours (+0x0C), mOverlapCounter (+0x20), mParentID (+0x10) and mType (+8) of
+				// every cell straight into the map, so a saved queue cell (type 3) comes back with its links, its queue link toward the entrance, its placement counter, its ride's owner word and the NoModify flag the
 				// placement gave the cell outside the entrance; the ride's front (0x4DE040) and back walk (0x4DE130) then read these cells (Jungle Easymode: Belly Bounce's four cells)
 				else if ( inside && save != null && !GameEditions.IsThemeParkInc && save.Cells[x, y].MapType == (byte)ParkCellType.Queue )
 				{
@@ -216,6 +216,7 @@ public sealed partial class ParkCellMap
 					cells.SetLinks( x, y, (byte)saved.PathConnections );
 					cells.SetQueueLink( x, y, saved.Direction );
 					cells.SetOwner( x, y, saved.MapParentId );
+					cells.SetPlacementCount( x, y, saved.OverlapCounter );
 					savedFlags = (ParkCellFlags)saved.MapFlags & ParkCellFlags.NoModify;
 				}
 				else if ( initial )

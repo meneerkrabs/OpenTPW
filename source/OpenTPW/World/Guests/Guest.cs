@@ -98,12 +98,25 @@ public sealed class Guest
 	/// <summary>Index into the .sam PeepTypes and the kid sprite set.</summary>
 	public int Type { get; }
 	public GuestState State { get; internal set; }
+	/// <summary>Persistent body presentation. Ordinary walker rendering still uses DrawDistanceWalked.</summary>
+	public VisitorSpriteState BodySprite { get; } = new();
+	/// <summary>The live body's copied category at creation, independent of subsequent costume purchases.</summary>
+	public bool BodySpriteInCostume { get; internal set; }
+	/// <summary>True when old/imported history had to be reconstructed at load, or after an unsupported extension lifecycle.</summary>
+	public bool BodySpriteHistoryReconstructed { get; internal set; }
+
 	/// <summary>Simulation position in cells (<see cref="Navigation"/>, 16.16), updated once per park turn.</summary>
 	public float X => Navigation.X / (float)Fixed16.One;
 	public float Y => Navigation.Y / (float)Fixed16.One;
 	/// <summary>Presentation position: interpolated between the last two steering steps (not simulation state).</summary>
 	public float DrawX { get; internal set; }
 	public float DrawY { get; internal set; }
+	/// <summary>
+	/// Where a body an object kept (state 16) was last placed by the guest update: the drawn position when the object took the guest. Presentation only, not saved or hashed; NaN outside such a use
+	/// (a loaded park draws the kept body at the guest's own position).
+	/// </summary>
+	public float KeptBodyX { get; internal set; } = float.NaN;
+	public float KeptBodyY { get; internal set; } = float.NaN;
 	/// <summary>Unit direction of the last movement (game cells).</summary>
 	public float HeadingX { get; internal set; } = 0;
 	public float HeadingY { get; internal set; } = 1;
@@ -175,6 +188,47 @@ public sealed class Guest
 	public int BalloonLife { get; internal set; }
 	/// <summary>Whether the guest holds a balloon (guest <c>+0x210</c>, the balloon's model <c>mBalloonScript</c>): put away on a ride, back after it while it has life.</summary>
 	public bool HasBalloon { get; internal set; }
+	/// <summary>
+	/// [EXT:umbrellas-extension] The guest's umbrella state (the umbrellas extension, docs/UMBRELLAS.md; Theme Park Inc's guest word <c>+0x238</c>): 0 none, 1 open and about to close, 2 owned and closed, 3 closed and
+	/// about to open, 4 open (<see cref="UmbrellaRules"/>). Only a purchase at a brolly shop writes anything but 0 into it, and nothing writes 0 again.
+	/// </summary>
+	// [BIN:TPI-EXE:0x60d260 guest field names] mUmbrellaState +0x238, mUmbrellaType +0x244 (the colour), mUmbrellaScript +0x240 (the sprite object, rebuilt from the state on load here)
+	public int UmbrellaState { get; internal set; }
+	/// <summary>[EXT:umbrellas-extension] The umbrella's colour, the sprite slot 0 to 2 (<see cref="UmbrellaRules.Colours"/>); 0 while there is no umbrella.</summary>
+	public int UmbrellaType { get; internal set; }
+	/// <summary>
+	/// [EXT:umbrellas-save-due] The park turn a scheduled change (state 1 or 3) is due, a multiple of four; 0 in every other state. Theme Park Inc's <c>+0x23C</c> is not saved; the extension saves it so a resumed park
+	/// continues the same run.
+	/// </summary>
+	public long UmbrellaDueTurn { get; internal set; }
+	/// <summary>
+	/// [EXT:rain-mood-once-per-day] The game day plus one on which the rain mood rule (<c>opentpw.rain-mood</c>) last changed this guest's meters; 0 while it never has. Theme Park Inc stores its day at <c>+0x2E8</c> and never reads it,
+	/// so the extension keeps its own to apply the rule once per qualifying day.
+	/// </summary>
+	public long RainMoodDay { get; internal set; }
+	/// <summary>[EXT:winter-cold] The game day plus one of the cold rule's last application to the guest (as <see cref="RainMoodDay"/>); written only once it has applied, so a save without <c>opentpw.winter-cold</c> has no such field.</summary>
+	public long ColdMoodDay { get; internal set; }
+	/// <summary>
+	/// [EXT:winter-items] The warm items the guest wears (the winter extension, docs/WINTER.md): bit 1 a hat, bit 2 earmuffs, bit 4 mittens (<see cref="WinterRules"/>); at most one head item. Only a purchase at a winter kiosk writes anything
+	/// but 0 into it, and nothing takes an item off: the guest keeps it until it leaves, whatever the weather. The colours are a function of the guest id and the item, so they are not kept.
+	/// </summary>
+	public int WarmItems { get; internal set; }
+	/// <summary>[EXT:winter-items] The guest's head item: <see cref="WinterRules.Hat"/>, <see cref="WinterRules.Earmuffs"/> or 0.</summary>
+	public int HeadItem => WarmItems & WinterRules.HeadItems;
+	/// <summary>[EXT:winter-items] Whether the guest wears mittens.</summary>
+	public bool HasMittens => (WarmItems & WinterRules.Mittens) != 0;
+	/// <summary>
+	/// [EXT:winter-gluehwein] The park calendar day (<see cref="ParkCalendar.DayIndex"/>) the guest's warmth from a glühwein lasts until, exclusive: the guest counts as warmed while the park's day index is below it; 0 while it never was.
+	/// Phase W3 only carries the field (saved, validated, hashed when set); the cold rule of phase W5 (<c>opentpw.winter-cold</c>) writes and reads it, and nothing in W3 does.
+	/// </summary>
+	public long WarmUntilDay { get; internal set; }
+	/// <summary>[EXT:winter-save] Whether the guest carries any state of the winter extension (a warm item, or warmth from a glühwein): the park then uses the extension, whatever its shops (<see cref="ParkResumeMods.WinterInUse"/>).</summary>
+	public bool HoldsWinter => WarmItems != 0 || WarmUntilDay != 0;
+	/// <summary>
+	/// [EXT:rain-mood-imported-age] The park turn an imported original guest without a known time in the park was loaded at, while the rain mood extension is on; its age for the rain mood's day gate counts from it. Null for every
+	/// other guest (they have their time in the park) and in every park without the extension.
+	/// </summary>
+	public long? RainMoodAgeStartTurn { get; internal set; }
 	/// <summary>Whether the guest wears a costume (guest <c>+0x24</c> == 2): a costume shop puts one on, and the next visit to one returns it.</summary>
 	public bool InCostume { get; internal set; }
 	public int Money { get; internal set; }
@@ -183,9 +237,11 @@ public sealed class Guest
 	/// needs phase of the guest (every fourth park turn, 0.992 s: the .sam's "seconds"), in every state. It is a signed word and runs negative after 0.
 	/// </summary>
 	public int ExitLevel { get; internal set; }
-	/// <summary>Display-only simulated seconds since admission; null means the prior duration is unknown.
-	/// Seeded in-park guests start at zero. Outside travel and the queue before admission do not count.</summary>
+	/// <summary>Simulated seconds since creation, including the arrival and departure walk; null means the prior duration is unknown.
+	/// Retained for stay statistics and weather gates; new visitor displays use the independent integer-turn age.</summary>
 	public double? TimeInParkSeconds { get; internal set; }
+	/// <summary>Display-only age in unsigned 32-bit park turns, or null for a legacy seconds-based duration. Never used by gameplay.</summary>
+	public long? DisplayTimeInParkTurns { get; internal set; }
 	/// <summary>Own-format/display duration bound; no original timing limit is inferred.</summary>
 	public static double MaximumTimeInParkSeconds => TimeSpan.MaxValue.TotalSeconds;
 	public float SecondsSinceRide { get; internal set; }

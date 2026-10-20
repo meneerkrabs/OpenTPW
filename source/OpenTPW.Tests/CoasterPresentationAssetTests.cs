@@ -109,6 +109,49 @@ public class CoasterPresentationAssetTests
 		}
 	}
 
+	/// <summary>The existing wheel UV tracks take the slot-owned epoch even when their assets first load after setup.</summary>
+	[TestMethod]
+	public void DelayedWheelAssetsUseTheSamePhaseAsContinuouslyPresentedAssets()
+	{
+		var clips = 0;
+		foreach ( var entry in PcCoasters() )
+		{
+			var definition = CoasterDefinition.FromCatalogEntry( entry );
+			using var visibleAssets = new CoasterAssets( entry, definition );
+			var visible = visibleAssets.GetCar( definition.CarTypes.CentreIndex )!;
+			if ( visible.WheelClip is not { } clip )
+				continue;
+			clips++;
+			var ride = CoasterPresentationTests.WheelRide();
+			var renderer = CoasterPresentationTests.WheelRenderer( ride );
+			try
+			{
+				var wheels = Enumerable.Range( 0, visible.Parts.Count ).Where( visible.AnimatesUv ).ToArray();
+				Assert.IsTrue( wheels.Length > 0 );
+				foreach ( var wheel in wheels )
+					Assert.IsNotNull( visible.WheelVertices( wheel, renderer.WheelTick( ride, 0, clip.Duration ) ) );
+				ride.Advance( 1.0 );
+				ride.Trains[0].Speed = clip.Duration / 6f;
+				var tick = renderer.WheelTick( ride, 0, clip.Duration );
+				Assert.AreEqual( clip.Duration / 2f, tick, 1e-4f, $"{entry.InfoId}: 1,000 ms since slot setup reaches half the clip" );
+				using var delayedAssets = new CoasterAssets( entry, definition );
+				var delayed = delayedAssets.GetCar( definition.CarTypes.CentreIndex )!;
+				foreach ( var wheel in wheels )
+				{
+					var expected = visible.WheelVertices( wheel, tick )!;
+					var actual = delayed.WheelVertices( wheel, renderer.WheelTick( ride, 0, clip.Duration ) )!;
+					CollectionAssert.AreEqual( expected.Select( vertex => vertex.TexCoords ).ToArray(), actual.Select( vertex => vertex.TexCoords ).ToArray(),
+						$"{entry.InfoId}: fresh assets for wheel {wheel} do not restart its phase" );
+				}
+			}
+			finally
+			{
+				renderer.Delete();
+			}
+		}
+		Assert.AreEqual( 3, clips, "the three non-bend coaster types with wheel clips" );
+	}
+
 	/// <summary>
 	/// The car's root node pose replaces the model's root rest matrix (<c>0x43d8f0</c>), so every car's camera seat looks along the car's +Z, the way the car runs, whether or not its model's root is
 	/// turned half a circle (the mine carts', the Candy cars' and the caterpillar's are).

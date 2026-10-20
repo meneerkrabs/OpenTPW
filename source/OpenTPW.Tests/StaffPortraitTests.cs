@@ -20,9 +20,9 @@ public class StaffPortraitTests
 	}
 
 	[TestMethod]
-	public void TheFeetStandAtTheCentreAQuarterAboveTheBottom()
+	public void TheGenericFeetRemainAtTheCentreAQuarterAboveTheBottom()
 	{
-		// control 9348's rectangle (484, 179)-(748, 443): x centre 616, y 443 − 264 / 4 = 377
+		// Generic rectangle-relative placement stays unchanged; the actual hire widget opts into its integer inner hotspot.
 		Assert.AreEqual( new NVector2( 616, 377 ), UiSpriteFigure.Feet( new UiRect( 484, 179, 264, 264 ) ) );
 	}
 

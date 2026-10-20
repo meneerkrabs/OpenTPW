@@ -1,0 +1,7 @@
+## Persistent visitor body sprites (October 18, 2026)
+
+BOUNCE body frames now come from persistent visitor-owned program state instead of a guessed elapsed-time divisor. The GPU-free player keeps strict signed-32-bit due tests, one emission per scheduler opportunity, deferred template/interval application, no visibility before the first FRAME, and the decoded walk/run/stand and finite guest programs. Ordinary state entry, navigation results, activities, guard capture/release, boarding/release and deletion supply the shared history. Renderers consume one cached post-batch pose pass, including explicit WALK hides and copied kid/costume category at actual body creation.
+
+Own-format snapshots preserve and validate this presentation state and its clock epoch without changing gameplay hashes or RNG. Older/native saves reconstruct explicitly. [Visitor sprites](../VISITOR-SPRITES.md) documents the fixed-host clock, fallback update order, current movement/state inputs and unsupported-history boundaries. HEADS-007 remains open for those boundaries; ordinary walker output, scripted WALK frame selection and staff timing are unchanged.
+
+Added synthetic player and integration tests for timing, lifetime, body visibility, finite-program identity, pause/lost/headless batches, two render consumers, snapshots and hash controls. Local source review, Python register/progress tests and whitespace checks are available; the C# suite requires CI because this workspace has no .NET SDK. No original executable was run and no original assets are included.

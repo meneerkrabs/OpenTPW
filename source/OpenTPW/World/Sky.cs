@@ -379,7 +379,7 @@ public sealed class Sky : IDisposable
 	}
 
 	/// <summary>Draws the sky behind everything else of the world pass: no depth test or write, centred on the camera.</summary>
-	public void Draw( float frameSeconds )
+	public void Draw( float frameSeconds, SVector3? tint = null )
 	{
 		if ( disposed || global::Global.Render == null )
 			return;
@@ -412,6 +412,8 @@ public sealed class Sky : IDisposable
 			g_mView = view,
 			g_mProj = Camera.ProjMatrix,
 			g_vCameraPos = SVector3.Zero,
+			// [EXT:evening] the sky's tint at dusk and night rides in the light colour particle.shader never used (zero: no tint)
+			g_vLightColor = tint ?? SVector3.Zero,
 			g_flTime = Time.Now
 		};
 		cloudMaterial.Set( "ObjectUniformBuffer", uniforms );

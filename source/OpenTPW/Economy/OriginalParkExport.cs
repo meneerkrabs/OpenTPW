@@ -2,9 +2,12 @@ namespace OpenTPW;
 
 /// <summary>What the exporter takes from outside the economy snapshot.</summary>
 /// <param name="VisitorsToDate">The guest simulation's count of visitors (<c>mNumberOfVisitorsToDate</c>); null keeps the template's.</param>
-/// <param name="Research">The park's research; when given, the research lab thing and the object controls' researched bytes are written from it (<see cref="OriginalResearchExport"/>), else the template's stay.</param>
+/// <param name="Research">The park's research; when given, the research lab, object controls' researched bytes and analyser's recent-research rings are written from it (<see cref="OriginalResearchExport"/>), else the template's stay.</param>
 /// <param name="Researchers">The number of hired researchers (the lab's active byte is set while there are any).</param>
-public sealed record OriginalParkExportOptions( uint? VisitorsToDate = null, ParkResearch? Research = null, int Researchers = 0 );
+/// <param name="RidesAboveOriginalLimits">[EXT:cheats-ride-vehicles] How many of the park's rides the vehicle cheat raised and that run above their type's original capacity maximum
+/// (<c>Level.RidesAboveOriginalLimits</c>, which the caller passes: the economy snapshot holds no rides): such a park is refused, because the original keeps a ride's capacity in a byte and
+/// clamps it to its type's own maximum. A raised ride whose capacity stays within the original's maximum is no obstacle.</param>
+public sealed record OriginalParkExportOptions( uint? VisitorsToDate = null, ParkResearch? Research = null, int Researchers = 0, int RidesAboveOriginalLimits = 0 );
 
 /// <summary>
 /// Writes an OpenTPW park's economy back into an original-format park (the twin of <see cref="OriginalEconomyImport"/>): the park turn and calendar, the world generator
@@ -12,7 +15,7 @@ public sealed record OriginalParkExportOptions( uint? VisitorsToDate = null, Par
 /// <em>template</em>, an original save of the same level (the shipped <c>Easymode.TPWI</c>, a park the player loaded, or a <c>restart.INTS</c>).
 /// <para>
 /// What is not exported, because OpenTPW cannot yet produce the original's bytes for it: placed objects and their attraction things, the cell map's built cells (paths,
-/// footprints), the RideSystem scene records, staff, guests, the advisor, the weather and the engine blocks. The research lab and the object controls' researched bytes are written when
+/// footprints), the RideSystem scene records, staff, guests, the advisor, the weather and the engine blocks. The research lab, object controls' researched bytes and recent-research rings are written when
 /// the caller passes the park's research (<see cref="OriginalParkExportOptions.Research"/>). Exporting a park that built
 /// something the template lacks therefore keeps the template's version of it, and <see cref="Export"/> says which values it took. The writer never runs the original game; the
 /// result is checked by reading it back through <see cref="OriginalParkImport"/> and <see cref="OriginalEconomyImport"/> (docs/TPWS-PAYLOAD.md, "Writing original-format saves").
@@ -32,6 +35,9 @@ public static class OriginalParkExport
 		ArgumentNullException.ThrowIfNull( template );
 		ArgumentNullException.ThrowIfNull( park );
 		options ??= new OriginalParkExportOptions();
+		// [EXT:cheats-export] the user's decision: a park whose rides hold more vehicles than the original's limits is not written in the original's format
+		if ( options.RidesAboveOriginalLimits > 0 )
+			throw new InvalidDataException( $"The park has {options.RidesAboveOriginalLimits} ride(s) whose vehicle limit a cheat raised and whose capacity is above the original's limit; the original game cannot hold them (docs/CHEATS.md)." );
 		var lines = new List<string>();
 		// a deep copy: the template's own bytes through the writer and reader
 		var result = OriginalSavePayload.Read( template.Write() );
@@ -49,10 +55,17 @@ public static class OriginalParkExport
 		};
 		lines.Add( $"World variables: park turn {turn}, park {(park.ParkOpen ? "open" : "closed")}, {world.Variables.NumberOfVisitorsToDate} visitors, world generator 0x{world.Variables.RandomSeed:X8}." );
 		ExportCalendar( world, park, turn, lines );
+		ExportCheats( result, park, lines );
 		ExportBank( world, park, lines );
 		ExportFirstPurchases( world, park, lines );
 		if ( options.Research != null )
+		{
 			OriginalResearchExport.Apply( world, options.Research, options.Researchers, lines );
+			var analyser = world.Things.FirstOrDefault( thing => thing.Id == world.Variables.ParkAnalyser )
+				?? throw new InvalidDataException( "The template names no park analyser thing for the research history." );
+			SaveRecentResearch.Write( analyser.Body, new SaveThing( (int)analyser.Id, analyser.Model, (int)analyser.Next, 0, 0, analyser.Body.Length ), options.Research.RecentItems );
+			lines.Add( "Park analyser: four recent-research rings written; all other analyser bytes kept." );
+		}
 		evidence = lines.AsReadOnly();
 		return result;
 	}
@@ -129,6 +142,18 @@ public static class OriginalParkExport
 			changed++;
 		}
 		lines.Add( $"Object controls: {changed} first-purchase turns written." );
+	}
+
+	/// <summary>
+	/// The <c>CHTS</c> chunk from the park's own cheat mode, not the template's (a template taken from a cheated save must not mark a clean park): <c>01 01</c> for a cheated park, the value the
+	/// shipped seed <c>Easymode.TPWI</c> carries (the eleven corpus saves carry <c>00 00</c>), and <c>00 00</c> otherwise.
+	/// </summary>
+	// [BIN:TPW-EXE:0x4055D0 cheat save] the chunk is the mode byte +0xA and the byte +0xB; [EXT:cheats-export] OpenTPW writes 01 01 for a cheated park (the shipped seed's value; no tp.exe code writes +0xB, so its meaning for another build is unknown) and 00 00 for any other
+	private static void ExportCheats( OriginalSavePayload result, ParkSaveFile.Data park, List<string> lines )
+	{
+		var cheated = park.Cheats?.Mode == true;
+		result.Cheat = cheated ? new byte[] { 1, 1 } : new byte[] { 0, 0 };
+		lines.Add( $"Cheat chunk: {Convert.ToHexString( result.Cheat )} ({(cheated ? "a cheated park" : "no cheats")})." );
 	}
 
 	/// <summary>

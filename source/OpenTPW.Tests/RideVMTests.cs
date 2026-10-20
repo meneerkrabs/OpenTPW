@@ -417,6 +417,55 @@ public class RideVMTests
 		var runaway = Load( new Asm().I( Opcode.CRIT_LOCK ).Label( "loop" ).I( Opcode.BRANCH, "loop" ) );
 		Run( runaway, 1 );
 		Assert.AreEqual( RideVMState.Faulted, runaway.State );
+		Assert.AreEqual( 100_000L, runaway.ExecutedInstructions, "the cap faults exactly at its bound" );
+	}
+
+	[TestMethod]
+	public void CriticalSectionEndingExactlyAtTheInstructionCapHalts()
+	{
+		// 3 pre-loop + 24,999 × 4 loop + 1 final = 100,000 instructions; CRIT_LOCK keeps the budget from counting them.
+		var vm = Load( new Asm()
+			.I( Opcode.COPY, V( 0 ), 24_999 )
+			.I( Opcode.CRIT_LOCK )
+			.I( Opcode.NOP )
+			.Label( "loop" )
+			.I( Opcode.ADD, V( 0 ), -1 )
+			.I( Opcode.NOP )
+			.I( Opcode.NOP )
+			.I( Opcode.BRANCH_NZ, "loop" )
+			.I( Opcode.NOP ) );
+
+		Run( vm, 1 );
+
+		Assert.AreEqual( RideVMState.Halted, vm.State );
+		Assert.AreEqual( 100_000L, vm.ExecutedInstructions );
+		Assert.AreEqual( vm.Instructions.Count, vm.ProgramCounter, "the program counter is at the end of the code" );
+		Assert.AreEqual( 0, vm.Variables[0] );
+	}
+
+	[TestMethod]
+	public void CriticalSectionStopsAtTheInstructionCapBeforeTheNextSideEffect()
+	{
+		// 4 pre-loop + 24,999 × 4 loop = 100,000 instructions; the COPY after the loop must not run.
+		var vm = Load( new Asm()
+			.I( Opcode.COPY, V( 0 ), 24_999 )
+			.I( Opcode.CRIT_LOCK )
+			.I( Opcode.NOP )
+			.I( Opcode.NOP )
+			.Label( "loop" )
+			.I( Opcode.ADD, V( 0 ), -1 )
+			.I( Opcode.NOP )
+			.I( Opcode.NOP )
+			.I( Opcode.BRANCH_NZ, "loop" )
+			.I( Opcode.COPY, V( 1 ), 99 ) );
+
+		Run( vm, 1 );
+
+		Assert.AreEqual( RideVMState.Faulted, vm.State );
+		Assert.AreEqual( 100_000L, vm.ExecutedInstructions );
+		Assert.AreEqual( vm.Instructions.Count - 1, vm.ProgramCounter, "the side-effect instruction was not fetched" );
+		Assert.AreEqual( 0, vm.Variables[1], "the instruction after the cap did not run" );
+		StringAssert.Contains( vm.FaultMessage, "slice exceeded" );
 	}
 
 	[TestMethod]

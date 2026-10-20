@@ -48,7 +48,7 @@ range validation is a separate input/display failure: at the supported bound it
 can refuse a tick even though the gameplay digest excludes the counter. Hash
 equality alone does not establish that display metadata passes its range checks.
 
-The original keeps no visitor counter but an arrival stamp (+0x1D4 = the world turn) that only the guest constructor writes (tp.exe `0x4fafdb`, at the bus drop-off), so its time also covers the road crossing and the booth and does not stop on the road home; OpenTPW's seconds start at the guest's creation and run to its end, and the visitors list (which guests the original's list holds is unread, `GUEST-920`) shows the guests in the park. The original visitors list's "Time In Park" column (tp.exe `0x49326c`) shows whole hours of the turns since the stamp in whole 4-turn steps (a new row a quarter of them until the 2 s refresh, `0x493800`), as "N hours" up to a day and "N day"/"N days" above (`0x490ff0`); OpenTPW's column does the same with the simulated seconds over the 248 ms turn standing in for the turns (`GUEST-920`).
+The original keeps no visitor counter but an arrival stamp (+0x1D4 = the world turn) that only the guest constructor writes (tp.exe `0x4fafdb`, at the bus drop-off), so its time also covers the road crossing and the booth and does not stop on the road home; OpenTPW's seconds start at the guest's creation and run to its end, and the visitors list (which guests the original's list holds is unread, `GUEST-920`) shows the guests in the park. The original visitors list's "Time In Park" column (tp.exe `0x49326c`) shows whole hours of the turns since the stamp in whole 4-turn steps (a new row a quarter of them until the 2 s refresh, `0x493800`), as "N hours" up to a day and "N day"/"N days" above (`0x490ff0`); OpenTPW's roster and individual-visitor info now use an independent unsigned integer-turn age for newly created guests and valid original arrivals. The age advances at existing host turn boundaries, including swept lost-park turns, and preserves native uint32 wrap. Optional own-format age and display-phase metadata preserve immediate display and continuation across a restore before `AlignTurns` reattaches; this does not restore or change the gameplay clock. Older own-format saves without integer provenance keep their existing seconds-derived fallback, and a null duration stays unknown. Statistics/stay accounting, umbrellas and other weather gates continue to use the unchanged seconds (`GUEST-920`); roster membership and arbitrary historical clock resets remain unqualified. See the [bounded display-age contract](proposals/guest-920-reconcile-visitor-elapsed-time-semantics.md).
 `GuestTimeInParkTests` verifies admission/refusal, seeded guests, pause/speed,
 known/unknown codec continuation, both validators, invalid/overflow rejection,
 the live UI model and hash exclusion using synthetic fixtures only. No original
@@ -326,7 +326,8 @@ network reachable from EntranceA.
 **States** (`KIDSTATES` indices): bus stop → crossing (0, 1) → ticket booth (2, 4:
 the booth weighs the fee against the park, see [The ticket booth](#the-ticket-booth); 3: paid, waiting at the booth for the gate) → entering (5) → walking around (7)
 → going to a ride (10) → walking to a queue position (12) ⇄ standing in the queue
-(11) → called: walking to the stand point (13) → waiting to board (14) → using (16, hidden)
+(11) → called: walking to the stand point (13) → waiting to board (14) → using (16, hidden;
+a guest whose body the object keeps stays in view, see [Kept bodies](#kept-bodies))
 → exiting a ride (15) → … → leaving the park (18) → crossing (19) → waiting to go
 home (21) → removed.
 
@@ -532,7 +533,7 @@ Traced in tp.exe (the builder `0x4A52A0`, the window procedure `0x4A4830`, the r
 - **What is counted:** the thought id (the first dword of the guest's thought object, `+0x30`) of every guest (thing type 1) standing on a park cell (`0x4FA990`: cell types 0, 1, 3, 9 and 10, whatever its state; a guest in the booth queue or on the road home does not count), into 23 counters for ids 0 to 22. **The count of id 0 (no thought) is then discarded** (`0x4C84D7` writes 0 to counts[0] right after the counting loop), so the guests without a thought never take a slot.
 - **Ranking:** three slots start as the ids 0, 1 and 2. Each id from 3 to 22, in order, finds the slot with the lowest count (the largest difference, signed, strictly above 0; the first slot among equal lows) and takes it if its own count is strictly higher. So an equal count never replaces a slot (the lower id keeps it on a tie), and **the slots are not sorted by count**. A slot whose count is 0 is written as 0x17 (nothing). The three slots are the result in slot order.
 - **Icons:** slot 0 goes to the rightmost icon (`0x4A68D4`), slot 1 to the middle (`0x4A68D3`), slot 2 to the leftmost (`0x4A68D2`). An id of 1 to 22 sets the icon's frame to the id less 1; 0 and 0x17 hide the icon ; an icon the update hides (`0x65D9DD(0)`) is never shown again while the window stays open, as nothing in `0x4A4AB0` or the window procedure calls the show form (not fully settled, `APPROX:UI-914`).
-- **Hover text:** each icon's handler `0x4A4700` answers message 0xC with the THOUGHTS.str entry of the icon's frame plus 1 (table `0x78BA9C`, as the visitor window reads it); the icon class's frame getter (vtable `0x7059F0` slot 8, `0x661596`) is `return 0` and the setter `0x661525` only forwards message 0x80 to the control's models, so **every shown icon names THOUGHTS.str entry 1**, whatever frame it shows, and OpenTPW does the same (`ParkHud.ParkInfoIconHelpThought`).
+- **Hover text:** each icon's handler `0x4A4700` answers message 0xC with the THOUGHTS.str entry of the icon's frame plus 1 (table `0x78BA9C`, as the visitor window reads it); the icons are control type 6 of table `0x7537D0` (the factory `0x65DD7B` builds them through `0x65E057` and the constructor `0x66D9E0`, vtable `0x705C58`), whose frame setter (slot 7, `0x66DA4D`) stores the frame at `+0x13C` before the base setter `0x661525` and whose getter (slot 8, `0x66DAD2`) returns it. So **each icon names its own thought** (the frame plus 1 is the thought id), and OpenTPW does the same.
 - **Cadence:** the builder arms timer `0x80083` at 1000 ms and runs the update once as it builds; every timer message re-reads the counts, the happiness levels and the thoughts. There are no strings: the title is UITEXT `0x9C` ("Top 3 Thoughts") and the frame's help id is 186.
 - **In OpenTPW:** `TopThoughtRanking.Rank` (pure) and `GuestSimulation.GetTopThoughts()` (a read of the guests on park cells); `ParkHud.OpenParkInfoWindow` draws the frame of the original table `0x7537D0` (`OriginalLayoutTables.ParkInfoWindow`) and refreshes it every second. This replaces `GuestStatistics.CommonThought`, a most-common-thought guess no code read, which the original never computes. Staff thoughts (18 to 22) live on staff things, which this census never reaches. The window's other parts are described in [UI.md](UI.md) (graph over the monthly statistics rings of `0x4C7720`, counts frame, the happiness bars from `0x4C9750` / `0x4C9670`, the navigation buttons).
 
@@ -949,7 +950,7 @@ W_max = ⌈Qmax/CAP⌉ × (DUR + 1 s + τ) (QUEUE-plan §9):
 
 | ID | OpenTPW choice | Evidence needed |
 | --- | --- | --- |
-| QUEUE-003 | Guests walk to the join cell, the path cell attached to the back of the queue (the first neighbour in the order 1, 4, 16, 64 whose bit is set in the back cell's link byte `+0x0C`, `0x4de840`), and join from it; with none the ride cannot be joined. tp.exe's state 10 (`0x4ffbc0`) joins when the guest stands on the back queue cell itself (`0x4de110`, `0x4de130`), reached through the back cell's link by the walk's edge test, and uses the attached path cell only for the back cell's fourth-place axis; the ride's entrance cell keeps no link byte here (ride cells are not typed map cells) | The route (`0x4fa5f0`) onto a queue cell on OpenTPW's walk (the edge test over OpenTPW's cell map, WALK-005) |
+| QUEUE-003 | Back-cell admission and fourth-slot path geometry are implemented. Supported live typed HasQueue entries derive the nonzero front from the entry links `+0x0C` in native priority 1,16,64,4 (`0x4DE040`); untyped and unsupported entries retain the positive one-cell fallback. See [typed-front contract](reverse/QUEUE-003-typed-front.md). | Native zero-front/count consumers and persistence; divergent imported mEntryPos and native cache invalidation timing remain unsupported. |
 | QUEUE-010 | A guest leaving a queue stays on its cell and decides from there (tp.exe's exit `0x5004aa`: `0x4ddd20`, `0x5012f0`, state 6, writes no position; the wander `0x4f9490` walks the cell's links except its own queue link); a guest leaving from the ride's entrance cell is placed on the queue's front cell, because OpenTPW's untyped ride cells carry no links to walk off by | The entrance cell's links (WALK-005) |
 | QUEUE-012 | Queue cells need allowed terrain and no object of the queue tool's overwrite priority 3 or more (a lower one, a feature of priority 0 or 1, is demolished: `0x535D66` with `0x818C10` = 3); tp.exe's validator (`0x535670`) tests the flag bit 0x40 (set by map setup `0x536490` outside the park and on inside cells but the initial path) and the cell type, not MAP terrain | The Easymode save's occupied cells stand in for their cell types in the terrain rule (ECON-050) |
 | QUEUE-014 | The tool lays straight segments from the back cell (`0x536100`, ported), ending on a path cell to connect the queue; tp.exe starts a segment at a clicked cell and lays anywhere. Each cell is validated as `0x535670` does (an empty cell, a path cell replaced unless NoModify and not on the last cell, an object of lower overwrite priority demolished and covered, another ride's queue cell refused by the owner word `+0x10`), typed (`0x5346d0`), linked (pass `0x80`), given its queue link toward the previous cell (`0x82`) and the tool's ride as owner word (`0x83`, ported). A cell touching no queue is laid free-standing (no queue link, the owner word only): the validator never asks a cell to touch the back cell. OpenTPW lays no queue over a path cell. The first click is read (`0x524960`, modes 1 and 3 with no line start: the clicked cell must pass the validator `0x535670` for the tool's type, a verdict of 1 refuses it and nothing starts, else it becomes the start; `0x52fbd0` clears the corner count and `0x52fbf0` pushes it; each later click counts up `0x8186dc` and posts message `0xd6` on the third) | The rest of the commit `0x532fc0`, the refund in the clear `0x5367a0` that reads the owner word |
@@ -977,6 +978,98 @@ A kid's set is the original's own draw at its creation, the world generator rese
 a walking kid steps its 8-frame walk 20 times a cell (0x4FA2A0: the interval is 62 ms over twice the speed).
 Not drawn: shadows, riders' bodies on a ride (their heads are drawn, see below).
 
+### Kept bodies
+
+A guest an object is serving (state 16) stays in view when the object's `UsageInfo.RideHandlesSprite` is 1, whatever
+the object is. tp.exe's state-16 entry tests the thing flag `+0x32` bit `0x20`, which the object constructor sets from
+that key (`0x4DB41C`): clear deletes the guest's body (`0x4D4170` at `0x502147`), set keeps it, queues the stand
+template and sets `+0x28` = 1 (`0x50212B`..`0x50213D`). The test reads no object kind. The guest update places the
+body at the guest's position only while `+0x28` is 0 (`0x4FA087`); `+0x28` is `mSpriteUnderRideCtrl`, which the save
+writes and reads (`0x4F8B10`), the state-15 entry clears (`0x501F79`) and the removed object's message 10 clears
+(`0x4FB3DF`); no other guest code reads it. The sprite pass (`0x542010`) draws every sprite that has a frame at its
+stored position, whoever owns it, so the body stays drawn where it was last placed until the state-15 entry places it
+again.
+
+Which objects keep the body (the inherited key: `Shops.sam`, `Features.sam` and `Rides.sam` say 0, the `SideShow.sam`
+of fantasy, hallow and space say 1, jungle's 0):
+
+- **Shops**: in the jungle the Burger, Fries, Drinks, Ice Cream, Steak, Gift and Balloon shops; the Costume Shop keeps 0.
+- **Sideshows**: every fantasy, hallow and space sideshow but the fantasy and space Arcades and the Fortune Teller (which set 0);
+  in the jungle Laughing Hyenas, Jungle Spray, Giant Puzzle and Strength Bird.
+- **Toilets**: the fantasy Small and Super Toilets, the jungle and space Small Toilets.
+- **Rides**: the bounce rides and every ride whose script walks its riders (all of them run `WALKON` or `BOUNCE`).
+
+What the scripts do with the kept body (decoded from the shipped `.RSE`): nothing but the walk table. `WALKON`,
+`WALKOFF` and `WALKGET` walk it between the model's nodes and pose it on board ([TOURS.md](TOURS.md#the-walking-body-tour-011)):
+the sideshows Laughing Hyenas, Jungle Spray, Aqua Spray and Martian Mooners (cheer, action 6), Strength Bird, Fruit
+Shy and Strength Skull (the short gesture, action 5), and the hallow Arcade, the Super Toilet and the Steak, Gift,
+Balloon and Cauldron shops (action 1, which deletes the body on board, `0x4F9ED0`, until the walk-off draws it again).
+The rest of the scripts read and write the guest only through `VAR_LETMEON`, `VAR_PEEPID` and `VAR_LETMEOFF`
+(`TEST`/`COPY`; `HUSH`/`HOP` and the limbo table appear only in the walking scripts), which are script state, and use `EVENT`, `ADDOBJ` and `TRIGANIM` on the object's own effects, sounds
+and animations: the Small Toilets, the Giant Puzzles, the Strength Flower, the Ufo Blaster and the remaining shops leave
+the body standing where it stood, at the stand point it walked to. None of these objects sets `UsageInfo.RequiresTeleport`.
+
+OpenTPW draws such a guest (`GuestSimulation.ShowsKeptBody`) from the ride poses when the walk table or a bounce
+table holds it, and once its entry is gone (`WALKGET`, `UNBOUNCE`, a node the model lacks) where the walk or the bounce
+left it, with the frames its body plays (`FlatRideBounceRiders.HoldKeptBodies`); otherwise standing where it stood,
+in the stand pose, by the kids or costume renderer of its kept body's appearance. A body the script deleted is not
+drawn. Its balloon, thought bubble, pick and portrait stay off, as for any rider; an umbrella or warm items it holds
+stay with a body that stands in place (not with one a ride pose draws). A pools changing room still hides the guest
+(`[EXT:pools-swim]`). OpenTPW's own winter kiosk, glühwein stall and brolly shop set the key to 1 as well, so their
+customers stand at the counter too; the kiosk (capacity 5) and the brolly shop (capacity 10) can serve several at
+once, and those stand on the same stand point. Their `.sam` comments still say the script hides the customer: the
+shipped archives are pinned by the asset manifest of every park save that placed one, so the comment waits for a
+content change that has to touch them anyway. Before October 19, 2026 every served guest was hidden, so guests at the
+Burger Shop seemed to vanish into the hut, and the toilets' and the puzzles' users vanished too.
+
+### Leaving an object (ExitRide)
+
+A script lets a guest off by writing it to `VAR_LETMEOFF`. tp.exe reads that variable only in the ride update of a park
+turn (the dismiss `0x4E1410`): ride state 0 runs it after the admission (`0x4E1220`) and the breakdown test, unless that
+test sets state 1 or 4 (`0x4E159A`); states 1, 2 and 4 run it after the head step (`0x4E0E27`). So a use lasts the
+script's time plus up to one park turn (248 ms): the Burger Shop's `WAIT 1000` serves a customer 1.0 to 1.25 s. The
+dismiss runs ExitRide (`0x5014E0`) and writes 0 to the variable only when ExitRide succeeds.
+
+ExitRide:
+
+1. Puts the guest at `UsageInfo.ExitCellAppearPos` in the object's exit cell (`+0x38`; for an object without an exit
+   it is the entrance cell `+0x36`). The point `0x4DEDF0(1)` takes the bytes `ftol(255 x f)` after the object's
+   rotation, as the stand point does: 90 gives (y, 1 - x), 180 gives (1 - x, 1 - y), 270 gives (1 - y, x). The
+   teleport `0x4FA930` sets the position, zeroes the velocity and moves the guest to the cell's list.
+2. Takes the exit cell's link byte `+0x0D` (`0x522850`), reversed by `0x4D8C00` when the exit cell is the entrance
+   cell, and the neighbour along it (`0x4D97E0`).
+3. Calls the exit blocked when that neighbour is a queue cell (types 3 and 9, `0x536320`) or no route reaches it
+   (`0x4FA530`). It logs "SetDest on ride exit failed, exit of object %d is blocked!" and closes the ride
+   (`0x4DF150`): the open word, the pending visitor and `VAR_RIDECLOSED` = 1, as a breakdown's SetState does. The
+   guest stays on the ride (state 16) at the exit point, its kept body where it was, and `VAR_LETMEOFF` keeps it,
+   so every later ride update tries again.
+4. Otherwise runs the use routine (`0x4FD970`) and enters state 15.
+
+State 15 (`0x500900`) walks the guest to that neighbouring cell. A stuck walk clears its target and sends it to state 6;
+on arrival the guest decides again (state 6, "successfully left ride"). tp.exe first takes a major destination it set
+aside for a minor one; OpenTPW keeps none (`APPROX:GUEST-004`). `GuestSimulation.ExitRide`,
+`RideVisitorBridge.DismissLetOff` and `CloseForBlockedExit` port this.
+
+Some cell maps hold no exit cell with the link a placement writes:
+- the M3 and M4 gates, the measurement scenarios, test rigs and the developer prototype lay no access cells;
+- the Theme Park Inc slice and online visits keep no access-cell links.
+
+An attraction on such a map lets off in the cell it takes its guests in and routes to its `ExitCell`. Only a Theme
+Park World level types the footprints, so only there does ExitRide use the object's own exit cell
+(`Level.RegisterWithGuests`, `ownExitCell`).
+
+A guest the ride lets go of without a let-off leaves by ExitRide when it can. That happens when its script halted or
+faulted, or for a save's leftover rider. When ExitRide fails, the guest is set down beyond the exit, as a guest on a
+removed ride is (`QUEUE-010`).
+
+A demolished object's riders get neither ExitRide nor the use routine: tp.exe's removal message (`0x4FB360`) gives
+them their model back, the small happiness step and state 6 (`GuestSimulation.Unregister`). The pools changing room's
+swimmers keep their own exit (`[EXT:pools-swim]`).
+
+`ShopVisitAssetTests` runs the shipped Burger Shop in all four rotations: every customer is let off 1.0 to 1.3 s after
+the shop takes it, walks out of the hut, and no guest is lost. `ExitRideTests` covers the exit point, the reversal,
+the blocked exit and the state-15 walk.
+
 **Depth.** The quad is camera-facing, so all of it lies at the depth of the hotspot, and seen from above the ground just in front of the
 feet is nearer the camera than the hotspot: it hides whatever hangs below the hotspot. In the `.TPC` the soles of a standing kid end 3 to 5
 pixels below it (up to 8 in a stride). The original pulls such sprites towards the camera once their quad is placed: in its sprite pass
@@ -1001,7 +1094,7 @@ and a burst frame, the colour drawn anew whenever the balloon appears (after a p
 `0x4fa030`: the balloon hangs at the guest's position 0.35 of a park turn behind (`0x4f9f00`), one unit up, lowered by twice the distance
 between that point and the guest in world units (ten per cell), and bobbing through a 20-entry table (0 to 0.2, scaled by 1.5). A
 balloon that bursts (its life ends, a prank, a guard's catch) shows its burst frame for a moment; one put away for a ride just goes.
-The colour is the guest's own draw (the second draw after the reseed with its thing id, 0x541FD0, the same whenever the balloon appears, a shop's gift or a give-back), the bob phase steps on every eleventh balloon placement and every balloon is placed on every rendered frame (0x4FA030 from 0x518F90), and a burst fades the sprite from alpha 250 by 20 a step for 13 steps of 62 ms (script 0x74F4C0, register 7 the alpha byte, drawn through the sprite shader's alpha). GUEST-017 keeps the order of the placements and the burst's first frame.
+The colour is the guest's own draw (the second draw after the reseed with its thing id, 0x541FD0, the same whenever the balloon appears, a shop's gift or a give-back), the bob phase steps on every eleventh balloon placement and every balloon is placed on every rendered frame (0x4FA030 from 0x518F90), and a burst fades the sprite from alpha 250 by 20 a step for 13 steps of 62 ms (script 0x74F4C0, register 7 the alpha byte, drawn through the sprite shader's alpha). GUEST-017 retains original-save script phase (SAVE-013), the fixed-60Hz/non-pooled host scheduling boundary and placement fidelity. Live balloon players now use explicit creation/burst/removal and the shared integer sprite pass, not render-time transition detection; see [the timing contract](reverse/BALLOON-TIMING.md).
 
 **Litter.** `LitterRenderer` draws each item the drop creates (0x4D93B0; the only creators are the guest's litter step and the vomit step) as one flat quad of `Generic/Litter/SPR_LI` on the ground (script flag 0x80000: the quad's y extents go to the map's y axis, 0x589320), at the cell corner plus the 1-9 tenths the cell id's two draws give, half a unit above the ground height, the picture upright with the map's rows running down. The slot is the kind: 1-5 slots 0-4, 6 and any other slot 5, vomit slot 6, stinkbomb slot 7. The width takes the display's height over width (0x582EB0, 0.75 for 4:3, which is what `SpriteScale` uses). The sweep deletes the sprite (0x4D9620); litter restored from a save has none, as the original's cell load makes none.
 
@@ -1117,7 +1210,7 @@ The All Attractions shop/sideshow business rows display the counters already mai
 - `APPROX:QUEUE-022`, closed as `[EXT:synthetic-ride-zero-guard]` (only synthetic objects lack operating values).
 - `APPROX:ARRIVAL-002`, closed as `[EXT:online-visit-settings]` (the online visit is a read-only extension).
 - GUEST-006 keeps its original-behaviour remainder; `[EXT:online-bubbles-on]` covers the bubbles in a visit.
-- GUEST-017 keeps its remainder (the order of the balloon placements, the burst's first frame); `[EXT:empty-costume-heads-keep-kid-head]` avoids the original's division by an empty group. The costume return needs no change: the reseed with the thing id makes the kid set repeat.
+- GUEST-017 keeps the native import/host-clock/placement remainder (see [timing contract](reverse/BALLOON-TIMING.md)); `[EXT:empty-costume-heads-keep-kid-head]` avoids the original's division by an empty group. The costume return needs no change: the reseed with the thing id makes the kid set repeat.
 - Round 7 (sprites in the game): the sprite pixel size, the kid sets, the balloon colour, bob and fade, the staff scripts and their sprite clock, the entertainers' program, the staff variant, litter and the upgrade balloon are read and drawn (GUEST-014 to 017 narrowed, HEADS-004 narrowed). The balloon give-back after a ride reseeds the world generator and takes two draws (0x502053).
 - PATH-007 keeps the land rules; `[EXT:no-land-maps]` covers maps without a fence setup, Theme Park Inc and visits.
 - GUEST-014 is split: GUEST-020 holds the flagged-folder bank limits. PATH-013 is retired: PATH-017 holds the P window's layer. TRACK-032 is new: the saved-ride controller.

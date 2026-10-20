@@ -261,7 +261,7 @@ public sealed class RopeSwingActivity : IPoolActivity
 			// up the ladder from the deck to the platform
 			1 => heights.Deck + PoolAttractionSettings.SwingPlatformHeight * Math.Min( guest.PoolActivityTurns, PoolAttractionSettings.SwingClimbTurns ) / PoolAttractionSettings.SwingClimbTurns,
 			// down from the platform to the water in an arc, then the splash at the water's surface
-			2 => platform + (heights.Water - platform) * guest.PoolActivityTurns / PoolAttractionSettings.SwingTurns + 0.25f * MathF.Sin( MathF.PI * guest.PoolActivityTurns / PoolAttractionSettings.SwingTurns ),
+			2 => platform + (heights.Water - platform) * guest.PoolActivityTurns / PoolAttractionSettings.SwingTurns + 0.25f * MathF.Sin( MathF.PI * guest.PoolActivityTurns / PoolAttractionSettings.SwingTurns ), // [DET:presentation] the drawn feet height (PoolFeetHeight)
 			3 => heights.Water,
 			_ => null
 		};
@@ -542,6 +542,7 @@ public sealed class RiverActivity : IPoolActivity
 			return PoolActivityStep.BackInWater;
 		}
 		// a floater keeps its gap along the lane: with another body in the water ahead of it within FloatGap (a floater, or a swimmer in the lane) it only drifts, and it stands when that one is closer than FloatMinimumGap
+		var rivers = PoolRiverMap.Of( simulation.Grid.Cells );
 		var (fromX, fromY) = (navigation.X, navigation.Y);
 		var blocker = Blocker( simulation, guest, region, fromX, fromY, x - fromX, y - fromY );
 		if ( blocker < PoolRiverSettings.FloatGap )
@@ -549,14 +550,37 @@ public sealed class RiverActivity : IPoolActivity
 			x = fromX;
 			y = fromY;
 			if ( blocker >= PoolRiverSettings.FloatMinimumGap )
-				PoolRiverMap.Of( simulation.Grid.Cells ).Float( ref x, ref y, PoolRiverSettings.DriftSpeed );
-			else
-				return PoolActivityStep.Continue;
+				rivers.Float( ref x, ref y, PoolRiverSettings.DriftSpeed );
 		}
 		// the float never leaves free water: a step that would (a lane the rim narrows) is not taken this turn
-		if ( region.IsWater( x, y ) )
+		if ( !region.IsWater( x, y ) )
+			(x, y) = (fromX, fromY);
+		// [EXT:pools-waves] the waves of the pool carry the floater too, along its lane only (WavePush), where the push keeps it in free water of its own ring and clear of the other bodies
+		var (pushX, pushY) = WavePush( rivers, x, y, simulation.PoolCurrent( guest, region ) );
+		if ( pushX != 0 || pushY != 0 )
+		{
+			var body = new PoolSwimBody { X = x, Y = y };
+			if ( PoolSwimming.Drift( region, ref body, pushX, pushY, simulation.WaterBodyPoints( region, guest, x, y ) ) )
+				(x, y) = (body.X, body.Y);
+		}
+		if ( (x, y) != (fromX, fromY) )
 			simulation.MovePoolGuest( guest, x, y );
 		return PoolActivityStep.Continue;
+	}
+
+	/// <summary>
+	/// [EXT:pools-waves] The part of the water's push (<paramref name="push"/>, 16.16 cells; the waves run along +x +y) a floater at (<paramref name="x"/>, <paramref name="y"/>) takes: its projection on the axis of
+	/// the floater's cell's flow, so the floater keeps to the middle line of its lane; on a lane that runs with the waves it is carried forward, on one that runs against them held back. Nothing when the pushed
+	/// point would leave the floater's cell, its next or its previous cell of the same ring (a small ring's lanes lie side by side), or when the point is in no river cell. Integers only.
+	/// </summary>
+	public static (int X, int Y) WavePush( PoolRiverMap rivers, int x, int y, (int X, int Y) push )
+	{
+		var cell = (X: x >> 16, Y: y >> 16);
+		if ( push == (0, 0) || rivers.FlowAt( cell.X, cell.Y ) is not { } flow )
+			return (0, 0);
+		var along = flow.Dx != 0 ? (push.X, 0) : (0, push.Y);
+		var landing = ((x + along.Item1) >> 16, (y + along.Item2) >> 16);
+		return landing == cell || landing == rivers.NextCell( cell.X, cell.Y ) || landing == rivers.PreviousCell( cell.X, cell.Y ) ? along : (0, 0);
 	}
 
 	/// <summary>The distance (16.16) to the nearest other body in the water ahead of the guest (a floater or a swimmer in the lane) within <see cref="PoolRiverSettings.FloatGap"/> (ahead: on the side of the step the guest is about to take), or <see cref="int.MaxValue"/> when there is none.</summary>
@@ -577,6 +601,136 @@ public sealed class RiverActivity : IPoolActivity
 	}
 
 	/// <summary>A floater is always a body in the water.</summary>
+	public bool InWater( GuestSimulation simulation, Guest guest ) => true;
+
+	public int SpriteSlot( Guest guest ) => PoolSwimSlots.FloatingInRing;
+
+	public void Abort( GuestSimulation simulation, Guest guest ) => PoolActivityHelpers.Left( simulation, Id, guest.PoolActivityTarget );
+}
+
+/// <summary>[EXT:pools-waves] The numbers of the wave pool's ring floaters (<see cref="WaveRingActivity"/>; OpenTPW's own).</summary>
+public static class PoolWaveRingSettings
+{
+	/// <summary>A float lasts at least 60 park turns (15 seconds), plus a draw of up to <see cref="ExtraTurns"/>, and never beyond the end of the waves' run.</summary>
+	public const int MinimumTurns = 60;
+	/// <summary>The drawn part of a float's length (up to 15 seconds more).</summary>
+	public const int ExtraTurns = 61;
+	/// <summary>A ring is offered only while at least this many turns of the waves' run are left, so a float rides the swell.</summary>
+	public const int MinimumRunLeft = 40;
+	/// <summary>The pool's rings: one per this many bodies the pool takes (<see cref="PoolSwimRegion.Capacity"/>), at least one.</summary>
+	public const int BodiesPerRing = 4;
+	/// <summary>How far a floater paddles back towards its own spot per park turn, 16.16 cells (1/20 cell): less than the swell on a full crest (about 0.085 cell a turn on each axis), so the waves rock it and it only makes up the drift.</summary>
+	public const int PaddleSpeed = Fixed16.One / 20;
+	/// <summary>Within this distance of its spot a floater does not paddle (16.16 cells): it lets the swell rock it.</summary>
+	public const int RestRadius = Fixed16.One / 4;
+	/// <summary>The happiness a whole float pays at its end (meter 0 to 100), on top of the waves' own pay once per period while it floats (<see cref="PoolWaves.HappinessGain"/>).</summary>
+	public const float HappinessGain = 2f;
+}
+
+/// <summary>
+/// [EXT:pools-waves] Floating on an inflatable ring in a wave pool (<c>waves.ring</c>, docs/POOLS.md, "Ring floaters"): while a pool's waves run, a free swimmer away from a lazy river lane and the steps may take
+/// one of the pool's rings (one per <see cref="PoolWaveRingSettings.BodiesPerRing"/> bodies it takes, counted against its wave machine) and bob on the swell for 15 to 30 seconds, never beyond the end of the run
+/// (slot 13, the lazy river's ring art), then swim on, happier: the waves' own pay once per period while it floats and a small bonus at the end. The waves rock it to and fro (<see cref="PoolWaves.Sway"/>: along
+/// +x +y on the crest, back in the trough, through <see cref="PoolSwimming.Drift"/>: in free water, clear of the other bodies and never into a lazy river lane), and when they have carried it away it paddles
+/// back towards the spot where it took the ring (<see cref="Guest.PoolActivityX"/>, <see cref="Guest.PoolActivityY"/>). Waves that stop (the machine is switched off or taken away) end the float at once,
+/// without the bonus. Its state is the guest's position, its spot, its target (the machine) and the turns left; integers only, and the only draw is the float's length from the swimmer's own stream.
+/// </summary>
+// [EXT:pools-waves] OpenTPW's own ring floaters; the original game has no pools
+public sealed class WaveRingActivity : IPoolActivity
+{
+	public const string ActivityId = "waves.ring";
+	private readonly PoolAttractionSites sites;
+
+	public WaveRingActivity( PoolAttractionSites sites ) => this.sites = sites ?? throw new ArgumentNullException( nameof( sites ) );
+
+	public string Id => ActivityId;
+
+	/// <summary>The turns of the waves' current run that are left on this park turn (0 in a rest).</summary>
+	private static int RunLeft( PoolWaveSettings waves, long turn ) =>
+		PoolWaves.IsRunning( waves, turn ) ? PoolWaves.RunTurns - (int)(turn % PoolWaves.CycleTurns( waves )) : 0;
+
+	/// <summary>Whether the cell, or one of its eight neighbours, is a lazy river lane or the pool's steps: no ring is taken there, so a floater does not sit in a lane or at the steps.</summary>
+	private static bool NearLaneOrSteps( PoolRiverMap rivers, PoolSwimRegion region, int x, int y )
+	{
+		for ( var dy = -1; dy <= 1; dy++ )
+			for ( var dx = -1; dx <= 1; dx++ )
+				if ( rivers.IsRiver( x + dx, y + dy ) || (x + dx, y + dy) == region.Access )
+					return true;
+		return false;
+	}
+
+	/// <summary>How many rings the pool has.</summary>
+	public static int RingsOf( PoolSwimRegion region ) => Math.Max( 1, region.Capacity / PoolWaveRingSettings.BodiesPerRing );
+
+	public PoolActivityOffer? Offer( GuestSimulation simulation, Guest guest, PoolSwimRegion region )
+	{
+		if ( !region.Contains( guest.CellX, guest.CellY ) || PoolWaveSettings.ActiveMachineIn( sites, simulation.Grid.Cells, region ) is not { } machine
+			|| PoolWaterEffects.WavesOf( sites, simulation.Grid.Cells, region ) is not { } waves || RunLeft( waves, simulation.ParkTurn ) < PoolWaveRingSettings.MinimumRunLeft
+			|| PoolActivityHelpers.Occupancy( simulation, Id, machine.ObjectId ) >= RingsOf( region )
+			|| NearLaneOrSteps( PoolRiverMap.Of( simulation.Grid.Cells ), region, guest.CellX, guest.CellY ) )
+			return null;
+		return new PoolActivityOffer( machine.ObjectId, guest.CellX, guest.CellY );
+	}
+
+	public bool Start( GuestSimulation simulation, Guest guest, PoolActivityOffer offer, ref uint random )
+	{
+		if ( PoolActivityHelpers.RegionOf( simulation, guest ) is not { } region || PoolWaterEffects.WavesOf( sites, simulation.Grid.Cells, region ) is not { } waves
+			|| PoolActivityHelpers.Starting( simulation, guest, Id, offer.TargetId ) >= RingsOf( region ) )
+		{
+			PoolActivityHelpers.Left( simulation, Id, offer.TargetId );
+			return false;
+		}
+		var drawn = PoolWaveRingSettings.MinimumTurns + (int)(PoolSwimming.Next( ref random ) % PoolWaveRingSettings.ExtraTurns);
+		guest.PoolActivityTurns = Math.Max( 1, Math.Min( drawn, RunLeft( waves, simulation.ParkTurn ) ) );
+		(guest.PoolActivityX, guest.PoolActivityY) = (guest.Navigation.X, guest.Navigation.Y);
+		return true;
+	}
+
+	public PoolActivityStep Update( GuestSimulation simulation, Guest guest, ref uint random )
+	{
+		var target = guest.PoolActivityTarget;
+		var step = UpdateCore( simulation, guest );
+		if ( step != PoolActivityStep.Continue )
+			PoolActivityHelpers.Left( simulation, Id, target );
+		return step;
+	}
+
+	private PoolActivityStep UpdateCore( GuestSimulation simulation, Guest guest )
+	{
+		if ( PoolActivityHelpers.RegionOf( simulation, guest ) is not { } region || PoolWaterEffects.WavesOf( sites, simulation.Grid.Cells, region ) is not { } waves )
+			return PoolActivityStep.BackInWater;
+		var turn = simulation.ParkTurn;
+		// the waves pay a floater as they pay a swimmer, once per period while they run
+		if ( PoolWaves.HappinessGain( waves, turn ) is var gain and > 0f )
+			PoolActivityHelpers.Gain( guest, gain );
+		if ( --guest.PoolActivityTurns <= 0 )
+		{
+			PoolActivityHelpers.Gain( guest, PoolWaveRingSettings.HappinessGain );
+			return PoolActivityStep.BackInWater;
+		}
+		var navigation = guest.Navigation;
+		var body = new PoolSwimBody { X = navigation.X, Y = navigation.Y };
+		var others = simulation.WaterBodyPoints( region, guest, body.X, body.Y );
+		var rivers = PoolRiverMap.Of( simulation.Grid.Cells );
+		// the swell first (forward on the crest, back in the trough), then a paddle back towards the spot when it has carried the floater away from it; never into a lazy river lane
+		var (swayX, swayY) = PoolWaves.Sway( waves, turn, body.X, body.Y );
+		if ( !rivers.IsRiver( (body.X + swayX) >> 16, (body.Y + swayY) >> 16 ) )
+			PoolSwimming.Drift( region, ref body, swayX, swayY, others );
+		var (toX, toY) = (guest.PoolActivityX - body.X, guest.PoolActivityY - body.Y);
+		var distance = Fixed16.Length( toX, toY );
+		if ( distance > PoolWaveRingSettings.RestRadius )
+		{
+			var paddle = Math.Min( PoolWaveRingSettings.PaddleSpeed, distance - PoolWaveRingSettings.RestRadius );
+			var (paddleX, paddleY) = ((int)((long)toX * paddle / distance), (int)((long)toY * paddle / distance));
+			if ( !rivers.IsRiver( (body.X + paddleX) >> 16, (body.Y + paddleY) >> 16 ) )
+				PoolSwimming.Drift( region, ref body, paddleX, paddleY, others );
+		}
+		if ( (body.X, body.Y) != (navigation.X, navigation.Y) )
+			simulation.MovePoolGuest( guest, body.X, body.Y );
+		return PoolActivityStep.Continue;
+	}
+
+	/// <summary>A ring floater is always a body in the water.</summary>
 	public bool InWater( GuestSimulation simulation, Guest guest ) => true;
 
 	public int SpriteSlot( Guest guest ) => PoolSwimSlots.FloatingInRing;

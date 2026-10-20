@@ -88,7 +88,7 @@ public static class QueuePaths
 	public static QueueBuildResult TryExtend( GuestPathGrid grid, RideVisitorBridge ride, int x, int y, Func<int, int, bool>? isBlocked = null, Func<int, int, bool>? givesWay = null, Action<int, int>? demolish = null )
 	{
 		ride.RecomputeQueue( grid );
-		if ( grid.IsWalkable( x, y ) && HasQueueCells( grid, ride ) && GuestPathGrid.DirectionBetween( ride.QueueBackCell.X, ride.QueueBackCell.Y, x, y ) >= 0 )
+		if ( grid.IsWalkable( x, y ) && grid.Cells.PoolBridges?.Covers( x, y ) != true && HasQueueCells( grid, ride ) && GuestPathGrid.DirectionBetween( ride.QueueBackCell.X, ride.QueueBackCell.Y, x, y ) >= 0 )
 			return Connect( grid, ride, ride.QueueBackCell, (x, y) ) ? QueueBuildResult.Connected : QueueBuildResult.Blocked;
 		var result = CheckExtend( grid, ride, x, y, isBlocked, givesWay );
 		if ( result != QueueBuildResult.Ok )
@@ -159,7 +159,7 @@ public static class QueuePaths
 	// [BIN:TPW-EXE:0x004DE1F0 re-evaluation callers] 0x4DE1F0 runs after the queue tool's cell click 0x524960, the placement 0x528A70, 0x52FE50, the cell type setter 0x5346D0 and the cell clear 0x5367A0: every queue edit raises RideVisitorBridge.QueueEdited, and the level opens a closed ride that passes the original's tests (Level.ReevaluateQueuedRide)
 	public static bool Connect( GuestPathGrid grid, RideVisitorBridge ride, (int X, int Y) before, (int X, int Y) path )
 	{
-		if ( !grid.IsWalkable( path.X, path.Y ) || GuestPathGrid.DirectionBetween( before.X, before.Y, path.X, path.Y ) < 0 )
+		if ( !grid.IsWalkable( path.X, path.Y ) || grid.Cells.PoolBridges?.Covers( path.X, path.Y ) == true || GuestPathGrid.DirectionBetween( before.X, before.Y, path.X, path.Y ) < 0 )
 			return false;
 		PathLinkWriter.LinkQueueStep( grid.Cells, path.X, path.Y, path.X - before.X, path.Y - before.Y, (byte)ParkCellType.Queue, OwnedBy( ride ) );
 		if ( ride.OwnerWord != 0 )
@@ -182,7 +182,7 @@ public static class QueuePaths
 		for ( var direction = 0; direction < 4; direction++ )
 		{
 			var (dx, dy) = GuestPathGrid.Directions[direction];
-			if ( grid.IsWalkable( back.X + dx, back.Y + dy ) )
+			if ( grid.IsWalkable( back.X + dx, back.Y + dy ) && grid.Cells.PoolBridges?.Covers( back.X + dx, back.Y + dy ) != true )
 				return Connect( grid, ride, back, (back.X + dx, back.Y + dy) );
 		}
 		return false;

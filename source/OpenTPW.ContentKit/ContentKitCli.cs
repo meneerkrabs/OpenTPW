@@ -92,6 +92,14 @@ public static class ContentKitCli
 		          Packs each set folder (slot<NN>_d<d>_f<f>.png frames and a set.json with the name, the detail and kid flags, the slots'
 		          directions and frames and every frame's origin) into NAME.ESP, .TPC and, at full detail, .FPC. With --mod the files go to
 		          <mod>/<overrides>/esprites/<folder>/, where the mod's content.overrides makes the game read them instead of its own.
+
+		  measure-anchors --data <game Data folder> --anchors <anchors.json> --pools <folder of the 2x kid sets> --out <file> [--force]
+		          A maintainers' tool of the umbrellas extension (docs/UMBRELLAS.md): reads the game's own kid and costume sprite sets and writes
+		          the guests' hand anchors as numbers only. Players never need it; its table is committed.
+
+		  measure-head-anchors --data <game Data folder> --anchors <winter anchors.json> --pools <folder of the 2x kid sets> --out <file> [--force]
+		          A maintainers' tool of the winter extension (docs/WINTER.md): the same for the guests' head (a hat's and earmuffs' attach points), every land slot the
+		          original sets share with the 2x redraws, as numbers only.
 		""";
 
 	public static int Run( string[] args, TextWriter output, TextWriter error )
@@ -114,6 +122,12 @@ public static class ContentKitCli
 					return 0;
 				case "sprites":
 					PrintResult( output, SpritesCommand.Run( options ) );
+					return 0;
+				case "measure-head-anchors":
+					PrintResult( output, MeasureHeadAnchorsCommand.Run( options ) );
+					return 0;
+				case "measure-anchors":
+					PrintResult( output, MeasureAnchorsCommand.Run( options ) );
 					return 0;
 				default:
 					throw new UsageException( $"Unknown command '{args[0]}'." );

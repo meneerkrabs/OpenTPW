@@ -123,7 +123,7 @@ public partial class Level
 			if ( Camera.Mode is ParkCameraMode park )
 				return ParkCameraMode.OriginalYaw( park.Yaw );
 			var forward = Camera.Rotation.Forward;
-			return MathF.Atan2( forward.X, forward.Y );
+			return MathF.Atan2( forward.X, forward.Y ); // [DET:presentation] the camera yaw for the tilt drag, an input of the coaster tool
 		}
 	}
 
@@ -138,7 +138,7 @@ public partial class Level
 	// [BIN:TPW-EXE:0x536320 cell predicates] 0x536310 type 1; 0x536320 types 3 and 9; 0x536340 type 9; 0x536350 type 10; 0x536360 types 7 and 0x1e; 0x536380 type 4: the cell type is the word at cell +8, the flags the word at +0xe
 	internal static bool IsCoasterAreaCell( ParkCellMap cells, int x, int y )
 	{
-		if ( !cells.InBounds( x, y ) )
+		if ( !cells.InBounds( x, y ) || cells.PoolBridges?.Reserves( x, y ) == true )
 			return false;
 		var type = cells.RawTypeAt( x, y );
 		var flags = cells.FlagsAt( x, y );
@@ -313,6 +313,7 @@ public partial class Level
 		CellTool.Cancel();
 		station.Close();
 		builder.Ride.EnterTool();
+		builder.OpenFailingClosure();
 		SetCoasterToolStation( station );
 		CoasterPanel = new CoasterToolPanel( builder, IsCoasterCellFree );
 		return true;
@@ -346,6 +347,7 @@ public partial class Level
 		var count = track.Nodes.Count;
 		var result = builder.Place( x, y );
 		LastActionMessage = closing && track.IsClosed ? "Closed the circuit; click the station end again to complete the coaster."
+			: closing ? $"The circuit stays open: {result}."
 			: track.Nodes.Count == count ? $"Cannot build a pylon here: {result}."
 			: result == CoasterPlaceResult.Ok ? $"Placed a pylon (track cost so far ${builder.BuildCost})."
 			: $"Placed a pylon marked invalid: {result}.";
@@ -380,6 +382,48 @@ public partial class Level
 		builder.Delete();
 		LastActionMessage = "Removed the coaster track.";
 		return true;
+	}
+
+	// ---- Original save import --------------------------------------------------------------------------
+
+	/// <summary>
+	/// Restores the coasters of an original save's Coasters block (<see cref="OriginalCoasterImport"/>), after the stations were placed (their three station nodes built)
+	/// and the scripts took their saved run state. Each block binds to its station by the station's mesh instance id, as tp.exe's loader does; a block whose station
+	/// is not a placed coaster station refuses the park (the original dereferences a null controller there). Only a park started from an original save does this.
+	/// </summary>
+	// [BIN:TPW-EXE:0x437CBF coaster bind] per saved coaster the loader walks the controller list 0x790FE0 for the one whose station mesh id (+0x10) is the header's +0xA; the RideSystem loader 0x4647A0 made that controller when it recreated the station's mesh instance (0x463060 → 0x4368F0 with the load flag), and with none matching the loader writes through a null pointer (0x437CD5)
+	private void ImportOriginalCoasters()
+	{
+		if ( resumeState != null || OriginalPark?.Save is not { CoasterBlock: { Count: > 0 } block } save )
+			return;
+		var scripts = save.Rsse?.Records.Where( record => record.ParentScriptId == 0 ).ToList() ?? new List<SaveRsseRecord>();
+		foreach ( var saved in block.Coasters )
+		{
+			if ( save.CoasterStation( saved ) is not { } attraction )
+				throw new InvalidDataException( $"The save's coaster of station mesh {saved.StationMeshInstanceId} binds to no single saved attraction; the original would crash here (0x437CD5)." );
+			var station = Objects.Objects.FirstOrDefault( item => !item.IsDeleted && item.ThingId == attraction.Id );
+			if ( station?.Runtime.Coaster is not { } ride )
+				throw new InvalidDataException( $"The save's coaster of station mesh {saved.StationMeshInstanceId} binds to attraction thing {attraction.Id} (Info.Id {attraction.InfoId}), which this park does not place as a coaster station; the original would crash here (0x437CD5)." );
+			var plan = OriginalCoasterImport.Map( saved, ride );
+			ride.ImportOriginal( plan.Track, plan.State, plan.BreakdownState, plan.SeatsPerTrain, plan.Trains );
+			// the first frame after the load: no substep runs (0x415140), its coaster update rebuilds keeping the saved trains and runs the controller's first motion tick, which takes no time
+			ride.UpdateFirstFrameAfterLoad();
+			var lines = plan.Evidence.Concat( OriginalCoasterImport.Compare( saved, ride ) ).ToList();
+			// [BIN:TPW-EXE:0x468760 coaster slot] the header's +0xC goes to the slot allocator as the preferred slot, which stores the controller in 0x790BD0[slot]: a station script whose +0xE0 holds that slot reaches this controller
+			var owners = scripts.Where( record => record.ThingId == station.ThingId ).ToList();
+			if ( owners.Count == 1 && owners[0].Coast != 0 )
+			{
+				if ( owners[0].Coast != saved.Slot )
+					throw new InvalidDataException( $"The save's station script {owners[0].ScriptId} of attraction thing {attraction.Id} holds coaster slot {owners[0].Coast}, but its coaster's block holds slot {saved.Slot}." );
+				ride.BindImportedScript();
+			}
+			lines.Insert( 0, $"Coaster imported for attraction thing {attraction.Id} (Info.Id {attraction.InfoId}): {ride.Track.PylonCount} pylons, {(ride.Track.IsComplete ? ride.Track.IsCut ? "complete, cut open" : "complete" : "incomplete")}, state {(int)ride.State}, {ride.Trains.Count} trains, speed setting {ride.SpeedSetting}." );
+			foreach ( var line in lines )
+			{
+				Park?.Import?.Report( line );
+				Log.Trace( $"Park coaster import: {line}" );
+			}
+		}
 	}
 
 	// ---- Park-resume snapshot -----------------------------------------------------------------------

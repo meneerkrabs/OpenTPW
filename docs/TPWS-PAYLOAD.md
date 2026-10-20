@@ -120,8 +120,8 @@ the TrackRides block, `KOLC`'s word is VanillaTime, `RYLF` holds RSSE, `SAOC`'s
   and the sub-chunk sizes must add up to it), FlyingRides `0x55e020` (`'FLY_'`, an on word, a counted slot table, ten
   words and one block per nonzero slot), RSSE `0x5597a0` (`'RSSE'`, a counted header, five words, a record count and size,
   then per record its struct, eight counted buffers, the folder string and an `'OBJ '` list; see "RSSE block" below), Camera 40 (`0x42cec0`), Advisor `0x599d00`
-  (`'ADV_'`, two counted buffers), Sound `0x51c400` (the settings, and with sound on a chunk the loader skips by its
-  length word), Cheat 2 (`0x405570`), AdvisorScoring 4 (`0x59c860`) and UI `0x481680` (`u32 count`, count x `0x21c`).
+  (`'ADV_'`, two counted buffers), Sound `0x51c400` (two flags, the counted 84-byte settings and, when sound was initialised, three
+  listener floats and the sound library's voice list behind its length word; see "Sound block"), Cheat 2 (`0x405570`), AdvisorScoring 4 (`0x59c860`) and UI `0x481680` (`u32 count`, count x `0x21c`).
   The Jungle Easymode save's seventeen widths all agree with these readers. An empty Coasters block is exactly its
   16-byte count and globals. The World block is the loader's own readers
   (`SaveBlockWidths.TryMeasureWorld`: the 64 variable bytes, the control manager 4,806, the macro AI 670 + 28 + 18, 0x4000
@@ -173,8 +173,9 @@ ID), `SaveStaffHq` (9), `SaveAdvisorController` (11: eight 21-byte pending
 records, three raw words, 351 history entries, the current record),
 `SaveResearchLab` (14, records raw), `SaveBank` (16), `SaveChallengeSystem`
 (19) and `SaveGuest` (1, `SaveGuests.cs`). The mechanic HQ (10), tag system (12),
-park analyser (13), weather (15) and UI receiver (17) are walked by width and not
-decoded.
+weather (15) and UI receiver (17) are walked by width and not decoded. The park
+analyser (13) has bounded recent-research and statistics readers described below;
+its remaining state stays opaque.
 
 ### Person and staff (`SavePerson`, `SaveStaff`)
 
@@ -229,9 +230,11 @@ ride, shop, sideshow and win counts, `+0x1D4` arrival date, `+0x1D8` arrival ind
 `+0x214` balloon life, `+0x218`/`+0x21C` last position, `+0x220` state, `+0x224` saved state, `+0x228`/`+0x22A` queue next and previous. The constructor `0x4FAEC0` zeroes the links, flag, destinations and
 last position and stores the constant 6 into both state and saved state (6 in every saved guest).
 
-- `mBeenAdmitted` is 1 after `OnAdmittance` (`0x5012B0`, log "Person %d: OnAdmittance (I think I'm on object %d)"); the dismissal `0x5012F0` ("dismissed from queue on ride %d") logs event type 6 with the major
+- `mBeenAdmitted` is the called-forward flag: 1 after `OnAdmittance` (`0x5012B0`, from the ride's LetMeOn; log "Person %d: OnAdmittance (I think I'm on object %d)"), cleared when the guest notices it in its queue update `0x4FFFF0` (state 13); only a state-11 head at position 0 carries it, typically for one turn. The dismissal `0x5012F0` ("dismissed from queue on ride %d") logs event type 6 with the major
   destination, clears the links, the flag, the destination and the queue position, and returns the guest to state 6. `SaveGuest` refuses any other flag value.
-- `mQNext`/`mQPrev` are the thing ids of the neighbours in the attraction's queue (0 ends the chain; the unlink code `0x501971` rewrites both neighbours).
+- `mQNext`/`mQPrev` are the thing ids of the neighbours in the attraction's queue (0 ends the chain). The unlink `0x4DDD20` rewrites both neighbours (or the ride's head); the needs phase at `0x501971` clears only the guest's own links when its state is outside 11..14.
+- `mQueuePos` (+0x1F1) is the recorded queue position (0 = the front, written by `0x501160` before routing), except in state 14: the state-14 entry (`0x501EF8` → `0x4E2670`) stores the sideshow-win draw there, so the byte is the win flag (`SaveGuest.SideshowWon`), and the queue re-evaluation `0x501390` exempts state 14.
+- The happiness at queue join (guest +0x20C, a float) is not saved: the thing-list loader zeroes it right after the constructor (`0x51861C`).
 - `mSavedState` is the state to resume after a spot animation: `0x4FC800` copies the state into it, stamps `mTimeOfLastSpotAnim` (+0x208) with the world tick and enters state 8 through the state setter
   `0x501DB0`. All 52 call sites of that setter pass at most 0x15, so states are 0 to 21 (`SaveGuest.MaximumState`; the reader refuses more). The setter itself does not guard the range: it stores the state at `0x501DBF` before its `ja` at `0x501DC5`.
 - `mLastPosX`/`mLastPosY` are the balloon sprite's previous position: `0x4FE900` moves the balloon script (+0x210) from them to the new point and stores it (0 without a balloon).
@@ -300,7 +303,7 @@ and bus. Its body is 1,091 bytes while the history buffers hold 30 entries:
 | 4 + 2 | `MeshInstanceID` (110–125 in Easymode), `mFlags` |
 | 33 × (2 + 2) | `mNameA[i]`, `mNameB[i]` interleaved: the two UTF-16 sign lines ("Belly"/"Bounce", gates "LOST"/"Kingdom") |
 | 4 × 3 | `mRideScriptHandle`, `mTrackRideHandle`, `mState` (+0x19c: 0 working, 1 broken down, 2 upgrade requested, 3 not choosable, 4 condemned; SetState `0x4e0e60` closes the object for 1, 2 and 4) |
-| 24 | `mTopLeft`, `mEntryPos`, `mNext`, `mAssignedStaffMember` (+0x5e, the claiming staff thing), `mBackOfQueue` (u16), `mCanLoad` (u32, the open word +0x68), `mExitPos`, `mFirstInQ` (u16), `mIsTrackRideValid` (u32), `mUpgradeParent` (u16) |
+| 24 | `mTopLeft`, `mEntryPos`, `mNext`, `mAssignedStaffMember` (+0x5e, the claiming staff thing), `mBackOfQueue` (u16, the cell id y × 128 + x + 1 of the cached back-of-queue cell, 0 when not cached, `0x4DE130`; not a guest), `mCanLoad` (u32, the open word +0x68), `mExitPos`, `mFirstInQ` (u16, the head guest; there is no tail word), `mIsTrackRideValid` (u32), `mUpgradeParent` (u16) |
 | 6 history buffers | each `u32` `mCurrentEntry`, `u32` `mNumEntries`, `u8` `mWrappedAround`, `u32` `mTemp` (today's running value), then count × `u32`; `mNumCustomers` (+0x1a0) follows the second buffer and `mNumWalkAways` (+0x1a4) the third. The rings are, in order, the daily costs (+0xf8), takings (+0x70), customers (+0x1a8), walk-aways (+0x230), visits (+0x2b8) and the visits' averaged happiness change (+0x340); the day message 0xb rolls each into its ring (`0x4dd320`) |
 | 1 + 1 + 4 + 2 | `mOperatingCapacity`, `mOperatingDuration`, `mOperatingSpeed`, `mPersonBeingLoaded` |
 | 6 × 4 | `mCostOfGoods`, `mQualityOfGoods`, `mChanceOfWinning`, `mPricePerUse` (the loader clamps it to 0–500), `mAmountOfSpecialIngredient`, `mQueueSizeInCells` |
@@ -539,28 +542,29 @@ before `SAOC`. The reader is read-only; OpenTPW builds no coaster chunk (the wri
 
 ```
 u32 coaster count          (linked-list count)
-u32, u32, u32              three globals, meaning unqualified
+u32, u32, u32              the slot allocator's state: 0x790B04 used slots, 0x790B00 free holes,
+                           0x791CE0 next-slot cursor (0, 0, 1 in an empty park)
 per coaster:
   32-byte header:
-    +0  u32  remapped controller flags
-    +4  u32  controller+8
-    +8  u16  controller+12      +10 u16 controller+16
-    +12 u16  controller+20      +14 u16 controller+28    +16 u16 controller+32
+    +0  u32  remapped controller flags (+0x3C bits 0/1, +0 track flags 0x20..0x800)
+    +4  u32  controller+8       (state word)
+    +8  u16  controller+12      (type id)      +10 u16 controller+16 (station mesh instance id)
+    +12 u16  controller+20      (slot)         +14 u16 controller+28 +16 u16 controller+32
     +18 f32  controller+44      (the power factor, 0 or 1)
-    +22 u16  section count      (nodes excluding descriptor flag 0x10)
-    +24 u16  controller+244     +26 u16 controller+240
-    +28 u32  controller+320     (riders on board)
+    +22 u16  section count      (chain nodes excluding descriptor flag 0x10: no station or end node)
+    +24 u16  controller+244     (trains in service)   +26 u16 controller+240 (seats per train)
+    +28 u32  controller+320     (the self-intersection count, not riders)
   auxiliary block: u32 count, then count × u16 ordinals
-    (the loader reads it before any section record, into the expected third node's
-     +180 link slots; the saver writes it where its node walk meets ordinal 2)
+    (station node S2's collision list; the loader reads it before any section record,
+     the saver writes it where its chain walk meets the node with node+0 == 2)
   per section (the header's count times):
     +0  u32  remapped section+8 flags      +4 u32 section+112
     +8  u16  cell X       +10 u16 cell Y   (the descriptor's +12/+16 grid coordinates)
     +12 u8   cell-stack insertion ordinal
     +13 f32  section+232  (height parameter t)   +17 f32 section+216 (bank)
     +21/+25/+29 f32       section+220 (incline), +224 (yaw), +248 (loop rotation, loop nodes only)
-    +33 u8   link count   (narrowed from section+176), then that many u16 ordinals,
-                          each its own 2-byte read like the original
+    +33 u8   collision count (narrowed from section+176, at most 8), then that many u16
+                          collision ordinals, each its own 2-byte read like the original
   per train slot of the coaster type (type +0x2e8, uiMaxTrains):
     27-byte record: u32 train flags, u8 car count (+0xc), u32 +0x74 (the reference car's position, f32),
                     u32 +0x78 (speed, f32), u32 +0x38, u32 +0x64, u32 +0x68, u16 riders (+0x10)
@@ -569,9 +573,81 @@ per coaster:
       then count A u32 (riders on the lap) and count B u32 (guests seated at the station)
 ```
 
+The header fields as tp.exe's loader treats them (`SaveCoaster` names them):
+
+| Header | Controller | Meaning | Restored |
+| --- | --- | --- | --- |
+| +0 u32 | +0x3C b0/b1, +0 0x20..0x800 | wire 0x1 track complete, 0x2 circuit cut open, 0x4..0x100 the track flags (SAVE-921) | yes |
+| +4 u32 | +8 | state word: low nibble 1/2/4/8, mode bits 0x10/0x20/0x40 (0x40 the breakdown, no power); the constructor's value is 0x11 | yes |
+| +8 u16 | +0xC | coaster type id (`TypeId`) | no, the constructor set it |
+| +0xA u16 | +0x10 | station mesh instance id (`StationMeshInstanceId`), the bind key | used to bind |
+| +0xC u16 | +0x14 | slot in the table `0x790BD0` (`Slot`, at most 255), the scripts' coaster handle | as the saved slot, which the allocator assigns as given |
+| +0xE u16 | +0x1C | placement value 1 from `0x466F90` (SAVE-922) | no |
+| +0x10 u16 | +0x20 | placement value 2 from `0x466F90` (SAVE-922) | no |
+| +0x12 f32 | +0x2C | power factor 0 or 1 | yes |
+| +0x16 u16 | — | section count | — |
+| +0x18 u16 | +0xF4 | trains in service (`TrainsInService`; the loop bound of `0x435784`, `0x43BA35`, `0x43CD36`) | yes |
+| +0x1A u16 | +0xF0 | seats per train (`SeatsPerTrain`) | yes |
+| +0x1C u32 | +0x140 | self-intersection count (`IntersectionCount`; PC writers `0x439C40`, `0x43AD50`, docs/COASTERS.md) | yes |
+
+Of the controller words only `+20` (header `+0xC`) reaches the slot allocator `0x468760`; `+28` and `+32` go to the station-node
+builder `0x436AC0`, which never reads them (its only stack argument read is the fifth, at `0x436BFA`).
+
+### The loader `0x437B60`, end to end
+
+The loader binds saved blocks to coasters that already exist; it creates none. Before the Coasters block the World
+block restored the station's attraction thing, and the RideSystem loader `0x4647A0` recreated every saved mesh
+instance through `0x463060` (saved id plus 1, load flag 1). For a coaster type that calls the controller constructor
+`0x4368F0` with the type id, the station mesh id, the two placement values of `0x466F90`, the load flag and one more
+word. The constructor allocates the 0x14C-byte controller, pushes it on the list `0x790FE0` and stores the type id
+(`+0xC`), the type record (`+4`), the station mesh id (`+0x10`) and the placement values (`+0x1C`, `+0x20`); with the
+load flag set it skips the slot, the trains, the seat split and the station nodes. The loader then:
+
+1. reads the count and the three globals straight into the allocator's state (`0x790B04`, `0x790B00`, `0x791CE0`);
+   a count of 0 returns at once;
+2. per coaster sets the loading flag `0x790AFC = 1`, reads the header and walks `0x790FE0` until `ctl+0x10` equals
+   the header's station mesh id (`0x437CBF`). **When no controller matches, the pointer stays 0 and the next
+   instruction dereferences it (`0x437CD5`): the original crashes rather than skipping the block**, so the station's
+   attraction and its RideSystem mesh record must load first. On a match it allocates the train slots and car arrays
+   (`0x436D10` with load flag 1, no car models), builds the three station nodes and the cursor node (`0x436AC0`, from
+   the station model's dummies), restores the slot (`0x468760` with the header's `+0xC`: a slot other than -1 is stored as given, with no
+   allocation, fallback or change to the allocator's globals; the result goes to `ctl+0x14`, `0x4386B2`), sets `ctl |= 2`
+   (`0x4386BA`) and then `ctl |= 0x4000` (`0x437CD8`);
+3. reads the auxiliary block into station node S2's collision list (count `+0xB0`, eight slots `+0xB4..`);
+4. reads each section: wire 0x8 runs the loop-mode setup `0x442CD0`, then `0x435020` finds or creates the cell's
+   stack descriptor in any coaster's stack list (the key is the cell index width·y + x), builds the node through
+   `0x434060` (re-attaching the saved mesh instance) and appends it to the chain (`0x430CA0`); with the load flag
+   it skips the link search and the cost charge. The setters `0x444150`, `0x4441D0` and `0x444270` restore t, the
+   yaw and the bank and incline (or the loop rotation of a loop node); the wire bits become node flags
+   (`0x437EA6..0x437F58`; wire 0x40/0x80 also mark the cut candidates); the collision ordinals are stored raw;
+5. clears the loading flag and runs the stack pass: zero bank (node flag 0x100) on every stacked node but the top,
+   the pylon parts and the stack-part visibility `0x432DF0`;
+6. when the track is complete (wire 0x1), sets `ctl+0x3C |= 1`, builds the end node and sets the state through
+   `0x435730(ctl, 2)`;
+7. resolves every node's collision ordinals to node pointers with `0x43E520`, which walks the head (`ctl+0x54`)
+   that many times along `+0x64`: the ordinals are chain positions (S0 = 0, S1 = 1, S2 = 2, the pylons in saved
+   order, then the end node);
+8. restores the cut (wire 0x2, `0x4382A5`: `ctl+0x60` the cut-end node, default S2, and `ctl+0x64` the cut-start
+   node, default the chain's tail `ctl+0x58` as read at `0x437CEC`, before the sections were added: S2 again) and the
+   track flags (`0x4382D1..0x438335`);
+9. restores the controller words (`0x438340..0x43837D`): header `+4` → `+8`, `+0x12` → `+0x2C`, `+0x18` → `+0xF4`,
+   `+0x1A` → `+0xF0`, `+0x1C` → `+0x140`; header `+8`, `+0xE` and `+0x10` are never written back;
+10. reads every one of the type's train slots (27 bytes, the loader ORs train flag 0x4) and each car of the train
+    (11 bytes), re-attaching the car model at the saved mesh id (`0x463AB0`, `0x4384CF`) and reading the two rider
+    lists when both buffers exist;
+11. re-splits the seats (`0x43BA90`), refreshes the tool state (`0x4426A0`), highlights the build end (`0x441840`)
+    and clears the current-coaster pointer `0x790FEC`.
+
+The loader runs no knot pass, sampler, validator or station step. It leaves the dirty flags `0x1001` and `0x4000`:
+the next rebuild (`0x43EB70`) re-derives the curve, the winch marks and the mesh and clears `0x4000`, and the rating
+pass (`0x43C450`) skips re-laying the trains while `0x4000` is set. The boarding span, the lead-car coordinate and
+the admission and leaving rings are not saved and are empty after a load.
+
 `SaveCoasterBlock.Parse` (payload + layout + map dimensions) bounds and validates what the traced
 contract states and refuses everything else: truncation inside the header, auxiliary block, section
-record or links (named per part); a coaster or auxiliary-link count above its bound; a non-finite
+record or collision ordinals (named per part); a coaster count above its bound or a collision count above the native
+list's eight slots (`SaveCoasterBlock.CollisionListSlots`; the loader stores the count unbounded, so a larger one
+would overrun the list); a non-finite
 power factor or section float; and a section cell outside the map. The train payload's extent depends
 on the coaster's type (the file carries neither the train slots, `uiMaxTrains`, nor the cars per
 train, `uiMaxCars`: the loader `0x437b60` reads them from the live type, `0x436d10`), so the caller
@@ -579,11 +655,9 @@ may pass each coaster's `SaveCoasterTrainLayout`, keyed by the header's controll
 `SaveCoasterTrain.ReadAll` decodes the train slots and cars exactly as the loader reads them, and
 a block of several coasters reads (`OriginalParkImport.Import` takes the type's counts from a
 callback and `OriginalPark` supplies them from the level's coaster `.sam`, finding the station as the
-saved attraction whose mesh instance equals the controller word); SAVE-920 is narrowed to the runtime
-restore, which is still refused. Without a layout only a single coaster's
+saved attraction whose mesh instance equals the controller word). Without a layout only a single coaster's
 train payload stays raw (the rest of the block) and a block with more coasters is refused, since the next
-header cannot be located. The controller word `+0x10` is the station's mesh instance id and `+8` the controller
-state word (low nibble: 1 incomplete, 2 built, 4 open, 8 closed). The section flag word follows the saver's
+header cannot be located. The section flag word follows the saver's
 and the loader's maps (`SaveCoasterSectionFlags`, `0x437615..0x4376e0`, `0x437ea6..0x437f58`): wire bits 0x1, 0x2, 0x4
 (manual yaw, incline, bank), the cut markers 0x40/0x80, the link marks 0x100/0x200 and the intersection marks
 0x400/0x800 are restored, while 0x8, 0x10 and 0x20 (the loop-pair, loop and zero-bank node flags) are
@@ -591,17 +665,97 @@ derived again by the node constructor (the loader runs the loop setup `0x442cd0`
 rotation float for 0x10). The section words are named: `section+112` is the node's mesh instance (re-attached
 through `0x463ab0`), `+216` bank, `+220` incline, `+224` yaw, `+232` the height parameter and `+248`
 the loop rotation (setters `0x444150`, `0x4441d0`, `0x444270`). The header's remaining track flags
-(SAVE-921), controller words (SAVE-922) and the train words `+0x38`, `+0x64`, `+0x68` and the car flag and
+(SAVE-921), the placement values `+28`/`+32` (SAVE-922) and the train words `+0x38`, `+0x64`, `+0x68` and the car flag and
 byte `+0x44` (SAVE-923) are kept raw. A block with count 0 is exactly its 16 bytes (`SavePayloadLayout` enforces this on the
 split). `OriginalParkImport.Import` runs the reader on every save and exposes the result as
 `CoasterBlock`, with `ObjectsAt`/`AttractionsAt` cell queries and `CoasterSections` joins that require both cell
 and object `Info.Id` to attach attraction ids. Missing or ambiguous scene matches remain visible;
 header words and scene indices are never guessed as station ids. Only recognized scene kinds
 815/865 participate: kind 1018 pylons are not decoded by the existing scene parser.
-`ParkObjects.ImportOriginal` calls `RequireSupportedCoasterRuntime` before creating any objects:
-a nonempty original TPW controller is explicitly refused, even with no saved sections. Empty TPW
-parks continue through the existing importer. Structural inspection remains available; no runtime
-track, controller or train state is reconstructed. The separate TPI viewer is unchanged.
+`ParkObjects.ImportOriginal` calls `RequireSupportedCoasterRuntime` before creating any objects: it refuses a park
+only when a saved coaster's station mesh id names no single saved attraction thing, the case where tp.exe crashes
+(`0x437CD5`). The separate TPI viewer is unchanged.
+
+### The import (`OriginalCoasterImport`)
+
+A park started from an original save restores its coasters after the stations were placed and the scripts took their
+saved run state (`Level.ImportOriginalCoasters`, after `ImportOriginalScripts`). Per saved coaster, in block order:
+
+1. **Bind.** The block binds to the saved attraction thing whose mesh instance id is the header's `+0xA`, and through
+   its thing id to the placed station object. A station that is not placed as a coaster station refuses the park with
+   the reason, as does a placed station whose track holds anything but its three station nodes.
+2. **Nodes.** The station's three nodes are the placement's (the loader builds them from the station model with
+   `0x436AC0`). Section i becomes chain node 3 + i at its cell, with its stack ordinal, loft t (`0x444150`), height
+   h0 + t(h1 − h0) of its pylon control and yaw (`0x4441D0`). The loop mode starts on a section with wire 0x8 when the
+   coaster type has flag 2, which the type loader `0x42FAD0` sets when the LoopPylon control names a mesh; that node and
+   the next take the LoopPylon control, and a loop control (flag 0x4000) gives them the pair's node flags 0xE0 and 0x60
+   (`0x434060`). The bank setter `0x444270` gets (bank, incline), or (loop rotate, 0) for a section with wire 0x10, and
+   stores them as bank and incline on a node without flag 0x40, or as the loop rotate on a loop node. Wire 0x1, 0x2 and
+   0x4 become the manual yaw, incline and bank flags. The zero-bank mark of a stack's lower nodes is the knot pass's stack
+   pass here, as for a track the tool builds.
+3. **End node and cut.** A complete track (wire 0x1) gets its one pylon-less end node (type flag 0x20, always set; `0x4380D4`). A cut
+   (wire 0x2, restored at `0x4382A5`) runs from the last section with wire 0x40, or S2, to the last section with wire
+   0x80, or the chain's tail as it stood before the sections were added (`0x437CEC`), which is S2 again;
+   the two must be neighbours, as the cut `0x446740` leaves them, and their link bits 0x40000/0x80000 come only with the
+   cut markers (closing the circuit, `0x442C70`, clears both).
+4. **Controller words.** The state (low nibble of `+4`), the ride mode (0x10, 0x40 the breakdown, 0x20), the power factor,
+   which must match the mode, and the seats per train are restored. A coaster that never ran is saved in state 1 with power 0:
+   the constructor's controller is zero-filled (`0x4368F0`) and only the first 1→2 transition (`0x43577D`) or a 0x40→0x10/0x20
+   step (`0x435931`, `0x43597F`) sets 1.0, so state 1 in mode 16 or 32 accepts power 0 as well as 1. The speed setting is not in the block and stays the
+   constructor's 60.
+5. **Trains.** A runnable track is rated at that cap, and the trains in service (`+0x18`) keep their saved slots: the
+   reference car's position (`+0x74`), the speed (`+0x78`) and the train flags 0x10..0x80. The first rebuild after a load
+   does the same: the rating pass `0x43C450`, called only from the rebuild `0x43EB70`, skips the train count, the slot
+   set-up and the layout while the loader's flag 0x4000 is set. Each in-service slot must be set up (bit 0) and hold the
+   type's car count. That first frame's coaster update then runs the controller's first motion tick, which takes no
+   time (`0x43CE85`: the tick that finds controller flag 0x10 clear sets it and its clock word first, and the loader
+   leaves the flag clear): the trains stay where they were saved, while a speed above the cap is capped, one below 2.0
+   decays by 0.95 and one below 0.01 stops (`CoasterRide.UpdateFirstFrameAfterLoad`). A newly built controller's first
+   tick is the same.
+6. **Script binding.** When the station's saved script holds this coaster's slot (script `+0xE0`, `COAST 8` stored it),
+   the coaster counts as created by its script. The script loop's speed setter (`0x5516B0` → `0x43B2B0` → `0x43C3D0`)
+   runs in the tail of every slice the cadence selects (one pass in eight by script id unless the TURBO byte is set,
+   `0x5516E1`; the call at `0x5517EA`), so it applies the script's speed word (`+0xC0`) after the script's first slice
+   after the load (`OriginalObjectEffects.AfterSlice`). When the word differs from 60, the rebuild that follows has
+   0x4000 clear, so the track is rated at the script's cap and the trains are laid out again from train 0's last car
+   (`0x43C1F0`).
+7. **The first frame's order.** In tp.exe the order of the first frame after a load depends on the wall clock. The load
+   path that sets `0x879070` (the save loader `0x414D40` in mode 2 calls `0x415140`; the paths through `0x5ACCF0` and
+   `0x5AC650` load in mode 2) makes the running case of the main loop `0x54E360` restart its substep clock at the
+   frame's own time: it reads the clock into `0x878C74`, then reads it again after the pause handling and `0x473440`,
+   and runs a substep (and with it the script pass) only when the second read is later. Usually it is not, and the
+   frame's coaster update (`0x435A30`, once per frame after the substep loop) runs first: its rebuild keeps the saved
+   trains and clears 0x4000, and the speed word re-lays them later. When the clock ticks between the two reads, one
+   substep runs first, and if the station script's slice falls on that pass, the speed word applies before the first
+   rebuild, which then rates at the script's cap but keeps the saved trains (no re-lay). OpenTPW takes the usual order.
+   A third load path (`0x54F113`, the save loader in mode 1 on the file of the online object `0xF7D88C`, built by
+   `0x5B50B0`, whose code logs "ONLINE_NEWS" and "ONLINE_FTPDOWNLOAD", followed by `0x404140`) does not set `0x879070`
+   and runs eight script passes before the first frame (`0x4041D0`), so every script's slice, and with it the speed word,
+   comes before the first rebuild there. That is the online park download, not the load of a saved park.
+
+Checked but not imported (evidence lines in the import report):
+
+- the self-intersection count and the collision lists, including the auxiliary block, which the rebuild re-derives
+  (COAST-004);
+- the track flags (SAVE-921);
+- surplus set-up slots;
+- the riders on the trains. Each car's two guest lists and the train's rider count are dropped (SAVE-920), because the
+  guests riding or seated (states 15 and 16) are not imported (SAVE-002).
+
+Shapes the original's own editing never leaves are refused with the reason. Examples: a cut on an incomplete track, a
+state that does not fit the track, a word with bits beyond the state and the mode, a power factor that does not fit the
+mode, seats outside COAST 6's range, or an in-service slot that is not set up.
+
+**Verification status.** This mapping is verified against tp.exe's loader and against synthetic blocks only, **not
+against a real Theme Park World save with a coaster**: none of the local saves holds one. `OriginalCoasterImportTests`
+covers it. A test-only writer (`OriginalCoasterBlockWriter`) follows the decoded reader field for field. It writes
+coasters that OpenTPW built (a running circuit with a hand-rotated and a hand-tilted pylon, an unfinished chain with a
+loop pair and a stacked pylon, a cut in the middle and after S2, a breakdown) in the original layout. The production
+reader parses them and the import restores the same nodes, flags, circuit, state, samples, rating, collision lists,
+trains and seats. The imported coaster continues as the built one does and round-trips through OpenTPW's own save.
+Hand-made blocks cover the refusals and the loop-mode rule. A fixed run of an imported coaster is pinned
+(docs/DETERMINISM.md). The Theme Park Inc prebuilt block is a real-byte cross-check: it reads byte for byte and maps
+consistently (see below), but its coaster type is a stand-in.
 
 ### Evidence status
 
@@ -619,15 +773,73 @@ track, controller or train state is reconstructed. The separate TPI viewer is un
   Theme Park World bytes.
 - **Theme Park Inc cross-check (sibling game, separate semantics):** the Theme Park Inc prebuilt
   save's Coasters block (1,226 bytes between the same delimiters) parses under this contract exactly:
-  count 1, globals 1, 0, 2; header power factor 1.0, one section, zero riders; one section record
-  with no links, cell (65, 67), stack ordinal 0, height parameter ≈ 0.0556, and a 1,140-byte train
+  count 1, globals 1, 0, 2 (slot 1 used, the cursor at 2); header wire flags 0x3, state word 0x11, type id 19,
+  station mesh 4, slot 1, placement values 69 and 65, power factor 1.0, one section, three trains in service,
+  two seats, no self-intersection, an empty auxiliary block; one section record with no collisions, cell (65, 67), stack ordinal 0, height parameter ≈ 0.0556, and a 1,140-byte train
   tail. Its park's RideSystem list places a 6×6 coaster station (Info.Id 1180) and 1×1 pylon records
   (Info.Id 1181, kind 1018) — the saved section's cell (65, 67) carries its own such record. The raw kind-1018 pylon header is pinned separately because the existing scene parser excludes it. That is
   a real-data cell association observation, but it is Theme Park Inc evidence: no Theme Park World proof, and no
   Theme Park Inc coaster chunk is inferred anywhere in production code (the reader runs on it only in
   a labelled test).
-- Which section is the station node is **not** qualified (the saver may exclude station nodes like
-  any descriptor-flag-0x10 node), so the reader makes no station claim; consumers join by cell.
+  The decoded words are also consistent with tp.exe's loader. The one section is the start of a cut (wire 0x280:
+  0x80 with the link bit 0x200) after station node S2. The track is complete and cut open (wire 0x3) in state 1,
+  which is the cut's state. Three train slots are still set up (flags 0x1, cars hidden) on a track that does not run.
+  `ThemeParkIncSaveWorldTests.TheCoasterBlockReadsAndMapsAsTheTpwLoaderReadsIt` imports it onto a stand-in coaster
+  type with the block's 30 one-car slots: a complete track, cut after S2, with no trains. Theme Park Inc's own loader
+  is not traced, so this is a cross-check, not proof.
+- Station nodes are never sections: the saver `0x437300` skips every node whose descriptor byte `+4` carries 0x10
+  (the station nodes 0x12 and the end node 0x13) and writes S2's collision list as the
+  auxiliary block instead. Consumers still join sections to objects by cell.
+
+## Sound block (`SaveSoundData`, `SaveSoundSettings`)
+
+Writer `0x51C350` (called at `0x416C02`, after the advisor block), loader `0x51C400` (called at `0x415BA2`, which logs "Sound: loaded %d bytes" and
+then checks the `SOUN` tag). Neither is QMixer code: QMIXER.dll exports no state functions and tp.exe imports none.
+
+| Field | Meaning |
+| --- | --- |
+| `u32` | sound initialised (`0x802BD4`, set by the init `0x51B660`) |
+| `u32` | sound enabled (`0x802BC8`; a running game writes `0x400`); the loader writes it straight back |
+| `u32` length, bytes | the 84 bytes (`0x54`) of the sound-service globals at `0x803AA0` (`SaveSoundSettings`, below) |
+| 3 x `f32` | only when initialised: the listener position, which the loader reads and discards |
+| `u32` length, bytes | the sound library's voice list (writer `0x6B6C30`, reader `0x6B6DA0`): a registry record, the handle counter and every live voice by handle; the loader stops every voice and rebuilds these |
+
+The 21 words of the settings (`SaveSoundSettings`, `SaveSoundData.SettingsView`; null unless the length is 84):
+
+| Offset | Name | Meaning |
+| --- | --- | --- |
+| +0x00 | `MusicHandle` | park music voice handle (`cat_music` event 2, park entry `0x51E730`) |
+| +0x04 | `CrowdHandle` | crowd sentence handle (`cat_kids` 0x5B, `0x51E7B0`) |
+| +0x08 | `CrowdAllowed` | 1 after the init; no other writer |
+| +0x0C | `RainHandle` | level rain voice handle (`cat_ambient` 0x21, `0x51E830`) |
+| +0x10 | `CrowdLevel` | crowd level 0..100 |
+| +0x14 | `ReverbPreset` | held `SndReverb.map` preset; the loader sends it again |
+| +0x18 | `MasterVolume` | master percent (setter `0x51BB60`, only called at start-up with 100) |
+| +0x1C | `EffectsVolume` | effects percent (setter `0x51BBA0`) |
+| +0x20 | `MusicVolume` | music percent (setter `0x51BB80`) |
+| +0x24 | `SpeechVolume` | speech percent (setter `0x51BBC0`) |
+| +0x28 | `Dirty` | the tick `0x51BD70` pushes all seven mixer values while it is non-zero, then clears it; park entry sets it after the load (`0x54F3AE`) |
+| +0x2C | `SpeechPlaying` | the advisor speaks (`0x51E6F0`); a duck condition |
+| +0x30 | `MusicDuck` (u16) | DIPMUSIC request (`0x51E710`); non-zero sends music as 0 |
+| +0x32 | `ListenerFreeze` (u16) | listener updates skipped (`0x51C1C0`); the post-load pass `0x415140` clears it |
+| +0x34 | `Unused34` | no reader or writer found |
+| +0x38 | `EffectsOn` | effects on (setter `0x51BC00`) |
+| +0x3C | `MusicOn` | music on (setter `0x51BBE0`) |
+| +0x40 | `SpeechOn` | speech on (setter `0x51BC20`) |
+| +0x44..+0x50 | `Tail` | four words without references |
+
+All twelve corpus files (the eleven private saves and the shipped Easymode) hold the defaults: master 100, effects 75, music 60, speech 75, every
+channel on, dirty 1, no duck.
+
+**Import.** A park started from an original save (a player's own, `--original-save`, or the level's shipped Easymode seed, which the original's park
+entry `0x5ACCF0` loads as the Instant Action player's copy) plays at the save's master, effects, music and speech volumes and
+on-flags (`GameAudio.ApplySavedSound`, `SavedSoundVolumes`), as the original's next sound tick does with the copied shadows; the player's options
+and `opentpw-options.json` are not changed, because the original's profile options (`0x78D8E8`) are a separate struct that the load does not touch
+and that the profile file is written from (`0x423E90`). The saved values end where the original's end (docs/AUDIO.md, "Volumes of a loaded original
+save"); Restart Park applies the start's values again, as the original's `restart.INTS` reload does. Everything else in the block is the original
+engine's own state (`[EXT:original-engine-state-dumps]`): crowd, rain and reverb are recomputed within frames by OpenTPW as by the original, the
+duck follows the saved DIPMUSIC script byte, the original itself discards the listener floats and clears the freeze, and the voice handles and
+voice list name voices of tp.exe's sound library. The writer copies the block verbatim from the template (byte-exact round trip).
 
 ## Money (bank thing, model 16)
 
@@ -663,25 +875,16 @@ A park started from the save (Instant Action, or the reference start) then runs
 `OriginalEconomyImport.Apply` (docs/ECONOMY.md, "Original save import") and the
 automatic advisor takes the saved controller (docs/LIPS.md). `Import` also parses the
 Coasters block (`SaveCoasterBlock`; a block that breaks its traced contract refuses the save) and
-exposes it as `CoasterBlock`, with `ObjectsAt`/`AttractionsAt` cell joins for consumers; no coaster
-state is imported. Imported: park turn
-and date, bank balance, admission fee, annual profit and bought loans, each
-object's price, cost of goods, upgrade level, state of repair, life gauge and walk-away count
-(also for objects whose footprint is unverified), staff (type, grade, training percentage, happiness, state, hire time), the park
-open flag, and the advisor's pending advice and history of bound messages. Every
-value read but not imported is reported with its SAVE approximation (SAVE-002 to
-SAVE-010 in the fidelity register): guests, staff
-names/jobs/positions/energy/idle ticks/role suffixes, the hiring pool, the
-challenge system's timing, switch bytes, Value and ActualThing, each
-attraction's state, chance of winning, third gauge, totals, name lines,
-quality of goods, queue size, customer
-count, time stamp and mesh instance ID, research, unmapped bank
-words and the loan offers' Available flags, the staff HQ's training budgets,
-strike words, strike levels and trained byte, the world state,
-arrival variables and bytes, the calendar session start, the advisor
-controller's presentation words and current record, the weather, park analyser,
-tag system, mechanic HQ and UI receiver things. The raw dumps of the original's own engine structures (the Scripts, RSSE, Particles, Sound, message-centre, Track ride and Flying ride blocks) are
-not restored: OpenTPW's engines restart from the archives (`[EXT:original-engine-state-dumps]`, formerly part of SAVE-010); the exceptions are the Particles pool (restored, SAVE-013) and the RSSE block's script ids, list order, next id and pass counter (applied to the imported objects' scripts, `SavedScriptImport`; the scripts restart their programs). Staff
+exposes it as `CoasterBlock`, with `ObjectsAt`/`AttractionsAt` cell joins for consumers. A park whose block lists a coaster is refused
+(`RequireSupportedCoasterRuntime`, SAVE-920): the headers, sections, trains and cars are decoded and no runtime track, controller or train is rebuilt.
+Imported: park turn and date, the world generator state `mRandomSeed` (`World.Restore`, SAVE-001 retired), bank balance, admission fee, annual profit and bought loans, each
+object's price, cost of goods, upgrade level, state of repair, life gauge, walk-away count, operating state, chance of winning, quality of goods, customer
+count and time stamp (also for objects whose footprint is unverified), staff (type, grade, training percentage, happiness, energy, name, job, hire time, idle stamp and patrol), the hiring pool, the staff HQ's training budgets and strike levels, research (finished and started projects, each category's effort and current project, the work load and the highest open groups), the analyser's four recent-research rings, the challenges, the park
+open flag, and the advisor's pending advice and history of bound messages. The saved guests are restored by `GuestSimulation.ImportOriginal`: states 0–10, 18, 19 and 21 keep their thing id, type, cash, meters and destination and walk on; guests queueing or boarding (11–14), leaving a ride (15), using an attraction (16), held by a guard (17), or walking to the arrival vehicle (20) are not imported (SAVE-002); a park guest (states 6–10) standing off the paths is imported where it stands and recovers through its own state handlers, as tp.exe's load leaves it (`0x4F9407`, `0x4F9490`).
+Still read and not imported, each reported with its SAVE approximation: those dropped guests (SAVE-002), a research project of an object the archives lack or a current project the picker would not offer (SAVE-007), the hiring
+pool's candidates saved on the pointer (SAVE-004), the advisor presentation block, the world state, the arrival variables and bytes, the calendar session start, the advisor
+controller's presentation words (its current record is the last tutorial advice when an automatic advisor attaches) and the weather, park analyser apart from its recent-research rings,
+tag system, mechanic HQ and UI receiver things (SAVE-010). The Scripts block's sprite scripts, the saved guests' and litter's animations, are decoded and not applied (SAVE-013): guests and staff animate from their state and litter from the cell. The Particles pool is restored, minus the emitter and effector fields SAVE-013 drops. The RSSE block's script ids, list order, next id, pass counter and run state are applied (`SavedScriptImport`, `RideVM.ImportSavedRunState`: the program counter, stack, variables, limbo table, waits and timers on the saved game clock); the records' object lists, node, bounce and walk tables, and the animations playing on their objects, are not restored. A script with a saved child or sound child keeps its fresh state; saved child records are left for their parent to recreate. Of the Sound block a park started from an original save applies its volumes and on-flags for the session (see "Sound block"); the rest of it, the message-centre lists and the Track and Flying ride chunks are not restored (`[EXT:original-engine-state-dumps]`). Staff
 values outside OpenTPW's ranges (happiness outside the traced 0–100, a 100 %
 training percentage, a state without a STAFFSTATES entry, a hire time outside
 the calendar or inside a park turn, which is rounded down to the turn) are adjusted and each adjustment is reported; an attraction whose
@@ -715,7 +918,7 @@ Typed: the action recording, the World variables, staff pool, calendar, arrivals
 29 lists, the clock, vanilla-time and game-system words, the flying-rides slot array and bodies, the RSSE header, padding words, records, buffers and `'OBJ '` lists, the camera words, the coasters'
 counts, the advisor and sound framing and the cheat, advisor-scoring and UI words. Kept as raw runs, because the original copies them as one dump or no OpenTPW reader decodes their fields: the
 control manager's 150 records, each map cell's records, every thing body except the bank (`SaveBank.ToBody` is the bank serializer `0x4CF920`), the RideSystem frame, the track-rides chunk, the coaster
-chunks, the particle tables, the RSSE structs and the sound chunk.
+chunks, the particle tables, the RSSE structs and the sound library's voice list.
 
 **Round trip.** `OriginalSaveWriterCorpusTests` reads each of the eleven saves (seven named parks and autosaves, four `restart.INTS`) and the shipped Easymode into the models, writes them again and
 compares the payload and the whole container: identical bytes in all twelve (Easymode's 18,288 uninitialised `0xCD` bytes included, because they sit in raw runs). Synthetic tests
@@ -738,6 +941,14 @@ that `0x504090` and `0x504140` set with the researchers) and each researchable o
 new park's lab is built, not carried, and reads back to the byte in all four (`OriginalResearchExportTests`); only the shipped Easymode save lists a subset (24 of the 44), which a template of the same level keeps.
 The eleven private saves come back through import and export with the same fields (the played saves' finished projects hold their cost where the save kept the overshoot).
 
+**Recent research (`SaveRecentResearch`).** The world-referenced TPW park analyser (model 13) carries four capacity-three rings at body bytes 62,492 through 62,559. Each 17-byte record holds head i32, capacity i32, wrapped u8, scratch u16 and three physical u16 slots. Import checks the referenced model and bounds, retains scratch and inactive values, and replaces runtime history without creating completion events. With explicit `OriginalParkExportOptions.Research`, export writes only this 68-byte range, even for empty history; without it, the template history is preserved. All other analyser bytes remain untouched. The host rejects malformed ring counts, capacities, head/wrapped combinations and unsigned-short values before applying state; this bounded validation is a defensive host policy, stronger than the original loader. These offsets and the paid-completion policy are TPW-specific, not a Theme Park Inc interpretation. Synthetic regression tests cover typed references, byte-preserving round trips and malformed input; they do not claim original execution or pixel parity.
+
+**Statistics (`SaveParkStatistics`).** The World-referenced TPW analyser imports five independent 144-slot monthly rings, its live arrivals accumulator and the 50-slot recent-stay ring. Relative to the body (including the eight-byte thing base), the monthly records start at 62,590 and occupy 589 bytes each: signed head, capacity, wrapped byte, scratch word and 144 physical words. The graph selects ordinals 9 (people), 12 (arrivals), 13 (binary32 happiness), 14 (whole-day stay) and 15 (rating); recent stays start at 72,014. The serializer (`0x4C5D70` / `0x4CDF00`), graph dispatch (`0x4A4750`) and month producer (`0x4C7720`) establish these meanings, independently of equal record sizes.
+
+The reader requires the complete 73,536-byte fixed body, checks all four short-ring and sixteen monthly capacities, and validates each selected ring's head and wrapped byte. Only active happiness words are reinterpreted as floats and required to be finite; signed integer samples are preserved, including negatives and outliers. Inactive words are retained in the immutable native carrier but normalized to zero in host statistics. Negative live arrivals are rejected by host continuation policy. A malformed selected ring or continuation input rejects the entire bundle before economy application; there is no partial graph recovery. No timestamps, old bank transactions, financial months or simulation caches are invented.
+
+Rating has its own host ring. Month close samples it once for both statistics and the financial ledger. Legacy host saves lacking rating seed it once from their existing ledger; a present empty ring remains empty. The whole statistics section stays excluded from the simulation hash. Native statistics export is unchanged: original export keeps the template's statistics bytes, and host JSON is not a byte-identical analyser round trip. Theme Park Inc uses the separate `SaveThemeParkIncStatistics` named-field decoder and independently traced ordinals, with the [fresh-host-start boundary](THEME-PARK-INC.md#historical-statistics-and-the-host-start-boundary) kept explicit; no TPW offset or ordinal mapping is reused. The shipped one-month TPW fixture is an import witness; wrapped and continuation coverage is synthetic, not a claim of a real long-running save or original execution. UI-914 remains open for its other residuals.
+
 **Things of a new park (`SaveNewParkThings`).** The park analyser (73,536 bytes: the grid words, 1,024 cell records whose extents the setup `0x4C7A90` fills, the history rings and extreme trackers at the
 constructor `0x4C58C0`'s values, in the order of the serializer `0x4C5D70`), the advisor controller (`0x599E70`; its first pending record, message 0 at score 100,000, is in all four restart saves and its posting site is
 not read), the tag system, the UI message receiver, the mechanic HQ and the staff HQ are generated, and equal the four restart saves' bodies byte for byte (`SaveNewParkThingsTests`).
@@ -753,7 +964,7 @@ constructors and the object models' node counts next.
 **Import of the script run state.** The Clock block's first word is the game clock the RSSE records' absolute deadlines count from (the Fantasy corpus seaplane is saved inside a `WAITANIM` 4,873 ms short of its
 deadline, `0x553783` and `0x553828` store the deadline at `+0xA0` and rewind the program counter): an imported park's script world starts its scheduler clock there and each matched script resumes at its saved
 program counter with its stack, variables, limbo table, waits and timers (`SavedScriptImport`, `RideVM.ImportSavedRunState`). The object lists, node, bounce and walk tables of the records, and the animations
-playing on their objects, are not restored.
+playing on their objects, are not restored. A script with a saved child or sound child keeps its fresh state; saved child records are left for their parent to recreate.
 
 ## Tests
 
@@ -820,3 +1031,41 @@ RideSystem, attraction and economy readers over the second fixture set
   node-state flag meanings (the record frame, header and lengths are decoded) and the meaning of the unnamed RSSE struct words.
 - Saves with known ride wear to confirm the attraction gauges against the original wear rule.
 - Money/time/guest state needs known-state reference saves before import.
+
+
+## TrackRides structural reader (TRACK-032 remains open)
+
+`SaveTrackRideBlock.ParseContainer` accepts exactly the full type-1 container, including its 12-byte header.
+`ParseBody` accepts only subchunks, as stored in `OriginalSavePayload.TrackRides`; check `TrackRidesType == 1`
+and pass `TrackRidesWord` separately. Chunk offsets are always relative to the full container header.
+All header words, stream order, opaque payload bytes, duplicate identities/positions and repeated chunk-6 requests
+are preserved. A malformed later chunk returns no partial document. This does not establish runtime import atomicity.
+
+TPW writer shapes (12-byte framing included in total):
+
+| Chunk | Payload | Total | Contents |
+|---|---:|---:|---|
+| 3 | 40 | 52 | handle, ride +b4/+b8, +b0, +10, +1c, +14, +18, +4 duration, +50 |
+| 4 | 16 | 28 | handle, tile/type word, two coordinates |
+| 5 | 196 | 208 | handle, raw 0xac record, two fallback tile coordinates, waypoint owner handle and two waypoint coordinates |
+| 6 | 4 | 16 | ride handle requesting reference selection, not a section index |
+
+Evidence: writer `0x542b05..0x542bda`, `0x542ccb..0x542d06`, `0x542e3b..0x542f6c`, `0x54335b..0x5433b5`;
+reader dispatch `0x544124`. The reader requires these exact typed sizes as a **managed strict writer-shape policy**.
+Native reads may zero-fill short data and skip excess bytes, so this is not a claim about native corruption rejection.
+Other chunk types retain their opaque bytes; Theme Park Inc has not been verified for this typed contract.
+
+The 0xd0 ride size is an **in-memory stride**, not chunk 3's serialized width. Chunk 5's raw records come from the
+0x877b68 pool, in pool order, not circuit order. Their raw pointer-looking fields are not followed. Raw +0x34/+0x38
+locate a tile; trailing coordinates provide a fallback. The trailing waypoint key is resolved natively against an
+owner ride's separate +0xa8 chain by waypoint +8/+c coordinates (`0x543df6..0x543e48`): first match supplies +4,
+no match stores 0, and absent owner stores -1. The structural reader leaves every nonzero-owner key **unresolved**,
+even if a matching ride header exists. Duplicate raw positions are legitimate structural data, not duplicate waypoint identities.
+
+Chunk 3's `0x545890` creates station/grid waypoints; chunk 4's `0x54b2f0` appends derived waypoints
+(`0x54bae5..0x54bb49`). These are distinct 0x1c records at 0x877b78, not the raw 0xac records.
+Chunk 6 (`0x5439bb..0x5439e4`) scans from the head to the first flag-4 waypoint, **always advances once**, wraps a null
+successor to the head, and skips flag-2 candidates. The first scan has no wrap/null guard in the original.
+No reference index can be obtained from chunk-5 record order. Geometry-specific waypoint reconstruction, safe handling
+of malformed chains and runtime restore semantics remain future work; the structural reader does not fresh-walk a map
+or retire TRACK-032.

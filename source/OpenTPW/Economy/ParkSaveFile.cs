@@ -43,6 +43,9 @@ public static class ParkSaveFile
 		/// </summary>
 		public bool SeedResearcherStandIn { get; init; }
 		public required long Tick { get; init; }
+		/// <summary>An imported TPW restart calendar awaiting its first actual turn. Absent in older saves: synchronized.</summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingDefault )]
+		public bool PendingInitialDay { get; init; }
 		public required GameSpeed Speed { get; init; }
 		/// <summary>The world generator's state as a number (written for older readers' sake); older saves hold the economy's own SplitMix64 stream here, which a load ignores (see <see cref="WorldGenerator"/>).</summary>
 		public required ulong RandomState { get; init; }
@@ -101,7 +104,7 @@ public static class ParkSaveFile
 		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
 		public List<PriceStatisticData>? PriceStatistics { get; init; }
 		/// <summary>
-		/// The monthly statistics the park information window graphs (<see cref="ParkStatisticsHistory"/>); absent in older saves and while nothing is recorded: the graph then starts empty.
+		/// The monthly statistics the park information window graphs (<see cref="ParkStatisticsHistory"/>); absent in older saves and empty new parks. Legacy saves seed only rating from their existing ledger.
 		/// A reading aid like <see cref="AnalyserCaches"/>: nothing in the simulation reads it, so it stays out of the run hash.
 		/// </summary>
 		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
@@ -109,6 +112,46 @@ public static class ParkSaveFile
 		/// <summary>World seed and the guest, script and sound streams (absent in saves written before world seeds: those streams are not restored).</summary>
 		// [EXT:legacy-economy-save] this legacy economy-only park save (Level.SavePark/LoadPark, used by DeterminismTests) persists the economy and every random stream, not guests, queues or object script state, and a load keeps the running guests and scripts; the player's save (GameFlow.SaveCurrentPark -> ParkResumeSaveFile) already stores the guests with their queue bookkeeping, the script world and each object runtime, the advisor, the coasters and the tracks
 		public WorldData? World { get; init; }
+		/// <summary>
+		/// The park's cheats (<see cref="ParkCheats"/>, docs/CHEATS.md): the original's cheat mode (<c>CHTS</c> byte 0), the record of the applied cheats and the actions waiting for the next turn.
+		/// Absent for a park that never cheated, so its save keeps the bytes of a park from before cheats existed; it joins the run hash (the economy digest) only when present.
+		/// </summary>
+		// [EXT:cheats-save] OpenTPW keeps the original's mode byte plus its own record of every cheat and its turn; the original saves only the two CHTS bytes (0x4055D0)
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+		public CheatsData? Cheats { get; init; }
+	}
+
+	/// <summary>A park's cheats as saved (<see cref="ParkCheats"/>).</summary>
+	public sealed class CheatsData
+	{
+		/// <summary>The cheat mode (the original's <c>+0xA</c>): on once the park has cheated.</summary>
+		public required bool Mode { get; init; }
+		/// <summary>[EXT:cheats-save] The park has used one of the extension's own cheats; absent while it has not.</summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingDefault )]
+		public bool Extension { get; init; }
+		/// <summary>The applied cheats, oldest first.</summary>
+		public required List<CheatLogData> Log { get; init; }
+		/// <summary>How many of the oldest entries were dropped to keep the log bounded; absent while none was.</summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingDefault )]
+		public long DroppedLog { get; init; }
+		/// <summary>The actions waiting for the next park turn; absent while none is.</summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+		public List<CheatActionData>? Pending { get; init; }
+	}
+
+	/// <summary>One applied cheat: the park turn, the kind and the argument.</summary>
+	public sealed class CheatLogData
+	{
+		public required long Turn { get; init; }
+		public required CheatKind Kind { get; init; }
+		public required int Argument { get; init; }
+	}
+
+	/// <summary>One queued cheat action.</summary>
+	public sealed class CheatActionData
+	{
+		public required CheatKind Kind { get; init; }
+		public required int Argument { get; init; }
 	}
 
 	/// <summary><see cref="WorldRandomState"/> as saved; the world generator itself is <see cref="Data.WorldGenerator"/>.</summary>
@@ -259,10 +302,16 @@ public static class ParkSaveFile
 	public sealed class StaffData
 	{
 		public required List<StaffMemberData> Members { get; init; }
+		/// <summary>Locator order in StaffType order, containing roster IDs (not thing IDs). Absent/null: legacy pool/reverse-roster reconstruction.</summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+		public int[][]? RoleOrder { get; init; }
 		public required List<StaffCandidate> Candidates { get; init; }
 		public required List<long> TrainingBudgets { get; init; }
 		public required int NextId { get; init; }
 		public required long NextPoolUpdateTick { get; init; }
+		/// <summary>The staff HQ's mHaveEverTrained flag (the advisor's train-your-staff line reads it); absent while no budget has ever been set above 0 and in older saves, which derive it from the budgets.</summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+		public bool? HaveEverTrained { get; init; }
 		/// <summary>The strike levels (ECON-014); absent in saves written before strikes and while no role has ever been considered.</summary>
 		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
 		public StrikeData? Strikes { get; init; }
@@ -546,6 +595,9 @@ public static class ParkSaveFile
 
 	public sealed class ResearchData
 	{
+		/// <summary>TPW presentation rings in WhichUIType order, retaining physical slots and scratch words. Older saves have no history.</summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+		public List<RecentResearchRing>? RecentItems { get; init; }
 		public required List<int[]> Completed { get; init; }
 		public required List<long[]> Progress { get; init; }
 		public required List<int> Effort { get; init; }
@@ -559,6 +611,10 @@ public static class ParkSaveFile
 		/// <summary>Each category's highest open group (SAVE-007) where it differs from what the completed projects give; absent in older saves and otherwise.</summary>
 		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
 		public List<int>? HighestGroups { get; init; }
+		/// <summary>The objects the research cheat made available without researching them (<see cref="ParkResearch.CheatAvailable"/>), by Info.Id; absent in a park that never used it.</summary>
+		// [EXT:cheats-save] the original keeps the available byte in the object control record (+0x10, saved with the control table); OpenTPW keeps the cheat's objects apart from its completions
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+		public List<int>? CheatAvailable { get; init; }
 	}
 
 	public sealed class ObjectivesData
@@ -601,6 +657,7 @@ public static class ParkSaveFile
 			Mode = park.Mode,
 			SeedResearcherStandIn = false,
 			Tick = park.Tick,
+			PendingInitialDay = park.PendingInitialDay,
 			Speed = park.Speed,
 			RandomState = world?.Generator ?? park.World.State,
 			WorldGenerator = world?.Generator ?? park.World.State,
@@ -719,21 +776,25 @@ public static class ParkSaveFile
 					CellY = member.CellY,
 					TravelSeconds = member.TravelSeconds
 				} ).ToList(),
+				RoleOrder = park.Staff.CaptureRoleOrder(),
 				Candidates = park.Staff.Candidates.ToList(),
 				TrainingBudgets = Enum.GetValues<StaffType>().Select( park.Staff.GetTrainingBudget ).ToList(),
 				NextId = park.Staff.NextId,
 				NextPoolUpdateTick = park.Staff.NextPoolUpdateTick,
+				HaveEverTrained = park.Staff.HaveEverTrained ? true : null,
 				Strikes = CaptureStrikes( park.Staff.Strikes )
 			},
 			Research = new ResearchData
 			{
+				RecentItems = park.Research.RecentItems.ToList(),
 				Completed = park.Research.Completed.OrderBy( key => key.InfoId ).ThenBy( key => key.Level ).Select( key => new[] { key.InfoId, key.Level } ).ToList(),
 				Progress = park.Research.ProgressEntries.OrderBy( entry => entry.Key.InfoId ).ThenBy( entry => entry.Key.Level ).Select( entry => new[] { entry.Key.InfoId, entry.Key.Level, entry.Points } ).ToList(),
 				Effort = park.Research.Effort.ToList(),
 				Current = park.Research.CurrentEntries.Any() ? park.Research.CurrentEntries.Select( entry => new[] { (int)entry.Category, entry.InfoId, entry.Level } ).ToList() : null,
 				Workload = park.Research.Workload == Math.Clamp( park.Settings.ResearchStartingWorkLoad, 0, 100 ) ? null : park.Research.Workload,
 				UpgradeOrder = park.Research.UpgradeTableToSave?.Select( key => new[] { key.InfoId, key.Level } ).ToList(),
-				HighestGroups = park.Research.HighestGroupsToSave?.ToList()
+				HighestGroups = park.Research.HighestGroupsToSave?.ToList(),
+				CheatAvailable = park.Research.CheatAvailable.Count == 0 ? null : park.Research.CheatAvailable.ToList()
 			},
 			Objectives = new ObjectivesData
 			{
@@ -755,8 +816,10 @@ public static class ParkSaveFile
 			MechanicCursor = park.MechanicCursor,
 			PriceStatistics = park.PriceStatistics.Capture() is { Count: > 0 } rings
 				? rings.Select( ring => new PriceStatisticData { Category = ring.Category, Head = ring.Head, Full = ring.Full, Values = ring.Values } ).ToList() : null,
-			StatisticsHistory = park.StatisticsHistory.IsEmpty ? null : park.StatisticsHistory.Capture(),
-			World = world == null ? null : new WorldData { Seed = world.Seed, SoundSeed = world.SoundSeed }
+			StatisticsHistory = park.StatisticsHistory.IsEmpty && park.Ledger.History.Count == 0 ? null : park.StatisticsHistory.Capture(),
+			World = world == null ? null : new WorldData { Seed = world.Seed, SoundSeed = world.SoundSeed },
+			// [EXT:cheats-save] null for a park that never cheated, so its save and its hash keep their bytes
+			Cheats = park.Cheats.Capture()
 		};
 	}
 
@@ -854,6 +917,7 @@ public static class ParkSaveFile
 				throw new InvalidDataException( $"Park save is inconsistent: {message}." );
 		}
 		Require( data.Tick >= 0 && Enum.IsDefined( data.Speed ) && Enum.IsDefined( data.Mode ), "clock" );
+		Require( !data.PendingInitialDay || data.Tick < ParkCalendar.TickOfTurn( 1 ), "pending initial calendar day" );
 		Require( data.EntranceFee >= 0 && data.MonthsInRed >= 0 && data.LitterScaled >= 0 && data.TicketsSpent >= 0, "park values" );
 		Require( data.TurnEnteredRed is not { } enteredRed || enteredRed >= 0 && enteredRed <= ParkCalendar.Turn( data.Tick ), "turn entered red" );
 		Require( data.BatchCredit >= 0, "batch credit" );
@@ -890,6 +954,7 @@ public static class ParkSaveFile
 			Require( item.WalkAways >= 0 && item.WalkAwaysToday >= 0 && item.WalkAwaysToday <= item.WalkAways
 				&& (item.WalkAwayDays is null || item.WalkAwayDays.Length <= ParkEconomy.WalkAwayHistoryDays && item.WalkAwayDays.All( day => day >= 0 )), $"object {item.Id} walk-aways" );
 		}
+		ParkStaff.ValidateRoleOrder( data.Staff.RoleOrder, data.Staff.Members.Select( member => (member.Id, member.Type) ).ToArray() );
 		var staffIds = new HashSet<int>();
 		var staffThingIds = new HashSet<int>();
 		foreach ( var member in data.Staff.Members )
@@ -898,7 +963,7 @@ public static class ParkSaveFile
 			Require( member.ThingId is >= 0 and <= ThingPool.Capacity && (member.ThingId == 0 || staffThingIds.Add( member.ThingId )), $"staff {member.Id} thing id {member.ThingId}" );
 			Require( Enum.IsDefined( member.Type ) && member.Grade is >= 0 and < BalanceSettings.GradeCount && member.TrainingPoints is >= 0 and < ParkStaff.TrainingPointsPerGrade && member.Variant is null or >= 0, $"staff {member.Id}" );
 			Require( member.Happiness is >= 0f and <= StaffVitals.Maximum && member.Energy is >= 0f and <= StaffVitals.Maximum, $"staff {member.Id} vitals" );
-			Require( member.Name is null || (member.Name.Length is > 0 and <= StaffMember.MaximumNameLength && !member.Name.Contains( '\0' )), $"staff {member.Id} name" );
+			Require( member.Name is null || (member.Name.Length <= StaffMember.MaximumNameLength && !member.Name.Contains( '\0' )), $"staff {member.Id} name" );
 			Require( member.ResumeDestination is null || member.ResumeDestination is [>= 0 and < ParkLitter.MapSize * 256, >= 0 and < ParkLitter.MapSize * 256], $"staff {member.Id} resume destination" );
 			Require( member.ResumeClaimTurn is not { } resumeTurn || resumeTurn >= 0 && resumeTurn <= ParkCalendar.Turn( data.Tick ), $"staff {member.Id} resume claim turn" );
 			Require( (member.BusyTurns is null) != (member.BusyTicks is null) && (member.BusyTurns ?? member.BusyTicks!.Value) >= 0 && (member.AssignedInstanceId == 0 || ids.Contains( member.AssignedInstanceId )), $"staff {member.Id} job" );
@@ -934,8 +999,11 @@ public static class ParkSaveFile
 			Require( strikes.Levels.Count == StaffStrikeBoard.Roles && strikes.Active.Count == StaffStrikeBoard.Roles && strikes.LastConsidered.Count == StaffStrikeBoard.Roles
 				&& strikes.Levels.All( level => level is >= 0 and <= 4 ), "staff strikes" );
 		Require( data.Objectives.AdoptedChallenges == null || data.Objectives.AdoptedChallenges.All( entry => entry.Length == 11 && entry[0] >= 0 && entry[9] is 0 or 1 && entry[10] is 0 or 1 ) && data.Objectives.AdoptedChallenges.Select( entry => entry[0] ).Distinct().Count() == data.Objectives.AdoptedChallenges.Count, "adopted challenge slots" );
+		if ( data.Research.RecentItems is { } recentItems )
+			SaveRecentResearch.Validate( recentItems );
 		Require( (data.Research.HighestGroups == null || data.Research.HighestGroups.Count == Enum.GetValues<ResearchCategory>().Length && data.Research.HighestGroups.All( group => group is >= 0 and <= ParkResearch.MaximumOpenGroup )) && (data.Research.Workload == null || data.Research.Workload is >= 0 and <= 100) && (data.Research.Current == null || data.Research.Current.All( entry => entry.Length == 3 && Enum.IsDefined( (ResearchCategory)entry[0] ) )) && data.Research.Effort.Count == 5 && data.Research.Completed.All( key => key.Length == 2 ) && (data.Research.UpgradeOrder?.All( key => key is { Length: 2 } ) ?? true) && data.Research.Progress.All( entry => entry.Length == 3 && entry[2] >= 0 ), "research" );
 		Require( data.MechanicCursor >= 0, "mechanic cursor" );
+		Require( data.Research.CheatAvailable is not { } cheatAvailable || cheatAvailable.Count > 0 && cheatAvailable.Distinct().Count() == cheatAvailable.Count, "research cheat" );
 		Require( data.PriceStatistics is null || data.PriceStatistics.All( ring => ring?.Values is not null )
 			&& ParkPriceStatistics.IsValid( data.PriceStatistics.Select( ring => new PriceStatisticRing( ring.Category, ring.Head, ring.Full, ring.Values ) ).ToList() ), "price statistics" );
 		Require( data.StatisticsHistory is null || data.StatisticsHistory.IsValid, "statistics history" );
@@ -949,6 +1017,8 @@ public static class ParkSaveFile
 				Require( blocks != null && blocks.All( entry => entry != null && entry.Block is >= 0 and < ParkLitter.BlockCount && entry.Count is >= 0 and <= ParkLitter.BlockSize * ParkLitter.BlockSize && entry.Stamp >= 0 )
 					&& blocks.Select( entry => entry.Block ).Distinct().Count() == blocks.Count, "analyser block caches" );
 		}
+		if ( data.Cheats is { } cheats && ParkCheats.Problem( cheats, ParkCalendar.Turn( data.Tick ) ) is { } cheatsProblem )
+			Require( false, cheatsProblem );
 		foreach ( var loan in data.Loans )
 			Require( loan.MonthsRemaining > 0 && loan.MonthsRemaining <= loan.Months && loan.MonthlyRepayment >= 0 && (loan.RemainingBalance is null or >= 0) && data.TakenLoanOffers.Contains( loan.OfferIndex ), $"loan {loan.OfferIndex}" );
 	}
@@ -957,11 +1027,14 @@ public static class ParkSaveFile
 	public static ParkEconomy Restore( Data data, BalanceSettings settings, IEconomyObjectCatalog catalog )
 	{
 		ArgumentNullException.ThrowIfNull( data );
+		if ( data.PendingInitialDay && (data.Tick < 0 || data.Tick >= ParkCalendar.TickOfTurn( 1 )) )
+			throw new InvalidDataException( "Park save is inconsistent: pending initial calendar day." );
 		if ( !string.Equals( settings.Theme, data.Theme, StringComparison.OrdinalIgnoreCase ) || settings.IsEasy != data.Easy )
 			throw new InvalidDataException( $"Park save is for {data.Theme}{(data.Easy ? " (easy)" : "")}, not {settings.Theme}{(settings.IsEasy ? " (easy)" : "")}." );
 		if ( data.Objectives.AdoptedChallenges is { } adopted )
 			settings.RestoreAdoptedChallenges( adopted.Select( entry => new ChallengeDefinition( entry[0], entry[1], entry[2], entry[3], entry[4], entry[5], entry[6], entry[7], entry[8], entry[9] != 0, entry[10] != 0 ) ).ToList() );
 		var park = new ParkEconomy( settings, catalog, data.Mode, 0 );
+		park.PendingInitialDay = data.PendingInitialDay;
 		// [EXT:legacy-generator-state] a save from before the world generator was ported has no state for it: it starts from the saved world seed (or from the old economy stream's state when the save has no world section), deterministically
 		park.World.Restore( data.WorldGenerator ?? (data.World is { } legacyWorld ? new WorldSeed( legacyWorld.Seed ).GeneratorState : WorldRng.StateFromSeed( data.RandomState )) );
 		park.Ledger.Restore( data.Ledger.Balance, data.Ledger.OpeningBalance, data.Ledger.MonthIndex, data.Ledger.CurrentTotals,
@@ -1056,6 +1129,8 @@ public static class ParkSaveFile
 			CellY = member.CellY,
 			TravelSeconds = member.TravelSeconds
 		} ), data.Staff.Candidates, data.Staff.TrainingBudgets, data.Staff.NextId, data.Staff.NextPoolUpdateTick );
+		park.Staff.RestoreRoleOrder( data.Staff.RoleOrder );
+		park.Staff.RestoreHaveEverTrained( data.Staff.HaveEverTrained ?? data.Staff.TrainingBudgets.Any( budget => budget > 0 ) );
 		foreach ( var saved in data.Staff.Members.Where( member => member.WorldState != null ) )
 			saved.WorldState!.Apply( park.Staff.Members.Single( member => member.Id == saved.Id ) );
 		park.ApplyStaffEffects();
@@ -1066,9 +1141,9 @@ public static class ParkSaveFile
 			park.Staff.Strikes.Restore( strikes.Levels, strikes.Active, strikes.LastConsidered );
 		park.Research.Restore( data.Research.Completed.Select( key => (key[0], key[1]) ),
 			data.Research.Progress.Select( entry => (((int)entry[0], (int)entry[1]), entry[2]) ), data.Research.Effort,
-			data.Research.Current?.Select( entry => ((ResearchCategory)entry[0], entry[1], entry[2]) ), data.Research.UpgradeOrder?.Select( key => (key[0], key[1]) ).ToList() );
-		if ( data.Research.HighestGroups is { } highestGroups )
-			park.Research.RestoreHighestGroups( highestGroups );
+			data.Research.Current?.Select( entry => ((ResearchCategory)entry[0], entry[1], entry[2]) ), data.Research.UpgradeOrder?.Select( key => (key[0], key[1]) ).ToList(), data.Research.HighestGroups );
+		park.Research.RestoreRecentItems( data.Research.RecentItems );
+		park.Research.RestoreCheatAvailable( data.Research.CheatAvailable );
 		if ( data.Research.Workload is int workload )
 			park.Research.SetWorkload( workload );
 		park.Objectives.Restore( data.Objectives.NextOfferDay, data.Objectives.NextListPosition, data.Objectives.Current, data.Objectives.Declines, data.Objectives.Finished, data.Objectives.GoldenTickets,
@@ -1077,9 +1152,12 @@ public static class ParkSaveFile
 		park.Counters.Restore( data.Counters );
 		park.MechanicCursor = data.MechanicCursor;
 		if ( data.StatisticsHistory is { } history )
-			park.StatisticsHistory.Restore( history );
+			park.StatisticsHistory.Restore( history, park.Ledger.History.Select( month => month.ParkRating ) );
+		else
+			park.StatisticsHistory.RestoreLegacyRating( park.Ledger.History.Select( month => month.ParkRating ) );
 		if ( data.PriceStatistics is { } statistics )
 			park.PriceStatistics.Restore( statistics.Select( ring => new PriceStatisticRing( ring.Category, ring.Head, ring.Full, ring.Values ) ).ToList() );
+		park.Cheats.Restore( data.Cheats );
 		return park;
 	}
 

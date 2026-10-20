@@ -125,7 +125,7 @@ public class CrossEditionObjectsTests
 		var on = Resolve( new[] { directory }, "community.tpi-rides", "opentpw.cross-edition-objects" );
 		Assert.AreEqual( 1, on.Mods.Count );
 		Assert.IsTrue( on.IsEnabled( "opentpw.cross-edition-objects" ) );
-		CollectionAssert.AreEqual( new[] { "opentpw.cross-edition-objects", "community.tpi-rides" }, on.Order.Where( id => id != OfficialExtensions.Online.Id && id != OfficialExtensions.Pools.Id && id != OfficialExtensions.PoolGuestArt.Id && id != OfficialExtensions.RestoredAdvice.Id ).ToArray(), "the extension loads before the mod that needs it" );
+		CollectionAssert.AreEqual( new[] { "opentpw.cross-edition-objects", "community.tpi-rides" }, on.Order.Where( id => !OfficialExtensions.All.Any( extension => extension.DefaultEnabled && extension.Id == id ) ).ToArray(), "the extension loads before the mod that needs it" );
 	}
 
 	[TestMethod]

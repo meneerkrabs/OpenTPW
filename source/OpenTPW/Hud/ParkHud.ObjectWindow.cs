@@ -1,4 +1,5 @@
 using OpenTPW.UI.Original;
+using Veldrid;
 using NVector2 = System.Numerics.Vector2;
 
 namespace OpenTPW.Hud;
@@ -78,6 +79,8 @@ public sealed partial class ParkHud
 		public LayoutNode? Queue { get; init; }
 		public LayoutNode? Track { get; init; }
 		public LayoutNode? ApplyAll { get; init; }
+		/// <summary>The status banner over the preview ("chev": 0x3E25 rides, 0xC06D shops, 0xA0A3 sideshows).</summary>
+		public LayoutNode? Status { get; init; }
 
 		/// <summary>The table the original opens for an object of <paramref name="category"/>: rides, sideshows, and the shop table for every other object.</summary>
 		public static ObjectWindowLayout For( int category ) => Of( category switch
@@ -104,7 +107,8 @@ public sealed partial class ParkHud
 				Door = table.TryModel( "b_door" ), Erase = table.TryModel( "b_erase" ), Move = table.TryModel( "b_move" ), Okay = table.TryModel( "b_okay" ), Previous = table.TryModel( "b_arup" ),
 				Next = table.TryModel( "b_ardown" ), List = table.TryModel( "b_allthings" ), RideIt = table.TryModel( "b_ride it!" ),
 				// a toilet's call button (shops have none of their own) uses the ride table's slot
-				CallMech = table.TryModel( "b_callmech" ) ?? OriginalLayoutTables.RideWindow.Model( "b_callmech" ), Upgrade = table.TryModel( "b_upgrade" ), Queue = table.TryModel( "b_queue" ), Track = table.TryModel( "b_track" ), ApplyAll = table.TryModel( "b_applyall" )
+				CallMech = table.TryModel( "b_callmech" ) ?? OriginalLayoutTables.RideWindow.Model( "b_callmech" ), Upgrade = table.TryModel( "b_upgrade" ), Queue = table.TryModel( "b_queue" ), Track = table.TryModel( "b_track" ), ApplyAll = table.TryModel( "b_applyall" ),
+				Status = table.TryModel( "chev" )
 			};
 		}
 	}
@@ -192,6 +196,7 @@ public sealed partial class ParkHud
 		objStatsFrame = Info( new UiModelImage { Id = "infoStatsFrame", Model = "!frame" } );
 		objPreviewFrame = Info( new UiModelImage { Id = "infoPreviewFrame", Model = "!frame" } );
 		objPreview = Info( new ObjectPreview( this ) { Id = "infoPreview" } );
+		objStatus = Info( new StatusBanner { Id = "infoStatus" } );
 		objName = Info( new UiLabel
 		{
 			Id = "infoName",
@@ -309,6 +314,11 @@ public sealed partial class ParkHud
 
 	// the elements of the object window, found once by BuildObjectWindow
 	private UiElement? objQueue, objTrack, objApplyAll, objWindow, objStatsFrame, objPreviewFrame, objPreview, objName, objDoor, objErase, objMove, objOkay, objPrevious, objNext, objList, objRideIt;
+	private StatusBanner? objStatus;
+	/// <summary>The selected object is condemned (state 4): its window hides the door and the service buttons (<see cref="ApplyObjectStatus"/>).</summary>
+	private bool objectCondemned;
+	/// <summary>The ride window's door may be used: not for the two track statuses, nor for a closed ride the reopening guard refuses (<see cref="ApplyObjectStatus"/>).</summary>
+	private bool objectDoorAllowed = true;
 	private readonly UiElement?[] objLabels = new UiElement?[ObjectWindowRows], objValues = new UiElement?[ObjectWindowRows], objGauges = new UiElement?[ObjectWindowRows];
 	private ObjectWindowLayout? appliedObjectLayout;
 	private string? appliedObjectLanguage;
@@ -333,6 +343,8 @@ public sealed partial class ParkHud
 	/// <summary>Places each control of the object window at its table rectangle for the selected object; a control the table lacks is hidden. Nothing runs while the window is closed.</summary>
 	private void ApplyObjectLayout()
 	{
+		objectCondemned = false;
+		objectDoorAllowed = true;
 		if ( !InfoArmOpen || ObjectLayout is not { } layout )
 			return;
 		var changed = !ReferenceEquals( layout, appliedObjectLayout ) || appliedObjectLanguage != strings.Language;
@@ -344,6 +356,9 @@ public sealed partial class ParkHud
 			Place( objStatsFrame, layout.Stats );
 			Place( objPreviewFrame, layout.Preview );
 			Place( objPreview, layout.Preview );
+			Place( objStatus, layout.Status );
+			if ( objStatus != null )
+				objStatus.Inner = layout.Status?.Inner;
 			Place( objName, layout.Title );
 			Place( objDoor, layout.Door );
 			Place( objErase, layout.Erase, HelpOf( layout.Erase?.Help ?? -1 ) );
@@ -374,6 +389,7 @@ public sealed partial class ParkHud
 		if ( layout.Upgrade == null && rideUpgradeButton != null ) rideUpgradeButton.Visible = false;
 		// the queue, track and apply-all buttons show only where they can act
 		var target = selectedObject!;
+		ApplyObjectStatus( target, layout );
 		if ( objQueue != null ) objQueue.Visible &= layout.Queue != null && CanEditQueue( target );
 		if ( objTrack != null ) objTrack.Visible &= layout.Track != null && CanEditTrack( target );
 		if ( objMove != null ) objMove.Enabled = layout.Move != null && CanMoveObject( target );
@@ -385,6 +401,111 @@ public sealed partial class ParkHud
 			if ( objGauges[row] != null ) objGauges[row]!.Visible = false;
 		}
 		ApplyObjectSettingLayout( layout );
+	}
+
+	/// <summary>
+	/// The window's status banner and the controls it governs (<c>0x4ad4e0</c>): the banner shows the object's status (<see cref="RideWindowStatus"/>, none for an
+	/// open object with nothing to report); a condemned ride hides its door, queue, track, call, move, ride and upgrade buttons; a ride's door greys for the
+	/// two track statuses whatever its open word, and while it is closed and the reopening guard refuses.
+	/// </summary>
+	// [BIN:TPW-EXE:0x4ad4e0 ride window refresh] status 3 (condemned) hides b_door, b_queue, b_track, b_callmech, b_move, b_ride it! and b_upgrade; status 0x19 or 0x1a disables b_door whatever the open word; a closed ride whose guard 0x4df290 refuses disables it too; the shop and sideshow refreshes (0x4b01d0, 0x4b16c0) show the banner without door logic
+	private void ApplyObjectStatus( OriginalObject target, ObjectWindowLayout layout )
+	{
+		var facts = StatusFactsOf( target );
+		var status = facts is { } known ? RideWindowStatus.Of( known ) : null;
+		// the shop and sideshow refreshes test no status: only the ride window hides and greys
+		var rideWindow = ReferenceEquals( layout.Table, OriginalLayoutTables.RideWindow );
+		objectCondemned = rideWindow && facts is { State: RideObjectStates.Condemned };
+		if ( objStatus != null )
+		{
+			objStatus.Status = status is { } shown ? strings[shown] : "";
+			objStatus.Colour = status is { } coloured ? StatusColour( coloured ) : UiColors.Text;
+			objStatus.Visible &= layout.Status != null && status != null;
+		}
+		if ( objDoor != null )
+			objDoor.Visible &= !objectCondemned;
+		// the frame's door enabling (ParkHud.Update) takes this with the object's own CanOpen
+		objectDoorAllowed = !rideWindow || !RideWindowStatus.LocksDoor( status ) && (target.IsOpen || (level.Gate?.MayOpen( target.Runtime ) ?? true));
+		if ( objectCondemned )
+			foreach ( var element in new[] { objQueue, objTrack, objMove, objRideIt } )
+				if ( element != null )
+					element.Visible = false;
+	}
+
+	/// <summary>What the status banner reads of <paramref name="item"/>; null in a visit or for an object without an economy record.</summary>
+	private RideStatusFacts? StatusFactsOf( OriginalObject item )
+	{
+		if ( Status.EconomySource is not ParkEconomy economy || LiveState( item ) is not { } record )
+			return null;
+		var relief = economy.Catalog.TryGet( record.InfoId, out var info ) && info.ProvidesRelief;
+		var state = ParkEconomy.ObjectState( record );
+		var guests = level.Guests;
+		// EXIT NOT CONNECTED is never shown (ECON-049, tagged at ParkGate.MayOpen): the exit test 0x4de5a0 steps from the exit cell by its link byte (+0xd) and walks the edge test 0x4d8750 from the cell in front, and OpenTPW's entrance and exit cells keep no link byte
+		return new RideStatusFacts(
+			state,
+			TrackIncomplete: item.Runtime.TrackIncomplete,
+			TrackInvalid: item.Runtime.TrackInvalid,
+			ServiceCalled: record.MaintenanceRequested,
+			Relief: relief,
+			// an upgrade always waits for the mechanics; a toilet's call is the handymen's
+			Service: ServiceProgress( economy, record, relief && state != RideObjectStates.Upgrading ? StaffType.Handyman : StaffType.Mechanic ),
+			QueueDetached: item.Entry.HasQueue && guests != null && !ParkGate.QueueConnected( guests.Grid, item.Visitors ),
+			ExitDetached: false,
+			IsOpen: item.IsOpen );
+	}
+
+	/// <summary>How far the service of <paramref name="record"/> (an upgrade or a call) has come with the employees of <paramref name="role"/>.</summary>
+	// [BIN:TPW-EXE:0x485f60 service progress] none hired (the world's role count), on strike (0x509990), claimed (+0x5e) and on the way, or the claimant at work on this object (0x4e02f0 → 0x5065d0), else waiting
+	private static RideServiceProgress ServiceProgress( ParkEconomy economy, ParkObjectState record, StaffType role )
+	{
+		if ( !economy.Staff.OfType( role ).Any() )
+			return RideServiceProgress.NoneHired;
+		if ( economy.Staff.Strikes.IsActive( role ) )
+			return RideServiceProgress.OnStrike;
+		if ( record.MechanicId == 0 )
+			return RideServiceProgress.Waiting;
+		var claimant = economy.Staff.Members.FirstOrDefault( member => member.Id == record.MechanicId );
+		return claimant != null && WorksOn( economy, claimant, record ) ? RideServiceProgress.AtWork : RideServiceProgress.OnTheWay;
+	}
+
+	/// <summary>Whether <paramref name="member"/>, the object's claimant, works on <paramref name="record"/> now.</summary>
+	// [BIN:TPW-EXE:0x5065d0 at work] a mechanic whose target +0x218 is the object in state 13 (repairing or upgrading), a handyman whose toilet +0x21a is the object in state 11 (cleaning); the headless economy, which drives no member through these states, counts the job's countdown on the object once the member arrived
+	private static bool WorksOn( ParkEconomy economy, StaffMember member, ParkObjectState record ) => economy.DrivenByWorld( member )
+		? member.Type == StaffType.Handyman ? member.Job == StaffJob.Cleaning && member.ToiletId == record.Id : member.Job == StaffJob.Repairing && member.RideId == record.Id
+		: member is { BusyTicks: > 0, AwaitingJobArrival: false } && member.AssignedInstanceId == record.Id;
+
+	/// <summary>The status banner's colour (table <c>0x74fb50</c>).</summary>
+	// [BIN:TPW-EXE:0x74fb50 status colours] CLOSED grey (128,128,128), broken down and condemned red (255,50,30), the upgrade, cleaning and repair statuses blue (80,100,255), the queue, exit and track statuses orange (255,150,30), each with alpha 255 (0x4861e0)
+	internal static RgbaByte StatusColour( UIStrings status ) => status switch
+	{
+		UIStrings.Closed => new RgbaByte( 128, 128, 128, 255 ),
+		UIStrings.BrokenDown or UIStrings.Condemned => new RgbaByte( 255, 50, 30, 255 ),
+		>= UIStrings.WaitingToBeUpgraded and <= UIStrings.RepairsInProgress => new RgbaByte( 80, 100, 255, 255 ),
+		_ => new RgbaByte( 255, 150, 30, 255 ),
+	};
+
+	/// <summary>
+	/// The object window's status banner (the "chev" control): the status in font slot 8, centred and wrapped in the control's inner rectangle, in the status
+	/// colour; nothing while there is no status.
+	/// </summary>
+	// [BIN:TPW-EXE:0x4ad720 status banner] the window's init makes the chev control a centred text in font slot 8, hidden; 0x48d160 hides it for status 0 and otherwise shows it with the status text and colour
+	// [BIN:TPW-EXE:0x65c5d5 text colour] the colour setter sends message 0x40000 to the control's model (+0x98) and text (+0x9c), and only the text class takes it (0x48fd07 stores it at +0x48): the chev art (f_chev, chev.tga) keeps its own gold-striped frame and black centre under the coloured text
+	internal sealed class StatusBanner : UiElement
+	{
+		public string Status { get; set; } = "";
+		public RgbaByte Colour { get; set; } = UiColors.Text;
+		/// <summary>The control's inner (text) rectangle, canvas units.</summary>
+		public UiRect? Inner { get; set; }
+
+		public override void Draw( UiContext context, bool focused, bool pressed )
+		{
+			if ( Status.Length == 0 )
+				return;
+			var rect = ScreenRect( context.Canvas );
+			context.DrawModel( "chev", 0, rect );
+			// [BIN:TPW-EXE:0x6aec80 text wrap] a status wider than the control wraps into it (the text library's formatter), the block centred
+			context.DrawText( context.Fonts.Label, Status, Inner is { } inner ? context.Canvas.Map( inner, Anchor ) : rect, Colour, UiAlign.Center, wrap: true );
+		}
 	}
 
 	/// <summary>The red-to-green gauge of a window row; rows whose stat is text draw nothing.</summary>

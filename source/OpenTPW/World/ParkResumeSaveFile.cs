@@ -19,7 +19,7 @@ namespace OpenTPW;
 internal static class ParkResumeSaveFile
 {
 	public const string FormatName = "opentpw-world";
-	public const int CurrentVersion = 1;
+	public const int CurrentVersion = 2;
 	/// <summary>
 	/// Hard cap on one world save: the compact envelope of a bounded initial park (the legacy economy-only save
 	/// caps at 16 MB indented — ≈ 4 MB compact; the whole world adds every guest, script and cell record) fits
@@ -70,6 +70,12 @@ internal static class ParkResumeSaveFile
 			throw new InvalidDataException( "The world save is null." );
 		if ( snapshot.Format != FormatName )
 			throw new InvalidDataException( $"Not an OpenTPW world save: '{snapshot.Format}'." );
+		if ( snapshot.Version == 1 )
+		{
+			if ( snapshot.Layout?.Cells == null || snapshot.Layout.Cells.QueuePassSchemaVersion != 0 || snapshot.Layout.Cells.QueuePassResidues != null )
+				throw new InvalidDataException( "Legacy world save contains unsupported queue pass fields." );
+			snapshot = snapshot with { Version = CurrentVersion };
+		}
 		if ( snapshot.Version != CurrentVersion )
 			throw new InvalidDataException( $"Unsupported world save version {snapshot.Version}." );
 		ValidateShape( snapshot );
@@ -195,22 +201,34 @@ internal static class ParkResumeSaveFile
 		}
 		// Tracks: every live track ride (water or kart) must be saved with a controller of its template's type, and no controller may exceed its template's vehicle limit.
 		var liveTrackRides = new Dictionary<int, BumperTemplate>();
+		var raisedRides = new HashSet<int>();
 		for ( var index = 0; index < snapshot.Layout.Objects.Count; index++ )
 		{
 			var record = snapshot.Layout.Objects[index]!;
 			var entry = catalog.Find( record.InfoId )!;
+			if ( snapshot.Runtimes[index].State.VehiclesRaised == true )
+				raisedRides.Add( record.AttractionId );
 			if ( entry.Settings != null && !snapshot.Runtimes[index].State.Stopped
 				&& BumperTemplates.ForRide( entry.Settings.GetInt( "Bumper.WhichTrackType" ), entry.Settings.GetInt( "Bumper.BumperType" ) ) is { } template )
 				liveTrackRides[record.AttractionId] = template;
 		}
 		var savedControllers = snapshot.Tracks?.Controllers ?? new List<BumpControllerSaveData>();
+		// [EXT:cheats-ride-vehicles] a live raised bumper or kart ride carries its raised limit in its saved controller (a kart ride may lack a controller only in a save from before them, which no raised ride is)
+		foreach ( var (id, template) in liveTrackRides )
+			if ( raisedRides.Contains( id ) )
+				Require( savedControllers.Any( controller => controller.AttractionId == id && controller.VehicleLimit != null ), $"raised ride {id} has no saved controller with its raised vehicle limit" );
 		Require( TrackControllersMatch( liveTrackRides, savedControllers.Select( controller => controller.AttractionId ).ToList() ),
 			$"the save holds {savedControllers.Count} track controllers, but the park places {liveTrackRides.Count} live track rides" );
 		foreach ( var controller in savedControllers )
 		{
 			var template = liveTrackRides[controller.AttractionId];
 			Require( controller.Type == template.Type, $"track controller {controller.AttractionId} has type {controller.Type}, not its ride's {template.Type}" );
-			Require( controller.Vehicles.Count <= template.MaxVehicles, $"track controller {controller.AttractionId} holds {controller.Vehicles.Count} boats, above {template.MaxVehicles}" );
+			// [EXT:cheats-ride-vehicles] a bumper or kart ride the cheat raised holds up to its raised limit
+			var limit = controller.VehicleLimit ?? template.MaxVehicles;
+			Require( controller.VehicleLimit == null || (template.IsBumper || template.IsKart) && controller.VehicleLimit == BumpController.RaisedVehicleLimit,
+				$"track controller {controller.AttractionId} has the vehicle limit {controller.VehicleLimit}, which only a raised bumper or kart ride has" );
+			Require( controller.Vehicles.Count <= limit, $"track controller {controller.AttractionId} holds {controller.Vehicles.Count} boats, above {limit}" );
+			Require( (controller.VehicleLimit != null) == raisedRides.Contains( controller.AttractionId ), $"track controller {controller.AttractionId}'s vehicle limit does not match its ride's raised flag" );
 		}
 		var instancesById = snapshot.Economy.Objects.ToDictionary( item => item.Id );
 		var bindingsByAttraction = snapshot.EconomyBindings.ToDictionary( binding => binding.AttractionId );
@@ -320,6 +338,18 @@ internal static class ParkResumeSaveFile
 		if ( snapshot.Layout?.Cells?.Cells?.Any( cell => cell?.Type == ParkCellTypes.PoolWater ) == true
 			&& snapshot.Mods?.Any( mod => mod?.Id == OfficialExtensions.Pools.Id ) != true )
 			Require( false, $"the layout has pool cells but the save does not record {OfficialExtensions.Pools.Id}" );
+		// [EXT:umbrellas-save] a park with a guest who has an umbrella records the umbrellas extension (a park without one does not), so a save cannot hide the umbrella state from the mod check
+		if ( snapshot.Guests?.Guests?.Any( guest => guest != null && guest.UmbrellaState != 0 ) == true
+			&& snapshot.Mods?.Any( mod => mod?.Id == OfficialExtensions.Umbrellas.Id ) != true )
+			Require( false, $"a guest has an umbrella but the save does not record {OfficialExtensions.Umbrellas.Id}" );
+		// [EXT:winter-save] a park with a guest who has a warm item records the winter extension (a park without one does not), so a save cannot hide the items from the mod check
+		if ( snapshot.Guests?.Guests?.Any( guest => guest != null && (guest.WarmItems != 0 || guest.WarmUntilDay != 0) ) == true
+			&& snapshot.Mods?.Any( mod => mod?.Id == OfficialExtensions.Winter.Id ) != true )
+			Require( false, $"a guest has a warm item but the save does not record {OfficialExtensions.Winter.Id}" );
+		// [EXT:cheats-save] a park that used one of the cheats extension's own cheats (or has one waiting) records the extension (a park cheated only through the original's cheats does not), so a save cannot hide them from the mod check
+		if ( snapshot.Economy?.Cheats is { } cheats && (cheats.Extension || cheats.Pending?.Any( action => action != null && ParkCheats.IsExtensionKind( action.Kind ) ) == true)
+			&& snapshot.Mods?.Any( mod => mod?.Id == OfficialExtensions.Cheats.Id ) != true )
+			Require( false, $"the park used the extension's cheats but the save does not record {OfficialExtensions.Cheats.Id}" );
 		// [EXT:smarter-guests] the extension's section: present exactly when the extension is recorded, with ids that fit the guests the save holds
 		if ( SmarterGuestsSave.ShapeProblem( snapshot.SmarterGuests, snapshot.Guests?.Guests?.Select( guest => guest.Id ), snapshot.Mods, snapshot.ScriptMods != null, snapshot.Guests?.Attractions?.Select( attraction => attraction.AttractionId ) ) is { } smarterProblem )
 			Require( false, smarterProblem );
@@ -495,6 +525,11 @@ internal static class ParkResumeSaveFile
 		ValidateTracks( snapshot );
 		ValidateTours( snapshot );
 		// [EXT:pools-slides] the slides part: shape only (the rules need the towers, which the level checks while it restores)
+		if ( PoolBridgeWorld.ShapeProblem( snapshot.PoolBridges, snapshot.Mods ) is { } bridgeProblem )
+			throw new InvalidDataException( bridgeProblem );
+		if ( snapshot.Layout.Cells.QueuePassResidues is { } residues && snapshot.PoolBridges is { } bridges )
+			Require( !residues.Any( residue => bridges.Bridges.Any( bridge => bridge.Contains( residue.X, residue.Y ) ) ),
+				"queue pass residues overlap an unsupported pool bridge layer" );
 		if ( PoolSlideSaves.ShapeProblem( snapshot.PoolSlides, snapshot.Mods ) is { } slideProblem )
 			Require( false, slideProblem );
 
@@ -553,6 +588,8 @@ internal static class ParkResumeSaveFile
 					"the weather holds a negative lightning clock" );
 			}
 		}
+		if ( snapshot.SnowCover is { } snowCover )
+			Require( SnowCover.IsValidSavedCover( snowCover ), $"the snow cover {snowCover} is not a number above 0 and at most 1" );
 		if ( snapshot.Gate is { } gate )
 			Require( gate.LastObservedTurn >= 0, $"the park gate's last observed turn {gate.LastObservedTurn} is negative" );
 		if ( snapshot.ParkName is { } parkName )
@@ -665,6 +702,8 @@ internal static class ParkResumeSaveFile
 				throw new InvalidDataException( $"World save is inconsistent: {message}." );
 		}
 		var guests = snapshot.Guests!;
+		foreach ( var problem in GuestSimulation.DisplayAgeProblems( guests ) )
+			Require( false, problem );
 		var width = snapshot.Layout!.Cells!.Width;
 		var height = snapshot.Layout.Cells.Height;
 		bool InBounds( int x, int y ) => (uint)x < (uint)width && (uint)y < (uint)height;
@@ -892,6 +931,11 @@ internal static class ParkResumeSaveFile
 				&& cell.Rotation is 0 or 90 or 180 or 270 && cell.Overlap >= 0 && cell.Segment >= 0 && (uint)cell.Owner <= (uint)(width * height),
 				$"track cell ({cell.X}, {cell.Y}) holds a link, piece, rotation, overlap, segment or owner outside the layer's ranges" );
 		}
+		var trackTypes = tracks.Cells.ToDictionary( cell => cell.Y * width + cell.X, cell => cell.Type );
+		foreach ( var cell in tracks.Cells )
+			Require( cell.BaseType == 0 || TrackCellTypes.IsStation( cell.Type )
+				|| cell.Type == TrackCellTypes.Extension && trackTypes.TryGetValue( cell.Parent, out var parentType ) && TrackCellTypes.IsStation( parentType ),
+				$"track cell ({cell.X}, {cell.Y}) preserves a base type without a station origin" );
 		var placedAttractions = snapshot.Layout.Objects!.Select( record => record!.AttractionId ).ToHashSet();
 		var guestIds = snapshot.Guests!.Guests!.Select( guest => guest!.Id ).ToHashSet();
 		var listedGuests = new HashSet<int>();
@@ -989,6 +1033,9 @@ internal static class ParkResumeSaveFile
 			Require( placedAttractions.Contains( controller.AttractionId ), $"the tour part names attraction {controller.AttractionId}, which the park does not place" );
 			previous = controller.AttractionId;
 			TourSave.Validate( controller, guestIds.Contains, listedGuests );
+			// [EXT:cheats-ride-vehicles] a raised tour ride's controller has the raised slots, every other one the original's
+			var index = snapshot.Layout.Objects.ToList().FindIndex( record => record!.AttractionId == controller.AttractionId );
+			Require( (controller.CarSlots != null) == (snapshot.Runtimes[index].State.VehiclesRaised == true), $"tour controller {controller.AttractionId}'s car slots do not match its ride's raised flag" );
 			// the riders of a car are guests the ride's script holds: the guest snapshot lists each of them aboard that attraction
 			var aboard = snapshot.Guests.Attractions.FirstOrDefault( bridge => bridge.AttractionId == controller.AttractionId )?.OnRide.ToHashSet() ?? new HashSet<int>();
 			// (only the seats of the riders aboard: the words after them are stale)

@@ -35,6 +35,7 @@ REGISTERS = {
     "VM": "source/OpenTPW/VM/VmApproximations.cs",
     "TRACK": "source/OpenTPW/World/Tracks/TrackApproximations.cs",
     "TOUR": "source/OpenTPW/World/Tours/TourApproximations.cs",
+    "UMB": "source/OpenTPW/World/Umbrellas/UmbrellaApproximations.cs",
 }
 # Closed areas: no register, and their IDs stay reserved. The OpenTPW online extension's former APPROX:ONLINE IDs were
 # closed as design choices with EXT:online-* labels (docs/ONLINE.md, "Online design choices"); online uncertainty takes an

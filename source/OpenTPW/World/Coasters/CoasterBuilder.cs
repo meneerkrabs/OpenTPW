@@ -54,6 +54,24 @@ public sealed class CoasterBuilder
 	/// <summary>The loop edit mode is on and the next pylon is the first of the pair (the counter 0x79c664 is still 2).</summary>
 	public bool FirstOfPair => loopMode && loopPylonsLeft == LoopPair;
 
+	/// <summary>The editable chain endpoint still needs the second pylon of a loop pair, even after the loop tool has been left.</summary>
+	// [BIN:TPW-EXE:0x444c00 pending loop endpoint] an incomplete track tests its tail (+0x58), a complete cut track its cut predecessor (+0x60), and a complete uncut track returns false; only node flag 0x80 is tested, independently of mode bit 0x40
+	public bool LoopPairPending => (!Track.IsComplete || Track.IsCut) && Track.LastIndex >= 0
+		&& (Track.Nodes[Track.LastIndex].Flags & CoasterNodeFlags.LoopFirst) != 0;
+
+	/// <summary>Resumes the endpoint's pending second loop pylon, or starts a new pair unless loop mode is already active.</summary>
+	// [BIN:TPW-EXE:0x442d10 resume loop pair] a pending endpoint sets counter 0x79c664 to 1 and mode bit 0x40; the loop selection then calls 0x442cd0, which starts at 2 only when that mode bit is clear
+	internal void StartOrResumeLoopPair()
+	{
+		if ( LoopPairPending )
+		{
+			loopMode = true;
+			loopPylonsLeft = 1;
+		}
+		else
+			LoopMode = true;
+	}
+
 	/// <summary>Loop pylons a loop edit mode places before it ends.</summary>
 	public const int LoopPair = 2;
 	/// <summary>The requested height of the next pylon (world units above the ground; clamped when placed).</summary>
@@ -126,30 +144,37 @@ public sealed class CoasterBuilder
 	}
 
 	/// <summary>
-	/// A click on the chain start: closes the circuit; a circuit the demolish button cut open joins its new nodes to the rest and is complete again (state 2, the trains come back) when the
-	/// closing link and every node pass the validator.
+	/// A click on the chain start: closes the circuit when the closing link and every node pass the validator; a circuit the demolish button cut open joins its new nodes to the rest and is
+	/// complete again (state 2, the trains come back). A closing link that fails, or a node still marked invalid, leaves the circuit open, so the track can be fixed first.
 	/// </summary>
 	// [BIN:TPW-EXE:0x442c70 close circuit] the click on the open chain start joins the chain and sets controller state 2 (0x435730) without a validator test
-	// [EXT:coaster-completion-click] OpenTPW joins a cut circuit only when the closing link passes the validator and no node is marked invalid, as it completes a fresh circuit only then (see Complete): the original's close click tests nothing
+	// [EXT:coaster-completion-click] OpenTPW closes a circuit, fresh or cut, only when the closing link passes the validator and no node is marked invalid, as it completes one only then (see Complete): the original's close click tests nothing; a fresh circuit closed through a failing link could never complete, and every click on it but a move was refused
 	public CoasterPlaceResult CloseCircuit()
 	{
+		var check = CheckClose();
+		if ( check != CoasterPlaceResult.Ok )
+			return check;
 		if ( !Track.IsCut )
 			return Close() ? CoasterPlaceResult.Ok : CoasterPlaceResult.NotEditable;
-		var closure = Track.CheckClosure();
-		if ( closure != CoasterPlaceResult.Ok )
-			return closure;
-		if ( Track.HasInvalidNodes )
-			return CoasterPlaceResult.InvalidNodes;
 		Track.Close();
 		Track.Revalidate( Site, Ride.World, Ride );
 		Ride.Rebuild();
 		return CoasterPlaceResult.Ok;
 	}
 
-	/// <summary>Closes the circuit (no node is added).</summary>
+	/// <summary>What a click on the chain start of the open circuit answers (<see cref="CloseCircuit"/>), without closing it: the closing link's check, then the invalid marks.</summary>
+	public CoasterPlaceResult CheckClose()
+	{
+		var closure = Track.CheckClosure();
+		if ( closure != CoasterPlaceResult.Ok )
+			return closure;
+		return Track.HasInvalidNodes ? CoasterPlaceResult.InvalidNodes : CoasterPlaceResult.Ok;
+	}
+
+	/// <summary>Closes the circuit (no node is added) without the checks of <see cref="CloseCircuit"/>.</summary>
 	// [BIN:TPW-EXE:0x435020 closing click] the original has a close click only on a reopened circuit (track flag 2): a click on a cell of the chain start the cut left (+0x64) joins the chain through 0x442c70 and takes the tool out of its mode (0x442880), with no validator test; a fresh circuit has no close step, it is completed by the click of 0x524960 → 0x435570
-	// [EXT:coaster-closing-check] OpenTPW keeps a close step for a fresh circuit (a click on the station's cells, [EXT:coaster-station-end-click]) and requires two pylons, then validates the closing link and the arrival turn by the validator's rule (the last pylon is marked invalid when they fail, CoasterTrack.CheckClosure), so completion never hands the sampler a closing link of any length; the original completes without such a test
-	public bool Close()
+	// [EXT:coaster-closing-check] OpenTPW keeps a close step for a fresh circuit (a click on the station's cells, [EXT:coaster-station-end-click]) and requires two pylons; CloseCircuit validates the closing link and the arrival turn by the validator's rule first (CoasterTrack.CheckClosure), so completion never hands the sampler a closing link of any length; the original completes without such a test
+	internal bool Close()
 	{
 		if ( !Track.Close() )
 			return false;
@@ -208,6 +233,20 @@ public sealed class CoasterBuilder
 		Track.Revalidate( Site, Ride.World, Ride );
 	}
 
+	/// <summary>
+	/// Opens a closed, incomplete circuit whose closing link fails the validator (closed before OpenTPW checked the closing link), so building goes on from its last pylon; false when
+	/// there is none.
+	/// </summary>
+	// [EXT:coaster-failing-closure-opens] such a circuit could never complete and took no new pylon: the tool's entry opens it again
+	public bool OpenFailingClosure()
+	{
+		if ( !Track.IsClosed || Track.IsComplete || Track.IsCut || Track.CheckClosure() == CoasterPlaceResult.Ok )
+			return false;
+		Track.OpenClosure();
+		Track.Revalidate( Site, Ride.World, Ride );
+		return true;
+	}
+
 	/// <summary>Removes the last pylon of an open chain. Nothing is refunded and there is no undo stack.</summary>
 	// [BIN:STP-PPC:0x10047170 delete nodes] deleting pylons calls no money routine; the coaster module credits only on drops and the height slider
 	public bool RemoveLast()
@@ -230,7 +269,7 @@ public sealed class CoasterBuilder
 	/// Completes a closed track (<c>0x37ef0</c>): appends the station end nodes, then fits the curve, rates the track and
 	/// places the trains. Completion moves no money.
 	/// </summary>
-	// [EXT:coaster-completion-click] OpenTPW completes a coaster only when its circuit is closed and no node is marked invalid (flag 0x4000), by a click on a station end after the closing click, or by Enter: a design decision. The original completes on one click on any cell whose type is 4, 9 or 10 (ride and queue-end cells) or whose byte +0xf has bit 0 (cell evaluator default case 0x534584..0x5345d0, click 0x524960 → 0x435570) and the completion appends the end node and sets state 2 without testing the invalid marks or the open bit; a click elsewhere adds a pylon (0x4419b0 → 0x435020), or closes a reopened circuit on its open start. Completing an unclosed or invalid track would hand the sampler and the rating a closing link of any length, which OpenTPW's curve fit does not guard against
+	// [EXT:coaster-completion-click] OpenTPW completes a coaster only when its circuit is closed and no node is marked invalid (flag 0x4000), by a click on a station end after the closing click: a design decision. The original completes on one click on any cell whose type is 4, 9 or 10 (ride and queue-end cells) or whose byte +0xf has bit 0 (cell evaluator default case 0x534584..0x5345d0, click 0x524960 → 0x435570) and the completion appends the end node and sets state 2 without testing the invalid marks or the open bit; a click elsewhere adds a pylon (0x4419b0 → 0x435020), or closes a reopened circuit on its open start. Completing an unclosed or invalid track would hand the sampler and the rating a closing link of any length, which OpenTPW's curve fit does not guard against
 	public CoasterPlaceResult Complete()
 	{
 		var check = CheckComplete();

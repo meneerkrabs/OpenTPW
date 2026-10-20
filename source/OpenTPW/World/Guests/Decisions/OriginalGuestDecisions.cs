@@ -8,6 +8,8 @@ public sealed class OriginalGuestDecisions : IGuestDecisions
 {
 	public static OriginalGuestDecisions Instance { get; } = new();
 
+	public bool ScoresDisconnectedQueues => true;
+
 	/// <summary>The unmodified booth verdict, from the host's draw.</summary>
 	// [BIN:TPW-EXE:0x004FF5B0 booth verdict] GP uses the one draw the host took first (BoothVerdict.Decide)
 	public BoothDecision DecideBooth( in DecisionContext context, in GuestView guest, in BoothView booth ) =>

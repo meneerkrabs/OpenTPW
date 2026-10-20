@@ -24,6 +24,15 @@ which is what a player's frame budget looks like; with it the frames are CPU-bou
 now also prints where a frame goes: the update (and inside it the simulation), the world drawing, the interface overlay,
 submit and present, the wait for the GPU, and the whole `Renderer.Update` call.
 
+Since October 19, 2026 every `--perf-*` run is offscreen without `--offscreen` (RUNNING.md, `[EXT:offscreen-automated-runs]`), so a
+perf run never opens a window on the developer's display; `--visible` (or `--no-offscreen`) opts back in to the presented window. The
+baselines on this page were all taken with `--offscreen`, so they stay comparable with the new default. A visible run is not: its
+pacing follows the display (up to 120 Hz on this Mac's ProMotion panel) and macOS throttles the Metal drawables of hidden, occluded or
+locked windows. Measured on the same Mac (Release, Jungle, `--mute --no-advisor --frame-stats --perf-run 1500 --perf-arrivals 3`,
+offscreen 1512 x 843, two rounds each, other sessions running): paced, 60.0 fps with 1.7 to 1.9 ms of CPU and 0.6 to 0.7 ms of world
+drawing per frame once loaded; with `--no-vsync`, 219.5 and 220.9 fps, a frame average of 4.55 and 4.53 ms (both windows include the
+level load) and 1.05 to 1.11 ms of world drawing, in line with the 3.5 to 4.0 ms at the Home zoom in the table below.
+
 The sampling profiler (`dotnet-sampled-thread-time`, 100 Hz) stops threads at GC poll points, so a loop with a back edge
 collects more samples than its cost and inlined callees fall into their caller. The simulation figures below therefore
 come from stopwatches around the tick's phases; the profile was used to find the candidates.

@@ -10,7 +10,7 @@ namespace OpenTPW.Tests;
 
 /// <summary>
 /// The Coasters block reader (the body between the stored EMAK and SAOC delimiters; docs/TPWS-PAYLOAD.md
-/// "Coasters block"): the traced 32-byte header, auxiliary link block, 34-byte sections with links and the raw
+/// "Coasters block"): the traced 32-byte header, the auxiliary block (station node S2's collision list), 34-byte sections with their collision lists and the raw
 /// train payload. Synthetic bodies prove every field and refusal; the original Jungle Easymode fixture pins the
 /// empty boundary; the Theme Park Inc prebuilt save (a sibling game whose coaster body follows the same contract)
 /// is a structural cross-check only, not a Theme Park World proof.
@@ -36,21 +36,21 @@ public class OriginalCoasterSaveTests
 	/// <summary>The header of one coaster in the traced field order (loader 0x39f98).</summary>
 	private static Body Header( Body body, uint flags = 3, uint controller8 = 17, ushort controller12 = 19, ushort controller16 = 4,
 		ushort controller20 = 1, ushort controller28 = 69, ushort controller32 = 65, float power = 1f, ushort sections = 1,
-		ushort controller244 = 3, ushort controller240 = 2, uint riders = 0 )
+		ushort controller244 = 3, ushort controller240 = 2, uint intersections = 0 )
 	{
 		return body.U32( flags ).U32( controller8 ).U16( controller12 ).U16( controller16 ).U16( controller20 )
-			.U16( controller28 ).U16( controller32 ).F32( power ).U16( sections ).U16( controller244 ).U16( controller240 ).U32( riders );
+			.U16( controller28 ).U16( controller32 ).F32( power ).U16( sections ).U16( controller244 ).U16( controller240 ).U32( intersections );
 	}
 
-	/// <summary>One section record plus its link values (34 bytes, then each link's own u16).</summary>
+	/// <summary>One section record plus its collision ordinals (34 bytes, then each ordinal's own u16).</summary>
 	private static Body Section( Body body, uint flags = 0x280, uint field112 = 37, int cellX = 65, int cellY = 67, byte stack = 0,
 		float height = 0.25f, float bank = 0.5f, float field220 = -0.068084791f, float field224 = 1.5707964f, float field248 = 0.75f,
-		params ushort[] links )
+		params ushort[] collisions )
 	{
 		body.U32( flags ).U32( field112 ).U16( (ushort)cellX ).U16( (ushort)cellY ).U8( stack )
-			.F32( height ).F32( bank ).F32( field220 ).F32( field224 ).F32( field248 ).U8( (byte)links.Length );
-		foreach ( var link in links )
-			body.U16( link );
+			.F32( height ).F32( bank ).F32( field220 ).F32( field224 ).F32( field248 ).U8( (byte)collisions.Length );
+		foreach ( var collision in collisions )
+			body.U16( collision );
 		return body;
 	}
 
@@ -76,10 +76,10 @@ public class OriginalCoasterSaveTests
 	[TestMethod]
 	public void OneCoasterHeaderAuxiliarySectionsLinksAndTrainsParseExactly()
 	{
-		var body = Header( new Body().U32( 1 ).U32( 1 ).U32( 0 ).U32( 2 ), sections: 2, riders: 5, power: 1f )
+		var body = Header( new Body().U32( 1 ).U32( 1 ).U32( 0 ).U32( 2 ), sections: 2, intersections: 5, power: 1f )
 			.U32( 2 ).U16( 5 ).U16( 7 );
-		Section( body, links: 1 );
-		Section( body, flags: 0, field112: 0, cellX: 66, stack: 1, height: 0.5f, bank: 0f, field248: 0f, links: new ushort[] { 0, 2 } );
+		Section( body, collisions: 1 );
+		Section( body, flags: 0, field112: 0, cellX: 66, stack: 1, height: 0.5f, bank: 0f, field248: 0f, collisions: new ushort[] { 0, 2 } );
 		var bytes = body.U32( 9 ).Bytes( 1, 2, 3, 4, 5 ).ToArray();
 		var payload = Payload( bytes );
 		var layout = SavePayloadLayout.Parse( payload );
@@ -100,7 +100,7 @@ public class OriginalCoasterSaveTests
 		Assert.AreEqual( 2, coaster.SectionCount );
 		Assert.AreEqual( 3, coaster.Controller244 );
 		Assert.AreEqual( 2, coaster.Controller240 );
-		Assert.AreEqual( 5u, coaster.RidersOnBoard );
+		Assert.AreEqual( 5u, coaster.IntersectionCount );
 		CollectionAssert.AreEqual( new ushort[] { 5, 7 }, coaster.AuxiliaryOrdinals );
 
 		var first = coaster.Sections[0];
@@ -114,11 +114,11 @@ public class OriginalCoasterSaveTests
 		Assert.AreEqual( -0.068084791f, first.Incline );
 		Assert.AreEqual( 1.5707964f, first.Yaw );
 		Assert.AreEqual( 0.75f, first.LoopRotate );
-		CollectionAssert.AreEqual( new ushort[] { 1 }, first.Links );
+		CollectionAssert.AreEqual( new ushort[] { 1 }, first.CollisionOrdinals );
 		var second = coaster.Sections[1];
 		Assert.AreEqual( (66, 67), (second.CellX, second.CellY) );
 		Assert.AreEqual( 1, second.StackOrdinal );
-		CollectionAssert.AreEqual( new ushort[] { 0, 2 }, second.Links );
+		CollectionAssert.AreEqual( new ushort[] { 0, 2 }, second.CollisionOrdinals );
 
 		// The train payload follows the last link value and stays raw.
 		Assert.AreEqual( first.Offset + SaveCoasterSection.Bytes + 2 + SaveCoasterSection.Bytes + 4, coaster.TrainsOffset );
@@ -136,8 +136,8 @@ public class OriginalCoasterSaveTests
 			StringAssert.Contains( error.Message, part );
 		}
 		Refused( Listed().Bytes( new byte[10] ).ToArray(), "coaster 0 header" );
-		Refused( Header( Listed() ).ToArray(), "auxiliary links" );
-		Refused( Header( Listed() ).U32( 2 ).U16( 5 ).ToArray(), "auxiliary links" );
+		Refused( Header( Listed() ).ToArray(), "auxiliary collision list" );
+		Refused( Header( Listed() ).U32( 2 ).U16( 5 ).ToArray(), "auxiliary collision list" );
 		Refused( Header( Listed() ).U32( 0 ).Bytes( new byte[20] ).ToArray(), "section 0" );
 		Refused( Header( Listed() ).U32( 0 ).Bytes( new byte[33] ).U8( 2 ).U16( 1 ).ToArray(), "section 0" );
 		Refused( Section( Header( Listed(), sections: 2 ).U32( 0 ) ).ToArray(), "section 1" );
@@ -172,8 +172,8 @@ public class OriginalCoasterSaveTests
 			Header( new Body().U32( 1 ).U32( 0 ).U32( 0 ).U32( 1 ), sections: 3000 ).U32( 0 ).ToArray() ) );
 		StringAssert.Contains( error.Message, "truncated" );
 		error = Assert.ThrowsException<InvalidDataException>( () => Parse(
-			Header( new Body().U32( 1 ).U32( 0 ).U32( 0 ).U32( 1 ) ).U32( SaveCoasterBlock.MaximumAuxiliaryLinks + 1 ).ToArray() ) );
-		StringAssert.Contains( error.Message, $"more than the bound of {SaveCoasterBlock.MaximumAuxiliaryLinks}" );
+			Header( new Body().U32( 1 ).U32( 0 ).U32( 0 ).U32( 1 ) ).U32( SaveCoasterBlock.CollisionListSlots + 1 ).ToArray() ) );
+		StringAssert.Contains( error.Message, $"more than the bound of {SaveCoasterBlock.CollisionListSlots}" );
 	}
 
 	[TestMethod]
@@ -252,7 +252,7 @@ public class OriginalCoasterSaveTests
 	{
 		var body = Header( new Body().U32( 1 ).U32( 0 ).U32( 0 ).U32( 1 ), sections: 2 ).U32( 0 );
 		Section( body, cellX: 1, cellY: 1 );
-		Section( body, flags: 0, field112: 0, cellX: 2, cellY: 0, links: 0 );
+		Section( body, flags: 0, field112: 0, cellX: 2, cellY: 0, collisions: 0 );
 		var park = Park( body.ToArray() );
 
 		Assert.IsNotNull( park.CoasterBlock );
@@ -308,14 +308,16 @@ public class OriginalCoasterSaveTests
 	}
 
 	[TestMethod]
-	public void RuntimeGuardAllowsEmptyParksButRefusesOpaqueOriginalControllers()
+	public void RuntimeGuardRefusesOnlyCoastersThatBindToNoStation()
 	{
 		Park().RequireSupportedCoasterRuntime();
 		var body = Header( new Body().U32( 1 ).U32( 0 ).U32( 0 ).U32( 1 ), sections: 0 ).U32( 0 );
 		var park = Park( body.ToArray() );
 		Assert.AreEqual( 1u, park.CoasterBlock!.Count );
 		var error = Assert.ThrowsException<InvalidDataException>( park.RequireSupportedCoasterRuntime );
-		StringAssert.Contains( error.Message, "no runtime track, controller or train is rebuilt" );
+		StringAssert.Contains( error.Message, "binds to station mesh 4, which no saved attraction carries" );
+		// a block that binds to its station's attraction thing passes the guard; the level restores it
+		Park( body.ToArray(), rideMeshInstance: 4 ).RequireSupportedCoasterRuntime();
 		// No catalog lookup or object mutation may precede the unsupported-data refusal.
 		var objects = new ParkObjects( null!, new SandboxParkGrid() );
 		Assert.ThrowsException<InvalidDataException>( () => objects.ImportOriginal( park ) );
@@ -372,7 +374,7 @@ public class OriginalCoasterSaveTests
 		Assert.AreEqual( 0u, park.CoasterBlock.Count );
 	}
 
-	// [DATA:PreBuilt/prebuilt.TPWS:COAS] the sibling Theme Park Inc prebuilt save's coaster body follows the traced Theme Park World contract (power factor 1.0, one section, no links); a structural cross-check on real nonempty bytes, not a Theme Park World proof
+	// [DATA:PreBuilt/prebuilt.TPWS:COAS] the sibling Theme Park Inc prebuilt save's coaster body follows the traced Theme Park World contract (power factor 1.0, one section, no collisions); a structural cross-check on real nonempty bytes, not a Theme Park World proof
 	[TestMethod]
 	public void ThemeParkIncPrebuiltCoasterBodyParsesUnderTheSharedContract()
 	{
@@ -406,7 +408,7 @@ public class OriginalCoasterSaveTests
 		Assert.AreEqual( 1, coaster.SectionCount );
 		Assert.AreEqual( 3, coaster.Controller244 );
 		Assert.AreEqual( 2, coaster.Controller240 );
-		Assert.AreEqual( 0u, coaster.RidersOnBoard );
+		Assert.AreEqual( 0u, coaster.IntersectionCount );
 		Assert.AreEqual( 0, coaster.AuxiliaryOrdinals.Length );
 		var section = coaster.Sections.Single();
 		Assert.AreEqual( 0x280u, section.Flags );
@@ -418,7 +420,7 @@ public class OriginalCoasterSaveTests
 		Assert.AreEqual( -0.06808479130268097f, section.Incline );
 		Assert.AreEqual( 1.5707963705062866f, section.Yaw );
 		Assert.AreEqual( 0f, section.LoopRotate );
-		Assert.AreEqual( 0, section.Links.Length );
+		Assert.AreEqual( 0, section.CollisionOrdinals.Length );
 		// The pylon's cell carries its own 1×1 record in the save's object list (Info.Id 1181 in this park).
 		Assert.AreEqual( 1140, coaster.Trains.Length );
 		Assert.AreEqual( block.Offset + 16 + SaveCoaster.HeaderBytes + 4 + SaveCoasterSection.Bytes, coaster.TrainsOffset );
@@ -583,5 +585,71 @@ public class OriginalCoasterSaveTests
 		var closed = Parse( Header( new Body().U32( 1 ).U32( 0 ).U32( 0 ).U32( 1 ), flags: 0x1, sections: 0 ).U32( 0 ).ToArray() ).Coasters.Single();
 		Assert.IsTrue( closed.TrackComplete );
 		Assert.IsFalse( closed.CircuitOpen );
+	}
+
+	[TestMethod]
+	public void TheHeaderWordsNameWhatTheLoaderRestores()
+	{
+		// Synthetic: a breakdown coaster (state word 0x42, power 0) in slot 3 of type 21, two trains in service, four seats, one self-intersection,
+		// after the allocator globals of a park whose slots 1..3 are used (used 3, no hole, next 4).
+		var body = Header( new Body().U32( 1 ).U32( 3 ).U32( 0 ).U32( 4 ), flags: 0x1, controller8: 0x42, controller12: 21, controller16: 9,
+			controller20: 3, controller28: 70, controller32: 66, power: 0f, sections: 0, controller244: 2, controller240: 4, intersections: 1 ).U32( 0 );
+		var block = Parse( body.ToArray() );
+		Assert.AreEqual( (3u, 0u, 4u), (block.Global1, block.Global2, block.Global3), "the globals are the slot allocator's used slots, holes and cursor" );
+		var coaster = block.Coasters.Single();
+		Assert.AreEqual( ((ushort)21, (ushort)9, (ushort)3), (coaster.TypeId, coaster.StationMeshInstanceId, coaster.Slot) );
+		Assert.AreEqual( ((ushort)2, (ushort)4, 1u), (coaster.TrainsInService, coaster.SeatsPerTrain, coaster.IntersectionCount) );
+		Assert.AreEqual( ((ushort)70, (ushort)66), (coaster.Controller28, coaster.Controller32), "the placement values stay raw (not restored)" );
+		Assert.AreEqual( (2u, 0f), (coaster.State, coaster.PowerFactor) );
+		Assert.AreEqual( 0x40u, coaster.Controller8 & 0x70, "mode bit 0x40: the breakdown" );
+		Assert.IsTrue( coaster.TrackComplete );
+		Assert.IsFalse( coaster.CircuitOpen );
+	}
+
+	[TestMethod]
+	public void CollisionListsAreBoundedByTheNativeEightSlots()
+	{
+		// Synthetic: station node S2's collision list (the auxiliary block) and a pylon's list each fill the native eight slots exactly.
+		var full = Enumerable.Range( 3, SaveCoasterBlock.CollisionListSlots ).Select( value => (ushort)value ).ToArray();
+		var body = Header( new Body().U32( 1 ).U32( 1 ).U32( 0 ).U32( 2 ), sections: 1 ).U32( (uint)full.Length );
+		foreach ( var ordinal in full )
+			body.U16( ordinal );
+		Section( body, collisions: full );
+		var coaster = Parse( body.ToArray() ).Coasters.Single();
+		CollectionAssert.AreEqual( full, coaster.AuxiliaryOrdinals );
+		CollectionAssert.AreEqual( full, coaster.Sections.Single().CollisionOrdinals );
+		Assert.AreEqual( 0, coaster.Trains.Length );
+
+		// A ninth entry would overrun the list (+0xB4..+0xD4) in the original, whose loader stores the count unbounded: refused.
+		var over = Enumerable.Range( 3, SaveCoasterBlock.CollisionListSlots + 1 ).Select( value => (ushort)value ).ToArray();
+		var sectionOver = Section( Header( new Body().U32( 1 ).U32( 1 ).U32( 0 ).U32( 2 ), sections: 1 ).U32( 0 ), collisions: over );
+		var error = Assert.ThrowsException<InvalidDataException>( () => Parse( sectionOver.ToArray() ) );
+		StringAssert.Contains( error.Message, "section 0 has 9 collision ordinals" );
+		var auxiliaryOver = Header( new Body().U32( 1 ).U32( 1 ).U32( 0 ).U32( 2 ), sections: 0 ).U32( (uint)over.Length );
+		foreach ( var ordinal in over )
+			auxiliaryOver.U16( ordinal );
+		error = Assert.ThrowsException<InvalidDataException>( () => Parse( auxiliaryOver.ToArray() ) );
+		StringAssert.Contains( error.Message, "9 auxiliary collision ordinals" );
+	}
+
+	[TestMethod]
+	public void SectionsFollowTheStationNodesInChainOrder()
+	{
+		// Synthetic: a complete circuit of three pylons; collision ordinals are chain positions (S0 = 0, S1 = 1, S2 = 2, the pylons 3..5, the end node 6),
+		// so a pylon may name a station node or the end node, which are never sections themselves.
+		var body = Header( new Body().U32( 1 ).U32( 1 ).U32( 0 ).U32( 2 ), flags: 0x1, sections: 3 ).U32( 1 ).U16( 5 );
+		Section( body, flags: (uint)SaveCoasterSectionWire.ManualYaw, field112: 40, cellX: 10, cellY: 20, collisions: new ushort[] { 6 } );
+		Section( body, flags: (uint)(SaveCoasterSectionWire.LoopFirst | SaveCoasterSectionWire.Loop), field112: 41, cellX: 11, cellY: 20, field248: 0f );
+		Section( body, flags: (uint)SaveCoasterSectionWire.Loop, field112: 42, cellX: 12, cellY: 20, bank: 0f, field220: 0f, field248: 0.5f, collisions: new ushort[] { 2 } );
+		var coaster = Parse( body.ToArray() ).Coasters.Single();
+		CollectionAssert.AreEqual( new ushort[] { 5 }, coaster.AuxiliaryOrdinals, "S2 collides with the third pylon" );
+		Assert.AreEqual( 3, coaster.Sections.Count );
+		CollectionAssert.AreEqual( new[] { 40u, 41u, 42u }, coaster.Sections.Select( section => section.MeshInstanceId ).ToArray() );
+		CollectionAssert.AreEqual( new ushort[] { 6 }, coaster.Sections[0].CollisionOrdinals );
+		CollectionAssert.AreEqual( new ushort[] { 2 }, coaster.Sections[2].CollisionOrdinals );
+		Assert.IsTrue( coaster.Sections[1].IsLoop && coaster.Sections[2].IsLoop );
+		Assert.AreEqual( 0.5f, coaster.Sections[2].LoopRotate, "a loop node carries its loop rotation in the last float" );
+		Assert.AreEqual( 0x1u, SaveCoasterSectionFlags.ToNodeFlags( coaster.Sections[0].Flags ) );
+		Assert.AreEqual( 0u, SaveCoasterSectionFlags.ToNodeFlags( coaster.Sections[1].Flags ), "the loop flags come from the node constructor, not the record" );
 	}
 }

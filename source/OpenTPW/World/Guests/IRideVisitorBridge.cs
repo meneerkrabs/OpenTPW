@@ -70,8 +70,17 @@ public interface IRideVisitorHost
 	void OnVisitorOffered( IRideVisitorBridge ride, int guestId );
 	/// <summary>The script took the guest (WALKON/BOUNCE, or it consumed VAR_LETMEON).</summary>
 	void OnVisitorBoarded( IRideVisitorBridge ride, int guestId );
-	/// <summary>The script released the guest at the exit (VAR_LETMEOFF = guest id), or the ride was removed.</summary>
+	/// <summary>The ride let go of a guest it held without the script's let-off (its script stopped or faulted, or a save's leftover rider): host teardown.</summary>
 	void OnVisitorReleased( IRideVisitorBridge ride, int guestId );
+	/// <summary>
+	/// The ride update's dismiss (tp.exe <c>0x004E1410</c>) found the guest in VAR_LETMEOFF and runs its ExitRide (<c>0x005014E0</c>): true when the guest left (state 15), false when the exit is blocked and
+	/// the guest stays on the ride. Hosts that do not model the exit walk treat it as <see cref="OnVisitorReleased"/>.
+	/// </summary>
+	bool OnVisitorExitRide( IRideVisitorBridge ride, int guestId )
+	{
+		OnVisitorReleased( ride, guestId );
+		return true;
+	}
 	/// <summary>The guest left the queue without riding (ride closed or removed).</summary>
 	void OnVisitorTurnedAway( IRideVisitorBridge ride, int guestId );
 	/// <summary>
@@ -160,6 +169,24 @@ public interface IRideVisitorBridge
 	int SpecialIngredient => 0;
 	/// <summary>.sam <c>UsageInfo.AppearanceEffect</c> (tp.exe type <c>+0x15C</c>): 0 none, 1 a balloon, 2 a costume (the balloon and costume shops).</summary>
 	int AppearanceEffect => 0;
+
+	/// <summary>
+	/// [EXT:umbrellas-extension] The score multipliers of an object of the umbrellas extension (a brolly shop): its weather and generation percentages, which the host score applies for these objects only; null for every other object, whose
+	/// score is the game's alone (docs/UMBRELLAS.md).
+	/// </summary>
+	UmbrellaShopTerms? UmbrellaTerms => null;
+
+	/// <summary>[EXT:umbrellas-extension] The attraction is a brolly shop: an object of the umbrellas extension whose use gives the guest an umbrella (<see cref="UmbrellaRules.ShopAppearanceEffect"/>).</summary>
+	bool IsUmbrellaShop => UmbrellaTerms != null && AppearanceEffect == UmbrellaRules.ShopAppearanceEffect;
+
+	/// <summary>
+	/// [EXT:winter-extension] The score multipliers of an object of the winter extension (a winter kiosk or a glühwein stall): its weather and season percentages, which the host score applies for these objects only; null for every
+	/// other object, whose score is the game's alone (docs/WINTER.md).
+	/// </summary>
+	WinterShopTerms? WinterTerms => null;
+
+	/// <summary>[EXT:winter-extension] The attraction is a winter kiosk: an object of the winter extension whose use gives the guest a warm item (<see cref="WinterRules.KioskAppearanceEffect"/>).</summary>
+	bool IsWinterKiosk => WinterTerms != null && AppearanceEffect == WinterRules.KioskAppearanceEffect;
 	/// <summary>The amount of the special ingredient (ride <c>+404</c> byte, 0..255); the ride build sets 50.</summary>
 	int IngredientAmount => GuestSpeed.DefaultIngredientAmount;
 	/// <summary>The shop's quality of goods (ride <c>+0x18C</c> byte); the ride build sets 50 (<see cref="GuestAppearance.BuiltQualityOfGoods"/>).</summary>
@@ -172,6 +199,13 @@ public interface IRideVisitorBridge
 	(int X, int Y) ExitCell { get; }
 	/// <summary>.sam <c>UsageInfo.EntryCellStandPosX/Y</c>: where in its entrance cell a called guest stands (0..1 per axis).</summary>
 	(float X, float Y) EntryCellStandPos => (0.5f, 0.5f);
+	/// <summary>.sam <c>UsageInfo.ExitCellAppearPosX/Y</c> (type record +0xDC, +0xE0): where in its exit cell a guest the ride lets off appears (0..1 per axis, rotated like the stand point).</summary>
+	(float X, float Y) ExitCellAppearPos => (0.5f, 0.5f);
+	/// <summary>
+	/// The object's own exit cell (the original's +0x38): the cell of the shape's exit symbol, or of its entrance for an object without an exit; null for a bridge without a placement, whose exit is the cell
+	/// it takes its guests in (<c>GuestSimulation.StandCellOf</c>).
+	/// </summary>
+	(int X, int Y)? ExitAccessCell => null;
 	/// <summary>The object's rotation in degrees (0/90/180/270), which rotates <see cref="EntryCellStandPos"/>.</summary>
 	int Rotation => 0;
 	int QueueLength { get; }
@@ -207,6 +241,8 @@ public interface IRideVisitorBridge
 	bool IsChangingRoom => false;
 	/// <summary>The object's <c>UsageInfo.RequiresTeleport</c>: its guests beam in and out at its entrance and exit (tp.exe 0x501db0 states 15 and 16).</summary>
 	bool RequiresTeleport => false;
+	/// <summary>UsageInfo.RideHandlesSprite: retain the visitor body at admission, otherwise delete it.</summary>
+	bool RideHandlesSprite => false;
 	/// <summary>
 	/// [EXT:pools-swim] The object has been stopped (demolished, or its script ended): the guests it releases then step out on its exit like those of any attraction, and no swim starts.
 	/// </summary>

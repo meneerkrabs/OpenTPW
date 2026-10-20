@@ -348,6 +348,28 @@ public class OnlineFormatTests
 	}
 
 	[TestMethod]
+	public void MovementModesAreWrittenOnlyWhenSet()
+	{
+		// a movement without a mode is the protocol 4 frame, which every server and client reads
+		var plain = Encoding.UTF8.GetString( StrictJson.Serialize( ChatRequest.ForMove( 0.5f, 0.25f ) ) );
+		Assert.IsFalse( plain.Contains( "mode" ), plain );
+		var hide = Encoding.UTF8.GetString( StrictJson.Serialize( ChatRequest.ForMove( 0.5f, 0.25f, ChatMoveMode.Hide ) ) );
+		StringAssert.Contains( hide, "\"mode\":\"hide\"" );
+		Assert.AreEqual( ChatMoveMode.Hide, ChatRequest.Parse( Encoding.UTF8.GetBytes( hide ) ).Mode );
+		Assert.AreEqual( ChatMoveMode.Unhide, ChatRequest.Parse( Encoding.UTF8.GetBytes( "{\"type\":\"move\",\"x\":0.5,\"y\":0.5,\"mode\":\"unhide\"}" ) ).Mode );
+		// a mode belongs to a movement only, and only by its name
+		Assert.ThrowsException<InvalidDataException>( () => ChatRequest.Parse( Encoding.UTF8.GetBytes( "{\"type\":\"join\",\"room\":\"lobby\",\"mode\":\"hide\"}" ) ) );
+		Assert.ThrowsException<InvalidDataException>( () => ChatRequest.Parse( Encoding.UTF8.GetBytes( "{\"type\":\"move\",\"x\":0.5,\"y\":0.5,\"mode\":2}" ) ) );
+		Assert.ThrowsException<InvalidDataException>( () => ChatRequest.Parse( Encoding.UTF8.GetBytes( "{\"type\":\"move\",\"x\":0.5,\"y\":0.5,\"mode\":\"fly\"}" ) ) );
+		// events alike: an event without a mode carries no member an older client would refuse
+		var said = Encoding.UTF8.GetString( StrictJson.Serialize( new ChatEvent( ChatEventKind.Say, "Ann", Text: "hi" ) ) );
+		Assert.IsFalse( said.Contains( "mode" ), said );
+		var moved = ChatEvent.Parse( StrictJson.Serialize( new ChatEvent( ChatEventKind.Move, "Ann", ChatProtocol.ParkRoom( "p1" ), X: 0.5f, Y: 0.5f, Mode: ChatMoveMode.Teleport ) ) );
+		Assert.AreEqual( ChatMoveMode.Teleport, moved.Mode );
+		Assert.ThrowsException<InvalidDataException>( () => ChatEvent.Parse( StrictJson.Serialize( new ChatEvent( ChatEventKind.Say, "Ann", Text: "hi", Mode: ChatMoveMode.Hide ) ) ) );
+	}
+
+	[TestMethod]
 	public void OriginalChatCommandStringsMatchTheProtocolNames()
 	{
 		var path = Path.Combine( OriginalParkImportTests.OriginalDataPath(), "Language", "English" );

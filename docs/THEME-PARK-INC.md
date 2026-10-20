@@ -613,3 +613,29 @@ would come from is open.
 
 No `.GMI` file was available, so all of this rests on the executable. `ThemeParkIncGlobalSave` reads one like a
 `.GMS`, and the corpus test includes `.GMI` files when the folder has any.
+
+
+## Historical statistics and the host start boundary
+
+`SaveThemeParkIncStatistics` reads only the model-13 analyser named by the World variable `ParkAnalyser`. A zero reference leaves history absent even if an unrelated analyser exists. The complete `ThemeParkIncBody` walk bounds the body and follows each saved count, so short research rings and unselected monthly rings may vary without shifting the meaning of later fields. This is a separate decoder from the fixed TPW profile.
+
+The TPI serializer (`0x5ACE30`) and month producer (`0x5AF220`, message 12) establish these zero-based positions in the parser's misleadingly named `DayRings` array:
+
+| Stored measurement | TPI field | Representation |
+| --- | --- | --- |
+| People in park at month close | `DayRings[14]` | signed 32-bit integer |
+| Guests dropped off by the arrival vehicle | `DayRings[17]` | signed 32-bit integer; `Current` is the unfinished-month counter |
+| Mean happiness of the in-park census | `DayRings[18]` | binary32 bits, widened to double |
+| Mean whole-day stay of recent departed guests | `DayRings[19]` | signed 32-bit integer |
+| Native composite park rating at month close | `DayRings[20]` | signed 32-bit integer |
+| Recent departed guests' whole-day stays | `Ring50` | signed 32-bit integer |
+
+`VisitorsThisMonth` is a separate admission counter sampled into ring 15; it is not the bus-arrivals graph or its live counter. Each selected ring keeps its own head and wrapped state. The native graph path `0x5630B0` selects only arrivals, people and rating. Happiness and stay are separately proven monthly storage; retaining them in OpenTPW's shared five-series graph model is `[EXT:tpi-history-five-series]`, not native five-series UI parity. The current TPI text HUD does not expose that graph, and this slice adds no TPI graph screen.
+
+The typed bundle preserves raw words and signed samples without plausibility clamps. Validation reads the raw wrapped byte before the generic typed ring can collapse it to bool; flags other than 0/1, invalid heads and active NaN/infinite happiness reject the whole bundle. Unread slots alone normalize to zero for host JSON. The common host state requires 144 physical monthly slots and 50 recent stays. Structurally valid smaller selected rings are explicitly unsupported by that fixed host profile, not padded or replayed; unrelated ring counts may still vary. Nonnegative running arrivals is a host-save rule, not a new native-format restriction (`[EXT:tpi-history-host-profile]`).
+
+`OriginalParkImport.Statistics` carries the bundle, and `ParkEconomyRuntime.ForThemeParkIncLevel` actually applies it. That factory still starts a fresh money-only economy and clock: it does not restore TPI's saved game turn, calendar rate, bank history, staff, research or challenges. Imported partial-month arrivals combine with new arrivals until the first fresh host month closes and then reset once. Imported recent stays continue into that month's mean, even when the saved monthly stay ring was empty. This cross-boundary mixture is deliberately `[EXT:tpi-history-fresh-start]`; it is not exact continuation of the saved native month. Subsequent host-produced census, happiness and rating values are not claimed equal to TPI's native simulation.
+
+Histories contain no per-sample timestamps. The import keeps relative 12/36/144-month order, does not date old samples from unrelated event timestamps, and creates no financial months. Host JSON retains the physical history and independent rating through the existing schema. Native export remains unchanged template preservation; normalized host state is not a byte-identical native export.
+
+Asset-free regressions construct a full independent TPI payload and vary unrelated capacities, all 21 ring signatures, raw flags, heads, active/inactive floats and body truncation. They exercise referenced identity, atomic rejection, the production factory with a deliberately different saved clock/rate, first host close, counter reset, recent stays and a statistics-bundle JSON/schema roundtrip. The existing generic host restore constructs full rules, and TPI park saves remain capability-gated; that schema check does not claim a TPI runtime save/resume path. Source guards are supplementary; C# execution needs the standard CI because the implementation workspace has no .NET SDK. The one shipped TPI park save, `PreBuilt/prebuilt.TPWS`, is checked with data (`OPENTPW_TPI_PATH`): its World names analyser thing 5, whose selected rings all have the 144/50 host capacities, head -1 and no wrap, so the import carries an empty bundle. Unread slots keep the `0xCDCDCDCD` fill as raw words and read as zero, and the arrivals counter is ring 17's `mTemp` (0). TPI ring 12, the TPW arrivals ordinal, holds 2625 there, so that test also catches a read through TPW ordinals. No populated/wrapped TPI save or original execution is claimed. Those corpus checks, saved-clock continuation and the remaining park-information residuals keep UI-914 open.

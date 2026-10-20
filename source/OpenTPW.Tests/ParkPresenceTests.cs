@@ -23,6 +23,7 @@ public class ParkPresenceTests
 		public string? PlayerName { get; set; } = "Ann";
 		public object? Connection { get; set; }
 		public bool ChatBusy { get; set; }
+		public bool ChatConnecting { get; set; }
 		public string CurrentRoom { get; set; } = ChatProtocol.LobbyRoom;
 		public string? Requested;
 		public string WantedRoom => Requested ?? CurrentRoom;
@@ -32,19 +33,36 @@ public class ParkPresenceTests
 		public int Closes;
 		public Dictionary<string, (float X, float Y)> Positions { get; } = new( StringComparer.OrdinalIgnoreCase );
 		public IReadOnlyDictionary<string, (float X, float Y)> RoomPositions => Positions;
+		public Dictionary<string, int> Jumps { get; } = new( StringComparer.OrdinalIgnoreCase );
+		public IReadOnlyDictionary<string, int> RoomJumps => Jumps;
 		public List<string> Players { get; } = new();
 		public IReadOnlyList<string> RoomPlayers => Players;
 		public IReadOnlyList<string> ChatLines => Lines;
 		public int Connects;
 		public readonly List<string> Joins = new();
 		public readonly List<(float X, float Y)> Moves = new();
+		public readonly List<ChatMoveMode> MoveModes = new();
 		public readonly List<string> Lines = new();
 		public void ConnectChat() => Connects++;
 		public void CloseChat() { Closes++; Connection = null; CurrentRoom = ChatProtocol.LobbyRoom; Requested = null; }
 		public void FetchServerInfo() => ServerInfoRequests++;
 		public void JoinRoom( string room ) { Joins.Add( room ); Requested = room; }
-		public void MoveTo( float x, float y ) => Moves.Add( (x, y) );
+		public void MoveTo( float x, float y, ChatMoveMode mode = ChatMoveMode.Walk )
+		{
+			Moves.Add( (x, y) );
+			MoveModes.Add( mode );
+		}
 		public void SendChatLine( string line ) => Lines.Add( line );
+		public bool ChatOpen => Connection != null;
+		public IReadOnlyList<(string Name, bool Online)> Buddies { get; set; } = Array.Empty<(string, bool)>();
+		public HashSet<string> IgnoredNames { get; } = new( StringComparer.OrdinalIgnoreCase );
+		public IReadOnlyCollection<string> Ignored => IgnoredNames;
+		public bool Earmuffs { get; set; }
+		public bool CanVote { get; set; } = true;
+		public readonly List<(ChatCommand Command, string Argument)> Commands = new();
+		public int BuddyRequests;
+		public void SendCommand( ChatCommand command, string argument ) => Commands.Add( (command, argument) );
+		public void AskBuddies() => BuddyRequests++;
 
 		/// <summary>The server confirms the requested room on a connection (a reconnection returns to the room the session was in).</summary>
 		public void Enter( object connection )
@@ -59,7 +77,7 @@ public class ParkPresenceTests
 	{
 		var session = new FakeSession { Connection = connection };
 		var now = 0.0;
-		var presence = new ParkPresence( session, "park1", "Ann", new Ground( 100, 50 ), (10.5f, 5.5f), () => now );
+		var presence = new ParkPresence( session, ChatProtocol.ParkRoom( "park1" ), "Ann", new Ground( 100, 50 ), (10.5f, 5.5f), () => now );
 		return (presence, session, () => now += step);
 	}
 
@@ -123,6 +141,31 @@ public class ParkPresenceTests
 	}
 
 	[TestMethod]
+	public void RidingARideHidesTheFigureFromTheRoomUntilTheRideEnds()
+	{
+		var (presence, session, advance) = Create();
+		var riding = false;
+		presence.Ride = () => riding ? new ParkPresence.PresenceRide( (30.5f, 5.5f) ) : null;
+		session.Enter( new object() );
+		advance(); presence.Update( 0.1f );
+		CollectionAssert.AreEqual( new[] { ChatMoveMode.Teleport }, session.MoveModes, "the arrival puts the figure in the park (tp.exe 0x4E5EF0: mode 1)" );
+		riding = true;
+		advance(); presence.Update( 0.1f );
+		Assert.AreEqual( ChatMoveMode.Hide, session.MoveModes[^1], "boarding hides the figure at once" );
+		Assert.AreEqual( session.Moves[0], session.Moves[^1], "where it stood" );
+		Assert.IsFalse( presence.State.Shown.Contains( presence.State.Own ) );
+		presence.Click( 30.5f, 5.5f );
+		for ( var frame = 0; frame < 20; frame++ ) { advance(); presence.Update( 0.1f ); }
+		Assert.AreEqual( 2, session.Moves.Count, "a click does not walk the hidden figure" );
+		riding = false;
+		advance(); presence.Update( 0.1f );
+		Assert.AreEqual( ChatMoveMode.Unhide, session.MoveModes[^1], "the ride's end shows it again" );
+		Assert.AreEqual( (0.305f, 0.11f), session.Moves[^1], "at the ride's exit" );
+		Assert.AreEqual( (30.5f, 5.5f), (presence.State.Own.X, presence.State.Own.Y) );
+		Assert.IsTrue( presence.State.Shown.Contains( presence.State.Own ) );
+	}
+
+	[TestMethod]
 	public void OthersAreDrawnWhereTheRoomPutsThemAndLinesAreSaidOnlyInTheRoom()
 	{
 		var (presence, session, advance) = Create();
@@ -168,6 +211,14 @@ public class ParkPresenceTests
 		opened.Dispose();
 		Assert.AreEqual( 1, openedSession.Closes );
 		Assert.IsNull( openedSession.Connection );
+		// a connection the online screens were still opening when the visit began is theirs: it stays open
+		var openingSession = new FakeSession { ChatConnecting = true };
+		var opening = new ParkPresence( openingSession, ChatProtocol.ParkRoom( "park1" ), "Ann", new Ground( 100, 50 ), (10.5f, 5.5f), () => 0 );
+		openingSession.ChatConnecting = false;
+		openingSession.Enter( new object() );
+		opening.Dispose();
+		Assert.AreEqual( 0, openingSession.Closes );
+		Assert.IsNotNull( openingSession.Connection );
 	}
 
 	[TestMethod]

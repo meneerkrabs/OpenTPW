@@ -15,6 +15,10 @@ public class HudVideoRoundTests
 {
 	private static ParkHud Hud() => (ParkHud)RuntimeHelpers.GetUninitializedObject( typeof( ParkHud ) );
 
+	/// <summary>Gives a bare HUD a level whose park is <paramref name="park"/>: the HUD's edits go through that level's commands.</summary>
+	private static void Attach( ParkHud hud, ParkEconomy park ) =>
+		typeof( ParkHud ).GetField( "level", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic )!.SetValue( hud, CommandTestLevel.Create( park ) );
+
 	[TestMethod]
 	public void AGaugeDrawsTheArtOfRidestatbarCutOffAtTheValue()
 	{
@@ -87,6 +91,7 @@ public class HudVideoRoundTests
 		var park = EconomyTestData.Park(); park.OpenPark();
 		park.AdvanceDays( 541 );
 		Assert.IsNotNull( park.Objectives.Current, "the first offer waits for its answer" );
+		Attach( hud, park );
 		var actions = hud.ChallengeActions( () => park );
 		CollectionAssert.AreEqual( new[] { GameMessageKind.Accept, GameMessageKind.Decline }, actions.Select( action => action.Kind ).ToArray() );
 		hud.PostGameMessage( "offer", actions );
@@ -101,6 +106,7 @@ public class HudVideoRoundTests
 		var declined = EconomyTestData.Park(); declined.OpenPark();
 		declined.AdvanceDays( 541 );
 		var index = declined.Objectives.Current!.DefinitionIndex;
+		Attach( hud, declined );
 		hud.ChallengeActions( () => declined )[1].Clicked();
 		Assert.IsNull( declined.Objectives.Current, "Decline calls the decline (0x4d2ec0)" );
 		Assert.IsFalse( declined.Objectives.Declines.ContainsKey( index ), "the decline never raises the slot's declined count (0x4d2ec0)" );
@@ -111,6 +117,7 @@ public class HudVideoRoundTests
 	{
 		var hud = Hud();
 		var park = EconomyTestData.Park(); park.OpenPark();
+		Attach( hud, park );
 		Assert.IsFalse( hud.KeepChallengeOfferPosted( park ), "nothing waits yet" );
 		park.AdvanceDays( 541 );
 		Assert.IsNotNull( park.Objectives.Current );

@@ -490,11 +490,27 @@ public class SmarterGuestsPlanningTests
 			park.Guests.PeekChoice( guest );
 		}
 		Assert.IsTrue( spy.Views.Count > 0 && spy.Views.All( view => view.Plan == -1 ), "a guest that never grows is not scanned for, however full" );
-		spy.Views.Clear();
-		spy.Rides.Clear();
-		var grower = growers[0];
-		grower.Hunger = 96;
-		park.Guests.PeekChoice( grower );
+		// a grower that has more than one ride it could choose (which guest that is depends on the run's history)
+		bool Choosable( AttractionView ride ) => ride.IsOpen && !ride.IsBrokenDown && ride.QueueLength < ride.QueueLimit && Admitted( park, spy.LastGuest, ride ) && SmarterGuestsRules.IsUnusedAdmissibleRide( Context( park.Guests.ParkTurn ), spy.LastGuest, ride );
+		Guest? grower = null;
+		for ( var run = 0; run < 40 && grower == null; run++ )
+		{
+			if ( run > 0 )
+				park.Run( 250 );
+			foreach ( var candidate in park.Guests.Guests.Where( guest => (guest.Id & 3) == 0 && guest.State is GuestState.DoingNothing or GuestState.WalkingAround ).ToArray() )
+			{
+				spy.Views.Clear();
+				spy.Rides.Clear();
+				candidate.Hunger = 96;
+				park.Guests.PeekChoice( candidate );
+				if ( spy.Rides.Count( Choosable ) >= 2 )
+				{
+					grower = candidate;
+					break;
+				}
+			}
+		}
+		Assert.IsNotNull( grower, "a grower with two rides it could choose" );
 		Assert.IsTrue( spy.Views.Count > 0 && spy.Views.All( view => view.GuestId == grower.Id && view.Plan >= 0 ), "a grower close to full gets a plan" );
 		// the join test's excitement gate, which the host applies to the rides it considers
 		static bool Admitted( ParkScenario park, GuestView guest, AttractionView ride )

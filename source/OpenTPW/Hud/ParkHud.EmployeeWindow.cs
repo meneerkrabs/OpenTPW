@@ -148,8 +148,7 @@ public sealed partial class ParkHud
 	{
 		if ( RejectReadOnlyAction() )
 			return false;
-		member.ClearPatrolArea();
-		return true;
+		return level.Commands.Issue( new SetPatrolAreaCommand( member.Id, 0, 0, 0, 0, Clear: true ) ).Accepted;
 	}
 
 	/// <summary>Dismisses the window's employee through the park economy and closes the window.</summary>
@@ -159,7 +158,8 @@ public sealed partial class ParkHud
 	{
 		if ( RejectReadOnlyAction() || Status.EconomySource is not ParkEconomy economy || economy.Staff.Members.All( item => item.Id != staffId ) )
 			return false;
-		economy.Fire( staffId );
+		if ( !level.Commands.Issue( new FireStaffCommand( staffId ) ).Accepted )
+			return false;
 		CloseEmployeeWindow();
 		return true;
 	}

@@ -40,7 +40,7 @@ internal sealed class FlatRideHeadSources : IHeadSourceProvider
 /// <summary>
 /// Draws the head of every rider whose ride has a head up (ADDHEAD, <see cref="RideHeadSpace"/>) as a camera-facing quad of
 /// the kid's head sprite at the head node's position, with the frame and roll of <see cref="HeadPresentation"/>. A rider on
-/// a ride is otherwise not drawn (<see cref="GuestRenderer"/> skips guests in the Using state), so this renderer supplies
+/// a ride is otherwise not drawn (<see cref="GuestRenderer"/> skips guests in the Using state unless their object keeps the body, <see cref="GuestSimulation.ShowsKeptBody"/>), so this renderer supplies
 /// their head presentation.
 /// </summary>
 public sealed class RideHeadRenderer : Entity

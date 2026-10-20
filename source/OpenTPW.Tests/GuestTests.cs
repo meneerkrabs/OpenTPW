@@ -272,8 +272,9 @@ public class GuestTests
 		Assert.AreEqual( 1, shop.Bridge.GetQueuePosition( 8 ) );
 		for ( var tick = 0; tick < 4 * 60; tick++ )
 			shop.Step();
-		// Capacity 1: the next guest is called only once VAR_ONRIDE < VAR_CAPACITY again, i.e. after the release (0xe1404).
-		CollectionAssert.AreEqual( new[] { "offer 7", "board 7", "release 7", "offer 8", "board 8", "release 8", "offer 9", "board 9", "release 9" }, host.Events, string.Join( ", ", host.Events ) );
+		// Capacity 1: the next guest is called only once VAR_ONRIDE < VAR_CAPACITY again (0xe1404); the script lowers VAR_ONRIDE as it writes VAR_LETMEOFF, and the ride update runs the admission
+		// before its dismiss (tp.exe 0x004E14E0: 0x004E1220, then 0x004E1410), so the next guest is offered in the update that lets the last one off
+		CollectionAssert.AreEqual( new[] { "offer 7", "board 7", "offer 8", "release 7", "board 8", "offer 9", "release 8", "board 9", "release 9" }, host.Events, string.Join( ", ", host.Events ) );
 		Assert.AreEqual( 0, shop.Script[RideVariables.VAR_ONRIDE] );
 		Assert.AreEqual( 3, shop.Bridge.ReleasedTotal );
 	}

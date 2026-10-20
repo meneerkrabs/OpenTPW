@@ -44,8 +44,8 @@ public partial class Level
 	/// first-person walk when the ride was entered from it, else to the orbit (ride-view exits: Escape, the
 	/// eject button, and a right click with RMB cancel on).
 	/// </summary>
-	// [BIN:TPW-EXE:0x42a190 ride exit] the exit clears the seat node's mark and, when the camera mode toggled off (0x42a560), takes the cell under the park camera's target and looks for a thing of type 3 there (0x42a340); if there is one the park camera's target moves to the centre of that thing's cell (0x42a1d0: (index - 1 & 0x7f) * 10 + 5 and (index - 1 >> 7) * 10 + 5), otherwise it stays; the camcorder walk (0x42ae70) instead restores the saved target and yaw exactly
-	// [APPROX:UI-095] the prior camera instance is restored, including the host terrain walk; the original's park camera is its own pose (yaw, height, smoothing: 0x42b1c0), which OpenTPW's host park camera does not reproduce, so the exit's pose change is limited to the target and the look direction; whether the original's object cells carry a link byte at all is not traced (OpenTPW's hold none, so the video's unchanged yaw at 77:07 and 77:24 is the rule's no-match case)
+	// [BIN:TPW-EXE:0x42a190,0x42a340,0x42a1d0] the cell under the saved target must be an entrance (type 9); its owner cell's thing list supplies the ride, whose mExitPos (+0x38) supplies the destination. The exit's direction byte (+0x0D), not its neighbours (+0x0C), selects yaw.
+	// [APPROX:UI-095] the host restores its prior camera instance, not the original's full pose/smoothing. Exit lookup uses the live object's last shape exit, as placement does; divergent saved mExitPos and overlapping native thing lists are not reconstructed. No anchor fallback is made.
 	public void ExitRideView()
 	{
 		if ( RideView == null )
@@ -74,26 +74,41 @@ public partial class Level
 	/// The <see cref="GuestPathGrid.Directions"/> index the exit's yaw rule picks from the link byte of the thing's cell: 0, 1, 2 or 3 when exactly one of the link
 	/// bits 1, 4, 16 and 64 is set (the byte masked with 0x55), else -1, which leaves the yaw alone.
 	/// </summary>
-	// [BIN:TPW-EXE:0x42a1d0 ride exit yaw] the byte is the map cell's +0xd (0x522850 read on the cell record of the thing's cell, index (+0x38 - 1) × 0x44, not a direction of the thing): masked with 0x55 it selects the park yaw 0x790a38 by a switch with no default: 1 → π, 4 → π/2, 0x10 → 0, 0x40 → 3π/2
+	// [BIN:TPW-EXE:0x42a1d0 ride exit yaw] the byte is the exit cell's +0xd (0x522850 read on the cell record named by mExitPos, index (+0x38 - 1) × 0x44, not a direction of the thing): masked with 0x55 it selects the park yaw 0x790a38 by a switch with no default: 1 → π, 4 → π/2, 0x10 → 0, 0x40 → 3π/2
 	internal static int RideExitDirection( int linkByte ) => (linkByte & 0x55) switch { 1 => 0, 4 => 1, 0x10 => 2, 0x40 => 3, _ => -1 };
 
-	/// <summary>
-	/// Moves the park camera's target to the cell centre of the ride-exit object under it (<see cref="IsRideExitThing"/>) and, when that cell's link byte names a direction
-	/// (<see cref="RideExitDirection"/>), turns the camera to look along it, as the original does when a ride is left.
-	/// </summary>
-	// [BIN:TPW-EXE:0x42a1d0 ride exit camera] the camera's forward on the ground is (sin yaw, cos yaw) in the original's (x, z) = the cell's (x, y) (the eye sits behind the target by the rotated offset 0x790aa0..0x790aa8, 0x42b1c0), so the yaws 0, π/2, π and 3π/2 of the four link bits look along +y, +x, -y and -x: the link's own direction, the order of GuestPathGrid.Directions
+	/// <summary>Resolves the live entrance owner to its last shape exit and that exit's direction byte, never to the footprint anchor or a neighbour-link byte.</summary>
+	// [BIN:TPW-EXE:0x42a340] type 9 -> owner +0x10 -> owner cell's thing list +0x24 -> type 3 with CannotRide 0.
+	// [BIN:TPW-EXE:0x529164] shape type 10 selects 0x529239; 0x5292A7 rotates its direction and 0x5292B2 writes +0x0D through 0x5227E0. The placement retains the last exit, not the entrance or anchor.
+	internal static (int X, int Y, byte Direction)? ResolveRideExit( ParkObjects objects, ParkCellMap cells, int x, int y )
+	{
+		if ( !cells.InBounds( x, y ) || cells.RawTypeAt( x, y ) != ParkCellTypes.Entrance || cells.OwnerAt( x, y ) == 0 )
+			return null;
+		var owner = cells.OwnerAt( x, y );
+		var thing = objects.Objects.FirstOrDefault( item => OwnerWord( item ) == owner && IsRideExitThing( item ) );
+		if ( thing == null )
+			return null;
+		ObjectAccessPoint? exit = null;
+		foreach ( var point in thing.AccessPoints )
+			if ( point.Kind == ObjectCellKind.Exit )
+				exit = point;
+		if ( exit is not { } end || !cells.InBounds( end.X, end.Y ) )
+			return null;
+		return (end.X, end.Y, cells.QueueLinkAt( end.X, end.Y ));
+	}
+
+	/// <summary>Recentres at the entrance owner's exit. A missing or ambiguous cardinal direction keeps yaw unchanged.</summary>
 	internal void RecentreParkCamera( ParkCameraMode camera )
 	{
-		if ( OriginalPark?.Heightfield is not { } field || !OriginalParkPlacement.TryGetCell( field, camera.Target.X, camera.Target.Y, out var x, out var y ) )
+		if ( OriginalPark?.Heightfield is not { } field || !OriginalParkPlacement.TryGetCell( field, camera.Target.X, camera.Target.Y, out var x, out var y )
+			|| Guests?.Grid.Cells is not { } cells || ResolveRideExit( Objects, cells, x, y ) is not { } exit )
 			return;
-		if ( Objects.FindAt( x, y ) is not { } thing || !IsRideExitThing( thing ) )
-			return;
-		var center = OriginalParkPlacement.GetCellCenter( field, thing.Placement.X, thing.Placement.Y );
+		var center = OriginalParkPlacement.GetCellCenter( field, exit.X, exit.Y );
 		camera.Focus( new Vector3( center.X, center.Y, center.Z ) );
-		if ( Guests?.Grid.Cells is { } cells && RideExitDirection( cells.LinksAt( thing.Placement.X, thing.Placement.Y ) ) is var direction and >= 0 )
+		if ( RideExitDirection( exit.Direction ) is var direction and >= 0 )
 		{
 			var (dx, dy) = GuestPathGrid.Directions[direction];
-			var ahead = OriginalParkPlacement.GetCellCenter( field, thing.Placement.X + dx, thing.Placement.Y + dy );
+			var ahead = OriginalParkPlacement.GetCellCenter( field, exit.X + dx, exit.Y + dy );
 			camera.LookAlong( new System.Numerics.Vector2( ahead.X - center.X, ahead.Y - center.Y ) );
 		}
 	}

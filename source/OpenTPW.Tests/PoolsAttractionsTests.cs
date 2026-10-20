@@ -463,9 +463,10 @@ public class PoolsAttractionsTests
 	[TestMethod]
 	public void OnlyOneGuestIsOnARopeSwingAtATimeAndTheOthersSwimOn()
 	{
-		var rig = new Rig( capacity: 4 );
+		var rig = new Rig( capacity: 6 );
 		rig.Simulation.RegisterPoolActivity( new RopeSwingActivity( Sites( Rope ) ) );
-		var guests = Enumerable.Range( 0, 4 ).Select( _ => rig.Send() ).ToList();
+		// six swimmers: the room lets one off per park turn at most (tp.exe 0x004E1410), so enough of them must be in the water together for the swing to be wanted twice
+		var guests = Enumerable.Range( 0, 6 ).Select( _ => rig.Send() ).ToList();
 		var most = 0;
 		var joined = new HashSet<int>();
 		var users = new HashSet<int>();
@@ -536,9 +537,10 @@ public class PoolsAttractionsTests
 	[TestMethod]
 	public void SwimmersStandUnderTheJetsInUpToThreeAndLeaveHappier()
 	{
-		var rig = new Rig( capacity: 5 );
+		var rig = new Rig( capacity: 9 );
 		rig.Simulation.RegisterPoolActivity( new JetsActivity( Sites( Jets ) ) );
-		var guests = Enumerable.Range( 0, 5 ).Select( _ => rig.Send() ).ToList();
+		// nine swimmers: the room lets one off per park turn at most (tp.exe 0x004E1410), so enough of them must be in the water together to meet under the jets
+		var guests = Enumerable.Range( 0, 9 ).Select( _ => rig.Send() ).ToList();
 		var most = 0;
 		var joined = new HashSet<int>();
 		var slots = new HashSet<int>();
@@ -1420,8 +1422,9 @@ public class PoolsAttractionsTests
 		for ( var i = 0; i < 5; i++ )
 			_ = PoolWaterEffects.Bob( rig.Simulation, guest, EffectSites );
 		Assert.AreEqual( hash, HashOf( rig ) );
+		// where in the wave the swimmer is depends on when it entered the water: sample a whole wave cycle (24 turns), not one window
 		var bobs = new List<float>();
-		for ( var i = 0; i < 20; i++ )
+		for ( var i = 0; i < 24 * 15; i++ )
 		{
 			bobs.Add( PoolWaterEffects.Bob( rig.Simulation, guest, EffectSites ) );
 			rig.Simulation.Tick( 1f / FixedStepClock.TicksPerSecond );

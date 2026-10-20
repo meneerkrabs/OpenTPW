@@ -98,6 +98,7 @@
 	</ItemGroup>
 	<ItemGroup Condition="'$(OpenTpwDeterminismPins)' != 'true'">
 		<Compile Remove="Program.DeterminismPins.cs" />
+		<Compile Remove="Program.ParticleRenderOracle.cs" />
 	</ItemGroup>
 
 	<ItemGroup>

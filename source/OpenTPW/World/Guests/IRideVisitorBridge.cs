@@ -70,8 +70,17 @@ public interface IRideVisitorHost
 	void OnVisitorOffered( IRideVisitorBridge ride, int guestId );
 	/// <summary>The script took the guest (WALKON/BOUNCE, or it consumed VAR_LETMEON).</summary>
 	void OnVisitorBoarded( IRideVisitorBridge ride, int guestId );
-	/// <summary>The script released the guest at the exit (VAR_LETMEOFF = guest id), or the ride was removed.</summary>
+	/// <summary>The ride let go of a guest it held without the script's let-off (its script stopped or faulted, or a save's leftover rider): host teardown.</summary>
 	void OnVisitorReleased( IRideVisitorBridge ride, int guestId );
+	/// <summary>
+	/// The ride update's dismiss (tp.exe <c>0x004E1410</c>) found the guest in VAR_LETMEOFF and runs its ExitRide (<c>0x005014E0</c>): true when the guest left (state 15), false when the exit is blocked and
+	/// the guest stays on the ride. Hosts that do not model the exit walk treat it as <see cref="OnVisitorReleased"/>.
+	/// </summary>
+	bool OnVisitorExitRide( IRideVisitorBridge ride, int guestId )
+	{
+		OnVisitorReleased( ride, guestId );
+		return true;
+	}
 	/// <summary>The guest left the queue without riding (ride closed or removed).</summary>
 	void OnVisitorTurnedAway( IRideVisitorBridge ride, int guestId );
 	/// <summary>
@@ -190,6 +199,13 @@ public interface IRideVisitorBridge
 	(int X, int Y) ExitCell { get; }
 	/// <summary>.sam <c>UsageInfo.EntryCellStandPosX/Y</c>: where in its entrance cell a called guest stands (0..1 per axis).</summary>
 	(float X, float Y) EntryCellStandPos => (0.5f, 0.5f);
+	/// <summary>.sam <c>UsageInfo.ExitCellAppearPosX/Y</c> (type record +0xDC, +0xE0): where in its exit cell a guest the ride lets off appears (0..1 per axis, rotated like the stand point).</summary>
+	(float X, float Y) ExitCellAppearPos => (0.5f, 0.5f);
+	/// <summary>
+	/// The object's own exit cell (the original's +0x38): the cell of the shape's exit symbol, or of its entrance for an object without an exit; null for a bridge without a placement, whose exit is the cell
+	/// it takes its guests in (<c>GuestSimulation.StandCellOf</c>).
+	/// </summary>
+	(int X, int Y)? ExitAccessCell => null;
 	/// <summary>The object's rotation in degrees (0/90/180/270), which rotates <see cref="EntryCellStandPos"/>.</summary>
 	int Rotation => 0;
 	int QueueLength { get; }

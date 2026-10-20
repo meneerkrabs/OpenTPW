@@ -404,17 +404,29 @@ public sealed class GuestRenderer : Entity
 	internal bool TryMount( Guest guest, SVector3 right, SVector3 up, SVector3 forward, SVector3 eye, out GuestMount mount )
 	{
 		mount = default;
-		if ( !Visible || deleted || atlases.Count == 0 || !guest.IsVisible || Draws?.Invoke( guest ) == false )
+		// a user whose kept body stands where it stood (GuestSimulation.ShowsKeptBody, no ride pose) keeps what it holds, as its body stays in view; a body the ride poses mounts nothing, as for any rider
+		if ( !Visible || deleted || atlases.Count == 0 || !guest.IsVisible && !StandsInPlace( guest ) || Draws?.Invoke( guest ) == false )
 			return false;
 		var (atlasIndex, frameIndex, mirror, slot, direction, _, step) = SelectSpriteAndSlot( guest, right, forward, up );
 		var atlas = atlases[atlasIndex];
-		var feet = (FeetChooser?.Invoke( guest ) ?? CellToEngine( field, guest.DrawX, guest.DrawY )) + up * AnchorLift( atlasIndex, slot, direction ) - forward * (DepthPullChooser?.Invoke( guest ) ?? 0f);
+		var feet = (FeetChooser?.Invoke( guest ) ?? GroundPoint( guest, !guest.IsVisible )) + up * AnchorLift( atlasIndex, slot, direction ) - forward * (DepthPullChooser?.Invoke( guest ) ?? 0f);
 		var share = 1f;
 		if ( DepthPulledSlots?.Invoke( slot ) != false )
 			(feet, share) = PullTowardsEye( feet, eye, forward );
 		mount = new GuestMount( feet, share, atlas.Name, atlas.Frames[frameIndex], slot, direction, step, mirror );
 		return true;
 	}
+
+	/// <summary>The ground point a guest is drawn at: its own drawn position, or for a kept body standing in place where that body was last placed (<see cref="GuestSimulation.KeptBodyPosition"/>).</summary>
+	private SVector3 GroundPoint( Guest guest, bool keptInPlace )
+	{
+		var (x, y) = keptInPlace ? simulation.KeptBodyPosition( guest ) : (guest.DrawX, guest.DrawY);
+		return CellToEngine( field, x, y );
+	}
+
+	/// <summary>A guest in state 16 whose kept body stands where it stood: no ride pose (walk, bounce or a held one) draws it.</summary>
+	private bool StandsInPlace( Guest guest ) => simulation.ShowsKeptBody( guest )
+		&& !(BounceRiders?.TryGetPose( guest.Id, out var pose ) == true && RideHeadRenderer.CanDraw( guest, pose.AttractionId ));
 
 	// The body player proves only scale-one provenance, never the renderer's selected frame or phase.
 	// Legacy/imported reconstructed histories deliberately remain on the rectangle, potentially for their lifetime.
@@ -513,12 +525,14 @@ public sealed class GuestRenderer : Entity
 		{
 			// a guest on a bounce ride is hidden like any rider, and drawn from the ride's own pose (a stale slot of another attraction never draws it)
 			BounceRiderPose? rider = bounceRiders.Count > 0 && bounceRiders.TryGetValue( guest.Id, out var pose ) && RideHeadRenderer.CanDraw( guest, pose.AttractionId ) ? pose : null;
-			if ( !guest.IsVisible && rider == null || rider is { Visible: false } || !AcceptsBodyConsumer( guest, rider?.UsesSpriteState == true ) )
+			// a kept body the object's script does not pose stays in view where it stood (GuestSimulation.ShowsKeptBody), drawn by the renderer of its kept body's appearance
+			var inPlace = rider == null && !guest.IsVisible && simulation.ShowsKeptBody( guest );
+			if ( !guest.IsVisible && rider == null && !inPlace || rider is { Visible: false } || !AcceptsBodyConsumer( guest, rider?.UsesSpriteState == true || inPlace ) )
 				continue;
 			var (atlasIndex, frameIndex, mirror, slot, direction, rotation, step) = SelectSpriteAndSlot( guest, right, forward, up, rider );
 			var atlas = atlases[atlasIndex];
 			var frame = atlas.Frames[frameIndex];
-			var feet = (rider?.Feet ?? FeetChooser?.Invoke( guest ) ?? CellToEngine( field, guest.DrawX, guest.DrawY )) + up * AnchorLift( atlasIndex, slot, direction ) - forward * (DepthPullChooser?.Invoke( guest ) ?? 0f);
+			var feet = (rider?.Feet ?? FeetChooser?.Invoke( guest ) ?? GroundPoint( guest, inPlace )) + up * AnchorLift( atlasIndex, slot, direction ) - forward * (DepthPullChooser?.Invoke( guest ) ?? 0f);
 			var share = 1f;
 			if ( DepthPulledSlots?.Invoke( slot ) != false )
 				(feet, share) = PullTowardsEye( feet, eye, forward );

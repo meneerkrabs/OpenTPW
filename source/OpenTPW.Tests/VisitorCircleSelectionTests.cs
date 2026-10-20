@@ -203,7 +203,7 @@ public class VisitorCircleSelectionTests
 		var original = HistorySimulation(); var saved = original.SpawnInPark(5, 5);
 		saved.BodySprite.Tick(63);
 		var snapshot = original.CaptureSnapshot();
-		if (legacy) snapshot = snapshot with { BodySpriteClockMilliseconds = null, Guests = snapshot.Guests.Select(g => g with { BodySprite = null }).ToArray() };
+		if (legacy) snapshot = snapshot with { BodySpriteClockMilliseconds = null, Balloons = null, Guests = snapshot.Guests.Select(g => g with { BodySprite = null }).ToArray() };
 		var restored = HistorySimulation(); restored.RestoreSnapshot(ParkResumeJson.Deserialize<GuestSimulationSnapshot>(ParkResumeJson.Serialize(snapshot)));
 		var guest = restored.Guests.Single(); guest.DrawX = guest.DrawY = 5;
 		Assert.AreEqual(legacy, guest.BodySpriteHistoryReconstructed);

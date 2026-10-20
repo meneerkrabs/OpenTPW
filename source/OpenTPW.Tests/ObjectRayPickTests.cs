@@ -157,6 +157,24 @@ public class ObjectRayPickTests
 	}
 
 	[TestMethod]
+	public void ARayThatDoesNotFallWalksNoCell()
+	{
+		// the picker never runs with such a ray (the park camera looks down at 35 degrees or more, its frustum's top edge 26.57 degrees above the view): no walk
+		var tower = Tower();
+		Assert.IsFalse( ObjectRayPick.TryPick( new NVector3( 21, 0, 10 ), new NVector3( 0, 1, 0.1f ), null, Grid, OwnerAt( tower, 10, 10 ), out _, out _ ) );
+		Assert.IsFalse( ObjectRayPick.TryPick( new NVector3( 21, 0, 10 ), new NVector3( 0, 1, 0 ), null, Grid, OwnerAt( tower, 10, 10 ), out _, out _ ) );
+		Assert.AreEqual( 0, tower.Tests );
+	}
+
+	[TestMethod]
+	public void TheParkCamerasLowestPitchLeavesEveryFrustumRayFalling()
+	{
+		// the lowest pitch of the zoom line (40 with the wide range) against the frustum's half height 0.5 at unit depth
+		Assert.AreEqual( 35f, ParkCameraMode.PitchOf( 40 ) * 180 / MathF.PI, 0.01f );
+		Assert.IsTrue( ParkCameraMode.PitchOf( 40 ) > MathF.Atan( 0.5f ) );
+	}
+
+	[TestMethod]
 	public void TheFaceTestAcceptsThePlaneHitInsideTheFaceByItsAngleSum()
 	{
 		NVector3 a = new( 0, 0, 0 ), b = new( 1, 0, 0 ), c = new( 0, 1, 0 ), normal = new( 0, 0, 2 );

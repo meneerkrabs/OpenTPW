@@ -626,7 +626,7 @@ public class ParticleSystemPortTests
 			(2, Template( Life( 200 ), Cap( 50 ), Rates( 1, 1, 1, 1 ), ParticleLife( 1000 ), (0x5, 1, 1) )) );
 		var effectors = new[] { Effector( (0x4, 4, -1), (0x4C, 4, 500), (0x40, 4, 5) ), Effector( (0x4, 4, -1), (0x4C, 4, 500), (0x45, 1, 1) ) };
 		var system = New( pool, effectors: effectors );
-		Assert.IsNull( system.Capture(), "nothing live, nothing to save" );
+		Assert.AreEqual( 0, system.Capture().Emitters.Count, "an empty initialized pool still saves its settings and generator" );
 		var smoke = system.Create( 1, (1024, 2048, 3072) );
 		var screen = system.Create( 2, Origin );
 		system.CreateEffector( 0, (1024, 0, 0) );

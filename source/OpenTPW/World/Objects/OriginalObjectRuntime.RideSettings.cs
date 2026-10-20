@@ -23,8 +23,11 @@ public sealed partial class OriginalObjectRuntime
 	/// <c>UsageInfo.MaxCapacity</c>'s when above it, only when the two sum above 0.
 	/// </summary>
 	// [BIN:TPW-EXE:0x4dd7f0 ride SetCapacity] byte b; when type +0x124 + type +0x128 > 0: b < MinCapacity → (byte)MinCapacity, else MaxCapacity < b → (byte)MaxCapacity (signed int compares); then script variable 2 (0x55a0b0), the log line "CAPACITY = %d" and ride +0x5d
-	internal static int ClampCapacity( ObjectSettings settings, int capacity )
+	internal static int ClampCapacity( ObjectSettings settings, int capacity, int? raisedMaximum = null )
 	{
+		// [EXT:cheats-ride-vehicles] a ride whose vehicle limit the cheat raised takes a capacity up to its raised maximum, above the byte the original keeps
+		if ( raisedMaximum is { } raised )
+			return Math.Clamp( capacity, Math.Max( 0, settings.GetInt( "UsageInfo.MinCapacity" ) ), raised );
 		var value = capacity & 0xFF;
 		var min = settings.GetInt( "UsageInfo.MinCapacity" );
 		var max = settings.GetInt( "UsageInfo.MaxCapacity" );
@@ -64,7 +67,7 @@ public sealed partial class OriginalObjectRuntime
 	/// <summary>The ride's SetCapacity (<c>0x4dd7f0</c>): <see cref="ClampCapacity"/>, then script variable 2 and the CAPACITY word.</summary>
 	public void SetCapacity( int capacity )
 	{
-		var value = ClampCapacity( Entry.Settings, capacity );
+		var value = ClampCapacity( Entry.Settings, capacity, VehiclesRaised ? MaximumCapacity : null );
 		SetVariable( nameof( RideVariables.VAR_CAPACITY ), value );
 		capacityWord = value;
 		PublishSettingWords();

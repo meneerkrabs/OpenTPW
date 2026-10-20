@@ -255,6 +255,10 @@ internal static class SaveTestPayloads
 		public ushort BaseSpeed { get; init; } = 100;
 		public uint EspSprite { get; init; }
 		public uint PreviousSpeed { get; init; } = 0x3F800000;
+		/// <summary>The walk mask nav_mode of the navigation state (navigation +48, walk +0xB4, person +0x188).</summary>
+		public int NavMode { get; init; }
+		/// <summary>mStrandedTime (person +0x198), after mPreviousSpeed, mPreviousX and mPreviousY.</summary>
+		public uint StrandedTime { get; init; }
 		public uint BalloonScript { get; init; }
 		public int Cash { get; init; } = 500;
 		public int ExitLevel { get; init; } = 90;
@@ -310,7 +314,9 @@ internal static class SaveTestPayloads
 		BinaryPrimitives.WriteUInt16LittleEndian( person.AsSpan( 26 ), fields.BaseSpeed );
 		BinaryPrimitives.WriteUInt32LittleEndian( person.AsSpan( 29 ), fields.EspSprite );
 		// the navigation block (177 bytes) follows mLastRecordedMapId at 33; mPreviousSpeed comes after it
+		BinaryPrimitives.WriteInt32LittleEndian( person.AsSpan( 35 + 48 ), fields.NavMode );
 		BinaryPrimitives.WriteUInt32LittleEndian( person.AsSpan( 35 + 177 ), fields.PreviousSpeed );
+		BinaryPrimitives.WriteUInt32LittleEndian( person.AsSpan( 35 + 177 + 12 ), fields.StrandedTime );
 		// the thought block (0x50BAD0) closes the person block: head, 32 ring slots, mLastThought, mThoughtScript, mTimeBubbleShown
 		var thought = SaveThingChain.PersonBytes - (4 + 4 * 32 + 12);
 		BinaryPrimitives.WriteUInt32LittleEndian( person.AsSpan( thought ), fields.ActionHistIndex );

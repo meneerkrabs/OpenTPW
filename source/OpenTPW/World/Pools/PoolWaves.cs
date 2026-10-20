@@ -17,7 +17,7 @@ public readonly record struct PoolWaveSettings( bool On, int Height, int Interva
 	public static PoolWaveSettings Default { get; } = new( true, 2, 1 );
 
 	/// <summary>
-	/// The settings a click on a wave machine steps through (the interim control; the player's window comes later): the default, strong and frequent, gentle and rare, then off, and round again.
+	/// The settings <c>Level.CyclePoolWaves</c> steps through, for scripted use (the player sets them in the machine's settings window): the default, strong and frequent, gentle and rare, then off, and round again.
 	/// </summary>
 	public static IReadOnlyList<PoolWaveSettings> Presets { get; } = new[] { Default, new PoolWaveSettings( true, 3, 0 ), new PoolWaveSettings( true, 1, 2 ), new PoolWaveSettings( false, 2, 1 ) };
 
@@ -61,30 +61,32 @@ public readonly record struct PoolWaveSettings( bool On, int Height, int Interva
 	/// The settings the waves of a pool region run with: those of its wave machine with the lowest object id whose settings are on (the machines of one pool do not add up), or null when the region has no
 	/// wave machine or none of them is on. A pool without a machine has no waves, whatever bits its cells hold. Allocation-free.
 	/// </summary>
-	public static PoolWaveSettings? ActiveIn( PoolAttractionSites sites, ParkCellMap cells, PoolSwimRegion region )
+	public static PoolWaveSettings? ActiveIn( PoolAttractionSites sites, ParkCellMap cells, PoolSwimRegion region ) =>
+		ActiveMachineIn( sites, cells, region ) is { } machine ? At( cells, machine.Access ) : null;
+
+	/// <summary>The wave machine whose settings the waves of <paramref name="region"/> run with (<see cref="ActiveIn"/>: the one with the lowest object id whose settings are on), or null.</summary>
+	public static PoolAttractionSite? ActiveMachineIn( PoolAttractionSites sites, ParkCellMap cells, PoolSwimRegion region )
 	{
 		ArgumentNullException.ThrowIfNull( sites );
 		var all = sites.All;
 		PoolAttractionSite? best = null;
-		PoolWaveSettings? found = null;
 		for ( var i = 0; i < all.Count; i++ )
 		{
 			var site = all[i];
 			if ( site.Kind != PoolAttractionKind.WaveMachine || !region.Contains( site.Access.X, site.Access.Y ) || (best != null && site.ObjectId > best.ObjectId) )
 				continue;
-			var settings = At( cells, site.Access );
-			if ( settings.On )
-				(best, found) = (site, settings);
+			if ( At( cells, site.Access ).On )
+				best = site;
 		}
-		return found;
+		return best;
 	}
 }
 
 /// <summary>
 /// The waves of a pool, a function of the park turn and the settings of its wave machine (docs/POOLS.md, "Wave machine"; docs/DETERMINISM.md). What the simulation reads is only turn counts and
-/// integer arithmetic: whether the waves run (<see cref="IsRunning"/>), their strength (<see cref="Envelope"/>) and the happiness paid once per period (<see cref="HappinessGain"/>). A machine runs for
-/// <see cref="RunTurns"/>, rests for the interval's turns and runs again; a run swells in and out over <see cref="SwellTurns"/>. The surface (the pool water shader) and the swimmers' bob draw the same
-/// plane wave (<see cref="SmoothWave"/>, floating point at the time of the frame, presentation only): the bob only moves a swimmer's drawn height, never its position, state or hash.
+/// integer arithmetic: whether the waves run (<see cref="IsRunning"/>), their strength (<see cref="Envelope"/>), the happiness paid once per period (<see cref="HappinessGain"/>) and the push on the free swimmers (<see cref="Push"/>). A machine runs for
+/// <see cref="RunTurns"/>, rests for the interval's turns and runs again; a run swells in and out over <see cref="SwellTurns"/>. The surface (the pool water shader, which raises and lowers the water mesh) and the swimmers' bob
+/// draw the same plane wave (<see cref="SmoothWave"/>, floating point at the time of the frame, presentation only): the bob only moves a swimmer's drawn height, never its position, state or hash.
 /// </summary>
 // [EXT:pools-waves] OpenTPW's own wave machine; the original game has no pools
 public static class PoolWaves
@@ -99,8 +101,13 @@ public static class PoolWaves
 	public const int PeriodTurns = 24;
 	/// <summary>The happiness a swimmer in the waves gets per period and height step: 0.4, 0.8 and 1.2 (meter 0 to 100).</summary>
 	public const float HappinessPerHeight = 0.4f;
-	/// <summary>How far a swimmer's drawn height bobs, by height 1, 2, 3, in engine units. The water shader's amplitude is the envelope (0 to 1) times height / 3.</summary>
-	public static readonly float[] BobHeights = { 0.03f, 0.05f, 0.08f };
+	/// <summary>
+	/// How far the water surface rises and falls at height 3, in engine units (a cell is 2 wide): the pool water shader's <c>kMaxHeave</c>, which raises the mesh by this times its strength (the
+	/// envelope, 0 to 1, times height / 3). It stays under the 0.12 the water lies below the lowest deck (<see cref="PoolMeshOptions.WaterDrop"/>), so a crest never tops the coping.
+	/// </summary>
+	public const float MaxHeave = 0.105f;
+	/// <summary>How far a swimmer's drawn height bobs, by height 1, 2, 3, in engine units: the surface's own rise at that height, so a swimmer rides the water it is drawn in.</summary>
+	public static readonly float[] BobHeights = { MaxHeave / 3, MaxHeave * 2 / 3, MaxHeave };
 	/// <summary>The phase a wave front advances per cell along +x +y (of 64 steps of a period): the wave length, about 3 cells. The direction is the same for every pool.</summary>
 	public const int PhasePerCell = 21;
 
@@ -130,11 +137,47 @@ public static class PoolWaves
 		if ( envelope == 0 )
 			return 0f;
 		var cycles = turn / PeriodTurns - (cellX + cellY) * PhasePerCell / 64.0;
-		return (float)(Math.Sin( 2 * Math.PI * cycles ) * envelope / 64.0);
+		return (float)(Math.Sin( 2 * Math.PI * cycles ) * envelope / 64.0); // [DET:presentation] the drawn wave
 	}
 
 	/// <summary>The drawn-height offset of a point (cells) at a fractional park turn, in engine units (<see cref="SmoothWave"/> times the bob height). Presentation only.</summary>
 	public static float SmoothBob( PoolWaveSettings settings, double turn, float cellX, float cellY ) => SmoothWave( settings, turn, cellX, cellY ) * BobHeights[Math.Clamp( settings.Height, 1, 3 ) - 1];
+
+	/// <summary>
+	/// How far a crest at full swell carries a free swimmer per park turn at height 3, in 16.16 cells (0.12 cell; about 0.085 on each axis, about the slowest stroke, 60 x 90 / 65536 = 0.082 cell a turn):
+	/// at the crest a slow swimmer heading against the waves is carried back a little. Over a whole period the push averages about a third of it, less than the slowest stroke, so every swimmer still
+	/// reaches its goals.
+	/// </summary>
+	public const int MaxPush = (int)(0.12 * Fixed16.One);
+
+	/// <summary>
+	/// The push of the waves on a free swimmer at (<paramref name="x"/>, <paramref name="y"/>) (16.16 cells) on a park turn, in 16.16 cells along +x and +y: the integer form of <see cref="SmoothWave"/> at that point
+	/// (the phase in 64 steps of a period, the sine from the swimmers' heading table) while its crest is up, times the envelope and the height share of <see cref="MaxPush"/>; nothing in a trough, in a rest or
+	/// with the waves off. Integers only, so every machine agrees (docs/DETERMINISM.md).
+	/// </summary>
+	public static (int X, int Y) Push( PoolWaveSettings settings, long turn, int x, int y ) => Carry( settings, turn, x, y, swaying: false );
+
+	/// <summary>
+	/// [EXT:pools-waves] The sway of the waves on a body that floats on them (the wave pool's ring floaters): the same as <see cref="Push"/> while the crest is up, and as much back along -x -y while the
+	/// trough passes, so a floater rocks to and fro with the swell instead of being carried away. Integers only.
+	/// </summary>
+	public static (int X, int Y) Sway( PoolWaveSettings settings, long turn, int x, int y ) => Carry( settings, turn, x, y, swaying: true );
+
+	private static (int X, int Y) Carry( PoolWaveSettings settings, long turn, int x, int y, bool swaying )
+	{
+		var envelope = Envelope( settings, turn );
+		if ( envelope == 0 )
+			return (0, 0);
+		// SmoothWave's cycles are turn / 24 - (x + y) x 21/64; in 64ths of a period the point's share is (x + y) x 21 in 16.16, shifted down
+		var phase = (int)(turn % PeriodTurns) * 64 / PeriodTurns - (int)(((long)x + y) * PhasePerCell >> 16);
+		var sine = PoolSwimming.Direction( phase & 63 ).Y;
+		if ( sine <= 0 && !swaying )
+			return (0, 0);
+		var magnitude = (int)((long)MaxPush * Math.Clamp( settings.Height, 1, 3 ) * envelope * sine / (3L * 64 * Fixed16.One));
+		// along the diagonal: both axes take cos 45 degrees of it (heading 8 of the table)
+		var along = Fixed16.Mul( magnitude, PoolSwimming.Direction( 8 ).X );
+		return (along, along);
+	}
 
 	/// <summary>The happiness a swimmer in the waves is paid on a turn: <see cref="HappinessPerHeight"/> times the height once per period while the waves run, else 0.</summary>
 	public static float HappinessGain( PoolWaveSettings settings, long turn ) =>

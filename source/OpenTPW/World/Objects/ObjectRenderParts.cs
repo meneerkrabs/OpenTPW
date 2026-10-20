@@ -52,6 +52,9 @@ public static class ObjectRenderParts
 				if ( node >= 0 )
 					animated[node] = true;
 		}
+		// [EXT:evening-torches-flicker] a node the evening lamp table names as a flame (a torch's) is moved and hidden by the evening extension each frame (EveningFlames), so it stays a separate part too
+		if ( EveningLampTable.Shipped.Find( entry ) is { Flame: { } flame } && model.Nodes.FirstOrDefault( node => string.Equals( node.Name, flame, StringComparison.OrdinalIgnoreCase ) ) is { } flameNode && flameNode.Index < animated.Length )
+			animated[flameNode.Index] = true;
 		// Children of animated nodes move with them.
 		var changed = true;
 		while ( changed )

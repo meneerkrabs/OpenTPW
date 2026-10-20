@@ -5,6 +5,8 @@ import { readFile } from 'node:fs/promises';
 const source = await readFile(new URL('../source/OpenTPW.Web/wwwroot/opentpw-startup.js', import.meta.url), 'utf8');
 const startup = await import(`data:text/javascript;base64,${Buffer.from(source).toString('base64')}`);
 const inputs = await import(`data:text/javascript;base64,${Buffer.from(await readFile(new URL('../source/OpenTPW.Web/wwwroot/opentpw-inputs.js', import.meta.url), 'utf8')).toString('base64')}`);
+// The page's pool sprite helpers, which main.js imports (its imports are stripped below and handed in as the page's environment).
+const poolSprites = await import(`data:text/javascript;base64,${Buffer.from(await readFile(new URL('../source/OpenTPW.Web/wwwroot/opentpw-pool-sprites.js', import.meta.url), 'utf8')).toString('base64')}`);
 const file = path => [path, async () => new Uint8Array([1]).buffer, 1];
 const paths = files => files.map(([path]) => path);
 
@@ -135,7 +137,7 @@ async function page(theme, active = false, frame = () => false) {
 			getConfig() { return { mainAssemblyName: 'synthetic' }; }, async runMain() {} }; } },
 		webgl: {}, audio: {}, text: {}, storage: { async restore() {}, async sync() {} },
 		originals: { supported() { return true; }, async claimKeeping() { return { acquired: true, unavailable: false, release() { released++; } }; }, MODES: ['lazy', 'all', 'off'], async openOriginalStore() { return store; } },
-		...startup, inputs, document: { getElementById: element, addEventListener() {} },
+		...startup, ...poolSprites, inputs, document: { getElementById: element, addEventListener() {} },
 		location: { search: '', hostname: 'test.invalid', origin: 'https://test.invalid' },
 		navigator: { locks: { async request(name, options, callback) { callback({}); } }, storage: { async getDirectory() { return {}; } } },
 		localStorage: { getItem() { return 'off'; }, setItem() {} }, window: { addEventListener() {} },

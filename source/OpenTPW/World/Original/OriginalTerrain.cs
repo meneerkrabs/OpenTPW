@@ -86,7 +86,7 @@ public sealed class OriginalTerrain : Entity
 	public int PathCellCount { get; private set; }
 	private Dictionary<string, Texture>? heightfieldTextures;
 	private readonly List<ModelEntity> pathParts = new();
-	/// <summary>Path layer materials by texture set; reused when the layer is rebuilt, because materials are never disposed.</summary>
+	/// <summary>Path layer materials by texture set; kept when the layer is rebuilt, since a texture set that comes back is drawn by the same material; released with the terrain.</summary>
 	private readonly Dictionary<string, Material> pathMaterials = new();
 
 	/// <summary>Rebuilds the path layer so built and removed path cells show.</summary>
@@ -99,7 +99,12 @@ public sealed class OriginalTerrain : Entity
 			parts.Remove( old );
 			old.Delete();
 			if ( old.Model is { } model && models.Remove( model ) )
+			{
 				ScheduleDispose( model );
+				// a queue model's material is its own (made again with every rebuild), a path batch's is shared through pathMaterials and kept for the next one
+				if ( !pathMaterials.ContainsValue( model.Material ) )
+					model.Material.ReleaseOwnedResources();
+			}
 		}
 		pathParts.Clear();
 		RefreshHoles();
@@ -250,7 +255,7 @@ public sealed class OriginalTerrain : Entity
 				material.Set( "Color", slots.ToArray(), SamplerType.Anisotropic );
 				pathMaterials.Add( key, material );
 			}
-			pathParts.Add( AddPart( new Model( vertices.ToArray(), indices.ToArray(), material ), $"paths {pathParts.Count}" ) );
+			pathParts.Add( AddPathPart( new Model( vertices.ToArray(), indices.ToArray(), material ), $"paths {pathParts.Count}" ) );
 		}
 		BuildQueueModels( textures, queues );
 	}
@@ -349,7 +354,7 @@ public sealed class OriginalTerrain : Entity
 				slots[index] = index < names.Count ? LoadTexture( textures, names[index], "textures", directory ) : slots[0];
 			var material = new Material<ObjectUniformBuffer>( "content/shaders/test.shader" );
 			material.Set( "Color", slots );
-			pathParts.Add( AddPart( new Model( vertices.ToArray(), indices.ToArray(), material ), $"queue models {pathParts.Count}" ) );
+			pathParts.Add( AddPathPart( new Model( vertices.ToArray(), indices.ToArray(), material ), $"queue models {pathParts.Count}" ) );
 		}
 		names.Clear();
 		vertices.Clear();
@@ -458,7 +463,8 @@ public sealed class OriginalTerrain : Entity
 					Normal = normal.LengthSquared() > 0 ? System.Numerics.Vector3.Normalize( new System.Numerics.Vector3( normal.X, normal.Z, normal.Y ) ) : System.Numerics.Vector3.UnitZ,
 					TexCoords = mesh.TexCoords[index],
 					TexIndex = slotOfMaterial[materialIndex],
-					MatFlags = TextureSlotAddressing.VertexFlags( mesh.Materials[materialIndex].Flags )
+					// [EXT:winter-snow-paths] the entrance plaza and its kerbs (grd_pav, grd_ctr, grd_krb) are walking surfaces: slush under snow, like the path layer
+					MatFlags = TextureSlotAddressing.VertexFlags( mesh.Materials[materialIndex].Flags ) | ( TextureSlotAddressing.IsPathLikeTexture( mesh.Materials[materialIndex].Name ) ? TextureSlotAddressing.SlushFlag : 0u )
 				} );
 			}
 			foreach ( var index in mesh.Indices )
@@ -577,8 +583,18 @@ public sealed class OriginalTerrain : Entity
 	private ModelEntity AddPart( Model model, string name )
 	{
 		models.Add( model );
-		var part = new ModelEntity { Model = model, Name = name };
+		// [EXT:winter-snow-surfaces] every terrain part draws with test.shader: ground takes the full cover (the paths and queue models change it to slush where they are added)
+		var part = new ModelEntity { Model = model, Name = name, SnowSurface = SnowCover.GroundSurface };
 		parts.Add( part );
+		return part;
+	}
+
+	/// <summary>A part of the path layer (paths and queue models): under snow it shows slush, not white (<see cref="SnowCover.PathSurface"/>).</summary>
+	// [EXT:winter-snow-paths] the user's decision (2026-10-18): paths turn to slush so they stay readable
+	private ModelEntity AddPathPart( Model model, string name )
+	{
+		var part = AddPart( model, name );
+		part.SnowSurface = SnowCover.PathSurface;
 		return part;
 	}
 
@@ -594,6 +610,12 @@ public sealed class OriginalTerrain : Entity
 		parts.Clear();
 		foreach ( var model in models )
 			ScheduleDispose( model );
+		// The materials are the terrain's own (each part made one, the path layer shares one per texture set, the heightfield keeps its own across hole changes) and carry a shader copy, a
+		// pipeline and a uniform buffer each: they leave with the entity, as an object's do (OriginalObject).
+		foreach ( var material in models.Select( model => model.Material ).Concat( pathMaterials.Values ).Concat( heightfieldMaterial != null ? new[] { heightfieldMaterial } : [] ).Distinct() )
+			material.ReleaseOwnedResources();
+		pathMaterials.Clear();
+		heightfieldMaterial = null;
 		models.Clear();
 	}
 }

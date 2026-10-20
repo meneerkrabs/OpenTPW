@@ -47,6 +47,8 @@ internal sealed class PeriodicAutosave
 	private double wait = IntervalSeconds;
 	private int refusals;
 	private Task? writing;
+	/// <summary>Whether the write <see cref="writing"/> tracks belongs to the park now playing; <see cref="Reset"/> clears it while the task keeps running.</summary>
+	private bool writingForCurrentPark;
 	private Exception? writeError;
 	private SlicedJsonSerializer? slicing;
 	private string? slicingPath;
@@ -94,10 +96,14 @@ internal sealed class PeriodicAutosave
 		elapsed += Math.Min( deltaSeconds, LongestFrameSeconds );
 	}
 
-	/// <summary>A new park (or a resumed one): the count starts again, a serialization of the old park is dropped and a write of it is left to finish on its own.</summary>
+	/// <summary>
+	/// A new park (or a resumed one): the count starts again, a serialization of the old park is dropped and a write of it is left to finish on its
+	/// own — the task keeps running alone, so <see cref="WriteInProgress"/> holds and writes stay single and atomic, but its outcome belongs to the
+	/// old park: a failure it reports warns and leaves the new park's count, wait and refusals exactly to this frame alone.
+	/// </summary>
 	internal void Reset()
 	{
-		elapsed = 0; wait = IntervalSeconds; refusals = 0; slicing = null; slicingPath = null;
+		elapsed = 0; wait = IntervalSeconds; refusals = 0; slicing = null; slicingPath = null; writingForCurrentPark = false;
 	}
 
 	/// <summary>
@@ -111,8 +117,16 @@ internal sealed class PeriodicAutosave
 		Advance( deltaSeconds, playing );
 		if ( writing is { IsCompleted: true } finished )
 		{
-			writing = null;
-			if ( finished.IsFaulted ) writeError = finished.Exception!.GetBaseException();
+			var thisPark = writingForCurrentPark;
+			writing = null; writingForCurrentPark = false;
+			if ( finished.IsFaulted )
+			{
+				var error = finished.Exception!.GetBaseException();
+				// a write this park started is this park's failed autosave, retried soon with a fresh capture; a write the park before this one
+				// started only reports itself — the current park's count, wait and refusals are what this frame alone makes of them
+				if ( thisPark ) writeError = error;
+				else warn?.Invoke( $"A periodic autosave from a previous park could not be written ({error.Message}); the current park autosave schedule is unchanged." );
+			}
 		}
 		if ( slicing != null ) return Continue( warn );
 		if ( writeError != null ) return Failed( writeError, warn );
@@ -153,6 +167,7 @@ internal sealed class PeriodicAutosave
 			slicing = null; return Failed( error, warn );
 		}
 		var path = slicingPath!; slicing = null; slicingPath = null; LastBytes = bytes.Length;
+		writingForCurrentPark = true;
 		writing = background( () =>
 		{
 			var started = System.Diagnostics.Stopwatch.GetTimestamp();

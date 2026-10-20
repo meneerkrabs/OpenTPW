@@ -41,3 +41,7 @@ Produce invariant and transition table before proposing one authoritative hosted
 - Deliver the evidence ledger, agreed contract and concrete regression cases described above.
 - Keep this proposal draft while required original evidence or scope decisions are unavailable.
 - Any later implementation, approximation retirement and merge require separate verified results; this document performs none.
+
+## Bounded implementation (2026-10-20)
+
+Restores the supported TPW original-save retained broken/condemned visitor-bridge state after script/coaster attachment, only for a unique matching saved/economy/runtime owner, closed saved/runtime state and an available script. It uses the economy's existing gauge normalization, does not replay a breakdown event, and never rewrites script words. Unsupported cases report a reason without mutation. Synthetic regression cases cover ownership, unsupported states, idempotence, script preservation and queue drainage. This is not original VM continuation: ECON-023 remains unresolved and the broader ownership transition ledger and original oracle are still outstanding.

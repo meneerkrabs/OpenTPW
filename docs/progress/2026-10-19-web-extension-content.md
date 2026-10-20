@@ -1,0 +1,3 @@
+## Brolly and winter shops in the browser build (October 19, 2026)
+
+The browser page served by play.opentpw.io had no brolly shop, winter kiosk or glühwein stall: the server image's Docker build copied `content/pools/` but not `content/umbrellas/` or `content/winter/`, so the web project's embedded-resource wildcards over those folders matched nothing and the build succeeded without them (the jungle catalog had 84 entries in the browser against 87 natively). The Dockerfile now copies both folders, and `OpenTPW.Web.csproj` fails the build when an official extension's `objects.json` is missing, so a build context can no longer drop an extension's content silently.

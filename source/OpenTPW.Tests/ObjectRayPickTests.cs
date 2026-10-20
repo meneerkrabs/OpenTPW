@@ -218,16 +218,16 @@ public class ObjectRayPickTests
 	}
 
 	[TestMethod]
-	public void TheFacesAreWalkedMaterialByMaterialAndABuiltModelInStoredOrder()
+	public void TheFacesAreWalkedMaterialByMaterial()
 	{
 		var mesh = new ModelFile.Mesh { Materials = new[] { new ModelFile.MaterialData { a = 0, b = 2 }, new ModelFile.MaterialData { a = 0, b = 2 } } };
-		CollectionAssert.AreEqual( new[] { 0, 1, 2, 3 }, ObjectPickModel.FaceOrder( mesh, 4 ), "OpenTPW's built models leave every start at 0" );
+		CollectionAssert.AreEqual( new[] { 0, 1, 0, 1 }, ObjectPickModel.FaceOrder( mesh, 4 ), "every range from its start word, also 0 twice" );
 		mesh = new ModelFile.Mesh { Materials = new[] { new ModelFile.MaterialData { a = 2, b = 2 }, new ModelFile.MaterialData { a = 0, b = 2 } } };
 		CollectionAssert.AreEqual( new[] { 2, 3, 0, 1 }, ObjectPickModel.FaceOrder( mesh, 4 ), "the original walks material by material" );
 		mesh = new ModelFile.Mesh { Materials = new[] { new ModelFile.MaterialData { a = 1, b = 2 }, new ModelFile.MaterialData { a = 2, b = 1 } } };
 		CollectionAssert.AreEqual( new[] { 1, 2, 2 }, ObjectPickModel.FaceOrder( mesh, 4 ), "a shared face twice, an uncovered face never" );
 		mesh = new ModelFile.Mesh { Materials = new[] { new ModelFile.MaterialData { a = 3, b = 2 } } };
-		CollectionAssert.AreEqual( new[] { 0, 1, 2, 3 }, ObjectPickModel.FaceOrder( mesh, 4 ), "a range past the faces" );
+		CollectionAssert.AreEqual( new[] { 3 }, ObjectPickModel.FaceOrder( mesh, 4 ), "a range cut at the last face" );
 	}
 
 	[TestMethod]
@@ -248,7 +248,7 @@ public class ObjectRayPickTests
 					foreach ( var mesh in model.Meshes.Where( candidate => candidate.Indices.Length > 0 ) )
 					{
 						// the walk goes material by material through the ranges (start a, count b), which are often out of the stored order (jungle bouncy's
-						// jb_floor: ... (36,4) (48,2) (50,2) (40,4) (44,4)); no shipped mesh takes the stored-order fallback of OpenTPW's built models
+						// jb_floor: ... (36,4) (48,2) (50,2) (40,4) (44,4)); every shipped range lies within its mesh
 						var faces = mesh.Indices.Length / 3;
 						var ranges = mesh.Materials.SelectMany( material => Enumerable.Range( material.a, material.b ) ).ToArray();
 						CollectionAssert.AreEqual( ranges, ObjectPickModel.FaceOrder( mesh, faces ), $"{theme}/{entry.ArchiveName}/{mesh.Name}" );

@@ -15,10 +15,11 @@ namespace OpenTPW;
 // 0x45d0d6-0x45d116) and face by face (the 8-byte records at +0x70: the normal index & 0x7fff and three corners mapped through the corner table +0x94 to
 // positions, 0x45d11e-0x45d16c), then, unless the state has 0x20, its children from the first (+0xc) along the siblings (+8) until one hits
 // (0x45d4cf-0x45d504), a hidden node's children too; the first hit returns at once (0x45d511), so the hit is the first face in this order, not the nearest
-// RIDES-021 (tagged at ObjectRayPick): the node state bits 0x20 (which prunes the children) and 0x8000 are not modelled, and the faces' stored normals are used
-// where 0x45cdc0 first has 0x473c30 recompute those of vertex-passed nodes (0x473a40) for an instance flagged 0x60000
-// [EXT:pick-face-order] a mesh whose several materials all start at face 0 (OpenTPW's own built models, ModelBuilder, leave every start word at 0; no
-// shipped mesh does) or whose ranges run past its faces is walked in its stored face order, so all its faces can be hit
+// RIDES-021 (tagged at ObjectRayPick): the node state bits 0x20 (which prunes the children) and 0x8000 are not modelled (0x200 marks every dummy, which holds no
+// faces), and the faces' stored normals are used where 0x45cdc0 first has 0x473c30 recompute those of vertex-passed nodes (0x473a40) when the flags word +0x30
+// of the instance's model has both 0x40000 and 0x20000
+// The material face ranges of every shipped object model lie within its faces (ObjectRayPickTests checks all 1630 meshes); OpenTPW's own built models leave
+// every start word at 0 but ship no height map, so the walk never names them (0x452ae0)
 public static class ObjectPickModel
 {
 	/// <summary>A mesh's positions, faces and normals in the forms the test reads, built once per model.</summary>
@@ -31,8 +32,6 @@ public static class ObjectPickModel
 		public required NVector3[] FaceNormals { get; init; }
 		/// <summary>The faces in the order the test walks them: material by material through each material's face range.</summary>
 		public required int[] Order { get; init; }
-		public required NVector3 BoundsMin { get; init; }
-		public required NVector3 BoundsMax { get; init; }
 	}
 
 	private static readonly ConditionalWeakTable<ModelFile, Mesh?[]> meshes = new();
@@ -73,36 +72,22 @@ public static class ObjectPickModel
 					: normal - mesh.CornerNormals.Length < mesh.FaceNormals.Length ? mesh.FaceNormals[normal - mesh.CornerNormals.Length].GetSystemVector3()
 					: default;
 			}
-			result[index] = new Mesh { Positions = positions, Faces = faces, FaceNormals = normals, Order = FaceOrder( mesh, faceCount ), BoundsMin = min, BoundsMax = max };
+			result[index] = new Mesh { Positions = positions, Faces = faces, FaceNormals = normals, Order = FaceOrder( mesh, faceCount ) };
 		}
 		return result;
 	}
 
 	/// <summary>
-	/// The faces material by material through each material's range (start <c>a</c>, count <c>b</c>), as the original walks them, a face that two ranges share
-	/// twice and a face that no range covers never; the stored order for a mesh whose ranges run past its faces or whose several materials all start at face 0.
+	/// The faces material by material through each material's range (start <c>a</c>, count <c>b</c>), as the original walks them: a face that two ranges share
+	/// twice and a face that no range covers never; a range is cut at the mesh's last face, so a malformed one reads no other mesh's records.
 	/// </summary>
 	internal static int[] FaceOrder( ModelFile.Mesh mesh, int faceCount )
 	{
 		var order = new List<int>( faceCount );
-		var allAtZero = mesh.Materials.Length > 1;
 		foreach ( var material in mesh.Materials )
-		{
-			if ( material.a + material.b > faceCount )
-				return StoredOrder( faceCount );
-			allAtZero &= material.a == 0;
-			for ( var face = material.a; face < material.a + material.b; face++ )
+			for ( var face = material.a; face < material.a + material.b && face < faceCount; face++ )
 				order.Add( face );
-		}
-		return allAtZero ? StoredOrder( faceCount ) : order.ToArray();
-	}
-
-	private static int[] StoredOrder( int faceCount )
-	{
-		var order = new int[faceCount];
-		for ( var face = 0; face < faceCount; face++ )
-			order[face] = face;
-		return order;
+		return order.ToArray();
 	}
 
 	/// <summary>
@@ -121,24 +106,22 @@ public static class ObjectPickModel
 		if ( root < 0 || root >= model.Nodes.Count )
 			return false;
 		var built = MeshesOf( model );
-		// the depth-first walk: a node, then its children from the first along the siblings
-		var stack = new Stack<int>();
-		var visited = new HashSet<int>();
-		stack.Push( root );
-		while ( stack.Count > 0 )
-		{
-			var node = stack.Pop();
-			if ( node < 0 || node >= model.Nodes.Count || !visited.Add( node ) )
-				continue;
-			if ( node < nodes.Count && TryHitNode( model, built, node, nodes[node], hidden, vertexPositions, placement, origin, direction, out hit ) )
+		return TryHitSubtree( model, built, root, nodes, hidden, vertexPositions, placement, origin, direction, 0, out hit );
+	}
+
+	/// <summary>A node's own faces, then its children from the first along the siblings, depth first (a malformed tree is cut at the node count's depth).</summary>
+	private static bool TryHitSubtree( ModelFile model, Mesh?[] built, int node, IReadOnlyList<Matrix4x4> nodes, Func<int, bool> hidden, Func<int, IReadOnlyList<NVector3>?> vertexPositions,
+		Matrix4x4 placement, NVector3 origin, NVector3 direction, int depth, out NVector3 hit )
+	{
+		hit = default;
+		if ( node < 0 || node >= model.Nodes.Count || depth > model.Nodes.Count )
+			return false;
+		if ( node < nodes.Count && TryHitNode( model, built, node, nodes[node], hidden, vertexPositions, placement, origin, direction, out hit ) )
+			return true;
+		var siblings = 0;
+		for ( var child = model.Nodes[node].FirstChildIndex; child >= 0 && child < model.Nodes.Count && siblings++ <= model.Nodes.Count; child = model.Nodes[child].NextSiblingIndex )
+			if ( TryHitSubtree( model, built, child, nodes, hidden, vertexPositions, placement, origin, direction, depth + 1, out hit ) )
 				return true;
-			// the children in reverse onto the stack, so the first child is walked first
-			var children = new List<int>();
-			for ( var child = model.Nodes[node].FirstChildIndex; child >= 0 && child < model.Nodes.Count && children.Count <= model.Nodes.Count; child = model.Nodes[child].NextSiblingIndex )
-				children.Add( child );
-			for ( var index = children.Count - 1; index >= 0; index-- )
-				stack.Push( children[index] );
-		}
 		return false;
 	}
 
@@ -151,51 +134,21 @@ public static class ObjectPickModel
 			return false;
 		var matrix = NodeToEngine( transform, placement );
 		var animated = vertexPositions( index );
-		NVector3 Position( int position ) => NVector3.Transform( animated != null && position < animated.Count ? animated[position] : mesh.Positions[position], matrix );
-		// a cheap rejection that cannot change the answer: a line that misses the mesh's box (a little larger) meets none of its faces
-		if ( animated == null && !LineMeetsBox( origin, direction, mesh.BoundsMin, mesh.BoundsMax, matrix ) )
-			return false;
+		// each position turned into the engine once for the node's faces
+		var count = animated?.Count ?? mesh.Positions.Length;
+		var positions = new NVector3[count];
+		for ( var position = 0; position < count; position++ )
+			positions[position] = NVector3.Transform( animated != null ? animated[position] : mesh.Positions[position], matrix );
 		var faces = mesh.Faces;
 		foreach ( var face in mesh.Order )
 		{
-			var a = Position( faces[face * 3] );
-			var b = Position( faces[face * 3 + 1] );
-			var c = Position( faces[face * 3 + 2] );
+			var a = positions[faces[face * 3]];
+			var b = positions[faces[face * 3 + 1]];
+			var c = positions[faces[face * 3 + 2]];
 			var normal = NVector3.TransformNormal( mesh.FaceNormals[face], matrix );
 			if ( ObjectRayPick.TryHitFace( origin, direction, a, b, c, normal, out hit ) )
 				return true;
 		}
 		return false;
-	}
-
-	/// <summary>Whether the line meets the mesh box turned into the engine (its corners' axis box, grown by 1 % and a small margin).</summary>
-	private static bool LineMeetsBox( NVector3 origin, NVector3 direction, NVector3 localMin, NVector3 localMax, Matrix4x4 matrix )
-	{
-		var min = new NVector3( float.PositiveInfinity );
-		var max = new NVector3( float.NegativeInfinity );
-		for ( var corner = 0; corner < 8; corner++ )
-		{
-			var local = new NVector3( (corner & 1) == 0 ? localMin.X : localMax.X, (corner & 2) == 0 ? localMin.Y : localMax.Y, (corner & 4) == 0 ? localMin.Z : localMax.Z );
-			var world = NVector3.Transform( local, matrix );
-			min = NVector3.Min( min, world );
-			max = NVector3.Max( max, world );
-		}
-		var margin = (max - min) * 0.01f + new NVector3( 1e-3f );
-		min -= margin;
-		max += margin;
-		double enter = double.NegativeInfinity, exit = double.PositiveInfinity;
-		return Slab( origin.X, direction.X, min.X, max.X, ref enter, ref exit ) && Slab( origin.Y, direction.Y, min.Y, max.Y, ref enter, ref exit )
-			&& Slab( origin.Z, direction.Z, min.Z, max.Z, ref enter, ref exit ) && enter <= exit;
-	}
-
-	private static bool Slab( double origin, double direction, double min, double max, ref double enter, ref double exit )
-	{
-		if ( direction == 0 )
-			return origin >= min && origin <= max;
-		var a = (min - origin) / direction;
-		var b = (max - origin) / direction;
-		enter = Math.Max( enter, Math.Min( a, b ) );
-		exit = Math.Min( exit, Math.Max( a, b ) );
-		return enter <= exit;
 	}
 }

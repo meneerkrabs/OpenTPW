@@ -46,7 +46,8 @@ public interface IObjectPickShape
 /// along the larger axis, 0x45cee6-0x45cf8f) is at most that height and its highest at least the model's bounds minimum (0x45cf8f-0x45cfbd)
 /// [APPROX:RIDES-021] a cell whose second-layer piece instance answers (a kart or water ride's track tile) is not tested, as the original tests the piece's
 /// model there, which the port does not hold; an instance with the group flag 0x80000 tests its group's members instead (0x447790, 0x4477d0), which the port
-/// does not model; nor are the model walk's node state bits 0x20 and 0x8000 and the normal refresh 0x473c30 (ObjectPickModel)
+/// does not model; nor are the model walk's node state bits 0x20 and 0x8000 and the normal refresh 0x473c30 (ObjectPickModel); the hit instance 0x45bf90 hands to 0x469340 (0x45ccd5),
+/// which the hover handler passes to 0x469180 (its normals copied, node flag 0x1000000 and model flag 0x400000 set: a hover highlight, not read further), is not used
 /// </remarks>
 public static class ObjectRayPick
 {
@@ -189,17 +190,15 @@ public static class ObjectRayPick
 		var point = direction * t + origin;
 		if ( !float.IsFinite( point.X ) || !float.IsFinite( point.Y ) || !float.IsFinite( point.Z ) )
 			return false;
-		// a cheap rejection that cannot change the answer: a point well outside the face's box cannot reach the angle sum
-		var min = NVector3.Min( a, NVector3.Min( b, c ) );
-		var max = NVector3.Max( a, NVector3.Max( b, c ) );
-		var margin = (max - min) * 0.01f + new NVector3( 1e-4f );
-		if ( point.X < min.X - margin.X || point.Y < min.Y - margin.Y || point.Z < min.Z - margin.Z
-			|| point.X > max.X + margin.X || point.Y > max.Y + margin.Y || point.Z > max.Z + margin.Z )
-			return false;
 		var toA = NVector3.Normalize( a - point );
 		var toB = NVector3.Normalize( b - point );
 		var toC = NVector3.Normalize( c - point );
-		var sum = MathF.Acos( NVector3.Dot( toA, toB ) ) + MathF.Acos( NVector3.Dot( toB, toC ) ) + MathF.Acos( NVector3.Dot( toC, toA ) );
+		float ab = NVector3.Dot( toA, toB ), bc = NVector3.Dot( toB, toC ), ca = NVector3.Dot( toC, toA );
+		// a rejection that keeps the answer: acos(d) = 2 asin(sqrt((1 - d) / 2)) is at most pi sqrt((1 - d) / 2), so when those bounds add up to less than the
+		// threshold (with room for the float rounding) the angles do too; it spares the arc cosines of the faces the line passes far from
+		if ( MathF.PI * (MathF.Sqrt( MathF.Max( 0, (1 - ab) / 2 ) ) + MathF.Sqrt( MathF.Max( 0, (1 - bc) / 2 ) ) + MathF.Sqrt( MathF.Max( 0, (1 - ca) / 2 ) )) < InsideAngleSum - 1e-3f )
+			return false;
+		var sum = MathF.Acos( ab ) + MathF.Acos( bc ) + MathF.Acos( ca );
 		if ( !(sum >= InsideAngleSum) )
 			return false;
 		hit = point;

@@ -1174,6 +1174,22 @@ public partial class Level
 
 	internal bool TryGetGroundHit( System.Numerics.Vector2 mousePosition, System.Numerics.Vector2 viewportSize, System.Numerics.Matrix4x4 view, System.Numerics.Matrix4x4 projection, out Vector3 point )
 	{
+		// the HUD, the tools and the visitor pick ask for the same point several times a frame: the last answer stands while the frame, the ray and the objects are the same
+		var key = (mousePosition, viewportSize, view, projection, Time.Now, Objects?.Version ?? -1, PickShapeOf);
+		if ( lastGroundHit is { } last && last.Key.Equals( key ) )
+		{
+			point = last.Point;
+			return last.Found;
+		}
+		var found = ComputeGroundHit( mousePosition, viewportSize, view, projection, out point );
+		lastGroundHit = (key, found, point);
+		return found;
+	}
+
+	private ((System.Numerics.Vector2, System.Numerics.Vector2, System.Numerics.Matrix4x4, System.Numerics.Matrix4x4, float, int, Func<OriginalObject, IObjectPickShape?>?) Key, bool Found, Vector3 Point)? lastGroundHit;
+
+	private bool ComputeGroundHit( System.Numerics.Vector2 mousePosition, System.Numerics.Vector2 viewportSize, System.Numerics.Matrix4x4 view, System.Numerics.Matrix4x4 projection, out Vector3 point )
+	{
 		point = default;
 		if ( !ParkPlacement.TryGetMouseRay( mousePosition, viewportSize, view, projection, out var origin, out var direction ) )
 			return false;
@@ -1218,10 +1234,21 @@ public partial class Level
 	/// </summary>
 	private ObjectRayPick.Owner? PickOwnerAt( int x, int y )
 	{
-		if ( TrackPieceGround( x, y ) != null || Objects.FindAt( x, y ) is not { IsDeleted: false } item || ObjectGround( item, x, y ) is not { } top )
+		if ( Objects.FindAt( x, y ) is not { IsDeleted: false } item || HasTrackPieceInstance( x, y ) || ObjectGround( item, x, y ) is not { } top )
 			return null;
 		var shape = PickShapeOf?.Invoke( item ) ?? item;
 		return new ObjectRayPick.Owner( shape, top * ObjectPlacement.ModelScale );
+	}
+
+	/// <summary>Whether a kart or water track tile's piece instance stands on the cell (the second layer 0x53bf30 asks first): an origin tile with a piece that is no add-on's.</summary>
+	// [BIN:TPW-EXE:0x00452A60 add-on surface] a track tile whose tile holds no piece instance (an add-on's tile) leaves the cell to its owner thing
+	private bool HasTrackPieceInstance( int x, int y )
+	{
+		if ( waterTracks?.Tracks is not { } layer || !layer.InBounds( x, y ) || layer.Get( x, y ) is not { Type: not 0 } cell )
+			return false;
+		var (originX, originY) = cell.IsExtension ? layer.CellOf( cell.Parent ) : (x, y);
+		var tile = layer.Get( originX, originY );
+		return tile.IsOrigin && tile.Piece != 0 && (tile.Flags & TrackCell.FlagAddOn) == 0;
 	}
 
 	/// <summary>The model the cursor pick tests for an object; null: the object's own (tests stand in a shape for an object without drawn geometry).</summary>

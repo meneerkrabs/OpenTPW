@@ -1265,6 +1265,14 @@ public class GuestTests
 		simulation.Register( ride );
 		var guest = simulation.SpawnInPark( 0, 1 );
 		Assert.AreEqual( 19u, simulation.ScoreAttraction( guest, ride ), "d² 8 to the back keeps the queue term: (99 + 50 + 70) / 11" );
+		var connected = simulation.ViewOf( ride, guest );
+		grid.SetPath( 3, 3, false );
+		ride.RecomputeQueue( grid );
+		Assert.IsNull( ride.JoinCell, "the sole connecting path was removed" );
+		Assert.AreEqual( (byte)ParkCellType.Queue, grid.Cells.RawTypeAt( 2, 3 ) );
+		CollectionAssert.AreEqual( new[] { (2, 5), (2, 4), (2, 3) }, ride.QueueCells.ToArray() );
+		Assert.AreEqual( connected with { HasJoinCell = false }, simulation.ViewOf( ride, guest ), "all scoring facts survive; the public join flag stays false" );
+		Assert.AreEqual( 19u, simulation.ScoreAttraction( guest, ride ), "the disconnected back still supplies d² 8, six queued guests and three cells" );
 	}
 
 	[TestMethod]

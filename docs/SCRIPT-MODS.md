@@ -363,7 +363,7 @@ without a script mod nothing is wrapped (`ScriptMods` is null, nothing is saved 
 
 | Hook | Seam point | When it runs | Result |
 | --- | --- | --- | --- |
-| `scoreAttraction(guest, candidate, prev)` | `ScoreAttraction` | per candidate, in the major and the minor decision (an attraction without a back-of-queue cell is never offered); the work counts per candidate | int, 0 to 4294967295 (the host's unsigned score) |
+| `scoreAttraction(guest, candidate, prev)` | `ScoreAttraction` | per candidate, in the major and the minor decision (the faithful base also offers disconnected typed queue backs to the major decision; the smarter base keeps its join-cell filter); the work counts per candidate | int, 0 to 4294967295 (the host's unsigned score) |
 | `joinQueue(guest, attraction, prev)` | `DecideAdmission` | when the guest has reached the back cell and the physical checks (open, not listed, room) passed | bool, true admits |
 | `leaveQueue(guest, attraction, prev)` | `DecideQueuePatience` | after the existing leave tests, on every turn a waiting guest stays (never while called forward or in an interlude) | bool, true leaves |
 | `wanderGoal(guest, prev)` | `ChooseWanderGoal` | after the host's own destination search and its draws | int, `y * 1024 + x` of a cell inside the map |

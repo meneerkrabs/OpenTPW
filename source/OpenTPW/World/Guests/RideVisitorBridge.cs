@@ -917,11 +917,14 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 
 	/// <summary>
 	/// The called guest reached the stand point (state 13, admission method <c>0xe03d0</c>): its id is written
-	/// to VAR_LETMEON only while that is 0. True when written (the guest then waits for the script).
+	/// to VAR_LETMEON only while that is 0 and the ride is open and outside its retained broken state. True when written (the guest then waits for the script).
 	/// </summary>
 	public bool PresentForBoarding( int guestId )
 	{
 		if ( guestId == 0 || guestId != called || vm == null )
+			return false;
+		// Recheck the owner's open word and retained state at the stand point; the choice's coaster/track predicate does not apply here.
+		if ( !isOpen() || IsBrokenDown )
 			return false;
 		if ( letMeOnWritten )
 			return true;

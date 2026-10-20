@@ -14,6 +14,6 @@ No staff lifecycle or animation ownership changes are included.
 
 Other linked nonpath start types and generalized candidate targets remain gated.
 In particular this does not implement every native linked-cell walk, change
-walk masks or track-record edge rules, or retire GUEST-010 or WALK-005. Synthetic
-producer/caller tests and exact-head C# CI are required; no original execution
-or rendered visual result is claimed.
+walk masks or track-record edge rules, or retire GUEST-010 or WALK-005. The
+synthetic producer/caller tests (LinkedAccessWanderTests) ran in exact-head CI
+before #517 merged; no original execution or rendered visual result is claimed.

@@ -91,6 +91,19 @@ public class VisitorInfoWindowTests
 	}
 
 	[TestMethod]
+	public void EveryValueIsLeftAlignedAsTheBuilderLeavesTheCellConstructorsAlignment()
+	{
+		// tp.exe 0x4b6c20 makes the money, duration and count cells (0x490250, 0x490e60, 0x48fde0), whose constructors store alignment 0 at +0xd8
+		// (0x490298, 0x490ea8, 0x48fe28), and sends none of them the alignment call 0x65c428, unlike the All Visitors row factory 0x4939d0
+		var hud = VisitorWorldSelectionTests.Fixture( out var simulation, out _ );
+		var guest = new Guest( 1, 0 ) { VisitorNumber = 1, State = GuestState.WalkingAround, Money = 250 };
+		SetGuests( simulation, guest );
+		Assert.IsTrue( hud.OpenVisitorInfoWindow( guest ) );
+		foreach ( var id in new[] { "cash", "timeInPark", "rides", "purchases", "sideshowsPlayed", "sideshowsWon", "status" } )
+			Assert.AreEqual( UiAlign.Left, ((UiLabel)hud.Stack.Top!.Find( id )!).Align, id );
+	}
+
+	[TestMethod]
 	public void TheWindowGivesWayToTheListAndTheListButtonReturnsToIt()
 	{
 		var hud = VisitorWorldSelectionTests.Fixture( out var simulation, out _ );

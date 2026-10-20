@@ -46,4 +46,4 @@ Describe generalized link traversal once cell links are available; preserve stra
 
 ## October 20 bounded implementation
 
-The linked entrance/exit start slice is implemented; the broader plan above remains residual. See [bounded contract](../LINKED-ACCESS-WANDER.md) and LinkedAccessWanderTests. This does not claim generalized linked-cell fidelity or retire GUEST-010. C# execution requires exact-head CI; no original-media or rendered result is claimed.
+The linked entrance/exit start slice is implemented; the broader plan above remains residual. See [bounded contract](../LINKED-ACCESS-WANDER.md) and LinkedAccessWanderTests. This does not claim generalized linked-cell fidelity or retire GUEST-010. #517 merged on 2026-10-20 with exact-head CI green; no original-media or rendered result is claimed.

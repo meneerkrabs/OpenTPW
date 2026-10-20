@@ -941,7 +941,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			UpdateNeedsTurn( guest );
 			// The leaving test itself runs in state 6 (UpdateDeciding). Closing the park pulls nobody out of a queue or a booking here.
 			// [BIN:TPW-EXE:0x00519EF0 park door closes the rides] the door closes every openable object (0x004DF300: open word 0, loading slot cleared; ParkGate.DoorMoved), and a closed ride's update dismisses its queue head, one per turn (RideVisitorBridge.HostStep, 0x004E1220 → 0x004E0450 → 0x005012F0), after which state 6 sends the guest home; a guest walking to a ride drops its target in state 10 (UpdateGoingToRide, 0x004FFEB9)
-			// [APPROX:GUEST-011] the close 0x4DF300 clears the call of a guest on its way to the stand point at once, where OpenTPW withdraws it at the ride's next update (the head dismissal); shops and stalls carry the openable flag 4 of +0x32 (type record word +0x3C, Info.IsChoosable, 1 in the four Shops.sam)
+			// [BIN:TPW-EXE:0x004DF300 close clears the call] the close zeroes the loading slot +0x6C at once (OriginalObjectRuntime.Close, RideVisitorBridge.ClearLoadingSlot): a called guest still standing waits (0x005001A4), one on its way to the stand point is refused there while the ride is closed and admitted once it has opened again (AdmitPerson 0x004E0900); shops and stalls carry the openable flag 4 of +0x32 (type record word +0x3C, Info.IsChoosable, 1 in the four Shops.sam)
 			// The state-18 recall (0xedc98): the leaving handler's opening test sends a guest whose counter is above 0, happiness byte nonzero and park
 			// open back to deciding, so a closed-park dismissal unwinds when the park reopens. The three leaving causes all fail it in the same turn.
 			// [BIN:TPW-EXE:0x00500A50 recall cell test] the recall also demands the guest's own cell pass 0x4FA990 (cell types 0, 1, 3, 9 and 10, 0x536310..0x536390, the set of ParkGate.CountsCellType): the walk out of the park crosses the gate's walkway cells (type 0x1E, 7 outside the terrain) and a guest on one cannot change its mind; the booth refusal and a closed park's state 3 enter state 18 with a zeroed counter (0x4FF9D0, 0x4FF7F0) and are never recalled
@@ -2712,22 +2712,24 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// <summary>The destination for the guest's list position (<c>0xee604</c>): store the position and walk there (state 12).</summary>
 	private void MoveToQueuePosition( Guest guest, IRideVisitorBridge attraction )
 	{
-		var position = attraction.GetQueuePosition( guest.Id );
-		if ( position < 0 )
-		{
-			// a guest missing from the list cannot occur in the original (0x004DDF50 asserts, "Problem with a queue"); OpenTPW sends it away like state 11's lookup does
+		// [BIN:TPW-EXE:0x00501160 queue place route] the generic route request 0x004FA5F0 from wherever the guest stands to the place's slot: a route sets state 12; none leaves "Couldn't get to my intended queue position" (move-up, 0x004FFFF0) or "Couldn't get to my place" (the join, 0x004FFBC0) through the dismissal with no thought, 0x005004AA
+		if ( !TryRouteToQueuePlace( guest, attraction ) )
 			DismissFromQueue( guest, attraction, GuestThought.None, QueueEndReason.NoPlace );
-			return;
-		}
+	}
+
+	/// <summary>FindQueueDestination (tp.exe <c>0x00501160</c>): store the list position and route to its slot (state 12); false, with no state change, when the guest has no place or no route.</summary>
+	private bool TryRouteToQueuePlace( Guest guest, IRideVisitorBridge attraction )
+	{
+		var position = attraction.GetQueuePosition( guest.Id );
+		// a guest missing from the list cannot occur in the original (0x004DDF50 asserts, "Problem with a queue"); 0x00501160 returns 0 for it, and OpenTPW sends it away like state 11's lookup does
+		if ( position < 0 )
+			return false;
 		guest.QueuePosition = position;
 		var (index, x, y) = QueueSlotPoint( attraction, position, NextLateral() );
-		// [BIN:TPW-EXE:0x00501160 queue place route] the generic route request 0x004FA5F0 from wherever the guest stands to the place's slot: a route sets state 12; none leaves "Couldn't get to my intended queue position" (move-up, 0x004FFFF0) or "Couldn't get to my place" (the join, 0x004FFBC0) through the dismissal with no thought, 0x005004AA
 		if ( !SetQueueDestination( guest, attraction, index, (x, y), toEntrance: false ) )
-		{
-			DismissFromQueue( guest, attraction, GuestThought.None, QueueEndReason.NoPlace );
-			return;
-		}
+			return false;
 		EnterGuestState( guest, GuestState.MovingUpQueue );
+		return true;
 	}
 
 	/// <summary>
@@ -2887,7 +2889,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 				return;
 		}
 		else if ( turnStarted )
-			Step( guest ); // state 13 keeps stepping (braking) until the ride takes the guest's offer
+			Step( guest ); // a state-13 guest without a waypoint (a resumed park) steps (brakes) on a started turn, then presents
 		if ( guest.State == GuestState.MovingUpQueue )
 			EnterStanding( guest );
 		else if ( TooExpensive( guest, attraction ) )
@@ -2896,6 +2898,23 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			RefusePrice( guest, attraction );
 		else if ( attraction.PresentForBoarding( guest.Id ) )
 			EnterGuestState( guest, GuestState.WaitingToBoard );
+		else
+			RejoinQueuePlace( guest, attraction );
+	}
+
+	/// <summary>
+	/// The ride refused the guest at the stand point: it walks back to its queue place (state 12) and stands there again, or leaves the queue when
+	/// no route leads there. The price test and the presentation therefore run once per arrival at the stand point, not once per tick.
+	/// </summary>
+	private void RejoinQueuePlace( Guest guest, IRideVisitorBridge attraction )
+	{
+		// [BIN:TPW-EXE:0x005007E7 AdmitPerson refusal] a 0 from AdmitPerson (0x004E0900) calls FindQueueDestination 0x00501160 (the place's queue slot 0x004DDF50, 0x004DE7E0, the generic route 0x004FA5F0, state 12: MoveToQueuePosition);
+		// when that fails ("Couldn't rejoin FOQ even!", 0x0050082F) the guest is unlinked (0x004DDD20), dismissed (0x005012F0) with no thought and set to state 6 (0x00500824..0x00500865)
+		if ( !TryRouteToQueuePlace( guest, attraction ) )
+		{
+			Log?.Warning( "Couldn't rejoin FOQ even!" );
+			DismissFromQueue( guest, attraction, GuestThought.None, QueueEndReason.NoPlace );
+		}
 	}
 
 	/// <summary>A called guest refuses the price: two medium happiness drops (the refusal and the dismissal), then it leaves the queue.</summary>
@@ -2999,6 +3018,11 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			EnterGuestState( guest, GuestState.Boarding );
 			return;
 		}
+		// 2. Called, but the ride no longer loads it: its close cleared the loading slot (RideVisitorBridge.ClearLoadingSlot).
+		// [BIN:TPW-EXE:0x005001A4 called without the loading slot] a guest at place 0 (+0x1F1) whose call flag +0x1F8 is set while the ride's +0x6C does not name it (0x004E0AA0)
+		// logs "Person been admitted to ride %d but ride %d not ready to admit!" and ends its state-11 update there (0x005001E7), keeping the flag, until the ride calls it again or the closed ride's update dismisses it
+		if ( guest.QueuePosition == 0 && guest.QueueCalled )
+			return;
 		// 3. The ride failed: 0xdfe34, a relief object whose wear gauge is below 25 (ORACLE.md F15), not a breakdown. A broken or closed ride
 		// dismisses its queue head first from the ride update (RideVisitorBridge.DismissHead), the others keep waiting.
 		// [BIN:TPW-EXE:0x004E2440 toilet wear] relief objects wear by use and are cleaned by handymen (ParkEconomy.UseRelief, DispatchToiletCleaning), and the swaps of the RegionFX rows 1 and 6 at the toilet's cell are the original's (0x004D8460 / 0x004D8440 are the remove and add wrappers of the region writer 0x004D8480, ParkEconomy.SwapToiletEffect); the branch for game type 1, the online visit, is ParkEconomy.OnlineVisit

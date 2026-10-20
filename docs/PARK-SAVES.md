@@ -156,7 +156,7 @@ refused this way before anything is replaced.
 | Staff locator order | `StaffData.RoleOrder` in the embedded economy: five independent arrays of member IDs, in `StaffType` order (handyman, mechanic, entertainer, guard, researcher), for presentation only; independent of the saved roster and global ThingPool order |
 | Litter | every littered cell with its type and the claiming handyman (in the economy record); a save from before litter by cell had a park-wide count instead, which loads as a clean park (logged) |
 | World | the fixed-step clock, the sound-event seed, weather with its pending thunder, the park gate, staff positions, and the advisor's pending advice and history when the park had them |
-| Particles | the particle pool's live emitters and effectors with its generator, generation counters and free-list order, when any effect was live (an optional presentation part, docs/PARTICLES.md): the particles themselves are not saved and screen-space emitters are killed on load, as in the original's PART/PTCL block; not part of the world hash |
+| Particles | the initialized particle pool's optional configuration, live emitters and effectors, generator, generation counters and free-list order, including empty pools (an optional presentation part, docs/PARTICLES.md): the particles themselves are not saved and screen-space emitters are killed on load, as in the original's PART/PTCL block; not part of the world hash |
 | Header | theme, world seed, gameplay mode and start kind, park name, save date |
 
 ## Staff locator order and compatibility

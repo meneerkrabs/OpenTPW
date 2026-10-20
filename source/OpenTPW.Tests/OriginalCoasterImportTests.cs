@@ -76,6 +76,19 @@ public class OriginalCoasterImportTests
 		return (ride, plan);
 	}
 
+	[TestMethod]
+	public void ImportedCompletedControllerHasEconomicEligibilityBeforeFirstMotion()
+	{
+		var definition = Definition();
+		var original = RunningCircuit( definition, seconds: 0 );
+		var (ride, _) = Import( RoundTrip( original ), definition );
+		Assert.IsTrue( ride.Track.IsComplete && ride.Track.IsClosed );
+		Assert.AreEqual( 0, ride.IntersectionCount );
+		Assert.IsTrue( ride.CountsForParkPoints );
+		Assert.IsTrue( ride.Samples.Count >= 3 && ride.AcceptsGuests, "import recomputes geometry; it does not bypass admission safety" );
+		Assert.IsFalse( ride.MotionClockStarted );
+	}
+
 	private static ulong TrackHash( CoasterTrack track )
 	{
 		var hash = new StateHasher();

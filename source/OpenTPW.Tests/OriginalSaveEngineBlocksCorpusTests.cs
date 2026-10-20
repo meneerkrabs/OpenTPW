@@ -95,12 +95,13 @@ public class OriginalSaveEngineBlocksCorpusTests
 			var system = new ParticleSystem( shipped.Templates, effectors: shipped.EffectorTemplates );
 			system.Restore( state );
 			var captured = system.Capture();
-			Assert.AreEqual( state.Emitters.Count > 0 || state.Effectors.Count > 0, captured != null, name );
+			Assert.IsNotNull( captured, $"{name}: an initialized empty pool still saves its configuration and generator" );
 			if ( captured != null )
 			{
 				// every carried field comes back; the only change is the post-load pass (0x5200B0): screen-space emitters and killed-on-load effectors get life -2
 				var expected = new ParticleSystemState
 				{
+					Configuration = state.Configuration,
 					Random = state.Random, TickCounter = state.TickCounter, GenerationCounter = state.GenerationCounter, EffectorGenerationCounter = state.EffectorGenerationCounter,
 					Emitters = state.Emitters.Select( emitter => shipped.Templates[emitter.EffectId].ScreenSpace ? emitter with { Life = -2 } : emitter ).ToList(),
 					FreeEmitters = state.FreeEmitters,

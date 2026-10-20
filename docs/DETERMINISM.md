@@ -359,8 +359,10 @@ before: nothing changes except after a load or an edit between two ticks, when a
 holding him (an imported save) to idle; `StaffWorld.Synchronize` puts a member without a position (hired since the last tick, or loaded so) on the gate
 path. Both write hashed staff state. They now run at the start of every tick after its commands, so a replayed or a session's hire is placed as a live
 one is, however many ticks a frame runs. `TryGetStaffWorldPosition`, which the HUD's locator calls, no longer synchronizes: a HUD read must not move
-the park between two ticks. The one live difference: a member hired in the HUD is placed at the next tick's start rather than at the next frame's start,
-so a path the same frame's input built before that tick can change the spawn cell of a park without a walkable gate.
+the park between two ticks. The live differences concern a member without a position (a hire made without the park view's place tool, which positions
+the member at the clicked cell itself, or a member loaded so): it is placed at the next tick's start rather than at the next frame's start, so a path the
+same frame's input built before that tick can change the spawn cell of a park without a walkable gate, and while the park is paused (no tick runs) it
+stays off the map and out of the HUD's locator until the park runs again; an imported save's member left picked up is likewise released at the first tick.
 
 What stays outside: the clock's banked fraction of a tick and its dropped-time total follow the frames' time feed (in a session the network clock
 feeds whole ticks, C2); the particle pool runs on the frame time, so the particle part of a save and the ADDOBJ records of effects that have ended

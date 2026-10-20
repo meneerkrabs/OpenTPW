@@ -12,7 +12,8 @@ namespace OpenTPW;
 public static class ParkCommandCodec
 {
 	/// <summary>The command format version written into every command.</summary>
-	public const int Version = 1;
+	public const int Version = 2;
+	internal static bool IsNativeQueue( ParkCommand command ) => command is QueueSegmentCommand or UndoQueueSegmentCommand;
 	/// <summary>The bound of a cell coordinate a command may carry (the largest park map is far smaller).</summary>
 	public const int MaximumCoordinate = 4096;
 	/// <summary>The most cells one command's cell list may hold.</summary>
@@ -42,7 +43,7 @@ public static class ParkCommandCodec
 	{
 		ArgumentNullException.ThrowIfNull( command );
 		var writer = new ParkCommandWriter();
-		writer.Int( Version );
+		writer.Int( IsNativeQueue( command ) ? Version : 1 );
 		writer.Byte( (byte)command.Kind );
 		writer.Int( command.Player );
 		command.WriteFields( writer );
@@ -59,9 +60,13 @@ public static class ParkCommandCodec
 			throw new InvalidDataException( $"A command of {bytes.Length} bytes is longer than {MaximumBytes}." );
 		var reader = new ParkCommandReader( bytes.ToArray() );
 		var version = reader.Int();
-		if ( version != Version )
+		if ( version is not (1 or Version) )
 			throw new InvalidDataException( $"Park command version {version} is not {Version}." );
 		var kind = (ParkCommandKind)reader.Byte();
+		if ( version == 1 && kind is ParkCommandKind.QueueSegment or ParkCommandKind.UndoQueueSegment )
+			throw new InvalidDataException( "Native queue commands require version 2." );
+		if ( version == 2 && kind is not (ParkCommandKind.QueueSegment or ParkCommandKind.UndoQueueSegment) )
+			throw new InvalidDataException( "Legacy command kinds retain their canonical version 1 encoding." );
 		var player = reader.Int();
 		if ( player < 0 )
 			throw new InvalidDataException( $"Player {player} is negative." );
@@ -72,6 +77,8 @@ public static class ParkCommandCodec
 			ParkCommandKind.RemoveObjectAt => new RemoveObjectAtCommand( reader.Int(), reader.Int() ),
 			ParkCommandKind.RemoveAttraction => new RemoveAttractionCommand( reader.Int() ),
 			ParkCommandKind.PickUpObject => new PickUpObjectCommand( reader.Int() ),
+			ParkCommandKind.QueueSegment => new QueueSegmentCommand( reader.Int(), reader.Int(), reader.Int(), reader.Int(), reader.Int() ),
+			ParkCommandKind.UndoQueueSegment => new UndoQueueSegmentCommand( reader.Int(), reader.Int(), reader.Int(), reader.Int(), reader.Int() ),
 			ParkCommandKind.LayLine => new LayLineCommand( (CellToolMode)reader.Byte(), reader.Int(), reader.Int(), reader.Int(), reader.Int(), reader.Int() ),
 			ParkCommandKind.UndoLine => new UndoLineCommand( (CellToolMode)reader.Byte(), reader.Int(), reader.Int(), reader.Int(), reader.Cells(), reader.Cells() ),
 			ParkCommandKind.RemovePathCell => new RemovePathCellCommand( reader.Int(), reader.Int() ),

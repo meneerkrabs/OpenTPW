@@ -46,6 +46,8 @@ public class ApplicationPauseTests
 	private void Key( UiKeys key ) => hud.Update( context, UiInput.Key( key ), false, false, false );
 	private void Click( string id )
 	{
+		// Text menus measure their rows on update; use the laid-out bounds, not the initial fallback boxes.
+		hud.Stack.Update( context, UiInput.Idle( new N.Vector2( -1, -1 ) ) );
 		var element = hud.Stack.Top!.Find( id ) ?? throw new AssertFailedException( "Missing control " + id );
 		hud.Stack.Update( context, UiInput.Click( element.ScreenRect( context.Canvas ).Center ) );
 	}

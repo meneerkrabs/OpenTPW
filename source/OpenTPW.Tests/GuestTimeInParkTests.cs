@@ -100,6 +100,8 @@ public class GuestTimeInParkTests
 		Assert.AreEqual( park.Guests.Single().TimeInParkSeconds, restored.Guests.Single().TimeInParkSeconds );
 		var json = JsonNode.Parse( bytes )!;
 		json["Guests"]![0]!.AsObject().Remove( "TimeInParkSeconds" );
+		json["Guests"]![0]!.AsObject().Remove( "DisplayTimeInParkTurns" );
+		json.AsObject().Remove( "DisplayTurnPhaseTicks" );
 		var old = ParkResumeJson.Deserialize<GuestSimulationSnapshot>( Encoding.UTF8.GetBytes( json.ToJsonString() ) );
 		restored.RestoreSnapshot( old );
 		Steps( restored, 10 );
@@ -141,7 +143,7 @@ public class GuestTimeInParkTests
 		}
 		var known = ParkResumeSaveFile.Deserialize( ParkResumeSaveFile.Serialize( envelope ) );
 		CollectionAssert.AreEqual( guests.Select( g => g.TimeInParkSeconds ).ToArray(), known.Guests.Guests.Select( g => g.TimeInParkSeconds ).ToArray() );
-		var unknown = guests.Select( g => g with { TimeInParkSeconds = null } ).ToArray();
+		var unknown = guests.Select( g => g with { TimeInParkSeconds = null, DisplayTimeInParkTurns = null } ).ToArray();
 		var loaded = ParkResumeSaveFile.Deserialize( ParkResumeSaveFile.Serialize( envelope with { Guests = envelope.Guests with { Guests = unknown } } ) );
 		Assert.IsTrue( loaded.Guests.Guests.All( g => g.TimeInParkSeconds == null ) );
 	}
@@ -150,6 +152,7 @@ public class GuestTimeInParkTests
 	public void DisplayMetadataDoesNotChangeGameplayHashesAndUiUsesWholeTurnSteps()
 	{
 		var park = Park(); var guest = park.SpawnInPark( 5, 5 );
+		guest.DisplayTimeInParkTurns = null; // Explicit legacy seconds-only display fixture.
 		var canonical = Canonical( park ); var gameplay = park.ComputeStateHash();
 		// 248 ms turns, whole 4-turn steps of 15000 park seconds, whole hours (tp.exe 0x49326c)
 		foreach ( var (duration, hours) in new (double?, long?)[] { (0, 0), (3661.9, 14764L * 3750 / 3600), (90061, 363148L * 3750 / 3600), (null, null) } )

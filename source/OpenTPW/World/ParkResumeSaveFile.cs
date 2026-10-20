@@ -702,6 +702,8 @@ internal static class ParkResumeSaveFile
 				throw new InvalidDataException( $"World save is inconsistent: {message}." );
 		}
 		var guests = snapshot.Guests!;
+		foreach ( var problem in GuestSimulation.DisplayAgeProblems( guests ) )
+			Require( false, problem );
 		var width = snapshot.Layout!.Cells!.Width;
 		var height = snapshot.Layout.Cells.Height;
 		bool InBounds( int x, int y ) => (uint)x < (uint)width && (uint)y < (uint)height;

@@ -12,7 +12,8 @@ public class PatrolAreaToolTests
 	{
 		var park = EconomyTestData.Park();
 		var guard = EconomyTestData.HireBest( park, StaffType.Guard );
-		var tool = new PatrolAreaTool( () => park );
+		var level = CommandTestLevel.Create( park );
+		var tool = new PatrolAreaTool( () => park, command => level.Commands.Issue( command ) );
 		Assert.IsTrue( tool.Begin( guard ) );
 		Assert.IsTrue( tool.IsActive );
 		Assert.IsTrue( tool.Click( 20, 4 ) );
@@ -43,7 +44,8 @@ public class PatrolAreaToolTests
 	{
 		var park = EconomyTestData.Park();
 		var guard = EconomyTestData.HireBest( park, StaffType.Guard );
-		var tool = new PatrolAreaTool( () => park );
+		var level = CommandTestLevel.Create( park );
+		var tool = new PatrolAreaTool( () => park, command => level.Commands.Issue( command ) );
 		tool.Begin( guard );
 		tool.Click( 3, 3 );
 		tool.Cancel();
@@ -56,6 +58,6 @@ public class PatrolAreaToolTests
 		Assert.IsFalse( tool.Click( 8, 8 ), "the member is gone" );
 		Assert.IsFalse( tool.IsActive );
 		Assert.IsFalse( tool.Begin( guard ) );
-		Assert.IsFalse( new PatrolAreaTool( () => park ).Click( 1, 1 ), "not running" );
+		Assert.IsFalse( new PatrolAreaTool( () => park, command => level.Commands.Issue( command ) ).Click( 1, 1 ), "not running" );
 	}
 }

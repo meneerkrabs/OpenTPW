@@ -97,6 +97,7 @@ public class FreeWalkCameraReviewTests
 		var economy = new ParkEconomy( EconomyTestData.Settings(), EconomyTestData.Catalog(), ParkGameMode.FullSimulation, 7 );
 		economy.OpenPark();
 		Set( hud, "<Status>k__BackingField", new EconomyParkStatus( () => economy ) );
+		CommandTestLevel.AttachPark( level, economy );
 		if ( readOnly ) Set( level, "<Visit>k__BackingField", RuntimeHelpers.GetUninitializedObject( typeof( ParkVisitInfo ) ) );
 		var hash = Hash( simulation );
 		var balance = economy.Balance;

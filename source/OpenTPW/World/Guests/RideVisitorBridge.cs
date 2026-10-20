@@ -228,6 +228,15 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	public bool InBrokenState => brokenDown;
 	private bool condemned;
 	private bool brokenDown;
+
+	/// <summary>Restores a supported original retained state without admission, queue or script side effects.</summary>
+	internal void RestoreOriginalBrokenState( bool isCondemned, double lifeGauge )
+	{
+		brokenDown = true;
+		condemned = isCondemned;
+		LifeGauge = lifeGauge;
+	}
+
 	/// <summary>The original's ride-failure predicate <c>0xdfe34</c> (ORACLE.md F15): a relief object whose wear gauge, truncated to a byte, is below 25.</summary>
 	public bool ReliefWornOut => QueueJoinRules.ReliefFailed( ProvidesRelief, (float)WearGauge );
 	public bool IsRunning => vm != null && Get( RideVariables.VAR_RUNNING ) != 0;

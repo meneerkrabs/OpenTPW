@@ -189,6 +189,7 @@ public class CheatsExtensionTests
 			var economy = EconomyTestData.Park();
 			economy.CheatHost = new Host( guests, null );
 			hud.GetType().GetField( "<Status>k__BackingField", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic )!.SetValue( hud, new OpenTPW.Hud.EconomyParkStatus( () => economy ) );
+			CommandTestLevel.AttachPark( (Level)typeof( OpenTPW.Hud.ParkHud ).GetField( "level", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic )!.GetValue( hud )!, economy );
 			Assert.IsTrue( hud.CheatsWindowAvailable );
 			var window = hud.CreateCheatsWindow();
 			void Click( string id ) => ((OpenTPW.UI.Original.UiButton)window.Find( id )!).Clicked!();

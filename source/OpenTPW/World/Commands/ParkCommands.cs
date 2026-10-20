@@ -42,7 +42,11 @@ public sealed class ParkCommands
 	private readonly Func<bool> refusesEdits;
 	private readonly ParkCommandLogRing log = new( MaximumLog );
 	private readonly SortedDictionary<long, List<ParkCommand>> scheduled = new();
+	private readonly List<Action> afterIssue = new();
 	private int depth;
+	/// <summary>The outermost command running now, whose player a command issued inside it takes.</summary>
+	private ParkCommand? running;
+	private bool issuing;
 
 	/// <param name="nextTick">The index of the next simulation tick (the fixed-step clock's tick count).</param>
 	/// <param name="execute">Runs one well-formed command on the park; a rejection must leave the park unchanged.</param>
@@ -75,6 +79,12 @@ public sealed class ParkCommands
 	/// <summary>Whether a command is being executed now (an edit inside an edit runs directly, unlogged, as part of the outer command).</summary>
 	public bool IsExecuting => depth > 0;
 
+	/// <summary>
+	/// Whether a command this machine's player issued runs now (<see cref="Issue"/>), not a scheduled one (a replay, or a peer's in a session): the issuer's tools may follow what it does, through
+	/// <see cref="AfterIssue"/>, and nobody else's may.
+	/// </summary>
+	public bool IsIssuing => issuing;
+
 	/// <summary>The commands held for later ticks.</summary>
 	public int ScheduledCount => scheduled.Values.Sum( list => list.Count );
 
@@ -96,11 +106,52 @@ public sealed class ParkCommands
 		return result;
 	}
 
-	/// <summary>Issues <paramref name="command"/> as the local player (<see cref="Player"/>) and applies it now.</summary>
+	/// <summary>
+	/// Issues <paramref name="command"/> as the local player (<see cref="Player"/>) and applies it now. A command issued while another runs (a tool callback inside an edit) is part of the outer one: it
+	/// takes the outer command's player, so it does the same on every peer, and runs unlogged.
+	/// </summary>
 	public ParkCommandResult Issue( ParkCommand command )
 	{
 		ArgumentNullException.ThrowIfNull( command );
-		return Apply( command with { Player = Player } );
+		if ( depth > 0 )
+			return Apply( command with { Player = running!.Player } );
+		var outer = !issuing;
+		issuing = true;
+		try
+		{
+			return Apply( command with { Player = Player } );
+		}
+		finally
+		{
+			if ( outer )
+			{
+				issuing = false;
+				RunAfterIssue();
+			}
+		}
+	}
+
+	/// <summary>
+	/// [EXT:online-coop-commands] Runs <paramref name="action"/> once the command this machine's player issued has returned (at once outside one): a HUD that follows its own edit, such as the tool a
+	/// placed ride opens, acts after the command, so the commands it issues are logged on their own instead of hiding inside the placement.
+	/// </summary>
+	public void AfterIssue( Action action )
+	{
+		ArgumentNullException.ThrowIfNull( action );
+		if ( issuing )
+			afterIssue.Add( action );
+		else
+			action();
+	}
+
+	private void RunAfterIssue()
+	{
+		if ( afterIssue.Count == 0 )
+			return;
+		var actions = afterIssue.ToArray();
+		afterIssue.Clear();
+		foreach ( var action in actions )
+			action();
 	}
 
 	/// <summary>Holds <paramref name="command"/> until tick <paramref name="tick"/> (not before <see cref="NextTick"/>); <see cref="ApplyDue"/> applies it at the start of that tick.</summary>
@@ -139,8 +190,11 @@ public sealed class ParkCommands
 			return ParkCommandResult.Rejected( $"Player {command.Player} is not a player." );
 		if ( refusesEdits() )
 			return ParkCommandResult.Rejected( "Read-only visit: the park takes no edits." );
-		if ( Rights is { } rights && !rights.Allows( command.Player, command.Kind ) )
+		// the rights are asked of the outermost command only: what runs inside it is that command's, which they allowed
+		if ( depth == 0 && Rights is { } rights && !rights.Allows( command.Player, command.Kind ) )
 			return ParkCommandResult.Rejected( $"Player {command.Player} may not {command.Kind}." );
+		if ( depth == 0 )
+			running = command;
 		depth++;
 		try
 		{
@@ -149,6 +203,8 @@ public sealed class ParkCommands
 		finally
 		{
 			depth--;
+			if ( depth == 0 )
+				running = null;
 		}
 	}
 

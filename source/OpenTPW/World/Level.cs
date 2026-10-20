@@ -1162,6 +1162,8 @@ public partial class Level : IDisposable
 		StaffPlacement?.Abandon();
 		// the employees in the players' hands belong to the replaced economy
 		StaffHands?.Clear();
+		// the coaster edits hold the replaced park's builders
+		coasterEdits?.Clear();
 		UpgradeBalloons?.Clear();
 		// the patrol tool's employee id belongs to the replaced economy
 		PatrolTool?.Cancel();

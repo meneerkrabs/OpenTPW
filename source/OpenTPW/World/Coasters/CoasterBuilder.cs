@@ -58,15 +58,22 @@ public sealed class CoasterBuilder
 	public int LoopPylonsLeft => loopPylonsLeft;
 
 	/// <summary>
-	/// [EXT:online-coop-commands] Takes the issuing tool's height and loop edit mode before a click's placement (<see cref="CoasterClickCommand"/>): the panel keeps them, and the command carries them,
-	/// so every peer places the same pylon.
+	/// [EXT:online-coop-commands] The tool state this machine's coaster panel keeps in the builder: the requested height and the loop edit mode with its pylons still to place. A click carries it in its
+	/// command (<see cref="CoasterClickCommand"/>), so every peer places the same pylon, and the builder of a peer keeps its own.
 	/// </summary>
-	internal void SetToolState( float requestedHeight, bool mode, int pylonsLeft )
+	public CoasterToolState ToolState => new( height, loopMode, loopPylonsLeft );
+
+	/// <summary>Takes a tool state (<see cref="ToolState"/>): a click's placement reads the issuer's, and the issuer's builder takes the state the placement left.</summary>
+	internal void SetToolState( CoasterToolState state )
 	{
-		Height = requestedHeight;
-		loopMode = mode;
-		loopPylonsLeft = mode ? Math.Clamp( pylonsLeft, 0, LoopPair ) : 0;
+		Height = state.Height;
+		loopMode = state.LoopMode;
+		loopPylonsLeft = state.LoopMode ? Math.Clamp( state.LoopPylonsLeft, 0, LoopPair ) : 0;
 	}
+
+	/// <summary>The loop button exists: the coaster has a loop pylon and its ride is upgraded to level 1 or more (a station without an economy counts as unlocked).</summary>
+	// [BIN:TPW-EXE:0x004980D1 loop button] the panel enables the loop button only when the ride's level byte (thing +0x50) is at least 1 (0x4980D6); see CoasterToolPanel.EnabledMask
+	public bool LoopUnlocked => Ride.Definition.HasLoopPylon && (UpgradeLevel is not int level || level >= 1);
 
 	/// <summary>The editable chain endpoint still needs the second pylon of a loop pair, even after the loop tool has been left.</summary>
 	// [BIN:TPW-EXE:0x444c00 pending loop endpoint] an incomplete track tests its tail (+0x58), a complete cut track its cut predecessor (+0x60), and a complete uncut track returns false; only node flag 0x80 is tested, independently of mode bit 0x40
@@ -340,6 +347,63 @@ public sealed class CoasterBuilder
 
 	// ---- Hand edits of the coaster tool panel (COAST-028) --------------------------------------------
 
+	/// <summary>Bank and incline range of the tilt drag: ±3.1416 (<c>0x40490e38</c>).</summary>
+	public const float TiltLimit = 3.1416f;
+
+	/// <summary>
+	/// The range a press on pylon <paramref name="index"/> gives a drag of kind <paramref name="drag"/> (the panel's press <c>0x446300</c> and the handlers it starts), or null when the pylon takes no such
+	/// drag: the height drag needs the loft control and stays within <see cref="CoasterTrack.LoftRange"/>, the rotate drag the rotate control and the automatic yaw ± the pylon's deviance, the loop tilt a
+	/// loop pylon with the loop control and [−0.35, 0.35] on the first pylon of a pair, [0.15, 0.85] on any other, the tilt a pylon that is no loop pylon with the bank or the incline control, each within
+	/// ±<see cref="TiltLimit"/> (a value without its control keeps its value); a move takes any cell.
+	/// </summary>
+	// [BIN:TPW-EXE:0x441a00 height drag] [BIN:TPW-EXE:0x441e80 rotate drag] [BIN:TPW-EXE:0x441cd0 loop tilt] [BIN:TPW-EXE:0x442010 tilt drag] the ranges each handler sets at the press (see CoasterToolPanel.Press)
+	public CoasterDragRange? DragRange( int index, CoasterDrag drag )
+	{
+		if ( !CanEdit( index ) )
+			return null;
+		var node = Track.Nodes[index];
+		var pylon = Track.Definition.Pylon( node.LoopPylon );
+		var capabilities = pylon.Capabilities;
+		var loop = (node.Flags & CoasterNodeFlags.Loop) != 0;
+		switch ( drag )
+		{
+			case CoasterDrag.Move:
+				return new CoasterDragRange();
+			case CoasterDrag.Height when (capabilities & CoasterPylonCapabilities.Loft) != 0:
+			{
+				var (low, high) = Track.LoftRange( Site, index );
+				return new CoasterDragRange( low, high, 0, 0 );
+			}
+			case CoasterDrag.Rotate when (capabilities & CoasterPylonCapabilities.Rotate) != 0:
+			{
+				var automatic = Track.AutomaticYaw( Site, index );
+				return new CoasterDragRange( automatic - pylon.MaxRotationDeviance, automatic + pylon.MaxRotationDeviance, 0, 0 );
+			}
+			case CoasterDrag.LoopTilt when loop && (capabilities & CoasterPylonCapabilities.LoopTilt) != 0:
+			{
+				var first = (node.Flags & CoasterNodeFlags.LoopFirst) != 0;
+				return new CoasterDragRange( first ? -0.35f : 0.15f, first ? 0.35f : 0.85f, 0, 0 );
+			}
+			case CoasterDrag.Tilt when !loop && (capabilities & (CoasterPylonCapabilities.Bank | CoasterPylonCapabilities.Incline)) != 0:
+			{
+				var bank = (capabilities & CoasterPylonCapabilities.Bank) != 0;
+				var incline = (capabilities & CoasterPylonCapabilities.Incline) != 0;
+				return new CoasterDragRange( bank ? -TiltLimit : node.Bank, bank ? TiltLimit : node.Bank, incline ? -TiltLimit : node.Incline, incline ? TiltLimit : node.Incline );
+			}
+			default:
+				return null;
+		}
+	}
+
+	/// <summary>Whether <see cref="RemoveLast"/> would delete a pylon.</summary>
+	public bool CanRemoveLast => Track.CanRemoveLast;
+
+	/// <summary>Whether <see cref="Cut"/> would cut between the two pylons.</summary>
+	public bool CanCut( int first, int second ) => Track.IsRunnable && Track.CheckCut( first, second ) != CoasterTrack.CutResult.Refused;
+
+	/// <summary>Whether <see cref="SwapStack"/> would swap pylon <paramref name="index"/> with a neighbour in its stack.</summary>
+	public bool CanSwapStack( int index, bool up ) => Track.StackNeighbour( index, up ) >= 0;
+
 	/// <summary>A node being edited by a drag: what it was and what it cost, so the release can settle the money.</summary>
 	/// <param name="Refund">The truncated cost of the node (and, on a complete track, of the node after it) before the edit.</param>
 	public sealed record NodeEdit( int Index, CoasterNode Start, long Refund, int? Next );
@@ -465,3 +529,6 @@ public sealed class CoasterBuilder
 		Ride.PaidCost -= amount;
 	}
 }
+
+/// <summary>[EXT:online-coop-commands] The coaster panel's build state a click reads (<see cref="CoasterBuilder.ToolState"/>): the requested height and the loop edit mode with its pylons still to place.</summary>
+public readonly record struct CoasterToolState( float Height, bool LoopMode, int LoopPylonsLeft );

@@ -24,6 +24,15 @@ public class ParkCommandsTests
 				// a command whose run issues another (a tool callback inside an edit) runs that one inside itself
 				if ( command is RemoveAtCommand { X: 99 } )
 					Commands.Apply( new RemoveObjectAtCommand( 1, 1 ) );
+				if ( command is RemoveAtCommand { X: 88 } )
+					Commands.Issue( new RemoveObjectAtCommand( 3, 3 ) );
+				// a HUD that follows its own player's edit (the tool a placed ride opens) acts after the command
+				if ( command is RemoveAtCommand { X: 77 } && Commands.IsIssuing )
+					Commands.AfterIssue( () =>
+					{
+						Assert.IsFalse( Commands.IsExecuting, "the follow-up runs after the command" );
+						Commands.Issue( new RemoveObjectAtCommand( 2, 2 ) );
+					} );
 				return command is RemoveAttractionCommand { Attraction: 0 } ? ParkCommandResult.Rejected( "no attraction 0" ) : ParkCommandResult.Ok( command.Kind );
 			}, () => Visit );
 		}
@@ -64,6 +73,44 @@ public class ParkCommandsTests
 		Assert.AreEqual( 2, park.Ran.Count );
 		Assert.AreEqual( 1, park.Commands.Log.Count );
 		Assert.IsFalse( park.Commands.IsExecuting );
+	}
+
+	/// <summary>
+	/// [EXT:online-coop-commands] What the issuer's own HUD does after its command (<see cref="ParkCommands.AfterIssue"/>) runs once the command has returned and issues commands that are logged on their
+	/// own; a scheduled command (a replay, a peer's) is not this machine's issue, so nothing follows it.
+	/// </summary>
+	[TestMethod]
+	public void AFollowUpOfTheIssuersCommandRunsAfterItAndIsLoggedOnItsOwnButNotAfterAScheduledOne()
+	{
+		var park = new Park();
+		Assert.IsFalse( park.Commands.IsIssuing );
+		Assert.IsTrue( park.Commands.Issue( new RemoveAtCommand( 77, 0 ) ).Accepted );
+		CollectionAssert.AreEqual( new ParkCommand[] { new RemoveAtCommand( 77, 0 ), new RemoveObjectAtCommand( 2, 2 ) }, park.Ran );
+		CollectionAssert.AreEqual( new[] { ParkCommandKind.RemoveAt, ParkCommandKind.RemoveObjectAt }, park.Commands.Log.Select( entry => entry.Command.Kind ).ToArray() );
+		Assert.IsFalse( park.Commands.IsIssuing );
+		park.Commands.Schedule( new RemoveAtCommand( 77, 0 ), 0 );
+		park.Commands.ApplyDue( 0 );
+		Assert.AreEqual( 3, park.Ran.Count, "a scheduled command moves no tool of this machine" );
+		var ran = false;
+		park.Commands.AfterIssue( () => ran = true );
+		Assert.IsTrue( ran, "outside a command a follow-up runs at once" );
+	}
+
+	/// <summary>
+	/// [EXT:online-coop-commands] A command issued inside another takes the outer command's player and is not asked of the rights again, so a guest replaying the host's command runs it the same way
+	/// although its own player has fewer rights.
+	/// </summary>
+	[TestMethod]
+	public void ACommandIssuedInsideAnotherIsTheOuterCommandsPlayers()
+	{
+		var park = new Park();
+		var rights = new OnlyPaths();
+		park.Commands.Rights = rights;
+		park.Commands.Player = 2;
+		park.Commands.Schedule( new RemoveAtCommand( 88, 0 ), 0 );
+		park.Commands.ApplyDue( 0 );
+		CollectionAssert.AreEqual( new ParkCommand[] { new RemoveAtCommand( 88, 0 ), new RemoveObjectAtCommand( 3, 3 ) }, park.Ran, "the host's command and the one inside it, both player 0's" );
+		CollectionAssert.AreEqual( new[] { (0, ParkCommandKind.RemoveAt) }, rights.Asked, "the rights were asked of the outer command only" );
 	}
 
 	[TestMethod]

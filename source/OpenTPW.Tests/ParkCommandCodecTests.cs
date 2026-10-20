@@ -83,9 +83,9 @@ public class ParkCommandCodecTests
 		(new EndCoasterToolCommand( 17 ) { Player = 1 }, "025b0222"),
 		(new CoasterClickCommand( 17, 30, 40, 10f, true, 2 ), "025c00223c50000020410104"),
 		(new RemoveLastCoasterPylonCommand( 17 ), "025d0022"),
-		(new BeginCoasterNodeEditCommand( 17, 5, true ), "025e00220a01"),
+		(new BeginCoasterNodeEditCommand( 17, 5, CoasterDrag.Rotate ), "025e00220a02"),
 		(new EditCoasterNodeCommand( 17, CoasterNodeField.Loft, 0.25f, 0, 0 ), "025f0022000000803e0000"),
-		(new EndCoasterNodeEditCommand( 17, CoasterEditEnd.SettleIfMoved ) { Player = 2 }, "0260042202"),
+		(new EndCoasterNodeEditCommand( 17 ) { Player = 2 }, "02600422"),
 		(new SwapCoasterStackCommand( 17, 6, false ), "026100220c00"),
 		(new CutCoasterCommand( 17, 4, 9 ), "026200220812"),
 	};
@@ -237,13 +237,16 @@ public class ParkCommandCodecTests
 			new CoasterClickCommand( 1, 0, 0, 10f, false, 1 ),
 			new CoasterClickCommand( 1, 0, 0, 10f, true, 3 ),
 			new RemoveLastCoasterPylonCommand( -1 ),
-			new BeginCoasterNodeEditCommand( 1, -1, false ),
+			new BeginCoasterNodeEditCommand( 1, -1, CoasterDrag.Height ),
+			new BeginCoasterNodeEditCommand( 1, 3, (CoasterDrag)5 ),
 			new EditCoasterNodeCommand( 1, (CoasterNodeField)6, 0, 0, 0 ),
 			new EditCoasterNodeCommand( 1, CoasterNodeField.Yaw, float.PositiveInfinity, 0, 0 ),
 			new EditCoasterNodeCommand( 1, CoasterNodeField.Move, 0, -1, 0 ),
-			new EndCoasterNodeEditCommand( 1, (CoasterEditEnd)3 ),
+			new EndCoasterNodeEditCommand( -1 ),
 			new SwapCoasterStackCommand( -1, 0, true ),
 			new CutCoasterCommand( 1, -1, 2 ),
+			new CutCoasterCommand( 1, 2, -1 ),
+			new SwapCoasterStackCommand( 1, -1, true ),
 		};
 		foreach ( var command in outOfRange )
 		{

@@ -353,11 +353,17 @@ public partial class Level
 			Commands.Issue( new EndCoasterToolCommand( station.Runtime.AttractionId ) );
 	}
 
-	/// <summary>Runs an <see cref="EndCoasterToolCommand"/>: the coaster is no longer being edited, and a ride the tool took out of service (state 2) opens again.</summary>
-	internal ParkCommandResult ExecuteEndCoasterTool( int attraction )
+	/// <summary>
+	/// Runs an <see cref="EndCoasterToolCommand"/> of <paramref name="player"/>: the player's pylon edit on the coaster ends where it stands, the coaster is no longer being edited, and a ride the tool took
+	/// out of service (state 2) opens again.
+	/// </summary>
+	internal ParkCommandResult ExecuteEndCoasterTool( int attraction, int player )
 	{
 		if ( ResolveCommandObject( attraction ) is not { Runtime.Coaster: { } ride } station )
 			return ParkCommandResult.Rejected( $"Attraction {attraction} is no coaster station." );
+		// the panel's own close releases its drag first (CoasterToolPanel.Close); an edit the command finds is a peer's whose panel went away
+		if ( CoasterEdits.Of( player ) is { } held && held.Station == attraction )
+			CoasterEdits.Release( player );
 		SetBeingEdited( station, false );
 		if ( ride.State == CoasterControllerState.Built )
 			station.Open();
@@ -372,10 +378,13 @@ public partial class Level
 	{
 		if ( CoasterTool is not { } builder || CoasterToolStation is not { } station )
 			return CoasterPlaceResult.NotEditable;
-		// [EXT:online-coop-commands] the click is a command with the panel's height and loop edit mode; a completion ends the tool here, on the issuer's machine
-		var click = Commands.Issue( new CoasterClickCommand( station.Runtime.AttractionId, x, y, builder.Height, builder.LoopMode, builder.LoopPylonsLeft ) );
+		// [EXT:online-coop-commands] the click is a command with the panel's height and loop edit mode; the builder here takes the tool state the placement left, and a completion ends the tool, on
+		// the issuer's machine
+		var state = builder.ToolState;
+		var click = Commands.Issue( new CoasterClickCommand( station.Runtime.AttractionId, x, y, state.Height, state.LoopMode, state.LoopPylonsLeft ) );
 		if ( click.Value is not CoasterClickDone done )
 			return CoasterPlaceResult.NotEditable;
+		builder.SetToolState( done.Next );
 		if ( done.Completed )
 			FinishCoasterTool( station );
 		return done.Result;

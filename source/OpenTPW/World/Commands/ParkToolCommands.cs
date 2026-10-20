@@ -52,9 +52,9 @@ public abstract record ParkToolCommand : ParkCommand
 		ParkCommandKind.EndCoasterTool => new EndCoasterToolCommand( reader.Int() ),
 		ParkCommandKind.CoasterClick => new CoasterClickCommand( reader.Int(), reader.Int(), reader.Int(), reader.Float(), reader.Bool(), reader.Int() ),
 		ParkCommandKind.RemoveLastCoasterPylon => new RemoveLastCoasterPylonCommand( reader.Int() ),
-		ParkCommandKind.BeginCoasterNodeEdit => new BeginCoasterNodeEditCommand( reader.Int(), reader.Int(), reader.Bool() ),
+		ParkCommandKind.BeginCoasterNodeEdit => new BeginCoasterNodeEditCommand( reader.Int(), reader.Int(), (CoasterDrag)reader.Byte() ),
 		ParkCommandKind.EditCoasterNode => new EditCoasterNodeCommand( reader.Int(), (CoasterNodeField)reader.Byte(), reader.Float(), reader.Int(), reader.Int() ),
-		ParkCommandKind.EndCoasterNodeEdit => new EndCoasterNodeEditCommand( reader.Int(), (CoasterEditEnd)reader.Byte() ),
+		ParkCommandKind.EndCoasterNodeEdit => new EndCoasterNodeEditCommand( reader.Int() ),
 		ParkCommandKind.SwapCoasterStack => new SwapCoasterStackCommand( reader.Int(), reader.Int(), reader.Bool() ),
 		ParkCommandKind.CutCoaster => new CutCoasterCommand( reader.Int(), reader.Int(), reader.Int() ),
 		_ => null

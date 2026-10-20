@@ -34,6 +34,8 @@ decisions as recorded in the plan's "User decisions" section:
 > - Q17 cheats: refused in a session (A).
 > - Q18 host leaves: the host role moves to another player (B) — needs host migration (snapshot + frame order handover).
 > - The proposed EXT labels are NOT yet individually approved; the decisions above approve the design they describe.
+> - DetMath (C1b): user chose "Als EXT: deterministic-math" (2026-10-19) for the double-precision portable evaluation of run-time sin/cos/atan2/acos/pow in the simulation; no pins move.
+> - EXT labels (2026-10-19, AskUserQuestion in the online-presence session): all proposed `online-coop-*` labels approved as named in section 4; new labels outside that list are asked separately.
 
 In English: host-sequenced lockstep (every player runs the simulation, the host orders the
 commands); one shared bank; the host sets each player's rights; the feature lives in the online
@@ -45,9 +47,12 @@ editions and languages when the simulation data matches; undo of a player's own 
 normal refund; the browser joins and hosts from the start; the same simulation-changing mods for
 everyone; cheats refused in a session; when the host leaves, the host role moves to another player.
 
-The task that started C1 asked for the plan's proposed labels (for example
-`[EXT:online-coop-commands]`) to be used; the code uses `online-coop-commands` for the command layer
-and `online-coop-permissions` for the rights hook.
+The labels: the plan's first record, made with the design decisions, says the proposed labels were
+not yet individually approved. Its later entry records the user's answer, given the same day in the
+online-presence session: every proposed `online-coop-*` label in the plan's section 4 is approved as
+named (among them `online-coop-commands` and `online-coop-permissions`, the two this code uses: the
+command layer and the rights hook), and a label outside that list is asked for separately. The
+Totem's commands keep the older `developer-prototype` label.
 
 ## The command layer (C1)
 
@@ -78,6 +83,10 @@ the issuing player's session slot (`Player`, 0 = the local player and host).
   rights refuse are rejected before they touch the park. A refusal changes nothing and is logged
   like an accepted command, so a replay refuses it the same way; only a malformed command, which
   has no byte form, is left out of the log.
+  `ParkCommandLevelTests` fuzzes the executor with a seeded stream of every kind (cells off the map
+  and outside the codec's range, unknown and negative ids and players, rotations and line modes no
+  tool has, non-finite and off-terrain prototype positions): no command throws, and every refused one
+  leaves the world hash unchanged.
 - **Rights.** `[EXT:online-coop-permissions]` `IParkCommandRights.Allows(player, kind)` is the hook for
   the host's per-player rights (decision Q7). Only the hook exists; single player has none.
 - **Nested edits.** A command whose execution issues another (a tool callback) runs that one as part
@@ -121,7 +130,8 @@ guarded list.
 | --- | --- | --- |
 | Objects | place (the build tool, the Move tool, track add-ons), the remove tool, remove at a cell, sell from the object and attraction windows, the Move tool's pick-up, the bulldozer (area clear: one command per cleared cell) | converted |
 | Paths and queues | path and queue lines, undo inside the tool, path and queue cell removal, Backspace over a cell, the queue edit click | converted |
-| Developer prototype | place and remove the Totem | converted (its start and stop: part 2) |
+| Developer prototype | place and remove the Totem, open and close it (the developer panel's button) | converted |
+| Winning screen | the Instant Action finale's dismissal (Resume Game, Escape, the right click) | converted |
 | Economy | park open and close, ride open and close, the ride window's settings, entrance fee, prices and shop settings, loans, hire and fire, training budget, research, challenges, maintenance, ride upgrades, park and staff rename, cheats, speed | part 2 |
 | Tools | land, pools and waves, slides and pool attractions, pool bridges, kart and water tracks, coasters and the coaster panel's edits, staff placement and patrol areas | part 3 |
 
@@ -133,4 +143,5 @@ guarded list.
   checkpoints, which the log carries.
 - A remote player's command will run the same presentation (the action message, sounds) as a local
   one; C3 separates the issuer's feedback from everyone's.
-- The in-memory log keeps the newest 65,536 commands; a recording keeps all.
+- The in-memory log keeps the newest 65,536 commands in a ring (adding to a full log overwrites the
+  oldest entry in constant time, so a long bulldozer drag does not stall); a recording keeps all.

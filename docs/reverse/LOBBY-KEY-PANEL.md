@@ -79,6 +79,11 @@ rendering, or a full `ShowFrontEnd` scene transition.
 
 ## Remaining gates
 
+The other live refresh path: the lobby window procedure also calls the
+refresh on message 0x11 with a nonzero parameter (`0x4b8c60..0x4b8c64`);
+REA lists `0x4b8b70`, `0x4b8ca0` and `0x599880` as the refresh's callers.
+OpenTPW makes none of these refreshes.
+
 EA/EB art, native arrow virtual semantics and any hidden/show side effects;
 selected-record threshold provenance; effect lifetime outside this function;
 lobby sequences 28/29 and timer reachability; particle positioning and pass

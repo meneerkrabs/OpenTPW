@@ -9,8 +9,9 @@ public sealed partial class FrontEndMenu
 	{
 		// [BIN:TPW-EXE:0x4b96be..0x4b9807 lobby count] EC is visible for positive keys outside Instant Action;
 		// EE receives "%d x". This is only EC's two children, not EA/EB affordability art or F0/F1 navigation.
-		// [EXT:lobby-progress-snapshot] The host has no persistent player-mode UI: use its saved Full Simulation
-		// ledger at menu creation. Returning from a park rebuilds it; this is not a live advisor refresh.
+		// [EXT:no-player-profiles] OpenTPW has no player profiles, so the count is the one player's saved Full Simulation
+		// ledger, read when the menu is built (returning from a park rebuilds it); the advisor timer's live refresh of the
+		// panel is not made ([APPROX:ADVISOR-025], AdvisorSequence.cs).
 		var keys = actions.PlayerKeySnapshot;
 		var visible = keys > 0;
 		var table = OriginalLayoutTables.Lobby;

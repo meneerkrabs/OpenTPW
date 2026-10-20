@@ -51,6 +51,7 @@ jobs:
         if: matrix.runtime == 'aot'
         run: dotnet workload install wasm-tools
       - name: Publish the browser build with the pin tests
+        id: publish
         run: dotnet publish source/OpenTPW.Web/OpenTPW.Web.csproj -c Release -p:RunAOTCompilation=${{ matrix.runtime == 'aot' }} -p:OpenTpwDeterminismPins=true -o "$RUNNER_TEMP/web" --nologo
       - name: Run the pins in headless Chrome
         run: node --experimental-websocket tools/web-determinism/run.mjs "$RUNNER_TEMP/web/wwwroot" --chrome /usr/bin/google-chrome --report "$RUNNER_TEMP/browser-determinism-${{ matrix.runtime }}.json"
@@ -66,4 +67,26 @@ jobs:
           path: |
             ${{ runner.temp }}/browser-determinism-${{ matrix.runtime }}.json
             ${{ runner.temp }}/particle-render-${{ matrix.runtime }}.json
+          if-no-files-found: ignore
+      # Diagnostic only: the normal interpreter gate above remains required and unchanged.
+      # Supported runtime option: dotnet/runtime docs/design/mono/jiterpreter.md.
+      - name: Diagnose the same interpreter bundle without Jiterpreter traces
+        if: always() && matrix.runtime == 'interpreter' && steps.publish.outcome == 'success'
+        run: |
+          python3 - <<'PYTHON'
+          import os
+          from pathlib import Path
+          entry = Path(os.environ["RUNNER_TEMP"]) / "web/wwwroot/main.js"
+          source = entry.read_text()
+          original = "const runtime = await dotnet.create();"
+          assert source.count(original) == 1, "the diagnostic must change exactly one runtime entry"
+          entry.write_text(source.replace(original, 'const runtime = await dotnet.withRuntimeOptions(["--no-jiterpreter-traces-enabled"]).create();'))
+          PYTHON
+          node --experimental-websocket tools/web-determinism/run.mjs "$RUNNER_TEMP/web/wwwroot" --chrome /usr/bin/google-chrome --report "$RUNNER_TEMP/browser-determinism-interpreter-no-traces.json" --timeout-minutes 2
+      - name: Keep the interpreter diagnostic report
+        if: always() && matrix.runtime == 'interpreter'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: browser-determinism-interpreter-no-traces
+          path: ${{ runner.temp }}/browser-determinism-interpreter-no-traces.json
           if-no-files-found: ignore

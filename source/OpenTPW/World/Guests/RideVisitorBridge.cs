@@ -367,6 +367,8 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 		Condemned = condemned ? true : null,
 		CalledTurn = calledTurn,
 		QueueCells = queueCells.ToArray(),
+		TypedQueueFront = QueueEntryResolver != null && QueueEntranceDirection >= 0 ? QueueFrontCell : null,
+		TypedQueueDirection = QueueEntryResolver != null && QueueFrontCell != null && QueueEntranceDirection >= 0 ? QueueEntranceDirection : null,
 		QueueEditCount = QueueEditCount,
 		JoinCell = JoinCell,
 		HeadNotReadyStreak = HeadNotReadyStreak,
@@ -400,6 +402,12 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 				listsMissing = true;
 			}
 		}
+		if ( snapshot.TypedQueueFront.HasValue != snapshot.TypedQueueDirection.HasValue )
+			Error( "the typed queue front and direction must be present together." );
+		if ( snapshot.TypedQueueFront is { } typedFront && (typedFront.X < 0 || typedFront.Y < 0) )
+			Error( "the typed queue front is outside the positive cell map." );
+		if ( snapshot.TypedQueueDirection is { } typedDirection && (typedDirection < 0 || typedDirection > 3) )
+			Error( "the typed queue direction is invalid." );
 		if ( snapshot.Condemned == true && !snapshot.BrokenDown )
 			Error( "a condemned ride (state 4) must be in the broken-down state." );
 		Require( snapshot.Queue, "queue list" );
@@ -558,6 +566,18 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 		calledTurn = snapshot.CalledTurn;
 		queueCells.Clear();
 		queueCells.AddRange( snapshot.QueueCells );
+		if ( snapshot.TypedQueueFront is { } savedFront )
+		{
+			QueueFrontCell = savedFront;
+			QueueEntranceDirection = snapshot.TypedQueueDirection!.Value;
+		}
+		else if ( QueueEntryResolver != null )
+		{
+			// Legacy snapshots never stored these caches: retain the old shape-registration reconstruction,
+			// not a guessed historical direction from newly edited links. The next normal grid sync may refresh.
+			QueueFrontCell = compatibilityQueueFront;
+			QueueEntranceDirection = compatibilityQueueDirection;
+		}
 		QueueEditCount = snapshot.QueueEditCount;
 		JoinCell = snapshot.JoinCell;
 		HeadNotReadyStreak = snapshot.HeadNotReadyStreak;
@@ -623,6 +643,41 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 
 	/// <summary>The entrance's outside cell (the original front cell), or null to use <see cref="EntranceCell"/>.</summary>
 	public (int X, int Y)? QueueFrontCell { get; set; }
+	/// <summary>Supported live typed entry reconstruction; rebound by the level, never persisted as a delegate. Untyped worlds retain their compatibility front.</summary>
+	private Func<(int X, int Y)?>? queueEntryResolver;
+	private (int X, int Y)? compatibilityQueueFront;
+	private int compatibilityQueueDirection = -1;
+	internal Func<(int X, int Y)?>? QueueEntryResolver
+	{
+		get => queueEntryResolver;
+		set
+		{
+			compatibilityQueueFront = QueueFrontCell;
+			compatibilityQueueDirection = QueueEntranceDirection;
+			queueEntryResolver = value;
+		}
+	}
+
+	/// <summary>Reads the native front from the entry's links, not its queue direction. Zero/unavailable entries retain the explicitly unsupported compatibility fallback.</summary>
+	// [BIN:TPW-EXE:0x004DE040] mEntryPos +0x36, Links +0x0C, priority 1,16,64,4; no neighbour type, owner or reciprocity filter.
+	internal bool RefreshTypedQueueFront( GuestPathGrid grid )
+	{
+		if ( QueueEntryResolver?.Invoke() is not { } entry || !grid.InBounds( entry.X, entry.Y ) ) return false;
+		var links = grid.Cells.LinksAt( entry.X, entry.Y );
+		foreach ( var direction in new[] { 0, 2, 3, 1 } )
+		{
+			if ( (links & GuestPathGrid.LinkValue( direction )) == 0 ) continue;
+			var (dx, dy) = GuestPathGrid.Directions[direction];
+			var front = (X: entry.X + dx, Y: entry.Y + dy);
+			// Out-of-map neighbours remain outside the supported host reconstruction, not a native type test.
+			if ( !grid.InBounds( front.X, front.Y ) ) return false;
+			QueueFrontCell = front;
+			QueueEntranceDirection = (direction + 2) & 3;
+			return true;
+		}
+		return false;
+	}
+
 	/// <summary><see cref="GuestPathGrid.Directions"/> index from the front cell toward the ride's entrance cell, or −1.</summary>
 	public int QueueEntranceDirection { get; set; } = -1;
 	/// <summary>Queue cells from the front (index 0) to the back; the front may be a path cell.</summary>
@@ -705,9 +760,10 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	{
 		var previous = queueCells.ToArray();
 		queueCells.Clear();
+		var typedFront = RefreshTypedQueueFront( grid );
 		var front = QueueFrontCell ?? EntranceCell;
 		// A front cell that is neither a queue nor a path cell falls back to EntranceCell, the nearest walkable path cell (a cell nothing laid: imports, restores, the gates), as a one-cell queue.
-		if ( !grid.IsQueue( front.X, front.Y ) && !grid.IsWalkable( front.X, front.Y ) )
+		if ( !typedFront && !grid.IsQueue( front.X, front.Y ) && !grid.IsWalkable( front.X, front.Y ) )
 			front = EntranceCell;
 		queueCells.Add( front );
 		var current = front;
@@ -724,6 +780,25 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 			return false;
 		QueueEditCount++;
 		return true;
+	}
+
+	/// <summary>Validates current-epoch save geometry without mutating live caches. Legacy snapshots use the pre-feature shape registration contract.</summary>
+	internal bool MatchesSnapshotQueueGeometry( GuestPathGrid grid, RideVisitorBridgeSnapshot saved )
+	{
+		var expected = this;
+		if ( saved.TypedQueueFront == null && QueueEntryResolver != null )
+		{
+			// Recompute only the old geometry, not guest/VM state. This isolated bridge never registers or writes the map.
+			expected = new RideVisitorBridge( AttractionId, Name, Kind, Capacity, excitementLevel, AttractionValue )
+			{
+				EntranceCell = EntranceCell, QueueFrontCell = compatibilityQueueFront,
+				QueueEntranceDirection = compatibilityQueueDirection
+			};
+			expected.RecomputeQueue( grid );
+		}
+		return saved.QueueCells.SequenceEqual( expected.QueueCells ) && saved.JoinCell == expected.JoinCell
+			&& (saved.TypedQueueFront == null || (saved.TypedQueueFront == expected.QueueFrontCell
+				&& saved.TypedQueueDirection == expected.QueueEntranceDirection));
 	}
 
 	/// <summary>Raised after an edit of this ride's queue cells (tp.exe's re-evaluation 0x004DE1F0), once the queue is recomputed.</summary>
@@ -763,7 +838,7 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	/// on a path; null when the queue is not connected to a path.
 	/// </summary>
 	// [BIN:TPW-EXE:0x004DE840 attached path] 0x4DEA2F..0x4DEA57: for the bits 1, 4, 16, 64 of the back cell's +0x0C (0x522770) the neighbour along it (0x4D97E0) is taken when it is type 1 (0x536310); none logs "No path attached to end of queue"
-	// [APPROX:QUEUE-003] guests walk to the join cell, the path cell attached to the back of the queue, and join from it; tp.exe's state-10 join (0x004FFBC0) needs the guest's own cell to be the back queue cell (0x004DE110 → 0x004DE130, else "The back of the queue has moved"), reached by the walk's edge test 0x4D8750 through the back cell's link, and uses the attached path cell only for the back cell's fourth place; OpenTPW's ride entrance cell keeps no link byte (its cells are not typed map cells, WALK-005), so the ride keeps its front in QueueFrontCell where tp.exe reads it from the entrance cell's bit (0x4DE040) — evidence needed: the route that walks a guest onto a queue cell (0x004FA5F0) on OpenTPW's walk (the edge test over OpenTPW's cell map, WALK-005)
+	// [APPROX:QUEUE-003] back-cell admission and fourth-slot path geometry are implemented. Supported live typed HasQueue entries select their nonzero front from +0x0C (0x4DE040). Linkless/unsupported entries and untyped worlds retain the host one-cell fallback; native zero-front/count semantics and divergent imported mEntryPos remain unsupported.
 	private (int X, int Y)? FindJoinCell( GuestPathGrid grid )
 	{
 		var back = queueCells[^1];

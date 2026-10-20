@@ -40,7 +40,7 @@ public partial class Level
 		};
 		AttachStaffWorld();
 		StaffPlacement = new StaffPlacement( () => Park?.Economy, () => Guests?.Grid.Cells, IsStaffDropBlocked );
-		PatrolTool = new PatrolAreaTool( () => Park?.Economy );
+		PatrolTool = new PatrolAreaTool( () => Park?.Economy, command => Commands.Issue( command ) );
 		if ( OriginalPark != null )
 		{
 			StaffSpriteSet sprites;

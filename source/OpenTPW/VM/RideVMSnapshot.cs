@@ -321,11 +321,14 @@ public sealed record RideScriptWorldSnapshot
 	/// <summary>The script pass counter (<see cref="RideScriptWorld.PassCounter"/>); a snapshot written before the substep scheduler holds none and the counter restarts at 0.</summary>
 	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )]
 	public long? PassCounter { get; init; }
+	/// <summary>Live scheduler order, head first, when it differs from legacy descending ID order. Absent preserves legacy restore behavior.</summary>
+	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )]
+	public int[]? ListOrder { get; init; }
 	/// <summary>Every live script, ordered by id.</summary>
 	public required IReadOnlyList<RideVMSnapshot> Scripts { get; init; }
 
 	/// <summary>Deep copy.</summary>
-	public RideScriptWorldSnapshot DeepCopy() => this with { Scripts = Scripts.Select( script => script.DeepCopy() ).ToArray() };
+	public RideScriptWorldSnapshot DeepCopy() => this with { Scripts = Scripts.Select( script => script.DeepCopy() ).ToArray(), ListOrder = ListOrder?.ToArray() };
 
 	/// <summary>
 	/// Pure validation of the whole graph: every script passes <see cref="RideVMSnapshot.ValidateSnapshot"/>, ids
@@ -356,6 +359,8 @@ public sealed record RideScriptWorldSnapshot
 			if ( script.ScriptId >= NextScriptId )
 				throw new InvalidDataException( $"Script id {script.ScriptId} is not below the allocator frontier {NextScriptId}." );
 		}
+		if ( ListOrder != null && (ListOrder.Length != byId.Count || ListOrder.Distinct().Count() != byId.Count || ListOrder.Any( id => !byId.ContainsKey( id ) )) )
+			throw new InvalidDataException( "Saved live script order must contain every script ID exactly once." );
 		foreach ( var script in Scripts )
 		{
 			if ( script.ParentScriptId != 0 )

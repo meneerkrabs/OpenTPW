@@ -688,6 +688,11 @@ public sealed partial class OriginalObjectRuntime
 			level?.GetFloat( "QueueWaitTimeConstant" ) ?? 0, initSpeed, initSpeed, capacity, duration, level?.GetInt( "InitDuration" ) ?? 0 );
 	}
 
+	// No delegate is invoked while validating original graph import provenance.
+	internal static bool HasCatalogResolver( RideVM vm, ObjectCatalogEntry entry ) =>
+		vm.Options.ResolveScript?.Target is OriginalObjectRuntime runtime && ReferenceEquals( runtime.Entry, entry ) && ReferenceEquals( runtime.Script, vm ) &&
+		vm.Options.ResolveScript == runtime.ResolveChildScript;
+
 	private RideScriptFile? ResolveChildScript( string fileName )
 	{
 		var member = Entry.Scripts.FirstOrDefault( script => string.Equals( Path.GetFileName( script ), fileName, StringComparison.OrdinalIgnoreCase ) );

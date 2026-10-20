@@ -195,7 +195,7 @@ public sealed partial class RideVM
 	}
 
 	/// <summary>Called by the public constructors, by <see cref="SpawnChild"/> and by the snapshot restore (which passes an explicit parent).</summary>
-	internal RideVM( RideScriptFile script, RideVMOptions options, RideVM? parent )
+	internal RideVM( RideScriptFile script, RideVMOptions options, RideVM? parent, bool register = true )
 	{
 		ArgumentNullException.ThrowIfNull( script );
 		Script = script;
@@ -233,7 +233,7 @@ public sealed partial class RideVM
 			instructions[index] = new Instruction( index, source.WordOffset, source.Opcode, operands, definition );
 		}
 
-		ScriptId = World.Register( this );
+		if ( register ) ScriptId = World.Register( this );
 	}
 
 	public int this[RideVariables variable]

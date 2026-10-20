@@ -177,9 +177,19 @@ public class GuestRefusedTargetTests
 			.Select( guest => (Guest: guest, Target: guest.AttractionId) ).ToArray();
 		foreach ( var pair in retained ) pair.Guest.AttractionId = 0;
 		ulong projected, repeatedProjection;
-		try { projected = compute(); repeatedProjection = compute(); }
+		string projectedBeforeFinally, repeatedBeforeFinally;
+		try
+		{
+			projected = compute();
+			projectedBeforeFinally = projected.ToString( "X16" );
+			repeatedProjection = compute();
+			repeatedBeforeFinally = repeatedProjection.ToString( "X16" );
+			Assert.AreEqual( projectedBeforeFinally, repeatedBeforeFinally, $"target-only projection repeated inside try; actual=0x{actual:X16}; targets={targets}" );
+		}
 		finally { foreach ( var pair in retained ) pair.Guest.AttractionId = pair.Target; }
 		Assert.AreEqual( actual, compute(), "diagnostic projection restores the actual hash" );
+		Assert.AreEqual( projectedBeforeFinally, projected.ToString( "X16" ), "the first projected scalar survives finally and restoration" );
+		Assert.AreEqual( repeatedBeforeFinally, repeatedProjection.ToString( "X16" ), "the repeated projected scalar survives finally and restoration" );
 		Assert.AreEqual( projected, repeatedProjection, "target-only projection is stable while the selected IDs remain cleared" );
 		if ( LegacyPinByRetainedTargetPin.TryGetValue( actual, out var legacy ) )
 		{

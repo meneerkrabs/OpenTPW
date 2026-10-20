@@ -2,7 +2,7 @@
 
 The content kit turns original, newly made art into files the game reads: MD2 models, textures, ride scripts and
 sprite banks, packed as an object a data-only mod adds through `objects.json` ([MODS.md](MODS.md#objects)). It exists
-for community content, and it builds the shipped swimming pools ([POOLS.md](POOLS.md)). Nothing in it reads or copies art from the original game;
+for community content, and it builds the shipped swimming pools ([POOLS.md](POOLS.md)), the umbrellas' content ([UMBRELLAS.md](UMBRELLAS.md)) and the winter shops and warm items ([WINTER.md](WINTER.md)). Nothing in it reads or copies art from the original game;
 the original corpus is only used to prove that each writer produces files the readers (and the formats) accept.
 
 Status (October 17, 2026): phase 0 is complete in the code. In place:

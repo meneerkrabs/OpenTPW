@@ -83,6 +83,9 @@ fragment {
         if ( texIndex == 6 ) color = texture( sampler2D( Color6, s_Color ), uv );
         if ( texIndex == 7 ) color = texture( sampler2D( Color7, s_Color ), uv );
         if ( color.a < 0.5 ) discard;
+        // [EXT:evening] the evening extension darkens and tints the pre-rendered sprites at dusk and night through the unused light colour (all zero keeps the sprite as it was)
+        if ( g_oUbo.g_vLightColor.x + g_oUbo.g_vLightColor.y + g_oUbo.g_vLightColor.z > 0.0 )
+            color.rgb *= g_oUbo.g_vLightColor;
 
         float viewSpaceDepth = length( vs_out.vViewPosition );
         float fogFactor = clamp( exp( viewSpaceDepth * 0.01 ) * 0.025, 0, 1 );

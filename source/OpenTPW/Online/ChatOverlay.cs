@@ -3,9 +3,9 @@ using Veldrid;
 namespace OpenTPW.UI;
 
 /// <summary>
-/// Chat lines drawn with the selected language's original BF4 font (GAME8AA) in the overlay pass.
-/// [EXT:ONLINE-065] Font choice, position (bottom-left), colours and line count are OpenTPW choices;
-/// the original chat panel (ui.wad f_chat.MD2, chatpan2/f_chat1-3 textures) is not reproduced yet.
+/// Chat lines drawn with the selected language's original BF4 font (GAME8AA) in the overlay pass, while the player is in the park's HUD or the
+/// lobby with a chat connection open: the chat parks and a visit's chat mode show the original chat overlay instead (<see cref="ChatPanel"/>).
+/// [EXT:ONLINE-065] Font choice, position (bottom-left), colours and line count are OpenTPW choices.
 /// </summary>
 internal sealed class ChatOverlay : IDisposable
 {
@@ -26,7 +26,7 @@ internal sealed class ChatOverlay : IDisposable
 
 	public ChatOverlay( OnlineSession session ) => this.session = session;
 
-	/// <summary>True while another view shows the lines (a visit with other players draws the room's lines in its HUD).</summary>
+	/// <summary>True while another view shows the lines (a visit's chat mode shows them in the original chat overlay).</summary>
 	public Func<bool>? Hidden { get; init; }
 
 	public void Draw()

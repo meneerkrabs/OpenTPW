@@ -1,7 +1,7 @@
 // Building blocks of the browser performance harness (run.mjs, docs/BROWSER-PERFORMANCE.md): a local server for the
 // published page and the player's own game folder, a minimal Chrome DevTools Protocol client, and frame statistics.
 // No dependencies: Node's own http, fs, child_process, fetch and WebSocket.
-import { createServer } from 'node:http';
+import { createServer, request as httpRequest } from 'node:http';
 import { createReadStream, promises as fs } from 'node:fs';
 import { spawn } from 'node:child_process';
 import path from 'node:path';
@@ -46,8 +46,37 @@ export async function listFiles(root) {
 /**
  * Serves the published wwwroot at / and the game folder at /game/ with a generated /game/files.txt, the page's local
  * test route (?data=/game/). Bound to 127.0.0.1 only: the game files never leave this machine.
+ *
+ * With `upstream` (a base URL such as http://127.0.0.1:8080) every request but /game/ is forwarded unchanged to that server, the
+ * OpenTPW.Server that serves the page in production (docs/SERVER.md), and answered with its own headers and body: the browser then
+ * sees the production transport (Brotli siblings, ETag, Cache-Control). The forwarded requests are logged in `log`
+ * (path, status, Content-Encoding, Cache-Control, ETag, whether the request was conditional, body bytes as sent), and `marks`
+ * records the log length where each scenario started.
  */
-export async function startServer(webRoot, gameRoot) {
+export async function startServer(webRoot, gameRoot, upstream = null) {
+	const log = [], marks = [];
+	// The upstream is the local OpenTPW.Server only: an http origin on a loopback address, fixed when the harness starts.
+	const upstreamUrl = upstream == null ? null : new URL(loopbackOrigin(upstream));
+	const forward = (request, response, url) => {
+		// Host and port are the upstream's, fixed at start; only the request's path and query are passed on, so an absolute-form
+		// request target (http://other/...) cannot pick another host.
+		const target = { hostname: upstreamUrl.hostname.replace(/^\[|\]$/g, ''), port: upstreamUrl.port || 80, path: url.pathname + url.search, host: upstreamUrl.host };
+		const entry = { path: url.pathname, method: request.method, conditional: Boolean(request.headers['if-none-match'] || request.headers['if-modified-since']), acceptEncoding: request.headers['accept-encoding'] ?? '', bytes: 0 };
+		log.push(entry);
+		const outgoing = httpRequest({ hostname: target.hostname, port: target.port, path: target.path, method: request.method, headers: { ...request.headers, host: target.host } }, incoming => {
+			entry.status = incoming.statusCode;
+			entry.encoding = incoming.headers['content-encoding'] ?? null;
+			entry.cacheControl = incoming.headers['cache-control'] ?? null;
+			entry.etag = incoming.headers.etag ?? null;
+			entry.type = incoming.headers['content-type'] ?? null;
+			entry.length = incoming.headers['content-length'] ? Number(incoming.headers['content-length']) : null;
+			response.writeHead(incoming.statusCode, incoming.headers);
+			incoming.on('data', chunk => entry.bytes += chunk.length);
+			incoming.pipe(response);
+		});
+		outgoing.on('error', () => { entry.status ??= 502; response.writeHead(502).end(); });
+		request.pipe(outgoing);
+	};
 	const files = (await listFiles(gameRoot)).join('\n') + '\n';
 	const realRoots = new Map([[webRoot, await fs.realpath(webRoot)], [gameRoot, await fs.realpath(gameRoot)]]);
 	const server = createServer(async (request, response) => {
@@ -58,6 +87,8 @@ export async function startServer(webRoot, gameRoot) {
 		};
 		if (url.pathname === '/game/files.txt')
 			return send(200, files);
+		if (upstream && !url.pathname.startsWith('/game/'))
+			return forward(request, response, url);
 		const [root, relative] = url.pathname.startsWith('/game/') ? [gameRoot, url.pathname.slice('/game/'.length)] : [webRoot, url.pathname === '/' ? 'index.html' : url.pathname.slice(1)];
 		const resolved = safeResolve(root, relative);
 		if (!resolved)
@@ -78,7 +109,16 @@ export async function startServer(webRoot, gameRoot) {
 		}
 	});
 	await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
-	return { server, origin: `http://127.0.0.1:${server.address().port}`, close: () => new Promise(resolve => server.close(resolve)) };
+	return { server, log, marks, origin: `http://127.0.0.1:${server.address().port}`, close: () => new Promise(resolve => server.close(resolve)) };
+}
+
+/** The origin of `value` if it is an http URL on a loopback address (127.0.0.0/8, ::1 or localhost); throws otherwise. */
+export function loopbackOrigin(value) {
+	const url = new URL(value);
+	const host = url.hostname.replace(/^\[|\]$/g, '');
+	if (url.protocol !== 'http:' || !(host === 'localhost' || host === '::1' || /^127(\.\d{1,3}){3}$/.test(host)))
+		throw new Error(`--upstream must be an http URL on a loopback address, not ${value}`);
+	return url.origin;
 }
 
 /** A minimal DevTools Protocol client over one browser WebSocket, with flattened page sessions. */
@@ -130,15 +170,24 @@ export class Cdp {
 	close() { this.#socket.close(); }
 }
 
-/** Starts Chrome with a fresh profile and its DevTools port; resolves with the process and the browser WebSocket URL. */
-export async function launchChrome(executable, profile, { headed = false, width = 1280, height = 900 } = {}) {
+/** Chrome's command line for a fresh profile: headless and muted unless asked otherwise. */
+export function chromeArguments(profile, { headed = false, audible = false, width = 1280, height = 900 } = {}) {
 	const args = [
 		`--user-data-dir=${profile}`, '--remote-debugging-port=0', '--no-first-run', '--no-default-browser-check',
 		'--autoplay-policy=no-user-gesture-required', `--window-size=${width},${height}`, '--disable-background-timer-throttling',
 		'--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows', 'about:blank',
 	];
+	// Muting only silences the speakers; Web Audio still decodes, so --music timings are unchanged.
+	if (!audible)
+		args.push('--mute-audio');
 	if (!headed)
 		args.unshift('--headless=new');
+	return args;
+}
+
+/** Starts Chrome with a fresh profile and its DevTools port; resolves with the process and the browser WebSocket URL. */
+export async function launchChrome(executable, profile, options = {}) {
+	const args = chromeArguments(profile, options);
 	const chrome = spawn(executable, args, { stdio: ['ignore', 'ignore', 'ignore'] });
 	let failure = null;
 	chrome.on('error', error => failure = error);

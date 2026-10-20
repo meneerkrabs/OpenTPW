@@ -111,15 +111,15 @@ public static class TextLayout
 		var index = 0;
 		while ( index < glyphs.Count )
 		{
-			if ( IsSpace( glyphs[index].Character ) )
+			if ( IsSpace( glyphs[index].Source ) )
 			{
 				var spaceEnd = index;
 				var spaceWidth = 0;
-				while ( spaceEnd < glyphs.Count && IsSpace( glyphs[spaceEnd].Character ) )
+				while ( spaceEnd < glyphs.Count && IsSpace( glyphs[spaceEnd].Source ) )
 					spaceWidth += glyphs[spaceEnd++].Advance;
 				var wordEnd = spaceEnd;
 				var wordWidth = 0;
-				while ( wordEnd < glyphs.Count && !IsSpace( glyphs[wordEnd].Character ) )
+				while ( wordEnd < glyphs.Count && !IsSpace( glyphs[wordEnd].Source ) )
 					wordWidth += glyphs[wordEnd++].Advance;
 				if ( line.Count > 0 && wordEnd > spaceEnd && lineWidth + spaceWidth + wordWidth > maximumWidth )
 				{

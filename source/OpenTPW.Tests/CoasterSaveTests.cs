@@ -128,6 +128,31 @@ public class CoasterSaveTests
 	}
 
 	/// <summary>
+	/// The motion clock (controller flag 0x10, <see cref="CoasterRide.MotionClockStarted"/>) crosses the resume save: a coaster saved before its first motion tick
+	/// still takes that tick without time after the resume, one saved after it does not, and a save from before the flag counts it set on a track that runs.
+	/// </summary>
+	[TestMethod]
+	public void TheMotionClockCrossesTheResumeSave()
+	{
+		var (builder, ride, _) = NewCoaster();
+		BuildRunningCoaster( builder, ride );
+		var fresh = ParkResumeJson.Deserialize<CoasterRideSaveData>( ParkResumeJson.Serialize( CoasterSave.CaptureRide( ride, attractionId: 7 ) ) );
+		Assert.AreEqual( false, fresh.MotionClockStarted );
+		var resumed = FreshRide( ride.Definition, new CoasterWorld( 1 ) );
+		resumed.RestoreSnapshot( fresh );
+		Assert.IsFalse( resumed.MotionClockStarted );
+		ride.Advance( Tick );
+		resumed.Advance( Tick );
+		Assert.AreEqual( Hash( ride ), Hash( resumed ), "both took the first tick without time" );
+		var started = CoasterSave.CaptureRide( ride, attractionId: 7 );
+		Assert.AreEqual( true, started.MotionClockStarted );
+		var older = FreshRide( ride.Definition, new CoasterWorld( 1 ) );
+		older.RestoreSnapshot( started with { MotionClockStarted = null } );
+		Assert.IsTrue( older.MotionClockStarted, "a save from before the flag: the track runs, so the clock counts as started" );
+		Assert.AreEqual( Hash( ride ), Hash( older ) );
+	}
+
+	/// <summary>
 	/// A save from before the original's station rule (trains with a state and a boarding clock, no flags, no admission ring) still
 	/// loads: a boarding train keeps its guests at the station and they ride when it leaves; an unloading train hands its riders to the
 	/// leaving ring; a running or waiting train keeps them on the lap.

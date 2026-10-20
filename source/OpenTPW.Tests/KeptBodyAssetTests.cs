@@ -98,6 +98,9 @@ public class KeptBodyAssetTests
 		{
 			simulation.Tick( Tick );
 			runtime.Simulate( Tick );
+			// the host's body-sprite phase (Level.Simulation): the players run on the fixed host clock, so a requested body has its output
+			simulation.SetBodySpriteClock( GuestSimulation.BodySpriteSampleAtTick( tick + 1 ) );
+			simulation.ScheduleBodySprites();
 			// the host's pose phase, as FlatRideBounceRiders.Prepare runs it after the substeps
 			poses.Clear();
 			FlatRideBounceRiders.CollectWalkers( poses, runtime, node => ObjectPlacement.SwapAxes( runtime.Animator.NodeTransforms[node] ), scratch,

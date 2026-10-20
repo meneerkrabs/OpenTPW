@@ -171,18 +171,20 @@ public class GuestRefusedTargetTests
 	internal static ulong VerifyRetainedTargetHash( GuestSimulation simulation, Func<ulong> compute )
 	{
 		var actual = compute();
+		var targets = string.Join( ";", simulation.Guests.Where( guest => guest.AttractionId != 0 ).Select( guest => $"{guest.Id}:{guest.AttractionId}:{guest.State}:{guest.Activity}:{guest.IsInQueue}" ) );
 		var retained = simulation.Guests.Where( guest => guest.AttractionId != 0 && !guest.IsInQueue
 			&& RetainedStates.Contains( (guest.State, guest.Activity) ) )
 			.Select( guest => (Guest: guest, Target: guest.AttractionId) ).ToArray();
 		foreach ( var pair in retained ) pair.Guest.AttractionId = 0;
-		ulong projected;
-		try { projected = compute(); }
+		ulong projected, repeatedProjection;
+		try { projected = compute(); repeatedProjection = compute(); }
 		finally { foreach ( var pair in retained ) pair.Guest.AttractionId = pair.Target; }
 		Assert.AreEqual( actual, compute(), "diagnostic projection restores the actual hash" );
+		Assert.AreEqual( projected, repeatedProjection, "target-only projection is stable while the selected IDs remain cleared" );
 		if ( LegacyPinByRetainedTargetPin.TryGetValue( actual, out var legacy ) )
 		{
 			Assert.IsTrue( retained.Length > 0, "a repinned run must exercise retained targets" );
-			Assert.AreEqual( legacy, projected, "the previous scenario pin is recovered by target-only projection" );
+			Assert.AreEqual( legacy, projected, $"the previous scenario pin is recovered by target-only projection; actual=0x{actual:X16}; projected=0x{projected:X16}; targets={targets}; retained={string.Join( ";", retained.Select( pair => $"{pair.Guest.Id}:{pair.Target}:{pair.Guest.State}:{pair.Guest.Activity}" ) )}" );
 		}
 		return actual; // All existing pin assertions still compare the real, unmodified hash.
 	}

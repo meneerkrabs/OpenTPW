@@ -372,6 +372,72 @@ public class AdvisorTests
 		CollectionAssert.AreEqual( new uint[] { 2226893, 2812380, 4058820 }, Advisor.LoadClip( FileSystem, 1, english ).Timeline.Marks.ToArray() );
 	}
 
+	[TestMethod]
+	public void TheAdvisorMaterialCullsTheFacesTheOriginalsFaceTestDrops()
+	{
+		// tp.exe 0x581320 (in the primitive builder 0x580530, the only path from the mesh submit 0x581cd0) keeps a triangle only when it runs clockwise
+		// on the screen; the material culls the back faces with the front faces clockwise, as for the park's objects
+		Assert.IsFalse( AdvisorRig.MeshMaterialFlags.HasFlag( MaterialFlags.DoubleSided ) );
+	}
+
+	/// <summary>
+	/// The face test against the model's own normals: in the advisor's screen space (<see cref="Advisor.ModelTransform"/>, x right, y up, depth with the
+	/// viewer on the near side), the triangles that run clockwise on the screen are the ones whose stored normals face the viewer, so culling the others
+	/// drops the advisor's hidden sides and not the ones in view.
+	/// </summary>
+	[TestMethod]
+	public void TheOriginalsFaceTestKeepsTheAdvisorsFacesTowardsTheViewer()
+	{
+		using var assets = new OriginalAssets();
+		var transform = Advisor.ModelTransform( new Point2( 640, 480 ) );
+		int kept = 0, dropped = 0, agree = 0, total = 0;
+		var inverted = new List<string>();
+		foreach ( var archive in new[] { $"{Advisor.ArchivePath}/Advisor.MD2", "/levels/fantasy/advisor/Advisor_FAN.MD2", "/levels/hallow/advisor/Advisor_HAL.MD2", "/levels/jungle/advisor/Advisor_JUN.MD2", "/levels/space/advisor/Advisor_SPA.MD2" } )
+		{
+			var model = new ModelFile( archive );
+			var rest = ModelAnimationPlayer.ComputeRestTransforms( model );
+			foreach ( var mesh in model.Meshes )
+			{
+				if ( mesh.Normals.Length != mesh.Vertices.Length || mesh.NodeIndex < 0 || mesh.NodeIndex >= rest.Length )
+					continue;
+				var world = rest[mesh.NodeIndex] * transform;
+				int meshAgree = 0, meshTotal = 0;
+				for ( var index = 0; index + 2 < mesh.Indices.Length; index += 3 )
+				{
+					var corners = new[] { mesh.Indices[index], mesh.Indices[index + 1], mesh.Indices[index + 2] };
+					var screen = corners.Select( corner => System.Numerics.Vector3.Transform( mesh.Vertices[corner].Position.GetSystemVector3(), world ) ).ToArray();
+					// clip space has y up; on the screen y runs down
+					var determinant = (screen[1].X - screen[0].X) * -(screen[2].Y - screen[0].Y) - (screen[2].X - screen[0].X) * -(screen[1].Y - screen[0].Y);
+					if ( Math.Abs( determinant ) < 1e-9f )
+						continue;
+					var clockwise = determinant > 0;
+					var normal = corners.Aggregate( System.Numerics.Vector3.Zero, ( sum, corner ) => sum + System.Numerics.Vector3.TransformNormal( mesh.Normals[corner].GetSystemVector3(), world ) );
+					// the depth grows away from the viewer, so a normal towards the viewer has a negative depth part
+					var towardsViewer = normal.Z < 0;
+					total++;
+					if ( clockwise )
+						kept++;
+					else
+						dropped++;
+					meshTotal++;
+					if ( clockwise == towardsViewer )
+					{
+						agree++;
+						meshAgree++;
+					}
+				}
+				Console.WriteLine( $"  {archive} {mesh.Name}: {meshAgree}/{meshTotal}" );
+				// a mesh whose kept faces mostly face away from the viewer would be drawn inside out
+				if ( meshTotal >= 8 && meshAgree * 2 < meshTotal )
+					inverted.Add( $"{archive} {mesh.Name} ({meshAgree}/{meshTotal})" );
+			}
+		}
+		Console.WriteLine( $"{total} advisor triangles at rest: {kept} kept, {dropped} dropped by the face test; {agree} agree with their stored normals" );
+		Assert.IsTrue( kept > 0 && dropped > 0 );
+		CollectionAssert.AreEqual( Array.Empty<string>(), inverted.ToArray(), "no mesh is drawn inside out" );
+		Assert.IsTrue( agree >= total * 0.85, $"{agree} of {total} agree (stored normals are smoothed across edges, so faces near the outline can disagree)" );
+	}
+
 	private sealed class OriginalAssets : IDisposable
 	{
 		private readonly BaseFileSystem? original;

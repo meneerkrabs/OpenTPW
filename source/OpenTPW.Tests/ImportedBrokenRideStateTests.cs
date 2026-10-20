@@ -104,6 +104,9 @@ public class ImportedBrokenRideStateTests
 		var w = Import( state );
 		using var fixture = new RuntimeFixture();
 		Assert.IsNull( Level.RestoreOriginalRetainedRideState( w.Saved, w.State, fixture.Runtime, w.Saved.Id ) );
+		// Production registration computes queue geometry before a park save can be captured.
+		fixture.Runtime.Visitors.RecomputeQueue( new GuestPathGrid( 3, 3 ) );
+		Assert.AreEqual( 0, RideVisitorBridge.ValidateSnapshot( fixture.Runtime.Visitors.CaptureSnapshot() ).Count );
 		var snapshot = ParkResumeJson.Deserialize<OriginalObjectRuntimeSnapshot>( ParkResumeJson.Serialize( fixture.Runtime.CaptureSnapshot() ) );
 		// Production saves retain visitor bridges in the guest slice, separate from the object/script slice.
 		var bridgeSnapshot = ParkResumeJson.Deserialize<RideVisitorBridgeSnapshot>( ParkResumeJson.Serialize( fixture.Runtime.Visitors.CaptureSnapshot() ) );

@@ -148,7 +148,11 @@ public class FrameBatchingTests
 			}
 			ticksInFrame = 0;
 			if ( driver == Driver.Frames )
+			{
+				// the entities' updates after the simulation read the frame's delta, as the renderer feeds it
+				Time.Update( (float)(ticks * FixedStepClock.TickDuration) );
 				level.AdvanceFrame( ticks * FixedStepClock.TickDuration );
+			}
 			else
 				for ( var tick = 0; tick < ticks; tick++ )
 					level.AdvanceSimulation( FixedStepClock.TickDuration );

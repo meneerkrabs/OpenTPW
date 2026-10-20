@@ -50,8 +50,8 @@ everyone; cheats refused in a session; when the host leaves, the host role moves
 The labels: the plan's first record, made with the design decisions, says the proposed labels were
 not yet individually approved. Its later entry records the user's answer, given the same day in the
 online-presence session: every proposed `online-coop-*` label in the plan's section 4 is approved as
-named (among them `online-coop-commands` and `online-coop-permissions`, the two this code uses: the
-command layer and the rights hook), and a label outside that list is asked for separately. The
+named (among them `online-coop-commands`, `online-coop-permissions` and `online-coop-lockstep`, the three this code uses: the
+command layer, the rights hook and the frame-batching independence of the fixed tick), and a label outside that list is asked for separately. The
 Totem's commands keep the older `developer-prototype` label.
 
 ## The command layer (C1)

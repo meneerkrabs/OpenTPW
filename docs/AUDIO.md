@@ -321,6 +321,44 @@ Both are described in [RSE-VM.md](RSE-VM.md#dipmusic-and-setreverb-the-sound-ser
 The advisor plays its clip on the speech channel; its lip-sync position is the mixer
 output the listener has been given since the clip started.
 
+### Volumes of a loaded original save
+
+The user's decision (2026-10-19): a park started from an original save takes the save's volumes, as tp.exe does. The save's
+Sound block holds the sound service's shadows of the mixer values (docs/TPWS-PAYLOAD.md, "Sound block"): master `+0x18`, effects
+`+0x1C`, music `+0x20`, speech `+0x24` (percent) and the on-flags `+0x38`/`+0x3C`/`+0x40`. The loader `0x51C400` copies them back into
+`0x803AA0`; park entry ends (state 9 of `0x54E360`, `0x54F3AE`) with `0x51E6F0(0)`, which sets the dirty word `+0x28`, so the next sound
+tick `0x51BD70` pushes all seven to the mixer whatever dirty word the save held. The post-load pass
+`0x415140` does not call the options applier `0x423DD0`, so the park plays at the save's volumes while the options screen shows the
+player's own. Which parks load a save: park entry (state 9 of `0x54E360`) loads the newest file in the player's folder of the park
+through `0x5ACCF0` -> `0x414D40`. That is a player's own save when one is chosen, and for an Instant Action player the copy of the level's
+`easymode.TPWI` that `0x5C8190` puts in each level folder when the player is created; a new Full Simulation park has no file and loads
+nothing. OpenTPW does the same for every park started from an original save, a player's own (`--original-save`) or the shipped
+`Easymode.TPWI` seed (Instant Action, the reference start) (`Level.OriginalSaveSound`, `GameAudio.ApplySavedSound`,
+`SavedSoundVolumes`; the import report names the values):
+
+- **Scale and mapping.** The saved percents go to OpenTPW's channels unchanged: effects to `Effects`, music to `Music`, speech to
+  `Speech`, a channel switched off plays silent (the applier pairs each on-flag with its volume), the master to the mixer's master gain.
+  The saved dirty word does not matter (park entry sets it after the load).
+- **The options file is never written by it.** The original's profile options are a separate struct (`0x78D8E8`, serializer
+  `0x423E90` with `SFXVolume`/`MusicVolume`/`SpeechVolume`/`MovieVolume`) that the save load does not touch, and the profile file is
+  written from that struct. `GameOptions` and `opentpw-options.json` stay as they are; the save's volumes hold for the session only.
+- **When the options take over again.** In the original: a slider or toggle of one channel calls that channel's setter only
+  (`0x4A2BF0`, messages `0x800`/`0x801`), so the other channels keep the save's values; OK on the options screen (`0x4237F0`) calls
+  `0x423DD0`, which pushes every channel's profile values; leaving the park (state 12 of `0x54E360`) writes the profile through
+  `0x5C8650`, and the profile serializer ends in `0x423DD0` too. OpenTPW ends a channel's saved value once the player's option for
+  that channel differs from what it was when the save applied, ends all of them on OK and on leaving the park. A channel the save
+  switched off stays silent until OK or leaving the park: the slider and the toggle call only the volume setter (`0x4A2E90`), and only
+  `0x423DD0` sets the on-flags. Cancel on the
+  options screen restores the options, so an untouched channel keeps the save's value.
+- **The master volume** has no option: the original sets it to 100 at start-up (`0x54DE31`) and `0x423DD0` never sets it, so a
+  save's master holds for the rest of the process; `GameAudio.MasterVolume` does the same.
+- **Restart Park.** The original's `restart.INTS` is written at park entry (state 15, `0x550B30`) with the shadows the park
+  started with, and the restart reloads it through `0x414D40`, so the start's volumes play again. OpenTPW's restart snapshot is its
+  own format (SAVE-012), so the flow keeps the Sound block the park started from with it and applies it again after the reload.
+- **Not applied:** a read-only online visit (its park is not an original save file) and a resumed OpenTPW park (its save has no
+  Sound block). All twelve corpus files hold the defaults (master 100, 75/60/75, all on), so with default options loading them, or
+  starting an Instant Action park from the shipped seed, changes nothing audible.
+
 ## Triggered sounds
 
 Every game sound is submitted through one wrapper (`0x100BB4FC`: category handle, event id,

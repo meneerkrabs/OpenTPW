@@ -755,13 +755,16 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	private (int X, int Y)? FindJoinCell( GuestPathGrid grid )
 	{
 		var back = queueCells[^1];
+		if ( grid.Cells.PoolBridges?.Covers( back.X, back.Y ) == true )
+			return null;
 		if ( grid.IsWalkable( back.X, back.Y ) )
 			return back;
 		var links = grid.Cells.LinksAt( back.X, back.Y );
 		for ( var direction = 0; direction < 4; direction++ )
 		{
 			var (dx, dy) = GuestPathGrid.Directions[direction];
-			if ( (links & GuestPathGrid.LinkValue( direction )) != 0 && grid.IsWalkable( back.X + dx, back.Y + dy ) )
+			if ( (links & GuestPathGrid.LinkValue( direction )) != 0 && grid.IsWalkable( back.X + dx, back.Y + dy )
+				&& grid.Cells.PoolBridges?.Covers( back.X + dx, back.Y + dy ) != true )
 				return (back.X + dx, back.Y + dy);
 		}
 		return null;
@@ -1511,9 +1514,11 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 /// Routes visitor opcodes to a <see cref="RideVisitorBridge"/> and everything else to <paramref name="inner"/>, including
 /// TRIGWAITANIM's AnimID query: the script has an object exactly when <paramref name="inner"/> answers it.
 /// </summary>
-public sealed class VisitorRideScriptEffects( RideVisitorBridge bridge, IRideScriptEffects inner ) : IRideScriptEffects, IRideAnimationQuery
+public sealed class VisitorRideScriptEffects( RideVisitorBridge bridge, IRideScriptEffects inner ) : IRideScriptEffects, IRideAnimationQuery, IRideSliceTail
 {
 	public int Perform( RideEffectCall call ) => bridge.TryPerform( call, out var result ) ? result : inner.Perform( call );
+
+	public void AfterSlice( RideVM vm ) => ( inner as IRideSliceTail )?.AfterSlice( vm );
 
 	public int GetAnimationId( RideVM vm, int channel ) =>
 		((IRideAnimationQuery)this).TryGetAnimationId( vm, channel, out var animationId ) ? animationId : ObjectAnimator.NoAnimation;

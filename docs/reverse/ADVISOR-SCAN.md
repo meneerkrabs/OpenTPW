@@ -16,20 +16,22 @@ values are game data: the inventory stores the `TAG_SYSTEM.str` entry numbers an
 
 ## Result
 
+Message 344 is posted by the first challenge offer, despite retaining the help-score descriptor callback and response 606. It is an event producer, not an unused or window-help producer; the existing first-offer runtime and restored-advice catalog are unchanged.
+
 | Status | Messages | Meaning |
 | --- | ---: | --- |
-| wired | 234 | OpenTPW produces the message today |
+| wired | 235 | OpenTPW produces the message today |
 | ready | 0 | every input exists in OpenTPW (the inventory names the class or field); only the producer is missing |
 | blocked | 12 | an input is missing or approximated |
-| none | 105 | nothing to produce: 21 are scored by the scan but their callback is the constant-zero stub, 84 have no producer in `tp.exe` at all |
+| none | 104 | nothing to produce: 21 are scored by the scan but their callback is the constant-zero stub, 83 have no producer in `tp.exe` at all |
 
 | Kind | Messages | Producer |
 | --- | ---: | --- |
 | scan | 134 | the background scan `0x59C680` scores it from park state (the 134 computed callbacks) |
 | scan-zero | 21 | the scan reaches it, the callback is `0x5D60C0` (returns 0): it can never pass `MinScoreForConsideration` |
-| event | 67 | game code posts it (bus message or direct call) |
+| event | 68 | game code posts it (bus message or direct call) |
 | help | 45 | a window or tool posts it through `0x486B00` (score callback `0x59E8C0`) |
-| unused | 84 | no producer found (37 of these are help descriptors that nothing posts) |
+| unused | 83 | no producer found (36 of these are help descriptors that nothing posts) |
 
 | Batch | wired | ready | blocked | none | Total |
 | --- | ---: | ---: | ---: | ---: | ---: |
@@ -41,14 +43,14 @@ values are game data: the inventory stores the `TAG_SYSTEM.str` entry numbers an
 | Staff | 63 | 0 | 6 | 0 | 69 |
 | Research | 19 | 0 | 0 | 0 | 19 |
 | Weather | 0 | 0 | 0 | 0 | 0 |
-| Challenges and golden tickets | 29 | 0 | 0 | 0 | 29 |
-| Tutorial and help | 45 | 0 | 3 | 37 | 85 |
+| Challenges and golden tickets | 30 | 0 | 0 | 0 | 30 |
+| Tutorial and help | 45 | 0 | 3 | 36 | 84 |
 | Other | 9 | 0 | 0 | 68 | 77 |
-| Total | 234 | 0 | 12 | 105 | 351 |
+| Total | 235 | 0 | 12 | 104 | 351 |
 
 Weather has no message: no score callback reads weather or season state, no poster is a weather event, and no `TAG_SYSTEM.str` caption
-of the advisor mentions rain, storm or snow. The "about 91" messages with a producer: **234** produce advice today: 67 posted by game code (every `event` row: 0, 323, 106, 128, 129, 33-57, 66,
-68-70, 93-97, 125-127, 133-136, 167, 215-217, 220-222, 225-227, 234-237, 258, 270-273, 311 and 315), 42 help messages of windows and tools OpenTPW has, and 125 scored by the ported scan (the money
+of the advisor mentions rain, storm or snow. The "about 91" messages with a producer: **235** produce advice today: 68 posted by game code (every `event` row: 0, 323, 106, 128, 129, 33-57, 66,
+68-70, 93-97, 125-127, 133-136, 167, 215-217, 220-222, 225-227, 234-237, 258, 270-273, 311, 315 and 344), 42 help messages of windows and tools OpenTPW has, and 125 scored by the ported scan (the money
 batch: 100-105 and 107; the 31 park callbacks of the rides, cleanliness and guest mood batches: 3-10, 60, 62, 71, 73-75, 77-79, 81, 82, 85-89, 145, 158, 159 and 259-262; the 38 staff callbacks: 11, 13, 14, 18, 20, 23, 26, 28-32,
 108-112, 114-123, 144, 146-150, 169-172 and 263; the 31 callbacks of the queues, prices and research batches: 15-17, 61, 63, 64, 72, 76, 80, 91, 92 and 238-257; and the 18 callbacks
 of the park-opening, congratulation, tutorial and golden ticket group: 1, 2, 124, 140, 156, 157, 185, 274-276, 278-282, 314, 316 and 317, see "Challenges and golden tickets").

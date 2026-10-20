@@ -307,8 +307,8 @@ public sealed partial class ParkHud
 			return;
 		void Remove()
 		{
-			// Catalogue objects sell and unlink exactly once; the developer prototype removes through its own seam.
-			level.RemoveAttraction( match );
+			// Catalogue objects sell and unlink exactly once; the developer prototype removes through its own seam ([EXT:online-coop-commands]: one command either way).
+			level.Commands.Issue( new RemoveAttractionCommand( match.Runtime.AttractionId ) );
 			selectedAttractionId = 0;
 			RefreshAttractionRows();
 			EnsureAttractionSelection();

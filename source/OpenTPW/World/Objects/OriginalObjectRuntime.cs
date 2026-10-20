@@ -724,7 +724,7 @@ public sealed partial class OriginalObjectRuntime
 /// TOUR/BUMP/COAST go to their controllers. The ride lights (ENABLELIGHT, DISABLELIGHT, SETLIGHT, COLOURLIGHT) act on the model's light dummies when it has them (<see cref="OriginalObjectRuntime.Lights"/>, docs/LIGHTS.md) and are a logged no-op when it does not. What stays an unimplemented effect (<see cref="RideVM.UnimplementedEffects"/>): the bounce rider opcodes where their object has no bounce
 /// rider rendering, and ADDOBJ/EVENT type 10 (the object type's own sound list). DIPMUSIC sets the sound service's music duck request; SETREVERB's level is read by <see cref="ReverbSelector"/>.
 /// </summary>
-public sealed class OriginalObjectEffects : IRideScriptEffects, IRideAnimationQuery, IRideCanonicalEffects, IRideScriptLifetime
+public sealed class OriginalObjectEffects : IRideScriptEffects, IRideAnimationQuery, IRideCanonicalEffects, IRideScriptLifetime, IRideSliceTail
 {
 	/// <summary>Channel of the plain animation opcodes: channel 0, the same record a _CH opcode addresses with channel 0.</summary>
 	// [BIN:STP-PPC:0x100A6CC0 animation trigger] the channel record is model +0x10 + channel × 0x38; TRIGANIM (0x100AFB10), WAITANIM (0x100AFC68), LOOPANIM (0x100AFD7C) and TRIGANIMSPEED (0x100B005C) pass channel 0, TRIGANIM_CH (0x100B01C4) its operand
@@ -746,6 +746,17 @@ public sealed class OriginalObjectEffects : IRideScriptEffects, IRideAnimationQu
 	private readonly List<AudioVoice> ownedEventLoops = new();
 
 	public OriginalObjectEffects( OriginalObjectRuntime ride ) => this.ride = ride;
+
+	/// <summary>
+	/// The script loop's speed setter after each slice of the station's root script (<c>0x5517D7</c> → <c>0x43B2B0</c>): once <c>COAST 8</c> bound the coaster (or the park import
+	/// bound a saved script that holds its slot), the script's speed word becomes the coaster's speed setting when it differs.
+	/// </summary>
+	public void AfterSlice( RideVM vm )
+	{
+		// the slot +0xE0 is the root script's: COAST 8 stores it there, and the station's root script is the one that runs it
+		if ( vm.Parent == null && ride.Coaster is { Initialised: true } coaster )
+			coaster.ApplyScriptSpeed( vm.SpeedBias );
+	}
 
 	/// <summary>Stops this runtime's chains, including handles lost by a refused STARTSCREAM, when the object is removed; its script holds no scream any more.</summary>
 	internal void StopSounds()

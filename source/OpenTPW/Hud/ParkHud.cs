@@ -563,8 +563,8 @@ public sealed partial class ParkHud
 			return;
 		void Remove()
 		{
-			// Catalogue objects sell and unlink exactly once; the developer prototype removes through its own seam.
-			level.RemoveAttraction( item );
+			// Catalogue objects sell and unlink exactly once; the developer prototype removes through its own seam ([EXT:online-coop-commands]: one command either way).
+			level.Commands.Issue( new RemoveAttractionCommand( item.Runtime.AttractionId ) );
 			selectedObject = null;
 			SetInfoArm( false );
 		}
@@ -1023,7 +1023,7 @@ public sealed partial class ParkHud
 		if ( !tool.IsActive )
 		{
 			// Backspace over a path or queue cell with no tool on: the backtrack sound, then that cell is removed (GameAudio.BacktrackEvent; a queue is [EXT:queue-backtrack]).
-			if ( inPark && input.Backspaces > 0 && Stack.Screens.Count == 1 && !Input.TextEntryActive && Camera.Mode is ParkCameraMode && level.BacktrackAt( cursorX, cursorY ) )
+			if ( inPark && input.Backspaces > 0 && Stack.Screens.Count == 1 && !Input.TextEntryActive && Camera.Mode is ParkCameraMode && level.Commands.Issue( new BacktrackCommand( cursorX, cursorY ) ).Accepted )
 				return true;
 			if ( !inPark || !input.LeftPressed || level.IsReadOnlyVisit || level.Objects.FindAt( cursorX, cursorY ) != null )
 				return false;

@@ -205,6 +205,154 @@ public class PeriodicAutosaveTests
 		StringAssert.Contains( warnings.Single(), "disk full" ); Assert.AreEqual( PeriodicAutosave.RetrySeconds, failing.Wait );
 	}
 
+	/// <summary>
+	/// A write that is started and then held: the started Action, its completion task and its destination are captured, so a test
+	/// controls exactly when a write runs, succeeds or fails around a park switch, without assuming any delta size.
+	/// </summary>
+	private sealed class HeldWrites
+	{
+		private readonly List<Action> work = new();
+		private readonly List<TaskCompletionSource> gates = new();
+		/// <summary>(destination, bytes) of every persist that ran, in run order; a controlled failure runs first, then throws.</summary>
+		public readonly List<(string Path, byte[] Bytes)> Ran = new();
+
+		public int StartedWrites => work.Count;
+
+		internal PeriodicAutosave Create() => new( ( path, bytes ) => Ran.Add( (path, bytes) ), Work ) { SliceBudget = TimeSpan.FromMinutes( 1 ) };
+
+		private Task Work( Action started )
+		{
+			work.Add( started );
+			var gate = new TaskCompletionSource();
+			gates.Add( gate );
+			return gate.Task;
+		}
+
+		/// <summary>Runs the <paramref name="index"/>'th started write to its end; <paramref name="fail"/> throws after the persist ran (its task faults).</summary>
+		public void Finish( int index, bool fail = false )
+		{
+			try
+			{
+				work[index]();
+				if ( fail ) throw new IOException( "disk full" );
+				gates[index].SetResult();
+			}
+			catch ( Exception error ) { gates[index].SetException( error ); }
+		}
+	}
+
+	[TestMethod]
+	public void SwitchingParksDoesNotRetimeTheNewParkForTheOldParksFailedWrite()
+	{
+		var held = new HeldWrites(); var autosave = held.Create();
+		var slotA = Path.Combine( root, "first.otpw.json" ); var slotB = Path.Combine( root, "second.otpw.json" );
+		Assert.AreEqual( AutosaveResult.Saved, Play( autosave, 301, () => Snapshot( "first" ), slotA ), "park A's write is started" );
+		// the switch (GameFlow.UpdateAutosave): the count starts again and the old write keeps running on its own
+		autosave.Reset(); Assert.IsTrue( autosave.WriteInProgress, "the old park's write stays tracked, so Busy and the single atomic writer are kept" );
+		// park B accrues play time, and the old write then fails under it
+		for ( var frame = 0; frame < 4; frame++ ) Assert.AreEqual( AutosaveResult.NotDue, autosave.Tick( 0.25, true, () => Snapshot( "second" ), slotB ) );
+		Assert.AreEqual( 1.0, autosave.Elapsed, 1e-9 );
+		held.Finish( 0, fail: true );
+		// the new park's frame observes the fault exactly once: one qualified warning, and its schedule is what this frame alone makes of it
+		var warnings = new List<string>();
+		Assert.AreEqual( AutosaveResult.NotDue, autosave.Tick( 0.25, true, () => Snapshot( "second" ), slotB, warnings.Add ) );
+		Assert.AreEqual( 1, warnings.Count, "the old park's failed write warns exactly once" );
+		StringAssert.Contains( warnings[0], "previous park" ); StringAssert.Contains( warnings[0], "disk full" ); StringAssert.Contains( warnings[0], "the current park autosave schedule is unchanged" );
+		Assert.AreEqual( 1.25, autosave.Elapsed, 1e-9, "the new park's count is not reset by the old park's failure" );
+		Assert.AreEqual( PeriodicAutosave.IntervalSeconds, autosave.Wait ); Assert.AreEqual( 0, autosave.Refusals );
+		// the documented schedule stands: park B autosaves 300 s of play after it started, into its own slot
+		var captures = 0;
+		Assert.AreEqual( AutosaveResult.NotDue, autosave.Tick( 0.25, true, () => { captures++; return Snapshot( "second" ); }, slotB, warnings.Add ) );
+		Assert.AreEqual( 1, warnings.Count, "the old failure is observed only once" );
+		Assert.AreEqual( 1.5, autosave.Elapsed, 1e-9 );
+		Assert.AreEqual( AutosaveResult.NotDue, Play( autosave, 298.25, () => { captures++; return Snapshot( "second" ); }, slotB ) );
+		Assert.AreEqual( 0, captures ); Assert.AreEqual( 299.75, autosave.Elapsed, 1e-9 );
+		Assert.AreEqual( AutosaveResult.Saved, autosave.Tick( 0.25, true, () => { captures++; return Snapshot( "second" ); }, slotB ) );
+		Assert.AreEqual( 1, captures, "the old failure added no early or extra capture" );
+		held.Finish( 1 );
+		Assert.AreEqual( slotB, held.Ran[1].Path ); Assert.AreEqual( "second", ParkResumeSaveFile.Deserialize( held.Ran[1].Bytes ).DisplayName );
+		// the captured A bytes stayed bound to A's slot through the switch, even though their write failed
+		Assert.AreEqual( slotA, held.Ran[0].Path ); Assert.AreEqual( "first", ParkResumeSaveFile.Deserialize( held.Ran[0].Bytes ).DisplayName );
+		autosave.Flush();
+	}
+
+	[TestMethod]
+	public void OldParksCompletedButUnconsumedFailedWriteWarnsOnceAtTheNewParksFirstFrameWithoutRetiming()
+	{
+		var held = new HeldWrites(); var autosave = held.Create();
+		var slotA = Path.Combine( root, "first.otpw.json" ); var slotB = Path.Combine( root, "second.otpw.json" );
+		Assert.AreEqual( AutosaveResult.Saved, Play( autosave, 301, () => Snapshot( "first" ), slotA ) );
+		Assert.AreEqual( 1, held.StartedWrites );
+		// the old write already failed (completed but unconsumed) before the park switch
+		held.Finish( 0, fail: true );
+		Assert.IsFalse( autosave.WriteInProgress, "a finished write no longer holds the single writer" );
+		Assert.IsFalse( autosave.SerializationInProgress );
+		autosave.Reset();
+		var warnings = new List<string>();
+		// the new park's first frame observes the fault once: it warns and keeps its own schedule
+		Assert.AreEqual( AutosaveResult.NotDue, autosave.Tick( 0.25, true, () => Snapshot( "second" ), slotB, warnings.Add ) );
+		Assert.AreEqual( 1, warnings.Count );
+		StringAssert.Contains( warnings[0], "previous park" ); StringAssert.Contains( warnings[0], "disk full" ); StringAssert.Contains( warnings[0], "schedule is unchanged" );
+		Assert.AreEqual( 0.25, autosave.Elapsed, 1e-9 ); Assert.AreEqual( PeriodicAutosave.IntervalSeconds, autosave.Wait );
+		// a reset after the old failure was reported repeats nothing
+		autosave.Reset();
+		Assert.AreEqual( AutosaveResult.NotDue, autosave.Tick( 0.25, true, () => Snapshot( "second" ), slotB, warnings.Add ) );
+		Assert.AreEqual( 1, warnings.Count, "no second warning" ); Assert.AreEqual( 0.25, autosave.Elapsed, 1e-9 );
+		// the new park proceeds on its own schedule, into its own slot
+		Assert.AreEqual( AutosaveResult.Saved, Play( autosave, 300, () => Snapshot( "second" ), slotB ) );
+		held.Finish( 1 );
+		Assert.AreEqual( slotB, held.Ran[1].Path );
+		Assert.AreEqual( slotA, held.Ran[0].Path ); Assert.AreEqual( "first", ParkResumeSaveFile.Deserialize( held.Ran[0].Bytes ).DisplayName );
+		autosave.Flush();
+	}
+
+	[TestMethod]
+	public void OldParksSuccessfulWriteKeepsBusyUntilItFinishesThenTheNewParkProceedsAndBothWritesStayBound()
+	{
+		var held = new HeldWrites(); var autosave = held.Create();
+		var slotA = Path.Combine( root, "first.otpw.json" ); var slotB = Path.Combine( root, "second.otpw.json" );
+		Assert.AreEqual( AutosaveResult.Saved, Play( autosave, 301, () => Snapshot( "first" ), slotA ) );
+		autosave.Reset();
+		// park B comes due while the old park's write still runs: busy, no capture of B, the old bytes still bound to their attempt
+		var captures = 0;
+		Assert.AreEqual( AutosaveResult.Busy, Play( autosave, 300, () => { captures++; return Snapshot( "second" ); }, slotB ) );
+		Assert.AreEqual( 0, captures, "the new park is not captured while the old park's write runs" );
+		// the old write finishes into its own slot; B's due frame proceeds
+		held.Finish( 0 );
+		Assert.AreEqual( AutosaveResult.Saved, autosave.Tick( 0.25, true, () => { captures++; return Snapshot( "second" ); }, slotB ) );
+		Assert.AreEqual( 1, captures ); Assert.IsTrue( autosave.WriteInProgress ); Assert.AreEqual( 2, held.StartedWrites );
+		held.Finish( 1 );
+		// the captured A and B bytes stayed bound to their own slots through the switch
+		Assert.AreEqual( slotA, held.Ran[0].Path ); Assert.AreEqual( "first", ParkResumeSaveFile.Deserialize( held.Ran[0].Bytes ).DisplayName );
+		Assert.AreEqual( slotB, held.Ran[1].Path ); Assert.AreEqual( "second", ParkResumeSaveFile.Deserialize( held.Ran[1].Bytes ).DisplayName );
+		autosave.Flush();
+	}
+
+	[TestMethod]
+	public void TheCurrentParksFailedWriteStillRetriesAfterFifteenSecondsOfPlay()
+	{
+		var attempts = 0; var bytes = new List<byte[]>();
+		var autosave = new PeriodicAutosave( ( _, data ) =>
+			{
+				if ( attempts++ == 0 ) throw new IOException( "disk full" );
+				bytes.Add( data );
+			}, work =>
+			{
+				try { work(); return Task.CompletedTask; }
+				catch ( Exception error ) { return Task.FromException( error ); }
+			} ) { SliceBudget = TimeSpan.FromMinutes( 1 ) };
+		Assert.AreEqual( AutosaveResult.Saved, Play( autosave, 301, () => Snapshot( "retry" ), slot ) );
+		var warnings = new List<string>();
+		Assert.AreEqual( AutosaveResult.Refused, autosave.Tick( 0.25, true, () => Snapshot( "retry" ), slot, warnings.Add ) );
+		StringAssert.Contains( warnings.Single(), "disk full" ); Assert.AreEqual( PeriodicAutosave.RetrySeconds, autosave.Wait );
+		// the documented retry: a fresh capture is saved 15 s of play after the failure, and the final bytes are the second capture's
+		Assert.AreEqual( AutosaveResult.NotDue, Play( autosave, 14, () => Snapshot( "retry" ), slot ) );
+		Assert.AreEqual( AutosaveResult.Saved, Play( autosave, 2, () => Snapshot( "retry" ), slot ) );
+		Assert.AreEqual( 1, bytes.Count );
+		Assert.AreEqual( "retry", ParkResumeSaveFile.Deserialize( bytes.Single() ).DisplayName );
+		autosave.Flush();
+	}
+
 	[TestMethod]
 	public void WriteIsAtomicAndNeverTouchesTheManualOrCheckpointSlot()
 	{

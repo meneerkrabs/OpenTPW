@@ -229,10 +229,32 @@ both times the power factor) and the cap. A hop takes `d / ((v + v')/2)`
 seconds, and the last hop of a step is partial; its end speed is capped but not
 floored, so a train at rest builds up speed over several frames. Below speed 2 the speed decays by 0.95 per hop,
 and below 0.01 it is 0. The trains of a frame hop one at a time from a queue (`0x43ced8`): the train with the most of the frame's
-time left hops next, a full hop puts it back before the first train with no more time left, a partial hop takes it out. The hops run
-on OpenTPW's fixed 60 Hz simulation step instead of the original's per-frame elapsed time, which keeps runs reproducible
-(`[EXT:coaster-fixed-step]`; the original's frame coupling is the proposed DET-003 that DET-I2 registers with the substep
-scheduler, docs/reverse/DET-plan.md §2.2 and §4.6).
+time left hops next, a full hop puts it back before the first train with no more time left, a partial hop takes it out.
+
+**The frame's time.** The motion tick takes as its frame time the scaled game clock since the controller's clock word `ctl+0x120`,
+in whole milliseconds × 0.001 (`0x43ce20`; the clock `0x7b496c` is the one that drives the substep clock, refreshed once per frame
+by `0x473440`). It writes the word only at its end, and the first tick of a controller (flag `0x10` clear) sets it first and takes no
+time (`0x43ce85`). The controller tick runs the motion tick only in states 2, 4 and 8 (`0x435ac9`), so while a track stands cut or
+reopened (state 1) the word stands and the clock runs on. The first tick after the track is completed again takes **all** the time
+since the last tick: one tick, no clamp, no substeps, every train hopping from the queue until it has spent it. The game pause
+(`0x4092a0`: the pause menu, the map, the postcard, message boxes, the pause key) freezes the clock, so a paused stretch adds nothing.
+OpenTPW counts that clock in fixed steps: they stop while the park is paused and multiply with the game speed, as the substep
+scheduler's clock does (`CoasterRide.MotionClockLagSeconds`, the steps since the last motion tick). A reopened coaster therefore
+catches up exactly as the original does. The catch-up stays cheap in practice: measured on the test circuit, a coaster cut open for six
+hours of simulation time catches up in one tick of about 145,000 hops (about 0.1 s). Like the original's float frame time, the
+catch-up only stops progressing once a hop is shorter than half the float step of the remaining time, which takes weeks of
+simulation time cut open. A restored lag that is not a finite time of 0 or more is refused. What stays OpenTPW's own (`[EXT:coaster-fixed-step]`) is the frame: the original runs one
+controller tick per rendered frame with that frame's milliseconds, OpenTPW one per 60 Hz simulation tick of 1/60 s. While the
+game clock stands still, the original still runs a zero-time motion tick and the station step on every frame (`0x435a30` is
+gated only by the application's activation test at `0x54F8E0`), which caps the speeds and decays the slow trains (×0.95 below 2.0); OpenTPW's paused
+park runs no tick. Both depend on the rendered frames, which no reproducible simulation can read.
+
+**The speed setter's gate.** The script's speed word reaches the controller through `0x43b2b0` (`COAST 8` at `0x554ab4` and the slice
+tail at `0x5517ea`), which skips a changed word when controller bit `0x8000` is set and no layout replay runs (`0x785a2c`, the action
+replayer `0x785a08`, which rebuilds a downloaded online park from its recorded actions). Only the replayed action 0x45 sets the bit
+(`0x447e30`: it applies the speed through the same setter and then sets `0x8000`), and the saver does not write it. So a speed a
+layout replay set holds against the script's word afterwards. `CoasterRide.SpeedSetByReplay` ports the bit and the gate; OpenTPW
+runs no layout replay, so the bit stays clear and the gate stays open.
 
 **The train.** A train's position is its middle car's, car `(n − 1) >> 1` (train `+0x2c`); every other car stands its offset ahead or
 behind (`0x43bc20`): the car types' extents (`0x430130`: the model's header bounds around its root node plus `fFrontDistanceAdd` and

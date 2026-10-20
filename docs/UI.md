@@ -169,6 +169,12 @@ screens, options), `FrontEnd/`, `Hud/`, `World/Lobby/LobbyScene.cs`,
   it, and plays its `<mesh>m1` wing cycle in a loop; all draws come from the lobby generator.
   Island clips (tp.exe `0x5E11D0`): every island model whose clip has under 1 ms left plays
   its `M1` or `M2` at random (C `rand() & 1`, a local stand-in stream), once.
+  Signs (tp.exe `0x5E1A44`, `0x409B10`, `LobbySigns`): the four models with `sign1`/`sign2` faces
+  (`Jun_isle`, `Hal_isle`, `Fan_gate`, `Spa_gate`) show their theme gate's default lines (the gate's
+  OBJECT_NAMES row, not a saved park name) drawn with their own `<model>.sgn`; they are composed one per
+  frame from the lobby's second frame on, the selected island's first and none during the zoom into a park,
+  show a plain board until then (or when one cannot be drawn), and are kept for the session, so a later
+  lobby binds them at once.
   Enter sequence (tp.exe `0x5e0490` states 1 and 2, `LobbyCameraMode.BeginEnter`): choosing a
   start in an island's menu hides the lobby UI, turns the camera to the island's angle + π at 0.05 × step a
   frame the short way round, plays the gate's `M1` clip, then zooms in (radius × (1 − 0.07 × step), height
@@ -202,6 +208,11 @@ screens, options), `FrontEnd/`, `Hud/`, `World/Lobby/LobbyScene.cs`,
   profiles, so every entry starts a new park (`[EXT:no-player-profiles]`, a design decision; the original's
   GameType is derived from flag bits 0x2000000/0x1000000 of 0x7a1a8c, tp.exe `0x550ca0`). The enter-park sound
   (`cat_globallobbysfx` 4) plays when the park starts, and the screen-space particle effect 0x62 starts over the key panel with it (`LobbyEnterEffect`, docs/PARTICLES.md), except in Instant Action (game type 2), which skips both.
+- The lobby shows the saved OpenTPW Full Simulation key count in the original top-right
+  `gkey`/count slots when positive. It is sampled after the previous park is saved and
+  detached; missing or invalid progress hides it without creating a profile. This is
+  a host snapshot adaptation, not the full native affordability panel or advisor
+  refresh (ADVISOR-025; see [the bounded contract](reverse/LOBBY-KEY-PANEL.md)).
 - Load Park (202): own saved parks, original Easymode parks (read-only) and the
   OpenTPW sandbox save. The shared lobby/pause chooser is tp.exe's load dialog (table `0x7523f0`, built by
   `0x49efb0`): `window2`, the title (202), the `f_load` list whose rows have the buy list's slot-7 pitch, so twelve show
@@ -903,7 +914,7 @@ is unchanged.
 | `own-window-sizes` | `APPROX:UI-013` (part) | The sizes of OpenTPW's own windows (`UiDialogs.CenteredWindow`), which have no original layout table. |
 | `challenge-offer-repost` | `APPROX:UI-025` (part) | A challenge offer whose message is deleted unanswered is posted again so the challenge system never stalls. |
 | `message-tube-art` | `APPROX:UI-025` (part) | The tube body is drawn as rectangles and its icons as discs. |
-| `preview-icon-cpu-projection` | `APPROX:UI-026` (part) | Build and object icons are drawn by a CPU orthographic projection with painter sorting rather than the engine's 3D object pipeline. |
+| `preview-icon-cpu-projection` | `APPROX:UI-026` (part) | Build and object icons are drawn by a CPU orthographic projection with painter sorting rather than the engine's 3D object pipeline. Like the original (its only Direct3D cull-mode write is D3DCULL_NONE, `0x566957`) both faces of every triangle are drawn; in place of its depth test the faces turned away from the viewer are drawn first and the faces towards it over them, each back to front, so a back face never covers the front face over it. |
 | `fit-button-text` | `APPROX:UI-032` (part) | The small-font fallback for a long single-line label. The rest of `APPROX:UI-032`, the formatter's greedy wrap (`0x6aec80`) and its glyph classes (`0x6aeab0`), is matched and retired. |
 | `options-slider-steps` | `APPROX:UI-036` (part) | OpenTPW's option sliders step through its own presets and 11 volume steps. The rest of `APPROX:UI-036`, the original slider class (value to thumb `0x66b088`, truncated drag `0x66af19`, page click `0x66b8aa`) and the options page's 0..100 range (`0x4a455a`, thumb left where it was dragged, `0x4a2e90`), is matched and retired. |
 | `option-label-fit` | `APPROX:UI-039` (part) | Option labels are sized by a shared 58 % letter box with a per-label drop to a size that fits, where the original does no fitting and lays an overflowing label out through the text library (wrapped into its rectangle, `0x6ae930`, `0x6aeb10`, `0x6aec80`), so this size choice stays a deliberate difference. The rest of `APPROX:UI-039`, the original's slot-6 label font (`0x4a443c`, tier pairing under `ui-font-tier-by-scale`), is matched and retired. |

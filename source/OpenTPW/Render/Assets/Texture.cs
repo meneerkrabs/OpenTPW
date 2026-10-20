@@ -19,14 +19,22 @@ public partial class Texture : Asset
 	/// </summary>
 	public static Texture Missing => missing.Value;
 
+	private static readonly Lazy<Texture> signBoard = new( () => new Texture( [38, 28, 18, 255], 1, 1 ) );
+
+	/// <summary>
+	/// The plain brown board a sign slot shows when its runtime sign cannot be drawn (<see cref="SignSlotPlan"/>): one texture shared by every
+	/// part, park and lobby and, like <see cref="Missing"/>, never released.
+	/// </summary>
+	internal static Texture SignBoard => signBoard.Value;
+
 	/// <summary>
 	/// Releases a texture its owner made from bytes and no one else uses: it leaves <see cref="Asset.All"/> and its GPU objects go
 	/// after the last frame that may draw them. Never for a texture loaded by path (those are shared through the cache) or for
-	/// <see cref="Missing"/>.
+	/// <see cref="Missing"/> and <see cref="SignBoard"/>.
 	/// </summary>
 	internal void ReleaseOwned()
 	{
-		if ( ReferenceEquals( this, missing.IsValueCreated ? missing.Value : null ) || !string.IsNullOrEmpty( Path ) )
+		if ( ReferenceEquals( this, missing.IsValueCreated ? missing.Value : null ) || ReferenceEquals( this, signBoard.IsValueCreated ? signBoard.Value : null ) || !string.IsNullOrEmpty( Path ) )
 			return;
 		Asset.All.Remove( this );
 		var (texture, view) = (NativeTexture, NativeTextureView);

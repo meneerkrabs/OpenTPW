@@ -241,12 +241,15 @@ public class ListOwnerAudioTests
 		Sounds( GameAudio.SelectClickEvent );
 	}
 
-	private void WithOnline( bool other, ParkSummary[] parks, Action<UiScreenStack, UiScreen, List<int>> test, Action<int>? advice = null )
+	private void WithOnline( bool other, ParkSummary[]? parks, Action<UiScreenStack, UiScreen, List<int>> test, Action<int>? advice = null )
+		=> WithOnline( other, parks, ( _, stack, screen, advised ) => test( stack, screen, advised ), advice );
+
+	private void WithOnline( bool other, ParkSummary[]? parks, Action<OnlineSession, UiScreenStack, UiScreen, List<int>> test, Action<int>? advice = null )
 	{
 		var folders = new OnlineFolders( root );
 		folders.SaveSettings( new OnlineSettings( null, "synthetic-player" ) );
 		using var session = new OnlineSession( folders );
-		Set( session, other ? "CityParks" : "Parks", parks );
+		Set( session, other ? "CityParks" : "Parks", parks! );
 		var stack = new UiScreenStack();
 		stack.Push( new UiScreen( "synthetic-parent" ) );
 		var advised = new List<int>();
@@ -255,14 +258,22 @@ public class ListOwnerAudioTests
 			Session = session,
 			Advise = id => { advised.Add( id ); advice?.Invoke( id ); }
 		} );
-		if ( other ) screens.ShowOtherParks( new CityInfo( 7, "Synthetic city", "", 0, 0, parks.Length ) );
+		if ( other ) screens.ShowOtherParks( new CityInfo( 7, "Synthetic city", "", 0, 0, parks?.Length ?? 0 ) );
 		else screens.ShowFindParks();
-		test( stack, stack.Top!, advised );
+		test( session, stack, stack.Top!, advised );
 	}
 
 	private static ParkSummary[] Parks() => Enumerable.Range( 0, 2 ).Select( index => new ParkSummary(
 		"synthetic-" + index, "Synthetic park " + index, "Synthetic description", "synthetic-author", "synthetic-level", "English",
 		DateTimeOffset.UnixEpoch, 4, 2, false, false, 0, false, 0, 7 ) ).ToArray();
+
+	private static ParkSummary[] NamedParks( params string[] names ) => names.Select( name => new ParkSummary(
+		name, name, "Synthetic description", "synthetic-author", "synthetic-level", "English",
+		DateTimeOffset.UnixEpoch, 4, 2, false, false, 0, false, 0, 7 ) ).ToArray();
+
+	private static string RowName( UiScrollList list, int index ) => list.Rows()[index].Split( '\t' )[0];
+
+	private static string DetailsName( UiScreenStack stack ) => ((UiLabel)stack.Top!.Find( "parkName" )!).Text();
 
 	[DataTestMethod]
 	[DataRow( false )]
@@ -311,6 +322,85 @@ public class ListOwnerAudioTests
 		Assert.AreEqual( 0, advised.Count( id => id == RestoredAdvice.ParkDetailsHelp ) );
 		Sounds();
 	} );
+
+	[DataTestMethod]
+	[DataRow( false )]
+	[DataRow( true )]
+	public void OtherParksSelectionChangedUsesRowsThatReplaceAnEmptyList( bool initiallyNull )
+	{
+		WithOnline( true, initiallyNull ? null : Array.Empty<ParkSummary>(), ( session, stack, screen, advised ) =>
+		{
+			var list = List( screen );
+			Assert.AreEqual( 1, list.Rows().Count, "the empty list shows its placeholder" );
+			stack.Update( Context(), UiInput.Click( RowPoint( list, 0 ) ) );
+			Assert.AreEqual( "otherParks", stack.Top!.Name, "the placeholder is not a park" );
+			Assert.AreEqual( 0, advised.Count( id => id == RestoredAdvice.ParkDetailsHelp ) );
+			Set( session, "CityParks", NamedParks( "fresh-0", "fresh-1" ) );
+			Assert.AreEqual( "fresh-0", RowName( list, 0 ) );
+			stack.Update( Context(), UiInput.Click( RowPoint( list, 1 ) ) );
+			Assert.AreEqual( "fresh-1", DetailsName( stack ) );
+			Assert.AreEqual( 1, advised.Count( id => id == RestoredAdvice.OtherParksHelp ) );
+			Assert.AreEqual( 1, advised.Count( id => id == RestoredAdvice.ParkDetailsHelp ) );
+			Assert.AreEqual( 1, stack.Screens.Count( item => item.Name == "parkDetails" ) );
+			Sounds();
+		} );
+	}
+
+	[DataTestMethod]
+	[DataRow( false )]
+	[DataRow( true )]
+	public void OtherParksKeyboardAndMouseActivationUseTheReplacedRowAtTheSelectedIndex( bool mouse )
+	{
+		WithOnline( true, NamedParks( "old-2", "old-1", "old-0" ), ( session, stack, screen, advised ) =>
+		{
+			var list = List( screen );
+			list.Select( 1 );
+			Assert.AreEqual( "old-1", DetailsName( stack ) );
+			stack.Pop();
+			Set( session, "CityParks", NamedParks( "new-2", "new-1", "new-0" ) );
+			Assert.AreEqual( "new-1", RowName( list, 1 ) );
+			screen.Focus( list );
+			if ( mouse )
+				stack.Update( Context(), UiInput.Click( RowPoint( list, 1 ) ) );
+			else
+				stack.Update( Context(), UiInput.Key( UiKeys.Accept ) );
+			Assert.AreEqual( "new-1", DetailsName( stack ) );
+			Assert.AreEqual( 1, advised.Count( id => id == RestoredAdvice.OtherParksHelp ) );
+			Assert.AreEqual( 2, advised.Count( id => id == RestoredAdvice.ParkDetailsHelp ) );
+			Assert.AreEqual( 1, stack.Screens.Count( item => item.Name == "parkDetails" ) );
+			Sounds();
+		} );
+	}
+
+	[TestMethod]
+	public void OtherParksShrinkAndEmptyPlaceholderUseCurrentRowsAndStaySilent()
+	{
+		WithOnline( true, NamedParks( "old-0", "old-1", "old-2" ), ( session, stack, screen, advised ) =>
+		{
+			var list = List( screen );
+			list.Select( 1 );
+			Assert.AreEqual( "old-1", DetailsName( stack ) );
+			stack.Pop();
+			Set( session, "CityParks", NamedParks( "new-2", "new-1" ) );
+			Assert.AreEqual( "new-1", RowName( list, 1 ) );
+			screen.Focus( list );
+			stack.Update( Context(), UiInput.Key( UiKeys.Accept ) );
+			Assert.AreEqual( "new-1", DetailsName( stack ), "a shrink keeps the current row's identity" );
+			stack.Pop();
+			Set( session, "CityParks", Array.Empty<ParkSummary>() );
+			Assert.AreEqual( 1, list.Rows().Count, "the empty list shows its placeholder" );
+			Assert.AreNotEqual( "new-1", RowName( list, 0 ) );
+			screen.Focus( list );
+			stack.Update( Context(), UiInput.Key( UiKeys.Accept ) );
+			Assert.AreEqual( "otherParks", stack.Top!.Name, "an out-of-range selection must not activate" );
+			stack.Update( Context(), UiInput.Click( RowPoint( list, 0 ) ) );
+			Assert.AreEqual( "otherParks", stack.Top!.Name, "the placeholder is not a park" );
+			Assert.AreEqual( 1, advised.Count( id => id == RestoredAdvice.OtherParksHelp ) );
+			Assert.AreEqual( 2, advised.Count( id => id == RestoredAdvice.ParkDetailsHelp ) );
+			Assert.AreEqual( 0, stack.Screens.Count( item => item.Name == "parkDetails" ) );
+			Sounds();
+		} );
+	}
 
 	[TestMethod]
 	public void SilentRowsDoNotMuteTheLoadersOwnSound()

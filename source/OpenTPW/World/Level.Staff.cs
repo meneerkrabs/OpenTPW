@@ -139,11 +139,13 @@ public partial class Level
 		return Guests!.Grid.IsWalkable( cell.X, cell.Y ) ? cell : null;
 	}
 
-	/// <summary>Actual staff actor position; false when there is no actor or no terrain.</summary>
+	/// <summary>
+	/// Actual staff actor position; false when there is no actor or no terrain. Read only: a member hired since the last tick has no position until the tick's
+	/// <see cref="StaffWorldSimulation.Synchronize"/> puts it on the gate path (the HUD that asks must not move the park between two ticks).
+	/// </summary>
 	public bool TryGetStaffWorldPosition( int id, out Vector3 position )
 	{
 		position = default;
-		StaffWorld?.Synchronize();
 		if ( StaffWorld == null || OriginalPark == null ) return false;
 		foreach ( var actor in StaffWorld.Snapshots )
 		{

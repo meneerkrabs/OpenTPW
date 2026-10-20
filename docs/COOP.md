@@ -194,13 +194,16 @@ guarded list.
 
 ## Known limits of C1
 
-- Wall-time updates outside the tick (`RefreshPools`, the evening, snow, the scene clock), the body
-  pose preparation after a frame's ticks (`FlatRideBounceRiders.Prepare`, which changes the riders'
-  ride-body state), the staff placement and staff world updates at the start of a frame
-  (`StaffPlacement.Reconcile`, `StaffWorld.Synchronize`) and the entities' updates after the
-  simulation are not part of a replay; C1b audits them. A replay runs one
-  tick per frame, the game several, so a recording made in play must be checked against its
-  checkpoints, which the log carries.
+- The frame's work outside the fixed tick was audited in C1b ([DETERMINISM.md](DETERMINISM.md),
+  "Frame batching"): the pools' drawing, the evening, the snow's easing, the scene clock and the
+  entities' updates are presentation; the staff host's bookkeeping (`StaffPlacement.Reconcile`,
+  `StaffWorld.Synchronize`) now runs at the start of every tick after its commands and the ride
+  bodies' pose phase (`FlatRideBounceRiders.Prepare`) at its end. The park after a tick therefore
+  depends only on the ticks and the commands, so a replay may run its ticks in frames of any size
+  (`FrameBatchingTests`, and with game data the park-resume smoke's restore phase). What stays
+  frame-coupled is presentation a save keeps but no hash or script reads: the particle pool and the
+  ADDOBJ records of ended effects, so two players' saves can differ there. The clock's remainder of a
+  tick follows the frames' time; a session's network clock (C2) feeds whole ticks.
 - A remote player's command will run the same presentation (the action message, sounds) as a local
   one; C3 separates the issuer's feedback from everyone's.
 - The in-memory log keeps the newest 65,536 commands in a ring (adding to a full log overwrites the

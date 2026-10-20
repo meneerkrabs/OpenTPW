@@ -86,7 +86,7 @@ public partial class Level
 	internal EveningLampSource? EveningLampLights => eveningLamps;
 
 	/// <summary>This frame's step of the day cycle, from the extension switch, the pace option, the frame time and the pause state.</summary>
-	private void UpdateEvening() => AdvanceEvening( EveningOn, EveningPaceOverride ?? GameOptions.Current.Evening, Time.Delta, SimulationTimeScale > 0f );
+	private void UpdateEvening( double frameSeconds ) => AdvanceEvening( EveningOn, EveningPaceOverride ?? GameOptions.Current.Evening, frameSeconds, SimulationTimeScale > 0f );
 
 	/// <summary>Whether the day cycle and its lamps run: the extension is on and the browser harness has not turned the look off for the run (<see cref="EveningLookOff"/>).</summary>
 	internal static bool EveningOn => FeatureGates.Evening && !EveningLookOff;

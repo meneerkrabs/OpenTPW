@@ -247,11 +247,15 @@ internal sealed partial class ParkResumeSmokeTest
 		Require( capture.ManifestSha256.Length == 64 && capture.ManifestSha256 == restore.ManifestSha256,
 			"the asset manifest agrees (content identity, sorted-key hash)" );
 		Compare( capture.Boundary, restore.Boundary, "boundary", problems );
-		Require( capture.Ticks.Count > 0 && capture.Ticks.Count == restore.Ticks.Count,
-			$"both phases recorded {capture.Ticks.Count}/{restore.Ticks.Count} continuation ticks" );
-		if ( capture.Ticks.Count == restore.Ticks.Count )
-			for ( var index = 0; index < capture.Ticks.Count; index++ )
-				Compare( capture.Ticks[index], restore.Ticks[index], $"tick {index}", problems );
+		// the capture phase samples every continuation tick; the restore phase, which runs several ticks a frame, samples the whole park at each frame's end (its ticks inside a frame are
+		// checked by their world hash as they run) and must end on the capture's last tick
+		var captured = capture.Ticks.GroupBy( sample => sample.Tick ).ToDictionary( group => group.Key, group => group.First() );
+		Require( capture.Ticks.Count > 0 && captured.Count == capture.Ticks.Count && restore.Ticks.Count > 0 && restore.Ticks[^1].Tick == capture.Ticks[^1].Tick
+			&& restore.Ticks.All( sample => captured.ContainsKey( sample.Tick ) ),
+			$"both phases recorded continuation ticks ({capture.Ticks.Count} captured, {restore.Ticks.Count} restored, ending at {capture.Ticks.LastOrDefault()?.Tick}/{restore.Ticks.LastOrDefault()?.Tick})" );
+		foreach ( var sample in restore.Ticks )
+			if ( captured.TryGetValue( sample.Tick, out var expected ) )
+				Compare( expected, sample, $"tick {sample.Tick}", problems );
 		Require( restore.Probes.Count > 0 && restore.Probes.All( probe => probe.Rejected ), "every corrupt-save candidate was rejected" );
 		Require( restore.Probes.All( probe => probe.LiveParkIntact ), "every rejected candidate left the live park untouched" );
 		if ( restore.PostLoad is { } postLoad )

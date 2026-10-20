@@ -283,7 +283,14 @@ embedded by value, so both formats' validators run on every load.
   each time, then resumes and compares every typed section hash and the composite world hash against
   the capture run at each checkpoint, finishing with post-load economy checks (admission booked
   once, a sale credited once with its links removed, a new placement, wages charged once, payment
-  bindings one-to-one). The evidence JSON holds hashes and counters; the directory also contains
+  bindings one-to-one). The capture phase continues one tick a frame and makes the continuation's
+  edits between frames as the HUD does (the speed raised and set back, the first attraction closed and
+  reopened, the entrance fee); the restore phase continues through the level's own frame step in
+  seeded random frames of 1 to 16 ticks (`OPENTPW_SMOKE_BATCHING`: `random` by default, or `1` or
+  `16`) with the same edits replayed inside its frames, so the pair also proves with game data that the
+  park after a tick does not depend on how the ticks fall into frames
+  ([DETERMINISM.md](DETERMINISM.md), "Frame batching"). The continuation's clock section leaves out the
+  clock's remainder of a tick, which follows the frames' time. The evidence JSON holds hashes and counters; the directory also contains
   the own-format save and screenshot readbacks, without original game files.
   These are controlled, accelerated fixtures that validate persistence of current OpenTPW behaviour,
   not original-game fidelity.

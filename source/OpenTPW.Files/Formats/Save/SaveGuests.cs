@@ -10,14 +10,19 @@ namespace OpenTPW;
 /// <c>+0x1E0</c>/<c>+0x1E8</c> the ride histories, <c>+0x1F0</c> person type, <c>+0x1F1</c> queue position, <c>+0x1F4</c> queue move delay, <c>+0x1F8</c> been admitted, <c>+0x1FC</c> idle stamp,
 /// <c>+0x200</c> opening wait, <c>+0x204</c> paid admission, <c>+0x208</c> spot animation stamp, <c>+0x210</c> balloon script, <c>+0x214</c> balloon life, <c>+0x218</c>/<c>+0x21C</c> last position,
 /// <c>+0x220</c> state, <c>+0x224</c> saved state, <c>+0x228</c>/<c>+0x22A</c> queue next/previous. The guest constructor <c>0x4FAEC0</c> zeroes the links, admission flag, destinations and last position
-/// and stores the constant 6 into both state and saved state.
+/// and stores the constant 6 into both state and saved state. The guest word <c>+0x20C</c> (the happiness at queue join, a float the state-10 join stores and the
+/// use satisfaction <c>0x4FDA1B</c> reads) is not saved: the thing-list loader zeroes it right after the constructor (<c>0x51861C</c>).
 /// </summary>
 public sealed record SaveGuest( int Id, SavePerson Person )
 {
 	public uint ArrivalDate { get; init; }
 	public uint ArrivalIndex { get; init; }
 	public uint BalloonScript { get; init; }
-	/// <summary><c>mBeenAdmitted</c> (+0x1F8): 1 once the attraction named by <see cref="MajorDest"/> admitted the guest (<c>OnAdmittance</c>, <c>0x5012B0</c>); the dismissal <c>0x5012F0</c> clears it together with the queue links, the destination and the queue position.</summary>
+	/// <summary>
+	/// <c>mBeenAdmitted</c> (+0x1F8): the called-forward flag. <c>OnAdmittance</c> (<c>0x5012B0</c>, from the ride's LetMeOn) sets it to 1 for the attraction named by
+	/// <see cref="MajorDest"/>; the guest's queue update <c>0x4FFFF0</c> clears it when the guest notices it (entering state 13), and the dismissal <c>0x5012F0</c>
+	/// clears it together with the queue links, the destination and the queue position. Only a state-11 head at queue position 0 carries it, typically for one turn.
+	/// </summary>
 	public uint BeenAdmitted { get; init; }
 	public int Cash { get; init; }
 	public int ExitLevel { get; init; }
@@ -43,7 +48,13 @@ public sealed record SaveGuest( int Id, SavePerson Person )
 	/// <summary><c>mQNext</c> (+0x228) and <see cref="QPrev"/> (+0x22A): the thing ids of the next and previous guest of the attraction queue the guest stands in (a doubly linked list; 0 ends it and means "not queued").</summary>
 	public ushort QNext { get; init; }
 	public ushort QPrev { get; init; }
+	/// <summary><c>mQueueMoveDelay</c> (+0x1F4): turns left before the guest moves up; <c>trunc(1.2 × position)</c> on the state-11 entry (<c>0x501E91</c>).</summary>
 	public uint QueueMoveDelay { get; init; }
+	/// <summary>
+	/// <c>mQueuePos</c> (+0x1F1): the recorded queue position (0 = the front), written by <c>0x501160</c> before routing; it lags the list index while the move-up
+	/// delay counts. In state 14 it holds the sideshow-win flag instead (<see cref="SideshowWon"/>): the state-14 entry (<c>0x501EF8</c> → <c>0x4E2670</c>) stores
+	/// the outcome of its win draw here, which is why the queue re-evaluation <c>0x501390</c> exempts state 14.
+	/// </summary>
 	public byte QueuePos { get; init; }
 	public int RemainingBalloonLife { get; init; }
 	public ushort SavedMajorDest { get; init; }
@@ -64,8 +75,14 @@ public sealed record SaveGuest( int Id, SavePerson Person )
 	/// <summary>The highest state the guest state setter <c>0x501DB0</c> is called with (all 52 call sites pass at most 0x15; the setter does not guard it, it stores before its <c>cmp eax, 0x15; ja</c>). Verified against this tp.exe build only. One refused guest aborts the whole park import.</summary>
 	public const uint MaximumState = 21;
 
-	/// <summary>The admission flag (<see cref="BeenAdmitted"/>) as a boolean.</summary>
+	/// <summary>The called-forward flag (<see cref="BeenAdmitted"/>) as a boolean.</summary>
 	public bool Admitted => BeenAdmitted != 0;
+
+	/// <summary>The guest state whose <see cref="QueuePos"/> is the sideshow-win flag rather than a position (<c>0x501EF8</c>).</summary>
+	public const uint SideshowOutcomeState = 14;
+
+	/// <summary>In state 14, the sideshow outcome the state's entry drew (<see cref="QueuePos"/> nonzero); null in any other state, where the byte is a position.</summary>
+	public bool? SideshowWon => State == SideshowOutcomeState ? QueuePos != 0 : null;
 
 	/// <summary>True when the guest stands in an attraction queue chain (a link or a queue position is set).</summary>
 	public bool InQueueChain => QNext != 0 || QPrev != 0 || QueuePos != 0;

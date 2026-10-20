@@ -1,9 +1,9 @@
 # Draft proposal: DET-013 — Specify restored script scheduling fidelity
 
 - Classification: **approximation**.
-- Mode: Evidence-gated implementation design only.
+- Mode: Evidence-gated partial implementation; ordinary-child graphs only.
 - Baseline: provided main `5ccddcab` source snapshot; source inspected locally on 2026-10-18.
-- Status: PLAN ONLY. No runtime implementation, identifier retirement or merge is claimed.
+- Status: DRAFT PARTIAL IMPLEMENTATION. Ordinary-child import is implemented with synthetic regression coverage; compilation/runtime CI is pending. No identifier retirement or full original fidelity is claimed.
 
 ## Current residual
 Script run state is imported but object animations, child relationships, object nodes and walk/bounce tables remain incomplete; host ticks differ.
@@ -14,8 +14,14 @@ Script run state is imported but object animations, child relationships, object 
 
 ## Missing evidence
 Original captures of TRIGWAITANIM, live child scripts, node lists and effects between 31ms substeps.
-- The available original Data corpus contains no executables or additional built-coaster saves.
+- Authorized local static TPW executable evidence now establishes loader and ordinary/sound child link semantics; no original saved-child runtime fixture or executed original-game oracle was added.
 - Repository reverse-engineering annotations are leads; they are not a newly executed original-game oracle.
+
+## October 20 bounded implementation
+
+[Ordinary-child import contract](det-013-ordinary-child-import.md) records the independently reviewed implementation scope. Exact embedded code/string identity, full folder matching, reciprocal normal children and saved scheduling state are prepared before a whole-block commit. Any sound edge or malformed/unresolved graph refuses unchanged. Optional own-save list order preserves non-ID scheduler order; old snapshots retain their legacy behavior.
+
+Sound ownership differs from ordinary parent identity in the executable and is not mapped speculatively. NAME, object animation/list and node/bounce/walk table state remain unrestored. TRIGWAITANIM keeps its existing retrigger gate; acceptance item 1 below remains open. Tests are synthetic, and runtime CI has not yet passed.
 
 ## Bounded proposal
 Define state ownership and replay checkpoints; distinguish approved explicit-seed and 60Hz extensions from missing restore state.

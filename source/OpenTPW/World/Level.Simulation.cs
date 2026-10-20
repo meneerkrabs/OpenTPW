@@ -2,47 +2,65 @@ namespace OpenTPW;
 
 public partial class Level
 {
-	/// <summary>The frame and restart smoke harness advance the same fixed-step simulation.</summary>
-	internal void AdvanceSimulation( double elapsedSeconds ) => simulationClock.Advance( elapsedSeconds, deltaTime =>
+	private FlatRideBounceRiders? rideBodyPoses;
+
+	/// <summary>The frame and restart smoke harness advance the same fixed-step simulation, then prepare one shared body pose phase.</summary>
+	internal void AdvanceSimulation( double elapsedSeconds )
 	{
-		SyncObjectEconomy();
-		// the substep this tick stands in (the park's own tick before the economy advances it): none while the park is paused
-		var substep = SimulationSubstep.ForTick( Park?.Economy.Tick ?? simulationClock.TickCount, Park == null || Park.Economy.Speed != GameSpeed.Paused );
-		// [BIN:TPW-EXE:0x00516380 world update] a lost park (world state 4, ParkEconomy.IsBankrupt) runs no thing updates: the guests and the staff walks stop, the ride scripts (the RSSE tick) go on
-		var lost = Park?.Economy.IsBankrupt == true;
-		// A park whose guests take their ids from the level's thing pool runs its turns as the original does (0x00516380): the tick that starts a turn runs the substep's ride scripts, then the sweep over the
-		// pool newest first, the gate retry, the turn's destroys and the arrival update. Without a park or its guests in the pool, in a lost park or where the economy and the guests count turns apart (a paused
-		// economy) the turn is not swept: the things update in the order of the ticks between turns, and the destroys are freed at the end of each tick.
-		var pooled = Park != null && Guests is { SharesThings: true };
-		// the guests' tick count starts at 0 where the economy of an original save starts at its turn: both cut the ticks into the same turns
-		if ( pooled && Park!.Economy.Speed != GameSpeed.Paused )
-			Guests!.AlignTurns( Park.Economy.Tick );
-		var guestsTurn = pooled && Guests!.NextTickStartsTurn;
-		var economyTurn = pooled && Park!.Economy.NextTickStartsTurn;
-		// [BIN:TPW-EXE:0x0051643B lost park turn] a lost park (world state 4) still runs the turn: its counter, the gate retry, the destroys and the world tail with the arrival update (0x4D7B20); only the thing walk is skipped
-		var sweeping = guestsTurn && economyTurn;
-		if ( sweeping )
-			SimulateSweptTurn( deltaTime, substep );
-		else
+		AttachCheatHost();
+		simulationClock.Advance( elapsedSeconds, deltaTime =>
 		{
+			// [EXT:online-coop-commands] the commands held for this tick apply before it (a replayed log; in single player the HUD's commands have run already)
+			ApplyDueCommands();
+			SyncObjectEconomy();
+			// the substep this tick stands in (the park's own tick before the economy advances it): none while the park is paused
+			var substep = SimulationSubstep.ForTick( Park?.Economy.Tick ?? simulationClock.TickCount, Park == null || Park.Economy.Speed != GameSpeed.Paused );
+			// [BIN:TPW-EXE:0x00516380 world update] a lost park (world state 4, ParkEconomy.IsBankrupt) runs no thing updates: the guests and the staff walks stop, the ride scripts (the RSSE tick) go on
+			var lost = Park?.Economy.IsBankrupt == true;
+			Guests?.SetBodySpriteHostRunning( substep.Running );
+			if ( substep.Running )
+				Guests?.SetBodySpriteClock( GuestSimulation.BodySpriteSampleAtTick( (Park?.Economy.Tick ?? simulationClock.TickCount) + 1 ) );
+			// A park whose guests take their ids from the level's thing pool runs its turns as the original does (0x00516380): the tick that starts a turn runs the substep's ride scripts, then the sweep over the
+			// pool newest first, the gate retry, the turn's destroys and the arrival update. Without a park or its guests in the pool, in a lost park or where the economy and the guests count turns apart (a paused
+			// economy) the turn is not swept: the things update in the order of the ticks between turns, and the destroys are freed at the end of each tick.
+			var pooled = Park != null && Guests is { SharesThings: true };
+			// the guests' tick count starts at 0 where the economy of an original save starts at its turn: both cut the ticks into the same turns
+			if ( pooled && Park!.Economy.Speed != GameSpeed.Paused )
+				Guests!.AlignTurns( Park.Economy.Tick );
+			var guestsTurn = pooled && Guests!.NextTickStartsTurn;
+			var economyTurn = pooled && Park!.Economy.NextTickStartsTurn;
+			// [BIN:TPW-EXE:0x0051643B lost park turn] a lost park (world state 4) still runs the turn: its counter, the gate retry, the destroys and the world tail with the arrival update (0x4D7B20); only the thing walk is skipped
+			var sweeping = guestsTurn && economyTurn;
+			if ( sweeping )
+				SimulateSweptTurn( deltaTime, substep );
+			else
+			{
+				if ( !lost )
+					Guests?.Tick( deltaTime );
+				Objects.Simulate( deltaTime, substep, PlacedRide );
+				// The non-pooled host keeps its existing guest-before-object order; only pooled turn sweeps provide native scheduler-before-guest ordering.
+				if ( substep.TourDue )
+					Guests?.ScheduleBodySprites();
+				Park?.FixedTick();
+				if ( !lost )
+					AdvanceWeather();
+				// The deferred gate-close retry follows the thing sweep (Mac 0x10536c).
+				Gate?.Tick();
+			}
 			if ( !lost )
-				Guests?.Tick( deltaTime );
-			Objects.Simulate( deltaTime, substep, PlacedRide );
-			Park?.FixedTick();
-			if ( !lost )
-				AdvanceWeather();
-			// The deferred gate-close retry follows the thing sweep (Mac 0x10536c).
-			Gate?.Tick();
-		}
-		if ( !lost )
-			StaffWorld?.Tick( deltaTime );
-		UpdateTrackRendering( deltaTime );
-		UpdateTourRendering( deltaTime );
-		// [BIN:TPW-EXE:0x00516641 turn's end] the park turn ends by freeing the things that asked for their destruction, last request first (0x00516310, 0x00516200); a swept turn has done it already, and a park whose
-		// things share the level's pool frees them only at a turn: the substeps between turns leave the requests waiting
-		if ( !sweeping && (!pooled || guestsTurn || economyTurn) )
-			Things.DestroyQueued();
-	} );
+				StaffWorld?.Tick( deltaTime );
+			UpdateTrackRendering( deltaTime );
+			UpdateTourRendering( deltaTime );
+			// [BIN:TPW-EXE:0x00516641 turn's end] the park turn ends by freeing the things that asked for their destruction, last request first (0x00516310, 0x00516200); a swept turn has done it already, and a park whose
+			// things share the level's pool frees them only at a turn: the substeps between turns leave the requests waiting
+			if ( !sweeping && (!pooled || guestsTurn || economyTurn) )
+				Things.DestroyQueued();
+			AfterCommandTick( simulationClock.TickCount + 1 );
+		} );
+		// A zero elapsed batch is the scene/HUD pause path; it must not create bodies, queue programs or change WALK headings.
+		if ( elapsedSeconds > 0 && Guests != null && (Park == null || Park.Economy.Speed != GameSpeed.Paused) )
+			(rideBodyPoses ??= new FlatRideBounceRiders( Objects )).Prepare( Guests );
+	}
 
 	/// <summary>The weather's step: the thing sweep's weather update (0x00512880), and on every other tick the first call that starts it.</summary>
 	private void AdvanceWeather()
@@ -50,7 +68,8 @@ public partial class Level
 		// [EXT:tpi-viewer] Theme Park Inc's weather is not traced (its states and keys differ from the Theme Park World weather this class ports), so a Theme Park Inc park has none
 		if ( Park == null || Guests == null || Park.Economy.Rules.ThemeParkInc )
 			return;
-		Weather ??= new ParkWeather( Park.Economy.Settings.Standard, Seed.WeatherStream, Guests.Grid.Cells.Width, Guests.Grid.Cells.Height );
+		Weather ??= new ParkWeather( Park.Economy.Settings.Standard, Seed.WeatherStream, Guests.Grid.Cells.Width, Guests.Grid.Cells.Height, FeatureGates.WinterWeather, FeatureGates.WinterAlways );
+		AttachSnow();
 		Weather.AdvanceTo( Park.Economy.Tick );
 	}
 
@@ -74,6 +93,8 @@ public partial class Level
 			foreach ( var item in items )
 				item.Visitors.DefersAdmission = false;
 		}
+		if ( substep.TourDue )
+			Guests!.ScheduleBodySprites();
 		Park!.Economy.ThingSweep = new LevelThingSweep( this );
 		try
 		{

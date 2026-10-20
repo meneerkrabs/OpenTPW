@@ -3,8 +3,8 @@ namespace OpenTPW;
 /// <summary>
 /// Gives the imported objects' scripts the ids, list order, next id and pass counter of an original save's RSSE block (<see cref="RideScriptWorld.ImportSaved"/>), so the one slice
 /// per eight passes ((id xor pass) &amp; 7, 0x5516E1) falls on the passes the saved park ran it on. A saved script belongs to the object whose thing id it names (+0xAC); a script
-/// whose object is not in the park, a saved child script (a parent's script creates its children as it runs) and a script of a folder other than the object's own are reported and left
-/// out. Nothing changes when the save holds no usable record.
+/// whose object is not in the park or whose folder does not match is reported and left out on the legacy root-only path. Ordinary-child graphs use a separate
+/// bounded all-or-nothing importer; sound graphs and the original animation/table residuals are not restored. Nothing changes when a graph is refused.
 /// </summary>
 // [BIN:TPW-EXE:0x5597A0 RSSE loader] the header's pass counter, next id and the records' ids are the saved ones; the loader links every record at the list's head, so the walk runs the saved scripts in reverse of the file's order (RideScriptWorld.ImportSaved)
 public static class SavedScriptImport
@@ -18,6 +18,9 @@ public static class SavedScriptImport
 		ArgumentNullException.ThrowIfNull( world );
 		ArgumentNullException.ThrowIfNull( rsse );
 		ArgumentNullException.ThrowIfNull( candidates );
+		// Existing no-ordinary-child imports retain their established compatibility path. A rejected graph never falls through.
+		if ( rsse.Records.Any( record => record.Raw.Length != SaveRsseRecord.Bytes || record.ChildScriptId != 0 || record.ParentScriptId != 0 ) )
+			return SavedScriptGraphImport.Apply( world, rsse, candidates, clockWord );
 		var pool = candidates.Where( candidate => candidate.ThingId != 0 && candidate.Script.Parent == null ).ToList();
 		var matched = new List<(RideVM Vm, int SavedId)>();
 		var unmatched = new List<string>();

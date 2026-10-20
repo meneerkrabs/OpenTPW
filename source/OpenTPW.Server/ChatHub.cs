@@ -89,6 +89,10 @@ public sealed class ChatHub
 		/// game versions (v0.7.x, which have no chat-park view) never get frames they would draw as empty lines.
 		/// </summary>
 		public bool ReceivesMovement;
+		/// <summary>Set by the first movement that carries a mode (protocol 5): only such clients are sent modes, which older ones refuse.</summary>
+		public bool ReceivesModes;
+		/// <summary>The player's figure is hidden in the room (they ride a ride, <see cref="ChatMoveMode.Hide"/>) until their next other movement.</summary>
+		public bool Hidden;
 		public string? LastToldTo;
 		public string? LastToldBy;
 		public bool Earmuffs;
@@ -280,11 +284,22 @@ public sealed class ChatHub
 			var first = session.Position == null;
 			session.Position = position;
 			session.ReceivesMovement = true;
-			var moved = new ChatEvent( ChatEventKind.Move, session.Name, session.Room, X: position.Item1, Y: position.Item2 );
+			// [EXT:online-ride-hiding] a movement's mode (protocol 5) goes only to clients that send modes themselves; a hidden player's figure (riding a
+			// ride) is not relayed to the others, who keep it where it stood and see it again at its next place
+			if ( request.Mode != null )
+				session.ReceivesModes = true;
+			session.Hidden = request.Mode == ChatMoveMode.Hide;
+			var moved = new ChatEvent( ChatEventKind.Move, session.Name, session.Room, X: position.Item1, Y: position.Item2, Mode: request.Mode );
 			foreach ( var other in sessions.Values.Where( other => other.Room == session.Room && other != session && other.ReceivesMovement ) )
-				Deliver( other, moved );
+			{
+				if ( other.ReceivesModes )
+					Deliver( other, moved );
+				else if ( !session.Hidden )
+					Deliver( other, moved with { Mode = null } );
+			}
+			// a joiner is told where the others stand, not where a hidden player stood
 			if ( first )
-				foreach ( var other in sessions.Values.Where( other => other.Room == session.Room && other != session && other.Position != null ) )
+				foreach ( var other in sessions.Values.Where( other => other.Room == session.Room && other != session && other.Position != null && !other.Hidden ) )
 					Send( session, new ChatEvent( ChatEventKind.Move, other.Name, session.Room, X: other.Position!.Value.X, Y: other.Position!.Value.Y ) );
 			return;
 		}
@@ -295,20 +310,27 @@ public sealed class ChatHub
 	/// <summary>
 	/// Places <paramref name="session"/> in <paramref name="room"/>: the joiner sees the room's roster and where
 	/// everyone stands, everyone else sees the new roster (the original's "see players join and the list of players
-	/// in the session"), and the joiner's online buddies are told which park they entered.
+	/// in the session"), and the joiner's online buddies are told which park they entered. A join of the room the
+	/// player is already in (a retried join whose answer came late) only answers the roster: the player keeps their
+	/// place and nobody is told again.
 	/// </summary>
 	private void EnterRoom( ChatSession session, string room )
 	{
 		var left = session.Room;
+		if ( left == room )
+		{
+			Send( session, RoomEvent( room ) );
+			return;
+		}
 		session.Room = room;
 		session.Position = null;
+		session.Hidden = false;
 		Send( session, RoomEvent( room ) );
 		foreach ( var other in sessions.Values.Where( other => other.Room == room && other != session ) )
 			Send( other, RoomEvent( room ) );
 		// The park the player walked out of gets its roster without them, as when they disconnect.
-		if ( left != room )
-			foreach ( var other in sessions.Values.Where( other => other.Room == left ) )
-				Send( other, RoomEvent( left ) );
+		foreach ( var other in sessions.Values.Where( other => other.Room == left ) )
+			Send( other, RoomEvent( left ) );
 		NotifyBuddiesOfEntry( session );
 	}
 

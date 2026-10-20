@@ -51,6 +51,10 @@ public sealed class ServerOptions
 	/// </summary>
 	public int MaximumParksPerPlayer { get; set; } = 10;
 	public int MaximumVotesPerDay { get; set; } = 10;
+	/// <summary>Postcard delivery attempts per authenticated sender per hour, counting each recipient.</summary>
+	public int PostcardRecipientsPerHour { get; set; } = 20;
+	/// <summary>Postcard e-mail delivery attempts per destination per hour, across senders.</summary>
+	public int PostcardEmailsPerAddressPerHour { get; set; } = 3;
 	public int MaximumInboxPostcards { get; set; } = 200;
 	public int MaximumBuddies { get; set; } = 50;
 	public int MaximumAccounts { get; set; } = 100_000;
@@ -88,6 +92,7 @@ public sealed class ServerOptions
 			throw new InvalidOperationException( "OpenTPW:DataDirectory is required." );
 		if ( PasswordIterations < 1000 || MaximumParksPerPlayer < 0 || MaximumVotesPerDay < 0 || RequestsPerMinute < 1
 			|| AuthenticationsPerMinute < 1 || UploadsPerHour < 1 || ChatBurst < 1 || ChatMessagesPerSecond < 1
+			|| PostcardRecipientsPerHour < 1 || PostcardEmailsPerAddressPerHour < 1
 			|| MovementBurst < 1 || MovementsPerSecond < 1 || SessionLifetime <= TimeSpan.Zero )
 			throw new InvalidOperationException( "OpenTPW server limits must be positive." );
 		if ( RequireEmail && (string.IsNullOrWhiteSpace( ResendApiKey ) || string.IsNullOrWhiteSpace( EmailFrom )) )

@@ -109,7 +109,8 @@ public sealed partial class ParkHud
 	// [BIN:TPW-EXE:0x004A06B0 loan tabs] the dialog's open and each tab button build the list again, which runs every offer's credit test (0x0049FA00 → 0x004D06B0)
 	private void SelectLoanTab( bool outstanding )
 	{
-		LoansEconomy?.RefreshLoanOffers();
+		if ( LoansEconomy != null )
+			level.Commands.Issue( new RefreshLoanOffersCommand() );
 		outstandingLoans = outstanding;
 		FillLoanList();
 	}
@@ -189,13 +190,13 @@ public sealed partial class ParkHud
 				{
 					if ( current.Loans.FirstOrDefault( loan => loan.OfferIndex == row.OfferIndex ) is not { } loan || loan.RemainingBalance != amount )
 						ShowLoanFailure( strings.Extra( OpenTpwText.NotAvailable ) );
-					else if ( !current.TryRepayLoan( row.OfferIndex ) )
+					else if ( !level.Commands.Issue( new RepayLoanCommand( row.OfferIndex, amount ) ).Accepted )
 						ShowLoanFailure( strings[UIStrings.InsufficientFunds] );
 				}
 				else if ( current.IsBankrupt || current.AvailableLoans.FirstOrDefault( offer => offer.Index == row.OfferIndex ) is not { } offer || offer.Amount != amount )
 					ShowLoanFailure( strings.Extra( OpenTpwText.NotAvailable ) );
 				else
-					current.TakeLoan( row.OfferIndex );
+					level.Commands.Issue( new TakeLoanCommand( row.OfferIndex, amount ) );
 				SelectLoan( 0 );
 			}),
 			(() => strings[UIStrings.No], () => Stack.Pop()) ) );
@@ -264,16 +265,22 @@ public sealed partial class ParkHud
 		}
 		screen.Add( new LoanList( this ) { Id = "loanList", Bounds = LoanContent, Anchor = UiAnchor.Center } );
 		screen.Add( new LoanScrollBar( this ) { Id = "loanScroll", Bounds = new UiRect( LoanKnob.X, LoanTrack.Y, LoanTrack.Right - LoanKnob.X, LoanTrack.Height ), Anchor = UiAnchor.Center } );
-		screen.Add( new UiButton { Id = "scrollUp", Model = "b_up", Clicked = () => ScrollLoans( -1 ),
-			Bounds = table.Model( "b_up" ).Rect, Anchor = UiAnchor.Center } );
-		screen.Add( new UiButton { Id = "scrollDown", Model = "b_down", Clicked = () => ScrollLoans( 1 ),
-			Bounds = table.Model( "b_down" ).Rect, Anchor = UiAnchor.Center } );
+		// The arrows' parent is the type 3 slider (style 0x10) inside list 0x12C4BD. A held arrow repeats at 500 ms then 125 ms (0x6688b3, 0x668dd9) and a release after that is silent (0x668eff).
+		void ScrollArrow( LayoutNode node, int step )
+		{
+			void Scroll() => ScrollLoans( step );
+			screen.Add( new UiButton { Id = step < 0 ? "scrollUp" : "scrollDown", Model = node.Model, ClickSound = table.ClickSoundOf( node ),
+				Clicked = Scroll, Repeat = UiButton.ScrollArrowRepeat( Scroll ), Bounds = node.Rect, Anchor = UiAnchor.Center } );
+		}
+		ScrollArrow( table.Model( "b_up" ), -1 );
+		ScrollArrow( table.Model( "b_down" ), 1 );
 		var available = table.Model( "b_sloan" );
 		var outstanding = table.Model( "b_spayup" );
-		screen.Add( new UiButton { Id = "available", Model = available.Model, Help = strings.Help( available.Help ), Clicked = () => SelectLoanTab( false ),
-			Selected = () => !outstandingLoans, Bounds = available.Rect, Anchor = UiAnchor.Center } );
-		screen.Add( new UiButton { Id = "outstanding", Model = outstanding.Model, Help = strings.Help( outstanding.Help ), Clicked = () => SelectLoanTab( true ),
-			Selected = () => outstandingLoans, Bounds = outstanding.Rect, Anchor = UiAnchor.Center } );
+		// The two tabs sit in radio group 0x12C4BE (type 8, style 0x11), so they play 0xBD.
+		screen.Add( new UiButton { Id = "available", Model = available.Model, Help = strings.Help( available.Help ), ClickSound = table.ClickSoundOf( available ),
+			Clicked = () => SelectLoanTab( false ), Selected = () => !outstandingLoans, Bounds = available.Rect, Anchor = UiAnchor.Center } );
+		screen.Add( new UiButton { Id = "outstanding", Model = outstanding.Model, Help = strings.Help( outstanding.Help ), ClickSound = table.ClickSoundOf( outstanding ),
+			Clicked = () => SelectLoanTab( true ), Selected = () => outstandingLoans, Bounds = outstanding.Rect, Anchor = UiAnchor.Center } );
 		for ( var row = 0; row < LoanSummaryRows.Length; row++ )
 		{
 			var index = row;
@@ -372,7 +379,12 @@ public sealed partial class ParkHud
 		private readonly Func<string> text;
 		public LoanHeader( ParkHud owner, int column, Func<string> text ) { this.owner = owner; this.column = column; this.text = text; }
 		public override bool Focusable => Visible && Enabled;
-		public override void Activate() => owner.SortLoans( column );
+		// The header's parent is list 0x12C4BD (type 7, style 0x91), which has bit 0x10, so the hook plays 0xBD.
+		public override void Activate()
+		{
+			GameAudio.PlayUi( LayoutTable.ClickSoundFor( LoansTable.Control( 0x12C4BD ) ) );
+			owner.SortLoans( column );
+		}
 		public override void Draw( UiContext context, bool focused, bool pressed ) =>
 			context.DrawFittedText( context.Fonts.Label, text(), ScreenRect( context.Canvas ), focused ? UiColors.Highlight : UiColors.Text, UiAlign.Center );
 	}

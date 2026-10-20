@@ -15,12 +15,15 @@ public sealed class UiStringTable
 	private readonly string[] lenderNames;
 	private readonly string[] ingredientNames;
 	private readonly StringTemplate[] uiTemplates;
+	private readonly StringTemplate[] helpTemplates;
 	private readonly StringFile? kidStates;
 	private readonly string[] thoughtNames;
 
 	public UiStringTable( string language, string[] uiText, string[] helpText, string[] themeNames, string[] objectNames, string[]? lenderNames = null,
-		StringTemplate[]? uiTemplates = null, string[]? ingredientNames = null, StringFile? kidStates = null, string[]? thoughtNames = null )
+		StringTemplate[]? uiTemplates = null, string[]? ingredientNames = null, StringFile? kidStates = null, string[]? thoughtNames = null,
+		StringTemplate[]? helpTemplates = null )
 	{
+		this.helpTemplates = helpTemplates ?? Array.Empty<StringTemplate>();
 		this.kidStates = kidStates;
 		this.thoughtNames = thoughtNames ?? Array.Empty<string>();
 		Language = language;
@@ -36,10 +39,11 @@ public sealed class UiStringTable
 	public static UiStringTable Load( GameLanguage language )
 	{
 		var uiText = language.LoadStrings( "UITEXT.str" );
-		return new( language.Name, uiText.Entries, language.LoadStrings( "UIHELPTEXT.str" ).Entries,
+		var helpText = language.LoadStrings( "UIHELPTEXT.str" );
+		return new( language.Name, uiText.Entries, helpText.Entries,
 			language.LoadStrings( "THEMENAMES.str" ).Entries, language.LoadStrings( "OBJECT_NAMES.str" ).Entries,
 			language.LoadStrings( "LOANNAMES.str" ).Entries, uiText.Templates, OptionalStrings( language, "INGREDIENT.str" ),
-			OptionalFile( language, "KIDSTATES.str" ), OptionalStrings( language, "THOUGHTS.str" ) );
+			OptionalFile( language, "KIDSTATES.str" ), OptionalStrings( language, "THOUGHTS.str" ), helpText.Templates );
 	}
 
 	private static StringFile? OptionalFile( GameLanguage language, string name )
@@ -57,6 +61,12 @@ public sealed class UiStringTable
 	public string Language { get; }
 	public string this[UIStrings id] => Get( uiText, (int)id );
 	public string Help( int index ) => Get( helpText, index );
+	/// <summary>
+	/// UIHELPTEXT record <paramref name="index"/> with its parameter slots filled by <paramref name="values"/> (e.g. 580, "&lt;ride&gt;: Left-click to ride"); a table
+	/// loaded without the records' parameter chunks appends the values to the entry's text.
+	/// </summary>
+	public string HelpFormat( int index, params string[] values ) => index >= 0 && index < helpTemplates.Length
+		? helpTemplates[index].Fill( values ) : Get( helpText, index ) + string.Concat( values );
 	/// <summary>UITEXT record <paramref name="index"/> by the file's own numbering (Theme Park Inc's table has 994 records with ids unlike Theme Park World's, so no <see cref="UIStrings"/> name applies); empty when out of range.</summary>
 	public string Entry( int index ) => Get( uiText, index );
 	public string Theme( int index ) => Get( themeNames, index );

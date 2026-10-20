@@ -21,6 +21,7 @@ public sealed partial class ParkHud
 	private bool[] parkInfoIconHidden => parkInfoIcons ??= new bool[3];
 	private UiScreen? parkInfoScreen;
 	// [BIN:TPW-EXE:0x753C48 series mask] the graph's series mask and the period (0x7CB39C) are globals the window procedure keeps across openings; they start at the people-in-park series and 1 year
+	// [APPROX:UI-914] the choice is kept across openings within a park (it lives on the park's HUD), where tp.exe's two globals persist for the whole process and so carry over to the next park
 	private ParkInfoSeries? parkInfoSeriesChoice;
 	private ParkInfoSeries parkInfoSeries { get => parkInfoSeriesChoice ?? ParkInfoGraph.InitialSeries; set => parkInfoSeriesChoice = value; }
 	private int parkInfoPeriod;
@@ -56,9 +57,6 @@ public sealed partial class ParkHud
 
 	/// <summary>The <c>ti_hungry</c> frame the icon of <paramref name="slot"/> shows, or -1 while it draws nothing (empty, or hidden earlier and never shown again).</summary>
 	public int ParkInfoIconFrame( int slot ) => parkInfoIconHidden[slot] ? -1 : parkInfoTop.FrameAt( slot );
-
-	/// <summary>The THOUGHTS.str entry every shown icon's hover text names: the icon's frame getter returns 0, so entry 0 + 1.</summary>
-	public const int ParkInfoIconHelpThought = 1;
 
 	/// <summary>Reads the Top 3 Thoughts again, as the window's one-second timer does.</summary>
 	// [BIN:TPW-EXE:0x004A4AB0 thoughts refresh] 0x4C8430 fills three bytes from the guests now; the icons take them as a whole, so the three always belong to one reading
@@ -143,10 +141,10 @@ public sealed partial class ParkHud
 		{
 			var icon = table.Control( control );
 			var shown = slot;
-			// [BIN:TPW-EXE:0x004A4700 icon hover] message 0xC calls the icon's vtable +0x20 (slot 8 of 0x7059F0, 0x661596), adds 1 and takes that entry of the THOUGHTS.str table 0x78BA9C (0x6ACE60) as its text
-			// [BIN:TPW-EXE:0x661596 frame getter] the getter is 'return 0' (the setter 0x661525 only forwards message 0x80 to the control's two models and stores no frame), so every icon that is shown names THOUGHTS.str entry 1, whatever frame it shows
+			// [BIN:TPW-EXE:0x004A4700 icon hover] message 0xC calls the icon's vtable +0x20, adds 1 and takes that entry of the THOUGHTS.str table 0x78BA9C (0x6ACE60) as its text
+			// [BIN:TPW-EXE:0x0066DA4D frame setter] the icons are control type 6 of table 0x7537D0 (factory 0x65DD7B, case 0x65E057, constructor 0x66D9E0, vtable 0x705C58): slot 7 (+0x1C, 0x66DA4D), which 0x4A4AB0 calls with the thought id less 1, stores the frame at +0x13C before the base setter 0x661525, and slot 8 (+0x20, 0x66DAD2) returns it, so each icon names the THOUGHTS.str entry of its own frame plus 1
 			screen.Add( new FrameIcon { Id = $"thought{slot}", Model = icon.Model!, Frame = () => ParkInfoIconFrame( shown ),
-				HelpSource = () => ParkInfoIconFrame( shown ) >= 0 ? strings.Thought( ParkInfoIconHelpThought ) : null, Bounds = icon.Rect, Anchor = UiAnchor.Center } );
+				HelpSource = () => ParkInfoIconFrame( shown ) is var frame and >= 0 ? strings.Thought( frame + 1 ) : null, Bounds = icon.Rect, Anchor = UiAnchor.Center } );
 		}
 		var okay = table.Model( "b_okay" );
 		screen.Add( new UiButton { Id = "close", Model = okay.Model, Help = strings.Help( okay.Help ), Clicked = CloseParkInfoWindow, Bounds = okay.Rect, Anchor = UiAnchor.Center } );
@@ -171,16 +169,18 @@ public sealed partial class ParkHud
 		{
 			var node = table.Control( control );
 			var shown = series;
+			// The series toggles' parent is the graph panel (type 1, style 0x1), which lacks bit 0x10, so they play 0x1F.
 			screen.Add( new UiButton { Id = $"series{series}", Model = node.Model, Text = () => strings[label], Font = fonts => fonts.Small, Help = strings.Help( node.Help ),
-				Selected = () => parkInfoSeries.HasFlag( shown ), Clicked = () => SetParkInfoSeries( shown, !parkInfoSeries.HasFlag( shown ) ), Bounds = node.Rect, Anchor = UiAnchor.Center } );
+				ClickSound = table.ClickSoundOf( node ), Selected = () => parkInfoSeries.HasFlag( shown ), Clicked = () => SetParkInfoSeries( shown, !parkInfoSeries.HasFlag( shown ) ), Bounds = node.Rect, Anchor = UiAnchor.Center } );
 		}
 		// [BIN:TPW-EXE:0x004A52A0 period buttons] 0x4A68C3 (period 0, UITEXT 0x16A), 0x4A68C4 (period 1, 0x16B) and 0x4A68C2 (period 2, 0x16C), each b_stoggle with help 183, 184 and 185 and font slot 6; the one the period names starts pressed (0x66A295)
 		foreach ( var (control, period) in new[] { (0x4A68C3u, 0), (0x4A68C4u, 1), (0x4A68C2u, 2) } )
 		{
 			var node = table.Control( control );
 			var shown = period;
+			// The period buttons' parent is radio group 0x4A68C1 (type 8, style 0x11), so they play 0xBD.
 			screen.Add( new UiButton { Id = $"period{period}", Model = node.Model, Text = () => strings[UIStrings.Year1 + (shown == 0 ? 0 : shown == 1 ? 1 : 2)], Font = fonts => fonts.Small, Help = strings.Help( node.Help ),
-				Selected = () => parkInfoPeriod == shown, Clicked = () => SetParkInfoPeriod( shown ), Bounds = node.Rect, Anchor = UiAnchor.Center } );
+				ClickSound = table.ClickSoundOf( node ), Selected = () => parkInfoPeriod == shown, Clicked = () => SetParkInfoPeriod( shown ), Bounds = node.Rect, Anchor = UiAnchor.Center } );
 		}
 		// [EXT:guest-insights] with the extension on, the refusal-reason counters stand in the two free strips beside the window's title, clear of the plot and the toggles: a title and the first two reasons on the left, the other three on the right; the counters are the simulation's passive observer, never saved, and a visit has none
 		if ( FeatureGates.GuestInsights && level.Guests?.RefusalCounters is { } counters )
@@ -210,7 +210,7 @@ public sealed partial class ParkHud
 	private void AddParkInfoCounts( UiScreen screen, LayoutTable table, bool visit )
 	{
 		// [BIN:TPW-EXE:0x004A52A0 counts frame] the frame 0x4A68C9 holds the labels 0x4A68CB (UITEXT 0x97) and 0x4A68CD (UITEXT 0x9E) as text controls in font slot 6 and the values 0x4A68CC (people in the park) and 0x4A68CA (visitors) as count cells (0x48FDE0); none gets the centring call 0x65C428
-		// [APPROX:UI-914] the two values are drawn left-aligned: the count cell's constructor 0x48fde0 (and its base 0x48f150) never writes the alignment byte +0xd8 that the text drawer 0x48f830 switches on (0 left, 1 centred, 2 right), so the original's alignment is whatever the allocation held
+		// [BIN:TPW-EXE:0x48fe28 count cell alignment] the two values are drawn left-aligned: the count cell's constructor 0x48fde0 stores 0 in the alignment byte +0xd8 (0x48fe28) that the text drawer 0x48f830 switches on (0 left, 1 centred, 2 right), and only the centring call 0x65c428 (message 0xc00, handler 0x48fc40) would change it
 		var frame = table.Control( 0x4A68C9 );
 		screen.Add( new UiModelImage { Id = "countsFrame", Model = frame.Model!, Bounds = frame.Rect, Anchor = UiAnchor.Center } );
 		screen.Add( new UiLabel { Id = "peopleLabel", Text = () => strings[UIStrings.PeopleInPark], Font = fonts => fonts.Label, Color = UiColors.Text, Bounds = table.Control( 0x4A68CB ).Rect, Anchor = UiAnchor.Center } );

@@ -86,6 +86,8 @@ public struct TrackCell
 {
 	/// <summary>Cell type (+8); 0 when the cell holds no track.</summary>
 	public byte Type;
+	/// <summary>Map type preserved beneath a station marker; zero for legacy cells and ordinary track tiles.</summary>
+	public byte BaseType;
 	/// <summary>Connection mask (+0xC): 0x01 −Y, 0x04 +X, 0x10 +Y, 0x40 −X.</summary>
 	public byte Mask;
 	/// <summary>Flow link (+0xD): the heading bit the last circuit walk moved along here.</summary>
@@ -182,7 +184,8 @@ public sealed class TrackCellLayer
 		foreach ( var (x, y, cell) in Cells() )
 		{
 			hash.Add( y * Width + x );
-			hash.Add( cell.Type | cell.Mask << 8 | cell.Link << 16 | cell.Flags << 24 | (long)(byte)cell.Family << 32 | (long)(byte)cell.Piece << 40 );
+			// XOR preserves the old stream for zero metadata, including its sign extension for high flag bytes.
+			hash.Add( (cell.Type | cell.Mask << 8 | cell.Link << 16 | cell.Flags << 24 | (long)(byte)cell.Family << 32 | (long)(byte)cell.Piece << 40) ^ (long)cell.BaseType << 48 );
 			hash.Add( cell.Parent );
 			hash.Add( cell.Rotation );
 			hash.Add( cell.Overlap | cell.AltMask << 16 );

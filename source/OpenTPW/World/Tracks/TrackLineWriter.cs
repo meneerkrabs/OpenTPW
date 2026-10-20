@@ -10,11 +10,14 @@ public sealed class TrackLineWriter : ICellLineWriter
 	private readonly TrackBuilder builder;
 	private readonly Action? changed;
 	private readonly int owner;
+	private readonly TrackEditor? editor;
 
+	/// <param name="editor">The live ride editor for directional Backspace replay, including its refund and add-on hooks; null retains standalone writer undo.</param>
 	/// <param name="owner">The ride the tiles are laid for (<see cref="TrackBuilder.OwnerOf"/>), or 0 for none.</param>
-	public TrackLineWriter( TrackBuilder builder, Action? changed = null, int owner = 0 )
+	public TrackLineWriter( TrackBuilder builder, Action? changed = null, int owner = 0, TrackEditor? editor = null )
 	{
 		this.owner = owner;
+		this.editor = editor;
 		this.builder = builder ?? throw new ArgumentNullException( nameof( builder ) );
 		this.changed = changed;
 	}
@@ -64,6 +67,12 @@ public sealed class TrackLineWriter : ICellLineWriter
 
 	public void Undo( SegmentResult segment )
 	{
+		if ( editor != null )
+		{
+			editor.UndoLine( segment );
+			changed?.Invoke();
+			return;
+		}
 		for ( var index = segment.Built.Count - 1; index >= 0; index-- )
 			builder.RemoveTile( segment.Built[index].X, segment.Built[index].Y );
 		foreach ( var (x, y) in segment.Existing )

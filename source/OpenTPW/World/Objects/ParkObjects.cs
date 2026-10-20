@@ -148,6 +148,9 @@ public sealed class ParkObjects
 	public ThingPool? Things { get; set; }
 	public RideScriptWorld ScriptWorld { get; }
 	public IReadOnlyList<OriginalObject> Objects => objects;
+
+	/// <summary>Counts every addition to and removal from <see cref="Objects"/>, so a cache of the placed objects (the evening lamps) rebuilds only when the set changes.</summary>
+	public int Version { get; private set; }
 	/// <summary>Extra blocked cells owned by the host (the sandbox Totem prototype).</summary>
 	public Func<int, int, bool>? IsReserved { get; set; }
 	/// <summary>Cells the park does not own (the level's cell map, flag 0x40); null owns every cell.</summary>
@@ -429,6 +432,7 @@ public sealed class ParkObjects
 				item.ThingId = thingId;
 		}
 		objects.Add( item );
+		Version++;
 		foreach ( var (x, y, _) in item.Cells )
 			occupied[(x, y)] = item;
 		registered?.Invoke( item );
@@ -517,6 +521,7 @@ public sealed class ParkObjects
 				ObjectRemoving?.Invoke( item );
 			if ( !objects.Remove( item ) )
 				return false;
+			Version++;
 		}
 		finally
 		{
@@ -621,7 +626,7 @@ public sealed class ParkObjects
 	/// </summary>
 	// [BIN:TPW-EXE:0x005156A0 world setup fixed items] world setup creates the definitions named "gates" (wide literal 0x762448) and "lights" (0x762454) through 0x4db090 (case-insensitive compare 0x67b140); a missing definition logs "Could not find the gates feature" or the LIGHTSNAME message; a loaded save then restores the handles (writer 0x517076)
 	// [BIN:TPW-EXE:0x0051A2F0 vehicle on demand] the bus, seaplane and Ferry are created by the vehicle dispatch the first time each is sent (0x004DB090 at 0x0051A57E), never at setup
-	// [APPROX:RIDES-019] End (0x762464, Info.Id 1605/2605/3605/4605, End.RSE: a finale of DIPMUSIC, ADDOBJ 186/200/201 and EVENT 17 to 20 that loops) is not created: the original creates it through 0x516b00 from the lab's message handler 0x503d40 (message type 0x11, dispatched by 0x50b550), which runs when a research item completes (0x504630) and, once every research item is complete (the loop over the 0x145c items at +0x18, stride 0x14: progress +4 not below cost +0), sets the online record's flag (0x5b0ca0) and then acts by the GameType word DAT_00fb3b7c: 2 (Instant Action) clears a flag (0x409cd0), 1 (an online visit) stops, 0 (Full Simulation) needs every online park record done (0x5b0c40 over the record list, byte +0xb9) before it does the same; then it posts the advisor message 0xa7 (0x59b590, 0x59a940) and creates End. evidence needed: the player-wide record list behind 0x5b0c40 (OpenTPW keeps no per-park research record across parks), what the advisor message 0xa7 says and which opcodes End.RSE's objects need
+	// RIDES-019 (see ParkFinale): End is not a setup object: ParkFinale creates it only on new research completion in TPW Instant Action (0x503D40 -> 0x516B00, after advice 0xA7), and its dismissal destroys it (0x48A970 -> 0x516C10). Game type 1 never starts it; type 0 also needs the player-wide record list behind 0x5B0C40, still absent. 0x409CD0 constructs the advice's handle argument, not a flag clear. The winning-camera follow, original panel, post-dismissal profile/dialog changes and original winning-UI restoration remain open; see docs/reverse/INSTANT-ACTION-FINALE.md.
 	public int AddDefaultFixedItems() => AddDefaultFixedItemSteps().LastOrDefault().Placed;
 
 	/// <summary><see cref="AddDefaultFixedItems"/> one object at a time, as <see cref="ImportOriginalSteps"/>.</summary>

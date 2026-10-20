@@ -11,7 +11,7 @@ namespace OpenTPW.Hud;
 // [BIN:TPW-EXE:0x004b6080 employee window] the opener stores the member, builds table 0x756f48 through 0x48cea0 (handler 0x4b5cb0, frames 0x511 and 0x512) and
 // posts help 0xc0; 0x48cea0 first closes the window that is open (0x485b40), so the All Staff list (0x496088, its row message 0x400) gives way to it
 // [BIN:TPW-EXE:0x00486920 thing info] a click on a staff thing (types 4-8) opens this window too; OpenTPW opens it from the staff list (no staff click in the park)
-// [APPROX:UI-092] the portrait frame (0x511) plays the employee's figure like the hire window's (UI-082 for its pixel size); the original's frame phase is the figure id + 1 of a record field (+0xE0) OpenTPW has no counterpart for; a click on the title does not rename the employee (0x48d2e0, help 85); the arrows cycle the economy's member list, which stands for the thing list (0x7cf56c, newest first) — evidence needed: the rename (the title message 0x10006 is forwarded to a vtable slot +0x38 of the object 0x65e705(0) returns, not identified; 0x48d2e0 itself holds no rename dialog) and the thing-list order of staff loaded from a save
+// [APPROX:UI-092] the employee portrait reads the current world output at yaw zero, with the existing hire loop when unavailable; this is not the original independent clone (0x486530 / 0x486610). Clone timing/state/flag semantics, source-loss lifecycle, native depth/occlusion and viewport/raster parity remain open; employee-only nominal geometry is 2.4 with authored feet (526,476).
 public sealed partial class ParkHud
 {
 	private static LayoutTable EmployeeTable => OriginalLayoutTables.EmployeeWindow;
@@ -88,7 +88,7 @@ public sealed partial class ParkHud
 	{
 		if ( Employee is not { } member )
 			return false;
-		var next = EmployeeWindowRules.Cycle( StaffMembers, member.Id, forward );
+		var next = EmployeeWindowRules.Cycle( StaffMembers, member.Id, forward, (Status.EconomySource as ParkEconomy)?.Staff.Things );
 		if ( next == null || next.Id == member.Id )
 			return false;
 		employeeId = next.Id;
@@ -148,8 +148,7 @@ public sealed partial class ParkHud
 	{
 		if ( RejectReadOnlyAction() )
 			return false;
-		member.ClearPatrolArea();
-		return true;
+		return level.Commands.Issue( new SetPatrolAreaCommand( member.Id, 0, 0, 0, 0, Clear: true ) ).Accepted;
 	}
 
 	/// <summary>Dismisses the window's employee through the park economy and closes the window.</summary>
@@ -159,7 +158,8 @@ public sealed partial class ParkHud
 	{
 		if ( RejectReadOnlyAction() || Status.EconomySource is not ParkEconomy economy || economy.Staff.Members.All( item => item.Id != staffId ) )
 			return false;
-		economy.Fire( staffId );
+		if ( !level.Commands.Issue( new FireStaffCommand( staffId ) ).Accepted )
+			return false;
 		CloseEmployeeWindow();
 		return true;
 	}
@@ -198,7 +198,8 @@ public sealed partial class ParkHud
 	// [BIN:TPW-EXE:0x004b5f07 locate] control 0x521 (b_locate, help 93) opens the staff locator panel on the member (0x4b3f60 with [0x7c2658]), which closes the open window
 	public bool LocateEmployee()
 	{
-		if ( Employee is not { } member || Camera.Mode is not ParkCameraMode || !level.TryGetStaffWorldPosition( member.Id, out _ ) )
+		// Retain the host tour-camera boundary; actor selection does not require resolvable coordinates.
+		if ( Employee is not { } member || Camera.Mode is not ParkCameraMode )
 			return false;
 		lastLocatedStaff[member.Type] = member.Id;
 		OpenLocator( LocatorMode.Staff, LocatorModel.RoleOf( member.Type ), member.Id );
@@ -208,7 +209,7 @@ public sealed partial class ParkHud
 	private (StaffType Type, int Variant)? employeePortraitKey;
 	private float employeePortraitStart;
 
-	/// <summary>The figure in the employee window's portrait frame: the employee's role and variant walking on the spot, restarting when another employee is shown.</summary>
+	/// <summary>The employee's published world frame at yaw zero, otherwise the existing role/variant hire-loop fallback.</summary>
 	private UiSpriteFrame? EmployeePortraitFrame()
 	{
 		(StaffType Type, int Variant)? key = Employee is { } member ? (member.Type, StaffSpriteRules.KeyOf( member )) : null;
@@ -217,22 +218,29 @@ public sealed partial class ParkHud
 			employeePortraitKey = key;
 			employeePortraitStart = Time.Now;
 		}
+		// Keep the old fallback clock/key updated even while a live output is available.
+		if ( Employee is { } selected && level.StaffRenderer?.EmployeeFrame( selected ) is { } live )
+			return live;
 		return key is { } chosen ? level.StaffRenderer?.PortraitFrame( chosen.Type, chosen.Variant, Time.Now - employeePortraitStart ) : null;
 	}
 
 	private UiScreen CreateEmployeeScreen()
 	{
 		var screen = new EmployeeScreen( this );
+		screen.Removed = CloseEmployeeRenameDialog;
 		var table = EmployeeTable;
 		screen.Add( new UiModelImage { Id = "window", Model = table.Root.Model!, Bounds = table.Root.Rect, Anchor = UiAnchor.Center } );
 		var portrait = table.Control( 0x511 );
+		// [BIN:TPW-EXE:0x65beb4 type-1 inner initialization;0x65d4f6 inner getter] no explicit inner override: inherit the outer rectangle.
+		var inner = portrait.Inner ?? portrait.Rect;
 		var stats = table.Control( 0x512 );
 		screen.Add( new UiModelImage { Id = "portraitFrame", Model = portrait.Model!, Bounds = portrait.Rect, Anchor = UiAnchor.Center } );
 		screen.Add( new UiModelImage { Id = "statsFrame", Model = stats.Model!, Bounds = stats.Rect, Anchor = UiAnchor.Center } );
-		// [BIN:TPW-EXE:0x4b5330 employee figure] the portrait frame plays the employee's figure (0x486530 with the frame's figure id + 1 at speed 8.0, the hire window's recipe 0x49ba00): feet at the frame's centre, a quarter of its height above the bottom
-		screen.Add( new UiSpriteFigure { Id = "portraitFigure", Frame = EmployeePortraitFrame, Bounds = portrait.Rect, Anchor = UiAnchor.Center } );
+		// [BIN:TPW-EXE:0x4b5330 employee figure] 0x486530 clones the employee's live sprite at scale 8.0, with draw depth control +0xE0 + 1; the host observes its current world output, with the existing hire-loop fallback (UI-092).
+		screen.Add( new UiSpriteFigure { Id = "portraitFigure", Frame = EmployeePortraitFrame, Bounds = inner, Anchor = UiAnchor.Center,
+			FeetInCanvas = EmployeePortraitGeometry.Feet( inner ), CanvasUnitsPerPixel = EmployeePortraitGeometry.CanvasUnitsPerPixel } );
 		var title = table.Control( 0x520 );
-		screen.Add( new UiLabel { Id = "title", Text = () => Employee is { } member ? StaffName( member ) : "", Help = strings.Help( title.Help ), Font = fonts => fonts.Title,
+		screen.Add( new UiLabel { Id = "title", Clicked = OpenEmployeeRenameDialog, Text = () => Employee is { } member ? StaffName( member ) : "", Help = strings.Help( title.Help ), Font = fonts => fonts.Title,
 			Color = UiColors.Title, Align = UiAlign.Center, Fit = true, Bounds = title.Rect, Anchor = UiAnchor.Center } );
 		// [BIN:TPW-EXE:0x004b53c0 stats frame] the labels take UITEXT 64 (0x51a), 65 (0x51d), 67 (0x519), 69 (0x518), 68 (0x51c) and 66 (0x516); the value 0x51b is text,
 		// 0x51e a money cell (0x490250), the bars 0x513 (happygrad.wct), 0x514 and 0x515 (ridestatbar.wct)
@@ -309,7 +317,9 @@ public sealed partial class ParkHud
 			if ( Find( "dismissStaff" ) is { } dismiss )
 				dismiss.Enabled = !owner.level.IsReadOnlyVisit;
 			if ( Find( "locateEmployee" ) is { } locate )
-				locate.Enabled = Camera.Mode is ParkCameraMode && owner.level.TryGetStaffWorldPosition( owner.employeeId, out _ );
+				locate.Enabled = Camera.Mode is ParkCameraMode;
+			if ( Find( "title" ) is { } title )
+				title.Enabled = !owner.level.IsReadOnlyVisit;
 			return base.Update( context, input );
 		}
 	}
@@ -365,22 +375,35 @@ public static class EmployeeWindowRules
 	};
 
 	/// <summary>
-	/// The employee the arrows move to from <paramref name="currentId"/>: <paramref name="forward"/> the next older one, wrapping to the newest, else the next
-	/// newer one, wrapping to the oldest. <paramref name="members"/> is in hire order, the reverse of the thing list.
+	/// Down walks the pool's newest-first used chain, up walks it backwards. A pool-free fixture retains reverse roster order.
+	/// Unpooled/mismatched members follow valid pool members in reverse roster order; queued and placeholder slots never qualify.
 	/// </summary>
-	// [BIN:TPW-EXE:0x004824d0 next thing] mask 1 walks the thing list (head 0x7cf56c; 0x516270 puts a new thing at the head, so it runs newest first) from the
-	// member's next node to the first staff thing (0x481f80: types 4-8), and 0x483740 starts again at the head when none follows; 0x482da0 walks the previous
-	// nodes and 0x483770 starts again at the tail
-	public static StaffMember? Cycle( IReadOnlyList<StaffMember> members, int currentId, bool forward )
+	// [BIN:TPW-EXE:0x004824d0 next thing] mask 1 accepts types 4-8 (0x481f80), following older links +8 from head 0x7cf56c;
+	// 0x483740 wraps from the head, 0x483770 from the tail. Thing ids are reusable slots, never chronology.
+	public static StaffMember? Cycle( IReadOnlyList<StaffMember> members, int currentId, bool forward, ThingPool? things = null )
 	{
-		if ( members.Count == 0 )
-			return null;
-		var index = -1;
-		for ( var position = 0; position < members.Count; position++ )
-			if ( members[position].Id == currentId )
-				index = position;
-		if ( index < 0 )
-			return forward ? members[^1] : members[0];
-		return forward ? members[index > 0 ? index - 1 : members.Count - 1] : members[index < members.Count - 1 ? index + 1 : 0];
+		var ordered = new List<StaffMember>();
+		var included = new HashSet<StaffMember>();
+		if ( things != null )
+		{
+			var claims = members.Where( member => member.ThingId != 0 ).ToLookup( member => member.ThingId );
+			foreach ( var slot in things.UsedNewestFirst() )
+			{
+				if ( things.IsQueued( slot.Id ) || things.IsHeld( slot.Id ) ) continue;
+				var matches = claims[slot.Id].Where( member => ParkStaff.ThingModelOf( member.Type ) == slot.Model ).ToArray();
+				// Duplicate claims are malformed: leave them to the stable host fallback rather than inventing pool order.
+				if ( matches.Length == 1 && included.Add( matches[0] ) ) ordered.Add( matches[0] );
+			}
+		}
+		for ( var index = members.Count - 1; index >= 0; index-- )
+		{
+			var member = members[index];
+			if ( (things == null || !things.IsQueued( member.ThingId ) && !things.IsHeld( member.ThingId )) && included.Add( member ) )
+				ordered.Add( member );
+		}
+		if ( ordered.Count == 0 ) return null;
+		var current = ordered.FindIndex( member => member.Id == currentId );
+		if ( current < 0 ) return forward ? ordered[0] : ordered[^1];
+		return ordered[(current + (forward ? 1 : ordered.Count - 1)) % ordered.Count];
 	}
 }

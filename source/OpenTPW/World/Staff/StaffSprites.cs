@@ -108,7 +108,7 @@ public static class StaffSpriteRules
 	public static StaffClip? SelectClip( StaffMember member, bool moving, IReadOnlyList<SpritePerformance>? performances = null, int performanceCount = 0 )
 	{
 		// a resting member is inside the Staff Room (0x5054d0 state 3 removes the model); a carried one is the dangling sprite instead
-		if ( member.State is StaffState.Resting or StaffState.PickedUp || member.Job is StaffJob.Resting or StaffJob.PickedUp )
+		if ( !HasBodySprite( member ) )
 			return null;
 		if ( member.Job == StaffJob.ToStrike )
 			return moving ? WalkHalf : Stand;
@@ -133,6 +133,10 @@ public static class StaffSpriteRules
 				return member.Job == StaffJob.Performing && !moving ? Perform( member.Id, performances, performanceCount ) : moving ? Walk : Stand;
 		}
 	}
+
+	/// <summary>The body-existence exclusions shared by clip selection and read-only employee output.</summary>
+	internal static bool HasBodySprite( StaffMember member ) =>
+		member.State is not (StaffState.Resting or StaffState.PickedUp) && member.Job is not (StaffJob.Resting or StaffJob.PickedUp);
 
 	/// <summary>
 	/// An entertainer's performance clip: entry 0 when the bank has one (or none: <see cref="DefaultPerformanceSlot"/>), else entry

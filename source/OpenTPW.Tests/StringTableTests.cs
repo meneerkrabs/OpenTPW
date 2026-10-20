@@ -182,6 +182,122 @@ public class StringTableTests
 		return data;
 	}
 
+	/// <summary>A single text-run record (marker, 24-bit length, payload) padded to four bytes.</summary>
+	private static byte[] TextRecord( params byte[] payload )
+	{
+		var record = new List<byte> { 1, (byte)payload.Length, (byte)(payload.Length >> 8), (byte)(payload.Length >> 16) };
+		record.AddRange( payload );
+		while ( record.Count % 4 != 0 )
+			record.Add( 0 );
+		return record.ToArray();
+	}
+
+	/// <summary>A BFST file from raw records plus one directory entry per slot: <paramref name="directory"/> may repeat (alias) or reorder records.</summary>
+	private static byte[] CreateTableFromRecords( byte[][] records, params int[] directory )
+	{
+		var body = new List<byte>();
+		var positions = new int[records.Length];
+		for ( var r = 0; r < records.Length; r++ )
+		{
+			positions[r] = 12 + directory.Length * 4 + body.Count;
+			body.AddRange( records[r] );
+		}
+		var data = new byte[12 + directory.Length * 4 + body.Count];
+		Encoding.ASCII.GetBytes( "BFST" ).CopyTo( data, 0 );
+		BinaryPrimitives.WriteInt32LittleEndian( data.AsSpan( 8 ), directory.Length );
+		for ( var i = 0; i < directory.Length; i++ )
+			BinaryPrimitives.WriteInt32LittleEndian( data.AsSpan( 12 + i * 4 ), positions[directory[i]] - 12 );
+		body.CopyTo( data, 12 + directory.Length * 4 );
+		return data;
+	}
+
+	/// <summary>Two records at absolute 20 and 28; the first text run has <paramref name="firstLength"/> declared bytes (4 is exact, 5 overruns).</summary>
+	private static byte[] CreateTwoRecordBoundaryTable( int firstLength )
+	{
+		var data = new byte[33];
+		Encoding.ASCII.GetBytes( "BFST" ).CopyTo( data, 0 );
+		BinaryPrimitives.WriteInt32LittleEndian( data.AsSpan( 8 ), 2 );
+		BinaryPrimitives.WriteInt32LittleEndian( data.AsSpan( 12 ), 8 );   // record 0 at absolute 20
+		BinaryPrimitives.WriteInt32LittleEndian( data.AsSpan( 16 ), 16 );  // record 1 at absolute 28
+		data[20] = 1;
+		data[21] = (byte)firstLength;
+		data[22] = 0;
+		data[23] = 0;
+		data[24] = 1; data[25] = 1; data[26] = 1; data[27] = 1;
+		data[28] = 1;
+		data[29] = 1;
+		data[30] = 0;
+		data[31] = 0;
+		data[32] = 1;
+		return data;
+	}
+
+	/// <summary>Record 1 starts at absolute 22, inside record 0's 4-byte header at absolute 20.</summary>
+	private static byte[] CreateOverlappingHeaderTable()
+	{
+		var data = new byte[27];
+		Encoding.ASCII.GetBytes( "BFST" ).CopyTo( data, 0 );
+		BinaryPrimitives.WriteInt32LittleEndian( data.AsSpan( 8 ), 2 );
+		BinaryPrimitives.WriteInt32LittleEndian( data.AsSpan( 12 ), 8 );   // record 0 at absolute 20
+		BinaryPrimitives.WriteInt32LittleEndian( data.AsSpan( 16 ), 10 );  // record 1 at absolute 22
+		data[20] = 1; data[21] = 1;
+		data[22] = 1; data[23] = 1;
+		data[26] = 1;
+		return data;
+	}
+
+	/// <summary>A single record whose text run ends exactly at the end of the file.</summary>
+	private static byte[] CreateSingleRecordToEndOfFileTable()
+	{
+		var data = new byte[21];
+		Encoding.ASCII.GetBytes( "BFST" ).CopyTo( data, 0 );
+		BinaryPrimitives.WriteInt32LittleEndian( data.AsSpan( 8 ), 1 );
+		BinaryPrimitives.WriteInt32LittleEndian( data.AsSpan( 12 ), 4 );   // record at absolute 16
+		data[16] = 1;
+		data[17] = 1;
+		data[18] = 0;
+		data[19] = 0;
+		data[20] = 1;
+		return data;
+	}
+
+	/// <summary>A two-byte BFMU: one lead byte 0xFF; code 0xFF 0x01 is the 255th character 'X', index 1 is 'A'.</summary>
+	private static byte[] CreateTwoByteCharacterTable()
+	{
+		var characters = new char[255];
+		characters[0] = 'A';
+		characters[254] = 'X';
+		var data = new byte[8 + characters.Length * 2];
+		Encoding.ASCII.GetBytes( "BFMU" ).CopyTo( data, 0 );
+		BinaryPrimitives.WriteUInt16LittleEndian( data.AsSpan( 4 ), 1 );    // one lead byte
+		data[6] = 0xFF;
+		data[7] = 1;
+		for ( var i = 0; i < characters.Length; i++ )
+			BinaryPrimitives.WriteUInt16LittleEndian( data.AsSpan( 8 + i * 2 ), characters[i] );
+		return data;
+	}
+
+	/// <summary>Two records at absolute 20 and 25; the lead byte sits at record 0's boundary and record 1 begins right after it.</summary>
+	private static byte[] CreateTwoByteBoundaryTable( int firstLength )
+	{
+		var data = new byte[30];
+		Encoding.ASCII.GetBytes( "BFST" ).CopyTo( data, 0 );
+		BinaryPrimitives.WriteInt32LittleEndian( data.AsSpan( 8 ), 2 );
+		BinaryPrimitives.WriteInt32LittleEndian( data.AsSpan( 12 ), 8 );   // record 0 at absolute 20
+		BinaryPrimitives.WriteInt32LittleEndian( data.AsSpan( 16 ), 13 );  // record 1 at absolute 25
+		data[20] = 1;
+		data[21] = (byte)firstLength;
+		data[22] = 0;
+		data[23] = 0;
+		data[24] = 0xFF;
+		data[25] = 1;
+		data[26] = 1;
+		data[27] = 0;
+		data[28] = 0;
+		data[29] = 1;
+		return data;
+	}
+
 	[TestMethod]
 	public void ParameterChunksFillTheRecordsTemplate()
 	{
@@ -202,6 +318,73 @@ public class StringTableTests
 		Assert.AreEqual( "3 days", strings.Format( 0, "3" ) );
 		Assert.AreEqual( "Cash 3", new OpenTPW.UI.Original.UiStringTable( "English", new[] { "", "Cash " }, System.Array.Empty<string>(), System.Array.Empty<string>(),
 			System.Array.Empty<string>() ).Format( 1, "3" ), "a table without records appends the value" );
+	}
+
+	[TestMethod]
+	public void InitialRecordMustFitBeforeTheNextRecord()
+	{
+		var table = new BFMUReader( new MemoryStream( CreateCharacterTable( "A" ) ) );
+		// The first text run ends exactly at the next record's start: accepted.
+		var atBoundary = new StringFile( new MemoryStream( CreateTwoRecordBoundaryTable( 4 ) ), table );
+		CollectionAssert.AreEqual( new[] { "AAAA", "A" }, atBoundary.Entries );
+		Assert.AreEqual( "AAAA", atBoundary.Templates[0].Parts[0].Text );
+		Assert.AreEqual( "A", atBoundary.Templates[1].Parts[0].Text );
+		// One byte more would read record 1's marker as a character: rejected before decoding.
+		Assert.ThrowsException<InvalidDataException>( () => new StringFile( new MemoryStream( CreateTwoRecordBoundaryTable( 5 ) ), table ) );
+	}
+
+	[TestMethod]
+	public void InitialHeaderMustFitBeforeTheNextRecord()
+	{
+		var table = new BFMUReader( new MemoryStream( CreateCharacterTable( "A" ) ) );
+		// Record 1's start at absolute 22 falls inside record 0's 4-byte header at absolute 20.
+		Assert.ThrowsException<InvalidDataException>( () => new StringFile( new MemoryStream( CreateOverlappingHeaderTable() ), table ) );
+	}
+
+	[TestMethod]
+	public void DuplicateOffsetsAndUnsortedDirectoryPreserveEntriesAndTemplates()
+	{
+		var table = new BFMUReader( new MemoryStream( CreateCharacterTable( "AB" ) ) );
+		// Two records; the directory lists record 1 first (unsorted offsets) and aliases record 0 twice.
+		var file = new StringFile( new MemoryStream( CreateTableFromRecords( new[] { TextRecord( 1 ), TextRecord( 2 ) }, 1, 0, 0 ) ), table );
+		CollectionAssert.AreEqual( new[] { "B", "A", "A" }, file.Entries );
+		Assert.AreEqual( 3, file.Templates.Length );
+		Assert.AreEqual( "B", file.Templates[0].Parts[0].Text );
+		Assert.AreEqual( "A", file.Templates[1].Parts[0].Text );
+		Assert.AreEqual( "A", file.Templates[2].Parts[0].Text );
+		CollectionAssert.AreEqual( file.Templates[1].Parts.ToArray(), file.Templates[2].Parts.ToArray(), "aliases share a template" );
+	}
+
+	[TestMethod]
+	public void TwoByteLeadAtTheRecordBoundaryCannotBorrowTheNextRecord()
+	{
+		var table = new BFMUReader( new MemoryStream( CreateTwoByteCharacterTable() ) );
+		// The lead byte is record 0's last declared byte and record 1 starts right after it: no trail byte exists inside the record.
+		Assert.ThrowsException<InvalidDataException>( () => new StringFile( new MemoryStream( CreateTwoByteBoundaryTable( 1 ) ), table ) );
+		// A length of two would take record 1's marker (0x01) as the trail byte and decode 'X': rejected by the boundary instead.
+		Assert.ThrowsException<InvalidDataException>( () => new StringFile( new MemoryStream( CreateTwoByteBoundaryTable( 2 ) ), table ) );
+	}
+
+	[TestMethod]
+	public void LastRecordMayEndAtTheEndOfTheFile()
+	{
+		var table = new BFMUReader( new MemoryStream( CreateCharacterTable( "A" ) ) );
+		var file = new StringFile( new MemoryStream( CreateSingleRecordToEndOfFileTable() ), table );
+		CollectionAssert.AreEqual( new[] { "A" }, file.Entries );
+		Assert.AreEqual( "A", file.Templates[0].Parts[0].Text );
+	}
+
+	[TestMethod]
+	public void ParameterChunksBeforeTheRecordBoundaryAreUnchanged()
+	{
+		const string characters = " adsy";
+		var table = new BFMUReader( new MemoryStream( CreateCharacterTable( characters ) ) );
+		// First run, parameter of type 8, second text run " days", terminator: the record boundary must not change this.
+		var days = new StringFile( new MemoryStream( CreateChunkedTable( (1, 0, Array.Empty<byte>()), (2, 8, Array.Empty<byte>()),
+			(1, 5, Encode( characters, " days" )), (0, 0, Array.Empty<byte>()) ) ), table );
+		Assert.AreEqual( 1, days.Templates[0].ParameterCount );
+		Assert.AreEqual( 8, days.Templates[0].Parts[1].ParameterType );
+		Assert.AreEqual( "12 days", days.Templates[0].Fill( "12" ) );
 	}
 
 	[TestMethod]

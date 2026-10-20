@@ -4,10 +4,10 @@ using System.Text.Json;
 
 namespace OpenTPW.Server;
 
-/// <summary>One plain-text e-mail.</summary>
-public sealed record EmailMessage( string To, string Subject, string Text );
+/// <summary>One plain-text e-mail with an optional postcard PNG attachment.</summary>
+public sealed record EmailMessage( string To, string Subject, string Text, byte[]? Image = null, string? IdempotencyKey = null );
 
-/// <summary>Sends account e-mails (codes and notices). <see cref="ResendEmailSender"/> on the official server.</summary>
+/// <summary>Sends account e-mails and postcards. <see cref="ResendEmailSender"/> on the official server.</summary>
 public interface IEmailSender
 {
 	Task SendAsync( EmailMessage message, CancellationToken cancel = default );
@@ -41,10 +41,13 @@ public sealed class ResendEmailSender : IEmailSender
 		var body = new Dictionary<string, object> { ["from"] = from, ["to"] = new[] { message.To }, ["subject"] = message.Subject, ["text"] = message.Text };
 		if ( replyTo != null )
 			body["reply_to"] = replyTo;
+		if ( message.Image != null )
+			body["attachments"] = new[] { new { filename = "postcard.png", content = Convert.ToBase64String( message.Image ) } };
 		using var request = new HttpRequestMessage( HttpMethod.Post, Endpoint )
 		{
 			Content = new StringContent( JsonSerializer.Serialize( body ), Encoding.UTF8, "application/json" ),
 		};
+		if ( message.IdempotencyKey != null ) request.Headers.Add( "Idempotency-Key", message.IdempotencyKey );
 		request.Headers.Authorization = new AuthenticationHeaderValue( "Bearer", apiKey );
 		HttpResponseMessage response;
 		try { response = await http.SendAsync( request, HttpCompletionOption.ResponseHeadersRead, cancel ); }

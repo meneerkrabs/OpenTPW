@@ -56,7 +56,7 @@ public sealed class GltfConversionOptions
 public static class GltfModelConverter
 {
 	public const string HeadExtra = "opentpw_head";
-	/// <summary>[EXT:object-lights] Node extra: the light number of a <c>KHR_lights_punctual</c> point light's dummy (an integer from 0); without it the lights take the lowest free numbers in node order.</summary>
+	/// <summary>[EXT:object-lights] Node extra: the light number of a <c>KHR_lights_punctual</c> point light's dummy (an integer from 0); a point light without it is skipped with a warning.</summary>
 	public const string LightExtra = "opentpw_light";
 	/// <summary>[EXT:object-lights] Node extra: the radius of that light in model units (1 to 65535), for exporters that cannot write a glTF <c>range</c> (Blender's lights have none).</summary>
 	public const string LightRadiusExtra = "opentpw_light_radius";

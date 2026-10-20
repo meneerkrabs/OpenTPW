@@ -162,13 +162,13 @@ public sealed partial class ParkHud
 		return true;
 	}
 
-	/// <summary>Feedback for a click that cannot hire (bankrupt, role full, read-only, no applicant): a message and the error sound instead of a silent select.</summary>
+	/// <summary>Feedback for a click that cannot hire (bankrupt, role full, read-only, no applicant): a message instead of a silent select.</summary>
+	// [BIN:TPW-EXE:0x49b988 hire row] the hire window's row activation (0x400) calls the hire 0x507bf0 (which returns 0 for an empty slot and builds the staff tool otherwise), closes the window and posts advisor help 0x135; no direct call chain from the window procedure 0x49b650 reaches a cat_ui sound, so the refusal plays no error sound (the message is OpenTPW's)
 	internal void RefuseHire()
 	{
 		if ( showingEmployedStaff )
 			return;
 		PostMessage( strings.Extra( OpenTpwText.NotAvailable ) );
-		GameAudio.PlayUi( GameAudio.ErrorEvent );
 	}
 
 	/// <summary>Opens the per-employee window on the employee view's selected employee (a click on the row, as the All Staff list does).</summary>
@@ -363,8 +363,11 @@ public sealed partial class ParkHud
 		screen.Add( new UiGaugeBar { Id = "skillGauge", Value = () => showingEmployedStaff ? null : SkillGauge( SelectedCandidate ),
 			Bounds = Rect( 722, 538, 957, 573 ), Anchor = UiAnchor.Center } );
 		// [BIN:TPW-EXE:0x0049BA00 hire figure] when the selected candidate's role (+0) or variant byte (+9) changes, the old figure goes (0x00475550) and a new one of thing type 5, 6, 4, 7 or 8 for the roles 0..4 (handyman, entertainer, mechanic, guard, researcher) with that variant is created in control 9348's rectangle (0x00475A10 with the script 0x0074F758), and its register 8 is set to 8.0 (0x004755D0)
-		// [APPROX:UI-082] the hire window's figure is drawn one sprite pixel to 3.2 canvas units (640 pixels across the 2048-unit canvas), where the original sets its register 8 to 8.0 (0x004755D0, the scale 0x00542010 copies to the draw record +0x2C, default 1.0); how the screen-sprite path (flag 0x40000, list 0x0087692C, count 0x875864) turns that scale into pixels is not traced (no reader of the list by absolute address exists); the figure also shows for an employee selected in the employed view, where 0x49BA00 reads only the applicant pool (0x507BD0, 32 entries of 0x14 bytes) — evidence needed: the engine's screen-sprite quad size, or a capture of the hire window and of the employed view
-		screen.Add( new UiSpriteFigure { Id = "portraitFigure", Frame = PortraitFrame, Bounds = Rect( 484, 179, 748, 443 ), Anchor = UiAnchor.Center } );
+		// [APPROX:UI-082] nominal inner-rectangle geometry and 2.4 scale are traced; native delayed FRAME/start/close/invalid-selection phase,
+		// global rotation/depth and viewport/raster parity remain qualified (docs/proposals/ui-082-verify-staff-portrait-scaling.md).
+		// [EXT:staff-employee-view] the employed tab deliberately shares this hire-box layout and the existing role/variant walking loop.
+		screen.Add( new UiSpriteFigure { Id = "portraitFigure", Frame = PortraitFrame, Bounds = HirePortraitGeometry.Inner,
+			FeetInCanvas = HirePortraitGeometry.FeetInCanvas, CanvasUnitsPerPixel = HirePortraitGeometry.CanvasUnitsPerPixel, Anchor = UiAnchor.Center } );
 		for ( var row = 0; row < StaffStatRows.Length; row++ )
 		{
 			var index = row;
@@ -378,10 +381,11 @@ public sealed partial class ParkHud
 				Bounds = entry.ValueRect, Anchor = UiAnchor.Center } );
 		}
 		// [DATA:Mac staff table 0x4a1e0:9360-9364] Five buttons with help 154-158 select applicants by role.
+		// The hire table 0x751fa8 and the All Staff table 0x750e10 are not generated. These role buttons are the radio group (type 8, style 0x11), and the employed view reuses them, so they play cat_ui 0xBD (hook 0x485780, choice 0x4857cb).
 		foreach ( var role in StaffRoles )
 		{
 			var item = role;
-			screen.Add( new UiButton { Id = $"role{item.Type}", Model = item.Model, Help = strings.Help( item.Help ),
+			screen.Add( new UiButton { Id = $"role{item.Type}", Model = item.Model, Help = strings.Help( item.Help ), ClickSound = GameAudio.SelectClickEvent,
 				Clicked = () => FilterStaff( item.Type ), Selected = () => staffFilter == item.Type,
 				Bounds = item.Rect, Anchor = UiAnchor.Center } );
 		}
@@ -390,10 +394,15 @@ public sealed partial class ParkHud
 		screen.Add( new StaffHeader( this, true ) { Id = "headerWage", Help = strings.Help( 160 ), Bounds = Rect( 1471, 331, 1731, 436 ), Anchor = UiAnchor.Center } );
 		screen.Add( new StaffList( this ) { Id = "staffList", Help = strings.Help( 161 ), Bounds = StaffContent, Anchor = UiAnchor.Center } );
 		screen.Add( new StaffScrollBar( this ) { Id = "staffScroll", Bounds = StaffScrollTrack, Anchor = UiAnchor.Center } );
-		screen.Add( new UiButton { Id = "scrollUp", Model = "b_up", Clicked = () => ScrollStaff( -1 ),
-			Bounds = Rect( 1742, 331, 1803, 391 ), Anchor = UiAnchor.Center } );
-		screen.Add( new UiButton { Id = "scrollDown", Model = "b_down", Clicked = () => ScrollStaff( 1 ),
-			Bounds = Rect( 1742, 850, 1803, 910 ), Anchor = UiAnchor.Center } );
+		// The list slider is type 3 style 0x10, so its arrows play 0xBD. A held arrow repeats (500 ms, then 125 ms, ctor 0x6688b3) and a release after that plays nothing (0x668eff).
+		void ScrollArrow( string id, UiRect bounds, int step )
+		{
+			void Scroll() => ScrollStaff( step );
+			screen.Add( new UiButton { Id = id, Model = step < 0 ? "b_up" : "b_down", ClickSound = GameAudio.SelectClickEvent, Clicked = Scroll,
+				Repeat = UiButton.ScrollArrowRepeat( Scroll ), Bounds = bounds, Anchor = UiAnchor.Center } );
+		}
+		ScrollArrow( "scrollUp", Rect( 1742, 331, 1803, 391 ), -1 );
+		ScrollArrow( "scrollDown", Rect( 1742, 850, 1803, 910 ), 1 );
 		// [DATA:Mac staff table 0x4a1e0:9365] b_allthings returns to the buy window.
 		screen.Add( new UiButton { Id = "allThings", Model = "b_allthings", Help = strings.Help( 162 ), Clicked = CloseStaffWindow,
 			Bounds = Rect( 1866, 583, 1968, 686 ), Anchor = UiAnchor.Center } );
@@ -545,7 +554,12 @@ public sealed partial class ParkHud
 		private readonly bool byWage;
 		public StaffHeader( ParkHud owner, bool byWage ) { this.owner = owner; this.byWage = byWage; }
 		public override bool Focusable => Visible && Enabled;
-		public override void Activate() => owner.SortStaff( byWage );
+		// The header is a child of the sortable list (type 7, style 0x91 / 0x291). That parent receives 0x100, so the hook plays 0xBD.
+		public override void Activate()
+		{
+			GameAudio.PlayUi( GameAudio.SelectClickEvent );
+			owner.SortStaff( byWage );
+		}
 		public override void Draw( UiContext context, bool focused, bool pressed ) =>
 			context.DrawFittedText( context.Fonts.Label, owner.strings[byWage ? UIStrings.MonthlyWageStaff : UIStrings.NameAttr],
 				ScreenRect( context.Canvas ), focused ? UiColors.Highlight : UiColors.Text, UiAlign.Center );

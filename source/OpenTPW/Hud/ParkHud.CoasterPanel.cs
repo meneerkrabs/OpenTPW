@@ -55,6 +55,8 @@ public sealed partial class ParkHud
 				Id = $"coaster{spec.Button}",
 				Model = spec.Model,
 				Help = strings.Help( spec.Help ),
+				// Coaster panel table 0x751530 is not generated. These nine toggles are its radio group (type 8, style 0x11), so they play 0xBD.
+				ClickSound = GameAudio.SelectClickEvent,
 				Clicked = () => SelectCoasterButton( spec ),
 				Selected = () => level.CoasterPanel?.Selected == spec.Button,
 				Bounds = spec.Rect,
@@ -196,7 +198,8 @@ public sealed partial class ParkHud
 		{
 			if ( panel.IsBuilding )
 			{
-				ReportCoasterResult( level.CoasterClick( cursorX, cursorY ) );
+				var closing = level.CoasterTool is { } tool && tool.Track.IsChainStart( cursorX, cursorY ) && !tool.Track.IsClosed;
+				ReportCoasterResult( level.CoasterClick( cursorX, cursorY ), closing );
 				// [BIN:TPW-EXE:0x52644c coaster tool click] the tool's click handler 0x524960 in mode 0x15 posts help 0xCD (205) after every click's action (the release 0x446300 with 0 for the edit buttons)
 				PostToolHelp( AdvisorToolHelp.CoasterToolClick );
 				PlayCoasterToolClick( cursorX, cursorY );
@@ -246,11 +249,18 @@ public sealed partial class ParkHud
 	// [BIN:TPW-EXE:0x526423 coaster click sound] 0x524960 submits cat_ui 0x65 at (x*10, 0, z*10) in mode 0x15 right before the coaster release 0x446300 and the help 0xCD
 	private static void PlayCoasterToolClick( int cellX, int cellY ) => GameAudio.PlayUiAt( GameAudio.CoasterToolClickEvent, GameAudio.CellSoundPosition( cellX, cellY ) );
 
-	private void ReportCoasterResult( CoasterPlaceResult result )
+	private void ReportCoasterResult( CoasterPlaceResult result, bool closing = false )
 	{
 		if ( result == CoasterPlaceResult.Ok )
 			return;
-		PostMessage( strings.Extra( result == CoasterPlaceResult.NotEnoughMoney ? OpenTpwText.NotEnoughMoney : OpenTpwText.CannotBuildHere ) );
+		// [EXT:coaster-closing-check] a circuit that stays open says why: a pylon still marked invalid (a closing or completing click), or a closing link from the last pylon that fails
+		PostMessage( strings.Extra( result switch
+		{
+			CoasterPlaceResult.NotEnoughMoney => OpenTpwText.NotEnoughMoney,
+			CoasterPlaceResult.InvalidNodes => OpenTpwText.CoasterInvalidPylons,
+			_ when closing => OpenTpwText.CoasterCannotClose,
+			_ => OpenTpwText.CannotBuildHere,
+		} ) );
 	}
 
 	/// <summary>The coaster tool's cost beside the cursor (the placement area and the cursor cell are the blueprint markers, <see cref="UpdateBlueprint"/>).</summary>

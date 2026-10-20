@@ -18,6 +18,7 @@ public class StaffWindowTests
 	{
 		var hud = VisitorWorldSelectionTests.Fixture( out _, out _ );
 		Set( hud, "<Status>k__BackingField", new EconomyParkStatus( () => economy ) );
+		CommandTestLevel.AttachPark( (Level)typeof( ParkHud ).GetField( "level", BindingFlags.Instance | BindingFlags.NonPublic )!.GetValue( hud )!, economy );
 		// the language tables the windows read (no game data in the unit tests)
 		Set( hud, "staffNames", System.Enum.GetValues<StaffType>().ToDictionary( type => type, _ => System.Array.Empty<string>() ) );
 		Set( hud, "staffTypes", System.Array.Empty<string>() );

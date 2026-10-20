@@ -281,7 +281,9 @@ public sealed partial class GuestSimulation
 		foreach ( var activity in poolActivities )
 			if ( activity is IPoolAmbient ambient )
 				ambient.Ambient( this, guest, region );
-		SwimStep( guest, region, ignoreOthers: false );
+		// [EXT:pools-waves] and the currents of the water (the waves) carry it after its stroke
+		var (pushX, pushY) = PoolCurrent( guest, region );
+		SwimStep( guest, region, ignoreOthers: false, pushX, pushY );
 	}
 
 	/// <summary>State 23: swimming to the pool-side cell; the crowd at the steps is ignored within <see cref="PoolSwimSettings.CrowdedRadius"/> of it. Then the guest changes back.</summary>
@@ -349,11 +351,27 @@ public sealed partial class GuestSimulation
 		ReturnToPath( guest, ride?.ExitCell ?? (guest.CellX, guest.CellY) );
 		// a guest with balloon life gets its balloon back on stepping out, as it does when it leaves a ride (the swim put it away, like a ride does)
 		if ( guest.BalloonLife > 0 )
-			guest.HasBalloon = true;
+			CreateBalloon( guest );
 	}
 
-	/// <summary>One steering step of a swimmer; the others are the swimmers of the same changing room.</summary>
-	private void SwimStep( Guest guest, PoolSwimRegion region, bool ignoreOthers )
+	/// <summary>
+	/// [EXT:pools-waves] The push of the water's currents (the registered <see cref="IPoolCurrent"/>s: the waves) on a body in the water of <paramref name="region"/> this turn, in 16.16 cells; zero for none.
+	/// Integers only; the free swimmers' step and the lazy river's floaters add it.
+	/// </summary>
+	internal (int X, int Y) PoolCurrent( Guest guest, PoolSwimRegion region )
+	{
+		var (x, y) = (0, 0);
+		foreach ( var activity in poolActivities )
+			if ( activity is IPoolCurrent current )
+			{
+				var push = current.Current( this, guest, region );
+				(x, y) = (x + push.X, y + push.Y);
+			}
+		return (x, y);
+	}
+
+	/// <summary>One steering step of a swimmer; the others are the swimmers of the same changing room. A push (16.16 cells, the waves) then carries it where there is room.</summary>
+	private void SwimStep( Guest guest, PoolSwimRegion region, bool ignoreOthers, int pushX = 0, int pushY = 0 )
 	{
 		var navigation = guest.Navigation;
 		// the water may have changed since the last turn (a cell erased beside the swimmer): a swimmer outside it is put back at the middle of its cell, or at the steps
@@ -370,6 +388,8 @@ public sealed partial class GuestSimulation
 		};
 		var (fromX, fromY, fromDistance) = (guest.X, guest.Y, guest.DistanceWalked);
 		var moved = PoolSwimming.Step( region, ref body, others, guest.BaseSpeed * PoolSwimSettings.SpeedPerBaseSpeed, ignoreOthers );
+		// the drift carries the swimmer but is no stroke: a swimmer only carried does not count distance (its stroke animation stays where it was)
+		PoolSwimming.Drift( region, ref body, pushX, pushY, others );
 		(navigation.X, navigation.Y) = (body.X, body.Y);
 		(guest.SwimHeading, guest.SwimGoalX, guest.SwimGoalY, guest.SwimHasGoal, guest.SwimRandom) = (body.Heading, body.GoalX, body.GoalY, body.HasGoal, body.Random);
 		SetSwimCell( guest );

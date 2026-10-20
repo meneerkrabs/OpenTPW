@@ -19,19 +19,21 @@ public sealed class OriginalGateSign : Entity
 	// [EXT:gate-sign-depth-lift] the sign faces are lifted along their normal to win the depth test; an OpenTPW rendering choice, not an original rule
 	private const float SurfaceOffset = 0.05f;
 
-	private readonly ModelEntity part;
+	private readonly ModelEntity part = null!;
 	private readonly Model model;
 
 	private OriginalGateSign( Model model, ObjectSignImages images, ParkNameLines lines, int textPixels, SignTextSlot slot, string archivePath, SignFile sign )
 	{
 		this.model = model;
 		this.sign = sign;
-		part = new ModelEntity { Model = model, Name = "gate sign" };
 		Images = images;
 		Lines = lines;
 		TextPixelCount = textPixels;
 		Slot = slot;
 		ArchivePath = archivePath;
+		// a half-built entity must not stay in Entity.All: its deletion would find no part
+		try { part = new ModelEntity { Model = model, Name = "gate sign" }; }
+		catch { Delete(); throw; }
 	}
 
 	private readonly SignFile sign;
@@ -63,6 +65,12 @@ public sealed class OriginalGateSign : Entity
 				Log.Warning( $"Park name: {ObjectNames.FileName} unavailable ({exception.Message}); using the theme name." );
 			}
 		}
+		return ThemeNameLines( levelName );
+	}
+
+	/// <summary>The lines that stand in for a gate without its OBJECT_NAMES row: the theme name split at its middle space.</summary>
+	public static ParkNameLines ThemeNameLines( string levelName )
+	{
 		// [EXT:park-name-fallback] without the gate's OBJECT_NAMES row (Theme Park Inc, a gate id outside tp.exe's table, missing language files) the theme name stands in, split at its middle space; no original rule applies
 		var (line1, line2) = SignCanvas.SplitAtMiddleSpace( DefaultParkName( levelName ) );
 		var fallback = new ParkNameLines( BonusNames.Truncate( line1 ), BonusNames.Truncate( line2 ) );
@@ -198,7 +206,7 @@ public sealed class OriginalGateSign : Entity
 
 	protected override void OnDelete()
 	{
-		part.Delete();
+		part?.Delete();
 		model.ReleaseBuffers();
 		// The gate's sign material and images are its own (its park's name), unlike the shared type signs.
 		model.Material.ReleaseOwnedResources();

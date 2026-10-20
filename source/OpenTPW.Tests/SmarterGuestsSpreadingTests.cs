@@ -594,9 +594,12 @@ public class SmarterGuestsSpreadingTests
 	{
 		using var scope = OpenTpwExtensions.Use( SmarterGuestsTests.On() );
 		var park = new ParkScenario( new WorldSeed( 1 ) );
-		park.Run( 12_000 );
 		var estimates = park.Guests.SmarterGuests!.Throughputs;
-		var ride = park.Attractions.First( item => item.Bridge.Kind == RideVisitorKind.Ride && estimates.TryGet( item.Bridge.AttractionId, out var entry ) && entry.Samples > 0 );
+		bool Learned( ScenarioAttraction item ) => item.Bridge.Kind == RideVisitorKind.Ride && estimates.TryGet( item.Bridge.AttractionId, out var entry ) && entry.Samples > 0;
+		// run until a ride has learned from a boarding with demand throughout (how soon depends on the run's queues)
+		for ( var run = 0; run < 30 && !park.Attractions.Any( Learned ); run++ )
+			park.Run( 2_000 );
+		var ride = park.Attractions.First( Learned );
 		Assert.AreEqual( ride.Bridge.Capacity, ride.Bridge.LiveCapacity, "no settings change yet" );
 		estimates.TryGet( ride.Bridge.AttractionId, out var learned );
 		Assert.AreEqual( ride.Bridge.LiveCapacity, learned.Capacity );

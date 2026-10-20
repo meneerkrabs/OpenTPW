@@ -62,6 +62,7 @@ FEATURED = [
     ("MODS.md", "Extensions and mods"),
     ("SCRIPT-MODS.md", "Script mods (TPW Script)"),
     ("POOLS.md", "Swimming pools (on by default)"),
+    ("EVENING.md", "Evening and night (on by default)"),
     ("RUNNING.md", "Running from source and command-line options"),
     ("SETUP.md", "How the game folder is found"),
     ("WEB.md", "The browser version"),

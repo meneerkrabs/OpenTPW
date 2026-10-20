@@ -1,91 +1,133 @@
+using OpenTPW.UI;
 using OpenTPW.UI.Original;
+using Veldrid;
 
 namespace OpenTPW.Hud;
 
 public sealed partial class ParkHud
 {
-	private const string VisitChatScreen = "visitChat";
-	/// <summary>The original chat overlay's message list and text entry (Mac UI table data:0x50b2c: 799019 at (543,1150)-(2005,1426), 799020 at (561,1441)-(1979,1486)).</summary>
-	private static readonly UiRect VisitChatMessages = new( 543, 1150, 1462, 276 );
-	private static readonly UiRect VisitChatEntry = new( 561, 1441, 1418, 45 );
-	/// <summary>Lines of the park's room shown over the park.</summary>
-	public const int VisitChatLines = 6;
-	/// <summary>How long the room's lines stay over the park after the last one came, seconds (the chat line keeps them while it is open).</summary>
-	public const float VisitChatSeconds = 10f;
-	private static readonly Veldrid.RgbaByte VisitChatPlate = new( 16, 24, 48, 170 );
-	private int visitChatCount = -1;
-	private string? visitChatLast;
-	private float visitChatAge = float.PositiveInfinity;
+	/// <summary>The name of the chat mode's screen: the original chat overlay in place of the HUD, in a visit with other players.</summary>
+	public const string ChatModeScreenName = "chatMode";
+	private ChatPanel.ChatScreen? chatModeScreen;
+	private ChatPanel? chatPanel;
+	/// <summary>Whether the player keeps the chat mode (a visit starts in it; F4 switches to the HUD and back).</summary>
+	private bool chatModeWanted = true;
+	private bool chatModeKeyDown;
 
 	/// <summary>
-	/// The visit with other players whose chat line Enter opens now, or null: only the HUD is open, the pointer rests on no control (a control would take
-	/// Enter itself), no text is typed, no modifier is held (Alt+Enter is the window's) and no ride view is up.
+	/// The visit shows the original chat overlay in place of the HUD: a visit of a published park with other players starts in it, as the original's
+	/// visit switched to chat mode on entering the park (manual p. 65), and F4 switches between it and the HUD.
 	/// </summary>
-	private IVisitPresence? VisitChatLineWanted( UiContext context, UiInput input ) =>
-		input.Has( UiKeys.Accept ) && !input.Has( UiKeys.Space ) && Stack.Screens.Count == 1 && !IsRiding && !level.HidesInterface && !Input.TextEntryActive
-		&& Input.ModifierMaskDown == 0 && hud.HitTest( context.Canvas, input.Mouse ) == null && host?.Presence?.Invoke() is { CanChat: true } presence ? presence : null;
+	// [BIN:TPW-EXE:0x4862A0 chat mode] in chat mode the HUD (0x7CB2AC) does not exist: the overlay (0x7CC8BC) or a bare full-screen panel (0x7CC8C0, 0x65DD7B) stands over the park, and F4 (key 0x73 in the entry's handler 0x4BE3A0, flag 0x7CC8B4) switches between them
+	// [EXT:online-visit-chat-mode] F4's other side is OpenTPW's read-only HUD of the visit (its windows, the camera and the ride view), where the original's was the bare park; Enter over the park returns to the chat mode with the entry focused
+	public bool ChatMode => chatModeScreen != null && Stack.Screens.Count > 0 && ReferenceEquals( Stack.Screens[0], chatModeScreen );
+
+	/// <summary>The chat overlay of the visit, once it had other players.</summary>
+	internal ChatPanel? VisitChatPanel => chatPanel;
+	/// <summary>The chat overlay's entry takes the keys.</summary>
+	internal bool ChatEntryFocused => ChatMode && chatPanel != null && ReferenceEquals( chatModeScreen!.Focused, chatPanel.Entry );
+
+	/// <summary>The other players of a read-only visit, while there are any.</summary>
+	private IVisitPresence? VisitPresence => level.IsReadOnlyVisit ? host?.Presence?.Invoke() : null;
 
 	/// <summary>
-	/// The chat line of a visit with other players: a text entry at the original chat overlay's entry place; Enter says the line in the park's room and
-	/// closes it, Escape closes it unsent.
+	/// The ride a click in the chat mode rides (tp.exe 0x4BD7F4): a placed object that is no track add-on (AddOn.UpgradesId 0), of the rides' or the features'
+	/// interface type (Info.WhichUIType 0 or 3), whose ride view opens (<see cref="RideCameraMode.CanRide"/>); null for anything else, where the click walks.
 	/// </summary>
-	// [EXT:online-visit-chat-line] the original's in-park chat overlay (Mac table data:0x50b2c) with its people list and vote button is not reproduced in the visit;
-	// Enter opens OpenTPW's single line at the overlay's entry (799020), and the room's last lines show at its message list (799019)
-	private void OpenVisitChatLine( IVisitPresence presence )
+	// [BIN:TPW-EXE:0x4BD7F4 chat mode ride] over a thing of type 3 whose definition has AddOn.UpgradesId (+0x284) 0 and Info.WhichUIType (+0x4ac) 0, or 3 with the thing's choosable bit (+0x32 bit 0x10), the chat mode panel shows help 580 with the ride's name, and a click runs the ride window's Ride it! (0x4E15B0)
+	// [EXT:online-chat-ride-click] the ride view opens only for a ride with a camera seat or a running coaster (RideCameraMode.CanRide), and a feature's choosable bit is not tracked: a feature rides when its view opens
+	internal static OriginalObject? ChatModeRide( OriginalObject? thing )
 	{
-		var screen = new UiScreen( VisitChatScreen );
-		var line = screen.Add( new UiTextField { Id = "line", MaximumLength = Online.Chat.ChatCommands.MaximumLineLength, Model = "f_text1",
-			Bounds = VisitChatEntry, Anchor = UiAnchor.Bottom } );
-		line.Submitted = () =>
-		{
-			if ( line.Text.Trim().Length > 0 )
-				presence.Say( line.Text );
-			CloseVisitChatLine();
-		};
-		screen.Back = CloseVisitChatLine;
-		Stack.Push( screen );
-		screen.Focus( line );
+		if ( thing is not { IsDeleted: false } || thing.Entry.Settings.GetInt( "AddOn.UpgradesId" ) != 0 )
+			return null;
+		// -1 is a missing key (GetInt's own fallback is 0, which is a ride): only the rides' and the features' interface types ride
+		var type = thing.Entry.Settings.GetInt( "Info.WhichUIType", -1 );
+		return type is 0 or 3 && RideCameraMode.CanRide( thing ) ? thing : null;
 	}
 
-	private void CloseVisitChatLine()
+	/// <summary>F4: switches between the chat mode and the HUD (with nothing open over them).</summary>
+	internal void ToggleChatMode()
 	{
-		if ( Stack.Top?.Name == VisitChatScreen )
-			Stack.Pop();
+		chatModeWanted = !chatModeWanted;
+		SyncChatMode();
+	}
+
+	/// <summary>F4 while nothing but the chat mode or the HUD is open; Alt+F4 is the window's.</summary>
+	private void HandleChatModeKey()
+	{
+		var down = Input.IsFrameKeyDown( Key.F4 );
+		if ( down && !chatModeKeyDown && (Input.ModifierMaskDown & 0x30) == 0 && VisitPresence != null && Stack.Screens.Count == 1 )
+			ToggleChatMode();
+		chatModeKeyDown = down;
 	}
 
 	/// <summary>
-	/// The park room's last lines at the original chat overlay's message list: while the chat line is open, and for <see cref="VisitChatSeconds"/> after a
-	/// line came. The visit draws them here instead of the chat overlay's corner box, which the game flow hides in a visit with other players.
+	/// Puts the chat mode or the HUD at the bottom of the stack, with nothing open over it: the chat mode once the visit is in its park's room (and on
+	/// through a reconnection) while the player keeps it and no ride view is up; the HUD otherwise, and when the server refused the park's room.
 	/// </summary>
-	private void DrawVisitChat( UiContext context )
+	private void SyncChatMode()
 	{
-		if ( IsRiding || level.HidesInterface || host?.Presence?.Invoke() is not { } presence )
+		if ( Stack.Screens.Count != 1 )
 			return;
-		var lines = presence.ChatLines;
-		if ( lines.Count != visitChatCount || (lines.Count > 0 && !ReferenceEquals( lines[^1], visitChatLast )) )
+		var presence = VisitPresence;
+		var wanted = presence != null && chatModeWanted && !IsRiding && !presence.Refused && (ChatMode || presence.CanChat);
+		if ( wanted == ChatMode )
+			return;
+		if ( wanted )
 		{
-			// a line came (the list is capped, so its last entry tells a new one apart once it is full)
-			if ( visitChatCount >= 0 && lines.Count > 0 )
-				visitChatAge = 0f;
-			visitChatCount = lines.Count;
-			visitChatLast = lines.Count > 0 ? lines[^1] : null;
+			// the HUD's windows, panels and modes go with it
+			SelectObject( null );
+			CloseArmPanel();
+			CloseCameraPanel();
+			CancelCamcorder();
+			chatModeScreen ??= CreateChatModeScreen();
+			Stack.Replace( chatModeScreen );
 		}
-		visitChatAge += context.Delta;
-		var open = Stack.Screens.Any( screen => screen.Name == VisitChatScreen );
-		if ( lines.Count == 0 || (!open && visitChatAge > VisitChatSeconds) )
-			return;
-		var area = context.Canvas.Map( VisitChatMessages, UiAnchor.Bottom );
-		var text = string.Join( "\n", lines.Skip( Math.Max( 0, lines.Count - VisitChatLines ) ) );
-		var (width, height) = context.Measure( context.Fonts.Small, text, (int)area.Width );
-		var pad = 4 * context.Canvas.TextScale;
-		var plate = new UiRect( area.X, area.Bottom - height - pad * 2, area.Width, height + pad * 2 );
-		context.Batch.AddRectangle( plate, VisitChatPlate );
-		context.DrawText( context.Fonts.Small, text, new UiRect( plate.X + pad, plate.Y + pad, plate.Width - pad * 2, height ), UiColors.Text, UiAlign.Left, wrap: true, shadow: false );
+		else
+		{
+			chatPanel?.ClosePopup();
+			Stack.Replace( hud );
+		}
 	}
 
-	private static readonly Veldrid.RgbaByte VisitNamePlate = new( 16, 24, 48, 170 );
+	/// <summary>
+	/// Whether Enter now goes to the chat overlay's entry: a visit with other players, nothing but the base screen open, no text field taking the keys
+	/// (the entry itself says its line), the pointer on no control (a control takes Enter itself), no modifier held (Alt+Enter is the window's) and no
+	/// ride view.
+	/// </summary>
+	private bool ChatEntryWanted( UiContext context, UiInput input ) =>
+		input.Has( UiKeys.Accept ) && !input.Has( UiKeys.Space ) && Stack.Screens.Count == 1 && !IsRiding && !level.HidesInterface && !Input.TextEntryActive
+		&& Stack.Screens[0].Focused is not UiTextField { Visible: true, Enabled: true }
+		&& Input.ModifierMaskDown == 0 && Stack.Screens[0].HitTest( context.Canvas, input.Mouse ) == null && VisitPresence is { CanChat: true };
+
+	/// <summary>Enter over the park: the chat mode, with the entry taking the keys.</summary>
+	private void FocusChatEntry()
+	{
+		chatModeWanted = true;
+		SyncChatMode();
+		if ( ChatMode && chatPanel != null )
+			chatModeScreen!.Focus( chatPanel.Entry );
+	}
+
+	/// <summary>
+	/// The chat mode's screen: the original chat overlay (<see cref="ChatPanel"/>) over the park, which takes the pointer only on its controls; Escape opens
+	/// the pause menu.
+	/// </summary>
+	private ChatPanel.ChatScreen CreateChatModeScreen()
+	{
+		chatPanel ??= new ChatPanel( strings, Stack, () => VisitPresence?.Chat )
+		{
+			Postcard = host?.OpenPostcard is { } open ? () => open( Stack ) : null,
+			GoTo = name => VisitPresence?.GoTo( name ),
+		};
+		var screen = new ChatPanel.ChatScreen( ChatModeScreenName, chatPanel ) { Modal = false, Back = OpenPauseMenu };
+		chatPanel.AddTo( screen );
+		return screen;
+	}
+
+	private static readonly RgbaByte VisitNamePlate = new( 16, 24, 48, 170 );
 	/// <summary>The player's own name: the original islands' yellow, as the chat park view marks the player's own marker.</summary>
-	private static readonly Veldrid.RgbaByte VisitOwnName = new( 252, 232, 7, 255 );
+	private static readonly RgbaByte VisitOwnName = new( 252, 232, 7, 255 );
 
 	/// <summary>
 	/// The players' names over their figures in a visit (<see cref="IVisitPresence.Names"/>), on a dark plate, the player's own in yellow. Drawn before the

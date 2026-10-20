@@ -34,7 +34,7 @@ public static partial class OpcodeHandlers
 		[OpcodeHandler( Opcode.EVENT_EXT, RideOpcodeStatus.Hooked, "TPW-EXE 0x552707 (`type key id control`, each resolved): EVENT with the control operand in place of 1000 (the dispatcher 0x5573D0 applies a control other than 1000 to a particle effect of types 1-2 through 0x51FFD0; the sound types ignore it); no corpus use" )]
 		public static void EventExt( RideVM vm, Operand type, Operand unknown, Operand id, Operand control ) => vm.Effect( Opcode.EVENT_EXT, new[] { type, unknown, id, control } );
 
-		[OpcodeHandler( Opcode.SETREVERB, RideOpcodeStatus.Hooked, "TPW-EXE 0x55649C (`level`, resolved): stores the operand as a dword at +0xD8 and nothing else; the reader is the main loop's 0x55A470, which sets the sound service's reverb preset (0x51C8D0, an index into SndReverb.map) from the root script of the ride being ridden whose level is not 0 (built: ReverbSelector; the mixed reverb is a stand-in, AUDIO-039); the corpus uses 0, 1, 3, 8 and 9" )]
+		[OpcodeHandler( Opcode.SETREVERB, RideOpcodeStatus.Hooked, "TPW-EXE 0x55649C (`level`, resolved): stores the operand as a dword at +0xD8 and nothing else; the reader is the main loop's 0x55A470, which sets the sound service's reverb preset (0x51C8D0, an index into SndReverb.map) from the root script of the ride being ridden whose level is not 0 (built: ReverbSelector; the mixed reverb is OpenTPW's stand-in by design, EXT:audio-reverb); the corpus uses 0, 1, 3, 8 and 9" )]
 		public static void SetReverb( RideVM vm, Operand level )
 		{
 			vm.ReverbLevel = level.Value;

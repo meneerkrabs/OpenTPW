@@ -38,7 +38,8 @@ public partial class ParkHud
 		var wasMouseDown = camcorderMouseDown;
 		camcorderMouseDown = input.LeftDown;
 		var owned = CamcorderArmed || level.FreeWalk != null;
-		var control = Input.IsFrameKeyDown( Key.ControlLeft ) || Input.IsFrameKeyDown( Key.ControlRight ) || Input.Down( InputButton.ClosePark );
+		// [BIN:TPW-EXE:0x40C900 context key match] a key matches its context entry only with the entry's exact modifier mask: the camcorder's C has none, so Alt+C (the cheats window's key) is no camcorder press
+		var control = Input.IsFrameKeyDown( Key.ControlLeft ) || Input.IsFrameKeyDown( Key.ControlRight ) || Input.Down( InputButton.ClosePark ) || (Input.ModifierMaskDown & 0x30) != 0;
 		var tools = level.BuildEntry != null || level.IsPlacing || level.IsRemovingObjects || level.CellTool.IsActive || level.IsCoasterToolActive;
 		if ( pressed && !control && !blocked && !tools && !IsRiding && GameEditions.Current == GameEdition.ThemeParkWorld )
 		{

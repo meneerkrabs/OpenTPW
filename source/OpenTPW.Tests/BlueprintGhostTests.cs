@@ -84,14 +84,144 @@ public class BlueprintGhostTests
 		}
 	}
 
-	[TestMethod]
-	public void RefusedFootprintIsAllRedWithoutArrows()
+	[DataTestMethod]
+	[DataRow( 0 )]
+	[DataRow( 90 )]
+	[DataRow( 180 )]
+	[DataRow( 270 )]
+	public void RefusedFootprintIsAllRedWithoutArrowsAtEveryRotation( int rotation )
 	{
+		// The ordinary hover's failed check-only pass sets 0x81B604 before its ghost pass (0x52390E..0x5239EE).
+		// Even a non-sticky NoModify refusal therefore must not become mixed-colour feedback in this route.
 		var shape = new ObjectShape( new[] { "***", "*2N" } );
-		var (cells, directions) = BlueprintGhosts.Footprint( shape, 5, 5, 0, allowed: false );
+		var (cells, directions) = BlueprintGhosts.Footprint( shape, 5, 5, rotation, allowed: false );
 		Assert.IsTrue( cells.All( cell => cell.Marker == BlueprintMarker.Refused ) );
 		Assert.AreEqual( 6, cells.Count );
 		Assert.AreEqual( 0, directions.Count );
+	}
+
+	/// <summary>The preview may read dimensions only, never terrain, height, ownership or other mutable host rules.</summary>
+	private sealed class PreviewGrid( int width = 9, int height = 7 ) : IParkGrid
+	{
+		public int Width => width;
+		public int Height => height;
+		public System.Numerics.Vector2 Origin => default;
+		public OriginalPlacementResult CheckTerrain( int x, int y ) => throw new InvalidOperationException( "A preview must not revalidate terrain." );
+		public float GetCellHeight( int x, int y ) => throw new InvalidOperationException( "A marker selection must not sample height." );
+	}
+
+	[DataTestMethod]
+	[DataRow( 0 )]
+	[DataRow( 90 )]
+	[DataRow( 180 )]
+	[DataRow( 270 )]
+	public void RefusedQueuedFootprintIncludesBothRedAccessCellsAtEveryRotation( int rotation )
+	{
+		var shape = new ObjectShape( new[] { "***", "*2N" } );
+		var preview = BlueprintGhosts.Footprint( shape, 4, 3, rotation, false, new PreviewGrid(), true, OriginalPlacementResult.Occupied );
+		Assert.AreEqual( 8, preview.Cells.Count );
+		Assert.IsTrue( preview.Cells.All( cell => cell.Marker == BlueprintMarker.Refused ), "whole-placement refusal stays all red" );
+		Assert.AreEqual( 0, preview.Directions.Count, "refused access cells are not arrows" );
+		var points = ObjectFootprint.GetAccessPoints( shape, 4, 3, rotation ).ToArray();
+		CollectionAssert.AreEqual( points.Select( point => (point.OutsideX, point.OutsideY) ).ToArray(),
+			preview.Cells.Skip( 6 ).Select( cell => (cell.X, cell.Y) ).ToArray() );
+	}
+
+	[DataTestMethod]
+	[DataRow( 0, 3, 0, false )]
+	[DataRow( 90, 0, 4, false )]
+	[DataRow( 180, 5, 6, false )]
+	[DataRow( 270, 8, 2, false )]
+	[DataRow( 0, 3, 4, true )]
+	[DataRow( 90, 6, 4, true )]
+	[DataRow( 180, 5, 2, true )]
+	[DataRow( 270, 2, 2, true )]
+	public void RefusedAccessBoundsFollowEntranceThenExitOrder( int rotation, int x, int y, bool entranceInBounds )
+	{
+		// A non-square host grid proves these checks do not assume the original 128-cell map.
+		var shape = new ObjectShape( new[] { "*S*", "***", "*2*" } );
+		var preview = BlueprintGhosts.Footprint( shape, x, y, rotation, false, new PreviewGrid(), true, OriginalPlacementResult.OutsideTerrain );
+		Assert.AreEqual( entranceInBounds ? 10 : 9, preview.Cells.Count,
+			"an off-grid entrance omits both outside markers; an off-grid exit keeps the entrance marker" );
+		Assert.IsTrue( preview.Cells.All( cell => cell.Marker == BlueprintMarker.Refused ) );
+		Assert.AreEqual( 0, preview.Directions.Count );
+		if ( entranceInBounds )
+		{
+			var entrance = ObjectFootprint.GetAccessPoints( shape, x, y, rotation ).Single( point => point.Kind == ObjectCellKind.Entrance );
+			Assert.AreEqual( (entrance.OutsideX, entrance.OutsideY, BlueprintMarker.Refused), preview.Cells[^1] );
+		}
+	}
+
+	[DataTestMethod]
+	[DataRow( 0, -1, 2 )]
+	[DataRow( 90, -1, 4 )]
+	[DataRow( 180, 1, 4 )]
+	[DataRow( 270, 1, 2 )]
+	public void PartlyOffGridFootprintKeepsTheLegacyFallback( int rotation, int x, int y )
+	{
+		var shape = new ObjectShape( new[] { "*S*", "***", "*2*" } );
+		var before = BlueprintGhosts.Footprint( shape, x, y, rotation, false );
+		var preview = BlueprintGhosts.Footprint( shape, x, y, rotation, false, new PreviewGrid(), true, OriginalPlacementResult.OutsideTerrain );
+		CollectionAssert.AreEqual( before.Cells, preview.Cells );
+		Assert.AreEqual( 0, preview.Directions.Count );
+	}
+
+	[DataTestMethod]
+	[DataRow( '@' )]
+	[DataRow( 'Q' )]
+	[DataRow( '+' )]
+	[DataRow( '#' )]
+	[DataRow( '<' )]
+	[DataRow( '>' )]
+	[DataRow( 'D' )]
+	public void SpecialSymbolsKeepTheLegacyRefusedFallback( char symbol )
+	{
+		var shape = new ObjectShape( new[] { "*S*", $"*{symbol}*", "*2*" } );
+		var before = BlueprintGhosts.Footprint( shape, 3, 2, 0, false );
+		var preview = BlueprintGhosts.Footprint( shape, 3, 2, 0, false, new PreviewGrid(), true, OriginalPlacementResult.Occupied );
+		CollectionAssert.AreEqual( before.Cells, preview.Cells );
+		Assert.AreEqual( 0, preview.Directions.Count );
+	}
+
+	[DataTestMethod]
+	[DataRow( "***" )]
+	[DataRow( "2**" )]
+	[DataRow( "**N" )]
+	[DataRow( "22N" )]
+	[DataRow( "2NN" )]
+	public void MissingOrMultipleAccessPointsKeepTheLegacyRefusedFallback( string row )
+	{
+		var shape = new ObjectShape( new[] { row } );
+		var before = BlueprintGhosts.Footprint( shape, 3, 2, 0, false );
+		var preview = BlueprintGhosts.Footprint( shape, 3, 2, 0, false, new PreviewGrid(), true, OriginalPlacementResult.Occupied );
+		CollectionAssert.AreEqual( before.Cells, preview.Cells );
+		Assert.AreEqual( 0, preview.Directions.Count );
+	}
+
+	[TestMethod]
+	public void AcceptedNoQueueAndUnprovenRefusalsKeepTheirExistingPresentation()
+	{
+		var shape = new ObjectShape( new[] { "***", "*2N" } );
+		foreach ( var rotation in new[] { 0, 90, 180, 270 } )
+		{
+			foreach ( var hasQueue in new[] { false, true } )
+			{
+				var before = BlueprintGhosts.Footprint( shape, 4, 3, rotation, true );
+				var accepted = BlueprintGhosts.Footprint( shape, 4, 3, rotation, true, new PreviewGrid(), hasQueue, OriginalPlacementResult.Allowed );
+				CollectionAssert.AreEqual( before.Cells, accepted.Cells );
+				CollectionAssert.AreEqual( before.Directions.ToArray(), accepted.Directions.ToArray() );
+			}
+			var refused = BlueprintGhosts.Footprint( shape, 4, 3, rotation, false );
+			var noQueue = BlueprintGhosts.Footprint( shape, 4, 3, rotation, false, new PreviewGrid(), false, OriginalPlacementResult.Occupied );
+			CollectionAssert.AreEqual( refused.Cells, noQueue.Cells );
+			foreach ( var reason in new[] { OriginalPlacementResult.Allowed, OriginalPlacementResult.Blocked, OriginalPlacementResult.NeedsPool } )
+			{
+				// Allowed placement plus a refused colour is the money/global-only fallback, not evidence for original money colours.
+				var fallback = BlueprintGhosts.Footprint( shape, 4, 3, rotation, false, new PreviewGrid(), true, reason );
+				CollectionAssert.AreEqual( refused.Cells, fallback.Cells );
+				Assert.AreEqual( 0, fallback.Directions.Count );
+			}
+		}
 	}
 
 	[TestMethod]

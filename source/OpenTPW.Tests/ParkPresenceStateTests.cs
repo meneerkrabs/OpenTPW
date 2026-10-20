@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using OpenTPW.Online.Chat;
 
 namespace OpenTPW.Tests;
 
@@ -58,6 +59,53 @@ public class ParkPresenceStateTests
 		}
 		Assert.IsNull( ParkPresenceState.Route( Wall( gap: null ), (2, 2), (8, 2) ), "no gap, no route" );
 		Assert.IsNull( ParkPresenceState.Route( ground, (2, 2), (5, 2) ), "a blocked goal has no route" );
+	}
+
+	/// <summary>A pocket of free cells walled in on all sides round <paramref name="centre"/> (radius 1 inside, the wall at radius 2).</summary>
+	private static IEnumerable<(int, int)> Pocket( (int X, int Y) centre ) =>
+		from y in Enumerable.Range( centre.Y - 2, 5 )
+		from x in Enumerable.Range( centre.X - 2, 5 )
+		where Math.Max( Math.Abs( x - centre.X ), Math.Abs( y - centre.Y ) ) == 2
+		select (x, y);
+
+	[TestMethod]
+	public void TheRouteSearchOfTheLargestParkAnswersUnreachableSpotsAtOnceAndFindsLongDetours()
+	{
+		// the largest park map: 256 x 256 cells
+		var open = new Ground( 256, 256 );
+		var search = new ParkPresenceState.RouteSearch( 256, 256 );
+		var across = search.Find( open, (0, 0), (255, 255) );
+		Assert.AreEqual( 256, across!.Count, "the diagonal across the whole park" );
+		Assert.IsTrue( search.Expanded < 2000, $"the heuristic leads straight there ({search.Expanded} cells)" );
+		// a spot walled in, near or far: the ground's areas answer at once, without flooding the park
+		var walled = new Ground( 256, 256, Pocket( (12, 10) ).Concat( Pocket( (250, 250) ) ) );
+		var pockets = new ParkPresenceState.RouteSearch( 256, 256 );
+		Assert.IsNull( pockets.Find( walled, (5, 10), (12, 10) ) );
+		Assert.AreEqual( 0, pockets.Expanded, "a near spot that cannot be reached costs no search" );
+		Assert.IsNull( pockets.Find( walled, (1, 1), (250, 250) ) );
+		Assert.AreEqual( 0, pockets.Expanded, "nor does a far one" );
+		// the same arrays serve the next search: nothing of the others is left in them
+		var again = pockets.Find( walled, (1, 1), (240, 200) );
+		Assert.AreEqual( (1, 1), again![0] );
+		Assert.AreEqual( (240, 200), again[^1] );
+		Assert.AreEqual( 240, again.Count, "the octile route: 199 diagonal steps and 40 straight ones" );
+		// a short distance behind a long wall: the route goes round its far end instead of straight through it
+		var wall = new Ground( 256, 256, Enumerable.Range( 0, 250 ).Select( y => (128, y) ) );
+		var detour = new ParkPresenceState.RouteSearch( 256, 256 ).Find( wall, (124, 10), (132, 10) );
+		Assert.IsNotNull( detour, "the long way round is found" );
+		Assert.IsTrue( detour!.Any( cell => cell.Y >= 250 ), "round the wall's end" );
+		Assert.IsTrue( detour.All( cell => wall.IsPassable( cell.X, cell.Y ) ) );
+	}
+
+	[TestMethod]
+	public void AFigureOnABlockedCellLeavesItByAnyFreeStep()
+	{
+		// the figure stands on a blocked cell beside the walled area's way out
+		var ground = new Ground( 20, 20, new[] { (5, 5) }.Concat( Enumerable.Range( 0, 20 ).Select( y => (10, y) ) ) );
+		var route = ParkPresenceState.Route( ground, (5, 5), (2, 2) );
+		Assert.AreEqual( (5, 5), route![0] );
+		Assert.AreEqual( (2, 2), route[^1] );
+		Assert.IsNull( ParkPresenceState.Route( ground, (5, 5), (15, 5) ), "across the wall there is no route" );
 	}
 
 	[TestMethod]
@@ -149,6 +197,83 @@ public class ParkPresenceStateTests
 		Assert.AreEqual( (0.205f, 0.105f), state.ToWire( state.Own.X, state.Own.Y ), "the last place sent is the end of the walk" );
 		state.TeleportTo( 50f, 50f );
 		Assert.AreEqual( (0.5f, 0.5f), state.Advance( 0.001f, true, false )!.Value, "a teleport goes out at once" );
+	}
+
+	[TestMethod]
+	public void ARidingPlayersFigureIsHiddenWhereItStoodAndAppearsThereAgain()
+	{
+		var state = new ParkPresenceState( new Ground( 100, 100 ), "Ann", (10.5f, 10.5f) );
+		Assert.IsNotNull( state.Advance( 0.016f, true, false ) );
+		Assert.AreEqual( ChatMoveMode.Teleport, state.SentMode, "the figure enters the park as a teleport (tp.exe 0x4E5EF0)" );
+		state.WalkTo( 20.5f, 10.5f );
+		state.Advance( 1f, true, false );
+		var stood = (state.Own.X, state.Own.Y);
+		// boarding a ride gives up the walk and hides the figure where it stood, at once
+		state.SetRiding( true );
+		Assert.IsFalse( state.Walking );
+		Assert.AreEqual( state.ToWire( stood.X, stood.Y ), state.Advance( 0.016f, true, false )!.Value );
+		Assert.AreEqual( ChatMoveMode.Hide, state.SentMode );
+		CollectionAssert.DoesNotContain( state.Shown.ToList(), state.Own, "the own figure is not drawn while riding" );
+		// clicks do not move it meanwhile, and its keyframes and a new connection's announcement keep it hidden
+		Assert.IsFalse( state.Click( 30f, 30f, 5.0 ) );
+		state.TeleportTo( 40f, 40f );
+		Assert.IsNull( state.Advance( 1f, true, false ) );
+		Assert.AreEqual( stood, (state.Own.X, state.Own.Y) );
+		Assert.IsNotNull( state.Advance( ParkPresenceState.KeyframeSeconds, true, false ) );
+		Assert.AreEqual( ChatMoveMode.Hide, state.SentMode );
+		Assert.IsNotNull( state.Advance( 0.016f, true, true ) );
+		Assert.AreEqual( ChatMoveMode.Hide, state.SentMode );
+		// the ride's end shows it where it stood, once; then it walks as before
+		state.SetRiding( false );
+		Assert.AreEqual( state.ToWire( stood.X, stood.Y ), state.Advance( 0.016f, true, false )!.Value );
+		Assert.AreEqual( ChatMoveMode.Unhide, state.SentMode );
+		CollectionAssert.Contains( state.Shown.ToList(), state.Own );
+		state.WalkTo( 20.5f, 20.5f );
+		Assert.IsNotNull( state.Advance( 0.5f, true, false ) );
+		Assert.AreEqual( ChatMoveMode.Walk, state.SentMode );
+		// a teleport says so
+		state.TeleportTo( 50f, 50f );
+		Assert.IsNotNull( state.Advance( 0.001f, true, false ) );
+		Assert.AreEqual( ChatMoveMode.Teleport, state.SentMode );
+		// a ride with an exit lets the figure out there
+		state.SetRiding( true, (70.5f, 30.5f) );
+		Assert.IsNotNull( state.Advance( 0.016f, true, false ) );
+		Assert.AreEqual( (50f, 50f), (state.Own.X, state.Own.Y), "hidden where it stood" );
+		state.SetRiding( false );
+		Assert.AreEqual( state.ToWire( 70.5f, 30.5f ), state.Advance( 0.016f, true, false )!.Value );
+		Assert.AreEqual( ChatMoveMode.Unhide, state.SentMode );
+		Assert.AreEqual( (70.5f, 30.5f), (state.Own.X, state.Own.Y) );
+	}
+
+	[TestMethod]
+	public void AFigureWhoseMovementJumpedIsAtItsPlaceAtOnce()
+	{
+		var state = new ParkPresenceState( new Ground( 100, 100 ), "Ann", (1, 1) );
+		var positions = new Dictionary<string, (float X, float Y)>( StringComparer.OrdinalIgnoreCase ) { ["Bob"] = (0.5f, 0.5f) };
+		var jumps = new Dictionary<string, int>( StringComparer.OrdinalIgnoreCase );
+		var players = new[] { "Ann", "Bob" };
+		state.Sync( positions, players, 0.016f, jumps );
+		var bob = state.Others.Single();
+		// a short step is walked to catch up with...
+		positions["Bob"] = (0.52f, 0.5f);
+		state.Sync( positions, players, 0.016f, jumps );
+		Assert.IsTrue( bob.X < 51f, $"walked toward the place ({bob.X})" );
+		// ...unless the movement was a teleport, also within the teleport distance
+		positions["Bob"] = (0.525f, 0.5f);
+		jumps["Bob"] = 1;
+		Assert.IsTrue( 52.5f - bob.X < ParkPresenceState.TeleportDistance );
+		state.Sync( positions, players, 0.016f, jumps );
+		Assert.AreEqual( 52.5f, bob.X, 1e-3f, "at the place at once" );
+		Assert.AreEqual( 50f, bob.Y, 1e-3f );
+		// a player who rides has no place: the figure goes, and comes back at its place when the ride ends
+		positions.Remove( "Bob" );
+		state.Sync( positions, players, 0.016f, jumps );
+		Assert.AreEqual( 0, state.Others.Count );
+		positions["Bob"] = (0.3f, 0.3f);
+		jumps["Bob"] = 2;
+		state.Sync( positions, players, 0.016f, jumps );
+		Assert.AreEqual( 30f, state.Others.Single().X, 1e-3f );
+		Assert.AreEqual( 30f, state.Others.Single().Y, 1e-3f );
 	}
 
 	[TestMethod]

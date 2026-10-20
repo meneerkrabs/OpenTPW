@@ -104,7 +104,7 @@ public class AdvisorTests
 		// 6 (a clip the archive lacks: the start 0x472F60 clears the animation of the model, which keeps its rest pose) and 22 (all 351 descriptors of table 0x76E300 are bound, so an original save's controller is imported whole) in the audio-fx sweep;
 		// 26 (the node bits: every clip end clears all of them, 0x472310 with the advisor's model flag 8, so no state persists between clips or responses) in the lip round.
 		var retired = new[] { 1, 2, 3, 4, 6, 7, 8, 10, 11, 13, 14, 15, 16, 18, 19, 20, 21, 22, 23, 24, 26, 27 };
-		CollectionAssert.AreEqual( Enumerable.Range( 1, 27 ).Except( retired ).Select( index => $"ADVISOR-{index:000}" ).ToArray(), Advisor.Approximations.Select( entry => entry.Id ).ToArray() );
+		CollectionAssert.AreEqual( Enumerable.Range( 1, 28 ).Except( retired ).Select( index => $"ADVISOR-{index:000}" ).ToArray(), Advisor.Approximations.Select( entry => entry.Id ).ToArray() );
 	}
 
 	[DataTestMethod]

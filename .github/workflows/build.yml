@@ -20,6 +20,38 @@ concurrency:
   group: build-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
+  changes:
+    if: inputs.release_tag == ''
+    runs-on: ubuntu-latest
+    outputs:
+      docs_only: ${{ steps.scope.outputs.docs_only }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          fetch-depth: 0
+      - name: Classify the complete pull request changeset
+        id: scope
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: python3 tools/ci_change_scope.py
+  proposal-docs:
+    needs: changes
+    if: inputs.release_tag == '' && needs.changes.outputs.docs_only == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+      - name: Check proposal documentation and register consistency
+        run: |
+          python tools/fidelity_register.py --check
+          python tools/progress.py --check
+          python -m unittest discover -s tools -p "test_ci_change_scope.py" -v
+          python -m unittest discover -s tools -p "test_fidelity_register.py" -v
+          python -m unittest discover -s tools -p "test_progress.py" -v
+          # Website's existing PR job independently builds/checks all documentation links.
   dispatch-release:
     # The browser's Run workflow selector lists branches. Forward the entered release
     # to its immutable tag instead of deploying the selected branch's current sources.
@@ -45,7 +77,8 @@ jobs:
           fi
           gh workflow run build.yml --repo "$GITHUB_REPOSITORY" --ref "$RELEASE_TAG"
   build:
-    if: inputs.release_tag == ''
+    needs: changes
+    if: always() && !cancelled() && inputs.release_tag == '' && needs.changes.outputs.docs_only != 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -59,10 +92,27 @@ jobs:
       - name: Check fidelity annotation consistency and the progress fragments
         run: |
           python tools/fidelity_register.py --check
+          python -m unittest discover -s tools -p "test_ci_change_scope.py" -v
           python -m unittest discover -s tools -p "test_fidelity_register.py" -v
           python tools/progress.py --check
           python -m unittest discover -s tools -p "test_progress.py" -v
           python -m unittest discover -s tools -p "test_release_train.py" -v
+          python -m unittest discover -s tools -p "test_hire_portrait_geometry_contract.py" -v
+          python -m unittest discover -s tools -p "test_employee_live_portrait_contract.py" -v
+          python -m unittest discover -s tools -p "test_employee_portrait_geometry_contract.py" -v
+          python -m unittest discover -s tools -p "test_locator_visitor_contract.py" -v
+          python -m unittest discover -s tools -p "test_visitor_info_arrow_contract.py" -v
+          python -m unittest discover -s tools -p "test_visitor_live_portrait_contract.py" -v
+          python -m unittest discover -s tools -p "test_visitor_circle_contract.py" -v
+          python -m unittest discover -s tools -p "test_staff_role_order_contract.py" -v
+          python -m unittest discover -s tools -p "test_staff_sprite_vm_contract.py" -v
+          python -m unittest discover -s tools -p "test_map_repair_contract.py" -v
+          python -m unittest discover -s tools -p "test_ride_static_contract.py" -v
+          python -m unittest discover -s tools -p "test_happiness_gauge_contract.py" -v
+          python -m unittest discover -s tools -p "test_native_statistics_history_contract.py" -v
+          python -m unittest discover -s tools -p "test_tpi_statistics_history_contract.py" -v
+          python -m unittest discover -s tools -p "test_tpi_arrival_ring_contract.py" -v
+          python -m unittest discover -s tools -p "test_graph_backdrop_contract.py" -v
           python -I -B tools/ppc-analysis/run_evidence_checks.py
       - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9
         with:
@@ -72,13 +122,14 @@ jobs:
       - name: Check patch comparison tool
         run: dotnet run --project tools/patch-analysis/PatchAnalysis.csproj --configuration Release -- --self-test
       - name: Check the browser page helpers, the kept game files and the performance harness
-        run: node --test tools/test_web_perf.mjs tools/test_web_originals.mjs tools/test_web_startup.mjs tools/test_web_inputs.mjs tools/test_web_pool_sprites.mjs tools/test_web_text.mjs
+        run: node --test tools/test_web_perf.mjs tools/test_web_determinism.mjs tools/test_web_originals.mjs tools/test_web_startup.mjs tools/test_web_inputs.mjs tools/test_web_pool_sprites.mjs tools/test_web_text.mjs
   server-image:
+    needs: changes
     # Builds the self-hosting image, browser game included, and checks that it serves the page and the API.
     # It is also the only place CI compiles the browser build (OpenTPW.Web is not in the solution).
     # Pushes from main and release tags publish it to ghcr.io (docs/SERVER.md); the official server
     # follows the latest release.
-    if: inputs.release_tag == ''
+    if: always() && !cancelled() && inputs.release_tag == '' && needs.changes.outputs.docs_only != 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read

@@ -56,7 +56,7 @@ public static class ChatFormatter
 /// Client-side online state for the in-game panel: the opt-in server, login, park list, postcards and
 /// chat. Network work runs on background tasks; results are applied on the game thread by <see cref="Pump"/>.
 /// </summary>
-public sealed class OnlineSession : IDisposable, IPresenceSession
+public sealed class OnlineSession : IDisposable, IPresenceSession, IChatPanelSource
 {
 	public const int MaximumChatLines = 200;
 	private readonly ConcurrentQueue<(int Generation, Action Action, Action? Discard)> mainThread = new();
@@ -78,11 +78,22 @@ public sealed class OnlineSession : IDisposable, IPresenceSession
 	private long? joinSentAt;
 	/// <summary>A join the server neither confirms nor refuses within this long is sent again (the chat rate limit drops requests over it).</summary>
 	internal const int JoinAnswerMilliseconds = 5000;
-	/// <summary>The newest place <see cref="MoveTo"/> was given and not sent yet with its connection, and whether a send of it is queued.</summary>
-	private (ChatConnection Chat, float X, float Y)? latestMove;
+	/// <summary>The newest place <see cref="MoveTo"/> was given and not sent yet, with the connection it belongs to and the mode the player asked for.</summary>
+	private (ChatConnection Chat, float X, float Y, ChatMoveMode Mode)? latestMove;
 	private bool moveQueued;
 	private readonly object moveLock = new();
 	private bool fetchingServerInfo;
+	/// <summary>The server-version read in flight. A newer read replaces it, and an older read's answer is ignored.</summary>
+	private int serverInfoEpoch;
+	/// <summary>
+	/// Waits before trying a connection's version again after a failed read, then the last wait is reused. One read at a time, so a dead server is asked
+	/// at most once per this interval and modes do not stay off for the rest of the connection.
+	/// </summary>
+	internal static readonly TimeSpan[] ServerInfoRetryDelays =
+	{
+		TimeSpan.FromSeconds( 1 ), TimeSpan.FromSeconds( 2 ), TimeSpan.FromSeconds( 4 ), TimeSpan.FromSeconds( 8 ), TimeSpan.FromSeconds( 15 ),
+	};
+	private TimeSpan[] serverInfoRetryDelays = ServerInfoRetryDelays;
 
 	public OnlineSession( OnlineFolders folders )
 	{
@@ -128,6 +139,8 @@ public sealed class OnlineSession : IDisposable, IPresenceSession
 	/// a second, which must not hold up a vote or a download.
 	/// </summary>
 	public bool ChatBusy => chatConnecting || Volatile.Read( ref pendingChatSends ) > 0;
+	/// <summary>A chat connection is being opened (the first one or a reconnection).</summary>
+	public bool ChatConnecting => chatConnecting;
 	public IReadOnlyList<ParkSummary> Parks { get; private set; } = Array.Empty<ParkSummary>();
 	public IReadOnlyList<PostcardSummary> Inbox { get; private set; } = Array.Empty<PostcardSummary>();
 	/// <summary>Cities of the current server's online world; empty before fetching or when the server has none.</summary>
@@ -146,10 +159,17 @@ public sealed class OnlineSession : IDisposable, IPresenceSession
 	public IReadOnlyList<string> RoomPlayers { get; private set; } = Array.Empty<string>();
 	/// <summary>
 	/// Where each player in the current chat park stands (both axes 0-1 within the park), from the server's relayed
-	/// movement; the player's own position is set by <see cref="MoveTo"/>. Empty in a room nobody moved in.
+	/// movement; the player's own position is set by <see cref="MoveTo"/>. A relayed hide removes that player's place
+	/// until their next movement. Empty in a room nobody moved in.
 	/// </summary>
 	public IReadOnlyDictionary<string, (float X, float Y)> RoomPositions => positions;
 	private readonly Dictionary<string, (float X, float Y)> positions = new( StringComparer.OrdinalIgnoreCase );
+	/// <summary>
+	/// How often each player's figure in the current room jumped (a teleport, or the appearance after a ride, <see cref="ChatMoveMode"/>): a figure whose
+	/// count changed is shown at its place at once.
+	/// </summary>
+	public IReadOnlyDictionary<string, int> RoomJumps => jumps;
+	private readonly Dictionary<string, int> jumps = new( StringComparer.OrdinalIgnoreCase );
 	/// <summary>
 	/// The logged-in player's own page (published parks, ranks, Platinum Tickets) or null before
 	/// <see cref="FetchProfile"/> ran.
@@ -157,14 +177,40 @@ public sealed class OnlineSession : IDisposable, IPresenceSession
 	public PlayerProfile? Profile { get; private set; }
 	/// <summary>
 	/// The buddies of the last <c>/buddy</c> answer and whether each was online then (the manual's buddy list: "Lists
-	/// your park buddies who are currently online"); empty before the first answer.
+	/// your park buddies who are currently online"); asked when the chat connection opens, empty until the first answer comes, and kept while a new ask
+	/// is out.
 	/// </summary>
 	public IReadOnlyList<(string Name, bool Online)> Buddies => buddies;
 	private readonly List<(string Name, bool Online)> buddies = new();
+	/// <summary>The buddy answers now coming are the overlay's own asks (<see cref="AskBuddies"/>), kept off the chat lines; a typed <c>/buddy</c> shows them.</summary>
+	private bool quietBuddyAnswers;
+	/// <summary>An ask for the buddy list is out: its first answer replaces <see cref="Buddies"/>, which stands as it was until then.</summary>
+	private bool buddyAnswerPending;
+	/// <summary>When the last ask for the buddy list went out on this connection, typed or the overlay's (<see cref="Environment.TickCount64"/>).</summary>
+	private long? buddyAskedAt;
+	/// <summary>
+	/// The overlay asks for the buddy list at most once in this many milliseconds, a typed <c>/buddy</c> included: each ask spends the connection's shared
+	/// request allowance, and an ask of the overlay right after a typed one would keep the typed one's answer off the chat lines. An ask that got no
+	/// answer in that time is taken as dropped.
+	/// </summary>
+	internal int BuddyAskIntervalMilliseconds { get; set; } = 5000;
+	/// <summary>The players this chat connection ignores, from the server's answers (it keeps the list per connection).</summary>
+	public IReadOnlyCollection<string> Ignored => ignored;
+	private readonly HashSet<string> ignored = new( StringComparer.OrdinalIgnoreCase );
+	/// <summary>Whether the player's earmuffs are on, from the server's last answer (off on a new connection).</summary>
+	public bool Earmuffs { get; private set; }
+	/// <summary>The park rooms the server took a vote for from this login, or refused one for (the player's own park, a vote already given today).</summary>
+	private readonly HashSet<string> votedRooms = new( StringComparer.Ordinal );
+	/// <summary>The server refused a vote for the day's limit, which counts the votes for every park.</summary>
+	private bool voteLimitReached;
+	/// <summary>The chat connection is open.</summary>
+	public bool ChatOpen => Chat != null;
+	/// <summary>The player is in a published park's room that the server has not taken a vote for from this login: the chat overlay's vote button works.</summary>
+	public bool CanVote => Chat != null && CurrentRoom.StartsWith( ChatProtocol.ParkRoomPrefix, StringComparison.Ordinal ) && !votedRooms.Contains( CurrentRoom ) && !voteLimitReached;
 	public bool IsLoggedIn => Client?.Session != null;
-	string? IPresenceSession.PlayerName => Settings.PlayerName;
+	string? IChatPanelSource.PlayerName => Settings.PlayerName;
 	object? IPresenceSession.Connection => Chat;
-	IReadOnlyList<string> IPresenceSession.ChatLines => ChatLines;
+	IReadOnlyList<string> IChatPanelSource.ChatLines => ChatLines;
 	/// <summary>A two-step setup waiting for its first code (after registering, or a login after an operator reset).</summary>
 	public TotpEnrollment? Enrollment { get; internal set; }
 	/// <summary>The last login asked for an authenticator code (missing or wrong).</summary>
@@ -247,6 +293,17 @@ public sealed class OnlineSession : IDisposable, IPresenceSession
 		Disconnect();
 		Client = new OnlineClient( server );
 		Settings = new OnlineSettings( server.ToString(), playerName ?? Settings.PlayerName );
+		Folders.SaveSettings( Settings );
+	}
+
+	/// <summary>Tests: the session uses <paramref name="client"/> (a stub transport) instead of opening one from a URL.</summary>
+	internal void UseClient( OnlineClient client, string? playerName )
+	{
+		if ( disposed )
+			throw new ObjectDisposedException( nameof( OnlineSession ) );
+		Disconnect();
+		Client = client;
+		Settings = new OnlineSettings( client.ServerUrl.ToString(), playerName ?? Settings.PlayerName );
 		Folders.SaveSettings( Settings );
 	}
 
@@ -372,7 +429,10 @@ public sealed class OnlineSession : IDisposable, IPresenceSession
 		lock ( moveLock )
 			latestMove = null;
 		ServerProtocol = null;
+		protocolCurrent = false;
 		fetchingServerInfo = false;
+		// a version read for the server just left must not answer the next one
+		serverInfoEpoch++;
 		Client?.Dispose();
 		Client = null;
 		Parks = Array.Empty<ParkSummary>();
@@ -384,8 +444,17 @@ public sealed class OnlineSession : IDisposable, IPresenceSession
 		CurrentRoom = ChatProtocol.LobbyRoom;
 		RoomPlayers = Array.Empty<string>();
 		positions.Clear();
+		jumps.Clear();
 		Profile = null;
 		ChatLines.Clear();
+		buddies.Clear();
+		quietBuddyAnswers = false;
+		buddyAnswerPending = false;
+		buddyAskedAt = null;
+		ignored.Clear();
+		Earmuffs = false;
+		votedRooms.Clear();
+		voteLimitReached = false;
 	}
 
 	/// <summary>
@@ -445,6 +514,18 @@ public sealed class OnlineSession : IDisposable, IPresenceSession
 		Post( () => Status = OnlineStrings.Ui( OnlineStrings.GettingChatSatelliteList, "Getting Chat Satellite List" ) );
 		var parks = await client.GetChatParksAsync();
 		Post( () => ChatParks = parks?.ChatParks ?? Array.Empty<ChatParkInfo>() );
+		return "";
+	} );
+
+	/// <summary>
+	/// Fetches the chat parks' scenes for a satellite's park details (needs a login): <paramref name="onFetched"/> gets them on the game's thread, or null
+	/// from a server without them (an older OpenTPW server).
+	/// </summary>
+	public void FetchChatParkScenes( Action<IReadOnlyList<ChatParkScene>?> onFetched ) => WithClient( async client =>
+	{
+		Post( () => Status = OnlineStrings.Ui( OnlineStrings.GettingChatSatelliteList, "Getting Chat Satellite List" ) );
+		var scenes = await client.GetChatParkScenesAsync();
+		Post( () => onFetched( scenes?.Scenes ) );
 		return "";
 	} );
 
@@ -519,8 +600,23 @@ public sealed class OnlineSession : IDisposable, IPresenceSession
 		{
 			if ( card == null || (files != null && files.Count > 0 && !files.Contains( file )) )
 				continue;
-			await client.SendPostcardAsync( card );
-			File.Move( file, Path.Combine( Folders.Sent, Path.GetFileName( file ) ), true );
+			var result = await client.SendPostcardAsync( card );
+			var delivered = result.DeliveredTo.Select( PostcardRecipient.Key ).ToHashSet( StringComparer.Ordinal );
+			var remaining = card.Manifest.To.Where( recipient => !delivered.Contains( PostcardRecipient.Key( recipient ) ) ).ToArray();
+			if ( remaining.Length == 0 )
+				File.Move( file, Path.Combine( Folders.Sent, Path.GetFileName( file ) ), true );
+			else
+			{
+				var confirmed = card.Manifest.To.Where( recipient => delivered.Contains( PostcardRecipient.Key( recipient ) ) ).ToArray();
+				if ( confirmed.Length > 0 )
+				{
+					// Stable subset names make repeating a local save safe; never mark a failed recipient as sent.
+					var suffix = ParkPackage.Hash( StrictJson.Serialize( card.Manifest with { To = confirmed } ) )[..16];
+					Folders.Store( Folders.Sent, card with { Manifest = card.Manifest with { To = confirmed } }, $"sent-{card.Id:N}-{suffix}" );
+					(card with { Manifest = card.Manifest with { To = remaining } }).Save( file );
+				}
+				throw new InvalidDataException( result.Error ?? "Some postcard recipients could not be reached; they remain in the outbox." );
+			}
 			sent++;
 		}
 		return $"{OnlineStrings.Ui( OnlineStrings.SendingOutbox, "Sending mails from outbox" )} {sent}";
@@ -615,6 +711,14 @@ public sealed class OnlineSession : IDisposable, IPresenceSession
 		}
 		Chat = chat;
 		chatCancel = cancel;
+		// the server keeps the ignore list and the earmuffs per connection: a new one starts without them
+		ignored.Clear();
+		Earmuffs = false;
+		// an ask on the old connection gets no answer on this one
+		buddyAskedAt = null;
+		// the server behind a new connection may be another version (a restart): movements carry no mode until its version is read again, and a hide waits for that read
+		protocolCurrent = false;
+		BeginServerInfo( refresh: true, attempt: 0 );
 		_ = Task.Run( () => ReceiveLoopAsync( chat, cancel.Token ) );
 		if ( joinPending && requestedRoom is { } room )
 		{
@@ -623,6 +727,8 @@ public sealed class OnlineSession : IDisposable, IPresenceSession
 			else
 				SendJoin( chat, room );
 		}
+		// [EXT:online-chat-person-flags] the overlay colours the buddies and offers the right name popup from the start, so the list is asked at once
+		AskBuddies();
 	}
 
 	private void SendJoin( ChatConnection chat, string room )
@@ -672,6 +778,15 @@ public sealed class OnlineSession : IDisposable, IPresenceSession
 				{
 					if ( Chat != chat )
 						return;
+					if ( buddyAnswerPending && IsBuddyAnswer( item ) )
+					{
+						// the first answer to an ask replaces the list, so a buddy removed elsewhere drops out
+						buddies.Clear();
+						buddyAnswerPending = false;
+					}
+					else if ( buddyAnswerPending && item.Kind == ChatEventKind.System && item.Text == "rate-limited" )
+						// the server dropped a request, perhaps the ask: the list stands as it was
+						buddyAnswerPending = false;
 					if ( item.Kind == ChatEventKind.Room && item.Room != null )
 					{
 						if ( item.Room != CurrentRoom )
@@ -679,13 +794,17 @@ public sealed class OnlineSession : IDisposable, IPresenceSession
 							// The new room's places arrive with the player's first movement there; the old room's
 							// places mean nothing in it.
 							positions.Clear();
+							jumps.Clear();
 						}
 						else if ( item.Args is { } roster && !(roster.Count > 0 && roster[^1].StartsWith( "+", StringComparison.Ordinal )) )
 						{
 							// A roster of the room the player is already in (someone came or went) keeps the places of those who
 							// stay; a roster cut short with "+N" (ChatHub.RosterEvent) does not tell who left.
-							foreach ( var name in positions.Keys.Where( name => !roster.Contains( name, StringComparer.OrdinalIgnoreCase ) ).ToArray() )
+							foreach ( var name in positions.Keys.Concat( jumps.Keys ).Where( name => !roster.Contains( name, StringComparer.OrdinalIgnoreCase ) ).ToArray() )
+							{
 								positions.Remove( name );
+								jumps.Remove( name );
+							}
 						}
 						CurrentRoom = item.Room;
 						RoomPlayers = item.Args ?? Array.Empty<string>();
@@ -700,21 +819,19 @@ public sealed class OnlineSession : IDisposable, IPresenceSession
 						&& Environment.TickCount64 - asked < JoinAnswerMilliseconds )
 					{
 						// The park's room was refused (it was unpublished): the player stays where they are.
+						// A place waiting for the refused room (for example a hide awaiting its version) is not this room's.
+						lock ( moveLock )
+							latestMove = null;
 						RefusedRoom = requestedRoom;
 						joinPending = false;
 						joinSentAt = null;
 						requestedRoom = CurrentRoom;
 					}
 					else if ( item.Kind == ChatEventKind.Move && item.From != null )
-						positions[item.From] = (item.X ?? 0, item.Y ?? 0);
-					else if ( item.Kind == ChatEventKind.Notice && item.Notice is (int)ChatNotice.YourBuddyOnline or (int)ChatNotice.YourBuddyOffline
-						&& item.Args is { Count: >= 1 } args )
-					{
-						// A /buddy answer: remember it for the chat overlay's buddy tab.
-						buddies.RemoveAll( entry => entry.Name.Equals( args[0], StringComparison.OrdinalIgnoreCase ) );
-						buddies.Add( (args[0], item.Notice == (int)ChatNotice.YourBuddyOnline) );
-					}
-					if ( item.Kind != ChatEventKind.Move )
+						Moved( item.From, (item.X ?? 0, item.Y ?? 0), item.Mode );
+					else if ( item.Kind == ChatEventKind.Notice )
+						Remember( (ChatNotice)(item.Notice ?? 0), item.Args );
+					if ( item.Kind != ChatEventKind.Move && !(quietBuddyAnswers && IsBuddyAnswer( item )) )
 						AddChatLine( line );
 				} );
 			}
@@ -732,6 +849,9 @@ public sealed class OnlineSession : IDisposable, IPresenceSession
 				Chat = null;
 				chatCancel?.Dispose();
 				chatCancel = null;
+				// a place held for the connection that just died is not this one's
+				lock ( moveLock )
+					latestMove = null;
 				if ( lost && IsLoggedIn && Client is { } client )
 				{
 					// The new connection returns to the room the player was in, or to the one they were on their way to.
@@ -747,6 +867,59 @@ public sealed class OnlineSession : IDisposable, IPresenceSession
 			}
 		} );
 	}
+
+	/// <summary>Keeps what the chat overlay shows of the server's answers: the buddy list, the ignored players, the earmuffs and the votes.</summary>
+	private void Remember( ChatNotice notice, IReadOnlyList<string>? args )
+	{
+		var name = args is { Count: >= 1 } ? args[0] : null;
+		switch ( notice )
+		{
+			case ChatNotice.YourBuddyOnline or ChatNotice.YourBuddyOffline or ChatNotice.YouMakeBuddy when name != null:
+				// a /buddy answer, or a buddy just added: the overlay's buddy tab lists them
+				var online = notice == ChatNotice.YourBuddyOnline || (notice == ChatNotice.YouMakeBuddy && RoomPlayers.Contains( name, StringComparer.OrdinalIgnoreCase ));
+				buddies.RemoveAll( entry => entry.Name.Equals( name, StringComparison.OrdinalIgnoreCase ) );
+				buddies.Add( (name, online) );
+				break;
+			case ChatNotice.YourBuddyRemoved when name != null:
+				buddies.RemoveAll( entry => entry.Name.Equals( name, StringComparison.OrdinalIgnoreCase ) );
+				break;
+			case ChatNotice.YouIgnore when name != null:
+				ignored.Add( name );
+				break;
+			case ChatNotice.YouNoLongerIgnore when name != null:
+				ignored.Remove( name );
+				break;
+			case ChatNotice.EarmuffsOn or ChatNotice.EarmuffsOff:
+				Earmuffs = notice == ChatNotice.EarmuffsOn;
+				break;
+			case ChatNotice.VotedForPark or ChatNotice.VoteFailed when CurrentRoom.StartsWith( ChatProtocol.ParkRoomPrefix, StringComparison.Ordinal ):
+				// a refusal (the player's own park, a vote already given today) would be refused again
+				votedRooms.Add( CurrentRoom );
+				break;
+			case ChatNotice.VoteLimitReached:
+				voteLimitReached = true;
+				break;
+		}
+	}
+
+	/// <summary>A relayed movement of <paramref name="name"/>: their place, none while their figure is hidden (they ride a ride), and a jump for a teleport or an appearance.</summary>
+	// [EXT:online-ride-hiding] a hidden player's figure leaves the room's places until their next movement, which shows it again
+	private void Moved( string name, (float X, float Y) place, ChatMoveMode? mode )
+	{
+		if ( mode == ChatMoveMode.Hide )
+		{
+			positions.Remove( name );
+			return;
+		}
+		positions[name] = place;
+		if ( mode is ChatMoveMode.Teleport or ChatMoveMode.Unhide )
+			jumps[name] = jumps.GetValueOrDefault( name ) + 1;
+	}
+
+	/// <summary>An answer to <c>/buddy</c> without a name: a buddy online or offline, or that there are none.</summary>
+	private static bool IsBuddyAnswer( ChatEvent item ) =>
+		item.Kind == ChatEventKind.Notice && item.Notice is (int)ChatNotice.YourBuddyOnline or (int)ChatNotice.YourBuddyOffline
+		|| item.Kind == ChatEventKind.System && item.Text == "buddy-list";
 
 	/// <summary>Waits between attempts to reconnect the chat after a server restart.</summary>
 	internal static readonly TimeSpan[] ReconnectDelays = { TimeSpan.FromSeconds( 1 ), TimeSpan.FromSeconds( 2 ), TimeSpan.FromSeconds( 4 ), TimeSpan.FromSeconds( 8 ), TimeSpan.FromSeconds( 15 ), TimeSpan.FromSeconds( 30 ) };
@@ -831,6 +1004,13 @@ public sealed class OnlineSession : IDisposable, IPresenceSession
 			AddChatLine( OnlineStrings.ChatNotice( (int)ChatNotice.NoSuchCommand, null ) );
 			return;
 		}
+		if ( command is ChatCommand.Buddy or ChatCommand.Friend && ChatCommands.SplitName( argument ).Name == null )
+		{
+			// a typed /buddy lists the buddies in the chat lines, and its answer replaces the list as an ask's does
+			buddyAnswerPending = true;
+			quietBuddyAnswers = false;
+			buddyAskedAt = Environment.TickCount64;
+		}
 		SendOnChat( chat, ChatRequest.ForCommand( command, argument ) );
 	}
 
@@ -849,6 +1029,10 @@ public sealed class OnlineSession : IDisposable, IPresenceSession
 			// already there, or on the way
 			if ( room == WantedRoom )
 				return;
+			// A coalesced place has no slot in the send chain yet: it must not follow this join into another room.
+			// Snapshots already in the chain precede the join and still belong to the room they were queued for.
+			lock ( moveLock )
+				latestMove = null;
 			requestedRoom = room;
 			joinPending = true;
 			SendJoin( chat, room );
@@ -884,47 +1068,114 @@ public sealed class OnlineSession : IDisposable, IPresenceSession
 		CurrentRoom = ChatProtocol.LobbyRoom;
 		RoomPlayers = Array.Empty<string>();
 		positions.Clear();
+		jumps.Clear();
+		// the server forgets the connection's ignore list and earmuffs with it
+		ignored.Clear();
+		Earmuffs = false;
 		requestedRoom = null;
 		joinPending = false;
 		joinSentAt = null;
 		// a send already queued finds no place and clears its own flag
 		lock ( moveLock )
 			latestMove = null;
+		// still logged in, so a version already known stays; a read for the connection just closed must not answer the next one
+		protocolCurrent = false;
+		fetchingServerInfo = false;
+		serverInfoEpoch++;
 	}
 
 	/// <summary>The current server's protocol version (<see cref="FetchServerInfo"/>); null before it is known.</summary>
 	public int? ServerProtocol { get; private set; }
+	/// <summary>
+	/// <see cref="ServerProtocol"/> was read after the open chat connection was made: only then do movements carry their mode, as a server that restarted on an
+	/// older version (a deploy taken back) would refuse the member. A hide is not sent at all until this is set, so a reconnect cannot show a riding player.
+	/// </summary>
+	private bool protocolCurrent;
+	/// <summary>Whether <see cref="protocolCurrent"/> is set (tests).</summary>
+	internal bool ProtocolCurrent => protocolCurrent;
 
 	/// <summary>Asks the server for its version once (no login needed), beside the operation slot; <see cref="ServerProtocol"/> holds the answer.</summary>
-	public void FetchServerInfo()
+	public void FetchServerInfo() => BeginServerInfo( refresh: false, attempt: 0 );
+
+	/// <summary>Tests: how long a failed version read waits before the next try (<see cref="ServerInfoRetryDelays"/>).</summary>
+	internal void SetServerInfoRetryDelays( TimeSpan[] delays ) => serverInfoRetryDelays = delays;
+
+	/// <param name="refresh">Asks again whatever is known, for the chat connection just made (<see cref="Install"/>) or a failed read of it.</param>
+	/// <param name="attempt">How many reads of this connection have already failed; chooses the wait before the next one.</param>
+	private void BeginServerInfo( bool refresh, int attempt )
 	{
-		if ( disposed || fetchingServerInfo || ServerProtocol != null || Client is not { } client )
+		if ( disposed || Client is not { } client )
 			return;
+		if ( !refresh && (fetchingServerInfo || ServerProtocol != null) )
+			return;
+		// a refresh replaces a read already in flight: that read's answer is then stale
 		fetchingServerInfo = true;
+		var epoch = ++serverInfoEpoch;
 		var startedGeneration = generation;
+		var connection = Chat;
 		_ = Task.Run( async () =>
 		{
 			operationGeneration.Value = startedGeneration;
 			try
 			{
 				var info = await client.GetServerInfoAsync();
-				Post( () => { fetchingServerInfo = false; ServerProtocol = info.ProtocolVersion; } );
+				Post( () => ApplyServerInfo( epoch, client, connection, info.ProtocolVersion ) );
 			}
 			catch ( Exception exception )
 			{
-				if ( exception is not (OnlineException or HttpRequestException or IOException or InvalidDataException or TaskCanceledException or InvalidOperationException) )
+				if ( exception is not (OnlineException or HttpRequestException or IOException or InvalidDataException or TaskCanceledException or InvalidOperationException or ObjectDisposedException) )
 					Log.Warning( $"Server version request failed: {exception}" );
-				Post( () => fetchingServerInfo = false );
+				Post( () => FailServerInfo( epoch, client, connection, attempt ) );
 			}
+		} );
+	}
+
+	/// <summary>The answer of version read <paramref name="epoch"/>, ignored when a newer read or another server has taken its place.</summary>
+	private void ApplyServerInfo( int epoch, OnlineClient client, ChatConnection? connection, int protocol )
+	{
+		if ( epoch != serverInfoEpoch || Client != client )
+			return;
+		fetchingServerInfo = false;
+		ServerProtocol = protocol;
+		// the answer speaks for the connection that was open when it was asked, and still is
+		if ( connection != null && Chat == connection )
+			protocolCurrent = true;
+		FlushMove();
+	}
+
+	/// <summary>A failed version read. The open connection's read is tried again, so modes do not stay off after one lost answer.</summary>
+	private void FailServerInfo( int epoch, OnlineClient client, ChatConnection? connection, int attempt )
+	{
+		if ( epoch != serverInfoEpoch || Client != client )
+			return;
+		fetchingServerInfo = false;
+		if ( connection == null || Chat != connection || protocolCurrent || disposed )
+			return;
+		var delay = serverInfoRetryDelays[Math.Min( attempt, serverInfoRetryDelays.Length - 1 )];
+		var next = attempt + 1;
+		var generationAtFail = generation;
+		_ = Task.Run( async () =>
+		{
+			await Task.Delay( delay );
+			Post( () =>
+			{
+				// a read started during the wait already owns the answer; replacing it would drop that answer
+				if ( disposed || generation != generationAtFail || Client != client || Chat != connection || protocolCurrent
+					|| fetchingServerInfo || epoch != serverInfoEpoch )
+					return;
+				BeginServerInfo( refresh: true, attempt: next );
+			} );
 		} );
 	}
 
 	/// <summary>
 	/// Walks the player's avatar to a place in the chat park (manual p. 68: "Left click to walk to destination;
 	/// Double click to teleport"): the server relays the position to everyone in the park. The player's own place is
-	/// recorded at once, so the view moves even before the server answers.
+	/// recorded at once, so the view moves even before the server answers. A server of <see cref="ChatProtocol.MoveModesVersion"/> or later is told how
+	/// the figure moved (<paramref name="mode"/>); an older one, which refuses the mode, gets the place alone. A hide waits until this connection's version
+	/// is known: sending it without the mode would show the rider to every older client for the whole ride.
 	/// </summary>
-	public void MoveTo( float x, float y )
+	public void MoveTo( float x, float y, ChatMoveMode mode = ChatMoveMode.Walk )
 	{
 		var chat = Chat;
 		if ( chat == null )
@@ -932,30 +1183,79 @@ public sealed class OnlineSession : IDisposable, IPresenceSession
 		var name = Settings.PlayerName;
 		if ( name != null )
 			positions[name] = (x, y);
-		// One send of the newest place waits in the chain at a time: a connection that cannot keep up skips the places in between, never the last one.
 		lock ( moveLock )
 		{
-			latestMove = (chat, x, y);
-			if ( moveQueued )
+			// a walk that replaces a waiting teleport, appearance or hide keeps that mode (the place is the new one)
+			if ( latestMove is { Chat: var pendingChat, Mode: var pending } && pendingChat == chat )
+				mode = KeepPlaceMode( mode, pending );
+			latestMove = (chat, x, y, mode);
+		}
+		FlushMove();
+	}
+
+	/// <summary>The mode a newer walk leaves in place: a teleport or an appearance keeps its jump, and a hide must not be walked into view before it is sent.</summary>
+	internal static ChatMoveMode KeepPlaceMode( ChatMoveMode incoming, ChatMoveMode pending ) =>
+		incoming == ChatMoveMode.Walk && pending is ChatMoveMode.Teleport or ChatMoveMode.Unhide or ChatMoveMode.Hide ? pending : incoming;
+
+	/// <summary>
+	/// Sends the newest place, or keeps a hide until <see cref="protocolCurrent"/> says this connection's version is known. One send waits in the chain at a
+	/// time: a connection that cannot keep up skips the places in between, never the last one.
+	/// </summary>
+	private void FlushMove()
+	{
+		(ChatConnection Chat, float X, float Y, ChatMoveMode? Wire) snapshot;
+		lock ( moveLock )
+		{
+			if ( moveQueued || latestMove is not { } held )
 				return;
+			if ( held.Chat != Chat )
+			{
+				latestMove = null;
+				return;
+			}
+			// a hide with its mode stripped is a plain place, and an older client keeps that place for the whole ride
+			if ( held.Mode == ChatMoveMode.Hide && !protocolCurrent )
+				return;
+			var wire = protocolCurrent && ServerProtocol >= ChatProtocol.MoveModesVersion ? held.Mode : (ChatMoveMode?)null;
+			latestMove = null;
 			moveQueued = true;
+			snapshot = (held.Chat, held.X, held.Y, wire);
 		}
 		Chain( () =>
 		{
-			(ChatConnection Chat, float X, float Y)? place;
 			lock ( moveLock )
-			{
-				place = latestMove;
-				latestMove = null;
 				moveQueued = false;
-			}
-			// the newest place goes out on the connection it was meant for (a reconnection's announcement on the new one)
-			return place is { } move ? move.Chat.SendAsync( ChatRequest.ForMove( move.X, move.Y ) ) : Task.CompletedTask;
+			// a place that arrived while this one was on the wire, or a hide released by the version answer, goes next
+			Post( FlushMove );
+			return snapshot.Chat.SendAsync( ChatRequest.ForMove( snapshot.X, snapshot.Y, snapshot.Wire ) );
 		} );
 	}
 
-	/// <summary>Asks the server for the buddy list (the original's <c>/buddy</c> answer lists each buddy as online or offline).</summary>
-	public void AskBuddies() => SendChatLine( "/" + ChatCommands.CanonicalName( ChatCommand.Buddy ) );
+	/// <summary>
+	/// Asks for the buddy list afresh, for the overlay: the answers (each buddy online or offline) rebuild <see cref="Buddies"/>, so a buddy removed elsewhere
+	/// drops out, and stay off the chat lines. The old list stands until the first answer, so a dropped ask leaves no buddy looking like a stranger. Nothing
+	/// is asked within <see cref="BuddyAskIntervalMilliseconds"/> of the last ask (<see cref="BuddyAskDue"/>).
+	/// </summary>
+	// [EXT:online-chat-person-flags] the overlay keeps its buddy list from asks of its own, one in five seconds at most; the original kept the flags from the server's buddy messages (0x4EE5C0)
+	public void AskBuddies()
+	{
+		if ( Chat == null || !BuddyAskDue( buddyAskedAt, Environment.TickCount64, BuddyAskIntervalMilliseconds ) )
+			return;
+		buddyAnswerPending = true;
+		quietBuddyAnswers = true;
+		buddyAskedAt = Environment.TickCount64;
+		SendCommand( ChatCommand.Buddy, "" );
+	}
+
+	/// <summary>Whether a new ask for the buddy list may go out at <paramref name="now"/>: none was sent yet, or the last at least <paramref name="interval"/> milliseconds ago.</summary>
+	internal static bool BuddyAskDue( long? askedAt, long now, int interval ) => askedAt is not { } asked || now - asked >= interval;
+
+	/// <summary>Sends one chat command (the chat overlay's buttons and popups), whatever the language's command words.</summary>
+	public void SendCommand( ChatCommand command, string argument )
+	{
+		if ( Chat is { } chat )
+			SendOnChat( chat, ChatRequest.ForCommand( command, argument ) );
+	}
 
 	/// <summary>Fetches the logged-in player's own page: their parks, their ranks and their Platinum Tickets.</summary>
 	public void FetchProfile() => WithClient( async client =>

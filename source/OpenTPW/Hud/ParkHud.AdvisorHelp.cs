@@ -27,7 +27,7 @@ public sealed partial class ParkHud
 		openScreens.Clear();
 		var screens = Stack.Screens;
 		for ( var index = 0; index < screens.Count; index++ )
-			if ( screens[index] != hud && screens[index] != rideScreen )
+			if ( screens[index] != hud && screens[index] != rideScreen && screens[index] != chatModeScreen )
 				openScreens.Add( screens[index].Name );
 		if ( level.StaffPlacement is { Kind: StaffToolKind.Place } )
 			openScreens.Add( StaffPlacementHelp );

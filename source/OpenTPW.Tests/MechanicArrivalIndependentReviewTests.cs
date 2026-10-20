@@ -168,6 +168,10 @@ public class MechanicArrivalIndependentReviewTests
 	{
 		var scene = Create(); var node = JsonNode.Parse( ParkSaveFile.Serialize( scene.Park ) )!;
 		var staff = node["Staff"]!["Members"]![0]!.AsObject(); staff["Type"] = "Guard";
+		// Keep presentation membership valid so the refusal below specifically exercises arrival job ownership.
+		var roleOrder = node["Staff"]!["RoleOrder"]!.AsArray();
+		roleOrder[(int)StaffType.Mechanic]!.AsArray().Clear();
+		roleOrder[(int)StaffType.Guard]!.AsArray().Add( scene.Member.Id );
 		var error = Assert.ThrowsException<InvalidDataException>( () => ParkSaveFile.Deserialize( Encoding.UTF8.GetBytes( node.ToJsonString() ) ) );
 		StringAssert.Contains( error.Message, "awaiting arrival job ownership" );
 		// The additional rule belongs to the new true phase; generic legacy staff parsing is unchanged.

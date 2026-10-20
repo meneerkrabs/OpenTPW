@@ -101,9 +101,12 @@ public static class ObjectRayPick
 		// clear the camera matrix takes the zoom's pitch (0x42c6b6, 0x42ca04 → 0x42cc02-0x42cc15): (1 - t) × 0.7853982 + t × 1.134464 for t = (zoom - 70) / 60 over the zoom
 		// clamp 70..130, or 40..300 with the mode flag 0x200 (0x42c621-0x42c6a1, 0x42c742-0x42c790), so at least 0.6109 rad (35 degrees), clamped to 0..1.4707963
 		// (0x42c790-0x42c7c0); the lean that follows (0x46f870 mode 9, 'ZX' at 0x74da90) adds no pitch, its X turn 0x7908e4 being set to 0 whatever the velocity
-		// (0x42c8d2-0x42c95d), only a roll from the pan velocity (0x7908e0, 0x42c850-0x42c8c8); the picker's frustum
+		// (0x42c8d2-0x42c95d), only a roll of 0.005 sqrt(100 |v|) - 0.001 from the pan velocity v (0x7908e0, 0x42c850-0x42c8c8), which each frame is halved toward
+		// 0.02 sqrt(zoom) times the pan input (0x42bc2a-0x42bc96; the edge input is (pointer share - 0.95) x 10, 0x42ba75-0x42ba9b), so the roll stays below the
+		// 20 degrees that would lift a frustum corner for any pan input under 140; the picker's frustum
 		// corners are (+-0.512, +-0.384, 0.768) in the camera's frame (0x45bf90's start: angle pi/2 x 0.885 / 2 at 0x74c9b8, 0x74d13c, turned by atan 0.75),
-		// so its highest ray rises atan(0.5) = 26.57 degrees above the view direction and, without a roll of some 20 degrees, every ray falls; OpenTPW's park camera keeps the same pitch line and
+		// so its highest ray rises atan(0.5) = 26.57 degrees above the view direction and every ray falls (the picker's only caller is the park's frame
+		// callback 0x54e2b0, registered at 0x54ecbc); OpenTPW's park camera keeps the same pitch line and
 		// half height 0.5 (ParkCameraMode.PitchOf, OriginalProjection) and has no lean, so a ray that does not fall never comes from the park camera and there is no walk
 		// to port for it (the original's loop would not end)
 		if ( !(drop < 0) )

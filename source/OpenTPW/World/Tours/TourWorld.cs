@@ -49,7 +49,7 @@ public sealed class TourWorld
 	{
 		var table = new int[4096];
 		for ( var index = 0; index < table.Length; index++ )
-			table[index] = (int)(0.5 - Math.Sin( index * 2 * 0.00076698974609375 ) * -1024.0);
+			table[index] = (int)(0.5 - DetMath.Sin( index * 2 * 0.00076698974609375 ) * -1024.0);
 		return table;
 	}
 

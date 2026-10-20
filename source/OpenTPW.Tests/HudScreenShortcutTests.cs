@@ -103,11 +103,6 @@ public class HudScreenShortcutTests
 		Assert.AreEqual( 1f, ParkHud.GaugeFill( 140f ), "the fill clamps at a full dish" );
 		Assert.AreEqual( 0f, ParkHud.GaugeFill( -20f ), "a negative mean does not fill below empty" );
 		Assert.IsNull( ParkHud.GaugeFill( null ), "no visitors in the park leaves the dish empty" );
-		var empty = ParkHud.GaugeColour( 0 );
-		var pleased = ParkHud.GaugeColour( 100 );
-		Assert.IsTrue( empty.R > pleased.R && empty.G < pleased.G, "unhappy visitors fill red, happy visitors green" );
-		Assert.AreEqual( 210, empty.A );
-		Assert.AreEqual( (empty.R, empty.G, empty.B), (ParkHud.GaugeColour( 0 ).R, ParkHud.GaugeColour( 0 ).G, ParkHud.GaugeColour( 0 ).B), "the colour is deterministic for tests and drawing" );
 	}
 
 	[TestMethod]

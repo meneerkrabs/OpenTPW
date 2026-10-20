@@ -11,11 +11,18 @@ public enum GameMode { InstantAction, FullSimulation }
 
 /// <summary>A park that can be loaded from the Load Park screen.</summary>
 /// <param name="Sandbox">True for the OpenTPW sandbox save (jungle sandbox), false for an original read-only park.</param>
-public sealed record ParkLoadEntry( string Level, int ThemeNameIndex, bool Sandbox, string? OwnSavePath = null, string? DisplayName = null, DateTime? SavedAt = null, string? Requires = null );
+/// <param name="Cheated">[EXT:cheats-publish] The saved park is marked as cheated (docs/CHEATS.md); the menu says so after its name.</param>
+public sealed record ParkLoadEntry( string Level, int ThemeNameIndex, bool Sandbox, string? OwnSavePath = null, string? DisplayName = null, DateTime? SavedAt = null, string? Requires = null, bool Cheated = false )
+{
+	/// <summary>[EXT:save-extension-switch] The extension switch the player confirmed for this load (<see cref="ParkExtensionSwitch"/>); null loads strictly.</summary>
+	public ParkExtensionSwitch? Switch { get; init; }
+}
 
 /// <summary>What the front-end screens ask of the game.</summary>
 public sealed class FrontEndActions
 {
+	/// <summary>Read-only saved Full Simulation key count, sampled after leaving the previous park; null when unavailable.</summary>
+	internal int? PlayerKeySnapshot { get; init; }
 	public Action<LobbyIslandInfo, GameMode> StartPark { get; init; } = ( _, _ ) => { };
 	public Action<ParkLoadEntry> Load { get; init; } = _ => { };
 	/// <summary>Lightweight own-save availability for the selected theme; assets are checked only on actual resume.</summary>
@@ -32,6 +39,11 @@ public sealed class FrontEndActions
 	public Func<IReadOnlyList<ParkLoadEntry>> LoadEntries { get; init; } = () => Array.Empty<ParkLoadEntry>();
 	/// <summary>Opens the online screens on the menu's stack (Go Online, UITEXT 1); null hides the button.</summary>
 	public Action<UiScreenStack>? GoOnline { get; init; }
+	/// <summary>
+	/// [EXT:save-extension-switch] Before an own save at the given path is loaded: asks whether to switch the extensions it differs in (<see cref="ParkExtensionSwitch"/>) and then calls the action with the confirmed
+	/// switch, or calls it at once with null when there is nothing to ask (the load then agrees, or refuses with its reasons). The default never asks.
+	/// </summary>
+	public Action<string?, Action<ParkExtensionSwitch?>> ConfirmExtensions { get; init; } = ( _, proceed ) => proceed( null );
 }
 
 /// <summary>
@@ -108,6 +120,7 @@ public sealed partial class FrontEndMenu
 		// [EXT:lobby-menu-hint] the original opens the lobby menu with Escape and its lobby table has no button or other mouse route for it that was found (callers of the pause menu 0x48c830 in the front-end handler 0x4be1a0 and 0x4be537 take no click); the hint tells a mouse user where it is
 		screen.Add( new UiLabel { Id = "menuHint", Text = () => strings.Extra( OpenTpwText.LobbyMenuHint ), Font = fonts => fonts.Small, Color = UiColors.Disabled, Align = UiAlign.Right,
 			Bounds = new UiRect( 1548, 1484, 480, 40 ), Anchor = UiAnchor.BottomRight } );
+		AddKeyCounter( screen );
 		screen.Back = ShowMenu;
 		screen.Focus( enter );
 		return screen;
@@ -178,6 +191,8 @@ public sealed partial class FrontEndMenu
 				Text = () => strings[entry.Label],
 				Font = fonts => fonts.Label,
 				Help = strings.Help( entry.Help ),
+				// Group 0x70c is type 8 style 0x11, so these toggles play 0xBD (the parent's style bit, hook 0x485780 at 0x4857cb).
+				ClickSound = table.ClickSoundOf( toggles[index] ),
 				Selected = () => chosen == entry.Mode,
 				Clicked = () => { chosen = entry.Mode; joyImage.Visible = entry.Mode == GameMode.InstantAction; },
 				Bounds = toggles[index].Rect,
@@ -233,6 +248,9 @@ public sealed partial class FrontEndMenu
 	internal static string RequiresSuffix( UiStringTable strings, string? requires ) =>
 		requires == null ? "" : " (" + string.Format( strings.Extra( OpenTpwText.RequiresMod ), requires ) + ")";
 
+	/// <summary>[EXT:cheats-publish] " (cheated)" after the name of a park marked as cheated (docs/CHEATS.md), else nothing.</summary>
+	internal static string CheatedSuffix( UiStringTable strings, bool cheated ) => cheated ? " (" + strings.Extra( OpenTpwText.CheatedPark ) + ")" : "";
+
 	// [EXT:list-row-pitch] the rows take the buy list's fixed pitch, a design choice (see ParkHud.BuyRowHeight)
 	public static UiScreen CreateLoadScreen( UiScreenStack stack, UiStringTable strings, IReadOnlyList<ParkLoadEntry> entries, Action<ParkLoadEntry> load )
 	{
@@ -251,7 +269,7 @@ public sealed partial class FrontEndMenu
 		var list = screen.Add( new UiScrollList
 		{
 			Id = "parks",
-			Rows = () => parks.Select( entry => entry.OwnSavePath != null ? (entry.DisplayName ?? entry.Level) + RequiresSuffix( strings, entry.Requires ) : entry.Sandbox ? strings.Extra( OpenTpwText.SandboxParkEntry )
+			Rows = () => parks.Select( entry => entry.OwnSavePath != null ? (entry.DisplayName ?? entry.Level) + CheatedSuffix( strings, entry.Cheated ) + RequiresSuffix( strings, entry.Requires ) : entry.Sandbox ? strings.Extra( OpenTpwText.SandboxParkEntry )
 				: string.Format( strings.Extra( OpenTpwText.OriginalParkEntry ), entry.ThemeNameIndex >= 0 ? strings.Theme( entry.ThemeNameIndex ) : entry.Level ) ).ToArray(),
 			Trailing = index => parks[index].SavedAt is { } saved
 				? strings.Format( UiTextRecord.SaveDate, saved.Day.ToString(), saved.Month.ToString(), saved.Year.ToString() ) + $" {saved.Hour:00}:{saved.Minute:00}" : "",
@@ -260,7 +278,8 @@ public sealed partial class FrontEndMenu
 			Enabled = parks.Length != 0,
 			Visible = parks.Length != 0,
 			ClicksOnActivate = false,
-			RowActivated = index => { if ( screen.TryBeginActivation() ) { GameAudio.PlayUi( GameAudio.ClickEvent ); load( parks[index] ); } },
+			// [BIN:TPW-EXE:0x49e901 load row] owner 0x49e880 handles type-7 notification 0x400 by loading, without a button message 0x100 or a dedicated row sound. The separate EXT Load Park button keeps its own click.
+			RowActivated = index => { if ( screen.TryBeginActivation() ) load( parks[index] ); },
 			RowHeight = OpenTPW.Hud.ParkHud.BuyRowHeight,
 			Margin = 0,
 			Background = false,
@@ -275,8 +294,15 @@ public sealed partial class FrontEndMenu
 		screen.Add( new LoadScrollBar( list, slider.Rect, knob.Rect, slider.Model2!, knob.Model! ) { Id = "loadScroll", Bounds = slider.Rect, Anchor = UiAnchor.Center, Visible = Scrolls() } );
 		var up = table.Model( "b_up" );
 		var down = table.Model( "b_down" );
-		screen.Add( new UiButton { Id = "scrollUp", Model = up.Model, Clicked = () => list.Scroll( -1 ), Bounds = up.Rect, Anchor = UiAnchor.Center, Visible = Scrolls() } );
-		screen.Add( new UiButton { Id = "scrollDown", Model = down.Model, Clicked = () => list.Scroll( 1 ), Bounds = down.Rect, Anchor = UiAnchor.Center, Visible = Scrolls() } );
+		// The arrows' parent is the type 3 slider (style 0x10) inside the load list, so they play 0xBD and repeat at 500 ms then 125 ms.
+		void ScrollArrow( LayoutNode node, int step )
+		{
+			void Scroll() => list.Scroll( step );
+			screen.Add( new UiButton { Id = step < 0 ? "scrollUp" : "scrollDown", Model = node.Model, ClickSound = table.ClickSoundOf( node ),
+				Clicked = Scroll, Repeat = UiButton.ScrollArrowRepeat( Scroll ), Bounds = node.Rect, Anchor = UiAnchor.Center, Visible = Scrolls() } );
+		}
+		ScrollArrow( up, -1 );
+		ScrollArrow( down, 1 );
 		// [EXT:load-chooser] a text button that loads the selected row, at the place of the name field the load hides; the original loads only by activating a row
 		screen.Add( new UiButton
 		{

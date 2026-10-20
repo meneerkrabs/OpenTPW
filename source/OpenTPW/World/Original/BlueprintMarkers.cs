@@ -36,6 +36,9 @@ public sealed class BlueprintMarkers : ModelEntity
 	// [BIN:STP-PPC:0x100BF540 square face] DAT_101f1240 = 10.0
 	public const float FaceSize = 10f;
 
+	/// <summary>[EXT:evening] The placement markers keep their daylight look at night so they stay readable.</summary>
+	protected override bool FollowsTimeOfDay => false;
+
 	private const int TextureSlots = 16;
 	private static readonly string[] TextureNames = ["blue", "red"];
 	// [BIN:STP-PPC:0x1022C374 dynamic texture table] slots 3, 4, 6 and 7 are m_enter, m_exit, m_front and m_inout (docs/reverse/BLUEPRINT.md)

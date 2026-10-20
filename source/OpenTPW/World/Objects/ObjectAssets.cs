@@ -79,6 +79,7 @@ public static class ObjectAssets
 				TexCoords = texCoords,
 				TexIndex = (int)sourceVertex.TextureIndex,
 				MatFlags = TextureSlotAddressing.VertexFlags( mesh.Materials[(int)sourceVertex.TextureIndex].Flags )
+					| ( TextureSlotAddressing.IsPathLikeTexture( mesh.Materials[(int)sourceVertex.TextureIndex].Name ) ? TextureSlotAddressing.SlushFlag : 0u )
 			};
 		}
 		return vertices;

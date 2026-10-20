@@ -154,6 +154,57 @@ public class ArrivalVehicleTests
 		CollectionAssert.AreEqual( new[] { ArrivalVehicleKind.Bus }, unsaved.Vehicles.Created );
 	}
 
+	/// <summary>[EXT:cheats-arrival] While an arrival cheat waits (docs/CHEATS.md) no natural group starts; once it has applied the natural timer goes on.</summary>
+	[TestMethod]
+	public void AWaitingArrivalCheatHoldsTheNaturalGroup()
+	{
+		foreach ( var withVehicles in new[] { true, false } )
+		{
+			var park = new Park();
+			if ( !withVehicles ) park.Simulation.ArrivalVehicles = null;
+			var held = true;
+			park.Simulation.ArrivalHeldForCheat = () => held;
+			var groups = new List<int>();
+			park.Simulation.ArrivalGroupStarted += groups.Add;
+			park.Turns( 40 );
+			Assert.AreEqual( 0, groups.Count, "the timer is long past, but the waiting cheat holds the group" );
+			Assert.AreEqual( 0, park.Vehicles.Created.Count, "and calls no vehicle" );
+			held = false;
+			park.Turns( 1 );
+			Assert.AreEqual( 1, groups.Count, "released: the natural group starts at the next turn" );
+		}
+	}
+
+	[DataTestMethod]
+	[DataRow( false, false )]
+	[DataRow( false, true )]
+	[DataRow( true, false )]
+	[DataRow( true, true )]
+	public void BothArrivalUpdatesReportSignedGroupsAboveTheirParkLimit( bool online, bool withVehicles )
+	{
+		var park = new Park();
+		park.Simulation.OnlineVisit = online;
+		if ( !withVehicles ) park.Simulation.ArrivalVehicles = null;
+		var limit = online ? GuestSimulation.OnlineArrivalParkLimit : GuestSimulation.ArrivalParkLimit;
+		for ( var index = 0; index < limit + 3; index++ )
+			park.Simulation.SpawnInPark( 5, 5 );
+		var groups = new List<int>();
+		park.Simulation.ArrivalGroupStarted += groups.Add;
+		park.Turn = 100;
+		park.Turns( 1 );
+		CollectionAssert.AreEqual( new[] { -3 }, groups, "the actual update emits the signed remainder before handling an empty group" );
+		Assert.AreEqual( limit + 3, park.Arrived );
+		if ( withVehicles )
+		{
+			CollectionAssert.AreEqual( new[] { ArrivalVehicleKind.Bus }, park.Vehicles.Created );
+			park.Vehicles.SetStatus( ArrivalVehicleKind.Bus, 2 );
+		}
+		park.Turns( 1 );
+		Assert.AreEqual( limit + 3, park.Arrived, "neither update creates a guest for a negative group" );
+		Assert.IsFalse( park.Simulation.CaptureSnapshot().DeliveringArrivals );
+		CollectionAssert.AreEqual( new[] { -3 }, groups, "finishing the empty group does not append a clamped zero" );
+	}
+
 	[TestMethod]
 	public void NoGuestStepsOffBeforeTheVehicleReportsItsStop()
 	{

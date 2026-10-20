@@ -329,7 +329,8 @@ public sealed class ObjectHoardingGeometry
 				{
 					if ( (sides & side) == 0 )
 						continue;
-					var angle = Math.Atan2( row + dy - halfHeight, column + dx - halfWidth );
+					// DetMath, not the platform's atan2: the board order is then the same on every runtime (the browser included)
+					var angle = DetMath.Atan2( row + dy - halfHeight, column + dx - halfWidth );
 					keys.Add( ((float)Fmod( angle + 3.9269909858703613, 6.2831854820251465 ), column, row, side) );
 				}
 			}

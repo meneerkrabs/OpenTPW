@@ -208,6 +208,11 @@ screens, options), `FrontEnd/`, `Hud/`, `World/Lobby/LobbyScene.cs`,
   profiles, so every entry starts a new park (`[EXT:no-player-profiles]`, a design decision; the original's
   GameType is derived from flag bits 0x2000000/0x1000000 of 0x7a1a8c, tp.exe `0x550ca0`). The enter-park sound
   (`cat_globallobbysfx` 4) plays when the park starts, and the screen-space particle effect 0x62 starts over the key panel with it (`LobbyEnterEffect`, docs/PARTICLES.md), except in Instant Action (game type 2), which skips both.
+- The lobby shows the saved OpenTPW Full Simulation key count in the original top-right
+  `gkey`/count slots when positive. It is sampled after the previous park is saved and
+  detached; missing or invalid progress hides it without creating a profile. This is
+  a host snapshot adaptation, not the full native affordability panel or advisor
+  refresh (ADVISOR-025; see [the bounded contract](reverse/LOBBY-KEY-PANEL.md)).
 - Load Park (202): own saved parks, original Easymode parks (read-only) and the
   OpenTPW sandbox save. The shared lobby/pause chooser is tp.exe's load dialog (table `0x7523f0`, built by
   `0x49efb0`): `window2`, the title (202), the `f_load` list whose rows have the buy list's slot-7 pitch, so twelve show
@@ -1069,3 +1074,11 @@ Independent CPU controls drive mouse entry and Apply for the second of two ident
 All Attractions shows the original per-category columns (tp.exe tables `0x750ab8`/`0x750ba0`/`0x750ca0`): the mapped ride users and shop/sideshow customers last month, profit last month and total profit come from the exact economy instance, the bars (excitement, state of repair, remaining life, satisfaction) use the object window's values, and features show the number owned of their type. The HUD takes each row's cells when the window opens, the category or order changes and every 2 s (the original's timer `0x80083`), keyed by attraction ID; cell reads do not revisit the object list or hold mutable economy records. Counts use invariant digits (centred), profits the existing localized money formatter (right-aligned). Read-only visits, TPI, missing economies and mismatched bindings retain the unavailable fallback. This adds no payment, monthly rollover, RNG, save fields or native accounting/UI equivalence claim.
 
 The existing money formatter computes signed integer magnitudes through exact decimal conversion so accepted signed 64-bit profit values, including the minimum, cannot overflow while being displayed. Currency labels, invariant grouping and accounting values are unchanged.
+
+## Offline focus-loss pause
+
+Visible offline TPW parks pause after an observed focus loss and wait for an
+explicit resume. Offscreen runs, read-only visits and logged-in sessions are
+excluded. User speed and named modal pauses keep their own state. This is a
+partial host adaptation, not retirement of UI-096; see
+[offline focus-loss pause](OFFLINE-FOCUS-PAUSE.md) for boundaries and tests.

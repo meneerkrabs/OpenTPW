@@ -85,8 +85,10 @@ sequential for every message (below).
 The original's main loop (tp.exe `0x54F4BF`) runs a 31 ms substep, and every eighth substep is a park turn. Each substep, in
 this order (`Level.AdvanceSimulation`, `ParkObjects.Simulate`, `SimulationSubstep`):
 
-1. the substep counter (`0x877D34`) and the scaled clock (`0x878C74`, +0x1F) rise at `0x54F4C4`..`0x54F4D6`, before the pause test (`0x54F4D4`); a paused park then skips the body (`0x54F8CD`), so its scripts, bump
-   module, tour cars and turns stand still with its calendar. The original's counter would keep rising for as long as its timer runs while paused; OpenTPW's 60 Hz clock does not run while paused, so the counter simply stops (an approximation of the pause's wall-clock phase only);
+1. the substep counter (`0x877D34`) and the scaled clock (`0x878C74`, +0x1F) rise at `0x54F4C4`..`0x54F4D6`, before the inactive-application test (`0x54F4D4`): the body is skipped
+   (`0x54F8CD`) only while the application is inactive (`0x7A1A14` bit 3 clear, kept by the main window procedure `0x46B600`) and the option bit `0x7A1A8C` bit 0 is set (its default,
+   `0xC0E15` at `0x449E1C`). The game pause (`0x4092A0`) freezes the clock object `0x785970` that drives the substep loop (`0x54F47F`..`0x54F4AF`), so a paused park runs no
+   substep at all: its scripts, bump module, tour cars and turns stand still with its calendar and its counter stands, as OpenTPW's 60 Hz clock does while paused;
 2. the effects system (`0x520130`, not modelled);
 3. the bump module tick (`0x546C80`, `0x54F55F`): once per substep, whichever rides exist;
 4. the script pass (`0x5516B0`, `0x54F56B`): the pass counter (`0x8791A4`) rises, then the scripts run **newest first** (a
@@ -1123,3 +1125,21 @@ The speed setter now runs after every slice of a station's root script that hold
 does. For a coaster OpenTPW built, the speed word equals the setting after `COAST 8`, so nothing changes until an upgrade
 changes the script's speed word (RIDES-033); then the coaster takes the new speed after the script's next slice, as in
 the original, where OpenTPW before kept the old one. No pinned run upgrades a coaster.
+
+## Coaster clock catch-up
+
+The coaster's motion tick now takes as its frame time the fixed steps since its last motion tick
+(`CoasterRide.MotionClockLagSeconds`), as tp.exe's `0x43CE20` takes the scaled game clock since its clock word `ctl+0x120`
+(October 19). A running coaster's tick follows the one before it, so its frame time is one step, bit-equal to before
+(the lag is the sum of the steps in double precision, cast to single precision once). Only a coaster whose track stood cut or
+reopened (state 1, which runs no motion tick, `0x435AC9`) moves differently: the first tick after the track is completed
+again takes the whole stretch, so its trains run further in that tick and every later state differs from before. The
+fixed steps are the original's scaled game clock, as the substep scheduler maps it: they stop while the park is paused and
+multiply with the game speed. What stays OpenTPW's own (`EXT:coaster-fixed-step`) is the frame: one motion tick per 60 Hz
+step instead of one per rendered frame, and no zero-time ticks while the clock stands still (the original runs them on
+every paused frame).
+
+The coaster hash gains the lag and the speed setter's replay bit (`CoasterRide.SpeedSetByReplay`, controller bit `0x8000`,
+set only by the original's layout replay, which OpenTPW does not run), so any park with a coaster hashes differently from
+before. The park-resume save carries both (optional; a save from before them holds no lag and a clear bit). No pinned
+golden or resume hash in the suite depends on a coaster's content, so no pin moved.

@@ -79,3 +79,12 @@ it is eligible, so a park without a holder role does not earn the ticket a secon
 with a better record takes it (`ParkEventKind.GlobalTicketMoved`, advisor message 234 + type),
 and a lower or equal record changes nothing. Without an eligible owner (Instant Action, no
 progress file) the park keeps its own set as before.
+
+## Tickets a cheat awarded (docs/CHEATS.md)
+
+The original's ticket cheats (Alt+G, Alt+Num1..9, `0x40C6C0..0x40C7E0`) write the same ledger bytes as a win (`0x5AF810`, `0x5AF940` with record 100), so a cheat ticket counts toward
+the keys and the theme unlocks like any other, and OpenTPW keeps that (the user's decision of 2026-10-19). A ticket cheat raises `ParkEventKind.CheatApplied`, not `GoldenTicketWon`, so the
+advisor says nothing, as in the original. `PlayerProgressRuntimeOwner` records the ticket: a local one is earned now, a global one was earned through the holder rule above (record 100: it
+moves from a park with a lower record, a record of 100 or more keeps it). `[EXT:cheats-ticket-provenance]` The ledger also keeps which earned identities a cheat awarded
+(`PlayerTicketLedger.Cheated`, `"Cheated": true` on the ticket in the progress file, absent otherwise, so a file without cheats keeps its bytes), only when the cheat earned the identity:
+a ticket the player had earned before, or a global that only moved, keeps its honest provenance. Nothing reads the mark yet; it lets a later online profile leave cheat tickets out.

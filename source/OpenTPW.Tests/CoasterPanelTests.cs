@@ -52,10 +52,12 @@ public class CoasterPanelTests
 		var (finished, _) = Finished();
 		var done = new CoasterToolPanel( finished );
 		Assert.AreEqual( CoasterToolButton.Height, done.Selected, "a finished circuit opens on the height button" );
+		Assert.IsFalse( done.ShowsActionCost, "mode 8 is hidden before a height drag begins" );
 		Assert.AreEqual( Edits | CoasterToolButton.Demolish, done.EnabledMask, "a complete track clears the two build buttons and keeps the demolish button" );
 		Assert.IsFalse( done.Select( CoasterToolButton.Build ), "a disabled button does nothing" );
 		Assert.AreEqual( CoasterToolButton.Height, done.Selected );
 		Assert.IsTrue( done.Select( CoasterToolButton.Demolish ) );
+		Assert.IsFalse( done.ShowsActionCost, "the demolition mode does not set the height-drag bit" );
 	}
 
 	[TestMethod]
@@ -72,6 +74,223 @@ public class CoasterPanelTests
 		Assert.AreEqual( CoasterPlaceResult.Ok, builder.Place( 20, 29 ) );
 		Assert.IsFalse( builder.LoopMode, "the second pylon ends the pair" );
 		Assert.IsTrue( panel.IsEnabled( CoasterToolButton.Build ) );
+	}
+
+	private static (CoasterBuilder Builder, CoasterToolPanel Panel) PendingLoopPair()
+	{
+		var (builder, _) = NewCoaster();
+		var panel = new CoasterToolPanel( builder );
+		Assert.AreEqual( CoasterPlaceResult.Ok, builder.Place( 24, 20 ) );
+		Assert.IsTrue( panel.Select( CoasterToolButton.Loop ) );
+		Assert.AreEqual( CoasterPlaceResult.Ok, builder.Place( 24, 26 ) );
+		return (builder, panel);
+	}
+
+	/// <summary>COAST-035: opening the panel resumes the chain endpoint's second pylon (0x4455c0), independently of the cleared tool mode.</summary>
+	[TestMethod]
+	public void ReopeningThePanelResumesTheSecondLoopPylonAndItsPreview()
+	{
+		var (builder, panel) = PendingLoopPair();
+		panel.Close();
+		Assert.IsFalse( builder.LoopMode );
+		Assert.IsTrue( panel.PairPending, "the endpoint's 0x80 survives leaving the tool" );
+		Assert.IsFalse( panel.IsEnabled( CoasterToolButton.Build ) );
+		var selectionOnClose = panel.Selected;
+		panel.Refresh();
+		Assert.AreEqual( selectionOnClose, panel.Selected, "refresh does not reopen a closed tool" );
+		Assert.IsFalse( builder.LoopMode );
+		Assert.IsTrue( panel.PairPending );
+		panel.Open();
+		Assert.AreEqual( CoasterToolButton.Loop, panel.Selected );
+		Assert.IsTrue( builder.LoopMode );
+		Assert.IsFalse( builder.FirstOfPair, "the resumed counter is 1" );
+		Assert.IsFalse( panel.Select( CoasterToolButton.Build ) );
+		Assert.IsTrue( panel.Select( CoasterToolButton.Loop ) );
+		Assert.IsTrue( panel.Select( CoasterToolButton.Loop ) );
+		Assert.IsFalse( builder.FirstOfPair, "repeated selection must not reset the counter to 2" );
+		var preview = builder.Track.BuildPreviewChain( (20, 29), builder.Height, builder.LoopMode, builder.FirstOfPair );
+		var ghost = preview!.Value.Chain.Single( node => (node.Flags & CoasterNodeFlags.Cursor) != 0 );
+		Assert.AreEqual( CoasterNodeFlags.Loop, ghost.Flags & (CoasterNodeFlags.Loop | CoasterNodeFlags.LoopFirst) );
+		Assert.AreEqual( 0.5f, ghost.LoopRotate );
+		Assert.AreEqual( CoasterPlaceResult.Ok, builder.Place( 20, 29 ) );
+		var second = builder.Track.Nodes[builder.Track.LastIndex];
+		Assert.AreEqual( CoasterNodeFlags.Loop, second.Flags & (CoasterNodeFlags.Loop | CoasterNodeFlags.LoopFirst) );
+		Assert.AreEqual( 0.5f, second.LoopRotate );
+		Assert.IsFalse( builder.LoopMode );
+		Assert.IsFalse( panel.PairPending );
+		Assert.IsTrue( panel.IsEnabled( CoasterToolButton.Build ) );
+		Assert.IsTrue( panel.Select( CoasterToolButton.Loop ), "the still-selected loop button starts another pair after completion" );
+		Assert.IsTrue( builder.FirstOfPair );
+	}
+
+	[DataTestMethod]
+	[DataRow( CoasterToolButton.Height )]
+	[DataRow( CoasterToolButton.Move )]
+	public void AnEditToolKeepsBuildDisabledUntilThePendingLoopPairResumes( CoasterToolButton edit )
+	{
+		var (builder, panel) = PendingLoopPair();
+		Assert.IsTrue( panel.Select( edit ) );
+		Assert.IsFalse( builder.LoopMode );
+		Assert.IsTrue( panel.PairPending );
+		Assert.IsFalse( panel.IsEnabled( CoasterToolButton.Build ) );
+		Assert.IsFalse( panel.Select( CoasterToolButton.Build ) );
+		Assert.IsTrue( panel.Press( builder.Track.LastIndex, NVector2.Zero, 24, 26 ) );
+		Assert.AreEqual( CoasterPanelResult.Edited, panel.Release( builder.Track.LastIndex, (24, 26) ) );
+		Assert.IsTrue( panel.PairPending );
+		Assert.IsTrue( panel.Select( CoasterToolButton.Loop ) );
+		Assert.IsTrue( builder.LoopMode );
+		Assert.IsFalse( builder.FirstOfPair );
+		Assert.IsFalse( panel.IsEnabled( CoasterToolButton.Build ) );
+		Assert.AreEqual( CoasterPlaceResult.Ok, builder.Place( 20, 29 ) );
+		Assert.IsFalse( builder.LoopMode );
+		Assert.IsFalse( panel.PairPending );
+	}
+
+	[TestMethod]
+	public void CancellingAnUnplacedLoopPairLeavesAnOrdinaryEndpoint()
+	{
+		var (builder, _) = NewCoaster();
+		Assert.AreEqual( CoasterPlaceResult.Ok, builder.Place( 24, 20 ) );
+		var panel = new CoasterToolPanel( builder );
+		Assert.IsTrue( panel.Select( CoasterToolButton.Loop ) );
+		Assert.IsTrue( builder.FirstOfPair );
+		Assert.IsTrue( panel.Select( CoasterToolButton.Loop ) );
+		Assert.IsTrue( builder.FirstOfPair, "an already active fresh pair stays at 2" );
+		Assert.IsFalse( panel.PairPending );
+		Assert.IsTrue( panel.Select( CoasterToolButton.Build ) );
+		Assert.IsFalse( builder.LoopMode );
+		Assert.IsTrue( panel.Select( CoasterToolButton.Loop ) );
+		panel.Close();
+		panel.Open();
+		Assert.AreEqual( CoasterToolButton.Build, panel.Selected );
+		Assert.IsFalse( builder.LoopMode );
+		Assert.IsFalse( panel.PairPending );
+	}
+
+	[TestMethod]
+	public void APendingCutPairUsesThePredecessorInsteadOfThePhysicalTail()
+	{
+		var (builder, _) = Finished();
+		Assert.AreEqual( CoasterTrack.CutResult.Cut, builder.Cut( First, First + 3 ) );
+		var track = builder.Track;
+		Assert.IsTrue( track.IsComplete && track.IsCut );
+		Assert.AreNotEqual( track.Nodes.Count - 1, track.LastIndex );
+		// Synthetic flag-only endpoint: 0x444c00 tests 0x80, without a node 0x40 or active-mode requirement.
+		track.Nodes[track.LastIndex].Flags |= CoasterNodeFlags.LoopFirst;
+		Assert.AreEqual( CoasterNodeFlags.None, track.Nodes[track.LastIndex].Flags & CoasterNodeFlags.Loop );
+		var panel = new CoasterToolPanel( builder );
+		Assert.IsTrue( panel.PairPending );
+		Assert.AreEqual( CoasterToolButton.Loop, panel.Selected );
+		Assert.IsTrue( builder.LoopMode );
+		Assert.IsFalse( builder.FirstOfPair );
+		Assert.IsFalse( panel.IsEnabled( CoasterToolButton.Build ) );
+		track.Nodes[track.LastIndex].Flags &= ~CoasterNodeFlags.LoopFirst;
+		track.Nodes[^1].Flags |= CoasterNodeFlags.LoopFirst;
+		panel.Open();
+		Assert.IsFalse( panel.PairPending, "the physical tail is not the open chain's build endpoint" );
+		Assert.AreEqual( CoasterToolButton.Build, panel.Selected );
+		Assert.IsFalse( builder.LoopMode );
+	}
+
+	[TestMethod]
+	public void AFinishedUncutTrackNeverResumesAnEndpointPair()
+	{
+		var (builder, _) = Finished();
+		builder.Track.Nodes[^1].Flags |= CoasterNodeFlags.LoopFirst;
+		var panel = new CoasterToolPanel( builder );
+		Assert.IsFalse( panel.PairPending );
+		Assert.IsFalse( builder.LoopMode );
+		Assert.AreEqual( CoasterToolButton.Height, panel.Selected );
+		Assert.IsFalse( panel.Select( CoasterToolButton.Build ) );
+		Assert.IsFalse( panel.Select( CoasterToolButton.Loop ) );
+	}
+
+	[TestMethod]
+	public void RefreshResumesAPendingPairWhenBuildBecomesDisabled()
+	{
+		var (builder, _) = NewCoaster();
+		var panel = new CoasterToolPanel( builder );
+		Assert.AreEqual( CoasterPlaceResult.Ok, builder.Place( 24, 20 ) );
+		builder.LoopMode = true;
+		Assert.AreEqual( CoasterPlaceResult.Ok, builder.Place( 24, 26 ) );
+		builder.LoopMode = false;
+		Assert.AreEqual( CoasterToolButton.Build, panel.Selected );
+		panel.Refresh();
+		Assert.AreEqual( CoasterToolButton.Loop, panel.Selected );
+		Assert.IsTrue( builder.LoopMode );
+		Assert.IsFalse( builder.FirstOfPair );
+		panel.Refresh();
+		Assert.IsFalse( builder.FirstOfPair );
+	}
+
+	[TestMethod]
+	public void APendingEndpointDoesNotBypassTheAvailableLoopPylonGate()
+	{
+		var settings = CoasterTests.PcSettings();
+		foreach ( var key in settings.Keys.Where( key => key.StartsWith( "asPylonControls[1].", StringComparison.Ordinal ) ).ToArray() )
+			settings.Remove( key );
+		var (builder, _) = NewCoaster( settings );
+		var panel = new CoasterToolPanel( builder );
+		Assert.AreEqual( CoasterToolButton.Build, panel.Selected );
+		Assert.IsFalse( panel.Select( CoasterToolButton.Loop ) );
+		Assert.AreEqual( CoasterPlaceResult.Ok, builder.Place( 24, 20 ) );
+		builder.Track.Nodes[builder.Track.LastIndex].Flags |= CoasterNodeFlags.LoopFirst;
+		panel.Refresh();
+		Assert.IsTrue( panel.PairPending );
+		Assert.IsFalse( panel.LoopUnlocked );
+		Assert.AreEqual( CoasterToolButton.Height, panel.Selected );
+		Assert.IsFalse( panel.Select( CoasterToolButton.Build ) );
+		Assert.IsFalse( panel.Select( CoasterToolButton.Loop ) );
+		panel.Open();
+		Assert.AreEqual( CoasterToolButton.Height, panel.Selected );
+		Assert.IsFalse( builder.LoopMode );
+	}
+
+	[TestMethod]
+	public void APendingEndpointDoesNotBypassTheUpgradeLevelGate()
+	{
+		var economy = EconomyTestData.Park( initialCash: 50000 );
+		Assert.AreEqual( ParkEconomy.PurchaseResult.Ok, economy.TryBuild( 1100, out var state ) );
+		var ride = new CoasterRide( CoasterDefinition.FromValues( CoasterTests.PcSettings() ), new CoasterWorld( 1 ), "Test Coaster" );
+		var builder = new CoasterBuilder( ride, new CoasterSite( 64, 64 ), () => economy, () => state!.Id );
+		CoasterTests.PlaceStation( builder, (20, 20) );
+		Assert.AreEqual( CoasterPlaceResult.Ok, builder.Place( 24, 20 ) );
+		builder.LoopMode = true;
+		Assert.AreEqual( CoasterPlaceResult.Ok, builder.Place( 24, 26 ) );
+		var panel = new CoasterToolPanel( builder );
+		Assert.AreEqual( 0, builder.UpgradeLevel );
+		Assert.IsTrue( panel.PairPending );
+		Assert.AreEqual( CoasterToolButton.Height, panel.Selected );
+		Assert.IsFalse( builder.LoopMode );
+		Assert.IsFalse( panel.Select( CoasterToolButton.Build ) );
+		Assert.IsFalse( panel.Select( CoasterToolButton.Loop ) );
+		state!.Level = 1;
+		Assert.IsTrue( panel.Select( CoasterToolButton.Loop ) );
+		Assert.IsFalse( builder.FirstOfPair );
+		state.Level = 0;
+		panel.Refresh();
+		Assert.AreEqual( CoasterToolButton.Height, panel.Selected );
+		Assert.IsFalse( builder.LoopMode );
+		Assert.IsTrue( panel.PairPending );
+	}
+
+	[TestMethod]
+	public void ASavedPendingPairResumesFromItsExistingNodeFlags()
+	{
+		var (builder, panel) = PendingLoopPair();
+		panel.Close();
+		var captured = ParkResumeJson.Deserialize<CoasterRideSaveData>( ParkResumeJson.Serialize( CoasterSave.CaptureRide( builder.Ride, attractionId: 7 ) ) );
+		var (resumed, ride) = NewCoaster();
+		ride.RestoreSnapshot( captured );
+		Assert.IsFalse( resumed.LoopMode );
+		var restoredPanel = new CoasterToolPanel( resumed );
+		Assert.IsTrue( restoredPanel.PairPending );
+		Assert.AreEqual( CoasterToolButton.Loop, restoredPanel.Selected );
+		Assert.IsTrue( resumed.LoopMode );
+		Assert.IsFalse( resumed.FirstOfPair );
+		Assert.AreEqual( CoasterPlaceResult.Ok, resumed.Place( 20, 29 ) );
+		Assert.AreEqual( 0.5f, resumed.Track.Nodes[resumed.Track.LastIndex].LoopRotate );
+		Assert.IsFalse( restoredPanel.PairPending );
 	}
 
 	// ---- Drags --------------------------------------------------------------------------------------------

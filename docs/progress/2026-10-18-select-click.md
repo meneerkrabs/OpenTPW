@@ -1,0 +1,9 @@
+## Select click plays cat_ui 0xBD (October 18, 2026)
+
+A button plays `cat_ui` 0xBD instead of 0x1F when the parent that receives message 0x100 has style bit 0x10. The hook is `0x485780` and the choice is at `0x4857cb`. The button class `0x668f9c` is the only sender of 0x100 for a mouse release over a button: it posts 0x100 to its parent (`[+0x60]`) at `0x6691eb` through the queue `0x658ccc`. The pump `0x658e42` calls the hook at `0x658eb2` (the dispatcher `0x658d9f` does too). Window procedures also send 0x100 to their own window (`0x48d83b`, `0x49973e`, `0x49ec53`, `0x4a6df5` (via the dispatcher `0x658d9f`), `0x4b640a`, `0x4b9f06`, `0x4bb020` and `0x4bfc29`; ids -1, -2 and 0xe059, some on 0x802 or 0x804), and the hook clicks for those too by that window's own style; whether OpenTPW's keyboard paths match those clicks is not read.
+
+Those parents are the vertical list scroll bars (type 3, style 0x10: their up and down arrows), the sortable lists (type 7, styles 0x91 and 0x291: their column headers) and the radio groups (type 8, style 0x11: their toggle tabs). Every other button plays 0x1F. A held arrow waits 500 ms and then steps every 125 ms (ctor `0x6688b3`, timer `0x668dd9`). The release `0x668eff` plays nothing once repeating has started. A quick click plays 0xBD and scrolls one step.
+
+AUDIO-004 is retired. A list row click posts 0x400–0x406, not 0x100, so the hook may play nothing for it; `UiScrollList` still plays 0x1F. That question is AUDIO-041 and is left open, together with a still click on a slider thumb (a plain style-1 button under the style-0x10 slider, which may play 0xBD).
+
+- After review, the wording was corrected: the button class is the only sender of 0x100 for a mouse release over a button (window procedures also send 0x100 to themselves), the thumb claim is narrowed to dragging, the type 7 styles are 0x91 and 0x291, and the 500/125 ms are stored for every button but only style bit 0x20 repeats.

@@ -176,6 +176,24 @@ internal sealed partial class GameFlow
 	/// <summary>The keys of the attached player ledger (the HUD's key counter), null while none is attached.</summary>
 	private int? PlayerKeys() => progressOwner?.Ledger.Keys;
 
+	private IReadOnlyList<int>? themeEntryCosts;
+
+	/// <summary>The player's tickets as the advisor's golden ticket advice counts them (the park's own tickets counted in, what each park costs to enter in keys), null while no ledger is attached or a park's cost cannot be read.</summary>
+	private AdvisorPlayerTickets? PlayerTickets( IReadOnlyCollection<GoldenTicketKind> parkTickets )
+	{
+		if ( progressOwner is not { } owner || Level is not { } level )
+			return null;
+		try
+		{
+			themeEntryCosts ??= ObjectCatalog.Themes.Where( theme => FileSystem.FileExists( $"/levels/{theme}/global.sam" ) ).Select( TrustedThemeEntryCost ).ToList();
+			return owner.Ledger.AdvisorView( level.LevelName, parkTickets, themeEntryCosts );
+		}
+		catch ( Exception error ) when ( error is InvalidDataException or IOException )
+		{
+			return null;
+		}
+	}
+
 	private void DetachProgress() { progressOwner?.Dispose(); progressOwner = null; progressNotice = null; shownProgressNotice = null; displayedProgressDetail = null; }
 	private void PumpProgress()
 	{

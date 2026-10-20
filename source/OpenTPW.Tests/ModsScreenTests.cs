@@ -223,16 +223,16 @@ public class ModsScreenTests
 	// ---- Screen ----------------------------------------------------------------------------------
 
 	[TestMethod]
-	public void OnlyGuestInsightsIsOfferedToPlayersOfTheGuestExtensions()
+	public void BothGuestExtensionsAreOfferedToPlayers()
 	{
-		Assert.IsFalse( OfficialExtensions.SmarterGuests.PlayerSelectable, "no real rule yet: a no-op version would lock saves to it" );
+		Assert.IsTrue( OfficialExtensions.SmarterGuests.PlayerSelectable && !OfficialExtensions.SmarterGuests.DefaultEnabled, "released as opt-in in 1.6.0: a measured effect and the CPU gate met (docs/SMARTER-GUESTS.md, Cost and release)" );
 		Assert.IsTrue( OfficialExtensions.GuestInsights.PlayerSelectable, "it only reads the park, so no save is locked" );
 		Assert.IsTrue( OfficialExtensions.Online.PlayerSelectable && OfficialExtensions.CrossEditionObjects.PlayerSelectable );
 		var stack = new UiScreenStack();
 		var screen = ModsScreen.Create( stack, OriginalUiTests.FakeStrings(), Services() );
 		stack.Push( screen );
 		var rows = ((UiScrollList)screen.Find( "extensions" )!).Rows();
-		CollectionAssert.AreEqual( new[] { "OpenTPW online  1.0.0", "Cross-edition objects  1.0.0", Text( OpenTpwText.ExtensionGuestInsightsName ) + "  1.0.0", "Pools  1.0.0", Text( OpenTpwText.ExtensionPoolGuestArtName ) + "  1.0.0", Text( OpenTpwText.ExtensionRestoredAdviceName ) + "  1.0.0" }, rows.ToArray() );
+		CollectionAssert.AreEqual( new[] { "OpenTPW online  1.0.0", "Cross-edition objects  1.0.0", Text( OpenTpwText.ExtensionSmarterGuestsName ) + "  1.6.0", Text( OpenTpwText.ExtensionGuestInsightsName ) + "  1.0.0", "Pools  1.0.0", Text( OpenTpwText.ExtensionPoolGuestArtName ) + "  1.0.0", Text( OpenTpwText.ExtensionUmbrellasName ) + "  1.0.0", Text( OpenTpwText.ExtensionRainMoodName ) + "  1.0.0", Text( OpenTpwText.ExtensionWinterName ) + "  1.0.0", Text( OpenTpwText.ExtensionWinterWeatherName ) + "  1.0.0", Text( OpenTpwText.ExtensionWinterColdName ) + "  1.0.0", Text( OpenTpwText.ExtensionWinterAlwaysName ) + "  1.0.0", Text( OpenTpwText.ExtensionRestoredAdviceName ) + "  1.0.0", Text( OpenTpwText.ExtensionEveningName ) + "  1.1.0", Text( OpenTpwText.ExtensionWinterSnowName ) + "  1.0.0", Text( OpenTpwText.ExtensionCheatsName ) + "  1.0.0" }, rows.ToArray() );
 		stack.Clear();
 	}
 
@@ -284,17 +284,16 @@ public class ModsScreenTests
 	}
 
 	[TestMethod]
-	public void SettingsAndTheCommandLineCannotSwitchOnTheSmarterExtensionWhileItIsNotSelectable()
+	public void SettingsAndTheCommandLineSwitchOnTheReleasedSmarterExtension()
 	{
 		var diagnostics = new List<string>();
 		var settings = ModStartup.WithCommandLine( ModSettings.Default.WithEnabled( "opentpw.guest-insights", true ), Array.Empty<DiscoveredMod>(), new[] { "opentpw.smarter-guests" }, Array.Empty<string>() );
 		Assert.IsTrue( settings.IsEnabled( "opentpw.smarter-guests", false ), "the request itself is a valid id" );
 		var set = ModStartup.Resolve( Array.Empty<DiscoveredMod>(), settings, Array.Empty<string>(), diagnostics );
-		Assert.IsFalse( set.IsEnabled( "opentpw.smarter-guests" ) );
-		Assert.IsTrue( set.IsEnabled( "opentpw.guest-insights" ), "the insights are selectable, so mods.json may switch them on" );
-		Assert.IsTrue( diagnostics.Any( line => line.Contains( "opentpw.smarter-guests" ) && line.Contains( "ignored" ) ), string.Join( "; ", diagnostics ) );
-		Assert.IsFalse( diagnostics.Any( line => line.Contains( "opentpw.guest-insights" ) && line.Contains( "ignored" ) ) );
-		Assert.IsFalse( FeatureGates.SmarterGuests );
+		Assert.IsTrue( set.IsEnabled( "opentpw.smarter-guests" ), "released as opt-in in 1.6.0, so --enable-mod and mods.json switch it on" );
+		Assert.IsTrue( set.IsEnabled( "opentpw.guest-insights" ) );
+		Assert.IsFalse( diagnostics.Any( line => line.Contains( "ignored" ) ), string.Join( "; ", diagnostics ) );
+		Assert.IsFalse( FeatureGates.SmarterGuests, "resolving a set does not switch the running game's gate" );
 		// tests and development code still switch them on directly
 		using var scope = OpenTpwExtensions.Use( SmarterGuestsTests.On() );
 		Assert.IsTrue( FeatureGates.SmarterGuests );
@@ -311,6 +310,9 @@ public class ModsScreenTests
 			Assert.IsTrue( texts.All( text => !string.IsNullOrWhiteSpace( text ) ), $"{key} has a text in every language" );
 			Assert.AreEqual( texts.Count, texts.Distinct().Count(), $"{key}: every language has its own text" );
 		}
+		// the mods screen's details label holds about 300 characters of description beside the name, version and flags
+		foreach ( var language in SupplementaryStrings.SupportedLanguages )
+			Assert.IsTrue( SupplementaryStrings.Get( OpenTpwText.ExtensionSmarterGuestsDescription, language ).Length <= 300, $"{language}: the smarter guests description fits the details label" );
 	}
 
 	[TestMethod]
@@ -449,7 +451,8 @@ public class ModsScreenTests
 	public void TheOptionsPageOffersTheScreenBesideGameFiles()
 	{
 		var source = File.ReadAllText( Path.Combine( RepositoryRoot(), "source", "OpenTPW", "UI", "Original", "Options", "OptionsScreen.cs" ) );
-		StringAssert.Contains( source, "ModsScreen.Create( stack, strings )" );
+		// [EXT:extensions-apply-at-load] the screen gets the flow's way to apply extension choices without a restart
+		Assert.IsTrue( source.Contains( "ModsScreen.Create( stack, strings, new ModsServices { ApplyExtensions = services.ApplyExtensions } )", StringComparison.Ordinal ), "the options page opens the screen with the flow's services" );
 		StringAssert.Contains( source, "OpenTpwText.ModsPage" );
 	}
 

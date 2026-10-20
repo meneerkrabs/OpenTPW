@@ -28,6 +28,9 @@ public sealed class ParticleRenderer : Entity
 	private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<Level, ParticleRenderer> byLevel = new();
 
 	/// <summary>The renderer of a level, or null.</summary>
+	/// <summary>True once the atlas's CPU pixels were dropped after the GPU upload (smoke tests).</summary>
+	internal bool AtlasPixelsReleased => atlas.Pixels.Length == 0;
+
 	public static ParticleRenderer? For( Level level ) => level != null && byLevel.TryGetValue( level, out var renderer ) ? renderer : null;
 
 	private readonly ParticleSystem system;
@@ -71,6 +74,8 @@ public sealed class ParticleRenderer : Entity
 		{
 			// one atlas texture shared by the three materials; a failure leaves no half-built entity or assets behind
 			atlasTexture = new Texture( atlas.Pixels, atlas.Width, atlas.Height );
+			// uploaded: this renderer reads only the frame positions from now on
+			atlas.ReleasePixels();
 			alphaMaterial = Prepare( atlasTexture, MaterialFlags.DisableDepthWrite | MaterialFlags.DoubleSided );
 			additiveMaterial = Prepare( atlasTexture, MaterialFlags.DisableDepthWrite | MaterialFlags.DoubleSided | MaterialFlags.AdditiveBlend );
 			oneOneMaterial = Prepare( atlasTexture, MaterialFlags.DisableDepthWrite | MaterialFlags.DoubleSided | MaterialFlags.OneOneBlend );
@@ -169,7 +174,7 @@ public sealed class ParticleRenderer : Entity
 			};
 			if ( (uniformsWritten & (1 << kind)) == 0 )
 			{
-				WriteUniforms( material!, eye, screenSpace: kind >= 3 );
+				WriteUniforms( material!, eye, screenSpace: kind >= 3, tinted: kind == 0 );
 				uniformsWritten |= 1 << kind;
 			}
 			Draw( commandList, material!, (first, count) );
@@ -294,16 +299,21 @@ public sealed class ParticleRenderer : Entity
 		return new SVector3( red, green, blue + 256 * alpha );
 	}
 
-	private static void WriteUniforms( Material<ObjectUniformBuffer> material, SVector3 eye, bool screenSpace )
+	// [EXT:evening] <paramref name="tinted"/>: the world's alpha-blended particles (smoke, dust, steam) take the sprite tint at dusk and night like the guests do; the additive ones (fire, sparks, fireworks)
+	// and the screen-space ones give off or belong to the screen's own light and are left as they are
+	private static void WriteUniforms( Material<ObjectUniformBuffer> material, SVector3 eye, bool screenSpace, bool tinted )
 	{
-		material.Set( "ObjectUniformBuffer", new ObjectUniformBuffer
+		var uniforms = new ObjectUniformBuffer
 		{
 			g_mModel = System.Numerics.Matrix4x4.Identity,
 			g_mView = screenSpace ? System.Numerics.Matrix4x4.Identity : Camera.ViewMatrix,
 			g_mProj = screenSpace ? System.Numerics.Matrix4x4.Identity : Camera.ProjMatrix,
 			g_vCameraPos = eye,
 			g_flTime = Time.Now
-		} );
+		};
+		if ( tinted )
+			uniforms.WithSpriteTint( Level.Current?.Look ?? EveningLook.Day );
+		material.Set( "ObjectUniformBuffer", uniforms );
 	}
 
 	private static void Draw( CommandList commandList, Material<ObjectUniformBuffer> material, (int First, int Count) range )

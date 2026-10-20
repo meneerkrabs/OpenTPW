@@ -42,3 +42,7 @@ Define typed entrance link requirements with cell-map owner; remove unconditiona
 - Deliver the evidence ledger, agreed contract and concrete regression cases described above.
 - Keep this proposal draft while required original evidence or scope decisions are unavailable.
 - Any later implementation, approximation retirement and merge require separate verified results; this document performs none.
+
+## Bounded implementation (2026-10-20)
+
+Typed, owned TPW no-queue entrance geometry now requires reciprocal links with the actual outside raw path cell before reopening. Synthetic tests cover rotations, ownership and geometry fallback, state/RNG hash and script preservation, and the unchanged real-queue rule. Unsupported/untyped geometry, prototypes and TPI retain the permissive fallback; the guard does not close already-open rides. Exit connectivity and fallback geometry remain unresolved under ECON-049. No original-game execution or browser qualification is claimed.

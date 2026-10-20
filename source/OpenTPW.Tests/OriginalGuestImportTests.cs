@@ -74,6 +74,8 @@ public class OriginalGuestImportTests
 			Decode( new SaveTestPayloads.GuestFields { Position = (At( 8 ), At( 5 )), State = 18 }, 40 ),
 		};
 		var report = simulation.ImportOriginal( saved, 755, thing => thing == 15 ? 3 : 0, thing => thing == 17 ? 21 : 0, visitorsToDate: 9 );
+		Assert.IsTrue( simulation.Guests.All( guest => guest.BodySpriteHistoryReconstructed ) );
+		Assert.IsTrue( simulation.Guests.All( guest => guest.BodySprite.Player?.Output == null ), "import never claims a connected original sprite history" );
 		CollectionAssert.AreEqual( new[] { 36, 38, 39, 40, 41 }, simulation.Guests.Select( guest => guest.Id ).ToArray(), "thing ids, in ascending order" );
 		Assert.AreEqual( random, simulation.CaptureSnapshot().RandomState, "the import draws nothing from the guest stream" );
 		Guest Of( int id ) => simulation.Guests.Single( guest => guest.Id == id );
@@ -122,10 +124,12 @@ public class OriginalGuestImportTests
 		Assert.AreEqual( GuestState.GoingToTicketBooth, Of( 30 ).State );
 		Assert.AreEqual( (GuestState.WaitingAtBooth, true, 250), (Of( 31 ).State, Of( 31 ).Paid, Of( 31 ).BoothWait), "state 3 keeps mPaidAdmission and the wait +0x200" );
 		Assert.AreEqual( (GuestState.EnteringPark, GuestState.AtTicketBooth, GuestState.CrossingRoadHome), (Of( 32 ).State, Of( 33 ).State, Of( 34 ).State) );
+		Assert.AreEqual( 0, Of( 34 ).Navigation.Mask, "state 19 keeps the saved nav_mode 0 (0x0050D150): a guest whose first gate route succeeded with mask 0 (0x004FEC90) crosses home with it" );
 		Assert.AreEqual( (GuestState.WaitingAtBooth, false), (Of( 38 ).State, Of( 38 ).Paid), "an unpaid guest of state 3 goes back to the booth or home on the next update" );
 		Assert.IsTrue( simulation.Guests.All( guest => guest.Lane == null && guest.OnGrid ) );
-		Assert.AreEqual( 6, simulation.Guests.Count );
-		StringAssert.Contains( report.Single( line => line.StartsWith( "[APPROX:SAVE-002] Guests not imported:", StringComparison.Ordinal ) ), "guest 35 (state 11), guest 36 (state 16), guest 37 (state 6 off the paths at (2, 2))" );
+		Assert.AreEqual( 7, simulation.Guests.Count, "the deciding guest 37 off the paths is imported where it stands (0x004FB530)" );
+		Assert.AreEqual( (GuestState.DoingNothing, 2, 2), (Of( 37 ).State, Of( 37 ).CellX, Of( 37 ).CellY) );
+		StringAssert.EndsWith( report.Single( line => line.StartsWith( "[APPROX:SAVE-002] Guests not imported:", StringComparison.Ordinal ) ), "guest 35 (state 11), guest 36 (state 16)." );
 		Assert.IsTrue( simulation.ValidateSnapshot( simulation.CaptureSnapshot() ).IsValid, string.Join( "; ", simulation.ValidateSnapshot( simulation.CaptureSnapshot() ).Errors ) );
 		for ( var tick = 0; tick < 6000 && simulation.Guests.Any( guest => guest.Id is 30 or 31 or 32 && guest.State != GuestState.DoingNothing ); tick++ )
 			simulation.Tick( 1f / 60 );
@@ -164,13 +168,100 @@ public class OriginalGuestImportTests
 		var simulation = new GuestSimulation( grid, settings, 5 ) { ArrivalsEnabled = false };
 		var saved = new[]
 		{
-			Decode( new SaveTestPayloads.GuestFields { Position = (At( 10 ), At( 7 )), Destination = (At( 10 ), At( 10 )), State = 18, PersonType = 0 }, 30 ),
-			Decode( new SaveTestPayloads.GuestFields { Position = (At( 10 ), At( 10 )), State = 19, PersonType = 0 }, 31 ),
-			Decode( new SaveTestPayloads.GuestFields { Position = (At( 10 ), At( 14 )), State = 21, PersonType = 0 }, 32 ),
+			Decode( new SaveTestPayloads.GuestFields { Position = (At( 10 ), At( 7 )), Destination = (At( 10 ), At( 10 )), State = 18, PersonType = 0, NavMode = 1 }, 30 ),
+			Decode( new SaveTestPayloads.GuestFields { Position = (At( 10 ), At( 10 )), State = 19, PersonType = 0, NavMode = 1 }, 31 ),
+			Decode( new SaveTestPayloads.GuestFields { Position = (At( 10 ), At( 14 )), State = 21, PersonType = 0, NavMode = 1 }, 32 ),
 		};
 		simulation.ImportOriginal( saved, 755, _ => 0, _ => 0 );
 		Assert.AreEqual( (GuestState.LeavingPark, GuestState.CrossingRoadHome, GuestState.WaitingToGoHome), (simulation.Guests[0].State, simulation.Guests[1].State, simulation.Guests[2].State) );
-		Assert.IsTrue( simulation.Guests.All( guest => guest.Navigation.Mask == 1 && guest.Lane == null ), "the walk home has the leaving mask" );
+		Assert.IsTrue( simulation.Guests.All( guest => guest.Navigation.Mask == 1 && guest.Lane == null ), "the walk home has the leaving mask, as saved in nav_mode (0x0050D150)" );
+		Assert.IsTrue( simulation.ValidateSnapshot( simulation.CaptureSnapshot() ).IsValid );
+	}
+
+	/// <summary>
+	/// Synthetic: a deciding park guest standing on a queue cell (type 3) that is not part of the path network. The load keeps it where it stands, as on grass (<c>0x004FB530</c>), and reports
+	/// the cell type: it is imported, not dropped.
+	/// </summary>
+	[TestMethod]
+	public void AParkGuestStandingOnAQueueCellIsImportedWhereItStands()
+	{
+		var simulation = Simulation();
+		simulation.Grid.SetQueue( 3, 2, -1 );
+		var saved = Decode( new SaveTestPayloads.GuestFields { Position = (At( 3 ), At( 2 )), Destination = (At( 8 ), At( 5 )), State = 6 }, 42 );
+		var report = simulation.ImportOriginal( new[] { saved }, 755, _ => 0, _ => 0 );
+		var guest = simulation.Guests.Single();
+		Assert.AreEqual( (GuestState.DoingNothing, 3, 2), (guest.State, guest.CellX, guest.CellY), "imported on the queue cell where it stands" );
+		Assert.IsTrue( report.Any( line => line.Contains( "guest 42 state 6 imported off the paths at (3, 2) (cell type 3)", StringComparison.Ordinal ) ), string.Join( "\n", report ) );
+		Assert.IsFalse( report.Any( line => line.StartsWith( "[APPROX:SAVE-002] Guests not imported:", StringComparison.Ordinal ) ) );
+	}
+
+	/// <summary>
+	/// Synthetic: a park guest of each state 6–10 standing on grass at (3, 2), three cells above the path y = 5. tp.exe's load leaves it there (<c>0x004FB530</c>) and routes a
+	/// walking state again to its accurate destination (<c>0x004F9407</c>), which draws nothing; its own state handlers bring it back onto a path in its first updates.
+	/// </summary>
+	[DataTestMethod]
+	[DataRow( 6u, GuestState.DoingNothing )]
+	[DataRow( 7u, GuestState.WalkingAround )]
+	[DataRow( 8u, GuestState.DoingNothing )]
+	[DataRow( 9u, GuestState.ThrowingAwayLitter )]
+	[DataRow( 10u, GuestState.GoingToRide )]
+	public void AParkGuestOffThePathsIsImportedWhereItStandsAndWalksBackOntoAPath( uint state, GuestState imported )
+	{
+		var simulation = Simulation();
+		simulation.Register( new RideVisitorBridge( 3, "Drinks Shop", RideVisitorKind.Shop, 1, 70, 30, GuestNeeds.Thirst ) { EntranceCell = (6, 4), ExitCell = (6, 4) } );
+		var random = simulation.CaptureSnapshot().RandomState;
+		var saved = Decode( new SaveTestPayloads.GuestFields
+		{
+			Position = (At( 3 ), At( 2 )), Destination = (At( 8 ), At( 5 )), State = state, MajorDest = state switch { 9 => 17, 10 => 15, _ => 0 }, StrandedTime = 1234
+		}, 41 );
+		var report = simulation.ImportOriginal( new[] { saved }, 755, thing => thing == 15 ? 3 : 0, thing => thing == 17 ? 21 : 0 );
+		Assert.AreEqual( random, simulation.CaptureSnapshot().RandomState, "the import draws nothing: the walk set-up's search is deterministic" );
+		var guest = simulation.Guests.Single();
+		Assert.AreEqual( (imported, 3, 2, (3, 2)), (guest.State, guest.CellX, guest.CellY, guest.Navigation.Cell), "imported where it stands" );
+		Assert.AreEqual( (0, 0), (guest.Navigation.Mask, guest.StrandedMark), "the saved nav_mode 0; the saved stranded mark is cleared as a fresh load clears it" );
+		CollectionAssert.Contains( report.ToArray(), $"[BIN:TPW-EXE:0x004F8B10] guest 41 state {state} imported off the paths at (3, 2) (cell type 0); it recovers through its state handler (0x004F9490 off-path search)." );
+		CollectionAssert.Contains( report.ToArray(), "[BIN:TPW-EXE:0x004F8B10] guest 41 saved stranded mark 1234 cleared as a fresh load clears it." );
+		Assert.IsFalse( report.Any( line => line.StartsWith( "[APPROX:SAVE-002] Guests not imported:", StringComparison.Ordinal ) ) );
+		if ( state is 7 or 9 or 10 )
+			Assert.IsTrue( guest.HasWaypointForTest() && !guest.Navigation.Stuck && guest.Navigation.Original, "the walk to the accurate destination starts off the paths (0x004D8750)" );
+		else
+			Assert.IsFalse( guest.HasWaypointForTest(), "states 6 and 8 stand" );
+		Assert.IsTrue( simulation.ValidateSnapshot( simulation.CaptureSnapshot() ).IsValid, string.Join( "; ", simulation.ValidateSnapshot( simulation.CaptureSnapshot() ).Errors ) );
+		var ticks = 0;
+		for ( ; ticks < 60 * 60 && !simulation.Grid.IsWalkable( guest.Navigation.Cell.X, guest.Navigation.Cell.Y ); ticks++ )
+			simulation.Tick( 1f / 60 );
+		Assert.IsTrue( simulation.Grid.IsWalkable( guest.Navigation.Cell.X, guest.Navigation.Cell.Y ), $"state {state} reached a path; it stands at {guest.Navigation.Cell} in state {guest.State}" );
+		Assert.IsTrue( ticks <= MaximumRecoveryTicks, $"state {state} took {ticks} ticks" );
+		Assert.IsTrue( simulation.ValidateSnapshot( simulation.CaptureSnapshot() ).IsValid );
+	}
+
+	/// <summary>The most ticks an off-path guest of the synthetic grid takes to reach the path (ten seconds: the walk of a few cells, about 400 ticks here).</summary>
+	private const int MaximumRecoveryTicks = 60 * 10;
+
+	/// <summary>
+	/// Synthetic: a wandering guest on grass walled in by water, with the leaving mask saved. The load's re-route fails without a draw and leaves the walk finished and stuck
+	/// (<c>0x0050F8E0</c>: mCantReachDest); its first update reads the stuck walk step (2), draws and wanders or decides again (<c>0x00501ABB</c>).
+	/// </summary>
+	[TestMethod]
+	public void AnEnclosedGuestOffThePathsCannotRenavAndRecoversOnItsFirstUpdate()
+	{
+		var simulation = Simulation();
+		for ( var y = 1; y <= 3; y++ )
+			for ( var x = 2; x <= 4; x++ )
+				if ( (x, y) != (3, 2) )
+					simulation.Grid.Cells.SetType( x, y, ParkCellTypes.Water );
+		var random = simulation.CaptureSnapshot().RandomState;
+		var saved = Decode( new SaveTestPayloads.GuestFields { Position = (At( 3 ), At( 2 )), Destination = (At( 8 ), At( 5 )), State = 7, NavMode = 1 }, 41 );
+		var report = simulation.ImportOriginal( new[] { saved }, 755, _ => 0, _ => 0 );
+		Assert.AreEqual( random, simulation.CaptureSnapshot().RandomState, "a failed re-route draws nothing" );
+		var guest = simulation.Guests.Single();
+		Assert.AreEqual( (GuestState.WalkingAround, 1, true, true), (guest.State, guest.Navigation.Mask, guest.HasWaypointForTest(), guest.Navigation.Stuck), "nav_mode as saved; the walk is stuck" );
+		CollectionAssert.Contains( report.ToArray(), "[BIN:TPW-EXE:0x004F8B10] guest 41 could not renav to its accurate destination (8, 5); it recovers on its first update (0x004F9407)." );
+		for ( var tick = 0; tick < 60 && random == simulation.CaptureSnapshot().RandomState; tick++ )
+			simulation.Tick( 1f / 60 );
+		Assert.AreNotEqual( random, simulation.CaptureSnapshot().RandomState, "the first update draws once the walk step answers stuck" );
+		Assert.IsTrue( guest.State is GuestState.WalkingAround or GuestState.DoingNothing );
+		Assert.AreEqual( (3, 2), (guest.CellX, guest.CellY), "walled in, it stays" );
 		Assert.IsTrue( simulation.ValidateSnapshot( simulation.CaptureSnapshot() ).IsValid );
 	}
 

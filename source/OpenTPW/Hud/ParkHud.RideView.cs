@@ -10,10 +10,9 @@ namespace OpenTPW.Hud;
 /// </summary>
 public sealed partial class ParkHud
 {
-	/// <summary>How long the full-screen static plays on entry and on exit, in seconds.</summary>
-	// [DATA:video 77:09-77:24, 7:52, 8:36] the static lasts 0.30 s on entering and leaving the ride (19 and 18 video frames of 60 per second) and 0.35 s (21 frames) in the camcorder walk; the noise changes every rendered frame (about 10 different images)
-	// [APPROX:UI-094] 0.33 s, the middle of the measured 0.30-0.35 s; the original's timer for it is not traced
-	public const float RideStaticSeconds = 0.33f;
+	/// <summary>The nominal static countdown on an observed eye-camera edge, in seconds.</summary>
+	// [BIN:TPW-EXE:0x54faf7 static countdown] the Boolean (gui_CameraFlags & 0x16) edge resets to 300 ms; 0x54fb20 tests positivity before 0x54fb46 subtracts elapsed wall time
+	public const float RideStaticSeconds = 0.3f;
 
 	/// <summary>A right click leaves the ride view only after it has been open this long, in seconds.</summary>
 	// [BIN:TPW-EXE:0x48a7bd right-click guard] the ride screen's procedure 0x48a740 leaves on the right-button message (0x10006, button 1) only when RMBCancelOn (0x78d911) is set, the clock (0x65968e) is more than 0x7d0 = 2000 ms past the stamp it took on message 0x15 (0x48a789) and the window pointer [0x7c24cc] is not 0; Escape without modifiers (0x1b, 0x48a8a7) leaves under the same pointer test
@@ -26,35 +25,43 @@ public sealed partial class ParkHud
 	private static readonly UiRect EjectBounds = new( 1916, 1404, 102, 102 );
 
 	private UiScreen? rideScreen;
-	private float rideStaticLeft;
+	private EyeModeStaticTransition rideStatic;
+	/// <summary>Presentation-only monotonic milliseconds; an override lets asset-free tests drive the real HUD update.</summary>
+	internal Func<double>? RideStaticClock { get; set; }
+
+	// [BIN:TPW-EXE:0x42a6b8 ride mode] mode 4 enters the native seat camera; 0x42af24 selects terrain camcorder mode 2.
+	// [APPROX:UI-094] FreeWalk is the host terrain-inspection substitute for native camcorder mode 2. Only this level's current camera counts;
+	// an armed camcorder, a suspended walk beneath a ride, and retired camera owners do not create extra Boolean edges. Native mask bit 0x10 is unresolved.
+	private bool EyeCameraActive => (level.RideView != null && ReferenceEquals( Camera.Mode, level.RideView ))
+		|| (level.FreeWalk != null && ReferenceEquals( Camera.Mode, level.FreeWalk ));
+
+	private void PrepareRideStatic( UiContext context ) => rideStatic.Prepare( EyeCameraActive,
+		RideStaticClock?.Invoke() ?? System.Diagnostics.Stopwatch.GetTimestamp() * (1000.0 / System.Diagnostics.Stopwatch.Frequency),
+		(int)(context.Time * 30f) );
 
 	/// <summary>True while the ride view's screen (viewfinder and eject button) is open.</summary>
 	public bool RideScreenOpen => rideScreen != null;
 
-	/// <summary>True while the TV-static transition covers the screen.</summary>
-	public bool RideStaticActive => rideStaticLeft > 0;
+	/// <summary>Whether the prepared frame shows static, including its last positive-budget frame.</summary>
+	public bool RideStaticActive => rideStatic.ShowStatic;
 
-	/// <summary>The seconds of static left.</summary>
-	public float RideStaticLeft => rideStaticLeft;
+	/// <summary>The budget after preparing this frame, in seconds; it can be nonpositive while this frame still shows static.</summary>
+	public float RideStaticLeft => (float)(rideStatic.RemainingMilliseconds / 1000.0);
 
-	/// <summary>Opens the ride screen when the ride view starts and closes it when it ends, each with the static transition; runs at both ends of a frame.</summary>
-	private void SyncRideScreen( float delta )
+	/// <summary>Synchronizes only the viewfinder/eject screen at both ends of input handling; timer observation is separate.</summary>
+	private void SyncRideScreen()
 	{
-		if ( rideStaticLeft > 0 )
-			rideStaticLeft = Math.Max( 0, rideStaticLeft - Math.Max( 0, delta ) );
 		var riding = IsRiding;
 		if ( riding && rideScreen == null )
 		{
 			rideScreen = BuildRideScreen();
 			Stack.Push( rideScreen );
-			rideStaticLeft = RideStaticSeconds;
 		}
 		else if ( !riding && rideScreen != null )
 		{
 			var screen = rideScreen;
 			rideScreen = null;
 			Stack.RemoveWhere( candidate => ReferenceEquals( candidate, screen ) );
-			rideStaticLeft = RideStaticSeconds;
 			RideCameraMode.PointerOverride = null;
 		}
 	}
@@ -82,7 +89,8 @@ public sealed partial class ParkHud
 	{
 		if ( !IsRiding )
 			return;
-		var control = Input.IsFrameKeyDown( Key.ControlLeft ) || Input.IsFrameKeyDown( Key.ControlRight );
+		// Alt+C is no C press either ([BIN:TPW-EXE:0x40C900] exact modifier match): it is the cheats window's key
+		var control = Input.IsFrameKeyDown( Key.ControlLeft ) || Input.IsFrameKeyDown( Key.ControlRight ) || (Input.ModifierMaskDown & 0x30) != 0;
 		// The C key is the camcorder's shortcut (key table action 0x10, tp.exe 0x488a00); E also leaves, as it enters ([EXT:ride-view-key]).
 		if ( shortcutsAllowed && ((!control && Input.Pressed( InputButton.CamcorderMode )) || Input.Pressed( InputButton.RideView )) )
 		{
@@ -96,16 +104,17 @@ public sealed partial class ParkHud
 	/// <summary>Whether a right click may leave: more than two seconds since the ride view opened.</summary>
 	internal static bool RideRightClickReady( float secondsOpen ) => secondsOpen > RideRightClickDelaySeconds;
 
-	/// <summary>The static drawn over a screen: full-screen grey noise that changes every frame it is shown.</summary>
+	/// <summary>Draws the prepared frame without changing its timer or noise identity.</summary>
 	private void DrawRideStatic( UiContext context )
 	{
-		if ( rideStaticLeft <= 0 )
+		if ( !rideStatic.ShowStatic )
 			return;
-		DrawStatic( context, (int)(context.Time * 30f) );
+		DrawStatic( context, rideStatic.NoiseFrame );
 	}
 
 	/// <summary>Full-screen TV static: a grid of grey cells, each from a hash of its place and the frame number, with a few brighter scan bands.</summary>
-	// [EXT:ride-static] the original's static image is not in the data files or the executable's strings (no static or noise texture or movie was found); the noise is generated here, about 7 px cells at 720p, a new picture each frame like the video's
+	// [EXT:ride-static] retained host hash noise, about 7 px cells at 720p, keyed at 30 Hz with grey levels and scan bands. The traced native generator
+	// (0x53e760) instead fills 320 x 240 pixels with black/white/grey150 from CRT random draws on every invocation; that algorithm/sequence is deferred, not untraced.
 	internal static void DrawStatic( UiContext context, int frame )
 	{
 		var canvas = context.Canvas;

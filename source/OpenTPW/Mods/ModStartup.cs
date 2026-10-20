@@ -4,7 +4,8 @@ namespace OpenTPW.Mods;
 
 /// <summary>
 /// Resolves the run's extensions and mods once at startup (docs/MODS.md) and makes them active for the whole process.
-/// Changes to <c>mods.json</c> apply at the next start. Mods are data only: nothing is loaded or executed; their overrides,
+/// Changes to <c>mods.json</c> apply at the next start, except official extensions switched on or off, which apply at the next park load
+/// ([EXT:extensions-apply-at-load], <see cref="ApplyExtensions"/>). Mods are data only: nothing is loaded or executed; their overrides,
 /// strings and objects are installed by <see cref="ModContentRoots"/>.
 /// </summary>
 // [EXT:mods] OpenTPW's own mod system; the original game had no mods
@@ -22,6 +23,62 @@ public static class ModStartup
 	/// resolved set it does not change until the next start. The browser lists the mods shipped with the page (<see cref="InitializeBrowser(Action{string}, Action{string})"/>).
 	/// </summary>
 	public static IReadOnlyList<DiscoveredMod> Discovered { get; private set; } = Array.Empty<DiscoveredMod>();
+
+	/// <summary>The choices this run was resolved with (<c>mods.json</c> and the command line), whose player order a switched extension keeps (<see cref="SwitchExtensions"/>).</summary>
+	internal static ModSettings Choices { get; private set; } = ModSettings.Default;
+
+	/// <summary>The ids switched off for this run with <c>--disable-extension</c>: a load never switches one of them on (<see cref="SwitchExtensions"/>).</summary>
+	internal static IReadOnlyList<string> DisabledForRun { get; private set; } = Array.Empty<string>();
+
+	/// <summary>[EXT:extensions-apply-at-load] The ids switched on for this run with <c>--enable-mod</c>: the Extensions and mods screen leaves a change to one of them to the next start (the command line wins for the run).</summary>
+	internal static IReadOnlyList<string> EnabledForRun { get; private set; } = Array.Empty<string>();
+
+	/// <summary>
+	/// [EXT:extensions-apply-at-load] Raised after official extensions were switched without a new start (<see cref="ApplyExtensions"/>), with the set now active: the browser host fetches the pools extension's sprite sets
+	/// when that extension came on (docs/POOLS.md, "Content", the browser's sprite sets).
+	/// </summary>
+	public static event Action<ModSet>? ExtensionsSwitched;
+
+	/// <summary>
+	/// [EXT:extensions-apply-at-load] user-approved 2026-10-19 ("Ook ontbrekende extensie aanzetten"): <paramref name="active"/> with official extensions switched on or off for this run, without a new start
+	/// (<see cref="ModSet.WithExtensions"/>, in the player order of <see cref="Choices"/>). An extension switched off with <c>--disable-extension</c> for this run is not switched on (<see cref="InvalidOperationException"/>).
+	/// </summary>
+	internal static ModSet SwitchExtensions( ModSet active, IReadOnlyDictionary<string, bool> changes )
+	{
+		ArgumentNullException.ThrowIfNull( active );
+		ArgumentNullException.ThrowIfNull( changes );
+		foreach ( var (id, on) in changes )
+			if ( on && DisabledForRun.Contains( id, StringComparer.Ordinal ) )
+				throw new InvalidOperationException( $"{id} is switched off for this run ({DisableExtensionOption})." );
+		return active.WithExtensions( changes, Choices.Order );
+	}
+
+	/// <summary>
+	/// [EXT:extensions-apply-at-load] Makes <paramref name="set"/> the active set of this run: the feature gates, the official extensions' catalog content roots (pools, umbrellas, winter) and the mods' hooks, which are
+	/// installed again for the same files-based mods (<see cref="ModContentRoots.Activate"/>). Everything else that depends on an extension reads it when a park is built (docs/MODS.md, "When a change applies"),
+	/// so the change takes effect at the next park load or start. Call it only while no park is being simulated with the old set, or right before a park replaces the live one.
+	/// </summary>
+	internal static void ApplyExtensions( ModSet set, Action<string>? trace = null )
+	{
+		ArgumentNullException.ThrowIfNull( set );
+		OpenTpwExtensions.Activate( set );
+		ModContentRoots.Activate( set, trace ?? (_ => { }) );
+		ExtensionsSwitched?.Invoke( set );
+	}
+
+	/// <summary>[EXT:extensions-apply-at-load] Writes extension choices to <c>mods.json</c> at <paramref name="path"/> as the Extensions and mods screen does, keeping every other choice in the file.</summary>
+	internal static void SaveExtensionChoices( string path, IReadOnlyDictionary<string, bool> changes )
+	{
+		var diagnostics = new List<string>();
+		var settings = ModSettings.Load( path, diagnostics );
+		// a mods.json that exists but cannot be read is not replaced by one that only holds these choices: the player's other choices would be lost
+		if ( File.Exists( path ) && diagnostics.Any( diagnostic => diagnostic.StartsWith( "Mod settings could not be read", StringComparison.Ordinal ) ) )
+			throw new IOException( diagnostics.First( diagnostic => diagnostic.StartsWith( "Mod settings could not be read", StringComparison.Ordinal ) ) );
+		foreach ( var (id, on) in changes.OrderBy( pair => pair.Key, StringComparer.Ordinal ) )
+			settings = settings.WithEnabled( id, on );
+		settings.Save( path );
+		Choices = changes.Aggregate( Choices, ( choices, change ) => choices.WithEnabled( change.Key, change.Value ) );
+	}
 
 	/// <summary>
 	/// This build's OpenTPW version for <c>openTpw</c> ranges: the assembly's informational version, or null for a
@@ -56,8 +113,8 @@ public static class ModStartup
 		var discovered = ModDiscovery.Discover( Values( args, ModDirOption, "a mod folder containing " + ModManifest.FileName ),
 			ModDiscovery.SplitEnvironment( modDirsEnvironment ),
 			smokeTest ? null : configDirectory, programDirectory );
-		settings = WithCommandLine( settings, discovered, Values( args, EnableModOption, "an extension or mod id such as opentpw.cross-edition-objects" ),
-			Values( args, ModInputOption, "<mod id>:<input id>=<folder>" ) );
+		var enabledIds = Values( args, EnableModOption, "an extension or mod id such as opentpw.cross-edition-objects" );
+		settings = WithCommandLine( settings, discovered, enabledIds, Values( args, ModInputOption, "<mod id>:<input id>=<folder>" ) );
 		var disabledIds = Values( args, DisableExtensionOption, "an extension or mod id such as opentpw.online" );
 		// [EXT:script-mods] --safe-mode or a marker of an unfinished start switches the script mods off for this run; otherwise the marker is
 		// written now, before any script is read or compiled (the manifests are known, docs/SCRIPT-MODS.md)
@@ -73,6 +130,9 @@ public static class ModStartup
 		Report( set, diagnostics, trace, warning );
 		OpenTpwExtensions.Activate( set );
 		Discovered = discovered;
+		Choices = settings;
+		DisabledForRun = disabledIds;
+		EnabledForRun = enabledIds;
 		// [EXT:mods] the mods' overrides, strings and objects become visible to the game (docs/MODS.md)
 		ModContentRoots.Activate( set, trace );
 		return set;
@@ -121,6 +181,9 @@ public static class ModStartup
 		Report( set, diagnostics, trace, warning );
 		OpenTpwExtensions.Activate( set );
 		Discovered = discovered;
+		Choices = settings;
+		DisabledForRun = Array.Empty<string>();
+		EnabledForRun = Array.Empty<string>();
 		BrowserModInputs.LockInUse( set );
 		// [EXT:mods] the mods' objects become visible to the game (docs/MODS.md); files-based overrides work the same way
 		ModContentRoots.Activate( set, trace );

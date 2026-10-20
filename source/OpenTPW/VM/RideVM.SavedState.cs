@@ -96,7 +96,12 @@ public sealed partial class RideVM
 		return null;
 	}
 
-	/// <summary>A saved absolute deadline as this script's clock counts it: 0 stays none, a deadline not ahead of the saved clock is already past (any value below the script clock behaves alike).</summary>
+	/// <summary>
+	/// A saved absolute deadline as this script's clock counts it: 0 stays none, a deadline ahead of the saved clock becomes the remaining time,
+	/// and a deadline not ahead of it is already past and imports as 0 (none). WAIT4ANIM treats the two alike (0x5538EB: a zero or reached
+	/// deadline continues and leaves the deadline cleared), and the deadline must stay non-negative: an earlier -1 stand-in for "past" made every
+	/// park-resume or restart snapshot of a park with a finished animation wait fail validation ("WAIT4ANIM deadline -1 is not finite and non-negative").
+	/// </summary>
 	private static double RelativeDeadline( uint saved, uint clockWord ) =>
-		saved == 0 ? 0 : unchecked( (int)(saved - clockWord) ) is var difference && difference > 0 ? difference : -1;
+		saved == 0 ? 0 : unchecked( (int)(saved - clockWord) ) is var difference && difference > 0 ? difference : 0;
 }

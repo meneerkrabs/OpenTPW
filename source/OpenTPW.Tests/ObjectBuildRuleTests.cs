@@ -3,6 +3,8 @@ using System.Buffers.Binary;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Reflection;
+using System.Runtime.CompilerServices;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace OpenTPW.Tests;
@@ -106,6 +108,120 @@ public class ObjectBuildRuleTests
 		public void Path( (int X, int Y) from, (int X, int Y) to ) => Assert.IsTrue( Paths.TryLayLine( from, to, out var result ), $"{result.StoppedBy}" );
 
 		public void Fix( int x, int y ) => Grid.Cells.SetFlags( x, y, Grid.Cells.FlagsAt( x, y ) | ParkCellFlags.NoModify );
+	}
+
+	private static Level PreviewLevel( Park park, ParkEconomy economy )
+	{
+		var level = (Level)RuntimeHelpers.GetUninitializedObject( typeof( Level ) );
+		const BindingFlags fields = BindingFlags.Instance | BindingFlags.NonPublic;
+		typeof( Level ).GetField( "<Objects>k__BackingField", fields )!.SetValue( level, park.Objects );
+		typeof( Level ).GetField( "<Park>k__BackingField", fields )!.SetValue( level, ParkEconomyRuntime.ForResume( economy, ParkStartKind.FullSimulation ) );
+		return level;
+	}
+
+	[DataTestMethod]
+	[DataRow( 0 )]
+	[DataRow( 90 )]
+	[DataRow( 180 )]
+	[DataRow( 270 )]
+	public void SharedHudPreviewKeepsOwnershipAndOccupancyRefusalsRedWithoutChangingThePark( int rotation )
+	{
+		var entry = Ride();
+		var points = ObjectFootprint.GetAccessPoints( entry.Shape, 12, 12, rotation ).ToArray();
+		var entrance = points.Single( point => point.Kind == ObjectCellKind.Entrance );
+		var exit = points.Single( point => point.Kind == ObjectCellKind.Exit );
+		foreach ( var at in new[] { (12, 12), (entrance.OutsideX, entrance.OutsideY), (exit.OutsideX, exit.OutsideY) } )
+		{
+			foreach ( var unowned in new[] { false, true } )
+			{
+				var park = new Park();
+				if ( unowned )
+					park.Grid.Cells.SetFlags( at.Item1, at.Item2, ParkCellFlags.Unowned );
+				else
+					Assert.IsNotNull( park.Objects.TryPlace( Entry( 1888, ObjectCategory.Feature, "Info.OverwritePriority 5\n", "*" ), at.Item1, at.Item2, 0, out _ ) );
+				var result = park.Objects.Check( entry, 12, 12, rotation );
+				var expected = at == (12, 12) ? (unowned ? OriginalPlacementResult.NotOwned : OriginalPlacementResult.Occupied) : OriginalPlacementResult.AccessBlocked;
+				Assert.AreEqual( expected, result );
+				var economy = EconomyTestData.Park();
+				var level = PreviewLevel( park, economy );
+				level.BuildEntry = entry;
+				var objectsBefore = park.Objects.Objects.ToArray();
+				var version = park.Grid.Cells.Version;
+				var balance = economy.Balance;
+				var ledger = economy.Ledger.CurrentTotals.ToArray();
+				var placed = 0;
+				var removed = 0;
+				park.Objects.ObjectPlaced += _ => placed++;
+				park.Objects.ObjectRemoved += _ => removed++;
+				park.Objects.ClearPath = ( _, _ ) => Assert.Fail( "A preview must not clear paths." );
+				for ( var frame = 0; frame < 5; frame++ )
+				{
+					var preview = level.ObjectBlueprint( entry, 12, 12, rotation, result, false );
+					Assert.AreEqual( 11, preview.Cells.Count, "both HUD consumers use this same presentation adapter" );
+					Assert.IsTrue( preview.Cells.All( cell => cell.Marker == BlueprintMarker.Refused ) );
+					Assert.AreEqual( 0, preview.Directions.Count );
+				}
+				level.BuildEntry = null; // Cancelling discards the preview; there is no placement or refund.
+				Assert.AreEqual( result, park.Objects.Check( entry, 12, 12, rotation ) );
+				Assert.AreEqual( version, park.Grid.Cells.Version );
+				CollectionAssert.AreEqual( objectsBefore, park.Objects.Objects.ToArray() );
+				Assert.IsTrue( objectsBefore.All( item => !item.IsDeleted ) );
+				Assert.AreEqual( 0, placed + removed );
+				Assert.AreEqual( balance, economy.Balance );
+				CollectionAssert.AreEqual( ledger, economy.Ledger.CurrentTotals.ToArray() );
+			}
+		}
+	}
+
+	[TestMethod]
+	public void SharedHudPreviewPreservesMoneyOnlyAndAddOnFallbacks()
+	{
+		var park = new Park();
+		var level = PreviewLevel( park, EconomyTestData.Park( initialCash: 0 ) );
+		var entry = Ride();
+		var result = park.Objects.Check( entry, 10, 10, 0 );
+		Assert.AreEqual( OriginalPlacementResult.Allowed, result );
+		// TPW's separate money check can refuse the colour; TPI currently uses only the placement result. Neither policy is changed.
+		var placementOnly = level.ObjectBlueprint( entry, 10, 10, 0, result, true );
+		var moneyRefused = level.ObjectBlueprint( entry, 10, 10, 0, result, false );
+		Assert.AreEqual( 11, placementOnly.Cells.Count );
+		Assert.AreEqual( 9, moneyRefused.Cells.Count );
+		Assert.IsTrue( moneyRefused.Cells.All( cell => cell.Marker == BlueprintMarker.Refused ) );
+		Assert.AreEqual( 0, moneyRefused.Directions.Count );
+		var addOn = Entry( 1889, ObjectCategory.Ride, "Info.HasQueue 1\nAddOn.UpgradesId 1110\n", "*S*", "***", "*2*" );
+		Assert.AreEqual( 9, level.ObjectBlueprint( addOn, 10, 10, 0, OriginalPlacementResult.Occupied, false ).Cells.Count );
+		var tool = Entry( 1890, ObjectCategory.Feature, "Info.HasQueue 1\n", "..." );
+		Assert.IsTrue( tool.IsTool ); // Tools currently have no occupied shape cells, so no paired-access tool can be constructed.
+		Assert.AreEqual( 0, level.ObjectBlueprint( tool, 10, 10, 0, OriginalPlacementResult.Occupied, false ).Cells.Count );
+		level.BuildEntry = entry;
+		typeof( Level ).GetField( "buildAddOnRide", BindingFlags.Instance | BindingFlags.NonPublic )!.SetValue( level,
+			park.Objects.TryPlace( Bush(), 20, 20, 0, out _ ) );
+		Assert.AreEqual( 9, level.ObjectBlueprint( entry, 10, 10, 0, OriginalPlacementResult.Occupied, false ).Cells.Count,
+			"an active add-on mode cannot opt into the ordinary refused-access branch" );
+		Assert.AreEqual( 0L, level.Park!.Economy.Balance );
+	}
+
+	[DataTestMethod]
+	[DataRow( 0 )]
+	[DataRow( 90 )]
+	[DataRow( 180 )]
+	[DataRow( 270 )]
+	public void FixedPathRefusalKeepsTheWholePreviewRedIncludingAccessCells( int rotation )
+	{
+		var park = new Park();
+		park.Path( (12, 12), (12, 12) );
+		park.Fix( 12, 12 );
+		var entry = Ride();
+		var result = park.Objects.Check( entry, 12, 12, rotation );
+		Assert.AreEqual( OriginalPlacementResult.Path, result );
+		var version = park.Grid.Cells.Version;
+		var level = PreviewLevel( park, EconomyTestData.Park() );
+		var preview = level.ObjectBlueprint( entry, 12, 12, rotation, result, false );
+		Assert.AreEqual( 11, preview.Cells.Count );
+		Assert.IsTrue( preview.Cells.All( cell => cell.Marker == BlueprintMarker.Refused ), "non-sticky NoModify still fails the whole-placement preflight" );
+		Assert.AreEqual( 0, preview.Directions.Count );
+		Assert.AreEqual( version, park.Grid.Cells.Version );
+		Assert.AreEqual( result, park.Objects.Check( entry, 12, 12, rotation ) );
 	}
 
 	// ---- Objects over paths ------------------------------------------------------------------------

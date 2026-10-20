@@ -2,8 +2,8 @@ namespace OpenTPW;
 
 /// <summary>
 /// One object control of the control manager's table (tp.exe <c>0x4D3AA0</c>, 32 bytes): the record <c>CControlManager::GetObjectControl</c> (<c>0x4D3D10</c>) finds by the id in its
-/// first 16 bits. <see cref="Researched"/> is the byte at <c>+0x10</c>, which only two places write: the research lab's init (<c>0x5031A0</c>, 1 for every object without a research cost)
-/// and the research step that reaches a project's cost (<c>0x504630</c>, 1 and <c>+0x14</c> = the project's upgrade level). The other words keep their native offsets.
+/// first 16 bits. <see cref="Researched"/> is the byte at <c>+0x10</c>, which three places write: the research lab's init (<c>0x5031A0</c>, 1 for every object without a research cost),
+/// the research step that reaches a project's cost (<c>0x504630</c>, 1 and <c>+0x14</c> = the project's upgrade level) and the research cheat (<c>0x503FF0</c>, 1 for every research item's object). The other words keep their native offsets.
 /// </summary>
 public readonly record struct SaveObjectControl( int Index, int Id, uint Word4, uint Word8, uint WordC, bool Researched, uint Word14, uint Word18, uint Word1C )
 {

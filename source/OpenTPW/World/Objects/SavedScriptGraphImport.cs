@@ -14,7 +14,7 @@ internal static class SavedScriptGraphImport
 		Action commit;
 		RideVM[] nodes;
 		try { (commit, nodes) = Prepare( world, block, candidates, clock ); }
-		catch ( Exception error ) when ( error is IOException or ArgumentException or OverflowException )
+		catch ( Exception error ) when ( error is InvalidDataException or IOException or ArgumentException or OverflowException )
 		{
 			return new[] { $"[APPROX:DET-013] RSSE ordinary-child graph refused without changes: {error.Message}" };
 		}

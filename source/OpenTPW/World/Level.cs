@@ -1213,7 +1213,7 @@ public partial class Level : IDisposable
 		RenderPass++;
 		// [EXT:point-lights] the lights of the objects that have any, for every draw of this frame
 		PointLights?.Gather( Camera.ViewMatrix * Camera.ProjMatrix );
-		foreach ( var entity in Entity.All.ToArray() )
+		foreach ( var entity in WeatherAfterParticles( Entity.All.ToArray() ) )
 			entity.Render();
 	}
 }

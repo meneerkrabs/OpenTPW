@@ -93,6 +93,8 @@ public class StationBaseCellTests
 		var restored = new ParkCellMap( 16, 16 );
 		foreach ( var item in saved.Cells )
 			restored.SetType( item.X, item.Y, item.Type );
+		// The layout snapshot restores these separately from TrackSave: the original cells were written twice.
+		restored.RestoreBlockStamps( cells.StampCounter, cells.CaptureBlockStamps() );
 		TrackSave.RestoreCells( restored, ParkResumeJson.Deserialize<TrackWorldSaveData>( json ) );
 		Assert.AreEqual( Hash( cells ), Hash( restored ) );
 		var legacy = saved with { Cells = saved.Cells.Select( cell => cell with { BaseType = 0 } ).ToList() };

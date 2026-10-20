@@ -318,9 +318,15 @@ public abstract class OriginalModelScene : Entity
 			Free( model );
 	}
 
+	/// <summary>
+	/// Retires a model and its material. Every model of a scene has a material of its own (<see cref="Flush"/> and the animated meshes make one each), and the material
+	/// carries its own shader copy, pipeline and uniform buffer: releasing only the buffers left all of those in <see cref="Asset.All"/> after the scene went, about 160 materials
+	/// and 5 MB of shader source for every visit of the lobby (docs/BROWSER-PERFORMANCE.md, "Transfer and memory").
+	/// </summary>
 	private static void Free( Model model )
 	{
 		model.ReleaseBuffers();
+		model.Material.ReleaseOwnedResources();
 	}
 
 	protected override void OnDelete()

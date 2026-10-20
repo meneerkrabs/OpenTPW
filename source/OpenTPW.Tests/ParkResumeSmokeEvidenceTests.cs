@@ -75,8 +75,23 @@ public class ParkResumeSmokeEvidenceTests
 		ticks[2] = ticks[2] with { FullTypedSha256 = Hash[..63] + "0" };
 		var restore = Evidence( "restore" ) with { Ticks = ticks };
 		var problems = ParkResumeSmokeTest.VerifyEvidencePair( capture, restore );
-		Assert.IsTrue( problems.Any( problem => problem.StartsWith( "tick 2: full typed SHA-256" ) ),
-			$"the mismatch must name tick 2's full typed hash, got: {string.Join( "; ", problems )}" );
+		// the third sample is continuation tick 3: a mismatch is named by its continuation tick
+		Assert.IsTrue( problems.Any( problem => problem.StartsWith( "tick 3: full typed SHA-256" ) ),
+			$"the mismatch must name tick 3's full typed hash, got: {string.Join( "; ", problems )}" );
+	}
+
+	[TestMethod]
+	public void ARestoreThatSamplesOnlyAtFrameEndsIsComparedTickByTick()
+	{
+		// the restore phase runs several ticks a frame and samples the whole park at each frame's end
+		var sparse = Evidence( "restore" ) with { Ticks = new[] { Sample( 2 ), Sample( 3 ) } };
+		Assert.AreEqual( "", string.Join( "; ", ParkResumeSmokeTest.VerifyEvidencePair( Evidence( "capture" ), sparse ) ) );
+		var drifted = sparse with { Ticks = new[] { Sample( 2 ) with { FullTypedSha256 = Hash[..63] + "0" }, Sample( 3 ) } };
+		Assert.IsTrue( ParkResumeSmokeTest.VerifyEvidencePair( Evidence( "capture" ), drifted ).Any( problem => problem.StartsWith( "tick 2: full typed SHA-256" ) ),
+			"a frame-end sample is compared with the capture's sample of the same tick" );
+		var unknown = sparse with { Ticks = new[] { Sample( 2 ), Sample( 7 ) } };
+		Assert.IsTrue( ParkResumeSmokeTest.VerifyEvidencePair( Evidence( "capture" ), unknown ).Any( problem => problem.StartsWith( "both phases recorded continuation ticks" ) ),
+			"a restore sample of a tick the capture has not, or a restore ending elsewhere, is named" );
 	}
 
 	[TestMethod]
@@ -97,7 +112,7 @@ public class ParkResumeSmokeEvidenceTests
 		var problems = ParkResumeSmokeTest.VerifyEvidencePair( Evidence( "capture" ), restore with { Boundary = boundary } );
 		Assert.IsTrue( problems.Any( problem => problem.StartsWith( "boundary: section scripts" ) ), "the drifted section is named" );
 		problems = ParkResumeSmokeTest.VerifyEvidencePair( Evidence( "capture" ), Evidence( "restore" ) with { Ticks = Evidence( "restore" ).Ticks.Take( 2 ).ToArray() } );
-		Assert.IsTrue( problems.Any( problem => problem.StartsWith( "both phases recorded 3/2" ) ), "a short restore continuation is named" );
+		Assert.IsTrue( problems.Any( problem => problem.StartsWith( "both phases recorded continuation ticks (3 captured, 2 restored, ending at 3/2)" ) ), "a short restore continuation is named" );
 	}
 
 	[TestMethod]

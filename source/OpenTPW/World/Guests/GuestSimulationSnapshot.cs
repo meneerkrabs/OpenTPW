@@ -38,6 +38,11 @@ public sealed record GuestSnapshot
 	public required float StepFromY { get; init; }
 	public required float StepFromDistance { get; init; }
 	public required long StepTick { get; init; }
+	/// <summary>Optional persistent body history. Absent in older/original saves, which reconstruct a fresh body at load.</summary>
+	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )]
+	public VisitorSpriteStateSnapshot? BodySprite { get; init; }
+	public bool BodySpriteInCostume { get; init; }
+	public bool BodySpriteHistoryReconstructed { get; init; }
 
 	// Needs, money and thoughts.
 	public required float Hunger { get; init; }
@@ -160,6 +165,30 @@ public sealed record GuestSnapshot
 	public bool HasBalloon { get; init; }
 	/// <summary>Whether the guest wears a costume. Absent before schema 6.</summary>
 	public bool InCostume { get; init; }
+	/// <summary>[EXT:umbrellas-save] The umbrella state (<see cref="Guest.UmbrellaState"/>, 0 to 4); written only while the guest has an umbrella, so a save without one has no such field and every older save loads as before.</summary>
+	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault )]
+	public int UmbrellaState { get; init; }
+	/// <summary>[EXT:umbrellas-save] The umbrella's colour (0 to 2); absent for colour 0 and without an umbrella.</summary>
+	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault )]
+	public int UmbrellaType { get; init; }
+	/// <summary>[EXT:umbrellas-save] The park turn a pending open or close is due (<see cref="Guest.UmbrellaDueTurn"/>); only in states 1 and 3.</summary>
+	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault )]
+	public long UmbrellaDueTurn { get; init; }
+	/// <summary>[EXT:rain-mood-once-per-day] The game day plus one of the rain mood rule's last application to the guest (<see cref="Guest.RainMoodDay"/>); written only once it has applied, so a save without the extension has no such field.</summary>
+	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault )]
+	public long RainMoodDay { get; init; }
+	/// <summary>[EXT:winter-cold] The game day plus one of the cold rule's last application to the guest (<see cref="Guest.ColdMoodDay"/>); written only once it has applied, so a save without the extension has no such field.</summary>
+	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault )]
+	public long ColdMoodDay { get; init; }
+	/// <summary>[EXT:winter-save] The warm items the guest wears (<see cref="Guest.WarmItems"/>, bits 1 hat, 2 earmuffs, 4 mittens); written only while the guest has one, so a save without the winter extension has no such field and every older save loads as before.</summary>
+	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault )]
+	public int WarmItems { get; init; }
+	/// <summary>[EXT:winter-save] The park day a glühwein's warmth lasts until (<see cref="Guest.WarmUntilDay"/>); written only while set (a glühwein drunk while <c>opentpw.winter-cold</c> is on), so every other save has no such field.</summary>
+	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault )]
+	public long WarmUntilDay { get; init; }
+	/// <summary>[EXT:rain-mood-imported-age] The park turn an imported guest without a known time in the park was loaded at (<see cref="Guest.RainMoodAgeStartTurn"/>); written only for such a guest while the extension is on, so every other save has no such field.</summary>
+	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )]
+	public long? RainMoodAgeStartTurn { get; init; }
 	public required float QueueJoinHappiness { get; init; }
 	public required int QueueCellIndex { get; init; }
 	public required int QueueTargetIndex { get; init; }
@@ -375,6 +404,11 @@ public sealed record RideVisitorBridgeSnapshot
 	public required long CalledTurn { get; init; }
 	/// <summary>Computed queue cells from the front (index 0) to the back.</summary>
 	public required (int X, int Y)[] QueueCells { get; init; }
+	/// <summary>Optional paired live typed-entry caches; absent in legacy snapshots. Preserve pre-sync link-edit history exactly.</summary>
+	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )]
+	public (int X, int Y)? TypedQueueFront { get; init; }
+	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )]
+	public int? TypedQueueDirection { get; init; }
 	public required int QueueEditCount { get; init; }
 	public required (int X, int Y)? JoinCell { get; init; }
 	public required long HeadNotReadyStreak { get; init; }
@@ -422,6 +456,12 @@ public sealed record GuestSimulationSnapshot
 	public uint? WorldGenerator { get; init; }
 	public required long TickCount { get; init; }
 	public required double TimeSeconds { get; init; }
+	/// <summary>Presentation-only absolute int32 sample in the host fixed-clock epoch. Required when per-guest BodySprite history is present.</summary>
+	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )]
+	public int? BodySpriteClockMilliseconds { get; init; }
+	/// <summary>Optional versioned presentation history, excluded from gameplay hashes. Null means old/native reconstruction.</summary>
+	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )]
+	public BalloonPresentationSnapshot? Balloons { get; init; }
 	/// <summary>The id after the highest guest id (before the thing pool: the next guest id the counter handed out; with it the next id is the pool's, <see cref="Things"/>).</summary>
 	public required int NextGuestId { get; init; }
 	/// <summary>

@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises';
 
 // The production file is an ES module without requiring a package.json or a test dependency.
 const source = await readFile(new URL('../source/OpenTPW.Web/wwwroot/opentpw-pool-sprites.js', import.meta.url), 'utf8');
-const { parseManifest, planSprites, fetchSprites } = await import(`data:text/javascript;base64,${Buffer.from(source).toString('base64')}`);
+const { parseManifest, planSprites, fetchSprites, serialRequests } = await import(`data:text/javascript;base64,${Buffer.from(source).toString('base64')}`);
 const shipped = await readFile(new URL('../content/pools/esprites.manifest.json', import.meta.url), 'utf8');
 
 const hash = 'a'.repeat(64);
@@ -118,4 +118,33 @@ test('a refused file after the game has stopped is not reported', async () => {
 	const ok = await fetchSprites({ files, concurrency: 1, active: () => running, fetcher: async () => response(new Uint8Array(4)), store: async () => { running = false; return false; }, failed: () => reports++ });
 	assert.equal(ok, false);
 	assert.equal(reports, 0);
+});
+
+test('a fetch requested again while one runs is followed by exactly one more, and none after the game stopped', async () => {
+	const tick = () => new Promise(resolve => setTimeout(resolve, 0));
+	const gates = [];
+	let runs = 0;
+	const request = serialRequests(() => { runs++; return new Promise(resolve => gates.push(resolve)); });
+	request();
+	request();
+	request();
+	assert.equal(runs, 0, 'the run starts on the next turn, not inside the request');
+	await tick();
+	assert.equal(runs, 1);
+	gates.shift()();
+	await tick();
+	assert.equal(runs, 2, 'one more run for the requests that came meanwhile');
+	gates.shift()();
+	await tick();
+	assert.equal(runs, 2, 'and no third');
+	let running = true;
+	const stopped = serialRequests(() => { runs++; return new Promise(resolve => gates.push(resolve)); }, () => running);
+	stopped();
+	stopped();
+	await tick();
+	assert.equal(runs, 3);
+	running = false;
+	gates.shift()();
+	await tick();
+	assert.equal(runs, 3, 'a game that stopped asks for nothing more');
 });

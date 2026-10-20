@@ -8,10 +8,7 @@ internal sealed partial class AutomaticAdvisor
 {
 	private RestoredAdviceDriver? restoredDriver;
 
-	/// <summary>The player's golden keys (the ledger's, as the HUD shows them); null when no progress is kept. Set by the flow that owns the ledger.</summary>
-	internal Func<int?>? PlayerKeys { get; set; }
-
-	private RestoredAdviceDriver Restored => restoredDriver ??= new RestoredAdviceDriver( Controller, () => GameTick, () => GameType, () => TutorialEnabled, () => PlayerKeys?.Invoke() );
+	private RestoredAdviceDriver Restored => restoredDriver ??= new RestoredAdviceDriver( Controller, () => GameTick, () => GameType, () => TutorialEnabled );
 
 	/// <summary>The read-only park view the extension's callbacks use; null while the extension is off.</summary>
 	private IRestoredAdviceState? RestoredState( ParkEconomy economy ) => RestoredAdvice.Enabled ? new ParkRestoredAdviceState( economy, level ) : null;
@@ -39,7 +36,6 @@ internal sealed partial class AutomaticAdvisor
 		if ( level == null )
 			return;
 		Restored.ObserveVehicle( guests?.ArrivalVehicle ?? -1 );
-		Restored.ResolveTickets();
 	}
 
 	/// <summary>The restored hints of the tools end with their mode (the blueprint and roller coaster hints).</summary>

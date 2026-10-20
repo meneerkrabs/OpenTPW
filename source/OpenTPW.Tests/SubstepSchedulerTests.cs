@@ -82,6 +82,30 @@ public class SubstepSchedulerTests
 		Assert.IsTrue( scripts.All( script => script.TimeMilliseconds == 16 * 31 ), "the script clock gains a substep every pass, slice or not" );
 	}
 
+	private sealed class SliceTail : IRideScriptEffects, IRideSliceTail
+	{
+		public readonly List<(int Script, long Pass, int Bias)> Calls = new();
+		public int Perform( RideEffectCall call ) => 0;
+		public void AfterSlice( RideVM vm ) => Calls.Add( (vm.ScriptId, vm.World.PassCounter, vm.SpeedBias) );
+	}
+
+	/// <summary>
+	/// The loop body's tail (0x5517D7: the speed word to the coaster in the script's slot, 0x43B2B0) runs after every slice the cadence selects, whether or not the script had
+	/// instructions left to run: a halted script reaches it too.
+	/// </summary>
+	[TestMethod]
+	public void TheSliceTailRunsOnThePassesTheCadenceSelects()
+	{
+		var world = new RideScriptWorld( 7 );
+		var effects = new SliceTail();
+		var halted = new Asm().I( Opcode.ENDSLICE );
+		var vm = new RideVM( new RideScriptFile( new MemoryStream( halted.Build( new[] { "V0" } ) ) ), new RideVMOptions { World = world, Seed = 1, Effects = effects } );
+		for ( var pass = 1; pass <= 24; pass++ )
+			world.RunPass( SimulationSubstep.Milliseconds );
+		CollectionAssert.AreEqual( new long[] { 1, 9, 17 }, effects.Calls.Select( call => call.Pass ).ToArray(), "script 1 takes its slice and the tail on passes 1, 9 and 17" );
+		Assert.IsTrue( effects.Calls.All( call => call.Script == vm.ScriptId && call.Bias == RideVM.DefaultSpeedBias ) );
+	}
+
 	[TestMethod]
 	public void ATurboScriptRunsInEveryPass()
 	{

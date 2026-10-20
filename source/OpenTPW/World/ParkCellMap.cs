@@ -100,8 +100,10 @@ public enum ParkCellFlags : ushort
 /// queue link. It is the source of truth for path and queue cells: <see cref="GuestPathGrid"/> is a view
 /// that derives the guests' walk graph from it (path cells are walkable, their links are the connections).
 /// </summary>
-public sealed class ParkCellMap
+public sealed partial class ParkCellMap
 {
+	/// <summary>[EXT:pools-bridges] Optional elevated walking layer; underlying water stays unchanged.</summary>
+	public PoolBridgeWorld? PoolBridges { get; internal set; }
 	private readonly byte[] types;
 	private readonly ushort[] flags;
 	private readonly short[] placements;
@@ -517,6 +519,7 @@ public sealed class ParkCellMap
 		typeCounts[types[index]]--;
 		typeCounts[type]++;
 		types[index] = type;
+		queuePassCells.Remove( index );
 		if ( !ParkCellTypes.CarriesQueueLink( type ) )
 			queueLinks[index] = 0;
 		if ( type == 0 )
@@ -535,12 +538,14 @@ public sealed class ParkCellMap
 	public void SetLinks( int x, int y, byte value )
 	{
 		links[Index( x, y )] = value;
+		NormalizeQueuePassCell( Index( x, y ) );
 		Version++;
 	}
 
 	public void SetQueueLink( int x, int y, byte value )
 	{
 		queueLinks[Index( x, y )] = value;
+		NormalizeQueuePassCell( Index( x, y ) );
 		Version++;
 	}
 
@@ -564,6 +569,7 @@ public sealed class ParkCellMap
 	public void SetOwner( int x, int y, ushort value )
 	{
 		owners[Index( x, y )] = value;
+		NormalizeQueuePassCell( Index( x, y ) );
 		Version++;
 	}
 
@@ -596,6 +602,7 @@ public sealed class ParkCellMap
 			hash.Add( index );
 			hash.Add( types[index] | flags[index] << 8 | (long)links[index] << 24 | (long)queueLinks[index] << 32 | (long)(ushort)placements[index] << 40 );
 		}
+		AddQueuePassCanonicalState( hash );
 		// The track layer joins the digest only while a track exists, so every trackless park keeps its earlier pins.
 		if ( Tracks.Count > 0 )
 			Tracks.AddCanonicalState( hash );

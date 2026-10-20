@@ -38,8 +38,9 @@ public class OriginalResearchExportTests
 	{
 		var template = OriginalSavePayloadFixtures.Blank( settings );
 		template.World.Things[0].Next = 2;
-		template.World.Things.Add( new SaveThingEntry { Id = 2, Next = 0, Model = SaveThingModel.ResearchLab, Body = new byte[SaveResearchLab.Bytes] } );
-		template.World.Variables = template.World.Variables with { ResearchLab = 2 };
+		template.World.Things.Add( new SaveThingEntry { Id = 2, Next = 3, Model = SaveThingModel.ResearchLab, Body = new byte[SaveResearchLab.Bytes] } );
+		template.World.Things.Add( new SaveThingEntry { Id = 3, Next = 0, Model = SaveThingModel.ParkAnalyser, Body = SaveNewParkThings.ParkAnalyser( 0, 0 ) } );
+		template.World.Variables = template.World.Variables with { ResearchLab = 2, ParkAnalyser = 3 };
 		return template;
 	}
 

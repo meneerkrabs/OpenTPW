@@ -26,6 +26,8 @@ public sealed class TourController
 {
 	/// <summary>The cars a controller holds.</summary>
 	public const int CarSlots = 20;
+	/// <summary>[EXT:cheats-ride-vehicles] The cars a tour ride holds once the cheats window raised its vehicle limit (the user's ceiling, 40; docs/CHEATS.md).</summary>
+	public const int RaisedCarSlots = 40;
 	/// <summary>The tour tick in seconds: the original's tour tick runs on every second world step of 31 ms.</summary>
 	// [BIN:TPW-EXE:0x0054F5EF tour tick] call 0x0055ABF0 behind `test al, 1` on the step counter at 0x0054F5D7: only even steps, so one tick per 62 ms (the draw divides by 62 ms, 0x00700F90)
 	public const double TickSeconds = 0.062;
@@ -51,7 +53,7 @@ public sealed class TourController
 
 	private readonly TourWorld world;
 	private readonly Func<uint> worldRandom;
-	private readonly TourCar[] cars = new TourCar[CarSlots];
+	private TourCar[] cars = new TourCar[CarSlots];
 	private double tickRemainder;
 
 	/// <param name="station">The launch pad.</param>
@@ -91,6 +93,8 @@ public sealed class TourController
 	{
 		this.worldRandom = worldRandom ?? throw new ArgumentNullException( nameof( worldRandom ) );
 		this.world = world ?? throw new ArgumentNullException( nameof( world ) );
+		// [EXT:cheats-ride-vehicles] a raised controller saved its slot count
+		cars = new TourCar[saved.CarSlots ?? CarSlots];
 		for ( var index = 0; index < cars.Length; index++ )
 			cars[index] = new TourCar();
 		StationX = saved.StationX;
@@ -219,6 +223,24 @@ public sealed class TourController
 	/// <summary>The riders a severe breakdown (<c>TOUR 9 4</c>) threw off a flying car, handed out by <c>TOUR 4</c> once a car is docked.</summary>
 	public List<int> Ejected { get; } = new();
 	public IReadOnlyList<TourCar> Cars => cars;
+
+	/// <summary>The car slots: <see cref="CarSlots"/>, or <see cref="RaisedCarSlots"/> once the cheat raised the ride's vehicle limit.</summary>
+	public int SlotCount => cars.Length;
+
+	/// <summary>
+	/// [EXT:cheats-ride-vehicles] Gives the controller <see cref="RaisedCarSlots"/> car slots, the new ones free and fresh; false when it has them already. The cars in the old slots keep them, and
+	/// the script's <c>TOUR 5</c> then asks for as many cars as its capacity gives (ceil(capacity / 9), / 8 for Star Tours).
+	/// </summary>
+	internal bool RaiseCarSlots()
+	{
+		if ( cars.Length >= RaisedCarSlots )
+			return false;
+		var old = cars.Length;
+		Array.Resize( ref cars, RaisedCarSlots );
+		for ( var index = old; index < cars.Length; index++ )
+			cars[index] = new TourCar();
+		return true;
+	}
 
 	/// <summary>The slot of <paramref name="car"/> in this controller, −1 when it is not one of its cars.</summary>
 	public int SlotOf( TourCar car ) => Array.IndexOf( cars, car );
@@ -783,7 +805,8 @@ public sealed class TourController
 		if ( ApproachMode == 0 )
 		{
 			// aim at the station along the line from the car
-			car.ApproachHeading = (int)(Math.Atan2( StationZ - car.Z, StationX - car.X ) * 652.0);
+			// [EXT:deterministic-math] the x87's fpatan in IEEE double by DetMath, the same bits on every runtime, not in x87 extended precision (docs/DETERMINISM.md, "Browser and native")
+			car.ApproachHeading = (int)(DetMath.Atan2( StationZ - car.Z, StationX - car.X ) * 652.0);
 			car.State = TourCar.StateApproach;
 			car.TargetX = StationX - TourMath.Div1024( TourWorld.Cos( car.ApproachHeading ) * ApproachRadius );
 			car.TargetY = Math.Max( StationY + 5000, 14000 );
@@ -982,7 +1005,8 @@ public sealed class TourController
 	private void Steer( TourCar car )
 	{
 		// the bearing to the target in 4096ths of a turn (the original multiplies the arc tangent by −652, a hair under 4096 / 2π, and subtracts)
-		var bearing = (int)(Math.Atan2( car.TargetZ - car.Z, car.TargetX - car.X ) * -652.0);
+		// [EXT:deterministic-math] the x87's fpatan in IEEE double by DetMath, the same bits on every runtime, not in x87 extended precision (docs/DETERMINISM.md, "Browser and native")
+		var bearing = (int)(DetMath.Atan2( car.TargetZ - car.Z, car.TargetX - car.X ) * -652.0);
 		var error = (-car.Heading - bearing) & 0xFFF;
 		if ( error > 0x7FF )
 			error -= 0xFFF;

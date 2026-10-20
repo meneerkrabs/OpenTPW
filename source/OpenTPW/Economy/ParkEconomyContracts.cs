@@ -93,7 +93,12 @@ public enum ParkEventKind
 	/// </summary>
 	RideEnteredBrokenState,
 	/// <summary>The player cancelled the upgrade a ride waited for (the upgrade list's "Cancel level" row, tp.exe 0x004E0050(0)): the ride opens. <see cref="ParkEvent.InstanceId"/> the ride.</summary>
-	UpgradeCancelled
+	UpgradeCancelled,
+	/// <summary>
+	/// A cheat was applied at the turn boundary (<see cref="ParkCheats"/>, docs/CHEATS.md): <see cref="ParkEvent.InfoId"/> the <see cref="CheatKind"/>, <see cref="ParkEvent.Amount"/> its argument (a ticket's
+	/// <see cref="GoldenTicketKind"/>), <see cref="ParkEvent.Detail"/> its outcome (a ticket's <see cref="GlobalTicketOutcome"/>). Unlike <see cref="GoldenTicketWon"/> the advisor says nothing: the original's ticket cheats are silent.
+	/// </summary>
+	CheatApplied
 }
 
 /// <summary>
@@ -179,6 +184,13 @@ public interface IParkGuestStatistics
 	/// Statistics that do not tell it answer <see cref="AverageHappiness"/>.
 	/// </summary>
 	float CensusHappiness => AverageHappiness;
+	/// <summary>The guests in state 3 standing on the two ticket booth cells (tp.exe <c>0x004C91C0</c>): the crowd the open-the-park advice counts. Statistics without guests answer 0.</summary>
+	int GuestsAtGate => 0;
+	/// <summary>
+	/// The percent of the census guests whose happiness, truncated to its low byte, is strictly below <paramref name="happiness"/> (tp.exe <c>0x004C9750</c>: the count x 100 divided by the census guests, signed,
+	/// 0 without any). The advisor's entertainer line reads it with 30. Statistics without guests answer 0.
+	/// </summary>
+	int CensusPercentBelowHappiness( int happiness ) => 0;
 }
 
 /// <summary>The guest need meters the advisor counts guests by (the offsets of the original's guest: <c>+0x1A4</c> thirst, <c>+0x1A8</c> hunger, <c>+0x1AC</c> toilet).</summary>
@@ -294,7 +306,7 @@ public sealed class ParkObjectState
 	public bool TrackValid { get; set; } = true;
 	/// <summary>
 	/// A coaster's controller passes the counts-test's coaster test: it exists, crosses itself nowhere, and is complete and closed
-	/// (<c>CoasterRide.AcceptsGuests</c>). Read only for a coaster type (Bumper.WhichTrackType 3); mirrored each tick by the level, not
+	/// and is not being edited (<c>CoasterRide.CountsForParkPoints</c>), without the host admission sample guard. Read only for a coaster type (Bumper.WhichTrackType 3); mirrored each tick by the level, not
 	/// saved; true until the first sync.
 	/// </summary>
 	// [BIN:TPW-EXE:0x00441970 coaster test] the controller found by the thing's +0x20 (0x00436860, none: 0) must have +0x140 (its self-intersection count) 0, +0x3C bit 0 set and bit 1 clear, and must not be the coaster being edited (0x00790FEC)

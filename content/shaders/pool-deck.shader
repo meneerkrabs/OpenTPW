@@ -7,6 +7,7 @@ common {
     mat4 g_mProj;
 
     vec3 g_vLightPos;
+    float g_flAmbientLevel; // [EXT:evening] the share of the original 0.4 ambient that is left (0 = unchanged: the extension is off or it is day); the padding after the sun position
     vec3 g_vLightColor;
     // [EXT:point-lights] the number of lights after the block (the padding after the light colour)
     float g_flLightCount;
@@ -55,7 +56,8 @@ fragment {
   {
     vec3 N = normalize( normal );
     vec3 L = normalize( g_oUbo.g_vLightPos - vs_out.vPositionVs );
-    return max( dot( N, L ), 0.0 ) * g_oUbo.g_vLightColor + vec3( 0.4 );
+    // [EXT:evening] the ambient share the evening extension leaves (0 keeps the 0.4)
+    return max( dot( N, L ), 0.0 ) * g_oUbo.g_vLightColor + vec3( 0.4 ) * ( g_oUbo.g_flAmbientLevel > 0.0 ? g_oUbo.g_flAmbientLevel : 1.0 );
   }
 
   // [EXT:point-lights] The park's point lights (docs/LIGHTS.md): what the lit uniform block carries after g_vFogColor, g_flLightCount lights of two vec4 each (the position and the squared

@@ -19,11 +19,26 @@ public static class WalkEdges
 
 	private static bool IsQueue( byte type ) => type is 3 or 9;
 
+	private static bool GroundTrackBlocks( ParkCellMap map, int x, int y )
+	{
+		var track = map.Tracks.Get( x, y );
+		if ( track.IsExtension )
+		{
+			// Zero-parent compatibility and malformed references remain outside this slice;
+			// preserve their host fallback rather than interpreting an unrelated record.
+			if ( track.Parent <= 0 || track.Parent >= (long)map.Tracks.Width * map.Tracks.Height )
+				return false;
+			var parent = map.Tracks.CellOf( track.Parent );
+			track = map.Tracks.Get( parent.X, parent.Y );
+		}
+		return track.IsOrigin && (track.Flags & TrackCell.BridgeMask) == 0;
+	}
+
 	/// <summary>
 	/// <c>0x4D8750</c>: true when a walker with <paramref name="mask"/> may not step from (<paramref name="x"/>,
 	/// <paramref name="y"/>) to its neighbour in <paramref name="direction"/>. Coordinates are bytes, as in the original.
 	/// </summary>
-	// [APPROX:WALK-005] the edge test 0x4d8750 reads only the cell map: OpenTPW's cells hold no track records, so the test on a target cell's track record (0x5363f0: kind 11, 13, 16, 18 or 25, or the parent of a kind 12 or 17 record, 0x53ad30 and 0x53ad90) that blocks the step unless the record's flag nibble (+0xE & 0xF, 0x53ad20) is set is not made, a type-9 target's ride thing (on its owner cell +0x10, type 3: 0x42a440, 0x4dd4e0 +0x118) never decides a mask-2 step, and the underground link byte +0x22 (0x522770 with 0x81b4cc) is not kept; the types are the ones OpenTPW's map holds — still open: the track records of the cell map (TRACK-002) and the writer of the flag nibble
+	// [APPROX:WALK-005] supported track origins and nonzero type-12 parents now read the low flag nibble from ParkCellMap.Tracks. Type-17 and zero/invalid-parent records retain the old fallthrough; a type-9 target owner still does not decide mask-2 steps, and underground links are not modelled. The host track layer retains TRACK-010 bridge/underlay limitations.
 	public static bool Blocked( ParkCellMap map, int x, int y, int direction, int mask )
 	{
 		x &= 0xFF;
@@ -35,6 +50,9 @@ public static class WalkEdges
 		// OpenTPW maps smaller than the original's 128 × 128 end at their own edge (the same test for the original's size).
 		if ( !map.InBounds( tx, ty ) )
 			return true;
+		// Elevated decks have their own edges. Neither off-path movement nor walk masks may bypass their sides.
+		if ( map.PoolBridges is { Count: > 0 } bridges && (bridges.Covers( x, y ) || bridges.Covers( tx, ty )) )
+			return !bridges.Connects( x, y, direction );
 		var from = map.RawTypeAt( x, y );
 		var to = map.RawTypeAt( tx, ty );
 		// [EXT:pools-cell-type] a pool cell blocks every step onto it, for every walk mask: a walker set down off the paths, an escorted guest or a striking employee never wades in (docs/POOLS.md)
@@ -66,7 +84,9 @@ public static class WalkEdges
 		if ( IsQueue( from ) && to == 1 )
 			return (map.LinksAt( tx, ty ) & BackLink( direction )) == 0;
 		// 0x4D89C3: a target cell whose track record is of a track kind (0x5363F0) blocks unless the record's flag nibble is set (0x53AD20);
-		// OpenTPW's cell map holds no track records (WALK-005).
+		// Supported track origins and type-12 parents now come from the shared track layer.
+		if ( GroundTrackBlocks( map, tx, ty ) )
+			return true;
 		if ( from != 1 && !IsQueue( from ) )
 			return false;
 		if ( mask == 1 && from == 1 && to != 1 && !IsQueue( to ) && to != 4 )

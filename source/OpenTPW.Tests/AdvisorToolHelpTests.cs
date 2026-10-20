@@ -371,7 +371,7 @@ public class AdvisorToolHelpTests
 	{
 		var hud = NewEmployeeHud( out var events, out var economy, StaffType.Guard );
 		var level = (Level)typeof( ParkHud ).GetField( "level", Private )!.GetValue( hud )!;
-		SetField( level, "<PatrolTool>k__BackingField", new PatrolAreaTool( () => economy ) );
+		SetField( level, "<PatrolTool>k__BackingField", new PatrolAreaTool( () => economy, command => level.Commands.Issue( command ) ) );
 		var guard = economy.Staff.Members[0];
 		Assert.IsTrue( hud.OpenEmployeeWindow( guard ) );
 		events.Clear();

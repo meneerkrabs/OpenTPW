@@ -150,13 +150,48 @@ refused this way before anything is replaced.
 | Thing pool | the park's one thing pool (`Things`, an optional part: the used list newest first with each thing's model, the head of the free list in its exact order, the destroy requests that wait and the placeholder slots of an imported original save; `[EXT:resume-exact-thing-pool]`), the objects' `ThingId` (layout) and the staff members' `ThingId` (economy), which every guest, object and member of the save must name as a slot of its own model; guest ids are slots from snapshot schema 8 on. A save from before the pool has none: its guests keep their counter ids as slots, and its objects and staff take the next free ones (docs/GUESTS.md, "Thing ids") |
 | Ride scripts | the whole script world: every script's identity and graph position, program state, stacks, variables, timers and waits, RNG state, animation channels and rider head slots |
 | Prototype ride | the developer Totem (the sandbox ride you place in a park): its position, open state, script seed and full runtime state — animator, head slots, cycle counters — with its economy association re-linked to the saved instance, never bought again; the entrance and exit cells its guests queue at are saved and restored verbatim (the placement's derivation is history: the live park keeps it across later path edits, so re-deriving from the saved paths would resume a different park) |
-| Coasters | every live coaster station's track (station ends, pylons with height, pylon kind and stack, node flags), controller state (open, breakdown, speed, seats, money, clocks) and trains with every rider on board or leaving — joined by attraction id, a rider mid-hand-over (the script has seated it, the bridge has not marked it aboard yet) included; the curve, rating and braking are re-derived on load, so a loaded coaster continues exactly where it was; a track saved with the two-node station (before the three-node station of COAST-029) keeps its pylons on the station the placement builds, is sampled again and lets its riders leave, because the train placement of the new sampling is another one |
+| Coasters | every live coaster station's track (station ends, pylons with height, pylon kind and stack, node flags), controller state (open, breakdown, speed, seats, money, clocks, whether the motion tick has run) and trains with every rider on board or leaving — joined by attraction id, a rider mid-hand-over (the script has seated it, the bridge has not marked it aboard yet) included; the curve, rating and braking are re-derived on load, so a loaded coaster continues exactly where it was; a track saved with the two-node station (before the three-node station of COAST-029) keeps its pylons on the station the placement builds, is sampled again and lets its riders leave, because the train placement of the new sampling is another one |
 | Tracks | the kart/water track layer (every track cell with its mask, flow link, flags, parent, piece and segment), every water ride's controller (phase, state, laps, performance, tick clock, waiting and leaving guests, the sections for verification) with every boat (all integer fields, riders) joined by attraction id, and the cosmetic generator — on load each circuit is walked again and must reproduce the saved validity and sections; collision objects and buoys are rebuilt ([TRACKS.md](TRACKS.md)); absent for a park without a track |
 | Economy | the full economy record (bank, loans, ledger, objects with price/level/repair/statistics, staff, research, challenges, golden tickets, RNG streams) and the exact attraction-to-economy-instance links, so two identical rides never swap their money |
+| Staff locator order | `StaffData.RoleOrder` in the embedded economy: five independent arrays of member IDs, in `StaffType` order (handyman, mechanic, entertainer, guard, researcher), for presentation only; independent of the saved roster and global ThingPool order |
 | Litter | every littered cell with its type and the claiming handyman (in the economy record); a save from before litter by cell had a park-wide count instead, which loads as a clean park (logged) |
 | World | the fixed-step clock, the sound-event seed, weather with its pending thunder, the park gate, staff positions, and the advisor's pending advice and history when the park had them |
 | Particles | the particle pool's live emitters and effectors with its generator, generation counters and free-list order, when any effect was live (an optional presentation part, docs/PARTICLES.md): the particles themselves are not saved and screen-space emitters are killed on load, as in the original's PART/PTCL block; not part of the world hash |
 | Header | theme, world seed, gameplay mode and start kind, park name, save date |
+
+## Staff locator order and compatibility
+
+`ParkStaff` owns the locator's independent role sequences. A fresh hire prepends to the matching role;
+firing removes only that member and preserves the survivors' order. The arrays contain roster member IDs,
+not ThingPool slot IDs. Employee-window arrows still follow the global pool, which is saved independently.
+
+The optional `StaffData.RoleOrder` is additive in the existing economy/world formats. When present, it must
+contain exactly five non-null arrays in `StaffType` order, with every current member exactly once in the
+matching role and no invalid, duplicate, missing, unknown or wrong-role IDs. Validation covers the complete
+value before installation, with at most 10,239 current members (`ThingPool.Capacity`). Roster IDs may
+grow above that count; they are not pool slot IDs. Restore and capture use copies, so caller-owned arrays cannot mutate the live
+owner and captured arrays cannot alias it. Capture always writes the effective order, including empty roles.
+
+Absent or null `RoleOrder` is the explicit older-save compatibility path: read matching live pool members in
+used-chain order, then unsupported members in reverse roster order. This projection remains read-only until
+a hire or fire materializes it. Opening/cycling the locator and capturing a save do not materialize it, reorder
+staff/pool data or consume RNG. Repeated `AttachThings` cannot replace an explicit or materialized order.
+The next capture records that effective projection, so loading the new save preserves it; it cannot recover
+an independent original role chain that the older save never retained.
+
+Original `TPWS` import is separate from own-format validation. Each complete role chain is read from its
+saved world head and staff `RoleNextId` (`+0x210`), mapped from ThingIds to imported member IDs, and checked
+against all imported members of that role before being installed. A cycle, wrong-role or missing link,
+out-of-bounds ID, or orphaned member produces precise per-role import evidence and replaces the entire
+malformed role with its saved-global-order projection. A valid prefix is never partially installed; other
+valid roles keep their exact independent chains. The fallback is an explicit robustness policy, not evidence
+that global pool order equals role order. Existing file-layer rejection of a nonzero invalid role head is
+unchanged. A roster above the supported capacity remains unsupported; the fallback does not expand that limit.
+
+`RoleOrder` is saved presentation state and is the only new nested staff property excluded from the
+[canonical hash](DETERMINISM.md#canonical-state-hash). Training budgets, `HaveEverTrained`, members and all
+other gameplay fields remain hashed. Synthetic coverage is in `StaffRoleOrderTests` and
+`LocatorStaffRoleOrderTests`; local C# execution is unavailable without the dotnet SDK and awaits exact-head CI.
 
 ## Limits
 

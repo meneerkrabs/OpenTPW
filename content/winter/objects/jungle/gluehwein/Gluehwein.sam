@@ -1,0 +1,69 @@
+#
+#	OpenTPW winter extension: the gluhwein stall (modelled on the keys of the original drinks shops: ShopType 4 with the Ice ingredient, relabelled "Spices" for this object).
+#	A warm spiced drink with no drunk effects: Theme Park World has no intoxication state and none is added ([EXT:winter-gluehwein-no-drunk]).
+#	Every number marked "OpenTPW's own value" is a choice of this extension (docs/WINTER.md). Nothing is read from Theme Park World's or Theme Park Inc's data.
+#
+Info.Id			64011		placeholder: objects.json replaces it with the object's own id
+Info.Name		"Gluehwein Stall"
+Info.IsChoosable	1
+Info.HasQueue		0		a shop: guests walk to it and buy, no queue
+Info.WhichUIType	1		a shop (the build menu's Shops tab)
+
+# A 2 x 2 market hut. The entrance '2' (where the customer stands, facing the counter) is the lower left cell.
+Info.Shape
+---
+**
+2*
+---
+
+# The construction fence for 2 x 2 cells: the four corner pieces
+Info.Hoarding
+---
+F7
+LJ
+---
+
+# 4 = a drinks shop, with the special ingredient 3 (Ice's mechanics: the slider gives thirst back); the stall uses the drinks code path, the drinks challenge and the drinks price statistics
+UsageInfo.ShopType			4
+UsageInfo.SpecialIngredient		3
+UsageInfo.InitCostOfGoods		15		OpenTPW's own value (the original drinks shops: 20)
+UsageInfo.InitPricePerUse		30		the drinks shops' price (decision of October 18, 2026)
+UsageInfo.EntryCellStandPosX	0.5
+UsageInfo.EntryCellStandPosY	0.5
+UsageInfo.ExitCellAppearPosX	0.5
+UsageInfo.ExitCellAppearPosY	0.5
+UsageInfo.RideHandlesSprite	1		the shop's script hides the customer while serving
+UsageInfo.MinCapacity		0		always zero for shops
+UsageInfo.MaxCapacity		0		always zero for shops
+
+UsageInfo.ISIndoors			0
+
+UsageInfo.ThirstEffect		30		OpenTPW's own value (the original drinks shops: 40)
+UsageInfo.HungerEffect		5		OpenTPW's own value
+UsageInfo.VomitEffect		5		half a drinks shop's 10: no drunk effects, and a warm drink adds half a drinks shop's vomit
+UsageInfo.HappinessEffect		15		OpenTPW's own value
+UsageInfo.LitterEffect		40		OpenTPW's own value (mugs)
+
+UsageInfo.AppearanceEffect		0		the stall gives no item; with opentpw.winter-cold on it warms the guest instead (WinterInfo.WarmEffectDays)
+
+# The ingredient slider's label for this object only ([EXT:winter-spice-label]); the mechanics stay Ice's
+WinterInfo.IngredientLabel		"Spices"
+WinterInfo.WarmEffectDays		1		a glühwein warms the guest for one game day (opentpw.winter-cold, [EXT:winter-gluehwein])
+
+# Demand, percent of the attraction score (read by the winter extension for its own objects only). No gate: thirst drives it like any drink.
+# The weather keys are Theme Park Inc's names (its warm food is 200, its cold drinks 50), the season keys are this extension's own ([EXT:winter-season-terms]).
+WeatherModifier.SnowPercentage		250		OpenTPW's own value
+WeatherModifier.RainPercentage		130		OpenTPW's own value
+WeatherModifier.StormPercentage		130		OpenTPW's own value
+SeasonModifier.WinterPercentage	150
+SeasonModifier.SpringPercentage	60
+SeasonModifier.SummerPercentage	20
+SeasonModifier.AutumnPercentage	60
+
+Research.Group		0		available from the start, no research
+Info.PreviewAnimNum		0
+
+Upgrades[0].InitCapacity		1		OpenTPW's own value (the original drinks shops: 1)
+Upgrades[0].CostOfUpgrade		750		OpenTPW's own value
+Upgrades[0].CostOfResearch		0		An object without research cost starts researched
+Upgrades[0].RunningCost		30		OpenTPW's own value (a Theme Park Inc key; the original does not read it)

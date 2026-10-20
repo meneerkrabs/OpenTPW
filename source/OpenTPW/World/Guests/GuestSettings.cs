@@ -28,6 +28,14 @@ public sealed class GuestSettings
 	public float AveragePriceMultiplier { get; set; } = 1.25f;
 	/// <summary><c>PeepInfo.ExpensivePriceMultiplier</c>: from this × the park value the fee is far too expensive (float <c>0x0078508C</c>).</summary>
 	public float ExpensivePriceMultiplier { get; set; } = 2.0f;
+	/// <summary>
+	/// <c>PeepInfo.OpinionForMuchTooHigh</c>, <c>OpinionForTooHigh</c>, <c>OpinionForTooLow</c> and <c>OpinionForAboutRight</c> (the bytes <c>0x007850CC</c>-<c>0x007850D8</c>): what the booth records in the park's perception ring 0
+	/// for a verdict of far too expensive, expensive, cheap and fair (<see cref="BoothVerdict.Opinion"/>); null while the settings have none, which records nothing.
+	/// </summary>
+	public int? OpinionForMuchTooHigh { get; set; }
+	public int? OpinionForTooHigh { get; set; }
+	public int? OpinionForTooLow { get; set; }
+	public int? OpinionForAboutRight { get; set; }
 	public int BigHappinessChange { get; set; } = 25;
 	public int RideVomitDivisor { get; set; } = 10;
 	public int ToiletDesperate { get; set; } = 100;
@@ -130,6 +138,12 @@ public sealed class GuestSettings
 		settings.CheapPriceMultiplier = GetFloat( "PeepInfo.CheapPriceMultiplier", settings.CheapPriceMultiplier );
 		settings.AveragePriceMultiplier = GetFloat( "PeepInfo.AveragePriceMultiplier", settings.AveragePriceMultiplier );
 		settings.ExpensivePriceMultiplier = GetFloat( "PeepInfo.ExpensivePriceMultiplier", settings.ExpensivePriceMultiplier );
+		// [DATA:levels/Standard.sam:PeepInfo.OpinionFor*] the key table's records 0x00740430..0x007404E4 (schema indices 32 to 35) fill the bytes 0x007850CC..0x007850D8 the booth verdict records in perception ring 0
+		int? Opinion( string key ) => values.TryGetValue( key, out var v ) ? (int)Math.Round( double.Parse( v[0], CultureInfo.InvariantCulture ) ) : null;
+		settings.OpinionForMuchTooHigh = Opinion( "PeepInfo.OpinionForMuchTooHigh" );
+		settings.OpinionForTooHigh = Opinion( "PeepInfo.OpinionForTooHigh" );
+		settings.OpinionForTooLow = Opinion( "PeepInfo.OpinionForTooLow" );
+		settings.OpinionForAboutRight = Opinion( "PeepInfo.OpinionForAboutRight" );
 		settings.RideVomitDivisor = Math.Max( 1, Get( "PeepInfo.RideVomitDivisor", settings.RideVomitDivisor ) );
 		settings.ToiletDesperate = Get( "PeepInfo.ToiletDesparate", settings.ToiletDesperate );
 		settings.VomitCapacity = Get( "PeepInfo.VomitCapacity", settings.VomitCapacity );

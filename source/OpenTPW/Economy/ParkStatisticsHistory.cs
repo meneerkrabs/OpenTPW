@@ -74,6 +74,18 @@ public sealed class HistoryRing
 	}
 
 	/// <summary>
+	/// A ring with exactly the saved <paramref name="slots"/>, <paramref name="head"/> and <paramref name="wrapped"/> flag (already validated by
+	/// <see cref="RingData.IsValid"/>), so a ring that has gone round keeps its head and flag and saves back to the same data.
+	/// </summary>
+	internal static HistoryRing Restore( IReadOnlyList<double> slots, int head, bool wrapped )
+	{
+		var ring = new HistoryRing( slots.Count ) { Head = head, Wrapped = wrapped };
+		for ( var slot = 0; slot < slots.Count; slot++ )
+			ring.data[slot] = slots[slot];
+		return ring;
+	}
+
+	/// <summary>
 	/// The sum and the number of entries of the newest <paramref name="count"/> (cut to the entries held), the way <c>0x4CEF30</c> adds them.
 	/// </summary>
 	// [BIN:TPW-EXE:0x4CEF30 history sum] the newest n entries added as signed integers into a double, n cut to the entries the ring holds; the caller divides by the count it gets back
@@ -90,9 +102,9 @@ public sealed class HistoryRing
 
 /// <summary>
 /// The park analyser's monthly statistics that the park information window graphs: the guests dropped off by the bus, the mean happiness, the mean stay,
-/// the guests in the park and (read from the ledger, which stores the same value at the same close) the park rating. Nothing here is read by the simulation.
+/// the guests in the park and the park rating. Nothing here is read by the simulation.
 /// </summary>
-// [APPROX:UI-914] a park from an original save starts with these rings empty: the analyser's rings (0x4C5D70, +0x205D0..+0x213B0) are not read from the save into the history, so the graph begins at the load
+// [APPROX:UI-914] TPW and independently traced TPI statistics are imported; TPI adapts partial inputs across a fresh host clock, not native saved-clock continuation. Real populated/wrapped-save corpus coverage and other park-information presentation residuals remain open.
 public sealed class ParkStatisticsHistory
 {
 	/// <summary>The entries of a monthly ring (0x90).</summary>
@@ -115,6 +127,8 @@ public sealed class ParkStatisticsHistory
 	public HistoryRing Stay { get; private set; } = new( MonthsKept );
 	/// <summary>The guests in the park as each month closed (ring at <c>+0x205D4</c>).</summary>
 	public HistoryRing People { get; private set; } = new( MonthsKept );
+	/// <summary>The park rating at each month close (ring at <c>+0x213B4</c>), independent of financial history.</summary>
+	public HistoryRing Rating { get; private set; } = new( MonthsKept );
 	/// <summary>The stay in days of the last 50 guests that left (ring at <c>+0x21604</c>).</summary>
 	public HistoryRing RecentStays { get; private set; } = new( StayWindow );
 
@@ -129,10 +143,10 @@ public sealed class ParkStatisticsHistory
 	public static int StayDays( long turns ) => (int)(ParkCalendar.SecondsPerTurn * ((turns >> 2) << 2) / ParkCalendar.SecondsPerDay);
 
 	/// <summary>
-	/// The month step: the running arrivals, the happiness, the mean stay and the guests in the park each go into their ring, and the arrivals start again at 0.
+	/// The month step: the running arrivals, happiness, mean stay, guests in the park and rating each go into their ring; arrivals start again at 0.
 	/// </summary>
 	// [BIN:TPW-EXE:0x4C7720 month sample] arrivals (+0x20CC0) into its ring and cleared; the happiness (0x4C7BB0, a single) and the census (0x4C7FA0, age 0) into their rings; the stay ring's mean over its newest 50 entries (0x4CEF30 over the count it returns, truncated; 0 when the ring is empty) into the stay ring
-	public void CloseMonth( float happiness, int peopleInPark )
+	public void CloseMonth( float happiness, int peopleInPark, int rating )
 	{
 		Arrivals.Add( ArrivalsThisMonth );
 		ArrivalsThisMonth = 0;
@@ -140,28 +154,57 @@ public sealed class ParkStatisticsHistory
 		var (sum, count) = RecentStays.SumNewest( StayWindow );
 		Stay.Add( count < 1 ? 0 : (int)(sum / count) );
 		Happiness.Add( happiness );
+		Rating.Add( rating );
 	}
 
 	/// <summary>The rings and the running arrivals, for a save.</summary>
 	public ParkStatisticsData Capture() => new()
 	{
 		ArrivalsThisMonth = ArrivalsThisMonth,
-		Arrivals = RingData.Of( Arrivals ), Happiness = RingData.Of( Happiness ), Stay = RingData.Of( Stay ), People = RingData.Of( People ), RecentStays = RingData.Of( RecentStays )
+		Arrivals = RingData.Of( Arrivals ), Happiness = RingData.Of( Happiness ), Stay = RingData.Of( Stay ), People = RingData.Of( People ), Rating = RingData.Of( Rating ), RecentStays = RingData.Of( RecentStays )
 	};
 
-	/// <summary>Replaces the rings with a save's (already validated by <see cref="ParkStatisticsData.IsValid"/>).</summary>
-	public void Restore( ParkStatisticsData data )
+	/// <summary>Replaces all rings atomically. Only an absent rating field migrates already-restored legacy ledger ratings.</summary>
+	public void Restore( ParkStatisticsData data, IEnumerable<int>? legacyRatings = null )
 	{
+		if ( data == null || !data.IsValid )
+			throw new InvalidDataException( "Invalid park statistics history." );
+		var arrivals = data.Arrivals!.ToRing();
+		var happiness = data.Happiness!.ToRing();
+		var stay = data.Stay!.ToRing();
+		var people = data.People!.ToRing();
+		var rating = data.Rating?.ToRing() ?? LegacyRating( legacyRatings );
+		var recentStays = data.RecentStays!.ToRing();
 		ArrivalsThisMonth = data.ArrivalsThisMonth;
-		Arrivals = data.Arrivals!.ToRing( MonthsKept );
-		Happiness = data.Happiness!.ToRing( MonthsKept );
-		Stay = data.Stay!.ToRing( MonthsKept );
-		People = data.People!.ToRing( MonthsKept );
-		RecentStays = data.RecentStays!.ToRing( StayWindow );
+		Arrivals = arrivals;
+		Happiness = happiness;
+		Stay = stay;
+		People = people;
+		Rating = rating;
+		RecentStays = recentStays;
 	}
 
+	/// <summary>Imports a validated TPW or TPI bundle without creating financial months or interpreting inactive native words as observations.</summary>
+	public void RestoreOriginal( NativeParkStatistics statistics )
+	{
+		ArgumentNullException.ThrowIfNull( statistics );
+		Restore( new ParkStatisticsData
+		{
+			ArrivalsThisMonth = statistics.ArrivalsThisMonth,
+			Arrivals = RingData.OfOriginal( statistics.Arrivals ), Happiness = RingData.OfOriginal( statistics.Happiness ),
+			Stay = RingData.OfOriginal( statistics.Stay ), People = RingData.OfOriginal( statistics.People ),
+			Rating = RingData.OfOriginal( statistics.Rating ), RecentStays = RingData.OfOriginal( statistics.RecentStays )
+		} );
+	}
+
+	private static HistoryRing LegacyRating( IEnumerable<int>? ratings ) => HistoryRing.Of( MonthsKept,
+		(ratings ?? Enumerable.Empty<int>()).TakeLast( MonthsKept ).Select( rating => (double)rating ) );
+
+	/// <summary>One-time migration when an old host save has no statistics section. Never called by graph drawing or month close.</summary>
+	internal void RestoreLegacyRating( IEnumerable<int> ratings ) => Rating = LegacyRating( ratings );
+
 	/// <summary>Whether nothing has been recorded (a fresh park, or a save from before the history).</summary>
-	public bool IsEmpty => ArrivalsThisMonth == 0 && Arrivals.Count == 0 && Happiness.Count == 0 && Stay.Count == 0 && People.Count == 0 && RecentStays.Count == 0;
+	public bool IsEmpty => ArrivalsThisMonth == 0 && Arrivals.Count == 0 && Happiness.Count == 0 && Stay.Count == 0 && People.Count == 0 && Rating.Count == 0 && RecentStays.Count == 0;
 
 	// ---- the graph's reads ---------------------------------------------------------------------------------------------------------
 
@@ -217,6 +260,8 @@ public sealed class RingData
 		return new RingData { Slots = slots, Head = ring.Head, Wrapped = ring.Wrapped };
 	}
 
+	internal static RingData OfOriginal( NativeStatisticsRing ring ) => new() { Slots = ring.Values.ToList(), Head = ring.Head, Wrapped = ring.Wrapped };
+
 	private static double SlotValue( HistoryRing ring, int slot )
 	{
 		// a slot is read through its age: head - slot, wrapped round
@@ -226,15 +271,9 @@ public sealed class RingData
 
 	internal bool IsValid( int size ) => Slots is { } slots && slots.Count == size && Head >= -1 && Head < size && (Head >= 0 || !Wrapped) && slots.All( double.IsFinite );
 
-	internal HistoryRing ToRing( int size )
-	{
-		// entries oldest first: the ring replays them, which restores head and the wrapped flag
-		var ring = new HistoryRing( size );
-		var count = Wrapped ? size : Head + 1;
-		for ( var back = count - 1; back >= 0; back-- )
-			ring.Add( Slots[(Head - back + size) % size] );
-		return ring;
-	}
+	// the slots, head and wrapped flag are restored as saved: replaying the entries into a fresh ring would leave a ring that has gone round with its
+	// head at size - 1 and the flag clear, so the next save would differ from the loaded one (IsValid has checked the size before this runs)
+	internal HistoryRing ToRing() => HistoryRing.Restore( Slots, Head, Wrapped );
 }
 
 /// <summary>The park statistics history as saved (optional; absent in saves from before the park information window's graph).</summary>
@@ -245,11 +284,14 @@ public sealed class ParkStatisticsData
 	public RingData? Happiness { get; init; }
 	public RingData? Stay { get; init; }
 	public RingData? People { get; init; }
+	/// <summary>Optional for legacy migration only; a present empty ring deliberately carries no rating history.</summary>
+	public RingData? Rating { get; init; }
 	public RingData? RecentStays { get; init; }
 
-	/// <summary>Whether every ring is present with its size and a head inside it.</summary>
+	/// <summary>Whether required rings and any optional legacy rating have their expected sizes and bounded, finite state.</summary>
 	public bool IsValid => ArrivalsThisMonth >= 0
 		&& Arrivals?.IsValid( ParkStatisticsHistory.MonthsKept ) == true && Happiness?.IsValid( ParkStatisticsHistory.MonthsKept ) == true
 		&& Stay?.IsValid( ParkStatisticsHistory.MonthsKept ) == true && People?.IsValid( ParkStatisticsHistory.MonthsKept ) == true
-		&& RecentStays?.IsValid( ParkStatisticsHistory.StayWindow ) == true;
+		&& RecentStays?.IsValid( ParkStatisticsHistory.StayWindow ) == true
+		&& (Rating is null || Rating.IsValid( ParkStatisticsHistory.MonthsKept ));
 }

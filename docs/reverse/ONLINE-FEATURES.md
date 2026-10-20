@@ -45,7 +45,7 @@ S5 the TPW-SE roadmap).
 | The globe fills the screen; camera circles it, zoom toggles two radii, arrows/edges/right button turn it with damping | BIN tp.exe 0x005DC860/0x005DCFE0; DATA data:0x523f0 (worldlob panel) | Done (start view, steering mode and pitch limit as tp.exe; per-frame timing [EXT:online-globe-tick], steering increments [EXT:online-globe-steering], move history [EXT:online-globe-edge-gate]) |
 | Cities as pins, taller with more parks; Bullfrog pin; hover shows name and "Parks: n" | BIN tp.exe 0x005DC3E0; UITEXT 461; S4 | Done; city list [EXT:ONLINE-059] |
 | Click a city → its lobby (sets the selected city for the top-10 request) | BIN tp.exe 0x005DD530, 0x005E23F0 | Done |
-| Five chat satellites around the globe, each showing the player count of its chat park; click to enter the park | DATA data:0x523f0 (i_sat 90120-90124); STP-PPC 0x1b8808 ("ONLINE CHATELLITES" connector, RoomInfo query, "%d" count); MAN p. 63; S5 | Done — the server names the five chat parks, the globe shows each count centred in the satellite's text region (tp.exe 0x4C4FB0) and enters the room on click |
+| Five chat satellites around the globe, each showing the player count of its chat park; click to enter the park | DATA data:0x523f0 (i_sat 90120-90124); STP-PPC 0x1b8808 ("ONLINE CHATELLITES" connector, RoomInfo query, "%d" count); tp.exe 0x4C56E0, 0x5B7610, 0x4C4BB0 (ONLINE-VISIT.md, "Chat satellites"); MAN p. 63; S5 | Done — the server names the five chat parks, the globe shows each count centred in the satellite's text region (tp.exe 0x4C4FB0), and a click opens the chat park's details, from which Enter visits its park [EXT:online-chat-park-scene] |
 | Publish globe: "Choose the city to publish in" over the globe; click a city opens the publish form | DATA UITEXT 419; STP-PPC 0x1018CE80 | Done (panel read: tp.exe 0x5DD910; [EXT:online-publish-globe-prompt] where UITEXT 419 showed) |
 | Back to your own lobby from the online world | DATA data:0x523f0 b_bck2lob, help 431 | Done |
 
@@ -57,7 +57,8 @@ S5 the TPW-SE roadmap).
 | Selected island's rank at the top, name at the bottom (item detail overlay) | STP-PPC 0x101834A0 labels 0x49D9/0x49DA | Done |
 | "Other Parks In <city>": the chart of the parks outside the top 10, five columns | DATA data:0x5137e; UITEXT 446, 292-297 | Done — original composition and columns |
 | Enter this park (download and visit); "Entering…" | DATA data:0x50172 b_entpark; UITEXT 463 | Done (read-only visit) |
-| Other players in a visited park: online persons walking and teleporting, each with its avatar sparkle | tp.exe 0x50B453 (online person tick), 0x4F7C60/0x4FA470 (effects 0x35/0x39), 0x4E7265 (`BOSS_CHAT_MOVE` modes 0-3); MAN pp. 65, 68 | Done — the visit joins the park's room; figures with names, routes and the original sparkle; places relayed as fractions of the park [EXT:online-visit-presence]; hiding while riding is not sent |
+| Other players in a visited park: online persons walking and teleporting, each with its avatar sparkle | tp.exe 0x50B453 (online person tick), 0x4F7C60/0x4FA470 (effects 0x35/0x39), 0x4E7265 (`BOSS_CHAT_MOVE` modes 0-3); MAN pp. 65, 68 | Done — the visit joins the park's room; figures with names, routes and the original sparkle; places relayed as fractions of the park [EXT:online-visit-presence]; a riding player's figure is hidden and shown again at the ride's exit (modes 2 and 3, protocol 5) [EXT:online-ride-hiding] |
+| A visit's chat mode: the chat overlay in place of the HUD, F4 switching it off and on, a park click walking | tp.exe 0x4BF460 (chat mode windows), 0x4862A0 (no HUD in chat mode), 0x4BE3A0 (F4), 0x4BD4A0 (park click, help 401); MAN p. 65 | Done — F4's other side is the visit's HUD [EXT:online-visit-chat-mode]; a rideable ride's hover (help 580 with its name) and click (0x4BD7F4 → 0x4E15B0) ride it [EXT:online-chat-ride-click] |
 | Previous/next island | DATA data:0x50172 b_lobleft/right | Done |
 | "Getting Ride List" / "Getting Theme List" / "Getting Logical Server List" | DATA UITEXT 253-255 | Missing: the visit runtime builds its content from the package (docs/ONLINE.md); the lists themselves are not decoded |
 
@@ -82,8 +83,10 @@ S5 the TPW-SE roadmap).
 
 | Feature | Evidence | OpenTPW status |
 | --- | --- | --- |
-| Chat parks joinable from any menu (the satellites); players present together, moving around the park; the server relays movement; teleport | S5; MAN pp. 63, 67-68 ("Left click to walk to destination. Double click to teleport") | Done — movement is relayed to the room with its own rate limit; the view is a flat overhead map of markers [EXT:online-chat-park-view]; teleport is the same click (one speed, no obstacles decoded) |
-| Chat overlay: people-in-park list left with tabs, player buttons under it, message list and text entry at the bottom, action bar at the top | DATA data:0x50b2c (ids 0xc3123-0xc3128) and data:0x50d1a; MAN pp. 67-70 | Done — original composition; the original's buttons carried other actions (list: earmuffs, vote, 0x4A9380; the six-button table is a name popup) [EXT:online-chat-action-bar] |
+| Chat parks joinable from any menu (the satellites); players present together, moving around the park; the server relays movement; teleport | S5; MAN pp. 63, 67-68 ("Left click to walk to destination. Double click to teleport"); tp.exe 0x4C0880 (a satellite's park is visited like any park) | Done — a satellite's park is visited in three dimensions with the room's players as figures, walking and teleporting as in any visited park ([EXT:online-chat-park-scene] the park and the room); movement is relayed to the room with its own rate limit; a room without a park to visit is a flat overhead map of markers [EXT:online-chat-park-view] |
+| Chat overlay: people list with its people and buddy tabs, the postcard, vote and earmuffs buttons under it, message list and text entry at the bottom | tp.exe table 0x758AE8, 0x4BF460, list handler 0x4BE820 (tabs, buttons); MAN pp. 67-70 | Done — original composition and actions; help ids by wording [EXT:online-chat-help] |
+| Name colours in the people list (buddy here green, elsewhere blue, offline red, others white) | tp.exe 0x4BE730 (colours 0x758F30-0x758F3C), 0x4EE5C0 (flags) | Done — a buddy's online and in-park flags follow the roster and the buddy list [EXT:online-chat-person-flags] |
+| Name popups on a right click: six buttons for a buddy, four for others, none for the player | tp.exe tables 0x758CD8 / 0x758E18, 0x4BE290 (0x402), 0x4BF370 (place), 0x4BEDE0 (buttons) | Done — placed at the pointer [EXT:online-chat-popup-place]; a goto in the visited park teleports the figure [EXT:online-chat-goto] |
 | Say (default; "broadcast to people in your vicinity", shown "Dan: Hello") | MAN pp. 67-68; CHAT_COMMANDS words | Done — reaches the whole room; the hearing range has no positional effect [EXT:online-chat-command-semantics] |
 | Tell (private), reply, last | CHAT_COMMANDS; MAN | Done |
 | Shout / eshout; wshout / ushout to every park | CHAT_COMMANDS | Done |
@@ -104,8 +107,8 @@ S5 the TPW-SE roadmap).
 | Per-player word filter on/off | CHAT_COMMANDS 132/133 | Done |
 | Help: the command list | CHAT_COMMANDS 120 | Done |
 | Command words localized per language | DATA `CHAT_COMMANDS.str` 0-42 (+ English 43-85) | Done — the selected language's words are accepted |
-| Chat lines drawn in per-command colours (white, green, …) | MAN p. 68 | Missing: all lines use one colour ([EXT:ONLINE-064] formatting); the original colour table is not decoded |
-| Chat Park Details dialog (name, theme, players, creator's name and e-mail, date, description) | DATA UITEXT 284-291 | Missing: the server's chat parks are standing rooms without a creator or description; no layout table for the dialog is decoded |
+| Chat lines drawn in per-command colours (white, green, …) | MAN p. 68; tp.exe 0x4BE7C0 (row colours 0x758F10 by kind), 0x4EA890 (kinds) | Missing: all lines use one colour ([EXT:ONLINE-064] formatting). Read so far: a message row takes the colour of its kind from 0x758F10 (0 green, 1 white, 2 blue, 3 red, 4 white, 5 blue, 6 red, 7 yellow (240,255,0)); the speech lines of CHAT_COMMANDS 88/89/92/93 have kinds 1/2/3/4 and every response kind 7; which speech each of 88/89/92/93 is (their English strings are empty) is not traced |
+| Chat Park Details dialog (name, theme, players, creator's name and e-mail, date, description) | DATA UITEXT 284-291; tp.exe 0x4C0AE0 (the park details' short variant for a city with the flag +0x60) | Done as tp.exe shows a satellite's park: the park details' short variant with the name, "Theme : …" (UITEXT 271), the description and Enter [EXT:online-chat-park-details]; tp.exe uses UITEXT 284-291 nowhere as a dialog |
 
 ## Postcards
 
@@ -134,8 +137,13 @@ S5 the TPW-SE roadmap).
 - The satellites' player counts are written into the satellite controls themselves by the connector
   at STP-PPC 0x1b8808 (RoomInfo per park, "%d" per control 90120-90124) — the count, not just the
   satellite, is original (S5 named the rooms; the trace shows where the count went).
-- The chat overlay's layout (data:0x50b2c) confirms the manual's picture: people list left, message
-  list and text entry bottom right, an action bar at the top (data:0x50d1a).
-- UITEXT 284-291 names a "Chat Park Details" dialog the outside sources do not mention.
+- The chat overlay's layout (data:0x50b2c, tp.exe 0x758AE8) confirms the manual's picture: people list
+  left, message list and text entry bottom right; the six-button table data:0x50d1a (tp.exe 0x758CD8)
+  is the buddy name popup, not a bar.
+- UITEXT 284-291 names a "Chat Park Details" dialog the outside sources do not mention; tp.exe never
+  shows it: a satellite opens its park's details in their short variant (tp.exe 0x4C0AE0,
+  ONLINE-VISIT.md "Chat satellites").
+- On the PC the satellites are the parks of a city of their own (city 1), visited like any park in
+  the park's own room (tp.exe 0x5B7610, 0x4C56E0, 0x4E6A67).
 - The original's service structure (S5) matches the client's own progress strings (UITEXT 243-255):
   news server, city server (city/theme/ride/logical-server lists, top-10, search), chat server.

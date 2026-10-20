@@ -191,6 +191,75 @@ public sealed class TrackEditor
 		return new TrackOpenEnd( last, corners, reached );
 	}
 
+	/// <summary>
+	/// Enters the line tool at the open end with the collected corner stack. Old and newly drawn segments use the same directional clear,
+	/// refund and add-on hooks. Re-entering recomputes the stack from the remaining track rather than retaining stale edit history.
+	/// </summary>
+	public void EnterLineTool( CellBuildTool tool, Action? changed = null )
+	{
+		ArgumentNullException.ThrowIfNull( tool );
+		var open = FindOpenEnd();
+		var corners = open.Corners;
+		// The shared tool has a smaller safe capacity than the original collector. If the collector overflowed, no captured point names the
+		// actual end; do not manufacture a straight segment across unrecorded corners. Otherwise retain the most recent complete segments.
+		if ( corners.Count == 0 || corners[^1] != open.End )
+			corners = new[] { open.End };
+		else if ( corners.Count > CellBuildTool.VertexCapacity )
+			corners = corners.Skip( corners.Count - CellBuildTool.VertexCapacity ).ToArray();
+		var segments = corners.Skip( 1 ).Select( (end, index) =>
+			new SegmentResult( end, Array.Empty<(int X, int Y)>(), 0, CellBuildResult.Ok, false ) { Start = corners[index] } ).ToArray();
+		tool.Enter( new TrackLineWriter( builder, changed, Owner, this ), open.End, corners, segments );
+	}
+
+	/// <summary>
+	/// Takes a line back from its end to its start, using the directional form of the tile clear. A shared crossing retains its other
+	/// flow and a shared corner becomes the new open endpoint. Only a tile actually cleared refunds and removes its add-on.
+	/// </summary>
+	// [BIN:TPW-EXE:0x0052FE50 Back] pop the last corner, click in mode 0x35 at it and the new stack top (0x52FF3A, 0x52FFB2); mode 0x35 runs line op 0x32 (0x526001), which calls 0x53B280 with the reverse line's step (0x538CCE)
+	// [BIN:TPW-EXE:0x0053B393 directional clear] decrement the pass word; when the flow link has two or more bits (0x522860), clear the bit opposite the replay step (0x53B3FF..0x53B437) and both mask arms of its axis (0x53B437..0x53B477); otherwise spare the protected ends, remove only that opposite arm and, for a former corner left with one arm, reverse its flow link (0x53B47C..0x53B543)
+	// [APPROX:TRACK-018] the recorded-corner replay and directional clear are built; the tool's 1024-point cap, existing station-layout approximation and full original replay/restore equivalence still lack executable-oracle coverage (TRACK-004/007 remain open)
+	public void UndoLine( SegmentResult segment )
+	{
+		// Only axis-aligned, whole-tile segments belong to this writer. A stale or foreign segment must not clear an arbitrary rectangle.
+		if ( !Tracks.InBounds( segment.Start.X, segment.Start.Y ) || !Tracks.InBounds( segment.SnappedEnd.X, segment.SnappedEnd.Y )
+			|| segment.Start.X != segment.SnappedEnd.X && segment.Start.Y != segment.SnappedEnd.Y
+			|| (segment.SnappedEnd.X - segment.Start.X) % TrackStation.TileCells != 0
+			|| (segment.SnappedEnd.Y - segment.Start.Y) % TrackStation.TileCells != 0 )
+			return;
+		var line = TrackLineWriter.LayLine( segment.SnappedEnd, segment.Start );
+		var back = line.Count > 1 ? TrackBuilder.HeadingBetween( line[0], line[1] ) : (byte)0;
+		foreach ( var at in line )
+		{
+			var cell = Tracks.Get( at.X, at.Y );
+			if ( !IsLaidTile( cell ) || cell.Type != builder.OriginType )
+				continue;
+			// The zero-step replay forces a clear; an ordinary reverse step consumes one of the collector's passes.
+			cell.Overlap = back == 0 ? (short)-1 : (short)(cell.Overlap - 1);
+			if ( back != 0 )
+			{
+				var forward = Opposite( back );
+				if ( TrackHeading.Count( cell.Link ) >= 2 )
+				{
+					cell.Link &= (byte)~forward;
+					cell.Mask &= (byte)~(back | forward);
+				}
+				else if ( at != station.Entry )
+				{
+					var corner = IsCorner( cell.Mask );
+					cell.Mask &= (byte)~forward;
+					if ( corner && TrackHeading.Count( cell.Mask ) == 1 )
+						cell.Link = Opposite( cell.Mask );
+				}
+			}
+			Tracks.Set( at.X, at.Y, cell );
+			if ( cell.Overlap < 0 && at != station.Entry )
+				ClearOrigin( at, cell );
+			else
+				Repick( at );
+		}
+		RepairStation();
+	}
+
 	/// <summary>A tile of the kart or water origin type of this ride (<c>0x53AD70</c>: type 0xB or 0x10).</summary>
 	private bool IsLaidTile( TrackCell cell ) =>
 		cell.IsOrigin && !TrackCellTypes.IsStation( cell.Type ) && cell.Type != TrackCellTypes.WaterAlternate && (cell.Owner == Owner || cell.Owner == 0 || Owner == 0);
@@ -217,7 +286,7 @@ public sealed class TrackEditor
 	private void Replay( (int X, int Y) start, byte heading, List<(int X, int Y)> cleared )
 	{
 		// the walk that collects the corners also resets the pass counters (corner or junction 1, any other tile 0) before the lines are replayed
-		var chain = new List<(int X, int Y)>();
+		var chain = new List<((int X, int Y) Tile, byte Heading, bool Crossing)>();
 		var position = start;
 		var limit = Tracks.Count + 16;
 		for ( var steps = 0; steps < limit; steps++ )
@@ -237,7 +306,7 @@ public sealed class TrackEditor
 				stop = (heading & cell.Mask) == 0;
 			}
 			Tracks.Set( position.X, position.Y, cell );
-			chain.Add( position );
+			chain.Add( (position, heading, cell.Mask == 0x55) );
 			if ( heading == 0 || stop )
 				break;
 			var next = Step( position, heading );
@@ -245,11 +314,24 @@ public sealed class TrackEditor
 				break;
 			position = next;
 		}
-		foreach ( var tile in chain )
+		foreach ( var (tile, traversed, crossing) in chain )
 		{
 			var cell = Tracks.Get( tile.X, tile.Y );
 			if ( !cell.IsOrigin )
 				continue;
+			// Preserve the other flow of a supported two-line crossing. Other replay shapes and contrary laid-flow directions keep the existing policy.
+			// [BIN:TPW-EXE:0x53B280 line step] with two or more link bits the line step clears dx -2 → 0x04, dx +2 → 0x40, dy -2 → 0x10, dy +2 → 0x01 from the link (0x5227f0) and both arms
+			// of the step's axis from the mask (0x522730), the bit opposite to the step (the per-tile driver 0x53aac0 steps from the anchor to the click, and 0x5370e0 maps dx -2 to heading 0x40);
+			// the replay 0x52FE50 pops the corner points the collector pushed in walk order (0x530830, 0x530B70: stack 0x81B740, count 0x820A8C) and runs each line from the later point
+			// back to the earlier one (mode 0x35: anchor = popped point, click = the point below it), so the cleared bit is the chain's own heading, the traversed heading here
+			var remaining = (byte)(cell.Link & ~traversed);
+			if ( crossing && IsJunction( cell.Mask ) && cell.Overlap == 1 && (traversed & ~0x55) == 0 && TrackHeading.Count( traversed ) == 1
+				&& (cell.Link & ~0x55) == 0 && TrackHeading.Count( cell.Link ) == 2 && (cell.Link & traversed) != 0
+				&& remaining != Opposite( traversed ) )
+			{
+				cell.Link = remaining;
+				Tracks.Set( tile.X, tile.Y, cell );
+			}
 			// a corner is an end of two replayed lines, so it is visited twice and its counter of 1 runs out; a plain tile is cleared on its one visit
 			if ( ClearCell( tile, pass: IsJunction( cell.Mask ), replay: true ) )
 				cleared.Add( tile );

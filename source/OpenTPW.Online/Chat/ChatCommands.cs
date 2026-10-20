@@ -95,7 +95,8 @@ public static class ChatCommands
 	public const int CommandCount = 43;
 	public const int LocalizedNamesOffset = 0;
 	public const int CanonicalNamesOffset = 43;
-	// [EXT:ONLINE-030] OpenTPW chat line limit; the original limit is unknown.
+	// [EXT:online-chat-line-limit] the protocol's chat line limit: one more than the original chat entry's 255 characters (tp.exe 0x4BF460, ChatPanel.EntryMaximumLength), so the
+	// lines of older OpenTPW clients still pass; the original server's limit is unknown
 	public const int MaximumLineLength = 256;
 
 	public static string CanonicalName( ChatCommand command ) => CanonicalNames[(int)command];
@@ -124,6 +125,9 @@ public static class ChatCommands
 		>= ChatCommand.Hungry => (ChatNotice)((int)ChatNotice.YouAppearHungry + (command - ChatCommand.Hungry)),
 		_ => null,
 	};
+
+	/// <summary>A player name as a command's first argument: in quotes when it holds a space, as <see cref="SplitName"/> reads it (a name holds no quote).</summary>
+	public static string NameArgument( string name ) => name.Contains( ' ' ) ? $"\"{name}\"" : name;
 
 	/// <summary>Splits "name rest" or "\"two words\" rest" into a player name and the remaining text.</summary>
 	public static (string? Name, string Remainder) SplitName( string argument )

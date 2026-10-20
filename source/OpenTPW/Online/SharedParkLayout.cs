@@ -15,6 +15,8 @@ public static class SharedParkLayout
 	public static IReadOnlyList<ParkCellRecord> CaptureCells( ParkCellMap cells )
 	{
 		ArgumentNullException.ThrowIfNull( cells );
+		if ( cells.HasQueuePassResidues || cells.HasExceptionalQueueMetadata )
+			throw new NotSupportedException( "This park contains native queue-pass metadata that the shared layout format cannot preserve. Save a resumable park instead." );
 		var records = new List<ParkCellRecord>();
 		for ( var y = 0; y < cells.Height; y++ )
 		{

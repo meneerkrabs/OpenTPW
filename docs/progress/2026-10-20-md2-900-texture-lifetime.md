@@ -1,0 +1,3 @@
+## MD2-900: Evidence-backed texture lifecycle (October 20, 2026)
+
+Advanced the [original proposal](../proposals/md2-900-trace-texture-frame-consumer.md) with a bounded [PC contract](../reverse/TEXTURE-FRAME-LIFETIME.md): outgoing texture-clip cleanup resets all raw-flag0x40 slots, including fixed items; ended channels stay bound while held ID12 keeps its final frame but ceases writing. Added ordinary replacement/unbind/loop and held-history synthetic regressions. The existing draw reader is unchanged. Source review and exact-head CI remain required; no local runtime test or original visual comparison is claimed. MD2-900 remains for aggregate/list-pass and headerflag4 residuals.

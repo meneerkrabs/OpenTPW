@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using OpenTPW.Online.Packages;
 
 namespace OpenTPW.Online.Chat;
@@ -21,6 +22,11 @@ public static class ChatProtocol
 	public const int SatelliteRoomCount = 5;
 	/// <summary>WebSocket close status "Service Restart": the server is being updated; clients reconnect.</summary>
 	public const int RestartingCloseStatus = 1012;
+	/// <summary>
+	/// The server protocol version from which movements carry a <see cref="ChatMoveMode"/>: a client sends a mode only to such a server, and the server
+	/// sends one only to clients that sent one, as the strict members of older clients and servers refuse an unknown <c>mode</c>.
+	/// </summary>
+	public const int MoveModesVersion = 5;
 
 	public static string ParkRoom( string parkId ) => ParkRoomPrefix + parkId;
 
@@ -32,7 +38,7 @@ public static class ChatProtocol
 	public static int? SatelliteIndexOf( string? room ) =>
 		room != null && int.TryParse( room.Length > SatelliteRoomPrefix.Length ? room[SatelliteRoomPrefix.Length..] : null,
 			System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var index )
-		&& index >= 1 && index <= SatelliteRoomCount ? index : null;
+		&& index >= 1 && index <= SatelliteRoomCount && room == SatelliteRoom( index ) ? index : null;
 
 	public static bool IsValidRoom( string? room ) => room == LobbyRoom
 		|| room != null && room.StartsWith( ParkRoomPrefix, StringComparison.Ordinal ) && room.Length is > 5 and <= 69 && room[5..].All( char.IsAsciiLetterOrDigit )
@@ -62,9 +68,27 @@ public sealed record ChatAuthentication( string Type, string Token )
 	}
 }
 
-/// <summary>Client to server: <c>command</c> (canonical command + argument), <c>join</c> (room) or <c>move</c> (position).</summary>
+/// <summary>
+/// How a movement moves a player's figure: the original's <c>BOSS_CHAT_MOVE</c> modes, the message's z (tp.exe 0x4E7265 in the dispatcher 0x4E6E80).
+/// </summary>
+// [BIN:TPW-EXE:0x4E7265 BOSS_CHAT_MOVE] z 0 walks the online person to the place (0x4F7DE0), 1 teleports it there (0x4F7E20), 2 hides it (0x4F9ED0) and 3 unhides and teleports it
+public enum ChatMoveMode
+{
+	/// <summary>The figure walks to the place.</summary>
+	Walk,
+	/// <summary>The figure is at the place at once (a double click, a goto).</summary>
+	Teleport,
+	/// <summary>The figure is hidden: its player rides a ride.</summary>
+	Hide,
+	/// <summary>The hidden figure is shown again, at the place: the ride ended.</summary>
+	Unhide,
+}
+
+/// <summary>Client to server: <c>command</c> (canonical command + argument), <c>join</c> (room) or <c>move</c> (position, and from protocol 5 its mode).</summary>
 public sealed record ChatRequest( string Type, string? Command, string? Argument, string? Room,
-	float? X = null, float? Y = null )
+	float? X = null, float? Y = null,
+	// written only when set: a server before protocol 5 refuses the member
+	[property: JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )] ChatMoveMode? Mode = null )
 {
 	public const string CommandType = "command";
 	public const string JoinType = "join";
@@ -73,11 +97,14 @@ public sealed record ChatRequest( string Type, string? Command, string? Argument
 
 	public static ChatRequest ForCommand( ChatCommand command, string argument ) => new( CommandType, ChatCommands.CanonicalName( command ), argument, null );
 	public static ChatRequest ForJoin( string room ) => new( JoinType, null, null, room );
-	public static ChatRequest ForMove( float x, float y ) => new( MoveType, null, null, null, x, y );
+	/// <summary>A movement; <paramref name="mode"/> only for a server of <see cref="ChatProtocol.MoveModesVersion"/> or later.</summary>
+	public static ChatRequest ForMove( float x, float y, ChatMoveMode? mode = null ) => new( MoveType, null, null, null, x, y, mode );
 
 	public static ChatRequest Parse( ReadOnlySpan<byte> utf8 )
 	{
 		var request = StrictJson.Deserialize<ChatRequest>( utf8, "Chat request" );
+		if ( request.Mode != null && request.Type != MoveType )
+			throw new InvalidDataException( "Invalid chat movement mode." );
 		if ( request.Type == CommandType )
 		{
 			if ( request.Command == null || !ChatCommands.TryParseCanonical( request.Command, out _ ) || request.Room != null )
@@ -123,7 +150,7 @@ public enum ChatEventKind
 	System,
 	/// <summary>Room membership: <see cref="ChatEvent.Room"/> joined, <see cref="ChatEvent.Args"/> players.</summary>
 	Room,
-	/// <summary>A player moved in a chat park: <see cref="ChatEvent.From"/>, <see cref="ChatEvent.Room"/>, X and Y.</summary>
+	/// <summary>A player moved in a chat park: <see cref="ChatEvent.From"/>, <see cref="ChatEvent.Room"/>, X and Y, and for a client that sends modes the <see cref="ChatEvent.Mode"/>.</summary>
 	Move,
 }
 
@@ -137,7 +164,9 @@ public sealed record ChatEvent(
 	int? Notice = null,
 	IReadOnlyList<string>? Args = null,
 	float? X = null,
-	float? Y = null )
+	float? Y = null,
+	// written only when set, and set only for a client that sent modes itself: an older client refuses the member
+	[property: JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )] ChatMoveMode? Mode = null )
 {
 	public static ChatEvent ForNotice( ChatNotice notice, params string[] args ) => new( ChatEventKind.Notice, Notice: (int)notice, Args: args );
 
@@ -145,7 +174,8 @@ public sealed record ChatEvent(
 	{
 		var value = StrictJson.Deserialize<ChatEvent>( utf8, "Chat event" );
 		if ( value.Notice is < 0 or > 1000 || value.Args?.Count > ChatProtocol.MaximumArguments || value.Args?.Any( arg => arg == null ) == true
-			|| (value.Kind == ChatEventKind.Move && (!ChatRequest.IsPosition( value.X ) || !ChatRequest.IsPosition( value.Y ) || value.From == null)) )
+			|| (value.Kind == ChatEventKind.Move && (!ChatRequest.IsPosition( value.X ) || !ChatRequest.IsPosition( value.Y ) || value.From == null))
+			|| (value.Mode != null && value.Kind != ChatEventKind.Move) )
 			throw new InvalidDataException( "Chat event is out of range." );
 		return value;
 	}

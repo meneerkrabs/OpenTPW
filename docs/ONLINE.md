@@ -11,13 +11,16 @@ command-line options until the next start.
 
 The online screens support the server's Game News and System News, account registration/login, park export/publish/search/download,
 voting, read-only visits, local postcard composition, sending the outbox, fetching the
-inbox, and chat — including the globe's five **chat parks**, standing rooms with live
-presence: everyone in a chat park sees who is there and where they stand, and the server
-relays each player's movement. A visit of a published park shows the park's other visitors
-walking in it ([Players in a visited park](#players-in-a-visited-park)). Chat commands use the selected original `CHAT_COMMANDS.str`
+inbox, and chat — including the globe's five **chat parks**, parks the players visit
+together: everyone in a chat park sees who is there and where they stand, and the server
+relays each player's movement. A visit of a published park or a chat park shows the park's
+other visitors walking in it ([Players in a visited park](#players-in-a-visited-park)). Chat commands use the selected original `CHAT_COMMANDS.str`
 words; original text is used where verified and supplementary labels cover the six supported
 languages. Chat lines use the local `GAME8AA.bf4` font. What the original service had and
 where each piece stands is inventoried in [reverse/ONLINE-FEATURES.md](reverse/ONLINE-FEATURES.md).
+
+Building a park together (co-op, `[EXT:online-coop-*]`) is planned as host-sequenced lockstep; its approved design
+decisions and the command layer every park edit now goes through are in [COOP.md](COOP.md).
 
 ## Screens
 
@@ -38,10 +41,10 @@ contents follow the original online screens mapped from the Mac binary in
 | Park details | The original details dialog (Mac table `data:0x51150`): eight label rows, description, enter-park and the owner's un-publish | `w_big` |
 | Other Parks | The city's outside-the-top-10 chart (Mac table `data:0x5137e`, "Other Parks In …", UITEXT 446) | `w_big`, `list_findprks` |
 | Publish Park | Publish Park form (Mac table `data:0x514de`); OpenTPW adds the website opt-in (off by default) | `w_med` |
-| Send Postcard | tp.exe's postcard window (table `0x7540d8`, `0x4a8c00`/`0x4a7d70`): photo frame, message, title and recipients fields with their prompts (shown while a field is empty) and lengths (the title at most the card format's 64 characters), clear, tick (unedited title and message take the defaults UITEXT 215/216; no recipient shows 213) and X; the preview and address book are disabled (UI-042); recipients are player names split at `;`, `,` and newlines, not spaces (`[EXT:postcard-player-names]`) | `window4`, `!frame`, `b_clear`, `b_okay`, `b_exit` |
+| Send Postcard | tp.exe's postcard window (table `0x7540d8`, `0x4a8c00`/`0x4a7d70`): photo frame, message, title and recipients fields with their prompts (shown while a field is empty) and lengths (the title at most the card format's 64 characters), clear, tick (unedited title and message take the defaults UITEXT 215/216; no recipient shows 213) and X; the preview and address book are disabled (UI-042); recipients are player names and e-mail addresses split at `;`, `,` and newlines, not spaces (`[EXT:postcard-player-names]`) | `window4`, `!frame`, `b_clear`, `b_okay`, `b_exit` |
 | Unsent Postcards | Unsent Postcards (outbox) screen in its original composition (Mac table `data:0x508bc`): Title/Date/Send/Delete columns and the mark buttons | `list_outbox`, `b_sendall` |
 | Inbox | (OpenTPW) | `list_outbox` |
-| Chat | The original chat overlay (Mac table `data:0x50b2c`): people-in-park list with tabs, action bar, message list, text entry — and the chat park view | `list_msgs`, `f_text1` |
+| Chat | The original chat overlay (tp.exe table `0x758ae8`): chat frame, people list with its two tabs and slider, postcard, vote and earmuffs buttons, message list with its slider, text entry, and the name popups (tables `0x758cd8`, `0x758e18`) — over the chat park view | `chat` (`f_chat`), `b_speeps`, `b_sbuddi`, `b_chtpcard`, `b_vote`, `b_muff`, `!f_plain`, `b_bmark`, `b_gopeep`, `b_ignore`, `b_unbuddi`, `b_peeploc`, `b_page` |
 | Import file | (OpenTPW) | `w_med` |
 
 The original files place several of these models on screen (`f_profile`, `b_login`,
@@ -95,14 +98,33 @@ the Publish Park dialog opens, 0x1018CE80). A server without cities skips the gl
 The five satellites are chat parks: standing chat rooms the server names (docs/SERVER.md), each
 showing how many players are in it — the original wrote each room's player count into its
 satellite control (STP-PPC 0x1b8808), and the manual says "The number displayed next to each
-satellite is the number of people currently in this chat park". A click enters the park. In a chat
-park the players are present together and **move around**: the chat screen shows the park from
-above with a marker per player, a click walks the player's marker there, and the server relays
-each position to everyone in the park. The original's three-dimensional chat-park scene is not
-decoded, so the overhead view is an OpenTPW design choice ([EXT:online-chat-park-view](#online-design-choices));
-the movement itself — one position per walk step, relayed to the room, rate-limited separately
-from chat — follows the manual ("Left click to walk to destination"). Any published park's chat
-room works the same way: joining a park's chat from its details dialog or the city lobby.
+satellite is the number of people currently in this chat park". In tp.exe a satellite is a
+**park**: the satellites show the parks of a city of their own (city 1's park list, entry *i* on
+satellite *i*), a click opens that park's details (0x4C56E0 → 0x4C0AE0) and Enter visits it like
+any park, in the chat mode ([reverse/ONLINE-VISIT.md](reverse/ONLINE-VISIT.md#chat-satellites-tpexe)).
+
+OpenTPW does the same. A click opens the chat park's details in the variant tp.exe shows for such a
+park — the name as the title, "Theme : …" (UITEXT 271 and the theme's name), the description and
+Enter, with the owner's action disabled and no statistics — and Enter visits its park in three
+dimensions with the room's other players walking in it, as [Players in a visited
+park](#players-in-a-visited-park) describes: the chat mode, the figures, walking, riding. The park
+is the published park the server names for the satellite, downloaded and reported as any visit,
+or else the starting park of the satellite's original level (jungle, hallow, fantasy or space),
+which the game builds from the level's own data. The visit walks in the satellite's standing room
+(`satellite:<n>`), so the satellite's count counts it.
+
+A room without a park to visit is shown from above: a marker per player, a click walks the player's
+marker there, and the server relays each position to everyone in the room. That is the view of a
+satellite on an older server (one without the satellites' scenes), and of a published park's chat
+joined from its details dialog. The movement itself — one position per walk step, relayed to the
+room, rate-limited separately from chat — follows the manual ("Left click to walk to
+destination"). Positions are fractions of the park in both views, so a player who sees the room
+from above walks among the park's visitors.
+
+| EXT label | OpenTPW decision | Known original evidence (not reproduced) |
+| --- | --- | --- |
+| `online-chat-park-scene` | The server names a published park or an original level for each satellite (`chatparks.json`, docs/SERVER.md), and the game asks for these scenes at the click. A satellite without a published park visits the starting park of its level, built by the game from the level's data once the level's files are there. The visit walks in the satellite's standing room, which an older game enters from above and the satellite's count counts; so a satellite's visit of a published park has no vote, as no chat park has, and its players are not counted at the park itself. | The satellites were the parks of city 1 (`GetParkInCityList(0, 1, …)`, tp.exe 0x5B7610 → 0x5BCB30), read from the client's copy of that list at the click (0x5B7910), and each was visited like any park in the park's own room ("%d" of its id, `CreateRoom` at 0x4E6A67). Which parks the service kept in city 1 is not known. |
+| `online-chat-park-details` | A satellite's details are always the short variant, titled with the chat park's name. | 0x4C0AE0 shows the short variant for a park whose city has the flag +0x60, titled with the park's name. Whether city 1 had that flag is not known. |
 
 ### City lobby
 
@@ -122,19 +144,54 @@ chat, import, account) are behind **OpenTPW online** at the top centre.
 
 ### The chat overlay
 
-Chat is the original overlay (Mac table `data:0x50b2c`): the people-in-park list at the left with
-its two tabs — the players in this park and the online buddies — the manual's player buttons under
-it (buddy, ignore, blackmark, on a selected name), the action bar across the top (vote, earmuffs,
-postcards, goto, page, locate), the message list and the text entry at the bottom, all at their
-authored places. The original assigned them otherwise
-([EXT:online-chat-action-bar](#online-design-choices)): its list buttons were earmuffs, vote and an
-unidentified handler, and the six-button table was a popup on a name in the list (blackmark, goto,
-ignore, buddy, locate, page); OpenTPW's assignment covers every action the manual names. The commands themselves are typed or clicked: `/say`, `/tell`, `/shout`, `/emote`
-("Dan is bouncing up and down"), `/earmuffs`, `/buddy`, `/ignore`, `/mark`, `/page` ("Dan pages
-you: Hello"), `/locate` ("Dan is currently in Halloween World in San Francisco" — the park and its
-city), `/goto`, `/afk`, `/vote` and the mood emotes, in the selected language's words. A player's
-online buddies are told when they enter a park
-(in OpenTPW's own words, [EXT:online-buddy-enters-text](#online-design-choices)).
+Chat is the original chat overlay (tp.exe table `0x758ae8`, built by 0x4BF460 when a park enters chat
+mode), at its authored places over the chat frame (`f_chat`); a visit with other players shows it over
+the visited park ([Players in a visited park](#players-in-a-visited-park)), a room without a park to
+visit over the overhead view ([Chat parks](#chat-parks-the-satellites)):
+
+- **People list** at the left, with its two tabs: the players in the room and the buddies. The
+  overlay asks the server for the buddy list as the chat connection opens and again on the buddy
+  tab; the list it has stands until the answer comes. A buddy's name is green in this park, blue online elsewhere and red offline; any other name
+  is white (the row colours of 0x4BE730 by the flags of 0x4EE5C0: buddy, online, in this park,
+  ignored).
+- **Name popups**: a right click on a name opens the original's popup at the pointer — six buttons
+  for a buddy (ignore, goto, locate, page, black-mark, remove from the buddy list; table `0x758cd8`),
+  four for anyone else (ignore, goto, black-mark, add to the buddy list; table `0x758e18`), none for
+  the player's own name (0x4BE290). The ignore button stays down while the name is ignored. A
+  button sends its command for the name. A click beside the popup closes it when the button is let
+  go, so the click reaches nothing under it; a right click or Escape closes it too. A goto to a
+  player in the visited park takes the player's figure to them.
+- **Player buttons** under the list: the postcard (opens Send Postcard), the vote for the visited
+  park and the earmuffs, which stay down while they are on (0x4BE820). The vote goes once, and not
+  again after the server refused it (the player's own park, a vote already given today; the day's
+  limit holds for every park). A chat park has no vote.
+- **Message list** along the bottom: the room's lines cut into rows at the list's width, the last
+  twenty rows, following the newest (0x4BE970).
+- **Entry** under the messages, up to 255 characters: a click gives it the keys, and so does Enter while nothing else
+  has the focus; the pointer passing over it does not, and neither do the arrows or Tab. Enter says
+  the line and Tab leaves the entry (0x4BE3A0). While it has the keys, the camera still takes the
+  wheel, the edges and the drag over the park, and no hover help covers the entry while a line is
+  typed.
+- **Panels**: the frame's left column and bottom strip keep clicks off the park; the park shows
+  through the opening between them and takes the clicks there (the triangles of `f_chat`).
+  Pushing the pointer against the screen's edge over them still scrolls the camera.
+
+The overlay keeps the server's answers for its state: the buddy list (its own asks stay out of the
+message list; a typed `/buddy` lists it), the ignored players and the earmuffs (both per chat
+connection, as the server keeps them) and the parks voted for or refused. The commands
+themselves can also be typed: `/say`, `/tell`, `/shout`, `/emote` ("Dan is bouncing up and down"),
+`/earmuffs`, `/buddy`, `/ignore`, `/mark`, `/page` ("Dan pages you: Hello"), `/locate` ("Dan is
+currently in Halloween World in San Francisco" — the park and its city), `/goto`, `/afk`, `/vote`
+and the mood emotes, in the selected language's words. A player's online buddies are told when they
+enter a park (in OpenTPW's own words, [EXT:online-buddy-enters-text](#online-design-choices)).
+
+| EXT label | OpenTPW decision | Known original evidence (not reproduced) |
+| --- | --- | --- |
+| `online-chat-help` | The overlay's controls show UIHELPTEXT 402-409, 418, 419, 422, 461 and 480 by their wording (tabs, names, earmuffs, scrollers, vote, postcard). The entry shows none: the help box over it would cover UIHELPTEXT 420 and the typed line. | The overlay's table carries no help ids; where the original took its controls' help from is not read. |
+| `online-chat-person-flags` | The overlay asks for the buddy list as the chat connection opens and on the buddy tab, at most once in five seconds counting a typed `/buddy`, and keeps those answers out of the message list. A buddy counts as online and in this park while the room's roster names them; otherwise as the last answer says. | The original kept both flags per buddy from the server's buddy messages (0x4EE5C0, buddy record +0x1C and +0x1D). |
+| `online-chat-line-limit` | A chat line carries up to 256 characters; the overlay's entry takes 255, as the original's. | The original entry's limit is 255 (0x4BF460); the original server's limit is not known. |
+| `online-chat-row-highlight` | The chosen name is marked with a bar. | The list's highlight art (`hilight`, set by 0x4BF460) is not drawn. |
+| `online-chat-popup-place` | A name popup's corner is at the pointer, kept inside the screen. | 0x4BF370 places it at the pointer with an offset that is not read. |
 
 The ImGui Online panel remains as a developer tool in `--sandbox` and other developer
 starts. The front-end smoke test walks the screens and captures
@@ -149,6 +206,59 @@ passwords and session tokens are not persisted. The `parks`, `visited`, and
 `postcards/{inbox,outbox,sent}` folders hold locally exported/downloaded files.
 Malformed local postcards are reported. A conflicting or damaged existing inbox file
 is retained and prevents deletion of that incoming postcard from the server.
+
+
+### Postcard recipients and delivery
+
+[EXT:postcard-player-names] The recipient field accepts a mixture such as
+`Bob Smith; friend@example.test, Alice`. Semicolons, commas and newlines separate
+recipients; spaces stay inside player names. Tokens containing `@` must be plain
+ASCII mailbox addresses (no display names, comments or quoted local parts); all
+other tokens use the existing player-name rules. The shared package/client/server
+validator rejects malformed or duplicate recipients and caps a card at ten. The
+composer uses the original localized UITEXT 213 refusal and preserves the draft.
+
+Composition is still offline: the tick saves to Outbox. **Send All** requires login.
+Player names go to that server's Inbox; addresses go through its already configured
+`IEmailSender` / Resend transport, using `EmailFrom` and `EmailReplyTo`. The e-mail
+contains the title, sender's player name and message, plus `postcard.png` when the
+card has an image. It does not disclose the sender's recovery address. Each inbox
+copy lists only its own recipient, and each e-mail has a single recipient.
+Unknown players are reported as player recipients, not unknown e-mail recipients.
+A server without mail configuration continues player delivery and reports that
+addresses cannot be delivered. No client-side SMTP or new mail credentials are used.
+
+Partial responses list only confirmed recipients. Send All records that subset in
+Sent and atomically rewrites the Outbox card with the unconfirmed recipients, so a
+failed address, unknown player or full inbox is not silently discarded. A failed
+request leaves its local card in Outbox. Successful delivery here means an inbox
+write or mail-provider acceptance, not a guarantee that an external mailbox received
+or displayed the message. Old clients can still send fully successful player cards;
+partial-result handling requires this client version.
+
+The server persists hashed account/content/recipient receipts separately from inbox
+files, and uses deterministic inbox delivery ids. Retrying the same immutable card
+also after a restart or local recipient-list reduction does not resend a confirmed
+recipient within the 30-day receipt lifetime. Reusing a client-chosen card id with
+different content is a different delivery. Confirmed receipts expire after 30 days;
+this is bounded deduplication, not a permanent exactly-once guarantee.
+
+For e-mail, the same hashed key is sent as Resend's `Idempotency-Key` header
+([provider contract](https://resend.com/docs/dashboard/emails/idempotency-keys)).
+Because that provider retains keys for 24 hours, an unconfirmed attempt may be
+retried for at most 23 hours. Afterward the server reports an uncertain result and
+requires the player to check with the recipient before composing a new card.
+Uncertain tombstones do not expire automatically, and are capped at 256 per sender;
+further new e-mails then require operator attention. A process or storage failure
+between the provider's acceptance and the local receipt write is explicitly
+uncertain, never reported as guaranteed exactly-once delivery.
+
+The existing upload/address rate limiter remains. `PostcardRecipientsPerHour`
+(default 20) additionally limits recipient delivery attempts per authenticated
+account, and `PostcardEmailsPerAddressPerHour` (default 3) limits attempts to the
+same address across accounts. Failed mail attempts count; confirmed retries do not.
+These one-hour attempt counters survive restart. Their persisted records and the
+receipt ledger contain hashes and timestamps, not raw e-mail addresses or messages.
 
 Export/import works without an account or a server. The Online panel inspects a local
 `.tpwpark` and reports required content and layout warnings. Downloading a shared park
@@ -247,9 +357,10 @@ parity remain unsupported.
 
 A visit of a park downloaded from the server (Find Parks, the park details or a city lobby's
 *Enter Park*) while logged in puts the player in the park's chat room (`park:<id>`), as the
-original's visit switched to chat mode on entering the park (manual p. 65). Every visitor of the
-park — and anyone in the park's room through the park details' *Chat* button — appears as a
-figure in the park (`ParkPresence`):
+original's visit switched to chat mode on entering the park (manual p. 65); a chat park's visit (a
+satellite's *Enter*) puts them in the satellite's room (`satellite:<n>`). Every visitor of the
+park — and anyone in its room through the park details' *Chat* button or the overhead view —
+appears as a figure in the park (`ParkPresence`):
 
 - **Figures**: each player is drawn with the guests' kid sprites (the pools extension's sets when
   it is on), walking or standing like a guest, with their name over their head on a dark plate —
@@ -257,20 +368,37 @@ figure in the park (`ParkPresence`):
   sparkle once a world turn: effect 53 *Avatar* for the player's own figure, 57 *OtherAvatar* for
   the others, from `Data/Particle/Tp2.plb` (tp.exe 0x4F7C60 / 0x4FA470 in the online person's tick
   0x50B453; docs/reverse/ONLINE-VISIT.md).
-- **Walking**: a left click on the ground that hits no object walks the player's figure
-  there, and a double click teleports it (manual p. 68). The walk goes from cell centre to cell
+- **Chat mode**: the visit starts in the original's chat mode, which puts the chat overlay
+  ([The chat overlay](#the-chat-overlay)) in place of the park's HUD (tp.exe 0x4862A0: the HUD does
+  not exist in chat mode); **F4** switches between it and the visit's HUD, as it switched the
+  original's overlay off and on (0x4BE3A0), and **Enter** over the park returns to the chat mode
+  with the entry taking the keys. The chat mode starts once the visit is in its park's room, stays
+  through a reconnection, and gives way to the HUD when the server refuses the park. The HUD shows
+  the room's lines in the corner chat box.
+- **Walking**: in the chat mode a left click anywhere in the park's opening (not on the overlay's
+  panels, nor on a rideable ride: see Riding) walks the player's figure there, as the original's chat mode panel does (help 401,
+  "Left-click to walk to this point"); in the HUD a click on the ground that hits no object does,
+  and objects keep their click (a ride's window, the ride view). A double click teleports (manual
+  p. 68). The walk goes from cell centre to cell
   centre round water, objects, the fence and cells without terrain, by the octile distance the
-  original's person route uses (0x50F8E0), and straight when there is no route. Objects keep their
-  click: a click on a ride still opens its window, and the ride view still rides it.
-- **Places**: the figure's place goes to the server as a fraction of the park's map (the chat
-  protocol's `move`), at most every 0.12 s while it walks, on arrival, and every ten seconds while
-  it stands; the server relays it to the room. The other figures follow the relayed places and
-  jump when a place is more than three cells away (a teleport, or a player in the overhead chat
-  view, whose square maps onto the same fractions).
-- **Chat**: the room's last lines show at the original chat overlay's message list for ten seconds
-  after each line (instead of the chat overlay's corner box); **Enter** over the park opens a chat
-  line at the overlay's entry, Enter again says it (commands work as in the chat screen), Escape
-  closes it.
+  original's person route uses (0x50F8E0), and straight when there is no route. A spot the figure
+  cannot reach at all (an island, a fenced corner) is known at once from the park's connected
+  areas, which the first click labels, and a search gives up after 40,000 cells.
+- **Places**: the player's figure enters the park at the centre of the entrance's first cell, and
+  its first place goes out as a teleport, as the original's own person entered (tp.exe 0x4E5EF0:
+  entrance 0's cell, `MovePlayer(…, 1)`). The figure's place goes to the server as a fraction of the
+  park's map (the chat protocol's `move`), at most every 0.12 s while it walks, on arrival, and
+  every ten seconds while it stands; the server relays it to the room. The other figures follow the relayed places and
+  jump when a place is more than three cells away (a player in the overhead chat view, whose
+  square maps onto the same fractions), or when the movement was a teleport.
+- **Riding**: in the chat mode a rideable ride under the pointer shows its name with "Left-click
+  to ride" (UIHELPTEXT 580) and a click rides it (tp.exe 0x4BD7F4 → 0x4E15B0, the ride window's
+  Ride it!), as the HUD's Ride it! does. While the player rides, their figure is hidden for the
+  park's other visitors, and when the ride ends it appears at the ride's exit (where the ride has
+  visitor cells; else where it stood): the original's `BOSS_CHAT_MOVE` modes 2 (hide) and 3 (unhide
+  and teleport). The ride view's screen covers the chat overlay until the ride ends, as the
+  original hid both chat windows (0x4BD090), and its own exits leave it (Escape, the eject button,
+  C, E and, with RMB cancel, a right click).
 - **Leaving** the park leaves its room, so the others see the parting; a chat connection that
   the visit opened is closed again, so the Online World's lines do not follow the player into
   their own park. A park that was unpublished meanwhile is refused by the server; its visit then
@@ -278,24 +406,38 @@ figure in the park (`ParkPresence`):
 
 Walking runs on real time, whatever the visited park's speed or pause. Figures need a server that
 answers each room's first movement with where everyone stands (protocol version 4,
-docs/SERVER.md); with an older server the visit chats but shows no figures. A park file opened
+docs/SERVER.md); with an older server the visit chats but shows no figures. Hiding a riding
+player needs protocol version 5, whose movements carry their mode; on a version 4 server, and
+for a player whose game is older, the riding player's figure stands where it was until the ride
+ends. A reconnect reads the version again before a hide goes out, and holds the hide until that
+read finishes, so neither an older game nor a current one is shown the rider in the meantime. A
+failed read is tried again, with a growing wait that levels off, for as long as the connection
+stays open. Leaving the room discards any coalesced movement that has not entered the send
+queue, including a held hide, so another park on the same connection starts with its own visible
+position. A park file opened
 from disk (Import file, `--visit-park`) has no room and no figures.
 `--visit-park <file> --smoke-test --smoke-presence` runs the native visit check with three scripted
-players round the entrance: their figures, names and sparkles are drawn, a HUD click walks the
-player's figure and its places are sent, and Enter says a chat line that shows over the park
-(`artifacts/native-smoke-online-visit-presence.png`).
+players round the entrance: the visit starts in the chat mode, their figures, names and sparkles are
+drawn, a click walks the player's figure and its places are sent, Enter focuses the entry and says a
+line, Tab leaves it, a right click on a name opens its popup and the ignore button sends its
+command, F4 switches to the HUD and back, a buddy's popup has its six buttons, and a click on a
+ride in the chat mode rides it with the player's figure hidden and brings it back at the ride's
+exit (`artifacts/native-smoke-online-visit-presence.png`, `native-smoke-online-visit-chat-popup.png`).
 
 | EXT label | OpenTPW decision | Known original evidence (not reproduced) |
 | --- | --- | --- |
-| `online-visit-presence` | The visit joins the park's room and the server relays fractions of the park, sent several times a second while a figure walks; a far jump is shown as a teleport. | The original's `BOSS_CHAT_MOVE` carried a cell position (8.8 words) and a mode: 0 walk to it (every client walked the online person there itself, 0x4F7DE0), 1 teleport (0x4F7E20), 2 hide, 3 unhide and teleport (tp.exe 0x4E7265 in 0x4E6E80). Hiding while riding is not sent. |
+| `online-visit-presence` | The visit joins the park's room and the server relays fractions of the park, sent several times a second while a figure walks; a far jump is shown as a teleport, and from protocol 5 each movement says whether it walks, teleports, hides or shows the figure again. | The original's `BOSS_CHAT_MOVE` carried a cell position (8.8 words) and a mode: 0 walk to it (every client walked the online person there itself, 0x4F7DE0), 1 teleport (0x4F7E20), 2 hide, 3 unhide and teleport (tp.exe 0x4E7265 in 0x4E6E80). |
+| `online-ride-hiding` | A player who rides is hidden for the room from boarding to the ride's end, and then shown at the ride's exit (or where they stood); any later movement shows a hidden figure again, so a lost "unhide" heals. The server sends the mode only to games that send one, and a hidden player's place to nobody who reads no mode. A hide waits until the version of the open connection is known, and a failed version read is tried again until it is. | The original hid the own person locally on entering any first-person view and sent mode 2 for a ride (0x4BD090 → 0x4EA3F0); a ride entered from the first-person walk ended at its exit cell with mode 3 (0x42A1D0, 0x4EA410), but the return to the overview from a ride boarded there sent only a teleport (mode 1, 0x4BD260 → 0x4EA2D0), which leaves the person hidden for the others: only mode 3 rebuilds its model, while modes 0 and 1 move a hidden person unseen. |
 | `online-avatar-look` | A figure wears the guests' kid set chosen by an FNV-1a hash of the lower-case name, the same for every client. | The online person's own model (`MODEL_ONLINE_PERSON`) is not decoded. |
 | `online-avatar-walk` | The player's figure walks 1.2 cells a second, about a quick guest's pace. | The online person's walk step (0x4FA2A0 on its route) is not read. |
 | `online-avatar-route` | The cells a figure may cross: land, paths, queues, object entrances and exits and fixed walkways inside the park. | The route map the original passes to its route search (person +0xB4 → 0x511420) is not read. |
-| `online-avatar-start` | A figure appears between the park entrance's two cells. | The original's first place of an online person is not read (mode 3 unhides it at a relayed place). |
-| `online-avatar-click` | A ground click that hits no object walks the figure; the ground's help in a visit says so (WalkHint), where a visit used to show the path tool's help. | The original's chat-mode click handling in a visited park is not decoded. |
+| `online-avatar-start` | A level whose entrance A lies outside its cell map starts the player's figure in the park's middle. | The original's own person enters at the centre of entrance 0's cell (tp.exe 0x4E5EF0, 0x4D8690(0)), which every original level has; OpenTPW follows it. |
+| `online-avatar-click` | In the chat mode a click anywhere in the park but on a rideable ride walks the figure, in the HUD a ground click that hits no object; the ground's help is UIHELPTEXT 401 in both, and not while the chat entry takes the keys (the help box would cover it). | The chat mode panel's handler (0x4BD4A0) walks on a park click with help 401. |
+| `online-chat-ride-click` | In the chat mode a ride whose ride view opens (a camera seat or a running coaster) shows UIHELPTEXT 580 with its name and a click rides it. A feature's choosable bit is not tracked: a feature rides when its view opens. | Over a thing of type 3 that is no add-on (AddOn.UpgradesId 0) and of interface type 0, or 3 with the thing's choosable bit (+0x32 bit 0x10), the panel shows help 580 and a click runs the ride window's Ride it! (0x4BD7F4 → 0x4E15B0). |
 | `online-avatar-labels` | Names over the figures, the player's own in yellow, drawn under the HUD's windows. | The decoded online code draws no names over persons; the chat overlay's people list names them. |
 | `online-avatar-sparkle-cap` | At most six figures sparkle in a turn (the player's own first, then the nearest), and none while more than 80 of the particle pool's 120 emitters are live. | The original sparkles every online person every turn; its server capped a park's attendance ("Capping the number of people in online park"). |
-| `online-visit-chat-line` | Enter over the park opens one chat line at the original overlay's entry (799020), and the room's last lines show at its message list (799019) for ten seconds after each line. | The original's in-park chat overlay (Mac table data:0x50b2c) with its people list, player buttons and vote button is not reproduced in the visit. |
+| `online-visit-chat-mode` | F4's other side is the visit's read-only HUD (its windows, the camera and the ride view), and Enter over the park returns to the chat mode with the entry focused. The camera's edge scroll works over the overlay's panels along the screen's left and bottom edges. | The original's F4 switched between the overlay and a bare full-screen panel over the park (0x7CC8C0, 0x65DD7B); its chat mode has no HUD. Whether its edge scroll worked over the overlay is not read. |
+| `online-chat-goto` | A name popup's goto to a player in the park teleports the player's figure to them (the server keeps the player in the park's room). | The original server's answer to a goto (command 0x13) is not read. |
 
 ## Local server
 
@@ -404,7 +546,7 @@ The package/protocol/server code owns tags 001–059. The game adapters own:
 | 066 | ImGui Online panel (developer starts only; players use the original-style screens) |
 | 067 | Publish Park's website opt-in, off by default (the server's public website list is 057) |
 | 070 | Platinum Tickets shown from the player's own server page: one per recorded visit of their parks |
-| 071 | The five chat parks' default names; the original's room list is not recovered |
+| 071 | The five chat parks' default names, levels and descriptions; the original's list (the parks of city 1) is not recovered |
 | 072 | Walking in a chat park sends one position per step under its own rate limit (`MovementBurst`/`MovementsPerSecond`) |
 | 068 | The version 2 layout digest: FNV-1a 64 over the payload's cells, objects and coasters, written by the publisher and recomputed by the visit |
 | 069 | The visit's Ride action in the object panel (coasters, the prototype ride and the rides with a camera seat) and its exits |
@@ -438,13 +580,19 @@ Windows v2.0 executable.
 | `online-globe-edge-gate` | `APPROX:ONLINE-012` | Edge steering starts once the cursor has moved on the globe screen, so a cursor resting at an edge does not spin a globe that just opened. | The original has no per-screen gate: it reads the online front end's last mouse-move position (0x5D5DD0), the canvas centre until the first move after the front end starts (0x5D5770), so it steers at once when the cursor already rests at an edge (for example back from a city lobby). OpenTPW keeps no move history across the online screens. |
 | `online-globe-pin-radius` | `APPROX:ONLINE-013` | Pins stand on the mesh surface (radius 119.7) at the decoded (s, s, p) scale of their root node; the cities are the OpenTPW server's own list, since the original list is lost. | The original puts the pin's root node at the city record's position vector (0x5DC3E0 → 0x5D8190), which the city list from weacityr.dll fills; its radius is not decoded (a city list from the original service or a capture of its globe). |
 | `online-publish-globe-prompt` | `APPROX:ONLINE-017` | The publish globe shows UITEXT 419 ("Choose the city to publish in") in the city name label while no city is hovered. | Its panel is read (tp.exe 0x5DD910 → 0x4C4FB0(1): the worldlob table without the satellites, Find Parks and back, with the city labels); neither tp.exe nor the Mac publish globe code loads UITEXT 419 as an immediate, so where it showed is unknown. |
-| `online-chat-park-view` | `APPROX:ONLINE-019` | A chat park is a flat overhead view in which each player is a marker that the server's relayed movement moves; the player walks their own marker by clicking (one walk speed; the double-click teleport is not separated). | The original chat park's three-dimensional scene, avatar model and animation (manual pp. 63-68) are not decoded. |
+| `online-chat-park-view` | `APPROX:ONLINE-019` | A room without a park to visit (a satellite on an older server, a published park's chat from its details) is a flat overhead view in which each player is a marker that the server's relayed movement moves; the player walks their own marker by clicking (one walk speed; the double-click teleport is not separated). A satellite's park is visited in three dimensions ([Chat parks](#chat-parks-the-satellites)). | The original's chat rooms were parks: a satellite's park was visited like any park (tp.exe 0x4C0880 → 0x5B8910, the chat mode 0x4BF460), and a park's room was entered by visiting the park. |
 | `online-park-details-players` | `APPROX:ONLINE-020` | The park details' eighth label row shows the players currently in the park's chat room (UITEXT 273). | The original's last row showed the Instant action mode flag (UITEXT 282), which the package format does not record. |
-| `online-chat-action-bar` | `APPROX:ONLINE-021` | The chat overlay's action buttons are a fixed top bar (vote, earmuffs, postcards, goto, page, locate) and three list buttons (buddy, ignore, blackmark), which covers every action the manual names. | The original (tp.exe list handler 0x4BE820) gave 799016 earmuffs on/off, 799017 vote and 799018 the unidentified shared handler 0x4A9380, and the six-button table 6024-6031 (tp.exe 0x758CD8) is a popup on a name in the list (0x4BE290, at the cursor): blackmark, goto, ignore, remove buddy, locate, page (0x4BEDE0); other names get the popup 12290 (blackmark, goto, ignore, add buddy). Still unknown: what 0x4A9380 does and which list flag picks the popup. |
 | `online-postcard-photo` | `APPROX:ONLINE-022` | The postcard photo attached by Send Postcard is the park's generated map thumbnail, and no park reference is attached (the live level has no package identity). | The original attached a camcorder snapshot of the visited park (manual pp. 51/67); its content and encoding are not decoded. |
 | `online-park-name-masking` | `APPROX:ONLINE-023` | Park names are masked with the word filter once, on the server at publish, and the stored masked name is what everyone sees. | The original masked at display on the client: the city lobby's park label (tp.exe 0x4B8850), the park details (0x4C0AE0), Find Parks (0x4BFC70) and the other-parks chart (0x4C1E40) pass the name through the filter 0x5D3230 while the filter flag (0x5B09B0) is set, with the local swears.txt/alloweds.txt (0x5AFD70, 0x5D3140). Still unknown: what sets the filter flag (the matching rules are under `online-word-filter`). |
 | `online-buddy-enters-text` | `APPROX:ONLINE-024` | A buddy entering a park is reported as "Your buddy X has entered Y", OpenTPW's own text. | The original notification's string is not recovered; CHAT_COMMANDS 111-113 ("Your buddy ") have empty English suffixes and no enter-the-park variant. |
 | `online-visit-count-guard` | `APPROX:ONLINE-076` | An owner's visits to their own park never count, and one visitor counts at most once per UTC day per park, so Platinum Tickets cannot be farmed. | Every visit earned the owner Platinum Tickets (FAQ, S2); the original service's guard against repeated or self visits is not recovered. |
+
+## Retired chat action bar
+
+`online-chat-action-bar` (former `APPROX:ONLINE-021`) is retired: the chat overlay now follows the
+original's (tp.exe 0x4BF460 and its handlers, [The chat overlay](#the-chat-overlay)), with the
+player buttons' own actions (postcard 0x4A9380, vote, earmuffs) and the name popups in place of
+OpenTPW's top action bar.
 
 ## Retired ride-camera entry
 

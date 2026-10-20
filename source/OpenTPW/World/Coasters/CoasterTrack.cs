@@ -269,7 +269,8 @@ public sealed class CoasterTrack
 		var la = MathF.Sqrt( ax * ax + ay * ay );
 		var lb = MathF.Sqrt( bx * bx + by * by );
 		var dot = MathF.FusedMultiplyAdd( ax / la, bx / lb, ay / la * (by / lb) );
-		return MathF.Acos( Math.Clamp( dot, -1f, 1f ) );
+		// [EXT:deterministic-math] the runtime's acos in IEEE double by DetMath, the same bits on every runtime, not in x87 extended precision (docs/DETERMINISM.md, "Browser and native")
+		return DetMathF.Acos( Math.Clamp( dot, -1f, 1f ) );
 	}
 
 	/// <summary>
@@ -596,6 +597,16 @@ public sealed class CoasterTrack
 			return false;
 		IsClosed = false;
 		nodes.RemoveAt( nodes.Count - 1 );
+		Version++;
+		return true;
+	}
+
+	/// <summary>Opens a closed, incomplete fresh circuit again without removing a pylon (<see cref="CoasterBuilder.OpenFailingClosure"/>).</summary>
+	internal bool OpenClosure()
+	{
+		if ( !IsClosed || IsComplete || CutAfter != null )
+			return false;
+		IsClosed = false;
 		Version++;
 		return true;
 	}
@@ -1023,7 +1034,8 @@ public sealed class CoasterTrack
 		var la = MathF.Sqrt( a.X * a.X + a.Z * a.Z );
 		var lb = MathF.Sqrt( b.X * b.X + b.Z * b.Z );
 		float ax = a.X / la, az = a.Z / la, bx = b.X / lb, bz = b.Z / lb;
-		var turn = MathF.Acos( Math.Clamp( ax * bx + az * bz, -1f, 1f ) );
+		// [EXT:deterministic-math] the runtime's acos in IEEE double by DetMath, the same bits on every runtime, not in x87 extended precision (docs/DETERMINISM.md, "Browser and native")
+		var turn = DetMathF.Acos( Math.Clamp( ax * bx + az * bz, -1f, 1f ) );
 		return az * bx - ax * bz < 0 ? -turn : turn;
 	}
 
@@ -1281,7 +1293,8 @@ public sealed class CoasterTrack
 			{
 				// [BIN:TPW-EXE:0x4324a0 loop knot side] the loop factor's side term is the node's rotate parameter (+0xec, the yaw's turn fraction) against the heading of its neighbour
 				var heading = Next( index ) is int towards ? new SVector3( positions[towards].X - positions[index].X, 0, positions[towards].Z - positions[index].Z ) : SVector3.Zero;
-				var axis = applyManual || (node.Flags & CoasterNodeFlags.ManualYaw) == 0 ? new SVector3( MathF.Sin( yaw ), 0, MathF.Cos( yaw ) ) : new SVector3( MathF.Sin( yaws[index] ), 0, MathF.Cos( yaws[index] ) );
+				// [EXT:deterministic-math] the x87's sine in IEEE double by DetMath, the same bits on every runtime, not in x87 extended precision (docs/DETERMINISM.md, "Browser and native")
+				var axis = applyManual || (node.Flags & CoasterNodeFlags.ManualYaw) == 0 ? new SVector3( DetMathF.Sin( yaw ), 0, DetMathF.Cos( yaw ) ) : new SVector3( DetMathF.Sin( yaws[index] ), 0, DetMathF.Cos( yaws[index] ) );
 				var side = heading.LengthSquared() > 0 ? SVector3.Dot( SVector3.Normalize( heading ), axis ) : 0;
 				factor = HermiteCoasterCurve.LoopKnotFactor( Definition.Curviness, side, node.LoopRotate );
 			}
@@ -1381,9 +1394,10 @@ public sealed class CoasterTrack
 		var forward = new SVector3( tag.M31, tag.M32, tag.M33 );
 		up = TurnY( up, -yaw );
 		forward = TurnY( forward, -yaw );
-		var pitch = MathF.Atan2( -forward.Y, forward.Z );
+		// [EXT:deterministic-math] the x87's fpatan in IEEE double by DetMath, the same bits on every runtime, not in x87 extended precision (docs/DETERMINISM.md, "Browser and native")
+		var pitch = DetMathF.Atan2( -forward.Y, forward.Z );
 		up = TurnX( up, -pitch );
-		return MathF.Atan2( -up.X, up.Y );
+		return DetMathF.Atan2( -up.X, up.Y );
 	}
 
 	/// <summary>A vector turned about Y with the PC table (<c>0x431570</c>): x′ = x cos a + sin a·z, z′ = cos a·z − sin a·x.</summary>
@@ -1408,9 +1422,10 @@ public sealed class CoasterTrack
 	// [BIN:TPW-EXE:0x43e590 tangent angles] yaw = fpatan(T.x, T.z) (0x46f220); z′ = cos(−yaw)·z − x·sin(−yaw) with the nearest-index table lookups; pitch = fpatan(−T.y, z′) (0x46f210)
 	public static (float Yaw, float Pitch) PcOrientation( SVector3 tangent )
 	{
-		var yaw = MathF.Atan2( tangent.X, tangent.Z );
+		// [EXT:deterministic-math] the x87's fpatan in IEEE double by DetMath, the same bits on every runtime, not in x87 extended precision (docs/DETERMINISM.md, "Browser and native")
+		var yaw = DetMathF.Atan2( tangent.X, tangent.Z );
 		var z = CoasterTrig.PcCos( -yaw ) * tangent.Z - tangent.X * CoasterTrig.PcSin( -yaw );
-		return (yaw, MathF.Atan2( -tangent.Y, z ));
+		return (yaw, DetMathF.Atan2( -tangent.Y, z ));
 	}
 
 	/// <summary>
@@ -1423,12 +1438,13 @@ public sealed class CoasterTrack
 		if ( (node.Flags & (CoasterNodeFlags.ManualYaw | CoasterNodeFlags.ManualIncline)) == 0 )
 			return direction;
 		var heading = MathF.Sqrt( direction.X * direction.X + direction.Z * direction.Z );
-		var yaw = (node.Flags & CoasterNodeFlags.ManualYaw) != 0 ? node.Yaw : MathF.Atan2( direction.X, direction.Z );
-		var pitch = MathF.Atan2( direction.Y, heading );
+		// [EXT:deterministic-math] the x87's fpatan, fsin and fcos in IEEE double by DetMath, the same bits on every runtime, not in x87 extended precision (docs/DETERMINISM.md, "Browser and native")
+		var yaw = (node.Flags & CoasterNodeFlags.ManualYaw) != 0 ? node.Yaw : DetMathF.Atan2( direction.X, direction.Z );
+		var pitch = DetMathF.Atan2( direction.Y, heading );
 		if ( (node.Flags & CoasterNodeFlags.ManualIncline) != 0 )
 			pitch = Math.Clamp( pitch + node.Incline * 0.5f, -1.5f, 1.5f );
-		var level = MathF.Cos( pitch );
-		return new SVector3( MathF.Sin( yaw ) * level, MathF.Sin( pitch ), MathF.Cos( yaw ) * level );
+		var level = DetMathF.Cos( pitch );
+		return new SVector3( DetMathF.Sin( yaw ) * level, DetMathF.Sin( pitch ), DetMathF.Cos( yaw ) * level );
 	}
 
 	/// <summary>
@@ -1440,8 +1456,8 @@ public sealed class CoasterTrack
 	// [BIN:TPW-EXE:0x4360c4 closing target] a hovered cell that holds the chain's start sets controller flag 8, clears 0x50000 (the cut end's markers) on the chain's end node (+0x60) and 0xa0000 on its start (+0x64), and marks the start 0x800000, or 0x804000 when the closing link fails the validator; the section builder draws a link into a node with 0x800000, and that node's own tag pairs, with the blue or red marker (0x43f4e0)
 	// [BIN:TPW-EXE:0x43eb70 closing marker] the rebuild walks the next links (+0x64) from the list head and stops at a null, so no link is drawn into the marked start; its marker is the node's own tag pairs (0x43f4e0 with both nodes the same)
 	// [BIN:TPW-EXE:0x439b6b cursor marks] 0x4360c0 also sets 0x200000 on both ends and their neighbours; the readers are the self-intersection pass (0x439ab0 re-tests only the nodes carrying it, 0x439b6b) and the save writer (0x4376bb: it saves the bit as 0x400): the pass runs over every node here, so the marks have nothing left to select
-	// [APPROX:COAST-035] the handlers of a selected pylon that also start the loop mode (0x442d10, 0x447a10) have no counterpart here
-	// [BIN:TPW-EXE:0x00436230 cursor flags] the cursor node takes 0x40 in loop mode and 0x80 as well while the counter 0x79c664 is 2 (0x4362f6, 0x43632a); the counter is written 2 by the loop button 0x442cd0 (0x442cf4) and its key 0x444650 (0x444677), decremented by every placed pylon (0x4352bf) and zeroed when the mode ends (0x4446dd), so 0x80 marks the first pylon of the pair; the handlers of a selected pylon 0x442d10 (writes 1, 0x442d51) and 0x447a10 (1, or 2 at 0x447ab2 when the selected node's pylon control lacks flag 0x80 and the mode is off) also start the mode and have no counterpart here
+	// [APPROX:COAST-035] chain-endpoint loop resumption (0x442d10, 0x4455c0) is implemented by CoasterBuilder and CoasterToolPanel; the auxiliary dispatcher 0x447a10 still has no mapped host caller, and the original controller/definition flag-2 gate is not reproduced by the host loader
+	// [BIN:TPW-EXE:0x00436230 cursor flags] the cursor node takes 0x40 in loop mode and 0x80 as well while the counter 0x79c664 is 2 (0x4362f6, 0x43632a); the counter is written 2 by the loop button 0x442cd0 (0x442cf4) and its key 0x444650 (0x444677), decremented by every placed pylon (0x4352bf) and zeroed when the mode ends (0x4446dd), so 0x80 marks the first pylon of the pair; endpoint resumption 0x442d10 writes 1 (0x442d51), implemented by CoasterBuilder.StartOrResumeLoopPair; auxiliary dispatcher 0x447a10 remains unmapped (COAST-035)
 	public (IReadOnlyList<CoasterNode> Chain, bool Closed)? BuildPreviewChain( (int X, int Y)? cursor, float height, bool loop, bool firstOfPair = false, bool valid = true )
 	{
 		if ( (IsComplete && !IsCut) || nodes.Count < StationNodeCount || DepartCell == null )

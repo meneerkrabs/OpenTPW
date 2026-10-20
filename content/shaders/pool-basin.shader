@@ -7,6 +7,7 @@ common {
     mat4 g_mProj;
 
     vec3 g_vLightPos;
+    float g_flAmbientLevel; // [EXT:evening] the share of the original 0.4 ambient that is left (0 = unchanged: the extension is off or it is day); the padding after the sun position
     vec3 g_vLightColor;
     // [EXT:point-lights] the number of lights after the block (the padding after the light colour)
     float g_flLightCount;
@@ -88,6 +89,8 @@ fragment {
     float t = g_oUbo.g_flTime;
     float caustic = pow( abs( sin( position.x * 2.6 + t * 0.9 ) * sin( position.y * 2.3 - t * 0.7 ) + sin( ( position.x + position.y ) * 1.7 + t * 0.5 ) * 0.5 ), 3.0 );
     vec3 shading = vec3( 0.75 + 0.35 * caustic * ( 1.0 - depth * 0.5 ) );
+    // [EXT:evening] the basin's own flat light follows the ambient the evening extension leaves (0 keeps it as it was)
+    shading *= ( g_oUbo.g_flAmbientLevel > 0.0 ? g_oUbo.g_flAmbientLevel : 1.0 );
     // [EXT:point-lights] lights in reach (a lamp over or in the pool) add to the tiles' shading, under the water tint
     if ( g_oUbo.g_flLightCount > 0.5 )
       shading += pointLights( position );

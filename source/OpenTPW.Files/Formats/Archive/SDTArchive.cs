@@ -22,6 +22,7 @@ public class SdtArchive : IArchive
 	/// <summary>Receives one line per skipped entry (wire to the game log).</summary>
 	public static Action<string>? Diagnostic { get; set; }
 
+	/// <summary>Reads the bank from a file.</summary>
 	public SdtArchive( string path )
 	{
 		soundFiles = new List<MP2File>();
@@ -29,6 +30,11 @@ public class SdtArchive : IArchive
 		ReadFromStream( fileStream );
 	}
 
+	/// <summary>
+	/// Reads the bank from the remaining bytes of <paramref name="stream"/>, from its current position to
+	/// <see cref="Stream.Length"/> (the stream must be seekable), and takes ownership of it, disposing it on
+	/// success or failure.
+	/// </summary>
 	public SdtArchive( Stream stream )
 	{
 		soundFiles = new List<MP2File>();
@@ -41,15 +47,22 @@ public class SdtArchive : IArchive
 		memoryStream.Dispose();
 	}
 
+	/// <summary>Reads the bank from the stream's current position to its length and disposes the stream.</summary>
 	public void ReadFromStream( Stream stream )
 	{
-		// Set up read buffer
-		var tempStreamReader = new StreamReader( stream );
-		var fileLength = (int)tempStreamReader.BaseStream.Length;
+		ArgumentNullException.ThrowIfNull( stream );
+		// Short reads are accumulated; a premature end must fail before parsing, not leave zero-filled entry bytes.
+		using ( stream )
+		{
+			var remaining = stream.Length - stream.Position;
+			if ( remaining < 0 || remaining > int.MaxValue )
+				throw new IOException( $"The SDT bank has {remaining} bytes remaining from position {stream.Position}; it cannot be read into one buffer." );
 
-		buffer = new byte[fileLength];
-		tempStreamReader.BaseStream.Read( buffer, 0, fileLength );
-		tempStreamReader.Close();
+			var length = checked( (int)remaining );
+			buffer = new byte[length];
+			stream.ReadExactly( buffer );
+		}
+
 		memoryStream = new ExpandedMemoryStream( buffer );
 		mp2Reader = new SoundFile( buffer );
 

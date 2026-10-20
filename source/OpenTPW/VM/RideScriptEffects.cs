@@ -43,6 +43,15 @@ public interface IRideScriptEffects
 }
 
 /// <summary>
+/// Implemented by effects whose object takes the script loop's controller update after each slice of its script (the tail of tp.exe <c>0x5516B0</c>'s loop body, which
+/// runs on the passes the slice cadence selects whether or not the script had instructions to run).
+/// </summary>
+public interface IRideSliceTail
+{
+	void AfterSlice( RideVM vm );
+}
+
+/// <summary>
 /// Implemented by effects that own animation channels: the raw AnimID of a channel as the query 0xa7dcc reads it
 /// (12 = none, 14 = ended), for TRIGWAITANIM's resume check. Effects without it have no channels to read, so
 /// TRIGWAITANIM resumes as for a script without an object (the query is skipped and the wait never ends).

@@ -24,13 +24,12 @@ public readonly record struct WeatherForecastSample(
 /// <summary>
 /// The forecast's presentation state (docs/AUDIO.md "Weather visuals"): the countdown line a pending forecast
 /// shows, the transient lines when the weather changes, and the messages posted at those moments. This is the
-/// testable, GPU-free half — <see cref="WeatherForecastPresenter"/> draws it. The original's forecast message
-/// handler is not traced, so the wording, cadence and surface are OpenTPW approximations (AUDIO-905..907); no
-/// weather text exists in the shipped string tables to copy, so the lines are OpenTPW's own, worded in the
-/// selected language (<see cref="SupplementaryStrings"/>).
+/// testable, GPU-free half — <see cref="WeatherForecastPresenter"/> draws it. The original shows no forecast or
+/// change at all (<see cref="ParkWeather"/>, the forecast-presentation extension), so the wording, cadence and surface are
+/// OpenTPW's own, worded in the selected language (<see cref="SupplementaryStrings"/>).
 /// </summary>
-// [EXT:forecast-wording] the forecast's kind text classifies the pending quality by the converter's bands only — the apply-time snow/rain coin flip has not happened, so both bands read "snow or rain", and the lightning band composes "thunderstorms"; the wording is OpenTPW's — evidence needed: the original's forecast message handler and its text
-// [EXT:forecast-cadence] one message is posted when a forecast appears and one when it applies, plus one transient current-weather line on attach (a park entered or loaded with weather on screen); a park resumed mid-warning announces the pending forecast once, and the transient line shows for ChangedLineSeconds of simulation time — evidence needed: the original's forecast message cadence
+// [EXT:forecast-wording] the forecast's kind text classifies the pending quality by the converter's bands only — the apply-time snow/rain coin flip has not happened, so both bands read "snow or rain", and the lightning band composes "thunderstorms"; the wording is OpenTPW's (no weather text exists in the shipped string tables)
+// [EXT:forecast-cadence] news only: one message when a forecast of another kind of weather appears and one when the kind of weather changes, plus one transient current-weather line on attach (a park entered or loaded with weather on screen); the original rolls every cycle whatever the weather (0x512880), so a dry roll after dry weather shows and posts nothing; a park resumed mid-warning announces the pending forecast once, and the transient line shows for ChangedLineSeconds of simulation time
 public sealed class WeatherForecastState
 {
 	private readonly Func<string> language;
@@ -43,6 +42,8 @@ public sealed class WeatherForecastState
 
 	private readonly List<string> announcements = new();
 	private (long ApplyDay, int Quality)? announced;
+	/// <summary>The kind of weather last shown or announced (<see cref="KindKey"/> of the current bands).</summary>
+	private OpenTpwText shownKind;
 	private string? flashText;
 	private float flashRemaining;
 	private bool attached;
@@ -54,8 +55,9 @@ public sealed class WeatherForecastState
 	public bool IsTransient { get; private set; }
 
 	/// <summary>
-	/// The messages posted since the last call, in order: one when a forecast appears and one when it applies.
-	/// At most one per step, so a park cannot be spammed by stepping.
+	/// The messages posted since the last call, in order: one when a forecast of another kind of weather appears and
+	/// one when the kind of weather changes. At most those two per step (a change and the next forecast can come in
+	/// one update), so a park cannot be spammed by stepping.
 	/// </summary>
 	public IReadOnlyList<string> TakeAnnouncements()
 	{
@@ -67,24 +69,32 @@ public sealed class WeatherForecastState
 	}
 
 	/// <summary>
-	/// Advances the presentation by one observation of the weather: a newly seen pending forecast is announced
-	/// once and shows the countdown, the forecast's apply (the simulation clears a pending forecast only by
-	/// applying it, <see cref="ParkWeather.Step"/>) posts and shows the changed line, and
-	/// <paramref name="deltaSeconds"/> of simulation time retire the transient line — 0 (a paused park) freezes
-	/// it mid-display.
+	/// Advances the presentation by one observation of the weather: a change of the kind of weather (a forecast's
+	/// apply) posts and shows the changed line, a newly seen pending forecast of another kind of weather is
+	/// announced once and shows the countdown, and <paramref name="deltaSeconds"/> of simulation time retire the
+	/// transient line — 0 (a paused park) freezes it mid-display. A forecast or an apply that keeps the kind of
+	/// weather (dry after dry) is no news and shows nothing.
 	/// </summary>
 	public void Step( in WeatherForecastSample sample, float deltaSeconds )
 	{
+		var currentKind = KindKey( sample.CurrentBands );
 		if ( !attached )
 		{
 			// A park entered or loaded with weather on screen says so once; a dry, quiet park stays silent.
 			attached = true;
+			shownKind = currentKind;
 			if ( !IsQuiet( sample.CurrentBands ) )
 				ShowTransient( Text( OpenTpwText.WeatherNow, KindText( sample.CurrentBands ) ) );
 		}
+		else if ( currentKind != shownKind )
+		{
+			shownKind = currentKind;
+			ShowTransient( Text( OpenTpwText.WeatherChanged, KindText( sample.CurrentBands ) ) );
+			announcements.Add( flashText! );
+		}
 
 		string? countdown = null;
-		if ( sample.ForecastQuality is int quality )
+		if ( sample.ForecastQuality is int quality && KindKey( sample.ForecastBands ) != currentKind )
 		{
 			var due = Math.Max( 0, sample.ForecastApplyDay - sample.Day );
 			var kind = KindText( sample.ForecastBands );
@@ -95,12 +105,6 @@ public sealed class WeatherForecastState
 				announced = (sample.ForecastApplyDay, quality);
 				announcements.Add( Text( OpenTpwText.WeatherForecastMessage, kind, when ) );
 			}
-		}
-		else if ( announced is not null )
-		{
-			announced = null;
-			ShowTransient( Text( OpenTpwText.WeatherChanged, KindText( sample.CurrentBands ) ) );
-			announcements.Add( flashText! );
 		}
 
 		if ( flashRemaining > 0 )
@@ -127,7 +131,7 @@ public sealed class WeatherForecastState
 	/// tie still undecided as "snow or rain" (the apply-time draw has not happened for a forecast), then snow, rain
 	/// and dry weather.
 	/// </summary>
-	// [EXT:forecast-wording] the kind wording is OpenTPW's; no weather text exists in the shipped Language tables (searched) — evidence needed: the original's forecast message handler
+	// [EXT:forecast-wording] the kind wording is OpenTPW's; no weather text exists in the shipped Language tables (searched), and the original shows no forecast
 	internal string KindText( WeatherQualityBands bands ) => Text( KindKey( bands ) );
 
 	internal static OpenTpwText KindKey( WeatherQualityBands bands )

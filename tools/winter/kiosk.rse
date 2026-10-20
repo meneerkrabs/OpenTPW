@@ -1,0 +1,75 @@
+; Winter kiosk script (OpenTPW winter extension), modelled on the pools' changing room: the shop has no animation; a customer is served at the counter and walks on.
+; UsageInfo.RideHandlesSprite 1 keeps the customer's body, so it stands in view at the stand point while it is served (no head records, no ADDHEAD; docs/GUESTS.md, "Shop customers"). The fill loop waits up to half a second for the next customer, the serving takes a second, then
+; the customers are released one by one. The stack size is also the size of the HUSH/HOP heap that holds their ids: it must be at least the capacity.
+.stack 20
+.timeslice 50
+.limbo 0
+.bounce 0
+.walk 0
+
+.var VAR_LETMEON
+.var VAR_LETMEOFF
+.var VAR_CAPACITY
+.var VAR_DURATION
+.var VAR_BREAKSTAT
+.var VAR_ONRIDE
+.var VAR_RIDECLOSED
+.var VAR_BROKEN
+.var VAR_WORN
+.var VAR_RUNNING
+.var VAR_PAD
+.var VAR_PARAM
+.var VAR_SPACELEFT
+
+	NAME "Winter Kiosk"
+closed:
+	ENDSLICE
+	TEST VAR_RIDECLOSED
+	BRANCH_NZ @closed
+fill:
+	SETTIMER 500
+	COPY VAR_SPACELEFT VAR_CAPACITY
+take:
+	TEST VAR_SPACELEFT
+	BRANCH_Z @serve
+	TEST VAR_RIDECLOSED
+	BRANCH_NZ @unload
+	GETTIMER 500
+	BRANCH_Z @serve
+	CRIT_LOCK
+	TEST VAR_LETMEON
+	BRANCH_Z @nobody
+	SETTIMER 500
+	HUSH VAR_LETMEON
+	COPY VAR_LETMEON 0
+	ADD VAR_ONRIDE 1
+	ADD VAR_SPACELEFT 0xFFFF
+	BRANCH_Z @full
+nobody:
+	CRIT_UNLOCK
+	BRANCH @take
+full:
+	CRIT_UNLOCK
+serve:
+	TEST VAR_ONRIDE
+	BRANCH_Z @unload
+	COPY VAR_RUNNING 1
+	WAIT 1000
+unload:
+	COPY VAR_RUNNING 0
+leave:
+	TEST VAR_ONRIDE
+	BRANCH_Z @done
+	CRIT_LOCK
+	HOP VAR_LETMEOFF
+	CRIT_UNLOCK
+taken:
+	TEST VAR_LETMEOFF
+	BRANCH_NZ @taken
+	ADD VAR_ONRIDE 0xFFFF
+	WAIT 300
+	BRANCH_NZ @leave
+done:
+	TEST VAR_RIDECLOSED
+	BRANCH_NZ @closed
+	BRANCH @fill

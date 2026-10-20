@@ -186,6 +186,8 @@ public partial class Level : IDisposable
 	public RideHeadRenderer? CostumeHeadRenderer { get; private set; }
 	/// <summary>Draws the guests' balloons.</summary>
 	public BalloonRenderer? BalloonRenderer { get; private set; }
+	/// <summary>The hoarding boards and textures the level's objects share (docs/OBJECTS.md, "Hoarding"); cleared in <see cref="Dispose"/>.</summary>
+	internal ObjectHoardingCache HoardingCache { get; } = new();
 	/// <summary>[EXT:umbrellas-draw] The guests' open umbrellas (<see cref="UmbrellaRenderer"/>); null without the extension, its content or guests.</summary>
 	public UmbrellaRenderer? UmbrellaRenderer { get; private set; }
 	/// <summary>[EXT:winter-draw] The warm items the guests wear (<see cref="WarmItemRenderer"/>); null without the extension, its content or guests.</summary>
@@ -1211,6 +1213,7 @@ public partial class Level : IDisposable
 		DisposeSky();
 		DetachOverlay();
 		TextOverlay?.Dispose();
+		HoardingCache.Clear();
 	}
 
 	/// <summary>Invalidates per-world-pass observations even when an entity is absent from the render list.</summary>

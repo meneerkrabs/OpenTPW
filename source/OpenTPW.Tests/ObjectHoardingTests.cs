@@ -230,6 +230,22 @@ public class ObjectHoardingTests
 		Assert.AreEqual( ObjectHoardingState.Standing | ObjectHoardingState.ClosedVariant, ObjectHoardingState.UnpackSavedFlags( 0x09 ) );
 		Assert.AreEqual( 0u, ObjectHoardingState.UnpackSavedFlags( 0x180 ), "bits 7 and 8 are other thing flags" );
 	}
+
+	/// <summary>The save's +0x22 level is copied raw: a loaded level outside 0..1 is held to 0..1, so the snapshot of the park stays valid.</summary>
+	[TestMethod]
+	public void ALoadedLevelOutsideZeroToOneIsHeldToIt()
+	{
+		var high = Present();
+		high.Restore( ObjectHoardingState.Standing | ObjectHoardingState.Rising, 1.5f );
+		Assert.AreEqual( 1f, high.Level );
+		Assert.AreEqual( 1f, high.Capture()!.Level );
+		var low = Present();
+		low.Restore( ObjectHoardingState.Standing | ObjectHoardingState.Sinking, -0.5f );
+		Assert.AreEqual( 0f, low.Level );
+		var nan = Present();
+		nan.Restore( ObjectHoardingState.Standing, float.NaN );
+		Assert.AreEqual( 0f, nan.Level );
+	}
 }
 
 /// <summary>The shipped hoardings; inconclusive without OPENTPW_GAME_PATH (Theme Park Inc's textures also need OPENTPW_TPI_PATH).</summary>
@@ -377,5 +393,32 @@ public class ObjectHoardingCorpusTests
 		{
 			FileSystem = previous;
 		}
+	}
+
+	/// <summary>A runtime whose loaded hoarding level was out of range captures a snapshot that validates (the park-resume save and the autosave serialize it).</summary>
+	[TestMethod]
+	public void ARuntimeWithAnOutOfRangeLoadedLevelCapturesAValidSnapshot()
+	{
+		var entry = ObjectCatalog.Load( "jungle" ).Entries.Single( item => item.InfoId == 1100 );
+		var runtime = new OriginalObjectRuntime( entry, seed: 3 );
+		runtime.Hoarding.Present = true;
+		runtime.Hoarding.Restore( ObjectHoardingState.Standing | ObjectHoardingState.Rising | ObjectHoardingState.HoardingVariant, 1.5f );
+		var snapshot = runtime.CaptureSnapshot();
+		snapshot.ValidateSnapshot();
+		Assert.AreEqual( 1f, snapshot.Hoarding!.Level );
+	}
+
+	/// <summary>The level's cache builds a type's boards once and loads the level's textures once.</summary>
+	[TestMethod]
+	public void TheLevelCacheBuildsATypesBoardsAndTheTexturesOnce()
+	{
+		var entry = ObjectCatalog.Load( "jungle" ).Entries.Single( item => item.InfoId == 1100 );
+		var field = new ModelFile( "/levels/jungle/terrain/base.MD2" ).Heightfield!;
+		var cache = new ObjectHoardingCache();
+		var first = cache.Geometry( entry, ModelOf( entry ), field );
+		Assert.IsNotNull( first );
+		Assert.AreSame( first, cache.Geometry( entry, ModelOf( entry ), field ) );
+		cache.Clear();
+		Assert.AreNotSame( first, cache.Geometry( entry, ModelOf( entry ), field ), "a cleared cache builds again" );
 	}
 }

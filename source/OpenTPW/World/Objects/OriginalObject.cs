@@ -165,7 +165,7 @@ public class OriginalObject : Entity, IPointLightSource, IObjectPickShape
 			BuildModels();
 			// the type's hoarding (docs/OBJECTS.md, "Hoarding"), on the level's terrain at this footprint; its state lives in the runtime
 			var level = Level ?? Level.Current;
-			hoarding = ObjectHoardingRenderer.Create( entry, Runtime.Model, placement, level?.OriginalPark?.Heightfield, level?.OriginalPark?.LevelName, Runtime.Hoarding );
+			hoarding = ObjectHoardingRenderer.Create( entry, Runtime.Model, placement, level?.OriginalPark?.Heightfield, level?.OriginalPark?.LevelName, Runtime.Hoarding, level?.HoardingCache );
 			UpdateTransforms();
 			// [EXT:object-lights] an object whose model has light dummies shows them through its level's point lights
 			if ( Runtime.Lights != null )

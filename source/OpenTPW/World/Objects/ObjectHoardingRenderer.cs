@@ -49,14 +49,18 @@ internal sealed class ObjectHoardingRenderer
 	/// The hoarding of an object of <paramref name="entry"/> placed at <paramref name="placement"/> in the level <paramref name="levelName"/> over <paramref name="field"/>,
 	/// or null when its type has none (<see cref="ObjectHoardingGeometry.Build"/>). Binds <paramref name="state"/> to it.
 	/// </summary>
-	public static ObjectHoardingRenderer? Create( ObjectCatalogEntry entry, ModelFile model, ObjectPlacement placement, ModelHeightfield? field, string? levelName, ObjectHoardingState state )
+	public static ObjectHoardingRenderer? Create( ObjectCatalogEntry entry, ModelFile model, ObjectPlacement placement, ModelHeightfield? field, string? levelName, ObjectHoardingState state,
+		ObjectHoardingCache? cache = null )
 	{
-		if ( field == null || levelName == null || ObjectHoardingGeometry.Build( entry.Settings, model, HoardingTerrain.Of( field ) ) is not { } geometry )
+		if ( field == null || levelName == null )
+			return null;
+		var geometry = cache != null ? cache.Geometry( entry, model, field ) : ObjectHoardingGeometry.Build( entry.Settings, model, HoardingTerrain.Of( field ) );
+		if ( geometry == null )
 			return null;
 		var bounds = ObjectFootprint.GetBounds( entry.Shape, placement.X, placement.Y, placement.Rotation );
 		var bottoms = ObjectHoardingGeometry.Conform( geometry, field, placement.Rotation, bounds, placement.BaseHeight / ObjectPlacement.ModelScale );
 		state.Present = true;
-		return new ObjectHoardingRenderer( geometry, state, bottoms, LoadTextures( levelName ), placement.ModelToEngine, entry.ArchiveName );
+		return new ObjectHoardingRenderer( geometry, state, bottoms, cache?.Textures( levelName ) ?? LoadTextures( levelName ), placement.ModelToEngine, entry.ArchiveName );
 	}
 
 	/// <summary>The level's four hoarding textures (Closed, Hoarding, Condemn, Upgrade), the missing texture for one the level lacks.</summary>
@@ -105,23 +109,21 @@ internal sealed class ObjectHoardingRenderer
 			var strip = geometry.Strips[index];
 			var (bottomA, bottomB) = bottoms[index];
 			var (height, bottomV) = shaped ? ObjectHoardingGeometry.Rise( index, count, state.Level ) : (ObjectHoardingGeometry.BoardHeight, 0f);
-			var corners = new[]
-			{
-				strip.Corners[0] with { Y = (float)(bottomA + height) },
-				strip.Corners[1] with { Y = (float)(bottomB + height) },
-				strip.Corners[2] with { Y = bottomA },
-				strip.Corners[3] with { Y = bottomB }
-			};
-			// [BIN:TPW-EXE:0x00453DF8 hoarding texture coordinates] the builder gives corner 4s (0, 1), 4s+1 (1, 1), 4s+2 (0, 0) and 4s+3 (1, 0); the rise rewrites only the bottom corners' V
-			var uvs = new[] { new Vector2( 0, 1 ), new Vector2( 1, 1 ), new Vector2( 0, bottomV ), new Vector2( 1, bottomV ) };
 			var normal = ObjectAssets.ConvertAxes( strip.Normal );
-			for ( var corner = 0; corner < 4; corner++ )
-			{
-				var position = ObjectAssets.ConvertAxes( corners[corner] );
-				vertices[index * 8 + corner] = new Vertex( position, normal, uvs[corner] ) { TexIndex = variant, MatFlags = MaterialFlags };
-				vertices[index * 8 + 4 + corner] = new Vertex( position, -normal, uvs[corner] ) { TexIndex = variant, MatFlags = MaterialFlags };
-			}
+			// [BIN:TPW-EXE:0x00453DF8 hoarding texture coordinates] the builder gives corner 4s (0, 1), 4s+1 (1, 1), 4s+2 (0, 0) and 4s+3 (1, 0); the rise rewrites only the bottom corners' V
+			WriteCorner( index, 0, strip.Corners[0] with { Y = (float)(bottomA + height) }, normal, new Vector2( 0, 1 ), variant );
+			WriteCorner( index, 1, strip.Corners[1] with { Y = (float)(bottomB + height) }, normal, new Vector2( 1, 1 ), variant );
+			WriteCorner( index, 2, strip.Corners[2] with { Y = bottomA }, normal, new Vector2( 0, bottomV ), variant );
+			WriteCorner( index, 3, strip.Corners[3] with { Y = bottomB }, normal, new Vector2( 1, bottomV ), variant );
 		}
+	}
+
+	/// <summary>One corner of a strip, written allocation-free on both faces (the back face with the opposite normal).</summary>
+	private void WriteCorner( int strip, int corner, System.Numerics.Vector3 modelCorner, System.Numerics.Vector3 normal, Vector2 uv, int variant )
+	{
+		var position = ObjectAssets.ConvertAxes( modelCorner );
+		vertices[strip * 8 + corner] = new Vertex( position, normal, uv ) { TexIndex = variant, MatFlags = MaterialFlags };
+		vertices[strip * 8 + 4 + corner] = new Vertex( position, -normal, uv ) { TexIndex = variant, MatFlags = MaterialFlags };
 	}
 
 	public void Delete()

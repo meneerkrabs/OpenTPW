@@ -127,7 +127,8 @@ public sealed class ObjectHoardingState
 		if ( !Present )
 			return;
 		Flags = (Flags & ~SavedFlags) | (flags & SavedFlags);
-		Level = float.IsFinite( level ) ? level : 0f;
+		// the save's +0x22 dword is copied raw; held to 0..1 as the frame update holds it, so a stray value never reaches a snapshot
+		Level = float.IsFinite( level ) ? Math.Clamp( level, 0f, 1f ) : 0f;
 		if ( (Flags & Standing) != 0 )
 		{
 			if ( (Flags & Rising) != 0 )

@@ -60,13 +60,16 @@ internal static partial class PlayerTicketFile
 	{
 		public required string? Theme { get; init; }
 		public required GoldenTicketKind Kind { get; init; }
+		/// <summary>[EXT:cheats-ticket-provenance] A cheat awarded this ticket; absent for a ticket the park won.</summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingDefault )]
+		public bool Cheated { get; init; }
 	}
 
 	public static byte[] Serialize( PlayerTicketSnapshot snapshot )
 	{
 		var copy = PlayerTicketLedger.Restore( snapshot ).Capture();
 		return JsonSerializer.SerializeToUtf8Bytes( new Data { Format = FormatName, Version = 1, Mode = copy.Mode, ExtraKeys = copy.ExtraKeys,
-			SpentTickets = copy.SpentTickets, Earned = copy.Earned.Select( item => new TicketData { Theme = item.Theme, Kind = item.Kind } ).ToList(),
+			SpentTickets = copy.SpentTickets, Earned = copy.Earned.Select( item => new TicketData { Theme = item.Theme, Kind = item.Kind, Cheated = copy.Cheated?.Contains( item ) == true } ).ToList(),
 			GlobalHolders = copy.Holders?.Select( item => new HolderData { Kind = item.Kind, Theme = item.Theme, Record = item.Record } ).ToList() }, Context.Data );
 	}
 
@@ -80,7 +83,8 @@ internal static partial class PlayerTicketFile
 			throw new InvalidDataException( "Invalid own player progress envelope." );
 		return PlayerTicketLedger.Restore( new( data.Mode, data.ExtraKeys, data.SpentTickets,
 			data.Earned.Select( item => new EarnedTicketIdentity( item.Theme, item.Kind ) ).ToArray(),
-			data.GlobalHolders?.Select( item => item == null ? throw new InvalidDataException( "Invalid own player progress envelope." ) : new GlobalTicketHolder( item.Kind, item.Theme, item.Record ) ).ToArray() ) );
+			data.GlobalHolders?.Select( item => item == null ? throw new InvalidDataException( "Invalid own player progress envelope." ) : new GlobalTicketHolder( item.Kind, item.Theme, item.Record ) ).ToArray(),
+			data.Earned.Any( item => item.Cheated ) ? data.Earned.Where( item => item.Cheated ).Select( item => new EarnedTicketIdentity( item.Theme, item.Kind ) ).ToArray() : null ) );
 	}
 
 	public static void Save( string path, PlayerTicketSnapshot snapshot )

@@ -30,7 +30,7 @@ public static class GuestWander
 	// [BIN:TPW-EXE:0x004F97E4 candidate removals] a type-1 cell loses the links to queue cells (0x00536310, 0x00536320); a queue cell (0x00536320 and not 0x00536340) loses the direction of its own queue link (0x00522850); every cell loses the links to type-10 cells (0x00536350); a count below 2 takes the first one left, none left is stranded
 	public static int OriginalCandidates( GuestPathGrid grid, (int X, int Y) cell )
 	{
-		var links = (byte)(grid.Cells.LinksAt( cell.X, cell.Y ) & AllLinks);
+		var links = (byte)(grid.LinksAt( cell.X, cell.Y ) & AllLinks);
 		var type = grid.Cells.RawTypeAt( cell.X, cell.Y );
 		var ownQueueLink = type == (byte)ParkCellType.Queue ? grid.Cells.QueueLinkAt( cell.X, cell.Y ) : (byte)0;
 		var count = 0;
@@ -40,12 +40,24 @@ public static class GuestWander
 			if ( (links & bit) == 0 || bit == ownQueueLink )
 				continue;
 			var (dx, dy) = GuestPathGrid.Directions[direction];
+			if ( !BridgeEdgeAllowed( grid, cell, direction ) )
+				continue;
 			var target = grid.Cells.RawTypeAt( cell.X + dx, cell.Y + dy );
-			if ( target == 10 || (type == (byte)ParkCellType.Path && target is (byte)ParkCellType.Queue or 9) )
+			if ( target == 10 || (grid.IsWalkable( cell.X, cell.Y ) && target is (byte)ParkCellType.Queue or 9) )
 				continue;
 			count++;
 		}
 		return count;
+	}
+
+	/// <summary>Keep original candidate behavior away from bridges, including asymmetric ground links.</summary>
+	private static bool BridgeEdgeAllowed( GuestPathGrid grid, (int X, int Y) cell, int direction )
+	{
+		if ( grid.Cells.PoolBridges is not { } bridges )
+			return true;
+		var (dx, dy) = GuestPathGrid.Directions[direction];
+		return !bridges.Covers( cell.X, cell.Y ) && !bridges.Covers( cell.X + dx, cell.Y + dy )
+			|| bridges.Connects( cell.X, cell.Y, direction );
 	}
 
 	/// <summary>
@@ -76,7 +88,7 @@ public static class GuestWander
 				var id = (ushort)((dy << 7) + dx + startId);
 				var offset = (uint)id - 1;
 				var cell = ((int)(offset & 0x7F), (int)(offset >> 7));
-				if ( cell.Item1 < 128 && cell.Item2 < 128 && grid.InBounds( cell.Item1, cell.Item2 ) && grid.Cells.RawTypeAt( cell.Item1, cell.Item2 ) == (byte)ParkCellType.Path && route( cell ) )
+				if ( cell.Item1 < 128 && cell.Item2 < 128 && grid.InBounds( cell.Item1, cell.Item2 ) && grid.IsWalkable( cell.Item1, cell.Item2 ) && route( cell ) )
 					return true;
 			}
 		}
@@ -87,7 +99,7 @@ public static class GuestWander
 			var x = (int)(first % 11) - 5 + start.X;
 			var y = (int)(second % 11) - 5 + start.Y;
 			// [EXT:pools-cell-type] the draws stay as they are; a candidate in the water is skipped (docs/POOLS.md)
-			if ( x >= 0 && y >= 0 && x < 128 && y < 128 && grid.InBounds( x, y ) && grid.Cells.RawTypeAt( x, y ) != ParkCellTypes.PoolWater && route( (x, y) ) )
+			if ( x >= 0 && y >= 0 && x < 128 && y < 128 && grid.InBounds( x, y ) && (grid.Cells.RawTypeAt( x, y ) != ParkCellTypes.PoolWater || grid.IsWalkable( x, y )) && route( (x, y) ) )
 				return true;
 		}
 		return false;
@@ -126,7 +138,7 @@ public static class GuestWander
 		// [BIN:TPW-EXE:0x004F9490 queue start] the link walk starts from any cell that has links, a queue cell (type 3) included: a guest the queue let go stands on its queue cell and wanders from there (QUEUE-010)
 		if ( !grid.IsWalkable( start.X, start.Y ) && !grid.IsQueue( start.X, start.Y ) )
 			return null;
-		if ( (grid.Cells.LinksAt( start.X, start.Y ) & AllLinks) == 0 )
+		if ( (grid.LinksAt( start.X, start.Y ) & AllLinks) == 0 )
 			return new Destination( start, CentreByte, CentreByte );
 		var cell = start;
 		var back = -1;
@@ -135,7 +147,7 @@ public static class GuestWander
 		{
 			var count = 0;
 			var outside = 0;
-			var links = grid.Cells.LinksAt( cell.X, cell.Y );
+			var links = grid.LinksAt( cell.X, cell.Y );
 			// [BIN:TPW-EXE:0x004F9490 candidates of a queue cell] on a queue cell (type 3, not the ride's entrance cell 9) the direction of its own queue link (0x00522850, toward the front) is removed (0x004F9718..0x004F97E0); a path cell removes its links to queue cells (0x00536320), a queue cell keeps them
 			var onQueue = grid.IsQueue( cell.X, cell.Y );
 			var queueLink = onQueue ? grid.Cells.QueueLinkAt( cell.X, cell.Y ) : 0;
@@ -146,7 +158,8 @@ public static class GuestWander
 				// [APPROX:GUEST-010] a candidate is a link of the current cell to a path cell; the original keeps every link except to queue cells (removed on a path cell, 0x00536310 / 0x00536320), its own queue link's direction on a queue cell (0x00522850), cell type 10 (0x00536350) and, for staff, cells outside the patrol rectangle (0x00506ED0); OpenTPW's maps link path cells only to path cells (ParkPathBuilder, saves), and it has no type 10 cells and no wandering staff yet (ECON-022) — evidence needed: none for guests on path cells
 				// staff keep to their patrol rectangle (0x00506ED0 removes the candidates outside it)
 				var linked = (links & GuestPathGrid.LinkValue( direction )) != 0 && (grid.IsWalkable( cell.X + dx, cell.Y + dy ) || onQueue && grid.IsQueue( cell.X + dx, cell.Y + dy ))
-					&& !(onQueue && queueLink == GuestPathGrid.LinkValue( direction ));
+					&& !(onQueue && queueLink == GuestPathGrid.LinkValue( direction ))
+					&& BridgeEdgeAllowed( grid, cell, direction );
 				candidates[index] = linked && (inArea == null || inArea( cell.X + dx, cell.Y + dy )) ? direction : -1;
 				count += candidates[index] >= 0 ? 1 : 0;
 				outside += linked && candidates[index] < 0 ? 1 : 0;

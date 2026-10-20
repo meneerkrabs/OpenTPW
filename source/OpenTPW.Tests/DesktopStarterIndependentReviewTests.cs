@@ -110,6 +110,22 @@ public class DesktopStarterIndependentReviewTests
 		Assert.IsTrue( allocated < 128 * 1024, $"Capped identity inspection allocated {allocated} bytes." ); Assert.IsFalse( GameEditions.HasKnownStandardSam( Path.Combine( Tpi, "Data" ) ) );
 	}
 
+	[DataTestMethod, DataRow( "--perf-run" ), DataRow( "--debug-weather" ), DataRow( "--capture-camera" )]
+	public void AnOffscreenRunWithoutGameDataRefusesInsteadOfOpeningTheSetupWindow( string flag )
+	{
+		var offscreen = Window.OffscreenRequested;
+		try
+		{
+			Window.OffscreenRequested = true;
+			new SetupSettings( null, null, ShowAutorun: false ).Save( SetupSettings.GetDefaultPath() );
+			Settings.Default.GamePath = ""; var wizard = 0;
+			Assert.ThrowsException<DirectoryNotFoundException>( () => Game.ResolveDesktopGameFolder( new[] { flag, "1" }, null, ( _, _ ) => { wizard++; return null; },
+				() => new( Array.Empty<InstallationReport>(), false, null ) ) );
+			Assert.AreEqual( 0, wizard, "an offscreen run never shows the setup window" );
+		}
+		finally { Window.OffscreenRequested = offscreen; }
+	}
+
 	[DataTestMethod, DataRow( "--m3-gate" ), DataRow( "--m4-gate" )]
 	public void MissingDataHeadlessGateRefusesAfterEmptyControlledDiscoveryBeforeWizard( string flag )
 	{

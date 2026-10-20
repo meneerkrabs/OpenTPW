@@ -174,8 +174,11 @@ public sealed class UiScrollList : UiElement, IUiRowList
 	public int Selected { get; set; } = -1;
 	public Action<int>? SelectionChanged { get; set; }
 	public Action<int>? RowActivated { get; set; }
-	/// <summary>Whether an activation plays the control click before <see cref="RowActivated"/>; off for proved silent-row owners or an owner that handles its own sound.</summary>
-	public bool ClicksOnActivate { get; set; } = true;
+	/// <summary>
+	/// Whether an activation plays the control click before <see cref="RowActivated"/>. Off by default: no original list row clicks (see <see cref="Activate"/>);
+	/// only OpenTPW's own screens without an original counterpart opt in.
+	/// </summary>
+	public bool ClicksOnActivate { get; set; }
 	/// <summary>Whether new rows keep the view at the bottom (chat).</summary>
 	public bool FollowEnd { get; set; }
 	/// <summary>Whether the list draws its own background (off when an original frame model is drawn behind it).</summary>
@@ -219,8 +222,7 @@ public sealed class UiScrollList : UiElement, IUiRowList
 	{
 		if ( Selected < 0 || Selected >= Rows().Count || RowActivated == null )
 			return;
-		// [BIN:TPW-EXE:0x665c35 type-7 procedure] row helpers notify the owner (activation 0x400), not the hook's button message 0x100. Load (0x49e880), Find Parks (0x4bf9f0) and Other Parks (0x4c1a10) add no intrinsic row sound and explicitly disable this click; their base/override routes and immediate downstream UI path are traced (docs/AUDIO.md).
-		// [APPROX:AUDIO-041] retain the default 0x1F policy for untraced/extension callers. Other owners/custom row classes, still-thumb activation and general keyboard/shortcut self-0x100 routing remain open; these three owners do not justify globally silencing lists or their separate buttons.
+		// [BIN:TPW-EXE:0x665c35 type-7 procedure] row helpers notify the owner (activation 0x400, selection 0x401, other button 0x402), never the hook's button message 0x100, and the hook 0x485780 plays 0x1F/0xBD only for 0x100 (0x4857cb). The type-7 constructor 0x662562 is reached only through the factory 0x65dd7b from layout records (0x65fe40; the text-layout path 0x6607ca has no caller), and the 19 type-7 lists of the 18 layout tables belong to owners whose row handlers send no 0x100: the only 0x100 senders in tp.exe are the button release 0x6691eb and eight window keyboard paths (docs/AUDIO.md, "List owners"). So no original list row clicks; OpenTPW's own screens opt in.
 		if ( ClicksOnActivate )
 			GameAudio.PlayUi( GameAudio.ClickEvent );
 		RowActivated( Selected );

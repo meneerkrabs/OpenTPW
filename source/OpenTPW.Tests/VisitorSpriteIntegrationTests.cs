@@ -505,7 +505,7 @@ public class VisitorSpriteIntegrationTests
 	}
 
 	[TestMethod]
-	public void WalkHeadingIsAlreadyPresentationOnlyAndOrdinaryWalkPoseOutputIsPreserved()
+	public void WalkHeadingAndGeometryStayPresentationOnlyWhilePreparedFramesUseTheSharedPlayer()
 	{
 		var rig = new QueueTests.Rig();
 		var guest = rig.Send();
@@ -521,13 +521,101 @@ public class VisitorSpriteIntegrationTests
 		FlatRideBounceRiders.CollectWalkers( newPoses, scene.Runtime, _ => System.Numerics.Matrix4x4.Identity, new(),
 			( id, template ) => rig.Simulation.RequestRideBody( id, rig.Ride.AttractionId, (VisitorSpriteTemplate)template ),
 			id => rig.Simulation.HideRideBody( id, rig.Ride.AttractionId ) );
-		Assert.AreEqual( oldPoses[guest.Id], newPoses[guest.Id] );
-		Assert.IsFalse( newPoses[guest.Id].UsesSpriteState );
+		Assert.AreEqual( oldPoses[guest.Id].Feet, newPoses[guest.Id].Feet );
+		Assert.AreEqual( oldPoses[guest.Id].Sector, newPoses[guest.Id].Sector );
+		Assert.IsFalse( oldPoses[guest.Id].UsesSpriteState, "provider-free geometry helpers retain their fallback" );
+		Assert.IsTrue( oldPoses[guest.Id].Visible );
+		Assert.IsTrue( newPoses[guest.Id].UsesSpriteState );
+		Assert.IsFalse( newPoses[guest.Id].Visible, "a supplied provider with no FRAME never falls back" );
 		Assert.AreEqual( saved, JsonSerializer.Serialize( rig.Ride.CaptureSnapshot() ) );
 		Assert.AreEqual( hash, Canonical( rig.Simulation ) );
 		Assert.AreEqual( legacy, rig.Simulation.ComputeStateHash() );
 		WalkTable( rig.Ride )[0]!.State = 3;
 		Assert.AreNotEqual( hash, Canonical( rig.Simulation ), "the existing walker state remains hashed" );
+	}
+
+	[DataTestMethod]
+	[DataRow( 5, 4 )]
+	[DataRow( 6, 12 )]
+	public void PreparedWalkUsesFiniteBodyFramesAndDoesNotReplayTheCompletedProgram( int action, int slot )
+	{
+		var rig = new QueueTests.Rig();
+		var guest = rig.Send();
+		((IRideVisitorHost)rig.Simulation).OnVisitorBoarded( rig.Ride, guest.Id );
+		guest.BodySprite.ApplyPending(); // Clear the wrapper request left by boarding before the missing body is created.
+		var scene = BodyScene( rig );
+		WalkTable( rig.Ride ).Add( new( guest.Id, 1, 1, 1, 1, action, 1, 2, 0, 0 ) );
+		var poses = new Dictionary<int, BounceRiderPose>();
+		scene.Source.Prepare( rig.Simulation );
+		scene.Source.Collect( poses );
+		Assert.IsTrue( poses[guest.Id].UsesSpriteState );
+		Assert.IsFalse( poses[guest.Id].Visible );
+		guest.BodySprite.ApplyPending();
+		var hash = Canonical( rig.Simulation );
+		var random = rig.Simulation.RandomState;
+		for ( var index = 0; index < 7; index++ )
+		{
+			Sample( rig.Simulation, guest.BodySprite.Player!.NextDue + 1 );
+			scene.Source.Prepare( rig.Simulation );
+			poses.Clear();
+			scene.Source.Collect( poses );
+			var pose = poses[guest.Id];
+			Assert.IsTrue( pose.Visible );
+			Assert.AreEqual( index < 4 ? slot : 0, pose.Slot );
+			Assert.AreEqual( index < 4 ? index : 0, pose.Step );
+			var before = guest.BodySprite.CaptureSnapshot();
+			scene.Source.Collect( poses );
+			scene.Source.Collect( poses );
+			Assert.AreEqual( pose, poses[guest.Id] );
+			Assert.AreEqual( before, guest.BodySprite.CaptureSnapshot() );
+			Assert.IsNull( guest.BodySprite.PendingTemplate, "matching active identity does not restart the finite tail" );
+		}
+		Assert.AreEqual( hash, Canonical( rig.Simulation ) );
+		Assert.AreEqual( random, rig.Simulation.RandomState );
+	}
+
+	[TestMethod]
+	public void WalkAfterBounceKeepsLastOutputUntilItsQueuedTemplateEmitsAndBodyJsonContinues()
+	{
+		var rig = new QueueTests.Rig();
+		rig.Ride.RideHandlesSprite = true;
+		var guest = rig.Send();
+		((IRideVisitorHost)rig.Simulation).OnVisitorBoarded( rig.Ride, guest.Id );
+		guest.BodySprite.QueueTemplate( VisitorSpriteTemplate.Run );
+		guest.BodySprite.ApplyPending();
+		Sample( rig.Simulation, guest.BodySprite.Player!.NextDue + 1 );
+		var scene = BodyScene( rig );
+		AddBounce( rig.Ride, guest.Id );
+		WalkTable( rig.Ride ).Add( new( guest.Id, 1, 1, 1, 1, 6, 1, 2, 0, 0 ) );
+		var due = guest.BodySprite.Player.NextDue;
+		scene.Source.Prepare( rig.Simulation );
+		var poses = new Dictionary<int, BounceRiderPose>();
+		scene.Source.Collect( poses );
+		Assert.AreEqual( VisitorSpriteTemplate.Cheer, guest.BodySprite.PendingTemplate, "WALK's later request wins" );
+		Assert.AreEqual( 2, poses[guest.Id].Slot, "queued cheer must not replace the already emitted run frame" );
+		Assert.AreEqual( 0, poses[guest.Id].Step );
+		Assert.AreEqual( due, guest.BodySprite.Player.NextDue );
+		// Round-trip the supported body-history record; the host clock remains in the same epoch.
+		var saved = JsonSerializer.Deserialize<VisitorSpriteStateSnapshot>( JsonSerializer.Serialize( guest.BodySprite.CaptureSnapshot() ) )!;
+		guest.BodySprite.ApplyPending();
+		Sample( rig.Simulation, due );
+		scene.Source.Prepare( rig.Simulation );
+		scene.Source.Collect( poses );
+		Assert.AreEqual( 2, poses[guest.Id].Slot, "due equality retains output even after template application" );
+		Sample( rig.Simulation, due + 1 );
+		scene.Source.Prepare( rig.Simulation );
+		scene.Source.Collect( poses );
+		var expected = poses[guest.Id];
+		var expectedHistory = guest.BodySprite.CaptureSnapshot();
+		Assert.AreEqual( 12, expected.Slot );
+		Assert.AreEqual( 0, expected.Step );
+		guest.BodySprite.RestoreSnapshot( saved );
+		guest.BodySprite.ApplyPending();
+		Sample( rig.Simulation, due + 1 );
+		scene.Source.Prepare( rig.Simulation );
+		scene.Source.Collect( poses );
+		Assert.AreEqual( expected, poses[guest.Id] );
+		Assert.AreEqual( expectedHistory, guest.BodySprite.CaptureSnapshot() );
 	}
 
 	[TestMethod]

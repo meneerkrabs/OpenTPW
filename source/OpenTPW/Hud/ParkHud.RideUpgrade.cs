@@ -149,6 +149,7 @@ public sealed partial class ParkHud
 			case RideUpgradeRowKind.AddOn:
 				if ( row.Price <= economy.Balance && row.AddOn is { } entry && BeginAddOnPlacement( entry, owner, row.Price ) )
 					return;
+				// [BIN:TPW-EXE:0x4af5d6 add-on refusal] the upgrade list's row activation (0x400, 0x4ae465) buys an add-on through 0x4af480, which plays the error 0x1D (0x486ae0) when the money is below its price; level rows refuse silently there, and no row adds a click
 				GameAudio.PlayUi( GameAudio.ErrorEvent );
 				break;
 			case RideUpgradeRowKind.Level:

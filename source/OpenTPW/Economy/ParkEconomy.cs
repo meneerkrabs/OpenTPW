@@ -383,6 +383,11 @@ public sealed class ParkEconomy : IParkEconomy
 		// [BIN:STP-PPC:0x100E3F0C calendar update] day, month and year events fire when the extracted date fields change from those of the previous turn (ParkCalendar.Update)
 		var stored = ParkCalendar.FieldsAtTurn( previousTurn );
 		var changes = ParkCalendar.Update( ref stored, turn );
+		if ( PendingInitialDay )
+		{
+			changes |= CalendarChange.Day;
+			PendingInitialDay = false;
+		}
 		var hourBefore = previousTurn * ParkCalendar.SecondsPerTurn / ParkCalendar.SecondsPerHour;
 		for ( var hour = hourBefore + 1; hour <= turn * ParkCalendar.SecondsPerTurn / ParkCalendar.SecondsPerHour; hour++ )
 			UpdateHour();
@@ -584,6 +589,23 @@ public sealed class ParkEconomy : IParkEconomy
 			}
 		}
 		return item.MechanicId;
+	}
+
+	/// <summary>Headless assigned jobs retain their existing lifetime; other claims use the original's lazy expiry.</summary>
+	private int HeadlessClaimant( ParkObjectState item )
+	{
+		// Candidate-list construction also runs with a staff world attached, but no headless job can be assigned there.
+		// Do not introduce a new world claim-query phase merely by building that unused list.
+		if ( StaffWorld != null )
+			return item.MechanicId;
+		if ( item.MechanicId == 0 )
+			return 0;
+		var member = Staff.Members.FirstOrDefault( member => member.Id == item.MechanicId );
+		// CountDownJob keeps the assignment while its timer is nonzero, including awaiting arrival and the fix-animation retry.
+		// These jobs use AssignedInstanceId rather than the world's RideId/ToiletId checked by Claimant.
+		if ( member != null && !DrivenByWorld( member ) && member.AssignedInstanceId == item.Id && member.BusyTicks != 0 )
+			return member.Id;
+		return Claimant( item );
 	}
 
 	/// <summary>The mechanic HQ's cursor into the object list (<see cref="FindRideForMechanic"/>): the object a search last started at, 0 for none.</summary>
@@ -1090,7 +1112,7 @@ public sealed class ParkEconomy : IParkEconomy
 	/// </summary>
 	private void DispatchMechanics()
 	{
-		var jobs = objects.Values.Where( item => item.MechanicId == 0 && JobRank( item ) >= 0 )
+		var jobs = objects.Values.Where( item => JobRank( item ) >= 0 && HeadlessClaimant( item ) == 0 )
 			.OrderBy( JobRank ).ThenBy( item => item.StateOfRepair ).ThenBy( item => item.Id ).ToList();
 		if ( jobs.Count == 0 )
 			return;
@@ -1200,8 +1222,8 @@ public sealed class ParkEconomy : IParkEconomy
 				handyman.State = StaffState.Working;
 				continue;
 			}
-			dirty ??= objects.Values.Where( item => item.MechanicId == 0 && Catalog.TryGet( item.InfoId, out var info ) && info.ProvidesRelief
-				&& (QueueJoinRules.Truncate( (float)item.Repair ) & 0xFF) < DirtyToiletGauge ).OrderBy( item => item.Repair ).ThenBy( item => item.Id ).ToList();
+			dirty ??= objects.Values.Where( item => Catalog.TryGet( item.InfoId, out var info ) && info.ProvidesRelief
+				&& (QueueJoinRules.Truncate( (float)item.Repair ) & 0xFF) < DirtyToiletGauge && HeadlessClaimant( item ) == 0 ).OrderBy( item => item.Repair ).ThenBy( item => item.Id ).ToList();
 			if ( dirty.Count == 0 )
 				break;
 			var toilet = dirty[0];
@@ -1626,11 +1648,11 @@ public sealed class ParkEconomy : IParkEconomy
 
 	/// <summary>
 	/// A cell's map type and whether its structure record counts 50, from OpenTPW's cell map: a track tile keeps its type in the map's type byte as well as in the track
-	/// layer (the original's structure records), so its map type is taken as the empty cell's 0.
+	/// layer (the original's structure records). Stations preserve the overwritten base type; ordinary and legacy track cells use 0.
 	/// </summary>
 	// [BIN:TPW-EXE:0x004D0AF0 structure records] a cell's structure record is not part of the cell: the records (0x28 bytes, the type in +8, 0x0B to 0x19) are an array of their own indexed by the cell id, 0x004D0AF0 (the array at game +0x10FFD8), and an extension record (types 0x0C and 0x11) names its parent through +0x10 (0x0053B280, 0x005363F0); the cell keeps its own type in +8 of its 0x44-byte record (0x536300..0x5363E0), whose only immediate writers in the map code are the init 0x00536490 (7, 2, 30, 5, 1, 0)
 	// [BIN:TPW-EXE:0x0053AD90 counted structures] 0x005363F0 counts 50 for the record of a cell when its type is 0x0B, 0x0D, 0x10, 0x12 or 0x19, or when it is an extension (0x0C, 0x11) of such a record; no extension type pairs with 0x19, so a hoarding post stands on its own cell
-	// [APPROX:ECON-026] the cell points follow tp.exe 0x004C7DB0 on OpenTPW's cell map and its land (the cells without the unowned flag 0x40: the level fence's enclosure, the strip at the gate and Buy Land's purchases, or an imported save's saved flags, PATH-007), but a track tile's map type is taken as 0 (OpenTPW keeps the track's type in the map's type byte as well as in the track layer, where the original's cell keeps its own type under the structure record, which the track tool is not found to write) and the fence's hoardings (structure type 25) count 50 each on the owned post cells of the land's ring, one cell per post, where the original lays them with the track tool (0x005323F0 → 0x00524960 in mode 0x19, the positions from the level's Hoardings.sam) and the piece's footprint is read only from the counting tests; a map without the level's land (a level without a fence setup, a Theme Park Inc map, a read-only visit) counts every cell over the terrain as owned — evidence needed: the track tool's laying of a piece (0x00524960 → 0x00536100 commands 0x80..0x87) for any write of a cell's type and for the footprint of a hoarding piece (the cells that carry its structure record), or a net worth cached in an original save (the analyser's +0x1F0EC) to compare with
+	// [APPROX:ECON-026] Station markers preserve their overwritten base type. Ordinary track tiles and legacy saves without that metadata retain base type 0. Hoardings still count one structure cell per owned land-ring post, and maps without land retain the existing all-owned adaptation; original structure reconstruction and general hoarding footprints remain unresolved.
 	private static (byte Type, bool Structure) CellForValue( ParkCellMap cells, int x, int y )
 	{
 		var track = cells.Tracks.Get( x, y );
@@ -1644,7 +1666,7 @@ public sealed class ParkEconomy : IParkEconomy
 			var (px, py) = cells.Tracks.CellOf( track.Parent );
 			record = cells.Tracks.Get( px, py ).Type;
 		}
-		var type = cells.RawTypeAt( x, y ) == track.Type ? (byte)0 : cells.RawTypeAt( x, y );
+		var type = cells.RawTypeAt( x, y ) == track.Type ? track.BaseType : cells.RawTypeAt( x, y );
 		return (type, ParkValueRules.IsCountedStructure( record ));
 	}
 
@@ -1683,6 +1705,13 @@ public sealed class ParkEconomy : IParkEconomy
 	}
 
 	// ---------------------------------------------------------------- park and prices
+
+	/// <summary>Restores a saved loss without replaying its transition; losing does not change the saved gate-open bit.</summary>
+	internal void RestoreOriginalLoss( bool open )
+	{
+		IsBankrupt = true;
+		IsParkOpen = open;
+	}
 
 	public void OpenPark()
 	{
@@ -2560,6 +2589,10 @@ public sealed class ParkEconomy : IParkEconomy
 	}
 
 	// ---------------------------------------------------------------- original save import
+
+	/// <summary>The supported TPW restart calendar still owes its first day message; consumed only by an actual park turn.</summary>
+	internal bool PendingInitialDay { get; set; }
+
 
 	/// <summary>
 	/// Moves a park that has not run yet to an original save's park turn (<c>mGameTick</c>, the turn the calendar

@@ -920,6 +920,11 @@ internal static class ParkResumeSaveFile
 				&& cell.Rotation is 0 or 90 or 180 or 270 && cell.Overlap >= 0 && cell.Segment >= 0 && (uint)cell.Owner <= (uint)(width * height),
 				$"track cell ({cell.X}, {cell.Y}) holds a link, piece, rotation, overlap, segment or owner outside the layer's ranges" );
 		}
+		var trackTypes = tracks.Cells.ToDictionary( cell => cell.Y * width + cell.X, cell => cell.Type );
+		foreach ( var cell in tracks.Cells )
+			Require( cell.BaseType == 0 || TrackCellTypes.IsStation( cell.Type )
+				|| cell.Type == TrackCellTypes.Extension && trackTypes.TryGetValue( cell.Parent, out var parentType ) && TrackCellTypes.IsStation( parentType ),
+				$"track cell ({cell.X}, {cell.Y}) preserves a base type without a station origin" );
 		var placedAttractions = snapshot.Layout.Objects!.Select( record => record!.AttractionId ).ToHashSet();
 		var guestIds = snapshot.Guests!.Guests!.Select( guest => guest!.Id ).ToHashSet();
 		var listedGuests = new HashSet<int>();

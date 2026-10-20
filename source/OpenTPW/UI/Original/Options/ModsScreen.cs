@@ -184,6 +184,8 @@ public static class ModsScreen
 		page.Toggle( "modsOn", "b_on", Rect( 1048 + 790, 190, 1048 + 893, 292 ), () => ModRowSelected()?.Enabled == true, () => Toggle( ModRowSelected() ) );
 		extensionList.RowActivated = _ => Toggle( ExtensionRow() );
 		modList.RowActivated = _ => Toggle( ModRowSelected() );
+		// [EXT:mods] activating a row toggles it like the On/Off button beside the list, with the button's click; the original has no mods screen (its list rows are silent, UiScrollList.Activate)
+		extensionList.ClicksOnActivate = modList.ClicksOnActivate = true;
 
 		string Details()
 		{

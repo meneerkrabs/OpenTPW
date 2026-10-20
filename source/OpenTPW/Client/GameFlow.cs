@@ -459,6 +459,7 @@ internal sealed partial class GameFlow : IDisposable
 		CreateOptions = CreateOptions,
 		CreateLoad = stack => FrontEndMenu.CreateLoadScreen( stack, Strings, FindLoadEntries(), entry => ConfirmExtensions( entry.OwnSavePath, change => QueueProgressLevel( entry.Level, () => LoadPark( entry with { Switch = change }, overFrames: true ) ) ) ),
 		GoOnline = WhenOnline( ShowOnline ),
+		IsLoggedIn = () => FeatureGates.Online && onlineSession?.IsLoggedIn == true,
 		// Restart Park reloads the restart snapshot in every original park but the read-only visit (the original's pause menu 0x48C150 lists the entry for every game type except the online visit)
 		RestartPark = RestartEligible( level ) ? () => RestartCurrentPark( level ) : null,
 		PublishPark = WhenOnline( stack => CreateOnlineScreens( stack ).ShowPublish() ),
@@ -616,6 +617,7 @@ internal sealed partial class GameFlow : IDisposable
 
 		if ( Level != null && Hud != null )
 		{
+			Hud.ObserveApplicationFocus( Window.Current?.Focused == true, Window.Current?.IsOffscreen != false, onlineSession?.IsLoggedIn == true );
 			Level.UiCapturesMouse = Hud.Update( Context, input ) || parkBuild != null;
 			// The camera reads the keyboard itself: while the next park is built it stays where it is, as under a modal window.
 			if ( parkBuild != null && Camera.Mode is ParkCameraMode parkCamera )

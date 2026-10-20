@@ -209,11 +209,17 @@ emitters, including immortal smoke, their generator and their handles survive a 
 restart empty.
 
 OpenTPW's park-resume envelope (docs/PARK-SAVES.md) carries the same thing as an optional part, `Particles`
-(`ParticleSystemState`: the generator, both generation counters, the tick counter, the live emitters in active-list order,
-the live effectors and the free lists' order, no particles and no templates; the file's templates are read again).
-`ParticleSystem.Capture` returns nothing when no emitter or effector is live, so a park without effects writes
-`"Particles": null` and an older file without the key still loads; `ParkResumeSaveFile.ValidateShape` checks the slot
-counts, ranges and generations; `Level.CaptureResumeSnapshot` captures it through the renderer module and
+(`ParticleSystemState`: the pool configuration, generator, both generation counters, tick counter, live emitters in active-list order,
+live effectors and free lists' order, no particles and no templates; the file's templates are read again).
+`ParticleSystem.Capture` retains every initialized pool, including an empty one: its settings, generator and allocation history
+still determine the next new effect. A host without a particle renderer writes `"Particles": null`; older files without the part
+still load. Its optional `Configuration` carries signed density, capacity and the low-detail flag's zero/nonzero meaning. Absent or
+null configuration in older own-format saves keeps the host's current settings. Present configuration replaces them before the
+empty particle free list is rebuilt; existing saved emitters' rates/cap/burst are not rescaled, while future emitters use the saved density.
+Density is restored literally, including zero and signed 32-bit extremes, using the existing native wrapped arithmetic. Capacity must
+be 100..32767, an explicit managed allocation boundary matching native initialization, not a claim that native load rejects other counts.
+See [the bounded SAVE-013 evidence](reverse/PARTICLE-POOL-SAVE-CONFIGURATION.md). `ParkResumeSaveFile.ValidateShape` checks the slot
+counts, ranges, generations and configuration; `Level.CaptureResumeSnapshot` captures it through the renderer module and
 `RestoreResumeSimulation` rebuilds the renderer and restores the pool (`Level.ParticlesCaptured` / `ParticlesResumed`).
 It is presentation: it is not in the world hash, so the hash schema and `DETERMINISM.md`'s conditional extension rule do
 not apply, and the envelope version is unchanged. The runtime snapshot also keeps the object's `ADDOBJ` records (slot, handle, and the optional type and key the follow needs, absent in older saves, whose records then stay where they are; the pool's generations and counters

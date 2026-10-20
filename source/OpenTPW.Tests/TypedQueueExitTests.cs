@@ -112,6 +112,9 @@ public class TypedQueueExitTests
 	public void PreservedEntranceCanDecideAndWalkAfterJsonResume()
 	{
 		var rig = Rig();
+		// QueueTests.Rig only lays path row 0. Its inherited cross-park lanes end off that path,
+		// so they are invalid and the no-gate fallback removes a leaving guest without walking.
+		rig.Simulation.Settings.ArrivalLaneA = new[] { (0, 0), (1, 0), (2, 0), (3, 0), (4, 0) };
 		var guest = rig.Send();
 		Until( rig, () => guest.State == GuestState.WaitingToBoard );
 		rig.Open = false;
@@ -119,6 +122,7 @@ public class TypedQueueExitTests
 		Assert.AreEqual( (2, 6), guest.Navigation.Cell );
 		var saved = ParkResumeJson.Deserialize<GuestSimulationSnapshot>( ParkResumeJson.Serialize( rig.Simulation.CaptureSnapshot() ) );
 		var restored = Rig();
+		restored.Simulation.Settings.ArrivalLaneA = rig.Simulation.Settings.ArrivalLaneA!.ToArray();
 		restored.Open = false;
 		restored.Ride.RestoreSnapshot( rig.Ride.CaptureSnapshot() );
 		var validation = restored.Simulation.ValidateSnapshot( saved );
@@ -137,6 +141,7 @@ public class TypedQueueExitTests
 		{
 			rig.Step();
 			restored.Step();
+			Assert.AreNotEqual( GuestState.Gone, guest.State, "Continuation must walk, not use the no-gate removal fallback." );
 			Assert.AreEqual( (guest.State, guest.Navigation.X, guest.Navigation.Y), (other.State, other.Navigation.X, other.Navigation.Y) );
 			Assert.AreEqual( rig.Simulation.RandomState, restored.Simulation.RandomState );
 			Assert.AreEqual( rig.Simulation.ComputeStateHash(), restored.Simulation.ComputeStateHash() );

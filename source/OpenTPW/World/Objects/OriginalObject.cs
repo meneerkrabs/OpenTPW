@@ -84,6 +84,8 @@ public class OriginalObject : Entity, IPointLightSource, IObjectPickShape
 	}
 
 	private readonly List<(ModelEntity Entity, int NodeIndex)> parts = new();
+	/// <summary>The type's hoarding drawn at this object, or null when its type has none (docs/OBJECTS.md, "Hoarding").</summary>
+	private ObjectHoardingRenderer? hoarding;
 	private readonly List<Model> models = new();
 	/// <summary>Parts of vertex- or UV-animated meshes: their model, own vertex array and the pose version it shows.</summary>
 	private readonly List<(Model Model, int MeshIndex, Vertex[] Vertices, int Version)> vertexParts = new();
@@ -161,6 +163,9 @@ public class OriginalObject : Entity, IPointLightSource, IObjectPickShape
 			Runtime.SetTourStation( ComputeTourStation );
 			Runtime.SetNodeEngine( GetNodeTransform );
 			BuildModels();
+			// the type's hoarding (docs/OBJECTS.md, "Hoarding"), on the level's terrain at this footprint; its state lives in the runtime
+			var level = Level ?? Level.Current;
+			hoarding = ObjectHoardingRenderer.Create( entry, Runtime.Model, placement, level?.OriginalPark?.Heightfield, level?.OriginalPark?.LevelName, Runtime.Hoarding );
 			UpdateTransforms();
 			// [EXT:object-lights] an object whose model has light dummies shows them through its level's point lights
 			if ( Runtime.Lights != null )
@@ -552,9 +557,20 @@ public class OriginalObject : Entity, IPointLightSource, IObjectPickShape
 		bank.AppendTo( into, NodeTransforms, Placement.ModelToEngine, hiddenTest );
 	}
 
+	/// <summary>A render frame: the hoarding rises or sinks by the frame's real time and shows its state (tp.exe <c>0x0044E410</c> → <c>0x004548F0</c>).</summary>
+	protected override void OnUpdate()
+	{
+		if ( deleted )
+			return;
+		Runtime.Hoarding.Advance( Time.Delta );
+		hoarding?.Update();
+	}
+
 	protected override void OnDelete()
 	{
 		deleted = true;
+		hoarding?.Delete();
+		hoarding = null;
 		Level?.PointLights?.Remove( this );
 		Runtime?.Stop();
 		foreach ( var (entity, _) in parts )

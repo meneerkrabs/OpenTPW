@@ -108,6 +108,8 @@ public sealed partial class OriginalObjectRuntime
 				() => !(Coaster?.AcceptsGuests ?? true) || Bump is { IsWater: false, IsTrackValid: false } );
 			// [BIN:TPW-EXE:0x005571A0 WALKOFF] the walk takes ftol(the distance between the walker's two slot nodes) x 100 ms (100 ms for 0): the slot's start node (u3, class 0x800, or 0x80 for the head action 4) and end node (u4, class 0x800) are looked up in the ride model (0x0044B220: the first dummy whose class mask matches and whose number equals) and measured at the time of the WALKOFF (0x00556B90 reads the live node); the Star and Tweety Tours slots span 10 model units (1000 ms)
 			// [BIN:TPW-EXE:0x00556F40 WALKON] the walk-on's nodes are looked up in the ride model the same way (the first node of class 0x800, the second of class 0x80 for the head action 4, else 0x800), for every object that walks riders
+			// the bridge's closings make the model calls on this object's hoarding (presentation only)
+			Visitors.ModelState = Hoarding.SetState;
 			Visitors.WalkNodeDistance = WalkNodeDistance;
 			Visitors.WalkNodeClassDistance = WalkNodeDistance;
 			Visitors.WalkNodeHeading = WalkHeadingOf;
@@ -230,19 +232,39 @@ public sealed partial class OriginalObjectRuntime
 		CompletedCycles,
 		Script?.State ?? RideVMState.Halted );
 
+	/// <summary>
+	/// The object's hoarding (docs/OBJECTS.md, "Hoarding"): its texture set, standing and rise. Presentation only: not part of the canonical state a hash reads,
+	/// saved with the runtime snapshot. Its type's hoarding is bound by the placed object (<see cref="OriginalObject"/>); without one every call does nothing.
+	/// </summary>
+	public ObjectHoardingState Hoarding { get; } = new();
+
+	// [BIN:TPW-EXE:0x004DF390 open] every opening that writes the open word +0x68 = 1 and VAR_RIDECLOSED = 0 (0x004DE1F0, 0x004DF390, 0x004DF8F0, 0x004DFE30(0), 0x004E0050(0)) calls 0x004547C0 on the thing first: its hoarding sinks
 	public void Open()
 	{
-		if ( !stopped )
-			SetVariable( nameof( RideVariables.VAR_RIDECLOSED ), 0 );
+		if ( stopped )
+			return;
+		Hoarding.StartOpenFade();
+		SetVariable( nameof( RideVariables.VAR_RIDECLOSED ), 0 );
 	}
 
-	public void Close()
+	// [BIN:TPW-EXE:0x004DF300 close model call] every closing that writes the open word +0x68 = 0 and VAR_RIDECLOSED = 1 (0x004DF300, 0x004DF150, 0x004DFE30(1), the repair tail's re-close at 0x004DFD3E, SetState 1, 2 and 4, a built object with a queue at 0x004DB712) calls 0x00454550(1) after it: the hoarding rises with the closed set unless another set stands
+	public void Close() => Close( modelCall: true );
+
+	/// <summary>
+	/// A loaded park's close of an attraction saved closed: the original's attraction loader writes the open word without a closing routine, so the hoarding
+	/// keeps the state its save holds (<see cref="ObjectHoardingState.Restore"/>).
+	/// </summary>
+	internal void CloseLoaded() => Close( modelCall: false );
+
+	private void Close( bool modelCall )
 	{
 		if ( stopped )
 			return;
 		SetVariable( nameof( RideVariables.VAR_RIDECLOSED ), 1 );
 		// [BIN:TPW-EXE:0x004DF300 close] the close clears the loading slot +0x6C with the open word (RideVisitorBridge.ClearLoadingSlot)
 		Visitors.ClearLoadingSlot();
+		if ( modelCall )
+			Hoarding.SetState( ObjectHoardingState.CloseMode );
 	}
 
 	/// <summary>A common variable by name (scripts declare different subsets); 0 when the script has none.</summary>
@@ -431,7 +453,8 @@ public sealed partial class OriginalObjectRuntime
 			RideCapacity = capacityWord,
 			RideDuration = durationWord,
 			VehiclesRaised = VehiclesRaised ? true : null,
-			Lights = Lights?.Capture()
+			Lights = Lights?.Capture(),
+			Hoarding = Hoarding.Capture()
 		};
 	}
 
@@ -499,6 +522,9 @@ public sealed partial class OriginalObjectRuntime
 			if ( unknownLights.Count > 0 )
 				gaps.Add( $"'{Entry.ArchivePath}': saved light(s) {string.Join( ", ", unknownLights )} are not in the model any more and were dropped." );
 		}
+		// the hoarding's flags and level as saved; an older save, or an object whose hoarding never stood, keeps the fresh state
+		if ( snapshot.Hoarding is { } hoarding )
+			Hoarding.Restore( hoarding.Flags, hoarding.Level );
 		CompletedCycles = snapshot.CompletedCycles;
 		AnimationsPlayed = snapshot.AnimationsPlayed;
 		unresolvedAnimations.Clear();

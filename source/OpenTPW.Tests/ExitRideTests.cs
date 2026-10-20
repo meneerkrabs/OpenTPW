@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Linq;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
@@ -101,6 +102,8 @@ public class ExitRideTests
 	{
 		var rig = Rig();
 		LayExit( rig, queueBeyond: true );
+		var calls = new List<int>();
+		rig.Ride.ModelState = calls.Add;
 		var guest = Serve( rig );
 		var kept = rig.Simulation.KeptBodyPosition( guest );
 		for ( var tick = 0; tick < 5 * 60; tick++ )
@@ -109,6 +112,7 @@ public class ExitRideTests
 		Assert.AreEqual( guest.Id, rig.Script[RideVariables.VAR_LETMEOFF], "VAR_LETMEOFF keeps the guest" );
 		Assert.AreEqual( 1, rig.Script[RideVariables.VAR_RIDECLOSED], "the ride closed (0x004DF150)" );
 		Assert.AreEqual( 1, rig.Ride.BlockedExitClosings, "an already closed ride does not close again" );
+		CollectionAssert.AreEqual( new[] { ObjectHoardingState.CloseMode }, calls, "the close makes the model call 0x00454550(1) once" );
 		Assert.AreEqual( (3, 6), guest.Navigation.Cell, "ExitRide put the guest at the exit point" );
 		Assert.AreEqual( kept, rig.Simulation.KeptBodyPosition( guest ), "the kept body stays where it was (0x004FA087)" );
 		Assert.IsTrue( rig.Simulation.ShowsKeptBody( guest ) );

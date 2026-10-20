@@ -887,7 +887,9 @@ save byte changed (the layer adds no saved or hashed state; the Move tool's carr
 the start of their tick inside `Level.AdvanceSimulation`, before the tick's economy sync. A command's executor reads only the command and the world, never a tool's state, and draws no
 random stream of its own beyond what the edit itself draws (a placement's script seed, as before). `ParkCommandLevelTests` records a build session on a no-data level and replays it on a
 twin with the same `WorldStateHash` after every tick; `ParkSettingCommandLevelTests` does the same for a session of the HUD windows' settings. `ParkToolCommandLevelTests` applies
-the staff and pool tools' logged commands to a twin that reaches the same hash, and `TrackAddOnLevelTests` the track tools' to a twin whose track layer and ride controller match. A tool issues one command for each write it made before (a pool
+the staff and pool tools' logged commands to a twin that reaches the same hash, `TrackAddOnLevelTests` the track tools' to a twin whose track layer and ride controller match, and
+`CoasterCommandTests` a coaster tool session's to a twin coaster with the same canonical state and money paid. The coaster tool's entry and exit set and clear the being-edited mark that guests read
+(`CoasterRide.BeingEdited`) through their commands. A tool issues one command for each write it made before (a pool
 stroke one per cell, as the drag wrote them), and a track command walks the circuit inside the command while the tool's own step after the walk stays on the issuer's machine; the line
 tool's walk to the track's open end, which writes the walked tiles' overlap words, is a command too (`OpenTrackLineToolCommand`, or inside the cut that opens the circuit). A replay runs one tick per `AdvanceSimulation` call; the work a frame does outside its ticks (pool refresh, evening, snow, the scene
 clock, the body poses prepared after a frame's ticks) is not replayed, which C1b audits.

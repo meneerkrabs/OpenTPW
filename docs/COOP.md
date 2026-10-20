@@ -154,10 +154,11 @@ their windows (`ShopPriceIngressTests`).
 ### Tools
 
 The tools' writes are commands too (`ParkToolCommand`, `ParkToolCommands.cs`, `PoolCommands.cs`,
-`TrackCommands.cs`, kinds 54 to 83, C1 part 3): the land, the hire and the employee in hand, the pools
-extension's tool and wave machines, and the kart and water rides' track tools; the coaster tool follows
-in its own part. A tool keeps its own state between clicks (a stored fence post, a stroke and its undo
-stack, the candidate being placed or the employee in hand, a tile picked for a cut) and issues one
+`TrackCommands.cs`, `CoasterCommands.cs`, kinds 54 to 98, C1 part 3): the land, the hire and the
+employee in hand, the pools extension's tool and wave machines, the kart and water rides' track tools,
+and the coaster tool with its panel. A tool keeps its own state between clicks (a stored fence post, a
+stroke and its undo stack, the candidate being placed or the employee in hand, a tile picked for a cut,
+the panel's selection and a drag's pointer) and issues one
 command for each write it made before the command layer, at the same moment, so no single-player run
 changes.
 
@@ -202,12 +203,32 @@ changes.
   - A track add-on's placement or removal walks the circuit inside its command, without the tool's
     step (`Level.WalkTrack`).
 
+- **Coasters.** The coaster tool's entry and exit are commands (`BeginCoasterToolCommand`,
+  `EndCoasterToolCommand`). The entry closes the ride, gives its controller the tool's state, opens a
+  closed circuit whose closing link fails and marks the coaster as being edited, which guests read
+  (`CoasterRide.BeingEdited`: none boards it); the exit clears the mark and opens a ride the tool took
+  out of service.
+  - Each click of the build buttons is `CoasterClickCommand`, which carries the panel's height and loop
+    edit mode, the tool state the placement reads. A click on the closed circuit's station end
+    completes the track; the tool's end after it (the panel closes, the queue tool follows) is the
+    issuer's. Backspace is `RemoveLastCoasterPylonCommand`.
+  - A drag in the coaster panel is a press (`BeginCoasterNodeEditCommand`), one command for each step
+    (`EditCoasterNodeCommand`: the loft, yaw, bank, incline, loop rotation or cell), as the panel wrote
+    the pylon each frame, and a release that settles the money (`EndCoasterNodeEditCommand`). The stack
+    buttons and the demolish button's cut are `SwapCoasterStackCommand` and `CutCoasterCommand`.
+  - The pylon a player is editing is the level's state (`CoasterEdits`), as the employee in hand is;
+    the panel, its selection and the drag's pointer stay the issuer's.
+
 `ParkToolCommandLevelTests` drives the staff and pool tools on a level without game data and applies
 their logged commands to a twin park, which reaches the same hash (the twin's reconcile between the
 pick-up and the drop keeps the employee picked up). `TrackAddOnLevelTests` applies a kart ride's
 logged lines, undo, cut, the line tool's reopening and Backspace after it to a twin whose track layer
-and ride controller match the issuer's. `PoolsTests` takes back a stroke longer than a command in
-chunks, and `ParkLandTests` checks the land command's posts and verdict.
+and ride controller match the issuer's. `CoasterCommandTests` runs a coaster tool session (clicks,
+Backspace, the panel's drags and a cut) and builds the same coaster (its pylons, its controller and
+the money paid) on a twin from the logged commands alone; `ParkToolCommandLevelTests` enters and
+leaves the coaster tool on a level through its commands. `PoolsTests` takes back a
+stroke longer than a command in chunks, and `ParkLandTests` checks the land command's posts and
+verdict.
 
 ### Serialization
 
@@ -251,7 +272,7 @@ guarded list.
 | Winning screen | the Instant Action finale's dismissal (Resume Game, Escape, the right click) | converted |
 | Settings | park open and close, ride open and close, the ride window's settings, entrance fee, prices, prizes and shop settings, loans and the loans dialog's list build, dismissal, training budget, research, challenges, maintenance, ride upgrades, park and staff rename, patrol areas, cheats, speed, the developer panel's open-all and close-all | converted |
 | Tools | land, staff hiring and the employee in hand, pool strokes and their undo, wave machines, slide pieces, pool bridges, kart and water track lines, their undo, the edit tool's cut and the line tool's walk to the open end | converted |
-| Coasters | the coaster tool's pylons, the circuit's closing and completion, the coaster panel's edits | part 3 (coasters) |
+| Coasters | the coaster tool's entry and exit, its pylons and Backspace, the circuit's closing and completion, the coaster panel's drags, stack swaps and cuts | converted |
 
 ## Known limits of C1
 
@@ -271,8 +292,12 @@ guarded list.
   simulation-changing extensions: the extensions' systems read the process's extension switches, and
   so do the cheats of the cheats extension (the weather, the arrivals, the ride vehicles). The log
   does not record the switches yet; a session's version gate (C2) checks them.
-- The reopening guard an attraction command asks reads whether the coaster tool is editing that
-  coaster (`CoasterRide.BeingEdited`), tool state the coaster commands of part 3 make shared.
+- The coaster-being-edited mark (`CoasterRide.BeingEdited`, which guests and the reopening guard read)
+  is one flag per coaster, as the original's was one global: two players editing the same coaster
+  clear it when the first one leaves the tool. C3 must keep a second player out of a coaster another
+  edits, or count the editors.
+- The pylon each player is editing in a coaster panel drag (`CoasterEdits`) is not hashed, as the
+  employees in hand are not; a session's join snapshot (C2) taken during a drag must carry it.
 - The developer and smoke options (`--perf-*`, `--debug-*`) set their parks up directly; a recording
   made with them does not replay.
 - The developer prototype can be opened by two kinds (32 with the reopening guard, 22 without), and
@@ -296,6 +321,6 @@ guarded list.
   pick-up is refused. C3 must always allow the drop back to where the employee came from.
 - A hire's pending candidate (`ParkStaff.PendingPlacementId`) is one per park: two players placing hires
   at once would take it from each other (C3 gives each player a placement).
-- Opening the queue tool (after a ride is placed or its track circuit closes) recomputes the ride's
+- Opening the queue tool (after a ride is placed, its track circuit closes or its coaster is completed) recomputes the ride's
   queue on the issuer's machine (`Level.EnterQueueTool`), outside the commands; C2 makes that part of a
   command or shows that it changes nothing.

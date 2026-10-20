@@ -221,7 +221,7 @@ System.Numerics' `Vector2`/`Vector3`/`Vector4.Lerp`, `Transform` and `TransformN
 source: .NET evaluates them with `MultiplyAddEstimate`, which fuses the multiply and the add where the processor has fused multiply-add.
 On macOS arm64 (.NET 11 RC2) `Vector3.Transform` equals `fma(z, m31, fma(y, m21, x * m11)) + m41` for every one of 200,000 random inputs
 and differs from the unfused sum for a quarter of them; a runtime that does not fuse rounds twice. `Dot`, `Cross`, `Length`, `Normalize`
-and `Distance` are not fused. Whether the browser fuses was not measured. The guard below does not ban these operations, and a source
+and `Distance` are not fused. The browser's Mono AOT build computes other values for them than the desktops (below). The guard below does not ban these operations, and a source
 scan cannot find the matrix product. `DetMatrix` (`source/OpenTPW/Utils/DetMatrix.cs`) has the plain versions (product, point
 transform, lerp, and a slerp with DetMath's acos and sin), every product and sum rounded left to right. `CoasterPylonRig` composes its
 tag matrices with them and blends its clips' keys with them, and the coaster station frame (`CoasterStationLayout.FromModel`)
@@ -1100,7 +1100,7 @@ and it is pinned again:
 | `CoasterTests.BuiltCoasterRunsArePinned` | `0x1ABA458D0079E09C` | a built synthetic circuit open for a minute with a guest on board |
 | `CoasterTests.BuiltCoasterRunsArePinned` | `0x045BFFE59994F3E7` | the same circuit reopened for three seconds at 20 s and completed again (the catch-up tick) |
 
-CI checks them on Windows, Linux and macOS. The synthetic coasters have no pylon or station models; a coaster built from game
+CI checks them on Windows, Linux and macOS and in both browser legs (Mono AOT and the interpreter). The synthetic coasters have no pylon or station models; a coaster built from game
 data adds the rig and the station frame, which `DetMatrix` covers. The rig's rest decomposition (`Matrix4x4.Decompose`) and its
 `Matrix4x4.CreateFromQuaternion` stay System.Numerics': they use the unfused `Dot`, `Cross`, `Length` and scalar arithmetic. The station frame's change from the fused product
 moves a station node's position by at most a few last bits; no pinned golden builds a coaster from game data, so no other pin moved.

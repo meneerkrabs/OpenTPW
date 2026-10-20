@@ -2325,10 +2325,10 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// </summary>
 	// [BIN:STP-PPC:0x100E9164 attraction score] executed by the PowerPC oracle (attraction-score, 578 inputs; C# agrees)
 	// [BIN:STP-PPC:0x100E9388 cell modifier] the environment record's component 4 (+8) at the back-of-queue cell divides the distance match; only the fireworks' RegionFX row 7 writes it (Attraction 10 in the shipped Standard.sam; tp.exe 0x004DB48C), so it is 0 everywhere else
-	// [APPROX:GUEST-002] the back-of-queue cell is the original's (tp.exe 0x4DE130, recomputed after each queue edit 0x4DE1F0) and the queue count is the whole queue list, which is what 0x4DDF50 counts because every listed guest is in a queue state (it stops after the first listed guest outside the states 0x502430 allows; a save holds queue membership and state together both ways), but a back cell with no join cell is scored 0 here, where 0x4FCB10 scores it and its route request to the back cell (0x4FA530, RouteToCell) then fails on the edge test — evidence needed: the walk onto the back cell (QUEUE-003)
+	// [APPROX:GUEST-002] faithful scoring and major choice now admit a disconnected real raw-type-3 queue back and leave route failure to RouteToCell; missing/untyped fallback backs, the minor decision and extension planning retain their join-cell filters (docs/DISCONNECTED-QUEUE-SCORING.md)
 	public uint ScoreAttraction( Guest guest, IRideVisitorBridge attraction )
 	{
-		if ( attraction.JoinCell == null )
+		if ( !HasScoreBackCell( attraction ) )
 			return 0;
 		return WinterScoreOf( ContextNow(), guest, ViewOf( guest ), attraction, ViewOf( attraction, guest ) );
 	}
@@ -2359,8 +2359,8 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		view = WithPlanHorizon( view, guest, null );
 		foreach ( var attraction in NewestFirst() )
 		{
-			// an attraction without a back-of-queue cell is never a candidate
-			if ( attraction.JoinCell == null )
+			// a disconnected typed back can still be scored; reachability is tested only after it beats the best
+			if ( !HasScoreBackCell( attraction ) )
 				continue;
 			var candidate = ViewOf( attraction, guest );
 			var score = WinterScoreOf( context, guest, view, attraction, candidate );

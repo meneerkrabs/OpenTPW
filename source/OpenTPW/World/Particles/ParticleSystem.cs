@@ -136,7 +136,7 @@ public sealed partial class ParticleSystem
 	private readonly IReadOnlyList<ParticleEffectorTemplate> effectorTemplates;
 	private readonly Emitter[] emitters = new Emitter[EmitterSlots];
 	private readonly Effector[] effectors = new Effector[EffectorSlots];
-	private readonly Particle[] particles;
+	private Particle[] particles;
 	private int activeEmitter, freeEmitter, activeEffector, freeEffector, freeParticle;
 	private int liveEmitters;
 	private int generationCounter, effectorGenerationCounter;
@@ -165,8 +165,8 @@ public sealed partial class ParticleSystem
 		Clear();
 	}
 
-	public int Density { get; }
-	public bool LowDetail { get; }
+	public int Density { get; private set; }
+	public bool LowDetail { get; private set; }
 	public int Capacity => particles.Length;
 	public int LiveEmitters => liveEmitters;
 	public int LiveEffectors { get; private set; }

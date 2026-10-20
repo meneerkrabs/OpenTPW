@@ -459,6 +459,7 @@ internal sealed partial class GameFlow : IDisposable
 		CreateOptions = CreateOptions,
 		CreateLoad = stack => FrontEndMenu.CreateLoadScreen( stack, Strings, FindLoadEntries(), entry => ConfirmExtensions( entry.OwnSavePath, change => QueueProgressLevel( entry.Level, () => LoadPark( entry with { Switch = change }, overFrames: true ) ) ) ),
 		GoOnline = WhenOnline( ShowOnline ),
+		IsLoggedIn = () => FeatureGates.Online && onlineSession?.IsLoggedIn == true,
 		// Restart Park reloads the restart snapshot in every original park but the read-only visit (the original's pause menu 0x48C150 lists the entry for every game type except the online visit)
 		RestartPark = RestartEligible( level ) ? () => RestartCurrentPark( level ) : null,
 		PublishPark = WhenOnline( stack => CreateOnlineScreens( stack ).ShowPublish() ),

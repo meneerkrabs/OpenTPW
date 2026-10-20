@@ -17,6 +17,8 @@ public sealed class HudHost
 	public Func<UiScreenStack, UiScreen>? CreateLoad { get; init; }
 	/// <summary>Opens the online screens (Go Online, UITEXT 1); null hides the entry.</summary>
 	public Action<UiScreenStack>? GoOnline { get; init; }
+	/// <summary>Existing authenticated session state, sampled when the park pause menu opens; null means offline.</summary>
+	public Func<bool>? IsLoggedIn { get; init; }
 	/// <summary>Restarts the park as it was started (the pause menu's Restart Park, after its confirmation); null disables the entry.</summary>
 	public Action? RestartPark { get; init; }
 	/// <summary>Opens the online Publish Park flow (the pause menu's Publish Park); null disables the entry.</summary>
@@ -548,11 +550,8 @@ public sealed partial class ParkHud
 			return;
 		if ( selectedObject is not { IsDeleted: false } item || !item.Runtime.IsAttraction )
 			return;
-		// [BIN:STP-PPC:0x1007159C open button] the open buttons call the reopening guard 0xde654 first and open only when it allows (ORACLE.md F27, ECON-049)
-		if ( item.IsOpen )
-			item.Close();
-		else if ( level.Gate?.MayOpen( item.Runtime ) ?? true )
-			item.Open();
+		// the command asks the reopening guard before it opens (SetAttractionOpenCommand)
+		level.Commands.Issue( new SetAttractionOpenCommand( item.Runtime.AttractionId, !item.IsOpen ) );
 	}
 
 	private void DeleteRide()
@@ -635,7 +634,7 @@ public sealed partial class ParkHud
 			entries.RemoveAll( entry => entry.Label == UIStrings.GoOnline );
 		var items = entries.Select( entry => (Id: entry.Label.ToString(), Text: (Func<string>)(() => strings[entry.Label]), entry.Clicked,
 			Enabled: PauseMenuEntryEnabled( level.IsReadOnlyVisit, entry.Label, host.CreateLoad != null, host.CreateOptions != null, host.RestartPark != null, host.PublishPark != null )) ).ToList();
-		menu = UiDialogs.TextMenu( PauseMenuScreen, items, ResumeGameAfterApplicationPause, UIStrings.ResumeGame.ToString() );
+		menu = UiDialogs.TextMenu( PauseMenuScreen, items, ResumeGameAfterApplicationPause, UIStrings.ResumeGame.ToString(), compact: host.IsLoggedIn?.Invoke() == true );
 		Stack.Push( menu );
 	}
 
@@ -806,13 +805,13 @@ public sealed partial class ParkHud
 			if ( Input.Pressed( InputButton.OpenPark ) )
 			{
 				if ( !doorEconomy.IsParkOpen )
-					doorEconomy.OpenPark();
+					level.Commands.Issue( new SetParkOpenCommand( true ) );
 				host?.ParkDoorPressed?.Invoke( true );
 			}
 			if ( Input.Pressed( InputButton.ClosePark ) )
 			{
 				if ( doorEconomy.IsParkOpen )
-					doorEconomy.ClosePark();
+					level.Commands.Issue( new SetParkOpenCommand( false ) );
 				host?.ParkDoorPressed?.Invoke( false );
 			}
 		}

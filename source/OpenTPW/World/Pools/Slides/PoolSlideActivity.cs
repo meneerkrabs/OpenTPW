@@ -348,6 +348,15 @@ public sealed class PoolSlideActivity : IPoolActivity
 			if ( other == rider || !(other.IsSwimming || other.InPoolActivity) || other.InPoolActivity && other.PoolActivityId == ActivityId && other.PoolActivityPhase is PoolSlidePhases.Climb or PoolSlidePhases.Wait )
 				continue;
 			var (dx, dy) = (other.Navigation.X - landingX, other.Navigation.Y - landingY);
+			// a rider of this slide not yet updated this turn is read where its step of this turn takes it (its next point on the track, or the landing point), so the test does not depend on the update order
+			if ( other.InPoolActivity && other.PoolActivityId == ActivityId && other.PoolActivityTarget == rider.PoolActivityTarget && other.PoolActivityPhase == PoolSlidePhases.Ride && other.StepTick != simulation.TickCount )
+			{
+				var position = slide.PositionAtTurn( other.PoolActivityTurns + 1 );
+				if ( position >= slide.Length )
+					return false;
+				var point = slide.PointAt( position );
+				(dx, dy) = ((long)point.X * 64 - landingX, (long)point.Y * 64 - landingY);
+			}
 			if ( dx * dx + dy * dy < LandingRadius * LandingRadius )
 				return false;
 		}

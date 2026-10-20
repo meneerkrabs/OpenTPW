@@ -71,6 +71,6 @@ public sealed partial class ParkHud
 			return;
 		if ( !item.MaintenanceRequested && CallRefusal( economy, toilet ) != null )
 			return;
-		economy.RequestMaintenance( item.Id, !item.MaintenanceRequested );
+		level.Commands.Issue( new RequestMaintenanceCommand( selectedObject!.Runtime.AttractionId, !item.MaintenanceRequested ) );
 	}
 }

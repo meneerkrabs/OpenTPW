@@ -59,6 +59,7 @@ public sealed class EconomyParkStatus : IHudParkStatus
 {
 	private readonly Func<ParkEconomy?> economy;
 	private readonly Func<int?>? playerKeys;
+	private Level? level;
 
 	/// <param name="playerKeys">The player's golden keys from the application-owned ticket ledger, null while no ledger is attached.</param>
 	public EconomyParkStatus( Func<ParkEconomy?> economy, Func<int?>? playerKeys = null )
@@ -67,8 +68,8 @@ public sealed class EconomyParkStatus : IHudParkStatus
 		this.playerKeys = playerKeys;
 	}
 
-	/// <summary>Binds to a level's runtime (followed on every access).</summary>
-	public static EconomyParkStatus ForLevel( Level level, Func<int?>? playerKeys = null ) => new( () => level.Park?.Economy, playerKeys );
+	/// <summary>Binds to a level's runtime (followed on every access); a speed set through the status goes through the level's commands.</summary>
+	public static EconomyParkStatus ForLevel( Level level, Func<int?>? playerKeys = null ) => new( () => level.Park?.Economy, playerKeys ) { level = level };
 
 	private ParkEconomy? Economy => economy();
 
@@ -76,14 +77,12 @@ public sealed class EconomyParkStatus : IHudParkStatus
 	public long Money => Economy?.Balance ?? 0;
 	public ParkDate Date => Economy?.Date ?? default;
 
+	/// <summary>The park's speed; setting it issues a <see cref="SetGameSpeedCommand"/> through the bound level (<see cref="ForLevel"/>). A status bound to no level cannot set it.</summary>
 	public GameSpeed Speed
 	{
 		get => Economy?.Speed ?? GameSpeed.Normal;
-		set
-		{
-			if ( Economy is { } economy )
-				economy.Speed = value;
-		}
+		set => (level ?? throw new InvalidOperationException( "An economy status without its level cannot set the speed: bind it with ForLevel." ))
+			.Commands.Issue( new SetGameSpeedCommand( value ) );
 	}
 
 	// The level scales the elapsed time of its whole fixed clock (guests, rides, scripts, economy) by this factor; the economy itself runs one tick per fixed tick.

@@ -351,7 +351,7 @@ public sealed partial class GuestSimulation
 		ReturnToPath( guest, ride?.ExitCell ?? (guest.CellX, guest.CellY) );
 		// a guest with balloon life gets its balloon back on stepping out, as it does when it leaves a ride (the swim put it away, like a ride does)
 		if ( guest.BalloonLife > 0 )
-			guest.HasBalloon = true;
+			CreateBalloon( guest );
 	}
 
 	/// <summary>

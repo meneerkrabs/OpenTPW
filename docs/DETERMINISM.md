@@ -1110,6 +1110,8 @@ The animator itself (`ObjectAnimator`, presentation and the object scripts' pose
 
 ## Retained full-room targets: bounded pin reconciliation (2026-10-20)
 
+The current default fixed-run pin is `0x60020C37ABCABF02`, schema 21. The schema is unchanged; the retained target is an existing hashed field.
+
 GUEST-004 retains the refused full-room target until replacement or removal. `AttractionId` already participates in the canonical hash; the hash schema and production hashing are unchanged. The diagnostic head `c101b4abb9c54256ec6000d26035eec02d539d1b` projects only retained target identities to zero without advancing the simulation, restores them in `finally`, and leaves each actual pin assertion intact. All 30 failing assertions on each of macOS, Windows and Linux recovered their individual previous expected hashes under that projection (jobs `118523918197`, `118523918216`, `118523918184`, run `39391350115`). Browser interpreter actual hashes match the same observed mappings (job `118523539167`, run `39391350411`); its harness does not emit the projection log, so the retained projection assertions must establish that check in the next run. This is endpoint equivalence, not a claim of native-game parity. The default fixed run also has a paired per-tick legacy-cleared replay which checks complete world hashes and RNG and recovers its original pin.
 
 The following are the observed pin mappings. Test-only `VerifyRetainedTargetHash` retains each previous pin as a projection assertion while existing tests assert the new actual hash. No unobserved pin is replaced, no runtime hash field is ignored, and the historical pin narratives above remain historical. Cross-platform verification of this reconciliation is pending.

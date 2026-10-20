@@ -529,8 +529,12 @@ public class VisitorSpriteIntegrationTests
 		level.AdvanceSimulation( 0 );
 		Assert.AreEqual( before, guest.BodySprite.CaptureSnapshot() );
 		Assert.AreEqual( 7, walker.Heading );
-		// Positive sub-tick elapsed still permits the native-style pose phase without inventing a scheduler opportunity.
+		// A positive sub-tick elapsed runs no tick and so no pose phase either: the phase ends every fixed tick, so the bodies follow the ticks, not the frames (docs/DETERMINISM.md, "Frame batching").
 		level.AdvanceSimulation( 0.001 );
+		Assert.AreEqual( before, guest.BodySprite.CaptureSnapshot() );
+		Assert.AreEqual( 7, walker.Heading );
+		// The tick's pose phase creates and requests without inventing a scheduler opportunity.
+		typeof( Level ).GetMethod( "PrepareRideBodyPoses", BindingFlags.Instance | BindingFlags.NonPublic )!.Invoke( level, null );
 		Assert.IsNotNull( guest.BodySprite.Player );
 		Assert.AreEqual( VisitorSpriteTemplate.Cheer, guest.BodySprite.Player.ActiveTemplate );
 		Assert.AreNotEqual( 7, walker.Heading );

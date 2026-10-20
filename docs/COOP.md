@@ -50,8 +50,8 @@ everyone; cheats refused in a session; when the host leaves, the host role moves
 The labels: the plan's first record, made with the design decisions, says the proposed labels were
 not yet individually approved. Its later entry records the user's answer, given the same day in the
 online-presence session: every proposed `online-coop-*` label in the plan's section 4 is approved as
-named (among them `online-coop-commands` and `online-coop-permissions`, the two this code uses: the
-command layer and the rights hook), and a label outside that list is asked for separately. The
+named (among them `online-coop-commands`, `online-coop-permissions` and `online-coop-lockstep`, the three this code uses: the
+command layer, the rights hook and the frame-batching independence of the fixed tick), and a label outside that list is asked for separately. The
 Totem's commands keep the older `developer-prototype` label.
 
 ## The command layer (C1)
@@ -255,14 +255,18 @@ guarded list.
 
 ## Known limits of C1
 
-- Wall-time updates outside the tick (`RefreshPools`, the evening, snow, the scene clock), the body
-  pose preparation after a frame's ticks (`FlatRideBounceRiders.Prepare`, which changes the riders'
-  ride-body state), the staff world update at the start of a frame (`StaffWorld.Synchronize`) and the
-  entities' updates after the simulation are not part of a replay; C1b audits them. The staff
-  placement's reconcile at the start of a frame frees only a member an original save left picked up
-  with nobody holding it: the employees in hand are the level's state since part 3. A replay runs one
-  tick per frame, the game several, so a recording made in play must be checked against its
-  checkpoints, which the log carries.
+- The frame's work outside the fixed tick was audited in C1b ([DETERMINISM.md](DETERMINISM.md),
+  "Frame batching"): the pools' drawing, the evening, the snow's easing, the scene clock and the
+  entities' updates are presentation; the staff host's bookkeeping (`StaffPlacement.Reconcile`,
+  `StaffWorld.Synchronize`) now runs at the start of every tick after its commands and the ride
+  bodies' pose phase (`FlatRideBounceRiders.Prepare`) at its end. The reconcile frees only a member an
+  original save left picked up with nobody holding it: the employees in hand are the level's state since
+  part 3. The park after a tick therefore depends only on the ticks and the commands, so a replay may
+  run its ticks in frames of any size (`FrameBatchingTests`, and with game data the park-resume smoke's
+  restore phase). What stays frame-coupled is presentation a save keeps but no hash or script reads:
+  the particle pool, the ADDOBJ records of ended effects and the hoardings' rise, so two players' saves
+  can differ there. The clock's remainder of a tick follows the frames' time; a session's network clock
+  (C2) feeds whole ticks.
 - A remote player's command will run the same presentation (the action message, sounds) as a local
   one; C3 separates the issuer's feedback from everyone's.
 - The in-memory log keeps the newest 65,536 commands in a ring (adding to a full log overwrites the

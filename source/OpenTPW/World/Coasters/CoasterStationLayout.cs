@@ -1,3 +1,5 @@
+using System.Numerics;
+
 namespace OpenTPW;
 
 /// <summary>
@@ -16,20 +18,25 @@ public readonly record struct CoasterStationPoint( float X, float Z, float Y );
 public sealed record CoasterStationLayout( CoasterStationPoint End, CoasterStationPoint Mid, CoasterStationPoint Start )
 {
 	/// <summary>
-	/// The frame of a placed station model: the three dummies that carry attribute 0x400000 (numbered 1, 2, 3, the End, Mid and Start dummies) at the model's rest pose
-	/// (<paramref name="nodeTransforms"/>), with the placement applied, in original world units. Null when the model lacks one of them.
+	/// The frame of a placed station model: the three dummies that carry attribute 0x400000 (numbered 1, 2, 3, the End, Mid and Start dummies) in the model's current pose
+	/// (<paramref name="localTransforms"/>, each node relative to its parent), with the placement applied, in original world units. Null when the model lacks one of them.
+	/// The parent chain and the placement are composed with <see cref="DetMatrix"/>: the frame becomes the track's station nodes and with them the coaster's canonical
+	/// state, and System.Numerics' matrix product may fuse the multiply-add on one runtime and not on another (docs/DETERMINISM.md, "Browser and native").
 	/// </summary>
 	// [BIN:TPW-EXE:0x436b21 station dummies] the coaster station's construction looks up the dummy node numbered i + 1 with attribute 0x400000 (0x44b220, the first record in order) and reads its world position (node instance +0x30..+0x38, placement included); the end pylons are asked for the dummy's height above the station's base
-	internal static CoasterStationLayout? FromModel( ModelFile model, IReadOnlyList<System.Numerics.Matrix4x4> nodeTransforms, ObjectPlacement placement )
+	internal static CoasterStationLayout? FromModel( ModelFile model, IReadOnlyList<Matrix4x4> localTransforms, ObjectPlacement placement )
 	{
 		var map = AdvisorNodeMap.From( model );
 		var points = new CoasterStationPoint[3];
+		var toEngine = placement.DeterministicModelToEngine;
 		for ( var index = 0; index < points.Length; index++ )
 		{
 			var node = map.FindNode( 0x400000, index + 1 );
-			if ( node < 0 || node >= nodeTransforms.Count )
+			if ( node < 0 || node >= localTransforms.Count || node >= model.Nodes.Count )
 				return null;
-			var position = (ObjectPlacement.SwapAxes( nodeTransforms[node] ) * placement.ModelToEngine).Translation;
+			var world = WorldOf( model, localTransforms, node );
+			// ObjectPlacement.SwapAxes on a node matrix moves its translation (x, y, z) to (x, z, y): MD2 Y is up, the engine's Z
+			var position = DetMatrix.TransformPosition( new System.Numerics.Vector3( world.M41, world.M43, world.M42 ), toEngine );
 			var x = (position.X - placement.GridOrigin.X) / ObjectPlacement.ModelScale;
 			var z = (position.Y - placement.GridOrigin.Y) / ObjectPlacement.ModelScale;
 			var up = position.Z / ObjectPlacement.ModelScale;
@@ -37,6 +44,15 @@ public sealed record CoasterStationLayout( CoasterStationPoint End, CoasterStati
 			points[index] = new CoasterStationPoint( x, z, index == 1 ? up : up - placement.BaseHeight / ObjectPlacement.ModelScale );
 		}
 		return new CoasterStationLayout( points[0], points[1], points[2] );
+	}
+
+	/// <summary>A node's model-space matrix: its local matrix times its parent's, up the chain (the order of <c>ObjectAnimator</c>), with <see cref="DetMatrix.Multiply"/>.</summary>
+	private static Matrix4x4 WorldOf( ModelFile model, IReadOnlyList<Matrix4x4> localTransforms, int node )
+	{
+		var world = localTransforms[node];
+		for ( var parent = model.Nodes[node].ParentIndex; parent >= 0 && parent < localTransforms.Count; parent = model.Nodes[parent].ParentIndex )
+			world = DetMatrix.Multiply( world, localTransforms[parent] );
+		return world;
 	}
 
 	/// <summary>

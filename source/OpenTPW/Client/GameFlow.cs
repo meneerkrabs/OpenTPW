@@ -180,6 +180,7 @@ internal sealed partial class GameFlow : IDisposable
 		FrontEndMenu? createdMenu = null;
 		createdMenu = new FrontEndMenu( Strings, lobbyDefinition.Islands, new FrontEndActions
 		{
+			PlayerKeySnapshot = GameEditions.Capabilities.Economy && !GameEditions.IsThemeParkInc ? ReadLobbyPlayerKeys( ProgressPath ) : null,
 			StartPark = ( island, mode ) => RequestParkStart( island.Level, mode, createdMenu ),
 			Load = entry => ConfirmExtensions( entry.OwnSavePath, change => QueueProgressLevel( entry.Level, () => LoadPark( entry with { Switch = change }, overFrames: true ) ) ),
 			ContinueEntry = FindContinueEntry,

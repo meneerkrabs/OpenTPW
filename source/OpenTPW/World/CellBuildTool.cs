@@ -144,8 +144,9 @@ public sealed class CellBuildTool
 		}
 		var writer = Writer;
 		var result = writer.Commit( start, end );
-		// A commit that finished the work (a track circuit closing) ended or replaced the tool: nothing is left to continue.
-		if ( !ReferenceEquals( Writer, writer ) )
+		// A commit that finished the work ended, replaced or restarted the tool without a start.
+		// Even a same-writer restart owns fresh stacks; do not restore this old commit into them.
+		if ( !ReferenceEquals( Writer, writer ) || Start == null )
 			return result;
 		// A writer that steps in tiles (the track tools) snaps the end further; the tool continues from where the line really ended.
 		if ( result.SnappedEnd != end )

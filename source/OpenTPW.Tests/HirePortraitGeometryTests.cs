@@ -101,7 +101,7 @@ public class HirePortraitGeometryTests
 			Sprites = (StaffSpriteSet)Activator.CreateInstance( typeof( StaffSpriteSet ), BindingFlags.Instance | BindingFlags.NonPublic, null,
 				new object[] { Atlases, Enumerable.Range( 0, 5 ).Select( role => (role * 2, 2) ).ToArray() }, null )!;
 			Renderer = new StaffRenderer( () => Economy.Staff.Members, new ModelHeightfield( 10, 10, 10, 10, 0, 0, Array.Empty<uint>(), new float[121], new uint[100] ),
-				StaffSpriteSet.Empty, new StaffPlacement( () => null, () => null, (_, _) => false ) );
+				StaffSpriteSet.Empty, StaffPlacementRig.Create( () => null, () => null, (_, _) => false ) );
 			Set( Renderer, "sprites", Sprites ); Textures.AddRange( Atlases.Select( _ => TextureSentinel() ) );
 			Set( Level, "<StaffRenderer>k__BackingField", Renderer ); Hud.OpenStaffWindow();
 		}

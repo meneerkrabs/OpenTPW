@@ -195,7 +195,8 @@ public sealed class TrackEditor
 	/// Enters the line tool at the open end with the collected corner stack. Old and newly drawn segments use the same directional clear,
 	/// refund and add-on hooks. Re-entering recomputes the stack from the remaining track rather than retaining stale edit history.
 	/// </summary>
-	public void EnterLineTool( CellBuildTool tool, Action? changed = null )
+	/// <param name="wrap">Wraps the line writer the tool holds ([EXT:online-coop-commands]: the level's commands, <see cref="ParkCommandTrackWriter"/>); null hands the tool the writer itself.</param>
+	public void EnterLineTool( CellBuildTool tool, Action? changed = null, Func<ICellLineWriter, ICellLineWriter>? wrap = null )
 	{
 		ArgumentNullException.ThrowIfNull( tool );
 		var open = FindOpenEnd();
@@ -208,7 +209,8 @@ public sealed class TrackEditor
 			corners = corners.Skip( corners.Count - CellBuildTool.VertexCapacity ).ToArray();
 		var segments = corners.Skip( 1 ).Select( (end, index) =>
 			new SegmentResult( end, Array.Empty<(int X, int Y)>(), 0, CellBuildResult.Ok, false ) { Start = corners[index] } ).ToArray();
-		tool.Enter( new TrackLineWriter( builder, changed, Owner, this ), open.End, corners, segments );
+		ICellLineWriter writer = new TrackLineWriter( builder, changed, Owner, this );
+		tool.Enter( wrap?.Invoke( writer ) ?? writer, open.End, corners, segments );
 	}
 
 	/// <summary>

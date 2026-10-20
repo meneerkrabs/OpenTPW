@@ -70,7 +70,7 @@ public class UiRegisterReadTests
 		park.Litter.Cells = grid.Cells;
 		var world = new StaffWorldSimulation( grid, () => park.Staff.Members, _ => null, (0, 5) );
 		park.StaffWorld = world;
-		var placement = new StaffPlacement( () => park, () => grid.Cells, ( _, _ ) => false );
+		var placement = StaffPlacementRig.Create( () => park, () => grid.Cells, ( _, _ ) => false );
 		var level = (Level)RuntimeHelpers.GetUninitializedObject( typeof( Level ) );
 		Set( level, "<StaffPlacement>k__BackingField", placement );
 

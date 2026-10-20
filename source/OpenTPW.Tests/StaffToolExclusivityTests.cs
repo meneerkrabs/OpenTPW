@@ -29,7 +29,7 @@ public class StaffToolExclusivityTests
 			Park.StaffWorld = world;
 			Member = EconomyTestData.HireBest( Park, StaffType.Handyman );
 			world.Synchronize();
-			Placement = new StaffPlacement( () => Park, () => Grid.Cells, ( _, _ ) => false );
+			Placement = StaffPlacementRig.Create( () => Park, () => Grid.Cells, ( _, _ ) => false );
 			Set( Level, "<StaffPlacement>k__BackingField", Placement );
 			Set( Level, "<CellTool>k__BackingField", new CellBuildTool() );
 			Set( Level, "<LastActionMessage>k__BackingField", "" );

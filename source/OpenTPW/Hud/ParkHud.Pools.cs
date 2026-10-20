@@ -260,7 +260,7 @@ public sealed partial class ParkHud
 			// the machine may have gone while the window was open (a visit's owner cannot reach it; a demolition clears the selection)
 			// an unchanged choice writes nothing, so a machine still running the default keeps its cell as it was
 			if ( IsWaveMachine( item ) && level.PoolWavesOf( item ) != chosen )
-				level.SetPoolWaves( item, chosen );
+				level.Commands.Issue( new SetPoolWavesCommand( item.Runtime.AttractionId, chosen.On, chosen.Height, chosen.Interval ) );
 			Close();
 		}
 		screen.Add( new UiButton { Id = "apply", Model = "b_okay", Clicked = Apply,

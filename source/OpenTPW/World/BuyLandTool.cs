@@ -14,13 +14,16 @@ public sealed class BuyLandTool
 	private readonly Func<ParkCellMap?> cells;
 	private readonly Func<ParkEconomy?> economy;
 	private readonly Func<int, int, bool> barrier;
+	private readonly Func<ParkCommand, ParkCommandResult> issue;
 
 	/// <param name="barrier">Whether a cell is of the original types 7 or 0x1e (<see cref="ParkLand.CheckPurchase"/>).</param>
-	public BuyLandTool( Func<ParkCellMap?> cells, Func<ParkEconomy?> economy, Func<int, int, bool> barrier )
+	/// <param name="issue">[EXT:online-coop-commands] Hands the purchase to the park's command funnel (<see cref="BuyLandCommand"/>).</param>
+	public BuyLandTool( Func<ParkCellMap?> cells, Func<ParkEconomy?> economy, Func<int, int, bool> barrier, Func<ParkCommand, ParkCommandResult> issue )
 	{
 		this.cells = cells ?? throw new ArgumentNullException( nameof( cells ) );
 		this.economy = economy ?? throw new ArgumentNullException( nameof( economy ) );
 		this.barrier = barrier ?? throw new ArgumentNullException( nameof( barrier ) );
+		this.issue = issue ?? throw new ArgumentNullException( nameof( issue ) );
 	}
 
 	public bool IsActive { get; private set; }
@@ -115,24 +118,11 @@ public sealed class BuyLandTool
 			HoverCheck = null;
 			return BuyLandClick.CornerStored;
 		}
-		var check = Check( map, land, corner, post );
-		LastResult = check;
-		var result = BuyLandClick.Refused;
-		if ( check.Allowed && land.Merge( corner, post ) is { } merged )
-		{
-			map.SetLand( merged );
-			merged.ClaimEnclosedCells( map );
-			economy()?.ChargeLand( check.Cost, check.Cells );
-			result = BuyLandClick.Bought;
-		}
+		// [EXT:online-coop-commands] the validator, the purchase and its debit run in the command; its value is the validator's verdict
+		var bought = issue( new BuyLandCommand( corner.X, corner.Y, post.X, post.Y ) );
+		LastResult = bought.Value is LandPurchaseCheck check ? check : null;
 		Cancel();
-		return result;
-	}
-
-	private LandPurchaseCheck Check( ParkCellMap map, ParkLand land, (int X, int Y) corner, (int X, int Y) post )
-	{
-		var park = economy();
-		return land.CheckPurchase( map, corner, post, barrier, park?.CellCost( CellPurchase.Land ) ?? 0, park?.Balance );
+		return bought.Accepted ? BuyLandClick.Bought : BuyLandClick.Refused;
 	}
 
 	/// <summary>

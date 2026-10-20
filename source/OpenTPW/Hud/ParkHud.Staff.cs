@@ -155,8 +155,9 @@ public sealed partial class ParkHud
 			level.EndBuildTools();
 			CloseStaffWindow();
 		}
-		else
-			economy.Hire( candidate.Id );
+		// [EXT:online-coop-commands] the hire without a placement is a command too
+		else if ( !level.Commands.Issue( new HireStaffCommand( candidate.Id ) ).Accepted )
+			return false;
 		selectedStaffId = 0;
 		EnsureStaffSelection();
 		return true;

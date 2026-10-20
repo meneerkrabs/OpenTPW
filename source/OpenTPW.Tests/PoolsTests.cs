@@ -298,7 +298,7 @@ public class PoolsTests
 		Assert.AreEqual( PoolBuildResult.ExtensionOff, rig.Builder.Paint( 3, 3 ) );
 		Assert.AreEqual( PoolBuildResult.ExtensionOff, rig.Builder.CheckErase( 3, 3 ) );
 		Assert.AreEqual( 0, rig.Cells.CountOf( ParkCellType.PoolWater ) );
-		Assert.IsFalse( new PoolTool( rig.Builder ).Begin( erase: false ), "the tool will not start" );
+		Assert.IsFalse( PoolToolRig.Create( rig.Builder ).Begin( erase: false ), "the tool will not start" );
 	}
 
 	[TestMethod]
@@ -318,7 +318,7 @@ public class PoolsTests
 		using var scope = OpenTpwExtensions.Use( PoolsSet( true ) );
 		var rig = new Rig();
 		var start = rig.Economy!.Balance;
-		var tool = new PoolTool( rig.Builder );
+		var tool = PoolToolRig.Create( rig.Builder );
 		Assert.IsTrue( tool.Begin( erase: false ) );
 		Assert.AreEqual( CellToolMode.Pool, tool.Mode );
 		tool.Hover( 2, 2 );
@@ -356,7 +356,7 @@ public class PoolsTests
 		var rig = new Rig();
 		rig.Builder.PaintCells( PoolBuilder.Rectangle( (1, 1), (5, 3) ) );
 		var painted = rig.Economy!.Balance;
-		var tool = new PoolTool( rig.Builder );
+		var tool = PoolToolRig.Create( rig.Builder );
 		tool.Begin( erase: true );
 		Assert.IsTrue( tool.IsErasing );
 		tool.Press( 1, 1 );
@@ -621,7 +621,7 @@ public class PoolsTests
 	{
 		using var scope = OpenTpwExtensions.Use( PoolsSet( true ) );
 		var rig = new Rig();
-		var tool = new PoolTool( rig.Builder );
+		var tool = PoolToolRig.Create( rig.Builder );
 		tool.Begin( erase: false );
 		tool.Press( 2, 2 );
 		tool.Hover( 4, 2 );
@@ -639,7 +639,7 @@ public class PoolsTests
 	{
 		using var scope = OpenTpwExtensions.Use( PoolsSet( true ) );
 		var rig = new Rig();
-		var tool = new PoolTool( rig.Builder );
+		var tool = PoolToolRig.Create( rig.Builder );
 		tool.Begin( erase: false );
 		tool.Press( 1, 1 );
 		tool.Hover( 2, 1 );

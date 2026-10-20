@@ -240,7 +240,10 @@ since the last tick: one tick, no clamp, no substeps, every train hopping from t
 (`0x4092a0`: the pause menu, the map, the postcard, message boxes, the pause key) freezes the clock, so a paused stretch adds nothing.
 OpenTPW counts that clock in fixed steps: they stop while the park is paused and multiply with the game speed, as the substep
 scheduler's clock does (`CoasterRide.MotionClockLagSeconds`, the steps since the last motion tick). A reopened coaster therefore
-catches up exactly as the original does. What stays OpenTPW's own (`[EXT:coaster-fixed-step]`) is the frame: the original runs one
+catches up exactly as the original does. The catch-up stays cheap in practice: measured on the test circuit, a coaster cut open for six
+hours of simulation time catches up in one tick of about 145,000 hops (about 0.1 s). Like the original's float frame time, the
+catch-up only stops progressing once a hop is shorter than half the float step of the remaining time, which takes weeks of
+simulation time cut open. A restored lag that is not a finite time of 0 or more is refused. What stays OpenTPW's own (`[EXT:coaster-fixed-step]`) is the frame: the original runs one
 controller tick per rendered frame with that frame's milliseconds, OpenTPW one per 60 Hz simulation tick of 1/60 s. While the
 game clock stands still, the original still runs a zero-time motion tick and the station step on every frame (`0x435a30` is
 gated only by the application's activation test at `0x54F8E0`), which caps the speeds and decays the slow trains (×0.95 below 2.0); OpenTPW's paused

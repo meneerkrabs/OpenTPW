@@ -1429,6 +1429,8 @@ public sealed class CoasterRide
 			throw new InvalidDataException( $"Coaster '{Name}' was saved on knot pass {knotPass}; this version knows {KnotPassVersion}." );
 		if ( saved.State is { } checkedState && !Enum.IsDefined( (CoasterControllerState)checkedState ) )
 			throw new InvalidDataException( $"Coaster '{Name}' holds the controller state {checkedState}, which is not 1, 2, 4 or 8." );
+		if ( saved.MotionClockLagSeconds is { } lag && !(double.IsFinite( lag ) && lag >= 0) )
+			throw new InvalidDataException( $"Coaster '{Name}' holds the motion clock lag {lag}, which is not a finite time of 0 or more." );
 		var migrated = Track.RestoreSnapshot( saved.Track );
 		Initialised = saved.Initialised;
 		// A save from before the controller state held only the closed flag: a finished track is open or closed, an unfinished one has no state to be in but 1.

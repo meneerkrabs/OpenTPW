@@ -185,6 +185,13 @@ public class CoasterSaveTests
 		CoasterTests.PlaceStation( new CoasterBuilder( older, new CoasterSite( 64, 64 ) ), Depart );
 		older.RestoreSnapshot( captured with { MotionClockLagSeconds = null } );
 		Assert.AreEqual( 0d, older.MotionClockLagSeconds, "a save from before the lag holds none" );
+
+		foreach ( var bad in new[] { double.NaN, double.PositiveInfinity, -1d } )
+		{
+			var corrupt = new CoasterRide( ride.Definition, new CoasterWorld( 1 ), "Test Coaster" );
+			CoasterTests.PlaceStation( new CoasterBuilder( corrupt, new CoasterSite( 64, 64 ) ), Depart );
+			Assert.ThrowsException<InvalidDataException>( () => corrupt.RestoreSnapshot( captured with { MotionClockLagSeconds = bad } ), $"a lag of {bad} is refused" );
+		}
 	}
 
 	/// <summary>

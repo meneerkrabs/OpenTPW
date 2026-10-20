@@ -383,6 +383,11 @@ public sealed class ParkEconomy : IParkEconomy
 		// [BIN:STP-PPC:0x100E3F0C calendar update] day, month and year events fire when the extracted date fields change from those of the previous turn (ParkCalendar.Update)
 		var stored = ParkCalendar.FieldsAtTurn( previousTurn );
 		var changes = ParkCalendar.Update( ref stored, turn );
+		if ( PendingInitialDay )
+		{
+			changes |= CalendarChange.Day;
+			PendingInitialDay = false;
+		}
 		var hourBefore = previousTurn * ParkCalendar.SecondsPerTurn / ParkCalendar.SecondsPerHour;
 		for ( var hour = hourBefore + 1; hour <= turn * ParkCalendar.SecondsPerTurn / ParkCalendar.SecondsPerHour; hour++ )
 			UpdateHour();
@@ -2560,6 +2565,10 @@ public sealed class ParkEconomy : IParkEconomy
 	}
 
 	// ---------------------------------------------------------------- original save import
+
+	/// <summary>The supported TPW restart calendar still owes its first day message; consumed only by an actual park turn.</summary>
+	internal bool PendingInitialDay { get; set; }
+
 
 	/// <summary>
 	/// Moves a park that has not run yet to an original save's park turn (<c>mGameTick</c>, the turn the calendar

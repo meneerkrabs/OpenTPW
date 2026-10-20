@@ -1404,6 +1404,24 @@ public class QueueTests
 	}
 
 	[TestMethod]
+	public void TheBreakdownsStateChangeMakesTheModelCallsOfItsSet()
+	{
+		// tp.exe 0x004E14E0: "Setting state BROKEN" calls 0x00454550(2) and "Setting state CONDEMNED" 0x00454550(4), then SetState's close calls 0x00454550(1)
+		foreach ( var (gauge, set) in new[] { (100.0, ObjectHoardingState.BreakdownMode), (0.0, ObjectHoardingState.CondemnMode) } )
+		{
+			var (ride, script, host) = CreateAdmission();
+			var calls = new List<int>();
+			ride.ModelState = calls.Add;
+			ride.LifeGauge = gauge;
+			script[RideVariables.VAR_BROKEN] = 1;
+			NextTurn( ride, host );
+			CollectionAssert.AreEqual( new[] { set, ObjectHoardingState.CloseMode }, calls, $"gauge {gauge}" );
+			NextTurn( ride, host );
+			Assert.AreEqual( 2, calls.Count, "the broken state makes no further model call" );
+		}
+	}
+
+	[TestMethod]
 	public void BrokenRidesAreNotChosenJoinedOrAdmitted()
 	{
 		// Admission: the ride update runs the admission on the turn it notices the breakdown (0xe1864 calls 0xe1404 before it reads VAR_BROKEN),

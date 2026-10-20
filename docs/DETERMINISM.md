@@ -441,6 +441,7 @@ Other OpenTPW state that is **not in the hash**:
 | --- | --- |
 | Placed objects outside their scripts: placement list and positions, `OriginalObjectRuntime` run flags (`stopped`, `wasRunning`), animator poses (node matrices, vertex and UV arrays, node-state bits) | not yet part of the canonical state; the scripts and the attractions' guest-facing state (queues, riders, `IsOpen` through the guest digest) are hashed |
 | `GuestEconomyBridge` attraction → economy instance map | not yet part of the canonical state; the economy objects themselves are in the economy digest |
+| `OriginalObjectRuntimeSnapshot.Hoarding` (the boards of a closed ride, docs/OBJECTS.md "Hoarding") | presentation: its level moves by real frame time, as tp.exe's `0x4548F0` does; it is saved for the look of a loaded park, but no simulation step reads it, and the park-resume smoke compares the runtimes without it |
 | `FixedStepClock` pending time (`PendingSeconds`) | frame timing, below one tick; the substep scheduler is DET-I2 |
 | Sound chooser seed | presentation, see above |
 | `ParkSaveFile.Data.AnalyserCaches` (the analyser's cached readings) | saved for an exact continuation, but a reading aid that no simulation step reads; removed from the economy digest |

@@ -182,7 +182,8 @@ public static class LoanMath
 	{
 		ArgumentOutOfRangeException.ThrowIfNegativeOrZero( months );
 		ArgumentOutOfRangeException.ThrowIfNegative( amount );
-		var power = Math.Pow( 1.0 + aprPercent / 100.0, months / 12.0 * 0.5 );
+		// [EXT:deterministic-math] the C runtime's pow in IEEE double by DetMath, the same bits on every runtime, not in x87 extended precision (docs/DETERMINISM.md, "Browser and native")
+		var power = DetMath.Pow( 1.0 + aprPercent / 100.0, months / 12.0 * 0.5 );
 		return TruncateUnsigned( amount * power / months );
 	}
 

@@ -85,6 +85,26 @@ public class SavedRunStateTests
 		Assert.AreEqual( 0, unarmed.Variables[0] );
 	}
 
+	/// <summary>
+	/// A saved WAIT4ANIM deadline behind the saved clock (a finished animation wait, as in every original save) imports as no deadline: the
+	/// script's snapshot stays valid (a -1 stand-in failed "WAIT4ANIM deadline -1 is not finite and non-negative", so the restart snapshot
+	/// and the autosave of a park started from an original save were never written) and WAIT4ANIM continues either way.
+	/// </summary>
+	[TestMethod]
+	public void APastWait4AnimDeadlineImportsAsNoneAndTheScriptSnapshotStaysValid()
+	{
+		var world = new RideScriptWorld( 7 );
+		var vm = Waiter( world );
+		world.ImportClock( Clock );
+		Assert.IsNull( vm.ImportSavedRunState( Record( vm, 0, raw => BitConverter.GetBytes( Clock - 5000 ).CopyTo( raw, 0xA4 ) ), Clock ) );
+		Assert.AreEqual( 0d, vm.Wait4AnimDeadline );
+		var snapshot = vm.CaptureSnapshot();
+		snapshot.ValidateSnapshot();
+		Assert.AreEqual( 0d, snapshot.Wait4AnimDeadline );
+		Assert.IsNull( vm.ImportSavedRunState( Record( vm, 0, raw => BitConverter.GetBytes( Clock ).CopyTo( raw, 0xA4 ) ), Clock ), "a deadline equal to the saved clock is over too" );
+		Assert.AreEqual( 0d, vm.Wait4AnimDeadline );
+	}
+
 	[TestMethod]
 	public void StackHeapVariablesLimboFlagsAndTimersAreTheSavedWords()
 	{

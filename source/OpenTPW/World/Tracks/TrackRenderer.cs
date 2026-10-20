@@ -158,7 +158,7 @@ public sealed class TrackRenderer : IDisposable
 				for ( var index = 0; index < geometry.Parts.Count; index++ )
 				{
 					var model = group != null && group.Copies.TryGetValue( index, out var copy ) ? copy.Model : geometry.Parts[index].Model;
-					tiles.Add( new ModelEntity { Model = model, Name = $"track:{x},{y}", TransformOverride = transform, Position = new Vector3( transform.M41, transform.M42, transform.M43 ) } );
+					tiles.Add( new ModelEntity { Model = model, Name = $"track:{x},{y}", SnowSurface = SnowCover.PathSurface, TransformOverride = transform, Position = new Vector3( transform.M41, transform.M42, transform.M43 ) } );
 				}
 			}
 		}

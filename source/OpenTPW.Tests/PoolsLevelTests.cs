@@ -229,7 +229,8 @@ public class PoolsLevelTests
 			Assert.IsTrue( level.Objects.Remove( one ) );
 			Assert.AreEqual( swimmer, level.Guests.Guests.Count( other => other.InSwimSession ), "no swim started for the guest that was changing" );
 			Assert.IsFalse( guest.InSwimSession );
-			Assert.AreEqual( GuestState.ExitingRide, guest.State, "it stepped out like a rider of any attraction" );
+			// the removal (0x004FB360) sets a rider of any attraction down in state 6, without ExitRide or a use
+			Assert.AreEqual( GuestState.DoingNothing, guest.State, "it stepped out like a rider of any removed attraction" );
 			Assert.AreEqual( 0, guest.AttractionId );
 			Assert.AreEqual( random, level.Guests.CaptureSnapshot().RandomState, "and the world generator was not drawn for one" );
 			return 0;
@@ -371,7 +372,7 @@ public class PoolsLevelTests
 			one.Visitors.PoolAccessCandidates = new[] { (4, 2) };
 			level.RegisterPoolActivities();
 			Call( level, "PrepareThings" );
-			CollectionAssert.AreEquivalent( new[] { "ambient.water", "attraction.jets", "attraction.river", "attraction.ropeswing", "attraction.spa", "extra.board", "extra.ladder", "extra.lounger", "extra.shower", "slide.ride" }, level.Guests!.PoolActivities.Select( activity => activity.Id ).ToArray(), "registered when the level's guests are made" );
+			CollectionAssert.AreEquivalent( new[] { "ambient.water", "attraction.jets", "attraction.river", "attraction.ropeswing", "attraction.spa", "extra.board", "extra.ladder", "extra.lounger", "extra.shower", "slide.ride", "waves.ring" }, level.Guests!.PoolActivities.Select( activity => activity.Id ).ToArray(), "registered when the level's guests are made" );
 			var (ladderEntry, showerEntry, loungerEntry) = (ExtraEntry( 66001, PoolExtraKind.Ladder, "*" ), ExtraEntry( 66003, PoolExtraKind.Shower, "*" ), ExtraEntry( 66004, PoolExtraKind.Lounger, "**" ));
 			// placement through the level's own hooks
 			Assert.AreEqual( OriginalPlacementResult.NeedsPoolEdge, level.Objects.Check( ladderEntry, 3, 1, 90 ), "the water cell beyond is a corner of the pool" );

@@ -31,6 +31,63 @@ public class SettingsFileTests
 	}
 
 	[TestMethod]
+	public void ObjectReaderEndsUnquotedValuesAtHashAndKeepsQuotedValuesRaw()
+	{
+		var text = "Info.Int 4#positive\nInfo.Negative -7#negative\nInfo.Float 2.5#fraction\nInfo.NegativeFloat -1.25#fraction\n"
+			+ "Info.Name \"A # B\"#comment\nInfo.Url \"a // b\"#comment\nInfo.Empty \"\"#empty\n"
+			+ "Info.Comment # only a comment\nInfo.Bare\nInfo.Next 1\n";
+		var objects = new ObjectSettingsFile( text, "synthetic.sam" );
+		var settings = Read( text );
+
+		// The attached comment ends the unquoted value for both readers.
+		CollectionAssert.AreEqual( new[] { "Info.Int=4", "Info.Negative=-7", "Info.Float=2.5", "Info.NegativeFloat=-1.25",
+			"Info.Name=A # B", "Info.Url=a // b", "Info.Empty=", "Info.Next=1" }, Pairs( settings ) );
+
+		// Quoted hashes and slashes stay in the value; an empty quoted string is kept.
+		Assert.AreEqual( "4", objects.Values["Info.Int"] );
+		Assert.AreEqual( "-7", objects.Values["Info.Negative"] );
+		Assert.AreEqual( "2.5", objects.Values["Info.Float"] );
+		Assert.AreEqual( "-1.25", objects.Values["Info.NegativeFloat"] );
+		Assert.AreEqual( "A # B", objects.Values["Info.Name"] );
+		Assert.AreEqual( "a // b", objects.Values["Info.Url"] );
+		Assert.AreEqual( "", objects.Values["Info.Empty"] );
+
+		// A comment with no value and a bare key produce no pair and do not consume the next line.
+		Assert.IsFalse( objects.Values.ContainsKey( "Info.Comment" ) );
+		Assert.IsFalse( objects.Values.ContainsKey( "Info.Bare" ) );
+		Assert.AreEqual( "1", objects.Values["Info.Next"] );
+
+		// The conversions see the stripped numbers.
+		var layered = new ObjectSettings( new[] { objects } );
+		Assert.AreEqual( 4, layered.GetInt( "Info.Int" ) );
+		Assert.AreEqual( -7, layered.GetInt( "Info.Negative" ) );
+		Assert.AreEqual( 2.5f, layered.GetFloat( "Info.Float" ) );
+		Assert.AreEqual( -1.25f, layered.GetFloat( "Info.NegativeFloat" ) );
+	}
+
+	[TestMethod]
+	public void ObjectReaderKeepsHashesInKeyedBlockRowsAndLayerSemantics()
+	{
+		var first = "Info.Id 1#one\nInfo.Name \"First\"\nInfo.Shape\n---\n*S*\n*2* # row comment\n---\n";
+		var objects = new ObjectSettingsFile( first, "first.sam" );
+		CollectionAssert.AreEqual( new[] { "*S*", "*2* # row comment" }, objects.Blocks["Info.Shape"].ToArray() );
+		Assert.AreEqual( "1", objects.Values["Info.Id"], "the attached hash ends the value, the block rows keep theirs" );
+
+		// Later layers override earlier ones; blocks are carried with the layer that supplies them.
+		var layered = new ObjectSettings( new[] { objects, new ObjectSettingsFile( "Info.Id 2#two\nInfo.Name \"Second\"\n", "second.sam" ) } );
+		Assert.AreEqual( "2", layered["Info.Id"], "the later layer wins" );
+		Assert.AreEqual( 2, layered.GetInt( "Info.Id" ) );
+		Assert.AreEqual( "Second", layered["Info.Name"] );
+		CollectionAssert.AreEqual( new[] { "*S*", "*2* # row comment" }, layered.GetBlock( "Info.Shape" )!.ToArray() );
+
+		// Duplicates inside one reader: SettingsFile keeps both and indexes the first, ObjectSettingsFile keeps the last.
+		const string duplicates = "A.One 1#first\nA.Two 2\nA.One 3#last\n";
+		CollectionAssert.AreEqual( new[] { "A.One=1", "A.Two=2", "A.One=3" }, Pairs( Read( duplicates ) ) );
+		Assert.AreEqual( "1", Read( duplicates )["A.One"] );
+		Assert.AreEqual( "3", new ObjectSettingsFile( duplicates, "duplicates.sam" ).Values["A.One"] );
+	}
+
+	[TestMethod]
 	public void QuotedValuesKeepTheirSpacesAndMayBeEmpty()
 	{
 		var file = Read( "Info.Name\t\t\"Inca Totem\"\nSkyObjects[0].Filename\t\"\"\t\t# none\nInfo.PreviewAnimType\t\"m\"\t\tm = main loop\nInfo.Broken \"no closing quote\n" );

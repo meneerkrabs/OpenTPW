@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Text.Json.Nodes;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace OpenTPW.Tests;
@@ -12,6 +13,62 @@ namespace OpenTPW.Tests;
 [TestClass]
 public class SavedResearchGroupTests
 {
+	private static ParkEconomy HigherGroupPark()
+	{
+		EconomyObjectInfo Feature( int id, int group ) => new( id, $"Feature {id}", ParkObjectKind.Feature, ResearchCategory.Feature, group,
+			new[] { new UpgradeLevelInfo( 0, 100, 100, 0, 0, new[] { 50 } ) }, null, null, null, 0, 0, 0, 0, 0, 0, $"features/{id}.wad" );
+		return new ParkEconomy( EconomyTestData.Settings(), new EconomyObjectCatalog( new[] { Feature( 1400, 0 ), Feature( 1410, 3 ) } ), ParkGameMode.FullSimulation, 7 );
+	}
+
+	[TestMethod]
+	public void OwnSaveRestoresHigherGroupsBeforeValidatingTheSelectedProject()
+	{
+		var park = HigherGroupPark();
+		Assert.AreEqual( 1, park.Research.HighestOpenGroup( ResearchCategory.Feature ), "the synthetic group-1 threshold is zero; group 2 still requires 80 percent completion" );
+		Assert.IsFalse( park.Research.TrySelect( ResearchCategory.Feature, 1410, 0 ) );
+		var groups = Enum.GetValues<ResearchCategory>().Select( park.Research.HighestOpenGroup ).ToArray();
+		groups[(int)ResearchCategory.Feature] = 3;
+		park.Research.RestoreHighestGroups( groups );
+		Assert.IsTrue( park.Research.MoveCurrent( ResearchCategory.Feature, 1 ), "host selection can choose the newly opened group" );
+		Assert.AreEqual( 1410, park.Research.Current( ResearchCategory.Feature )!.InfoId );
+
+		var saved = ParkSaveFile.Deserialize( Encoding.UTF8.GetBytes( ParkSaveFile.Serialize( park ) ) );
+		CollectionAssert.AreEqual( groups, saved.Research.HighestGroups );
+		CollectionAssert.AreEqual( new[] { (int)ResearchCategory.Feature, 1410, 0 }, saved.Research.Current!.Single() );
+		var restored = ParkSaveFile.Restore( saved, park.Settings, park.Catalog );
+		CollectionAssert.AreEqual( groups, Enum.GetValues<ResearchCategory>().Select( restored.Research.HighestOpenGroup ).ToArray() );
+		Assert.AreEqual( 1410, restored.Research.Current( ResearchCategory.Feature )!.InfoId );
+		Assert.AreEqual( 0, restored.Research.Current( ResearchCategory.Feature )!.Level );
+	}
+
+	[DataTestMethod]
+	[DataRow( 9999, 0, (int)ResearchCategory.Ride )]
+	[DataRow( 1100, 0, (int)ResearchCategory.Ride )]
+	[DataRow( 1500, 0, (int)ResearchCategory.Upgrade )]
+	public void SavedGroupsDoNotPermitUnknownCompletedOrPrerequisiteBlockedCursors( int id, int level, int category )
+	{
+		var park = EconomyTestData.Park();
+		park.Research.RestoreHighestGroups( new[] { 7, 7, 7, 7, 7 } );
+		Assert.IsFalse( park.Research.TrySelect( (ResearchCategory)category, id, level ) );
+		var json = JsonNode.Parse( ParkSaveFile.Serialize( park ) )!;
+		json["Research"]!["Current"] = new JsonArray( new JsonArray( category, id, level ) );
+		var saved = ParkSaveFile.Deserialize( Encoding.UTF8.GetBytes( json.ToJsonString() ) );
+		var error = Assert.ThrowsException<InvalidDataException>( () => ParkSaveFile.Restore( saved, park.Settings, park.Catalog ) );
+		Assert.AreEqual( $"Saved research cursor refers to an invalid project {id} level {level}.", error.Message );
+	}
+
+	[TestMethod]
+	public void AbsentSavedGroupsDoNotOpenASelectedProjectsGroup()
+	{
+		var park = HigherGroupPark();
+		var json = JsonNode.Parse( ParkSaveFile.Serialize( park ) )!;
+		Assert.IsNull( json["Research"]!["HighestGroups"] );
+		json["Research"]!["Current"] = new JsonArray( new JsonArray( (int)ResearchCategory.Feature, 1410, 0 ) );
+		var saved = ParkSaveFile.Deserialize( Encoding.UTF8.GetBytes( json.ToJsonString() ) );
+		var error = Assert.ThrowsException<InvalidDataException>( () => ParkSaveFile.Restore( saved, park.Settings, park.Catalog ) );
+		Assert.AreEqual( "Saved research cursor refers to an invalid project 1410 level 0.", error.Message );
+	}
+
 	[TestMethod]
 	public void SavedHighestGroupsReplaceTheRecomputedOnesAndAreKeptByOwnSaves()
 	{
@@ -39,6 +96,17 @@ public class SavedResearchGroupTests
 		StringAssert.DoesNotMatch( json, new System.Text.RegularExpressions.Regex( "HighestGroups" ), "the field is written only where it differs" );
 		var restored = ParkSaveFile.Restore( ParkSaveFile.Deserialize( Encoding.UTF8.GetBytes( json ) ), park.Settings, park.Catalog );
 		Assert.IsNull( restored.Research.HighestGroupsToSave );
+	}
+
+	[DataTestMethod]
+	[DataRow( "[0,0,0,0,8]" )]
+	[DataRow( "[0,0,0,0,-1]" )]
+	[DataRow( "[0,0,0]" )]
+	public void OwnSaveRejectsMalformedHighestGroups( string groups )
+	{
+		var json = JsonNode.Parse( ParkSaveFile.Serialize( HigherGroupPark() ) )!;
+		json["Research"]!["HighestGroups"] = JsonNode.Parse( groups );
+		Assert.ThrowsException<InvalidDataException>( () => ParkSaveFile.Deserialize( Encoding.UTF8.GetBytes( json.ToJsonString() ) ) );
 	}
 
 	[TestMethod]

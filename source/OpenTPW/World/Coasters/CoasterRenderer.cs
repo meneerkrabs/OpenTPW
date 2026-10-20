@@ -75,6 +75,13 @@ public sealed class CoasterRenderer : Entity
 		return next - MathF.Floor( next );
 	}
 
+	/// <summary>The wheel clip's current frame, read from the live train slot rather than a renderer-owned start time.</summary>
+	internal float WheelTick( CoasterRide ride, int trainIndex, int duration )
+	{
+		var train = ride.Trains[trainIndex];
+		return CoasterCarRig.WheelTick( (ride.TimeSeconds - train.WheelAnimationStartSeconds) * 1000.0, train.Speed, duration );
+	}
+
 	private readonly Func<IReadOnlyList<CoasterRide>> coasters;
 	private readonly Func<SVector2> origin;
 	private readonly float scale;
@@ -219,8 +226,6 @@ public sealed class CoasterRenderer : Entity
 		public required int TypeIndex { get; init; }
 		/// <summary>The car-to-world matrix of the last update (original axes).</summary>
 		public Matrix4x4 World { get; set; } = Matrix4x4.Identity;
-		/// <summary>The controller time the car's wheel clip started at (set on the first update).</summary>
-		public double? StartSeconds { get; set; }
 		/// <summary>The models of the parts whose texture coordinates follow the car's own wheel clip (null for the shared ones), released with the car.</summary>
 		public Model?[]? OwnModels { get; set; }
 	}
@@ -431,7 +436,7 @@ public sealed class CoasterRenderer : Entity
 			material.Set( "Color", slots );
 			model = new Model( vertices, indices, material, dynamic );
 			models.Add( model );
-			entities.Add( new ModelEntity { Model = model, Name = "coaster", TransformOverride = matrix, Position = new SVector3( matrix.M41, matrix.M42, matrix.M43 ) } );
+			entities.Add( new ModelEntity { Model = model, Name = "coaster", SnowSurface = SnowCover.GroundSurface, TransformOverride = matrix, Position = new SVector3( matrix.M41, matrix.M42, matrix.M43 ) } );
 		}
 
 		private void ClearStatic()
@@ -540,8 +545,7 @@ public sealed class CoasterRenderer : Entity
 				Matrix4x4[]? wheels = null;
 				if ( car.Rig.WheelClip is { } clip )
 				{
-					car.StartSeconds ??= Ride.TimeSeconds;
-					var tick = CoasterCarRig.WheelTick( (Ride.TimeSeconds - car.StartSeconds.Value) * 1000.0, Ride.Trains[car.Train].Speed, clip.Duration );
+					var tick = owner.WheelTick( Ride, car.Train, clip.Duration );
 					wheels = car.Rig.WheelPartMatrices( tick );
 					for ( var partIndex = 0; partIndex < car.Parts.Length; partIndex++ )
 					{

@@ -6,15 +6,19 @@ import * as originals from './opentpw-originals.js';
 import { plan, importStartup, startSelected } from './opentpw-startup.js';
 import * as inputs from './opentpw-inputs.js';
 import * as text from './opentpw-text.js';
-import { parseManifest, planSprites, fetchSprites } from './opentpw-pool-sprites.js';
+import { parseManifest, planSprites, fetchSprites, serialRequests } from './opentpw-pool-sprites.js';
 
 // The game in the browser (docs/WEB.md): the player's own files go into the runtime's memory, then
 // the front end runs in the canvas, one Program.Frame per animation frame.
 const status = document.getElementById('status');
+// Harness experiment (loopback only, with ?perf=1): ?gc=<params> sets the runtime's garbage collector parameters (MONO_GC_PARAMS), to measure how they change the page's peak memory.
+const gcExperiment = ['127.0.0.1', 'localhost', '[::1]'].includes(location.hostname) && new URLSearchParams(location.search).get('perf') === '1' ? new URLSearchParams(location.search).get('gc') : null;
+if (gcExperiment)
+	dotnet.withEnvironmentVariable('MONO_GC_PARAMS', gcExperiment);
 const runtime = await dotnet.create();
 const { setModuleImports, getAssemblyExports, getConfig, runMain } = runtime;
 setModuleImports('opentpw-gl', webgl);
-setModuleImports('opentpw-page', { requestLevel, requestLanguage, chooseInput });
+setModuleImports('opentpw-page', { requestLevel, requestLanguage, chooseInput, requestPoolSprites });
 setModuleImports('opentpw-audio', audio);
 setModuleImports('opentpw-text', text);
 const program = (await getAssemblyExports(getConfig().mainAssemblyName)).OpenTPW.Program;
@@ -39,6 +43,8 @@ const perf = loopback && perfQuery.get('perf') === '1' ? {
 	counters: () => ({ ...JSON.parse(program.PerfCounters()), wasmBytes: runtime.localHeapViewU8().buffer.byteLength }),
 	take() { const frames = this.frames; this.frames = []; return frames; },
 	takeSkipped() { const skipped = this.skipped; this.skipped = 0; return skipped; },
+	// Copies a theme's files as a park start would (the determinism scenario's other themes); program.PerfLevelLoaded tells when they are in.
+	loadLevel: level => requestLevel(level),
 } : null;
 if (perf)
 	globalThis.opentpwPerf = perf;
@@ -605,14 +611,22 @@ async function fetchPoolSprites() {
 	try {
 		if (!program.PoolsEnabled()) return;
 		const manifest = program.PoolSpriteManifest();
-		const files = manifest ? planSprites(parseManifest(manifest), { pools: true, guestArt: program.PoolGuestArtEnabled() }) : [];
-		complete = files.length > 0 && await fetchSprites({ files, active: () => gameRunning, store: (path, bytes) => gameRunning && program.AddPoolSpriteFile(path, bytes) });
+		const planned = manifest ? planSprites(parseManifest(manifest), { pools: true, guestArt: program.PoolGuestArtEnabled() }) : [];
+		// A fetch started again after an extension switch skips the files it already stored.
+		const files = planned.filter(file => !program.PoolSpriteStored(file.path));
+		complete = planned.length > 0 && (files.length === 0 || await fetchSprites({ files, active: () => gameRunning, store: (path, bytes) => gameRunning && program.AddPoolSpriteFile(path, bytes) }));
 	} catch (error) {
 		console.warn('Pools sprites unavailable; swimmers and land guests keep their fallbacks:', error?.message ?? error);
 	}
 	if (!complete && gameRunning) {
 		try { program.PoolSpritesFailed(); } catch { /* the game is gone */ }
 	}
+}
+
+// One fetch at a time; a request while one runs (the game switched the pools extension or its guest art on after the start: Page.RequestPoolSprites) is followed by one more.
+const poolSpriteRequests = serialRequests(() => fetchPoolSprites(), () => gameRunning);
+function requestPoolSprites() {
+	poolSpriteRequests();
 }
 
 async function start(theme) {
@@ -641,7 +655,7 @@ async function start(theme) {
 		document.getElementById('setup').hidden = true;
 		gameRunning = true;
 		startSelected(program, location.origin, theme);
-		fetchPoolSprites();
+		requestPoolSprites();
 		openKeeping();
 		// Keep saves and settings: every few seconds, and when the page is hidden or closed.
 		const keep = () => storage.sync(program).catch(error => console.warn('Saving to this browser failed', error));

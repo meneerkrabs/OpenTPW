@@ -94,7 +94,7 @@ public partial class Level
 				}
 				return slideWaterLevels.TryGetValue( (x, y), out var level ) ? level : null;
 			},
-			IsReserved = ( x, y ) => IsReservedByPrototype( x, y )
+			IsReserved = ( x, y ) => PoolBridges?.Reserves( x, y ) == true || IsReservedByPrototype( x, y )
 		};
 	}
 

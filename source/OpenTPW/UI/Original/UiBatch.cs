@@ -6,11 +6,13 @@ namespace OpenTPW.UI.Original;
 /// <summary>
 /// Texture of a UI draw: a solid colour (all null), a BF4 font atlas drawn at integer
 /// <see cref="FontScale"/> (see <see cref="FontSmoothing"/>), an original image from the game file
-/// system (pink 255/0/255 is transparent, linear filtered), or a texture rendered this frame by its
-/// owner (the park advisor; linear filtered, not disposed by the UI).
+/// system (pink 255/0/255 is transparent, linear filtered), a texture rendered this frame by its
+/// owner (the park advisor; linear filtered, not disposed by the UI), or a <see cref="UiDepthImage"/> the
+/// renderer draws first (the model previews).
 /// </summary>
-public sealed record UiTexture( string? ImagePath, FontAtlas? Atlas, int FontScale = 1, Veldrid.Texture? Rendered = null )
+public sealed record UiTexture( string? ImagePath, FontAtlas? Atlas, int FontScale = 1, Veldrid.Texture? Rendered = null, UiDepthImage? DepthImage = null )
 {
+	public static UiTexture Of( UiDepthImage image ) => new( null, null, DepthImage: image );
 	public static UiTexture Of( Veldrid.Texture rendered ) => new( null, null, Rendered: rendered );
 	public static readonly UiTexture Solid = new( null, null );
 	public static UiTexture Image( string path ) => images.GetOrAdd( path, static path => new( path, null ) );
@@ -57,6 +59,7 @@ public sealed class UiBatch
 	private readonly List<UiGlyphQuad> glyphs = new();
 	private readonly List<(UiRect Rect, string Text)> texts = new();
 	private readonly List<UiTextDraw> textDraws = new();
+	private readonly List<UiDepthImage> depthImages = new();
 
 	public IReadOnlyList<UiDraw> Draws => draws;
 	public IReadOnlyList<UiGlyphQuad> Glyphs => glyphs;
@@ -70,6 +73,7 @@ public sealed class UiBatch
 		glyphs.Clear();
 		texts.Clear();
 		textDraws.Clear();
+		depthImages.Clear();
 	}
 
 	private UiDraw Current( UiTexture texture )
@@ -110,6 +114,16 @@ public sealed class UiBatch
 		AddTriangle( texture, topLeft, bottomLeft, topRight );
 		AddTriangle( texture, topRight, bottomLeft, bottomRight );
 	}
+
+	/// <summary>Adds a depth-tested image (see <see cref="UiDepthImage"/>) as a quad at its rectangle.</summary>
+	public void AddDepthImage( UiDepthImage image )
+	{
+		depthImages.Add( image );
+		AddQuad( UiTexture.Of( image ), image.Rect, NVector2.Zero, NVector2.One, RgbaByte.White );
+	}
+
+	/// <summary>The depth-tested images of this frame, in drawing order.</summary>
+	public IReadOnlyList<UiDepthImage> DepthImages => depthImages;
 
 	public void AddRectangle( UiRect rect, RgbaByte color ) => AddQuad( UiTexture.Solid, rect, NVector2.Zero, NVector2.One, color );
 

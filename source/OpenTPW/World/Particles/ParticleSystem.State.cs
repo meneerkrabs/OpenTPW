@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace OpenTPW;
 
 /// <summary>One live emitter slot's saved state (tp.exe's 320-byte slot, without the particles).</summary>
@@ -49,12 +51,26 @@ public sealed record ParticleEffectorState
 	public int Life { get; init; }
 }
 
+/// <summary>The saved pool settings, independent of the loading host's graphics preset.</summary>
+public sealed record ParticlePoolConfiguration
+{
+	/// <summary>The signed density word used by the native wrapped multiply; load does not normalize zero.</summary>
+	public required int Density { get; init; }
+	/// <summary>The supported initialized-pool domain, 100..32767; invalid saved counts are refused, not clamped.</summary>
+	public required int PoolCapacity { get; init; }
+	/// <summary>The native low-detail word's zero/nonzero meaning.</summary>
+	public required bool LowDetail { get; init; }
+}
+
 /// <summary>
 /// The particle pool as the original saves it (tp.exe 0x51F680 'PTCL', 0x9E68 bytes of pool state): the private generator, the
 /// generation counters, the live emitters (active list, newest first) and effectors with the free lists' order, and no particles.
 /// </summary>
 public sealed record ParticleSystemState
 {
+	/// <summary>Absent in older own-format saves: keep the loading pool's current settings.</summary>
+	[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+	public ParticlePoolConfiguration? Configuration { get; init; }
 	public uint Random { get; init; }
 	public int TickCounter { get; init; }
 	public int GenerationCounter { get; init; }
@@ -68,14 +84,12 @@ public sealed record ParticleSystemState
 public sealed partial class ParticleSystem
 {
 	/// <summary>
-	/// The save: null when no emitter and no effector is live (nothing to resume). The original saves the whole block with a particle
+	/// The initialized pool, including its settings and generator even when no emitter or effector is live. The original saves the whole block with a particle
 	/// array of length 0 (the game save passes 0, tp.exe 0x41661E), so the particles themselves are never captured.
 	/// </summary>
 	// [BIN:TPW-EXE:0x51F680 save] 'PTCL', the init flag, 0x9E68 bytes from 0x80CED0 (pool globals, RNG, 120 emitters, 20 effectors, list heads), the templates (0x8B60 bytes, file data here), the particle array length and data
-	public ParticleSystemState? Capture()
+	public ParticleSystemState Capture()
 	{
-		if ( liveEmitters == 0 && LiveEffectors == 0 )
-			return null;
 		var savedEmitters = new List<ParticleEmitterState>( liveEmitters );
 		for ( var slot = activeEmitter; slot >= 0; slot = emitters[slot].Next )
 		{
@@ -112,16 +126,25 @@ public sealed partial class ParticleSystem
 			freeEffectors.Add( slot );
 		return new ParticleSystemState
 		{
+			Configuration = new ParticlePoolConfiguration { Density = Density, PoolCapacity = Capacity, LowDetail = LowDetail },
 			Random = random, TickCounter = tickCounter, GenerationCounter = generationCounter, EffectorGenerationCounter = effectorGenerationCounter,
 			Emitters = savedEmitters, FreeEmitters = freeEmitters, Effectors = savedEffectors, FreeEffectors = freeEffectors
 		};
 	}
+
+	// The native loader trusts the saved count. Bound allocation to the initialized-pool domain instead of reproducing unsafe heap/index accesses.
+	internal static string? ValidateConfiguration( ParticlePoolConfiguration? configuration ) =>
+		configuration is { PoolCapacity: < MinimumParticleCount or > MaximumParticleCount }
+			? $"the particle state's pool capacity {configuration.PoolCapacity} is outside the supported {MinimumParticleCount}..{MaximumParticleCount} range"
+			: null;
 
 	/// <summary>Whether a saved state is well formed for the fixed slot counts (the envelope's shape check; templates are not consulted).</summary>
 	public static string? ValidateState( ParticleSystemState? state )
 	{
 		if ( state == null )
 			return "the particle state is null";
+		if ( ValidateConfiguration( state.Configuration ) is { } configurationReason )
+			return configurationReason;
 		if ( state.Emitters == null || state.FreeEmitters == null || state.Effectors == null || state.FreeEffectors == null )
 			return "the particle state has a missing list";
 		if ( state.Emitters.Count + state.FreeEmitters.Count != EmitterSlots )
@@ -191,6 +214,15 @@ public sealed partial class ParticleSystem
 			if ( saved.EffectorId >= effectorTemplates.Count )
 				throw new InvalidDataException( $"The saved particle effector {saved.Slot} is template {saved.EffectorId}, which the template file lacks." );
 
+		// [BIN:TPW-EXE:0x51F851 pool load] the saved globals replace the host's; only the sine/ground pointers are retained at 0x51F9FC.
+		// All validation and any allocation happen before mutation, so a rejected state leaves the old pool and settings intact.
+		if ( state.Configuration is { } configuration )
+		{
+			var restoredParticles = configuration.PoolCapacity == Capacity ? particles : new Particle[configuration.PoolCapacity];
+			particles = restoredParticles;
+			Density = configuration.Density;
+			LowDetail = configuration.LowDetail;
+		}
 		Clear();
 		random = state.Random;
 		tickCounter = state.TickCounter;

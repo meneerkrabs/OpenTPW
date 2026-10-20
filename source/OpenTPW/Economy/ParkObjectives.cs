@@ -11,7 +11,14 @@ public sealed class ParkCounters
 	public long this[string key] => values.GetValueOrDefault( key );
 	public IReadOnlyDictionary<string, long> Values => values;
 
-	public void Add( string key, long amount ) => values[key] = checked(values.GetValueOrDefault( key ) + amount);
+	public void Add( string key, long amount )
+	{
+		values[key] = checked(values.GetValueOrDefault( key ) + amount);
+		Added?.Invoke( key, amount );
+	}
+
+	internal event Action<string, long>? Added;
+	internal event Action? Restored;
 
 	public void Max( string key, long value ) => values[key] = Math.Max( values.GetValueOrDefault( key ), value );
 
@@ -20,6 +27,7 @@ public sealed class ParkCounters
 		values.Clear();
 		foreach ( var (key, value) in restored )
 			values[key] = value;
+		Restored?.Invoke();
 	}
 
 	public static string Sold( int shopType, int ingredient ) => $"sold:{shopType}:{ingredient}";
@@ -36,8 +44,12 @@ public sealed class ParkCounters
 	public const string SideshowProfit = "profit:sideshow";
 }
 
-/// <summary>State of an offered or accepted challenge; <c>Baseline</c> is the measure at acceptance of a count type, the running sum of the daily values of types 24, 25 and 27.</summary>
-public sealed record ActiveChallenge( int DefinitionIndex, long OfferedDay, bool Accepted, long StartDay, long DeadlineDay, long Baseline, [property: System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault )] long DeadlineSeconds = 0 )
+/// <summary>
+/// State of an offered or accepted challenge. Baseline remains the scoring count offset or daily sum; RawValue is the separately saved 32-bit display accumulator.
+/// A missing RawValue identifies an older OpenTPW save and is hydrated from restored count/daily state, otherwise zero, without fresh absolute measurements.
+/// </summary>
+public sealed record ActiveChallenge( int DefinitionIndex, long OfferedDay, bool Accepted, long StartDay, long DeadlineDay, long Baseline, [property: System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault )] long DeadlineSeconds = 0,
+	[property: System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )] int? RawValue = null )
 {
 	/// <summary>The park second the running challenge ends at (the stamp of +0x3d0 at its accept): the exact deadline when it is known, else the start of <see cref="DeadlineDay"/>.</summary>
 	[System.Text.Json.Serialization.JsonIgnore]
@@ -92,6 +104,65 @@ public sealed class ParkObjectives
 	private readonly Dictionary<int, int> declines = new();
 	private readonly HashSet<int> finished = new();
 	private readonly HashSet<GoldenTicketKind> tickets = new();
+
+	/// <summary>Immutable presentation transitions, independent of the existing gameplay event sequence and ledger.</summary>
+	public event Action<ChallengePresentation>? PresentationPosted;
+
+	private void Present( ChallengePresentationKind kind, ChallengeDefinition definition, ActiveChallenge state, long seconds ) =>
+		PresentationPosted?.Invoke( new ChallengePresentation( kind, definition.Type, definition.Prize, definition.TargetTime, definition.TargetValue,
+			state.RawValue ?? 0, unchecked( (int)((state.EndSeconds - seconds) / ParkCalendar.SecondsPerDay) ), definition.TargetObject,
+			definition.TargetObject2, definition.TargetStaffType, kind == ChallengePresentationKind.Offer ? Describe( definition ) : "" ) );
+
+	/// <summary>
+	/// The original raw accumulator is event-driven. Counter notifications never measure percentage/skill/absolute checks, including between checked turns.
+	/// A carried ride uses its instance counter only; the matching aggregate counter must not count the same event twice.
+	/// </summary>
+	internal void AccumulateCounter( string key, long amount, Func<int, int> objectInfo )
+	{
+		if ( Current is not { Accepted: true } running || CurrentDefinition is not { } definition || !IsCountSinceAcceptance( definition.Type ) )
+			return;
+		bool matches;
+		if ( definition.Type is 17 or 20 or 22 )
+			matches = ActualThing != 0
+				? key == ParkCounters.RideUsesOfThing( ActualThing ) && objectInfo( ActualThing ) == definition.TargetObject
+				: key == ParkCounters.RideUses( definition.TargetObject );
+		else
+		{
+			if ( ActualThing != 0 || definition.TargetObject != 0 )
+				return;
+			matches = definition.Type switch
+			{
+				1 => key == ParkCounters.Sold( 2, 2 ) || key == ParkCounters.Sold( 4, 2 ),
+				2 => key == ParkCounters.Sold( 2, 1 ) || key == ParkCounters.Sold( 4, 1 ),
+				3 => key == ParkCounters.Sold( 2, 3 ) || key == ParkCounters.Sold( 4, 3 ),
+				4 => key == ParkCounters.Sold( 2, 4 ) || key == ParkCounters.Sold( 4, 4 ),
+				5 or 6 or 7 or 8 => Enumerable.Range( 0, 5 ).Any( ingredient => key == ParkCounters.Sold( definition.Type switch { 5 => 1, 6 => 6, 7 => 5, _ => 3 }, ingredient ) ),
+				11 => key == ParkCounters.Admissions,
+				12 => key == ParkCounters.ShopProfit,
+				13 => key == ParkCounters.SideshowProfit,
+				16 => key == ParkCounters.Researched( ResearchCategory.Ride ),
+				_ => false
+			};
+		}
+		if ( matches )
+			Current = running with { RawValue = unchecked( (running.RawValue ?? 0) + (int)amount ) };
+	}
+
+	/// <summary>
+	/// Older OpenTPW saves have no raw field: infer counts from the restored counters/baseline and daily sums from Baseline, otherwise use zero.
+	/// Never take a fresh absolute, percentage or skill measurement to invent an unavailable historical snapshot.
+	/// </summary>
+	internal void RestoreLegacyRawValue( Func<ChallengeDefinition, long> measureCount, Func<int, int> objectInfo )
+	{
+		if ( Current is not { RawValue: null } saved || CurrentDefinition is not { } definition )
+			return;
+		var eligibleCount = IsCountSinceAcceptance( definition.Type )
+			&& !(TakesObjectlessEvents( definition.Type ) && (ActualThing != 0 || definition.TargetObject != 0))
+			&& !(definition.Type is 17 or 20 or 22 && ActualThing != 0 && objectInfo( ActualThing ) != definition.TargetObject);
+		var raw = !saved.Accepted ? 0 : IsDailyAverage( definition.Type ) ? saved.Baseline
+			: eligibleCount ? measureCount( definition ) - saved.Baseline : 0;
+		Current = saved with { RawValue = unchecked( (int)raw ) };
+	}
 
 	public ParkObjectives( BalanceSettings settings, IEconomyObjectCatalog catalog )
 	{
@@ -254,7 +325,11 @@ public sealed class ParkObjectives
 			return;
 		var definition = settings.Challenges[running.DefinitionIndex];
 		if ( IsDailyAverage( definition.Type ) )
-			Current = running with { Baseline = running.Baseline + measure( definition ) };
+		{
+			var amount = measure( definition );
+			Current = running with { Baseline = running.Baseline + amount,
+				RawValue = definition.TargetObject == 0 ? unchecked( (int)(running.RawValue ?? running.Baseline) + (int)amount ) : running.RawValue ?? 0 };
+		}
 	}
 
 	/// <summary>
@@ -275,32 +350,41 @@ public sealed class ParkObjectives
 	// [BIN:TPW-EXE:0x4d3140 challenge lost] a lost challenge only counts a loss (slot +0x24, 0x4d1ae0, for which no reader is found): its completed byte (+0x2c) stays clear, so the offer scan 0x4d2a70 can offer it again, without limit; the next offer waits DaysAfterCompletedChallenge as after a win
 	// [BIN:TPW-EXE:0x4d1e90 challenge update] nothing is offered, checked or timed out while an offer waits for its answer (+0x3da, set by 0x4d2a70 / 0x4d2b60), which only
 	// the accept 0x4d2df0 (accepted +0x3d9, the deadline from mTargetTime) or the decline 0x4d2ec0 clears
-	// [BIN:TPW-EXE:0x4d1f99 challenge update] a running challenge is checked on the park turns whose low two bits (+0x1da70c) are not 0, on the others the update only posts the progress message 0x4d3390 (tag 0x160) and returns; the check is made at once when the clock has not reached the deadline (0x4d1660 with the at-end flag clear, a pass wins) and, once it has, with the flag set (a pass wins, else the challenge is lost)
+	// [BIN:TPW-EXE:0x4d1f99 challenge update] a running challenge is checked on the park turns whose low two bits (+0x1da70c) are not 0, on the others the update only posts the progress message 0x4d3390 (type-dependent text tag, advice 0x160) and returns; the check is made at once when the clock has not reached the deadline (0x4d1660 with the at-end flag clear, a pass wins) and, once it has, with the flag set (a pass wins, else the challenge is lost)
 	// [BIN:TPW-EXE:0x4d1e90 challenge update] the idle system offers (0x4d2a70) on the first update at or after the next event time (+0x3d0), not at a day end
 	// [BIN:TPW-EXE:0x4d21fd challenge time warning] on a checked turn that neither passed nor ended the challenge, a slot with a TargetTime (+4) posts the message tag 0x17f with advice 0x10f when (days left × 100) / TargetTime (days left: the deadline +0x3d0 minus the park time, divided by 8.64e11; signed 32-bit division) is below the word 0x7857d0, the settings key Challenges.ShortTimeLeftWarningAt (the 60-byte descriptor records at 0x743c70 list DaysAfterCompletedChallenge, DaysAfterDeclinedChallenge, DaysUntilFirstChallenge, DeclinesToForfeit, ShortTimeLeftWarningAt in the order of the words 0x7857c0..0x7857d0)
 	// [BIN:TPW-EXE:0x59b060 challenge message receivers] a challenge message (category 25, vtable 0x006FD830) carries a text tag in +8 and an advice id in +0xc: the advisor queues the advice (0x59B540, 0x59B590, 0x59A940) unless it is 0x160, and the tag system (0x509BF0) shows the tag's text; the warning's advice 0x10f is message 271 of the advisor table (Challenge.Score, getter 0x5A0A30 = +0x62C), whose tag 0x17f has no text
-	// [APPROX:ECON-058] the challenge system runs tp.exe's update on every park turn (an idle system offers on the first turn at or after its next event time, a running challenge is checked on the turns whose low two bits are not 0 and ends at its exact second, 0x4d1e90, 0x4d1f99), but the progress message that the other turns post (tag 0x4d3390 by type, advice 0x160, which the advisor skips) has no OpenTPW message: the tag system shows the tag's TAG_SYSTEM text with the slot's numbers in the message tube, replacing the offer's message in place, while OpenTPW's tube shows its own description of the offer (Describe) — evidence needed: the placeholder grammar of the TAG_SYSTEM entries (the substitution 0x509e10 from the message's fields) and the tube's in-place update (0x48eb20)
-	public IEnumerable<(ParkEventKind Kind, int Index, long Amount, string Detail)> Update( long seconds, long turn, Func<ChallengeDefinition, long> measure, bool parkOpen = true, Func<ChallengeDefinition, int>? bestThing = null )
+	// [APPROX:ECON-058] all 33 progress and terminal types use immutable localized payloads; terminal instances retain read rows and use unscaled expiry/delayed release with a named host suspension mapping; offers retain OpenTPW wording/buttons and repost, and original offer removal, focus/modal ownership, full native timer queue/wrap semantics and UI particles remain open — evidence needed: runtime visual validation and remaining lifecycle integration (docs/reverse/CHALLENGE-TERMINALS.md, PTCL-908)
+	public IEnumerable<(ParkEventKind Kind, int Index, long Amount, string Detail)> Update( long seconds, long turn, Func<ChallengeDefinition, long> measure, bool parkOpen = true, Func<ChallengeDefinition, int>? bestThing = null, Func<int>? guestCensus = null )
 	{
 		if ( Current == null )
 		{
 			// [BIN:TPW-EXE:0x4d1e90 challenge system start] while the switch (+0x3d8) is off, the system offers only with the park open (0x4c9050: the park-closed word 0x1da710 clear) and the park's age in days (0x4f8800 / 864e9) at DaysUntilFirstChallenge (0x7857c8), then sets the switch and offers at once; afterwards only the next event time (+0x3d0) counts
+			var switchedNow = false;
 			if ( !SwitchedOn )
 			{
 				if ( !parkOpen || seconds < NextOfferSeconds )
 					yield break;
 				SwitchedOn = true;
+				switchedNow = true;
 			}
 			if ( seconds >= NextOfferSeconds && settings.Challenges.Count > 0 && TryPickNext( out var index ) )
 			{
-				Current = new ActiveChallenge( index, seconds / ParkCalendar.SecondsPerDay, false, 0, 0, 0 );
+				LastOfferSwitchedOn = switchedNow;
+				Current = new ActiveChallenge( index, seconds / ParkCalendar.SecondsPerDay, false, 0, 0, 0, RawValue: 0 );
+				Present( ChallengePresentationKind.Offer, settings.Challenges[index], Current, seconds );
 				yield return (ParkEventKind.ChallengeOffered, index, settings.Challenges[index].Prize, Describe( settings.Challenges[index] ));
 			}
 			yield break;
 		}
-		if ( !Current.Accepted || (turn & 3) == 0 )
+		if ( !Current.Accepted )
 			yield break;
 		var definition = settings.Challenges[Current.DefinitionIndex];
+		if ( (turn & 3) == 0 )
+		{
+			Present( ChallengePresentationKind.Progress, definition, Current, seconds );
+			yield break;
+		}
 		long value;
 		if ( IsDailyAverage( definition.Type ) )
 			value = definition.TargetTime > 0 ? Current.Baseline / definition.TargetTime : 0;
@@ -313,6 +397,8 @@ public sealed class ParkObjectives
 		if ( reached && definition.Type is 14 or 15 or 18 )
 			SetCarried( definition.Index, bestThing?.Invoke( definition ) ?? 0 );
 		var ended = seconds >= Current.EndSeconds;
+		if ( (!definition.CheckAtEndOnly || ended) && (definition.Type == 29 || definition.Type is 9 or 10 && guestCensus?.Invoke() > 0) )
+			Current = Current with { RawValue = unchecked( (int)value ) };
 		// a challenge that is checked at its end only (+0x1c) passes only then (0x4d1660: the flag clear or the at-end parameter set)
 		if ( reached && (!definition.CheckAtEndOnly || ended) )
 		{
@@ -322,6 +408,7 @@ public sealed class ParkObjectives
 		}
 		if ( ended )
 		{
+			Present( ChallengePresentationKind.Failure, definition, Current, seconds );
 			Current = null;
 			NextOfferSeconds = seconds + settings.ChallengeTiming.DaysAfterCompletedChallenge * ParkCalendar.SecondsPerDay;
 			yield return (ParkEventKind.ChallengeFailed, definition.Index, value, Describe( definition ));
@@ -331,6 +418,13 @@ public sealed class ParkObjectives
 		if ( IsTimeShort( definition, seconds ) )
 			TimeShort?.Invoke( definition.Index );
 	}
+
+	/// <summary>
+	/// Whether the offer made last was the one that switched the challenge system on (the park's first offer): the original asks for it with the first-offer argument of 0x4D2A70, and the advisor then says its
+	/// first-challenge line (344) in place of the offer line (270). A follow-up offer is never the first.
+	/// </summary>
+	// [BIN:TPW-EXE:0x004D1E90 challenge system start] the update that sets the switch (+0x3D8) calls the offer scan 0x4D2A70 with 1 (0x4D1F4B); every later offer, 0x4D2A70 with 0 (0x4D22F5-0x4D2302) or the follow-up offer 0x4D2B60, passes 0 to the message builder 0x4D2C50, which posts advice 0x158 (344) for a nonzero argument and 0x10E (270) for 0
+	internal bool LastOfferSwitchedOn { get; private set; }
 
 	/// <summary>The challenge system posted its short-time-left warning for the challenge with this definition index (the advisor's advice 271).</summary>
 	public event Action<int>? TimeShort;
@@ -356,6 +450,7 @@ public sealed class ParkObjectives
 	// [BIN:TPW-EXE:0x4d310d challenge won] the won mark 0x4d1a00 (mHaveWon +0x2c) goes to the slot at the current index (+0x3cc), read after 0x4d2b60 has moved it to the offered follow-up (0x4d2be6)
 	private IEnumerable<(ParkEventKind, int, long, string)> Complete( long seconds, ChallengeDefinition definition )
 	{
+		var completedState = Current!;
 		ChallengeDefinition? followup = null;
 		if ( definition.FollowupType != 0 )
 		{
@@ -376,9 +471,15 @@ public sealed class ParkObjectives
 		yield return (ParkEventKind.ChallengeCompleted, definition.Index, definition.FollowupType == 0 ? definition.Prize : 0, Describe( definition ));
 		if ( followup != null )
 		{
-			Current = new ActiveChallenge( followup.Index, seconds / ParkCalendar.SecondsPerDay, false, 0, 0, 0 );
+			LastOfferSwitchedOn = false;
+			Current = new ActiveChallenge( followup.Index, seconds / ParkCalendar.SecondsPerDay, false, 0, 0, 0, RawValue: 0 );
+			Present( ChallengePresentationKind.Offer, followup, Current, seconds );
 			yield return (ParkEventKind.ChallengeOffered, followup.Index, followup.Prize, Describe( followup ));
 		}
+		// The success helper reads the post-follow-up current slot, not necessarily the challenge that just won.
+		var resultDefinition = followup ?? definition;
+		if ( resultDefinition.FollowupType == 0 )
+			Present( ChallengePresentationKind.Success, resultDefinition, Current ?? completedState, seconds );
 	}
 
 	/// <summary>The slot's saved declined count has reached DeclinesToForfeit: only a loaded save can hold one (0x4d2a70, 0x4d2b60).</summary>
@@ -411,7 +512,7 @@ public sealed class ParkObjectives
 		var definition = settings.Challenges[Current.DefinitionIndex];
 		var deadline = seconds + definition.TargetTime * ParkCalendar.SecondsPerDay;
 		Current = Current with { Accepted = true, StartDay = seconds / ParkCalendar.SecondsPerDay, DeadlineDay = deadline / ParkCalendar.SecondsPerDay, DeadlineSeconds = deadline,
-			Baseline = IsDailyAverage( definition.Type ) ? 0 : baseline };
+			Baseline = IsDailyAverage( definition.Type ) ? 0 : baseline, RawValue = Current.RawValue ?? 0 };
 	}
 
 	// [BIN:TPW-EXE:0x4d2ec0 challenge declined] the decline answers a waiting offer only: it clears the waiting and running flags, pays half the prize of a follow-up (ParkEconomy.DeclineChallenge) and sets the next event time from DaysAfterDeclinedChallenge; it never raises the slot's mChallengeDeclined (+0x28)
@@ -442,9 +543,41 @@ public sealed class ParkObjectives
 	internal Func<GoldenTicketKind, long, GlobalTicketOutcome>? GlobalTicketAuthority { get; set; }
 
 	private IReadOnlyList<GoldenTicketKind> lastMovedTickets = Array.Empty<GoldenTicketKind>();
+	private IReadOnlyList<GoldenTicketKind> lastWonTickets = Array.Empty<GoldenTicketKind>();
+
+	/// <summary>The tickets the last <see cref="CheckGoldenTickets"/> won, in the order the original announces them (the advisor counts each win over the ones before it).</summary>
+	public IReadOnlyList<GoldenTicketKind> LastWonTickets => lastWonTickets;
 
 	/// <summary>The global tickets the last <see cref="CheckGoldenTickets"/> took over from another park.</summary>
 	public IReadOnlyList<GoldenTicketKind> LastMovedTickets => lastMovedTickets;
+
+	/// <summary>
+	/// A ticket cheat (Alt+G, Alt+Num1..9): a local ticket joins the park's set; a global one goes through the player-wide authority with record <see cref="ParkCheats.TicketRecord"/> (awarded when nobody
+	/// holds it, taken from a park that holds it with a lower record, nothing when this park holds it or the holder's record is as good). Returns <see cref="GlobalTicketOutcome.Awarded"/>,
+	/// <see cref="GlobalTicketOutcome.Moved"/> or <see cref="GlobalTicketOutcome.None"/>. Neither the game mode nor <c>CanEarnTickets</c> is checked, and <see cref="LastWonTickets"/> is not touched: the
+	/// award is silent.
+	/// </summary>
+	// [BIN:TPW-EXE:0x5AF810 local ticket award] 0 when the park's byte (+0x48 + type) is set, else it sets it and returns 1 (2 or 3 with a key); [BIN:TPW-EXE:0x5AF940 global ticket award] with the player-wide flag clear it sets the flag, the park's held byte and record (1, 2 or 3), with it set and this park holding it 0, else the first park holding it with a record below the new one loses it (4); no handler checks the game type or CanEarnTicketsInTheme
+	internal GlobalTicketOutcome AwardCheatTicket( GoldenTicketKind kind )
+	{
+		if ( kind is < GoldenTicketKind.Visitors or > GoldenTicketKind.BigPark )
+			throw new ArgumentOutOfRangeException( nameof( kind ), kind, "Only the ten non-secret tickets have a cheat." );
+		if ( kind < GoldenTicketKind.CoasterHeight )
+			return tickets.Add( kind ) ? GlobalTicketOutcome.Awarded : GlobalTicketOutcome.None;
+		switch ( GlobalTicketAuthority?.Invoke( kind, ParkCheats.TicketRecord ) ?? GlobalTicketOutcome.Unmanaged )
+		{
+			case GlobalTicketOutcome.Unmanaged:
+				return tickets.Add( kind ) ? GlobalTicketOutcome.Awarded : GlobalTicketOutcome.None;
+			case GlobalTicketOutcome.Awarded:
+				tickets.Add( kind );
+				return GlobalTicketOutcome.Awarded;
+			case GlobalTicketOutcome.Moved:
+				tickets.Add( kind );
+				return GlobalTicketOutcome.Moved;
+			default:
+				return GlobalTicketOutcome.None;
+		}
+	}
 
 	/// <summary>Golden ticket check (every 100 park turns in Full Simulation, <see cref="ParkEconomy.RunsGoldenTicketCheck"/>); returns newly won tickets. <paramref name="coveredCells"/> is the big park's cell count (<see cref="ParkEconomy.CoveredCells"/>); null without a cell map.</summary>
 	public IReadOnlyList<GoldenTicketKind> CheckGoldenTickets( ParkCounters counters, IParkGuestStatistics guests, ParkResearch research, long profitThisYear, IReadOnlyList<long> monthlyAdmissions, long droppedAdmissions = 0, long parkSeconds = long.MaxValue, long? coveredCells = null, int? securityCoveragePercent = null )
@@ -452,6 +585,7 @@ public sealed class ParkObjectives
 		var won = new List<GoldenTicketKind>();
 		var moved = new List<GoldenTicketKind>();
 		lastMovedTickets = moved;
+		lastWonTickets = won;
 		if ( !settings.CanEarnTickets )
 			return won;
 		var rules = settings.GoldenTickets;

@@ -1,0 +1,20 @@
+; Torch script (OpenTPW evening extension, docs/EVENING.md "Torches"): a feature nobody walks into, so it only waits. Its light (the evening lamp table) and its flame's
+; flicker are drawn by the evening extension and never touch the script, the simulation or a save beyond this idle loop.
+.stack 4
+.timeslice 50
+.limbo 0
+.bounce 0
+.walk 0
+
+.var VAR_LETMEON
+.var VAR_LETMEOFF
+.var VAR_CAPACITY
+.var VAR_DURATION
+.var VAR_BREAKSTAT
+.var VAR_ONRIDE
+.var VAR_RIDECLOSED
+
+	NAME "Torch"
+idle:
+	WAIT 10000
+	BRANCH @idle

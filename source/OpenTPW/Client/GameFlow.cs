@@ -168,6 +168,8 @@ internal sealed partial class GameFlow : IDisposable
 	public void ShowFrontEnd( string? selectLevel = null )
 	{
 		TearDown();
+		// [EXT:extensions-apply-at-load] extension choices made in the park just left are active in the lobby and for the next park
+		ApplyPendingExtensions();
 		enterHold = false;
 		lobbyDefinition ??= LobbyDefinition.Load();
 		Lobby = new LobbyScene( lobbyDefinition, generator: lobbyEffects.Draw, flyerPercent: LobbyObjectsPercent );
@@ -178,8 +180,9 @@ internal sealed partial class GameFlow : IDisposable
 		FrontEndMenu? createdMenu = null;
 		createdMenu = new FrontEndMenu( Strings, lobbyDefinition.Islands, new FrontEndActions
 		{
+			PlayerKeySnapshot = GameEditions.Capabilities.Economy && !GameEditions.IsThemeParkInc ? ReadLobbyPlayerKeys( ProgressPath ) : null,
 			StartPark = ( island, mode ) => RequestParkStart( island.Level, mode, createdMenu ),
-			Load = entry => QueueProgressLevel( entry.Level, () => LoadPark( entry, overFrames: true ) ),
+			Load = entry => ConfirmExtensions( entry.OwnSavePath, change => QueueProgressLevel( entry.Level, () => LoadPark( entry with { Switch = change }, overFrames: true ) ) ),
 			ContinueEntry = FindContinueEntry,
 			AutomaticEntry = FindAutomaticContinueEntry,
 			ContinueAutomatic = entry => RequestAutomaticContinue( createdMenu!, entry ),
@@ -196,6 +199,8 @@ internal sealed partial class GameFlow : IDisposable
 			},
 			LoadEntries = FindLoadEntries,
 			GoOnline = WhenOnline( ShowOnline ),
+			// [EXT:save-extension-switch] an own save whose extensions differ asks before it loads
+			ConfirmExtensions = ConfirmExtensions,
 		} );
 		Menu = createdMenu;
 		Menu.SelectIsland( 0 );
@@ -236,6 +241,8 @@ internal sealed partial class GameFlow : IDisposable
 		Languages = GameLanguage.Choosable(),
 		// A choice still waiting for the park to be left is what the row shows, so it can also be taken back.
 		CurrentLanguage = pendingLanguage ?? GameLanguage.Current.Name,
+		// [EXT:extensions-apply-at-load] extensions switched on the Extensions and mods screen apply at the next park start or load
+		ApplyExtensions = ApplyExtensionChoices,
 		ApplyLanguage = language =>
 		{
 			pendingLanguage = string.Equals( language, GameLanguage.Current.Name, StringComparison.OrdinalIgnoreCase ) ? null : language;
@@ -272,8 +279,9 @@ internal sealed partial class GameFlow : IDisposable
 			try
 			{
 				var saved = ParkResumeSaveFile.Load( path );
-				// [EXT:mods] a save made with mods that are not all active stays listed and says which it needs
-				entries.Add( new ParkLoadEntry( saved.Theme, -1, false, path, saved.DisplayName, SavedAt( path ), ParkResumeMods.MissingText( saved.Mods, Mods.OpenTpwExtensions.Active ) ) );
+				// [EXT:mods] a save made with mods that are not all active stays listed and says which it needs ([EXT:save-extension-switch] unless the load can switch them: it asks then)
+				// [EXT:cheats-publish] and says when the park is marked as cheated
+				entries.Add( new ParkLoadEntry( saved.Theme, -1, false, path, saved.DisplayName, SavedAt( path ), ParkExtensionSwitch.RequiresText( saved.Mods, NextExtensions ), saved.Economy.Cheats?.Mode == true ) );
 			}
 			catch ( Exception error ) when ( error is IOException or InvalidDataException or UnauthorizedAccessException or System.Text.Json.JsonException or ArgumentException )
 			{
@@ -312,7 +320,7 @@ internal sealed partial class GameFlow : IDisposable
 	{
 		if ( entry.OwnSavePath != null )
 		{
-			try { ResumePark( ParkResumeSaveFile.Load( entry.OwnSavePath ) ); }
+			try { ResumePark( ParkResumeSaveFile.Load( entry.OwnSavePath ), extensionSwitch: entry.Switch ); }
 			catch ( Exception error ) when ( error is IOException or InvalidDataException or UnauthorizedAccessException or System.Text.Json.JsonException
 				or ArgumentException or InvalidOperationException or NotSupportedException )
 			{
@@ -340,6 +348,8 @@ internal sealed partial class GameFlow : IDisposable
 		using var profile = LoadProfile.Measure( "start-level" );
 		using ( LoadProfile.Measure( "tear-down" ) )
 			TearDown();
+		// [EXT:extensions-apply-at-load] the new park is built with the extension choices made in the park just left
+		ApplyPendingExtensions();
 		Level level;
 		using ( LoadProfile.Measure( "level" ) )
 			level = new Level( levelName, loadOriginalLevel: original, visit: visit, onlineFolders: OnlineFolders, start: start, playerSave: playerSave ) { ShowDeveloperPanels = developerPanels };
@@ -370,6 +380,13 @@ internal sealed partial class GameFlow : IDisposable
 		if ( original )
 			using ( LoadProfile.Measure( "enter-park-audio" ) )
 				GameAudio.EnterPark( levelName, level.Seed.SoundStream );
+		// [BIN:TPW-EXE:0x51C400 sound loader] a park started from an original save (a player's own or the shipped Easymode seed, Level.OriginalSaveSound) plays at the save's volumes until the options take over (docs/AUDIO.md, "Volumes of a loaded original save"); the player's options are not changed
+		if ( original && visit == null && level.OriginalSaveSound is { } savedSound )
+		{
+			var line = GameAudio.ApplySavedSound( savedSound, GameOptions.Current );
+			level.Park?.Import?.Report( line );
+			Log.Trace( line );
+		}
 		StartKind = level.Park?.Start.Kind;
 		AttachGuestSounds( level );
 		// [EXT:tpi-viewer] the edition capability policy runs the experimental Theme Park Inc slice: the shared world,
@@ -394,7 +411,7 @@ internal sealed partial class GameFlow : IDisposable
 		IHudParkStatus status = level.Park != null ? EconomyParkStatus.ForLevel( level, PlayerKeys ) : new NoEconomyStatus();
 		using ( LoadProfile.Measure( "park-hud" ) )
 			Hud = CreateParkHud( level, status );
-		// [EXT:online-visit-presence] a visit of a downloaded park joins its chat room and draws its players while logged in
+		// [EXT:online-visit-presence] a visit with a chat room (a downloaded park's, a chat satellite's) joins it and draws its players while logged in
 		if ( visit != null && FeatureGates.Online )
 			presence = ParkPresence.TryCreate( onlineSession, level );
 		// [EXT:online-visit] read-only visits of shared parks get no advisor (the original has no visits)
@@ -408,7 +425,7 @@ internal sealed partial class GameFlow : IDisposable
 			if ( Advisor != null )
 			{
 				Advisor.CaptionSink = Hud.PostAdvisorCaption;
-				Advisor.PlayerKeys = PlayerKeys;
+				Advisor.PlayerTickets = PlayerTickets;
 			}
 		}
 		if ( Advisor?.IsAttached != true && level.Park?.Import is { } import && level.OriginalPark?.Save?.Advisor is { } saved )
@@ -440,8 +457,9 @@ internal sealed partial class GameFlow : IDisposable
 		SavePark = SaveCurrentPark,
 		OpenPostcard = WhenOnline( ShowPostcard ),
 		CreateOptions = CreateOptions,
-		CreateLoad = stack => FrontEndMenu.CreateLoadScreen( stack, Strings, FindLoadEntries(), entry => QueueProgressLevel( entry.Level, () => LoadPark( entry, overFrames: true ) ) ),
+		CreateLoad = stack => FrontEndMenu.CreateLoadScreen( stack, Strings, FindLoadEntries(), entry => ConfirmExtensions( entry.OwnSavePath, change => QueueProgressLevel( entry.Level, () => LoadPark( entry with { Switch = change }, overFrames: true ) ) ) ),
 		GoOnline = WhenOnline( ShowOnline ),
+		IsLoggedIn = () => FeatureGates.Online && onlineSession?.IsLoggedIn == true,
 		// Restart Park reloads the restart snapshot in every original park but the read-only visit (the original's pause menu 0x48C150 lists the entry for every game type except the online visit)
 		RestartPark = RestartEligible( level ) ? () => RestartCurrentPark( level ) : null,
 		PublishPark = WhenOnline( stack => CreateOnlineScreens( stack ).ShowPublish() ),
@@ -599,6 +617,7 @@ internal sealed partial class GameFlow : IDisposable
 
 		if ( Level != null && Hud != null )
 		{
+			Hud.ObserveApplicationFocus( Window.Current?.Focused == true, Window.Current?.IsOffscreen != false, onlineSession?.IsLoggedIn == true );
 			Level.UiCapturesMouse = Hud.Update( Context, input ) || parkBuild != null;
 			// The camera reads the keyboard itself: while the next park is built it stays where it is, as under a modal window.
 			if ( parkBuild != null && Camera.Mode is ParkCameraMode parkCamera )
@@ -611,7 +630,7 @@ internal sealed partial class GameFlow : IDisposable
 			Level.SimulationTimeScale = parkBuild != null ? 0 : Hud.SimulationTimeScale;
 			Level.Update();
 			presence?.Update( Time.Delta );
-			Advisor?.Update( Hud.Paused );
+			Advisor?.Update( Hud.Paused, parkPaused: Level.SimulationTimeScale <= 0 );
 			UpdateAutosave( Level, Hud );
 			var parkLost = Level.Park?.Economy.IsBankrupt == true;
 			GameAudio.Update( Level.Guests?.GetStatistics().InPark, parkLost );
@@ -871,6 +890,7 @@ internal sealed partial class GameFlow : IDisposable
 			for ( var frames = lobbyFrames.Advance( Time.Delta ); frames > 0; frames-- )
 				Lobby.StepFrame( ReferenceFrameClock.FrameSeconds );
 			Lobby.Animate( Time.Delta );
+			Lobby.StepSigns( Menu?.Selected, paused: false );
 			lobbyEffects.StepGlobe( Time.Delta );
 			return;
 		}
@@ -883,6 +903,7 @@ internal sealed partial class GameFlow : IDisposable
 				for ( var frames = lobbyFrames.Advance( Time.Delta ); frames > 0; frames-- )
 					city.StepFrame( ReferenceFrameClock.FrameSeconds );
 				city.Animate( Time.Delta );
+				city.StepSigns( null, paused: false );
 			}
 			return;
 		}
@@ -907,6 +928,8 @@ internal sealed partial class GameFlow : IDisposable
 				GameAudio.PlayLobbyOneShot( oneShot );
 		}
 		Lobby.Animate( Time.Delta );
+		// one lobby sign per frame from the second frame on, the selected island's first; none during the zoom into a park, whose island keeps its board then
+		Lobby.StepSigns( Menu?.Selected, paused: LobbyEntering );
 	}
 
 	/// <summary>The lobby's reference frames (60 Hz) for the frame-driven effects and flyers.</summary>
@@ -970,14 +993,15 @@ internal sealed partial class GameFlow : IDisposable
 		var framebuffer = global::Global.Render.MultisampledFramebuffer;
 		// The engine fog every fogged shader blends into: the level's fog colour in a park, the lobby's clear colour otherwise (RenderFog).
 		// [BIN:TPW-EXE:0x4080e0 fog colour] [0x8bd47c] is the one colour of the viewport clear, the sky's haze and the distant vertices
-		RenderFog.WorldColour = RenderFog.ColourOf( Level?.BackdropColour ?? RenderFog.LobbyColour );
+		// [EXT:evening] at dusk and night the evening extension darkens it (the level's WorldBackdropColour; the same colour at day)
+		RenderFog.WorldColour = RenderFog.ColourOf( Level?.WorldBackdropColour ?? RenderFog.LobbyColour );
 		if ( Level != null )
 		{
 			// The park's backdrop: the level's fog colour (what the original's viewport clear and the sky's haze blend with), then the sky over it.
 			// [BIN:TPW-EXE:0x4080e0 fog colour] the level load copies ThemeEngine.FogColour into the fog colour [0x8bd47c]; [BIN:TPW-EXE:0x5737aa clear] the viewport clear uses it when render flags & 0x4002000, else black
 			// [APPROX:UI-107] the clear is always the fog colour, since the park's render flags (0x4002000 bits of [0x8bcbc8]) are not traced; the sky is Level.DrawSky (World/Sky.cs)
 			backgroundBatch.Clear();
-			backgroundBatch.AddRectangle( new UiRect( 0, 0, framebuffer.Width, framebuffer.Height ), Level.BackdropColour );
+			backgroundBatch.AddRectangle( new UiRect( 0, 0, framebuffer.Width, framebuffer.Height ), Level.WorldBackdropColour );
 			backgroundRenderer.Draw( global::Global.Render.CommandList, backgroundBatch, framebuffer.Width, framebuffer.Height );
 			Level.DrawSky();
 			Level.Render();
@@ -1016,7 +1040,7 @@ internal sealed partial class GameFlow : IDisposable
 		Context.Canvas = CurrentCanvas();
 		Context.Batch.Clear();
 		// [BIN:STP-PPC:engine_shared 0x1D4B4 lightning flash] LightningFlash() sets a flag; the rain render then draws one full-screen white quad for exactly one frame and clears it (lobby only)
-		// [DATA:video 78:47-78:48] the capture shows the bolt with no full-screen flash: the top third's mean luminance stays at 143-149 over 4729.4-4730.8
+		// [DATA:video 78:47-78:48] the capture shows the bolt but no inverted frame (the top third's mean luminance stays at 143-149 over 4729.4-4730.8): a flash that lasts one frame at 60 Hz can fall between the capture's frames, so this does not contradict the inverted flash above
 		// [BIN:TPW-EXE:0x57ee30 flash flag] the flag is cleared once the quad is drawn: it lasts one frame
 		if ( Level == null && lobbyEffects.Flash )
 			lobbyEffects.Flash = false;
@@ -1040,6 +1064,8 @@ internal sealed partial class GameFlow : IDisposable
 		DrawParkBuildProgress();
 		// the game's own pointer goes on top of every UI layer
 		Hud?.DrawCursor( Context );
+		// the model previews are drawn with a depth buffer into their own images, which the overlay pass shows in the batch's order
+		overlayRenderer.PrepareDepthImages( global::Global.Render.CommandList, Context.Batch, framebuffer );
 	}
 
 	/// <summary>Overlay pass (output pixels, possibly twice per frame when the output is captured).</summary>
@@ -1071,12 +1097,19 @@ internal sealed partial class GameFlow : IDisposable
 			if ( onlineSession == null )
 			{
 				onlineSession = new OnlineSession( OnlineFolders ?? global::OpenTPW.OnlineFolders.FromEnvironment() );
-				chatOverlay = new UI.ChatOverlay( onlineSession ) { Hidden = () => presence != null };
+				// the chat park screen and a visit's chat mode show the room in the original chat overlay, also under a name popup or the postcard composer
+				// opened from it; elsewhere (a visit's HUD, F4) the corner box shows it
+				chatOverlay = new UI.ChatOverlay( onlineSession )
+				{
+					Hidden = () => (presence != null && Hud?.ChatMode == true) || ShowsChatScreen( Menu?.Stack ) || ShowsChatScreen( Hud?.Stack ),
+				};
 				global::Global.Render.OnOverlayRender += chatOverlay.Draw;
 			}
 			return onlineSession;
 		}
 	}
+
+	private static bool ShowsChatScreen( UiScreenStack? stack ) => stack?.Screens.Any( screen => screen.Name == UI.OnlineScreens.ChatScreenName ) == true;
 
 	/// <summary>The visit's online players (null: none).</summary>
 	internal ParkPresence? Presence => presence;
@@ -1110,9 +1143,30 @@ internal sealed partial class GameFlow : IDisposable
 		Session = Online,
 		Level = () => Level,
 		Visit = visit => QueueProgressLevel( visit.Level, () => StartLevel( visit.Level, original: !visit.IsSandbox, developerPanels: false, visit: visit, overFrames: true ) ),
+		VisitLevel = ( level, prepare ) => QueueProgressLevel( level, () =>
+		{
+			if ( PrepareLevelVisit( prepare ) is { } visit )
+				StartLevel( level, original: true, developerPanels: false, visit: visit, overFrames: true );
+		} ),
 		Globe = () => Globe,
 		Advise = message => Advisor?.OnOnlineScreenOpened( message ),
 	} );
+
+	/// <summary>A chat park's visit, built once its level's files are there; null after a failure, which is shown over the screen it came from.</summary>
+	private ParkVisitInfo? PrepareLevelVisit( Func<ParkVisitInfo> prepare )
+	{
+		try
+		{
+			return prepare();
+		}
+		catch ( Exception error ) when ( error is IOException or InvalidDataException or UnauthorizedAccessException or ArgumentException or InvalidOperationException )
+		{
+			Log.Warning( $"Chat park visit failed: {error.Message}" );
+			var stack = Hud?.Stack ?? Menu?.Stack;
+			stack?.Push( UiDialogs.Message( "visitFailed", () => error.Message, (() => Strings.Extra( OpenTpwText.Back ), () => stack.Pop()) ) );
+			return null;
+		}
+	}
 
 	public void Dispose()
 	{

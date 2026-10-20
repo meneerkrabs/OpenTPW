@@ -19,7 +19,8 @@ internal sealed record TourControllerSaveData(
 	int AttractionId, int StationX, int StationY, int StationZ, int RotationDegrees, bool Small,
 	int Wanted, int Requested, int CarCount, int Duration, int AvoidanceScale, int BankScale, bool LandingReserved, int Condition, bool IsOpen, bool Ready,
 	int ApproachMode, int Riders, long TickCount, double TickRemainder, int Boarded, int Released, int Departures,
-	List<int> Ejected, List<TourCarSaveData> Cars, List<TourFreeSlotSaveData>? FreeSlots = null );
+	List<int> Ejected, List<TourCarSaveData> Cars, List<TourFreeSlotSaveData>? FreeSlots = null,
+	[property: System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )] int? CarSlots = null );
 
 /// <summary>The park-resume tour part: every live tour ride's controller (<see cref="ParkResumeSnapshot.Tours"/>), joined by attraction id.</summary>
 internal sealed record TourWorldSaveData
@@ -56,7 +57,9 @@ internal static class TourSave
 		return new TourControllerSaveData( controller.AttractionId, controller.StationX, controller.StationY, controller.StationZ, controller.RotationDegrees, controller.Small,
 			controller.Wanted, controller.Requested, controller.CarCount, controller.Duration, controller.AvoidanceScale, controller.BankScale, controller.LandingReserved, controller.Condition,
 			controller.IsOpen, controller.Ready, controller.ApproachMode, controller.Riders, controller.TickCount, controller.TickRemainder, controller.Boarded, controller.Released, controller.Departures,
-			controller.Ejected.ToList(), cars, free.Count == 0 ? null : free );
+			controller.Ejected.ToList(), cars, free.Count == 0 ? null : free,
+			// [EXT:cheats-ride-vehicles] written only for a raised controller, so every other save keeps its bytes
+			controller.SlotCount != TourController.CarSlots ? controller.SlotCount : null );
 	}
 
 	/// <summary>Whether a saved controller is internally consistent: bounded words, distinct slots, riders matching the counts. Throws <see cref="InvalidDataException"/> otherwise.</summary>
@@ -69,8 +72,11 @@ internal static class TourSave
 		}
 		bool Small( int value ) => value >= -CoordinateLimit && value <= CoordinateLimit;
 		Require( saved.Cars != null && saved.Ejected != null, "it holds no car or ejected list" );
-		Require( saved.Cars!.Count <= TourController.CarSlots, $"it holds {saved.Cars.Count} cars" );
-		Require( saved.Wanted is >= 0 and <= TourController.CarSlots && saved.Requested is >= -1000 and <= 1000 && saved.CarCount == saved.Cars.Count, "a car count is out of range" );
+		// [EXT:cheats-ride-vehicles] a controller the cheat raised has 40 slots; every other one 20
+		Require( saved.CarSlots is null or TourController.RaisedCarSlots, $"it has {saved.CarSlots} car slots" );
+		var slotCount = saved.CarSlots ?? TourController.CarSlots;
+		Require( saved.Cars!.Count <= slotCount, $"it holds {saved.Cars.Count} cars" );
+		Require( saved.Wanted >= 0 && saved.Wanted <= slotCount && saved.Requested is >= -1000 and <= 1000 && saved.CarCount == saved.Cars.Count, "a car count is out of range" );
 		Require( saved.Condition is >= 0 and <= 4 && saved.ApproachMode is >= -1000 and <= 1000, "the condition or approach mode is out of range" );
 		Require( Small( saved.StationX ) && Small( saved.StationY ) && Small( saved.StationZ ) && saved.RotationDegrees is 0 or 90 or 180 or 270, "the station is out of range" );
 		Require( saved.Duration is >= -1_000_000 and <= 1_000_000 && saved.AvoidanceScale is >= 0 and <= 1_000_000 && saved.BankScale is >= -1_000_000 and <= 1_000_000, "a scale is out of range" );
@@ -80,7 +86,7 @@ internal static class TourSave
 		var riders = 0;
 		foreach ( var car in saved.Cars )
 		{
-			Require( car != null && car.Slot is >= 0 and < TourController.CarSlots && slots.Add( car.Slot ), "a car has a bad or repeated slot" );
+			Require( car != null && car.Slot >= 0 && car.Slot < slotCount && slots.Add( car.Slot ), "a car has a bad or repeated slot" );
 			Require( car.State is >= TourCar.StateDocked and <= TourCar.StateLeaving, $"car {car.Slot} has state {car.State}" );
 			Require( Small( car.X ) && Small( car.Y ) && Small( car.Z ) && Small( car.PreviousX ) && Small( car.PreviousY ) && Small( car.PreviousZ )
 				&& Small( car.TargetX ) && Small( car.TargetY ) && Small( car.TargetZ ) && Small( car.PreviousTargetX ) && Small( car.PreviousTargetY ) && Small( car.PreviousTargetZ ), $"car {car.Slot} lies outside the module's range" );
@@ -101,7 +107,7 @@ internal static class TourSave
 		}
 		foreach ( var slot in saved.FreeSlots ?? new List<TourFreeSlotSaveData>() )
 		{
-			Require( slot != null && slot.Slot is >= 0 and < TourController.CarSlots && slots.Add( slot.Slot ), "a free slot has a bad slot or one a car holds" );
+			Require( slot != null && slot.Slot >= 0 && slot.Slot < slotCount && slots.Add( slot.Slot ), "a free slot has a bad slot or one a car holds" );
 			Require( slot.Heading is >= 0 and < 4096 && slot.Corner is >= 0 and < 4 && Small( slot.ApproachHeading ), $"free slot {slot.Slot} has a stale heading, corner or approach out of range" );
 			Require( slot.Riders != null && slot.Riders.Count == TourCar.MaximumRiders && slot.Riders.All( Small ), $"free slot {slot.Slot} has a bad seat list" );
 		}

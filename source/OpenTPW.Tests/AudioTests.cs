@@ -52,17 +52,32 @@ public class AudioTests
 	}
 
 	[TestMethod]
+	public void CategoryGroupMasksFollowTheirEventsAcrossMultipleCategoryRecords()
+	{
+		var w = new Writer();
+		w.Zero( 16 ).U32( 0 ).U32( 0 ).U32( 3 );
+		foreach ( var mask in new uint[] { 9, 3, 5 } )
+			w.U32( 1 ).U32( 0 ).U32( mask ).Zero( 12 );
+		for ( uint id = 1; id <= 3; id++ )
+			w.U32( id ).U32( 0 ).U32( 0 ).U32( 0 ).U16( 0 ).U16( 0 );
+		var catalog = new SoundCatalog( w.Bytes.ToArray() );
+		CollectionAssert.AreEqual( new uint[] { 9, 3, 5 }, catalog.Events.Select( sound => sound.GroupMask ).ToArray() );
+	}
+
+	[TestMethod]
 	public void ReadsCatalogueEventsSoundsSamplesAndLinks()
 	{
 		var catalog = new SoundCatalog( CreateCatalog() );
 		Assert.AreEqual( 2, catalog.Events.Count );
 		var click = catalog.Find( 31 )!;
 		Assert.AreEqual( SoundEventPlayer.OneShot, click.Player );
+		Assert.AreEqual( 0x10003u, click.GroupMask, "The category +8 mask is retained without inferring it from event flags" );
 		Assert.AreEqual( (byte)50, click.Sounds[0].MinimumVolume );
 		Assert.AreEqual( 2, click.Sounds[0].Samples.Count );
 		Assert.AreEqual( (11u, 65535u, (ushort)1), (click.Sounds[0].Samples[1].SampleNumber, click.Sounds[0].Samples[1].CumulativeWeight, click.Sounds[0].Samples[1].BankNumber) );
 		var music = catalog.Find( 2 )!;
 		Assert.AreEqual( SoundEventPlayer.BranchingSentence, music.Player );
+		Assert.AreEqual( click.GroupMask, music.GroupMask );
 		Assert.AreEqual( (2u, (byte)15, (byte)29), (music.Sounds[0].Links[1].TargetSound, music.Sounds[0].Links[1].MinimumParameter, music.Sounds[0].Links[1].MaximumParameter) );
 		var data = CreateCatalog();
 		Assert.ThrowsException<InvalidDataException>( () => new SoundCatalog( data[..^1] ) );

@@ -32,39 +32,67 @@ public sealed class SshFile
 		if ( count < 0 || count > MaximumImages || 16 + 8L * count > data.Length )
 			throw new InvalidDataException( $"SSH image count {count} is out of range." );
 		Id = System.Text.Encoding.ASCII.GetString( data, 12, 4 );
+		var tags = new string[count];
+		var offsets = new int[count];
+		for ( var i = 0; i < count; i++ )
+		{
+			tags[i] = System.Text.Encoding.Latin1.GetString( data, 16 + 8 * i, 4 ).TrimEnd( '\0' );
+			var offset = BitConverter.ToInt32( data, 16 + 8 * i + 4 );
+			if ( offset < 0 || (long)offset + 16 > data.Length )
+				throw new InvalidDataException( $"SSH image {i} offset {offset} is outside the file." );
+			offsets[i] = offset;
+		}
+
+		var sorted = (int[])offsets.Clone();
+		Array.Sort( sorted );
+		var starts = new List<int>();
+		foreach ( var start in sorted )
+			if ( starts.Count == 0 || starts[starts.Count - 1] != start )
+				starts.Add( start );
+
 		var images = new List<SshImage>();
 		for ( var i = 0; i < count; i++ )
 		{
-			var tag = System.Text.Encoding.Latin1.GetString( data, 16 + 8 * i, 4 ).TrimEnd( '\0' );
-			var offset = BitConverter.ToInt32( data, 16 + 8 * i + 4 );
-			if ( offset < 0 || offset + 16 > data.Length )
-				throw new InvalidDataException( $"SSH image {i} offset {offset} is outside the file." );
+			var offset = offsets[i];
+			var limit = data.Length;
+			foreach ( var start in starts )
+			{
+				if ( start > offset )
+				{
+					limit = start;
+					break;
+				}
+			}
+
 			var type = data[offset];
 			var next = data[offset + 1] | data[offset + 2] << 8 | data[offset + 3] << 16;
 			var width = BitConverter.ToUInt16( data, offset + 4 );
-			var height = BitConverter.ToUInt16( data, offset + 8 - 2 );
-			var payloadEnd = next == 0 ? data.Length : offset + next;
-			if ( payloadEnd > data.Length || payloadEnd < offset + 16 )
-				throw new InvalidDataException( $"SSH image {i} block runs past the file." );
-			var payload = payloadEnd - offset - 16;
-			var gm = payload >= 8 && data[offset + 16] == (byte)'G' && data[offset + 17] == (byte)'M';
+			var height = BitConverter.ToUInt16( data, offset + 6 );
+			var payloadEnd = next == 0 ? limit : (long)offset + next;
+			if ( payloadEnd > limit || payloadEnd < (long)offset + 16 )
+				throw new InvalidDataException( $"SSH image {i} block runs past its image." );
+			var payloadStart = (int)((long)offset + 16);
+			var payload = (int)(payloadEnd - offset - 16);
+			var gm = payload >= 8 && data[payloadStart] == (byte)'G' && data[payloadStart + 1] == (byte)'M';
 			var name = "";
-			var block = offset;
+			long block = offset;
 			var guard = 0;
 			while ( next != 0 && guard++ < 16 )
 			{
 				block += next;
-				if ( block + 4 > data.Length )
-					break;
-				var blockType = data[block];
-				next = data[block + 1] | data[block + 2] << 8 | data[block + 3] << 16;
+				if ( block + 4 > limit )
+					throw new InvalidDataException( $"SSH image {i} attached block runs past its image." );
+				var blockIndex = (int)block;
+				var blockType = data[blockIndex];
+				next = data[blockIndex + 1] | data[blockIndex + 2] << 8 | data[blockIndex + 3] << 16;
 				if ( blockType == 0x70 )
 				{
-					var end = Array.IndexOf( data, (byte)0, block + 4 );
-					name = System.Text.Encoding.Latin1.GetString( data, block + 4, (end < 0 ? data.Length : end) - block - 4 );
+					var nameStart = blockIndex + 4;
+					var end = Array.IndexOf( data, (byte)0, nameStart, limit - nameStart );
+					name = System.Text.Encoding.Latin1.GetString( data, nameStart, (end < 0 ? limit : end) - nameStart );
 				}
 			}
-			images.Add( new SshImage( tag, type, width, height, name, payload, gm, gm ? data[offset + 18] : 0, gm ? data[offset + 19] : 0 ) );
+			images.Add( new SshImage( tags[i], type, width, height, name, payload, gm, gm ? data[payloadStart + 2] : 0, gm ? data[payloadStart + 3] : 0 ) );
 		}
 		Images = images;
 	}

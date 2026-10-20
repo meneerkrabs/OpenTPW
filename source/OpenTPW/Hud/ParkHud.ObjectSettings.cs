@@ -97,7 +97,8 @@ public sealed partial class ParkHud
 			var words = item.Runtime.Settings;
 			pending.Ride = new RideSettingWords(
 				SliderPosition( words.Speed, Setting( item, "UsageInfo.MinSpeed" ), Setting( item, "UsageInfo.MaxSpeed" ) ),
-				SliderPosition( words.Capacity, Setting( item, "UsageInfo.MinCapacity" ), Setting( item, "UsageInfo.MaxCapacity" ) ),
+				// [EXT:cheats-ride-vehicles] a ride whose vehicle limit the cheat raised has a larger capacity maximum (OriginalObjectRuntime.MaximumCapacity)
+				SliderPosition( words.Capacity, Setting( item, "UsageInfo.MinCapacity" ), item.Runtime.MaximumCapacity ),
 				SliderPosition( words.Duration, Setting( item, "UsageInfo.MinDuration" ), Setting( item, "UsageInfo.MaxDuration" ) ) );
 			return;
 		}
@@ -123,7 +124,7 @@ public sealed partial class ParkHud
 		if ( item.Entry.WhichUIType == (int)BuildCategory.Rides )
 		{
 			if ( item.Runtime.Script != null )
-				item.Runtime.ApplyRideWindow( pending.Ride );
+				level.Commands.Issue( new SetRideSettingsCommand( item.Runtime.AttractionId, pending.Ride.Speed, pending.Ride.Capacity, pending.Ride.Duration ) );
 			return;
 		}
 		if ( TryPriceTarget( item, out var economy, out var state ) )
@@ -132,15 +133,16 @@ public sealed partial class ParkHud
 
 	private void ApplyShopSettings( OriginalObject item, ParkEconomy economy, ParkObjectState state )
 	{
+		var attraction = item.Runtime.AttractionId;
 		if ( state.Kind == ParkObjectKind.Shop )
 		{
-			economy.SetShopSettings( state.Id, (byte)(pending.QualityStep * 50), pending.Ingredient );
-			economy.SetPrices( state.Id, pending.Price );
+			level.Commands.Issue( new SetShopSettingsCommand( attraction, (byte)(pending.QualityStep * 50), pending.Ingredient ) );
+			level.Commands.Issue( new SetPriceCommand( attraction, pending.Price ) );
 		}
 		else if ( IsNonWinnable( item ) )
-			economy.SetPrices( state.Id, pending.Price );
+			level.Commands.Issue( new SetPriceCommand( attraction, pending.Price ) );
 		else
-			economy.SetPrices( state.Id, pending.Price, pending.Prize, 100 - (pending.WinChance & 0xFF) );
+			level.Commands.Issue( new SetGamePrizeCommand( attraction, pending.Price, pending.Prize, 100 - (pending.WinChance & 0xFF) ) );
 	}
 
 	/// <summary>Applies the window's values to the object it showed when the window closes or shows another object, then loads the new one.</summary>
@@ -228,7 +230,7 @@ public sealed partial class ParkHud
 		UiLabel Label( string id, Func<string> text ) => Info( new UiLabel { Id = id, Text = text, Font = fonts => fonts.Small, Color = UiColors.Text, Align = UiAlign.Center, Fit = true } );
 
 		(int, int) Speeds( OriginalObject item ) => (Setting( item, "UsageInfo.MinSpeed" ), Setting( item, "UsageInfo.MaxSpeed" ));
-		(int, int) Capacities( OriginalObject item ) => (Setting( item, "UsageInfo.MinCapacity" ), Setting( item, "UsageInfo.MaxCapacity" ));
+		(int, int) Capacities( OriginalObject item ) => (Setting( item, "UsageInfo.MinCapacity" ), item.Runtime.MaximumCapacity);
 		(int, int) Durations( OriginalObject item ) => (Setting( item, "UsageInfo.MinDuration" ), Setting( item, "UsageInfo.MaxDuration" ));
 
 		rideSpeedSlider = Slider( "rideSpeed", Speeds, () => pending.Ride.Speed, value => pending.Ride = pending.Ride with { Speed = value } );
@@ -367,6 +369,13 @@ public sealed partial class ParkHud
 			shopPriceButton.Bounds = price.Rect;
 			shopPriceButton.Anchor = UiAnchor.Center;
 			shopPriceButton.Help = HelpOf( price.Help );
+		}
+		// [EXT:pools-waves] a wave machine (a Features object, shown in the shop table) has none of these controls; its "Wave settings" button takes their row, from the quality slider's left (0xc06b) to the price box's right (0xc085)
+		if ( waveSettingsButton != null && Control( table, 0xC06B ) is { } quality && Control( table, 0xC085 ) is { } box )
+		{
+			var row = quality.Rect.Y + quality.Rect.Height / 2;
+			waveSettingsButton.Bounds = UiRect.FromCenter( new NVector2( (quality.Rect.X + box.Rect.Right) / 2, row ), 760, 100 );
+			waveSettingsButton.Anchor = UiAnchor.Center;
 		}
 	}
 

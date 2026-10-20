@@ -46,16 +46,23 @@ public class VisitorInfoWindowTests
 	}
 
 	[TestMethod]
-	public void TheArrowsWalkTheVisitorsNewestFirstAndWrap()
+	public void TheArrowsPreserveProjectedOrderAndWrapWithHostOnlyAbsentCurrentEndpoints()
 	{
-		var ids = new[] { 3, 9, 5 };
-		Assert.AreEqual( 5, VisitorInfoRules.Cycle( ids, 9, forward: true ), "the next in the thing list is the next older visitor" );
-		Assert.AreEqual( 3, VisitorInfoRules.Cycle( ids, 5, forward: true ) );
-		Assert.AreEqual( 9, VisitorInfoRules.Cycle( ids, 3, forward: true ), "the walk starts again at the head" );
-		Assert.AreEqual( 5, VisitorInfoRules.Cycle( ids, 3, forward: false ) );
-		Assert.AreEqual( 3, VisitorInfoRules.Cycle( ids, 9, forward: false ), "backwards from the head starts again at the tail" );
-		Assert.AreEqual( 9, VisitorInfoRules.Cycle( ids, 77, forward: true ), "a visitor that left starts at the head" );
-		Assert.IsNull( VisitorInfoRules.Cycle( Array.Empty<int>(), 1, forward: true ) );
+		var ids = new[] { 2, 9, 7 };
+		Assert.AreEqual( 9, VisitorInfoRules.Cycle( ids, 2, forward: true ) );
+		Assert.AreEqual( 7, VisitorInfoRules.Cycle( ids, 9, forward: true ) );
+		Assert.AreEqual( 2, VisitorInfoRules.Cycle( ids, 7, forward: true ), "next wraps to the projected head" );
+		Assert.AreEqual( 7, VisitorInfoRules.Cycle( ids, 2, forward: false ), "previous wraps to the projected tail" );
+		Assert.AreEqual( 9, VisitorInfoRules.Cycle( ids, 7, forward: false ) );
+		Assert.AreEqual( 2, VisitorInfoRules.Cycle( ids, 9, forward: false ) );
+		Assert.AreEqual( 2, VisitorInfoRules.Cycle( ids, 77, forward: true ), "host-only helper fallback; the HUD closes a missing selection" );
+		Assert.AreEqual( 7, VisitorInfoRules.Cycle( ids, 77, forward: false ) );
+		foreach ( var forward in new[] { false, true } )
+		{
+			Assert.IsNull( VisitorInfoRules.Cycle( Array.Empty<int>(), 1, forward ) );
+			Assert.AreEqual( 2, VisitorInfoRules.Cycle( new[] { 2 }, 2, forward ) );
+		}
+		CollectionAssert.AreEqual( new[] { 2, 9, 7 }, ids );
 	}
 
 	[TestMethod]
@@ -75,12 +82,25 @@ public class VisitorInfoWindowTests
 		Assert.AreEqual( 1, shown.ThoughtFrame, "the thought less 1 (Thirsty is 2); none is no frame" );
 		Assert.AreEqual( VisitorInfoRules.Title( OriginalUiTests.FakeStrings(), 1 ), hud.VisitorInfoTitle );
 
-		Assert.IsTrue( hud.CycleVisitorInfo( forward: false ), "the visitor after id 1 in the other direction is the newest" );
+		Assert.IsTrue( hud.CycleVisitorInfo( forward: false ), "pool-free host fallback wraps from the first to the last visitor" );
 		Assert.AreSame( second, hud.InfoVisitor );
 		Assert.AreEqual( 40, hud.VisitorInfoShown.Cash );
 		Assert.AreEqual( -1, hud.VisitorInfoShown.ThoughtFrame );
 		Assert.IsTrue( hud.CycleVisitorInfo( forward: true ) );
 		Assert.AreSame( first, hud.InfoVisitor );
+	}
+
+	[TestMethod]
+	public void EveryValueIsLeftAlignedAsTheBuilderLeavesTheCellConstructorsAlignment()
+	{
+		// tp.exe 0x4b6c20 makes the money, duration and count cells (0x490250, 0x490e60, 0x48fde0), whose constructors store alignment 0 at +0xd8
+		// (0x490298, 0x490ea8, 0x48fe28), and sends none of them the alignment call 0x65c428, unlike the All Visitors row factory 0x4939d0
+		var hud = VisitorWorldSelectionTests.Fixture( out var simulation, out _ );
+		var guest = new Guest( 1, 0 ) { VisitorNumber = 1, State = GuestState.WalkingAround, Money = 250 };
+		SetGuests( simulation, guest );
+		Assert.IsTrue( hud.OpenVisitorInfoWindow( guest ) );
+		foreach ( var id in new[] { "cash", "timeInPark", "rides", "purchases", "sideshowsPlayed", "sideshowsWon", "status" } )
+			Assert.AreEqual( UiAlign.Left, ((UiLabel)hud.Stack.Top!.Find( id )!).Align, id );
 	}
 
 	[TestMethod]

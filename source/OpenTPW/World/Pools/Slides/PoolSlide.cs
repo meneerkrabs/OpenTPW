@@ -210,7 +210,7 @@ public sealed class PoolSlide
 	{
 		var table = new int[17];
 		for ( var step = 0; step <= 16; step++ )
-			table[step] = (int)Math.Round( Math.Sin( step * Math.PI / 32 ) * Unit );
+			table[step] = (int)Math.Round( DetMath.Sin( step * Math.PI / 32 ) * Unit );
 		return table;
 	}
 

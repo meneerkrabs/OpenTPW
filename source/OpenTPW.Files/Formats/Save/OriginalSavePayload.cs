@@ -105,14 +105,107 @@ public sealed class SaveCoastersData
 	public byte[] Tail { get; set; } = Array.Empty<byte>();
 }
 
-/// <summary>The sound block (<c>0x51C350</c>): the on word, a word, the counted settings and, when on, three words and a chunk the loader skips by its length word.</summary>
+/// <summary>
+/// The sound block (writer <c>0x51C350</c>, loader <c>0x51C400</c>): the sound-initialised flag (<c>0x802BD4</c>), the sound-enabled word (<c>0x802BC8</c>, 0x400 in a
+/// running game), the counted settings (the 84 bytes of the sound-service globals at <c>0x803AA0</c>, <see cref="SettingsView"/>) and, when initialised, three words
+/// (the listener position as floats, which the loader discards) and the sound library's own voice list (writer <c>0x6B6C30</c>, reader <c>0x6B6DA0</c>; not QMixer
+/// data), carried verbatim behind its length word.
+/// </summary>
 public sealed class SaveSoundData
 {
+	/// <summary>The saved sound-initialised flag: the loader reads the chunk only when it is non-zero.</summary>
 	public bool On { get; set; }
+	/// <summary>The saved sound-enabled word, which the loader writes straight into <c>0x802BC8</c>.</summary>
 	public uint Word { get; set; }
 	public byte[] Settings { get; set; } = Array.Empty<byte>();
 	public byte[] ChunkWords { get; set; } = Array.Empty<byte>();
 	public byte[] Chunk { get; set; } = Array.Empty<byte>();
+
+	/// <summary>The 21 words of <see cref="Settings"/> by name; null when the counted settings are not the 84 bytes tp.exe writes (the raw bytes stay the source of truth).</summary>
+	public SaveSoundSettings? SettingsView => SaveSoundSettings.Read( Settings );
+}
+
+/// <summary>
+/// A read-only view of the sound block's 84 settings bytes: tp.exe's sound-service globals <c>0x803AA0</c>..<c>0x803AF3</c>, 21 words that the init <c>0x51B660</c>
+/// zeroes and the save loader <c>0x51C400</c> copies back as one run. Names and roles: docs/TPWS-PAYLOAD.md, "Sound block".
+/// </summary>
+// [BIN:TPW-EXE:0x51C350 sound settings] the writer emits the length 0x54 and the 84 bytes at 0x803AA0; the loader 0x51C400 reads that many bytes back into 0x803AA0
+public sealed class SaveSoundSettings
+{
+	public const int Bytes = 0x54;
+
+	/// <summary>+0x00 (<c>0x803AA0</c>): the park music voice handle (<c>cat_music</c> event 2, set at park entry by <c>0x51E730</c>).</summary>
+	public uint MusicHandle { get; init; }
+	/// <summary>+0x04: the crowd sentence handle (<c>cat_kids</c> 0x5B, <c>0x51E7B0</c>).</summary>
+	public uint CrowdHandle { get; init; }
+	/// <summary>+0x08: crowd allowed (1 after the init; no other writer).</summary>
+	public uint CrowdAllowed { get; init; }
+	/// <summary>+0x0C: the level rain voice handle (<c>cat_ambient</c> 0x21, <c>0x51E830</c>).</summary>
+	public uint RainHandle { get; init; }
+	/// <summary>+0x10: the crowd level 0..100 (<c>0x51E7B0</c>).</summary>
+	public int CrowdLevel { get; init; }
+	/// <summary>+0x14: the held reverb preset (<c>SndReverb.map</c> index, <c>0x51C8D0</c>); the loader sends it again.</summary>
+	public int ReverbPreset { get; init; }
+	/// <summary>+0x18: the master volume in percent (setter <c>0x51BB60</c>, called only at start-up with 100).</summary>
+	public int MasterVolume { get; init; }
+	/// <summary>+0x1C: the effects volume in percent (setter <c>0x51BBA0</c>).</summary>
+	public int EffectsVolume { get; init; }
+	/// <summary>+0x20: the music volume in percent (setter <c>0x51BB80</c>).</summary>
+	public int MusicVolume { get; init; }
+	/// <summary>+0x24: the speech volume in percent (setter <c>0x51BBC0</c>).</summary>
+	public int SpeechVolume { get; init; }
+	/// <summary>+0x28: the dirty word: the sound tick <c>0x51BD70</c> pushes all seven mixer values while it is non-zero, then clears it.</summary>
+	public uint Dirty { get; init; }
+	/// <summary>+0x2C: speech playing (the advisor sets and clears it, <c>0x51E6F0</c>); a duck condition.</summary>
+	public uint SpeechPlaying { get; init; }
+	/// <summary>+0x30 (u16): the DIPMUSIC music duck request (<c>0x51E710</c>); non-zero sends the music volume as 0.</summary>
+	public ushort MusicDuck { get; init; }
+	/// <summary>+0x32 (u16): the listener freeze (<c>0x51C1C0</c>); the post-load pass clears it.</summary>
+	public ushort ListenerFreeze { get; init; }
+	/// <summary>+0x34: no reader or writer found.</summary>
+	public uint Unused34 { get; init; }
+	/// <summary>+0x38: effects on (setter <c>0x51BC00</c>).</summary>
+	public uint EffectsOn { get; init; }
+	/// <summary>+0x3C: music on (setter <c>0x51BBE0</c>).</summary>
+	public uint MusicOn { get; init; }
+	/// <summary>+0x40: speech on (setter <c>0x51BC20</c>).</summary>
+	public uint SpeechOn { get; init; }
+	/// <summary>+0x44..+0x50: four words without references (the rest of the 21-word table).</summary>
+	public IReadOnlyList<uint> Tail { get; init; } = Array.Empty<uint>();
+
+	/// <summary>The view of <paramref name="settings"/>; null unless it is exactly the 84 bytes tp.exe writes.</summary>
+	public static SaveSoundSettings? Read( ReadOnlySpan<byte> settings )
+	{
+		if ( settings.Length != Bytes )
+			return null;
+		var words = new uint[Bytes / 4];
+		for ( var index = 0; index < words.Length; index++ )
+			words[index] = BinaryPrimitives.ReadUInt32LittleEndian( settings.Slice( index * 4, 4 ) );
+		uint Word( int offset ) => words[offset / 4];
+		var tail = words[(0x44 / 4)..];
+		return new SaveSoundSettings
+		{
+			MusicHandle = Word( 0x00 ),
+			CrowdHandle = Word( 0x04 ),
+			CrowdAllowed = Word( 0x08 ),
+			RainHandle = Word( 0x0C ),
+			CrowdLevel = (int)Word( 0x10 ),
+			ReverbPreset = (int)Word( 0x14 ),
+			MasterVolume = (int)Word( 0x18 ),
+			EffectsVolume = (int)Word( 0x1C ),
+			MusicVolume = (int)Word( 0x20 ),
+			SpeechVolume = (int)Word( 0x24 ),
+			Dirty = Word( 0x28 ),
+			SpeechPlaying = Word( 0x2C ),
+			MusicDuck = (ushort)Word( 0x30 ),
+			ListenerFreeze = (ushort)(Word( 0x30 ) >> 16),
+			Unused34 = Word( 0x34 ),
+			EffectsOn = Word( 0x38 ),
+			MusicOn = Word( 0x3C ),
+			SpeechOn = Word( 0x40 ),
+			Tail = tail,
+		};
+	}
 }
 
 /// <summary>
@@ -621,6 +714,24 @@ public sealed class OriginalSavePayload
 			data.Records.Add( record );
 		}
 		return data;
+	}
+
+	/// <summary>
+	/// The Sound block of <paramref name="payload"/> (split by <paramref name="layout"/>), or null when the block does not read as the original writer's
+	/// (the import never refuses a save for this block).
+	/// </summary>
+	public static SaveSoundData? TryReadSound( ReadOnlySpan<byte> payload, SavePayloadLayout layout )
+	{
+		var block = layout[SaveBlock.Sound];
+		try
+		{
+			var reader = new BlockReader( payload.Slice( block.Offset, block.Length ), nameof( SaveBlock.Sound ) );
+			return ReadSound( ref reader );
+		}
+		catch ( Exception exception ) when ( exception is InvalidDataException or ArgumentOutOfRangeException or OverflowException )
+		{
+			return null;
+		}
 	}
 
 	private static SaveSoundData ReadSound( ref BlockReader reader )

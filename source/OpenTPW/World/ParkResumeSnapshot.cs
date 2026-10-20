@@ -88,6 +88,12 @@ internal sealed record ParkResumeSnapshot
 	public ParkGate.ParkGateSnapshot? Gate { get; init; }
 	/// <summary>The park's name (the gate's two sign lines), or null when the park had none; saves from before the part carry none.</summary>
 	public ParkNameSaveData? ParkName { get; init; }
+	/// <summary>
+	/// [EXT:winter-snow-save] The settled snow cover (<c>opentpw.winter-snow</c>, docs/WINTER.md), 0 &lt; x &lt;= 1, or null: written only while the extension is on and the cover is above 0, so a park without snow saves the same
+	/// bytes as before, and ignored on load while the extension is off. Presentation only and not hashed: it is in no world hash and no mod record. Validated on load.
+	/// </summary>
+	[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+	public double? SnowCover { get; init; }
 	/// <summary>The staff world's actors, or null when the park had no staff world (the actors are the world-side authority).</summary>
 	public StaffWorldSimulation.StaffWorldStateSnapshot? Staff { get; init; }
 	/// <summary>The automatic advisor, or null when the park had none; never captured while a response is being spoken.</summary>
@@ -114,6 +120,9 @@ internal sealed record ParkResumeSnapshot
 	/// </summary>
 	[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
 	public PoolSlidesSaveData? PoolSlides { get; init; }
+	/// <summary>[EXT:pools-bridges] Absent in parks without bridges, preserving their existing save bytes.</summary>
+	[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+	public PoolBridgesSaveData? PoolBridges { get; init; }
 	/// <summary>
 	/// The developer prototype Totem, or null when the park had none: where it stands, its runtime and script state
 	/// and its economy association, joined by attraction id (the part joined the envelope with the prototype slice;
@@ -121,7 +130,7 @@ internal sealed record ParkResumeSnapshot
 	/// </summary>
 	public PrototypeRideSaveData? Prototype { get; init; }
 	/// <summary>
-	/// The particle pool's live emitters and effectors with its generator, or null when none was live (an optional presentation part, like the
+	/// The initialized particle pool's configuration, emitters, effectors and generator, or null when no pool was available (an optional presentation part, like the
 	/// original's PART/PTCL save block: no particles are saved, screen-space emitters are killed on load; it is not part of the world hash).
 	/// </summary>
 	public ParticleSystemState? Particles { get; init; }

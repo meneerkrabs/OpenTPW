@@ -466,7 +466,7 @@ public class PoolSlideActivityTests
 	}
 
 	/// <summary>[EXT:pools-slides] The pinned hash of <see cref="RunFixedSlides"/> (docs/DETERMINISM.md, "Pools").</summary>
-	internal const ulong PoolsSlidesFixedRunHash = 0xB6C14C9856DF363AUL;
+	internal const ulong PoolsSlidesFixedRunHash = 0x758CE71C17D724D0UL;
 
 	[TestMethod]
 	public void FixedRunWithASlideIsTheSameInEveryProcessAndGuestsRideIt()

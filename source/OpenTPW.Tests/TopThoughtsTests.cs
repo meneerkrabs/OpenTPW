@@ -151,9 +151,12 @@ public class TopThoughtsTests
 	}
 
 	[TestMethod]
-	public void AnIconHiddenByAnEmptySlotStaysHiddenAndTheHoverTextIsTheThoughtsString()
+	public void AnIconHiddenByAnEmptySlotStaysHiddenAndTheHoverTextNamesItsOwnThought()
 	{
 		var hud = VisitorWorldSelectionTests.Fixture( out var simulation, out _ );
+		var strings = new UiStringTable( "English", Array.Empty<string>(), Array.Empty<string>(), Array.Empty<string>(), Array.Empty<string>(),
+			thoughtNames: Enumerable.Range( 0, 23 ).Select( index => $"thought{index}" ).ToArray() );
+		typeof( ParkHud ).GetField( "strings", BindingFlags.Instance | BindingFlags.NonPublic )!.SetValue( hud, strings );
 		SetGuests( simulation );
 		hud.OpenParkInfoWindow();
 		Assert.IsTrue( Enumerable.Range( 0, 3 ).All( slot => hud.ParkInfoIconFrame( slot ) == -1 ), "an empty park shows no icon" );
@@ -166,7 +169,16 @@ public class TopThoughtsTests
 		hud.Stack.Pop();
 		hud.OpenParkInfoWindow();
 		Assert.AreEqual( 1, hud.ParkInfoIconFrame( 2 ), "a new window shows it" );
-		Assert.AreEqual( OriginalUiTests.FakeStrings().Thought( ParkHud.ParkInfoIconHelpThought ), hud.Stack.Top!.Find( "thought2" )!.CurrentHelp, "the hover text is THOUGHTS.str entry 1: the frame getter 0x661596 returns 0" );
+		Assert.AreEqual( "thought2", hud.Stack.Top!.Find( "thought2" )!.CurrentHelp, "the hover text is THOUGHTS.str entry frame + 1: thirsty (id 2, frame 1)" );
+
+		// each icon names its own thought: the getter 0x66DAD2 returns the frame the setter 0x66DA4D stored at +0x13C
+		hud.Stack.Pop();
+		SetGuests( simulation, new Guest( 1, 0 ) { State = GuestState.WalkingAround, Thought = GuestThought.Thirsty }, new Guest( 2, 0 ) { State = GuestState.WalkingAround, Thought = GuestThought.Thirsty },
+			new Guest( 3, 0 ) { State = GuestState.WalkingAround, Thought = GuestThought.Scared } );
+		hud.OpenParkInfoWindow();
+		Assert.AreEqual( (14, -1, 1), (hud.ParkInfoIconFrame( 0 ), hud.ParkInfoIconFrame( 1 ), hud.ParkInfoIconFrame( 2 )) );
+		Assert.AreEqual( ("thought15", null, "thought2"), (hud.Stack.Top!.Find( "thought0" )!.CurrentHelp, hud.Stack.Top!.Find( "thought1" )!.CurrentHelp, hud.Stack.Top!.Find( "thought2" )!.CurrentHelp),
+			"scared (frame 14) names entry 15, thirsty (frame 1) entry 2, and the empty slot has no text" );
 	}
 
 	// ---- The guest-insights counters -------------------------------------------------------------

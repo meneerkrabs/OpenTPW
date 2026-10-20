@@ -124,12 +124,70 @@ public abstract class OriginalModelScene : Entity
 	{
 		if ( name.Length == 0 )
 			return Texture.Missing;
+		// the shipped sign1/sign2 art is the magenta "SIGN1 SIGN2" placeholder the game draws over at run time: a sign slot of a model without a runtime sign shows the plain board
+		if ( ObjectSigns.IsSignSlot( name ) )
+			return SignSlotPlan.FallbackBoard;
 		if ( textures.TryGetValue( name, out var texture ) )
 			return texture;
 		var path = OpenTPW.UI.Original.UiImages.Resolve( name, TextureDirectory );
 		texture = path == null ? Texture.Missing : new Texture( path, TextureFlags.Repeat );
 		textures[name] = texture;
 		return texture;
+	}
+
+	/// <summary>A sign slot of a named model: the material and array element it is bound to, and the texture bound there now.</summary>
+	private sealed class SignSlot( string model, int side, Material material, int index, Texture bound )
+	{
+		public string Model { get; } = model;
+		public int Side { get; } = side;
+		public Material Material { get; } = material;
+		public int Index { get; } = index;
+		public Texture Bound { get; set; } = bound;
+	}
+
+	private readonly List<SignSlot> signSlots = new();
+
+	/// <summary>
+	/// The runtime sign of the scene's model <paramref name="model"/> (its file name without extension), or null while it has none (not composed yet, or
+	/// it cannot be): its sign1/sign2 slots then show the plain board, never the shipped placeholder.
+	/// </summary>
+	protected virtual ObjectSignImages? SignOf( string model ) => null;
+
+	/// <summary>The texture of one side (0 <c>sign1</c>, 1 <c>sign2</c>) of a model's runtime sign; the scene owns it and releases it with itself.</summary>
+	protected virtual Texture? SignTexture( string model, int side ) => null;
+
+	private Texture SignSlotTexture( string? model, string textureName )
+	{
+		var plan = SignSlotPlan.ForScene( model == null ? null : SignOf( model ) );
+		return plan.SourceOf( textureName ) == SignSlotSource.RuntimeSign && model != null && SignTexture( model, ObjectSigns.SlotOf( textureName ) ) is { } sign
+			? sign
+			: SignSlotPlan.FallbackBoard;
+	}
+
+	/// <summary>Whether the scene has a model <paramref name="model"/> with sign slots.</summary>
+	protected bool HasSignSlots( string model ) => signSlots.Any( slot => string.Equals( slot.Model, model, StringComparison.OrdinalIgnoreCase ) );
+
+	/// <summary>The models of the scene with sign slots.</summary>
+	protected IReadOnlyList<string> SignSlotModels => signSlots.Select( slot => slot.Model ).Distinct( StringComparer.OrdinalIgnoreCase ).ToList();
+
+	/// <summary>Where each sign slot of <paramref name="model"/> takes its bound texture from: the model's runtime sign, the plain board, or (never expected) the shipped art.</summary>
+	private protected IReadOnlyList<SignSlotSource> SignSlotSourcesOf( string model ) => signSlots
+		.Where( slot => string.Equals( slot.Model, model, StringComparison.OrdinalIgnoreCase ) )
+		.Select( slot => ReferenceEquals( slot.Bound, SignSlotPlan.FallbackBoard ) ? SignSlotSource.FallbackBoard
+			: SignTexture( slot.Model, slot.Side ) is { } sign && ReferenceEquals( slot.Bound, sign ) ? SignSlotSource.RuntimeSign
+			: SignSlotSource.Shipped )
+		.ToList();
+
+	/// <summary>Binds the sign slots of <paramref name="model"/> to its sign as it is now (after it was composed).</summary>
+	protected void RebindSigns( string model )
+	{
+		foreach ( var slot in signSlots )
+		{
+			if ( !string.Equals( slot.Model, model, StringComparison.OrdinalIgnoreCase ) )
+				continue;
+			slot.Bound = SignSlotTexture( slot.Model, slot.Side == 0 ? "sign1" : "sign2" );
+			slot.Material.SetTextureArrayElement( "Color", slot.Index, slot.Bound );
+		}
 	}
 
 	/// <summary>
@@ -144,7 +202,7 @@ public abstract class OriginalModelScene : Entity
 		private readonly OriginalModelScene scene;
 		private bool shown = true;
 
-		internal AnimatedModel( OriginalModelScene scene, ModelFile file, bool animatedMeshes )
+		internal AnimatedModel( OriginalModelScene scene, ModelFile file, bool animatedMeshes, string? name )
 		{
 			this.scene = scene;
 			scene.animatedModels.Add( this );
@@ -171,9 +229,15 @@ public abstract class OriginalModelScene : Entity
 				{
 					var slots = new Texture[MaximumTextureSlots];
 					for ( var index = 0; index < slots.Length; index++ )
-						slots[index] = index < textures.Length ? scene.LoadTexture( textures[index] ) : slots[0] ?? Texture.Missing;
+						slots[index] = index >= textures.Length ? slots[0] ?? Texture.Missing
+							: ObjectSigns.IsSignSlot( textures[index] ) ? scene.SignSlotTexture( name, textures[index] )
+							: scene.LoadTexture( textures[index] );
 					var material = new Material<ObjectUniformBuffer>( "content/shaders/test.shader" );
 					material.Set( "Color", slots );
+					if ( name != null )
+						for ( var index = 0; index < textures.Length && index < slots.Length; index++ )
+							if ( ObjectSigns.SlotOf( textures[index] ) is >= 0 and var side )
+								scene.signSlots.Add( new SignSlot( name, side, material, index, slots[index] ) );
 					var model = new Model( vertices, indices, material, animatedMeshes );
 					scene.models.Add( model );
 					var entity = new ModelEntity { Model = model, Name = $"{scene.GetType().Name} part {scene.parts.Count}" };
@@ -238,8 +302,11 @@ public abstract class OriginalModelScene : Entity
 		}
 	}
 
-	/// <summary>Adds an animated model (see <see cref="AnimatedModel"/>); <paramref name="animatedMeshes"/> makes its vertices rewritable.</summary>
-	protected AnimatedModel AddAnimatedModel( ModelFile file, bool animatedMeshes ) => new( this, file, animatedMeshes );
+	/// <summary>
+	/// Adds an animated model (see <see cref="AnimatedModel"/>); <paramref name="animatedMeshes"/> makes its vertices rewritable. A model with a
+	/// <paramref name="name"/> (its file name without extension) gets its runtime sign on its sign slots (<see cref="SignOf"/>), the others the plain board.
+	/// </summary>
+	protected AnimatedModel AddAnimatedModel( ModelFile file, bool animatedMeshes, string? name = null ) => new( this, file, animatedMeshes, name );
 
 	/// <summary>Removes one part and frees its buffers.</summary>
 	protected void RemovePart( ModelEntity part )
@@ -251,9 +318,15 @@ public abstract class OriginalModelScene : Entity
 			Free( model );
 	}
 
+	/// <summary>
+	/// Retires a model and its material. Every model of a scene has a material of its own (<see cref="Flush"/> and the animated meshes make one each), and the material
+	/// carries its own shader copy, pipeline and uniform buffer: releasing only the buffers left all of those in <see cref="Asset.All"/> after the scene went, about 160 materials
+	/// and 5 MB of shader source for every visit of the lobby (docs/BROWSER-PERFORMANCE.md, "Transfer and memory").
+	/// </summary>
 	private static void Free( Model model )
 	{
 		model.ReleaseBuffers();
+		model.Material.ReleaseOwnedResources();
 	}
 
 	protected override void OnDelete()
@@ -261,6 +334,7 @@ public abstract class OriginalModelScene : Entity
 		foreach ( var part in parts )
 			part.Delete();
 		parts.Clear();
+		signSlots.Clear();
 		foreach ( var model in models )
 			Free( model );
 		models.Clear();

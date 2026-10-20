@@ -1,0 +1,47 @@
+name: Pool bridge exact-head verification
+on:
+  pull_request:
+    paths:
+      - '**/*Bridge*'
+      - 'content/pools/bridge/**'
+      - 'tools/blender/opentpw_pool_bridge*'
+      - '.github/workflows/pool-bridge.yml'
+permissions:
+  contents: read
+concurrency:
+  group: pool-bridge-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9
+        with:
+          dotnet-version: 11.0.100-rc.2.26504.105
+      - name: Run CPU regression tests on the exact proposed commit
+        run: dotnet test source/OpenTPW.Tests/OpenTPW.Tests.csproj --configuration Release --nologo --logger "trx;LogFileName=pool-bridge.trx"
+      - name: Package native debug build with smoke-scene controls
+        run: dotnet publish source/OpenTPW/OpenTPW.csproj --configuration Debug --runtime linux-x64 --self-contained true --output bridge-runtime --nologo
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: pool-bridge-linux-${{ github.event.pull_request.head.sha }}
+          path: bridge-runtime/
+          retention-days: 3
+      - name: Package browser build for private runtime verification
+        run: dotnet publish source/OpenTPW.Web/OpenTPW.Web.csproj --configuration Release --output bridge-web --nologo -p:SourceRevisionId=${{ github.event.pull_request.head.sha }}
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: pool-bridge-web-${{ github.event.pull_request.head.sha }}
+          path: bridge-web/wwwroot/
+          retention-days: 3
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: pool-bridge-tests-${{ github.event.pull_request.head.sha }}
+          path: source/OpenTPW.Tests/TestResults/*.trx
+          retention-days: 3

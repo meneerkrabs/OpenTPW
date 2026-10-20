@@ -1,3 +1,4 @@
+using OpenTPW.Mods;
 using System.Diagnostics;
 using OpenTPW.UI.Original;
 
@@ -50,18 +51,27 @@ internal sealed partial class GameFlow
 		ParkStartKind start = ParkStartKind.OriginalSaveReference, Action<Level>? ready = null, Action<Level>? beforeEnter = null )
 	{
 		RequireProgressSaved();
+		// [EXT:extensions-apply-at-load] from the lobby (no park simulates) a new park is built with the extension choices waiting; a park still running keeps its set until it is left
+		if ( Level == null )
+			ApplyPendingExtensions();
 		// A language chosen just before the park applies before it is built, as the tear-down of a park built in one go applies it;
 		// one whose files are still coming waits for that tear-down. (Only a language chosen inside the park being left can still be
 		// pending here; the front end applies its choice at once. That park's screens keep their strings for its last frames, and a
 		// dropped build always comes with a queued transition that replaces them too.)
 		if ( overFrames && pendingLanguage != null )
 			ApplyPendingLanguage();
-		if ( !overFrames || pendingLanguage != null )
+		// [EXT:extensions-apply-at-load] with extension choices waiting while a park runs (a shipped park, the sandbox or a visit started from inside a park), the new park is built in one go, as for a waiting
+		// language, so the running park never simulates with the new set: below, after the tear-down, or right before the candidate is built
+		if ( !overFrames || pendingLanguage != null || pendingExtensions != null )
 		{
 			if ( beforeEnter != null )
 			{
 				using var candidateScene = new EntityConstructionScope();
 				Level? candidate = null;
+				var live = Level;
+				var extensionsBefore = OpenTpwExtensions.Active;
+				var extensionsWaiting = pendingExtensions;
+				ApplyPendingExtensions();
 				try
 				{
 					candidate = new Level( levelName, loadOriginalLevel: original, visit: visit, onlineFolders: OnlineFolders, start: start ) { ShowDeveloperPanels = developerPanels };
@@ -73,7 +83,17 @@ internal sealed partial class GameFlow
 					var entered = EnterLevel( candidate, levelName, original, visit );
 					ready?.Invoke( entered );
 				}
-				catch { candidate?.Dispose(); throw; }
+				catch ( Exception error )
+				{
+					candidate?.Dispose();
+					// the park that was running is still the live one: it keeps its set and the choice waits again
+					if ( extensionsWaiting != null && ReferenceEquals( Level, live ) )
+					{
+						SwitchBack( extensionsBefore, error );
+						pendingExtensions = extensionsWaiting;
+					}
+					throw;
+				}
 				return;
 			}
 			var level = StartLevel( levelName, original, developerPanels, visit, start );

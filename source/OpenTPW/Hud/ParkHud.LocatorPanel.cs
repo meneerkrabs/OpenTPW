@@ -151,7 +151,7 @@ public sealed class LocatorModel
 /// name, the staff state icon or the visitor's thought). Ctrl+S and Ctrl+V open them; a radio locates its role's next actor and the camera follows it.
 /// </summary>
 // [EXT:visitor-info-window] the visitor info window that Ctrl+V tests ([0x7cc418], window object 0x7cc408) is not ported, by design: a left click on an All Visitors row or a visitor picked in the park stands in for opening it and it closes with the All Visitors window, where the original's stays open on its own
-// [APPROX:UI-091] the locator panels take staff newest first (by id, descending) and visitors by id, where the original walks the role's thing list (+0x210) and the thing list (0x4824d0); the camera snaps to the followed actor every frame where the original sets the focus directly (0x486860 → 0x42aab0) and the per-frame blend of 0x42b1c0 smooths it; a staff member's patrol rectangle is not marked (0x536100 in 0x4b3640); the panels appear without sliding and, for a given actor, without the sounds the opener 0x4b3f60 plays (0x11f visitor, 0xc6 staff); a picked-up member's state frame 9 (0x485ec0) draws the first frame; the staff window's own locate buttons focus actual actor positions, the list rows' 0x402 path (0x4867b0) is the original's — evidence needed: the insertion order of the role lists and the patrol markers
+// [APPROX:UI-091] staff locator radios preserve independent saved role chains (+0x210), with qualified original-malformation and legacy-save reconstruction; visitor radios use the live ThingPool chain with an explicit out-of-pool fixture fallback; visitor position failure still clears the selection; camera follow lacks the original per-frame smoothing (0x42b1c0), patrol rectangles (0x536100) and panel sliding remain unimplemented — evidence needed: patrol presentation and slide geometry; camera and real-data visual comparison
 public sealed partial class ParkHud
 {
 	private static LayoutTable LocatorTable => OriginalLayoutTables.LocatorPanels;
@@ -200,7 +200,7 @@ public sealed partial class ParkHud
 		// [BIN:TPW-EXE:0x004b3e1d locator strip] the name box 0x147 (font slot 11, white), the staff state icon 0x148 (staffstat) and the visitor thought icon 0x14a
 		Add( new UiLabel { Id = "locatorName", Text = () => LocatorActorName, Font = fonts => fonts.Label, Color = UiColors.Text, Align = UiAlign.Center, Fit = true,
 			Bounds = strip.Children.Single( node => node.Id == 0x147 ).Rect }, locatorStripElements );
-		Add( new UiModelImage { Id = "locatorState", Model = "staffstat", Frame = () => LocatorStateFrame, Bounds = strip.Children.Single( node => node.Id == 0x148 ).Rect }, locatorStripElements );
+		Add( new FrameIcon { Id = "locatorState", Model = "staffstat", Frame = () => LocatorStateFrame, Bounds = strip.Children.Single( node => node.Id == 0x148 ).Rect }, locatorStripElements );
 		Add( new UiModelImage { Id = "locatorThought", Model = "ti_hungry", Frame = () => LocatorThoughtFrame ?? 0, Bounds = strip.Children.Single( node => node.Id == 0x14A ).Rect }, locatorStripElements );
 	}
 
@@ -238,6 +238,7 @@ public sealed partial class ParkHud
 	{
 		CloseOpenWindowsForLocator();
 		Locator.Open( mode, role, actorId );
+		locatorCameraTarget = null;
 		// [BIN:TPW-EXE:0x004b4099 locator help] 0x4b3f60 ends by posting help 0x11f (287) through 0x486b00 when the chosen role is 6 (a visitor) and 0xc6 (198) for every other role or none, whether or not an actor was given
 		host?.HelpPosted?.Invoke( Locator.Role == LocatorModel.VisitorRole ? AdvisorToolHelp.VisitorLocator : AdvisorToolHelp.StaffLocator );
 		if ( Locator.Following )
@@ -283,8 +284,8 @@ public sealed partial class ParkHud
 
 	/// <summary>The actor of <paramref name="role"/> after <paramref name="current"/> (0: the first), 0 when there is none after it.</summary>
 	private int NextLocatorActor( int role, int current ) => role == LocatorModel.VisitorRole
-		? LocatorOrder.NextVisitor( level.Guests?.Guests ?? Array.Empty<Guest>(), current )
-		: LocatorOrder.NextStaff( level.StaffWorld?.Snapshots ?? Array.Empty<StaffWorldSnapshot>(), LocatorModel.StaffTypeOf( role ), current );
+		? LocatorOrder.NextVisitor( level.Guests?.Guests ?? Array.Empty<Guest>(), level.Guests?.Things, current )
+		: (Status.EconomySource as ParkEconomy)?.Staff.NextInRole( LocatorModel.StaffTypeOf( role ), current ) ?? 0;
 
 	private bool TryLocatorActorPosition( out Vector3 position )
 	{
@@ -297,6 +298,8 @@ public sealed partial class ParkHud
 				|| !float.IsFinite( guest.X ) || !float.IsFinite( guest.Y ) )
 				return false;
 			var cell = GuestRenderer.CellToEngine( park.Heightfield, guest.X, guest.Y );
+			if ( !float.IsFinite( cell.X ) || !float.IsFinite( cell.Y ) || !float.IsFinite( cell.Z ) )
+				return false;
 			position = new Vector3( cell.X, cell.Y, cell.Z );
 			return true;
 		}
@@ -316,7 +319,9 @@ public sealed partial class ParkHud
 	{
 		if ( Locator.Mode != LocatorMode.None && (InfoArmOpen || OpenedMessage != null || CameraPanelOpen || IsRiding) )
 			CloseLocator();
-		if ( Locator.ActorId != 0 && !TryLocatorActorPosition( out _ ) )
+		// Staff identity survives temporarily unavailable coordinates. Keep the existing visitor position-loss policy.
+		if ( Locator.ActorId != 0 && (Locator.Role == LocatorModel.VisitorRole
+			? !TryLocatorActorPosition( out _ ) : !StaffMembers.Any( member => member.Id == Locator.ActorId )) )
 			Locator.LoseActor();
 		if ( Locator.Following )
 		{
@@ -388,13 +393,38 @@ public sealed partial class ParkHud
 /// <summary>The order the locator radios step through a role's actors.</summary>
 internal static class LocatorOrder
 {
-	/// <summary>The staff member of <paramref name="type"/> placed in the world after <paramref name="current"/> (0: the first), newest first; 0 when none follows.</summary>
-	public static int NextStaff( IEnumerable<StaffWorldSnapshot> snapshots, StaffType type, int current ) =>
-		snapshots.Where( actor => actor.Type == type && float.IsFinite( actor.CellX ) && float.IsFinite( actor.CellY ) ).OrderByDescending( actor => actor.Id )
-			.FirstOrDefault( actor => current == 0 || actor.Id < current ).Id;
+	/// <summary>The live visitor after <paramref name="current"/> (0: the first) in the pool's used-chain order; 0 at the tail or for a stale current.</summary>
+	// [BIN:TPW-EXE:0x00482757 visitor locator order] mask 64 walks the used head (0x516130) and older links (0x516160), accepting type 1 regardless of sprite visibility;
+	// a destroy request enqueues at 0x50B8FD, then changes the type to 2 at 0x50B906 before returning. The caller 0x4B3340 wraps by retrying with a null current.
+	public static int NextVisitor( IEnumerable<Guest> guests, ThingPool? things, int current )
+	{
+		var afterCurrent = current == 0;
+		foreach ( var id in VisitorIds( guests, things ) )
+		{
+			if ( afterCurrent )
+				return id;
+			afterCurrent = id == current;
+		}
+		return 0;
+	}
 
-	/// <summary>The visible visitor after <paramref name="current"/> (0: the first) in id order; 0 when none follows.</summary>
-	public static int NextVisitor( IEnumerable<Guest> guests, int current ) =>
-		guests.Where( guest => guest.IsVisible && float.IsFinite( guest.X ) && float.IsFinite( guest.Y ) ).OrderBy( guest => guest.Id )
-			.FirstOrDefault( guest => current == 0 || guest.Id > current )?.Id ?? 0;
+	/// <summary>The shared live visitor projection for locator radios and info-window arrows; pool-free fixtures have an explicit host-only fallback.</summary>
+	public static IEnumerable<int> VisitorIds( IEnumerable<Guest> guests, ThingPool? things )
+	{
+		// Unsupported fixtures can repeat IDs. The first roster claim wins, as in the HUD's position/name lookup;
+		// retain Gone claims here so a later duplicate cannot revive them through the compatibility fallback.
+		var byId = new Dictionary<int, Guest>();
+		foreach ( var guest in guests )
+			if ( guest.Id > 0 )
+				byId.TryAdd( guest.Id, guest );
+		if ( things != null )
+			foreach ( var slot in things.UsedNewestFirst() )
+				if ( slot.Model == SaveThingModel.Guest && !things.IsQueued( slot.Id ) && !things.IsHeld( slot.Id )
+					&& byId.TryGetValue( slot.Id, out var guest ) && guest.State != GuestState.Gone )
+					yield return slot.Id;
+		// Host compatibility only: active, pool-free members follow valid pooled visitors in ascending ID order.
+		// A used ID rejected above (wrong model, queued or placeholder) must never re-enter through this path.
+		foreach ( var guest in byId.Values.Where( guest => guest.State != GuestState.Gone && !(things?.IsUsed( guest.Id ) ?? false) ).OrderBy( guest => guest.Id ) )
+			yield return guest.Id;
+	}
 }

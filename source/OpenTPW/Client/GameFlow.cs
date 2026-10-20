@@ -616,6 +616,7 @@ internal sealed partial class GameFlow : IDisposable
 
 		if ( Level != null && Hud != null )
 		{
+			Hud.ObserveApplicationFocus( Window.Current?.Focused == true, Window.Current?.IsOffscreen != false, onlineSession?.IsLoggedIn == true );
 			Level.UiCapturesMouse = Hud.Update( Context, input ) || parkBuild != null;
 			// The camera reads the keyboard itself: while the next park is built it stays where it is, as under a modal window.
 			if ( parkBuild != null && Camera.Mode is ParkCameraMode parkCamera )

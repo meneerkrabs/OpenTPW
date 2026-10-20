@@ -108,7 +108,7 @@ public static class GuestWander
 	/// <summary>
 	/// Picks the destination from <paramref name="start"/>, drawing from <paramref name="draw"/> in the original's order: the step
 	/// count, a start index for every step with two or more candidates, then the two sub-cell bytes. A path cell without links gives
-	/// its own centre; null when the start is no path cell or its links lead to no path cell (stranded).
+	/// its own centre; linked entrance/exit cells can walk out to paths. Other nonpath starts or a step with no supported candidates give null.
 	/// </summary>
 	// [BIN:TPW-EXE:0x004F9490 wander destination] rand % 5 at entry (0x004F9534); a do-while over the steps whose counter becomes 1 again when a step ends on the start cell with the counter at 0 (0x004F98F5); per step the current cell's links (0x00522770, & 0x55) in the order 16, 4, 1, 64, the count from 0x00522810; fewer than two left: the first in order (no draw); else the first from rand & 3 (0x004F9874) that is neither empty nor the way back ((i − 2) & 3 of the last step, 9999 before the first); then two draws & 0x7F, each clamped to 5..123 (0x004F9922)
 	public static Destination? Pick( GuestPathGrid grid, (int X, int Y) start, Func<uint> draw, Func<int, int, bool>? inArea = null ) =>
@@ -134,9 +134,11 @@ public static class GuestWander
 		areaBlocked = false;
 		trailCount = 0;
 		var remaining = draw() % 5;
-		// [APPROX:GUEST-010] a linked start cell that is no path cell finds no destination here (a start without links takes the off-path search, OffPath, and a linked path or queue cell the link walk below), where the original walks the links of a linked cell of any type (0x4F9490); OpenTPW's routes start on path cells
+		// [APPROX:GUEST-010] linked entrance/exit starts use the existing path-candidate walk; other nonpath start types and generalized candidate types remain unsupported (the original walks links of any cell type, 0x4F9490). GuestNavigation can route from access cells; the path-grid route is only bookkeeping.
 		// [BIN:TPW-EXE:0x004F9490 queue start] the link walk starts from any cell that has links, a queue cell (type 3) included: a guest the queue let go stands on its queue cell and wanders from there (QUEUE-010)
-		if ( !grid.IsWalkable( start.X, start.Y ) && !grid.IsQueue( start.X, start.Y ) )
+		var linkedAccess = grid.Cells.RawTypeAt( start.X, start.Y ) is ParkCellTypes.Entrance or ParkCellTypes.Exit
+			&& (grid.LinksAt( start.X, start.Y ) & AllLinks) != 0;
+		if ( !grid.IsWalkable( start.X, start.Y ) && !grid.IsQueue( start.X, start.Y ) && !linkedAccess )
 			return null;
 		if ( (grid.LinksAt( start.X, start.Y ) & AllLinks) == 0 )
 			return new Destination( start, CentreByte, CentreByte );
@@ -155,7 +157,7 @@ public static class GuestWander
 			{
 				var direction = CandidateOrder[index];
 				var (dx, dy) = GuestPathGrid.Directions[direction];
-				// [APPROX:GUEST-010] a candidate is a link of the current cell to a path cell; the original keeps every link except to queue cells (removed on a path cell, 0x00536310 / 0x00536320), its own queue link's direction on a queue cell (0x00522850), cell type 10 (0x00536350) and, for staff, cells outside the patrol rectangle (0x00506ED0); OpenTPW's maps link path cells only to path cells (ParkPathBuilder, saves), and it has no type 10 cells and no wandering staff yet (ECON-022) — evidence needed: none for guests on path cells
+				// [APPROX:GUEST-010] a candidate is a link of the current cell to a path cell; the original keeps every link except to queue cells (removed on a path cell, 0x00536310 / 0x00536320), its own queue link's direction on a queue cell (0x00522850), cell type 10 (0x00536350) and, for staff, cells outside the patrol rectangle (0x00506ED0); this bounded adapter retains path targets (and queue targets from queue starts), including for linked access starts; generalized target types remain gated
 				// staff keep to their patrol rectangle (0x00506ED0 removes the candidates outside it)
 				var linked = (links & GuestPathGrid.LinkValue( direction )) != 0 && (grid.IsWalkable( cell.X + dx, cell.Y + dy ) || onQueue && grid.IsQueue( cell.X + dx, cell.Y + dy ))
 					&& !(onQueue && queueLink == GuestPathGrid.LinkValue( direction ))

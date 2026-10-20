@@ -25,13 +25,15 @@ public class ClosedRideAdmissionTests
 		var runtime = fixture.Runtime;
 		var ride = runtime.Visitors;
 		fixture.CallHead( 101, 102 );
+		Assert.AreEqual( 101, ride.CalledGuest );
 		runtime.Close();
 		Assert.IsFalse( runtime.IsOpen );
 		var before = ParkResumeJson.Serialize( runtime.CaptureSnapshot() );
 		Assert.IsFalse( ride.PresentForBoarding( 101 ) );
 		Assert.IsFalse( ride.PresentForBoarding( 101 ), "Repeated presentation must not write an offer either." );
 		Assert.AreEqual( 0, runtime.GetVariable( RideVariables.VAR_LETMEON ) );
-		Assert.AreEqual( 101, ride.CalledGuest, "Immediate close-time withdrawal is a separate residual." );
+		// [BIN:TPW-EXE:0x004DF300 close clears the loading slot] the close itself zeroes +0x6C; the refusal then touches nothing
+		Assert.AreEqual( 0, ride.CalledGuest, "The close withdraws the call at once." );
 		CollectionAssert.AreEqual( new[] { 101, 102 }, ride.Queue.ToArray() );
 		CollectionAssert.AreEqual( new[] { "call 101" }, fixture.Host.Events );
 		CollectionAssert.AreEqual( before, ParkResumeJson.Serialize( runtime.CaptureSnapshot() ), "Refusal must not mutate either the bridge or the script." );
@@ -127,6 +129,17 @@ public class ClosedRideAdmissionTests
 	/// </summary>
 	private static (QueueTests.Rig Rig, Guest Guest, Action Step) WalkToStandPoint( RuntimeFixture fixture )
 	{
+		var (rig, guest, step) = CallGuest( fixture );
+		for ( var tick = 0; tick < 4000 && guest.State != GuestState.Boarding; tick++ ) step();
+		Assert.AreEqual( GuestState.Boarding, guest.State );
+		Assert.IsTrue( guest.HasWaypoint, "The guest is still on its way to the stand point." );
+		Assert.AreEqual( 0, fixture.Runtime.GetVariable( RideVariables.VAR_LETMEON ) );
+		return (rig, guest, step);
+	}
+
+	/// <summary>As <see cref="WalkToStandPoint"/>, stopped at the call: the guest still stands in state 11 with its call flag set.</summary>
+	private static (QueueTests.Rig Rig, Guest Guest, Action Step) CallGuest( RuntimeFixture fixture )
+	{
 		var runtime = fixture.Runtime;
 		var ride = runtime.Visitors;
 		var rig = new QueueTests.Rig();
@@ -151,10 +164,6 @@ public class ClosedRideAdmissionTests
 		Assert.AreEqual( guest.Id, ride.CalledGuest );
 		Assert.AreEqual( GuestState.Queueing, guest.State, "The call marks state 11; its next queue update starts the stand-point walk." );
 		Assert.IsTrue( guest.QueueCalled );
-		for ( var step = 0; step < 4000 && guest.State != GuestState.Boarding; step++ ) Step();
-		Assert.AreEqual( GuestState.Boarding, guest.State );
-		Assert.IsTrue( guest.HasWaypoint, "The guest is still on its way to the stand point." );
-		Assert.AreEqual( 0, runtime.GetVariable( RideVariables.VAR_LETMEON ) );
 		return (rig, guest, Step);
 	}
 
@@ -182,10 +191,11 @@ public class ClosedRideAdmissionTests
 		if ( close ) runtime.Close();
 		var before = ride.CaptureSnapshot();
 		Assert.IsFalse( before.LetMeOnWritten );
+		Assert.AreEqual( close ? 0 : guest.Id, before.CalledGuest, "The close (0x004DF300) clears the loading slot at once." );
 		ArriveAtStandPoint( rig, guest );
 		Assert.AreEqual( before.LastAdmissionTurn, ride.CaptureSnapshot().LastAdmissionTurn, "Only the guest's subturns ran." );
 		Assert.AreEqual( close ? 0 : guest.Id, runtime.GetVariable( RideVariables.VAR_LETMEON ) );
-		Assert.AreEqual( guest.Id, ride.CalledGuest );
+		Assert.AreEqual( close ? 0 : guest.Id, ride.CalledGuest );
 		Assert.AreEqual( (0, 0), (ride.BoardedTotal, ride.Dismissed) );
 		CollectionAssert.AreEqual( new[] { guest.Id }, ride.Queue.ToArray() );
 		if ( !close )
@@ -207,6 +217,75 @@ public class ClosedRideAdmissionTests
 		Assert.AreEqual( GuestState.DoingNothing, guest.State );
 		Assert.AreEqual( (0, 1), (ride.CalledGuest, ride.Dismissed) );
 		Assert.AreEqual( 0, ride.Queue.Count() );
+	}
+
+	[TestMethod]
+	public void AGuestWalkingWhenTheRideClosesAndReopensBeforeItsNextUpdateIsAdmittedOnArrival()
+	{
+		using var fixture = new RuntimeFixture();
+		var runtime = fixture.Runtime;
+		var ride = runtime.Visitors;
+		var (rig, guest, _) = WalkToStandPoint( fixture );
+		runtime.Close();
+		Assert.AreEqual( 0, ride.CalledGuest, "The close (0x004DF300) clears the loading slot at once." );
+		runtime.Open();
+		var turn = ride.CaptureSnapshot().LastAdmissionTurn;
+		ArriveAtStandPoint( rig, guest );
+		Assert.AreEqual( turn, ride.CaptureSnapshot().LastAdmissionTurn, "No ride update ran between the close and the arrival." );
+		// [BIN:TPW-EXE:0x004E0976 AdmitPerson admits the presenting guest] with the slot cleared AdmitPerson logs "admitting wrong person" and writes VAR_LETMEON for the guest that presents itself
+		Assert.AreEqual( GuestState.WaitingToBoard, guest.State );
+		Assert.AreEqual( guest.Id, runtime.GetVariable( RideVariables.VAR_LETMEON ) );
+		Assert.AreEqual( guest.Id, ride.CalledGuest );
+		Assert.AreEqual( 0, ride.Dismissed );
+	}
+
+	[TestMethod]
+	public void ARefusedGuestIsCalledAgainWhenTheRideReopensBeforeItsNextUpdate()
+	{
+		using var fixture = new RuntimeFixture();
+		var runtime = fixture.Runtime;
+		var ride = runtime.Visitors;
+		var (rig, guest, step) = WalkToStandPoint( fixture );
+		var simulation = rig.Simulation;
+		var calls = 0;
+		ride.AdmissionChecked += ( _, check ) => calls += check.CalledGuest == guest.Id ? 1 : 0;
+		runtime.Close();
+		ArriveAtStandPoint( rig, guest );
+		Assert.AreEqual( GuestState.MovingUpQueue, guest.State, "Refused at the closed ride, the guest walks back to its place." );
+		for ( var tick = 0; tick < 4000 && guest.State == GuestState.MovingUpQueue; tick++ ) simulation.Tick( Tick );
+		Assert.AreEqual( GuestState.Queueing, guest.State );
+		Assert.AreEqual( (0, 0), (ride.CalledGuest, ride.Dismissed), "No ride update has run since the close." );
+		runtime.Open();
+		// The ride's next update finds nobody pending (the close cleared +0x6C) and its standing head at place 0: it calls the guest again (0x004E1220).
+		for ( var tick = 0; tick < 4000 && guest.State != GuestState.WaitingToBoard; tick++ ) step();
+		Assert.AreEqual( GuestState.WaitingToBoard, guest.State );
+		Assert.AreEqual( guest.Id, runtime.GetVariable( RideVariables.VAR_LETMEON ) );
+		Assert.AreEqual( (guest.Id, 0), (ride.CalledGuest, ride.Dismissed) );
+		Assert.AreEqual( 1, calls, "The reopened ride called the guest again." );
+	}
+
+	[TestMethod]
+	public void ACalledGuestStillStandingWaitsWhileTheRideIsClosedAndIsCalledAgainOnReopening()
+	{
+		using var fixture = new RuntimeFixture();
+		var runtime = fixture.Runtime;
+		var ride = runtime.Visitors;
+		var (rig, guest, step) = CallGuest( fixture );
+		var simulation = rig.Simulation;
+		var calls = 0;
+		ride.AdmissionChecked += ( _, check ) => calls += check.CalledGuest == guest.Id ? 1 : 0;
+		runtime.Close();
+		Assert.AreEqual( 0, ride.CalledGuest );
+		var turn = simulation.ParkTurn;
+		for ( var tick = 0; tick < 4000 && simulation.ParkTurn < turn + 3; tick++ ) simulation.Tick( Tick );
+		// [BIN:TPW-EXE:0x005001A4 called without the loading slot] place 0 and the call flag set, but the ride's +0x6C no longer names the guest: its state-11 update ends there
+		Assert.AreEqual( GuestState.Queueing, guest.State, "The guest does not walk to the stand point of a ride that no longer loads it." );
+		Assert.IsTrue( guest.QueueCalled, "The flag stays set." );
+		runtime.Open();
+		for ( var tick = 0; tick < 4000 && guest.State != GuestState.WaitingToBoard; tick++ ) step();
+		Assert.AreEqual( GuestState.WaitingToBoard, guest.State );
+		Assert.AreEqual( (guest.Id, 0), (ride.CalledGuest, ride.Dismissed) );
+		Assert.AreEqual( 1, calls, "The reopened ride called the guest a second time." );
 	}
 
 	[TestMethod]

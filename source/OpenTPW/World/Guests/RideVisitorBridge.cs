@@ -916,6 +916,18 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 		return true;
 	}
 
+	/// <summary>
+	/// The close (tp.exe <c>0x004DF300</c>, and <c>SetState</c> 1, 2 and 4): the loading slot <c>+0x6C</c> is cleared at once, so a guest that was called but has not yet written
+	/// its offer is no longer the pending visitor (its stand-point admission then refuses it while the ride is closed, or takes it once the ride has opened again). An offer
+	/// already written stays: tp.exe's AdmitPerson cleared the slot when it wrote VAR_LETMEON, and the close leaves VAR_LETMEON alone.
+	/// </summary>
+	// [BIN:TPW-EXE:0x004DF300 close clears the loading slot] "Object %d: Closing...": the open word +0x68 = 0, "person being loaded was %d (about to zeroise)", +0x6C = 0, script variable 6 (VAR_RIDECLOSED) = 1 and the model state call 0x00454550(1); no guest, flag or queue word is touched. Its callers are the park door 0x00519EF0, the coaster tool's entry 0x00447520 and the ride window's close 0x0048CCF0; SetState 1, 2 and 4 (0x004E0E92, 0x004E0FA0, 0x004E10A4) and the repair tail's re-close (0x004DFD3E) clear +0x6C the same way
+	public void ClearLoadingSlot()
+	{
+		if ( !letMeOnWritten )
+			called = 0;
+	}
+
 	private void Withdraw()
 	{
 		if ( letMeOnWritten && Get( RideVariables.VAR_LETMEON ) == called )
@@ -931,7 +943,11 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	/// </summary>
 	public bool PresentForBoarding( int guestId )
 	{
-		if ( guestId == 0 || guestId != called || vm == null )
+		if ( guestId == 0 || vm == null )
+			return false;
+		// AdmitPerson admits whoever presents itself (it only logs "admitting wrong person" when +0x6C names someone else); OpenTPW calls only the queue head and only a
+		// standing head, so the presenting guest is the pending visitor or, once a close (ClearLoadingSlot) or a busy VAR_LETMEON has cleared it, nobody: any other id is refused
+		if ( called != 0 && guestId != called )
 			return false;
 		// Recheck the owner's open word and retained state at the stand point; the choice's coaster/track predicate does not apply here.
 		// [BIN:TPW-EXE:0x004E0900 AdmitPerson state/open test] AdmitPerson refuses a ride in state 1 (+0x19C), with the open word +0x68 = 0 or in state 4 before the loading-slot and VAR_LETMEON checks: it logs and returns 0 without touching the ride (0x004E0A30), so the pending visitor and VAR_LETMEON stay as they are
@@ -942,14 +958,14 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 			return false;
 		if ( letMeOnWritten )
 			return true;
+		// [BIN:TPW-EXE:0x004E09B0 AdmitPerson clears the loading slot] past the state/open test AdmitPerson logs a loading slot +0x6C that names someone else ("admitting wrong person", 0x004E0976: none after a close cleared it)
+		// and clears it before it reads VAR_LETMEON; a busy VAR_LETMEON then logs "script changed its mind about admission!" and returns 0 (0x004E09EC), leaving the variable alone, so the ride calls its head again at a later update
+		called = 0;
 		// [BIN:TPW-EXE:0x551724 critical flag] the original's host side never looks at the critical flag (its only reader is the slice loop); the admission method writes VAR_LETMEON whenever it is 0, whatever the script is doing
 		if ( Get( RideVariables.VAR_LETMEON ) != 0 )
-		{
-			// [BIN:TPW-EXE:0x004E09B0 AdmitPerson clears the loading slot] past the state/open test AdmitPerson clears the person being loaded (+0x6C) before it reads VAR_LETMEON;
-			// a busy VAR_LETMEON then logs "script changed its mind about admission!" and returns 0 (0x004E09EC), leaving the variable alone, so the ride calls its head again at a later update
-			called = 0;
 			return false;
-		}
+		// The written guest is kept as the bridge's pending visitor: OpenTPW's state 14 (HostStep, MarkBoarded) follows it there, where tp.exe's guest watches VAR_LETMEON itself
+		called = guestId;
 		Set( RideVariables.VAR_LETMEON, guestId );
 		letMeOnWritten = true;
 		return true;

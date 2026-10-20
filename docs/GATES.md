@@ -59,8 +59,8 @@ The grid holds the original's types: the world init types the cells without terr
   queue are taken as connected, because OpenTPW's ride entrance cells keep no link byte.
 - `ECON-050`: a removed object empties the cells it typed; the original's removal path to its cells is not traced, and the placement's other cell
   writes (the link to the path in front of an entrance) are not modelled.
-- `GUEST-011`: a paid visitor walks in only while the entrance gate's script variable 1 (`VAR_STATUS`, `0x51a290`) is 1, else it goes home as at a closed park (`0x4ff814`, `GuestSimulation.EntranceGateOpen`);
-  the closed-ride queue turn-away is the original's (the door closes the rides, whose update dismisses the queue head, one per turn), but the close clears a walking guest's call at once (`0x4df300`) where OpenTPW withdraws it at the ride's next update.
+- `GUEST-011` (retired): a paid visitor walks in only while the entrance gate's script variable 1 (`VAR_STATUS`, `0x51a290`) is 1, else it goes home as at a closed park (`0x4ff814`, `GuestSimulation.EntranceGateOpen`);
+  the closed-ride queue turn-away is the original's (the door closes the rides, whose update dismisses the queue head, one per turn), and the close clears a called guest's loading slot at once (`0x4df300`, [CLOSED-RIDE-ADMISSION.md](CLOSED-RIDE-ADMISSION.md)).
 - The keyboard shortcuts are the door button's own help rows; the original's shortcut table row for Ctrl-C
   is a fork lead (`park-engine.md`, PC `0x0040c410`), not verified statically.
 

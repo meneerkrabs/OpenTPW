@@ -59,17 +59,36 @@ These are host regression tests, not original-game execution, imported-save
 queue reconstruction, or a native timing-equivalence result. They require the
 C# test runner; source validation alone does not establish that they pass.
 
-## Remaining closure scope
+## Close-time withdrawal
 
-`GUEST-011` remains open: close-time pending-call/loading-slot withdrawal is
-still separate from this guard. Closing still withdraws the pending guest at
-the next queue-head dismissal. This change does not clear an already-written
-offer, alter the close/withdraw protocol, or implement the entrance-gate wait
-state. No approximation ID is retired.
+tp.exe's close `0x004DF300` ("Object %d: Closing...") writes the open word
+`+0x68` = 0, zeroes the loading slot `+0x6C` ("person being loaded was %d
+(about to zeroise)"), writes `VAR_RIDECLOSED` = 1 and calls the model routine
+`0x00454550(1)`; it touches no guest, call flag or queue word. Its callers are
+the park door `0x00519EF0`, the coaster tool's entry `0x00447520` and the ride
+window's close `0x0048CCF0`; `SetState` 1, 2 and 4 and the repair tail's
+re-close clear `+0x6C` the same way. `OriginalObjectRuntime.Close` now clears
+the bridge's pending visitor at once (`RideVisitorBridge.ClearLoadingSlot`),
+unless the guest has already written its offer (AdmitPerson clears `+0x6C`
+when it writes `VAR_LETMEON`, and the close leaves `VAR_LETMEON` alone).
 
-Until that withdrawal is ported, a guest refused at a closed ride walks back
-to its place still named as the ride's pending visitor (tp.exe's close
-`0x004DF300` would already have cleared `+0x6C`). The ride's next update
-dismisses it as the closed queue's head; a ride reopened before that update
-keeps the stale call, so its admission calls nobody until that guest leaves
-the queue through one of its own state-11 exits.
+What follows is the original's:
+
+- A called guest still standing at place 0 with its call flag set, whose ride
+  no longer names it, ends its state-11 update there ("Person been admitted to
+  ride %d but ride %d not ready to admit!", `0x005001A4`) until the ride calls
+  it again or the closed ride's update dismisses it.
+- A guest on its way to the stand point is refused there while the ride is
+  closed and walks back to its place; once the ride has opened again, the
+  next ride update finds nobody pending and calls its standing head again.
+- A guest that arrives after the ride has reopened is admitted at once:
+  AdmitPerson only logs a loading slot that does not name the presenting guest
+  ("admitting wrong person", `0x004E0976`), then clears it and writes
+  `VAR_LETMEON`. OpenTPW calls only a standing queue head, so the presenting
+  guest is always the pending visitor or, after a close or a busy refusal,
+  nobody.
+
+`ClosedRideAdmissionTests` covers the three cases, closing and reopening
+before the ride's next update. `GUEST-011` is retired: its remaining text (the
+call withdrawn only at the next update, and a booth wait without a state of its
+own, which state 3 `0x004FF7F0` now is) no longer describes OpenTPW.

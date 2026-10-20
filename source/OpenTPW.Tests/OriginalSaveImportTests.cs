@@ -52,7 +52,7 @@ public class OriginalSaveImportTests
 	/// <paramref name="unverifiedFootprint"/> records Belly Bounce as 2×1 turned 90°, a footprint without a verified rule.
 	/// </summary>
 	internal static OriginalParkImport Park( BalanceSettings settings, byte[]? bank = null, uint parkClosed = 0, IEnumerable<(uint, uint, byte[])>? extraThings = null,
-		byte[]? researcher = null, byte[]? bellyBounce = null, byte[]? staffHq = null, bool unverifiedFootprint = false, byte[]? challenges = null, byte[]? staffPool = null, Func<int, int, byte[]?>? cellOverride = null, uint worldState = 0 )
+		byte[]? researcher = null, byte[]? bellyBounce = null, byte[]? staffHq = null, bool unverifiedFootprint = false, byte[]? challenges = null, byte[]? staffPool = null, Func<int, int, byte[]?>? cellOverride = null, uint gameTick = 755, byte[]? calendar = null, uint worldState = 0 )
 	{
 		var map = OriginalParkImportTests.CreateMap( 3, 3, ( _, _ ) => 0 );
 		var things = SaveTestPayloads.ParkThings();
@@ -72,7 +72,7 @@ public class OriginalSaveImportTests
 			SaveTestPayloads.RideSystemRecord( 1601, 0, 0, 1, 1, SaveObject.FixedItemKind, 1 ),
 			SaveTestPayloads.RideSystemRecord( 1100, 1, 1, unverifiedFootprint ? 2 : 1, 1, SaveObject.PlacedObjectKind, 2, rotation: unverifiedFootprint ? 90 : 0 ),
 		} );
-		var payload = SaveTestPayloads.Payload( SaveTestPayloads.World( SaveTestPayloads.ParkVariables( parkClosed: parkClosed, worldState: worldState ), grid, SaveTestPayloads.Things( things ), opaque: staffPool ), rideSystem );
+		var payload = SaveTestPayloads.Payload( SaveTestPayloads.World( SaveTestPayloads.ParkVariables( gameTick: gameTick, parkClosed: parkClosed, worldState: worldState ), grid, SaveTestPayloads.Things( things ), opaque: staffPool, calendar: calendar ), rideSystem );
 		return OriginalParkImport.Import( payload, map );
 	}
 

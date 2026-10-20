@@ -141,8 +141,9 @@ public sealed partial class OriginalEconomyImport
 		var calendar = world.Calendar;
 		var epoch = (ParkCalendar.Epoch - new DateTime( 1601, 1, 1 )).Ticks;
 		// [BIN:TPW-EXE:0x4F7E80 calendar constructor] an unplayed park (restart.INTS) keeps the constructor's calendar: the park's start (2000-01-01), month cache 0, day cache -1; the first update fills the caches
-		// its first update posts a day message (no date equals day -1; the world init 0x5156A0 syncs only the month and year caches, 0x4F85A0), which the imported park, started synchronised as a new park is, does not (ECON-063, tagged at ParkCalendar.Update)
+		// its first update posts a day message (no date equals day -1; the world init 0x5156A0 syncs only the month and year caches, 0x4F85A0). Keep that pending message until an actual turn.
 		var unplayed = calendar.IsInitial && world.Variables.GameTick == 0;
+		economy.PendingInitialDay = unplayed;
 		var matches = unplayed || calendar.FunnyTimeStart == epoch && calendar.FunnySecsPerRealSec == ParkCalendar.SecondsPerTurn * 4
 			&& calendar.MonthAtLastUpdate == date.Month - 1 && calendar.DayAtLastUpdate == date.Day;
 		evidence.Add( $"Park turn {world.Variables.GameTick} imported ({ParkCalendar.ToDate( economy.Tick )}); the save's calendar (rate {calendar.FunnySecsPerRealSec}, month cache {calendar.MonthAtLastUpdate}, day cache {calendar.DayAtLastUpdate}) {(matches ? "agrees" : "does not agree")} with that date." );

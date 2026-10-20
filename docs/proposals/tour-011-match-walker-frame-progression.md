@@ -1,6 +1,12 @@
 # TOUR-011: Match walker frame progression
 
-## Status and classification
+## Implementation update (October 20, 2026)
+
+A bounded implementation now makes scripted WALK poses consume the visitor-owned last emitted frame already requested by the shared pose phase. An absent emitted frame stays hidden, rather than falling back to elapsed-time animation. Provider-free geometry helpers retain their legacy fallback. Synthetic regression coverage includes finite gesture/cheer prefixes and stand tails, BOUNCE-before-WALK ordering, due equality, read-only repeated collection and same-epoch body-history JSON continuation. No movement, scheduler, VM or save-schema changes are included.
+
+Independent source review passed. Python fidelity tests (13) and progress tests (10), their consistency checks and whitespace checks passed. C# compilation and execution await CI; no original visual equivalence or full TOUR-011 completion is claimed. Clock, terrain, movement and attachment residuals remain. The following is the original proposal, retained as historical scope, not current implementation status.
+
+## Original proposal status and classification
 - Classification: approximation.
 - Plan-only local proposal: no runtime implementation, annotation retirement, publication or merge performed.
 - Snapshot supplied as main 5ccddcab (export has no .git; commit not independently verified).

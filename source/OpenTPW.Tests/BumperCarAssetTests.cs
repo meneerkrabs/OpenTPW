@@ -84,7 +84,7 @@ public class BumperCarAssetTests
 	}
 
 	/// <summary>The ride in a small queue with <paramref name="count"/> guests heading for it (the setup of the stuck-rider probe).</summary>
-	private static (OriginalObjectRuntime Runtime, System.Collections.Generic.List<Guest> Guests, GuestSimulation Simulation) BuildRide( string theme, ObjectCatalogEntry entry, int count )
+	internal static (OriginalObjectRuntime Runtime, System.Collections.Generic.List<Guest> Guests, GuestSimulation Simulation) BuildRide( string theme, ObjectCatalogEntry entry, int count )
 	{
 		var park = OriginalPark.Load( theme );
 		var grid = GuestPathGrid.FromOriginal( park.Map, park.Save! );

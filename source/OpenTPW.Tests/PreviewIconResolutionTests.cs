@@ -1,3 +1,4 @@
+using System;
 using System.IO;
 using System.Linq;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
@@ -11,6 +12,20 @@ public class PreviewIconResolutionTests
 {
 	private static ModelFile Quad() => new( new MemoryStream( Md2ModelFileTests.CreateGeometry() ) );
 
+	/// <summary>
+	/// The object window's preview of <paramref name="icon"/> at <paramref name="yaw"/> from the quad's front: one depth-tested image, drawn as one quad of the
+	/// batch. The quad faces +Z and the preview looks from the -Z side, so it is turned half round.
+	/// </summary>
+	private static UiDepthImage Drawn( PreviewIcon icon, float yaw )
+	{
+		var batch = new UiBatch();
+		icon.Draw( batch, new UiRect( 0, 0, 100, 100 ), yaw + MathF.PI );
+		var image = batch.DepthImages.Single();
+		Assert.AreSame( image, batch.Draws.Single().Texture.DepthImage );
+		Assert.AreEqual( 6, batch.Draws.Single().Vertices.Count );
+		return image;
+	}
+
 	[TestMethod]
 	public void SharedMaterialIsResolvedOnceAndRetainsEveryTriangle()
 	{
@@ -23,10 +38,10 @@ public class PreviewIconResolutionTests
 		Assert.AreEqual( 2, icon.TriangleCount );
 		foreach ( var yaw in new[] { 0f, 0.5f, 1f } )
 		{
-			var batch = new UiBatch();
-			icon.Draw( batch, new UiRect( 0, 0, 100, 100 ), yaw );
-			Assert.AreEqual( 6, batch.Draws.Sum( draw => draw.Vertices.Count ) );
-			Assert.IsTrue( batch.Draws.All( draw => draw.Texture.ImagePath == "image/tex_a" ) );
+			// the object window's view sees the quad's front at these turns; its image holds both triangles with the one texture
+			var image = Drawn( icon, yaw );
+			Assert.AreEqual( 6, image.Draws.Sum( draw => draw.Vertices.Count ) );
+			Assert.IsTrue( image.Draws.All( draw => draw.Texture.ImagePath == "image/tex_a" ) );
 		}
 		Assert.AreEqual( 1, imageCalls, "drawing a cached preview does not resolve materials again" );
 	}
@@ -48,21 +63,19 @@ public class PreviewIconResolutionTests
 		CollectionAssert.AreEquivalent( new[] { "tex_a", "tex_b" }, calls );
 		foreach ( var yaw in new[] { 0f, 0.5f, 1f } )
 		{
-			var batch = new UiBatch();
-			icon.Draw( batch, new UiRect( 0, 0, 100, 100 ), yaw );
-			CollectionAssert.AreEquivalent( new[] { "image/tex_a", "image/tex_b" }, batch.Draws.Select( draw => draw.Texture.ImagePath ).ToArray() );
-			Assert.IsTrue( batch.Draws.All( draw => draw.Vertices.Count == 3 ) );
+			var image = Drawn( icon, yaw );
+			CollectionAssert.AreEquivalent( new[] { "image/tex_a", "image/tex_b" }, image.Draws.Select( draw => draw.Texture.ImagePath ).ToArray() );
+			Assert.IsTrue( image.Draws.All( draw => draw.Vertices.Count == 3 ) );
 		}
 		Assert.AreEqual( 2, calls.Count );
 	}
 
 	[TestMethod]
-	public void BothFacesAreDrawnAndTheBackFacesGoFirstSoTheyNeverPaintOverTheFrontFaces()
+	public void TheFaceTestKeepsTheTrianglesThatRunClockwiseOnTheScreenAndTheImageHoldsOnlyThose()
 	{
-		// The quad (a wall in the XY plane facing +Z) again with its two triangles wound the other way: the same corners, facing -Z. The original draws both faces
-		// (D3DCULL_NONE, tp.exe 0x566957) and depth tests them; the painter-sorted preview draws the pair turned away from the viewer first and the pair facing it
-		// over it, so a back face never covers a front face (the winter kiosk's split roof slopes) and a face seen from behind is still drawn. Turned less than a
-		// quarter round, the first pair faces the viewer; turned more, the reversed pair does.
+		// The quad (a wall in the XY plane facing +Z) again with its two triangles wound the other way: the same corners, facing -Z. The original keeps a
+		// triangle only when its corners run clockwise on the screen (tp.exe 0x581320 in the primitive builder 0x580530); the preview's camera looks from
+		// the -Z side (0x468e50 tilts by -pi/4), so unturned the reversed pair is kept, and turned half round the first pair is.
 		var model = Quad();
 		var mesh = model.Meshes.Single();
 		var front = mesh.Indices.ToArray();
@@ -70,15 +83,19 @@ public class PreviewIconResolutionTests
 		mesh.Indices = front.Concat( back ).ToArray();
 		var icon = new PreviewIcon( model, _ => "image/quad" );
 		Assert.AreEqual( 4, icon.TriangleCount );
-		foreach ( var (yaw, facing) in new[] { (0f, new[] { 0, 1 }), (0.5f, new[] { 0, 1 }), (1f, new[] { 0, 1 }), (2f, new[] { 2, 3 }), (3f, new[] { 2, 3 }) } )
+		foreach ( var (yaw, kept) in new[] { (0f, new[] { 2, 3 }), (0.5f, new[] { 2, 3 }), (1f, new[] { 2, 3 }), (2.5f, new[] { 0, 1 }), (3f, new[] { 0, 1 }), (MathF.PI, new[] { 0, 1 }) } )
 		{
-			var drawn = icon.ArrangeBuyPreview( new UiRect( 0, 0, 100, 100 ), yaw );
-			Assert.AreEqual( 4, drawn.Count, $"yaw {yaw}: both faces are drawn" );
-			CollectionAssert.AreEquivalent( facing, drawn.Skip( 2 ).Select( triangle => triangle.Index ).ToArray(), $"yaw {yaw}: the pair facing the viewer is drawn last" );
-			Assert.IsTrue( drawn.Skip( 2 ).All( triangle => triangle.FacesViewer ) && drawn.Take( 2 ).All( triangle => !triangle.FacesViewer ), $"yaw {yaw}" );
+			var arranged = icon.ArrangeBuyPreview( new UiRect( 0, 0, 100, 100 ), yaw, 0.5f );
+			Assert.AreEqual( 4, arranged.Triangles.Count, $"yaw {yaw}" );
+			CollectionAssert.AreEquivalent( kept, arranged.Triangles.Where( triangle => triangle.FacesViewer ).Select( triangle => triangle.Index ).ToArray(), $"yaw {yaw}" );
+			foreach ( var triangle in arranged.Triangles )
+			{
+				var clockwise = (triangle.B.X - triangle.A.X) * (triangle.C.Y - triangle.A.Y) - (triangle.C.X - triangle.A.X) * (triangle.B.Y - triangle.A.Y) > 0;
+				Assert.AreEqual( clockwise, triangle.FacesViewer, $"yaw {yaw}, triangle {triangle.Index}" );
+			}
 			var batch = new UiBatch();
-			icon.Draw( batch, new UiRect( 0, 0, 100, 100 ), yaw );
-			Assert.AreEqual( 12, batch.Draws.Sum( draw => draw.Vertices.Count ), $"yaw {yaw}" );
+			icon.DrawBuyPreview( batch, new UiRect( 0, 0, 100, 100 ), yaw, 0.5f );
+			Assert.AreEqual( 2, batch.DepthImages.Single().TriangleCount, $"yaw {yaw}: the image holds the kept pair only" );
 		}
 	}
 
@@ -90,10 +107,9 @@ public class PreviewIconResolutionTests
 		var icon = new PreviewIcon( Quad(), _ => { Assert.Fail( "Runtime texture must take priority." ); return null; },
 			_ => { calls++; return texture; } );
 		Assert.AreEqual( 1, calls );
-		var batch = new UiBatch();
-		icon.Draw( batch, new UiRect( 0, 0, 100, 100 ), 0 );
-		Assert.AreSame( texture, batch.Draws.Single().Texture );
-		Assert.AreEqual( 6, batch.Draws.Single().Vertices.Count );
+		var image = Drawn( icon, 0 );
+		Assert.AreSame( texture, image.Draws.Single().Texture );
+		Assert.AreEqual( 6, image.Draws.Single().Vertices.Count );
 	}
 
 	[TestMethod]
@@ -102,9 +118,7 @@ public class PreviewIconResolutionTests
 		var calls = 0;
 		var icon = new PreviewIcon( Quad(), _ => { calls++; return null; } );
 		Assert.AreEqual( 1, calls );
-		var batch = new UiBatch();
-		icon.Draw( batch, new UiRect( 0, 0, 100, 100 ), 0 );
-		Assert.AreSame( UiTexture.Solid, batch.Draws.Single().Texture );
+		Assert.AreSame( UiTexture.Solid, Drawn( icon, 0 ).Draws.Single().Texture );
 	}
 
 	[TestMethod]
@@ -117,5 +131,30 @@ public class PreviewIconResolutionTests
 		var icon = new PreviewIcon( model, _ => { Assert.Fail( "Untextured or unused material must not load an image." ); return null; },
 			_ => { Assert.Fail( "An unused sign must not be composed." ); return null; } );
 		Assert.AreEqual( 2, icon.TriangleCount );
+	}
+
+	[TestMethod]
+	public void TheImageKeepsTheDepthOrderInsideTheDepthRangeAndSitsOnWholePixels()
+	{
+		var icon = new PreviewIcon( Quad(), _ => "image/quad" );
+		var arranged = icon.ArrangeBuyPreview( new UiRect( 10.3f, 20.6f, 100, 100 ), MathF.PI, 0.5f );
+		var image = icon.ToDepthImage( arranged );
+		Assert.AreEqual( MathF.Floor( image.Rect.X ), image.Rect.X );
+		Assert.AreEqual( MathF.Floor( image.Rect.Y ), image.Rect.Y );
+		Assert.AreEqual( (image.Width, image.Height), ((int)image.Rect.Width, (int)image.Rect.Height) );
+		var kept = arranged.Triangles.Where( triangle => triangle.FacesViewer ).ToArray();
+		var corners = kept.SelectMany( triangle => new[] { triangle.A, triangle.B, triangle.C } ).ToArray();
+		var vertices = image.Draws.SelectMany( draw => draw.Vertices ).ToArray();
+		Assert.AreEqual( corners.Length, vertices.Length );
+		for ( var index = 0; index < corners.Length; index++ )
+		{
+			Assert.AreEqual( corners[index].X - image.Rect.X, vertices[index].Position.X, 1e-4 );
+			Assert.AreEqual( corners[index].Y - image.Rect.Y, vertices[index].Position.Y, 1e-4 );
+			Assert.IsTrue( vertices[index].Position.Z is > 0 and < 1 );
+			for ( var other = 0; other < corners.Length; other++ )
+				if ( corners[index].Z < corners[other].Z )
+					Assert.IsTrue( vertices[index].Position.Z < vertices[other].Position.Z, "the depth order is kept" );
+		}
+		Assert.IsTrue( vertices.All( vertex => vertex.Position.X >= 0 && vertex.Position.X <= image.Width && vertex.Position.Y >= 0 && vertex.Position.Y <= image.Height ) );
 	}
 }

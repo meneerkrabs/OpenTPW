@@ -41,5 +41,5 @@ when it loaded, and the main model otherwise.
 file system that the icon loader does not read.
 
 The original layout is not changed by this. It has one preview frame next to a three-column text catalogue,
-not a grid of turning icons (UI-024). The icon projection, tilt and turn rate remain the UI-026
-approximation.
+not a grid of turning icons (UI-024). The buy window's projection, camera, face test, turn and animation follow tp.exe
+(`docs/UI.md`, "The buy window's preview"); the preview's lighting remains part of UI-026.

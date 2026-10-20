@@ -46,6 +46,7 @@ public class ShaderTests
 	[DataRow( "test.shader" )]
 	[DataRow( "text.shader" )]
 	[DataRow( "ui-batch.shader" )]
+	[DataRow( "ui-depth.shader" )]
 	[DataRow( "ui.shader" )]
 	[DataRow( "unlit.shader" )]
 	[DataRow( "water.shader" )]

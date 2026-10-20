@@ -35,6 +35,35 @@ internal sealed class UiRenderer : IDisposable
 	private GpuVertex[] vertices = Array.Empty<GpuVertex>();
 	private readonly HashSet<string> failedImages = new( StringComparer.OrdinalIgnoreCase );
 
+	// Depth-tested images (UiDepthImage): their own shader and pipeline over the same resource layout, targets and vertex buffers per frame slot.
+	[StructLayout( LayoutKind.Sequential )]
+	private readonly record struct GpuDepthVertex( System.Numerics.Vector3 Position, System.Numerics.Vector2 TexCoords );
+	private static readonly int GpuDepthVertexSize = Marshal.SizeOf<GpuDepthVertex>();
+	private static readonly VertexLayoutDescription DepthVertexLayout = new(
+		new VertexElementDescription( "vPosition", VertexElementSemantic.TextureCoordinate, VertexElementFormat.Float3 ),
+		new VertexElementDescription( "vTexCoords", VertexElementSemantic.TextureCoordinate, VertexElementFormat.Float2 ) );
+	private const PixelFormat DepthImageColorFormat = PixelFormat.R8_G8_B8_A8_UNorm;
+	private const PixelFormat DepthImageDepthFormat = PixelFormat.D32_Float_S8_UInt;
+	private ShaderInfo? depthShader;
+	private Pipeline? depthPipeline;
+	private sealed class DepthTarget( Veldrid.Texture color, Veldrid.Texture depth, Framebuffer framebuffer, ResourceSet set ) : IDisposable
+	{
+		public Veldrid.Texture Color { get; } = color;
+		public Framebuffer Framebuffer { get; } = framebuffer;
+		public ResourceSet Set { get; } = set;
+		public void Dispose()
+		{
+			Set.Dispose();
+			Framebuffer.Dispose();
+			depth.Dispose();
+			Color.Dispose();
+		}
+	}
+	private readonly List<DepthTarget>[] depthTargets = Enumerable.Range( 0, Renderer.FramesInFlight ).Select( _ => new List<DepthTarget>() ).ToArray();
+	private readonly List<DeviceBuffer>[] depthBuffers = Enumerable.Range( 0, Renderer.FramesInFlight ).Select( _ => new List<DeviceBuffer>() ).ToArray();
+	private readonly Dictionary<UiDepthImage, DepthTarget> preparedImages = new( ReferenceEqualityComparer.Instance );
+	private GpuDepthVertex[] depthVertices = Array.Empty<GpuDepthVertex>();
+
 	public UiRenderer( OutputDescription outputs )
 	{
 		shader = ShaderCompiler.CompileShader( Path.GetFullPath( "content/shaders/ui-batch.shader", AppContext.BaseDirectory ) );
@@ -63,7 +92,118 @@ internal sealed class UiRenderer : IDisposable
 	}
 
 	/// <summary>Call once per frame before the first <see cref="Draw"/>.</summary>
-	public void BeginFrame() => frameBuffers = 0;
+	public void BeginFrame()
+	{
+		frameBuffers = 0;
+		preparedImages.Clear();
+	}
+
+	/// <summary>
+	/// Draws the batch's depth-tested images (<see cref="UiBatch.DepthImages"/>) into their targets, for <see cref="Draw"/> to show; then sets
+	/// <paramref name="restore"/> again with full viewports. Call it after the batch is built and before it is drawn, outside the batch's own pass.
+	/// </summary>
+	public void PrepareDepthImages( CommandList commands, UiBatch batch, Framebuffer restore )
+	{
+		if ( batch.DepthImages.Count == 0 )
+			return;
+		var slot = Renderer.SlotOf( Render.FrameNumber );
+		var targets = depthTargets[slot];
+		var buffers = depthBuffers[slot];
+		var used = 0;
+		var bufferIndex = 0;
+		foreach ( var image in batch.DepthImages )
+		{
+			if ( preparedImages.ContainsKey( image ) )
+				continue;
+			if ( used == targets.Count )
+				targets.Add( CreateDepthTarget( image.Width, image.Height ) );
+			else if ( targets[used].Color.Width != (uint)image.Width || targets[used].Color.Height != (uint)image.Height )
+			{
+				var old = targets[used];
+				Render.ScheduleDelete( old.Dispose );
+				targets[used] = CreateDepthTarget( image.Width, image.Height );
+			}
+			var target = targets[used++];
+			preparedImages[image] = target;
+			commands.SetFramebuffer( target.Framebuffer );
+			commands.SetFullViewports();
+			commands.SetFullScissorRects();
+			commands.ClearColorTarget( 0, RgbaFloat.Clear );
+			commands.ClearDepthStencil( 1 );
+			var count = image.Draws.Sum( draw => draw.Vertices.Count );
+			if ( count == 0 )
+				continue;
+			if ( depthVertices.Length < count )
+				depthVertices = new GpuDepthVertex[count];
+			var offset = 0;
+			foreach ( var draw in image.Draws )
+			{
+				foreach ( var vertex in draw.Vertices )
+				{
+					var position = new System.Numerics.Vector3( vertex.Position.X * 2f / image.Width - 1, 1 - vertex.Position.Y * 2f / image.Height, vertex.Position.Z );
+					depthVertices[offset++] = new GpuDepthVertex( position, vertex.TexCoords );
+				}
+			}
+			var bytes = (uint)(count * GpuDepthVertexSize);
+			if ( bufferIndex == buffers.Count )
+				buffers.Add( CreateBuffer( bytes ) );
+			else if ( buffers[bufferIndex].SizeInBytes < bytes )
+			{
+				var old = buffers[bufferIndex];
+				Render.ScheduleDelete( old.Dispose );
+				buffers[bufferIndex] = CreateBuffer( bytes );
+			}
+			var buffer = buffers[bufferIndex++];
+			Device.UpdateBuffer( buffer, 0, ref depthVertices[0], bytes );
+			commands.SetPipeline( DepthPipeline( target.Framebuffer.OutputDescription ) );
+			commands.SetVertexBuffer( 0, buffer );
+			var start = 0u;
+			foreach ( var draw in image.Draws )
+			{
+				var set = GetResourceSet( draw.Texture );
+				if ( set != null )
+				{
+					commands.SetGraphicsResourceSet( 0, set );
+					commands.Draw( (uint)draw.Vertices.Count, 1, start, 0 );
+				}
+				start += (uint)draw.Vertices.Count;
+			}
+		}
+		commands.SetFramebuffer( restore );
+		commands.SetFullViewports();
+		commands.SetFullScissorRects();
+	}
+
+	private DepthTarget CreateDepthTarget( int width, int height )
+	{
+		var factory = Device.ResourceFactory;
+		var color = factory.CreateTexture( TextureDescription.Texture2D( (uint)width, (uint)height, 1, 1, DepthImageColorFormat, TextureUsage.RenderTarget | TextureUsage.Sampled ) );
+		var depth = factory.CreateTexture( TextureDescription.Texture2D( (uint)width, (uint)height, 1, 1, DepthImageDepthFormat, TextureUsage.DepthStencil ) );
+		var framebuffer = factory.CreateFramebuffer( new FramebufferDescription( depth, color ) );
+		// one target pixel per output pixel: point sampled
+		var set = factory.CreateResourceSet( new ResourceSetDescription( resourceLayout, color, Device.PointSampler ) );
+		return new DepthTarget( color, depth, framebuffer, set );
+	}
+
+	private Pipeline DepthPipeline( OutputDescription outputs )
+	{
+		if ( depthPipeline != null )
+			return depthPipeline;
+		var shaderInfo = ShaderCompiler.CompileShader( Path.GetFullPath( "content/shaders/ui-depth.shader", AppContext.BaseDirectory ) );
+		depthShader = shaderInfo;
+		// [BIN:TPW-EXE:0x567620 state word] the draw's state word turns the depth test (ZENABLE, bit 0x8000 clear) and depth writes (ZWRITEENABLE, bit 0x800
+		// clear) on; the device init (0x566910-0x5669c6) never sets ZFUNC, so it is Direct3D's default LESSEQUAL, and the cull mode is D3DCULL_NONE (0x566957)
+		depthPipeline = Device.ResourceFactory.CreateGraphicsPipeline( new GraphicsPipelineDescription(
+			BlendStateDescription.SingleDisabled,
+			new DepthStencilStateDescription( true, true, ComparisonKind.LessEqual ),
+			RasterizerStateDescription.CullNone,
+			PrimitiveTopology.TriangleList,
+			new ShaderSetDescription( [DepthVertexLayout], shaderInfo.ShaderProgram ),
+			[resourceLayout],
+			outputs,
+			ResourceBindingModel.Improved ) );
+		return depthPipeline;
+	}
 
 	/// <param name="invert">Draws with the lightning flash's blend: the destination colour inverted by the batch's (white) coverage.</param>
 	public void Draw( CommandList commands, UiBatch batch, uint framebufferWidth, uint framebufferHeight, bool invert = false )
@@ -120,6 +260,8 @@ internal sealed class UiRenderer : IDisposable
 
 	private ResourceSet? GetResourceSet( UiTexture texture )
 	{
+		if ( texture.DepthImage is { } depthImage )
+			return preparedImages.TryGetValue( depthImage, out var prepared ) ? prepared.Set : null;
 		if ( texture.Rendered is { } rendered )
 		{
 			if ( renderedSets.TryGetValue( rendered, out var renderedSet ) )
@@ -230,11 +372,24 @@ internal sealed class UiRenderer : IDisposable
 			texture.Dispose();
 		}
 		textures.Clear();
-		foreach ( var slot in buffers )
+		foreach ( var slot in buffers.Concat( depthBuffers ) )
 		{
 			foreach ( var buffer in slot )
 				buffer.Dispose();
 			slot.Clear();
+		}
+		foreach ( var slot in depthTargets )
+		{
+			foreach ( var target in slot )
+				target.Dispose();
+			slot.Clear();
+		}
+		preparedImages.Clear();
+		depthPipeline?.Dispose();
+		if ( depthShader is { } depthShaderInfo )
+		{
+			depthShaderInfo.VertexShader.Dispose();
+			depthShaderInfo.FragmentShader.Dispose();
 		}
 		pipeline.Dispose();
 		resourceLayout.Dispose();

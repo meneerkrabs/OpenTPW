@@ -50,6 +50,9 @@ public sealed partial class OriginalObjectRuntime
 		if ( Tour != null || stopped || scriptWorld.Tours.Controllers.Count >= TourWorld.MaximumControllers )
 			return Tour;
 		Tour = new TourController( CurrentTourStation, scriptWorld.NextWorldDraw, scriptWorld.Tours, small ) { AttractionId = AttractionId };
+		// [EXT:cheats-ride-vehicles] a ride the cheat raised before its script created the controller
+		if ( VehiclesRaised )
+			Tour.RaiseCarSlots();
 		Tour.Effect += OnTourEffect;
 		// the controller's first car was created inside its constructor, before anyone listened: its engine starts now
 		ResumeTourEffects();

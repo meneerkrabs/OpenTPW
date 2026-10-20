@@ -248,6 +248,21 @@ public static class PoolSwimming
 		return false;
 	}
 
+	/// <summary>
+	/// [EXT:pools-waves] Carries a swimmer by (<paramref name="dx"/>, <paramref name="dy"/>) (16.16 cells; the push of the waves) when the point it lands on is free water and not within
+	/// <see cref="PoolSwimSettings.MinimumDistance"/> of another body it was not already inside; otherwise it stays (a swimmer pressed against the wall or a crowd is not pushed through it). Returns whether it moved.
+	/// </summary>
+	public static bool Drift( PoolSwimRegion region, ref PoolSwimBody body, int dx, int dy, ReadOnlySpan<(int X, int Y)> others )
+	{
+		if ( dx == 0 && dy == 0 )
+			return false;
+		int nextX = body.X + dx, nextY = body.Y + dy;
+		if ( !region.IsWater( nextX, nextY ) || TooClose( body.X, body.Y, nextX, nextY, others ) )
+			return false;
+		(body.X, body.Y) = (nextX, nextY);
+		return true;
+	}
+
 	/// <summary>Whether moving from (<paramref name="x"/>, <paramref name="y"/>) to the next point brings the swimmer within <see cref="PoolSwimSettings.MinimumDistance"/> of another it was not already inside.</summary>
 	private static bool TooClose( int x, int y, int nextX, int nextY, ReadOnlySpan<(int X, int Y)> others )
 	{

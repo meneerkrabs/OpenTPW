@@ -53,7 +53,8 @@ public sealed partial class ParkHud
 		if ( callStaffButton == null )
 			return;
 		var target = InfoArmOpen && CallTarget( selectedObject, out var economy, out var item, out var toilet );
-		callStaffButton.Visible = target;
+		// a condemned ride's window hides its call button (0x4ad4e0, ApplyObjectStatus)
+		callStaffButton.Visible = target && !objectCondemned;
 		if ( !target )
 			return;
 		CallTarget( selectedObject, out economy, out item, out toilet );

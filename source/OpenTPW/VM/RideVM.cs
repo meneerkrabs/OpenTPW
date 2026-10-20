@@ -262,6 +262,7 @@ public sealed partial class RideVM
 			TimeMilliseconds += deltaSeconds * 1000;
 			World.ObserveClock( SchedulerMilliseconds );
 			RunSlice();
+			RunSliceTail();
 		}
 		if ( StopChildrenIfFaulted() )
 			return;
@@ -284,9 +285,20 @@ public sealed partial class RideVM
 			TimeMilliseconds += substepMilliseconds;
 			World.ObserveClock( SchedulerMilliseconds );
 			if ( TurboByte != 0 || ((ScriptId ^ (int)pass) & 7) == 0 )
+			{
 				RunSlice();
+				RunSliceTail();
+			}
 		}
 		StopChildrenIfFaulted();
+	}
+
+	/// <summary>The loop body's tail after the slice: the object's controller updates (<see cref="IRideSliceTail"/>); a script that faulted in its slice takes none.</summary>
+	// [BIN:TPW-EXE:0x5517D7 slice tail] after the slice loop (0x551719..0x55173C), on every pass the cadence 0x5516E1 selects, the loop body passes the script's words to its object's controllers whether or not instructions ran (a halted script reaches it through 0x5516FF): the speed word +0xC0 to the coaster in the slot +0xE0 (0x43B2B0, 0x5517EA), among others
+	private void RunSliceTail()
+	{
+		if ( State != RideVMState.Faulted )
+			( Effects as IRideSliceTail )?.AfterSlice( this );
 	}
 
 	private bool StopChildrenIfFaulted()
@@ -319,14 +331,14 @@ public sealed partial class RideVM
 		// [BIN:TPW-EXE:0x551719 slice loop] while the counter is above 0 and the pc is valid, one instruction runs (0x551cb0) and the counter falls by one only while the flag is 0 (0x551724..0x551730): CRIT_LOCK (0x551D44) sets the flag, so instructions from the lock on are free, and CRIT_UNLOCK (0x551D59) clears it and zeroes the counter (+0x98), ENDSLICE (0x5542A8) zeroes it too, and a wait rewinds the pc and ends the slice
 		while ( !yieldRequested && State == RideVMState.Running && budget > 0 )
 		{
-			if ( executed >= MaximumInstructionsPerSlice )
-			{
-				Fault( $"slice exceeded {MaximumInstructionsPerSlice} instructions inside a critical section" );
-				break;
-			}
 			if ( ProgramCounter >= instructions.Length )
 			{
 				State = RideVMState.Halted;
+				break;
+			}
+			if ( executed >= MaximumInstructionsPerSlice )
+			{
+				Fault( $"slice exceeded {MaximumInstructionsPerSlice} instructions inside a critical section" );
 				break;
 			}
 

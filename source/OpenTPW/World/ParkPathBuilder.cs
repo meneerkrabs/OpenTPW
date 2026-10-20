@@ -32,6 +32,8 @@ public sealed record SegmentResult( (int X, int Y) SnappedEnd, IReadOnlyList<(in
 {
 	/// <summary>The start of the line.</summary>
 	public (int X, int Y) Start { get; init; }
+	internal QueueSegmentReceipt? QueueReceipt { get; init; }
+	internal bool? QueueFinalEndsTool { get; init; }
 	/// <summary>Every cell of the snapped line, start and end included (what the preview shows).</summary>
 	public IReadOnlyList<(int X, int Y)> Line { get; init; } = Array.Empty<(int X, int Y)>();
 	/// <summary>Line cells that already had the type (placement counter bumped on commit, never charged).</summary>

@@ -102,6 +102,8 @@ public enum ParkCellFlags : ushort
 /// </summary>
 public sealed class ParkCellMap
 {
+	/// <summary>[EXT:pools-bridges] Optional elevated walking layer; underlying water stays unchanged.</summary>
+	public PoolBridgeWorld? PoolBridges { get; internal set; }
 	private readonly byte[] types;
 	private readonly ushort[] flags;
 	private readonly short[] placements;

@@ -21,6 +21,8 @@ public sealed class ParkResearch
 {
 	public const int PointScale = 1000;
 	private readonly BalanceSettings settings;
+	private readonly bool trackRecentItems;
+	private RecentResearchRing[] recentItems = SaveRecentResearch.Empty();
 	private readonly IEconomyObjectCatalog catalog;
 	private readonly List<ResearchItem> items;
 	private readonly HashSet<(int InfoId, int Level)> completed = new();
@@ -28,6 +30,7 @@ public sealed class ParkResearch
 	private readonly int[] effort;
 	private readonly Dictionary<ResearchCategory, ResearchItem> selected = new();
 	private readonly HashSet<(int InfoId, int Level)> itemKeys = new();
+	private readonly SortedSet<int> cheatAvailable = new();
 	private readonly Dictionary<ResearchCategory, List<ResearchItem>> byCategory = new();
 	private readonly Dictionary<(ResearchCategory Category, int Group), (int Count, int Done)> groupStats = new();
 	private readonly int[] highestGroup = new int[Enum.GetValues<ResearchCategory>().Length];
@@ -36,10 +39,43 @@ public sealed class ParkResearch
 	/// <summary>Research is added every this many park turns.</summary>
 	public const int TurnsPerResearch = 20;
 
-	public ParkResearch( BalanceSettings settings, IEconomyObjectCatalog catalog )
+	/// <summary>TPW presentation history in WhichUIType order, copied so callers cannot change the live rings.</summary>
+	public IReadOnlyList<RecentResearchRing> RecentItems => SaveRecentResearch.Copy( recentItems );
+
+	/// <summary>Active slots only: inactive physical words survive saves but never confer recent status.</summary>
+	public bool IsRecentlyResearched( int whichUIType, int infoId )
+	{
+		if ( !trackRecentItems || whichUIType is < 0 or >= SaveRecentResearch.RingCount )
+			return false;
+		var ring = recentItems[whichUIType];
+		var count = ring.Wrapped != 0 ? SaveRecentResearch.Capacity : ring.Head + 1;
+		for ( var index = 0; index < count; index++ )
+			if ( ring.Values[(ring.Head - index + SaveRecentResearch.Capacity) % SaveRecentResearch.Capacity] == infoId )
+				return true;
+		return false;
+	}
+
+	internal void RestoreRecentItems( IReadOnlyList<RecentResearchRing>? rings ) => recentItems = rings == null ? SaveRecentResearch.Empty() : SaveRecentResearch.Copy( rings );
+
+	// The TPW research-completion event appends the object's id to its WhichUIType ring. Level projects and add-ons are events too;
+	// free unlock propagation emits no such event. Theme Park Inc's event policy has not been established.
+	private void RecordRecentItem( ResearchItem item )
+	{
+		if ( !trackRecentItems || item.Cost <= 0 || !catalog.TryGet( item.InfoId, out var info ) || info.WhichUIType is < 0 or >= SaveRecentResearch.RingCount
+			|| item.InfoId is < 0 or > ushort.MaxValue )
+			return;
+		var ring = recentItems[info.WhichUIType];
+		var head = (ring.Head + 1) % SaveRecentResearch.Capacity;
+		var values = ring.Values.ToArray();
+		values[head] = item.InfoId;
+		recentItems[info.WhichUIType] = ring with { Head = head, Wrapped = ring.Wrapped != 0 || head == 0 && ring.Head >= 0 ? 1 : 0, Values = values };
+	}
+
+	public ParkResearch( BalanceSettings settings, IEconomyObjectCatalog catalog, bool trackRecentItems = true )
 	{
 		this.settings = settings;
 		this.catalog = catalog;
+		this.trackRecentItems = trackRecentItems;
 		effort = settings.ResearchEffort.ToArray();
 		Workload = Math.Clamp( settings.ResearchStartingWorkLoad, 0, 100 );
 		items = new List<ResearchItem>();
@@ -213,7 +249,46 @@ public sealed class ParkResearch
 	public IReadOnlyCollection<(int InfoId, int Level)> Completed => completed;
 	public IReadOnlyList<int> Effort => effort;
 
-	public bool IsAvailable( int infoId, int level = 0 ) => completed.Contains( (infoId, level) ) || !itemKeys.Contains( (infoId, level) );
+	public bool IsAvailable( int infoId, int level = 0 ) => completed.Contains( (infoId, level) ) || !itemKeys.Contains( (infoId, level) ) || level == 0 && cheatAvailable.Contains( infoId );
+
+	/// <summary>The objects the research cheat made available without researching them (<see cref="MakeEveryItemAvailable"/>), by Info.Id; empty in a park that never used it.</summary>
+	public IReadOnlyCollection<int> CheatAvailable => cheatAvailable;
+
+	/// <summary>
+	/// The research cheat (Alt+R): every research item's object becomes available to build, without completing its research. The items stay in the lab with their progress, the groups do
+	/// not open and <see cref="IsAllResearched"/> does not change, so the AllResearchedAndBuilt ticket reads the same as before. Returns how many objects became available.
+	/// </summary>
+	// [BIN:TPW-EXE:0x503FF0 research cheat] for each of the manager's items (+0x145C of them, 0x14 bytes each, walked from the last) the object control of the item's id (+0xC, 0x4D3D10) gets its available byte (+0x10) set; an upgrade level's item names its ride, whose control is the ride's own, so the levels themselves stay researched only; the AllResearchedAndBuilt ticket (0x4CA6B0) reads the items left (0x503B30) and the built counts, not the available byte
+	internal int MakeEveryItemAvailable()
+	{
+		var before = cheatAvailable.Count;
+		foreach ( var item in items )
+			if ( !IsAvailable( item.InfoId ) )
+				cheatAvailable.Add( item.InfoId );
+		return cheatAvailable.Count - before;
+	}
+
+	/// <summary>Makes <paramref name="infoIds"/> available as the research cheat does (an original save's research cheat, <see cref="OriginalEconomyImport"/>); ids that are no research item's object, or already available, are skipped. Returns how many became available.</summary>
+	internal int MakeAvailableByCheat( IEnumerable<int> infoIds )
+	{
+		var before = cheatAvailable.Count;
+		foreach ( var infoId in infoIds )
+			if ( items.Any( item => item.InfoId == infoId ) && !IsAvailable( infoId ) )
+				cheatAvailable.Add( infoId );
+		return cheatAvailable.Count - before;
+	}
+
+	/// <summary>Restores <see cref="CheatAvailable"/>; every id must be a research item's object.</summary>
+	internal void RestoreCheatAvailable( IEnumerable<int>? infoIds )
+	{
+		cheatAvailable.Clear();
+		foreach ( var infoId in infoIds ?? Array.Empty<int>() )
+		{
+			if ( !items.Any( item => item.InfoId == infoId ) )
+				throw new InvalidDataException( $"Saved research made object {infoId} available by cheat, but it is no research item." );
+			cheatAvailable.Add( infoId );
+		}
+	}
 
 	public void SetEffort( ResearchCategory category, int value ) => effort[(int)category] = Math.Clamp( value, 0, 100 );
 
@@ -378,6 +453,7 @@ public sealed class ParkResearch
 				MarkCompleted( item );
 				done.Add( item );
 				finished.Add( item );
+				RecordRecentItem( item );
 			}
 			else
 				progress[key] = value;
@@ -470,8 +546,9 @@ public sealed class ParkResearch
 	}
 
 	internal void Restore( IEnumerable<(int InfoId, int Level)> restoredCompleted, IEnumerable<((int InfoId, int Level) Key, long Points)> restoredProgress, IReadOnlyList<int> restoredEffort, IEnumerable<(ResearchCategory Category, int InfoId, int Level)>? restoredCurrent = null,
-		IReadOnlyList<(int InfoId, int Level)>? upgradeOrder = null )
+		IReadOnlyList<(int InfoId, int Level)>? upgradeOrder = null, IReadOnlyList<int>? restoredHighestGroups = null )
 	{
+		RestoreRecentItems( null );
 		selected.Clear();
 		completed.Clear();
 		foreach ( var key in restoredCompleted )
@@ -484,6 +561,9 @@ public sealed class ParkResearch
 		RebuildGroupStats();
 		Array.Clear( highestGroup );
 		OpenGroups();
+		// Own saves can retain groups opened by an imported lab; validate their cursors against those groups.
+		if ( restoredHighestGroups != null )
+			RestoreHighestGroups( restoredHighestGroups );
 		progress.Clear();
 		foreach ( var (key, points) in restoredProgress )
 			progress[key] = points;

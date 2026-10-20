@@ -1,6 +1,10 @@
 # UI-907: Determine visitor rides alignment
 
-## Status and classification
+## Current bounded implementation (2026-10-20)
+
+This PR now corrects only the rides-column alignment and its provenance, with actual CPU row-draw fixtures described in [VISITOR-RIDES-ALIGNMENT](../VISITOR-RIDES-ALIGNMENT.md). The plan-only statements below are historical. Exact-head CI is pending; no executed C# or native rendered parity claim is made. UI-907 remains registered and full native pixel/font validation is not claimed.
+
+## Historical proposal status and classification
 - Plan-only draft proposal; no implementation, tests-run claim, retirement or merge.
 - Classification: `evidence_only`.
 - Baseline: `meneerkrabs/OpenTPW` main `5ccddcab` (2026-10-18).

@@ -1,0 +1,141 @@
+{
+  "schema": 1,
+  "note": "The lamps of the evening and night extension (docs/EVENING.md): OpenTPW's own, not data of the original game. Each row names objects (theme, category, archive name, the pools extension's Pools.Extra key, or the id of the extension whose content lists the object) and the lights they get; a light follows a model node (anchor: pivot, centre or top of the node's mesh box) plus an offset in model units (ground in XY, up in Z; 1 model unit = 0.2 engine units, a cell is 10), has a colour (linear 0 to 4 per channel) and a radius in model units (full colour at the centre, nothing at the radius). Lights shine only as it gets dark. A light may flicker (0 to 0.5, the share by which it dips) and a row may name a flame node the extension moves; both follow a play-time clock and are presentation only.",
+  "lamps": [
+    {
+      "note": "Pools extension: the pool lamp (Pools.Extra 5), a warm light at the top of the lamp head",
+      "match": { "poolsExtra": 5 },
+      "lights": [ { "node": "lamp", "anchor": "top", "offset": [0, 0, -1.5], "colour": [0.95, 0.78, 0.48], "radius": 42 } ]
+    },
+    {
+      "note": "Pools extension: the underwater light (Pools.Extra 6), an aqua light on the pool side of the disc, which also makes the basin glow",
+      "match": { "poolsExtra": 6 },
+      "lights": [ { "node": "light", "anchor": "centre", "offset": [0, 14, -6], "colour": [0.3, 0.85, 1.0], "radius": 26 } ]
+    },
+    {
+      "note": "The Lights feature of all four themes (the four lamp heads along the entrance road): warm street lamps",
+      "match": { "category": "feature", "archive": "lights" },
+      "lights": [
+        { "node": "tl01", "anchor": "centre", "offset": [0, 0, 1], "colour": [1.0, 0.82, 0.5], "radius": 45 },
+        { "node": "tl02", "anchor": "centre", "offset": [0, 0, 1], "colour": [1.0, 0.82, 0.5], "radius": 45 },
+        { "node": "tl03", "anchor": "centre", "offset": [0, 0, 1], "colour": [1.0, 0.82, 0.5], "radius": 45 },
+        { "node": "tl04", "anchor": "centre", "offset": [0, 0, 1], "colour": [1.0, 0.82, 0.5], "radius": 45 }
+      ]
+    },
+    {
+      "match": { "theme": "jungle", "category": "feature", "archive": "gates" },
+      "lights": [ { "node": "gateway", "anchor": "top", "offset": [0, 0, 1], "colour": [1.0, 0.85, 0.55], "radius": 60 } ]
+    },
+    {
+      "match": { "theme": "hallow", "category": "feature", "archive": "gates" },
+      "lights": [ { "node": "rail arch", "anchor": "centre", "offset": [0, 0, 0], "colour": [0.85, 0.5, 1.0], "radius": 60 } ]
+    },
+    {
+      "match": { "theme": "space", "category": "feature", "archive": "gates" },
+      "lights": [ { "node": "front sign", "anchor": "centre", "offset": [0, 0, 0], "colour": [0.5, 0.9, 1.0], "radius": 60 } ]
+    },
+    {
+      "match": { "theme": "fantasy", "category": "feature", "archive": "gates" },
+      "lights": [ { "node": "worm", "anchor": "top", "offset": [0, 0, -4], "colour": [1.0, 0.8, 0.6], "radius": 60 } ]
+    },
+    {
+      "note": "Spooky Halloween features: the giant pumpkin glows from inside, the demon statue stands in its own flames, the haunted tower has a lit window",
+      "match": { "theme": "hallow", "category": "feature", "archive": "pumpkin" },
+      "lights": [ { "node": "pu_pumpkin", "anchor": "centre", "offset": [0, 0, 0], "colour": [1.0, 0.5, 0.12], "radius": 28 } ]
+    },
+    {
+      "match": { "theme": "hallow", "category": "feature", "archive": "demstat" },
+      "lights": [ { "node": "flames", "anchor": "pivot", "offset": [0, 0, 6], "colour": [1.0, 0.45, 0.1], "radius": 45 } ]
+    },
+    {
+      "match": { "theme": "hallow", "category": "feature", "archive": "tower1" },
+      "lights": [ { "node": "tower", "anchor": "top", "offset": [0, 0, -9], "colour": [0.95, 0.8, 0.4], "radius": 35 } ]
+    },
+    {
+      "match": { "theme": "space", "category": "feature", "archive": "plasma" },
+      "lights": [ { "node": "pl_dome", "anchor": "centre", "offset": [0, 0, 0], "colour": [0.7, 0.4, 1.0], "radius": 40 } ]
+    },
+    {
+      "match": { "theme": "space", "category": "feature", "archive": "crys_b" },
+      "lights": [ { "node": "main_crystal", "anchor": "centre", "offset": [0, 0, 0], "colour": [0.3, 0.8, 1.0], "radius": 30 } ]
+    },
+    {
+      "match": { "theme": "fantasy", "category": "feature", "archive": "fountain" },
+      "lights": [ { "node": "Crystal Base", "anchor": "centre", "offset": [0, 0, 2], "colour": [0.7, 0.9, 1.0], "radius": 40 } ]
+    },
+    {
+      "match": { "theme": "jungle", "category": "feature", "archive": "lavspurt" },
+      "lights": [ { "node": "vhillx", "anchor": "top", "offset": [0, 0, 1], "colour": [1.0, 0.4, 0.1], "radius": 40 } ]
+    },
+    {
+      "note": "Ride lights, kept modest: the candles of Hocus Pocus move with the arms, the fire pots of Aztec Mayhem and the lava of Eruption glow, the bulbs of Pumpkin Castle shine warm",
+      "match": { "theme": "hallow", "category": "ride", "archive": "candle" },
+      "lights": [
+        { "node": "flame02", "anchor": "centre", "offset": [0, 0, 0], "colour": [1.0, 0.7, 0.3], "radius": 24 },
+        { "node": "flame03", "anchor": "centre", "offset": [0, 0, 0], "colour": [1.0, 0.7, 0.3], "radius": 24 },
+        { "node": "flame04", "anchor": "centre", "offset": [0, 0, 0], "colour": [1.0, 0.7, 0.3], "radius": 24 },
+        { "node": "flame05", "anchor": "centre", "offset": [0, 0, 0], "colour": [1.0, 0.7, 0.3], "radius": 24 },
+        { "node": "flame06", "anchor": "centre", "offset": [0, 0, 0], "colour": [1.0, 0.7, 0.3], "radius": 24 },
+        { "node": "flame07", "anchor": "centre", "offset": [0, 0, 0], "colour": [1.0, 0.7, 0.3], "radius": 24 }
+      ]
+    },
+    {
+      "match": { "theme": "jungle", "category": "ride", "archive": "tvsim" },
+      "lights": [
+        { "node": "flame04", "anchor": "pivot", "offset": [0, 0, 1], "colour": [1.0, 0.5, 0.15], "radius": 30 },
+        { "node": "flame05", "anchor": "pivot", "offset": [0, 0, 1], "colour": [1.0, 0.5, 0.15], "radius": 30 },
+        { "node": "flame1", "anchor": "pivot", "offset": [0, 0, 1], "colour": [1.0, 0.5, 0.15], "radius": 30 },
+        { "node": "flame2", "anchor": "pivot", "offset": [0, 0, 1], "colour": [1.0, 0.5, 0.15], "radius": 30 }
+      ]
+    },
+    {
+      "match": { "theme": "jungle", "category": "ride", "archive": "volcano" },
+      "lights": [ { "node": "d_SPURT", "anchor": "centre", "offset": [0, 0, 0], "colour": [1.0, 0.4, 0.1], "radius": 60 } ]
+    },
+    {
+      "match": { "theme": "hallow", "category": "ride", "archive": "bumper" },
+      "lights": [ { "node": "p_lights", "anchor": "centre", "offset": [0, 0, 2], "colour": [1.0, 0.65, 0.25], "radius": 55 } ]
+    },
+    {
+      "match": { "theme": "space", "category": "ride", "archive": "megacost" },
+      "lights": [
+        { "node": "sc_beamgreen", "anchor": "centre", "offset": [0, 0, 0], "colour": [0.3, 1.0, 0.4], "radius": 30 },
+        { "node": "sc_beamred", "anchor": "centre", "offset": [0, 0, 0], "colour": [1.0, 0.3, 0.3], "radius": 30 }
+      ]
+    },
+    {
+      "match": { "theme": "space", "category": "ride", "archive": "scitour" },
+      "lights": [
+        { "node": "st_aerialg", "anchor": "centre", "offset": [0, 0, 0], "colour": [0.3, 1.0, 0.4], "radius": 25 },
+        { "node": "st_aerialr", "anchor": "centre", "offset": [0, 0, 0], "colour": [1.0, 0.3, 0.3], "radius": 25 }
+      ]
+    },
+    {
+      "match": { "theme": "hallow", "category": "shop", "archive": "cauldron" },
+      "lights": [ { "node": "glow", "anchor": "centre", "offset": [0, 0, 1], "colour": [0.4, 1.0, 0.3], "radius": 30 } ]
+    },
+    {
+      "note": "The evening extension's own torches (content/evening): a warm flame light in the jungle (the bamboo tiki torch) and Halloween (the pumpkin torch); the flame node moves and the light flickers by a quarter (presentation only). Green grass reflects little red or blue, so the jungle's and fantasy's lights are stronger and sit a little lower, to show a pool of light on the lawn",
+      "match": { "mod": "opentpw.evening", "theme": "jungle", "archive": "torch" },
+      "flame": "flame",
+      "lights": [ { "node": "flame", "anchor": "centre", "offset": [0, 0, -4], "flicker": 0.25, "colour": [1.9, 0.88, 0.24], "radius": 44 } ]
+    },
+    {
+      "match": { "mod": "opentpw.evening", "theme": "hallow", "archive": "torch" },
+      "flame": "flame",
+      "lights": [ { "node": "flame", "anchor": "centre", "offset": [0, 0, 0], "flicker": 0.25, "colour": [1.0, 0.55, 0.18], "radius": 40 } ]
+    },
+    {
+      "note": "The space torch's blue plasma flame",
+      "match": { "mod": "opentpw.evening", "theme": "space", "archive": "torch" },
+      "flame": "flame",
+      "lights": [ { "node": "flame", "anchor": "centre", "offset": [0, 0, 0], "flicker": 0.25, "colour": [0.35, 0.62, 1.0], "radius": 40 } ]
+    },
+    {
+      "note": "The fantasy candy torch's pink flame",
+      "match": { "mod": "opentpw.evening", "theme": "fantasy", "archive": "torch" },
+      "flame": "flame",
+      "lights": [ { "node": "flame", "anchor": "centre", "offset": [0, 0, -4], "flicker": 0.25, "colour": [2.1, 0.55, 1.6], "radius": 44 } ]
+    }
+  ]
+}

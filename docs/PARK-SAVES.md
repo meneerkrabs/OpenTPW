@@ -218,6 +218,9 @@ other gameplay fields remain hashed. Synthetic coverage is in `StaffRoleOrderTes
   where the Belly Bounce's queue lies; the load lays those cells again from the level's shipped save (`[EXT:legacy-save-queue-cells]`,
   user-approved 2026-10-20, [GUESTS.md](GUESTS.md#closed-or-split-in-the-guests-queues-and-arrivals-pass)). It changes such a save's cell
   map once; a newer save, or one whose queue the player removed, is not touched.
+  A save older than the access-link fix of 2026-10-17 is not repaired: its entrance cell has its queue link but no link byte,
+  which is also the state of a newer save whose queue the player removed, so the load cannot tell them apart and leaves the
+  ride as the save holds it (no heuristic guesses which it was).
 - **The analyser's caches are saved outside the run hash.** The net worth and the litter/path block counts are cached with their
   turn stamps as the original's analyser keeps them; an older save without them counts afresh at the first read.
 - **The save is pinned to the game data it was made with.** It carries a SHA-256 manifest of the

@@ -174,7 +174,7 @@ public static class ObjectAccessCells
 	/// <summary>
 	/// Lays the saved queue of <paramref name="owner"/> that a park resumed from an OpenTPW save made before the import took the save's queue cells lacks: from <paramref name="front"/>
 	/// (<see cref="EmptyQueueFront"/>) the chain of the original save's type-3 cells of the owner, each step to the neighbour whose saved queue link points back, each cell taken only
-	/// while the resumed map holds empty ground there. Returns the number of cells laid.
+	/// while the resumed map holds empty ground there; a laid cell keeps no link toward a neighbour that does not link back. Returns the number of cells laid.
 	/// </summary>
 	// [EXT:legacy-save-queue-cells] an OpenTPW park save made before the import restored the shipped save's queue cells (#722) holds empty ground where the imported Belly Bounce's queue lies, so its typed front (0x4DE040) is an empty cell no guest can join; tp.exe's saves always hold the cells (0x4D0B30 reads each cell record whole), so the original needs no repair, and OpenTPW lays them at load from the level's shipped save, as the import now does, where the resumed cell is still empty ground and the entrance links into it. User-approved 2026-10-20 ("Herstel bij laden (EXT)").
 	public static int RestoreLegacySavedQueue( ParkCellMap cells, (int X, int Y) front, ushort owner, SaveCellGrid saved, LinkEffects? effects = null )
@@ -183,15 +183,14 @@ public static class ObjectAccessCells
 		ArgumentNullException.ThrowIfNull( saved );
 		bool Takes( int x, int y ) => cells.InBounds( x, y ) && x < saved.CountX && y < saved.CountY && cells.RawTypeAt( x, y ) == 0
 			&& saved[x, y].MapType == (uint)ParkCellType.Queue && saved[x, y].MapParentId == owner;
-		var laid = 0;
+		var laid = new List<(int X, int Y)>();
 		var cell = front;
-		while ( laid < 1000 && Takes( cell.X, cell.Y ) )
+		while ( laid.Count < 1000 && Takes( cell.X, cell.Y ) )
 		{
 			var record = saved[cell.X, cell.Y];
 			cells.TakeSavedQueueCell( cell.X, cell.Y, record );
 			cells.SetFlags( cell.X, cell.Y, cells.FlagsAt( cell.X, cell.Y ) | ((ParkCellFlags)record.MapFlags & ParkCellFlags.NoModify) );
-			effects?.Refresh?.Invoke( cell.X, cell.Y );
-			laid++;
+			laid.Add( cell );
 			(int X, int Y)? next = null;
 			for ( var direction = 0; direction < 4 && next == null; direction++ )
 			{
@@ -204,7 +203,22 @@ public static class ObjectAccessCells
 				break;
 			cell = step;
 		}
-		return laid;
+		// a queue laid only in part (a later cell of it is the player's now) keeps no link toward a neighbour that does not link back, as the queue tool's link pass leaves none
+		foreach ( var (x, y) in laid )
+		{
+			var links = cells.LinksAt( x, y );
+			for ( var direction = 0; direction < 4; direction++ )
+			{
+				var bit = GuestPathGrid.LinkValue( direction );
+				var (dx, dy) = GuestPathGrid.Directions[direction];
+				if ( (links & bit) != 0 && !(cells.InBounds( x + dx, y + dy ) && (cells.LinksAt( x + dx, y + dy ) & GuestPathGrid.LinkValue( (direction + 2) & 3 )) != 0) )
+					links &= (byte)~bit;
+			}
+			if ( links != cells.LinksAt( x, y ) )
+				cells.SetLinks( x, y, links );
+			effects?.Refresh?.Invoke( x, y );
+		}
+		return laid.Count;
 	}
 
 	private static bool IsLinkless( ParkCellMap cells, int x, int y, byte type ) => cells.InBounds( x, y ) && cells.RawTypeAt( x, y ) == type && cells.LinksAt( x, y ) == 0;

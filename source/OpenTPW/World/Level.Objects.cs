@@ -147,6 +147,8 @@ public partial class Level
 					ObjectAccessCells.RepairMissingLinks( cells, item.AccessPoints, item.Entry.HasQueue, new LinkEffects( RefreshTile ) );
 				}
 			}
+			// the shipped save read for the repair is not kept
+			legacyQueueSave = null;
 		}
 		if ( typesFootprints )
 		{
@@ -200,7 +202,7 @@ public partial class Level
 
 	/// <summary>
 	/// [EXT:legacy-save-queue-cells] For a resumed park: an imported HasQueue object whose entrance links into empty ground (an OpenTPW save made before the import took the shipped save's
-	/// queue cells) gets those cells back from the level's shipped save, when that save placed the same object at the same anchor (ObjectAccessCells.RestoreLegacySavedQueue).
+	/// queue cells) gets those cells back from the level's shipped save, when that save placed the same object at the same anchor and angle (ObjectAccessCells.RestoreLegacySavedQueue).
 	/// A newer save holds the cells, so nothing is read or written for it. User-approved 2026-10-20 ("Herstel bij laden (EXT)").
 	/// </summary>
 	private void RestoreLegacySavedQueue( ParkCellMap cells, OriginalObject item )
@@ -208,18 +210,19 @@ public partial class Level
 		if ( OriginalPark is not { } park )
 			return;
 		legacyQueueSave ??= new Lazy<OriginalParkImport?>( () => OriginalPark.ReadShippedSave( park.LevelName, park.Map ) );
-		var laid = RestoreLegacySavedQueue( cells, item.AccessPoints, item.Entry.InfoId, item.Entry.HasQueue, OwnerWord( item ), () => legacyQueueSave.Value, new LinkEffects( RefreshTile ) );
+		var laid = RestoreLegacySavedQueue( cells, item.AccessPoints, item.Entry.InfoId, item.Placement.Rotation, item.Entry.HasQueue, OwnerWord( item ), () => legacyQueueSave.Value, new LinkEffects( RefreshTile ) );
 		if ( laid > 0 )
 			Log.Trace( $"[EXT:legacy-save-queue-cells] {item.Entry.DisplayName}: {laid} queue cell(s) of the shipped save restored into a park saved before the import took them." );
 	}
 
 	/// <summary>The repair of <see cref="RestoreLegacySavedQueue(ParkCellMap, OriginalObject)"/> for one object; <paramref name="shippedSave"/> is read only when the entrance links into empty ground.</summary>
-	internal static int RestoreLegacySavedQueue( ParkCellMap cells, IEnumerable<ObjectAccessPoint> accessPoints, int infoId, bool hasQueue, ushort owner, Func<OriginalParkImport?> shippedSave, LinkEffects? effects = null )
+	internal static int RestoreLegacySavedQueue( ParkCellMap cells, IEnumerable<ObjectAccessPoint> accessPoints, int infoId, int rotation, bool hasQueue, ushort owner, Func<OriginalParkImport?> shippedSave, LinkEffects? effects = null )
 	{
 		var points = accessPoints.ToArray();
 		if ( !hasQueue || ObjectAccessCells.EmptyQueueFront( cells, points, owner ) is not { } front )
 			return 0;
-		if ( shippedSave() is not { } save || !save.PlacedObjects.Any( placed => placed.Record.InfoId == infoId && ParkCellMap.CellWord( placed.Record.X, placed.Record.Y ) == owner ) )
+		if ( shippedSave() is not { } save || !save.PlacedObjects.Any( placed => placed.Record.InfoId == infoId && ParkCellMap.CellWord( placed.Record.X, placed.Record.Y ) == owner
+			&& placed.Record.Rotation == rotation ) )
 			return 0;
 		return ObjectAccessCells.RestoreLegacySavedQueue( cells, front, owner, save.Cells, effects );
 	}

@@ -1,5 +1,8 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
+using System.Runtime.CompilerServices;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace OpenTPW.Tests;
@@ -158,7 +161,7 @@ public class ImportedQueueCellsTests
 		var owner = ParkCellMap.CellWord( record.X, record.Y );
 		Assert.AreEqual( (52, 22), ObjectAccessCells.EmptyQueueFront( cells, points, owner ), "the entrance links into empty ground" );
 		var reads = 0;
-		var laid = Level.RestoreLegacySavedQueue( cells, points, BellyBounceInfoId, hasQueue: true, owner,
+		var laid = Level.RestoreLegacySavedQueue( cells, points, BellyBounceInfoId, record.Rotation, hasQueue: true, owner,
 			() => { reads++; return OriginalPark.ReadShippedSave( "jungle", jungle.Park.Map ); } );
 		Assert.AreEqual( 4, laid );
 		Assert.AreEqual( 1, reads );
@@ -187,7 +190,7 @@ public class ImportedQueueCellsTests
 		var owner = ParkCellMap.CellWord( record.X, record.Y );
 		var version = cells.Version;
 		var reads = 0;
-		Assert.AreEqual( 0, Level.RestoreLegacySavedQueue( cells, points, BellyBounceInfoId, hasQueue: true, owner, () => { reads++; return null; } ) );
+		Assert.AreEqual( 0, Level.RestoreLegacySavedQueue( cells, points, BellyBounceInfoId, record.Rotation, hasQueue: true, owner, () => { reads++; return null; } ) );
 		Assert.AreEqual( 0, reads, "nothing is read for a park that holds its queue" );
 		Assert.AreEqual( version, cells.Version, "no cell is written" );
 		// a newer save whose queue the player removed: the removal unlinks the cells on both sides (0x5367A0), so the entrance links into nothing and stays without a queue
@@ -195,8 +198,82 @@ public class ImportedQueueCellsTests
 			jungle.Grid.ClearQueue( x, y );
 		Assert.IsNull( ObjectAccessCells.EmptyQueueFront( cells, points, owner ) );
 		version = cells.Version;
-		Assert.AreEqual( 0, Level.RestoreLegacySavedQueue( cells, points, BellyBounceInfoId, hasQueue: true, owner, () => { reads++; return jungle.Park.Save; } ) );
+		Assert.AreEqual( 0, Level.RestoreLegacySavedQueue( cells, points, BellyBounceInfoId, record.Rotation, hasQueue: true, owner, () => { reads++; return jungle.Park.Save; } ) );
 		Assert.AreEqual( 0, reads );
 		Assert.AreEqual( version, cells.Version );
+	}
+
+	/// <summary>[EXT:legacy-save-queue-cells] A queue restored only in part (a cell of it holds the player's path now) keeps no link toward a neighbour that does not link back.</summary>
+	[TestMethod]
+	public void APartlyRestoredQueueKeepsNoOneSidedLink()
+	{
+		var jungle = LoadJungle();
+		var cells = jungle.Grid.Cells;
+		foreach ( var (x, y) in SavedQueueCells( jungle.Park.Save!.Cells ) )
+		{
+			cells.SetType( x, y, ParkCellType.Empty );
+			cells.SetFlags( x, y, cells.FlagsAt( x, y ) & ~ParkCellFlags.NoModify );
+		}
+		// the player's unlinked path cell where the queue's second cell lay
+		cells.SetType( 51, 22, ParkCellType.Path );
+		cells.SetLinks( 51, 22, 0 );
+		var record = jungle.Record;
+		var points = ObjectFootprint.GetAccessPoints( jungle.Entry.Shape, record.X, record.Y, record.Rotation ).ToArray();
+		var owner = ParkCellMap.CellWord( record.X, record.Y );
+		Assert.AreEqual( 1, Level.RestoreLegacySavedQueue( cells, points, BellyBounceInfoId, record.Rotation, hasQueue: true, owner, () => jungle.Park.Save ) );
+		Assert.AreEqual( (byte)ParkCellType.Queue, cells.RawTypeAt( 52, 22 ) );
+		Assert.AreEqual( (byte)0x10, cells.LinksAt( 52, 22 ), "the front keeps its link to the entrance, which links back, and drops the -X link the path does not return" );
+		Assert.AreEqual( (byte)0, cells.LinksAt( 51, 22 ), "the player's path is not written" );
+		Assert.AreEqual( 0, Level.RestoreLegacySavedQueue( cells, points, BellyBounceInfoId, record.Rotation + 90, hasQueue: true, owner, () => jungle.Park.Save ), "another angle is not the shipped object" );
+	}
+
+	/// <summary>
+	/// [EXT:legacy-save-queue-cells] The repair through the level's real resume branch (<c>Level.ConnectObjectsToGuests</c> with a resume state, an <see cref="OriginalPark"/> loaded without its
+	/// shipped save as a resume loads it, and the lazily read shipped save): the Jungle layout goes through the park save's cell codec with the four queue cells emptied, as a save made before the
+	/// import holds them, and the resumed Belly Bounce has its four-cell queue. A layout that holds the cells is resumed unchanged. (A whole <c>new Level( snapshot, … )</c> needs the GPU for the
+	/// imported objects' models; this drives the same branch on a headless level, as <c>ObjectAccessCellsTests</c> does for the access links.)
+	/// </summary>
+	[TestMethod]
+	public void TheLevelsResumeRestoresTheQueueOfAParkSavedBeforeTheImport()
+	{
+		var jungle = LoadJungle();
+		var empty = new ParkObjects( jungle.Catalog, new SandboxParkGrid() );
+		var layout = ParkLayoutSnapshot.CaptureSnapshot( jungle.Grid.Cells, empty );
+		var queue = SavedQueueCells( jungle.Park.Save!.Cells ).ToHashSet();
+		Assert.AreEqual( 4, layout.Cells.Cells.Count( cell => queue.Contains( (cell.X, cell.Y) ) ), "a newer save holds the four queue cells" );
+		var old = layout with { Cells = layout.Cells with { Cells = layout.Cells.Cells.Where( cell => !queue.Contains( (cell.X, cell.Y) ) ).ToList() } };
+
+		(ParkCellMap Cells, RideVisitorBridge Bridge, Level Level) Resume( ParkLayoutSnapshot.Data saved )
+		{
+			saved = ParkResumeJson.Deserialize<ParkLayoutSnapshot.Data>( ParkResumeJson.Serialize( saved ) );
+			var cells = ParkLayoutSnapshot.RestoreCellMap( saved );
+			var objects = new ParkObjects( jungle.Catalog, new SandboxParkGrid() );
+			// the imported Belly Bounce as the resume restores it: its placement and runtime (its models are presentation, which needs the GPU)
+			var item = (OriginalObject)RuntimeHelpers.GetUninitializedObject( typeof( OriginalObject ) );
+			const BindingFlags Private = BindingFlags.Instance | BindingFlags.NonPublic;
+			typeof( OriginalObject ).GetField( "<Placement>k__BackingField", Private )!.SetValue( item, new ObjectPlacement( jungle.Record.X, jungle.Record.Y, jungle.Record.Rotation, default, 0 ) );
+			typeof( OriginalObject ).GetField( "<Runtime>k__BackingField", Private )!.SetValue( item, new OriginalObjectRuntime( jungle.Entry, objects.ScriptWorld, seed: 3 ) );
+			((List<OriginalObject>)objects.Objects).Add( item );
+			var simulation = new GuestSimulation( new GuestPathGrid( cells ), GuestSettings.Load( "jungle" ), 7 ) { ArrivalsEnabled = false };
+			var level = (Level)RuntimeHelpers.GetUninitializedObject( typeof( Level ) );
+			typeof( Level ).GetField( "<Objects>k__BackingField", Private )!.SetValue( level, objects );
+			typeof( Level ).GetField( "<Guests>k__BackingField", Private )!.SetValue( level, simulation );
+			typeof( Level ).GetField( "<PathVariants>k__BackingField", Private )!.SetValue( level, new PathTileVariants() );
+			typeof( Level ).GetField( "<OriginalPark>k__BackingField", Private )!.SetValue( level, OriginalPark.Load( "jungle", readShippedSave: false ) );
+			typeof( Level ).GetField( "resumeState", Private )!.SetValue( level, RuntimeHelpers.GetUninitializedObject( typeof( ParkResumeSnapshot ) ) );
+			typeof( Level ).GetMethod( "ConnectObjectsToGuests", Private )!.Invoke( level, null );
+			Assert.IsNull( typeof( Level ).GetField( "legacyQueueSave", Private )!.GetValue( level ), "the shipped save read for the repair is released" );
+			return (cells, item.Visitors, level);
+		}
+
+		var resumed = Resume( old );
+		Assert.AreEqual( (byte)ParkCellType.Queue, resumed.Cells.RawTypeAt( 52, 22 ) );
+		Assert.AreEqual( 4, resumed.Bridge.QueueSizeInCells );
+		Assert.IsNotNull( resumed.Bridge.JoinCell );
+
+		var newer = Resume( layout );
+		Assert.AreEqual( 4, newer.Bridge.QueueSizeInCells );
+		var restoredFromNewer = ParkLayoutSnapshot.CaptureSnapshot( newer.Cells, empty );
+		CollectionAssert.AreEqual( ParkResumeJson.Serialize( layout.Cells.Cells ), ParkResumeJson.Serialize( restoredFromNewer.Cells.Cells ), "a newer save's cells are resumed unchanged" );
 	}
 }

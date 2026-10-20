@@ -11,4 +11,5 @@ smoke sends its visitors to such a ride from that join cell. New with-data tests
 
 A park saved by OpenTPW before this import gets those queue cells back at load from the level's shipped save
 (`[EXT:legacy-save-queue-cells]`, user-approved 2026-10-20), only where its cells are still empty ground and the
-ride's entrance links into them; newer saves are untouched.
+ride's entrance links into them; newer saves are untouched. Saves older than the access-link fix of
+October 17 (an entrance with no link byte) are not repaired: they cannot be told apart from a removed queue.

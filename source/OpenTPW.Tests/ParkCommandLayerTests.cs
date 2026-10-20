@@ -81,6 +81,9 @@ public class ParkCommandLayerTests
 		new( "Pool bridges", @"\bBridges\??!?\.(TryAdd|RemoveAt)\s*\(", nameof( PlacePoolBridgeCommand ) ),
 		// the cell tool commits every line through the writer it holds, a command writer for paths, queues and tracks alike; a track write of its own is refused
 		new( "Kart and water tracks", @"\.(BuildTrack|PlaceTile|RemoveTile|UndoLine|RepairStation)\s*\(|\bnew\s+TrackLineWriter\s*\(|\.Cut\s*\([^)]*commit\s*:", nameof( LayTrackLineCommand ) ),
+		// the coaster tool: its builder's writes (the panel and the HUD hold the builder) and the controller's tool state
+		new( "Coaster builder writes", @"\bbuilder\??\.(Place|RemoveLast|Complete|CloseCircuit|Move|SetHeight|EndEdit|FinishEdit|ApplyEdit|EditLoft|EditYaw|EditBank|EditIncline|EditLoopRotate|EditMove|SwapStack|Cut|Reopen|Delete|OpenFailingClosure)\s*\(", nameof( CoasterClickCommand ) ),
+		new( "Coaster tool state", @"\.EnterTool\s*\(|\bBeingEdited\s*=[^=]", nameof( BeginCoasterToolCommand ) ),
 	};
 
 	/// <summary>
@@ -89,9 +92,7 @@ public class ParkCommandLayerTests
 	/// </summary>
 	internal static readonly (Mutator Mutator, string Phase)[] Remaining =
 	{
-		(new( "Coasters", Call( "CoasterClick" ), "CoasterClick" ), "C1 part 3 (tools)"),
 		(new( "Developer sandbox load", Call( "LoadSandbox" ), "LoadSandbox" ), "C2 (a load replaces the park; a session replaces it from the host)"),
-		(new( "Coaster panel edits", @"\bbuilder\.RemoveLast\s*\(", "CoasterClick" ), "C1 part 3 (tools)"),
 	};
 
 	/// <summary>The starts of a bare call: a line start, an operator or bracket, or a keyword before an expression (a declaration has a type before the name instead).</summary>
@@ -119,6 +120,7 @@ public class ParkCommandLayerTests
 				Path.Combine( "World", "Staff", "StaffPlacement.cs" ),
 				Path.Combine( "World", "Staff", "PatrolAreaTool.cs" ),
 				Path.Combine( "World", "Pools", "PoolTool.cs" ),
+				Path.Combine( "World", "Coasters", "CoasterToolPanel.cs" ),
 			}.Select( relative => Path.Combine( source, relative ) ) )
 			.ToList();
 		foreach ( var file in files )
@@ -254,6 +256,16 @@ public class ParkCommandLayerTests
 		Assert.IsTrue( Caught( tracks, "var writer = new TrackLineWriter( builder, changed, owner );" ) );
 		Assert.IsTrue( Caught( tracks, "var cut = editor.Cut( a, b, commit: true );" ) );
 		Assert.IsFalse( Caught( tracks, "var result = writer.Commit( start, end );" ), "the cell tool commits through the command writer it holds" );
+		var coaster = Converted.Single( mutator => mutator.Name == "Coaster builder writes" );
+		Assert.IsTrue( Caught( coaster, "builder.RemoveLast();" ) );
+		Assert.IsTrue( Caught( coaster, "var result = builder.Cut( first, index );" ) );
+		Assert.IsTrue( Caught( coaster, "builder.EditLoft( edit, value );" ) );
+		Assert.IsFalse( Caught( coaster, "builder.LoopMode = false;" ), "the panel's loop edit mode is its own state" );
+		Assert.IsFalse( Caught( coaster, "if ( builder.BeginEdit( node ) is not { } edit )" ), "a press notes the pylon and writes nothing" );
+		var toolState = Converted.Single( mutator => mutator.Name == "Coaster tool state" );
+		Assert.IsTrue( Caught( toolState, "builder.Ride.EnterTool();" ) );
+		Assert.IsTrue( Caught( toolState, "ride.BeingEdited = true;" ) );
+		Assert.IsFalse( Caught( toolState, "if ( ride.BeingEdited == false )" ) );
 	}
 
 	/// <summary>The command code itself keeps to the simulation's determinism rules (no process-wide randomness, clock or mutable statics), as the simulation folders do.</summary>

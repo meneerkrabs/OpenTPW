@@ -36,12 +36,13 @@ public class ParkSettingCommandLevelTests
 	private Park NewPark() => NewPark( fixture! );
 
 	/// <summary>A level of <paramref name="fixture"/>'s with two placed rides, its staff, gate and paths set up, money in the bank, a mechanic and a full map's land (the tool commands' tests use it too).</summary>
-	internal static Park NewPark( UpgradeCatalogueDefaultsTests fixture )
+	/// <param name="extra">More of the rides' type settings (a coaster's <c>Bumper.WhichTrackType 3</c>).</param>
+	internal static Park NewPark( UpgradeCatalogueDefaultsTests fixture, string extra = "" )
 	{
 		var type = typeof( UpgradeCatalogueDefaultsTests );
 		// the rides' speed slider runs from 10 to 100 (the fixture's type names no range of its own)
 		var world = ((Level Level, ParkEconomy Economy, OriginalObject One, OriginalObject Two, ParkObjectState State))type.GetMethod( "World", BindingFlags.Instance | BindingFlags.NonPublic )!.Invoke( fixture,
-			new object[] { "UsageInfo.MinSpeed 10\nUsageInfo.MaxSpeed 100\n", 0, false } )!;
+			new object[] { "UsageInfo.MinSpeed 10\nUsageInfo.MaxSpeed 100\n" + extra, 0, false } )!;
 		type.GetMethod( "PrepareCapture", BindingFlags.Static | BindingFlags.NonPublic )!.Invoke( null, new object[] { world } );
 		typeof( Level ).GetMethod( "SetupStaff", BindingFlags.Instance | BindingFlags.NonPublic )!.Invoke( world.Level, null );
 		typeof( Level ).GetMethod( "SetupParkGate", BindingFlags.Instance | BindingFlags.NonPublic )!.Invoke( world.Level, null );

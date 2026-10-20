@@ -31,7 +31,7 @@ public class ParkToolCommandLevelTests
 		renderer?.Dispose();
 	}
 
-	private ParkSettingCommandLevelTests.Park NewPark() => ParkSettingCommandLevelTests.NewPark( fixture! );
+	private ParkSettingCommandLevelTests.Park NewPark( string extra = "" ) => ParkSettingCommandLevelTests.NewPark( fixture!, extra );
 
 	/// <summary>Applies <paramref name="log"/> to <paramref name="twin"/> in order, each command as its issuer's result had it.</summary>
 	private static void Replay( IEnumerable<ParkCommandLogEntry> log, Level twin, IReadOnlyList<bool> accepted )
@@ -114,6 +114,43 @@ public class ParkToolCommandLevelTests
 		Assert.IsTrue( level.Commands.Issue( new BeginStaffHireCommand( candidate.Id ) ).Accepted );
 		Assert.IsFalse( level.Commands.Issue( new PlaceStaffCommand( candidate.Id, invalid.X, invalid.Y ) ).Accepted, "a cell no employee may stand on" );
 		Assert.AreEqual( candidate.Id, park.Economy.Staff.PendingPlacementId, "the refused click leaves the placement running" );
+	}
+
+	/// <summary>The coaster tool's entry and exit (the ride closed and opened, the controller's tool state, the being-edited mark that keeps guests off) are commands a twin follows.</summary>
+	[TestMethod]
+	public void TheCoasterToolsEntryAndExitAreCommandsThatMarkTheCoasterBeingEdited()
+	{
+		ParkSettingCommandLevelTests.Park Coaster()
+		{
+			var park = NewPark( "Bumper.WhichTrackType 3\n" );
+			// an uninitialised level has no field initialisers run: the coaster builders the tool keeps
+			typeof( Level ).GetField( "coasterBuilders", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic )!.SetValue( park.Level, new Dictionary<OriginalObject, CoasterBuilder>() );
+			Assert.IsNotNull( park.One.Runtime.Coaster );
+			return park;
+		}
+		var park = Coaster();
+		var level = park.Level;
+		Assert.IsTrue( level.EnterCoasterTool( park.One ) );
+		Assert.IsTrue( park.One.Runtime.Coaster!.BeingEdited, "no guest boards a coaster being edited" );
+		Assert.IsFalse( park.One.IsOpen, "the tool closes the ride" );
+		Assert.IsNotNull( level.CoasterPanel );
+		Assert.AreNotEqual( CoasterPlaceResult.Ok, level.CoasterClick( 200, 200 ), "a click off the site places nothing (and is logged as refused)" );
+		Assert.IsTrue( level.EnterCoasterTool( park.Two ), "another coaster's tool ends this one's first" );
+		Assert.IsFalse( park.One.Runtime.Coaster.BeingEdited );
+		Assert.IsTrue( park.Two.Runtime.Coaster!.BeingEdited );
+		level.ExitCoasterTool();
+		Assert.IsFalse( park.Two.Runtime.Coaster.BeingEdited );
+		Assert.IsFalse( level.IsCoasterToolActive );
+		CollectionAssert.AreEqual( new[] { ParkCommandKind.BeginCoasterTool, ParkCommandKind.CoasterClick, ParkCommandKind.EndCoasterTool, ParkCommandKind.BeginCoasterTool,
+			ParkCommandKind.EndCoasterTool }, level.Commands.Log.Select( entry => entry.Command.Kind ).ToArray() );
+
+		var twin = Coaster();
+		var results = new List<bool>();
+		foreach ( var entry in level.Commands.Log )
+			results.Add( twin.Level.Commands.Apply( entry.Command ).Accepted );
+		Assert.AreEqual( level.ComputeStateHash(), twin.Level.ComputeStateHash(), "the commands alone close, mark and open as the tool did" );
+		Assert.IsFalse( twin.Level.IsCoasterToolActive, "a peer's or a replayed command opens no tool" );
+		Assert.AreEqual( park.One.IsOpen, twin.One.IsOpen );
 	}
 
 	[TestMethod]

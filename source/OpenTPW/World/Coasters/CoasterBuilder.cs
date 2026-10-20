@@ -54,6 +54,20 @@ public sealed class CoasterBuilder
 	/// <summary>The loop edit mode is on and the next pylon is the first of the pair (the counter 0x79c664 is still 2).</summary>
 	public bool FirstOfPair => loopMode && loopPylonsLeft == LoopPair;
 
+	/// <summary>The loop pylons the loop edit mode still places before it ends (the counter 0x79c664), 0 outside the mode.</summary>
+	public int LoopPylonsLeft => loopPylonsLeft;
+
+	/// <summary>
+	/// [EXT:online-coop-commands] Takes the issuing tool's height and loop edit mode before a click's placement (<see cref="CoasterClickCommand"/>): the panel keeps them, and the command carries them,
+	/// so every peer places the same pylon.
+	/// </summary>
+	internal void SetToolState( float requestedHeight, bool mode, int pylonsLeft )
+	{
+		Height = requestedHeight;
+		loopMode = mode;
+		loopPylonsLeft = mode ? Math.Clamp( pylonsLeft, 0, LoopPair ) : 0;
+	}
+
 	/// <summary>The editable chain endpoint still needs the second pylon of a loop pair, even after the loop tool has been left.</summary>
 	// [BIN:TPW-EXE:0x444c00 pending loop endpoint] an incomplete track tests its tail (+0x58), a complete cut track its cut predecessor (+0x60), and a complete uncut track returns false; only node flag 0x80 is tested, independently of mode bit 0x40
 	public bool LoopPairPending => (!Track.IsComplete || Track.IsCut) && Track.LastIndex >= 0

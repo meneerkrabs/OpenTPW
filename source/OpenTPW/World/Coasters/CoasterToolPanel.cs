@@ -50,6 +50,8 @@ public sealed class CoasterToolPanel
 
 	private readonly CoasterBuilder builder;
 	private readonly Func<int, int, bool> isFreeCell;
+	private readonly int station;
+	private readonly Func<ParkCommand, ParkCommandResult> issue;
 	private DragState? drag;
 	private int? cutStart;
 	private int cutVersion;
@@ -58,12 +60,24 @@ public sealed class CoasterToolPanel
 
 	/// <param name="builder">The builder of the station's track.</param>
 	/// <param name="isFreeCell">Whether a cell holds nothing else (no path, queue, ride or scenery): the placement area marks only such cells. Null: every cell is free.</param>
-	public CoasterToolPanel( CoasterBuilder builder, Func<int, int, bool>? isFreeCell = null )
+	/// <param name="station">The attraction id of the station, which the panel's commands name.</param>
+	/// <param name="issue">[EXT:online-coop-commands] Hands each of the panel's writes to the park's command funnel (<see cref="CoasterPanelCommand"/>): a drag's press, each of its steps and its release,
+	/// a stack swap and a cut. The selection, the cursor and the drag's pointer stay the panel's.</param>
+	public CoasterToolPanel( CoasterBuilder builder, Func<int, int, bool>? isFreeCell, int station, Func<ParkCommand, ParkCommandResult> issue )
 	{
 		this.builder = builder ?? throw new ArgumentNullException( nameof( builder ) );
 		this.isFreeCell = isFreeCell ?? ((_, _) => true);
+		this.station = station;
+		this.issue = issue ?? throw new ArgumentNullException( nameof( issue ) );
 		Open();
 	}
+
+	/// <summary>The press of a drag on <paramref name="node"/>: the edit the command began, or null when it refused.</summary>
+	private CoasterBuilder.NodeEdit? BeginEdit( int node, bool includeNext = false ) =>
+		issue( new BeginCoasterNodeEditCommand( station, node, includeNext ) ).Value as CoasterBuilder.NodeEdit;
+
+	/// <summary>One step of the drag (no money moves): the command's value (a move's verdict).</summary>
+	private ParkCommandResult Edit( CoasterNodeField field, float value, int x = 0, int y = 0 ) => issue( new EditCoasterNodeCommand( station, field, value, x, y ) );
 
 	public CoasterBuilder Builder => builder;
 	public CoasterTrack Track => builder.Track;
@@ -278,14 +292,14 @@ public sealed class CoasterToolPanel
 		{
 			case CoasterToolButton.Move:
 				// [BIN:TPW-EXE:0x446d50 move press] the pylon is picked up (a station node cannot be): its cell and cost are noted, the range around it marked, and the node follows the pointer's cell until the release (0x442f40)
-				if ( builder.BeginEdit( node, includeNext: true ) is not { } move )
+				if ( BeginEdit( node, includeNext: true ) is not { } move )
 					return false;
 				drag = new DragState { Kind = Selected, Edit = move, Origin = mouse, Moves = true, Cell = (picked.X, picked.Y) };
 				return true;
 			case CoasterToolButton.Height:
 			{
 				// [BIN:TPW-EXE:0x441a00 height drag] needs the loft clip (pylon flag 0x20); the range is [0, (fMinHeight − h0)/(h1 − h0)] up to what the stack's top leaves of fMaxHeight; the money settles on the release
-				if ( (capabilities & CoasterPylonCapabilities.Loft) == 0 || builder.BeginEdit( node ) is not { } edit )
+				if ( (capabilities & CoasterPylonCapabilities.Loft) == 0 || BeginEdit( node ) is not { } edit )
 					return false;
 				var (low, high) = Track.LoftRange( builder.Site, node );
 				drag = new DragState { Kind = Selected, Edit = edit, Origin = mouse, StartValue = picked.T, Low = low, High = high };
@@ -295,7 +309,7 @@ public sealed class CoasterToolPanel
 			case CoasterToolButton.Rotate:
 			{
 				// [BIN:TPW-EXE:0x441e80 rotate drag] needs the rotate clip (pylon flag 0x40); the yaw (+0xE0) stays within the automatic yaw ± fMaxRotnAngleDeviance; the node takes flag 1
-				if ( (capabilities & CoasterPylonCapabilities.Rotate) == 0 || builder.BeginEdit( node ) is not { } edit )
+				if ( (capabilities & CoasterPylonCapabilities.Rotate) == 0 || BeginEdit( node ) is not { } edit )
 					return false;
 				var automatic = Track.AutomaticYaw( builder.Site, node );
 				var range = Track.Definition.Pylon( picked.LoopPylon ).MaxRotationDeviance;
@@ -315,14 +329,14 @@ public sealed class CoasterToolPanel
 		if ( (picked.Flags & CoasterNodeFlags.Loop) != 0 )
 		{
 			// [BIN:TPW-EXE:0x441cd0 loop tilt] a loop node needs pylon flag 0x200; the loop rotation (+0xF8) of the first pylon of a pair first loses 1 when above 0.5 and stays in [−0.35, 0.35], any other in [0.15, 0.85]
-			if ( (capabilities & CoasterPylonCapabilities.LoopTilt) == 0 || builder.BeginEdit( node ) is not { } loop )
+			if ( (capabilities & CoasterPylonCapabilities.LoopTilt) == 0 || BeginEdit( node ) is not { } loop )
 				return false;
 			var first = (picked.Flags & CoasterNodeFlags.LoopFirst) != 0;
 			var value = picked.LoopRotate;
 			if ( first && value > 0.5f )
 			{
 				value -= 1f;
-				builder.EditLoopRotate( loop, value );
+				Edit( CoasterNodeField.LoopRotate, value );
 			}
 			drag = new DragState { Kind = Selected, Edit = loop, Origin = mouse, StartValue = value, Low = first ? -0.35f : 0.15f, High = first ? 0.35f : 0.85f, Loop = true };
 			return true;
@@ -330,7 +344,7 @@ public sealed class CoasterToolPanel
 		// [BIN:TPW-EXE:0x442010 tilt drag] the bank (+0xD8, flag 4) needs pylon flag 0x100 and the incline (+0xDC, flag 2) flag 0x80, both in [−π, π]; the drag is turned to the camera's view of the pylon
 		var bank = (capabilities & CoasterPylonCapabilities.Bank) != 0;
 		var incline = (capabilities & CoasterPylonCapabilities.Incline) != 0;
-		if ( !bank && !incline || builder.BeginEdit( node ) is not { } edit )
+		if ( !bank && !incline || BeginEdit( node ) is not { } edit )
 			return false;
 		drag = new DragState
 		{
@@ -365,7 +379,7 @@ public sealed class CoasterToolPanel
 				if ( clamped )
 					state.Origin.Y = (value - state.StartValue) / HeightRate + mouse.Y;
 				if ( value != Track.Nodes[edit.Index].T )
-					builder.EditLoft( edit, value );
+					Edit( CoasterNodeField.Loft, value );
 				var cost = CoasterTrack.RoundUp( Track.NodeCost( edit.Index, chargeUnit: false ) ) - edit.Refund;
 				DragCost = cost;
 				break;
@@ -376,7 +390,7 @@ public sealed class CoasterToolPanel
 				if ( clamped )
 					state.Origin.X = (value - state.StartValue) / AngleRate + mouse.X;
 				if ( (Track.Nodes[edit.Index].Flags & CoasterNodeFlags.ManualYaw) == 0 || value != Track.Nodes[edit.Index].Yaw )
-					builder.EditYaw( edit, value );
+					Edit( CoasterNodeField.Yaw, value );
 				break;
 			}
 			case CoasterToolButton.Tilt when state.Loop:
@@ -385,7 +399,7 @@ public sealed class CoasterToolPanel
 				if ( clamped )
 					state.Origin.X = (value - state.StartValue) / LoopRotateRate + mouse.X;
 				if ( value != Track.Nodes[edit.Index].LoopRotate )
-					builder.EditLoopRotate( edit, value );
+					Edit( CoasterNodeField.LoopRotate, value );
 				break;
 			}
 			case CoasterToolButton.Tilt:
@@ -402,20 +416,20 @@ public sealed class CoasterToolPanel
 				{
 					var value = Clamp( state.StartValue + bank, state.Low, state.High ).Value;
 					if ( value != node.Bank || (node.Flags & CoasterNodeFlags.NoAutoBank) == 0 )
-						builder.EditBank( edit, value );
+						Edit( CoasterNodeField.Bank, value );
 				}
 				if ( state.HighSecond > state.LowSecond )
 				{
 					var value = Clamp( state.StartSecond + incline, state.LowSecond, state.HighSecond ).Value;
 					if ( value != Track.Nodes[edit.Index].Incline || (Track.Nodes[edit.Index].Flags & CoasterNodeFlags.ManualIncline) == 0 )
-						builder.EditIncline( edit, value );
+						Edit( CoasterNodeField.Incline, value );
 				}
 				break;
 			}
 			case CoasterToolButton.Move when cell is { } hovered && hovered != state.Cell:
 				// [BIN:TPW-EXE:0x443340 move drag] the node follows the hovered cell (0x442f40), the validator marks it invalid (flag 0x4000) when the cell fails, and the cost shown is the new cost against the noted one
 				state.Cell = hovered;
-				state.MoveResult = builder.EditMove( edit, hovered.X, hovered.Y );
+				state.MoveResult = Edit( CoasterNodeField.Move, 0, hovered.X, hovered.Y ).Value is CoasterPlaceResult moved ? moved : CoasterPlaceResult.NotEditable;
 				DragCost = CoasterTrack.RoundUp( Track.NodeCost( edit.Index, chargeUnit: false ) ) - edit.Refund;
 				break;
 		}
@@ -450,7 +464,7 @@ public sealed class CoasterToolPanel
 			case CoasterToolButton.StackUp:
 			case CoasterToolButton.StackDown:
 				// [BIN:TPW-EXE:0x4423f0 stack up] on the release over a pylon that has a neighbour that way in its cell's stack the two exchange places (0x4424e0); the track is rebuilt
-				return node is int swapped && builder.SwapStack( swapped, Selected == CoasterToolButton.StackUp ) ? CoasterPanelResult.Swapped : CoasterPanelResult.Nothing;
+				return node is int swapped && issue( new SwapCoasterStackCommand( station, swapped, Selected == CoasterToolButton.StackUp ) ).Accepted ? CoasterPanelResult.Swapped : CoasterPanelResult.Nothing;
 			case CoasterToolButton.Demolish:
 				return ReleaseDemolish( node );
 		}
@@ -470,7 +484,7 @@ public sealed class CoasterToolPanel
 			return CoasterPanelResult.CutStarted;
 		}
 		cutStart = null;
-		var result = builder.Cut( first, index );
+		var result = issue( new CutCoasterCommand( station, first, index ) ).Value is CoasterTrack.CutResult cut ? cut : CoasterTrack.CutResult.Refused;
 		if ( result == CoasterTrack.CutResult.Refused )
 			return CoasterPanelResult.Nothing;
 		// the cut reselects the build button (0x446740 ends in 0x444360(1), 0x4445b0(1)) and recomputes the enabled buttons
@@ -484,27 +498,25 @@ public sealed class CoasterToolPanel
 		drag = null;
 		DragCost = null;
 		var edit = state.Edit;
+		// [EXT:online-coop-commands] the release's writes are commands: a move's last step, then the end that settles the money (or only fits the track again)
 		switch ( state.Kind )
 		{
 			case CoasterToolButton.Height:
-				builder.EndEdit( edit );
+				issue( new EndCoasterNodeEditCommand( station, CoasterEditEnd.Settle ) );
 				return CoasterPanelResult.Edited;
 			case CoasterToolButton.Move:
 				// [BIN:TPW-EXE:0x445a70 move release] a release over no cell puts the node back; over a cell the node is dropped there (0x442f40) and the refund and charge of the node and, on a finished track, the one after it settle (0x447830, 0x4d0190, 0x4d01f0)
 				if ( cell is { } target )
 				{
 					if ( target != state.Cell )
-						builder.EditMove( edit, target.X, target.Y );
+						Edit( CoasterNodeField.Move, 0, target.X, target.Y );
 				}
-				else if ( (Track.Nodes[edit.Index].X, Track.Nodes[edit.Index].Y) != (edit.Start.X, edit.Start.Y) )
-					builder.EditMove( edit, edit.Start.X, edit.Start.Y );
-				if ( (Track.Nodes[edit.Index].X, Track.Nodes[edit.Index].Y) != (edit.Start.X, edit.Start.Y) )
-					builder.EndEdit( edit );
-				else
-					builder.FinishEdit();
+				else if ( edit.Index < Track.Nodes.Count && (Track.Nodes[edit.Index].X, Track.Nodes[edit.Index].Y) != (edit.Start.X, edit.Start.Y) )
+					Edit( CoasterNodeField.Move, 0, edit.Start.X, edit.Start.Y );
+				issue( new EndCoasterNodeEditCommand( station, CoasterEditEnd.SettleIfMoved ) );
 				return CoasterPanelResult.Edited;
 			default:
-				builder.FinishEdit();
+				issue( new EndCoasterNodeEditCommand( station, CoasterEditEnd.Finish ) );
 				return CoasterPanelResult.Edited;
 		}
 	}

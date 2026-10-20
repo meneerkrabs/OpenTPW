@@ -37,6 +37,15 @@ instead of 8 in Jungle, a 150 MB download after decompression); it is still abou
 experiments, not what the published page uses (docs/BROWSER-PERFORMANCE.md, "CoreCLR on WebAssembly"). Delete
 `source/OpenTPW.Web/obj` and `bin` when switching between runtimes, or the next publish fails to link.
 
+The cross-runtime determinism check (docs/DETERMINISM.md, "Browser and native") publishes the page with the asset-free pin tests
+compiled in and runs them in headless, muted Chrome. Delete `obj` and `bin` between an AOT and an interpreter publish here too: an
+AOT publish strips the method bodies that the interpreter needs.
+
+```sh
+dotnet publish source/OpenTPW.Web/OpenTPW.Web.csproj -c Release -p:RunAOTCompilation=true -p:OpenTpwDeterminismPins=true -o out/web-pins
+node tools/web-determinism/run.mjs out/web-pins/wwwroot
+```
+
 An OpenTPW server can serve the published `wwwroot` itself, beside its API
 (`OpenTPW:WebClientDirectory`, docs/SERVER.md). The page then offers its own address as the
 online server, and everything runs over one HTTPS address.

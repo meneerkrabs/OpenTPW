@@ -46,6 +46,7 @@ AUDIO-035 docs/AUDIO.md
 AUDIO-036 docs/PROGRESS.md
 AUDIO-037 docs/AUDIO.md
 AUDIO-039 docs/AUDIO.md
+AUDIO-041 docs/AUDIO.md
 AUDIO-903 docs/AUDIO.md
 AUDIO-908 docs/AUDIO.md
 BLUEPRINT-002 docs/PROGRESS.md
@@ -312,6 +313,7 @@ UI-020 docs/reverse/APPROX-TRACE.md
 UI-021 docs/reverse/APPROX-TRACE.md
 UI-022 docs/reverse/APPROX-TRACE.md
 UI-023 docs/reverse/APPROX-TRACE.md
+UI-027 docs/UI.md
 UI-028 docs/UI.md
 UI-029 docs/reverse/APPROX-TRACE.md
 UI-030 docs/reverse/APPROX-TRACE.md

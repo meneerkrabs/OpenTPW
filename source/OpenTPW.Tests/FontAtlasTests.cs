@@ -6,6 +6,8 @@ using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using OpenTPW.UI.Original;
+using Veldrid;
 
 namespace OpenTPW.Tests;
 
@@ -161,6 +163,98 @@ public class FontAtlasTests
 		// tp.exe 0x6aeab0 flags space and tab (0x12) as break opportunities and nothing else: a hyphen does not break, a tab does
 		Assert.AreEqual( 4, TextLayout.Create( atlas, "a-a-a-a", 8 ).LineCount, "no break at the hyphens: the run breaks between characters, two glyphs a line" );
 		Assert.AreEqual( 2, TextLayout.Create( atlas, "aa\taa", 8 ).LineCount, "the tab is a break opportunity and the line drops it" );
+	}
+
+	[TestMethod]
+	public void MissingSpaceWrapsAtItsSourceCharacter()
+	{
+		var atlas = new FontAtlas( CreateFont( 10,
+			new SyntheticGlyph( 'a', 2, 2, 0, 0, 4 ),
+			new SyntheticGlyph( '?', 2, 2, 0, 0, 4 ) ) );
+		// the atlas has no space: the fallback '?' is drawn for it, but the source character is still a break opportunity
+		var layout = TextLayout.Create( atlas, "a a", 9 );
+		Assert.AreEqual( 2, layout.LineCount );
+		CollectionAssert.AreEqual( new[] { 4, 4 }, layout.LineWidths.ToArray() );
+		Assert.AreEqual( 4, layout.Width );
+		Assert.AreEqual( "a0,0 a0,10", Describe( layout ) );
+		CollectionAssert.AreEqual( new[] { ' ' }, layout.MissingCharacters.ToArray() );
+	}
+
+	[TestMethod]
+	public void MissingTabWrapsAtItsSourceCharacter()
+	{
+		var atlas = new FontAtlas( CreateFont( 10,
+			new SyntheticGlyph( 'a', 2, 2, 0, 0, 4 ),
+			new SyntheticGlyph( '?', 2, 2, 0, 0, 4 ) ) );
+		var layout = TextLayout.Create( atlas, "a\ta", 9 );
+		Assert.AreEqual( 2, layout.LineCount );
+		CollectionAssert.AreEqual( new[] { 4, 4 }, layout.LineWidths.ToArray() );
+		Assert.AreEqual( 4, layout.Width );
+		Assert.AreEqual( "a0,0 a0,10", Describe( layout ) );
+		CollectionAssert.AreEqual( new[] { '\t' }, layout.MissingCharacters.ToArray() );
+	}
+
+	[TestMethod]
+	public void MissingOrdinaryCharacterWithSpaceFallbackStaysInTheWord()
+	{
+		var atlas = new FontAtlas( CreateFont( 10,
+			new SyntheticGlyph( 'a', 2, 2, 0, 0, 4 ),
+			new SyntheticGlyph( ' ', 0, 0, 0, 0, 2 ) ) );
+		// 'x' is missing and draws as the space fallback, but its source character is not a break, so it stays in the word
+		var layout = TextLayout.Create( atlas, "axa", 9, fallback: ' ' );
+		Assert.AreEqual( 2, layout.LineCount );
+		CollectionAssert.AreEqual( new[] { 6, 4 }, layout.LineWidths.ToArray() );
+		Assert.AreEqual( 6, layout.Width );
+		Assert.AreEqual( "a0,0 a0,10", Describe( layout ) );
+		CollectionAssert.AreEqual( new[] { 'x' }, layout.MissingCharacters.ToArray() );
+	}
+
+	[TestMethod]
+	public void BreakCharacterWithEnoughRoomDoesNotWrapAndMissingFallbackStillRenders()
+	{
+		var present = new FontAtlas( CreateFont( 10,
+			new SyntheticGlyph( 'a', 2, 2, 0, 0, 4 ),
+			new SyntheticGlyph( ' ', 0, 0, 0, 0, 4 ) ) );
+		var fitting = TextLayout.Create( present, "a a", 12 );
+		Assert.AreEqual( 1, fitting.LineCount );
+		CollectionAssert.AreEqual( new[] { 12 }, fitting.LineWidths.ToArray() );
+		Assert.AreEqual( "a0,0 a8,0", Describe( fitting ) );
+		Assert.AreEqual( 0, fitting.MissingCharacters.Count );
+
+		// the same text with the space missing: the line still fits, so the fallback is drawn rather than dropped
+		var missing = new FontAtlas( CreateFont( 10,
+			new SyntheticGlyph( 'a', 2, 2, 0, 0, 4 ),
+			new SyntheticGlyph( '?', 2, 2, 0, 0, 4 ) ) );
+		var rendered = TextLayout.Create( missing, "a a", 12 );
+		Assert.AreEqual( 1, rendered.LineCount );
+		CollectionAssert.AreEqual( new[] { 12 }, rendered.LineWidths.ToArray() );
+		Assert.AreEqual( "a0,0 ?4,0 a8,0", Describe( rendered ) );
+		CollectionAssert.AreEqual( new[] { ' ' }, rendered.MissingCharacters.ToArray() );
+		var unwrapped = TextLayout.Create( missing, "a a" );
+		Assert.AreEqual( 1, unwrapped.LineCount );
+		Assert.AreEqual( 12, unwrapped.Width );
+		Assert.AreEqual( "a0,0 ?4,0 a8,0", Describe( unwrapped ) );
+	}
+
+	[TestMethod]
+	public void CentredWrappedTextPlacesLinesFromTheAdvanceBlockWidth()
+	{
+		var atlas = new FontAtlas( CreateFont( 10,
+			new SyntheticGlyph( 'a', 2, 2, 0, 0, 4 ),
+			new SyntheticGlyph( '?', 2, 2, 0, 0, 4 ) ) );
+		var context = new UiContext( null!, null!, null! );
+		context.DrawText( atlas, "a a", new UiRect( 0, 0, 9, 40 ), new RgbaByte( 255, 255, 255, 255 ),
+			UiAlign.Center, wrap: true, shadow: false, textScale: 1 );
+
+		var glyphs = context.Batch.Glyphs;
+		Assert.AreEqual( 2, glyphs.Count );
+		Assert.AreEqual( (2, 10, 2, 2), (glyphs[0].X, glyphs[0].Y, glyphs[0].Width, glyphs[0].Height) );
+		Assert.AreEqual( (2, 20, 2, 2), (glyphs[1].X, glyphs[1].Y, glyphs[1].Width, glyphs[1].Height) );
+
+		var text = context.Batch.TextDraws.Single();
+		Assert.AreEqual( "a a", text.Text );
+		Assert.AreEqual( (2f, 10f, 4f, 20f), (text.Rect.X, text.Rect.Y, text.Rect.Width, text.Rect.Height) );
+		Assert.AreEqual( (0, 2), (text.FirstGlyph, text.GlyphCount) );
 	}
 
 	[TestMethod]

@@ -100,7 +100,7 @@ The ranges do not overlap. In every run both builds gave the same digest, textur
 same two hashes for the same work, as does an AOT build made in the Linux server image. That
 covers decoding the theme's 1,698 textures and the fixed park run, which exercises the economy and
 the guests but not the rides, object scripts, weather or staff; within that coverage AOT changed
-the speed, not the result. These are three runs per build on one machine: they show a large
+the speed, not the result (the check now covers rides, object scripts, weather and staff as well and runs in CI: docs/DETERMINISM.md, "Browser and native"). These are three runs per build on one machine: they show a large
 improvement there, not a speed guarantee for every device.
 
 The cost is the build: the native module grows from 2.9 to 32.6 MB, the Brotli-compressed
@@ -463,6 +463,75 @@ remaining first-preview work is still visible; this does not claim a 16 ms cold 
   can reuse decoded PCM. This budget covers retained long samples; current/prefetched
   working arrays and the existing short-sample cache are separate. The native decoder
   keeps its background task. Synchronous and cooperative output is bit-identical.
+
+## Transfer and memory (October 19, 2026)
+
+Measured with the published AOT page (`dotnet publish -c Release -p:RunAOTCompilation=true`), served by the real `OpenTPW.Server` (so its precompressed copies, ETags and headers are what the browser sees), Chrome 155 headless and muted, Apple M5, 1280 x 900, the game folder from the harness. `tools/web-perf/run.mjs --upstream http://127.0.0.1:<port> --scenarios start,jungle,switch,reload,transfer` forwards every request but `/game/` to that server and logs it (path, status, Content-Encoding, Cache-Control, ETag, conditional or not, bytes sent); `reload` loads the page again in the same profile and `transfer` prints the log by scenario. `--track-origins`, `--gc <params>` and the counters below are diagnostics; the harness reads them only when asked.
+
+### Transfer
+
+A cold page load plus a Jungle park (the game's own files come from the player's folder and are not counted): 105 requests and 20.2 MB sent before, 104 and 17.4 MB after. Everything is listed in the table; "raw" is the size on disk, "sent" the bytes on the wire.
+
+| Files | Count | Raw MB | Sent MB before | Sent MB after | Content-Encoding | Cache-Control after |
+| --- | ---: | ---: | ---: | ---: | --- | --- |
+| `dotnet.native.<hash>.wasm` (the runtime, AOT code) | 1 | 42.6 | 8.49 | 8.47 | br | immutable, 1 year |
+| `OpenTPW.Web.<hash>.wasm` (the game) | 1 | 12.4 | 2.22 | 2.22 | br | immutable |
+| 38 other assemblies (`.wasm`) | 38 | 5.0 | 1.29 | 1.29 | br | immutable |
+| ICU data (`icudt_no_CJK`) | 1 | 1.2 | 0.23 | 0.23 | br | immutable |
+| `dotnet.js` and the two fingerprinted runtime scripts | 3 | 0.4 | 0.10 | 0.10 | br | `dotnet.js` no-cache, the others immutable |
+| page scripts (`main.js`, `opentpw-*.js`), `index.html`, `style.css` | 12 | 0.1 | 0.02 | 0.02 | br | no-cache (ETag, 304) |
+| pools sprites `.TPC` (Jungle, with the pools extension on: the swim and land sets) | 24 | 7.9 | **7.86** | **5.02** | none before, br after | **no-cache before**, immutable after (`?v=<hash>`) |
+| pools sprites `.ESP` (350 bytes each) | 24 | 0.01 | 0.01 | 0.01 | none | no-cache before, immutable after |
+| `/favicon.ico` (404) | 1 | | 0 | gone | | |
+| Total | 105 / 104 | 69.5 | 20.2 | 17.4 | | |
+
+What was wrong:
+
+- **The sprite files went out uncompressed.** The SDK's publish step stores `.br` and `.gz` copies only for the extensions it knows to be compressible (js, css, json, wasm, dat, html and a few more); `.TPC` is not on its list, and Caddy's `encode` does not touch `application/octet-stream`. The 8.2 MB of sprite files (24 of them for a Jungle visit) are 36 % smaller with Brotli (5.3 MB for all 48): `OpenTPW.Web.csproj` adds `**/*.TPC` to `CompressionIncludePatterns`. The 350-byte `.ESP` files stay as they are.
+- **Every visit asked again for all 48 sprite files** (`no-cache`, 304 each; the 61 requests of a reload, 48 of them for sprites). The page already puts the content hash in the address (`?v=` plus the first 16 hex digits of the pinned SHA-256, `opentpw-pool-sprites.js`); the server now serves `/pools-sprites/...?v=<16 hex digits>` as `public, max-age=31536000, immutable`. Without the hash, or with another query, the file is revalidated as before. A changed sprite file is a new address; the game keeps a file only when the manifest pins its SHA-256 in any case. A reload now makes 13 requests (the page, its ten scripts, `dotnet.js` and the stylesheet, all 304 with an empty body) instead of 61.
+- **A browser without Brotli made Caddy compress on the fly.** The server only knew `.br`; for `Accept-Encoding: gzip` Caddy gzipped the 44.6 MB runtime again on every request (15 MB out), and sent the 1.2 MB ICU data as it was. The SDK stores `.gz` copies too, so `WebClient` now sends the `.gz` copy to a browser that lists gzip but not Brotli (`br;q=0` counts as not accepted). Checked against Caddy 2.11.7 with the production Caddyfile (`encode zstd gzip`, run locally): a response that already has a `Content-Encoding` passes through untouched, so there is no double compression of `.br`; zstd is never used (Chrome offers it, the server prefers Brotli).
+- **The page asked for `/favicon.ico` on every visit** (a 404). `index.html` now declares `<link rel="icon" href="data:,">`.
+
+Checked and left as it is: the SDK's Brotli is already level 11 with the 4 MB window (`lgwin` 22: the same 8,899,876 bytes for the runtime as a local re-run); window 24 would save 138 KB (1.5 %). The scripts of the page (`main.js` and its modules) stay revalidated with ETag and 304: they have no fingerprint in their names, and giving them one (the SDK's import map) needs an inline script, which the page's content security policy forbids.
+
+### Memory
+
+Jungle in the browser (the `switch` scenario: Jungle, lobby, Jungle, lobby, Jungle, each point after a full collection; the second park is Jungle again because the next island is locked). Counters added for this: `gpuTextureBytes` and `gpuTextures` (the live WebGL textures and renderbuffers, from their size and mip chain), `PerfTextureBytes` (distinct textures by path group and the largest ones), `PerfAssetBytes` (array bytes behind `Asset.All` by type, and the shaders by file), committed and fragmented GC bytes, and the renderer process's resident memory (`ps`).
+
+| Step | Live managed MB before / after | Shader assets before / after | Renderer resident MB before / after | Wasm MB before / after | GPU textures MB |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Jungle | 72 / 61 | 236 / 90 | 755 / 619 | 214 / 214 | 149 |
+| Lobby | 59 / 45 | 357 / 195 | 789 / 663 | 214 / 214 | 82 |
+| Jungle again (park 2) | 80 / 62 | 398 / 90 | 1,121 / 852 | 445 / 371 | 150 |
+| Lobby again | 73 / 52 | 519 / 195 | 1,123 / 861 | 445 / 371 | 82 |
+| Jungle once more | 86 / 62 | 560 / 90 | 905 / 842 | 445 / 371 | 150 |
+
+Texture digest hash `845CD7FD1E465A18` and fixed-park simulation hash `ECB0C5BC6BFC46B9` are the same in both builds. (One run each, one machine: the wasm and resident figures depend on when the runtime's allocator grew.)
+
+Where the memory goes in a Jungle park (after): the wasm memory is 214 MB: 61 MB live managed objects, the rest the runtime (the 13 MB game assembly and the others are loaded into it), the allocator and its free space after the build's garbage (the build allocates about 590 MB). Wasm memory never shrinks; its peak after the second park is 371 MB. GC parameters do not change it: `MONO_GC_PARAMS` `soft-heap-limit=128m` gave 214 MB and `nursery-size=1m` 209 MB (against 215), and `major=marksweep-conc` hangs the page. The JS heap is 16-23 MB. The GPU holds 149 MB in Jungle (by estimate from size and mip chain; 82 MB in the lobby): about 46 MB of that are the render targets at 1280 x 900 (4x multisampled colour and depth, the resolve texture and the swap chain; they scale with the canvas size, so a high-DPI window costs several times as much), the 38 textures made from bytes are 69 MB (the guest, staff, particle and sign atlases, mostly 1024 x 1024 and 1024 x 512), and the 137 + 81 + 42 textures loaded by path 14 MB.
+
+What was changed:
+
+- **Lobby scene and terrain never released their materials.** Every part of the lobby scene (`OriginalModelScene`) and of a park's terrain (`OriginalTerrain`) makes its own `Material`, and a material makes its own `Shader`, so each carries a copy of the 15-30 KB shader source, a pipeline, a uniform buffer and layouts. Deleting the scene or terrain released the vertex and index buffers only. Each lobby visit left about 160 materials and shaders in `Asset.All` (`test.shader` 308 -> 470 in the lobby, 168 -> 330 in the park; the harness's `(shaders by file)` list), 5-6 MB of managed memory and the GPU objects with them. They now go with their owner (`OriginalObject` already did); the terrain's path batches keep one shared material per texture set until the terrain goes, and the queue models' own materials go when the path layer is rebuilt (each path edit made new ones). Releasing a material frees only what it owns (shader copy, pipeline, uniform buffer, layouts, its binding tables); it never touches a texture, so `Texture.Missing` and the textures cached by path stay live. The native front-end smoke test checks this (the count of `test.shader` copies is the same before and after a park, and no live texture lost its GPU texture, right after the exit and a few frames later); without the fix it fails (576 before, 745 after in a run of several visits). Live managed memory no longer grows from visit to visit (73 -> 86 MB became 52 -> 62 MB).
+- **Equal shader sources share one string** in the browser's Veldrid layer (a park holds about 90-170 shaders over eight distinct sources).
+- **The particle atlas dropped its CPU pixels after the upload** (`ParticleSpriteAtlas.ReleasePixels`, as the guest atlases already did): the park's renderer and the lobby's each held one for their lifetime.
+
+The answers to the questions asked:
+
+- **(a) CPU pixel copies after the upload.** The web Veldrid layer keeps none (`UploadTexture` copies to JavaScript for the call and drops it); `Texture` keeps none; the guest, staff and balloon atlases are released after the upload (`GuestRenderer.LoadAtlas`); the particle atlas was the one that was not (fixed above). `FontAtlas.Alpha` (the glyph coverage, a few hundred KB per font) and the sign textures' byte arrays stay; they are small.
+- **(b) Texture formats.** Every texture is RGBA8 with a full mip chain. The sources are not 16-bit: a WCT decodes from a wavelet YCbCr code through floats into 8-bit RGBA, and the sprite banks are 8-bit paletted (the guest atlas bank keeps one byte per pixel). A census of all 8,412 WCT textures of the original data: 5,886 are fully opaque, but only 34 are exactly representable in RGB565, 32 in RGBA4444 and 32 in RGB5A1, and even for those the sampled value is `c / 31` in WebGL against `c8 / 255` now, and the mip levels would be averaged in 16 bits. So uploading as RGB565, RGBA5551 or RGBA4444 is not lossless for any real texture, and was not done. An opaque texture as RGB8 saves nothing: ANGLE on Metal stores it as RGBA8.
+- **(c) Audio.** The decoded PCM kept in memory is 8 MB while Jungle starts (the music sentences, capped at 8 MiB by an LRU) and 4 MB afterwards, and `SoundEventSystem.Forget` drops a park's samples when it ends. Keeping MP2 and decoding on demand would save at most 4-8 MB and cost decoding on the main thread for every effect; not done.
+- **(d) Per-theme texture cache.** Textures loaded by path stay cached for the session. A theme's own textures are small: Jungle's 81 `levels/jungle` textures are 6.8 MB of GPU memory with mips and the lobby terrain's 137 are 7.1 MB, so visiting all four themes adds about 20 MB. A limit would need reference counting of path textures; recommended only if a device with little memory needs it.
+- **(e) Other managed caches.** Largest roots in the lobby: `AudioMixer` 18.7 MB (23.3 MB after a second park: about 4.6 MB more per park visit, not found yet; it is not the decoded samples, which stay at 4 MB), `Global.Render` 1.9 MB (10 MB before the leak fix), `SignTextRenderer.shared` 1.6 MB. Archive members read on demand are 13 MB.
+
+Recommendations (not done, with their trade-offs):
+
+- **GPU block compression (S3TC/BC, ETC2, ASTC).** About 4x (BC1/ETC2 RGB) or 4x-8x less texture memory, lossy on top of the wavelet decode, and needs an encoder at load time (a CPU cost on the main thread that the browser cannot spare) or a precompressed pack (data the project must not ship). Not recommended while the textures are about 14 MB by path and 69 MB of atlases.
+- **A 1x render path.** The multisampled colour and depth are about 37 MB at 1280 x 900 and 4x that at 2560 x 1800; the GPU cost follows the canvas size. A lower sample count or a render scale on high-DPI screens would help most devices with little memory, at a visible cost in edge quality.
+- **Merging the resolve texture and the swap-chain texture** (two full-size 1x surfaces: 9 MB at 1280 x 900) would need a change in `Renderer.cs`, which is shared with the desktop build and with the frame-hitch work.
+- **Palette textures for the sprite atlases** (one byte per pixel instead of four) would cut about 50 MB of the 69 MB, but linear filtering and mip levels do not work on indices; it would need a shader that filters after the lookup.
+- **Pooling the decode buffers** (`TextureFile` allocates four planes of `size * size` floats for each texture) would lower the allocator's peak, which sets the wasm memory; it touches the decoder and the decode scheduling, so it is left to the work on frame hitches.
+- **The wasm memory after the second park** (371 MB against 214) is the allocator's peak and does not respond to GC parameters; the lever is less garbage in the build, not collection settings.
 
 ## Remaining stalls
 

@@ -85,8 +85,10 @@ sequential for every message (below).
 The original's main loop (tp.exe `0x54F4BF`) runs a 31 ms substep, and every eighth substep is a park turn. Each substep, in
 this order (`Level.AdvanceSimulation`, `ParkObjects.Simulate`, `SimulationSubstep`):
 
-1. the substep counter (`0x877D34`) and the scaled clock (`0x878C74`, +0x1F) rise at `0x54F4C4`..`0x54F4D6`, before the pause test (`0x54F4D4`); a paused park then skips the body (`0x54F8CD`), so its scripts, bump
-   module, tour cars and turns stand still with its calendar. The original's counter would keep rising for as long as its timer runs while paused; OpenTPW's 60 Hz clock does not run while paused, so the counter simply stops (an approximation of the pause's wall-clock phase only);
+1. the substep counter (`0x877D34`) and the scaled clock (`0x878C74`, +0x1F) rise at `0x54F4C4`..`0x54F4D6`, before the inactive-application test (`0x54F4D4`): the body is skipped
+   (`0x54F8CD`) only while the application is inactive (`0x7A1A14` bit 3 clear, kept by the main window procedure `0x46B600`) and the option bit `0x7A1A8C` bit 0 is set (its default,
+   `0xC0E15` at `0x449E1C`). The game pause (`0x4092A0`) freezes the clock object `0x785970` that drives the substep loop (`0x54F47F`..`0x54F4AF`), so a paused park runs no
+   substep at all: its scripts, bump module, tour cars and turns stand still with its calendar and its counter stands, as OpenTPW's 60 Hz clock does while paused;
 2. the effects system (`0x520130`, not modelled);
 3. the bump module tick (`0x546C80`, `0x54F55F`): once per substep, whichever rides exist;
 4. the script pass (`0x5516B0`, `0x54F56B`): the pass counter (`0x8791A4`) rises, then the scripts run **newest first** (a
@@ -190,9 +192,147 @@ checks that different files, other clock expressions, appended expressions and
 a weakened edition gate remain forbidden.
 
 `SourceGuardCatchesEachForbiddenForm` checks each form against sample lines,
-and each was also checked by inserting it into a scanned source file. Not
-forbidden: `Guid.NewGuid` (temp file names) and `Parallel` (unused). Client
-code (`GameFlow`, the M3 gate) is not scanned.
+and each was also checked by inserting it into a scanned source file. `Guid.NewGuid`
+and `Parallel` are banned by the second scan below. Client code (`GameFlow`, the M3
+gate) is not scanned.
+
+## Browser and native
+
+A co-op session (docs/ONLINE.md; the user chose lockstep with the host ordering commands, and browsers that join and host) needs the
+browser build and every desktop to compute the same simulation bits. This section is the gate (co-op phase C1b).
+
+### What can differ
+
+The CLR's `Math.Sin`, `Math.Atan2`, `Math.Pow` and their relatives, `MathF`'s, and the System.Numerics builders that use them (rotation
+matrices, quaternion slerp) call the C library of the runtime: MSVC's on Windows, glibc on Linux, Apple's libm on macOS, and
+emscripten's musl in the browser (Mono, AOT or interpreter). They are not correctly rounded, and they disagree in the last bit. Over
+the 20,000 fixed inputs per function of `CrossRuntimeMathProbe`, Apple's libm (macOS arm64) and the browser's musl (Chrome, Mono AOT)
+differ in:
+
+| Function | Inputs that differ |
+| --- | ---: |
+| `Math.Sin` / `Math.Cos` | 895 / 894 |
+| `Math.Atan` / `Math.Atan2` / `Math.Acos` | 715 / 3,483 / 3,439 |
+| `Math.Pow` / `Math.Log2` | 1,994 / 39 against FreeBSD's routines (musl uses Arm's table routines, which glibc shares) |
+| `MathF.Sin` / `MathF.Cos` / `MathF.Atan2` / `MathF.Acos` | 418 / 230 / 1,150 / 228 against the double result rounded once |
+
+Square root, fused multiply-add, the four arithmetic operations, rounding and conversions are exact in IEEE 754 and gave the same
+digests in both (pinned in `DetMathTests.CorrectlyRoundedPlatformFunctionsArePinned`).
+
+System.Numerics' `Vector2`/`Vector3`/`Vector4.Lerp`, `Transform` and `TransformNormal` and the `Matrix4x4` product are another possible
+source: .NET evaluates them with `MultiplyAddEstimate`, which fuses the multiply and the add where the processor has fused multiply-add.
+On macOS arm64 (.NET 11 RC2) `Vector3.Transform` equals `fma(z, m31, fma(y, m21, x * m11)) + m41` for every one of 200,000 random inputs
+and differs from the unfused sum for a quarter of them; a runtime that does not fuse rounds twice. `Dot`, `Cross`, `Length`, `Normalize`
+and `Distance` are not fused. The browser's Mono AOT build computes other values for them than the desktops (below). The guard below does not ban these operations, and a source
+scan cannot find the matrix product. `DetMatrix` (`source/OpenTPW/Utils/DetMatrix.cs`) has the plain versions (product, point
+transform, lerp, and a slerp with DetMath's acos and sin), every product and sum rounded left to right. `CoasterPylonRig` composes its
+tag matrices with them and blends its clips' keys with them, and the coaster station frame (`CoasterStationLayout.FromModel`)
+composes a dummy's parent chain (`ObjectAnimator.LocalTransforms`) and the placement with them ("Cross-platform coaster pins" below).
+`CrossRuntimeMathProbe` reports the System.Numerics operations and `DetMatrix`'s over fixed inputs:
+`DetMathTests.DetMatrixDigestsArePinned` pins `DetMatrix`'s on every runtime. `FusedSystemNumericsOperationsArePinned` holds the
+fused System.Numerics values that Windows, Linux and macOS compute; the browser's Mono AOT build computes others (its interpreter
+matches the desktops), so that comparison is informative in the browser check, like the platform library's, and documents why
+simulation code must not use those operations.
+
+### DetMath
+
+`DetMath` and `DetMathF` (`source/OpenTPW/Utils/DetMath.cs`) are C# ports of FreeBSD's msun as musl ships them: sin, cos
+(with the Cody-Waite and Payne-Hanek reductions), atan, atan2, acos, pow and log2, with a fixed order of IEEE double operations, so
+every runtime computes the same bits. The single-precision versions evaluate in double and round once. Over the probe, sin, cos,
+atan, atan2 and acos equal the browser's musl bit for bit, and every function is within one unit in the last place of Apple's libm
+(`DetMathIsWithinOneUlpOfThePlatformLibrary`). `DetMathTests.DetMathDigestsArePinned` pins their results; CI checks the pins on
+Windows, Linux and macOS, and the browser check checks them in WebAssembly.
+
+Simulation code calls DetMath for every elementary function. `[EXT:deterministic-math]` (user decision, 2026-10-19: "Als EXT:
+deterministic-math"): tp.exe evaluates them on the x87 in extended precision (`fsin`, `fpatan`, `fyl2x`) or through its C runtime
+(`pow`, `acos`). OpenTPW evaluated them before through the platform's double `Math`, and now through DetMath. That is the same
+double precision, now identical everywhere, and the change moved no pin. The x87 control-word questions of `COAST-032` and
+`ECON-059` are unchanged. The call sites:
+
+| Site | Function | Original |
+| --- | --- | --- |
+| `LoanMath.MonthlyRepayment` | pow | the instalment `0xcb7a8` |
+| `CoasterRating` swing | atan2 | fpatan `0x43c918` |
+| `HermiteCoasterCurve.Orientation`, `SecondRailAngle` | atan2 | `0x41e24` |
+| `CoasterTrack.TurnAngle`, `TurnAngleXZ`, loop knot axis, `TagRoll`, `PcOrientation`, `ApplyManualPose` | acos, sin, cos, atan2 | `0x36a50`, `0x31984`, `0x4324a0`, `0x43e590` |
+| `CoasterCollision` angle sum | acos | the crossing test |
+| `TourController` approach and steering | atan2 | the tour cars |
+| `BumpMath.HeadingOf`, `SteerAngle`, `ReflectAngle` | atan2 | the bump module |
+| `WalkerBodies.HeadingOf` | atan2 | fpatan `0x5570C2` |
+| `HeadingAngle.Facing` | sin, cos | the turn `0x4FEF25` |
+| `GuestSimulation` queue facing change | sin, cos | `0x4FFFF0` |
+| `SideshowWin.HappinessGain` | log2 | fyl2x `0x4FE835` |
+
+The start-up tables are built with DetMath too and equal the platform libraries' tables entry for entry
+(`DetMathTests.LookupTablesBuiltWithDetMathEqualThePlatformLibrarysTables`; pinned in `LookupTablesArePinned`). They keep their
+binary-evidence labels: the coaster and PC sine tables (`0xa3cc8`, `0x4708D0`), `OriginalSineTable`, the tour table, the bump
+table `0x5442E0`, the slide's quarter sine, the bounce riders' table and the heading arctangent table `0x6E71B4`, whose 257 words
+equal the executable's. Every loan offer's instalment is the same with DetMath as with the platform's `pow`
+(`LoanInstalmentsWithDetMathEqualThePlatformLibrarys`). `RideMotion` (the unused prototype ride) uses DetMath as well.
+
+Presentation keeps the platform functions: renderers, meshes, cameras, the sky and lobby, particles, the evening, the drawn boat and
+kart poses (`TrackSurface`), the drawn pool waves and feet heights, the coaster car bend and rig, and the coaster tool's camera yaw
+input. A difference there changes a pixel, not the park.
+
+### The guard
+
+`DeterminismTests.SimulationCodeUsesNoPlatformMathGuidsOrParallelism` scans every file below `VM`, `Scripting`, `Economy` and
+`World` (all folders). It forbids `Math.`, `MathF.`, `double.` and `float.` elementary functions (sin to atan2pi, exp, log, pow, cbrt,
+hypot, rootn), `Matrix4x4`/`Matrix3x2.CreateRotation*`, `CreateFromYawPitchRoll`, `CreateFromAxisAngle`, `Quaternion.Slerp`,
+`Guid.NewGuid`, `Parallel.` and `.AsParallel(`. Exempt are:
+
+- the presentation files and folders it lists (`PresentationMathFiles`);
+- a line marked `[DET:presentation]` with its reason;
+- the atomic writes' temporary file names (`Guid.NewGuid().ToString( "N" ) + ".tmp"`).
+
+`PlatformMathGuardCatchesEachForbiddenForm` checks the forms and the exemptions.
+
+### The browser check
+
+`tools/web-determinism/run.mjs` runs the asset-free tests that pin simulation results inside the browser build. They cover the
+economy, guests, pools, umbrellas, winter, the weather, rain mood, smarter guests, script mods, cheats, coasters, tours, bump rides,
+track rides, staff, loans and DetMath. The page is published with `-p:OpenTpwDeterminismPins=true`, which compiles the tests into the
+page's own assembly with the page's settings (the published page never sets it). The check runs the tests one by one in headless,
+muted Chrome, where each test asserts the constant the desktop test asserts.
+
+- Skipped: two tests that read the repository's own sources or shaders.
+- Informative only: the comparisons with the runtime's own C library (`TestCategory("PlatformLibrary")`).
+- Gate: the `Browser determinism` workflow runs the check on every pull request and on main, for Mono AOT (as published) and the
+  interpreter.
+
+The with-data twin is `CrossRuntimeDigest`: per theme it gives the browser digest's fixed park run (economy and guests), the same run
+with one employee of every role, two park years of the level's weather, and the M4 gate's scenario as its list of state hashes. The
+M4 scenario covers every supported ride, shop, sideshow and feature with its object scripts and guests, and the track rides'
+stations. Run it on the desktop with `--determinism-digest [--out native.json]` and in the browser with tools/web-perf's
+`determinism` scenario, then compare with `tools/web-determinism/compare-digest.mjs`.
+
+### Results (October 19, 2026; macOS arm64, Chrome 155 headless, .NET 11 RC2)
+
+| Run | Before DetMath | After DetMath |
+| --- | --- | --- |
+| Asset-free pins in the browser, Mono AOT (29 s of tests) | 631 passed, 0 failed (7 inconclusive for want of data, 2 skipped) | 632 passed, 0 failed (the new source scan is inconclusive without sources) |
+| Asset-free pins in the browser, interpreter | 631 passed, 0 failed | 632 passed, 0 failed |
+| With data, four themes, browser AOT against desktop: fixed run, with staff, weather, M4 (692, 692, 677, 659 state hashes) | identical | identical |
+| The same with data, browser interpreter against desktop | not run | identical |
+| Desktop pins (2,050 tests of the simulation classes) | pass | pass, no pin moved |
+
+The desktop digests are the same before and after: jungle `ECB0C5BC6BFC46B9`, hallow `4B56CE11D7E43D7A`, space `69BBE374CB405BD0`,
+fantasy `9DC0B98B9C6BB2E9` (fixed run); M4 `9689EA415EBCD10C`, `7E6304824ABCA32A`, `B272F3F44E867B4E`, `B50BBEAFFD13640E`. So the
+browser already computed the desktop's bits for everything these runs cover, although the libraries disagree in the last bit for
+thousands of inputs. DetMath removes that dependency, so a later change cannot start to depend on it.
+
+Still outside these runs, and so not proven identical:
+
+- the state that is not hashed (above: placed-object animator poses, the guest economy bridge map);
+- the work `Level.Update` does by wall time outside the fixed tick (`SceneClock`, `RefreshPools`, `UpdateEvening`, `UpdateSnow`);
+- the per-frame staff calls of `Level.Update` outside the tick: `StaffWorld.Synchronize` (the tick repeats it before it moves anyone) and
+  `StaffPlacement.Reconcile`, which returns a picked-up member that no local tool carries to idle;
+- `FlatRideBounceRiders.Prepare` (`Level.AdvanceSimulation`, via `PrepareRideBodyPoses`), which runs once per frame after that frame's ticks and
+  changes the guests' ride-body state, so its result depends on how ticks are batched into frames;
+- the `Update()` of every entity (`Entity.All`), which runs after the simulation each frame;
+- a NaN that reaches hashed state, whose sign and payload differ between x86, ARM and WebAssembly.
+
+The co-op hash check covers the unhashed state only once it reaches hashed state.
 
 ## Park save
 
@@ -259,7 +399,7 @@ arrival timer's start turn and group flag instead of its countdown, version 11 t
 | `thing_table_digest` | guests in id order (every field the tick reads, including navigation and timers), including each guest's walk speed and steering state and its queue fields, the queue edge detectors, then attractions with queue cells, the queue list, admission state and counters, riders, limbo and bounce lists (each bounce slot with its deadline and start) | yes (order is id order, not the original's newest first) |
 | (cell map) | `ParkCellMap` of the guest grid: every non-empty cell in row order with its type, flags, placement counter, links and queue link (paths built by the path tool included) | yes (extra, after the thing table) |
 | `script_table_digest` | the script world's scheduler clock, then every live script in id order: id, name, parent, state, PC, flags, call stack, variables, clock origin, clock, wake time, timers, WAIT4ANIM deadline, LOOPANIM and TRIGWAITANIM tokens, instruction and slice counts, seed and RNG call count; for a root object script also its animator channels (AnimID, variant, loop, speed, start, ended, tick, deferred clip) and clock | yes |
-| (coasters) | `RideScriptWorld.Coasters`: the coaster generator, then every coaster in creation order: station ends, closed and complete flags, nodes (cell, height, t, pylon kind, stack index, station end, flags, bank, loop rotate, the exact position of the middle station node), controller state (initialised, the state 1/2/4/8, ride mode, speed setting, seats, speed cap, the lead car coordinate a reopened track keeps for the next train placement, net track money, time, braking start, station window, self-intersection count), samples (flags, height, roll, speed), rating, winch sections, trains (position, speed, train flags, boarding span, the riders of the lap and the guests seated at the station per car), the admission ring and the riders waiting to leave | yes (extra, after the script digest) |
+| (coasters) | `RideScriptWorld.Coasters`: the coaster generator, then every coaster in creation order: station ends, closed and complete flags, nodes (cell, height, t, pylon kind, stack index, station end, flags, bank, loop rotate, the exact position of the middle station node), controller state (initialised, the state 1/2/4/8, ride mode, speed setting, seats, speed cap, the lead car coordinate a reopened track keeps for the next train placement, net track money, time, whether the motion tick has run, braking start, station window, self-intersection count), samples (flags, height, roll, speed), rating, winch sections, trains (position, speed, train flags, boarding span, the riders of the lap and the guests seated at the station per car), the admission ring and the riders waiting to leave | yes (extra, after the script digest) |
 | (tracks) | the track layer after the cell map (every track cell: type, mask, link, flags, piece, parent, rotation, overlap, segment) and `RideScriptWorld.Bumpers`: the cosmetic LCG, then every controller (type, laps, performance, phase, state, validity, tick count and clock, station, sections, waiting and leaving guests, every boat's slot, flags, position, velocity, heading, spin, target buoy, laps and rider count) — both only while a track or controller exists, so every park without one keeps its earlier digests and the schema stays 14 (TRACKS.md); bumper cars add the chase target and the drawn heading and yaw to their boats' fields (the same conditional extension: only while a controller exists, no schema bump, as for the water and kart fields); boats draw their aiming jitter from the script stream (`RideScriptWorld.NextWorldDraw`, DET-013) | yes (extra, after the coasters) |
 | `economy_digest` | the park save's economy part as canonical JSON (sorted keys) | yes |
 | `input_log_cursor` | no input log | **missing** |
@@ -648,7 +788,7 @@ A park's cheats ([CHEATS.md](CHEATS.md), `ParkCheats`) live in the park economy:
 counted) and the actions waiting for the next turn. Every cheat the player asks for, through the original's secret park name and Alt keys or the extension's window, is **queued and applied at the start of the next park turn**
 (`ParkEconomy.AdvanceTurn`, before the turn's thing sweep with its weather and arrival updates; in a level whose turns are not swept, a paused economy's or one without pooled guests, the tick's guests and objects have run
 before the economy's turn, and only the weather follows), in a fixed order of kinds (`CheatKind`), and **takes no draw from any random stream** (`[EXT:cheats-turn-boundary]`). So a run with the same
-cheats at the same turns is the same run; the record in the save names those turns. OpenTPW has no input log for other player actions, and the record does not replay itself.
+cheats at the same turns is the same run; the record in the save names those turns. The record does not replay itself; the park's other edits have a command log ([Commands](#commands)).
 
 The record is part of the park save (`ParkSaveFile.Data.Cheats`) only when the park has cheated or has a cheat waiting; otherwise it is left out, so **a park that never cheated keeps its save bytes and its hash** whether the
 `opentpw.cheats` extension is on or off. Because the economy digest of the canonical hash is that save's text, the record joins the hash exactly when it is present; `WorldStateHash.SchemaVersion` did not move.
@@ -675,6 +815,16 @@ The ride vehicle cheat (K4) raises a ride's limit at a turn boundary with no dra
 ride, and the runtime snapshot, the track and the tour parts write the raised state only then, so every other park keeps its pins and save bytes. A pin covers the scenario:
 `CheatsRideVehicleTests.CheatsBumperRaisedRunHash` = `0xDF2C86E99A8FB3C0`, the jungle bumper controller (template -1, world generator of seed 99) raised to 32 cars, loaded with 32 guests,
 run through a 30-second session and 600 more ticks.
+
+## Commands
+
+`[EXT:online-coop-commands]` The park's edits are commands ([COOP.md](COOP.md), `ParkCommands`): each applies before a stated simulation tick, the next one the fixed-step clock runs. In single
+player a command runs at once in the input handler, between two ticks before the frame's simulation, exactly where the edit ran before the command layer, so **no pin moved** and no
+save byte changed (the layer adds no saved or hashed state; the Move tool's carried entry is session state, not saved). Held commands (`ParkCommands.Schedule`, a replayed log) apply at
+the start of their tick inside `Level.AdvanceSimulation`, before the tick's economy sync. A command's executor reads only the command and the world, never a tool's state, and draws no
+random stream of its own beyond what the edit itself draws (a placement's script seed, as before). `ParkCommandLevelTests` records a build session on a no-data level and replays it on a
+twin with the same `WorldStateHash` after every tick. A replay runs one tick per `AdvanceSimulation` call; the work a frame does outside its ticks (pool refresh, evening, snow, the scene
+clock, the body poses prepared after a frame's ticks) is not replayed, which C1b audits.
 
 ## Tests
 
@@ -888,3 +1038,72 @@ The canopy size, the pull cap, the renderer's per-frame work and the measurement
 | `RainMoodWithUmbrellasFixedRunHash` | `0xADEE2FA6AFC2ACE3` | `0xADEE2FA6AFC2ACE3` |
 
 `RainMoodFixedRunHash` (`0x3697B9094432D152`) and every pin with no brolly shop are unchanged: the kid score is read only for a brolly shop.
+
+## Original coaster import
+
+The original coaster import (October 19, `OriginalCoasterImport`, docs/TPWS-PAYLOAD.md "The import") moves no pin and
+adds none. Every original save in the corpus holds an empty Coasters block, so no park takes the new path. The import
+draws nothing from `World.Random` or the coaster generator (`CoasterWorld.Random`). It rates the track at the
+constructor's speed setting and keeps the saved trains. The first frame after the load then runs the controller's first
+motion tick, which takes no time. After the station script's first slice, the slice tail passes the script's speed word
+(`0x5517D7` → `0x43B2B0`, `OriginalObjectEffects.AfterSlice`), which re-rates the track and lays the trains out again when
+it differs from 60.
+
+The PR first pinned a fixed run of an imported synthetic coaster (`ImportedCoasterPin`, `0x0B6F305C6589A229`). That pin
+held on macOS arm64 only: the Linux and Windows x64 runners compute `0x43373F0B3F89E03C` for the same run. The coaster's
+curve, rating and collision pass called libm functions (`Atan2`, `Sin`, `Cos`, `Acos`), whose results are not bit-equal
+across platforms. The pin was removed then and is back since DetMath ("Cross-platform coaster pins" below).
+
+The same review ported the controller's first motion tick (`CoasterRide.MotionClockStarted`, controller flag `0x10`):
+tp.exe's motion tick `0x43CE20` takes the animation clock's time since its last run as the frame time, and the tick that
+finds flag `0x10` clear sets the flag and that clock word first, so it takes no time (`0x43CE85`). That is the first tick
+of every new or loaded controller. Every train makes one partial hop of no length: it stays where it stands, while its
+speed is capped, decays by 0.95 below 2.0 and stops below 0.01. Before, OpenTPW's first tick moved the trains by a whole
+step. The coaster hash content therefore changes twice: it holds the flag, and a coaster's trains run one step behind from
+their first tick on (any park with a running coaster hashes differently). No pinned golden or resume hash in the suite
+depends on a coaster's content, so no pin moved; `CoasterTests.ADepartureFromRestDoesNotReachTheMinimumSpeedInOneFrame`
+now measures the second tick. The park-resume save carries the flag (optional; a save from before it counts the flag set
+on a track that runs), so a resumed coaster continues as the one that kept running.
+
+The speed setter now runs after every slice of a station's root script that holds its coaster, as the original's loop
+does. For a coaster OpenTPW built, the speed word equals the setting after `COAST 8`, so nothing changes until an upgrade
+changes the script's speed word (RIDES-033); then the coaster takes the new speed after the script's next slice, as in
+the original, where OpenTPW before kept the old one. No pinned run upgrades a coaster.
+
+## Coaster clock catch-up
+
+The coaster's motion tick now takes as its frame time the fixed steps since its last motion tick
+(`CoasterRide.MotionClockLagSeconds`), as tp.exe's `0x43CE20` takes the scaled game clock since its clock word `ctl+0x120`
+(October 19). A running coaster's tick follows the one before it, so its frame time is one step, bit-equal to before
+(the lag is the sum of the steps in double precision, cast to single precision once). Only a coaster whose track stood cut or
+reopened (state 1, which runs no motion tick, `0x435AC9`) moves differently: the first tick after the track is completed
+again takes the whole stretch, so its trains run further in that tick and every later state differs from before. The
+fixed steps are the original's scaled game clock, as the substep scheduler maps it: they stop while the park is paused and
+multiply with the game speed. What stays OpenTPW's own (`EXT:coaster-fixed-step`) is the frame: one motion tick per 60 Hz
+step instead of one per rendered frame, and no zero-time ticks while the clock stands still (the original runs them on
+every paused frame).
+
+The coaster hash gains the lag and the speed setter's replay bit (`CoasterRide.SpeedSetByReplay`, controller bit `0x8000`,
+set only by the original's layout replay, which OpenTPW does not run), so any park with a coaster hashes differently from
+before. The park-resume save carries both (optional; a save from before them holds no lag and a clear bit). No pinned
+golden or resume hash in the suite depends on a coaster's content, so no pin moved.
+
+## Cross-platform coaster pins
+
+Since DetMath (#697) the coaster's curve, rating and collision pass evaluate their elementary functions identically everywhere,
+and the remaining System.Numerics arithmetic of the coaster's simulation path now goes through `DetMatrix` (October 20): the
+pylon rig's clip blending (`Vector3.Lerp` and the slerp's `MathF.Acos`/`Sin` before) and the station frame of a placed station
+model (`Matrix4x4`'s product before, which may fuse the multiply-add). A coaster's content is therefore a cross-platform digest,
+and it is pinned again:
+
+| Pin | Value | What |
+| --- | --- | --- |
+| `OriginalCoasterImportTests.AnImportedSyntheticCoasterRunsDeterministically` | `0x8A1279434220868B` | the imported synthetic coaster's minute (the #702 pin, `0x0B6F305C6589A229` on macOS and `0x43373F0B3F89E03C` on x64, moved with the coaster hash's two new fields, the motion clock lag and the replay bit) |
+| `CoasterTests.BuiltCoasterRunsArePinned` | `0x1ABA458D0079E09C` | a built synthetic circuit open for a minute with a guest on board |
+| `CoasterTests.BuiltCoasterRunsArePinned` | `0x045BFFE59994F3E7` | the same circuit reopened for three seconds at 20 s and completed again (the catch-up tick) |
+
+CI checks them on Windows, Linux and macOS and in both browser legs (Mono AOT and the interpreter). The synthetic coasters have no pylon or station models; a coaster built from game
+data adds the rig and the station frame, which `DetMatrix` covers. The rig's rest decomposition (`Matrix4x4.Decompose`) and its
+`Matrix4x4.CreateFromQuaternion` stay System.Numerics': they use the unfused `Dot`, `Cross`, `Length` and scalar arithmetic. The station frame's change from the fused product
+moves a station node's position by at most a few last bits; no pinned golden builds a coaster from game data, so no other pin moved.
+The animator itself (`ObjectAnimator`, presentation and the object scripts' poses) still uses System.Numerics.

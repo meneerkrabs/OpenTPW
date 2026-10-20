@@ -180,6 +180,7 @@ internal sealed partial class GameFlow : IDisposable
 		FrontEndMenu? createdMenu = null;
 		createdMenu = new FrontEndMenu( Strings, lobbyDefinition.Islands, new FrontEndActions
 		{
+			PlayerKeySnapshot = GameEditions.Capabilities.Economy && !GameEditions.IsThemeParkInc ? ReadLobbyPlayerKeys( ProgressPath ) : null,
 			StartPark = ( island, mode ) => RequestParkStart( island.Level, mode, createdMenu ),
 			Load = entry => ConfirmExtensions( entry.OwnSavePath, change => QueueProgressLevel( entry.Level, () => LoadPark( entry with { Switch = change }, overFrames: true ) ) ),
 			ContinueEntry = FindContinueEntry,
@@ -615,6 +616,7 @@ internal sealed partial class GameFlow : IDisposable
 
 		if ( Level != null && Hud != null )
 		{
+			Hud.ObserveApplicationFocus( Window.Current?.Focused == true, Window.Current?.IsOffscreen != false, onlineSession?.IsLoggedIn == true );
 			Level.UiCapturesMouse = Hud.Update( Context, input ) || parkBuild != null;
 			// The camera reads the keyboard itself: while the next park is built it stays where it is, as under a modal window.
 			if ( parkBuild != null && Camera.Mode is ParkCameraMode parkCamera )
@@ -887,6 +889,7 @@ internal sealed partial class GameFlow : IDisposable
 			for ( var frames = lobbyFrames.Advance( Time.Delta ); frames > 0; frames-- )
 				Lobby.StepFrame( ReferenceFrameClock.FrameSeconds );
 			Lobby.Animate( Time.Delta );
+			Lobby.StepSigns( Menu?.Selected, paused: false );
 			lobbyEffects.StepGlobe( Time.Delta );
 			return;
 		}
@@ -899,6 +902,7 @@ internal sealed partial class GameFlow : IDisposable
 				for ( var frames = lobbyFrames.Advance( Time.Delta ); frames > 0; frames-- )
 					city.StepFrame( ReferenceFrameClock.FrameSeconds );
 				city.Animate( Time.Delta );
+				city.StepSigns( null, paused: false );
 			}
 			return;
 		}
@@ -923,6 +927,8 @@ internal sealed partial class GameFlow : IDisposable
 				GameAudio.PlayLobbyOneShot( oneShot );
 		}
 		Lobby.Animate( Time.Delta );
+		// one lobby sign per frame from the second frame on, the selected island's first; none during the zoom into a park, whose island keeps its board then
+		Lobby.StepSigns( Menu?.Selected, paused: LobbyEntering );
 	}
 
 	/// <summary>The lobby's reference frames (60 Hz) for the frame-driven effects and flyers.</summary>

@@ -1,5 +1,7 @@
 # AUDIO-041: Resolve list-row click sounds
 
+**Superseded (October 19, 2026):** every list owner, the scroll thumb and the keyboard's 0x100 paths are traced and `APPROX:AUDIO-041` is retired (docs/AUDIO.md, "List owners"). The rest of this proposal is kept as history.
+
 ## Implemented bounded scope
 This draft now contains a runtime implementation for three proved owners: Load, Find Parks and Other Parks. Their original type-7 row notifications do not synthesize button message 0x100 or a dedicated row-click sound through the traced owner/base/override paths. The complete static route and source anchors are recorded in docs/AUDIO.md.
 

@@ -110,6 +110,32 @@ public class FknlArchiveTests
 		return new Builder().Build( root );
 	}
 
+	private static List<byte> SshHeader( params (string Tag, int Offset)[] entries )
+	{
+		var data = new List<byte>();
+		data.AddRange( Encoding.ASCII.GetBytes( "SHPS" ) );
+		data.AddRange( BitConverter.GetBytes( 0 ) );
+		data.AddRange( BitConverter.GetBytes( entries.Length ) );
+		data.AddRange( Encoding.ASCII.GetBytes( "GIMX" ) );
+		foreach ( var (tag, offset) in entries )
+		{
+			data.AddRange( Encoding.ASCII.GetBytes( tag ) );
+			data.AddRange( BitConverter.GetBytes( offset ) );
+		}
+		return data;
+	}
+
+	private static void AddSshImage( List<byte> data, byte type, int next, ushort width, ushort height )
+	{
+		data.Add( type );
+		data.Add( (byte)next );
+		data.Add( (byte)( next >> 8 ) );
+		data.Add( (byte)( next >> 16 ) );
+		data.AddRange( BitConverter.GetBytes( width ) );
+		data.AddRange( BitConverter.GetBytes( height ) );
+		data.AddRange( new byte[8] );
+	}
+
 	[TestMethod]
 	public void ReadsTheDirectoryTreeAndStoredAndCompressedMembers()
 	{
@@ -164,6 +190,122 @@ public class FknlArchiveTests
 		var image = ssh.Images.Single();
 		Assert.AreEqual( ("jj_b", 0x84, 64, 64, "jj_base1", 8, true, 4, 4), (image.Tag, image.Type, image.Width, image.Height, image.Name, image.PayloadSize, image.IsGmCompressed, image.GmBlocksX, image.GmBlocksY) );
 		Assert.ThrowsException<InvalidDataException>( () => new SshFile( Encoding.ASCII.GetBytes( "FSH " + new string( '\0', 20 ) ) ) );
+	}
+
+	[TestMethod]
+	public void SshPayloadStopsAtTheNextImageAndTheLastImageUsesEof()
+	{
+		var data = SshHeader( ("one1", 32), ("two2", 56) );
+		AddSshImage( data, 4, 0, 1, 2 );
+		data.AddRange( new byte[8] );
+		AddSshImage( data, 5, 0, 3, 4 );
+		Assert.AreEqual( 72, data.Count );
+		var images = new SshFile( data.ToArray() ).Images;
+		Assert.AreEqual( 8, images[0].PayloadSize, "The second image header is not pixel payload." );
+		Assert.AreEqual( 0, images[1].PayloadSize, "The final image may end exactly at EOF." );
+		data.AddRange( new byte[] { 1, 2, 3 } );
+		Assert.AreEqual( 3, new SshFile( data.ToArray() ).Images[1].PayloadSize );
+	}
+
+	[TestMethod]
+	public void SshAdjacentImageHeadersDoNotBecomePixelPayload()
+	{
+		var data = SshHeader( ("one1", 32), ("two2", 48) );
+		AddSshImage( data, 0x84, 0, 8, 8 );
+		AddSshImage( data, 0x84, 0, 8, 8 );
+		Assert.AreEqual( 64, data.Count );
+		var bytes = data.ToArray();
+		var original = (byte[])bytes.Clone();
+		var images = new SshFile( bytes ).Images;
+		CollectionAssert.AreEqual( original, bytes, "Reading metadata must not modify the input." );
+		CollectionAssert.AreEqual( new[] { 0, 0 }, images.Select( image => image.PayloadSize ).ToArray() );
+	}
+
+	[TestMethod]
+	public void SshUnterminatedNameStopsBeforeTheNextImage()
+	{
+		var data = SshHeader( ("one1", 32), ("two2", 56) );
+		AddSshImage( data, 0x84, 16, 8, 8 );
+		data.AddRange( new byte[] { 0x70, 0, 0, 0 } );
+		data.AddRange( Encoding.Latin1.GetBytes( "abcd" ) );
+		AddSshImage( data, 0x84, 0, 8, 8 );
+		Assert.AreEqual( 72, data.Count );
+		var bytes = data.ToArray();
+		var original = (byte[])bytes.Clone();
+		var images = new SshFile( bytes ).Images;
+		CollectionAssert.AreEqual( original, bytes, "Reading metadata must not modify the input." );
+		Assert.AreEqual( "abcd", images[0].Name, "A NUL in the next image cannot terminate this name." );
+		Assert.AreEqual( "", images[1].Name );
+	}
+
+	[TestMethod]
+	public void SshUnsortedDirectoryAndAliasesKeepDirectoryOrderAndSharedBounds()
+	{
+		var data = SshHeader( ("last", 64), ("one1", 40), ("alia", 40) );
+		AddSshImage( data, 0x84, 0, 16, 32 );
+		data.AddRange( new byte[] { (byte)'G', (byte)'M', 1, 2, 0, 0, 0, 0 } );
+		AddSshImage( data, 5, 0, 3, 4 );
+		var images = new SshFile( data.ToArray() ).Images;
+		CollectionAssert.AreEqual( new[] { "last", "one1", "alia" }, images.Select( image => image.Tag ).ToArray() );
+		Assert.AreEqual( (5, 3, 4, 0, false), (images[0].Type, images[0].Width, images[0].Height, images[0].PayloadSize, images[0].IsGmCompressed) );
+		foreach ( var image in images.Skip( 1 ) )
+			Assert.AreEqual( (0x84, 16, 32, 8, true, 1, 2), (image.Type, image.Width, image.Height, image.PayloadSize, image.IsGmCompressed, image.GmBlocksX, image.GmBlocksY) );
+	}
+
+	[TestMethod]
+	public void SshGmSignatureCannotBorrowBytesFromTheNextImage()
+	{
+		var data = SshHeader( ("one1", 32), ("two2", 52) );
+		AddSshImage( data, 0x84, 0, 1, 1 );
+		data.AddRange( new byte[] { (byte)'G', (byte)'M', 9, 8 } );
+		AddSshImage( data, 5, 0, 2, 2 );
+		var image = new SshFile( data.ToArray() ).Images[0];
+		Assert.AreEqual( (4, false, 0, 0), (image.PayloadSize, image.IsGmCompressed, image.GmBlocksX, image.GmBlocksY) );
+	}
+
+	[TestMethod]
+	public void SshAttachmentHeaderMayEndExactlyAtTheImageBoundary()
+	{
+		var data = SshHeader( ("one1", 32), ("two2", 52) );
+		AddSshImage( data, 4, 16, 1, 1 );
+		data.AddRange( new byte[] { 0x70, 0, 0, 0 } );
+		AddSshImage( data, 5, 0, 2, 2 );
+		var image = new SshFile( data.ToArray() ).Images[0];
+		Assert.AreEqual( (0, ""), (image.PayloadSize, image.Name) );
+	}
+
+	[DataTestMethod]
+	[DataRow( 17 )]
+	[DataRow( 20 )]
+	[DataRow( 21 )]
+	public void SshRejectsAttachmentHeadersAndPayloadsAcrossTheImageBoundary( int next )
+	{
+		var data = SshHeader( ("one1", 32), ("two2", 52) );
+		AddSshImage( data, 4, next, 1, 1 );
+		data.AddRange( new byte[4] );
+		AddSshImage( data, 5, 0, 2, 2 );
+		Assert.ThrowsException<InvalidDataException>( () => new SshFile( data.ToArray() ) );
+	}
+
+	[TestMethod]
+	public void SshRejectsAnAttachmentChainEnteringTheNextImage()
+	{
+		var data = SshHeader( ("one1", 32), ("two2", 56) );
+		AddSshImage( data, 4, 16, 1, 1 );
+		data.AddRange( new byte[] { 0x71, 8, 0, 0, 0, 0, 0, 0 } );
+		AddSshImage( data, 5, 0, 2, 2 );
+		Assert.ThrowsException<InvalidDataException>( () => new SshFile( data.ToArray() ) );
+	}
+
+	[DataTestMethod]
+	[DataRow( -1 )]
+	[DataRow( int.MaxValue )]
+	[DataRow( int.MaxValue - 15 )]
+	public void SshRejectsInvalidDirectoryOffsetsWithoutIntegerOverflow( int offset )
+	{
+		var data = SshHeader( ("one1", offset) );
+		AddSshImage( data, 4, 0, 1, 1 );
+		Assert.ThrowsException<InvalidDataException>( () => new SshFile( data.ToArray() ) );
 	}
 
 	internal static string? Ps2DataDirectory()

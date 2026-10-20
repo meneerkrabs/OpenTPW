@@ -51,6 +51,12 @@ public static class PoolExtraSettings
 	public const int BoardPauseTurns = 3, SplashTurns = 4;
 	/// <summary>A shower: 12 to 20 turns (3 to 5 seconds), the chance (percent) that a guest showers as its swim starts, and the distance (in cells, each way) a shower may lie from the room's pool-side cell.</summary>
 	public const int ShowerTurns = 12, ShowerExtraTurns = 9, ShowerStartPercent = 60, ShowerReach = 4;
+	/// <summary>
+	/// The engine units a guest lying on a lounger is drawn pulled towards the camera (presentation only, <see cref="LoungerActivity.DepthPull"/>): the camera-facing quad stands at the seat's middle, and
+	/// the lounger's own raised head end (up to 5.8 model units, 0.48 engine units above the cushion) and the front half of its seat, up to 0.68 engine units nearer the camera, hid the head and the
+	/// near side of the body. The pull is along the view direction, so the screen position moves only by the perspective's small share (as the flume riders').
+	/// </summary>
+	public const float LoungerDepthPull = 0.75f;
 	/// <summary>A lounger: 60 to 120 turns (15 to 30 seconds) lying, then 60 percent back into the water and the rest end the session.</summary>
 	public const int LoungerTurns = 60, LoungerExtraTurns = 61, LoungerBackPercent = 60;
 
@@ -417,7 +423,10 @@ public sealed class ShowerActivity : IPoolActivity
 /// </summary>
 public sealed class LoungerActivity : IPoolActivity
 {
-	public string Id => "extra.lounger";
+	/// <summary>The activity's id.</summary>
+	public const string ActivityId = "extra.lounger";
+
+	public string Id => ActivityId;
 
 	/// <summary>The side of the seat the swimmer comes in from: the first, from the lounger's own facing, with water of the swimmer's pool beside the seat and a free line to it.</summary>
 	private static int? SideOf( ParkCellMap cells, PoolSwimRegion region, (int X, int Y) seat, int first ) =>
@@ -468,10 +477,14 @@ public sealed class LoungerActivity : IPoolActivity
 				return PoolActivityStep.Continue;
 			case 2:
 				if ( PoolExtraMotion.StepToward( simulation, guest, land, PoolExtraSettings.WalkSpeed ) )
+				{
 					PoolExtraMotion.SetStep( guest, 3, PoolExtraSettings.LoungerTurns + (int)(PoolSwimming.Next( ref random ) % PoolExtraSettings.LoungerExtraTurns) );
+					// lie down at once along the seat, so the first lying turn is not drawn with the heading of the step onto it
+					PoolExtraMotion.Face( guest, LieDirection( simulation, guest ) );
+				}
 				return PoolActivityStep.Continue;
 			case 3:
-				PoolExtraMotion.Face( guest, PoolExtraMotion.WaterSide( guest ) );
+				PoolExtraMotion.Face( guest, LieDirection( simulation, guest ) );
 				if ( --guest.PoolActivityTurns > 0 )
 					return PoolActivityStep.Continue;
 				if ( PoolSwimming.Next( ref random ) % 100 < PoolExtraSettings.LoungerBackPercent )
@@ -485,6 +498,19 @@ public sealed class LoungerActivity : IPoolActivity
 				return PoolExtraMotion.ReEnter( simulation, guest, step, PoolExtraSettings.LoungerHappiness );
 		}
 	}
+
+	/// <summary>
+	/// The way a lying guest faces: along the seat, the feet towards the lounger's foot end and the head on its raised head end. That is the lounger's own back, <see cref="PoolExtras.WaterDirection"/> of its
+	/// rotation (tools/blender/opentpw_pool_extras.py, <c>add_lounger</c>: the head end is the front of the cell, the cushion runs to the back), and the lying frames have the feet towards the heading
+	/// (<see cref="PoolSwimSlots.Lying"/>). It is not the side the guest climbed out on: a lounger may stand with its side or its head end to the water (any cell with water beside it), and a guest who came
+	/// in from there lay across the seat. The seat's own side only while the lounger is gone (the activity is then aborted).
+	/// </summary>
+	public static (int X, int Y) LieDirection( GuestSimulation simulation, Guest guest ) =>
+		PoolExtraMotion.SiteOf( simulation, guest.PoolActivityTarget ) is { } site ? PoolExtras.WaterDirection( site.Rotation ) : PoolExtraMotion.WaterSide( guest );
+
+	/// <summary>The depth pull of the swimmers' renderer for this guest: <see cref="PoolExtraSettings.LoungerDepthPull"/> while it lies on a lounger (step 3), 0 for everyone else. Presentation only.</summary>
+	public static float DepthPull( GuestSimulation simulation, Guest guest ) =>
+		guest.State == GuestState.PoolActivity && guest.PoolActivityId == ActivityId && PoolExtraMotion.StepOf( guest ) == 3 ? PoolExtraSettings.LoungerDepthPull : 0f;
 
 	public void Abort( GuestSimulation simulation, Guest guest ) { }
 

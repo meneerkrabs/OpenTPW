@@ -43,13 +43,15 @@ public sealed partial class ParkHud
 		SetInfoArm( false );
 		level.CellTool.Cancel();
 		LeaveBuildTool();
-		researchScreen ??= CreateResearchScreen();
+		// The original constructs new controls on each open (0x4aa480); a closed screen must not retain mouse capture.
+		researchScreen = CreateResearchScreen();
 		ResetResearchFluids();
 		Stack.Push( researchScreen );
 		researchScreen.Focus( researchScreen.Find( "exit" ) );
 		// [BIN:TPW-EXE:0x4a1737 drawer open] opening the map/research drawer (message 0xA) plays cat_ui event 0x1C (the drawer's research button help is 'Click for research (R)')
 		GameAudio.PlayUi( GameAudio.DrawerOpenEvent );
 		StartResearchSounds();
+		((ResearchWorkloadKnob)researchScreen.Find( "workloadKnob" )!).Reset();
 	}
 
 	public void CloseResearchWindow()
@@ -186,24 +188,17 @@ public sealed partial class ParkHud
 		ResearchFluid.StepFrames( researchFluidClock, researchFluids, delta );
 	}
 
-	public static bool TrySetResearchWorkload( ParkEconomy? economy, bool readOnly, int workload )
-	{
-		if ( readOnly || economy is not { Features.ResearchPanel: true } ) return false;
-		economy.Research.SetWorkload( workload );
-		return true;
-	}
+	/// <summary>Sets the lab's workload, clamped to the knob's 0..100 as the lab clamps it (<see cref="SetResearchWorkloadCommand"/>).</summary>
+	public static bool TrySetResearchWorkload( Level level, int workload ) =>
+		level.Commands.Issue( new SetResearchWorkloadCommand( Math.Clamp( workload, 0, 100 ) ) ).Accepted;
 
-	public static bool TryMoveResearchCurrent( ParkEconomy? economy, bool readOnly, ResearchCategory category, int direction )
-	{
-		if ( readOnly || economy is not { Features.ResearchPanel: true } || !Enum.IsDefined( category ) ) return false;
-		return economy.Research.MoveCurrent( category, direction );
-	}
+	/// <summary>Steps a category's current project one place (<see cref="MoveResearchCommand"/>).</summary>
+	public static bool TryMoveResearchCurrent( Level level, ResearchCategory category, int direction ) =>
+		level.Commands.Issue( new MoveResearchCommand( category, direction ) ).Accepted;
 
-	private void SetResearchEffort( ResearchCategory category, int effort )
-	{
-		if ( !level.IsReadOnlyVisit && ResearchEconomy is { Features: { ResearchPanel: true } } economy )
-			economy.SetResearchEffort( category, effort );
-	}
+	/// <summary>Sets a category's effort, clamped to 0..100 as the lab clamps it (<see cref="SetResearchEffortCommand"/>).</summary>
+	private void SetResearchEffort( ResearchCategory category, int effort ) =>
+		level.Commands.Issue( new SetResearchEffortCommand( category, Math.Clamp( effort, 0, 100 ) ) );
 
 	private UiScreen CreateResearchScreen()
 	{
@@ -214,9 +209,13 @@ public sealed partial class ParkHud
 		screen.Add( new UiLabel { Id = "title", Text = () => strings[UIStrings.ResearchLab], Font = fonts => fonts.Title,
 			Color = UiColors.Title, Align = UiAlign.Center, Fit = true, Bounds = Rect( 866, 67, 1338, 146 ), Anchor = UiAnchor.Center } );
 		Model( "workload", "effort", Rect( 234, 148, 464, 968 ) );
-		screen.Add( new ResearchWorkloadKnob( this ) { Id = "workloadKnob",
+		var workloadKnob = screen.Add( new ResearchWorkloadKnob( this ) { Id = "workloadKnob",
 			Bounds = Rect( 267, 220, 334, 701 ), Anchor = UiAnchor.Center } );
-		Model( "cameo", "cameo", Rect( 262, 760, 438, 936 ) );
+		screen.Add( new UiModelImage { Id = "cameo", Model = "cameo",
+			Frame = () => ResearchCameoFrame( ResearchEconomy?.Research.Workload ?? MinimumKnobWorkload ),
+			Bounds = Rect( 262, 760, 438, 936 ), Anchor = UiAnchor.Center } );
+		screen.Add( new ResearchCapacityGauge { Id = "capacityGauge", Value = () => workloadKnob.Limit,
+			Bounds = Rect( 354, 238, 422, 683 ), Anchor = UiAnchor.Center } );
 		for ( var row = 0; row < ResearchRows.Length; row++ )
 		{
 			var index = row;
@@ -226,10 +225,10 @@ public sealed partial class ParkHud
 			Model( $"icon{index}", icon, cells.Icon );
 			// [EXTENSION:UI] Cursor arrows select eligible research targets using the economy model.
 			screen.Add( new UiButton { Id = $"previous{index}", Model = "b_sleft", Enabled = false,
-				Clicked = () => TryMoveResearchCurrent( ResearchEconomy, level.IsReadOnlyVisit, category, -1 ),
+				Clicked = () => TryMoveResearchCurrent( level, category, -1 ),
 				Bounds = cells.Previous, Anchor = UiAnchor.Center } );
 			screen.Add( new UiButton { Id = $"next{index}", Model = "b_sright", Enabled = false,
-				Clicked = () => TryMoveResearchCurrent( ResearchEconomy, level.IsReadOnlyVisit, category, 1 ),
+				Clicked = () => TryMoveResearchCurrent( level, category, 1 ),
 				Bounds = cells.Next, Anchor = UiAnchor.Center } );
 			screen.Add( new UiLabel { Id = $"item{index}", Text = () => ResearchItemName( category ), Font = fonts => fonts.Label,
 				Color = UiColors.Text, Align = UiAlign.Center, Fit = true,
@@ -254,13 +253,24 @@ public sealed partial class ParkHud
 		{
 			StepResearchFluids( context.Delta );
 			var editable = !level.IsReadOnlyVisit && ResearchEconomy is { Features: { ResearchPanel: true } };
-			if ( screen.Find( "workloadKnob" ) is UiElement workload ) workload.Enabled = editable;
+			workloadKnob.Enabled = editable;
+			if ( !editable ) workloadKnob.CancelInteraction();
+			workloadKnob.RefreshStaffing();
 			foreach ( var index in Enumerable.Range( 0, ResearchRows.Length ) )
 				{
 				if ( screen.Find( $"effort{index}" ) is UiSlider effort ) effort.Enabled = editable;
 				var canSelect = editable && ResearchEconomy!.Research.SelectableItems( ResearchRows[index].Category ).Count > 1;
 				if ( screen.Find( $"previous{index}" ) is UiButton previous ) previous.Enabled = canSelect;
 				if ( screen.Find( $"next{index}" ) is UiButton next ) next.Enabled = canSelect;
+			}
+		};
+		screen.Removed = () =>
+		{
+			workloadKnob.CancelInteraction();
+			if ( ReferenceEquals( researchScreen, screen ) )
+			{
+				StopResearchSounds();
+				researchScreen = null;
 			}
 		};
 		screen.Back = CloseResearchWindow;
@@ -326,73 +336,148 @@ public sealed partial class ParkHud
 	public static float DragBall( float centre, float from, float to ) =>
 		Math.Clamp( centre + (to - from), 220 + KnobBallHeight / 2f, 701 - KnobBallHeight / 2f );
 
-	private int WorkloadLimit()
+	/// <summary>The nine cameo states of child 0xd2d11 (0x4a9a5e): trunc(2 × (workload - 70) / 7).</summary>
+	internal static int ResearchCameoFrame( int workload ) => 2 * (Math.Clamp( workload, MinimumKnobWorkload, MaximumKnobWorkload ) - MinimumKnobWorkload) / 7;
+
+	private (int Ability, int Limit) WorkloadStaffing()
 	{
 		if ( ResearchEconomy is not { } economy )
-			return WorkloadKnobRange;
+			return (0, WorkloadKnobRange);
 		var abilities = economy.Settings.ResearchAbility;
 		var sum = economy.Staff.OfType( StaffType.Researcher ).Sum( member => abilities[Math.Clamp( member.Grade, 0, abilities.Count - 1 )] );
-		return WorkloadKnobLimit( sum, economy.Settings[StaffType.Researcher].MaximumInPark, abilities[BalanceSettings.GradeCount - 1] );
+		return (sum, WorkloadKnobLimit( sum, economy.Settings[StaffType.Researcher].MaximumInPark, abilities[BalanceSettings.GradeCount - 1] ));
 	}
 
-	private sealed class ResearchWorkloadKnob : UiElement, IUiDragTarget, IUiDragStart
+	/// <summary>Research child 0xd2d12: the staffing limit fills a clipped vertical cylinder from the bottom.</summary>
+	internal sealed class ResearchCapacityGauge : UiElement
+	{
+		internal const string ArtPath = "/ui/textures/effortguage.wct";
+		internal Func<int> Value { get; init; } = () => 0;
+		public override void Draw( UiContext context, bool focused, bool pressed ) => DrawGauge( context.Batch, ScreenRect( context.Canvas ), Value() );
+
+		internal static void DrawGauge( UiBatch batch, UiRect bounds, int value ) => UiVerticalGauge.Draw( batch, bounds, value, ArtPath );
+	}
+
+	internal sealed class ResearchWorkloadKnob : UiElement, IUiDragTarget, IUiDragStart, IUiCapturedClickTarget
 	{
 		private readonly ParkHud owner;
 		public ResearchWorkloadKnob( ParkHud owner ) => this.owner = owner;
 		public override bool Focusable => Visible && Enabled;
-		// [EXT:ui-key-navigation] the arrow keys move the workload one point within the knob's 70..100
-		public override void Adjust( int direction ) => TrySetResearchWorkload( owner.ResearchEconomy, owner.level.IsReadOnlyVisit,
-			Math.Clamp( (owner.ResearchEconomy?.Research.Workload ?? MinimumKnobWorkload) + direction, MinimumKnobWorkload, MaximumKnobWorkload ) );
-		// [BIN:TPW-EXE:0x66afe5 vertical slider drag] the value is read back from the ball: trunc((bottom - ball bottom) × (min - max) / (height - ball height)) + max
-		// [BIN:TPW-EXE:0x66b771 slider ball move] a drag translates the ball's rectangle by the pointer's movement and clamps it to the track (0x66b771 adds the delta to both ends, then pulls the ball back inside the limits), so the ball keeps the offset at which it was grabbed
-		// [APPROX:UI-064] the ball proc 0x66bb9b moves the ball from the rectangle saved at the press or release (0x65cf3d); that it is the ball's rectangle at the press, as done here, is not settled; a press in the track outside the ball puts the ball's centre under the pointer where the slider class moves the value by its step +0x148 toward the pointer, one step per press (0x66b8aa picks mode 2 or 3 of 0x66b088 by the pointer's side of the thumb, flipped when the page word +0x144 is above 0; the knob's step value is not found); the knob's children 0xd2d12 and 0xd2d11 are not drawn
-		private float? ballCentre;
-		private float lastPointerY;
+		private bool Editable => Visible && Enabled && !owner.level.IsReadOnlyVisit && owner.ResearchEconomy is { Features.ResearchPanel: true };
+		internal int Value { get; private set; }
+		internal int Limit { get; private set; } = WorkloadKnobRange;
+		internal float BallTop { get; private set; } = WorkloadKnobTop( 0 );
+		internal UiRect BallRect => Rect( 267, BallTop, 334, BallTop + KnobBallHeight );
+		private int ability;
+		private enum PressMode { None, Page, Grab }
+		private PressMode pressMode;
+		private bool releasedPage;
+		private float pressCentre;
+		private NVector2 pressPoint, lastPoint;
+		private static readonly UiRect Track = Rect( 273, 220, 330, 701 );
 
-		private float PointerY( UiCanvas canvas, NVector2 point )
+		// [BIN:TPW-EXE:0x4aacce initial workload] new slider value 0; project the saved workload through SetPos, which only notifies when its raw value changes.
+		internal void Reset()
+		{
+			CancelInteraction();
+			Value = 0;
+			// [APPROX:UI-064] raw-zero startup keeps the existing host-normalized bottom (634); native construction can retain authored top399 when SetPos is unchanged, but later startup normalization is not fully traced.
+			BallTop = WorkloadKnobTop( Value );
+			(ability, Limit) = owner.WorkloadStaffing();
+			SetValue( KnobFromWorkload( owner.ResearchEconomy?.Research.Workload ?? MinimumKnobWorkload, Limit ) );
+		}
+
+		// [BIN:TPW-EXE:0x4a97d4 staffing refresh] only a changed ability sum reprojects workload; ordinary frames, efforts and targets leave the raw value alone.
+		internal void RefreshStaffing()
+		{
+			var staffing = owner.WorkloadStaffing();
+			if ( staffing.Ability == ability ) return;
+			(ability, Limit) = staffing;
+			SetValue( KnobFromWorkload( owner.ResearchEconomy?.Research.Workload ?? MinimumKnobWorkload, Limit ) );
+			// SetPos changes the live rectangle, not the press-time rectangle (+0x20); the next actual move still uses the original baseline.
+		}
+
+		private void SetValue( int value, bool positionBall = true, bool writeWorkload = true )
+		{
+			value = Math.Clamp( value, 0, WorkloadKnobRange );
+			if ( value == Value ) return;
+			// [BIN:TPW-EXE:0x4a99ea capacity clamp] the change handler calls SetPos again when the raw value exceeds the staffing limit.
+			var capped = Math.Min( value, Math.Max( 0, Limit ) );
+			Value = capped;
+			if ( positionBall || capped != value ) BallTop = WorkloadKnobTop( Value );
+			if ( !writeWorkload || TrySetResearchWorkload( owner.level, WorkloadFromKnob( Value, Limit ) ) )
+				owner.SetResearchHum( Value );
+		}
+
+		// [EXT:ui-key-navigation] keys move the workload one percentage point and explicitly synchronize the raw knob without rounding that requested workload back down.
+		public override void Adjust( int direction )
+		{
+			if ( !Editable ) return;
+			var workload = Math.Clamp( owner.ResearchEconomy!.Research.Workload + direction, MinimumKnobWorkload, MaximumKnobWorkload );
+			if ( !TrySetResearchWorkload( owner.level, workload ) ) return;
+			CancelInteraction();
+			SetValue( KnobFromWorkload( workload, Limit ), writeWorkload: false );
+		}
+
+		private NVector2 AuthoredPoint( UiCanvas canvas, NVector2 point )
 		{
 			var rect = ScreenRect( canvas );
-			return Bounds.Y + (point.Y - rect.Y) / rect.Height * Bounds.Height;
+			return new NVector2( Bounds.X, Bounds.Y ) + (point - new NVector2( rect.X, rect.Y )) / canvas.Scale;
 		}
 
 		public void DragStart( UiCanvas canvas, NVector2 point )
 		{
-			ballCentre = null;
-			if ( !Enabled || ScreenRect( canvas ).Height <= 0 )
-				return;
-			var y = PointerY( canvas, point );
-			var workload = owner.ResearchEconomy?.Research.Workload ?? MinimumKnobWorkload;
-			var top = WorkloadKnobTop( KnobFromWorkload( workload, owner.WorkloadLimit() ) );
-			if ( y >= top && y <= top + KnobBallHeight )
+			CancelInteraction();
+			if ( !Editable ) return;
+			pressPoint = lastPoint = AuthoredPoint( canvas, point );
+			// [BIN:TPW-EXE:0x65db72 child hit dispatch] the ball child wins before the parent's narrower track rectangle is tested.
+			if ( BallRect.Contains( pressPoint ) )
 			{
-				ballCentre = top + KnobBallHeight / 2f;
-				lastPointerY = y;
+				pressMode = PressMode.Grab;
+				pressCentre = BallTop + KnobBallHeight / 2;
 			}
+			else if ( Track.Contains( pressPoint ) )
+				pressMode = PressMode.Page;
 		}
 
 		public void DragTo( UiCanvas canvas, NVector2 point )
 		{
-			if ( !Enabled ) return;
-			var rect = ScreenRect( canvas );
-			if ( rect.Height <= 0 ) return;
-			var y = PointerY( canvas, point );
-			if ( ballCentre is { } centre )
-			{
-				centre = DragBall( centre, lastPointerY, y );
-				ballCentre = centre;
-				lastPointerY = y;
-				y = centre;
-			}
-			var limit = owner.WorkloadLimit();
-			if ( TrySetResearchWorkload( owner.ResearchEconomy, owner.level.IsReadOnlyVisit, WorkloadFromKnob( KnobValueAt( y ), limit ) ) )
-				owner.SetResearchHum( Math.Clamp( KnobValueAt( y ), 0, Math.Min( Math.Max( limit, 0 ), WorkloadKnobRange ) ) );
+			if ( !Editable || pressMode != PressMode.Grab ) return;
+			var at = AuthoredPoint( canvas, point );
+			// [BIN:TPW-EXE:0x658840 pointer dispatch] a stationary pointer emits no movement. UiScreen calls every held frame, including the press itself.
+			if ( at == lastPoint ) return;
+			lastPoint = at;
+			// [BIN:TPW-EXE:0x66be55 saved rectangle] translate the immutable press-time rectangle by the full press-relative delta, then clamp and read the value.
+			BallTop = DragBall( pressCentre, pressPoint.Y, at.Y ) - KnobBallHeight / 2;
+			SetValue( KnobValueAt( BallTop + KnobBallHeight / 2 ), positionBall: false );
 		}
-		public override void Draw( UiContext context, bool focused, bool pressed )
+
+		public void DragEnd( UiCanvas canvas, NVector2 point )
 		{
-			var workload = owner.ResearchEconomy?.Research.Workload ?? MinimumKnobWorkload;
-			var top = WorkloadKnobTop( KnobFromWorkload( workload, owner.WorkloadLimit() ) );
-			context.DrawModel( "b_scroller", owner.ResearchEconomy == null ? UiButton.DisabledFrame : UiButton.NormalFrame,
-				context.Canvas.Map( Rect( 267, top, 334, top + 67 ), Anchor ) );
+			releasedPage = pressMode == PressMode.Page;
+			// [BIN:TPW-EXE:0x66bd75 release] mode -2 repositions the ball from the raw value even when that value did not change.
+			if ( pressMode == PressMode.Grab ) BallTop = WorkloadKnobTop( Value );
+			pressMode = PressMode.None;
 		}
+
+		public void ClickCaptured( UiCanvas canvas, NVector2 point )
+		{
+			if ( !releasedPage || !Editable ) return;
+			releasedPage = false;
+			// [BIN:TPW-EXE:0x66bb38 track click] 0x11006 uses the saved press point, only after the completed-click qualification; constructor 0x66adc9 leaves page +0x148 at 1.
+			SetValue( Value + (pressPoint.Y <= BallTop + KnobBallHeight ? 1 : -1) );
+		}
+
+		public void CancelCapturedClick() => CancelInteraction();
+
+		internal void CancelInteraction()
+		{
+			pressMode = PressMode.None;
+			releasedPage = false;
+			BallTop = WorkloadKnobTop( Value );
+		}
+
+		public override void Draw( UiContext context, bool focused, bool pressed ) =>
+			context.DrawModel( "b_scroller", Editable ? UiButton.NormalFrame : UiButton.DisabledFrame, context.Canvas.Map( BallRect, Anchor ) );
 	}
 }

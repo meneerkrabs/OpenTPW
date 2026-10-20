@@ -40,13 +40,14 @@ public partial class Level
 		};
 		AttachStaffWorld();
 		StaffPlacement = new StaffPlacement( () => Park?.Economy, () => Guests?.Grid.Cells, IsStaffDropBlocked );
-		PatrolTool = new PatrolAreaTool( () => Park?.Economy );
+		PatrolTool = new PatrolAreaTool( () => Park?.Economy, command => Commands.Issue( command ) );
 		if ( OriginalPark != null )
 		{
 			StaffSpriteSet sprites;
 			using ( LoadProfile.Measure( "staff-sprites" ) )
 				sprites = StaffSpriteSet.Load( LevelName );
-			StaffRenderer = new StaffRenderer( () => Park.Economy.Staff.Members, OriginalPark.Heightfield, sprites, StaffPlacement );
+			StaffRenderer = new StaffRenderer( () => Park.Economy.Staff.Members, OriginalPark.Heightfield, sprites, StaffPlacement )
+			{ FeetHeight = ( x, y ) => PoolBridges?.At( (int)x, (int)y )?.HeightAt( x, y ) };
 		}
 	}
 
@@ -55,9 +56,9 @@ public partial class Level
 	/// (4, 9, 10), the types are the whole rule; a world that keeps the cells it was given (a visit, a Theme Park Inc layout) refuses every cell under an object.
 	/// </summary>
 	// [BIN:TPW-EXE:0x0046CC40 drop cells] the drop reads the cell's type (0, 1, 3 or 9 pass, 0x536390, 0x536310, 0x536320) and its flags, never an object list: a ride's footprint cells are refused as the types 4 and 10 the placement writes (ParkCellMap.WriteFootprint, 0x00528A70), its queue-end entrance cell (9) takes a drop
-	// [EXT:developer-prototype] the Sandbox Totem and the pool slides' reserved land have no cell types
+	// [EXT:developer-prototype] the Sandbox Totem, pool slides' reserved land and pool bridges' reserved cells have no cell types
 	private bool IsStaffDropBlocked( int x, int y ) =>
-		TypesFootprints ? IsReservedByPrototype( x, y ) || (Guests != null && PoolSlides?.ReservesLand( x, y, Guests.Grid.Cells ) == true) : IsPathBlocked( x, y );
+		TypesFootprints ? PoolBridges?.Reserves( x, y ) == true || IsReservedByPrototype( x, y ) || (Guests != null && PoolSlides?.ReservesLand( x, y, Guests.Grid.Cells ) == true) : IsPathBlocked( x, y );
 
 	/// <summary>One park tool at a time: ends the path, queue, track, coaster, placing and remove tools before a staff tool starts.</summary>
 	public void EndBuildTools()

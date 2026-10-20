@@ -6,14 +6,14 @@ namespace OpenTPW.Hud;
 
 /// <summary>
 /// The original's message system: pending messages stack as icons in the red tube left of the HUD panel; a left click on an icon opens that message in the
-/// green panel that slides out of the HUD, a right click deletes it. A message stays in the tube until it is opened or deleted.
+/// green panel that slides out of the HUD, a right click deletes it. Generic messages leave the tube when opened; tagged challenge progress and terminal rows remain when read or closed.
 /// </summary>
 public sealed partial class ParkHud
 {
 	/// <summary>How many messages the tube holds; the oldest goes when a sixth arrives.</summary>
 	// [DATA:video 15:20, 51:40, 76:03] up to about five icons are stacked in the tube at once
 	// [EXT:message-tube-art] the red tube body is drawn as rectangles and the white icons as discs, the growth per message (77 units) read off the video, instead of the original's tube art
-	// [APPROX:UI-025] pending tube messages are not saved with the park; the capacity of five is the most the video shows, where the original's tube has eight slots (0x59a940) and on overflow replaces its lowest-priority slot only for a message of higher priority (the per-type caps and priorities of the registry 0x76e300 are filled at run time and not read)
+	// [APPROX:UI-025] pending tube messages are not saved with the park; the capacity of five is the most the video shows, while the traced tube insertion scans ten slots (0x48eb20); generic messages still evict the oldest at the host limit, whereas new challenge rows refuse a full tube (including hidden terminal slots awaiting release) and same-tag progress refresh bypasses capacity
 	public const int MessageTubeCapacity = 5;
 
 	/// <summary>The advisor help the open message panel carries (0x11C, 284).</summary>
@@ -39,11 +39,14 @@ public sealed partial class ParkHud
 	private static readonly string[] PanelButtonIds = { "messageDelete", "messageClose" };
 	private List<string>? pendingMessages;
 	private List<GameMessageAction[]>? pendingActions;
+	private List<ChallengeTubeRow?>? pendingChallengeRows;
+	private ChallengeTubeRow? openedChallengeRow;
+	internal readonly record struct ChallengeMessageIdentity( int Tag, short ContextShort, int ContextInt );
 	private string? openedMessage;
 	private GameMessageAction[] openedActions = Array.Empty<GameMessageAction>();
 	private float messageSlide;
 
-	/// <summary>The messages waiting in the tube, oldest first (the lowest icon).</summary>
+	/// <summary>The occupied tube slots, oldest first (the lowest icon), including hidden terminals awaiting final release.</summary>
 	public IReadOnlyList<string> PendingMessages => pendingMessages ?? (IReadOnlyList<string>)Array.Empty<string>();
 	/// <summary>The message the slide-out panel shows, null when it is closed.</summary>
 	public string? OpenedMessage => openedMessage;
@@ -63,34 +66,92 @@ public sealed partial class ParkHud
 			return;
 		pendingMessages ??= new List<string>();
 		pendingActions ??= new List<GameMessageAction[]>();
+		pendingChallengeRows ??= new List<ChallengeTubeRow?>();
 		pendingMessages.Add( text );
 		pendingActions.Add( actions.Take( MessageActionIds.Length ).ToArray() );
+		pendingChallengeRows.Add( null );
 		GameAudio.PlayUi( MessagePostedEvent );
 		// [EXT:restored-advice-tutorial] 322 (a message icon sits on the control panel antenna): the first message of the tube; the advisor posts it only while the extension is on, once (the tutorial group)
 		if ( pendingMessages.Count == 1 )
 			host?.RestoredHelp?.Invoke( RestoredAdvice.MessageIconHelp );
+		// UI-025: preserve generic immediate eviction, including a terminal awaiting its own delayed release.
 		while ( pendingMessages.Count > MessageTubeCapacity )
 		{
-			pendingMessages.RemoveAt( 0 );
-			pendingActions.RemoveAt( 0 );
+			RemovePendingMessageAt( 0 );
 		}
 	}
 
-	/// <summary>A left click on an icon: the message leaves the tube and the panel shows it.</summary>
+	/// <summary>
+	/// Refreshes every matching progress row, including the selected panel, without changing its order, actions or posted sound.
+	/// New progress refuses a full tube; its first insertion follows the existing new-message sound/help path.
+	/// </summary>
+	internal bool PostChallengeProgress( int tag, string text, short contextShort = 0, int contextInt = 0 )
+	{
+		if ( string.IsNullOrWhiteSpace( text ) )
+			return false;
+		text = text.Length <= 255 ? text : text[..255];
+		var identity = new ChallengeMessageIdentity( tag, contextShort, contextInt );
+		var refreshed = false;
+		for ( var index = 0; index < (pendingMessages?.Count ?? 0); index++ )
+			if ( pendingChallengeRows![index] is { Visible: true } row && row.Identity == identity )
+			{
+				pendingMessages![index] = text;
+				refreshed = true;
+			}
+		if ( refreshed )
+		{
+			if ( openedChallengeRow?.Identity == identity )
+				openedMessage = text;
+			return true;
+		}
+		if ( PendingMessages.Count >= MessageTubeCapacity )
+			return false;
+		PostGameMessage( text );
+		pendingChallengeRows![^1] = new ChallengeTubeRow( identity );
+		return true;
+	}
+
+	/// <summary>Applies only the incoming record's exact replacement identity, never a guessed completed-definition identity.</summary>
+	internal void RemoveChallengeProgress( int tag, short contextShort = 0, int contextInt = 0 )
+	{
+		var identity = new ChallengeMessageIdentity( tag, contextShort, contextInt );
+		for ( var index = (pendingMessages?.Count ?? 0) - 1; index >= 0; index-- )
+			if ( pendingChallengeRows![index] is { Visible: true } row && row.Identity == identity )
+				RemovePendingMessageAt( index );
+	}
+
+	private void RemovePendingMessageAt( int index )
+	{
+		if ( pendingChallengeRows![index] is { } row && ReferenceEquals( openedChallengeRow, row ) )
+			CloseMessagePanel();
+		pendingMessages!.RemoveAt( index );
+		pendingActions!.RemoveAt( index );
+		pendingChallengeRows.RemoveAt( index );
+	}
+
+	/// <summary>A left click selects the message. A challenge row remains; reading a terminal cancels its timers permanently.</summary>
 	public bool OpenPendingMessage( int index )
 	{
-		if ( pendingMessages == null || index < 0 || index >= pendingMessages.Count )
+		if ( !IsPendingMessageVisible( index ) )
 			return false;
 		GameAudio.PlayUi( MessageClickedEvent );
+		var row = pendingChallengeRows![index];
+		if ( row != null && ReferenceEquals( openedChallengeRow, row ) )
+		{
+			CloseMessagePanel();
+			return true;
+		}
 		// the panel comes out where the info arm is, so opening a message puts the arm away: the opened message is always visible, and one read there is not lost
 		if ( InfoArmOpen )
 			SetInfoArm( false );
 		// the message panel and the camera panel share one slot: opening a message puts the camera panel away
 		CloseCameraPanel();
-		openedMessage = pendingMessages[index];
+		openedMessage = pendingMessages![index];
 		openedActions = pendingActions![index];
-		pendingMessages.RemoveAt( index );
-		pendingActions.RemoveAt( index );
+		openedChallengeRow = row;
+		row?.Read();
+		if ( row == null )
+			RemovePendingMessageAt( index );
 		// [BIN:TPW-EXE:0x48D9C0 message selected] the tube item's left click (0x48E03B: sound 0xC0, then 0x48D9C0 unless it is the open one) stores the item as the panel's message and posts help 0x11C (284) through 0x486B00
 		host?.HelpPosted?.Invoke( MessagePanelHelp );
 		return true;
@@ -99,20 +160,31 @@ public sealed partial class ParkHud
 	/// <summary>A right click on an icon: the message is deleted without being read.</summary>
 	public bool DeletePendingMessage( int index )
 	{
-		if ( pendingMessages == null || index < 0 || index >= pendingMessages.Count )
+		if ( !IsPendingMessageVisible( index ) )
 			return false;
-		pendingMessages.RemoveAt( index );
-		pendingActions!.RemoveAt( index );
+		if ( pendingChallengeRows![index] is { IsTerminal: true } row )
+			BeginChallengeTerminalRemoval( row, closePanel: true );
+		else
+			RemovePendingMessageAt( index );
 		return true;
 	}
 
-	/// <summary>Closes the panel (the red cross, or the bomb that deletes the opened message).</summary>
+	/// <summary>The bomb deletes the selected instance; closing alone keeps it in the tube.</summary>
+	public void DeleteOpenedMessage()
+	{
+		if ( openedChallengeRow is { } row && pendingChallengeRows?.IndexOf( row ) is int index && index >= 0 )
+			DeletePendingMessage( index );
+		CloseMessagePanel();
+	}
+
+	/// <summary>Closes the panel, retaining the selected challenge row without restarting its timers.</summary>
 	public void CloseMessagePanel()
 	{
 		// [BIN:TPW-EXE:0x48E4BF message panel close] the panel's close message 0x1001D8 (sent when the arm drawer puts it away, 0x4A25F0 with 0) withdraws help 0x11C through 0x486B40 (0x48E4D3) and clears the selected item
 		if ( openedMessage != null )
 			host?.HelpWithdrawn?.Invoke( MessagePanelHelp );
 		openedMessage = null;
+		openedChallengeRow = null;
 		openedActions = Array.Empty<GameMessageAction>();
 	}
 
@@ -165,7 +237,7 @@ public sealed partial class ParkHud
 	/// <summary>The tube's icons: one list row per message; left opens, right deletes.</summary>
 	private sealed class MessageTubeList( ParkHud owner ) : UiElement, IUiRowList
 	{
-		public override bool Focusable => Visible && Enabled && owner.PendingMessages.Count > 0;
+		public override bool Focusable => Visible && Enabled && owner.pendingChallengeRows?.Any( row => row?.Visible != false ) == true;
 		public int Selected => -1;
 		public bool ArrowsSelect => false;
 		public int HoveredRow { get; private set; } = -1;
@@ -177,7 +249,7 @@ public sealed partial class ParkHud
 		public int RowAt( UiCanvas canvas, NVector2 point )
 		{
 			for ( var index = 0; index < owner.PendingMessages.Count; index++ )
-				if ( canvas.Map( TubeIcon( index ), UiAnchor.BottomLeft ).Inflate( 4 * canvas.Scale ).Contains( point ) )
+				if ( owner.IsPendingMessageVisible( index ) && canvas.Map( TubeIcon( index ), UiAnchor.BottomLeft ).Inflate( 4 * canvas.Scale ).Contains( point ) )
 					return index;
 			return -1;
 		}
@@ -199,6 +271,8 @@ public sealed partial class ParkHud
 			context.Batch.AddRectangle( new UiRect( body.X + body.Width * 0.18f, body.Y, body.Width * 0.18f, body.Height ), new RgbaByte( 255, 120, 110, 255 ) );
 			for ( var index = 0; index < count; index++ )
 			{
+				if ( !owner.IsPendingMessageVisible( index ) )
+					continue;
 				var icon = canvas.Map( TubeIcon( index ), UiAnchor.BottomLeft );
 				var hovered = index == HoveredRow;
 				UiDisc.Draw( context.Batch, icon.Center, icon.Width / 2, hovered ? new RgbaByte( 255, 240, 120, 255 ) : new RgbaByte( 250, 250, 250, 255 ) );

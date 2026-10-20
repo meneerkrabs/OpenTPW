@@ -7,6 +7,10 @@ public partial class Level
 
 	private CameraMode? parkCameraBeforeRide;
 
+	/// <summary>Ride view suppresses new guest bubble work, while thoughts, voice and ordinary expiry continue. A retired simulation cannot follow a replacement's camera state.</summary>
+	internal void BindGuestThoughtPresentation( GuestSimulation simulation ) =>
+		simulation.ThoughtBubblesAllowed = () => ReferenceEquals( Guests, simulation ) && RideView == null;
+
 	/// <summary>The park camera the ride was boarded from while the ride view is open, else null: its target stays where it was (the crowd sound counts around it).</summary>
 	internal ParkCameraMode? ParkCameraWhileRiding => RideView != null ? parkCameraBeforeRide as ParkCameraMode : null;
 

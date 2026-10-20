@@ -11,6 +11,13 @@ namespace OpenTPW;
 public interface IGuestDecisions
 {
 	/// <summary>
+	/// The host may score a disconnected real typed queue back, and offer it to the major decision before testing its route. This includes newly built queues and removed connections.
+	/// False preserves the existing join-cell filter and identity-only view for custom and smarter policies. The faithful policy opts in; wrappers forward their base policy's choice.
+	/// This does not change <see cref="AttractionView.HasJoinCell"/>, the minor decision or the extension's planning filters.
+	/// </summary>
+	bool ScoresDisconnectedQueues => false;
+
+	/// <summary>
 	/// The policy belongs to the <c>opentpw.smarter-guests</c> extension: the simulation then keeps the extension's park state (<see cref="SmarterGuestsState"/>: birth ids and the park seed).
 	/// A policy that wraps another forwards it.
 	/// </summary>
@@ -119,7 +126,7 @@ public interface IGuestDecisions
 	/// <summary>The booth's verdict on the entrance fee (tp.exe <c>0x004FF9D0</c>); the host draws the verdict's word first and the expensive wait afterwards.</summary>
 	BoothDecision DecideBooth( in DecisionContext context, in GuestView guest, in BoothView booth );
 
-	/// <summary>The score of one attraction for one guest (<c>0xe9164</c>); the host asks for attractions that have a join cell only.</summary>
+	/// <summary>The score of one attraction for one guest (<c>0xe9164</c>); the host asks for attractions with a join cell, or a real typed queue back when <see cref="ScoresDisconnectedQueues"/> is true.</summary>
 	uint ScoreAttraction( in DecisionContext context, in GuestView guest, in AttractionView attraction );
 
 	/// <summary>

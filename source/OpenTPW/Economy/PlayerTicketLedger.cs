@@ -4,7 +4,12 @@ namespace OpenTPW;
 internal sealed record EarnedTicketIdentity( string? Theme, GoldenTicketKind Kind );
 /// <summary>The park that holds one global ticket and the record it won it with (the original's held byte and record, tp.exe 0x5AF940).</summary>
 internal sealed record GlobalTicketHolder( GoldenTicketKind Kind, string Theme, long Record );
-internal sealed record PlayerTicketSnapshot( ParkGameMode Mode, int ExtraKeys, int SpentTickets, IReadOnlyList<EarnedTicketIdentity> Earned, IReadOnlyList<GlobalTicketHolder>? Holders = null );
+internal sealed record KnownTicketPurchase( int InfoId, int Cost );
+internal enum TicketPurchaseOutcome { Purchased, AlreadyOwned, InsufficientTickets }
+
+/// <param name="Cheated">[EXT:cheats-ticket-provenance] The earned identities a cheat awarded (a subset of <paramref name="Earned"/>); null when none was.</param>
+internal sealed record PlayerTicketSnapshot( ParkGameMode Mode, int ExtraKeys, int SpentTickets, IReadOnlyList<EarnedTicketIdentity> Earned, IReadOnlyList<GlobalTicketHolder>? Holders = null,
+	IReadOnlyList<EarnedTicketIdentity>? Cheated = null, IReadOnlyList<KnownTicketPurchase>? KnownPurchases = null );
 
 /// <summary>
 /// Own player-wide history, separate from native profiles and the legacy count-only PlayerProgress.
@@ -16,9 +21,11 @@ internal sealed class PlayerTicketLedger
 	private static readonly string[] Themes = { "jungle", "hallow", "fantasy", "space" };
 	private readonly HashSet<EarnedTicketIdentity> earned = new();
 	private readonly Dictionary<GoldenTicketKind, GlobalTicketHolder> holders = new();
+	private readonly HashSet<EarnedTicketIdentity> cheated = new();
+	private readonly Dictionary<int, KnownTicketPurchase> purchases = new();
 	public ParkGameMode Mode { get; }
 	public int ExtraKeys { get; }
-	public int SpentTickets { get; }
+	public int SpentTickets { get; private set; }
 	public int EarnedTickets => earned.Count;
 	public int AvailableTickets => EarnedTickets - SpentTickets;
 	public int Keys => ExtraKeys + EarnedTickets / PlayerProgress.TicketsPerKey;
@@ -35,8 +42,49 @@ internal sealed class PlayerTicketLedger
 		ExtraKeys = snapshot.ExtraKeys;
 		SpentTickets = snapshot.SpentTickets;
 		earned.UnionWith( snapshot.Earned );
+		cheated.UnionWith( snapshot.Cheated ?? Array.Empty<EarnedTicketIdentity>() );
+		foreach ( var purchase in snapshot.KnownPurchases ?? Array.Empty<KnownTicketPurchase>() )
+			purchases.Add( purchase.InfoId, purchase );
 		foreach ( var holder in snapshot.Holders ?? Array.Empty<GlobalTicketHolder>() )
 			holders[holder.Kind] = holder;
+	}
+
+	/// <summary>
+	/// [EXT:cheats-ticket-provenance] The earned identities a cheat awarded (docs/CHEATS.md). They count toward the keys and the theme unlocks like any other, as the original's ledger counts them
+	/// (its cheats write the same bytes as a win); the record only lets a later online profile leave them out.
+	/// </summary>
+	public IReadOnlyCollection<EarnedTicketIdentity> Cheated => cheated;
+
+	/// <summary>Pure own-ledger foundation; live park purchases do not call this API yet. Info.Id retains the existing host identity semantics.</summary>
+	public TicketPurchaseOutcome TryPurchase( int infoId, int cost )
+	{
+		if ( infoId < 0 || cost <= 0 ) throw new InvalidDataException( "Invalid ticket purchase." );
+		if ( purchases.ContainsKey( infoId ) ) return TicketPurchaseOutcome.AlreadyOwned;
+		if ( cost > AvailableTickets ) return TicketPurchaseOutcome.InsufficientTickets;
+		purchases.Add( infoId, new( infoId, cost ) );
+		SpentTickets += cost; // AvailableTickets bounds the sum by the earned identity count.
+		return TicketPurchaseOutcome.Purchased;
+	}
+
+	public bool OwnsPurchasedItem( int infoId ) => purchases.ContainsKey( infoId );
+
+	/// <summary>Whether a cheat awarded this park's or the player's ticket of <paramref name="kind"/>.</summary>
+	public bool IsCheated( string theme, GoldenTicketKind kind ) => cheated.Contains( Identity( theme, kind ) );
+
+	/// <summary>
+	/// [EXT:cheats-ticket-provenance] Records that a cheat awarded the ticket: a local ticket is earned now if it was not and then marked as a cheat's; a global one was earned through
+	/// <see cref="RecordGlobal"/> already, and is marked when that award earned it (<paramref name="globalAwarded"/>), not when it moved from another park. A ticket the player had earned before keeps
+	/// its honest provenance. True when anything changed.
+	/// </summary>
+	public bool RecordCheated( string theme, GoldenTicketKind kind, bool globalAwarded )
+	{
+		var identity = Identity( theme, kind );
+		if ( IsGlobal( kind ) )
+			return globalAwarded && earned.Contains( identity ) && cheated.Add( identity );
+		var added = RecordEarned( theme, kind );
+		if ( added )
+			cheated.Add( identity );
+		return added;
 	}
 
 	/// <summary>The park that holds a global ticket, null for an unknown holder (an older file) or a ticket not earned.</summary>
@@ -107,7 +155,9 @@ internal sealed class PlayerTicketLedger
 
 	public PlayerTicketSnapshot Capture() => new( Mode, ExtraKeys, SpentTickets,
 		Array.AsReadOnly( earned.OrderBy( item => item.Kind ).ThenBy( item => item.Theme, StringComparer.Ordinal ).ToArray() ),
-		holders.Count == 0 ? null : Array.AsReadOnly( holders.Values.OrderBy( item => item.Kind ).ToArray() ) );
+		holders.Count == 0 ? null : Array.AsReadOnly( holders.Values.OrderBy( item => item.Kind ).ToArray() ),
+		cheated.Count == 0 ? null : Array.AsReadOnly( cheated.OrderBy( item => item.Kind ).ThenBy( item => item.Theme, StringComparer.Ordinal ).ToArray() ),
+		purchases.Count == 0 ? null : Array.AsReadOnly( purchases.Values.OrderBy( item => item.InfoId ).ToArray() ) );
 
 	/// <summary>Copies a validated own snapshot. Spending never removes earned identities or keys.</summary>
 	public static PlayerTicketLedger Restore( PlayerTicketSnapshot snapshot )
@@ -133,7 +183,35 @@ internal sealed class PlayerTicketLedger
 			if ( CanonicalTheme( holder.Theme ) != holder.Theme || !unique.Contains( new EarnedTicketIdentity( null, holder.Kind ) ) || !restoredHolders.TryAdd( holder.Kind, holder ) )
 				throw new InvalidDataException( "Invalid global ticket holder." );
 		}
-		return new PlayerTicketLedger( snapshot with { Earned = unique.ToArray(), Holders = restoredHolders.Values.ToArray() } );
+		var restoredCheated = new HashSet<EarnedTicketIdentity>();
+		foreach ( var item in snapshot.Cheated ?? Array.Empty<EarnedTicketIdentity>() )
+			if ( item == null || !unique.Contains( item ) || !restoredCheated.Add( item ) )
+				throw new InvalidDataException( "Invalid cheated ticket." );
+		if ( snapshot.KnownPurchases?.Count > MaximumIdentities ) throw new InvalidDataException( "Too many known ticket purchases." );
+		var restoredPurchases = new Dictionary<int, KnownTicketPurchase>();
+		var knownCost = 0;
+		foreach ( var purchase in snapshot.KnownPurchases ?? Array.Empty<KnownTicketPurchase>() )
+		{
+			if ( purchase == null || purchase.InfoId < 0 || purchase.Cost <= 0 || purchase.Cost > snapshot.SpentTickets - knownCost
+				|| !restoredPurchases.TryAdd( purchase.InfoId, purchase ) )
+				throw new InvalidDataException( "Invalid known ticket purchase." );
+			knownCost += purchase.Cost;
+		}
+		// A legacy scalar may include unknown purchases. Never manufacture their identities.
+		return new PlayerTicketLedger( snapshot with { Earned = unique.ToArray(), Holders = restoredHolders.Values.ToArray(), Cheated = restoredCheated.ToArray(), KnownPurchases = restoredPurchases.Values.ToArray() } );
+	}
+
+	/// <summary>
+	/// The player's tickets as the advisor's win advice counts them: the ledger's earned identities and the park's own tickets, each once, so the count does not depend on whether the ledger has recorded the
+	/// win that raised the advice yet. Nothing is recorded.
+	/// </summary>
+	internal AdvisorPlayerTickets AdvisorView( string theme, IEnumerable<GoldenTicketKind> parkTickets, IReadOnlyList<int> themeKeyCosts )
+	{
+		var all = new HashSet<EarnedTicketIdentity>( earned );
+		foreach ( var kind in parkTickets )
+			all.Add( Identity( theme, kind ) );
+		var secret = all.Count( item => AdvisorPlayerTickets.IsSecret( item.Kind ) );
+		return new AdvisorPlayerTickets( all.Count, all.Count - secret, ExtraKeys, themeKeyCosts );
 	}
 
 	private static bool IsGlobal( GoldenTicketKind kind ) => kind is >= GoldenTicketKind.CoasterHeight and <= GoldenTicketKind.BigPark;

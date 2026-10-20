@@ -114,7 +114,14 @@ same frame from its cells (`CoasterStationLayout.FromCells`, `[EXT:coaster-stati
   `0x80000` and `0x100000` (`0x434060`): it is no loop node, its tangent has no previous neighbour and its next is S1, and
   it starts no link. OpenTPW completes only a closed circuit without invalid marks, in
   two clicks (`[EXT:coaster-completion-click]`); the original completes on one click on any
-  cell of type 4, 9 or 10 and refuses nothing (`0x435570`, cell evaluator `0x5345b8`).
+  cell of type 4, 9 or 10 and refuses nothing (`0x435570`, cell evaluator `0x5345b8`). The closing click is refused while
+  the closing link from the last pylon fails the validator or a pylon is still marked invalid: the circuit stays open, the
+  hovered closing target is already marked refused, and the HUD says why ("The track can't be completed from the last pylon…",
+  "Move the pylons marked red…"). A closed circuit whose closing link fails (closed by an earlier build, or a pylon moved
+  after the closing) can never complete and takes no new pylon; entering the tool opens it again
+  (`[EXT:coaster-failing-closure-opens]`), so it is built on from its last pylon. The ride window shows such a coaster as
+  TRACK INCOMPLETE and greys its door ([UI.md](UI.md)); the reopening guard's coaster test is the guests' predicate
+  (complete, not crossing itself, not in the tool, `0x441970`).
 
 Headless API (tests, the M3/M4 gates):
 
@@ -177,6 +184,8 @@ placed once on the release. Backspace waits for a drag; a drag let go while the 
   coaster's own, `0x42f390`). A hovered chain start (the closing target) takes the node flag `0x800000`, or `0x804000` when the closing link is refused (`0x4360c4`), and the marker
   textures draw that node's own tag pairs (`0x43f4e0` with both nodes the same); the rebuild `0x43eb70` draws no link into the start. `0x4360c0` also sets `0x200000` on the ends and their neighbours: it is the mark that makes the self-intersection pass `0x439ab0` re-test a node (`0x439b6b`), redundant here because the pass runs over every node. The rebuild `0x43eb70` samples and tests every track it draws, so while a coaster is built (and while a pylon is dragged) a link that crosses the track, the cursor's link included, is drawn with the crossing marker.
 
+The loop tool resumes a pending pair from the open chain endpoint after closing/reopening the panel or using an edit button: the second pylon keeps counter 1, its cursor omits `LoopFirst`, and placing it ends loop mode. The endpoint is the incomplete chain's tail or a completed cut circuit's predecessor, not an arbitrary picked pylon. Build stays disabled while that endpoint carries `0x80`, independently of the active tool. Availability and upgrade gates remain in force. See [loop-pair resumption](COASTER-LOOP-RESUMPTION.md) for the static evidence, synthetic coverage and remaining COAST-035 dispatch/loader qualifications.
+
 ## Running
 
 The station runs its original script (`Coaster.RSE`). The script's `COAST`
@@ -220,10 +229,32 @@ both times the power factor) and the cap. A hop takes `d / ((v + v')/2)`
 seconds, and the last hop of a step is partial; its end speed is capped but not
 floored, so a train at rest builds up speed over several frames. Below speed 2 the speed decays by 0.95 per hop,
 and below 0.01 it is 0. The trains of a frame hop one at a time from a queue (`0x43ced8`): the train with the most of the frame's
-time left hops next, a full hop puts it back before the first train with no more time left, a partial hop takes it out. The hops run
-on OpenTPW's fixed 60 Hz simulation step instead of the original's per-frame elapsed time, which keeps runs reproducible
-(`[EXT:coaster-fixed-step]`; the original's frame coupling is the proposed DET-003 that DET-I2 registers with the substep
-scheduler, docs/reverse/DET-plan.md §2.2 and §4.6).
+time left hops next, a full hop puts it back before the first train with no more time left, a partial hop takes it out.
+
+**The frame's time.** The motion tick takes as its frame time the scaled game clock since the controller's clock word `ctl+0x120`,
+in whole milliseconds × 0.001 (`0x43ce20`; the clock `0x7b496c` is the one that drives the substep clock, refreshed once per frame
+by `0x473440`). It writes the word only at its end, and the first tick of a controller (flag `0x10` clear) sets it first and takes no
+time (`0x43ce85`). The controller tick runs the motion tick only in states 2, 4 and 8 (`0x435ac9`), so while a track stands cut or
+reopened (state 1) the word stands and the clock runs on. The first tick after the track is completed again takes **all** the time
+since the last tick: one tick, no clamp, no substeps, every train hopping from the queue until it has spent it. The game pause
+(`0x4092a0`: the pause menu, the map, the postcard, message boxes, the pause key) freezes the clock, so a paused stretch adds nothing.
+OpenTPW counts that clock in fixed steps: they stop while the park is paused and multiply with the game speed, as the substep
+scheduler's clock does (`CoasterRide.MotionClockLagSeconds`, the steps since the last motion tick). A reopened coaster therefore
+catches up exactly as the original does. The catch-up stays cheap in practice: measured on the test circuit, a coaster cut open for six
+hours of simulation time catches up in one tick of about 145,000 hops (about 0.1 s). Like the original's float frame time, the
+catch-up only stops progressing once a hop is shorter than half the float step of the remaining time, which takes weeks of
+simulation time cut open. A restored lag that is not a finite time of 0 or more is refused. What stays OpenTPW's own (`[EXT:coaster-fixed-step]`) is the frame: the original runs one
+controller tick per rendered frame with that frame's milliseconds, OpenTPW one per 60 Hz simulation tick of 1/60 s. While the
+game clock stands still, the original still runs a zero-time motion tick and the station step on every frame (`0x435a30` is
+gated only by the application's activation test at `0x54F8E0`), which caps the speeds and decays the slow trains (×0.95 below 2.0); OpenTPW's paused
+park runs no tick. Both depend on the rendered frames, which no reproducible simulation can read.
+
+**The speed setter's gate.** The script's speed word reaches the controller through `0x43b2b0` (`COAST 8` at `0x554ab4` and the slice
+tail at `0x5517ea`), which skips a changed word when controller bit `0x8000` is set and no layout replay runs (`0x785a2c`, the action
+replayer `0x785a08`, which rebuilds a downloaded online park from its recorded actions). Only the replayed action 0x45 sets the bit
+(`0x447e30`: it applies the speed through the same setter and then sets `0x8000`), and the saver does not write it. So a speed a
+layout replay set holds against the script's word afterwards. `CoasterRide.SpeedSetByReplay` ports the bit and the gate; OpenTPW
+runs no layout replay, so the bit stays clear and the gate stays open.
 
 **The train.** A train's position is its middle car's, car `(n − 1) >> 1` (train `+0x2c`); every other car stands its offset ahead or
 behind (`0x43bc20`): the car types' extents (`0x430130`: the model's header bounds around its root node plus `fFrontDistanceAdd` and
@@ -490,6 +521,17 @@ car's seated list (`0x43b600` → `0x44b410`: socket j is the node of the car mo
 position (controller `+0x124`, `0x43d7dd`) and its car 0, or car 1 behind a front car of another type than the seats' (train `+0x34`, `0x436f15`), on that
 car model's camera seat; `CoasterRide.TryGetRideView` gives the same car's pose. `FIRSTPERSONVIEWDISTANCE`, `COASTERSMOOTHNESS` and
 `Info.FirstPersonSprites` have no reader in tp.exe that was found (COAST-011).
+
+The wheel-lifecycle slice of October 18 moves the looping wheel clip's start time from the first renderer update to train-slot
+setup (`0x43be10`: id 5, sub 0, loop flag 1, initial speed 1.0). The rating pass sets up only newly activated slots
+(`0x43cad6`); existing slots keep their start through re-rating and speed changes. The state setter's incomplete → built
+transition (`0x435730`, 1 → 2) starts every slot again, while opening, closing, entering the tool, changing capacity and
+changing power do not. A replacement renderer reads the same live slot epoch; a removed and reactivated slot gets a fresh
+one. The existing `WheelTick` arithmetic and its current-speed multiplier are unchanged. This is presentation-only state,
+excluded from the simulation hash and save format: restoring a park initializes fresh clips at the restored controller time,
+without promising wheel-phase continuity across saves. COAST-034 remains open for bend sampling/endpoints, the untraced flume
+clip invocation and unbent rider sockets. CPU phase-query and private-asset UV fixtures cover this slice; they do not establish
+GPU or full original-game visual parity.
 
 The pylon tag round of October 16 built the knot pass over the pylon models' posed track tags (COAST-015 narrowed to the
 knot pass's write-back of the clamped height parameter and the no-model fallback; COAST-028's guessed clip angles apply only

@@ -64,7 +64,8 @@ public sealed partial class ParkHud
 	private void UpdateRideUpgradeButton( UiInput input )
 	{
 		if ( rideUpgradeButton == null ) return;
-		rideUpgradeButton.Visible = InfoArmOpen && IsUpgradeListTarget( selectedObject );
+		// a condemned ride's window hides its upgrade button (0x4ad4e0, ApplyObjectStatus)
+		rideUpgradeButton.Visible = InfoArmOpen && IsUpgradeListTarget( selectedObject ) && !objectCondemned;
 		if ( (input.LeftDown || input.LeftPressed || input.LeftReleased)
 			&& (rideUpgradeButton.Visible || Stack.Top is RideUpgradeScreen) && UpgradeInputCaptured() )
 			upgradeMouseGestureBlocked = true;
@@ -141,21 +142,22 @@ public sealed partial class ParkHud
 		}
 		var rows = UpgradeListRows();
 		if ( upgradeSelected < 0 || upgradeSelected >= rows.Count || rows[upgradeSelected].Row is not { } row || upgradeOwner is not { IsDeleted: false } owner
-			|| !IsUpgradeListTarget( owner ) || FinanceEconomy is not { } economy || level.GetEconomyInstance( owner ) is not int instance )
+			|| !IsUpgradeListTarget( owner ) || FinanceEconomy is not { } economy || level.GetEconomyInstance( owner ) == null )
 			return;
 		switch ( row.Kind )
 		{
 			case RideUpgradeRowKind.AddOn:
 				if ( row.Price <= economy.Balance && row.AddOn is { } entry && BeginAddOnPlacement( entry, owner, row.Price ) )
 					return;
+				// [BIN:TPW-EXE:0x4af5d6 add-on refusal] the upgrade list's row activation (0x400, 0x4ae465) buys an add-on through 0x4af480, which plays the error 0x1D (0x486ae0) when the money is below its price; level rows refuse silently there, and no row adds a click
 				GameAudio.PlayUi( GameAudio.ErrorEvent );
 				break;
 			case RideUpgradeRowKind.Level:
 				// the level is asked for only while the balance is above its price; the economy refuses otherwise and the list closes either way
-				economy.TryBuyUpgrade( instance );
+				level.Commands.Issue( new BuyUpgradeCommand( owner.Runtime.AttractionId ) );
 				break;
 			case RideUpgradeRowKind.CancelLevel:
-				economy.TryCancelUpgrade( instance );
+				level.Commands.Issue( new CancelUpgradeCommand( owner.Runtime.AttractionId ) );
 				break;
 		}
 		CloseRideUpgrade();
@@ -195,8 +197,15 @@ public sealed partial class ParkHud
 			Bounds = table.Control( 0x1F4E ).Rect, Anchor = UiAnchor.Center } );
 		screen.Add( new UpgradeList( this ) { Id = "upgradeList", Bounds = UpgradeContent, Anchor = UiAnchor.Center } );
 		screen.Add( new UpgradeScrollBar( this ) { Id = "upgradeScroll", Bounds = new UiRect( UpgradeKnob.X, UpgradeTrack.Y, UpgradeTrack.Right - UpgradeKnob.X, UpgradeTrack.Height ), Anchor = UiAnchor.Center } );
-		screen.Add( new UiButton { Id = "scrollUp", Model = "b_up", Clicked = () => ScrollUpgrades( -1 ), Bounds = table.Model( "b_up" ).Rect, Anchor = UiAnchor.Center } );
-		screen.Add( new UiButton { Id = "scrollDown", Model = "b_down", Clicked = () => ScrollUpgrades( 1 ), Bounds = table.Model( "b_down" ).Rect, Anchor = UiAnchor.Center } );
+		// The list 0x1F4D is style 0x81 (no bit 0x10). The arrows' parent is its type 3 slider, style 0x10, so they play 0xBD and repeat at 500 ms then 125 ms.
+		void ScrollArrow( LayoutNode node, int step )
+		{
+			void Scroll() => ScrollUpgrades( step );
+			screen.Add( new UiButton { Id = step < 0 ? "scrollUp" : "scrollDown", Model = node.Model, ClickSound = table.ClickSoundOf( node ),
+				Clicked = Scroll, Repeat = UiButton.ScrollArrowRepeat( Scroll ), Bounds = node.Rect, Anchor = UiAnchor.Center } );
+		}
+		ScrollArrow( table.Model( "b_up" ), -1 );
+		ScrollArrow( table.Model( "b_down" ), 1 );
 		var exit = table.Model( "b_exit" );
 		screen.Add( new UiButton { Id = "cancel", Model = exit.Model, Help = strings.Help( 2 ), Clicked = CloseRideUpgrade, Bounds = exit.Rect, Anchor = UiAnchor.Center } );
 		screen.Back = CloseRideUpgrade;

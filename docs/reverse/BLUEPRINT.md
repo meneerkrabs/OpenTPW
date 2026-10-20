@@ -100,8 +100,7 @@ Open points (`BlueprintApproximations`):
   vertex writer `0x53DDD0` adds to every vertex of a texture 0–14 face the terrain at that vertex and `sine[round((phase + x + z) × 4096 / 2π) & 4095]`
   (table `0x7B0968` filled by `0x4708D0` with `sin(i / 4096 × 2π)`, phase `0x874FC0`, + 0.1 per unpaused frame at `0x53C762`), so the markers drape over the
   ground, 1.5 above it, and ripple by ±1 unit. October 16: OpenTPW does this for every cell (`BlueprintMarkers.VertexHeight`, `Ripple`, `Update`), steps the phase
-  0.1 per 1/30 s of real time (`[EXT:blueprint-phase-step]`, user approved: the original steps per rendered frame, which would tie the ripple speed to the frame rate), and has no walls (equal heights need none). Still open: the raise of a cell that already holds an
-  object or track (OpenTPW's cell map does not type those cells).
+  0.1 per 1/30 s of real time (`[EXT:blueprint-phase-step]`, user approved: the original steps per rendered frame, which would tie the ripple speed to the frame rate), and originally had no walls. October 20: bounded typed TPW object offsets and stepped walls are implemented below; unsupported/missing-map/secondary/TPI cases remain open. The earlier claim that the host never types object cells is obsolete.
 - BLUEPRINT-002 (retired October 14, 2026): texture coordinates. The PC table `0x871EE8` holds the unit square in entries 0–3 and (0.5, 0.5) in
   entry 4 (filled by `0x53C3F0`); entries 5–8 are the rotating ±0.4 square of the track symbols. The face builder `0x53DF30` uses the rotating set only
   for textures 8–14 and the unit square for all others, with the corner order by direction byte (default 0,1,2,3; `0x40`: 1,3,0,2; `0x10`: 3,2,1,0;
@@ -113,7 +112,144 @@ Open points (`BlueprintApproximations`):
   `0x53391D`/`0x534009`), and the validator `0x535670` refuses every later cell once its flag `0x816D50` is set (`0x5358A0`; reset at `0x527C52`): OpenTPW now
   marks every cell and turns the refused cell and all later cells red (`BlueprintGhosts.LineCells`). The footprint caller is the object placement `0x528A70`
   in ghost mode: the cells of row 0 of the shape (the last text row) are drawn with `m_front` (texture 6) turned by the build direction byte (1, `0x40`, `0x10`, 4 for
-  0, 90, 180, 270; `0x52967E`), the other cells blue, each red when refused; with the queue option (`0x52FAB0`, default on) the entrance's outside cell gets `m_enter` (3, `0x52989A`)
-  and, after an entrance, the exit's outside cell `m_exit` (4, `0x529B1C`), each turned to the opposite of its rotated symbol direction (`0x4D8C00` after `0x4D8C20`);
+  0, 90, 180, 270; `0x52967E`), the other cells blue; a failed whole-placement preflight forces all stamped ghost cells red (the caller correction below), and otherwise the per-cell chooser applies; with the queue option (`0x52FAB0`, default on) the entrance's outside cell gets `m_enter` (3, `0x52989A`)
+  and, after the entrance-side bounds check and stamp, the exit's outside cell `m_exit` (4, `0x529B1C`), each turned to the opposite of its rotated symbol direction (`0x4D8C00` after `0x4D8C20`);
   without the queue option the entrance's outside cell gets `m_inout` (7, `0x5299AE`). OpenTPW draws all of these (`BlueprintGhosts.Footprint`) except `m_inout`. The track symbols (`m_direct`,
   `m_link`, `m_end`, `m_break`, `m_erase`) and the arrow models `garrow.MD2`/`rarrow.MD2` are not drawn yet; the validator's answer for a line cell that already holds the line's type is not read.
+
+## Object preflight refusal correction (October 18, 2026)
+
+The earlier BLUEPRINT-003 claim that a refused object preview should colour only independently refused cells was too broad.
+The PC ordinary-object hover checks the entire placement before it draws the ghost. A failed check forces the subsequent ghost
+red, even for a refusal whose individual validator return is non-sticky. OpenTPW's all-red ordinary footprint therefore does not
+need to be replaced with mixed per-cell feedback on this evidence.
+
+### Caller, arguments and return chain
+
+Bounded static inspection of the PC code establishes the following chain without executing original software:
+
+1. The hover `0x5234D0` clears `0x816D48`, the sticky refusal `0x816D50` and related flags at `0x5234EC` onward. The ordinary
+   build route clears the separate force-red word `0x81B604` at `0x52367D`.
+2. At `0x52390E` it calls placement `0x528A70` with six arguments: cell X, cell Y, type 4, rotation, commit = 0, check = 1.
+   In placement's normal stack frame these last two arguments are read at `[esp+0x90]` and `[esp+0x94]`. The ordinary footprint
+   branch `0x529646`–`0x529676` skips ghost/check work when commit is set, chooses `SetCell(0x204)` when check is set and chooses
+   `SetCell(0x104)` for the ghost otherwise. Entrance and exit footprint branches also check through `0x204`.
+3. `SetCell`'s `0x200` branch (`0x532FEE`–`0x53300F`) calls validator `0x535670` and returns 0 exactly when the validator
+   returns 1 (refused). The ordinary footprint check branches to placement's zero return at `0x529CED` when that happens
+   (`0x52966E`). A queued entrance's outside cell uses `0x204` at `0x5297A4`; its failed check returns 0 through
+   `0x5298C0`–`0x5298D4` as well.
+4. A zero placement result makes the hover set `0x81B604 = 1` at `0x52391A`. It then calls the same placement immediately at
+   `0x5239EE` with commit = 0, check = 0. The Move hover has the same two-pass structure at `0x5239C4`, `0x5239D0` and
+   `0x5239EE`.
+5. In the ghost branch, `SetCell` reads `0x81B604` at `0x53319A`. When set, it takes refusal before consulting that cell's
+   validator (`0x5331A7`–`0x5331BF`), and the refused face path uses red. A front/access arrow supplied by the caller does not
+   override this global refusal.
+
+This also rules out the proposed fixed-path exception: type 4 on a NoModify cell returns refusal at `0x5356AA` → `0x535B31`
+without setting `0x816D50`, but that is still a failed preflight and therefore sets `0x81B604` before drawing. For ordinary
+footprint cells and a queue entrance's outside cell, preflight and ghost use the same type-4 cell rule and the same coordinates;
+no commit runs between them. The inspected route provides no successful first-pass case that newly acquires that NoModify
+refusal in its immediate ghost pass. Other shape branches and tool modes are not generalized from this result.
+
+### Refusal word versus marker colour
+
+The refused ghost calls `0x527940(1)` after its second validator call. That helper only writes the separate word `0x816D48`;
+it does not write `0x816D50` or `0x81B604`. Direct references found in the retained code spans read `0x816D48` to gate click work
+(`0x5247F0`, `0x52482C`, `0x5249E0`, `0x524A63`) or clear it. Its getter `0x527950` is called at `0x52F9F3`, where it selects
+the no-place pointer 8 through the pointer setter `0x4A2AA0`. Those inspected consumers do not recolour the blueprint after
+stamping. The positive force-red caller chain above, rather than an assumption that this separate word has no consumers,
+is the basis for the correction.
+
+### Outside access stamps and bounds
+
+For an ordinary shape with one entrance and one exit, both footprint cells in bounds, the ghost pass still reaches the
+outside access work after a failed preflight. With the queue option enabled, it calls `SetCell(0x104, 3, direction)` for the
+entrance's outside cell at `0x52989A` and `SetCell(0x118, 4, direction)` for the exit's outside cell at `0x529B1C`. Both ghost
+types reach the force-red check above; when it is set, these faces are red rather than access arrows. There is no early
+return merely because the footprint ghost is refused: refused `SetCell` returns 1 at `0x534009`.
+
+The order of the bounds checks matters. The helper `0x4D8300` accepts exactly `0 <= x,y < 128`. The entrance-side check at
+`0x529744` returns from placement immediately on failure (`0x52974E`), before either outside stamp. The exit-side check at
+`0x5299E2` also returns on failure (`0x5299EC`), but the entrance-side ghost has already been stamped. With the queue option
+off, the entrance-side ghost instead uses `0x118`/`m_inout` at `0x5299AE`, and the exit-side work is skipped at `0x5299D2`.
+The option helper `0x52FAB0` returns `0x81B0CC` only when the add-on selection `0x8187F8` is zero, and otherwise returns zero.
+
+The older shorthand that an exit is drawn "only after an entrance" is not an exact presence test. The placement records
+an entrance flag at normal-frame `[esp+0x12]` (`0x52932D`, with two arguments then pushed) and an exit flag at `[esp+0x13]`
+(`0x529243`, likewise). At `0x529711`, one argument is still pushed, so `[esp+0x16]` reads the entrance flag; after popping
+that argument, `0x52971C` reads the exit flag. Either flag enters the outside-stamp sequence. The coordinate locals start at
+zero and are overwritten whenever the in-bounds footprint loop encounters another matching access symbol. Thus missing
+partners and multiple entrances/exits cannot be inferred from OpenTPW's current first-entrance/first-exit selection. These
+cases, and the distinction between a skipped out-of-bounds footprint cell (`0x52903D`) and an outside-cell bounds failure,
+remain separate work. Only the ordinary paired-access case is implemented below.
+
+### Scope and remaining work
+
+Only the incorrect independent-cell expectation is removed from the register. `BLUEPRINT-003` stays open:
+
+- The context-free `BlueprintGhosts.Footprint` fallback returns before adding refused outside access markers. The grid-aware
+  overload now implements the bounded paired-access case below; other access selection and bounds cases remain open.
+- Special shape branches (`@`, `Q`, `+`, `#` and track ends), unsupported arrow models and track markers still need their own work.
+- The existing line-cell validator, Buy Land fence ghost and no-queue `m_inout`/queue-option residuals remain unchanged.
+
+The evidence correction retains whole-footprint refusal, placement, overwrite, refund, economy, decoder and simulation behavior.
+Both HUDs keep their existing colour policies. It does not establish original object money-colour behavior or retire the whole ID.
+The existing all-red/no-arrow regression now covers all four rotations. No original binary, disassembly or assets are included.
+
+## Bounded refused-access preview (October 18, 2026)
+
+`BlueprintGhosts.Footprint` has a grid-aware overload for the proven omission: the outside cells of an ordinary refused queued
+object can still need red faces. It adds those faces only when all of these conditions hold:
+
+- the shape contains only free cells and ordinary types 4, 9 and 10;
+- exactly one entrance and one exit are present, and the whole shape bounding box is within the host grid;
+- the caller enables the queue branch, the placement result is `Path`, `Occupied`, `NotOwned`, `AccessBlocked` or
+  `OutsideTerrain`, and the caller's existing colour decision is refused.
+
+The entrance's outside cell is checked against the host grid dimensions first. If it is outside, neither access face is added.
+Otherwise it is added red, followed by the exit's red face only if its outside cell is in bounds. The footprint remains entirely
+red, and no direction arrows are added. Other inputs retain the existing fallback, including money/global-only refusal, unproven
+refusal reasons, missing/multiple access points, partly off-grid shapes, special symbols and no-queue mode. Accepted previews
+are unchanged; this does not implement `m_inout` or change which access cells actual placement accepts or lays.
+
+Both HUDs call `Level.ObjectBlueprint`, which disables the new branch for tools, add-on entries and active add-on mode. It uses
+their already-computed placement result and colour decision: TPW still includes its separate purchase check, while TPI still
+colours by placement alone. The adapter does not repeat validation, consult the economy or buy anything. No validators, path
+clearing, overwrite priorities, purchases, refunds or simulation code changed.
+
+Synthetic regressions cover all rotations, non-square host bounds, entrance/exit ordering, footprint bounds, fixed paths,
+ownership/occupancy refusal in both footprint and access cells, accepted/fallback output and repeated preview/cancel without
+cell-map writes, object changes or ledger charges. They use no original assets. Local .NET execution remains blocked by the
+missing SDK; the test command was attempted rather than reported as passed.
+
+## Bounded occupied-cell height implementation (October 20, 2026)
+
+Further read-only PC inspection resolves the top/wall contract independently of the PPC analysis.
+`0x5330C6`–`0x533189` uses `Q(H) = 10 * trunc0((trunc0(H) + 9) / 10)`; the float conversion helper
+`0x67A830` explicitly selects truncation toward zero, and the multiply-high/signed-shift correction implements
+signed division by ten. This is not mathematical ceiling: H = 0.9 gives 0, H = 10.9 gives 10, H = -18.9 gives 0,
+and H = -19 gives -10. Second-layer types 11/12/16/17/25 first set Q; base types 4/7/9/10/30 overwrite it using
+the same `0x452AE0(x,y,0)` sampler, not a sum or maximum. That sampler looks for a second-layer instance first,
+then the owner object, and finally terrain when no instance height map exists.
+
+The top face is Q + 1.5. Each of the four PC neighbour loops (`0x53323C`–`0x53391B`, and the refused duplicates
+`0x53397E`–`0x534007`) skips a missing neighbour and emits side quads only from lower neighbour Q to current Q,
+in ten-unit steps. Neighbours come from the map even when they are not preview cells. The face codes 1/4/16/64
+select the -Y/+X/+Y/-X sides in the PC face builder `0x53DF30`; subtracting the -10 constant at `0x700E1C`
+adds the vertical step. Allowed sides use blue, except an area top (texture 2) also has area sides; refused
+sides use red. Access/front arrows and their rotation do not propagate to side faces. `0x53DDD0` adds terrain
+at each vertex and ripple to both tops and walls, so Q is an additional offset, not a replacement terrain height.
+
+The host implementation deliberately supports only TPW ordinary primary cells 4/9/10 whose live owner word
+matches the footprint object and whose existing `ObjectHeightMaps.Height` supplies a valid map sample. Plain
+cells 0/1/3 have known zero offset. Any nonzero track/structure cell or fence post is excluded before owner
+sampling; it does not call the generic tour sampler or assert track-priority compatibility. Unsupported cells
+retain their old unraised top and do not acquire guessed walls. Missing, malformed, inaccessible or out-of-range
+height maps all remain unresolved here, including the native missing-map terrain-quantization branch. Types
+7/30, secondary-layer parity, and all TPI behavior remain open. BLUEPRINT-001 is not retired.
+
+Preview samples include the current cell and four map neighbours. They are captured when the preview is shown;
+a changed snapshot rebuilds topology even while paused, whereas ripple-only frame updates preserve the vertex
+count. Synthetic geometry cases cover both-sided stepped walls, all four sides, unequal/equal/higher/unknown
+neighbours, red/blue/area textures, arrow isolation, signed quantization and boundary sampling. No original assets
+or disassembly are published with this implementation; no BLUEPRINT-003 marker-selection behavior changes.

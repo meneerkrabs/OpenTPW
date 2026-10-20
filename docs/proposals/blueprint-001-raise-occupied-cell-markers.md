@@ -36,3 +36,21 @@ Trace first/second layer ownership and rounding for types 4/7/9/10/30 and 11/12/
 - Stop at a reviewable design/evidence package; this draft authorizes no tag removal or parity claim.
 - Do not publish original media or private game data in fixtures, screenshots, or commits.
 - A future implementation needs its own reviewed evidence and acceptance results; do not treat this proposal as merge-ready.
+
+## Reviewed bounded implementation update (October 20, 2026)
+
+The initial proposal above is retained as historical scope, not current implementation status. Static PC evidence
+now resolves quantization, first/second-layer selection and side-wall construction; see the October 20 section of
+[BLUEPRINT.md](../reverse/BLUEPRINT.md). The host already types ordinary object footprints, contrary to the old
+residual shorthand. The bounded change samples valid owner height maps on TPW primary types 4/9/10 and builds
+raised tops plus stepped sides without changing placement or the marker-selection rules.
+
+Remaining: missing/malformed/out-of-range HMP fallback, types 7/30, all secondary surfaces, and TPI parity. No
+approximation is retired. Every nonzero track-layer cell and fence post is excluded from this owner-only path;
+unknown surfaces retain their legacy unraised top and suppress unsupported side comparisons. There is no
+BLUEPRINT-003 expansion, track-priority substitution, original-media fixture or original-program execution.
+
+Acceptance is represented by synthetic BlueprintHeightTests, existing BlueprintGhostTests and synthetic rotated
+height-map checks. Local build/test execution could not be verified: package restore attempted an unauthorized
+metadata endpoint and was blocked; it was not retried or bypassed. CI and independent final source review must
+establish the published candidate's acceptance. This is bounded implementation progress, not full-ID closure.

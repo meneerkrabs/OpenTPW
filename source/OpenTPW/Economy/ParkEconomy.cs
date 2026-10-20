@@ -1689,6 +1689,13 @@ public sealed class ParkEconomy : IParkEconomy
 
 	// ---------------------------------------------------------------- park and prices
 
+	/// <summary>Restores a saved loss without replaying its transition; losing does not change the saved gate-open bit.</summary>
+	internal void RestoreOriginalLoss( bool open )
+	{
+		IsBankrupt = true;
+		IsParkOpen = open;
+	}
+
 	public void OpenPark()
 	{
 		if ( IsBankrupt || IsParkOpen )

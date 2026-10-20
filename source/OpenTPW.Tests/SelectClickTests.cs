@@ -30,7 +30,7 @@ public class SelectClickTests
 		var visitors = OriginalLayoutTables.VisitorsWindow;
 		Assert.AreEqual( GameAudio.SelectClickEvent, visitors.ClickSoundOf( visitors.All.Single( node => node.Model == "b_up" ) ), "a scroll arrow's parent is the vertical slider (type 3, style 0x10)" );
 		Assert.AreEqual( GameAudio.ClickEvent, visitors.ClickSoundOf( visitors.Model( "b_okay" ) ), "the tick's parent is the window" );
-		// The thumb is a plain type-2 button (style 1) under the slider, so the helper reports 0xBD. Whether a still click on it posts 0x100 is open (AUDIO-041); no button is built for it.
+		// The thumb is a type-2 button (style 1) under the slider, so the helper reports 0xBD, but its procedure 0x66bb9b replaces the button class 0x668f9c and its release (0x10004) sends 0x802 to the slider, never 0x100: a still click plays nothing, and no button is built for it.
 		Assert.AreEqual( GameAudio.SelectClickEvent, visitors.ClickSoundOf( visitors.Model( "b_scroller" ) ) );
 		var visitorList = visitors.Control( 0x1E497 );
 		Assert.AreEqual( 7, visitorList.Type );

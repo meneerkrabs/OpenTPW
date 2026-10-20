@@ -318,8 +318,10 @@ public sealed partial class GuestSimulation
 			case 4:
 				guest.State = GuestState.AtTicketBooth;
 				guest.Paid = save.PaidAdmission != 0;
-				// an expensive verdict's wait is kept; a guest that has not been weighed yet is weighed at its next update
-				guest.BoothWait = (int)Math.Min( save.ParkOpeningWaitingTime, 2 * BoothVerdict.ExpensiveWaitBase );
+				// The host counts down through the verdict turn; imported positive counters exclude that final turn.
+				// Keep the existing input clamp, then translate once. Zero still means the next update.
+				var boothWait = (int)Math.Min( save.ParkOpeningWaitingTime, 2 * BoothVerdict.ExpensiveWaitBase );
+				guest.BoothWait = boothWait > 0 ? boothWait + 1 : 0;
 				guest.StateTimer = 0;
 				break;
 			case 5:

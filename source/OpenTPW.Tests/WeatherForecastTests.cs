@@ -8,7 +8,8 @@ namespace OpenTPW.Tests;
 /// The forecast's presentation (docs/AUDIO.md "Weather visuals"): the countdown line a pending forecast shows,
 /// the messages posted when a forecast appears and applies, the transient changed/current lines, and the
 /// ParkWeather seams the presentation reads (apply day, current day, band classification, the debug seam).
-/// All of it is OpenTPW approximation (AUDIO-905..907); no original forecast text exists to compare against.
+/// All of it is an OpenTPW extension (forecast-presentation): the original shows no forecast, and no original
+/// forecast text exists to compare against.
 /// </summary>
 [TestClass]
 public class WeatherForecastTests
@@ -18,6 +19,7 @@ public class WeatherForecastTests
 
 	private static readonly WeatherQualityBands Dry = new( false, false, false );
 	private static readonly WeatherQualityBands Rain = new( false, true, false );
+	private static readonly WeatherQualityBands Snow = new( true, false, false );
 	private static readonly WeatherQualityBands Thunderstorms = new( false, true, true );
 
 	private static WeatherForecastSample Sample(
@@ -99,14 +101,14 @@ public class WeatherForecastTests
 	{
 		var state = new WeatherForecastState();
 		// A resumed park first sees the forecast with one day left, as a restore mid-warning would.
-		state.Step( Sample( day: 6, forecast: 30, applyDay: 7, forecastBands: Rain, currentBands: Rain ), 0.016f );
+		state.Step( Sample( day: 6, forecast: 8, applyDay: 7, forecastBands: Thunderstorms, currentBands: Rain ), 0.016f );
 		var messages = state.TakeAnnouncements();
-		CollectionAssert.AreEqual( new[] { "Weather forecast: rain tomorrow." }, messages.ToArray() );
+		CollectionAssert.AreEqual( new[] { "Weather forecast: thunderstorms tomorrow." }, messages.ToArray() );
 		Assert.AreEqual( "The weather: rain.", state.Banner, "the transient attach line shows first (it wins over the countdown)" );
-		state.Step( Sample( day: 6, forecast: 30, applyDay: 7, forecastBands: Rain, currentBands: Rain ), WeatherForecastState.ChangedLineSeconds );
-		Assert.AreEqual( "Forecast: rain tomorrow.", state.Banner, "then the countdown takes over" );
+		state.Step( Sample( day: 6, forecast: 8, applyDay: 7, forecastBands: Thunderstorms, currentBands: Rain ), WeatherForecastState.ChangedLineSeconds );
+		Assert.AreEqual( "Forecast: thunderstorms tomorrow.", state.Banner, "then the countdown takes over" );
 		for ( var step = 0; step < 50; step++ )
-			state.Step( Sample( day: 6, forecast: 30, applyDay: 7, forecastBands: Rain, currentBands: Rain ), 0.1f );
+			state.Step( Sample( day: 6, forecast: 8, applyDay: 7, forecastBands: Thunderstorms, currentBands: Rain ), 0.1f );
 		Assert.AreEqual( 0, state.TakeAnnouncements().Count, "the resumed warning is not repeated while the day holds" );
 	}
 
@@ -115,15 +117,54 @@ public class WeatherForecastTests
 	{
 		var state = new WeatherForecastState();
 		var total = 0;
-		// One full cycle observed step by step, then a second forecast: two posts and two applies in all.
+		// One full cycle observed step by step (rain applies on day 7), then a second forecast (snow on day 14): two posts and two changes in all.
 		for ( var day = 0; day <= 20; day++ )
 		{
 			int? forecast = day is >= 3 and < 7 ? 30 : day is >= 10 and < 14 ? 60 : null;
-			var bands = forecast == 30 ? Rain : forecast == 60 ? new WeatherQualityBands( true, false, false ) : Dry;
-			state.Step( Sample( day, forecast, forecast != null ? forecast == 30 ? 7 : 14 : 0, bands, Dry ), 0.1f );
+			var bands = forecast == 30 ? Rain : forecast == 60 ? Snow : Dry;
+			var current = day >= 14 ? Snow : day >= 7 ? Rain : Dry;
+			state.Step( Sample( day, forecast, forecast != null ? forecast == 30 ? 7 : 14 : 0, bands, current ), 0.1f );
 			total += state.TakeAnnouncements().Count;
 		}
-		Assert.AreEqual( 4, total, "one post and one apply per forecast cycle, nothing per step" );
+		Assert.AreEqual( 4, total, "one post and one change per forecast cycle, nothing per step" );
+	}
+
+	[TestMethod]
+	public void AForecastOrApplyThatKeepsTheKindOfWeatherIsNoNews()
+	{
+		// The original rolls every cycle whatever the weather: a dry roll during dry weather shows and posts nothing, nor does its apply.
+		var state = new WeatherForecastState();
+		state.Step( Sample( day: 3 ), 0.016f );
+		state.Step( Sample( day: 3, forecast: 88, applyDay: 7, forecastBands: Dry ), 0.016f );
+		Assert.IsNull( state.Banner, "no countdown toward the weather there is already" );
+		state.Step( Sample( day: 7 ), 0.016f );
+		Assert.IsNull( state.Banner );
+		Assert.AreEqual( 0, state.TakeAnnouncements().Count, "dry after dry is no news" );
+		// The same for rain after rain, once the attach line is over.
+		var wet = new WeatherForecastState();
+		wet.Step( Sample( day: 3, currentBands: Rain ), WeatherForecastState.ChangedLineSeconds );
+		wet.Step( Sample( day: 3, forecast: 30, applyDay: 7, forecastBands: Rain, currentBands: Rain ), 0.016f );
+		Assert.IsNull( wet.Banner );
+		wet.Step( Sample( day: 7, currentBands: Rain ), 0.016f );
+		Assert.IsNull( wet.Banner );
+		Assert.AreEqual( 0, wet.TakeAnnouncements().Count, "rain after rain is no news" );
+		// An undecided snow-or-rain forecast during rain may still bring snow: it is announced.
+		wet.Step( Sample( day: 10, forecast: 20, applyDay: 14, forecastBands: new WeatherQualityBands( true, true, false ), currentBands: Rain ), 0.016f );
+		CollectionAssert.AreEqual( new[] { "Weather forecast: snow or rain in 4 days." }, wet.TakeAnnouncements().ToArray() );
+	}
+
+	[TestMethod]
+	public void AChangeAndTheNextForecastInOneStepBothPost()
+	{
+		// With DaysBetweenChanges at most DaysOfWarning the apply and the next roll come in one update (tp.exe 0x512880 falls through from one to the other).
+		var state = new WeatherForecastState();
+		state.Step( Sample( day: 3, forecast: 30, applyDay: 7, forecastBands: Rain ), 0.016f );
+		state.TakeAnnouncements();
+		state.Step( Sample( day: 7, forecast: 60, applyDay: 11, forecastBands: Snow, currentBands: Rain ), 0.016f );
+		CollectionAssert.AreEqual( new[] { "The weather has changed: rain.", "Weather forecast: snow in 4 days." }, state.TakeAnnouncements().ToArray() );
+		Assert.AreEqual( "The weather has changed: rain.", state.Banner, "the changed line shows first" );
+		state.Step( Sample( day: 7, forecast: 60, applyDay: 11, forecastBands: Snow, currentBands: Rain ), WeatherForecastState.ChangedLineSeconds );
+		Assert.AreEqual( "Forecast: snow in 4 days.", state.Banner, "then the new countdown" );
 	}
 
 	[TestMethod]
@@ -251,12 +292,14 @@ public class WeatherForecastTests
 		restored.RestoreSnapshot( snapshot );
 		Assert.AreEqual( 2, restored.CurrentDay, "the countdown's 'now' resumes at the saved day, not day 0" );
 		Assert.AreEqual( 4, restored.ForecastApplyDay );
-		// The first presentation step after restore reads the true remaining distance, before any turn steps.
+		// The first presentation step after restore reads the true remaining distance, before any turn steps; the current weather is taken of another
+		// kind than the rolled forecast, so the forecast is news
 		var state = new WeatherForecastState();
 		var quality = restored.Forecast;
 		Assert.IsNotNull( quality );
-		state.Step( new WeatherForecastSample( restored.CurrentDay, quality, restored.ForecastApplyDay,
-			restored.BandsOf( quality.Value ), default ), 0.016f );
+		var forecastBands = restored.BandsOf( quality.Value );
+		var current = WeatherForecastState.KindKey( forecastBands ) == OpenTPW.UI.Original.OpenTpwText.WeatherDry ? Rain : Dry;
+		state.Step( new WeatherForecastSample( restored.CurrentDay, quality, restored.ForecastApplyDay, forecastBands, current ), 0.016f );
 		var expected = $"Weather forecast: {state.KindText( restored.BandsOf( quality.Value ) )} in 2 days.";
 		CollectionAssert.AreEqual( new[] { expected }, state.TakeAnnouncements().ToArray(),
 			"a park resumed mid-warning announces the true distance on its first frame" );

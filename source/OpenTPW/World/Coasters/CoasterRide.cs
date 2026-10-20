@@ -223,6 +223,9 @@ public sealed class CoasterRide
 	/// <summary>Per node, the nodes whose links cross the link that starts at it (the original's per-node collision lists, <c>+0xb0</c>).</summary>
 	public IReadOnlyList<IReadOnlyList<int>> CollisionLists { get; private set; } = Array.Empty<IReadOnlyList<int>>();
 	public bool IsOperational => Track.IsRunnable && samples.Length >= 3;
+	/// <summary>The native shared predicate as used by the park-points counts-test, without the host admission sample-safety guard.</summary>
+	// [BIN:TPW-EXE:0x441970,0x4dd9ad] existing controller, +0x140 == 0, +0x3c bit 0 set/bit 1 clear, not global 0x790fec; no sample or controller-state test.
+	public bool CountsForParkPoints => Track.IsComplete && Track.IsClosed && IntersectionCount == 0 && !BeingEdited;
 	/// <summary>
 	/// The guest predicate <c>0x441970</c>: the coaster is complete, its track crosses itself nowhere (controller <c>+0x140 == 0</c>) and it is not the
 	/// coaster being edited; guests do not join or board a coaster that fails it, and queued guests at an unchanged place leave with thought 13.

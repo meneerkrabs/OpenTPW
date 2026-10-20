@@ -1686,8 +1686,8 @@ public partial class Level
 			Park.Economy.ObserveScriptState( state, item.Visitors.InBrokenState );
 			// a kart or water ride's circuit walk writes the attraction's track word (+0x2C on the PC), which the counts-test reads (docs/TRACKS.md)
 			state.TrackValid = item.Runtime.Bump?.IsTrackValid ?? true;
-			// a coaster counts only while its controller accepts guests (0x00441970); without a controller the original's lookup fails
-			state.CoasterAcceptsGuests = item.Runtime.Coaster?.AcceptsGuests ?? false;
+			// Use the native shared predicate for park points, not the additional host admission sample guard; a missing controller fails lookup.
+			state.CoasterAcceptsGuests = item.Runtime.Coaster?.CountsForParkPoints ?? false;
 			// the park points counts-test needs real queue cells from the entrance and room in them (0x004DE130, 0x004DDF50)
 			if ( Guests is { } guests )
 				state.QueueHasRoom = QueueJoinRules.QueueCountsForParkPoints( item.Visitors, guests.Grid );

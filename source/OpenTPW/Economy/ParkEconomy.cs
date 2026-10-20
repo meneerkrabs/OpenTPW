@@ -2214,6 +2214,14 @@ public sealed class ParkEconomy : IParkEconomy
 	/// (<c>ClearCell</c> queue case, PATH-plan §6). Returns the amount credited.
 	/// </summary>
 	// [BIN:STP-PPC:0x10085DCC ClearCell queue refund] Earn(QueueCost × 0xe2424(ride) / 100), 0xe2424 = the ride's age-based scrap percentage
+	internal long RefundQueueCellNative( int rideInstanceId )
+	{
+		var amount = TryGetObject( rideInstanceId, out var ride )
+			? unchecked((uint)((int)CellCost( CellPurchase.Queue ) * ScrapPercent( ride! ))) / 100U : 0U;
+		if ( amount > 0 ) Post( LedgerCategory.OtherIncome, amount );
+		return amount;
+	}
+
 	public long RefundQueueCell( int rideInstanceId )
 	{
 		var amount = TryGetObject( rideInstanceId, out var ride ) ? CellCost( CellPurchase.Queue ) * ScrapPercent( ride! ) / 100 : 0;

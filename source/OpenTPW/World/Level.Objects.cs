@@ -737,8 +737,40 @@ public partial class Level
 
 	/// <summary>The queue tool's line writer for <paramref name="ride"/>: its checks, its per-cell build with <c>Costs.QueueCell</c> and its removal.</summary>
 	private QueueLineWriter CreateQueueWriter( RideVisitorBridge ride ) =>
-		new( Guests!.Grid, ride, ( x, y, pending ) => CheckQueueCell( ride, x, y, pending ),
-			( x, y ) => BuildQueueCell( ride, x, y ), RemoveQueueCell, () => Park?.Economy.CellCost( CellPurchase.Queue ) ?? 0 );
+		new QueueLineWriter( Guests!.Grid, ride, ( x, y, pending ) => CheckQueueCell( ride, x, y, pending ),
+			( x, y ) => BuildQueueCell( ride, x, y ), RemoveQueueCell, () => Park?.Economy.CellCost( CellPurchase.Queue ) ?? 0 )
+		.WithNativeReducer( new QueueSegmentReducer( Guests!.Grid.Cells, ride.OwnerWord,
+			( x, y ) => IsReadOnlyVisit || IsQueueBlocked( x, y ) || Objects.FindAt( x, y ) != null,
+			() => Park == null || Park.Economy.TrySpendCell( CellPurchase.Queue ) == ParkEconomy.PurchaseResult.Ok,
+			pending => Park == null || Park.Economy.CanPreviewLine( pending ),
+			() => Park?.Economy.CellCost( CellPurchase.Queue ) ?? 0,
+			RefundNativeQueueOwner,
+			() => { ride.RecomputeQueue( Guests.Grid ); ride.NotifyQueueEdited( Guests.Grid ); },
+			new LinkEffects( RefreshTile ), removed => { Guests.SetDownOffQueueCells( removed, ride ); AfterAccessCellRemoved( removed ); },
+			() => ResolveQueueEntrance( Objects, Guests.Grid.Cells, ride.OwnerWord ) ) );
+
+	/// <summary>Live shape reconstruction of native mEntryPos (+0x36); never the bridge's outside-cell adaptation.</summary>
+	internal static (int X, int Y)? ResolveQueueEntrance( ParkObjects objects, ParkCellMap cells, ushort owner )
+	{
+		if ( owner == 0 ) return null;
+		var item = objects.Objects.FirstOrDefault( item => !item.IsDeleted && OwnerWord( item ) == owner && item.Entry.HasQueue );
+		if ( item == null ) return null;
+		ObjectAccessPoint? entrance = null;
+		foreach ( var point in item.AccessPoints )
+			if ( point.Kind == ObjectCellKind.Entrance ) entrance = point;
+		return entrance is { } entry && cells.InBounds( entry.X, entry.Y )
+			&& cells.RawTypeAt( entry.X, entry.Y ) == ParkCellTypes.Entrance && cells.OwnerAt( entry.X, entry.Y ) == owner
+			? (entry.X, entry.Y) : null;
+	}
+
+	private void RefundNativeQueueOwner( ushort owner )
+	{
+		if ( owner == 0 || Guests == null || Park == null ) return;
+		var x = (owner - 1) % 128; var y = (owner - 1) / 128;
+		if ( !Guests.Grid.Cells.InBounds( x, y ) || Guests.Grid.Cells.RawTypeAt( x, y ) == 0 ) return;
+		var item = Objects.Objects.FirstOrDefault( item => OwnerWord( item ) == owner );
+		if ( item != null && GetEconomyInstance( item ) is int instance ) Park.Economy.RefundQueueCellNative( instance );
+	}
 
 
 	/// <summary>

@@ -105,8 +105,11 @@ public class ImportedBrokenRideStateTests
 		using var fixture = new RuntimeFixture();
 		Assert.IsNull( Level.RestoreOriginalRetainedRideState( w.Saved, w.State, fixture.Runtime, w.Saved.Id ) );
 		var snapshot = ParkResumeJson.Deserialize<OriginalObjectRuntimeSnapshot>( ParkResumeJson.Serialize( fixture.Runtime.CaptureSnapshot() ) );
+		// Production saves retain visitor bridges in the guest slice, separate from the object/script slice.
+		var bridgeSnapshot = ParkResumeJson.Deserialize<RideVisitorBridgeSnapshot>( ParkResumeJson.Serialize( fixture.Runtime.Visitors.CaptureSnapshot() ) );
 		using var restored = new RuntimeFixture();
 		Assert.AreEqual( 0, restored.Runtime.RestoreSnapshot( snapshot ).Count );
+		restored.Runtime.Visitors.RestoreSnapshot( bridgeSnapshot );
 		var park = ParkSaveFile.Restore( ParkResumeJson.Deserialize<ParkSaveFile.Data>( ParkResumeJson.Serialize( ParkSaveFile.Capture( w.Economy ) ) ), w.Economy.Settings, w.Economy.Catalog );
 		var loaded = park.Objects.Single( item => item.Id == w.State.Id );
 		var events = 0;
@@ -115,6 +118,7 @@ public class ImportedBrokenRideStateTests
 		Assert.AreEqual( state == 4, restored.Runtime.Visitors.IsCondemned );
 		Assert.AreEqual( state == 1, restored.Runtime.Visitors.HoldsQueuedGuests );
 		Assert.AreEqual( 0, events );
+		CollectionAssert.AreEqual( ParkResumeJson.Serialize( fixture.Runtime.Visitors.CaptureSnapshot() ), ParkResumeJson.Serialize( restored.Runtime.Visitors.CaptureSnapshot() ) );
 		CollectionAssert.AreEqual( ParkResumeJson.Serialize( fixture.Runtime.CaptureSnapshot() ), ParkResumeJson.Serialize( restored.Runtime.CaptureSnapshot() ) );
 	}
 

@@ -77,7 +77,7 @@ public sealed partial class ParkHud
 		{
 			if ( screen.IsRemoved || !ReferenceEquals( Stack.Top, screen ) )
 				return;
-			level.DismissResearchFinale();
+			level.Commands.Issue( new DismissFinaleCommand() );
 			RemoveFinaleScreen();
 		}
 		screen.Back = Dismiss;

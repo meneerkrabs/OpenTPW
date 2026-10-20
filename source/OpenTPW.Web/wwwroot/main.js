@@ -43,6 +43,8 @@ const perf = loopback && perfQuery.get('perf') === '1' ? {
 	counters: () => ({ ...JSON.parse(program.PerfCounters()), wasmBytes: runtime.localHeapViewU8().buffer.byteLength }),
 	take() { const frames = this.frames; this.frames = []; return frames; },
 	takeSkipped() { const skipped = this.skipped; this.skipped = 0; return skipped; },
+	// Copies a theme's files as a park start would (the determinism scenario's other themes); program.PerfLevelLoaded tells when they are in.
+	loadLevel: level => requestLevel(level),
 } : null;
 if (perf)
 	globalThis.opentpwPerf = perf;

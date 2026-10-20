@@ -1133,11 +1133,9 @@ public static class ParkSaveFile
 			park.Staff.Strikes.Restore( strikes.Levels, strikes.Active, strikes.LastConsidered );
 		park.Research.Restore( data.Research.Completed.Select( key => (key[0], key[1]) ),
 			data.Research.Progress.Select( entry => (((int)entry[0], (int)entry[1]), entry[2]) ), data.Research.Effort,
-			data.Research.Current?.Select( entry => ((ResearchCategory)entry[0], entry[1], entry[2]) ), data.Research.UpgradeOrder?.Select( key => (key[0], key[1]) ).ToList() );
+			data.Research.Current?.Select( entry => ((ResearchCategory)entry[0], entry[1], entry[2]) ), data.Research.UpgradeOrder?.Select( key => (key[0], key[1]) ).ToList(), data.Research.HighestGroups );
 		park.Research.RestoreRecentItems( data.Research.RecentItems );
 		park.Research.RestoreCheatAvailable( data.Research.CheatAvailable );
-		if ( data.Research.HighestGroups is { } highestGroups )
-			park.Research.RestoreHighestGroups( highestGroups );
 		if ( data.Research.Workload is int workload )
 			park.Research.SetWorkload( workload );
 		park.Objectives.Restore( data.Objectives.NextOfferDay, data.Objectives.NextListPosition, data.Objectives.Current, data.Objectives.Declines, data.Objectives.Finished, data.Objectives.GoldenTickets,

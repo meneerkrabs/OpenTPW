@@ -32,6 +32,9 @@ public class ParkCommandLayerTests
 		new( "ParkObjects.Remove / TryPlace", @"\bObjects\??\.(Remove|TryPlace)\s*\(", nameof( RemoveAttractionCommand ) ),
 		new( "Level.PlaceRide", Call( "PlaceRide" ), nameof( PlacePrototypeCommand ) ),
 		new( "Level.RemoveRide", Call( "RemoveRide" ), nameof( RemovePrototypeCommand ) ),
+		new( "Developer prototype run", @"\bPlacedRide\??\.(Start|Stop|Open|Close)\s*\(", nameof( SetPrototypeRunningCommand ) ),
+		// the winning screen
+		new( "Level.DismissResearchFinale / ParkFinale.Dismiss", @"(\.\s*|" + BareCall + @")(DismissResearchFinale|ParkFinale\.Dismiss)\s*\(", nameof( DismissFinaleCommand ) ),
 		// paths and queues
 		new( "Level.BuildPath", Call( "BuildPath" ), nameof( LayLineCommand ) ),
 		new( "Level.RemovePathCell", Call( "RemovePathCell" ), nameof( RemovePathCellCommand ) ),
@@ -66,7 +69,6 @@ public class ParkCommandLayerTests
 		new( "Challenge slots", @"\.(AcceptAt|DeclineAt)\s*\(", nameof( AnswerChallengeCommand ) ),
 		new( "Cheat queue (direct)", @"\bCheats\??\.Queue\s*\(", nameof( QueueCheatCommand ) ),
 		new( "Loan list build", Call( "RefreshLoanOffers" ), nameof( RefreshLoanOffersCommand ) ),
-		new( "Developer prototype run", @"\bPlacedRide\??\.(Start|Stop)\s*\(", nameof( SetPrototypeRunningCommand ) ),
 	};
 
 	/// <summary>
@@ -185,6 +187,15 @@ public class ParkCommandLayerTests
 		Assert.IsTrue( Caught( paths, "level.Paths.BuildSegment( a, b );" ) );
 		Assert.IsTrue( Caught( paths, "level.Paths?.Remove( x, y );" ) );
 		Assert.IsFalse( Caught( paths, "level.CellTool.Undo();" ) );
+		var finale = Converted.Single( mutator => mutator.Name == "Level.DismissResearchFinale / ParkFinale.Dismiss" );
+		Assert.IsTrue( Caught( finale, "level.DismissResearchFinale();" ) );
+		Assert.IsTrue( Caught( finale, "var removed = ParkFinale.Dismiss( level.Objects );" ) );
+		Assert.IsFalse( Caught( finale, "public bool DismissResearchFinale() => SupportsResearchFinale;" ) );
+		Assert.IsFalse( Caught( finale, "level.Commands.Issue( new DismissFinaleCommand() );" ) );
+		var prototype = Converted.Single( mutator => mutator.Name == "Developer prototype run" );
+		Assert.IsTrue( Caught( prototype, "level.PlacedRide.Stop();" ) );
+		Assert.IsTrue( Caught( prototype, "level.PlacedRide?.Start();" ) );
+		Assert.IsFalse( Caught( prototype, "ImGui.Text( level.PlacedRide.IsOpen ? \"Ride: open\" : \"Ride: closed\" );" ) );
 	}
 
 	/// <summary>The command code itself keeps to the simulation's determinism rules (no process-wide randomness, clock or mutable statics), as the simulation folders do.</summary>

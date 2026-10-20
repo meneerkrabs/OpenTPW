@@ -34,6 +34,8 @@ decisions as recorded in the plan's "User decisions" section:
 > - Q17 cheats: refused in a session (A).
 > - Q18 host leaves: the host role moves to another player (B) — needs host migration (snapshot + frame order handover).
 > - The proposed EXT labels are NOT yet individually approved; the decisions above approve the design they describe.
+> - DetMath (C1b): user chose "Als EXT: deterministic-math" (2026-10-19) for the double-precision portable evaluation of run-time sin/cos/atan2/acos/pow in the simulation; no pins move.
+> - EXT labels (2026-10-19, AskUserQuestion in the online-presence session): all proposed `online-coop-*` labels approved as named in section 4; new labels outside that list are asked separately.
 
 In English: host-sequenced lockstep (every player runs the simulation, the host orders the
 commands); one shared bank; the host sets each player's rights; the feature lives in the online
@@ -45,9 +47,12 @@ editions and languages when the simulation data matches; undo of a player's own 
 normal refund; the browser joins and hosts from the start; the same simulation-changing mods for
 everyone; cheats refused in a session; when the host leaves, the host role moves to another player.
 
-The task that started C1 asked for the plan's proposed labels (for example
-`[EXT:online-coop-commands]`) to be used; the code uses `online-coop-commands` for the command layer
-and `online-coop-permissions` for the rights hook.
+The labels: the plan's first record, made with the design decisions, says the proposed labels were
+not yet individually approved. Its later entry records the user's answer, given the same day in the
+online-presence session: every proposed `online-coop-*` label in the plan's section 4 is approved as
+named (among them `online-coop-commands` and `online-coop-permissions`, the two this code uses: the
+command layer and the rights hook), and a label outside that list is asked for separately. The
+Totem's commands keep the older `developer-prototype` label.
 
 ## The command layer (C1)
 
@@ -78,6 +83,10 @@ the issuing player's session slot (`Player`, 0 = the local player and host).
   rights refuse are rejected before they touch the park. A refusal changes nothing and is logged
   like an accepted command, so a replay refuses it the same way; only a malformed command, which
   has no byte form, is left out of the log.
+  `ParkCommandLevelTests` fuzzes the executor with a seeded stream of every kind (cells off the map
+  and outside the codec's range, unknown and negative ids and players, rotations and line modes no
+  tool has, non-finite and off-terrain prototype positions): no command throws, and every refused one
+  leaves the world hash unchanged.
 - **Rights.** `[EXT:online-coop-permissions]` `IParkCommandRights.Allows(player, kind)` is the hook for
   the host's per-player rights (decision Q7). Only the hook exists; single player has none.
 - **Nested edits.** A command whose execution issues another (a tool callback) runs that one as part
@@ -85,7 +94,7 @@ the issuing player's session slot (`Player`, 0 = the local player and host).
 
 ### Settings
 
-The HUD windows' settings are commands too (`ParkSettingCommand`, `ParkSettingCommands.cs`, kinds 22
+The HUD windows' settings are commands too (`ParkSettingCommand`, `ParkSettingCommands.cs`, kinds 25
 and 30 to 53, C1 part 2): the park door, the entrance fee, attractions open and closed (the reopening
 guard is asked first, as the open buttons ask it), the ride window's speed, capacity and duration, a
 shop's or sideshow's price, a winnable sideshow's prize and chance of losing, a shop's quality and
@@ -94,7 +103,7 @@ projects, the loans dialog's list build, taking and paying off loans, ride upgra
 cancellation, maintenance calls, the answer to a challenge, renaming and dismissing staff, patrol
 areas (the patrol tool's second click and the employee window's clear button), the park's name, the
 game speed, the cheats (the secret park name's mode, the Alt keys and the cheats window) and the
-developer prototype's start and stop.
+developer object panel's open-all and close-all.
 
 - An object's setting names it by its attraction id, as the object commands do; the executor finds
   its economy object through the level.
@@ -119,9 +128,9 @@ developer prototype's start and stop.
 - The game speed: a park's is part of its state, so the speed buttons and keys and the HUD's status
   (`EconomyParkStatus`, bound to its level) set it through a command. A visited park has no economy
   and keeps its speed in the HUD, as before.
-- The developer panel's open-all and close-all issue one attraction command per attraction, so they
-  now ask the reopening guard and leave non-attractions alone; its prototype button has its own
-  command (`SetPrototypeRunningCommand`), which opens without the guard, as before.
+- The developer panel's open-all and close-all are one command (`SetAllObjectsOpenCommand`, kind 25)
+  that opens or closes every placed object without the reopening guard, as the buttons did; its
+  prototype button has its own command (`SetPrototypeRunningCommand`, kind 22).
 - Hiring is not a setting: an applicant is hired when the Place tool puts the employee down, so it is
   converted with the staff placement.
 
@@ -170,8 +179,9 @@ guarded list.
 | --- | --- | --- |
 | Objects | place (the build tool, the Move tool, track add-ons), the remove tool, remove at a cell, sell from the object and attraction windows, the Move tool's pick-up, the bulldozer (area clear: one command per cleared cell) | converted |
 | Paths and queues | path and queue lines, undo inside the tool, path and queue cell removal, Backspace over a cell, the queue edit click | converted |
-| Developer prototype | place and remove the Totem, its start and stop | converted |
-| Settings | park open and close, ride open and close, the ride window's settings, entrance fee, prices, prizes and shop settings, loans, dismissal, training budget, research, challenges, maintenance, ride upgrades, park and staff rename, patrol areas, cheats, speed | converted |
+| Developer prototype | place and remove the Totem, open and close it (the developer panel's button) | converted |
+| Winning screen | the Instant Action finale's dismissal (Resume Game, Escape, the right click) | converted |
+| Settings | park open and close, ride open and close, the ride window's settings, entrance fee, prices, prizes and shop settings, loans and the loans dialog's list build, dismissal, training budget, research, challenges, maintenance, ride upgrades, park and staff rename, patrol areas, cheats, speed, the developer panel's open-all and close-all | converted |
 | Tools | land, pools and waves, slides and pool attractions, pool bridges, kart and water tracks, coasters and the coaster panel's edits, staff hiring and placement | part 3 |
 
 ## Known limits of C1
@@ -185,7 +195,8 @@ guarded list.
   checkpoints, which the log carries.
 - A remote player's command will run the same presentation (the action message, sounds) as a local
   one; C3 separates the issuer's feedback from everyone's.
-- The in-memory log keeps the newest 65,536 commands; a recording keeps all.
+- The in-memory log keeps the newest 65,536 commands in a ring (adding to a full log overwrites the
+  oldest entry in constant time, so a long bulldozer drag does not stall); a recording keeps all.
 - A log replays only with the extensions it was recorded with, as a save loads only with its
   simulation-changing extensions: the extensions' systems read the process's extension switches, and
   so do the cheats of the cheats extension (the weather, the arrivals, the ride vehicles). The log

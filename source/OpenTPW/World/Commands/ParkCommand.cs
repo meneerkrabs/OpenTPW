@@ -32,8 +32,12 @@ public enum ParkCommandKind : byte
 	PlacePrototype = 20,
 	/// <summary>Removes the developer prototype ride (<see cref="RemovePrototypeCommand"/>).</summary>
 	RemovePrototype = 21,
-	/// <summary>Starts or stops the developer prototype ride (<see cref="SetPrototypeRunningCommand"/>).</summary>
+	/// <summary>Opens or closes the developer prototype ride (<see cref="SetPrototypeRunningCommand"/>).</summary>
 	SetPrototypeRunning = 22,
+	/// <summary>The winning screen's exit: removes the Instant Action research finale (<see cref="DismissFinaleCommand"/>).</summary>
+	DismissFinale = 23,
+	/// <summary>The developer object panel's open-all and close-all (<see cref="SetAllObjectsOpenCommand"/>).</summary>
+	SetAllObjectsOpen = 25,
 	// the park's settings (C1 part 2, ParkSettingCommands.cs)
 	/// <summary>Opens or closes the park's door (<see cref="SetParkOpenCommand"/>).</summary>
 	SetParkOpen = 30,
@@ -282,5 +286,19 @@ public sealed record PlacePrototypeCommand( float X, float Y, float Z ) : ParkCo
 public sealed record RemovePrototypeCommand : ParkCommand
 {
 	public override ParkCommandKind Kind => ParkCommandKind.RemovePrototype;
+	internal override void WriteFields( ParkCommandWriter writer ) { }
+}
+
+/// <summary>[EXT:developer-prototype] Opens (<paramref name="Running"/> true) or closes the developer prototype ride: the developer panel's open and close button.</summary>
+public sealed record SetPrototypeRunningCommand( bool Running ) : ParkCommand
+{
+	public override ParkCommandKind Kind => ParkCommandKind.SetPrototypeRunning;
+	internal override void WriteFields( ParkCommandWriter writer ) => writer.Bool( Running );
+}
+
+/// <summary>The winning screen's exit (its Resume Game button and its Escape and right click): removes the Instant Action research finale's End object (<see cref="Level.DismissResearchFinale"/>).</summary>
+public sealed record DismissFinaleCommand : ParkCommand
+{
+	public override ParkCommandKind Kind => ParkCommandKind.DismissFinale;
 	internal override void WriteFields( ParkCommandWriter writer ) { }
 }

@@ -96,8 +96,8 @@ public abstract record ParkSettingCommand : ParkCommand
 		ParkCommandKind.RenamePark => new RenameParkCommand( reader.String(), reader.String() ),
 		ParkCommandKind.SetGameSpeed => new SetGameSpeedCommand( (GameSpeed)reader.Int() ),
 		ParkCommandKind.QueueCheat => new QueueCheatCommand( (CheatKind)reader.Int(), reader.Int() ),
-		ParkCommandKind.SetPrototypeRunning => new SetPrototypeRunningCommand( reader.Bool() ),
 		ParkCommandKind.RefreshLoanOffers => new RefreshLoanOffersCommand(),
+		ParkCommandKind.SetAllObjectsOpen => new SetAllObjectsOpenCommand( reader.Bool() ),
 		_ => null
 	};
 }
@@ -640,20 +640,26 @@ public sealed record QueueCheatCommand( CheatKind Cheat, int Argument = 0 ) : Pa
 	}
 }
 
-/// <summary>[EXT:developer-prototype] Starts or stops the developer prototype ride (the developer panel's open and close button); its own seam, without the reopening guard, as before.</summary>
-public sealed record SetPrototypeRunningCommand( bool Running ) : ParkSettingCommand
+/// <summary>
+/// The developer object panel's open-all (<paramref name="Open"/> true) and close-all: every placed object opens or closes, without the reopening guard, as the panel's buttons
+/// did before the command layer.
+/// </summary>
+public sealed record SetAllObjectsOpenCommand( bool Open ) : ParkSettingCommand
 {
-	public override ParkCommandKind Kind => ParkCommandKind.SetPrototypeRunning;
-	internal override void WriteFields( ParkCommandWriter writer ) => writer.Bool( Running );
+	public override ParkCommandKind Kind => ParkCommandKind.SetAllObjectsOpen;
+	internal override void WriteFields( ParkCommandWriter writer ) => writer.Bool( Open );
 
 	internal override ParkCommandResult Execute( Level level )
 	{
-		if ( level.PlacedRide is not { IsDeleted: false } ride )
-			return ParkCommandResult.Rejected( "No prototype ride is placed." );
-		if ( Running )
-			ride.Start();
-		else
-			ride.Stop();
+		if ( level.Objects is not { } objects )
+			return ParkCommandResult.Rejected( "The park has no objects." );
+		foreach ( var item in objects.Objects.ToArray() )
+		{
+			if ( Open )
+				item.Open();
+			else
+				item.Close();
+		}
 		return ParkCommandResult.Ok();
 	}
 }

@@ -29,7 +29,8 @@ public class ParkCommandCodecTests
 		(new EditQueueCommand( 3, 3 ), "020f000606"),
 		(new PlacePrototypeCommand( 1.5f, -2.25f, 0f ), "0214000000c03f000010c000000000"),
 		(new RemovePrototypeCommand(), "021500"),
-		(new SetPrototypeRunningCommand( true ), "02160001"),
+		(new DismissFinaleCommand(), "021700"),
+		(new SetPrototypeRunningCommand( true ) { Player = 1 }, "02160201"),
 		// the park's settings (C1 part 2)
 		(new SetParkOpenCommand( true ), "021e0001"),
 		(new SetEntranceFeeCommand( 35 ) { Player = 1 }, "021f0246"),
@@ -55,6 +56,7 @@ public class ParkCommandCodecTests
 		(new SetGameSpeedCommand( GameSpeed.Fastest ), "02330008"),
 		(new QueueCheatCommand( CheatKind.Ticket, 4 ), "0234000608"),
 		(new RefreshLoanOffersCommand(), "023500"),
+		(new SetAllObjectsOpenCommand( true ), "02190001"),
 	};
 
 	[TestMethod]
@@ -117,7 +119,8 @@ public class ParkCommandCodecTests
 		{
 			"020000", // kind 0
 			"02ff00", // kind 255
-			"02170000", // a kind no command has
+			"02180000", // a kind no command has
+			"02160002", // a prototype run flag that is not a boolean
 			"02028000", // a padded player varint
 			"020201", // a negative player
 			"0202000608" + "", // valid, the control

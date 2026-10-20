@@ -33,6 +33,14 @@ public readonly record struct ObjectPlacement( int X, int Y, int Rotation, Syste
 	}
 
 	/// <summary>
+	/// <see cref="ModelToEngine"/> composed with <see cref="DetMatrix.Multiply"/> (plain multiplies and adds), for simulation code that must compute the same bits on
+	/// every runtime (docs/DETERMINISM.md, "Browser and native").
+	/// </summary>
+	public Matrix4x4 DeterministicModelToEngine =>
+		DetMatrix.Multiply( DetMatrix.Multiply( DetMatrix.Multiply( CellRotation( Rotation ), Matrix4x4.CreateTranslation( X * 10, Y * 10, 0 ) ),
+			Matrix4x4.CreateScale( ModelScale ) ), Matrix4x4.CreateTranslation( GridOrigin.X, GridOrigin.Y, BaseHeight ) );
+
+	/// <summary>
 	/// The rigid turn of a model by <paramref name="rotation"/> degrees (0, 90, 180, 270) in model units with the ground in XY, about the
 	/// first cell (0..10, 0..10) so that cell maps onto itself (<see cref="ObjectFootprint.ToGrid(int,int,int,System.Numerics.Vector2)"/>).
 	/// </summary>
@@ -260,7 +268,7 @@ public class OriginalObject : Entity, IPointLightSource
 	}
 
 	/// <summary>The station frame of a coaster station (<see cref="CoasterStationLayout.FromModel"/>) at the model's rest pose, or null when its model lacks a dummy.</summary>
-	internal CoasterStationLayout? ComputeCoasterStationLayout() => CoasterStationLayout.FromModel( Runtime.Model, NodeTransforms, Placement );
+	internal CoasterStationLayout? ComputeCoasterStationLayout() => CoasterStationLayout.FromModel( Runtime.Model, Runtime.Animator.LocalTransforms, Placement );
 
 	/// <summary>One fixed simulation tick.</summary>
 	public void Simulate( double deltaSeconds ) => Simulate( deltaSeconds, null );

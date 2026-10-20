@@ -38,20 +38,27 @@ public sealed partial class ParkHud
 
 	/// <summary>
 	/// Opens the buy window on the row of the object type <paramref name="infoId"/> (its category, then its row) and, when <paramref name="yawDegrees"/> is given,
-	/// holds the preview at that turn, so a capture shows one object's preview at a known angle. False when no category lists the type.
+	/// holds the preview at that turn, so a capture shows one object's preview at a known angle. A type still in the lab is made available first, as the
+	/// research cheat does. False when no category lists the type.
 	/// </summary>
 	internal bool DebugBuyItem( int infoId, float? yawDegrees )
 	{
 		OpenBuyWindow();
 		DebugBuyYaw = yawDegrees * MathF.PI / 180;
-		foreach ( var category in Enum.GetValues<BuildCategory>() )
+		// a type still in the lab is made available as the research cheat does, so every preview can be captured
+		for ( var attempt = 0; attempt < 2; attempt++ )
 		{
-			SelectCategory( category );
-			var index = BuyItems.ToList().FindIndex( item => item.InfoId == infoId );
-			if ( index < 0 )
-				continue;
-			SelectBuyItem( index );
-			return true;
+			foreach ( var category in Enum.GetValues<BuildCategory>() )
+			{
+				SelectCategory( category );
+				var index = BuyItems.ToList().FindIndex( item => item.InfoId == infoId );
+				if ( index < 0 )
+					continue;
+				SelectBuyItem( index );
+				return true;
+			}
+			if ( Status.EconomySource is not ParkEconomy economy || economy.Research.MakeEveryItemAvailable() == 0 )
+				break;
 		}
 		return false;
 	}

@@ -23,9 +23,15 @@ public class OnlineIntegrationTests
 {
 	internal static OnlineFolders Folders() => new( Path.Combine( Path.GetTempPath(), "opentpw-online-" + Guid.NewGuid().ToString( "N" ) ) );
 
+	/// <summary>
+	/// How long a wait for something the server or a session is to do may take before the test fails. Every wait returns as soon as its condition
+	/// holds, so the deadline costs nothing when the test passes; it is generous because shared CI runners can stall a loopback server for seconds.
+	/// </summary>
+	internal static readonly TimeSpan Deadline = TimeSpan.FromSeconds( 60 );
+
 	internal static async Task PumpUntilIdle( OnlineSession session )
 	{
-		var until = DateTime.UtcNow.AddSeconds( 10 );
+		var until = DateTime.UtcNow + Deadline;
 		// chat traffic runs beside the operation slot (OnlineSession.ChatBusy), so both must settle
 		while ( (session.Busy > 0 || session.ChatBusy) && DateTime.UtcNow < until )
 		{
@@ -108,12 +114,12 @@ public class OnlineIntegrationTests
 	}
 
 	/// <summary>
-	/// Pumps both sessions and updates both visits until <paramref name="condition"/> holds, or twenty seconds pass. Each round advances the visits by a
+	/// Pumps both sessions and updates both visits until <paramref name="condition"/> holds, or <see cref="Deadline"/> passes. Each round advances the visits by a
 	/// quarter of a second of walking, so a walk does not take its real time on a slow machine (the network still runs in real time).
 	/// </summary>
 	private static async Task<bool> Until( OnlineSession first, ParkPresence firstVisit, OnlineSession second, ParkPresence secondVisit, Func<bool> condition )
 	{
-		var until = DateTime.UtcNow.AddSeconds( 20 );
+		var until = DateTime.UtcNow + Deadline;
 		while ( DateTime.UtcNow < until )
 		{
 			first.Pump();
@@ -225,7 +231,6 @@ public class OnlineIntegrationTests
 		}
 	}
 
-	/// <summary>Pumps <paramref name="session"/> until <paramref name="condition"/> holds, or ten seconds pass.</summary>
 	[TestMethod]
 	public async Task AVisitsChatOverlayFollowsTheServersAnswers()
 	{
@@ -397,10 +402,10 @@ public class OnlineIntegrationTests
 		}
 	}
 
-	/// <summary>Pumps <paramref name="session"/> and, when given, its visit, until <paramref name="condition"/> holds.</summary>
+	/// <summary>Pumps <paramref name="session"/> and, when given, its visit, until <paramref name="condition"/> holds, or <see cref="Deadline"/> passes.</summary>
 	private static async Task<bool> Until( OnlineSession session, Func<bool> condition, ParkPresence? visit = null )
 	{
-		var until = DateTime.UtcNow.AddSeconds( 15 );
+		var until = DateTime.UtcNow + Deadline;
 		while ( DateTime.UtcNow < until )
 		{
 			session.Pump();
@@ -514,7 +519,7 @@ public class OnlineIntegrationTests
 			Assert.IsNotNull( session.Chat, session.Status );
 			session.SendChatLine( "hello from the game session" );
 			await PumpUntilIdle( session );
-			var until = DateTime.UtcNow.AddSeconds( 5 );
+			var until = DateTime.UtcNow + Deadline;
 			while ( !session.ChatLines.Any( line => line.Contains( "hello from the game session" ) ) && DateTime.UtcNow < until )
 			{
 				session.Pump();
@@ -550,7 +555,7 @@ public class OnlineIntegrationTests
 
 			await server.DisposeAsync();
 			await using var restarted = await LoopbackServer.StartAsync( directory: directory, url: url );
-			await PumpUntil( session, () => session.ChatLines.Any( line => line == OnlineStrings.Get( OnlineLabel.ChatReconnected ) ), seconds: 20 );
+			await PumpUntil( session, () => session.ChatLines.Any( line => line == OnlineStrings.Get( OnlineLabel.ChatReconnected ) ) );
 			Assert.IsTrue( session.IsLoggedIn, "the session survived the restart" );
 			await PumpUntil( session, () => session.Chat != null && session.CurrentRoom == room );
 		}
@@ -562,9 +567,9 @@ public class OnlineIntegrationTests
 		}
 	}
 
-	private static async Task PumpUntil( OnlineSession session, Func<bool> done, int seconds = 10 )
+	private static async Task PumpUntil( OnlineSession session, Func<bool> done )
 	{
-		var until = DateTime.UtcNow.AddSeconds( seconds );
+		var until = DateTime.UtcNow + Deadline;
 		while ( !done() && DateTime.UtcNow < until )
 		{
 			session.Pump();
@@ -1214,9 +1219,9 @@ public class OnlineIntegrationTests
 		}
 	}
 
-	private static async Task WaitUntil( Func<bool> done, int seconds = 10 )
+	private static async Task WaitUntil( Func<bool> done )
 	{
-		var until = DateTime.UtcNow.AddSeconds( seconds );
+		var until = DateTime.UtcNow + Deadline;
 		while ( !done() && DateTime.UtcNow < until )
 			await Task.Delay( 20 );
 		Assert.IsTrue( done() );

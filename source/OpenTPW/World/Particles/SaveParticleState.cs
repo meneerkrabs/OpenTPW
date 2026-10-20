@@ -4,8 +4,7 @@ namespace OpenTPW;
 /// Maps a decoded Particles block of an original park save (<see cref="SaveParticlesBlock"/>, tp.exe <c>0x51F7A0</c>) onto the runtime pool's save shape
 /// (<see cref="ParticleSystemState"/>, <see cref="ParticleSystem.Restore"/>). Both describe the same native structure and the fields <see cref="ParticleSystemState"/> has are copied directly. The conversion is partial, and what it leaves out is listed here and asserted by the corpus test:
 /// <list type="bullet">
-/// <item>Not carried (the runtime state has no field): the emitter's hold word, group, screen-space flag, ring mode, immortal word, word +0x2A, live particle count, first particle and bounds, the effector's group, mode and strength, the pool
-/// capacity, density and low-detail flag, and the saved template tables. <see cref="ParticleSystem.Restore"/> refills hold, group, screen-space and killed-on-load from the runtime's own templates, so a save made with modified templates
+/// <item>Not carried (the runtime state has no field): the emitter's hold word, group, screen-space flag, ring mode, immortal word, word +0x2A, live particle count, first particle and bounds, the effector's group, mode and strength, and the saved template tables. <see cref="ParticleSystem.Restore"/> refills hold, group, screen-space and killed-on-load from the runtime's own templates, so a save made with modified templates
 /// (Jungle's scratch templates 101 to 104) restores with the file's; the corpus emitters use effects 0 to 100 only and their saved fields equal the file's.</item>
 /// <item>Inferred: an effector slot stores no template id, so it is matched by template bytes (group, mode, jitter, strength) that the tick does not write directly (checked for direct-displacement writes only); no match or several is refused.</item>
 /// <item>Conditional: <c>VolumeExtent</c> is null when the slot equals the runtime template's extent. <c>TickCounter</c> is capped at <see cref="int.MaxValue"/>.</item>
@@ -31,6 +30,12 @@ public static class SaveParticleState
 			return null;
 		if ( block.ListProblems.Count > 0 )
 			throw new InvalidDataException( $"The Particles block's slot lists are not well formed: {block.ListProblems[0]}" );
+		var configuration = new ParticlePoolConfiguration
+		{
+			Density = unchecked( (int)block.Globals.Density ), PoolCapacity = unchecked( (int)block.Globals.PoolCapacity ), LowDetail = block.Globals.LowDetail != 0
+		};
+		if ( ParticleSystem.ValidateConfiguration( configuration ) is { } configurationReason )
+			throw new InvalidDataException( configurationReason );
 		var emitters = new List<ParticleEmitterState>();
 		foreach ( var slot in block.ActiveEmitterOrder )
 		{
@@ -62,6 +67,7 @@ public static class SaveParticleState
 		}
 		return new ParticleSystemState
 		{
+			Configuration = configuration,
 			Random = block.Globals.Random, TickCounter = (int)Math.Min( block.Globals.TickCounter, int.MaxValue ),
 			GenerationCounter = block.Globals.EmitterGeneration, EffectorGenerationCounter = block.Globals.EffectorGeneration,
 			Emitters = emitters, FreeEmitters = block.FreeEmitterOrder, Effectors = effectors, FreeEffectors = block.FreeEffectorOrder

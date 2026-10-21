@@ -55,6 +55,14 @@ code uses: the command layer, the rights hook, the frame-batching independence o
 conflict rules), and a label outside that list is asked for separately. The
 Totem's commands keep the older `developer-prototype` label.
 
+## Sessions (C2)
+
+`[EXT:online-coop-session]` The server side of a shared session exists: the co-op socket, sessions with
+their code, the open list, invitations, the version and mod gate, the relay of the host's frames in
+order, resume after a lost connection or a restart, and the join snapshots
+([ONLINE.md](ONLINE.md), "Shared parks"; part C2a). The game does not use it yet: the stream of the
+host's commands (C2b), the join and resync (C2c) and the game's screens (C2d) follow.
+
 ## The command layer (C1)
 
 `[EXT:online-coop-commands]` Every park edit of a HUD window or tool is a serializable command

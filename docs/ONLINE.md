@@ -20,7 +20,8 @@ languages. Chat lines use the local `GAME8AA.bf4` font. What the original servic
 where each piece stands is inventoried in [reverse/ONLINE-FEATURES.md](reverse/ONLINE-FEATURES.md).
 
 Building a park together (co-op, `[EXT:online-coop-*]`) is planned as host-sequenced lockstep; its approved design
-decisions and the command layer every park edit now goes through are in [COOP.md](COOP.md).
+decisions and the command layer every park edit now goes through are in [COOP.md](COOP.md). The server side of
+its sessions exists ([Shared parks](#shared-parks)); the game does not use it yet.
 
 ## Screens
 
@@ -438,6 +439,47 @@ exit (`artifacts/native-smoke-online-visit-presence.png`, `native-smoke-online-v
 | `online-avatar-sparkle-cap` | At most six figures sparkle in a turn (the player's own first, then the nearest), and none while more than 80 of the particle pool's 120 emitters are live. | The original sparkles every online person every turn; its server capped a park's attendance ("Capping the number of people in online park"). |
 | `online-visit-chat-mode` | F4's other side is the visit's read-only HUD (its windows, the camera and the ride view), and Enter over the park returns to the chat mode with the entry focused. The camera's edge scroll works over the overlay's panels along the screen's left and bottom edges. | The original's F4 switched between the overlay and a bare full-screen panel over the park (0x7CC8C0, 0x65DD7B); its chat mode has no HUD. Whether its edge scroll worked over the overlay is not read. |
 | `online-chat-goto` | A name popup's goto to a player in the park teleports the player's figure to them (the server keeps the player in the park's room). | The original server's answer to a goto (command 0x13) is not read. |
+
+## Shared parks
+
+`[EXT:online-coop-session]` A shared park is a session on the server: a host and up to three guests
+(decision Q5) who build one park together ([COOP.md](COOP.md)). The server relays the host's command
+stream and the players' messages without reading them; the game does not use sessions yet (C2b to C2d).
+
+- **The co-op socket.** `/api/v1/coop` (server protocol 6) is a WebSocket of binary messages
+  (`OpenTPW.Online.Coop.CoopProtocol`), beside the text chat socket. A desktop game sends its login
+  token as a header, a browser as the chat's first frame. The first message is a hello with the game's
+  build, its simulation-changing mods in load order and a random id of the game process; the server
+  answers with the session the account belongs to.
+- **One game per account.** A reconnect of the same game process replaces its old connection; another
+  game of the account (a forgotten browser tab) is refused unless the player takes over. A close says
+  whether the game reconnects and resumes (a restart, a lost or slow connection, a rate close) or stops
+  (replaced, in use elsewhere, a protocol error, a logout): `CoopCloseStatus`.
+- **Sessions.** A host creates a session, listed on the open list or by code and invitation only
+  (decision Q4); a code is six characters without the ones read alike (0 and O, 1, I and L). A player
+  joins by code, or from the list (`GET /api/v1/coop/sessions`: listed sessions with room and a
+  connected host, for the same build). A join needs exactly the host's build (Q11) and the same
+  simulation-changing mods in the same order (Q16); a refusal names the difference. The host invites a
+  player whose game is online, removes a player (who cannot come back), and ends the session by
+  leaving; Q18's host migration is a later phase. Members have ids that are never reused, and slots
+  (the game's player index; the host is 0).
+- **Order and resume.** Only the host sends frames, numbered; the server relays a frame only from the
+  host's current connection and only when it follows the last one, so no guest ever misses one unseen.
+  A frame out of turn is dropped and the host told which one comes next. A member whose connection
+  drops stays a member; it resumes with its hello and hears the last frame the host relayed, and a
+  session ends when its host has been away ten minutes. A deploy stores that number exactly; after a
+  crash it may be behind, the welcome says so, and the host's next later frame sets it. A game whose
+  release or mods changed while it was away cannot resume: it leaves (a host's change ends the
+  session). A message to one member is delivered at most once (C2b asks again after a resume).
+- **Join snapshots** `[EXT:online-coop-snapshot-join]`. The host uploads the park a joiner starts from
+  (`PUT /api/v1/coop/{id}/snapshot`, the answer names its SHA-256) and its members download it by
+  digest (`GET …/snapshot/{sha256}`); the newest two are kept, and they go with the session.
+- **Limits.** A host may send far more than a guest, and an account's limits carry over a reconnect;
+  per account the server counts sessions started, joins (and codes that matched no session),
+  invitations, removals and downloads from the start of a snapshot. A slow reader is cut off (it
+  resumes) instead of losing messages, and a connection whose login ends (a logout elsewhere, a ban, a
+  recovery) closes within a minute. Every text the server sends fits what a game reads.
+  [SERVER.md](SERVER.md) lists the settings.
 
 ## Local server
 

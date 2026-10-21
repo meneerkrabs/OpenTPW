@@ -36,6 +36,14 @@ public static class ApiRoutes
 	/// <summary>The public list of parks shown on the project website, and their pictures (<c>/{id}/thumbnail</c>).</summary>
 	public const string WebsiteParks = Parks + "/website";
 	public const string Chat = global::OpenTPW.Online.Chat.ChatProtocol.Path;
+	/// <summary>[EXT:online-coop-session] The co-op socket of shared parks (<c>Coop.CoopProtocol</c>), the open list of shared parks and a session's join snapshots.</summary>
+	public const string Coop = global::OpenTPW.Online.Coop.CoopProtocol.Path;
+	public const string CoopSessions = Coop + "/sessions";
+	/// <summary>
+	/// A session's join snapshot: <c>PUT {Coop}/{id}/snapshot</c> by its host (the answer names its digest), <c>GET {Coop}/{id}/snapshot/{sha256}</c> by its
+	/// members.
+	/// </summary>
+	public static string CoopSnapshot( string sessionId ) => $"{Coop}/{sessionId}/snapshot";
 	public const string PackageMediaType = "application/vnd.opentpw.park";
 	public const string PostcardMediaType = "application/vnd.opentpw.postcard";
 }
@@ -163,3 +171,11 @@ public static class ApiErrorReasons
 	/// <summary>The code from the e-mail was wrong or no longer valid.</summary>
 	public const string EmailCodeInvalid = "email-code-invalid";
 }
+
+/// <summary>[EXT:online-coop-session] A shared park on the open list (decision Q4): its code, title, host, players, most players and the host's build.</summary>
+public sealed record CoopListedSession( string Code, string Title, string Host, int Players, int MaximumPlayers, string Build );
+
+public sealed record CoopSessionList( IReadOnlyList<CoopListedSession> Sessions );
+
+/// <summary>[EXT:online-coop-snapshot-join] A stored join snapshot: its digest, which names it, and its size.</summary>
+public sealed record CoopSnapshotStored( string Sha256, long Bytes );

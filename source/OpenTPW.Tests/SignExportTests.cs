@@ -245,6 +245,82 @@ public class SignExportTests
 	}
 
 	[TestMethod]
+	public void BonusObjectsAreExportedOnlyWhenAskedFor()
+	{
+		Assert.IsNull( SignExport.BonusRoot( new[] { "--export-signs", "Spanish", "/tmp/out" }, () => throw new AssertFailedException( "the saved bonus folder is not read without --with-bonus" ) ) );
+		Assert.ThrowsException<ArgumentException>( () => SignExport.BonusRoot( new[] { "--export-signs", "Spanish", "/tmp/out", "--bonus-data" } ) );
+		Assert.ThrowsException<ArgumentException>( () => SignExport.BonusRoot( new[] { "--bonus-data", "--with-bonus" } ) );
+		var empty = Path.Combine( root, "empty" );
+		Directory.CreateDirectory( empty );
+		Assert.ThrowsException<DirectoryNotFoundException>( () => SignExport.BonusRoot( new[] { "--bonus-data", empty } ) );
+		var bonus = Path.Combine( root, "Bonus Stuff" );
+		Directory.CreateDirectory( Path.Combine( bonus, "Bonus content", "levels", "jungle", "rides" ) );
+		Assert.AreEqual( bonus, SignExport.BonusRoot( new[] { "--bonus-data", bonus } ) );
+		Assert.AreEqual( bonus, SignExport.BonusRoot( new[] { "--with-bonus" }, () => bonus ) );
+		Assert.ThrowsException<DirectoryNotFoundException>( () => SignExport.BonusRoot( new[] { "--with-bonus" }, () => null ) );
+		// the index records where a bonus sign's lines come from
+		var files = SignExport.Plan( new[] { Sign( "jungle", "_dizzyd_8", line1: "Dinos", line2: "Mareados" ) with { StringIds = Array.Empty<int>(), StringTexts = Array.Empty<string>(), TextSource = "Spanish.txt SIGNA/SIGNB", IsBonus = true } } );
+		using var json = JsonDocument.Parse( SignExport.IndexJson( "Spanish", "Language/spanish", files ) );
+		var first = json.RootElement.GetProperty( "files" )[0];
+		Assert.AreEqual( "Spanish.txt SIGNA/SIGNB", first.GetProperty( "textSource" ).GetString() );
+		Assert.IsTrue( first.GetProperty( "bonus" ).GetBoolean() );
+		Assert.AreEqual( "jungle/_dizzyd_8-1.png", first.GetProperty( "file" ).GetString() );
+	}
+
+	[TestMethod]
+	public void TheBonusRidesSignsAreWhatTheGameDrawsForThem()
+	{
+		var bonusRoot = Environment.GetEnvironmentVariable( "OPENTPW_BONUS_DATA" );
+		if ( string.IsNullOrWhiteSpace( bonusRoot ) || ObjectCatalog.FindBonusLevelsParent( bonusRoot ) == null )
+			Assert.Inconclusive( "Set OPENTPW_BONUS_DATA to the official bonus content for the bonus sign export." );
+		if ( ObjectCatalogCorpusTests.UseOriginalData( out var previousFileSystem ) == null )
+			Assert.Inconclusive( "Set OPENTPW_GAME_PATH to the original game for the sign export." );
+		var previousLanguage = GameLanguage.IsSelected ? GameLanguage.Current : null;
+		var previousEdition = GameEditions.Current;
+		var previousBonus = ObjectCatalog.BonusDataRoot;
+		try
+		{
+			GameEditions.Select( GameEdition.ThemeParkWorld );
+			var data = FileSystem.GetAbsolutePath( "/" );
+			GameLanguage.Current = GameLanguage.Resolve( data, "English", null );
+			ObjectCatalog.BonusDataRoot = null;
+			var plain = SignExport.Run( Path.Combine( root, "plain" ), data );
+			ObjectCatalog.BonusDataRoot = bonusRoot;
+			var output = Path.Combine( root, "bonus" );
+			var files = SignExport.Run( output, data, bonusRoot );
+
+			// the shipped signs are the same with and without the bonus objects
+			CollectionAssert.AreEqual( plain.Select( file => (file.RelativePath, file.PngSha256) ).ToArray(), files.Where( file => !file.Sign.IsBonus ).Select( file => (file.RelativePath, file.PngSha256) ).ToArray() );
+
+			var bonus = files.Where( file => file.Sign.IsBonus && file.Half != 0 ).ToList();
+			var rides = bonus.Where( file => file.Sign.Kind == "ride" ).Select( file => file.Sign.Name ).Distinct().ToList();
+			Assert.AreEqual( 14, rides.Count, string.Join( ", ", rides ) );
+			Assert.IsTrue( bonus.All( file => string.Equals( file.Sign.TextSource, "English.txt SIGNA/SIGNB", StringComparison.OrdinalIgnoreCase ) ), "the bonus archives carry English.txt" );
+			var dinos = bonus.First( file => file.Sign.Name == "_dizzyd_8" ).Sign;
+			Assert.AreEqual( ("Dizzy", "Dinos"), (dinos.Line1, dinos.Line2) );
+			Assert.AreEqual( ("jungle", "/levels/jungle/rides/_dizzyd_8"), (dinos.Theme, dinos.ArchivePath.TrimEnd( '/' )) );
+			foreach ( var file in bonus )
+			{
+				var entry = ObjectCatalog.Load( file.Sign.Theme ).Entries.Single( entry => entry.IsBonus && entry.ArchivePath == file.Sign.ArchivePath );
+				// the game's lines for a bonus object: its language file's SIGNA/SIGNB
+				Assert.AreEqual( BonusNames.ReadSignLines( entry ), (file.Sign.Line1, file.Sign.Line2), file.RelativePath );
+				var images = ObjectSigns.Get( entry )!;
+				var decoded = ImageResult.FromMemory( File.ReadAllBytes( Path.Combine( output, file.RelativePath ) ), ColorComponents.RedGreenBlueAlpha );
+				CollectionAssert.AreEqual( file.Half == 1 ? images.Left : images.Right, decoded.Data, file.RelativePath );
+			}
+			// the bonus folder is protected like the game data
+			Assert.ThrowsException<IOException>( () => SignExport.Run( Path.Combine( bonusRoot, "signs" ), data, bonusRoot ) );
+		}
+		finally
+		{
+			FileSystem = previousFileSystem;
+			GameLanguage.Current = previousLanguage!;
+			GameEditions.Select( previousEdition );
+			ObjectCatalog.BonusDataRoot = previousBonus;
+		}
+	}
+
+	[TestMethod]
 	public void TheEnglishExportMatchesTheSignsTheLevelAndTheLobbyUse()
 	{
 		if ( ObjectCatalogCorpusTests.UseOriginalData( out var previousFileSystem ) == null )
@@ -317,6 +393,10 @@ public class SignExportTests
 			}
 			Assert.IsTrue( levelSigns >= 2 * 75, $"{levelSigns} level sign textures" );
 			Assert.AreEqual( 8, lobbySigns, "the lobby's four sign models" );
+			// without --bonus-data only the shipped data: no bonus row, and every shipped object's lines come from OBJECT_NAMES
+			Assert.IsFalse( files.Any( file => file.Sign.IsBonus || file.Sign.Name.StartsWith( '_' ) ), "no bonus object without --bonus-data" );
+			Assert.IsFalse( rows.Any( row => row.TryGetProperty( "bonus", out _ ) ) );
+			Assert.IsTrue( rows.Where( row => row.GetProperty( "kind" ).GetString() is "ride" or "shop" ).All( row => row.GetProperty( "textSource" ).GetString() == "OBJECT_NAMES.str ids" ) );
 
 			// a second export into the same, now full, directory is refused and changes nothing
 			var before = File.ReadAllBytes( Path.Combine( output, "jungle", "gates-1.png" ) );

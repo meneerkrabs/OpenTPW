@@ -106,6 +106,7 @@ public abstract record ParkSettingCommand : ParkCommand
 		ParkCommandKind.QueueCheat => new QueueCheatCommand( (CheatKind)reader.Int(), reader.Int() ),
 		ParkCommandKind.RefreshLoanOffers => new RefreshLoanOffersCommand(),
 		ParkCommandKind.SetAllObjectsOpen => new SetAllObjectsOpenCommand( reader.Bool() ),
+		ParkCommandKind.SetSessionClock => new SetSessionClockCommand( reader.Long() ),
 		_ => null
 	};
 }
@@ -639,6 +640,31 @@ public sealed record SetGameSpeedCommand( GameSpeed Speed ) : ParkSettingCommand
 		if ( level.Park?.Economy is not { } economy )
 			return NoEconomy;
 		economy.Speed = Speed;
+		return ParkCommandResult.Ok();
+	}
+}
+
+/// <summary>
+/// [EXT:online-coop-lockstep] The co-op session's clock (docs/COOP.md, "The session clock"): the civil time the park's ride scripts read from now on, in whole seconds of the host's local
+/// time since 1 January of year 1. The original reads each machine's own clock on every script instruction (<c>[EXT:vm-host-time]</c>), which two machines never share; the host issues
+/// this command when the session starts and whenever its clock's second changes, so every peer's scripts read the same time from the same tick on. Applying it switches the scripts to
+/// the commanded clock whatever the session mode, so a replayed session log reads the session's time. A Theme Park Inc park reads no civil time: the command changes nothing there.
+/// </summary>
+public sealed record SetSessionClockCommand( long Seconds ) : ParkSettingCommand
+{
+	public override ParkCommandKind Kind => ParkCommandKind.SetSessionClock;
+	internal override bool IsWellFormed => Seconds >= 0 && Seconds <= DateTime.MaxValue.Ticks / TimeSpan.TicksPerSecond;
+	internal override void WriteFields( ParkCommandWriter writer ) => writer.Long( Seconds );
+
+	/// <summary>The command for the local time <paramref name="time"/>, to the second.</summary>
+	public static SetSessionClockCommand For( DateTime time ) => new( time.Ticks / TimeSpan.TicksPerSecond );
+
+	/// <summary>The civil time it sets (a well-formed command's only: not a public member, so a malformed command still prints).</summary>
+	internal DateTime Time => new( Seconds * TimeSpan.TicksPerSecond, DateTimeKind.Unspecified );
+
+	internal override ParkCommandResult Execute( Level level )
+	{
+		level.Objects.ScriptWorld.SessionTime = Time;
 		return ParkCommandResult.Ok();
 	}
 }

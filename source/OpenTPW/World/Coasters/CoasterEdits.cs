@@ -44,6 +44,41 @@ public sealed class CoasterEdits
 	/// <summary>The edit <paramref name="player"/> holds, or null.</summary>
 	public Held? Of( int player ) => edits.GetValueOrDefault( player );
 
+	/// <summary>[EXT:online-coop-lockstep] Every player's drag, lowest player first, for the session digest: the drag's later steps and its release read it on every peer.</summary>
+	internal void AddSessionState( StateHasher hash )
+	{
+		hash.Add( edits.Count );
+		foreach ( var (player, held) in edits.OrderBy( pair => pair.Key ) )
+		{
+			hash.Add( player );
+			hash.Add( held.Station );
+			hash.Add( (int)held.Drag );
+			hash.Add( held.Range.Low );
+			hash.Add( held.Range.High );
+			hash.Add( held.Range.LowSecond );
+			hash.Add( held.Range.HighSecond );
+			hash.Add( held.Edit.Index );
+			hash.Add( held.Edit.Refund );
+			hash.Add( held.Edit.Next ?? -1 );
+			var node = held.Edit.Start;
+			hash.Add( node.X );
+			hash.Add( node.Y );
+			hash.Add( node.Height );
+			hash.Add( node.T );
+			hash.Add( node.LoopPylon );
+			hash.Add( node.StackIndex );
+			hash.Add( node.IsStation );
+			hash.Add( node.IsStationEnd );
+			hash.Add( node.ExactPosition.HasValue );
+			if ( node.ExactPosition is { } position )
+			{
+				hash.Add( position.X );
+				hash.Add( position.Y );
+				hash.Add( position.Z );
+			}
+		}
+	}
+
 	internal void Begin( int player, Held held ) => edits[player] = held;
 
 	/// <summary>

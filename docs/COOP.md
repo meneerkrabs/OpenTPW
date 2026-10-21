@@ -62,8 +62,69 @@ their code, the open list, invitations, the version and mod gate, the relay of t
 order, resume after a lost connection or a restart, and the join snapshots
 ([ONLINE.md](ONLINE.md), "Shared parks"; part C2a). So does the game's link to it (`CoopLink` under
 `OnlineSession`): it opens, resumes and closes the socket and offers the requests and events a shared
-park needs. No park uses it yet: the stream of the host's commands (C2b), the join and resync (C2c)
-and the game's screens (C2d) follow.
+park needs. The host's command stream runs over it (C2b-1, below). The level in a session (rights,
+local pauses, the gating of cheats, saves and debug setups: C2b-2), the join and resync (C2c) and the
+game's screens (C2d) follow; until then no game starts a stream.
+
+### The host's command stream (C2b-1)
+
+`[EXT:online-coop-lockstep]` A guest's park follows the host's by replaying the host's commands at the
+host's ticks, checked by digests (`CoopHostStream`, `CoopGuestStream`; the frames and messages in
+`CoopStreamCodec`). Both run each frame's simulation step for their level (`Level.SessionStream`).
+
+- **Records and frames.** Every top-level command the host's funnel applies (accepted, refused, or one
+  that threw) is a record of the stream: its number, the tick it applied before, what became of it and
+  its bytes. Never its reason text, which depends on the runtime and the language. The host publishes
+  the records in frames, at most every 100 ms and only when something changed, each with a horizon:
+  every tick below it ran on the host, and every record before it is out. A frame cut at the size
+  limit stops its horizon at the first record it does not hold. A paused park sends nothing until a
+  command comes.
+- **A guest's clock.** At one point of each game frame, before its ticks and never inside one, a guest
+  applies the frames that came: each record's command is held until its tick (one for the tick the
+  guest stands at applies at once), and its ticks run only up to the horizon. It runs at the park's own
+  rate about one published frame behind the horizon and catches up a share of any further lag each
+  frame, within a time budget, never past the horizon and never dropping a tick.
+- **Checks.** After every 60th tick (a park second) the host takes the session digest (`CoopDigest`):
+  the world hash and what a session shares that the world hash leaves out. That is the placed objects'
+  layout, economy links and run flags; the weather, without the thunder that the frames drain; every
+  player's carried catalogue entry, hand and coaster drag; the pending hire; the coasters'
+  being-edited marks; and the session clock. Presentation a player may switch alone stays out (the
+  winter snow's cover changes no simulation and is no part of a session's identity). After a command that threw
+  the host also takes a digest right after it (at most one a frame period). A guest compares each
+  digest at the same point, and each record's outcome as it applies. A mismatch is a desync: the
+  guest's clock stops, it reports the desync with every progress until the host has seen it, and it
+  waits for a resync (C2c).
+- **Progress, resends and flow control.**
+  - A guest reports its state, its last frame without a gap and its ticks twice a second.
+  - A frame lost on its way is asked for and resent from the host's history: one copy on its way at a
+    time, at most a megabyte a guest has not acknowledged, and a megabyte a second for all guests. A
+    request from before the history is told to resync.
+  - The host's park runs at most three park seconds ahead of its slowest following guest, so a slow
+    guest paces the session, as lockstep does. A guest that has not reported for ten seconds is not
+    waited for until it is back within reach. A guest catching up that holds every frame and stays out
+    of reach for a minute is told to resync.
+  - While the host's own link is down, its park holds.
+  - After a server restart that lost the frame number, the host resends from its oldest frame. A
+    server that needs a frame the host no longer holds ends the session with the reason.
+- **The session clock.** The ride scripts read the civil time (`[EXT:vm-host-time]`, which two machines
+  never share). In a session the host issues a clock command (`SetSessionClockCommand`, kind 100)
+  before the session's first tick and, while its park runs, whenever its clock's second changes, so
+  every peer's scripts read the same time from the same tick on. Applying the command switches that park's scripts to it, so a
+  replayed session log reads the session's time. A Theme Park Inc park reads no civil time and issues
+  none.
+- **The funnel's session rules** (`ParkCommands.SessionRules`, `InTick`):
+  - a command applied inside a tick is dropped, since a peer would apply it at the tick's start;
+  - a command issued inside another is refused;
+  - a command of this machine that the rights refuse leaves no trace, so a guest's own clicks stay out
+    of its log, which is the host's stream; a streamed record the rights refuse is logged as refused,
+    so the stream sees the mismatch;
+  - a held command never rethrows: its error is in its outcome, which the stream compares.
+
+  In C2 only player 0 builds (`CoopHostOnlyRights`).
+
+The tests run a host and its guests as levels of one asset-free park in one process over an in-memory
+server with the real one's guarantees, each driven through whole game frames of random lengths
+(`CoopStreamTests`, `CoopStreamCodecTests`).
 
 ## The command layer (C1)
 
@@ -338,8 +399,8 @@ guarded list.
   run its ticks in frames of any size (`FrameBatchingTests`, and with game data the park-resume smoke's
   restore phase). What stays frame-coupled is presentation a save keeps but no hash or script reads:
   the particle pool, the ADDOBJ records of ended effects and the hoardings' rise, so two players' saves
-  can differ there. The clock's remainder of a tick follows the frames' time; a session's network clock
-  (C2) feeds whole ticks.
+  can differ there. The clock's remainder of a tick follows the frames' time; a session guest's clock
+  (C2b) runs whole ticks from the host's stream.
 - A remote player's command will run the same presentation (the action message, sounds) as a local
   one; C3 separates the issuer's feedback from everyone's.
 - The in-memory log keeps the newest 65,536 commands in a ring (adding to a full log overwrites the
@@ -354,13 +415,14 @@ guarded list.
   edits, or count the editors.
 - A command a tool callback issues inside another command runs as part of it, with its player
   (Nested edits). This machine's tools differ from a peer's, so a callback that only this machine's
-  tool makes must not write inside a peer's command, which every peer runs alike: C2 must refuse a
-  nested command whose outer command is not this machine's issue (`ParkCommands.IsIssuing`). The HUD's
+  tool makes must not write inside a peer's command, which every peer runs alike: a session refuses
+  every command issued inside another (C2b-1, `ParkCommands.SessionRules`). The HUD's
   follow-ups of its own placement already wait for its command to return (`ParkCommands.AfterIssue`),
   and a coaster station that goes drops the drags on it before this machine's panel closes, so that
   panel's release finds no drag to end.
-- The pylon each player is editing in a coaster panel drag (`CoasterEdits`) is not hashed, as the
-  employees in hand are not; a session's join snapshot (C2) taken during a drag must carry it.
+- The pylon each player is editing in a coaster panel drag (`CoasterEdits`) is not in the world hash,
+  as the employees in hand are not; the session digest covers both (C2b-1), and a session's join
+  snapshot (C2c) taken during a drag must carry it.
 - The developer and smoke options (`--perf-*`, `--debug-*`) set their parks up directly; a recording
   made with them does not replay.
 - The developer prototype can be opened by two kinds (32 with the reopening guard, 22 without), and
@@ -376,8 +438,8 @@ guarded list.
   too, not only `QueueCheatCommand`.
 - The developer panel's sandbox load (`Level.LoadSandbox`) replaces the park outside the commands; it is
   listed in the guard for C2, where a session replaces the park from the host.
-- The employees in the players' hands (`StaffHands`) are not hashed, as the Move tool's carried entry
-  is not. A save drops the employee in the saving machine's own hand first (a `DropStaffCommand`), so
+- The employees in the players' hands (`StaffHands`) are not in the world hash, as the Move tool's
+  carried entry is not (the session digest covers both, C2b-1). A save drops the employee in the saving machine's own hand first (a `DropStaffCommand`), so
   that hand is empty in the save; another player's held employee is saved picked up. A session's join
   snapshot (C2) must not drop it, since the snapshot is taken on the host only.
 - The staff tool's cancel ends the tool even when its drop is refused, as a player's rights could

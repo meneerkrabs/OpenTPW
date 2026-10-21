@@ -24,6 +24,13 @@ public partial class Level
 	public ParkCommandRecorder StartCommandRecording() =>
 		commandRecorder ??= new ParkCommandRecorder( Commands, LevelName ?? "", Seed.Value, simulationClock?.TickCount ?? 0, ComputeStateHash() );
 
+	/// <summary>Stops the recording of the park's commands, if one runs (a co-op session's own recording when the session ends).</summary>
+	internal void StopCommandRecording()
+	{
+		commandRecorder?.Dispose();
+		commandRecorder = null;
+	}
+
 	/// <summary>The command log recorded so far, with the world hash now as its final checkpoint; null while nothing records.</summary>
 	public ParkCommandLogFile? CommandLog() =>
 		commandRecorder?.ToLog( (simulationClock?.TickCount ?? 0, ComputeStateHash()) );
@@ -64,8 +71,17 @@ public partial class Level
 		_ => null
 	};
 
+	/// <summary>Test seam: runs before every command the park executes; a throw makes the command errored, as a rule its own checks missed would (the co-op stream's checks).</summary>
+	internal Action<ParkCommand>? CommandFault { get; set; }
+
 	/// <summary>Runs one well-formed command on the park (<see cref="ParkCommands"/> has checked the visit and the player's rights).</summary>
-	private ParkCommandResult ExecuteCommand( ParkCommand command ) => command switch
+	private ParkCommandResult ExecuteCommand( ParkCommand command )
+	{
+		CommandFault?.Invoke( command );
+		return ExecuteParkCommand( command );
+	}
+
+	private ParkCommandResult ExecuteParkCommand( ParkCommand command ) => command switch
 	{
 		PlaceObjectCommand place => ExecutePlaceObject( place ),
 		RemoveAtCommand remove => Outcome( RemoveAt( remove.X, remove.Y ) ),

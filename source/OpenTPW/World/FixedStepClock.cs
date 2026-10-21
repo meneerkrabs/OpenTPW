@@ -15,7 +15,12 @@ public sealed class FixedStepClock
 	public double PendingSeconds { get; private set; }
 	public double DroppedSeconds { get; private set; }
 
-	public int Advance( double elapsedSeconds, Action<float> simulate )
+	/// <summary>
+	/// Banks <paramref name="elapsedSeconds"/> (at most <see cref="MaximumCatchUpTicks"/> ticks' worth; the rest is dropped) and runs the whole ticks it holds. With a
+	/// <paramref name="limit"/>, no tick runs once <see cref="TickCount"/> reaches it, and the whole ticks banked then are dropped too, so the clock does not race ahead
+	/// once the limit moves ([EXT:online-coop-lockstep]: a session's host holds a few seconds ahead of its slowest guest).
+	/// </summary>
+	public int Advance( double elapsedSeconds, Action<float> simulate, long? limit = null )
 	{
 		ArgumentNullException.ThrowIfNull( simulate );
 		if ( !double.IsFinite( elapsedSeconds ) || elapsedSeconds < 0 )
@@ -26,12 +31,34 @@ public sealed class FixedStepClock
 		var ticks = 0;
 		while ( ticks < MaximumCatchUpTicks && PendingSeconds + TickDuration * 1e-9 >= TickDuration )
 		{
+			if ( limit is { } stop && TickCount >= stop )
+			{
+				var whole = Math.Floor( (PendingSeconds + TickDuration * 1e-9) / TickDuration ) * TickDuration;
+				PendingSeconds = Math.Max( 0, PendingSeconds - whole );
+				DroppedSeconds = Math.Min( double.MaxValue, DroppedSeconds + whole );
+				break;
+			}
 			simulate( (float)TickDuration );
 			PendingSeconds = Math.Max( 0, PendingSeconds - TickDuration );
 			++TickCount;
 			++ticks;
 		}
 		return ticks;
+	}
+
+	/// <summary>
+	/// [EXT:online-coop-lockstep] Runs exactly <paramref name="ticks"/> ticks, without wall time and without dropping any: a session guest's clock, which follows the host's
+	/// published horizon instead of its own time. The banked remainder stays as it is.
+	/// </summary>
+	public void RunTicks( int ticks, Action<float> simulate )
+	{
+		ArgumentNullException.ThrowIfNull( simulate );
+		ArgumentOutOfRangeException.ThrowIfNegative( ticks );
+		for ( var tick = 0; tick < ticks; tick++ )
+		{
+			simulate( (float)TickDuration );
+			++TickCount;
+		}
 	}
 
 	public void Reset()

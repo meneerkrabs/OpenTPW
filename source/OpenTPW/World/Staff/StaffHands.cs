@@ -43,6 +43,19 @@ public sealed class StaffHands
 	/// <summary>Empties every hand (a load replaced the economy, whose employees they held).</summary>
 	public void Clear() => carried.Clear();
 
+	/// <summary>[EXT:online-coop-lockstep] Every hand, lowest player first, for the session digest: later commands read them on every peer.</summary>
+	internal void AddSessionState( StateHasher hash )
+	{
+		hash.Add( carried.Count );
+		foreach ( var (player, hand) in carried.OrderBy( pair => pair.Key ) )
+		{
+			hash.Add( player );
+			hash.Add( hand.Staff );
+			hash.Add( hand.X );
+			hash.Add( hand.Y );
+		}
+	}
+
 	/// <summary>Applies a staff command to these hands directly, outside a level's command funnel (the tool's tests); any other command is refused.</summary>
 	public ParkCommandResult Apply( ParkCommand command ) =>
 		command is StaffToolCommand staff ? staff.Apply( this ) : ParkCommandResult.Rejected( $"{command.Kind} is no staff command." );

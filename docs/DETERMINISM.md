@@ -21,7 +21,11 @@ TPI and unsupported-edition worlds cannot enable it. `YEAR`, `MONTH`, `DAY`, `HO
 the sample is an external input (`[EXT:vm-host-time]`; VM-902 retired), so a replay needs the same samples.
 
 The provider and its current host input are external: neither is serialized in
-`RideScriptWorldSnapshot` or fed to the canonical hash. Scheduler timestamps,
+`RideScriptWorldSnapshot` or fed to the canonical hash. In a co-op session the
+scripts read the session's clock instead, which the host sets with a command
+(`SetSessionClockCommand`, `[EXT:online-coop-lockstep]`; [COOP.md](COOP.md),
+"The host's command stream"), so every peer reads the same time from the same
+tick; that value is part of the session digest, not of the world hash or a save. Scheduler timestamps,
 returned VM variables, flags and branch state keep their existing save/hash
 rules. Restoring a saved script preserves prior results, but future clock
 queries may diverge unless the caller supplies the same external samples.

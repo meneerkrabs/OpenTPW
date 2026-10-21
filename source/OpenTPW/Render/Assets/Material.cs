@@ -207,6 +207,7 @@ public partial class Material : Asset
 		if ( resourceSets != null )
 			return resourceSets;
 
+		using var mark = FrameMarks.Measure( "draw.materialResourceSets" );
 		List<ResourceSetDescription> resourceSetDescriptions = new();
 
 		for ( int i = 0; i < Shader.ResourceLayouts.Length; i++ )

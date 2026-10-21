@@ -288,7 +288,8 @@ internal sealed class UiRenderer : IDisposable
 				renderedSets.Remove( stale.Key );
 				stale.Value.Dispose();
 			}
-			renderedSet = Device.ResourceFactory.CreateResourceSet( new ResourceSetDescription( resourceLayout, rendered, Device.LinearSampler ) );
+			using ( FrameMarks.Measure( "ui.renderedSet" ) )
+				renderedSet = Device.ResourceFactory.CreateResourceSet( new ResourceSetDescription( resourceLayout, rendered, Device.LinearSampler ) );
 			renderedSets[rendered] = renderedSet;
 			return renderedSet;
 		}
@@ -296,6 +297,8 @@ internal sealed class UiRenderer : IDisposable
 		object key = texture.Atlas != null ? (texture.Atlas, factor) : texture.ImagePath ?? "solid";
 		if ( textures.TryGetValue( key, out var entry ) )
 			return entry.Set;
+		using var mark = !FrameMarks.Enabled ? default
+			: FrameMarks.Measure( texture.Atlas != null ? "ui.atlas" : texture.ImagePath != null ? "ui.image " + texture.ImagePath : "ui.solid" );
 		if ( texture.Atlas != null )
 		{
 			var atlas = texture.Atlas;

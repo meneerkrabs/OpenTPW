@@ -1012,10 +1012,14 @@ internal sealed partial class GameFlow : IDisposable
 			// [APPROX:UI-107] the clear is always the fog colour, since the park's render flags (0x4002000 bits of [0x8bcbc8]) are not traced; the sky is Level.DrawSky (World/Sky.cs)
 			backgroundBatch.Clear();
 			backgroundBatch.AddRectangle( new UiRect( 0, 0, framebuffer.Width, framebuffer.Height ), Level.WorldBackdropColour );
-			backgroundRenderer.Draw( global::Global.Render.CommandList, backgroundBatch, framebuffer.Width, framebuffer.Height );
-			Level.DrawSky();
-			Level.Render();
-			Advisor?.Render();
+			using ( FrameMarks.Measure( "draw.backdrop" ) )
+				backgroundRenderer.Draw( global::Global.Render.CommandList, backgroundBatch, framebuffer.Width, framebuffer.Height );
+			using ( FrameMarks.Measure( "draw.sky" ) )
+				Level.DrawSky();
+			using ( FrameMarks.Measure( "draw.level" ) )
+				Level.Render();
+			using ( FrameMarks.Measure( "draw.advisorModel" ) )
+				Advisor?.Render();
 		}
 		else
 		{
@@ -1056,8 +1060,10 @@ internal sealed partial class GameFlow : IDisposable
 			lobbyEffects.Flash = false;
 		if ( Hud != null )
 		{
-			Hud.Draw( Context );
-			Advisor?.Draw( Context );
+			using ( FrameMarks.Measure( "draw.hud" ) )
+				Hud.Draw( Context );
+			using ( FrameMarks.Measure( "draw.advisorUi" ) )
+				Advisor?.Draw( Context );
 		}
 		else if ( IncHud != null )
 			IncHud.Draw( Context );
@@ -1075,13 +1081,15 @@ internal sealed partial class GameFlow : IDisposable
 		// the game's own pointer goes on top of every UI layer
 		Hud?.DrawCursor( Context );
 		// the model previews are drawn with a depth buffer into their own images, which the overlay pass shows in the batch's order
-		overlayRenderer.PrepareDepthImages( global::Global.Render.CommandList, Context.Batch, framebuffer );
+		using ( FrameMarks.Measure( "draw.depthImages" ) )
+			overlayRenderer.PrepareDepthImages( global::Global.Render.CommandList, Context.Batch, framebuffer );
 	}
 
 	/// <summary>Overlay pass (output pixels, possibly twice per frame when the output is captured).</summary>
 	private void RenderOverlay()
 	{
 		var target = global::Global.Render.OverlayFramebuffer;
+		using var mark = FrameMarks.Measure( "overlay.ui" );
 		overlayRenderer.Draw( global::Global.Render.CommandList, Context.Batch, target.Width, target.Height );
 	}
 

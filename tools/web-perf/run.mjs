@@ -27,7 +27,7 @@ import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { Cdp, launchChrome, mainThreadBusy, medianResults, sleep, startServer, stopChrome, summarizeFrames } from './lib.mjs';
 import { markdown } from './report.mjs';
-import { attributeProfile, eventsScenario, useSymbols } from './events.mjs';
+import { eventsScenario, profileClockOffset, profileFrames, profileOfFrame, useSymbols } from './events.mjs';
 
 const DEFAULT_CHROME = {
 	darwin: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
@@ -259,7 +259,10 @@ class Page {
 		const summary = summarizeFrames(end.frames, end.now - start.now);
 		// With the game's named work on (the events scenario turns it on) the slowest frames come with it.
 		const slowFrames = end.frames.filter(frame => frame[2] && frame[1] >= 40).map(([begin, duration, marks]) => ({ atMs: Math.round(begin - start.now), beginMs: begin, ms: Math.round(duration * 10) / 10, marks }));
-		return { readyMs, maxFrameMs: summary.maxMs, over50Ms: summary.over50Ms, longFramesMs: summary.longFramesMs, frames: summary.frames, p95Ms: summary.p95Ms, ...(slowFrames.length ? { slowFrames } : {}), ...(atReady ? { atReady } : {}) };
+		const result = { readyMs, maxFrameMs: summary.maxMs, over50Ms: summary.over50Ms, longFramesMs: summary.longFramesMs, frames: summary.frames, p95Ms: summary.p95Ms, ...(slowFrames.length ? { slowFrames } : {}), ...(atReady ? { atReady } : {}) };
+		// every frame ([begin, ms]), to line a CPU profile up with the page's clock; not enumerable, so it stays out of the report
+		Object.defineProperty(result, 'pageFrames', { value: end.frames.map(([begin, duration]) => [begin, duration]) });
+		return result;
 	}
 }
 
@@ -315,13 +318,11 @@ const scenarios = {
 		if (coldProfile != null) {
 			const captured = (await page.send('Profiler.stop', undefined, 120000)).profile;
 			if (options.profileOut)
-				await fs.writeFile(options.profileOut, JSON.stringify({ pageNowAtStart: coldProfile, slowFrames: (cold.slowFrames ?? []).map(({ beginMs, ms }) => [beginMs, ms]), profile: captured }));
+				await fs.writeFile(options.profileOut, JSON.stringify({ pageNowAtStart: coldProfile, slowFrames: (cold.slowFrames ?? []).map(({ beginMs, ms }) => [beginMs, ms]), frames: cold.pageFrames, profile: captured }));
+			// each slow frame's window is lined up with the frame the profile itself saw (profileOffsetMs: how far the two clocks were apart)
+			const offset = profileClockOffset(profileFrames(captured, coldProfile), coldProfile, cold.pageFrames);
 			for (const frame of cold.slowFrames ?? [])
-				{
-				frame.functions = attributeProfile(captured, coldProfile, [[frame.beginMs, frame.beginMs + frame.ms]], 40);
-				frame.stacks = attributeProfile(captured, coldProfile, [[frame.beginMs, frame.beginMs + frame.ms]], 15, 6);
-				frame.owners = attributeProfile(captured, coldProfile, [[frame.beginMs, frame.beginMs + frame.ms]], 20, 4, true);
-			}
+				Object.assign(frame, profileOfFrame(captured, coldProfile, offset, frame.beginMs, frame.ms, { functions: 40, stacks: 15, owners: 20 }));
 		}
 		cold.profile = JSON.parse(await page.eval('opentpwPerf.program.PerfLoadProfile()'));
 		await page.eval('opentpwPerf.program.PerfProfile(false)');

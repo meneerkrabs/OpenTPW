@@ -70,24 +70,30 @@ public class GraphicsDevice : IDisposable
 	{
 		unsafe
 		{
-			Gl.UploadBuffer( buffer.Handle, (int)bufferOffsetInBytes, new Span<byte>( (void*)source, (int)sizeInBytes ) );
+			UploadBuffer( buffer, bufferOffsetInBytes, new Span<byte>( (void*)source, (int)sizeInBytes ) );
 		}
 	}
 
 	public void UpdateBuffer<T>( DeviceBuffer buffer, uint bufferOffsetInBytes, T source ) where T : unmanaged
-		=> Gl.UploadBuffer( buffer.Handle, (int)bufferOffsetInBytes, MemoryMarshal.AsBytes( new Span<T>( ref source ) ) );
+		=> UploadBuffer( buffer, bufferOffsetInBytes, MemoryMarshal.AsBytes( new Span<T>( ref source ) ) );
 
 	public void UpdateBuffer<T>( DeviceBuffer buffer, uint bufferOffsetInBytes, ref T source ) where T : unmanaged
-		=> Gl.UploadBuffer( buffer.Handle, (int)bufferOffsetInBytes, MemoryMarshal.AsBytes( new Span<T>( ref source ) ) );
+		=> UploadBuffer( buffer, bufferOffsetInBytes, MemoryMarshal.AsBytes( new Span<T>( ref source ) ) );
 
 	public void UpdateBuffer<T>( DeviceBuffer buffer, uint bufferOffsetInBytes, ref T source, uint sizeInBytes ) where T : unmanaged
-		=> Gl.UploadBuffer( buffer.Handle, (int)bufferOffsetInBytes, MemoryMarshal.CreateSpan( ref Unsafe.As<T, byte>( ref source ), (int)sizeInBytes ) );
+		=> UploadBuffer( buffer, bufferOffsetInBytes, MemoryMarshal.CreateSpan( ref Unsafe.As<T, byte>( ref source ), (int)sizeInBytes ) );
 
 	public void UpdateBuffer<T>( DeviceBuffer buffer, uint bufferOffsetInBytes, T[] source ) where T : unmanaged
-		=> Gl.UploadBuffer( buffer.Handle, (int)bufferOffsetInBytes, MemoryMarshal.AsBytes( source.AsSpan() ) );
+		=> UploadBuffer( buffer, bufferOffsetInBytes, MemoryMarshal.AsBytes( source.AsSpan() ) );
 
 	public void UpdateBuffer<T>( DeviceBuffer buffer, uint bufferOffsetInBytes, ReadOnlySpan<T> source ) where T : unmanaged
-		=> Gl.UploadBuffer( buffer.Handle, (int)bufferOffsetInBytes, MemoryMarshal.AsBytes( MemoryMarshal.CreateSpan( ref MemoryMarshal.GetReference( source ), source.Length ) ) );
+		=> UploadBuffer( buffer, bufferOffsetInBytes, MemoryMarshal.AsBytes( MemoryMarshal.CreateSpan( ref MemoryMarshal.GetReference( source ), source.Length ) ) );
+
+	private static void UploadBuffer( DeviceBuffer buffer, uint bufferOffsetInBytes, Span<byte> data )
+	{
+		using var mark = WebGlMarks.Measure( "gl.uploadBuffer" );
+		Gl.UploadBuffer( buffer.Handle, (int)bufferOffsetInBytes, data );
+	}
 
 	public void UpdateTexture( Texture texture, IntPtr source, uint sizeInBytes, uint x, uint y, uint z, uint width, uint height, uint depth, uint mipLevel, uint arrayLayer )
 	{
@@ -118,6 +124,7 @@ public class GraphicsDevice : IDisposable
 				(swizzled[index], swizzled[index + 2]) = (swizzled[index + 2], swizzled[index]);
 			pixels = swizzled;
 		}
+		using var mark = WebGlMarks.Measure( "gl.uploadTexture" );
 		Gl.UploadTexture( texture.Handle, (int)mipLevel, (int)x, (int)y, (int)width, (int)height, format, type, pixels );
 	}
 

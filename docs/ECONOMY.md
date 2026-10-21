@@ -363,7 +363,8 @@ tests compare saves before/after load and after identical continuations byte for
   OpenTPW opens imported parks on load (the original open state is not decoded).
 - `IEconomyObjectCatalog` / `EconomyObjectInfo` (rides/objects slice may supply its own catalogue);
   `ParkEconomy.TryBuild(infoId)` returns the instance id the placed object should keep;
-  `RegisterExisting` for imported/fixed items; `SetObjectOpen`, `Sell`, `TryBuyUpgrade`,
+  `RegisterExisting` for imported/fixed items (also for the fixed items made in play, an arrival vehicle at its
+  first trip and the finale's End: `Level.BindFixedItemMadeInPlay`); `SetObjectOpen`, `Sell`, `TryBuyUpgrade`,
   `TryBuyCells(CellPurchase, count)` for batches of paths, queues, tracks and land;
   `TrySpendCell(CellPurchase)` charges one path/queue cell when it is written, refused only
   when balance − cost < 0 (`SetCellType` `0x82ac4`, PATH-plan §3.2); `RefundQueueCell(ride)`

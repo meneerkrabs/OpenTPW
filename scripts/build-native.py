@@ -4,7 +4,9 @@
 Veldrid.SPIRV 1.0.14, Veldrid.SDL2 4.8.0 and ImGui.NET 1.87.2 only carry win-x64/x86,
 linux-x64 and Intel/universal macOS binaries. This script builds the *same pinned
 source revisions* for the remaining release targets and writes them, under the file
-names the managed loaders probe, to native/<rid>/:
+names the managed loaders probe, to native/<rid>/. It also builds SDL2 for win-x64 and
+win-x86: Veldrid.SDL2 4.8.0 carries SDL 2.0.8 there, whose WASAPI output drops audio
+on current Windows (issue #754).
 
     veldrid-spirv  Veldrid.SPIRV v1.0.14 (shaderc/SPIRV-Cross from its known_good.json)
     cimgui         ImGui.NET-nativebuild v1.87.1 (Dear ImGui 1.87)
@@ -15,6 +17,7 @@ architecture and ABI-export checks read the produced binary. It needs git, cmake
 a C/C++ toolchain and Python 3; it installs nothing and does not run .NET.
 
     python3 scripts/build-native.py --rid osx-arm64 veldrid-spirv sdl2
+    py scripts/build-native.py --rid win-x64 sdl2
 """
 
 from __future__ import annotations
@@ -174,6 +177,27 @@ def binary_arch(path: pathlib.Path) -> str:
     return "unknown"
 
 
+def pinned_version(library: str) -> tuple[int, int, int]:
+    """The release version of a pinned source tag, for example (2, 32, 10) for release-2.32.10."""
+    tag = SOURCES[library][1]
+    parts = tag.rsplit("-", 1)[-1].lstrip("v").split(".")
+    if len(parts) != 3 or not all(part.isdigit() for part in parts):
+        raise ValueError(f"{library} tag {tag} is not a release version")
+    return tuple(int(part) for part in parts)
+
+
+def pe_file_version(data: bytes) -> tuple[int, int, int, int] | None:
+    """FileVersion from a PE's VS_FIXEDFILEINFO (the version Explorer and VersionInfo show), or None without one."""
+    key = data.find("VS_VERSION_INFO".encode("utf-16-le"))
+    if key < 0:
+        return None
+    signature = data.find(struct.pack("<I", 0xFEEF04BD), key)
+    if signature < 0 or signature + 16 > len(data):
+        return None
+    major_minor, build_revision = struct.unpack_from("<II", data, signature + 8)
+    return major_minor >> 16, major_minor & 0xFFFF, build_revision >> 16, build_revision & 0xFFFF
+
+
 def pe_exports(data: bytes) -> set[str]:
     pe = struct.unpack_from("<I", data, 0x3C)[0]
     optional = pe + 24
@@ -215,6 +239,10 @@ def verify(library: str, path: pathlib.Path, system: str, arch: str) -> None:
     missing = [symbol for symbol in EXPORTS[library] if symbol not in exported_symbols(path, system)]
     if missing:
         sys.exit(f"{path} lacks the managed ABI exports {missing}")
+    if library == "sdl2" and system == "windows":
+        version = pe_file_version(path.read_bytes())
+        if version is None or version[:3] != pinned_version(library):
+            sys.exit(f"{path} has FileVersion {version}, expected {pinned_version(library)}")
 
 
 def build_library(library: str, rid: str, cache: pathlib.Path, jobs: int) -> pathlib.Path:

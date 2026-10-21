@@ -199,7 +199,7 @@ public partial class Level
 		// The arrival update sends the level's bus, seaplane or Ferry (tp.exe 0x004CF3E0); a Theme Park Inc world keeps the vehicle-less step-off.
 		if ( !GameEditions.IsThemeParkInc && ArrivalVehicles.Available( Objects.Catalog ) )
 		{
-			Guests.ArrivalVehicles = new ArrivalVehicles( Objects );
+			Guests.ArrivalVehicles = new ArrivalVehicles( Objects, BindFixedItemMadeInPlay );
 		}
 	}
 
@@ -1699,6 +1699,21 @@ public partial class Level
 		if ( instance is not int id || !park.Economy.TryGetObject( id, out _ ) )
 			return null;
 		return park.Economy.Sell( id );
+	}
+
+	/// <summary>
+	/// Gives a fixed item the game makes while the park is played its uncharged economy record, as the park's start does for the fixed items already standing
+	/// (<see cref="ConnectObjectsToEconomy"/>): an arrival vehicle at its first trip and the research finale's End. The original builds them with the common object constructor,
+	/// which counts the type and stamps its first-purchase turn, and saves an attraction record for each (the Bus, Seaplane and Ferry of every shipped TPWS). Nothing is charged: the
+	/// constructor debits an object's price, and every fixed item's is 0. An object already bound, or one the economy catalogue does not know, is left as it is.
+	/// </summary>
+	// [BIN:TPW-EXE:0x004DB690,0x004DB6CA object constructor] the type's record takes the turn at +0x1C while it is 0 and counts the object at +0x18, for every object it constructs
+	// [BIN:TPW-EXE:0x004DB4E2 object constructor] the price debit (0x4D01F0) of the type's price (+0x1B8): Upgrades[0].CostOfUpgrade, which every fixed item's file sets to 0
+	private void BindFixedItemMadeInPlay( OriginalObject item )
+	{
+		if ( Park == null || economyInstances.ContainsKey( item ) || !Park.Economy.Catalog.TryGet( item.Entry.InfoId, out _ ) )
+			return;
+		LinkEconomy( item, Park.Economy.RegisterExisting( item.Entry.InfoId ).Id );
 	}
 
 	private void LinkEconomy( OriginalObject item, int instance )

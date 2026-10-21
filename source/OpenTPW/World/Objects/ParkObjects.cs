@@ -169,6 +169,8 @@ public sealed class ParkObjects
 	/// occupancy rules do not apply to it and this one does, besides a cell another object already holds (the ride's own station tiles). Null: they are ordinary object cells.
 	/// </summary>
 	public Func<int, int, bool>? AddOnCellRule { get; set; }
+	/// <summary>Land and secondary-layer gate for the beyond-endpoint cell, before its object-mode rule.</summary>
+	public Func<int, int, bool>? TrackEndCellRule { get; set; }
 	/// <summary>
 	/// [EXT:pools-changing-room] An extra placement rule of the host, asked last with the entry, anchor and rotation: a refusal it answers is the placement's result, null has no opinion
 	/// (the level: a changing room needs pool water beside it, <see cref="PoolChangingRooms.PlacementRule"/>).
@@ -271,8 +273,16 @@ public sealed class ParkObjects
 			if ( cell.CellType != ObjectShapeSymbols.TypeTrackEnd )
 				continue;
 			var direction = GuestPathGrid.LinkDirection( ObjectFootprint.RotateDirectionByte( cell.Direction, rotation ) );
-			if ( direction < 0 || x + GuestPathGrid.Directions[direction].DX is var bx && y + GuestPathGrid.Directions[direction].DY is var by && (bx < 0 || by < 0 || bx >= Grid.Width || by >= Grid.Height) )
+			if ( direction < 0 ) return OriginalPlacementResult.OutsideTerrain;
+			var bx = x + GuestPathGrid.Directions[direction].DX;
+			var by = y + GuestPathGrid.Directions[direction].DY;
+			if ( bx < 0 || by < 0 || bx >= Grid.Width || by >= Grid.Height )
 				return OriginalPlacementResult.OutsideTerrain;
+			// [BIN:TPW-EXE:0x5295D7,0x5295D9] station endpoints use object mode4, not the node tool's same-owner marker exemption.
+			if ( TrackEndCellRule?.Invoke( bx, by ) == false ) return OriginalPlacementResult.Occupied;
+			var beyond = CheckObjectCell( entry, bx, by, overwritten );
+			if ( beyond != OriginalPlacementResult.Allowed ) return beyond;
+			if ( PathAt?.Invoke( bx, by ) == ObjectPathCell.Path && !paths.Contains( (bx, by) ) ) paths.Add( (bx, by) );
 		}
 		return OriginalPlacementResult.Allowed;
 	}

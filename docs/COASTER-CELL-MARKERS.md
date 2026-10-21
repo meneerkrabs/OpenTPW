@@ -1,0 +1,26 @@
+# Coaster cell markers (RIDES-011 bounded slice)
+
+The station's rotated `<` and `>` endpoints require a beyond cell, tested by the object-mode rule before mutation. `D` has direction zero: the native neighbour routine returns no cell, so it is refused in every rotation. The existing `+` and `#` add-on writers remain unchanged.
+
+A live coaster binding reserves its beyond-station cells and non-pylonless node cells as primary type21 with the station owner word. The secondary node token is represented by a derived live node reference in that cell, not written into kart/water mesh metadata. Construction publishes the new node; deletion republishes the first surviving stack node. Stacks release only their final node; station reservations survive `CoasterTrack.Clear`. Full `CoasterWorld.Remove`, including runtime Stop and stopped-snapshot teardown, releases the entire binding. The binding attaches after footprint typing, and on resume only after the secondary track layer has restored. It adds no serialized fields or native pointers. Initial rebinding uses the first live stack node, and immutable host record replacement follows the old token’s stack slot; these are host representation choices, not a recreation of native model-pointer identity. Reconstructing a token for an already matching saved marker does not stamp the map.
+
+## Native evidence and preview priority
+
+- Station beyond-cell validation: `0x5295D7..0x5295D9` invokes mode4, not node mode15/16. Commit then writes type21 and selected owner (`0x5295F7..0x52963F`).
+- Both node tool calls are single-cell (`0x5240D5`, `0x5242F1`); `0x53628C` sets both first and last context flags. A mode15 preview therefore accepts primary type21 even with another owner through the equal-type branch (`0x535AFB`). Mode16 accepts its equal type22; type21 in mode16 instead requires the selected owner.
+- The earlier special case (`0x53578E..0x5357C4`) accepts mode15's same-owner marker21 with bit0x100 before unowned and secondary checks. This priority is intentional, not an unconditional early-owner exemption.
+- Outside that special case, the unowned and secondary track rejection precede first/last acceptance. Empty0 and a path1 without flag0x20 pass; water2 is not empty land.
+- Creation parameter0x10 maps to node flag0x400 and the writer's marker flag0x100 (`0x4343B3`, `0x434401`). Stack republish passes zero (`0x444EC6`).
+- The stack count decides last removal versus republish (`0x444EC3`, `0x444EE7`). Ordinary deletion refuses station descriptors; full teardown does not (`0x445008`, `0x445129`, `0x43EAF0`). Primary removal clears the payload (`0x536BBB`); an empty secondary layer needs no additional mutation.
+
+## Explicit host adaptations and residual scope
+
+Preview acceptance is not a claim of native commit parity. Existing host geometry/stack checks still mark and retain geometrically invalid pylons, including a pylon overlapping another coaster. A defensive binding never claims that other owner's marker for the invalid node and never deletes foreign secondary tracks. This differs from the native unconditional commit writer. Cleanup additionally requires the same owner, type and a private generation lease; unrelated type writes and a new binding invalidate an old lease, even when an owner word is reused. The native clear helper itself has no direct owner check.
+
+The host request represents an independent single-cell preview, not the native sticky failure globals or a whole dragged multi-cell tool operation. Global failure aggregation and its ancillary side effects are not recreated. Malformed secondary parent references refuse host registration. The `Track.Clear` command is a host operation: retaining its station nodes is not claimed to reproduce an identified native one-click command.
+
+Synthetic tests cover preview priorities, foreign invalid geometry without ownership theft, secondary precedence, stacks, moves, clear versus teardown, same-owner replacement, restored derived tokens, endpoint rotations/bounds and directionless D. Written tests are not evidence of execution: this slice still requires exact-head C# CI and independent review; no browser or original-game execution has been performed.
+
+Token identity is a live host reference, not a native pointer. Move-cancel restores can clone several immutable node records at once; identifying an added token in that case may select another live member of the same stack. Occupancy and lifetime readers rely on the cell's owner/count, not on exact token identity. This remains an explicit host adaptation, not native pointer-fidelity evidence.
+
+The asset-free Level fixture additionally exercises actual SetupCoasters/ConnectObjectsToGuests placement registration and the RestoreCoastersSnapshot → RestoreTracksSnapshot → BindCoasterCellsAfterLoad sequence. The secondary restore helper receives a null payload (no kart/water controllers); this tests helper compatibility, not restoration of a populated secondary map or a runtime regression guard on ApplyResumeSnapshot ordering. Production ordering is checked statically. It does not execute the complete disk-load pipeline or render a frame. These C# tests have been authored and statically reviewed only, not executed locally.

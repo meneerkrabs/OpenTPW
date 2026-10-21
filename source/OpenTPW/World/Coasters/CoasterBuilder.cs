@@ -152,7 +152,7 @@ public sealed class CoasterBuilder
 		if ( Track.IsChainStart( x, y ) && !Track.IsClosed && (!Track.IsComplete || Track.IsCut) )
 			return CloseCircuit();
 		var result = Check( x, y );
-		if ( result is CoasterPlaceResult.OutsideMap or CoasterPlaceResult.NotEditable or CoasterPlaceResult.NoLoopPylon )
+		if ( result is CoasterPlaceResult.OutsideMap or CoasterPlaceResult.NotEditable or CoasterPlaceResult.NoLoopPylon or CoasterPlaceResult.CellOccupied )
 			return result;
 		// [BIN:TPW-EXE:0x435020 place debit] the PC coaster click path (0x524960 → 0x4419b0 → 0x435020) reads the balance (0x6ad810) and ignores it, then debits ftol(cost) through 0x4d01f0 unless a layout replays (0x785a2c, the replay word set by 0x404140, always 0 here; "money off" is the bank's withdrawals flag +0x114 inside 0x4d01f0): there is no balance comparison on the path, so nothing here refuses a pylon for money
 		Spend( CoasterTrack.Truncate( PreviewCost( x, y ) ), force: true );
@@ -221,6 +221,7 @@ public sealed class CoasterBuilder
 		if ( x < 0 || y < 0 || x >= Site.Width || y >= Site.Height )
 			return CoasterPlaceResult.OutsideMap;
 		var result = Track.CheckPlacement( Site, Ride.World, Ride, x, y, node.LoopPylon, moving: index );
+		if ( result == CoasterPlaceResult.CellOccupied ) return result;
 		var stack = Ride.World.PylonsAt( x, y ).Count( pylon => !ReferenceEquals( pylon.Node, node ) );
 		Settle( index, () => Track.Relocate( index, x, y, stack, null ) );
 		if ( Track.IsComplete )
@@ -485,6 +486,7 @@ public sealed class CoasterBuilder
 		if ( x < 0 || y < 0 || x >= Site.Width || y >= Site.Height )
 			return CoasterPlaceResult.OutsideMap;
 		var result = Track.CheckPlacement( Site, Ride.World, Ride, x, y, node.LoopPylon, moving: edit.Index );
+		if ( result == CoasterPlaceResult.CellOccupied ) return result;
 		var stack = Ride.World.PylonsAt( x, y ).Count( pylon => !ReferenceEquals( pylon.Node, node ) );
 		// back on the cell it was picked up from, the node takes its old place in the stack again
 		int? restore = (x, y) == (edit.Start.X, edit.Start.Y) ? edit.Start.StackIndex : null;

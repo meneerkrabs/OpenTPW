@@ -141,17 +141,13 @@ internal sealed partial class GameFlow
 		LoadProfile.Resume();
 		build.Scene.Resume();
 		bool OverBudget() => Stopwatch.GetElapsedTime( started ).TotalMilliseconds >= ParkBuildBudgetMilliseconds;
-		// whether this frame has run a step already: a preparation step that asks for a frame of its own (see PrepareEntry) ends the frame only after one
-		var stepped = false;
 		try
 		{
 			while ( !build.Constructed && !OverBudget() )
 			{
-				var steppedBefore = stepped;
 				build.Constructed = !build.Level.Step();
-				stepped = true;
-				// the next construction step is a long one: it starts a frame of its own (docs/BROWSER-PERFORMANCE.md, "Build steps")
-				if ( !build.Constructed && build.Level.NextStepIsLong && steppedBefore )
+				// the step just run announced that the next one is long: it starts a frame of its own (docs/BROWSER-PERFORMANCE.md, "Build steps")
+				if ( !build.Constructed && build.Level.NextStepIsLong )
 					break;
 			}
 		}
@@ -179,8 +175,7 @@ internal sealed partial class GameFlow
 			while ( !OverBudget() && build.Preparation != null )
 			{
 				bool more;
-				var steppedBefore = stepped;
-				try { more = build.Preparation.MoveNext(); build.PreparationStepped |= more; stepped = true; }
+				try { more = build.Preparation.MoveNext(); build.PreparationStepped |= more; }
 				catch ( Exception error ) when ( error is IOException or InvalidDataException or UnauthorizedAccessException or InvalidOperationException
 					or NotSupportedException or ArgumentException )
 				{
@@ -194,8 +189,8 @@ internal sealed partial class GameFlow
 					// entering is the heaviest step of all (the snapshot, the advisor, the first update): after preparation work it gets a frame of its own
 					preparedNow = build.PreparationStepped;
 				}
-				// false: the step that follows is a long one and starts a frame of its own (docs/BROWSER-PERFORMANCE.md, "Build steps")
-				else if ( !build.Preparation.Current && steppedBefore )
+				// false: the step just run announced that the next one is long, which starts a frame of its own (docs/BROWSER-PERFORMANCE.md, "Build steps")
+				else if ( !build.Preparation.Current )
 					break;
 			}
 		}
@@ -243,8 +238,8 @@ internal sealed partial class GameFlow
 	}
 
 	/// <summary>
-	/// The steps that make ready what entering the park would do whole: see <see cref="ParkBuild.Preparation"/>. A step that returns false asks
-	/// for the next one to start a frame of its own, because it is long (<see cref="PumpParkBuild"/>).
+	/// The steps that make ready what entering the park would do whole: see <see cref="ParkBuild.Preparation"/>. A step that returns false did its
+	/// work and announces that the next one is long: the frame ends after it, and the long step starts the next frame (<see cref="PumpParkBuild"/>).
 	/// </summary>
 	private IEnumerable<bool> PrepareEntry( ParkBuild build )
 	{
@@ -319,6 +314,7 @@ internal sealed partial class GameFlow
 	/// <summary>The advisor's and the first restart snapshot's preparation. None for a park without the automatic advisor and a restart snapshot.</summary>
 	private IEnumerable<bool> PrepareAdvisorAndSnapshot( ParkBuild build )
 	{
+		var snapshot = build.Original && build.Visit == null && TakesRestartSnapshot( build.Level );
 		// the automatic advisor EnterLevel creates and whose first line it says: its settings, its shipped tables and what its presentation reads (AdvisorEntryPreparation)
 		if ( AutomaticAdvisorEnabled && build.Original && build.Visit == null && !advisorUnavailable && !build.Level.IsThemeParkIncSlice )
 		{
@@ -336,14 +332,16 @@ internal sealed partial class GameFlow
 				_ = AdvisorCostumeTable.Table;
 			}
 			catch ( Exception ) { /* only a head start: the first line meets the same failure and handles it as before */ }
-			yield return true;
-			foreach ( var step in AdvisorEntryPreparation.PresentationSteps( FileSystem, build.Level.LevelName, globalRig: Advisor?.Presentation == null ) )
+			var globalRig = Advisor?.Presentation == null;
+			// false: the presentation's steps start with the advisor shader's program, a long step
+			yield return !globalRig;
+			// the last of them announces the warm-up of the economy capture, whose first step is a long one
+			foreach ( var step in snapshot ? EndingBeforeLong( AdvisorEntryPreparation.PresentationSteps( FileSystem, build.Level.LevelName, globalRig ) )
+				: AdvisorEntryPreparation.PresentationSteps( FileSystem, build.Level.LevelName, globalRig ) )
 				yield return step;
 		}
-		if ( !(build.Original && build.Visit == null && TakesRestartSnapshot( build.Level )) )
+		if ( !snapshot )
 			yield break;
-		// the first capture of the economy (the warm-up's first step) is a long one
-		yield return false;
 		foreach ( var step in build.Level.WarmResumeCaptureSteps() )
 			yield return step;
 		foreach ( var step in ParkResumeJson.WarmupSteps() )
@@ -353,6 +351,20 @@ internal sealed partial class GameFlow
 			yield return true;
 		foreach ( var step in build.Level.PrepareAutosaveAssets() )
 			yield return step;
+	}
+
+	/// <summary>The steps of <paramref name="steps"/>, the last one returning false: what follows them is a long step (<see cref="PumpParkBuild"/>).</summary>
+	private static IEnumerable<bool> EndingBeforeLong( IEnumerable<bool> steps )
+	{
+		bool? held = null;
+		foreach ( var step in steps )
+		{
+			if ( held is { } previous )
+				yield return previous;
+			held = step;
+		}
+		if ( held != null )
+			yield return false;
 	}
 
 	/// <summary>Drops what <see cref="PrepareEntry"/> read for the advisor and no advisor took.</summary>

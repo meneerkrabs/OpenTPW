@@ -91,14 +91,14 @@ internal static class AdvisorEntryPreparation
 
 	/// <summary>
 	/// The steps that read what the advisor's first line in <paramref name="level"/> reads: the global model (when no presentation exists yet), the level's model,
-	/// the clip lengths of both and the theme costume. A false value asks for the next step, a long one, to start a frame of its own (GameFlow's park build).
+	/// the clip lengths of both and the theme costume. A false value announces that the next step is a long one, which then starts a frame of its own (GameFlow's
+	/// park build). With <paramref name="globalRig"/> the first step, the advisor shader's program, is a long one too: the caller's step before announces it.
 	/// </summary>
 	internal static IEnumerable<bool> PresentationSteps( BaseFileSystem fileSystem, string level, bool globalRig )
 	{
 		if ( globalRig )
 		{
 			// the advisor shader's program, then the model, each a long step in a frame of its own; the shader is only a head start
-			yield return false;
 			try { AdvisorRig.WarmShader(); }
 			catch ( Exception exception ) when ( exception is not OutOfMemoryException ) { }
 			yield return false;

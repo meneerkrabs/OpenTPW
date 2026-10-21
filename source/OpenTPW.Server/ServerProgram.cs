@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Http.Features;
 using OpenTPW.Online;
 using OpenTPW.Online.Api;
 using OpenTPW.Online.Chat;
+using OpenTPW.Online.Coop;
 using OpenTPW.Online.Moderation;
 using OpenTPW.Online.Packages;
 
@@ -20,8 +21,9 @@ public static class ServerProgram
 	/// 2: registration may answer 202 with a two-step setup (docs/ONLINE.md, "Two-step login"). 4: the chat relays movement in park rooms and
 	/// answers each room's first movement with where everyone stands, which a visit's online players rely on (docs/ONLINE.md, "Players in a visited park").
 	/// 5: movements carry a mode (<see cref="ChatMoveMode"/>, <see cref="ChatProtocol.MoveModesVersion"/>), so a player riding a ride is hidden.
+	/// 6: the co-op socket of shared parks (<see cref="CoopProtocol"/>), their open list and join snapshots.
 	/// </summary>
-	public const int ProtocolVersion = 5;
+	public const int ProtocolVersion = CoopProtocol.Version;
 	private const string WebsitePolicy = "website";
 	/// <summary>File in the data folder that asks the host to update the server (deploy/opentpw-deploy.path).</summary>
 	public const string DeployRequestFile = ".deploy-requested";
@@ -61,12 +63,14 @@ public static class ServerProgram
 		var chatParks = new ChatParkDirectory( options.DataDirectory );
 		var cities = new CityDirectory( options.DataDirectory );
 		var hub = new ChatHub( store, options, filter, chatParks, cities );
+		var coop = new CoopHub( store, options, filter, new CoopStore( options.DataDirectory ) );
 		builder.Services.AddSingleton( options );
 		builder.Services.AddSingleton( store );
 		builder.Services.AddSingleton( chatParks );
 		builder.Services.AddSingleton( cities );
 		builder.Services.AddSingleton( filter );
 		builder.Services.AddSingleton( hub );
+		builder.Services.AddSingleton( coop );
 		// [EXT:ONLINE-057] the project website reads the public news and website park list from the browser
 		builder.Services.AddCors( cors => cors.AddPolicy( WebsitePolicy, policy => policy.WithOrigins( options.WebsiteOrigins.ToArray() ).WithMethods( "GET" ) ) );
 		builder.Services.AddRateLimiter( limiter =>
@@ -100,9 +104,45 @@ public static class ServerProgram
 		// [EXT:online-email] account e-mails go through Resend when a key is set; without one, e-mail is off
 		emailSender ??= string.IsNullOrWhiteSpace( options.ResendApiKey ) || string.IsNullOrWhiteSpace( options.EmailFrom )
 			? null : new ResendEmailSender( options.ResendApiKey, options.EmailFrom, options.EmailReplyTo );
-		Map( app, options, store, hub, chatParks, cities, filter, emailSender );
+		Map( app, options, store, hub, coop, chatParks, cities, filter, emailSender );
 		app.Lifetime.ApplicationStopping.Register( hub.Restarting );
+		app.Lifetime.ApplicationStopping.Register( coop.Restarting );
+		coop.Warn = message => app.Logger.LogWarning( "{Message}", message );
+		// [EXT:online-coop-session] ends the shared parks whose host stayed away, once a minute
+		app.Lifetime.ApplicationStarted.Register( () => _ = Task.Run( async () =>
+		{
+			using var timer = new PeriodicTimer( TimeSpan.FromMinutes( 1 ) );
+			try
+			{
+				while ( await timer.WaitForNextTickAsync( app.Lifetime.ApplicationStopping ) )
+				{
+					// one failed pass (a full disk while a login's expiry is stored) must not end the sweeps
+					try
+					{
+						coop.Sweep( DateTimeOffset.UtcNow );
+						// a login that ended elsewhere (a logout, a ban) ends its co-op connection
+						coop.CheckLogins();
+					}
+					catch ( Exception exception ) when ( exception is IOException or UnauthorizedAccessException )
+					{
+						app.Logger.LogWarning( "The co-op sweep failed: {Reason}", exception.Message );
+					}
+				}
+			}
+			catch ( OperationCanceledException ) { }
+		} ) );
 		return app;
+	}
+
+	/// <summary>Whether <paramref name="range"/> resumes a download: one range from a byte after the first on (<c>bytes=N-</c>, N &gt; 0); a suffix range reads the whole file.</summary>
+	public static bool ResumesDownload( string range )
+	{
+		const string Prefix = "bytes=";
+		if ( !range.StartsWith( Prefix, StringComparison.Ordinal ) || range.Contains( ',' ) )
+			return false;
+		var dash = range.IndexOf( '-', Prefix.Length );
+		return dash > Prefix.Length && long.TryParse( range.AsSpan( Prefix.Length, dash - Prefix.Length ), System.Globalization.NumberStyles.None,
+			System.Globalization.CultureInfo.InvariantCulture, out var start ) && start > 0;
 	}
 
 	/// <summary>Typed handler so minimal APIs write the returned result (a bare HttpContext lambda would bind as RequestDelegate).</summary>
@@ -245,7 +285,8 @@ public static class ServerProgram
 			entry.Park.Name, entry.Park.Visits, entry.Park.Votes, entry.Park.PublishedUtc, entry.Rank, entry.Park.HighestRank ) ).ToList() );
 	}
 
-	private static void Map( WebApplication app, ServerOptions options, ServerStore store, ChatHub hub, ChatParkDirectory chatParks, CityDirectory cities, WordFilter filter, IEmailSender? emailSender )
+	private static void Map( WebApplication app, ServerOptions options, ServerStore store, ChatHub hub, CoopHub coop, ChatParkDirectory chatParks, CityDirectory cities, WordFilter filter,
+		IEmailSender? emailSender )
 	{
 		app.MapGet( BuildInfoRoute, () => Ok( ServerBuildInfo.Current ) );
 		app.MapGet( ApiRoutes.Server, () => Ok( new ServerInfo( options.ServerName, Version, ProtocolVersion, options.Message, options.AllowRegistration, !filter.IsEmpty,
@@ -391,6 +432,7 @@ public static class ServerProgram
 			var request = await ReadJsonAsync<RecoveryConfirmation>( context.Request );
 			var (account, notice) = store.ConfirmRecovery( request.NameOrEmail ?? "", request.Code ?? "", request.Password ?? "", request.ResetTwoStep, request.Language );
 			hub.Disconnect( account.Key );
+			coop.Disconnect( account.Key );
 			if ( emailSender != null )
 			{
 				try { await emailSender.SendAsync( notice, context.RequestAborted ); }
@@ -405,6 +447,10 @@ public static class ServerProgram
 			var credentials = await ReadJsonAsync<Credentials>( context.Request );
 			if ( !string.Equals( OnlineText.NormalizeName( credentials.Name ?? "" ), user!.Key, StringComparison.Ordinal ) )
 				throw new StoreException( 400, "Name the account you are deleting." );
+			// the account leaves its shared park (ending one it hosts) before its name is free for someone else
+			if ( !PasswordHasher.Verify( credentials.Password ?? "", user.Salt, user.Hash, user.Iterations ) )
+				throw new StoreException( 401, "Invalid username or password." );
+			coop.RemoveAccount( user.Key );
 			store.DeleteAccount( user, credentials.Password ?? "" );
 			hub.Disconnect( user.Key );
 			return Results.NoContent();
@@ -580,5 +626,120 @@ public static class ServerProgram
 					Interlocked.Decrement( ref authenticating );
 			}
 		} );
+
+		MapCoop( app, options, store, coop );
+	}
+
+	/// <summary>
+	/// [EXT:online-coop-session] The co-op socket, the open list of shared parks and their join snapshots ([EXT:online-coop-snapshot-join]); docs/ONLINE.md,
+	/// "Shared parks".
+	/// </summary>
+	private static void MapCoop( WebApplication app, ServerOptions options, ServerStore store, CoopHub coop )
+	{
+		app.Map( ApiRoutes.Coop, async ( HttpContext context ) =>
+		{
+			if ( !context.WebSockets.IsWebSocketRequest )
+			{
+				context.Response.StatusCode = StatusCodes.Status400BadRequest;
+				return;
+			}
+			var token = Token( context );
+			var user = token == null ? null : store.Authenticate( token );
+			if ( token != null && user == null )
+			{
+				context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+				return;
+			}
+			// the slot counts a socket from before it authenticates, so unauthenticated sockets are bounded too
+			if ( !coop.TryReserveConnection() )
+			{
+				context.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
+				return;
+			}
+			try
+			{
+				// its own keep-alive: a dead peer is noticed within 45 seconds
+				using var socket = await context.WebSockets.AcceptWebSocketAsync( new WebSocketAcceptContext
+				{
+					KeepAliveInterval = TimeSpan.FromSeconds( 15 ),
+					KeepAliveTimeout = TimeSpan.FromSeconds( 30 )
+				} );
+				if ( user == null )
+					(user, token) = await AuthenticateFirstFrameAsync( socket, store, context.RequestAborted );
+				if ( user == null || token == null )
+				{
+					await ChatHub.CloseAsync( socket, System.Net.WebSockets.WebSocketCloseStatus.PolicyViolation, "unauthorized" );
+					if ( socket.State != System.Net.WebSockets.WebSocketState.Closed )
+						context.Abort();
+					return;
+				}
+				await coop.RunAsync( socket, user, token, context.Abort, context.RequestAborted );
+			}
+			finally
+			{
+				coop.ReleaseConnection();
+			}
+		} );
+
+		app.MapGet( ApiRoutes.CoopSessions, Handler( context => Guarded( context, store, true, _ =>
+			Task.FromResult( Ok( new CoopSessionList( coop.Listed() ) ) ) ) ) );
+
+		app.MapPut( ApiRoutes.Coop + "/{id}/snapshot", ( HttpContext context, string id ) => Guarded( context, store, true, async user =>
+		{
+			if ( !CoopProtocol.IsSessionId( id ) )
+				throw new StoreException( StatusCodes.Status404NotFound, "No such shared park." );
+			if ( context.Request.ContentLength > options.MaximumCoopSnapshotBytes )
+				throw new StoreException( StatusCodes.Status413PayloadTooLarge, "The snapshot is too large." );
+			// authenticated, the host's and with room: only now may the body be larger than the server's default limit
+			var upload = coop.BeginUpload( user!, id );
+			string? temporary = null;
+			string? sha256 = null;
+			try
+			{
+				var feature = context.Features.Get<IHttpMaxRequestBodySizeFeature>();
+				if ( feature is { IsReadOnly: false } )
+					feature.MaxRequestBodySize = options.MaximumCoopSnapshotBytes + 1;
+				long bytes;
+				try
+				{
+					(temporary, sha256, bytes) = await coop.Store.ReceiveAsync( id, context.Request.Body, options.MaximumCoopSnapshotBytes, context.RequestAborted );
+				}
+				catch ( BadHttpRequestException )
+				{
+					throw new StoreException( StatusCodes.Status413PayloadTooLarge, "The snapshot is too large." );
+				}
+				coop.FinishUpload( upload, temporary, sha256 );
+				temporary = null;
+				return Ok( new CoopSnapshotStored( sha256!, bytes ) );
+			}
+			finally
+			{
+				// once: a finished upload ignores this
+				coop.FinishUpload( upload, null, null );
+				if ( temporary != null && File.Exists( temporary ) )
+					File.Delete( temporary );
+			}
+		} ) ).RequireRateLimiting( "upload" );
+
+		app.MapGet( ApiRoutes.Coop + "/{id}/snapshot/{sha256}", ( HttpContext context, string id, string sha256 ) => Guarded( context, store, true, user =>
+		{
+			// a download counts against the member's downloads unless it resumes one: a single range from a later byte on
+			var counts = !ResumesDownload( context.Request.Headers.Range.ToString() );
+			if ( !CoopProtocol.IsSessionId( id ) || !CoopProtocol.IsSha256( sha256 ) || coop.FindSnapshot( user!, id, sha256, counts ) is not { } path )
+				return Task.FromResult( Error( StatusCodes.Status404NotFound, "No such snapshot." ) );
+			FileStream file;
+			try
+			{
+				// a newer snapshot may replace this one meanwhile: the open file stays readable until it is sent
+				file = new FileStream( path, FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete, 81920, FileOptions.Asynchronous );
+			}
+			catch ( Exception exception ) when ( exception is FileNotFoundException or DirectoryNotFoundException )
+			{
+				return Task.FromResult( Error( StatusCodes.Status404NotFound, "No such snapshot." ) );
+			}
+			context.Response.Headers["X-Content-SHA256"] = sha256;
+			return Task.FromResult( Results.Stream( file, "application/octet-stream", entityTag: new Microsoft.Net.Http.Headers.EntityTagHeaderValue( $"\"{sha256}\"" ),
+				enableRangeProcessing: true ) );
+		} ) );
 	}
 }

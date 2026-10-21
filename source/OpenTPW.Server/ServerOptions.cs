@@ -71,6 +71,29 @@ public sealed class ServerOptions
 	public int MovementBurst { get; set; } = 30;
 	public int MovementsPerSecond { get; set; } = 10;
 	public int MaximumChatConnections { get; set; } = 1000;
+	/// <summary>[EXT:online-coop-session] Shared parks: co-op connections (counted before they authenticate) and live sessions the server holds.</summary>
+	public int MaximumCoopConnections { get; set; } = 1000;
+	public int MaximumCoopSessions { get; set; } = 250;
+	/// <summary>How long a co-op connection may go without a message from the server before it sends a ping (browsers never see WebSocket pings).</summary>
+	public TimeSpan CoopPingInterval { get; set; } = TimeSpan.FromSeconds( 15 );
+	/// <summary>Bytes queued for one co-op connection, and for all of them, before a slow reader is cut off (it resumes).</summary>
+	public long CoopOutboxBytes { get; set; } = 2 * 1024 * 1024;
+	public long CoopServerOutboxBytes { get; set; } = 256L * 1024 * 1024;
+	/// <summary>A co-op connection's messages and bytes a second (a two-second burst): a host's stream is far larger than a guest's requests.</summary>
+	public int CoopHostMessagesPerSecond { get; set; } = 400;
+	public int CoopHostBytesPerSecond { get; set; } = 4 * 1024 * 1024;
+	public int CoopGuestMessagesPerSecond { get; set; } = 50;
+	public int CoopGuestBytesPerSecond { get; set; } = 256 * 1024;
+	/// <summary>Per account and hour: shared parks started, joins, codes that matched no park, invitations, kicks and leaves, snapshot downloads.</summary>
+	public int CoopCreatesPerHour { get; set; } = 6;
+	public int CoopJoinsPerHour { get; set; } = 30;
+	public int CoopWrongCodesPerHour { get; set; } = 10;
+	public int CoopInvitesPerHour { get; set; } = 60;
+	public int CoopKicksPerHour { get; set; } = 60;
+	public int CoopDownloadsPerHour { get; set; } = 30;
+	/// <summary>[EXT:online-coop-snapshot-join] A join snapshot (a gzipped world save and the session's state), and all of them together.</summary>
+	public long MaximumCoopSnapshotBytes { get; set; } = 96L * 1024 * 1024;
+	public long MaximumCoopStoreBytes { get; set; } = 4L * 1024 * 1024 * 1024;
 	/// <summary>Moderation: players that cannot log in, players that cannot speak in chat, parks hidden from lists.</summary>
 	public List<string> BannedPlayers { get; set; } = new();
 	public List<string> MutedPlayers { get; set; } = new();
@@ -93,7 +116,11 @@ public sealed class ServerOptions
 		if ( PasswordIterations < 1000 || MaximumParksPerPlayer < 0 || MaximumVotesPerDay < 0 || RequestsPerMinute < 1
 			|| AuthenticationsPerMinute < 1 || UploadsPerHour < 1 || ChatBurst < 1 || ChatMessagesPerSecond < 1
 			|| PostcardRecipientsPerHour < 1 || PostcardEmailsPerAddressPerHour < 1
-			|| MovementBurst < 1 || MovementsPerSecond < 1 || SessionLifetime <= TimeSpan.Zero )
+			|| MovementBurst < 1 || MovementsPerSecond < 1 || SessionLifetime <= TimeSpan.Zero
+			|| MaximumCoopConnections < 1 || MaximumCoopSessions < 1 || CoopPingInterval <= TimeSpan.Zero || CoopOutboxBytes < 1 || CoopServerOutboxBytes < CoopOutboxBytes
+			|| CoopHostMessagesPerSecond < 1 || CoopHostBytesPerSecond < 1 || CoopGuestMessagesPerSecond < 1 || CoopGuestBytesPerSecond < 1
+			|| CoopCreatesPerHour < 1 || CoopJoinsPerHour < 1 || CoopWrongCodesPerHour < 1 || CoopInvitesPerHour < 1 || CoopKicksPerHour < 1 || CoopDownloadsPerHour < 1
+			|| MaximumCoopSnapshotBytes < 1 || MaximumCoopStoreBytes < MaximumCoopSnapshotBytes )
 			throw new InvalidOperationException( "OpenTPW server limits must be positive." );
 		if ( RequireEmail && (string.IsNullOrWhiteSpace( ResendApiKey ) || string.IsNullOrWhiteSpace( EmailFrom )) )
 			throw new InvalidOperationException( "OpenTPW:RequireEmail needs OpenTPW:ResendApiKey and OpenTPW:EmailFrom." );

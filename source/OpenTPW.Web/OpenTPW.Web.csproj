@@ -54,6 +54,7 @@
 		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/GltfSceneTests.cs" />
 		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/OnlineIntegrationTests.cs" />
 		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/OnlineServerTests.cs" />
+		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/CoopServerTests.cs" />
 		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/PostcardEmailTests.cs" />
 		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/PoolSpriteDeliveryTests.cs" />
 		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/SecurityHardeningTests.cs" />

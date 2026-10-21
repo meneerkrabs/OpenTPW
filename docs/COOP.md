@@ -8,8 +8,9 @@ phases (C1 to C7) and the comparison of the architectures is in the project note
 (`plans/coop-plan.md`); this page records what is built and the decisions it rests on.
 
 Status: the command layer (C1) is in place, and of the sessions (C2) the server, the game's link, the
-host's command stream, the level in a session and the stream's join and resync are built. The game's
-join (C2c-2) and the screens (C2d) follow, so no game starts a session yet.
+host's command stream, the level in a session, the stream's join and resync and the game's join are
+built. The join's measurements and the browser's join (C2c-2b) and the screens (C2d) follow, so no
+player starts a session yet.
 
 ## User decisions
 
@@ -65,8 +66,8 @@ order, resume after a lost connection or a restart, and the join snapshots
 `OnlineSession`): it opens, resumes and closes the socket and offers the requests and events a shared
 park needs. The host's command stream runs over it (C2b-1, below), a level takes part in a session
 through `CoopSession` (C2b-2, below), and a member joins a running session or resyncs from a join
-snapshot (C2c-1, below). The game's join (C2c-2) and the game's screens (C2d) follow; until then no
-game starts a session.
+snapshot (C2c-1, below), which the game builds and swaps in (C2c-2a, below). The join's measurements and
+the browser's join (C2c-2b) and the game's screens (C2d) follow; until then no player starts a session.
 
 ### The host's command stream (C2b-1)
 
@@ -243,7 +244,7 @@ at a cut of the host's stream and goes on from there without leaving the session
 - **The guest's session.** `CoopSession.JoinRunning` starts a guest's session without a park
   (`CoopGuestPhase.Joining`); a following guest's park that loses the stream resyncs the same way
   (`Resyncing`). It buffers the frames, downloads the capture and, at its step (once a game frame
-  after the online pump, never inside a callback), lets the game build the candidate (`ICoopJoinHost`),
+  after the online pump, never inside a callback), lets the game build the candidate over frames (`ICoopJoinHost`, below),
   checks `D` and `W` at the cut and swaps it in: the old park is detached from the session first, so
   its teardown does not end it. Then it asks the host for every frame from the first it lacks: a
   socket that dropped during the download lost frames that an idle host would never show. A guest
@@ -285,7 +286,119 @@ built or installed, and a late join through the real links, the server's snapsho
 `CoopSnapshotDownloadTests` runs the client's ranged download against a scripted server (a stall or a
 break resumed with a range, a server that ignores the range, a line that broke after its last byte,
 the length and digest checks) and the link's reading of each transfer failure. The save path's
-completeness is the game's join's to prove (C2c-2, with data): the asset-free park has no full restore.
+completeness is the game's join's to prove with the game's data: the asset-free park has no full restore
+(the native smoke below does).
+
+### The game's join (C2c-2a)
+
+`[EXT:online-coop-snapshot-join]` The game's side of a join (`coop-c2c2-plan.md`, v3): the game is the
+session's join host (`ICoopJoinHost`). It builds the host's park from a join snapshot over frames, beside
+the live game, and swaps it in.
+
+- **Entries.** `GameFlow.JoinSharedPark` joins a running session from the front end. It is refused while
+  a park is open, a join is held, a park is being started or a transition waits.
+  `GameFlow.FollowSharedPark` follows a session with the open park, which must be the host's park at the
+  session's identical start (C2b); a park that loses the stream later resyncs through the same join host.
+  The screens that call them are C2d's.
+- **The step.** The session steps once a frame, right after the online pump and before the HUD's and the
+  level's update (`GameFlow.StepCoopSession`). It waits while a park is built over frames or a transition
+  waits: there is one construction scene at a time, and a queued transition would tear the guest's park
+  down after the swap.
+- **The build** (`CoopJoinBuild`, in steps within the park build's frame budget):
+  1. It reads the save, which must hold the gate's and the staff's state.
+  2. It refuses at once when this game's simulation mods are not the host's or the park's (decision Q16).
+  3. It waits for the theme's files, loads the object catalogue in steps, and reads the balance settings
+     and the economy catalogue.
+  4. It hashes this game's asset manifest in steps (kept for the next join while the catalogue is the
+     same) and refuses at once when it differs from the host's (decision Q11): "This game's files differ
+     from the host's".
+  5. It validates the snapshot in steps and restores the save.
+  6. It builds the level over frames in the join restore mode (below), with its HUD and, when the player
+     has the automatic advisor on, a fresh advisor.
+
+  A refusal (`CoopJoinRefusedException`) ends the join, since no capture would build; any other failure
+  is a failed check (above), and so is a build that runs longer than 300 seconds.
+- **Beside the live game.** The build runs in a construction scene of its own
+  (`EntityConstructionScope`). Each step resumes it and pauses it again, so the front end, or the
+  guest's own park in a resync, stays live and untouched while the build runs.
+- **The swap** (`GameFlow.InstallJoin`), in the frame the build completes and passes the check at the
+  cut:
+  1. The build's HUD is made again if the player switched the language meanwhile.
+  2. The old park (none on a first join) is torn down without ending the session and without applying a
+     pending language.
+  3. The build's scene becomes the live one, and the level, its HUD, the advisor, the guest sounds and
+     the park's audio come in.
+  4. A resync keeps the player's camera where it was.
+
+  A swap that fails ends the session and leaves the player in the front end with the reason.
+- **The join restore mode** (`Level.BeginJoinOverFrames`). A join loads the host's live park, not a save,
+  and a load's repairs would make the guest's park differ from the host's. So it keeps the park exactly
+  as its snapshot holds it:
+  - no footprint is written again, no entrance or exit link is repaired, and no legacy queue is restored
+    (a placement made under a negative balance leaves its entrance and exit without links, which the
+    repair would lay; the footprint writer changes nothing on a live park anyway);
+  - no land is laid on the cell map (an imported park whose land walk failed has none);
+  - a built coaster that is closed (by its tool, or by the park's door) is not reopened, as a resume
+    reopens it (`coaster-resume-reopen`);
+  - a tour ride between its script's TOUR 2 and TOUR 1 gets no fresh controller;
+  - the park's name is the host's, none included: the sign's default lines are not its name;
+  - each coaster's marker binding is taken over from the cells without writing (`CoasterCellMarkers`'s
+    adoption). The cells the host's binding did not hold stay unheld and the displaced ones displaced
+    (`CoopJoinState.CoasterUnheldCells`, the join state's version 2), so the next change of the track
+    claims the same cells on every machine. A bind would claim at once, also a cell another coaster's
+    marker held when the pylon was placed and has released since;
+  - the join's session state is applied last, before the park's first frame (`Level.ApplyJoinState`), and
+    the park is a guest's from the build's first step.
+
+  Kept, with the reason: the queue routing with pool bridges (the guests' restore writes every bridge's
+  queue back), the gate's start from the park state (the script world's restore overwrites its
+  variables) and the track circuits' re-walk (every live edit ends with a walk). Settled by reading: the
+  thing pool's free list, the owner words, the bump module clock and finite floats all round-trip
+  exactly through the save.
+- **The lifecycle.** A join without a park (`GameFlow.HeldJoin`) and a resync's build hold the game's
+  one construction scene. A park start, a load, a visit or a Theme Park Inc layout ends them first ("The
+  player left the shared park."), and so does any other teardown; the front end's rebuild for a new
+  language keeps the join. A join that ends without a park shows its reason on the front end, unless the
+  player ended it.
+
+`CoopJoinSessionTests.GameFlow` runs the game's join host without the game's data: the build is the
+replay twin, staged in a scene of its own. It covers the build beside the front end and the swap, a resync
+that keeps the view, the refusals, the step waiting during a transition or a park build, a park start that
+ends a join or a resync's build first, the front end's rebuild that keeps a join, the other teardowns that
+end it, a join that ends without a park, and a failed swap. The coaster binding's adoption is tested at the
+binding level (`CoasterCellMarkerTests`): a replay twin replays the host's binding history, so a test
+through it would pass without the adoption.
+
+The native smoke, `scripts/smoke-coop-join.sh` (two processes with the game's data, silent and
+offscreen: `--coop-join-smoke host|join --coop-join-evidence <directory>`), runs the game's join for real:
+
+- **The host phase** starts Jungle as Instant Action and builds what a join must carry: two coasters by
+  the coaster tool's commands (the start has not researched them, so the stations are placed without a
+  purchase before the park is shared), staff, a pool with a lazy river, its changing room, water
+  attractions, a slide and swimmers, and an object put back by the Move tool while the balance is below
+  zero (its entrance without its link). It hosts a session over a recording transport. Before the first
+  cut it puts an employee in hand, a pending hire, a carried Move entry and the coaster tool open on a
+  coaster; before the second, the park paused with edits since its last tick, a built coaster closed and
+  a tour ride bought while paused (its script has not run, so it has no controller). A virtual member
+  joins, and later asks again with a desync, so the host takes two captures through its stream. The
+  phase checks that each cut holds what was staged and that the capture changed nothing, runs park
+  minutes at the normal and the fastest speed, and writes the frames, the captures and its final state.
+- **The join phase** is a fresh process. It starts in the front end, runs the real game loop and joins
+  through `GameFlow.JoinSharedPark` over a transport that replays the recorded host. The first capture's
+  answer names a wrong digest: it builds beside the front end, fails its check at the cut and is
+  abandoned while the front end stays. The guest asks again and gets the first capture, which builds and
+  swaps in. The guest follows the host's frames at twice the recorded pace, its stream checking the
+  host's digest at every checkpoint (80 up to the second cut). At the second cut its park's digest and
+  world hash equal the host's; it is then assigned the second capture while following, a resync over its
+  park, and follows to the end (20 more checkpoints). It ends with the host's digest, world hash, join
+  state and save, apart from the save's presentation parts (the time, the particles, the snow cover and
+  the sound seed).
+
+MUTATIONS
+
+Known limits: the guest's files and simulation mods must be the host's (the build refuses otherwise); a
+park state with a non-finite float (NaN or an infinity) cannot be captured, since the save's JSON holds
+none; a single build step can take longer than the frame budget, which C2c-2b measures.
 
 ### Measurements
 

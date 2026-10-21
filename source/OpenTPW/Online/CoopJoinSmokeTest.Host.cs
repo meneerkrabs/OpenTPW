@@ -182,11 +182,48 @@ internal sealed partial class CoopJoinSmokeTest
 		HireStaff();
 		BuildPools( used );
 		PrepareTour( used );
+		MoveUnderNegativeBalance();
 		if ( !Economy.IsParkOpen )
 			Economy.OpenPark();
 		Log.Trace( $"Co-op join smoke: Jungle with {level.Objects.Objects.Count( item => !item.IsDeleted )} objects, {coasters.Count} coasters, {Economy.Staff.Members.Count} staff, "
 			+ $"{level.Guests!.Guests.Count} guests." );
 	}
+
+	/// <summary>
+	/// An object put back by the Move tool while the balance is below zero: the laid cells' money test (tp.exe 0x534767) leaves its entrance without the link to the path in front of it,
+	/// which a load repairs and a join keeps (docs/COOP.md, "The game's join"). Before the park is shared: the balance is taken below zero and given back outside the commands.
+	/// </summary>
+	private void MoveUnderNegativeBalance()
+	{
+		var cells = level.Guests!.Grid.Cells;
+		var queued = level.Guests.Attractions.OfType<RideVisitorBridge>().Where( ride => ride.HasQueue ).Select( ride => ride.AttractionId ).ToHashSet();
+		bool FacesPath( ObjectAccessPoint point ) => point.Kind == ObjectCellKind.Entrance && cells.InBounds( point.OutsideX, point.OutsideY )
+			&& cells.RawTypeAt( point.OutsideX, point.OutsideY ) == (byte)ParkCellType.Path;
+		// the first cut's Move takes the first of these objects (StageFirstCut): this one is the last, so its cells stay as this move leaves them
+		var movable = level.Objects.Objects.Where( item => !item.IsDeleted && item.Runtime.Coaster == null && !item.Entry.IsFixedItem && level.GetEconomyInstance( item ) != null
+			&& !queued.Contains( item.Visitors.AttractionId ) ).OrderBy( item => item.Visitors.AttractionId ).ToList();
+		// not a pool's object: its swimmers would leave the water with it
+		var item = movable.Skip( 1 ).LastOrDefault( candidate => !candidate.Entry.HasQueue && PoolAttractions.KindOf( candidate.Entry ) == PoolAttractionKind.None
+			&& !PoolChangingRooms.IsChangingRoom( candidate.Entry ) && candidate.AccessPoints.Any( FacesPath ) );
+		Require( item != null, "an object with its entrance on a path, besides the one the first cut's Move takes" );
+		var (entry, x, y, rotation) = (item!.Entry, item.Placement.X, item.Placement.Y, item.Placement.Rotation);
+		Issue( new PickUpObjectCommand( item.Visitors.AttractionId ), "an object is picked up to be put back under a negative balance" );
+		var balance = Economy.Balance;
+		Economy.Ledger.Post( LedgerCategory.OtherCosts, balance + 1 );
+		var click = Level.GetClickCell( entry, x, y, rotation );
+		Issue( new PlaceObjectCommand( ParkCommandCodec.EntryKey( entry ), click.X, click.Y, rotation, Moving: true ), "the object is put back while the balance is below zero" );
+		Economy.Ledger.Post( LedgerCategory.OtherIncome, balance - Economy.Balance );
+		unlinked = level.Objects.Objects.LastOrDefault( other => !other.IsDeleted && ReferenceEquals( other.Entry, entry ) && (other.Placement.X, other.Placement.Y) == (x, y) );
+		Require( unlinked != null && UnlinkedEntrance( level ), $"{entry.DisplayName}'s entrance is left without its link, which a load would repair" );
+		Log.Trace( $"Co-op join smoke: {entry.DisplayName} put back at ({x}, {y}) under a negative balance, its entrance without its link." );
+	}
+
+	/// <summary>The object put back under a negative balance (<see cref="MoveUnderNegativeBalance"/>).</summary>
+	private OriginalObject? unlinked;
+
+	/// <summary>Whether that object's entrance still lacks its link in <paramref name="park"/>: a load's repair of a copy of its cells would lay it.</summary>
+	private bool UnlinkedEntrance( Level park ) => unlinked is { IsDeleted: false } item && park.Guests?.Grid.Cells is { } map
+		&& ObjectAccessCells.RepairMissingLinks( ParkLayoutSnapshot.RestoreCellMap( ParkLayoutSnapshot.CaptureSnapshot( map, park.Objects ) ), item.AccessPoints, item.Entry.HasQueue ) > 0;
 
 	/// <summary>A coaster station on a free site near the paths, its circuit built and completed by the coaster tool's commands (the sandbox smoke's circuit).</summary>
 	private OriginalObject BuildCoaster( HashSet<(int, int)> used )
@@ -393,6 +430,7 @@ internal sealed partial class CoopJoinSmokeTest
 		if ( park.Objects.Objects.Any( item => !item.IsDeleted && item.Runtime.UsesTour && !item.Runtime.IsStopped && item.Runtime.LiveTour == null ) ) staged.Add( "tour ride without a live tour" );
 		if ( park.Guests?.Grid.Cells is { } map && Enumerable.Range( 0, map.Width * map.Height ).Any( index => map.TypeAt( index % map.Width, index / map.Width ) == ParkCellType.PoolWater
 			&& map.FlagsAt( index % map.Width, index / map.Width ).HasFlag( ParkCellFlags.PoolRiver ) ) ) staged.Add( "pool with a river" );
+		if ( UnlinkedEntrance( park ) ) staged.Add( "entrance without its link" );
 		if ( park.PoolSlides?.Slides.Any() == true ) staged.Add( "slide" );
 		if ( park.PoolBridges?.Count > 0 ) staged.Add( "bridge" );
 		if ( park.Guests?.Guests.Any( guest => guest.IsSwimming ) == true ) staged.Add( "swimmers" );
@@ -473,8 +511,8 @@ internal sealed partial class CoopJoinSmokeTest
 		var staged = pendingStaged ?? throw new InvalidOperationException( "Native co-op join smoke test failed: the capture's cut was seen." );
 		pendingStaged = null;
 		string[] expected = number == 1
-			? new[] { "employee in hand", "pending hire", "carried Move entry", "coaster tool open", "session clock", "several coasters" }
-			: new[] { "session clock", "several coasters", "paused with edits since its last tick", "built coaster closed", "tour ride without a live tour" };
+			? new[] { "employee in hand", "pending hire", "carried Move entry", "coaster tool open", "session clock", "several coasters", "entrance without its link" }
+			: new[] { "session clock", "several coasters", "paused with edits since its last tick", "built coaster closed", "tour ride without a live tour", "entrance without its link" };
 		if ( pools )
 			expected = expected.Append( "pool with a river" ).ToArray();
 		Require( expected.All( staged.Contains ), $"cut {number} holds what was staged for it (held: {string.Join( ", ", staged )})" );

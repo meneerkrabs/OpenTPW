@@ -39,6 +39,28 @@ Save restoration is not a clip replacement and preserves valid slot history.
 Missing decoded art and invalid frame keys retain the host's defensive policy
 (MD2-901), not an unchecked native memory access.
 
+## Invalid frame consumer (MD2-901)
+
+The consumer is no longer unread. Binder `0x57A420` checks the slot pointer
+and texture object for null (`0x57A468` and `0x57A46F`). With global
+`0x8BD550` bit `0x40` set it zero-extends slot word `+2` into EAX
+(`0x57A47C`–`0x57A47E`); otherwise it selects zero. It passes that index
+to `0x575F90` at `0x57A487`. The entire accessor loads `[this+8]`, loads
+the argument, reads `[array+index*4]`, then returns. There is no frame-count
+comparison, clamp, or modulo operation. The subsequent null-result check
+at `0x57A48E` does not protect the preceding unchecked array access.
+
+The writer independently forms `[model+0x50] + slot*8` at `0x470CBB`–`0x470CC3`
+and writes frame word `+2` at `0x470CFC`, without validating the slot index.
+Malformed slots can therefore already cause an out-of-range memory operation
+before drawing. Invalid-frame native outcomes depend on memory state; this
+trace does not establish a portable fallback, deterministic crash, or safe
+wrapping rule. The host's slot filtering, invalid-frame refusal, and separate
+missing-decoded-art policy remain deliberate defensive extensions. MD2-901
+is retained as that documented divergence, not a missing consumer trace.
+Existing invalid-slot/frame and held-history tests cover these host policies;
+this evidence closure adds no runtime behavior or duplicate tests.
+
 ## Explicit residual scope
 
 0x4726D0 performs a separate aggregate reset once for previous sampled clips.

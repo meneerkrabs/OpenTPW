@@ -69,6 +69,7 @@ function parseArguments(argv) {
 			case '--zoom': options.zoom = Number(value()); break;
 			case '--crowd': options.crowd = Number(value()); break;
 			case '--profile': options.profile = true; break;
+			case '--profile-out': options.profileOut = value(); break;
 			case '--symbols': useSymbols(readFileSync(value(), 'utf8')); break;
 			case '--soak': options.soakSeconds = Math.max(1, Number(value()) || 90); break;
 			case '--advice': options.advice = value().split(',').map(Number).filter(Number.isFinite); break;
@@ -101,6 +102,7 @@ function usage() {
   --music                 keep music and speech on (default: muted, effects on, as on 11 October)
   --size <w>x<h>          window size (default 1280x900)
   --profile               jungle (cold start) and events: also record a CPU profile (Profiler domain) and name the functions each slow frame spent its time in
+  --profile-out <file>    with --profile: also write the cold start's raw CPU profile (.cpuprofile JSON with the slow frames' page times)
   --symbols <file>        with --profile: name the AOT functions from the publish's Emscripten symbol map (-p:WasmEmitSymbolMap=true)
   --soak <seconds>        events: length of the closing soak at the fastest speed (default 90)
   --advice <ids>          events: advisor advice message ids to post and time, comma separated
@@ -312,6 +314,8 @@ const scenarios = {
 		delete cold.atReady;
 		if (coldProfile != null) {
 			const captured = (await page.send('Profiler.stop', undefined, 120000)).profile;
+			if (options.profileOut)
+				await fs.writeFile(options.profileOut, JSON.stringify({ pageNowAtStart: coldProfile, slowFrames: (cold.slowFrames ?? []).map(({ beginMs, ms }) => [beginMs, ms]), profile: captured }));
 			for (const frame of cold.slowFrames ?? [])
 				{
 				frame.functions = attributeProfile(captured, coldProfile, [[frame.beginMs, frame.beginMs + frame.ms]], 40);

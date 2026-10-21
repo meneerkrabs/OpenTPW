@@ -33,6 +33,15 @@
 	<ItemGroup Condition="'$(RuntimeIdentifier)' != '' And Exists('$(NativeRuntimeDirectory)')">
 		<Content Include="$(NativeRuntimeDirectory)*" Exclude="$(NativeRuntimeDirectory).*" Link="%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
 	</ItemGroup>
+	<!-- A built library replaces the package's file of the same name (win-x64/win-x86 SDL2.dll: Veldrid.SDL2 carries SDL 2.0.8),
+	     so the output holds exactly one copy and the SDK's conflict resolution never has to pick between them. -->
+	<Target Name="PreferBuiltNativeLibraries" AfterTargets="ResolvePackageAssets" Condition="'$(RuntimeIdentifier)' != '' And Exists('$(NativeRuntimeDirectory)')">
+		<ItemGroup>
+			<_PackageNativeReplacedByBuilt Include="@(NativeCopyLocalItems)" Condition="Exists('$(NativeRuntimeDirectory)%(Filename)%(Extension)')" />
+			<NativeCopyLocalItems Remove="@(_PackageNativeReplacedByBuilt)" />
+		</ItemGroup>
+		<Message Importance="normal" Text="Using native/$(RuntimeIdentifier)/%(_PackageNativeReplacedByBuilt.Filename)%(_PackageNativeReplacedByBuilt.Extension) instead of %(_PackageNativeReplacedByBuilt.Identity)" Condition="'@(_PackageNativeReplacedByBuilt)' != ''" />
+	</Target>
 
 	<!-- Local arm64 macOS builds without a built SDL2 fall back to Homebrew's -->
 	<PropertyGroup Condition="'$(RuntimeIdentifier)' == 'osx-arm64' And !Exists('$(NativeRuntimeDirectory)libsdl2.dylib')">

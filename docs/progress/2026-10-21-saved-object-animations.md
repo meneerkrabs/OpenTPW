@@ -1,0 +1,8 @@
+## Imported objects take their saved animations (October 21, 2026)
+
+The imported Jungle park is open and its gate script stands in its open state, yet the gate model showed its closed rest pose, so guests walked through closed doors. OpenTPW read only the hoarding flags from each object's RideSystem scene record; tp.exe's loader (`0x4647A0`) also puts the record's animation time controls and node states back.
+
+- **What.** `ParkObjects.ImportOriginal` now hands each object's record to `OriginalObjectRuntime.RestoreSavedScene`: every saved control below AnimID 12 goes back on its channel with its clip, sub-animation, loop flag, speed and deferred clip, its start set back by the saved game clock minus StartAnimTime so the next update continues the saved frame (`0x4735D0`), and an ended control (flag 0x4) stays on its last frame. The node bits 0x10 (hidden mesh) and 0x80000000 come back when the record's node and embedded-node counts are the model's (`0x464AB4`).
+- **Effect.** The Jungle gate saved 5/1 ended on frame 50 of 50 and now stands open at load; the Bus (5/2, ended, meshes hidden) and the Traffic Lights (5/0, looping) follow the save, as do the rides, shops and toilets that saved a running or ended clip.
+- **Fidelity.** The word layout is read from the loader's copy (`0x464BEF`), the debug dump's field names (`0x464580`) and the binder (`0x472D10`, `0x472CB0`). DET-013 is narrowed: controls held on the first frame (flag 0x2) or on the unscaled clock (flag 0x40) are reported, not restored; no corpus save holds one.
+- **Tests.** `SavedObjectAnimationTests`: the decoding of a synthetic record, the channel restore, the node states, the Jungle gate, Bus and Traffic Lights, and every object control of the Easymode save and the TPWS corpus.

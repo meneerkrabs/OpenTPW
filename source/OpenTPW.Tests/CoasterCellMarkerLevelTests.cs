@@ -81,7 +81,7 @@ public partial class TrackAddOnLevelTests
 		var marked = all.Where( cell => cells.RawTypeAt( cell.X, cell.Y ) == CoasterCellMarkers.MarkerType && ((ushort)cells.FlagsAt( cell.X, cell.Y ) & CoasterCellMarkers.StationHeadMark) != 0 )
 			.ToArray();
 		Assert.AreEqual( 1, marked.Length, "the station head's marker cell carries the original's marker bit" );
-		// a park with a coaster loads its own save: on a marker cell the bit is no pool flag, though a wave height bit shares its value
+		// a park with a coaster can be saved: on a marker cell the bit is no pool flag, though a wave height bit shares its value
 		var layout = ParkLayoutSnapshot.CaptureSnapshot( cells, level.Objects );
 		var restored = ParkLayoutSnapshot.RestoreCellMap( layout );
 		Assert.AreEqual( cells.FlagsAt( marked[0].X, marked[0].Y ), restored.FlagsAt( marked[0].X, marked[0].Y ) );
@@ -110,6 +110,7 @@ public partial class TrackAddOnLevelTests
 			.Select( index => (X: index % cells.Width, Y: index / cells.Width) )
 			.Where( cell => cells.RawTypeAt( cell.X, cell.Y ) == 21 )
 			.Select( cell => (cell.X, cell.Y, Owner: cells.OwnerAt( cell.X, cell.Y ), Flags: cells.FlagsAt( cell.X, cell.Y )) ).ToArray();
+		Assert.IsTrue( markers.Any( cell => ((ushort)cell.Flags & CoasterCellMarkers.StationHeadMark) != 0 ), "the station head's marker cell carries the marker bit" );
 		builder.Track.DetachCells();
 		Set( level, "coasterCellsReady", false );
 		level.RestoreCoastersSnapshot( saved );
@@ -123,6 +124,9 @@ public partial class TrackAddOnLevelTests
 		typeof( Level ).GetMethod( "BindCoasterCellsAfterLoad", Private )!.Invoke( level, null );
 		Assert.IsNotNull( builder.Track.CellMarkers!.TokenAt( 28, 20 ) );
 		Assert.AreEqual( stamp, cells.StampCounter, "restored markers only acquire derived tokens" );
+		// the preview's same-owner accept and a joiner's hash equality read the saved marker bit, so the rebind keeps every marker's flags
+		foreach ( var cell in markers )
+			Assert.AreEqual( cell.Flags, cells.FlagsAt( cell.X, cell.Y ), $"the rebind leaves the flags of marker ({cell.X}, {cell.Y}) intact" );
 		builder.Delete();
 		Assert.AreEqual( (byte)0, cells.RawTypeAt( 28, 20 ) );
 	}

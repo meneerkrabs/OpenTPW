@@ -597,10 +597,15 @@ public sealed class ParkObjects
 	/// <summary>
 	/// Replaces the Easymode markers with the real objects: every SYSG placed record at its saved anchor and
 	/// rotation (unresolved non-square rotations use the catalog shape), and the fixed items in park space.
-	/// Imported objects are opened (the saved open word is not imported, SAVE-006).
+	/// Imported objects are opened (the saved open word is not imported, SAVE-006). Each object takes the hoarding state, node states and animation channels of its RideSystem record (<see cref="OriginalObjectRuntime.RestoreSavedScene"/>); what could not be restored is listed in <see cref="SavedSceneGaps"/>.
 	/// </summary>
 	// [BIN:TPW-EXE:0x004DB712 built ride closes] a built object opens in the constructor (open word +0x68 = 1, 0x4DB3B9) and closes again when its type has Info.HasQueue (Level.BuiltObjectStartsOpen); an imported object is not built: its open word comes from the save in the original (mCanLoad), which this port does not import and opens every imported object instead (SAVE-006)
 	public int ImportOriginal( OriginalParkImport save ) => ImportOriginalSteps( save ).LastOrDefault().Placed;
+
+	private readonly List<string> savedSceneGaps = new();
+
+	/// <summary>What <see cref="ImportOriginal"/> could not restore of the saved scene records' node states and animation controls, one line each.</summary>
+	public IReadOnlyList<string> SavedSceneGaps => savedSceneGaps;
 
 	/// <summary><see cref="ImportOriginal"/> one object at a time: after each, the objects placed so far and the share of the records done.</summary>
 	internal IEnumerable<(int Placed, float Share)> ImportOriginalSteps( OriginalParkImport save )
@@ -621,7 +626,16 @@ public sealed class ParkObjects
 			var imported = Register( new OriginalObject( entry, ComputePlacement( entry, record.X, record.Y, record.Rotation ), ScriptWorld, nextSeed++ ^ scriptKey, true, attractionId: null, seedScript: false ), thingId );
 			// [BIN:TPW-EXE:0x004647A0 hoarding load] the RideSystem record's flag word +0x1C bits 0..6 and its +0x22 dword are the thing's hoarding flags and level (docs/OBJECTS.md, "Hoarding")
 			if ( save.RideSystem?.Records.FirstOrDefault( scene => scene.Offset == record.Offset ) is { } scene )
+			{
 				imported.Runtime.Hoarding.Restore( ObjectHoardingState.UnpackSavedFlags( scene.InstanceFlags ), BitConverter.UInt32BitsToSingle( scene.InstanceDword ) );
+				// [BIN:TPW-EXE:0x004647A0 scene record load] the same record's node states and animation time controls (OriginalObjectRuntime.RestoreSavedScene) on the save's game clock
+				foreach ( var gap in imported.Runtime.RestoreSavedScene( scene, save.RuntimeBlocks?.ClockWords[0] ) )
+				{
+					var line = $"{entry.DisplayName} (RideSystem slot {scene.Slot}): {gap}.";
+					savedSceneGaps.Add( line );
+					Log.Trace( $"Original scene import: {line}" );
+				}
+			}
 			count++;
 			yield return (count, (index + 1) / (float)records.Count);
 		}

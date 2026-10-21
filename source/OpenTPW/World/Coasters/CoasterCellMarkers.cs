@@ -7,7 +7,7 @@ namespace OpenTPW;
 /// </summary>
 internal sealed class CoasterCellMarkers : IDisposable
 {
-	internal const byte MarkerType = 21;
+	internal const byte MarkerType = ParkCellTypes.TrackConnection;
 	/// <summary>
 	/// The marker bit of a station head's marker cell in the cell's flag word (<see cref="ParkCellMap.FlagsAt"/>): the node creation's parameter 0x10 gives the node 0x400 and its marker
 	/// cell this bit. It shares its value with a pool wave height bit (<see cref="ParkCellFlags.PoolWaveHeightMask"/>), which only pool cells read.

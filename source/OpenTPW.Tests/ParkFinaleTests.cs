@@ -88,7 +88,7 @@ public class ParkFinaleTests
 		return level;
 	}
 
-	/// <summary>An economy whose catalogue also knows the Seaplane and the finale's End, as the shipped Features.sam files declare them (Info.WhichUIType 4: fixed items).</summary>
+	/// <summary>An economy whose catalogue also knows the Seaplane and the finale's End as fixed items (the kind the shipped Info.WhichUIType 4 gives them; the rest is the test catalogue's).</summary>
 	private static ParkEconomy FixedItemEconomy( ParkGameMode mode )
 	{
 		EconomyObjectInfo Fixed( int id, string name, string archive ) => new( id, name, ParkObjectKind.FixedItem, ResearchCategory.Ride, 0,
@@ -176,12 +176,15 @@ public class ParkFinaleTests
 	public void TheFinalesEndGetsItsUnchargedEconomyRecordAsTheOriginalsConstructorGivesIt()
 	{
 		var level = LevelFor( Objects( Entry() ), economy: FixedItemEconomy( ParkGameMode.InstantAction ) ); var economy = level.Park!.Economy;
+		// a day into the park: the record's build tick and the type's first-purchase turn are the clock's, not a new park's 0
+		economy.AdvanceDays( 1 ); Assert.IsTrue( economy.Turn > 0 );
 		var cash = economy.Balance; var records = economy.Objects.Count;
 		Complete( level ); Complete( level );
 		var state = RecordOf( level, level.Objects.Objects.Single(), 1605 );
 		Assert.AreEqual( records + 1, economy.Objects.Count, "the second notification adopts End and makes no second record" );
 		Assert.AreEqual( cash, economy.Balance );
 		Assert.AreEqual( 1, economy.Counters[ParkCounters.Built( 1605 )], "the constructor counts the type" );
+		Assert.AreEqual( economy.Turn, economy.Counters[ParkCounters.FirstPurchaseTurn( 1605 )], "and stamps its first-purchase turn" );
 		Assert.AreEqual( economy.Tick, state.BuiltTick );
 	}
 
@@ -192,12 +195,15 @@ public class ParkFinaleTests
 		Set( level, "demolishedQueues", new HashSet<OriginalObject>() );
 		// the level's own wiring makes the vehicles' host
 		Invoke( level, "ConnectObjectsToGuests" );
-		var economy = level.Park!.Economy; var cash = economy.Balance; var records = economy.Objects.Count;
+		var economy = level.Park!.Economy;
+		economy.AdvanceDays( 1 ); Assert.IsTrue( economy.Turn > 0 );
+		var cash = economy.Balance; var records = economy.Objects.Count;
 		Assert.IsTrue( level.Guests!.ArrivalVehicles!.Create( 1 ) );
 		var state = RecordOf( level, level.Objects.Objects.Single(), 1602 );
 		Assert.AreEqual( records + 1, economy.Objects.Count );
 		Assert.AreEqual( cash, economy.Balance );
 		Assert.AreEqual( 1, economy.Counters[ParkCounters.Built( 1602 )], "the constructor counts the type" );
+		Assert.AreEqual( economy.Turn, economy.Counters[ParkCounters.FirstPurchaseTurn( 1602 )], "and stamps its first-purchase turn" );
 		Assert.AreEqual( economy.Tick, state.BuiltTick );
 		// a save made now has nothing to repair
 		Invoke( level, "RepairMissingEconomyBindings" );

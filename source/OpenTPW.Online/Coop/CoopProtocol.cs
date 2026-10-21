@@ -81,8 +81,8 @@ public static class CoopCloseStatus
 	/// <summary>The account's game took this socket over on another device or process; terminal.</summary>
 	public const int Replaced = 4001;
 	/// <summary>
-	/// This socket read too slowly; resumable. The server usually drops such a socket without a close (its queue is stuck behind it), which a game resumes
-	/// after as well.
+	/// This socket read too slowly: the server dropped its queue and closes it after the message on its way (or drops it when even that does not go out
+	/// within three seconds); resumable.
 	/// </summary>
 	public const int TooSlow = 4002;
 	/// <summary>Another game of the account holds the co-op socket; terminal unless the player takes over.</summary>

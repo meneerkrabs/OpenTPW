@@ -977,10 +977,49 @@ public class CoopServerTests
 		configure?.Invoke( options );
 	}, directory );
 
+	/// <summary>The host streams frames as fast as the test sends them until <paramref name="stop"/>, a few hundred at a time between short pauses.</summary>
+	private static Task Stream( CoopTestClient host, CancellationToken stop ) => Task.Run( async () =>
+	{
+		try
+		{
+			for ( var seq = 1UL; !stop.IsCancellationRequested; seq++ )
+			{
+				await host.SendAsync( new CoopHostFrame( seq, Payload( (int)seq, 4096 ) ) );
+				if ( seq % 256 == 0 )
+					await Task.Delay( 1, CancellationToken.None );
+			}
+		}
+		catch ( Exception exception ) when ( exception is WebSocketException or OperationCanceledException or ObjectDisposedException )
+		{
+		}
+	} );
+
+	/// <summary>
+	/// The same game reconnects and resumes, as a game does after any close it resumes after: a connection cut off for slowness before its welcome (its queue
+	/// overflowed at once) is opened again.
+	/// </summary>
+	private static async Task<CoopTestClient> ReconnectAsync( LoopbackServer server, OnlineClient account, Guid instance, CoopResume resume, List<CoopTestClient> cutOff )
+	{
+		for ( var attempt = 0; ; attempt++ )
+		{
+			var client = await CoopTestClient.OpenAsync( server, account, instance );
+			await client.SendAsync( new CoopHello( (ushort)CoopProtocol.Version, CoopTestClient.Build, Array.Empty<CoopMod>(), instance, false, resume ) );
+			while ( await client.ReceiveAsync() is { } message )
+			{
+				if ( message is CoopWelcome )
+					return client;
+			}
+			Assert.IsTrue( CoopCloseStatus.IsResumable( client.CloseStatus ), $"a close before the welcome is one a game resumes after ({client.CloseStatus})" );
+			Assert.IsTrue( attempt < 20, "the game got a welcome again" );
+			cutOff.Add( client );
+		}
+	}
+
 	[TestMethod]
 	public async Task AFenceWhileFramesStreamNeverCorruptsWhatAGuestReads()
 	{
-		var server = await StartFast();
+		// a guest queue of 32 MiB: the fences, not slowness, end the connections here (ACutOffConnectionEndsForTheGame covers the slow reader)
+		var server = await StartFast( options => options.CoopOutboxBytes = 32 * 1024 * 1024 );
 		await using var accounts = new Accounts();
 		try
 		{
@@ -990,18 +1029,14 @@ public class CoopServerTests
 			var (guest, _) = await CoopTestClient.ConnectAsync( server, guestAccount );
 			var guestId = (await Join( guest, created.Session.Code )).Session.You;
 			using var stop = new CancellationTokenSource();
-			var streaming = Task.Run( async () =>
-			{
-				for ( var seq = 1UL; !stop.IsCancellationRequested; seq++ )
-					await host.SendAsync( new CoopHostFrame( seq, Payload( (int)seq, 4096 ) ) );
-			} );
+			var streaming = Stream( host, stop.Token );
 			// the same game reconnects again and again while the frames stream: each old connection is fenced with frames still queued for it
 			var fenced = new List<CoopTestClient>();
 			var current = guest;
 			for ( var round = 0; round < 40; round++ )
 			{
 				await Task.Delay( 15 );
-				var (again, _) = await CoopTestClient.ConnectAsync( server, guestAccount, instance: guest.Instance, resume: new CoopResume( created.Session.Id, guestId, 0 ) );
+				var again = await ReconnectAsync( server, guestAccount, guest.Instance, new CoopResume( created.Session.Id, guestId, 0 ), fenced );
 				fenced.Add( current );
 				current = again;
 			}
@@ -1018,6 +1053,51 @@ public class CoopServerTests
 		finally
 		{
 			// stopped first: a server still at work writes into the folder being deleted
+			await server.DisposeAsync();
+			server.DeleteData();
+		}
+	}
+
+	[TestMethod]
+	public async Task ACutOffConnectionEndsForTheGame()
+	{
+		// a guest queue of 64 KiB: the streaming host has the server cut every guest connection off for slowness within moments
+		var server = await StartFast( options => options.CoopOutboxBytes = 64 * 1024 );
+		await using var accounts = new Accounts();
+		try
+		{
+			var (host, _) = await CoopTestClient.ConnectAsync( server, await accounts.Add( server, "Hostess" ) );
+			var created = await Create( host );
+			var guestAccount = await accounts.Add( server, "Guest" );
+			var (guest, _) = await CoopTestClient.ConnectAsync( server, guestAccount );
+			var guestId = (await Join( guest, created.Session.Code )).Session.You;
+			using var stop = new CancellationTokenSource();
+			var streaming = Stream( host, stop.Token );
+			var ended = new List<CoopTestClient> { guest };
+			for ( var round = 0; round < 30; round++ )
+			{
+				await Task.Delay( 15 );
+				ended.Add( await ReconnectAsync( server, guestAccount, guest.Instance, new CoopResume( created.Session.Id, guestId, 0 ), ended ) );
+			}
+			stop.Cancel();
+			await streaming;
+			// the newest connection may still stand; every other one was cut off (a close of 4002 after the frame on its way) or replaced (1001), and its game sees it
+			// end, never a connection that stays silent: an abort's reset can be lost (macOS limits how many resets it sends), a close cannot
+			foreach ( var connection in ended.Take( ended.Count - 1 ) )
+			{
+				try
+				{
+					await DrainAsync( connection );
+				}
+				catch ( OperationCanceledException )
+				{
+					Assert.Fail( $"connection {ended.IndexOf( connection )} of {ended.Count} stayed open after the server ended it" );
+				}
+				Assert.AreEqual( 0, connection.Malformed );
+			}
+		}
+		finally
+		{
 			await server.DisposeAsync();
 			server.DeleteData();
 		}

@@ -669,9 +669,11 @@ public static class ServerProgram
 				if ( user == null || token == null )
 				{
 					await ChatHub.CloseAsync( socket, System.Net.WebSockets.WebSocketCloseStatus.PolicyViolation, "unauthorized" );
+					if ( socket.State != System.Net.WebSockets.WebSocketState.Closed )
+						context.Abort();
 					return;
 				}
-				await coop.RunAsync( socket, user, token, context.RequestAborted );
+				await coop.RunAsync( socket, user, token, context.Abort, context.RequestAborted );
 			}
 			finally
 			{

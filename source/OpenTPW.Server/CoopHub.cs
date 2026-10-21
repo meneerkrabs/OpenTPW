@@ -96,21 +96,32 @@ public sealed class CoopHub
 
 	public void ReleaseConnection() => Interlocked.Decrement( ref connections );
 
-	/// <summary>Runs an accepted, authenticated co-op socket until it closes; the caller has reserved its connection slot.</summary>
-	public async Task RunAsync( WebSocket socket, AccountRecord account, string token, CancellationToken cancel )
+	/// <summary>
+	/// Runs an accepted, authenticated co-op socket until it closes; the caller has reserved its connection slot. <paramref name="abortConnection"/> drops the
+	/// connection under the socket (the request's own abort): a socket that ends without its close handshake goes with it, since an aborted WebSocket can
+	/// leave its connection open under it, and the game would then hear nothing until its silence watchdog.
+	/// </summary>
+	public async Task RunAsync( WebSocket socket, AccountRecord account, string token, Action abortConnection, CancellationToken cancel )
 	{
+		// a refusal before the socket runs closes it, and drops the connection when the game does not answer the close
+		async Task RefuseAsync( int status, string reason )
+		{
+			await CloseAsync( socket, status, reason );
+			if ( socket.State != WebSocketState.Closed )
+				abortConnection();
+		}
 		var (hello, first) = await ReadHelloAsync( socket, cancel );
 		if ( hello == null )
 		{
 			if ( first is { } type )
 				await SendDirectAsync( socket, new CoopError( type, CoopReason.HelloFirst, "The first message is the hello." ), cancel );
-			await CloseAsync( socket, CoopCloseStatus.ProtocolError, "hello first" );
+			await RefuseAsync( CoopCloseStatus.ProtocolError, "hello first" );
 			return;
 		}
 		if ( hello.Protocol < CoopProtocol.Version )
 		{
 			await SendDirectAsync( socket, new CoopError( CoopMessageType.Hello, CoopReason.ProtocolTooOld, $"This server shares parks from protocol {CoopProtocol.Version} on." ), cancel );
-			await CloseAsync( socket, CoopCloseStatus.ProtocolError, "protocol too old" );
+			await RefuseAsync( CoopCloseStatus.ProtocolError, "protocol too old" );
 			return;
 		}
 		var peer = new Peer( socket, account, token, hello );
@@ -120,10 +131,10 @@ public sealed class CoopHub
 			if ( registration == Registration.InUse )
 			{
 				await SendDirectAsync( socket, new CoopError( CoopMessageType.Hello, CoopReason.InUse, "Another game of this account is connected." ), cancel );
-				await CloseAsync( socket, CoopCloseStatus.InUse, "in use elsewhere" );
+				await RefuseAsync( CoopCloseStatus.InUse, "in use elsewhere" );
 			}
 			else
-				await CloseAsync( socket, (int)WebSocketCloseStatus.PolicyViolation, "unauthorized" );
+				await RefuseAsync( (int)WebSocketCloseStatus.PolicyViolation, "unauthorized" );
 			peer.Dispose();
 			return;
 		}
@@ -156,7 +167,10 @@ public sealed class CoopHub
 			if ( socket.State is WebSocketState.Open or WebSocketState.CloseReceived or WebSocketState.CloseSent )
 				await CloseAsync( socket, peer.CloseStatus ?? (int)WebSocketCloseStatus.NormalClosure, peer.CloseReason ?? "bye" );
 			if ( socket.State != WebSocketState.Closed )
+			{
 				socket.Abort();
+				abortConnection();
+			}
 			peer.Dispose();
 		}
 	}
@@ -265,28 +279,34 @@ public sealed class CoopHub
 	}
 
 	/// <summary>
-	/// Takes a connection out of the hub so it can never relay again (a reconnect replaced it): its seat is emptied under the session's gate and the other
-	/// members hear it disconnected (a resume then connects it again), its queue is dropped, and it closes with <paramref name="status"/>. Under the registry
-	/// lock.
+	/// Takes a connection out of the hub so it can never relay again (a reconnect replaced it): it is no longer its account's connection, and it is ended
+	/// (<see cref="Kill"/>: its seat emptied, its queue dropped, a close with <paramref name="status"/>). Under the registry lock.
 	/// </summary>
 	private void Fence( Peer peer, int status, string reason )
 	{
-		if ( peer.Session is { } session )
+		peers.Remove( peer.Account.Key );
+		Kill( peer, status, reason );
+	}
+
+	/// <summary>
+	/// Empties the seat <paramref name="peer"/> holds, if it still holds one: the other members hear it disconnected (a resume connects it again), and a host
+	/// is away from now. Takes the session's gate (after the registry lock, or inside the same gate: a kill during a relay).
+	/// </summary>
+	private void Detach( Peer peer )
+	{
+		if ( peer.Session is not { } session )
+			return;
+		lock ( session.Gate )
 		{
-			lock ( session.Gate )
+			peer.Session = null;
+			if ( !session.Ended && session.Seat( peer.Account.Key ) is { } seat && seat.Peer == peer )
 			{
-				peer.Session = null;
-				if ( !session.Ended && session.Seat( peer.Account.Key ) is { } seat && seat.Peer == peer )
-				{
-					seat.Peer = null;
-					if ( seat.Id == session.HostMember )
-						session.HostAwaySince = clock();
-					Announce( session, seat, CoopMemberState.Disconnected );
-				}
+				seat.Peer = null;
+				if ( seat.Id == session.HostMember )
+					session.HostAwaySince = clock();
+				Announce( session, seat, CoopMemberState.Disconnected );
 			}
 		}
-		peers.Remove( peer.Account.Key );
-		Kill( peer, status, reason, abort: false );
 	}
 
 	/// <summary>A connection's socket closed: its seat is empty until it resumes, and its session's host is away when it hosted.</summary>
@@ -296,18 +316,7 @@ public sealed class CoopHub
 		{
 			if ( peers.TryGetValue( peer.Account.Key, out var current ) && current == peer )
 				peers.Remove( peer.Account.Key );
-			if ( peer.Session is not { } session )
-				return;
-			lock ( session.Gate )
-			{
-				peer.Session = null;
-				if ( session.Ended || session.Seat( peer.Account.Key ) is not { } seat || seat.Peer != peer )
-					return;
-				seat.Peer = null;
-				if ( seat.Id == session.HostMember )
-					session.HostAwaySince = clock();
-				Announce( session, seat, CoopMemberState.Disconnected );
-			}
+			Detach( peer );
 		}
 	}
 
@@ -322,13 +331,13 @@ public sealed class CoopHub
 			}
 			catch ( MessageTooLargeException )
 			{
-				Kill( peer, (int)WebSocketCloseStatus.MessageTooBig, "message too large", abort: false );
+				Kill( peer, (int)WebSocketCloseStatus.MessageTooBig, "message too large" );
 				return;
 			}
 			catch ( InvalidDataException )
 			{
 				// a text message
-				Kill( peer, CoopCloseStatus.ProtocolError, "invalid message", abort: false );
+				Kill( peer, CoopCloseStatus.ProtocolError, "invalid message" );
 				return;
 			}
 			if ( bytes == null )
@@ -338,7 +347,7 @@ public sealed class CoopHub
 				continue;
 			if ( !peer.Buckets!.Take( peer.Hosting, bytes.Length ) )
 			{
-				Kill( peer, CoopCloseStatus.Rate, "rate", abort: false );
+				Kill( peer, CoopCloseStatus.Rate, "rate" );
 				return;
 			}
 			CoopMessage request;
@@ -348,7 +357,7 @@ public sealed class CoopHub
 			}
 			catch ( InvalidDataException )
 			{
-				Kill( peer, CoopCloseStatus.ProtocolError, "malformed message", abort: false );
+				Kill( peer, CoopCloseStatus.ProtocolError, "malformed message" );
 				return;
 			}
 			if ( !Handle( peer, request, bytes ) )
@@ -456,8 +465,9 @@ public sealed class CoopHub
 	}
 
 	/// <summary>
-	/// Queues a message for a connection. A queue over its limit marks the connection dead and drops it, so it never sees a gap; a server over its budget
-	/// drops the connection with the longest queue instead. A connection that is closing (a kill's or a restart's close is on its way) takes nothing more.
+	/// Queues a message for a connection. A queue over its limit marks the connection dead and ends it (<see cref="Kill"/>), so it never sees a gap; a server
+	/// over its budget ends the connection with the longest queue instead. A connection that is closing (a kill's or a restart's close is on its way) takes
+	/// nothing more.
 	/// </summary>
 	private void Enqueue( Peer peer, ReadOnlyMemory<byte> bytes )
 	{
@@ -468,14 +478,14 @@ public sealed class CoopHub
 		if ( mine > options.CoopOutboxBytes )
 		{
 			Unqueue( peer, bytes.Length );
-			Kill( peer, CoopCloseStatus.TooSlow, "too slow", abort: true );
+			Kill( peer, CoopCloseStatus.TooSlow, "too slow" );
 			return;
 		}
 		if ( all > options.CoopServerOutboxBytes )
 		{
 			// the slowest reader goes, not whichever connection happens to queue next
 			var slowest = running.Keys.Where( candidate => !candidate.Dead ).MaxBy( candidate => Volatile.Read( ref candidate.QueuedBytes ) ) ?? peer;
-			Kill( slowest, CoopCloseStatus.TooSlow, "too slow", abort: true );
+			Kill( slowest, CoopCloseStatus.TooSlow, "too slow" );
 			if ( slowest == peer || peer.Dead )
 			{
 				Unqueue( peer, bytes.Length );
@@ -494,10 +504,11 @@ public sealed class CoopHub
 
 	/// <summary>
 	/// Ends a connection from the server side: nothing more is queued for it, its queue is dropped, and its writer sends a close with
-	/// <paramref name="status"/>, which the game answers (one that does not is dropped after three seconds). A connection whose queue is stuck is aborted
-	/// instead (<paramref name="abort"/>): the game sees no close status and resumes.
+	/// <paramref name="status"/> after the message it is sending, which the game answers. A connection that has not closed within three seconds (its
+	/// game reads nothing) is dropped. A close is never lost the way a dropped connection's reset can be (macOS limits how many resets it sends), so even
+	/// a reader cut off for slowness gets one (<see cref="CoopCloseStatus.TooSlow"/>) and resumes at once.
 	/// </summary>
-	private void Kill( Peer peer, int status, string reason, bool abort )
+	private void Kill( Peer peer, int status, string reason )
 	{
 		if ( Interlocked.Exchange( ref peer.DeadFlag, 1 ) == 1 )
 			return;
@@ -509,20 +520,12 @@ public sealed class CoopHub
 			Interlocked.Add( ref peer.QueuedBytes, -dropped.Length );
 			Interlocked.Add( ref queuedBytes, -dropped.Length );
 		}
+		// the members hear it gone now, not once its close has run its course
+		Detach( peer );
 		try
 		{
-			if ( abort )
-			{
-				// off this thread: a kill runs under the hub's locks, and an abort or a cancel can run the connection's own clean-up (which takes them) inline
-				_ = Task.Run( () =>
-				{
-					peer.Socket.Abort();
-					try { peer.Closed.Cancel(); }
-					catch ( ObjectDisposedException ) { }
-				} );
-			}
-			else
-				peer.Closed.CancelAfter( TimeSpan.FromSeconds( 3 ) );
+			// a timer, never a cancel here: a kill runs under the hub's locks, and a cancel could run the connection's own clean-up (which takes them) inline
+			peer.Closed.CancelAfter( TimeSpan.FromSeconds( 3 ) );
 		}
 		catch ( ObjectDisposedException ) { }
 	}
@@ -559,7 +562,7 @@ public sealed class CoopHub
 				return true;
 			default:
 				// a second hello or a server's message
-				Kill( peer, CoopCloseStatus.ProtocolError, "unexpected message", abort: false );
+				Kill( peer, CoopCloseStatus.ProtocolError, "unexpected message" );
 				return false;
 		}
 	}

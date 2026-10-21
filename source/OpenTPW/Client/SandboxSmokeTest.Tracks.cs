@@ -120,7 +120,7 @@ internal sealed partial class SandboxSmokeTest
 	/// <summary>
 	/// A site for a ride whose placement is allowed and whose area (cells around the anchor) is free and on screen. The site the view already shows comes
 	/// first (row by row); without one, a player scrolls to free land: the free site nearest the view's centre, the camera looking at its area's middle.
-	/// Each verdict reads the view it judges, so the site found does not depend on how earlier phases happened to leave the camera.
+	/// Each verdict reads only the view it judges; which site is tried first follows the current view, so the run stays deterministic.
 	/// </summary>
 	private (int X, int Y)? FindSmokeSite( ObjectCatalogEntry entry, Func<(int X, int Y), IEnumerable<(int X, int Y)>> area, Func<int, int, bool> free, Func<(int X, int Y), bool> onScreen )
 	{

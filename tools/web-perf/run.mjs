@@ -529,7 +529,8 @@ const scenarios = {
 			await page.nextFrame();
 		await page.call('PerfClick', 'ExitToLobby');
 		await page.waitFor('the lobby', current => current.menu === 'lobby' && !current.hud, 60000);
-		await sleep(2000);
+		// the checkpoint reaches the browser's storage after the lobby shows: a reload too soon finds no saved park to offer
+		await sleep(10000);
 		await page.send('Page.navigate', { url: context.url });
 		await page.waitFor('the page loaded again', current => current.started, 600000);
 		await page.waitFor('the lobby', current => current.menu === 'lobby', 120000);

@@ -75,8 +75,11 @@ public sealed partial class ParkHud
 	private readonly Dictionary<string, PreviewIcon?> icons = new();
 	private readonly List<UiElement> infoElements = new();
 	private string lastLevelMessage = "";
-	/// <summary>[EXT:online-coop-lockstep] The level's session refusals the HUD has said already (<see cref="Level.SessionRefusals"/>).</summary>
+	/// <summary>[EXT:online-coop-lockstep] The level's session refusals the HUD has said already (<see cref="Level.SessionRefusals"/>), and when it last said so.</summary>
 	private int lastSessionRefusals;
+	private float lastSessionRefusalNotice = float.NegativeInfinity;
+	/// <summary>The least time between two "only the host builds" notices: a drag that issues a command per cell says it once.</summary>
+	internal const float SessionRefusalNoticeSeconds = 1.5f;
 	private BuildItem? pendingItem;
 	private UiLabel? moneyLabel;
 	private ListSortMemory? fallbackSorts;
@@ -672,10 +675,7 @@ public sealed partial class ParkHud
 		// world-state-4 test (0x48c27a). Otherwise a lost park gets Load, Restart, Resume, Exit To Lobby and Quit, in that order.
 		// The loss Load row uses UITEXT 3 and command 22, not text 22. Its 0x49efb0 argument is unused; the extra 0x5da3c0
 		// calls on loss Restart/Exit/Quit return immediately, so the existing callbacks and confirmations are shared (0x48b6a0).
-		if ( level.IsReadOnlyVisit )
-			entries.RemoveAll( entry => entry.Label is not (UIStrings.ResumeGame or UIStrings.ExitToLobby or UIStrings.QuitGame) );
-		else if ( level.Park?.Economy.IsBankrupt == true )
-			entries.RemoveAll( entry => entry.Label is not (UIStrings.Load or UIStrings.RestartPark or UIStrings.ResumeGame or UIStrings.ExitToLobby or UIStrings.QuitGame) );
+		entries.RemoveAll( entry => !PauseMenuOffers( level.IsReadOnlyVisit, level.IsCoopGuestPark, level.Park?.Economy.IsBankrupt == true, entry.Label ) );
 		if ( host.GoOnline == null )
 			entries.RemoveAll( entry => entry.Label == UIStrings.GoOnline );
 		var items = entries.Select( entry => (Id: entry.Label.ToString(), Text: (Func<string>)(() => strings[entry.Label]), entry.Clicked,
@@ -689,6 +689,15 @@ public sealed partial class ParkHud
 		while ( Stack.Screens.Count > 1 )
 			Stack.Pop();
 	}
+
+	/// <summary>
+	/// Whether the pause menu lists <paramref name="label"/>: a read-only visit only Resume Game, Exit To Lobby and Quit Game; a lost park (bankrupt) Load, Restart Park, Resume Game,
+	/// Exit To Lobby and Quit Game. [EXT:online-coop-lockstep] A co-op guest's park is the host's: it lists no Save, Restart Park or Publish Park (also after the session ended).
+	/// </summary>
+	internal static bool PauseMenuOffers( bool readOnlyVisit, bool coopGuestPark, bool bankrupt, UIStrings label ) =>
+		readOnlyVisit ? label is UIStrings.ResumeGame or UIStrings.ExitToLobby or UIStrings.QuitGame
+		: !(coopGuestPark && label is UIStrings.Save or UIStrings.RestartPark or UIStrings.PublishPark)
+			&& (!bankrupt || label is UIStrings.Load or UIStrings.RestartPark or UIStrings.ResumeGame or UIStrings.ExitToLobby or UIStrings.QuitGame);
 
 	/// <summary>
 	/// Whether a pause-menu entry is clickable: a read-only visit never saves, and an entry without its host
@@ -885,12 +894,16 @@ public sealed partial class ParkHud
 		if ( walkingAtStart && level.FreeWalk == null && Camera.Mode is ParkCameraMode returningCamera )
 			returningCamera.ModalOpen = true;
 
-		// [EXT:online-coop-lockstep] a guest's click in a shared park: only the host builds
+		// [EXT:online-coop-lockstep] a guest's click in a shared park: only the host builds (once for a drag's run of refusals)
 		if ( level.SessionRefusals != lastSessionRefusals )
 		{
 			lastSessionRefusals = level.SessionRefusals;
-			PostMessage( strings.Extra( OpenTpwText.OnlyTheHostBuilds ) );
-			GameAudio.PlayUi( GameAudio.ErrorEvent );
+			if ( Time.Now - lastSessionRefusalNotice >= SessionRefusalNoticeSeconds )
+			{
+				lastSessionRefusalNotice = Time.Now;
+				PostMessage( strings.Extra( OpenTpwText.OnlyTheHostBuilds ) );
+				GameAudio.PlayUi( GameAudio.ErrorEvent );
+			}
 		}
 		if ( level.LastActionMessage != lastLevelMessage )
 		{
@@ -1128,6 +1141,7 @@ public sealed partial class ParkHud
 		var hadStart = tool.Start != null;
 		var modeBefore = tool.Mode;
 		var interfaceBefore = InterfaceMode();
+		var sessionRefusals = level.SessionRefusals;
 		cellToolClicking = true;
 		SegmentResult? result;
 		try
@@ -1150,7 +1164,8 @@ public sealed partial class ParkHud
 		// [BIN:STP-PPC:0x10070DE0 path lay click] a committed path line plays cat_ui 101 (the tool's commit site, gated by its mode); a click on a refused ghost (or a refused track commit) plays cat_ui 175 at the clicked cell when the button is released (PathRefusalClick)
 		if ( result is { Completed: true } )
 			GameAudio.PlayPathToolSound( GameAudio.PathLayEvent );
-		if ( result is { Completed: false } )
+		// [EXT:online-coop-lockstep] a line the session refused is said once, as "only the host builds", not also as a cell that cannot be built on
+		if ( result is { Completed: false } && level.SessionRefusals == sessionRefusals )
 		{
 			// a commit stopped only by the back-of-queue walk's bound is not one of the original's refusals
 			if ( !result.StoppedByOwnLimit )

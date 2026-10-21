@@ -9,7 +9,7 @@ phases (C1 to C7) and the comparison of the architectures is in the project note
 
 Status: the command layer (C1) is in place, and of the sessions (C2) the server, the game's link, the
 host's command stream and the level in a session are built. The join and resync (C2c) and the
-screens (C2d) follow, so no game starts a session yet; single player is unchanged.
+screens (C2d) follow, so no game starts a session yet.
 
 ## User decisions
 
@@ -138,10 +138,13 @@ part (`Level.CoopRole`: none, host or guest).
 
 - **Which park is shared.** `CoopSession.CanShare`: a running Theme Park World park with its guests
   (decision Q3: never Theme Park Inc, and never the developer sandbox, whose load replaces the park
-  outside the commands), not a visit and not in a session already, in a game not started with a
-  developer option that changes the park outside the commands. Every `--debug-*` and `--perf-*`
-  option counts, and so does the browser page of the performance harness (`?perf=1`): their setups
-  and hooks build, fill or edit the park directly, so a peer would never see their changes.
+  outside the commands), not a visit and not in a session already, with no cheat waiting for its park
+  turn (it would apply inside the session, decision Q17), in a game not started with a developer
+  option that changes the park outside the commands. Every `--debug-*` and `--perf-*` option counts,
+  and so do the smokes that build their parks directly (`--smoke-test`, `--tpi-smoke-test`,
+  `--park-resume-smoke`, `--smoke-presence`) and the browser page of the performance harness
+  (`?perf=1`): their setups and hooks build, fill or edit the park directly, so a peer would never
+  see their changes.
 - **Only the host builds.** In C2 the rights let only player 0 build (`CoopHostOnlyRights`). A
   guest's own click is refused before it runs and leaves no trace in its log. The funnel raises
   `SessionRefused`, and the guest's HUD says "Only the host builds in a shared park"
@@ -157,15 +160,19 @@ part (`Level.CoopRole`: none, host or guest).
   whatever screens a player has open: the pause menu, the map window, a postcard or a delete
   confirmation stop no shared park. Only the host pauses or changes the speed, with the speed commands
   (decision Q8); a guest's park follows the host's stream.
-- **A guest never saves.** Its park is the host's: it takes no automatic checkpoint, periodic
+- **A guest's park is never saved.** It is the host's: it takes no automatic checkpoint, periodic
   autosave, exit checkpoint or restart snapshot (`GameFlow.AutomaticEligible`, `TakesRestartSnapshot`),
-  and leaving the park goes to the front end, as a visit does. The host saves as before; the co-op
-  copies of decision Q9 come later.
+  its pause menu offers no Save, Restart Park or Publish Park, and leaving the park goes to the front
+  end, as a visit does. That holds after its session ended too (`Level.IsCoopGuestPark`), so the
+  host's park never replaces the guest's own park of the theme. The host saves as before, except that
+  a save that would repair a missing economy binding refuses instead: a shared park changes only
+  through its commands. The co-op copies of decision Q9 come later.
 - **The end.** The session ends for a game when its level closes (a load, a restart, a replaced park,
-  leaving the park: `Level.Dispose`), when its link's session ends (a kick, the host leaving, a session
-  that ended while the game was away) and when the host's stream ends it. A player's own end leaves
-  the session, and a host's leave ends it for everyone. The stream's rules go with the session, and
-  the park is that player's own again.
+  leaving the park: `Level.Dispose`), when the game quits, when its link's session ends (a kick, the
+  host leaving, a session that ended while the game was away) and when the host's stream ends it. A
+  player's own end leaves the session, and a host's leave ends it for everyone. The stream's rules go
+  with the session; a guest's park stays the host's, which that game never saves (where the player
+  goes next is the screens' part, C2d).
 - **A tool changes nothing in the park.** A tool is one player's alone, so entering one must not change
   what the peers share. The queue tool's entry (after a ride is placed, after a track's circuit closes
   or a coaster is completed, from the ride window's edit button, on a queue click) used to recompute
@@ -521,4 +528,16 @@ guarded list.
 - Opening the queue tool (after a ride is placed, its track circuit closes or its coaster is completed,
   from the ride window or on a queue click) recomputed the ride's queue on the issuer's machine
   (`Level.EnterQueueTool`), outside the commands. Since C2b-2 it reads the queue from a copy, and the
-  queue line commands bring the ride's queue up to date first ("The level in a session").
+  queue line commands bring the ride's queue up to date first ("The level in a session"). The tool's
+  previews still read the ride's own queue, which a grid edit since the last recompute (in a paused
+  park) leaves behind until the line's command or the next tick takes it in.
+- A guest's park must be built as a guest from its start (C2c's join): the game takes the restart
+  snapshot when a park starts (`GameFlow.TakeRestartSnapshot`), before a session could mark the park
+  as a guest's, and would write the host's park over the guest's own restart file.
+- A session's recorded log (`CoopHostStream.SessionLog`) replays only with the session's rules on: the
+  refusals of the cheats, the secret park name and the developer kinds, and of a command issued inside
+  another, read them, and the log does not record them yet. The replay of a session log must set them.
+- A guest's HUD still offers the build tools (C2d): each refused click says "Only the host builds",
+  once for a drag. Opening the loans window refreshes its offers by command, which a guest is refused,
+  and the winning screen's Resume is the host's alone, so a guest's winning screen stays until the
+  host dismisses it.

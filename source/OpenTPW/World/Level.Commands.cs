@@ -64,8 +64,8 @@ public partial class Level
 		Guests?.Attractions.OfType<RideVisitorBridge>().FirstOrDefault( ride => ride.HasQueue && ride.AttractionId == attraction );
 
 	/// <summary>
-	/// <see cref="ResolveCommandRide"/> for a queue line command, its queue brought up to date first (as the queue edit's is): the queue tool's entry only reads the queue
-	/// (<see cref="EnterQueueTool"/>), so a grid edit since the last recompute is taken in here, on every peer alike.
+	/// <see cref="ResolveCommandRide"/> for a queue line command, which goes ahead once its ride is found, its queue brought up to date first (as the queue edit's is): the queue tool's
+	/// entry only reads the queue (<see cref="EnterQueueTool"/>), so a grid edit since the last recompute is taken in here, on every peer alike.
 	/// </summary>
 	private RideVisitorBridge? ResolveQueueCommandRide( int attraction )
 	{
@@ -164,18 +164,22 @@ public partial class Level
 
 	private ParkCommandResult ExecuteQueueSegment( QueueSegmentCommand line )
 	{
-		if ( ResolveQueueCommandRide( line.Ride ) is not { } ride ) return ParkCommandResult.Rejected( "No queue ride." );
+		if ( ResolveCommandRide( line.Ride ) is not { } ride || Guests == null ) return ParkCommandResult.Rejected( "No queue ride." );
 		var writer = CreateQueueWriter( ride );
 		if ( !writer.SupportsNativeStart( (line.StartX, line.StartY) ) || !writer.SupportsNative( (line.StartX, line.StartY), (line.EndX, line.EndY) ) ) return ParkCommandResult.Rejected( "Unsupported native queue domain." );
+		// [EXT:online-coop-lockstep] the checks read the grid alone; the segment goes ahead on the queue as it stands (a rejection leaves the ride as it was)
+		ride.RecomputeQueue( Guests.Grid );
 		// Even a partial type failure applied subsequent passes and must remain in the command log.
 		return ParkCommandResult.Ok( writer.CommitNative( (line.StartX, line.StartY), (line.EndX, line.EndY) ) );
 	}
 
 	private ParkCommandResult ExecuteQueueSegmentUndo( UndoQueueSegmentCommand undo )
 	{
-		if ( ResolveQueueCommandRide( undo.Ride ) is not { } ride ) return ParkCommandResult.Rejected( "No queue ride." );
+		if ( ResolveCommandRide( undo.Ride ) is not { } ride || Guests == null ) return ParkCommandResult.Rejected( "No queue ride." );
 		var writer = CreateQueueWriter( ride );
 		if ( !writer.SupportsNativeUndo( (undo.StartX, undo.StartY), (undo.EndX, undo.EndY) ) ) return ParkCommandResult.Rejected( "Unsupported native queue undo domain." );
+		// [EXT:online-coop-lockstep] as the segment: brought up to date only once the undo goes ahead
+		ride.RecomputeQueue( Guests.Grid );
 		writer.UndoNative( new( (undo.StartX, undo.StartY), (undo.EndX, undo.EndY) ) );
 		return ParkCommandResult.Ok();
 	}

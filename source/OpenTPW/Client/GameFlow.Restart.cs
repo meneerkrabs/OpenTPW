@@ -27,7 +27,7 @@ internal sealed partial class GameFlow
 	/// </summary>
 	// [BIN:TPW-EXE:0x54f3e6 restart snapshot game type] state 15 compares the GameType word 0xFB3B7C with 1 (cmp ecx, ebx at 0x54f3ee, sete) and calls the snapshot writer 0x550B30 only when it differs, then moves to state 10 (0x54f3fc)
 	internal static bool TakesRestartSnapshot( Level level ) => GameEditions.Current == GameEdition.ThemeParkWorld && !level.IsReadOnlyVisit &&
-		!level.IsThemeParkIncSlice && level.CoopRole != CoopRole.Guest && level.OriginalPark != null && level.Guests != null && level.Park != null;
+		!level.IsThemeParkIncSlice && !level.IsCoopGuestPark && level.OriginalPark != null && level.Guests != null && level.Park != null;
 
 	/// <summary>
 	/// Whether the pause menu offers Restart Park for this park: every park that takes a restart snapshot, Full Simulation included. The

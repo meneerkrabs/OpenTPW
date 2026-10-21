@@ -27,6 +27,9 @@ public partial class Level
 			if ( item.IsDeleted || item is PrototypeRide || economyInstances.ContainsKey( item ) || (PlacedRide != null && ReferenceEquals( item, PlacedRide ))
 				|| !Park.Economy.Catalog.TryGet( item.Entry.InfoId, out _ ) )
 				continue;
+			// [EXT:online-coop-lockstep] a shared park changes only through its commands: the host's save refuses instead of repairing on its own machine
+			if ( CoopRole != CoopRole.None )
+				throw new InvalidOperationException( $"{item.Entry.DisplayName} (attraction {item.Visitors.AttractionId}) has no economy binding, which a shared park cannot repair; save it after the session." );
 			var held = economyInstances.Values.ToHashSet();
 			if ( prototypeInstance is int prototype )
 				held.Add( prototype );

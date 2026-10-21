@@ -404,7 +404,7 @@ const scenarios = {
 	},
 
 	/**
-	 * [EXT:online-coop-lockstep] The co-op session digest's cost (docs/COOP.md, "Measurements"): the host takes one every park second. After jungle, the median of 15 digests and
+	 * [EXT:online-coop-lockstep] The co-op session digest's cost (docs/COOP.md, "Measurements"): the host takes one a second of real time. After jungle, the median of 15 digests and
 	 * world hashes on the park as it stands; again after up to 80 of the buy menu's rides and shops are built (money cheated in for them) and after --crowd extra guests are staged
 	 * (Program.PerfCrowd); and once more after the park ran on for 20 s. The park is not a real run afterwards.
 	 */

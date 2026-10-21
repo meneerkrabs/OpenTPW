@@ -13,8 +13,8 @@ public enum CoopRole
 /// <summary>
 /// [EXT:online-coop-lockstep] A level in a co-op session (docs/COOP.md, "The level in a session"): the stream it runs over the link (the host's, or a guest's), and the session's
 /// rules on the level. Only the host builds (C2), and a guest's own click is refused with a message; local pause screens stop no park; cheats and the developer kinds are refused
-/// alike on every peer; a game started with developer park options shares nothing; a guest never saves. It ends when the level closes or is replaced, when the link's session
-/// ends, or when the host's stream ends it. The screens that start one are C2d's; the join snapshot is C2c's.
+/// alike on every peer; a game started with developer park options shares nothing; a guest's park is never saved, not even after its session. It ends when the level closes or
+/// is replaced, when the link's session ends, or when the host's stream ends it. The screens that start one are C2d's; the join snapshot is C2c's.
 /// </summary>
 internal sealed class CoopSession : IDisposable
 {
@@ -29,8 +29,9 @@ internal sealed class CoopSession : IDisposable
 	}
 
 	/// <summary>
-	/// Whether this run may change the park outside the commands: the desktop game started with a developer option (every <c>--debug-*</c> and <c>--perf-*</c> option) or the browser
-	/// page of the performance harness, whose hooks stage crowds, cheats and research directly. Such a game shares no park, since a peer would never see those changes.
+	/// Whether this run may change the park outside the commands: the desktop game started with a developer option (every <c>--debug-*</c> and <c>--perf-*</c> option, and the smokes
+	/// that build their parks directly: <c>--smoke-test</c>, <c>--tpi-smoke-test</c>, <c>--park-resume-smoke</c>, <c>--smoke-presence</c>) or the browser page of the performance
+	/// harness, whose hooks stage crowds, cheats and research directly. Such a game shares no park, since a peer would never see those changes.
 	/// </summary>
 	internal static bool ChangesParkOutsideCommands { get; set; }
 
@@ -46,8 +47,8 @@ internal sealed class CoopSession : IDisposable
 
 	/// <summary>
 	/// Whether <paramref name="level"/> can be shared (hosted, or joined from the host's park): a running Theme Park World park with its guests (decision Q3: never Theme Park Inc, and
-	/// never the developer sandbox, whose load replaces the park outside the commands), not a visit, not in a session already, in a game not started with a developer option that
-	/// changes the park outside the commands.
+	/// never the developer sandbox, whose load replaces the park outside the commands), not a visit, not in a session already, no cheat waiting for its park turn (decision Q17:
+	/// it would apply inside the session), in a game not started with a developer option that changes the park outside the commands.
 	/// </summary>
 	public static bool CanShare( Level level, out string reason )
 	{
@@ -56,6 +57,7 @@ internal sealed class CoopSession : IDisposable
 			: GameEditions.Current != GameEdition.ThemeParkWorld || level.IsThemeParkIncSlice || level.OriginalPark == null ? "Only Theme Park World parks are shared."
 			: level.IsReadOnlyVisit ? "A visited park is not shared."
 			: level.Park == null || level.Guests == null ? "Only a running park is shared."
+			: level.Park.Economy.Cheats.Pending.Count > 0 ? "A cheat is waiting for the next park turn; share the park after it."
 			: ChangesParkOutsideCommands ? "This game was started with developer options that change the park; restart it without them to share a park."
 			: "";
 		return reason.Length == 0;
@@ -64,7 +66,7 @@ internal sealed class CoopSession : IDisposable
 	/// <summary>Hosts the session <paramref name="link"/> is in with <paramref name="level"/>: the host's stream starts (the session clock with it).</summary>
 	public static CoopSession Host( Level level, ICoopStreamTransport link, Func<double>? seconds = null, Func<DateTime>? localTime = null )
 	{
-		Require( level, link );
+		Require( level, link, CoopRole.Host );
 		var session = new CoopSession( level, link, CoopRole.Host );
 		session.HostStream = new CoopHostStream( level, link, seconds, localTime );
 		session.HostStream.Failed += session.OnStreamFailed;
@@ -74,26 +76,31 @@ internal sealed class CoopSession : IDisposable
 	/// <summary>Joins the session <paramref name="link"/> is in with <paramref name="level"/>, which must be the host's park as it stands at the session's last frame (C2c).</summary>
 	public static CoopSession Join( Level level, ICoopStreamTransport link, Func<double>? seconds = null )
 	{
-		Require( level, link );
+		Require( level, link, CoopRole.Guest );
 		var session = new CoopSession( level, link, CoopRole.Guest );
 		session.GuestStream = new CoopGuestStream( level, link, seconds );
 		level.Commands.SessionRefused += session.OnRefused;
 		return session.Attach();
 	}
 
-	private static void Require( Level level, ICoopStreamTransport link )
+	private static void Require( Level level, ICoopStreamTransport link, CoopRole role )
 	{
 		ArgumentNullException.ThrowIfNull( link );
 		if ( !CanShare( level, out var reason ) )
 			throw new InvalidOperationException( reason );
-		if ( link.Session == null )
+		if ( link.Session is not { } session )
 			throw new InvalidOperationException( "The link is in no session." );
+		if ( (session.You == session.Host) != (role == CoopRole.Host) )
+			throw new InvalidOperationException( role == CoopRole.Host ? "This game does not host the link's session." : "The host's game streams; it does not follow." );
 	}
 
 	private CoopSession Attach()
 	{
 		link.SessionEnded += OnSessionEnded;
 		level.CoopSession = this;
+		// a guest's park is the host's: nothing saves it, during the session or after it
+		if ( Role == CoopRole.Guest )
+			level.IsCoopGuestPark = true;
 		return this;
 	}
 
@@ -128,7 +135,9 @@ internal sealed class CoopSession : IDisposable
 			level.CoopSession = null;
 		if ( leave )
 			link.Leave( reason );
-		Ended?.Invoke( reason );
+		// a listener that throws never keeps a closing park from the rest of its teardown
+		try { Ended?.Invoke( reason ); }
+		catch ( Exception error ) { Log.Warning( $"A co-op session's end listener failed: {error.Message}" ); }
 	}
 }
 
@@ -139,6 +148,9 @@ public partial class Level
 
 	/// <summary>[EXT:online-coop-lockstep] This level's part in a co-op session.</summary>
 	internal CoopRole CoopRole => CoopSession?.Role ?? CoopRole.None;
+
+	/// <summary>[EXT:online-coop-lockstep] Whether this level joined a co-op session as a guest: its park is the host's, which nothing saves, also after the session ended.</summary>
+	internal bool IsCoopGuestPark { get; set; }
 
 	/// <summary>[EXT:online-coop-lockstep] How many of this machine's clicks the session refused (a guest: only the host builds); the HUD says so when it changes.</summary>
 	internal int SessionRefusals { get; private set; }

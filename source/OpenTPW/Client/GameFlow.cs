@@ -1221,6 +1221,8 @@ internal sealed partial class GameFlow : IDisposable
 		if ( chatOverlay != null )
 			global::Global.Render.OnOverlayRender -= chatOverlay.Draw;
 		chatOverlay?.Dispose();
+		// [EXT:online-coop-lockstep] quitting leaves a shared park's session while the link can still say so (a host's leave ends it for everyone)
+		Level?.CoopSession?.End( "The player quit the game." );
 		onlineSession?.Dispose();
 		global::Global.Render.OnOverlayRender -= RenderOverlay;
 		Level?.DetachOverlay();

@@ -9,8 +9,10 @@ internal static class Game
 	public static void Run( string[] args )
 	{
 		Log = new();
-		// [EXT:online-coop-lockstep] every --debug-* and --perf-* option may change the park outside the commands: such a game shares no park (CoopSession.CanShare)
-		CoopSession.ChangesParkOutsideCommands = args.Any( arg => arg.StartsWith( "--debug-", StringComparison.Ordinal ) || arg.StartsWith( "--perf-", StringComparison.Ordinal ) );
+		// [EXT:online-coop-lockstep] every --debug-* and --perf-* option and the smokes that build their parks directly may change the park outside the commands: such a game shares no
+		// park (CoopSession.CanShare)
+		CoopSession.ChangesParkOutsideCommands = args.Any( arg => arg.StartsWith( "--debug-", StringComparison.Ordinal ) || arg.StartsWith( "--perf-", StringComparison.Ordinal )
+			|| arg is "--smoke-test" or "--tpi-smoke-test" or "--park-resume-smoke" or "--smoke-presence" );
 		SdlMovieAudioOutput.Suppressed = IsSilentRun( args, Environment.GetEnvironmentVariable( "OPENTPW_SILENT" ), Environment.GetEnvironmentVariable( "OPENTPW_OFFSCREEN" ) );
 		Window.OffscreenRequested = IsOffscreenRun( args, Environment.GetEnvironmentVariable( "OPENTPW_OFFSCREEN" ) );
 		// [EXT:online-coop-commands] a strict run throws on a command applied inside a simulation tick and on one that throws (docs/COOP.md, "No command inside a tick"); only ever

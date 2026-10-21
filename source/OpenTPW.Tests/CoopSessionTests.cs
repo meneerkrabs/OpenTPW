@@ -4,7 +4,10 @@ using System.Linq;
 using System.Reflection;
 using System.Threading.Tasks;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using OpenTPW.Hud;
 using OpenTPW.Online.Coop;
+using OpenTPW.UI.Original;
+using N = System.Numerics;
 
 namespace OpenTPW.Tests;
 
@@ -216,10 +219,12 @@ public class CoopSessionTests
 	{
 		var (host, guest, hostLink, _) = Shared();
 		var session = host.Session!;
+		// a listener that throws keeps the closing park from nothing
+		session.Ended += _ => throw new InvalidOperationException( "a listener's fault" );
 		host.Enter();
 		host.Level.Dispose();
 		Assert.AreEqual( "The park was closed.", session.EndedWith );
-		Assert.AreEqual( "The park was closed.", hostLink.LeftWith, "a host's leave ends the session for everyone" );
+		Assert.AreEqual( "The park was closed.", hostLink.LeftWith, "the host's link leaves with the reason (the server ends the session for every member then)" );
 		Assert.IsNull( host.Level.CoopSession );
 		Assert.AreEqual( CoopRole.Guest, guest.Level.CoopRole );
 	}
@@ -248,6 +253,22 @@ public class CoopSessionTests
 		var link = new CoopTestNetwork().Add( host: true );
 		Assert.ThrowsException<InvalidOperationException>( () => CoopSession.Host( bare, link ) );
 		Assert.IsNull( bare.CoopSession );
+
+		// a cheat waiting for its park turn would apply inside the session (decision Q17)
+		park.Enter();
+		Assert.IsTrue( park.Issue( new QueueCheatCommand( CheatKind.Mode ) ).Accepted );
+		Assert.IsFalse( CoopSession.CanShare( park.Level, out reason ) );
+		StringAssert.Contains( reason, "cheat is waiting" );
+
+		// the host's game hosts and a guest's follows, each through its own link
+		var network = new CoopTestNetwork();
+		var hostLink = network.Add( host: true );
+		var guestLink = network.Add();
+		var other = NewPark();
+		Assert.ThrowsException<InvalidOperationException>( () => CoopSession.Host( other.Level, guestLink ), "a guest's link hosts nothing" );
+		Assert.ThrowsException<InvalidOperationException>( () => CoopSession.Join( other.Level, hostLink ), "the host's link follows nothing" );
+		Assert.IsNull( other.Level.CoopSession );
+		Assert.IsFalse( other.Level.IsCoopGuestPark );
 	}
 
 	[TestMethod]
@@ -267,6 +288,8 @@ public class CoopSessionTests
 			new SetAllObjectsOpenCommand( false ),
 			new SetPrototypeRunningCommand( true )
 		};
+		// each is refused by the session's own rule, as its reason says (the prototype's run is refused before the check that no prototype is placed: placing one needs the game's
+		// Totem script, which this park has not)
 		foreach ( var command in refused )
 		{
 			var result = host.Issue( command );
@@ -291,6 +314,13 @@ public class CoopSessionTests
 		Assert.IsTrue( Saves( host ) && GameFlow.TakesRestartSnapshot( host.Level ), "the host saves and restarts as before" );
 		Assert.IsFalse( Saves( guest ), "no automatic checkpoint, autosave or exit checkpoint for a guest" );
 		Assert.IsFalse( GameFlow.TakesRestartSnapshot( guest.Level ), "no restart snapshot for a guest" );
+		bool Offers( Park park, UIStrings label ) => ParkHud.PauseMenuOffers( park.Level.IsReadOnlyVisit, park.Level.IsCoopGuestPark, false, label );
+		foreach ( var label in new[] { UIStrings.Save, UIStrings.RestartPark, UIStrings.PublishPark } )
+		{
+			Assert.IsTrue( Offers( host, label ), $"the host's pause menu offers {label}" );
+			Assert.IsFalse( Offers( guest, label ), $"a guest's pause menu offers no {label}" );
+		}
+		Assert.IsTrue( Offers( guest, UIStrings.Load ) && Offers( guest, UIStrings.ExitToLobby ) && Offers( guest, UIStrings.QuitGame ) );
 
 		var alone = NewPark();
 		Assert.IsNull( GameFlow.SessionTimeScale( alone.Level ), "outside a session the HUD's screens may stop the park" );
@@ -302,6 +332,61 @@ public class CoopSessionTests
 		Assert.AreEqual( GameSpeedScale.Of( GameSpeed.Fastest ), GameFlow.SessionTimeScale( guest.Level ), "the guest's park follows the host's speed" );
 		Assert.IsTrue( host.Issue( new SetGameSpeedCommand( GameSpeed.Paused ) ).Accepted );
 		Assert.AreEqual( 0f, GameFlow.SessionTimeScale( host.Level ), "the park's own pause stops it" );
+
+		// the park stays the host's after the session: nothing saves it over the guest's own park of the theme
+		guest.Session!.End( "Time for tea." );
+		Assert.AreEqual( CoopRole.None, guest.Level.CoopRole );
+		Assert.IsTrue( guest.Level.IsCoopGuestPark );
+		Assert.IsFalse( Saves( guest ) || GameFlow.TakesRestartSnapshot( guest.Level ) || Offers( guest, UIStrings.Save ) );
+	}
+
+	[TestMethod]
+	public void TheHostsSaveRepairsNothingInASharedPark()
+	{
+		var (host, _, _, _) = Shared();
+		host.Enter();
+		var bindings = (Dictionary<OriginalObject, int>)typeof( Level ).GetField( "economyInstances", BindingFlags.Instance | BindingFlags.NonPublic )!.GetValue( host.Level )!;
+		Assert.IsTrue( bindings.Remove( host.One ), "a park that lost an object's economy binding" );
+		// outside the commands the repair would give the host's object a record the guests' objects lack
+		var error = Assert.ThrowsException<InvalidOperationException>( () => host.Level.CaptureResumeSnapshot( null, "shared" ) );
+		StringAssert.Contains( error.Message, "cannot repair" );
+		Assert.IsFalse( bindings.ContainsKey( host.One ), "nothing was repaired" );
+	}
+
+	/// <summary>An empty build menu for the guest's HUD.</summary>
+	private sealed class NoItems : IBuildCatalog
+	{
+		public IReadOnlyList<BuildItem> GetItems( BuildCategory category ) => Array.Empty<BuildItem>();
+	}
+
+	[TestMethod]
+	public void AGuestsRefusedClicksAreSaidOnceAsOnlyTheHostBuilds()
+	{
+		var (_, guest, _, _) = Shared();
+		guest.Enter();
+		var strings = OriginalUiTests.FakeStrings();
+		var hud = new ParkHud( guest.Level, strings, new EconomyParkStatus( () => guest.Economy ), new NoItems(), new HudHost() );
+		var font = new FontAtlas( FontAtlasTests.CreateFont( 8, new FontAtlasTests.SyntheticGlyph( 'A', 2, 2, 0, 0, 3 ) ) );
+		var context = new UiContext( strings, new UiFonts( _ => font ), new UiModels( name => throw new System.IO.FileNotFoundException( name ) ) )
+		{ Canvas = new UiCanvas( 2048, 1536 ), ResolveTexture = _ => null };
+		void Frame() => hud.Update( context, UiInput.Idle( new N.Vector2( -1 ) ), false, false, false );
+		var said = strings.Extra( OpenTpwText.OnlyTheHostBuilds );
+		int Said() => hud.Messages.Count( message => message == said );
+		Frame();
+		Assert.AreEqual( 0, Said() );
+		// a drag's run of refused clicks, one command a cell: said once, with one error sound
+		for ( var x = 4; x <= 8; x++ )
+			Assert.IsFalse( guest.Issue( new RemovePathCellCommand( x, 1 ) ).Accepted );
+		Frame();
+		Assert.AreEqual( 1, Said() );
+		Assert.IsFalse( guest.Issue( new RemovePathCellCommand( 9, 1 ) ).Accepted );
+		Frame();
+		Assert.AreEqual( 1, Said(), "a refusal right after the notice is not said again" );
+		Time.Update( ParkHud.SessionRefusalNoticeSeconds );
+		Assert.IsFalse( guest.Issue( new RemovePathCellCommand( 10, 1 ) ).Accepted );
+		Frame();
+		Assert.AreEqual( 2, Said(), "a later click is said again" );
+		Assert.AreEqual( 7, guest.Level.SessionRefusals );
 	}
 
 	/// <summary>
@@ -431,6 +516,22 @@ public class CoopSessionTests
 	}
 
 	[TestMethod]
+	public void ARejectedQueueCommandLeavesTheRideAsItWas()
+	{
+		var park = NewPark();
+		park.Enter();
+		var grid = park.Level.Guests!.Grid;
+		ConfigureQueue( grid, park.One, 10, 5 );
+		grid.ClearQueue( 10, 2 );
+		var ride = park.One.Visitors;
+		var before = QueueState( ride );
+		// segments the native queue rules do not cover are refused before the queue is brought up to date
+		Assert.IsFalse( park.Issue( new QueueSegmentCommand( ride.AttractionId, 0, 0, 1, 0 ) ).Accepted );
+		Assert.IsFalse( park.Issue( new UndoQueueSegmentCommand( ride.AttractionId, 0, 0, 0, 0 ) ).Accepted );
+		Assert.AreEqual( before, QueueState( ride ), "a rejection changes nothing" );
+	}
+
+	[TestMethod]
 	public async Task AHostAndAGuestStayEqualThroughTheirRealLinksAndALostSocketEach()
 	{
 		await CoopLinkTests.WithServer( async ( server, players ) =>
@@ -487,7 +588,6 @@ public class CoopSessionTests
 				await Task.Delay( 2 );
 			}
 			Assert.AreEqual( 2, lostSockets );
-			Assert.IsTrue( hostPlayer.Link.Connections >= 2 && guestPlayer.Link.Connections >= 2, "each socket was lost and the link resumed" );
 
 			// the host holds its park and its clock until the guest stands at its tick with every record applied
 			host.Holds = true;
@@ -503,6 +603,7 @@ public class CoopSessionTests
 				await Task.Delay( 2 );
 			}
 			Compare( host, guest );
+			Assert.IsTrue( hostPlayer.Link.Connections >= 2 && guestPlayer.Link.Connections >= 2, "each socket was lost and the link resumed" );
 			// a digest a second of real time: one at the fastest speed (tick 240) and at least two in the last three seconds at the normal speed
 			Assert.IsTrue( guest.Session.GuestStream!.Checks >= 3, $"the guest compared the host's digests ({guest.Session.GuestStream.Checks})" );
 			Assert.AreEqual( 1, guest.Level.SessionRefusals );

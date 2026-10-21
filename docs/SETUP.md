@@ -58,8 +58,10 @@ refusing, when:
   `swears.txt`, which the installer copies from the CD's language folders (some banners
   or the chat word filter may then be missing);
 - there is no `Movies` folder (the CD can be added for movies and music);
-- the folder is read-only, such as a mounted CD: saves then go to a `save` folder in
-  the user configuration directory instead of `<game>/save`.
+- the folder is read-only, such as a mounted CD or (on Windows, where OpenTPW runs
+  without administrator rights) an installation under Program Files: saves then go to a
+  `save` folder in the user configuration directory instead of `<game>/save`. Saves an
+  earlier OpenTPW wrote in `<game>/save` are copied there once, without replacing files.
 
 ## The setup window
 

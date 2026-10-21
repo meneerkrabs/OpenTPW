@@ -155,8 +155,7 @@ public sealed class OriginalGateSign : Entity
 		foreach ( var part in SignTextRenderer.Shared.ComposeSignSteps( sign, new[] { line1, line2 }, diagnostics, composition ) )
 			yield return part;
 		var (left, right, textPixels) = composition.Result;
-		foreach ( var diagnostic in diagnostics )
-			Log?.Warning( $"Gate sign: {diagnostic}" );
+		LogDiagnostics( diagnostics );
 		var images = new ObjectSignImages( line1, line2, left, right, textPixels, diagnostics );
 		var model = new Model( vertices.ToArray(), indices.ToArray(), SignTextRenderer.CreateMaterial( images.LeftTexture, images.RightTexture ) );
 		var slot = sign.Slots[0];
@@ -187,9 +186,15 @@ public sealed class OriginalGateSign : Entity
 	internal static (byte[] Left, byte[] Right, IReadOnlyList<string> Diagnostics, int TextPixelCount) ComposeHalves( SignFile sign, string line1, string line2 )
 	{
 		var composed = SignTextRenderer.Shared.ComposeSign( sign, new[] { line1, line2 }, default );
-		foreach ( var diagnostic in composed.Diagnostics )
-			Log?.Warning( $"Gate sign: {diagnostic}" );
+		LogDiagnostics( composed.Diagnostics );
 		return composed;
+	}
+
+	/// <summary>Logs the drawing problems of a composition of the gate's sign.</summary>
+	private static void LogDiagnostics( IEnumerable<string> diagnostics )
+	{
+		foreach ( var diagnostic in diagnostics )
+			Log?.Warning( $"Gate sign: {diagnostic}" );
 	}
 
 	private static void AppendSignFaces( OriginalPark park, ModelFile model, ModelFile.Mesh mesh, List<Vertex> vertices, List<uint> indices )

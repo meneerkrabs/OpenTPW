@@ -12,6 +12,7 @@ public partial class Level
 	/// <summary>Draws the placed staff and the tool's dangling sprite.</summary>
 	public StaffRenderer? StaffRenderer { get; private set; }
 
+	// kept beside its steps for the tests that call it by reflection (FrameBatchingTests, RestartParkSnapshotTests and others)
 	private void SetupStaff()
 	{
 		foreach ( var _ in SetupStaffSteps() ) { }

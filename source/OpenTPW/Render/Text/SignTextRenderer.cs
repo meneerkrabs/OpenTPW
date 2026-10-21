@@ -79,8 +79,8 @@ public sealed class SignTextRenderer
 	}
 
 	/// <summary>
-	/// <see cref="ComposeSign"/> in steps (<see cref="SignSurfaceComposer.ComposeSteps"/>), for a sign composed over frames; the last step
-	/// sets <paramref name="into"/> and adds the diagnostics to <paramref name="diagnostics"/>, as <see cref="ComposeSign"/> returns them.
+	/// <see cref="ComposeSign"/> in steps (<see cref="SignSurfaceComposer.ComposeSteps"/>), for a sign composed over frames: each step adds the diagnostics
+	/// of its part to <paramref name="diagnostics"/> as it runs (together those <see cref="ComposeSign"/> returns), and the last sets <paramref name="into"/>.
 	/// </summary>
 	internal IEnumerable<bool> ComposeSignSteps( SignFile sign, IReadOnlyList<string?> lines, List<string> diagnostics, SignSurfaceComposer.Composition into, SignPaint? firstPaintOverride = null ) =>
 		SignSurfaceComposer.ComposeSteps( sign, Fonts, lines, diagnostics, into, firstPaintOverride );

@@ -201,16 +201,6 @@ public static partial class Program
 		return true;
 	}
 
-	/// <summary>Presses the HUD's park door button (<see cref="ParkHud.ToggleParkDoor"/>): it opens a closed park and closes an open one, as a click does; false outside a park.</summary>
-	[JSExport]
-	public static bool PerfParkDoor()
-	{
-		if ( flow?.Hud is not { } hud )
-			return false;
-		hud.ToggleParkDoor();
-		return true;
-	}
-
 	/// <summary>Whether the park's economy has its door open (null economy: false).</summary>
 	[JSExport]
 	public static bool PerfParkOpen() => flow?.Level?.Park?.Economy.IsParkOpen == true;

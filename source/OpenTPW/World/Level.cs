@@ -88,6 +88,7 @@ public partial class Level : IDisposable
 	/// The park name and the gate sign of an original level: a resumed park keeps its saved lines, which the sign draws as the
 	/// original's rebuild after loading does (0x468500); a new park takes the gate's default lines.
 	/// </summary>
+	// kept beside its steps for the tests that call it by reflection (ParkNameTests)
 	private void SetupParkName()
 	{
 		foreach ( var _ in SetupParkNameSteps() ) { }

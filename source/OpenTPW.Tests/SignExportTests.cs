@@ -327,6 +327,181 @@ public class SignExportTests
 		}
 	}
 
+	/// <summary>The fixture of the override tests: two explicit lines for the jungle gate, one name for the Inca Totem, two lines for the lobby's jungle island.</summary>
+	internal const string OverrideFixture = """
+		{
+		  "description": "test fixture",
+		  "signs": [
+		    { "theme": "jungle", "object": "gates", "lines": [ "El Reino", "Perdido" ] },
+		    { "theme": "Jungle", "object": "TOTEM", "name": "  El Tótem Inca  " },
+		    { "theme": "lobby", "object": "jun_isle", "lines": [ "Reino", "" ] }
+		  ]
+		}
+		""";
+
+	private static SignTextOverrides Overrides( string json ) => SignTextOverrides.Parse( System.Text.Encoding.UTF8.GetBytes( json ), "texts.json" );
+
+	[TestMethod]
+	public void OverrideFilesGiveTwoLinesOrOneNameSplitAsTheGameSplitsAName()
+	{
+		var overrides = Overrides( OverrideFixture );
+		Assert.AreEqual( "texts.json", overrides.FileName );
+		Assert.AreEqual( 3, overrides.Entries.Count );
+		Assert.AreEqual( new SignTextOverrides.Replacement( "El Reino", "Perdido", "El Reino Perdido" ), overrides.Entries[new( "jungle", "gates" )] );
+		// one name: trimmed and split at the space nearest its middle, the game's rule for a sign with only a display name (ObjectSigns.Lines)
+		Assert.AreEqual( new SignTextOverrides.Replacement( "El Tótem", "Inca", "El Tótem Inca" ), overrides.Entries.Single( pair => pair.Key.Object == "TOTEM" ).Value );
+		Assert.AreEqual( SignCanvas.SplitAtMiddleSpace( "El Tótem Inca" ), SignTextOverrides.SplitName( "  El Tótem Inca  " ) );
+		Assert.AreEqual( ("Reptador", ""), SignTextOverrides.SplitName( "Reptador" ) );
+		Assert.AreEqual( ("El País de", "las Maravillas"), SignTextOverrides.SplitName( "El País de las Maravillas" ) );
+		Assert.AreEqual( new SignTextOverrides.Replacement( "Reino", "", "Reino" ), overrides.Entries[new( "lobby", "jun_isle" )] );
+		// keys are matched without regard to case
+		Assert.IsTrue( overrides.TryGet( Sign( "jungle", "totem" ), out var totem ) && totem.Line1 == "El Tótem" );
+		Assert.IsFalse( overrides.TryGet( Sign( "hallow", "totem" ), out _ ) );
+	}
+
+	[DataTestMethod]
+	[DataRow( "[]", "top level" )]
+	[DataRow( "{ \"sign\": [] }", "unknown top-level member" )]
+	[DataRow( "{ }", "\"signs\" array is required" )]
+	[DataRow( "{ \"signs\": [ { \"theme\": \"jungle\", \"object\": \"totem\" } ] }", "exactly one of" )]
+	[DataRow( "{ \"signs\": [ { \"theme\": \"jungle\", \"object\": \"totem\", \"name\": \"A\", \"lines\": [ \"A\", \"B\" ] } ] }", "exactly one of" )]
+	[DataRow( "{ \"signs\": [ { \"theme\": \"jungle\", \"object\": \"totem\", \"lines\": [ \"A\", \"B\", \"C\" ] } ] }", "exactly two strings" )]
+	[DataRow( "{ \"signs\": [ { \"theme\": \"jungle\", \"object\": \"totem\", \"lines\": [ \"A\", 1 ] } ] }", "exactly two strings" )]
+	[DataRow( "{ \"signs\": [ { \"theme\": \"jungle\", \"object\": \"totem\", \"name\": \"A\", \"line1\": \"A\" } ] }", "unknown member" )]
+	[DataRow( "{ \"signs\": [ { \"object\": \"totem\", \"name\": \"A\" } ] }", "\"theme\" must be" )]
+	[DataRow( "{ \"signs\": [ { \"theme\": \"jungle\", \"object\": \"totem\", \"name\": \"A\\nB\" } ] }", "control characters" )]
+	[DataRow( "{ \"signs\": [ { \"theme\": \"jungle\", \"object\": \"totem\", \"name\": \"A\" }, { \"theme\": \"JUNGLE\", \"object\": \"Totem\", \"name\": \"B\" } ] }", "listed twice" )]
+	[DataRow( "{ \"signs\": [ ], }", "not valid JSON" )]
+	[DataRow( "{ \"signs\": [ { \"theme\": \"jungle\", \"object\": \"totem\", \"name\": \"A\" } ], \"signs\": [ ] }", "not valid JSON" )]
+	[DataRow( "{ \"signs\": [ { \"theme\": \"jungle\", \"object\": \"totem\", \"name\": \"A\", \"name\": \"B\" } ] }", "not valid JSON" )]
+	[DataRow( "{ \"signs\": [ { \"theme\": \"jungle\", \"object\": \"totem\", \"name\": \"A\\u2028B\" } ] }", "line/paragraph separators" )]
+	[DataRow( "{ \"signs\": [ { \"theme\": \"jungle\", \"object\": \"totem\", \"lines\": [ \"A\\u2029\", \"B\" ] } ] }", "line/paragraph separators" )]
+	[DataRow( "{ \"signs\": [ { \"theme\": \"jungle\", \"object\": \"totem\", \"name\": \"\\ud800\" } ] }", "not valid text" )]
+	[DataRow( "{ \"signs\": [ { \"theme\": \"\\udc00\", \"object\": \"totem\", \"name\": \"A\" } ] }", "not valid text" )]
+	public void MalformedOverrideFilesAreRejected( string json, string message )
+	{
+		var error = Assert.ThrowsException<InvalidDataException>( () => Overrides( json ) );
+		StringAssert.Contains( error.Message, message );
+	}
+
+	[TestMethod]
+	public void UnknownOverrideKeysAreAnErrorListingThem()
+	{
+		var signs = new[] { Sign( "jungle", "totem" ), Sign( "jungle", "gates", "gate" ) };
+		var overrides = Overrides( """{ "signs": [ { "theme": "jungle", "object": "totem", "name": "A" }, { "theme": "jungle", "object": "totum", "name": "B" }, { "theme": "mars", "object": "gates", "name": "C" } ] }""" );
+		var error = Assert.ThrowsException<InvalidDataException>( () => SignExport.ApplyOverrides( signs, overrides ) );
+		StringAssert.Contains( error.Message, "jungle/totum" );
+		StringAssert.Contains( error.Message, "mars/gates" );
+		Assert.IsFalse( error.Message.Contains( "jungle/totem," ) );
+		Assert.ThrowsException<FileNotFoundException>( () => SignTextOverrides.Load( Path.Combine( root, "missing.json" ) ) );
+		Assert.AreEqual( Path.Combine( root, "texts.json" ), SignExport.SignTextsPath( new[] { "--sign-texts", Path.Combine( root, "texts.json" ) } ) );
+		Assert.ThrowsException<ArgumentException>( () => SignExport.SignTextsPath( new[] { "--sign-texts", "--bonus-data" } ) );
+	}
+
+	[TestMethod]
+	public void OverridesChangeExactlyTheNamedSignsWithTheGamesComposer()
+	{
+		if ( ObjectCatalogCorpusTests.UseOriginalData( out var previousFileSystem ) == null )
+			Assert.Inconclusive( "Set OPENTPW_GAME_PATH to the original game for the sign export." );
+		var previousLanguage = GameLanguage.IsSelected ? GameLanguage.Current : null;
+		var previousEdition = GameEditions.Current;
+		var previousBonus = ObjectCatalog.BonusDataRoot;
+		try
+		{
+			ObjectCatalog.BonusDataRoot = null;
+			GameEditions.Select( GameEdition.ThemeParkWorld );
+			var data = FileSystem.GetAbsolutePath( "/" );
+			GameLanguage.Current = GameLanguage.Resolve( data, "English", null );
+			var fixture = Path.Combine( root, "texts.json" );
+			File.WriteAllText( fixture, OverrideFixture );
+			var fixtureBytes = File.ReadAllBytes( fixture );
+			var plain = SignExport.Run( Path.Combine( root, "plain" ), data );
+			var output = Path.Combine( root, "override" );
+			var files = SignExport.Run( output, SignTextOverrides.Load( fixture ), data );
+			CollectionAssert.AreEqual( fixtureBytes, File.ReadAllBytes( fixture ), "the override file is only read" );
+
+			// the same files, and only the three named signs differ
+			CollectionAssert.AreEqual( plain.Select( file => file.RelativePath ).ToArray(), files.Select( file => file.RelativePath ).ToArray() );
+			var changed = files.Zip( plain ).Where( pair => pair.First.PngSha256 != pair.Second.PngSha256 ).Select( pair => pair.First.Sign.Theme + "/" + pair.First.Sign.Name ).Distinct().ToArray();
+			CollectionAssert.AreEquivalent( new[] { "jungle/gates", "jungle/totem", "lobby/jun_isle" }, changed );
+			Assert.IsTrue( files.Where( file => !changed.Contains( file.Sign.Theme + "/" + file.Sign.Name ) ).All( file => file.Sign.Original == null && !file.Sign.TextSource.StartsWith( "override" ) ) );
+
+			var gate = files.First( file => file.Sign.Theme == "jungle" && file.Sign.Name == "gates" ).Sign;
+			Assert.AreEqual( ("El Reino", "Perdido", "override (texts.json)"), (gate.Line1, gate.Line2, gate.TextSource) );
+			Assert.AreEqual( ("LOST", "Kingdom"), (gate.Original!.Line1, gate.Original.Line2) );
+			var totem = files.First( file => file.Sign.Theme == "jungle" && file.Sign.Name == "totem" ).Sign;
+			Assert.AreEqual( ("El Tótem", "Inca"), (totem.Line1, totem.Line2) );
+
+			// every overridden texture is what the game's composer draws from that .sgn with those lines
+			foreach ( var file in files.Where( file => file.Sign.Original != null && file.Half != 0 ) )
+			{
+				var sign = file.Sign;
+				var signFile = sign.Theme == SignExport.LobbyFolder
+					? new SignFile( FileSystem.ReadAllBytes( sign.SignPath ) )
+					: SignTextRenderer.LoadSignFile( sign.ArchivePath )!;
+				var composed = SignTextRenderer.Shared.ComposeSign( signFile, new[] { sign.Line1, sign.Line2 }, default );
+				var decoded = ImageResult.FromMemory( File.ReadAllBytes( Path.Combine( output, file.RelativePath ) ), ColorComponents.RedGreenBlueAlpha );
+				CollectionAssert.AreEqual( file.Half == 1 ? composed.Left : composed.Right, decoded.Data, file.RelativePath );
+			}
+
+			// the index records the override and the game's own text
+			using var json = JsonDocument.Parse( File.ReadAllText( Path.Combine( output, SignExport.IndexFileName ) ) );
+			var row = json.RootElement.GetProperty( "files" ).EnumerateArray().First( row => row.GetProperty( "file" ).GetString() == "jungle/gates-1.png" );
+			Assert.AreEqual( "override (texts.json)", row.GetProperty( "textSource" ).GetString() );
+			Assert.AreEqual( "El Reino", row.GetProperty( "line1" ).GetString() );
+			Assert.AreEqual( "LOST", row.GetProperty( "originalLine1" ).GetString() );
+			Assert.AreEqual( "Kingdom", row.GetProperty( "originalLine2" ).GetString() );
+			Assert.AreEqual( "OBJECT_NAMES.str gate row", row.GetProperty( "originalTextSource" ).GetString() );
+			Assert.IsFalse( json.RootElement.GetProperty( "files" ).EnumerateArray().Where( row => row.GetProperty( "textSource" ).GetString()!.StartsWith( "override" ) == false ).Any( row => row.TryGetProperty( "originalText", out _ ) ) );
+
+			// the name rule is the game's: every shipped object's own lines are its OBJECT_NAMES name split this way
+			foreach ( var theme in ObjectCatalog.Themes )
+				foreach ( var entry in ObjectCatalog.Load( theme ).Entries.Where( entry => !entry.IsExternal && entry.SignName != null ) )
+					Assert.AreEqual( ObjectSigns.Lines( entry ), SignTextOverrides.SplitName( entry.SignName! ), entry.ArchivePath );
+
+			// identity: every exported sign overridden with its own two lines reproduces the default export exactly
+			var identity = Path.Combine( root, "identity.json" );
+			using ( var stream = File.Create( identity ) )
+			using ( var writer = new Utf8JsonWriter( stream ) )
+			{
+				writer.WriteStartObject();
+				writer.WriteStartArray( "signs" );
+				foreach ( var sign in plain.Where( file => file.Half == 0 ).Select( file => file.Sign ) )
+				{
+					writer.WriteStartObject();
+					writer.WriteString( "theme", sign.Theme );
+					writer.WriteString( "object", sign.Name );
+					writer.WriteStartArray( "lines" );
+					writer.WriteStringValue( sign.Line1 );
+					writer.WriteStringValue( sign.Line2 );
+					writer.WriteEndArray();
+					writer.WriteEndObject();
+				}
+				writer.WriteEndArray();
+				writer.WriteEndObject();
+			}
+			var same = SignExport.Run( Path.Combine( root, "identity" ), SignTextOverrides.Load( identity ), data );
+			Assert.AreEqual( plain.Count, same.Count );
+			Assert.IsTrue( same.All( file => file.Sign.Original != null ), "every sign was overridden" );
+			CollectionAssert.AreEqual( plain.Select( file => (file.RelativePath, file.PngSha256) ).ToArray(), same.Select( file => (file.RelativePath, file.PngSha256) ).ToArray() );
+
+			// a key the export does not have is an error before anything is written
+			var unknown = Path.Combine( root, "unknown.json" );
+			File.WriteAllText( unknown, """{ "signs": [ { "theme": "jungle", "object": "nosuchride", "name": "X" } ] }""" );
+			var bad = Path.Combine( root, "bad" );
+			var error = Assert.ThrowsException<InvalidDataException>( () => SignExport.Run( bad, SignTextOverrides.Load( unknown ), data ) );
+			StringAssert.Contains( error.Message, "jungle/nosuchride" );
+			Assert.IsFalse( Directory.Exists( bad ) );
+		}
+		finally
+		{
+			FileSystem = previousFileSystem;
+			GameLanguage.Current = previousLanguage!;
+			GameEditions.Select( previousEdition );
+			ObjectCatalog.BonusDataRoot = previousBonus;
+		}
+	}
+
 	[TestMethod]
 	public void TheEnglishExportMatchesTheSignsTheLevelAndTheLobbyUse()
 	{

@@ -29,6 +29,10 @@ public static class SignExport
 		public string TextSource { get; init; } = "";
 		/// <summary>Whether the sign belongs to an official bonus archive (<c>--bonus-data</c>).</summary>
 		public bool IsBonus { get; init; }
+		/// <summary>The file system <see cref="SignPath"/> is read from (the game data, or the bonus content for a bonus object).</summary>
+		internal BaseFileSystem? SignFileSystem { get; init; }
+		/// <summary>The sign as the game would draw it, when <c>--sign-texts</c> replaced its text (null otherwise).</summary>
+		public ComposedSign? Original { get; init; }
 	}
 
 	/// <summary>One written PNG, as <c>index.json</c> lists it. <see cref="Half"/> is 1 (<c>sign1</c>), 2 (<c>sign2</c>) or 0 (the preview of both).</summary>
@@ -61,7 +65,9 @@ public static class SignExport
 		ObjectCatalog.BonusDataRoot = bonus;
 		if ( bonus != null )
 			Log?.Trace( $"Bonus content: {bonus}." );
-		var files = Run( outputDirectory, protectedDirectories );
+		// --sign-texts <file>: replacement texts per sign (read only; parsed before anything is composed)
+		var overrides = args.Contains( "--sign-texts" ) ? SignTextOverrides.Load( SignTextsPath( args ) ) : null;
+		var files = Run( outputDirectory, overrides, protectedDirectories );
 		var previews = files.Count( file => file.Half == 0 );
 		Console.WriteLine( $"Exported {files.Count - previews} sign textures and {previews} previews ({previews} signs) in {GameLanguage.Current.Name} to {Path.GetFullPath( outputDirectory )}; index in {IndexFileName}." );
 	}
@@ -113,12 +119,17 @@ public static class SignExport
 	/// be new or empty and outside <paramref name="protectedDirectories"/> (the game and language data). Everything is composed before the
 	/// first file is written.
 	/// </summary>
-	public static IReadOnlyList<ExportedFile> Run( string outputDirectory, params string[] protectedDirectories )
+	public static IReadOnlyList<ExportedFile> Run( string outputDirectory, params string[] protectedDirectories ) => Run( outputDirectory, null, protectedDirectories );
+
+	/// <summary>As <see cref="Run(string, string[])"/>, with the texts of <paramref name="overrides"/> (<c>--sign-texts</c>) replacing those of the signs it names.</summary>
+	public static IReadOnlyList<ExportedFile> Run( string outputDirectory, SignTextOverrides? overrides, params string[] protectedDirectories )
 	{
 		var root = PrepareOutputDirectory( outputDirectory, protectedDirectories.Concat( LanguageDirectories() ) );
 		var signs = ComposeAll();
 		if ( signs.Count == 0 )
 			throw new InvalidDataException( "The game data defines no signs to export." );
+		if ( overrides != null )
+			signs = ApplyOverrides( signs, overrides );
 		var files = Plan( signs );
 		Directory.CreateDirectory( root );
 		foreach ( var file in files )
@@ -171,7 +182,7 @@ public static class SignExport
 			var row = ParkNameLines.Default( id, objectNames ) != null && ObjectNameTable.TryGet( id, out var first, out var second ) ? new[] { first, second } : Array.Empty<int>();
 			var (left, right, _, _) = OriginalGateSign.ComposeHalves( sign, lines.Line1, lines.Line2 );
 			yield return new ComposedSign( theme, "gate", gate.ArchiveName, gate.ArchivePath, SignPath( gate )!, id, row, Texts( row, objectNames ), lines.DisplayName, lines.Line1, lines.Line2, left, right )
-				{ TextSource = row.Length > 0 ? $"{ObjectNames.FileName} gate row" : "THEMENAMES.str (no gate row)" };
+				{ TextSource = row.Length > 0 ? $"{ObjectNames.FileName} gate row" : "THEMENAMES.str (no gate row)", SignFileSystem = gate.FileSystem };
 		}
 		else
 			Log?.Warning( $"Sign export: {theme} names no gate object (ParkName.GateObjectId); its gate sign is not exported." );
@@ -184,7 +195,7 @@ public static class SignExport
 			var images = ObjectSigns.Get( entry ) ?? throw new InvalidDataException( $"The sign of {entry.ArchivePath} could not be composed (see the log)." );
 			var ids = entry.ObjectNameIndex is { } index ? Enumerable.Range( index, entry.ObjectNameLength ).ToArray() : Array.Empty<int>();
 			yield return new ComposedSign( theme, entry.Category.ToString().ToLowerInvariant(), entry.ArchiveName, entry.ArchivePath, signPath, entry.InfoId, ids, Texts( ids, objectNames ),
-				(entry.SignName ?? entry.DisplayName).Trim(), images.Line1, images.Line2, images.Left, images.Right ) { TextSource = TextSourceOf( entry ), IsBonus = entry.Root.IsBonus };
+				(entry.SignName ?? entry.DisplayName).Trim(), images.Line1, images.Line2, images.Left, images.Right ) { TextSource = TextSourceOf( entry ), IsBonus = entry.Root.IsBonus, SignFileSystem = entry.FileSystem };
 		}
 	}
 
@@ -206,9 +217,46 @@ public static class SignExport
 				var gate = LobbySigns.GateInfoId( island.Level );
 				var row = gate is { } id && ParkNameLines.Default( id, objectNames ) != null && ObjectNameTable.TryGet( id, out var first, out var second ) ? new[] { first, second } : Array.Empty<int>();
 				yield return new ComposedSign( LobbyFolder, $"lobby {island.Level}", model, LobbyScene.TerrainDirectory, signPath, gate, row, Texts( row, objectNames ), lines.DisplayName, images.Line1, images.Line2, images.Left, images.Right )
-					{ TextSource = row.Length > 0 ? $"{ObjectNames.FileName} gate row" : "THEMENAMES.str (no gate row)" };
+					{ TextSource = row.Length > 0 ? $"{ObjectNames.FileName} gate row" : "THEMENAMES.str (no gate row)", SignFileSystem = FileSystem };
 			}
 		}
+	}
+
+	/// <summary>The path after <c>--sign-texts</c>.</summary>
+	internal static string SignTextsPath( string[] args )
+	{
+		var index = Array.IndexOf( args, "--sign-texts" );
+		if ( index < 0 || index + 1 >= args.Length || args[index + 1].StartsWith( "--", StringComparison.Ordinal ) || string.IsNullOrWhiteSpace( args[index + 1] ) )
+			throw new ArgumentException( "--sign-texts requires a JSON file of replacement sign texts (docs/RUNNING.md)." );
+		return args[index + 1];
+	}
+
+	/// <summary>
+	/// The signs with the texts of <paramref name="overrides"/>: each named sign is composed again from its own <c>.sgn</c> with the replacement lines,
+	/// by the composer every sign path of the game ends in (<see cref="SignTextRenderer.ComposeSign"/>); the game's own text is kept in
+	/// <see cref="ComposedSign.Original"/>. A key that names no exported sign is an error listing every such key, before anything is written.
+	/// </summary>
+	public static IReadOnlyList<ComposedSign> ApplyOverrides( IReadOnlyList<ComposedSign> signs, SignTextOverrides overrides )
+	{
+		var unknown = overrides.Entries.Keys.Where( key => !signs.Any( sign => SignTextOverrides.Matches( key, sign ) ) ).ToList();
+		if ( unknown.Count > 0 )
+			throw new InvalidDataException( $"{overrides.FileName} names {unknown.Count} sign(s) the export does not have: {string.Join( ", ", unknown.Select( key => $"{key.Theme}/{key.Object}" ) )}. The keys are the theme and object of index.json{(unknown.Any( key => key.Object.StartsWith( '_' ) ) ? "; bonus objects (_name_N) are exported only with --bonus-data" : "")}." );
+		return signs.Select( sign =>
+		{
+			if ( !overrides.TryGet( sign, out var replacement ) )
+				return sign;
+			var fileSystem = sign.SignFileSystem ?? FileSystem;
+			// read as the game reads the sign (SignTextRenderer.LoadSignFile, LobbySigns.Compose): the member's bytes with the enabled data corrections
+			var signFile = new SignFile( CompatibilityRuntime.Correct( sign.SignPath, fileSystem.ReadAllBytes( sign.SignPath ) ) );
+			var composed = SignTextRenderer.Shared.ComposeSign( signFile, new[] { replacement.Line1, replacement.Line2 }, default );
+			foreach ( var diagnostic in composed.Diagnostics.Where( diagnostic => !diagnostic.StartsWith( "COMPAT-003", StringComparison.Ordinal ) ).Distinct() )
+				Log?.Warning( $"Sign {sign.Theme}/{sign.Name} ({overrides.FileName}): {diagnostic}" );
+			return sign with
+			{
+				Text = replacement.Text, Line1 = replacement.Line1, Line2 = replacement.Line2, Left = composed.Left, Right = composed.Right,
+				TextSource = $"override ({overrides.FileName})", Original = sign
+			};
+		} ).ToList();
 	}
 
 	/// <summary>
@@ -431,6 +479,14 @@ public static class SignExport
 				writer.WriteEndArray();
 				writer.WriteString( "text", sign.Text );
 				writer.WriteString( "textSource", sign.TextSource );
+				if ( sign.Original is { } original )
+				{
+					// the text the game itself draws on this sign (stringIds and strings above are that text's OBJECT_NAMES entries)
+					writer.WriteString( "originalText", original.Text );
+					writer.WriteString( "originalLine1", original.Line1 );
+					writer.WriteString( "originalLine2", original.Line2 );
+					writer.WriteString( "originalTextSource", original.TextSource );
+				}
 				if ( sign.IsBonus )
 					writer.WriteBoolean( "bonus", true );
 				writer.WriteString( "line1", sign.Line1 );
@@ -447,5 +503,147 @@ public static class SignExport
 			writer.WriteEndObject();
 		}
 		return System.Text.Encoding.UTF8.GetString( buffer.ToArray() ) + "\n";
+	}
+}
+
+/// <summary>
+/// The replacement sign texts of <c>--sign-texts &lt;file&gt;</c> (docs/RUNNING.md): a UTF-8 JSON object with a <c>signs</c> array whose entries name one
+/// sign by <c>theme</c> and <c>object</c> (as <c>index.json</c> names it; the gate is the object <c>gates</c> of its theme, the lobby's signs are theme
+/// <c>lobby</c>) and give either <c>lines</c> (exactly two strings, drawn as they are) or <c>name</c> (one string, split into two lines with the rule the
+/// game uses for a display name, <see cref="SignCanvas.SplitAtMiddleSpace"/>). Keys are matched without regard to case; a duplicate key, an unknown
+/// member, an entry with both or neither of <c>lines</c> and <c>name</c>, or a line with a control character is an error. The file is only read.
+/// </summary>
+public sealed class SignTextOverrides
+{
+	/// <summary>The largest file accepted.</summary>
+	public const int MaximumFileBytes = 4 * 1024 * 1024;
+
+	public readonly record struct Key( string Theme, string Object );
+
+	/// <summary>One replacement: the two lines that are drawn, and the text as given (the name, or the two lines joined by a space).</summary>
+	public sealed record Replacement( string Line1, string Line2, string Text );
+
+	private SignTextOverrides( string fileName, IReadOnlyDictionary<Key, Replacement> entries )
+	{
+		FileName = fileName;
+		Entries = entries;
+	}
+
+	/// <summary>The override file's name (without its folder: index.json is meant to be shared).</summary>
+	public string FileName { get; }
+	public IReadOnlyDictionary<Key, Replacement> Entries { get; }
+
+	public static SignTextOverrides Load( string path )
+	{
+		var info = new FileInfo( path );
+		if ( !info.Exists )
+			throw new FileNotFoundException( $"The sign texts file '{path}' does not exist.", path );
+		if ( info.Length > MaximumFileBytes )
+			throw new InvalidDataException( $"The sign texts file '{path}' is larger than {MaximumFileBytes} bytes." );
+		return Parse( File.ReadAllBytes( path ), info.Name );
+	}
+
+	/// <summary>Parses the JSON text of an override file named <paramref name="fileName"/>.</summary>
+	public static SignTextOverrides Parse( byte[] json, string fileName )
+	{
+		JsonDocument document;
+		try
+		{
+			document = JsonDocument.Parse( json, new JsonDocumentOptions { CommentHandling = JsonCommentHandling.Disallow, AllowTrailingCommas = false, AllowDuplicateProperties = false } );
+		}
+		catch ( JsonException exception )
+		{
+			throw new InvalidDataException( $"{fileName} is not valid JSON: {exception.Message}", exception );
+		}
+		using ( document )
+		{
+			var root = document.RootElement;
+			if ( root.ValueKind != JsonValueKind.Object )
+				throw new InvalidDataException( $"{fileName}: the top level must be an object with a \"signs\" array." );
+			foreach ( var property in root.EnumerateObject() )
+				if ( property.Name is not ("signs" or "description") )
+					throw new InvalidDataException( $"{fileName}: unknown top-level member \"{property.Name}\" (allowed: signs, description)." );
+			if ( root.TryGetProperty( "description", out var description ) && description.ValueKind != JsonValueKind.String )
+				throw new InvalidDataException( $"{fileName}: \"description\" must be a string." );
+			if ( !root.TryGetProperty( "signs", out var signs ) || signs.ValueKind != JsonValueKind.Array )
+				throw new InvalidDataException( $"{fileName}: a \"signs\" array is required." );
+			var entries = new Dictionary<Key, Replacement>( KeyComparer.Instance );
+			var position = 0;
+			foreach ( var sign in signs.EnumerateArray() )
+			{
+				var where = $"{fileName}: signs[{position++}]";
+				if ( sign.ValueKind != JsonValueKind.Object )
+					throw new InvalidDataException( $"{where} must be an object." );
+				foreach ( var property in sign.EnumerateObject() )
+					if ( property.Name is not ("theme" or "object" or "lines" or "name") )
+						throw new InvalidDataException( $"{where}: unknown member \"{property.Name}\" (allowed: theme, object, lines, name)." );
+				var theme = RequiredString( sign, "theme", where );
+				var name = RequiredString( sign, "object", where );
+				var hasLines = sign.TryGetProperty( "lines", out var lines );
+				var hasName = sign.TryGetProperty( "name", out var text );
+				if ( hasLines == hasName )
+					throw new InvalidDataException( $"{where} ({theme}/{name}) needs exactly one of \"lines\" (two strings) and \"name\" (one string)." );
+				Replacement replacement;
+				if ( hasLines )
+				{
+					if ( lines.ValueKind != JsonValueKind.Array || lines.GetArrayLength() != 2 || lines.EnumerateArray().Any( line => line.ValueKind != JsonValueKind.String ) )
+						throw new InvalidDataException( $"{where} ({theme}/{name}): \"lines\" must be an array of exactly two strings." );
+					var line1 = CheckedText( StringOf( lines[0], where ), where );
+					var line2 = CheckedText( StringOf( lines[1], where ), where );
+					replacement = new Replacement( line1, line2, line2.Length == 0 ? line1 : line1.Length == 0 ? line2 : $"{line1} {line2}" );
+				}
+				else
+				{
+					if ( text.ValueKind != JsonValueKind.String )
+						throw new InvalidDataException( $"{where} ({theme}/{name}): \"name\" must be a string." );
+					var full = CheckedText( StringOf( text, where ), where );
+					// the game's rule for a sign that has one name (ObjectSigns.Lines: the display name, trimmed, split at the middle space)
+					var (line1, line2) = SplitName( full );
+					replacement = new Replacement( line1, line2, full.Trim() );
+				}
+				if ( !entries.TryAdd( new Key( theme, name ), replacement ) )
+					throw new InvalidDataException( $"{where}: {theme}/{name} is listed twice." );
+			}
+			return new SignTextOverrides( fileName, entries );
+		}
+	}
+
+	/// <summary>The two lines the game draws for a sign with one name: the name trimmed and split at the space nearest its middle (<see cref="ObjectSigns.Lines"/>).</summary>
+	public static (string Line1, string Line2) SplitName( string name ) => SignCanvas.SplitAtMiddleSpace( name.Trim() );
+
+	internal static bool Matches( Key key, SignExport.ComposedSign sign ) => KeyComparer.Instance.Equals( key, new Key( sign.Theme, sign.Name ) );
+
+	public bool TryGet( SignExport.ComposedSign sign, out Replacement replacement ) => Entries.TryGetValue( new Key( sign.Theme, sign.Name ), out replacement! );
+
+	private static string RequiredString( JsonElement element, string member, string where )
+	{
+		var text = element.TryGetProperty( member, out var value ) && value.ValueKind == JsonValueKind.String ? StringOf( value, where ) : null;
+		return string.IsNullOrWhiteSpace( text ) ? throw new InvalidDataException( $"{where}: \"{member}\" must be a non-empty string." ) : text.Trim();
+	}
+
+	// a line or paragraph separator (U+2028/U+2029) is no glyph in the sign fonts and draws a .notdef box, so it is refused like a control character
+	private static string CheckedText( string text, string where ) =>
+		text.Any( c => char.IsControl( c ) || char.GetUnicodeCategory( c ) is System.Globalization.UnicodeCategory.LineSeparator or System.Globalization.UnicodeCategory.ParagraphSeparator )
+			? throw new InvalidDataException( $"{where}: a sign text must not contain control characters or line/paragraph separators (line breaks are given as two lines)." )
+			: text;
+
+	/// <summary>A JSON string's value; an escaped lone surrogate ("\ud800"), which is no text, is an error of the file.</summary>
+	private static string StringOf( JsonElement element, string where )
+	{
+		try
+		{
+			return element.GetString()!;
+		}
+		catch ( InvalidOperationException exception )
+		{
+			throw new InvalidDataException( $"{where}: a string is not valid text ({exception.Message}).", exception );
+		}
+	}
+
+	private sealed class KeyComparer : IEqualityComparer<Key>
+	{
+		public static readonly KeyComparer Instance = new();
+		public bool Equals( Key x, Key y ) => string.Equals( x.Theme, y.Theme, StringComparison.OrdinalIgnoreCase ) && string.Equals( x.Object, y.Object, StringComparison.OrdinalIgnoreCase );
+		public int GetHashCode( Key key ) => HashCode.Combine( StringComparer.OrdinalIgnoreCase.GetHashCode( key.Theme ), StringComparer.OrdinalIgnoreCase.GetHashCode( key.Object ) );
 	}
 }

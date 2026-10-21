@@ -47,4 +47,73 @@ public class TrackSurfaceTests
 		// heading −Y (256) reverses the pitch
 		Assert.AreEqual( -rise.Pitch, TrackSurface.Pose( 10, 10, 256, 2, ( x, y ) => 0.5f * y ).Pitch, 1e-3f );
 	}
+
+	/// <summary>Authored MD2 input, not a test-only TrackSurface constructor or original game asset.</summary>
+	private static TrackSurface ObjectSurface( bool records, params TrackSurface.Triangle[] triangles )
+	{
+		var builder = new ModelBuilder();
+		var node = builder.AddMesh( "surface" );
+		// The authoring API requires the head bit; bit 2 selects this synthetic surface record.
+		if ( records )
+			node.AddHead( 1, type: 0x82 );
+		var material = node.Mesh!.AddMaterial( null );
+		foreach ( var triangle in triangles )
+		{
+			int Vertex( System.Numerics.Vector3 p ) => material.AddVertex(
+				new System.Numerics.Vector3( p.X, p.Z, p.Y ), System.Numerics.Vector3.UnitY, System.Numerics.Vector2.Zero );
+			material.AddTriangle( Vertex( triangle.A ), Vertex( triangle.B ), Vertex( triangle.C ) );
+		}
+		var model = builder.Build();
+		foreach ( var mesh in model.Meshes )
+			for ( var face = 0; face < mesh.FaceNormalIndices.Length; face++ )
+				mesh.FaceNormalIndices[face] |= 0x8000;
+		var surface = TrackSurface.FromObject( model );
+		Assert.AreEqual( records ? TrackSamplerMode.SurfaceRecords : TrackSamplerMode.InstanceMesh, surface.Mode );
+		Assert.AreEqual( triangles.Length, surface.TriangleCount );
+		return surface;
+	}
+
+	[TestMethod]
+	public void ObjectSurfaceRejectsReversedWindingThroughTheModelAxisConversion()
+	{
+		var front = Triangle( 0, 0, 3, 0, 8, 3, 8, 0, 3 );
+		var back = new TrackSurface.Triangle( front.A, front.C, front.B );
+		Assert.AreEqual( 3f, ObjectSurface( true, front ).HeightAt( 2, 2 )!.Value );
+		Assert.IsNull( ObjectSurface( true, back ).HeightAt( 2, 2 ) );
+		Assert.AreEqual( 3f, new TrackSurface( new[] { back } ).HeightAt( 2, 2 )!.Value,
+			"The general triangle-list helper remains two-sided." );
+	}
+
+	[TestMethod]
+	public void ObjectSurfaceIncludesExactEdgesButNotTheFormerBarycentricTolerance()
+	{
+		var surface = ObjectSurface( true, Triangle( 0, 0, 3, 0, 8, 3, 8, 0, 3 ) );
+		foreach ( var point in new[] { (0f, 0f), (0f, 4f), (4f, 0f), (4f, 4f), (8f, 0f), (0f, 8f) } )
+			Assert.AreEqual( 3f, surface.HeightAt( point.Item1, point.Item2 )!.Value );
+		const float outside = 1f / 4096;
+		Assert.IsNull( surface.HeightAt( -outside, 2 ) );
+		Assert.IsNull( surface.HeightAt( 2, -outside ) );
+		Assert.IsNull( surface.HeightAt( 4 + outside, 4 ) );
+	}
+
+	[TestMethod]
+	public void HigherBackFaceDoesNotHideTheLowerAcceptedObjectFace()
+	{
+		var back = Triangle( 0, 0, 9, 8, 0, 9, 0, 8, 9 );
+		var front = Triangle( 0, 0, 3, 0, 8, 3, 8, 0, 3 );
+		Assert.AreEqual( 3f, ObjectSurface( true, back, front ).HeightAt( 2, 2 )!.Value );
+		Assert.AreEqual( 3f, ObjectSurface( true, front, back ).HeightAt( 2, 2 )!.Value );
+		Assert.AreEqual( 3f, ObjectSurface( false, back, front ).HeightAt( 2, 2 )!.Value,
+			"The instance-mesh first-hit route must skip rejected back faces too." );
+		Assert.AreEqual( 0f, ObjectSurface( false, back ).HeightAt( 2, 2 )!.Value,
+			"No accepted instance face retains the existing base-height fallback." );
+	}
+
+	[TestMethod]
+	public void DirectedObjectFacesKeepSlopeInterpolationAndTranslation()
+	{
+		var surface = ObjectSurface( true, Triangle( 16, -8, 2, 16, 0, 2, 24, -8, 10 ) );
+		Assert.AreEqual( 4f, surface.HeightAt( 18, -6 )!.Value );
+		Assert.IsNull( surface.HeightAt( 15, -6 ) );
+	}
 }

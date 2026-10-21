@@ -68,7 +68,7 @@ public sealed class TrackSurface
 	// [BIN:TPW-EXE:0x004511A0 sample] mode 1: the terrain sampler 0x004527F0 (the landscape's corner heights over the cell's two triangles, not the .hmp) + model +0xA0; mode 2: 0x00451290(x, z, 0, 1); mode 4: 0x00451290(x, z, 1, 0); every mode adds +0xA0, and a NaN +0xA0 is reset to 0
 	// [BIN:TPW-EXE:0x00451290 face sampler] mode 4 samples the +0x2C mesh (first covering face; none: the instance height +0x44), mode 2 walks the dummy records with bit 2 (mesh = the header's first dummy mesh +0x46 plus the record index) and takes the highest covering face, returning at once for a record with bit 4; −100 when nothing covers
 	// [BIN:TPW-EXE:0x00451390 mesh faces] only faces whose first u16 has bit 0x8000 count; the height is the face plane's at the point (the normal at the low 15 bits, turned by the instance's 0/90/180/270 rotation)
-	// [APPROX:TRACK-001] the surface records are taken when a dummy record has bit 2 (the instance block's bit 8 that the original tests is not read; every shipped hill piece and the face-sampled stations carry such a record, and the flat pieces a nonzero +0xA0); the faces are baked with the full rest transforms (the original adds the node translations only), a face covers a point from either side (the original's edge test is one-sided) and the faces are read in record order; the instance mesh sampler (+0x2C, 0x0046A5A0) reads every 0x8000 face of the model
+	// [APPROX:TRACK-001] the surface records are taken when a dummy record has bit 2 (the instance block's bit 8 that the original tests is not read; every shipped hill piece and the face-sampled stations carry such a record, and the flat pieces a nonzero +0xA0); the faces are baked with the full rest transforms (the original adds the node translations only), the faces are read in record order; the directed edge gate follows the original but uses host float arithmetic, not exact x87 intermediates; the instance mesh sampler (+0x2C, 0x0046A5A0) reads every 0x8000 face of the model
 	public static TrackSurface FromObject( ModelFile model )
 	{
 		ArgumentNullException.ThrowIfNull( model );
@@ -129,7 +129,7 @@ public sealed class TrackSurface
 				float? height = null;
 				for ( var index = start; index < start + count; index++ )
 				{
-					if ( Cover( triangles[index], x, y ) is not { } z )
+					if ( Cover( triangles[index], x, y, oneSided: true ) is not { } z )
 						continue;
 					if ( height == null || z > height )
 						height = z;
@@ -155,9 +155,13 @@ public sealed class TrackSurface
 	}
 
 	/// <summary>The height of <paramref name="triangle"/>'s plane at the point, or null when the triangle does not cover it.</summary>
-	private static float? Cover( Triangle triangle, float x, float y )
+	private static float? Cover( Triangle triangle, float x, float y, bool oneSided = false )
 	{
 		var (a, b, c) = (triangle.A, triangle.B, triangle.C);
+		// Native object faces use directed edges in X/Z, mapped here to X/Y by ConvertAxes.
+		// The plain triangle-list constructor remains a two-sided presentation helper.
+		if ( oneSided && (!InsideDirectedEdge( c, a, x, y ) || !InsideDirectedEdge( b, c, x, y ) || !InsideDirectedEdge( a, b, x, y )) )
+			return null;
 		var denominator = (b.Y - c.Y) * (a.X - c.X) + (c.X - b.X) * (a.Y - c.Y);
 		if ( MathF.Abs( denominator ) < 1e-9f )
 			return null;
@@ -168,6 +172,17 @@ public sealed class TrackSurface
 		if ( u < edge || v < edge || w < edge )
 			return null;
 		return u * a.Z + v * b.Z + w * c.Z;
+	}
+
+	// [BIN:TPW-EXE:0x004514CF directed face edges] Three edge values must be >= 0, with no
+	// epsilon (comparison against 0 at 0x45151f). In converted axes this accepts clockwise
+	// faces. These host float operations do not reproduce all x87 boundary rounding.
+	private static bool InsideDirectedEdge( V3 previous, V3 next, float x, float y )
+	{
+		var dx = previous.X - next.X;
+		var dy = next.Y - previous.Y;
+		var origin = dy * previous.X + dx * previous.Y;
+		return (dy * x - origin) + dx * y >= 0;
 	}
 
 	/// <summary>

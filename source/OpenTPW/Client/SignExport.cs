@@ -23,7 +23,13 @@ public static class SignExport
 
 	/// <summary>One composed sign: its source, the text it was drawn with and the RGBA of its two halves.</summary>
 	public sealed record ComposedSign( string Theme, string Kind, string Name, string ArchivePath, string SignPath, int? InfoId,
-		IReadOnlyList<int> StringIds, IReadOnlyList<string> StringTexts, string Text, string Line1, string Line2, byte[] Left, byte[] Right );
+		IReadOnlyList<int> StringIds, IReadOnlyList<string> StringTexts, string Text, string Line1, string Line2, byte[] Left, byte[] Right )
+	{
+		/// <summary>Where the game takes the two lines from (OBJECT_NAMES ids, or a bonus archive's language file), as <c>index.json</c> records it.</summary>
+		public string TextSource { get; init; } = "";
+		/// <summary>Whether the sign belongs to an official bonus archive (<c>--bonus-data</c>).</summary>
+		public bool IsBonus { get; init; }
+	}
 
 	/// <summary>One written PNG, as <c>index.json</c> lists it. <see cref="Half"/> is 1 (<c>sign1</c>), 2 (<c>sign2</c>) or 0 (the preview of both).</summary>
 	public sealed record ExportedFile( ComposedSign Sign, int Half, string RelativePath, int Width, int Height, string RgbaSha256, string PngSha256 )
@@ -40,21 +46,58 @@ public static class SignExport
 	internal static void RunCommand( string[] args, string dataDirectory, string? languageData, string? cdFolder )
 	{
 		var (language, outputDirectory) = ParseArguments( args );
+		// official bonus objects only when asked for: --bonus-data <folder>, or --with-bonus for the folder a normal start uses
+		var bonus = BonusRoot( args );
 		LanguageStartup.Apply( dataDirectory, language, languageData, cdFolder, false, message => Log?.Warning( message ) );
 		if ( !GameLanguage.IsSelected || !string.Equals( GameLanguage.Current.Name, GameLanguage.CanonicalName( language ), StringComparison.OrdinalIgnoreCase ) )
 			throw new DirectoryNotFoundException( $"Language '{language}' was not selected; see docs/LANGUAGES.md for where the language data is found." );
 		Log?.Trace( $"Language: {GameLanguage.Current}" );
 		// nothing is written into the game folder, its data, any language data (the one exported and the overlay offered beside it) or the CD folder;
 		// checked before anything else starts
-		var protectedDirectories = new[] { dataDirectory, Settings.Default.GamePath, languageData, cdFolder }.OfType<string>().ToArray();
+		var protectedDirectories = new[] { dataDirectory, Settings.Default.GamePath, languageData, cdFolder, bonus, bonus == null ? null : ObjectCatalog.FindBonusLevelsParent( bonus ) }.OfType<string>().ToArray();
 		PrepareOutputDirectory( outputDirectory, protectedDirectories.Concat( LanguageDirectories() ) );
 		CompatibilityStartup.Initialize( args, dataDirectory );
-		// Only the shipped data: no official bonus objects and no mod content (mods are not started for the export).
-		ObjectCatalog.BonusDataRoot = null;
+		// Only the shipped data, and the official bonus objects when asked for; never mod content (mods are not started for the export).
+		ObjectCatalog.BonusDataRoot = bonus;
+		if ( bonus != null )
+			Log?.Trace( $"Bonus content: {bonus}." );
 		var files = Run( outputDirectory, protectedDirectories );
 		var previews = files.Count( file => file.Half == 0 );
 		Console.WriteLine( $"Exported {files.Count - previews} sign textures and {previews} previews ({previews} signs) in {GameLanguage.Current.Name} to {Path.GetFullPath( outputDirectory )}; index in {IndexFileName}." );
 	}
+
+	/// <summary>
+	/// The bonus content folder of the export, or null for the shipped data alone (the default): <c>--bonus-data &lt;folder&gt;</c>, or with
+	/// <c>--with-bonus</c> the folder a normal start would use (<c>OPENTPW_BONUS_DATA</c>, the saved bonus folder, <c>&lt;config&gt;/bonus</c>).
+	/// A folder without official bonus archives (no <c>levels</c> folder within two levels) is an error.
+	/// </summary>
+	internal static string? BonusRoot( string[] args, Func<string?>? implicitRoot = null )
+	{
+		var index = Array.IndexOf( args, "--bonus-data" );
+		string? root = null;
+		if ( index >= 0 )
+		{
+			if ( index + 1 >= args.Length || args[index + 1].StartsWith( "--", StringComparison.Ordinal ) || string.IsNullOrWhiteSpace( args[index + 1] ) )
+				throw new ArgumentException( "--bonus-data requires the extracted official bonus content directory." );
+			root = Path.GetFullPath( args[index + 1] );
+		}
+		else if ( args.Contains( "--with-bonus" ) )
+		{
+			root = (implicitRoot ?? DefaultBonusRoot)() ?? throw new DirectoryNotFoundException( "--with-bonus found no bonus content folder (OPENTPW_BONUS_DATA, the saved bonus folder or <config>/bonus); pass --bonus-data <folder>." );
+		}
+		if ( root == null )
+			return null;
+		// the folder the catalog reads (the first levels parent within two levels) must hold bonus archives; a levels tree without them (a __MACOSX copy) would export no bonus sign
+		var levelsParent = ObjectCatalog.FindBonusLevelsParent( root )
+			?? throw new DirectoryNotFoundException( $"The bonus content folder '{root}' holds no levels folder (within two levels); see docs/OBJECTS.md." );
+		if ( BonusContent.Validate( levelsParent ) == 0 )
+			throw new DirectoryNotFoundException( $"The bonus content folder '{root}' holds no official bonus archives (_name_N.wad) in '{levelsParent}'; see docs/OBJECTS.md." );
+		return root;
+	}
+
+	private static string? DefaultBonusRoot() =>
+		BonusContent.ResolveRoot( null, Environment.GetEnvironmentVariable( "OPENTPW_BONUS_DATA" ), SetupSettings.Load( SetupSettings.GetDefaultPath() ).BonusPath,
+			Path.GetDirectoryName( DisplaySettings.GetDefaultPath() )! )?.Path;
 
 	/// <summary>The language and output directory of <c>--export-signs</c>.</summary>
 	internal static (string Language, string OutputDirectory) ParseArguments( string[] args )
@@ -127,18 +170,21 @@ public static class SignExport
 			var lines = OriginalGateSign.DefaultLines( theme, id );
 			var row = ParkNameLines.Default( id, objectNames ) != null && ObjectNameTable.TryGet( id, out var first, out var second ) ? new[] { first, second } : Array.Empty<int>();
 			var (left, right, _, _) = OriginalGateSign.ComposeHalves( sign, lines.Line1, lines.Line2 );
-			yield return new ComposedSign( theme, "gate", gate.ArchiveName, gate.ArchivePath, SignPath( gate )!, id, row, Texts( row, objectNames ), lines.DisplayName, lines.Line1, lines.Line2, left, right );
+			yield return new ComposedSign( theme, "gate", gate.ArchiveName, gate.ArchivePath, SignPath( gate )!, id, row, Texts( row, objectNames ), lines.DisplayName, lines.Line1, lines.Line2, left, right )
+				{ TextSource = row.Length > 0 ? $"{ObjectNames.FileName} gate row" : "THEMENAMES.str (no gate row)" };
 		}
 		else
 			Log?.Warning( $"Sign export: {theme} names no gate object (ParkName.GateObjectId); its gate sign is not exported." );
-		foreach ( var entry in catalog.Entries.Where( entry => !entry.IsExternal && entry.InfoId != gateId ).OrderBy( entry => entry.ArchivePath, StringComparer.OrdinalIgnoreCase ) )
+		// the shipped objects in archive-path order, then the official bonus objects (only with --bonus-data); never a mod's or an extension's objects
+		foreach ( var entry in catalog.Entries.Where( entry => (entry.Root.IsData || entry.Root.IsBonus) && entry.InfoId != gateId )
+			.OrderBy( entry => entry.Root.IsBonus ).ThenBy( entry => entry.ArchivePath, StringComparer.OrdinalIgnoreCase ) )
 		{
 			if ( SignPath( entry ) is not { } signPath )
 				continue;
 			var images = ObjectSigns.Get( entry ) ?? throw new InvalidDataException( $"The sign of {entry.ArchivePath} could not be composed (see the log)." );
 			var ids = entry.ObjectNameIndex is { } index ? Enumerable.Range( index, entry.ObjectNameLength ).ToArray() : Array.Empty<int>();
 			yield return new ComposedSign( theme, entry.Category.ToString().ToLowerInvariant(), entry.ArchiveName, entry.ArchivePath, signPath, entry.InfoId, ids, Texts( ids, objectNames ),
-				(entry.SignName ?? entry.DisplayName).Trim(), images.Line1, images.Line2, images.Left, images.Right );
+				(entry.SignName ?? entry.DisplayName).Trim(), images.Line1, images.Line2, images.Left, images.Right ) { TextSource = TextSourceOf( entry ), IsBonus = entry.Root.IsBonus };
 		}
 	}
 
@@ -159,9 +205,28 @@ public static class SignExport
 				var images = LobbySigns.Compose( signPath, lines ) ?? throw new InvalidDataException( $"The lobby sign {signPath} could not be composed (see the log)." );
 				var gate = LobbySigns.GateInfoId( island.Level );
 				var row = gate is { } id && ParkNameLines.Default( id, objectNames ) != null && ObjectNameTable.TryGet( id, out var first, out var second ) ? new[] { first, second } : Array.Empty<int>();
-				yield return new ComposedSign( LobbyFolder, $"lobby {island.Level}", model, LobbyScene.TerrainDirectory, signPath, gate, row, Texts( row, objectNames ), lines.DisplayName, images.Line1, images.Line2, images.Left, images.Right );
+				yield return new ComposedSign( LobbyFolder, $"lobby {island.Level}", model, LobbyScene.TerrainDirectory, signPath, gate, row, Texts( row, objectNames ), lines.DisplayName, images.Line1, images.Line2, images.Left, images.Right )
+					{ TextSource = row.Length > 0 ? $"{ObjectNames.FileName} gate row" : "THEMENAMES.str (no gate row)" };
 			}
 		}
+	}
+
+	/// <summary>
+	/// Where <see cref="ObjectSigns.Lines"/> takes an object's lines from: a bonus archive's <c>&lt;language&gt;.txt</c> SIGNA/SIGNB when it has that file,
+	/// else its display name split at the middle space (its NAME, English as fallback, else the .sam Info.Name); a shipped object's OBJECT_NAMES row.
+	/// </summary>
+	internal static string TextSourceOf( ObjectCatalogEntry entry )
+	{
+		if ( !entry.IsBonus )
+			return entry.SignName != null ? $"{ObjectNames.FileName} ids" : "display name";
+		var language = GameLanguage.IsSelected ? GameLanguage.Current.Name : GameLanguage.DefaultLanguage;
+		var file = entry.FileSystem.GetFiles( entry.ArchivePath ).Select( Path.GetFileName )
+			.FirstOrDefault( name => name != null && name.EndsWith( ".txt", StringComparison.OrdinalIgnoreCase ) && string.Equals( Path.GetFileNameWithoutExtension( name ), language, StringComparison.OrdinalIgnoreCase ) );
+		if ( file == null )
+			return $"bonus display name (no {language}.txt): NAME of English.txt, else the .sam Info.Name, split at the middle space";
+		return BonusNames.ReadSignLines( entry ) != null
+			? $"{file} SIGNA/SIGNB"
+			: $"bonus display name ({file} unreadable): NAME of English.txt, else the .sam Info.Name, split at the middle space";
 	}
 
 	private static string[] Texts( IReadOnlyList<int> ids, IReadOnlyList<string> objectNames ) =>
@@ -262,7 +327,7 @@ public static class SignExport
 			var full = ResolveLinks( directory! );
 			if ( string.Equals( resolvedRoot, full, StringComparison.OrdinalIgnoreCase ) || resolvedRoot.StartsWith( full + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase )
 				|| full.StartsWith( resolvedRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase ) )
-				throw new IOException( $"The sign export's output directory '{root}' overlaps the game or language data '{full}'; choose a directory outside it." );
+				throw new IOException( $"The sign export's output directory '{root}' overlaps the game, language or bonus data '{full}'; choose a directory outside it." );
 		}
 		if ( File.Exists( root ) )
 			throw new IOException( $"The sign export's output '{root}' is a file; choose a new or empty directory." );
@@ -365,6 +430,9 @@ public static class SignExport
 					writer.WriteStringValue( text );
 				writer.WriteEndArray();
 				writer.WriteString( "text", sign.Text );
+				writer.WriteString( "textSource", sign.TextSource );
+				if ( sign.IsBonus )
+					writer.WriteBoolean( "bonus", true );
 				writer.WriteString( "line1", sign.Line1 );
 				writer.WriteString( "line2", sign.Line2 );
 				writer.WriteString( "texture", file.Half switch { 1 => "sign1", 2 => "sign2", _ => "preview" } );

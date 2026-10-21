@@ -583,7 +583,7 @@ is 0.2 ms longer. The Jungle park has few guests, so this is the empty-park case
 
 ## Event hitches (October 19, 2026)
 
-The game stuttered in the browser at some in-game events. The `events` scenario measures them: `node tools/web-perf/run.mjs --web <wwwroot> --game <folder> --scenarios start,jungle,events --music`. `--music` keeps the advisor's speech on, so its decoding is measured too; Chrome stays muted. Every exported frame of at least `opentpwPerf.markMs` (8 ms; 40 ms during the cold start) carries the game's named work of that frame. `FrameMarks` sections cover the frame, update, draw, park, level and simulation parts, and every `LoadProfile` section counts as `load:<name>`. Off, a section is one boolean test. `--profile` adds a CPU profile (Profiler domain, 250 µs samples). For each slow frame it lists the hottest functions, the call stacks six frames deep (`stacks`) and the game functions behind the runtime's time (`owners`). The AOT module's functions appear as `wasm-function[n]`. `--symbols` names them from the publish's Emscripten symbol map: publish with `-p:WasmEmitSymbolMap=true` and pass `obj/Release/net11.0/wasm/for-publish/dotnet.native.js.symbols`. The `dotnet.native.*.js.symbols` copied into `wwwroot` is the runtime pack's, not the AOT module's. New hooks in `Program.Perf.cs` drive the events: `PerfOpenWindow`, `PerfSpeed`, `PerfAdvisorAdvice`, `PerfCheat`, `PerfResearch`, `PerfSkipToBoundary`, `PerfCrowd`, `PerfBuildCoaster`, `PerfAutosaveDue`, `PerfPlaceObject` and `PerfFrameMarks`. As with the other hooks, a park they touched is not a real run.
+The game stuttered in the browser at some in-game events. The `events` scenario measures them: `node tools/web-perf/run.mjs --web <wwwroot> --game <folder> --scenarios start,jungle,events --music`. `--music` keeps the advisor's speech on, so its decoding is measured too; Chrome stays muted. Every exported frame of at least `opentpwPerf.markMs` (8 ms; 40 ms during the cold start) carries the game's named work of that frame. `FrameMarks` sections cover the frame, update, draw, park, level and simulation parts, and every `LoadProfile` section counts as `load:<name>`. Off, a section is one boolean test. `--profile` adds a CPU profile (Profiler domain, 250 µs samples). For each slow frame it lists the hottest functions, the call stacks six frames deep (`stacks`) and the game functions behind the runtime's time (`owners`), over the frame's window moved by the offset between the profile's clock and the page's (`profileOffsetMs`, see "The first draw and the park HUD" below). The AOT module's functions appear as `wasm-function[n]`. `--symbols` names them from the publish's Emscripten symbol map: publish with `-p:WasmEmitSymbolMap=true` and pass `obj/Release/net11.0/wasm/for-publish/dotnet.native.js.symbols`. The `dotnet.native.*.js.symbols` copied into `wwwroot` is the runtime pack's, not the AOT module's. New hooks in `Program.Perf.cs` drive the events: `PerfOpenWindow`, `PerfSpeed`, `PerfAdvisorAdvice`, `PerfCheat`, `PerfResearch`, `PerfSkipToBoundary`, `PerfCrowd`, `PerfBuildCoaster`, `PerfAutosaveDue`, `PerfPlaceObject` and `PerfFrameMarks`. As with the other hooks, a park they touched is not a real run.
 
 `PerfResearch` completes research items as a researcher's points would, with the park's events. `PerfSkipToBoundary` runs the economy alone to 45 ticks before a month or year boundary, and the park then crosses it at the fastest speed. The soak runs 30 s at the fastest speed with the Belly Bounce, the shops, the coaster and about 400 guests. That covers thought balloons, ride and coaster runs with guests boarding, arrivals and month ends as they happen. A ride start with boarding guests was not measured as an event of its own.
 
@@ -644,13 +644,62 @@ The build takes 38 frames instead of 34. No frame of 40 ms or more follows the e
 
 The welcome line's PCM is still decoded over frames (the sliced path above), starting in the entering frame. Which line comes first is the controller's choice in that frame, so it is not decoded ahead. The first draw did not change. The CPU profile of that frame did not name its cost, because the profile's window and the frame did not line up. Pipelines are already created with their materials during the build.
 
+### The first draw and the park HUD (October 21)
+
+The entering frame's first draw (`frame.draw`, 19 ms) and the park HUD (`load:park-hud` and the HUD's first `park.hud`, 16 ms) were the two largest parts left. Two harness changes named their cost:
+
+- **A profile lined up with the frame.** The harness tied the CPU profile's clock to the page's with one `performance.now()` read after `Profiler.start`. That read was 28-30 ms off in the Jungle start, so the entering frame's profile showed the frames before it. Now the harness finds the frames the profile saw itself: the runs of samples under `main.js`'s frame callback (`profileFrames`). It slides them over every frame the page recorded and keeps the shift where both agree on the most time (`profileClockOffset`). A run of back-to-back frames merges into one in the profile, but the pattern of their lengths and gaps still lines up. Each slow frame reports the shift as `profileOffsetMs`. The entering frame's samples now add up to its length (89.9 ms sampled for an 89.7 ms frame).
+- **Marks inside the draw.** `FrameMarks` now also cover the draw's parts (`draw.backdrop`, `draw.sky`, `draw.level`, `draw.advisorModel`, `draw.hud`, `draw.advisorUi`, `draw.depthImages`, `overlay.ui`), every entity type's draws (`draw:GuestRenderer`, ...), the lazy material resource sets (`draw.materialResourceSets`) and the interface textures made on first use (`ui.image <path>`, `ui.atlas`, `ui.solid`, `ui.renderedSet`). While marks are on, the browser's WebGL calls are recorded by kind too (`gl.createTexture`, `gl.uploadTexture`, `gl.createBuffer`, `gl.uploadBuffer`, `gl.createResourceSet`, `gl.createProgram`, `gl.createPipeline`, `gl.execute`; `Veldrid.WebGlMarks`).
+
+What the profile and the marks showed, on the published build before the changes below:
+
+| Part | ms | What it is |
+| --- | ---: | --- |
+| Sky (`draw.sky`) | 4-8 | first-time work: `Level.DrawSky` created the sky on its first call. That reads the colour grid (a `.tga` decode, most of `load:image-decode`), loads the cloud and cylinder textures, and builds the geometry and two materials. |
+| Interface textures (`draw.overlay`) | 5-6 | first-time work: the overlay decoded, keyed and uploaded each image of the HUD's first draw (`UiImages.LoadKeyed`; `thoughts2.wct`, `thoughts.wct`, `purple_button.wct`, `meter.wct`, `b_money.wct` and smaller ones) and smoothed the font atlas |
+| Entities (`draw.level`) | 3.4 | the first call of each renderer's draw (`RideHeadRenderer`, `BalloonRenderer`, `GuestRenderer`, `LitterRenderer` 0.4-0.6 ms each). The GPU calls are small: all `gl.*` marks together stay under 1 ms, 24 material resource sets take 0.3 ms. The rest is the AOT runtime's first-call work. |
+| Advisor model (`draw.advisorModel`) | 1.9 | its first pose and the render target of its image; the advisor itself is made in this frame |
+| HUD draw (`draw.hud`) | 1.2 | the first call of each widget's draw |
+| Deletions at the frame's end (`frame.post`) | 0.4-2.9 | the retired lobby's textures, one WebGL `deleteTexture` each |
+| HUD creation (`load:park-hud`) | 6.6 | `ParkHud.Build` (about 3 ms), the build catalogue's grouping (`OriginalBuildCatalog`, about 2 ms, mostly its LINQ `GroupBy`'s first use) and the rest of the constructor |
+| HUD first update (`park.hud`) | 8.7 | spread over the update's parts, each paying the runtime's first-call work: `UpdateBlueprint` (`BlueprintMarkers.Show`, about 3 ms), `UpdateCursor`, `SampleHappiness`, `HandleCheatKeys` and smaller ones |
+
+Three changes move or spread the first-time work. The picture does not change: the same sky, HUD and textures are made, only earlier, and a deletion only releases what nothing draws any more.
+
+- **The sky, the HUD and its first textures in the build.** The build's preparation (`GameFlow.PrepareEntry`) now ends with `PrepareFirstFrame`, after the advisor's and the snapshot's steps. `Level.PrepareSky` loads the sky the first draw would load, from the same files. Nothing of it depends on when it is made. Next, the park HUD is created as `EnterLevel` creates it, in a step of its own, and `EnterLevel` takes it (`[EXT:park-entry-preparation]`). It is made last, so everything the other steps make comes before it, as in the entering frame. The staged scene is current then, as it is at entering. The level does not update before it is entered, and input waits while it is built, so the HUD meets the same park. The constructor reads only one thing from outside the park: whether the camcorder key and the mouse button are held. `ParkHud.RefreshEntryInput` reads both again in the entering frame, so a held key is not taken for a new press. Last, `ParkHud.EntryTextures` names the textures the main screen's first draw makes: every frame's images of the models its visible elements show, the purple bar of its text buttons, the happiness meter, the fonts of its labels and buttons at the canvas's text scale, and the two pointers the first frame can show. `UiRenderer.Prepare` makes each one in its own step, as the draw would. A dropped build clears its prepared HUD, as a tear-down clears a retired one. A HUD that cannot be made in a step is made on entering, which meets the same failure. Tests: `EnteringFramePreparationTests`; the front-end smoke now checks that the park built over frames is entered with the HUD a build step made. It also checks that this HUD's screens, elements, messages and modes equal those of a HUD made on entering, and that the sky was loaded before the first draw. The world hash, the entity count and the object count still equal the park built in one go.
+- **Deletions spread over frames (browser).** At the end of a frame the browser now runs the oldest scheduled deletions in order, for at most 1 ms (`Renderer.BrowserDeletionBudgetMilliseconds`), and the rest waits for the next frames. At least one runs per frame, so the queue drains. The desktop runs them all at once, as before. Tests: `DeletionsRunInOrderWithinTheirBudgetAndTheRestWaitsForTheNextFrame` and `ADeletionScheduledByADeletionRunsAfterTheOthers`.
+
+Measured on published AOT builds of this branch without (before) and with (after) these changes, both with the new marks, same machine and harness as above. Values are medians of five runs of each build, in milliseconds:
+
+| Part of the entering frame | Before | After |
+| --- | ---: | ---: |
+| Whole frame | 83 | 60 |
+| Construction part (the last entry of the build-frame list) | 36 | 27 |
+| First draw (`frame.draw`) | 19.4 | 7.7 |
+| Sky (`draw.sky`) | 7.6 | 0.4 |
+| Interface textures (`draw.overlay`) | 5.3 | 1.0 |
+| Entities, advisor model, HUD draw (`draw.level`, `draw.advisorModel`, `draw.hud`) | 3.4, 1.9, 1.2 | 3.1, 1.8, 1.0 |
+| Image decoding (`load:image-decode`) | 4.9 | 0 |
+| HUD creation (`load:park-hud`) | 6.6 | 0 |
+| HUD first update (`park.hud`) | 8.7 | 7.4 |
+| Largest frame of the park start | 83 (entering) | 73 (a build step) |
+| Largest frame before entering | 77 | 71 |
+| Park ready after the click | 9,157 | 9,137 |
+
+The build takes 39 frames instead of 38, each step within the 12 ms budget. No frame of 40 ms or more follows the entering one. The entering frame is no longer the largest frame of the park start: the economy and gate sign steps of the build are. The `events` scenario's other events stayed within noise. Some runs of both builds met other work on the machine, which raised the p95 of every event in them to about 5 ms.
+
+What the entering frame still spends, apart from the advisor's creation, first update and first speech (about 15 ms together) and the live capture (7 ms):
+
+- **The HUD's first update (7.4 ms).** Almost all of it is the runtime's first-call work in the update's parts. Running the update during the build would warm it, but it would also change the HUD's state: its timers, the happiness sample, the pointer and the camera flags it sets. So it stays in the entering frame. `RuntimeHelpers.PrepareMethod` cannot warm it either: Mono does not implement it.
+- **The first draws of the entities, the advisor model and the HUD (about 6 ms).** These are first calls as well. The advisor is made in the entering frame, so its model cannot be drawn before.
+
 ### Remaining hitches
 
 | Hitch | Worst frame | Cause | What a fix would take |
 | --- | ---: | --- | --- |
-| Entering the park | 85 ms | first draw (19 ms), park HUD creation and first update (16 ms), first speech with its first decode slice (8 ms), live capture (7 ms), advisor creation (6 ms) | find what the first draw spends (a profile aligned with the frame); create the HUD in a build step |
+| Entering the park | 60 ms | the advisor's creation, first update and first speech (about 15 ms), the first draw (8 ms: the first calls of the entities', the advisor model's and the HUD's draws), the HUD's first update (7 ms, first calls), the live capture (7 ms) | first calls are the runtime's: warming them needs a side-effect-free way to run the code once before entering |
 | Autosave capture | 37 ms, once per autosave interval | `CaptureResumeSnapshot` and its validation in the frame the autosave is due | the same deferred validation; a cheaper capture of the cell layout |
 | First buy preview of a ride with a sign | 55 ms | the sign's effects: `Ext.Add` in `SignEffectShape.Blur` and the relief's square roots through `BigInteger` (`Ext.IntegerSquareRoot`) | a word-pair square root and add-free blur passes, or composing the sign over frames before the preview shows it |
-| Park build steps | 73-83 ms | the economy's catalogue and balance parsing; the gate sign; guest sprite atlases | split those steps further (each is one step of `Level.Construct` now) |
+| Park build steps | 71-77 ms (now the largest frames of the park start) | the economy's catalogue and balance parsing; the gate sign; guest sprite atlases | split those steps further (each is one step of `Level.Construct` now) |
 | Coaster first built | 17 ms | first use of the coaster's models and textures | preload them with the park's catalogue |
 | Advisor line, while decoding | p95 about 6 ms | the 5 ms slices | none needed (under a 60 Hz frame) |

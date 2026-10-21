@@ -74,6 +74,50 @@ public class NativeWorldShaderRenderTests
 		Assert.IsTrue( contrast > 20, $"{shader} on {device.BackendType} lost the texture detail: white cells average {white:F1}, black cells {black:F1}" );
 	}
 
+	/// <summary>
+	/// Direct3D 11 links the vertex shader's outputs to the pixel shader's inputs by register: every pixel shader input must sit in
+	/// the register where the vertex shader writes the same semantic, with at least its components (issue #754). This compiles
+	/// every shader as the engine does on Windows (Veldrid.SPIRV's HLSL, then the system HLSL compiler with Veldrid's vs_5_0/ps_5_0
+	/// profile and optimisation level 3) and compares the two signatures, so it needs no GPU.
+	/// </summary>
+	[TestMethod]
+	public void EveryShaderLinksItsStagesByRegisterOnDirect3D11()
+	{
+		if ( !OperatingSystem.IsWindows() )
+			Assert.Inconclusive( "Needs the Windows HLSL compiler (d3dcompiler_47.dll)." );
+		Log = new();
+		var directory = Path.GetDirectoryName( GetShaderPath( "test.shader" ) )!;
+		var problems = new System.Collections.Generic.List<string>();
+		foreach ( var path in Directory.GetFiles( directory, "*.shader" ).Order( StringComparer.Ordinal ) )
+		{
+			var program = ShaderCompiler.CompileProgram( path, Veldrid.SPIRV.CrossCompileTarget.HLSL );
+			var hlsl = Veldrid.SPIRV.SpirvCompilation.CompileVertexFragment( program.Vertex, program.Fragment, Veldrid.SPIRV.CrossCompileTarget.HLSL, new Veldrid.SPIRV.CrossCompileOptions() );
+			var vertex = Signature( hlsl.VertexShader, "vs_5_0", input: false );
+			var pixel = Signature( hlsl.FragmentShader, "ps_5_0", input: true );
+			foreach ( var element in pixel )
+			{
+				// values the rasterizer makes itself, not the vertex shader
+				if ( element.Name is "SV_ISFRONTFACE" or "SV_PRIMITIVEID" or "SV_SAMPLEINDEX" or "SV_COVERAGE" )
+					continue;
+				var match = vertex.FirstOrDefault( output => output.Name == element.Name && output.Index == element.Index );
+				if ( match.Name == null )
+					problems.Add( $"{Path.GetFileName( path )}: {element.Name}{element.Index} is not written by the vertex shader" );
+				else if ( match.Register != element.Register || (match.Mask & element.Mask) != element.Mask )
+					problems.Add( $"{Path.GetFileName( path )}: {element.Name}{element.Index} is read from register {element.Register} (mask {element.Mask}) but written to register {match.Register} (mask {match.Mask})" );
+			}
+		}
+		Assert.AreEqual( 0, problems.Count, string.Join( "\n", problems ) );
+	}
+
+	private static (string Name, int Index, int Register, int Mask)[] Signature( string hlsl, string profile, bool input )
+	{
+		var bytecode = Vortice.D3DCompiler.Compiler.Compile( hlsl, "main", profile, profile, Vortice.D3DCompiler.ShaderFlags.OptimizationLevel3, Vortice.D3DCompiler.EffectFlags.None );
+		using var reflection = Vortice.D3DCompiler.Compiler.Reflect<Vortice.Direct3D11.Shader.ID3D11ShaderReflection>( bytecode.Span );
+		return (input ? reflection.InputParameters : reflection.OutputParameters)
+			.Select( element => (element.SemanticName.ToUpperInvariant(), (int)element.SemanticIndex, (int)element.Register, (int)element.UsageMask) )
+			.ToArray();
+	}
+
 	private static bool IsWhite( int x, int y ) => ((x / Cell) + (y / Cell)) % 2 == 0;
 
 	private static string Describe( byte[] pixels, int x, int y )

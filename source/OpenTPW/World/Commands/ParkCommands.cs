@@ -1,3 +1,4 @@
+using System.Runtime.ExceptionServices;
 namespace OpenTPW;
 
 /// <summary>
@@ -51,7 +52,6 @@ public sealed class ParkCommands
 	private ParkCommand? running;
 	private bool issuing;
 	private bool inTick;
-	private readonly TickScope tickScope;
 
 	/// <param name="nextTick">The index of the next simulation tick (the fixed-step clock's tick count).</param>
 	/// <param name="execute">Runs one well-formed command on the park; a rejection must leave the park unchanged.</param>
@@ -61,7 +61,6 @@ public sealed class ParkCommands
 		this.nextTick = nextTick ?? throw new ArgumentNullException( nameof( nextTick ) );
 		this.execute = execute ?? throw new ArgumentNullException( nameof( execute ) );
 		this.refusesEdits = refusesEdits ?? throw new ArgumentNullException( nameof( refusesEdits ) );
-		tickScope = new TickScope( this );
 	}
 
 	/// <summary>The local player's id, put on the commands the HUD and the tools issue (<see cref="LocalPlayer"/> until a session gives this machine its slot).</summary>
@@ -103,11 +102,17 @@ public sealed class ParkCommands
 		ArgumentNullException.ThrowIfNull( command );
 		if ( depth > 0 )
 			return Run( command );
+		// [EXT:online-coop-commands] a command applied while a simulation tick runs would apply inside tick N here but at the start of tick N in a replay or on a peer (its log entry says
+		// "before tick N"), so no code path may apply one there: the held commands apply before the tick's scope begins. The tests and a strict run throw to find one; a game of one runs
+		// it at once, as it always did, and a co-op session (C2) will not take one.
+		if ( inTick && Strict )
+			throw new InvalidOperationException( $"The {command.Kind} command was applied during a simulation tick." );
 		// a malformed command never reaches the park and has no byte form to log: it is refused before the log
 		if ( !command.IsWellFormed )
 			return ParkCommandResult.Rejected( $"The {command.Kind} command has fields out of range." );
 		var tick = nextTick();
 		ParkCommandResult result;
+		ExceptionDispatchInfo? thrown = null;
 		try
 		{
 			result = Run( command );
@@ -115,10 +120,14 @@ public sealed class ParkCommands
 		catch ( Exception error ) when ( error is not OutOfMemoryException )
 		{
 			// [EXT:online-coop-commands] a command that throws (a rule its own checks missed) is a rejection with what it wrote before the throw: it is logged like any other, so a replay or a
-			// peer, which throws the same way at the same place, stays in step instead of losing the command
+			// peer, which throws the same way at the same place, stays in step instead of losing the command; the tests and a strict run rethrow it once it is logged
+			Common.GlobalNamespace.Log?.Error( $"The {command.Kind} command threw: {error}" );
 			result = new ParkCommandResult( false, $"The {command.Kind} command failed: {error.GetType().Name}: {error.Message}" ) { Error = error };
+			if ( Strict )
+				thrown = ExceptionDispatchInfo.Capture( error );
 		}
 		Record( new ParkCommandLogEntry( tick, command ), result );
+		thrown?.Throw();
 		return result;
 	}
 
@@ -131,10 +140,6 @@ public sealed class ParkCommands
 		ArgumentNullException.ThrowIfNull( command );
 		if ( depth > 0 )
 			return Apply( command with { Player = running!.Player } );
-		// [EXT:online-coop-commands] an edit issued while a simulation tick runs would apply inside tick N here but before tick N + 1 on a peer, so no code path may issue one there: the tests and a
-		// strict run throw to find one; a game of one runs it at once as it always did, and a co-op session (C2) refuses it
-		if ( inTick && ThrowOnIssueInTick )
-			throw new InvalidOperationException( $"The {command.Kind} command was issued during a simulation tick." );
 		var outer = !issuing;
 		issuing = true;
 		try
@@ -200,26 +205,39 @@ public sealed class ParkCommands
 	}
 
 	/// <summary>
-	/// Marks a simulation tick running, from after its held commands applied (<see cref="ApplyDue"/>) to the end of the returned scope: no command may be issued then (<see cref="ThrowOnIssueInTick"/>).
+	/// Marks a simulation tick running, from after its held commands applied (<see cref="ApplyDue"/>) to the end of the returned scope, which restores the mark it found: no command
+	/// may be applied then (<see cref="Strict"/>).
 	/// </summary>
-	public IDisposable EnterTick()
+	internal TickScope EnterTick()
 	{
+		var scope = new TickScope( this, inTick );
 		inTick = true;
-		return tickScope;
+		return scope;
 	}
 
 	/// <summary>Whether a simulation tick is running (<see cref="EnterTick"/>).</summary>
 	public bool IsInTick => inTick;
 
 	/// <summary>
-	/// [EXT:online-coop-commands] Whether <see cref="Issue"/> throws when a simulation tick is running (<see cref="EnterTick"/>): set by the tests and by a strict developer run
-	/// (<c>OPENTPW_STRICT_COMMANDS=1</c>), so a code path that issues a command inside a tick is found. Off, a game of one runs such a command at once, as it always did.
+	/// [EXT:online-coop-commands] The checks of the tests and a strict developer run (<c>OPENTPW_STRICT_COMMANDS=1</c>): a command applied while a simulation tick runs throws
+	/// (<see cref="EnterTick"/>), and a command that throws is rethrown once it is logged, so neither goes unnoticed. Off, a game of one runs a command inside a tick at once, as it always
+	/// did, and a command that throws is a logged rejection.
 	/// </summary>
-	public static bool ThrowOnIssueInTick { get; set; }
+	public static bool Strict { get; set; }
 
-	private sealed class TickScope( ParkCommands owner ) : IDisposable
+	/// <summary>The scope of <see cref="EnterTick"/>: its end restores the tick mark it found, so a nested or a late end never clears an outer tick's.</summary>
+	internal readonly struct TickScope : IDisposable
 	{
-		public void Dispose() => owner.inTick = false;
+		private readonly ParkCommands owner;
+		private readonly bool previous;
+
+		public TickScope( ParkCommands owner, bool previous )
+		{
+			this.owner = owner;
+			this.previous = previous;
+		}
+
+		public void Dispose() => owner.inTick = previous;
 	}
 
 	/// <summary>Drops every held command (a session that ends, a level that closes).</summary>

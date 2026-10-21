@@ -6,7 +6,10 @@ namespace OpenTPW.Tests;
 [TestClass]
 public static class TestAssembly
 {
-	/// <summary>[EXT:online-coop-commands] A command issued inside a simulation tick throws in every test, so no code path that does it goes unnoticed (docs/COOP.md, "Nested edits").</summary>
+	/// <summary>
+	/// [EXT:online-coop-commands] The command funnel's strict checks in every test (docs/COOP.md, "No command inside a tick"): a command applied inside a simulation tick throws, and
+	/// so does a command that throws, so neither goes unnoticed.
+	/// </summary>
 	[AssemblyInitialize]
-	public static void Initialize( TestContext context ) => ParkCommands.ThrowOnIssueInTick = true;
+	public static void Initialize( TestContext context ) => ParkCommands.Strict = true;
 }

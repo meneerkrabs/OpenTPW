@@ -30,6 +30,11 @@ public class ParkCommandsTests
 					Commands.Apply( new RemoveObjectAtCommand( 1, 1 ) );
 				if ( command is RemoveAtCommand { X: 88 } )
 					Commands.Issue( new RemoveObjectAtCommand( 3, 3 ) );
+				// two levels down, a command that throws
+				if ( command is RemoveAtCommand { X: 55 } )
+					Commands.Apply( new RemoveAtCommand( 44, 0 ) );
+				if ( command is RemoveAtCommand { X: 44 } )
+					Commands.Apply( new RemoveAtCommand( 66, 0 ) );
 				// a HUD that follows its own player's edit (the tool a placed ride opens) acts after the command
 				if ( command is RemoveAtCommand { X: 77 } && Commands.IsIssuing )
 					Commands.AfterIssue( () =>
@@ -117,58 +122,105 @@ public class ParkCommandsTests
 		CollectionAssert.AreEqual( new[] { (0, ParkCommandKind.RemoveAt) }, rights.Asked, "the rights were asked of the outer command only" );
 	}
 
-	/// <summary>
-	/// [EXT:online-coop-commands] A command that throws is a rejection with what it wrote before the throw, logged like any other (a replay or a peer throws the same way at the same place);
-	/// the funnel goes on with the next command.
-	/// </summary>
-	[TestMethod]
-	public void ACommandThatThrowsIsALoggedRejectionAndTheFunnelGoesOn()
+	/// <summary>Runs <paramref name="test"/> with <see cref="ParkCommands.Strict"/> set as given, then restores the test run's setting.</summary>
+	private static void WithStrict( bool strict, Action test )
 	{
-		var park = new Park();
-		var applied = new List<ParkCommandResult>();
-		park.Commands.Applied += ( _, result ) => applied.Add( result );
-		var failed = park.Commands.Issue( new RemoveAtCommand( 66, 0 ) );
-		Assert.IsFalse( failed.Accepted );
-		Assert.IsInstanceOfType( failed.Error, typeof( InvalidDataException ) );
-		StringAssert.Contains( failed.Reason, "a missed rule" );
-		Assert.AreEqual( 1, park.Commands.Log.Count, "the failed command is logged" );
-		Assert.AreSame( failed, applied.Single() );
-		Assert.IsFalse( park.Commands.IsExecuting );
-		Assert.IsTrue( park.Commands.Issue( new RemoveAtCommand( 99, 0 ) ).Accepted, "the next command runs, with the one inside it" );
-		Assert.AreEqual( 3, park.Ran.Count, "the failed command, the next one and the one inside it" );
-	}
-
-	/// <summary>
-	/// [EXT:online-coop-commands] An edit issued while a simulation tick runs throws where that is checked (the tests, a strict run): a peer would apply it a tick later. The held commands still apply
-	/// inside the tick, and off the check a game of one runs such a command at once.
-	/// </summary>
-	[TestMethod]
-	public void AnEditIssuedDuringATickThrowsWhereThatIsCheckedAndHeldCommandsStillApply()
-	{
-		var strict = ParkCommands.ThrowOnIssueInTick;
+		var kept = ParkCommands.Strict;
+		ParkCommands.Strict = strict;
 		try
 		{
-			var park = new Park();
-			ParkCommands.ThrowOnIssueInTick = true;
-			using ( park.Commands.EnterTick() )
-			{
-				Assert.IsTrue( park.Commands.IsInTick );
-				var error = Assert.ThrowsException<InvalidOperationException>( () => park.Commands.Issue( new RemoveAtCommand( 1, 1 ) ) );
-				StringAssert.Contains( error.Message, "simulation tick" );
-				Assert.IsTrue( park.Commands.Apply( new RemoveAtCommand( 2, 2 ) ).Accepted, "a held command's apply is not an issue" );
-			}
-			Assert.IsFalse( park.Commands.IsInTick );
-			Assert.IsTrue( park.Commands.Issue( new RemoveAtCommand( 1, 1 ) ).Accepted );
-			ParkCommands.ThrowOnIssueInTick = false;
-			using ( park.Commands.EnterTick() )
-				Assert.IsTrue( park.Commands.Issue( new RemoveAtCommand( 3, 3 ) ).Accepted, "a game of one runs it at once" );
-			CollectionAssert.AreEqual( new ParkCommand[] { new RemoveAtCommand( 2, 2 ), new RemoveAtCommand( 1, 1 ), new RemoveAtCommand( 3, 3 ) }, park.Ran );
-			Assert.AreEqual( 3, park.Commands.Log.Count );
+			test();
 		}
 		finally
 		{
-			ParkCommands.ThrowOnIssueInTick = strict;
+			ParkCommands.Strict = kept;
 		}
+	}
+
+	/// <summary>
+	/// [EXT:online-coop-commands] A command that throws is a rejection with what it wrote before the throw, logged like any other (a replay or a peer throws the same way at the same place),
+	/// and the funnel goes on with the next command, however deep in nested commands the throw was. The tests and a strict run rethrow it once it is logged.
+	/// </summary>
+	[TestMethod]
+	[DoNotParallelize]
+	public void ACommandThatThrowsIsALoggedRejectionAndTheFunnelGoesOn()
+	{
+		WithStrict( false, () =>
+		{
+			var park = new Park();
+			var applied = new List<ParkCommandResult>();
+			park.Commands.Applied += ( _, result ) => applied.Add( result );
+			var failed = park.Commands.Issue( new RemoveAtCommand( 66, 0 ) );
+			Assert.IsFalse( failed.Accepted );
+			Assert.IsInstanceOfType( failed.Error, typeof( InvalidDataException ) );
+			StringAssert.Contains( failed.Reason, "a missed rule" );
+			Assert.AreEqual( 1, park.Commands.Log.Count, "the failed command is logged" );
+			Assert.AreSame( failed, applied.Single() );
+			Assert.IsFalse( park.Commands.IsExecuting );
+			Assert.IsTrue( park.Commands.Issue( new RemoveAtCommand( 99, 0 ) ).Accepted, "the next command runs, with the one inside it" );
+			Assert.AreEqual( 3, park.Ran.Count, "the failed command, the next one and the one inside it" );
+			var deep = park.Commands.Issue( new RemoveAtCommand( 55, 0 ) );
+			Assert.IsInstanceOfType( deep.Error, typeof( InvalidDataException ), "a throw two commands down rejects the outer one" );
+			Assert.IsFalse( park.Commands.IsExecuting, "and leaves the funnel at the top level" );
+			Assert.AreEqual( 3, park.Commands.Log.Count, "only the outer command is logged" );
+			Assert.IsTrue( park.Commands.Issue( new RemoveAtCommand( 1, 0 ) ).Accepted );
+		} );
+		WithStrict( true, () =>
+		{
+			var park = new Park();
+			Assert.ThrowsException<InvalidDataException>( () => park.Commands.Issue( new RemoveAtCommand( 66, 0 ) ), "the tests see the throw" );
+			Assert.AreEqual( 1, park.Commands.Log.Count, "once it is logged" );
+			Assert.IsFalse( park.Commands.IsExecuting );
+			Assert.IsFalse( park.Commands.IsIssuing );
+		} );
+	}
+
+	/// <summary>
+	/// [EXT:online-coop-commands] A command applied while a simulation tick runs throws where that is checked (the tests, a strict run): it would apply inside the tick here but at its
+	/// start in a replay or on a peer. The held commands apply before the tick's scope begins; off the check a game of one runs such a command at once; a nested scope's end restores
+	/// the outer tick's mark.
+	/// </summary>
+	[TestMethod]
+	[DoNotParallelize]
+	public void ACommandAppliedDuringATickThrowsWhereThatIsChecked()
+	{
+		WithStrict( true, () =>
+		{
+			var park = new Park();
+			using ( park.Commands.EnterTick() )
+			{
+				Assert.IsTrue( park.Commands.IsInTick );
+				StringAssert.Contains( Assert.ThrowsException<InvalidOperationException>( () => park.Commands.Issue( new RemoveAtCommand( 1, 1 ) ) ).Message, "simulation tick" );
+				Assert.ThrowsException<InvalidOperationException>( () => park.Commands.Apply( new RemoveAtCommand( 2, 2 ) ), "an apply inside the tick too" );
+				using ( park.Commands.EnterTick() )
+					Assert.IsTrue( park.Commands.IsInTick );
+				Assert.IsTrue( park.Commands.IsInTick, "a nested scope's end restores the outer tick's mark" );
+			}
+			Assert.IsFalse( park.Commands.IsInTick );
+			park.Commands.Schedule( new RemoveAtCommand( 2, 2 ), park.Tick );
+			park.Commands.ApplyDue( park.Tick );
+			Assert.IsTrue( park.Commands.Issue( new RemoveAtCommand( 1, 1 ) ).Accepted );
+			CollectionAssert.AreEqual( new ParkCommand[] { new RemoveAtCommand( 2, 2 ), new RemoveAtCommand( 1, 1 ) }, park.Ran, "the held command applied before the tick" );
+			Assert.AreEqual( 2, park.Commands.Log.Count, "the refused issues are not logged" );
+		} );
+		WithStrict( false, () =>
+		{
+			var park = new Park();
+			using ( park.Commands.EnterTick() )
+				Assert.IsTrue( park.Commands.Issue( new RemoveAtCommand( 3, 3 ) ).Accepted, "a game of one runs it at once" );
+		} );
+	}
+
+	/// <summary>Running the game never turns the strict checks off: a test that runs it keeps the test run's setting.</summary>
+	[TestMethod]
+	[DoNotParallelize]
+	public void RunningTheGameKeepsTheStrictChecks()
+	{
+		WithStrict( true, () =>
+		{
+			Assert.ThrowsException<ArgumentException>( () => Game.Run( new[] { "--export-fsh-png" } ) );
+			Assert.IsTrue( ParkCommands.Strict );
+		} );
 	}
 
 	[TestMethod]

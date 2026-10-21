@@ -100,14 +100,18 @@ the issuing player's session slot (`Player`, 0 = the local player and host).
 - **A command that throws.** A run that throws (a rule the command's own checks missed: a hostile
   peer's or a damaged log's command) is a rejection that carries the exception
   (`ParkCommandResult.Error`), with whatever the command wrote before the throw, and is logged like any
-  other: a replay or a peer throws at the same place and stays in step, and the funnel goes on. The
-  setting and tool commands turn the park's own refusals (`InvalidOperationException` and the like)
-  into rejections; `ParkCommands.Apply` catches the rest. The executor's fuzz fails on one.
+  other: a replay or a peer throws at the same place and stays in step, and the funnel goes on, however
+  deep in nested commands the throw was. The setting and tool commands turn the park's own refusals
+  (`InvalidOperationException` and the like) into rejections; `ParkCommands.Apply` catches the rest and
+  writes the exception to the diagnostic log. The tests and a strict developer run
+  (`OPENTPW_STRICT_COMMANDS=1`, `ParkCommands.Strict`) rethrow it once it is logged, so no test passes
+  over a crashed command.
 - **No command inside a tick.** The level marks each simulation tick from after its held commands
-  applied (`ParkCommands.EnterTick`): a command issued then would apply inside tick N on this machine
-  but before tick N + 1 on a peer. The tests and a strict developer run (`OPENTPW_STRICT_COMMANDS=1`)
-  throw on one (`ParkCommands.ThrowOnIssueInTick`), so every code path that does it is found; a game of
-  one runs it at once, as it always did, and a session (C2) will refuse it.
+  applied (`ParkCommands.EnterTick`): a command applied then would apply inside tick N on this machine
+  but at the start of tick N in a replay or on a peer (its log entry says "before tick N"). The tests
+  and a strict run throw on one, so every code path that does it is found; a game of one runs it at
+  once, as it always did, and a session (C2) will not take one. A tick-end seam that wants an edit
+  holds it for a later tick (`ParkCommands.Schedule`).
 
 ### Settings
 

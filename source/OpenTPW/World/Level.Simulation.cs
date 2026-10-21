@@ -6,7 +6,8 @@ public partial class Level
 
 	/// <summary>
 	/// Test and smoke seam: called at the end of every fixed tick with the ticks run so far, after the tick's body pose phase and command checkpoint, so a caller that advances
-	/// several ticks in one frame still sees the world after each of them (docs/DETERMINISM.md, "Frame batching").
+	/// several ticks in one frame still sees the world after each of them (docs/DETERMINISM.md, "Frame batching"). It runs inside the tick's scope (<see cref="ParkCommands.EnterTick"/>):
+	/// an edit for a later tick is held with <see cref="ParkCommands.Schedule"/>, not issued.
 	/// </summary>
 	internal Action<long>? TickCompleted { get; set; }
 
@@ -44,8 +45,10 @@ public partial class Level
 		AttachCheatHost();
 		simulationClock.Advance( elapsedSeconds, deltaTime =>
 		{
-			// [EXT:online-coop-commands] the commands held for this tick apply before it (a replayed log; in single player the HUD's commands have run already)
+			// [EXT:online-coop-commands] the commands held for this tick apply before it (a replayed log; in single player the HUD's commands have run already); no command may be applied while
+			// the tick itself runs, since a replay or a peer would apply it at the tick's start (ParkCommands.Strict)
 			ApplyDueCommands();
+			using var tickScope = Commands.EnterTick();
 			// The staff host's bookkeeping, after the commands and before anything of the tick reads a member: a member saved picked up that no hand holds goes back to idle (an imported save),
 			// and a member without a position (hired since the last tick, or loaded so) is put on the gate path. Both ran once per frame before the world input; inside the tick they see the
 			// same commands at the same tick whether those came from this player's input, a replayed log or (later) a session frame, and however many ticks a frame runs.

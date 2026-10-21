@@ -116,14 +116,14 @@ internal sealed class OnlinePanel : IDisposable
 		if ( !ImGui.CollapsingHeader( OnlineStrings.Get( OnlineLabel.FileSharing ) ) )
 			return;
 		ImGui.InputText( OnlineStrings.Ui( OnlineStrings.ParkName, "Park name" ), ref parkName, 128 );
-		if ( !level.IsReadOnlyVisit && ParkSharing.ModsRefusal( level ) == null && ImGui.Button( OnlineStrings.Get( OnlineLabel.ExportPark ) ) )
+		if ( !level.IsReadOnlyVisit && !level.IsCoopGuestPark && ParkSharing.ModsRefusal( level ) == null && ImGui.Button( OnlineStrings.Get( OnlineLabel.ExportPark ) ) )
 		{
 			var package = ParkSharing.ExportLevel( level, parkName, name );
 			var path = Path.Combine( session.Folders.Parks, package.Manifest.PackageId.ToString( "N" ) + ParkPackage.FileExtension );
 			package.Save( path );
 			localStatus = OnlineStrings.Get( OnlineLabel.SavedTo ) + path;
 		}
-		if ( !level.IsReadOnlyVisit && ParkSharing.ModsRefusal( level ) == null && session.IsLoggedIn && ImGui.Button( OnlineStrings.Ui( OnlineStrings.PublishPark, "Publish park" ) ) )
+		if ( !level.IsReadOnlyVisit && !level.IsCoopGuestPark && ParkSharing.ModsRefusal( level ) == null && session.IsLoggedIn && ImGui.Button( OnlineStrings.Ui( OnlineStrings.PublishPark, "Publish park" ) ) )
 			session.Publish( ParkSharing.ExportLevel( level, parkName, name ) );
 		ImGui.InputText( "Local .tpwpark path", ref importPath, 2048 );
 		if ( ImGui.Button( OnlineStrings.Get( OnlineLabel.ImportFile ) ) )

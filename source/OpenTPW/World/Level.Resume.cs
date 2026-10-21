@@ -18,7 +18,7 @@ public partial class Level
 	/// The object adopts the lowest-numbered record of its type no other object holds: that is the record its own purchase made, which a failed build left unowned. Only when no such record exists is an
 	/// uncharged one registered, as the original-save import does (<see cref="ParkEconomy.RegisterExisting"/>), because nothing was bought for the object that the books could still refund or count.
 	/// </summary>
-	private void RepairMissingEconomyBindings()
+	internal void RepairMissingEconomyBindings()
 	{
 		if ( Park == null )
 			return;
@@ -27,6 +27,9 @@ public partial class Level
 			if ( item.IsDeleted || item is PrototypeRide || economyInstances.ContainsKey( item ) || (PlacedRide != null && ReferenceEquals( item, PlacedRide ))
 				|| !Park.Economy.Catalog.TryGet( item.Entry.InfoId, out _ ) )
 				continue;
+			// [EXT:online-coop-lockstep] a shared park changes only through its commands: the host's save refuses instead of repairing on its own machine
+			if ( CoopRole != CoopRole.None )
+				throw new InvalidOperationException( $"{item.Entry.DisplayName} (attraction {item.Visitors.AttractionId}) has no economy binding, which a shared park cannot repair; save it after the session." );
 			var held = economyInstances.Values.ToHashSet();
 			if ( prototypeInstance is int prototype )
 				held.Add( prototype );

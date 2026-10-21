@@ -403,6 +403,8 @@ public enum OpenTpwText
 	ModsSavedNextPark,
 	/// <summary>[EXT:extensions-apply-at-load] The same notice while a park runs: the changes apply when the player leaves it or loads another park.</summary>
 	ModsSavedAfterThisPark,
+	/// <summary>[EXT:online-coop-lockstep] A guest's click in a shared park: only the host builds (C2).</summary>
+	OnlyTheHostBuilds,
 }
 
 public static class SupplementaryStrings
@@ -987,6 +989,7 @@ public static class SupplementaryStrings
 			"Estensioni salvate\n\nLe modifiche valgono quando lasci questo parco o ne carichi un altro. Non serve riavviare.",
 			"ההרחבות נשמרו\n\nהשינויים יחולו כשתצא מהפארק הזה או תטען פארק אחר. אין צורך להפעיל מחדש." },
 		[OpenTpwText.ExtensionPoolsName] = new[] { "Pools", "Svømmebassiner", "Zwembaden", "Piscines", "Schwimmbecken", "수영장", "Baseny", "Piscinas", "Pooler", "Piscine", "בריכות" },
+		[OpenTpwText.OnlyTheHostBuilds] = new[] { "Only the host builds in a shared park", "Kun værten bygger i en delt park", "Alleen de host bouwt in een gedeeld park", "Seul l'hôte construit dans un parc partagé", "In einem geteilten Park baut nur der Gastgeber", "공유 공원에서는 호스트만 건설할 수 있습니다", "We wspólnym parku buduje tylko gospodarz", "En un parque compartido solo construye el anfitrión", "Bara värden bygger i en delad park", "In un parco condiviso costruisce solo l'host", "בפארק משותף רק המארח בונה" },
 	};
 
 	public static IReadOnlyList<string> SupportedLanguages => Languages;

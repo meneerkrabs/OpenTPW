@@ -23,4 +23,6 @@ internal interface ICoopStreamTransport
 	event Action<CoopMemberChanged>? MemberChanged;
 	event Action<CoopFrame>? FrameReceived;
 	event Action<CoopRelayed>? MessageReceived;
+	/// <summary>This game is no longer in its session (kicked, the host left, it ended while away, the link closed).</summary>
+	event Action<CoopEnded>? SessionEnded;
 }

@@ -23,8 +23,15 @@ internal sealed class CoopHostOnlyRights : IParkCommandRights
 /// </summary>
 internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 {
-	/// <summary>The ticks between two tick checkpoints: one park second.</summary>
+	/// <summary>The ticks between two tick checkpoints at the normal speed: one park second.</summary>
 	public const int CheckpointTicks = FixedStepClock.TicksPerSecond;
+
+	/// <summary>
+	/// The ticks between two tick checkpoints at <paramref name="speed"/>: <see cref="CheckpointTicks"/> times the speed's factor, so the host takes one digest a second of real
+	/// time at every speed (a full park's digest costs about 10 ms in the browser build, docs/COOP.md "Measurements"); the intervals divide each other, so a change of speed
+	/// keeps them aligned.
+	/// </summary>
+	public static int CheckpointInterval( GameSpeed speed ) => CheckpointTicks * Math.Max( 1, (int)GameSpeedScale.Of( speed ) );
 	/// <summary>The least time between two published frames.</summary>
 	public const double PublishSeconds = 0.1;
 	/// <summary>How far, in park seconds at the current speed, the host may run ahead of its slowest following guest.</summary>
@@ -104,8 +111,11 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 	private readonly ParkCommandInTickRule previousInTick;
 	private readonly IParkCommandRights? previousRights;
 	private readonly int previousPlayer;
-	/// <summary>Whether this stream started the level's command recording (and so stops it when the session ends).</summary>
-	private readonly bool recording;
+	/// <summary>
+	/// The session's own recording, from its start, so a desync can be replayed offline: under the session's rules, and with the world hash of each tick digest as its checkpoint
+	/// (it takes none between the digests: a full park's world hash is most of a digest's cost).
+	/// </summary>
+	private readonly ParkCommandRecorder recorder;
 	private long nextStream = 1;
 	private ulong nextSeq;
 	private ulong sendNext;
@@ -147,9 +157,7 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 		commands.InTick = ParkCommandInTickRule.Drop;
 		commands.Rights ??= CoopHostOnlyRights.Instance;
 		commands.Player = ParkCommands.LocalPlayer;
-		// the session's stream is recorded from its start, so a desync can be replayed offline (a recording already running is kept)
-		recording = level.CommandRecorder == null;
-		level.StartCommandRecording();
+		recorder = new ParkCommandRecorder( commands, level.LevelName ?? "", level.Seed.Value, level.TickCount, level.ComputeStateHash() ) { SessionRules = true };
 		commands.Applied += OnApplied;
 		level.TickEnded += OnTickEnded;
 		transport.Resumed += OnResumed;
@@ -281,8 +289,12 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 
 	private void OnTickEnded( long ticks )
 	{
-		if ( Failure == null && ticks % CheckpointTicks == 0 )
-			pendingTicks.Add( new CoopCheckpoint( CoopCheckpointKind.AfterTick, ticks, CoopDigest.Compute( level ) ) );
+		if ( Failure == null && ticks % CheckpointInterval( level.Park?.Economy.Speed ?? GameSpeed.Normal ) == 0 )
+		{
+			var digest = CoopDigest.Compute( level, out var world );
+			recorder.AddCheckpoint( ticks, world );
+			pendingTicks.Add( new CoopCheckpoint( CoopCheckpointKind.AfterTick, ticks, digest ) );
+		}
 	}
 
 	/// <summary>Every 100 ms when something changed (a record, a higher horizon, a checkpoint): the waiting records in frames of at most the frame size, the checkpoints with them.</summary>
@@ -499,8 +511,8 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 				if ( guest.Desyncs.Add( report.Id ) )
 				{
 					Log.Warning( $"Shared park guest {guest.Id} desynced ({report.Kind}) at tick {report.Tick}: host digest {report.HostDigest:X16}, guest {report.GuestDigest:X16}, "
-						+ $"stream records {report.FirstStream} to {report.LastStream}; the host recorded {level.CommandRecorder?.Entries.Count ?? 0} commands of the session." );
-					SessionLog ??= level.CommandLog();
+						+ $"stream records {report.FirstStream} to {report.LastStream}; the host recorded {recorder.Entries.Count} commands of the session." );
+					SessionLog ??= RecordedLog();
 					Desynced?.Invoke( guest.Id, report );
 				}
 				Desync( guest );
@@ -729,9 +741,10 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 		// the park's scripts read the machine's own clock again
 		if ( level.Objects?.ScriptWorld is { } scripts )
 			scripts.SessionTime = null;
-		if ( level.CommandLog() is { } log )
-			SessionLog = log;
-		if ( recording )
-			level.StopCommandRecording();
+		recorder.Dispose();
+		SessionLog = RecordedLog();
 	}
+
+	/// <summary>The session's recording so far, with the world hash now as its last checkpoint.</summary>
+	private ParkCommandLogFile RecordedLog() => recorder.ToLog( (level.TickCount, level.ComputeStateHash()) );
 }

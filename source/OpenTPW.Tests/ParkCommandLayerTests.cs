@@ -98,7 +98,7 @@ public class ParkCommandLayerTests
 	/// </summary>
 	internal static readonly (Mutator Mutator, string Phase)[] Remaining =
 	{
-		(new( "Developer sandbox load", Call( "LoadSandbox" ), "LoadSandbox" ), "C2 (a load replaces the park; a session replaces it from the host)"),
+		(new( "Developer sandbox load", Call( "LoadSandbox" ), "LoadSandbox" ), "never in a session (a load replaces the park; the developer sandbox is never shared, CoopSession.CanShare)"),
 	};
 
 	/// <summary>The starts of a bare call: a line start, an operator or bracket, or a keyword before an expression (a declaration has a type before the name instead).</summary>

@@ -782,6 +782,24 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 		return true;
 	}
 
+	/// <summary>
+	/// The queue as <see cref="RecomputeQueue"/> would find it now, on an isolated copy of the queue's geometry: this bridge's own cells, front, join cell and edit count stay as
+	/// they are. [EXT:online-coop-lockstep] The queue tool's entry reads it (<see cref="Level.EnterQueueTool"/>): a tool is one player's alone, so entering it changes nothing
+	/// in the park, and the queue commands bring the ride's own queue up to date on every peer.
+	/// </summary>
+	internal RideVisitorBridge QueueView( GuestPathGrid grid )
+	{
+		// Like the snapshot check's copy: it never registers, writes the map or runs a script.
+		var view = new RideVisitorBridge( AttractionId, Name, Kind, Capacity, excitementLevel, AttractionValue )
+		{
+			EntranceCell = EntranceCell, ExitCell = ExitCell, OwnerWord = OwnerWord,
+			QueueFrontCell = QueueFrontCell, QueueEntranceDirection = QueueEntranceDirection
+		};
+		view.queueEntryResolver = queueEntryResolver;
+		view.RecomputeQueue( grid );
+		return view;
+	}
+
 	/// <summary>Validates current-epoch save geometry without mutating live caches. Legacy snapshots use the pre-feature shape registration contract.</summary>
 	internal bool MatchesSnapshotQueueGeometry( GuestPathGrid grid, RideVisitorBridgeSnapshot saved )
 	{

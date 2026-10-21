@@ -49,8 +49,11 @@ const perf = loopback && perfQuery.get('perf') === '1' ? {
 	// Copies a theme's files as a park start would (the determinism scenario's other themes); program.PerfLevelLoaded tells when they are in.
 	loadLevel: level => requestLevel(level),
 } : null;
-if (perf)
+if (perf) {
 	globalThis.opentpwPerf = perf;
+	// the harness's hooks change the park outside the commands, so this page shares no park (docs/COOP.md, "The level in a session")
+	program.PerfMode();
+}
 
 let levelSources = [];
 let speechSources = new Map();

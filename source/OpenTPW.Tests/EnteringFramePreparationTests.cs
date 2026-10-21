@@ -13,8 +13,8 @@ namespace OpenTPW.Tests;
 
 /// <summary>
 /// [EXT:park-entry-preparation] What a park built over frames prepares for its first draw and HUD before it is entered
-/// (docs/BROWSER-PERFORMANCE.md, "The entering frame"): the HUD's interface textures, its input seeds read again on entering, the sky,
-/// and the deletions spread over frames. No original art or GPU is required.
+/// (docs/BROWSER-PERFORMANCE.md, "The entering frame"): the HUD's interface textures, its input seeds read again on entering, a HUD that
+/// fails partway, the sky, and the deletions spread over frames. No original art or GPU is required.
 /// </summary>
 [TestClass, DoNotParallelize]
 public class EnteringFramePreparationTests
@@ -88,28 +88,73 @@ public class EnteringFramePreparationTests
 	[TestMethod]
 	public void AHudMadeBeforeEnteringReadsTheCamcorderSeedsAgainOnEntering()
 	{
-		var (hud, _, _) = Create();
-		// as if the C key and the mouse button had been held in the frame of the build step that made it
-		Set( hud, "camcorderKeyDown", true );
-		Set( hud, "camcorderMouseDown", true );
-		hud.RefreshEntryInput();
-		// nothing is held in this frame (no input in the test process), as a HUD made now reads it
-		var made = Create().Hud;
-		Assert.AreEqual( Get<bool>( made, "camcorderKeyDown" ), Get<bool>( hud, "camcorderKeyDown" ) );
-		Assert.AreEqual( Get<bool>( made, "camcorderMouseDown" ), Get<bool>( hud, "camcorderMouseDown" ) );
+		var frameKeys = (HashSet<Veldrid.Key>)typeof( Input ).GetField( "frameKeys", BindingFlags.Static | BindingFlags.NonPublic )!.GetValue( null )!;
+		var mouse = Input.Mouse;
+		var keys = frameKeys.ToArray();
+		try
+		{
+			// made in a build step while nothing was held
+			frameKeys.Clear();
+			Input.Mouse = new Input.MouseInfo();
+			var (hud, _, _) = Create();
+			Assert.IsFalse( Get<bool>( hud, "camcorderKeyDown" ) );
+			Assert.IsFalse( Get<bool>( hud, "camcorderMouseDown" ) );
+			// the entering frame holds the camcorder key and the mouse button: entering reads them, as a HUD made in that frame does
+			frameKeys.Add( Input.ChordKey( InputButton.CamcorderMode ) );
+			Input.Mouse = new Input.MouseInfo { Left = true };
+			hud.RefreshEntryInput();
+			var made = Create().Hud;
+			Assert.IsTrue( Get<bool>( made, "camcorderKeyDown" ) );
+			Assert.IsTrue( Get<bool>( made, "camcorderMouseDown" ) );
+			Assert.IsTrue( Get<bool>( hud, "camcorderKeyDown" ), "a key held through entering is no new press" );
+			Assert.IsTrue( Get<bool>( hud, "camcorderMouseDown" ) );
+			// and released again before entering
+			frameKeys.Clear();
+			Input.Mouse = new Input.MouseInfo();
+			hud.RefreshEntryInput();
+			Assert.IsFalse( Get<bool>( hud, "camcorderKeyDown" ) );
+			Assert.IsFalse( Get<bool>( hud, "camcorderMouseDown" ) );
+		}
+		finally
+		{
+			frameKeys.Clear();
+			frameKeys.UnionWith( keys );
+			Input.Mouse = mouse;
+		}
 	}
 
 	[TestMethod]
-	public void ThePreparedSkyIsTheOneTheFirstDrawWouldLoadAndIsLoadedOnce()
+	public void APreparedSkyIsLoadedOnceAndTheFirstDrawDoesNotLoadItAgain()
 	{
 		var (_, level, _) = Create();
 		Assert.IsFalse( level.SkyLoaded );
-		// without a renderer the level has no sky to load (Sky.TryCreate), as on its first draw
+		// without a renderer the level has no sky to load (Sky.TryCreate returns null), as on its first draw
 		level.PrepareSky();
 		Assert.IsTrue( level.SkyLoaded );
 		Assert.IsNull( Get<Sky?>( level, "sky" ) );
+		// a sky already set stays: neither a second preparation nor the first draw loads another
+		var marker = (Sky)RuntimeHelpers.GetUninitializedObject( typeof( Sky ) );
+		Set( level, "sky", marker );
 		level.PrepareSky();
-		Assert.IsTrue( level.SkyLoaded );
+		Assert.AreSame( marker, Get<Sky?>( level, "sky" ) );
+		Set( level, "sky", null );
+		level.DrawSky();
+		Assert.IsNull( Get<Sky?>( level, "sky" ), "the first draw after the preparation loads nothing" );
+	}
+
+	[TestMethod]
+	public void AHudThatFailsPartwayLeavesNoHandlerOnTheLevel()
+	{
+		var (_, level, _) = Create();
+		var placed = typeof( ParkObjects ).GetField( "ObjectPlaced", BindingFlags.Instance | BindingFlags.NonPublic )!;
+		var ended = typeof( Level ).GetField( "BuildToolsEnded", BindingFlags.Instance | BindingFlags.NonPublic )!;
+		int Handlers( FieldInfo field, object owner ) => (field.GetValue( owner ) as Delegate)?.GetInvocationList().Length ?? 0;
+		var placedBefore = Handlers( placed, level.Objects );
+		var endedBefore = Handlers( ended, level );
+		// without a string table the constructor fails in Build, after it has hooked the level
+		Assert.ThrowsException<NullReferenceException>( () => new ParkHud( level, null!, new EconomyParkStatus( () => EconomyTestData.Park() ), new EmptyCatalog(), new HudHost() ) );
+		Assert.AreEqual( placedBefore, Handlers( placed, level.Objects ) );
+		Assert.AreEqual( endedBefore, Handlers( ended, level ) );
 	}
 
 	[TestMethod]
@@ -131,6 +176,18 @@ public class EnteringFramePreparationTests
 		queue.Add( () => ran.Add( 9 ) );
 		Assert.AreEqual( 2, Renderer.RunDeletions( queue, () => 5, double.PositiveInfinity ) );
 		CollectionAssert.AreEqual( new[] { 0, 1, 2, 3, 4, 9 }, ran );
+		Assert.AreEqual( 0, queue.Count );
+	}
+
+	[TestMethod]
+	public void AThrowingDeletionIsRemovedAndNotRunAgain()
+	{
+		var runs = 0;
+		var queue = new List<Action> { () => { runs++; throw new InvalidOperationException( "Injected deletion failure." ); }, () => runs += 10 };
+		Assert.ThrowsException<InvalidOperationException>( () => Renderer.RunDeletions( queue, () => 0, double.PositiveInfinity ) );
+		Assert.AreEqual( 1, queue.Count, "the deletion that threw is removed, the next waits" );
+		Renderer.RunDeletions( queue, () => 0, double.PositiveInfinity );
+		Assert.AreEqual( 11, runs );
 		Assert.AreEqual( 0, queue.Count );
 	}
 

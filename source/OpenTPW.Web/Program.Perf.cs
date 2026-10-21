@@ -625,6 +625,8 @@ public static partial class Program
 			["decodedSampleBytes"] = GameAudio.DecodedSampleBytes,
 			["gpuTextureBytes"] = Veldrid.Texture.LiveGpuBytes,
 			["gpuTextures"] = Veldrid.Texture.LiveGpuTextures,
+			// GPU deletions the browser's per-frame budget has left for later frames (Renderer.BrowserDeletionBudgetMilliseconds); a settled page has none
+			["pendingDeletions"] = renderer?.PendingDeletions ?? 0,
 			["managedBytes"] = GC.GetTotalMemory( false ),
 			["heapBytes"] = info.HeapSizeBytes,
 			["committedBytes"] = info.TotalCommittedBytes,

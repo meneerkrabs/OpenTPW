@@ -48,8 +48,9 @@ public partial class Level
 	{
 		if ( skyLoaded )
 			return;
-		skyLoaded = true;
 		sky = Sky.TryCreate( LevelName );
+		// set once the sky is made: a sky that failed to load is tried again by the first draw, which then meets the failure as before
+		skyLoaded = true;
 	}
 
 	/// <summary>Whether the sky has been loaded (by <see cref="PrepareSky"/> or the first draw).</summary>

@@ -249,24 +249,44 @@ internal sealed partial class GameFlow
 	/// </summary>
 	private IEnumerable<bool> PrepareFirstFrame( ParkBuild build )
 	{
-		build.Level.PrepareSky();
+		// each part is only a head start: whatever fails here is logged once and left to the entering frame, which meets the same failure there,
+		// and the build goes on (an exception leaving a step would leave the staged scene current)
+		if ( !HeadStart( "the sky", build.Level.PrepareSky ) )
+			yield break;
 		yield return true;
 		if ( build.Level.IsThemeParkIncSlice )
 			yield break;
-		try
+		if ( !HeadStart( "the park HUD", () =>
 		{
 			using ( LoadProfile.Measure( "park-hud" ) )
 				build.Hud = CreateParkHud( build.Level, HudStatusFor( build.Level ) );
-		}
-		catch ( Exception ) { /* only a head start: EnterLevel makes the HUD and meets the same failure there */ }
-		yield return true;
-		// a running texture-pack switch reloads the interface images itself
-		if ( build.Hud == null || TexturePackSwitch.Current != null )
+		} ) )
 			yield break;
-		foreach ( var texture in build.Hud.EntryTextures( Context ) )
+		yield return true;
+		List<UiTexture>? textures = null;
+		if ( !HeadStart( "the HUD's interface textures", () => textures = build.Hud!.EntryTextures( Context ).ToList() ) )
+			yield break;
+		foreach ( var texture in textures! )
 		{
-			overlayRenderer.Prepare( texture );
+			// a texture-pack switch, started at any step, reloads the interface images itself
+			if ( TexturePackSwitch.Current != null || !HeadStart( "the HUD's interface textures", () => overlayRenderer.Prepare( texture ) ) )
+				yield break;
 			yield return true;
+		}
+	}
+
+	/// <summary>Runs one part of <see cref="PrepareFirstFrame"/>; false, with one warning, when it failed.</summary>
+	private static bool HeadStart( string what, Action prepare )
+	{
+		try
+		{
+			prepare();
+			return true;
+		}
+		catch ( Exception error )
+		{
+			Log.Warning( $"Park entry preparation: {what} left to the entering frame ({error.GetType().Name}: {error.Message})." );
+			return false;
 		}
 	}
 

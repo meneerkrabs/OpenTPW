@@ -35,9 +35,11 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 	private (ulong Hash, int Entities, int Objects) builtInOneGo, builtOverFrames;
 	private int framesBuilding;
 	// [EXT:park-entry-preparation] the HUD a build step made, the HUDs' state as each park was entered, and whether the sky was loaded before the first draw
-	private ParkHud? preparedHud;
-	private string? hudInOneGo, hudOverFrames;
+	private ParkHud? preparedHud, droppedHud;
+	private string? hudInOneGo, hudOverFrames, hudInOneGoUpdated, hudOverFramesUpdated;
 	private bool skyBeforeFirstDraw;
+	// runs once at the end of the next frame, after its update (the HUD's first update when it is set as a park is entered)
+	private Action? afterNextUpdate;
 	private (List<Entity> Entities, int Count, int Materials) lobbyBeforeAbandon;
 
 	private void RecordBuiltOverFrames()
@@ -47,16 +49,27 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 			builtOverFrames = (level.ComputeStateHash(), Entity.All.Count, level.Objects.Objects.Count);
 			hudOverFrames = flow.Hud is { } hud ? HudState( hud ) : null;
 			skyBeforeFirstDraw = level.SkyLoaded;
+			// Transitioned runs inside the entering frame's update, before the HUD's first update; this frame's end comes after it
+			afterNextUpdate = () => hudOverFramesUpdated = flow.Hud is { } updated ? HudState( updated ) : null;
 		}
 	}
 
 	/// <summary>What a HUD shows and holds as a park is entered, before its first update: its screens, its main screen's elements and their state, its messages and modes.</summary>
-	private static string HudState( ParkHud hud ) => string.Join( "|", new[]
+	private static string HudState( ParkHud hud )
 	{
-		string.Join( ",", hud.Stack.Screens.Select( screen => screen.Name ) ),
-		string.Join( ",", hud.Screen.Elements.Select( element => $"{element.Id}:{element.Visible}:{element.Enabled}:{element.Bounds}" ) ),
-		string.Join( ",", hud.Messages ), $"{hud.Paused} {hud.SimulationTimeScale} {hud.InfoArmOpen} {hud.CamcorderArmed} {hud.Category} {hud.BuySort} {hud.BuySortDescending}",
-	} );
+		const System.Reflection.BindingFlags Private = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic;
+		object? Field( string name ) => typeof( ParkHud ).GetField( name, Private )!.GetValue( hud );
+		// the host's connections: which are set (an online entry is null while the extension is off, Restart Park without a restart snapshot)
+		var host = (HudHost?)Field( "host" );
+		var connections = host == null ? "no host" : string.Join( ",", typeof( HudHost ).GetProperties().Select( property => $"{property.Name}:{property.GetValue( host ) != null}" ) );
+		return string.Join( "|", new[]
+		{
+			string.Join( ",", hud.Stack.Screens.Select( screen => screen.Name ) ),
+			string.Join( ",", hud.Screen.Elements.Select( element => $"{element.Id}:{element.Visible}:{element.Enabled}:{element.Bounds}" ) ),
+			string.Join( ",", hud.Messages ), $"{hud.Paused} {hud.SimulationTimeScale} {hud.InfoArmOpen} {hud.CamcorderArmed} {hud.Category} {hud.BuySort} {hud.BuySortDescending}",
+			$"{Field( "challengeUserPaused" )} {Field( "lastLevelMessage" )}", connections,
+		} );
+	}
 	private OriginalObject? visitedObject;
 	private bool visitedOpen;
 	private int visitedCount;
@@ -1456,6 +1469,7 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 			flow.LoadPark( new ParkLoadEntry( "jungle", 0, false ) );
 			builtInOneGo = (flow.Level!.ComputeStateHash(), Entity.All.Count, flow.Level.Objects.Objects.Count);
 			hudInOneGo = HudState( flow.Hud! );
+			afterNextUpdate = () => hudInOneGoUpdated = flow.Hud is { } updated ? HudState( updated ) : null;
 			Require( !flow.Level.SkyLoaded, "a park built in one go loads its sky on its first draw" );
 		} );
 		Wait( "original park loads", 3 );
@@ -1487,6 +1501,32 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 				"the dropped park's materials and shaders are released" );
 		} );
 		Wait( "the queued transition runs", 3 );
+		Do( "start a park over frames that is dropped after its HUD is made", () =>
+		{
+			lobbyBeforeAbandon = (Entity.All, Entity.All.Count, Asset.All.Count( asset => asset is Material or Shader ));
+			flow.LoadPark( new ParkLoadEntry( "jungle", 0, false ), overFrames: true );
+		} );
+		steps.Enqueue( ("the dropped park's HUD is made", () =>
+		{
+			if ( flow.PreparedHud is { } hud )
+			{
+				droppedHud = hud;
+				return true;
+			}
+			Require( flow.BuildingPark, "the park is still being built until a build step makes its HUD" );
+			return false;
+		}) );
+		Do( "a transition queued after the HUD is made drops it", () =>
+		{
+			Require( flow.BuildingPark, "the park whose HUD is made is not entered yet" );
+			flow.Queue( () => flow.ShowFrontEnd( "jungle" ) );
+			Require( !flow.BuildingPark && flow.Level == null && flow.Hud == null && ReferenceEquals( Entity.All, lobbyBeforeAbandon.Entities )
+				&& Entity.All.Count == lobbyBeforeAbandon.Count, "dropping the build with its HUD made leaves the lobby current and untouched" );
+			Require( droppedHud!.Stack.Screens.Count == 0, "the dropped park's prepared HUD is cleared, as a tear-down clears a retired one" );
+			Require( Asset.All.Count( asset => asset is Material or Shader ) == lobbyBeforeAbandon.Materials,
+				"the dropped park's materials and shaders, its sky's included, are released" );
+		} );
+		Wait( "the transition after the dropped HUD runs", 3 );
 		Do( "load the original park over frames", () =>
 		{
 			flow.Transitioned += RecordBuiltOverFrames;
@@ -1512,6 +1552,8 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 				$"built over frames: hash, entities and objects {builtOverFrames} equal the park built in one go {builtInOneGo}" );
 			Require( preparedHud != null && ReferenceEquals( flow.Hud, preparedHud ), "the park built over frames is entered with the HUD a build step made" );
 			Require( hudOverFrames == hudInOneGo, $"the HUD made in a build step is entered as the HUD made on entering: {hudOverFrames} / {hudInOneGo}" );
+			Require( hudOverFramesUpdated != null && hudOverFramesUpdated == hudInOneGoUpdated,
+				$"after its first update the HUD made in a build step equals the HUD made on entering: {hudOverFramesUpdated} / {hudInOneGoUpdated}" );
 			Require( skyBeforeFirstDraw, "the park built over frames has its sky loaded before its first draw" );
 			Require( flow.Level != null && flow.Hud != null && flow.Lobby == null && flow.StartKind == ParkStartKind.OriginalSaveReference,
 				"the park built over frames is entered with its HUD, and the lobby is gone" );
@@ -1770,6 +1812,11 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 
 	public void Update()
 	{
+		if ( afterNextUpdate is { } pending )
+		{
+			afterNextUpdate = null;
+			pending();
+		}
 		++frame;
 		Require( frame - speechFrames - loadFrames < MaximumFrames, $"finish within {MaximumFrames} frames (stuck at '{(steps.Count > 0 ? steps.Peek().Name : "end")}')" );
 		while ( steps.Count > 0 && steps.Peek().Step() )

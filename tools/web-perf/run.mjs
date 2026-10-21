@@ -329,6 +329,13 @@ const scenarios = {
 		if (coldMarks)
 			await page.eval('opentpwPerf.marks = false, opentpwPerf.markMs = 8, opentpwPerf.program.PerfFrameMarks(false), 0');
 		const steady = await page.steady(options.window * 1000);
+		// the GPU deletions spread over frames (at most 1 ms of them per frame) drain once the park has settled: a few frames at most
+		let pendingDeletions = null;
+		for (const begin = Date.now(); Date.now() - begin < 5000; await sleep(100))
+			if ((pendingDeletions = await page.eval('opentpwPerf.counters().pendingDeletions ?? 0')) === 0)
+				break;
+		if (pendingDeletions !== 0)
+			throw new Error(`${pendingDeletions} scheduled GPU deletions still wait 5 s after the Jungle park's steady window`);
 		const result = { cold, steady };
 		// [evening] the same park with the evening look held at night, dusk or day, or the cycle and its lamps turned off (night, dusk, day, off), measured in a second window
 		if (options.evening != null) {

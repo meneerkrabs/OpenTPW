@@ -25,14 +25,27 @@ partial class Renderer
 
 	/// <summary>
 	/// Runs the oldest scheduled deletions, in the order they were scheduled, until <paramref name="budgetMilliseconds"/> has passed (at least one
-	/// runs, so the queue always drains), and removes them; returns how many ran. A deletion that schedules another adds it behind the rest.
+	/// runs, so the queue always drains), and removes them, a deletion that threw included; returns how many ran. A deletion that schedules another adds it behind the rest.
 	/// </summary>
 	internal static int RunDeletions( List<Action> queue, Func<double> elapsedMilliseconds, double budgetMilliseconds )
 	{
 		var ran = 0;
-		while ( ran < queue.Count && (ran == 0 || elapsedMilliseconds() < budgetMilliseconds) )
-			queue[ran++].Invoke();
-		queue.RemoveRange( 0, ran );
+		try
+		{
+			while ( ran < queue.Count && (ran == 0 || elapsedMilliseconds() < budgetMilliseconds) )
+				queue[ran++].Invoke();
+		}
+		finally
+		{
+			// a deletion that threw is removed with the ones before it, so it is not run again every frame
+			queue.RemoveRange( 0, ran );
+		}
 		return ran;
 	}
+
+	/// <summary>Runs every scheduled deletion now, whatever the budget (a renderer that stops, the harness's oracle, tests).</summary>
+	public void FlushDeletions() => RunDeletions( _deletionQueue, () => 0, double.PositiveInfinity );
+
+	/// <summary>The scheduled deletions not run yet (the browser harness checks that they drain).</summary>
+	public int PendingDeletions => _deletionQueue.Count;
 }

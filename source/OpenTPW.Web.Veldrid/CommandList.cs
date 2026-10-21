@@ -29,7 +29,8 @@ public class CommandList : IDisposable
 
 	internal void Execute()
 	{
-		Gl.Execute( CollectionsMarshal.AsSpan( commands ), CollectionsMarshal.AsSpan( data ) );
+		using ( WebGlMarks.Measure( "gl.execute" ) )
+			Gl.Execute( CollectionsMarshal.AsSpan( commands ), CollectionsMarshal.AsSpan( data ) );
 		commands.Clear();
 		data.Clear();
 	}

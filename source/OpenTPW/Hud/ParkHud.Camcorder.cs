@@ -6,8 +6,22 @@ namespace OpenTPW.Hud;
 public partial class ParkHud
 {
 	public bool CamcorderArmed { get; private set; }
-	private bool camcorderKeyDown = Input.IsFrameKeyDown( Input.ChordKey( InputButton.CamcorderMode ) ) || Input.Down( InputButton.CamcorderMode );
+	private bool camcorderKeyDown = CamcorderKeyHeld();
 	private bool camcorderMouseDown = Input.Mouse.Left;
+
+	private static bool CamcorderKeyHeld() => Input.IsFrameKeyDown( Input.ChordKey( InputButton.CamcorderMode ) ) || Input.Down( InputButton.CamcorderMode );
+
+	/// <summary>
+	/// [EXT:park-entry-preparation] Takes the camcorder's held key and button from the current frame's input, as the constructor did: a HUD a park
+	/// build made a few frames before entering (GameFlow.PrepareFirstFrame) reads them again in the entering frame, so a key or button held then
+	/// is not taken for a new press, exactly as for a HUD made in that frame. The rest of what the constructor reads is the park's own state, which
+	/// does not change before the park is entered.
+	/// </summary>
+	internal void RefreshEntryInput()
+	{
+		camcorderKeyDown = CamcorderKeyHeld();
+		camcorderMouseDown = Input.Mouse.Left;
+	}
 
 	private bool CancelCamcorder()
 	{

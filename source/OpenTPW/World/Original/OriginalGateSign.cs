@@ -130,9 +130,7 @@ public sealed class OriginalGateSign : Entity
 		// [BIN:TPW-EXE:0x004629D0 object builder] a sign built from the catalogue is the info-record name split at the middle space (0x467A80); for the four shipped gates (rows of one-word texts) that is exactly the pair of lines the placed gate gets (0x4DB6F9), so the lines are drawn as they are
 		// The stored paint is not overridden: in gates.sgn it is a 60 % black shadow offset by (-1, 1) under dark relief stone text, which is what the video shows (the former cream-paint and upward-normal decision gate-paint-legibility, COMPAT-031, is contradicted by the video)
 		var (line1, line2) = reloaded ? lines.ReloadedSignLines : (lines.Line1, lines.Line2);
-		var (left, right, diagnostics, textPixels) = SignTextRenderer.Shared.ComposeSign( sign, new[] { line1, line2 }, default );
-		foreach ( var diagnostic in diagnostics )
-			Log.Warning( $"Gate sign: {diagnostic}" );
+		var (left, right, diagnostics, textPixels) = ComposeHalves( sign, line1, line2 );
 		var images = new ObjectSignImages( line1, line2, left, right, textPixels, diagnostics );
 		var model = new Model( vertices.ToArray(), indices.ToArray(), SignTextRenderer.CreateMaterial( images.LeftTexture, images.RightTexture ) );
 		var slot = sign.Slots[0];
@@ -150,12 +148,22 @@ public sealed class OriginalGateSign : Entity
 		ArgumentNullException.ThrowIfNull( lines );
 		if ( !lines.IsValid )
 			throw new ArgumentException( "The park name lines are not valid.", nameof( lines ) );
-		var (left, right, diagnostics, textPixels) = SignTextRenderer.Shared.ComposeSign( sign, new[] { lines.Line1, lines.Line2 }, default );
-		foreach ( var diagnostic in diagnostics )
-			Log.Warning( $"Gate sign: {diagnostic}" );
+		var (left, right, diagnostics, textPixels) = ComposeHalves( sign, lines.Line1, lines.Line2 );
 		Images.Replace( lines.Line1, lines.Line2, left, right, textPixels, diagnostics );
 		Lines = lines;
 		TextPixelCount = textPixels;
+	}
+
+	/// <summary>
+	/// The CPU halves of the gate's sign with two lines drawn as they are (no middle-space split): the <c>sign1</c> (left) and <c>sign2</c> (right)
+	/// textures the gate model shows. Drawing problems are logged, not thrown. Also used by the sign export (<see cref="SignExport"/>).
+	/// </summary>
+	internal static (byte[] Left, byte[] Right, IReadOnlyList<string> Diagnostics, int TextPixelCount) ComposeHalves( SignFile sign, string line1, string line2 )
+	{
+		var composed = SignTextRenderer.Shared.ComposeSign( sign, new[] { line1, line2 }, default );
+		foreach ( var diagnostic in composed.Diagnostics )
+			Log?.Warning( $"Gate sign: {diagnostic}" );
+		return composed;
 	}
 
 	private static void AppendSignFaces( OriginalPark park, ModelFile model, ModelFile.Mesh mesh, List<Vertex> vertices, List<uint> indices )

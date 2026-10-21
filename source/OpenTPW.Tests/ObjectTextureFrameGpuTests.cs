@@ -73,7 +73,7 @@ public class ObjectTextureFrameGpuTests
 			Global.Device?.WaitForIdle();
 			if ( Global.Render != null )
 			{
-				typeof( Renderer ).GetMethod( "ProcessDeletionQueue", BindingFlags.Instance | BindingFlags.NonPublic )!.Invoke( Global.Render, null );
+				Global.Render.FlushDeletions();
 				Global.Render.Window.SdlWindow.Close();
 			}
 		}

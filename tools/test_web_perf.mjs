@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { chromeArguments, keyMetrics, listFiles, loopbackOrigin, mainThreadBusy, median, medianResults, percentile, safeResolve, startServer, summarizeFrames } from './web-perf/lib.mjs';
 import { markdown } from './web-perf/report.mjs';
+import { profileClockOffset, profileFrames, profileOfFrame } from './web-perf/events.mjs';
 
 // The browser performance harness (tools/web-perf/run.mjs) without a browser: its server, path handling, statistics and reports.
 
@@ -195,4 +196,37 @@ test('a forwarded request keeps the upstream host, even with an absolute-form ta
 		await new Promise(resolve => upstream.close(resolve));
 		await rm(root, { recursive: true, force: true });
 	}
+});
+
+// A CPU profile of three frames (root > frame main.js > work), 1 ms samples from profile time 0 (microseconds), with idle samples between:
+// frame A at 0-3 ms, frame B (slow) at 10-30 ms with a garbage collection sample in it, frame C at 40-42 ms.
+const syntheticProfile = () => {
+	const nodes = [
+		{ id: 1, callFrame: { functionName: '(root)', url: '' }, children: [2, 4, 5] },
+		{ id: 2, callFrame: { functionName: 'frame', url: 'http://127.0.0.1:1/main.js' }, children: [3] },
+		{ id: 3, callFrame: { functionName: 'draw', url: '' } },
+		{ id: 4, callFrame: { functionName: '(idle)', url: '' } },
+		{ id: 5, callFrame: { functionName: '(garbage collector)', url: '' } },
+	];
+	const samples = [];
+	for (let ms = 0; ms < 50; ms++)
+		samples.push(ms < 3 || (ms >= 10 && ms < 30) || (ms >= 40 && ms < 42) ? (ms === 20 ? 5 : 3) : 4);
+	return { nodes, startTime: 0, endTime: 50000, samples, timeDeltas: samples.map((_, index) => index === 0 ? 0 : 1000) };
+};
+
+test('the frames a CPU profile saw are the runs under the page\'s frame callback, a short pause inside one included', () => {
+	// the profile started at page time 1000
+	assert.deepEqual(profileFrames(syntheticProfile(), 1000), [[1000, 1003], [1010, 1030], [1040, 1042]]);
+});
+
+test('the profile\'s clock is lined up with the page\'s by the frames both saw', () => {
+	const runs = profileFrames(syntheticProfile(), 1000);
+	// the page recorded the same three frames 7 ms earlier than the profile's clock shows them
+	const frames = [[993, 3], [1003, 20], [1033, 2]];
+	assert.equal(profileClockOffset(runs, 1000, frames), 7);
+	assert.equal(profileClockOffset([], 1000, frames), null);
+	const view = profileOfFrame(syntheticProfile(), 1000, 7, 1003, 20);
+	assert.equal(view.profileOffsetMs, 7);
+	// the moved window holds the frame's own samples only, not the idle time before it
+	assert.deepEqual(view.functions.map(entry => entry.name), ['draw', '(garbage collector)']);
 });

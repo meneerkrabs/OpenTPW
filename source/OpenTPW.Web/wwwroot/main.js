@@ -37,6 +37,9 @@ const perf = loopback && perfQuery.get('perf') === '1' ? {
 	program,
 	frames: [],
 	skipped: 0,
+	// The event-hitch harness turns this on: a frame of at least markMs also carries the game's named work of that frame (FrameMarks).
+	marks: false,
+	markMs: 8,
 	started: false,
 	wasmBytes: () => runtime.localHeapViewU8().buffer.byteLength,
 	state: () => JSON.parse(program.PerfState()),
@@ -674,7 +677,7 @@ async function start(theme) {
 					running = program.Frame();
 					const end = performance.now();
 					if (program.PerfFramesDrawn() > drawn)
-						perf.frames.push([begin, end - begin]);
+						perf.frames.push(perf.marks && end - begin >= perf.markMs ? [begin, end - begin, JSON.parse(program.PerfTakeMarks())] : [begin, end - begin]);
 					else
 						perf.skipped++;
 					// Bounded when nobody drains it (about half an hour at 60 fps).

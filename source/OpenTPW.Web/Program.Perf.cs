@@ -75,6 +75,160 @@ public static partial class Program
 	[JSExport]
 	public static string PerfParkBuild() => new JsonArray( (flow?.LastParkBuildFrames ?? Array.Empty<double>() ).Select( value => (JsonNode?)Math.Round( value, 2 ) ).ToArray() ).ToJsonString();
 
+	/// <summary>Turns the per-frame named work (<see cref="FrameMarks"/>) on or off; the page reads it for the frames it finds slow (<see cref="PerfTakeMarks"/>).</summary>
+	[JSExport]
+	public static void PerfFrameMarks( bool enabled ) => FrameMarks.Enable( enabled );
+
+	/// <summary>The named work of the frame just run, as JSON: name → [milliseconds, count], largest first (sections nest, so a parent includes its children).</summary>
+	[JSExport]
+	public static string PerfTakeMarks() => FrameMarks.Snapshot().ToJsonString();
+
+	/// <summary>Opens a HUD window by its shortcut name (buy, finance, research, map, loans, staff, parkInfo, entryPrice, staffCosts, attractions, visitors); false for another name or outside a park.</summary>
+	[JSExport]
+	public static bool PerfOpenWindow( string name )
+	{
+		if ( flow?.Hud is not { } hud )
+			return false;
+		Action? open = name switch
+		{
+			"buy" => hud.OpenBuyWindow,
+			"finance" => hud.OpenFinanceWindow,
+			"research" => hud.OpenResearchWindow,
+			"map" => hud.OpenMapWindow,
+			"loans" => hud.OpenLoansWindow,
+			"staff" => hud.OpenStaffWindow,
+			"parkInfo" => hud.OpenParkInfoWindow,
+			"entryPrice" => hud.OpenEntryPriceWindow,
+			"staffCosts" => hud.OpenStaffCostsWindow,
+			"attractions" => hud.OpenAttractionsWindow,
+			"visitors" => hud.OpenVisitorWindow,
+			_ => null,
+		};
+		if ( open == null )
+			return false;
+		open();
+		return true;
+	}
+
+	/// <summary>Sets the park speed (0 paused, 1 normal, 2 fast, 4 fastest) the way the speed keys do; false for another value or outside a park.</summary>
+	[JSExport]
+	public static bool PerfSpeed( int speed )
+	{
+		if ( flow?.Hud is not { } hud || !Enum.IsDefined( typeof( GameSpeed ), speed ) )
+			return false;
+		hud.SetUserGameSpeed( (GameSpeed)speed );
+		return true;
+	}
+
+	/// <summary>Posts advisor advice <paramref name="message"/> as game code does (the advisor says it when its queue next serves); false without an advisor.</summary>
+	[JSExport]
+	public static bool PerfAdvisorAdvice( int message )
+	{
+		if ( flow?.Advisor is not { IsAttached: true } advisor )
+			return false;
+		advisor.PostEventAdvice( message, "the perf harness" );
+		return true;
+	}
+
+	/// <summary>Whether the advisor is speaking now.</summary>
+	[JSExport]
+	public static bool PerfAdvisorSpeaking() => flow?.Advisor?.IsSpeechActive == true;
+
+	/// <summary>Queues a cheat for the next park turn (kind: money, weather, arrival, research; argument: the weather or vehicle); false when the park refuses it.</summary>
+	[JSExport]
+	public static bool PerfCheat( string kind, int argument )
+	{
+		if ( flow?.Level?.Park?.Economy is not { } economy || !Enum.TryParse<CheatKind>( kind, ignoreCase: true, out var parsed ) )
+			return false;
+		economy.QueueCheat( new CheatAction( CheatKind.Mode ) );
+		return economy.QueueCheat( new CheatAction( parsed, argument ) );
+	}
+
+	/// <summary>Completes research items as researchers' points would (every category at full effort, <paramref name="points"/> points), with the park's events for them; returns the items completed.</summary>
+	[JSExport]
+	public static int PerfResearch( int points )
+	{
+		if ( flow?.Level?.Park?.Economy is not { } economy )
+			return -1;
+		foreach ( var category in Enum.GetValues<ResearchCategory>() )
+			economy.Research.SetEffort( category, 100 );
+		var done = economy.Research.AddResearcherPoints( points );
+		economy.ApplyResearch( done );
+		return done.Count;
+	}
+
+	/// <summary>Runs the park's economy forward to <paramref name="ticks"/> fixed ticks before the next month's (or, for "year", the next year's) start; the park's guests and rides do not run meanwhile, so the park is not a real run afterwards. False for another unit or outside a park.</summary>
+	[JSExport]
+	public static bool PerfSkipToBoundary( string unit, int ticks )
+	{
+		if ( flow?.Level?.Park?.Economy is not { } economy )
+			return false;
+		var month = ParkCalendar.MonthIndex( economy.Tick );
+		long boundary;
+		if ( unit == "month" )
+			boundary = ParkCalendar.TickAtMonth( month + 1 );
+		else if ( unit == "year" )
+			boundary = ParkCalendar.TickAtMonth( (month / 12 + 1) * 12 );
+		else
+			return false;
+		economy.Advance( Math.Max( 0, boundary - ticks - economy.Tick ) );
+		return true;
+	}
+
+	/// <summary>Adds <paramref name="count"/> guests on the park's walkable paths (<see cref="UmbrellaPerf.Stage"/> without weather or umbrellas); the park is not a real run afterwards. Returns the guests in the park, or -1.</summary>
+	[JSExport]
+	public static int PerfCrowd( int count ) =>
+		flow?.Level?.Guests is { } guests ? UmbrellaPerf.Stage( guests, null, count, 0, false ).Guests : -1;
+
+	/// <summary>Builds a coaster station with a small circuit near the paths (<see cref="Level.BuildDemoCoaster"/>, finished or left open with the tool active); true when it fitted. The coaster is free and not a real run's.</summary>
+	[JSExport]
+	public static bool PerfBuildCoaster( bool finished ) => flow?.Level?.BuildDemoCoaster( finished, null ) != null;
+
+	/// <summary>Makes the periodic autosave due now, so its capture and slices run in the frames that follow; false outside a park.</summary>
+	[JSExport]
+	public static bool PerfAutosaveDue()
+	{
+		if ( flow?.Level == null )
+			return false;
+		flow.Autosave.MakeDue();
+		return true;
+	}
+
+	/// <summary>The guests in the park, as the harness's crowd windows report them.</summary>
+	[JSExport]
+	public static int PerfGuests() => flow?.Level?.Guests?.Guests.Count ?? -1;
+
+	/// <summary>Builds the item with archive <paramref name="archive"/> at the first free cell of the park, as a click on the map would (the economy charges it); returns "x,y" or an empty string when nothing was built.</summary>
+	[JSExport]
+	public static string PerfPlaceObject( string category, string archive )
+	{
+		if ( flow?.Hud is not { } hud || flow.Level is not { } level || !Enum.TryParse<BuildCategory>( category, ignoreCase: true, out var parsed ) )
+			return "";
+		var item = hud.Catalog.GetItems( parsed ).FirstOrDefault( entry => string.Equals( entry.Entry?.ArchiveName, archive, StringComparison.OrdinalIgnoreCase ) );
+		if ( item?.Entry is not { } entry )
+			return "";
+		var grid = level.Objects.Grid;
+		var centreX = grid.Width / 2;
+		var centreY = grid.Height / 2;
+		for ( var radius = 0; radius < Math.Max( grid.Width, grid.Height ) / 2; radius += 2 )
+			for ( var dy = -radius; dy <= radius; dy += 2 )
+				for ( var dx = -radius; dx <= radius; dx += 2 )
+				{
+					if ( Math.Max( Math.Abs( dx ), Math.Abs( dy ) ) != radius )
+						continue;
+					var x = centreX + dx;
+					var y = centreY + dy;
+					if ( x < 0 || y < 0 || x >= grid.Width || y >= grid.Height )
+						continue;
+					var anchor = Level.GetCentredAnchor( entry, x, y, 0 );
+					if ( level.Objects.Check( entry, anchor.X, anchor.Y, 0 ) != OriginalPlacementResult.Allowed )
+						continue;
+					if ( level.PlaceObject( entry, x, y, 0 ) != null )
+						return $"{x},{y}";
+				}
+		return "";
+	}
+
 	/// <summary>Presses a UI key by its <see cref="UiKeys"/> name (Accept, Back, Left, ...); false for an unknown name.</summary>
 	[JSExport]
 	public static bool PerfKey( string key )

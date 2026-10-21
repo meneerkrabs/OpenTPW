@@ -30,6 +30,10 @@ internal sealed partial class GameFlow
 		public LoadProfile.Section LevelSection { get; init; }
 		public List<double> FrameMilliseconds { get; } = new();
 		public bool Constructed { get; set; }
+		// [EXT:park-entry-preparation] what the entering frame would otherwise do in one go for the park's first restart snapshot, run in steps once the park is built
+		public IEnumerator<bool>? Preparation { get; set; }
+		public bool Prepared { get; set; }
+		public bool PreparationStepped { get; set; }
 	}
 
 	private ParkBuild? parkBuild;
@@ -140,6 +144,7 @@ internal sealed partial class GameFlow
 		{
 			// Only the guarded New request turns expected delayed construction refusal into its own dialog.
 			parkBuild = null;
+			DropAdvisorPreparation();
 			if ( build.BeforeEnter != null ) build.Level.Dispose();
 			build.Scene.Dispose();
 			if ( build.BeforeEnter != null && ProgressFailure( error ) )
@@ -150,9 +155,34 @@ internal sealed partial class GameFlow
 			}
 			throw;
 		}
+		// [EXT:park-entry-preparation] the park's first restart snapshot, taken as it is entered, needs the codec's reflection metadata and the hash of the asset manifest:
+		// together about 0.5 s in the browser. Both are made here in steps instead, within the frame budget, and the snapshot then finds them ready.
+		var preparedNow = false;
+		if ( build.Constructed && !build.Prepared )
+		{
+			build.Preparation ??= PrepareEntry( build ).GetEnumerator();
+			while ( !OverBudget() && build.Preparation != null )
+			{
+				bool more;
+				try { more = build.Preparation.MoveNext(); build.PreparationStepped |= more; }
+				catch ( Exception error ) when ( error is IOException or InvalidDataException or UnauthorizedAccessException or InvalidOperationException
+					or NotSupportedException or ArgumentException )
+				{
+					// only a head start: the snapshot taken on entering meets the same refusal and reports it as before
+					more = false;
+				}
+				if ( !more )
+				{
+					build.Preparation = null;
+					build.Prepared = true;
+					// entering is the heaviest step of all (the snapshot, the advisor, the first update): after preparation work it gets a frame of its own
+					preparedNow = build.PreparationStepped;
+				}
+			}
+		}
 		// Entering (retiring the live scene, park audio, HUD, then the park's first update and draw) waits for a frame of its own
 		// when this one has used its budget.
-		if ( !build.Constructed || OverBudget() )
+		if ( !build.Constructed || !build.Prepared || preparedNow || OverBudget() )
 		{
 			build.Scene.Pause();
 			LoadProfile.Pause();
@@ -167,12 +197,13 @@ internal sealed partial class GameFlow
 			build.BeforeEnter?.Invoke( build.Level );
 			build.Scene.Detach();
 			using ( LoadProfile.Measure( "tear-down" ) )
-				TearDown( applyPendingLanguage: false );
+				TearDown( applyPendingLanguage: false, keepAdvisorPreparation: true );
 			build.Scene.Activate();
 		}
 		catch ( Exception error )
 		{
-			// A profile precommit refusal occurs before the previous world is retired.
+			// A profile precommit refusal occurs before the previous world is retired; what the build read for the advisor is not used.
+			DropAdvisorPreparation();
 			if ( build.BeforeEnter != null || error is PlayerProgressSaveException ) build.Level.Dispose();
 			build.Scene.Dispose();
 			if ( error is PlayerProgressSaveException || build.BeforeEnter != null && ProgressFailure( error ) )
@@ -191,6 +222,43 @@ internal sealed partial class GameFlow
 		Transitioned?.Invoke();
 	}
 
+	/// <summary>The steps that make ready what entering the park would do whole: see <see cref="ParkBuild.Preparation"/>. None for a park without the automatic advisor and a restart snapshot.</summary>
+	private IEnumerable<bool> PrepareEntry( ParkBuild build )
+	{
+		// what an earlier build read and nobody took (one that failed while no park was live) is not this park's
+		DropAdvisorPreparation();
+		// the automatic advisor EnterLevel creates and whose first line it says: its settings, its shipped tables and what its presentation reads (AdvisorEntryPreparation)
+		if ( AutomaticAdvisorEnabled && build.Original && build.Visit == null && !advisorUnavailable && !build.Level.IsThemeParkIncSlice )
+		{
+			if ( Advisor == null )
+			{
+				AdvisorEntryPreparation.Prepare( AdvisorEntryPreparation.BalanceKey, FileSystem, AdvisorBalance.Load );
+				yield return true;
+			}
+			try
+			{
+				_ = AdvisorResponses.Table;
+				_ = AdvisorCaptionTable.Table;
+				_ = AdvisorCostumeTable.Table;
+			}
+			catch ( Exception ) { /* only a head start: the first line meets the same failure and handles it as before */ }
+			yield return true;
+			foreach ( var step in AdvisorEntryPreparation.PresentationSteps( FileSystem, build.Level.LevelName, globalRig: Advisor?.Presentation == null ) )
+				yield return step;
+		}
+		if ( !(build.Original && build.Visit == null && TakesRestartSnapshot( build.Level )) )
+			yield break;
+		foreach ( var step in build.Level.WarmResumeCaptureSteps() )
+			yield return step;
+		foreach ( var step in ParkResumeJson.WarmupSteps() )
+			yield return step;
+		foreach ( var step in build.Level.PrepareAutosaveAssets() )
+			yield return step;
+	}
+
+	/// <summary>Drops what <see cref="PrepareEntry"/> read for the advisor and no advisor took.</summary>
+	private static void DropAdvisorPreparation() => AdvisorEntryPreparation.Drop();
+
 	/// <summary>Drops a park still being built (another transition came after it, and the latest wins); the live scene stays current.</summary>
 	private void AbandonParkBuild()
 	{
@@ -199,6 +267,7 @@ internal sealed partial class GameFlow
 		parkBuild = null;
 		LoadProfile.Resume();
 		build.Scene.Dispose();
+		DropAdvisorPreparation();
 		Log.Trace( $"Stopped building {build.LevelName}: another transition came first." );
 	}
 

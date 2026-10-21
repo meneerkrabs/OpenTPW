@@ -32,6 +32,15 @@ export function markdown(report) {
 			...results.switch.steps.map(step => `| ${step.step} | ${(step.wasmBytes / 1048576).toFixed(0)} | ${(step.managedBytes / 1048576).toFixed(0)} | ${step.levelsAlive} | ${step.entities} | ${step.texturesHeld} | ${(step.archiveBytes / 1048576).toFixed(0)} | ${(step.archiveMemberBytes / 1048576).toFixed(0)} | ${(step.decodedSampleBytes / 1048576).toFixed(0)} | ${(step.jsHeapBytes / 1048576).toFixed(0)} | ${((step.gpuTextureBytes ?? 0) / 1048576).toFixed(0)} / ${step.gpuTextures ?? 0} | ${step.rssBytes ? (step.rssBytes / 1048576).toFixed(0) : ''} |`));
 	if (results.memory && !results.memory.error)
 		lines.push('', `- Memory over ${results.memory.minutes} min: wasm +${(results.memory.wasmGrowthBytes / 1048576).toFixed(1)} MB (peak ${(results.memory.peakWasmBytes / 1048576).toFixed(0)} MB), managed +${(results.memory.managedGrowthBytes / 1048576).toFixed(1)} MB`);
+	if (results.events && !results.events.error) {
+		const records = [...Object.values(results.events.events ?? {}), results.events.soak].filter(entry => entry && !entry.missing);
+		lines.push('', '| Event | Max frame (ms) | p95 (ms) | Frames ≥ 20 ms | Long tasks | Slowest frame: named work (ms) |', '| --- | ---: | ---: | ---: | ---: | --- |');
+		for (const entry of records) {
+			const worst = entry.slow?.[0];
+			const marks = worst ? Object.entries(worst.marks).slice(0, 5).map(([name, [ms, count]]) => `${name} ${ms}${count > 1 ? ` ×${count}` : ''}`).join(', ') : '';
+			lines.push(`| ${entry.name} | ${entry.maxMs} | ${entry.p95Ms} | ${entry.over20Ms} | ${entry.longTasks} | ${marks} |`);
+		}
+	}
 	for (const [name, entry] of Object.entries(results))
 		if (entry?.error)
 			lines.push(`- ${name}: FAILED — ${entry.error}`);

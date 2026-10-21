@@ -101,6 +101,22 @@ public class PeriodicAutosaveTests
 	}
 
 	[TestMethod]
+	public void TheCodecsMetadataIsMadeInStepsAndChangesNoByte()
+	{
+		var snapshot = Snapshot( "warm" );
+		var expected = ParkResumeSaveFile.Serialize( snapshot );
+		var steps = ParkResumeJson.WarmupSteps().Count();
+		// the type of every section of the snapshot is a step of its own (deepest first), so the metadata is not made in one frame
+		Assert.IsTrue( steps > 40, $"{steps} steps" );
+		CollectionAssert.AreEqual( expected, ParkResumeSaveFile.Serialize( snapshot ) );
+		var sliced = ParkResumeSaveFile.BeginSlicedSerialize( snapshot );
+		while ( !sliced.Run( TimeSpan.Zero ) ) { }
+		CollectionAssert.AreEqual( expected, sliced.Bytes );
+		Assert.AreEqual( "warm", ParkResumeSaveFile.Deserialize( expected ).DisplayName );
+		Assert.AreEqual( steps, ParkResumeJson.WarmupSteps().Count(), "running it again makes nothing new and fails nowhere" );
+	}
+
+	[TestMethod]
 	public void SlicedWalkerCoversEveryShapeOfTheCodec()
 	{
 		// the walker takes over the serializer's contract for objects and lists, so no type of the snapshot may rely on what it does not mirror

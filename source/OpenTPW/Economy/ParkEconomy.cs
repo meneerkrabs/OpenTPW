@@ -847,7 +847,12 @@ public sealed class ParkEconomy : IParkEconomy
 			return;
 		var ability = Settings.ResearchAbility[member.Grade];
 		// Research comes from researchers only (Mac 0xf0728 has no staffless path); an imported seed park brings its own.
-		var researched = Research.AddResearcherPoints( ability );
+		ApplyResearch( Research.AddResearcherPoints( ability ) );
+	}
+
+	/// <summary>What the park does with the items one researcher's points completed: the counters, the completion events, the new groups and the all-done event.</summary>
+	internal void ApplyResearch( IReadOnlyList<ResearchItem> researched )
+	{
 		foreach ( var item in researched )
 		{
 			Counters.Add( ParkCounters.Researched( item.Category ), 1 );

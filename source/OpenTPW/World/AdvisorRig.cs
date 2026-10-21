@@ -82,14 +82,21 @@ internal sealed class AdvisorRig : IDisposable
 		return null;
 	}
 
-	/// <summary>The global advisor (<c>/global/advisor/Advisor.MD2</c>).</summary>
-	public static AdvisorRig LoadGlobal() => Load( Advisor.ArchivePath, "Advisor.MD2", "", required: true )!;
+	/// <summary>The global advisor (<c>/global/advisor/Advisor.MD2</c>); the one a park build prepared, when there is one (<see cref="AdvisorEntryPreparation"/>).</summary>
+	public static AdvisorRig LoadGlobal() =>
+		AdvisorEntryPreparation.TryTake<AdvisorRig>( AdvisorEntryPreparation.GlobalRigKey, FileSystem, out var prepared ) && prepared != null ? prepared : LoadGlobalModel();
+
+	/// <summary>Reads the global advisor's model.</summary>
+	internal static AdvisorRig LoadGlobalModel() => Load( Advisor.ArchivePath, "Advisor.MD2", "", required: true )!;
+
+	/// <summary>The archive of a level's advisor model and clips.</summary>
+	internal static string LevelArchive( string level ) => $"/levels/{level}/advisor";
 
 	/// <summary>The level's advisor model, or null when the level has none (or it cannot be read; logged).</summary>
 	public static AdvisorRig? LoadLevel( BaseFileSystem fileSystem, string level )
 	{
 		ArgumentNullException.ThrowIfNull( fileSystem );
-		var archive = $"/levels/{level}/advisor";
+		var archive = LevelArchive( level );
 		try
 		{
 			if ( FindModel( fileSystem.GetFiles( archive ) ) is not { } model )

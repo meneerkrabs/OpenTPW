@@ -67,7 +67,8 @@ internal sealed partial class AutomaticAdvisor : IDisposable
 	{
 		try
 		{
-			var balance = AdvisorBalance.Load();
+			// [EXT:park-entry-preparation] the settings a park build read for this advisor (AdvisorEntryPreparation), else read now
+			var balance = AdvisorEntryPreparation.TryTake<AdvisorBalance>( AdvisorEntryPreparation.BalanceKey, FileSystem, out var prepared ) && prepared != null ? prepared : AdvisorBalance.Load();
 			Log.Trace( $"Advisor scoring: {AdvisorBalance.Path}, minimum score {balance.MinimumScore}, {AdvisorTables.AllMessages.Count()} bound messages ({string.Join( ", ", AdvisorTables.Messages.Select( message => $"{message.MessageId}: {message.ScoreKey} {balance.ScoreOf( message.MessageId )}" ) ) + $", and the help messages at {balance.Scores.GetValueOrDefault( AdvisorTables.HelpScoreKey )} (F1 replay {balance.ContextHelpScore})"})." );
 			return new AutomaticAdvisor( new AdvisorController( balance ) );
 		}
@@ -427,6 +428,9 @@ internal sealed partial class AutomaticAdvisor : IDisposable
 			return;
 		}
 		presentation?.Update();
+		// [EXT:advisor-sliced-decode] a line whose decode failed after it started reserves what a line that could not be said reserves
+		if ( presentation?.TakeUnsaidLine() == true )
+			Controller.Queue.ReserveAsUnsaid();
 		// [BIN:TPW-EXE:0x0059A550 advisor queue] service belongs to the park turn; a paused modal must not start another response after its stop.
 		if ( parkPaused )
 			return;
@@ -499,6 +503,9 @@ internal sealed partial class AutomaticAdvisor : IDisposable
 				Log.Warning( $"Advisor response {responseId} is not in {AdvisorResponses.RelativePath}." );
 				return null;
 			}
+			// [EXT:advisor-sliced-decode] a decode over frames that already failed in the line's first update: no span, as for a decode that fails before the line
+			if ( presentation.TakeUnsaidLine() )
+				return null;
 			// [BIN:TPW-EXE:0x005994AC response player return] the span is the sequence sum + 1000 + the length of clip 15 (a generated sequence already ends with clip 15, so it counts twice); the clip length is trailer word 2 × 1000 / 30, unsigned (0x474070), from the level advisor if loaded, else the global one (0x5989C0)
 			// [BIN:TPW-EXE:0x00598BF0 fixed-sequence builder] a fixed-sequence response (60 of 610) returns its row's clip sum from table 0x76DC18 + 1000 + the length of clip 15 (a row that sums to 0 uses the generator)
 			return presentation.ResponseSpanMilliseconds;

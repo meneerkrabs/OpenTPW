@@ -188,7 +188,9 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 		}
 		var now = seconds();
 		UpdateGuests( now );
-		IssueClock();
+		// the scripts read the clock only in ticks: a paused park sends no clock command, and the first frame that runs again sets the clock before its ticks
+		if ( timeScale > 0 )
+			IssueClock();
 		level.TickLimit = Limit();
 		level.AdvanceSimulation( frameSeconds * timeScale );
 		if ( Failure != null )

@@ -507,6 +507,27 @@ public class CoopStreamTests
 	}
 
 	[TestMethod]
+	public void TheThunderQueueTheFramesEmptyIsNoDesyncButTheWeatherItselfIsChecked()
+	{
+		var random = new Random( 31 );
+		var (host, guests, _) = Session( 1 );
+		var guest = guests[0];
+		Rounds( 30, random );
+		Assert.IsNotNull( guest.Level.Weather, "the park's weather runs" );
+		// a thunder strike due on the guest only: the game frames empty that queue (TakeThunder), so it depends on how ticks fell into frames, and the digest leaves it out
+		var strikes = (Queue<Vector3>)typeof( ParkWeather ).GetField( "strikes", BindingFlags.Instance | BindingFlags.NonPublic )!.GetValue( guest.Level.Weather )!;
+		strikes.Enqueue( new Vector3( 1, 2, 3 ) );
+		Rounds( 150, random );
+		Assert.IsNull( guest.Guest!.Desync );
+		Assert.IsTrue( guest.Guest.Checks >= 2 );
+		// the weather's own state is checked: a lightning clock that differs is a desync at the next checkpoint
+		var countdown = typeof( ParkWeather ).GetField( "lightningCountdown", BindingFlags.Instance | BindingFlags.NonPublic )!;
+		countdown.SetValue( guest.Level.Weather, (int)countdown.GetValue( guest.Level.Weather )! + 1000 );
+		Rounds( 150, random );
+		Assert.AreEqual( CoopDesyncKind.Digest, guest.Guest.Desync?.Kind );
+	}
+
+	[TestMethod]
 	public void TheSessionClockKeepsLevelsWithDifferentClocksEqual()
 	{
 		// a ride script that writes the hour, the minute and the second into its variables every slice, as Halloween's Haunted Tower writes the hour into the park

@@ -88,6 +88,8 @@ public class ParkCommandCodecTests
 		(new EndCoasterNodeEditCommand( 17 ) { Player = 2 }, "02600422"),
 		(new SwapCoasterStackCommand( 17, 6, false ), "026100220c00"),
 		(new CutCoasterCommand( 17, 4, 9 ), "026200220812"),
+		// [EXT:online-coop-lockstep] the session clock: 21 October 2026, 15:00:00 in whole seconds since year 1
+		(new SetSessionClockCommand( 63928191600 ), "026400e0a9d6a6dc03"),
 	};
 
 	[TestMethod]

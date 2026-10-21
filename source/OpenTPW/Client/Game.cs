@@ -1431,17 +1431,25 @@ internal static class Game
 		}
 	}
 
-	private static string GetSaveDirectory()
+	private static string GetSaveDirectory() => ResolveSaveDirectory( Settings.Default.GamePath, Path.GetDirectoryName( SetupSettings.GetDefaultPath() )! );
+
+	/// <summary>
+	/// The game folder's <c>save</c> directory when files can be written there, else <c>save</c> under <paramref name="fallbackRoot"/>.
+	/// OpenTPW runs without administrator rights, so a game folder under Program Files usually is not writable even when its
+	/// <c>save</c> directory already exists: a probe file is written and deleted to find out before the first save does.
+	/// </summary>
+	internal static string ResolveSaveDirectory( string gamePath, string fallbackRoot )
 	{
-		var beside = Path.Combine( Settings.Default.GamePath, "save" );
+		var beside = Path.Combine( gamePath, "save" );
 		try
 		{
 			Directory.CreateDirectory( beside );
+			using ( new FileStream( Path.Combine( beside, $".opentpw-write-test-{Environment.ProcessId}" ), FileMode.CreateNew, FileAccess.Write, FileShare.None, 1, FileOptions.DeleteOnClose ) ) { }
 			return beside + Path.DirectorySeparatorChar;
 		}
 		catch ( Exception exception ) when ( exception is IOException or UnauthorizedAccessException )
 		{
-			var fallback = Path.Combine( Path.GetDirectoryName( SetupSettings.GetDefaultPath() )!, "save" );
+			var fallback = Path.Combine( fallbackRoot, "save" );
 			Directory.CreateDirectory( fallback );
 			Log.Warning( $"The game folder is read-only ({exception.Message}); saves go to {fallback}." );
 			return fallback + Path.DirectorySeparatorChar;

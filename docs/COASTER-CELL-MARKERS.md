@@ -10,7 +10,7 @@ A live coaster binding reserves its beyond-station cells and non-pylonless node 
 - Both node tool calls are single-cell (`0x5240D5`, `0x5242F1`); `0x53628C` sets both first and last context flags. A mode15 preview therefore accepts primary type21 even with another owner through the equal-type branch (`0x535AFB`). Mode16 accepts its equal type22; type21 in mode16 instead requires the selected owner.
 - The earlier special case (`0x53578E..0x5357C4`) accepts mode15's same-owner marker21 with bit0x100 before unowned and secondary checks. This priority is intentional, not an unconditional early-owner exemption.
 - Outside that special case, the unowned and secondary track rejection precede first/last acceptance. Empty0 and a path1 without flag0x20 pass; water2 is not empty land.
-- Creation parameter0x10 maps to node flag0x400 and the writer's marker flag0x100 (`0x4343B3`, `0x434401`). Stack republish passes zero (`0x444EC6`).
+- Creation parameter0x10 maps to node flag0x400 and the writer's marker flag0x100 (`0x4343B3`, `0x434401`). Stack republish passes zero (`0x444EC6`). The bit is part of the cell map a park save holds; its value is also a pool wave height bit (`ParkCellFlags.PoolWaveHeightMask`, POOLS.md), which only pool cells read, so the save's check of pool bits on other cells leaves it on a marker cell (`CoasterCellMarkers.StationHeadMark`).
 - The stack count decides last removal versus republish (`0x444EC3`, `0x444EE7`). Ordinary deletion refuses station descriptors; full teardown does not (`0x445008`, `0x445129`, `0x43EAF0`). Primary removal clears the payload (`0x536BBB`); an empty secondary layer needs no additional mutation.
 
 ## Explicit host adaptations and residual scope

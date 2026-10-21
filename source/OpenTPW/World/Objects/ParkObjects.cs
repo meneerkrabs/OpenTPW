@@ -608,7 +608,10 @@ public sealed class ParkObjects
 			// the object keeps its saved thing id when the save's attraction thing is the one record that matches (the pool holds the saved chain)
 			var thingId = Things != null && save.FindAttraction( record ) is { } thing && Things.IsUsed( thing.Id ) && Things.ModelOf( thing.Id ) == SaveThingModel.Attraction
 				&& objects.All( other => other.ThingId != thing.Id ) ? thing.Id : 0;
-			Register( new OriginalObject( entry, ComputePlacement( entry, record.X, record.Y, record.Rotation ), ScriptWorld, nextSeed++ ^ scriptKey, true, attractionId: null, seedScript: false ), thingId );
+			var imported = Register( new OriginalObject( entry, ComputePlacement( entry, record.X, record.Y, record.Rotation ), ScriptWorld, nextSeed++ ^ scriptKey, true, attractionId: null, seedScript: false ), thingId );
+			// [BIN:TPW-EXE:0x004647A0 hoarding load] the RideSystem record's flag word +0x1C bits 0..6 and its +0x22 dword are the thing's hoarding flags and level (docs/OBJECTS.md, "Hoarding")
+			if ( save.RideSystem?.Records.FirstOrDefault( scene => scene.Offset == record.Offset ) is { } scene )
+				imported.Runtime.Hoarding.Restore( ObjectHoardingState.UnpackSavedFlags( scene.InstanceFlags ), BitConverter.UInt32BitsToSingle( scene.InstanceDword ) );
 			count++;
 			yield return (count, (index + 1) / (float)records.Count);
 		}

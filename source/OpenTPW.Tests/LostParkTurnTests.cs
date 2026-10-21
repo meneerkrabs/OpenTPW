@@ -47,4 +47,20 @@ public class LostParkTurnTests
 		Assert.IsTrue( economy.Turn - turn > 100, "the turn counter goes on" );
 		Assert.IsTrue( guests.Guests.Count > before, "the arrival update ran in the lost park: a group arrived" );
 	}
+	[TestMethod]
+	public void LostParkTurnsStillAdvanceDisplayAgeWhileGuestSecondsRemainStopped()
+	{
+		var (level, economy, guests) = CreateLevel();
+		guests.ArrivalsEnabled = false;
+		var guest = guests.SpawnInPark( 5, 5 );
+		typeof( ParkEconomy ).GetProperty( nameof( ParkEconomy.IsBankrupt ) )!.SetValue( economy, true );
+		var turn = economy.Turn;
+		for ( var tick = 0; tick < 400; tick++ )
+		{
+			level.AdvanceSimulation( FixedStepClock.TickDuration );
+			Assert.AreEqual( economy.Turn - turn, guest.DisplayTimeInParkTurns, "the existing host still begins each swept turn, even when it skips the guest walk" );
+			Assert.AreEqual( 0d, guest.TimeInParkSeconds, "this display-only fix must not advance gameplay duration in a lost park" );
+		}
+	}
+
 }

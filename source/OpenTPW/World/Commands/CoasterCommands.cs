@@ -36,15 +36,15 @@ public sealed record BeginCoasterToolCommand( int Station ) : ParkToolCommand
 }
 
 /// <summary>
-/// [EXT:online-coop-commands] The coaster tool's exit (<see cref="Level.ExitCoasterTool"/>) from the station whose attraction id is <paramref name="Station"/>: the issuing player's pylon edit there
-/// ends where it stands, the coaster is no longer being edited and a ride the tool took out of service opens again.
+/// [EXT:online-coop-commands] The coaster tool's exit (<see cref="Level.ExitCoasterTool"/>) from the station whose attraction id is <paramref name="Station"/>: the pylon edits there end where they
+/// stand, the coaster is no longer being edited and a ride the tool took out of service opens again.
 /// </summary>
 public sealed record EndCoasterToolCommand( int Station ) : ParkToolCommand
 {
 	public override ParkCommandKind Kind => ParkCommandKind.EndCoasterTool;
 	internal override bool IsWellFormed => Station >= 0;
 	internal override void WriteFields( ParkCommandWriter writer ) => writer.Int( Station );
-	internal override ParkCommandResult Execute( Level level ) => level.ExecuteEndCoasterTool( Station, Player );
+	internal override ParkCommandResult Execute( Level level ) => level.ExecuteEndCoasterTool( Station );
 }
 
 /// <summary>
@@ -94,8 +94,9 @@ public abstract record CoasterPanelCommand( int Station ) : ParkToolCommand
 /// [EXT:online-coop-commands] A click of the coaster tool's build buttons on cell (<paramref name="X"/>, <paramref name="Y"/>) for the station whose attraction id is <paramref name="Station"/>
 /// (<see cref="Level.CoasterClick"/>): a click on the closed circuit's station end completes the track (it is rated and its trains start; the coaster is then no longer being edited and the ride
 /// opens), any other places a pylon at the tool's <paramref name="Height"/> or closes the circuit on its open start (<see cref="CoasterBuilder.Place"/>). The loop edit mode and its pylons still to
-/// place (<paramref name="LoopMode"/>, <paramref name="LoopPylonsLeft"/>) are the issuer's panel state the placement reads: the loop mode needs the loop button (<see cref="CoasterBuilder.LoopUnlocked"/>),
-/// and a pylon after the first of a loop pair must be its second, as the panel's buttons allow. The builder of every peer keeps its own tool state. The value is <see cref="CoasterClickDone"/>.
+/// place (<paramref name="LoopMode"/>, <paramref name="LoopPylonsLeft"/>) are the issuer's panel state the placement reads: the loop mode needs the loop button (<see cref="CoasterBuilder.LoopUnlocked"/>).
+/// The builder of every peer keeps its own tool state. A click that places a pylon releases the drag running on the coaster first, as Backspace does; a click on the chain start waits until no drag runs
+/// (the close checks the last pylon, which a drag can hold, and the completion ends the tool every drag needs). The value is <see cref="CoasterClickDone"/>.
 /// </summary>
 public sealed record CoasterClickCommand( int Station, int X, int Y, float Height, bool LoopMode, int LoopPylonsLeft ) : CoasterPanelCommand( Station )
 {
@@ -115,7 +116,13 @@ public sealed record CoasterClickCommand( int Station, int X, int Y, float Heigh
 	{
 		var issued = new CoasterToolState( Height, LoopMode, LoopPylonsLeft );
 		var track = builder.Track;
-		if ( track.IsChainStart( X, Y ) && track.IsClosed )
+		var closing = track.IsChainStart( X, Y );
+		if ( closing && edits.Runs( Station ) )
+		{
+			var waits = track.IsClosed ? "Cannot complete the track while a pylon is dragged." : "Cannot close the circuit while a pylon is dragged.";
+			return new ParkCommandResult( false, waits, new CoasterClickDone( CoasterPlaceResult.NotEditable, false, waits, issued ) );
+		}
+		if ( closing && track.IsClosed )
 		{
 			var completed = builder.Complete();
 			if ( completed != CoasterPlaceResult.Ok )
@@ -127,12 +134,9 @@ public sealed record CoasterClickCommand( int Station, int X, int Y, float Heigh
 			return ParkCommandResult.Ok( new CoasterClickDone( completed, true,
 				$"Coaster complete (track ${builder.Ride.PaidCost}): excitement {rating.Excitement:F0}, sickness {rating.Sickness:F0}, {rating.Trains} train(s).", issued ) );
 		}
-		var closing = track.IsChainStart( X, Y );
-		// the panel's buttons: the loop button exists only with the loop upgrade, and the build button is off while a loop pair waits for its second pylon (the loop button resumes it at its second)
+		// the panel's loop button exists only with the loop upgrade (CoasterToolPanel.EnabledMask)
 		if ( !closing && LoopMode && !builder.LoopUnlocked )
 			return ParkCommandResult.Rejected( "The coaster takes no loop pylons." );
-		if ( !closing && builder.LoopPairPending && !(LoopMode && LoopPylonsLeft == 1) )
-			return ParkCommandResult.Rejected( "A loop pair waits for its second pylon." );
 		var version = track.Version;
 		var count = track.Nodes.Count;
 		// the placement reads the issuer's tool state; this peer's builder keeps its own (its own panel's), and the issuer takes the state the placement left from the value
@@ -142,6 +146,10 @@ public sealed record CoasterClickCommand( int Station, int X, int Y, float Heigh
 		builder.SetToolState( issued );
 		try
 		{
+			// a pylon the click places changes the pylon list (a pylon in a cut circuit's gap moves the pylons after it) and links to the last pylon: the drag running on the coaster ends first, as its
+			// release would (the placement's own refusals read no pylon a drag can change, so a click that places nothing releases nothing)
+			if ( !closing && builder.Check( X, Y ) is not (CoasterPlaceResult.OutsideMap or CoasterPlaceResult.NotEditable or CoasterPlaceResult.NoLoopPylon) )
+				edits.ReleaseAll( Station );
 			result = builder.Place( X, Y );
 			next = builder.ToolState;
 		}
@@ -185,7 +193,8 @@ public sealed record RemoveLastCoasterPylonCommand( int Station ) : CoasterPanel
 /// <summary>
 /// The press of a drag in the coaster tool's panel on pylon <paramref name="Node"/> (<see cref="CoasterBuilder.BeginEdit"/>): the pylon must take the drag (<see cref="CoasterBuilder.DragRange"/>);
 /// its cost (with the next pylon's on a finished track, for a move) is noted in the issuing player's edit with the drag and its range, which the drag's steps keep to and its release settles. An edit
-/// the player still holds is released first. The loop tilt of the first pylon of a pair whose loop rotation is above 0.5 takes 1 off it, as the press does. The value is the edit.
+/// the player still holds is released first. One drag runs on a coaster at a time, as one pointer gives in a game of one: a press waits while another player's drag runs (two drags on neighbouring
+/// or stacked pylons would each settle what the other changed). The loop tilt of the first pylon of a pair whose loop rotation is above 0.5 takes 1 off it, as the press does. The value is the edit.
 /// </summary>
 public sealed record BeginCoasterNodeEditCommand( int Station, int Node, CoasterDrag Drag ) : CoasterPanelCommand( Station )
 {
@@ -202,6 +211,8 @@ public sealed record BeginCoasterNodeEditCommand( int Station, int Node, Coaster
 	{
 		if ( builder.DragRange( Node, Drag ) is not { } range )
 			return ParkCommandResult.Rejected( $"Pylon {Node} takes no {Drag} drag." );
+		if ( edits.Runs( Station, except: Player ) )
+			return ParkCommandResult.Rejected( "Another player drags a pylon of this coaster." );
 		// a drag never starts over another one: the player's edit still held ends where it stands (its pylon may share this one's stack, so the range is taken again)
 		edits.Release( Player );
 		range = builder.DragRange( Node, Drag ) ?? range;
@@ -297,8 +308,8 @@ public sealed record EndCoasterNodeEditCommand( int Station ) : CoasterPanelComm
 }
 
 /// <summary>
-/// The stack buttons' release over pylon <paramref name="Node"/>: it swaps places with the piece above (<paramref name="Up"/>) or below it in its cell's stack (<see cref="CoasterBuilder.SwapStack"/>);
-/// every pylon edit on the coaster is released first.
+/// The stack buttons' release over pylon <paramref name="Node"/>: it swaps places with the piece above (<paramref name="Up"/>) or below it in its cell's stack (<see cref="CoasterBuilder.SwapStack"/>).
+/// It waits while a drag runs on the coaster: the drag's release could change the stack the swap was asked on (a carried pylon goes back to its cell).
 /// </summary>
 public sealed record SwapCoasterStackCommand( int Station, int Node, bool Up ) : CoasterPanelCommand( Station )
 {
@@ -313,9 +324,10 @@ public sealed record SwapCoasterStackCommand( int Station, int Node, bool Up ) :
 
 	internal override ParkCommandResult Apply( CoasterBuilder builder, CoasterEdits edits )
 	{
-		if ( !builder.CanSwapStack( Node, Up ) )
+		if ( builder.Track.StackNeighbour( Node, Up ) < 0 )
 			return ParkCommandResult.Rejected( $"Pylon {Node} has no stack piece that way." );
-		edits.ReleaseAll( Station );
+		if ( edits.Runs( Station ) )
+			return ParkCommandResult.Rejected( "A pylon of this coaster is dragged." );
 		return builder.SwapStack( Node, Up ) ? ParkCommandResult.Ok() : ParkCommandResult.Rejected( $"Pylon {Node} has no stack piece that way." );
 	}
 }

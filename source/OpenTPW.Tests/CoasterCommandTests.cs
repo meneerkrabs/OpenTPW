@@ -9,7 +9,8 @@ namespace OpenTPW.Tests;
 /// <summary>
 /// [EXT:online-coop-commands] The coaster tool's writes as commands (docs/COOP.md, "Tools"), without game data: a whole session of clicks, Backspace and the panel's drags and cut leaves the tool as
 /// commands, and the commands alone build the same coaster (its nodes, flags, controller and paid cost) on a twin. The commands keep the panel's rules: a drag's steps stay within the range its press
-/// gave, a press releases the player's drag still held, a change of the pylon list releases every drag first, and the loop button's gate holds.
+/// gave, one drag runs on a coaster at a time (a press releases the player's own drag still held and waits for another player's), a click that places a pylon, Backspace and the cut release the
+/// running drag first, a stack swap and a click on the chain start (the close and the completion) wait for it, and the loop button's gate holds.
 /// </summary>
 [TestClass]
 public class CoasterCommandTests
@@ -70,6 +71,10 @@ public class CoasterCommandTests
 			hash.Add( Ride.PaidCost );
 			return hash.Value;
 		}
+
+		/// <summary>The drags of players 0 to 2 as text that compares by value (the builder each holds is this rig's).</summary>
+		public string Drags() => string.Join( "; ", Enumerable.Range( 0, 3 ).Select( player =>
+			Edits.Of( player ) is { } held ? $"{player}: {held.Station} {held.Edit} {held.Drag} {held.Range}" : $"{player}: none" ) );
 	}
 
 	[TestMethod]
@@ -205,7 +210,8 @@ public class CoasterCommandTests
 	}
 
 	/// <summary>
-	/// A command that removes or reorders pylons (Backspace, a cut, a stack swap) releases every drag on the coaster first: a moved pylon goes back to its cell and nobody's drag settles against another pylon.
+	/// A command that changes the pylon list (Backspace, a cut, a placing click) releases the drag running on the coaster first: a moved pylon goes back to its cell and no drag settles against another
+	/// pylon.
 	/// </summary>
 	[TestMethod]
 	public void BackspaceReleasesAnotherPlayersDragFirst()
@@ -228,9 +234,12 @@ public class CoasterCommandTests
 		Assert.IsFalse( rig.Issue( new EndCoasterNodeEditCommand( 0 ) { Player = 1 } ).Accepted, "player 1's late release finds no drag" );
 	}
 
-	/// <summary>The click keeps the panel's buttons: the loop mode needs the loop button, and while a loop pair waits for its second pylon only that pylon may follow.</summary>
+	/// <summary>
+	/// The click keeps the loop button's gate: the loop mode needs the loop button. The click handler tests nothing else of the panel, so a click with the build button's state while a loop pair waits
+	/// for its second pylon places a pylon as in a game of one.
+	/// </summary>
 	[TestMethod]
-	public void AClickKeepsTheLoopButtonsRules()
+	public void AClickKeepsTheLoopButtonsGate()
 	{
 		var settings = CoasterTests.PcSettings();
 		foreach ( var key in settings.Keys.Where( key => key.StartsWith( "asPylonControls[1].", StringComparison.Ordinal ) ).ToArray() )
@@ -249,11 +258,263 @@ public class CoasterCommandTests
 		var first = rig.Click( 28, 20 );
 		Assert.AreEqual( 1, first.Next.LoopPylonsLeft, "the pair's first pylon leaves one to place" );
 		Assert.IsTrue( rig.Builder.LoopPairPending );
-		var pending = rig.Hash();
-		Assert.IsFalse( rig.Issue( new CoasterClickCommand( 0, 32, 20, 40, false, 0 ) ).Accepted, "the build button is off while the pair waits" );
-		Assert.IsFalse( rig.Issue( new CoasterClickCommand( 0, 32, 20, 40, true, 2 ) ).Accepted, "a new pair cannot start over a waiting one" );
-		Assert.AreEqual( pending, rig.Hash() );
+		var count = rig.Builder.Track.Nodes.Count;
+		var twin = new Rig();
+		foreach ( var command in rig.Log )
+			twin.Issue( command );
+		Assert.IsTrue( twin.Issue( new CoasterClickCommand( 0, 32, 20, 40, false, 0 ) ).Accepted, "a build click while the pair waits places a pylon" );
+		Assert.AreEqual( count + 1, twin.Builder.Track.Nodes.Count );
 		Assert.IsTrue( rig.Click( 32, 20 ).Next is { LoopMode: false, LoopPylonsLeft: 0 }, "the second pylon ends the loop mode" );
 		Assert.IsFalse( rig.Builder.LoopPairPending );
+	}
+
+	/// <summary>
+	/// A click that places a pylon releases the drag running on the coaster first, as its own release would: a pylon placed in a cut circuit's gap moves the pylons after it, and another player's height
+	/// drag on one of those is settled before, so the coaster and the money come out as if the drag had ended before the click; a carried pylon goes back to its cell first.
+	/// </summary>
+	[TestMethod]
+	public void APlacingClickReleasesTheRunningDragFirst()
+	{
+		Rig Session( bool endFirst )
+		{
+			var rig = new Rig();
+			rig.BuildCircuit();
+			var gone = rig.Builder.Track.Nodes[First + 2];
+			Assert.AreEqual( CoasterTrack.CutResult.Cut, rig.Issue( new CutCoasterCommand( 0, First + 1, First + 3 ) ).Value );
+			var dragged = First + 2;
+			var high = rig.Builder.DragRange( dragged, CoasterDrag.Height )!.Value.High;
+			Assert.IsTrue( rig.Issue( new BeginCoasterNodeEditCommand( 0, dragged, CoasterDrag.Height ) { Player = 1 } ).Accepted );
+			Assert.IsTrue( rig.Issue( new EditCoasterNodeCommand( 0, CoasterNodeField.Loft, high, 0, 0 ) { Player = 1 } ).Accepted );
+			if ( endFirst )
+				Assert.IsTrue( rig.Issue( new EndCoasterNodeEditCommand( 0 ) { Player = 1 } ).Accepted );
+			Assert.AreEqual( CoasterPlaceResult.Ok, rig.Click( gone.X, gone.Y ).Result, "player 0 builds into the gap" );
+			Assert.IsNull( rig.Edits.Of( 1 ), "player 1's drag ended" );
+			Assert.IsFalse( rig.Issue( new EditCoasterNodeCommand( 0, CoasterNodeField.Loft, high, 0, 0 ) { Player = 1 } ).Accepted, "a step after the click finds no drag" );
+			return rig;
+		}
+		var ended = Session( endFirst: true );
+		var released = Session( endFirst: false );
+		Assert.AreEqual( ended.Ride.PaidCost, released.Ride.PaidCost, "the click settled the raise as the drag's release would have" );
+		Assert.AreEqual( ended.Hash(), released.Hash() );
+
+		var carried = new Rig();
+		carried.Builder.Height = 40;
+		foreach ( var (dx, dy) in CoasterTests.Circuit.Take( 3 ) )
+			Assert.AreEqual( CoasterPlaceResult.Ok, carried.Click( 20 + dx, 20 + dy ).Result );
+		var last = carried.Builder.Track.Nodes[^1];
+		var paid = carried.Ride.PaidCost;
+		Assert.IsTrue( carried.Issue( new BeginCoasterNodeEditCommand( 0, carried.Builder.Track.Nodes.Count - 1, CoasterDrag.Move ) { Player = 1 } ).Accepted );
+		Assert.IsTrue( carried.Issue( new EditCoasterNodeCommand( 0, CoasterNodeField.Move, 0, last.X + 1, last.Y ) { Player = 1 } ).Accepted );
+		var (nx, ny) = CoasterTests.Circuit[3];
+		carried.Click( 20 + nx, 20 + ny );
+		Assert.IsNull( carried.Edits.Of( 1 ) );
+		Assert.AreEqual( (last.X, last.Y), (carried.Builder.Track.Nodes[^2].X, carried.Builder.Track.Nodes[^2].Y), "the carried pylon went back before the new one linked to it" );
+		var twin = new Rig();
+		twin.Builder.Height = 40;
+		foreach ( var (dx, dy) in CoasterTests.Circuit.Take( 4 ) )
+			twin.Click( 20 + dx, 20 + dy );
+		Assert.AreEqual( twin.Hash(), carried.Hash(), "the same coaster as if the pylon had never been carried" );
+		Assert.AreNotEqual( paid, carried.Ride.PaidCost );
+		Assert.AreEqual( twin.Ride.PaidCost, carried.Ride.PaidCost );
+	}
+
+	/// <summary>
+	/// One drag runs on a coaster at a time, as one pointer gives in a game of one: another player's press waits while a drag runs (the player's own second press releases the first), and so do a stack
+	/// swap (the release could change the stack it was asked on), the close (it checks the last pylon, which a drag can hold) and the completion (it ends the tool every drag needs). A command that
+	/// waits changes nothing.
+	/// </summary>
+	[TestMethod]
+	public void APressASwapTheCloseAndTheCompletionWaitForTheRunningDrag()
+	{
+		var rig = new Rig();
+		rig.Builder.Height = 20;
+		foreach ( var (x, y) in new[] { (24, 20), (28, 24), (24, 28), (20, 24) } )
+			Assert.AreEqual( CoasterPlaceResult.Ok, rig.Click( x, y ).Result );
+		rig.Builder.Height = 60;
+		Assert.AreEqual( CoasterPlaceResult.Ok, rig.Click( 24, 20 ).Result );
+		var (below, above) = (First, First + 4);
+		var track = rig.Builder.Track;
+		Assert.AreEqual( (0, 1), (track.Nodes[below].StackIndex, track.Nodes[above].StackIndex) );
+		Assert.IsTrue( rig.Issue( new BeginCoasterNodeEditCommand( 0, First + 2, CoasterDrag.Rotate ) { Player = 1 } ).Accepted );
+		var before = rig.Hash();
+		Assert.IsFalse( rig.Issue( new BeginCoasterNodeEditCommand( 0, First + 1, CoasterDrag.Height ) { Player = 2 } ).Accepted, "player 1's drag runs" );
+		Assert.IsFalse( rig.Issue( new SwapCoasterStackCommand( 0, above, false ) ).Accepted, "the swap waits too" );
+		Assert.AreEqual( before, rig.Hash() );
+		Assert.AreEqual( First + 2, rig.Edits.Of( 1 )!.Edit.Index, "the refusals released nobody" );
+		Assert.IsNull( rig.Edits.Of( 2 ) );
+		Assert.IsTrue( rig.Issue( new BeginCoasterNodeEditCommand( 0, First + 1, CoasterDrag.Rotate ) { Player = 1 } ).Accepted, "player 1's own press releases its drag first" );
+		Assert.IsTrue( rig.Issue( new EndCoasterNodeEditCommand( 0 ) { Player = 1 } ).Accepted );
+		Assert.IsTrue( rig.Issue( new SwapCoasterStackCommand( 0, above, false ) ).Accepted, "with no drag running the pieces swap" );
+		Assert.AreEqual( (1, 0), (track.Nodes[below].StackIndex, track.Nodes[above].StackIndex) );
+
+		var closed = new Rig();
+		closed.Builder.Height = 40;
+		foreach ( var (dx, dy) in CoasterTests.Circuit )
+			closed.Click( 20 + dx, 20 + dy );
+		var back = closed.Builder.Track.ReturnCell!.Value;
+		Assert.IsTrue( closed.Issue( new BeginCoasterNodeEditCommand( 0, First + 5, CoasterDrag.Move ) { Player = 1 } ).Accepted, "player 1 picks up the last pylon" );
+		var open = closed.Hash();
+		Assert.IsTrue( closed.Click( back.X, back.Y ) is { Result: not CoasterPlaceResult.Ok, Completed: false }, "the close waits for player 1's drag" );
+		Assert.IsFalse( closed.Builder.Track.IsClosed );
+		Assert.AreEqual( open, closed.Hash() );
+		Assert.IsTrue( closed.Issue( new EndCoasterNodeEditCommand( 0 ) { Player = 1 } ).Accepted );
+		Assert.IsTrue( closed.Click( back.X, back.Y ) is { Result: CoasterPlaceResult.Ok, Completed: false } );
+		Assert.IsTrue( closed.Builder.Track.IsClosed );
+		Assert.IsTrue( closed.Issue( new BeginCoasterNodeEditCommand( 0, First, CoasterDrag.Height ) { Player = 1 } ).Accepted );
+		var shut = closed.Hash();
+		Assert.IsTrue( closed.Click( back.X, back.Y ) is { Completed: false }, "the completion waits for player 1's drag" );
+		Assert.AreEqual( shut, closed.Hash() );
+		Assert.IsTrue( closed.Issue( new EndCoasterNodeEditCommand( 0 ) { Player = 1 } ).Accepted );
+		Assert.IsTrue( closed.Click( back.X, back.Y ) is { Result: CoasterPlaceResult.Ok, Completed: true } );
+	}
+
+	/// <summary>
+	/// Random panel commands from three players on a coaster in each state the tool reaches (an open chain, a closed circuit, a finished one, a cut one): none throws, a refused one changes neither the
+	/// coaster nor the drags, and a twin that applies each command in step answers it the same way and keeps the same coaster, money and drags after every command.
+	/// </summary>
+	[TestMethod]
+	public void RandomPanelCommandsFromThreePlayersReplayOnATwin()
+	{
+		var accepted = new Dictionary<ParkCommandKind, int>();
+		foreach ( var (state, seed) in new[] { ("open", 1), ("closed", 2), ("finished", 3), ("cut", 4) } )
+		{
+			var rig = new Rig();
+			rig.Builder.Height = 40;
+			switch ( state )
+			{
+				case "open":
+					foreach ( var (dx, dy) in CoasterTests.Circuit.Take( 3 ) )
+						rig.Click( 20 + dx, 20 + dy );
+					break;
+				case "closed":
+					foreach ( var (dx, dy) in CoasterTests.Circuit )
+						rig.Click( 20 + dx, 20 + dy );
+					rig.Click( rig.Builder.Track.ReturnCell!.Value.X, rig.Builder.Track.ReturnCell!.Value.Y );
+					Assert.IsTrue( rig.Builder.Track.IsClosed && !rig.Builder.Track.IsComplete );
+					break;
+				default:
+					rig.BuildCircuit();
+					if ( state == "cut" )
+						Assert.IsTrue( rig.Issue( new CutCoasterCommand( 0, First + 1, First + 3 ) ).Accepted );
+					break;
+			}
+			var twin = new Rig();
+			foreach ( var command in rig.Log )
+				twin.Issue( command );
+			var random = new Random( 20261021 + seed );
+			var gap = new List<(int X, int Y)>();
+			for ( var step = 0; step < 600; step++ )
+			{
+				var command = RandomPanelCommand( random, rig, gap );
+				var cells = rig.Builder.Track.Nodes.Select( node => (node.X, node.Y) ).ToList();
+				var before = (rig.Hash(), rig.Drags());
+				var result = rig.Issue( command );
+				if ( result.Accepted )
+				{
+					accepted[command.Kind] = accepted.GetValueOrDefault( command.Kind ) + 1;
+					if ( command is CutCoasterCommand )
+						gap = cells.Except( rig.Builder.Track.Nodes.Select( node => (node.X, node.Y) ) ).ToList();
+				}
+				else
+					Assert.AreEqual( before, (rig.Hash(), rig.Drags()), $"{state} step {step}: the refused {command} ({result.Reason}) changed nothing" );
+				Assert.AreEqual( result.Accepted, twin.Issue( command ).Accepted, $"{state} step {step}: the twin answers {command} the same way" );
+				Assert.AreEqual( (rig.Hash(), rig.Drags()), (twin.Hash(), twin.Drags()), $"{state} step {step}: the same coaster, money and drags on the twin after {command}" );
+			}
+		}
+		var kinds = string.Join( ", ", accepted.OrderBy( pair => pair.Key ).Select( pair => $"{pair.Key} {pair.Value}" ) );
+		foreach ( var kind in new[] { ParkCommandKind.CoasterClick, ParkCommandKind.RemoveLastCoasterPylon, ParkCommandKind.BeginCoasterNodeEdit, ParkCommandKind.EditCoasterNode,
+			ParkCommandKind.EndCoasterNodeEdit, ParkCommandKind.SwapCoasterStack, ParkCommandKind.CutCoaster } )
+			Assert.IsTrue( accepted.ContainsKey( kind ), $"the fuzz never ran a {kind} ({kinds})" );
+	}
+
+	/// <summary>
+	/// One panel command of the fuzz, from one of three players: mostly ones that can do something on the coaster as it stands (its next pylon, its pylons, a running drag's range from the player who
+	/// holds it), some malformed.
+	/// </summary>
+	private static ParkCommand RandomPanelCommand( Random random, Rig rig, List<(int X, int Y)> gap )
+	{
+		var track = rig.Builder.Track;
+		var count = track.Nodes.Count;
+		int Node() => random.Next( -1, count + 1 );
+		int Pylon() => random.Next( 3 ) == 0 ? Node() : random.Next( CoasterTrack.StationNodeCount, Math.Max( CoasterTrack.StationNodeCount + 1, count ) );
+		int AnyPlayer() => random.Next( 3 );
+		// the player who holds the running drag, mostly: its steps and its release
+		int Holder() => Enumerable.Range( 0, 3 ).FirstOrDefault( player => rig.Edits.Of( player ) != null, -1 ) is var holder and >= 0 && random.Next( 4 ) > 0 ? holder : AnyPlayer();
+		(int X, int Y) NearNode()
+		{
+			var node = track.Nodes[random.Next( count )];
+			return (Math.Max( 0, node.X + random.Next( -2, 3 ) ), Math.Max( 0, node.Y + random.Next( -2, 3 ) ));
+		}
+		var roll = random.Next( 100 );
+		if ( roll < 25 )
+		{
+			// the circuit's next pylon, a pylon in a cut's gap, or the chain start that closes and completes the circuit
+			var placed = count - CoasterTrack.StationNodeCount;
+			var (x, y) = !track.IsComplete && !track.IsClosed && placed < CoasterTests.Circuit.Length ? (20 + CoasterTests.Circuit[placed].X, 20 + CoasterTests.Circuit[placed].Y)
+				: track.IsCut && gap.Count > 0 && random.Next( 3 ) > 0 ? gap[random.Next( gap.Count )]
+				: track.CutAfter is int cut && cut + 1 < count ? (track.Nodes[cut + 1].X, track.Nodes[cut + 1].Y)
+				: track.ReturnCell ?? (20, 20);
+			return new CoasterClickCommand( 0, x, y, 40, false, 0 ) { Player = AnyPlayer() };
+		}
+		if ( roll < 30 )
+		{
+			// a pylon on another pylon's cell (a stack) or anywhere, maybe in loop mode
+			var loop = random.Next( 4 ) == 0;
+			var (x, y) = random.Next( 2 ) == 0 ? NearNode() : (6 + random.Next( 30 ), 6 + random.Next( 30 ));
+			return new CoasterClickCommand( 0, x, y, 10 + random.Next( 80 ), loop, loop ? random.Next( 3 ) : 0 ) { Player = AnyPlayer() };
+		}
+		if ( roll < 45 )
+			return new BeginCoasterNodeEditCommand( 0, Pylon(), (CoasterDrag)random.Next( 6 ) ) { Player = AnyPlayer() };
+		if ( roll < 70 )
+		{
+			var player = Holder();
+			var held = rig.Edits.Of( player );
+			var field = (CoasterNodeField)random.Next( 7 );
+			var value = (float)(random.NextDouble() * 4 - 2);
+			if ( held != null && random.Next( 4 ) > 0 )
+			{
+				field = held.Drag switch
+				{
+					CoasterDrag.Move => CoasterNodeField.Move,
+					CoasterDrag.Height => CoasterNodeField.Loft,
+					CoasterDrag.Rotate => CoasterNodeField.Yaw,
+					CoasterDrag.LoopTilt => CoasterNodeField.LoopRotate,
+					_ => random.Next( 2 ) == 0 ? CoasterNodeField.Bank : CoasterNodeField.Incline
+				};
+				var (low, high) = field == CoasterNodeField.Incline ? (held.Range.LowSecond, held.Range.HighSecond) : (held.Range.Low, held.Range.High);
+				value = random.Next( 5 ) switch { 0 => low, 1 => high, 2 => low + (high - low) * (float)random.NextDouble(), 3 => high + 1, _ => low - 1 };
+			}
+			var (x, y) = held != null && held.Edit.Index < count ? (track.Nodes[held.Edit.Index].X + random.Next( -2, 3 ), track.Nodes[held.Edit.Index].Y + random.Next( -2, 3 )) : NearNode();
+			return new EditCoasterNodeCommand( 0, field, value, Math.Max( 0, x ), Math.Max( 0, y ) ) { Player = player };
+		}
+		if ( roll < 80 )
+			return new EndCoasterNodeEditCommand( 0 ) { Player = Holder() };
+		if ( roll < 86 )
+			return new RemoveLastCoasterPylonCommand( 0 ) { Player = AnyPlayer() };
+		if ( roll < 93 )
+			return new SwapCoasterStackCommand( 0, Pylon(), random.Next( 2 ) == 0 ) { Player = AnyPlayer() };
+		return new CutCoasterCommand( 0, Pylon(), Pylon() ) { Player = AnyPlayer() };
+	}
+
+	/// <summary>
+	/// A loft drag on the lower piece of a stack whose top stands above the coaster's highest pylon has a range whose ends are the wrong way round; the panel's clamp then gives one of the ends, and the
+	/// command takes it as the panel sends it.
+	/// </summary>
+	[TestMethod]
+	public void ALoftDragTakesTheEndsOfARangeTheWrongWayRound()
+	{
+		var rig = new Rig();
+		rig.Builder.Height = 20;
+		foreach ( var (x, y) in new[] { (24, 20), (28, 24), (24, 28), (20, 24) } )
+			Assert.AreEqual( CoasterPlaceResult.Ok, rig.Click( x, y ).Result );
+		rig.Builder.Height = 1000;
+		Assert.AreEqual( CoasterPlaceResult.Ok, rig.Click( 24, 20 ).Result );
+		var range = rig.Builder.DragRange( First, CoasterDrag.Height )!.Value;
+		Assert.IsTrue( range.High < range.Low, $"the lower piece's range [{range.Low}, {range.High}] is the wrong way round" );
+		Assert.IsTrue( rig.Issue( new BeginCoasterNodeEditCommand( 0, First, CoasterDrag.Height ) ).Accepted );
+		Assert.IsTrue( rig.Issue( new EditCoasterNodeCommand( 0, CoasterNodeField.Loft, range.Low, 0, 0 ) ).Accepted, "the clamp's low end" );
+		Assert.IsTrue( rig.Issue( new EditCoasterNodeCommand( 0, CoasterNodeField.Loft, range.High, 0, 0 ) ).Accepted, "the clamp's high end" );
+		Assert.IsFalse( rig.Issue( new EditCoasterNodeCommand( 0, CoasterNodeField.Loft, (range.Low + range.High) / 2, 0, 0 ) ).Accepted, "between the ends the clamp gives nothing" );
+		Assert.IsTrue( rig.Issue( new EndCoasterNodeEditCommand( 0 ) ).Accepted );
 	}
 }

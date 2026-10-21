@@ -34,7 +34,7 @@ public partial class Level
 	}
 
 	/// <summary>One frame of the cover's easing toward the last turn's value, in real time (a paused park's cover stands still because its target does).</summary>
-	private void UpdateSnow() => snow?.Ease( Math.Min( Time.Delta, EveningMaximumFrameSeconds ) );
+	private void UpdateSnow( double frameSeconds ) => snow?.Ease( Math.Min( frameSeconds, EveningMaximumFrameSeconds ) );
 
 	/// <summary>The saved cover of a park: the cover while it is above 0 and the extension is on, otherwise null (the field is then left out of the file).</summary>
 	internal double? CaptureSnowCover() => snow is { Cover: > 0 } cover ? cover.Cover : null;

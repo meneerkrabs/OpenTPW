@@ -214,6 +214,13 @@ other gameplay fields remain hashed. Synthetic coverage is in `StaffRoleOrderTes
   of placed objects; `ParkCellMap.MapStartCell`, `WriteFootprint`) resumes with every such cell still empty (type 0). The load does
   not type them again, because that would change a newer save's cell map version and the caches keyed on it; the census, the
   litter counts and the park value of such a park count those cells as empty ground.
+- **Imported queues are restored once.** A Jungle park saved before the import kept the shipped save's queue cells has empty ground
+  where the Belly Bounce's queue lies; the load lays those cells again from the level's shipped save (`[EXT:legacy-save-queue-cells]`,
+  user-approved 2026-10-20, [GUESTS.md](GUESTS.md#closed-or-split-in-the-guests-queues-and-arrivals-pass)). It changes such a save's cell
+  map once; a newer save, or one whose queue the player removed, is not touched.
+  A save older than the access-link fix of 2026-10-17 is not repaired: its entrance cell has its queue link but no link byte,
+  which is also the state of a newer save whose queue the player removed, so the load cannot tell them apart and leaves the
+  ride as the save holds it (no heuristic guesses which it was).
 - **The analyser's caches are saved outside the run hash.** The net worth and the litter/path block counts are cached with their
   turn stamps as the original's analyser keeps them; an older save without them counts afresh at the first read.
 - **The save is pinned to the game data it was made with.** It carries a SHA-256 manifest of the
@@ -283,7 +290,14 @@ embedded by value, so both formats' validators run on every load.
   each time, then resumes and compares every typed section hash and the composite world hash against
   the capture run at each checkpoint, finishing with post-load economy checks (admission booked
   once, a sale credited once with its links removed, a new placement, wages charged once, payment
-  bindings one-to-one). The evidence JSON holds hashes and counters; the directory also contains
+  bindings one-to-one). The capture phase continues one tick a frame and makes the continuation's
+  edits between frames as the HUD does (the speed raised and set back, the first attraction closed and
+  reopened, the entrance fee); the restore phase continues through the level's own frame step in
+  seeded random frames of 1 to 16 ticks (`OPENTPW_SMOKE_BATCHING`: `random` by default, or `1` or
+  `16`) with the same edits replayed inside its frames, so the pair also proves with game data that the
+  park after a tick does not depend on how the ticks fall into frames
+  ([DETERMINISM.md](DETERMINISM.md), "Frame batching"). The continuation's clock section leaves out the
+  clock's remainder of a tick, which follows the frames' time. The evidence JSON holds hashes and counters; the directory also contains
   the own-format save and screenshot readbacks, without original game files.
   These are controlled, accelerated fixtures that validate persistence of current OpenTPW behaviour,
   not original-game fidelity.

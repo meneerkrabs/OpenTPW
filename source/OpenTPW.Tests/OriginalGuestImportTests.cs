@@ -299,6 +299,31 @@ public class OriginalGuestImportTests
 	}
 
 	[TestMethod]
+	public void ImportedIntegerAgeKeepsItsWorldPhaseInsteadOfReflooringSeconds()
+	{
+		foreach ( var priorTicks in new[] { 0, 73 } )
+		{
+			var simulation = Simulation();
+			for ( var tick = 0; tick < priorTicks; tick++ ) simulation.Tick( GuestSnapshotTests.Tick );
+			var saved = new[]
+			{
+				Decode( new SaveTestPayloads.GuestFields { Position = (At( 3 ), At( 5 )), State = 7, ArrivalDate = 905 }, 41 ),
+				Decode( new SaveTestPayloads.GuestFields { Position = (At( 4 ), At( 5 )), State = 7, ArrivalDate = 1006 }, 42 ),
+				Decode( new SaveTestPayloads.GuestFields { Position = (At( 10 ), At( 8 )), State = 3, ArrivalDate = 0 }, 43 ),
+			};
+			simulation.ImportOriginal( saved, 1005, _ => 0, _ => 0 );
+			var guest = simulation.Guests.Single( item => item.Id == 41 );
+			Assert.AreEqual( 100L, guest.DisplayTimeInParkTurns );
+			Assert.IsNull( simulation.Guests.Single( item => item.Id == 42 ).DisplayTimeInParkTurns, "future stamp policy is unchanged" );
+			Assert.IsNull( simulation.Guests.Single( item => item.Id == 43 ).DisplayTimeInParkTurns, "on-map arrival has no previously known duration under the existing import policy" );
+			for ( var tick = 0; tick < 59; tick++ ) simulation.Tick( GuestSnapshotTests.Tick );
+			Assert.AreEqual( 104L, guest.DisplayTimeInParkTurns );
+			Assert.AreEqual( 103L, (long)Math.Floor( guest.TimeInParkSeconds!.Value * 1000 / ParkCalendar.TurnMilliseconds ) );
+			Assert.IsTrue( simulation.ValidateSnapshot( simulation.CaptureSnapshot() ).IsValid, "import into an already-ticked empty simulation still stores a normalized phase" );
+		}
+	}
+
+	[TestMethod]
 	public void OriginalJungleEasymodeGuestsWalkIntoThePark()
 	{
 		var dataPath = OriginalParkImportTests.OriginalDataPath();

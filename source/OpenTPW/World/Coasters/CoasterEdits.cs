@@ -21,11 +21,12 @@ public enum CoasterDrag : byte
 /// </summary>
 public readonly record struct CoasterDragRange( float Low, float High, float LowSecond, float HighSecond )
 {
-	/// <summary>Whether <paramref name="value"/> lies in the first value's range, ends included.</summary>
-	public bool Holds( float value ) => value >= Low && value <= High;
+	/// <summary>Whether the panel's clamp can give <paramref name="value"/> for the first value: an end of the range, or a value between them (a stack whose top stands above the coaster's highest
+	/// pylon leaves its lower piece a range whose ends are the wrong way round, and the clamp then gives one of the ends).</summary>
+	public bool Holds( float value ) => value == Low || value == High || (value >= Low && value <= High);
 
-	/// <summary>Whether <paramref name="value"/> lies in the second value's range, ends included.</summary>
-	public bool HoldsSecond( float value ) => value >= LowSecond && value <= HighSecond;
+	/// <summary>Whether the panel's clamp can give <paramref name="value"/> for the second value.</summary>
+	public bool HoldsSecond( float value ) => value == LowSecond || value == HighSecond || (value >= LowSecond && value <= HighSecond);
 }
 
 /// <summary>
@@ -62,11 +63,24 @@ public sealed class CoasterEdits
 			Settle( held, putBack: true );
 	}
 
-	/// <summary>Releases every edit on the coaster station <paramref name="station"/>, lowest player first, before a command removes or reorders its pylons, so no edit settles against another pylon.</summary>
+	/// <summary>
+	/// Releases every edit on the coaster station <paramref name="station"/>, lowest player first: before a command adds or removes pylons, so no edit settles against a pylon list that changed under it,
+	/// and when the coaster leaves the tool.
+	/// </summary>
 	internal void ReleaseAll( int station )
 	{
 		foreach ( var player in edits.Where( pair => pair.Value.Station == station ).Select( pair => pair.Key ).Order().ToArray() )
 			Release( player );
+	}
+
+	/// <summary>Whether a player's drag runs on the coaster station <paramref name="station"/>, another than <paramref name="except"/>'s when it is given.</summary>
+	internal bool Runs( int station, int? except = null ) => edits.Any( pair => pair.Key != except && pair.Value.Station == station );
+
+	/// <summary>Drops the edits on the coaster station <paramref name="station"/> without settling them (the station went, and its track with it, without a refund).</summary>
+	internal void Drop( int station )
+	{
+		foreach ( var player in edits.Where( pair => pair.Value.Station == station ).Select( pair => pair.Key ).ToArray() )
+			edits.Remove( player );
 	}
 
 	/// <summary>Drops every edit (a load replaced the park, whose coasters they held).</summary>

@@ -79,11 +79,17 @@ public class GuestTimeInParkReviewTests
 	public void OldWorldJsonWithoutDurationStaysUnknownAndFormattingIgnoresCulture()
 	{
 		var json = JsonNode.Parse( ParkResumeSaveFile.Serialize( ParkResumeSaveFileTests.Envelope() ) )!;
-		foreach ( var guest in json["Guests"]!["Guests"]!.AsArray() ) guest!.AsObject().Remove( "TimeInParkSeconds" );
+		foreach ( var guest in json["Guests"]!["Guests"]!.AsArray() )
+		{
+			guest!.AsObject().Remove( "TimeInParkSeconds" );
+			guest.AsObject().Remove( "DisplayTimeInParkTurns" );
+		}
+		json["Guests"]!.AsObject().Remove( "DisplayTurnPhaseTicks" );
 		var restored = ParkResumeSaveFile.Deserialize( Encoding.UTF8.GetBytes( json.ToJsonString() ) );
 		Assert.IsTrue( restored.Guests.Guests.All( guest => guest.TimeInParkSeconds == null ) );
 		var rig = new GuestSnapshotTests.Rig();
 		var visitor = rig.Simulation.SpawnInPark( 5, 0 );
+		visitor.DisplayTimeInParkTurns = null; // Explicit legacy seconds-only display fixture.
 		var culture = CultureInfo.CurrentCulture;
 		try
 		{

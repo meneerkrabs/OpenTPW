@@ -142,8 +142,13 @@ public partial class Level
 					cells.TakeSavedAccessLinks( item.Cells, OwnerWord( item ), save.Cells );
 				// a park resumed from an OpenTPW save made before that import gets the byte its entrance and exit cells lack, from the writers the placement uses
 				else if ( resumeState != null )
+				{
+					RestoreLegacySavedQueue( cells, item );
 					ObjectAccessCells.RepairMissingLinks( cells, item.AccessPoints, item.Entry.HasQueue, new LinkEffects( RefreshTile ) );
+				}
 			}
+			// the shipped save read for the repair is not kept
+			legacyQueueSave = null;
 		}
 		if ( typesFootprints )
 		{
@@ -192,6 +197,36 @@ public partial class Level
 		}
 	}
 
+	/// <summary>The level's shipped save, read once for <see cref="RestoreLegacySavedQueue"/> (a resumed park's <see cref="OriginalPark"/> has none); null until needed.</summary>
+	private Lazy<OriginalParkImport?>? legacyQueueSave;
+
+	/// <summary>
+	/// [EXT:legacy-save-queue-cells] For a resumed park: an imported HasQueue object whose entrance links into empty ground (an OpenTPW save made before the import took the shipped save's
+	/// queue cells) gets those cells back from the level's shipped save, when that save placed the same object at the same anchor and angle (ObjectAccessCells.RestoreLegacySavedQueue).
+	/// A newer save holds the cells, so nothing is read or written for it. User-approved 2026-10-20 ("Herstel bij laden (EXT)").
+	/// </summary>
+	private void RestoreLegacySavedQueue( ParkCellMap cells, OriginalObject item )
+	{
+		if ( OriginalPark is not { } park )
+			return;
+		legacyQueueSave ??= new Lazy<OriginalParkImport?>( () => OriginalPark.ReadShippedSave( park.LevelName, park.Map ) );
+		var laid = RestoreLegacySavedQueue( cells, item.AccessPoints, item.Entry.InfoId, item.Placement.Rotation, item.Entry.HasQueue, OwnerWord( item ), () => legacyQueueSave.Value, new LinkEffects( RefreshTile ) );
+		if ( laid > 0 )
+			Log.Trace( $"[EXT:legacy-save-queue-cells] {item.Entry.DisplayName}: {laid} queue cell(s) of the shipped save restored into a park saved before the import took them." );
+	}
+
+	/// <summary>The repair of <see cref="RestoreLegacySavedQueue(ParkCellMap, OriginalObject)"/> for one object; <paramref name="shippedSave"/> is read only when the entrance links into empty ground.</summary>
+	internal static int RestoreLegacySavedQueue( ParkCellMap cells, IEnumerable<ObjectAccessPoint> accessPoints, int infoId, int rotation, bool hasQueue, ushort owner, Func<OriginalParkImport?> shippedSave, LinkEffects? effects = null )
+	{
+		var points = accessPoints.ToArray();
+		if ( !hasQueue || ObjectAccessCells.EmptyQueueFront( cells, points, owner ) is not { } front )
+			return 0;
+		if ( shippedSave() is not { } save || !save.PlacedObjects.Any( placed => placed.Record.InfoId == infoId && ParkCellMap.CellWord( placed.Record.X, placed.Record.Y ) == owner
+			&& placed.Record.Rotation == rotation ) )
+			return 0;
+		return ObjectAccessCells.RestoreLegacySavedQueue( cells, front, owner, save.Cells, effects );
+	}
+
 	/// <summary>
 	/// The queue's front cell is the cell outside the object's entrance (shape '2'); guests reappear outside its
 	/// exit (shape 'S'/'N'/'E', else the entrance). Until a queue path is built there (and while that cell is
@@ -215,7 +250,8 @@ public partial class Level
 	/// with a valid track (the track word <c>+0x2C</c>) is opened.
 	/// </summary>
 	// [BIN:TPW-EXE:0x004DE1F0 queue re-evaluation] the ride is skipped when its open word +0x68 is set or its state +0x19C is 1 or 4, +0x64 (the call) is set, state 2, or 0x4DE4A0 reports the queue unconnected; a type-3 ride (coaster) must pass 0x441970 and a kind 1, 2 or 3 ride needs its track word +0x2C; then +0x68 = 1, the script variable 6 (VAR_RIDECLOSED) = 0 and SetState(0) (0x4E0E60); +0x5E is cleared on every path
-	// [APPROX:QUEUE-023] the model call 0x4547C0 on the type's table entry 0x7A4610 that the opening makes (the open sound is not among the traced effects) is not made
+	// [BIN:TPW-EXE:0x004DE462 queue opening's model call] the opening calls 0x004547C0 on the ride's thing (table 0x007A4610 by the thing's +0x20): its hoarding sinks (OriginalObjectRuntime.Open)
+	// [APPROX:QUEUE-023] the re-evaluation runs on the queue tool's edits, a path laid over a queue cell and a queue cell's clear only, not at the click handler's own calls 0x52537A and 0x5259AE nor after the placements 0x528A70 and 0x52FE50
 	private void ReevaluateQueuedRide( OriginalObjectRuntime runtime )
 	{
 		if ( runtime.IsOpen || Gate?.MayOpen( runtime ) != true )
@@ -758,9 +794,15 @@ public partial class Level
 	{
 		if ( owner == 0 ) return null;
 		var item = objects.Objects.FirstOrDefault( item => !item.IsDeleted && OwnerWord( item ) == owner && item.Entry.HasQueue );
-		if ( item == null ) return null;
+		return item == null ? null : ResolveQueueEntrance( item.AccessPoints, cells, owner );
+	}
+
+	/// <summary><see cref="ResolveQueueEntrance(ParkObjects, ParkCellMap, ushort)"/> for the access points of the owner's HasQueue object: its last entrance cell, when that cell is a type-9 cell of the owner.</summary>
+	internal static (int X, int Y)? ResolveQueueEntrance( IEnumerable<ObjectAccessPoint> accessPoints, ParkCellMap cells, ushort owner )
+	{
+		if ( owner == 0 ) return null;
 		ObjectAccessPoint? entrance = null;
-		foreach ( var point in item.AccessPoints )
+		foreach ( var point in accessPoints )
 			if ( point.Kind == ObjectCellKind.Entrance ) entrance = point;
 		return entrance is { } entry && cells.InBounds( entry.X, entry.Y )
 			&& cells.RawTypeAt( entry.X, entry.Y ) == ParkCellTypes.Entrance && cells.OwnerAt( entry.X, entry.Y ) == owner
@@ -1370,6 +1412,9 @@ public partial class Level
 			{
 				layingAccessCells = false;
 			}
+			// [BIN:TPW-EXE:0x004DB78B built ride's hoarding] the constructor's close of a type with a queue calls 0x00454550(1) on the new thing: its hoarding rises with the closed set
+			if ( !BuiltObjectStartsOpen( entry ) )
+				placed.Runtime.Hoarding.SetState( ObjectHoardingState.CloseMode );
 			// [BIN:TPW-EXE:0x558e7c build effect] the type's CreateParticleEffect starts when the new object's script attaches, not when a park loads
 			placed.Runtime.StartObjectEffect( ObjectParticleEffect.Create );
 			// [BIN:TPW-EXE:0x528e30 placement cue] the commit pass of the placement plays its size-classed cat_ui cue
@@ -1622,7 +1667,8 @@ public partial class Level
 			// [BIN:TPW-EXE:0x004E0E60 SetState] the open word (mCanLoad, +0x68) is cleared by states 1, 2 and 4 (their import closes the ride already) and by the player's close or a maintenance call; an idle attraction saved with it clear stays closed until the door opens the park
 			if ( Park!.Economy.TryGetObject( instance, out var objectState ) && RideOpening.ClosedByImportedOpenWord( attraction.CanLoad, ParkEconomy.ObjectState( objectState ) ) && runtime.IsOpen )
 			{
-				runtime.Close();
+				// the loader writes the open word without a closing routine, so the hoarding keeps its saved state (ParkObjects.ImportOriginalSteps)
+				runtime.CloseLoaded();
 				SyncOpenState( runtime );
 				taken = taken.Concat( new[] { "closed (the saved open word is 0)" } ).ToList();
 			}

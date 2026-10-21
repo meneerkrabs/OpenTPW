@@ -135,7 +135,10 @@ public sealed class ReverbUnit
 		get { lock ( gate ) return settings; }
 	}
 
-	/// <summary>Sets the preset (null: no reverb). A change of the environment size rebuilds the delay lines and drops the tail; any other change keeps it.</summary>
+	/// <summary>
+	/// Sets the preset (null: no reverb). A change of the effective environment size (the scale after clamping) rebuilds the delay lines and drops the tail;
+	/// a raw Size change that clamps to the same effective scale keeps it. Otherwise the tail is kept unless a delay length changes, which replaces that delay line.
+	/// </summary>
 	public void Set( ReverbSettings? value )
 	{
 		lock ( gate )
@@ -199,7 +202,8 @@ public sealed class ReverbUnit
 	{
 		// [EXT:audio-reverb] the size scale is OpenTPW's choice: EAX's environment size (metres) stretches the room's delays, here the comb and allpass lengths by sqrt(size / 7.5), within a factor of two
 		var scale = Math.Clamp( MathF.Sqrt( Math.Clamp( value.Size, 1.5f, 100f ) / 7.5f ), 0.5f, 1.5f );
-		if ( left.Combs.Length == 0 || scale != sizeScale )
+		var rebuild = left.Combs.Length == 0 || scale != sizeScale;
+		if ( rebuild )
 		{
 			sizeScale = scale;
 			var factor = rate / ReferenceRate * scale;
@@ -218,7 +222,7 @@ public sealed class ReverbUnit
 		wet = WetScale * MathF.Pow( 10f, millibels / 2000f );
 		inputGain = 0.5f / CombLengths.Length;
 		var preSamples = (int)MathF.Round( Math.Clamp( value.ReverbDelay, 0f, 0.1f ) * rate );
-		if ( preDelay.Length != preSamples )
+		if ( rebuild || preDelay.Length != preSamples )
 		{
 			preDelay = new float[preSamples];
 			preDelayPosition = 0;
@@ -234,7 +238,7 @@ public sealed class ReverbUnit
 				((int)MathF.Max( 3, baseDelay * 1.8f * rate ), level * 0.5f, true),
 			};
 			var length = earlyTaps.Max( tap => tap.Samples ) + 1;
-			if ( early.Length != length )
+			if ( rebuild || early.Length != length )
 			{
 				early = new float[length];
 				earlyPosition = 0;

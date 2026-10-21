@@ -401,9 +401,6 @@ public sealed class CoasterBuilder
 	/// <summary>Whether <see cref="Cut"/> would cut between the two pylons.</summary>
 	public bool CanCut( int first, int second ) => Track.IsRunnable && Track.CheckCut( first, second ) != CoasterTrack.CutResult.Refused;
 
-	/// <summary>Whether <see cref="SwapStack"/> would swap pylon <paramref name="index"/> with a neighbour in its stack.</summary>
-	public bool CanSwapStack( int index, bool up ) => Track.StackNeighbour( index, up ) >= 0;
-
 	/// <summary>A node being edited by a drag: what it was and what it cost, so the release can settle the money.</summary>
 	/// <param name="Refund">The truncated cost of the node (and, on a complete track, of the node after it) before the edit.</param>
 	public sealed record NodeEdit( int Index, CoasterNode Start, long Refund, int? Next );

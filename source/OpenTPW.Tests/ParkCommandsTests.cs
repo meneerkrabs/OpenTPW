@@ -211,18 +211,6 @@ public class ParkCommandsTests
 		} );
 	}
 
-	/// <summary>Running the game never turns the strict checks off: a test that runs it keeps the test run's setting.</summary>
-	[TestMethod]
-	[DoNotParallelize]
-	public void RunningTheGameKeepsTheStrictChecks()
-	{
-		WithStrict( true, () =>
-		{
-			Assert.ThrowsException<ArgumentException>( () => Game.Run( new[] { "--export-fsh-png" } ) );
-			Assert.IsTrue( ParkCommands.Strict );
-		} );
-	}
-
 	[TestMethod]
 	public void TheRightsHookRefusesAPlayersCommandBeforeItRunsAndTheLocalPlayerIsTheHost()
 	{

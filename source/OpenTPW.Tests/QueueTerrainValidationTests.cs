@@ -1,5 +1,4 @@
 using System;
-using System.Numerics;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace OpenTPW.Tests;
@@ -13,7 +12,7 @@ public class QueueTerrainValidationTests
 		public OriginalPlacementResult Result = OriginalPlacementResult.Path;
 		public int Width => 8;
 		public int Height => 8;
-		public Vector2 Origin => default;
+		public System.Numerics.Vector2 Origin => default;
 		public float GetCellHeight( int x, int y ) => 0;
 		public OriginalPlacementResult CheckTerrain( int x, int y ) =>
 			x < 0 || y < 0 || x >= Width || y >= Height ? OriginalPlacementResult.OutsideTerrain : Result;

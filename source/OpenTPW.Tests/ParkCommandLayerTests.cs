@@ -57,7 +57,8 @@ public class ParkCommandLayerTests
 		new( "Level.RenamePark", Call( "RenamePark" ), nameof( RenameParkCommand ) ),
 		new( "Cheats", Call( "QueueCheat" ), nameof( QueueCheatCommand ) ),
 		// any receiver (a name, a call's or an index's result, null-forgiving or not) but the HUD's own panels (the locator, the camera slide) and a layout builder's track
-		new( "Ride open and close", @"([)\]]|\b(?!(Locator|CameraSlide|Track)\b)\w+)!?\??\.(Open|Close)\(\s*\)", nameof( SetAttractionOpenCommand ) ),
+		// the co-op link's open and close (OnlineSession's Coop) are a socket's, not a ride's
+		new( "Ride open and close", @"([)\]]|\b(?!(Locator|CameraSlide|Track|Coop)\b)\w+)!?\??\.(Open|Close)\(\s*\)", nameof( SetAttractionOpenCommand ) ),
 		new( "ParkEconomy.SetObjectOpen", Call( "SetObjectOpen" ), nameof( SetAttractionOpenCommand ) ),
 		new( "Ride window settings", Call( "ApplyRideWindow" ), nameof( SetRideSettingsCommand ) ),
 		new( "Ride setters", @"\.(SetSpeed|SetCapacity|SetDuration)\s*\(", nameof( SetRideSettingsCommand ) ),
@@ -113,9 +114,10 @@ public class ParkCommandLayerTests
 	private static IReadOnlyList<string> ToolLayer( string source )
 	{
 		IEnumerable<string> All( string folder ) => Directory.EnumerateFiles( Path.Combine( source, folder ), "*.cs", SearchOption.AllDirectories );
-		// a visit's park is built from its package as a save's restore builds a park (SharedParkLayout: the objects, paths and coasters of a read-only copy), not edited by a tool
+		// a visit's park is built from its package as a save's restore builds a park (SharedParkLayout: the objects, paths and coasters of a read-only copy), not edited by a tool; the co-op
+		// link (CoopLink) is the socket under the shared park screens, whose opens and closes are its sockets'
 		var files = All( "Hud" ).Concat( All( "UI" ) ).Concat( All( "FrontEnd" ) ).Concat( All( "Online" ) )
-			.Where( path => !Path.GetFileName( path ).Contains( "SmokeTest", StringComparison.Ordinal ) && Path.GetFileName( path ) != "SharedParkLayout.cs" )
+			.Where( path => !Path.GetFileName( path ).Contains( "SmokeTest", StringComparison.Ordinal ) && Path.GetFileName( path ) is not ("SharedParkLayout.cs" or "CoopLink.cs") )
 			.Concat( new[]
 			{
 				Path.Combine( "Client", "ThemeParkIncHud.cs" ),

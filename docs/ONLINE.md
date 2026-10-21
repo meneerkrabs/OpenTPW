@@ -21,7 +21,7 @@ where each piece stands is inventoried in [reverse/ONLINE-FEATURES.md](reverse/O
 
 Building a park together (co-op, `[EXT:online-coop-*]`) is planned as host-sequenced lockstep; its approved design
 decisions and the command layer every park edit now goes through are in [COOP.md](COOP.md). The server side of
-its sessions exists ([Shared parks](#shared-parks)); the game does not use it yet.
+its sessions and the game's link to them exist ([Shared parks](#shared-parks)); no screen or park uses them yet.
 
 ## Screens
 
@@ -444,7 +444,8 @@ exit (`artifacts/native-smoke-online-visit-presence.png`, `native-smoke-online-v
 
 `[EXT:online-coop-session]` A shared park is a session on the server: a host and up to three guests
 (decision Q5) who build one park together ([COOP.md](COOP.md)). The server relays the host's command
-stream and the players' messages without reading them; the game does not use sessions yet (C2b to C2d).
+stream and the players' messages without reading them. The game has its link to the server's sessions;
+no screen or park uses it yet (C2b to C2d).
 
 - **The co-op socket.** `/api/v1/coop` (server protocol 6) is a WebSocket of binary messages
   (`OpenTPW.Online.Coop.CoopProtocol`), beside the text chat socket. A desktop game sends its login
@@ -480,6 +481,21 @@ stream and the players' messages without reading them; the game does not use ses
   resumes) instead of losing messages, and a connection whose login ends (a logout elsewhere, a ban, a
   recovery) closes within a minute. Every text the server sends fits what a game reads.
   [SERVER.md](SERVER.md) lists the settings.
+- **The game's link** (`CoopLink`, under the online login). It opens the co-op socket and says hello
+  with the game's build (its informational version) and its simulation-changing mods in load order,
+  the used-only extensions included, and its own random id: a second link of the account (another game,
+  or another online session of this one) is refused unless the player takes over. A socket lost by a
+  close that resumes is opened again after 1, 2, 4, 8 and 15 seconds, then every 30 seconds, for ten
+  minutes from the loss (a rate close waits at least ten seconds; a socket that keeps dropping soon after
+  its welcome counts as the same loss), and its hello resumes the session; the welcome tells a host the
+  last frame the server relayed, so it can resend from there. A connect that does not open within 20
+  seconds is tried again, a link that hears nothing for 45 seconds opens a new socket, and the server's
+  pings are answered at once. Any other close stops the link: another game of the account, a refused
+  login, a protocol error. A create or join whose answer is lost with its socket is refused, so the game
+  can ask again; a session the server names that the game does not hold (the game restarted, took the
+  socket over, or lost the answer to its create or join) is left at once, with the reason of a leave
+  that could not go out. Closing the link, or logging out, ends the session for this game without
+  leaving it; the next login leaves it.
 
 ## Local server
 

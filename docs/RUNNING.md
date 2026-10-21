@@ -278,11 +278,22 @@ The language is found as for a normal start (`--language-data`, `OPENTPW_LANGUAG
 folder; LANGUAGES.md); a language that is not there is an error listing the available ones, before anything is written. The output
 directory must be new or empty and outside the game folder, its data, every language data folder in use (the exported language's, the
 `--language-data` folder and the CD folder, also when the exported language comes from the installation) with symbolic links resolved; nothing is overwritten, and everything is composed before the
-first file is written. The run opens no window and no audio device, loads no park, starts no mods or bonus objects (only the shipped
-data), and reads the game data only. One sign file depends on the compatibility profile: in the default Original profile the second
+first file is written. The run opens no window and no audio device, loads no park, starts no mods and, by default, no bonus objects (only the
+shipped data), and reads the game data only. One sign file depends on the compatibility profile: in the default Original profile the second
 line of Space Zone's `megacost.sgn` (a font `fonts.wad` lacks) is not drawn; `--compat-profile recommended` draws it with the
 `sign-font-substitution` fix (COMPATIBILITY.md). The sign files themselves are the installed game's; a CD whose levels carry other
 `.sgn` files (the Korean CD) is exported by pointing `--game-path` at that CD.
+
+Official bonus objects are exported only when asked for: `--bonus-data <folder>` (the extracted bonus content, the folder that holds
+`levels` or one up to two levels above it, as for a normal start; OBJECTS.md), or `--with-bonus` for the folder a normal start would use
+(`OPENTPW_BONUS_DATA`, the saved bonus folder, `<config>/bonus`); a folder whose `levels` tree holds no `_name_N.wad` archive (such as the
+`__MACOSX` copy of an unpacked zip) is an error. Each theme's bonus archives with a `.sgn` then follow its shipped objects,
+named by archive (`jungle/_dizzyd_8-1.png`; the 35 shipped bonus archives give 14 ride signs: Dizzy Dinos, King of the Swingers, Manic Mayan,
+Slither, Ghost Train, Dare Devil, Haunted House, Bone Shaker, The Dizzy Tree, Rubber Ringos, Flying Fountain, G-Force, Whirligig and
+Wormhole), with the lines the game draws for them (`ObjectSigns.Lines`): the `SIGNA`/`SIGNB` sections of the archive's `<language>.txt`, or,
+without that file, the object's display name split at the middle space. Mod and extension objects are never exported. `index.json` records
+each sign's `textSource` (`OBJECT_NAMES.str ids`, `OBJECT_NAMES.str gate row`, `Spanish.txt SIGNA/SIGNB`, ...) and marks bonus signs with
+`"bonus": true`; the bonus folder is protected like the game data. Without either option the output is the same as before.
 
 ## Movies
 

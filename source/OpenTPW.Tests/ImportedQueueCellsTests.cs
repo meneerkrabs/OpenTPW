@@ -220,11 +220,16 @@ public class ImportedQueueCellsTests
 		var record = jungle.Record;
 		var points = ObjectFootprint.GetAccessPoints( jungle.Entry.Shape, record.X, record.Y, record.Rotation ).ToArray();
 		var owner = ParkCellMap.CellWord( record.X, record.Y );
+		Assert.AreEqual( (52, 22), ObjectAccessCells.EmptyQueueFront( cells, points, owner ) );
+		var version = cells.Version;
+		var reads = 0;
+		Assert.AreEqual( 0, Level.RestoreLegacySavedQueue( cells, points, BellyBounceInfoId, record.Rotation + 90, hasQueue: true, owner, () => { reads++; return jungle.Park.Save; } ), "another angle is not the shipped object" );
+		Assert.AreEqual( 1, reads, "the rotation check must inspect the source" );
+		Assert.AreEqual( version, cells.Version );
 		Assert.AreEqual( 1, Level.RestoreLegacySavedQueue( cells, points, BellyBounceInfoId, record.Rotation, hasQueue: true, owner, () => jungle.Park.Save ) );
 		Assert.AreEqual( (byte)ParkCellType.Queue, cells.RawTypeAt( 52, 22 ) );
 		Assert.AreEqual( (byte)0x10, cells.LinksAt( 52, 22 ), "the front keeps its link to the entrance, which links back, and drops the -X link the path does not return" );
 		Assert.AreEqual( (byte)0, cells.LinksAt( 51, 22 ), "the player's path is not written" );
-		Assert.AreEqual( 0, Level.RestoreLegacySavedQueue( cells, points, BellyBounceInfoId, record.Rotation + 90, hasQueue: true, owner, () => jungle.Park.Save ), "another angle is not the shipped object" );
 	}
 
 	/// <summary>

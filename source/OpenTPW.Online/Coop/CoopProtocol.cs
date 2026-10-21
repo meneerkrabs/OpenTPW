@@ -340,7 +340,8 @@ public sealed record CoopHostFrame( ulong Seq, ReadOnlyMemory<byte> Payload ) : 
 		writer.Bytes( Payload.Span );
 	}
 
-	private protected override void Validate() => Require( Seq > 0, "frame number" );
+	// the largest number is never a frame, so the next one always exists
+	private protected override void Validate() => Require( Seq is > 0 and < ulong.MaxValue, "frame number" );
 }
 
 /// <summary>

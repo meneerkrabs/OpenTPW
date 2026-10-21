@@ -84,7 +84,24 @@ public sealed class CoopStore
 		}
 	}
 
-	private void Save() => AtomicFile.Write( Path.Combine( Root, "sessions.json" ), JsonSerializer.SerializeToUtf8Bytes( records.Values.ToList(), JsonOptions ) );
+	/// <summary>Whether the last write of <c>sessions.json</c> failed, so the file may hold sessions that changed or ended since.</summary>
+	public bool Unsaved
+	{
+		get
+		{
+			lock ( gate )
+				return unsaved;
+		}
+	}
+
+	private bool unsaved;
+
+	private void Save()
+	{
+		unsaved = true;
+		AtomicFile.Write( Path.Combine( Root, "sessions.json" ), JsonSerializer.SerializeToUtf8Bytes( records.Values.ToList(), JsonOptions ) );
+		unsaved = false;
+	}
 
 	// ---- join snapshots ----
 
@@ -92,12 +109,12 @@ public sealed class CoopStore
 
 	public string BlobPath( string id, string sha256 ) => Path.Combine( BlobFolder( id ), sha256 );
 
-	/// <summary>The bytes the stored snapshots take, every session together (the store's cap).</summary>
+	/// <summary>The bytes the stored snapshots take, every session together (the store's cap); an upload in progress counts by its reservation instead.</summary>
 	public long BlobBytes()
 	{
 		if ( !Directory.Exists( Blobs ) )
 			return 0;
-		return new DirectoryInfo( Blobs ).EnumerateFiles( "*", SearchOption.AllDirectories ).Sum( file => file.Length );
+		return new DirectoryInfo( Blobs ).EnumerateFiles( "*", SearchOption.AllDirectories ).Where( file => file.Extension != ".tmp" ).Sum( file => file.Length );
 	}
 
 	/// <summary>

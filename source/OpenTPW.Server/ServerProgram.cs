@@ -116,14 +116,33 @@ public static class ServerProgram
 			{
 				while ( await timer.WaitForNextTickAsync( app.Lifetime.ApplicationStopping ) )
 				{
-					coop.Sweep( DateTimeOffset.UtcNow );
-					// a login that ended elsewhere (a logout, a ban) ends its co-op connection
-					coop.CheckLogins();
+					// one failed pass (a full disk while a login's expiry is stored) must not end the sweeps
+					try
+					{
+						coop.Sweep( DateTimeOffset.UtcNow );
+						// a login that ended elsewhere (a logout, a ban) ends its co-op connection
+						coop.CheckLogins();
+					}
+					catch ( Exception exception ) when ( exception is IOException or UnauthorizedAccessException )
+					{
+						app.Logger.LogWarning( "The co-op sweep failed: {Reason}", exception.Message );
+					}
 				}
 			}
 			catch ( OperationCanceledException ) { }
 		} ) );
 		return app;
+	}
+
+	/// <summary>Whether <paramref name="range"/> resumes a download: one range from a byte after the first on (<c>bytes=N-</c>, N &gt; 0); a suffix range reads the whole file.</summary>
+	public static bool ResumesDownload( string range )
+	{
+		const string Prefix = "bytes=";
+		if ( !range.StartsWith( Prefix, StringComparison.Ordinal ) || range.Contains( ',' ) )
+			return false;
+		var dash = range.IndexOf( '-', Prefix.Length );
+		return dash > Prefix.Length && long.TryParse( range.AsSpan( Prefix.Length, dash - Prefix.Length ), System.Globalization.NumberStyles.None,
+			System.Globalization.CultureInfo.InvariantCulture, out var start ) && start > 0;
 	}
 
 	/// <summary>Typed handler so minimal APIs write the returned result (a bare HttpContext lambda would bind as RequestDelegate).</summary>
@@ -702,9 +721,8 @@ public static class ServerProgram
 
 		app.MapGet( ApiRoutes.Coop + "/{id}/snapshot/{sha256}", ( HttpContext context, string id, string sha256 ) => Guarded( context, store, true, user =>
 		{
-			// a download from the start counts against the member's downloads; a resumed range does not
-			var range = context.Request.Headers.Range.ToString();
-			var counts = range.Length == 0 || range.StartsWith( "bytes=0-", StringComparison.Ordinal );
+			// a download counts against the member's downloads unless it resumes one: a single range from a later byte on
+			var counts = !ResumesDownload( context.Request.Headers.Range.ToString() );
 			if ( !CoopProtocol.IsSessionId( id ) || !CoopProtocol.IsSha256( sha256 ) || coop.FindSnapshot( user!, id, sha256, counts ) is not { } path )
 				return Task.FromResult( Error( StatusCodes.Status404NotFound, "No such snapshot." ) );
 			FileStream file;

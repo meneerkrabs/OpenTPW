@@ -117,6 +117,7 @@ public sealed record CoasterClickCommand( int Station, int X, int Y, float Heigh
 		var issued = new CoasterToolState( Height, LoopMode, LoopPylonsLeft );
 		var track = builder.Track;
 		var closing = track.IsChainStart( X, Y );
+		// [EXT:online-coop-claims] a click on the chain start waits for the running drag: the close checks the last pylon, which a drag can hold, and the completion ends the tool every drag needs
 		if ( closing && edits.Runs( Station ) )
 		{
 			var waits = track.IsClosed ? "Cannot complete the track while a pylon is dragged." : "Cannot close the circuit while a pylon is dragged.";
@@ -146,7 +147,7 @@ public sealed record CoasterClickCommand( int Station, int X, int Y, float Heigh
 		builder.SetToolState( issued );
 		try
 		{
-			// a pylon the click places changes the pylon list (a pylon in a cut circuit's gap moves the pylons after it) and links to the last pylon: the drag running on the coaster ends first, as its
+			// [EXT:online-coop-claims] a pylon the click places changes the pylon list (a pylon in a cut circuit's gap moves the pylons after it) and links to the last pylon: the drag running on the coaster ends first, as its
 			// release would (the placement's own refusals read no pylon a drag can change, so a click that places nothing releases nothing)
 			if ( !closing && builder.Check( X, Y ) is not (CoasterPlaceResult.OutsideMap or CoasterPlaceResult.NotEditable or CoasterPlaceResult.NoLoopPylon) )
 				edits.ReleaseAll( Station );
@@ -184,7 +185,7 @@ public sealed record RemoveLastCoasterPylonCommand( int Station ) : CoasterPanel
 	{
 		if ( !builder.CanRemoveLast )
 			return ParkCommandResult.Rejected( "No pylon to take back." );
-		// a pylon list that changes under a drag would settle the drag against another pylon: every edit ends first
+		// [EXT:online-coop-claims] a pylon list that changes under a drag would settle the drag against another pylon: every edit ends first
 		edits.ReleaseAll( Station );
 		return builder.RemoveLast() ? ParkCommandResult.Ok() : ParkCommandResult.Rejected( "No pylon to take back." );
 	}
@@ -211,6 +212,7 @@ public sealed record BeginCoasterNodeEditCommand( int Station, int Node, Coaster
 	{
 		if ( builder.DragRange( Node, Drag ) is not { } range )
 			return ParkCommandResult.Rejected( $"Pylon {Node} takes no {Drag} drag." );
+		// [EXT:online-coop-claims] one drag runs on a coaster at a time, as one pointer gives in a game of one
 		if ( edits.Runs( Station, except: Player ) )
 			return ParkCommandResult.Rejected( "Another player drags a pylon of this coaster." );
 		// a drag never starts over another one: the player's edit still held ends where it stands (its pylon may share this one's stack, so the range is taken again)
@@ -326,6 +328,7 @@ public sealed record SwapCoasterStackCommand( int Station, int Node, bool Up ) :
 	{
 		if ( builder.Track.StackNeighbour( Node, Up ) < 0 )
 			return ParkCommandResult.Rejected( $"Pylon {Node} has no stack piece that way." );
+		// [EXT:online-coop-claims] the swap waits for the running drag, whose release could change the stack it was asked on
 		if ( edits.Runs( Station ) )
 			return ParkCommandResult.Rejected( "A pylon of this coaster is dragged." );
 		return builder.SwapStack( Node, Up ) ? ParkCommandResult.Ok() : ParkCommandResult.Rejected( $"Pylon {Node} has no stack piece that way." );
@@ -351,6 +354,7 @@ public sealed record CutCoasterCommand( int Station, int First, int Second ) : C
 	{
 		if ( !builder.CanCut( First, Second ) )
 			return new ParkCommandResult( false, "The circuit cannot be cut there.", CoasterTrack.CutResult.Refused );
+		// [EXT:online-coop-claims] the cut removes pylons: the running drag ends first, so it never settles against a pylon list that changed under it
 		edits.ReleaseAll( Station );
 		var result = builder.Cut( First, Second );
 		return new ParkCommandResult( result != CoasterTrack.CutResult.Refused, result == CoasterTrack.CutResult.Refused ? "The circuit cannot be cut there." : null, result );

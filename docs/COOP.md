@@ -50,8 +50,9 @@ everyone; cheats refused in a session; when the host leaves, the host role moves
 The labels: the plan's first record, made with the design decisions, says the proposed labels were
 not yet individually approved. Its later entry records the user's answer, given the same day in the
 online-presence session: every proposed `online-coop-*` label in the plan's section 4 is approved as
-named (among them `online-coop-commands`, `online-coop-permissions` and `online-coop-lockstep`, the three this code uses: the
-command layer, the rights hook and the frame-batching independence of the fixed tick), and a label outside that list is asked for separately. The
+named (among them `online-coop-commands`, `online-coop-permissions`, `online-coop-lockstep` and `online-coop-claims`, the four this
+code uses: the command layer, the rights hook, the frame-batching independence of the fixed tick, and one drag per coaster with its
+conflict rules), and a label outside that list is asked for separately. The
 Totem's commands keep the older `developer-prototype` label.
 
 ## The command layer (C1)
@@ -96,6 +97,17 @@ the issuing player's session slot (`Player`, 0 = the local player and host).
   opens, runs once the command has returned (`ParkCommands.AfterIssue`), so the commands it issues are
   logged on their own instead of hiding inside the placement. A scheduled command (a replay, a
   peer's) is not this machine's issue (`ParkCommands.IsIssuing`), and no tool follows it.
+- **A command that throws.** A run that throws (a rule the command's own checks missed: a hostile
+  peer's or a damaged log's command) is a rejection that carries the exception
+  (`ParkCommandResult.Error`), with whatever the command wrote before the throw, and is logged like any
+  other: a replay or a peer throws at the same place and stays in step, and the funnel goes on. The
+  setting and tool commands turn the park's own refusals (`InvalidOperationException` and the like)
+  into rejections; `ParkCommands.Apply` catches the rest. The executor's fuzz fails on one.
+- **No command inside a tick.** The level marks each simulation tick from after its held commands
+  applied (`ParkCommands.EnterTick`): a command issued then would apply inside tick N on this machine
+  but before tick N + 1 on a peer. The tests and a strict developer run (`OPENTPW_STRICT_COMMANDS=1`)
+  throw on one (`ParkCommands.ThrowOnIssueInTick`), so every code path that does it is found; a game of
+  one runs it at once, as it always did, and a session (C2) will refuse it.
 
 ### Settings
 
@@ -227,13 +239,14 @@ changes.
     clamp can give (an end of the range, or a value between its ends). A click in loop mode needs the
     loop button; the click tests nothing else of the panel, as the original's click handler does not.
     Every panel command needs its coaster in the tool, whose entry let the riders off.
-  - One drag runs on a coaster at a time, as one pointer gives in a game of one. A press releases the
-    player's own drag still held and waits while another player's drag runs; so do a stack swap (the
-    drag's release could change the stack it was asked on), the close (it checks the last pylon, which
-    a drag can hold) and the completion (it ends the tool every drag needs). A click that places a pylon, Backspace and the cut release the running drag first, as
-    its own release would, so no drag settles against a pylon list or a neighbour that changed under
-    it. The tool's exit ends the drags on its coaster, and a station that goes drops them unsettled
-    with its track.
+  - `[EXT:online-coop-claims]` One drag runs on a coaster at a time, as one pointer gives in a game
+    of one. A press releases the player's own drag still held and waits while another player's drag
+    runs; so do a stack swap (the drag's release could change the stack it was asked on), the close
+    (it checks the last pylon, which a drag can hold) and the completion (it ends the tool every
+    drag needs). A click that places a pylon, Backspace and the cut release the running drag first,
+    as its own release would, so no drag settles against a pylon list or a neighbour that changed
+    under it. The tool's exit ends the drags on its coaster, and a station that goes drops them
+    unsettled with its track.
   - The pylon a player is editing is the level's state (`CoasterEdits`), as the employee in hand is;
     the panel, its selection and the drag's pointer stay the issuer's. The height and loop mode a click
     carries are the issuer's panel state: the builder of a peer keeps its own, and the issuer's takes

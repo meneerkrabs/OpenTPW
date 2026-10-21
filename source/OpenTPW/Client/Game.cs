@@ -13,6 +13,8 @@ internal static class Game
 		Window.OffscreenRequested = IsOffscreenRun( args, Environment.GetEnvironmentVariable( "OPENTPW_OFFSCREEN" ) );
 		// [EXT:online-coop-commands] a strict run throws when a command is issued inside a simulation tick, which a co-op session cannot stream (docs/COOP.md, "Nested edits")
 		ParkCommands.ThrowOnIssueInTick = Environment.GetEnvironmentVariable( "OPENTPW_STRICT_COMMANDS" ) == "1";
+		if ( ParkCommands.ThrowOnIssueInTick )
+			Log.Trace( "Strict commands: a command issued inside a simulation tick throws." );
 		var tgqExportIndex = Array.IndexOf(args, "--export-tgq-png");
 		if (tgqExportIndex >= 0)
 		{

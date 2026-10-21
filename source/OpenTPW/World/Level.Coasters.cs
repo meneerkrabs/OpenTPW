@@ -364,8 +364,8 @@ public partial class Level
 	{
 		if ( ResolveCommandObject( attraction ) is not { Runtime.Coaster: { } ride } station )
 			return ParkCommandResult.Rejected( $"Attraction {attraction} is no coaster station." );
-		// the panel's own close releases its drag first (CoasterToolPanel.Close); an edit the command finds is a peer's, which the being-edited mark the exit clears ends too (it is the coaster's, not
-		// the player's: docs/COOP.md, "Known limits")
+		// [EXT:online-coop-claims] the panel's own close releases its drag first (CoasterToolPanel.Close); an edit the command finds is a peer's, which the being-edited mark the exit clears ends too
+		// (it is the coaster's, not the player's: docs/COOP.md, "Known limits")
 		CoasterEdits.ReleaseAll( attraction );
 		SetBeingEdited( station, false );
 		if ( ride.State == CoasterControllerState.Built )

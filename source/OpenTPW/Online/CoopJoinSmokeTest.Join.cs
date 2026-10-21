@@ -21,6 +21,11 @@ internal sealed partial class CoopJoinSmokeTest
 	private long paceFrame;
 	private int stepFrame;
 	private List<Entity>? frontEndScene;
+	/// <summary>The front end's entities when the join began: no build may add to them or take from them.</summary>
+	private HashSet<Entity>? frontEndEntities;
+	/// <summary>The frames the first (wrong) capture's build ran, and the frames the second's has run: the second is abandoned half way, by a newer assignment.</summary>
+	private int firstBuildFrames, secondBuildFrames;
+	private bool abandonedMidBuild;
 	private Level? firstPark;
 	private int requestsAnswered;
 	private string? scriptFailure;
@@ -66,6 +71,7 @@ internal sealed partial class CoopJoinSmokeTest
 				if ( frame < WarmUpFrames )
 					return;
 				Require( flow.Level == null && flow.Menu != null, "the game stands in the front end" );
+				frontEndEntities = Entity.All.ToHashSet();
 				joinSession = flow.JoinSharedPark( replay, () => true );
 				Require( flow.HeldJoin == joinSession, "the game holds the join it started" );
 				Advance( JoinStep.Joining );
@@ -86,10 +92,21 @@ internal sealed partial class CoopJoinSmokeTest
 			switch ( joinStep )
 			{
 				case JoinStep.Joining:
+					if ( flow.Level == null )
+					{
+						// every build runs set aside: the front end stays the live scene, whole, and no entity of a build (one abandoned included) is left in it
+						Require( ReferenceEquals( Entity.All, frontEndScene ) && Level.Current == null && flow.Menu != null, "the build runs beside the live front end" );
+						Require( Entity.All.Count == frontEndEntities!.Count && Entity.All.All( frontEndEntities.Contains ), "no entity of a build is in the front end's scene" );
+						if ( session.IsBuilding && requestsAnswered == 1 )
+							firstBuildFrames++;
+						else if ( session.IsBuilding && requestsAnswered == 2 && !abandonedMidBuild && ++secondBuildFrames >= Math.Max( 2, firstBuildFrames / 2 ) )
+							ReassignMidBuild();
+					}
 					if ( session.Phase == CoopGuestPhase.Following && flow.Level != null )
 					{
-						// the first answer's wrong digest failed its check at the cut; the second built and swapped in
-						Require( requestsAnswered == 2 && session.FailedJoins == 1, $"one failed check before the swap ({session.FailedJoins} failed joins, {requestsAnswered} answers)" );
+						// the first answer's wrong digest failed its check at the cut; the second's build was abandoned half way for a newer assignment; the third built and swapped in
+						Require( requestsAnswered == 2 && session.FailedJoins == 1 && abandonedMidBuild,
+							$"one failed check and one abandoned build before the swap ({session.FailedJoins} failed joins, {requestsAnswered} answers, abandoned {abandonedMidBuild})" );
 						Require( ReferenceEquals( flow.Level, session.Level ) && flow.HeldJoin == null && flow.Menu == null && flow.Hud != null, "the join's park is the game's, with its HUD" );
 						Require( frontEndScene != null && frontEndScene.Count == 0 && !ReferenceEquals( Entity.All, frontEndScene ), "the swap retired the front end's scene" );
 						Require( flow.Level!.IsCoopGuestPark && flow.Level.CoopSession == session, "a guest's park in the session" );
@@ -128,15 +145,16 @@ internal sealed partial class CoopJoinSmokeTest
 					Require( stream.Checks == expected && expected > 0, $"the followed stream compared every checkpoint of its frames ({stream.Checks} of {expected})" );
 					joinSteps.Add( $"followed to the second cut, {stream.Checks} checkpoints compared" );
 					// the host assigns the member the second capture (it asked for one), then answers it once uploaded
-					Answer( new CoopSnapshotAssigned( resync.Assigned ) { Generation = 3 } );
-					var payload = Rewrite( File.ReadAllBytes( Path.Combine( evidenceDirectory, resync.File ) ), 3 );
+					Answer( new CoopSnapshotAssigned( resync.Assigned ) { Generation = ResyncGeneration } );
+					var payload = Rewrite( File.ReadAllBytes( Path.Combine( evidenceDirectory, resync.File ) ), ResyncGeneration );
 					var sha = replay.Serve( payload );
-					pendingAnswers.Add( (resync.ReadyHostFrame, new CoopSnapshotReady( resync.Records, resync.Ticks, resync.Frame, resync.Digest, resync.WorldHash, sha, payload.Length ) { Generation = 3 }) );
+					pendingAnswers.Add( (resync.ReadyHostFrame, new CoopSnapshotReady( resync.Records, resync.Ticks, resync.Frame, resync.Digest, resync.WorldHash, sha, payload.Length )
+						{ Generation = ResyncGeneration }) );
 					Advance( JoinStep.Resyncing );
 					return;
 				}
 				case JoinStep.Resyncing:
-					if ( session.Phase == CoopGuestPhase.Following && session.GuestStream?.Generation == 3 )
+					if ( session.Phase == CoopGuestPhase.Following && session.GuestStream?.Generation == ResyncGeneration )
 					{
 						Require( !ReferenceEquals( flow.Level, firstPark ) && ReferenceEquals( flow.Level, session.Level ) && flow.Hud != null, "the resync swapped the host's park in over the old one" );
 						Require( session.FailedJoins == 1, "the resync was no failed join" );
@@ -167,6 +185,24 @@ internal sealed partial class CoopJoinSmokeTest
 		{
 			Fail( error );
 		}
+	}
+
+	/// <summary>The generation of the second capture's resync: after the wrong first, the abandoned second and the third that is swapped in.</summary>
+	private const uint ResyncGeneration = 4;
+
+	/// <summary>
+	/// The host assigns the member a newer capture of the same cut while the second's build runs (half as long as the first's took): the session abandons that build part way, and the
+	/// third is built and swapped in.
+	/// </summary>
+	private void ReassignMidBuild()
+	{
+		abandonedMidBuild = true;
+		var cut = hostEvidence.Cuts[0];
+		var payload = Rewrite( File.ReadAllBytes( Path.Combine( evidenceDirectory, cut.File ) ), 3 );
+		var sha = replay.Serve( payload );
+		Answer( new CoopSnapshotAssigned( cut.Assigned ) { Generation = 3 } );
+		Answer( new CoopSnapshotReady( cut.Records, cut.Ticks, cut.Frame, cut.Digest, cut.WorldHash, sha, payload.Length ) { Generation = 3 } );
+		joinSteps.Add( $"a newer assignment abandoned the next build {secondBuildFrames} frames in (the first took {firstBuildFrames})" );
 	}
 
 	/// <summary>Sends a host message, kept as the generation's last assignment or answer.</summary>

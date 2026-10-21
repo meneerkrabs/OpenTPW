@@ -96,6 +96,12 @@ public static class ModStartup
 	}
 
 	/// <summary>
+	/// Whether a run ignores the saved choices and the configuration folder's mods: the smoke tests, and [EXT:online-coop-snapshot-join] the native co-op join smoke, whose two phases
+	/// must run the same simulation mods (the default extensions) whatever the developer's <c>mods.json</c> holds.
+	/// </summary>
+	internal static bool IgnoresSavedChoices( string[] args ) => args.Contains( "--smoke-test" ) || args.Contains( "--coop-join-smoke" );
+
+	/// <summary>
 	/// The desktop startup: <c>--mod-dir</c>, <c>OPENTPW_MOD_DIRS</c>, <c>&lt;config&gt;/mods</c> and
 	/// <c>&lt;program&gt;/content/mods</c>, the saved choices, then <c>--disable-extension</c>. Smoke tests ignore the
 	/// saved choices and the configuration folder's mods, like the compatibility settings.
@@ -106,7 +112,7 @@ public static class ModStartup
 	/// <summary><see cref="Initialize(string[], Action{string}, Action{string})"/> with explicit <c>OPENTPW_MOD_DIRS</c> and program folder (tests).</summary>
 	internal static ModSet Initialize( string[] args, Action<string> trace, Action<string> warning, string? modDirsEnvironment, string? programDirectory )
 	{
-		var smokeTest = args.Contains( "--smoke-test" );
+		var smokeTest = IgnoresSavedChoices( args );
 		var configDirectory = Path.GetDirectoryName( DisplaySettings.GetDefaultPath() )!;
 		var diagnostics = new List<string>();
 		var settings = smokeTest ? ModSettings.Default : ModSettings.Load( ModSettings.GetDefaultPath(), diagnostics );

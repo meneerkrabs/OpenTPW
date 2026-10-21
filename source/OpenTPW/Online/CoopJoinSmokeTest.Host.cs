@@ -35,7 +35,6 @@ internal sealed partial class CoopJoinSmokeTest
 	private (ObjectCatalogEntry Entry, int X, int Y, int Rotation)? carried;
 	/// <summary>The tour ride the second cut buys while paused, and where (researched, with the golden ticket it needs, before the park is shared).</summary>
 	private (ObjectCatalogEntry Entry, int X, int Y)? tourSite;
-	private bool pools;
 	private ParkEconomy Economy => level.Park!.Economy;
 
 	private void StartHost()
@@ -182,6 +181,7 @@ internal sealed partial class CoopJoinSmokeTest
 		HireStaff();
 		BuildPools( used );
 		PrepareTour( used );
+		BuildWaterRide( used );
 		MoveUnderNegativeBalance();
 		if ( !Economy.IsParkOpen )
 			Economy.OpenPark();
@@ -281,18 +281,17 @@ internal sealed partial class CoopJoinSmokeTest
 	}
 
 	/// <summary>
-	/// [EXT:pools] A pool of 6 x 4 cells near the paths with a lazy river round it, its changing room, the water attractions, a slide and a bridge, and swimmers in it: the park-resume smoke's
-	/// pools fixture, built before the park is shared (the pools extension is on by default; without it the park has none).
+	/// [EXT:pools] A pool of 6 x 3 cells near the paths with a lazy river round it, its changing room, the water attractions, a slide, a bridge over it and swimmers in it: the
+	/// park-resume smoke's pools fixture, three cells deep so a bridge spans it, built before the park is shared.
 	/// </summary>
 	private void BuildPools( HashSet<(int, int)> used )
 	{
-		if ( !FeatureGates.Pools || level.PoolBuilder is not { } builder )
-		{
-			Log.Trace( "Co-op join smoke: the pools extension is off; the park has no pool." );
-			return;
-		}
+		// the smoke runs with the default extensions (ModStartup), so the pools extension is on in both phases
+		Require( FeatureGates.Pools && level.PoolBuilder != null, "the pools extension is on" );
+		var builder = level.PoolBuilder!;
 		var focus = OriginalParkPlacement.TryGetCell( level.OriginalPark!.Heightfield, level.PathFocus.X, level.PathFocus.Y, out var focusX, out var focusY ) ? (X: focusX, Y: focusY) : (X: 64, Y: 64);
-		var shape = PoolBuilder.Rectangle( (0, 0), (5, 3) ).ToArray();
+		// three cells deep: a bridge spans three water cells (Level.BuildDebugPoolBridge)
+		var shape = PoolBuilder.Rectangle( (0, 0), (5, 2) ).ToArray();
 		var grid = level.Objects.Grid;
 		var origin = Enumerable.Range( 0, grid.Width * grid.Height ).Select( index => (X: index % grid.Width, Y: index / grid.Width) )
 			.OrderBy( cell => Math.Abs( cell.X - focus.X ) + Math.Abs( cell.Y - focus.Y ) ).ThenBy( cell => cell.Y ).ThenBy( cell => cell.X )
@@ -301,7 +300,7 @@ internal sealed partial class CoopJoinSmokeTest
 		Require( origin != null, "find a free site for a pool near the paths" );
 		var cells = shape.Select( offset => (X: origin!.Value.X + offset.X, Y: origin.Value.Y + offset.Y) ).ToArray();
 		Require( builder.PaintCells( cells ).Completed, "paint the pool through the pool builder" );
-		foreach ( var cell in cells.Where( cell => cell.X == origin!.Value.X || cell.X == origin.Value.X + 5 || cell.Y == origin.Value.Y || cell.Y == origin.Value.Y + 3 ) )
+		foreach ( var cell in cells.Where( cell => cell.X == origin!.Value.X || cell.X == origin.Value.X + 5 || cell.Y == origin.Value.Y || cell.Y == origin.Value.Y + 2 ) )
 			level.Guests!.Grid.Cells.SetFlags( cell.X, cell.Y, ParkCellFlags.PoolRiver );
 		var room = level.BuildChangingRoomBeside( cells );
 		Require( room != null, "build a changing room beside the pool" );
@@ -313,9 +312,8 @@ internal sealed partial class CoopJoinSmokeTest
 			for ( var mx = -4; mx <= 4; mx++ )
 				for ( var my = -4; my <= 4; my++ )
 					used.Add( (cell.X + mx, cell.Y + my) );
-		pools = true;
-		Log.Trace( $"Co-op join smoke: a pool of {cells.Length} cells at {origin}, {attractions.Count} water attraction(s), a slide {(tower != null ? "built" : "refused")}, "
-			+ $"a bridge {(bridge != null ? "built" : "refused")}, {swimmers} swimmer(s)." );
+		Require( tower != null && bridge != null && swimmers > 0, $"the pool has its slide, a bridge and swimmers (slide {tower != null}, bridge {bridge != null}, {swimmers} swimmers)" );
+		Log.Trace( $"Co-op join smoke: a pool of {cells.Length} cells at {origin}, {attractions.Count} water attraction(s), a slide, a bridge, {swimmers} swimmer(s)." );
 	}
 
 	/// <summary>
@@ -388,6 +386,8 @@ internal sealed partial class CoopJoinSmokeTest
 	/// <summary>Before the first cut: an employee in hand, a pending hire, a carried Move entry and the coaster tool open on the second coaster, all by the tools' commands.</summary>
 	private void StageFirstCut()
 	{
+		// first: entering the track tool cancels the staff placement, which holds the hand and the hire staged below
+		CutWaterTrack();
 		var hands = level.StaffHands!;
 		foreach ( var member in Economy.Staff.Members.ToArray() )
 			if ( level.Commands.Issue( new PickUpStaffCommand( member.Id ) ).Accepted )
@@ -431,6 +431,7 @@ internal sealed partial class CoopJoinSmokeTest
 		if ( park.Guests?.Grid.Cells is { } map && Enumerable.Range( 0, map.Width * map.Height ).Any( index => map.TypeAt( index % map.Width, index / map.Width ) == ParkCellType.PoolWater
 			&& map.FlagsAt( index % map.Width, index / map.Width ).HasFlag( ParkCellFlags.PoolRiver ) ) ) staged.Add( "pool with a river" );
 		if ( UnlinkedEntrance( park ) ) staged.Add( "entrance without its link" );
+		staged.AddRange( WaterStagedAtCut( park ) );
 		if ( park.PoolSlides?.Slides.Any() == true ) staged.Add( "slide" );
 		if ( park.PoolBridges?.Count > 0 ) staged.Add( "bridge" );
 		if ( park.Guests?.Guests.Any( guest => guest.IsSwimming ) == true ) staged.Add( "swimmers" );
@@ -447,6 +448,7 @@ internal sealed partial class CoopJoinSmokeTest
 		if ( !level.Commands.Issue( new PlaceObjectCommand( ParkCommandCodec.EntryKey( entry ), click.X, click.Y, rotation, Moving: true ) ).Accepted )
 			Log.Trace( "Co-op join smoke: the carried object stays in the hand (its place was taken meanwhile)." );
 		Issue( new EndCoasterToolCommand( coasters[1].Visitors.AttractionId ), "the coaster tool closes" );
+		MendWaterTrack();
 	}
 
 	/// <summary>
@@ -462,6 +464,7 @@ internal sealed partial class CoopJoinSmokeTest
 		Issue( new EndCoasterToolCommand( coaster.Visitors.AttractionId ), "the coaster tool closes, the coaster built" );
 		Issue( new SetAttractionOpenCommand( coaster.Visitors.AttractionId, false ), "the built coaster is closed" );
 		Require( !coaster.IsOpen && coaster.Runtime.Coaster is { BeingEdited: false, State: CoasterControllerState.Built }, "a coaster closed while built, its tool not open" );
+		SellAddOnOffTheTrack();
 		// a tour ride bought while paused: its script has not run, so it has no controller yet (C5)
 		var (entry, x, y) = tourSite!.Value;
 		Issue( new PlaceObjectCommand( ParkCommandCodec.EntryKey( entry ), x, y, 0 ), "the tour ride is bought while paused" );
@@ -511,10 +514,10 @@ internal sealed partial class CoopJoinSmokeTest
 		var staged = pendingStaged ?? throw new InvalidOperationException( "Native co-op join smoke test failed: the capture's cut was seen." );
 		pendingStaged = null;
 		string[] expected = number == 1
-			? new[] { "employee in hand", "pending hire", "carried Move entry", "coaster tool open", "session clock", "several coasters", "entrance without its link" }
-			: new[] { "session clock", "several coasters", "paused with edits since its last tick", "built coaster closed", "tour ride without a live tour", "entrance without its link" };
-		if ( pools )
-			expected = expected.Append( "pool with a river" ).ToArray();
+			? new[] { "employee in hand", "pending hire", "carried Move entry", "coaster tool open", "session clock", "several coasters", "entrance without its link",
+				"water track cut open after a Backspace", "pool with a river", "slide", "bridge", "swimmers" }
+			: new[] { "session clock", "several coasters", "paused with edits since its last tick", "built coaster closed", "tour ride without a live tour", "entrance without its link",
+				"add-on sold off a track", "pool with a river", "slide", "bridge" };
 		Require( expected.All( staged.Contains ), $"cut {number} holds what was staged for it (held: {string.Join( ", ", staged )})" );
 		var file = $"capture-{number}.otpwjoin";
 		File.WriteAllBytes( Path.Combine( evidenceDirectory, file ), payload! );

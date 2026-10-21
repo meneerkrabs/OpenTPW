@@ -211,6 +211,14 @@ public class CoopJoinTests
 		Assert.IsFalse( bindings.ContainsKey( host.One ) );
 		bindings[host.One] = record;
 
+		// reading the drags makes no set of them on this machine alone, and a set that is empty hashes as none
+		Assert.IsNull( typeof( Level ).GetField( "coasterEdits", BindingFlags.Instance | BindingFlags.NonPublic )!.GetValue( host.Level ) );
+		Assert.IsFalse( host.Level.CoasterDragHeld );
+		Assert.IsNull( typeof( Level ).GetField( "coasterEdits", BindingFlags.Instance | BindingFlags.NonPublic )!.GetValue( host.Level ), "the capture's check made no set" );
+		var unread = CoopDigest.Compute( host.Level );
+		_ = host.Level.CoasterEdits;
+		Assert.AreEqual( unread, CoopDigest.Compute( host.Level ), "a set made by a read changes no digest" );
+
 		// a held coaster drag waits: its edited pylon is no part of the save
 		var held = (System.Collections.IDictionary)typeof( CoasterEdits ).GetField( "edits", BindingFlags.Instance | BindingFlags.NonPublic )!.GetValue( host.Level.CoasterEdits )!;
 		held.Add( 0, null );

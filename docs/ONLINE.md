@@ -476,8 +476,10 @@ no screen or park uses it yet (C2b to C2d).
   release or mods changed while it was away cannot resume: it leaves (a host's change ends the
   session). A message to one member is delivered at most once (C2b asks again after a resume).
 - **Join snapshots** `[EXT:online-coop-snapshot-join]`. The host uploads the park a joiner starts from
-  (`PUT /api/v1/coop/{id}/snapshot`, the answer names its SHA-256) and its members download it by
-  digest (`GET …/snapshot/{sha256}`); the newest two are kept, and they go with the session.
+  (`PUT /api/v1/coop/{id}/snapshot`, the answer names its SHA-256; a limit of the session's own, 60 an
+  hour) and its members download it by digest (`GET …/snapshot/{sha256}`, resumable with a range); the
+  newest two are kept, and they go with the session. The game's side is in [COOP.md](COOP.md),
+  "Joining a running session".
 - **Limits.** A host may send far more than a guest, and an account's limits carry over a reconnect;
   per account the server counts sessions started, joins (and codes that matched no session),
   invitations, removals and downloads from the start of a snapshot. A slow reader is cut off (it

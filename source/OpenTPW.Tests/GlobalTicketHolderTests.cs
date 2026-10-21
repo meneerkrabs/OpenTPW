@@ -230,7 +230,9 @@ public class GlobalTicketHolderTests
 				var shared = true;
 				var runtime = ParkEconomyRuntime.ForResume( EconomyTestData.Park(), ParkStartKind.FullSimulation );
 				using var owner = new PlayerProgressRuntimeOwner( path, "space", PlayerTicketFile.ReadIfPresent( path )!, runtime, () => true, _ => Assert.Fail(), () => shared );
-				owner.Pump();
+				// the session started after the owner's last pump: the park is outside its player's progress from its first tick
+				Assert.AreEqual( GlobalTicketOutcome.Unmanaged, runtime.Economy.Objectives.GlobalTicketAuthority!( GoldenTicketKind.CoasterHeight, 500 ), "no player-wide rule in a session" );
+				Assert.AreEqual( held, owner.Ledger.HolderOf( GoldenTicketKind.CoasterHeight ) );
 				var peer = EconomyTestData.Park();
 				foreach ( var economy in new[] { runtime.Economy, peer } )
 				{
@@ -249,6 +251,22 @@ public class GlobalTicketHolderTests
 				var holder = PlayerTicketFile.LoadIfPresent( path )!.HolderOf( GoldenTicketKind.CoasterHeight );
 				Assert.AreEqual( keeps ? new GlobalTicketHolder( GoldenTicketKind.CoasterHeight, "space", 140 ) : held, holder );
 				held = holder!;
+			}
+
+			// a global ticket the park held before the session is no session win: the hand-back leaves it alone
+			{
+				var shared = true;
+				var economy = EconomyTestData.Park();
+				var objectives = economy.Objectives;
+				typeof( ParkObjectives ).GetField( "tickets", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic )!.GetValue( objectives )!
+					.GetType().GetMethod( "Add" )!.Invoke( typeof( ParkObjectives ).GetField( "tickets", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic )!.GetValue( objectives ),
+						new object[] { GoldenTicketKind.CoasterHeight } );
+				var runtime = ParkEconomyRuntime.ForResume( economy, ParkStartKind.FullSimulation );
+				using var owner = new PlayerProgressRuntimeOwner( path, "hallow", PlayerTicketFile.ReadIfPresent( path )!, runtime, () => true, _ => Assert.Fail(), () => shared );
+				owner.Pump();
+				shared = false;
+				owner.Pump();
+				Assert.IsTrue( economy.Objectives.GoldenTickets.Contains( GoldenTicketKind.CoasterHeight ), "a ticket from before the session stays" );
 			}
 		}
 		finally { Directory.Delete( root, true ); }

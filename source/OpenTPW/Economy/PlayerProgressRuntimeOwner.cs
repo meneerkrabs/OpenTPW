@@ -59,6 +59,7 @@ internal sealed class PlayerProgressRuntimeOwner : IDisposable
 		// [EXT:online-coop-snapshot-join] a shared park's global wins are noted, outside the simulation, for the hand-back; the event comes in the check's own tick
 		if ( reclaimPending || shared?.Invoke() == true )
 		{
+			reclaimPending = true;
 			if ( item.Kind == ParkEventKind.GoldenTicketWon && item.Amount is >= 0 and <= int.MaxValue && PlayerTicketLedger.IsGlobal( (GoldenTicketKind)item.Amount ) )
 				wonInSession[(GoldenTicketKind)item.Amount] = runtime.Economy.GlobalTicketRecord( (GoldenTicketKind)item.Amount );
 			return;

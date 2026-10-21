@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
+using System.Threading.Tasks;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using OpenTPW.Online.Coop;
 
@@ -36,7 +37,10 @@ public class CoopJoinSessionTests
 	{
 		public Level? Level { get; set; }
 		public List<Entity> Entities { get; set; } = new();
+		/// <summary>The in-memory link (the tests' controls); a member of the real links has none.</summary>
 		public CoopTestNetwork.Member Link { get; init; } = null!;
+		/// <summary>The real link's pump (its online session's), which raises what arrived; null for the in-memory link.</summary>
+		public Action? Pump { get; init; }
 		public CoopSession? Session { get; set; }
 		public ReplayJoin? Join { get; set; }
 		/// <summary>The host's park holds (its time scale 0) while the guests catch up at the end.</summary>
@@ -55,7 +59,10 @@ public class CoopJoinSessionTests
 		public void Frame( double seconds )
 		{
 			Enter();
-			Link.Deliver();
+			if ( Pump != null )
+				Pump();
+			else
+				Link.Deliver();
 			Session?.Step();
 			Enter();
 			if ( Level == null )
@@ -79,6 +86,8 @@ public class CoopJoinSessionTests
 		public int Builds { get; private set; }
 		/// <summary>Breaks the next builds (a failed check), while set.</summary>
 		public bool Breaks { get; set; }
+		/// <summary>Builds parks that differ from the host's at the cut, while set (a restore that misses something).</summary>
+		public bool Drifts { get; set; }
 
 		public Level Build( CoopJoinPayload payload )
 		{
@@ -86,6 +95,8 @@ public class CoopJoinSessionTests
 			if ( Breaks )
 				throw new System.IO.InvalidDataException( "A broken build." );
 			var (level, list) = tests.Twin( payload );
+			if ( Drifts )
+				level.Park!.Economy.Ledger.Post( LedgerCategory.OtherIncome, 1 );
 			candidates[level] = list;
 			return level;
 		}
@@ -293,7 +304,8 @@ public class CoopJoinSessionTests
 	[TestMethod]
 	public void ALateJoinerGetsTheHostsParkAndFollowsIt()
 	{
-		Hosted();
+		// a following guest's acknowledgements let the host trim its history: the joiner's frames from the cut stay for it
+		var other = Hosted( 1 ).Single();
 		Assert.IsTrue( host.Issue( new SetGameSpeedCommand( GameSpeed.Fast ) ).Accepted );
 		Build( 240, 3 );
 		var joiner = Joiner();
@@ -310,7 +322,8 @@ public class CoopJoinSessionTests
 		Assert.IsTrue( joiner.Level!.IsCoopGuestPark && joiner.Level.CoopSession == joiner.Session, "a guest's park from its build" );
 		Assert.AreEqual( 1u, joiner.Session.GuestStream!.Generation );
 		Build( 300, 4 );
-		CatchUpAndCompare( joiner );
+		Assert.IsTrue( host.Session.HostStream.OldestFrame > 1, "the host trimmed its history" );
+		CatchUpAndCompare( joiner, other );
 		Assert.IsNull( host.Session.HostStream.JoinWindowOf( joiner.Link.Id ), "caught up: an ordinary following guest" );
 		Assert.IsTrue( host.Session.HostStream.WaitedFor.Contains( joiner.Link.Id ) );
 		Assert.IsNull( joiner.Link.LeftWith );
@@ -356,6 +369,80 @@ public class CoopJoinSessionTests
 		Assert.AreEqual( 1, host.Session!.HostStream!.CapturesTaken, "a re-ask gets the outstanding answer again, not a new capture" );
 		Assert.IsTrue( joiner.Link.Sent.Count( sent => sent.Message is CoopSnapshotRequest ) >= 2 );
 		Build( 120, 8 );
+		CatchUpAndCompare( joiner );
+	}
+
+	[TestMethod]
+	public void AnOutstandingAssignmentIsRepeatedOnAReconnectOnTheHostsResumeAndToAnOldStream()
+	{
+		var guest = Hosted( 1 ).Single();
+		Build( 60, 22 );
+		int Assignments() => host.Link.Sent.Count( sent => sent.To == guest.Link.Id && sent.Message is CoopSnapshotAssigned );
+		// the guest's park desyncs; every assignment the host sends it is lost while it stays away and comes back
+		guest.Link.DropMessage = ( from, payload ) => from == host.Link.Id && CoopStreamMessage.Decode( payload ) is CoopSnapshotAssigned && Assignments() <= 3;
+		network.TransferSeconds = 20;
+		guest.Enter();
+		guest.Economy.Ledger.Post( LedgerCategory.OtherIncome, 1 );
+		RoundsUntil( () => host.Session!.HostStream!.GenerationOf( guest.Link.Id ) == 1, "the host assigned the guest a capture" );
+		var sent = Assignments();
+		// the old stream's reports (generation 0) are answered with the assignment, at most once a second
+		Rounds( 150 );
+		Assert.IsTrue( Assignments() > sent && Assignments() <= sent + 3, $"repeated to the old stream: {Assignments() - sent}" );
+		// the guest's machine runs no frames now, so neither its re-asks nor its old stream's reports bring the repeats
+		guest.Frozen = true;
+		Rounds( 120 );
+		sent = Assignments();
+		guest.Link.Drop();
+		Rounds( 10 );
+		guest.Link.Resume();
+		Rounds( 5 );
+		Assert.AreEqual( sent + 1, Assignments(), "repeated on the guest's reconnect" );
+		sent = Assignments();
+		host.Link.Drop();
+		Rounds( 10 );
+		host.Link.Resume();
+		Rounds( 5 );
+		Assert.AreEqual( sent + 1, Assignments(), "repeated on the host's own resume" );
+		guest.Frozen = false;
+		RoundsUntil( () => guest.Session!.GuestStream!.Generation == 1, "the guest swapped the capture in", 20000 );
+		Assert.AreEqual( 1, host.Session!.HostStream!.CapturesTaken );
+		CatchUpAndCompare( guest );
+	}
+
+	[TestMethod]
+	public void AFollowingGuestAssignedACaptureStopsItsOldParkUntilTheSwap()
+	{
+		var guest = Hosted( 1 ).Single();
+		Build( 60, 24 );
+		network.TransferSeconds = 2;
+		// the host assigns the following guest a capture (a request that reports a failure its park never had)
+		guest.Link.Send( host.Link.Id, new CoopSnapshotRequest( 0, CoopSnapshotReason.FailedCheck, null ).Encode() );
+		var old = guest.Level!;
+		RoundsUntil( () => guest.Session!.Assigned == 1, "assigned" );
+		Assert.IsTrue( guest.Session!.GuestStream!.Silenced && guest.Session.GuestStream.Stopped );
+		Assert.AreEqual( CoopGuestPhase.Resyncing, guest.Session.Phase );
+		var ticks = old.TickCount;
+		Rounds( 60 );
+		Assert.AreSame( old, guest.Level, "still the old park while the capture is on its way" );
+		Assert.AreEqual( ticks, old.TickCount, "the old park stands still" );
+		Assert.IsFalse( guest.Issue( new SetEntranceFeeCommand( 3 ) ).Accepted, "and its clicks are refused" );
+		RoundsUntil( () => guest.Level != old, "swapped" );
+		CatchUpAndCompare( guest );
+	}
+
+	[TestMethod]
+	public void ACandidateThatDiffersAtTheCutIsAFailedJoinAndNeverFollowed()
+	{
+		Hosted();
+		Build( 60, 23 );
+		var joiner = Joiner();
+		joiner.Join!.Drifts = true;
+		RoundsUntil( () => joiner.Session!.FailedJoins == 1, "the first candidate failed its check" );
+		Assert.IsNull( joiner.Level, "a candidate that differs from the host's park at the cut is never swapped in" );
+		Assert.IsTrue( joiner.Link.Sent.Any( sent => sent.Message is CoopSnapshotRequest { Reason: CoopSnapshotReason.FailedCheck } ) );
+		joiner.Join.Drifts = false;
+		RoundsUntil( () => joiner.Level != null, "the next capture builds right", 20000 );
+		Assert.AreEqual( (2, 2), (host.Session!.HostStream!.CapturesTaken, joiner.Join.Builds) );
 		CatchUpAndCompare( joiner );
 	}
 
@@ -427,6 +514,9 @@ public class CoopJoinSessionTests
 		Rounds( 10 );
 		joiner.Link.Resume();
 		Rounds( 60 );
+		// a waiting request that names the generation it follows gets that answer again, never a new capture
+		joiner.Link.Send( host.Link.Id, new CoopSnapshotRequest( 1, CoopSnapshotReason.NoAnswer, null ) { Generation = 1 }.Encode() );
+		Rounds( 60 * 15 );
 		Assert.AreEqual( (1, 1), (host.Session.HostStream.CapturesTaken, joiner.Join!.Builds) );
 		Assert.AreSame( level, joiner.Level );
 		Assert.IsFalse( joiner.Session!.GuestStream!.Silenced );
@@ -549,5 +639,65 @@ public class CoopJoinSessionTests
 		guest.Link.Send( host.Link.Id, new CoopSnapshotRequest( 5, CoopSnapshotReason.Desync, null ).Encode() );
 		RoundsUntil( () => guest.Session!.EndedWith != null, "the guest heard it is out of step" );
 		Assert.AreEqual( 0, host.Session!.HostStream!.CapturesTaken );
+	}
+
+	[TestMethod]
+	public async Task ALateJoinerIsServedThroughTheRealLinksAndTheServersSnapshotStore()
+	{
+		await CoopLinkTests.WithServer( async ( server, players ) =>
+		{
+			var hostPlayer = await players.Add( server, "Hostess" );
+			var joinPlayer = await players.Add( server, "Latecomer", firstFrame: true );
+			await CoopLinkTests.Open( hostPlayer, joinPlayer );
+			var state = await CoopLinkTests.Share( hostPlayer );
+			var (level, list) = NewPark();
+			host = new Peer { Level = level, Entities = list, Pump = hostPlayer.Session.Pump };
+			peers.Add( host );
+			host.Enter();
+			hostLogStart = level.Commands.Log.Count;
+			host.Session = CoopSession.Host( level, hostPlayer.Link, () => clock, HostTime );
+			host.Session.HostStream!.CaptureSliceBudget = TimeSpan.FromMilliseconds( 50 );
+			async Task Frames( int count, Func<bool>? until = null, string what = "" )
+			{
+				var deadline = DateTime.UtcNow + OnlineIntegrationTests.Deadline;
+				for ( var round = 0; round < count || (until != null && !until()); round++ )
+				{
+					Assert.IsTrue( DateTime.UtcNow < deadline, $"{what}: the host took {host.Session!.HostStream!.CapturesTaken} captures; {string.Join( "; ", peers.Select( peer => $"{peer.Session?.Phase} {peer.Session?.EndedWith}" ) )}" );
+					if ( round % 40 == 7 )
+						host.Issue( new LayLineCommand( CellToolMode.Path, -1, 4 + round % 6, 20, 4 + round % 6, 26 ) );
+					clock += 1 / 60.0;
+					foreach ( var peer in peers.ToArray() )
+						peer.Frame( 1 / 60.0 );
+					await Task.Delay( 2 );
+				}
+			}
+			await Frames( 120 );
+
+			// a player joins the running session with its code: the host's capture goes up to the server and comes down to the joiner over HTTP
+			Assert.IsTrue( joinPlayer.Link.Join( state.Code ) );
+			await CoopLinkTests.Until( () => joinPlayer.Link.Session != null, "the joiner to join", joinPlayer, hostPlayer );
+			var joiner = new Peer { Pump = joinPlayer.Session.Pump };
+			peers.Add( joiner );
+			joiner.Join = new ReplayJoin( this, joiner );
+			joiner.Session = CoopSession.JoinRunning( joinPlayer.Link, joiner.Join, () => clock );
+			await Frames( 0, () => joiner.Level != null, "the joiner swapped its capture in" );
+			Assert.AreEqual( 1, host.Session.HostStream.CapturesTaken );
+			Assert.AreEqual( CoopGuestPhase.Following, joiner.Session.Phase );
+			await Frames( 180 );
+
+			// the host holds until the joiner stands at its tick with every record applied
+			host.Holds = true;
+			hostTimeFrozenAt = clock;
+			await Frames( 0, () => joiner.Level!.TickCount == host.Level.TickCount && joiner.Session.GuestStream!.LastRecord == host.Session.HostStream.LastRecord
+				&& joiner.Level.Commands.ScheduledCount == 0, "the joiner caught up" );
+			hostTimeFrozenAt = null;
+			host.Enter();
+			var digest = CoopDigest.Compute( host.Level, out var world );
+			joiner.Enter();
+			Assert.AreEqual( digest, CoopDigest.Compute( joiner.Level!, out var joinerWorld ) );
+			Assert.AreEqual( world, joinerWorld );
+			Assert.IsNull( joiner.Session.GuestStream!.Desync );
+			Assert.IsTrue( joiner.Session.GuestStream.Checks >= 1, "the joiner compared the host's digests after its join" );
+		} );
 	}
 }

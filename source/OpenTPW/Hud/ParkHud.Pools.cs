@@ -109,8 +109,8 @@ public sealed partial class ParkHud
 			return false;
 		}
 		tool.Hover( cursorX, cursorY );
-		// a bridge the pointer cannot place says why instead of the help, so the player sees the reason before clicking (the blueprint marks the cell to blame)
-		context.HoverHelp = strings.Extra( tool.IsBridge && !tool.IsErasing && tool.HoverBridgeResult is { } hoverRefusal ? BridgeRefusalText( hoverRefusal ) : tool.IsBridge ? (tool.IsErasing ? OpenTpwText.PoolBridgeEraseHelp : OpenTpwText.PoolBridgeHelp) : tool.IsSlide ? OpenTpwText.PoolSlideHelp : tool.IsErasing ? OpenTpwText.PoolEraseHelp : tool.IsRiver ? OpenTpwText.PoolRiverHelp : OpenTpwText.PoolPaintHelp );
+		// a bridge the pointer cannot place over a pool says why instead of the help, so the player sees the reason before clicking (the blueprint marks the cell to blame)
+		context.HoverHelp = strings.Extra( tool.ShowsBridgeReason && tool.HoverBridgeResult is { } hoverRefusal ? BridgeRefusalText( hoverRefusal ) : tool.IsBridge ? (tool.IsErasing ? OpenTpwText.PoolBridgeEraseHelp : OpenTpwText.PoolBridgeHelp) : tool.IsSlide ? OpenTpwText.PoolSlideHelp : tool.IsErasing ? OpenTpwText.PoolEraseHelp : tool.IsRiver ? OpenTpwText.PoolRiverHelp : OpenTpwText.PoolPaintHelp );
 		if ( input.LeftPressed )
 		{
 			refusalClick.Press();

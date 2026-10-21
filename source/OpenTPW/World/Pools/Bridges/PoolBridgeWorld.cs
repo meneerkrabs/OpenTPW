@@ -59,6 +59,8 @@ public sealed class PoolBridgeWorld
 		cells.PoolBridges = this;
 	}
 
+	public bool CellsInBounds( int x, int y ) => cells.InBounds( x, y );
+	public bool IsWater( int x, int y ) => cells.TypeAt( x, y ) == ParkCellType.PoolWater;
 	public PoolBridge? At( int x, int y ) => coverage.GetValueOrDefault( (x, y) );
 	public bool Covers( int x, int y ) => coverage.ContainsKey( (x, y) );
 	public bool Reserves( int x, int y ) => Covers( x, y ) || bridges.Values.Any( b => b.Cell( -1 ) == (x, y) || b.Cell( PoolBridge.Length ) == (x, y) );

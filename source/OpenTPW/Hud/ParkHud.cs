@@ -1231,10 +1231,8 @@ public sealed partial class ParkHud
 		{
 			// [EXT:pools-bridges] the bridge tool previews the whole bridge: its two outside path ends and its seven cells, blue while it can be built, the cell to blame red when one is
 			// (a missing path, water where land must be, something in the way), and every cell red when the refusal is the bridge's as a whole (the slope, the money)
-			var blamed = bridgeTool.HoverBridgeBlocker;
-			var refused = bridgeTool.HoverBridgeResult != null;
 			foreach ( var (x, y) in bridgeTool.HoverBridgeCells() )
-				cells.Add( (x, y, refused && (blamed == null || blamed == (x, y)) ? BlueprintMarker.Refused : BlueprintMarker.Allowed) );
+				cells.Add( (x, y, bridgeTool.HoverBridgeRefuses( (x, y) ) ? BlueprintMarker.Refused : BlueprintMarker.Allowed) );
 		}
 		else if ( level.PoolTool is { IsActive: true, HoverCell: { } poolCell, HoverResult: { } poolResult } )
 		{

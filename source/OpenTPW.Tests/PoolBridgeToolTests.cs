@@ -69,6 +69,13 @@ public class PoolBridgeToolTests
 		tool.Hover( 2, 3 );
 		Assert.AreEqual( PoolBridgeResult.EndNotPath, tool.HoverBridgeResult );
 		Assert.AreEqual( (9, 3), tool.HoverBridgeBlocker );
+		Assert.IsTrue( tool.HoverBridgeRefuses( (9, 3) ) );
+		Assert.IsFalse( tool.HoverBridgeRefuses( (5, 3) ), "only the cell to blame turns red" );
+		Assert.IsTrue( tool.ShowsBridgeReason, "the line reaches the pool, so the help names the reason" );
+		tool.Hover( 9, 9 );
+		Assert.IsNotNull( tool.HoverBridgeResult );
+		Assert.IsFalse( tool.ShowsBridgeReason, "away from any pool the help keeps the instructions" );
+		tool.Hover( 2, 3 );
 		Assert.AreEqual( OpenTpwText.PoolBridgeEndNotPath, ParkHud.BridgeRefusalText( PoolBridgeResult.EndNotPath ) );
 		Assert.AreEqual( 0, world.Count, "Hover must not mutate the park" );
 		tool.Press( 2, 3 );

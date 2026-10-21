@@ -160,6 +160,23 @@ public class PoolBridgeWorldTests
 	}
 
 	[TestMethod]
+	public void StandingProtectedCellsAndMoneyBlameTheRightCell()
+	{
+		var cells = Crossing();
+		var economy = EconomyTestData.Park( initialCash: 100 );
+		var world = new PoolBridgeWorld( cells, occupied: ( x, y ) => x == 3 && y == 3, economy: () => economy );
+		Assert.AreEqual( PoolBridgeResult.Standing, world.Check( 2, 3, 1, out var standing ) );
+		Assert.AreEqual( (3, 3), standing );
+		var poor = new PoolBridgeWorld( Crossing(), economy: () => economy );
+		Assert.AreEqual( PoolBridgeResult.NotEnoughMoney, poor.Check( 2, 3, 1, out var money ) );
+		Assert.IsNull( money );
+		var protectedCells = Crossing();
+		protectedCells.SetFlags( 8, 3, ParkCellFlags.EntranceArea );
+		Assert.AreEqual( PoolBridgeResult.Blocked, new PoolBridgeWorld( protectedCells ).Check( 2, 3, 1, out var entrance ) );
+		Assert.AreEqual( (8, 3), entrance );
+	}
+
+	[TestMethod]
 	public void AnotherBridgeInTheWayIsNamedOnTheSharedCell()
 	{
 		var cells = Crossing();
@@ -169,6 +186,13 @@ public class PoolBridgeWorldTests
 		cells.SetType( 5, 0, ParkCellType.Path );
 		Assert.AreEqual( PoolBridgeResult.BridgeInTheWay, world.Check( 5, 1, 2, out var crossing ) );
 		Assert.AreEqual( (5, 3), crossing );
+		// a north-south bridge whose first approach cell is the first bridge's outside path end
+		cells.SetType( 9, 2, ParkCellType.Path );
+		Assert.AreEqual( PoolBridgeResult.BridgeInTheWay, world.Check( 9, 3, 2, out var end ) );
+		Assert.AreEqual( (9, 3), end );
+		// an east-west bridge whose outside path end is the first bridge's deck
+		Assert.AreEqual( PoolBridgeResult.BridgeInTheWay, world.Check( 9, 3, 1, out var deck ) );
+		Assert.AreEqual( (8, 3), deck );
 	}
 
 	[TestMethod]

@@ -39,6 +39,14 @@ public sealed class PoolTool
 	public PoolBridgeResult? HoverBridgeResult { get; private set; }
 	/// <summary>The cell that refuses the hovered bridge, when one cell is to blame (<see cref="PoolBridgeWorld.Check(int, int, int, out (int X, int Y)?)"/>).</summary>
 	public (int X, int Y)? HoverBridgeBlocker { get; private set; }
+	/// <summary>
+	/// Whether the hover help names the hovered bridge's refusal instead of the instructions: only while the line under the pointer reaches pool water, so the
+	/// instructions still show while the pointer is away from any pool (where every place refuses).
+	/// </summary>
+	public bool ShowsBridgeReason => HoverBridgeResult != null && !IsErasing && Bridges != null
+		&& HoverBridgeCells().Skip( 1 ).Take( PoolBridge.Length ).Any( cell => Bridges.CellsInBounds( cell.X, cell.Y ) && Bridges.IsWater( cell.X, cell.Y ) );
+	/// <summary>Whether the blueprint marks this preview cell red: the cell to blame, or every cell when the refusal is the whole bridge's (the slope, the money).</summary>
+	public bool HoverBridgeRefuses( (int X, int Y) cell ) => HoverBridgeResult != null && (HoverBridgeBlocker == null || HoverBridgeBlocker == cell);
 	/// <summary>The cells the hovered bridge would use while placing one: the outside path end before it, its seven cells and the path end after it (the cells inside the park).</summary>
 	public IEnumerable<(int X, int Y)> HoverBridgeCells()
 	{

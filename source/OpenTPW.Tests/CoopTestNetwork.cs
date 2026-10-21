@@ -45,6 +45,9 @@ internal sealed class CoopTestNetwork( Func<double>? clock = null )
 	/// <summary>How long the upload of the given attempt number (1 first) takes to answer instead of <see cref="TransferSeconds"/>; null keeps it.</summary>
 	public Func<int, double?>? UploadSeconds { get; set; }
 
+	/// <summary>Answers every download a second time, this many seconds after the first (a callback raised twice); null answers once.</summary>
+	public double? RepeatDownloadAnswerAfter { get; set; }
+
 	/// <summary>Answers the upload of the given attempt number (1 first) instead of the store, e.g. with a failure; null lets the store answer.</summary>
 	public Func<int, CoopSnapshotTransfer?>? FailUpload { get; set; }
 
@@ -239,6 +242,8 @@ internal sealed class CoopTestNetwork( Func<double>? clock = null )
 				: stored.Length != bytes ? CoopSnapshotTransfer.Failed( "The snapshot is not as long as its host said." )
 				: CoopSnapshotTransfer.Downloaded( stored.ToArray() ));
 			transfers.Enqueue( () => done( answer ), (network.clock() + network.TransferSeconds, transferOrder++) );
+			if ( network.RepeatDownloadAnswerAfter is { } after )
+				transfers.Enqueue( () => done( answer ), (network.clock() + network.TransferSeconds + after, transferOrder++) );
 		}
 
 		/// <summary>The socket drops: what was on its way is lost, and the connected members see it go.</summary>

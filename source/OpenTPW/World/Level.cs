@@ -90,7 +90,8 @@ public partial class Level : IDisposable
 	/// </summary>
 	private void SetupParkName()
 	{
-		var savedName = resumeState?.ParkName is { } saved ? new ParkNameLines( saved.Line1, saved.Line2 ) : SavedGateName();
+		// [EXT:online-coop-snapshot-join] a join keeps the host's name as its snapshot holds it, none included: the sign's default lines are not its name
+		var savedName = resumeState?.ParkName is { } saved ? new ParkNameLines( saved.Line1, saved.Line2 ) : joinRestore != null ? null : SavedGateName();
 		if ( OriginalPark != null )
 		{
 			try { GateSign = OriginalGateSign.TryCreate( OriginalPark, Global, savedName, reloaded: savedName != null ); }
@@ -100,7 +101,7 @@ public partial class Level : IDisposable
 				Log.Warning( $"Gate sign: {exception.GetType().Name}: {exception.Message}" );
 			}
 		}
-		ParkName = savedName ?? GateSign?.Lines;
+		ParkName = joinRestore != null ? savedName : savedName ?? GateSign?.Lines;
 	}
 
 	/// <summary>
@@ -261,8 +262,17 @@ public partial class Level : IDisposable
 	internal static Level BeginOverFrames( string levelName, bool loadOriginalLevel, ParkVisitInfo? visit, OnlineFolders? onlineFolders, ParkStartKind start ) =>
 		new( levelName, loadOriginalLevel, visit, onlineFolders, start, null, null, null, overFrames: true );
 
+	/// <summary>
+	/// [EXT:online-coop-snapshot-join] A guest's park built over frames from a join snapshot (docs/COOP.md, "Joining a running session"): the resume's steps in the join restore mode, which keeps
+	/// the host's live park exactly as its snapshot holds it, with <paramref name="join"/>'s session state applied as the last step. A guest's park from its first step.
+	/// </summary>
+	internal static Level BeginJoinOverFrames( ParkResumeSnapshot snapshot, ParkEconomy economy, OnlineFolders? onlineFolders, CoopJoinState join ) =>
+		new( snapshot.Theme, true, null, onlineFolders, snapshot.StartKind, new WorldSeed( snapshot.Seed ), snapshot, economy, overFrames: true,
+			join: join ?? throw new ArgumentNullException( nameof( join ) ) );
+
 	private Level( string levelName, bool loadOriginalLevel, ParkVisitInfo? visit, OnlineFolders? onlineFolders,
-		ParkStartKind start, WorldSeed? seed, ParkResumeSnapshot? resume, ParkEconomy? resumedEconomy, bool overFrames, ThemeParkIncLayoutCheckpoint? checkpoint = null, ReadOnlyMemory<byte>? playerSave = null )
+		ParkStartKind start, WorldSeed? seed, ParkResumeSnapshot? resume, ParkEconomy? resumedEconomy, bool overFrames, ThemeParkIncLayoutCheckpoint? checkpoint = null, ReadOnlyMemory<byte>? playerSave = null,
+		CoopJoinState? join = null )
 	{
 		playerSavePayload = playerSave;
 		if (checkpoint != null && !GameEditions.IsThemeParkInc)
@@ -279,6 +289,10 @@ public partial class Level : IDisposable
 		Seed = seed ?? WorldSeed.Default;
 		Visit = visit;
 		resumeState = resume;
+		// [EXT:online-coop-snapshot-join] a join's build is a guest's park from its first step (the HUD made for it reads that)
+		joinRestore = resume != null ? join : null;
+		if ( joinRestore != null )
+			IsCoopGuestPark = true;
 		visitLayout = visit != null && visit.Payload.HasBuiltLayout && !visit.IsSandbox ? visit.Payload : null;
 		Global = new SettingsFile( $"/levels/{levelName}/global.sam" );
 		Current = this;
@@ -349,9 +363,12 @@ public partial class Level : IDisposable
 				yield return progress;
 		}
 		if ( resume != null ) RestoreResumeSimulation( resume );
+		// [EXT:online-coop-snapshot-join] a join's session state, before the park's first frame
+		if ( joinRestore is { } joined ) ApplyJoinState( joined );
 		using ( LoadProfile.Measure( "level-hud" ) )
 			SetupHud( onlineFolders );
 		resumeState = null;
+		joinRestore = null;
 		incLayout = null;
 		incLayoutCells = null;
 		if ( visitLayout != null )
@@ -579,7 +596,8 @@ public partial class Level : IDisposable
 		// A version 2 visit walks the shared park's own cell map (the owner's built paths and queues), not the shipped import.
 		// A resumed save from before land existed gets the level's land as a new park (or the imported save's) would.
 		var grid = incLayoutCells != null ? new GuestPathGrid(incLayoutCells)
-			: resumeState != null ? new GuestPathGrid( ParkLayoutSnapshot.RestoreCellMap( resumeState.Layout, land == null ? null : cells => cells.SetUpLand( land, park.Save ) ) )
+			// [EXT:online-coop-snapshot-join] a join's map is the host's live one, land-less too (an imported save whose land walk failed): no land is laid on it
+			: resumeState != null ? new GuestPathGrid( ParkLayoutSnapshot.RestoreCellMap( resumeState.Layout, land == null || joinRestore != null ? null : cells => cells.SetUpLand( land, park.Save ) ) )
 			: visitLayout?.Cells != null
 			? new GuestPathGrid( SharedParkLayout.BuildCellMap( park.Map.CellCountX, park.Map.CellCountY, visitLayout.Cells ) )
 			: new GuestPathGrid( ParkCellMap.FromOriginal( park.Map, park.Save, land, park.Heightfield ) );

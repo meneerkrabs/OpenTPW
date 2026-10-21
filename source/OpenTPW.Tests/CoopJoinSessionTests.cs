@@ -16,13 +16,15 @@ namespace OpenTPW.Tests;
 /// </summary>
 [TestClass]
 [DoNotParallelize]
-public class CoopJoinSessionTests
+public partial class CoopJoinSessionTests
 {
 	private AutomaticCheckpointCpuRendererScope? renderer;
 	private UpgradeCatalogueDefaultsTests? fixture;
 	private List<Entity>? entities;
 	private Level? current;
 	private float timeNow, timeDelta;
+	private CameraMode? camera;
+	private bool? audioWas;
 	private readonly List<Peer> peers = new();
 	private readonly List<List<Entity>> built = new();
 	private double clock;
@@ -47,6 +49,14 @@ public class CoopJoinSessionTests
 		public bool Holds { get; set; }
 		/// <summary>This member runs no game frames (a stalled machine).</summary>
 		public bool Frozen { get; set; }
+		/// <summary>The member's game when it is the real <see cref="GameFlow"/>: its frame steps the session through the flow, whose swap makes the park the member's.</summary>
+		public GameFlow? Flow { get; set; }
+		/// <summary>A flow member's builds (<see cref="FlowBuild"/>): how many began, the frames the build of the given number (1 first) takes, how many were abandoned.</summary>
+		public int FlowBuilds { get; set; }
+		public Func<int, int> FlowSteps { get; set; } = _ => 1;
+		public int FlowAbandoned { get; set; }
+		/// <summary>The flow member's next swap fails before the live scene is touched, once.</summary>
+		public bool StageFails { get; set; }
 		public ParkEconomy Economy => Level!.Park!.Economy;
 
 		public void Enter()
@@ -63,7 +73,14 @@ public class CoopJoinSessionTests
 				Pump();
 			else
 				Link.Deliver();
-			Session?.Step();
+			if ( Flow != null )
+			{
+				Flow.StepCoopSession();
+				if ( !ReferenceEquals( Flow.Level, Level ) )
+					(Level, Entities) = (Flow.Level, Entity.All);
+			}
+			else
+				Session?.Step();
 			Enter();
 			if ( Level == null )
 				return;
@@ -79,45 +96,52 @@ public class CoopJoinSessionTests
 		}
 	}
 
-	/// <summary>The game's join for a test member: the candidate built by replay (<see cref="Twin"/>), the old park torn down and the candidate made the member's park.</summary>
+	/// <summary>
+	/// The game's join for a test member: the candidate built by replay (<see cref="Twin"/>) over <see cref="Steps"/> frames, the old park torn down and the candidate made the member's
+	/// park.
+	/// </summary>
 	private sealed class ReplayJoin( CoopJoinSessionTests tests, Peer member ) : ICoopJoinHost
 	{
-		private readonly Dictionary<Level, List<Entity>> candidates = new();
+		public CoopJoinSessionTests Tests { get; } = tests;
 		public int Builds { get; private set; }
 		/// <summary>Breaks the next builds (a failed check), while set.</summary>
 		public bool Breaks { get; set; }
 		/// <summary>Builds parks that differ from the host's at the cut, while set (a restore that misses something).</summary>
 		public bool Drifts { get; set; }
-		/// <summary>The next build throws this (a restore that refuses the payload for its own reasons), once.</summary>
+		/// <summary>The next build throws this at its last step (a restore that refuses the payload for its own reasons), once.</summary>
 		public Exception? Throws { get; set; }
+		/// <summary>The next build's step of this number throws this, once.</summary>
+		public (int Step, Exception Error)? ThrowsAtStep { get; set; }
+		/// <summary>The next build refuses as it starts (this game's files or mods differ from the host's), once.</summary>
+		public CoopJoinRefusedException? Refuses { get; set; }
 		/// <summary>The next install fails halfway, once.</summary>
 		public bool InstallFails { get; set; }
-		public int Discarded { get; private set; }
+		/// <summary>The frames the build of the given number (1 first) takes; a build of one frame by default.</summary>
+		public Func<int, int> Steps { get; set; } = _ => 1;
+		/// <summary>The candidates released without being installed.</summary>
+		public int Discarded { get; set; }
+		/// <summary>The builds abandoned, with a candidate or before one.</summary>
+		public int Abandoned { get; set; }
 
-		public Level Build( CoopJoinPayload payload )
+		public ICoopJoinBuild Build( CoopJoinPayload payload )
 		{
 			Builds++;
-			if ( Breaks )
-				throw new System.IO.InvalidDataException( "A broken build." );
-			if ( Throws is { } error )
+			if ( Refuses is { } refusal )
 			{
-				Throws = null;
-				throw error;
+				Refuses = null;
+				throw refusal;
 			}
-			var (level, list) = tests.Twin( payload );
-			if ( Drifts )
-				level.Park!.Economy.Ledger.Post( LedgerCategory.OtherIncome, 1 );
-			candidates[level] = list;
-			return level;
+			return new ReplayBuild( this, payload, Steps( Builds ) );
 		}
 
-		public void Install( Level? old, Level candidate )
+		public void Install( Level? old, ICoopJoinBuild build )
 		{
 			if ( InstallFails )
 			{
 				InstallFails = false;
 				throw new InvalidOperationException( "The park's renderer could not start." );
 			}
+			var replay = (ReplayBuild)build;
 			if ( old != null )
 			{
 				member.Enter();
@@ -125,19 +149,58 @@ public class CoopJoinSessionTests
 				foreach ( var entity in member.Entities.ToArray() )
 					entity.Delete();
 			}
-			member.Level = candidate;
-			member.Entities = candidates[candidate];
-			candidates.Remove( candidate );
+			member.Level = replay.Candidate;
+			member.Entities = replay.Entities;
+			replay.Installed = true;
+		}
+	}
+
+	/// <summary>A replay build: nothing until its last step, which builds the twin.</summary>
+	private sealed class ReplayBuild( ReplayJoin join, CoopJoinPayload payload, int steps ) : ICoopJoinBuild
+	{
+		private int done;
+		private Level? candidate;
+		private bool abandoned;
+		public List<Entity> Entities { get; private set; } = new();
+		public bool Installed { get; set; }
+		public Level Candidate => candidate ?? throw new InvalidOperationException( "The park is not built yet." );
+
+		public bool Step()
+		{
+			done++;
+			if ( join.ThrowsAtStep is { } fault && fault.Step == done )
+			{
+				join.ThrowsAtStep = null;
+				throw fault.Error;
+			}
+			if ( done < steps )
+				return false;
+			if ( join.Breaks )
+				throw new System.IO.InvalidDataException( "A broken build." );
+			if ( join.Throws is { } error )
+			{
+				join.Throws = null;
+				throw error;
+			}
+			var (level, list) = join.Tests.Twin( payload );
+			if ( join.Drifts )
+				level.Park!.Economy.Ledger.Post( LedgerCategory.OtherIncome, 1 );
+			(candidate, Entities) = (level, list);
+			return true;
 		}
 
-		public void Discard( Level candidate )
+		public void Abandon()
 		{
-			Discarded++;
-			if ( !candidates.Remove( candidate, out var list ) )
+			if ( Installed || abandoned )
 				return;
-			Entity.All = list;
+			abandoned = true;
+			join.Abandoned++;
+			if ( candidate == null )
+				return;
+			join.Discarded++;
+			Entity.All = Entities;
 			candidate.Dispose();
-			foreach ( var entity in list.ToArray() )
+			foreach ( var entity in Entities.ToArray() )
 				entity.Delete();
 		}
 	}
@@ -148,6 +211,7 @@ public class CoopJoinSessionTests
 		entities = Entity.All;
 		current = Level.Current;
 		(timeNow, timeDelta) = (Time.Now, Time.Delta);
+		camera = Camera.Mode;
 		renderer = new AutomaticCheckpointCpuRendererScope();
 		fixture = new UpgradeCatalogueDefaultsTests();
 		fixture.Setup();
@@ -176,12 +240,16 @@ public class CoopJoinSessionTests
 		if ( entities != null )
 			Entity.All = entities;
 		Level.Current = current!;
+		if ( camera != null )
+			Camera.Mode = camera;
+		if ( audioWas is { } was )
+			GameAudio.Enabled = was;
 	}
 
-	/// <summary>A park of the identical start, as the stream tests build it.</summary>
-	private (Level Level, List<Entity> Entities) NewPark()
+	/// <summary>A park of the identical start, as the stream tests build it (into <paramref name="into"/>, a staged scene's list, when given).</summary>
+	private (Level Level, List<Entity> Entities) NewPark( List<Entity>? into = null )
 	{
-		var park = CoopStreamTests.BuildPark( fixture! );
+		var park = CoopStreamTests.BuildPark( fixture!, into );
 		built.Add( park.Entities );
 		// the asset-free park has no name of its own yet and no track renderers (a closing park disposes them)
 		typeof( Level ).GetProperty( nameof( Level.ParkName ) )!.SetValue( park.Level, new ParkNameLines( "Test", "Park" ) );
@@ -193,9 +261,9 @@ public class CoopJoinSessionTests
 	/// The candidate a guest builds from <paramref name="payload"/>, by replay: a twin from the identical start, the host's first <see cref="CoopJoinPayload.Records"/> records applied under
 	/// the session's rules before their ticks up to the cut's tick, then its per-player state cleared (as a load of the save clears it) and the capture's session state applied.
 	/// </summary>
-	private (Level Level, List<Entity> Entities) Twin( CoopJoinPayload payload )
+	private (Level Level, List<Entity> Entities) Twin( CoopJoinPayload payload, List<Entity>? into = null )
 	{
-		var (level, list) = NewPark();
+		var (level, list) = NewPark( into );
 		var commands = level.Commands;
 		var (rules, inTick, rights) = (commands.SessionRules, commands.InTick, commands.Rights);
 		commands.SessionRules = true;
@@ -217,8 +285,11 @@ public class CoopJoinSessionTests
 	/// <summary>The host's local civil time in the tests: an afternoon, moving with the virtual clock.</summary>
 	private DateTime HostTime() => new DateTime( 2026, 10, 21, 15, 0, 0 ).AddSeconds( hostTimeFrozenAt ?? clock );
 
-	/// <summary>A session hosted on an identical-start park, with <paramref name="guests"/> guests of the identical start (generation 0) that resync through their replay joins.</summary>
-	private Peer[] Hosted( int guests = 0 )
+	/// <summary>
+	/// A session hosted on an identical-start park, with <paramref name="guests"/> guests of the identical start (generation 0) that resync through their replay joins, or through the game's
+	/// join with <paramref name="flowGuests"/>.
+	/// </summary>
+	private Peer[] Hosted( int guests = 0, bool flowGuests = false )
 	{
 		network = new CoopTestNetwork( () => clock );
 		var hostLink = network.Add( host: true );
@@ -244,6 +315,13 @@ public class CoopJoinSessionTests
 		foreach ( var member in members )
 		{
 			member.Enter();
+			if ( flowGuests )
+			{
+				member.Flow = NewFlow( member );
+				SetField( member.Flow, "<Level>k__BackingField", member.Level );
+				member.Session = member.Flow.FollowSharedPark( member.Link, () => true );
+				continue;
+			}
 			member.Join = new ReplayJoin( this, member );
 			member.Session = CoopSession.Join( member.Level!, member.Link, () => clock, member.Join );
 		}
@@ -930,6 +1008,85 @@ public class CoopJoinSessionTests
 		Assert.IsNull( guest.Session.Level );
 		Assert.IsNull( host.Session.EndedWith, "the session goes on without it" );
 		Build( 60, 35 );
+		CatchUpAndCompare( joiner );
+	}
+
+	[TestMethod]
+	public void ANewerAssignmentAbandonsABuildOnItsWay()
+	{
+		Hosted();
+		Build( 60, 40 );
+		var joiner = Joiner();
+		// the first build takes ten seconds of frames; meanwhile the host assigns the member a newer capture (it reports a failure its build never had)
+		joiner.Join!.Steps = build => build == 1 ? 600 : 1;
+		RoundsUntil( () => joiner.Join.Builds == 1, "the first build began" );
+		joiner.Link.Send( host.Link.Id, new CoopSnapshotRequest( 1, CoopSnapshotReason.FailedCheck, null ).Encode() );
+		RoundsUntil( () => joiner.Level != null, "the next capture built and swapped in", 20000 );
+		Assert.AreEqual( (2, 1, 0), (joiner.Join.Builds, joiner.Join.Abandoned, joiner.Join.Discarded), "the first build abandoned before it had a park" );
+		Assert.AreEqual( 2u, joiner.Session!.Assigned );
+		Build( 60, 41 );
+		CatchUpAndCompare( joiner );
+	}
+
+	[TestMethod]
+	public void ARefusalEndsTheJoinAtOnceAndAStepThatThrowsIsAFailedCheck()
+	{
+		Hosted();
+		Build( 60, 42 );
+		// a build step that throws (a file this game could not read) is a failed check: the next capture serves the member
+		var joiner = Joiner();
+		joiner.Join!.Steps = _ => 5;
+		joiner.Join.ThrowsAtStep = (3, new System.IO.IOException( "A level file could not be read." ));
+		RoundsUntil( () => joiner.Level != null, "joined after a failed build", 20000 );
+		Assert.AreEqual( (2, 1, 1, 0), (joiner.Join.Builds, joiner.Session!.FailedJoins, joiner.Join.Abandoned, joiner.Join.Discarded) );
+		// a refusal every build of the payload would meet (this game's files differ from the host's) ends the join at once, without more captures
+		var captures = host.Session!.HostStream!.CapturesTaken;
+		var refused = Joiner();
+		refused.Join!.Refuses = new CoopJoinRefusedException( "This game's files differ from the host's." );
+		RoundsUntil( () => refused.Session!.EndedWith != null, "the refused joiner left" );
+		StringAssert.Contains( refused.Link.LeftWith, "files differ" );
+		Assert.AreEqual( (1, 0), (refused.Join.Builds, refused.Session.FailedJoins) );
+		Assert.AreEqual( captures + 1, host.Session.HostStream.CapturesTaken, "one capture, no more" );
+		// a refusal in a later step ends it the same way
+		var late = Joiner();
+		late.Join!.Steps = _ => 4;
+		late.Join.ThrowsAtStep = (2, new CoopJoinRefusedException( "This game's simulation mods differ from the host's." ));
+		RoundsUntil( () => late.Session!.EndedWith != null, "the late refusal left" );
+		StringAssert.Contains( late.Link.LeftWith, "mods differ" );
+		Assert.AreEqual( (1, 1, 0), (late.Join.Builds, late.Join.Abandoned, late.Session.FailedJoins) );
+		Build( 60, 43 );
+		CatchUpAndCompare( joiner );
+	}
+
+	[TestMethod]
+	public void ABuildThatNeverEndsIsAFailedCheckAtItsDeadline()
+	{
+		Hosted();
+		Build( 60, 44 );
+		var joiner = Joiner();
+		joiner.Join!.Steps = build => build == 1 ? int.MaxValue : 1;
+		RoundsUntil( () => joiner.Join.Builds == 1, "the build began" );
+		var began = clock;
+		RoundsUntil( () => joiner.Session!.FailedJoins == 1, "the build's deadline", 30000 );
+		Assert.IsTrue( clock - began >= CoopSession.BuildDeadlineSeconds - 1, $"{clock - began:0.0} s" );
+		RoundsUntil( () => joiner.Level != null, "the next capture built", 20000 );
+		Assert.AreEqual( (2, 1), (joiner.Join.Builds, joiner.Join.Abandoned) );
+		CatchUpAndCompare( joiner );
+	}
+
+	[TestMethod]
+	public void ASecondDownloadAnswerBuildsNothingTwice()
+	{
+		Hosted();
+		Build( 60, 45 );
+		// the download's callback is raised again a second after the first, once the build has begun
+		network.RepeatDownloadAnswerAfter = 1;
+		var joiner = Joiner();
+		joiner.Join!.Steps = _ => 30;
+		RoundsUntil( () => joiner.Level != null, "joined" );
+		Rounds( 120 );
+		Assert.AreEqual( 1, joiner.Join.Builds, "the second answer of the same download built nothing" );
+		Build( 60, 46 );
 		CatchUpAndCompare( joiner );
 	}
 

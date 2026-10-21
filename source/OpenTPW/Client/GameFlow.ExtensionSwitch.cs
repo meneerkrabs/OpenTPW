@@ -44,7 +44,8 @@ internal sealed partial class GameFlow
 			Log.Trace( $"Extension choices need a new start: {error.Message}" );
 			return ExtensionChoiceTiming.NextStart;
 		}
-		if ( Level == null && !BuildingPark )
+		// [EXT:online-coop-snapshot-join] a join held in the front end builds with the set it asked with: choices wait for it as in a park
+		if ( Level == null && !BuildingPark && coopJoin == null )
 		{
 			pendingExtensions = null;
 			ModStartup.ApplyExtensions( next, Log.Trace );

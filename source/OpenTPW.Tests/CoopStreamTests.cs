@@ -113,9 +113,10 @@ public class CoopStreamTests
 	/// The frame batching tests' park (objects, paths, guests, staff), its entities in a list of their own; <see cref="Entity.All"/> is left on that list (the co-op session tests
 	/// build their parks here too).
 	/// </summary>
-	internal static (Level Level, ParkEconomy Economy, OriginalObject One, OriginalObject Two, List<Entity> Entities) BuildPark( UpgradeCatalogueDefaultsTests fixture )
+	/// <param name="into">The entity list the park is built into (a staged scene's), else a new one.</param>
+	internal static (Level Level, ParkEconomy Economy, OriginalObject One, OriginalObject Two, List<Entity> Entities) BuildPark( UpgradeCatalogueDefaultsTests fixture, List<Entity>? into = null )
 	{
-		var list = new List<Entity>();
+		var list = into ?? new List<Entity>();
 		Entity.All = list;
 		Level.Current = null!;
 		var type = typeof( UpgradeCatalogueDefaultsTests );

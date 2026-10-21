@@ -20,6 +20,7 @@ internal sealed partial class GameFlow
 		if (checkpoint.Theme != live.LevelName)
 			throw new InvalidDataException("The layout checkpoint belongs to another theme.");
 		// Catalog, manifest and terrain checks occur during candidate construction, before the old world is retired.
+		LeaveJoinBuild();
 		using var scene = new EntityConstructionScope();
 		var candidate = new Level(checkpoint, OnlineFolders) { ShowDeveloperPanels = false };
 		var candidateHud = CreateThemeParkIncHud(candidate);

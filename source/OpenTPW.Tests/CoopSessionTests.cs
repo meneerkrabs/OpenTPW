@@ -295,6 +295,9 @@ public class CoopSessionTests
 			Assert.IsTrue( Game.IsAutomatedRun( new[] { smoke } ), $"{smoke} stays an automated run" );
 		}
 		CollectionAssert.AreEquivalent( new[] { "--smoke-test", "--tpi-smoke-test", "--park-resume-smoke", "--smoke-presence" }, Game.SmokeFlags );
+		// [EXT:online-coop-snapshot-join] the join smoke shares the park it built before its session: an automated run that changes no park outside the commands
+		Assert.IsFalse( Game.ChangesParkOutsideCommands( new[] { "--coop-join-smoke", "host", "--coop-join-evidence", "evidence" } ) );
+		Assert.IsTrue( Game.IsAutomatedRun( new[] { "--coop-join-smoke", "join" } ) );
 	}
 
 	[TestMethod]

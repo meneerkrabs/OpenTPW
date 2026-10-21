@@ -284,7 +284,12 @@ public partial class Level
 			.Select( entry => (entry.X, entry.Y, Direction: GuestPathGrid.LinkDirection( ObjectFootprint.RotateDirectionByte( entry.Cell.Direction, station.Placement.Rotation ) )) )
 			.Where( entry => entry.Direction >= 0 )
 			.Select( entry => (entry.X + GuestPathGrid.Directions[entry.Direction].DX, entry.Y + GuestPathGrid.Directions[entry.Direction].DY) );
-		builder.Track.BindCells( Guests.Grid.Cells, OwnerWord( station ), ends );
+		// [EXT:online-coop-snapshot-join] a join takes the host's live binding over from the cells, without claiming anything the host's binding does not hold
+		if ( joinRestore is { } join )
+			builder.Track.AdoptCells( Guests.Grid.Cells, OwnerWord( station ), ends, join.CoasterUnheldCells.Where( cell => cell.Station == station.Runtime.AttractionId )
+				.Select( cell => (cell.X, cell.Y, cell.Displaced) ).ToArray() );
+		else
+			builder.Track.BindCells( Guests.Grid.Cells, OwnerWord( station ), ends );
 	}
 
 	private void BindCoasterCellsAfterLoad()
@@ -529,7 +534,8 @@ public partial class Level
 				throw new InvalidDataException( $"Attraction {entry.AttractionId}'s coaster controller is not live; a stopped station holds no coaster state." );
 			ride.RestoreSnapshot( entry );
 			// [EXT:coaster-resume-reopen] a save taken while the coaster tool was open holds the ride out of service (state 2, its object closed); the tool is not open after a load, so the ride is let out as leaving the tool would (0x447520 → 0x4df390; the original's save during the tool is not traced)
-			if ( ride.State == CoasterControllerState.Built && !station.IsOpen )
+			// [EXT:online-coop-snapshot-join] not in a join: the host's live coaster stays as it is (its tool open, or closed by the park's door while built)
+			if ( joinRestore == null && ride.State == CoasterControllerState.Built && !station.IsOpen )
 				station.Open();
 		}
 		if ( Coasters.Count != saved.Rides.Count )

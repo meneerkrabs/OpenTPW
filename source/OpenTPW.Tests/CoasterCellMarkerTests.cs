@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace OpenTPW.Tests;
@@ -231,6 +232,105 @@ public class CoasterCellMarkerTests
 		Assert.IsTrue( builder.RemoveLast() );
 		Assert.AreSame( head, builder.Track.CellMarkers.TokenAt( head.X, head.Y ) );
 		Assert.AreEqual( 0, (ushort)map.FlagsAt( head.X, head.Y ) & 0x100 );
+	}
+
+	/// <summary>A copy of <paramref name="map"/>'s cells (the types, owners and flags a save holds), with fresh generations, as a join's restore makes it.</summary>
+	private static ParkCellMap Copy( ParkCellMap map )
+	{
+		var copy = new ParkCellMap( map.Width, map.Height );
+		for ( var y = 0; y < map.Height; y++ )
+			for ( var x = 0; x < map.Width; x++ )
+			{
+				copy.SetType( x, y, map.RawTypeAt( x, y ) );
+				copy.SetOwner( x, y, map.OwnerAt( x, y ) );
+				copy.SetFlags( x, y, map.FlagsAt( x, y ) );
+			}
+		return copy;
+	}
+
+	private static void AssertSameCells( ParkCellMap expected, ParkCellMap actual, string what )
+	{
+		for ( var y = 0; y < expected.Height; y++ )
+			for ( var x = 0; x < expected.Width; x++ )
+				Assert.AreEqual( (expected.RawTypeAt( x, y ), expected.OwnerAt( x, y ), expected.FlagsAt( x, y )), (actual.RawTypeAt( x, y ), actual.OwnerAt( x, y ), actual.FlagsAt( x, y )),
+					$"{what}: cell ({x}, {y})" );
+	}
+
+	/// <summary>The coaster of <paramref name="builder"/> restored from its save, as a join's guest builds it.</summary>
+	private static CoasterBuilder Restored( CoasterBuilder builder )
+	{
+		var restored = new CoasterRide( builder.Ride.Definition, new CoasterWorld( 1 ), "Joined" );
+		var fresh = new CoasterBuilder( restored, new CoasterSite( 64, 64 ) );
+		CoasterTests.PlaceStation( fresh, (20, 20) );
+		restored.RestoreSnapshot( CoasterSave.CaptureRide( builder.Ride, 7 ) );
+		return fresh;
+	}
+
+	/// <summary>
+	/// [EXT:online-coop-snapshot-join] A join's guest takes the host's binding over without claiming what it does not hold: here a pylon coaster A placed on coaster B's marker (the preview
+	/// accepts it, the lease is refused), whose cell B released since. The host's A has not synchronized since, so it does not hold the cell; a resume's bind would claim it at once.
+	/// </summary>
+	[TestMethod]
+	public void AJoinAdoptsTheHostsBindingWithoutClaimingACellItWantsButDoesNotHold()
+	{
+		var (b, map) = NewCoaster();
+		Assert.AreEqual( CoasterPlaceResult.Ok, b.Place( 24, 20 ) );
+		var aRide = new CoasterRide( b.Ride.Definition, b.Ride.World, "Coaster A" );
+		var a = new CoasterBuilder( aRide, new CoasterSite( 64, 64 ) );
+		CoasterTests.PlaceStation( a, (20, 20) );
+		a.Track.BindCells( map, 124 );
+		Assert.AreEqual( CoasterPlaceResult.OtherCoaster, a.Place( 24, 20 ), "A's pylon on B's marker: kept, without the cell" );
+		b.Move( CoasterTrack.StationNodeCount, 25, 21 );
+		Assert.AreEqual( (byte)0, map.RawTypeAt( 24, 20 ), "B released the cell; A's track did not change, so A did not claim it" );
+
+		var guest = Copy( map );
+		var joined = Restored( a );
+		var unheld = a.Track.CellMarkers!.UnheldCells().ToArray();
+		var stamp = guest.StampCounter;
+		joined.Track.AdoptCells( guest, 124, null, unheld );
+		Assert.AreEqual( stamp, guest.StampCounter, "the adoption writes nothing" );
+		AssertSameCells( map, guest, "at the cut" );
+		Assert.AreEqual( 0, joined.Track.CellMarkers!.CountAt( 24, 20 ) );
+		// a resume's bind would have claimed it
+		var resumed = Copy( map );
+		Restored( a ).Track.BindCells( resumed, 124 );
+		Assert.AreEqual( (byte)21, resumed.RawTypeAt( 24, 20 ) );
+
+		// the next change of A's track synchronizes on both, alike
+		Assert.AreEqual( a.Place( 27, 24 ), joined.Place( 27, 24 ) );
+		AssertSameCells( map, guest, "after an edit" );
+		Assert.AreEqual( (byte)21, guest.RawTypeAt( 24, 20 ) );
+	}
+
+	/// <summary>[EXT:online-coop-snapshot-join] The cells the host's binding wants and does not hold although the adoption would (a stale lease, a cell it may not claim) stay so on the guest.</summary>
+	[TestMethod]
+	public void AJoinsAdoptionLeavesTheHostsUnheldCellsUnheld()
+	{
+		var (host, map) = NewCoaster();
+		Assert.AreEqual( CoasterPlaceResult.Ok, host.Place( 24, 20 ) );
+		Assert.AreEqual( CoasterPlaceResult.Ok, host.Place( 27, 24 ) );
+		// another writer rewrites a held cell with the same owner word (a stale lease, displaced at the next synchronization), and a held cell's land is no longer the park's
+		map.SetType( 24, 20, 21 );
+		map.SetOwner( 24, 20, 123 );
+		var unowned = host.Track.Nodes[^1];
+		map.SetFlags( unowned.X, unowned.Y, map.FlagsAt( unowned.X, unowned.Y ) | ParkCellFlags.Unowned );
+		host.Track.CellMarkers!.Synchronize();
+		var unheld = host.Track.CellMarkers.UnheldCells().ToArray();
+		CollectionAssert.Contains( unheld, (24, 20, true ), "displaced" );
+
+		var guest = Copy( map );
+		var joined = Restored( host );
+		joined.Track.AdoptCells( guest, 123, null, unheld );
+		AssertSameCells( map, guest, "at the cut" );
+		Assert.AreEqual( host.Track.CellMarkers.CountAt( 24, 20 ), joined.Track.CellMarkers!.CountAt( 24, 20 ) );
+		// an edit on both: the displaced cell stays the other writer's, and the rest follows alike; then the pylon leaves the displaced cell, which neither releases
+		Assert.AreEqual( host.Place( 30, 27 ), joined.Place( 30, 27 ) );
+		AssertSameCells( map, guest, "after an edit" );
+		host.Move( CoasterTrack.StationNodeCount, 26, 22 );
+		joined.Move( CoasterTrack.StationNodeCount, 26, 22 );
+		AssertSameCells( map, guest, "after the pylon left the displaced cell" );
+		Assert.AreEqual( (byte)21, guest.RawTypeAt( 24, 20 ) );
+		Assert.AreEqual( host.Track.CellMarkers.CountAt( 24, 20 ), joined.Track.CellMarkers.CountAt( 24, 20 ) );
 	}
 
 	[TestMethod]

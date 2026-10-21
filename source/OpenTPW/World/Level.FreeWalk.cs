@@ -5,6 +5,9 @@ public partial class Level
 	public FreeWalkCameraMode? FreeWalk { get; private set; }
 	private CameraMode? cameraBeforeFreeWalk;
 
+	/// <summary>The park camera the free walk was entered from while it lasts, else null.</summary>
+	internal ParkCameraMode? ParkCameraWhileWalking => FreeWalk != null ? cameraBeforeFreeWalk as ParkCameraMode : null;
+
 	public bool EnterFreeWalk( Vector3 position )
 	{
 		if ( GameEditions.Current != GameEdition.ThemeParkWorld || FreeWalk != null || RideView != null

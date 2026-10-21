@@ -131,9 +131,10 @@ public sealed class ParkCommands
 		ArgumentNullException.ThrowIfNull( command );
 		if ( depth > 0 )
 			return Apply( command with { Player = running!.Player } );
-		// an edit issued while a simulation tick runs would apply before tick N here but before tick N + 1 on a peer: only the held commands apply inside a tick, at its start
-		if ( inTick )
-			return ParkCommandResult.Rejected( $"The {command.Kind} command was issued during a simulation tick." );
+		// [EXT:online-coop-commands] an edit issued while a simulation tick runs would apply inside tick N here but before tick N + 1 on a peer, so no code path may issue one there: the tests and a
+		// strict run throw to find one; a game of one runs it at once as it always did, and a co-op session (C2) refuses it
+		if ( inTick && ThrowOnIssueInTick )
+			throw new InvalidOperationException( $"The {command.Kind} command was issued during a simulation tick." );
 		var outer = !issuing;
 		issuing = true;
 		try
@@ -199,7 +200,7 @@ public sealed class ParkCommands
 	}
 
 	/// <summary>
-	/// Marks a simulation tick running, from after its held commands applied (<see cref="ApplyDue"/>) to the end of the returned scope: a command issued then is refused (<see cref="Issue"/>).
+	/// Marks a simulation tick running, from after its held commands applied (<see cref="ApplyDue"/>) to the end of the returned scope: no command may be issued then (<see cref="ThrowOnIssueInTick"/>).
 	/// </summary>
 	public IDisposable EnterTick()
 	{
@@ -209,6 +210,12 @@ public sealed class ParkCommands
 
 	/// <summary>Whether a simulation tick is running (<see cref="EnterTick"/>).</summary>
 	public bool IsInTick => inTick;
+
+	/// <summary>
+	/// [EXT:online-coop-commands] Whether <see cref="Issue"/> throws when a simulation tick is running (<see cref="EnterTick"/>): set by the tests and by a strict developer run
+	/// (<c>OPENTPW_STRICT_COMMANDS=1</c>), so a code path that issues a command inside a tick is found. Off, a game of one runs such a command at once, as it always did.
+	/// </summary>
+	public static bool ThrowOnIssueInTick { get; set; }
 
 	private sealed class TickScope( ParkCommands owner ) : IDisposable
 	{

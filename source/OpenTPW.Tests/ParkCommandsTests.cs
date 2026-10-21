@@ -138,23 +138,37 @@ public class ParkCommandsTests
 		Assert.AreEqual( 3, park.Ran.Count, "the failed command, the next one and the one inside it" );
 	}
 
-	/// <summary>[EXT:online-coop-commands] An edit issued while a simulation tick runs is refused and left out of the log: a peer would apply it a tick later. The held commands still apply.</summary>
+	/// <summary>
+	/// [EXT:online-coop-commands] An edit issued while a simulation tick runs throws where that is checked (the tests, a strict run): a peer would apply it a tick later. The held commands still apply
+	/// inside the tick, and off the check a game of one runs such a command at once.
+	/// </summary>
 	[TestMethod]
-	public void AnEditIssuedDuringATickIsRefusedAndHeldCommandsStillApply()
+	public void AnEditIssuedDuringATickThrowsWhereThatIsCheckedAndHeldCommandsStillApply()
 	{
-		var park = new Park();
-		using ( park.Commands.EnterTick() )
+		var strict = ParkCommands.ThrowOnIssueInTick;
+		try
 		{
-			Assert.IsTrue( park.Commands.IsInTick );
-			var refused = park.Commands.Issue( new RemoveAtCommand( 1, 1 ) );
-			Assert.IsFalse( refused.Accepted );
-			StringAssert.Contains( refused.Reason, "simulation tick" );
-			Assert.IsTrue( park.Commands.Apply( new RemoveAtCommand( 2, 2 ) ).Accepted, "a held command's apply is not an issue" );
+			var park = new Park();
+			ParkCommands.ThrowOnIssueInTick = true;
+			using ( park.Commands.EnterTick() )
+			{
+				Assert.IsTrue( park.Commands.IsInTick );
+				var error = Assert.ThrowsException<InvalidOperationException>( () => park.Commands.Issue( new RemoveAtCommand( 1, 1 ) ) );
+				StringAssert.Contains( error.Message, "simulation tick" );
+				Assert.IsTrue( park.Commands.Apply( new RemoveAtCommand( 2, 2 ) ).Accepted, "a held command's apply is not an issue" );
+			}
+			Assert.IsFalse( park.Commands.IsInTick );
+			Assert.IsTrue( park.Commands.Issue( new RemoveAtCommand( 1, 1 ) ).Accepted );
+			ParkCommands.ThrowOnIssueInTick = false;
+			using ( park.Commands.EnterTick() )
+				Assert.IsTrue( park.Commands.Issue( new RemoveAtCommand( 3, 3 ) ).Accepted, "a game of one runs it at once" );
+			CollectionAssert.AreEqual( new ParkCommand[] { new RemoveAtCommand( 2, 2 ), new RemoveAtCommand( 1, 1 ), new RemoveAtCommand( 3, 3 ) }, park.Ran );
+			Assert.AreEqual( 3, park.Commands.Log.Count );
 		}
-		Assert.IsFalse( park.Commands.IsInTick );
-		Assert.IsTrue( park.Commands.Issue( new RemoveAtCommand( 1, 1 ) ).Accepted );
-		CollectionAssert.AreEqual( new ParkCommand[] { new RemoveAtCommand( 2, 2 ), new RemoveAtCommand( 1, 1 ) }, park.Ran );
-		Assert.AreEqual( 2, park.Commands.Log.Count );
+		finally
+		{
+			ParkCommands.ThrowOnIssueInTick = strict;
+		}
 	}
 
 	[TestMethod]

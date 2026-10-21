@@ -11,6 +11,8 @@ internal static class Game
 		Log = new();
 		SdlMovieAudioOutput.Suppressed = IsSilentRun( args, Environment.GetEnvironmentVariable( "OPENTPW_SILENT" ), Environment.GetEnvironmentVariable( "OPENTPW_OFFSCREEN" ) );
 		Window.OffscreenRequested = IsOffscreenRun( args, Environment.GetEnvironmentVariable( "OPENTPW_OFFSCREEN" ) );
+		// [EXT:online-coop-commands] a strict run throws when a command is issued inside a simulation tick, which a co-op session cannot stream (docs/COOP.md, "Nested edits")
+		ParkCommands.ThrowOnIssueInTick = Environment.GetEnvironmentVariable( "OPENTPW_STRICT_COMMANDS" ) == "1";
 		var tgqExportIndex = Array.IndexOf(args, "--export-tgq-png");
 		if (tgqExportIndex >= 0)
 		{

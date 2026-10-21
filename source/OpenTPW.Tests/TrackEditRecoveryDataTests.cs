@@ -47,8 +47,13 @@ public class TrackEditRecoveryDataTests
 				var cells = new ParkCellMap( 40, 40 );
 				var station = TrackStation.FromPlacement( 10, 9, 0 );
 				var builder = new TrackBuilder( cells, family, () => economy, new SandboxParkGrid() );
-				builder.PlaceStation( station );
-				Assert.IsTrue( new TrackLineWriter( builder, owner: builder.OwnerOf( station ) ).Commit( (14, 10), (18, 10) ).Completed, entry.DisplayName );
+				// A fresh placement lays the exit and entry tiles free (0x005253E9, free byte 0x8186D4) and makes the exit the first vertex.
+				builder.PlaceInitialStation( station );
+				Assert.AreEqual( (14, 10), station.Exit, entry.DisplayName );
+				var line = new TrackLineWriter( builder, owner: builder.OwnerOf( station ) ).Commit( station.Exit, (18, 10) );
+				Assert.IsTrue( line.Completed, entry.DisplayName );
+				CollectionAssert.AreEqual( new[] { station.Exit }, line.Existing.ToArray(), entry.DisplayName );
+				Assert.AreEqual( 2, line.Built.Count, entry.DisplayName );
 				var before = economy.Balance;
 				var count = 0;
 				var editor = new TrackEditor( builder, station, new TrackEditHooks
@@ -59,8 +64,11 @@ public class TrackEditRecoveryDataTests
 				editor.EnterLineTool( tool );
 				Assert.IsTrue( tool.Undo(), entry.DisplayName );
 				Assert.IsFalse( tool.Undo(), entry.DisplayName );
-				Assert.AreEqual( 3, count, entry.DisplayName );
-				Assert.AreEqual( before + 3 * (builder.TileCost * economy.ScrapPercent( ride ) / 100), economy.Balance, entry.DisplayName );
+				// The ordinary clear (0x53B280) spares the tiles at 0x7639E0/E4 and 0x7639E8/EC, which the placement sets to the exit
+				// (0x52A3A0) and the entry (0x52A420): backspace refunds the two paid tiles and the exit stays.
+				Assert.AreEqual( 2, count, entry.DisplayName );
+				Assert.IsTrue( cells.Tracks.Get( station.Exit.X, station.Exit.Y ).IsOrigin, entry.DisplayName );
+				Assert.AreEqual( before + 2 * (builder.TileCost * economy.ScrapPercent( ride ) / 100), economy.Balance, entry.DisplayName );
 			}
 		}
 		CollectionAssert.AreEquivalent( new[] { TrackFamily.Kart, TrackFamily.Water }, families.ToArray() );

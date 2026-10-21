@@ -70,9 +70,18 @@ internal static class ParkResumeAssetManifest
 	/// <summary>Trusted asset identity without constructing economy rules (the experimental TPI layout path).</summary>
 	internal static IReadOnlyDictionary<string, string> Capture(ObjectCatalog catalog, string theme, bool easy)
 	{
-		ArgumentNullException.ThrowIfNull(catalog);
-
 		var manifest = new SortedDictionary<string, string>( StringComparer.Ordinal );
+		foreach ( var _ in CaptureSteps( catalog, theme, easy, manifest ) ) { }
+		return manifest;
+	}
+
+	/// <summary>
+	/// <see cref="Capture(ObjectCatalog, string, bool)"/> as steps, one catalogue archive, then the theme's settings files together, then each terrain file per step, for a caller that hashes between frames
+	/// (a park about to be entered, docs/BROWSER-PERFORMANCE.md "Event hitches"): fills <paramref name="manifest"/>, which is complete once the steps have run out.
+	/// </summary>
+	internal static IEnumerable<bool> CaptureSteps(ObjectCatalog catalog, string theme, bool easy, SortedDictionary<string, string> manifest)
+	{
+		ArgumentNullException.ThrowIfNull(catalog);
 		// The full pinned catalog set, not the currently surviving objects: a resumed park can still place
 		// anything its catalogue offered at save time.
 		foreach ( var entry in catalog.Entries.OrderBy( entry => entry.ArchivePath, StringComparer.Ordinal ) )
@@ -80,6 +89,7 @@ internal static class ParkResumeAssetManifest
 			var prefix = entry.Root.KeyPrefix;
 			foreach ( var member in SimulationMembers( entry.FileSystem, entry.ArchivePath ) )
 				Add( manifest, prefix + member, Hash( entry.FileSystem, member ) );
+			yield return true;
 		}
 
 		// The category default .sam under each present category's object files. Bonus archives read these from
@@ -102,9 +112,12 @@ internal static class ParkResumeAssetManifest
 		// The terrain the placement grid and guest paths run on. The original data keeps these as members
 		// of terrain.wad, which FileExists cannot see — OriginalPark lists the terrain directory instead,
 		// and so does this (a root without a terrain directory pins none of them).
+		yield return true;
 		foreach ( var file in TerrainFiles( theme ) )
+		{
 			Add( manifest, DataRootPrefix + file, Hash( FileSystem, file ) );
-		return manifest;
+			yield return true;
+		}
 	}
 
 	private static void AddWhenPresent( SortedDictionary<string, string> manifest, string path )

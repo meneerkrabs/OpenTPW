@@ -146,6 +146,61 @@ public class PlayerProgressLifecycleReviewTests
 		File.WriteAllBytes( Profile, source ); queued(); Assert.AreEqual( 1, transitioned ); Assert.AreEqual( 1, PlayerTicketFile.LoadIfPresent( Profile )!.EarnedTickets );
 	}
 
+	private sealed class PreparedModel : IDisposable
+	{
+		public bool Disposed { get; private set; }
+		public void Dispose() => Disposed = true;
+	}
+
+	/// <summary>Something an earlier build read for the advisor and nobody took (<see cref="AdvisorEntryPreparation"/>).</summary>
+	private static PreparedModel PrepareStale()
+	{
+		var stale = new PreparedModel();
+		AdvisorEntryPreparation.Prepare( "stale", new BaseFileSystem( Path.GetTempPath() ), () => stale );
+		Assert.AreEqual( 1, AdvisorEntryPreparation.Count );
+		return stale;
+	}
+
+	[TestMethod]
+	public void AParkBuildWhoseConstructionFailsLeavesNoAdvisorPreparation()
+	{
+		try
+		{
+			var stale = PrepareStale();
+			flow.ProgressBuildOverride = ( _, _, commit ) => Stage( commit, failStep: true ); Choose(); Pending(); Pump();
+			Assert.AreEqual( "progressFailed", menu.Stack.Top!.Name );
+			Assert.AreEqual( 0, AdvisorEntryPreparation.Count, "a build whose construction failed" ); Assert.IsTrue( stale.Disposed );
+		}
+		finally { AdvisorEntryPreparation.Drop(); }
+	}
+
+	[TestMethod]
+	public void AParkBuildWhoseEnteringFailsLeavesNoAdvisorPreparation()
+	{
+		try
+		{
+			// entering refused (unsaved progress), after the build's preparation
+			KnownOwner(); var source = File.ReadAllBytes( Profile ); var stale = PrepareStale();
+			flow.ProgressBuildOverride = ( _, _, commit ) => Stage( commit ); Choose(); Pending(); File.WriteAllText( Profile, "{}" ); Award(); Pump();
+			Assert.AreEqual( "progressFailed", menu.Stack.Top!.Name );
+			Assert.AreEqual( 0, AdvisorEntryPreparation.Count, "a build whose entering failed" ); Assert.IsTrue( stale.Disposed );
+			File.WriteAllBytes( Profile, source );
+		}
+		finally { AdvisorEntryPreparation.Drop(); }
+	}
+
+	[TestMethod]
+	public void ATearDownDropsTheAdvisorPreparation()
+	{
+		try
+		{
+			var stale = PrepareStale();
+			Call( flow, "TearDown", false, false );
+			Assert.AreEqual( 0, AdvisorEntryPreparation.Count ); Assert.IsTrue( stale.Disposed );
+		}
+		finally { AdvisorEntryPreparation.Drop(); }
+	}
+
 	[TestMethod]
 	public void DirtyDirectTearDownAndNormalQuitRefuseBeforeNativeCloseOrOwnershipMutation()
 	{
@@ -184,7 +239,7 @@ public class PlayerProgressLifecycleReviewTests
 	public void SuccessfulActualTearDownFlushesThenUnsubscribesRetiredRuntime()
 	{
 		KnownOwner(); Award(); Assert.AreEqual( 1, PlayerTicketFile.LoadIfPresent( Profile )!.EarnedTickets );
-		Call( flow, "TearDown", false ); Assert.IsNull( flow.Level ); Assert.IsNull( flow.Menu ); Assert.AreEqual( 1, liveEntity.Deleted );
+		Call( flow, "TearDown", false, false ); Assert.IsNull( flow.Level ); Assert.IsNull( flow.Menu ); Assert.AreEqual( 1, liveEntity.Deleted );
 		var events = typeof( ParkEconomyRuntime ).GetField( "EventRaised", BindingFlags.Instance | BindingFlags.NonPublic )!;
 		Assert.AreEqual( 0, ((Delegate?)events.GetValue( runtime ))?.GetInvocationList().Length ?? 0 );
 		var source = File.ReadAllBytes( Profile ); runtime.Economy.Counters.Max( ParkCounters.Record( ParkRecordKind.CoasterHeight, 1 ), 106 );

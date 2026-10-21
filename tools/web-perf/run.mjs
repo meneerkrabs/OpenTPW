@@ -21,12 +21,13 @@
 // and no game data belongs in the report. Example:
 //
 //   node tools/web-perf/run.mjs --web out/web/wwwroot --game "/path/to/Theme Park World" --label interpreter
-import { promises as fs } from 'node:fs';
+import { promises as fs, readFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { Cdp, launchChrome, mainThreadBusy, medianResults, sleep, startServer, stopChrome, summarizeFrames } from './lib.mjs';
 import { markdown } from './report.mjs';
+import { attributeProfile, eventsScenario, useSymbols } from './events.mjs';
 
 const DEFAULT_CHROME = {
 	darwin: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
@@ -41,7 +42,7 @@ const SELECTIONS = [['Rides', 'Belly Bounce'], ['Shops', 'Balloon Shop'], ['Shop
 function parseArguments(argv) {
 	const options = {
 		web: null, game: null, upstream: null, trackOrigins: false, gc: null, label: 'unlabelled', out: null, chrome: process.env.CHROME ?? DEFAULT_CHROME, headed: false, audible: false,
-		scenarios: ['start', 'lobby', 'jungle', 'buy', 'digest'], window: 30, memoryMinutes: 10, music: false, width: 1280, height: 900, runs: 1, frameCap: 0, keep: 'off', zoom: null, shot: null, follow: null, crowd: 400, cover: 1, evening: null, eveningLamps: 0,
+		scenarios: ['start', 'lobby', 'jungle', 'buy', 'digest'], window: 30, memoryMinutes: 10, music: false, width: 1280, height: 900, runs: 1, frameCap: 0, keep: 'off', zoom: null, shot: null, follow: null, crowd: 400, profile: false, soakSeconds: 90, advice: [], cover: 1, evening: null, eveningLamps: 0,
 	};
 	for (let index = 2; index < argv.length; index++) {
 		const [flag, inline] = argv[index].split(/=(.*)/s);
@@ -67,6 +68,11 @@ function parseArguments(argv) {
 			case '--keep': options.keep = value(); break;
 			case '--zoom': options.zoom = Number(value()); break;
 			case '--crowd': options.crowd = Number(value()); break;
+			case '--profile': options.profile = true; break;
+			case '--profile-out': options.profileOut = value(); break;
+			case '--symbols': useSymbols(readFileSync(value(), 'utf8')); break;
+			case '--soak': options.soakSeconds = Math.max(1, Number(value()) || 90); break;
+			case '--advice': options.advice = value().split(',').map(Number).filter(Number.isFinite); break;
 			case '--shot': options.shot = value(); break;
 			case '--follow': options.follow = Math.trunc(Number(value())) || 0; break;
 			case '--cover': options.cover = Math.min(1, Math.max(0, Number(value()))); break;
@@ -90,11 +96,16 @@ function usage() {
   --track-origins         jungle: record where the textures made from bytes come from (their stack), so the switch scenario names the largest ones (a few ms per texture)
   --label <name>          build label in the report (interpreter, aot, ...)
   --out <file.json>       report path (default reports/web-perf/<date>-<label>.json)
-  --scenarios <list>      comma list of start,lobby,jungle,buy,umbrellas,snow,winter,winterCost,umbrellaCost,memory,switch,revisit,digest,determinism,transfer,reload (default start,lobby,jungle,buy,digest)
+  --scenarios <list>      comma list of start,lobby,jungle,buy,umbrellas,snow,winter,winterCost,umbrellaCost,events,memory,switch,revisit,digest,determinism,transfer,reload (default start,lobby,jungle,buy,digest)
   --window <seconds>      steady window length (default 30)
   --memory-minutes <n>    memory scenario length (default 10)
   --music                 keep music and speech on (default: muted, effects on, as on 11 October)
   --size <w>x<h>          window size (default 1280x900)
+  --profile               jungle (cold start) and events: also record a CPU profile (Profiler domain) and name the functions each slow frame spent its time in
+  --profile-out <file>    with --profile: also write the cold start's raw CPU profile (.cpuprofile JSON with the slow frames' page times)
+  --symbols <file>        with --profile: name the AOT functions from the publish's Emscripten symbol map (-p:WasmEmitSymbolMap=true)
+  --soak <seconds>        events: length of the closing soak at the fastest speed (default 90)
+  --advice <ids>          events: advisor advice message ids to post and time, comma separated
   --crowd <n>             umbrellaCost, winterCost: extra guests staged in the Jungle park (default 400)
   --shot <file>           umbrellas, snow, winter, winterCost: where the screenshot goes; buy: one screenshot per row, named <file>-<row>.png
   --follow <n>            winter, winterCost: the screenshot follows the visible guest after skipping |n| of them by id, counted from the newest when negative (winter default 0, the lowest; winterCost default -250, a guest of a fresh crowd standing in the open and not under the entrance roofs)
@@ -246,7 +257,9 @@ class Page {
 		await sleep(settleMs);
 		const end = await this.mark();
 		const summary = summarizeFrames(end.frames, end.now - start.now);
-		return { readyMs, maxFrameMs: summary.maxMs, over50Ms: summary.over50Ms, longFramesMs: summary.longFramesMs, frames: summary.frames, p95Ms: summary.p95Ms, ...(atReady ? { atReady } : {}) };
+		// With the game's named work on (the events scenario turns it on) the slowest frames come with it.
+		const slowFrames = end.frames.filter(frame => frame[2] && frame[1] >= 40).map(([begin, duration, marks]) => ({ atMs: Math.round(begin - start.now), beginMs: begin, ms: Math.round(duration * 10) / 10, marks }));
+		return { readyMs, maxFrameMs: summary.maxMs, over50Ms: summary.over50Ms, longFramesMs: summary.longFramesMs, frames: summary.frames, p95Ms: summary.p95Ms, ...(slowFrames.length ? { slowFrames } : {}), ...(atReady ? { atReady } : {}) };
 	}
 }
 
@@ -273,6 +286,18 @@ const scenarios = {
 		await page.waitFor('the game mode menu', current => current.menu === 'gameMode' || current.menu === 'themeStart', 10000);
 		// The load profile covers the click, the construction and the first seconds after (textures that load lazily).
 		await page.eval('opentpwPerf.program.PerfProfile(true)');
+		// The events scenario (and --profile) also wants the named work of the cold start's slow frames.
+		const coldMarks = options.scenarios.includes('events') || options.profile;
+		if (coldMarks)
+			await page.eval('opentpwPerf.marks = true, opentpwPerf.markMs = 40, opentpwPerf.program.PerfFrameMarks(true), 0');
+		// --profile: a CPU profile of the cold start names the functions of each slow frame
+		let coldProfile = null;
+		if (options.profile) {
+			await page.send('Profiler.enable');
+			await page.send('Profiler.setSamplingInterval', { interval: 250 });
+			await page.send('Profiler.start');
+			coldProfile = await page.eval('performance.now()');
+		}
 		if (options.trackOrigins)
 			await page.eval('opentpwPerf.program.PerfTrackTextureOrigins(true)');
 		const cold = await page.action('the Jungle park', () => page.enterFullSimulation('jungle'),
@@ -287,8 +312,21 @@ const scenarios = {
 		// The construction time of each frame the park was built over; the last includes entering it.
 		cold.buildFramesMs = cold.atReady.build;
 		delete cold.atReady;
+		if (coldProfile != null) {
+			const captured = (await page.send('Profiler.stop', undefined, 120000)).profile;
+			if (options.profileOut)
+				await fs.writeFile(options.profileOut, JSON.stringify({ pageNowAtStart: coldProfile, slowFrames: (cold.slowFrames ?? []).map(({ beginMs, ms }) => [beginMs, ms]), profile: captured }));
+			for (const frame of cold.slowFrames ?? [])
+				{
+				frame.functions = attributeProfile(captured, coldProfile, [[frame.beginMs, frame.beginMs + frame.ms]], 40);
+				frame.stacks = attributeProfile(captured, coldProfile, [[frame.beginMs, frame.beginMs + frame.ms]], 15, 6);
+				frame.owners = attributeProfile(captured, coldProfile, [[frame.beginMs, frame.beginMs + frame.ms]], 20, 4, true);
+			}
+		}
 		cold.profile = JSON.parse(await page.eval('opentpwPerf.program.PerfLoadProfile()'));
 		await page.eval('opentpwPerf.program.PerfProfile(false)');
+		if (coldMarks)
+			await page.eval('opentpwPerf.marks = false, opentpwPerf.markMs = 8, opentpwPerf.program.PerfFrameMarks(false), 0');
 		const steady = await page.steady(options.window * 1000);
 		const result = { cold, steady };
 		// [evening] the same park with the evening look held at night, dusk or day, or the cycle and its lamps turned off (night, dusk, day, off), measured in a second window
@@ -457,6 +495,11 @@ const scenarios = {
 		const file = options.shot ?? path.join(os.tmpdir(), 'opentpw-snow.png');
 		await fs.writeFile(file, Buffer.from(shot.data, 'base64'));
 		return { cover: options.cover, screenshot: file };
+	},
+
+	/** The frames each event of a park session causes, with the game's named work in the slow ones (events.mjs; run after jungle). */
+	async events(page, options) {
+		return eventsScenario(page, options);
 	},
 
 	async buy(page, options) {

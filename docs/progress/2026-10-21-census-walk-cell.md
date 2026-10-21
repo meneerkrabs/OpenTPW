@@ -1,0 +1,7 @@
+## The park census reads the cell a guest stands on (October 21, 2026)
+
+After closing a park with guests inside, the gate stayed open until the guests boarded the bus: in a test run the census stayed at 13 from turn 860 to 1050 with everyone already outside. OpenTPW's walk step moves a guest's stored cell only onto path and queue cells, so a guest on the approach road kept the entrance cell, and the census counted it there.
+
+- **What.** The census (`ParkGate.CountedInCensus`, used by the gate retry and every guest statistic that walks the census) reads the cell of the guest's walk position, `GuestNavigation.Cell`. tp.exe's predicate `0x004FA990` reads the thing's cell bytes, which every walk step rewrites whatever the cell type (`0x004FA2A0` → `0x0050B6A0`) and the teleport `0x004FA930` sets; OpenTPW's cell lists already follow that position.
+- **Effect.** A guest walking home leaves the census as it steps off the park onto the gate's road, so the retry (`0x00516380`, every 30 park turns) shuts the gate at the first boundary after the last guest walked out. Riders still count at the stand point they walked to.
+- **Tests.** `ParkGateTests.AClosedParkShutsItsGateAtTheFirstRetryAfterTheLastGuestWalkedOut` closes a park with four guests inside and checks that the gate shuts on the first 30-turn boundary after the census emptied, while the guests still wait outside; the census tests put the guests' walk positions on their cells.

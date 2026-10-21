@@ -448,8 +448,6 @@ public sealed class OnlineSession : IDisposable, IPresenceSession, IChatPanelSou
 		Chat = null;
 		chatConnecting = false;
 		Interlocked.Increment( ref chatEpoch );
-		// [EXT:online-coop-session] the co-op link belongs to the login; a session it held is named again at the next open, and left then
-		Coop.Close();
 		requestedRoom = null;
 		joinPending = false;
 		joinSentAt = null;
@@ -464,6 +462,9 @@ public sealed class OnlineSession : IDisposable, IPresenceSession, IChatPanelSou
 		serverInfoEpoch++;
 		Client?.Dispose();
 		Client = null;
+		// [EXT:online-coop-session] the co-op link belongs to the login (closed once the login is gone, so a handler of its close cannot open it on the old one); a
+		// session it held is named again at the next open, and left then
+		Coop.Close();
 		Parks = Array.Empty<ParkSummary>();
 		Inbox = Array.Empty<PostcardSummary>();
 		News = null;

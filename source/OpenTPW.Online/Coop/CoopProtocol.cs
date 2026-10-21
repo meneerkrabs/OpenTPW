@@ -27,7 +27,8 @@ public static class CoopProtocol
 	/// <summary>Simulation-changing mods a hello lists at most: as many as a save records (<c>ParkResumeMods.MaximumRecords</c>).</summary>
 	public const int MaximumMods = 256;
 	public const int MaximumModIdLength = 64;
-	public const int MaximumModVersionLength = 32;
+	/// <summary>A mod's version as its manifest may write it (<c>ModVersion.MaximumLength</c>).</summary>
+	public const int MaximumModVersionLength = 64;
 	/// <summary>A session's id: 16 lowercase hexadecimal digits.</summary>
 	public const int SessionIdLength = 16;
 	/// <summary>A session's code is this many characters of <see cref="CodeAlphabet"/>.</summary>

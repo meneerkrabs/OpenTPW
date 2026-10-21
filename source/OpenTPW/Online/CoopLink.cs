@@ -2,6 +2,7 @@ using System.Net.WebSockets;
 using System.Reflection;
 using System.Threading.Channels;
 using OpenTPW.Mods;
+using OpenTPW.Online;
 using OpenTPW.Online.Api;
 using OpenTPW.Online.Client;
 using OpenTPW.Online.Coop;
@@ -31,16 +32,20 @@ public enum CoopStop
 	Replaced,
 	/// <summary>The server is older than protocol 6 and has no shared parks.</summary>
 	ServerTooOld,
-	/// <summary>The server closed the link for good: a login, protocol or size refusal, or a close the link does not resume.</summary>
+	/// <summary>
+	/// The link cannot go on: no login, a login the server refuses, a protocol or size refusal, a close the link does not resume after, or a hello this
+	/// game cannot write.
+	/// </summary>
 	Closed,
-	/// <summary>No socket could be opened again within <see cref="CoopLink.ReconnectWindow"/>.</summary>
+	/// <summary>No socket stayed up within <see cref="CoopLink.ReconnectWindow"/> of the loss.</summary>
 	Lost
 }
 
 /// <summary>
 /// [EXT:online-coop-session] The game's link to the co-op socket of shared parks (docs/ONLINE.md, "Shared parks"), under an <see cref="OnlineSession"/> and its
 /// login: a background reader and writer per socket, a reconnect after a lost socket that resumes the session, a silence watchdog, and the requests and
-/// events the shared park uses. Every request and event is on the game thread; events are raised from <see cref="OnlineSession.Pump"/>.
+/// events the shared park uses. Every request and event is on the game thread. What the server sends is raised from <see cref="OnlineSession.Pump"/>;
+/// <see cref="Open"/>, <see cref="Close"/> and a stop raise their own state and session events at once.
 /// </summary>
 public sealed class CoopLink
 {
@@ -56,34 +61,63 @@ public sealed class CoopLink
 	/// <summary>How long a lost link keeps trying: the server ends a session whose host has been away this long.</summary>
 	internal static readonly TimeSpan DefaultReconnectWindow = TimeSpan.FromMinutes( 10 );
 
+	/// <summary>
+	/// A socket that stays up this long after its welcome counts as healthy: only then does a later loss start the waits and the window afresh. A socket that
+	/// keeps dropping soon after its welcome stays one loss, so the link backs off and stops in time.
+	/// </summary>
+	internal static readonly TimeSpan DefaultStableAfter = TimeSpan.FromSeconds( 30 );
+
+	/// <summary>A connect attempt whose socket has not opened within this long is given up and tried again (a server that never answers the upgrade).</summary>
+	internal static readonly TimeSpan DefaultConnectTimeout = TimeSpan.FromSeconds( 20 );
+
 	/// <summary>The bytes queued for a socket at most; a socket that falls this far behind is dropped and resumed (a host resends its frames after a resume).</summary>
 	internal const long MaximumQueuedBytes = 8 * 1024 * 1024;
 
-	/// <summary>The random id of this game process, sent in every hello: a reconnect of this process replaces its own old socket, another process is refused.</summary>
-	internal static readonly Guid ProcessInstance = Guid.NewGuid();
+	/// <summary>The largest frame payload a host sends: the message limit less the frame's type, number and length.</summary>
+	public const int MaximumFramePayload = CoopProtocol.MaximumMessageBytes - 13;
+
+	/// <summary>The largest message payload a member sends: the message limit less the message's type, addressee and length.</summary>
+	public const int MaximumMessagePayload = CoopProtocol.MaximumMessageBytes - 9;
 
 	private static readonly byte[] Pong = new CoopPong().Encode();
 	private readonly OnlineSession owner;
 	/// <summary>The socket in use.</summary>
 	private Socket? live;
-	/// <summary>Counts opens, closes and attempts: what an older one posts back is dropped.</summary>
+	/// <summary>Counts opens, closes, stops and attempts: what an older one posts back is dropped.</summary>
 	private int epoch;
-	/// <summary>When the socket was lost (<see cref="Environment.TickCount64"/>), while reconnecting.</summary>
+	/// <summary>When the loss began (<see cref="Environment.TickCount64"/>), while reconnecting or opening.</summary>
 	private long? lostAt;
-	/// <summary>Attempts since the socket was lost, or since <see cref="Open"/> while none has been welcomed.</summary>
+	/// <summary>Attempts since the loss began, or since <see cref="Open"/> while none has been welcomed.</summary>
 	private int attempt;
 	/// <summary>The server's protocol was asked after a failed first attempt (an older server has no co-op socket).</summary>
 	private bool protocolAsked;
+	/// <summary>The take-over <see cref="Open"/> asked for, kept until a welcome so a failed first attempt does not lose it.</summary>
+	private bool takeOver;
+	/// <summary>The connect attempt in flight: its timeout, and its cancel at a close or a stop.</summary>
+	private CancellationTokenSource? attemptCancel;
+	/// <summary>When the live socket was welcomed (<see cref="Environment.TickCount64"/>).</summary>
+	private long? welcomedAt;
+	/// <summary>The creates and joins sent on the live socket and not answered yet: a lost socket refuses them (<see cref="Refused"/>).</summary>
+	private readonly List<CoopMessageType> pending = new();
+	/// <summary>A leave that could not go out (the link was reconnecting): its reason goes with the leave the next welcome sends.</summary>
+	private (string SessionId, string Reason)? pendingLeave;
 
 	internal CoopLink( OnlineSession owner ) => this.owner = owner;
 
-	/// <summary>This game process's id in its hellos (tests give each link of a process its own).</summary>
-	internal Guid Instance { get; set; } = ProcessInstance;
+	/// <summary>
+	/// This link's random id in its hellos: a reconnect of this link replaces its own old socket, another link of the account (another game, or another
+	/// online session of this one) is refused unless it takes over.
+	/// </summary>
+	internal Guid Instance { get; set; } = Guid.NewGuid();
 	internal TimeSpan[] RetryDelays { get; set; } = DefaultRetryDelays;
 	internal TimeSpan Silence { get; set; } = DefaultSilence;
 	internal TimeSpan ReconnectWindow { get; set; } = DefaultReconnectWindow;
+	internal TimeSpan StableAfter { get; set; } = DefaultStableAfter;
+	internal TimeSpan ConnectTimeout { get; set; } = DefaultConnectTimeout;
 	/// <summary>The build and mods a hello names (<see cref="CurrentIdentity"/>; tests give their own).</summary>
 	internal Func<(string Build, IReadOnlyList<CoopMod> Mods)> Identity { get; set; } = CurrentIdentity;
+	/// <summary>Opens a socket (<see cref="OnlineClient.ConnectCoopAsync"/>; tests delay or cut it).</summary>
+	internal Func<OnlineClient, CancellationToken, Task<CoopConnection>> Connector { get; set; } = ( client, cancel ) => client.ConnectCoopAsync( cancel );
 	/// <summary>Sockets the link has opened (tests: a reconnect).</summary>
 	internal int Connections { get; private set; }
 
@@ -101,27 +135,33 @@ public sealed class CoopLink
 	public IReadOnlyList<CoopMod>? HostMods { get; private set; }
 	/// <summary>The server's protocol, from its welcome.</summary>
 	public int? ServerProtocol { get; private set; }
-	/// <summary>The newest frame of the session this game holds: the last one it sent as the host or received as a guest. A resume reports it.</summary>
+	/// <summary>
+	/// The newest frame of the session this game holds: for a host the last frame it queued (after a resume, the last one the server relayed), for a guest
+	/// the last one it received (when it joined, the host's last frame then). A resume reports it.
+	/// </summary>
 	public ulong LastFrameSeq { get; private set; }
 
 	/// <summary>This game created a session (it hosts it) or joined one.</summary>
 	public event Action<CoopSessionState>? SessionStarted;
 	/// <summary>
-	/// A lost socket is back and the session with it; a host resends its frames after the state's <see cref="CoopSessionState.LastFrameSeq"/>. When that
-	/// number is not exact (<see cref="CoopSessionState.SeqKnown"/>: the server crashed), the server takes any later frame, and a guest drops the frames it
-	/// already holds.
+	/// A lost socket is back and the session with it: the state is a full refresh (members that came or went while the socket was lost raise no
+	/// <see cref="MemberChanged"/>). A host resends its frames after the state's <see cref="CoopSessionState.LastFrameSeq"/>; when that number is not exact
+	/// (<see cref="CoopSessionState.SeqKnown"/>: the server crashed), the server takes any later frame, and a guest drops the frames it already holds.
 	/// </summary>
 	public event Action<CoopSessionState>? Resumed;
 	/// <summary>The server dropped a frame of the host's that was not the next one (no guest saw it); the host resends from <see cref="CoopFrameRefused.Expected"/>.</summary>
 	public event Action<CoopFrameRefused>? FrameRefused;
 	public event Action<CoopMemberChanged>? MemberChanged;
-	/// <summary>This game is no longer in its session: kicked, the host left, it expired while this game was away, or the link stopped.</summary>
+	/// <summary>This game is no longer in its session: kicked, the host left, it ended while this game was away, or the link closed or stopped.</summary>
 	public event Action<CoopEnded>? SessionEnded;
 	/// <summary>A frame of the host's command stream (a guest).</summary>
 	public event Action<CoopFrame>? FrameReceived;
 	public event Action<CoopRelayed>? MessageReceived;
 	public event Action<CoopInvited>? Invited;
-	/// <summary>The server refused a request (<see cref="CoopError.Request"/>), with a reason that names what differs.</summary>
+	/// <summary>
+	/// The server refused a request (<see cref="CoopError.Request"/>), with a reason that names what differs; or a create or join got no answer because its
+	/// socket was lost (<see cref="CoopReason.Unknown"/>), so the game can ask again.
+	/// </summary>
 	public event Action<CoopError>? Refused;
 	public event Action<CoopLinkState>? StateChanged;
 
@@ -150,37 +190,65 @@ public sealed class CoopLink
 		attempt = 0;
 		lostAt = null;
 		protocolAsked = false;
+		this.takeOver = takeOver;
+		var opening = ++epoch;
 		SetState( CoopLinkState.Opening );
-		Connect( takeOver );
+		// a handler of the change may have closed the link again
+		if ( opening == epoch && State == CoopLinkState.Opening )
+			Connect();
 	}
-
-	/// <summary>Closes the link and forgets its session without leaving it (<see cref="Leave"/> leaves); a later open names it, and the game leaves it then.</summary>
-	public void Close()
-	{
-		epoch++;
-		live?.Close();
-		live = null;
-		ForgetSession();
-		Stopped = CoopStop.None;
-		SetState( CoopLinkState.Closed );
-	}
-
-	/// <summary>Creates a session hosted by this game: listed on the open list or by code and invitation only (decision Q4), its title and most players (2 to 4).</summary>
-	public bool Create( bool listed, string title, int maximumPlayers ) =>
-		Session == null && maximumPlayers is >= 2 and <= CoopProtocol.MaximumPlayers && Send( new CoopCreate( listed, title, (byte)maximumPlayers ) );
-
-	/// <summary>Joins the session with <paramref name="code"/> as typed (case, spaces and dashes do not matter); false for what cannot be a code.</summary>
-	public bool Join( string code ) => Session == null && CoopProtocol.NormalizeCode( code ) is { } normalized && Send( new CoopJoin( normalized ) );
 
 	/// <summary>
-	/// Leaves the session, at once for this game: the server tells the others <paramref name="reason"/>, and a host's leave ends the session. A leave that
-	/// cannot go out now goes out when the server next names the session.
+	/// Closes the link and forgets its session without leaving it (<see cref="Leave"/> leaves): the session is over for this game (<see cref="SessionEnded"/>),
+	/// a later open names it, and the game leaves it then.
+	/// </summary>
+	public void Close()
+	{
+		Shut( "This game closed its link to the shared park." );
+		Stopped = CoopStop.None;
+		var held = Session;
+		ForgetSession();
+		SetState( CoopLinkState.Closed, quietly: true );
+		if ( held != null )
+			SessionEnded?.Invoke( new CoopEnded( held.Id, CoopReason.Unknown, "This game closed its link to the shared park." ) );
+		RaiseState();
+	}
+
+	/// <summary>
+	/// Creates a session hosted by this game: listed on the open list or by code and invitation only (decision Q4), its title and most players (2 to 4).
+	/// False for a title over <see cref="CoopProtocol.MaximumTitleLength"/> characters or with a control character, and while a create or join waits.
+	/// </summary>
+	public bool Create( bool listed, string title, int maximumPlayers )
+	{
+		if ( Session != null || pending.Count > 0 || maximumPlayers is < 2 or > CoopProtocol.MaximumPlayers || !Fits( title, CoopProtocol.MaximumTitleLength ) )
+			return false;
+		if ( !Send( new CoopCreate( listed, title, (byte)maximumPlayers ) ) )
+			return false;
+		pending.Add( CoopMessageType.Create );
+		return true;
+	}
+
+	/// <summary>Joins the session with <paramref name="code"/> as typed (case, spaces and dashes do not matter); false for what cannot be a code, and while a create or join waits.</summary>
+	public bool Join( string code )
+	{
+		if ( Session != null || pending.Count > 0 || CoopProtocol.NormalizeCode( code ) is not { } normalized )
+			return false;
+		if ( !Send( new CoopJoin( normalized ) ) )
+			return false;
+		pending.Add( CoopMessageType.Join );
+		return true;
+	}
+
+	/// <summary>
+	/// Leaves the session, at once for this game: the server tells the others <paramref name="reason"/> (cut to what a message carries), and a host's leave
+	/// ends the session. A leave that cannot go out now goes out, with its reason, when the server next names the session.
 	/// </summary>
 	public bool Leave( string reason )
 	{
-		if ( Session == null )
+		if ( Session is not { } session )
 			return false;
-		Send( new CoopLeave( reason ) );
+		reason = CoopProtocol.Clip( reason.Trim() );
+		pendingLeave = Send( new CoopLeave( reason ) ) ? null : (session.Id, reason);
 		ForgetSession();
 		return true;
 	}
@@ -188,30 +256,34 @@ public sealed class CoopLink
 	/// <summary>The host removes member <paramref name="memberId"/>; the account cannot join the session again.</summary>
 	public bool Kick( uint memberId ) => IsHost && Send( new CoopKick( memberId ) );
 
-	/// <summary>The host invites a player, who must have a co-op link open.</summary>
-	public bool Invite( string player ) => IsHost && Send( new CoopInvite( player.Trim() ) );
+	/// <summary>The host invites a player, who must have a co-op link open; false for a name that cannot be one.</summary>
+	public bool Invite( string player )
+	{
+		player = player.Trim();
+		return IsHost && player.Length > 0 && Fits( player, CoopProtocol.MaximumInviteNameLength ) && Send( new CoopInvite( player ) );
+	}
 
 	/// <summary>
-	/// The host's frame <paramref name="seq"/> (each one after the last, from 1) for the other members. A frame that cannot go out now (the link is
-	/// reconnecting) is the host's to resend after <see cref="Resumed"/>.
+	/// The host's frame <paramref name="seq"/> (each one after the last, from 1) for the other members; false when it cannot go out now (the link is
+	/// reconnecting: the host resends after <see cref="Resumed"/>) or the payload is over <see cref="MaximumFramePayload"/>.
 	/// </summary>
 	public bool SendFrame( ulong seq, ReadOnlyMemory<byte> payload )
 	{
-		if ( !IsHost || seq == 0 )
+		if ( !IsHost || seq is 0 or ulong.MaxValue || payload.Length > MaximumFramePayload || !Send( new CoopHostFrame( seq, payload ) ) )
 			return false;
 		LastFrameSeq = seq;
-		return Send( new CoopHostFrame( seq, payload ) );
+		return true;
 	}
 
 	/// <summary>
 	/// A message to member <paramref name="to"/> (<see cref="CoopProtocol.EveryOtherMember"/>: every other member, the host's only); a guest sends to the
 	/// host. At most once: one to a member who is not connected is refused, and one queued on a lost socket is lost.
 	/// </summary>
-	public bool Send( uint to, ReadOnlyMemory<byte> payload ) => Session != null && Send( new CoopSend( to, payload ) );
+	public bool Send( uint to, ReadOnlyMemory<byte> payload ) => Session != null && payload.Length <= MaximumMessagePayload && Send( new CoopSend( to, payload ) );
 
 	/// <summary>
 	/// The open list of shared parks of this game's build (another build cannot join): <paramref name="onListed"/> runs on the game thread with the sessions,
-	/// or with null and why the list failed.
+	/// or with null and why the list failed. It does not run once the player has logged out or changed server meanwhile.
 	/// </summary>
 	public void List( Action<IReadOnlyList<CoopListedSession>?, string?> onListed )
 	{
@@ -229,22 +301,35 @@ public sealed class CoopLink
 			{
 				sessions = (await client.ListCoopSessionsAsync()).Sessions.Where( session => session.Build == build ).ToArray();
 			}
-			catch ( Exception exception ) when ( exception is OnlineException or HttpRequestException or IOException or InvalidDataException or TaskCanceledException
-				or InvalidOperationException or ObjectDisposedException )
+			catch ( Exception exception )
 			{
+				if ( exception is not (OnlineException or HttpRequestException or IOException or InvalidDataException or TaskCanceledException
+					or InvalidOperationException or ObjectDisposedException) )
+					Log.Warning( $"The shared parks list failed: {exception}" );
 				error = exception.Message;
 			}
 			owner.Post( () => onListed( sessions, error ) );
 		} );
 	}
 
+	/// <summary>Whether <paramref name="text"/> fits a field of <paramref name="maximumLength"/> characters (the writer refuses longer ones and control characters).</summary>
+	private static bool Fits( string text, int maximumLength ) => text.Length <= maximumLength && !text.Any( char.IsControl );
+
 	private bool Send( CoopMessage message )
 	{
 		if ( State != CoopLinkState.Open || live is not { } socket )
 			return false;
-		var bytes = message.Encode();
+		byte[] bytes;
+		try
+		{
+			bytes = message.Encode();
+		}
+		catch ( ArgumentException )
+		{
+			return false;
+		}
 		if ( bytes.Length > CoopProtocol.MaximumMessageBytes )
-			throw new ArgumentException( $"The co-op message is over {CoopProtocol.MaximumMessageBytes} bytes." );
+			return false;
 		if ( socket.Enqueue( bytes ) )
 			return true;
 		// the socket is this far behind: dropping it lets the link resume on a new one
@@ -252,7 +337,7 @@ public sealed class CoopLink
 		return false;
 	}
 
-	private void Connect( bool takeOver )
+	private void Connect()
 	{
 		if ( owner.Client is not { Session: not null } client )
 		{
@@ -260,34 +345,50 @@ public sealed class CoopLink
 			return;
 		}
 		var current = ++epoch;
-		var (build, mods) = Identity();
-		var resume = Session is { } session ? new CoopResume( session.Id, session.You, LastFrameSeq ) : null;
-		var hello = new CoopHello( (ushort)CoopProtocol.Version, build, mods, Instance, takeOver, resume ).Encode();
+		byte[] hello;
+		try
+		{
+			var (build, mods) = Identity();
+			var resume = Session is { } session ? new CoopResume( session.Id, session.You, LastFrameSeq ) : null;
+			hello = new CoopHello( (ushort)CoopProtocol.Version, build, mods, Instance, takeOver, resume ).Encode();
+		}
+		catch ( ArgumentException exception )
+		{
+			// a build or a mod list a hello cannot carry: no attempt would get further
+			Log.Warning( $"The shared park link cannot say hello: {exception.Message}" );
+			Stop( CoopStop.Closed );
+			return;
+		}
 		var silence = Silence;
 		var askProtocol = State == CoopLinkState.Opening && !protocolAsked && owner.ServerProtocol == null;
+		var cancel = attemptCancel = new CancellationTokenSource( ConnectTimeout );
+		var connector = Connector;
 		owner.Background( async () =>
 		{
 			CoopConnection connection;
 			try
 			{
-				connection = await client.ConnectCoopAsync();
+				connection = await connector( client, cancel.Token );
 			}
 			catch ( OnlineException exception ) when ( exception.Status is System.Net.HttpStatusCode.Unauthorized )
 			{
 				// the login is no longer valid (a password change, a deleted account): another attempt would be refused the same way
 				owner.Post( () =>
 				{
+					Forget( cancel );
 					if ( current == epoch )
 						Stop( CoopStop.Closed );
 				} );
 				return;
 			}
-			catch ( Exception exception ) when ( exception is WebSocketException or HttpRequestException or IOException or OperationCanceledException
-				or InvalidOperationException or ObjectDisposedException or OnlineException )
+			catch ( Exception exception )
 			{
+				if ( exception is not (WebSocketException or HttpRequestException or IOException or OperationCanceledException or InvalidOperationException
+					or ObjectDisposedException or OnlineException) )
+					Log.Warning( $"A shared park connection failed: {exception}" );
 				// a first open that fails asks the server's protocol once: an older server has no co-op socket to wait for
 				int? protocol = null;
-				if ( askProtocol )
+				if ( askProtocol && !cancel.IsCancellationRequested )
 				{
 					try
 					{
@@ -299,6 +400,7 @@ public sealed class CoopLink
 				}
 				owner.Post( () =>
 				{
+					Forget( cancel );
 					if ( current != epoch )
 						return;
 					if ( askProtocol )
@@ -310,30 +412,44 @@ public sealed class CoopLink
 				} );
 				return;
 			}
-			var socket = new Socket( connection );
-			socket.Enqueue( hello );
+			// only an attempt the link still wants starts reading and says hello: an abandoned one closes without a word, so it cannot replace a newer socket
 			owner.Post( () =>
 			{
+				Forget( cancel );
 				if ( current != epoch )
 				{
-					socket.Close();
+					connection.Dispose();
 					return;
 				}
+				var socket = new Socket( connection );
 				live = socket;
 				Connections++;
-			}, socket.Close );
-			_ = Task.Run( socket.WriteLoopAsync );
-			await ReadLoopAsync( socket, silence );
+				socket.Enqueue( hello );
+				owner.Background( socket.WriteLoopAsync );
+				owner.Background( () => ReadLoopAsync( socket, silence ) );
+			}, () =>
+			{
+				cancel.Dispose();
+				connection.Dispose();
+			} );
 		} );
 	}
 
-	/// <summary>Reads <paramref name="socket"/> until it ends, answering pings at once and passing every other message to the game thread.</summary>
+	/// <summary>The attempt <paramref name="cancel"/> belongs to has ended: its timeout goes.</summary>
+	private void Forget( CancellationTokenSource cancel )
+	{
+		if ( attemptCancel == cancel )
+			attemptCancel = null;
+		cancel.Dispose();
+	}
+
+	/// <summary>Reads <paramref name="socket"/> until it ends, answering pings at once and passing every other message to the game thread; its end always reaches it too.</summary>
 	private async Task ReadLoopAsync( Socket socket, TimeSpan silence )
 	{
 		var malformed = false;
-		using var quiet = new CancellationTokenSource();
 		try
 		{
+			using var quiet = new CancellationTokenSource();
 			while ( true )
 			{
 				// no message for this long drops the socket (a cancelled receive aborts it), and the link resumes on a new one
@@ -353,15 +469,20 @@ public sealed class CoopLink
 		{
 			malformed = true;
 		}
-		catch ( Exception exception ) when ( exception is WebSocketException or OperationCanceledException or ObjectDisposedException )
+		catch ( Exception exception )
 		{
+			if ( exception is not (WebSocketException or OperationCanceledException or ObjectDisposedException) )
+				Log.Warning( $"A shared park socket failed: {exception}" );
 		}
-		var status = socket.Connection.CloseStatus;
-		if ( malformed )
-			socket.Fail( (WebSocketCloseStatus)CoopCloseStatus.ProtocolError, "invalid message" );
-		else
-			socket.Close();
-		owner.Post( () => SocketEnded( socket, status, malformed ) );
+		finally
+		{
+			var status = socket.Connection.CloseStatus;
+			if ( malformed )
+				socket.Fail( (WebSocketCloseStatus)CoopCloseStatus.ProtocolError, "invalid message" );
+			else
+				socket.Close();
+			owner.Post( () => SocketEnded( socket, status, malformed ) );
+		}
 	}
 
 	private void Receive( Socket socket, CoopMessage message )
@@ -374,9 +495,11 @@ public sealed class CoopLink
 				Welcomed( welcome );
 				break;
 			case CoopCreated created:
+				pending.Remove( CoopMessageType.Create );
 				Started( created.Session, null, null );
 				break;
 			case CoopJoined joined:
+				pending.Remove( CoopMessageType.Join );
 				Started( joined.Session, joined.HostBuild, joined.HostMods );
 				break;
 			case CoopMemberChanged change when Session is { } session:
@@ -406,6 +529,8 @@ public sealed class CoopLink
 				Invited?.Invoke( invited );
 				break;
 			case CoopError error:
+				if ( error.Request is CoopMessageType.Create or CoopMessageType.Join )
+					pending.Remove( error.Request );
 				Refused?.Invoke( error );
 				break;
 		}
@@ -422,19 +547,25 @@ public sealed class CoopLink
 
 	/// <summary>
 	/// The server's answer to the hello: the session resumed, or why it ended while this game was away. A session the server names that this game does not
-	/// hold (it restarted, or took the socket over) cannot be resumed, so the account leaves it.
+	/// hold (it restarted, or took the socket over, or its create or join was answered on a lost socket) cannot be resumed, so the account leaves it, before
+	/// anything else this welcome raises.
 	/// </summary>
 	private void Welcomed( CoopWelcome welcome )
 	{
 		ServerProtocol = welcome.Protocol;
-		lostAt = null;
-		attempt = 0;
+		welcomedAt = Environment.TickCount64;
+		takeOver = false;
 		CoopSessionState? resumed = null;
 		CoopEnded? ended = null;
 		if ( Session is { } held )
 		{
 			if ( welcome.Session is { } state && state.Id == held.Id && state.You == held.You )
+			{
 				resumed = Session = state;
+				// what the server relayed last, not what the host queued on the lost socket
+				if ( IsHost )
+					LastFrameSeq = state.LastFrameSeq;
+			}
 			else
 			{
 				ended = welcome.EndedWhileAway is { } away && away.SessionId == held.Id ? away
@@ -442,13 +573,18 @@ public sealed class CoopLink
 				ForgetSession();
 			}
 		}
-		SetState( CoopLinkState.Open );
-		if ( Session == null && welcome.Session != null )
-			Send( new CoopLeave( "This game no longer holds the shared park." ) );
+		SetState( CoopLinkState.Open, quietly: true );
+		if ( Session == null && welcome.Session is { } named )
+		{
+			var reason = pendingLeave is { } leave && leave.SessionId == named.Id ? leave.Reason : "This game no longer holds the shared park.";
+			Send( new CoopLeave( reason ) );
+		}
+		pendingLeave = null;
 		if ( ended != null )
 			SessionEnded?.Invoke( ended );
 		if ( resumed != null )
 			Resumed?.Invoke( resumed );
+		RaiseState();
 	}
 
 	/// <summary>The socket ended: a close the link resumes after starts the reconnect attempts, any other stops the link.</summary>
@@ -457,6 +593,9 @@ public sealed class CoopLink
 		if ( socket != live )
 			return;
 		live = null;
+		var stable = welcomedAt is { } at && Environment.TickCount64 - at >= StableAfter.TotalMilliseconds;
+		welcomedAt = null;
+		FailPending();
 		if ( malformed )
 			Stop( CoopStop.Closed );
 		else if ( status == CoopCloseStatus.InUse )
@@ -467,13 +606,18 @@ public sealed class CoopLink
 			Stop( CoopStop.Closed );
 		else
 		{
-			if ( State == CoopLinkState.Open )
+			// a socket that stayed up starts a new loss; one that dropped soon after its welcome goes on with the loss before it
+			if ( stable || lostAt == null )
 			{
 				lostAt = Environment.TickCount64;
 				attempt = 0;
-				SetState( CoopLinkState.Reconnecting );
 			}
-			Retry( rate: status == CoopCloseStatus.Rate );
+			var current = epoch;
+			if ( State == CoopLinkState.Open )
+				SetState( CoopLinkState.Reconnecting );
+			// a handler of the change may have closed the link
+			if ( current == epoch && State is CoopLinkState.Opening or CoopLinkState.Reconnecting )
+				Retry( rate: status == CoopCloseStatus.Rate );
 		}
 	}
 
@@ -497,7 +641,7 @@ public sealed class CoopLink
 			owner.Post( () =>
 			{
 				if ( current == epoch && State is CoopLinkState.Opening or CoopLinkState.Reconnecting )
-					Connect( takeOver: false );
+					Connect();
 			} );
 		} );
 	}
@@ -505,20 +649,47 @@ public sealed class CoopLink
 	/// <summary>The link stopped on its own: the socket goes, and a session it held is over for this game.</summary>
 	private void Stop( CoopStop reason )
 	{
-		epoch++;
-		live?.Close();
-		live = null;
+		Shut( "The link to the server ended before the server answered." );
 		var held = Session;
 		ForgetSession();
 		Stopped = reason;
-		SetState( CoopLinkState.Closed );
+		SetState( CoopLinkState.Closed, quietly: true );
 		if ( held != null )
 			SessionEnded?.Invoke( new CoopEnded( held.Id, CoopReason.Unknown, reason switch
 			{
+				CoopStop.InUseElsewhere => "Another game of this account holds the link to shared parks.",
 				CoopStop.Replaced => "Another game of this account took the shared park over.",
+				CoopStop.ServerTooOld => "The server does not share parks.",
 				CoopStop.Lost => "The connection to the server was lost.",
 				_ => "The server closed the connection."
 			} ) );
+		RaiseState();
+	}
+
+	/// <summary>Ends whatever the link is doing: an attempt on its way, the live socket and the requests waiting on it (refused with <paramref name="text"/>).</summary>
+	private void Shut( string text )
+	{
+		epoch++;
+		if ( attemptCancel != null )
+		{
+			attemptCancel.Cancel();
+			attemptCancel = null;
+		}
+		live?.Close();
+		live = null;
+		welcomedAt = null;
+		FailPending( text );
+	}
+
+	/// <summary>Refuses the creates and joins that wait on a socket that is gone: the game hears no answer will come and can ask again.</summary>
+	private void FailPending( string text = "The connection was lost before the server answered." )
+	{
+		if ( pending.Count == 0 )
+			return;
+		var requests = pending.ToArray();
+		pending.Clear();
+		foreach ( var request in requests )
+			Refused?.Invoke( new CoopError( request, CoopReason.Unknown, text ) );
 	}
 
 	private void ForgetSession()
@@ -529,18 +700,28 @@ public sealed class CoopLink
 		LastFrameSeq = 0;
 	}
 
-	private void SetState( CoopLinkState state )
+	private CoopLinkState raised;
+
+	/// <summary>Sets <see cref="State"/>; <paramref name="quietly"/> leaves raising <see cref="StateChanged"/> to <see cref="RaiseState"/>, after the events that go first.</summary>
+	private void SetState( CoopLinkState state, bool quietly = false )
 	{
-		if ( State == state )
-			return;
 		State = state;
-		StateChanged?.Invoke( state );
+		if ( !quietly )
+			RaiseState();
+	}
+
+	private void RaiseState()
+	{
+		if ( raised == State )
+			return;
+		raised = State;
+		StateChanged?.Invoke( State );
 	}
 
 	/// <summary>One open socket: its connection and the queue its writer sends, bounded by <see cref="MaximumQueuedBytes"/>.</summary>
 	private sealed class Socket
 	{
-		private readonly Channel<byte[]> outbox = Channel.CreateUnbounded<byte[]>( new UnboundedChannelOptions { SingleReader = true } );
+		private readonly Channel<byte[]> outbox = Channel.CreateUnbounded<byte[]>( new UnboundedChannelOptions { SingleReader = false } );
 		private long queuedBytes;
 
 		public Socket( CoopConnection connection ) => Connection = connection;
@@ -582,10 +763,12 @@ public sealed class CoopLink
 			_ = Task.Delay( TimeSpan.FromSeconds( 2 ) ).ContinueWith( _ => Connection.Abort(), TaskScheduler.Default );
 		}
 
-		/// <summary>Closes at once with <paramref name="status"/>, dropping what is queued (the server sent something this game cannot read).</summary>
+		/// <summary>Closes at once with <paramref name="status"/> and drops what is queued (the server sent something this game cannot read).</summary>
 		public void Fail( WebSocketCloseStatus status, string reason )
 		{
 			outbox.Writer.TryComplete();
+			while ( outbox.Reader.TryRead( out var dropped ) )
+				Interlocked.Add( ref queuedBytes, -dropped.Length );
 			Connection.Close( status, reason );
 		}
 

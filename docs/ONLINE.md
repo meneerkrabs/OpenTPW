@@ -481,16 +481,21 @@ no screen or park uses it yet (C2b to C2d).
   resumes) instead of losing messages, and a connection whose login ends (a logout elsewhere, a ban, a
   recovery) closes within a minute. Every text the server sends fits what a game reads.
   [SERVER.md](SERVER.md) lists the settings.
-- **The game's link** (`CoopLink`, under the online login). It opens the co-op socket, says hello with
-  the game's build (its informational version) and its simulation-changing mods in load order, the
-  used-only extensions included, and keeps one random id per game process. A socket lost by a close
-  that resumes is opened again after 1, 2, 4, 8 and 15 seconds, then every 30 seconds, for ten minutes
-  (a rate close waits at least ten seconds), and its hello resumes the session; the host then resends
-  its frames after the last one the server relayed. A link that hears nothing for 45 seconds opens a
-  new socket; it answers the server's pings at once. Any other close stops the link: another game of
-  the account (the player may take it over), a refused login, a protocol error. A session the server
-  names that the game does not hold (the game restarted, or took the socket over) is left at once.
-  Logging out closes the link; it does not leave the session, which the next login leaves.
+- **The game's link** (`CoopLink`, under the online login). It opens the co-op socket and says hello
+  with the game's build (its informational version) and its simulation-changing mods in load order,
+  the used-only extensions included, and its own random id: a second link of the account (another game,
+  or another online session of this one) is refused unless the player takes over. A socket lost by a
+  close that resumes is opened again after 1, 2, 4, 8 and 15 seconds, then every 30 seconds, for ten
+  minutes from the loss (a rate close waits at least ten seconds; a socket that keeps dropping soon after
+  its welcome counts as the same loss), and its hello resumes the session; the welcome tells a host the
+  last frame the server relayed, so it can resend from there. A connect that does not open within 20
+  seconds is tried again, a link that hears nothing for 45 seconds opens a new socket, and the server's
+  pings are answered at once. Any other close stops the link: another game of the account, a refused
+  login, a protocol error. A create or join whose answer is lost with its socket is refused, so the game
+  can ask again; a session the server names that the game does not hold (the game restarted, took the
+  socket over, or lost the answer to its create or join) is left at once, with the reason of a leave
+  that could not go out. Closing the link, or logging out, ends the session for this game without
+  leaving it; the next login leaves it.
 
 ## Local server
 

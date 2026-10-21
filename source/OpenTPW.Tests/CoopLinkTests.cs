@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Net.WebSockets;
+using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using OpenTPW.Online.Client;
@@ -38,6 +40,7 @@ public class CoopLinkTests
 			Link.Invited += Invitations.Add;
 			Link.Refused += Errors.Add;
 			Link.FrameRefused += Refusals.Add;
+			Link.StateChanged += States.Add;
 		}
 
 		public OnlineSession Session { get; }
@@ -52,6 +55,7 @@ public class CoopLinkTests
 		public List<CoopInvited> Invitations { get; } = new();
 		public List<CoopError> Errors { get; } = new();
 		public List<CoopFrameRefused> Refusals { get; } = new();
+		public List<CoopLinkState> States { get; } = new();
 
 		public void Dispose() => Session.Dispose();
 	}
@@ -60,15 +64,14 @@ public class CoopLinkTests
 	{
 		private readonly List<Player> all = new();
 
-		/// <summary>A logged-in session whose link names the test build and mods, with its own process id and quick retries.</summary>
-		public async Task<Player> Add( LoopbackServer server, string name, bool firstFrame = false, bool register = true )
+		/// <summary>A logged-in session whose link names the test build and mods, with quick retries.</summary>
+		public async Task<Player> Add( LoopbackServer server, string name, bool firstFrame = false, bool register = true, IReadOnlyList<CoopMod>? mods = null )
 		{
 			var client = await server.LoginAsync( name, register: register );
 			client.AuthenticateInFirstFrame = firstFrame;
 			var session = new OnlineSession( OnlineIntegrationTests.Folders() );
 			session.UseClient( client, name );
-			session.Coop.Identity = () => (Build, Mods);
-			session.Coop.Instance = Guid.NewGuid();
+			session.Coop.Identity = () => (Build, mods ?? Mods);
 			session.Coop.RetryDelays = new[] { TimeSpan.FromMilliseconds( 50 ) };
 			var player = new Player( session, name );
 			all.Add( player );
@@ -269,10 +272,12 @@ public class CoopLinkTests
 
 			host.Link.DropSocket();
 			Assert.IsFalse( host.Link.SendFrame( 3, Payload( 3 ) ), "a frame the lost socket cannot take is the host's to resend" );
+			Assert.AreEqual( 2UL, host.Link.LastFrameSeq, "a frame that did not go out is not the host's last" );
 			await Until( () => host.Resumes.Count == 1 && host.Link.State == CoopLinkState.Open, "the host's resume", host, guest );
 			Assert.AreEqual( 2, host.Link.Connections );
 			Assert.AreEqual( session.Id, host.Link.Session!.Id );
 			Assert.AreEqual( 2UL, host.Resumes[0].LastFrameSeq, "the server's last frame: the host resends after it" );
+			Assert.AreEqual( 2UL, host.Link.LastFrameSeq );
 			await Until( () => guest.Changes.Any( change => change.State == CoopMemberState.Connected ), "the guest to see the host back", host, guest );
 			Assert.IsTrue( guest.Changes.Any( change => change.State == CoopMemberState.Disconnected ) );
 			Assert.IsTrue( host.Link.SendFrame( 3, Payload( 3 ) ) );
@@ -331,7 +336,7 @@ public class CoopLinkTests
 		await WithServer( async ( server, players ) =>
 		{
 			var host = await players.Add( server, "Hostess" );
-			host.Link.Silence = TimeSpan.FromSeconds( 1 );
+			host.Link.Silence = TimeSpan.FromSeconds( 3 );
 			await Open( host );
 			Assert.IsTrue( host.Link.Create( listed: false, "Our park", 2 ) );
 			await Until( () => host.Link.Session != null, "the session", host );
@@ -382,13 +387,14 @@ public class CoopLinkTests
 			// the guest's game restarts: a new process, nothing held
 			guest.Link.Close();
 			Assert.IsNull( guest.Link.Session );
+			Assert.AreEqual( 1, guest.Ended.Count, "closing the link ends the session for this game" );
 			await Until( () => host.Changes.Any( change => change.State == CoopMemberState.Disconnected ), "the host to see the guest go", host );
 			guest.Link.Instance = Guid.NewGuid();
 			await Open( guest );
 			await Until( () => host.Link.Session!.Members.Count == 1, "the restarted guest to leave", host, guest );
 			Assert.AreEqual( CoopMemberState.Left, host.Changes.Last().State );
 			Assert.IsNull( guest.Link.Session );
-			Assert.AreEqual( 0, guest.Ended.Count );
+			Assert.AreEqual( 1, guest.Ended.Count, "the leave of a session the game no longer holds ends nothing more" );
 		} );
 	}
 
@@ -404,11 +410,273 @@ public class CoopLinkTests
 			host.Session.Disconnect();
 			Assert.AreEqual( CoopLinkState.Closed, host.Link.State );
 			Assert.IsNull( host.Link.Session );
+			Assert.AreEqual( 1, host.Ended.Count, "a logout ends the session for this game" );
 			Assert.AreEqual( CoopStop.None, host.Link.Stopped );
 			host.Link.Open();
 			Assert.AreEqual( CoopLinkState.Closed, host.Link.State );
 			host.Session.Pump();
 			Assert.AreEqual( CoopStop.Closed, host.Link.Stopped, "no login, no link" );
+		} );
+	}
+
+	[TestMethod]
+	public async Task ALongModVersionStillSaysHello()
+	{
+		await WithServer( async ( server, players ) =>
+		{
+			// a version as long as a manifest may write it
+			var mods = new[] { new CoopMod( "community.nightly", "1.0.0-nightly.2026.10.21.build.1234567+" + new string( 'a', 25 ), new string( 'e', 64 ) ) };
+			Assert.AreEqual( CoopProtocol.MaximumModVersionLength, mods[0].Version.Length );
+			var host = await players.Add( server, "Hostess", mods: mods );
+			var guest = await players.Add( server, "Guest", mods: mods );
+			await Open( host, guest );
+			await Share( host, guest );
+			CollectionAssert.AreEqual( mods, guest.Link.HostMods!.ToArray() );
+		} );
+	}
+
+	[TestMethod]
+	public async Task AJoinLostWithItsSocketIsRefusedAndItsSessionLeft()
+	{
+		await WithServer( async ( server, players ) =>
+		{
+			var host = await players.Add( server, "Hostess" );
+			var guest = await players.Add( server, "Guest" );
+			await Open( host, guest );
+			Assert.IsTrue( host.Link.Create( listed: false, "Our park", 4 ) );
+			await Until( () => host.Link.Session != null, "the session", host );
+			var code = host.Link.Session!.Code;
+			Assert.IsTrue( guest.Link.Join( code ) );
+			Assert.IsFalse( guest.Link.Join( code ), "one create or join waits at a time" );
+			// the socket goes before the answer can come: the game hears that, and whatever the server made of the join is left
+			guest.Link.DropSocket();
+			await Until( () => guest.Errors.Any( error => error.Request == CoopMessageType.Join && error.Reason == CoopReason.Unknown ) && guest.Link.State == CoopLinkState.Open,
+				"the lost join's refusal and the resume", host, guest );
+			await Until( () => host.Link.Session!.Members.Count == 1, "no join to stay behind", host, guest );
+			Assert.IsNull( guest.Link.Session );
+			Assert.AreEqual( 0, guest.Started.Count );
+			Assert.IsTrue( guest.Link.Join( code ), "the game asks again" );
+			await Until( () => guest.Link.Session != null && host.Link.Session!.Members.Count == 2, "the second join", host, guest );
+		} );
+	}
+
+	[TestMethod]
+	public async Task AConnectThatNeverOpensIsGivenUpAndTriedAgain()
+	{
+		await WithServer( async ( server, players ) =>
+		{
+			var guest = await players.Add( server, "Guest" );
+			guest.Link.ConnectTimeout = TimeSpan.FromMilliseconds( 300 );
+			var attempts = 0;
+			var real = guest.Link.Connector;
+			// the first upgrade never answers
+			guest.Link.Connector = async ( client, cancel ) =>
+			{
+				if ( Interlocked.Increment( ref attempts ) == 1 )
+					await Task.Delay( Timeout.Infinite, cancel );
+				return await real( client, cancel );
+			};
+			await Open( guest );
+			Assert.AreEqual( 2, attempts );
+			Assert.AreEqual( 1, guest.Link.Connections );
+		} );
+	}
+
+	[TestMethod]
+	public async Task AnAbandonedAttemptNeverReplacesTheNewerSocket()
+	{
+		await WithServer( async ( server, players ) =>
+		{
+			var guest = await players.Add( server, "Guest" );
+			var attempts = 0;
+			var real = guest.Link.Connector;
+			var late = new TaskCompletionSource( TaskCreationOptions.RunContinuationsAsynchronously );
+			// the first upgrade answers only after the link has moved on
+			guest.Link.Connector = async ( client, cancel ) =>
+			{
+				if ( Interlocked.Increment( ref attempts ) == 1 )
+				{
+					await Task.Delay( 300, CancellationToken.None );
+					var connection = await real( client, CancellationToken.None );
+					late.TrySetResult();
+					return connection;
+				}
+				return await real( client, cancel );
+			};
+			guest.Link.Open();
+			guest.Link.Close();
+			await Open( guest );
+			await late.Task;
+			// the late socket would have replaced the live one with its hello; it closes without a word instead
+			var until = DateTime.UtcNow + TimeSpan.FromSeconds( 1 );
+			while ( DateTime.UtcNow < until )
+			{
+				guest.Session.Pump();
+				await Task.Delay( 10 );
+			}
+			Assert.AreEqual( CoopLinkState.Open, guest.Link.State );
+			Assert.AreEqual( 1, guest.Link.Connections );
+			Assert.IsFalse( guest.States.Contains( CoopLinkState.Reconnecting ) );
+		} );
+	}
+
+	[TestMethod]
+	public async Task TheWelcomeLeavesTheOldSessionBeforeTheLinkSaysItIsOpen()
+	{
+		await WithServer( async ( server, players ) =>
+		{
+			var host = await players.Add( server, "Hostess" );
+			var guest = await players.Add( server, "Guest" );
+			await Open( host, guest );
+			await Share( host, guest );
+			guest.Link.Close();
+			guest.Link.Instance = Guid.NewGuid();
+			var created = false;
+			guest.Link.StateChanged += state =>
+			{
+				if ( state == CoopLinkState.Open )
+					created = guest.Link.Create( listed: false, "My own park", 2 );
+			};
+			await Open( guest );
+			Assert.IsTrue( created );
+			await Until( () => guest.Link.Session != null, "the guest's own session", host, guest );
+			Assert.AreEqual( guest.Link.Session!.You, guest.Link.Session.Host );
+			Assert.IsFalse( guest.Errors.Any( error => error.Reason == CoopReason.InSession ), "the old session was left first" );
+		} );
+	}
+
+	[TestMethod]
+	public async Task ASocketThatKeepsDroppingSoonAfterItsWelcomeBacksOffAndStops()
+	{
+		await WithServer( async ( server, players ) =>
+		{
+			var guest = await players.Add( server, "Guest" );
+			guest.Link.RetryDelays = new[] { TimeSpan.FromMilliseconds( 100 ), TimeSpan.FromMilliseconds( 400 ), TimeSpan.FromMilliseconds( 1600 ) };
+			guest.Link.ReconnectWindow = TimeSpan.FromSeconds( 2 );
+			var real = guest.Link.Connector;
+			// every socket is cut 150 ms after it opens: each one is welcomed, none stays up
+			guest.Link.Connector = async ( client, cancel ) =>
+			{
+				var connection = await real( client, cancel );
+				_ = Task.Delay( 150 ).ContinueWith( _ => connection.Abort(), TaskScheduler.Default );
+				return connection;
+			};
+			guest.Link.Open();
+			await Until( () => guest.Link.Stopped == CoopStop.Lost, "the link to give up", guest );
+			Assert.IsTrue( guest.Link.Connections is >= 2 and <= 6, $"{guest.Link.Connections} connections" );
+		} );
+	}
+
+	[TestMethod]
+	public async Task ATakeOverSurvivesAFailedFirstAttempt()
+	{
+		await WithServer( async ( server, players ) =>
+		{
+			var first = await players.Add( server, "Twin" );
+			var second = await players.Add( server, "Twin", register: false );
+			await Open( first );
+			var attempts = 0;
+			var real = second.Link.Connector;
+			second.Link.Connector = async ( client, cancel ) =>
+			{
+				if ( Interlocked.Increment( ref attempts ) == 1 )
+					throw new WebSocketException( "The network is down." );
+				return await real( client, cancel );
+			};
+			second.Link.Open( takeOver: true );
+			await Until( () => second.Link.State == CoopLinkState.Open && first.Link.Stopped == CoopStop.Replaced, "the take-over", first, second );
+			Assert.AreEqual( 2, attempts );
+		} );
+	}
+
+	[TestMethod]
+	public async Task TwoLinksOfOneAccountInOneGameDoNotTakeTurns()
+	{
+		await WithServer( async ( server, players ) =>
+		{
+			// two online sessions of one process (the game has one, the park panel another) each get their own id
+			var first = await players.Add( server, "Twin" );
+			var second = await players.Add( server, "Twin", register: false );
+			Assert.AreNotEqual( first.Link.Instance, second.Link.Instance );
+			await Open( first );
+			second.Link.Open();
+			await Until( () => second.Link.Stopped == CoopStop.InUseElsewhere, "the second link's refusal", first, second );
+			var until = DateTime.UtcNow + TimeSpan.FromMilliseconds( 500 );
+			while ( DateTime.UtcNow < until )
+			{
+				first.Session.Pump();
+				second.Session.Pump();
+				await Task.Delay( 10 );
+			}
+			Assert.AreEqual( CoopLinkState.Open, first.Link.State );
+			Assert.AreEqual( 1, first.Link.Connections, "the first link kept its socket" );
+		} );
+	}
+
+	[TestMethod]
+	public async Task ALeaveWhileReconnectingKeepsItsReason()
+	{
+		await WithServer( async ( server, players ) =>
+		{
+			var host = await players.Add( server, "Hostess" );
+			var guest = await players.Add( server, "Guest" );
+			await Open( host, guest );
+			await Share( host, guest );
+			host.Link.DropSocket();
+			Assert.IsTrue( host.Link.Leave( "Closing time." ) );
+			Assert.IsNull( host.Link.Session );
+			await Until( () => guest.Ended.Count == 1, "the guest to hear the end", host, guest );
+			Assert.AreEqual( (CoopReason.HostLeft, "Closing time."), (guest.Ended[0].Reason, guest.Ended[0].Text) );
+		} );
+	}
+
+	[TestMethod]
+	public async Task WhatCannotBeSentIsNoRequest()
+	{
+		await WithServer( async ( server, players ) =>
+		{
+			var host = await players.Add( server, "Hostess" );
+			var guest = await players.Add( server, "Guest" );
+			await Open( host, guest );
+			Assert.IsFalse( host.Link.Create( listed: false, new string( 'a', CoopProtocol.MaximumTitleLength + 1 ), 2 ) );
+			Assert.IsFalse( host.Link.Create( listed: false, "Our\tpark", 2 ) );
+			Assert.IsFalse( host.Link.Create( listed: false, "Our park", 5 ) );
+			await Share( host, guest );
+			Assert.IsFalse( host.Link.Invite( new string( 'a', CoopProtocol.MaximumInviteNameLength + 1 ) ) );
+			Assert.IsFalse( host.Link.Invite( "  " ) );
+			Assert.IsFalse( host.Link.SendFrame( 1, new byte[CoopLink.MaximumFramePayload + 1] ) );
+			Assert.IsFalse( host.Link.SendFrame( ulong.MaxValue, Payload( 1 ) ) );
+			Assert.AreEqual( 0UL, host.Link.LastFrameSeq );
+			Assert.IsTrue( host.Link.SendFrame( 1, new byte[CoopLink.MaximumFramePayload] ), "the largest frame goes" );
+			Assert.IsFalse( host.Link.Send( CoopProtocol.EveryOtherMember, new byte[CoopLink.MaximumMessagePayload + 1] ) );
+			await Until( () => guest.Frames.Count == 1, "the largest frame", host, guest );
+			// a long reason is cut to what a message carries
+			Assert.IsTrue( host.Link.Leave( new string( 'r', 300 ) ) );
+			await Until( () => guest.Ended.Count == 1, "the end", host, guest );
+			Assert.AreEqual( CoopProtocol.MaximumReasonLength, guest.Ended[0].Text.Length );
+		} );
+	}
+
+	[TestMethod]
+	public async Task ACloseFromTheOpeningHandlerStopsTheAttempt()
+	{
+		await WithServer( async ( server, players ) =>
+		{
+			var guest = await players.Add( server, "Guest" );
+			guest.Link.StateChanged += state =>
+			{
+				if ( state == CoopLinkState.Opening )
+					guest.Link.Close();
+			};
+			guest.Link.Open();
+			var until = DateTime.UtcNow + TimeSpan.FromMilliseconds( 500 );
+			while ( DateTime.UtcNow < until )
+			{
+				guest.Session.Pump();
+				await Task.Delay( 10 );
+			}
+			Assert.AreEqual( CoopLinkState.Closed, guest.Link.State );
+			Assert.AreEqual( 0, guest.Link.Connections );
 		} );
 	}
 }

@@ -345,7 +345,8 @@ public sealed class OnlineClient : IDisposable
 	private async Task<ClientWebSocket> OpenSocketAsync( SessionToken session, string route, TimeSpan keepAlive, TimeSpan? keepAliveTimeout, CancellationToken cancel )
 	{
 		var socket = new ClientWebSocket();
-		var firstFrame = AuthenticateInFirstFrame;
+		// a browser cannot set a header whatever the setting says
+		var firstFrame = AuthenticateInFirstFrame || OperatingSystem.IsBrowser();
 		if ( !firstFrame )
 			socket.Options.SetRequestHeader( "Authorization", "Bearer " + session.Token );
 		var browser = OperatingSystem.IsBrowser();

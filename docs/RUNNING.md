@@ -9,7 +9,8 @@ Install the pinned .NET 11 SDK (`global.json`). Apple Silicon uses native arm64 
 the matching libraries are available; see MACOS-NATIVE.md for reproduction.
 The launcher falls back to an Intel/Rosetta bootstrap when those files are absent.
 Linux currently uses Vulkan and needs a working Vulkan driver. Windows uses
-Direct3D 11. Windows/Linux GPU execution is not yet locally qualified.
+Direct3D 11. Windows/Linux GPU execution is not yet locally qualified; CI draws the textured
+park shaders on Direct3D 11 (the Windows runner's WARP adapter) in `NativeWorldShaderRenderTests`.
 
 Linux (x64) needs the system packages for SDL2, the Vulkan loader and a Vulkan
 driver (Debian/Ubuntu: `libsdl2-2.0-0 libvulkan1 mesa-vulkan-drivers`) and an X11

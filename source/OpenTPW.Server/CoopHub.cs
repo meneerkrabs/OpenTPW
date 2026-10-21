@@ -133,6 +133,8 @@ public sealed class CoopHub
 				await SendDirectAsync( socket, new CoopError( CoopMessageType.Hello, CoopReason.InUse, "Another game of this account is connected." ), cancel );
 				await RefuseAsync( CoopCloseStatus.InUse, "in use elsewhere" );
 			}
+			else if ( registration == Registration.Restarting )
+				await RefuseAsync( CoopCloseStatus.Restarting, "server restarting" );
 			else
 				await RefuseAsync( (int)WebSocketCloseStatus.PolicyViolation, "unauthorized" );
 			peer.Dispose();
@@ -199,7 +201,9 @@ public sealed class CoopHub
 		/// <summary>Another game of the account holds the socket and the hello does not take it over.</summary>
 		InUse,
 		/// <summary>The login ended between the upgrade and the hello (a logout, a recovery, a deleted account).</summary>
-		LoggedOut
+		LoggedOut,
+		/// <summary>The server is stopping: the game resumes on the new one.</summary>
+		Restarting
 	}
 
 	/// <summary>
@@ -212,6 +216,9 @@ public sealed class CoopHub
 		var key = peer.Account.Key;
 		lock ( registry )
 		{
+			// a hello after the stop began would hold a socket the stop never closes: it resumes on the new server instead
+			if ( restarting )
+				return Registration.Restarting;
 			// the hello may come seconds after the upgrade: a login that ended meanwhile (a deleted account's name may even belong to someone new) is refused
 			if ( accounts.Authenticate( peer.Token ) is not { } current || current.Key != key )
 				return Registration.LoggedOut;
@@ -471,21 +478,24 @@ public sealed class CoopHub
 	/// </summary>
 	private void Enqueue( Peer peer, ReadOnlyMemory<byte> bytes )
 	{
-		if ( peer.Dead )
+		if ( peer.Dead || peer.Closing )
 			return;
 		var mine = Interlocked.Add( ref peer.QueuedBytes, bytes.Length );
 		var all = Interlocked.Add( ref queuedBytes, bytes.Length );
 		if ( mine > options.CoopOutboxBytes )
 		{
 			Unqueue( peer, bytes.Length );
-			Kill( peer, CoopCloseStatus.TooSlow, "too slow" );
+			// a queue a restart closed meanwhile is never cut off: it holds frames whose position the restart stored
+			if ( !peer.Closing )
+				Kill( peer, CoopCloseStatus.TooSlow, "too slow" );
 			return;
 		}
 		if ( all > options.CoopServerOutboxBytes )
 		{
-			// the slowest reader goes, not whichever connection happens to queue next
-			var slowest = running.Keys.Where( candidate => !candidate.Dead ).MaxBy( candidate => Volatile.Read( ref candidate.QueuedBytes ) ) ?? peer;
-			Kill( slowest, CoopCloseStatus.TooSlow, "too slow" );
+			// the slowest reader goes, not whichever connection happens to queue next, and never one a restart is closing
+			var slowest = running.Keys.Where( candidate => !candidate.Dead && !candidate.Closing ).MaxBy( candidate => Volatile.Read( ref candidate.QueuedBytes ) ) ?? peer;
+			if ( !slowest.Closing )
+				Kill( slowest, CoopCloseStatus.TooSlow, "too slow" );
 			if ( slowest == peer || peer.Dead )
 			{
 				Unqueue( peer, bytes.Length );
@@ -887,8 +897,11 @@ public sealed class CoopHub
 		}
 	}
 
-	/// <summary>Whether <paramref name="peer"/> is still its account's connection (a replaced one's late requests do nothing). Under the registry lock.</summary>
-	private bool Current( Peer peer ) => !peer.Dead && peers.TryGetValue( peer.Account.Key, out var current ) && current == peer;
+	/// <summary>
+	/// Whether <paramref name="peer"/> is still its account's connection (a replaced one's late requests do nothing) and the server is not stopping (a request the stop overtook
+	/// changes nothing, so the positions and memberships it stored stay the last). Under the registry lock.
+	/// </summary>
+	private bool Current( Peer peer ) => !restarting && !peer.Dead && peers.TryGetValue( peer.Account.Key, out var current ) && current == peer;
 
 	// ---- membership ----
 
@@ -908,7 +921,8 @@ public sealed class CoopHub
 	{
 		ReadOnlyMemory<byte> message = new CoopMemberChanged( seat.Info with { Connected = false }, state ).Encode();
 		session.Seats.Remove( seat );
-		Persist( () => store.Put( session.ToRecord( exact: false ) ) );
+		// while the server stops the frame position can no longer move, so the stored one stays exact (an account deleted during the stop)
+		Persist( () => store.Put( session.ToRecord( exact: restarting && session.SeqKnown ) ) );
 		memberships.Remove( seat.AccountKey );
 		if ( seat.Peer != null )
 		{
@@ -1041,6 +1055,11 @@ public sealed class CoopHub
 			if ( records.Count > 0 || store.Unsaved )
 				Persist( () => store.PutAll( records ) );
 			open = peers.Values.ToList();
+			// every queue stops taking messages before any closes, and before anything waiting on the registry runs: a host's socket closes first (its queue is short)
+			// and its departure is announced, and that message must not cut off a guest whose queue is at its limit, which would drop the frames whose position was
+			// just stored
+			foreach ( var peer in open )
+				peer.Closing = true;
 		}
 		foreach ( var peer in open )
 		{
@@ -1201,6 +1220,11 @@ public sealed class CoopHub
 		public long QueuedBytes;
 		public int DeadFlag;
 		public bool Dead => Volatile.Read( ref DeadFlag ) == 1;
+		/// <summary>
+		/// A restart closed the queue after storing the frame positions (<see cref="Restarting"/>): nothing more is queued or counted for it, so no limit cuts it off and
+		/// drops the frames whose position was stored.
+		/// </summary>
+		public volatile bool Closing;
 		public int? CloseStatus;
 		public string? CloseReason;
 		public readonly CancellationTokenSource Closed = new();

@@ -291,6 +291,10 @@ public partial class Level
 	{
 		if ( !TypesFootprints || Guests == null ) return;
 		coasterCellsReady = true;
+		// Non-coaster parks need no binding. Asset-free Level fixtures can intentionally omit coaster setup;
+		// a live coaster without the normal constructor/setup state remains an error, not silently unbound.
+		if ( Coasters.Count == 0 ) return;
+		if ( coasterBuilders == null ) throw new InvalidOperationException( "Live coasters require initialized coaster builders before cell binding." );
 		foreach ( var (station, builder) in coasterBuilders )
 			if ( !station.IsDeleted && builder.Track.CellMarkers == null ) BindCoasterCellsToMap( station, builder );
 	}

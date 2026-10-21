@@ -27,6 +27,30 @@ public partial class TrackAddOnLevelTests
 	}
 
 	[TestMethod]
+	public void LevelWithoutCoastersDoesNotRequireCoasterSetupForCellBinding()
+	{
+		var (level, _) = CoasterMarkerLevel();
+		Set( level, "coasterBuilders", null );
+		Set( level, "coasterCellsReady", false );
+		// Existing asset-free non-coaster fixtures skip the constructor and SetupCoasters.
+		typeof( Level ).GetMethod( "ConnectObjectsToGuests", Private )!.Invoke( level, null );
+		Assert.AreEqual( true, typeof( Level ).GetField( "coasterCellsReady", Private )!.GetValue( level ) );
+		Assert.AreEqual( 0, level.Coasters.Count );
+	}
+
+	[TestMethod]
+	public void LiveCoasterWithMissingBuilderStateIsNotSilentlyIgnored()
+	{
+		var (level, entry) = CoasterMarkerLevel();
+		var station = level.Objects.TryPlace( entry, 20, 16, 0, out _ );
+		Assert.IsNotNull( station?.Runtime.Coaster );
+		Set( level, "coasterBuilders", null );
+		var failure = Assert.ThrowsException<System.Reflection.TargetInvocationException>( () =>
+			typeof( Level ).GetMethod( "BindCoasterCellsAfterLoad", Private )!.Invoke( level, null ) );
+		Assert.IsInstanceOfType( failure.InnerException, typeof( InvalidOperationException ) );
+	}
+
+	[TestMethod]
 	public void LevelPlacementBindsAfterFootprintsAndRemovalClearsBeyondEnds()
 	{
 		var (level, entry) = CoasterMarkerLevel();

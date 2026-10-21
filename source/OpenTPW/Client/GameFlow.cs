@@ -713,6 +713,7 @@ internal sealed partial class GameFlow : IDisposable
 		if ( pendingLanguage != null && Level == null && Menu != null && Menu.Stack.Top == Menu.Main && SettlePendingLanguage() && pendingLanguage != null )
 		{
 			var selected = Menu.Selected.Level;
+			// [EXT:online-coop-snapshot-join] the front end's own rebuild keeps a join under way: the player has not gone elsewhere
 			ShowFrontEnd( selected, keepJoin: true );
 			Menu?.ShowOptions();
 		}

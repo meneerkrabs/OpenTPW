@@ -321,8 +321,8 @@ the live game, and swaps it in.
 - **Beside the live game.** The build runs in a construction scene of its own
   (`EntityConstructionScope`). Each step resumes it and pauses it again, so the front end, or the
   guest's own park in a resync, stays live and untouched while the build runs.
-- **The swap** (`GameFlow.InstallJoin`), in the frame the build completes and passes the check at the
-  cut:
+- **The swap** (`GameFlow.InstallJoin`), once the build completes and passes the check at the cut (in
+  the frame of its last step, or the next when that step spent the frame's budget):
   1. The build's HUD is made again if the player switched the language meanwhile.
   2. The old park (none on a first join) is torn down without ending the session and without applying a
      pending language.
@@ -330,7 +330,9 @@ the live game, and swaps it in.
      the park's audio come in.
   4. A resync keeps the player's camera where it was.
 
-  A swap that fails ends the session and leaves the player in the front end with the reason.
+  A swap that fails ends the session. A first join then leaves the player in the front end with the
+  reason; a resync whose swap fails before the teardown leaves the player in the guest's own park, as
+  any other end of the session does (the screens that tell the player are C2d's).
 - **The join restore mode** (`Level.BeginJoinOverFrames`). A join loads the host's live park, not a save,
   and a load's repairs would make the guest's park differ from the host's. So it keeps the park exactly
   as its snapshot holds it:

@@ -357,6 +357,23 @@ public class CoopSessionTests
 	}
 
 	[TestMethod]
+	public void ARetiredHudLeavesNoHandlerOnItsPark()
+	{
+		var park = NewPark();
+		park.Enter();
+		var level = park.Level;
+		var hud = new ParkHud( level, OriginalUiTests.FakeStrings(), new EconomyParkStatus( () => park.Economy ), new NoItems(), new HudHost() );
+		object?[] owners = { level.Objects, (CellBuildTool?)level.CellTool, level, level.Park };
+		int Handlers() => owners.Where( owner => owner != null ).Sum( owner => owner!.GetType().GetFields( BindingFlags.Instance | BindingFlags.NonPublic )
+			.Where( field => typeof( Delegate ).IsAssignableFrom( field.FieldType ) )
+			.Sum( field => ((Delegate?)field.GetValue( owner ))?.GetInvocationList().Count( handler => ReferenceEquals( handler.Target, hud ) ) ?? 0 ) );
+		Assert.IsTrue( Handlers() >= 5, "the HUD hears the park: placements, the cell tool, the build tools, strikes and challenges" );
+		hud.Retire();
+		Assert.AreEqual( 0, Handlers(), "a retired HUD hears nothing of the park that lives on" );
+		Assert.AreEqual( 0, hud.Stack.Screens.Count, "and its screens are closed" );
+	}
+
+	[TestMethod]
 	public void AGuestNeverSavesAndASharedParkRunsAtItsSpeed()
 	{
 		var automaticEligible = typeof( GameFlow ).GetMethod( "AutomaticEligible", BindingFlags.Static | BindingFlags.NonPublic )!;

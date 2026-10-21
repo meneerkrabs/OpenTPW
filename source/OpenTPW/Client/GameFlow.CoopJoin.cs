@@ -328,10 +328,11 @@ internal sealed partial class GameFlow
 			yield return true;
 			if ( flow.AutomaticAdvisorEnabled && !flow.advisorUnavailable )
 			{
-				advisorTried = true;
 				try
 				{
 					advisor = AutomaticAdvisor.TryCreate();
+					// an entry's rule: a game whose advisor cannot be made tries no more (the swap records it); a throw below is this build's alone
+					advisorTried = true;
 					if ( advisor != null )
 					{
 						advisor.AttachLevel( candidate );
@@ -341,9 +342,10 @@ internal sealed partial class GameFlow
 				}
 				catch ( Exception error ) when ( error is not OutOfMemoryException )
 				{
-					// the shared park goes on without advice rather than fail its join
+					// the shared park goes on without advice rather than fail its join, and the game's later parks try again
 					advisor?.Dispose();
 					advisor = null;
+					advisorTried = false;
 					Log.Warning( $"The shared park's advisor could not start: {error.Message}" );
 				}
 			}
@@ -357,8 +359,10 @@ internal sealed partial class GameFlow
 			// the front end's own rebuild may have switched the language since the HUD was made: it is made again in the new one
 			if ( hudLanguage != GameLanguage.Version )
 			{
-				hud.Stack.Clear();
+				// the park lives on: the old HUD must not go on hearing it
+				var retired = hud;
 				hud = null;
+				retired.Retire();
 				hud = flow.CreateParkHud( candidate, flow.HudStatusFor( candidate ) );
 				hudLanguage = GameLanguage.Version;
 				if ( advisor != null )
@@ -378,7 +382,7 @@ internal sealed partial class GameFlow
 			try
 			{
 				advisor?.Dispose();
-				hud?.Stack.Clear();
+				hud?.Retire();
 			}
 			finally
 			{

@@ -355,6 +355,7 @@ public partial class Level
 		if ( gaps.Count != 0 ) throw new InvalidDataException( string.Join( "; ", gaps ) );
 		var registered = PrototypeRideSave.RestoreGuestCells( saved, ride.Visitors, Guests! );
 		// [EXT:developer-prototype] a prototype saved before the build laid its stand cell gets it at load (a cell that holds a type is left as it is)
+		// [EXT:online-coop-snapshot-join] kept for a join: a live prototype's stand cell holds its type already, so the lay changes nothing
 		if ( registered )
 		{
 			var (standX, standY) = GuestSimulation.StandCellOf( ride.Visitors );

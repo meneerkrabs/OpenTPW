@@ -149,6 +149,16 @@ public sealed partial class ParkHud
 		}
 	}
 
+	/// <summary>
+	/// [EXT:online-coop-snapshot-join] Retires a HUD whose park lives on without it (a join's build makes the park's HUD again after a language change): its handlers leave the level and
+	/// its park, and its screens close.
+	/// </summary>
+	internal void Retire()
+	{
+		UnhookLevel();
+		Stack.Clear();
+	}
+
 	public UiScreenStack Stack { get; } = new();
 	public IHudParkStatus Status { get; }
 	public IBuildCatalog Catalog { get; }

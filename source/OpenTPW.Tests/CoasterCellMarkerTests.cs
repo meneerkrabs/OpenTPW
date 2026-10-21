@@ -302,6 +302,33 @@ public class CoasterCellMarkerTests
 		Assert.AreEqual( (byte)21, guest.RawTypeAt( 24, 20 ) );
 	}
 
+	/// <summary>
+	/// [EXT:online-coop-snapshot-join] A lease the host's binding holds stale at the cut (another writer rewrote its cell, and the binding has not synchronized since) is reported displaced,
+	/// and the guest's adoption leaves it so: the next change of the track displaces it on both alike.
+	/// </summary>
+	[TestMethod]
+	public void AJoinsAdoptionDisplacesALeaseTheHostHoldsStaleAtTheCut()
+	{
+		var (host, map) = NewCoaster();
+		Assert.AreEqual( CoasterPlaceResult.Ok, host.Place( 24, 20 ) );
+		Assert.AreEqual( CoasterPlaceResult.Ok, host.Place( 27, 24 ) );
+		map.SetType( 24, 20, 21 );
+		map.SetOwner( 24, 20, 123 );
+		var unheld = host.Track.CellMarkers!.UnheldCells().ToArray();
+		CollectionAssert.Contains( unheld, (24, 20, true), "the stale lease is reported displaced" );
+
+		var guest = Copy( map );
+		var joined = Restored( host );
+		joined.Track.AdoptCells( guest, 123, null, unheld );
+		AssertSameCells( map, guest, "at the cut" );
+		Assert.AreEqual( host.Place( 30, 27 ), joined.Place( 30, 27 ) );
+		AssertSameCells( map, guest, "after an edit" );
+		Assert.AreEqual( host.Track.CellMarkers.CountAt( 24, 20 ), joined.Track.CellMarkers!.CountAt( 24, 20 ) );
+		host.Move( CoasterTrack.StationNodeCount, 26, 22 );
+		joined.Move( CoasterTrack.StationNodeCount, 26, 22 );
+		AssertSameCells( map, guest, "after the pylon left the cell" );
+	}
+
 	/// <summary>[EXT:online-coop-snapshot-join] The cells the host's binding wants and does not hold although the adoption would (a stale lease, a cell it may not claim) stay so on the guest.</summary>
 	[TestMethod]
 	public void AJoinsAdoptionLeavesTheHostsUnheldCellsUnheld()

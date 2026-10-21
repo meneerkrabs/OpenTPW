@@ -263,8 +263,9 @@ public partial class Level : IDisposable
 		new( levelName, loadOriginalLevel, visit, onlineFolders, start, null, null, null, overFrames: true );
 
 	/// <summary>
-	/// [EXT:online-coop-snapshot-join] A guest's park built over frames from a join snapshot (docs/COOP.md, "Joining a running session"): the resume's steps in the join restore mode, which keeps
-	/// the host's live park exactly as its snapshot holds it, with <paramref name="join"/>'s session state applied as the last step. A guest's park from its first step.
+	/// [EXT:online-coop-snapshot-join] A guest's park built over frames from a join snapshot (docs/COOP.md, "The game's join"): the resume's steps in the join restore mode, which keeps
+	/// the host's live park exactly as its snapshot holds it, with <paramref name="join"/>'s session state applied after the simulation's restore, before the park's HUD and first frame.
+	/// A guest's park from its first step.
 	/// </summary>
 	internal static Level BeginJoinOverFrames( ParkResumeSnapshot snapshot, ParkEconomy economy, OnlineFolders? onlineFolders, CoopJoinState join ) =>
 		new( snapshot.Theme, true, null, onlineFolders, snapshot.StartKind, new WorldSeed( snapshot.Seed ), snapshot, economy, overFrames: true,

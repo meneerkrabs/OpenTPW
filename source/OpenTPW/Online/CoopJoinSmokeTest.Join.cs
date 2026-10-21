@@ -9,7 +9,7 @@ internal sealed partial class CoopJoinSmokeTest
 	private const int Pace = 2;
 	/// <summary>The most join frames the guest may take to reach the host's last tick once every frame is out.</summary>
 	private const int CatchUpFrames = 3600;
-	/// <summary>The save's parts a session's peers may hold apart: presentation, which no simulation reads and no digest covers (docs/COOP.md, "Checks").</summary>
+	/// <summary>The save's top-level parts a session's peers may hold apart: presentation, which no simulation reads and no digest covers (docs/COOP.md, "Checks"). Only at the top level.</summary>
 	private static readonly HashSet<string> PresentationParts = new( StringComparer.Ordinal ) { "SavedUtc", "Particles", "SnowCover", "SoundSeed" };
 
 	private enum JoinStep { FrontEnd, Joining, Following, Approaching, Resyncing, Resynced, CatchingUp, Done }
@@ -270,7 +270,7 @@ internal sealed partial class CoopJoinSmokeTest
 				var names = expected.EnumerateObject().Select( property => property.Name ).Union( actual.EnumerateObject().Select( property => property.Name ) );
 				foreach ( var name in names )
 				{
-					if ( PresentationParts.Contains( name ) )
+					if ( path == "$" && PresentationParts.Contains( name ) )
 						continue;
 					var inExpected = expected.TryGetProperty( name, out var left );
 					var inActual = actual.TryGetProperty( name, out var right );

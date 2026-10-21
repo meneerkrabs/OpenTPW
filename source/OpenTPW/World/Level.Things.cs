@@ -25,6 +25,7 @@ public partial class Level
 			else
 			{
 				// a save from before the pool: the guests keep their counter ids as slots (those above the pool's size stay outside it), newest last
+				// [EXT:online-coop-snapshot-join] kept for a join: a live park's pool is made on first use and every save writes it, so a join's snapshot never lacks it
 				Things.Restore( resume.Guests.Guests.Reverse().Where( guest => guest.Id <= ThingPool.Capacity ).Select( guest => new ThingSlot( guest.Id, SaveThingModel.Guest ) ) );
 				Things.AllocateWorldSetup();
 			}

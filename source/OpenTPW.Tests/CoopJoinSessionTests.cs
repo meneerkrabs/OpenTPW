@@ -24,6 +24,8 @@ public partial class CoopJoinSessionTests
 	private Level? current;
 	private float timeNow, timeDelta;
 	private CameraMode? camera;
+	/// <summary>The view statics a construction scene's swap changes: the park camera's extent and start, and the audio listener.</summary>
+	private (float Extent, global::OpenTPW.Vector3 Target, global::OpenTPW.Vector3 Position, global::OpenTPW.Vector3 Forward, global::OpenTPW.Vector3 Front, global::OpenTPW.Vector3 Up) view;
 	private bool? audioWas;
 	private readonly List<Peer> peers = new();
 	private readonly List<List<Entity>> built = new();
@@ -212,6 +214,7 @@ public partial class CoopJoinSessionTests
 		current = Level.Current;
 		(timeNow, timeDelta) = (Time.Now, Time.Delta);
 		camera = Camera.Mode;
+		view = (ParkCameraMode.TargetExtent, ParkCameraMode.InitialTarget, AudioListener.Position, AudioListener.Forward, AudioListener.Front, AudioListener.Up);
 		renderer = new AutomaticCheckpointCpuRendererScope();
 		fixture = new UpgradeCatalogueDefaultsTests();
 		fixture.Setup();
@@ -242,6 +245,9 @@ public partial class CoopJoinSessionTests
 		Level.Current = current!;
 		if ( camera != null )
 			Camera.Mode = camera;
+		(ParkCameraMode.TargetExtent, ParkCameraMode.InitialTarget) = (view.Extent, view.Target);
+		AudioListener.RestoreCaptured( view.Position, view.Forward );
+		AudioListener.RestoreCapturedAxes( view.Front, view.Up );
 		if ( audioWas is { } was )
 			GameAudio.Enabled = was;
 	}
@@ -1079,10 +1085,10 @@ public partial class CoopJoinSessionTests
 	{
 		Hosted();
 		Build( 60, 45 );
-		// the download's callback is raised again a second after the first, once the build has begun
+		// the download's callback is raised again a second after the first, while the build (four seconds of frames) runs
 		network.RepeatDownloadAnswerAfter = 1;
 		var joiner = Joiner();
-		joiner.Join!.Steps = _ => 30;
+		joiner.Join!.Steps = _ => 240;
 		RoundsUntil( () => joiner.Level != null, "joined" );
 		Rounds( 120 );
 		Assert.AreEqual( 1, joiner.Join.Builds, "the second answer of the same download built nothing" );

@@ -99,7 +99,7 @@ public sealed partial class OriginalObjectRuntime
 		if ( SavedChannelState.Decode( control, clockWord, out var gap ) is not { } state )
 			return gap;
 		var clip = ResolveSavedClip( state.AnimationId, state.Variant, out var name );
-		// [BIN:TPW-EXE:0x00472D10 saved clip bind] a sub-animation the AnimID's group does not have binds nothing (0x472CB0 with no clip clears the frame, the total and the start)
+		// [BIN:TPW-EXE:0x00472D10 saved clip bind] a sub-animation the AnimID's group does not have binds nothing (the loader skips 0x472CB0 when 0x472D10 fails or yields no clip, je 0x464C5D)
 		if ( clip == null )
 			return $"animation {state.AnimationId}/{state.Variant} does not resolve in the object's archive";
 		(ModelAnimation, string, int, int, bool, float)? deferred = null;

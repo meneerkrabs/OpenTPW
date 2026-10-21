@@ -248,7 +248,8 @@ public class SavedObjectAnimationTests
 				foreach ( var entity in Entity.All.ToArray() )
 					entity.Delete();
 			}
-			Assert.IsTrue( restored >= 18, $"{restored} controls restored" );
+			// the shipped Jungle Easymode save alone holds 15 controls below AnimID 12; the private corpus adds more
+			Assert.IsTrue( restored >= (string.IsNullOrEmpty( folder ) ? 15 : 18), $"{restored} controls restored" );
 		}
 		finally
 		{

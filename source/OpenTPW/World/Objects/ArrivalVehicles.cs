@@ -8,8 +8,14 @@ namespace OpenTPW;
 public sealed class ArrivalVehicles : IArrivalVehicleHost
 {
 	private readonly ParkObjects objects;
+	private readonly Action<OriginalObject>? created;
 
-	public ArrivalVehicles( ParkObjects objects ) => this.objects = objects;
+	/// <param name="created">Called with each vehicle as it is placed: the level gives it its economy record (<see cref="Level"/>'s fixed items made in play).</param>
+	public ArrivalVehicles( ParkObjects objects, Action<OriginalObject>? created = null )
+	{
+		this.objects = objects;
+		this.created = created;
+	}
 
 	/// <summary>True when the level defines at least one of the vehicles (the original stops with a fatal error otherwise, 0x0051A601).</summary>
 	public static bool Available( ObjectCatalog catalog ) => ArrivalVehicleKind.Names.Any( name => Definition( catalog, name ) != null );
@@ -20,7 +26,8 @@ public sealed class ArrivalVehicles : IArrivalVehicleHost
 	{
 		if ( Definition( objects.Catalog, ArrivalVehicleKind.Names[kind] ) is not { } entry )
 			return false;
-		objects.Add( entry, 0, 0, 0 );
+		// [BIN:TPW-EXE:0x0051A57E vehicle construction] the first trip constructs the vehicle with the common object constructor 0x004DB090, like every placed object
+		created?.Invoke( objects.Add( entry, 0, 0, 0 ) );
 		return true;
 	}
 

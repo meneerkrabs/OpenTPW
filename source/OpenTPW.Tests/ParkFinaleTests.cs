@@ -63,7 +63,7 @@ public class ParkFinaleTests
 		Directory.Delete( root, true );
 	}
 
-	private ObjectCatalogEntry Entry( string name = "End", bool fixedItem = true, int id = 1605 ) => new( "jungle", ObjectCategory.Feature, "/synthetic",
+	private ObjectCatalogEntry Entry( string name = "End", bool fixedItem = true, int id = 1605, string archive = "/synthetic" ) => new( "jungle", ObjectCategory.Feature, archive,
 		new ObjectSettings( new[] { new ObjectSettingsFile( $"Info.Id {id}\nInfo.Name {name}\nInfo.DontApplyOffset {(fixedItem ? 1 : 0)}\n", "synthetic.sam" ) } ),
 		new ObjectShape( new[] { "." } ), "/model.MD2", null, "/script.RSE", Array.Empty<string>(), Array.Empty<ObjectAnimationFile>(), Array.Empty<string>(), Array.Empty<string>(), FileSystem, null );
 
@@ -73,7 +73,7 @@ public class ParkFinaleTests
 		return new ParkObjects( catalog, new SandboxParkGrid(), new WorldSeed( 123 ) );
 	}
 
-	private Level LevelFor( ParkObjects objects, ParkGameMode mode = ParkGameMode.InstantAction )
+	private Level LevelFor( ParkObjects objects, ParkGameMode mode = ParkGameMode.InstantAction, ParkEconomy? economy = null )
 	{
 		var level = Empty<Level>();
 		var guests = new GuestSimulation( new GuestPathGrid( 32, 32 ), GuestTests.CreateSettings(), 1 ) { ArrivalsEnabled = false };
@@ -83,9 +83,30 @@ public class ParkFinaleTests
 		Set( level, "<CellTool>k__BackingField", new CellBuildTool() );
 		Set( level, "<LastActionMessage>k__BackingField", "" );
 		Set( level, "economyInstances", new Dictionary<OriginalObject, int>() );
-		Set( level, "<Park>k__BackingField", ParkEconomyRuntime.ForResume( EconomyTestData.Park( mode: mode ), mode == ParkGameMode.InstantAction ? ParkStartKind.InstantAction : ParkStartKind.FullSimulation ) );
+		Set( level, "<Park>k__BackingField", ParkEconomyRuntime.ForResume( economy ?? EconomyTestData.Park( mode: mode ), mode == ParkGameMode.InstantAction ? ParkStartKind.InstantAction : ParkStartKind.FullSimulation ) );
 		Invoke( level, "SetupParkGate" );
 		return level;
+	}
+
+	/// <summary>An economy whose catalogue also knows the Seaplane and the finale's End as fixed items (the kind the shipped Info.WhichUIType 4 gives them; the rest is the test catalogue's).</summary>
+	private static ParkEconomy FixedItemEconomy( ParkGameMode mode )
+	{
+		EconomyObjectInfo Fixed( int id, string name, string archive ) => new( id, name, ParkObjectKind.FixedItem, ResearchCategory.Ride, 0,
+			new[] { new UpgradeLevelInfo( 0, 0, 0, 0, 0, new[] { 50, 30, 20, 10 } ) }, null, null, null, 0, 0, 0, 0, 0, 0, archive );
+		return new ParkEconomy( EconomyTestData.Settings(), new EconomyObjectCatalog( EconomyTestData.Catalog().Objects.Concat( new[] { Fixed( 1602, "Seaplane", "features/seaplane.wad" ),
+			Fixed( 1605, "End", "features/end.wad" ) } ) ), mode, 7 );
+	}
+
+	/// <summary>The fixed item's economy record: bound, of its type, uncharged; and the save's repair finds nothing left to bind (a shared park's capture refuses an unbound object).</summary>
+	private static ParkObjectState RecordOf( Level level, OriginalObject item, int infoId )
+	{
+		Assert.IsTrue( level.GetEconomyInstance( item ) is int instance && level.Park!.Economy.TryGetObject( instance, out _ ), $"{item.Entry.DisplayName} is bound to an economy record" );
+		level.Park!.Economy.TryGetObject( level.GetEconomyInstance( item )!.Value, out var state );
+		Assert.AreEqual( infoId, state!.InfoId );
+		Assert.IsTrue( state.Imported, "the record is uncharged: nothing was bought" );
+		var unbound = (IEnumerable<OriginalObject>)typeof( Level ).GetMethod( "UnboundObjects", BindingFlags.Instance | BindingFlags.NonPublic )!.Invoke( level, null )!;
+		Assert.IsFalse( unbound.Any(), "no placed object is left without its binding" );
+		return state;
 	}
 
 	private static void Complete( Level level ) => Invoke( level.Park!, "ForwardEvent", new ParkEvent( 0, ParkEventKind.ResearchAllDone, 0, 0, 0, "" ) );
@@ -149,6 +170,44 @@ public class ParkFinaleTests
 		Complete( level ); Complete( level );
 		Assert.AreEqual( 1, level.Objects.Objects.Count ); Assert.IsTrue( economy.WinningSequenceActive!() );
 		Assert.AreEqual( cash, economy.Balance ); Assert.AreEqual( records, economy.Objects.Count );
+	}
+
+	[TestMethod]
+	public void TheFinalesEndGetsItsUnchargedEconomyRecordAsTheOriginalsConstructorGivesIt()
+	{
+		var level = LevelFor( Objects( Entry() ), economy: FixedItemEconomy( ParkGameMode.InstantAction ) ); var economy = level.Park!.Economy;
+		// a day into the park: the record's build tick and the type's first-purchase turn are the clock's, not a new park's 0
+		economy.AdvanceDays( 1 ); Assert.IsTrue( economy.Turn > 0 );
+		var cash = economy.Balance; var records = economy.Objects.Count;
+		Complete( level ); Complete( level );
+		var state = RecordOf( level, level.Objects.Objects.Single(), 1605 );
+		Assert.AreEqual( records + 1, economy.Objects.Count, "the second notification adopts End and makes no second record" );
+		Assert.AreEqual( cash, economy.Balance );
+		Assert.AreEqual( 1, economy.Counters[ParkCounters.Built( 1605 )], "the constructor counts the type" );
+		Assert.AreEqual( economy.Turn, economy.Counters[ParkCounters.FirstPurchaseTurn( 1605 )], "and stamps its first-purchase turn" );
+		Assert.AreEqual( economy.Tick, state.BuiltTick );
+	}
+
+	[TestMethod]
+	public void AnArrivalVehicleGetsItsUnchargedEconomyRecordAtItsFirstTrip()
+	{
+		var level = LevelFor( Objects( Entry( "Plane", id: 1602, archive: "/seaplane" ) ), ParkGameMode.FullSimulation, FixedItemEconomy( ParkGameMode.FullSimulation ) );
+		Set( level, "demolishedQueues", new HashSet<OriginalObject>() );
+		// the level's own wiring makes the vehicles' host
+		Invoke( level, "ConnectObjectsToGuests" );
+		var economy = level.Park!.Economy;
+		economy.AdvanceDays( 1 ); Assert.IsTrue( economy.Turn > 0 );
+		var cash = economy.Balance; var records = economy.Objects.Count;
+		Assert.IsTrue( level.Guests!.ArrivalVehicles!.Create( 1 ) );
+		var state = RecordOf( level, level.Objects.Objects.Single(), 1602 );
+		Assert.AreEqual( records + 1, economy.Objects.Count );
+		Assert.AreEqual( cash, economy.Balance );
+		Assert.AreEqual( 1, economy.Counters[ParkCounters.Built( 1602 )], "the constructor counts the type" );
+		Assert.AreEqual( economy.Turn, economy.Counters[ParkCounters.FirstPurchaseTurn( 1602 )], "and stamps its first-purchase turn" );
+		Assert.AreEqual( economy.Tick, state.BuiltTick );
+		// a save made now has nothing to repair
+		Invoke( level, "RepairMissingEconomyBindings" );
+		Assert.AreEqual( records + 1, economy.Objects.Count );
 	}
 
 	[TestMethod]

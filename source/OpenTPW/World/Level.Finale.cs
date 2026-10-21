@@ -9,8 +9,9 @@ public partial class Level
 
 	private void StartResearchFinale()
 	{
-		if ( SupportsResearchFinale )
-			ParkFinale.StartForResearchCompletion( Objects, Park!.Economy.Mode );
+		// [BIN:TPW-EXE:0x00516B8B finale construction] End is constructed with the common object constructor 0x004DB090, so it gets its economy record like an arrival vehicle
+		if ( SupportsResearchFinale && ParkFinale.StartForResearchCompletion( Objects, Park!.Economy.Mode ) is { } finale )
+			BindFixedItemMadeInPlay( finale );
 	}
 
 	/// <summary>Rebound on setup and economy-only load; binding never creates an End or replays completed research.</summary>

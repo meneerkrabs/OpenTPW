@@ -79,6 +79,7 @@
 		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/ObjectLightTests.cs" />
 		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/TgqPngExportTests.cs" />
 		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/ShaderTests.cs" />
+		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/NativeWorldShaderRenderTests.cs" />
 		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/InstallationDiscoveryTests.cs" />
 		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/MaterialRollbackTests.cs" />
 		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/LinuxNativeLibrariesTests.cs" />

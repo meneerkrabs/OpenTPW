@@ -9,7 +9,9 @@ internal sealed partial class GameFlow
 	internal const double LobbyWarmupBudgetMilliseconds = 4;
 
 	private IEnumerator<bool>? lobbyCodecWarmup;
+	// made (or failed) once per session; the lobby without saved parks is asked again on its next entry (another menu)
 	private bool lobbyCodecWarmupDone;
+	private object? lobbyWithoutSaves;
 
 	/// <summary>
 	/// The first click on the lobby's enter-park button reads the island's saved parks to offer them (<see cref="FindContinueEntry"/>,
@@ -20,14 +22,14 @@ internal sealed partial class GameFlow
 	/// </summary>
 	private void PumpLobbyCodecWarmup()
 	{
-		if ( lobbyCodecWarmupDone || Menu == null || LobbyEntering || pending != null || parkBuild != null )
+		if ( lobbyCodecWarmupDone || Menu == null || ReferenceEquals( Menu, lobbyWithoutSaves ) || LobbyEntering || pending != null || parkBuild != null )
 			return;
 		if ( lobbyCodecWarmup == null )
 		{
 			if ( !HasSavedWorld() )
 			{
-				// a session without saved parks offers none; its first park's restart snapshot makes the metadata in that park's build steps
-				lobbyCodecWarmupDone = true;
+				// a lobby without saved parks offers none: it is asked again when the lobby is entered next (a park left since may have saved one)
+				lobbyWithoutSaves = Menu;
 				return;
 			}
 			lobbyCodecWarmup = ParkResumeJson.WarmupSteps().GetEnumerator();
@@ -35,7 +37,16 @@ internal sealed partial class GameFlow
 		var started = Stopwatch.GetTimestamp();
 		while ( Stopwatch.GetElapsedTime( started ).TotalMilliseconds < LobbyWarmupBudgetMilliseconds )
 		{
-			if ( lobbyCodecWarmup.MoveNext() )
+			bool more;
+			try { more = lobbyCodecWarmup.MoveNext(); }
+			// only a head start, as in the park build's preparation: the first read of a save meets the same failure and reports it
+			catch ( Exception error ) when ( error is IOException or InvalidDataException or UnauthorizedAccessException or InvalidOperationException
+				or NotSupportedException or ArgumentException )
+			{
+				Log.Warning( $"Lobby: the world-save codec's metadata was left to the first read of a save ({error.GetType().Name}: {error.Message})." );
+				more = false;
+			}
+			if ( more )
 				continue;
 			lobbyCodecWarmup.Dispose();
 			lobbyCodecWarmup = null;

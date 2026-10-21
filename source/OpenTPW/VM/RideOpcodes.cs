@@ -17,25 +17,10 @@ public sealed record RideOpcodeDefinition( Opcode Opcode, RideOpcodeStatus Statu
 /// </summary>
 public static class RideOpcodes
 {
-	private static readonly object gate = new();
-	private static Dictionary<Opcode, RideOpcodeDefinition>? definitions;
-	private static TableBuilder? building;
+	private static readonly Table shared = new();
 
 	/// <summary>The handler of every implemented opcode; built on first use, or ahead of it in steps (<see cref="PrepareStep"/>).</summary>
-	public static IReadOnlyDictionary<Opcode, RideOpcodeDefinition> Definitions
-	{
-		get
-		{
-			if ( Volatile.Read( ref definitions ) is { } built )
-				return built;
-			lock ( gate )
-			{
-				while ( definitions == null )
-					StepLocked();
-				return definitions;
-			}
-		}
-	}
+	public static IReadOnlyDictionary<Opcode, RideOpcodeDefinition> Definitions => shared.Definitions;
 
 	public static RideOpcodeStatus GetStatus( Opcode opcode ) => Definitions.TryGetValue( opcode, out var definition ) ? definition.Status : RideOpcodeStatus.Unknown;
 
@@ -44,25 +29,62 @@ public static class RideOpcodes
 	/// compiling every handler at once is a long frame in the browser. True while work remains. The table is the same (<see cref="TableBuilder"/>),
 	/// and a use of <see cref="Definitions"/> meanwhile finishes it at once.
 	/// </summary>
-	internal static bool PrepareStep()
-	{
-		if ( Volatile.Read( ref definitions ) != null )
-			return false;
-		lock ( gate )
-		{
-			if ( definitions == null )
-				StepLocked();
-			return definitions == null;
-		}
-	}
+	internal static bool PrepareStep() => shared.PrepareStep();
 
-	private static void StepLocked()
+	/// <summary>
+	/// The table built once, at once on its first use or ahead of it in steps (the shared one is <see cref="Definitions"/>; tests make their own). A build that
+	/// throws is dropped, so the next use builds again from the start and meets the same failure, as the former static constructor failed every time.
+	/// </summary>
+	internal sealed class Table
 	{
-		building ??= new TableBuilder();
-		if ( building.Step() )
-			return;
-		Volatile.Write( ref definitions, building.Result );
-		building = null;
+		private readonly object gate = new();
+		private Dictionary<Opcode, RideOpcodeDefinition>? definitions;
+		private TableBuilder? building;
+
+		public IReadOnlyDictionary<Opcode, RideOpcodeDefinition> Definitions
+		{
+			get
+			{
+				if ( Volatile.Read( ref definitions ) is { } built )
+					return built;
+				lock ( gate )
+				{
+					while ( definitions == null )
+						StepLocked();
+					return definitions;
+				}
+			}
+		}
+
+		/// <summary>Builds part of the table; true while work remains.</summary>
+		public bool PrepareStep()
+		{
+			if ( Volatile.Read( ref definitions ) != null )
+				return false;
+			lock ( gate )
+			{
+				if ( definitions == null )
+					StepLocked();
+				return definitions == null;
+			}
+		}
+
+		private void StepLocked()
+		{
+			building ??= new TableBuilder();
+			bool more;
+			try { more = building.Step(); }
+			catch
+			{
+				// a half-read enumerator would publish a table without the failing handler: start again from the first method next time
+				building = null;
+				throw;
+			}
+			if ( more )
+				return;
+			Volatile.Write( ref definitions, building.Result );
+			building = null;
+		}
 	}
 
 	/// <summary>

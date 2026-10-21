@@ -44,13 +44,13 @@ public class CoasterPanelTests
 	public void TheMaskEnablesBuildOnAnUnfinishedTrackAndDemolishOnAFinishedOne()
 	{
 		var (builder, ride) = NewCoaster();
-		var panel = new CoasterToolPanel( builder );
+		var panel = CoasterPanelRig.Create( builder );
 		Assert.AreEqual( CoasterToolButton.Build, panel.Selected, "0x4455c0: an unfinished track opens on the build button" );
 		const CoasterToolButton Edits = CoasterToolButton.Move | CoasterToolButton.Tilt | CoasterToolButton.Height | CoasterToolButton.Rotate | CoasterToolButton.StackUp | CoasterToolButton.StackDown;
 		Assert.AreEqual( Edits | CoasterToolButton.Build | CoasterToolButton.Loop, panel.EnabledMask, "0x1fc plus build and loop; demolish is off while the circuit is not finished" );
 
 		var (finished, _) = Finished();
-		var done = new CoasterToolPanel( finished );
+		var done = CoasterPanelRig.Create( finished );
 		Assert.AreEqual( CoasterToolButton.Height, done.Selected, "a finished circuit opens on the height button" );
 		Assert.IsFalse( done.ShowsActionCost, "mode 8 is hidden before a height drag begins" );
 		Assert.AreEqual( Edits | CoasterToolButton.Demolish, done.EnabledMask, "a complete track clears the two build buttons and keeps the demolish button" );
@@ -64,7 +64,7 @@ public class CoasterPanelTests
 	public void TheLoopButtonStartsAPairAndNeedsTheSecondPylonBeforeBuildComesBack()
 	{
 		var (builder, _) = NewCoaster();
-		var panel = new CoasterToolPanel( builder );
+		var panel = CoasterPanelRig.Create( builder );
 		Assert.AreEqual( CoasterPlaceResult.Ok, builder.Place( 24, 20 ) );
 		Assert.IsTrue( panel.Select( CoasterToolButton.Loop ) );
 		Assert.IsTrue( builder.LoopMode, "0x442cd0: the pair counter is 2" );
@@ -79,7 +79,7 @@ public class CoasterPanelTests
 	private static (CoasterBuilder Builder, CoasterToolPanel Panel) PendingLoopPair()
 	{
 		var (builder, _) = NewCoaster();
-		var panel = new CoasterToolPanel( builder );
+		var panel = CoasterPanelRig.Create( builder );
 		Assert.AreEqual( CoasterPlaceResult.Ok, builder.Place( 24, 20 ) );
 		Assert.IsTrue( panel.Select( CoasterToolButton.Loop ) );
 		Assert.AreEqual( CoasterPlaceResult.Ok, builder.Place( 24, 26 ) );
@@ -151,7 +151,7 @@ public class CoasterPanelTests
 	{
 		var (builder, _) = NewCoaster();
 		Assert.AreEqual( CoasterPlaceResult.Ok, builder.Place( 24, 20 ) );
-		var panel = new CoasterToolPanel( builder );
+		var panel = CoasterPanelRig.Create( builder );
 		Assert.IsTrue( panel.Select( CoasterToolButton.Loop ) );
 		Assert.IsTrue( builder.FirstOfPair );
 		Assert.IsTrue( panel.Select( CoasterToolButton.Loop ) );
@@ -178,7 +178,7 @@ public class CoasterPanelTests
 		// Synthetic flag-only endpoint: 0x444c00 tests 0x80, without a node 0x40 or active-mode requirement.
 		track.Nodes[track.LastIndex].Flags |= CoasterNodeFlags.LoopFirst;
 		Assert.AreEqual( CoasterNodeFlags.None, track.Nodes[track.LastIndex].Flags & CoasterNodeFlags.Loop );
-		var panel = new CoasterToolPanel( builder );
+		var panel = CoasterPanelRig.Create( builder );
 		Assert.IsTrue( panel.PairPending );
 		Assert.AreEqual( CoasterToolButton.Loop, panel.Selected );
 		Assert.IsTrue( builder.LoopMode );
@@ -197,7 +197,7 @@ public class CoasterPanelTests
 	{
 		var (builder, _) = Finished();
 		builder.Track.Nodes[^1].Flags |= CoasterNodeFlags.LoopFirst;
-		var panel = new CoasterToolPanel( builder );
+		var panel = CoasterPanelRig.Create( builder );
 		Assert.IsFalse( panel.PairPending );
 		Assert.IsFalse( builder.LoopMode );
 		Assert.AreEqual( CoasterToolButton.Height, panel.Selected );
@@ -209,7 +209,7 @@ public class CoasterPanelTests
 	public void RefreshResumesAPendingPairWhenBuildBecomesDisabled()
 	{
 		var (builder, _) = NewCoaster();
-		var panel = new CoasterToolPanel( builder );
+		var panel = CoasterPanelRig.Create( builder );
 		Assert.AreEqual( CoasterPlaceResult.Ok, builder.Place( 24, 20 ) );
 		builder.LoopMode = true;
 		Assert.AreEqual( CoasterPlaceResult.Ok, builder.Place( 24, 26 ) );
@@ -230,7 +230,7 @@ public class CoasterPanelTests
 		foreach ( var key in settings.Keys.Where( key => key.StartsWith( "asPylonControls[1].", StringComparison.Ordinal ) ).ToArray() )
 			settings.Remove( key );
 		var (builder, _) = NewCoaster( settings );
-		var panel = new CoasterToolPanel( builder );
+		var panel = CoasterPanelRig.Create( builder );
 		Assert.AreEqual( CoasterToolButton.Build, panel.Selected );
 		Assert.IsFalse( panel.Select( CoasterToolButton.Loop ) );
 		Assert.AreEqual( CoasterPlaceResult.Ok, builder.Place( 24, 20 ) );
@@ -257,7 +257,7 @@ public class CoasterPanelTests
 		Assert.AreEqual( CoasterPlaceResult.Ok, builder.Place( 24, 20 ) );
 		builder.LoopMode = true;
 		Assert.AreEqual( CoasterPlaceResult.Ok, builder.Place( 24, 26 ) );
-		var panel = new CoasterToolPanel( builder );
+		var panel = CoasterPanelRig.Create( builder );
 		Assert.AreEqual( 0, builder.UpgradeLevel );
 		Assert.IsTrue( panel.PairPending );
 		Assert.AreEqual( CoasterToolButton.Height, panel.Selected );
@@ -283,7 +283,7 @@ public class CoasterPanelTests
 		var (resumed, ride) = NewCoaster();
 		ride.RestoreSnapshot( captured );
 		Assert.IsFalse( resumed.LoopMode );
-		var restoredPanel = new CoasterToolPanel( resumed );
+		var restoredPanel = CoasterPanelRig.Create( resumed );
 		Assert.IsTrue( restoredPanel.PairPending );
 		Assert.AreEqual( CoasterToolButton.Loop, restoredPanel.Selected );
 		Assert.IsTrue( resumed.LoopMode );
@@ -302,7 +302,7 @@ public class CoasterPanelTests
 		builder.Height = 40;
 		builder.Place( 24, 20 );
 		builder.Place( 28, 24 );
-		var panel = new CoasterToolPanel( builder );
+		var panel = CoasterPanelRig.Create( builder );
 		panel.Select( CoasterToolButton.Height );
 		var node = First;
 		var start = builder.Track.Nodes[node].T;
@@ -334,7 +334,7 @@ public class CoasterPanelTests
 		CoasterTests.PlaceStation( builder, (20, 20) );
 		builder.Height = 20;
 		builder.Place( 24, 20 );
-		var panel = new CoasterToolPanel( builder );
+		var panel = CoasterPanelRig.Create( builder );
 		panel.Select( CoasterToolButton.Height );
 		var balance = economy.Balance;
 		var oldCost = CoasterTrack.Truncate( builder.Track.NodeCost( First, false ) );
@@ -356,7 +356,7 @@ public class CoasterPanelTests
 		builder.Place( 28, 24 );
 		builder.Place( 24, 28 );
 		var track = builder.Track;
-		var panel = new CoasterToolPanel( builder );
+		var panel = CoasterPanelRig.Create( builder );
 		panel.Select( CoasterToolButton.Rotate );
 		var automatic = track.AutomaticYaw( builder.Site, First + 1 );
 		var range = track.Definition.StandardPylon.MaxRotationDeviance;
@@ -379,7 +379,7 @@ public class CoasterPanelTests
 	{
 		var (builder, _) = Finished();
 		var track = builder.Track;
-		var panel = new CoasterToolPanel( builder );
+		var panel = CoasterPanelRig.Create( builder );
 		panel.Select( CoasterToolButton.Tilt );
 		var index = First + 2;
 		var auto = track.Nodes[index].Bank;
@@ -409,7 +409,7 @@ public class CoasterPanelTests
 		builder.Place( 24, 26 );
 		builder.Place( 20, 29 );
 		var track = builder.Track;
-		var panel = new CoasterToolPanel( builder );
+		var panel = CoasterPanelRig.Create( builder );
 		panel.Select( CoasterToolButton.Tilt );
 		Assert.AreEqual( 0f, track.Nodes[First + 1].LoopRotate, "the first pylon of a pair starts at 0" );
 		Assert.IsTrue( panel.Press( First + 1, new NVector2( 100, 100 ), 24, 26 ) );
@@ -430,7 +430,7 @@ public class CoasterPanelTests
 		builder.Height = 40;
 		builder.Place( 24, 20 );
 		builder.Track.Definition.StandardPylon.Capabilities = CoasterPylonCapabilities.Loft;
-		var panel = new CoasterToolPanel( builder );
+		var panel = CoasterPanelRig.Create( builder );
 		panel.Select( CoasterToolButton.Rotate );
 		Assert.IsFalse( panel.Press( First, NVector2.Zero, 24, 20 ), "no rotate clip, no rotate drag" );
 		panel.Select( CoasterToolButton.Tilt );
@@ -450,7 +450,7 @@ public class CoasterPanelTests
 		builder.Place( 24, 20 );
 		builder.Place( 28, 24 );
 		builder.Place( 24, 28 );
-		var panel = new CoasterToolPanel( builder );
+		var panel = CoasterPanelRig.Create( builder );
 		panel.Select( CoasterToolButton.Move );
 		Assert.IsTrue( panel.Press( First + 1, new NVector2( 50, 50 ), 28, 24 ) );
 		panel.Drag( new NVector2( 60, 60 ), 0, (29, 25) );
@@ -480,7 +480,7 @@ public class CoasterPanelTests
 		var above = First + 4;
 		Assert.AreEqual( (0, 1), (track.Nodes[below].StackIndex, track.Nodes[above].StackIndex) );
 		var (belowT, aboveT) = (track.Nodes[below].T, track.Nodes[above].T);
-		var panel = new CoasterToolPanel( builder );
+		var panel = CoasterPanelRig.Create( builder );
 		panel.Select( CoasterToolButton.StackDown );
 		Assert.AreEqual( CoasterPanelResult.Nothing, panel.Release( below, null ), "the lowest piece cannot go down" );
 		Assert.AreEqual( CoasterPanelResult.Swapped, panel.Release( above, null ) );
@@ -515,7 +515,7 @@ public class CoasterPanelTests
 
 		ride.EnterTool();
 		Assert.AreEqual( CoasterControllerState.Built, ride.State );
-		var panel = new CoasterToolPanel( builder );
+		var panel = CoasterPanelRig.Create( builder );
 		Assert.AreEqual( CoasterToolButton.Height, panel.Selected );
 		var track = builder.Track;
 		var cut = First + 2;
@@ -556,7 +556,7 @@ public class CoasterPanelTests
 		ride.EnterTool();
 		var track = builder.Track;
 		var before = track.Nodes.Select( node => (node.X, node.Y) ).ToArray();
-		var panel = new CoasterToolPanel( builder );
+		var panel = CoasterPanelRig.Create( builder );
 		Assert.IsTrue( panel.Select( CoasterToolButton.Demolish ) );
 		// Cut from the second pylon to the fifth: the third and fourth go.
 		panel.Release( First + 1, null );
@@ -661,7 +661,7 @@ public class CoasterPanelTests
 		Assert.AreEqual( count, track.Nodes.Count );
 		Assert.IsTrue( track.IsRunnable, "the circuit is as it was" );
 		Assert.AreEqual( CoasterControllerState.Built, ride.State );
-		var panel = new CoasterToolPanel( builder );
+		var panel = CoasterPanelRig.Create( builder );
 		panel.Select( CoasterToolButton.Demolish );
 		Assert.AreEqual( CoasterPanelResult.CutStarted, panel.Release( 0, null ) );
 		Assert.AreEqual( CoasterPanelResult.Nothing, panel.Release( 0, null ), "the panel path refuses it too" );
@@ -679,7 +679,7 @@ public class CoasterPanelTests
 		builder.Height = 40;
 		builder.Place( 24, 20 );
 		builder.Place( 28, 24 );
-		var panel = new CoasterToolPanel( builder );
+		var panel = CoasterPanelRig.Create( builder );
 		panel.Select( CoasterToolButton.Height );
 		Assert.IsTrue( panel.Press( First + 1, new NVector2( 100, 100 ), 28, 24 ) );
 		Assert.IsTrue( builder.RemoveLast() );
@@ -690,7 +690,7 @@ public class CoasterPanelTests
 		// a pending cut does not survive an edit between its two releases
 		var (finished, ride) = Finished();
 		ride.EnterTool();
-		var cutting = new CoasterToolPanel( finished );
+		var cutting = CoasterPanelRig.Create( finished );
 		cutting.Select( CoasterToolButton.Demolish );
 		Assert.AreEqual( CoasterPanelResult.CutStarted, cutting.Release( First + 2, null ) );
 		finished.Track.Revalidate( finished.Site, null, null );
@@ -707,7 +707,7 @@ public class CoasterPanelTests
 		pylon.MaxHeight = 100;
 		builder.Height = 40;
 		builder.Place( 24, 20 );
-		var panel = new CoasterToolPanel( builder );
+		var panel = CoasterPanelRig.Create( builder );
 		panel.Select( CoasterToolButton.Height );
 		var (_, high) = builder.Track.LoftRange( builder.Site, First );
 		Assert.IsTrue( high > 1f, "(fMaxHeight − top)/(h1 − h0) lets t pass 1: 0x434680 has no clamp" );
@@ -732,7 +732,7 @@ public class CoasterPanelTests
 		Assert.AreEqual( CoasterPlaceResult.Ok, builder.Place( 24, 20 ) );
 		var track = builder.Track;
 		Assert.AreEqual( (0, 1), (track.Nodes[First].StackIndex, track.Nodes[First + 4].StackIndex) );
-		var panel = new CoasterToolPanel( builder );
+		var panel = CoasterPanelRig.Create( builder );
 		panel.Select( CoasterToolButton.Move );
 		// pick the lower piece up and carry it over another cell: the upper piece comes down
 		Assert.IsTrue( panel.Press( First, new NVector2( 0, 0 ), 24, 20 ) );
@@ -751,7 +751,7 @@ public class CoasterPanelTests
 		builder.Height = 40;
 		foreach ( var (dx, dy) in CoasterTests.Circuit )
 			builder.Place( 20 + dx, 20 + dy );
-		var panel = new CoasterToolPanel( builder );
+		var panel = CoasterPanelRig.Create( builder );
 		Assert.AreEqual( CoasterToolButton.Build, panel.Selected );
 		CoasterTests.CloseAndComplete( builder );
 		panel.Refresh();
@@ -803,7 +803,7 @@ public class CoasterPanelTests
 		builder.Height = 40;
 		builder.Place( 24, 20 );
 		builder.Place( 28, 24 );
-		var panel = new CoasterToolPanel( builder );
+		var panel = CoasterPanelRig.Create( builder );
 		panel.Select( CoasterToolButton.Move );
 		Assert.IsTrue( panel.Press( First + 1, NVector2.Zero, 28, 24 ) );
 		panel.Drag( new NVector2( 4, 4 ), 0, (29, 25) );
@@ -817,7 +817,7 @@ public class CoasterPanelTests
 	{
 		var (builder, ride) = Finished();
 		ride.EnterTool();
-		var panel = new CoasterToolPanel( builder );
+		var panel = CoasterPanelRig.Create( builder );
 		var samples = ride.Samples.Count;
 		var version = builder.Track.Nodes[First + 1].T;
 		Assert.IsTrue( panel.Press( First + 1, new NVector2( 0, 400 ), 0, 0 ) );
@@ -835,7 +835,7 @@ public class CoasterPanelTests
 	{
 		var (builder, ride) = Finished();
 		ride.EnterTool();
-		var panel = new CoasterToolPanel( builder );
+		var panel = CoasterPanelRig.Create( builder );
 		panel.Select( CoasterToolButton.Demolish );
 		panel.Release( First + 2, null );
 		panel.Close();
@@ -938,7 +938,7 @@ public class CoasterPanelTests
 	{
 		var (builder, ride) = Finished();
 		ride.EnterTool();
-		var panel = new CoasterToolPanel( builder );
+		var panel = CoasterPanelRig.Create( builder );
 		panel.Select( CoasterToolButton.Rotate );
 		Assert.IsTrue( panel.Press( First + 1, new NVector2( 100, 100 ), 0, 0 ) );
 		panel.Drag( new NVector2( 80, 100 ), 0, null );
@@ -979,7 +979,7 @@ public class CoasterPanelTests
 		builder.Height = 40;
 		builder.Place( 24, 20 );
 		var occupied = new HashSet<(int, int)> { (26, 20) };
-		var panel = new CoasterToolPanel( builder, ( x, y ) => !occupied.Contains( (x, y) ) );
+		var panel = CoasterPanelRig.Create( builder, ( x, y ) => !occupied.Contains( (x, y) ) );
 		var pylon = builder.Track.Definition.StandardPylon;
 		var half = pylon.MaxPlaceDistance + 1;
 		var area = panel.PlacementArea;
@@ -998,7 +998,7 @@ public class CoasterPanelTests
 	{
 		var (builder, _) = NewCoaster();
 		builder.Height = 40;
-		var panel = new CoasterToolPanel( builder );
+		var panel = CoasterPanelRig.Create( builder );
 		panel.Hover( 24, 20 );
 		Assert.AreEqual( CoasterPlaceResult.Ok, panel.Cursor!.Value.Result );
 		Assert.IsTrue( panel.Cursor.Value.Cost > 0 );
@@ -1019,7 +1019,7 @@ public class CoasterPanelTests
 	{
 		var (builder, _) = NewCoaster();
 		builder.Height = 40;
-		var panel = new CoasterToolPanel( builder );
+		var panel = CoasterPanelRig.Create( builder );
 		panel.Hover( 24, 20 );
 		var before = panel.Cursor;
 		Assert.IsNotNull( before );
@@ -1062,7 +1062,7 @@ public class CoasterPanelTests
 		var ride = new CoasterRide( CoasterDefinition.FromValues( CoasterTests.PcSettings() ), new CoasterWorld( 1 ), "Test Coaster" );
 		var builder = new CoasterBuilder( ride, new CoasterSite( 64, 64 ), () => economy, () => state!.Id );
 		CoasterTests.PlaceStation( builder, (20, 20) );
-		var panel = new CoasterToolPanel( builder );
+		var panel = CoasterPanelRig.Create( builder );
 		Assert.IsTrue( builder.Ride.Definition.HasLoopPylon );
 		Assert.AreEqual( 0, builder.UpgradeLevel );
 		Assert.IsFalse( panel.LoopUnlocked );
@@ -1072,6 +1072,6 @@ public class CoasterPanelTests
 		Assert.AreEqual( CoasterToolButton.Loop, panel.EnabledMask & CoasterToolButton.Loop );
 		var (sandbox, _) = NewCoaster();
 		Assert.IsNull( sandbox.UpgradeLevel );
-		Assert.IsTrue( new CoasterToolPanel( sandbox ).LoopUnlocked, "no economy, no level gate" );
+		Assert.IsTrue( CoasterPanelRig.Create( sandbox ).LoopUnlocked, "no economy, no level gate" );
 	}
 }

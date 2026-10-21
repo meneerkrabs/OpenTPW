@@ -126,6 +126,24 @@ public enum ParkCommandKind : byte
 	CutTrack = 82,
 	/// <summary>Opens a kart or water ride's line tool at its track's open end (<see cref="OpenTrackLineToolCommand"/>).</summary>
 	OpenTrackLineTool = 83,
+	/// <summary>The coaster tool's entry on a station (<see cref="BeginCoasterToolCommand"/>).</summary>
+	BeginCoasterTool = 90,
+	/// <summary>The coaster tool's exit (<see cref="EndCoasterToolCommand"/>).</summary>
+	EndCoasterTool = 91,
+	/// <summary>A click of the coaster tool's build buttons (<see cref="CoasterClickCommand"/>).</summary>
+	CoasterClick = 92,
+	/// <summary>Backspace in the coaster tool (<see cref="RemoveLastCoasterPylonCommand"/>).</summary>
+	RemoveLastCoasterPylon = 93,
+	/// <summary>The press of a coaster panel drag (<see cref="BeginCoasterNodeEditCommand"/>).</summary>
+	BeginCoasterNodeEdit = 94,
+	/// <summary>One step of a coaster panel drag (<see cref="EditCoasterNodeCommand"/>).</summary>
+	EditCoasterNode = 95,
+	/// <summary>The release of a coaster panel drag (<see cref="EndCoasterNodeEditCommand"/>).</summary>
+	EndCoasterNodeEdit = 96,
+	/// <summary>The coaster panel's stack buttons (<see cref="SwapCoasterStackCommand"/>).</summary>
+	SwapCoasterStack = 97,
+	/// <summary>The coaster panel's demolish button (<see cref="CutCoasterCommand"/>).</summary>
+	CutCoaster = 98,
 }
 
 /// <summary>

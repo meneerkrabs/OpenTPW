@@ -250,17 +250,24 @@ public class PrototypeEconomySyncTests
 		Assert.IsFalse( ride.AcceptsGuests );
 		var bothPoints = economy.ParkPoints();
 		Assert.IsTrue( bothPoints > 0 );
-		Invoke( "SetCoasterToolStation", ordinary );
+		// [EXT:online-coop-commands] the coaster tool's entry and exit set the being-edited mark through their commands (BeginCoasterToolCommand, EndCoasterToolCommand); the test moves it as they do
+		void Mark( OriginalObject? editing )
+		{
+			foreach ( var item in new OriginalObject[] { ordinary, prototype } )
+				if ( item.Runtime.Coaster is { } coaster )
+					coaster.BeingEdited = ReferenceEquals( item, editing );
+		}
+		Mark( ordinary );
 		Invoke( "SyncObjectEconomy" );
 		Assert.IsFalse( ordinaryState.CoasterAcceptsGuests );
 		Assert.IsTrue( prototypeState.CoasterAcceptsGuests );
 		Assert.AreEqual( bothPoints / 2, economy.ParkPoints() );
-		Invoke( "SetCoasterToolStation", prototype );
+		Mark( prototype );
 		Invoke( "SyncObjectEconomy" );
 		Assert.IsTrue( ordinaryState.CoasterAcceptsGuests );
 		Assert.IsFalse( prototypeState.CoasterAcceptsGuests );
 		Assert.AreEqual( bothPoints / 2, economy.ParkPoints() );
-		Invoke( "SetCoasterToolStation", new object[] { null! } );
+		Mark( null );
 		Invoke( "SyncObjectEconomy" );
 		Assert.IsTrue( ordinaryState.CoasterAcceptsGuests && prototypeState.CoasterAcceptsGuests );
 		Assert.AreEqual( bothPoints, economy.ParkPoints() );

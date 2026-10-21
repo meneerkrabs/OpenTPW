@@ -13,8 +13,8 @@ namespace OpenTPW.Tests;
 
 /// <summary>
 /// [EXT:park-entry-preparation] What a park built over frames prepares for its first draw and HUD before it is entered
-/// (docs/BROWSER-PERFORMANCE.md, "The entering frame"): the HUD's interface textures, its input seeds read again on entering and the sky.
-/// No original art or GPU is required.
+/// (docs/BROWSER-PERFORMANCE.md, "The entering frame"): the HUD's interface textures, its input seeds read again on entering, the sky,
+/// and the deletions spread over frames. No original art or GPU is required.
 /// </summary>
 [TestClass, DoNotParallelize]
 public class EnteringFramePreparationTests
@@ -110,5 +110,39 @@ public class EnteringFramePreparationTests
 		Assert.IsNull( Get<Sky?>( level, "sky" ) );
 		level.PrepareSky();
 		Assert.IsTrue( level.SkyLoaded );
+	}
+
+	[TestMethod]
+	public void DeletionsRunInOrderWithinTheirBudgetAndTheRestWaitsForTheNextFrame()
+	{
+		var ran = new List<int>();
+		var queue = Enumerable.Range( 0, 5 ).Select( index => (Action)(() => ran.Add( index )) ).ToList();
+		var elapsed = 0.0;
+		Action Timed( Action action ) => () => { action(); elapsed += 0.4; };
+		queue = queue.Select( Timed ).ToList();
+		// 1 ms: three deletions start before the budget has passed
+		Assert.AreEqual( 3, Renderer.RunDeletions( queue, () => elapsed, 1 ) );
+		CollectionAssert.AreEqual( new[] { 0, 1, 2 }, ran );
+		Assert.AreEqual( 2, queue.Count );
+		// a frame whose budget is already spent still runs one, so the queue always drains
+		Assert.AreEqual( 1, Renderer.RunDeletions( queue, () => 5, 1 ) );
+		CollectionAssert.AreEqual( new[] { 0, 1, 2, 3 }, ran );
+		// without a budget (the desktop) every deletion runs at once
+		queue.Add( () => ran.Add( 9 ) );
+		Assert.AreEqual( 2, Renderer.RunDeletions( queue, () => 5, double.PositiveInfinity ) );
+		CollectionAssert.AreEqual( new[] { 0, 1, 2, 3, 4, 9 }, ran );
+		Assert.AreEqual( 0, queue.Count );
+	}
+
+	[TestMethod]
+	public void ADeletionScheduledByADeletionRunsAfterTheOthers()
+	{
+		var ran = new List<string>();
+		var queue = new List<Action>();
+		queue.Add( () => { ran.Add( "a" ); queue.Add( () => ran.Add( "c" ) ); } );
+		queue.Add( () => ran.Add( "b" ) );
+		Renderer.RunDeletions( queue, () => 0, double.PositiveInfinity );
+		CollectionAssert.AreEqual( new[] { "a", "b", "c" }, ran );
+		Assert.AreEqual( 0, queue.Count );
 	}
 }

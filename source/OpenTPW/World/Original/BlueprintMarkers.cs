@@ -157,6 +157,16 @@ public sealed class BlueprintMarkers : ModelEntity
 	public void Clear() => Show( [] );
 
 	/// <summary>
+	/// While no cell is shown, shows none: nothing changes, but the runtime's first-call work of <see cref="Show"/> (its queries over the cell tuples,
+	/// several milliseconds in the browser) is done before the park HUD's first update calls it in the entering frame (docs/BROWSER-PERFORMANCE.md, "Build steps").
+	/// </summary>
+	internal void WarmUp()
+	{
+		if ( shown.Length == 0 )
+			Show( new List<(int X, int Y, BlueprintMarker Marker)>(), null );
+	}
+
+	/// <summary>
 	/// Advances the ripple phase while the game runs. The original adds 0.1 to the phase on every unpaused frame of its
 	/// dynamic-mesh flush and the vertex writer rebuilds every face from it, so the markers' height keeps moving.
 	/// </summary>

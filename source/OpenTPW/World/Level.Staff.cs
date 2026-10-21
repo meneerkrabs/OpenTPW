@@ -14,7 +14,13 @@ public partial class Level
 
 	private void SetupStaff()
 	{
-		if ( Park == null || Guests == null ) return;
+		foreach ( var _ in SetupStaffSteps() ) { }
+	}
+
+	/// <summary><see cref="SetupStaff"/> in steps: the staff's world and renderer; each value is a point where a frame may end (docs/BROWSER-PERFORMANCE.md, "Build steps").</summary>
+	private IEnumerable<bool> SetupStaffSteps()
+	{
+		if ( Park == null || Guests == null ) yield break;
 		var lane = Guests.Settings.ArrivalLaneA ?? Guests.Settings.ArrivalLaneB;
 		StaffWorld = new StaffWorldSimulation( Guests.Grid, () => Park.Economy.Staff.Members, StaffJobAccess,
 			lane is { Length: > 0 } ? lane[^1] : null );
@@ -44,11 +50,16 @@ public partial class Level
 		StaffHands = new StaffHands( () => Park?.Economy, () => Guests?.Grid.Cells, IsStaffDropBlocked );
 		StaffPlacement = new StaffPlacement( () => Park?.Economy, () => Guests?.Grid.Cells, IsStaffDropBlocked, command => Commands.Issue( command ), StaffHands.IsCarried );
 		PatrolTool = new PatrolAreaTool( () => Park?.Economy, command => Commands.Issue( command ) );
+		// the staff sprites, then their renderer's atlases, are two long steps
+		NextStepIsLong = true;
+		yield return true;
 		if ( OriginalPark != null )
 		{
 			StaffSpriteSet sprites;
 			using ( LoadProfile.Measure( "staff-sprites" ) )
 				sprites = StaffSpriteSet.Load( LevelName );
+			NextStepIsLong = true;
+			yield return true;
 			StaffRenderer = new StaffRenderer( () => Park.Economy.Staff.Members, OriginalPark.Heightfield, sprites, StaffPlacement )
 			{ FeetHeight = ( x, y ) => PoolBridges?.At( (int)x, (int)y )?.HeightAt( x, y ) };
 		}

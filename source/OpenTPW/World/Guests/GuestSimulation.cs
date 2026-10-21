@@ -1378,6 +1378,14 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		}
 	}
 
+	/// <summary>The happiness of each existing cell-list member, at the list's cell rather than a guest's potentially unsynchronized position. Reading does not synchronize or change membership.</summary>
+	internal IEnumerable<(int X, int Y, float Happiness)> CellListHappiness()
+	{
+		foreach ( var (cell, list) in occupants )
+			for ( var index = list.Count - 1; index >= 0; index-- )
+				yield return (cell.X, cell.Y, list[index].Happiness);
+	}
+
 	/// <summary>The guest that heads the thing list of a cell (the one that entered it last), or null (tests).</summary>
 	internal Guest? HeadOfCell( int x, int y ) => occupants.TryGetValue( (x, y), out var list ) && list.Count > 0 ? list[^1] : null;
 

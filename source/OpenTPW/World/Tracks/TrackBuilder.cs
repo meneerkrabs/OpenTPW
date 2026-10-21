@@ -146,7 +146,9 @@ public sealed class TrackBuilder
 	/// A tile that exists only bumps its overlap counter, free of charge. Returns the validation result (<see cref="CellBuildResult.Ok"/> when written).
 	/// </summary>
 	// [BIN:STP-PPC:0x10088CB8 track tile write] a tile over four path or empty cells clears the paths and writes the origin and three type-12 extension cells (the origin recorded in +0x10)
-	public CellBuildResult PlaceTile( int x, int y, int owner = 0 )
+	public CellBuildResult PlaceTile( int x, int y, int owner = 0 ) => PlaceTile( x, y, owner, free: false );
+
+	private CellBuildResult PlaceTile( int x, int y, int owner, bool free )
 	{
 		var check = Validate( x, y, pending: null, owner );
 		if ( check == CellBuildResult.Existing )
@@ -158,7 +160,7 @@ public sealed class TrackBuilder
 		}
 		if ( check != CellBuildResult.Ok )
 			return check;
-		var park = Economy;
+		var park = free ? null : Economy;
 		if ( park != null && !park.CanSpendCell( Purchase ) )
 			return CellBuildResult.NotEnoughMoney;
 		var overPath = false;
@@ -223,6 +225,21 @@ public sealed class TrackBuilder
 				// [BIN:TPW-EXE:0x00524F1E station link] the station tiles' flow link is the heading of the station's rotation (0x524EE9..0x524F19: 0 → 4, 90 → 1, 180 → 0x40, 270 → 0x10)
 				Tracks.Set( cx, cy, new TrackCell { Type = origin ? StartType : TrackCellTypes.Extension, Mask = origin ? axis : (byte)0, Link = origin ? station.Heading : (byte)0, Parent = origin ? -1 : originIndex, Owner = owner, BaseType = baseType } );
 			}
+		}
+	}
+
+	/// <summary>Fresh placement only: attempts the two free adjacent origins without overriding placement refusals. Loading or migrating a station uses <see cref="PlaceStation"/> instead.</summary>
+	// [BIN:TPW-EXE:0x005253E9 initial track] placement sets free byte 0x8186D4; secondary writer 0x538FC0 skips the tile price and debit, not validation or existing-tile overlap.
+	public void PlaceInitialStation( TrackStation station )
+	{
+		PlaceStation( station );
+		var owner = OwnerOf( station );
+		foreach ( var at in new[] { station.Exit, station.Entry } )
+		{
+			// A refused adjacent tile remains untouched; placement is not an atomic four-origin transaction.
+			var result = PlaceTile( at.X, at.Y, owner, free: true );
+			if ( at == station.Entry && result is (CellBuildResult.Ok or CellBuildResult.Existing) )
+				ApplyLineLink( at, station.Heading );
 		}
 	}
 

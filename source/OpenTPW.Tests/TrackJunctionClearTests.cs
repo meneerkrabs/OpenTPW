@@ -153,34 +153,29 @@ public class TrackJunctionClearTests
 	}
 
 	[TestMethod]
-	public void ZeroOverlapSparesTheFirstStationTileAndTheEntryTile()
+	public void ZeroOverlapSparesTheExitAndTheEntryTile()
 	{
 		var rig = new Rig();
-		var first = rig.Station.First;
-		var entry = rig.Station.Entry;
-
-		Assert.IsFalse( rig.Editor.ClearCell( first, pass: true ) );
-		var firstAfter = rig.Tracks.Get( first.Item1, first.Item2 );
-		Assert.AreEqual( rig.Builder.StartType, firstAfter.Type, "the first station tile stays" );
-		Assert.AreEqual( -1, firstAfter.Overlap, "its overlap still counts below zero" );
-
-		rig.Put( entry, MakeCell( 0x11, TrackHeading.PosY, 0 ) );
-		Assert.IsFalse( rig.Editor.ClearCell( entry, pass: true ) );
-		var entryAfter = rig.Tracks.Get( entry.Item1, entry.Item2 );
-		Assert.AreEqual( TrackCellTypes.KartOrigin, entryAfter.Type, "the tile before the station stays" );
-		Assert.AreEqual( -1, entryAfter.Overlap );
-		Assert.AreEqual( 0, rig.Cleared.Count, "a spared station-side tile refunds nothing" );
+		foreach ( var at in new[] { rig.Station.Exit, rig.Station.Entry } )
+		{
+			rig.Put( at, MakeCell( 0x11, TrackHeading.PosY, 0 ) );
+			Assert.IsFalse( rig.Editor.ClearCell( at, pass: true ) );
+			var after = rig.Tracks.Get( at.X, at.Y );
+			Assert.AreEqual( TrackCellTypes.KartOrigin, after.Type );
+			Assert.AreEqual( -1, after.Overlap );
+		}
+		Assert.AreEqual( 0, rig.Cleared.Count, "protected station-side origins do not refund" );
 	}
 
 	[TestMethod]
-	public void ReplayClearBypassesTheStationSpare()
+	public void ReplayClearBypassesTheEndpointSpare()
 	{
 		var rig = new Rig();
-		var first = rig.Station.First;
-
-		Assert.IsTrue( rig.Editor.ClearCell( first, pass: true, replay: true ) );
-		Assert.AreEqual( 0, rig.Tracks.Get( first.Item1, first.Item2 ).Type, "the replay flag removes the station tile the ordinary clear spares" );
-		CollectionAssert.AreEqual( new[] { first }, rig.Cleared );
+		var exit = rig.Station.Exit;
+		rig.Put( exit, MakeCell( 0x11, TrackHeading.PosY, 0 ) );
+		Assert.IsTrue( rig.Editor.ClearCell( exit, pass: true, replay: true ) );
+		Assert.AreEqual( 0, rig.Tracks.Get( exit.X, exit.Y ).Type );
+		CollectionAssert.AreEqual( new[] { exit }, rig.Cleared );
 	}
 
 	[TestMethod]

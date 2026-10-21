@@ -102,7 +102,7 @@ public sealed partial class ParkHud
 		else
 			Status.Speed = speed;
 		// Only an accepted explicit local speed choice owns this backdrop. Focus loss and session speed do not.
-		if ( level.CoopRole == CoopRole.None && !level.IsReadOnlyVisit )
+		if ( level != null && level.CoopRole == CoopRole.None && !level.IsReadOnlyVisit )
 		{
 			if ( speed == GameSpeed.Paused )
 				pausePointerOverlay ??= new OpenTPW.UI.Original.UiPointerOwner( new object() );

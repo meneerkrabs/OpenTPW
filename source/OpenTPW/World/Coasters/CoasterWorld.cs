@@ -49,7 +49,11 @@ public sealed class CoasterWorld
 			rides.Add( ride );
 	}
 
-	internal void Remove( CoasterRide ride ) => rides.Remove( ride );
+	internal void Remove( CoasterRide ride )
+	{
+		ride.Track.DetachCells();
+		rides.Remove( ride );
+	}
 
 	/// <summary>Every pylon (not a pylon-less station or station end node) standing on (x, y), with its coaster.</summary>
 	public IEnumerable<(CoasterRide? Ride, CoasterNode Node)> PylonsAt( int x, int y )

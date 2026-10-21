@@ -573,13 +573,101 @@ public static partial class Program
 		var result = new JsonObject();
 		try
 		{
+			PerfReachability.Unreadable.Clear();
 			foreach ( var (root, bytes) in PerfReachability.BytesByStaticRoot() )
 				result[root] = root.StartsWith( "(objects" ) ? bytes : Math.Round( bytes / 1048576d, 1 );
+			if ( PerfReachability.Unreadable.Count > 0 )
+				result["(unreadable fields)"] = string.Join( "; ", PerfReachability.Unreadable.Take( 20 ) );
 		}
 		catch ( Exception exception )
 		{
 			// a diagnostic: say what went wrong rather than lose the other counters of the step
 			result["(error)"] = exception.ToString();
+		}
+		return result.ToJsonString();
+	}
+
+	/// <summary>
+	/// What the sound mixer (<see cref="AudioMixer.Current"/>) reaches, as JSON: array bytes by the field that holds them (the nearest
+	/// game type's field; collections pass their holder on) and the object counts of the game's types (<see cref="PerfReachability.AudioGraph"/>).
+	/// </summary>
+	[JSExport]
+	public static string PerfAudioBytes()
+	{
+		var result = new JsonObject();
+		try
+		{
+			if ( AudioMixer.Current is not { } mixer )
+				return result.ToJsonString();
+			var decodes = new List<string>();
+			var (bytes, counts) = PerfReachability.AudioGraph( mixer, decodes );
+			var flights = new JsonArray();
+			foreach ( var decode in decodes )
+				flights.Add( decode );
+			result["decodesInFlight"] = flights;
+			var holders = new JsonObject();
+			foreach ( var (holder, value) in bytes.OrderByDescending( entry => entry.Value ).Take( 25 ) )
+				holders[holder] = Math.Round( value / 1048576d, 3 );
+			result["megabytesByHolder"] = holders;
+			var types = new JsonObject();
+			foreach ( var (type, count) in counts.OrderByDescending( entry => entry.Value ).Take( 40 ) )
+				types[type] = count;
+			result["objectsByType"] = types;
+		}
+		catch ( Exception exception )
+		{
+			result["(error)"] = exception.ToString();
+		}
+		return result.ToJsonString();
+	}
+
+	/// <summary>
+	/// The bytes behind the runtime's own statics that the game's root walk does not see (<see cref="PerfReachability.BytesByRuntimeRoot"/>):
+	/// the shared array pools and the static fields of the framework's assemblies, as JSON megabytes, largest first.
+	/// </summary>
+	[JSExport]
+	public static string PerfRuntimeRoots()
+	{
+		var result = new JsonObject();
+		try
+		{
+			PerfReachability.Unreadable.Clear();
+			foreach ( var (root, bytes) in PerfReachability.BytesByRuntimeRoot() )
+				result[root] = root.StartsWith( "(objects" ) ? bytes : Math.Round( bytes / 1048576d, 2 );
+			if ( PerfReachability.Unreadable.Count > 0 )
+				result["(unreadable fields)"] = string.Join( "; ", PerfReachability.Unreadable.Take( 20 ) );
+		}
+		catch ( Exception exception )
+		{
+			result["(error)"] = exception.ToString();
+		}
+		return result.ToJsonString();
+	}
+
+	/// <summary>
+	/// The objects the game's and the framework's static roots reach, counted by type (the largest counts, as JSON): two points compared show
+	/// which types a change of scene leaves more of, where the array bytes alone do not.
+	/// </summary>
+	[JSExport]
+	public static string PerfObjectCounts()
+	{
+		var result = new JsonObject();
+		try
+		{
+			PerfReachability.TypeCounts = new();
+			PerfReachability.EstimatedBytes = 0;
+			PerfReachability.BytesByRuntimeRoot();
+			result["(estimated bytes)"] = PerfReachability.EstimatedBytes;
+			foreach ( var (type, count) in PerfReachability.TypeCounts.OrderByDescending( entry => entry.Value ).Take( 150 ) )
+				result[type.FullName ?? type.Name] = count;
+		}
+		catch ( Exception exception )
+		{
+			result["(error)"] = exception.ToString();
+		}
+		finally
+		{
+			PerfReachability.TypeCounts = null;
 		}
 		return result.ToJsonString();
 	}
@@ -635,6 +723,7 @@ public static partial class Program
 	{
 		var info = GC.GetGCMemoryInfo();
 		var (archives, members) = WadArchive.MemoryInUse;
+		var sound = GameAudio.Counts;
 		return new JsonObject
 		{
 			["entities"] = Entity.All.Count,
@@ -643,6 +732,10 @@ public static partial class Program
 			["archiveBytes"] = archives,
 			["archiveMemberBytes"] = members,
 			["decodedSampleBytes"] = GameAudio.DecodedSampleBytes,
+			// the sound system's own holdings: voices and the distinct PCM they play, and the sample decodes still running (a sample taken during one counts its growing buffer)
+			["soundVoices"] = sound?.Voices ?? 0,
+			["soundVoiceSampleBytes"] = sound?.VoiceSampleBytes ?? 0,
+			["soundDecodesInFlight"] = sound?.DecodesInFlight ?? 0,
 			["gpuTextureBytes"] = Veldrid.Texture.LiveGpuBytes,
 			["gpuTextures"] = Veldrid.Texture.LiveGpuTextures,
 			// GPU deletions the browser's per-frame budget has left for later frames (Renderer.BrowserDeletionBudgetMilliseconds); a settled page has none
@@ -668,7 +761,8 @@ internal static class PerfReachability
 {
 	/// <summary>
 	/// Bytes of the arrays reachable from each static field (an object reached from several counts for the first), largest first: an
-	/// approximate map of who holds the memory.
+	/// approximate map of who holds the memory. Everything that reads files reaches the file system (the sound categories do, for their
+	/// banks), so the archive members it keeps read are counted under the first such root (<c>AudioMixer.Current</c> in the lobby).
 	/// </summary>
 	public static List<(string Root, long Bytes)> BytesByStaticRoot( int top = 15, int maximumObjects = 30_000_000 )
 	{
@@ -685,6 +779,87 @@ internal static class PerfReachability
 	}
 
 	/// <summary>
+	/// Like <see cref="BytesByStaticRoot"/>, after the game's own roots (so what they reach is not counted again): the shared array pools of
+	/// the common element types (their thread-local and per-core stores) and the static fields of the framework's assemblies.
+	/// </summary>
+	public static List<(string Root, long Bytes)> BytesByRuntimeRoot( int top = 20, int maximumObjects = 30_000_000 )
+	{
+		var seen = new HashSet<object>( ReferenceEqualityComparer.Instance );
+		foreach ( var (_, value) in StaticRoots() )
+			if ( seen.Add( value ) )
+				ArrayBytesFrom( value, seen, maximumObjects );
+		var totals = new List<(string Root, long Bytes)>();
+		void Add( string root, object? value )
+		{
+			if ( value != null && !IsWeakTable( value ) && seen.Add( value ) )
+				totals.Add( (root, ArrayBytesFrom( value, seen, maximumObjects )) );
+		}
+		foreach ( var pool in new object[] { System.Buffers.ArrayPool<byte>.Shared, System.Buffers.ArrayPool<char>.Shared, System.Buffers.ArrayPool<int>.Shared,
+			System.Buffers.ArrayPool<float>.Shared, System.Buffers.ArrayPool<short>.Shared, System.Buffers.ArrayPool<ushort>.Shared, System.Buffers.ArrayPool<uint>.Shared } )
+		{
+			var type = pool.GetType();
+			Add( $"{type.Name}<{type.GetGenericArguments().FirstOrDefault()?.Name}>", pool );
+			foreach ( var field in type.GetFields( System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public ) )
+			{
+				try { Add( $"{type.Name}<{type.GetGenericArguments().FirstOrDefault()?.Name}>.{field.Name}", field.GetValue( null ) ); }
+				catch ( Exception exception ) { Unreadable.Add( $"{type.Name}.{field.Name}: {exception.GetType().Name}" ); }
+			}
+		}
+		var game = new HashSet<System.Reflection.Assembly> { typeof( Level ).Assembly, typeof( BaseFileSystem ).Assembly, typeof( WadArchive ).Assembly };
+		foreach ( var assembly in AppDomain.CurrentDomain.GetAssemblies().Where( assembly => !game.Contains( assembly ) ) )
+		{
+			Type[] types;
+			try { types = assembly.GetTypes(); } catch { continue; }
+			foreach ( var type in types )
+			{
+				if ( type.ContainsGenericParameters )
+					continue;
+				System.Reflection.FieldInfo[] fields;
+				try { fields = type.GetFields( System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic ); } catch { continue; }
+				foreach ( var field in fields )
+				{
+					try
+					{
+						if ( field.FieldType.IsPrimitive || field.FieldType.IsPointer || field.IsLiteral )
+							continue;
+						Add( $"{assembly.GetName().Name}: {type.Name}.{field.Name}", field.GetValue( null ) );
+					}
+					catch ( Exception exception ) { Unreadable.Add( $"{type.FullName}.{field.Name}: {exception.GetType().Name}" ); }
+				}
+			}
+		}
+		totals.Add( ($"(objects visited{(seen.Count >= maximumObjects ? ", cut off" : "")})", seen.Count) );
+		return totals.OrderByDescending( entry => entry.Bytes ).Take( top ).ToList();
+	}
+
+	/// <summary>When set, the walks count every object they visit by its type (<see cref="Program.PerfObjectCounts"/>).</summary>
+	internal static Dictionary<Type, int>? TypeCounts;
+
+	/// <summary>With <see cref="TypeCounts"/>: the estimated bytes of the objects visited (<see cref="EstimateSize"/>).</summary>
+	internal static long EstimatedBytes;
+
+	/// <summary>
+	/// A rough size of one object on the browser's 32-bit runtime: an 8-byte header plus 4 bytes per instance field (an array: its elements
+	/// at their own size, references 4). Boxed copies of struct elements the walk makes count again; only differences between points mean much.
+	/// </summary>
+	private static long EstimateSize( object value )
+	{
+		var type = value.GetType();
+		if ( value is string text )
+			return 12 + text.Length * 2L;
+		if ( value is Array array )
+		{
+			var element = type.GetElementType()!;
+			long size = element.IsPrimitive ? System.Runtime.InteropServices.Marshal.SizeOf( element ) : element.IsValueType ? 8 : 4;
+			return 16 + array.LongLength * size;
+		}
+		long fields = 0;
+		for ( var walk = type; walk != null && walk != typeof( object ); walk = walk.BaseType )
+			fields += walk.GetFields( System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.DeclaredOnly ).Length;
+		return 8 + 4 * fields;
+	}
+
+	/// <summary>
 	/// Bytes of the arrays of numbers (and strings) reachable from <paramref name="value"/>, counting only objects not yet in <paramref name="seen"/> (which it fills), so a
 	/// caller walking several roots counts every object once.
 	/// </summary>
@@ -696,6 +871,11 @@ internal static class PerfReachability
 		while ( queue.Count > 0 && seen.Count < maximumObjects )
 		{
 			var current = queue.Dequeue();
+			if ( TypeCounts != null )
+			{
+				TypeCounts[current.GetType()] = TypeCounts.GetValueOrDefault( current.GetType() ) + 1;
+				EstimatedBytes += EstimateSize( current );
+			}
 			if ( current is string text )
 			{
 				bytes += text.Length * 2L;
@@ -712,6 +892,78 @@ internal static class PerfReachability
 					queue.Enqueue( child );
 		}
 		return bytes;
+	}
+
+	/// <summary>
+	/// Everything reachable from <paramref name="root"/>: array bytes by holder (<c>Type.field</c> of the nearest object of a game
+	/// assembly; a collection or array in between keeps its holder's label) and the count of objects of each game type.
+	/// </summary>
+	public static (Dictionary<string, long> Bytes, Dictionary<string, int> Counts) AudioGraph( object root, int maximumObjects = 5_000_000 )
+		=> AudioGraph( root, new List<string>(), maximumObjects );
+
+	public static (Dictionary<string, long> Bytes, Dictionary<string, int> Counts) AudioGraph( object root, List<string> decodes, int maximumObjects = 5_000_000 )
+	{
+		var game = new HashSet<System.Reflection.Assembly> { typeof( Level ).Assembly, typeof( BaseFileSystem ).Assembly, typeof( WadArchive ).Assembly };
+		var bytes = new Dictionary<string, long>();
+		var counts = new Dictionary<string, int>();
+		var seen = new HashSet<object>( ReferenceEqualityComparer.Instance ) { root };
+		var queue = new Queue<(object Value, string Label)>();
+		queue.Enqueue( (root, root.GetType().Name) );
+		static string Name( Type type ) => type.IsGenericType ? type.Name.Split( '`' )[0] + "<" + string.Join( ",", type.GetGenericArguments().Select( Name ) ) + ">" : type.Name;
+		while ( queue.Count > 0 && seen.Count < maximumObjects )
+		{
+			var (current, label) = queue.Dequeue();
+			var type = current.GetType();
+			if ( current is string text )
+			{
+				bytes[label] = bytes.GetValueOrDefault( label ) + text.Length * 2L;
+				continue;
+			}
+			if ( current is Array array && type.GetElementType() is { IsPrimitive: true } element )
+			{
+				bytes[label] = bytes.GetValueOrDefault( label ) + (long)array.Length * System.Runtime.InteropServices.Marshal.SizeOf( element );
+				continue;
+			}
+			var own = game.Contains( type.Assembly );
+			// an MPEG decode in flight: how far it is (input offset, PCM samples so far), to tell a running decode from a stuck one
+			if ( type.Name == "DecodeState" )
+			{
+				var flags = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic;
+				var offset = type.GetField( "offset", flags )?.GetValue( current );
+				var output = type.GetField( "output", flags )?.GetValue( current ) as List<short>;
+				decodes.Add( $"{label}: offset {offset}, pcm {output?.Count}" );
+			}
+			if ( own )
+				counts[Name( type )] = counts.GetValueOrDefault( Name( type ) ) + 1;
+			void Visit( object? child, string childLabel )
+			{
+				if ( child == null || child.GetType().IsPrimitive || child.GetType().IsEnum || child is Type || child is System.Reflection.MemberInfo || child is System.Reflection.Assembly || IsWeakTable( child ) )
+					return;
+				if ( seen.Count < maximumObjects && seen.Add( child ) )
+					queue.Enqueue( (child, childLabel) );
+			}
+			switch ( current )
+			{
+				case Delegate @delegate:
+					foreach ( var single in @delegate.GetInvocationList() )
+						Visit( single.Target, $"{label}→{single.Method.DeclaringType?.Name}.{single.Method.Name}" );
+					continue;
+				case Array items:
+					foreach ( var item in items )
+						Visit( item, label );
+					continue;
+			}
+			for ( var walk = type; walk != null && walk != typeof( object ); walk = walk.BaseType )
+				foreach ( var field in walk.GetFields( System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.DeclaredOnly ) )
+				{
+					if ( field.FieldType.IsPrimitive || field.FieldType.IsPointer )
+						continue;
+					object? child;
+					try { child = field.GetValue( current ); } catch { continue; }
+					Visit( child, own ? $"{Name( walk )}.{field.Name}" : label );
+				}
+		}
+		return (bytes, counts);
 	}
 
 	/// <summary>The array bytes behind the assets in <see cref="Asset.All"/>, by the asset's type (textures, materials, models, shaders), largest first.</summary>
@@ -741,7 +993,7 @@ internal static class PerfReachability
 			{
 				object? value;
 				try { value = field.GetValue( null ); } catch { continue; }
-				if ( value != null && !field.FieldType.IsPrimitive )
+				if ( value != null && !field.FieldType.IsPrimitive && !IsWeakTable( value ) )
 					yield return ($"{type.Name}.{field.Name}", value);
 			}
 		}
@@ -750,37 +1002,80 @@ internal static class PerfReachability
 	/// <summary>The objects <paramref name="value"/> refers to, at most <paramref name="limit"/> (a huge collection does not expand past the walk's budget).</summary>
 	private static IEnumerable<object> Children( object value, int limit )
 	{
-		static bool Skip( object child ) => child.GetType().IsPrimitive || child.GetType().IsEnum || child is Type || child is System.Reflection.MemberInfo;
+		static bool Skip( object child ) => child.GetType().IsPrimitive || child.GetType().IsEnum || child is Type || child is System.Reflection.MemberInfo || IsWeakTable( child );
 		var children = new List<object>();
-		switch ( value )
+		try
 		{
-			case Delegate @delegate:
-				foreach ( var single in @delegate.GetInvocationList() )
-					if ( single.Target != null && !Skip( single.Target ) )
-						children.Add( single.Target );
-				return children;
-			case Array array:
-				foreach ( var item in array )
-				{
-					if ( children.Count >= limit )
-						break;
-					if ( item != null && !Skip( item ) )
-						children.Add( item );
-				}
-				return children;
+			switch ( value )
+			{
+				case Delegate @delegate:
+					foreach ( var single in @delegate.GetInvocationList() )
+						if ( single.Target != null && !Skip( single.Target ) )
+							children.Add( single.Target );
+					return children;
+				case Array array:
+					foreach ( var item in array )
+					{
+						if ( children.Count >= limit )
+							break;
+						if ( item != null && !Skip( item ) )
+							children.Add( item );
+					}
+					return children;
+			}
+		}
+		catch ( Exception exception )
+		{
+			Unreadable.Add( $"{value.GetType().FullName}: {exception.GetType().Name}" );
+			return children;
 		}
 		for ( var type = value.GetType(); type != null && type != typeof( object ); type = type.BaseType )
 			foreach ( var field in type.GetFields( System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.DeclaredOnly ) )
 			{
-				if ( field.FieldType.IsPrimitive || field.FieldType.IsPointer )
-					continue;
 				object? child;
-				try { child = field.GetValue( value ); } catch { continue; }
-				if ( child != null && !Skip( child ) )
-					children.Add( child );
+				try
+				{
+					if ( field.FieldType.IsPrimitive || field.FieldType.IsPointer )
+						continue;
+					child = field.GetValue( value );
+				}
+				catch ( Exception exception )
+				{
+					// the runtime's reflection cannot read every field (the walk names them instead of giving up)
+					Unreadable.Add( $"{type.FullName}.{field?.Name ?? "(null field)"}: {exception.GetType().Name}" );
+					continue;
+				}
+				try
+				{
+					if ( child != null && !Skip( child ) )
+						children.Add( child );
+				}
+				catch ( Exception exception )
+				{
+					Unreadable.Add( $"{type.FullName}.{field.Name} (its value): {exception.GetType().Name}" );
+				}
 			}
 		return children;
 	}
+
+	/// <summary>
+	/// A <see cref="System.Runtime.CompilerServices.ConditionalWeakTable{TKey, TValue}"/> holds its keys weakly, and reading its entries by reflection
+	/// reads an ephemeron whose key may be gone (a null reference, or in the browser's runtime memory out of bounds): the walks do not enter one.
+	/// </summary>
+	internal static bool IsWeakTable( object value )
+	{
+		var type = value.GetType();
+		while ( type.IsArray )
+			type = type.GetElementType()!;
+		// the table, its nested storage types and the runtime's ephemeron entries
+		for ( var outer = type; outer != null; outer = outer.DeclaringType )
+			if ( outer.IsGenericType && outer.GetGenericTypeDefinition() == typeof( System.Runtime.CompilerServices.ConditionalWeakTable<,> ) )
+				return true;
+		return type.FullName?.Contains( "Ephemeron", StringComparison.Ordinal ) == true;
+	}
+
+	/// <summary>The fields the last walks could not read, by declaring type and name.</summary>
+	public static readonly HashSet<string> Unreadable = new();
 
 	public static List<string> PathsToStaleLevels( int maximumObjects = 3_000_000 )
 	{
@@ -796,7 +1091,7 @@ internal static class PerfReachability
 			{
 				object? value;
 				try { value = field.GetValue( null ); } catch { continue; }
-				if ( value != null && !field.FieldType.IsPrimitive && seen.Add( value ) )
+				if ( value != null && !field.FieldType.IsPrimitive && !IsWeakTable( value ) && seen.Add( value ) )
 					queue.Enqueue( (value, $"{type.Name}.{field.Name}") );
 			}
 		}
@@ -810,7 +1105,7 @@ internal static class PerfReachability
 			}
 			void Visit( object? child, string name )
 			{
-				if ( seen.Count >= maximumObjects || child == null || child is string || child.GetType().IsPrimitive || child.GetType().IsEnum || child is Type || child is System.Reflection.MemberInfo )
+				if ( seen.Count >= maximumObjects || child == null || child is string || child.GetType().IsPrimitive || child.GetType().IsEnum || child is Type || child is System.Reflection.MemberInfo || IsWeakTable( child ) )
 					return;
 				if ( seen.Add( child ) )
 					queue.Enqueue( (child, $"{path}{name}") );

@@ -6,6 +6,7 @@ using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Net.WebSockets;
+using System.Reflection;
 using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
@@ -215,6 +216,14 @@ internal sealed class CoopTestClient : IAsyncDisposable
 
 	/// <summary>Stops reading the socket, as a stalled game does: the server's sends back up.</summary>
 	public void StopReading() => stalled = new TaskCompletionSource( TaskCreationOptions.RunContinuationsAsynchronously );
+
+	/// <summary>Reads the socket again after <see cref="StopReading"/>.</summary>
+	public void ResumeReading()
+	{
+		var stall = stalled;
+		stalled = null;
+		stall?.TrySetResult();
+	}
 
 	public async ValueTask DisposeAsync()
 	{
@@ -1103,6 +1112,115 @@ public class CoopServerTests
 		}
 	}
 
+	/// <summary>
+	/// A restart closes every queue after storing the session's frame position; the host's socket then closes first (its queue is short) and the server tells the guest the host went.
+	/// That message must not cut off a guest whose queue is at its limit: the cut-off would drop the frames whose position the restart just stored.
+	/// </summary>
+	[TestMethod]
+	public async Task ARestartNeverCutsOffAGuestWhoseQueueIsFull()
+	{
+		var server = await StartFast( options => options.CoopOutboxBytes = 64 * 1024 * 1024 );
+		await using var accounts = new Accounts();
+		try
+		{
+			var (host, _) = await CoopTestClient.ConnectAsync( server, await accounts.Add( server, "Hostess" ) );
+			var created = await Create( host );
+			var (guest, _) = await CoopTestClient.ConnectAsync( server, await accounts.Add( server, "Guest" ) );
+			await Join( guest, created.Session.Code );
+			var hub = server.Services.GetRequiredService<CoopHub>();
+			// the hub's connections (white-box, read under the hub's own lock): the guest's queued bytes, and whether the host's connection is still registered
+			var registry = typeof( CoopHub ).GetField( "registry", BindingFlags.Instance | BindingFlags.NonPublic )!.GetValue( hub )!;
+			var peers = (System.Collections.IDictionary)typeof( CoopHub ).GetField( "peers", BindingFlags.Instance | BindingFlags.NonPublic )!.GetValue( hub )!;
+			object guestPeer;
+			lock ( registry )
+				guestPeer = peers.Values.Cast<object>().Single( peer => !(bool)peer.GetType().GetField( "Hosting" )!.GetValue( peer )! );
+			long Queued() => (long)guestPeer.GetType().GetField( "QueuedBytes" )!.GetValue( guestPeer )!;
+			// the guest's game stalls while the host streams more than the sockets buffer, so frames wait in its queue
+			guest.StopReading();
+			var seq = 0UL;
+			for ( var round = 0; round < 1000 && Queued() < 2 * 1024 * 1024; round++ )
+			{
+				await host.SendAsync( new CoopHostFrame( ++seq, new byte[64 * 1024] ) );
+				if ( round % 8 == 7 )
+					await Task.Delay( 20 );
+			}
+			// a refusal answers after every frame before it: the server has queued them all
+			await Refused( host, new CoopSend( 99, Payload( 0 ) ), CoopReason.NotMember );
+			Assert.IsTrue( Queued() > 0, "frames wait in the guest's queue" );
+			// the queue stands at its limit: one more byte would cut the guest off
+			server.Services.GetRequiredService<ServerOptions>().CoopOutboxBytes = Queued();
+			hub.Restarting();
+			// the host's close comes first, and with it the news that it went: the hub announces it as the host's connection leaves its registry
+			await DrainAsync( host );
+			var until = DateTime.UtcNow + TimeSpan.FromSeconds( 2 );
+			while ( true )
+			{
+				lock ( registry )
+				{
+					if ( peers.Count == 1 )
+						break;
+				}
+				if ( DateTime.UtcNow > until )
+					Assert.Fail( "the host's connection never left the hub" );
+				await Task.Delay( 10 );
+			}
+			guest.ResumeReading();
+			var frames = (await DrainAsync( guest )).OfType<CoopFrame>().Select( frame => frame.Seq ).ToArray();
+			Assert.AreEqual( CoopCloseStatus.Restarting, guest.CloseStatus, "the guest hears the restart, not a cut-off for slowness (4002)" );
+			CollectionAssert.AreEqual( Enumerable.Range( 1, (int)seq ).Select( value => (ulong)value ).ToArray(), frames, "it got every frame up to the stored position" );
+			await guest.DisposeAsync();
+		}
+		finally
+		{
+			await server.DisposeAsync();
+			server.DeleteData();
+		}
+	}
+
+	/// <summary>
+	/// A hello that comes once the server is stopping is told to resume on the new server, and a request the stop overtook (it passed the read loop's check before the stop
+	/// began, white-box: the handler is called directly) changes nothing.
+	/// </summary>
+	[TestMethod]
+	public async Task AHelloOrARequestAfterTheStopBeganIsTurnedAway()
+	{
+		var server = await Start();
+		await using var accounts = new Accounts();
+		try
+		{
+			var hostAccount = await accounts.Add( server, "Hostess" );
+			var (host, _) = await CoopTestClient.ConnectAsync( server, hostAccount );
+			var lateAccount = await accounts.Add( server, "Late" );
+			var hub = server.Services.GetRequiredService<CoopHub>();
+			var registry = typeof( CoopHub ).GetField( "registry", BindingFlags.Instance | BindingFlags.NonPublic )!.GetValue( hub )!;
+			var peers = (System.Collections.IDictionary)typeof( CoopHub ).GetField( "peers", BindingFlags.Instance | BindingFlags.NonPublic )!.GetValue( hub )!;
+			var sessions = (System.Collections.IDictionary)typeof( CoopHub ).GetField( "sessions", BindingFlags.Instance | BindingFlags.NonPublic )!.GetValue( hub )!;
+			object hostPeer;
+			lock ( registry )
+				hostPeer = peers.Values.Cast<object>().Single();
+			// the host's game reads nothing, so its connection stays registered through the stop's three seconds
+			host.StopReading();
+			hub.Restarting();
+			typeof( CoopHub ).GetMethod( "Create", BindingFlags.Instance | BindingFlags.NonPublic )!.Invoke( hub, new[] { hostPeer, new CoopCreate( false, "Too late", 4 ) } );
+			lock ( registry )
+				Assert.AreEqual( 0, sessions.Count, "no session was created once the stop began" );
+			host.ResumeReading();
+			await DrainAsync( host );
+			Assert.AreEqual( CoopCloseStatus.Restarting, host.CloseStatus );
+			// a new connection is told to come back
+			var late = await CoopTestClient.OpenAsync( server, lateAccount );
+			await late.SendAsync( new CoopHello( (ushort)CoopProtocol.Version, CoopTestClient.Build, Array.Empty<CoopMod>(), Guid.NewGuid(), false, null ) );
+			await DrainAsync( late );
+			Assert.AreEqual( CoopCloseStatus.Restarting, late.CloseStatus, "it resumes on the new server" );
+			await late.DisposeAsync();
+		}
+		finally
+		{
+			await server.DisposeAsync();
+			server.DeleteData();
+		}
+	}
+
 	[TestMethod]
 	public async Task ARefusalThatListsManyModsStaysReadable()
 	{
@@ -1137,7 +1255,10 @@ public class CoopServerTests
 			var directory = Path.Combine( Path.GetTempPath(), $"opentpw-server-{Guid.NewGuid():N}" );
 			try
 			{
-				var server = await StartFast( directory: directory );
+				// the guest's queue takes the whole burst (the host's 200,000-message burst of 269-byte frames stays under 54 MiB): on a slow runner a queue at its limit
+				// would rightly cut the guest off for slowness (4002) before the restart, and the frames it then misses are the host's to resend after its resume, so the
+				// restart's position would no longer be the guest's last frame
+				var server = await StartFast( options => options.CoopOutboxBytes = 64 * 1024 * 1024, directory );
 				var hostAccount = await accounts.Add( server, $"Hostess{run}" );
 				var guestAccount = await accounts.Add( server, $"Guest{run}" );
 				var (host, _) = await CoopTestClient.ConnectAsync( server, hostAccount );
@@ -1160,7 +1281,7 @@ public class CoopServerTests
 				await server.DisposeAsync();
 				await streaming;
 				var last = (await received).OfType<CoopFrame>().Last().Seq;
-				Assert.AreEqual( CoopCloseStatus.Restarting, guest.CloseStatus );
+				Assert.AreEqual( CoopCloseStatus.Restarting, guest.CloseStatus, "the restart's close (1012), not a cut-off for slowness (4002)" );
 				await using var restarted = await StartFast( directory: directory );
 				var (_, welcome) = await CoopTestClient.ConnectAsync( restarted, hostAccount, instance: host.Instance,
 					resume: new CoopResume( created.Session.Id, created.Session.You, last ) );

@@ -56,6 +56,8 @@ public partial class Texture : Asset
 	private string? wctPath;
 	private TextureFlags wctFlags;
 	private static readonly List<WeakReference<Texture>> wctTextures = new();
+	// The list is pruned of collected textures once it doubles (only a pack switch pruned it before, so every park added about 230 dead entries for the session).
+	private static int wctPruneAt = 256;
 
 	/// <summary>
 	/// From path on disk, or from a game resource
@@ -67,7 +69,14 @@ public partial class Texture : Asset
 			wctPath = path;
 			wctFlags = flags;
 			lock ( wctTextures )
+			{
+				if ( wctTextures.Count >= wctPruneAt )
+				{
+					wctTextures.RemoveAll( reference => !reference.TryGetTarget( out _ ) );
+					wctPruneAt = Math.Max( 256, wctTextures.Count * 2 );
+				}
 				wctTextures.Add( new WeakReference<Texture>( this ) );
+			}
 			UpdateFromWct( path, flags );
 		}
 		else
@@ -77,10 +86,12 @@ public partial class Texture : Asset
 	/// <summary>
 	/// From data as bytes
 	/// </summary>
-	public Texture( byte[] data, int width, int height, TextureFlags flags = TextureFlags.None )
+	public Texture( byte[] data, int width, int height, TextureFlags flags = TextureFlags.None,
+		[System.Runtime.CompilerServices.CallerFilePath] string callerFile = "", [System.Runtime.CompilerServices.CallerLineNumber] int callerLine = 0 )
 	{
+		// the browser's AOT build has no method names in its stack traces, so the calling line comes first
 		if ( TrackOrigins )
-			Origin = string.Join( " < ", new System.Diagnostics.StackTrace( 1, false ).GetFrames().Take( 3 ).Select( frame => $"{frame.GetMethod()?.DeclaringType?.Name}.{frame.GetMethod()?.Name}" ) );
+			Origin = $"{System.IO.Path.GetFileName( callerFile.Replace( '\\', '/' ) )}:{callerLine} " + string.Join( " < ", new System.Diagnostics.StackTrace( 1, false ).GetFrames().Take( 3 ).Select( frame => $"{frame.GetMethod()?.DeclaringType?.Name}.{frame.GetMethod()?.Name}" ) );
 		CreateTexture( "", data, (uint)width, (uint)height, flags );
 	}
 
@@ -256,6 +267,7 @@ public partial class Texture : Asset
 		lock ( wctTextures )
 		{
 			wctTextures.RemoveAll( reference => !reference.TryGetTarget( out _ ) );
+			wctPruneAt = Math.Max( 256, wctTextures.Count * 2 );
 			foreach ( var reference in wctTextures )
 				if ( reference.TryGetTarget( out var texture ) && seen.Add( texture.wctPath! ) )
 					result.Add( (texture.wctPath!, texture.wctFlags) );

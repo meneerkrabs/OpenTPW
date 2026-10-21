@@ -80,10 +80,10 @@ public class TrackEditRecoveryTests
 		Assert.AreEqual( rig.Station.Exit, tool.Start );
 		Assert.IsTrue( tool.Undo(), "the collector's repeated first corner has its own final replay" );
 		Assert.IsFalse( tool.Undo(), "the one-point station boundary cannot be popped" );
-		Assert.AreEqual( 5, rig.Cleared.Count );
-		Assert.AreEqual( 5, rig.Cleared.Distinct().Count() );
-		Assert.AreEqual( before + 5 * refund, rig.Economy.Balance );
-		Assert.AreEqual( 2, rig.Cells.Tracks.Cells().Count( cell => cell.Cell.IsOrigin ), "only station tiles remain" );
+		Assert.AreEqual( 4, rig.Cleared.Count );
+		Assert.AreEqual( 4, rig.Cleared.Distinct().Count() );
+		Assert.AreEqual( before + 4 * refund, rig.Economy.Balance );
+		Assert.AreEqual( 3, rig.Cells.Tracks.Cells().Count( cell => cell.Cell.IsOrigin ), "station tiles and the protected exit remain; legacy stamping did not add an entry" );
 	}
 
 	[TestMethod]
@@ -101,7 +101,7 @@ public class TrackEditRecoveryTests
 		Assert.AreEqual( before, rig.Economy.Balance, "a new unused ride's two tiles refund their complete price" );
 		Assert.AreEqual( TrackHeading.NegX, rig.Cells.Tracks.Get( 18, 10 ).Mask );
 		Assert.IsTrue( tool.Undo(), "then the old straight is replayed" );
-		Assert.AreEqual( 5, rig.Cleared.Distinct().Count() );
+		Assert.AreEqual( 4, rig.Cleared.Distinct().Count() );
 		Assert.IsFalse( tool.Undo() );
 	}
 
@@ -122,8 +122,8 @@ public class TrackEditRecoveryTests
 		Assert.AreEqual( (14, 14), resumed.Start );
 		Assert.AreEqual( 2, resumed.SegmentCount );
 		while ( resumed.Undo() ) { }
-		Assert.AreEqual( 5, rig.Cleared.Count );
-		Assert.AreEqual( 5, rig.Cleared.Distinct().Count(), "re-entry cannot refund already removed tiles" );
+		Assert.AreEqual( 4, rig.Cleared.Count );
+		Assert.AreEqual( 4, rig.Cleared.Distinct().Count(), "re-entry cannot refund already removed tiles" );
 	}
 
 	[TestMethod]
@@ -143,7 +143,7 @@ public class TrackEditRecoveryTests
 		Assert.IsFalse( rig.Cleared.Contains( (14, 12) ) );
 		Assert.IsTrue( rig.Cells.Tracks.Get( 12, 12 ).IsOrigin && rig.Cells.Tracks.Get( 16, 12 ).IsOrigin );
 		Assert.IsTrue( tool.Undo() );
-		Assert.AreEqual( 3, rig.Cleared.Count );
+		Assert.AreEqual( 2, rig.Cleared.Count );
 	}
 
 	[TestMethod]
@@ -208,6 +208,6 @@ public class TrackEditRecoveryTests
 		while ( uninterrupted.Undo() ) Assert.IsTrue( resumed.Undo() );
 		Assert.IsFalse( resumed.Undo() );
 		Assert.AreEqual( rig.TrackHash(), restored.TrackHash() );
-		Assert.AreEqual( 3, restored.Cleared.Count, "only the three saved tiles refund after loading" );
+		Assert.AreEqual( 2, restored.Cleared.Count, "only non-protected saved tiles refund after loading" );
 	}
 }

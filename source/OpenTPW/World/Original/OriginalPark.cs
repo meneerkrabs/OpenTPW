@@ -114,15 +114,24 @@ public sealed class OriginalPark
 	/// <summary>The level's shipped <c>Easymode.TPWI</c> alone (Theme Park World levels; null for Theme Park Inc or a level without one), for a resumed park's legacy repairs.</summary>
 	internal static OriginalParkImport? ReadShippedSave( string levelName, MapFile map )
 	{
-		var directory = $"/levels/{levelName}";
-		if ( GameEditions.IsThemeParkInc || !FileSystem.DirectoryExists( directory ) )
+		try
+		{
+			var directory = $"/levels/{levelName}";
+			if ( GameEditions.IsThemeParkInc || !FileSystem.DirectoryExists( directory ) )
+				return null;
+			var path = FileSystem.GetFiles( directory ).FirstOrDefault( path => string.Equals( Path.GetFileName( path ), SaveFileName, StringComparison.OrdinalIgnoreCase ) );
+			if ( path == null )
+				return null;
+			using var stream = FileSystem.OpenRead( $"{directory}/{Path.GetFileName( path )}" );
+			using var reader = new SaveReader( stream );
+			return ImportOriginalSave( levelName, reader.ReadFile(), map );
+		}
+		catch ( Exception exception ) when ( exception is IOException or InvalidDataException or UnauthorizedAccessException or NotSupportedException )
+		{
+			// This is optional repair input, not the player's park. Mandatory imports still report their errors.
+			Log.Trace( $"[EXT:legacy-save-queue-cells] {levelName}: shipped save unavailable for repair ({exception.GetType().Name})." );
 			return null;
-		var path = FileSystem.GetFiles( directory ).FirstOrDefault( path => string.Equals( Path.GetFileName( path ), SaveFileName, StringComparison.OrdinalIgnoreCase ) );
-		if ( path == null )
-			return null;
-		using var stream = FileSystem.OpenRead( $"{directory}/{Path.GetFileName( path )}" );
-		using var reader = new SaveReader( stream );
-		return ImportOriginalSave( levelName, reader.ReadFile(), map );
+		}
 	}
 
 	/// <summary>

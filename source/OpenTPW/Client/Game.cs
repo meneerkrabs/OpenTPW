@@ -9,10 +9,7 @@ internal static class Game
 	public static void Run( string[] args )
 	{
 		Log = new();
-		// [EXT:online-coop-lockstep] every --debug-* and --perf-* option and the smokes that build their parks directly may change the park outside the commands: such a game shares no
-		// park (CoopSession.CanShare)
-		CoopSession.ChangesParkOutsideCommands = args.Any( arg => arg.StartsWith( "--debug-", StringComparison.Ordinal ) || arg.StartsWith( "--perf-", StringComparison.Ordinal )
-			|| arg is "--smoke-test" or "--tpi-smoke-test" or "--park-resume-smoke" or "--smoke-presence" );
+		CoopSession.ChangesParkOutsideCommands = ChangesParkOutsideCommands( args );
 		SdlMovieAudioOutput.Suppressed = IsSilentRun( args, Environment.GetEnvironmentVariable( "OPENTPW_SILENT" ), Environment.GetEnvironmentVariable( "OPENTPW_OFFSCREEN" ) );
 		Window.OffscreenRequested = IsOffscreenRun( args, Environment.GetEnvironmentVariable( "OPENTPW_OFFSCREEN" ) );
 		// [EXT:online-coop-commands] a strict run throws on a command applied inside a simulation tick and on one that throws (docs/COOP.md, "No command inside a tick"); only ever
@@ -1126,6 +1123,16 @@ internal static class Game
 	}
 
 	/// <summary>
+	/// [EXT:online-coop-lockstep] Whether a run's options may change the park outside the commands, so the game shares no park (<see cref="CoopSession.CanShare"/>): every
+	/// <c>--debug-*</c> and <c>--perf-*</c> option and every smoke (<see cref="SmokeFlags"/>).
+	/// </summary>
+	internal static bool ChangesParkOutsideCommands( string[] args ) =>
+		args.Any( arg => arg.StartsWith( "--debug-", StringComparison.Ordinal ) || arg.StartsWith( "--perf-", StringComparison.Ordinal ) ) || args.Intersect( SmokeFlags ).Any();
+
+	/// <summary>The smokes. Each builds or edits its park outside the commands (<see cref="ChangesParkOutsideCommands"/>), and each is an automated run (<see cref="IsAutomatedRun"/>).</summary>
+	internal static readonly string[] SmokeFlags = { "--smoke-test", "--tpi-smoke-test", "--park-resume-smoke", "--smoke-presence" };
+
+	/// <summary>
 	/// The automated modes that [EXT:silent-automated-runs] and [EXT:offscreen-automated-runs] share, so the two rules cannot drift apart: smokes
 	/// (<c>--smoke-test</c>, <c>--tpi-smoke-test</c>, <c>--park-resume-smoke</c>, <c>--smoke-presence</c>), captures (<c>--capture-*</c>), perf runs
 	/// (<c>--perf-*</c>), gates, guest reports, asset validation, every <c>--debug-*</c> option (they exist for smoke captures and agent runs, none is a
@@ -1136,11 +1143,11 @@ internal static class Game
 		args.Any( arg => arg.StartsWith( "--capture-", StringComparison.Ordinal ) || arg.StartsWith( "--perf-", StringComparison.Ordinal ) || arg.StartsWith( "--debug-", StringComparison.Ordinal ) )
 		|| args.Intersect( AutomatedFlags ).Any();
 
-	private static readonly string[] AutomatedFlags =
+	private static readonly string[] AutomatedFlags = SmokeFlags.Concat( new[]
 	{
-		"--smoke-test", "--tpi-smoke-test", "--park-resume-smoke", "--smoke-presence", "--perf-run", "--perf-hash-tick",
+		"--perf-run", "--perf-hash-tick",
 		"--offscreen", "--headless", "--m3-gate", "--m4-gate", "--determinism-digest", "--guest-report", "--guest-compare", "--validate-assets", "--export-signs",
-	};
+	} ).ToArray();
 
 	/// <summary>
 	/// [EXT:silent-automated-runs] every automated run (<see cref="IsAutomatedRun"/>) opens no audio device, so tests and agents on a developer machine make

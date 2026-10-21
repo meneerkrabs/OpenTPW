@@ -162,11 +162,14 @@ part (`Level.CoopRole`: none, host or guest).
   (decision Q8); a guest's park follows the host's stream.
 - **A guest's park is never saved.** It is the host's: it takes no automatic checkpoint, periodic
   autosave, exit checkpoint or restart snapshot (`GameFlow.AutomaticEligible`, `TakesRestartSnapshot`),
-  its pause menu offers no Save, Restart Park or Publish Park, and leaving the park goes to the front
-  end, as a visit does. That holds after its session ended too (`Level.IsCoopGuestPark`), so the
-  host's park never replaces the guest's own park of the theme. The host saves as before, except that
-  a save that would repair a missing economy binding refuses instead: a shared park changes only
-  through its commands. The co-op copies of decision Q9 come later.
+  its pause menu offers no Save, Restart Park or Publish Park, the online menu and the developer panel
+  neither publish nor export it (`ParkSharing.ExportLevel`: "A shared park is published by its
+  host."), and leaving the park goes to the front end, as a visit does. That holds after its session
+  ended too (`Level.IsCoopGuestPark`), so the host's park never replaces the guest's own park of the
+  theme, and such a park is never shared again. The host saves as before. A park that lost an
+  economy binding is repaired as it starts hosting, while it is still that game's alone; in a session
+  a save that would repair one refuses instead, as a shared park changes only through its commands.
+  The co-op copies of decision Q9 come later.
 - **The end.** The session ends for a game when its level closes (a load, a restart, a replaced park,
   leaving the park: `Level.Dispose`), when the game quits, when its link's session ends (a kick, the
   host leaving, a session that ended while the game was away) and when the host's stream ends it. A
@@ -432,14 +435,23 @@ new format version.
 
 ### Recording and replay
 
-`ParkCommandRecorder` (`Level.StartCommandRecording`) records every applied command with its tick and
-the world hash (`WorldStateHash`) every 60 ticks. `ParkCommandLogFile` is its file: the magic
+`ParkCommandRecorder` records every applied command with its tick, and the world hash
+(`WorldStateHash`) at its checkpoints: the level's own recording (`Level.StartCommandRecording`,
+`--record-commands`) takes one every 60 ticks. `ParkCommandLogFile` is its file: the magic
 `OTPWCMDS`, format version 3, the theme, the world seed, the start tick and start hash, a flags byte
 (bit 0: the commands applied under a co-op session's rules), then the commands and checkpoints in
 tick order and an end mark. Versions 1 and 2 have no flags byte and remain readable (version 1 cannot
 contain the new queue commands). `ParkCommandReplay.Run` schedules a log on a park that stands where
 the log started and runs it tick by tick, so each command lands where it was recorded, under the
 session's rules when the log says so; `FirstMismatch` compares the checkpoints.
+
+A co-op session records its own log (`CoopHostStream.SessionLog`, kept at the first desync and when
+the session ends): every command from the session's start, with the world hash of each tick digest as
+its checkpoints. It takes none between the digests (a world hash is most of a digest's cost), only at
+its start, at the first desync and at its end. It is the only log that sets the session-rules flag:
+the refusals of the cheats, the secret park name, the developer kinds and a command issued inside
+another read those rules, and `ParkCommandReplay.Run` replays the log under them on the session's
+starting park.
 
 `ParkCommandLevelTests` runs a scripted build session (objects, the path tool with lines, undo and
 cancel, path removals, Backspace, the Move tool, a sale, the remove tool and refused commands) on a
@@ -502,8 +514,13 @@ guarded list.
 - The pylon each player is editing in a coaster panel drag (`CoasterEdits`) is not in the world hash,
   as the employees in hand are not; the session digest covers both (C2b-1), and a session's join
   snapshot (C2c) taken during a drag must carry it.
-- The developer and smoke options (`--perf-*`, `--debug-*`) set their parks up directly; a recording
-  made with them does not replay, and a game started with them shares no park (C2b-2).
+- The developer and smoke options (`--perf-*`, `--debug-*`, `--smoke-test`, `--tpi-smoke-test`,
+  `--park-resume-smoke`, `--smoke-presence`) set their parks up directly; a recording made with them
+  does not replay, and a game started with them shares no park (C2b-2).
+- The level's own recording (`--record-commands`) never sets the session-rules flag, and one flag
+  could not describe a recording that spans a session's start or end: a recording made during a
+  session replays the commands the session refused as applied. A session replays from its own log
+  ("Recording and replay").
 - The developer prototype can be opened by two kinds (32 with the reopening guard, 22 without), and
   kind 25 opens every placed object without the guard; the coaster tool's entry and exit (90, 91)
   close and open a coaster without it too. A session refuses 22 and 25 on every peer (C2b-2); the
@@ -536,13 +553,9 @@ guarded list.
 - A guest's park must be built as a guest from its start (C2c's join): the game takes the restart
   snapshot when a park starts (`GameFlow.TakeRestartSnapshot`), before a session could mark the park
   as a guest's, and would write the host's park over the guest's own restart file.
-- A session records its own log (`CoopHostStream.SessionLog`, kept at the first desync and when the
-  session ends): every command from the session's start, with the world hash of each tick digest as
-  its checkpoints (it takes no hash of its own, which would double the digests' cost). The log records
-  the session's rules (format 3), since the refusals of the cheats, the secret park name, the developer
-  kinds and a command issued inside another read them, and `ParkCommandReplay.Run` replays it under
-  them on the session's starting park.
 - A guest's HUD still offers the build tools (C2d): each refused click says "Only the host builds",
-  once for a drag. Opening the loans window refreshes its offers by command, which a guest is refused,
+  at most once every 1.5 seconds. Two tools add their own feedback to it: Buy Land's refused second
+  click also says that the land cannot be bought, with a second error sound, and a refused queue line
+  still plays the queue-join sound. Opening the loans window refreshes its offers by command, which a guest is refused,
   and the winning screen's Resume is the host's alone, so a guest's winning screen stays until the
   host dismisses it.

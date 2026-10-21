@@ -54,6 +54,7 @@ internal sealed class CoopSession : IDisposable
 	{
 		ArgumentNullException.ThrowIfNull( level );
 		reason = level.CoopSession != null ? "The park is shared already."
+			: level.IsCoopGuestPark ? "A guest's copy of a shared park is not shared again."
 			: GameEditions.Current != GameEdition.ThemeParkWorld || level.IsThemeParkIncSlice || level.OriginalPark == null ? "Only Theme Park World parks are shared."
 			: level.IsReadOnlyVisit ? "A visited park is not shared."
 			: level.Park == null || level.Guests == null ? "Only a running park is shared."
@@ -67,6 +68,8 @@ internal sealed class CoopSession : IDisposable
 	public static CoopSession Host( Level level, ICoopStreamTransport link, Func<double>? seconds = null, Func<DateTime>? localTime = null )
 	{
 		Require( level, link, CoopRole.Host );
+		// a park that lost an economy binding is repaired while it is still this game's alone: once shared, it changes only through its commands
+		level.RepairMissingEconomyBindings();
 		var session = new CoopSession( level, link, CoopRole.Host );
 		session.HostStream = new CoopHostStream( level, link, seconds, localTime );
 		session.HostStream.Failed += session.OnStreamFailed;
@@ -135,9 +138,12 @@ internal sealed class CoopSession : IDisposable
 			level.CoopSession = null;
 		if ( leave )
 			link.Leave( reason );
-		// a listener that throws never keeps a closing park from the rest of its teardown
-		try { Ended?.Invoke( reason ); }
-		catch ( Exception error ) { Log.Warning( $"A co-op session's end listener failed: {error.Message}" ); }
+		// a listener that throws keeps neither the other listeners nor a closing park from the rest of its teardown
+		foreach ( var listener in Ended?.GetInvocationList() ?? Array.Empty<Delegate>() )
+		{
+			try { ((Action<string>)listener)( reason ); }
+			catch ( Exception error ) when ( error is not OutOfMemoryException ) { Log.Warning( $"A co-op session's end listener failed: {error}" ); }
+		}
 	}
 }
 

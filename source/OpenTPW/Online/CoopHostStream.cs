@@ -113,7 +113,7 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 	private readonly int previousPlayer;
 	/// <summary>
 	/// The session's own recording, from its start, so a desync can be replayed offline: under the session's rules, and with the world hash of each tick digest as its checkpoint
-	/// (it takes no hash of its own: a full park's world hash is most of a digest's cost).
+	/// (it takes none between the digests: a full park's world hash is most of a digest's cost).
 	/// </summary>
 	private readonly ParkCommandRecorder recorder;
 	private long nextStream = 1;
@@ -741,8 +741,8 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 		// the park's scripts read the machine's own clock again
 		if ( level.Objects?.ScriptWorld is { } scripts )
 			scripts.SessionTime = null;
-		SessionLog = RecordedLog();
 		recorder.Dispose();
+		SessionLog = RecordedLog();
 	}
 
 	/// <summary>The session's recording so far, with the world hash now as its last checkpoint.</summary>

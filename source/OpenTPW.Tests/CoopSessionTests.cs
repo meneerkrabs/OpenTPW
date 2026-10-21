@@ -28,6 +28,7 @@ public class CoopSessionTests
 	private readonly List<Park> parks = new();
 	private double clock;
 	private double? hostTimeFrozenAt;
+	private float timeNow, timeDelta;
 	/// <summary>The in-memory server of the last <see cref="Shared"/> session.</summary>
 	private CoopTestNetwork? network;
 
@@ -73,6 +74,7 @@ public class CoopSessionTests
 	{
 		entities = Entity.All;
 		current = Level.Current;
+		(timeNow, timeDelta) = (Time.Now, Time.Delta);
 		renderer = new AutomaticCheckpointCpuRendererScope();
 		fixture = new UpgradeCatalogueDefaultsTests();
 		fixture.Setup();
@@ -93,6 +95,7 @@ public class CoopSessionTests
 		renderer?.Dispose();
 		CoopSession.ChangesParkOutsideCommands = false;
 		GameEditions.Select( GameEdition.ThemeParkWorld );
+		(Time.Now, Time.Delta) = (timeNow, timeDelta);
 		if ( entities != null )
 			Entity.All = entities;
 		Level.Current = current!;
@@ -204,6 +207,11 @@ public class CoopSessionTests
 		Assert.IsFalse( guest.Level.Commands.SessionRules, "the session's rules end with it" );
 		Assert.IsTrue( guest.Issue( new SetEntranceFeeCommand( 7 ) ).Accepted, "a park of its own again" );
 		Assert.AreEqual( 1, guest.Level.SessionRefusals );
+		// but the host's park still: a former guest's copy hosts no session of its own (its host could never save it)
+		Assert.IsFalse( CoopSession.CanShare( guest.Level, out reason ) );
+		Assert.AreEqual( "A guest's copy of a shared park is not shared again.", reason );
+		Assert.ThrowsException<InvalidOperationException>( () => CoopSession.Host( guest.Level, new CoopTestNetwork().Add( host: true ) ) );
+		Assert.IsNull( guest.Level.CoopSession );
 
 		// the host's link ends the session (as it does for a member kicked or away when it ended): the session ends with the link's reason and leaves nothing of its own
 		hostLink.End( "The session ended while you were away." );
@@ -219,11 +227,14 @@ public class CoopSessionTests
 	{
 		var (host, guest, hostLink, _) = Shared();
 		var session = host.Session!;
-		// a listener that throws keeps the closing park from nothing
+		// a listener that throws keeps neither the other listeners nor the closing park from the rest of the end
 		session.Ended += _ => throw new InvalidOperationException( "a listener's fault" );
+		var heard = new List<string>();
+		session.Ended += heard.Add;
 		host.Enter();
 		host.Level.Dispose();
 		Assert.AreEqual( "The park was closed.", session.EndedWith );
+		CollectionAssert.AreEqual( new[] { "The park was closed." }, heard, "the next listener still hears the end" );
 		Assert.AreEqual( "The park was closed.", hostLink.LeftWith, "the host's link leaves with the reason (the server ends the session for every member then)" );
 		Assert.IsNull( host.Level.CoopSession );
 		Assert.AreEqual( CoopRole.Guest, guest.Level.CoopRole );
@@ -272,6 +283,21 @@ public class CoopSessionTests
 	}
 
 	[TestMethod]
+	public void EveryDeveloperOptionAndSmokeChangesTheParkOutsideTheCommands()
+	{
+		Assert.IsFalse( Game.ChangesParkOutsideCommands( Array.Empty<string>() ) );
+		Assert.IsFalse( Game.ChangesParkOutsideCommands( new[] { "--front-end", "--load-original-level", "jungle", "--silent", "--offscreen" } ), "a player's launch" );
+		foreach ( var options in new[] { new[] { "--debug-sim-minutes", "3" }, new[] { "--perf-run", "600" }, new[] { "--perf-crowd", "1500" }, new[] { "--perf-digest" } } )
+			Assert.IsTrue( Game.ChangesParkOutsideCommands( options ), string.Join( ' ', options ) );
+		foreach ( var smoke in Game.SmokeFlags )
+		{
+			Assert.IsTrue( Game.ChangesParkOutsideCommands( new[] { "--front-end", smoke } ), smoke );
+			Assert.IsTrue( Game.IsAutomatedRun( new[] { smoke } ), $"{smoke} stays an automated run" );
+		}
+		CollectionAssert.AreEquivalent( new[] { "--smoke-test", "--tpi-smoke-test", "--park-resume-smoke", "--smoke-presence" }, Game.SmokeFlags );
+	}
+
+	[TestMethod]
 	public void ASessionRefusesCheatsAndTheDeveloperKindsAlikeOnEveryPeer()
 	{
 		// outside a session the secret park name turns the cheats on
@@ -313,6 +339,7 @@ public class CoopSessionTests
 		{
 			var twin = NewPark();
 			twin.Enter();
+			Assert.AreEqual( (log.StartTick, log.StartHash), (twin.Level.TickCount, twin.Level.ComputeStateHash()), "the twin is the session's starting park" );
 			var hashes = new Dictionary<long, ulong>();
 			if ( withRules )
 				ParkCommandReplay.Run( twin.Level.Commands, log, () => twin.Level.Commands.NextTick, () => twin.Level.RunTicks( 1 ), log.Checkpoints[^1].Ticks, ticks => hashes[ticks] = twin.Level.ComputeStateHash() );
@@ -335,13 +362,27 @@ public class CoopSessionTests
 		Assert.IsTrue( Saves( host ) && GameFlow.TakesRestartSnapshot( host.Level ), "the host saves and restarts as before" );
 		Assert.IsFalse( Saves( guest ), "no automatic checkpoint, autosave or exit checkpoint for a guest" );
 		Assert.IsFalse( GameFlow.TakesRestartSnapshot( guest.Level ), "no restart snapshot for a guest" );
-		bool Offers( Park park, UIStrings label ) => ParkHud.PauseMenuOffers( park.Level.IsReadOnlyVisit, park.Level.IsCoopGuestPark, false, label );
+		// the pause menu as the HUD opens it
+		bool Offers( Park park, UIStrings label )
+		{
+			park.Enter();
+			var hud = new ParkHud( park.Level, OriginalUiTests.FakeStrings(), new EconomyParkStatus( () => park.Economy ), new NoItems(), new HudHost() );
+			hud.OpenPauseMenu();
+			var offered = hud.Stack.Top!.Find( label.ToString() ) != null;
+			Assert.AreEqual( ParkHud.PauseMenuOffers( park.Level.IsReadOnlyVisit, park.Level.IsCoopGuestPark, false, label ), offered, $"the menu lists {label} as its rule says" );
+			hud.ClosePauseMenu();
+			return offered;
+		}
 		foreach ( var label in new[] { UIStrings.Save, UIStrings.RestartPark, UIStrings.PublishPark } )
 		{
 			Assert.IsTrue( Offers( host, label ), $"the host's pause menu offers {label}" );
 			Assert.IsFalse( Offers( guest, label ), $"a guest's pause menu offers no {label}" );
 		}
 		Assert.IsTrue( Offers( guest, UIStrings.Load ) && Offers( guest, UIStrings.ExitToLobby ) && Offers( guest, UIStrings.QuitGame ) );
+		// nor does the online menu's or the developer panel's publish or export: the host publishes the shared park
+		void RefusesExport( Park park ) =>
+			Assert.AreEqual( "A shared park is published by its host.", Assert.ThrowsException<InvalidOperationException>( () => ParkSharing.ExportLevel( park.Level, "Park", "Guest" ) ).Message );
+		RefusesExport( guest );
 
 		var alone = NewPark();
 		Assert.IsNull( GameFlow.SessionTimeScale( alone.Level ), "outside a session the HUD's screens may stop the park" );
@@ -358,15 +399,30 @@ public class CoopSessionTests
 		guest.Session!.End( "Time for tea." );
 		Assert.AreEqual( CoopRole.None, guest.Level.CoopRole );
 		Assert.IsTrue( guest.Level.IsCoopGuestPark );
-		Assert.IsFalse( Saves( guest ) || GameFlow.TakesRestartSnapshot( guest.Level ) || Offers( guest, UIStrings.Save ) );
+		Assert.IsFalse( Saves( guest ) || GameFlow.TakesRestartSnapshot( guest.Level ) || Offers( guest, UIStrings.Save ) || Offers( guest, UIStrings.PublishPark ) );
+		RefusesExport( guest );
 	}
 
+	/// <summary>The level's object-to-economy-record bindings.</summary>
+	private static Dictionary<OriginalObject, int> EconomyBindings( Level level ) =>
+		(Dictionary<OriginalObject, int>)typeof( Level ).GetField( "economyInstances", BindingFlags.Instance | BindingFlags.NonPublic )!.GetValue( level )!;
+
 	[TestMethod]
-	public void TheHostsSaveRepairsNothingInASharedPark()
+	public void AParkIsRepairedBeforeItIsSharedAndTheHostsSaveRepairsNothingInASharedPark()
 	{
+		// a park that lost an object's economy binding is repaired as it starts hosting, while it is still this game's alone
+		var lone = NewPark();
+		lone.Enter();
+		var record = EconomyBindings( lone.Level )[lone.One];
+		Assert.IsTrue( EconomyBindings( lone.Level ).Remove( lone.One ) );
+		var link = new CoopTestNetwork( () => clock ).Add( host: true );
+		link.Deliver();
+		lone.Session = CoopSession.Host( lone.Level, link, () => clock, HostTime );
+		Assert.AreEqual( record, EconomyBindings( lone.Level ).GetValueOrDefault( lone.One, -1 ), "repaired as it starts hosting: the object adopts its own record again" );
+
 		var (host, _, _, _) = Shared();
 		host.Enter();
-		var bindings = (Dictionary<OriginalObject, int>)typeof( Level ).GetField( "economyInstances", BindingFlags.Instance | BindingFlags.NonPublic )!.GetValue( host.Level )!;
+		var bindings = EconomyBindings( host.Level );
 		Assert.IsTrue( bindings.Remove( host.One ), "a park that lost an object's economy binding" );
 		// outside the commands the repair would give the host's object a record the guests' objects lack
 		var error = Assert.ThrowsException<InvalidOperationException>( () => host.Level.CaptureResumeSnapshot( null, "shared" ) );
@@ -450,10 +506,12 @@ public class CoopSessionTests
 			$"a digest every fourth park second: {string.Join( ", ", digests )}" );
 		CollectionAssert.AreEqual( digests.Skip( 1 ).ToArray(), digests.SkipLast( 1 ).Select( at => at + CoopHostStream.CheckpointInterval( GameSpeed.Fastest ) ).ToArray(), "and no digest left out" );
 		CatchUpAndCompare( host, guest );
-		// the session's recording keeps the world hash of each digest and takes none of its own (a world hash is most of a digest's cost)
+		// the session's recording keeps the world hash of each digest and takes none between them (a world hash is most of a digest's cost)
 		var hostStream = host.Session!.HostStream!;
 		host.Session.End( "Done." );
-		var recorded = hostStream.SessionLog!.Checkpoints.SkipLast( 1 ).Select( point => point.Ticks ).Where( ticks => ticks > digests[0] - CoopHostStream.CheckpointInterval( GameSpeed.Fastest ) ).ToArray();
+		// (the log ends with the session's end, a checkpoint of its own unless it fell on a digest's tick)
+		var recorded = hostStream.SessionLog!.Checkpoints.Select( point => point.Ticks )
+			.Where( ticks => ticks > digests[0] - CoopHostStream.CheckpointInterval( GameSpeed.Fastest ) && ticks <= digests[^1] ).ToArray();
 		CollectionAssert.IsSubsetOf( digests, recorded );
 		Assert.IsTrue( recorded.All( ticks => ticks % CoopHostStream.CheckpointInterval( GameSpeed.Fastest ) == 0 ), $"no hash between the digests: {string.Join( ", ", recorded )}" );
 	}
@@ -552,9 +610,14 @@ public class CoopSessionTests
 		grid.ClearQueue( 10, 2 );
 		var ride = park.One.Visitors;
 		var before = QueueState( ride );
-		// segments the native queue rules do not cover are refused before the queue is brought up to date
+		// segments the native queue rules do not cover are refused before the queue is brought up to date: a start off the queue, an undo without a line
 		Assert.IsFalse( park.Issue( new QueueSegmentCommand( ride.AttractionId, 0, 0, 1, 0 ) ).Accepted );
 		Assert.IsFalse( park.Issue( new UndoQueueSegmentCommand( ride.AttractionId, 0, 0, 0, 0 ) ).Accepted );
+		// and a line from the queue's own back cell onto the ride's entrance, which passes the start's check and fails the line's
+		Assert.IsTrue( grid.IsQueue( 10, 3 ) && grid.Cells.OwnerAt( 10, 3 ) == ride.OwnerWord, "the start the native rules take" );
+		Assert.AreEqual( ParkCellTypes.Entrance, grid.Cells.RawTypeAt( 10, 7 ), "a cell no queue line crosses" );
+		Assert.AreEqual( "Unsupported native queue domain.", park.Issue( new QueueSegmentCommand( ride.AttractionId, 10, 3, 10, 7 ) ).Reason );
+		Assert.AreEqual( "Unsupported native queue undo domain.", park.Issue( new UndoQueueSegmentCommand( ride.AttractionId, 10, 3, 10, 7 ) ).Reason );
 		Assert.AreEqual( before, QueueState( ride ), "a rejection changes nothing" );
 	}
 

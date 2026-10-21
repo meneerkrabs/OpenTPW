@@ -18,7 +18,7 @@ public partial class Level
 	/// The object adopts the lowest-numbered record of its type no other object holds: that is the record its own purchase made, which a failed build left unowned. Only when no such record exists is an
 	/// uncharged one registered, as the original-save import does (<see cref="ParkEconomy.RegisterExisting"/>), because nothing was bought for the object that the books could still refund or count.
 	/// </summary>
-	private void RepairMissingEconomyBindings()
+	internal void RepairMissingEconomyBindings()
 	{
 		if ( Park == null )
 			return;

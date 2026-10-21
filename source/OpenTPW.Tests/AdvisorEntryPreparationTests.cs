@@ -108,6 +108,33 @@ public class AdvisorEntryPreparationTests
 		}
 	}
 
+	[TestMethod]
+	public void ALookupInvalidationOrAModChangeDropsAPreparedResult()
+	{
+		foreach ( var change in new Action<BaseFileSystem>[] { files => files.InvalidateLookups(), files => files.Overrides = null, files => files.ArchiveRedirect = null } )
+		{
+			var files = EmptyFileSystem();
+			var stale = new Disposable();
+			AdvisorEntryPreparation.Prepare( "key", files, () => stale );
+			change( files );
+			Assert.IsFalse( AdvisorEntryPreparation.TryTake<Disposable>( "key", files, out _ ), "read before the file system changed what it reads" );
+			Assert.AreEqual( 0, AdvisorEntryPreparation.Count, "and dropped" );
+			Assert.IsTrue( stale.Disposed );
+
+			// a preparation for a changed file system reads again instead of keeping the old result
+			var first = new Disposable();
+			var reads = 0;
+			AdvisorEntryPreparation.Prepare( "key", files, () => { reads++; return first; } );
+			change( files );
+			var second = new Disposable();
+			AdvisorEntryPreparation.Prepare( "key", files, () => { reads++; return second; } );
+			Assert.AreEqual( 2, reads );
+			Assert.IsTrue( first.Disposed );
+			Assert.IsTrue( AdvisorEntryPreparation.TryTake<Disposable>( "key", files, out var taken ) );
+			Assert.AreSame( second, taken );
+		}
+	}
+
 	private static BaseFileSystem GameFileSystem()
 	{
 		var gamePath = Environment.GetEnvironmentVariable( "OPENTPW_GAME_PATH" );

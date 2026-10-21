@@ -54,6 +54,12 @@ internal sealed class Advisor : IDisposable
 	private SpeechAudioPlayer? player;
 	// [EXT:advisor-sliced-decode] a response whose PCM is still being decoded over frames (the player is made when it is done)
 	private Mp2Decoder.SlicedDecode? pendingDecode;
+	// [EXT:advisor-sliced-decode] the advisor-clock time the audio was first due while it was still being decoded, and how much later than that it started:
+	// the mouth reads the clock less this lateness, so it moves with the audio heard (0 when the audio started as soon as it was due, as on the desktop)
+	private long? audioDueWhileDecoding;
+	private uint audioLateMilliseconds;
+	// [EXT:advisor-sliced-decode] the decode of the response being said failed after it started (a damaged payload): the line was ended, as one that cannot be said
+	private bool unsaidLine;
 	private LipSyncTimeline? timeline;
 	private bool disposed;
 	// The advisor clock (milliseconds that stand still while the game is paused) of the automatic advisor; null for the manual
@@ -180,12 +186,19 @@ internal sealed class Advisor : IDisposable
 	private static Point2 WorldTargetSize => new( (int)global::Global.Render.MultisampledFramebuffer.Width, (int)global::Global.Render.MultisampledFramebuffer.Height );
 
 	/// <param name="clock">The advisor clock in milliseconds (the automatic advisor's pausable clock); null for the manual tools.</param>
-	public Advisor( Func<long>? clock = null )
+	public Advisor( Func<long>? clock = null ) : this( clock, AdvisorRig.LoadGlobal ) { }
+
+	/// <summary>An advisor without a model, for tests of its speech timing (it is never drawn, and no response may select a level model).</summary>
+	internal static Advisor WithoutModel( Func<long> clock ) => new( clock, () => null );
+
+	private Advisor( Func<long>? clock, Func<AdvisorRig?> loadModel )
 	{
 		this.clock = clock;
 		foreach ( var (id, rule) in Approximations )
 			Log.Warning( $"[APPROX:{id}] {rule}" );
-		globalRig = rig = AdvisorRig.LoadGlobal();
+		globalRig = rig = loadModel()!;
+		if ( globalRig == null )
+			return;
 		try
 		{
 			foreach ( var part in globalRig.Parts.Where( part => Mouths.Contains( part.Name ) ) )
@@ -354,18 +367,28 @@ internal sealed class Advisor : IDisposable
 	{
 		if ( !AdvisorResponses.Table.TryGetValue( responseId, out var response ) )
 			return false;
-		Mp2Audio? audio = null;
-		Mp2Decoder.SlicedDecode? pending = null;
+		byte[] mpeg;
+		int? playbackBytes;
 		LipSyncTimeline lips;
 		string source;
+		using ( FrameMarks.Measure( "advisor.loadResponse" ) )
+			(mpeg, playbackBytes, lips, source) = LoadResponseParts( FileSystem, response, level, language );
+		SayResponseParts( response, mpeg, playbackBytes, lips, source, level );
+		return true;
+	}
+
+	/// <summary><see cref="SayResponse"/> from the response's loaded parts (<see cref="LoadResponseParts"/>); tests give their own.</summary>
+	internal void SayResponseParts( AdvisorResponse response, byte[] mpeg, int? playbackBytes, LipSyncTimeline lips, string source, string? level )
+	{
+		Mp2Audio? audio = null;
+		Mp2Decoder.SlicedDecode? pending = null;
 		double seconds;
 		using ( FrameMarks.Measure( "advisor.loadResponse" ) )
 		{
-			var (mpeg, playbackBytes, timeline, from) = LoadResponseParts( FileSystem, response, level, language );
-			(lips, source) = (timeline, from);
 			// [EXT:advisor-sliced-decode] with the browser's single thread the response's PCM is decoded over the next frames, not in this one (17-50 ms for a line);
 			// its length, which the sequence and the span the controller waits are built from, comes from the frame headers and equals the decoded one. The audio starts
-			// when it is decoded and the advisor clock has reached its start, so a line can start a few frames later than it would with the whole decode first.
+			// when it is decoded and the advisor clock has reached its start, so a line can start a few frames later than it would with the whole decode first; the mouth
+			// then follows the audio that started late (see LipPosition), and the speech's end and the cut-off's slap follow the player, so they move with it.
 			if ( SlicedDecoding && clock != null && Mp2Decoder.TryMeasure( mpeg, playbackBytes, out var sampleRate, out var sampleFrames ) )
 			{
 				pending = new Mp2Decoder.SlicedDecode( mpeg, playbackBytes );
@@ -379,8 +402,7 @@ internal sealed class Advisor : IDisposable
 			}
 		}
 		using ( FrameMarks.Measure( "advisor.play" ) )
-			Play( audio, pending, seconds, lips, response.Lip, $"response {responseId} (sample {response.Sample}, {source})", response, level );
-		return true;
+			Play( audio, pending, seconds, lips, response.Lip, $"response {response.Id} (sample {response.Sample}, {source})", response, level );
 	}
 
 	private AdvisorClipDurations? ClipDurations( AdvisorRig playing )
@@ -418,6 +440,9 @@ internal sealed class Advisor : IDisposable
 		Duration = TimeSpan.FromSeconds( durationSeconds );
 		player = audio != null ? CreatePlayer( audio ) : null;
 		pendingDecode = pending;
+		audioDueWhileDecoding = null;
+		audioLateMilliseconds = 0;
+		unsaidLine = false;
 		speechStart = null;
 		Sequence = null;
 		timerFired = false;
@@ -447,7 +472,7 @@ internal sealed class Advisor : IDisposable
 			var length = (int)Duration.TotalMilliseconds;
 			AdvisorClipDurations? durations;
 			using ( FrameMarks.Measure( "advisor.clipDurations" ) )
-				durations = clipDurations = ClipDurations( rig );
+				durations = clipDurations = rig == null ? null : ClipDurations( rig );
 			if ( durations != null )
 			{
 				using var sequenceMark = FrameMarks.Measure( "advisor.sequence" );
@@ -514,10 +539,18 @@ internal sealed class Advisor : IDisposable
 		// The last clip's end hides the model (see DrawnSpanMilliseconds); the next response shows it again.
 		if ( ModelShown && !start.Within( clock(), DrawnSpanMilliseconds ) )
 			ModelShown = false;
-		if ( player == null || player.IsStarted )
+		if ( player is { IsStarted: true } || !start.AudioDue( clock() ) )
 			return;
-		if ( start.AudioDue( clock() ) )
-			player.Start();
+		// [EXT:advisor-sliced-decode] a response still being decoded when its audio is due starts when the decode is done; the mouth waits as long (LipPosition)
+		var due = clock();
+		if ( player == null )
+		{
+			if ( pendingDecode != null )
+				audioDueWhileDecoding ??= due;
+			return;
+		}
+		audioLateMilliseconds = audioDueWhileDecoding is { } dueAt ? unchecked((uint)(due - dueAt)) : 0;
+		player.Start();
 	}
 
 	/// <summary>One slice of the decode of a response started with <see cref="SlicedDecoding"/>; its player is made when the PCM is complete.</summary>
@@ -533,24 +566,59 @@ internal sealed class Advisor : IDisposable
 			pendingDecode = null;
 			player = CreatePlayer( decode.Result! );
 		}
-		catch ( Exception exception ) when ( exception is InvalidDataException or NotSupportedException or InvalidOperationException )
+		catch ( Exception exception ) when ( exception is IOException or InvalidDataException or InvalidOperationException or NotSupportedException or OverflowException )
 		{
-			// the frame headers were readable (the length was measured), so this is a damaged payload: the line stays silent, as one that cannot be decoded does
+			// The frame headers were readable (the length was measured), so this is a damaged payload. With the decode before the line, the same failure makes the
+			// automatic advisor skip the line (its player returns no span, so the controller reserves only the 1000 ms it adds): here the line has already started,
+			// so it is ended at once (Kill: silent, the model hidden, its effects cleared) and the automatic advisor shortens the reservation to those 1000 ms
+			// (TakeUnsaidLine). The caption was posted and the history recorded either way.
 			pendingDecode = null;
-			Log.Warning( $"Advisor response could not be decoded: {exception.Message}" );
+			Log.Warning( $"Advisor response could not be played: {exception.Message}" );
+			Kill();
+			unsaidLine = true;
+		}
+		catch
+		{
+			// anything else is a fault, as it is when the decode runs before the line: reported once, not again every frame
+			pendingDecode = null;
+			throw;
 		}
 	}
 
-	/// <summary>Where the mouth's LIP clock stands: the advisor clock minus the LIP base (the original's mouth never follows the audio); the audio position for the manual tools; silent before the audio starts.</summary>
-	private TimeSpan LipPosition => player is not { IsStarted: true } ? TimeSpan.Zero
-		: clock != null && speechStart is { } start ? TimeSpan.FromMilliseconds( start.LipMilliseconds( clock() ) )
+	/// <summary>
+	/// [EXT:advisor-sliced-decode] Whether the last line's decode failed after the line started (<see cref="PumpDecode"/>), once: the caller ends the line as one it could
+	/// not say.
+	/// </summary>
+	internal bool TakeUnsaidLine()
+	{
+		var unsaid = unsaidLine;
+		unsaidLine = false;
+		return unsaid;
+	}
+
+	/// <summary>
+	/// Where the mouth's LIP clock stands: the advisor clock minus the LIP base (the original's mouth never follows the audio); the audio position for the manual tools; silent
+	/// before the audio starts. [EXT:advisor-sliced-decode] Audio that started late because its decode was not done when it was due moves the LIP clock back by as much, so the
+	/// mouth keeps the lead over the audio it has on the desktop.
+	/// </summary>
+	internal TimeSpan LipPosition => player is not { IsStarted: true } ? TimeSpan.Zero
+		: clock != null && speechStart is { } start ? TimeSpan.FromMilliseconds( unchecked((uint)(start.LipMilliseconds( clock() ) - audioLateMilliseconds)) )
 		: Position;
+
+	/// <summary>Whether the speech's audio has started.</summary>
+	internal bool AudioStarted => player is { IsStarted: true };
+
+	/// <summary>Makes the speech players instead of <see cref="CreatePlayer"/> (tests); null for the real ones.</summary>
+	internal static Func<Mp2Audio, SpeechAudioPlayer>? PlayerFactory { get; set; }
 
 	/// <summary>
 	/// Speech goes through the game mixer when sound is on. Without a mixer it opens its own SDL device,
 	/// except when sound is off (<c>--mute</c>): then it keeps the wall clock and stays silent.
 	/// </summary>
 	internal static SpeechAudioPlayer CreatePlayer( Mp2Audio audio ) =>
+		PlayerFactory?.Invoke( audio ) ?? CreateDevicePlayer( audio );
+
+	private static SpeechAudioPlayer CreateDevicePlayer( Mp2Audio audio ) =>
 		GameAudio.EnsureStarted() && AudioMixer.Current is { } mixer
 			? new SpeechAudioPlayer( audio, mixer )
 			: new SpeechAudioPlayer( audio, null, openDevice: GameAudio.Enabled && AudioMixer.Current == null );
@@ -561,6 +629,8 @@ internal sealed class Advisor : IDisposable
 		player?.Dispose();
 		player = null;
 		pendingDecode = null;
+		audioDueWhileDecoding = null;
+		audioLateMilliseconds = 0;
 		timeline = null;
 		speechStart = null;
 	}
@@ -785,7 +855,7 @@ internal sealed class Advisor : IDisposable
 		disposed = true;
 		player?.Dispose();
 		DisposeImageTarget();
-		globalRig.Dispose();
+		globalRig?.Dispose();
 		levelRig?.Dispose();
 	}
 }

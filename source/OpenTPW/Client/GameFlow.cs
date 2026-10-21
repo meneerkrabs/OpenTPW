@@ -502,12 +502,15 @@ internal sealed partial class GameFlow : IDisposable
 	// [BIN:TPW-EXE:0x4c8d30 crowd counter] the park loop (0x54e360) calls it with the camera cell, radius 4 (0x54f4ba) and counts the things whose type byte (+2) is 1 over the cell rectangle [x-4, x+4] x [y-4, y+4] clamped to 0..127 (0x4c8d43-0x4c8da5); the caller caps the count at 100 (0x54f89e) and sends 0 when the world state is 4 (setter 0x51e7b0): the same square as this Chebyshev test
 	public const int CrowdRadiusCells = 4;
 
-	private void TearDown( bool applyPendingLanguage = true )
+	/// <param name="keepAdvisorPreparation">The park being entered tears down the live one: what its build read for the advisor is kept for its first update.</param>
+	private void TearDown( bool applyPendingLanguage = true, bool keepAdvisorPreparation = false )
 	{
 		RequireProgressSaved();
 		FlushRestartSnapshot();
 		DetachProgress();
 		AbandonParkBuild();
+		if ( !keepAdvisorPreparation )
+			DropAdvisorPreparation();
 		presence?.Dispose();
 		presence = null;
 		Hud?.Stack.Clear();

@@ -52,19 +52,18 @@ internal sealed class ScaledTaps
 	/// <summary>The products of every tap with <paramref name="value"/> (not for 0, whose products are all zero).</summary>
 	public Ext[] For( byte value )
 	{
-		var products = byValue[value];
+		var products = Volatile.Read( ref byValue[value] );
 		if ( products != null )
 			return products;
 		var scaled = Ext.FromByte( value );
 		products = new Ext[taps.Length];
 		for ( var i = 0; i < products.Length; i++ )
 			products[i] = scaled * taps[i];
-		// a mask with many distinct bytes (smooth glyph edges) would keep a table of every tap for each of them: only the first few are kept (memory is bounded)
-		if ( kept < MaximumKept )
-		{
-			byValue[value] = products;
-			kept++;
-		}
+		// A mask with many distinct bytes (smooth glyph edges) would keep a table of every tap for each of them: only the first few are kept (memory is bounded).
+		// Signs may compose on several threads: a slot is claimed by an atomic count, and a table is published whole (a reader sees null or a complete one; two
+		// threads that make the same value's table make equal ones, and the one kept does not matter).
+		if ( Volatile.Read( ref kept ) < MaximumKept && Interlocked.Increment( ref kept ) <= MaximumKept )
+			Volatile.Write( ref byValue[value], products );
 		return products;
 	}
 
@@ -323,7 +322,7 @@ internal readonly struct Ext
 	/// <summary>
 	/// <see cref="Make(bool, UInt128, int, bool, int)"/> with the magnitude as two words, <c>high:low</c>. The same rounding without 128-bit
 	/// operators: <see cref="UInt128"/> shifts and comparisons cost most of a sign's composition in the browser's AOT build (each blur tap is one
-	/// multiply and one add, each rounded here); <c>X87Tests</c> compare it with the 128-bit form on random values.
+	/// multiply and one add, each rounded here); <c>X87FastPathTests</c> compare it with the 128-bit form on random values.
 	/// </summary>
 	private static Ext Make( bool negative, ulong high, ulong low, int exponent, bool sticky, int precision )
 	{

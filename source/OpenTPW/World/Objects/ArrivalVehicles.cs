@@ -26,7 +26,7 @@ public sealed class ArrivalVehicles : IArrivalVehicleHost
 	{
 		if ( Definition( objects.Catalog, ArrivalVehicleKind.Names[kind] ) is not { } entry )
 			return false;
-		// [BIN:TPW-EXE:0x0051A57E vehicle construction] the first trip constructs the vehicle with the common object constructor 0x004DB090, as every placed object
+		// [BIN:TPW-EXE:0x0051A57E vehicle construction] the first trip constructs the vehicle with the common object constructor 0x004DB090, like every placed object
 		created?.Invoke( objects.Add( entry, 0, 0, 0 ) );
 		return true;
 	}

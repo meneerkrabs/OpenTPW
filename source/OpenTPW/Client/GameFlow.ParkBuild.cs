@@ -335,7 +335,7 @@ internal sealed partial class GameFlow
 			var globalRig = Advisor?.Presentation == null;
 			// false: the presentation's steps start with the advisor shader's program, a long step
 			yield return !globalRig;
-			// the last of them announces the warm-up of the economy capture, whose first step is a long one
+			// after them, a separate boundary announces the economy capture, whose first step is a long one
 			foreach ( var step in snapshot ? EndingBeforeLong( AdvisorEntryPreparation.PresentationSteps( FileSystem, build.Level.LevelName, globalRig ) )
 				: AdvisorEntryPreparation.PresentationSteps( FileSystem, build.Level.LevelName, globalRig ) )
 				yield return step;
@@ -353,18 +353,13 @@ internal sealed partial class GameFlow
 			yield return step;
 	}
 
-	/// <summary>The steps of <paramref name="steps"/>, the last one returning false: what follows them is a long step (<see cref="PumpParkBuild"/>).</summary>
-	private static IEnumerable<bool> EndingBeforeLong( IEnumerable<bool> steps )
+	/// <summary>Passes through each step without lookahead, then ends the frame before the following long step (<see cref="PumpParkBuild"/>).</summary>
+	internal static IEnumerable<bool> EndingBeforeLong( IEnumerable<bool> steps )
 	{
-		bool? held = null;
 		foreach ( var step in steps )
-		{
-			if ( held is { } previous )
-				yield return previous;
-			held = step;
-		}
-		if ( held != null )
-			yield return false;
+			yield return step;
+		// Never advance a side-effecting iterator to discover its last step: that can run the next long step in this frame.
+		yield return false;
 	}
 
 	/// <summary>Drops what <see cref="PrepareEntry"/> read for the advisor and no advisor took.</summary>

@@ -494,7 +494,8 @@ public sealed class CoopHub
 		{
 			// the slowest reader goes, not whichever connection happens to queue next, and never one a restart is closing
 			var slowest = running.Keys.Where( candidate => !candidate.Dead && !candidate.Closing ).MaxBy( candidate => Volatile.Read( ref candidate.QueuedBytes ) ) ?? peer;
-			Kill( slowest, CoopCloseStatus.TooSlow, "too slow" );
+			if ( !slowest.Closing )
+				Kill( slowest, CoopCloseStatus.TooSlow, "too slow" );
 			if ( slowest == peer || peer.Dead )
 			{
 				Unqueue( peer, bytes.Length );
@@ -896,10 +897,9 @@ public sealed class CoopHub
 		}
 	}
 
-	/// <summary>Whether <paramref name="peer"/> is still its account's connection (a replaced one's late requests do nothing). Under the registry lock.</summary>
 	/// <summary>
-	/// Whether <paramref name="peer"/> is its account's connection and the server is not stopping: a request the stop overtook changes nothing, so the positions and
-	/// memberships it stored stay the last. Under the registry lock.
+	/// Whether <paramref name="peer"/> is still its account's connection (a replaced one's late requests do nothing) and the server is not stopping (a request the stop overtook
+	/// changes nothing, so the positions and memberships it stored stay the last). Under the registry lock.
 	/// </summary>
 	private bool Current( Peer peer ) => !restarting && !peer.Dead && peers.TryGetValue( peer.Account.Key, out var current ) && current == peer;
 
@@ -921,7 +921,8 @@ public sealed class CoopHub
 	{
 		ReadOnlyMemory<byte> message = new CoopMemberChanged( seat.Info with { Connected = false }, state ).Encode();
 		session.Seats.Remove( seat );
-		Persist( () => store.Put( session.ToRecord( exact: false ) ) );
+		// while the server stops the frame position can no longer move, so the stored one stays exact (an account deleted during the stop)
+		Persist( () => store.Put( session.ToRecord( exact: restarting && session.SeqKnown ) ) );
 		memberships.Remove( seat.AccountKey );
 		if ( seat.Peer != null )
 		{

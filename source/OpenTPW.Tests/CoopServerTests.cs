@@ -1177,7 +1177,10 @@ public class CoopServerTests
 		}
 	}
 
-	/// <summary>A hello that comes once the server is stopping is told to resume on the new server, and a request the stop overtook changes nothing.</summary>
+	/// <summary>
+	/// A hello that comes once the server is stopping is told to resume on the new server, and a request the stop overtook (it passed the read loop's check before the stop
+	/// began, white-box: the handler is called directly) changes nothing.
+	/// </summary>
 	[TestMethod]
 	public async Task AHelloOrARequestAfterTheStopBeganIsTurnedAway()
 	{
@@ -1189,18 +1192,21 @@ public class CoopServerTests
 			var (host, _) = await CoopTestClient.ConnectAsync( server, hostAccount );
 			var lateAccount = await accounts.Add( server, "Late" );
 			var hub = server.Services.GetRequiredService<CoopHub>();
+			var registry = typeof( CoopHub ).GetField( "registry", BindingFlags.Instance | BindingFlags.NonPublic )!.GetValue( hub )!;
+			var peers = (System.Collections.IDictionary)typeof( CoopHub ).GetField( "peers", BindingFlags.Instance | BindingFlags.NonPublic )!.GetValue( hub )!;
+			var sessions = (System.Collections.IDictionary)typeof( CoopHub ).GetField( "sessions", BindingFlags.Instance | BindingFlags.NonPublic )!.GetValue( hub )!;
+			object hostPeer;
+			lock ( registry )
+				hostPeer = peers.Values.Cast<object>().Single();
+			// the host's game reads nothing, so its connection stays registered through the stop's three seconds
+			host.StopReading();
 			hub.Restarting();
-			// the host's queue closes with the restart's close, and its request after the stop began is never answered (the socket may already be closing)
-			try
-			{
-				await host.SendAsync( new CoopCreate( false, "Too late", 4 ) );
-			}
-			catch ( Exception exception ) when ( exception is WebSocketException or InvalidOperationException or ObjectDisposedException )
-			{
-			}
-			var answers = await DrainAsync( host );
+			typeof( CoopHub ).GetMethod( "Create", BindingFlags.Instance | BindingFlags.NonPublic )!.Invoke( hub, new[] { hostPeer, new CoopCreate( false, "Too late", 4 ) } );
+			lock ( registry )
+				Assert.AreEqual( 0, sessions.Count, "no session was created once the stop began" );
+			host.ResumeReading();
+			await DrainAsync( host );
 			Assert.AreEqual( CoopCloseStatus.Restarting, host.CloseStatus );
-			Assert.IsFalse( answers.OfType<CoopCreated>().Any(), "no session was created once the stop began" );
 			// a new connection is told to come back
 			var late = await CoopTestClient.OpenAsync( server, lateAccount );
 			await late.SendAsync( new CoopHello( (ushort)CoopProtocol.Version, CoopTestClient.Build, Array.Empty<CoopMod>(), Guid.NewGuid(), false, null ) );

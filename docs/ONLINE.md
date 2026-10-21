@@ -469,10 +469,10 @@ no screen or park uses it yet (C2b to C2d).
   A frame out of turn is dropped and the host told which one comes next. A member whose connection
   drops stays a member; it resumes with its hello and hears the last frame the host relayed, and a
   session ends when its host has been away ten minutes. A deploy stores that number exactly, then
-  closes each queue to new messages and each socket after what its queue holds, so a guest gets every
-  frame up to the stored number; a hello or a request during the stop is turned away, and the game
-  resumes on the new server. After a crash the number may be behind, the welcome says so, and the
-  host's next later frame sets it. A game whose
+  closes each queue to new messages and each socket after what its queue holds, so a guest that reads
+  its queue within three seconds gets every frame up to the stored number; a hello during the stop is
+  told to come back and a request is ignored, and the game resumes on the new server. After a crash
+  the number may be behind, the welcome says so, and the host's next later frame sets it. A game whose
   release or mods changed while it was away cannot resume: it leaves (a host's change ends the
   session). A message to one member is delivered at most once (C2b asks again after a resume).
 - **Join snapshots** `[EXT:online-coop-snapshot-join]`. The host uploads the park a joiner starts from

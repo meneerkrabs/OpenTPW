@@ -231,12 +231,12 @@ internal sealed class CoopGuestStream : ILevelSessionStream, IDisposable
 		}
 	}
 
-	/// <summary>After its own resume the guest asks for whatever it may have missed while away.</summary>
+	/// <summary>After its own resume the guest asks for whatever it may have missed while away: every frame from the first it lacks, also those after the frames it holds past a gap.</summary>
 	private void OnResumed( CoopSessionState session )
 	{
 		if ( Stopped || silenced )
 			return;
-		RequestResend();
+		RequestMissing();
 		lastSentState = null;
 	}
 

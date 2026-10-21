@@ -82,7 +82,7 @@ public static class ServerProgram
 				_ => new FixedWindowRateLimiterOptions { PermitLimit = options.AuthenticationsPerMinute, Window = TimeSpan.FromMinutes( 1 ), QueueLimit = 0 } ) );
 			limiter.AddPolicy( "upload", context => RateLimitPartition.GetFixedWindowLimiter( Address( context ),
 				_ => new FixedWindowRateLimiterOptions { PermitLimit = options.UploadsPerHour, Window = TimeSpan.FromHours( 1 ), QueueLimit = 0 } ) );
-			// [EXT:online-coop-snapshot-join] a refusal says when its window opens again (a joiner's download waits that long)
+			// [EXT:online-coop-snapshot-join] a refusal says when to try again: the window's length, at most what is left of it (a joiner's download waits that long)
 			limiter.OnRejected = ( rejected, _ ) =>
 			{
 				if ( rejected.Lease.TryGetMetadata( MetadataName.RetryAfter, out var wait ) )

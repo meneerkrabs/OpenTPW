@@ -65,8 +65,8 @@ internal sealed class CoopSession : IDisposable
 	/// <summary>The downloads a server may ask to be tried again in a row before the download counts as failed.</summary>
 	public const int MaximumBusyRetries = 10;
 	/// <summary>
-	/// The longest wait for a server that asked to be tried again: the host keeps the frames after the cut for a while only, so a longer one ends the join with the server's reason instead
-	/// (the player may join again later).
+	/// The longest single wait for a server that asked to be tried again (an address limit names its whole minute): the host keeps the frames after the cut for the waiting member, so the
+	/// ten retries keep it to about ten minutes in all, which the host's history holds; a longer wait ends the join with the server's reason instead (the player may join again later).
 	/// </summary>
 	public const double MaximumBusyWaitSeconds = 60;
 

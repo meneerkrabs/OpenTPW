@@ -858,19 +858,54 @@ public class CoopJoinSessionTests
 	{
 		Hosted();
 		Build( 60, 36 );
-		// the first upload's answer comes long after the host gave it up (a lost callback): the joiner is told to wait for now, then the next capture serves it
-		network.UploadSeconds = attempt => attempt == 1 ? CoopHostStream.UploadSeconds + 120 : null;
+		var stored = new List<uint>();
+		host.Session!.HostStream!.CaptureStored += ( generation, _ ) => stored.Add( generation );
+		// the first upload answers only after the host gave it up (a lost callback), while the next capture's upload is on its way: the joiner is told to wait for now, then the next
+		// capture serves it, and the late answer takes nothing from it
+		network.UploadSeconds = attempt => attempt switch { 1 => CoopHostStream.UploadSeconds + 15, 2 => 30, _ => null };
 		var joiner = Joiner();
 		RoundsUntil( () => host.Link.Sent.Any( sent => sent.To == joiner.Link.Id && sent.Message is CoopSnapshotFailed { Reason: CoopSnapshotFailure.Busy, Permanent: false } ),
 			"the host gave the upload up", 20000 );
 		Assert.IsTrue( clock >= CoopHostStream.UploadSeconds );
 		RoundsUntil( () => joiner.Level != null, "the next capture served the joiner", 20000 );
-		Assert.AreEqual( (2, 2u), (host.Session!.HostStream!.CapturesTaken, joiner.Session!.Assigned) );
-		// past the first upload's late answer: no answer for the capture given up, and nothing changes for the member that follows the next
-		RoundsUntil( () => clock >= CoopHostStream.UploadSeconds + 130, "past the late answer", 20000 );
-		Assert.IsFalse( host.Link.Sent.Any( sent => sent.Message is CoopSnapshotReady { Generation: 1 } ), "the late answer of the capture given up was ignored" );
+		Assert.AreEqual( (2, 2u), (host.Session.HostStream.CapturesTaken, joiner.Session!.Assigned) );
+		CollectionAssert.AreEqual( new uint[] { 2 }, stored, "the late answer of the capture given up was ignored" );
+		Assert.IsFalse( host.Link.Sent.Any( sent => sent.Message is CoopSnapshotReady { Generation: 1 } ) );
 		Assert.AreEqual( CoopGuestPhase.Following, joiner.Session.Phase );
 		CatchUpAndCompare( joiner );
+	}
+
+	[TestMethod]
+	public void AServersLongWaitIsClampedToAnHour()
+	{
+		Hosted();
+		Build( 60, 38 );
+		network.FailUpload = _ => CoopSnapshotTransfer.Failed( "The server is in maintenance.", retryAfter: TimeSpan.FromHours( 2 ) );
+		var joiner = Joiner();
+		RoundsUntil( () => host.Link.Sent.Any( sent => sent.To == joiner.Link.Id && sent.Message is CoopSnapshotFailed ), "the capture failed for now" );
+		Assert.AreEqual( CoopHostStream.MaximumRetrySeconds, host.Link.Sent.Select( sent => sent.Message ).OfType<CoopSnapshotFailed>().Single().RetryAfterSeconds );
+	}
+
+	[TestMethod]
+	public void AFollowingGuestsResumeAsksForEveryFrameFromTheFirstItLacks()
+	{
+		var guest = Hosted( 1 ).Single();
+		Build( 120, 37 );
+		// a frame lost on its way leaves a gap, and the guest's socket drops before the copy of it comes: the frames after the ones it holds are lost too, and then the host's park
+		// stands still, publishing nothing that would show them
+		var lostOne = false;
+		var from = host.Session!.HostStream!.LastFrame;
+		guest.Link.DropFrame = seq => !lostOne && seq > from + 1 && (lostOne = true);
+		RoundsUntil( () => guest.Session!.GuestStream!.HeldFrames > 0, "a frame held after the gap" );
+		guest.Link.DropFrame = null;
+		guest.Link.Drop();
+		Assert.IsTrue( host.Issue( new SetEntranceFeeCommand( 19 ) ).Accepted );
+		Rounds( 30 );
+		host.Holds = true;
+		Rounds( 10 );
+		guest.Link.Resume();
+		CatchUpAndCompare( guest );
+		Assert.AreEqual( 19, guest.Economy.EntranceFee, "the record lost while it was away arrived" );
 	}
 
 	[TestMethod]

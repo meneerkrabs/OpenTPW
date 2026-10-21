@@ -56,7 +56,7 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 	public const double CaptureBudgetSeconds = 10;
 	/// <summary>How long a capture waits for a held coaster drag before it fails for now.</summary>
 	public const double HeldDragSeconds = 30;
-	/// <summary>The first wait a capture that failed for now asks of a member before it asks again: it doubles with the host's failures in a row, and a server's Retry-After only raises it.</summary>
+	/// <summary>The first wait a capture that failed for now asks of a member before it asks again: it doubles with the host's failed uploads in a row, and a server's Retry-After only raises it.</summary>
 	public const uint RetrySeconds = 5;
 	/// <summary>The least time between two repeats of an outstanding assignment to a member still on an older generation.</summary>
 	public const double ReassignSeconds = 1;
@@ -962,13 +962,6 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 		var end = request.To == 0 ? nextSeq : Math.Min( request.To, nextSeq );
 		if ( request.From >= end )
 			return;
-		// [EXT:online-coop-snapshot-join] a request from the frame a copy not yet begun starts at widens it: a guest that started at a cut asks for its gap and for every frame after
-		// it in the same frame, in either order
-		if ( request.From == guest.ResendFrom && guest.ResendCursor == guest.ResendFrom && guest.Resending )
-		{
-			guest.ResendEnd = Math.Max( guest.ResendEnd, end );
-			return;
-		}
 		// a repeated request (with each progress while the gap lasts, and after the guest's resume) never starts a second copy while the last one may still be on its way:
 		// it only extends the copy
 		if ( request.From >= guest.ResendFrom && request.From <= guest.ResendCursor && now - guest.ResendSentAt < ResendRetrySeconds )
@@ -976,6 +969,10 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 			guest.ResendEnd = Math.Max( guest.ResendEnd, end );
 			return;
 		}
+		// [EXT:online-coop-snapshot-join] a request that restarts within a copy still on its way keeps the copy's end: a guest that started at a cut, or resumed, asks for every frame
+		// from its first gap, and its narrower request for that gap or a later one must not clip the frames after them
+		if ( guest.Resending && request.From <= guest.ResendEnd )
+			end = Math.Max( end, guest.ResendEnd );
 		guest.ResendFrom = guest.ResendCursor = request.From;
 		guest.ResendEnd = end;
 		guest.InFlight.Clear();

@@ -102,7 +102,9 @@ host's ticks, checked by digests (`CoopHostStream`, `CoopGuestStream`; the frame
   - A guest reports its state, its last frame without a gap and its ticks twice a second.
   - A frame lost on its way is asked for and resent from the host's history: one copy on its way at a
     time, at most a megabyte a guest has not acknowledged, and a megabyte a second for all guests. A
-    request from before the history is told to resync.
+    request from before the history is told to resync. After its own resume a guest asks for every
+    frame from the first it lacks, also those after the frames it holds past a gap, and a request that
+    restarts within a copy on its way keeps that copy's end (C2c-1).
   - The host's park runs at most three park seconds ahead of its slowest following guest, so a slow
     guest paces the session, as lockstep does. A guest that has not reported for ten seconds is not
     waited for until it is back within reach. A guest catching up that holds every frame and stays out
@@ -224,7 +226,7 @@ at a cut of the host's stream and goes on from there without leaving the session
   park the save path refuses (catalogue defaults it cannot write, an object without its economy
   binding) or one too large for a snapshot fails for good. The answer is
   `SnapshotReady` or `SnapshotFailed` (for now, with a delay that doubles with the host's failed
-  uploads in a row and is at least the server's Retry-After; or for good: too large, cannot be
+  uploads in a row and is at least the server's Retry-After, up to an hour; or for good: too large, cannot be
   captured, out of step, and the member leaves). An upload that has not answered within three
   minutes is given up for now, and its late answer changes nothing. A member asks with the newest generation it has an
   answer for: an older one gets its assignment and answer again, never a new capture, so a lost
@@ -250,8 +252,9 @@ at a cut of the host's stream and goes on from there without leaving the session
   identical start); the third within ten minutes leaves the session. A failure for now, a snapshot the
   server rotated out, and a download the server asks to try again later (too many downloads, a server
   error) do not count, unless the server still asks after ten retries; the guest waits as long as the
-  server's `Retry-After` says (five seconds without one), and a wait longer than a minute ends the join
-  with the server's reason, since the host keeps the frames after the cut for a while only. A
+  server's `Retry-After` says (five seconds without one; an address limit names its whole minute), and
+  for a wait longer than a minute the guest leaves the session with the server's reason (a resyncing
+  guest too), since the host keeps the frames after the cut for a while only. A
   download the server refuses for good, or a candidate the game cannot install, leaves the session.
   Only a session with
   the game's join host (`ICoopJoinHost`, C2c-2) resyncs: a guest without one stops as in C2b.

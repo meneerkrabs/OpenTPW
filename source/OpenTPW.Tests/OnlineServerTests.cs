@@ -597,7 +597,9 @@ public class OnlineServerTests
 			using var client = new OnlineClient( server.Url );
 			for ( var attempt = 0; attempt < 3; attempt++ )
 				await Fails( () => client.LoginAsync( "Nobody", "wrong password" ) );
-			Assert.AreEqual( HttpStatusCode.TooManyRequests, (await Fails( () => client.LoginAsync( "Nobody", "wrong password" ) )).Status );
+			var refused = await Fails( () => client.LoginAsync( "Nobody", "wrong password" ) );
+			Assert.AreEqual( HttpStatusCode.TooManyRequests, refused.Status );
+			Assert.IsTrue( refused.RetryAfter is { } wait && wait > TimeSpan.Zero && wait <= TimeSpan.FromMinutes( 1 ), "the client reads when to try again" );
 		}
 		finally
 		{

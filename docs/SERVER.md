@@ -193,8 +193,10 @@ Settings are in `OpenTPW.Server/appsettings.json`, or environment variables name
 | `MaximumCoopSnapshotBytes`, `MaximumCoopStoreBytes` | 96 MiB, 4 GiB | A shared park's join snapshot, and all of them together |
 | `CoopPingInterval` | 15 s | A co-op socket that has heard nothing from the server for this long gets a ping (browsers never see WebSocket pings) |
 
-A request a limit refuses gets a 429; the address limits and the shared parks' snapshot limits
-say in its `Retry-After` header when to try again (a joiner's download waits that long).
+The address limits (requests, logins and park uploads) and the shared parks' snapshot and download
+limits answer a 429 with a `Retry-After` header: the time until the oldest counted request leaves its
+hour, or for an address limit its window's length (an upper bound). A joiner's download waits that
+long, up to a minute.
 
 Behind a proxy, set `ASPNETCORE_FORWARDEDHEADERS_ENABLED=true` so the limits see the real
 client addresses (the compose example does).

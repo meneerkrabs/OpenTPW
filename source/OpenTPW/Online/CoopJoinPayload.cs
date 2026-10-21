@@ -265,4 +265,4 @@ internal sealed class CoopJoinPayloadWriter
 }
 
 /// <summary>[EXT:online-coop-snapshot-join] A park too large for a join snapshot (its save past the save's cap, or its body past the payload's): the capture fails for good, as too large.</summary>
-internal sealed class CoopSnapshotTooLargeException( string message ) : InvalidOperationException( message );
+internal sealed class CoopSnapshotTooLargeException( string message ) : Exception( message );

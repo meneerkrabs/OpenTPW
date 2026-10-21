@@ -339,6 +339,8 @@ public class GlobalTicketHolderTests
 			runtime.Economy.ReportRecord( ParkRecordKind.CoasterHeight, 0, 140 );
 			runtime.Economy.AdvanceMonths( 1 );
 			Assert.IsTrue( runtime.Economy.Objectives.GoldenTickets.Contains( GoldenTicketKind.CoasterHeight ), "won by the park's own record" );
+			owner.Pump();
+			Assert.IsNull( PlayerTicketFile.LoadIfPresent( path )!.HolderOf( GoldenTicketKind.CoasterHeight ), "nothing of it during the session" );
 			// the session ended; the way out finds no session and pumps the progress: the guest's player gets nothing of the host's park
 			level.CoopSession = null;
 			typeof( GameFlow ).GetMethod( "LeaveCoopSession", BindingFlags.Instance | BindingFlags.NonPublic )!.Invoke( flow, new object[] { "The park was closed." } );

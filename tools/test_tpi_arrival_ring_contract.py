@@ -158,7 +158,8 @@ class TpiArrivalRingContract(unittest.TestCase):
         resume = method(resume_source, "private Level ResumeStrict(")
         self.assertIn(refusal, resume)
         self.assertLess(resume.index("GameEditions.IsThemeParkInc"), resume.index("ParkSaveFile.Restore"))
-        capture = method(read("source/OpenTPW/World/Level.Resume.cs"), "internal ParkResumeSnapshot CaptureResumeSnapshotUnchecked(")
+        # the overload that does the capture (the shorter overloads forward to it)
+        capture = method(read("source/OpenTPW/World/Level.Resume.cs"), "internal ParkResumeSnapshot CaptureResumeSnapshotUnchecked( AutomaticAdvisor? advisor, string displayName, out Action validate, out IEnumerable<bool> validationSteps,")
         self.assertIn("if ( IsReadOnlyVisit || GameEditions.IsThemeParkInc || OriginalPark == null || Park == null || Guests == null )", capture)
 
     def test_synthetic_empty_partial_full_and_every_wrapped_head(self):

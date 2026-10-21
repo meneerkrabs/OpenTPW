@@ -41,6 +41,12 @@ public class BaseFileSystem
 	private readonly ConcurrentDictionary<(string Directory, bool FilesOnly), (int Generation, string[]? Value)> listingLookups = new();
 	private int lookupGeneration;
 
+	/// <summary>
+	/// Counts the invalidations (<see cref="InvalidateLookups"/>, and every change of <see cref="Overrides"/> or <see cref="ArchiveRedirect"/>): what was read from this
+	/// file system under another generation may differ from what it reads now.
+	/// </summary>
+	public int LookupGeneration => Volatile.Read( ref lookupGeneration );
+
 	/// <summary>Forgets the remembered lookups (<see cref="CacheLookups"/>): call after files are added below the root.</summary>
 	public void InvalidateLookups()
 	{
@@ -89,7 +95,16 @@ public class BaseFileSystem
 	/// <see cref="InvalidateLookups"/> after changing it.
 	/// </summary>
 	// [EXT:mods] OpenTPW's own mod system; the original game had no mods
-	public IFileOverrides? Overrides { get; set; }
+	public IFileOverrides? Overrides
+	{
+		get => overrides;
+		set
+		{
+			overrides = value;
+			Interlocked.Increment( ref lookupGeneration );
+		}
+	}
+	private IFileOverrides? overrides;
 
 	/// <summary>
 	/// Archives of this root that another archive file stands in for: called with the absolute path of an archive found below the root (e.g.
@@ -97,7 +112,16 @@ public class BaseFileSystem
 	/// root's own. Every read, listing and size of a path inside the archive goes to the replacement. Null (the default) changes nothing. Call
 	/// <see cref="InvalidateLookups"/> after changing it.
 	/// </summary>
-	public Func<string, string?>? ArchiveRedirect { get; set; }
+	public Func<string, string?>? ArchiveRedirect
+	{
+		get => archiveRedirect;
+		set
+		{
+			archiveRedirect = value;
+			Interlocked.Increment( ref lookupGeneration );
+		}
+	}
+	private Func<string, string?>? archiveRedirect;
 
 	private string? Overridden( string relativePath ) =>
 		Overrides != null && Overrides.TryGetFile( GetRelativePath( GetAbsolutePath( relativePath ) ), out var file ) ? file : null;

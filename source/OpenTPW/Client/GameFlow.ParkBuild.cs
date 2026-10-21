@@ -150,6 +150,7 @@ internal sealed partial class GameFlow
 		{
 			// Only the guarded New request turns expected delayed construction refusal into its own dialog.
 			parkBuild = null;
+			DropAdvisorPreparation();
 			if ( build.BeforeEnter != null ) build.Level.Dispose();
 			build.Scene.Dispose();
 			if ( build.BeforeEnter != null && ProgressFailure( error ) )
@@ -202,12 +203,13 @@ internal sealed partial class GameFlow
 			build.BeforeEnter?.Invoke( build.Level );
 			build.Scene.Detach();
 			using ( LoadProfile.Measure( "tear-down" ) )
-				TearDown( applyPendingLanguage: false );
+				TearDown( applyPendingLanguage: false, keepAdvisorPreparation: true );
 			build.Scene.Activate();
 		}
 		catch ( Exception error )
 		{
-			// A profile precommit refusal occurs before the previous world is retired.
+			// A profile precommit refusal occurs before the previous world is retired; what the build read for the advisor is not used.
+			DropAdvisorPreparation();
 			if ( build.BeforeEnter != null || error is PlayerProgressSaveException ) build.Level.Dispose();
 			DropPreparedHud( build );
 			build.Scene.Dispose();
@@ -230,6 +232,8 @@ internal sealed partial class GameFlow
 	/// <summary>The steps that make ready what entering the park would do whole: see <see cref="ParkBuild.Preparation"/>.</summary>
 	private IEnumerable<bool> PrepareEntry( ParkBuild build )
 	{
+		// what an earlier build read and nobody took (one that failed while no park was live) is not this park's
+		DropAdvisorPreparation();
 		foreach ( var step in PrepareAdvisorAndSnapshot( build ) )
 			yield return step;
 		foreach ( var step in PrepareFirstFrame( build ) )

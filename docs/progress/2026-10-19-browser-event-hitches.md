@@ -17,7 +17,7 @@ The park is ready 0.5 s sooner.
 
 Four behaviour-preserving changes made the difference:
 - bit-identical faster x87 sign arithmetic, with the relief terms reused;
-- advisor speech decoded over frames in the browser (a line's audio may start 50-150 ms later there);
+- advisor speech decoded over frames in the browser (a line's audio may start 50-150 ms later there, and the mouth waits for it);
 - the first restart snapshot's JSON metadata and asset manifest prepared in steps before entering;
 - remembered file-system existence and listing answers for the browser's game data.
 
@@ -28,9 +28,13 @@ Remaining hitches are listed in docs/BROWSER-PERFORMANCE.md under "Event hitches
 - the autosave capture (37 ms);
 - the first preview of a ride with a sign (55 ms).
 
-The entering frame fell further, from 216 to 85 ms, on builds after merging origin/main (medians of three runs):
+Merging origin/main added work to the entering frame, which then took 216 ms instead of 147. On builds after that merge it fell further, to 85 ms (medians of three runs):
 - the first restart snapshot is now validated after entering, in steps;
 - the capture's code is warmed during the build;
 - the advisor's settings, models, clip lengths and theme costume are read during the build.
+
+The prepared advisor reads are dropped when a build starts its preparation, fails or is abandoned, when the game tears down, and when a mod or language change alters what the file system reads, so a later park never takes stale ones.
+
+In the browser the advisor's mouth follows the late-starting audio, by the same lead as on the desktop. A line whose speech cannot be decoded after it started ends at once and reserves what a line that cannot be said reserves; the desktop skips such a line before it starts.
 
 The restart snapshot's guarantees are unchanged: the capture still happens in the entering frame, and the pending marker still blocks an earlier park until the snapshot is committed. The first draw (19 ms) and the HUD (16 ms) remain.

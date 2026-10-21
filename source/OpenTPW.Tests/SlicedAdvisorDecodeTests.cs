@@ -69,7 +69,7 @@ public class SlicedAdvisorDecodeTests
 	{
 		var fileSystem = new BaseFileSystem( StringTableTests.OriginalDataDirectory() );
 		var table = AdvisorResponses.Table;
-		// every response of the global bank, and the level's (the welcome line)
+		// every seventh response of the global bank, every response of the level's bank and the welcome line (587): a sample that keeps the test short
 		var checkedResponses = 0;
 		foreach ( var response in table.Values.OrderBy( response => response.Id ).Where( response => response.Id % 7 == 0 || response.Local || response.Id == 587 ) )
 		{

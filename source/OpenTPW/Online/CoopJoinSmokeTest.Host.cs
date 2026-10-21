@@ -33,6 +33,9 @@ internal sealed partial class CoopJoinSmokeTest
 	private readonly Dictionary<uint, byte[]> stored = new();
 	private (int Staff, int X, int Y)? hand;
 	private (ObjectCatalogEntry Entry, int X, int Y, int Rotation)? carried;
+	/// <summary>The tour ride the second cut buys while paused, and where (researched, with the golden ticket it needs, before the park is shared).</summary>
+	private (ObjectCatalogEntry Entry, int X, int Y)? tourSite;
+	private bool pools;
 	private ParkEconomy Economy => level.Park!.Economy;
 
 	private void StartHost()
@@ -177,6 +180,8 @@ internal sealed partial class CoopJoinSmokeTest
 		if ( !Economy.Staff.Members.Any( member => member.State != StaffState.PickedUp ) )
 			HireStaff();
 		HireStaff();
+		BuildPools( used );
+		PrepareTour( used );
 		if ( !Economy.IsParkOpen )
 			Economy.OpenPark();
 		Log.Trace( $"Co-op join smoke: Jungle with {level.Objects.Objects.Count( item => !item.IsDeleted )} objects, {coasters.Count} coasters, {Economy.Staff.Members.Count} staff, "
@@ -236,6 +241,80 @@ internal sealed partial class CoopJoinSmokeTest
 			return station;
 		}
 		throw new InvalidOperationException( "Native co-op join smoke test failed: find a site for a coaster and its circuit." );
+	}
+
+	/// <summary>
+	/// [EXT:pools] A pool of 6 x 4 cells near the paths with a lazy river round it, its changing room, the water attractions, a slide and a bridge, and swimmers in it: the park-resume smoke's
+	/// pools fixture, built before the park is shared (the pools extension is on by default; without it the park has none).
+	/// </summary>
+	private void BuildPools( HashSet<(int, int)> used )
+	{
+		if ( !FeatureGates.Pools || level.PoolBuilder is not { } builder )
+		{
+			Log.Trace( "Co-op join smoke: the pools extension is off; the park has no pool." );
+			return;
+		}
+		var focus = OriginalParkPlacement.TryGetCell( level.OriginalPark!.Heightfield, level.PathFocus.X, level.PathFocus.Y, out var focusX, out var focusY ) ? (X: focusX, Y: focusY) : (X: 64, Y: 64);
+		var shape = PoolBuilder.Rectangle( (0, 0), (5, 3) ).ToArray();
+		var grid = level.Objects.Grid;
+		var origin = Enumerable.Range( 0, grid.Width * grid.Height ).Select( index => (X: index % grid.Width, Y: index / grid.Width) )
+			.OrderBy( cell => Math.Abs( cell.X - focus.X ) + Math.Abs( cell.Y - focus.Y ) ).ThenBy( cell => cell.Y ).ThenBy( cell => cell.X )
+			.Where( cell => shape.All( offset => builder.Check( cell.X + offset.X, cell.Y + offset.Y ) == PoolBuildResult.Ok
+				&& !used.Contains( (cell.X + offset.X, cell.Y + offset.Y) ) ) ).Cast<(int X, int Y)?>().FirstOrDefault();
+		Require( origin != null, "find a free site for a pool near the paths" );
+		var cells = shape.Select( offset => (X: origin!.Value.X + offset.X, Y: origin.Value.Y + offset.Y) ).ToArray();
+		Require( builder.PaintCells( cells ).Completed, "paint the pool through the pool builder" );
+		foreach ( var cell in cells.Where( cell => cell.X == origin!.Value.X || cell.X == origin.Value.X + 5 || cell.Y == origin.Value.Y || cell.Y == origin.Value.Y + 3 ) )
+			level.Guests!.Grid.Cells.SetFlags( cell.X, cell.Y, ParkCellFlags.PoolRiver );
+		var room = level.BuildChangingRoomBeside( cells );
+		Require( room != null, "build a changing room beside the pool" );
+		var attractions = level.BuildPoolAttractionsBeside( cells, "all" );
+		var tower = level.BuildSlideBeside( cells, PoolSlideProfile.Flume );
+		var bridge = level.BuildDebugPoolBridge( cells );
+		var swimmers = level.Guests!.DebugStartSwimmers( room!.Visitors, 3 );
+		foreach ( var cell in cells )
+			for ( var mx = -4; mx <= 4; mx++ )
+				for ( var my = -4; my <= 4; my++ )
+					used.Add( (cell.X + mx, cell.Y + my) );
+		pools = true;
+		Log.Trace( $"Co-op join smoke: a pool of {cells.Length} cells at {origin}, {attractions.Count} water attraction(s), a slide {(tower != null ? "built" : "refused")}, "
+			+ $"a bridge {(bridge != null ? "built" : "refused")}, {swimmers} swimmer(s)." );
+	}
+
+	/// <summary>
+	/// [EXT:online-coop-snapshot-join] The tour ride the second cut buys while the park is paused (C5: a live tour ride whose script has not created its controller yet): researched, with the
+	/// golden ticket it needs, and a free site found before the park is shared, as the park-resume smoke's tour fixture prepares one.
+	/// </summary>
+	private void PrepareTour( HashSet<(int, int)> used )
+	{
+		var economy = Economy;
+		var entry = level.Objects.Catalog.Buildable.Where( candidate => candidate.Settings.GetInt( "Bumper.WhichTrackType" ) == 0 && candidate.ScriptPath != null
+			&& candidate.ScriptPath.Contains( "tour", StringComparison.OrdinalIgnoreCase ) ).OrderBy( candidate => candidate.InfoId ).FirstOrDefault();
+		Require( entry != null, "the theme's catalogue has a tour ride" );
+		var research = economy.Research;
+		research.Restore( research.Completed.Append( (entry!.InfoId, 0) ).Distinct().ToList(),
+			research.Items.Select( item => ((item.InfoId, item.Level), research.GetProgress( item )) ).Where( pair => pair.Item2 != 0 ).ToList(), research.Effort );
+		var objectives = economy.Objectives;
+		objectives.Restore( objectives.NextOfferDay, objectives.NextListPosition, objectives.Current, objectives.Declines, objectives.Finished, objectives.GoldenTickets.Append( GoldenTicketKind.Visitors ).ToList() );
+		Require( economy.CheckBuild( entry.InfoId ) == ParkEconomy.PurchaseResult.Ok, $"the tour ride can be bought ({economy.CheckBuild( entry.InfoId )})" );
+		var grid = level.Objects.Grid;
+		bool Free( int x, int y ) => x >= 0 && y >= 0 && x < grid.Width && y < grid.Height && level.Objects.FindAt( x, y ) == null && !used.Contains( (x, y) )
+			&& grid.CheckTerrain( x, y ) is OriginalPlacementResult.Allowed && level.Guests!.Grid.Cells.RawTypeAt( x, y ) == 0 && !level.Guests!.Grid.Cells.FlagsAt( x, y ).HasFlag( ParkCellFlags.Unowned );
+		var focus = OriginalParkPlacement.TryGetCell( level.OriginalPark!.Heightfield, level.PathFocus.X, level.PathFocus.Y, out var focusX, out var focusY ) ? (X: focusX, Y: focusY) : (X: 64, Y: 64);
+		foreach ( var cell in Enumerable.Range( 0, grid.Width * grid.Height ).Select( index => (X: index % grid.Width, Y: index / grid.Width) )
+			.OrderBy( cell => Math.Abs( cell.X - focus.X ) + Math.Abs( cell.Y - focus.Y ) ).ThenBy( cell => cell.Y ).ThenBy( cell => cell.X ) )
+		{
+			var anchor = Level.GetCentredAnchor( entry, cell.X, cell.Y, 0 );
+			if ( level.Objects.CheckFree( entry, anchor.X, anchor.Y, 0 ) != OriginalPlacementResult.Allowed
+				|| !Enumerable.Range( anchor.X - 1, 7 ).All( x => Enumerable.Range( anchor.Y - 1, 7 ).All( y => Free( x, y ) ) ) )
+				continue;
+			tourSite = (entry, cell.X, cell.Y);
+			for ( var x = anchor.X - 2; x <= anchor.X + 7; x++ )
+				for ( var y = anchor.Y - 2; y <= anchor.Y + 7; y++ )
+					used.Add( (x, y) );
+			return;
+		}
+		throw new InvalidOperationException( "Native co-op join smoke test failed: find a free site for the tour ride." );
 	}
 
 	/// <summary>Hires the cheapest candidate onto a free cell of the paths, by the hire tool's commands.</summary>
@@ -311,6 +390,12 @@ internal sealed partial class CoopJoinSmokeTest
 		if ( park.Coasters.Count >= 2 ) staged.Add( "several coasters" );
 		if ( park.Park?.Economy.Speed == GameSpeed.Paused && park.Commands.ScheduledCount == 0 && park.Commands.Log.Count > 0 && park.Commands.Log[^1].Tick == park.TickCount ) staged.Add( "paused with edits since its last tick" );
 		if ( coasters.Any( coaster => !coaster.IsDeleted && !coaster.IsOpen && coaster.Runtime.Coaster is { BeingEdited: false, State: CoasterControllerState.Built } ) ) staged.Add( "built coaster closed" );
+		if ( park.Objects.Objects.Any( item => !item.IsDeleted && item.Runtime.UsesTour && !item.Runtime.IsStopped && item.Runtime.LiveTour == null ) ) staged.Add( "tour ride without a live tour" );
+		if ( park.Guests?.Grid.Cells is { } map && Enumerable.Range( 0, map.Width * map.Height ).Any( index => map.TypeAt( index % map.Width, index / map.Width ) == ParkCellType.PoolWater
+			&& map.FlagsAt( index % map.Width, index / map.Width ).HasFlag( ParkCellFlags.PoolRiver ) ) ) staged.Add( "pool with a river" );
+		if ( park.PoolSlides?.Slides.Any() == true ) staged.Add( "slide" );
+		if ( park.PoolBridges?.Count > 0 ) staged.Add( "bridge" );
+		if ( park.Guests?.Guests.Any( guest => guest.IsSwimming ) == true ) staged.Add( "swimmers" );
 		return staged.ToArray();
 	}
 
@@ -339,6 +424,9 @@ internal sealed partial class CoopJoinSmokeTest
 		Issue( new EndCoasterToolCommand( coaster.Visitors.AttractionId ), "the coaster tool closes, the coaster built" );
 		Issue( new SetAttractionOpenCommand( coaster.Visitors.AttractionId, false ), "the built coaster is closed" );
 		Require( !coaster.IsOpen && coaster.Runtime.Coaster is { BeingEdited: false, State: CoasterControllerState.Built }, "a coaster closed while built, its tool not open" );
+		// a tour ride bought while paused: its script has not run, so it has no controller yet (C5)
+		var (entry, x, y) = tourSite!.Value;
+		Issue( new PlaceObjectCommand( ParkCommandCodec.EntryKey( entry ), x, y, 0 ), "the tour ride is bought while paused" );
 	}
 
 	/// <summary>The scripted edits of the park minutes: the entrance fee, a ride closed and opened again, a hire placed, an employee moved.</summary>
@@ -386,7 +474,9 @@ internal sealed partial class CoopJoinSmokeTest
 		pendingStaged = null;
 		string[] expected = number == 1
 			? new[] { "employee in hand", "pending hire", "carried Move entry", "coaster tool open", "session clock", "several coasters" }
-			: new[] { "session clock", "several coasters", "paused with edits since its last tick", "built coaster closed" };
+			: new[] { "session clock", "several coasters", "paused with edits since its last tick", "built coaster closed", "tour ride without a live tour" };
+		if ( pools )
+			expected = expected.Append( "pool with a river" ).ToArray();
 		Require( expected.All( staged.Contains ), $"cut {number} holds what was staged for it (held: {string.Join( ", ", staged )})" );
 		var file = $"capture-{number}.otpwjoin";
 		File.WriteAllBytes( Path.Combine( evidenceDirectory, file ), payload! );

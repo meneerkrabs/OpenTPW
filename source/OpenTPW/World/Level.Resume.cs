@@ -118,6 +118,16 @@ public partial class Level
 		}
 		Read( () => Objects.ScriptWorld.CaptureSnapshot() );
 		yield return true;
+		// the snapshot's extension and asset filters over the placed objects, with a one-key manifest of an extension's prefix: the filters' queries meet their first calls here
+		Read( () =>
+		{
+			var placed = Objects.Objects.Where( item => !item.IsDeleted ).Select( item => item.Entry ).ToArray();
+			_ = ParkResumeMods.InUse( Guests.Grid.Cells, placed.Any( ParkResumeMods.IsPoolsObject ), ParkResumeMods.UmbrellasInUse( placed, Guests ), ParkResumeMods.WinterInUse( placed, Guests ),
+				Park.Economy.Cheats.UsesExtension, ParkResumeMods.EveningInUse( placed ) );
+			// the manifest's own type (a sorted dictionary, as ParkResumeAssetManifest makes it): its enumerators' first calls are of that type
+			_ = ParkResumeMods.AssetsForUse( new SortedDictionary<string, string>( StringComparer.Ordinal ) { [ContentRoot.Mod( OfficialExtensions.Pools.Id ).KeyPrefix] = "" }, placed );
+		} );
+		yield return true;
 		Read( () =>
 		{
 			_ = Weather?.CaptureSnapshot(); _ = Gate?.CaptureSnapshot(); _ = StaffWorld?.CaptureSnapshot();

@@ -59,8 +59,10 @@ public class TrackEditRecoveryDataTests
 				editor.EnterLineTool( tool );
 				Assert.IsTrue( tool.Undo(), entry.DisplayName );
 				Assert.IsFalse( tool.Undo(), entry.DisplayName );
-				Assert.AreEqual( 3, count, entry.DisplayName );
-				Assert.AreEqual( before + 3 * (builder.TileCost * economy.ScrapPercent( ride ) / 100), economy.Balance, entry.DisplayName );
+				// the line's first tile is the station exit, which the clear spares (0x7639E0/E4, 0x53B47C, 0x53B54A): the undo refunds the other two
+				Assert.AreEqual( 2, count, entry.DisplayName );
+				Assert.IsTrue( builder.Tracks.Get( station.Exit.X, station.Exit.Y ).IsOrigin, entry.DisplayName );
+				Assert.AreEqual( before + 2 * (builder.TileCost * economy.ScrapPercent( ride ) / 100), economy.Balance, entry.DisplayName );
 			}
 		}
 		CollectionAssert.AreEquivalent( new[] { TrackFamily.Kart, TrackFamily.Water }, families.ToArray() );

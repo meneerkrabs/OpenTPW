@@ -67,18 +67,8 @@ internal sealed partial class SandboxSmokeTest
 		bool Free( int x, int y ) => x >= 0 && y >= 0 && x < grid.Width && y < grid.Height
 			&& level.Objects.FindAt( x, y ) == null && grid.CheckTerrain( x, y ) is OriginalPlacementResult.Allowed
 			&& level.Guests!.Grid.Cells.RawTypeAt( x, y ) == 0 && !level.Guests!.Grid.Cells.FlagsAt( x, y ).HasFlag( ParkCellFlags.Unowned );
-		(int X, int Y)? anchor = null;
-		for ( var index = 0; index < grid.Width * grid.Height && anchor == null; index++ )
-		{
-			var cell = (X: index % grid.Width, Y: index / grid.Width);
-			var candidate = Level.GetCentredAnchor( entry!, cell.X, cell.Y, 0 );
-			if ( level.Objects.CheckFree( entry!, candidate.X, candidate.Y, 0 ) != OriginalPlacementResult.Allowed || !OnScreen( cell ) )
-				continue;
-			// the footprint rows, the loop tiles around it (x from −2 to +5, y from 1 to 6: the station lies on the footprint's rows 1 and 2) and the queue's front cell must be free
-			var cells = Enumerable.Range( candidate.X - 2, 9 ).SelectMany( x => Enumerable.Range( candidate.Y - 1, 8 ).Select( y => (X: x, Y: y) ) );
-			if ( cells.All( loopCell => Free( loopCell.X, loopCell.Y ) && OnScreen( loopCell ) ) )
-				anchor = candidate;
-		}
+		// the footprint rows, the loop tiles around it (x from −2 to +5, y from 1 to 6: the station lies on the footprint's rows 1 and 2) and the queue's front cell must be free
+		var anchor = FindSmokeSite( entry!, candidate => Enumerable.Range( candidate.X - 2, 9 ).SelectMany( x => Enumerable.Range( candidate.Y - 1, 8 ).Select( y => (X: x, Y: y) ) ), Free, OnScreen );
 		Require( anchor != null, $"find an on-screen site for a {kind} ride and its circuit" );
 		var economy = level.Park?.Economy;
 		var centre = Level.GetClickCell( entry!, anchor!.Value.X, anchor.Value.Y, 0 );
@@ -94,7 +84,11 @@ internal sealed partial class SandboxSmokeTest
 		var builder = level.BuilderOf( station! )!;
 		var originType = water ? TrackCellTypes.WaterOrigin : TrackCellTypes.KartOrigin;
 		var mode = water ? CellToolMode.WaterTrack : CellToolMode.KartTrack;
-		Require( !station!.Runtime.Bump!.IsTrackValid && !builder.Tracks.Cells().Any( item => item.Cell.Type == originType ), "no track yet: the circuit is invalid" );
+		// [BIN:TPW-EXE:0x005253E9 initial track] the placement lays a track tile at the exit and at the entry, free of charge (docs/TRACKS.md, "The station"): before any line those are the
+		// only track tiles and the circuit is invalid
+		var laid = builder.Tracks.Cells().Where( item => item.Cell.Type == originType ).Select( item => (item.X, item.Y) ).ToHashSet();
+		Require( !station!.Runtime.Bump!.IsTrackValid && laid.SetEquals( new[] { layout.Exit, layout.Entry } ),
+			$"no circuit yet: the placement laid only the exit {layout.Exit} and entry {layout.Entry} tiles ({string.Join( ", ", laid )}) and the circuit is invalid" );
 		var balance = economy?.Balance ?? 0;
 		Require( level.EnterTrackTool( station ) && level.CellTool.IsActive && level.CellTool.Mode == mode && level.CellTool.Start == layout.Exit,
 			$"the {kind} track tool starts at the tile after the station" );
@@ -112,7 +106,8 @@ internal sealed partial class SandboxSmokeTest
 		Require( station.Runtime.Bump.IsTrackValid, "the third line closes the circuit and the walk accepts it" );
 		Require( !(level.CellTool.IsActive && level.CellTool.Mode == mode), "a valid circuit closes the track tool" );
 		level.CellTool.Cancel();
-		Require( tiles == 8 && builder.Tiles().Count() == 10, $"eight tiles were laid around the two station tiles ({tiles})" );
+		// the circuit is ten tiles: the two station tiles, the exit and entry tiles the placement laid, and six the lines laid between them
+		Require( tiles == 6 && builder.Tiles().Count() == 10, $"six tiles were laid between the exit and entry tiles around the two station tiles ({tiles} laid, {builder.Tiles().Count()} in all)" );
 		if ( economy != null )
 			Require( balance - economy.Balance >= tiles * builder.TileCost, $"each tile is charged Costs.{(water ? "Water" : "Kart")}TrackCell" );
 		var bump = station.Runtime.Bump;
@@ -120,6 +115,37 @@ internal sealed partial class SandboxSmokeTest
 		Require( bump.Sections.Count == 10 && bump.Buoys.Count == expectedBuoys, $"the controller holds the circuit's sections and buoys ({bump.Sections.Count}, {bump.Buoys.Count})" );
 		run.Wait = System.Diagnostics.Stopwatch.StartNew();
 		Log.Trace( $"HUD {kind} track: {entry!.DisplayName} with {tiles} track tiles, {bump.Sections.Count} sections, {bump.Objects.Count} collision objects and {bump.Buoys.Count} buoys." );
+	}
+
+	/// <summary>
+	/// A site for a ride whose placement is allowed and whose area (cells around the anchor) is free and on screen. The site the view already shows comes
+	/// first (row by row); without one, a player scrolls to free land: the free site nearest the view's centre, the camera looking at its area's middle.
+	/// Each verdict reads the view it judges, so the site found does not depend on how earlier phases happened to leave the camera.
+	/// </summary>
+	private (int X, int Y)? FindSmokeSite( ObjectCatalogEntry entry, Func<(int X, int Y), IEnumerable<(int X, int Y)>> area, Func<int, int, bool> free, Func<(int X, int Y), bool> onScreen )
+	{
+		var grid = level.Objects.Grid;
+		var candidates = Enumerable.Range( 0, grid.Width * grid.Height ).Select( index => (Cell: (X: index % grid.Width, Y: index / grid.Width), Anchor: Level.GetCentredAnchor( entry, index % grid.Width, index / grid.Width, 0 )) )
+			.Where( item => level.Objects.CheckFree( entry, item.Anchor.X, item.Anchor.Y, 0 ) == OriginalPlacementResult.Allowed && area( item.Anchor ).All( cell => free( cell.X, cell.Y ) ) )
+			.ToList();
+		foreach ( var (cell, anchor) in candidates )
+			if ( onScreen( cell ) && area( anchor ).All( onScreen ) )
+				return anchor;
+		if ( level.OriginalPark is not { } park || Camera.Mode is not ParkCameraMode parkCamera || hudContext == null )
+			return null;
+		var viewport = new System.Numerics.Vector2( hudContext.Canvas.Width, hudContext.Canvas.Height );
+		var centre = level.TryGetGridCell( viewport / 2, viewport, out var viewX, out var viewY ) ? (X: viewX, Y: viewY)
+			: OriginalParkPlacement.TryGetCell( park.Heightfield, level.PathFocus.X, level.PathFocus.Y, out var focusX, out var focusY ) ? (X: focusX, Y: focusY) : (X: 0, Y: 0);
+		foreach ( var (cell, anchor) in candidates.OrderBy( item => Math.Abs( item.Anchor.X - centre.X ) + Math.Abs( item.Anchor.Y - centre.Y ) ).ThenBy( item => item.Anchor.Y ).ThenBy( item => item.Anchor.X ) )
+		{
+			var cells = area( anchor ).ToArray();
+			var middle = OriginalParkPlacement.GetCellCenter( park.Heightfield, (int)cells.Average( item => item.X ), (int)cells.Average( item => item.Y ) );
+			parkCamera.SetPose( new Vector3( middle.X, middle.Y, 0 ), parkCamera.Height, parkCamera.Yaw );
+			Camera.Update();
+			if ( onScreen( cell ) && cells.All( onScreen ) )
+				return anchor;
+		}
+		return null;
 	}
 
 	/// <summary>Per frame after the build: runs the water phase, then the kart phase.</summary>
@@ -162,16 +188,7 @@ internal sealed partial class SandboxSmokeTest
 		bool Free( int x, int y ) => x >= 0 && y >= 0 && x < grid.Width && y < grid.Height
 			&& level.Objects.FindAt( x, y ) == null && grid.CheckTerrain( x, y ) is OriginalPlacementResult.Allowed
 			&& level.Guests!.Grid.Cells.RawTypeAt( x, y ) == 0 && !level.Guests!.Grid.Cells.FlagsAt( x, y ).HasFlag( ParkCellFlags.Unowned );
-		(int X, int Y)? anchor = null;
-		for ( var index = 0; index < grid.Width * grid.Height && anchor == null; index++ )
-		{
-			var cell = (X: index % grid.Width, Y: index / grid.Width);
-			var candidate = Level.GetCentredAnchor( entry, cell.X, cell.Y, 0 );
-			if ( level.Objects.CheckFree( entry, candidate.X, candidate.Y, 0 ) != OriginalPlacementResult.Allowed || !OnScreen( cell ) )
-				continue;
-			if ( Enumerable.Range( candidate.X - 1, 7 ).All( x => Enumerable.Range( candidate.Y - 1, 8 ).All( y => Free( x, y ) && OnScreen( (x, y) ) ) ) )
-				anchor = candidate;
-		}
+		var anchor = FindSmokeSite( entry, candidate => Enumerable.Range( candidate.X - 1, 7 ).SelectMany( x => Enumerable.Range( candidate.Y - 1, 8 ).Select( y => (X: x, Y: y) ) ), Free, OnScreen );
 		Require( anchor != null, "find an on-screen site for a bumper ride" );
 		var click = Level.GetClickCell( entry, anchor!.Value.X, anchor.Value.Y, 0 );
 		var station = level.PlaceObject( entry, click.X, click.Y, 0 ) ?? level.Objects.TryPlace( entry, anchor.Value.X, anchor.Value.Y, 0, out _ );

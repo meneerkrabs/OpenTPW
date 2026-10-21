@@ -1454,18 +1454,26 @@ internal static class Game
 			var fallback = Path.Combine( fallbackRoot, "save" );
 			Directory.CreateDirectory( fallback );
 			Log.Warning( $"The game folder is read-only ({exception.Message}); saves go to {fallback}." );
-			var copied = CopyMissingSaves( beside, fallback );
-			if ( copied > 0 )
-				Log.Info( $"Copied {copied} earlier save file(s) from {beside} to {fallback}; the originals are left in place." );
+			// The marker makes the copy happen once: a save, autosave or restart snapshot deleted later must not come back
+			var marker = Path.Combine( fallback, CopiedSavesMarker );
+			if ( Directory.Exists( beside ) && !File.Exists( marker ) )
+			{
+				var copied = CopyMissingSaves( beside, fallback );
+				try { File.WriteAllText( marker, $"Earlier saves copied from {beside}{Environment.NewLine}" ); }
+				catch ( Exception markerException ) when ( markerException is IOException or UnauthorizedAccessException ) { Log.Warning( $"Could not write {marker} ({markerException.Message})." ); }
+				if ( copied > 0 )
+					Log.Info( $"Copied {copied} earlier save file(s) from {beside} to {fallback}; the originals are left in place." );
+			}
 			return fallback + Path.DirectorySeparatorChar;
 		}
 	}
 
+	/// <summary>Written in the fallback save folder once the earlier saves beside the game have been copied.</summary>
+	internal const string CopiedSavesMarker = ".copied-from-game-folder";
+
 	/// <summary>Copies every file under <paramref name="source"/> that <paramref name="destination"/> lacks; unreadable files are skipped.</summary>
 	private static int CopyMissingSaves( string source, string destination )
 	{
-		if ( !Directory.Exists( source ) )
-			return 0;
 		var copied = 0;
 		try
 		{

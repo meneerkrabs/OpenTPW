@@ -1,4 +1,4 @@
-﻿namespace OpenTPW;
+namespace OpenTPW;
 
 /// <summary>Whether a folder can serve as the original game data, and why (docs/SETUP.md).</summary>
 public sealed record InstallationReport( string Path, string? DataDirectory, IReadOnlyList<string> Languages, IReadOnlyList<string> Problems, IReadOnlyList<string> Warnings )
@@ -132,8 +132,8 @@ public static class GameInstallation
 	private static bool IsUnderProgramFiles( string directory )
 	{
 		var full = Path.TrimEndingDirectorySeparator( Path.GetFullPath( directory ) ) + Path.DirectorySeparatorChar;
-		return new[] { Environment.SpecialFolder.ProgramFiles, Environment.SpecialFolder.ProgramFilesX86 }
-			.Select( Environment.GetFolderPath )
+		// a 32-bit process sees Program Files (x86) for both folders; ProgramW6432 names the 64-bit one
+		return new[] { Environment.GetFolderPath( Environment.SpecialFolder.ProgramFiles ), Environment.GetFolderPath( Environment.SpecialFolder.ProgramFilesX86 ), Environment.GetEnvironmentVariable( "ProgramW6432" ) ?? "" }
 			.Where( root => root.Length > 0 )
 			.Any( root => full.StartsWith( Path.TrimEndingDirectorySeparator( root ) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase ) );
 	}

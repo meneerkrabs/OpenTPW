@@ -89,9 +89,14 @@ public class SaveDirectoryTests
 		Assert.AreEqual( "newer options", File.ReadAllText( Path.Combine( fallback, "options.sam" ) ) );
 		Assert.AreEqual( "old park", File.ReadAllText( Path.Combine( save, "park1.otpw" ) ) );
 
+		Assert.IsTrue( File.Exists( Path.Combine( fallback, Game.CopiedSavesMarker ) ) );
+
+		// once only: a later change or deletion in the fallback (a restart snapshot, a deleted park) is kept
 		File.WriteAllText( Path.Combine( fallback, "park1.otpw" ), "played on" );
+		File.Delete( Path.Combine( fallback, "autosave", "jungle.otpw" ) );
 		Game.ResolveSaveDirectory( Path.Combine( root, "game" ), Path.Combine( root, "settings" ) );
 		Assert.AreEqual( "played on", File.ReadAllText( Path.Combine( fallback, "park1.otpw" ) ) );
+		Assert.IsFalse( File.Exists( Path.Combine( fallback, "autosave", "jungle.otpw" ) ) );
 	}
 
 	[TestMethod]

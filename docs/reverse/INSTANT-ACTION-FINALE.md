@@ -27,6 +27,11 @@ also changes profile state and, in Instant Action, shows UITEXT 471; those steps
 - The fixed settings name, not a localized display name or hard-coded Info.Id, selects it.
 - Existing live objects are reused. A missing definition changes nothing.
 - Placement uses the existing fixed-object origin and ordinary seed/thing allocators; no purchase occurs.
+- `0x516B00` constructs End with the common object constructor `0x004DB090` (called at `0x516B8B`), which
+  counts the type and stamps its first-purchase turn for every object. End therefore gets an uncharged
+  economy record when it is made, like the fixed items at the park's start (`Level.BindFixedItemMadeInPlay`);
+  nothing is charged, since End's price is 0. Its dismissal removes it like any object, which sells the record
+  for its scrap value of 0.
 - The economy's bank predicate follows the live object and is rebound when the economy is replaced.
 - Startup/load only binds that predicate. Completed research alone never triggers creation.
 - A restored live End is dismissible through the same screen without a second allocation.

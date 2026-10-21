@@ -12,6 +12,5 @@ area was left in view for the water ride.
 The coaster site test now only reads the view it judges, and the track and bumper phases take a free site the view shows or else scroll to
 the free site nearest the view's centre. The water and kart phases also expect the exit and entry tiles that the station placement lays free
 of charge since #739 (`0x5253E9`): before any line those are the only track tiles, and the three lines lay the other six of the ten-tile loop.
-The with-data `TrackEditRecoveryDataTests` still expected a line's undo to refund the station exit tile; since #739 the clear spares it, as
-its no-data twin already expects (`0x7639E0/E4`, `0x53B47C`, `0x53B54A`), so the undo refunds the line's other two tiles. All five native
+(The matching with-data `TrackEditRecoveryDataTests` expectation was fixed separately in #744.) All five native
 smokes pass; no simulation code changed.

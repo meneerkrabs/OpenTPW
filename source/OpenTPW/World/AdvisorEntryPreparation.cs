@@ -97,6 +97,10 @@ internal static class AdvisorEntryPreparation
 	{
 		if ( globalRig )
 		{
+			// the advisor shader's program, then the model, each a long step in a frame of its own; the shader is only a head start
+			yield return false;
+			try { AdvisorRig.WarmShader(); }
+			catch ( Exception exception ) when ( exception is not OutOfMemoryException ) { }
 			yield return false;
 			Prepare( GlobalRigKey, fileSystem, () => AdvisorRig.LoadGlobalModel() );
 			yield return true;

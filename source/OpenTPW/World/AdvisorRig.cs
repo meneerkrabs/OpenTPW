@@ -86,6 +86,12 @@ internal sealed class AdvisorRig : IDisposable
 	public static AdvisorRig LoadGlobal() =>
 		AdvisorEntryPreparation.TryTake<AdvisorRig>( AdvisorEntryPreparation.GlobalRigKey, FileSystem, out var prepared ) && prepared != null ? prepared : LoadGlobalModel();
 
+	/// <summary>
+	/// Makes a material of the advisor's shader and releases it: the GL program of that shader, which the browser's renderer keeps for later materials,
+	/// is then compiled in a build step of its own instead of inside the long step that reads the advisor's model (docs/BROWSER-PERFORMANCE.md, "Build steps").
+	/// </summary>
+	internal static void WarmShader() => new Material<ObjectUniformBuffer>( "content/shaders/advisor.shader", MeshMaterialFlags ).ReleaseOwnedResources();
+
 	/// <summary>Reads the global advisor's model.</summary>
 	internal static AdvisorRig LoadGlobalModel() => Load( Advisor.ArchivePath, "Advisor.MD2", "", required: true )!;
 

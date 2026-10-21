@@ -103,23 +103,42 @@ public sealed class ParkEconomyRuntime
 	/// </summary>
 	/// <param name="seed">The park's world seed; the economy stream is <see cref="WorldSeed.EconomyStream"/> (1 for the default seed).</param>
 	/// <param name="playerSave">The park starts from a player's own save (<see cref="Level"/>'s <c>playerSave</c>): Full Simulation rules, and the balance layer the save was made with (the standard one, else the easy one when the save's loan table matches only that).</param>
-	public static ParkEconomyRuntime ForOriginalLevel( OriginalPark park, ParkStartKind kind = ParkStartKind.OriginalSaveReference, WorldSeed? seed = null, bool playerSave = false )
+	public static ParkEconomyRuntime ForOriginalLevel( OriginalPark park, ParkStartKind kind = ParkStartKind.OriginalSaveReference, WorldSeed? seed = null, bool playerSave = false ) =>
+		ForOriginalLevelSteps( park, kind, seed, playerSave ).Last()!;
+
+	/// <summary>
+	/// <see cref="ForOriginalLevel"/> in steps, for a park built over frames (docs/BROWSER-PERFORMANCE.md, "Build steps"): null after the
+	/// settings and after each part of the catalogues (<see cref="ParkEconomy.CreateForThemeSteps"/>), then the economy, imported. A player's save is one step.
+	/// </summary>
+	internal static IEnumerable<ParkEconomyRuntime?> ForOriginalLevelSteps( OriginalPark park, ParkStartKind kind = ParkStartKind.OriginalSaveReference, WorldSeed? seed = null, bool playerSave = false )
 	{
 		ArgumentNullException.ThrowIfNull( park );
 		if ( playerSave )
-			return ForPlayerSave( park, seed );
+		{
+			yield return ForPlayerSave( park, seed );
+			yield break;
+		}
 		if ( park.Save != null && !ParkStart.ReadsShippedSave( kind ) )
 			throw new ArgumentException( $"A {kind} start does not use the shipped save; load the level without it.", nameof( park ) );
 		EconomyApproximations.LogOnce();
 		var start = ParkStart.Resolve( kind, park.Save != null, BalanceSettings.HasEasyLayer( park.LevelName ) );
 		var easy = start.EasyBalance;
-		var economy = ParkEconomy.CreateForTheme( park.LevelName, easy, start.Mode, (seed ?? WorldSeed.Default).EconomyStream );
+		ParkEconomy? createdEconomy = null;
+		foreach ( var created in ParkEconomy.CreateForThemeSteps( park.LevelName, easy, start.Mode, (seed ?? WorldSeed.Default).EconomyStream ) )
+		{
+			if ( created == null )
+				yield return null;
+			else
+				createdEconomy = created;
+		}
+		var economy = createdEconomy!;
+		yield return null;
 		var import = start.ImportShippedSave ? OriginalEconomyImport.Apply( economy, park, shippedSeed: true ) : null;
 		Log.Trace( $"Park economy: {kind} start, {start.Mode} rules; {park.LevelName} {(easy ? "easy" : "standard")} balance from {string.Join( ", ", economy.Settings.Standard.Sources )}; "
 			+ $"cash ${economy.Balance}, entrance fee ${economy.EntranceFee}, {economy.Catalog.Objects.Count} catalogue objects, {economy.Research.Items.Count} research items." );
 		foreach ( var line in import?.Evidence ?? Array.Empty<string>() )
 			Log.Trace( $"Park economy import: {line}" );
-		return new ParkEconomyRuntime( economy, import ) { Start = start };
+		yield return new ParkEconomyRuntime( economy, import ) { Start = start };
 	}
 
 	private static ParkEconomyRuntime ForPlayerSave( OriginalPark park, WorldSeed? seed )

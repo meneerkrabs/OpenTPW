@@ -105,6 +105,10 @@ public sealed partial class ParkCellMap
 	/// <summary>[EXT:pools-bridges] Optional elevated walking layer; underlying water stays unchanged.</summary>
 	public PoolBridgeWorld? PoolBridges { get; internal set; }
 	private readonly byte[] types;
+	// [EXT:coaster-marker-guard] Derived lease generations, not saved or hashed.
+	private readonly int[] coasterGenerations;
+	internal int CoasterGenerationAt( int x, int y ) => coasterGenerations[Index( x, y )];
+	internal int ClaimCoasterGeneration( int x, int y ) => ++coasterGenerations[Index( x, y )];
 	private readonly ushort[] flags;
 	private readonly short[] placements;
 	private readonly byte[] links;
@@ -122,6 +126,7 @@ public sealed partial class ParkCellMap
 		Width = width;
 		Height = height;
 		types = new byte[width * height];
+		coasterGenerations = new int[width * height];
 		Tracks = new TrackCellLayer( width, height );
 		flags = new ushort[width * height];
 		placements = new short[width * height];
@@ -534,6 +539,7 @@ public sealed partial class ParkCellMap
 	public void SetType( int x, int y, byte type )
 	{
 		var index = Index( x, y );
+		coasterGenerations[index]++;
 		if ( types[index] == ParkCellTypes.PoolWater || type == ParkCellTypes.PoolWater )
 			PoolWrites++;
 		// tp.exe's cell setter 0x5346D0 returns early for the same non-zero type only: clearing always stamps.

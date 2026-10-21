@@ -36,7 +36,9 @@ public enum CoasterPlaceResult
 	NotClosed,
 	/// <summary>Completion: a node is marked invalid (flag 0x4000).</summary>
 	InvalidNodes,
-	NotEnoughMoney
+	NotEnoughMoney,
+	/// <summary>The map tool gate refuses this cell before geometry, spending or mutation.</summary>
+	CellOccupied
 }
 
 /// <summary>Node flags (node <c>+8</c>).</summary>
@@ -207,7 +209,19 @@ public sealed class CoasterTrack
 	public int InsertIndex => CutAfter is int cut ? cut + 1 : nodes.Count;
 	public bool HasInvalidNodes => nodes.Any( node => (node.Flags & CoasterNodeFlags.Invalid) != 0 );
 	/// <summary>Incremented by every edit.</summary>
-	public int Version { get; private set; }
+	private int version;
+	public int Version { get => version; private set { version = value; CellMarkers?.Synchronize(); } }
+	internal CoasterCellMarkers? CellMarkers { get; private set; }
+	internal void BindCells( ParkCellMap cells, ushort owner, IEnumerable<(int X, int Y)>? stationEnds = null )
+	{
+		DetachCells();
+		CellMarkers = new CoasterCellMarkers( cells, this, owner, stationEnds );
+	}
+	internal void DetachCells()
+	{
+		CellMarkers?.Dispose();
+		CellMarkers = null;
+	}
 
 	/// <summary>
 	/// Sets the station ends and builds the station's three nodes (descriptor flag 2) from its model frame, removing any pylons: S0 a StdPylon node in the
@@ -353,6 +367,8 @@ public sealed class CoasterTrack
 		// [BIN:STP-PPC:0x10036BA4 placement validator] test 1: x < map width (+24) and y < map height (+28)
 		if ( x < 0 || y < 0 || x >= site.Width || y >= site.Height )
 			return CoasterPlaceResult.OutsideMap;
+		if ( CellMarkers?.AllowsPreview( x, y, moving != null ) == false )
+			return CoasterPlaceResult.CellOccupied;
 		if ( moving == null && site.IsBlocked( x, y ) )
 			return CoasterPlaceResult.Blocked;
 		var position = moving ?? InsertIndex;

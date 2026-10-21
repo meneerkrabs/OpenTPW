@@ -309,6 +309,8 @@ public partial class Level
 		RestoreCoastersSnapshot( snapshot.Coasters );
 		ValidateResumeBridgeCoasterGeometry( PoolBridges, Coasters );
 		RestoreTracksSnapshot( snapshot.Tracks );
+		// Rebuild only derived coaster tokens, after both primary and secondary layers exist.
+		BindCoasterCellsAfterLoad();
 		// [EXT:pools-slides] the slides go back over their towers and the pool cells the layout restored
 		PoolSlides?.RestoreSnapshot( snapshot.PoolSlides );
 		PoolSlides?.ValidateGuests( Guests.Guests );

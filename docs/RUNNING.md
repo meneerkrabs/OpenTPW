@@ -295,6 +295,32 @@ without that file, the object's display name split at the middle space. Mod and 
 each sign's `textSource` (`OBJECT_NAMES.str ids`, `OBJECT_NAMES.str gate row`, `Spanish.txt SIGNA/SIGNB`, ...) and marks bonus signs with
 `"bonus": true`; the bonus folder is protected like the game data. Without either option the output is the same as before.
 
+`--sign-texts <file>` draws chosen signs with other texts (for instance a translation table of another release), opt-in and only read.
+The file is UTF-8 JSON:
+
+```json
+{
+  "description": "optional free text",
+  "signs": [
+    { "theme": "jungle", "object": "gates", "lines": [ "El Reino", "Perdido" ] },
+    { "theme": "jungle", "object": "totem", "name": "El Tótem Inca" },
+    { "theme": "jungle", "object": "_dizzyd_8", "name": "Dinos Mareados" },
+    { "theme": "lobby", "object": "jun_isle", "lines": [ "El Reino", "Perdido" ] }
+  ]
+}
+```
+
+Only `description` (a string) and `signs` (an array) are allowed at the top. Each entry names one sign by `theme` and `object`, exactly as
+`index.json` does (`jungle`, `hallow`, `fantasy`, `space` or `lobby`; the archive name such as `totem`, `gates` for each theme's park gate,
+`_dizzyd_8` for a bonus ride, which needs `--bonus-data`; the lobby model such as `jun_isle`), matched without regard to case, and gives
+exactly one of `lines` (two strings, drawn as they are; either may be empty) or `name` (one string, trimmed and split at the space nearest
+its middle, the rule the game uses for a sign that has only a display name; a name without a space is one line). No other member is
+allowed; a key listed twice, a text with a control character (a line break is given as two lines) or a file over 4 MiB is an error, and
+so is a key that names no exported sign (all such keys are listed) before anything is written. Signs the file does not name keep their
+text. A named sign is composed again from its own `.sgn` by the game's composer; its `index.json` entry has `textSource`
+`"override (<file name>)"` and keeps the game's own text in `originalText`, `originalLine1`, `originalLine2` and `originalTextSource`
+(`stringIds` and `strings` stay those of the game's text).
+
 ## Movies
 
 Export a single decoded TGQ video frame without game assets, a window or audio:

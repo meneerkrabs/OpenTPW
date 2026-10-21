@@ -12,10 +12,12 @@ public class HeadPresentationTests
 
 	private static Matrix4x4 At( Matrix4x4 rotation ) => rotation * Matrix4x4.CreateTranslation( Anchor );
 
+	private static Matrix4x4 CameraAt( System.Numerics.Vector3 position ) => Matrix4x4.CreateTranslation( position );
+
 	[TestMethod]
 	public void CameraStraightOverheadIsFrameZeroAtTheAnchor()
 	{
-		var placement = HeadPresentation.Compute( At( Matrix4x4.Identity ), 0, Anchor + new System.Numerics.Vector3( 0, 50, 0 ) );
+		var placement = HeadPresentation.Compute( At( Matrix4x4.Identity ), 0, CameraAt( Anchor + new System.Numerics.Vector3( 0, 50, 0 ) ) );
 		Assert.IsTrue( placement.Visible );
 		Assert.AreEqual( 0, placement.Frame );
 		Assert.AreEqual( Anchor, placement.Anchor );
@@ -31,7 +33,7 @@ public class HeadPresentationTests
 		{
 			var azimuth = MathF.PI / 2 + column * MathF.PI / 4;
 			var camera = Anchor + new System.Numerics.Vector3( MathF.Cos( azimuth ), 0, MathF.Sin( azimuth ) ) * 20;
-			var placement = HeadPresentation.Compute( At( Matrix4x4.Identity ), 0, camera );
+			var placement = HeadPresentation.Compute( At( Matrix4x4.Identity ), 0, CameraAt( camera ) );
 			Assert.AreEqual( 3, placement.Row );
 			Assert.AreEqual( column, placement.Column );
 			Assert.AreEqual( 24 + column, placement.Frame );
@@ -41,7 +43,7 @@ public class HeadPresentationTests
 		{
 			var elevation = row * MathF.PI / 6;
 			var camera = Anchor + new System.Numerics.Vector3( MathF.Sin( elevation ), MathF.Cos( elevation ), 0 ) * 20;
-			Assert.AreEqual( row, HeadPresentation.Compute( At( Matrix4x4.Identity ), 0, camera ).Row );
+			Assert.AreEqual( row, HeadPresentation.Compute( At( Matrix4x4.Identity ), 0, CameraAt( camera ) ).Row );
 		}
 	}
 
@@ -79,10 +81,10 @@ public class HeadPresentationTests
 	[TestMethod]
 	public void ColumnIsForcedToZeroAtTheFirstAndLastRows()
 	{
-		var below = HeadPresentation.Compute( At( Matrix4x4.Identity ), 0, Anchor + new System.Numerics.Vector3( 0.01f, -50, 0.01f ) );
+		var below = HeadPresentation.Compute( At( Matrix4x4.Identity ), 0, CameraAt( Anchor + new System.Numerics.Vector3( 0.01f, -50, 0.01f ) ) );
 		Assert.AreEqual( 6, below.Row );
 		Assert.AreEqual( 0, below.Column );
-		var nearPole = HeadPresentation.Compute( At( Matrix4x4.Identity ), 0, Anchor + new System.Numerics.Vector3( 0.5f, 50, 0.5f ) );
+		var nearPole = HeadPresentation.Compute( At( Matrix4x4.Identity ), 0, CameraAt( Anchor + new System.Numerics.Vector3( 0.5f, 50, 0.5f ) ) );
 		Assert.AreEqual( 0, nearPole.Row );
 		Assert.AreEqual( 0, nearPole.Column );
 	}
@@ -90,12 +92,12 @@ public class HeadPresentationTests
 	[TestMethod]
 	public void NinetyDegreeBankRollsAQuarterTurn()
 	{
-		// The node's up axis leans from +Y to -X: atan2(-m10, m11) = atan2(1, 0).
+		// The camera-to-node matrix contains the inverse bank; the selected horizon frame has identity basis.
 		var bank = Matrix4x4.CreateRotationZ( MathF.PI / 2 );
-		var placement = HeadPresentation.Compute( At( bank ), 0, Anchor + new System.Numerics.Vector3( 0, 0, 20 ) );
-		Assert.AreEqual( 0.25f, placement.Roll, 1e-5f );
-		var other = HeadPresentation.Compute( At( Matrix4x4.CreateRotationZ( -MathF.PI / 2 ) ), 0, Anchor + new System.Numerics.Vector3( 0, 0, 20 ) );
-		Assert.AreEqual( -0.25f, other.Roll, 1e-5f );
+		var placement = HeadPresentation.Compute( At( bank ), 0, CameraAt( Anchor + new System.Numerics.Vector3( 0, 0, 20 ) ) );
+		Assert.AreEqual( -0.25f, placement.Roll, 1e-5f );
+		var other = HeadPresentation.Compute( At( Matrix4x4.CreateRotationZ( -MathF.PI / 2 ) ), 0, CameraAt( Anchor + new System.Numerics.Vector3( 0, 0, 20 ) ) );
+		Assert.AreEqual( 0.25f, other.Roll, 1e-5f );
 	}
 
 	[TestMethod]
@@ -103,7 +105,7 @@ public class HeadPresentationTests
 	{
 		// A node banked 90 degrees about Z sees a camera overhead in the world as on its side.
 		var bank = Matrix4x4.CreateRotationZ( MathF.PI / 2 );
-		var placement = HeadPresentation.Compute( At( bank ), 0, Anchor + new System.Numerics.Vector3( 0, 50, 0 ) );
+		var placement = HeadPresentation.Compute( At( bank ), 0, CameraAt( Anchor + new System.Numerics.Vector3( 0, 50, 0 ) ) );
 		Assert.AreEqual( 3, placement.Row );
 	}
 
@@ -111,16 +113,16 @@ public class HeadPresentationTests
 	public void UniformScaleOfTheMatrixDoesNotChangeTheBinning()
 	{
 		var scaled = Matrix4x4.CreateScale( 0.2f ) * Matrix4x4.CreateRotationZ( MathF.PI / 2 );
-		var placement = HeadPresentation.Compute( At( scaled ), 0, Anchor + new System.Numerics.Vector3( 0, 0, 20 ) );
-		Assert.AreEqual( 0.25f, placement.Roll, 1e-5f );
+		var placement = HeadPresentation.Compute( At( scaled ), 0, CameraAt( Anchor + new System.Numerics.Vector3( 0, 0, 20 ) ) );
+		Assert.AreEqual( -0.25f, placement.Roll, 1e-5f );
 	}
 
 	[TestMethod]
 	public void MirroredNodeNegatesRowsZeroAndTwo()
 	{
 		var camera = Anchor + new System.Numerics.Vector3( 10, 10, 10 );
-		var plain = HeadPresentation.Compute( At( Matrix4x4.Identity ), 0, camera );
-		var mirrored = HeadPresentation.Compute( At( Matrix4x4.Identity ), HeadPresentation.MirroredFlag, camera );
+		var plain = HeadPresentation.Compute( At( Matrix4x4.Identity ), 0, CameraAt( camera ) );
+		var mirrored = HeadPresentation.Compute( At( Matrix4x4.Identity ), HeadPresentation.MirroredFlag, CameraAt( camera ) );
 		Assert.AreNotEqual( plain.Frame, mirrored.Frame );
 		// Negating local X and Z turns azimuth by 180 degrees: 45 degrees becomes 225 degrees.
 		Assert.AreEqual( plain.Row, mirrored.Row );
@@ -131,7 +133,7 @@ public class HeadPresentationTests
 	[TestMethod]
 	public void HiddenNodeDrawsNoHead()
 	{
-		var placement = HeadPresentation.Compute( At( Matrix4x4.Identity ), HeadPresentation.HiddenFlag | HeadPresentation.MirroredFlag, Anchor + new System.Numerics.Vector3( 0, 50, 0 ) );
+		var placement = HeadPresentation.Compute( At( Matrix4x4.Identity ), HeadPresentation.HiddenFlag | HeadPresentation.MirroredFlag, CameraAt( Anchor + new System.Numerics.Vector3( 0, 50, 0 ) ) );
 		Assert.IsFalse( placement.Visible );
 		Assert.AreEqual( -1, placement.Frame );
 	}
@@ -139,7 +141,7 @@ public class HeadPresentationTests
 	[TestMethod]
 	public void SingularNodeFallsBackToFrameZero()
 	{
-		var placement = HeadPresentation.Compute( new Matrix4x4(), 0, new System.Numerics.Vector3( 1, 2, 3 ) );
+		var placement = HeadPresentation.Compute( new Matrix4x4(), 0, CameraAt( new System.Numerics.Vector3( 1, 2, 3 ) ) );
 		Assert.IsTrue( placement.Visible );
 		Assert.AreEqual( 0, placement.Frame );
 		Assert.AreEqual( 0f, placement.Roll );

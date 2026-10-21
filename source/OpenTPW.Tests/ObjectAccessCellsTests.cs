@@ -442,7 +442,7 @@ public class ObjectAccessCellsTests
 			var version = rig.Cells.Version;
 			Assert.AreEqual( OriginalPlacementResult.Occupied, rig.Objects.Check( entry, 10, 10, rotation ), "Station mode4 has no same-owner type21 exemption." );
 			Assert.AreEqual( version, rig.Cells.Version );
-			rig.Cells.SetType( bx, by, 0 );
+			rig.Cells.SetType( bx, by, ParkCellType.Empty );
 			rig.Cells.Tracks.Set( bx, by, new TrackCell { Type = 11 } );
 			Assert.AreEqual( OriginalPlacementResult.Occupied, rig.Objects.Check( entry, 10, 10, rotation ) );
 			var edgeX = dx < 0 ? 0 : dx > 0 ? ParkPlacement.TileCount - 1 : 10;

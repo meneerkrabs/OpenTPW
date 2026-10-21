@@ -133,6 +133,81 @@ public static partial class Mp2Decoder
 		return state.Finish( data.Length, playbackBytes );
 	}
 
+	/// <summary>
+	/// A decode that runs in slices of a time budget on the caller's own frames (the browser has no second thread, and a timer task per batch
+	/// delays the result by a timer tick each): the same PCM as <see cref="Decode(ReadOnlySpan{byte}, int?)"/>.
+	/// </summary>
+	public sealed class SlicedDecode
+	{
+		private readonly DecodeState state = new();
+		private readonly ReadOnlyMemory<byte> data;
+		private readonly int? playbackBytes;
+
+		public SlicedDecode( ReadOnlyMemory<byte> data, int? playbackBytes = null )
+		{
+			if ( data.Length > MaximumInputBytes )
+				throw new InvalidDataException( "MP2 stream exceeds the input byte limit." );
+			this.data = data;
+			this.playbackBytes = playbackBytes;
+		}
+
+		/// <summary>The decoded audio once <see cref="Run"/> has returned true.</summary>
+		public Mp2Audio? Result { get; private set; }
+
+		/// <summary>Decodes whole MPEG frames until <paramref name="budget"/> has passed (at least one); true once everything is decoded.</summary>
+		public bool Run( TimeSpan budget )
+		{
+			if ( Result != null )
+				return true;
+			var started = System.Diagnostics.Stopwatch.GetTimestamp();
+			while ( state.Process( data.Span, 1 ) )
+				if ( System.Diagnostics.Stopwatch.GetElapsedTime( started ) >= budget )
+					return false;
+			Result = state.Finish( data.Length, playbackBytes );
+			return true;
+		}
+	}
+
+	/// <summary>
+	/// The length <see cref="Decode(ReadOnlySpan{byte}, int?)"/> would give, from the frame headers alone (no PCM is made): the sample rate and
+	/// the sample frames kept. False for a stream the decoder would reject or that has no complete frame, so a caller falls back to decoding.
+	/// </summary>
+	public static bool TryMeasure( ReadOnlySpan<byte> data, int? playbackBytes, out int sampleRate, out int sampleFrames )
+	{
+		sampleRate = sampleFrames = 0;
+		if ( data.Length > MaximumInputBytes )
+			return false;
+		try
+		{
+			int offset = 0, frames = 0, rate = 0, channels = 0, layer = 0, emphasis = 0;
+			long samples = 0;
+			while ( data.Length - offset >= 4 )
+			{
+				var header = Header.Parse( data[offset..] );
+				if ( header.FrameBytes > data.Length - offset )
+					break;
+				if ( frames == 0 )
+					(rate, channels, layer, emphasis) = (header.SampleRate, header.Channels, header.Layer, header.Emphasis);
+				else if ( header.SampleRate != rate || header.Channels != channels || header.Layer != layer || header.Emphasis != emphasis )
+					return false;
+				samples += (long)(header.Layer == 1 ? LayerOneSamplesPerFrame : SamplesPerFrame) * channels;
+				offset += header.FrameBytes;
+				frames++;
+			}
+			if ( frames == 0 )
+				return false;
+			if ( playbackBytes is { } bytes && bytes >= 0 )
+				samples = Math.Min( samples, bytes / (2 * channels) * channels );
+			sampleRate = rate;
+			sampleFrames = (int)(samples / channels);
+			return true;
+		}
+		catch ( Exception exception ) when ( exception is InvalidDataException or NotSupportedException )
+		{
+			return false;
+		}
+	}
+
 	private sealed class DecodeState
 	{
 		private readonly List<short> output = new();

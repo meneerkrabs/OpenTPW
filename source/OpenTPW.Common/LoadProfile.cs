@@ -27,7 +27,7 @@ public static class LoadProfile
 	}
 
 	/// <summary>Starts a section; dispose it to record it. A no-op while recording is off.</summary>
-	public static Section Measure( string name ) => threadId == Environment.CurrentManagedThreadId ? new Section( name, Stopwatch.GetTimestamp(), excludedTicks ) : default;
+	public static Section Measure( string name ) => threadId == Environment.CurrentManagedThreadId || FrameMarks.Enabled ? new Section( name, Stopwatch.GetTimestamp(), excludedTicks ) : default;
 
 	/// <summary>The load stops for other work until <see cref="Resume"/>; open sections do not count that time.</summary>
 	public static void Pause()
@@ -64,10 +64,17 @@ public static class LoadProfile
 
 		public void Dispose()
 		{
-			if ( name == null || threadId != Environment.CurrentManagedThreadId )
+			if ( name == null )
 				return;
+			if ( threadId != Environment.CurrentManagedThreadId )
+			{
+				// only the per-frame marks are on (the browser event-hitch harness)
+				FrameMarks.Add( "load:" + name, Stopwatch.GetTimestamp() - start );
+				return;
+			}
 			var elapsed = Stopwatch.GetTimestamp() - start - (excludedTicks - excludedAtStart);
 			totals[name] = totals.TryGetValue( name, out var total ) ? (total.Ticks + elapsed, total.Count + 1) : (elapsed, 1);
+			FrameMarks.Add( "load:" + name, elapsed );
 		}
 	}
 }

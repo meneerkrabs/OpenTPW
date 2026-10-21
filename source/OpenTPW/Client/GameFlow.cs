@@ -502,12 +502,15 @@ internal sealed partial class GameFlow : IDisposable
 	// [BIN:TPW-EXE:0x4c8d30 crowd counter] the park loop (0x54e360) calls it with the camera cell, radius 4 (0x54f4ba) and counts the things whose type byte (+2) is 1 over the cell rectangle [x-4, x+4] x [y-4, y+4] clamped to 0..127 (0x4c8d43-0x4c8da5); the caller caps the count at 100 (0x54f89e) and sends 0 when the world state is 4 (setter 0x51e7b0): the same square as this Chebyshev test
 	public const int CrowdRadiusCells = 4;
 
-	private void TearDown( bool applyPendingLanguage = true )
+	/// <param name="keepAdvisorPreparation">The park being entered tears down the live one: what its build read for the advisor is kept for its first update.</param>
+	private void TearDown( bool applyPendingLanguage = true, bool keepAdvisorPreparation = false )
 	{
 		RequireProgressSaved();
 		FlushRestartSnapshot();
 		DetachProgress();
 		AbandonParkBuild();
+		if ( !keepAdvisorPreparation )
+			DropAdvisorPreparation();
 		presence?.Dispose();
 		presence = null;
 		Hud?.Stack.Clear();
@@ -618,7 +621,8 @@ internal sealed partial class GameFlow : IDisposable
 		if ( Level != null && Hud != null )
 		{
 			Hud.ObserveApplicationFocus( Window.Current?.Focused == true, Window.Current?.IsOffscreen != false, onlineSession?.IsLoggedIn == true );
-			Level.UiCapturesMouse = Hud.Update( Context, input ) || parkBuild != null;
+			using ( FrameMarks.Measure( "park.hud" ) )
+				Level.UiCapturesMouse = Hud.Update( Context, input ) || parkBuild != null;
 			// The camera reads the keyboard itself: while the next park is built it stays where it is, as under a modal window.
 			if ( parkBuild != null && Camera.Mode is ParkCameraMode parkCamera )
 				parkCamera.ModalOpen = true;
@@ -628,13 +632,22 @@ internal sealed partial class GameFlow : IDisposable
 			// The pause menu, the map window and a texture-pack download stop the park; the speed setting is kept (ParkHud.TimeScaleFor).
 			// The park being left waits too while the next one is built.
 			Level.SimulationTimeScale = parkBuild != null ? 0 : Hud.SimulationTimeScale;
-			Level.Update();
+			using ( FrameMarks.Measure( "park.level" ) )
+				Level.Update();
 			presence?.Update( Time.Delta );
-			Advisor?.Update( Hud.Paused, parkPaused: Level.SimulationTimeScale <= 0 );
-			UpdateAutosave( Level, Hud );
+			using ( FrameMarks.Measure( "park.advisor" ) )
+				Advisor?.Update( Hud.Paused, parkPaused: Level.SimulationTimeScale <= 0 );
+			// [EXT:park-entry-preparation] what the build prepared for the advisor and its first line is used by the update of the frame that entered the park; anything left is dropped
+			if ( parkBuild == null )
+				DropAdvisorPreparation();
+			using ( FrameMarks.Measure( "park.autosave" ) )
+				UpdateAutosave( Level, Hud );
 			var parkLost = Level.Park?.Economy.IsBankrupt == true;
-			GameAudio.Update( Level.Guests?.GetStatistics().InPark, parkLost );
-			ReverbSelector.Update( Level.RideView?.Ride );
+			using ( FrameMarks.Measure( "park.audio" ) )
+			{
+				GameAudio.Update( Level.Guests?.GetStatistics().InPark, parkLost );
+				ReverbSelector.Update( Level.RideView?.Ride );
+			}
 			// The game timer the steps follow stands still while the park is paused, as the advisor's clock does.
 			var crowdLevel = Level;
 			GameAudio.UpdateCrowd( Hud.Paused ? 0 : Time.Delta * 1000.0, () => GuestsNearCamera( crowdLevel ), parkLost );

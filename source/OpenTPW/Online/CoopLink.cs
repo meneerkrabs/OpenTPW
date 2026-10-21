@@ -106,8 +106,14 @@ public sealed class CoopLink
 
 	/// <summary>This game created a session (it hosts it) or joined one.</summary>
 	public event Action<CoopSessionState>? SessionStarted;
-	/// <summary>A lost socket is back and the session with it; a host resends its frames after the state's <see cref="CoopSessionState.LastFrameSeq"/>.</summary>
+	/// <summary>
+	/// A lost socket is back and the session with it; a host resends its frames after the state's <see cref="CoopSessionState.LastFrameSeq"/>. When that
+	/// number is not exact (<see cref="CoopSessionState.SeqKnown"/>: the server crashed), the server takes any later frame, and a guest drops the frames it
+	/// already holds.
+	/// </summary>
 	public event Action<CoopSessionState>? Resumed;
+	/// <summary>The server dropped a frame of the host's that was not the next one (no guest saw it); the host resends from <see cref="CoopFrameRefused.Expected"/>.</summary>
+	public event Action<CoopFrameRefused>? FrameRefused;
 	public event Action<CoopMemberChanged>? MemberChanged;
 	/// <summary>This game is no longer in its session: kicked, the host left, it expired while this game was away, or the link stopped.</summary>
 	public event Action<CoopEnded>? SessionEnded;
@@ -392,6 +398,9 @@ public sealed class CoopLink
 				break;
 			case CoopRelayed relayed when Session != null:
 				MessageReceived?.Invoke( relayed );
+				break;
+			case CoopFrameRefused refused when IsHost:
+				FrameRefused?.Invoke( refused );
 				break;
 			case CoopInvited invited:
 				Invited?.Invoke( invited );

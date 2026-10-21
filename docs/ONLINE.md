@@ -466,16 +466,21 @@ no screen or park uses it yet (C2b to C2d).
   (the game's player index; the host is 0).
 - **Order and resume.** Only the host sends frames, numbered; the server relays a frame only from the
   host's current connection and only when it follows the last one, so no guest ever misses one unseen.
-  A member whose connection drops stays a member; it resumes with its hello and hears the last frame
-  the host relayed, and a session ends when its host has been away ten minutes. A message to one member
-  is delivered at most once (C2b asks again after a resume).
+  A frame out of turn is dropped and the host told which one comes next. A member whose connection
+  drops stays a member; it resumes with its hello and hears the last frame the host relayed, and a
+  session ends when its host has been away ten minutes. A deploy stores that number exactly; after a
+  crash it may be behind, the welcome says so, and the host's next later frame sets it. A game whose
+  release or mods changed while it was away cannot resume: it leaves (a host's change ends the
+  session). A message to one member is delivered at most once (C2b asks again after a resume).
 - **Join snapshots** `[EXT:online-coop-snapshot-join]`. The host uploads the park a joiner starts from
   (`PUT /api/v1/coop/{id}/snapshot`, the answer names its SHA-256) and its members download it by
   digest (`GET …/snapshot/{sha256}`); the newest two are kept, and they go with the session.
-- **Limits.** Per connection a host may send far more than a guest; per account the server counts
-  sessions started, joins (and codes that matched no session), invitations, removals and downloads.
-  A slow reader is cut off (it resumes) instead of losing messages. [SERVER.md](SERVER.md) lists the
-  settings.
+- **Limits.** A host may send far more than a guest, and an account's limits carry over a reconnect;
+  per account the server counts sessions started, joins (and codes that matched no session),
+  invitations, removals and downloads from the start of a snapshot. A slow reader is cut off (it
+  resumes) instead of losing messages, and a connection whose login ends (a logout elsewhere, a ban, a
+  recovery) closes within a minute. Every text the server sends fits what a game reads.
+  [SERVER.md](SERVER.md) lists the settings.
 - **The game's link** (`CoopLink`, under the online login). It opens the co-op socket, says hello with
   the game's build (its informational version) and its simulation-changing mods in load order, the
   used-only extensions included, and keeps one random id per game process. A socket lost by a close

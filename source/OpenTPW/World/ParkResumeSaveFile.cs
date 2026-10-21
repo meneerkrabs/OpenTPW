@@ -141,7 +141,22 @@ internal static class ParkResumeSaveFile
 		ArgumentNullException.ThrowIfNull( catalog );
 		ArgumentNullException.ThrowIfNull( settings );
 		ArgumentNullException.ThrowIfNull( economyCatalog );
-		ValidateShape( snapshot );
+		foreach ( var _ in ValidateSnapshotSteps( snapshot, catalog, settings, economyCatalog, currentAssetHashes, activeMods ) ) { }
+	}
+
+	/// <summary>
+	/// [EXT:restart-snapshot-deferred-validation] <see cref="ValidateSnapshot"/> in steps: the same checks in the same order, with a pause between groups of them, so a caller
+	/// can spread them over frames (the restart snapshot's write, docs/BROWSER-PERFORMANCE.md "Event hitches"). The validation is complete, and has accepted the snapshot,
+	/// only when the enumeration ends; a refusal throws from the step that finds it.
+	/// </summary>
+	internal static IEnumerable<bool> ValidateSnapshotSteps( ParkResumeSnapshot snapshot, ObjectCatalog catalog, BalanceSettings settings,
+		IEconomyObjectCatalog economyCatalog, IReadOnlyDictionary<string, string> currentAssetHashes, ModSet? activeMods = null )
+	{
+		ArgumentNullException.ThrowIfNull( catalog );
+		ArgumentNullException.ThrowIfNull( settings );
+		ArgumentNullException.ThrowIfNull( economyCatalog );
+		foreach ( var step in ValidateShapeSteps( snapshot ) )
+			yield return step;
 		// [EXT:mods] the mods the park was saved with must be the ones that are active, before anything else is judged (docs/MODS.md)
 		ParkResumeMods.Require( snapshot.Mods, activeMods ?? OpenTpwExtensions.Active );
 		// [EXT:script-mods] the section exists exactly when a script mod is active (and so recorded), and names exactly those mods
@@ -152,7 +167,9 @@ internal static class ParkResumeSaveFile
 			if ( !condition )
 				throw new InvalidDataException( $"World save is inconsistent: {message}." );
 		}
+		yield return true;
 		ParkLayoutSnapshot.ValidateSnapshot( snapshot.Layout, catalog, activeMods );
+		yield return true;
 		Require( string.Equals( catalog.Theme, snapshot.Theme, StringComparison.OrdinalIgnoreCase ),
 			$"the object catalog is for theme '{catalog.Theme}', not the saved '{snapshot.Theme}'" );
 		Require( string.Equals( settings.Theme, snapshot.Theme, StringComparison.OrdinalIgnoreCase ) && settings.IsEasy == snapshot.Economy.Easy,
@@ -199,6 +216,7 @@ internal static class ParkResumeSaveFile
 				}
 			}
 		}
+		yield return true;
 		// Tracks: every live track ride (water or kart) must be saved with a controller of its template's type, and no controller may exceed its template's vehicle limit.
 		var liveTrackRides = new Dictionary<int, BumperTemplate>();
 		var raisedRides = new HashSet<int>();
@@ -230,6 +248,7 @@ internal static class ParkResumeSaveFile
 			Require( controller.Vehicles.Count <= limit, $"track controller {controller.AttractionId} holds {controller.Vehicles.Count} boats, above {limit}" );
 			Require( (controller.VehicleLimit != null) == raisedRides.Contains( controller.AttractionId ), $"track controller {controller.AttractionId}'s vehicle limit does not match its ride's raised flag" );
 		}
+		yield return true;
 		var instancesById = snapshot.Economy.Objects.ToDictionary( item => item.Id );
 		var bindingsByAttraction = snapshot.EconomyBindings.ToDictionary( binding => binding.AttractionId );
 		foreach ( var record in snapshot.Layout.Objects )
@@ -250,6 +269,7 @@ internal static class ParkResumeSaveFile
 			Require( economyCatalog.TryGet( prototypeObject.InfoId, out _ ),
 				$"the prototype's economy object {prototypeInstance} has Info.Id {prototypeObject.InfoId}, which the {settings.Theme} economy catalogue does not know" );
 		}
+		yield return true;
 		Require( currentAssetHashes != null && currentAssetHashes.Count > 0, "the current asset manifest is empty" );
 		RequireAssets( snapshot, catalog, currentAssetHashes! );
 	}
@@ -294,6 +314,13 @@ internal static class ParkResumeSaveFile
 	internal static void ValidateShape( ParkResumeSnapshot snapshot )
 	{
 		ArgumentNullException.ThrowIfNull( snapshot );
+		foreach ( var _ in ValidateShapeSteps( snapshot ) ) { }
+	}
+
+	/// <summary><see cref="ValidateShape"/> in steps (see <see cref="ValidateSnapshotSteps"/>): the same checks in the same order, complete only when the enumeration ends.</summary>
+	internal static IEnumerable<bool> ValidateShapeSteps( ParkResumeSnapshot snapshot )
+	{
+		ArgumentNullException.ThrowIfNull( snapshot );
 		void Require( bool condition, string message )
 		{
 			if ( !condition )
@@ -323,6 +350,7 @@ internal static class ParkResumeSaveFile
 		Require( snapshot.Economy.Objects != null, "the economy holds no object list" );
 		Require( snapshot.Economy.Staff != null && snapshot.Economy.Staff.Members != null, "the economy holds no staff list" );
 		ValidateInner( () => ParkSaveFile.Validate( snapshot.Economy ), "embedded economy" );
+		yield return true;
 		Require( snapshot.Layout != null, "the layout snapshot is missing" );
 		Require( snapshot.Guests != null, "the guest snapshot is missing" );
 		Require( snapshot.Scripts != null, "the script-world snapshot is missing" );
@@ -357,6 +385,7 @@ internal static class ParkResumeSaveFile
 		if ( ScriptModsSave.ShapeProblem( snapshot.ScriptMods, snapshot.Mods ) is { } scriptProblem )
 			Require( false, scriptProblem );
 		Require( snapshot.ScriptMods == null || snapshot.SmarterGuests != null, "the save has script mod state but no guest identity state (the SmarterGuests section)" );
+		yield return true;
 
 		// Layout: the pure identity and allocator rules (catalog resolution is ValidateSnapshot's).
 		var layout = snapshot.Layout!;
@@ -391,6 +420,7 @@ internal static class ParkResumeSaveFile
 			previousAttractionId = record.AttractionId;
 			Require( objectsByAttraction.TryAdd( record.AttractionId, record ), $"attraction {record.AttractionId} is placed twice" );
 		}
+		yield return true;
 
 		// Script world: its own graph validation, and the same attraction-id allocator as the layout.
 		foreach ( var script in snapshot.Scripts.Scripts! )
@@ -398,6 +428,7 @@ internal static class ParkResumeSaveFile
 		ValidateInner( snapshot.Scripts.ValidateSnapshot, "script world" );
 		Require( layout.NextAttractionId == snapshot.Scripts.NextAttractionId,
 			$"the layout's next attraction id {layout.NextAttractionId} is not the script world's {snapshot.Scripts.NextAttractionId}" );
+		yield return true;
 
 		// Runtimes: one per layout object, in order, with matching identity, and every world root a live object's.
 		Require( snapshot.Runtimes!.Count == layout.Objects.Count,
@@ -486,6 +517,7 @@ internal static class ParkResumeSaveFile
 		}
 		Require( claimedRoots.Count == worldRoots.Count,
 			$"the script world holds {worldRoots.Count} root scripts, but {claimedRoots.Count} live objects name one" );
+		yield return true;
 
 		// Economy associations: the direct exact mapping, never re-derived by first Info.Id match.
 		var instancesById = snapshot.Economy.Objects!.ToDictionary( item => item.Id );
@@ -519,11 +551,15 @@ internal static class ParkResumeSaveFile
 				$"the prototype's economy object {prototypeInstance} has Info.Id {prototypeObject.InfoId}, not the Inca Totem's {PrototypeRide.InfoId}" );
 		}
 
+		yield return true;
 		ValidateGuests( snapshot );
+		yield return true;
 		ValidateThings( snapshot );
+		yield return true;
 		ValidateCoasters( snapshot );
 		ValidateTracks( snapshot );
 		ValidateTours( snapshot );
+		yield return true;
 		// [EXT:pools-slides] the slides part: shape only (the rules need the towers, which the level checks while it restores)
 		if ( PoolBridgeWorld.ShapeProblem( snapshot.PoolBridges, snapshot.Mods ) is { } bridgeProblem )
 			throw new InvalidDataException( bridgeProblem );
@@ -551,6 +587,7 @@ internal static class ParkResumeSaveFile
 			Require( world.SoundSeed == snapshot.SoundSeed,
 				$"the economy's sound seed {world.SoundSeed} is not the envelope's {snapshot.SoundSeed}" );
 		}
+		yield return true;
 
 		// Optional parts: present means structurally valid; the destination park re-validates against its settings.
 		if ( snapshot.Particles != null )
@@ -628,6 +665,7 @@ internal static class ParkResumeSaveFile
 			Require( advisor.Controller != null, "the advisor snapshot has no controller state" );
 			Require( !advisor.SpeechWasActive, "the advisor was speaking when the park was saved; active speech cannot be restored" );
 		}
+		yield return true;
 
 		// Asset manifest: non-empty, bounded, and every digest a real SHA-256 hex string.
 		Require( snapshot.AssetHashes!.Count > 0, "the asset manifest is empty" );

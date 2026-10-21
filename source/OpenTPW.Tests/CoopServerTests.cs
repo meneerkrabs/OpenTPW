@@ -47,6 +47,8 @@ internal sealed class CoopTestClient : IAsyncDisposable
 	public string Name { get; }
 	public Guid Instance { get; }
 	public WebSocketState State => socket.State;
+	/// <summary>Messages that did not decode (the reader stops at the first).</summary>
+	public int Malformed { get; private set; }
 	/// <summary>The close status the server sent, once the socket closed; null for an abort.</summary>
 	public int? CloseStatus { get; private set; }
 
@@ -102,6 +104,10 @@ internal sealed class CoopTestClient : IAsyncDisposable
 				} while ( !result.EndOfMessage );
 				inbox.Writer.TryWrite( CoopMessage.Decode( buffer.AsSpan( 0, length ) ) );
 			}
+		}
+		catch ( InvalidDataException )
+		{
+			Malformed++;
 		}
 		catch ( Exception exception ) when ( exception is WebSocketException or OperationCanceledException or ObjectDisposedException )
 		{
@@ -299,7 +305,7 @@ public class CoopServerTests
 	[TestMethod]
 	public async Task AHostAndThreeGuestsShareFramesAndMessages()
 	{
-		await using var server = await Start();
+		var server = await Start();
 		await using var accounts = new Accounts();
 		try
 		{
@@ -355,6 +361,8 @@ public class CoopServerTests
 		}
 		finally
 		{
+			// stopped first: a server still at work writes into the folder being deleted
+			await server.DisposeAsync();
 			server.DeleteData();
 		}
 	}
@@ -362,7 +370,7 @@ public class CoopServerTests
 	[TestMethod]
 	public async Task AJoinIsRefusedWithItsReason()
 	{
-		await using var server = await Start();
+		var server = await Start();
 		await using var accounts = new Accounts();
 		try
 		{
@@ -395,6 +403,8 @@ public class CoopServerTests
 		}
 		finally
 		{
+			// stopped first: a server still at work writes into the folder being deleted
+			await server.DisposeAsync();
 			server.DeleteData();
 		}
 	}
@@ -402,7 +412,7 @@ public class CoopServerTests
 	[TestMethod]
 	public async Task OnlyTheHostSendsFramesAndTheyFollowEachOther()
 	{
-		await using var server = await Start();
+		var server = await Start();
 		await using var accounts = new Accounts();
 		try
 		{
@@ -422,13 +432,21 @@ public class CoopServerTests
 
 			await host.SendAsync( new CoopHostFrame( 1, Payload( 1 ) ) );
 			Assert.AreEqual( 1UL, (await first.NextAsync<CoopFrame>()).Seq );
-			// a gap would let a guest miss a frame unseen: the host's connection ends instead
+			// a gap would let a guest miss a frame unseen: the frame is dropped and the host told which one comes next, and so is a repeat
 			await host.SendAsync( new CoopHostFrame( 3, Payload( 3 ) ) );
-			Assert.AreEqual( CoopCloseStatus.ProtocolError, await host.ClosedAsync() );
-			Assert.AreEqual( CoopMemberState.Disconnected, (await first.NextAsync<CoopMemberChanged>()).State, "the guest sees the host go" );
+			Assert.AreEqual( 2UL, (await host.NextAsync<CoopFrameRefused>()).Expected );
+			await host.SendAsync( new CoopHostFrame( 1, Payload( 1 ) ) );
+			Assert.AreEqual( 2UL, (await host.NextAsync<CoopFrameRefused>()).Expected );
+			await host.SendAsync( new CoopHostFrame( 2, Payload( 2 ) ) );
+			await host.SendAsync( new CoopHostFrame( 3, Payload( 3 ) ) );
+			Assert.AreEqual( 2UL, (await first.NextAsync<CoopFrame>()).Seq, "the guest never saw the refused frames" );
+			Assert.AreEqual( 3UL, (await first.NextAsync<CoopFrame>()).Seq );
+			Assert.AreEqual( WebSocketState.Open, host.State );
 		}
 		finally
 		{
+			// stopped first: a server still at work writes into the folder being deleted
+			await server.DisposeAsync();
 			server.DeleteData();
 		}
 	}
@@ -436,7 +454,7 @@ public class CoopServerTests
 	[TestMethod]
 	public async Task GuestsLeaveTheHostKicksAndTheHostsLeaveEndsTheSession()
 	{
-		await using var server = await Start();
+		var server = await Start();
 		await using var accounts = new Accounts();
 		try
 		{
@@ -470,6 +488,8 @@ public class CoopServerTests
 		}
 		finally
 		{
+			// stopped first: a server still at work writes into the folder being deleted
+			await server.DisposeAsync();
 			server.DeleteData();
 		}
 	}
@@ -477,7 +497,7 @@ public class CoopServerTests
 	[TestMethod]
 	public async Task OneAccountHasOneCoopConnectionPerGame()
 	{
-		await using var server = await Start();
+		var server = await Start();
 		await using var accounts = new Accounts();
 		try
 		{
@@ -493,13 +513,21 @@ public class CoopServerTests
 			var (taken, _) = await CoopTestClient.ConnectAsync( server, account, takeOver: true );
 			Assert.AreEqual( CoopCloseStatus.Replaced, await desktop.ClosedAsync() );
 			Assert.IsFalse( CoopCloseStatus.IsResumable( CoopCloseStatus.Replaced ) );
-			// the same game reconnecting (a network change) replaces its old connection quietly
+			// the same game reconnecting (a network change) replaces its old connection quietly, with a close a game resumes after
 			var (again, _) = await CoopTestClient.ConnectAsync( server, account, instance: taken.Instance );
-			Assert.AreEqual( (int)WebSocketCloseStatus.NormalClosure, await taken.ClosedAsync() );
+			Assert.AreEqual( (int)WebSocketCloseStatus.EndpointUnavailable, await taken.ClosedAsync() );
+			Assert.IsTrue( CoopCloseStatus.IsResumable( (int)WebSocketCloseStatus.EndpointUnavailable ) );
 			Assert.AreEqual( WebSocketState.Open, again.State );
+			// a connection the server already dropped does not keep another game out
+			await again.SendRawAsync( new byte[] { 250 } );
+			Assert.AreEqual( CoopCloseStatus.ProtocolError, await again.ClosedAsync() );
+			var (other, otherWelcome) = await CoopTestClient.ConnectAsync( server, account );
+			Assert.AreEqual( WebSocketState.Open, other.State );
 		}
 		finally
 		{
+			// stopped first: a server still at work writes into the folder being deleted
+			await server.DisposeAsync();
 			server.DeleteData();
 		}
 	}
@@ -507,7 +535,7 @@ public class CoopServerTests
 	[TestMethod]
 	public async Task AGuestAndTheHostResumeAfterALostConnection()
 	{
-		await using var server = await Start();
+		var server = await Start();
 		await using var accounts = new Accounts();
 		try
 		{
@@ -558,6 +586,8 @@ public class CoopServerTests
 		}
 		finally
 		{
+			// stopped first: a server still at work writes into the folder being deleted
+			await server.DisposeAsync();
 			server.DeleteData();
 		}
 	}
@@ -565,7 +595,7 @@ public class CoopServerTests
 	[TestMethod]
 	public async Task AReplacedConnectionNeverRelaysAgain()
 	{
-		await using var server = await Start();
+		var server = await Start();
 		await using var accounts = new Accounts();
 		try
 		{
@@ -595,6 +625,8 @@ public class CoopServerTests
 		}
 		finally
 		{
+			// stopped first: a server still at work writes into the folder being deleted
+			await server.DisposeAsync();
 			server.DeleteData();
 		}
 	}
@@ -602,7 +634,7 @@ public class CoopServerTests
 	[TestMethod]
 	public async Task ASlowGuestIsCutOffAndResumes()
 	{
-		await using var server = await Start( options =>
+		var server = await Start( options =>
 		{
 			options.CoopOutboxBytes = 256 * 1024;
 			options.CoopHostBytesPerSecond = 64 * 1024 * 1024;
@@ -641,9 +673,13 @@ public class CoopServerTests
 			var (_, welcome) = await CoopTestClient.ConnectAsync( server, guestAccount, instance: guest.Instance,
 				resume: new CoopResume( created.Session.Id, joined.Session.You, 0 ) );
 			Assert.AreEqual( seq, welcome.Session!.LastFrameSeq, "it resumes knowing which frames to ask the host for" );
+			// the stalled reader is let go
+			await guest.DisposeAsync();
 		}
 		finally
 		{
+			// stopped first: a server still at work writes into the folder being deleted
+			await server.DisposeAsync();
 			server.DeleteData();
 		}
 	}
@@ -707,7 +743,7 @@ public class CoopServerTests
 	[TestMethod]
 	public async Task ASessionEndsWhenItsHostStaysAway()
 	{
-		await using var server = await Start();
+		var server = await Start();
 		await using var accounts = new Accounts();
 		try
 		{
@@ -725,6 +761,8 @@ public class CoopServerTests
 		}
 		finally
 		{
+			// stopped first: a server still at work writes into the folder being deleted
+			await server.DisposeAsync();
 			server.DeleteData();
 		}
 	}
@@ -732,7 +770,7 @@ public class CoopServerTests
 	[TestMethod]
 	public async Task TheOpenListShowsListedSessionsWithRoomAndAHost()
 	{
-		await using var server = await Start();
+		var server = await Start();
 		await using var accounts = new Accounts();
 		try
 		{
@@ -767,6 +805,8 @@ public class CoopServerTests
 		}
 		finally
 		{
+			// stopped first: a server still at work writes into the folder being deleted
+			await server.DisposeAsync();
 			server.DeleteData();
 		}
 	}
@@ -774,7 +814,7 @@ public class CoopServerTests
 	[TestMethod]
 	public async Task InvitationsReachPlayersWhoseGameIsOnline()
 	{
-		await using var server = await Start();
+		var server = await Start();
 		await using var accounts = new Accounts();
 		try
 		{
@@ -793,6 +833,8 @@ public class CoopServerTests
 		}
 		finally
 		{
+			// stopped first: a server still at work writes into the folder being deleted
+			await server.DisposeAsync();
 			server.DeleteData();
 		}
 	}
@@ -800,7 +842,7 @@ public class CoopServerTests
 	[TestMethod]
 	public async Task AccountDeletionEndsTheSessionItHosts()
 	{
-		await using var server = await Start();
+		var server = await Start();
 		await using var accounts = new Accounts();
 		try
 		{
@@ -815,6 +857,8 @@ public class CoopServerTests
 		}
 		finally
 		{
+			// stopped first: a server still at work writes into the folder being deleted
+			await server.DisposeAsync();
 			server.DeleteData();
 		}
 	}
@@ -822,7 +866,7 @@ public class CoopServerTests
 	[TestMethod]
 	public async Task TheSocketAcceptsTheBrowsersFirstFrameAndPingsWhenIdle()
 	{
-		await using var server = await Start( options => options.CoopPingInterval = TimeSpan.FromMilliseconds( 200 ) );
+		var server = await Start( options => options.CoopPingInterval = TimeSpan.FromMilliseconds( 200 ) );
 		await using var accounts = new Accounts();
 		try
 		{
@@ -842,6 +886,8 @@ public class CoopServerTests
 		}
 		finally
 		{
+			// stopped first: a server still at work writes into the folder being deleted
+			await server.DisposeAsync();
 			server.DeleteData();
 		}
 	}
@@ -849,7 +895,7 @@ public class CoopServerTests
 	[TestMethod]
 	public async Task TheJoinSnapshotIsTheHostsToUploadAndItsMembersToRead()
 	{
-		await using var server = await Start( options => options.MaximumCoopSnapshotBytes = 1024 * 1024 );
+		var server = await Start( options => options.MaximumCoopSnapshotBytes = 1024 * 1024 );
 		await using var accounts = new Accounts();
 		try
 		{
@@ -905,7 +951,465 @@ public class CoopServerTests
 		}
 		finally
 		{
+			// stopped first: a server still at work writes into the folder being deleted
+			await server.DisposeAsync();
 			server.DeleteData();
+		}
+	}
+
+	/// <summary>The co-op store's file format (<c>coop/sessions.json</c>).</summary>
+	private static readonly System.Text.Json.JsonSerializerOptions CoopFileOptions = new() { PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase };
+
+	/// <summary>Every message a connection received until it closed.</summary>
+	private static async Task<List<CoopMessage>> DrainAsync( CoopTestClient client )
+	{
+		var messages = new List<CoopMessage>();
+		while ( await client.ReceiveAsync() is { } message )
+			messages.Add( message );
+		return messages;
+	}
+
+	/// <summary>A server that lets a host stream as fast as a test sends.</summary>
+	private static Task<LoopbackServer> StartFast( Action<ServerOptions>? configure = null, string? directory = null ) => Start( options =>
+	{
+		options.CoopHostMessagesPerSecond = 100_000;
+		options.CoopHostBytesPerSecond = 512 * 1024 * 1024;
+		configure?.Invoke( options );
+	}, directory );
+
+	[TestMethod]
+	public async Task AFenceWhileFramesStreamNeverCorruptsWhatAGuestReads()
+	{
+		var server = await StartFast();
+		await using var accounts = new Accounts();
+		try
+		{
+			var (host, _) = await CoopTestClient.ConnectAsync( server, await accounts.Add( server, "Hostess" ) );
+			var created = await Create( host );
+			var guestAccount = await accounts.Add( server, "Guest" );
+			var (guest, _) = await CoopTestClient.ConnectAsync( server, guestAccount );
+			var guestId = (await Join( guest, created.Session.Code )).Session.You;
+			using var stop = new CancellationTokenSource();
+			var streaming = Task.Run( async () =>
+			{
+				for ( var seq = 1UL; !stop.IsCancellationRequested; seq++ )
+					await host.SendAsync( new CoopHostFrame( seq, Payload( (int)seq, 4096 ) ) );
+			} );
+			// the same game reconnects again and again while the frames stream: each old connection is fenced with frames still queued for it
+			var fenced = new List<CoopTestClient>();
+			var current = guest;
+			for ( var round = 0; round < 40; round++ )
+			{
+				await Task.Delay( 15 );
+				var (again, _) = await CoopTestClient.ConnectAsync( server, guestAccount, instance: guest.Instance, resume: new CoopResume( created.Session.Id, guestId, 0 ) );
+				fenced.Add( current );
+				current = again;
+			}
+			stop.Cancel();
+			await streaming;
+			foreach ( var connection in fenced )
+			{
+				var frames = (await DrainAsync( connection )).OfType<CoopFrame>().Select( frame => frame.Seq ).ToList();
+				Assert.AreEqual( 0, connection.Malformed, "every message a fenced connection read decodes" );
+				for ( var index = 1; index < frames.Count; index++ )
+					Assert.IsTrue( frames[index] > frames[index - 1], $"frames rise on one connection: {frames[index - 1]} then {frames[index]}" );
+			}
+		}
+		finally
+		{
+			// stopped first: a server still at work writes into the folder being deleted
+			await server.DisposeAsync();
+			server.DeleteData();
+		}
+	}
+
+	[TestMethod]
+	public async Task ARefusalThatListsManyModsStaysReadable()
+	{
+		var server = await Start();
+		await using var accounts = new Accounts();
+		try
+		{
+			var mods = Enumerable.Range( 0, 12 ).Select( index => new CoopMod( $"community.a-rather-long-mod-identifier-{index:D2}", "10.20.30", new string( 'd', 64 ) ) ).ToArray();
+			var (host, _) = await CoopTestClient.ConnectAsync( server, await accounts.Add( server, "Hostess" ), mods: mods );
+			var created = await Create( host );
+			var (guest, _) = await CoopTestClient.ConnectAsync( server, await accounts.Add( server, "Guest" ) );
+			var refusal = await Refused( guest, new CoopJoin( created.Session.Code ), CoopReason.ModsDiffer );
+			Assert.IsTrue( refusal.Text.Length <= CoopProtocol.MaximumReasonLength );
+			StringAssert.StartsWith( refusal.Text, "The host's mods differ from yours; you lack community.a-rather-long-mod-identifier-00 10.20.30" );
+			var (other, _) = await CoopTestClient.ConnectAsync( server, await accounts.Add( server, "Other" ), build: "9.9.9+" + new string( 'f', 120 ), mods: mods );
+			Assert.IsTrue( (await Refused( other, new CoopJoin( created.Session.Code ), CoopReason.BuildDiffers )).Text.Length <= CoopProtocol.MaximumReasonLength );
+			Assert.AreEqual( WebSocketState.Open, guest.State );
+		}
+		finally
+		{
+			await server.DisposeAsync();
+			server.DeleteData();
+		}
+	}
+
+	[TestMethod]
+	public async Task ARestartUnderTrafficStoresTheLastFrameEveryGuestHas()
+	{
+		await using var accounts = new Accounts();
+		for ( var run = 0; run < 3; run++ )
+		{
+			var directory = Path.Combine( Path.GetTempPath(), $"opentpw-server-{Guid.NewGuid():N}" );
+			try
+			{
+				var server = await StartFast( directory: directory );
+				var hostAccount = await accounts.Add( server, $"Hostess{run}" );
+				var guestAccount = await accounts.Add( server, $"Guest{run}" );
+				var (host, _) = await CoopTestClient.ConnectAsync( server, hostAccount );
+				var created = await Create( host );
+				var (guest, _) = await CoopTestClient.ConnectAsync( server, guestAccount );
+				var guestId = (await Join( guest, created.Session.Code )).Session.You;
+				var streaming = Task.Run( async () =>
+				{
+					try
+					{
+						for ( var seq = 1UL; ; seq++ )
+							await host.SendAsync( new CoopHostFrame( seq, Payload( (int)seq, 256 ) ) );
+					}
+					catch ( Exception exception ) when ( exception is WebSocketException or OperationCanceledException or ObjectDisposedException )
+					{
+					}
+				} );
+				var received = DrainAsync( guest );
+				await Task.Delay( 100 );
+				await server.DisposeAsync();
+				await streaming;
+				var last = (await received).OfType<CoopFrame>().Last().Seq;
+				Assert.AreEqual( CoopCloseStatus.Restarting, guest.CloseStatus );
+				await using var restarted = await StartFast( directory: directory );
+				var (_, welcome) = await CoopTestClient.ConnectAsync( restarted, hostAccount, instance: host.Instance,
+					resume: new CoopResume( created.Session.Id, created.Session.You, last ) );
+				Assert.IsTrue( welcome.Session!.SeqKnown, "a shutdown stores the position exactly" );
+				Assert.AreEqual( last, welcome.Session.LastFrameSeq, "the stored position is the last frame the guest has, so a resend from the next one repeats nothing" );
+			}
+			finally
+			{
+				if ( Directory.Exists( directory ) )
+					Directory.Delete( directory, true );
+			}
+		}
+	}
+
+	[TestMethod]
+	public async Task AHelloAfterTheLoginEndedIsRefused()
+	{
+		var server = await Start();
+		await using var accounts = new Accounts();
+		try
+		{
+			var account = await accounts.Add( server, "Leaver" );
+			var socket = await CoopTestClient.OpenAsync( server, account );
+			await account.DeleteAccountAsync( "Leaver", "correct horse" );
+			// someone registers the free name before the old socket says hello
+			var newcomer = await accounts.Add( server, "Leaver" );
+			await socket.SendAsync( new CoopHello( (ushort)CoopProtocol.Version, CoopTestClient.Build, Array.Empty<CoopMod>(), socket.Instance, false, null ) );
+			Assert.AreEqual( (int)WebSocketCloseStatus.PolicyViolation, await socket.ClosedAsync() );
+			var (fresh, welcome) = await CoopTestClient.ConnectAsync( server, newcomer );
+			Assert.IsNull( welcome.Session, "the new account is in no session" );
+		}
+		finally
+		{
+			await server.DisposeAsync();
+			server.DeleteData();
+		}
+	}
+
+	[TestMethod]
+	public async Task AResumeWithAnotherReleaseOrOtherModsEndsTheSessionForThatGame()
+	{
+		var server = await Start();
+		await using var accounts = new Accounts();
+		try
+		{
+			var hostAccount = await accounts.Add( server, "Hostess" );
+			var guestAccount = await accounts.Add( server, "Guest" );
+			var (host, _) = await CoopTestClient.ConnectAsync( server, hostAccount );
+			var created = await Create( host );
+			var (guest, _) = await CoopTestClient.ConnectAsync( server, guestAccount );
+			var guestId = (await Join( guest, created.Session.Code )).Session.You;
+			guest.Abort();
+			await host.NextAsync<CoopMemberChanged>( change => change.State == CoopMemberState.Disconnected );
+			var (_, guestWelcome) = await CoopTestClient.ConnectAsync( server, guestAccount, instance: guest.Instance,
+				resume: new CoopResume( created.Session.Id, guestId, 0 ), build: "2.0.0+other" );
+			Assert.IsNull( guestWelcome.Session );
+			Assert.AreEqual( CoopReason.BuildDiffers, guestWelcome.EndedWhileAway!.Reason );
+			Assert.AreEqual( CoopMemberState.Left, (await host.NextAsync<CoopMemberChanged>()).State, "the guest's seat is free again" );
+
+			// a host whose mods changed while away ends the session
+			var (second, _) = await CoopTestClient.ConnectAsync( server, await accounts.Add( server, "Second" ) );
+			await Join( second, created.Session.Code );
+			host.Abort();
+			await second.NextAsync<CoopMemberChanged>( change => change.State == CoopMemberState.Disconnected );
+			var (_, hostWelcome) = await CoopTestClient.ConnectAsync( server, hostAccount, instance: host.Instance,
+				resume: new CoopResume( created.Session.Id, created.Session.You, 0 ), mods: new[] { Pools } );
+			Assert.AreEqual( CoopReason.ModsDiffer, hostWelcome.EndedWhileAway!.Reason );
+			Assert.AreEqual( CoopReason.ModsDiffer, (await second.NextAsync<CoopEnded>()).Reason );
+		}
+		finally
+		{
+			await server.DisposeAsync();
+			server.DeleteData();
+		}
+	}
+
+	[TestMethod]
+	public async Task AHostThatNoLongerHoldsItsSessionIsAnsweredWhenItLeaves()
+	{
+		var server = await Start();
+		await using var accounts = new Accounts();
+		try
+		{
+			var hostAccount = await accounts.Add( server, "Hostess" );
+			var (host, _) = await CoopTestClient.ConnectAsync( server, hostAccount );
+			var created = await Create( host );
+			var (guest, _) = await CoopTestClient.ConnectAsync( server, await accounts.Add( server, "Guest" ) );
+			await Join( guest, created.Session.Code );
+			host.Abort();
+			await guest.NextAsync<CoopMemberChanged>( change => change.State == CoopMemberState.Disconnected );
+			// a restarted game: a new process, no resume; the server names the session and the game leaves it
+			var (restarted, welcome) = await CoopTestClient.ConnectAsync( server, hostAccount );
+			Assert.AreEqual( created.Session.Id, welcome.Session!.Id );
+			await restarted.SendAsync( new CoopLeave( "The game restarted." ) );
+			Assert.AreEqual( CoopReason.HostLeft, (await restarted.NextAsync<CoopEnded>()).Reason );
+			var ended = await guest.NextAsync<CoopEnded>();
+			Assert.AreEqual( (CoopReason.HostLeft, "The game restarted."), (ended.Reason, ended.Text) );
+		}
+		finally
+		{
+			await server.DisposeAsync();
+			server.DeleteData();
+		}
+	}
+
+	[TestMethod]
+	public async Task AfterACrashTheHostsNextLaterFrameSetsThePosition()
+	{
+		var directory = Path.Combine( Path.GetTempPath(), $"opentpw-server-{Guid.NewGuid():N}" );
+		await using var accounts = new Accounts();
+		try
+		{
+			OnlineClient hostAccount, guestAccount;
+			CoopCreated created;
+			uint guestId;
+			Guid hostInstance, guestInstance;
+			await using ( var server = await Start( directory: directory ) )
+			{
+				hostAccount = await accounts.Add( server, "Hostess" );
+				guestAccount = await accounts.Add( server, "Guest" );
+				var (host, _) = await CoopTestClient.ConnectAsync( server, hostAccount );
+				created = await Create( host );
+				var (guest, _) = await CoopTestClient.ConnectAsync( server, guestAccount );
+				guestId = (await Join( guest, created.Session.Code )).Session.You;
+				for ( var seq = 1UL; seq <= 3; seq++ )
+					await host.SendAsync( new CoopHostFrame( seq, Payload( (int)seq ) ) );
+				for ( var seq = 1UL; seq <= 3; seq++ )
+					await guest.NextAsync<CoopFrame>();
+				hostInstance = host.Instance;
+				guestInstance = guest.Instance;
+			}
+			// a crash: the file holds the position of the last membership change, not the frames since
+			var file = Path.Combine( directory, "coop", "sessions.json" );
+			var records = System.Text.Json.JsonSerializer.Deserialize<List<CoopSessionRecord>>( File.ReadAllBytes( file ), CoopFileOptions )!;
+			File.WriteAllBytes( file, System.Text.Json.JsonSerializer.SerializeToUtf8Bytes( records.Select( record => record with { LastFrameSeq = 1, SeqExact = false } ).ToList(), CoopFileOptions ) );
+			await using var restarted = await Start( directory: directory );
+			var (hostAgain, welcome) = await CoopTestClient.ConnectAsync( restarted, hostAccount, instance: hostInstance,
+				resume: new CoopResume( created.Session.Id, created.Session.You, 3 ) );
+			Assert.IsFalse( welcome.Session!.SeqKnown );
+			Assert.AreEqual( 1UL, welcome.Session.LastFrameSeq );
+			var (guestAgain, _) = await CoopTestClient.ConnectAsync( restarted, guestAccount, instance: guestInstance, resume: new CoopResume( created.Session.Id, guestId, 3 ) );
+			await hostAgain.SendAsync( new CoopHostFrame( 1, Payload( 1 ) ) );
+			Assert.AreEqual( 2UL, (await hostAgain.NextAsync<CoopFrameRefused>()).Expected, "not a frame the server relayed already" );
+			// any later number sets the position: the host goes on from its own last frame, and a guest drops what it has
+			await hostAgain.SendAsync( new CoopHostFrame( 4, Payload( 4 ) ) );
+			Assert.AreEqual( 4UL, (await guestAgain.NextAsync<CoopFrame>()).Seq );
+			await hostAgain.SendAsync( new CoopHostFrame( 6, Payload( 6 ) ) );
+			Assert.AreEqual( 5UL, (await hostAgain.NextAsync<CoopFrameRefused>()).Expected, "then frames follow each other again" );
+		}
+		finally
+		{
+			if ( Directory.Exists( directory ) )
+				Directory.Delete( directory, true );
+		}
+	}
+
+	[TestMethod]
+	public async Task RatesAndQuotasAreKept()
+	{
+		var server = await Start( options =>
+		{
+			options.CoopGuestMessagesPerSecond = 5;
+			options.CoopCreatesPerHour = 2;
+		} );
+		await using var accounts = new Accounts();
+		try
+		{
+			var (host, _) = await CoopTestClient.ConnectAsync( server, await accounts.Add( server, "Hostess" ) );
+			var created = await Create( host );
+			await host.SendAsync( new CoopLeave( "" ) );
+			await host.NextAsync<CoopEnded>();
+			await Create( host );
+			await host.SendAsync( new CoopLeave( "" ) );
+			await host.NextAsync<CoopEnded>();
+			await Refused( host, new CoopCreate( false, "Third park", 2 ), CoopReason.Rate );
+
+			// a guest sending faster than its bucket refills is closed, and resumes after the rate close's wait
+			var (guest, _) = await CoopTestClient.ConnectAsync( server, await accounts.Add( server, "Guest" ) );
+			for ( var index = 0; index < 30 && guest.State == WebSocketState.Open; index++ )
+			{
+				try { await guest.SendAsync( new CoopPong() ); }
+				catch ( WebSocketException ) { }
+			}
+			Assert.AreEqual( CoopCloseStatus.Rate, await guest.ClosedAsync() );
+			Assert.IsTrue( CoopCloseStatus.IsResumable( CoopCloseStatus.Rate ) );
+		}
+		finally
+		{
+			await server.DisposeAsync();
+			server.DeleteData();
+		}
+	}
+
+	[TestMethod]
+	public async Task AMemberKickedWhileAwayHearsWhyWhenItResumes()
+	{
+		var server = await Start();
+		await using var accounts = new Accounts();
+		try
+		{
+			var (host, _) = await CoopTestClient.ConnectAsync( server, await accounts.Add( server, "Hostess" ) );
+			var created = await Create( host );
+			var guestAccount = await accounts.Add( server, "Guest" );
+			var (guest, _) = await CoopTestClient.ConnectAsync( server, guestAccount );
+			var guestId = (await Join( guest, created.Session.Code )).Session.You;
+			guest.Abort();
+			await host.NextAsync<CoopMemberChanged>( change => change.State == CoopMemberState.Disconnected );
+			await host.SendAsync( new CoopKick( guestId ) );
+			await host.NextAsync<CoopMemberChanged>( change => change.State == CoopMemberState.Kicked );
+			var (_, welcome) = await CoopTestClient.ConnectAsync( server, guestAccount, instance: guest.Instance, resume: new CoopResume( created.Session.Id, guestId, 0 ) );
+			Assert.IsNull( welcome.Session );
+			Assert.AreEqual( CoopReason.Kicked, welcome.EndedWhileAway!.Reason );
+		}
+		finally
+		{
+			await server.DisposeAsync();
+			server.DeleteData();
+		}
+	}
+
+	/// <summary>A request body that sends its first bytes, then waits until <see cref="Release"/> (an upload in flight).</summary>
+	private sealed class HeldContent( byte[] body ) : HttpContent
+	{
+		private readonly TaskCompletionSource release = new( TaskCreationOptions.RunContinuationsAsynchronously );
+		public readonly TaskCompletionSource Started = new( TaskCreationOptions.RunContinuationsAsynchronously );
+
+		public void Release() => release.TrySetResult();
+
+		protected override async Task SerializeToStreamAsync( Stream stream, System.Net.TransportContext? context )
+		{
+			await stream.WriteAsync( body.AsMemory( 0, 1024 ) );
+			await stream.FlushAsync();
+			Started.TrySetResult();
+			await release.Task;
+			await stream.WriteAsync( body.AsMemory( 1024 ) );
+		}
+
+		protected override bool TryComputeLength( out long length )
+		{
+			length = body.Length;
+			return true;
+		}
+	}
+
+	[TestMethod]
+	public async Task SnapshotUploadsInFlightCountAgainstTheStoreAndDownloadsResume()
+	{
+		const int Megabyte = 1024 * 1024;
+		var server = await Start( options =>
+		{
+			options.MaximumCoopSnapshotBytes = Megabyte;
+			options.MaximumCoopStoreBytes = Megabyte * 3 / 2;
+		} );
+		await using var accounts = new Accounts();
+		try
+		{
+			HttpClient As( OnlineClient account )
+			{
+				var http = new HttpClient();
+				http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue( "Bearer", account.Session!.Token );
+				return http;
+			}
+			async Task<(OnlineClient Host, OnlineClient Guest, string Route)> Share( string name )
+			{
+				var hostAccount = await accounts.Add( server, name + "Host" );
+				var guestAccount = await accounts.Add( server, name + "Guest" );
+				var (host, _) = await CoopTestClient.ConnectAsync( server, hostAccount );
+				var created = await Create( host );
+				var (guest, _) = await CoopTestClient.ConnectAsync( server, guestAccount );
+				await Join( guest, created.Session.Code );
+				return (hostAccount, guestAccount, ApiRoutes.CoopSnapshot( created.Session.Id ).TrimStart( '/' ));
+			}
+			var (firstHost, firstGuest, firstRoute) = await Share( "First" );
+			var (secondHost, _, secondRoute) = await Share( "Second" );
+			var body = RandomNumberGenerator.GetBytes( 600 * 1024 );
+			using var held = new HeldContent( body );
+			using var firstHttp = As( firstHost );
+			var inFlight = firstHttp.PutAsync( new Uri( server.Url, firstRoute ), held );
+			await held.Started.Task;
+			using ( var secondHttp = As( secondHost ) )
+				Assert.AreEqual( HttpStatusCode.InsufficientStorage, (await secondHttp.PutAsync( new Uri( server.Url, secondRoute ), new ByteArrayContent( new byte[1000] ) )).StatusCode,
+					"the upload in flight holds its room" );
+			held.Release();
+			var stored = await inFlight;
+			Assert.AreEqual( HttpStatusCode.OK, stored.StatusCode );
+			var sha = StrictJson.Deserialize<CoopSnapshotStored>( await stored.Content.ReadAsByteArrayAsync(), "snapshot" ).Sha256;
+
+			// a download resumes with a range, which counts against no quota; the digest is the entity tag
+			using var guestHttp = As( firstGuest );
+			using var request = new HttpRequestMessage( HttpMethod.Get, new Uri( server.Url, firstRoute + "/" + sha ) );
+			request.Headers.Range = new RangeHeaderValue( 1000, null );
+			using var partial = await guestHttp.SendAsync( request );
+			Assert.AreEqual( HttpStatusCode.PartialContent, partial.StatusCode );
+			CollectionAssert.AreEqual( body.AsSpan( 1000 ).ToArray(), await partial.Content.ReadAsByteArrayAsync() );
+			Assert.AreEqual( $"\"{sha}\"", partial.Headers.ETag?.Tag );
+			Assert.AreEqual( HttpStatusCode.NotFound, (await guestHttp.GetAsync( new Uri( server.Url, firstRoute + "/" + new string( 'e', 64 ) ) )).StatusCode );
+		}
+		finally
+		{
+			await server.DisposeAsync();
+			server.DeleteData();
+		}
+	}
+
+	[TestMethod]
+	public void AStartSweepsTheSnapshotsOfSessionsThatAreGone()
+	{
+		var directory = Path.Combine( Path.GetTempPath(), $"opentpw-server-{Guid.NewGuid():N}" );
+		try
+		{
+			var live = new CoopSessionRecord( "0123456789abcdef", "ABCDEF", "Park", false, 2, CoopTestClient.Build, Array.Empty<CoopMod>(), 1, 2, 0,
+				new[] { new CoopMemberRecord( 1, 0, "hostess", "Hostess" ) }, Array.Empty<string>() );
+			var blobs = Path.Combine( directory, "coop", "blobs" );
+			Directory.CreateDirectory( Path.Combine( blobs, live.Id ) );
+			Directory.CreateDirectory( Path.Combine( blobs, "fedcba9876543210" ) );
+			File.WriteAllBytes( Path.Combine( blobs, live.Id, new string( 'a', 64 ) ), new byte[] { 1 } );
+			File.WriteAllBytes( Path.Combine( blobs, live.Id, "half.tmp" ), new byte[] { 1 } );
+			File.WriteAllBytes( Path.Combine( blobs, "fedcba9876543210", new string( 'b', 64 ) ), new byte[] { 1 } );
+			File.WriteAllBytes( Path.Combine( directory, "coop", "sessions.json" ), System.Text.Json.JsonSerializer.SerializeToUtf8Bytes( new[] { live }, CoopFileOptions ) );
+			var store = new CoopStore( directory );
+			store.SweepOrphans( store.Load().Select( record => record.Id ).ToHashSet() );
+			Assert.IsTrue( File.Exists( Path.Combine( blobs, live.Id, new string( 'a', 64 ) ) ), "a live session's snapshot stays" );
+			Assert.IsFalse( File.Exists( Path.Combine( blobs, live.Id, "half.tmp" ) ), "an unfinished upload goes" );
+			Assert.IsFalse( Directory.Exists( Path.Combine( blobs, "fedcba9876543210" ) ), "a gone session's folder goes" );
+		}
+		finally
+		{
+			if ( Directory.Exists( directory ) )
+				Directory.Delete( directory, true );
 		}
 	}
 }

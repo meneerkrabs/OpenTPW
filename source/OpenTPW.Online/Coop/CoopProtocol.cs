@@ -22,7 +22,10 @@ public static class CoopProtocol
 	public const int MaximumReasonLength = 256;
 	/// <summary>A name as typed in an invitation; the server answers an unknown or invalid one as not online.</summary>
 	public const int MaximumInviteNameLength = 64;
-	public const int MaximumMods = 64;
+	/// <summary>A code as typed in a join, before <see cref="NormalizeCode"/> drops its spaces and dashes.</summary>
+	public const int MaximumTypedCodeLength = 32;
+	/// <summary>Simulation-changing mods a hello lists at most: as many as a save records (<c>ParkResumeMods.MaximumRecords</c>).</summary>
+	public const int MaximumMods = 256;
 	public const int MaximumModIdLength = 64;
 	public const int MaximumModVersionLength = 32;
 	/// <summary>A session's id: 16 lowercase hexadecimal digits.</summary>
@@ -52,6 +55,19 @@ public static class CoopProtocol
 		return builder.Length == CodeLength ? builder.ToString() : null;
 	}
 
+	/// <summary>
+	/// <paramref name="text"/> as a field of at most <paramref name="maximumLength"/> characters a reader takes: control characters become spaces and the end
+	/// is cut, never inside a surrogate pair. The server's own texts (a refusal that lists mods or builds) go through it.
+	/// </summary>
+	public static string Clip( string text, int maximumLength = MaximumReasonLength )
+	{
+		var clean = text.Any( char.IsControl ) ? new string( text.Select( c => char.IsControl( c ) ? ' ' : c ).ToArray() ) : text;
+		if ( clean.Length <= maximumLength )
+			return clean;
+		var cut = char.IsHighSurrogate( clean[maximumLength - 1] ) ? maximumLength - 1 : maximumLength;
+		return clean[..cut];
+	}
+
 	public static bool IsSessionId( string? id ) => id is { Length: SessionIdLength } && id.All( c => c is (>= '0' and <= '9') or (>= 'a' and <= 'f') );
 
 	public static bool IsSha256( string? hex ) => hex is { Length: 64 } && hex.All( c => c is (>= '0' and <= '9') or (>= 'a' and <= 'f') );
@@ -64,7 +80,10 @@ public static class CoopCloseStatus
 {
 	/// <summary>The account's game took this socket over on another device or process; terminal.</summary>
 	public const int Replaced = 4001;
-	/// <summary>This socket's outbox overflowed (it read too slowly); resumable.</summary>
+	/// <summary>
+	/// This socket read too slowly; resumable. The server usually drops such a socket without a close (its queue is stuck behind it), which a game resumes
+	/// after as well.
+	/// </summary>
 	public const int TooSlow = 4002;
 	/// <summary>Another game of the account holds the co-op socket; terminal unless the player takes over.</summary>
 	public const int InUse = 4003;
@@ -106,14 +125,14 @@ public enum CoopMessageType : byte
 	Frame = 107,
 	Message = 108,
 	Error = 109,
-	Ping = 110
+	Ping = 110,
+	FrameRefused = 111
 }
 
 /// <summary>Why the server refused a request or ended a session (<see cref="CoopError"/>, <see cref="CoopEnded"/>).</summary>
 public enum CoopReason : ushort
 {
 	None = 0,
-	Malformed = 1,
 	HelloFirst = 2,
 	ProtocolTooOld = 3,
 	InUse = 4,
@@ -135,8 +154,7 @@ public enum CoopReason : ushort
 	HostLeft = 41,
 	Expired = 42,
 	AccountDeleted = 43,
-	Unknown = 44,
-	FrameOutOfOrder = 50
+	Unknown = 44
 }
 
 public enum CoopMemberState : byte
@@ -159,10 +177,11 @@ public sealed record CoopMemberInfo( uint Id, byte Slot, string Name, bool Conne
 
 /// <summary>
 /// A session as a member sees it: its id and code, title, whether it is listed, the most players, the receiver's own member id, the host's member id,
-/// the last frame the host relayed and the members.
+/// the last frame the host relayed, whether that number is exact (<paramref name="SeqKnown"/>), and the members. After a server crash the stored number
+/// may be behind the frames the guests hold: then the server takes the host's next frame at any later number, and guests drop the frames they already have.
 /// </summary>
 public sealed record CoopSessionState( string Id, string Code, string Title, bool Listed, byte MaximumPlayers, uint You, uint Host, ulong LastFrameSeq,
-	IReadOnlyList<CoopMemberInfo> Members );
+	bool SeqKnown, IReadOnlyList<CoopMemberInfo> Members );
 
 /// <summary>A message of the co-op socket. <see cref="Encode"/> writes its bytes; <see cref="Decode"/> reads one or throws <see cref="InvalidDataException"/>.</summary>
 public abstract record CoopMessage
@@ -189,7 +208,7 @@ public abstract record CoopMessage
 		{
 			CoopMessageType.Hello => CoopHello.Read( ref reader ),
 			CoopMessageType.Create => new CoopCreate( reader.Bool(), reader.Text( CoopProtocol.MaximumTitleLength ), reader.Byte() ),
-			CoopMessageType.Join => new CoopJoin( reader.Text( 32 ) ),
+			CoopMessageType.Join => new CoopJoin( reader.Text( CoopProtocol.MaximumTypedCodeLength ) ),
 			CoopMessageType.Leave => new CoopLeave( reader.Text( CoopProtocol.MaximumReasonLength ) ),
 			CoopMessageType.Kick => new CoopKick( reader.U32() ),
 			CoopMessageType.Invite => new CoopInvite( reader.Text( CoopProtocol.MaximumInviteNameLength ) ),
@@ -206,6 +225,7 @@ public abstract record CoopMessage
 			CoopMessageType.Message => new CoopRelayed( reader.U32(), reader.Bytes() ),
 			CoopMessageType.Error => new CoopError( (CoopMessageType)reader.Byte(), (CoopReason)reader.U16(), reader.Text( CoopProtocol.MaximumReasonLength ) ),
 			CoopMessageType.Ping => new CoopPing(),
+			CoopMessageType.FrameRefused => new CoopFrameRefused( reader.U64() ),
 			_ => throw new InvalidDataException( $"Unknown co-op message {(byte)type}." )
 		};
 		reader.End();
@@ -235,14 +255,14 @@ public sealed record CoopHello( ushort Protocol, string Build, IReadOnlyList<Coo
 	private protected override void WriteFields( CoopWriter writer )
 	{
 		writer.U16( Protocol );
-		writer.Text( Build );
+		writer.Text( Build, CoopProtocol.MaximumBuildLength );
 		writer.Mods( Mods );
 		writer.Guid( Instance );
 		writer.Bool( TakeOver );
 		writer.Bool( Resume != null );
 		if ( Resume != null )
 		{
-			writer.Text( Resume.SessionId );
+			writer.Text( Resume.SessionId, CoopProtocol.SessionIdLength );
 			writer.U32( Resume.MemberId );
 			writer.U64( Resume.LastFrameSeq );
 		}
@@ -274,7 +294,7 @@ public sealed record CoopCreate( bool Listed, string Title, byte MaximumPlayers 
 	private protected override void WriteFields( CoopWriter writer )
 	{
 		writer.Bool( Listed );
-		writer.Text( Title );
+		writer.Text( Title, CoopProtocol.MaximumTitleLength );
 		writer.Byte( MaximumPlayers );
 	}
 
@@ -285,14 +305,14 @@ public sealed record CoopCreate( bool Listed, string Title, byte MaximumPlayers 
 public sealed record CoopJoin( string Code ) : CoopMessage
 {
 	public override CoopMessageType Type => CoopMessageType.Join;
-	private protected override void WriteFields( CoopWriter writer ) => writer.Text( Code );
+	private protected override void WriteFields( CoopWriter writer ) => writer.Text( Code, CoopProtocol.MaximumTypedCodeLength );
 }
 
 /// <summary>Leaves the sender's session; a host's leave ends it, and the server tells the others <paramref name="Reason"/>.</summary>
 public sealed record CoopLeave( string Reason ) : CoopMessage
 {
 	public override CoopMessageType Type => CoopMessageType.Leave;
-	private protected override void WriteFields( CoopWriter writer ) => writer.Text( Reason );
+	private protected override void WriteFields( CoopWriter writer ) => writer.Text( Reason, CoopProtocol.MaximumReasonLength );
 }
 
 /// <summary>The host removes member <paramref name="MemberId"/> from its session; the account cannot join it again.</summary>
@@ -306,7 +326,7 @@ public sealed record CoopKick( uint MemberId ) : CoopMessage
 public sealed record CoopInvite( string Player ) : CoopMessage
 {
 	public override CoopMessageType Type => CoopMessageType.Invite;
-	private protected override void WriteFields( CoopWriter writer ) => writer.Text( Player );
+	private protected override void WriteFields( CoopWriter writer ) => writer.Text( Player, CoopProtocol.MaximumInviteNameLength );
 }
 
 /// <summary>A frame of the host's command stream (C2b): the server relays it to every other member when <paramref name="Seq"/> follows the last one.</summary>
@@ -362,9 +382,9 @@ public sealed record CoopWelcome( ushort Protocol, CoopSessionState? Session, Co
 		writer.Bool( EndedWhileAway != null );
 		if ( EndedWhileAway != null )
 		{
-			writer.Text( EndedWhileAway.SessionId );
+			writer.Text( EndedWhileAway.SessionId, CoopProtocol.SessionIdLength );
 			writer.U16( (ushort)EndedWhileAway.Reason );
-			writer.Text( EndedWhileAway.Text );
+			writer.Text( EndedWhileAway.Text, CoopProtocol.MaximumReasonLength );
 		}
 	}
 
@@ -392,7 +412,7 @@ public sealed record CoopJoined( CoopSessionState Session, string HostBuild, IRe
 	private protected override void WriteFields( CoopWriter writer )
 	{
 		writer.Session( Session );
-		writer.Text( HostBuild );
+		writer.Text( HostBuild, CoopProtocol.MaximumBuildLength );
 		writer.Mods( HostMods );
 	}
 }
@@ -418,10 +438,10 @@ public sealed record CoopInvited( string SessionId, string Code, string Title, s
 
 	private protected override void WriteFields( CoopWriter writer )
 	{
-		writer.Text( SessionId );
-		writer.Text( Code );
-		writer.Text( Title );
-		writer.Text( Host );
+		writer.Text( SessionId, CoopProtocol.SessionIdLength );
+		writer.Text( Code, CoopProtocol.CodeLength );
+		writer.Text( Title, CoopProtocol.MaximumTitleLength );
+		writer.Text( Host, OnlineText.MaximumNameLength );
 	}
 }
 
@@ -432,9 +452,9 @@ public sealed record CoopEnded( string SessionId, CoopReason Reason, string Text
 
 	private protected override void WriteFields( CoopWriter writer )
 	{
-		writer.Text( SessionId );
+		writer.Text( SessionId, CoopProtocol.SessionIdLength );
 		writer.U16( (ushort)Reason );
-		writer.Text( Text );
+		writer.Text( Text, CoopProtocol.MaximumReasonLength );
 	}
 }
 
@@ -471,7 +491,7 @@ public sealed record CoopError( CoopMessageType Request, CoopReason Reason, stri
 	{
 		writer.Byte( (byte)Request );
 		writer.U16( (ushort)Reason );
-		writer.Text( Text );
+		writer.Text( Text, CoopProtocol.MaximumReasonLength );
 	}
 }
 
@@ -480,6 +500,17 @@ public sealed record CoopPing : CoopMessage
 {
 	public override CoopMessageType Type => CoopMessageType.Ping;
 	private protected override void WriteFields( CoopWriter writer ) { }
+}
+
+/// <summary>
+/// The host's frame was not the next one: the server dropped it (no guest sees it) and takes frame <paramref name="Expected"/> next, or any later one while
+/// the session's frame number is not exact (<see cref="CoopSessionState.SeqKnown"/>). The host resends from there.
+/// </summary>
+public sealed record CoopFrameRefused( ulong Expected ) : CoopMessage
+{
+	public override CoopMessageType Type => CoopMessageType.FrameRefused;
+	private protected override void WriteFields( CoopWriter writer ) => writer.U64( Expected );
+	private protected override void Validate() => Require( Expected > 0, "frame number" );
 }
 
 /// <summary>Writes the fields of a co-op message.</summary>
@@ -506,12 +537,16 @@ public sealed class CoopWriter
 	public void U64( ulong value ) => BinaryPrimitives.WriteUInt64LittleEndian( Take( 8 ), value );
 	public void Guid( Guid value ) => value.TryWriteBytes( Take( 16 ) );
 
-	public void Text( string value )
+	/// <summary>
+	/// A field of at most <paramref name="maximumLength"/> characters without control characters, the same limits <see cref="CoopReader.Text"/> keeps, so
+	/// nothing is written that a reader refuses (<see cref="CoopProtocol.Clip"/> fits a text the server makes).
+	/// </summary>
+	public void Text( string value, int maximumLength )
 	{
+		if ( value.Length > maximumLength || value.Any( char.IsControl ) )
+			throw new ArgumentException( $"The text is over {maximumLength} characters or holds a control character.", nameof( value ) );
 		var count = Encoding.UTF8.GetByteCount( value );
-		if ( count > ushort.MaxValue )
-			throw new ArgumentException( "Text too long for a co-op message.", nameof( value ) );
-		U16( (ushort)count );
+		U16( checked( (ushort)count ) );
 		Encoding.UTF8.GetBytes( value, Take( count ) );
 	}
 
@@ -523,12 +558,14 @@ public sealed class CoopWriter
 
 	public void Mods( IReadOnlyList<CoopMod> mods )
 	{
-		Byte( checked( (byte)mods.Count ) );
+		if ( mods.Count > CoopProtocol.MaximumMods )
+			throw new ArgumentException( $"A co-op message lists at most {CoopProtocol.MaximumMods} mods.", nameof( mods ) );
+		U16( (ushort)mods.Count );
 		foreach ( var mod in mods )
 		{
-			Text( mod.Id );
-			Text( mod.Version );
-			Text( mod.ContentSha256 );
+			Text( mod.Id, CoopProtocol.MaximumModIdLength );
+			Text( mod.Version, CoopProtocol.MaximumModVersionLength );
+			Text( mod.ContentSha256, 64 );
 		}
 	}
 
@@ -536,20 +573,21 @@ public sealed class CoopWriter
 	{
 		U32( member.Id );
 		Byte( member.Slot );
-		Text( member.Name );
+		Text( member.Name, OnlineText.MaximumNameLength );
 		Bool( member.Connected );
 	}
 
 	public void Session( CoopSessionState session )
 	{
-		Text( session.Id );
-		Text( session.Code );
-		Text( session.Title );
+		Text( session.Id, CoopProtocol.SessionIdLength );
+		Text( session.Code, CoopProtocol.CodeLength );
+		Text( session.Title, CoopProtocol.MaximumTitleLength );
 		Bool( session.Listed );
 		Byte( session.MaximumPlayers );
 		U32( session.You );
 		U32( session.Host );
 		U64( session.LastFrameSeq );
+		Bool( session.SeqKnown );
 		Byte( checked( (byte)session.Members.Count ) );
 		foreach ( var member in session.Members )
 			Member( member );
@@ -628,7 +666,7 @@ public ref struct CoopReader
 
 	public IReadOnlyList<CoopMod> Mods()
 	{
-		var count = Byte();
+		var count = U16();
 		if ( count > CoopProtocol.MaximumMods )
 			throw new InvalidDataException( "The co-op message lists too many mods." );
 		var mods = new CoopMod[count];
@@ -665,13 +703,14 @@ public ref struct CoopReader
 		var you = U32();
 		var host = U32();
 		var seq = U64();
+		var known = Bool();
 		var count = Byte();
 		if ( CoopProtocol.NormalizeCode( code ) != code || maximum is < 2 or > CoopProtocol.MaximumPlayers || count > maximum )
 			throw new InvalidDataException( "The co-op message has an invalid session." );
 		var members = new CoopMemberInfo[count];
 		for ( var index = 0; index < count; index++ )
 			members[index] = Member();
-		return new CoopSessionState( id, code, title, listed, maximum, you, host, seq, members );
+		return new CoopSessionState( id, code, title, listed, maximum, you, host, seq, known, members );
 	}
 
 	/// <summary>Requires the whole message to have been read.</summary>

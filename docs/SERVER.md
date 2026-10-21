@@ -185,9 +185,9 @@ Settings are in `OpenTPW.Server/appsettings.json`, or environment variables name
 | `MovementBurst`, `MovementsPerSecond` | 30, 10 | Walking-position bucket per connection (chat parks; positions sent in the lobby are ignored) |
 | `BannedPlayers`, `MutedPlayers`, `HiddenParks` | empty | Moderation lists |
 | `MaximumCoopConnections`, `MaximumCoopSessions` | 1000, 250 | Shared parks: co-op sockets (counted before they authenticate) and live sessions |
-| `CoopHostMessagesPerSecond`, `CoopHostBytesPerSecond` | 400, 4 MiB | A host's co-op socket, with a two-second burst |
-| `CoopGuestMessagesPerSecond`, `CoopGuestBytesPerSecond` | 50, 256 KiB | A guest's co-op socket, with a two-second burst |
-| `CoopOutboxBytes`, `CoopServerOutboxBytes` | 2 MiB, 256 MiB | Bytes queued for one co-op socket and for all of them before a slow reader is cut off |
+| `CoopHostMessagesPerSecond`, `CoopHostBytesPerSecond` | 400, 4 MiB | What a host's co-op socket sends, with a two-second burst; an account keeps its buckets over reconnects |
+| `CoopGuestMessagesPerSecond`, `CoopGuestBytesPerSecond` | 50, 256 KiB | What a guest's co-op socket sends, with a two-second burst |
+| `CoopOutboxBytes`, `CoopServerOutboxBytes` | 2 MiB, 256 MiB | Bytes queued for one co-op socket and for all of them: a socket over its share is cut off, and a server over its budget cuts off the socket with the longest queue. A socket that takes no message for 30 seconds is cut off too |
 | `CoopCreatesPerHour`, `CoopJoinsPerHour`, `CoopWrongCodesPerHour`, `CoopInvitesPerHour`, `CoopKicksPerHour`, `CoopDownloadsPerHour` | 6, 30, 10, 60, 60, 30 | Per account: sessions started, joins, codes that matched no session, invitations, removals and leaves, snapshot downloads |
 | `MaximumCoopSnapshotBytes`, `MaximumCoopStoreBytes` | 96 MiB, 4 GiB | A shared park's join snapshot, and all of them together |
 | `CoopPingInterval` | 15 s | A co-op socket that has heard nothing from the server for this long gets a ping (browsers never see WebSocket pings) |

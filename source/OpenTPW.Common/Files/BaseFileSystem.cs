@@ -34,7 +34,18 @@ public class BaseFileSystem
 	public bool CacheLookups { get; init; }
 	private readonly ConcurrentDictionary<string, (int Generation, string Value)> absoluteLookups = new();
 	private readonly ConcurrentDictionary<(string Path, bool ExplicitRoot), (int Generation, (string ArchivePath, string InternalPath) Value)> archiveLookups = new();
+	// What the searches behind both ask the disk: whether a path exists, and a directory's entries (null for no directory). A path inside an archive
+	// is a miss of the case correction, which then tests and lists every directory along it; a park start asks that for hundreds of members of
+	// the same few directories, each answer a walk of the browser's file system (docs/BROWSER-PERFORMANCE.md, "Event hitches").
+	private readonly ConcurrentDictionary<string, (int Generation, bool Value)> existsLookups = new();
+	private readonly ConcurrentDictionary<(string Directory, bool FilesOnly), (int Generation, string[]? Value)> listingLookups = new();
 	private int lookupGeneration;
+
+	/// <summary>
+	/// Counts the invalidations (<see cref="InvalidateLookups"/>, and every change of <see cref="Overrides"/> or <see cref="ArchiveRedirect"/>): what was read from this
+	/// file system under another generation may differ from what it reads now.
+	/// </summary>
+	public int LookupGeneration => Volatile.Read( ref lookupGeneration );
 
 	/// <summary>Forgets the remembered lookups (<see cref="CacheLookups"/>): call after files are added below the root.</summary>
 	public void InvalidateLookups()
@@ -42,7 +53,20 @@ public class BaseFileSystem
 		Interlocked.Increment( ref lookupGeneration );
 		absoluteLookups.Clear();
 		archiveLookups.Clear();
+		existsLookups.Clear();
+		listingLookups.Clear();
 	}
+
+	/// <summary>Whether a file or directory is at <paramref name="absolutePath"/> on disk; remembered with <see cref="CacheLookups"/>.</summary>
+	private bool ExistsOnDisk( string absolutePath ) =>
+		CacheLookups ? Remembered( existsLookups, absolutePath, path => File.Exists( path ) || Directory.Exists( path ) ) : File.Exists( absolutePath ) || Directory.Exists( absolutePath );
+
+	/// <summary>The files (or all entries) of a directory on disk in the order the system lists them, or null when it is no directory; remembered with <see cref="CacheLookups"/>.</summary>
+	private string[]? DiskEntries( string directory, bool filesOnly ) =>
+		CacheLookups ? Remembered( listingLookups, (directory, filesOnly), key => ListDisk( key.Item1, key.Item2 ) ) : ListDisk( directory, filesOnly );
+
+	private static string[]? ListDisk( string directory, bool filesOnly ) =>
+		!Directory.Exists( directory ) ? null : filesOnly ? Directory.EnumerateFiles( directory ).ToArray() : Directory.EnumerateFileSystemEntries( directory ).ToArray();
 
 	/// <summary>The remembered answer for <paramref name="key"/> of this generation, else a fresh one, kept only if no invalidation came between.</summary>
 	private TValue Remembered<TKey, TValue>( ConcurrentDictionary<TKey, (int Generation, TValue Value)> lookups, TKey key, Func<TKey, TValue> find ) where TKey : notnull
@@ -71,7 +95,16 @@ public class BaseFileSystem
 	/// <see cref="InvalidateLookups"/> after changing it.
 	/// </summary>
 	// [EXT:mods] OpenTPW's own mod system; the original game had no mods
-	public IFileOverrides? Overrides { get; set; }
+	public IFileOverrides? Overrides
+	{
+		get => overrides;
+		set
+		{
+			overrides = value;
+			Interlocked.Increment( ref lookupGeneration );
+		}
+	}
+	private IFileOverrides? overrides;
 
 	/// <summary>
 	/// Archives of this root that another archive file stands in for: called with the absolute path of an archive found below the root (e.g.
@@ -79,7 +112,16 @@ public class BaseFileSystem
 	/// root's own. Every read, listing and size of a path inside the archive goes to the replacement. Null (the default) changes nothing. Call
 	/// <see cref="InvalidateLookups"/> after changing it.
 	/// </summary>
-	public Func<string, string?>? ArchiveRedirect { get; set; }
+	public Func<string, string?>? ArchiveRedirect
+	{
+		get => archiveRedirect;
+		set
+		{
+			archiveRedirect = value;
+			Interlocked.Increment( ref lookupGeneration );
+		}
+	}
+	private Func<string, string?>? archiveRedirect;
 
 	private string? Overridden( string relativePath ) =>
 		Overrides != null && Overrides.TryGetFile( GetRelativePath( GetAbsolutePath( relativePath ) ), out var file ) ? file : null;
@@ -264,12 +306,13 @@ public class BaseFileSystem
 			var part = parts[index];
 			currentPath = Path.Combine( currentPath, part );
 			var parentPath = Path.GetDirectoryName( currentPath );
-			if ( parentPath == null || !Directory.Exists( parentPath ) )
+			var parentFiles = parentPath == null ? null : DiskEntries( parentPath, filesOnly: true );
+			if ( parentFiles == null )
 			{
 				break;
 			}
 
-			foreach ( var candidate in Directory.EnumerateFiles( parentPath ) )
+			foreach ( var candidate in parentFiles )
 			{
 				if ( !archiveHandlers.ContainsKey( Path.GetExtension( candidate ) ) )
 					continue;
@@ -311,7 +354,11 @@ public class BaseFileSystem
 	/// </summary>
 	private string MatchCase( string absolutePath )
 	{
-		if ( OperatingSystem.IsWindows() || File.Exists( absolutePath ) || Directory.Exists( absolutePath ) )
+		if ( OperatingSystem.IsWindows() )
+			return absolutePath;
+		// With remembered answers the walk below asks the disk about each directory along the path once, and a path that exists comes out of it as
+		// requested; testing the whole path first would ask once more for every path, and a park start resolves hundreds of archive members.
+		if ( (!CacheLookups || Path.EndsInDirectorySeparator( absolutePath )) && ExistsOnDisk( absolutePath ) )
 			return absolutePath;
 		var relativePath = Path.GetRelativePath( basePath, absolutePath );
 		if ( relativePath == "." )
@@ -321,13 +368,13 @@ public class BaseFileSystem
 		for ( var index = 0; index < parts.Length; index++ )
 		{
 			var exact = Path.Combine( current, parts[index] );
-			if ( File.Exists( exact ) || Directory.Exists( exact ) )
+			if ( ExistsOnDisk( exact ) )
 			{
 				current = exact;
 				continue;
 			}
-			var match = Directory.Exists( current )
-				? Directory.EnumerateFileSystemEntries( current )
+			var match = DiskEntries( current, filesOnly: false ) is { } entries
+				? entries
 					.Where( entry => string.Equals( Path.GetFileName( entry ), parts[index], StringComparison.OrdinalIgnoreCase ) )
 					.OrderBy( entry => entry, StringComparer.Ordinal )
 					.FirstOrDefault()

@@ -237,6 +237,36 @@ public class ParkResumeAssetManifestTests
 		Assert.ThrowsException<InvalidDataException>( () => ParkResumeAssetManifest.Capture( catalog, settings ) );
 	}
 
+	[TestMethod]
+	public void TheStepsOfASyntheticParkMakeTheSameManifestInSeveralFrames()
+	{
+		var root = CreateSyntheticPark();
+		var whole = Capture( root, out var catalog, out var settings );
+		var manifest = new SortedDictionary<string, string>( StringComparer.Ordinal );
+		var steps = 0;
+		foreach ( var _ in ParkResumeAssetManifest.CaptureSteps( catalog, settings.Theme, settings.IsEasy, manifest ) )
+			steps++;
+		Assert.IsTrue( steps >= catalog.Entries.Count, "one step for each catalogue archive" );
+		Assert.IsTrue( whole.SequenceEqual( manifest ), "the steps and the one-go capture agree" );
+	}
+
+	[TestMethod]
+	public void APreparedParkKeepsTheManifestItsStepsMadeForItsSnapshot()
+	{
+		var root = CreateSyntheticPark();
+		var whole = Capture( root, out var catalog, out _ );
+		var level = (Level)System.Runtime.CompilerServices.RuntimeHelpers.GetUninitializedObject( typeof( Level ) );
+		void Set( string name, object value ) => typeof( Level ).GetField( name, System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic )!.SetValue( level, value );
+		Set( "<Objects>k__BackingField", new ParkObjects( catalog, new SandboxParkGrid() ) );
+		Set( "<Park>k__BackingField", ParkEconomyRuntime.ForResume( EconomyTestData.Park(), ParkStartKind.FullSimulation ) );
+		var steps = level.PrepareAutosaveAssets().Count();
+		Assert.IsTrue( steps >= catalog.Entries.Count, "one step for each catalogue archive" );
+		var prepared = level.AutosaveAssets();
+		Assert.IsTrue( whole.SequenceEqual( prepared ), "the prepared manifest is the one-go capture" );
+		Assert.AreEqual( 0, level.PrepareAutosaveAssets().Count(), "a prepared park has nothing left to hash" );
+		Assert.AreSame( prepared, level.AutosaveAssets(), "the snapshot and the autosave reuse it instead of hashing again" );
+	}
+
 	/// <summary>Corpus: the real Jungle data (read-only); inconclusive without OPENTPW_GAME_PATH.</summary>
 	[TestMethod]
 	public void OriginalJungleDataCapturesDeterministicallyOverVirtualMembers()

@@ -54,6 +54,7 @@
 		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/GltfSceneTests.cs" />
 		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/OnlineIntegrationTests.cs" />
 		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/OnlineServerTests.cs" />
+		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/CoopServerTests.cs" />
 		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/PostcardEmailTests.cs" />
 		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/PoolSpriteDeliveryTests.cs" />
 		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/SecurityHardeningTests.cs" />
@@ -90,6 +91,7 @@
 		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/WebClientTransportTests.cs" />
 		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/CoopLinkTests.cs" />
 		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/BrowserPinsExclusionTests.cs" />
+		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/StrictCommandsGameTests.cs" />
 	</ItemGroup>
 	<ItemGroup Condition="'$(OpenTpwDeterminismPins)' == 'true'">
 		<Compile Include="../OpenTPW.Tests/**/*.cs" Exclude="../OpenTPW.Tests/obj/**;../OpenTPW.Tests/bin/**;@(DeterminismPinsExcludedTests)" Link="Tests/%(RecursiveDir)%(Filename)%(Extension)" />

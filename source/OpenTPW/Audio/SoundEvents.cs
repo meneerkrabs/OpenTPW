@@ -570,6 +570,7 @@ public sealed class SoundEventSystem
 	{
 		if ( TryDecoded( category, sample, out var cached ) )
 			return cached;
+		using var decodeMark = FrameMarks.Measure( "audio.decodeSync" );
 		Mp2Audio? audio = null;
 		var bank = category.GetBank( sample.BankNumber );
 		var rejectedPayloadBytes = 0;

@@ -342,6 +342,8 @@ public class ParkCommandLevelTests
 				Assert.Fail( $"draw {draw}: {command} threw {error}" );
 				return;
 			}
+			// the funnel turns a throw into a logged rejection: the fuzz still fails on one
+			Assert.IsNull( result.Error, $"draw {draw}: {command} threw {result.Error}" );
 			if ( result.Accepted )
 				accepted++;
 			else

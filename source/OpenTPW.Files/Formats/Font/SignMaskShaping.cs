@@ -105,19 +105,29 @@ public static class SignMaskShaping
 	/// (an even count leans right), each <c>exp(-0.5 d² / sigma²) / (2 pi sigma²)</c> divided by the sum of all taps.
 	/// </summary>
 	// [BIN:TPW-EXE:0x005EA8A0 Gaussian kernel] n = 3 - _ftol(sigma * -2.5) (0x702F38 = -2.5, _ftol 0x67A830 truncates); each tap is 2^(log2(e) * (d² * -0.5 / sigma²)) / (sigma² * 6.2831853) (0x702F30, 0x702F28), summed, stored as double and divided by the sum
-	public static double[] Kernel( float sigma ) => Array.ConvertAll( KernelTaps( sigma ), tap => tap.ToDouble() );
+	public static double[] Kernel( float sigma ) => Array.ConvertAll( KernelTaps( sigma ).Taps, tap => tap.ToDouble() );
 
-	private static Ext[] KernelTaps( float sigma )
+	private static ScaledTaps KernelTaps( float sigma )
 	{
 		var s = (double)sigma;
 		if ( !double.IsFinite( s ) || Math.Abs( s ) > MaximumSigma )
 			throw new NotSupportedException( "Sign mask blur parameter is not supported by the compositor." );
 		var count = 3 - (int)(Ext.FromFloat( sigma ) * Ext.FromDouble( -2.5 )).Truncate();
 		if ( count <= 0 )
-			return Array.Empty<Ext>();
+			return new ScaledTaps( Array.Empty<Ext>() );
 		var centre = (count - 1) / 2;
-		return Ext.GaussianTaps( sigma, Enumerable.Range( 0, count ).Select( k => (k - centre) * (k - centre) ).ToArray() );
+		// the taps depend on the sigma and the precision only: made once per pair (every sign layer of a theme repeats a few sigmas)
+		var key = (BitConverter.SingleToInt32Bits( sigma ), X87Precision.Bits);
+		lock ( kernelCache )
+			if ( kernelCache.TryGetValue( key, out var cached ) )
+				return cached;
+		var taps = new ScaledTaps( Ext.GaussianTaps( sigma, Enumerable.Range( 0, count ).Select( k => (k - centre) * (k - centre) ).ToArray() ) );
+		lock ( kernelCache )
+			kernelCache[key] = taps;
+		return taps;
 	}
+
+	private static readonly Dictionary<(int Sigma, int Precision), ScaledTaps> kernelCache = new();
 
 	/// <summary>
 	/// Blurs the mask in place with <see cref="Kernel"/>, first along rows, then along columns. Taps that fall off the mask
@@ -128,12 +138,12 @@ public static class SignMaskShaping
 	{
 		var kernel = KernelTaps( sigma );
 		// [BIN:TPW-EXE:0x005EA8A0 empty kernel] with no taps (a parameter of -1.2 or less) both passes still run, every tap range [x - c, x + n - c - 1] is empty, and each pixel is written as the truncated empty sum 0
-		if ( kernel.Length == 0 )
+		if ( kernel.Taps.Length == 0 )
 		{
 			Array.Clear( mask );
 			return;
 		}
-		var centre = (kernel.Length - 1) / 2;
+		var centre = (kernel.Taps.Length - 1) / 2;
 		var line = new byte[Math.Max( width, height )];
 		for ( var y = 0; y < height; y++ )
 		{
@@ -150,13 +160,18 @@ public static class SignMaskShaping
 		}
 	}
 
-	private static byte Convolve( byte[] line, int at, int length, Ext[] kernel, int centre )
+	private static byte Convolve( byte[] line, int at, int length, ScaledTaps kernel, int centre )
 	{
 		var first = Math.Max( 0, at - centre );
-		var last = Math.Min( length - 1, at + kernel.Length - centre - 1 );
+		var last = Math.Min( length - 1, at + kernel.Taps.Length - centre - 1 );
 		var sum = Ext.Zero;
 		for ( var i = first; i <= last; i++ )
-			sum += Ext.FromInt( line[i] ) * kernel[i - at + centre];
+		{
+			// a zero byte adds a zero product, which leaves a sum that is already rounded as it was (most of a glyph mask is empty)
+			if ( line[i] == 0 )
+				continue;
+			sum += kernel.For( line[i] )[i - at + centre];
+		}
 		return unchecked( (byte)sum.Truncate() );
 	}
 }

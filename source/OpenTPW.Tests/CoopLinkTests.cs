@@ -37,6 +37,7 @@ public class CoopLinkTests
 			Link.MessageReceived += Messages.Add;
 			Link.Invited += Invitations.Add;
 			Link.Refused += Errors.Add;
+			Link.FrameRefused += Refusals.Add;
 		}
 
 		public OnlineSession Session { get; }
@@ -50,6 +51,7 @@ public class CoopLinkTests
 		public List<CoopRelayed> Messages { get; } = new();
 		public List<CoopInvited> Invitations { get; } = new();
 		public List<CoopError> Errors { get; } = new();
+		public List<CoopFrameRefused> Refusals { get; } = new();
 
 		public void Dispose() => Session.Dispose();
 	}
@@ -191,6 +193,10 @@ public class CoopLinkTests
 			for ( var seq = 1; seq <= 3; seq++ )
 				Assert.IsTrue( host.Link.SendFrame( (ulong)seq, Payload( seq * 10 ) ) );
 			Assert.IsFalse( guest.Link.SendFrame( 1, Payload( 0 ) ), "only the host sends frames" );
+			// a frame out of turn is dropped and the host told which one comes next
+			Assert.IsTrue( host.Link.SendFrame( 5, Payload( 50 ) ) );
+			await Until( () => host.Refusals.Count == 1, "the refused frame", host );
+			Assert.AreEqual( 4UL, host.Refusals[0].Expected );
 			await Until( () => guest.Frames.Count == 3, "the frames", guest );
 			CollectionAssert.AreEqual( new ulong[] { 1, 2, 3 }, guest.Frames.Select( frame => frame.Seq ).ToArray() );
 			CollectionAssert.AreEqual( new[] { 10, 20, 30 }, guest.Frames.Select( frame => Value( frame.Payload ) ).ToArray() );

@@ -367,6 +367,13 @@ internal sealed class AdvisorScoreQueue
 	}
 
 	/// <summary>
+	/// [EXT:advisor-sliced-decode] The response just played could not be said after all (its decode over frames failed after the line started): the reservation becomes the one
+	/// a playback that returned no span makes, 0 + 1000 from the same start, as when the decode fails before the line (<see cref="CompletePlaybackAttempt"/>). A reservation
+	/// already ended (a withdrawal) stays ended.
+	/// </summary>
+	public void ReserveAsUnsaid() => LastActionDuration = Math.Min( LastActionDuration, 1000u );
+
+	/// <summary>
 	/// Withdraws <paramref name="messageId"/> (the original's "unadvise", 0x486B40 → 0x59AA70): every pending record of that message is
 	/// dropped; and when it is the message being spoken (the action is busy and it is the current message) the speech is cut off: the
 	/// message does not count as played any more, its slap count goes up by one (so a help message that is cut off three times is discarded

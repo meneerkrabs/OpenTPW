@@ -37,6 +37,41 @@ internal static class X87Precision
 }
 
 /// <summary>
+/// A blur kernel's taps with their products by byte value, made when a value first meets the kernel: a sign mask holds a handful of distinct bytes, so
+/// each tap's product with the byte is rounded once instead of at every pixel (<c>FromByte(value) * tap</c>, exactly, at the precision the table was made for).
+/// </summary>
+internal sealed class ScaledTaps
+{
+	private readonly Ext[] taps;
+	private readonly Ext[]?[] byValue = new Ext[256][];
+
+	public ScaledTaps( Ext[] taps ) => this.taps = taps;
+
+	public Ext[] Taps => taps;
+
+	/// <summary>The products of every tap with <paramref name="value"/> (not for 0, whose products are all zero).</summary>
+	public Ext[] For( byte value )
+	{
+		var products = Volatile.Read( ref byValue[value] );
+		if ( products != null )
+			return products;
+		var scaled = Ext.FromByte( value );
+		products = new Ext[taps.Length];
+		for ( var i = 0; i < products.Length; i++ )
+			products[i] = scaled * taps[i];
+		// A mask with many distinct bytes (smooth glyph edges) would keep a table of every tap for each of them: only the first few are kept (memory is bounded).
+		// Signs may compose on several threads: a slot is claimed by an atomic count, and a table is published whole (a reader sees null or a complete one; two
+		// threads that make the same value's table make equal ones, and the one kept does not matter).
+		if ( Volatile.Read( ref kept ) < MaximumKept && Interlocked.Increment( ref kept ) <= MaximumKept )
+			Volatile.Write( ref byValue[value], products );
+		return products;
+	}
+
+	private const int MaximumKept = 64;
+	private int kept;
+}
+
+/// <summary>
 /// One x87 register value: sign, a 64-bit normalised mantissa and an unbounded exponent (value = mantissa * 2^exponent, zero has
 /// mantissa 0). Add, subtract, multiply, divide and square root round to nearest-even at the current precision control, as the
 /// FADD, FSUB, FMUL, FDIV and FSQRT instructions do; loads are exact and stores to float or double round to that format.
@@ -158,8 +193,9 @@ internal readonly struct Ext
 	{
 		if ( a.IsZero || b.IsZero )
 			return Zero;
-		var product = (UInt128)a.mantissa * b.mantissa;
-		return Make( a.negative != b.negative, product, a.exponent + b.exponent, false, X87Precision.Bits );
+		// the 128-bit product as two words (UInt128 arithmetic is slow in the browser's AOT build, docs/BROWSER-PERFORMANCE.md "Event hitches")
+		var high = Math.BigMul( a.mantissa, b.mantissa, out var low );
+		return Make( a.negative != b.negative, high, low, a.exponent + b.exponent, false, X87Precision.Bits );
 	}
 
 	/// <summary>FDIV / FDIVR at the current precision control.</summary>
@@ -235,58 +271,111 @@ internal readonly struct Ext
 			small = a;
 		}
 		var distance = big.exponent - small.exponent;
-		var bigMagnitude = (UInt128)big.mantissa << 62;
-		var smallMagnitude = (UInt128)small.mantissa << 62;
+		// the two mantissas as 126-bit magnitudes in word pairs (high, low): mantissa << 62
+		var bigHigh = big.mantissa >> 2;
+		var bigLow = big.mantissa << 62;
+		var smallHigh = small.mantissa >> 2;
+		var smallLow = small.mantissa << 62;
 		var sticky = false;
 		if ( distance >= 126 )
 		{
 			sticky = true;
-			smallMagnitude = 0;
+			smallHigh = smallLow = 0;
+		}
+		else if ( distance >= 64 )
+		{
+			var extra = distance - 64;
+			sticky = smallLow != 0 || (smallHigh & ((1UL << extra) - 1)) != 0;
+			smallLow = smallHigh >> extra;
+			smallHigh = 0;
 		}
 		else if ( distance > 0 )
 		{
-			sticky = (smallMagnitude & (((UInt128)1 << distance) - 1)) != 0;
-			smallMagnitude >>= distance;
+			sticky = (smallLow & ((1UL << distance) - 1)) != 0;
+			smallLow = (smallLow >> distance) | (smallHigh << (64 - distance));
+			smallHigh >>= distance;
 		}
 		var exponent = big.exponent - 62;
 		if ( big.negative == small.negative )
-			return Make( big.negative, bigMagnitude + smallMagnitude, exponent, sticky, precision );
-		var difference = bigMagnitude - smallMagnitude - (sticky ? (UInt128)1 : 0);
-		if ( difference == 0 && !sticky )
+		{
+			var low = bigLow + smallLow;
+			var high = bigHigh + smallHigh + (low < bigLow ? 1UL : 0UL);
+			return Make( big.negative, high, low, exponent, sticky, precision );
+		}
+		var differenceLow = bigLow - smallLow;
+		var differenceHigh = bigHigh - smallHigh - (bigLow < smallLow ? 1UL : 0UL);
+		if ( sticky )
+		{
+			if ( differenceLow == 0 )
+				differenceHigh--;
+			differenceLow--;
+		}
+		if ( differenceHigh == 0 && differenceLow == 0 && !sticky )
 			return Zero;
-		return Make( big.negative, difference, exponent, sticky, precision );
+		return Make( big.negative, differenceHigh, differenceLow, exponent, sticky, precision );
 	}
 
 	/// <summary>Rounds (magnitude + a sticky fraction below one unit) * 2^exponent to <paramref name="precision"/> bits, to nearest even.</summary>
-	private static Ext Make( bool negative, UInt128 magnitude, int exponent, bool sticky, int precision )
+	private static Ext Make( bool negative, UInt128 magnitude, int exponent, bool sticky, int precision ) =>
+		Make( negative, (ulong)(magnitude >> 64), (ulong)magnitude, exponent, sticky, precision );
+
+	/// <summary>
+	/// <see cref="Make(bool, UInt128, int, bool, int)"/> with the magnitude as two words, <c>high:low</c>. The same rounding without 128-bit
+	/// operators: <see cref="UInt128"/> shifts and comparisons cost most of a sign's composition in the browser's AOT build (each blur tap is one
+	/// multiply and one add, each rounded here); <c>X87FastPathTests</c> compare it with the 128-bit form on random values.
+	/// </summary>
+	private static Ext Make( bool negative, ulong high, ulong low, int exponent, bool sticky, int precision )
 	{
-		if ( magnitude == 0 )
+		if ( (high | low) == 0 )
 			return Zero;
-		var top = 127 - (int)UInt128.LeadingZeroCount( magnitude );
+		var top = high != 0 ? 127 - BitOperations.LeadingZeroCount( high ) : 63 - BitOperations.LeadingZeroCount( low );
 		var shift = top - (precision - 1);
-		UInt128 kept;
+		ulong kept;
 		if ( shift > 0 )
 		{
-			var mask = ((UInt128)1 << shift) - 1;
-			var dropped = magnitude & mask;
-			kept = magnitude >> shift;
-			var half = (UInt128)1 << (shift - 1);
-			if ( dropped > half || (dropped == half && (sticky || (kept & 1) == 1)) )
+			ulong droppedHigh, droppedLow, halfHigh, halfLow;
+			if ( shift >= 64 )
+			{
+				var extra = shift - 64;
+				kept = high >> extra;
+				droppedHigh = high & ((1UL << extra) - 1);
+				droppedLow = low;
+				(halfHigh, halfLow) = extra == 0 ? (0UL, 1UL << 63) : (1UL << (extra - 1), 0UL);
+			}
+			else
+			{
+				kept = (low >> shift) | (high << (64 - shift));
+				droppedHigh = 0;
+				droppedLow = low & ((1UL << shift) - 1);
+				(halfHigh, halfLow) = (0UL, 1UL << (shift - 1));
+			}
+			var above = droppedHigh > halfHigh || (droppedHigh == halfHigh && droppedLow > halfLow);
+			var tie = droppedHigh == halfHigh && droppedLow == halfLow;
+			if ( above || (tie && (sticky || (kept & 1) == 1)) )
 			{
 				kept++;
-				if ( kept >> precision != 0 )
+				if ( precision == 64 ? kept == 0 : kept >> precision != 0 )
 				{
-					kept >>= 1;
+					kept = precision == 64 ? 1UL << 63 : kept >> 1;
 					shift++;
 				}
 			}
 		}
 		else
 		{
-			kept = magnitude << -shift;
+			kept = low << -shift;
 		}
-		return new Ext( negative, (ulong)(kept << (64 - precision)), exponent + shift - (64 - precision) );
+		return new Ext( negative, kept << (64 - precision), exponent + shift - (64 - precision) );
 	}
+
+	/// <summary>The extended values 0..255 (a byte's <see cref="FromInt"/>), made once.</summary>
+	private static readonly Ext[] ByteValues = Enumerable.Range( 0, 256 ).Select( value => FromInt( value ) ).ToArray();
+
+	/// <summary><see cref="FromInt"/> of a byte, from a table.</summary>
+	public static Ext FromByte( byte value ) => ByteValues[value];
+
+	/// <summary>The sign, mantissa and exponent as stored (tests).</summary>
+	internal (bool Negative, ulong Mantissa, int Exponent) Parts => (negative, mantissa, exponent);
 
 	private static BigInteger IntegerSquareRoot( BigInteger value )
 	{

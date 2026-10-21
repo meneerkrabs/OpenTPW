@@ -64,10 +64,21 @@ internal sealed partial class GameFlow
 				using ( LoadProfile.Measure( "restart-assets" ) )
 					if ( RestartCaptureOverride == null ) verifiedAssets = level.AutosaveAssets( verifiedAssets );
 				ParkResumeSnapshot snapshot;
+				IEnumerable<bool>? validation = null;
 				using ( LoadProfile.Measure( "restart-capture" ) )
-					snapshot = RestartCaptureOverride != null ? RestartCaptureOverride( level ) :
-						level.CaptureResumeSnapshot( Advisor?.IsAttached == true ? Advisor : null, level.LevelName, verifiedAssets );
-				restartWrite = new RestartSnapshotWrite( RestartSnapshotPath( level ), snapshot );
+				{
+					var advisor = Advisor?.IsAttached == true ? Advisor : null;
+					if ( RestartCaptureOverride != null )
+						snapshot = RestartCaptureOverride( level );
+					// [EXT:restart-snapshot-deferred-validation] taken over frames, the capture's closing validation (it reads only the detached copy and the trusted
+					// catalogue and balance, as for the periodic autosave) runs in steps in the write's first slices instead of the entering frame; a refusal still leaves no restart point
+					else if ( overFrames )
+						snapshot = level.CaptureResumeSnapshotUnchecked( advisor, level.LevelName, out _, out validation, verifiedAssets );
+					else
+						snapshot = level.CaptureResumeSnapshot( advisor, level.LevelName, verifiedAssets );
+				}
+				using ( LoadProfile.Measure( "restart-begin" ) )
+					restartWrite = new RestartSnapshotWrite( RestartSnapshotPath( level ), snapshot, validation: validation );
 				if ( !overFrames ) FlushRestartSnapshot();
 			}
 			Log.Trace( $"Restart snapshot of the {level.LevelName} park captured in {System.Diagnostics.Stopwatch.GetElapsedTime( started ).TotalMilliseconds:0} ms." );

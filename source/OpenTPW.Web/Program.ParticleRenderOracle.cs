@@ -1,5 +1,4 @@
 using System.Numerics;
-using System.Reflection;
 using System.Runtime.InteropServices.JavaScript;
 using System.Text.Json;
 using OpenTPW.Tests;
@@ -121,7 +120,7 @@ public static partial class Program
 		try
 		{
 			Global.Device.WaitForIdle();
-			typeof( Renderer ).GetMethod( "ProcessDeletionQueue", BindingFlags.Instance | BindingFlags.NonPublic )!.Invoke( renderer, null );
+			renderer.FlushDeletions();
 			renderer.Stop();
 			renderer.Window.SdlWindow.Close();
 		}

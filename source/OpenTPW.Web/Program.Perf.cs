@@ -75,9 +75,16 @@ public static partial class Program
 	[JSExport]
 	public static string PerfParkBuild() => new JsonArray( (flow?.LastParkBuildFrames ?? Array.Empty<double>() ).Select( value => (JsonNode?)Math.Round( value, 2 ) ).ToArray() ).ToJsonString();
 
-	/// <summary>Turns the per-frame named work (<see cref="FrameMarks"/>) on or off; the page reads it for the frames it finds slow (<see cref="PerfTakeMarks"/>).</summary>
+	/// <summary>
+	/// Turns the per-frame named work (<see cref="FrameMarks"/>) on or off; the page reads it for the frames it finds slow (<see cref="PerfTakeMarks"/>).
+	/// The WebGL calls are recorded with it, by kind (<see cref="Veldrid.WebGlMarks"/>: "gl.uploadTexture", "gl.createResourceSet", ...).
+	/// </summary>
 	[JSExport]
-	public static void PerfFrameMarks( bool enabled ) => FrameMarks.Enable( enabled );
+	public static void PerfFrameMarks( bool enabled )
+	{
+		FrameMarks.Enable( enabled );
+		Veldrid.WebGlMarks.Sink = enabled ? FrameMarks.Add : null;
+	}
 
 	/// <summary>The named work of the frame just run, as JSON: name → [milliseconds, count], largest first (sections nest, so a parent includes its children).</summary>
 	[JSExport]
@@ -618,6 +625,8 @@ public static partial class Program
 			["decodedSampleBytes"] = GameAudio.DecodedSampleBytes,
 			["gpuTextureBytes"] = Veldrid.Texture.LiveGpuBytes,
 			["gpuTextures"] = Veldrid.Texture.LiveGpuTextures,
+			// GPU deletions the browser's per-frame budget has left for later frames (Renderer.BrowserDeletionBudgetMilliseconds); a settled page has none
+			["pendingDeletions"] = renderer?.PendingDeletions ?? 0,
 			["managedBytes"] = GC.GetTotalMemory( false ),
 			["heapBytes"] = info.HeapSizeBytes,
 			["committedBytes"] = info.TotalCommittedBytes,

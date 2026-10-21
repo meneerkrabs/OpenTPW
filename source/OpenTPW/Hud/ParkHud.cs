@@ -101,16 +101,46 @@ public sealed partial class ParkHud
 		Catalog = catalog;
 		buy = new BuyListModel( catalog, ListName, BuyPrice, Sorts, LandRows, item => Status.IsAvailable( item ) );
 		lastLevelMessage = level.LastActionMessage;
-		level.Objects.ObjectPlaced += OnObjectPlaced;
-		// Harnesses that build a Level without its constructor have no tool object.
+		try
+		{
+			level.Objects.ObjectPlaced += OnObjectPlaced;
+			// Harnesses that build a Level without its constructor have no tool object.
+			if ( (CellBuildTool?)level.CellTool is { } cellTool )
+				cellTool.Ended += OnCellToolEnded;
+			level.BuildToolsEnded += OnBuildToolsEnded;
+			hud = new UiScreen( "hud" ) { Modal = false };
+			Stack.Push( hud );
+			Build();
+			HookStaffStrikeMessages();
+			HookChallengeMessages();
+		}
+		catch
+		{
+			// a HUD that fails partway leaves no handler on the level it would have shown
+			UnhookLevel();
+			throw;
+		}
+	}
+
+	private void OnBuildToolsEnded()
+	{
+		pendingItem = null;
+		queueRearmItem = null;
+	}
+
+	/// <summary>Removes every handler the constructor puts on the level and its park (removing one that was not added is a no-op).</summary>
+	private void UnhookLevel()
+	{
+		if ( level.Objects is { } objects )
+			objects.ObjectPlaced -= OnObjectPlaced;
 		if ( (CellBuildTool?)level.CellTool is { } cellTool )
-			cellTool.Ended += OnCellToolEnded;
-		level.BuildToolsEnded += () => { pendingItem = null; queueRearmItem = null; };
-		hud = new UiScreen( "hud" ) { Modal = false };
-		Stack.Push( hud );
-		Build();
-		HookStaffStrikeMessages();
-		HookChallengeMessages();
+			cellTool.Ended -= OnCellToolEnded;
+		level.BuildToolsEnded -= OnBuildToolsEnded;
+		if ( level.Park != null )
+		{
+			level.Park.EventRaised -= OnStaffStrikeEvent;
+			level.Park.ChallengePresentationPosted -= OnChallengePresentation;
+		}
 	}
 
 	public UiScreenStack Stack { get; } = new();

@@ -493,6 +493,8 @@ public sealed class Sky : IDisposable
 		if ( disposed )
 			return;
 		disposed = true;
+		// the cloud and cylinder textures are path textures, shared through the texture cache (Texture.TryGetCachedTexture): the next sky of
+		// the same level takes them again instead of loading new ones, so they are kept (two per level), as ReleaseOwned keeps every path texture
 		cloudMaterial.ReleaseOwnedResources();
 		cylinderMaterial.ReleaseOwnedResources();
 		var buffer = vertexBuffer;

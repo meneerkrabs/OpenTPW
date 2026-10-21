@@ -71,7 +71,8 @@ public class Texture : DeviceResource, BindableResource, MappableResource
 			TextureSampleCount.Count1 => 1,
 			_ => 8
 		};
-		Handle = Gl.CreateTexture( Formats.Texture( Format ).Internal, (int)Width, (int)Height, (int)MipLevels, samples );
+		using ( WebGlMarks.Measure( "gl.createTexture" ) )
+			Handle = Gl.CreateTexture( Formats.Texture( Format ).Internal, (int)Width, (int)Height, (int)MipLevels, samples );
 		gpuBytes = EstimateGpuBytes( Formats.Texture( Format ).BytesPerPixel, Width, Height, samples > 1 ? 1u : MipLevels, samples );
 		Interlocked.Add( ref liveGpuBytes, gpuBytes );
 		Interlocked.Increment( ref liveGpuTextures );
@@ -137,7 +138,8 @@ public class DeviceBuffer : DeviceResource, BindableResource, MappableResource
 		var target = (Usage & BufferUsage.IndexBuffer) != 0 ? Gl.ElementArrayBuffer
 			: (Usage & BufferUsage.UniformBuffer) != 0 ? Gl.UniformBuffer
 			: Gl.ArrayBuffer;
-		Handle = Gl.CreateBuffer( target, (int)SizeInBytes );
+		using ( WebGlMarks.Measure( "gl.createBuffer" ) )
+			Handle = Gl.CreateBuffer( target, (int)SizeInBytes );
 	}
 }
 
@@ -216,7 +218,8 @@ public class ResourceSet : DeviceResource
 			entries[2 + index * 3] = handle;
 			entries[3 + index * 3] = size;
 		}
-		Handle = Gl.CreateResourceSet( entries );
+		using ( WebGlMarks.Measure( "gl.createResourceSet" ) )
+			Handle = Gl.CreateResourceSet( entries );
 	}
 }
 
@@ -333,9 +336,12 @@ public class Pipeline : DeviceResource
 		var key = string.Join( '\u0001', vertex.Source, fragment.Source, string.Join( ',', bindings ) );
 		if ( !programs.TryGetValue( key, out var program ) )
 		{
-			program = Gl.CreateProgram( vertex.Source, fragment.Source );
-			foreach ( var binding in bindings )
-				Gl.BindProgramResource( program, binding.Name, binding.Block, binding.Slot );
+			using ( WebGlMarks.Measure( "gl.createProgram" ) )
+			{
+				program = Gl.CreateProgram( vertex.Source, fragment.Source );
+				foreach ( var binding in bindings )
+					Gl.BindProgramResource( program, binding.Name, binding.Block, binding.Slot );
+			}
 			programs[key] = program;
 		}
 
@@ -392,6 +398,7 @@ public class Pipeline : DeviceResource
 			}
 		}
 		data.AddRange( sets );
-		Handle = Gl.CreatePipeline( CollectionsMarshal.AsSpan( data ) );
+		using ( WebGlMarks.Measure( "gl.createPipeline" ) )
+			Handle = Gl.CreatePipeline( CollectionsMarshal.AsSpan( data ) );
 	}
 }

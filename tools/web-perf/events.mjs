@@ -67,6 +67,104 @@ export function attributeProfile(profile, pageNowAtStart, windows, top = 10, dep
 	return [...totals].sort((a, b) => b[1] - a[1]).slice(0, top).map(([name, ms]) => ({ name, ms: round(ms) }));
 }
 
+/** True for the page's frame callback (main.js `frame`, which calls Program.Frame), the root of every frame's samples. */
+const isFrameCallback = frame => frame?.functionName === 'frame' && /(^|\/)main(\.[\w-]+)?\.js$/.test(frame.url ?? '');
+
+/**
+ * The frames a CPU profile saw: runs of consecutive samples under the page's frame callback, as [begin, end] page times. Samples taken
+ * outside the callback (a garbage collection at the top of the stack, say) end nothing for `gapMs`; a longer pause ends the run.
+ */
+export function profileFrames(profile, pageNowAtStart, gapMs = 1) {
+	const byId = new Map(profile.nodes.map(node => [node.id, node]));
+	const parents = new Map();
+	for (const node of profile.nodes)
+		for (const child of node.children ?? [])
+			parents.set(child, node.id);
+	const inFrame = new Map();
+	const underFrame = id => {
+		if (inFrame.has(id))
+			return inFrame.get(id);
+		let result = false;
+		for (let current = id; current != null; current = parents.get(current))
+			if (isFrameCallback(byId.get(current)?.callFrame)) {
+				result = true;
+				break;
+			}
+		inFrame.set(id, result);
+		return result;
+	};
+	const runs = [];
+	let run = null;
+	let time = profile.startTime;
+	profile.samples.forEach((id, index) => {
+		time += profile.timeDeltas[index];
+		const pageTime = pageNowAtStart + (time - profile.startTime) / 1000;
+		if (!underFrame(id))
+			return;
+		const end = pageTime + (profile.timeDeltas[index + 1] ?? 0) / 1000;
+		if (run && pageTime - run[1] <= gapMs)
+			run[1] = end;
+		else
+			runs.push(run = [pageTime, end]);
+	});
+	return runs;
+}
+
+/**
+ * How much later the CPU profile's clock reads than the page's (profile page time = page time + offset), from the frames themselves.
+ * The two clocks are only related through one performance.now() read after Profiler.start, which can be off by a frame or more
+ * (28 ms in the Jungle start). The busy times of the frame callback in the profile (profileFrames) are slid over the page's recorded
+ * frames (`frames`: [begin, ms] each) in steps of `binMs`, up to `searchMs` either way, and the shift where the two agree on the most
+ * time wins. Runs of back-to-back frames merge in the profile, but their pattern of lengths and gaps is what lines up. Null without
+ * frames or samples to compare.
+ */
+export function profileClockOffset(runs, pageNowAtStart, frames, { binMs = 0.5, searchMs = 500 } = {}) {
+	if (!runs.length || !frames.length)
+		return null;
+	const first = Math.min(...frames.map(([begin]) => begin));
+	const last = Math.max(...frames.map(([begin, ms]) => begin + ms));
+	const origin = Math.min(first, runs[0][0]) - searchMs;
+	const length = Math.ceil((Math.max(last, runs.at(-1)[1]) + searchMs - origin) / binMs) + 1;
+	const fill = (spans, into) => {
+		for (const [begin, end] of spans)
+			for (let bin = Math.max(0, Math.floor((begin - origin) / binMs)); bin < Math.min(length, Math.ceil((end - origin) / binMs)); bin++)
+				into[bin] = 1;
+	};
+	const profileBusy = new Uint8Array(length);
+	fill(runs, profileBusy);
+	const pageBusy = new Uint8Array(length);
+	fill(frames.map(([begin, ms]) => [begin, begin + ms]), pageBusy);
+	// only the time the page recorded frames over is compared
+	const from = Math.floor((first - origin) / binMs), to = Math.ceil((last - origin) / binMs);
+	const steps = Math.round(searchMs / binMs);
+	let best = null;
+	for (let shift = -steps; shift <= steps; shift++) {
+		let agree = 0;
+		for (let bin = from; bin < to; bin++) {
+			const shifted = bin + shift;
+			if (shifted >= 0 && shifted < length && profileBusy[shifted] === pageBusy[bin])
+				agree++;
+		}
+		if (!best || agree > best.agree || (agree === best.agree && Math.abs(shift) < Math.abs(best.shift)))
+			best = { agree, shift };
+	}
+	return round(best.shift * binMs);
+}
+
+/**
+ * The CPU profile's view of one slow frame (begin, ms in page time), read over the frame's window moved by the clock offset
+ * (profileClockOffset; none when null): the hottest functions, the stacks six deep and the game functions behind the runtime's time.
+ */
+export function profileOfFrame(profile, pageNowAtStart, offsetMs, begin, ms, top = { functions: 10, stacks: 8, owners: 12 }) {
+	const window = [begin + (offsetMs ?? 0), begin + (offsetMs ?? 0) + ms];
+	return {
+		profileOffsetMs: offsetMs,
+		functions: attributeProfile(profile, pageNowAtStart, [window], top.functions),
+		stacks: attributeProfile(profile, pageNowAtStart, [window], top.stacks, 6),
+		owners: attributeProfile(profile, pageNowAtStart, [window], top.owners, 4, true),
+	};
+}
+
 /**
  * One event: marks the page, runs act(), lets the park run for settleMs and returns what the frames and long tasks in between show.
  * A frame of at least `slowMs` is reported with its marks (and, when profiling, the functions it spent time in).
@@ -87,13 +185,11 @@ export async function recordEvent(page, name, act, { settleMs = 2000, slowMs = 2
 	const frames = end.frames;
 	const tasks = (await page.eval('globalThis.__opentpwLongTasks.splice(0)')).filter(([startTime]) => startTime >= start.now && startTime < end.now);
 	const summary = summarizeFrames(frames, end.now - start.now);
+	const offset = captured ? profileClockOffset(profileFrames(captured, profileStart), profileStart, frames) : null;
 	const slow = frames.filter(([, duration]) => duration >= slowMs).sort((a, b) => b[1] - a[1]).slice(0, 4).map(([begin, duration, marks]) => {
 		const entry = { atMs: round(begin - start.now), ms: round(duration), marks: marks ?? {} };
-		if (captured) {
-			entry.functions = attributeProfile(captured, profileStart, [[begin, begin + duration]]);
-			entry.stacks = attributeProfile(captured, profileStart, [[begin, begin + duration]], 8, 6);
-			entry.owners = attributeProfile(captured, profileStart, [[begin, begin + duration]], 12, 4, true);
-		}
+		if (captured)
+			Object.assign(entry, profileOfFrame(captured, profileStart, offset, begin, duration));
 		return entry;
 	});
 	return {

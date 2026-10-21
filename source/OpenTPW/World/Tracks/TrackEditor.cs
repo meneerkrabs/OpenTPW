@@ -49,7 +49,7 @@ public sealed class TrackEditor
 	private readonly TrackEditHooks hooks;
 
 	/// <param name="builder">The ride's family builder over the level's track layer.</param>
-	/// <param name="station">The ride's station: its first tile (<c>0x7639E0/E4</c>) and the tile before it (<c>0x7639E8/EC</c>) are the tiles a clear spares.</param>
+	/// <param name="station">The ride's station: its exit tile (<c>0x7639E0/E4</c>) and the entry tile (<c>0x7639E8/EC</c>) are the tiles a clear spares.</param>
 	/// <param name="hooks">Refunds and add-on removals; null for a headless cut.</param>
 	public TrackEditor( TrackBuilder builder, TrackStation station, TrackEditHooks? hooks = null )
 	{
@@ -186,7 +186,8 @@ public sealed class TrackEditor
 				break;
 			position = next;
 		}
-		if ( corners.Count < CornerCapacity )
+		// The initial exit is a vertex, not a zero-length segment to undo. Keep genuine repeated corner points.
+		if ( corners.Count < CornerCapacity && (corners.Count != 1 || corners[0] != station.Exit || last != station.Exit) )
 			corners.Add( last );
 		return new TrackOpenEnd( last, corners, reached );
 	}
@@ -247,7 +248,7 @@ public sealed class TrackEditor
 					cell.Link &= (byte)~forward;
 					cell.Mask &= (byte)~(back | forward);
 				}
-				else if ( at != station.Entry )
+				else if ( at != station.Exit && at != station.Entry )
 				{
 					var corner = IsCorner( cell.Mask );
 					cell.Mask &= (byte)~forward;
@@ -256,7 +257,7 @@ public sealed class TrackEditor
 				}
 			}
 			Tracks.Set( at.X, at.Y, cell );
-			if ( cell.Overlap < 0 && at != station.Entry )
+			if ( cell.Overlap < 0 && at != station.Exit && at != station.Entry )
 				ClearOrigin( at, cell );
 			else
 				Repick( at );
@@ -490,17 +491,17 @@ public sealed class TrackEditor
 	/// <summary>
 	/// The clear of one tile for a cut (<c>0x53B280</c> with the cut's arguments): a pass of a junction (<paramref name="pass"/>, arguments −1, −1) takes one pass off the overlap
 	/// counter and removes the arms of the pass that the tile's flow link no longer names, any other tile is marked for clearing outright (arguments 0, 0). A tile whose counter
-	/// went below zero is then cleared and refunds, except the first station tile and the tile before it, which stay. Returns whether the tile was cleared.
+	/// went below zero is then cleared and refunds, except the initial exit and entry tiles, which stay. Returns whether the tile was cleared.
 	/// </summary>
-	// [BIN:TPW-EXE:0x0053B280 clear cell] the forced clear (0, 0) writes the overlap word 0xFFFF (0x53B388) unless the tile is the first station tile; a pass (−1, −1) decrements it (0x53B393), removes the arms across the remaining link (0x53B3A7: link 1 or 0x10 takes 4 and 0x40, link 4 or 0x40 takes 1 and 0x10) and chooses the piece again (0x53B54A); a counter below zero clears the tile (0x53B54A..0x53B8BB) when it is neither the first station tile (0x7639E0/E4) nor the tile before it (0x7639E8/EC), or when the replay flag 0x81B46C is set: the refund (0x53B622), the arms of the tile and the arms of its neighbours pointing at it (0x53B634..0x53B6D9), the add-on object (0x53B6E5), the link, flags and step word (0x53B70B..0x53B73E) and the three extension cells (0x53B751..0x53B8BB)
+	// [BIN:TPW-EXE:0x0053B280 clear cell] the forced clear (0, 0) writes the overlap word 0xFFFF (0x53B388) unless the tile is the exit tile; a pass (−1, −1) decrements it (0x53B393), removes the arms across the remaining link (0x53B3A7: link 1 or 0x10 takes 4 and 0x40, link 4 or 0x40 takes 1 and 0x10) and chooses the piece again (0x53B54A); a counter below zero clears the tile (0x53B54A..0x53B8BB) when it is neither the exit tile (0x7639E0/E4) nor the entry tile (0x7639E8/EC), or when the replay flag 0x81B46C is set: the refund (0x53B622), the arms of the tile and the arms of its neighbours pointing at it (0x53B634..0x53B6D9), the add-on object (0x53B6E5), the link, flags and step word (0x53B70B..0x53B73E) and the three extension cells (0x53B751..0x53B8BB)
 	internal bool ClearCell( (int X, int Y) at, bool pass, bool replay = false )
 	{
 		var cell = Tracks.Get( at.X, at.Y );
 		if ( !cell.IsOrigin )
 			return false;
-		var isFirst = at == station.First;
+		var isExit = at == station.Exit;
 		var isEntry = at == station.Entry;
-		if ( !pass && !isFirst )
+		if ( !pass && !isExit )
 		{
 			cell.Overlap = -1;
 			Tracks.Set( at.X, at.Y, cell );
@@ -526,7 +527,7 @@ public sealed class TrackEditor
 			Repick( at );
 		}
 		cell = Tracks.Get( at.X, at.Y );
-		if ( cell.Overlap >= 0 || (!replay && (isFirst || isEntry)) )
+		if ( cell.Overlap >= 0 || (!replay && (isExit || isEntry)) )
 			return false;
 		ClearOrigin( at, cell );
 		return true;

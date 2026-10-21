@@ -67,6 +67,9 @@ public sealed class AudioVoice
 	public bool Loops { get; internal set; }
 	public event Action<AudioVoice>? Completed;
 
+	/// <summary>The decoded PCM this voice plays (shared with the decoded-sample cache when it is cached there), for the memory counters.</summary>
+	internal short[] SampleData => samples;
+
 	/// <summary>Whether this logical voice currently owns a sample output.</summary>
 	internal bool HasOutput => !IsFinished && output != null;
 

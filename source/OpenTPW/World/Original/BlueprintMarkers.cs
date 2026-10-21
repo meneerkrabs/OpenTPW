@@ -46,6 +46,8 @@ public sealed class BlueprintMarkers : ModelEntity
 
 	private readonly ModelHeightfield field;
 	private readonly Material material;
+	/// <summary>The placement area's texture: made from bytes for these markers alone, so it goes with them (<see cref="OnDelete"/>).</summary>
+	private readonly Texture areaTexture;
 	private (int X, int Y, BlueprintMarker Marker)[] shown = [];
 	private readonly Func<int, int, float?>? heightOffset;
 	private Dictionary<(int X, int Y), float?> shownHeights = [];
@@ -58,7 +60,8 @@ public sealed class BlueprintMarkers : ModelEntity
 		Hidden = true;
 		material = new Material<ObjectUniformBuffer>( "content/shaders/test.shader" );
 		var textures = TextureNames.Select( name => LoadTexture( $"/generic/dynamic/textures/{name}.wct" ) ).ToList();
-		textures.Add( AreaTexture() );
+		areaTexture = AreaTexture();
+		textures.Add( areaTexture );
 		while ( textures.Count < TextureSlots )
 			textures.Add( textures[0] );
 		// The arrow markers are optional art: a data set without them (Theme Park Inc) draws those cells blue.
@@ -208,13 +211,17 @@ public sealed class BlueprintMarkers : ModelEntity
 	private byte[] shownDirectionList = [];
 	private IReadOnlyDictionary<(int X, int Y), byte> shownDirections = new Dictionary<(int X, int Y), byte>();
 
-	/// <summary>Leaving the park releases the marker model and the markers' own material (the textures are shared game textures).</summary>
+	/// <summary>
+	/// Leaving the park releases the marker model, the markers' own material and the area texture they made from bytes (every park made a new
+	/// one, and each stayed for the session); the marker textures loaded by path are shared game textures and stay.
+	/// </summary>
 	protected override void OnDelete()
 	{
 		Model?.ReleaseBuffers();
 		Model = null;
 		shown = [];
 		material.ReleaseOwnedResources();
+		areaTexture.ReleaseOwned();
 	}
 
 	private const int SineEntries = 4096;

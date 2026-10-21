@@ -150,6 +150,33 @@ public class TrackInitialStationTests
 	}
 
 	[TestMethod]
+	public void DemolitionConsumesBothVisitsOfACornerExitWithoutLeavingAnOrphan()
+	{
+		foreach ( var family in Families )
+		foreach ( var rotation in Rotations )
+		{
+			var cells = new ParkCellMap( 64, 64 );
+			var builder = new TrackBuilder( cells, family, () => null, new Grid() );
+			var station = TrackStation.FromPlacement( 30, 30, rotation );
+			builder.PlaceInitialStation( station );
+			var dx = TrackHeading.Dy( station.Heading );
+			var dy = -TrackHeading.Dx( station.Heading );
+			var writer = new TrackLineWriter( builder, owner: builder.OwnerOf( station ) );
+			Assert.IsTrue( writer.Commit( station.Exit, (station.Exit.X + 4 * dx, station.Exit.Y + 4 * dy) ).Completed );
+			var cleared = new System.Collections.Generic.List<(int X, int Y)>();
+			var editor = new TrackEditor( builder, station, new TrackEditHooks { TileCleared = at => cleared.Add( at ) } );
+			editor.FindOpenEnd();
+			Assert.AreEqual( 1, cells.Tracks.Get( station.Exit.X, station.Exit.Y ).Overlap );
+			Assert.AreEqual( 4, editor.Demolish().Count );
+			Assert.AreEqual( 4, cleared.Distinct().Count() );
+			Assert.IsTrue( cleared.Contains( station.Exit ) && cleared.Contains( station.Entry ) );
+			Assert.AreEqual( 2, cells.Tracks.Cells().Count( x => x.Cell.IsOrigin ) );
+			Assert.AreEqual( 0, editor.Demolish().Count );
+			Assert.AreEqual( 4, cleared.Count, "repeated demolition cannot refund twice" );
+		}
+	}
+
+	[TestMethod]
 	public void SaveRoundtripRetainsInitialCellsButLegacyStationStampDoesNotInventThem()
 	{
 		foreach ( var family in Families )

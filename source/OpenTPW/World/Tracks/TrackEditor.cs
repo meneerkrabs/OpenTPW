@@ -338,7 +338,12 @@ public sealed class TrackEditor
 				Tracks.Set( tile.X, tile.Y, cell );
 			}
 			// a corner is an end of two replayed lines, so it is visited twice and its counter of 1 runs out; a plain tile is cleared on its one visit
-			if ( ClearCell( tile, pass: IsJunction( cell.Mask ), replay: true ) )
+			var removed = ClearCell( tile, pass: IsJunction( cell.Mask ), replay: true );
+			// Exit is exempt from the forced -1 write even during replay. A corner there starts with one pass,
+			// so consume its second recorded-line visit instead of leaving overlap zero alive. Do not repeat junction passes.
+			if ( !removed && tile == station.Exit && IsCorner( cell.Mask ) )
+				removed = ClearCell( tile, pass: false, replay: true );
+			if ( removed )
 				cleared.Add( tile );
 		}
 	}

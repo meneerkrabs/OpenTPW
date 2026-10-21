@@ -73,8 +73,9 @@ public sealed partial class ParkHud
 	{
 		if ( level.IsReadOnlyVisit || level.Guests is not { } guests )
 			return null;
-		var around = guests.Guests.Where( guest => guests.IsOnParkCell( guest ) ).Select( guest => (guest.CellX, guest.CellY, guest.Happiness) );
-		// [APPROX:UI-024] the guests counted are those on a park cell (GuestSimulation.IsOnParkCell) at the object's anchor cell, where the original walks the thing lists of the cells around the thing's own cell byte pair (+5, +7)
-		return UiGauge.OfPercent( LocalHappiness( around, item.Placement.X, item.Placement.Y ) );
+		// [BIN:TPW-EXE:0x4cd880] count actual cell-list members, without the separate IsOnParkCell predicate or a state filter.
+		// [EXT:guest-cell-lists] retain the simulation's membership and synchronization policy, including its swim exclusion.
+		// The existing placement anchor matches the inspected shipped objects (zero MapOffsetX/Y); custom nonzero offsets are not resolved here.
+		return UiGauge.OfPercent( LocalHappiness( guests.CellListHappiness(), item.Placement.X, item.Placement.Y ) );
 	}
 }

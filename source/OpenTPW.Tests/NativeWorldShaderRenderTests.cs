@@ -30,11 +30,22 @@ public class NativeWorldShaderRenderTests
 	[DataRow( "advisor.shader", 0u )]
 	[DataRow( "sprite.shader", 0u )]
 	[DataRow( "unlit.shader", 0u )]
-	public void TexturedShaderKeepsTheTextureDetail( string shader, uint matFlags )
+	public void TexturedShaderKeepsTheTextureDetail( string shader, uint matFlags ) => AssertTextureDetail( shader, matFlags, materialScratchBuffer: false );
+
+	/// <summary>
+	/// The uniform block as Material uploads it: a 2048-byte dynamic uniform buffer of which each draw records only the block's bytes (272, more with point
+	/// lights). On Direct3D 11 Veldrid writes such a partial update through a staging buffer and a GPU copy.
+	/// </summary>
+	[DataTestMethod]
+	[DataRow( "test.shader" )]
+	[DataRow( "unlit.shader" )]
+	public void MaterialScratchBufferUploadReachesTheShader( string shader ) => AssertTextureDetail( shader, 0u, materialScratchBuffer: true );
+
+	private static void AssertTextureDetail( string shader, uint matFlags, bool materialScratchBuffer )
 	{
 		using var device = CreateDevice();
 		Log = new();
-		var pixels = Draw( device, shader, matFlags );
+		var pixels = Draw( device, shader, matFlags, materialScratchBuffer );
 
 		// the picture must follow the checkerboard: the mean of the pixels under white cells against those under black cells
 		// (either orientation, the backends' texture origins differ), and the cells must not be one averaged colour
@@ -51,7 +62,7 @@ public class NativeWorldShaderRenderTests
 		white /= whiteCount;
 		black /= blackCount;
 		var contrast = Math.Abs( white - black );
-		Console.WriteLine( $"{device.BackendType} {shader} flags 0x{matFlags:X8}: white cells {white:F1}, black cells {black:F1}, centre {Describe( pixels, Size / 2, Size / 2 )}" );
+		Console.WriteLine( $"{device.BackendType} {shader} flags 0x{matFlags:X8}{(materialScratchBuffer ? " (Material scratch buffer)" : "")}: white cells {white:F1}, black cells {black:F1}, centre {Describe( pixels, Size / 2, Size / 2 )}" );
 		// a coarse picture of the target (every second row and column) for the CI log
 		for ( int y = 0; y < Size; y += 2 )
 		{
@@ -91,7 +102,7 @@ public class NativeWorldShaderRenderTests
 		return null!;
 	}
 
-	private static byte[] Draw( GraphicsDevice device, string shader, uint matFlags )
+	private static byte[] Draw( GraphicsDevice device, string shader, uint matFlags, bool materialScratchBuffer )
 	{
 		var factory = device.ResourceFactory;
 		var target = device.BackendType switch
@@ -137,7 +148,9 @@ public class NativeWorldShaderRenderTests
 			g_vLightPos = new Vector3( 0, 0, -10 ),
 			g_vLightColor = Vector3.Zero,
 		};
-		using var uniforms = factory.CreateBuffer( new BufferDescription( 4096, BufferUsage.UniformBuffer ) );
+		using var uniforms = factory.CreateBuffer( materialScratchBuffer
+			? new BufferDescription( 16 * 128, BufferUsage.UniformBuffer | BufferUsage.Dynamic ) // Material.SetupResources' ScratchBuffer
+			: new BufferDescription( 4096, BufferUsage.UniformBuffer ) );
 
 		Vertex Corner( float x, float y, float u, float v ) => new Vertex( new Vector3( x, y, 0.5f ), new Vector3( 0, 0, -1 ), new Vector2( u, v ) ) { TexIndex = 0, MatFlags = matFlags };
 		var vertices = new[]

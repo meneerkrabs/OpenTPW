@@ -249,6 +249,7 @@ export function summarizeFrames(frames, windowMs) {
 		p99Ms: round(percentile(durations, 0.99)),
 		maxMs: round(durations.at(-1) ?? null),
 		totalMs: round(durations.reduce((sum, value) => sum + value, 0)),
+		over33Ms: durations.filter(value => value > 33).length,
 		over50Ms: durations.filter(value => value >= 50).length,
 		longFramesMs: frames.map(([, duration]) => duration).filter(value => value >= 50).map(round),
 		largestGapMs: round(largestGap),
@@ -304,6 +305,7 @@ export function keyMetrics(results) {
 	add('Lobby: main thread busy', results.lobby?.mainThreadBusyPercent, '%');
 	add('Lobby: frame p95', results.lobby?.p95Ms, 'ms');
 	add('Jungle cold: largest frame', results.jungle?.cold?.maxFrameMs, 'ms');
+	add('Jungle cold: frames over 33 ms', results.jungle?.cold?.over33Ms, '');
 	add('Jungle cold: ready', results.jungle?.cold?.readyMs, 'ms');
 	add('Jungle: main thread busy', results.jungle?.steady?.mainThreadBusyPercent, '%');
 	add('Jungle: frame p95', results.jungle?.steady?.p95Ms, 'ms');

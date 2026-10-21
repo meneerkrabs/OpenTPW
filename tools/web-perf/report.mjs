@@ -9,6 +9,7 @@ export function markdown(report) {
 			lines.push(`- ${name} steady: main thread busy ${steady.mainThreadBusyPercent}%, ${steady.fps} fps, frame p95 ${steady.p95Ms} ms, largest gap ${steady.largestGapMs} ms, long tasks ${steady.longTasks}`);
 	if (results.jungle?.cold) {
 		lines.push(`- Jungle cold: ready in ${results.jungle.cold.readyMs} ms, largest frame ${results.jungle.cold.maxFrameMs} ms`
+			+ (results.jungle.cold.over33Ms != null ? `, ${results.jungle.cold.over33Ms} frames over 33 ms` : '')
 			+ (results.jungle.cold.longFramesMs?.length ? `; frames over 50 ms: ${results.jungle.cold.longFramesMs.join(', ')}` : ''));
 		if (results.jungle.cold.buildFramesMs?.length)
 			lines.push(`- Jungle built over ${results.jungle.cold.buildFramesMs.length} frames, construction ms per frame (the last enters the park): ${results.jungle.cold.buildFramesMs.join(', ')}`);
@@ -32,8 +33,10 @@ export function markdown(report) {
 			...results.switch.steps.map(step => `| ${step.step} | ${(step.wasmBytes / 1048576).toFixed(0)} | ${(step.managedBytes / 1048576).toFixed(0)} | ${step.levelsAlive} | ${step.entities} | ${step.texturesHeld} | ${(step.archiveBytes / 1048576).toFixed(0)} | ${(step.archiveMemberBytes / 1048576).toFixed(0)} | ${(step.decodedSampleBytes / 1048576).toFixed(0)} | ${(step.jsHeapBytes / 1048576).toFixed(0)} | ${((step.gpuTextureBytes ?? 0) / 1048576).toFixed(0)} / ${step.gpuTextures ?? 0} | ${step.rssBytes ? (step.rssBytes / 1048576).toFixed(0) : ''} |`));
 	if (results.memory && !results.memory.error)
 		lines.push('', `- Memory over ${results.memory.minutes} min: wasm +${(results.memory.wasmGrowthBytes / 1048576).toFixed(1)} MB (peak ${(results.memory.peakWasmBytes / 1048576).toFixed(0)} MB), managed +${(results.memory.managedGrowthBytes / 1048576).toFixed(1)} MB`);
-	if (results.events && !results.events.error) {
-		const records = [...Object.values(results.events.events ?? {}), results.events.soak].filter(entry => entry && !entry.missing);
+	for (const scenario of [results.events, results.door]) {
+		if (!scenario || scenario.error)
+			continue;
+		const records = [...Object.values(scenario.events ?? {}), scenario.soak].filter(entry => entry && !entry.missing);
 		lines.push('', '| Event | Max frame (ms) | p95 (ms) | Frames ≥ 20 ms | Long tasks | Slowest frame: named work (ms) |', '| --- | ---: | ---: | ---: | ---: | --- |');
 		for (const entry of records) {
 			const worst = entry.slow?.[0];

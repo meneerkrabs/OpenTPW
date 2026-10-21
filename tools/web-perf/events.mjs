@@ -213,6 +213,76 @@ export function eventPlan(options) {
 	return plan;
 }
 
+/**
+ * The park door button of the entry price window clicked three times (open, close, open again) in a park whose door is still closed: the first
+ * opening runs the gate script's open, opens the attractions and starts admissions, the arrivals and the advisor's line. The clicks go through the
+ * HUD's input like a player's. Each press gets its frames, worst frame, p95, the slow frames' marks (and profile) and `stateMs`: the wall time
+ * from the click until the economy reports the new door state (it includes the harness's polling, a few ms), and for an opening `firstGuestMs`:
+ * the time until a new guest is in the park, at most `waitSeconds`. Records into `events` with `run`.
+ */
+export async function doorEvents(page, run, waitSeconds = 20) {
+	if (!await page.call('PerfOpenWindow', 'entryPrice'))
+		throw new Error('the entry price window could not be opened');
+	await sleep(1500);
+	const presses = [['park door: first click (opens)', true, waitSeconds * 1000], ['park door: second click (closes)', false, 3000], ['park door: third click (opens again)', true, waitSeconds * 1000]];
+	try {
+		for (const [name, opens, settleMs] of presses) {
+			let stateMs = null, firstGuestMs = null;
+			const record = await run(name, async () => {
+				if (await page.eval('opentpwPerf.program.PerfParkOpen()') === opens)
+					throw new Error(`the park door is already ${opens ? 'open' : 'closed'}`);
+				const guests = await page.eval('opentpwPerf.program.PerfGuests()');
+				const clicked = Date.now();
+				if (!await page.call('PerfClick', 'door'))
+					throw new Error('the park door button is not shown');
+				for (const begin = Date.now(); Date.now() - begin < 3000; await sleep(10))
+					if (await page.eval('opentpwPerf.program.PerfParkOpen()') === opens) {
+						stateMs = Date.now() - clicked;
+						break;
+					}
+				// an opening: the time until the first new guest is in the park (the arrivals' own schedule; at most the settle time)
+				if (opens)
+					for (const begin = Date.now(); Date.now() - begin < settleMs; await sleep(50))
+						if (await page.eval('opentpwPerf.program.PerfGuests()') > guests) {
+							firstGuestMs = Date.now() - clicked;
+							break;
+						}
+			}, { settleMs: opens ? 1000 : settleMs });
+			record.stateMs = stateMs;
+			record.firstGuestMs = firstGuestMs;
+		}
+	} finally {
+		await page.call('PerfKey', 'Back').catch(() => {});
+	}
+}
+
+/** The park door alone (`--scenarios start,jungle,door`): the presses of doorEvents in the fresh Jungle park, with marks and --profile. */
+export async function doorScenario(page, options) {
+	const state = await page.state();
+	if (!state.hud || state.level !== 'jungle')
+		throw new Error('The door scenario needs the Jungle park: run it after jungle');
+	const profile = !!options.profile;
+	if (profile) {
+		await page.send('Profiler.enable');
+		await page.send('Profiler.setSamplingInterval', { interval: 250 });
+	}
+	await page.eval('opentpwPerf.marks = true, opentpwPerf.program.PerfFrameMarks(true), 0');
+	const events = {};
+	const run = async (name, act, extra) => {
+		process.stderr.write(`  ${name}\n`);
+		const record = await recordEvent(page, name, act, { profile, ...extra }).catch(error => ({ name, missing: true, error: error.message }));
+		events[name] = record;
+		return record;
+	};
+	try {
+		await run('steady before the door', () => sleep(0), { settleMs: 3000 });
+		await doorEvents(page, run, options.doorWaitSeconds);
+		return { events };
+	} finally {
+		await page.eval('opentpwPerf.marks = false, opentpwPerf.program.PerfFrameMarks(false), 0').catch(() => {});
+	}
+}
+
 /** Runs the whole scenario; returns { events: { name: record }, soak: record }. */
 export async function eventsScenario(page, options) {
 	const state = await page.state();
@@ -282,6 +352,9 @@ export async function eventsScenario(page, options) {
 		const guests = await page.eval('opentpwPerf.program.PerfGuests()');
 		const soak = await recordEvent(page, `soak at the fastest speed (${options.soakSeconds} s, ${guests} guests)`, () => sleep(0), { settleMs: options.soakSeconds * 1000, slowMs: 20, profile });
 		await page.call('PerfSpeed', 1);
+		// the park door last, so the events above keep the closed park they were measured in
+		if (!await page.eval('opentpwPerf.program.PerfParkOpen?.() ?? true'))
+			await doorEvents(page, run);
 		return { events, soak };
 	} finally {
 		await page.eval('opentpwPerf.marks = false, opentpwPerf.program.PerfFrameMarks(false), 0').catch(() => {});

@@ -37,6 +37,17 @@ public sealed class PoolTool
 	/// <summary>Bridge mode uses one click per bridge and never paints water.</summary>
 	public bool IsBridge => IsActive && bridgeMode;
 	public PoolBridgeResult? HoverBridgeResult { get; private set; }
+	/// <summary>The cell that refuses the hovered bridge, when one cell is to blame (<see cref="PoolBridgeWorld.Check(int, int, int, out (int X, int Y)?)"/>).</summary>
+	public (int X, int Y)? HoverBridgeBlocker { get; private set; }
+	/// <summary>The cells the hovered bridge would use while placing one: the outside path end before it, its seven cells and the path end after it (the cells inside the park).</summary>
+	public IEnumerable<(int X, int Y)> HoverBridgeCells()
+	{
+		if ( !IsBridge || IsErasing || HoverCell is not { } cell || Bridges == null )
+			yield break;
+		var candidate = new PoolBridge( cell.X, cell.Y, bridgeDirection, 0 );
+		for ( var i = -1; i <= PoolBridge.Length; i++ )
+			yield return candidate.Cell( i );
+	}
 	public PoolBridgeResult? LastBridgeRefusal { get; private set; }
 	/// <summary>True in the slide mode (<see cref="BeginSlide"/>): presses lay the pieces of the tower's slide, one cell at a time.</summary>
 	public bool IsSlide => IsActive && slideTower != null;
@@ -83,6 +94,7 @@ public sealed class PoolTool
 		HoverResult = null;
 		HoverSlideResult = null;
 		HoverBridgeResult = null;
+		HoverBridgeBlocker = null;
 		LastBridgeRefusal = null;
 		IsErasing = erase;
 		slideTower = null;
@@ -125,6 +137,7 @@ public sealed class PoolTool
 		HoverResult = null;
 		HoverSlideResult = null;
 		HoverBridgeResult = null;
+		HoverBridgeBlocker = null;
 		LastBridgeRefusal = null;
 		IsErasing = false;
 		slideTower = (towerX, towerY);
@@ -145,8 +158,10 @@ public sealed class PoolTool
 		HoverCell = (x, y);
 		if ( bridgeMode )
 		{
-			var result = IsErasing ? Bridges!.CheckRemove( x, y ) : Bridges!.Check( x, y, bridgeDirection );
+			(int X, int Y)? blocker = null;
+			var result = IsErasing ? Bridges!.CheckRemove( x, y ) : Bridges!.Check( x, y, bridgeDirection, out blocker );
 			HoverBridgeResult = result == PoolBridgeResult.Ok ? null : result;
+			HoverBridgeBlocker = blocker;
 			HoverResult = Map( result );
 			return;
 		}
@@ -174,6 +189,7 @@ public sealed class PoolTool
 		HoverCell = null;
 		HoverResult = null;
 		HoverBridgeResult = null;
+		HoverBridgeBlocker = null;
 	}
 
 	/// <summary>The press: starts a stroke on the cell and writes it.</summary>
@@ -288,6 +304,7 @@ public sealed class PoolTool
 		IsActive = false;
 		bridgeMode = false;
 		HoverBridgeResult = null;
+		HoverBridgeBlocker = null;
 		LastBridgeRefusal = null;
 		IsErasing = false;
 		slideTower = null;
@@ -314,7 +331,7 @@ public sealed class PoolTool
 		PoolBridgeResult.ExtensionOff => PoolBuildResult.ExtensionOff,
 		PoolBridgeResult.OutsideTerrain => PoolBuildResult.OutsideTerrain,
 		PoolBridgeResult.NotOwned => PoolBuildResult.NotOwned,
-		PoolBridgeResult.Occupied => PoolBuildResult.Occupied,
+		PoolBridgeResult.Occupied or PoolBridgeResult.EndNotPath or PoolBridgeResult.LandIsWater or PoolBridgeResult.Blocked or PoolBridgeResult.BridgeInTheWay => PoolBuildResult.Occupied,
 		PoolBridgeResult.TooSteep => PoolBuildResult.TooSteep,
 		PoolBridgeResult.Standing => PoolBuildResult.Standing,
 		PoolBridgeResult.NotEnoughMoney => PoolBuildResult.NotEnoughMoney,

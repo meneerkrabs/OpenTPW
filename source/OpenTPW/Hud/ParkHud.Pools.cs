@@ -109,7 +109,8 @@ public sealed partial class ParkHud
 			return false;
 		}
 		tool.Hover( cursorX, cursorY );
-		context.HoverHelp = strings.Extra( tool.IsBridge ? (tool.IsErasing ? OpenTpwText.PoolBridgeEraseHelp : OpenTpwText.PoolBridgeHelp) : tool.IsSlide ? OpenTpwText.PoolSlideHelp : tool.IsErasing ? OpenTpwText.PoolEraseHelp : tool.IsRiver ? OpenTpwText.PoolRiverHelp : OpenTpwText.PoolPaintHelp );
+		// a bridge the pointer cannot place says why instead of the help, so the player sees the reason before clicking (the blueprint marks the cell to blame)
+		context.HoverHelp = strings.Extra( tool.IsBridge && !tool.IsErasing && tool.HoverBridgeResult is { } hoverRefusal ? BridgeRefusalText( hoverRefusal ) : tool.IsBridge ? (tool.IsErasing ? OpenTpwText.PoolBridgeEraseHelp : OpenTpwText.PoolBridgeHelp) : tool.IsSlide ? OpenTpwText.PoolSlideHelp : tool.IsErasing ? OpenTpwText.PoolEraseHelp : tool.IsRiver ? OpenTpwText.PoolRiverHelp : OpenTpwText.PoolPaintHelp );
 		if ( input.LeftPressed )
 		{
 			refusalClick.Press();
@@ -126,6 +127,22 @@ public sealed partial class ParkHud
 		return false;
 	}
 
+	/// <summary>[EXT:pools-bridges] What a refused bridge placement or removal tells the player, on the click and in the hover help.</summary>
+	internal static OpenTpwText BridgeRefusalText( PoolBridgeResult result ) => result switch
+	{
+		PoolBridgeResult.NotEnoughMoney => OpenTpwText.NotEnoughMoney,
+		PoolBridgeResult.NotOverPool => OpenTpwText.PoolBridgeNeedsWater,
+		PoolBridgeResult.NotBridge => OpenTpwText.PoolBridgeNotBridge,
+		PoolBridgeResult.Standing => OpenTpwText.PoolBridgeStanding,
+		PoolBridgeResult.TooSteep => OpenTpwText.PoolBridgeTooSteep,
+		PoolBridgeResult.EndNotPath => OpenTpwText.PoolBridgeEndNotPath,
+		PoolBridgeResult.LandIsWater => OpenTpwText.PoolBridgeLandIsWater,
+		PoolBridgeResult.Blocked => OpenTpwText.PoolBridgeBlocked,
+		PoolBridgeResult.BridgeInTheWay => OpenTpwText.PoolBridgeInTheWay,
+		PoolBridgeResult.NotOwned => OpenTpwText.PoolBridgeNotOwned,
+		_ => OpenTpwText.CannotBuildHere
+	};
+
 	/// <summary>Ends the stroke: the lay sound if it wrote cells, and one refusal sound and message if a cell was refused.</summary>
 	private void ReportPoolStroke( PoolTool tool )
 	{
@@ -139,15 +156,7 @@ public sealed partial class ParkHud
 		refusalClick.Refused( refusal.Cell.X, refusal.Cell.Y );
 		if ( tool.LastBridgeRefusal is { } bridgeRefusal )
 		{
-			PostMessage( strings.Extra( bridgeRefusal switch
-			{
-				PoolBridgeResult.NotEnoughMoney => OpenTpwText.NotEnoughMoney,
-				PoolBridgeResult.NotOverPool => OpenTpwText.PoolBridgeNeedsWater,
-				PoolBridgeResult.NotBridge => OpenTpwText.PoolBridgeNotBridge,
-				PoolBridgeResult.Standing => OpenTpwText.PoolBridgeStanding,
-				PoolBridgeResult.TooSteep => OpenTpwText.PoolTooSteep,
-				_ => OpenTpwText.CannotBuildHere
-			} ) );
+			PostMessage( strings.Extra( BridgeRefusalText( bridgeRefusal ) ) );
 			return;
 		}
 		PostMessage( strings.Extra( refusal.Reason switch

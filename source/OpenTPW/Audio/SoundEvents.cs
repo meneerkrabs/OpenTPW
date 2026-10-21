@@ -106,6 +106,21 @@ public sealed class SoundEventSystem
 	private readonly List<SoundChain> chains = new();
 	private readonly List<PlacedSound> placements = new();
 
+	/// <summary>
+	/// What the sound system holds right now (<see cref="SoundSystemCounts"/>): the memory accounting of the browser harness and the tests that
+	/// check a park visit leaves nothing behind read it.
+	/// </summary>
+	public SoundSystemCounts Counts()
+	{
+		var voiceSamples = new HashSet<short[]>( ReferenceEqualityComparer.Instance );
+		foreach ( var voice in mixer.Voices )
+			voiceSamples.Add( voice.SampleData );
+		lock ( decoded )
+			return new SoundSystemCounts( mixer.Voices.Count, voiceSamples.Sum( samples => (long)samples.Length * sizeof( short ) ), sentences.Count, chains.Count,
+				placements.Count, oneShots.Count, loopSamples.Count, HeldSounds.Sounds.Count, decoded.Count,
+				decoded.Values.Sum( audio => (long)(audio?.Samples.Length ?? 0) * sizeof( short ) ), decoding.Count );
+	}
+
 	/// <summary>Starts decoded segments that were waiting for an asynchronous decode; call once per frame.</summary>
 	public void Pump()
 	{
@@ -1263,3 +1278,10 @@ internal sealed class SoundParameterTable
 
 	internal byte Code( int slot ) => codes[slot];
 }
+
+/// <summary>
+/// The sound system's holdings at one moment (<see cref="SoundEventSystem.Counts"/>): the mixer's voices and the distinct PCM they play, the sentences, held chains,
+/// placed sounds waiting for their decode, the tracked one-shots and loops, the held sounds, the decoded-sample cache and the decodes in flight.
+/// </summary>
+public readonly record struct SoundSystemCounts( int Voices, long VoiceSampleBytes, int Sentences, int Chains, int Placements, int OneShots, int LoopSamples,
+	int HeldSounds, int DecodedSamples, long DecodedBytes, int DecodesInFlight );

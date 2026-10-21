@@ -373,8 +373,11 @@ internal sealed partial class GameFlow : IDisposable
 		};
 	}
 
-	/// <summary>The rest of <see cref="StartLevel"/> once its level is built and current: park audio, HUD and advisor.</summary>
-	private Level EnterLevel( Level level, string levelName, bool original, ParkVisitInfo? visit )
+	/// <summary>
+	/// The rest of <see cref="StartLevel"/> once its level is built and current: park audio, HUD and advisor. <paramref name="preparedHud"/> is the HUD
+	/// a build step made for this level (GameFlow.PrepareFirstFrame); without it the HUD is made here.
+	/// </summary>
+	private Level EnterLevel( Level level, string levelName, bool original, ParkVisitInfo? visit, ParkHud? preparedHud = null )
 	{
 		Level = level;
 		if ( original )
@@ -406,11 +409,15 @@ internal sealed partial class GameFlow : IDisposable
 			}
 			return level;
 		}
-		// Money, calendar, speed and purchases come from the park economy of original levels (Level.Park,
-		// looked up on every access so loading a park save is followed); the generic sandbox has none.
-		IHudParkStatus status = level.Park != null ? EconomyParkStatus.ForLevel( level, PlayerKeys ) : new NoEconomyStatus();
-		using ( LoadProfile.Measure( "park-hud" ) )
-			Hud = CreateParkHud( level, status );
+		if ( preparedHud != null )
+		{
+			// [EXT:park-entry-preparation] made in a build step; what it took from the input of that frame is taken from this one
+			preparedHud.RefreshEntryInput();
+			Hud = preparedHud;
+		}
+		else
+			using ( LoadProfile.Measure( "park-hud" ) )
+				Hud = CreateParkHud( level, HudStatusFor( level ) );
 		// [EXT:online-visit-presence] a visit with a chat room (a downloaded park's, a chat satellite's) joins it and draws its players while logged in
 		if ( visit != null && FeatureGates.Online )
 			presence = ParkPresence.TryCreate( onlineSession, level );
@@ -441,6 +448,12 @@ internal sealed partial class GameFlow : IDisposable
 
 	/// <summary>The window list sorts of this session, shared by every park's HUD (UI-084).</summary>
 	private readonly ListSortMemory listSorts = new();
+
+	/// <summary>
+	/// Money, calendar, speed and purchases come from the park economy of original levels (Level.Park, looked up on every access so loading a
+	/// park save is followed); the generic sandbox has none.
+	/// </summary>
+	private IHudParkStatus HudStatusFor( Level level ) => level.Park != null ? EconomyParkStatus.ForLevel( level, PlayerKeys ) : new NoEconomyStatus();
 
 	private ParkHud CreateParkHud( Level level, IHudParkStatus status )
 	{

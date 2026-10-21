@@ -34,13 +34,29 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 	private ParkVisitInfo? readOnlyVisit;
 	private (ulong Hash, int Entities, int Objects) builtInOneGo, builtOverFrames;
 	private int framesBuilding;
+	// [EXT:park-entry-preparation] the HUD a build step made, the HUDs' state as each park was entered, and whether the sky was loaded before the first draw
+	private ParkHud? preparedHud;
+	private string? hudInOneGo, hudOverFrames;
+	private bool skyBeforeFirstDraw;
 	private (List<Entity> Entities, int Count, int Materials) lobbyBeforeAbandon;
 
 	private void RecordBuiltOverFrames()
 	{
 		if ( flow.Level is { } level )
+		{
 			builtOverFrames = (level.ComputeStateHash(), Entity.All.Count, level.Objects.Objects.Count);
+			hudOverFrames = flow.Hud is { } hud ? HudState( hud ) : null;
+			skyBeforeFirstDraw = level.SkyLoaded;
+		}
 	}
+
+	/// <summary>What a HUD shows and holds as a park is entered, before its first update: its screens, its main screen's elements and their state, its messages and modes.</summary>
+	private static string HudState( ParkHud hud ) => string.Join( "|", new[]
+	{
+		string.Join( ",", hud.Stack.Screens.Select( screen => screen.Name ) ),
+		string.Join( ",", hud.Screen.Elements.Select( element => $"{element.Id}:{element.Visible}:{element.Enabled}:{element.Bounds}" ) ),
+		string.Join( ",", hud.Messages ), $"{hud.Paused} {hud.SimulationTimeScale} {hud.InfoArmOpen} {hud.CamcorderArmed} {hud.Category} {hud.BuySort} {hud.BuySortDescending}",
+	} );
 	private OriginalObject? visitedObject;
 	private bool visitedOpen;
 	private int visitedCount;
@@ -1439,6 +1455,8 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 		{
 			flow.LoadPark( new ParkLoadEntry( "jungle", 0, false ) );
 			builtInOneGo = (flow.Level!.ComputeStateHash(), Entity.All.Count, flow.Level.Objects.Objects.Count);
+			hudInOneGo = HudState( flow.Hud! );
+			Require( !flow.Level.SkyLoaded, "a park built in one go loads its sky on its first draw" );
 		} );
 		Wait( "original park loads", 3 );
 		Do( "loaded park is the reference start", () =>
@@ -1479,6 +1497,7 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 		{
 			if ( flow.BuildingPark )
 			{
+				preparedHud ??= flow.PreparedHud;
 				framesBuilding++;
 				Require( flow.Level == null && flow.Lobby != null && Entity.All.Count > 0, "the lobby stays current while the park is built" );
 				return false;
@@ -1491,6 +1510,9 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 			Require( framesBuilding >= 2, $"the park is built over several frames ({framesBuilding})" );
 			Require( builtOverFrames == builtInOneGo,
 				$"built over frames: hash, entities and objects {builtOverFrames} equal the park built in one go {builtInOneGo}" );
+			Require( preparedHud != null && ReferenceEquals( flow.Hud, preparedHud ), "the park built over frames is entered with the HUD a build step made" );
+			Require( hudOverFrames == hudInOneGo, $"the HUD made in a build step is entered as the HUD made on entering: {hudOverFrames} / {hudInOneGo}" );
+			Require( skyBeforeFirstDraw, "the park built over frames has its sky loaded before its first draw" );
 			Require( flow.Level != null && flow.Hud != null && flow.Lobby == null && flow.StartKind == ParkStartKind.OriginalSaveReference,
 				"the park built over frames is entered with its HUD, and the lobby is gone" );
 			Log.Trace( $"Park built over {framesBuilding} frames: hash {builtOverFrames.Hash:X16}, {builtOverFrames.Entities} entities, {builtOverFrames.Objects} objects, as built in one go." );

@@ -35,13 +35,25 @@ public partial class Level
 	/// </summary>
 	internal void DrawSky()
 	{
-		if ( !skyLoaded )
-		{
-			skyLoaded = true;
-			sky = Sky.TryCreate( LevelName );
-		}
+		PrepareSky();
 		sky?.Draw( SceneClock.CappedFrameSeconds, Look.IsDay ? (System.Numerics.Vector3?)null : Look.SkyTint );
 	}
+
+	/// <summary>
+	/// Loads the sky now if the first draw has not: its textures, colour grid, geometry and materials.
+	/// [EXT:park-entry-preparation] a park built over frames runs this in a build step before it is entered, so the frame that enters it does
+	/// not (about 4 ms in the browser). The same sky is made, from the same files, and nothing of it depends on the time it is made.
+	/// </summary>
+	internal void PrepareSky()
+	{
+		if ( skyLoaded )
+			return;
+		skyLoaded = true;
+		sky = Sky.TryCreate( LevelName );
+	}
+
+	/// <summary>Whether the sky has been loaded (by <see cref="PrepareSky"/> or the first draw).</summary>
+	internal bool SkyLoaded => skyLoaded;
 
 	private void DisposeSky()
 	{

@@ -274,6 +274,17 @@ internal sealed class UiRenderer : IDisposable
 
 	internal void PrepareImage( string path ) => GetResourceSet( UiTexture.Image( path ) );
 
+	/// <summary>
+	/// Makes the GPU copy of an interface image or font atlas now, as its first draw would (a decoded, keyed image or a smoothed atlas,
+	/// uploaded once and kept): a park built over frames prepares its HUD's textures this way before it is entered. Other textures
+	/// (solid, rendered, depth images) are left alone.
+	/// </summary>
+	internal void Prepare( UiTexture texture )
+	{
+		if ( texture.ImagePath != null || texture.Atlas != null )
+			GetResourceSet( texture );
+	}
+
 	private ResourceSet? GetResourceSet( UiTexture texture )
 	{
 		if ( texture.DepthImage is { } depthImage )

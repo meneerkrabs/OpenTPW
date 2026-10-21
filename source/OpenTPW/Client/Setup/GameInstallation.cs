@@ -1,4 +1,4 @@
-namespace OpenTPW;
+﻿namespace OpenTPW;
 
 /// <summary>Whether a folder can serve as the original game data, and why (docs/SETUP.md).</summary>
 public sealed record InstallationReport( string Path, string? DataDirectory, IReadOnlyList<string> Languages, IReadOnlyList<string> Problems, IReadOnlyList<string> Warnings )
@@ -117,12 +117,24 @@ public static class GameInstallation
 		{
 			if ( new DriveInfo( directory ).DriveType == DriveType.CDRom )
 				return false;
+			if ( OperatingSystem.IsWindows() )
+				return !IsUnderProgramFiles( directory );
 			const UnixFileMode anyWrite = UnixFileMode.UserWrite | UnixFileMode.GroupWrite | UnixFileMode.OtherWrite;
-			return OperatingSystem.IsWindows() || (File.GetUnixFileMode( directory ) & anyWrite) != 0;
+			return (File.GetUnixFileMode( directory ) & anyWrite) != 0;
 		}
 		catch ( Exception exception ) when ( exception is IOException or UnauthorizedAccessException or ArgumentException )
 		{
 			return true;
 		}
+	}
+
+	/// <summary>OpenTPW runs without administrator rights, so a game under Program Files cannot take saves beside it.</summary>
+	private static bool IsUnderProgramFiles( string directory )
+	{
+		var full = Path.TrimEndingDirectorySeparator( Path.GetFullPath( directory ) ) + Path.DirectorySeparatorChar;
+		return new[] { Environment.SpecialFolder.ProgramFiles, Environment.SpecialFolder.ProgramFilesX86 }
+			.Select( Environment.GetFolderPath )
+			.Where( root => root.Length > 0 )
+			.Any( root => full.StartsWith( Path.TrimEndingDirectorySeparator( root ) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase ) );
 	}
 }

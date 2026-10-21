@@ -8,6 +8,7 @@ namespace OpenTPW.Tests;
 
 /// <summary>Where saves go now that OpenTPW runs without administrator rights: beside the game when writable, else the settings folder.</summary>
 [TestClass]
+[DoNotParallelize]
 public class SaveDirectoryTests
 {
 	private string root = null!;
@@ -58,6 +59,39 @@ public class SaveDirectoryTests
 		var directory = Game.ResolveSaveDirectory( Path.Combine( root, "game" ), Path.Combine( root, "settings" ) );
 		Assert.AreEqual( Path.Combine( root, "settings", "save" ) + Path.DirectorySeparatorChar, directory );
 		Assert.IsTrue( Directory.Exists( directory ) );
+	}
+
+	[TestMethod]
+	public void FallbackCopiesEarlierSavesOnceWithoutReplacingFiles()
+	{
+		if ( OperatingSystem.IsWindows() )
+		{
+			Assert.Inconclusive( "Unix directory permissions do not apply on Windows." );
+			return;
+		}
+		var save = Path.Combine( root, "game", "save" );
+		Directory.CreateDirectory( Path.Combine( save, "autosave" ) );
+		File.WriteAllText( Path.Combine( save, "park1.otpw" ), "old park" );
+		File.WriteAllText( Path.Combine( save, "options.sam" ), "old options" );
+		File.WriteAllText( Path.Combine( save, "autosave", "jungle.otpw" ), "old autosave" );
+		var fallback = Path.Combine( root, "settings", "save" );
+		Directory.CreateDirectory( fallback );
+		File.WriteAllText( Path.Combine( fallback, "options.sam" ), "newer options" );
+		File.SetUnixFileMode( save, UnixFileMode.UserRead | UnixFileMode.UserExecute );
+		try { using var stream = new FileStream( Path.Combine( save, "probe" ), FileMode.CreateNew ); Assert.Inconclusive( "The current identity can bypass nonwritable directory permissions." ); }
+		catch ( UnauthorizedAccessException ) { }
+
+		var directory = Game.ResolveSaveDirectory( Path.Combine( root, "game" ), Path.Combine( root, "settings" ) );
+
+		Assert.AreEqual( fallback + Path.DirectorySeparatorChar, directory );
+		Assert.AreEqual( "old park", File.ReadAllText( Path.Combine( fallback, "park1.otpw" ) ) );
+		Assert.AreEqual( "old autosave", File.ReadAllText( Path.Combine( fallback, "autosave", "jungle.otpw" ) ) );
+		Assert.AreEqual( "newer options", File.ReadAllText( Path.Combine( fallback, "options.sam" ) ) );
+		Assert.AreEqual( "old park", File.ReadAllText( Path.Combine( save, "park1.otpw" ) ) );
+
+		File.WriteAllText( Path.Combine( fallback, "park1.otpw" ), "played on" );
+		Game.ResolveSaveDirectory( Path.Combine( root, "game" ), Path.Combine( root, "settings" ) );
+		Assert.AreEqual( "played on", File.ReadAllText( Path.Combine( fallback, "park1.otpw" ) ) );
 	}
 
 	[TestMethod]

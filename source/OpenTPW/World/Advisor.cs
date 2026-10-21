@@ -388,12 +388,15 @@ internal sealed class Advisor : IDisposable
 		if ( !durationsByArchive.TryGetValue( playing.Archive, out var durations ) )
 		{
 			// The playing model's own clips; a level model without any falls back to the global advisor's.
-			durations = AdvisorClipDurations.LoadArchive( FileSystem, playing.Archive )
-				?? (playing.Archive == ArchivePath ? null : AdvisorClipDurations.LoadArchive( FileSystem, ArchivePath ));
+			durations = LoadClipDurations( playing.Archive ) ?? (playing.Archive == ArchivePath ? null : LoadClipDurations( ArchivePath ));
 			durationsByArchive[playing.Archive] = durations;
 		}
 		return durations;
 	}
+
+	// the lengths a park build prepared (AdvisorEntryPreparation), else read now
+	private static AdvisorClipDurations? LoadClipDurations( string archive ) =>
+		AdvisorEntryPreparation.TryTake<AdvisorClipDurations>( AdvisorEntryPreparation.DurationsKey( archive ), FileSystem, out var prepared ) ? prepared : AdvisorClipDurations.LoadArchive( FileSystem, archive );
 
 	/// <summary>
 	/// [EXT:advisor-sliced-decode] Whether a response's PCM is decoded over frames (<see cref="Mp2Decoder.SlicedDecode"/>) instead of before it starts: the browser,
@@ -419,13 +422,17 @@ internal sealed class Advisor : IDisposable
 		Sequence = null;
 		timerFired = false;
 		// Choose the model first: a failed level load must not leave a disposed rig drawn.
-		rig = SelectRig( response, level );
+		using ( FrameMarks.Measure( "advisor.selectRig" ) )
+			rig = SelectRig( response, level );
 		ModelShown = true;
 		// [BIN:TPW-EXE:0x005990E3 response player] the response row's +0x14 and +0x18 words are the accessory selectors (0xF79684, 0xF79688) and its +0x10 low half the model slot (0xF79674)
-		costume = response != null ? AdvisorCostumeTable.For( response.Id ) : AdvisorCostume.None;
+		using ( FrameMarks.Measure( "advisor.costume" ) )
+			costume = response != null ? AdvisorCostumeTable.For( response.Id ) : AdvisorCostume.None;
 		theme = AdvisorThemeCostume.None;
 		if ( (costume.Hat == -1 || costume.SecondHat == -1) && level != null && !themes.TryGetValue( level, out theme! ) )
-			themes[level] = theme = AdvisorThemeCostume.Load( FileSystem, level );
+			using ( FrameMarks.Measure( "advisor.themeCostume" ) )
+				themes[level] = theme = AdvisorEntryPreparation.TryTake<AdvisorThemeCostume>( AdvisorEntryPreparation.ThemeKey( level ), FileSystem, out var preparedTheme ) && preparedTheme != null
+					? preparedTheme : AdvisorThemeCostume.Load( FileSystem, level );
 		costumeHidden.Clear();
 		sequenceHidden.Clear();
 		startedClipIndex = -1;
@@ -438,9 +445,12 @@ internal sealed class Advisor : IDisposable
 			speechStart = AdvisorSpeechStart.For( now, response.Animation );
 			// [BIN:TPW-EXE:0x00599050 response player] the builder gets the sample length + 200 + 300 ms; a fixed sequence (response +12 minus 16) comes from table 0x76DC18
 			var length = (int)Duration.TotalMilliseconds;
-			var durations = clipDurations = ClipDurations( rig );
+			AdvisorClipDurations? durations;
+			using ( FrameMarks.Measure( "advisor.clipDurations" ) )
+				durations = clipDurations = ClipDurations( rig );
 			if ( durations != null )
 			{
+				using var sequenceMark = FrameMarks.Measure( "advisor.sequence" );
 				Sequence = AdvisorSequences.Build( response.Animation, length + AdvisorSequences.BudgetSlackMilliseconds, durations, sequenceRandom.Next );
 				ResponseSpanMilliseconds = AdvisorSequences.ResponseSpan( Sequence, durations );
 			}
@@ -450,7 +460,8 @@ internal sealed class Advisor : IDisposable
 				// [EXT:advisor-no-clips] an install without advisor clip archives (a partial data copy) keeps the speech's length + 200 + 300 + 1000 as the span and draws the model for it, so the advisor stays visible while it talks
 				ResponseSpanMilliseconds = checked((uint)(length + AdvisorSequences.BudgetSlackMilliseconds + 1000));
 			}
-			Update();
+			using ( FrameMarks.Measure( "advisor.firstUpdate" ) )
+				Update();
 		}
 		Log.Trace( $"Advisor says {description}: {durationSeconds:F2} s, {lips.Marks.Count} LIP marks, clock: {player?.ClockSource ?? "decoding"}{(player?.DeviceError == null ? "" : $" ({player.DeviceError})")}{(Sequence == null ? "" : $", sequence {string.Join( ",", Sequence.Clips )} ({Sequence.SumMilliseconds} ms)")}{(speechStart is { } start ? $", audio starts at +{start.AudioStartMilliseconds - start.RequestMilliseconds} ms" : "")}." );
 	}
@@ -735,7 +746,7 @@ internal sealed class Advisor : IDisposable
 			levelRigName = level;
 			try
 			{
-				levelRig = AdvisorRig.LoadLevel( FileSystem, level );
+				levelRig = AdvisorEntryPreparation.TryTake<AdvisorRig>( AdvisorEntryPreparation.LevelRigKey( level ), FileSystem, out var prepared ) ? prepared : AdvisorRig.LoadLevel( FileSystem, level );
 			}
 			catch ( Exception exception )
 			{

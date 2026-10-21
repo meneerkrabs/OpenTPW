@@ -67,7 +67,8 @@ internal sealed partial class AutomaticAdvisor : IDisposable
 	{
 		try
 		{
-			var balance = AdvisorBalance.Load();
+			// [EXT:park-entry-preparation] the settings a park build read for this advisor (AdvisorEntryPreparation), else read now
+			var balance = AdvisorEntryPreparation.TryTake<AdvisorBalance>( AdvisorEntryPreparation.BalanceKey, FileSystem, out var prepared ) && prepared != null ? prepared : AdvisorBalance.Load();
 			Log.Trace( $"Advisor scoring: {AdvisorBalance.Path}, minimum score {balance.MinimumScore}, {AdvisorTables.AllMessages.Count()} bound messages ({string.Join( ", ", AdvisorTables.Messages.Select( message => $"{message.MessageId}: {message.ScoreKey} {balance.ScoreOf( message.MessageId )}" ) ) + $", and the help messages at {balance.Scores.GetValueOrDefault( AdvisorTables.HelpScoreKey )} (F1 replay {balance.ContextHelpScore})"})." );
 			return new AutomaticAdvisor( new AdvisorController( balance ) );
 		}

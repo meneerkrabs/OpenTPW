@@ -634,6 +634,9 @@ internal sealed partial class GameFlow : IDisposable
 			presence?.Update( Time.Delta );
 			using ( FrameMarks.Measure( "park.advisor" ) )
 				Advisor?.Update( Hud.Paused, parkPaused: Level.SimulationTimeScale <= 0 );
+			// [EXT:park-entry-preparation] what the build prepared for the advisor and its first line is used by the update of the frame that entered the park; anything left is dropped
+			if ( parkBuild == null )
+				DropAdvisorPreparation();
 			using ( FrameMarks.Measure( "park.autosave" ) )
 				UpdateAutosave( Level, Hud );
 			var parkLost = Level.Park?.Economy.IsBankrupt == true;

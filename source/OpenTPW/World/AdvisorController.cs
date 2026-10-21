@@ -229,10 +229,32 @@ internal static class AdvisorTables
 	/// callbacks are computations of the park's state, ADVISOR-009). They have no <see cref="AdvisorMessageDefinition.ScoreKey"/>; an original save's
 	/// pending advice and history of them are imported with their saved scores.
 	/// </summary>
-	public static IReadOnlyList<AdvisorMessageDefinition> UnproducedMessages => unproduced ??= AdvisorDescriptorTable.Rows
-		.Where( row => !AllMessages.Any( message => message.MessageId == row.MessageId ) )
-		.Select( row => new AdvisorMessageDefinition( row.MessageId, row.FirstResponseId, row.ResponseCount, row.Group, row.MaximumPendingDuplicates, string.Empty, row.GameMode ) )
-		.ToArray();
+	public static IReadOnlyList<AdvisorMessageDefinition> UnproducedMessages => unproduced ??= BuildUnproducedMessages();
+
+	private static AdvisorMessageDefinition[] BuildUnproducedMessages()
+	{
+		// the ids of every produced message in a set: one lookup per descriptor row instead of a scan of all messages
+		var produced = AllMessages.Select( message => message.MessageId ).ToHashSet();
+		return AdvisorDescriptorTable.Rows
+			.Where( row => !produced.Contains( row.MessageId ) )
+			.Select( row => new AdvisorMessageDefinition( row.MessageId, row.FirstResponseId, row.ResponseCount, row.Group, row.MaximumPendingDuplicates, string.Empty, row.GameMode ) )
+			.ToArray();
+	}
+
+	/// <summary>
+	/// Makes the message tables the advisor's settings read (<see cref="AdvisorBalance.Parse"/>), one per step, for a park built over frames
+	/// (docs/BROWSER-PERFORMANCE.md, "Build steps"). Only a head start: a table that fails here is built again, and fails again, where it is read.
+	/// </summary>
+	internal static IEnumerable<bool> WarmSteps()
+	{
+		var parts = new Action[] { () => _ = EventMessages, () => _ = ScanMessages, () => _ = HelpMessages, () => _ = UnproducedMessages };
+		foreach ( var part in parts )
+		{
+			try { part(); }
+			catch ( Exception ) { /* only a head start */ }
+			yield return true;
+		}
+	}
 
 	/// <summary>Whether a message's game-mode selector admits the game type (2 = Instant Action, else the full simulation).</summary>
 	// [BIN:TPW-EXE:0x0059C0A0 descriptor score] selector 2 always passes, 0 passes only while the game-mode global 0xFB3B7C is 0, 1 only while it is 2; any other state scores -1 and nothing is said

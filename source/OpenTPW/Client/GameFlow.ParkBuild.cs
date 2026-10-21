@@ -141,10 +141,19 @@ internal sealed partial class GameFlow
 		LoadProfile.Resume();
 		build.Scene.Resume();
 		bool OverBudget() => Stopwatch.GetElapsedTime( started ).TotalMilliseconds >= ParkBuildBudgetMilliseconds;
+		// whether this frame has run a step already: a preparation step that asks for a frame of its own (see PrepareEntry) ends the frame only after one
+		var stepped = false;
 		try
 		{
 			while ( !build.Constructed && !OverBudget() )
+			{
+				var steppedBefore = stepped;
 				build.Constructed = !build.Level.Step();
+				stepped = true;
+				// the next construction step is a long one: it starts a frame of its own (docs/BROWSER-PERFORMANCE.md, "Build steps")
+				if ( !build.Constructed && build.Level.NextStepIsLong && steppedBefore )
+					break;
+			}
 		}
 		catch ( Exception error )
 		{
@@ -170,7 +179,8 @@ internal sealed partial class GameFlow
 			while ( !OverBudget() && build.Preparation != null )
 			{
 				bool more;
-				try { more = build.Preparation.MoveNext(); build.PreparationStepped |= more; }
+				var steppedBefore = stepped;
+				try { more = build.Preparation.MoveNext(); build.PreparationStepped |= more; stepped = true; }
 				catch ( Exception error ) when ( error is IOException or InvalidDataException or UnauthorizedAccessException or InvalidOperationException
 					or NotSupportedException or ArgumentException )
 				{
@@ -184,6 +194,9 @@ internal sealed partial class GameFlow
 					// entering is the heaviest step of all (the snapshot, the advisor, the first update): after preparation work it gets a frame of its own
 					preparedNow = build.PreparationStepped;
 				}
+				// false: the step that follows is a long one and starts a frame of its own (docs/BROWSER-PERFORMANCE.md, "Build steps")
+				else if ( !build.Preparation.Current && steppedBefore )
+					break;
 			}
 		}
 		// Entering (retiring the live scene, park audio, HUD, then the park's first update and draw) waits for a frame of its own
@@ -229,13 +242,19 @@ internal sealed partial class GameFlow
 		Transitioned?.Invoke();
 	}
 
-	/// <summary>The steps that make ready what entering the park would do whole: see <see cref="ParkBuild.Preparation"/>.</summary>
+	/// <summary>
+	/// The steps that make ready what entering the park would do whole: see <see cref="ParkBuild.Preparation"/>. A step that returns false asks
+	/// for the next one to start a frame of its own, because it is long (<see cref="PumpParkBuild"/>).
+	/// </summary>
 	private IEnumerable<bool> PrepareEntry( ParkBuild build )
 	{
 		// what an earlier build read and nobody took (one that failed while no park was live) is not this park's
 		DropAdvisorPreparation();
 		foreach ( var step in PrepareAdvisorAndSnapshot( build ) )
 			yield return step;
+		// the own player progress a progress park writes as it is entered (PlayerProgressAdmission.BeforeRetirement): its serializer's metadata, as a head start
+		if ( build.BeforeEnter != null && HeadStart( "the player progress file's serializer", PlayerTicketFile.WarmUp ) )
+			yield return true;
 		foreach ( var step in PrepareFirstFrame( build ) )
 			yield return step;
 	}
@@ -305,6 +324,8 @@ internal sealed partial class GameFlow
 		{
 			if ( Advisor == null )
 			{
+				foreach ( var step in AdvisorTables.WarmSteps() )
+					yield return step;
 				AdvisorEntryPreparation.Prepare( AdvisorEntryPreparation.BalanceKey, FileSystem, AdvisorBalance.Load );
 				yield return true;
 			}
@@ -321,10 +342,15 @@ internal sealed partial class GameFlow
 		}
 		if ( !(build.Original && build.Visit == null && TakesRestartSnapshot( build.Level )) )
 			yield break;
+		// the first capture of the economy (the warm-up's first step) is a long one
+		yield return false;
 		foreach ( var step in build.Level.WarmResumeCaptureSteps() )
 			yield return step;
 		foreach ( var step in ParkResumeJson.WarmupSteps() )
 			yield return step;
+		// the sliced serializer the snapshot's write starts in the entering frame
+		if ( HeadStart( "the sliced serializer", SlicedJsonSerializer.WarmUp ) )
+			yield return true;
 		foreach ( var step in build.Level.PrepareAutosaveAssets() )
 			yield return step;
 	}

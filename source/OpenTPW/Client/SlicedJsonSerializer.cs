@@ -32,6 +32,13 @@ internal sealed class SlicedJsonSerializer
 		steps = Steps( value, options.GetTypeInfo( type ), first ).GetEnumerator();
 	}
 
+	/// <summary>
+	/// Serializes an empty string in slices and drops it: the runtime's first-call work of the serializer's own methods (about 6 ms in the browser's
+	/// AOT build, the initialization of its constructor) is then done before a park's first restart snapshot needs them in the entering frame
+	/// (docs/BROWSER-PERFORMANCE.md, "Build steps"). Nothing is written; a fresh options instance keeps every codec's own settings untouched.
+	/// </summary>
+	internal static void WarmUp() => new SlicedJsonSerializer( string.Empty, typeof( string ), new JsonSerializerOptions() ).Run( TimeSpan.MaxValue );
+
 	/// <summary>True once <see cref="Bytes"/> is complete.</summary>
 	internal bool Done { get; private set; }
 	/// <summary>Slices run so far.</summary>

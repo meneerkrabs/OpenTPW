@@ -91,12 +91,13 @@ internal static class AdvisorEntryPreparation
 
 	/// <summary>
 	/// The steps that read what the advisor's first line in <paramref name="level"/> reads: the global model (when no presentation exists yet), the level's model,
-	/// the clip lengths of both and the theme costume.
+	/// the clip lengths of both and the theme costume. A false value asks for the next step, a long one, to start a frame of its own (GameFlow's park build).
 	/// </summary>
 	internal static IEnumerable<bool> PresentationSteps( BaseFileSystem fileSystem, string level, bool globalRig )
 	{
 		if ( globalRig )
 		{
+			yield return false;
 			Prepare( GlobalRigKey, fileSystem, () => AdvisorRig.LoadGlobalModel() );
 			yield return true;
 		}

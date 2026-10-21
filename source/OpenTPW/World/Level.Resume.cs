@@ -93,6 +93,18 @@ public partial class Level
 			try { read(); }
 			catch ( Exception exception ) when ( exception is InvalidDataException or NotSupportedException or InvalidOperationException or ArgumentException ) { }
 		}
+		// the economy capture's parts first, one per step: its first call alone was a long step in the browser
+		using ( var parts = ParkSaveFile.CapturePartSteps( Park.Economy ).GetEnumerator() )
+		{
+			while ( true )
+			{
+				var more = false;
+				Read( () => more = parts.MoveNext() );
+				if ( !more )
+					break;
+				yield return true;
+			}
+		}
 		Read( () => ParkSaveFile.Capture( Park.Economy, CaptureRandomState() ) );
 		yield return true;
 		Read( () => ParkLayoutSnapshot.CaptureSnapshot( Guests.Grid.Cells, Objects ) );

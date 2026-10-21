@@ -563,13 +563,10 @@ public sealed class CoasterTrack
 	// [BIN:TPW-EXE:0x4424e0 swap stack nodes] the stack indices, the descriptor's node array entries, the model's stack base height (+0x44) and the loft parameters (+0xE8) of the two nodes are exchanged; the chain order is untouched; the track is rebuilt (0x4346c0) and the stack's pylon models posed again (0x432d50, 0x432df0)
 	public bool SwapStack( int index, bool up )
 	{
-		if ( index < StationNodeCount || index >= nodes.Count || !nodes[index].IsPlayerPylon )
-			return false;
-		var node = nodes[index];
-		var wanted = node.StackIndex + (up ? 1 : -1);
-		var otherIndex = nodes.FindIndex( other => other.IsPlayerPylon && other.X == node.X && other.Y == node.Y && other.StackIndex == wanted );
+		var otherIndex = StackNeighbour( index, up );
 		if ( otherIndex < 0 )
 			return false;
+		var node = nodes[index];
 		var other = nodes[otherIndex];
 		var nodeHeight = PylonHeight( Definition.Pylon( node.LoopPylon ), other.T );
 		var otherHeight = PylonHeight( Definition.Pylon( other.LoopPylon ), node.T );
@@ -579,22 +576,33 @@ public sealed class CoasterTrack
 		return true;
 	}
 
+	/// <summary>The pylon above (<paramref name="up"/>) or below pylon <paramref name="index"/> in its cell's stack, which <see cref="SwapStack"/> would swap it with, or −1.</summary>
+	internal int StackNeighbour( int index, bool up )
+	{
+		if ( index < StationNodeCount || index >= nodes.Count || !nodes[index].IsPlayerPylon )
+			return -1;
+		var node = nodes[index];
+		var wanted = node.StackIndex + (up ? 1 : -1);
+		return nodes.FindIndex( other => other.IsPlayerPylon && other.X == node.X && other.Y == node.Y && other.StackIndex == wanted );
+	}
+
+	/// <summary>Whether <see cref="RemoveLast"/> would delete a pylon: the one before the cut on a cut circuit, else the last one of an incomplete track.</summary>
+	internal bool CanRemoveLast => CutAfter is int cut ? cut >= StationNodeCount && nodes[cut].IsPlayerPylon : !IsComplete && nodes.Count > StationNodeCount;
+
 	/// <summary>Deletes the last pylon of an incomplete track; a closed circuit opens again (the cut ends are marked open).</summary>
 	internal bool RemoveLast()
 	{
+		if ( !CanRemoveLast )
+			return false;
 		if ( CutAfter is int cut )
 		{
 			// [BIN:TPW-EXE:0x444f30 delete last] a cut circuit deletes the node before the cut (+0x60) and moves the open-circuit reference back; the station nodes (descriptor flag 2) stay
-			if ( cut < StationNodeCount || !nodes[cut].IsPlayerPylon )
-				return false;
 			nodes.RemoveAt( cut );
 			CutAfter = cut - 1;
 			SyncCutMarkers();
 			Version++;
 			return true;
 		}
-		if ( IsComplete || nodes.Count <= StationNodeCount )
-			return false;
 		IsClosed = false;
 		nodes.RemoveAt( nodes.Count - 1 );
 		Version++;
@@ -746,7 +754,12 @@ public sealed class CoasterTrack
 	/// a loop pair is never split, the nodes between them are removed and the circuit is cut open. A cut that reaches the end of the chain leaves an incomplete track again.
 	/// </summary>
 	// [BIN:TPW-EXE:0x446740 cut range] ordinal 0 (S0) of either end is replaced by the last node (0x446787..0x4467b9); the ends are ordered; a range that is one loop pair (the first with 0x40|0x80 next to the second with 0x40) widens to the nodes around it; equal ends widen to the nodes around the node; a node after the lower end that is the second of a pair moves the lower end back; a node before the upper end that is the first of a pair moves the upper end on; nodes between are deleted from the upper end down (0x444cb0); the node before the cut gets 0x50000, the one after 0xa0000; a range that reaches the last node clears controller flags 1 and 2 (0x435530)
-	public CutResult Cut( int first, int second )
+	public CutResult Cut( int first, int second ) => Cut( first, second, commit: true );
+
+	/// <summary>What <see cref="Cut(int, int)"/> would answer for the two ends, without cutting.</summary>
+	public CutResult CheckCut( int first, int second ) => Cut( first, second, commit: false );
+
+	private CutResult Cut( int first, int second, bool commit )
 	{
 		if ( !IsComplete || !IsClosed || IsCut || nodes.Count <= StationNodeCount + 1 )
 			return CutResult.Refused;
@@ -800,6 +813,8 @@ public sealed class CoasterTrack
 		// the ends must carry a pylon: a pylon-less node (S1, the station end) cannot border a cut
 		if ( low < 0 || nodes[low].IsPylonless || nodes[high].IsPylonless && high != last )
 			return CutResult.Refused;
+		if ( !commit )
+			return reachesEnd ? CutResult.Reopened : CutResult.Cut;
 		if ( reachesEnd )
 		{
 			nodes.RemoveRange( low + 1, nodes.Count - low - 1 );

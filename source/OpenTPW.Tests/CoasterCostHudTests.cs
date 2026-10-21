@@ -25,7 +25,7 @@ public class CoasterCostHudTests
 		CoasterTests.PlaceStation( builder, (20, 20) );
 		builder.Height = 40;
 		Assert.AreEqual( CoasterPlaceResult.Ok, builder.Place( 24, 20 ) );
-		var panel = new CoasterToolPanel( builder );
+		var panel = CoasterPanelRig.Create( builder );
 		Set( level, "<CoasterToolStation>k__BackingField", RuntimeHelpers.GetUninitializedObject( typeof( OriginalObject ) ) );
 		Set( level, "<CoasterPanel>k__BackingField", panel );
 		return (hud, level, panel);

@@ -83,6 +83,12 @@ public class ParkCommandLayerTests
 		new( "Pool bridges", @"\bBridges\??!?\.(TryAdd|RemoveAt)\s*\(", nameof( PlacePoolBridgeCommand ) ),
 		// the cell tool commits every line through the writer it holds, a command writer for paths, queues and tracks alike; a track write of its own is refused
 		new( "Kart and water tracks", @"\.(BuildTrack|PlaceTile|RemoveTile|UndoLine|RepairStation|FindOpenEnd)\s*\(|\bnew\s+TrackLineWriter\s*\(|\.Cut\s*\([^)]*commit\s*:", nameof( LayTrackLineCommand ) ),
+		// the coaster tool: its builder's writes (the panel and the HUD hold the builder) and the controller's tool state
+		// any name a coaster builder goes by in the tool layer (the panel's builder, the level's coaster tool, the HUD's tool), its track and its ride, null-forgiving or not
+		new( "Coaster builder writes", @"\b(builder|Builder|tool|CoasterTool)[!?]*\.(Place|RemoveLast|Complete|CloseCircuit|Move|SetHeight|EndEdit|FinishEdit|ApplyEdit|EditLoft|EditYaw|EditBank|EditIncline|EditLoopRotate|EditMove|SwapStack|Cut|Reopen|Delete|OpenFailingClosure|SetStation)\s*\("
+			+ @"|\b(Track|Ride)[!?]*\.(Append|Replace|Relocate|RemoveLast|Cut|SwapStack|Clear|Complete|Close|OpenClosure|Reopen|Revalidate|SetStation|EnterState|ClearTrains|Rebuild)\s*\(|" + Call( "DeleteCoasterTrack" ) + "|" + Call( "AfterCoasterClick" ),
+			nameof( CoasterClickCommand ) ),
+		new( "Coaster tool state", @"\.EnterTool\s*\(|\bBeingEdited\s*=[^=]|" + Call( "SetBeingEdited" ) + "|" + Call( "ExecuteBeginCoasterTool" ) + "|" + Call( "ExecuteEndCoasterTool" ), nameof( BeginCoasterToolCommand ) ),
 	};
 
 	/// <summary>
@@ -91,9 +97,7 @@ public class ParkCommandLayerTests
 	/// </summary>
 	internal static readonly (Mutator Mutator, string Phase)[] Remaining =
 	{
-		(new( "Coasters", Call( "CoasterClick" ), "CoasterClick" ), "C1 part 3 (tools)"),
 		(new( "Developer sandbox load", Call( "LoadSandbox" ), "LoadSandbox" ), "C2 (a load replaces the park; a session replaces it from the host)"),
-		(new( "Coaster panel edits", @"\bbuilder\.RemoveLast\s*\(", "CoasterClick" ), "C1 part 3 (tools)"),
 	};
 
 	/// <summary>The starts of a bare call: a line start, an operator or bracket, or a keyword before an expression (a declaration has a type before the name instead).</summary>
@@ -109,8 +113,9 @@ public class ParkCommandLayerTests
 	private static IReadOnlyList<string> ToolLayer( string source )
 	{
 		IEnumerable<string> All( string folder ) => Directory.EnumerateFiles( Path.Combine( source, folder ), "*.cs", SearchOption.AllDirectories );
+		// a visit's park is built from its package as a save's restore builds a park (SharedParkLayout: the objects, paths and coasters of a read-only copy), not edited by a tool
 		var files = All( "Hud" ).Concat( All( "UI" ) ).Concat( All( "FrontEnd" ) ).Concat( All( "Online" ) )
-			.Where( path => !Path.GetFileName( path ).Contains( "SmokeTest", StringComparison.Ordinal ) )
+			.Where( path => !Path.GetFileName( path ).Contains( "SmokeTest", StringComparison.Ordinal ) && Path.GetFileName( path ) != "SharedParkLayout.cs" )
 			.Concat( new[]
 			{
 				Path.Combine( "Client", "ThemeParkIncHud.cs" ),
@@ -121,6 +126,7 @@ public class ParkCommandLayerTests
 				Path.Combine( "World", "Staff", "StaffPlacement.cs" ),
 				Path.Combine( "World", "Staff", "PatrolAreaTool.cs" ),
 				Path.Combine( "World", "Pools", "PoolTool.cs" ),
+				Path.Combine( "World", "Coasters", "CoasterToolPanel.cs" ),
 			}.Select( relative => Path.Combine( source, relative ) ) )
 			.ToList();
 		foreach ( var file in files )
@@ -263,6 +269,30 @@ public class ParkCommandLayerTests
 		Assert.IsTrue( Caught( tracks, "var cut = editor.Cut( a, b, commit: true );" ) );
 		Assert.IsTrue( Caught( tracks, "var open = editor.FindOpenEnd();" ), "the open-end walk writes the tiles' overlap words" );
 		Assert.IsFalse( Caught( tracks, "var result = writer.Commit( start, end );" ), "the cell tool commits through the command writer it holds" );
+		var coaster = Converted.Single( mutator => mutator.Name == "Coaster builder writes" );
+		Assert.IsTrue( Caught( coaster, "builder.RemoveLast();" ) );
+		Assert.IsTrue( Caught( coaster, "var result = builder.Cut( first, index );" ) );
+		Assert.IsTrue( Caught( coaster, "builder.EditLoft( edit, value );" ) );
+		Assert.IsFalse( Caught( coaster, "builder.LoopMode = false;" ), "the panel's loop edit mode is its own state" );
+		Assert.IsFalse( Caught( coaster, "if ( builder.BeginEdit( node ) is not { } edit )" ), "a press notes the pylon and writes nothing" );
+		Assert.IsTrue( Caught( coaster, "builder!.RemoveLast();" ), "a null-forgiving receiver" );
+		Assert.IsTrue( Caught( coaster, "level.CoasterTool?.RemoveLast();" ) );
+		Assert.IsTrue( Caught( coaster, "var result = panel.Builder.Cut( first, index );" ) );
+		Assert.IsTrue( Caught( coaster, "ReportCoasterResult( tool.Place( cursorX, cursorY ), closing );" ) );
+		Assert.IsTrue( Caught( coaster, "builder.Track.Replace( index, node );" ) );
+		Assert.IsTrue( Caught( coaster, "station.Runtime.Coaster!.Ride.Rebuild();" ) );
+		Assert.IsTrue( Caught( coaster, "if ( closed && !builder.Track.Close() )" ), "the track's own close and its validator's marks" );
+		Assert.IsTrue( Caught( coaster, "builder.Track.OpenClosure();" ) );
+		Assert.IsTrue( Caught( coaster, "builder.Track.Revalidate( builder.Site, builder.Ride.World, builder.Ride );" ) );
+		Assert.IsTrue( Caught( coaster, "level.DeleteCoasterTrack( station );" ) );
+		Assert.IsFalse( Caught( coaster, "var closing = level.CoasterTool is { } tool && tool.Track.IsChainStart( cursorX, cursorY ) && !tool.Track.IsClosed;" ), "the HUD reads the track" );
+		Assert.IsFalse( Caught( coaster, "if ( builder.DragRange( node, dragKind ) is not { } range )" ) );
+		var toolState = Converted.Single( mutator => mutator.Name == "Coaster tool state" );
+		Assert.IsTrue( Caught( toolState, "builder.Ride.EnterTool();" ) );
+		Assert.IsTrue( Caught( toolState, "ride.BeingEdited = true;" ) );
+		Assert.IsFalse( Caught( toolState, "if ( ride.BeingEdited == false )" ) );
+		Assert.IsTrue( Caught( toolState, "SetBeingEdited( station, true );" ) );
+		Assert.IsTrue( Caught( toolState, "level.ExecuteEndCoasterTool( id );" ) );
 	}
 
 	/// <summary>The command code itself keeps to the simulation's determinism rules (no process-wide randomness, clock or mutable statics), as the simulation folders do.</summary>

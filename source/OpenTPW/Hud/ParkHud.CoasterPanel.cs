@@ -174,9 +174,9 @@ public sealed partial class ParkHud
 				panel.Release( null, null );
 			return false;
 		}
-		// Backspace waits for the drag: it would delete the pylon the drag holds
-		for ( var index = 0; index < input.Backspaces && !panel.IsDragging; index++ )
-			builder.RemoveLast();
+		// Backspace waits for the drag: it would delete the pylon the drag holds ([EXT:online-coop-commands] each one a command)
+		for ( var index = 0; index < input.Backspaces && !panel.IsDragging && level.CoasterToolStation is { } station; index++ )
+			level.Commands.Issue( new RemoveLastCoasterPylonCommand( station.Runtime.AttractionId ) );
 		if ( input.RightPressed && inPark )
 		{
 			level.ExitCoasterTool();

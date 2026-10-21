@@ -248,7 +248,7 @@ public class ParkCommandLevelTests
 		long Amount() => Pick( -1L, long.MinValue, long.MaxValue, 0L, 100L, 10_000L, 10_001L, 18_000L );
 		bool Flag() => random.Below( 2 ) == 0;
 		string Text() => Pick( "Ann", "", "A\u0007B", "\ud800", new string( 'a', 600 ), "Kevin the", "Cosmic Cow" );
-		ParkCommand Next() => random.Below( 61 ) switch
+		ParkCommand Next() => random.Below( 70 ) switch
 		{
 			0 => new PlaceObjectCommand( Entry(), Coordinate(), Coordinate(), Rotation(), random.Below( 4 ) == 0, Pick( -1, -2, Id() ) ),
 			1 => new RemoveAtCommand( Coordinate(), Coordinate() ),
@@ -313,6 +313,16 @@ public class ParkCommandLevelTests
 			// the native queue segments
 			58 => new QueueSegmentCommand( Id(), Coordinate(), Coordinate(), Coordinate(), Coordinate() ),
 			59 => new UndoQueueSegmentCommand( Id(), Coordinate(), Coordinate(), Coordinate(), Coordinate() ),
+			// the coaster tool (C1 part 3b)
+			60 => new BeginCoasterToolCommand( Id() ),
+			61 => new EndCoasterToolCommand( Id() ),
+			62 => new CoasterClickCommand( Id(), Coordinate(), Coordinate(), Pick( 10f, -5f, float.NaN, 1e9f ), Flag(), Pick( -1, 0, 1, 2, 3 ) ),
+			63 => new RemoveLastCoasterPylonCommand( Id() ),
+			64 => new BeginCoasterNodeEditCommand( Id(), Pick( -1, 0, 2, 3, 5, 99 ), (CoasterDrag)Pick<byte>( 0, 1, 2, 3, 4, 5, 255 ) ),
+			65 => new EditCoasterNodeCommand( Id(), (CoasterNodeField)Pick<byte>( 0, 1, 2, 3, 4, 5, 6, 255 ), Pick( 0f, 0.5f, -3f, 1e9f, float.NaN ), Coordinate(), Coordinate() ),
+			66 => new EndCoasterNodeEditCommand( Id() ),
+			67 => new SwapCoasterStackCommand( Id(), Pick( -1, 0, 3, 5 ), Flag() ),
+			68 => new CutCoasterCommand( Id(), Pick( -1, 0, 3, 5 ), Pick( -1, 0, 4, 9 ) ),
 			_ => new RemoveAttractionCommand( Pick( -1, int.MinValue, 99_999 ) ),
 		};
 		CollectionAssert.IsSubsetOf( Enum.GetValues<ParkCommandKind>(), Enumerable.Range( 0, 1024 ).Select( _ => Next().Kind ).Distinct().ToArray(), "the stream draws every kind" );

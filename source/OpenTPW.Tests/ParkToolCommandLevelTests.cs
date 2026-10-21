@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using OpenTPW.Hud;
 using OpenTPW.Mods;
 
 namespace OpenTPW.Tests;
@@ -31,7 +32,7 @@ public class ParkToolCommandLevelTests
 		renderer?.Dispose();
 	}
 
-	private ParkSettingCommandLevelTests.Park NewPark() => ParkSettingCommandLevelTests.NewPark( fixture! );
+	private ParkSettingCommandLevelTests.Park NewPark( string extra = "" ) => ParkSettingCommandLevelTests.NewPark( fixture!, extra );
 
 	/// <summary>Applies <paramref name="log"/> to <paramref name="twin"/> in order, each command as its issuer's result had it.</summary>
 	private static void Replay( IEnumerable<ParkCommandLogEntry> log, Level twin, IReadOnlyList<bool> accepted )
@@ -114,6 +115,151 @@ public class ParkToolCommandLevelTests
 		Assert.IsTrue( level.Commands.Issue( new BeginStaffHireCommand( candidate.Id ) ).Accepted );
 		Assert.IsFalse( level.Commands.Issue( new PlaceStaffCommand( candidate.Id, invalid.X, invalid.Y ) ).Accepted, "a cell no employee may stand on" );
 		Assert.AreEqual( candidate.Id, park.Economy.Staff.PendingPlacementId, "the refused click leaves the placement running" );
+	}
+
+	private sealed class NoItems : IBuildCatalog
+	{
+		public IReadOnlyList<BuildItem> GetItems( BuildCategory category ) => System.Array.Empty<BuildItem>();
+	}
+
+	/// <summary>The no-data park with two coaster stations.</summary>
+	private ParkSettingCommandLevelTests.Park Coaster()
+	{
+		var park = NewPark( "Bumper.WhichTrackType 3\n" );
+		// an uninitialised level has no field initialisers run: the coaster builders the tool keeps
+		typeof( Level ).GetField( "coasterBuilders", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic )!.SetValue( park.Level, new Dictionary<OriginalObject, CoasterBuilder>() );
+		Assert.IsNotNull( park.One.Runtime.Coaster );
+		return park;
+	}
+
+	/// <summary>The coaster tool's entry and exit (the ride closed and opened, the controller's tool state, the being-edited mark that keeps guests off) are commands a twin follows.</summary>
+	[TestMethod]
+	public void TheCoasterToolsEntryAndExitAreCommandsThatMarkTheCoasterBeingEdited()
+	{
+		var park = Coaster();
+		var level = park.Level;
+		Assert.IsTrue( level.EnterCoasterTool( park.One ) );
+		Assert.IsTrue( park.One.Runtime.Coaster!.BeingEdited, "no guest boards a coaster being edited" );
+		Assert.IsFalse( park.One.IsOpen, "the tool closes the ride" );
+		Assert.IsNotNull( level.CoasterPanel );
+		Assert.AreNotEqual( CoasterPlaceResult.Ok, level.CoasterClick( 200, 200 ), "a click off the site places nothing (and is logged as refused)" );
+		Assert.IsTrue( level.EnterCoasterTool( park.Two ), "another coaster's tool ends this one's first" );
+		Assert.IsFalse( park.One.Runtime.Coaster.BeingEdited );
+		Assert.IsTrue( park.Two.Runtime.Coaster!.BeingEdited );
+		level.ExitCoasterTool();
+		Assert.IsFalse( park.Two.Runtime.Coaster.BeingEdited );
+		Assert.IsFalse( level.IsCoasterToolActive );
+		CollectionAssert.AreEqual( new[] { ParkCommandKind.BeginCoasterTool, ParkCommandKind.CoasterClick, ParkCommandKind.EndCoasterTool, ParkCommandKind.BeginCoasterTool,
+			ParkCommandKind.EndCoasterTool }, level.Commands.Log.Select( entry => entry.Command.Kind ).ToArray() );
+
+		var twin = Coaster();
+		var results = new List<bool>();
+		var marks = new List<(bool One, bool Two)>();
+		foreach ( var entry in level.Commands.Log )
+		{
+			results.Add( twin.Level.Commands.Apply( entry.Command ).Accepted );
+			marks.Add( (twin.One.Runtime.Coaster!.BeingEdited, twin.Two.Runtime.Coaster!.BeingEdited) );
+		}
+		CollectionAssert.AreEqual( new[] { true, false, true, true, true }, results, "the click off the site is refused on the twin too" );
+		CollectionAssert.AreEqual( new[] { (true, false), (true, false), (false, false), (false, true), (false, false) }, marks, "the twin marks the coaster being edited as the tool did" );
+		Assert.AreEqual( level.ComputeStateHash(), twin.Level.ComputeStateHash(), "the commands alone close, mark and open as the tool did" );
+		Assert.IsFalse( twin.Level.IsCoasterToolActive, "a peer's or a replayed command opens no tool" );
+		Assert.AreEqual( park.One.IsOpen, twin.One.IsOpen );
+		// a panel command needs its coaster in the tool, whose entry let the riders off
+		var before = twin.Level.ComputeStateHash();
+		Assert.IsFalse( twin.Level.Commands.Apply( new CoasterClickCommand( twin.One.Runtime.AttractionId, 24, 20, 40, false, 0 ) ).Accepted );
+		Assert.IsFalse( twin.Level.Commands.Apply( new RemoveLastCoasterPylonCommand( twin.One.Runtime.AttractionId ) ).Accepted );
+		Assert.AreEqual( before, twin.Level.ComputeStateHash() );
+	}
+
+	/// <summary>The no-data park with two coaster stations whose type has the PC coasters' pylons, the first one's station ends set as the coaster tests set theirs.</summary>
+	private ParkSettingCommandLevelTests.Park BuildableCoaster()
+	{
+		var pylons = string.Join( "\n", CoasterTests.PcSettings().Select( pair => $"{pair.Key} {pair.Value}" ) );
+		var park = NewPark( "Bumper.WhichTrackType 3\n" + pylons + "\n" );
+		typeof( Level ).GetField( "coasterBuilders", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic )!.SetValue( park.Level, new Dictionary<OriginalObject, CoasterBuilder>() );
+		CoasterTests.PlaceStation( park.Level.GetCoasterBuilder( park.One )!, (20, 20) );
+		return park;
+	}
+
+	/// <summary>
+	/// A coaster built, closed and completed in the tool on a level: the completion waits for another player's drag, then rates the coaster, ends the tool and the being-edited mark and opens the ride;
+	/// a twin that applies the logged commands builds the same coaster to the same hash. The tool's exit ends the drags on its coaster, a peer's too.
+	/// </summary>
+	[TestMethod]
+	public void ACoasterCompletedInTheToolIsCompletedOnTheTwin()
+	{
+		var park = BuildableCoaster();
+		var level = park.Level;
+		var id = park.One.Runtime.AttractionId;
+		var results = new List<bool>();
+		level.Commands.Applied += ( _, result ) => results.Add( result.Accepted );
+		Assert.IsTrue( level.EnterCoasterTool( park.One ) );
+		var builder = level.CoasterTool!;
+		builder.Height = 40;
+		foreach ( var (dx, dy) in CoasterTests.Circuit )
+			Assert.AreEqual( CoasterPlaceResult.Ok, level.CoasterClick( 20 + dx, 20 + dy ), $"pylon at offset ({dx}, {dy})" );
+		var back = builder.Track.ReturnCell!.Value;
+		Assert.AreEqual( CoasterPlaceResult.Ok, level.CoasterClick( back.X, back.Y ), "the chain start closes the circuit" );
+		Assert.IsTrue( level.Commands.Apply( new BeginCoasterNodeEditCommand( id, CoasterTrack.StationNodeCount, CoasterDrag.Rotate ) { Player = 1 } ).Accepted, "a peer presses a pylon" );
+		var open = level.ComputeStateHash();
+		Assert.AreNotEqual( CoasterPlaceResult.Ok, level.CoasterClick( back.X, back.Y ), "the completion waits for the peer's drag" );
+		Assert.AreEqual( open, level.ComputeStateHash() );
+		Assert.IsTrue( level.Commands.Apply( new EndCoasterNodeEditCommand( id ) { Player = 1 } ).Accepted );
+		Assert.AreEqual( CoasterPlaceResult.Ok, level.CoasterClick( back.X, back.Y ), "the next click completes the coaster" );
+		Assert.IsTrue( builder.Track.IsComplete );
+		Assert.IsNotNull( builder.Ride.Rating );
+		Assert.IsFalse( level.IsCoasterToolActive, "the completion ended the tool" );
+		Assert.IsFalse( park.One.Runtime.Coaster!.BeingEdited );
+
+		var twin = BuildableCoaster();
+		Replay( level.Commands.Log, twin.Level, results );
+		var built = twin.Level.GetCoasterBuilder( twin.One )!;
+		Assert.IsTrue( built.Track.IsComplete, "the twin completed the coaster" );
+		Assert.AreEqual( builder.Ride.Rating, built.Ride.Rating );
+		Assert.AreEqual( builder.Ride.PaidCost, built.Ride.PaidCost );
+		Assert.IsFalse( twin.One.Runtime.Coaster!.BeingEdited );
+		Assert.AreEqual( park.One.IsOpen, twin.One.IsOpen );
+		Assert.AreEqual( level.ComputeStateHash(), twin.Level.ComputeStateHash(), "the commands alone build, close, complete and open as the tool did" );
+
+		// a peer's drag the tool's exit finds ends with it: the being-edited mark the exit clears is the coaster's
+		Assert.IsTrue( level.EnterCoasterTool( park.One ) );
+		Assert.IsTrue( level.Commands.Apply( new BeginCoasterNodeEditCommand( id, CoasterTrack.StationNodeCount + 1, CoasterDrag.Height ) { Player = 1 } ).Accepted );
+		level.ExitCoasterTool();
+		Assert.IsNull( level.CoasterEdits.Of( 1 ), "the exit ended the peer's drag" );
+		Assert.IsFalse( park.One.Runtime.Coaster.BeingEdited );
+	}
+
+	/// <summary>
+	/// The coaster tool a placed station opens follows the HUD's own placement once its command has returned (<see cref="ParkCommands.AfterIssue"/>): the tool's entry is a command of its own, logged
+	/// after the placement, so a twin replaying the log marks the coaster being edited as the issuer's park does. The twin's HUD opens no tool for the replayed placement.
+	/// </summary>
+	[TestMethod]
+	public void APlacedCoasterStationsToolEntryIsACommandOfItsOwn()
+	{
+		ParkHud Hud( ParkSettingCommandLevelTests.Park park ) =>
+			new( park.Level, OriginalUiTests.FakeStrings(), new EconomyParkStatus( () => park.Economy ), new NoItems(), new HudHost() );
+		var park = Coaster();
+		var level = park.Level;
+		var hud = Hud( park );
+		var entry = park.One.Entry;
+		hud.BeginPlacing( new BuildItem( "coaster", entry.InfoId, BuildCategory.Rides, 0, 0, null, System.Array.Empty<string>(), Entry: entry ) );
+		var placed = level.Commands.Issue( level.BuildCommand( entry, 10, 10, 0 ) ).As<OriginalObject>();
+		Assert.IsNotNull( placed, level.LastActionMessage );
+		Assert.IsTrue( placed.Runtime.Coaster!.BeingEdited, "the HUD entered the coaster tool on the placed station" );
+		Assert.AreSame( placed, level.CoasterToolStation );
+		CollectionAssert.AreEqual( new[] { ParkCommandKind.PlaceObject, ParkCommandKind.BeginCoasterTool }, level.Commands.Log.Select( entry => entry.Command.Kind ).ToArray(),
+			"the tool's entry is logged on its own, after the placement" );
+
+		var twin = Coaster();
+		var twinHud = Hud( twin );
+		twinHud.BeginPlacing( new BuildItem( "coaster", entry.InfoId, BuildCategory.Rides, 0, 0, null, System.Array.Empty<string>(), Entry: twin.One.Entry ) );
+		foreach ( var logged in level.Commands.Log )
+			Assert.IsTrue( twin.Level.Commands.Apply( logged.Command ).Accepted, logged.Command.ToString() );
+		var twinPlaced = twin.Level.Objects.Objects.Single( item => !item.IsDeleted && item.Placement.X == placed.Placement.X && item.Placement.Y == placed.Placement.Y );
+		Assert.IsTrue( twinPlaced.Runtime.Coaster!.BeingEdited, "the twin marks the coaster as the issuer's park does" );
+		Assert.IsNull( twin.Level.CoasterToolStation, "the twin's HUD, though it places the same item, opens no tool for a replayed placement" );
+		Assert.AreEqual( level.ComputeStateHash(), twin.Level.ComputeStateHash() );
 	}
 
 	[TestMethod]

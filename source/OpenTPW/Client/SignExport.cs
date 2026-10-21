@@ -44,9 +44,14 @@ public static class SignExport
 		if ( !GameLanguage.IsSelected || !string.Equals( GameLanguage.Current.Name, GameLanguage.CanonicalName( language ), StringComparison.OrdinalIgnoreCase ) )
 			throw new DirectoryNotFoundException( $"Language '{language}' was not selected; see docs/LANGUAGES.md for where the language data is found." );
 		Log?.Trace( $"Language: {GameLanguage.Current}" );
+		// nothing is written into the game folder, its data, any language data (the one exported and the overlay offered beside it) or the CD folder;
+		// checked before anything else starts
+		var protectedDirectories = new[] { dataDirectory, Settings.Default.GamePath, languageData, cdFolder }.OfType<string>().ToArray();
+		PrepareOutputDirectory( outputDirectory, protectedDirectories.Concat( LanguageDirectories() ) );
 		CompatibilityStartup.Initialize( args, dataDirectory );
-		// nothing is written into the game folder, its data or the language data
-		var files = Run( outputDirectory, new[] { dataDirectory, Settings.Default.GamePath, GameLanguage.Current.OverlayDataDirectory }.OfType<string>().ToArray() );
+		// Only the shipped data: no official bonus objects and no mod content (mods are not started for the export).
+		ObjectCatalog.BonusDataRoot = null;
+		var files = Run( outputDirectory, protectedDirectories );
 		var previews = files.Count( file => file.Half == 0 );
 		Console.WriteLine( $"Exported {files.Count - previews} sign textures and {previews} previews ({previews} signs) in {GameLanguage.Current.Name} to {Path.GetFullPath( outputDirectory )}; index in {IndexFileName}." );
 	}
@@ -67,7 +72,7 @@ public static class SignExport
 	/// </summary>
 	public static IReadOnlyList<ExportedFile> Run( string outputDirectory, params string[] protectedDirectories )
 	{
-		var root = PrepareOutputDirectory( outputDirectory, protectedDirectories.Append( GameLanguage.Current.Directory ) );
+		var root = PrepareOutputDirectory( outputDirectory, protectedDirectories.Concat( LanguageDirectories() ) );
 		var signs = ComposeAll();
 		if ( signs.Count == 0 )
 			throw new InvalidDataException( "The game data defines no signs to export." );
@@ -79,7 +84,8 @@ public static class SignExport
 			Directory.CreateDirectory( Path.GetDirectoryName( target )! );
 			WriteNew( target, file.Png );
 		}
-		WriteNew( ResolveInside( root, IndexFileName ), System.Text.Encoding.UTF8.GetBytes( IndexJson( GameLanguage.Current.Name, GameLanguage.Current.Directory, files, CompatibilityRuntime.Flags.ToMetadata() ) ) );
+		var languageFolder = DescribeLanguageFolder( GameLanguage.Current.Directory, Settings.Default.GamePath );
+		WriteNew( ResolveInside( root, IndexFileName ), System.Text.Encoding.UTF8.GetBytes( IndexJson( GameLanguage.Current.Name, languageFolder, files, CompatibilityRuntime.Flags.ToMetadata() ) ) );
 		Log?.Trace( $"Sign export: {signs.Count} signs, {files.Count} PNG files (two textures and a preview per sign) in {root}." );
 		return files;
 	}
@@ -101,8 +107,6 @@ public static class SignExport
 		{
 			throw new FileNotFoundException( $"The {GameLanguage.Current.Name} language has no readable {ObjectNames.FileName} ({exception.Message}); the sign texts come from it.", exception );
 		}
-		// Only the shipped data: no official bonus objects and no mod content (mods are not started for the export).
-		ObjectCatalog.BonusDataRoot = null;
 		var signs = new List<ComposedSign>();
 		foreach ( var theme in OriginalGateSign.ThemeLevels )
 			signs.AddRange( ComposeTheme( theme, objectNames ) );
@@ -171,7 +175,8 @@ public static class SignExport
 
 	/// <summary>
 	/// The files of <paramref name="signs"/>: two per sign, <c>&lt;theme&gt;/&lt;name&gt;-1.png</c> (sign1) and <c>-2.png</c> (sign2). A name that is
-	/// taken in its folder (two archives of one name in different categories) gets its kind appended, then a number.
+	/// taken in its folder (two archives of one name in different categories) gets its kind appended, then a number; a name is taken when any of its
+	/// three files is (an object <c>foo-1</c> makes <c>foo-1.png</c>, which an object <c>foo</c> would also write).
 	/// </summary>
 	public static IReadOnlyList<ExportedFile> Plan( IReadOnlyList<ComposedSign> signs )
 	{
@@ -180,14 +185,13 @@ public static class SignExport
 		foreach ( var sign in signs )
 		{
 			var folder = SafeSegment( sign.Theme );
-			var name = SafeSegment( sign.Name );
-			if ( !taken.Add( $"{folder}/{name}" ) )
-			{
-				var alternative = $"{name}_{SafeSegment( sign.Kind )}";
-				for ( var number = 2; !taken.Add( $"{folder}/{alternative}" ); number++ )
-					alternative = $"{name}_{SafeSegment( sign.Kind )}_{number}";
-				name = alternative;
-			}
+			var baseName = SafeSegment( sign.Name );
+			var name = baseName;
+			bool Free( string candidate ) => new[] { 1, 2, 0 }.All( half => !taken.Contains( FileName( folder, candidate, half ) ) );
+			for ( var number = 1; !Free( name ); number++ )
+				name = number == 1 ? $"{baseName}_{SafeSegment( sign.Kind )}" : $"{baseName}_{SafeSegment( sign.Kind )}_{number}";
+			foreach ( var half in new[] { 1, 2, 0 } )
+				taken.Add( FileName( folder, name, half ) );
 			foreach ( var half in new[] { 1, 2, 0 } )
 			{
 				var rgba = half switch { 1 => sign.Left, 2 => sign.Right, _ => SideBySide( sign.Left, sign.Right ) };
@@ -251,11 +255,13 @@ public static class SignExport
 	{
 		ArgumentException.ThrowIfNullOrWhiteSpace( outputDirectory );
 		var root = Path.TrimEndingDirectorySeparator( Path.GetFullPath( outputDirectory ) );
+		// compared with symbolic links resolved, so a link into the data (or /tmp for /private/tmp) is no way around the check
+		var resolvedRoot = ResolveLinks( root );
 		foreach ( var directory in protectedDirectories.Where( directory => !string.IsNullOrWhiteSpace( directory ) ) )
 		{
-			var full = Path.TrimEndingDirectorySeparator( Path.GetFullPath( directory! ) );
-			if ( string.Equals( root, full, StringComparison.OrdinalIgnoreCase ) || root.StartsWith( full + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase )
-				|| full.StartsWith( root + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase ) )
+			var full = ResolveLinks( directory! );
+			if ( string.Equals( resolvedRoot, full, StringComparison.OrdinalIgnoreCase ) || resolvedRoot.StartsWith( full + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase )
+				|| full.StartsWith( resolvedRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase ) )
 				throw new IOException( $"The sign export's output directory '{root}' overlaps the game or language data '{full}'; choose a directory outside it." );
 		}
 		if ( File.Exists( root ) )
@@ -263,6 +269,54 @@ public static class SignExport
 		if ( Directory.Exists( root ) && Directory.EnumerateFileSystemEntries( root ).Any() )
 			throw new IOException( $"The sign export's output directory '{root}' is not empty; choose a new or empty directory (nothing is overwritten)." );
 		return root;
+	}
+
+	/// <summary>The directories of the language data in use: the exported language's folder, its overlay data folder and the overlay offered beside it.</summary>
+	private static IEnumerable<string?> LanguageDirectories() => GameLanguage.IsSelected
+		? new[] { GameLanguage.Current.Directory, GameLanguage.Current.OverlayDataDirectory, GameLanguage.AvailableOverlay }
+		: new[] { GameLanguage.AvailableOverlay };
+
+	/// <summary>
+	/// The full path of <paramref name="path"/> with every symbolic link along it resolved (segments that do not exist yet are kept as given), without a
+	/// trailing separator.
+	/// </summary>
+	public static string ResolveLinks( string path ) => ResolveLinks( path, 0 );
+
+	private static string ResolveLinks( string path, int depth )
+	{
+		var full = Path.TrimEndingDirectorySeparator( Path.GetFullPath( path ) );
+		var current = Path.GetPathRoot( full ) ?? "";
+		foreach ( var segment in full[current.Length..].Split( Path.DirectorySeparatorChar, StringSplitOptions.RemoveEmptyEntries ) )
+		{
+			current = Path.Combine( current, segment );
+			FileSystemInfo entry = Directory.Exists( current ) ? new DirectoryInfo( current ) : new FileInfo( current );
+			if ( !entry.Exists || entry.LinkTarget == null )
+				continue;
+			if ( depth >= 40 )
+				throw new IOException( $"Too many symbolic links in '{path}'." );
+			// a link's target may itself run through links (/var -> /private/var on macOS)
+			var target = Path.IsPathRooted( entry.LinkTarget ) ? entry.LinkTarget : Path.Combine( Path.GetDirectoryName( current ) ?? "", entry.LinkTarget );
+			current = ResolveLinks( target, depth + 1 );
+		}
+		return Path.TrimEndingDirectorySeparator( current );
+	}
+
+	/// <summary>
+	/// The language folder as <c>index.json</c> names it, without the user's own path (the file is meant to be shared): relative to the game folder
+	/// when it lies inside it (<c>Data/Language/English</c>), else from its <c>Language</c> folder on (<c>Language/spanish</c>), else its name.
+	/// </summary>
+	public static string DescribeLanguageFolder( string languageDirectory, string? gameFolder )
+	{
+		var full = Path.TrimEndingDirectorySeparator( Path.GetFullPath( languageDirectory ) );
+		if ( !string.IsNullOrWhiteSpace( gameFolder ) )
+		{
+			var game = Path.TrimEndingDirectorySeparator( Path.GetFullPath( gameFolder ) );
+			if ( full.StartsWith( game + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase ) )
+				return full[(game.Length + 1)..].Replace( Path.DirectorySeparatorChar, '/' );
+		}
+		var segments = full.Split( Path.DirectorySeparatorChar, StringSplitOptions.RemoveEmptyEntries );
+		var language = Array.FindLastIndex( segments, segment => string.Equals( segment, "Language", StringComparison.OrdinalIgnoreCase ) );
+		return language >= 0 ? string.Join( '/', segments[language..] ) : segments.LastOrDefault() ?? "";
 	}
 
 	private static void WriteNew( string path, byte[] bytes )
@@ -282,7 +336,7 @@ public static class SignExport
 			writer.WriteStartObject();
 			writer.WriteString( "tool", "OpenTPW --export-signs (debug export, docs/RUNNING.md)" );
 			writer.WriteString( "language", language );
-			writer.WriteString( "languageDirectory", languageDirectory );
+			writer.WriteString( "languageFolder", languageDirectory );
 			writer.WriteString( "stringTable", ObjectNames.FileName );
 			// the compatibility profile decides one data correction of the sign files (sign-font-substitution, docs/COMPATIBILITY.md)
 			if ( compatibility != null )

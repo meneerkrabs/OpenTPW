@@ -271,11 +271,13 @@ left 128 x 128 half that replaces the model's `sign1` placeholder), `<theme>/<ob
 `<theme>/<object>.png` a 256 x 128 preview of both side by side. `<object>` is the archive name (`gates`, `totem`; the lobby uses its
 model names, `jun_isle`); `index.json` lists for every file the theme, kind, object, archive, `.sgn`, info id, the `OBJECT_NAMES`
 string ids and their texts, the two drawn lines, the texture, the file, its size and the SHA-256 of its RGBA and PNG bytes, plus the
-language, its folder and the compatibility profile.
+language, its folder (relative to the game folder, or from its `Language` folder on: the index holds no path of the user's machine) and
+the compatibility profile.
 
 The language is found as for a normal start (`--language-data`, `OPENTPW_LANGUAGE_DATA`, the saved language data folder, then the CD
 folder; LANGUAGES.md); a language that is not there is an error listing the available ones, before anything is written. The output
-directory must be new or empty and outside the game and language data; nothing is overwritten, and everything is composed before the
+directory must be new or empty and outside the game folder, its data, every language data folder in use (the exported language's, the
+`--language-data` folder and the CD folder, also when the exported language comes from the installation) with symbolic links resolved; nothing is overwritten, and everything is composed before the
 first file is written. The run opens no window and no audio device, loads no park, starts no mods or bonus objects (only the shipped
 data), and reads the game data only. One sign file depends on the compatibility profile: in the default Original profile the second
 line of Space Zone's `megacost.sgn` (a font `fonts.wad` lacks) is not drawn; `--compat-profile recommended` draws it with the

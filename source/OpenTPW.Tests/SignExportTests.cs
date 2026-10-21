@@ -65,6 +65,72 @@ public class SignExportTests
 	}
 
 	[TestMethod]
+	public void AnObjectNamedLikeAnotherObjectsFileGetsItsKind()
+	{
+		// "foo-1" writes foo-1-1.png, foo-1-2.png and foo-1.png; "foo" would write foo-1.png again
+		var files = SignExport.Plan( new[] { Sign( "jungle", "foo-1" ), Sign( "jungle", "foo" ) } );
+		CollectionAssert.AreEqual( new[] { "jungle/foo-1-1.png", "jungle/foo-1-2.png", "jungle/foo-1.png", "jungle/foo_ride-1.png", "jungle/foo_ride-2.png", "jungle/foo_ride.png" },
+			files.Select( file => file.RelativePath ).ToArray() );
+		Assert.AreEqual( files.Count, files.Select( file => file.RelativePath ).Distinct( StringComparer.OrdinalIgnoreCase ).Count() );
+	}
+
+	[TestMethod]
+	public void TheIndexNamesTheLanguageFolderWithoutTheUsersPath()
+	{
+		var game = Path.Combine( root, "Theme Park World" );
+		Assert.AreEqual( "Data/Language/English", SignExport.DescribeLanguageFolder( Path.Combine( game, "Data", "Language", "English" ), game ) );
+		Assert.AreEqual( "Language/spanish", SignExport.DescribeLanguageFolder( Path.Combine( root, "es-lang", "Data", "Language", "spanish" ), game ) );
+		Assert.AreEqual( "spanish", SignExport.DescribeLanguageFolder( Path.Combine( root, "spanish" ), null ) );
+	}
+
+	[TestMethod]
+	public void LinksAreResolvedBeforeTheOutputIsCompared()
+	{
+		var data = Path.Combine( root, "lang", "Data" );
+		Directory.CreateDirectory( data );
+		var link = Path.Combine( root, "link" );
+		Directory.CreateSymbolicLink( link, data );
+		Assert.AreEqual( SignExport.ResolveLinks( data ), SignExport.ResolveLinks( link ) );
+		Assert.AreEqual( Path.Combine( SignExport.ResolveLinks( data ), "new" ), SignExport.ResolveLinks( Path.Combine( link, "new" ) ) );
+		Assert.ThrowsException<IOException>( () => SignExport.PrepareOutputDirectory( Path.Combine( link, "signs" ), new[] { data } ) );
+		Assert.ThrowsException<IOException>( () => SignExport.PrepareOutputDirectory( Path.Combine( data, "signs" ), new[] { link } ) );
+		Assert.IsFalse( Directory.Exists( Path.Combine( data, "signs" ) ) );
+	}
+
+	[TestMethod]
+	public void LanguageDataAndTheCdFolderAreProtectedWhenTheLanguageComesFromTheInstallation()
+	{
+		var data = Path.Combine( root, "game", "Data" );
+		Directory.CreateDirectory( Path.Combine( data, "Language", "English" ) );
+		var overlay = Path.Combine( root, "es-lang", "Data" );
+		Directory.CreateDirectory( Path.Combine( overlay, "Language", "spanish" ) );
+		var cd = Path.Combine( root, "cd" );
+		Directory.CreateDirectory( cd );
+		var link = Path.Combine( root, "overlay-link" );
+		Directory.CreateSymbolicLink( link, overlay );
+		var previousLanguage = GameLanguage.IsSelected ? GameLanguage.Current : null;
+		var previousOverlay = GameLanguage.AvailableOverlay;
+		try
+		{
+			foreach ( var output in new[] { Path.Combine( overlay, "x" ), Path.Combine( link, "x" ), Path.Combine( cd, "x" ) } )
+			{
+				Assert.ThrowsException<IOException>( () => SignExport.RunCommand( new[] { "--export-signs", "English", output }, data, overlay, cd ), output );
+				Assert.AreEqual( "English", GameLanguage.Current.Name, "the exported language comes from the installation" );
+				Assert.IsFalse( Directory.Exists( output ), output );
+			}
+			// the overlay offered beside an installed language is protected without being passed again
+			GameLanguage.AvailableOverlay = overlay;
+			Assert.ThrowsException<IOException>( () => SignExport.Run( Path.Combine( overlay, "y" ), data ) );
+			Assert.AreEqual( 1, Directory.EnumerateFileSystemEntries( overlay ).Count() );
+		}
+		finally
+		{
+			GameLanguage.Current = previousLanguage!;
+			GameLanguage.AvailableOverlay = previousOverlay;
+		}
+	}
+
+	[TestMethod]
 	public void NamesFromDataCannotLeaveTheOutputDirectory()
 	{
 		Assert.AreEqual( "_evil", SignExport.SafeSegment( "../evil" ) );
@@ -185,6 +251,7 @@ public class SignExportTests
 			Assert.Inconclusive( "Set OPENTPW_GAME_PATH to the original game for the sign export." );
 		var previousLanguage = GameLanguage.IsSelected ? GameLanguage.Current : null;
 		var previousEdition = GameEditions.Current;
+		var previousBonus = ObjectCatalog.BonusDataRoot;
 		try
 		{
 			ObjectCatalog.BonusDataRoot = null;
@@ -199,6 +266,9 @@ public class SignExportTests
 			Assert.AreEqual( files.Count, rows.Count );
 			Assert.AreEqual( files.Count, Directory.EnumerateFiles( output, "*.png", SearchOption.AllDirectories ).Count() );
 			Assert.AreEqual( "English", json.RootElement.GetProperty( "language" ).GetString() );
+			// the index is meant to be shared: no absolute path of the user's machine
+			Assert.IsFalse( Path.IsPathRooted( json.RootElement.GetProperty( "languageFolder" ).GetString() ) );
+			Assert.IsFalse( File.ReadAllText( Path.Combine( output, SignExport.IndexFileName ) ).Contains( Path.GetDirectoryName( data.TrimEnd( '/' ) )!, StringComparison.OrdinalIgnoreCase ) );
 
 			// the jungle gate: OBJECT_NAMES 85 and 86, "LOST" over "Kingdom", as a new park's gate starts
 			var gate = rows.Where( row => row.GetProperty( "theme" ).GetString() == "jungle" && row.GetProperty( "kind" ).GetString() == "gate" ).ToList();
@@ -258,7 +328,7 @@ public class SignExportTests
 			FileSystem = previousFileSystem;
 			GameLanguage.Current = previousLanguage!;
 			GameEditions.Select( previousEdition );
-			ObjectCatalog.BonusDataRoot = null;
+			ObjectCatalog.BonusDataRoot = previousBonus;
 		}
 	}
 }

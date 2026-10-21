@@ -77,10 +77,12 @@ public partial class Texture : Asset
 	/// <summary>
 	/// From data as bytes
 	/// </summary>
-	public Texture( byte[] data, int width, int height, TextureFlags flags = TextureFlags.None )
+	public Texture( byte[] data, int width, int height, TextureFlags flags = TextureFlags.None,
+		[System.Runtime.CompilerServices.CallerFilePath] string callerFile = "", [System.Runtime.CompilerServices.CallerLineNumber] int callerLine = 0 )
 	{
+		// the browser's AOT build has no method names in its stack traces, so the calling line comes first
 		if ( TrackOrigins )
-			Origin = string.Join( " < ", new System.Diagnostics.StackTrace( 1, false ).GetFrames().Take( 3 ).Select( frame => $"{frame.GetMethod()?.DeclaringType?.Name}.{frame.GetMethod()?.Name}" ) );
+			Origin = $"{System.IO.Path.GetFileName( callerFile.Replace( '\\', '/' ) )}:{callerLine} " + string.Join( " < ", new System.Diagnostics.StackTrace( 1, false ).GetFrames().Take( 3 ).Select( frame => $"{frame.GetMethod()?.DeclaringType?.Name}.{frame.GetMethod()?.Name}" ) );
 		CreateTexture( "", data, (uint)width, (uint)height, flags );
 	}
 

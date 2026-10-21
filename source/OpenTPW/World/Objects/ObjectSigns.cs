@@ -53,6 +53,9 @@ public sealed class ObjectSignImages
 		rightTexture = null;
 	}
 
+	/// <summary>The GPU textures made so far (for the tests that count what a park leaves behind).</summary>
+	internal IEnumerable<Texture> CreatedTextures => new[] { leftTexture, rightTexture }.OfType<Texture>();
+
 	/// <summary>GPU texture of the <c>sign1</c> half (created on first use, shared by every object of the type).</summary>
 	public Texture LeftTexture => leftTexture ??= new Texture( Left, SignSurfaceComposer.HalfWidth, SignSurfaceComposer.Height );
 	/// <summary>GPU texture of the <c>sign2</c> half.</summary>
@@ -70,6 +73,13 @@ public sealed class ObjectSignImages
 public static class ObjectSigns
 {
 	private static readonly Dictionary<string, ObjectSignImages?> cache = new( StringComparer.Ordinal );
+
+	/// <summary>The GPU textures of the type signs kept for the session (one pair per object type and name drawn; kept on purpose).</summary>
+	internal static Texture[] SessionTextures()
+	{
+		lock ( cache )
+			return cache.Values.OfType<ObjectSignImages>().SelectMany( images => images.CreatedTextures ).ToArray();
+	}
 
 	/// <summary>0 for <c>sign1</c>, 1 for <c>sign2</c> (extension and case ignored), else -1.</summary>
 	public static int SlotOf( string textureName ) => Path.GetFileNameWithoutExtension( textureName.TrimEnd( '\0' ) ).ToLowerInvariant() switch { "sign1" => 0, "sign2" => 1, _ => -1 };

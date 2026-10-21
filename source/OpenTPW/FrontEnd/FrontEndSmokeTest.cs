@@ -131,6 +131,17 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 	private string lobbyShadersBeforePark = "";
 	private int lobbyTestShadersBeforePark = -1;
 	private static int TestShaderCount() => Asset.All.OfType<Shader>().Count( shader => System.IO.Path.GetFileName( shader.Path ) == "test.shader" );
+	/// <summary>
+	/// The textures alive that were not loaded by path (made from bytes or for a render target), with where they were made; the type signs
+	/// <see cref="ObjectSigns"/> keeps for the session on purpose are left out.
+	/// </summary>
+	private static (int Count, string Origins) PathlessTextures()
+	{
+		var kept = ObjectSigns.SessionTextures().ToHashSet();
+		var textures = Asset.All.OfType<Texture>().Where( texture => string.IsNullOrEmpty( texture.Path ) && !kept.Contains( texture ) ).ToList();
+		return (textures.Count, string.Join( ", ", textures.GroupBy( texture => texture.Origin ?? "?" ).OrderBy( group => group.Key ).Select( group => $"{group.Key} x{group.Count()}" ) ));
+	}
+	private (int Count, string Origins) lobbyPathlessTexturesBeforePark = (-1, "");
 	private Asset[] secondParkHeadAssets = Array.Empty<Asset>();
 	private Asset[] firstParkGuestAssets = Array.Empty<Asset>();
 	private Asset[] secondParkGuestAssets = Array.Empty<Asset>();
@@ -586,6 +597,9 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 			lobbyMaterialsBeforePark = Asset.All.Count( asset => asset is Material or Shader );
 			lobbyShadersBeforePark = ShaderCounts();
 			lobbyTestShadersBeforePark = TestShaderCount();
+			// from here on a texture made from bytes records where it was made, so a park that leaves one behind is named
+			Texture.TrackOrigins = true;
+			lobbyPathlessTexturesBeforePark = PathlessTextures();
 			flow.Menu.Main.Focus( flow.Menu.Main.Find( "enterPark" ) );
 			flow.InjectedInput = UiInput.Key( UiKeys.Accept );
 		} );
@@ -1443,6 +1457,10 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 			Require( lobbyMaterialsBeforePark >= 0 && TestShaderCount() == lobbyTestShadersBeforePark, $"leaving a park releases the materials of its terrain and the lobby's scene ({lobbyMaterialsBeforePark} materials and shaders before: {lobbyShadersBeforePark}; {lobbyMaterialsNow} after: {ShaderCounts()})" );
 			// Releasing a material frees only what it owns (its shader copy, pipeline, uniform buffer and layouts), never the textures it draws with: the shared white placeholder and the textures cached by path stay live.
 			Require( Texture.Missing.NativeTexture is { IsDisposed: false } && Asset.All.OfType<Texture>().All( texture => texture.NativeTexture is not { IsDisposed: true } ), "no live texture lost its GPU texture when the park's materials were released" );
+			// Every park made a new area texture for its blueprint markers and none was released (one more texture per visit for the session):
+			// the textures not loaded by path are those of the lobby again, as before the park.
+			var pathless = PathlessTextures();
+			Require( pathless.Count == lobbyPathlessTexturesBeforePark.Count, $"leaving a park releases every texture it made from bytes ({lobbyPathlessTexturesBeforePark.Count} before: {lobbyPathlessTexturesBeforePark.Origins}; {pathless.Count} after: {pathless.Origins})" );
 			if ( parkLanguage != null )
 				Require( string.Equals( GameLanguage.Current.Name, parkLanguage, StringComparison.OrdinalIgnoreCase ) && flow.Strings.Language == parkLanguage,
 					"a language chosen in the park applies once the park is left" );
@@ -1466,6 +1484,9 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 		Wait( "instant action returns to lobby", 3 );
 		Do( "load original park after Instant Action", () =>
 		{
+			var pathless = PathlessTextures();
+			Require( pathless.Count == lobbyPathlessTexturesBeforePark.Count, $"a second park leaves no texture made from bytes behind either ({lobbyPathlessTexturesBeforePark.Count} before the first park; {pathless.Count} now: {pathless.Origins})" );
+			Texture.TrackOrigins = false;
 			flow.LoadPark( new ParkLoadEntry( "jungle", 0, false ) );
 			builtInOneGo = (flow.Level!.ComputeStateHash(), Entity.All.Count, flow.Level.Objects.Objects.Count);
 			hudInOneGo = HudState( flow.Hud! );

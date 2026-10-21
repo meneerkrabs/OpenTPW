@@ -1605,6 +1605,9 @@ public sealed class ParkEconomy : IParkEconomy
 		return total;
 	}
 
+	/// <summary>The park's record for global ticket <paramref name="kind"/> (<see cref="ParkObjectives.GlobalRecord"/>).</summary>
+	internal long GlobalTicketRecord( GoldenTicketKind kind ) => ParkObjectives.GlobalRecord( kind, Counters, CoveredCells() );
+
 	/// <summary>
 	/// The big park ticket's count (tp.exe <c>0x004CD7F0</c>): the cells, owned or not, whose type is 4, 9, 10 or 21 or that lie under a counted structure; null without a cell map.
 	/// </summary>

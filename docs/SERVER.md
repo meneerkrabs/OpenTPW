@@ -189,8 +189,14 @@ Settings are in `OpenTPW.Server/appsettings.json`, or environment variables name
 | `CoopGuestMessagesPerSecond`, `CoopGuestBytesPerSecond` | 50, 256 KiB | What a guest's co-op socket sends, with a two-second burst |
 | `CoopOutboxBytes`, `CoopServerOutboxBytes` | 2 MiB, 256 MiB | Bytes queued for one co-op socket and for all of them: a socket over its share is cut off, and a server over its budget cuts off the socket with the longest queue. A socket that takes no message for 30 seconds is cut off too |
 | `CoopCreatesPerHour`, `CoopJoinsPerHour`, `CoopWrongCodesPerHour`, `CoopInvitesPerHour`, `CoopKicksPerHour`, `CoopDownloadsPerHour` | 6, 30, 10, 60, 60, 30 | Per account: sessions started, joins, codes that matched no session, invitations, removals and leaves, snapshot downloads |
+| `CoopSnapshotsPerSessionPerHour` | 60 | Per shared park: the join snapshots its host uploads, counted once the request is known to be the host's with room for it (a limit of its own, not `UploadsPerHour`) |
 | `MaximumCoopSnapshotBytes`, `MaximumCoopStoreBytes` | 96 MiB, 4 GiB | A shared park's join snapshot, and all of them together |
 | `CoopPingInterval` | 15 s | A co-op socket that has heard nothing from the server for this long gets a ping (browsers never see WebSocket pings) |
+
+The address limits (requests, logins and park uploads) and the shared parks' snapshot and download
+limits answer a 429 with a `Retry-After` header: the time until the oldest counted request leaves its
+hour, or for an address limit its window's length (an upper bound). A joiner's download waits that
+long, up to a minute.
 
 Behind a proxy, set `ASPNETCORE_FORWARDEDHEADERS_ENABLED=true` so the limits see the real
 client addresses (the compose example does).

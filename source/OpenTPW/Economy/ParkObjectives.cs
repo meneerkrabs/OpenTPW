@@ -200,6 +200,28 @@ public sealed class ParkObjectives
 	public IReadOnlyDictionary<int, int> Declines => declines;
 	public IReadOnlyCollection<GoldenTicketKind> GoldenTickets => tickets;
 
+	/// <summary>
+	/// [EXT:online-coop-snapshot-join] Takes a global ticket from the park: one it won by its own records in a co-op session that the player's rule keeps with another park
+	/// (<see cref="PlayerProgressRuntimeOwner"/>'s hand-back).
+	/// </summary>
+	internal bool TakeGoldenTicket( GoldenTicketKind kind ) => tickets.Remove( kind );
+
+	/// <summary>
+	/// The park's record for global ticket <paramref name="kind"/>, as the golden ticket check compares it with the ticket's threshold and the player's holder: the highest of its records
+	/// of the kind, or the big park's covered cells (<paramref name="coveredCells"/>, 0 without a cell map).
+	/// </summary>
+	internal static long GlobalRecord( GoldenTicketKind kind, ParkCounters counters, long? coveredCells ) => kind switch
+	{
+		GoldenTicketKind.CoasterHeight => MaxRecord( counters, ParkRecordKind.CoasterHeight ),
+		GoldenTicketKind.GokartExcitement => MaxRecord( counters, ParkRecordKind.GokartExcitement ),
+		GoldenTicketKind.WaterLength => MaxRecord( counters, ParkRecordKind.WaterLength ),
+		GoldenTicketKind.BigPark => coveredCells ?? 0,
+		_ => throw new ArgumentOutOfRangeException( nameof( kind ), "Not a global ticket." )
+	};
+
+	private static long MaxRecord( ParkCounters counters, ParkRecordKind kind ) =>
+		counters.Values.Where( pair => pair.Key.StartsWith( $"record:{kind}:", StringComparison.Ordinal ) ).Select( pair => pair.Value ).DefaultIfEmpty( 0 ).Max();
+
 	public ChallengeDefinition? CurrentDefinition => Current == null ? null : settings.Challenges[Current.DefinitionIndex];
 
 	/// <summary>Challenge types whose progress the simulation can measure (see <see cref="Measure"/>).</summary>
@@ -589,7 +611,6 @@ public sealed class ParkObjectives
 		if ( !settings.CanEarnTickets )
 			return won;
 		var rules = settings.GoldenTickets;
-		long MaxRecord( ParkRecordKind kind ) => counters.Values.Where( pair => pair.Key.StartsWith( $"record:{kind}:", StringComparison.Ordinal ) ).Select( pair => pair.Value ).DefaultIfEmpty( 0 ).Max();
 		// [BIN:STP-PPC:0x100D33F8 local golden tickets] the profit ticket is won when the bank's year profit (+292, mProfitThisYear) is signed GREATER than ProfitYear, with no factor (oracle F23); the multiplier at 0x10013FDC belongs to the advisor's near-ticket hint, not to the award
 		// [BIN:TPW-EXE:0x004C94D0 visitors since a month close] the lifetime visitor counter (+0x21C08, raised per admission by 0x004C7530) minus its snapshot at the close RecentVisitorMonths back (a 144-entry ring written at each month close, 0x004C7720); 0 unless that close exists, so the open month counts and RecentVisitorMonths + 1 closes are needed. The snapshot is the dropped history plus the closed months through it.
 		var recentMonths = rules.RecentVisitorMonths;
@@ -630,9 +651,9 @@ public sealed class ParkObjectives
 					break;
 			}
 		}
-		CheckGlobal( GoldenTicketKind.CoasterHeight, MaxRecord( ParkRecordKind.CoasterHeight ), rules.CoasterHeight );
-		CheckGlobal( GoldenTicketKind.GokartExcitement, MaxRecord( ParkRecordKind.GokartExcitement ), rules.GokartExcitement );
-		CheckGlobal( GoldenTicketKind.WaterLength, MaxRecord( ParkRecordKind.WaterLength ), rules.WaterLength );
+		CheckGlobal( GoldenTicketKind.CoasterHeight, MaxRecord( counters, ParkRecordKind.CoasterHeight ), rules.CoasterHeight );
+		CheckGlobal( GoldenTicketKind.GokartExcitement, MaxRecord( counters, ParkRecordKind.GokartExcitement ), rules.GokartExcitement );
+		CheckGlobal( GoldenTicketKind.WaterLength, MaxRecord( counters, ParkRecordKind.WaterLength ), rules.WaterLength );
 		// [BIN:TPW-EXE:0x004D4E50 global golden tickets] the four global tickets are tested in index order against the GoldenTicketGlobal words (0x7857AC, B0, B4, BC), each strictly greater: coaster height, go-kart excitement, water length and, index 3, the big park, whose count (0x004CD7F0) goes over all 128 x 128 cells of type 9, 10, 4 or 21 or under a structure of 0x005363F0 and is compared with GoldenTicketGlobal.MinCellsCovered (0x7857BC, the fifth key of the table 0x73FC70); MinCellsOwned (0x7857B8) is never read
 		if ( coveredCells is { } covered )
 			CheckGlobal( GoldenTicketKind.BigPark, covered, rules.MinCellsCovered );

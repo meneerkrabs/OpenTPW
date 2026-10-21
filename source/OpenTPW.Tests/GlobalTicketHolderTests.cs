@@ -3,6 +3,8 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Collections.Generic;
+using System.Reflection;
+using System.Runtime.CompilerServices;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace OpenTPW.Tests;
@@ -201,5 +203,156 @@ public class GlobalTicketHolderTests
 			Assert.AreEqual( 1, saved.EarnedTickets );
 		}
 		finally { Directory.Delete( root, true ); }
+	}
+
+	/// <summary>
+	/// [EXT:online-coop-snapshot-join] A park in a co-op session decides its global tickets by its own records, as a peer's park without a ledger does, and leaves the player's holder alone;
+	/// when the session ends, the hand-back takes a ticket the rule keeps with another park and records one the park's record takes over.
+	/// </summary>
+	[TestMethod]
+	public void AParkInASessionDecidesItsGlobalTicketsAloneAndTheHandBackAppliesTheRule()
+	{
+		var root = Directory.CreateTempSubdirectory( "opentpw-global-session-" ).FullName;
+		try
+		{
+			var path = Path.Combine( root, PlayerTicketFile.FileName );
+			PlayerTicketFile.Save( path, new PlayerTicketLedger().Capture() );
+			var held = new GlobalTicketHolder( GoldenTicketKind.CoasterHeight, "jungle", 110 );
+			{
+				var runtime = ParkEconomyRuntime.ForResume( EconomyTestData.Park(), ParkStartKind.FullSimulation );
+				using var owner = new PlayerProgressRuntimeOwner( path, "jungle", PlayerTicketFile.ReadIfPresent( path )!, runtime, () => true, _ => Assert.Fail() );
+				runtime.Economy.OpenPark();
+				runtime.Economy.ReportRecord( ParkRecordKind.CoasterHeight, 0, 110 );
+				runtime.Economy.AdvanceMonths( 1 );
+			}
+			Assert.AreEqual( held, PlayerTicketFile.LoadIfPresent( path )!.HolderOf( GoldenTicketKind.CoasterHeight ) );
+
+			foreach ( var (record, keeps) in new[] { (108L, false), (140L, true) } )
+			{
+				var shared = true;
+				var runtime = ParkEconomyRuntime.ForResume( EconomyTestData.Park(), ParkStartKind.FullSimulation );
+				using var owner = new PlayerProgressRuntimeOwner( path, "space", PlayerTicketFile.ReadIfPresent( path )!, runtime, () => true, _ => Assert.Fail(), () => shared );
+				// the session started after the owner's last pump: the park is outside its player's progress from its first tick
+				Assert.AreEqual( GlobalTicketOutcome.Unmanaged, runtime.Economy.Objectives.GlobalTicketAuthority!( GoldenTicketKind.CoasterHeight, 500 ), "no player-wide rule in a session" );
+				Assert.AreEqual( held, owner.Ledger.HolderOf( GoldenTicketKind.CoasterHeight ) );
+				var peer = EconomyTestData.Park();
+				foreach ( var economy in new[] { runtime.Economy, peer } )
+				{
+					economy.OpenPark();
+					economy.ReportRecord( ParkRecordKind.CoasterHeight, 0, record );
+					economy.AdvanceMonths( 1 );
+				}
+				CollectionAssert.AreEquivalent( peer.Objectives.GoldenTickets.ToArray(), runtime.Economy.Objectives.GoldenTickets.ToArray(), "decided alike with and without a ledger" );
+				Assert.IsTrue( runtime.Economy.Objectives.GoldenTickets.Contains( GoldenTicketKind.CoasterHeight ), $"a record of {record} wins the ticket in the session" );
+				Assert.AreEqual( held, owner.Ledger.HolderOf( GoldenTicketKind.CoasterHeight ), "the player's holder is untouched in the session" );
+				Assert.IsFalse( owner.Dirty );
+
+				shared = false;
+				owner.Pump();
+				Assert.AreEqual( keeps, runtime.Economy.Objectives.GoldenTickets.Contains( GoldenTicketKind.CoasterHeight ), $"the hand-back with a record of {record}" );
+				var holder = PlayerTicketFile.LoadIfPresent( path )!.HolderOf( GoldenTicketKind.CoasterHeight );
+				Assert.AreEqual( keeps ? new GlobalTicketHolder( GoldenTicketKind.CoasterHeight, "space", 140 ) : held, holder );
+				held = holder!;
+			}
+
+			// a global ticket the park held before the session is no session win: the hand-back leaves it alone
+			{
+				var shared = true;
+				var economy = EconomyTestData.Park();
+				var objectives = economy.Objectives;
+				typeof( ParkObjectives ).GetField( "tickets", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic )!.GetValue( objectives )!
+					.GetType().GetMethod( "Add" )!.Invoke( typeof( ParkObjectives ).GetField( "tickets", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic )!.GetValue( objectives ),
+						new object[] { GoldenTicketKind.CoasterHeight } );
+				var runtime = ParkEconomyRuntime.ForResume( economy, ParkStartKind.FullSimulation );
+				using var owner = new PlayerProgressRuntimeOwner( path, "hallow", PlayerTicketFile.ReadIfPresent( path )!, runtime, () => true, _ => Assert.Fail(), () => shared );
+				owner.Pump();
+				shared = false;
+				owner.Pump();
+				Assert.IsTrue( economy.Objectives.GoldenTickets.Contains( GoldenTicketKind.CoasterHeight ), "a ticket from before the session stays" );
+			}
+		}
+		finally { Directory.Delete( root, true ); }
+	}
+
+	/// <summary>
+	/// [EXT:online-coop-snapshot-join] The game's way out of a shared park (<c>GameFlow.LeaveCoopSession</c>, first on every way out) runs the hand-back also when the session ended earlier in
+	/// the frame (the server or the host's stream ended it, so the game holds no session any more), before anything saves or detaches progress.
+	/// </summary>
+	[TestMethod]
+	public void TheWayOutOfASharedParkRunsTheHandBackAlsoWhenItsSessionEndedEarlier()
+	{
+		var root = Directory.CreateTempSubdirectory( "opentpw-global-leave-" ).FullName;
+		try
+		{
+			var path = Path.Combine( root, PlayerTicketFile.FileName );
+			PlayerTicketFile.Save( path, new PlayerTicketLedger().Capture() );
+			var shared = true;
+			var runtime = ParkEconomyRuntime.ForResume( EconomyTestData.Park(), ParkStartKind.FullSimulation );
+			using var owner = new PlayerProgressRuntimeOwner( path, "space", PlayerTicketFile.ReadIfPresent( path )!, runtime, () => true, _ => Assert.Fail(), () => shared );
+			runtime.Economy.OpenPark();
+			runtime.Economy.ReportRecord( ParkRecordKind.CoasterHeight, 0, 140 );
+			runtime.Economy.AdvanceMonths( 1 );
+			Assert.IsTrue( runtime.Economy.Objectives.GoldenTickets.Contains( GoldenTicketKind.CoasterHeight ), "won in the session" );
+			Assert.IsNull( PlayerTicketFile.LoadIfPresent( path )!.HolderOf( GoldenTicketKind.CoasterHeight ), "nothing of it recorded while shared" );
+			shared = false;
+			var flow = (GameFlow)RuntimeHelpers.GetUninitializedObject( typeof( GameFlow ) );
+			typeof( GameFlow ).GetField( "progressOwner", BindingFlags.Instance | BindingFlags.NonPublic )!.SetValue( flow, owner );
+			typeof( GameFlow ).GetMethod( "LeaveCoopSession", BindingFlags.Instance | BindingFlags.NonPublic )!.Invoke( flow, new object[] { "The park was closed." } );
+			Assert.AreEqual( new GlobalTicketHolder( GoldenTicketKind.CoasterHeight, "space", 140 ), PlayerTicketFile.LoadIfPresent( path )!.HolderOf( GoldenTicketKind.CoasterHeight ),
+				"the hand-back recorded the session's win" );
+		}
+		finally { Directory.Delete( root, true ); }
+	}
+
+	private static void Set( object target, string name, object? value ) => target.GetType().GetField( name, BindingFlags.NonPublic | BindingFlags.Instance )!.SetValue( target, value );
+	private static object? Get( object target, string name ) => target.GetType().GetField( name, BindingFlags.NonPublic | BindingFlags.Instance )!.GetValue( target );
+
+	/// <summary>
+	/// [EXT:online-coop-snapshot-join] A park that joins a session as a guest's at the session's identical start is the host's park from then on: the progress attached to it while it was
+	/// the player's own never takes the park's tickets for its player, during the session or after it (<c>GameFlow.AttachProgress</c>'s owner is active only for a park that is no guest's).
+	/// </summary>
+	[TestMethod]
+	public void AGuestsParkNeverHandsTheHostsTicketsToItsPlayer()
+	{
+		var root = Directory.CreateTempSubdirectory( "opentpw-global-guest-" ).FullName;
+		var (saves, edition) = (SaveFileSystem, GameEditions.Current);
+		try
+		{
+			SaveFileSystem = new( root );
+			GameEditions.Select( GameEdition.ThemeParkWorld );
+			var path = Path.Combine( root, PlayerTicketFile.FileName );
+			PlayerTicketFile.Save( path, new PlayerTicketLedger().Capture() );
+			var flow = (GameFlow)RuntimeHelpers.GetUninitializedObject( typeof( GameFlow ) );
+			var level = (Level)RuntimeHelpers.GetUninitializedObject( typeof( Level ) );
+			var runtime = ParkEconomyRuntime.ForResume( EconomyTestData.Park(), ParkStartKind.FullSimulation );
+			Set( level, "<LevelName>k__BackingField", "space" );
+			Set( level, "<Park>k__BackingField", runtime );
+			Set( flow, "<Level>k__BackingField", level );
+			flow.AttachProgress( level );
+			var owner = (PlayerProgressRuntimeOwner)Get( flow, "progressOwner" )!;
+			Assert.IsNotNull( owner, "the player's own park takes part in its progress" );
+			// the park joins a session as a guest's: the host's park from then on, which wins a global ticket in the session
+			level.IsCoopGuestPark = true;
+			level.CoopSession = (CoopSession)RuntimeHelpers.GetUninitializedObject( typeof( CoopSession ) );
+			owner.Pump();
+			runtime.Economy.OpenPark();
+			runtime.Economy.ReportRecord( ParkRecordKind.CoasterHeight, 0, 140 );
+			runtime.Economy.AdvanceMonths( 1 );
+			Assert.IsTrue( runtime.Economy.Objectives.GoldenTickets.Contains( GoldenTicketKind.CoasterHeight ), "won by the park's own record" );
+			owner.Pump();
+			Assert.IsNull( PlayerTicketFile.LoadIfPresent( path )!.HolderOf( GoldenTicketKind.CoasterHeight ), "nothing of it during the session" );
+			// the session ended; the way out finds no session and pumps the progress: the guest's player gets nothing of the host's park
+			level.CoopSession = null;
+			typeof( GameFlow ).GetMethod( "LeaveCoopSession", BindingFlags.Instance | BindingFlags.NonPublic )!.Invoke( flow, new object[] { "The park was closed." } );
+			Assert.IsNull( PlayerTicketFile.LoadIfPresent( path )!.HolderOf( GoldenTicketKind.CoasterHeight ) );
+			Assert.IsFalse( owner.Dirty );
+			typeof( GameFlow ).GetMethod( "DetachProgress", BindingFlags.Instance | BindingFlags.NonPublic )!.Invoke( flow, null );
+		}
+		finally
+		{
+			SaveFileSystem = saves;
+			GameEditions.Select( edition );
+			Directory.Delete( root, true );
+		}
 	}
 }

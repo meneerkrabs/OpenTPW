@@ -31,6 +31,9 @@ public sealed class StaffHands
 	/// <summary>The employee <paramref name="player"/> holds and the cell it came from, or null.</summary>
 	public (int Staff, int X, int Y)? Of( int player ) => carried.TryGetValue( player, out var hand ) ? hand : null;
 
+	/// <summary>[EXT:online-coop-snapshot-join] Every hand, lowest player first: the employee and the cell it came from (a join snapshot carries them).</summary>
+	internal IEnumerable<(int Player, int Staff, int X, int Y)> All => carried.OrderBy( pair => pair.Key ).Select( pair => (pair.Key, pair.Value.Staff, pair.Value.X, pair.Value.Y) );
+
 	/// <summary>Whether a player holds employee <paramref name="staff"/>.</summary>
 	public bool IsCarried( int staff ) => carried.Values.Any( hand => hand.Staff == staff );
 

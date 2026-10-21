@@ -82,6 +82,13 @@ public static class ServerProgram
 				_ => new FixedWindowRateLimiterOptions { PermitLimit = options.AuthenticationsPerMinute, Window = TimeSpan.FromMinutes( 1 ), QueueLimit = 0 } ) );
 			limiter.AddPolicy( "upload", context => RateLimitPartition.GetFixedWindowLimiter( Address( context ),
 				_ => new FixedWindowRateLimiterOptions { PermitLimit = options.UploadsPerHour, Window = TimeSpan.FromHours( 1 ), QueueLimit = 0 } ) );
+			// [EXT:online-coop-snapshot-join] a refusal says when to try again: the window's length, at most what is left of it (a joiner's download waits that long)
+			limiter.OnRejected = ( rejected, _ ) =>
+			{
+				if ( rejected.Lease.TryGetMetadata( MetadataName.RetryAfter, out var wait ) )
+					rejected.HttpContext.Response.Headers.RetryAfter = RetryAfterSeconds( wait );
+				return ValueTask.CompletedTask;
+			};
 		} );
 
 		var app = builder.Build();
@@ -256,6 +263,9 @@ public static class ServerProgram
 		}
 		catch ( StoreException exception )
 		{
+			// [EXT:online-coop-snapshot-join] a limit's refusal says when it may be tried again
+			if ( exception.RetryAfter is { } wait )
+				context.Response.Headers.RetryAfter = RetryAfterSeconds( wait );
 			return Results.Json( new ApiError( exception.Message, exception.Reason ), StrictJson.Options, statusCode: exception.Status );
 		}
 		catch ( InvalidDataException exception )
@@ -263,6 +273,9 @@ public static class ServerProgram
 			return Error( StatusCodes.Status400BadRequest, exception.Message );
 		}
 	}
+
+	/// <summary>[EXT:online-coop-snapshot-join] A Retry-After header's value: whole seconds, at least one.</summary>
+	private static string RetryAfterSeconds( TimeSpan wait ) => Math.Max( 1, (long)Math.Ceiling( wait.TotalSeconds ) ).ToString( System.Globalization.CultureInfo.InvariantCulture );
 
 	private static void RequireClean( WordFilter filter, string text, string what )
 	{
@@ -690,7 +703,8 @@ public static class ServerProgram
 				throw new StoreException( StatusCodes.Status404NotFound, "No such shared park." );
 			if ( context.Request.ContentLength > options.MaximumCoopSnapshotBytes )
 				throw new StoreException( StatusCodes.Status413PayloadTooLarge, "The snapshot is too large." );
-			// authenticated, the host's and with room: only now may the body be larger than the server's default limit
+			// authenticated, the host's, within the session's own snapshot limit and with room: only now may the body be larger than the server's default limit
+			// ([EXT:online-coop-snapshot-join] the limit is counted in CoopHub.BeginUpload, not against the address's park uploads)
 			var upload = coop.BeginUpload( user!, id );
 			string? temporary = null;
 			string? sha256 = null;
@@ -719,7 +733,7 @@ public static class ServerProgram
 				if ( temporary != null && File.Exists( temporary ) )
 					File.Delete( temporary );
 			}
-		} ) ).RequireRateLimiting( "upload" );
+		} ) );
 
 		app.MapGet( ApiRoutes.Coop + "/{id}/snapshot/{sha256}", ( HttpContext context, string id, string sha256 ) => Guarded( context, store, true, user =>
 		{

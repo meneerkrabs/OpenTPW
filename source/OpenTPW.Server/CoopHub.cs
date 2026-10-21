@@ -1118,6 +1118,12 @@ public sealed class CoopHub
 					throw new StoreException( StatusCodes.Status409Conflict, "An upload is running." );
 				if ( store.BlobBytes() + reservedUploadBytes + options.MaximumCoopSnapshotBytes > options.MaximumCoopStoreBytes )
 					throw new StoreException( StatusCodes.Status507InsufficientStorage, "The server has no room for the park now." );
+				// [EXT:online-coop-snapshot-join] the session's own limit, counted only for its authenticated host with room for the upload, so nobody else and no full store can spend it
+				if ( !quotas.Allow( session.Id, "snapshot", options.CoopSnapshotsPerSessionPerHour, TimeSpan.FromHours( 1 ) ) )
+					throw new StoreException( StatusCodes.Status429TooManyRequests, "Too many join snapshots for this shared park; try again later." )
+					{
+						RetryAfter = quotas.Wait( session.Id, "snapshot", TimeSpan.FromHours( 1 ) )
+					};
 				reservedUploadBytes += options.MaximumCoopSnapshotBytes;
 				session.Uploading = true;
 				return new Upload( id );
@@ -1177,7 +1183,11 @@ public sealed class CoopHub
 		if ( !File.Exists( path ) )
 			return null;
 		if ( counts && !quotas.Allow( user.Key, "download", options.CoopDownloadsPerHour, TimeSpan.FromHours( 1 ) ) )
-			throw new StoreException( StatusCodes.Status429TooManyRequests, "Too many downloads; try again later." );
+			throw new StoreException( StatusCodes.Status429TooManyRequests, "Too many downloads; try again later." )
+			{
+				// [EXT:online-coop-snapshot-join] a joiner waits as long as it says, or gives up the join when that is too long
+				RetryAfter = quotas.Wait( user.Key, "download", TimeSpan.FromHours( 1 ) )
+			};
 		return path;
 	}
 
@@ -1396,6 +1406,16 @@ public sealed class CoopHub
 		{
 			lock ( events )
 				return Queue( key, kind, window ).Count;
+		}
+
+		/// <summary>How long until the oldest counted request of <paramref name="kind"/> leaves <paramref name="window"/>: when a refused one may be tried again.</summary>
+		public TimeSpan Wait( string key, string kind, TimeSpan window )
+		{
+			lock ( events )
+			{
+				var queue = Queue( key, kind, window );
+				return queue.Count == 0 ? TimeSpan.Zero : queue.Peek() + window - clock();
+			}
 		}
 
 		private Queue<DateTimeOffset> Queue( string key, string kind, TimeSpan window )

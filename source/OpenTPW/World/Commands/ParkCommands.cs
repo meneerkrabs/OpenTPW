@@ -27,6 +27,18 @@ public sealed record ParkCommandResult( bool Accepted, string? Reason = null, ob
 /// <summary>One logged command: the tick it applied before and the command.</summary>
 public readonly record struct ParkCommandLogEntry( long Tick, ParkCommand Command );
 
+/// <summary>What the funnel does with a command applied while a simulation tick runs (<see cref="ParkCommands.InTick"/>; <see cref="ParkCommands.Strict"/> throws first).</summary>
+public enum ParkCommandInTickRule
+{
+	/// <summary>Runs it at once, as a game of one always did.</summary>
+	RunAtOnce,
+	/// <summary>
+	/// [EXT:online-coop-lockstep] Refuses it, logged as an error, neither recorded nor raised: a session's rule, since a peer would apply it at the tick's start (its log
+	/// entry says "before tick N").
+	/// </summary>
+	Drop
+}
+
 /// <summary>
 /// [EXT:online-coop-commands] The park's one funnel for edits (docs/COOP.md): every HUD window and tool hands its edit to <see cref="Apply"/> as a <see cref="ParkCommand"/>.
 /// A command applies before simulation tick <see cref="NextTick"/>, the tick the next frame runs first: in single player it runs at once, between two ticks as every edit did
@@ -52,6 +64,8 @@ public sealed class ParkCommands
 	private ParkCommand? running;
 	private bool issuing;
 	private bool inTick;
+	/// <summary>The held commands of a tick are being applied (<see cref="ApplyDue"/>).</summary>
+	private bool applyingDue;
 
 	/// <param name="nextTick">The index of the next simulation tick (the fixed-step clock's tick count).</param>
 	/// <param name="execute">Runs one well-formed command on the park; a rejection must leave the park unchanged.</param>
@@ -68,6 +82,16 @@ public sealed class ParkCommands
 
 	/// <summary>The host's per-player rights; null allows every command (single player).</summary>
 	public IParkCommandRights? Rights { get; set; }
+
+	/// <summary>What a command applied during a simulation tick does: runs at once in a game of one, is dropped in a session.</summary>
+	public ParkCommandInTickRule InTick { get; set; } = ParkCommandInTickRule.RunAtOnce;
+
+	/// <summary>
+	/// [EXT:online-coop-lockstep] The rules of a co-op session (docs/COOP.md): a command issued inside another (a HUD callback during an edit) is refused, since it would
+	/// run unstreamed on its issuer only; a command the rights refuse is neither logged nor raised, so a guest's own issues stay out of its log, which is the host's
+	/// stream; and a held command never rethrows (a strict run included): its error is in its result, which the stream compares.
+	/// </summary>
+	public bool SessionRules { get; set; }
 
 	/// <summary>The tick the next command applies before.</summary>
 	public long NextTick => nextTick();
@@ -104,12 +128,23 @@ public sealed class ParkCommands
 			return Run( command );
 		// [EXT:online-coop-commands] a command applied while a simulation tick runs would apply inside tick N here but at the start of tick N in a replay or on a peer (its log entry says
 		// "before tick N"), so no code path may apply one there: the held commands apply before the tick's scope begins. The tests and a strict run throw to find one; a game of one runs
-		// it at once, as it always did, and a co-op session (C2) will not take one.
-		if ( inTick && Strict )
-			throw new InvalidOperationException( $"The {command.Kind} command was applied during a simulation tick." );
+		// it at once, as it always did, and a co-op session drops it (InTick)
+		if ( inTick )
+		{
+			if ( Strict )
+				throw new InvalidOperationException( $"The {command.Kind} command was applied during a simulation tick." );
+			if ( InTick == ParkCommandInTickRule.Drop )
+			{
+				Common.GlobalNamespace.Log?.Error( $"The {command.Kind} command was applied during a simulation tick and dropped." );
+				return ParkCommandResult.Rejected( $"The {command.Kind} command was applied during a simulation tick." );
+			}
+		}
 		// a malformed command never reaches the park and has no byte form to log: it is refused before the log
 		if ( !command.IsWellFormed )
 			return ParkCommandResult.Rejected( $"The {command.Kind} command has fields out of range." );
+		// [EXT:online-coop-lockstep] in a session a command the rights refuse leaves no trace: a guest's own issues stay out of its log, which is the host's stream
+		if ( SessionRules && command.Player >= 0 && Rights is { } rights && !rights.Allows( command.Player, command.Kind ) )
+			return ParkCommandResult.Rejected( $"Player {command.Player} may not {command.Kind}." );
 		var tick = nextTick();
 		ParkCommandResult result;
 		ExceptionDispatchInfo? thrown = null;
@@ -123,7 +158,8 @@ public sealed class ParkCommands
 			// peer, which throws the same way at the same place, stays in step instead of losing the command; the tests and a strict run rethrow it once it is logged
 			Common.GlobalNamespace.Log?.Error( $"The {command.Kind} command threw: {error}" );
 			result = new ParkCommandResult( false, $"The {command.Kind} command failed: {error.GetType().Name}: {error.Message}" ) { Error = error };
-			if ( Strict )
+			// a held command in a session never rethrows: its error is in its result, which the stream compares with the host's
+			if ( Strict && !(SessionRules && applyingDue) )
 				thrown = ExceptionDispatchInfo.Capture( error );
 		}
 		Record( new ParkCommandLogEntry( tick, command ), result );
@@ -139,7 +175,17 @@ public sealed class ParkCommands
 	{
 		ArgumentNullException.ThrowIfNull( command );
 		if ( depth > 0 )
+		{
+			// [EXT:online-coop-lockstep] a HUD callback inside a command would run here as part of it on its issuer only, and so on no peer: a session refuses it everywhere (the issuer's
+			// follow-ups go through AfterIssue, as commands of their own)
+			if ( SessionRules )
+			{
+				if ( Strict )
+					throw new InvalidOperationException( $"The {command.Kind} command was issued inside the {running!.Kind} command." );
+				return ParkCommandResult.Rejected( $"The {command.Kind} command was issued inside another command." );
+			}
 			return Apply( command with { Player = running!.Player } );
+		}
 		var outer = !issuing;
 		issuing = true;
 		try
@@ -190,18 +236,42 @@ public sealed class ParkCommands
 		list.Add( command );
 	}
 
-	/// <summary>Applies, in the order they were scheduled, the held commands of every tick up to <paramref name="tick"/> (the tick about to run).</summary>
+	/// <summary>
+	/// Applies, in the order they were scheduled, the held commands of every tick up to <paramref name="tick"/> (the tick about to run). A strict run's exception is rethrown once
+	/// every one of them has applied, so a command that throws never drops the rest of its tick.
+	/// </summary>
 	public void ApplyDue( long tick )
 	{
-		while ( scheduled.Count > 0 )
+		ExceptionDispatchInfo? thrown = null;
+		var outer = !applyingDue;
+		applyingDue = true;
+		try
 		{
-			var first = scheduled.First();
-			if ( first.Key > tick )
-				return;
-			scheduled.Remove( first.Key );
-			foreach ( var command in first.Value )
-				Apply( command );
+			while ( scheduled.Count > 0 )
+			{
+				var first = scheduled.First();
+				if ( first.Key > tick )
+					break;
+				scheduled.Remove( first.Key );
+				foreach ( var command in first.Value )
+				{
+					try
+					{
+						Apply( command );
+					}
+					catch ( Exception error ) when ( error is not OutOfMemoryException )
+					{
+						thrown ??= ExceptionDispatchInfo.Capture( error );
+					}
+				}
+			}
 		}
+		finally
+		{
+			if ( outer )
+				applyingDue = false;
+		}
+		thrown?.Throw();
 	}
 
 	/// <summary>
@@ -269,11 +339,21 @@ public sealed class ParkCommands
 		}
 	}
 
+	/// <summary>Logs a command and raises <see cref="Applied"/>; a subscriber that throws is logged (and rethrown when strict), so it never takes the funnel down with it.</summary>
 	private void Record( ParkCommandLogEntry entry, ParkCommandResult result )
 	{
 		if ( log.Add( entry ) )
 			DroppedLog++;
-		Applied?.Invoke( entry, result );
+		try
+		{
+			Applied?.Invoke( entry, result );
+		}
+		catch ( Exception error ) when ( error is not OutOfMemoryException )
+		{
+			Common.GlobalNamespace.Log?.Error( $"A subscriber of the {entry.Command.Kind} command threw: {error}" );
+			if ( Strict )
+				throw;
+		}
 	}
 }
 

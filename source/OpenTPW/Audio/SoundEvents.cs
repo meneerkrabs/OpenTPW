@@ -117,7 +117,7 @@ public sealed class SoundEventSystem
 			voiceSamples.Add( voice.SampleData );
 		lock ( decoded )
 			return new SoundSystemCounts( mixer.Voices.Count, voiceSamples.Sum( samples => (long)samples.Length * sizeof( short ) ), sentences.Count, chains.Count,
-				placements.Count, oneShots.Count, loopSamples.Count, HeldSounds.Sounds.Count, decoded.Count,
+				placements.Count, oneShots.Count, sampleOwners.Keys.Count( voice => voice.Loops ), HeldSounds.Sounds.Count, decoded.Count,
 				decoded.Values.Sum( audio => (long)(audio?.Samples.Length ?? 0) * sizeof( short ) ), decoding.Count );
 	}
 
@@ -137,18 +137,26 @@ public sealed class SoundEventSystem
 			}
 		}
 		var now = PoolClock();
-		oneShots.RemoveAll( entry => entry.ExpiresAt < 0 ? entry.Voice.IsFinished : now > entry.ExpiresAt );
-		finishedLoops.Clear();
-		foreach ( var voice in loopSamples.Keys )
-			if ( voice.IsFinished )
-				finishedLoops.Add( voice );
-		foreach ( var voice in finishedLoops ) loopSamples.Remove( voice );
+		oneShots.RemoveAll( entry =>
+		{
+			var expiresAt = sampleOwners.TryGetValue( entry.Voice, out var owner ) ? owner.ExpiresAt : entry.ExpiresAt;
+			if ( expiresAt < 0 ? !entry.Voice.IsFinished : now <= expiresAt ) return false;
+			// An expired released owner must not remain in the mixer forever or return later.
+			if ( !entry.Voice.HasOutput ) entry.Voice.Stop();
+			sampleOwners.Remove( entry.Voice );
+			return true;
+		} );
+		finishedSamples.Clear();
+		foreach ( var voice in sampleOwners.Keys )
+			if ( voice.IsFinished && sampleOwners[voice].ExpiresAt < 0 )
+				finishedSamples.Add( voice );
+		foreach ( var voice in finishedSamples ) sampleOwners.Remove( voice );
 		StopVoicesOutOfRange();
 		foreach ( var sentence in sentences.ToArray() )
 			sentence.Pump();
 		sentences.RemoveAll( sentence => sentence.IsStopped );
 		SelectPooledVoices();
-		foreach ( var loop in pooledLoops ) loop.Restart();
+		foreach ( var loop in pooledSamples ) loop.Restart();
 		foreach ( var chain in chains.ToArray() )
 		{
 			if ( !pooledChains.Contains( chain ) )
@@ -170,19 +178,19 @@ public sealed class SoundEventSystem
 	/// <summary>The event flag that makes a voice audible at any distance (voice flag 8 of the original, set by 0x6bbe90 from the event's 0x200).</summary>
 	internal const ushort AnyDistanceFlag = 0x200;
 
-	/// <summary>Stops out-of-range samples. A catalogue loop retains its owner for a later admitted fresh output.</summary>
+	/// <summary>Stops out-of-range samples. Finite catalogue samples and loops retain their owner for a later admitted fresh output.</summary>
 	// [BIN:TPW-EXE:0x6BCA70,0x6B8D60,0x6BB7C0,0x6C8E50,0x6BBE40] range flag 0x800 is set before stop; the successful output callback clears +0x24 and playing bit 1 without making the owner terminal.
 	// [BIN:TPW-EXE:0x6BD800,0x6BC410,0x6B9AB0] the same owner's next admitted tick rebuilds the selected sample request with a zero existing output handle; this is a fresh source, not silent cursor advance.
-	// [APPROX:AUDIO-038] finite one-shot restart/expiry and sentence selected-descriptor/refill timing remain separate residuals; held-chain children are not recursively range-stopped.
+	// [APPROX:AUDIO-038] sentence selected-descriptor/refill timing and expiry-exempt nonloop retention remain separate residuals; held-chain children are not recursively range-stopped.
 	private void StopVoicesOutOfRange()
 	{
 		foreach ( var (voice, _, flags, _) in oneShots )
 			if ( voice.Position != null && voice.Range > 0 && (flags & AnyDistanceFlag) == 0 && !Audible( voice.Position, voice.Range ) )
 			{
-				// only a catalogue loop (one with its sample parameters) can be rebuilt later; any other voice stops as before
-				if ( voice.Loops && loopSamples.TryGetValue( voice, out var loop ) )
+				// Only catalogue samples with retained parameters can be rebuilt; unrelated voices stop as before.
+				if ( sampleOwners.TryGetValue( voice, out var loop ) )
 				{
-					if ( voice.ReleaseLoopOutput() )
+					if ( voice.ReleaseSampleOutput() )
 						loop.Lifetime?.LoseOutputReply();
 				}
 				else voice.Stop();
@@ -236,28 +244,65 @@ public sealed class SoundEventSystem
 	internal static bool Admitted( Vector3? position, float range, ushort flags ) => (flags & AnyDistanceFlag) != 0 || Audible( position, range );
 
 	private readonly List<(AudioVoice Voice, uint Priority, ushort Flags, long ExpiresAt)> oneShots = new();
-	private readonly Dictionary<AudioVoice, LoopSample> loopSamples = new();
-	private readonly List<AudioVoice> finishedLoops = new();
+	private readonly Dictionary<AudioVoice, RetainedSample> sampleOwners = new();
+	private readonly List<AudioVoice> finishedSamples = new();
 
 	private void TrackOneShot( AudioVoice voice, uint priority, ushort flags, double delay, PlacedSoundParameters? parameters, HeldSoundLifetime? lifetime = null )
 	{
-		oneShots.Add( (voice, priority, flags, ExpiryFrame( voice, flags, delay )) );
-		if ( voice.Loops && parameters != null ) loopSamples.Add( voice, new LoopSample( voice, parameters, lifetime ) );
+		var expiresAt = ExpiryFrame( voice, flags, delay );
+		oneShots.Add( (voice, priority, flags, expiresAt) );
+		if ( parameters != null && (voice.Loops || (flags & 0xC) == 0) ) sampleOwners.Add( voice, new RetainedSample( this, voice, parameters, lifetime, expiresAt, delay ) );
 	}
 
 	/// <summary>The selected source and parameter state survive output release; the public voice remains the stable Stop/move handle.</summary>
-	private sealed class LoopSample( AudioVoice voice, PlacedSoundParameters parameters, HeldSoundLifetime? lifetime )
+	private sealed class RetainedSample
 	{
-		internal AudioVoice Voice { get; } = voice;
-		internal HeldSoundLifetime? Lifetime { get; } = lifetime;
+		private readonly SoundEventSystem system;
+		private readonly PlacedSoundParameters parameters;
+		private readonly double lifetimeSeconds;
+		private readonly long bornAt;
+		private readonly long duration;
+		internal AudioVoice Voice { get; }
+		internal HeldSoundLifetime? Lifetime { get; }
+		internal long ExpiresAt { get; private set; }
 		internal bool CanAdmit => Lifetime is not { CanAdmit: false } and not { Suspended: true };
+
+		internal RetainedSample( SoundEventSystem system, AudioVoice voice, PlacedSoundParameters parameters,
+			HeldSoundLifetime? lifetime, long expiresAt, double delay )
+		{
+			this.system = system; this.parameters = parameters; Voice = voice; Lifetime = lifetime;
+			ExpiresAt = expiresAt;
+			var length = voice.SampleRate > 0 ? voice.Frames / (double)voice.SampleRate : 0;
+			duration = system.mixer.SecondsToFrames( length );
+			lifetimeSeconds = length + ExpiryTailSeconds;
+			// Retain the exact initial birth and round the combined duration as ExpiryFrame does.
+			bornAt = expiresAt < 0 ? system.PoolClock() : expiresAt - system.mixer.SecondsToFrames( lifetimeSeconds + delay );
+		}
+
 		internal void Restart()
 		{
 			if ( Voice.IsFinished || Voice.HasOutput || !CanAdmit ) return;
-			var (volume, pitch) = parameters.Restart( Lifetime );
+			var now = system.PoolClock();
+			// Manager admission used the previous delay. Setup redraws it, but never renews birth/end.
+			// [BIN:TPW-EXE:0x6BC4D8-0x6BC504,0x6BCB60] expiry is strict and checked again after that draw.
+			if ( ExpiresAt >= 0 && now > ExpiresAt ) { Voice.Stop(); return; }
+			var (volume, pitch) = parameters.Restart( Lifetime, out var delay );
+			if ( ExpiresAt >= 0 )
+			{
+				ExpiresAt = bornAt + system.mixer.SecondsToFrames( lifetimeSeconds + delay );
+				var second = system.mixer.SecondsToFrames( 1 );
+				var elapsed = Math.Max( 0, now - bornAt );
+				var remainder = duration > 0 ? elapsed % duration : 0;
+				// [BIN:TPW-EXE:0x6BC534-0x6BC55D] late-start eligibility only, never a seek offset.
+				if ( now > ExpiresAt || (duration > second && remainder > second && duration - remainder < second) )
+				{
+					Voice.Stop();
+					return;
+				}
+			}
 			Voice.Gain = volume / 100f;
 			Voice.SetPitch( pitch );
-			Voice.RestartLoopOutput();
+			Voice.RestartSampleOutput();
 			Lifetime?.Admit( Voice, volume );
 		}
 	}
@@ -266,7 +311,7 @@ public sealed class SoundEventSystem
 	internal Func<long> PoolClock { get; set; } = null!;
 	private readonly List<(object Voice, uint Rank, long Serial)> poolCandidates = new();
 	private readonly HashSet<SoundChain> pooledChains = new();
-	private readonly List<LoopSample> pooledLoops = new();
+	private readonly List<RetainedSample> pooledSamples = new();
 
 	/// <summary>
 	/// The pool order of two voices: the higher rank first, and among equal ranks the newer voice first.
@@ -282,17 +327,17 @@ public sealed class SoundEventSystem
 	private static readonly Comparison<(object Voice, uint Rank, long Serial)> ByRankThenNewest = ( a, b ) => ComparePoolOrder( a.Rank, a.Serial, b.Rank, b.Serial );
 
 	/// <summary>
-	/// Selects held-chain ticks and loop-output restarts among the highest-ranked audible owners. Pool eviction does not stop existing outputs.
+	/// Selects held-chain ticks and sample-output restarts among the highest-ranked audible owners. Pool eviction does not stop existing outputs.
 	/// A chain outside the pool starts no new child; the children it already started play out.
 	/// </summary>
 	// [BIN:TPW-EXE:0x6b62b0 sound manager tick] only the voices in the pool of 12 are ticked; the pool is rebuilt every tick (0x6b6ba0), a voice is admitted (0x6b6bc0) only while audible (0x6bca10: the listener within the voice's range, the map sound's float +34, over the ground) and ranked by the dword priority:distance of 0x6bb9f0; a held chain's next child, its first included, is made in its tick (0x6bdae0 → 0x6bdb50 → 0x6bdbb0)
 	// [BIN:TPW-EXE:0x6bca44 any-distance admission] a voice with the any-distance flag is admitted whatever its distance
 	// [BIN:TPW-EXE:0x6b6bc0 equal ranks] among equal ranks the newer logical owner keeps its slot (ComparePoolOrder); recreating output does not renew its serial.
 	// [BIN:TPW-EXE:0x6BDB50,0x6BDBB0,0x6C3AE0] held-chain children are locally linked and ticked directly, with a distinct output setup; they are not extra manager pool entries.
-	private bool AnyLoopWithoutOutput()
+	private bool AnySampleWithoutOutput()
 	{
-		foreach ( var loop in loopSamples.Values )
-			if ( !loop.Voice.HasOutput )
+		foreach ( var loop in sampleOwners.Values )
+			if ( !loop.Voice.IsFinished && !loop.Voice.HasOutput )
 				return true;
 		return false;
 	}
@@ -300,8 +345,8 @@ public sealed class SoundEventSystem
 	private void SelectPooledVoices()
 	{
 		pooledChains.Clear();
-		pooledLoops.Clear();
-		if ( chains.Count == 0 && !AnyLoopWithoutOutput() )
+		pooledSamples.Clear();
+		if ( chains.Count == 0 && !AnySampleWithoutOutput() )
 			return;
 		poolCandidates.Clear();
 		foreach ( var sentence in sentences )
@@ -312,7 +357,7 @@ public sealed class SoundEventSystem
 				poolCandidates.Add( (placement, PoolRank( placement.Priority, placement.Position ), placement.Serial) );
 		foreach ( var (voice, priority, flags, expiresAt) in oneShots )
 			if ( (expiresAt >= 0 || !voice.IsFinished) && Admitted( voice.Position, voice.Range, flags )
-				&& loopSamples.GetValueOrDefault( voice ) is not { CanAdmit: false } )
+				&& sampleOwners.GetValueOrDefault( voice ) is not { CanAdmit: false } )
 				poolCandidates.Add( (voice, PoolRank( priority, voice.Position ), voice.Serial) );
 		foreach ( var chain in chains )
 			if ( !chain.IsStopped && Admitted( chain.Position, chain.Range, chain.Event.Flags ) )
@@ -323,9 +368,9 @@ public sealed class SoundEventSystem
 		for ( var index = 0; index < Math.Min( VoicePool, poolCandidates.Count ); index++ )
 			if ( poolCandidates[index].Voice is SoundChain chain )
 				pooledChains.Add( chain );
-			else if ( poolCandidates[index].Voice is AudioVoice { Loops: true } voice
-				&& loopSamples.GetValueOrDefault( voice ) is { } loop )
-				pooledLoops.Add( loop );
+			else if ( poolCandidates[index].Voice is AudioVoice voice
+				&& sampleOwners.GetValueOrDefault( voice ) is { } loop )
+				pooledSamples.Add( loop );
 	}
 
 	/// <summary>
@@ -858,11 +903,13 @@ internal sealed class PlacedSoundParameters
 
 	/// <summary>Re-evaluates the retained sample's volume, pitch and delay, without selecting another sound or sample.</summary>
 	// [BIN:TPW-EXE:0x6BC410] a returning sample repeats setup; volume and pitch precede the delay draw at 0x6BC4F4. Loops are expiry-exempt.
-	internal (int Volume, int Pitch) Restart( HeldSoundLifetime? lifetime )
+	internal (int Volume, int Pitch) Restart( HeldSoundLifetime? lifetime ) => Restart( lifetime, out _ );
+
+	internal (int Volume, int Pitch) Restart( HeldSoundLifetime? lifetime, out double delay )
 	{
 		var volume = lifetime is { PreserveVolume: true } ? lifetime.OwnVolume : system.Volume( sound, table );
 		var pitch = system.Pitch( sound, table );
-		_ = system.DelaySeconds( sound );
+		delay = system.DelaySeconds( sound );
 		return (volume, pitch);
 	}
 

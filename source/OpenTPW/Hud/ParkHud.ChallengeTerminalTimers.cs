@@ -48,7 +48,8 @@ public sealed partial class ParkHud
 		if ( record.Lifetime != 30000 || record.FirstAction != 0 || record.SecondAction != 0
 			|| record.Tag == record.ReplacementTag || string.IsNullOrWhiteSpace( text ) || PendingMessages.Count >= MessageTubeCapacity )
 			return false;
-		PostGameMessage( text );
+		if ( !PostGameMessage( text ) )
+			return false;
 		pendingChallengeRows![^1] = new ChallengeTubeRow( new( record.Tag, 0, 0 ), record.Lifetime, ChallengeUiMilliseconds );
 		return true;
 	}

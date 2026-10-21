@@ -287,12 +287,15 @@ public class ChallengeTerminalTubeTests
 		using var audio = new AudioTriggerProbe();
 		var clock = new Clock();
 		for ( var i = 0; i < ParkHud.MessageTubeCapacity; i++ ) clock.Hud.PostGameMessage( "ordinary-" + i );
-		Post( clock );
+		Assert.IsTrue( ChallengeMessageRecords.TryGet( 1, ChallengePresentationKind.Success, out var record ) );
+		Assert.IsFalse( clock.Hud.PostChallengeTerminal( record, "refused terminal" ) );
+		Post( clock ); // Recognized transition remains true even when admission fails.
 		Assert.AreEqual( "ordinary-0", clock.Hud.PendingMessages[0] );
 		Assert.AreEqual( ParkHud.MessageTubeCapacity, audio.Events( "cat_ui" ).Count( id => id == ParkHud.MessagePostedEvent ) );
 		clock.Pump( 100000 );
 		Assert.AreEqual( ParkHud.MessageTubeCapacity, clock.Hud.PendingMessages.Count );
 		Assert.IsNull( clock.Hud.ChallengeTerminalState( 0 ) );
+		Assert.IsNull( clock.Hud.ChallengeTerminalState( 9 ), "refusal must not attach terminal metadata to the final ordinary row" );
 	}
 
 	[TestMethod]
@@ -551,17 +554,26 @@ public class ChallengeTerminalTubeTests
 	}
 
 	[TestMethod]
-	public void GenericOldestEvictionRetainsItsExistingImmediatePolicyEvenForAHiddenTerminal()
+	public void GenericRefusalKeepsHiddenTerminalOccupiedUntilReleaseThenAppendsReuse()
 	{
+		using var audio = new AudioTriggerProbe();
 		var clock = new Clock();
 		Post( clock );
-		for ( var i = 1; i < ParkHud.MessageTubeCapacity; i++ ) clock.Hud.PostGameMessage( "ordinary-" + i );
-		clock.Hud.DeletePendingMessage( 0 );
-		clock.Hud.PostGameMessage( "latest ordinary" );
-		Assert.AreEqual( ParkHud.MessageTubeCapacity, clock.Hud.PendingMessages.Count );
-		Assert.AreEqual( "ordinary-1", clock.Hud.PendingMessages[0] );
+		for ( var i = 1; i < 10; i++ ) Assert.IsTrue( clock.Hud.PostGameMessage( "ordinary-" + i ) );
+		Assert.IsTrue( clock.Hud.DeletePendingMessage( 0 ) );
+		var occupied = clock.Hud.PendingMessages.ToArray();
+		Assert.IsFalse( clock.Hud.PostGameMessage( "latest ordinary" ) );
+		clock.Pump( 499 );
+		Assert.IsFalse( clock.Hud.PostGameMessage( "still full" ) );
+		CollectionAssert.AreEqual( occupied, clock.Hud.PendingMessages.ToArray() );
+		Assert.AreEqual( 10, audio.Events( "cat_ui" ).Count( id => id == ParkHud.MessagePostedEvent ) );
 		clock.Pump( 500 );
-		Assert.AreEqual( ParkHud.MessageTubeCapacity, clock.Hud.PendingMessages.Count, "an old release never removes another slot" );
+		Assert.AreEqual( 9, clock.Hud.PendingMessages.Count );
+		Assert.IsTrue( clock.Hud.PostGameMessage( "latest ordinary" ) );
+		CollectionAssert.AreEqual( Enumerable.Range( 1, 9 ).Select( i => "ordinary-" + i ).Concat( new[] { "latest ordinary" } ).ToArray(), clock.Hud.PendingMessages.ToArray() );
+		clock.Pump( 1000 );
+		Assert.AreEqual( 10, clock.Hud.PendingMessages.Count, "an old release never removes a reused slot" );
+		Assert.AreEqual( 11, audio.Events( "cat_ui" ).Count( id => id == ParkHud.MessagePostedEvent ) );
 	}
 
 	[TestMethod]

@@ -20,19 +20,27 @@ internal sealed class RestartSnapshotWrite
 	private byte[]? copiedBytes;
 	private IncrementalHash? hash;
 	private int copied;
+	// the capture's validation steps, still to run before the first serialization slice (null: validated already)
+	private IEnumerator<bool>? validation;
 	internal const int CopyChunkBytes = 64 * 1024;
 	internal int CopiedBytes => copied;
 	internal static string MarkerPath( string path ) => path + ".pending.json";
 	internal bool Done { get; private set; }
 
-	internal RestartSnapshotWrite( string path, ParkResumeSnapshot snapshot, Action<string, byte[]>? persist = null, bool? cooperative = null, Func<Action, Task>? background = null )
+	/// <param name="validation">
+	/// The capture's closing validation in steps (<see cref="ParkResumeSaveFile.ValidateSnapshotSteps"/>) when it has not run yet: the first slices run its steps (at least one per slice,
+	/// none with serialization, all at once with an unlimited budget), and a refusal there ends the write before any byte of the snapshot is written. It includes the shape check,
+	/// so the serialization does not repeat it.
+	/// </param>
+	internal RestartSnapshotWrite( string path, ParkResumeSnapshot snapshot, Action<string, byte[]>? persist = null, bool? cooperative = null, Func<Action, Task>? background = null, IEnumerable<bool>? validation = null )
 	{
 		this.path = path;
+		this.validation = validation?.GetEnumerator();
 		this.persist = persist ?? ParkResumeSaveFile.SaveBytes;
 		this.cooperative = cooperative ?? OperatingSystem.IsBrowser();
 		this.background = background ?? (work => Task.Run( work ));
 		using ( LoadProfile.Measure( "restart-json-begin" ) )
-			serializer = ParkResumeSaveFile.BeginSlicedSerialize( snapshot );
+			serializer = ParkResumeSaveFile.BeginSlicedSerialize( snapshot, validation != null ? static () => { } : null );
 		// Use the existing flushed temporary-file/rename protocol for the marker too.
 		using ( LoadProfile.Measure( "restart-marker" ) )
 			this.persist( MarkerPath( path ), Encoding.UTF8.GetBytes( "\"pending\"" ) );
@@ -42,6 +50,31 @@ internal sealed class RestartSnapshotWrite
 	internal bool Run( TimeSpan budget )
 	{
 		if ( Done ) return true;
+		if ( validation != null )
+		{
+			var started = Stopwatch.GetTimestamp();
+			try
+			{
+				using ( LoadProfile.Measure( "restart-validate" ) )
+					while ( validation.MoveNext() )
+						if ( budget != TimeSpan.MaxValue && Stopwatch.GetElapsedTime( started ) >= budget )
+							return false;
+			}
+			catch
+			{
+				// as a capture refused in its own frame: no earlier park's snapshot is left behind to be restarted into (nor its marker)
+				validation.Dispose();
+				validation = null;
+				Done = true;
+				foreach ( var file in new[] { path, MarkerPath( path ) } )
+					try { File.Delete( file ); }
+					catch ( Exception deleteError ) when ( deleteError is IOException or UnauthorizedAccessException ) { }
+				throw;
+			}
+			validation.Dispose();
+			validation = null;
+			if ( budget != TimeSpan.MaxValue ) return false;
+		}
 		if ( writing != null ) return FinishWrite( budget );
 		if ( !serializer.Done )
 		{

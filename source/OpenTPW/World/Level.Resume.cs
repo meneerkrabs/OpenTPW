@@ -78,6 +78,43 @@ public partial class Level
 		}
 	}
 
+	/// <summary>
+	/// [EXT:park-entry-preparation] Runs, one per step, the parts of <see cref="CaptureResumeSnapshotUnchecked(AutomaticAdvisor?, string, out Action, IReadOnlyDictionary{string, string}?, DateTimeOffset?, bool)"/>
+	/// that only read the park (the economy, layout, guest, thing-pool, script-world, weather, gate, staff, ride, pool, tour and extension captures, which the periodic autosave runs on a live park without changing it) and drops what
+	/// they make: the browser's runtime then initializes their code in a park build step instead of the frame that enters the park and takes the restart snapshot
+	/// (docs/BROWSER-PERFORMANCE.md, "Event hitches"). A part that refuses is skipped; the snapshot meets the same refusal and reports it.
+	/// </summary>
+	internal IEnumerable<bool> WarmResumeCaptureSteps()
+	{
+		if ( Park == null || Guests == null )
+			yield break;
+		static void Read( Action read )
+		{
+			try { read(); }
+			catch ( Exception exception ) when ( exception is InvalidDataException or NotSupportedException or InvalidOperationException or ArgumentException ) { }
+		}
+		Read( () => ParkSaveFile.Capture( Park.Economy, CaptureRandomState() ) );
+		yield return true;
+		Read( () => ParkLayoutSnapshot.CaptureSnapshot( Guests.Grid.Cells, Objects ) );
+		yield return true;
+		Read( () => Guests.CaptureSnapshot() );
+		yield return true;
+		if ( Objects.Things != null )
+		{
+			Read( () => Things.CaptureSnapshot() );
+			yield return true;
+		}
+		Read( () => Objects.ScriptWorld.CaptureSnapshot() );
+		yield return true;
+		Read( () =>
+		{
+			_ = Weather?.CaptureSnapshot(); _ = Gate?.CaptureSnapshot(); _ = StaffWorld?.CaptureSnapshot();
+			_ = CaptureCoastersSnapshot(); _ = CaptureTracksSnapshot(); _ = PoolSlides?.CaptureSnapshot(); _ = PoolBridges?.CaptureSnapshot(); _ = CaptureToursSnapshot();
+			_ = SmarterGuestsSave.Capture( Guests ); _ = ScriptModsSave.Capture( Guests );
+		} );
+		yield return true;
+	}
+
 	/// <summary>Drops the kept manifest, so the next <see cref="AutosaveAssets"/> hashes the files again.</summary>
 	internal void ForgetAutosaveAssets() => autosaveAssets = null;
 
@@ -95,19 +132,32 @@ public partial class Level
 	/// and the trusted catalogue and balance, so the periodic autosave runs it in a later frame than the capture, which alone has to see the park between two ticks.
 	/// </summary>
 	internal ParkResumeSnapshot CaptureResumeSnapshotUnchecked( AutomaticAdvisor? advisor, string displayName, out Action validate,
+		IReadOnlyDictionary<string, string>? verifiedAssets = null, DateTimeOffset? savedUtc = null, bool advisorMaySpeak = false ) =>
+		CaptureResumeSnapshotUnchecked( advisor, displayName, out validate, out _, verifiedAssets, savedUtc, advisorMaySpeak );
+
+	/// <summary>
+	/// <see cref="CaptureResumeSnapshotUnchecked(AutomaticAdvisor?, string, out Action, IReadOnlyDictionary{string, string}?, DateTimeOffset?, bool)"/> that also hands back the same validation
+	/// in steps (<see cref="ParkResumeSaveFile.ValidateSnapshotSteps"/>), to be spread over frames; nothing of it runs until it is enumerated.
+	/// </summary>
+	internal ParkResumeSnapshot CaptureResumeSnapshotUnchecked( AutomaticAdvisor? advisor, string displayName, out Action validate, out IEnumerable<bool> validationSteps,
 		IReadOnlyDictionary<string, string>? verifiedAssets = null, DateTimeOffset? savedUtc = null, bool advisorMaySpeak = false )
 	{
 		if ( IsReadOnlyVisit || GameEditions.IsThemeParkInc || OriginalPark == null || Park == null || Guests == null )
 			throw new InvalidOperationException( "Only a writable Theme Park World park can be saved here." );
-		RepairMissingEconomyBindings();
-		RequireResumableCatalogueDefaults();
-		StaffPlacement?.PrepareForSave();
-		var prototype = CapturePrototypeSnapshot();
-		var runtimes = Objects.Objects.Select( item =>
+		using ( FrameMarks.Measure( "capture.prepare" ) )
 		{
-			var state = item.Runtime.CaptureSnapshot();
-			return new ParkResumeRuntime( state.HasScript && !state.Stopped ? item.Runtime.Script!.ScriptId : 0, state );
-		} ).ToArray();
+			RepairMissingEconomyBindings();
+			RequireResumableCatalogueDefaults();
+			StaffPlacement?.PrepareForSave();
+		}
+		var prototype = CapturePrototypeSnapshot();
+		ParkResumeRuntime[] runtimes;
+		using ( FrameMarks.Measure( "capture.runtimes" ) )
+			runtimes = Objects.Objects.Select( item =>
+			{
+				var state = item.Runtime.CaptureSnapshot();
+				return new ParkResumeRuntime( state.HasScript && !state.Stopped ? item.Runtime.Script!.ScriptId : 0, state );
+			} ).ToArray();
 		// [EXT:pools-save] the extension is recorded while the park has a pool cell or a changing room; its manifest keys are those of the objects the park placed (a changing room), not of its whole content.
 		// [EXT:umbrellas-save] opentpw.umbrellas likewise: recorded while the park has a brolly shop or a guest with an umbrella, with the keys of the placed shops only
 		var placedEntries = Objects.Objects.Where( item => !item.IsDeleted ).Select( item => item.Entry ).ToArray();
@@ -118,6 +168,20 @@ public partial class Level
 			Park.Economy.Cheats.UsesExtension, ParkResumeMods.EveningInUse( placedEntries ) );
 		var assets = ParkResumeMods.AssetsForUse( verifiedAssets ?? ParkResumeAssetManifest.Capture( Objects.Catalog, Park.Economy.Settings ), placedEntries );
 		var random = CaptureRandomState();
+		// the parts in the order the snapshot lists them (the first five are measured on their own: docs/BROWSER-PERFORMANCE.md, "Event hitches")
+		ParkSaveFile.Data economy; ParkLayoutSnapshot.Data layout; GuestSimulationSnapshot guests; ThingPoolSnapshot? things; RideScriptWorldSnapshot scripts;
+		using ( FrameMarks.Measure( "capture.economy" ) )
+			economy = ParkSaveFile.Capture( Park.Economy, random );
+		using ( FrameMarks.Measure( "capture.layout" ) )
+			layout = ParkLayoutSnapshot.CaptureSnapshot( Guests.Grid.Cells, Objects );
+		using ( FrameMarks.Measure( "capture.guests" ) )
+			guests = Guests.CaptureSnapshot();
+		using ( FrameMarks.Measure( "capture.things" ) )
+			// a level whose objects never took pool slots (a fixture built around the pool) has none to save, and loads as a save from before the pool
+			things = Objects.Things == null ? null : Things.CaptureSnapshot();
+		using ( FrameMarks.Measure( "capture.scripts" ) )
+			scripts = Objects.ScriptWorld.CaptureSnapshot();
+		using var restMark = FrameMarks.Measure( "capture.rest" );
 		var snapshot = new ParkResumeSnapshot
 		{
 			Format = ParkResumeSaveFile.FormatName,
@@ -127,12 +191,11 @@ public partial class Level
 			Seed = Seed.Value,
 			DisplayName = displayName,
 			SavedUtc = savedUtc ?? DateTimeOffset.UnixEpoch,
-			Economy = ParkSaveFile.Capture( Park.Economy, random ),
-			Layout = ParkLayoutSnapshot.CaptureSnapshot( Guests.Grid.Cells, Objects ),
-			Guests = Guests.CaptureSnapshot(),
-			// a level whose objects never took pool slots (a fixture built around the pool) has none to save, and loads as a save from before the pool
-			Things = Objects.Things == null ? null : Things.CaptureSnapshot(),
-			Scripts = Objects.ScriptWorld.CaptureSnapshot(),
+			Economy = economy,
+			Layout = layout,
+			Guests = guests,
+			Things = things,
+			Scripts = scripts,
 			Runtimes = runtimes,
 			EconomyBindings = Objects.Objects.Where( economyInstances.ContainsKey )
 				.Select( item => new ParkResumeEconomyBinding( item.Visitors.AttractionId, economyInstances[item] ) ).ToArray(),
@@ -162,6 +225,7 @@ public partial class Level
 		};
 		var catalogue = Objects.Catalog; var settings = Park.Economy.Settings; var economyCatalog = Park.Economy.Catalog;
 		validate = () => ParkResumeSaveFile.ValidateSnapshot( snapshot, catalogue, settings, economyCatalog, assets );
+		validationSteps = ParkResumeSaveFile.ValidateSnapshotSteps( snapshot, catalogue, settings, economyCatalog, assets );
 		return snapshot;
 	}
 

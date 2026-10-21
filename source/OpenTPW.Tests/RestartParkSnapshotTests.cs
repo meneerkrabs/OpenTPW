@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
@@ -168,6 +170,74 @@ public class RestartParkSnapshotTests
 	}
 
 	[TestMethod]
+	public void DeferredValidationRunsInSlicesOfItsOwnAndTheBytesAreUnchanged()
+	{
+		var snapshot = Snapshot( "validated later" );
+		var steps = 0;
+		IEnumerable<bool> Validation()
+		{
+			for ( var step = 0; step < 3; step++ )
+			{
+				steps++;
+				yield return true;
+			}
+			steps++;
+		}
+		var write = new RestartSnapshotWrite( RestartFile, snapshot, cooperative: true, validation: Validation() );
+		Assert.AreEqual( 0, steps, "the entering frame does not validate" );
+		// a zero budget runs one step per slice; the serialization waits until the last one
+		for ( var slice = 1; slice <= 3; slice++ )
+		{
+			Assert.IsFalse( write.Run( TimeSpan.Zero ) );
+			Assert.AreEqual( slice, steps );
+		}
+		Assert.IsFalse( write.Run( TimeSpan.Zero ), "the validation's end is a slice of its own" );
+		Assert.AreEqual( 4, steps );
+		Assert.IsFalse( File.Exists( RestartFile ) );
+		while ( !write.Run( TimeSpan.Zero ) ) { }
+		Assert.AreEqual( 4, steps, "the validation runs once" );
+		CollectionAssert.AreEqual( ParkResumeSaveFile.Serialize( snapshot ), File.ReadAllBytes( RestartFile ) );
+		// an unlimited budget (restart, shutdown) validates and writes in one call
+		File.Delete( RestartFile );
+		steps = 0;
+		var flushed = new RestartSnapshotWrite( RestartFile, snapshot, cooperative: true, validation: Validation() );
+		Assert.IsTrue( flushed.Run( TimeSpan.MaxValue ) );
+		Assert.AreEqual( 4, steps );
+		Assert.AreEqual( "validated later", RestartSnapshotWrite.Load( RestartFile ).DisplayName );
+	}
+
+	[TestMethod]
+	public void ARefusedDeferredValidationLeavesNoRestartPointAsARefusedCaptureDid()
+	{
+		ParkResumeSaveFile.Save( RestartFile, Snapshot( "old park" ) );
+		static IEnumerable<bool> Refusal()
+		{
+			yield return true;
+			throw new InvalidDataException( "simulated refusal" );
+		}
+		var write = new RestartSnapshotWrite( RestartFile, Snapshot( "invalid" ), cooperative: true, validation: Refusal() );
+		Assert.IsFalse( write.Run( TimeSpan.Zero ) );
+		Assert.IsTrue( File.Exists( RestartFile ), "the earlier snapshot stays until the validation has decided" );
+		Assert.ThrowsException<InvalidDataException>( () => write.Run( TimeSpan.Zero ) );
+		Assert.IsTrue( write.Done, "a refused write is over" );
+		Assert.IsFalse( File.Exists( RestartFile ), "the earlier park's snapshot is not left to be restarted into" );
+		Assert.IsFalse( File.Exists( RestartSnapshotWrite.MarkerPath( RestartFile ) ) );
+	}
+
+	[TestMethod]
+	public void TheValidationInStepsIsTheWholeValidation()
+	{
+		// the steps hold every check of the whole validation: a snapshot the whole validation refuses is refused by its steps with the same message, and one it accepts passes them
+		var snapshot = Snapshot( "steps" );
+		var steps = ParkResumeSaveFile.ValidateShapeSteps( snapshot ).Count();
+		Assert.IsTrue( steps > 5, $"the shape check is spread over {steps} steps" );
+		var broken = snapshot with { Clock = null };
+		var whole = Assert.ThrowsException<InvalidDataException>( () => ParkResumeSaveFile.ValidateShape( broken ) ).Message;
+		var stepped = Assert.ThrowsException<InvalidDataException>( () => ParkResumeSaveFile.ValidateShapeSteps( broken ).Count() ).Message;
+		Assert.AreEqual( whole, stepped );
+	}
+
+	[TestMethod]
 	public void SlicedRestartBytesEqualTheSynchronousFormat()
 	{
 		var snapshot = Snapshot( "same bytes" );
@@ -280,6 +350,28 @@ public class RestartParkSnapshotTests
 			flow.FlushRestartSnapshot();
 			Assert.AreNotEqual( before, world.Level.ComputeStateHash(), "the live world really advanced" );
 			CollectionAssert.AreEqual( expected, File.ReadAllBytes( RestartFile ) );
+		}
+		finally { fixture.Cleanup(); }
+	}
+
+	[TestMethod]
+	public void TheCaptureWarmUpOfAParkBuildChangesNeitherTheParkNorItsSnapshot()
+	{
+		using var renderer = new AutomaticCheckpointCpuRendererScope();
+		var fixture = new UpgradeCatalogueDefaultsTests(); fixture.Setup();
+		try
+		{
+			var type = typeof( UpgradeCatalogueDefaultsTests );
+			var world = ((Level Level, ParkEconomy Economy, OriginalObject One, OriginalObject Two, ParkObjectState State))type.GetMethod( "World", BindingFlags.Instance | BindingFlags.NonPublic )!.Invoke( fixture, new object[] { "", 0, false } )!;
+			var assets = (System.Collections.Generic.Dictionary<string, string>)type.GetMethod( "PrepareCapture", BindingFlags.Static | BindingFlags.NonPublic )!.Invoke( null, new object[] { world } )!;
+			typeof( Level ).GetMethod( "SetupStaff", BindingFlags.Instance | BindingFlags.NonPublic )!.Invoke( world.Level, null );
+			typeof( Level ).GetMethod( "SetupParkGate", BindingFlags.Instance | BindingFlags.NonPublic )!.Invoke( world.Level, null );
+			var before = world.Level.ComputeStateHash();
+			var expected = ParkResumeSaveFile.Serialize( world.Level.CaptureResumeSnapshot( null, "jungle", assets ) );
+			var steps = world.Level.WarmResumeCaptureSteps().Count();
+			Assert.IsTrue( steps >= 4, $"the warm-up runs its parts in {steps} steps" );
+			Assert.AreEqual( before, world.Level.ComputeStateHash(), "the warm-up does not change the park" );
+			CollectionAssert.AreEqual( expected, ParkResumeSaveFile.Serialize( world.Level.CaptureResumeSnapshot( null, "jungle", assets ) ), "nor its snapshot" );
 		}
 		finally { fixture.Cleanup(); }
 	}

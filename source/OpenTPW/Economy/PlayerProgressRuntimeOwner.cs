@@ -7,6 +7,9 @@ internal sealed class PlayerProgressRuntimeOwner : IDisposable
 	private readonly string theme;
 	private readonly ParkEconomyRuntime runtime;
 	private readonly Func<bool> active;
+	private readonly Func<bool>? shared;
+	/// <summary>[EXT:online-coop-snapshot-join] The park was seen in a co-op session and is not reclaimed yet (<see cref="Reclaim"/>).</summary>
+	private bool reclaimPending;
 	private readonly Action<string> report;
 	private ParkEconomy observed;
 	private string digest;
@@ -16,12 +19,15 @@ internal sealed class PlayerProgressRuntimeOwner : IDisposable
 	public bool Dirty { get; private set; }
 	public string? Error { get; private set; }
 	internal string CommittedDigest => digest;
-	private bool Eligible => !disposed && active() && Ledger.Mode == ParkGameMode.FullSimulation &&
+	// [EXT:online-coop-snapshot-join] a park in a co-op session is outside its player's progress until it is reclaimed: every peer decides its global tickets by the park's own records
+	private bool Eligible => !disposed && active() && !reclaimPending && shared?.Invoke() != true && Ledger.Mode == ParkGameMode.FullSimulation &&
 		runtime.Start.Kind == ParkStartKind.FullSimulation && runtime.Economy.Mode == ParkGameMode.FullSimulation && runtime.Economy.Settings.CanEarnTickets;
 
-	public PlayerProgressRuntimeOwner( string path, string theme, PlayerTicketFile.ReadState state, ParkEconomyRuntime runtime, Func<bool> active, Action<string> report )
+	/// <param name="shared">[EXT:online-coop-snapshot-join] Whether the park is in a co-op session now; null for a park that never is.</param>
+	public PlayerProgressRuntimeOwner( string path, string theme, PlayerTicketFile.ReadState state, ParkEconomyRuntime runtime, Func<bool> active, Action<string> report,
+		Func<bool>? shared = null )
 	{
-		this.path = path; this.theme = theme; this.runtime = runtime; this.active = active; this.report = report;
+		this.path = path; this.theme = theme; this.runtime = runtime; this.active = active; this.report = report; this.shared = shared;
 		authority = Authority;
 		Ledger = state.Ledger; digest = state.Digest; observed = runtime.Economy;
 		Reconcile();
@@ -66,7 +72,36 @@ internal sealed class PlayerProgressRuntimeOwner : IDisposable
 
 	public void Pump()
 	{
+		if ( shared?.Invoke() == true )
+		{
+			reclaimPending = true;
+			return;
+		}
+		if ( reclaimPending )
+		{
+			reclaimPending = false;
+			Reclaim();
+			return;
+		}
 		if ( Eligible && !ReferenceEquals( observed, runtime.Economy ) ) { Reconcile(); TryFlush(); }
+	}
+
+	/// <summary>
+	/// [EXT:online-coop-snapshot-join] A park back from a co-op session returns to this player's progress (docs/COOP.md, "Golden tickets in a session"): while shared it decided its global
+	/// tickets by its own records, as every peer's park did, so each global ticket it holds goes through the player-wide rule now, with the park's record; one the rule keeps with another park
+	/// is taken from this park, as the rule would have decided at the win. Its local tickets reconcile as ever.
+	/// </summary>
+	private void Reclaim()
+	{
+		if ( !Eligible ) return;
+		var objectives = runtime.Economy.Objectives;
+		foreach ( var kind in objectives.GoldenTickets.Where( PlayerTicketLedger.IsGlobal ).ToArray() )
+		{
+			var before = Ledger.HolderOf( kind );
+			if ( Ledger.RecordGlobal( theme, kind, runtime.Economy.GlobalTicketRecord( kind ) ) != GlobalTicketOutcome.None || before != Ledger.HolderOf( kind ) ) Dirty = true;
+			if ( !Ledger.HeldBy( theme, kind ) ) objectives.TakeGoldenTicket( kind );
+		}
+		TryFlush();
 	}
 
 	public bool TryFlush( bool requireUnchangedWhenClean = false )

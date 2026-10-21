@@ -160,7 +160,8 @@ internal sealed partial class GameFlow
 	internal void AttachProgress( Level level )
 	{
 		DetachProgress();
-		if ( !ReferenceEquals( Level, level ) || level.IsReadOnlyVisit || level.IsThemeParkIncSlice || !GameEditions.Capabilities.Economy || !ObjectCatalog.Themes.Contains( level.LevelName, StringComparer.Ordinal ) ||
+		// [EXT:online-coop-snapshot-join] a co-op guest's park is the host's: it never takes part in this player's progress
+		if ( !ReferenceEquals( Level, level ) || level.IsReadOnlyVisit || level.IsCoopGuestPark || level.IsThemeParkIncSlice || !GameEditions.Capabilities.Economy || !ObjectCatalog.Themes.Contains( level.LevelName, StringComparer.Ordinal ) ||
 			level.Park is not { Start.Kind: ParkStartKind.FullSimulation } runtime || runtime.Economy.Mode != ParkGameMode.FullSimulation ) return;
 		try
 		{
@@ -168,7 +169,7 @@ internal sealed partial class GameFlow
 			if ( state?.Ledger.Mode != ParkGameMode.FullSimulation ) { progressNotice = Strings.Extra( OpenTpwText.ProgressTrackingUnavailable ); return; }
 			progressOwner = new( ProgressPath, level.LevelName, state, runtime,
 				() => ReferenceEquals( Level, level ) && ReferenceEquals( level.Park, runtime ) && !level.IsReadOnlyVisit,
-				message => { progressNotice = message; shownProgressNotice = null; } );
+				message => { progressNotice = message; shownProgressNotice = null; }, () => level.CoopSession != null );
 		}
 		catch ( Exception error ) when ( ProgressFailure( error ) ) { Log.Warning( $"OpenTPW tracking unavailable: {error.Message}" ); progressNotice = Strings.Extra( OpenTpwText.ProgressTrackingUnavailable ); }
 	}

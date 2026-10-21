@@ -202,4 +202,55 @@ public class GlobalTicketHolderTests
 		}
 		finally { Directory.Delete( root, true ); }
 	}
+
+	/// <summary>
+	/// [EXT:online-coop-snapshot-join] A park in a co-op session decides its global tickets by its own records, as a peer's park without a ledger does, and leaves the player's holder alone;
+	/// when the session ends, the hand-back takes a ticket the rule keeps with another park and records one the park's record takes over.
+	/// </summary>
+	[TestMethod]
+	public void AParkInASessionDecidesItsGlobalTicketsAloneAndTheHandBackAppliesTheRule()
+	{
+		var root = Directory.CreateTempSubdirectory( "opentpw-global-session-" ).FullName;
+		try
+		{
+			var path = Path.Combine( root, PlayerTicketFile.FileName );
+			PlayerTicketFile.Save( path, new PlayerTicketLedger().Capture() );
+			var held = new GlobalTicketHolder( GoldenTicketKind.CoasterHeight, "jungle", 110 );
+			{
+				var runtime = ParkEconomyRuntime.ForResume( EconomyTestData.Park(), ParkStartKind.FullSimulation );
+				using var owner = new PlayerProgressRuntimeOwner( path, "jungle", PlayerTicketFile.ReadIfPresent( path )!, runtime, () => true, _ => Assert.Fail() );
+				runtime.Economy.OpenPark();
+				runtime.Economy.ReportRecord( ParkRecordKind.CoasterHeight, 0, 110 );
+				runtime.Economy.AdvanceMonths( 1 );
+			}
+			Assert.AreEqual( held, PlayerTicketFile.LoadIfPresent( path )!.HolderOf( GoldenTicketKind.CoasterHeight ) );
+
+			foreach ( var (record, keeps) in new[] { (108L, false), (140L, true) } )
+			{
+				var shared = true;
+				var runtime = ParkEconomyRuntime.ForResume( EconomyTestData.Park(), ParkStartKind.FullSimulation );
+				using var owner = new PlayerProgressRuntimeOwner( path, "space", PlayerTicketFile.ReadIfPresent( path )!, runtime, () => true, _ => Assert.Fail(), () => shared );
+				owner.Pump();
+				var peer = EconomyTestData.Park();
+				foreach ( var economy in new[] { runtime.Economy, peer } )
+				{
+					economy.OpenPark();
+					economy.ReportRecord( ParkRecordKind.CoasterHeight, 0, record );
+					economy.AdvanceMonths( 1 );
+				}
+				CollectionAssert.AreEquivalent( peer.Objectives.GoldenTickets.ToArray(), runtime.Economy.Objectives.GoldenTickets.ToArray(), "decided alike with and without a ledger" );
+				Assert.IsTrue( runtime.Economy.Objectives.GoldenTickets.Contains( GoldenTicketKind.CoasterHeight ), $"a record of {record} wins the ticket in the session" );
+				Assert.AreEqual( held, owner.Ledger.HolderOf( GoldenTicketKind.CoasterHeight ), "the player's holder is untouched in the session" );
+				Assert.IsFalse( owner.Dirty );
+
+				shared = false;
+				owner.Pump();
+				Assert.AreEqual( keeps, runtime.Economy.Objectives.GoldenTickets.Contains( GoldenTicketKind.CoasterHeight ), $"the hand-back with a record of {record}" );
+				var holder = PlayerTicketFile.LoadIfPresent( path )!.HolderOf( GoldenTicketKind.CoasterHeight );
+				Assert.AreEqual( keeps ? new GlobalTicketHolder( GoldenTicketKind.CoasterHeight, "space", 140 ) : held, holder );
+				held = holder!;
+			}
+		}
+		finally { Directory.Delete( root, true ); }
+	}
 }

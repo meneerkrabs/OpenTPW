@@ -1,0 +1,219 @@
+using Microsoft.VisualStudio.TestTools.UnitTesting;
+using System;
+using System.IO;
+using System.Linq;
+using System.Numerics;
+using System.Runtime.InteropServices;
+using Veldrid;
+
+namespace OpenTPW.Tests;
+
+/// <summary>
+/// Draws the park's textured shaders on a real GPU backend into an offscreen target and checks that the texture's detail reaches
+/// the picture (issue #754: on Direct3D 11 every world surface showed one flat colour per face). Direct3D 11 runs on every Windows
+/// machine, the CI runner's WARP adapter included; Metal runs on macOS with OPENTPW_NATIVE_SHADER_TESTS=1 (architecture-matching
+/// native SPIR-V libraries). The probe follows the engine's path: the engine's GLSL to SPIR-V compile, Veldrid's cross-compile for
+/// the device, the engine's Vertex layout and reflected resource layouts, and a texture made like Texture.CreateNative (RGBA8,
+/// full mip chain, level 0 uploaded, the rest generated on the GPU).
+/// </summary>
+[TestClass]
+[DoNotParallelize]
+public class NativeWorldShaderRenderTests
+{
+	private const int Size = 64; // the target and the texture: one texel per pixel, so mip 0 is sampled
+	private const int Cell = 8; // the checkerboard's cell size in texels
+	private const uint FlagClamp = 0x80000000u; // TextureSlotAddressing.ClampFlag: the SampleGrad + textureSize path
+
+	[DataTestMethod]
+	[DataRow( "test.shader", 0u )]
+	[DataRow( "test.shader", FlagClamp )]
+	[DataRow( "advisor.shader", 0u )]
+	[DataRow( "sprite.shader", 0u )]
+	[DataRow( "unlit.shader", 0u )]
+	public void TexturedShaderKeepsTheTextureDetail( string shader, uint matFlags )
+	{
+		using var device = CreateDevice();
+		Log = new();
+		var pixels = Draw( device, shader, matFlags );
+
+		// the picture must follow the checkerboard: the mean of the pixels under white cells against those under black cells
+		// (either orientation, the backends' texture origins differ), and the cells must not be one averaged colour
+		double white = 0, black = 0;
+		int whiteCount = 0, blackCount = 0;
+		for ( int y = 0; y < Size; y++ )
+			for ( int x = 0; x < Size; x++ )
+			{
+				var offset = (y * Size + x) * 4;
+				double luma = 0.299 * pixels[offset] + 0.587 * pixels[offset + 1] + 0.114 * pixels[offset + 2];
+				if ( IsWhite( x, y ) ) { white += luma; whiteCount++; }
+				else { black += luma; blackCount++; }
+			}
+		white /= whiteCount;
+		black /= blackCount;
+		var contrast = Math.Abs( white - black );
+		Console.WriteLine( $"{device.BackendType} {shader} flags 0x{matFlags:X8}: white cells {white:F1}, black cells {black:F1}, centre {Describe( pixels, Size / 2, Size / 2 )}" );
+		// a coarse picture of the target (every second row and column) for the CI log
+		for ( int y = 0; y < Size; y += 2 )
+		{
+			var row = new char[Size / 2];
+			for ( int x = 0; x < Size; x += 2 )
+				row[x / 2] = pixels[(y * Size + x) * 4 + 1] switch { > 64 => '#', > 8 => '+', _ => '.' };
+			Console.WriteLine( new string( row ) );
+		}
+		Assert.IsTrue( contrast > 20, $"{shader} on {device.BackendType} lost the texture detail: white cells average {white:F1}, black cells {black:F1}" );
+	}
+
+	private static bool IsWhite( int x, int y ) => ((x / Cell) + (y / Cell)) % 2 == 0;
+
+	private static string Describe( byte[] pixels, int x, int y )
+	{
+		var offset = (y * Size + x) * 4;
+		return $"({pixels[offset]}, {pixels[offset + 1]}, {pixels[offset + 2]}, {pixels[offset + 3]})";
+	}
+
+	private static GraphicsDevice CreateDevice()
+	{
+		// the engine's options (Renderer.CreateDevice) without its swapchain
+		var options = new GraphicsDeviceOptions
+		{
+			PreferStandardClipSpaceYDirection = true,
+			PreferDepthRangeZeroToOne = true,
+			SwapchainDepthFormat = null,
+			SwapchainSrgbFormat = false,
+			SyncToVerticalBlank = false,
+			HasMainSwapchain = false
+		};
+		if ( OperatingSystem.IsWindows() )
+			return GraphicsDevice.CreateD3D11( options );
+		if ( OperatingSystem.IsMacOS() && Environment.GetEnvironmentVariable( "OPENTPW_NATIVE_SHADER_TESTS" ) == "1" )
+			return GraphicsDevice.CreateMetal( options );
+		Assert.Inconclusive( "Direct3D 11 on Windows; Metal on macOS with OPENTPW_NATIVE_SHADER_TESTS=1." );
+		return null!;
+	}
+
+	private static byte[] Draw( GraphicsDevice device, string shader, uint matFlags )
+	{
+		var factory = device.ResourceFactory;
+		var target = device.BackendType switch
+		{
+			GraphicsBackend.Direct3D11 => Veldrid.SPIRV.CrossCompileTarget.HLSL,
+			GraphicsBackend.Metal => Veldrid.SPIRV.CrossCompileTarget.MSL,
+			_ => Veldrid.SPIRV.CrossCompileTarget.GLSL
+		};
+		var program = ShaderCompiler.CompileProgram( GetShaderPath( shader ), target );
+		var shaders = Veldrid.SPIRV.ResourceFactoryExtensions.CreateFromSpirv( factory,
+			new ShaderDescription( ShaderStages.Vertex, program.Vertex, "main" ),
+			new ShaderDescription( ShaderStages.Fragment, program.Fragment, "main" ) );
+
+		using var colour = factory.CreateTexture( TextureDescription.Texture2D( Size, Size, 1, 1, PixelFormat.R8_G8_B8_A8_UNorm, TextureUsage.RenderTarget ) );
+		using var staging = factory.CreateTexture( TextureDescription.Texture2D( Size, Size, 1, 1, PixelFormat.R8_G8_B8_A8_UNorm, TextureUsage.Staging ) );
+		using var depth = factory.CreateTexture( TextureDescription.Texture2D( Size, Size, 1, 1, PixelFormat.D32_Float_S8_UInt, TextureUsage.DepthStencil ) );
+		using var framebuffer = factory.CreateFramebuffer( new FramebufferDescription( depth, colour ) );
+
+		// the texture as Texture.CreateNative makes it
+		var checker = new byte[Size * Size * 4];
+		for ( int y = 0; y < Size; y++ )
+			for ( int x = 0; x < Size; x++ )
+			{
+				var value = IsWhite( x, y ) ? (byte)255 : (byte)0;
+				var offset = (y * Size + x) * 4;
+				checker[offset] = checker[offset + 1] = checker[offset + 2] = value;
+				checker[offset + 3] = 255;
+			}
+		var mipLevels = (uint)Math.Floor( Math.Log2( Size ) ) + 1;
+		using var texture = factory.CreateTexture( TextureDescription.Texture2D( Size, Size, mipLevels, 1, PixelFormat.R8_G8_B8_A8_UNorm, TextureUsage.Sampled | TextureUsage.GenerateMipmaps ) );
+		var handle = GCHandle.Alloc( checker, GCHandleType.Pinned );
+		try { device.UpdateTexture( texture, handle.AddrOfPinnedObject(), (uint)checker.Length, 0, 0, 0, Size, Size, 1, 0, 0 ); }
+		finally { handle.Free(); }
+		using var view = factory.CreateTextureView( texture );
+		using var sampler = factory.CreateSampler( ColorSampler.Describe( SamplerType.AnisotropicWrap, new RenderQuality( TextureFilterMode.Anisotropic, 16, true, 1f ) ) );
+
+		// one quad over the whole target in clip space (identity matrices), UVs 0..1, slot 0, ambient-only light
+		var ubo = new ObjectUniformBuffer
+		{
+			g_mModel = Matrix4x4.Identity,
+			g_mView = Matrix4x4.Identity,
+			g_mProj = Matrix4x4.Identity,
+			g_vLightPos = new Vector3( 0, 0, -10 ),
+			g_vLightColor = Vector3.Zero,
+		};
+		using var uniforms = factory.CreateBuffer( new BufferDescription( 4096, BufferUsage.UniformBuffer ) );
+
+		Vertex Corner( float x, float y, float u, float v ) => new Vertex( new Vector3( x, y, 0.5f ), new Vector3( 0, 0, -1 ), new Vector2( u, v ) ) { TexIndex = 0, MatFlags = matFlags };
+		var vertices = new[]
+		{
+			Corner( -1, -1, 0, 0 ), Corner( 1, -1, 1, 0 ), Corner( 1, 1, 1, 1 ),
+			Corner( -1, -1, 0, 0 ), Corner( 1, 1, 1, 1 ), Corner( -1, 1, 0, 1 ),
+		};
+		using var vertexBuffer = factory.CreateBuffer( new BufferDescription( (uint)vertices.Length * Vertex.SizeInBytes, BufferUsage.VertexBuffer ) );
+
+		var layouts = program.Reflection.ResourceLayouts.Select( factory.CreateResourceLayout ).ToArray();
+		var sets = program.Reflection.ResourceLayouts.Select( ( description, index ) => factory.CreateResourceSet( new ResourceSetDescription( layouts[index],
+			description.Elements.Select( element => element.Kind switch
+			{
+				ResourceKind.UniformBuffer => (BindableResource)uniforms,
+				ResourceKind.TextureReadOnly => view,
+				ResourceKind.Sampler => sampler,
+				_ => throw new InvalidOperationException( $"{shader}: unexpected resource {element.Name} ({element.Kind})" )
+			} ).ToArray() ) ) ).ToArray();
+
+		using var pipeline = factory.CreateGraphicsPipeline( new GraphicsPipelineDescription(
+			BlendStateDescription.SingleOverrideBlend,
+			DepthStencilStateDescription.Disabled,
+			new RasterizerStateDescription( FaceCullMode.None, PolygonFillMode.Solid, FrontFace.Clockwise, true, false ),
+			PrimitiveTopology.TriangleList,
+			new ShaderSetDescription( [new VertexLayoutDescription( Vertex.VertexElementDescriptions )], shaders ),
+			layouts,
+			framebuffer.OutputDescription,
+			ResourceBindingModel.Improved ) ); // as Material builds its pipelines
+
+		using var commands = factory.CreateCommandList();
+		commands.Begin();
+		commands.UpdateBuffer( uniforms, 0, ubo );
+		commands.UpdateBuffer( vertexBuffer, 0, vertices );
+		commands.GenerateMipmaps( texture );
+		commands.SetFramebuffer( framebuffer );
+		commands.SetFullViewports();
+		commands.SetFullScissorRects();
+		commands.ClearDepthStencil( 1f );
+		commands.ClearColorTarget( 0, RgbaFloat.Black );
+		commands.SetVertexBuffer( 0, vertexBuffer );
+		commands.SetPipeline( pipeline );
+		for ( uint i = 0; i < sets.Length; i++ )
+			commands.SetGraphicsResourceSet( i, sets[i] );
+		commands.Draw( (uint)vertices.Length );
+		commands.CopyTexture( colour, staging );
+		commands.End();
+		device.SubmitCommands( commands );
+		device.WaitForIdle();
+
+		var pixels = new byte[Size * Size * 4];
+		var mapped = device.Map( staging, MapMode.Read );
+		try
+		{
+			for ( int y = 0; y < Size; y++ )
+				Marshal.Copy( mapped.Data + (int)(y * mapped.RowPitch), pixels, y * Size * 4, Size * 4 );
+		}
+		finally
+		{
+			device.Unmap( staging );
+		}
+
+		foreach ( var set in sets )
+			set.Dispose();
+		foreach ( var layout in layouts )
+			layout.Dispose();
+		foreach ( var compiled in shaders )
+			compiled.Dispose();
+		return pixels;
+	}
+
+	private static string GetShaderPath( string shader )
+	{
+		var directory = new DirectoryInfo( AppContext.BaseDirectory );
+		while ( directory != null && !File.Exists( Path.Combine( directory.FullName, "content", "shaders", shader ) ) )
+			directory = directory.Parent;
+		Assert.IsNotNull( directory, "Repository shader assets must be available for this test." );
+		return Path.Combine( directory!.FullName, "content", "shaders", shader );
+	}
+}

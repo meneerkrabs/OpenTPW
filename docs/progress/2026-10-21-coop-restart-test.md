@@ -1,3 +1,3 @@
-## Co-op: a steady restart test (October 21, 2026)
+## Co-op: a restart never cuts a guest off for its queue (October 21, 2026)
 
-The co-op server test that restarts the server while a host streams frames failed now and then on the macOS runners: when the guest read slower than the host sent, its queue reached its limit and the server rightly cut it off for slowness before the restart, so it never saw the restart's close. The test now gives the guest a queue that takes the whole burst, since it is about the restart, not about slow readers (which other tests cover).
+A server restart stores every shared park's frame position and then closes the co-op sockets after their queues. The host's socket closes first, and the news that the host went is sent to its guests; that message could cut off a guest whose queue stood at its limit, dropping the frames whose position the restart had just stored. A closing queue now takes and counts nothing more. The test that restarts the server while a host streams frames also failed now and then on the macOS runners, when a slow guest was rightly cut off for slowness before the restart; its guest's queue now takes the whole burst.

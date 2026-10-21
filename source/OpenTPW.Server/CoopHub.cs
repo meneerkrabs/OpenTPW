@@ -471,7 +471,7 @@ public sealed class CoopHub
 	/// </summary>
 	private void Enqueue( Peer peer, ReadOnlyMemory<byte> bytes )
 	{
-		if ( peer.Dead )
+		if ( peer.Dead || peer.Closing )
 			return;
 		var mine = Interlocked.Add( ref peer.QueuedBytes, bytes.Length );
 		var all = Interlocked.Add( ref queuedBytes, bytes.Length );
@@ -1042,6 +1042,10 @@ public sealed class CoopHub
 				Persist( () => store.PutAll( records ) );
 			open = peers.Values.ToList();
 		}
+		// every queue stops taking messages before any closes: a host's socket closes first (its queue is short) and its departure is announced, and that message must
+		// not cut off a guest whose queue is at its limit, which would drop the frames whose position was just stored
+		foreach ( var peer in open )
+			peer.Closing = true;
 		foreach ( var peer in open )
 		{
 			peer.Outbox.Writer.TryComplete();
@@ -1201,6 +1205,11 @@ public sealed class CoopHub
 		public long QueuedBytes;
 		public int DeadFlag;
 		public bool Dead => Volatile.Read( ref DeadFlag ) == 1;
+		/// <summary>
+		/// A restart closed the queue after storing the frame positions (<see cref="Restarting"/>): nothing more is queued or counted for it, so no limit cuts it off and
+		/// drops the frames whose position was stored.
+		/// </summary>
+		public volatile bool Closing;
 		public int? CloseStatus;
 		public string? CloseReason;
 		public readonly CancellationTokenSource Closed = new();

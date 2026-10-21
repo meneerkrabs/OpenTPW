@@ -283,6 +283,34 @@ export async function doorScenario(page, options) {
 	}
 }
 
+/**
+ * One click on the lobby's enter-park button (the theme start, or the game mode screen when the island has no park to continue), then
+ * back to the lobby. Records the frames and `screenMs`: the wall time from the click until the game reports the next screen (it includes
+ * the harness's polling, a few ms). Records into `events` with `run`.
+ */
+export async function lobbyEnterClick(page, run, name, { profile = false } = {}) {
+	let screenMs = null, screen = null;
+	const record = await run(name, async () => {
+		const clicked = Date.now();
+		if (!await page.eval('opentpwPerf.program.PerfClick("enterPark")'))
+			throw new Error('the enter-park button is not shown');
+		for (const begin = Date.now(); Date.now() - begin < 10000; await sleep(5)) {
+			const state = await page.state();
+			if (state.menu === 'themeStart' || state.menu === 'gameMode') {
+				screenMs = Date.now() - clicked;
+				screen = state.menu;
+				break;
+			}
+		}
+	}, { settleMs: 1500, profile });
+	record.screenMs = screenMs;
+	record.screen = screen;
+	await page.eval('opentpwPerf.program.PerfKey("Back")');
+	await page.waitFor('the lobby', current => current.menu === 'lobby', 10000);
+	await sleep(1500);
+	return record;
+}
+
 /** Runs the whole scenario; returns { events: { name: record }, soak: record }. */
 export async function eventsScenario(page, options) {
 	const state = await page.state();

@@ -33,7 +33,7 @@ export function markdown(report) {
 			...results.switch.steps.map(step => `| ${step.step} | ${(step.wasmBytes / 1048576).toFixed(0)} | ${(step.managedBytes / 1048576).toFixed(0)} | ${step.levelsAlive} | ${step.entities} | ${step.texturesHeld} | ${(step.archiveBytes / 1048576).toFixed(0)} | ${(step.archiveMemberBytes / 1048576).toFixed(0)} | ${(step.decodedSampleBytes / 1048576).toFixed(0)} | ${(step.jsHeapBytes / 1048576).toFixed(0)} | ${((step.gpuTextureBytes ?? 0) / 1048576).toFixed(0)} / ${step.gpuTextures ?? 0} | ${step.rssBytes ? (step.rssBytes / 1048576).toFixed(0) : ''} |`));
 	if (results.memory && !results.memory.error)
 		lines.push('', `- Memory over ${results.memory.minutes} min: wasm +${(results.memory.wasmGrowthBytes / 1048576).toFixed(1)} MB (peak ${(results.memory.peakWasmBytes / 1048576).toFixed(0)} MB), managed +${(results.memory.managedGrowthBytes / 1048576).toFixed(1)} MB`);
-	for (const scenario of [results.events, results.door]) {
+	for (const scenario of [results.events, results.door, results.lobbyEnter]) {
 		if (!scenario || scenario.error)
 			continue;
 		const records = [...Object.values(scenario.events ?? {}), scenario.soak].filter(entry => entry && !entry.missing);

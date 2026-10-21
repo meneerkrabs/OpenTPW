@@ -11,10 +11,13 @@ namespace OpenTPW.Online.Client;
 
 public sealed class OnlineException : Exception
 {
-	public OnlineException( HttpStatusCode status, string message, string? reason = null ) : base( message ) => (Status, Reason) = (status, reason);
+	public OnlineException( HttpStatusCode status, string message, string? reason = null, TimeSpan? retryAfter = null ) : base( message ) =>
+		(Status, Reason, RetryAfter) = (status, reason, retryAfter);
 	public HttpStatusCode Status { get; }
 	/// <summary>The server's <see cref="ApiErrorReasons"/> value, or null.</summary>
 	public string? Reason { get; }
+	/// <summary>How long the server asked the client to wait before it tries again (its Retry-After), or null.</summary>
+	public TimeSpan? RetryAfter { get; }
 }
 
 /// <summary>A login: a session, or the two-step setup the account needs first (<see cref="OnlineClient.ConfirmEnrollmentAsync"/>).</summary>
@@ -339,6 +342,79 @@ public sealed class OnlineClient : IDisposable
 	public Task<CoopSessionList> ListCoopSessionsAsync( CancellationToken cancel = default ) => GetJsonAsync<CoopSessionList>( ApiRoutes.CoopSessions, cancel );
 
 	/// <summary>
+	/// [EXT:online-coop-snapshot-join] Uploads the host's join snapshot of shared park <paramref name="sessionId"/> (docs/COOP.md, "Joining a running session"): the server keeps it under its
+	/// SHA-256 for the session's members, the newest two of the session. Only the host uploads, while another member is in the session.
+	/// </summary>
+	public async Task<CoopSnapshotStored> PutCoopSnapshotAsync( string sessionId, ReadOnlyMemory<byte> payload, CancellationToken cancel = default )
+	{
+		if ( !CoopProtocol.IsSessionId( sessionId ) )
+			throw new ArgumentException( "Not a shared park's id.", nameof( sessionId ) );
+		using var content = new ReadOnlyMemoryContent( payload );
+		content.Headers.ContentType = new MediaTypeHeaderValue( "application/octet-stream" );
+		using var response = await SendAsync( HttpMethod.Put, $"{ApiRoutes.Coop}/{sessionId}/snapshot", content, cancel );
+		var stored = await ReadJsonAsync<CoopSnapshotStored>( response, cancel );
+		if ( !CoopProtocol.IsSha256( stored.Sha256 ) || stored.Bytes != payload.Length )
+			throw new InvalidDataException( "The server stored a different snapshot than the one sent." );
+		return stored;
+	}
+
+	/// <summary>
+	/// [EXT:online-coop-snapshot-join] Downloads join snapshot <paramref name="sha256"/> of shared park <paramref name="sessionId"/>, <paramref name="length"/> bytes. Each read must come within
+	/// <paramref name="stall"/> (the client's overall timeout ends with the response's headers, so a large snapshot on a slow line is not cut off while it moves); a transfer that breaks or
+	/// stalls resumes from the bytes it has with a range, at most <paramref name="attempts"/> times in all. The bytes are checked against the digest. A snapshot the server no longer keeps is a
+	/// 404 <see cref="OnlineException"/>.
+	/// </summary>
+	public async Task<byte[]> DownloadCoopSnapshotAsync( string sessionId, string sha256, long length, TimeSpan stall, int attempts = 3, CancellationToken cancel = default )
+	{
+		if ( !CoopProtocol.IsSessionId( sessionId ) || !CoopProtocol.IsSha256( sha256 ) )
+			throw new ArgumentException( "Not a shared park's snapshot." );
+		if ( length <= 0 || length > int.MaxValue )
+			throw new ArgumentOutOfRangeException( nameof( length ) );
+		var buffer = new byte[length];
+		var have = 0;
+		for ( var attempt = 1; ; attempt++ )
+		{
+			try
+			{
+				using var request = new HttpRequestMessage( HttpMethod.Get, new Uri( ServerUrl, $"{ApiRoutes.Coop.TrimStart( '/' )}/{sessionId}/snapshot/{sha256}" ) );
+				if ( Session != null )
+					request.Headers.Authorization = new AuthenticationHeaderValue( "Bearer", Session.Token );
+				if ( have > 0 )
+					request.Headers.Range = new RangeHeaderValue( have, null );
+				using var response = await SendRequestAsync( request, cancel );
+				// a server that ignored the range sends the whole snapshot again
+				if ( have > 0 && response.StatusCode != HttpStatusCode.PartialContent )
+					have = 0;
+				await using var body = await response.Content.ReadAsStreamAsync( cancel );
+				var beyond = new byte[1];
+				while ( true )
+				{
+					using var stalled = CancellationTokenSource.CreateLinkedTokenSource( cancel );
+					stalled.CancelAfter( stall );
+					// once every byte is in, one more read must find the end
+					var target = have < buffer.Length ? buffer.AsMemory( have, Math.Min( buffer.Length - have, 64 * 1024 ) ) : beyond.AsMemory();
+					var read = await body.ReadAsync( target, stalled.Token );
+					if ( read == 0 )
+						break;
+					if ( have == buffer.Length )
+						throw new InvalidDataException( "The snapshot is longer than its host said." );
+					have += read;
+				}
+				if ( have != buffer.Length )
+					throw new IOException( "The snapshot's transfer ended early." );
+				if ( Convert.ToHexString( System.Security.Cryptography.SHA256.HashData( buffer ) ).ToLowerInvariant() != sha256 )
+					throw new InvalidDataException( "The snapshot's bytes do not match its digest." );
+				return buffer;
+			}
+			catch ( Exception exception ) when ( attempt < attempts && !cancel.IsCancellationRequested
+				&& exception is IOException or HttpRequestException or OperationCanceledException )
+			{
+				// a broken or stalled transfer: the next attempt asks for the rest
+			}
+		}
+	}
+
+	/// <summary>
 	/// Opens a WebSocket on <paramref name="route"/> with the session token: a header and a keep-alive on the desktop; in a browser, which can set neither,
 	/// the token is the first message.
 	/// </summary>
@@ -416,6 +492,12 @@ public sealed class OnlineClient : IDisposable
 		using var request = new HttpRequestMessage( method, new Uri( ServerUrl, route.TrimStart( '/' ) ) ) { Content = content };
 		if ( authenticated && Session != null )
 			request.Headers.Authorization = new AuthenticationHeaderValue( "Bearer", Session.Token );
+		return await SendRequestAsync( request, cancel );
+	}
+
+	/// <summary>Sends <paramref name="request"/>: the response once its headers came, or the server's error as an <see cref="OnlineException"/>.</summary>
+	private async Task<HttpResponseMessage> SendRequestAsync( HttpRequestMessage request, CancellationToken cancel )
+	{
 		var response = await http.SendAsync( request, HttpCompletionOption.ResponseHeadersRead, cancel );
 		if ( response.IsSuccessStatusCode )
 			return response;
@@ -434,7 +516,8 @@ public sealed class OnlineClient : IDisposable
 			catch ( Exception exception ) when ( exception is InvalidDataException or IOException )
 			{
 			}
-			throw new OnlineException( response.StatusCode, $"{(int)response.StatusCode}: {message}", reason );
+			var retryAfter = response.Headers.RetryAfter is { } retry ? retry.Delta ?? (retry.Date is { } date ? date - DateTimeOffset.UtcNow : null) : null;
+			throw new OnlineException( response.StatusCode, $"{(int)response.StatusCode}: {message}", reason, retryAfter );
 		}
 	}
 

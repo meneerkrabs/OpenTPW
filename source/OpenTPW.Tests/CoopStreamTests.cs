@@ -121,8 +121,10 @@ public class CoopStreamTests
 		var type = typeof( UpgradeCatalogueDefaultsTests );
 		var world = ((Level Level, ParkEconomy Economy, OriginalObject One, OriginalObject Two, ParkObjectState State))type.GetMethod( "World", BindingFlags.Instance | BindingFlags.NonPublic )!
 			.Invoke( fixture, new object[] { "", 0, false } )!;
-		type.GetMethod( "PrepareCapture", BindingFlags.Static | BindingFlags.NonPublic )!.Invoke( null, new object[] { world } );
+		var assets = (Dictionary<string, string>)type.GetMethod( "PrepareCapture", BindingFlags.Static | BindingFlags.NonPublic )!.Invoke( null, new object[] { world } )!;
 		var level = world.Level;
+		// the park's kept asset manifest, as the game takes it when a park starts (a join capture reads it)
+		level.AutosaveAssets( assets );
 		typeof( Level ).GetMethod( "SetupStaff", BindingFlags.Instance | BindingFlags.NonPublic )!.Invoke( level, null );
 		typeof( Level ).GetMethod( "SetupParkGate", BindingFlags.Instance | BindingFlags.NonPublic )!.Invoke( level, null );
 		typeof( Level ).GetMethod( "SetupPaths", BindingFlags.Instance | BindingFlags.NonPublic )!.Invoke( level, null );

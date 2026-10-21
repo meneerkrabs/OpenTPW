@@ -313,6 +313,72 @@ public sealed class CoopLink : ICoopStreamTransport
 		} );
 	}
 
+	/// <summary>[EXT:online-coop-snapshot-join] How long a snapshot download may wait for its next bytes before it resumes with a range.</summary>
+	internal static readonly TimeSpan SnapshotStall = TimeSpan.FromSeconds( 20 );
+
+	void ICoopStreamTransport.UploadSnapshot( byte[] payload, Action<CoopSnapshotTransfer> done )
+	{
+		ArgumentNullException.ThrowIfNull( payload );
+		ArgumentNullException.ThrowIfNull( done );
+		if ( owner.Client is not { Session: not null } client || Session is not { } session )
+		{
+			owner.Post( () => done( CoopSnapshotTransfer.Failed( OnlineStrings.Get( OnlineLabel.OnlineOff ) ) ) );
+			return;
+		}
+		owner.Background( async () =>
+		{
+			CoopSnapshotTransfer result;
+			try
+			{
+				result = CoopSnapshotTransfer.Stored( (await client.PutCoopSnapshotAsync( session.Id, payload )).Sha256 );
+			}
+			catch ( Exception exception ) when ( exception is OnlineException or HttpRequestException or IOException or InvalidDataException or TaskCanceledException
+				or InvalidOperationException or ObjectDisposedException )
+			{
+				result = exception switch
+				{
+					// too large, not the host's, the session gone: trying again cannot help
+					OnlineException { Status: System.Net.HttpStatusCode.RequestEntityTooLarge or System.Net.HttpStatusCode.Forbidden or System.Net.HttpStatusCode.NotFound } error =>
+						CoopSnapshotTransfer.Failed( error.Message, permanent: true ),
+					// nobody joining yet, another upload running, too many uploads, no room now
+					OnlineException error => CoopSnapshotTransfer.Failed( error.Message, retryAfter: error.RetryAfter ),
+					_ => CoopSnapshotTransfer.Failed( exception.Message )
+				};
+			}
+			owner.Post( () => done( result ) );
+		} );
+	}
+
+	void ICoopStreamTransport.DownloadSnapshot( string sha256, long bytes, Action<CoopSnapshotTransfer> done )
+	{
+		ArgumentNullException.ThrowIfNull( done );
+		if ( owner.Client is not { Session: not null } client || Session is not { } session )
+		{
+			owner.Post( () => done( CoopSnapshotTransfer.Failed( OnlineStrings.Get( OnlineLabel.OnlineOff ) ) ) );
+			return;
+		}
+		owner.Background( async () =>
+		{
+			CoopSnapshotTransfer result;
+			try
+			{
+				result = CoopSnapshotTransfer.Downloaded( await client.DownloadCoopSnapshotAsync( session.Id, sha256, bytes, SnapshotStall ) );
+			}
+			catch ( Exception exception ) when ( exception is OnlineException or HttpRequestException or IOException or InvalidDataException or OperationCanceledException
+				or InvalidOperationException or ObjectDisposedException or ArgumentException )
+			{
+				result = exception switch
+				{
+					OnlineException { Status: System.Net.HttpStatusCode.NotFound } error => CoopSnapshotTransfer.Failed( error.Message, missing: true ),
+					OnlineException { Status: System.Net.HttpStatusCode.Forbidden } error => CoopSnapshotTransfer.Failed( error.Message, permanent: true ),
+					OnlineException error => CoopSnapshotTransfer.Failed( error.Message, retryAfter: error.RetryAfter ),
+					_ => CoopSnapshotTransfer.Failed( exception.Message )
+				};
+			}
+			owner.Post( () => done( result ) );
+		} );
+	}
+
 	/// <summary>Whether <paramref name="text"/> fits a field of <paramref name="maximumLength"/> characters (the writer refuses longer ones and control characters).</summary>
 	private static bool Fits( string text, int maximumLength ) => text.Length <= maximumLength && !text.Any( char.IsControl );
 

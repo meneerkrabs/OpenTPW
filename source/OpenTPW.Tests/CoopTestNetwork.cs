@@ -30,6 +30,24 @@ internal sealed class CoopTestNetwork( Func<double>? clock = null )
 	/// <summary>Every frame the server took, in order.</summary>
 	public List<byte[]> Taken { get; } = new();
 
+	/// <summary>[EXT:online-coop-snapshot-join] The stored join snapshots by digest, the newest two (as the server keeps them), oldest first.</summary>
+	public List<(string Sha256, byte[] Payload)> Snapshots { get; } = new();
+
+	/// <summary>Every upload the host attempted, in order (stored or not).</summary>
+	public int Uploads { get; private set; }
+
+	/// <summary>Every download a member attempted, in order: the member and the digest.</summary>
+	public List<(uint Member, string Sha256)> Downloads { get; } = new();
+
+	/// <summary>How long an upload or a download takes to answer (seconds of the network's clock).</summary>
+	public double TransferSeconds { get; set; }
+
+	/// <summary>Answers the upload of the given attempt number (1 first) instead of the store, e.g. with a failure; null lets the store answer.</summary>
+	public Func<int, CoopSnapshotTransfer?>? FailUpload { get; set; }
+
+	/// <summary>Answers the given member's download of the given digest instead of the store, e.g. with a failure; null lets the store answer.</summary>
+	public Func<uint, string, CoopSnapshotTransfer?>? FailDownload { get; set; }
+
 	public Member Host => members.First( member => member.IsHost );
 
 	/// <summary>A member joins: it sees the session as it stands, and the connected members hear of it.</summary>
@@ -103,6 +121,9 @@ internal sealed class CoopTestNetwork( Func<double>? clock = null )
 		private readonly CoopTestNetwork network;
 		private readonly Queue<(double Due, Action Raise)> inbox = new();
 
+		/// <summary>The transfers' answers: HTTP is no part of the socket, so a lost socket loses none of them.</summary>
+		private readonly Queue<(double Due, Action Raise)> transfers = new();
+
 		public Member( CoopTestNetwork network, uint id, byte slot, bool host )
 		{
 			this.network = network;
@@ -171,12 +192,46 @@ internal sealed class CoopTestNetwork( Func<double>? clock = null )
 
 		internal void Enqueue( Action raise ) => inbox.Enqueue( (network.clock() + Latency, raise) );
 
-		/// <summary>Raises what has arrived by now, in order, as the game's pump does before its frame; at most <paramref name="limit"/> items.</summary>
+		/// <summary>Raises what has arrived by now, in order, as the game's pump does before its frame; at most <paramref name="limit"/> items. The transfers' answers come after.</summary>
 		public void Deliver( int limit = int.MaxValue )
 		{
 			var now = network.clock();
 			for ( var count = 0; count < limit && inbox.TryPeek( out var next ) && next.Due <= now; count++ )
 				inbox.Dequeue().Raise();
+			while ( transfers.TryPeek( out var answer ) && answer.Due <= now )
+				transfers.Dequeue().Raise();
+		}
+
+		/// <summary>The store's rules: only the host uploads, only while another member is in the session; the newest two snapshots stay.</summary>
+		public void UploadSnapshot( byte[] payload, Action<CoopSnapshotTransfer> done )
+		{
+			var attempt = ++network.Uploads;
+			var answer = network.FailUpload?.Invoke( attempt )
+				?? (!IsHost ? CoopSnapshotTransfer.Failed( "Only the host uploads the park.", permanent: true )
+				: network.members.Count < 2 ? CoopSnapshotTransfer.Failed( "Nobody is joining." )
+				: Store( payload ));
+			transfers.Enqueue( (network.clock() + network.TransferSeconds, () => done( answer )) );
+		}
+
+		private CoopSnapshotTransfer Store( byte[] payload )
+		{
+			var sha256 = Convert.ToHexString( System.Security.Cryptography.SHA256.HashData( payload ) ).ToLowerInvariant();
+			network.Snapshots.RemoveAll( stored => stored.Sha256 == sha256 );
+			network.Snapshots.Add( (sha256, payload.ToArray()) );
+			while ( network.Snapshots.Count > 2 )
+				network.Snapshots.RemoveAt( 0 );
+			return CoopSnapshotTransfer.Stored( sha256 );
+		}
+
+		public void DownloadSnapshot( string sha256, long bytes, Action<CoopSnapshotTransfer> done )
+		{
+			network.Downloads.Add( (Id, sha256) );
+			var stored = network.Snapshots.FirstOrDefault( snapshot => snapshot.Sha256 == sha256 ).Payload;
+			var answer = network.FailDownload?.Invoke( Id, sha256 )
+				?? (stored == null ? CoopSnapshotTransfer.Failed( "No such snapshot.", missing: true )
+				: stored.Length != bytes ? CoopSnapshotTransfer.Failed( "The snapshot is not as long as its host said." )
+				: CoopSnapshotTransfer.Downloaded( stored.ToArray() ));
+			transfers.Enqueue( (network.clock() + network.TransferSeconds, () => done( answer )) );
 		}
 
 		/// <summary>The socket drops: what was on its way is lost, and the connected members see it go.</summary>

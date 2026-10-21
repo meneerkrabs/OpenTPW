@@ -82,6 +82,9 @@ public static class ServerProgram
 				_ => new FixedWindowRateLimiterOptions { PermitLimit = options.AuthenticationsPerMinute, Window = TimeSpan.FromMinutes( 1 ), QueueLimit = 0 } ) );
 			limiter.AddPolicy( "upload", context => RateLimitPartition.GetFixedWindowLimiter( Address( context ),
 				_ => new FixedWindowRateLimiterOptions { PermitLimit = options.UploadsPerHour, Window = TimeSpan.FromHours( 1 ), QueueLimit = 0 } ) );
+			// [EXT:online-coop-snapshot-join] a shared park's join snapshots count against the session's own limit, not the address's park uploads
+			limiter.AddPolicy( "coop-snapshot", context => RateLimitPartition.GetFixedWindowLimiter( context.GetRouteValue( "id" ) as string ?? Address( context ),
+				_ => new FixedWindowRateLimiterOptions { PermitLimit = options.CoopSnapshotsPerSessionPerHour, Window = TimeSpan.FromHours( 1 ), QueueLimit = 0 } ) );
 		} );
 
 		var app = builder.Build();
@@ -719,7 +722,7 @@ public static class ServerProgram
 				if ( temporary != null && File.Exists( temporary ) )
 					File.Delete( temporary );
 			}
-		} ) ).RequireRateLimiting( "upload" );
+		} ) ).RequireRateLimiting( "coop-snapshot" );
 
 		app.MapGet( ApiRoutes.Coop + "/{id}/snapshot/{sha256}", ( HttpContext context, string id, string sha256 ) => Guarded( context, store, true, user =>
 		{

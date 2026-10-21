@@ -91,6 +91,8 @@ public sealed class ServerOptions
 	public int CoopInvitesPerHour { get; set; } = 60;
 	public int CoopKicksPerHour { get; set; } = 60;
 	public int CoopDownloadsPerHour { get; set; } = 30;
+	/// <summary>[EXT:online-coop-snapshot-join] Join snapshots one session's host may upload an hour, a limit of the session's own (not the address-wide park uploads).</summary>
+	public int CoopSnapshotsPerSessionPerHour { get; set; } = 60;
 	/// <summary>[EXT:online-coop-snapshot-join] A join snapshot (a gzipped world save and the session's state), and all of them together.</summary>
 	public long MaximumCoopSnapshotBytes { get; set; } = 96L * 1024 * 1024;
 	public long MaximumCoopStoreBytes { get; set; } = 4L * 1024 * 1024 * 1024;
@@ -119,7 +121,7 @@ public sealed class ServerOptions
 			|| MovementBurst < 1 || MovementsPerSecond < 1 || SessionLifetime <= TimeSpan.Zero
 			|| MaximumCoopConnections < 1 || MaximumCoopSessions < 1 || CoopPingInterval <= TimeSpan.Zero || CoopOutboxBytes < 1 || CoopServerOutboxBytes < CoopOutboxBytes
 			|| CoopHostMessagesPerSecond < 1 || CoopHostBytesPerSecond < 1 || CoopGuestMessagesPerSecond < 1 || CoopGuestBytesPerSecond < 1
-			|| CoopCreatesPerHour < 1 || CoopJoinsPerHour < 1 || CoopWrongCodesPerHour < 1 || CoopInvitesPerHour < 1 || CoopKicksPerHour < 1 || CoopDownloadsPerHour < 1
+			|| CoopCreatesPerHour < 1 || CoopJoinsPerHour < 1 || CoopWrongCodesPerHour < 1 || CoopInvitesPerHour < 1 || CoopKicksPerHour < 1 || CoopDownloadsPerHour < 1 || CoopSnapshotsPerSessionPerHour < 1
 			|| MaximumCoopSnapshotBytes < 1 || MaximumCoopStoreBytes < MaximumCoopSnapshotBytes )
 			throw new InvalidOperationException( "OpenTPW server limits must be positive." );
 		if ( RequireEmail && (string.IsNullOrWhiteSpace( ResendApiKey ) || string.IsNullOrWhiteSpace( EmailFrom )) )

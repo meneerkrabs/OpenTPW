@@ -22,11 +22,8 @@ public partial class Level
 	{
 		if ( Park == null )
 			return;
-		foreach ( var item in Objects.Objects.ToArray() )
+		foreach ( var item in UnboundObjects().ToArray() )
 		{
-			if ( item.IsDeleted || item is PrototypeRide || economyInstances.ContainsKey( item ) || (PlacedRide != null && ReferenceEquals( item, PlacedRide ))
-				|| !Park.Economy.Catalog.TryGet( item.Entry.InfoId, out _ ) )
-				continue;
 			// [EXT:online-coop-lockstep] a shared park changes only through its commands: the host's save refuses instead of repairing on its own machine
 			if ( CoopRole != CoopRole.None )
 				throw new InvalidOperationException( $"{item.Entry.DisplayName} (attraction {item.Visitors.AttractionId}) has no economy binding, which a shared park cannot repair; save it after the session." );
@@ -40,6 +37,11 @@ public partial class Level
 			LinkEconomy( item, state.Id );
 		}
 	}
+
+	/// <summary>The placed objects the economy catalogue knows that hold no economy binding (<see cref="RepairMissingEconomyBindings"/>).</summary>
+	private IEnumerable<OriginalObject> UnboundObjects() => Park == null ? Array.Empty<OriginalObject>()
+		: Objects.Objects.Where( item => !item.IsDeleted && item is not PrototypeRide && !economyInstances.ContainsKey( item ) && !(PlacedRide != null && ReferenceEquals( item, PlacedRide ))
+			&& Park.Economy.Catalog.TryGet( item.Entry.InfoId, out _ ) );
 
 	private IReadOnlyDictionary<string, string>? autosaveAssets;
 	private int autosaveAssetEntries = -1;
@@ -145,13 +147,36 @@ public partial class Level
 	internal ParkResumeSnapshot CaptureResumeSnapshotUnchecked( AutomaticAdvisor? advisor, string displayName, out Action validate, out IEnumerable<bool> validationSteps,
 		IReadOnlyDictionary<string, string>? verifiedAssets = null, DateTimeOffset? savedUtc = null, bool advisorMaySpeak = false )
 	{
+		var snapshot = CaptureResumeSnapshotParts( advisor, displayName, verifiedAssets, savedUtc, advisorMaySpeak, join: false );
+		var catalogue = Objects.Catalog; var settings = Park!.Economy.Settings; var economyCatalog = Park.Economy.Catalog; var assets = snapshot.AssetHashes;
+		validate = () => ParkResumeSaveFile.ValidateSnapshot( snapshot, catalogue, settings, economyCatalog, assets );
+		validationSteps = ParkResumeSaveFile.ValidateSnapshotSteps( snapshot, catalogue, settings, economyCatalog, assets );
+		return snapshot;
+	}
+
+	/// <summary>
+	/// [EXT:online-coop-snapshot-join] The park's save for a join snapshot (docs/COOP.md, "Joining a running session"), taken at the cut between two ticks: the parts of
+	/// <see cref="CaptureResumeSnapshot"/> without its preparations. The employees in hand are the join state's, not dropped; nothing is repaired, since a shared park changes only through its
+	/// commands, so an object without an economy binding refuses the capture; no advisor state (each player's advisor is its own); the park's kept asset manifest. Not validated here: the guest
+	/// validates what it loads.
+	/// </summary>
+	internal ParkResumeSnapshot CaptureJoinSnapshot() => CaptureResumeSnapshotParts( null, ParkName is { } name ? $"{name.Line1} {name.Line2}".Trim() : LevelName ?? "", AutosaveAssets(),
+		null, false, join: true );
+
+	private ParkResumeSnapshot CaptureResumeSnapshotParts( AutomaticAdvisor? advisor, string displayName, IReadOnlyDictionary<string, string>? verifiedAssets, DateTimeOffset? savedUtc,
+		bool advisorMaySpeak, bool join )
+	{
 		if ( IsReadOnlyVisit || GameEditions.IsThemeParkInc || OriginalPark == null || Park == null || Guests == null )
 			throw new InvalidOperationException( "Only a writable Theme Park World park can be saved here." );
 		using ( FrameMarks.Measure( "capture.prepare" ) )
 		{
-			RepairMissingEconomyBindings();
+			if ( !join )
+				RepairMissingEconomyBindings();
+			else if ( UnboundObjects().FirstOrDefault() is { } unbound )
+				throw new InvalidOperationException( $"{unbound.Entry.DisplayName} (attraction {unbound.Visitors.AttractionId}) has no economy binding, which a shared park cannot repair." );
 			RequireResumableCatalogueDefaults();
-			StaffPlacement?.PrepareForSave();
+			if ( !join )
+				StaffPlacement?.PrepareForSave();
 		}
 		var prototype = CapturePrototypeSnapshot();
 		ParkResumeRuntime[] runtimes;
@@ -226,9 +251,6 @@ public partial class Level
 			ScriptMods = ScriptModsSave.Capture( Guests ),
 			AssetHashes = assets
 		};
-		var catalogue = Objects.Catalog; var settings = Park.Economy.Settings; var economyCatalog = Park.Economy.Catalog;
-		validate = () => ParkResumeSaveFile.ValidateSnapshot( snapshot, catalogue, settings, economyCatalog, assets );
-		validationSteps = ParkResumeSaveFile.ValidateSnapshotSteps( snapshot, catalogue, settings, economyCatalog, assets );
 		return snapshot;
 	}
 

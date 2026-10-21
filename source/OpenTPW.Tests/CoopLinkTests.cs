@@ -474,10 +474,39 @@ public class CoopLinkTests
 			{
 				if ( Interlocked.Increment( ref attempts ) == 1 )
 					await Task.Delay( Timeout.Infinite, cancel );
-				return await real( client, cancel );
+				// the real attempt is not timed: a slow machine would otherwise give up on it too and count a third
+				return await real( client, CancellationToken.None );
 			};
 			await Open( guest );
 			Assert.AreEqual( 2, attempts );
+			Assert.AreEqual( 1, guest.Link.Connections );
+		} );
+	}
+
+	[TestMethod]
+	public async Task ALogoutWhileASocketWaitsForThePumpLeavesTheLinkClosed()
+	{
+		await WithServer( async ( server, players ) =>
+		{
+			var guest = await players.Add( server, "Guest" );
+			var real = guest.Link.Connector;
+			var connected = new TaskCompletionSource( TaskCreationOptions.RunContinuationsAsynchronously );
+			guest.Link.Connector = async ( client, cancel ) =>
+			{
+				var connection = await real( client, cancel );
+				connected.TrySetResult();
+				return connection;
+			};
+			guest.Link.Open();
+			await connected.Task;
+			// the socket's install now waits for a pump that does not come before the logout
+			await Task.Delay( 250 );
+			guest.Session.Disconnect();
+			Assert.AreEqual( CoopLinkState.Closed, guest.Link.State );
+			Assert.AreEqual( 0, guest.Link.Connections );
+			// the link is not stuck: a new login opens it again
+			guest.Session.UseClient( await server.LoginAsync( "Guest", register: false ), "Guest" );
+			await Open( guest );
 			Assert.AreEqual( 1, guest.Link.Connections );
 		} );
 	}

@@ -388,7 +388,8 @@ public sealed class CoopLink
 					Log.Warning( $"A shared park connection failed: {exception}" );
 				// a first open that fails asks the server's protocol once: an older server has no co-op socket to wait for
 				int? protocol = null;
-				if ( askProtocol && !cancel.IsCancellationRequested )
+				var asked = askProtocol && !cancel.IsCancellationRequested;
+				if ( asked )
 				{
 					try
 					{
@@ -403,7 +404,7 @@ public sealed class CoopLink
 					Forget( cancel );
 					if ( current != epoch )
 						return;
-					if ( askProtocol )
+					if ( asked )
 						protocolAsked = true;
 					if ( protocol is < CoopProtocol.Version )
 						Stop( CoopStop.ServerTooOld );
@@ -427,11 +428,7 @@ public sealed class CoopLink
 				socket.Enqueue( hello );
 				owner.Background( socket.WriteLoopAsync );
 				owner.Background( () => ReadLoopAsync( socket, silence ) );
-			}, () =>
-			{
-				cancel.Dispose();
-				connection.Dispose();
-			} );
+			}, connection.Dispose );
 		} );
 	}
 
@@ -477,11 +474,12 @@ public sealed class CoopLink
 		finally
 		{
 			var status = socket.Connection.CloseStatus;
+			var endedAt = Environment.TickCount64;
 			if ( malformed )
 				socket.Fail( (WebSocketCloseStatus)CoopCloseStatus.ProtocolError, "invalid message" );
 			else
 				socket.Close();
-			owner.Post( () => SocketEnded( socket, status, malformed ) );
+			owner.Post( () => SocketEnded( socket, status, malformed, endedAt ) );
 		}
 	}
 
@@ -587,15 +585,23 @@ public sealed class CoopLink
 		RaiseState();
 	}
 
-	/// <summary>The socket ended: a close the link resumes after starts the reconnect attempts, any other stops the link.</summary>
-	private void SocketEnded( Socket socket, int? status, bool malformed )
+	/// <summary>
+	/// The socket ended (at <paramref name="endedAt"/>, which a stalled pump may reach late): a close the link resumes after starts the reconnect attempts, any
+	/// other stops the link.
+	/// </summary>
+	private void SocketEnded( Socket socket, int? status, bool malformed, long endedAt )
 	{
 		if ( socket != live )
 			return;
 		live = null;
-		var stable = welcomedAt is { } at && Environment.TickCount64 - at >= StableAfter.TotalMilliseconds;
+		// the welcome's time is when the pump took it, never before it came, so a socket's measured life is never longer than it was
+		var stable = welcomedAt is { } at && endedAt - at >= StableAfter.TotalMilliseconds;
 		welcomedAt = null;
+		var current = epoch;
 		FailPending();
+		// a refusal's handler may have closed the link: the game's own close is no stop of the server's
+		if ( current != epoch )
+			return;
 		if ( malformed )
 			Stop( CoopStop.Closed );
 		else if ( status == CoopCloseStatus.InUse )
@@ -609,10 +615,9 @@ public sealed class CoopLink
 			// a socket that stayed up starts a new loss; one that dropped soon after its welcome goes on with the loss before it
 			if ( stable || lostAt == null )
 			{
-				lostAt = Environment.TickCount64;
+				lostAt = endedAt;
 				attempt = 0;
 			}
-			var current = epoch;
 			if ( State == CoopLinkState.Open )
 				SetState( CoopLinkState.Reconnecting );
 			// a handler of the change may have closed the link
@@ -670,9 +675,11 @@ public sealed class CoopLink
 	private void Shut( string text )
 	{
 		epoch++;
+		// the game thread alone cancels and disposes an attempt's timeout (here or in Forget), so a discarded post never leaves it disposed under the link
 		if ( attemptCancel != null )
 		{
 			attemptCancel.Cancel();
+			attemptCancel.Dispose();
 			attemptCancel = null;
 		}
 		live?.Close();

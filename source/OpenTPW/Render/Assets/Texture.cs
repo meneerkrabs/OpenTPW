@@ -56,6 +56,8 @@ public partial class Texture : Asset
 	private string? wctPath;
 	private TextureFlags wctFlags;
 	private static readonly List<WeakReference<Texture>> wctTextures = new();
+	// The list is pruned of collected textures once it doubles (only a pack switch pruned it before, so every park added about 230 dead entries for the session).
+	private static int wctPruneAt = 256;
 
 	/// <summary>
 	/// From path on disk, or from a game resource
@@ -67,7 +69,14 @@ public partial class Texture : Asset
 			wctPath = path;
 			wctFlags = flags;
 			lock ( wctTextures )
+			{
+				if ( wctTextures.Count >= wctPruneAt )
+				{
+					wctTextures.RemoveAll( reference => !reference.TryGetTarget( out _ ) );
+					wctPruneAt = Math.Max( 256, wctTextures.Count * 2 );
+				}
 				wctTextures.Add( new WeakReference<Texture>( this ) );
+			}
 			UpdateFromWct( path, flags );
 		}
 		else

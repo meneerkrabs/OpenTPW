@@ -142,8 +142,13 @@ public partial class Level
 					cells.TakeSavedAccessLinks( item.Cells, OwnerWord( item ), save.Cells );
 				// a park resumed from an OpenTPW save made before that import gets the byte its entrance and exit cells lack, from the writers the placement uses
 				else if ( resumeState != null )
+				{
+					RestoreLegacySavedQueue( cells, item );
 					ObjectAccessCells.RepairMissingLinks( cells, item.AccessPoints, item.Entry.HasQueue, new LinkEffects( RefreshTile ) );
+				}
 			}
+			// the shipped save read for the repair is not kept
+			legacyQueueSave = null;
 		}
 		if ( typesFootprints )
 		{
@@ -190,6 +195,36 @@ public partial class Level
 		{
 			Guests.ArrivalVehicles = new ArrivalVehicles( Objects );
 		}
+	}
+
+	/// <summary>The level's shipped save, read once for <see cref="RestoreLegacySavedQueue"/> (a resumed park's <see cref="OriginalPark"/> has none); null until needed.</summary>
+	private Lazy<OriginalParkImport?>? legacyQueueSave;
+
+	/// <summary>
+	/// [EXT:legacy-save-queue-cells] For a resumed park: an imported HasQueue object whose entrance links into empty ground (an OpenTPW save made before the import took the shipped save's
+	/// queue cells) gets those cells back from the level's shipped save, when that save placed the same object at the same anchor and angle (ObjectAccessCells.RestoreLegacySavedQueue).
+	/// A newer save holds the cells, so nothing is read or written for it. User-approved 2026-10-20 ("Herstel bij laden (EXT)").
+	/// </summary>
+	private void RestoreLegacySavedQueue( ParkCellMap cells, OriginalObject item )
+	{
+		if ( OriginalPark is not { } park )
+			return;
+		legacyQueueSave ??= new Lazy<OriginalParkImport?>( () => OriginalPark.ReadShippedSave( park.LevelName, park.Map ) );
+		var laid = RestoreLegacySavedQueue( cells, item.AccessPoints, item.Entry.InfoId, item.Placement.Rotation, item.Entry.HasQueue, OwnerWord( item ), () => legacyQueueSave.Value, new LinkEffects( RefreshTile ) );
+		if ( laid > 0 )
+			Log.Trace( $"[EXT:legacy-save-queue-cells] {item.Entry.DisplayName}: {laid} queue cell(s) of the shipped save restored into a park saved before the import took them." );
+	}
+
+	/// <summary>The repair of <see cref="RestoreLegacySavedQueue(ParkCellMap, OriginalObject)"/> for one object; <paramref name="shippedSave"/> is read only when the entrance links into empty ground.</summary>
+	internal static int RestoreLegacySavedQueue( ParkCellMap cells, IEnumerable<ObjectAccessPoint> accessPoints, int infoId, int rotation, bool hasQueue, ushort owner, Func<OriginalParkImport?> shippedSave, LinkEffects? effects = null )
+	{
+		var points = accessPoints.ToArray();
+		if ( !hasQueue || ObjectAccessCells.EmptyQueueFront( cells, points, owner ) is not { } front )
+			return 0;
+		if ( shippedSave() is not { } save || !save.PlacedObjects.Any( placed => placed.Record.InfoId == infoId && ParkCellMap.CellWord( placed.Record.X, placed.Record.Y ) == owner
+			&& placed.Record.Rotation == rotation ) )
+			return 0;
+		return ObjectAccessCells.RestoreLegacySavedQueue( cells, front, owner, save.Cells, effects );
 	}
 
 	/// <summary>
@@ -759,9 +794,15 @@ public partial class Level
 	{
 		if ( owner == 0 ) return null;
 		var item = objects.Objects.FirstOrDefault( item => !item.IsDeleted && OwnerWord( item ) == owner && item.Entry.HasQueue );
-		if ( item == null ) return null;
+		return item == null ? null : ResolveQueueEntrance( item.AccessPoints, cells, owner );
+	}
+
+	/// <summary><see cref="ResolveQueueEntrance(ParkObjects, ParkCellMap, ushort)"/> for the access points of the owner's HasQueue object: its last entrance cell, when that cell is a type-9 cell of the owner.</summary>
+	internal static (int X, int Y)? ResolveQueueEntrance( IEnumerable<ObjectAccessPoint> accessPoints, ParkCellMap cells, ushort owner )
+	{
+		if ( owner == 0 ) return null;
 		ObjectAccessPoint? entrance = null;
-		foreach ( var point in item.AccessPoints )
+		foreach ( var point in accessPoints )
 			if ( point.Kind == ObjectCellKind.Entrance ) entrance = point;
 		return entrance is { } entry && cells.InBounds( entry.X, entry.Y )
 			&& cells.RawTypeAt( entry.X, entry.Y ) == ParkCellTypes.Entrance && cells.OwnerAt( entry.X, entry.Y ) == owner

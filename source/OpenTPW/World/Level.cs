@@ -995,8 +995,6 @@ public partial class Level : IDisposable
 
 	public void Update()
 	{
-		StaffPlacement?.Reconcile();
-		StaffWorld?.Synchronize();
 		// the ride ends when it is deleted or loses what the view rides on (a coaster's train)
 		if ( RideView is { } riding && (riding.Ride.IsDeleted || !RideCameraMode.CanRide( riding.Ride )) )
 			ExitRideView();
@@ -1010,16 +1008,7 @@ public partial class Level : IDisposable
 		}
 		UpdateWorldInput( Input.Mouse.Left, UiCapturesMouse || ImGuiNET.ImGui.GetIO().WantCaptureMouse,
 			Input.Mouse.Position, new Vector2( Screen.Size.X, Screen.Size.Y ), Input.ModifierMaskDown );
-		RefreshRenderedCells();
-		RefreshPools();
-		UpdateEvening();
-		UpdateSnow();
-		SceneClock.Advance( Time.Delta * SimulationTimeScale );
-		var simulationStart = FrameStats.Begin();
-		AdvanceSimulation( Time.Delta * SimulationTimeScale );
-		FrameStats.EndSimulation( simulationStart );
-		foreach ( var entity in Entity.All.ToArray() )
-			entity.Update();
+		AdvanceFrame( Time.Delta );
 		// Riding follows the frame just simulated; park-camera input is consumed only by the earlier update.
 		if ( RideView != null && ReferenceEquals( Camera.Mode, RideView ) )
 			Camera.Update();

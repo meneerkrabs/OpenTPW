@@ -44,3 +44,11 @@ and canonical-state equivalence when replaying synthetic link edits. This
 input replay is not a claim of an original-game execution oracle or browser
 verification. Existing queue, resume and deterministic command tests remain
 required CI regressions.
+
+Imported parks: the typed front leaves no fallback when the entry's linked
+neighbour is not a queue cell, so an import must restore the saved queue cells.
+tp.exe's cell base serializer 0x4D0B30 (mode 0) reads mDirection (+0x0D), mFlags
+(+0x0E), mNeighbours (+0x0C), mParentID (+0x10) and mType (+8) of every cell into
+the map; `ParkCellMap.FromOriginal` restores type-3 cells with these fields. The
+Jungle Easymode Belly Bounce's entry link selects (52, 22), the first of its four
+saved queue cells, and the back walk ends at the saved mBackOfQueue (49, 22).

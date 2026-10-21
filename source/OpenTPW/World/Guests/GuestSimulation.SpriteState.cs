@@ -130,7 +130,7 @@ public sealed partial class GuestSimulation
 			guest.BodySprite.QueueTemplate( VisitorSpriteTemplate.Walk );
 	}
 
-	/// <summary>The once-per-host-update pose phase, after all fixed ticks. It never advances the player or applies the guest's pending requests.</summary>
+	/// <summary>The pose phase at the end of every fixed tick (Level.PrepareRideBodyPoses). It never advances the player or applies the guest's pending requests.</summary>
 	internal VisitorSpriteFrame? RequestRideBody( int guestId, int attractionId, VisitorSpriteTemplate template )
 	{
 		if ( Find( guestId ) is not { } guest || !RideHeadRenderer.CanDraw( guest, attractionId ) )

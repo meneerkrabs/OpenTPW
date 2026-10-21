@@ -111,6 +111,20 @@ public sealed class OriginalPark
 		yield return new OriginalPark( levelName, map, model, lake, save, catalog );
 	}
 
+	/// <summary>The level's shipped <c>Easymode.TPWI</c> alone (Theme Park World levels; null for Theme Park Inc or a level without one), for a resumed park's legacy repairs.</summary>
+	internal static OriginalParkImport? ReadShippedSave( string levelName, MapFile map )
+	{
+		var directory = $"/levels/{levelName}";
+		if ( GameEditions.IsThemeParkInc || !FileSystem.DirectoryExists( directory ) )
+			return null;
+		var path = FileSystem.GetFiles( directory ).FirstOrDefault( path => string.Equals( Path.GetFileName( path ), SaveFileName, StringComparison.OrdinalIgnoreCase ) );
+		if ( path == null )
+			return null;
+		using var stream = FileSystem.OpenRead( $"{directory}/{Path.GetFileName( path )}" );
+		using var reader = new SaveReader( stream );
+		return ImportOriginalSave( levelName, reader.ReadFile(), map );
+	}
+
 	/// <summary>
 	/// Imports a Theme Park World save of <paramref name="levelName"/> with the resolvers the game's data gives the reader: the coaster train
 	/// layouts and each object's animation control count, <c>max(1, UsageInfo.NumSimultAnims)</c> of its .sam (the count tp.exe's type entry

@@ -263,32 +263,131 @@ internal sealed partial class ParkResumeSmokeTest : IDisposable
 		stage = Stage.Continuation;
 	}
 
+	/// <summary>
+	/// [EXT:online-coop-lockstep] How the restore phase's continuation falls into frames (<c>OPENTPW_SMOKE_BATCHING</c>): <c>random</c> (the default: seeded frames of 1 to 16 ticks), <c>1</c> or <c>16</c>
+	/// ticks a frame. The capture phase always runs one tick a frame; the restore phase runs the level's frame step (<see cref="Level.AdvanceFrame"/>) and must match the capture after every
+	/// tick, its edits included, which it replays inside the frames (docs/DETERMINISM.md, "Frame batching").
+	/// </summary>
+	internal static string BatchingMode => Environment.GetEnvironmentVariable( "OPENTPW_SMOKE_BATCHING" ) is { Length: > 0 } mode ? mode : "random";
+
+	private Func<int>? restoreFrames;
+	private IReadOnlyList<(int Tick, ParkCommand Command)>? continuationEdits;
+	private int nextContinuationEdit;
+
+	/// <summary>The restore phase's frame sizes for <see cref="BatchingMode"/>.</summary>
+	private static Func<int> RestoreFrames( string mode )
+	{
+		if ( int.TryParse( mode, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var fixedTicks ) && fixedTicks is >= 1 and <= FixedStepClock.MaximumCatchUpTicks )
+			return () => fixedTicks;
+		if ( mode != "random" )
+			throw new ArgumentException( $"OPENTPW_SMOKE_BATCHING expects 'random' or 1 to {FixedStepClock.MaximumCatchUpTicks}, not '{mode}'." );
+		// SplitMix64 from a fixed seed: the same frames on every run
+		var state = 0x5EED_0BA7_C4E5_0001UL;
+		return () =>
+		{
+			var z = state += 0x9E3779B97F4A7C15UL;
+			z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9UL;
+			z = (z ^ (z >> 27)) * 0x94D049BB133111EBUL;
+			return 1 + (int)((z ^ (z >> 31)) % FixedStepClock.MaximumCatchUpTicks);
+		};
+	}
+
+	/// <summary>
+	/// The continuation's edits, as continuation ticks and park commands, worked out from the park at the save boundary (the same park in both phases): the speed raised and set back, the
+	/// first attraction closed and reopened and the entrance fee changed. The capture phase issues each between two frames, as the HUD does; the restore phase schedules them all.
+	/// </summary>
+	private IReadOnlyList<(int Tick, ParkCommand Command)> ContinuationEdits()
+	{
+		var economy = level.Park!.Economy;
+		var edits = new List<(int, ParkCommand)> { (60, new SetGameSpeedCommand( economy.Speed == GameSpeed.Fast ? GameSpeed.Fastest : GameSpeed.Fast )) };
+		if ( level.Objects.Objects.Where( item => !item.IsDeleted && item.Runtime.IsAttraction && level.GetEconomyInstance( item ) != null ).OrderBy( item => item.Visitors.AttractionId ).FirstOrDefault() is { } first )
+		{
+			edits.Add( (120, new SetAttractionOpenCommand( first.Visitors.AttractionId, false )) );
+			edits.Add( (240, new SetAttractionOpenCommand( first.Visitors.AttractionId, true )) );
+		}
+		edits.Add( (300, new SetEntranceFeeCommand( economy.EntranceFee > 0 ? economy.EntranceFee - 1 : 1 )) );
+		edits.Add( (420, new SetGameSpeedCommand( economy.Speed )) );
+		return edits;
+	}
+
 	private void ContinuationStep()
 	{
+		continuationEdits ??= ContinuationEdits();
+		if ( restoring )
+		{
+			RestoreContinuationStep();
+			return;
+		}
 		for ( var step = 0; step < EvidenceAdvancesPerFrame && continuationTick < ContinuationTickCount; step++ )
 		{
+			while ( nextContinuationEdit < continuationEdits.Count && continuationEdits[nextContinuationEdit].Tick == continuationTick )
+			{
+				var (_, command) = continuationEdits[nextContinuationEdit++];
+				var result = level.Commands.Issue( command );
+				Require( result.Accepted, $"the continuation's {command.Kind} before tick {continuationTick}: {result.Reason}" );
+			}
 			level.AdvanceSimulation( FixedStepClock.TickDuration );
 			continuationTick++;
-			var sample = CaptureSample( continuationTick );
-			tickSamples.Add( sample );
-			if ( restoring )
-				RequireSampleMatches( capture!.Ticks[continuationTick - 1], sample, $"continuation tick {continuationTick}" );
-			if ( !restoring && continuationTick == ContinuationTickCount / 2 )
+			tickSamples.Add( CaptureSample( continuationTick, exactClock: false ) );
+			if ( continuationTick == ContinuationTickCount / 2 )
 				CaptureFrame( "park-resume-capture-mid.png" );
 		}
 		if ( continuationTick < ContinuationTickCount )
 			return;
-		if ( restoring )
-		{
-			stage = Stage.PostLoad;
-			return;
-		}
 		CaptureFrame( "park-resume-capture-end.png" );
 		Complete( "Native park-resume smoke capture passed: built park saved through the HUD handler; "
 			+ $"{ContinuationTickCount} continuation ticks hashed ({tickSamples.Count} samples, {boundarySample.Counters.Guests} guests at save)." );
 	}
 
 	// ---- Restore phase ---------------------------------------------------------------------------
+
+	/// <summary>
+	/// The restore phase's continuation: up to four frames of the level's own frame step per harness frame (the entities' updates left out, so the particle pool stands still as in the capture
+	/// phase), each <see cref="BatchingMode"/>'s number of ticks, with the continuation's edits scheduled for their ticks. Every tick's world hash and, after each frame, every section of the
+	/// whole park must equal the capture phase's.
+	/// </summary>
+	private void RestoreContinuationStep()
+	{
+		if ( restoreFrames == null )
+		{
+			restoreFrames = RestoreFrames( BatchingMode );
+			var start = level.Commands.NextTick;
+			foreach ( var (tick, command) in continuationEdits! )
+				level.Commands.Schedule( command, start + tick );
+			Log.Trace( $"Park-resume restore: continuing in '{BatchingMode}' frames with {continuationEdits.Count} scheduled edits." );
+		}
+		for ( var step = 0; step < EvidenceAdvancesPerFrame && continuationTick < ContinuationTickCount; step++ )
+		{
+			var ticks = Math.Min( restoreFrames(), ContinuationTickCount - continuationTick );
+			var ran = 0;
+			// inside a frame every tick's world hash must be the capture's; the whole park is captured once the frame is over (a save mid-frame would hold the clock's unspent ticks)
+			level.TickCompleted = _ =>
+			{
+				ran++;
+				var expected = capture!.Ticks[continuationTick + ran - 1].ComputeStateHash;
+				var actual = level.ComputeStateHash().ToString( System.Globalization.CultureInfo.InvariantCulture );
+				Require( actual == expected, $"continuation tick {continuationTick + ran} ({BatchingMode} frames): world hash {actual} is not the capture's {expected}" );
+			};
+			try
+			{
+				level.AdvanceFrame( ticks * FixedStepClock.TickDuration, updateEntities: false );
+			}
+			finally
+			{
+				level.TickCompleted = null;
+			}
+			Require( ran == ticks, $"a frame of {ticks} ticks ran {ran}" );
+			continuationTick += ticks;
+			var sample = CaptureSample( continuationTick, exactClock: false );
+			tickSamples.Add( sample );
+			RequireSampleMatches( capture!.Ticks[continuationTick - 1], sample, $"continuation tick {continuationTick} ({BatchingMode} frames, after a frame of {ticks})" );
+		}
+		if ( continuationTick >= ContinuationTickCount )
+		{
+			Require( level.Commands.ScheduledCount == 0, "every scheduled continuation edit was applied" );
+			stage = Stage.PostLoad;
+		}
+	}
 
 	private void LoadSavedPark()
 	{
@@ -629,8 +728,11 @@ internal sealed partial class ParkResumeSmokeTest : IDisposable
 
 	private AutomaticAdvisor? Advisor => flow.Advisor?.IsAttached == true ? flow.Advisor : null;
 
-	/// <summary>Captures the whole park and hashes every section plus the composite; one sample per recorded tick.</summary>
-	private SmokeSample CaptureSample( long tick )
+	/// <summary>
+	/// Captures the whole park and hashes every section plus the composite; one sample per recorded tick. Without <paramref name="exactClock"/> the clock section leaves out the clock's banked
+	/// fraction of a tick and its dropped-time total, which follow the frames' time feed (a frame of n ticks' time leaves a rounding residue), not the ticks: the continuation's samples.
+	/// </summary>
+	private SmokeSample CaptureSample( long tick, bool exactClock = true )
 	{
 		// [EXT:pools-save] a save holds the pools extension's own objects only while the park uses the extension: the manifest taken before the pools variant built its room has none, so it is taken again once the room stands
 		if ( verifiedAssets != null && PoolsVariant && PoolRoom() != null && !verifiedAssets.Keys.Any( key => key.StartsWith( "mod:opentpw.pools:", StringComparison.Ordinal ) ) )
@@ -652,7 +754,7 @@ internal sealed partial class ParkResumeSmokeTest : IDisposable
 			// the hoarding moves by real frame time (presentation, docs/DETERMINISM.md): the runtimes are compared without it
 			["runtimes"] = SectionSha256( snapshot.Runtimes.Select( runtime => runtime with { State = runtime.State with { Hoarding = null } } ).ToList() ),
 			["bindings"] = SectionSha256( snapshot.EconomyBindings ),
-			["clock"] = SectionSha256( snapshot.Clock ),
+			["clock"] = SectionSha256( exactClock ? snapshot.Clock : snapshot.Clock with { PendingSeconds = 0, DroppedSeconds = 0 } ),
 			["weather"] = SectionSha256( snapshot.Weather ),
 			["gate"] = SectionSha256( snapshot.Gate ),
 			["staff"] = SectionSha256( snapshot.Staff ),

@@ -4,7 +4,35 @@ public partial class Level
 {
 	private FlatRideBounceRiders? rideBodyPoses;
 
-	/// <summary>The frame and restart smoke harness advance the same fixed-step simulation, then prepare one shared body pose phase.</summary>
+	/// <summary>
+	/// Test and smoke seam: called at the end of every fixed tick with the ticks run so far, after the tick's body pose phase and command checkpoint, so a caller that advances
+	/// several ticks in one frame still sees the world after each of them (docs/DETERMINISM.md, "Frame batching").
+	/// </summary>
+	internal Action<long>? TickCompleted { get; set; }
+
+	/// <summary>
+	/// The part of a frame after the world input (<see cref="Update"/>): the path layer, the pools' drawing, the evening, the snow and the scene clock, then the fixed-step simulation for
+	/// <paramref name="frameSeconds"/> of real time at the game's time scale, then every entity's update. Everything here outside <see cref="AdvanceSimulation"/> is presentation: it writes
+	/// nothing the state hash covers, the simulation reads or a save holds for the simulation, so the park after a tick depends on the ticks and the commands only, never on how the ticks
+	/// fall into frames (docs/DETERMINISM.md, "Frame batching"). <paramref name="updateEntities"/> false leaves out the entities' updates (the resume smoke, whose particle pool must stand still).
+	/// </summary>
+	internal void AdvanceFrame( double frameSeconds, bool updateEntities = true )
+	{
+		RefreshRenderedCells();
+		RefreshPools();
+		UpdateEvening( frameSeconds );
+		UpdateSnow( frameSeconds );
+		SceneClock.Advance( frameSeconds * SimulationTimeScale );
+		var simulationStart = FrameStats.Begin();
+		AdvanceSimulation( frameSeconds * SimulationTimeScale );
+		FrameStats.EndSimulation( simulationStart );
+		if ( !updateEntities )
+			return;
+		foreach ( var entity in Entity.All.ToArray() )
+			entity.Update();
+	}
+
+	/// <summary>The frame, the replay and the smoke harnesses advance the same fixed-step simulation; every tick ends with the shared body pose phase.</summary>
 	internal void AdvanceSimulation( double elapsedSeconds )
 	{
 		AttachCheatHost();
@@ -12,6 +40,11 @@ public partial class Level
 		{
 			// [EXT:online-coop-commands] the commands held for this tick apply before it (a replayed log; in single player the HUD's commands have run already)
 			ApplyDueCommands();
+			// The staff host's bookkeeping, after the commands and before anything of the tick reads a member: a member saved picked up that no hand holds goes back to idle (an imported save),
+			// and a member without a position (hired since the last tick, or loaded so) is put on the gate path. Both ran once per frame before the world input; inside the tick they see the
+			// same commands at the same tick whether those came from this player's input, a replayed log or (later) a session frame, and however many ticks a frame runs.
+			StaffPlacement?.Reconcile();
+			StaffWorld?.Synchronize();
 			SyncObjectEconomy();
 			// the substep this tick stands in (the park's own tick before the economy advances it): none while the park is paused
 			var substep = SimulationSubstep.ForTick( Park?.Economy.Tick ?? simulationClock.TickCount, Park == null || Park.Economy.Speed != GameSpeed.Paused );
@@ -55,10 +88,24 @@ public partial class Level
 			// things share the level's pool frees them only at a turn: the substeps between turns leave the requests waiting
 			if ( !sweeping && (!pooled || guestsTurn || economyTurn) )
 				Things.DestroyQueued();
+			PrepareRideBodyPoses();
 			AfterCommandTick( simulationClock.TickCount + 1 );
+			TickCompleted?.Invoke( simulationClock.TickCount + 1 );
 		} );
-		// A zero elapsed batch is the scene/HUD pause path; it must not create bodies, queue programs or change WALK headings.
-		if ( elapsedSeconds > 0 && Guests != null && (Park == null || Park.Economy.Speed != GameSpeed.Paused) )
+	}
+
+	/// <summary>
+	/// The ride bodies' pose phase, at the end of every fixed tick: it asks the guests' body players for templates, creates and deletes bodies and stores the walkers' headings
+	/// (<see cref="FlatRideBounceRiders.Prepare"/>), state a park save keeps. A paused park's ticks run none.
+	/// </summary>
+	// [EXT:fixed-60hz-clock] tp.exe's main loop 0x0054E360 runs the walk update 0x00557AB0 and the bounce pass once per rendered frame, after the frame's substeps (none, one or several); OpenTPW
+	// runs them after every fixed tick, so the bodies a save keeps depend on the ticks, never on how they fall into frames (docs/DETERMINISM.md, "Frame batching"). A frame of one tick (60 Hz at
+	// normal speed) is unchanged. A frame without a tick runs no pose phase: tp.exe's walk update still runs on a frame without a substep and reads the free-running scaled timer 0x785970
+	// (0x00557AFF -> 0x00402D70), but OpenTPW's phase reads the script and body clocks, which only the ticks advance, so on such a frame it only repeated the requests of the frame before, unless
+	// the park changed between the two (a load, an edit), when the bodies now follow at the next tick's end instead
+	private void PrepareRideBodyPoses()
+	{
+		if ( Guests != null && (Park == null || Park.Economy.Speed != GameSpeed.Paused) )
 			(rideBodyPoses ??= new FlatRideBounceRiders( Objects )).Prepare( Guests );
 	}
 

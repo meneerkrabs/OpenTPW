@@ -47,7 +47,7 @@ public enum CoopStop
 /// events the shared park uses. Every request and event is on the game thread. What the server sends is raised from <see cref="OnlineSession.Pump"/>;
 /// <see cref="Open"/>, <see cref="Close"/> and a stop raise their own state and session events at once.
 /// </summary>
-public sealed class CoopLink
+public sealed class CoopLink : ICoopStreamTransport
 {
 	/// <summary>Waits before each reconnect attempt after a lost socket; the last wait repeats until <see cref="ReconnectWindow"/> has passed.</summary>
 	internal static readonly TimeSpan[] DefaultRetryDelays =
@@ -130,6 +130,7 @@ public sealed class CoopLink
 	/// <summary>The session this game is in, as the server last told it; null outside a session.</summary>
 	public CoopSessionState? Session { get; private set; }
 	public bool IsHost => Session is { } session && session.You == session.Host;
+	bool ICoopStreamTransport.IsOpen => State == CoopLinkState.Open;
 	/// <summary>The joined session's host build and mods (they match this game's, or the join was refused); null for a host.</summary>
 	public string? HostBuild { get; private set; }
 	public IReadOnlyList<CoopMod>? HostMods { get; private set; }

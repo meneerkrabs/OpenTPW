@@ -43,11 +43,17 @@ public sealed class RideScriptWorld
 		civilTime = GameEditions.Current == GameEdition.ThemeParkWorld ? clock ?? (() => DateTime.Now) : null;
 	}
 
-	/// <summary>Samples external host civil time; it is never reconstructed from scheduler or park turns.</summary>
+	/// <summary>
+	/// [EXT:online-coop-lockstep] The co-op session's clock (<see cref="SetSessionClockCommand"/>): once set, the scripts read it instead of the host clock, so every peer of a session
+	/// reads the same civil time from the same tick on. Null until a session's clock command applies; part of the session digest, not of the park save.
+	/// </summary>
+	internal DateTime? SessionTime { get; set; }
+
+	/// <summary>Samples external host civil time (or the session's clock); it is never reconstructed from scheduler or park turns.</summary>
 	// [EXT:vm-host-time] the original reads the C runtime's local time on every execution (tp.exe 0x67D3F0/0x67D8E0), so YEAR to SEC are external inputs: managed host-local time here, neither saved nor hashed, while the variable writes and flags that follow are VM state. A replay needs the same samples (an OpenTPW replay design point; the tests and headless runs inject a fixed clock)
 	internal bool TryReadCivilTime( out DateTime value )
 	{
-		value = civilTime == null ? default : civilTime();
+		value = civilTime == null ? default : SessionTime ?? civilTime();
 		return civilTime != null;
 	}
 

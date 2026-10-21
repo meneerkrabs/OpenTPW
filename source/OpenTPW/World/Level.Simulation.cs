@@ -20,6 +20,12 @@ public partial class Level
 	/// <summary>[EXT:online-coop-lockstep] The tick a session's host stops at (a few seconds ahead of its slowest guest); null outside a session.</summary>
 	internal long? TickLimit { get; set; }
 
+	/// <summary>
+	/// [EXT:online-coop-lockstep] The co-op session's stream this level's frames run their simulation step through (<see cref="CoopHostStream"/>: wall time held to the guests;
+	/// <see cref="CoopGuestStream"/>: the host's ticks); null outside a session.
+	/// </summary>
+	internal ILevelSessionStream? SessionStream { get; set; }
+
 	/// <summary>The ticks run so far (the fixed-step clock's count).</summary>
 	internal long TickCount => simulationClock.TickCount;
 
@@ -42,7 +48,12 @@ public partial class Level
 		SceneClock.Advance( frameSeconds * SimulationTimeScale );
 		var simulationStart = FrameStats.Begin();
 		using ( FrameMarks.Measure( "level.simulation" ) )
-			AdvanceSimulation( frameSeconds * SimulationTimeScale );
+		{
+			if ( SessionStream is { } stream )
+				stream.AdvanceSimulation( frameSeconds, SimulationTimeScale );
+			else
+				AdvanceSimulation( frameSeconds * SimulationTimeScale );
+		}
 		FrameStats.EndSimulation( simulationStart );
 		if ( !updateEntities )
 			return;

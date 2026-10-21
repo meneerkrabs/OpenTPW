@@ -219,6 +219,9 @@ public sealed partial class OriginalObjectRuntime
 	/// <summary>Guests may choose this object (.sam <c>Info.IsChoosable</c>, category defaults included).</summary>
 	public bool IsAttraction => Script != null && Entry.IsChoosable && !Entry.IsFixedItem && !Entry.IsTool;
 	public bool IsOpen => GetVariable( RideVariables.VAR_RIDECLOSED ) == 0;
+
+	/// <summary>[EXT:online-coop-lockstep] The run flags a save keeps and the world hash leaves out (stopped, was running), for the session digest.</summary>
+	internal (bool Stopped, bool WasRunning) RunFlags => (stopped, wasRunning);
 	public int CompletedCycles { get; private set; }
 	/// <summary>Animation requests answered with an original clip.</summary>
 	public int AnimationsPlayed { get; private set; }

@@ -14,7 +14,7 @@ namespace OpenTPW;
 // [BIN:TPW-EXE:0x5e0490 enter sequence] LobbyCameraMode runs the enter (state 1: turn to the island angle + π at 0.05 × step per frame, open the gate with M1 (0x5e06e4); state 2: radius × (1 − 0.07 × step), height × (1 − 0.6 × step), black fade by the closed share of SPINRADIUS − 8, park start below 8, 0x5e1e50); the gate plays M1 here
 public sealed class LobbyScene : OriginalModelScene
 {
-	private const string TerrainDirectory = "/lobby/terrain";
+	internal const string TerrainDirectory = "/lobby/terrain";
 
 	protected override string TextureDirectory => $"{TerrainDirectory}/textures";
 

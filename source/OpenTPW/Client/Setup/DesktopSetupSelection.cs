@@ -55,7 +55,7 @@ internal sealed class DesktopSetupSelection( SetupSettings saved )
 
 	internal static bool HasExplicitMode( string[] args ) => args.Any( argument => argument is
 		"--sandbox" or "--front-end" or "--load-original-level" or "--play-movie" or "--park-resume-smoke"
-		or "--m3-gate" or "--m4-gate"
+		or "--m3-gate" or "--m4-gate" or "--export-signs"
 		or "--advisor-say" or "--advisor-response" or "--visit-park" or "--park-resume-file" or "--park-resume-evidence"
 		or "--tpi-smoke-test" or "--capture-camera" or "--capture-interface" or "--capture-sequence" );
 

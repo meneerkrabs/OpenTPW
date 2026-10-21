@@ -36,6 +36,8 @@ internal sealed class LoopbackServer : IAsyncDisposable
 
 	public string Directory { get; }
 	public Uri Url { get; }
+	/// <summary>The server's services (its hubs), for tests that drive them directly.</summary>
+	public IServiceProvider Services => app.Services;
 
 	/// <summary>
 	/// Building, starting or stopping the server takes well under a second; a stall (once a file watcher blocked in
@@ -147,7 +149,7 @@ public class OnlineServerTests
 		{
 			using var client = new OnlineClient( server.Url );
 			var info = await client.GetServerInfoAsync();
-			Assert.AreEqual( 5, info.ProtocolVersion, "5: movements carry a mode" );
+			Assert.AreEqual( 6, info.ProtocolVersion, "6: the co-op socket of shared parks" );
 			Assert.IsFalse( info.WordFilterLoaded );
 			await client.RegisterAsync( "Alice", "correct horse" );
 			Assert.AreEqual( HttpStatusCode.Conflict, (await Fails( () => client.RegisterAsync( "ALICE", "another one" ) )).Status );

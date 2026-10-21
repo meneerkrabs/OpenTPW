@@ -315,7 +315,8 @@ Only `description` (a string) and `signs` (an array) are allowed at the top. Eac
 `_dizzyd_8` for a bonus ride, which needs `--bonus-data`; the lobby model such as `jun_isle`), matched without regard to case, and gives
 exactly one of `lines` (two strings, drawn as they are; either may be empty) or `name` (one string, trimmed and split at the space nearest
 its middle, the rule the game uses for a sign that has only a display name; a name without a space is one line). No other member is
-allowed; a key listed twice, a text with a control character (a line break is given as two lines) or a file over 4 MiB is an error, and
+allowed; a member given twice in one object (JSON would keep the last), a key listed twice, a text with a control character or a line or
+paragraph separator (a line break is given as two lines), a string that is no valid text (a lone escaped surrogate) or a file over 4 MiB is an error, and
 so is a key that names no exported sign (all such keys are listed) before anything is written. Signs the file does not name keep their
 text. A named sign is composed again from its own `.sgn` by the game's composer; its `index.json` entry has `textSource`
 `"override (<file name>)"` and keeps the game's own text in `originalText`, `originalLine1`, `originalLine2` and `originalTextSource`

@@ -549,7 +549,7 @@ public sealed class SignTextOverrides
 		JsonDocument document;
 		try
 		{
-			document = JsonDocument.Parse( json, new JsonDocumentOptions { CommentHandling = JsonCommentHandling.Disallow, AllowTrailingCommas = false } );
+			document = JsonDocument.Parse( json, new JsonDocumentOptions { CommentHandling = JsonCommentHandling.Disallow, AllowTrailingCommas = false, AllowDuplicateProperties = false } );
 		}
 		catch ( JsonException exception )
 		{
@@ -588,18 +588,18 @@ public sealed class SignTextOverrides
 				{
 					if ( lines.ValueKind != JsonValueKind.Array || lines.GetArrayLength() != 2 || lines.EnumerateArray().Any( line => line.ValueKind != JsonValueKind.String ) )
 						throw new InvalidDataException( $"{where} ({theme}/{name}): \"lines\" must be an array of exactly two strings." );
-					var line1 = CheckedText( lines[0].GetString()!, where );
-					var line2 = CheckedText( lines[1].GetString()!, where );
+					var line1 = CheckedText( StringOf( lines[0], where ), where );
+					var line2 = CheckedText( StringOf( lines[1], where ), where );
 					replacement = new Replacement( line1, line2, line2.Length == 0 ? line1 : line1.Length == 0 ? line2 : $"{line1} {line2}" );
 				}
 				else
 				{
 					if ( text.ValueKind != JsonValueKind.String )
 						throw new InvalidDataException( $"{where} ({theme}/{name}): \"name\" must be a string." );
-					var full = CheckedText( text.GetString()!, where );
+					var full = CheckedText( StringOf( text, where ), where );
 					// the game's rule for a sign that has one name (ObjectSigns.Lines: the display name, trimmed, split at the middle space)
 					var (line1, line2) = SplitName( full );
-					replacement = new Replacement( line1, line2, full );
+					replacement = new Replacement( line1, line2, full.Trim() );
 				}
 				if ( !entries.TryAdd( new Key( theme, name ), replacement ) )
 					throw new InvalidDataException( $"{where}: {theme}/{name} is listed twice." );
@@ -615,13 +615,30 @@ public sealed class SignTextOverrides
 
 	public bool TryGet( SignExport.ComposedSign sign, out Replacement replacement ) => Entries.TryGetValue( new Key( sign.Theme, sign.Name ), out replacement! );
 
-	private static string RequiredString( JsonElement element, string member, string where ) =>
-		element.TryGetProperty( member, out var value ) && value.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace( value.GetString() )
-			? value.GetString()!.Trim()
-			: throw new InvalidDataException( $"{where}: \"{member}\" must be a non-empty string." );
+	private static string RequiredString( JsonElement element, string member, string where )
+	{
+		var text = element.TryGetProperty( member, out var value ) && value.ValueKind == JsonValueKind.String ? StringOf( value, where ) : null;
+		return string.IsNullOrWhiteSpace( text ) ? throw new InvalidDataException( $"{where}: \"{member}\" must be a non-empty string." ) : text.Trim();
+	}
 
+	// a line or paragraph separator (U+2028/U+2029) is no glyph in the sign fonts and draws a .notdef box, so it is refused like a control character
 	private static string CheckedText( string text, string where ) =>
-		text.Any( char.IsControl ) ? throw new InvalidDataException( $"{where}: a sign text must not contain control characters (line breaks are given as two lines)." ) : text;
+		text.Any( c => char.IsControl( c ) || char.GetUnicodeCategory( c ) is System.Globalization.UnicodeCategory.LineSeparator or System.Globalization.UnicodeCategory.ParagraphSeparator )
+			? throw new InvalidDataException( $"{where}: a sign text must not contain control characters or line/paragraph separators (line breaks are given as two lines)." )
+			: text;
+
+	/// <summary>A JSON string's value; an escaped lone surrogate ("\ud800"), which is no text, is an error of the file.</summary>
+	private static string StringOf( JsonElement element, string where )
+	{
+		try
+		{
+			return element.GetString()!;
+		}
+		catch ( InvalidOperationException exception )
+		{
+			throw new InvalidDataException( $"{where}: a string is not valid text ({exception.Message}).", exception );
+		}
+	}
 
 	private sealed class KeyComparer : IEqualityComparer<Key>
 	{

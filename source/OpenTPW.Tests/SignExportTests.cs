@@ -349,7 +349,7 @@ public class SignExportTests
 		Assert.AreEqual( 3, overrides.Entries.Count );
 		Assert.AreEqual( new SignTextOverrides.Replacement( "El Reino", "Perdido", "El Reino Perdido" ), overrides.Entries[new( "jungle", "gates" )] );
 		// one name: trimmed and split at the space nearest its middle, the game's rule for a sign with only a display name (ObjectSigns.Lines)
-		Assert.AreEqual( new SignTextOverrides.Replacement( "El Tótem", "Inca", "  El Tótem Inca  " ), overrides.Entries.Single( pair => pair.Key.Object == "TOTEM" ).Value );
+		Assert.AreEqual( new SignTextOverrides.Replacement( "El Tótem", "Inca", "El Tótem Inca" ), overrides.Entries.Single( pair => pair.Key.Object == "TOTEM" ).Value );
 		Assert.AreEqual( SignCanvas.SplitAtMiddleSpace( "El Tótem Inca" ), SignTextOverrides.SplitName( "  El Tótem Inca  " ) );
 		Assert.AreEqual( ("Reptador", ""), SignTextOverrides.SplitName( "Reptador" ) );
 		Assert.AreEqual( ("El País de", "las Maravillas"), SignTextOverrides.SplitName( "El País de las Maravillas" ) );
@@ -372,6 +372,12 @@ public class SignExportTests
 	[DataRow( "{ \"signs\": [ { \"theme\": \"jungle\", \"object\": \"totem\", \"name\": \"A\\nB\" } ] }", "control characters" )]
 	[DataRow( "{ \"signs\": [ { \"theme\": \"jungle\", \"object\": \"totem\", \"name\": \"A\" }, { \"theme\": \"JUNGLE\", \"object\": \"Totem\", \"name\": \"B\" } ] }", "listed twice" )]
 	[DataRow( "{ \"signs\": [ ], }", "not valid JSON" )]
+	[DataRow( "{ \"signs\": [ { \"theme\": \"jungle\", \"object\": \"totem\", \"name\": \"A\" } ], \"signs\": [ ] }", "not valid JSON" )]
+	[DataRow( "{ \"signs\": [ { \"theme\": \"jungle\", \"object\": \"totem\", \"name\": \"A\", \"name\": \"B\" } ] }", "not valid JSON" )]
+	[DataRow( "{ \"signs\": [ { \"theme\": \"jungle\", \"object\": \"totem\", \"name\": \"A\\u2028B\" } ] }", "line/paragraph separators" )]
+	[DataRow( "{ \"signs\": [ { \"theme\": \"jungle\", \"object\": \"totem\", \"lines\": [ \"A\\u2029\", \"B\" ] } ] }", "line/paragraph separators" )]
+	[DataRow( "{ \"signs\": [ { \"theme\": \"jungle\", \"object\": \"totem\", \"name\": \"\\ud800\" } ] }", "not valid text" )]
+	[DataRow( "{ \"signs\": [ { \"theme\": \"\\udc00\", \"object\": \"totem\", \"name\": \"A\" } ] }", "not valid text" )]
 	public void MalformedOverrideFilesAreRejected( string json, string message )
 	{
 		var error = Assert.ThrowsException<InvalidDataException>( () => Overrides( json ) );
@@ -452,6 +458,32 @@ public class SignExportTests
 			foreach ( var theme in ObjectCatalog.Themes )
 				foreach ( var entry in ObjectCatalog.Load( theme ).Entries.Where( entry => !entry.IsExternal && entry.SignName != null ) )
 					Assert.AreEqual( ObjectSigns.Lines( entry ), SignTextOverrides.SplitName( entry.SignName! ), entry.ArchivePath );
+
+			// identity: every exported sign overridden with its own two lines reproduces the default export exactly
+			var identity = Path.Combine( root, "identity.json" );
+			using ( var stream = File.Create( identity ) )
+			using ( var writer = new Utf8JsonWriter( stream ) )
+			{
+				writer.WriteStartObject();
+				writer.WriteStartArray( "signs" );
+				foreach ( var sign in plain.Where( file => file.Half == 0 ).Select( file => file.Sign ) )
+				{
+					writer.WriteStartObject();
+					writer.WriteString( "theme", sign.Theme );
+					writer.WriteString( "object", sign.Name );
+					writer.WriteStartArray( "lines" );
+					writer.WriteStringValue( sign.Line1 );
+					writer.WriteStringValue( sign.Line2 );
+					writer.WriteEndArray();
+					writer.WriteEndObject();
+				}
+				writer.WriteEndArray();
+				writer.WriteEndObject();
+			}
+			var same = SignExport.Run( Path.Combine( root, "identity" ), SignTextOverrides.Load( identity ), data );
+			Assert.AreEqual( plain.Count, same.Count );
+			Assert.IsTrue( same.All( file => file.Sign.Original != null ), "every sign was overridden" );
+			CollectionAssert.AreEqual( plain.Select( file => (file.RelativePath, file.PngSha256) ).ToArray(), same.Select( file => (file.RelativePath, file.PngSha256) ).ToArray() );
 
 			// a key the export does not have is an error before anything is written
 			var unknown = Path.Combine( root, "unknown.json" );

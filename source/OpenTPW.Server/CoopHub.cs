@@ -2,7 +2,6 @@ using System.Buffers;
 using System.Net.WebSockets;
 using System.Security.Cryptography;
 using System.Threading.Channels;
-using System.Threading.RateLimiting;
 using OpenTPW.Online;
 using OpenTPW.Online.Api;
 using OpenTPW.Online.Coop;
@@ -25,10 +24,12 @@ public sealed class CoopHub
 	public static readonly TimeSpan HostAwayLimit = TimeSpan.FromMinutes( 10 );
 	/// <summary>How long the reason a session ended is kept for a member that resumes after it.</summary>
 	private static readonly TimeSpan EndedMemory = TimeSpan.FromHours( 1 );
-	/// <summary>How often a connection's login is checked again (a logout, a recovery or a ban ends it).</summary>
-	private static readonly TimeSpan AuthenticationCheck = TimeSpan.FromSeconds( 60 );
 	/// <summary>How long the server waits for a connection's <see cref="CoopHello"/>.</summary>
 	private static readonly TimeSpan HelloTimeout = TimeSpan.FromSeconds( 10 );
+	/// <summary>How long one send to a game may take; a game that reads slower than this is dropped (Kestrel's minimum response rate leaves WebSockets alone).</summary>
+	private static readonly TimeSpan SendTimeout = TimeSpan.FromSeconds( 30 );
+	/// <summary>How long a connection's clean-up waits for its writer once the connection ended.</summary>
+	private static readonly TimeSpan WriterDrain = TimeSpan.FromSeconds( 3 );
 	/// <summary>Snapshots kept per session: the newest two, so a join that started on the older one finishes.</summary>
 	public const int KeptSnapshots = 2;
 	private const int ReceiveChunk = 4096;
@@ -44,10 +45,19 @@ public sealed class CoopHub
 	private readonly Dictionary<string, Session> codes = new();
 	private readonly Dictionary<string, Session> memberships = new();
 	private readonly Dictionary<string, (string SessionId, CoopReason Reason, string Text, DateTimeOffset At)> endedSessions = new();
+	/// <summary>Each account's relay buckets, kept over reconnects so a new socket starts with what the last one left. Under the registry lock.</summary>
+	private readonly Dictionary<string, AccountLimits> limits = new();
+	/// <summary>Every running connection, for the server's queue budget (read without the registry lock).</summary>
+	private readonly System.Collections.Concurrent.ConcurrentDictionary<Peer, byte> running = new();
 	private readonly Quotas quotas;
 	private long queuedBytes;
+	/// <summary>Snapshot bytes promised to uploads in progress (the store's cap counts them). Under the registry lock.</summary>
+	private long reservedUploadBytes;
 	private int connections;
 	private volatile bool restarting;
+
+	/// <summary>Where a failure to write the co-op files is reported (the server's log); the sessions go on in memory and the next change writes them again.</summary>
+	public Action<string>? Warn { get; set; }
 
 	/// <summary>The co-op sessions' files (the routes stream snapshots through it).</summary>
 	public CoopStore Store => store;
@@ -89,20 +99,35 @@ public sealed class CoopHub
 	/// <summary>Runs an accepted, authenticated co-op socket until it closes; the caller has reserved its connection slot.</summary>
 	public async Task RunAsync( WebSocket socket, AccountRecord account, string token, CancellationToken cancel )
 	{
-		var hello = await ReadHelloAsync( socket, cancel );
+		var (hello, first) = await ReadHelloAsync( socket, cancel );
 		if ( hello == null )
 		{
+			if ( first is { } type )
+				await SendDirectAsync( socket, new CoopError( type, CoopReason.HelloFirst, "The first message is the hello." ), cancel );
 			await CloseAsync( socket, CoopCloseStatus.ProtocolError, "hello first" );
 			return;
 		}
-		var peer = new Peer( socket, account, token, hello, options );
-		if ( !Register( peer ) )
+		if ( hello.Protocol < CoopProtocol.Version )
 		{
-			await SendDirectAsync( socket, new CoopError( CoopMessageType.Hello, CoopReason.InUse, "Another game of this account is connected." ), cancel );
-			await CloseAsync( socket, CoopCloseStatus.InUse, "in use elsewhere" );
+			await SendDirectAsync( socket, new CoopError( CoopMessageType.Hello, CoopReason.ProtocolTooOld, $"This server shares parks from protocol {CoopProtocol.Version} on." ), cancel );
+			await CloseAsync( socket, CoopCloseStatus.ProtocolError, "protocol too old" );
+			return;
+		}
+		var peer = new Peer( socket, account, token, hello );
+		var registration = Register( peer );
+		if ( registration != Registration.Welcomed )
+		{
+			if ( registration == Registration.InUse )
+			{
+				await SendDirectAsync( socket, new CoopError( CoopMessageType.Hello, CoopReason.InUse, "Another game of this account is connected." ), cancel );
+				await CloseAsync( socket, CoopCloseStatus.InUse, "in use elsewhere" );
+			}
+			else
+				await CloseAsync( socket, (int)WebSocketCloseStatus.PolicyViolation, "unauthorized" );
 			peer.Dispose();
 			return;
 		}
+		running[peer] = 0;
 		using var linked = CancellationTokenSource.CreateLinkedTokenSource( cancel, peer.Closed.Token );
 		var writer = Task.Run( () => WriteLoopAsync( peer, linked.Token ), linked.Token );
 		try
@@ -115,9 +140,18 @@ public sealed class CoopHub
 		finally
 		{
 			Disconnected( peer );
+			running.TryRemove( peer, out _ );
 			peer.Outbox.Writer.TryComplete();
-			try { await writer; } catch ( Exception exception ) when ( exception is WebSocketException or OperationCanceledException ) { }
-			Interlocked.Add( ref queuedBytes, -Interlocked.Exchange( ref peer.QueuedBytes, 0 ) );
+			// a writer stuck on a game that stopped reading is cut off
+			try { peer.Closed.CancelAfter( WriterDrain ); }
+			catch ( ObjectDisposedException ) { }
+			try { await writer; }
+			catch ( Exception exception ) when ( exception is WebSocketException or OperationCanceledException or IOException or ObjectDisposedException ) { }
+			finally
+			{
+				// whatever ended the writer, its queue no longer counts against the server's budget
+				Interlocked.Add( ref queuedBytes, -Interlocked.Exchange( ref peer.QueuedBytes, 0 ) );
+			}
 			// the writer sent the close a kill asked for; this finishes the handshake (or sends a plain close) and drops a peer that does not answer
 			if ( socket.State is WebSocketState.Open or WebSocketState.CloseReceived or WebSocketState.CloseSent )
 				await CloseAsync( socket, peer.CloseStatus ?? (int)WebSocketCloseStatus.NormalClosure, peer.CloseReason ?? "bye" );
@@ -127,36 +161,57 @@ public sealed class CoopHub
 		}
 	}
 
-	private static async Task<CoopHello?> ReadHelloAsync( WebSocket socket, CancellationToken cancel )
+	/// <summary>The connection's hello; null without one, with the type of a well-formed first message that was something else.</summary>
+	private static async Task<(CoopHello? Hello, CoopMessageType? First)> ReadHelloAsync( WebSocket socket, CancellationToken cancel )
 	{
 		using var timeout = CancellationTokenSource.CreateLinkedTokenSource( cancel );
 		timeout.CancelAfter( HelloTimeout );
 		try
 		{
-			return await ReceiveAsync( socket, timeout.Token ) is { } bytes && CoopMessage.Decode( bytes ) is CoopHello hello ? hello : null;
+			if ( await ReceiveAsync( socket, timeout.Token ) is not { } bytes )
+				return (null, null);
+			var message = CoopMessage.Decode( bytes );
+			return message is CoopHello hello ? (hello, null) : (null, message.Type);
 		}
-		catch ( Exception exception ) when ( exception is OperationCanceledException or WebSocketException or InvalidDataException )
+		catch ( Exception exception ) when ( exception is OperationCanceledException or WebSocketException or InvalidDataException or MessageTooLargeException )
 		{
-			return null;
+			return (null, null);
 		}
 	}
 
+	private enum Registration
+	{
+		Welcomed,
+		/// <summary>Another game of the account holds the socket and the hello does not take it over.</summary>
+		InUse,
+		/// <summary>The login ended between the upgrade and the hello (a logout, a recovery, a deleted account).</summary>
+		LoggedOut
+	}
+
 	/// <summary>
-	/// Makes <paramref name="peer"/> its account's co-op connection: a reconnect of the same game process replaces the old connection (fenced first), another
-	/// process of the account is refused unless it takes over. Then answers the hello: the session the account belongs to, resumed when the hello asks for it.
+	/// Makes <paramref name="peer"/> its account's co-op connection once its login still holds: a reconnect of the same game process replaces the old
+	/// connection (fenced first), another process of the account is refused unless it takes over or the old connection is already dead. Then answers the
+	/// hello: the session the account belongs to, resumed when the hello asks for it and still has the session's build and mods.
 	/// </summary>
-	private bool Register( Peer peer )
+	private Registration Register( Peer peer )
 	{
 		var key = peer.Account.Key;
 		lock ( registry )
 		{
+			// the hello may come seconds after the upgrade: a login that ended meanwhile (a deleted account's name may even belong to someone new) is refused
+			if ( accounts.Authenticate( peer.Token ) is not { } current || current.Key != key )
+				return Registration.LoggedOut;
 			if ( peers.TryGetValue( key, out var old ) )
 			{
-				if ( old.Hello.Instance != peer.Hello.Instance && !peer.Hello.TakeOver )
-					return false;
-				Fence( old, old.Hello.Instance == peer.Hello.Instance ? (int)WebSocketCloseStatus.NormalClosure : CoopCloseStatus.Replaced, "replaced" );
+				if ( old.Hello.Instance != peer.Hello.Instance && !peer.Hello.TakeOver && !old.Dead )
+					return Registration.InUse;
+				// the same game's old socket gets a close it would resume after (it never acts on it: its game already holds the new one)
+				Fence( old, old.Hello.Instance == peer.Hello.Instance ? (int)WebSocketCloseStatus.EndpointUnavailable : CoopCloseStatus.Replaced, "replaced" );
 			}
 			peers[key] = peer;
+			if ( !limits.TryGetValue( key, out var buckets ) )
+				limits[key] = buckets = new AccountLimits( options );
+			peer.Buckets = buckets;
 			var resume = peer.Hello.Resume;
 			if ( memberships.TryGetValue( key, out var session ) )
 			{
@@ -165,6 +220,20 @@ public sealed class CoopHub
 					var seat = session.Seat( key )!;
 					if ( resume != null && resume.SessionId == session.Id && resume.MemberId == seat.Id )
 					{
+						// a game that changed its release or its mods while away cannot go on in the session (decisions Q11 and Q16)
+						if ( Mismatch( session, peer.Hello ) is { } mismatch )
+						{
+							var hosting = seat.Id == session.HostMember;
+							if ( hosting )
+								End( session, mismatch.Reason, "The host's game changed: " + mismatch.Text );
+							else
+							{
+								RemoveSeat( session, seat, CoopMemberState.Left );
+								endedSessions[key] = (session.Id, mismatch.Reason, mismatch.Text, clock());
+							}
+							Enqueue( peer, new CoopWelcome( CoopProtocol.Version, null, new CoopEnded( session.Id, mismatch.Reason, mismatch.Text ) ).Encode() );
+							return Registration.Welcomed;
+						}
 						seat.Peer = peer;
 						peer.Session = session;
 						peer.MemberId = seat.Id;
@@ -175,14 +244,24 @@ public sealed class CoopHub
 					}
 					Enqueue( peer, new CoopWelcome( CoopProtocol.Version, session.StateFor( seat.Id ), null ).Encode() );
 				}
-				return true;
+				return Registration.Welcomed;
 			}
 			var ended = resume != null && endedSessions.TryGetValue( key, out var gone ) && gone.SessionId == resume.SessionId
 				? new CoopEnded( gone.SessionId, gone.Reason, gone.Text )
 				: resume != null ? new CoopEnded( resume.SessionId, CoopReason.Unknown, "The session no longer exists." ) : null;
 			Enqueue( peer, new CoopWelcome( CoopProtocol.Version, null, ended ).Encode() );
-			return true;
+			return Registration.Welcomed;
 		}
+	}
+
+	/// <summary>How <paramref name="hello"/>'s build or mods differ from the session's (decisions Q11 and Q16), or null when they are the same.</summary>
+	private static (CoopReason Reason, string Text)? Mismatch( Session session, CoopHello hello )
+	{
+		if ( hello.Build != session.Build )
+			return (CoopReason.BuildDiffers, CoopProtocol.Clip( $"The host plays OpenTPW {session.Build}; you play {hello.Build}." ));
+		if ( !hello.Mods.SequenceEqual( session.Mods ) )
+			return (CoopReason.ModsDiffer, ModsDifference( session.Mods, hello.Mods ));
+		return null;
 	}
 
 	/// <summary>
@@ -241,21 +320,23 @@ public sealed class CoopHub
 			{
 				bytes = await ReceiveAsync( peer.Socket, cancel );
 			}
+			catch ( MessageTooLargeException )
+			{
+				Kill( peer, (int)WebSocketCloseStatus.MessageTooBig, "message too large", abort: false );
+				return;
+			}
 			catch ( InvalidDataException )
 			{
-				// a text or oversized message
+				// a text message
 				Kill( peer, CoopCloseStatus.ProtocolError, "invalid message", abort: false );
 				return;
 			}
 			if ( bytes == null )
 				return;
-			// a killed or fenced connection acts on nothing more; its close is on its way
-			if ( peer.Dead )
+			// a killed or fenced connection acts on nothing more, and nothing is done while the server stops (the stored frame positions stay true)
+			if ( peer.Dead || restarting )
 				continue;
-			var limits = peer.Limits;
-			using var message = limits.Messages.AttemptAcquire();
-			using var volume = limits.Bytes.AttemptAcquire( Math.Max( 1, bytes.Length ) );
-			if ( !message.IsAcquired || !volume.IsAcquired )
+			if ( !peer.Buckets!.Take( peer.Hosting, bytes.Length ) )
 			{
 				Kill( peer, CoopCloseStatus.Rate, "rate", abort: false );
 				return;
@@ -270,12 +351,12 @@ public sealed class CoopHub
 				Kill( peer, CoopCloseStatus.ProtocolError, "malformed message", abort: false );
 				return;
 			}
-			if ( !Handle( peer, request ) )
+			if ( !Handle( peer, request, bytes ) )
 				return;
 		}
 	}
 
-	/// <summary>Reads one whole binary message: null at a close; a text or oversized message throws <see cref="InvalidDataException"/>.</summary>
+	/// <summary>Reads one whole binary message: null at a close; a text message throws <see cref="InvalidDataException"/>, an oversized one <see cref="MessageTooLargeException"/>.</summary>
 	private static async Task<byte[]?> ReceiveAsync( WebSocket socket, CancellationToken cancel )
 	{
 		var chunk = new byte[ReceiveChunk];
@@ -289,7 +370,7 @@ public sealed class CoopHub
 				if ( length == target.Length )
 				{
 					if ( large != null )
-						throw new InvalidDataException( "The co-op message is too large." );
+						throw new MessageTooLargeException();
 					// an idle socket holds only the small buffer: a long message rents the large one
 					large = ArrayPool<byte>.Shared.Rent( CoopProtocol.MaximumMessageBytes + 1 );
 					chunk.AsSpan( 0, length ).CopyTo( large );
@@ -302,7 +383,7 @@ public sealed class CoopHub
 					throw new InvalidDataException( "The co-op socket takes binary messages." );
 				length += result.Count;
 				if ( length > CoopProtocol.MaximumMessageBytes )
-					throw new InvalidDataException( "The co-op message is too large." );
+					throw new MessageTooLargeException();
 				if ( result.EndOfMessage )
 					return (large ?? chunk).AsSpan( 0, length ).ToArray();
 			}
@@ -314,16 +395,20 @@ public sealed class CoopHub
 		}
 	}
 
+	private static readonly byte[] Ping = new CoopPing().Encode();
+
 	private async Task WriteLoopAsync( Peer peer, CancellationToken cancel )
 	{
 		var reader = peer.Outbox.Reader;
 		var lastSent = clock();
-		var lastCheck = clock();
 		Task<bool>? waiting = null;
+		// one timer at a time, whatever the traffic: it fires once per ping interval
+		Task? tick = null;
+		using var sending = CancellationTokenSource.CreateLinkedTokenSource( cancel );
 		while ( true )
 		{
 			waiting ??= reader.WaitToReadAsync( cancel ).AsTask();
-			var tick = Task.Delay( options.CoopPingInterval, cancel );
+			tick ??= Task.Delay( options.CoopPingInterval, cancel );
 			if ( await Task.WhenAny( waiting, tick ) == waiting )
 			{
 				if ( !await waiting )
@@ -333,23 +418,22 @@ public sealed class CoopHub
 				{
 					if ( peer.Socket.State != WebSocketState.Open )
 						return;
-					await peer.Socket.SendAsync( item, WebSocketMessageType.Binary, true, cancel );
+					await SendBoundedAsync( peer, item, sending );
 					Interlocked.Add( ref peer.QueuedBytes, -item.Length );
 					Interlocked.Add( ref queuedBytes, -item.Length );
 					lastSent = clock();
 				}
 			}
+			else
+			{
+				await tick;
+				tick = null;
+			}
 			var now = clock();
 			if ( now - lastSent >= options.CoopPingInterval && peer.Socket.State == WebSocketState.Open )
 			{
-				await peer.Socket.SendAsync( new CoopPing().Encode(), WebSocketMessageType.Binary, true, cancel );
+				await SendBoundedAsync( peer, Ping, sending );
 				lastSent = now;
-			}
-			if ( now - lastCheck >= AuthenticationCheck )
-			{
-				lastCheck = now;
-				if ( accounts.Authenticate( peer.Token ) == null )
-					Kill( peer, (int)WebSocketCloseStatus.PolicyViolation, "logged out", abort: false );
 			}
 		}
 		// the queue ended: a kill's close, a restart's, or none (the read loop ended first)
@@ -358,19 +442,49 @@ public sealed class CoopHub
 			await peer.Socket.CloseOutputAsync( (WebSocketCloseStatus)status.Value, peer.CloseReason ?? "server restarting", cancel );
 	}
 
-	/// <summary>Queues a message for a connection; a queue over its limit (or the server's) marks the connection dead and aborts it, so it never sees a gap.</summary>
+	/// <summary>Sends one message, cancelling (which drops the socket) when the game has not taken it within <see cref="SendTimeout"/>.</summary>
+	private static async Task SendBoundedAsync( Peer peer, ReadOnlyMemory<byte> item, CancellationTokenSource sending )
+	{
+		sending.CancelAfter( SendTimeout );
+		await peer.Socket.SendAsync( item, WebSocketMessageType.Binary, true, sending.Token );
+		sending.CancelAfter( Timeout.InfiniteTimeSpan );
+	}
+
+	/// <summary>
+	/// Queues a message for a connection. A queue over its limit marks the connection dead and drops it, so it never sees a gap; a server over its budget
+	/// drops the connection with the longest queue instead. A connection that is closing (a kill's or a restart's close is on its way) takes nothing more.
+	/// </summary>
 	private void Enqueue( Peer peer, ReadOnlyMemory<byte> bytes )
 	{
 		if ( peer.Dead )
 			return;
 		var mine = Interlocked.Add( ref peer.QueuedBytes, bytes.Length );
 		var all = Interlocked.Add( ref queuedBytes, bytes.Length );
-		if ( mine > options.CoopOutboxBytes || all > options.CoopServerOutboxBytes || !peer.Outbox.Writer.TryWrite( bytes ) )
+		if ( mine > options.CoopOutboxBytes )
 		{
-			Interlocked.Add( ref peer.QueuedBytes, -bytes.Length );
-			Interlocked.Add( ref queuedBytes, -bytes.Length );
+			Unqueue( peer, bytes.Length );
 			Kill( peer, CoopCloseStatus.TooSlow, "too slow", abort: true );
+			return;
 		}
+		if ( all > options.CoopServerOutboxBytes )
+		{
+			// the slowest reader goes, not whichever connection happens to queue next
+			var slowest = running.Keys.Where( candidate => !candidate.Dead ).MaxBy( candidate => Volatile.Read( ref candidate.QueuedBytes ) ) ?? peer;
+			Kill( slowest, CoopCloseStatus.TooSlow, "too slow", abort: true );
+			if ( slowest == peer || peer.Dead )
+			{
+				Unqueue( peer, bytes.Length );
+				return;
+			}
+		}
+		if ( !peer.Outbox.Writer.TryWrite( bytes ) )
+			Unqueue( peer, bytes.Length );
+	}
+
+	private void Unqueue( Peer peer, int count )
+	{
+		Interlocked.Add( ref peer.QueuedBytes, -count );
+		Interlocked.Add( ref queuedBytes, -count );
 	}
 
 	/// <summary>
@@ -410,15 +524,16 @@ public sealed class CoopHub
 
 	// ---- requests ----
 
-	/// <summary>Runs one request; false when the connection ends.</summary>
-	private bool Handle( Peer peer, CoopMessage request )
+	/// <summary>Runs one request, whose received bytes are <paramref name="bytes"/> (a relay forwards them); false when the connection ends.</summary>
+	private bool Handle( Peer peer, CoopMessage request, byte[] bytes )
 	{
 		switch ( request )
 		{
 			case CoopHostFrame frame:
-				return RelayFrame( peer, frame );
+				RelayFrame( peer, frame, bytes );
+				return true;
 			case CoopSend send:
-				RelaySend( peer, send );
+				RelaySend( peer, send, bytes );
 				return true;
 			case CoopPong:
 				return true;
@@ -444,7 +559,21 @@ public sealed class CoopHub
 		}
 	}
 
-	private void Refuse( Peer peer, CoopMessageType request, CoopReason reason, string text ) => Enqueue( peer, new CoopError( request, reason, text ).Encode() );
+	private void Refuse( Peer peer, CoopMessageType request, CoopReason reason, string text ) =>
+		Enqueue( peer, new CoopError( request, reason, CoopProtocol.Clip( text ) ).Encode() );
+
+	/// <summary>Writes the co-op files; a failure (a full disk) is reported and the sessions go on in memory, written again with the next change.</summary>
+	private void Persist( Action write )
+	{
+		try
+		{
+			write();
+		}
+		catch ( Exception exception ) when ( exception is IOException or UnauthorizedAccessException )
+		{
+			Warn?.Invoke( $"The co-op sessions could not be stored: {exception.Message}" );
+		}
+	}
 
 	private void Create( Peer peer, CoopCreate create )
 	{
@@ -490,7 +619,7 @@ public sealed class CoopHub
 				session.Seats.Add( seat );
 				session.HostMember = seat.Id;
 				session.SeqKnown = true;
-				store.Put( session.ToRecord( exact: false ) );
+				Persist( () => store.Put( session.ToRecord( exact: false ) ) );
 				sessions[session.Id] = session;
 				codes[session.Code] = session;
 				memberships[peer.Account.Key] = session;
@@ -538,20 +667,15 @@ public sealed class CoopHub
 					return;
 				}
 				// decisions Q11 and Q16: exactly the same release and the same simulation-changing mods, in load order
-				if ( peer.Hello.Build != session.Build )
+				if ( Mismatch( session, peer.Hello ) is { } mismatch )
 				{
-					Refuse( peer, CoopMessageType.Join, CoopReason.BuildDiffers, $"The host plays OpenTPW {session.Build}; you play {peer.Hello.Build}." );
-					return;
-				}
-				if ( !peer.Hello.Mods.SequenceEqual( session.Mods ) )
-				{
-					Refuse( peer, CoopMessageType.Join, CoopReason.ModsDiffer, ModsDifference( session.Mods, peer.Hello.Mods ) );
+					Refuse( peer, CoopMessageType.Join, mismatch.Reason, mismatch.Text );
 					return;
 				}
 				var slot = (byte)Enumerable.Range( 1, CoopProtocol.MaximumPlayers - 1 ).First( candidate => session.Seats.All( seat => seat.Slot != candidate ) );
 				var joined = new Seat( session.NextMember++, slot, key, peer.Account.Name ) { Peer = peer };
 				session.Seats.Add( joined );
-				store.Put( session.ToRecord( exact: false ) );
+				Persist( () => store.Put( session.ToRecord( exact: false ) ) );
 				memberships[key] = session;
 				peer.Session = session;
 				peer.MemberId = joined.Id;
@@ -562,15 +686,16 @@ public sealed class CoopHub
 		}
 	}
 
+	/// <summary>What differs between the host's mods and a joiner's, cut to what a refusal carries (<see cref="CoopProtocol.Clip"/>).</summary>
 	private static string ModsDifference( IReadOnlyList<CoopMod> host, IReadOnlyList<CoopMod> joiner )
 	{
 		static string Name( CoopMod mod ) => $"{mod.Id} {mod.Version}";
 		var missing = host.Where( mod => !joiner.Contains( mod ) ).Select( Name ).ToList();
 		var extra = joiner.Where( mod => !host.Contains( mod ) ).Select( Name ).ToList();
 		if ( missing.Count == 0 && extra.Count == 0 )
-			return "The host loads the same mods in another order: " + string.Join( ", ", host.Select( Name ) ) + ".";
-		return "The host's mods differ from yours" + (missing.Count > 0 ? "; you lack " + string.Join( ", ", missing ) : "")
-			+ (extra.Count > 0 ? "; the host lacks " + string.Join( ", ", extra ) : "") + ".";
+			return CoopProtocol.Clip( "The host loads the same mods in another order: " + string.Join( ", ", host.Select( Name ) ) + "." );
+		return CoopProtocol.Clip( "The host's mods differ from yours" + (missing.Count > 0 ? "; you lack " + string.Join( ", ", missing ) : "")
+			+ (extra.Count > 0 ? "; the host lacks " + string.Join( ", ", extra ) : "") + "." );
 	}
 
 	private void Leave( Peer peer, CoopLeave leave )
@@ -589,13 +714,19 @@ public sealed class CoopHub
 				Refuse( peer, CoopMessageType.Leave, CoopReason.Rate, "Too many changes; try again later." );
 				return;
 			}
-			var reason = leave.Reason.Trim();
+			// the reason reaches the other players: it passes the word filter like a title
+			var reason = CoopProtocol.Clip( filter.Apply( leave.Reason.Trim() ) );
 			lock ( session.Gate )
 			{
 				var seat = session.Seat( peer.Account.Key )!;
 				if ( seat.Id == session.HostMember )
 				{
-					End( session, CoopReason.HostLeft, reason.Length > 0 ? reason : "The host left." );
+					var text = reason.Length > 0 ? reason : "The host left.";
+					// a host that never resumed (a restarted game leaving what it no longer holds) is told too, as the members are
+					var attached = seat.Peer == peer;
+					End( session, CoopReason.HostLeft, text );
+					if ( !attached )
+						Enqueue( peer, new CoopEnded( session.Id, CoopReason.HostLeft, text ).Encode() );
 					return;
 				}
 				RemoveSeat( session, seat, CoopMemberState.Left );
@@ -664,44 +795,47 @@ public sealed class CoopHub
 	}
 
 	/// <summary>
-	/// The host's frame: relayed to every other connected member when it comes from the host's current connection and follows the last frame; anything else
-	/// ends the host's connection, so no member ever sees a frame out of order.
+	/// The host's frame: relayed to every other connected member when it comes from the host's current connection and follows the last frame. Any other
+	/// number is dropped and the host told which one comes next (<see cref="CoopFrameRefused"/>), so no member ever sees a frame out of order. The relay
+	/// forwards the received bytes with the frame's server type (the two layouts match).
 	/// </summary>
-	private bool RelayFrame( Peer peer, CoopHostFrame frame )
+	private void RelayFrame( Peer peer, CoopHostFrame frame, byte[] bytes )
 	{
 		if ( peer.Session is not { } session )
 		{
 			Refuse( peer, CoopMessageType.HostFrame, CoopReason.NotInSession, "You are in no shared park." );
-			return true;
+			return;
 		}
 		lock ( session.Gate )
 		{
-			if ( session.Ended || session.Seat( peer.Account.Key ) is not { } seat || seat.Peer != peer )
-				return true;
+			// a stopping server relays nothing more: the frame position it stored stays the last frame the guests have
+			if ( restarting || session.Ended || session.Seat( peer.Account.Key ) is not { } seat || seat.Peer != peer )
+				return;
 			if ( seat.Id != session.HostMember )
 			{
 				Refuse( peer, CoopMessageType.HostFrame, CoopReason.NotHost, "Only the host sends frames." );
-				return true;
+				return;
 			}
-			// after a crash the stored position may be behind: the host's first frame sets it
+			// after a crash the stored position may be behind: the host's first frame after it sets it
 			if ( session.SeqKnown ? frame.Seq != session.LastSeq + 1 : frame.Seq <= session.LastSeq )
 			{
-				Kill( peer, CoopCloseStatus.ProtocolError, "frame out of order", abort: false );
-				return false;
+				Enqueue( peer, new CoopFrameRefused( session.LastSeq + 1 ).Encode() );
+				return;
 			}
 			session.LastSeq = frame.Seq;
 			session.SeqKnown = true;
-			ReadOnlyMemory<byte> relayed = new CoopFrame( frame.Seq, frame.Payload ).Encode();
+			bytes[0] = (byte)CoopMessageType.Frame;
+			ReadOnlyMemory<byte> relayed = bytes;
 			foreach ( var other in session.Seats )
 			{
 				if ( other.Peer != null && other != seat )
 					Enqueue( other.Peer, relayed );
 			}
-			return true;
 		}
 	}
 
-	private void RelaySend( Peer peer, CoopSend send )
+	/// <summary>A member's message, forwarded as received with the server's type and the sender's member id in place of the addressee (the layouts match).</summary>
+	private void RelaySend( Peer peer, CoopSend send, byte[] bytes )
 	{
 		if ( peer.Session is not { } session )
 		{
@@ -710,7 +844,7 @@ public sealed class CoopHub
 		}
 		lock ( session.Gate )
 		{
-			if ( session.Ended || session.Seat( peer.Account.Key ) is not { } seat || seat.Peer != peer )
+			if ( restarting || session.Ended || session.Seat( peer.Account.Key ) is not { } seat || seat.Peer != peer )
 				return;
 			var hosting = seat.Id == session.HostMember;
 			// C2: guests talk to the host only
@@ -719,7 +853,9 @@ public sealed class CoopHub
 				Refuse( peer, CoopMessageType.Send, CoopReason.NotHost, "A guest sends to the host." );
 				return;
 			}
-			ReadOnlyMemory<byte> relayed = new CoopRelayed( seat.Id, send.Payload ).Encode();
+			bytes[0] = (byte)CoopMessageType.Message;
+			System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian( bytes.AsSpan( 1, 4 ), seat.Id );
+			ReadOnlyMemory<byte> relayed = bytes;
 			if ( send.To == CoopProtocol.EveryOtherMember )
 			{
 				foreach ( var other in session.Seats )
@@ -763,7 +899,7 @@ public sealed class CoopHub
 	private void RemoveSeat( Session session, Seat seat, CoopMemberState state )
 	{
 		session.Seats.Remove( seat );
-		store.Put( session.ToRecord( exact: false ) );
+		Persist( () => store.Put( session.ToRecord( exact: false ) ) );
 		memberships.Remove( seat.AccountKey );
 		if ( seat.Peer != null )
 		{
@@ -784,7 +920,7 @@ public sealed class CoopHub
 		sessions.Remove( session.Id );
 		codes.Remove( session.Code );
 		// stored (and its snapshots gone) before anyone hears of it
-		store.Remove( session.Id );
+		Persist( () => store.Remove( session.Id ) );
 		ReadOnlyMemory<byte> message = new CoopEnded( session.Id, reason, text ).Encode();
 		var now = clock();
 		foreach ( var seat in session.Seats )
@@ -852,8 +988,24 @@ public sealed class CoopHub
 			}
 			foreach ( var key in endedSessions.Where( pair => now - pair.Value.At >= EndedMemory ).Select( pair => pair.Key ).ToList() )
 				endedSessions.Remove( key );
+			// an account without a connection whose buckets have filled again needs none
+			foreach ( var key in limits.Where( pair => !peers.ContainsKey( pair.Key ) && pair.Value.Full ).Select( pair => pair.Key ).ToList() )
+				limits.Remove( key );
 		}
 		quotas.Prune( now );
+	}
+
+	/// <summary>Ends the connections whose login no longer holds (a logout elsewhere, an expiry, a ban); the server runs it every minute.</summary>
+	public void CheckLogins()
+	{
+		lock ( registry )
+		{
+			foreach ( var peer in peers.Values.ToList() )
+			{
+				if ( accounts.Authenticate( peer.Token ) is not { } account || account.Key != peer.Account.Key )
+					Fence( peer, (int)WebSocketCloseStatus.PolicyViolation, "logged out" );
+			}
+		}
 	}
 
 	/// <summary>
@@ -862,20 +1014,22 @@ public sealed class CoopHub
 	/// </summary>
 	public void Restarting()
 	{
+		// from here on no request is handled and nothing is relayed, so the positions stored below stay the last frames every guest has
 		restarting = true;
-		List<CoopSessionRecord> records;
 		List<Peer> open;
 		lock ( registry )
 		{
-			records = new List<CoopSessionRecord>();
+			var records = new List<CoopSessionRecord>();
 			foreach ( var session in sessions.Values )
 			{
 				lock ( session.Gate )
 					records.Add( session.ToRecord( exact: session.SeqKnown ) );
 			}
+			// under the registry lock, so no membership change stored meanwhile is overwritten with an older record; with no session there is nothing to keep
+			if ( records.Count > 0 )
+				Persist( () => store.PutAll( records ) );
 			open = peers.Values.ToList();
 		}
-		store.PutAll( records );
 		foreach ( var peer in open )
 		{
 			peer.Outbox.Writer.TryComplete();
@@ -906,11 +1060,18 @@ public sealed class CoopHub
 
 	// ---- join snapshots ([EXT:online-coop-snapshot-join]) ----
 
+	/// <summary>An upload in progress: the space it holds in the store's cap is given back once (<see cref="FinishUpload"/>).</summary>
+	public sealed class Upload( string sessionId )
+	{
+		public string SessionId { get; } = sessionId;
+		internal bool Finished;
+	}
+
 	/// <summary>
 	/// Starts the host's snapshot upload for session <paramref name="id"/>: only its host, only while another member is in it, one at a time, and within the
-	/// server's snapshot space.
+	/// server's snapshot space, which counts the room every upload in progress may still take.
 	/// </summary>
-	public void BeginUpload( AccountRecord user, string id )
+	public Upload BeginUpload( AccountRecord user, string id )
 	{
 		lock ( registry )
 		{
@@ -924,19 +1085,28 @@ public sealed class CoopHub
 					throw new StoreException( StatusCodes.Status409Conflict, "Nobody is joining." );
 				if ( session.Uploading )
 					throw new StoreException( StatusCodes.Status409Conflict, "An upload is running." );
-				if ( store.BlobBytes() + options.MaximumCoopSnapshotBytes > options.MaximumCoopStoreBytes )
+				if ( store.BlobBytes() + reservedUploadBytes + options.MaximumCoopSnapshotBytes > options.MaximumCoopStoreBytes )
 					throw new StoreException( StatusCodes.Status507InsufficientStorage, "The server has no room for the park now." );
+				reservedUploadBytes += options.MaximumCoopSnapshotBytes;
 				session.Uploading = true;
+				return new Upload( id );
 			}
 		}
 	}
 
-	/// <summary>Ends an upload: a received snapshot is kept under its digest while the session lives (else deleted); the newest two stay.</summary>
-	public void FinishUpload( string id, string? temporary, string? sha256 )
+	/// <summary>
+	/// Ends an upload, once (a second call does nothing): a received snapshot is kept under its digest while the session lives (else deleted); the newest two
+	/// stay.
+	/// </summary>
+	public void FinishUpload( Upload upload, string? temporary, string? sha256 )
 	{
 		lock ( registry )
 		{
-			sessions.TryGetValue( id, out var session );
+			if ( upload.Finished )
+				return;
+			upload.Finished = true;
+			reservedUploadBytes -= options.MaximumCoopSnapshotBytes;
+			sessions.TryGetValue( upload.SessionId, out var session );
 			if ( session == null )
 			{
 				if ( temporary != null )
@@ -951,13 +1121,16 @@ public sealed class CoopHub
 				if ( session.Ended )
 					File.Delete( temporary );
 				else
-					store.Commit( id, temporary, sha256, KeptSnapshots );
+					store.Commit( upload.SessionId, temporary, sha256, KeptSnapshots );
 			}
 		}
 	}
 
-	/// <summary>The file of snapshot <paramref name="sha256"/> of session <paramref name="id"/> for one of its members, or null when it is gone.</summary>
-	public string? FindSnapshot( AccountRecord user, string id, string sha256 )
+	/// <summary>
+	/// The file of snapshot <paramref name="sha256"/> of session <paramref name="id"/> for one of its members, or null when it is gone. A download that
+	/// <paramref name="counts"/> (one from the start, not a resumed range) takes one of the member's downloads an hour.
+	/// </summary>
+	public string? FindSnapshot( AccountRecord user, string id, string sha256, bool counts )
 	{
 		lock ( registry )
 		{
@@ -969,10 +1142,12 @@ public sealed class CoopHub
 					throw new StoreException( StatusCodes.Status403Forbidden, "Only its players download the park." );
 			}
 		}
-		if ( !quotas.Allow( user.Key, "download", options.CoopDownloadsPerHour, TimeSpan.FromHours( 1 ) ) )
-			throw new StoreException( StatusCodes.Status429TooManyRequests, "Too many downloads; try again later." );
 		var path = store.BlobPath( id, sha256 );
-		return File.Exists( path ) ? path : null;
+		if ( !File.Exists( path ) )
+			return null;
+		if ( counts && !quotas.Allow( user.Key, "download", options.CoopDownloadsPerHour, TimeSpan.FromHours( 1 ) ) )
+			throw new StoreException( StatusCodes.Status429TooManyRequests, "Too many downloads; try again later." );
+		return path;
 	}
 
 	// ---- helpers ----
@@ -1002,27 +1177,15 @@ public sealed class CoopHub
 
 	private static Task CloseAsync( WebSocket socket, int status, string reason ) => ChatHub.CloseAsync( socket, (WebSocketCloseStatus)status, reason );
 
-	/// <summary>A connection: its socket, account, login token and hello, its queue, its session seat, and its limits (a host's are higher than a guest's).</summary>
-	private sealed class Peer : IDisposable
+	/// <summary>A connection: its socket, account, login token and hello, its queue, its session seat, and its account's relay buckets.</summary>
+	private sealed class Peer( WebSocket socket, AccountRecord account, string token, CoopHello hello ) : IDisposable
 	{
-		private readonly ConnectionLimits guest;
-		private readonly ConnectionLimits host;
-
-		public Peer( WebSocket socket, AccountRecord account, string token, CoopHello hello, ServerOptions options )
-		{
-			Socket = socket;
-			Account = account;
-			Token = token;
-			Hello = hello;
-			guest = new ConnectionLimits( options.CoopGuestMessagesPerSecond, options.CoopGuestBytesPerSecond );
-			host = new ConnectionLimits( options.CoopHostMessagesPerSecond, options.CoopHostBytesPerSecond );
-		}
-
-		public WebSocket Socket { get; }
-		public AccountRecord Account { get; }
-		public string Token { get; }
-		public CoopHello Hello { get; }
-		public readonly Channel<ReadOnlyMemory<byte>> Outbox = Channel.CreateUnbounded<ReadOnlyMemory<byte>>( new UnboundedChannelOptions { SingleReader = true } );
+		public WebSocket Socket { get; } = socket;
+		public AccountRecord Account { get; } = account;
+		public string Token { get; } = token;
+		public CoopHello Hello { get; } = hello;
+		/// <summary>The writer reads the queue, and so does a kill that drops it: two readers.</summary>
+		public readonly Channel<ReadOnlyMemory<byte>> Outbox = Channel.CreateUnbounded<ReadOnlyMemory<byte>>( new UnboundedChannelOptions { SingleReader = false } );
 		public long QueuedBytes;
 		public int DeadFlag;
 		public bool Dead => Volatile.Read( ref DeadFlag ) == 1;
@@ -1033,43 +1196,81 @@ public sealed class CoopHub
 		public volatile Session? Session;
 		public uint MemberId;
 		public volatile bool Hosting;
-		public ConnectionLimits Limits => Hosting ? host : guest;
+		/// <summary>The account's relay buckets, set when the connection registers.</summary>
+		public AccountLimits? Buckets;
 
-		public void Dispose()
+		public void Dispose() => Closed.Dispose();
+	}
+
+	/// <summary>
+	/// An account's relay buckets: messages and bytes a second with a two-second burst, a host's higher than a guest's, kept over its reconnects. They refill
+	/// as they are used, without a timer.
+	/// </summary>
+	private sealed class AccountLimits( ServerOptions options )
+	{
+		// a byte burst holds at least one whole message
+		private readonly TokenBucket guestMessages = new( options.CoopGuestMessagesPerSecond );
+		private readonly TokenBucket guestBytes = new( Math.Max( options.CoopGuestBytesPerSecond, CoopProtocol.MaximumMessageBytes / 2 ) );
+		private readonly TokenBucket hostMessages = new( options.CoopHostMessagesPerSecond );
+		private readonly TokenBucket hostBytes = new( Math.Max( options.CoopHostBytesPerSecond, CoopProtocol.MaximumMessageBytes / 2 ) );
+
+		/// <summary>Takes one message of <paramref name="bytes"/> from the host's or the guest's buckets; false when either is empty.</summary>
+		public bool Take( bool hosting, int bytes )
 		{
-			guest.Dispose();
-			host.Dispose();
-			Closed.Dispose();
+			var (messages, volume) = hosting ? (hostMessages, hostBytes) : (guestMessages, guestBytes);
+			lock ( this )
+			{
+				var now = System.Diagnostics.Stopwatch.GetTimestamp();
+				messages.Refill( now );
+				volume.Refill( now );
+				var cost = Math.Max( 1, bytes );
+				if ( messages.Tokens < 1 || volume.Tokens < cost )
+					return false;
+				messages.Tokens -= 1;
+				volume.Tokens -= cost;
+				return true;
+			}
+		}
+
+		/// <summary>Whether every bucket has filled again (an idle account's buckets can go).</summary>
+		public bool Full
+		{
+			get
+			{
+				lock ( this )
+				{
+					var now = System.Diagnostics.Stopwatch.GetTimestamp();
+					foreach ( var bucket in new[] { guestMessages, guestBytes, hostMessages, hostBytes } )
+					{
+						bucket.Refill( now );
+						if ( !bucket.IsFull )
+							return false;
+					}
+					return true;
+				}
+			}
 		}
 	}
 
-	/// <summary>A connection's buckets: messages and bytes a second, with a two-second burst.</summary>
-	private sealed class ConnectionLimits : IDisposable
+	/// <summary>A bucket of <paramref name="perSecond"/> tokens a second that holds two seconds' worth; it starts full.</summary>
+	private sealed class TokenBucket( int perSecond )
 	{
-		public ConnectionLimits( int messagesPerSecond, int bytesPerSecond )
+		private readonly double capacity = perSecond * 2.0;
+		private long last = System.Diagnostics.Stopwatch.GetTimestamp();
+		public double Tokens = perSecond * 2.0;
+
+		public bool IsFull => Tokens >= capacity;
+
+		public void Refill( long now )
 		{
-			Messages = Bucket( messagesPerSecond );
-			// a burst holds at least one whole message
-			Bytes = Bucket( Math.Max( bytesPerSecond, CoopProtocol.MaximumMessageBytes / 2 ) );
+			Tokens = Math.Min( capacity, Tokens + (now - last) * (double)perSecond / System.Diagnostics.Stopwatch.Frequency );
+			last = now;
 		}
+	}
 
-		public TokenBucketRateLimiter Messages { get; }
-		public TokenBucketRateLimiter Bytes { get; }
-
-		private static TokenBucketRateLimiter Bucket( int perSecond ) => new( new TokenBucketRateLimiterOptions
-		{
-			TokenLimit = perSecond * 2,
-			TokensPerPeriod = perSecond,
-			ReplenishmentPeriod = TimeSpan.FromSeconds( 1 ),
-			QueueLimit = 0,
-			AutoReplenishment = true
-		} );
-
-		public void Dispose()
-		{
-			Messages.Dispose();
-			Bytes.Dispose();
-		}
+	/// <summary>A message over <see cref="CoopProtocol.MaximumMessageBytes"/>: the connection closes with 1009.</summary>
+	private sealed class MessageTooLargeException() : Exception( "The co-op message is too large." )
+	{
 	}
 
 	private sealed class Seat( uint id, byte slot, string accountKey, string name )
@@ -1107,7 +1308,7 @@ public sealed class CoopHub
 		public Seat? Seat( string accountKey ) => Seats.FirstOrDefault( seat => seat.AccountKey == accountKey );
 		public Seat? Seat( uint memberId ) => Seats.FirstOrDefault( seat => seat.Id == memberId );
 
-		public CoopSessionState StateFor( uint you ) => new( Id, Code, Title, Listed, MaximumPlayers, you, HostMember, LastSeq,
+		public CoopSessionState StateFor( uint you ) => new( Id, Code, Title, Listed, MaximumPlayers, you, HostMember, LastSeq, SeqKnown,
 			Seats.OrderBy( seat => seat.Slot ).Select( seat => seat.Info ).ToList() );
 
 		public CoopSessionRecord ToRecord( bool exact ) => new( Id, Code, Title, Listed, MaximumPlayers, Build, Mods, HostMember, NextMember, LastSeq,

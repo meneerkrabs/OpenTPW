@@ -107,6 +107,7 @@ public static class ServerProgram
 		Map( app, options, store, hub, coop, chatParks, cities, filter, emailSender );
 		app.Lifetime.ApplicationStopping.Register( hub.Restarting );
 		app.Lifetime.ApplicationStopping.Register( coop.Restarting );
+		coop.Warn = message => app.Logger.LogWarning( "{Message}", message );
 		// [EXT:online-coop-session] ends the shared parks whose host stayed away, once a minute
 		app.Lifetime.ApplicationStarted.Register( () => _ = Task.Run( async () =>
 		{
@@ -114,7 +115,11 @@ public static class ServerProgram
 			try
 			{
 				while ( await timer.WaitForNextTickAsync( app.Lifetime.ApplicationStopping ) )
+				{
 					coop.Sweep( DateTimeOffset.UtcNow );
+					// a login that ended elsewhere (a logout, a ban) ends its co-op connection
+					coop.CheckLogins();
+				}
 			}
 			catch ( OperationCanceledException ) { }
 		} ) );
@@ -423,9 +428,12 @@ public static class ServerProgram
 			var credentials = await ReadJsonAsync<Credentials>( context.Request );
 			if ( !string.Equals( OnlineText.NormalizeName( credentials.Name ?? "" ), user!.Key, StringComparison.Ordinal ) )
 				throw new StoreException( 400, "Name the account you are deleting." );
+			// the account leaves its shared park (ending one it hosts) before its name is free for someone else
+			if ( !PasswordHasher.Verify( credentials.Password ?? "", user.Salt, user.Hash, user.Iterations ) )
+				throw new StoreException( 401, "Invalid username or password." );
+			coop.RemoveAccount( user.Key );
 			store.DeleteAccount( user, credentials.Password ?? "" );
 			hub.Disconnect( user.Key );
-			coop.RemoveAccount( user.Key );
 			return Results.NoContent();
 		} ) ) ).RequireRateLimiting( "auth" );
 
@@ -662,7 +670,7 @@ public static class ServerProgram
 			if ( context.Request.ContentLength > options.MaximumCoopSnapshotBytes )
 				throw new StoreException( StatusCodes.Status413PayloadTooLarge, "The snapshot is too large." );
 			// authenticated, the host's and with room: only now may the body be larger than the server's default limit
-			coop.BeginUpload( user!, id );
+			var upload = coop.BeginUpload( user!, id );
 			string? temporary = null;
 			string? sha256 = null;
 			try
@@ -679,25 +687,39 @@ public static class ServerProgram
 				{
 					throw new StoreException( StatusCodes.Status413PayloadTooLarge, "The snapshot is too large." );
 				}
-				coop.FinishUpload( id, temporary, sha256 );
+				coop.FinishUpload( upload, temporary, sha256 );
 				temporary = null;
 				return Ok( new CoopSnapshotStored( sha256!, bytes ) );
 			}
 			finally
 			{
-				if ( temporary != null || sha256 == null )
-					coop.FinishUpload( id, null, null );
-				if ( temporary != null )
+				// once: a finished upload ignores this
+				coop.FinishUpload( upload, null, null );
+				if ( temporary != null && File.Exists( temporary ) )
 					File.Delete( temporary );
 			}
 		} ) ).RequireRateLimiting( "upload" );
 
 		app.MapGet( ApiRoutes.Coop + "/{id}/snapshot/{sha256}", ( HttpContext context, string id, string sha256 ) => Guarded( context, store, true, user =>
 		{
-			if ( !CoopProtocol.IsSessionId( id ) || !CoopProtocol.IsSha256( sha256 ) || coop.FindSnapshot( user!, id, sha256 ) is not { } path )
+			// a download from the start counts against the member's downloads; a resumed range does not
+			var range = context.Request.Headers.Range.ToString();
+			var counts = range.Length == 0 || range.StartsWith( "bytes=0-", StringComparison.Ordinal );
+			if ( !CoopProtocol.IsSessionId( id ) || !CoopProtocol.IsSha256( sha256 ) || coop.FindSnapshot( user!, id, sha256, counts ) is not { } path )
 				return Task.FromResult( Error( StatusCodes.Status404NotFound, "No such snapshot." ) );
+			FileStream file;
+			try
+			{
+				// a newer snapshot may replace this one meanwhile: the open file stays readable until it is sent
+				file = new FileStream( path, FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete, 81920, FileOptions.Asynchronous );
+			}
+			catch ( Exception exception ) when ( exception is FileNotFoundException or DirectoryNotFoundException )
+			{
+				return Task.FromResult( Error( StatusCodes.Status404NotFound, "No such snapshot." ) );
+			}
 			context.Response.Headers["X-Content-SHA256"] = sha256;
-			return Task.FromResult( Results.File( path, "application/octet-stream", enableRangeProcessing: true ) );
+			return Task.FromResult( Results.Stream( file, "application/octet-stream", entityTag: new Microsoft.Net.Http.Headers.EntityTagHeaderValue( $"\"{sha256}\"" ),
+				enableRangeProcessing: true ) );
 		} ) );
 	}
 }

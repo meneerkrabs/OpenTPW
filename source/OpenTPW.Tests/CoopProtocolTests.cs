@@ -17,7 +17,7 @@ public class CoopProtocolTests
 	private static readonly CoopMod Pools = new( "opentpw.pools", "1.0.0", new string( 'a', 64 ) );
 	private static readonly CoopMod Evening = new( "opentpw.evening", "2.1", new string( 'b', 64 ) );
 
-	private static CoopSessionState State( uint you = 2 ) => new( "0123456789abcdef", "ABCD23", "Our park", true, 4, you, 1, 41,
+	private static CoopSessionState State( uint you = 2, bool seqKnown = true ) => new( "0123456789abcdef", "ABCD23", "Our park", true, 4, you, 1, 41, seqKnown,
 		new[] { new CoopMemberInfo( 1, 0, "Host", true ), new CoopMemberInfo( 2, 1, "Guest", false ) } );
 
 	public static IEnumerable<object[]> Messages() => new CoopMessage[]
@@ -35,6 +35,9 @@ public class CoopProtocolTests
 		new CoopWelcome( 6, State(), null ),
 		new CoopWelcome( 6, null, new CoopEnded( "0123456789abcdef", CoopReason.Expired, "The host did not come back." ) ),
 		new CoopCreated( State( 1 ) ),
+		new CoopWelcome( 6, State( seqKnown: false ), null ),
+		new CoopHello( 6, "1.4.0+0123abcd", Enumerable.Range( 0, CoopProtocol.MaximumMods ).Select( index => new CoopMod( $"mod.{index}", "1.0", new string( 'c', 64 ) ) ).ToArray(),
+			Guid.NewGuid(), false, null ),
 		new CoopJoined( State(), "1.4.0+0123abcd", new[] { Pools } ),
 		new CoopMemberChanged( new CoopMemberInfo( 3, 2, "Third", true ), CoopMemberState.Connected ),
 		new CoopInvited( "0123456789abcdef", "ABCD23", "Our park", "Host" ),
@@ -42,7 +45,8 @@ public class CoopProtocolTests
 		new CoopFrame( ulong.MaxValue, new byte[] { 9 } ),
 		new CoopRelayed( 2, new byte[] { 4, 5 } ),
 		new CoopError( CoopMessageType.Join, CoopReason.ModsDiffer, "The host's mods differ from yours." ),
-		new CoopPing()
+		new CoopPing(),
+		new CoopFrameRefused( 8 )
 	}.Select( message => new object[] { message } );
 
 	[TestMethod]
@@ -78,8 +82,11 @@ public class CoopProtocolTests
 		Refused( new CoopMemberChanged( new CoopMemberInfo( 1, 4, "Fifth", true ), CoopMemberState.Joined ).Encode(), "slot 4" );
 		Refused( new CoopMemberChanged( new CoopMemberInfo( 0, 1, "Nobody", true ), CoopMemberState.Joined ).Encode(), "member 0" );
 		Refused( new CoopMemberChanged( new CoopMemberInfo( 1, 1, "One", true ), (CoopMemberState)9 ).Encode(), "an unknown member state" );
-		Refused( new CoopLeave( "line\nbreak" ).Encode(), "a control character" );
-		Refused( new CoopJoin( new string( 'A', 33 ) ).Encode(), "an overlong code" );
+		var controlCharacter = new CoopLeave( "line break" ).Encode();
+		controlCharacter[^6] = (byte)'\n';
+		Refused( controlCharacter, "a control character" );
+		Refused( Raw( (byte)CoopMessageType.Join, 33, (byte)'A' ), "an overlong code" );
+		Refused( new CoopFrameRefused( 0 ).Encode(), "frame 0 expected" );
 		var invalidUtf8 = new CoopInvite( "ab" ).Encode();
 		invalidUtf8[^1] = 0xFF;
 		Refused( invalidUtf8, "invalid UTF-8" );
@@ -87,6 +94,25 @@ public class CoopProtocolTests
 		BitConverter.GetBytes( (uint)(CoopProtocol.MaximumMessageBytes + 1) ).CopyTo( huge, 9 );
 		Refused( huge, "a payload length over the limit" );
 		Refused( new byte[CoopProtocol.MaximumMessageBytes + 1], "a message over the limit" );
+	}
+
+	/// <summary>A message of <paramref name="type"/> with one text field of <paramref name="length"/> copies of <paramref name="fill"/>, beyond what a writer writes.</summary>
+	private static byte[] Raw( byte type, ushort length, byte fill ) =>
+		new[] { type }.Concat( BitConverter.GetBytes( length ) ).Concat( Enumerable.Repeat( fill, length ) ).ToArray();
+
+	[TestMethod]
+	public void NothingIsWrittenThatAReaderRefuses()
+	{
+		Assert.ThrowsException<ArgumentException>( () => new CoopLeave( new string( 'a', CoopProtocol.MaximumReasonLength + 1 ) ).Encode() );
+		Assert.ThrowsException<ArgumentException>( () => new CoopError( CoopMessageType.Join, CoopReason.ModsDiffer, new string( 'a', 300 ) ).Encode() );
+		Assert.ThrowsException<ArgumentException>( () => new CoopCreate( true, "a\tb", 2 ).Encode() );
+		Assert.ThrowsException<ArgumentException>( () => new CoopHello( 6, "1.0", Enumerable.Repeat( Pools, CoopProtocol.MaximumMods + 1 ).ToArray(), Guid.NewGuid(), false, null ).Encode() );
+		// a text the server makes is clipped to what a reader takes, never inside a surrogate pair
+		var clipped = CoopProtocol.Clip( new string( 'a', 255 ) + "\U0001F600" + new string( 'b', 40 ) + "\n" );
+		Assert.AreEqual( 255, clipped.Length );
+		Assert.AreEqual( "a b", CoopProtocol.Clip( "a\nb" ) );
+		var error = new CoopError( CoopMessageType.Join, CoopReason.ModsDiffer, CoopProtocol.Clip( new string( 'x', 1000 ) ) );
+		Assert.AreEqual( CoopProtocol.MaximumReasonLength, ((CoopError)CoopMessage.Decode( error.Encode() )).Text.Length );
 	}
 
 	[TestMethod]

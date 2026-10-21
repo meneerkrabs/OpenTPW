@@ -198,9 +198,9 @@ public sealed class ParkGate
 
 	/// <summary>
 	/// Guests standing on the grid's counted cell types:
-	/// type 0, 1, 3, 9 or 10 (Mac <c>0xc3684</c>); [EXT:pools-swim] a guest in a swim session (swimming in the water, climbing out, changing back) counts too, though the pool water is no counted type. Preserved approach-road and outside types do not count; a rider
-	/// counts at their stored cell (not because they are riding), and a guest that has left is not a
-	/// thing on the map at all.
+	/// type 0, 1, 3, 9 or 10 (Mac <c>0xc3684</c>); [EXT:pools-swim] a guest in a swim session (swimming in the water, climbing out, changing back) counts too, though the pool water is no counted type. Preserved approach-road and outside types do not count. The cell is
+	/// the one the guest's position stands on (its walk position, <see cref="GuestNavigation.Cell"/>), whatever its type: a guest walking out over the approach road leaves
+	/// the census there, a rider counts at the stand point it walked to (not because it is riding), and a guest that has left is not a thing on the map at all.
 	/// </summary>
 	public int GuestCensus => guests == null ? 0 : CountCensus( guests );
 
@@ -210,8 +210,9 @@ public sealed class ParkGate
 
 	/// <summary>Whether a guest is one of the census (<see cref="CountCensus"/>): the guests the statistics of tp.exe <c>0x004C9130</c>, <c>0x004C9290</c>-<c>0x004C95D0</c> and <c>0x004C7BB0</c> all walk.</summary>
 	// [BIN:TPW-EXE:0x004FA990 census predicate] a thing of type 1 (a guest) on a cell the predicate accepts; the same test in every guest statistic
+	// [BIN:TPW-EXE:0x004FA9B6 census cell] the predicate reads the thing's cell bytes +5/+7, the high bytes of its position words +4/+6, which every walk step rewrites whatever the new cell's type (0x004FA2A0 → 0x0050B6A0, relinking the cell's thing list on a cell change) and the teleport 0x004FA930 sets (the ride exit 0x005014E0, the guard's set-down 0x004FEB50); OpenTPW's thing position is the walk position, which its cell lists already follow (SyncOccupants), so the census reads that cell, not the stored cell a step only moves onto path and queue cells
 	internal static bool CountedInCensus( GuestSimulation guests, Guest guest ) =>
-		guest.State != GuestState.Gone && (guest.InSwimSession || CountsCellOf( guests.Grid.Cells, guest.Cell.X, guest.Cell.Y ));
+		guest.State != GuestState.Gone && (guest.InSwimSession || CountsCellOf( guests.Grid.Cells, guest.Navigation.Cell.X, guest.Navigation.Cell.Y ));
 
 	/// <summary>
 	/// Live staff standing outside the counted cell types (the retry's blocker scan: thing kinds 4–8 with
@@ -222,7 +223,7 @@ public sealed class ParkGate
 		? 0
 		: staff().Count( member => member.CellX is { } x && member.CellY is { } y && !CountsCellOf( x, y ) );
 
-	internal bool Counts( Guest guest ) => guest.InSwimSession || CountsCellOf( guests!.Grid.Cells, guest.Cell.X, guest.Cell.Y );
+	internal bool Counts( Guest guest ) => guest.InSwimSession || CountsCellOf( guests!.Grid.Cells, guest.Navigation.Cell.X, guest.Navigation.Cell.Y );
 
 	/// <summary>Whether the cell at a guest's or staff member's position has a census-counted type.</summary>
 	// [BIN:STP-PPC:0xc3684 cell predicates 0x85190–0x85258] types 0, 1, 3, 9 and 10 count; the grid holds the world init's and the placements' types (ParkCellMap.MapStartCell, WriteFootprint)

@@ -29,7 +29,7 @@ internal sealed class AutomaticCheckpointCpuRendererScope : IDisposable
 		try
 		{
 			// Run the actual queued cleanup. These synthetic fixtures create no GPU resources.
-			typeof( Renderer ).GetMethod( "ProcessDeletionQueue", BindingFlags.Instance | BindingFlags.NonPublic )!.Invoke( renderer, null );
+			renderer.FlushDeletions();
 		}
 		finally
 		{

@@ -1,6 +1,38 @@
+using System.Diagnostics;
 using System.Runtime.InteropServices.JavaScript;
 
 namespace Veldrid;
+
+/// <summary>
+/// The time of the WebGL calls by kind, for the browser event-hitch harness (docs/BROWSER-PERFORMANCE.md, "Event hitches"): while
+/// <see cref="Sink"/> is set (the harness sets it to the game's per-frame marks), every measured call adds its wall time under its name
+/// ("gl.uploadTexture", say). Unset, a measurement is one null test; the calls are the same either way.
+/// </summary>
+public static class WebGlMarks
+{
+	/// <summary>Receives a call's name and its elapsed <see cref="Stopwatch"/> ticks; null while nothing records.</summary>
+	public static Action<string, long>? Sink { get; set; }
+
+	internal static Scope Measure( string name ) => Sink != null ? new Scope( name, Stopwatch.GetTimestamp() ) : default;
+
+	internal readonly struct Scope : IDisposable
+	{
+		private readonly string? name;
+		private readonly long start;
+
+		internal Scope( string name, long start )
+		{
+			this.name = name;
+			this.start = start;
+		}
+
+		public void Dispose()
+		{
+			if ( name != null )
+				Sink?.Invoke( name, Stopwatch.GetTimestamp() - start );
+		}
+	}
+}
 
 /// <summary>
 /// The WebGL2 side, in opentpw-gl.js (the page registers it under this module name). Objects are

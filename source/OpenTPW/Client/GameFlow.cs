@@ -373,8 +373,11 @@ internal sealed partial class GameFlow : IDisposable
 		};
 	}
 
-	/// <summary>The rest of <see cref="StartLevel"/> once its level is built and current: park audio, HUD and advisor.</summary>
-	private Level EnterLevel( Level level, string levelName, bool original, ParkVisitInfo? visit )
+	/// <summary>
+	/// The rest of <see cref="StartLevel"/> once its level is built and current: park audio, HUD and advisor. <paramref name="preparedHud"/> is the HUD
+	/// a build step made for this level (GameFlow.PrepareFirstFrame); without it the HUD is made here.
+	/// </summary>
+	private Level EnterLevel( Level level, string levelName, bool original, ParkVisitInfo? visit, ParkHud? preparedHud = null )
 	{
 		Level = level;
 		if ( original )
@@ -406,11 +409,15 @@ internal sealed partial class GameFlow : IDisposable
 			}
 			return level;
 		}
-		// Money, calendar, speed and purchases come from the park economy of original levels (Level.Park,
-		// looked up on every access so loading a park save is followed); the generic sandbox has none.
-		IHudParkStatus status = level.Park != null ? EconomyParkStatus.ForLevel( level, PlayerKeys ) : new NoEconomyStatus();
-		using ( LoadProfile.Measure( "park-hud" ) )
-			Hud = CreateParkHud( level, status );
+		if ( preparedHud != null )
+		{
+			// [EXT:park-entry-preparation] made in a build step; what it took from the input of that frame is taken from this one
+			preparedHud.RefreshEntryInput();
+			Hud = preparedHud;
+		}
+		else
+			using ( LoadProfile.Measure( "park-hud" ) )
+				Hud = CreateParkHud( level, HudStatusFor( level ) );
 		// [EXT:online-visit-presence] a visit with a chat room (a downloaded park's, a chat satellite's) joins it and draws its players while logged in
 		if ( visit != null && FeatureGates.Online )
 			presence = ParkPresence.TryCreate( onlineSession, level );
@@ -441,6 +448,12 @@ internal sealed partial class GameFlow : IDisposable
 
 	/// <summary>The window list sorts of this session, shared by every park's HUD (UI-084).</summary>
 	private readonly ListSortMemory listSorts = new();
+
+	/// <summary>
+	/// Money, calendar, speed and purchases come from the park economy of original levels (Level.Park, looked up on every access so loading a
+	/// park save is followed); the generic sandbox has none.
+	/// </summary>
+	private IHudParkStatus HudStatusFor( Level level ) => level.Park != null ? EconomyParkStatus.ForLevel( level, PlayerKeys ) : new NoEconomyStatus();
 
 	private ParkHud CreateParkHud( Level level, IHudParkStatus status )
 	{
@@ -1015,10 +1028,14 @@ internal sealed partial class GameFlow : IDisposable
 			// [APPROX:UI-107] the clear is always the fog colour, since the park's render flags (0x4002000 bits of [0x8bcbc8]) are not traced; the sky is Level.DrawSky (World/Sky.cs)
 			backgroundBatch.Clear();
 			backgroundBatch.AddRectangle( new UiRect( 0, 0, framebuffer.Width, framebuffer.Height ), Level.WorldBackdropColour );
-			backgroundRenderer.Draw( global::Global.Render.CommandList, backgroundBatch, framebuffer.Width, framebuffer.Height );
-			Level.DrawSky();
-			Level.Render();
-			Advisor?.Render();
+			using ( FrameMarks.Measure( "draw.backdrop" ) )
+				backgroundRenderer.Draw( global::Global.Render.CommandList, backgroundBatch, framebuffer.Width, framebuffer.Height );
+			using ( FrameMarks.Measure( "draw.sky" ) )
+				Level.DrawSky();
+			using ( FrameMarks.Measure( "draw.level" ) )
+				Level.Render();
+			using ( FrameMarks.Measure( "draw.advisorModel" ) )
+				Advisor?.Render();
 		}
 		else
 		{
@@ -1059,8 +1076,10 @@ internal sealed partial class GameFlow : IDisposable
 			lobbyEffects.Flash = false;
 		if ( Hud != null )
 		{
-			Hud.Draw( Context );
-			Advisor?.Draw( Context );
+			using ( FrameMarks.Measure( "draw.hud" ) )
+				Hud.Draw( Context );
+			using ( FrameMarks.Measure( "draw.advisorUi" ) )
+				Advisor?.Draw( Context );
 		}
 		else if ( IncHud != null )
 			IncHud.Draw( Context );
@@ -1078,13 +1097,15 @@ internal sealed partial class GameFlow : IDisposable
 		// the game's own pointer goes on top of every UI layer
 		Hud?.DrawCursor( Context );
 		// the model previews are drawn with a depth buffer into their own images, which the overlay pass shows in the batch's order
-		overlayRenderer.PrepareDepthImages( global::Global.Render.CommandList, Context.Batch, framebuffer );
+		using ( FrameMarks.Measure( "draw.depthImages" ) )
+			overlayRenderer.PrepareDepthImages( global::Global.Render.CommandList, Context.Batch, framebuffer );
 	}
 
 	/// <summary>Overlay pass (output pixels, possibly twice per frame when the output is captured).</summary>
 	private void RenderOverlay()
 	{
 		var target = global::Global.Render.OverlayFramebuffer;
+		using var mark = FrameMarks.Measure( "overlay.ui" );
 		overlayRenderer.Draw( global::Global.Render.CommandList, Context.Batch, target.Width, target.Height );
 	}
 

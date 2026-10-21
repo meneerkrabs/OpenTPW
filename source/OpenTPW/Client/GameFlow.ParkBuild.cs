@@ -1,3 +1,4 @@
+using OpenTPW.Hud;
 using OpenTPW.Mods;
 using System.Diagnostics;
 using OpenTPW.UI.Original;
@@ -34,6 +35,8 @@ internal sealed partial class GameFlow
 		public IEnumerator<bool>? Preparation { get; set; }
 		public bool Prepared { get; set; }
 		public bool PreparationStepped { get; set; }
+		// [EXT:park-entry-preparation] the park HUD, made by a preparation step as EnterLevel would make it; EnterLevel takes it
+		public ParkHud? Hud { get; set; }
 	}
 
 	private ParkBuild? parkBuild;
@@ -46,6 +49,9 @@ internal sealed partial class GameFlow
 
 	/// <summary>True while a park is being built over frames.</summary>
 	public bool BuildingPark => parkBuild != null;
+
+	/// <summary>The HUD a build step has made for the park being built, until it is entered (smoke tests).</summary>
+	internal ParkHud? PreparedHud => parkBuild?.Hud;
 
 	/// <summary>
 	/// <see cref="StartLevel(string, bool, bool, ParkVisitInfo?, ParkStartKind)"/>, built over frames when <paramref name="overFrames"/>
@@ -205,6 +211,7 @@ internal sealed partial class GameFlow
 			// A profile precommit refusal occurs before the previous world is retired; what the build read for the advisor is not used.
 			DropAdvisorPreparation();
 			if ( build.BeforeEnter != null || error is PlayerProgressSaveException ) build.Level.Dispose();
+			DropPreparedHud( build );
 			build.Scene.Dispose();
 			if ( error is PlayerProgressSaveException || build.BeforeEnter != null && ProgressFailure( error ) )
 			{
@@ -214,7 +221,7 @@ internal sealed partial class GameFlow
 			}
 			throw;
 		}
-		var level = EnterLevel( build.Level, build.LevelName, build.Original, build.Visit );
+		var level = EnterLevel( build.Level, build.LevelName, build.Original, build.Visit, build.Hud );
 		build.StartSection.Dispose();
 		build.Ready?.Invoke( level );
 		build.FrameMilliseconds.Add( Stopwatch.GetElapsedTime( started ).TotalMilliseconds );
@@ -222,11 +229,77 @@ internal sealed partial class GameFlow
 		Transitioned?.Invoke();
 	}
 
-	/// <summary>The steps that make ready what entering the park would do whole: see <see cref="ParkBuild.Preparation"/>. None for a park without the automatic advisor and a restart snapshot.</summary>
+	/// <summary>The steps that make ready what entering the park would do whole: see <see cref="ParkBuild.Preparation"/>.</summary>
 	private IEnumerable<bool> PrepareEntry( ParkBuild build )
 	{
 		// what an earlier build read and nobody took (one that failed while no park was live) is not this park's
 		DropAdvisorPreparation();
+		foreach ( var step in PrepareAdvisorAndSnapshot( build ) )
+			yield return step;
+		foreach ( var step in PrepareFirstFrame( build ) )
+			yield return step;
+	}
+
+	/// <summary>
+	/// What the entering frame's first draw and HUD would make (docs/BROWSER-PERFORMANCE.md, "The entering frame"): the level's sky, the park HUD,
+	/// created as <see cref="EnterLevel"/> creates it, and the interface textures of the HUD's first draw. The HUD is made last of all the steps, as
+	/// in the entering frame it is made after everything the other steps prepare, with the staged scene current as it is there; the level does not
+	/// update before it is entered, and input waits while it is built, so the HUD meets the same park. What it reads from the frame's input is read
+	/// again on entering (<see cref="ParkHud.RefreshEntryInput"/>).
+	/// </summary>
+	private IEnumerable<bool> PrepareFirstFrame( ParkBuild build )
+	{
+		// each part is only a head start: whatever fails here is logged once and left to the entering frame, which meets the same failure there,
+		// and the build goes on (an exception leaving a step would leave the staged scene current)
+		if ( !HeadStart( "the sky", build.Level.PrepareSky ) )
+			yield break;
+		yield return true;
+		if ( build.Level.IsThemeParkIncSlice )
+			yield break;
+		if ( !HeadStart( "the park HUD", () =>
+		{
+			using ( LoadProfile.Measure( "park-hud" ) )
+				build.Hud = CreateParkHud( build.Level, HudStatusFor( build.Level ) );
+		} ) )
+			yield break;
+		yield return true;
+		List<UiTexture>? textures = null;
+		if ( !HeadStart( "the HUD's interface textures", () => textures = build.Hud!.EntryTextures( Context ).ToList() ) )
+			yield break;
+		foreach ( var texture in textures! )
+		{
+			// a texture-pack switch, started at any step, reloads the interface images itself
+			if ( TexturePackSwitch.Current != null || !HeadStart( "the HUD's interface textures", () => overlayRenderer.Prepare( texture ) ) )
+				yield break;
+			yield return true;
+		}
+	}
+
+	/// <summary>Runs one part of <see cref="PrepareFirstFrame"/>; false, with one warning, when it failed.</summary>
+	private static bool HeadStart( string what, Action prepare )
+	{
+		try
+		{
+			prepare();
+			return true;
+		}
+		catch ( Exception error )
+		{
+			Log.Warning( $"Park entry preparation: {what} left to the entering frame ({error.GetType().Name}: {error.Message})." );
+			return false;
+		}
+	}
+
+	/// <summary>Discards a HUD prepared for a park that is not entered, as <see cref="TearDown"/> discards the HUD of a park it retires.</summary>
+	private static void DropPreparedHud( ParkBuild build )
+	{
+		build.Hud?.Stack.Clear();
+		build.Hud = null;
+	}
+
+	/// <summary>The advisor's and the first restart snapshot's preparation. None for a park without the automatic advisor and a restart snapshot.</summary>
+	private IEnumerable<bool> PrepareAdvisorAndSnapshot( ParkBuild build )
+	{
 		// the automatic advisor EnterLevel creates and whose first line it says: its settings, its shipped tables and what its presentation reads (AdvisorEntryPreparation)
 		if ( AutomaticAdvisorEnabled && build.Original && build.Visit == null && !advisorUnavailable && !build.Level.IsThemeParkIncSlice )
 		{
@@ -266,6 +339,7 @@ internal sealed partial class GameFlow
 			return;
 		parkBuild = null;
 		LoadProfile.Resume();
+		DropPreparedHud( build );
 		build.Scene.Dispose();
 		DropAdvisorPreparation();
 		Log.Trace( $"Stopped building {build.LevelName}: another transition came first." );

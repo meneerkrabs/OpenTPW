@@ -87,11 +87,15 @@ public partial class Material : Asset
 	/// </summary>
 	private void DisposeOwnedResources()
 	{
+		// the objects of now, as SetupResources captures them: a deferred deletion must not reach ones made after it was scheduled
+		var pipeline = Pipeline;
+		var scratchBuffer = ScratchBuffer;
+		var layouts = _resourceLayouts;
 		Action dispose = () =>
 		{
-			Pipeline?.Dispose();
-			ScratchBuffer?.Dispose();
-			foreach ( var layout in _resourceLayouts )
+			pipeline?.Dispose();
+			scratchBuffer?.Dispose();
+			foreach ( var layout in layouts ?? [] )
 				layout.Dispose();
 			_boundResources.Clear();
 			_boundTextures.Clear();
@@ -207,6 +211,7 @@ public partial class Material : Asset
 		if ( resourceSets != null )
 			return resourceSets;
 
+		using var mark = FrameMarks.Measure( "draw.materialResourceSets" );
 		List<ResourceSetDescription> resourceSetDescriptions = new();
 
 		for ( int i = 0; i < Shader.ResourceLayouts.Length; i++ )

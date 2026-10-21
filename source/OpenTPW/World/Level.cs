@@ -1223,6 +1223,24 @@ public partial class Level : IDisposable
 		// [EXT:point-lights] the lights of the objects that have any, for every draw of this frame
 		PointLights?.Gather( Camera.ViewMatrix * Camera.ProjMatrix );
 		foreach ( var entity in WeatherAfterParticles( Entity.All.ToArray() ) )
-			entity.Render();
+		{
+			if ( !FrameMarks.Enabled )
+			{
+				entity.Render();
+				continue;
+			}
+			using ( FrameMarks.Measure( RenderMarkName( entity.GetType() ) ) )
+				entity.Render();
+		}
+	}
+
+	private static readonly Dictionary<Type, string> renderMarkNames = new();
+
+	/// <summary>The frame mark of an entity type's draws ("draw:GuestRenderer"), for the browser event-hitch harness.</summary>
+	private static string RenderMarkName( Type type )
+	{
+		if ( !renderMarkNames.TryGetValue( type, out var name ) )
+			renderMarkNames[type] = name = "draw:" + type.Name;
+		return name;
 	}
 }

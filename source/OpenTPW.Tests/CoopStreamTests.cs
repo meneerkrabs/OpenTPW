@@ -369,6 +369,7 @@ public class CoopStreamTests
 		Assert.AreEqual( 0, desync.Tick % CoopHostStream.CheckpointTicks, "found at a tick checkpoint" );
 		Assert.AreEqual( desync.Tick, guest.Level.TickCount, "the guest's clock stopped there" );
 		Assert.AreEqual( 1, desyncs.Count, "the host logged it once" );
+		Assert.IsNotNull( host.Host.SessionLog, "the session's stream was kept at the desync, for an offline replay" );
 		Assert.IsTrue( lost >= 2, "the first report was lost and the guest sent it again" );
 		Assert.IsTrue( host.Host.IsDesynced( guest.Link.Id ) );
 		// once the host has seen it, the guest stops sending it
@@ -576,6 +577,14 @@ public class CoopStreamTests
 		var lost = 0;
 		guest.Link.DropMessage = ( from, bytes ) => CoopStreamMessage.Decode( bytes ) is CoopTooFarBack && lost++ == 0;
 		guest.Link.Send( host.Link.Id, new CoopResendRequest( 1, 0 ).Encode() );
+		// the guest's game stands still for a while, so no progress of its own reaches the host: its next request is what the host answers again
+		guest.Frozen = true;
+		Rounds( 70, random );
+		Assert.AreEqual( 1, lost, "the first answer was lost" );
+		guest.Link.Send( host.Link.Id, new CoopResendRequest( 1, 0 ).Encode() );
+		Rounds( 3, random );
+		Assert.AreEqual( 2, host.Link.Sent.Count( sent => sent.To == guest.Link.Id && sent.Message is CoopTooFarBack ), "a request after the repeat time is answered again" );
+		guest.Frozen = false;
 		Rounds( 120, random );
 		Assert.IsTrue( lost >= 2, "a second answer came" );
 		Assert.IsTrue( guest.Guest!.Stopped );
@@ -635,6 +644,13 @@ public class CoopStreamTests
 		Rounds( 120, random );
 		Assert.IsTrue( dropped );
 		Assert.IsTrue( network.Offered.Values.Max() <= 2, $"a frame was offered {network.Offered.Values.Max()} times" );
+		// the resent frame is refused too: the host rewinds again instead of standing still
+		var again = host.Host.LastFrame + 2;
+		var drops = 0;
+		host.Link.DropToServer = seq => seq == again && drops++ < 2;
+		Rounds( 240, random );
+		Assert.AreEqual( 3, drops, "the frame was dropped twice, then taken" );
+		Assert.IsTrue( network.LastFrame > again, "the server went past it" );
 		host.Link.Latency = 0;
 		CatchUpAndCompare( host, guests, random );
 	}
@@ -671,5 +687,6 @@ public class CoopStreamTests
 		Assert.IsNull( host.Level.Objects.ScriptWorld.SessionTime );
 		Assert.IsNull( guests[0].Level.Objects.ScriptWorld.SessionTime );
 		Assert.IsNull( host.Level.CommandRecorder, "the session's own recording stops with it" );
+		Assert.AreEqual( host.Level.Commands.Log.Count, host.Host.SessionLog!.Entries.Count, "and its log stays with the stream" );
 	}
 }

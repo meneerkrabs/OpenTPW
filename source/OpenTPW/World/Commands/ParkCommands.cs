@@ -341,7 +341,6 @@ public sealed class ParkCommands
 		}
 	}
 
-	/// <summary>Logs a command and raises <see cref="Applied"/>; a subscriber that throws is logged (and rethrown when strict), so it never takes the funnel down with it.</summary>
 	/// <summary>
 	/// Logs a command and raises <see cref="Applied"/> for it: every subscriber runs, each in its own catch, so one that throws never keeps the others (a session's stream among
 	/// them) from the command; a strict run rethrows the first throw once all have run.

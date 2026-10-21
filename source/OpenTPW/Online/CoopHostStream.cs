@@ -116,8 +116,9 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 	private double resendTokens = ResendBytesPerSecond;
 	private double lastResendRefill;
 	private long? lastClockSecond;
-	/// <summary>The frame the last refusal rewound to: the refusals of the frames that were on their way after it name the same frame and change nothing.</summary>
+	/// <summary>The frame the last refusal rewound to, and how many refusals of the frames that were on their way after it (naming the same frame) are still to come.</summary>
 	private ulong? rewoundTo;
+	private long staleRefusals;
 	private bool disposed;
 
 	/// <param name="seconds">A monotonic clock in seconds (wall time; the tests' virtual one).</param>
@@ -170,6 +171,12 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 
 	/// <summary>Raised for every desync a guest reports (once per desync), with the guest's member id and its report.</summary>
 	public event Action<uint, CoopDesyncReport>? Desynced;
+
+	/// <summary>
+	/// The session's recorded stream (design section 6: a desync replays offline with the command tools): taken at the first desync a guest reports, and in full when the stream
+	/// ends; null before either.
+	/// </summary>
+	public ParkCommandLogFile? SessionLog { get; private set; }
 
 	/// <summary>The frames published so far (the next frame's number less one).</summary>
 	public ulong LastFrame => nextSeq - 1;
@@ -347,6 +354,7 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 		if ( Failure != null )
 			return;
 		rewoundTo = null;
+		staleRefusals = 0;
 		var last = session.LastFrameSeq;
 		if ( session.SeqKnown )
 		{
@@ -400,16 +408,19 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 
 	/// <summary>
 	/// The server took a frame out of turn: it holds every frame before <see cref="CoopFrameRefused.Expected"/>, exactly (the host's frames after a crash's resume start above the
-	/// server's number, which it takes), and the host resends from there. Every frame that was on its way after the gap is refused with the same number: only the first refusal
-	/// rewinds.
+	/// server's number, which it takes), and the host resends from there. Every frame that was on its way after the gap is refused with the same number, in order: those refusals
+	/// change nothing, and one more naming it means the resent frame was refused too, so the host rewinds again.
 	/// </summary>
 	private void OnFrameRefused( CoopFrameRefused refused )
 	{
 		if ( Failure != null )
 			return;
 		var expected = refused.Expected;
-		if ( expected == rewoundTo )
+		if ( expected == rewoundTo && staleRefusals > 0 )
+		{
+			staleRefusals--;
 			return;
+		}
 		if ( expected > nextSeq )
 		{
 			Fail( $"The server expects frame {expected}, after the host's last." );
@@ -421,6 +432,8 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 			Fail( $"The server needs frame {expected}, which the host no longer holds." );
 			return;
 		}
+		// the frames after the first refused one, up to the last one handed over, were on their way too: each is refused with the same number
+		staleRefusals = Math.Max( 0, (long)(sendNext - expected) - 2 );
 		rewoundTo = expected;
 		sendNext = expected;
 		Flush();
@@ -487,9 +500,10 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 				{
 					Log.Warning( $"Shared park guest {guest.Id} desynced ({report.Kind}) at tick {report.Tick}: host digest {report.HostDigest:X16}, guest {report.GuestDigest:X16}, "
 						+ $"stream records {report.FirstStream} to {report.LastStream}; the host recorded {level.CommandRecorder?.Entries.Count ?? 0} commands of the session." );
+					SessionLog ??= level.CommandLog();
 					Desynced?.Invoke( guest.Id, report );
 				}
-				guest.Phase = GuestPhase.Desynced;
+				Desync( guest );
 				transport.Send( guest.Id, new CoopDesyncSeen( report.Id ).Encode() );
 				break;
 		}
@@ -509,7 +523,7 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 		switch ( progress.State )
 		{
 			case CoopGuestState.Desynced:
-				guest.Phase = GuestPhase.Desynced;
+				Desync( guest );
 				return;
 			case CoopGuestState.TooFarBack:
 				guest.Phase = GuestPhase.TooFarBack;
@@ -559,6 +573,15 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 		transport.Send( guest.Id, new CoopTooFarBack( from ).Encode() );
 	}
 
+	/// <summary>A guest stopped at a desync: the host neither waits for it nor resends to it (a copy on its way stops) until a resync.</summary>
+	private static void Desync( Guest guest )
+	{
+		guest.Phase = GuestPhase.Desynced;
+		guest.CatchingUpSince = null;
+		guest.ResendCursor = guest.ResendEnd = 0;
+		guest.InFlight.Clear();
+	}
+
 	/// <summary>Tells a guest again that it is too far back, at most every <see cref="TooFarBackRepeatSeconds"/>: the first message may have been lost.</summary>
 	private void RepeatTooFarBack( Guest guest, double now )
 	{
@@ -604,6 +627,8 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 		lastResendRefill = now;
 		foreach ( var guest in guests.Values.OrderBy( guest => guest.Id ) )
 		{
+			if ( guest.Phase is GuestPhase.Desynced or GuestPhase.TooFarBack )
+				continue;
 			while ( guest.Resending && transport.IsOpen )
 			{
 				if ( guest.ResendCursor < OldestFrame )
@@ -704,6 +729,8 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 		// the park's scripts read the machine's own clock again
 		if ( level.Objects?.ScriptWorld is { } scripts )
 			scripts.SessionTime = null;
+		if ( level.CommandLog() is { } log )
+			SessionLog = log;
 		if ( recording )
 			level.StopCommandRecording();
 	}

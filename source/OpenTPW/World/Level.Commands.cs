@@ -63,11 +63,23 @@ public partial class Level
 	private RideVisitorBridge? ResolveCommandRide( int attraction ) =>
 		Guests?.Attractions.OfType<RideVisitorBridge>().FirstOrDefault( ride => ride.HasQueue && ride.AttractionId == attraction );
 
+	/// <summary>
+	/// <see cref="ResolveCommandRide"/> for a queue line command, its queue brought up to date first (as the queue edit's is): the queue tool's entry only reads the queue
+	/// (<see cref="EnterQueueTool"/>), so a grid edit since the last recompute is taken in here, on every peer alike.
+	/// </summary>
+	private RideVisitorBridge? ResolveQueueCommandRide( int attraction )
+	{
+		if ( ResolveCommandRide( attraction ) is not { } ride || Guests == null )
+			return null;
+		ride.RecomputeQueue( Guests.Grid );
+		return ride;
+	}
+
 	/// <summary>The line writer a command's line is laid and taken back through: the path builder, or the queue writer of the ride.</summary>
 	private ICellLineWriter? CommandLineWriter( CellToolMode mode, int ride ) => mode switch
 	{
 		CellToolMode.Path => Paths,
-		CellToolMode.Queue when ResolveCommandRide( ride ) is { } bridge && Guests != null => CreateQueueWriter( bridge ),
+		CellToolMode.Queue when ResolveQueueCommandRide( ride ) is { } bridge => CreateQueueWriter( bridge ),
 		_ => null
 	};
 
@@ -152,7 +164,7 @@ public partial class Level
 
 	private ParkCommandResult ExecuteQueueSegment( QueueSegmentCommand line )
 	{
-		if ( ResolveCommandRide( line.Ride ) is not { } ride || Guests == null ) return ParkCommandResult.Rejected( "No queue ride." );
+		if ( ResolveQueueCommandRide( line.Ride ) is not { } ride ) return ParkCommandResult.Rejected( "No queue ride." );
 		var writer = CreateQueueWriter( ride );
 		if ( !writer.SupportsNativeStart( (line.StartX, line.StartY) ) || !writer.SupportsNative( (line.StartX, line.StartY), (line.EndX, line.EndY) ) ) return ParkCommandResult.Rejected( "Unsupported native queue domain." );
 		// Even a partial type failure applied subsequent passes and must remain in the command log.
@@ -161,7 +173,7 @@ public partial class Level
 
 	private ParkCommandResult ExecuteQueueSegmentUndo( UndoQueueSegmentCommand undo )
 	{
-		if ( ResolveCommandRide( undo.Ride ) is not { } ride || Guests == null ) return ParkCommandResult.Rejected( "No queue ride." );
+		if ( ResolveQueueCommandRide( undo.Ride ) is not { } ride ) return ParkCommandResult.Rejected( "No queue ride." );
 		var writer = CreateQueueWriter( ride );
 		if ( !writer.SupportsNativeUndo( (undo.StartX, undo.StartY), (undo.EndX, undo.EndY) ) ) return ParkCommandResult.Rejected( "Unsupported native queue undo domain." );
 		writer.UndoNative( new( (undo.StartX, undo.StartY), (undo.EndX, undo.EndY) ) );
@@ -196,6 +208,9 @@ public partial class Level
 
 	private ParkCommandResult ExecuteSetPrototypeRunning( SetPrototypeRunningCommand running )
 	{
+		// [EXT:online-coop-lockstep] the developer prototype's run skips the reopening guard: a co-op session refuses it alike on every peer
+		if ( Commands.SessionRules )
+			return ParkCommandResult.Rejected( "The developer panel is off in a shared park." );
 		if ( PlacedRide == null )
 			return ParkCommandResult.Rejected( "No prototype ride is placed." );
 		if ( running.Running )

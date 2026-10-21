@@ -103,6 +103,18 @@ public class CoopStreamTests
 	/// <summary>The frame batching tests' park (objects, paths, guests, staff), built the same way for every member.</summary>
 	private Peer NewPeer( CoopTestNetwork.Member link )
 	{
+		var park = BuildPark( fixture! );
+		var peer = new Peer { Level = park.Level, Economy = park.Economy, One = park.One, Two = park.Two, Entities = park.Entities, Link = link };
+		peers.Add( peer );
+		return peer;
+	}
+
+	/// <summary>
+	/// The frame batching tests' park (objects, paths, guests, staff), its entities in a list of their own; <see cref="Entity.All"/> is left on that list (the co-op session tests
+	/// build their parks here too).
+	/// </summary>
+	internal static (Level Level, ParkEconomy Economy, OriginalObject One, OriginalObject Two, List<Entity> Entities) BuildPark( UpgradeCatalogueDefaultsTests fixture )
+	{
 		var list = new List<Entity>();
 		Entity.All = list;
 		Level.Current = null!;
@@ -131,9 +143,7 @@ public class CoopStreamTests
 			level.Guests.SpawnInPark( x, y );
 		EconomyTestData.HireBest( world.Economy, StaffType.Mechanic );
 		EconomyTestData.HireBest( world.Economy, StaffType.Handyman );
-		var peer = new Peer { Level = level, Economy = world.Economy, One = world.One, Two = world.Two, Entities = list, Link = link };
-		peers.Add( peer );
-		return peer;
+		return (level, world.Economy, world.One, world.Two, list);
 	}
 
 	/// <summary>While set, the host's local time stands still (the catch-up at a test's end: no clock command is left on its way when the parks are compared).</summary>

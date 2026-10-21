@@ -75,6 +75,8 @@ public sealed partial class ParkHud
 	private readonly Dictionary<string, PreviewIcon?> icons = new();
 	private readonly List<UiElement> infoElements = new();
 	private string lastLevelMessage = "";
+	/// <summary>[EXT:online-coop-lockstep] The level's session refusals the HUD has said already (<see cref="Level.SessionRefusals"/>).</summary>
+	private int lastSessionRefusals;
 	private BuildItem? pendingItem;
 	private UiLabel? moneyLabel;
 	private ListSortMemory? fallbackSorts;
@@ -101,6 +103,7 @@ public sealed partial class ParkHud
 		Catalog = catalog;
 		buy = new BuyListModel( catalog, ListName, BuyPrice, Sorts, LandRows, item => Status.IsAvailable( item ) );
 		lastLevelMessage = level.LastActionMessage;
+		lastSessionRefusals = level.SessionRefusals;
 		try
 		{
 			level.Objects.ObjectPlaced += OnObjectPlaced;
@@ -882,6 +885,13 @@ public sealed partial class ParkHud
 		if ( walkingAtStart && level.FreeWalk == null && Camera.Mode is ParkCameraMode returningCamera )
 			returningCamera.ModalOpen = true;
 
+		// [EXT:online-coop-lockstep] a guest's click in a shared park: only the host builds
+		if ( level.SessionRefusals != lastSessionRefusals )
+		{
+			lastSessionRefusals = level.SessionRefusals;
+			PostMessage( strings.Extra( OpenTpwText.OnlyTheHostBuilds ) );
+			GameAudio.PlayUi( GameAudio.ErrorEvent );
+		}
 		if ( level.LastActionMessage != lastLevelMessage )
 		{
 			lastLevelMessage = level.LastActionMessage;

@@ -762,16 +762,18 @@ public partial class Level
 		if ( IsReadOnlyVisit || Guests == null || ride.QueueFrontCell is not { } front )
 			return false;
 		StaffPlacement?.Cancel();
-		ride.RecomputeQueue( Guests.Grid );
-		var start = Guests.Grid.IsQueue( front.X, front.Y ) ? ride.QueueBackCell : front;
+		// [EXT:online-coop-lockstep] the tool reads the queue as it stands now on a copy (a grid edit since the last recompute taken in): entering a tool changes nothing in
+		// the park, and each queue command brings the ride's own queue up to date first, on every peer
+		var queue = ride.QueueView( Guests.Grid );
+		var start = Guests.Grid.IsQueue( front.X, front.Y ) ? queue.QueueBackCell : front;
 		// [BIN:TPW-EXE:0x00530120 corner walk] the tool's entry walks the queue into the stack of corner points (0x81B740) and sets the line start to its last point; the tool's undo then takes the queue back segment by segment (Back 0x52FE50)
 		// a queue of its front cell alone (a ride just placed) keeps the one-point stack the placement leaves, so its first click lays from the front cell
-		var stack = Guests.Grid.IsQueue( front.X, front.Y ) && ride.QueueCells.Count >= 2 ? QueuePaths.CornerStack( Guests.Grid, ride ) : null;
+		var stack = Guests.Grid.IsQueue( front.X, front.Y ) && queue.QueueCells.Count >= 2 ? QueuePaths.CornerStack( Guests.Grid, queue ) : null;
 		if ( stack is not { Count: >= 2 } || stack[^1] != start )
 			stack = null;
 		// [EXT:online-coop-commands] the tool's previews read the ride's queue writer; each committed line is a command
 		CellTool.Enter( new ParkCommandLineWriter( CreateQueueWriter( ride ), Commands, ride.AttractionId ), start,
-			stack, stack == null ? null : QueuePaths.StackSegments( ride, stack ) );
+			stack, stack == null ? null : QueuePaths.StackSegments( queue, stack ) );
 		return true;
 	}
 

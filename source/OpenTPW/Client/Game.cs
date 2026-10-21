@@ -9,6 +9,8 @@ internal static class Game
 	public static void Run( string[] args )
 	{
 		Log = new();
+		// [EXT:online-coop-lockstep] every --debug-* and --perf-* option may change the park outside the commands: such a game shares no park (CoopSession.CanShare)
+		CoopSession.ChangesParkOutsideCommands = args.Any( arg => arg.StartsWith( "--debug-", StringComparison.Ordinal ) || arg.StartsWith( "--perf-", StringComparison.Ordinal ) );
 		SdlMovieAudioOutput.Suppressed = IsSilentRun( args, Environment.GetEnvironmentVariable( "OPENTPW_SILENT" ), Environment.GetEnvironmentVariable( "OPENTPW_OFFSCREEN" ) );
 		Window.OffscreenRequested = IsOffscreenRun( args, Environment.GetEnvironmentVariable( "OPENTPW_OFFSCREEN" ) );
 		// [EXT:online-coop-commands] a strict run throws on a command applied inside a simulation tick and on one that throws (docs/COOP.md, "No command inside a tick"); only ever
@@ -393,6 +395,14 @@ internal static class Game
 			// [EXT:perf-run] --perf-hash-tick <tick> logs the park's world state hash (Level.ComputeStateHash) at the frame whose park tick is exactly that one, so two runs (the evening extension on and off, say)
 			// can be compared on a real level with its placed objects; use --perf-speed 1 so no frame steps over the tick
 			long? perfHashTick = GetOption( args, "--perf-hash-tick", "a park tick" ) is { } hashTickText && long.TryParse( hashTickText, out var parsedHashTick ) && parsedHashTick > 0 ? parsedHashTick : null;
+			// [EXT:perf-run] --perf-digest adds the co-op session digest's cost on the running park to every 600th frame's line (CoopDigest.MeasureCost, the median of five; docs/COOP.md,
+			// "Measurements"); the five digests run inside that frame, so leave it out of frame-time runs
+			var perfDigest = args.Contains( "--perf-digest" );
+			// [EXT:perf-run] --perf-crowd <n> stages n guests on the park's paths once the door opens (UmbrellaPerf.Stage without weather or umbrellas, as the browser harness's PerfCrowd), so a
+			// measurement sees a full park at once; the park is not a real run afterwards
+			int? perfCrowd = GetOption( args, "--perf-crowd", "a number of guests" ) is { } perfCrowdText
+				? int.TryParse( perfCrowdText, out var parsedPerfCrowd ) && parsedPerfCrowd is > 0 and <= 5000 ? parsedPerfCrowd : throw new ArgumentException( "--perf-crowd expects a number of guests from 1 to 5000." )
+				: null;
 			int perfWarmup = 0, perfDone = 0;
 			var perfOpened = false;
 			Render.PostUpdate += () =>
@@ -413,6 +423,8 @@ internal static class Game
 						perfCamera.SetPose( perfCamera.Target, zoom, perfCamera.Yaw );
 					if ( perfArrivals is { } arrivals && perfLevel.Guests != null )
 						perfLevel.Guests.Settings.ArrivalTimeBetween = arrivals;
+					if ( perfCrowd is { } crowd && perfLevel.Guests != null )
+						Log.Trace( $"--perf-crowd: {UmbrellaPerf.Stage( perfLevel.Guests, null, crowd, 0, false ).Guests} guests in the park." );
 				}
 				if ( perfHashTick is { } hashTick && perfPark.Economy.Tick == hashTick )
 				{
@@ -420,7 +432,10 @@ internal static class Game
 					Log.Trace( $"--perf-run: world state hash {perfLevel.ComputeStateHash():x16} at park tick {hashTick}, {perfLevel.PointLights.Count} point lights in view." );
 				}
 				if ( ++perfDone % 600 == 0 )
-					Log.Trace( $"--perf-run: frame {perfDone}: {perfLevel.Guests?.Guests.Count} guests, park tick {perfPark.Economy.Tick}, {(perfPark.Economy.IsParkOpen ? "open" : "closed")}, {perfPark.Economy.Counters[ParkCounters.Admissions]} admissions, balance ${perfPark.Economy.Balance}, {perfLevel.PointLights.Count} point lights in view." );
+				{
+					var digestCost = perfDigest && CoopDigest.MeasureCost( perfLevel, 5 ) is var (digest, worldHash) ? $", session digest {digest:0.00} ms (world hash {worldHash:0.00} ms) on {perfLevel.Objects.Objects.Count} objects" : "";
+					Log.Trace( $"--perf-run: frame {perfDone}: {perfLevel.Guests?.Guests.Count} guests, park tick {perfPark.Economy.Tick}, {(perfPark.Economy.IsParkOpen ? "open" : "closed")}, {perfPark.Economy.Counters[ParkCounters.Admissions]} admissions, balance ${perfPark.Economy.Balance}, {perfLevel.PointLights.Count} point lights in view{digestCost}." );
+				}
 				if ( perfDone >= perfFrames )
 					Render.Window.SdlWindow.Close();
 			};

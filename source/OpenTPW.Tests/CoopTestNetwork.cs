@@ -27,6 +27,9 @@ internal sealed class CoopTestNetwork( Func<double>? clock = null )
 	/// <summary>How often the host offered each frame to the server (taken or refused).</summary>
 	public Dictionary<ulong, int> Offered { get; } = new();
 
+	/// <summary>Every frame the server took, in order.</summary>
+	public List<byte[]> Taken { get; } = new();
+
 	public Member Host => members.First( member => member.IsHost );
 
 	/// <summary>A member joins: it sees the session as it stands, and the connected members hear of it.</summary>
@@ -69,6 +72,7 @@ internal sealed class CoopTestNetwork( Func<double>? clock = null )
 		LastFrame = seq;
 		SeqKnown = true;
 		var copy = payload.ToArray();
+		Taken.Add( copy );
 		foreach ( var guest in members.Where( member => !member.IsHost && member.Connected ) )
 		{
 			guest.Frames++;
@@ -139,6 +143,7 @@ internal sealed class CoopTestNetwork( Func<double>? clock = null )
 		public event Action<CoopMemberChanged>? MemberChanged;
 		public event Action<CoopFrame>? FrameReceived;
 		public event Action<CoopRelayed>? MessageReceived;
+		public event Action<CoopEnded>? SessionEnded;
 
 		public bool SendFrame( ulong seq, ReadOnlyMemory<byte> payload )
 		{
@@ -215,6 +220,13 @@ internal sealed class CoopTestNetwork( Func<double>? clock = null )
 			}
 			MemberChanged?.Invoke( change );
 		}
+
+		/// <summary>The session ends for this member (the host left, a kick): what it hears next.</summary>
+		public void End( string reason ) => Enqueue( () =>
+		{
+			Snapshot = null;
+			SessionEnded?.Invoke( new CoopEnded( "s", CoopReason.Unknown, reason ) );
+		} );
 
 		internal void RaiseFrameRefused( CoopFrameRefused refused ) => FrameRefused?.Invoke( refused );
 		internal void RaiseFrame( CoopFrame frame ) => FrameReceived?.Invoke( frame );

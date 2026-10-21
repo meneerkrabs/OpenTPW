@@ -23,8 +23,15 @@ internal sealed class CoopHostOnlyRights : IParkCommandRights
 /// </summary>
 internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 {
-	/// <summary>The ticks between two tick checkpoints: one park second.</summary>
+	/// <summary>The ticks between two tick checkpoints at the normal speed: one park second.</summary>
 	public const int CheckpointTicks = FixedStepClock.TicksPerSecond;
+
+	/// <summary>
+	/// The ticks between two tick checkpoints at <paramref name="speed"/>: <see cref="CheckpointTicks"/> times the speed's factor, so the host takes one digest a second of real
+	/// time at every speed (a full park's digest costs about 10 ms in the browser build, docs/COOP.md "Measurements"); the intervals divide each other, so a change of speed
+	/// keeps them aligned.
+	/// </summary>
+	public static int CheckpointInterval( GameSpeed speed ) => CheckpointTicks * Math.Max( 1, (int)GameSpeedScale.Of( speed ) );
 	/// <summary>The least time between two published frames.</summary>
 	public const double PublishSeconds = 0.1;
 	/// <summary>How far, in park seconds at the current speed, the host may run ahead of its slowest following guest.</summary>
@@ -281,7 +288,7 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 
 	private void OnTickEnded( long ticks )
 	{
-		if ( Failure == null && ticks % CheckpointTicks == 0 )
+		if ( Failure == null && ticks % CheckpointInterval( level.Park?.Economy.Speed ?? GameSpeed.Normal ) == 0 )
 			pendingTicks.Add( new CoopCheckpoint( CoopCheckpointKind.AfterTick, ticks, CoopDigest.Compute( level ) ) );
 	}
 

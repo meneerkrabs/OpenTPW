@@ -7,8 +7,9 @@ online extension `opentpw.online`, labelled `[EXT:online-coop-*]` in the code. T
 phases (C1 to C7) and the comparison of the architectures is in the project notes
 (`plans/coop-plan.md`); this page records what is built and the decisions it rests on.
 
-Status: phase C1, the command layer, in progress. No session code exists yet; single player is
-unchanged.
+Status: the command layer (C1) is in place, and of the sessions (C2) the server, the game's link, the
+host's command stream and the level in a session are built. The join and resync (C2c) and the
+screens (C2d) follow, so no game starts a session yet; single player is unchanged.
 
 ## User decisions
 
@@ -62,9 +63,9 @@ their code, the open list, invitations, the version and mod gate, the relay of t
 order, resume after a lost connection or a restart, and the join snapshots
 ([ONLINE.md](ONLINE.md), "Shared parks"; part C2a). So does the game's link to it (`CoopLink` under
 `OnlineSession`): it opens, resumes and closes the socket and offers the requests and events a shared
-park needs. The host's command stream runs over it (C2b-1, below). The level in a session (rights,
-local pauses, the gating of cheats, saves and debug setups: C2b-2), the join and resync (C2c) and the
-game's screens (C2d) follow; until then no game starts a stream.
+park needs. The host's command stream runs over it (C2b-1, below), and a level takes part in a session
+through `CoopSession` (C2b-2, below). The join and resync (C2c) and the game's screens (C2d) follow;
+until then no game starts a session.
 
 ### The host's command stream (C2b-1)
 
@@ -84,7 +85,9 @@ host's ticks, checked by digests (`CoopHostStream`, `CoopGuestStream`; the frame
   guest stands at applies at once), and its ticks run only up to the horizon. It runs at the park's own
   rate about one published frame behind the horizon and catches up a share of any further lag each
   frame, within a time budget, never past the horizon and never dropping a tick.
-- **Checks.** After every 60th tick (a park second) the host takes the session digest (`CoopDigest`):
+- **Checks.** After every 60th tick (a park second) at the normal speed, and once a second of real
+  time at the faster ones (every 120th or 240th tick, "Measurements" below), the host takes the
+  session digest (`CoopDigest`):
   the world hash and what a session shares that the world hash leaves out. That is the placed objects'
   layout, economy links and run flags; the weather, without the thunder that the frames drain; every
   player's carried catalogue entry, hand and coaster drag; the pending hire; the coasters'
@@ -125,6 +128,73 @@ host's ticks, checked by digests (`CoopHostStream`, `CoopGuestStream`; the frame
 The tests run a host and its guests as levels of one asset-free park in one process over an in-memory
 server with the real one's guarantees, each driven through whole game frames of random lengths
 (`CoopStreamTests`, `CoopStreamCodecTests`).
+
+### The level in a session (C2b-2)
+
+`[EXT:online-coop-lockstep]` `CoopSession` puts a level into the session its link is in, as the host
+(`Host`) or as a guest whose park is the host's (`Join`; the join snapshot that gives a guest that
+park is C2c's, the screens that call both are C2d's), and owns the level's stream. The level knows its
+part (`Level.CoopRole`: none, host or guest).
+
+- **Which park is shared.** `CoopSession.CanShare`: a running Theme Park World park with its guests
+  (decision Q3: never Theme Park Inc, and never the developer sandbox, whose load replaces the park
+  outside the commands), not a visit and not in a session already, in a game not started with a
+  developer option that changes the park outside the commands. Every `--debug-*` and `--perf-*`
+  option counts, and so does the browser page of the performance harness (`?perf=1`): their setups
+  and hooks build, fill or edit the park directly, so a peer would never see their changes.
+- **Only the host builds.** In C2 the rights let only player 0 build (`CoopHostOnlyRights`). A
+  guest's own click is refused before it runs and leaves no trace in its log. The funnel raises
+  `SessionRefused`, and the guest's HUD says "Only the host builds in a shared park"
+  (`OpenTpwText.OnlyTheHostBuilds`, in the eleven languages of the OpenTPW texts) with the error
+  sound, as it does for a cell it cannot build on.
+- **Rules every peer applies alike.** These checks read the funnel's session rules, so a guest
+  refuses the host's record as the host did, and the record's outcome check agrees:
+  - the cheats (`QueueCheatCommand`) and the secret park name of the rename are refused (decision
+    Q17); any other name goes through;
+  - so are the developer panel's open-all and close-all (`SetAllObjectsOpenCommand`) and the
+    developer prototype's run (`SetPrototypeRunningCommand`), which skip the reopening guard.
+- **No local pause.** In a session the level runs at the park's own speed (`GameFlow.SessionTimeScale`)
+  whatever screens a player has open: the pause menu, the map window, a postcard or a delete
+  confirmation stop no shared park. Only the host pauses or changes the speed, with the speed commands
+  (decision Q8); a guest's park follows the host's stream.
+- **A guest never saves.** Its park is the host's: it takes no automatic checkpoint, periodic
+  autosave, exit checkpoint or restart snapshot (`GameFlow.AutomaticEligible`, `TakesRestartSnapshot`),
+  and leaving the park goes to the front end, as a visit does. The host saves as before; the co-op
+  copies of decision Q9 come later.
+- **The end.** The session ends for a game when its level closes (a load, a restart, a replaced park,
+  leaving the park: `Level.Dispose`), when its link's session ends (a kick, the host leaving, a session
+  that ended while the game was away) and when the host's stream ends it. A player's own end leaves
+  the session, and a host's leave ends it for everyone. The stream's rules go with the session, and
+  the park is that player's own again.
+- **A tool changes nothing in the park.** A tool is one player's alone, so entering one must not change
+  what the peers share. The queue tool's entry (after a ride is placed, after a track's circuit closes
+  or a coaster is completed, from the ride window's edit button, on a queue click) used to recompute
+  the ride's queue on that machine. It now reads the queue as it stands from a copy
+  (`RideVisitorBridge.QueueView`), and every queue line command brings the ride's queue up to date
+  first, as the queue edit already did, on every peer alike.
+
+`CoopSessionTests` runs a host and a guest of the asset-free park through `CoopSession` over the
+in-memory server, and once over the game's real links to a loopback server with a lost socket on
+each side.
+
+### Measurements
+
+The design fixed two constants only after measuring them (`coop-c2b-design.md`, section 11).
+
+- **The digest's cost.** The digest is the world hash, which serialises the economy, plus a little
+  more. The median of 15 in the published browser build (Mono AOT, Chrome 155 headless, Apple M5;
+  `tools/web-perf/run.mjs --scenarios start,jungle,coopDigest --crowd 1500`): Jungle as Full
+  Simulation starts it, 2.3 ms; with 80 of the buy menu's rides and shops built, 5.7 ms; with 1,500
+  guests staged on top, 6.7 ms; the same park after 20 seconds of play, 10.0 ms. On the desktop
+  (Release, `--perf-run 3600 --perf-crowd 1500 --perf-digest`, the median of five every 600th frame)
+  the opening Jungle with 1,400 to 1,500 guests took 4.5 to 5.3 ms once warm. A steady Jungle frame
+  in the browser has a p95 of 4.5 ms, so a digest a park second fits at the normal speed, but four a
+  second at the fastest (40 ms a second, each one most of a frame) do not: a faster park takes its
+  digests as many park seconds apart as its speed, once a second of real time
+  (`CoopHostStream.CheckpointInterval`).
+- **Frames.** Through a build session at the fastest speed (`CoopSessionTests`) the host published
+  9.2 frames a second, 25 bytes on average and 81 at most (231 bytes a second), and 19 digests in 20
+  seconds. The 100 ms frame period stays.
 
 ## The command layer (C1)
 
@@ -424,20 +494,21 @@ guarded list.
   as the employees in hand are not; the session digest covers both (C2b-1), and a session's join
   snapshot (C2c) taken during a drag must carry it.
 - The developer and smoke options (`--perf-*`, `--debug-*`) set their parks up directly; a recording
-  made with them does not replay.
+  made with them does not replay, and a game started with them shares no park (C2b-2).
 - The developer prototype can be opened by two kinds (32 with the reopening guard, 22 without), and
   kind 25 opens every placed object without the guard; the coaster tool's entry and exit (90, 91)
-  close and open a coaster without it too. The host's rights (C3) must name all five.
+  close and open a coaster without it too. A session refuses 22 and 25 on every peer (C2b-2); the
+  host's rights (C3) must name the other three.
 - A park call that throws after it began to change the park (an event listener of the economy, for
   example) is reported as a rejection with the change made. The throw is the same for the same park,
   so peers stay together, but only while no peer has a listener of its own that throws: presentation
   listeners must never throw. A tool that issued the command takes the rejection as no write (the
   track line writer answers a stopped line, for example), so its undo stack misses what was written.
 - The secret park name ("Kevin the" / "Cosmic Cow") turns the cheat mode on inside `Level.RenamePark`,
-  so a session that refuses the cheats (decision Q17) must refuse that name in `RenameParkCommand`
-  too, not only `QueueCheatCommand`.
-- The developer panel's sandbox load (`Level.LoadSandbox`) replaces the park outside the commands; it is
-  listed in the guard for C2, where a session replaces the park from the host.
+  so a session, which refuses the cheats (decision Q17), refuses that name in `RenameParkCommand` as
+  well as the cheats in `QueueCheatCommand` (C2b-2).
+- The developer panel's sandbox load (`Level.LoadSandbox`) replaces the park outside the commands; it
+  stays in the guard's list, as the developer sandbox is never shared (C2b-2, `CoopSession.CanShare`).
 - The employees in the players' hands (`StaffHands`) are not in the world hash, as the Move tool's
   carried entry is not (the session digest covers both, C2b-1). A save drops the employee in the saving machine's own hand first (a `DropStaffCommand`), so
   that hand is empty in the save; another player's held employee is saved picked up. A session's join
@@ -447,6 +518,7 @@ guarded list.
   pick-up is refused. C3 must always allow the drop back to where the employee came from.
 - A hire's pending candidate (`ParkStaff.PendingPlacementId`) is one per park: two players placing hires
   at once would take it from each other (C3 gives each player a placement).
-- Opening the queue tool (after a ride is placed, its track circuit closes or its coaster is completed) recomputes the ride's
-  queue on the issuer's machine (`Level.EnterQueueTool`), outside the commands; C2 makes that part of a
-  command or shows that it changes nothing.
+- Opening the queue tool (after a ride is placed, its track circuit closes or its coaster is completed,
+  from the ride window or on a queue click) recomputed the ride's queue on the issuer's machine
+  (`Level.EnterQueueTool`), outside the commands. Since C2b-2 it reads the queue from a copy, and the
+  queue line commands bring the ride's queue up to date first ("The level in a session").

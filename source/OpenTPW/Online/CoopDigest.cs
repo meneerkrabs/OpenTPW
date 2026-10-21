@@ -19,6 +19,29 @@ internal static class CoopDigest
 		level.AddSessionState( hash );
 		return hash.Value;
 	}
+
+	/// <summary>
+	/// [EXT:perf-run] The digest's cost on <paramref name="level"/> (docs/COOP.md, "Measurements"): the median time of <paramref name="repeats"/> digests and of as many world hashes alone,
+	/// in milliseconds. Measurement only: it reads the park and changes nothing.
+	/// </summary>
+	internal static (double Digest, double WorldHash) MeasureCost( Level level, int repeats )
+	{
+		ArgumentNullException.ThrowIfNull( level );
+		ArgumentOutOfRangeException.ThrowIfLessThan( repeats, 1 );
+		static double Median( Func<ulong> work, int repeats )
+		{
+			var times = new double[repeats];
+			for ( var index = 0; index < repeats; index++ )
+			{
+				var start = System.Diagnostics.Stopwatch.GetTimestamp();
+				work();
+				times[index] = System.Diagnostics.Stopwatch.GetElapsedTime( start ).TotalMilliseconds;
+			}
+			Array.Sort( times );
+			return times[repeats / 2];
+		}
+		return (Median( () => Compute( level ), repeats ), Median( level.ComputeStateHash, repeats ));
+	}
 }
 
 public partial class Level

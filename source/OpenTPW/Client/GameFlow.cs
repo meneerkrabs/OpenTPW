@@ -643,8 +643,9 @@ internal sealed partial class GameFlow : IDisposable
 				walkCamera.ModalOpen = true;
 			UpdateParkGlobe( Hud );
 			// The pause menu, the map window and a texture-pack download stop the park; the speed setting is kept (ParkHud.TimeScaleFor).
-			// The park being left waits too while the next one is built.
-			Level.SimulationTimeScale = parkBuild != null ? 0 : Hud.SimulationTimeScale;
+			// The park being left waits too while the next one is built. [EXT:online-coop-lockstep] in a co-op session no screen of one player stops the park: it runs at its speed
+			// (a guest's clock follows the host's stream, and its scene clock this speed)
+			Level.SimulationTimeScale = parkBuild != null ? 0 : SessionTimeScale( Level ) ?? Hud.SimulationTimeScale;
 			using ( FrameMarks.Measure( "park.level" ) )
 				Level.Update();
 			presence?.Update( Time.Delta );

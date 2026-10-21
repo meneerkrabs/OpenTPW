@@ -137,7 +137,7 @@ public sealed class RideHeadRenderer : Entity
 		var forward = -new SVector3( view.M13, view.M23, view.M33 );
 		// The presentation works in MD2 axes (Y up): engine Y and Z swapped.
 		var camera = Camera.Position;
-		var cameraMd2 = new SVector3( camera.X, camera.Z, camera.Y );
+		var cameraMd2 = HeadPresentation.CameraFromEngineView( view, camera.GetSystemVector3() );
 		sources.Clear();
 		foreach ( var provider in providers )
 			provider.Collect( sources, OnlyAttraction );

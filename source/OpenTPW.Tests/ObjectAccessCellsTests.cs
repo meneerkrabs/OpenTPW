@@ -418,6 +418,40 @@ public class ObjectAccessCellsTests
 	}
 
 	[TestMethod]
+	[DataRow( 0 )]
+	[DataRow( 90 )]
+	[DataRow( 180 )]
+	[DataRow( 270 )]
+	public void TrackEndpointsCheckRotatedBeyondOccupancyAndDirectionlessD( int rotation )
+	{
+		foreach ( var symbol in new[] { '<', '>', 'D' } )
+		{
+			var entry = Entry( 1185, 5, false, symbol.ToString() );
+			var rig = new Rig( entry );
+			rig.Objects.TrackEndCellRule = ( x, y ) => CoasterCellMarkers.AllowsOrdinaryGround( rig.Cells, x, y );
+			if ( symbol == 'D' )
+			{
+				Assert.AreEqual( OriginalPlacementResult.OutsideTerrain, rig.Objects.Check( entry, 10, 10, rotation ) );
+				continue;
+			}
+			var (dx, dy) = ObjectFootprint.RotateDirection( rotation, symbol == '>' ? 1 : -1, 0 );
+			var (bx, by) = (10 + dx, 10 + dy);
+			Assert.AreEqual( OriginalPlacementResult.Allowed, rig.Objects.Check( entry, 10, 10, rotation ) );
+			rig.Cells.SetType( bx, by, 21 );
+			rig.Cells.SetOwner( bx, by, ParkCellMap.CellWord( 10, 10 ) );
+			var version = rig.Cells.Version;
+			Assert.AreEqual( OriginalPlacementResult.Occupied, rig.Objects.Check( entry, 10, 10, rotation ), "Station mode4 has no same-owner type21 exemption." );
+			Assert.AreEqual( version, rig.Cells.Version );
+			rig.Cells.SetType( bx, by, 0 );
+			rig.Cells.Tracks.Set( bx, by, new TrackCell { Type = 11 } );
+			Assert.AreEqual( OriginalPlacementResult.Occupied, rig.Objects.Check( entry, 10, 10, rotation ) );
+			var edgeX = dx < 0 ? 0 : dx > 0 ? ParkPlacement.TileCount - 1 : 10;
+			var edgeY = dy < 0 ? 0 : dy > 0 ? ParkPlacement.TileCount - 1 : 10;
+			Assert.AreEqual( OriginalPlacementResult.OutsideTerrain, rig.Objects.Check( entry, edgeX, edgeY, rotation ) );
+		}
+	}
+
+	[TestMethod]
 	public void DemolishingARideClearsItsQueueSoItCanBeRebuiltOnTheSameSite()
 	{
 		var ride = Entry( 1100, 5, true, "*2S" );

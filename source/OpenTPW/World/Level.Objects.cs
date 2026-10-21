@@ -149,6 +149,7 @@ public partial class Level
 			}
 			// the shipped save read for the repair is not kept
 			legacyQueueSave = null;
+			if ( resumeState == null ) BindCoasterCellsAfterLoad();
 		}
 		if ( typesFootprints )
 		{
@@ -163,6 +164,11 @@ public partial class Level
 					// the entrance's outside cell becomes a queue cell, over a plain path the player built: guests walking there step off
 					Guests?.SetDownOffCells( item.AccessPoints.Select( point => (point.OutsideX, point.OutsideY) ).ToHashSet() );
 				}
+			};
+			// Station geometry was created by SetupCoasters' earlier handler. Bind after footprint and access-cell typing, never over it.
+			Objects.ObjectPlaced += item =>
+			{
+				if ( GetCoasterBuilder( item ) is { } builder ) BindCoasterCells( item, builder );
 			};
 			Objects.ObjectRemoved += item =>
 			{
@@ -395,6 +401,7 @@ public partial class Level
 		Objects.IsReserved = ( x, y ) => PoolBridges?.Reserves( x, y ) == true || IsReservedByPrototype( x, y ) || Guests?.Grid.Cells.RawTypeAt( x, y ) is { } type && ReservesCell( type ) || (Guests != null && PoolSlides?.ReservesLand( x, y, Guests.Grid.Cells ) == true);
 		Objects.IsUnowned = ( x, y ) => Guests?.Grid.Cells is { } cells && cells.InBounds( x, y ) && cells.FlagsAt( x, y ).HasFlag( ParkCellFlags.Unowned );
 		Objects.PathAt = ( x, y ) => Guests?.Grid.Cells is { } cells ? ObjectPathAt( cells, x, y ) : null;
+		Objects.TrackEndCellRule = ( x, y ) => Guests?.Grid.Cells is not { } cells || CoasterCellMarkers.AllowsOrdinaryGround( cells, x, y );
 		Objects.ClearPath = ( x, y ) => Paths?.Remove( x, y );
 		Objects.PathRuleAllows = ( x, y ) => Paths?.CheckPathRule( x, y ) is { } rule ? rule is CellBuildResult.Ok or CellBuildResult.Existing : null;
 		// [EXT:pools-changing-room] a changing room needs pool water beside its back

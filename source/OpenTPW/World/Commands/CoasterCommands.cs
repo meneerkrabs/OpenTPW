@@ -149,7 +149,7 @@ public sealed record CoasterClickCommand( int Station, int X, int Y, float Heigh
 		{
 			// [EXT:online-coop-claims] a pylon the click places changes the pylon list (a pylon in a cut circuit's gap moves the pylons after it) and links to the last pylon: the drag running on the coaster ends first, as its
 			// release would (the placement's own refusals read no pylon a drag can change, so a click that places nothing releases nothing)
-			if ( !closing && builder.Check( X, Y ) is not (CoasterPlaceResult.OutsideMap or CoasterPlaceResult.NotEditable or CoasterPlaceResult.NoLoopPylon) )
+			if ( !closing && builder.Check( X, Y ) is not (CoasterPlaceResult.OutsideMap or CoasterPlaceResult.NotEditable or CoasterPlaceResult.NoLoopPylon or CoasterPlaceResult.CellOccupied) )
 				edits.ReleaseAll( Station );
 			result = builder.Place( X, Y );
 			next = builder.ToolState;

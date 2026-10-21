@@ -4,6 +4,7 @@ namespace OpenTPW;
 public partial class Level
 {
 	private readonly Dictionary<OriginalObject, CoasterBuilder> coasterBuilders = new();
+	private bool coasterCellsReady;
 	private CoasterRenderer? coasterRenderer;
 
 	/// <summary>Every coaster controller of the park.</summary>
@@ -267,6 +268,31 @@ public partial class Level
 			return;
 		if ( CoasterBuilder.StationEnds( item.Entry.Shape, item.Placement.X, item.Placement.Y, item.Placement.Rotation ) is { } ends )
 			builder.SetStation( ends.Depart, ends.Return, item.ComputeCoasterStationLayout() );
+	}
+
+	/// <summary>Derived marker tokens are attached only after the map exists, and after both track layers restore on resume.</summary>
+	private void BindCoasterCells( OriginalObject station, CoasterBuilder builder )
+	{
+		if ( !TypesFootprints || !coasterCellsReady || Guests == null || builder.Track.CellMarkers != null ) return;
+		BindCoasterCellsToMap( station, builder );
+	}
+
+	private void BindCoasterCellsToMap( OriginalObject station, CoasterBuilder builder )
+	{
+		if ( Guests == null || !Coasters.Contains( builder.Ride ) ) return;
+		var ends = station.Cells.Where( entry => entry.Cell.CellType == ObjectShapeSymbols.TypeTrackEnd )
+			.Select( entry => (entry.X, entry.Y, Direction: GuestPathGrid.LinkDirection( ObjectFootprint.RotateDirectionByte( entry.Cell.Direction, station.Placement.Rotation ) )) )
+			.Where( entry => entry.Direction >= 0 )
+			.Select( entry => (entry.X + GuestPathGrid.Directions[entry.Direction].DX, entry.Y + GuestPathGrid.Directions[entry.Direction].DY) );
+		builder.Track.BindCells( Guests.Grid.Cells, OwnerWord( station ), ends );
+	}
+
+	private void BindCoasterCellsAfterLoad()
+	{
+		if ( !TypesFootprints || Guests == null ) return;
+		coasterCellsReady = true;
+		foreach ( var (station, builder) in coasterBuilders )
+			if ( !station.IsDeleted && builder.Track.CellMarkers == null ) BindCoasterCellsToMap( station, builder );
 	}
 
 	private void OnCoasterStationRemoved( OriginalObject item )

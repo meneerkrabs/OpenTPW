@@ -408,7 +408,12 @@ public sealed class CoopHub
 		while ( true )
 		{
 			waiting ??= reader.WaitToReadAsync( cancel ).AsTask();
-			tick ??= Task.Delay( options.CoopPingInterval, cancel );
+			// timed from the last send, so a ping follows it after one interval, not two
+			if ( tick == null )
+			{
+				var wait = options.CoopPingInterval - (clock() - lastSent);
+				tick = Task.Delay( wait > TimeSpan.Zero ? wait : TimeSpan.Zero, cancel );
+			}
 			if ( await Task.WhenAny( waiting, tick ) == waiting )
 			{
 				if ( !await waiting )
@@ -898,6 +903,7 @@ public sealed class CoopHub
 	/// <summary>A guest leaves or is kicked: its seat goes, the change is stored, then announced. Under the registry lock and the session's gate.</summary>
 	private void RemoveSeat( Session session, Seat seat, CoopMemberState state )
 	{
+		ReadOnlyMemory<byte> message = new CoopMemberChanged( seat.Info with { Connected = false }, state ).Encode();
 		session.Seats.Remove( seat );
 		Persist( () => store.Put( session.ToRecord( exact: false ) ) );
 		memberships.Remove( seat.AccountKey );
@@ -909,19 +915,21 @@ public sealed class CoopHub
 		foreach ( var other in session.Seats )
 		{
 			if ( other.Peer != null )
-				Enqueue( other.Peer, new CoopMemberChanged( seat.Info with { Connected = false }, state ).Encode() );
+				Enqueue( other.Peer, message );
 		}
 	}
 
 	/// <summary>Ends a session for everyone: each connected member hears why, and the session, its code and its snapshots go. Under the registry lock and the gate.</summary>
 	private void End( Session session, CoopReason reason, string text )
 	{
+		// encoded first: nothing changes unless the message can be sent
+		text = CoopProtocol.Clip( text );
+		ReadOnlyMemory<byte> message = new CoopEnded( session.Id, reason, text ).Encode();
 		session.Ended = true;
 		sessions.Remove( session.Id );
 		codes.Remove( session.Code );
 		// stored (and its snapshots gone) before anyone hears of it
 		Persist( () => store.Remove( session.Id ) );
-		ReadOnlyMemory<byte> message = new CoopEnded( session.Id, reason, text ).Encode();
 		var now = clock();
 		foreach ( var seat in session.Seats )
 		{
@@ -1025,8 +1033,9 @@ public sealed class CoopHub
 				lock ( session.Gate )
 					records.Add( session.ToRecord( exact: session.SeqKnown ) );
 			}
-			// under the registry lock, so no membership change stored meanwhile is overwritten with an older record; with no session there is nothing to keep
-			if ( records.Count > 0 )
+			// under the registry lock, so no membership change stored meanwhile is overwritten with an older record; with no session there is nothing to
+			// keep, unless an earlier write failed and the file still holds a session that ended
+			if ( records.Count > 0 || store.Unsaved )
 				Persist( () => store.PutAll( records ) );
 			open = peers.Values.ToList();
 		}

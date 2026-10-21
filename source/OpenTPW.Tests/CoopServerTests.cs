@@ -1126,29 +1126,38 @@ public class CoopServerTests
 		await using var accounts = new Accounts();
 		try
 		{
+			// many long mods, so what differs makes a long text
+			var mods = Enumerable.Range( 0, 12 ).Select( index => new CoopMod( $"community.a-rather-long-mod-identifier-{index:D2}", "10.20.30", new string( 'd', 64 ) ) ).ToArray();
 			var hostAccount = await accounts.Add( server, "Hostess" );
 			var guestAccount = await accounts.Add( server, "Guest" );
-			var (host, _) = await CoopTestClient.ConnectAsync( server, hostAccount );
+			var (host, _) = await CoopTestClient.ConnectAsync( server, hostAccount, mods: mods );
 			var created = await Create( host );
-			var (guest, _) = await CoopTestClient.ConnectAsync( server, guestAccount );
+			var (guest, _) = await CoopTestClient.ConnectAsync( server, guestAccount, mods: mods );
 			var guestId = (await Join( guest, created.Session.Code )).Session.You;
 			guest.Abort();
 			await host.NextAsync<CoopMemberChanged>( change => change.State == CoopMemberState.Disconnected );
 			var (_, guestWelcome) = await CoopTestClient.ConnectAsync( server, guestAccount, instance: guest.Instance,
-				resume: new CoopResume( created.Session.Id, guestId, 0 ), build: "2.0.0+other" );
+				resume: new CoopResume( created.Session.Id, guestId, 0 ), build: "2.0.0+other", mods: mods );
 			Assert.IsNull( guestWelcome.Session );
 			Assert.AreEqual( CoopReason.BuildDiffers, guestWelcome.EndedWhileAway!.Reason );
 			Assert.AreEqual( CoopMemberState.Left, (await host.NextAsync<CoopMemberChanged>()).State, "the guest's seat is free again" );
 
 			// a host whose mods changed while away ends the session
-			var (second, _) = await CoopTestClient.ConnectAsync( server, await accounts.Add( server, "Second" ) );
+			var (second, _) = await CoopTestClient.ConnectAsync( server, await accounts.Add( server, "Second" ), mods: mods );
 			await Join( second, created.Session.Code );
 			host.Abort();
 			await second.NextAsync<CoopMemberChanged>( change => change.State == CoopMemberState.Disconnected );
 			var (_, hostWelcome) = await CoopTestClient.ConnectAsync( server, hostAccount, instance: host.Instance,
-				resume: new CoopResume( created.Session.Id, created.Session.You, 0 ), mods: new[] { Pools } );
+				resume: new CoopResume( created.Session.Id, created.Session.You, 0 ) );
 			Assert.AreEqual( CoopReason.ModsDiffer, hostWelcome.EndedWhileAway!.Reason );
-			Assert.AreEqual( CoopReason.ModsDiffer, (await second.NextAsync<CoopEnded>()).Reason );
+			var ended = await second.NextAsync<CoopEnded>();
+			Assert.AreEqual( CoopReason.ModsDiffer, ended.Reason );
+			StringAssert.StartsWith( ended.Text, "The host's game changed: " );
+			Assert.AreEqual( CoopProtocol.MaximumReasonLength, ended.Text.Length, "a long text is clipped, not refused" );
+			// the session is gone for good: the guest is free, and so is the host
+			var (afterwards, _) = await CoopTestClient.ConnectAsync( server, await accounts.Add( server, "Afterwards" ) );
+			await Refused( afterwards, new CoopJoin( created.Session.Code ), CoopReason.UnknownCode );
+			await Create( second, title: "Second park" );
 		}
 		finally
 		{
@@ -1360,6 +1369,11 @@ public class CoopServerTests
 			using var firstHttp = As( firstHost );
 			var inFlight = firstHttp.PutAsync( new Uri( server.Url, firstRoute ), held );
 			await held.Started.Task;
+			// the server took the upload once its file exists
+			var firstFolder = Path.Combine( server.Directory, "coop", "blobs", firstRoute.Split( '/' )[^2] );
+			for ( var wait = 0; wait < 1000 && !(Directory.Exists( firstFolder ) && Directory.EnumerateFiles( firstFolder, "*.tmp" ).Any()); wait++ )
+				await Task.Delay( 10 );
+			Assert.IsTrue( Directory.EnumerateFiles( firstFolder, "*.tmp" ).Any(), "the first upload is in flight" );
 			using ( var secondHttp = As( secondHost ) )
 				Assert.AreEqual( HttpStatusCode.InsufficientStorage, (await secondHttp.PutAsync( new Uri( server.Url, secondRoute ), new ByteArrayContent( new byte[1000] ) )).StatusCode,
 					"the upload in flight holds its room" );
@@ -1383,6 +1397,15 @@ public class CoopServerTests
 			await server.DisposeAsync();
 			server.DeleteData();
 		}
+	}
+
+	[TestMethod]
+	public void OnlyARangeFromALaterByteResumesADownload()
+	{
+		Assert.IsTrue( ServerProgram.ResumesDownload( "bytes=1000-" ) );
+		Assert.IsTrue( ServerProgram.ResumesDownload( "bytes=1-2000" ) );
+		foreach ( var whole in new[] { "", "bytes=0-", "bytes=0-99", "bytes=-500", "bytes=10-20,30-40", "bytes=abc-", "items=5-", "bytes=+5-" } )
+			Assert.IsFalse( ServerProgram.ResumesDownload( whole ), whole );
 	}
 
 	[TestMethod]

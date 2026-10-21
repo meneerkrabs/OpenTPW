@@ -74,6 +74,7 @@ public class CoopProtocolTests
 		Refused( new CoopCreate( true, "Park", 5 ).Encode(), "more players than four" );
 		Refused( new CoopCreate( true, "Park", 1 ).Encode(), "a session of one" );
 		Refused( new CoopHostFrame( 0, new byte[1] ).Encode(), "frame 0" );
+		Refused( new CoopHostFrame( ulong.MaxValue, new byte[1] ).Encode(), "the largest frame number, which has no next one" );
 		Refused( new CoopHello( 6, "", Array.Empty<CoopMod>(), Guid.NewGuid(), false, null ).Encode(), "no build" );
 		Refused( new CoopHello( 6, "1.0", Array.Empty<CoopMod>(), Guid.Empty, false, null ).Encode(), "no instance" );
 		Refused( new CoopHello( 6, "1.0", new[] { Pools with { ContentSha256 = "not hex" } }, Guid.NewGuid(), false, null ).Encode(), "a mod digest that is no SHA-256" );

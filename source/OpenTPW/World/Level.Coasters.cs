@@ -11,16 +11,20 @@ public partial class Level
 	/// <summary>The station whose track the coaster tool edits, or null when the tool is off.</summary>
 	public OriginalObject? CoasterToolStation { get; private set; }
 
-	/// <summary>Points the tool at a station (or none) and moves the coaster-being-edited mark with it.</summary>
+	/// <summary>
+	/// The coaster-being-edited mark: the tool's entry sets it and its exit clears it, through their commands (<see cref="BeginCoasterToolCommand"/>, <see cref="EndCoasterToolCommand"/>), so every peer
+	/// keeps guests off the coaster a player edits.
+	/// </summary>
 	// [BIN:TPW-EXE:0x00790FEC coaster being edited] the global names the controller the tool edits (written by 0x00430AC0 from the tool's entry and exit 0x00447520); the guest predicate 0x00441970 refuses it
-	private void SetCoasterToolStation( OriginalObject? station )
+	private static void SetBeingEdited( OriginalObject station, bool editing )
 	{
-		if ( CoasterToolStation?.Runtime?.Coaster is { } previous )
-			previous.BeingEdited = false;
-		CoasterToolStation = station;
-		if ( station?.Runtime?.Coaster is { } current )
-			current.BeingEdited = true;
+		if ( station.Runtime?.Coaster is { } ride )
+			ride.BeingEdited = editing;
 	}
+
+	private CoasterEdits? coasterEdits;
+	/// <summary>[EXT:online-coop-commands] The pylon each player is editing in a coaster panel drag.</summary>
+	internal CoasterEdits CoasterEdits => coasterEdits ??= new();
 	/// <summary>The builder the coaster tool drives, or null.</summary>
 	public CoasterBuilder? CoasterTool => CoasterToolStation is { } station ? GetCoasterBuilder( station ) : null;
 	public bool IsCoasterToolActive => CoasterToolStation != null;
@@ -267,6 +271,9 @@ public partial class Level
 
 	private void OnCoasterStationRemoved( OriginalObject item )
 	{
+		// [EXT:online-coop-commands] the drags on the station's track end with it, unsettled, as the track goes without a refund; before this machine's panel closes, whose close ends its drag through
+		// commands that would otherwise run inside a peer's removal on this machine alone
+		coasterEdits?.Drop( item.Runtime.AttractionId );
 		if ( CoasterToolStation == item )
 		{
 			// the tool's full clean-up for a station that goes (the ride object is deleted, so it is not opened again)
@@ -274,7 +281,8 @@ public partial class Level
 			CoasterPanel = null;
 			CoasterPreview = null;
 			DemoPreview = null;
-			SetCoasterToolStation( null );
+			CoasterToolStation = null;
+			SetBeingEdited( item, false );
 		}
 		if ( coasterBuilders.Remove( item, out var builder ) )
 			builder.Delete();
@@ -311,12 +319,27 @@ public partial class Level
 			ExitCoasterTool();
 		StaffPlacement?.Cancel();
 		CellTool.Cancel();
+		// [EXT:online-coop-commands] the entry's writes are a command; the tool and its panel are the issuer's
+		if ( !Commands.Issue( new BeginCoasterToolCommand( station.Runtime.AttractionId ) ).Accepted )
+			return false;
+		CoasterToolStation = station;
+		CoasterPanel = new CoasterToolPanel( builder, IsCoasterCellFree, station.Runtime.AttractionId, command => Commands.Issue( command ) );
+		return true;
+	}
+
+	/// <summary>
+	/// Runs a <see cref="BeginCoasterToolCommand"/>: the station's ride closes (its riders leave, no guest is stranded), its controller takes the tool's state, a closed circuit whose closing link
+	/// fails opens again, and the coaster is marked as being edited.
+	/// </summary>
+	internal ParkCommandResult ExecuteBeginCoasterTool( int attraction )
+	{
+		if ( ResolveCommandObject( attraction ) is not { } station || GetCoasterBuilder( station ) is not { } builder )
+			return ParkCommandResult.Rejected( $"Attraction {attraction} is no coaster station." );
 		station.Close();
 		builder.Ride.EnterTool();
 		builder.OpenFailingClosure();
-		SetCoasterToolStation( station );
-		CoasterPanel = new CoasterToolPanel( builder, IsCoasterCellFree );
-		return true;
+		SetBeingEdited( station, true );
+		return ParkCommandResult.Ok();
 	}
 
 	/// <summary>Ends the coaster tool (the track keeps its pylons; an incomplete track takes no riders). A ride the tool took out of service (state 2) opens again.</summary>
@@ -326,10 +349,28 @@ public partial class Level
 		var station = CoasterToolStation;
 		CoasterPanel?.Close();
 		CoasterPanel = null;
-		SetCoasterToolStation( null );
+		CoasterToolStation = null;
 		CoasterPreview = null;
-		if ( station is { IsDeleted: false } && station.Runtime.Coaster is { State: CoasterControllerState.Built } )
+		// [EXT:online-coop-commands] the exit's writes (the being-edited mark, the ride's door) are a command
+		if ( station is { IsDeleted: false } )
+			Commands.Issue( new EndCoasterToolCommand( station.Runtime.AttractionId ) );
+	}
+
+	/// <summary>
+	/// Runs an <see cref="EndCoasterToolCommand"/>: the pylon edits on the coaster end where they stand, the coaster is no longer being edited, and a ride the tool took out of service (state 2) opens
+	/// again.
+	/// </summary>
+	internal ParkCommandResult ExecuteEndCoasterTool( int attraction )
+	{
+		if ( ResolveCommandObject( attraction ) is not { Runtime.Coaster: { } ride } station )
+			return ParkCommandResult.Rejected( $"Attraction {attraction} is no coaster station." );
+		// the panel's own close releases its drag first (CoasterToolPanel.Close); an edit the command finds is a peer's, which the being-edited mark the exit clears ends too (it is the coaster's, not
+		// the player's: docs/COOP.md, "Known limits")
+		CoasterEdits.ReleaseAll( attraction );
+		SetBeingEdited( station, false );
+		if ( ride.State == CoasterControllerState.Built )
 			station.Open();
+		return ParkCommandResult.Ok();
 	}
 
 	/// <summary>
@@ -338,40 +379,43 @@ public partial class Level
 	/// </summary>
 	public CoasterPlaceResult CoasterClick( int x, int y )
 	{
-		if ( CoasterTool is not { } builder )
+		if ( CoasterTool is not { } builder || CoasterToolStation is not { } station )
 			return CoasterPlaceResult.NotEditable;
-		var track = builder.Track;
-		if ( track.IsChainStart( x, y ) && track.IsClosed )
-			return CompleteCoaster();
-		var closing = track.IsChainStart( x, y );
-		var count = track.Nodes.Count;
-		var result = builder.Place( x, y );
-		LastActionMessage = closing && track.IsClosed ? "Closed the circuit; click the station end again to complete the coaster."
-			: closing ? $"The circuit stays open: {result}."
-			: track.Nodes.Count == count ? $"Cannot build a pylon here: {result}."
-			: result == CoasterPlaceResult.Ok ? $"Placed a pylon (track cost so far ${builder.BuildCost})."
-			: $"Placed a pylon marked invalid: {result}.";
-		return result;
+		// [EXT:online-coop-commands] the click is a command with the panel's height and loop edit mode; the builder here takes the tool state the placement left, and a completion ends the tool, on
+		// the issuer's machine
+		var state = builder.ToolState;
+		var click = Commands.Issue( new CoasterClickCommand( station.Runtime.AttractionId, x, y, state.Height, state.LoopMode, state.LoopPylonsLeft ) );
+		if ( click.Value is not CoasterClickDone done )
+			return CoasterPlaceResult.NotEditable;
+		builder.SetToolState( done.Next );
+		if ( done.Completed )
+			FinishCoasterTool( station );
+		return done.Result;
 	}
 
-	/// <summary>Completes the edited (closed) track: rates it, starts its trains and ends the tool.</summary>
-	public CoasterPlaceResult CompleteCoaster()
+	/// <summary>The tool's end after a completed track, on the issuer's machine: the panel closes and the queue tool follows a ride with a queue (the ride's door opened in the command).</summary>
+	private void FinishCoasterTool( OriginalObject station )
 	{
-		if ( CoasterTool is not { } builder )
-			return CoasterPlaceResult.NotEditable;
-		var result = builder.Complete();
-		if ( result != CoasterPlaceResult.Ok )
-		{
-			LastActionMessage = $"Cannot complete the track: {result}.";
-			return result;
-		}
-		var rating = builder.Ride.Rating!.Value;
-		LastActionMessage = $"Coaster complete (track ${builder.Ride.PaidCost}): excitement {rating.Excitement:F0}, sickness {rating.Sickness:F0}, {rating.Trains} train(s).";
-		var station = CoasterToolStation!;
-		ExitCoasterTool();
+		CoasterPanel?.Close();
+		CoasterPanel = null;
+		CoasterToolStation = null;
+		CoasterPreview = null;
 		if ( station.Entry.HasQueue && station.Runtime.IsAttraction && station.Visitors.HasCells )
 			EnterQueueTool( station.Visitors );
-		return result;
+	}
+
+	/// <summary>
+	/// The level's part of a <see cref="CoasterClickCommand"/>, on every peer: the action message, and after a completion the tool's exit writes (the coaster is no longer being edited, the ride opens
+	/// when its controller is built).
+	/// </summary>
+	internal void AfterCoasterClick( OriginalObject station, CoasterClickDone done )
+	{
+		LastActionMessage = done.Message;
+		if ( !done.Completed )
+			return;
+		SetBeingEdited( station, false );
+		if ( station.Runtime.Coaster is { State: CoasterControllerState.Built } )
+			station.Open();
 	}
 
 	/// <summary>Removes the track of a station (no refund); the station stays.</summary>

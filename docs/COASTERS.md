@@ -136,8 +136,9 @@ builder.Complete();                                       // end node, curve, ra
 // ride.Rating, ride.Trains, ride.Command( n, p ), ride.Advance( dt ), builder.Move / SetHeight / Reopen / Delete
 ```
 
-`Level` exposes the same through `GetCoasterBuilder`, `EnterCoasterTool`,
-`CoasterClick`, `CompleteCoaster` and `DeleteCoasterTrack`.
+`Level` exposes the same through `GetCoasterBuilder`, `EnterCoasterTool`, `CoasterClick` (a click on the
+closed circuit's station end completes it) and `DeleteCoasterTrack`; the tool's writes are park commands
+(`CoasterCommands.cs`, [COOP.md](COOP.md), "Tools").
 
 ## The tool panel
 

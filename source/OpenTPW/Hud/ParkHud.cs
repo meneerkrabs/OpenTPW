@@ -455,6 +455,19 @@ public sealed partial class ParkHud
 	// [APPROX:UI-031] the coaster and water-track tools (whose original sub-modes are not traced) end the build tool whatever the modifier, and the Ctrl tests at 0x5259e2/0x5259f4 (another exit path that keeps the tool on exactly Ctrl and otherwise leaves it and resets the angle) (Ctrl alone, the builder 0x46b420) are only partly mapped: an entrance-bearing item (0x52fab0, sub-record +0x40) resets the angle to 0x80 and, with the record flag +0x29c = 1, ends the tool whatever the modifier — evidence needed: the coaster sub-mode's continuation and what +0x29c = 1 stands for
 	private void OnObjectPlaced( OriginalObject item )
 	{
+		// [EXT:online-coop-commands] a placement inside a command: the HUD follows its own player's placement once the command has returned, so the tool the placed ride opens issues commands of its own;
+		// a scheduled placement (a replay, a peer's) moves no tool here
+		if ( level.Commands.IsExecuting )
+		{
+			if ( level.Commands.IsIssuing )
+				level.Commands.AfterIssue( () => FinishPlacement( item ) );
+			return;
+		}
+		FinishPlacement( item );
+	}
+
+	private void FinishPlacement( OriginalObject item )
+	{
 		if ( pendingItem?.Entry != item.Entry )
 			return;
 		// Level.PlaceObject owns the purchase and guest link; this callback only finishes the HUD tool.

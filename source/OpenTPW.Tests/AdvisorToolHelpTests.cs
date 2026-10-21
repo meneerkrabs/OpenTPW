@@ -89,7 +89,7 @@ public class AdvisorToolHelpTests
 		var ride = new CoasterRide( CoasterDefinition.FromValues( settings ), new CoasterWorld( 1 ), "Test Coaster" );
 		var builder = new CoasterBuilder( ride, new CoasterSite( 64, 64 ) );
 		CoasterTests.PlaceStation( builder, (20, 20) );
-		var panel = new CoasterToolPanel( builder );
+		var panel = CoasterPanelRig.Create( builder );
 		SetField( level, "<CoasterToolStation>k__BackingField", level.Objects.Objects.First() );
 		SetField( level, "<CoasterPanel>k__BackingField", panel );
 		return panel;

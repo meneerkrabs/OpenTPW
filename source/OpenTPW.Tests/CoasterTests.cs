@@ -525,7 +525,7 @@ public class CoasterTests
 	{
 		var (builder, _) = NewCoaster();
 		BuildCircuit( builder );
-		var panel = new CoasterToolPanel( builder );
+		var panel = CoasterPanelRig.Create( builder );
 		panel.Hover( Return.X, Return.Y );
 		Assert.IsTrue( panel.Cursor!.Value.Closing );
 		Assert.AreEqual( CoasterPlaceResult.Ok, panel.Cursor.Value.Result );

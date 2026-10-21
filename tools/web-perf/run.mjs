@@ -42,7 +42,7 @@ const SELECTIONS = [['Rides', 'Belly Bounce'], ['Shops', 'Balloon Shop'], ['Shop
 function parseArguments(argv) {
 	const options = {
 		web: null, game: null, upstream: null, trackOrigins: false, gc: null, label: 'unlabelled', out: null, chrome: process.env.CHROME ?? DEFAULT_CHROME, headed: false, audible: false,
-		scenarios: ['start', 'lobby', 'jungle', 'buy', 'digest'], window: 30, memoryMinutes: 10, music: false, width: 1280, height: 900, runs: 1, frameCap: 0, keep: 'off', zoom: null, shot: null, follow: null, crowd: 400, profile: false, soakSeconds: 90, advice: [], cover: 1, evening: null, eveningLamps: 0,
+		scenarios: ['start', 'lobby', 'jungle', 'buy', 'digest'], window: 30, memoryMinutes: 10, music: false, width: 1280, height: 900, runs: 1, frameCap: 0, keep: 'off', zoom: null, shot: null, follow: null, crowd: 400, profile: false, soakSeconds: 90, advice: [], cover: 1, evening: null, eveningLamps: 0, visits: 3,
 	};
 	for (let index = 2; index < argv.length; index++) {
 		const [flag, inline] = argv[index].split(/=(.*)/s);
@@ -78,6 +78,8 @@ function parseArguments(argv) {
 			case '--cover': options.cover = Math.min(1, Math.max(0, Number(value()))); break;
 			case '--evening': options.evening = value(); break;
 			case '--evening-lamps': options.eveningLamps = Math.max(0, Number(value()) || 0); break;
+			case '--audio-later': options.audioLater = true; break;
+			case '--visits': options.visits = Math.max(3, Math.trunc(Number(value())) || 3); break;
 			case '--help': case '-h': console.log(usage()); process.exit(0);
 			default: throw new Error(`Unknown option ${flag}\n${usage()}`);
 		}
@@ -113,6 +115,8 @@ function usage() {
   --zoom <value>          jungle: after the steady window, hold the park camera at this zoom value (40..300 with the wide zoom option) and measure a second window
   --evening <mode>        jungle: after the steady window, hold the evening look (night, dusk, day) or turn the cycle and its lamps off, and measure a second window
   --evening-lamps <n>     with --evening: add n extra lamp lights around the camera target (the browser twin of the desktop's --debug-evening-lamps) for the second window
+  --visits <n>            switch: park visits (default 3); each one past the third is another lobby and Jungle, to show whether memory grows per visit
+  --audio-later           switch: read what the sound mixer reaches again 20 s after each point (a decode in flight then has ended)
   --keep <mode>           keep the game files in the browser on the first visit: lazy, all or off (default off)
   --frame-cap <fps>       the display settings' frame cap (0 off, 30, 60; default 0)
   --runs <n>              repeat the whole session n times, each in a fresh profile, and report the medians (default 1)
@@ -638,13 +642,18 @@ const scenarios = {
 		return { themes };
 	},
 
-	async switch(page) {
+	async switch(page, options) {
 		const state = await page.state();
 		if (!state.hud || state.level !== 'jungle')
 			throw new Error('The switch scenario starts in Jungle: run it after jungle');
 		const steps = [];
 		// Each point after a full collection, so it shows live memory; wasm memory only grows, so it shows the peak so far.
 		const record = async name => {
+			// A sound sample decoded in the browser (cooperatively, in batches between frames) holds its growing PCM buffer and its MPEG input until it
+			// ends; a point taken during one counts them (2-6 MB in the lobby, whose music segments are long), so wait for none to be in flight.
+			const settleBegin = Date.now();
+			while ((await page.eval('opentpwPerf.counters().soundDecodesInFlight')) > 0 && Date.now() - settleBegin < 60000)
+				await sleep(250);
 			await page.eval('opentpwPerf.program.PerfCollect()');
 			const memory = await page.memory();
 			const stale = memory.levelsAlive > (name.startsWith('lobby') ? 0 : 1) ? JSON.parse(await page.eval('opentpwPerf.program.PerfStaleLevelPaths()', 120000)) : [];
@@ -652,7 +661,11 @@ const scenarios = {
 			const textureBytes = JSON.parse(await page.eval('opentpwPerf.program.PerfTextureBytes()'));
 			const roots = name.startsWith('lobby') ? JSON.parse(await page.eval('opentpwPerf.program.PerfMemoryRoots()', 180000)) : undefined;
 			const assetBytes = JSON.parse(await page.eval('opentpwPerf.program.PerfAssetBytes()', 180000));
-			steps.push({ step: name, ...memory, textureGroups, textureBytes, assetBytes, ...(roots ? { roots } : {}), ...(stale.length ? { staleLevelPaths: stale } : {}) });
+			// what the sound mixer reaches, by the field holding the bytes, and its object counts by type
+			const audio = JSON.parse(await page.eval('opentpwPerf.program.PerfAudioBytes()', 180000));
+			// the same 20 seconds later (a decode in flight at the point has ended by then)
+			const audioLater = options.audioLater ? (await sleep(20000), JSON.parse(await page.eval('opentpwPerf.program.PerfAudioBytes()', 180000))) : undefined;
+			steps.push({ step: name, ...memory, textureGroups, textureBytes, assetBytes, audio, ...(audioLater ? { audioLater } : {}), ...(roots ? { roots } : {}), ...(stale.length ? { staleLevelPaths: stale } : {}) });
 		};
 		const toLobby = async () => {
 			await page.call('PerfOpenPauseMenu');
@@ -707,6 +720,13 @@ const scenarios = {
 		}
 		await enterPark('jungle');
 		await record('jungle again');
+		for (let visit = 4; visit <= options.visits; visit++) {
+			await toLobby();
+			await record(`lobby ${visit - 1}`);
+			await page.waitFor('the jungle island', current => current.island === 'jungle', 10000);
+			await enterPark('jungle');
+			await record(`jungle ${visit}`);
+		}
 		return { steps };
 	},
 

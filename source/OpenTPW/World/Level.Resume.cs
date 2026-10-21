@@ -14,7 +14,8 @@ public partial class Level
 
 	/// <summary>
 	/// Gives every placed object the economy catalogue knows an economy record before a save is captured: a save must hold a binding for each of them (<see cref="ParkResumeSaveFile.ValidateSnapshot"/>).
-	/// Every build path binds the object it places (<see cref="PlaceObject"/> does so even when a placement handler throws), so this only repairs a park that lost a binding anyway, and says so in the log.
+	/// Every build path binds the object it places (<see cref="PlaceObject"/> does so even when a placement handler throws), and so does the game for the fixed items it makes in play
+	/// (<see cref="BindFixedItemMadeInPlay"/>), so this only repairs a park that lost a binding anyway, and says so in the log.
 	/// The object adopts the lowest-numbered record of its type no other object holds: that is the record its own purchase made, which a failed build left unowned. Only when no such record exists is an
 	/// uncharged one registered, as the original-save import does (<see cref="ParkEconomy.RegisterExisting"/>), because nothing was bought for the object that the books could still refund or count.
 	/// </summary>

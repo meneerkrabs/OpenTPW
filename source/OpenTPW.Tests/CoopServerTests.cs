@@ -1137,7 +1137,9 @@ public class CoopServerTests
 			var directory = Path.Combine( Path.GetTempPath(), $"opentpw-server-{Guid.NewGuid():N}" );
 			try
 			{
-				var server = await StartFast( directory: directory );
+				// the guest's queue takes the whole burst: on a slow runner a queue at its limit would rightly cut the guest off for slowness (4002) before the restart,
+				// and the frames it then misses are the host's to resend after its resume, so the restart's position would no longer be the guest's last frame
+				var server = await StartFast( options => options.CoopOutboxBytes = 64 * 1024 * 1024, directory );
 				var hostAccount = await accounts.Add( server, $"Hostess{run}" );
 				var guestAccount = await accounts.Add( server, $"Guest{run}" );
 				var (host, _) = await CoopTestClient.ConnectAsync( server, hostAccount );

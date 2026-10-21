@@ -184,6 +184,13 @@ Settings are in `OpenTPW.Server/appsettings.json`, or environment variables name
 | `ChatBurst`, `ChatMessagesPerSecond` | 8, 1 | Chat message bucket per connection |
 | `MovementBurst`, `MovementsPerSecond` | 30, 10 | Walking-position bucket per connection (chat parks; positions sent in the lobby are ignored) |
 | `BannedPlayers`, `MutedPlayers`, `HiddenParks` | empty | Moderation lists |
+| `MaximumCoopConnections`, `MaximumCoopSessions` | 1000, 250 | Shared parks: co-op sockets (counted before they authenticate) and live sessions |
+| `CoopHostMessagesPerSecond`, `CoopHostBytesPerSecond` | 400, 4 MiB | What a host's co-op socket sends, with a two-second burst; an account keeps its buckets over reconnects |
+| `CoopGuestMessagesPerSecond`, `CoopGuestBytesPerSecond` | 50, 256 KiB | What a guest's co-op socket sends, with a two-second burst |
+| `CoopOutboxBytes`, `CoopServerOutboxBytes` | 2 MiB, 256 MiB | Bytes queued for one co-op socket and for all of them: a socket over its share is cut off, and a server over its budget cuts off the socket with the longest queue. A socket that takes no message for 30 seconds is cut off too |
+| `CoopCreatesPerHour`, `CoopJoinsPerHour`, `CoopWrongCodesPerHour`, `CoopInvitesPerHour`, `CoopKicksPerHour`, `CoopDownloadsPerHour` | 6, 30, 10, 60, 60, 30 | Per account: sessions started, joins, codes that matched no session, invitations, removals and leaves, snapshot downloads |
+| `MaximumCoopSnapshotBytes`, `MaximumCoopStoreBytes` | 96 MiB, 4 GiB | A shared park's join snapshot, and all of them together |
+| `CoopPingInterval` | 15 s | A co-op socket that has heard nothing from the server for this long gets a ping (browsers never see WebSocket pings) |
 
 Behind a proxy, set `ASPNETCORE_FORWARDEDHEADERS_ENABLED=true` so the limits see the real
 client addresses (the compose example does).
@@ -378,13 +385,18 @@ name or address exists (its e-mail is sent in the background). Accounts made bef
 - **Parks:** published packages and thumbnails with their author, visits and votes.
 - **Postcards:** cards waiting in a recipient's inbox.
 - **Reports:** moderation reports (`reports.jsonl`).
+- **Shared parks** (`coop/`): the live sessions in `coop/sessions.json` (code, title, host, members,
+  the host's build and mods, the last frame relayed), so a restart does not end them, and their join
+  snapshots in `coop/blobs/` (deleted with the session; the nightly backup leaves them out). The
+  frames and messages the server relays are not stored.
 
 Client addresses are only used in memory for rate limiting; they are not stored or logged by
 the server. Chat is not stored.
 
 **Deleting an account:** the Online World screen offers *Delete account* while logged in; the
 player confirms with their name and password (`DELETE /api/v1/accounts`). The server then
-removes the account, its sessions and chat connection, its published parks with their files,
+removes the account, its sessions and chat connection, its co-op connection and its place in a shared
+park (a shared park it hosts ends), its published parks with their files,
 the postcards in its inbox, and its entries in other players' buddy lists and park visitor and
 vote lists. Reports the player made name them as a deleted player; reports about them are
 kept for moderation. Postcards they already sent stay with their recipients. The name becomes

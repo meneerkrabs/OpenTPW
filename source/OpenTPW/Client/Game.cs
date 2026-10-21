@@ -144,6 +144,17 @@ internal static class Game
 		FileSystem.RegisterArchiveHandler<WadArchive>( ".wad" );
 		FileSystem.RegisterArchiveHandler<SdtArchive>( ".sdt" );
 
+		// Debug export of every sign texture in one language (docs/RUNNING.md, "Sign textures"): the language is the option's own, the language data is found as below; no window, audio or park.
+		if ( args.Contains( "--export-signs" ) )
+		{
+			var exportLanguageSettings = LanguageSettings.Load( LanguageSettings.GetDefaultPath(), new List<string>() );
+			SignExport.RunCommand( args, dataDirectory,
+				LanguageSettings.Choose( GetOption( args, "--language-data", "a directory with the original CD's language data" ),
+					Environment.GetEnvironmentVariable( "OPENTPW_LANGUAGE_DATA" ), exportLanguageSettings.LanguageDataPath, Settings.Default.LanguageDataPath ),
+				GetOption( args, "--cd-data", "the original CD's folder" ) ?? Environment.GetEnvironmentVariable( "OPENTPW_CD_DATA" ) );
+			return;
+		}
+
 		//
 		// Select the text language: --language / --language-data, then OPENTPW_LANGUAGE /
 		// OPENTPW_LANGUAGE_DATA, then language.json, then the old Language / LanguageDataPath
@@ -1111,7 +1122,7 @@ internal static class Game
 	private static readonly string[] AutomatedFlags =
 	{
 		"--smoke-test", "--tpi-smoke-test", "--park-resume-smoke", "--smoke-presence", "--perf-run", "--perf-hash-tick",
-		"--offscreen", "--headless", "--m3-gate", "--m4-gate", "--determinism-digest", "--guest-report", "--guest-compare", "--validate-assets",
+		"--offscreen", "--headless", "--m3-gate", "--m4-gate", "--determinism-digest", "--guest-report", "--guest-compare", "--validate-assets", "--export-signs",
 	};
 
 	/// <summary>

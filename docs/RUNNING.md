@@ -255,6 +255,73 @@ metadata and input/decoded hashes, and exits nonzero on invalid/unsupported inpu
 Limits are 64 MiB each for input and decoded output. This is **not** playable park
 import or proof of all original TPWS layouts. See SAVE-CONTAINER.md for evidence.
 
+## Sign textures (debug export)
+
+```sh
+OPENTPW_SILENT=1 OPENTPW_OFFSCREEN=1 dotnet source/OpenTPW/bin/Debug/net11.0/OpenTPW.dll \
+  --game-path '/path/to/Theme Park World' --export-signs Spanish /path/to/new-folder --language-data /path/to/spanish-language-data
+```
+
+A debug tool for translators and comparisons: writes every sign texture the shipped data defines, in one language, as PNG.
+`--export-signs <language> <output directory>` composes, with the code the game itself uses (`ObjectSigns`, the gate's
+`OriginalGateSign` lines, `LobbySigns`), for each of the four themes the park gate (its `OBJECT_NAMES.str` row, as a new park's gate
+starts: English jungle entries 85 and 86, "LOST" and "Kingdom") and every object archive with a `.sgn` (its name split at the middle
+space), and the lobby's four island and gate signs. Each sign gives three files: `<theme>/<object>-1.png` is the `sign1` texture (the
+left 128 x 128 half that replaces the model's `sign1` placeholder), `<theme>/<object>-2.png` the `sign2` texture (the right half), and
+`<theme>/<object>.png` a 256 x 128 preview of both side by side. `<object>` is the archive name (`gates`, `totem`; the lobby uses its
+model names, `jun_isle`); `index.json` lists for every file the theme, kind, object, archive, `.sgn`, info id, the `OBJECT_NAMES`
+string ids and their texts, the two drawn lines, the texture, the file, its size and the SHA-256 of its RGBA and PNG bytes, plus the
+language, its folder (relative to the game folder, or from its `Language` folder on: the index holds no path of the user's machine) and
+the compatibility profile.
+
+The language is found as for a normal start (`--language-data`, `OPENTPW_LANGUAGE_DATA`, the saved language data folder, then the CD
+folder; LANGUAGES.md); a language that is not there is an error listing the available ones, before anything is written. The output
+directory must be new or empty and outside the game folder, its data, every language data folder in use (the exported language's, the
+`--language-data` folder and the CD folder, also when the exported language comes from the installation) with symbolic links resolved; nothing is overwritten, and everything is composed before the
+first file is written. The run opens no window and no audio device, loads no park, starts no mods and, by default, no bonus objects (only the
+shipped data), and reads the game data only. One sign file depends on the compatibility profile: in the default Original profile the second
+line of Space Zone's `megacost.sgn` (a font `fonts.wad` lacks) is not drawn; `--compat-profile recommended` draws it with the
+`sign-font-substitution` fix (COMPATIBILITY.md). The sign files themselves are the installed game's; a CD whose levels carry other
+`.sgn` files (the Korean CD) is exported by pointing `--game-path` at that CD.
+
+Official bonus objects are exported only when asked for: `--bonus-data <folder>` (the extracted bonus content, the folder that holds
+`levels` or one up to two levels above it, as for a normal start; OBJECTS.md), or `--with-bonus` for the folder a normal start would use
+(`OPENTPW_BONUS_DATA`, the saved bonus folder, `<config>/bonus`); a folder whose `levels` tree holds no `_name_N.wad` archive (such as the
+`__MACOSX` copy of an unpacked zip) is an error. Each theme's bonus archives with a `.sgn` then follow its shipped objects,
+named by archive (`jungle/_dizzyd_8-1.png`; the 35 shipped bonus archives give 14 ride signs: Dizzy Dinos, King of the Swingers, Manic Mayan,
+Slither, Ghost Train, Dare Devil, Haunted House, Bone Shaker, The Dizzy Tree, Rubber Ringos, Flying Fountain, G-Force, Whirligig and
+Wormhole), with the lines the game draws for them (`ObjectSigns.Lines`): the `SIGNA`/`SIGNB` sections of the archive's `<language>.txt`, or,
+without that file, the object's display name split at the middle space. Mod and extension objects are never exported. `index.json` records
+each sign's `textSource` (`OBJECT_NAMES.str ids`, `OBJECT_NAMES.str gate row`, `Spanish.txt SIGNA/SIGNB`, ...) and marks bonus signs with
+`"bonus": true`; the bonus folder is protected like the game data. Without either option the output is the same as before.
+
+`--sign-texts <file>` draws chosen signs with other texts (for instance a translation table of another release), opt-in and only read.
+The file is UTF-8 JSON:
+
+```json
+{
+  "description": "optional free text",
+  "signs": [
+    { "theme": "jungle", "object": "gates", "lines": [ "El Reino", "Perdido" ] },
+    { "theme": "jungle", "object": "totem", "name": "El Tótem Inca" },
+    { "theme": "jungle", "object": "_dizzyd_8", "name": "Dinos Mareados" },
+    { "theme": "lobby", "object": "jun_isle", "lines": [ "El Reino", "Perdido" ] }
+  ]
+}
+```
+
+Only `description` (a string) and `signs` (an array) are allowed at the top. Each entry names one sign by `theme` and `object`, exactly as
+`index.json` does (`jungle`, `hallow`, `fantasy`, `space` or `lobby`; the archive name such as `totem`, `gates` for each theme's park gate,
+`_dizzyd_8` for a bonus ride, which needs `--bonus-data`; the lobby model such as `jun_isle`), matched without regard to case, and gives
+exactly one of `lines` (two strings, drawn as they are; either may be empty) or `name` (one string, trimmed and split at the space nearest
+its middle, the rule the game uses for a sign that has only a display name; a name without a space is one line). No other member is
+allowed; a member given twice in one object (JSON would keep the last), a key listed twice, a text with a control character or a line or
+paragraph separator (a line break is given as two lines), a string that is no valid text (a lone escaped surrogate) or a file over 4 MiB is an error, and
+so is a key that names no exported sign (all such keys are listed) before anything is written. Signs the file does not name keep their
+text. A named sign is composed again from its own `.sgn` by the game's composer; its `index.json` entry has `textSource`
+`"override (<file name>)"` and keeps the game's own text in `originalText`, `originalLine1`, `originalLine2` and `originalTextSource`
+(`stringIds` and `strings` stay those of the game's text).
+
 ## Movies
 
 Export a single decoded TGQ video frame without game assets, a window or audio:

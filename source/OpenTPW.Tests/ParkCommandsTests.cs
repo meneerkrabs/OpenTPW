@@ -211,6 +211,144 @@ public class ParkCommandsTests
 		} );
 	}
 
+	/// <summary>
+	/// [EXT:online-coop-lockstep] A session drops a command applied during a tick: refused, neither logged nor raised (a peer would apply it at the tick's start). A game of one
+	/// runs it at once; a strict run throws first.
+	/// </summary>
+	[TestMethod]
+	[DoNotParallelize]
+	public void ASessionDropsACommandAppliedDuringATick()
+	{
+		WithStrict( false, () =>
+		{
+			var park = new Park();
+			park.Commands.InTick = ParkCommandInTickRule.Drop;
+			var raised = 0;
+			park.Commands.Applied += ( _, _ ) => raised++;
+			using ( park.Commands.EnterTick() )
+			{
+				Assert.IsFalse( park.Commands.Issue( new RemoveAtCommand( 3, 3 ) ).Accepted );
+				Assert.IsFalse( park.Commands.Apply( new RemoveAtCommand( 4, 4 ) ).Accepted );
+			}
+			Assert.AreEqual( 0, park.Ran.Count, "nothing ran" );
+			Assert.AreEqual( 0, park.Commands.Log.Count, "nothing was logged" );
+			Assert.AreEqual( 0, raised, "nothing reached the stream" );
+			Assert.IsTrue( park.Commands.Issue( new RemoveAtCommand( 5, 5 ) ).Accepted, "between ticks a command runs" );
+		} );
+	}
+
+	/// <summary>
+	/// [EXT:online-coop-lockstep] In a session a command issued inside another (a HUD callback during an edit) is refused on every peer, since it would run unstreamed on its
+	/// issuer only; a strict run throws. Outside a session it runs as part of the outer command, as before.
+	/// </summary>
+	[TestMethod]
+	[DoNotParallelize]
+	public void ASessionRefusesACommandIssuedInsideAnother()
+	{
+		WithStrict( false, () =>
+		{
+			var park = new Park { Commands = { SessionRules = true } };
+			park.Commands.Issue( new RemoveAtCommand( 88, 0 ) );
+			CollectionAssert.AreEqual( new ParkCommand[] { new RemoveAtCommand( 88, 0 ) }, park.Ran, "the inner issue never ran" );
+			Assert.AreEqual( 1, park.Commands.Log.Count );
+		} );
+		WithStrict( true, () =>
+		{
+			var park = new Park { Commands = { SessionRules = true } };
+			// the throw inside the outer command is the outer command's error: a strict run rethrows it once logged
+			Assert.ThrowsException<InvalidOperationException>( () => park.Commands.Issue( new RemoveAtCommand( 88, 0 ) ) );
+			Assert.AreEqual( 1, park.Commands.Log.Count );
+		} );
+	}
+
+	/// <summary>[EXT:online-coop-lockstep] In a session a command the rights refuse leaves no trace: a guest's own issues stay out of its log, which is the host's stream.</summary>
+	[TestMethod]
+	public void ASessionLogsNoCommandTheRightsRefuse()
+	{
+		var park = new Park();
+		park.Commands.Rights = new OnlyPaths();
+		park.Commands.SessionRules = true;
+		park.Commands.Player = 2;
+		var raised = 0;
+		park.Commands.Applied += ( _, _ ) => raised++;
+		Assert.IsFalse( park.Commands.Issue( new RemoveAtCommand( 3, 3 ) ).Accepted );
+		Assert.AreEqual( 0, park.Commands.Log.Count );
+		Assert.AreEqual( 0, raised );
+		// the host's stream (player 0) passes, held or not
+		park.Commands.Schedule( new RemoveAtCommand( 4, 4 ), 0 );
+		park.Commands.ApplyDue( 0 );
+		Assert.AreEqual( 1, park.Commands.Log.Count );
+		Assert.AreEqual( 1, raised );
+		// a held command the rights refuse (a stream record this park would not run) is refused as usual, and logged and raised, so the stream sees the refusal
+		park.Commands.Schedule( new RemoveAtCommand( 5, 5 ) { Player = 2 }, 0 );
+		park.Commands.ApplyDue( 0 );
+		Assert.AreEqual( 2, park.Commands.Log.Count );
+		Assert.AreEqual( 2, raised );
+	}
+
+	/// <summary>
+	/// A held command that throws never drops the rest of its tick: a strict run rethrows once every held command of the tick has applied, and in a session a held command
+	/// never rethrows (its error is in its result, which the stream compares).
+	/// </summary>
+	[TestMethod]
+	[DoNotParallelize]
+	public void AHeldCommandThatThrowsNeverDropsTheRestOfItsTick()
+	{
+		WithStrict( true, () =>
+		{
+			var park = new Park();
+			park.Commands.Schedule( new RemoveAtCommand( 1, 1 ), 0 );
+			park.Commands.Schedule( new RemoveAtCommand( 66, 0 ), 0 );
+			park.Commands.Schedule( new RemoveAtCommand( 2, 2 ), 0 );
+			Assert.ThrowsException<InvalidDataException>( () => park.Commands.ApplyDue( 0 ) );
+			Assert.AreEqual( 3, park.Commands.Log.Count, "every held command applied before the throw came" );
+			Assert.AreEqual( 0, park.Commands.ScheduledCount );
+
+			var session = new Park { Commands = { SessionRules = true } };
+			ParkCommandResult? errored = null;
+			session.Commands.Applied += ( entry, result ) =>
+			{
+				if ( result.Error != null )
+					errored = result;
+			};
+			session.Commands.Schedule( new RemoveAtCommand( 66, 0 ), 0 );
+			session.Commands.Schedule( new RemoveAtCommand( 2, 2 ), 0 );
+			session.Commands.ApplyDue( 0 );
+			Assert.IsInstanceOfType( errored?.Error, typeof( InvalidDataException ), "the error is in the result" );
+			Assert.AreEqual( 2, session.Commands.Log.Count );
+		} );
+	}
+
+	/// <summary>A subscriber of the funnel that throws is logged and never takes the funnel down; a strict run rethrows it.</summary>
+	[TestMethod]
+	[DoNotParallelize]
+	public void ASubscriberThatThrowsNeverTakesTheFunnelDown()
+	{
+		WithStrict( false, () =>
+		{
+			var park = new Park();
+			park.Commands.Applied += ( _, _ ) => throw new InvalidOperationException( "a broken hook" );
+			// a subscriber after the broken one (a session's stream) still hears every command
+			var heard = 0;
+			park.Commands.Applied += ( _, _ ) => heard++;
+			Assert.IsTrue( park.Commands.Issue( new RemoveAtCommand( 3, 3 ) ).Accepted );
+			park.Commands.Schedule( new RemoveAtCommand( 4, 4 ), 0 );
+			park.Commands.Schedule( new RemoveAtCommand( 5, 5 ), 0 );
+			park.Commands.ApplyDue( 0 );
+			Assert.AreEqual( 3, park.Commands.Log.Count );
+			Assert.AreEqual( 3, heard );
+		} );
+		WithStrict( true, () =>
+		{
+			var park = new Park();
+			park.Commands.Applied += ( _, _ ) => throw new InvalidOperationException( "a broken hook" );
+			var heard = 0;
+			park.Commands.Applied += ( _, _ ) => heard++;
+			Assert.ThrowsException<InvalidOperationException>( () => park.Commands.Issue( new RemoveAtCommand( 3, 3 ) ) );
+			Assert.AreEqual( 1, heard, "the strict throw comes once every subscriber ran" );
+		} );
+	}
+
 	[TestMethod]
 	public void TheRightsHookRefusesAPlayersCommandBeforeItRunsAndTheLocalPlayerIsTheHost()
 	{

@@ -144,6 +144,9 @@ public enum ParkCommandKind : byte
 	SwapCoasterStack = 97,
 	/// <summary>The coaster panel's demolish button (<see cref="CutCoasterCommand"/>).</summary>
 	CutCoaster = 98,
+	// a co-op session's own commands (C2b)
+	/// <summary>[EXT:online-coop-lockstep] The session's clock, the civil time the ride scripts read (<see cref="SetSessionClockCommand"/>).</summary>
+	SetSessionClock = 100,
 }
 
 /// <summary>

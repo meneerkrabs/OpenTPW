@@ -58,6 +58,9 @@ public sealed record GuestSnapshot
 	public required double ExitLevel { get; init; }
 	/// <summary>Optional display duration in simulated seconds. Older saves omit it; null stays unknown.</summary>
 	public double? TimeInParkSeconds { get; init; }
+	/// <summary>Optional exact display age, 0..uint.MaxValue turns. Requires known seconds and a saved display phase; absent in older saves, which retain their seconds fallback.</summary>
+	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )]
+	public long? DisplayTimeInParkTurns { get; init; }
 	public required float SecondsSinceRide { get; init; }
 	public required int RidesTaken { get; init; }
 	/// <summary>The shops visited. Absent in older saves (0).</summary>
@@ -455,6 +458,9 @@ public sealed record GuestSimulationSnapshot
 	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )]
 	public uint? WorldGenerator { get; init; }
 	public required long TickCount { get; init; }
+	/// <summary>Optional display-clock phase offset, 0..371 fixed ticks. Keeps exact ages on their saved boundaries before host reattachment; not a gameplay clock.</summary>
+	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )]
+	public int? DisplayTurnPhaseTicks { get; init; }
 	public required double TimeSeconds { get; init; }
 	/// <summary>Presentation-only absolute int32 sample in the host fixed-clock epoch. Required when per-guest BodySprite history is present.</summary>
 	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )]

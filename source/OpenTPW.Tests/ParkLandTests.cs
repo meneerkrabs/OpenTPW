@@ -272,12 +272,17 @@ public class ParkLandTests
 
 	// --- the tool ---
 
+	/// <summary>The Buy Land tool over <paramref name="cells"/>, its purchases applied straight to the map (the level hands them to its command funnel, <see cref="BuyLandCommand"/>).</summary>
+	private static BuyLandTool Tool( ParkCellMap cells, ParkEconomy? economy ) =>
+		new( () => cells, () => economy, ( _, _ ) => false,
+			command => command is BuyLandCommand buy ? buy.Apply( cells, economy, ( _, _ ) => false ) : ParkCommandResult.Rejected( "Not a land command." ) );
+
 	[TestMethod]
 	public void TheToolBuysOneRectanglePerActivation()
 	{
 		var cells = NewPark();
 		var economy = Economy( 50000, 100 );
-		var tool = new BuyLandTool( () => cells, () => economy, ( _, _ ) => false );
+		var tool = Tool( cells, economy );
 		Assert.IsTrue( tool.Begin() );
 		Assert.AreEqual( BuyLandClick.CornerStored, tool.Click( 26, 12 ) );
 		Assert.AreEqual( (25, 11), tool.Corner, "the click snaps down to the post lattice" );
@@ -302,12 +307,37 @@ public class ParkLandTests
 		Assert.AreEqual( LandPurchaseRefusal.NoNewLand, tool.LastResult?.Refusal );
 	}
 
+	/// <summary>[EXT:online-coop-commands] The purchase as a command (<see cref="BuyLandCommand"/>): its posts are checked against the fence's lattice and the validator runs again with the money.</summary>
+	[TestMethod]
+	public void TheBuyLandCommandChecksItsPostsAgainAndBuysWhatTheToolWould()
+	{
+		var cells = NewPark();
+		var economy = Economy( 50000, 100 );
+		var balance = economy.Balance;
+		var before = Hash( cells );
+		ParkCommandResult Buy( int cornerX, int cornerY, int postX, int postY ) => new BuyLandCommand( cornerX, cornerY, postX, postY ).Apply( cells, economy, ( _, _ ) => false );
+		Assert.IsFalse( Buy( 26, 11, 33, 21 ).Accepted, "a corner off the post lattice is no post the tool could store" );
+		Assert.IsFalse( Buy( 25, 11, 33, 22 ).Accepted, "nor is a clicked cell the tool did not snap" );
+		Assert.AreEqual( before, Hash( cells ), "a refusal buys nothing" );
+		Assert.AreEqual( balance, economy.Balance );
+		var bought = Buy( 25, 11, 33, 21 );
+		Assert.IsTrue( bought.Accepted );
+		Assert.AreEqual( new LandPurchaseCheck( LandPurchaseRefusal.None, 48, 4800 ), bought.Value, "the value is the validator's verdict" );
+		Assert.AreEqual( balance - 4800, economy.Balance );
+		Assert.IsTrue( Owned( cells, 30, 15 ) );
+		var away = Buy( 37, 31, 45, 39 );
+		Assert.IsFalse( away.Accepted, "a rectangle away from the park has no land to join" );
+		Assert.AreEqual( LandPurchaseRefusal.NoNewLand, ((LandPurchaseCheck)away.Value!).Refusal, "a refusal's value is the validator's verdict too" );
+		Assert.AreEqual( balance - 4800, economy.Balance );
+		Assert.IsFalse( new BuyLandCommand( 25, 11, 33, 21 ).Apply( new ParkCellMap( 64, 64 ), economy, ( _, _ ) => false ).Accepted, "a map without a fence sells no land" );
+	}
+
 	[TestMethod]
 	public void TheToolShowsTheCashPointerWhenTheLandIsTooDear()
 	{
 		var cells = NewPark();
 		var economy = Economy( 1000, 100 );
-		var tool = new BuyLandTool( () => cells, () => economy, ( _, _ ) => false );
+		var tool = Tool( cells, economy );
 		tool.Begin();
 		tool.Click( 25, 11 );
 		tool.Hover( 33, 21 );
@@ -321,7 +351,7 @@ public class ParkLandTests
 	{
 		var cells = NewPark();
 		var economy = Economy( 5000, 100 );
-		var tool = new BuyLandTool( () => cells, () => economy, ( _, _ ) => false );
+		var tool = Tool( cells, economy );
 		tool.Begin();
 		tool.Click( 25, 11 );
 		tool.Hover( 33, 21 );
@@ -401,7 +431,7 @@ public class ParkLandTests
 	public void TheLandSurvivesASaveRoundTrip()
 	{
 		var cells = NewPark();
-		var tool = new BuyLandTool( () => cells, () => null, ( _, _ ) => false );
+		var tool = Tool( cells, null );
 		Assert.IsTrue( tool.Begin() );
 		tool.Click( 25, 11 );
 		Assert.AreEqual( BuyLandClick.Bought, tool.Click( 33, 21 ) );
@@ -463,7 +493,7 @@ public class ParkLandTests
 		broken.ImportLand( Setup( RectangleClicks ), Unowned, ( x, y ) => links.TryGetValue( (x, y), out var bits ) ? bits : null );
 		Assert.IsNull( broken.Land );
 		Assert.IsTrue( Owned( broken, 29, 40 ) && !Owned( broken, 30, 5 ) && !Owned( broken, 40, 15 ) );
-		Assert.IsFalse( new BuyLandTool( () => broken, () => null, ( _, _ ) => false ).Begin() );
+		Assert.IsFalse( Tool( broken, null ).Begin() );
 	}
 
 	[TestMethod]

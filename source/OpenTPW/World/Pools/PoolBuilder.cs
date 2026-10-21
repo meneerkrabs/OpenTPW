@@ -56,6 +56,9 @@ public sealed record PoolStroke( bool Erase, IReadOnlyList<(int X, int Y)> Cells
 
 	/// <summary>True when no cell of the stroke was refused.</summary>
 	public bool Completed => FirstRefusal == null;
+
+	/// <summary>True when the stroke ended at a cell it could not pay for (<see cref="PoolBuilder.PaintCells"/> writes no cell after it).</summary>
+	public bool RanOutOfMoney { get; init; }
 }
 
 /// <summary>
@@ -216,6 +219,7 @@ public sealed class PoolBuilder
 		var marked = new List<(int X, int Y)>();
 		((int X, int Y), PoolBuildResult)? refusal = null;
 		long charged = 0;
+		var broke = false;
 		foreach ( var (x, y) in cells )
 		{
 			var result = Paint( x, y, river );
@@ -230,10 +234,13 @@ public sealed class PoolBuilder
 			{
 				refusal ??= ((x, y), result);
 				if ( result == PoolBuildResult.NotEnoughMoney )
+				{
+					broke = true;
 					break;
+				}
 			}
 		}
-		return new PoolStroke( false, painted, charged, 0, refusal ) { RiverMarked = marked };
+		return new PoolStroke( false, painted, charged, 0, refusal ) { RiverMarked = marked, RanOutOfMoney = broke };
 	}
 
 	/// <summary>Erases <paramref name="cells"/> in order, refunding each pool cell; cells that are not pool cells are skipped and the first one recorded as the refusal.</summary>

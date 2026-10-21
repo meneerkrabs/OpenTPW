@@ -324,15 +324,63 @@ thousands of inputs. DetMath removes that dependency, so a later change cannot s
 Still outside these runs, and so not proven identical:
 
 - the state that is not hashed (above: placed-object animator poses, the guest economy bridge map);
-- the work `Level.Update` does by wall time outside the fixed tick (`SceneClock`, `RefreshPools`, `UpdateEvening`, `UpdateSnow`);
-- the per-frame staff calls of `Level.Update` outside the tick: `StaffWorld.Synchronize` (the tick repeats it before it moves anyone) and
-  `StaffPlacement.Reconcile`, which returns a picked-up member that no local tool carries to idle;
-- `FlatRideBounceRiders.Prepare` (`Level.AdvanceSimulation`, via `PrepareRideBodyPoses`), which runs once per frame after that frame's ticks and
-  changes the guests' ride-body state, so its result depends on how ticks are batched into frames;
-- the `Update()` of every entity (`Entity.All`), which runs after the simulation each frame;
 - a NaN that reaches hashed state, whose sign and payload differ between x86, ARM and WebAssembly.
 
-The co-op hash check covers the unhashed state only once it reaches hashed state.
+The co-op hash check covers the unhashed state only once it reaches hashed state. The work a frame does outside the fixed tick is the
+subject of the next section.
+
+### Frame batching
+
+For lockstep the park after a tick may depend only on the ticks and the commands, never on how the ticks fall into frames or on wall time.
+`Level.Update` reads the world input and then runs `Level.AdvanceFrame`: the path layer, the pools' drawing, the evening, the snow, the scene
+clock, the fixed-step simulation for the frame's time (0 to 16 ticks) and every entity's update. Each piece of that frame step outside
+the simulation was audited (co-op phase C1b, October 20, 2026):
+
+| Hook | Verdict | What it writes |
+| --- | --- | --- |
+| `RefreshPools` | presentation | Creates the pool, slide and spray renderers and, once, the swimmers' renderer. The slide rules' water levels are computed from the cell map by the simulation's own site (`Level.SlideSite`), not from the renderer. |
+| `UpdateEvening` | presentation | The evening clock, look, sun colour and lamps, and the torches' flame transforms, which act on the drawn parts only (`OriginalObject.SetPresentationNodeTransform`); none of it is saved or read by the simulation (docs/EVENING.md). |
+| `UpdateSnow` | presentation | Eases `SnowCover.Drawn` towards the cover. The cover a save keeps is stepped by the weather's turns inside the tick. |
+| `SceneClock` | presentation | Read by the sky's scroll and the coasters' scrolling textures only; not saved. |
+| `FlatRideBounceRiders.Prepare` | moved into the tick | Runs at the end of every tick (`Level.PrepareRideBodyPoses`), see below. |
+| `StaffPlacement.Reconcile`, `StaffWorld.Synchronize` | moved into the tick | Run at the start of every tick, after its commands, see below. |
+| `Entity.All` updates | presentation | The nine entity types with an update: the placed original objects (the ride hoarding's rise and fade, tp.exe `0x0044E410` → `0x004548F0`, advances its level by real frame time; the simulation only sets the hoarding's state and nothing it hashes or reads uses the level), the coaster renderer (meshes and cars from the track; its knot pass does not write the banks), the particle renderer, the pool, slide and bridge renderers (meshes, the drawn waves, the spray's water levels), the weather renderer and forecast presenter (their visual state and log lines) and the UI's root panel, whose panels edit the park only through the command funnel (`ParkCommandLayerTests`). `FrameBatchingTests.EveryEntityUpdateIsAnAuditedPresentationUpdate` fails when another entity type gains an update. |
+
+**The ride bodies' pose phase** (`FlatRideBounceRiders.Prepare`) asks the guests' body players (`VisitorSpriteState`) for templates, creates and deletes
+bodies and stores the walkers' headings. The body players are not hashed and the simulation never reads them, but a save keeps them, and run once per
+frame after the frame's ticks they depended on how many ticks the frame ran. tp.exe runs the walk update (`0x00557AB0`) and the bounce pass once per
+rendered frame after the frame's substeps (`0x0054E360`, `0x0054FA08`); OpenTPW now runs them after every fixed tick (`[EXT:fixed-60hz-clock]`). A
+frame of one tick, 60 Hz at normal speed, is unchanged. A frame without a tick no longer runs the phase. tp.exe's walk update still runs on a frame
+without a substep and reads the free-running scaled timer `0x785970` (`0x00557AFF` → `0x00402D70`); OpenTPW's phase reads the script and body
+clocks, which only the ticks advance (`[EXT:fixed-60hz-clock]`, as before this change), so on such a frame it only repeated the requests of the frame
+before: nothing changes except after a load or an edit between two ticks, when a body now follows at the next tick's end instead of in the same frame.
+
+**The staff host's bookkeeping** ran once per frame before the world input. `StaffPlacement.Reconcile` returns a member left picked up with no hand
+holding him (an imported save) to idle; `StaffWorld.Synchronize` puts a member without a position (hired since the last tick, or loaded so) on the gate
+path. Both write hashed staff state. They now run at the start of every tick after its commands, so a replayed or a session's hire is placed as a live
+one is, however many ticks a frame runs. `TryGetStaffWorldPosition`, which the HUD's locator calls, no longer synchronizes: a HUD read must not move
+the park between two ticks. The live differences concern a member without a position (a hire made without the park view's place tool, which positions
+the member at the clicked cell itself, or a member loaded so): it is placed at the next tick's start rather than at the next frame's start, so a path the
+same frame's input built before that tick can change the spawn cell of a park without a walkable gate, and while the park is paused (no tick runs) it
+stays off the map and out of the HUD's locator until the park runs again; an imported save's member left picked up, or a carried member dropped while the park is paused, is likewise released at the first tick, not at the next frame.
+
+What stays outside: the clock's banked fraction of a tick and its dropped-time total follow the frames' time feed (in a session the network clock
+feeds whole ticks, C2); the particle pool runs on the frame time, so the particle part of a save and the ADDOBJ records of effects that have ended
+(`OriginalObjectRuntime.ParticleObjects`) and the ride hoarding's level and shown set (a sunk hoarding goes back to the closed set at the frame its level reaches 0, which a later model call reads) can differ between two players' saves, though neither is hashed nor returned to a script; and
+`GameFlow.Update`'s work after the level's frame (the advisor, the autosave, the audio, the presence figures) is not part of this audit.
+
+The tests:
+
+- `FrameBatchingTests.TheParkAfterEveryTickIsTheSameHoweverTheTicksFallIntoFramesLiveOrReplayed` runs a scripted park without game data (objects,
+  paths, guests, staff hired between ticks and a member left picked up, the speed changed to every setting, edits on both sides of frame
+  boundaries) through the simulation alone and through `AdvanceFrame` in frames of 1 tick, 16 ticks and two seeded random sizes, with its edits
+  issued live between frames and replayed from the recorded log inside the frames: the world hash after every tick, the command log and the
+  park save at the end (less the clock's remainder) are equal in all ten runs.
+- `FrameBatchingTests.TheStaffHostsBookkeepingRunsInsideTheTick` pins where the staff calls run.
+- With game data, the park-resume smoke's restore phase (docs/PARK-SAVES.md) continues the saved Jungle park through `AdvanceFrame` in seeded
+  random frames of 1 to 16 ticks (`OPENTPW_SMOKE_BATCHING=random`, the default; `1` and `16` choose fixed frames) and replays the continuation's
+  edits (the speed raised and set back, the first attraction closed and reopened, the entrance fee) inside them; every tick's sections, the
+  guests' body players included, must equal the capture phase's, which runs one tick a frame and issues the edits between frames.
 
 ## Park save
 
@@ -441,6 +489,7 @@ Other OpenTPW state that is **not in the hash**:
 | --- | --- |
 | Placed objects outside their scripts: placement list and positions, `OriginalObjectRuntime` run flags (`stopped`, `wasRunning`), animator poses (node matrices, vertex and UV arrays, node-state bits) | not yet part of the canonical state; the scripts and the attractions' guest-facing state (queues, riders, `IsOpen` through the guest digest) are hashed |
 | `GuestEconomyBridge` attraction → economy instance map | not yet part of the canonical state; the economy objects themselves are in the economy digest |
+| `OriginalObjectRuntimeSnapshot.Hoarding` (the boards of a closed ride, docs/OBJECTS.md "Hoarding") | presentation: its level moves by real frame time, as tp.exe's `0x4548F0` does; it is saved for the look of a loaded park, but no simulation step reads it, and the park-resume smoke compares the runtimes without it |
 | `FixedStepClock` pending time (`PendingSeconds`) | frame timing, below one tick; the substep scheduler is DET-I2 |
 | Sound chooser seed | presentation, see above |
 | `ParkSaveFile.Data.AnalyserCaches` (the analyser's cached readings) | saved for an exact continuation, but a reading aid that no simulation step reads; removed from the economy digest |
@@ -515,6 +564,24 @@ property:
 - the smarter guests' planning and capacity tests;
 - the pool swing, jets and bob tests (more swimmers, a whole wave cycle);
 - the pools changing room tests (the guest is at the exit point and walks out).
+
+### Imported queue cells (October 20)
+
+An imported park now keeps the save's queue cells (map type 3) with their link byte, queue link, placement counter,
+owner word and NoModify flag, as tp.exe's cell load (`0x4D0B30`, mode 0) reads every cell record into the map
+(`ParkCellMap.FromOriginal`). Jungle Easymode has four, the Belly Bounce's queue. Before, those cells were empty
+ground, and since the typed queue front (QUEUE-003, #540) the ride's front was such an empty cell, so no guest could
+join it. No draw, hashed field or schema changed; the cell map holds four more queue cells. A run over the Jungle
+cell map moves because the walk's edge test (`0x4D8750`) enters a queue cell only along its link, where the empty
+ground was open to an off-path step (walk mask 1); with the edge test reading the four cells as ground again the
+Jungle guest run returns to 22 admissions, which isolates that cause.
+
+Pins moved (old → new):
+
+| Pin | Before | After |
+| --- | --- | --- |
+| `PathAssetTests` Jungle guest run (22 → 23 admissions) | `0xBE549F10640102B9` | `0x11C1DCF60A32B061` |
+
 ### Staff locator role order (October 19)
 
 The own save records five independent role-ID sequences in `StaffData.RoleOrder`. This presentation owner
@@ -883,11 +950,14 @@ run through a 30-second session and 600 more ticks.
 
 `[EXT:online-coop-commands]` The park's edits are commands ([COOP.md](COOP.md), `ParkCommands`): each applies before a stated simulation tick, the next one the fixed-step clock runs. In single
 player a command runs at once in the input handler, between two ticks before the frame's simulation, exactly where the edit ran before the command layer, so **no pin moved** and no
-save byte changed (the layer adds no saved or hashed state; the Move tool's carried entry is session state, not saved). Held commands (`ParkCommands.Schedule`, a replayed log) apply at
+save byte changed (the layer adds no saved or hashed state; the Move tool's carried entry and the employees in the players' hands are session state, not saved). Held commands (`ParkCommands.Schedule`, a replayed log) apply at
 the start of their tick inside `Level.AdvanceSimulation`, before the tick's economy sync. A command's executor reads only the command and the world, never a tool's state, and draws no
 random stream of its own beyond what the edit itself draws (a placement's script seed, as before). `ParkCommandLevelTests` records a build session on a no-data level and replays it on a
-twin with the same `WorldStateHash` after every tick; `ParkSettingCommandLevelTests` does the same for a session of the HUD windows' settings. A replay runs one tick per `AdvanceSimulation` call; the work a frame does outside its ticks (pool refresh, evening, snow, the scene
-clock, the body poses prepared after a frame's ticks) is not replayed, which C1b audits.
+twin with the same `WorldStateHash` after every tick; `ParkSettingCommandLevelTests` does the same for a session of the HUD windows' settings. `ParkToolCommandLevelTests` applies
+the staff and pool tools' logged commands to a twin that reaches the same hash, and `TrackAddOnLevelTests` the track tools' to a twin whose track layer and ride controller match. A tool issues one command for each write it made before (a pool
+stroke one per cell, as the drag wrote them), and a track command walks the circuit inside the command while the tool's own step after the walk stays on the issuer's machine; the line
+tool's walk to the track's open end, which writes the walked tiles' overlap words, is a command too (`OpenTrackLineToolCommand`, or inside the cut that opens the circuit). A replay runs one tick per `AdvanceSimulation` call or any number per `Level.AdvanceFrame`; the park after a tick does not depend on how the ticks fall
+into frames, as "Frame batching" shows.
 
 ## Tests
 

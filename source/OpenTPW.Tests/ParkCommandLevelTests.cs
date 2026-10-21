@@ -248,7 +248,7 @@ public class ParkCommandLevelTests
 		long Amount() => Pick( -1L, long.MinValue, long.MaxValue, 0L, 100L, 10_000L, 10_001L, 18_000L );
 		bool Flag() => random.Below( 2 ) == 0;
 		string Text() => Pick( "Ann", "", "A\u0007B", "\ud800", new string( 'a', 600 ), "Kevin the", "Cosmic Cow" );
-		ParkCommand Next() => random.Below( 43 ) switch
+		ParkCommand Next() => random.Below( 61 ) switch
 		{
 			0 => new PlaceObjectCommand( Entry(), Coordinate(), Coordinate(), Rotation(), random.Below( 4 ) == 0, Pick( -1, -2, Id() ) ),
 			1 => new RemoveAtCommand( Coordinate(), Coordinate() ),
@@ -291,8 +291,28 @@ public class ParkCommandLevelTests
 			37 => new QueueCheatCommand( (CheatKind)Pick( -1, 0, 1, 2, 3, 99 ), Pick( -1, 0, 1, 9, 10, int.MaxValue ) ),
 			38 => new RefreshLoanOffersCommand(),
 			39 => new SetAllObjectsOpenCommand( Flag() ),
-			40 => new QueueSegmentCommand( Id(), Coordinate(), Coordinate(), Coordinate(), Coordinate() ),
-			41 => new UndoQueueSegmentCommand( Id(), Coordinate(), Coordinate(), Coordinate(), Coordinate() ),
+			// the park's tools (C1 part 3)
+			40 => new BuyLandCommand( Coordinate(), Coordinate(), Coordinate(), Coordinate() ),
+			41 => new BeginStaffHireCommand( Id() ),
+			42 => new CancelStaffHireCommand(),
+			43 => new PlaceStaffCommand( Id(), Coordinate(), Coordinate() ),
+			44 => new PickUpStaffCommand( Id() ),
+			45 => new DropStaffCommand( Id(), Coordinate(), Coordinate() ),
+			46 => new OpenTrackLineToolCommand( Id() ),
+			47 => new PaintPoolCellCommand( Coordinate(), Coordinate(), Flag() ),
+			48 => new ErasePoolCellCommand( Coordinate(), Coordinate() ),
+			49 => new UndoPoolStrokeCommand( Flag(), Cells(), random.Below( 3 ) == 0 ? Cells() : Array.Empty<(int X, int Y)>() ),
+			50 => new SetPoolWavesCommand( Id(), Flag(), Pick( -1, 0, 1, 2, 3, 4 ), Pick( -1, 0, 1, 2, 3 ) ),
+			51 => new LayPoolSlidePieceCommand( Coordinate(), Coordinate(), Coordinate(), Coordinate() ),
+			52 => new UndoPoolSlidePieceCommand( Coordinate(), Coordinate() ),
+			53 => new PlacePoolBridgeCommand( Coordinate(), Coordinate(), Pick( -1, 0, 1, 2, 3, 4 ) ),
+			54 => new RemovePoolBridgeCommand( Coordinate(), Coordinate() ),
+			55 => new LayTrackLineCommand( Id(), Coordinate(), Coordinate(), Coordinate(), Coordinate() ),
+			56 => new UndoTrackLineCommand( Id(), Coordinate(), Coordinate(), Coordinate(), Coordinate() ),
+			57 => new CutTrackCommand( Id(), Coordinate(), Coordinate(), Coordinate(), Coordinate() ),
+			// the native queue segments
+			58 => new QueueSegmentCommand( Id(), Coordinate(), Coordinate(), Coordinate(), Coordinate() ),
+			59 => new UndoQueueSegmentCommand( Id(), Coordinate(), Coordinate(), Coordinate(), Coordinate() ),
 			_ => new RemoveAttractionCommand( Pick( -1, int.MinValue, 99_999 ) ),
 		};
 		CollectionAssert.IsSubsetOf( Enum.GetValues<ParkCommandKind>(), Enumerable.Range( 0, 1024 ).Select( _ => Next().Kind ).Distinct().ToArray(), "the stream draws every kind" );

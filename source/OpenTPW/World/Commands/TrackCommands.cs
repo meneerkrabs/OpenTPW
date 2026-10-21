@@ -1,0 +1,145 @@
+namespace OpenTPW;
+
+/// <summary>What a track line command did (<see cref="LayTrackLineCommand"/>, <see cref="UndoTrackLineCommand"/>): the laid line (null for an undo), and whether the circuit was walked again and was then valid (null: no walk).</summary>
+public sealed record TrackLineDone( SegmentResult? Segment, bool? Valid );
+
+/// <summary>
+/// What a track cut did (<see cref="CutTrackCommand"/>): the cut, whether the walk after it found a valid circuit (null: no walk), and on an open circuit the open end the line tool goes on from
+/// (the walk to it writes the tiles' overlap words, so it is the command's).
+/// </summary>
+public sealed record TrackCutDone( TrackCutResult Cut, bool? Valid, TrackOpenEnd? Open );
+
+/// <summary>
+/// The line tool's opening on a kart or water ride whose circuit is open (the track button, <see cref="Level.EnterTrackTool"/>): the walk from the station to the track's open end, which collects
+/// the corners the tool's Backspace takes back and sets every walked tile's overlap word (<see cref="TrackEditor.FindOpenEnd"/>). The value is the open end.
+/// </summary>
+public sealed record OpenTrackLineToolCommand( int Ride ) : ParkToolCommand
+{
+	public override ParkCommandKind Kind => ParkCommandKind.OpenTrackLineTool;
+	internal override bool IsWellFormed => Ride >= 0;
+	internal override void WriteFields( ParkCommandWriter writer ) => writer.Int( Ride );
+	internal override ParkCommandResult Execute( Level level ) => level.ExecuteOpenTrackLine( Ride );
+}
+
+/// <summary>
+/// One committed line of a kart or water ride's track tool (<see cref="TrackLineWriter"/>, the ride window's track button on an open circuit): from (<paramref name="StartX"/>, <paramref name="StartY"/>) toward
+/// (<paramref name="EndX"/>, <paramref name="EndY"/>), snapped by the writer, for the ride whose attraction id is <paramref name="Ride"/>. The circuit is walked again when the line laid or met a tile. The value is
+/// <see cref="TrackLineDone"/>; the issuer ends or continues its tool from it (<see cref="Level.ContinueTrackTool"/>).
+/// </summary>
+public sealed record LayTrackLineCommand( int Ride, int StartX, int StartY, int EndX, int EndY ) : ParkToolCommand
+{
+	public override ParkCommandKind Kind => ParkCommandKind.LayTrackLine;
+	internal override bool IsWellFormed => Ride >= 0 && IsCell( StartX, StartY ) && IsCell( EndX, EndY );
+	internal override void WriteFields( ParkCommandWriter writer )
+	{
+		writer.Int( Ride );
+		writer.Int( StartX );
+		writer.Int( StartY );
+		writer.Int( EndX );
+		writer.Int( EndY );
+	}
+
+	internal override ParkCommandResult Execute( Level level ) => level.ExecuteTrackLine( Ride, (StartX, StartY), (EndX, EndY), undo: false );
+}
+
+/// <summary>
+/// Backspace in a kart or water ride's track tool: the line from (<paramref name="StartX"/>, <paramref name="StartY"/>) to (<paramref name="EndX"/>, <paramref name="EndY"/>) of the ride whose attraction id is
+/// <paramref name="Ride"/> is taken back by the editor's directional clear (<see cref="TrackEditor.UndoLine"/>), each cleared tile refunded, and the circuit walked again.
+/// </summary>
+public sealed record UndoTrackLineCommand( int Ride, int StartX, int StartY, int EndX, int EndY ) : ParkToolCommand
+{
+	public override ParkCommandKind Kind => ParkCommandKind.UndoTrackLine;
+	// a line the tool laid is axis-aligned and whole tiles long (TrackLineWriter.SnapEnd)
+	internal override bool IsWellFormed => Ride >= 0 && IsCell( StartX, StartY ) && IsCell( EndX, EndY ) && (StartX == EndX || StartY == EndY)
+		&& (EndX - StartX) % TrackStation.TileCells == 0 && (EndY - StartY) % TrackStation.TileCells == 0;
+	internal override void WriteFields( ParkCommandWriter writer )
+	{
+		writer.Int( Ride );
+		writer.Int( StartX );
+		writer.Int( StartY );
+		writer.Int( EndX );
+		writer.Int( EndY );
+	}
+
+	internal override ParkCommandResult Execute( Level level ) => level.ExecuteTrackLine( Ride, (StartX, StartY), (EndX, EndY), undo: true );
+}
+
+/// <summary>
+/// The second click of a kart or water ride's track edit tool (<see cref="TrackEditWriter"/>, the track button on a closed circuit): the track of the ride whose attraction id is <paramref name="Ride"/> is cut
+/// between the tile the first click picked (<paramref name="FirstX"/>, <paramref name="FirstY"/>) and the clicked one (<paramref name="SecondX"/>, <paramref name="SecondY"/>), the station repaired and the
+/// circuit walked again. The value is <see cref="TrackCutDone"/>.
+/// </summary>
+public sealed record CutTrackCommand( int Ride, int FirstX, int FirstY, int SecondX, int SecondY ) : ParkToolCommand
+{
+	public override ParkCommandKind Kind => ParkCommandKind.CutTrack;
+	internal override bool IsWellFormed => Ride >= 0 && IsCell( FirstX, FirstY ) && IsCell( SecondX, SecondY );
+	internal override void WriteFields( ParkCommandWriter writer )
+	{
+		writer.Int( Ride );
+		writer.Int( FirstX );
+		writer.Int( FirstY );
+		writer.Int( SecondX );
+		writer.Int( SecondY );
+	}
+
+	internal override ParkCommandResult Execute( Level level ) => level.ExecuteTrackCut( Ride, (FirstX, FirstY), (SecondX, SecondY) );
+}
+
+/// <summary>
+/// [EXT:online-coop-commands] The line writer a kart or water ride's track tool holds: previews and the start check stay local (<see cref="Inner"/>, no writes), and each commit and undo of a line becomes one
+/// command (<see cref="LayTrackLineCommand"/>, <see cref="UndoTrackLineCommand"/>). When the command walked the circuit to a valid one, the tool moves on as the walk once moved it
+/// (<see cref="Level.ContinueTrackTool"/>: it ends, follows the queue or restarts), on the issuer's machine only.
+/// </summary>
+public sealed class ParkCommandTrackWriter : ICellLineWriter
+{
+	private readonly ParkCommands commands;
+	private readonly Action continueTool;
+
+	/// <param name="inner">The ride's line writer, whose previews the tool shows.</param>
+	/// <param name="ride">The attraction id of the ride whose track the tool lays.</param>
+	/// <param name="continueTool">The issuer's tool step after a walk that found a valid circuit.</param>
+	public ParkCommandTrackWriter( ICellLineWriter inner, ParkCommands commands, int ride, Action continueTool )
+	{
+		Inner = inner ?? throw new ArgumentNullException( nameof( inner ) );
+		this.commands = commands ?? throw new ArgumentNullException( nameof( commands ) );
+		this.continueTool = continueTool ?? throw new ArgumentNullException( nameof( continueTool ) );
+		Ride = ride;
+	}
+
+	/// <summary>The ride's line writer the previews read.</summary>
+	public ICellLineWriter Inner { get; }
+	/// <summary>The attraction id of the ride.</summary>
+	public int Ride { get; }
+	public CellToolMode Mode => Inner.Mode;
+	public bool SnapsToLine => Inner.SnapsToLine;
+
+	public SegmentResult Preview( (int X, int Y) start, (int X, int Y) cursor ) => Inner.Preview( start, cursor );
+
+	public bool CanStart( (int X, int Y) cell ) => Inner.CanStart( cell );
+
+	public SegmentResult Commit( (int X, int Y) start, (int X, int Y) end )
+	{
+		var result = commands.Issue( new LayTrackLineCommand( Ride, start.X, start.Y, end.X, end.Y ) );
+		if ( result.Value is TrackLineDone { Segment: { } segment } done )
+		{
+			if ( done.Valid == true )
+				continueTool();
+			return segment;
+		}
+		// a refused command lays nothing: the tool sees a line stopped at its first cell
+		var snapped = TrackLineWriter.SnapEnd( start, end );
+		return new SegmentResult( snapped, Array.Empty<(int X, int Y)>(), 0, CellBuildResult.Occupied, false )
+		{
+			Start = start,
+			Line = TrackLineWriter.LayLine( start, snapped ).SelectMany( tile => TrackStation.TileCellsOf( tile.X, tile.Y ) ).ToArray(),
+			StoppedAt = start
+		};
+	}
+
+	public void Undo( SegmentResult segment )
+	{
+		ArgumentNullException.ThrowIfNull( segment );
+		if ( commands.Issue( new UndoTrackLineCommand( Ride, segment.Start.X, segment.Start.Y, segment.SnappedEnd.X, segment.SnappedEnd.Y ) ).Value is TrackLineDone { Valid: true } )
+			continueTool();
+	}
+}

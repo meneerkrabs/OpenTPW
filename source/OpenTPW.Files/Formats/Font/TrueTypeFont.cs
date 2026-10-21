@@ -345,7 +345,9 @@ public sealed class TrueTypeFont
 			{
 				RequireWithin( position, 1, end );
 				var repeat = data[position++];
-				for ( var r = 0; r < repeat && i < pointCount; r++ )
+				if ( repeat > pointCount - i )
+					throw new InvalidDataException( "Flag repeat count exceeds the glyph's remaining points." );
+				for ( var r = 0; r < repeat; r++ )
 					flags[i++] = flag;
 			}
 		}

@@ -103,7 +103,7 @@ public class EmployeeLivePortraitTests
 		public readonly GuestSpriteAtlas Atlas;
 		public readonly Level Level;
 		public readonly StaffRenderer Renderer;
-		public readonly StaffPlacement Placement = new( () => null, () => null, (_, _) => false );
+		public readonly StaffPlacement Placement = StaffPlacementRig.Create( () => null, () => null, (_, _) => false );
 		public List<Texture> Textures => Get<List<Texture>>( Renderer, "textures" );
 		public Rig( StaffMember member, int directions = 5, Level? level = null, List<StaffMember>? members = null )
 		{

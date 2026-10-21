@@ -184,13 +184,13 @@ public sealed record SetAttractionOpenCommand( int Attraction, bool Open ) : Par
 
 /// <summary>
 /// The ride window's apply for the placed ride <paramref name="Attraction"/> (<see cref="OriginalObjectRuntime.ApplyRideWindow"/>): the speed, the capacity, and the duration when
-/// its type has one. The capacity and duration setters clamp as the original's do; the speed is held to the speed slider's <c>UsageInfo.MinSpeed..MaxSpeed</c>, as the window's
-/// load holds it, and must fit the script's signed 16-bit speed bias.
+/// its type has one. The speed is held to the speed slider's <c>UsageInfo.MinSpeed..MaxSpeed</c>, as the window's load holds it; the setters then take every value as the window's
+/// apply gave it to them (the capacity and duration clamps, the script's 16-bit speed bias), so a mod ride whose ranges go past the shipped ones applies as it did.
 /// </summary>
 public sealed record SetRideSettingsCommand( int Attraction, int Speed, int Capacity, int Duration ) : ParkSettingCommand
 {
 	public override ParkCommandKind Kind => ParkCommandKind.SetRideSettings;
-	internal override bool IsWellFormed => Attraction >= 0 && Speed is >= short.MinValue and <= short.MaxValue && Capacity is >= 0 and <= ushort.MaxValue && Duration is >= 0 and <= byte.MaxValue;
+	internal override bool IsWellFormed => Attraction >= 0;
 
 	internal override void WriteFields( ParkCommandWriter writer )
 	{

@@ -158,7 +158,10 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	public void AlignTurns( long economyTick )
 	{
 		if ( economyTick >= TickCount )
+		{
 			turnPhase = economyTick - TickCount;
+			displayTurnPhaseTicks = (int)(turnPhase % DisplayTurnPhasePeriodTicks);
+		}
 	}
 	public double TimeSeconds { get; private set; }
 	public bool ArrivalsEnabled { get; set; } = true;
@@ -420,6 +423,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		guest.ToiletBonus = GuestSpeed.ToiletBonus;
 		// [BIN:TPW-EXE:0x004FAFDB arrival stamp] the person constructor stamps the world turn into +0x1D4, the one write of the visitor's time in the park
 		guest.TimeInParkSeconds = 0;
+		guest.DisplayTimeInParkTurns = 0;
 		guest.PrankFlag = start.PrankFlag;
 		guest.Money = start.Money;
 		guest.Happiness = start.Happiness;
@@ -567,6 +571,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			if ( CountsParkTime( guest ) && guest.TimeInParkSeconds is { } elapsed && deltaSeconds > Guest.MaximumTimeInParkSeconds - elapsed )
 				throw new OverflowException( $"Guest {guest.Id} time in park exceeds the supported duration." );
 		TickCount++;
+		AdvanceDisplayAges();
 		TimeSeconds += deltaSeconds;
 		decisions.BeginTick();
 		// [EXT:smarter-guests] the extension's first tick gives the guests that predate it their ids, in thing-list order; before any decision of the tick
@@ -929,7 +934,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 
 	private void UpdateGuest( Guest guest, float dt )
 	{
-		// [APPROX:GUEST-920] the elapsed seconds accumulate per step (display metadata) where tp.exe subtracts two integer world turns (0x4FD950: the turn at +0x1DA70C minus the stamp +0x1D4, >> 2); the turn count a visitor shows is the seconds over the turn's 248 ms, floored
+		// [APPROX:GUEST-920] seconds still accumulate per step for stay statistics, weather gates and legacy displays; new visitor displays retain integer-turn age independently (DisplayAge). No gameplay consumer is migrated here.
 		if ( CountsParkTime( guest ) && guest.TimeInParkSeconds is { } elapsed )
 			guest.TimeInParkSeconds = elapsed + dt;
 		if ( turnStarted )
@@ -3738,6 +3743,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			RandomState = random.State,
 			WorldGenerator = random.State,
 			TickCount = TickCount,
+			DisplayTurnPhaseTicks = displayTurnPhaseTicks,
 			TimeSeconds = TimeSeconds,
 			BodySpriteClockMilliseconds = BodySpriteClockMilliseconds,
 			Balloons = CaptureBalloons(),
@@ -3791,6 +3797,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			Money = guest.Money,
 			ExitLevel = guest.ExitLevel,
 			TimeInParkSeconds = guest.TimeInParkSeconds,
+			DisplayTimeInParkTurns = guest.TimeInParkSeconds == null ? null : guest.DisplayTimeInParkTurns,
 			SecondsSinceRide = guest.SecondsSinceRide,
 			RidesTaken = guest.RidesTaken,
 			ShopsVisited = guest.ShopsVisited,
@@ -3926,6 +3933,8 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 
 		if ( !GuestSimulationSnapshot.AcceptedSchemaVersions.Contains( snapshot.SchemaVersion ) )
 			Error( $"Guest snapshot schema version {snapshot.SchemaVersion} is not supported; this build reads {string.Join( ", ", GuestSimulationSnapshot.AcceptedSchemaVersions )}." );
+		foreach ( var problem in DisplayAgeProblems( snapshot ) )
+			Error( problem );
 		if ( snapshot.TickCount < 0 )
 			Error( $"TickCount {snapshot.TickCount} is negative." );
 		if ( !double.IsFinite( snapshot.TimeSeconds ) || snapshot.TimeSeconds < 0 )
@@ -4367,10 +4376,10 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// </summary>
 	public void RestoreSnapshot( GuestSimulationSnapshot snapshot )
 	{
-		poolActivityVersion++;
 		var validation = ValidateSnapshot( snapshot );
 		if ( !validation.IsValid )
 			throw new InvalidDataException( "The guest snapshot does not restore: " + string.Join( " ", validation.Errors ) );
+		poolActivityVersion++;
 		// Pass 1: identities first — every guest becomes a fresh object; nothing live is replaced yet.
 		var restored = new List<Guest>( snapshot.Guests.Length );
 		var restoredById = new Dictionary<int, Guest>( snapshot.Guests.Length );
@@ -4407,6 +4416,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		if ( snapshot.WorldGenerator is { } generator )
 			random.Restore( generator );
 		TickCount = snapshot.TickCount;
+		displayTurnPhaseTicks = snapshot.DisplayTurnPhaseTicks ?? (int)(turnPhase % DisplayTurnPhasePeriodTicks);
 		TimeSeconds = snapshot.TimeSeconds;
 		BodySpriteClockMilliseconds = snapshot.BodySpriteClockMilliseconds ?? BodySpriteSampleAtTick( snapshot.TickCount );
 		RestoreBalloons( snapshot.Balloons );
@@ -4482,6 +4492,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		// Schema 1 stored the former seconds-based value as a fraction; truncating toward zero keeps it a counter (one per 0.992 s).
 		guest.ExitLevel = (int)Math.Truncate( snapshot.ExitLevel );
 		guest.TimeInParkSeconds = snapshot.TimeInParkSeconds;
+		guest.DisplayTimeInParkTurns = snapshot.DisplayTimeInParkTurns;
 		guest.SecondsSinceRide = snapshot.SecondsSinceRide;
 		guest.RidesTaken = snapshot.RidesTaken;
 		(guest.ShopsVisited, guest.SideshowsVisited, guest.SideshowsWon) = (snapshot.ShopsVisited, snapshot.SideshowsVisited, snapshot.SideshowsWon);

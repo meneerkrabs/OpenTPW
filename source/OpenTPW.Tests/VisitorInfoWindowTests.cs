@@ -145,4 +145,37 @@ public class VisitorInfoWindowTests
 		Assert.AreEqual( "Confused...", strings.Thought( (int)GuestThought.Confused ) );
 		Assert.AreEqual( "", strings.Thought( 0 ) );
 	}
+	[TestMethod]
+	public void BothVisitorWindowsReadExactAgeWithoutChangingTheirRefreshCadenceOrRows()
+	{
+		var hud = VisitorWorldSelectionTests.Fixture( out var simulation, out _ );
+		var first = new Guest( 1, 0 ) { State = GuestState.WalkingAround, TimeInParkSeconds = 0.9833333846, DisplayTimeInParkTurns = 4 };
+		var second = new Guest( 8, 0 ) { State = GuestState.WalkingAround, TimeInParkSeconds = 0.9833333846, DisplayTimeInParkTurns = 8 };
+		var outside = new Guest( 9, 0 ) { State = GuestState.CrossingRoadHome, TimeInParkSeconds = 0.9833333846, DisplayTimeInParkTurns = 12 };
+		SetGuests( simulation, first, second, outside );
+		hud.OpenVisitorWindow();
+		Assert.AreEqual( 1L, hud.VisitorValuesOf( first ).Hours, "new-row quarter value, not the zero from floored seconds" );
+		var order = hud.VisitorItems.Select( guest => guest.Id ).ToArray();
+		CollectionAssert.AreEqual( new[] { 1, 8 }, order, "membership is the existing in-park projection" );
+		first.DisplayTimeInParkTurns = 12;
+		var context = Context();
+		var input = UiInput.Idle( new System.Numerics.Vector2( 1, 1 ) );
+		context.Delta = ParkHud.VisitorValueRefreshSeconds - 0.1f;
+		hud.Stack.Top!.Update( context, input );
+		Assert.AreEqual( 1L, hud.VisitorValuesOf( first ).Hours, "cached row until its existing 2-second refresh" );
+		context.Delta = 0.2f;
+		hud.Stack.Top!.Update( context, input );
+		Assert.AreEqual( 12L, hud.VisitorValuesOf( first ).Hours );
+		CollectionAssert.AreEqual( order, hud.VisitorItems.Select( guest => guest.Id ).ToArray(), "refresh does not re-sort rows" );
+		Assert.IsTrue( hud.OpenVisitorInfoWindow( first ) );
+		Assert.AreEqual( 12L, hud.VisitorInfoShown.Hours, "individual info uses the refreshed value" );
+		first.DisplayTimeInParkTurns = 16;
+		context.Delta = ParkHud.VisitorInfoRefreshSeconds - 0.1f;
+		hud.Stack.Top!.Update( context, input );
+		Assert.AreEqual( 12L, hud.VisitorInfoShown.Hours, "cached info until its existing 4-second refresh" );
+		context.Delta = 0.2f;
+		hud.Stack.Top!.Update( context, input );
+		Assert.AreEqual( 16L, hud.VisitorInfoShown.Hours );
+	}
+
 }

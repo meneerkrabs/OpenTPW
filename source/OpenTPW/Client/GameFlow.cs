@@ -697,6 +697,8 @@ internal sealed partial class GameFlow : IDisposable
 		UpdateGlobeView();
 		Camera.Update();
 		UpdateLobbyEffects();
+		using ( FrameMarks.Measure( "lobby.codecWarmup" ) )
+			PumpLobbyCodecWarmup();
 		if ( !LobbyEntering )
 			Menu?.Stack.Update( Context, input );
 		foreach ( var entity in Entity.All.ToArray() )

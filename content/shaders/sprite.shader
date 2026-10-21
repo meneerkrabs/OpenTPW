@@ -17,7 +17,10 @@ vertex {
         vec3 g_vFogColor;
     } g_oUbo;
 
-    layout(location = 0) out VS_OUT {
+    // A struct, not an interface block: Veldrid.SPIRV's HLSL passes a block as its own main() parameter, so the vertex output
+    // and pixel input signatures list the block, the flat varyings and SV_Position in different register orders, and Direct3D 11
+    // fed the pixel shader the wrong registers (issue #754: one flat colour per face). A struct keeps both in location order.
+    layout(location = 0) out struct VS_OUT {
         vec2 vTexCoords;
         vec3 vViewPosition;
     } vs_out;
@@ -37,7 +40,7 @@ vertex {
 }
 
 fragment {
-    layout(location = 0) in VS_OUT {
+    layout(location = 0) in struct VS_OUT {
         vec2 vTexCoords;
         vec3 vViewPosition;
     } vs_out;

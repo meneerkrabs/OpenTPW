@@ -137,6 +137,26 @@ public class ShaderTests
 		}
 	}
 
+	/// <summary>
+	/// Issue #754: Veldrid.SPIRV's HLSL passes a varying interface block (<c>out Name { ... } name;</c>) as its own main() parameter,
+	/// so on Direct3D 11 the vertex output and pixel input signatures disagree about register order and the pixel shader reads the
+	/// wrong varyings. Stage inputs and outputs must be plain variables or <c>struct</c> variables (uniform blocks are fine).
+	/// NativeWorldShaderRenderTests draws the affected shaders on Direct3D 11.
+	/// </summary>
+	[TestMethod]
+	public void NoShaderPassesVaryingsInAnInterfaceBlock()
+	{
+		var directory = Path.GetDirectoryName( GetShaderPath( "test.shader" ) )!;
+		var block = new System.Text.RegularExpressions.Regex( @"\b(in|out)\s+(?!struct\b)[A-Za-z_][A-Za-z0-9_]*\s*\{" );
+		var offenders = Directory.GetFiles( directory, "*.*", SearchOption.AllDirectories )
+			.Where( path => path.EndsWith( ".shader", StringComparison.Ordinal ) || path.EndsWith( ".vert", StringComparison.Ordinal ) || path.EndsWith( ".frag", StringComparison.Ordinal ) )
+			.SelectMany( path => File.ReadLines( path ).Select( ( line, index ) => (path, line, index) ) )
+			.Where( entry => block.IsMatch( entry.line.Split( "//" )[0] ) )
+			.Select( entry => $"{Path.GetFileName( entry.path )}:{entry.index + 1}: {entry.line.Trim()}" )
+			.ToArray();
+		Assert.AreEqual( 0, offenders.Length, "Use 'in struct'/'out struct' for varyings: " + string.Join( "; ", offenders ) );
+	}
+
 	private static string GetShaderPath( string shader )
 	{
 		var directory = new System.IO.DirectoryInfo( System.AppContext.BaseDirectory );

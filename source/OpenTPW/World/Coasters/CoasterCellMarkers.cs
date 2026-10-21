@@ -8,6 +8,12 @@ namespace OpenTPW;
 internal sealed class CoasterCellMarkers : IDisposable
 {
 	internal const byte MarkerType = 21;
+	/// <summary>
+	/// The marker bit of a station head's marker cell in the cell's flag word (<see cref="ParkCellMap.FlagsAt"/>): the node creation's parameter 0x10 gives the node 0x400 and its marker
+	/// cell this bit. It shares its value with a pool wave height bit (<see cref="ParkCellFlags.PoolWaveHeightMask"/>), which only pool cells read.
+	/// </summary>
+	// [BIN:TPW-EXE:0x4343B3,0x434401] creation parameter 0x10 maps node 0x400 and marker 0x100
+	internal const ushort StationHeadMark = 0x100;
 	private readonly ParkCellMap cells;
 	private readonly CoasterTrack track;
 	private readonly ushort owner;
@@ -89,7 +95,7 @@ internal sealed class CoasterCellMarkers : IDisposable
 		var type = cells.RawTypeAt( x, y );
 		var flags = cells.FlagsAt( x, y );
 		// The marker100 success precedes unowned and secondary tests. Do not move it below them.
-		if ( !moving && type == MarkerType && ((ushort)flags & 0x100) != 0 && cells.OwnerAt( x, y ) == owner ) return true;
+		if ( !moving && type == MarkerType && ((ushort)flags & StationHeadMark) != 0 && cells.OwnerAt( x, y ) == owner ) return true;
 		if ( !AllowsOrdinaryGround( cells, x, y ) ) return false;
 		if ( type == (moving ? 22 : MarkerType) ) return true;
 		return type switch
@@ -187,7 +193,7 @@ internal sealed class CoasterCellMarkers : IDisposable
 			if ( !restored || existing != null && existing.Count != nodes.Length )
 			{
 				var set = existing == null && token != null && (token.Flags & CoasterNodeFlags.StationHead) != 0;
-				var flags = (ParkCellFlags)((ushort)cells.FlagsAt( cell.X, cell.Y ) & ~0x100 | (set ? 0x100 : 0));
+				var flags = (ParkCellFlags)((ushort)cells.FlagsAt( cell.X, cell.Y ) & ~StationHeadMark | (set ? StationHeadMark : 0));
 				if ( flags != cells.FlagsAt( cell.X, cell.Y ) ) cells.SetFlags( cell.X, cell.Y, flags );
 			}
 			leases[cell] = new( cells.CoasterGenerationAt( cell.X, cell.Y ), token, nodes );

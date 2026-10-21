@@ -42,11 +42,12 @@ internal interface ICoopStreamTransport
 /// the stored snapshot's digest or the downloaded bytes; else why it failed, whether trying again cannot help, when the server asks to be tried again, and whether the server no longer keeps
 /// the snapshot (it keeps a session's newest two).
 /// </summary>
-internal sealed record CoopSnapshotTransfer( string? Sha256, byte[]? Payload, string? Failure, bool Permanent = false, TimeSpan? RetryAfter = null, bool Missing = false )
+internal sealed record CoopSnapshotTransfer( string? Sha256, byte[]? Payload, string? Failure, bool Permanent = false, TimeSpan? RetryAfter = null, bool Missing = false,
+	bool TooLarge = false )
 {
 	public bool Succeeded => Failure == null;
 	public static CoopSnapshotTransfer Stored( string sha256 ) => new( sha256, null, null );
 	public static CoopSnapshotTransfer Downloaded( byte[] payload ) => new( null, payload, null );
-	public static CoopSnapshotTransfer Failed( string reason, bool permanent = false, TimeSpan? retryAfter = null, bool missing = false ) =>
-		new( null, null, reason, permanent, retryAfter, missing );
+	public static CoopSnapshotTransfer Failed( string reason, bool permanent = false, TimeSpan? retryAfter = null, bool missing = false, bool tooLarge = false ) =>
+		new( null, null, reason, permanent || tooLarge, retryAfter, missing, tooLarge );
 }

@@ -182,7 +182,9 @@ public enum CoopSnapshotReason : byte
 	/// <summary>No assignment or answer came within its wait, or it resumed after a lost socket.</summary>
 	NoAnswer = 6,
 	/// <summary>The server no longer keeps the snapshot it was told of.</summary>
-	Missing = 7
+	Missing = 7,
+	/// <summary>The host's capture failed for now; the member asks again after the delay it was given.</summary>
+	Retry = 8
 }
 
 /// <summary>[EXT:online-coop-snapshot-join] Why the host could not serve a capture (<see cref="CoopSnapshotFailed"/>).</summary>
@@ -236,7 +238,7 @@ public abstract record CoopStreamMessage
 			CoopStreamMessageType.TooFarBack => new CoopTooFarBack( reader.U64() ),
 			CoopStreamMessageType.Desync => CoopDesyncReport.Read( ref reader ),
 			CoopStreamMessageType.DesyncSeen => new CoopDesyncSeen( reader.U32() ),
-			CoopStreamMessageType.SnapshotAssigned => new CoopSnapshotAssigned(),
+			CoopStreamMessageType.SnapshotAssigned => new CoopSnapshotAssigned( reader.U64() ),
 			CoopStreamMessageType.SnapshotRequest => new CoopSnapshotRequest( reader.U32(), Reason( reader.Byte() ), reader.Bool() ? CoopDesyncReport.Read( ref reader ) : null ),
 			CoopStreamMessageType.SnapshotReady => new CoopSnapshotReady( Signed( reader.U64() ), Signed( reader.U64() ), reader.U64(), reader.U64(), reader.U64(), Sha256( reader.Text( 64 ) ),
 				Positive( reader.U64() ) ),
@@ -247,7 +249,7 @@ public abstract record CoopStreamMessage
 		return message with { Generation = generation };
 	}
 
-	private static CoopSnapshotReason Reason( byte value ) => value is >= (byte)CoopSnapshotReason.Join and <= (byte)CoopSnapshotReason.Missing
+	private static CoopSnapshotReason Reason( byte value ) => value is >= (byte)CoopSnapshotReason.Join and <= (byte)CoopSnapshotReason.Retry
 		? (CoopSnapshotReason)value
 		: throw new InvalidDataException( "The stream message has an unknown snapshot reason." );
 
@@ -368,13 +370,14 @@ public sealed record CoopDesyncSeen( uint Id ) : CoopStreamMessage
 }
 
 /// <summary>
-/// [EXT:online-coop-snapshot-join] The host assigned the member capture <see cref="CoopStreamMessage.Generation"/> (docs/COOP.md, "Joining a running session"): the member's old stream goes
-/// silent until the capture's <see cref="CoopSnapshotReady"/> or <see cref="CoopSnapshotFailed"/>.
+/// [EXT:online-coop-snapshot-join] The host assigned the member capture <see cref="CoopStreamMessage.Generation"/> (docs/COOP.md, "Joining a running session"): the member's old stream stops
+/// until the capture's <see cref="CoopSnapshotReady"/> or <see cref="CoopSnapshotFailed"/>. <paramref name="Frame"/> is the host's last frame then: the cut comes later, so the member's buffer
+/// may drop every frame up to it.
 /// </summary>
-public sealed record CoopSnapshotAssigned : CoopStreamMessage
+public sealed record CoopSnapshotAssigned( ulong Frame ) : CoopStreamMessage
 {
 	public override CoopStreamMessageType Type => CoopStreamMessageType.SnapshotAssigned;
-	private protected override void WriteFields( CoopWriter writer ) { }
+	private protected override void WriteFields( CoopWriter writer ) => writer.U64( Frame );
 }
 
 /// <summary>

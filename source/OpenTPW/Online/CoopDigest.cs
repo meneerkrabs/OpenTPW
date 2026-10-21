@@ -7,8 +7,8 @@ namespace OpenTPW;
 /// </summary>
 internal static class CoopDigest
 {
-	/// <summary>Bumped whenever the digest's sections or their order change.</summary>
-	public const int Version = 1;
+	/// <summary>Bumped whenever the digest's sections or their order change (2: no drags hash as an empty set of them).</summary>
+	public const int Version = 2;
 
 	public static ulong Compute( Level level ) => Compute( level, out _ );
 
@@ -104,8 +104,11 @@ public partial class Level
 		var staff = Park?.Economy.Staff;
 		hash.Add( staff?.PendingPlacementId ?? -1 );
 		hash.Add( staff?.StaleOnPointerId ?? -1 );
-		hash.Add( coasterEdits != null );
-		coasterEdits?.AddSessionState( hash );
+		// [EXT:online-coop-snapshot-join] the set of drags is made the first time anything reads it, on one machine alone: none hashes as an empty set
+		if ( coasterEdits != null )
+			coasterEdits.AddSessionState( hash );
+		else
+			hash.Add( 0 );
 		var scripts = Objects?.ScriptWorld;
 		hash.Add( scripts?.Coasters.Rides.Count ?? -1 );
 		if ( scripts != null )

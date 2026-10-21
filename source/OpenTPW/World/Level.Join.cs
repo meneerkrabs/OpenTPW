@@ -49,6 +49,12 @@ public partial class Level
 			scripts.SessionTime = state.SessionClockTicks is { } ticks ? new DateTime( ticks, DateTimeKind.Unspecified ) : null;
 	}
 
+	/// <summary>
+	/// [EXT:online-coop-snapshot-join] Whether a player holds a coaster drag (a join capture waits for its release). It reads the drags without making their set, which the session digest
+	/// would otherwise count on this machine alone.
+	/// </summary>
+	internal bool CoasterDragHeld => coasterEdits is { IsEmpty: false };
+
 	/// <summary>The placed coaster stations with their controllers, as the coaster save joins them (<see cref="CoasterSave.Capture(CoasterWorld, ParkObjects)"/>).</summary>
 	private IEnumerable<(int AttractionId, CoasterRide Ride)> CoasterStations() => Objects?.Objects.Where( item => item.Runtime?.Coaster is not null )
 		.Select( item => (item.Runtime.AttractionId, item.Runtime.Coaster!) ) ?? Enumerable.Empty<(int, CoasterRide)>();

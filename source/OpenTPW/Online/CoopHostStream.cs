@@ -50,12 +50,24 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 	public const double ResendRetrySeconds = 2;
 	/// <summary>A guest told it is too far back that still asks or reports otherwise is told again, at most this often (a message is at most once).</summary>
 	public const double TooFarBackRepeatSeconds = 1;
+	/// <summary>[EXT:online-coop-snapshot-join] How long new assignments are collected before their capture is taken: one capture serves them all.</summary>
+	public const double CollectSeconds = 2;
+	/// <summary>The least time between two captures for one member: a capture it asks for earlier is assigned at the mark.</summary>
+	public const double CaptureBudgetSeconds = 10;
+	/// <summary>How long a capture waits for a held coaster drag before it fails for now.</summary>
+	public const double HeldDragSeconds = 30;
+	/// <summary>How long a member waits before it asks again after a capture failed for now, unless the server said.</summary>
+	public const uint RetrySeconds = 5;
+	/// <summary>The least time between two repeats of an outstanding assignment to a member still on an older generation.</summary>
+	public const double ReassignSeconds = 1;
 
 	private sealed record PendingRecord( long Number, CoopStreamRecord Record );
 	private readonly record struct HistoryFrame( ulong Seq, byte[] Payload );
 
 	private enum GuestPhase
 	{
+		/// <summary>[EXT:online-coop-snapshot-join] Assigned a capture and not reported in its generation yet: not waited for, no timers.</summary>
+		AwaitingSnapshot,
 		Joining,
 		Following,
 		CatchingUp,
@@ -94,6 +106,57 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 		public List<(ulong Seq, int Bytes)> InFlight { get; } = new();
 		public HashSet<uint> Desyncs { get; } = new();
 		public bool Resending => ResendCursor < ResendEnd;
+		/// <summary>[EXT:online-coop-snapshot-join] Its last assigned capture (0 never: a session's identical start, or a member the host's resume reconciled in).</summary>
+		public uint Generation { get; set; }
+		/// <summary>The host's last frame when it was assigned (the assignment's repeats carry it: the cut is no earlier).</summary>
+		public ulong AssignedFrame { get; set; }
+		/// <summary>Its last assignment awaits its first report of that generation.</summary>
+		public bool Outstanding { get; set; }
+		/// <summary>The answer to its last assignment once decided: a <see cref="CoopSnapshotReady"/> or a <see cref="CoopSnapshotFailed"/>.</summary>
+		public CoopStreamMessage? Answer { get; set; }
+		/// <summary>The smallest lag it reported in its generation, while it catches up after a capture.</summary>
+		public long? SmallestLag { get; set; }
+		/// <summary>Its join window while it catches up after a capture: the smallest lag it reported plus the window; null once that lag is within the window.</summary>
+		public long? JoinWindow { get; set; }
+		/// <summary>When it was last assigned a capture (one every <see cref="CaptureBudgetSeconds"/>).</summary>
+		public double LastAssigned { get; set; } = double.NegativeInfinity;
+		/// <summary>A capture it asked for waits for its budget's mark.</summary>
+		public bool CaptureDue { get; set; }
+		public double ReassignedAt { get; set; } = double.NegativeInfinity;
+	}
+
+	/// <summary>[EXT:online-coop-snapshot-join] A capture on its way: the cut, the session state and the save, serialized and compressed in slices, then uploaded.</summary>
+	private sealed class JoinCapture( uint generation, List<Guest> members, long records, long ticks, ulong frame, ulong digest, ulong worldHash, CoopJoinState state,
+		SlicedJsonSerializer save )
+	{
+		public uint Generation { get; } = generation;
+		public List<Guest> Members { get; } = members;
+		public long Records { get; } = records;
+		public long Ticks { get; } = ticks;
+		public ulong Frame { get; } = frame;
+		public ulong Digest { get; } = digest;
+		public ulong WorldHash { get; } = worldHash;
+		public CoopJoinPayloadWriter? Writer { get; private set; }
+		public byte[]? Payload { get; private set; }
+		public bool Uploading { get; set; }
+
+		/// <summary>One slice of the work: the save's serialization, then the payload's compression; true once the payload is complete. A park past the save's cap throws.</summary>
+		public bool Step( TimeSpan budget )
+		{
+			if ( Payload != null )
+				return true;
+			if ( Writer == null )
+			{
+				if ( !save.Run( budget ) )
+					return false;
+				Writer = new CoopJoinPayloadWriter( new CoopJoinPayload( Generation, Records, Ticks, Frame, Digest, WorldHash, state, ParkResumeSaveFile.CheckSize( save.Bytes ) ) );
+				return false;
+			}
+			if ( !Writer.Run( budget ) )
+				return false;
+			Payload = Writer.Bytes;
+			return true;
+		}
 	}
 
 	private readonly Level level;
@@ -130,6 +193,12 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 	private ulong? rewoundTo;
 	private long staleRefusals;
 	private bool disposed;
+	/// <summary>[EXT:online-coop-snapshot-join] The number the next capture takes, which the members assigned to it get.</summary>
+	private uint nextGeneration = 1;
+	private readonly List<Guest> assigned = new();
+	private double? collectSince;
+	private double? heldSince;
+	private JoinCapture? capture;
 
 	/// <param name="seconds">A monotonic clock in seconds (wall time; the tests' virtual one).</param>
 	/// <param name="localTime">The host's civil clock the session clock samples.</param>
@@ -207,6 +276,24 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 	/// <summary>Whether the host told <paramref name="guest"/> it is too far back (a resync, C2c).</summary>
 	internal bool IsTooFarBack( uint guest ) => guests.TryGetValue( guest, out var found ) && found.Phase == GuestPhase.TooFarBack;
 
+	/// <summary>[EXT:online-coop-snapshot-join] The capture <paramref name="guest"/> was last assigned (0 never).</summary>
+	internal uint GenerationOf( uint guest ) => guests.TryGetValue( guest, out var found ) ? found.Generation : 0;
+
+	/// <summary>Whether <paramref name="guest"/> awaits a capture: assigned and not reported in its generation yet.</summary>
+	internal bool IsAwaitingSnapshot( uint guest ) => guests.TryGetValue( guest, out var found ) && found.Phase == GuestPhase.AwaitingSnapshot;
+
+	/// <summary>The join window <paramref name="guest"/> catches up within, or null (none, or its lag is within the ordinary window).</summary>
+	internal long? JoinWindowOf( uint guest ) => guests.TryGetValue( guest, out var found ) ? found.JoinWindow : null;
+
+	/// <summary>The captures taken so far.</summary>
+	public int CapturesTaken { get; private set; }
+
+	/// <summary>Raised when a capture is uploaded, with its generation and its payload (the tests read the cut).</summary>
+	internal event Action<uint, byte[]>? CaptureStored;
+
+	/// <summary>The time a frame spends on a capture's serialization and compression (the periodic autosave's slice).</summary>
+	internal TimeSpan CaptureSliceBudget { get; set; } = TimeSpan.FromMilliseconds( 2 );
+
 	public void AdvanceSimulation( double frameSeconds, float timeScale )
 	{
 		if ( Failure != null )
@@ -227,6 +314,7 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 		Flush();
 		Resend( now );
 		Trim();
+		Captures( now );
 	}
 
 	/// <summary>Publishes what waits now, whatever the time since the last frame (a test, a session that ends).</summary>
@@ -246,7 +334,7 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 		var window = WindowTicks;
 		foreach ( var guest in guests.Values )
 			if ( guest.Phase == GuestPhase.Following && guest.Report is { } report )
-				limit = Math.Min( limit ?? long.MaxValue, report.Ticks + window );
+				limit = Math.Min( limit ?? long.MaxValue, report.Ticks + (guest.JoinWindow ?? window) );
 		return limit;
 	}
 
@@ -390,6 +478,9 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 		}
 		Reconcile( session );
 		Flush();
+		// [EXT:online-coop-snapshot-join] what was queued on the old socket died with it
+		foreach ( var guest in guests.Values.Where( guest => guest.Outstanding ) )
+			Repeat( guest );
 	}
 
 	/// <summary>
@@ -406,7 +497,7 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 		{
 			if ( !guests.TryGetValue( member.Id, out var guest ) )
 				guests[member.Id] = new Guest( member.Id, relayed + 1, now ) { Phase = member.Connected ? GuestPhase.Joining : GuestPhase.Disconnected };
-			else if ( guest.Phase is GuestPhase.Desynced or GuestPhase.TooFarBack )
+			else if ( guest.Phase is GuestPhase.Desynced or GuestPhase.TooFarBack or GuestPhase.AwaitingSnapshot )
 				continue;
 			else if ( !member.Connected )
 				guest.Phase = GuestPhase.Disconnected;
@@ -460,7 +551,9 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 		switch ( change.State )
 		{
 			case CoopMemberState.Joined:
-				guests[id] = new Guest( id, relayed + 1, now );
+				var joined = guests[id] = new Guest( id, relayed + 1, now );
+				// [EXT:online-coop-snapshot-join] a member that joins a running session needs the park: its capture is assigned at once
+				Assign( joined, now );
 				break;
 			case CoopMemberState.Connected:
 				if ( guests.TryGetValue( id, out var back ) )
@@ -468,13 +561,16 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 					if ( back.Phase is GuestPhase.Disconnected or GuestPhase.Stalled or GuestPhase.Following or GuestPhase.CatchingUp )
 						back.Phase = GuestPhase.Joining;
 					back.Since = now;
+					// an assignment or answer on its way when it went away was lost
+					if ( back.Outstanding )
+						Repeat( back );
 				}
 				else
 					guests[id] = new Guest( id, relayed + 1, now );
 				break;
 			case CoopMemberState.Disconnected:
 				// not waited for while away; its frames from its last acknowledgement stay while the history's caps allow, so a quick resume needs no resync
-				if ( guests.TryGetValue( id, out var away ) && away.Phase is not (GuestPhase.Desynced or GuestPhase.TooFarBack) )
+				if ( guests.TryGetValue( id, out var away ) && away.Phase is not (GuestPhase.Desynced or GuestPhase.TooFarBack or GuestPhase.AwaitingSnapshot) )
 					away.Phase = GuestPhase.Disconnected;
 				break;
 			case CoopMemberState.Left:
@@ -499,6 +595,16 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 			return;
 		}
 		var now = seconds();
+		// [EXT:online-coop-snapshot-join] a stream message of another generation than the member's belongs to a stream it no longer runs
+		if ( message is CoopProgress or CoopResendRequest or CoopDesyncReport && message.Generation != guest.Generation )
+		{
+			if ( guest.Outstanding && message.Generation < guest.Generation && now - guest.ReassignedAt >= ReassignSeconds )
+			{
+				guest.ReassignedAt = now;
+				Repeat( guest );
+			}
+			return;
+		}
 		switch ( message )
 		{
 			case CoopProgress progress:
@@ -508,16 +614,198 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 				Request( guest, request, now );
 				break;
 			case CoopDesyncReport report:
-				if ( guest.Desyncs.Add( report.Id ) )
-				{
-					Log.Warning( $"Shared park guest {guest.Id} desynced ({report.Kind}) at tick {report.Tick}: host digest {report.HostDigest:X16}, guest {report.GuestDigest:X16}, "
-						+ $"stream records {report.FirstStream} to {report.LastStream}; the host recorded {recorder.Entries.Count} commands of the session." );
-					SessionLog ??= RecordedLog();
-					Desynced?.Invoke( guest.Id, report );
-				}
+				Note( guest, report );
 				Desync( guest );
-				transport.Send( guest.Id, new CoopDesyncSeen( report.Id ).Encode() );
+				Send( guest, new CoopDesyncSeen( report.Id ) );
 				break;
+			case CoopSnapshotRequest request:
+				if ( request.Report is { } reported )
+					Note( guest, reported );
+				Requested( guest, request, now );
+				break;
+		}
+	}
+
+	/// <summary>A guest's desync, logged once, with the session's log taken at the first.</summary>
+	private void Note( Guest guest, CoopDesyncReport report )
+	{
+		if ( !guest.Desyncs.Add( report.Id ) )
+			return;
+		Log.Warning( $"Shared park guest {guest.Id} desynced ({report.Kind}) at tick {report.Tick}: host digest {report.HostDigest:X16}, guest {report.GuestDigest:X16}, "
+			+ $"stream records {report.FirstStream} to {report.LastStream}; the host recorded {recorder.Entries.Count} commands of the session." );
+		SessionLog ??= RecordedLog();
+		Desynced?.Invoke( guest.Id, report );
+	}
+
+	/// <summary>Sends <paramref name="message"/> to <paramref name="guest"/> in the guest's generation.</summary>
+	private bool Send( Guest guest, CoopStreamMessage message ) => transport.Send( guest.Id, (message with { Generation = guest.Generation }).Encode() );
+
+	/// <summary>
+	/// [EXT:online-coop-snapshot-join] A member asks for a join snapshot (docs/COOP.md, "Joining a running session"): an answer it missed is sent again, and only a failure (or a member never
+	/// assigned) makes a new capture; a member ahead of the host's numbers is out of step and leaves.
+	/// </summary>
+	private void Requested( Guest guest, CoopSnapshotRequest request, double now )
+	{
+		if ( request.Known > guest.Generation )
+		{
+			transport.Send( guest.Id, new CoopSnapshotFailed( CoopSnapshotFailure.Uncapturable, true, 0 ) { Generation = request.Known }.Encode() );
+			return;
+		}
+		var failure = request.Reason is not (CoopSnapshotReason.Join or CoopSnapshotReason.NoAnswer);
+		if ( request.Known < guest.Generation || (guest.Generation != 0 && !failure) )
+			Repeat( guest );
+		else
+			Assign( guest, now );
+	}
+
+	/// <summary>
+	/// Assigns <paramref name="guest"/> the next capture and tells it at once, so its old stream stops; the capture waits for the others assigned within <see cref="CollectSeconds"/>. A member
+	/// assigned within <see cref="CaptureBudgetSeconds"/> of its last assignment is assigned at the mark.
+	/// </summary>
+	private void Assign( Guest guest, double now )
+	{
+		if ( now - guest.LastAssigned < CaptureBudgetSeconds )
+		{
+			guest.CaptureDue = true;
+			return;
+		}
+		guest.CaptureDue = false;
+		guest.LastAssigned = now;
+		guest.Generation = nextGeneration;
+		guest.AssignedFrame = LastFrame;
+		guest.Phase = GuestPhase.AwaitingSnapshot;
+		guest.Outstanding = true;
+		guest.Answer = null;
+		guest.Report = null;
+		guest.Acknowledged = 0;
+		guest.NeedFrom = nextSeq;
+		guest.CatchingUpSince = null;
+		guest.ResendCursor = guest.ResendEnd = 0;
+		guest.InFlight.Clear();
+		guest.TooFarBackFrom = 0;
+		guest.SmallestLag = guest.JoinWindow = null;
+		if ( !assigned.Contains( guest ) )
+			assigned.Add( guest );
+		collectSince ??= now;
+		Send( guest, new CoopSnapshotAssigned( guest.AssignedFrame ) );
+	}
+
+	/// <summary>The member's outstanding assignment again, with its answer once decided (a member that has them ignores them).</summary>
+	private void Repeat( Guest guest )
+	{
+		if ( guest.Generation == 0 )
+			return;
+		Send( guest, new CoopSnapshotAssigned( guest.AssignedFrame ) );
+		if ( guest.Answer is { } answer )
+			Send( guest, answer );
+	}
+
+	/// <summary>
+	/// [EXT:online-coop-snapshot-join] The captures, at the end of the frame (the park between ticks, every record before the cut published): the one on its way takes its slice of serialization
+	/// and compression, then uploads; else, once the assignments have been collected and no coaster drag is held, the next is taken.
+	/// </summary>
+	private void Captures( double now )
+	{
+		if ( capture is { } running )
+		{
+			if ( running.Uploading )
+				return;
+			bool complete;
+			try
+			{
+				complete = running.Step( CaptureSliceBudget );
+			}
+			catch ( Exception error ) when ( error is InvalidDataException or InvalidOperationException )
+			{
+				capture = null;
+				Log.Warning( $"The shared park is too large for a join snapshot: {error.Message}" );
+				Answer( running.Members, running.Generation, new CoopSnapshotFailed( CoopSnapshotFailure.TooLarge, true, 0 ) );
+				return;
+			}
+			if ( complete )
+			{
+				running.Uploading = true;
+				transport.UploadSnapshot( running.Payload!, result => Uploaded( running, result ) );
+			}
+			return;
+		}
+		if ( assigned.Count == 0 || now - collectSince < CollectSeconds )
+			return;
+		// a held coaster drag's edited pylon is no part of the save: the capture waits for its release, for a while
+		if ( level.CoasterDragHeld )
+		{
+			heldSince ??= now;
+			if ( now - heldSince >= HeldDragSeconds )
+			{
+				heldSince = null;
+				var held = nextGeneration++;
+				Answer( Take( held ), held, new CoopSnapshotFailed( CoopSnapshotFailure.Held, false, RetrySeconds ) );
+			}
+			return;
+		}
+		heldSince = null;
+		var generation = nextGeneration++;
+		var members = Take( generation );
+		if ( members.Count == 0 )
+			return;
+		// the cut: every record so far applied and published, the next tick and the last frame, whose horizon is that tick
+		PublishNow();
+		var records = LastRecord;
+		var ticks = level.TickCount;
+		var frame = LastFrame;
+		try
+		{
+			var digest = CoopDigest.Compute( level, out var world );
+			var state = level.CaptureJoinState();
+			var save = ParkResumeSaveFile.BeginSlicedSerialize( level.CaptureJoinSnapshot() );
+			capture = new JoinCapture( generation, members, records, ticks, frame, digest, world, state, save );
+		}
+		catch ( Exception error ) when ( error is InvalidOperationException or InvalidDataException )
+		{
+			Log.Warning( $"The shared park could not be captured for a join: {error.Message}" );
+			Answer( members, generation, new CoopSnapshotFailed( CoopSnapshotFailure.Uncapturable, true, 0 ) );
+			return;
+		}
+		CapturesTaken++;
+		foreach ( var guest in members )
+			guest.NeedFrom = frame + 1;
+	}
+
+	/// <summary>The members still assigned capture <paramref name="generation"/>, taken off the list of those waiting for one.</summary>
+	private List<Guest> Take( uint generation )
+	{
+		var members = assigned.Where( guest => guest.Generation == generation && guests.TryGetValue( guest.Id, out var current ) && current == guest ).ToList();
+		assigned.Clear();
+		collectSince = null;
+		return members;
+	}
+
+	private void Uploaded( JoinCapture running, CoopSnapshotTransfer result )
+	{
+		if ( disposed || Failure != null || capture != running )
+			return;
+		capture = null;
+		if ( result.Succeeded )
+		{
+			CaptureStored?.Invoke( running.Generation, running.Payload! );
+			Answer( running.Members, running.Generation, new CoopSnapshotReady( running.Records, running.Ticks, running.Frame, running.Digest, running.WorldHash, result.Sha256!,
+				running.Payload!.Length ) );
+			return;
+		}
+		Log.Warning( $"The shared park's join snapshot could not be uploaded: {result.Failure}" );
+		Answer( running.Members, running.Generation, new CoopSnapshotFailed( result.TooLarge ? CoopSnapshotFailure.TooLarge : result.Permanent ? CoopSnapshotFailure.Uncapturable
+			: CoopSnapshotFailure.Busy, result.Permanent, (uint)Math.Ceiling( (result.RetryAfter ?? TimeSpan.FromSeconds( RetrySeconds )).TotalSeconds ) ) );
+	}
+
+	/// <summary>Answers the members still assigned capture <paramref name="generation"/>; the answer is kept for the repeats.</summary>
+	private void Answer( IEnumerable<Guest> members, uint generation, CoopStreamMessage answer )
+	{
+		foreach ( var guest in members )
+		{
+			if ( !guests.TryGetValue( guest.Id, out var current ) || current != guest || guest.Generation != generation )
+				continue;
+			guest.Answer = answer with { Generation = generation };
+			Send( guest, guest.Answer );
 		}
 	}
 
@@ -532,6 +820,9 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 			relayed = Math.Max( relayed, progress.LastFrame );
 			guest.InFlight.RemoveAll( sent => sent.Seq <= progress.LastFrame );
 		}
+		// [EXT:online-coop-snapshot-join] its first report of its generation ends its assignment
+		var first = guest.Outstanding;
+		guest.Outstanding = false;
 		switch ( progress.State )
 		{
 			case CoopGuestState.Desynced:
@@ -550,6 +841,16 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 		if ( guest.Phase == GuestPhase.Desynced )
 			return;
 		var behind = level.TickCount - progress.Ticks;
+		// [EXT:online-coop-snapshot-join] a joiner catches up within a join window of its own: its smallest lag plus the ordinary window, so its lag never grows by more than that and the park
+		// runs on while it catches up; once that lag is within the ordinary window it is an ordinary following guest
+		if ( first || guest.JoinWindow != null )
+		{
+			guest.SmallestLag = Math.Min( guest.SmallestLag ?? long.MaxValue, Math.Max( 0, behind ) );
+			guest.JoinWindow = guest.SmallestLag <= WindowTicks ? null : guest.SmallestLag + WindowTicks;
+			guest.Phase = GuestPhase.Following;
+			guest.CatchingUpSince = null;
+			return;
+		}
 		if ( guest.Phase != GuestPhase.Following )
 			guest.Phase = behind <= WindowTicks ? GuestPhase.Following : GuestPhase.CatchingUp;
 		// the minute before a resync counts from the moment a catching-up guest holds every frame it asked for
@@ -562,6 +863,8 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 	/// <summary>Stalled and long catching-up guests: a guest without a report for ten seconds is not waited for; one that holds every frame and stays behind for a minute is told to resync.</summary>
 	private void UpdateGuests( double now )
 	{
+		foreach ( var guest in guests.Values.Where( guest => guest.CaptureDue && now - guest.LastAssigned >= CaptureBudgetSeconds ).ToList() )
+			Assign( guest, now );
 		foreach ( var guest in guests.Values )
 		{
 			if ( guest.Phase is GuestPhase.Joining or GuestPhase.Following or GuestPhase.CatchingUp && now - guest.Since >= StallSeconds )
@@ -582,7 +885,7 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 		guest.InFlight.Clear();
 		guest.TooFarBackFrom = from;
 		guest.TooFarBackSentAt = seconds();
-		transport.Send( guest.Id, new CoopTooFarBack( from ).Encode() );
+		Send( guest, new CoopTooFarBack( from ) );
 	}
 
 	/// <summary>A guest stopped at a desync: the host neither waits for it nor resends to it (a copy on its way stops) until a resync.</summary>
@@ -600,7 +903,7 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 		if ( now - guest.TooFarBackSentAt < TooFarBackRepeatSeconds )
 			return;
 		guest.TooFarBackSentAt = now;
-		transport.Send( guest.Id, new CoopTooFarBack( guest.TooFarBackFrom ).Encode() );
+		Send( guest, new CoopTooFarBack( guest.TooFarBackFrom ) );
 	}
 
 	private void Request( Guest guest, CoopResendRequest request, double now )
@@ -661,7 +964,7 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 					size += add;
 					cursor++;
 				}
-				if ( batch.Count == 0 || !transport.Send( guest.Id, new CoopResentFrames( batch ).Encode() ) )
+				if ( batch.Count == 0 || !Send( guest, new CoopResentFrames( batch ) ) )
 					break;
 				resendTokens -= size;
 				guest.ResendSentAt = now;

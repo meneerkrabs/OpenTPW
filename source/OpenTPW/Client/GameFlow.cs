@@ -518,6 +518,7 @@ internal sealed partial class GameFlow : IDisposable
 	/// <param name="keepAdvisorPreparation">The park being entered tears down the live one: what its build read for the advisor is kept for its first update.</param>
 	private void TearDown( bool applyPendingLanguage = true, bool keepAdvisorPreparation = false )
 	{
+		LeaveCoopSession( "The park was closed." );
 		RequireProgressSaved();
 		FlushRestartSnapshot();
 		DetachProgress();
@@ -1205,6 +1206,8 @@ internal sealed partial class GameFlow : IDisposable
 
 	public void Dispose()
 	{
+		// [EXT:online-coop-lockstep] quitting leaves a shared park's session while the link can still say so (a host's leave ends it for everyone)
+		LeaveCoopSession( "The player quit the game." );
 		FlushRestartSnapshot();
 		// a window closed past the in-app Quit's check still writes earned awards a failed save left behind
 		if ( progressOwner is { Dirty: true } owner && !owner.TryFlush() )
@@ -1221,8 +1224,6 @@ internal sealed partial class GameFlow : IDisposable
 		if ( chatOverlay != null )
 			global::Global.Render.OnOverlayRender -= chatOverlay.Draw;
 		chatOverlay?.Dispose();
-		// [EXT:online-coop-lockstep] quitting leaves a shared park's session while the link can still say so (a host's leave ends it for everyone)
-		Level?.CoopSession?.End( "The player quit the game." );
 		onlineSession?.Dispose();
 		global::Global.Render.OnOverlayRender -= RenderOverlay;
 		Level?.DetachOverlay();

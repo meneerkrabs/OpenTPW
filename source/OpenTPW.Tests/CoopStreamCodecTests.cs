@@ -106,7 +106,7 @@ public class CoopStreamCodecTests
 		new CoopTooFarBack( 17 ) { Generation = 4 },
 		new CoopDesyncReport( 2, CoopDesyncKind.Digest, 600, 0xAAAA, 0xBBBB, 1, 77 ),
 		new CoopDesyncSeen( 2 ),
-		new CoopSnapshotAssigned { Generation = 5 },
+		new CoopSnapshotAssigned( 87 ) { Generation = 5 },
 		new CoopSnapshotRequest( 4, CoopSnapshotReason.Desync, new CoopDesyncReport( 2, CoopDesyncKind.Flags, 600, 0, 0, 1, 77 ) ) { Generation = 4 },
 		new CoopSnapshotRequest( 0, CoopSnapshotReason.Join, null ),
 		new CoopSnapshotReady( 120, 3600, 88, 0xAAAA, 0xBBBB, new string( 'a', 64 ), 12345 ) { Generation = 5 },

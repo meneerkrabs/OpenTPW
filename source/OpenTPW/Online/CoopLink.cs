@@ -338,8 +338,8 @@ public sealed class CoopLink : ICoopStreamTransport
 				result = exception switch
 				{
 					// too large, not the host's, the session gone: trying again cannot help
-					OnlineException { Status: System.Net.HttpStatusCode.RequestEntityTooLarge or System.Net.HttpStatusCode.Forbidden or System.Net.HttpStatusCode.NotFound } error =>
-						CoopSnapshotTransfer.Failed( error.Message, permanent: true ),
+					OnlineException { Status: System.Net.HttpStatusCode.RequestEntityTooLarge } error => CoopSnapshotTransfer.Failed( error.Message, tooLarge: true ),
+					OnlineException { Status: System.Net.HttpStatusCode.Forbidden or System.Net.HttpStatusCode.NotFound } error => CoopSnapshotTransfer.Failed( error.Message, permanent: true ),
 					// nobody joining yet, another upload running, too many uploads, no room now
 					OnlineException error => CoopSnapshotTransfer.Failed( error.Message, retryAfter: error.RetryAfter ),
 					_ => CoopSnapshotTransfer.Failed( exception.Message )

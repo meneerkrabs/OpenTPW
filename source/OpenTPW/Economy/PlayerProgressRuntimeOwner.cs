@@ -10,6 +10,8 @@ internal sealed class PlayerProgressRuntimeOwner : IDisposable
 	private readonly Func<bool>? shared;
 	/// <summary>[EXT:online-coop-snapshot-join] The park was seen in a co-op session and is not reclaimed yet (<see cref="Reclaim"/>).</summary>
 	private bool reclaimPending;
+	/// <summary>[EXT:online-coop-snapshot-join] The global tickets the park won in the session, with its record at each win (the record the check compared).</summary>
+	private readonly Dictionary<GoldenTicketKind, long> wonInSession = new();
 	private readonly Action<string> report;
 	private ParkEconomy observed;
 	private string digest;
@@ -54,6 +56,13 @@ internal sealed class PlayerProgressRuntimeOwner : IDisposable
 
 	private void OnEvent( ParkEvent item )
 	{
+		// [EXT:online-coop-snapshot-join] a shared park's global wins are noted, outside the simulation, for the hand-back; the event comes in the check's own tick
+		if ( reclaimPending || shared?.Invoke() == true )
+		{
+			if ( item.Kind == ParkEventKind.GoldenTicketWon && item.Amount is >= 0 and <= int.MaxValue && PlayerTicketLedger.IsGlobal( (GoldenTicketKind)item.Amount ) )
+				wonInSession[(GoldenTicketKind)item.Amount] = runtime.Economy.GlobalTicketRecord( (GoldenTicketKind)item.Amount );
+			return;
+		}
 		// [EXT:cheats-ticket-provenance] a ticket cheat (silent: no GoldenTicketWon) earns the ticket like a win and records that a cheat awarded it; a global one was earned through the authority already
 		if ( Eligible && item.Kind == ParkEventKind.CheatApplied && item.InfoId == (int)CheatKind.Ticket && item.Amount is >= 0 and <= int.MaxValue
 			&& Enum.IsDefined( (GoldenTicketKind)item.Amount ) && runtime.Economy.Objectives.GoldenTickets.Contains( (GoldenTicketKind)item.Amount )
@@ -88,19 +97,21 @@ internal sealed class PlayerProgressRuntimeOwner : IDisposable
 
 	/// <summary>
 	/// [EXT:online-coop-snapshot-join] A park back from a co-op session returns to this player's progress (docs/COOP.md, "Golden tickets in a session"): while shared it decided its global
-	/// tickets by its own records, as every peer's park did, so each global ticket it holds goes through the player-wide rule now, with the park's record; one the rule keeps with another park
-	/// is taken from this park, as the rule would have decided at the win. Its local tickets reconcile as ever.
+	/// tickets by its own records, as every peer's park did, so each global ticket it won in the session goes through the player-wide rule now, with its record at the win; one the rule keeps
+	/// with another park is taken from this park, as the rule would have decided at the win. The tickets it held before the session, and its local tickets, reconcile as ever.
 	/// </summary>
 	private void Reclaim()
 	{
-		if ( !Eligible ) return;
+		if ( !Eligible ) { wonInSession.Clear(); return; }
 		var objectives = runtime.Economy.Objectives;
-		foreach ( var kind in objectives.GoldenTickets.Where( PlayerTicketLedger.IsGlobal ).ToArray() )
+		foreach ( var (kind, record) in wonInSession.OrderBy( pair => pair.Key ) )
 		{
+			if ( !objectives.GoldenTickets.Contains( kind ) ) continue;
 			var before = Ledger.HolderOf( kind );
-			if ( Ledger.RecordGlobal( theme, kind, runtime.Economy.GlobalTicketRecord( kind ) ) != GlobalTicketOutcome.None || before != Ledger.HolderOf( kind ) ) Dirty = true;
+			if ( Ledger.RecordGlobal( theme, kind, record ) != GlobalTicketOutcome.None || before != Ledger.HolderOf( kind ) ) Dirty = true;
 			if ( !Ledger.HeldBy( theme, kind ) ) objectives.TakeGoldenTicket( kind );
 		}
+		wonInSession.Clear();
 		TryFlush();
 	}
 

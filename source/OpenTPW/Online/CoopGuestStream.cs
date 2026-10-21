@@ -45,10 +45,15 @@ internal sealed class CoopGuestStream : ILevelSessionStream, IDisposable
 	private double lastProgress = double.NegativeInfinity;
 	private CoopGuestState? lastSentState;
 	private double tickCredit;
+	private bool silenced;
 	private bool disposed;
 
 	/// <param name="seconds">A monotonic clock in seconds (wall time; the tests' virtual one).</param>
-	public CoopGuestStream( Level level, ICoopStreamTransport transport, Func<double>? seconds = null )
+	/// <param name="generation">[EXT:online-coop-snapshot-join] The join snapshot the stream starts from (0 a session's identical start); every stream message carries it.</param>
+	/// <param name="cut">The snapshot's cut: records up to it applied, its tick the level's next, its frame the last (null: the session's own start, from the next frame the server relays).</param>
+	/// <param name="desyncs">The desync ids the session gave out before this stream (they go on across resyncs).</param>
+	public CoopGuestStream( Level level, ICoopStreamTransport transport, Func<double>? seconds = null, uint generation = 0, (long Records, long Ticks, ulong Frame)? cut = null,
+		uint desyncs = 0 )
 	{
 		this.level = level ?? throw new ArgumentNullException( nameof( level ) );
 		this.transport = transport ?? throw new ArgumentNullException( nameof( transport ) );
@@ -56,7 +61,12 @@ internal sealed class CoopGuestStream : ILevelSessionStream, IDisposable
 		var session = transport.Session ?? throw new InvalidOperationException( "A guest's stream needs a session." );
 		if ( session.You == session.Host )
 			throw new InvalidOperationException( "The host's game streams; it does not follow." );
-		nextFrame = session.LastFrameSeq + 1;
+		if ( cut is { } start && start.Ticks != level.TickCount )
+			throw new InvalidOperationException( $"The park stands at tick {level.TickCount}, not at the cut's {start.Ticks}." );
+		Generation = generation;
+		this.desyncs = desyncs;
+		nextFrame = cut is { } from ? from.Frame + 1 : session.LastFrameSeq + 1;
+		nextStream = (cut?.Records ?? 0) + 1;
 		horizon = level.TickCount;
 		var commands = level.Commands;
 		previousSessionRules = commands.SessionRules;
@@ -77,14 +87,32 @@ internal sealed class CoopGuestStream : ILevelSessionStream, IDisposable
 		level.SessionStream = this;
 	}
 
+	/// <summary>[EXT:online-coop-snapshot-join] The join snapshot this stream started from (0 a session's identical start).</summary>
+	public uint Generation { get; }
+
+	/// <summary>The desync ids given out so far (the session's next stream goes on from them).</summary>
+	public uint Desyncs => desyncs;
+
 	/// <summary>The desync this guest found, or null; its clock stands still while there is one (until a resync, C2c).</summary>
 	public CoopDesyncReport? Desync { get; private set; }
 
 	/// <summary>Raised once when the guest finds a desync.</summary>
 	public event Action<CoopDesyncReport>? Desynced;
 
-	/// <summary>Whether the guest's clock stands still (a desync, or the host no longer holds the frames it needs: a resync, C2c).</summary>
-	public bool Stopped => Desync != null || tooFarBack;
+	/// <summary>Whether the guest's clock stands still (a desync, the host no longer holds the frames it needs, or a newer capture is on its way: a resync, C2c).</summary>
+	public bool Stopped => Desync != null || tooFarBack || silenced;
+
+	/// <summary>
+	/// [EXT:online-coop-snapshot-join] The host assigned a newer capture: the stream stops as a desync stops it (no frames applied, no ticks) and goes silent (no progress, resend requests or
+	/// desyncs). It stays attached, so its level stays paused and the player's clicks stay refused, until the session swaps the capture's park in.
+	/// </summary>
+	public void Silence() => silenced = true;
+
+	/// <summary>Whether the stream went silent (<see cref="Silence"/>).</summary>
+	public bool Silenced => silenced;
+
+	/// <summary>Takes a frame the session buffered before the stream started (<see cref="Accept"/>).</summary>
+	internal void Take( ulong seq, ReadOnlyMemory<byte> payload ) => Accept( seq, payload );
 
 	/// <summary>The host's horizon the guest holds: it runs every tick below it.</summary>
 	public long Horizon => horizon;
@@ -121,7 +149,8 @@ internal sealed class CoopGuestStream : ILevelSessionStream, IDisposable
 			ApplyReady();
 		if ( !Stopped )
 			RunTicks( frameSeconds, now );
-		Progress( now );
+		if ( !silenced )
+			Progress( now );
 	}
 
 	private void OnFrame( CoopFrame frame ) => Accept( frame.Seq, frame.Payload );
@@ -154,7 +183,10 @@ internal sealed class CoopGuestStream : ILevelSessionStream, IDisposable
 			RequestResend();
 	}
 
-	private void RequestResend() => transport.Send( Host, new CoopResendRequest( nextFrame, held.Count > 0 ? held.Keys.First() : 0 ).Encode() );
+	private void RequestResend() => Send( new CoopResendRequest( nextFrame, held.Count > 0 ? held.Keys.First() : 0 ) );
+
+	/// <summary>Sends <paramref name="message"/> to the host in this stream's generation.</summary>
+	private void Send( CoopStreamMessage message ) => transport.Send( Host, (message with { Generation = Generation }).Encode() );
 
 	private uint Host => transport.Session?.Host ?? 0;
 
@@ -172,6 +204,9 @@ internal sealed class CoopGuestStream : ILevelSessionStream, IDisposable
 			Log.Warning( $"The shared park's host sent a message this game cannot read: {error.Message}" );
 			return;
 		}
+		// [EXT:online-coop-snapshot-join] the host's stream messages of another generation belong to a stream this one is not
+		if ( decoded.Generation != Generation || silenced )
+			return;
 		switch ( decoded )
 		{
 			case CoopResentFrames resent:
@@ -192,7 +227,7 @@ internal sealed class CoopGuestStream : ILevelSessionStream, IDisposable
 	/// <summary>After its own resume the guest asks for whatever it may have missed while away.</summary>
 	private void OnResumed( CoopSessionState session )
 	{
-		if ( Stopped )
+		if ( Stopped || silenced )
 			return;
 		RequestResend();
 		lastSentState = null;
@@ -306,11 +341,11 @@ internal sealed class CoopGuestStream : ILevelSessionStream, IDisposable
 		lastProgress = now;
 		lastSentState = state;
 		var report = Desync is { } desync && !reportSeen ? desync : null;
-		transport.Send( Host, new CoopProgress( state, LastFrame, level.TickCount, report?.Id ?? 0 ).Encode() );
+		Send( new CoopProgress( state, LastFrame, level.TickCount, report?.Id ?? 0 ) );
 		if ( held.Count > 0 && !Stopped )
 			RequestResend();
 		if ( report != null )
-			transport.Send( Host, report.Encode() );
+			Send( report );
 	}
 
 	private void OnApplied( ParkCommandLogEntry entry, ParkCommandResult result )

@@ -4,6 +4,7 @@ using System.Net.WebSockets;
 using System.Text;
 using OpenTPW.Online.Api;
 using OpenTPW.Online.Chat;
+using OpenTPW.Online.Coop;
 using OpenTPW.Online.Packages;
 
 namespace OpenTPW.Online.Client;
@@ -38,6 +39,12 @@ public sealed class OnlineClient : IDisposable
 
 	public Uri ServerUrl { get; }
 	public SessionToken? Session { get; private set; }
+
+	/// <summary>
+	/// Whether a socket sends its token as its first message instead of a header: always in a browser, which cannot set WebSocket headers; tests use it on
+	/// the desktop to take the browser's way.
+	/// </summary>
+	public bool AuthenticateInFirstFrame { get; set; } = OperatingSystem.IsBrowser();
 
 	/// <summary>
 	/// https, or http for a server on this machine or the local network (passwords and tokens would otherwise cross the
@@ -315,28 +322,60 @@ public sealed class OnlineClient : IDisposable
 	public async Task<ChatConnection> ConnectChatAsync( CancellationToken cancel = default )
 	{
 		var session = Session ?? throw new InvalidOperationException( "Log in before connecting to chat." );
+		return new ChatConnection( await OpenSocketAsync( session, ApiRoutes.Chat, TimeSpan.FromSeconds( 30 ), null, cancel ) );
+	}
+
+	/// <summary>
+	/// [EXT:online-coop-session] Opens the co-op socket of shared parks with the session token (docs/ONLINE.md, "Shared parks"); the caller's first message is
+	/// <see cref="CoopHello"/>. Its keep-alive notices a dead server within 45 seconds.
+	/// </summary>
+	public async Task<CoopConnection> ConnectCoopAsync( CancellationToken cancel = default )
+	{
+		var session = Session ?? throw new InvalidOperationException( "Log in before opening a shared park." );
+		return new CoopConnection( await OpenSocketAsync( session, ApiRoutes.Coop, TimeSpan.FromSeconds( 15 ), TimeSpan.FromSeconds( 30 ), cancel ) );
+	}
+
+	/// <summary>[EXT:online-coop-session] The open list of shared parks (decision Q4): listed sessions that are not full and whose host is connected.</summary>
+	public Task<CoopSessionList> ListCoopSessionsAsync( CancellationToken cancel = default ) => GetJsonAsync<CoopSessionList>( ApiRoutes.CoopSessions, cancel );
+
+	/// <summary>
+	/// Opens a WebSocket on <paramref name="route"/> with the session token: a header and a keep-alive on the desktop; in a browser, which can set neither,
+	/// the token is the first message.
+	/// </summary>
+	private async Task<ClientWebSocket> OpenSocketAsync( SessionToken session, string route, TimeSpan keepAlive, TimeSpan? keepAliveTimeout, CancellationToken cancel )
+	{
 		var socket = new ClientWebSocket();
-		// Browsers cannot set WebSocket headers or keep-alive; there the token is the first frame.
+		var firstFrame = AuthenticateInFirstFrame;
+		if ( !firstFrame )
+			socket.Options.SetRequestHeader( "Authorization", "Bearer " + session.Token );
 		var browser = OperatingSystem.IsBrowser();
 		if ( !browser )
 		{
-			socket.Options.SetRequestHeader( "Authorization", "Bearer " + session.Token );
-			socket.Options.KeepAliveInterval = TimeSpan.FromSeconds( 30 );
+			socket.Options.KeepAliveInterval = keepAlive;
+			if ( keepAliveTimeout is { } timeout )
+				socket.Options.KeepAliveTimeout = timeout;
+			socket.Options.CollectHttpResponseDetails = true;
 		}
-		var builder = new UriBuilder( new Uri( ServerUrl, ApiRoutes.Chat.TrimStart( '/' ) ) );
+		var builder = new UriBuilder( new Uri( ServerUrl, route.TrimStart( '/' ) ) );
 		builder.Scheme = builder.Scheme == "https" ? "wss" : "ws";
 		try
 		{
 			await socket.ConnectAsync( builder.Uri, cancel );
-			if ( browser )
+			if ( firstFrame )
 				await socket.SendAsync( StrictJson.Serialize( ChatAuthentication.For( session.Token ) ), WebSocketMessageType.Text, true, cancel );
+		}
+		catch ( WebSocketException ) when ( !browser && socket.HttpStatusCode == HttpStatusCode.Unauthorized )
+		{
+			// a refused login is no network trouble: a reconnect would be refused the same way
+			socket.Dispose();
+			throw new OnlineException( HttpStatusCode.Unauthorized, "401: The server no longer accepts this login." );
 		}
 		catch
 		{
 			socket.Dispose();
 			throw;
 		}
-		return new ChatConnection( socket );
+		return socket;
 	}
 
 	private static string Id( string id )

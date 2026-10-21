@@ -59,8 +59,10 @@ Totem's commands keep the older `developer-prototype` label.
 `[EXT:online-coop-session]` The server side of a shared session exists: the co-op socket, sessions with
 their code, the open list, invitations, the version and mod gate, the relay of the host's frames in
 order, resume after a lost connection or a restart, and the join snapshots
-([ONLINE.md](ONLINE.md), "Shared parks"; part C2a). The game does not use it yet: the stream of the
-host's commands (C2b), the join and resync (C2c) and the game's screens (C2d) follow.
+([ONLINE.md](ONLINE.md), "Shared parks"; part C2a). So does the game's link to it (`CoopLink` under
+`OnlineSession`): it opens, resumes and closes the socket and offers the requests and events a shared
+park needs. No park uses it yet: the stream of the host's commands (C2b), the join and resync (C2c)
+and the game's screens (C2d) follow.
 
 ## The command layer (C1)
 

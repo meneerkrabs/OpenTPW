@@ -88,6 +88,7 @@
 		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/GlbBuilder.cs" />
 		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/GltfModelConverterTests.cs" />
 		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/WebClientTransportTests.cs" />
+		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/CoopLinkTests.cs" />
 		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/BrowserPinsExclusionTests.cs" />
 	</ItemGroup>
 	<ItemGroup Condition="'$(OpenTpwDeterminismPins)' == 'true'">

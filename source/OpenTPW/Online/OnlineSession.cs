@@ -98,6 +98,7 @@ public sealed class OnlineSession : IDisposable, IPresenceSession, IChatPanelSou
 	public OnlineSession( OnlineFolders folders )
 	{
 		Folders = folders;
+		Coop = new CoopLink( this );
 		try { Settings = folders.LoadSettings(); }
 		catch ( Exception exception ) when ( exception is InvalidDataException or IOException )
 		{
@@ -108,6 +109,8 @@ public sealed class OnlineSession : IDisposable, IPresenceSession, IChatPanelSou
 
 	public OnlineFolders Folders { get; }
 	public OnlineSettings Settings { get; private set; }
+	/// <summary>[EXT:online-coop-session] The link to the co-op socket of shared parks, under this session's login (docs/ONLINE.md, "Shared parks").</summary>
+	public CoopLink Coop { get; }
 
 	/// <summary>
 	/// Offered in the server field while no server has been chosen: the browser build sets the
@@ -234,7 +237,11 @@ public sealed class OnlineSession : IDisposable, IPresenceSession, IChatPanelSou
 		}
 	}
 
-	private void Post( Action action, Action? discard = null )
+	/// <summary>
+	/// Runs <paramref name="action"/> on the game thread at the next <see cref="Pump"/>, unless the session went offline or changed server since the background
+	/// work that posts it began; then <paramref name="discard"/> runs instead.
+	/// </summary>
+	internal void Post( Action action, Action? discard = null )
 	{
 		lock ( mainThread )
 		{
@@ -246,6 +253,26 @@ public sealed class OnlineSession : IDisposable, IPresenceSession, IChatPanelSou
 			}
 		}
 		discard?.Invoke();
+	}
+
+	/// <summary>Runs <paramref name="work"/> on a background task whose <see cref="Post"/>s belong to the current server and login; it does not take the operation slot.</summary>
+	internal void Background( Func<Task> work )
+	{
+		if ( disposed )
+			return;
+		var startedGeneration = generation;
+		_ = Task.Run( async () =>
+		{
+			operationGeneration.Value = startedGeneration;
+			try
+			{
+				await work();
+			}
+			catch ( Exception exception )
+			{
+				Log.Warning( $"Online background work failed: {exception}" );
+			}
+		} );
 	}
 
 	private static string ConnectError( HttpRequestException exception ) =>
@@ -421,6 +448,8 @@ public sealed class OnlineSession : IDisposable, IPresenceSession, IChatPanelSou
 		Chat = null;
 		chatConnecting = false;
 		Interlocked.Increment( ref chatEpoch );
+		// [EXT:online-coop-session] the co-op link belongs to the login; a session it held is named again at the next open, and left then
+		Coop.Close();
 		requestedRoom = null;
 		joinPending = false;
 		joinSentAt = null;

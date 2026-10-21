@@ -253,8 +253,15 @@ public class SignExportTests
 		var empty = Path.Combine( root, "empty" );
 		Directory.CreateDirectory( empty );
 		Assert.ThrowsException<DirectoryNotFoundException>( () => SignExport.BonusRoot( new[] { "--bonus-data", empty } ) );
+		// a levels tree without bonus archives (the __MACOSX copy of an unpacked zip) is refused rather than exporting no bonus sign
+		var macosx = Path.Combine( root, "__MACOSX" );
+		Directory.CreateDirectory( Path.Combine( macosx, "Bonus content", "levels", "jungle", "rides" ) );
+		File.WriteAllText( Path.Combine( macosx, "Bonus content", "levels", "jungle", "rides", "._snake_1.wad" ), "" );
+		var noArchives = Assert.ThrowsException<DirectoryNotFoundException>( () => SignExport.BonusRoot( new[] { "--bonus-data", macosx } ) );
+		StringAssert.Contains( noArchives.Message, "no official bonus archives" );
 		var bonus = Path.Combine( root, "Bonus Stuff" );
 		Directory.CreateDirectory( Path.Combine( bonus, "Bonus content", "levels", "jungle", "rides" ) );
+		File.WriteAllText( Path.Combine( bonus, "Bonus content", "levels", "jungle", "rides", "_snake_1.wad" ), "" );
 		Assert.AreEqual( bonus, SignExport.BonusRoot( new[] { "--bonus-data", bonus } ) );
 		Assert.AreEqual( bonus, SignExport.BonusRoot( new[] { "--with-bonus" }, () => bonus ) );
 		Assert.ThrowsException<DirectoryNotFoundException>( () => SignExport.BonusRoot( new[] { "--with-bonus" }, () => null ) );

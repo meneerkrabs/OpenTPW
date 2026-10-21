@@ -85,8 +85,13 @@ public static class SignExport
 		{
 			root = (implicitRoot ?? DefaultBonusRoot)() ?? throw new DirectoryNotFoundException( "--with-bonus found no bonus content folder (OPENTPW_BONUS_DATA, the saved bonus folder or <config>/bonus); pass --bonus-data <folder>." );
 		}
-		if ( root != null && ObjectCatalog.FindBonusLevelsParent( root ) == null )
-			throw new DirectoryNotFoundException( $"The bonus content folder '{root}' holds no levels folder (within two levels); see docs/OBJECTS.md." );
+		if ( root == null )
+			return null;
+		// the folder the catalog reads (the first levels parent within two levels) must hold bonus archives; a levels tree without them (a __MACOSX copy) would export no bonus sign
+		var levelsParent = ObjectCatalog.FindBonusLevelsParent( root )
+			?? throw new DirectoryNotFoundException( $"The bonus content folder '{root}' holds no levels folder (within two levels); see docs/OBJECTS.md." );
+		if ( BonusContent.Validate( levelsParent ) == 0 )
+			throw new DirectoryNotFoundException( $"The bonus content folder '{root}' holds no official bonus archives (_name_N.wad) in '{levelsParent}'; see docs/OBJECTS.md." );
 		return root;
 	}
 
@@ -217,9 +222,11 @@ public static class SignExport
 		var language = GameLanguage.IsSelected ? GameLanguage.Current.Name : GameLanguage.DefaultLanguage;
 		var file = entry.FileSystem.GetFiles( entry.ArchivePath ).Select( Path.GetFileName )
 			.FirstOrDefault( name => name != null && name.EndsWith( ".txt", StringComparison.OrdinalIgnoreCase ) && string.Equals( Path.GetFileNameWithoutExtension( name ), language, StringComparison.OrdinalIgnoreCase ) );
-		return file != null && BonusNames.ReadSignLines( entry ) != null
+		if ( file == null )
+			return $"bonus display name (no {language}.txt): NAME of English.txt, else the .sam Info.Name, split at the middle space";
+		return BonusNames.ReadSignLines( entry ) != null
 			? $"{file} SIGNA/SIGNB"
-			: $"bonus display name (no {language}.txt): NAME of {language}.txt, else English.txt, else the .sam Info.Name, split at the middle space";
+			: $"bonus display name ({file} unreadable): NAME of English.txt, else the .sam Info.Name, split at the middle space";
 	}
 
 	private static string[] Texts( IReadOnlyList<int> ids, IReadOnlyList<string> objectNames ) =>
@@ -320,7 +327,7 @@ public static class SignExport
 			var full = ResolveLinks( directory! );
 			if ( string.Equals( resolvedRoot, full, StringComparison.OrdinalIgnoreCase ) || resolvedRoot.StartsWith( full + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase )
 				|| full.StartsWith( resolvedRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase ) )
-				throw new IOException( $"The sign export's output directory '{root}' overlaps the game or language data '{full}'; choose a directory outside it." );
+				throw new IOException( $"The sign export's output directory '{root}' overlaps the game, language or bonus data '{full}'; choose a directory outside it." );
 		}
 		if ( File.Exists( root ) )
 			throw new IOException( $"The sign export's output '{root}' is a file; choose a new or empty directory." );

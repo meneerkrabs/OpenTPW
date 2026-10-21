@@ -286,7 +286,8 @@ line of Space Zone's `megacost.sgn` (a font `fonts.wad` lacks) is not drawn; `--
 
 Official bonus objects are exported only when asked for: `--bonus-data <folder>` (the extracted bonus content, the folder that holds
 `levels` or one up to two levels above it, as for a normal start; OBJECTS.md), or `--with-bonus` for the folder a normal start would use
-(`OPENTPW_BONUS_DATA`, the saved bonus folder, `<config>/bonus`). Each theme's bonus archives with a `.sgn` then follow its shipped objects,
+(`OPENTPW_BONUS_DATA`, the saved bonus folder, `<config>/bonus`); a folder whose `levels` tree holds no `_name_N.wad` archive (such as the
+`__MACOSX` copy of an unpacked zip) is an error. Each theme's bonus archives with a `.sgn` then follow its shipped objects,
 named by archive (`jungle/_dizzyd_8-1.png`; the 35 shipped bonus archives give 14 ride signs: Dizzy Dinos, King of the Swingers, Manic Mayan,
 Slither, Ghost Train, Dare Devil, Haunted House, Bone Shaker, The Dizzy Tree, Rubber Ringos, Flying Fountain, G-Force, Whirligig and
 Wormhole), with the lines the game draws for them (`ObjectSigns.Lines`): the `SIGNA`/`SIGNB` sections of the archive's `<language>.txt`, or,

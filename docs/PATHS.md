@@ -103,7 +103,7 @@ each cell of that segment loses one placement count and goes when it falls
 below zero. Right click, Escape and Back cancel.
 Escape or Back inside the tool only ends the tool; the next one opens the
 pause menu (tp.exe key dispatch `0x488921`, Escape row `0x40c180`). While the pause menu is open the tool takes no clicks;
-the speed pause does not stop it (PATH-013).
+the click handler does not itself test the speed flag. The separate P-window input owner now has bounded ordinary-WM pointer routing (PATH-017, still open).
 
 In the park view the hover help is 441 over an empty owned cell, 442 over a
 path and 444 over a queue; inside the tools it is 443 and 445. A left click on a
@@ -185,7 +185,8 @@ and `Level.RemovePathCell(x, y)` wrap it with the read-only visit check.
 | ID | Plan name | Interim behaviour |
 | --- | --- | --- |
 | PATH-007 | PATH-LAND | the land (`ParkLand`: the Hoardings.sam fence from the gate posts, an imported save's own flags and fence, Buy Land) follows the original, except that the fence fill's cell outcome is modelled instead of its scan (0x5311c0), the fence of level flag 0x79d86c bit 0x400 is not laid and a purchase in front of the gate is refused (the original's validator accepts some; its ring walk `0x52ba50` then likely keeps the old ring and drops the new hoardings, charging for no land, or may not terminate) |
-| PATH-017 | PATH-PAUSE-WINDOW | the pause menu blocks tool clicks and the speed pause does not, as tp.exe's click gate (`0x48c8d0` reads the pause-menu object `0x7c2534`; `APPROX:PATH-013`, retired); the P key's full-screen layer (`0x47ed80` → `0x65dd7b`) under its panel is not drawn and whether it stops the park click route is not read | The window manager's hit test of the layer |
+| PATH-017 | PATH-PAUSE-WINDOW | Bounded ordinary-WM pump/admission then drain is implemented for offline motion/button ownership and P: topmost eligible receiver, stable screen/element lifetime, separate movement capture, saved release owner, and accepted explicit local pause backdrop. The handler-only speed test does not describe the upstream window routing (`0x65db25`, `0x658b1a`, `0x658b7f`, outer pump `0x45ab13`, drain `0x48a5be`). Still open: alternate buffered-input scheduling; full native keyboard/wheel routing (legacy aggregate wheel/non-P paths can still act below the backdrop); original backdrop/panel rendering and full modal/audio parity; ingestion-time and unobserved focus-modifier limits. |
 | PATH-015 | QUEUE-MODELS | queue cells carry the theme's queue models as tp.exe places them (0x535dd0 class 2, 0x5229e0); baked at the cell's mean height, without their .hmp ground deformation, texture-frame animation (the fire0 torches) and quedead's load flag 0x100000 |
 
 Retired: `APPROX:PATH-016` (the links of MAP InitialPath cells: the map init `0x536490` types each cell and links it with the link writer `0x5348d0` in mode 1, the cells in index order, so a cell links only toward the path cells before it and the later cells link back when their own turn comes; `ParkCellMap.FromOriginal` runs the ported writer in that order and no longer links toward non-path neighbours).
+

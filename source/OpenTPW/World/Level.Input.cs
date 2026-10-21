@@ -7,6 +7,8 @@ namespace OpenTPW;
 /// </summary>
 public partial class Level
 {
+	internal bool WorldPointerRouted { get; set; }
+
 	internal enum WorldClickAction { None, PlacePrototype, UseTool }
 
 	/// <summary>World input stays suspended in ride and walking views, including tools armed through the HUD.</summary>
@@ -17,6 +19,11 @@ public partial class Level
 	/// <param name="modifierMask">The modifier mask held at the click (<see cref="Input.ModifierMask"/>: Shift 3, Ctrl 0xc, Alt 0x30); exactly Ctrl keeps the build tool armed after a placement.</param>
 	internal void UpdateWorldInput( bool leftDown, bool mouseCaptured, Vector2 mousePosition, Vector2 viewportSize, int modifierMask = 0 )
 	{
+		if ( WorldPointerRouted )
+		{
+			wasMouseDown = leftDown;
+			return;
+		}
 		clickModifierMask = modifierMask;
 		switch ( WorldClick( RideView != null || FreeWalk != null, leftDown, wasMouseDown, mouseCaptured, IsPlacing ) )
 		{
@@ -30,6 +37,19 @@ public partial class Level
 		}
 		// Track the button in both cameras: a held click must not build when the player leaves a ride.
 		wasMouseDown = leftDown;
+	}
+
+	/// <summary>An admitted park-view down, delivered once by the HUD router rather than reconstructed from final held state.</summary>
+	internal void DispatchRoutedWorldPress( Vector2 position, Vector2 viewport, int modifierMask )
+	{
+		if ( RideView != null || FreeWalk != null ) return;
+		clickModifierMask = modifierMask;
+		if ( IsPlacing )
+		{
+			if ( TryGetPlacementPosition( position, viewport, out var placed ) )
+				Commands.Issue( new PlacePrototypeCommand( placed.X, placed.Y, placed.Z ) );
+		}
+		else HandleObjectClick( position, viewport );
 	}
 
 	private void HandleObjectClick( System.Numerics.Vector2 mousePosition, System.Numerics.Vector2 viewportSize )
@@ -131,3 +151,4 @@ public partial class Level
 		return false;
 	}
 }
+

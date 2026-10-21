@@ -540,8 +540,17 @@ function attachInput() {
 		events.push(`b 1 ${button(event)}`);
 	});
 	window.addEventListener('mouseup', event => {
-		if (heldButtons.delete(button(event)))
-			events.push(`b 0 ${button(event)}`);
+		if (!heldButtons.delete(button(event)))
+			return;
+		// mouseup can target another element: offsetX/Y would then belong to that element.
+		// Convert viewport coordinates to the canvas's logical padding-box units, as offsetX/Y
+		// do for its own motion events, including a CSS-scaled canvas and its border.
+		const rect = canvas.getBoundingClientRect();
+		const scaleX = rect.width > 0 && canvas.offsetWidth > 0 ? canvas.offsetWidth / rect.width : 1;
+		const scaleY = rect.height > 0 && canvas.offsetHeight > 0 ? canvas.offsetHeight / rect.height : 1;
+		const x = (event.clientX - rect.left) * scaleX - canvas.clientLeft;
+		const y = (event.clientY - rect.top) * scaleY - canvas.clientTop;
+		events.push(`b 0 ${button(event)} ${x} ${y}`);
 	});
 	canvas.addEventListener('blur', releaseAll);
 	window.addEventListener('blur', releaseAll);

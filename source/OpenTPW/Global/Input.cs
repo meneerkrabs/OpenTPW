@@ -13,6 +13,11 @@ public static partial class Input
 	public static IReadOnlyList<Key> KeyPresses { get; private set; } = Array.Empty<Key>();
 	/// <summary>Set by the UI while a text field has the focus: the park camera and hotkeys ignore the keyboard.</summary>
 	public static bool TextEntryActive { get; set; }
+	/// <summary>
+	/// Raw ordered facts for this frame, independent of the legacy snapshot. Null means unavailable;
+	/// an empty batch is authoritative and must not replay snapshot edges (including deferred releases).
+	/// </summary>
+	public static IReadOnlyList<OrderedInputEvent>? OrderedEvents { get; private set; }
 
 	public static float Forward { get; set; }
 	public static float Right { get; set; }
@@ -62,8 +67,22 @@ public static partial class Input
 	internal static int ModifierMask( bool shift, bool control, bool alt ) => (shift ? 3 : 0) | (control ? 0xc : 0) | (alt ? 0x30 : 0);
 
 	/// <summary>The modifier mask of the keys held this frame (either side of each modifier counts).</summary>
-	internal static int ModifierMaskDown => ModifierMask( IsFrameKeyDown( Key.ShiftLeft ) || IsFrameKeyDown( Key.ShiftRight ),
+	internal static int ModifierMaskDown => pointerModifierMask ?? ModifierMask( IsFrameKeyDown( Key.ShiftLeft ) || IsFrameKeyDown( Key.ShiftRight ),
 		IsFrameKeyDown( Key.ControlLeft ) || IsFrameKeyDown( Key.ControlRight ), IsFrameKeyDown( Key.AltLeft ) || IsFrameKeyDown( Key.AltRight ) );
+
+	private static int? pointerModifierMask;
+	/// <summary>A queued pointer delivery must not read the final frame's modifier state.</summary>
+	internal static IDisposable UsePointerModifiers( int modifiers )
+	{
+		var previous = pointerModifierMask;
+		pointerModifierMask = ModifierMask( ((ModifierKeys)modifiers & ModifierKeys.Shift) != 0,
+			((ModifierKeys)modifiers & ModifierKeys.Control) != 0, ((ModifierKeys)modifiers & ModifierKeys.Alt) != 0 );
+		return new PointerModifierScope( previous );
+	}
+	private sealed class PointerModifierScope( int? previous ) : IDisposable
+	{
+		public void Dispose() => pointerModifierMask = previous;
+	}
 
 	/// <summary>
 	/// Queues a physical key press for the next frame only (the native smoke tests' keyboard steps): the key
@@ -130,8 +149,13 @@ public static partial class Input
 		}
 	}
 
-	public static void UpdateFrom( InputSnapshot inputSnapshot )
+	public static void UpdateFrom( InputSnapshot inputSnapshot ) =>
+		UpdateFromOrderedSnapshot( inputSnapshot, (inputSnapshot as IOrderedInputSnapshot)?.OrderedEvents );
+
+	internal static void UpdateFromOrderedSnapshot( InputSnapshot inputSnapshot, IReadOnlyList<OrderedInputEvent>? orderedEvents )
 	{
+		// Copy: browser snapshots and desktop collection buffers are reused by the next pump.
+		OrderedEvents = orderedEvents?.ToArray();
 		IsSystemCursorVisible = !SoftwareCursorRequested;
 		SoftwareCursorRequested = false;
 
@@ -155,15 +179,7 @@ public static partial class Input
 		Right = 0;
 		Forward = 0;
 
-		var newKeysDown = inputSnapshot.KeyEvents.Where( x => x.Down ).Select( x => x.Key );
-		var newKeysUp = inputSnapshot.KeyEvents.Where( x => !x.Down ).Select( x => x.Key );
-
-		Keyboard = new KeyboardInfo(
-			Keyboard.KeysDown.Concat( newKeysDown )
-				.Distinct()
-				.Where( x => !newKeysUp.Contains( x ) )
-				.ToList()
-		);
+		Keyboard = new KeyboardInfo( ReducePhysicalKeys( Keyboard.KeysDown, inputSnapshot.KeyEvents ) );
 
 		bool IsKeyPressed( Key k ) => Keyboard.KeysDown.Contains( k );
 
@@ -177,6 +193,18 @@ public static partial class Input
 			Forward -= 1;
 
 		UpdateButtons();
+	}
+
+	/// <summary>Apply the compatibility snapshot's ordered edges; Up then Down must finish held.</summary>
+	internal static List<Key> ReducePhysicalKeys( IEnumerable<Key> previous, IReadOnlyList<KeyEvent> events )
+	{
+		var held = previous.ToHashSet();
+		foreach ( var item in events )
+		{
+			if ( item.Down ) held.Add( item.Key );
+			else held.Remove( item.Key );
+		}
+		return held.ToList();
 	}
 
 	/// <summary>

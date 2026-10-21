@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Numerics;
+using OpenTPW;
 
 namespace Veldrid
 {
@@ -43,8 +44,11 @@ namespace Veldrid
 		}
 	}
 
-	internal sealed class CanvasInputSnapshot : InputSnapshot
+	internal sealed class CanvasInputSnapshot : InputSnapshot, IOrderedInputSnapshot
 	{
+		private readonly List<OrderedInputEvent> orderedEvents = new();
+		private long orderedSequence;
+		public IReadOnlyList<OrderedInputEvent> OrderedEvents => orderedEvents;
 		private readonly bool[] buttons = new bool[13];
 		public List<KeyEvent> Keys { get; } = new();
 		public List<MouseEvent> Mouse { get; } = new();
@@ -64,6 +68,8 @@ namespace Veldrid
 		/// <summary>Starts the next frame's snapshot, applying releases held back from the last one.</summary>
 		public void Clear()
 		{
+			// Deferred legacy releases below are not newly received platform events.
+			orderedEvents.Clear();
 			Keys.Clear();
 			Mouse.Clear();
 			Characters.Clear();
@@ -121,7 +127,7 @@ namespace Veldrid
 
 		/// <summary>
 		/// Applies the events opentpw-gl.js queued, one per line:
-		/// <c>k down key modifiers repeat</c>, <c>b down button</c>, <c>m x y</c>, <c>w delta</c>, <c>c codepoint</c>, <c>r</c> (resized).
+		/// <c>k down key modifiers repeat</c>, <c>b down button [x y]</c>, <c>m x y</c>, <c>w delta</c>, <c>c codepoint</c>, <c>r</c> (resized).
 		/// Key names are Veldrid's <see cref="Key"/> names. Returns whether the canvas was resized.
 		/// </summary>
 		public bool Apply( string events )
@@ -133,13 +139,27 @@ namespace Veldrid
 				switch ( parts[0] )
 				{
 					case "k" when parts.Length >= 5 && Enum.TryParse<Key>( parts[2], out var key ):
-						AddKey( new KeyEvent( key, parts[1] == "1", (ModifierKeys)int.Parse( parts[3], CultureInfo.InvariantCulture ), parts[4] == "1" ) );
+						var keyEvent = new KeyEvent( key, parts[1] == "1", (ModifierKeys)int.Parse( parts[3], CultureInfo.InvariantCulture ), parts[4] == "1" );
+						Record( keyEvent.Down ? OrderedInputEventKind.KeyDown : OrderedInputEventKind.KeyUp,
+							key: (int)keyEvent.Key, modifiers: (int)keyEvent.Modifiers, repeat: keyEvent.Repeat );
+						AddKey( keyEvent );
 						break;
 					case "b" when parts.Length >= 3:
-						SetButton( (MouseButton)int.Parse( parts[2], CultureInfo.InvariantCulture ), parts[1] == "1" );
+						var button = (MouseButton)int.Parse( parts[2], CultureInfo.InvariantCulture );
+						var down = parts[1] == "1";
+						// Physical releases include canvas-relative coordinates even outside the canvas.
+						// Old/blur-generated records have none, so keep their position explicitly inexact.
+						// Do not invent a motion event or change the legacy snapshot's final position.
+						var exactPosition = parts.Length >= 5;
+						var x = exactPosition ? float.Parse( parts[3], CultureInfo.InvariantCulture ) : MousePosition.X;
+						var y = exactPosition ? float.Parse( parts[4], CultureInfo.InvariantCulture ) : MousePosition.Y;
+						Record( down ? OrderedInputEventKind.ButtonDown : OrderedInputEventKind.ButtonUp,
+							button: (int)button, exactPosition: exactPosition, x: x, y: y );
+						SetButton( button, down );
 						break;
 					case "m" when parts.Length >= 3:
 						MousePosition = new Vector2( float.Parse( parts[1], CultureInfo.InvariantCulture ), float.Parse( parts[2], CultureInfo.InvariantCulture ) );
+						Record( OrderedInputEventKind.Motion, exactPosition: true );
 						break;
 					case "w" when parts.Length >= 2:
 						WheelDelta += float.Parse( parts[1], CultureInfo.InvariantCulture );
@@ -154,6 +174,10 @@ namespace Veldrid
 			}
 			return resized;
 		}
+
+		private void Record( OrderedInputEventKind kind, int button = -1, int key = 0, int modifiers = 0, bool repeat = false, bool exactPosition = false, float? x = null, float? y = null ) =>
+			orderedEvents.Add( new OrderedInputEvent( ++orderedSequence, kind, x ?? MousePosition.X, y ?? MousePosition.Y,
+				button, key, modifiers, repeat, Environment.TickCount64, OrderedInputEventSource.Browser, exactPosition ) );
 	}
 }
 

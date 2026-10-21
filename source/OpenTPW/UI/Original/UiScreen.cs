@@ -10,6 +10,9 @@ namespace OpenTPW.UI.Original;
 public class UiScreen
 {
 	private readonly List<UiElement> elements = new();
+	private readonly Dictionary<UiElement, int> memberships = new();
+	internal int ElementGeneration( UiElement? element ) => element != null && memberships.TryGetValue( element, out var generation ) ? generation : 0;
+	private void ChangeMembership( UiElement element ) => memberships[element] = ElementGeneration( element ) + 1;
 	private UiElement? pressed;
 	private NVector2 pressPoint;
 	private bool capturedClick;
@@ -41,12 +44,15 @@ public class UiScreen
 		get => isRemoved;
 		internal set
 		{
+			if ( isRemoved != value ) PointerGeneration++;
 			isRemoved = value;
 			// Retain the opt-in marker until release/new press, so cancelling capture cannot fall through to another widget.
 			if ( value ) CancelCapturedPress();
 		}
 	}
 	private bool isRemoved;
+	internal int PointerGeneration { get; private set; }
+	internal UiElement? PointerDragCapture => pressed is IUiDragTarget ? pressed : null;
 
 	/// <summary>Whether the right click leaves a modal screen: the RMBCancelOn option (+0x39, default on) is set.</summary>
 	// [BIN:TPW-EXE:0x488aa1 RMBCancelOn] the original's screens (camcorder 0x488aa1, ride view 0x48a7ab, 0x48aadb) leave on a right click only when the option [0x78d911] is set; the option's other reader is the park view's mouse procedure 0x4881a0 (a quick right click cancels the tool and mode there)
@@ -56,6 +62,7 @@ public class UiScreen
 	public T Add<T>( T element ) where T : UiElement
 	{
 		elements.Add( element );
+		ChangeMembership( element );
 		return element;
 	}
 
@@ -64,12 +71,13 @@ public class UiScreen
 	{
 		var index = before == null ? -1 : elements.IndexOf( before );
 		if ( index < 0 ) elements.Add( element ); else elements.Insert( index, element );
+		ChangeMembership( element );
 		return element;
 	}
 
 	public void Remove( UiElement element )
 	{
-		elements.Remove( element );
+		if ( elements.Remove( element ) ) ChangeMembership( element );
 		if ( pressed == element ) CancelCapturedPress();
 		if ( Focused == element )
 			Focused = null;
@@ -80,6 +88,15 @@ public class UiScreen
 		if ( !capturedClick ) return;
 		(pressed as IUiCapturedClickTarget)?.CancelCapturedClick();
 		pressed = null;
+	}
+
+	/// <summary>Host view transition: cancel a gesture without activating or moving its target.</summary>
+	internal void CancelPointerGesture()
+	{
+		(pressed as IUiCapturedClickTarget)?.CancelCapturedClick();
+		if ( pressed is UiButton held ) held.HoldState = 0;
+		pressed = null;
+		capturedClick = false;
 	}
 
 	public IEnumerable<UiElement> FocusableElements => elements.Where( element => element.Visible && element.Focusable );
@@ -96,6 +113,9 @@ public class UiScreen
 	public bool Covers( UiCanvas canvas, NVector2 point ) =>
 		Modal || elements.Any( element => element.Visible && element.CoversPoint( canvas, point ) );
 
+	/// <summary>Pure geometry preparation before pointer admission; no timers, callbacks, focus or key dispatch.</summary>
+	internal virtual void PreparePointerGeometry( UiContext context ) { }
+
 	/// <summary>Handles one frame of input; returns true when the input was consumed.</summary>
 	// [EXT:ui-modal-right-click-back] hover focus follows the pointer, and the right click backs out of a modal screen when the RMBCancelOn option (+0x39, default 1) is set; the option's only direct readers in the original are the park view 0x4881a0, the camcorder 0x488aa1 and the ride view 0x48a7ab/0x48aadb, so this is OpenTPW's uniform back-out
 	public virtual bool Update( UiContext context, UiInput input )
@@ -105,84 +125,102 @@ public class UiScreen
 		Updating?.Invoke( context );
 		if ( IsRemoved )
 			return true;
-		if ( capturedClick && (pressed is { Enabled: false } or { Visible: false } || !input.LeftDown && !input.LeftPressed && !input.LeftReleased) )
-			CancelCapturedPress();
+		return HandleInput( context, input, null, false, !input.PointerSuppressed, false );
+	}
+
+	/// <summary>Dispatches one already-admitted pointer record, without repeating the frame callback or keyboard work.</summary>
+	internal virtual bool UpdatePointer( UiContext context, UiInput input, UiElement? recipient ) =>
+		IsRemoved ? true : HandleInput( context, input, recipient, true, true, true );
+
+	private bool HandleInput( UiContext context, UiInput input, UiElement? recipient, bool routed, bool pointerInput, bool pointerOnly )
+	{
 		var canvas = context.Canvas;
-		var hit = HitTest( canvas, input.Mouse );
-		context.HoverHelp = hit?.CurrentHelp;
-		// A text field keeps the keyboard focus while the mouse merely passes over other elements.
-		var typing = Focused is UiTextField { Visible: true, Enabled: true };
-		// a field over the park view (the chat entry) takes the keys only when clicked, and the pointer resting on it leaves nothing else focused, so Enter there
-		// does not press the button the pointer crossed before
-		if ( hit != null && (input.LeftPressed || input.LeftReleased || hit != Focused && !typing && hit is not UiTextField { OverView: true }) && input.Mouse.X >= 0 )
-			Focused = hit;
-		else if ( hit is UiTextField { OverView: true } && !typing && input.Mouse.X >= 0 )
-			Focused = null;
-		if ( input.LeftPressed && hit == null && typing && input.Mouse.X >= 0 )
-			Focused = null;
-		// [BIN:TPW-EXE:0x6656a0 list hover] a list with attribute 0x80 selects the row under the pointer when the pointer moves; the list decides what a hover does: the buy, loans and hire lists select, the others only highlight (the Load Park list does not, EXT:load-list-select-then-load)
-		// [BIN:TPW-EXE:0x658840 pointer move] the original sends the pointer messages (0x10001/0x10003, 0x6588ef) only when the pointer position differs from the last one sent, so a resting pointer selects nothing while keys or the wheel scroll the rows under it; the first frame of a screen has no earlier position and counts as no move
-		var pointerMoved = seenMouse && input.Mouse.X >= 0 && input.Mouse != lastMouse;
-		foreach ( var element in elements )
+		var hit = routed ? recipient : HitTest( canvas, input.Mouse );
+		var consumed = false;
+		var rightHandled = false;
+		if ( pointerInput )
 		{
-			if ( element is IUiRowList { HoverSelects: true } hoverList )
-				hoverList.Hover( ReferenceEquals( element, hit ) && input.Mouse.X >= 0 ? hoverList.RowAt( canvas, input.Mouse ) : -1, pointerMoved );
-		}
-		lastMouse = input.Mouse;
-		seenMouse = true;
-		var consumed = hit != null;
-		if ( input.LeftPressed )
-		{
-			pressed = hit;
-			capturedClick = pressed is IUiCapturedClickTarget;
-			pressPoint = input.Mouse;
-			if ( pressed is { Enabled: true } and IUiDragStart start && input.Mouse.X >= 0 )
-				start.DragStart( canvas, input.Mouse );
-			if ( hit is UiButton { Repeat: not null, Enabled: true } holdButton && input.Mouse.X >= 0 )
-				(holdButton.HoldState, holdButton.HoldTime) = (1, context.Time);
-		}
-		if ( pressed is UiButton { Repeat: { } repeat, HoldState: not 0 } held && input.LeftDown )
-			RunHold( held, repeat, context.Time, ReferenceEquals( hit, held ) );
-		if ( input.LeftPressed && pressed is { Enabled: true } and IUiDragTarget begin && input.Mouse.X >= 0 )
-			begin.DragBegin( canvas, input.Mouse );
-		// A slider follows the mouse while it is held, wherever the pointer has drifted to.
-		if ( pressed is { Enabled: true } and IUiDragTarget drag && input.Mouse.X >= 0 && (input.LeftDown || input.LeftPressed || input.LeftReleased) )
-			drag.DragTo( canvas, input.Mouse );
-		if ( input.LeftReleased )
-		{
-			if ( pressed is { Enabled: true } and IUiDragTarget ended && (input.Mouse.X >= 0 || capturedClick) )
-				ended.DragEnd( canvas, input.Mouse );
-			// [BIN:TPW-EXE:0x65f6d1 click rule] a release is a click only within 500 ms of its press and without the pointer straying more than 6 px (UiInputSource)
-			// a button whose hold began repeating gives no click when it is let go (0x668eff: the click needs the state not to be 2)
-			var repeating = pressed is UiButton { HoldState: 2 };
-			// [BIN:TPW-EXE:0x658b84 captured release] release selects the original recipient; 0x65f971 rebuilds the qualified click from its saved press point.
-			// Opt-in only: other widgets retain their existing same-element release behavior and the shared UiInput NotClick qualification.
-			if ( capturedClick )
+			if ( capturedClick && (pressed is { Enabled: false } or { Visible: false } || !input.LeftDown && !input.LeftPressed && !input.LeftReleased) )
+				CancelCapturedPress();
+			context.HoverHelp = hit?.CurrentHelp;
+			// A text field keeps the keyboard focus while the mouse merely passes over other elements.
+			var typing = Focused is UiTextField { Visible: true, Enabled: true };
+			// a field over the park view (the chat entry) takes the keys only when clicked, and the pointer resting on it leaves nothing else focused, so Enter there
+			// does not press the button the pointer crossed before
+			if ( hit != null && (input.LeftPressed || input.LeftReleased || hit != Focused && !typing && hit is not UiTextField { OverView: true }) && input.Mouse.X >= 0 )
+				Focused = hit;
+			else if ( hit is UiTextField { OverView: true } && !typing && input.Mouse.X >= 0 )
+				Focused = null;
+			if ( input.LeftPressed && hit == null && typing && input.Mouse.X >= 0 )
+				Focused = null;
+			// [BIN:TPW-EXE:0x6656a0 list hover] a list with attribute 0x80 selects the row under the pointer when the pointer moves; the list decides what a hover does: the buy, loans and hire lists select, the others only highlight (the Load Park list does not, EXT:load-list-select-then-load)
+			// [BIN:TPW-EXE:0x658840 pointer move] the original sends the pointer messages (0x10001/0x10003, 0x6588ef) only when the pointer position differs from the last one sent, so a resting pointer selects nothing while keys or the wheel scroll the rows under it; the first frame of a screen has no earlier position and counts as no move
+			var pointerMoved = seenMouse && input.Mouse.X >= 0 && input.Mouse != lastMouse;
+			foreach ( var element in elements )
 			{
-				if ( !IsRemoved && pressed is { Enabled: true, Visible: true } and IUiCapturedClickTarget captured && elements.Contains( pressed ) && input.Mouse.X >= 0 && !input.NotClick && !repeating )
-					captured.ClickCaptured( canvas, pressPoint );
-				else
-					CancelCapturedPress();
+				if ( element is IUiRowList { HoverSelects: true } hoverList )
+					hoverList.Hover( ReferenceEquals( element, hit ) && input.Mouse.X >= 0 ? hoverList.RowAt( canvas, input.Mouse ) : -1, pointerMoved );
 			}
-			else if ( hit != null && (pressed == null || pressed == hit) && !input.NotClick && !repeating )
-				Click( canvas, hit, input.Mouse );
-			if ( pressed is UiButton { Repeat: not null } released )
-				released.HoldState = 0;
-			pressed = null;
-			capturedClick = false;
+			lastMouse = input.Mouse;
+			seenMouse = true;
+			consumed = hit != null;
+			if ( input.LeftPressed )
+			{
+				pressed = hit;
+				capturedClick = pressed is IUiCapturedClickTarget;
+				pressPoint = input.Mouse;
+				if ( pressed is { Enabled: true } and IUiDragStart start && input.Mouse.X >= 0 )
+					start.DragStart( canvas, input.Mouse );
+				if ( hit is UiButton { Repeat: not null, Enabled: true } holdButton && input.Mouse.X >= 0 )
+					(holdButton.HoldState, holdButton.HoldTime) = (1, context.Time);
+			}
+			if ( pressed is UiButton { Repeat: { } repeat, HoldState: not 0 } held && input.LeftDown )
+				RunHold( held, repeat, context.Time, ReferenceEquals( hit, held ) );
+			if ( input.LeftPressed && pressed is { Enabled: true } and IUiDragTarget begin && input.Mouse.X >= 0 )
+				begin.DragBegin( canvas, input.Mouse );
+			// A slider follows the mouse while it is held, wherever the pointer has drifted to.
+			if ( pressed is { Enabled: true } and IUiDragTarget drag && input.Mouse.X >= 0 && (input.LeftDown || input.LeftPressed || input.LeftReleased) )
+				drag.DragTo( canvas, input.Mouse );
+			if ( input.LeftReleased )
+			{
+				if ( pressed is { Enabled: true } and IUiDragTarget ended && (input.Mouse.X >= 0 || capturedClick) )
+					ended.DragEnd( canvas, input.Mouse );
+				// [BIN:TPW-EXE:0x65f6d1 click rule] a release is a click only within 500 ms of its press and without the pointer straying more than 6 px (UiInputSource)
+				// a button whose hold began repeating gives no click when it is let go (0x668eff: the click needs the state not to be 2)
+				var repeating = pressed is UiButton { HoldState: 2 };
+				// [BIN:TPW-EXE:0x658b84 captured release] release selects the original recipient; 0x65f971 rebuilds the qualified click from its saved press point.
+				// Opt-in only: other widgets retain their existing same-element release behavior and the shared UiInput NotClick qualification.
+				if ( capturedClick )
+				{
+					if ( !IsRemoved && pressed is { Enabled: true, Visible: true } and IUiCapturedClickTarget captured && elements.Contains( pressed ) && input.Mouse.X >= 0 && !input.NotClick && !repeating )
+						captured.ClickCaptured( canvas, pressPoint );
+					else
+						CancelCapturedPress();
+				}
+				else if ( hit != null && (pressed == null || pressed == hit) && !input.NotClick && !repeating )
+					Click( canvas, hit, input.Mouse );
+				if ( pressed is UiButton { Repeat: not null } released )
+					released.HoldState = 0;
+				pressed = null;
+				capturedClick = false;
+				if ( IsRemoved )
+					return true;
+			}
+			// [BIN:TPW-EXE:0x66563d list click] a click of the other button selects the row and posts 0x402 to the list's owner; the list decides what that does and whether the right click also backs out
+			if ( input.RightPressed && hit is IUiRowList rightList && input.Mouse.X >= 0 && rightList.RowAt( canvas, input.Mouse ) is >= 0 and var rightRow )
+				rightHandled = rightList.RowClicked( rightRow, false );
 			if ( IsRemoved )
 				return true;
 		}
-		// [BIN:TPW-EXE:0x66563d list click] a click of the other button selects the row and posts 0x402 to the list's owner; the list decides what that does and whether the right click also backs out
-		var rightHandled = false;
-		if ( input.RightPressed && hit is IUiRowList rightList && input.Mouse.X >= 0 && rightList.RowAt( canvas, input.Mouse ) is >= 0 and var rightRow )
-			rightHandled = rightList.RowClicked( rightRow, false );
-		if ( IsRemoved )
-			return true;
 		if ( (hit is UiOptionRow or UiSlider || hit is UiButton { Adjusted: not null, WheelAdjusts: true }) && input.Wheel != 0 )
 			hit.Adjust( input.Wheel > 0 ? 1 : -1 );
 		if ( hit is IUiRowList wheelList && input.Wheel != 0 )
 			wheelList.Scroll( input.Wheel > 0 ? -1 : 1 );
+		if ( pointerOnly )
+		{
+			if ( RightCancels( input ) && Modal && !rightHandled ) Back?.Invoke();
+			return consumed;
+		}
 		if ( input.Has( UiKeys.Tab ) )
 			MoveFocus( 1, element => element is UiTextField );
 		if ( Focused is UiTextField field && field.Visible && field.Enabled )
@@ -411,3 +449,4 @@ public sealed class UiScreenStack
 		context.DrawText( context.Fonts.Small, text, area, UiColors.Text, UiAlign.Center, wrap: true, shadow: false );
 	}
 }
+

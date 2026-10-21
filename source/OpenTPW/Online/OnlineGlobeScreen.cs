@@ -70,13 +70,29 @@ public sealed class OnlineGlobeScreen : UiScreen
 			if ( !overUi && globe() is { } scene && Ray( input.Mouse, canvas ) is { } ray )
 				Hovered = scene.Pick( ray.Origin, ray.Direction );
 			// [BIN:TPW-EXE:0x005DD530 online globe input] a click (event 0x10005) on a hovered pin selects that city (DAT_00f82888) and switches to its lobby, whose top-10 request reads it (0x005E23F0); zooming is the zoom button (event 0x10006, param 2)
-			if ( input.LeftReleased && !overUi && Hovered is { } city )
+			if ( !input.PointerSuppressed && input.LeftReleased && !overUi && Hovered is { } city )
 				CityClicked?.Invoke( city );
 		}
 		// Arrow keys turn the globe instead of moving the focus; the right button steers instead of going back.
 		var forwarded = input with { Pressed = input.Pressed & ~(UiKeys.Left | UiKeys.Right | UiKeys.Up | UiKeys.Down), RightPressed = false };
 		base.Update( context, forwarded );
 		// The globe covers the whole screen: nothing below (a park) gets the input.
+		return true;
+	}
+
+	internal override bool UpdatePointer( UiContext context, UiInput input, UiElement? recipient )
+	{
+		if ( IsRemoved ) return true;
+		// Re-pick at this record's position, but never repeat the frame's camera steering or keyboard turns.
+		var canvas = context.Canvas;
+		Hovered = null;
+		if ( recipient == null && input.Mouse.X >= 0 && canvas.Width > 0 && canvas.Height > 0
+			&& globe() is { } scene && Ray( input.Mouse, canvas ) is { } ray )
+			Hovered = scene.Pick( ray.Origin, ray.Direction );
+		if ( input.LeftReleased && !input.NotClick && Hovered is { } city )
+			CityClicked?.Invoke( city );
+		// As in the frame path, the right button steers the globe rather than cancelling the screen.
+		base.UpdatePointer( context, input with { RightPressed = false }, recipient );
 		return true;
 	}
 

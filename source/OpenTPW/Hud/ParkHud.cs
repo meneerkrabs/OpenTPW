@@ -746,6 +746,7 @@ public sealed partial class ParkHud
 	// Explicit captures run the identical frame body in asset-free tests. Null samples native IO at its original point.
 	internal bool Update( UiContext context, UiInput input, bool? mouseCaptured, bool? keyboardCaptured, bool? textCaptured )
 	{
+		level.WorldPointerRouted = false;
 		SyncChallengeMessageSuspension();
 		QueueChallengeTerminalTimers();
 		if ( UpdateResearchFinale( context, input, mouseCaptured, keyboardCaptured, textCaptured ) )
@@ -755,6 +756,11 @@ public sealed partial class ParkHud
 			FinishChallengeMessageFrame();
 			return true;
 		}
+		var pointerFrameInput = input;
+		var orderedPointerFrame = (input.OrderedEvents != null || pointerRoutingStarted || pausePointerOverlay != null) && level.CoopRole == CoopRole.None && !level.IsReadOnlyVisit && !IsRiding && !CamcorderArmed && level.FreeWalk == null;
+		if ( !orderedPointerFrame && pointerRoutingActive ) SuspendParkPointer();
+		if ( orderedPointerFrame )
+			input = input with { LeftPressed = false, LeftReleased = false, RightPressed = false, Pressed = pointerFrameInput.OrderedEvents != null ? input.Pressed & ~UiKeys.Pause : input.Pressed, PointerSuppressed = true };
 		var ridingAtStart = IsRiding;
 		SyncRideScreen();
 		HandleChatModeKey();
@@ -791,6 +797,7 @@ public sealed partial class ParkHud
 			StopResearchSounds();
 		UpdateLocatorPanels();
 		SampleHappiness( context.Delta );
+		var admittedPointerEvents = orderedPointerFrame ? AdmitPointerEvents( context, pointerFrameInput ) : null;
 		var paused = Paused;
 		var overUi = Stack.Covers( context.Canvas, input.Mouse ) || Stack.Screens.Count > 1;
 		// Enter over the park goes to a visit's chat entry before the screen sees the key, which would otherwise press the button the pointer last rested on
@@ -923,21 +930,50 @@ public sealed partial class ParkHud
 			}
 		}
 
+		var rideOwnsInput = ridingAtStart || IsRiding || camcorderOwnsInput;
+		bool inPark, toolClick;
+		if ( admittedPointerEvents != null )
+		{
+			toolClick = DrainPointerEvents( context, admittedPointerEvents, pointerFrameInput, rideOwnsInput, mouseCaptured.Value, keyboardCaptured.Value, textCaptured.Value );
+			inPark = !overUi && pausePointerOverlay == null && !rideOwnsInput;
+		}
+		else
+			(inPark, toolClick) = DispatchParkPointer( context, input, overUi, consumed, rideOwnsInput, paused,
+				mouseCaptured.Value, keyboardCaptured.Value, textCaptured.Value );
+		UpdateBlueprint( inPark && !rideOwnsInput, context.Delta, paused || Status.Speed == GameSpeed.Paused );
+
+		for ( var index = messages.Count - 1; index >= 0; index-- )
+		{
+			messages[index] = (messages[index].Text, messages[index].Age + context.Delta);
+			if ( messages[index].Age > MessageSeconds )
+				messages.RemoveAt( index );
+		}
+		UpdateCursor( input, overUi || consumed || pausePointerOverlay != null, mouseCaptured == true );
+		Status.Update( context.Delta );
+		SyncRideScreen();
+		PrepareRideStatic( context ); // observe the final camera once, after this frame's callbacks and shortcuts
+		FinishChallengeMessageFrame();
+		return overUi || consumed || toolClick;
+	}
+
+	/// <summary>One pointer delivery; frame timers, keyboard shortcuts and visual animation run in Update only.</summary>
+	private (bool InPark, bool Consumed) DispatchParkPointer( UiContext context, UiInput input, bool overUi, bool consumed,
+		bool rideOwnsInput, bool paused, bool mouseCaptured, bool keyboardCaptured, bool textCaptured )
+	{
 		// The park view's own click is not a button-class 0x100. The hook 0x485780 plays cat_ui 0xBD only when the receiver of 0x100 has style bit 0x10 (the choice at 0x4857cb); this click stays 0x1F.
 		if ( !overUi && !consumed && input.LeftPressed )
 			GameAudio.PlayUi( ParkViewClickEvent );
 
 		// The ride view is a view of one ride: the park's clicks and tools wait until it is left.
-		var rideOwnsInput = ridingAtStart || IsRiding || camcorderOwnsInput;
 		var inPark = !overUi && !consumed && !rideOwnsInput && level.TryGetGridCell( input.Mouse, new NVector2( context.Canvas.Width, context.Canvas.Height ), out cursorX, out cursorY );
 		if ( !inPark )
 			cursorX = cursorY = -1;
 		// Also consume the exit frame: leaving a ride must not activate an armed tool on that same click.
-		var staffToolClick = !rideOwnsInput && (UpdateStaffTool( input, inPark && !mouseCaptured.Value, new NVector2( context.Canvas.Width, context.Canvas.Height ) ) || UpdatePatrolTool( input, inPark && !mouseCaptured.Value )
-			|| UpdateBuyLandTool( input, inPark && !mouseCaptured.Value ) || UpdateAreaClearTool( input, inPark && !mouseCaptured.Value )
-			|| UpdatePoolTool( context, input, inPark && !mouseCaptured.Value ));
+		var staffToolClick = !rideOwnsInput && (UpdateStaffTool( input, inPark && !mouseCaptured, new NVector2( context.Canvas.Width, context.Canvas.Height ) ) || UpdatePatrolTool( input, inPark && !mouseCaptured )
+			|| UpdateBuyLandTool( input, inPark && !mouseCaptured ) || UpdateAreaClearTool( input, inPark && !mouseCaptured )
+			|| UpdatePoolTool( context, input, inPark && !mouseCaptured ));
 		var visitorClick = TrySelectWorldVisitor( input, new NVector2( context.Canvas.Width, context.Canvas.Height ),
-			paused || overUi || consumed || rideOwnsInput || ChatMode || mouseCaptured.Value || keyboardCaptured.Value || textCaptured.Value || staffToolClick || level.StaffPlacement is { IsActive: true } || level.PatrolTool is { IsActive: true }
+			paused || overUi || consumed || rideOwnsInput || ChatMode || mouseCaptured || keyboardCaptured || textCaptured || staffToolClick || level.StaffPlacement is { IsActive: true } || level.PatrolTool is { IsActive: true }
 			|| level.BuyLandTool is { IsActive: true } || level.AreaClearTool is { IsActive: true } || level.PoolTool is { IsActive: true } );
 		var toolClick = staffToolClick || visitorClick || rideOwnsInput || UpdateCoasterTool( context, input, inPark, paused ) || UpdateCellTool( context, input, inPark, paused );
 		// A right click leaves a build tool that Ctrl kept armed (and one still waiting for its first click).
@@ -946,7 +982,6 @@ public sealed partial class ParkHud
 			LeaveBuildTool();
 			toolClick = true;
 		}
-		UpdateBlueprint( inPark && !rideOwnsInput, context.Delta, paused || Status.Speed == GameSpeed.Paused );
 		// [BIN:TPW-EXE:0x487013 hover modes] with Shift alone, or with the visitor locator panel out, the hover handler picks visitors only (IsVisitorPickState) and no object mode is set
 		// [BIN:TPW-EXE:0x4879D0 object click] the object a park click opens is the owner of the hovered cell: the hover handler 0x486d90 sets cursor mode 4 for a hovered cell of map type 4, 9 or 10
 		// with an owner thing (0x527e80; the cell-type switch 0x4875ae, mode 4 at 0x48769f) once no visitor or staff member is hovered, and the click dispatcher's mode 4 (switch 0x487a74) opens that thing's window (0x487c16: 0x486920 by its kind; the modes 8 to 0xc of a hovered staff member open 0x4b6080 instead, 0x487c77); the hovered
@@ -955,7 +990,7 @@ public sealed partial class ParkHud
 		// thing types 1, 4 to 8 and 0x12 (visitors and staff, 0x532d14-0x532d2c; the hovered-thing filter 0x46c110), and the sprite scripts' FRAME op 0x476940 marks its sprite pickable (+0x114 = 1 through 0x540b90) for any frame
 		// but -1, so no ride or shop (thing type 3) is picked by a sprite
 		if ( inPark && !IsVisitorPickState( Locator.Mode, Input.ModifierMaskDown ) && level.BuildEntry == null && !level.IsPlacing && !level.CellTool.IsActive && !level.IsCoasterToolActive && level.StaffPlacement is not { IsActive: true } && level.PatrolTool is not { IsActive: true }
-			&& level.BuyLandTool is not { IsActive: true } && level.AreaClearTool is not { IsActive: true } && level.PoolTool is not { IsActive: true } && input.LeftReleased && !toolPress )
+			&& level.BuyLandTool is not { IsActive: true } && level.AreaClearTool is not { IsActive: true } && level.PoolTool is not { IsActive: true } && input.LeftReleased && !input.NotClick && !toolPress )
 			{
 				var clicked = level.Objects.FindAt( cursorX, cursorY );
 				// [EXT:pools-waves] a deliberate second click on the wave machine that is already selected opens its settings window; selecting it (here or from the attractions list) changes nothing (ParkHud.Pools.cs)
@@ -980,18 +1015,7 @@ public sealed partial class ParkHud
 				GameAudio.PlayPathRefused( refused.X, refused.Y );
 		}
 
-		for ( var index = messages.Count - 1; index >= 0; index-- )
-		{
-			messages[index] = (messages[index].Text, messages[index].Age + context.Delta);
-			if ( messages[index].Age > MessageSeconds )
-				messages.RemoveAt( index );
-		}
-		UpdateCursor( input, overUi || consumed, mouseCaptured == true );
-		Status.Update( context.Delta );
-		SyncRideScreen();
-		PrepareRideStatic( context ); // observe the final camera once, after this frame's callbacks and shortcuts
-		FinishChallengeMessageFrame();
-		return overUi || consumed || toolClick;
+		return (inPark, overUi || consumed || toolClick);
 	}
 
 	/// <summary>The patrol tool's HUD side: the hovered cell, right click leaves, a left click stores a corner or sets the area (tp.exe mode 0x36).</summary>
@@ -1071,8 +1095,11 @@ public sealed partial class ParkHud
 	private bool UpdateCellTool( UiContext context, UiInput input, bool inPark, bool paused )
 	{
 		var tool = level.CellTool;
-		// [BIN:TPW-EXE:0x0048C8D0 pause-menu click gate] while the pause menu is shown the park takes no tool clicks (the gate reads the pause-menu object 0x7c2534 +0xc; the park click handler 0x4879d0 returns before the tool dispatch) and the handler does not read the speed pause flag 0x786b84, so the speed pause keeps the tool live
-		// [APPROX:PATH-017] the P key's window (the global 0x7cb2cc, 0x4a27f0 → 0x47ed80) puts a full-screen layer (0x65dd7b, the 'lolight' backdrop) under the panel 5094 of table 0x752e00; OpenTPW draws neither, and whether the layer stops the click route to 0x4879d0 is not read (the window manager's hit test of the layer classes)
+		// [BIN:TPW-EXE:0x0048C8D0 pause-menu click gate] the handler tests the pause-menu object, not the speed flag;
+		// admission is separate: 0x65db25 chooses the topmost eligible window, and 0x658b1a/0x658b7f save down/up recipients.
+		// [APPROX:PATH-017] ParkHud.PointerInput implements bounded ordinary-WM batch admission then P/pointer drain,
+		// including captured movement and original release owners. Alternate buffered input, aggregate wheel/non-P keys,
+		// and the original backdrop/panel rendering remain outside this contract; a generic speed flag is not an input owner.
 		// The remove tool owns the park click while it is on (Level.RemoveAt clears paths and queues too).
 		if ( paused || level.BuildEntry != null || level.IsPlacing || level.IsRemovingObjects || level.IsCoasterToolActive
 			|| level.PatrolTool is { IsActive: true } || level.StaffPlacement is { IsActive: true } || level.BuyLandTool is { IsActive: true }
@@ -1367,3 +1394,4 @@ public sealed partial class ParkHud
 		return icon;
 	}
 }
+

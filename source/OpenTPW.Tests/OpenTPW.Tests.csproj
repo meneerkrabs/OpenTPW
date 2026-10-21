@@ -16,6 +16,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\OpenTPW\OpenTPW.csproj" />
+    <!-- Alias isolates the browser's Veldrid API from the desktop package used by other tests. -->
+    <ProjectReference Include="..\OpenTPW.Web.Veldrid\OpenTPW.Web.Veldrid.csproj" Aliases="WebInputShim" />
     <ProjectReference Include="..\OpenTPW.Online\OpenTPW.Online.csproj" />
     <ProjectReference Include="..\OpenTPW.Server\OpenTPW.Server.csproj" />
     <ProjectReference Include="..\OpenTPW.ContentKit\OpenTPW.ContentKit.csproj" />

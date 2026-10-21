@@ -16,4 +16,15 @@
 		<SupportedPlatform Include="browser" />
 	</ItemGroup>
 
+	<!-- One neutral input contract is shared by the shim and the browser game, not duplicated. -->
+	<ItemGroup>
+		<Compile Include="../OpenTPW.Common/Client/OrderedInputEvent.cs" Link="Input/OrderedInputEvent.cs" />
+	</ItemGroup>
+
+	<!-- Pure input-parser behavior tests; no browser or graphics initialization is required. -->
+	<ItemGroup>
+		<InternalsVisibleTo Include="OpenTPW.Tests" />
+		<InternalsVisibleTo Include="OpenTPW.Web" />
+	</ItemGroup>
+
 </Project>

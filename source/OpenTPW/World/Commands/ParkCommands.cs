@@ -342,20 +342,31 @@ public sealed class ParkCommands
 	}
 
 	/// <summary>Logs a command and raises <see cref="Applied"/>; a subscriber that throws is logged (and rethrown when strict), so it never takes the funnel down with it.</summary>
+	/// <summary>
+	/// Logs a command and raises <see cref="Applied"/> for it: every subscriber runs, each in its own catch, so one that throws never keeps the others (a session's stream among
+	/// them) from the command; a strict run rethrows the first throw once all have run.
+	/// </summary>
 	private void Record( ParkCommandLogEntry entry, ParkCommandResult result )
 	{
 		if ( log.Add( entry ) )
 			DroppedLog++;
-		try
+		if ( Applied is not { } applied )
+			return;
+		ExceptionDispatchInfo? thrown = null;
+		foreach ( var subscriber in applied.GetInvocationList() )
 		{
-			Applied?.Invoke( entry, result );
+			try
+			{
+				((Action<ParkCommandLogEntry, ParkCommandResult>)subscriber)( entry, result );
+			}
+			catch ( Exception error ) when ( error is not OutOfMemoryException )
+			{
+				Common.GlobalNamespace.Log?.Error( $"A subscriber of the {entry.Command.Kind} command threw: {error}" );
+				if ( Strict )
+					thrown ??= ExceptionDispatchInfo.Capture( error );
+			}
 		}
-		catch ( Exception error ) when ( error is not OutOfMemoryException )
-		{
-			Common.GlobalNamespace.Log?.Error( $"A subscriber of the {entry.Command.Kind} command threw: {error}" );
-			if ( Strict )
-				throw;
-		}
+		thrown?.Throw();
 	}
 }
 

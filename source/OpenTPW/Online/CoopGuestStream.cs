@@ -385,5 +385,8 @@ internal sealed class CoopGuestStream : ILevelSessionStream, IDisposable
 		commands.InTick = previousInTick;
 		commands.Rights = previousRights;
 		commands.Player = previousPlayer;
+		// the park's scripts read the machine's own clock again
+		if ( level.Objects?.ScriptWorld is { } scripts )
+			scripts.SessionTime = null;
 	}
 }

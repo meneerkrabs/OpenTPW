@@ -328,17 +328,24 @@ public class ParkCommandsTests
 		{
 			var park = new Park();
 			park.Commands.Applied += ( _, _ ) => throw new InvalidOperationException( "a broken hook" );
+			// a subscriber after the broken one (a session's stream) still hears every command
+			var heard = 0;
+			park.Commands.Applied += ( _, _ ) => heard++;
 			Assert.IsTrue( park.Commands.Issue( new RemoveAtCommand( 3, 3 ) ).Accepted );
 			park.Commands.Schedule( new RemoveAtCommand( 4, 4 ), 0 );
 			park.Commands.Schedule( new RemoveAtCommand( 5, 5 ), 0 );
 			park.Commands.ApplyDue( 0 );
 			Assert.AreEqual( 3, park.Commands.Log.Count );
+			Assert.AreEqual( 3, heard );
 		} );
 		WithStrict( true, () =>
 		{
 			var park = new Park();
 			park.Commands.Applied += ( _, _ ) => throw new InvalidOperationException( "a broken hook" );
+			var heard = 0;
+			park.Commands.Applied += ( _, _ ) => heard++;
 			Assert.ThrowsException<InvalidOperationException>( () => park.Commands.Issue( new RemoveAtCommand( 3, 3 ) ) );
+			Assert.AreEqual( 1, heard, "the strict throw comes once every subscriber ran" );
 		} );
 	}
 

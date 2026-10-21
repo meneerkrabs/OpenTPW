@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using OpenTPW.Mods;
 using OpenTPW.Online.Coop;
 
 namespace OpenTPW.Tests;
@@ -43,6 +44,8 @@ public class CoopStreamTests
 		public bool Holds { get; set; }
 		/// <summary>This member runs no game frames (a stalled machine, or a hidden tab).</summary>
 		public bool Frozen { get; set; }
+		/// <summary>This member's extensions while it runs its frames (each player's machine has its own); null keeps the process's.</summary>
+		public ModSet? Extensions { get; set; }
 
 		public void Enter()
 		{
@@ -53,6 +56,7 @@ public class CoopStreamTests
 		public void Frame( double seconds )
 		{
 			Enter();
+			using var extensions = Extensions != null ? OpenTpwExtensions.Use( Extensions ) : null;
 			Link.Deliver();
 			Level.SimulationTimeScale = Holds ? 0f : GameSpeedScale.Of( Economy.Speed );
 			Time.Update( (float)seconds );
@@ -141,7 +145,7 @@ public class CoopStreamTests
 	/// <summary>A host and <paramref name="guests"/> guests of one session, all parks alike, their streams attached.</summary>
 	private (Peer Host, Peer[] Guests, CoopTestNetwork Network) Session( int guests, Action<Peer>? prepare = null )
 	{
-		var network = new CoopTestNetwork();
+		var network = new CoopTestNetwork( () => clock );
 		var hostLink = network.Add( host: true );
 		var guestLinks = Enumerable.Range( 0, guests ).Select( _ => network.Add() ).ToArray();
 		var host = NewPeer( hostLink );
@@ -528,6 +532,114 @@ public class CoopStreamTests
 	}
 
 	[TestMethod]
+	public void AHostAloneTrimsItsHistoryPastTheCaps()
+	{
+		// nobody acknowledges a frame and the server confirms none: past the caps the oldest frames handed to the link go, instead of the session ending
+		var random = new Random( 37 );
+		var (host, _, _) = Session( 0 );
+		var line = new string( 'y', 500 );
+		for ( var round = 0; round < 200; round++ )
+		{
+			for ( var index = 0; index < 250; index++ )
+				host.Issue( new RenameParkCommand( line + index % 10, line ) );
+			Round( 1 / 60.0, random );
+		}
+		Assert.IsNull( host.Host!.Failure );
+		Assert.IsTrue( host.Host.OldestFrame > 1, "the oldest frames went" );
+	}
+
+	[TestMethod]
+	public void TheWinterSnowAPlayerSwitchesAloneIsNoDesync()
+	{
+		// the winter snow's cover is presentation each player may switch alone (no part of a session's identity): the host's game draws it, the guest's does not
+		static ModSet Snow( bool on ) => ModSet.Resolve( Array.Empty<DiscoveredMod>(),
+			new ModSettings { Enabled = new Dictionary<string, bool> { [OfficialExtensions.WinterSnow.Id] = on } }, null, GameEdition.ThemeParkWorld, OfficialExtensions.All );
+		var random = new Random( 41 );
+		var (host, guests, _) = Session( 1 );
+		host.Extensions = Snow( true );
+		guests[0].Extensions = Snow( false );
+		Rounds( 240, random );
+		Assert.IsNotNull( host.Level.Snow, "the host's park has a snow cover" );
+		Assert.IsNull( guests[0].Level.Snow, "the guest's has none" );
+		CatchUpAndCompare( host, guests, random );
+		Assert.IsTrue( guests[0].Guest!.Checks >= 2 );
+	}
+
+	[TestMethod]
+	public void ALostTooFarBackIsToldAgain()
+	{
+		var random = new Random( 43 );
+		var (host, guests, _) = Session( 1 );
+		var guest = guests[0];
+		Rounds( 120, random );
+		// the first answer is lost: the guest goes on as if nothing happened, and the host tells it again
+		var lost = 0;
+		guest.Link.DropMessage = ( from, bytes ) => CoopStreamMessage.Decode( bytes ) is CoopTooFarBack && lost++ == 0;
+		guest.Link.Send( host.Link.Id, new CoopResendRequest( 1, 0 ).Encode() );
+		Rounds( 120, random );
+		Assert.IsTrue( lost >= 2, "a second answer came" );
+		Assert.IsTrue( guest.Guest!.Stopped );
+		Assert.AreEqual( CoopGuestState.TooFarBack, guest.Guest.State );
+		var answers = host.Link.Sent.Count( sent => sent.To == guest.Link.Id && sent.Message is CoopTooFarBack );
+		Rounds( 120, random );
+		Assert.AreEqual( answers, host.Link.Sent.Count( sent => sent.To == guest.Link.Id && sent.Message is CoopTooFarBack ), "no more once the guest stopped" );
+	}
+
+	[TestMethod]
+	public void ARepeatedRequestNeverStartsASecondCopy()
+	{
+		// what the host sends takes over a second to reach this guest, so it asks for its missing frame again before the copy arrives
+		var random = new Random( 47 );
+		var (host, guests, _) = Session( 1 );
+		var guest = guests[0];
+		Rounds( 30, random );
+		guest.Link.Latency = 1.2;
+		var target = host.Host!.LastFrame + 3;
+		guest.Link.DropFrame = seq => seq == target;
+		Rounds( 400, random );
+		Assert.IsTrue( guest.Link.Sent.Count( sent => sent.Message is CoopResendRequest ) >= 3, "the guest asked again while the copy was on its way" );
+		var copies = host.Link.Sent.Where( sent => sent.To == guest.Link.Id ).Select( sent => sent.Message ).OfType<CoopResentFrames>()
+			.Sum( resent => resent.Frames.Count( frame => frame.Seq == target ) );
+		Assert.AreEqual( 1, copies, "one copy" );
+		CatchUpAndCompare( host, guests, random );
+	}
+
+	[TestMethod]
+	public void AGuestThatJoinedWhileTheHostWasAwayIsServed()
+	{
+		var random = new Random( 53 );
+		var (host, _, network) = Session( 1 );
+		Rounds( 30, random );
+		// the host's socket is down when a member joins: the host hears of it only in its resume's state
+		host.Link.Drop();
+		var late = network.Add();
+		Rounds( 10, random );
+		host.Link.Resume();
+		Rounds( 10, random );
+		late.Send( host.Link.Id, new CoopProgress( CoopGuestState.Following, host.Host!.LastFrame, host.Level.TickCount, 0 ).Encode() );
+		Rounds( 5, random );
+		Assert.IsTrue( host.Host.WaitedFor.Contains( late.Id ), "the host takes the newcomer's report" );
+	}
+
+	[TestMethod]
+	public void RefusedFramesRewindOnce()
+	{
+		// a frame lost before the server: the server refuses every frame after it with the same number, and those refusals reach the host late
+		var random = new Random( 59 );
+		var (host, guests, network) = Session( 1 );
+		Rounds( 30, random );
+		host.Link.Latency = 0.5;
+		var target = host.Host!.LastFrame + 2;
+		var dropped = false;
+		host.Link.DropToServer = seq => seq == target && !dropped && (dropped = true);
+		Rounds( 120, random );
+		Assert.IsTrue( dropped );
+		Assert.IsTrue( network.Offered.Values.Max() <= 2, $"a frame was offered {network.Offered.Values.Max()} times" );
+		host.Link.Latency = 0;
+		CatchUpAndCompare( host, guests, random );
+	}
+
+	[TestMethod]
 	public void TheSessionClockKeepsLevelsWithDifferentClocksEqual()
 	{
 		// a ride script that writes the hour, the minute and the second into its variables every slice, as Halloween's Haunted Tower writes the hour into the park
@@ -553,5 +665,11 @@ public class CoopStreamTests
 		Assert.IsTrue( guests[0].Level.Objects.ScriptWorld.TryReadCivilTime( out var read ) );
 		Assert.AreEqual( host.Level.Objects.ScriptWorld.SessionTime, read, "the guest's scripts read the session's time, not their machine's" );
 		Assert.IsTrue( host.Level.Commands.Log.Count( entry => entry.Command is SetSessionClockCommand ) >= 4, "a clock command every second" );
+		// the session's clock goes with the session: each park's scripts read their own machine's clock again
+		host.Host!.Dispose();
+		guests[0].Guest!.Dispose();
+		Assert.IsNull( host.Level.Objects.ScriptWorld.SessionTime );
+		Assert.IsNull( guests[0].Level.Objects.ScriptWorld.SessionTime );
+		Assert.IsNull( host.Level.CommandRecorder, "the session's own recording stops with it" );
 	}
 }

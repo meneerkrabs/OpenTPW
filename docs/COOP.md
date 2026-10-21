@@ -86,9 +86,10 @@ host's ticks, checked by digests (`CoopHostStream`, `CoopGuestStream`; the frame
   frame, within a time budget, never past the horizon and never dropping a tick.
 - **Checks.** After every 60th tick (a park second) the host takes the session digest (`CoopDigest`):
   the world hash and what a session shares that the world hash leaves out. That is the placed objects'
-  layout, economy links and run flags; the weather, without the thunder that the frames drain; the
-  snow's cover of the last turn; every player's carried catalogue entry, hand and coaster drag; the
-  pending hire; the coasters' being-edited marks; and the session clock. After a command that threw
+  layout, economy links and run flags; the weather, without the thunder that the frames drain; every
+  player's carried catalogue entry, hand and coaster drag; the pending hire; the coasters'
+  being-edited marks; and the session clock. Presentation a player may switch alone stays out (the
+  winter snow's cover changes no simulation and is no part of a session's identity). After a command that threw
   the host also takes a digest right after it (at most one a frame period). A guest compares each
   digest at the same point, and each record's outcome as it applies. A mismatch is a desync: the
   guest's clock stops, it reports the desync with every progress until the host has seen it, and it

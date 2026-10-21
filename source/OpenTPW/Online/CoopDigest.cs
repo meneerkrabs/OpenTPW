@@ -26,8 +26,9 @@ public partial class Level
 	/// <summary>
 	/// [EXT:online-coop-lockstep] Adds what the session digest covers beyond the world hash (<see cref="CoopDigest"/>): the placed objects in list order and the prototype ride (catalogue
 	/// key, cell, rotation, base, attraction id, deleted flag, economy link, run flags); the weather without its frame-drained thunder queue (<see cref="ParkWeather.TakeThunder"/> empties
-	/// it once a game frame, so at a tick's end it depends on how ticks fell into frames) and the snow cover of the last turn; each player's carried catalogue entry, hand and coaster
-	/// drag, the pending hire and the stale on-pointer candidate, the coasters' being-edited marks; the session clock.
+	/// it once a game frame, so at a tick's end it depends on how ticks fell into frames); each player's carried catalogue entry, hand and coaster drag, the pending hire and the stale
+	/// on-pointer candidate, the coasters' being-edited marks; the session clock. Never presentation a player may switch on or off alone: the snow cover is the winter snow
+	/// extension's, which changes no simulation and is no part of a session's identity, so two peers may differ in it.
 	/// </summary>
 	internal void AddSessionState( StateHasher hash )
 	{
@@ -63,8 +64,6 @@ public partial class Level
 			hash.Add( weather.LastTop.Y );
 			hash.Add( weather.LastTop.Z );
 		}
-		// the cover of the last park turn, never the drawn value the frames ease toward it
-		hash.Add( snow?.Cover ?? -1d );
 
 		hash.Add( carriedEntries?.Count ?? 0 );
 		if ( carriedEntries != null )

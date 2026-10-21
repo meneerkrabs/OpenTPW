@@ -41,6 +41,8 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 	public const int ResendBytesPerSecond = 1 << 20;
 	/// <summary>A repeated resend request within this time of the last resent message leaves the copy on its way alone.</summary>
 	public const double ResendRetrySeconds = 2;
+	/// <summary>A guest told it is too far back that still asks or reports otherwise is told again, at most this often (a message is at most once).</summary>
+	public const double TooFarBackRepeatSeconds = 1;
 
 	private sealed record PendingRecord( long Number, CoopStreamRecord Record );
 	private readonly record struct HistoryFrame( ulong Seq, byte[] Payload );
@@ -79,6 +81,9 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 		public ulong ResendCursor { get; set; }
 		public ulong ResendEnd { get; set; }
 		public double ResendSentAt { get; set; } = double.NegativeInfinity;
+		/// <summary>The frame it was told the host no longer holds, and when (<see cref="GuestPhase.TooFarBack"/>).</summary>
+		public ulong TooFarBackFrom { get; set; }
+		public double TooFarBackSentAt { get; set; } = double.NegativeInfinity;
 		public List<(ulong Seq, int Bytes)> InFlight { get; } = new();
 		public HashSet<uint> Desyncs { get; } = new();
 		public bool Resending => ResendCursor < ResendEnd;
@@ -98,6 +103,9 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 	private readonly bool previousSessionRules;
 	private readonly ParkCommandInTickRule previousInTick;
 	private readonly IParkCommandRights? previousRights;
+	private readonly int previousPlayer;
+	/// <summary>Whether this stream started the level's command recording (and so stops it when the session ends).</summary>
+	private readonly bool recording;
 	private long nextStream = 1;
 	private ulong nextSeq;
 	private ulong sendNext;
@@ -108,6 +116,8 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 	private double resendTokens = ResendBytesPerSecond;
 	private double lastResendRefill;
 	private long? lastClockSecond;
+	/// <summary>The frame the last refusal rewound to: the refusals of the frames that were on their way after it name the same frame and change nothing.</summary>
+	private ulong? rewoundTo;
 	private bool disposed;
 
 	/// <param name="seconds">A monotonic clock in seconds (wall time; the tests' virtual one).</param>
@@ -131,10 +141,13 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 		previousSessionRules = commands.SessionRules;
 		previousInTick = commands.InTick;
 		previousRights = commands.Rights;
+		previousPlayer = commands.Player;
 		commands.SessionRules = true;
 		commands.InTick = ParkCommandInTickRule.Drop;
 		commands.Rights ??= CoopHostOnlyRights.Instance;
 		commands.Player = ParkCommands.LocalPlayer;
+		// the session's stream is recorded from its start, so a desync can be replayed offline (a recording already running is kept)
+		recording = level.CommandRecorder == null;
 		level.StartCommandRecording();
 		commands.Applied += OnApplied;
 		level.TickEnded += OnTickEnded;
@@ -333,6 +346,7 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 	{
 		if ( Failure != null )
 			return;
+		rewoundTo = null;
 		var last = session.LastFrameSeq;
 		if ( session.SeqKnown )
 		{
@@ -354,31 +368,60 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 			// after a server crash its number may be behind frames the guests hold and the host trimmed: it takes any later frame, so the host resends from its oldest
 			sendNext = Math.Min( nextSeq, Math.Max( last + 1, OldestFrame ) );
 		}
+		Reconcile( session );
 		Flush();
 	}
 
+	/// <summary>
+	/// A resume's state is a full refresh, without the member changes of the time the host was away: a guest that joined meanwhile is taken in, one that left goes, and a guest's
+	/// connection is as the state says.
+	/// </summary>
+	private void Reconcile( CoopSessionState session )
+	{
+		var now = seconds();
+		var members = session.Members.Where( member => member.Id != session.You ).ToDictionary( member => member.Id );
+		foreach ( var id in guests.Keys.Where( id => !members.ContainsKey( id ) ).ToList() )
+			guests.Remove( id );
+		foreach ( var member in members.Values )
+		{
+			if ( !guests.TryGetValue( member.Id, out var guest ) )
+				guests[member.Id] = new Guest( member.Id, relayed + 1, now ) { Phase = member.Connected ? GuestPhase.Joining : GuestPhase.Disconnected };
+			else if ( guest.Phase is GuestPhase.Desynced or GuestPhase.TooFarBack )
+				continue;
+			else if ( !member.Connected )
+				guest.Phase = GuestPhase.Disconnected;
+			else if ( guest.Phase == GuestPhase.Disconnected )
+			{
+				guest.Phase = GuestPhase.Joining;
+				guest.Since = now;
+			}
+		}
+	}
+
+	/// <summary>
+	/// The server took a frame out of turn: it holds every frame before <see cref="CoopFrameRefused.Expected"/>, exactly (the host's frames after a crash's resume start above the
+	/// server's number, which it takes), and the host resends from there. Every frame that was on its way after the gap is refused with the same number: only the first refusal
+	/// rewinds.
+	/// </summary>
 	private void OnFrameRefused( CoopFrameRefused refused )
 	{
 		if ( Failure != null )
 			return;
 		var expected = refused.Expected;
-		var known = transport.Session?.SeqKnown ?? true;
+		if ( expected == rewoundTo )
+			return;
 		if ( expected > nextSeq )
 		{
 			Fail( $"The server expects frame {expected}, after the host's last." );
 			return;
 		}
-		if ( known )
-			relayed = Math.Max( relayed, expected - 1 );
+		relayed = Math.Max( relayed, expected - 1 );
 		if ( expected < OldestFrame )
 		{
-			if ( known )
-			{
-				Fail( $"The server needs frame {expected}, which the host no longer holds." );
-				return;
-			}
-			expected = OldestFrame;
+			Fail( $"The server needs frame {expected}, which the host no longer holds." );
+			return;
 		}
+		rewoundTo = expected;
 		sendNext = expected;
 		Flush();
 	}
@@ -472,7 +515,13 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 				guest.Phase = GuestPhase.TooFarBack;
 				return;
 		}
-		if ( guest.Phase is GuestPhase.Desynced or GuestPhase.TooFarBack )
+		// a guest told it is too far back that reports otherwise has not heard it
+		if ( guest.Phase == GuestPhase.TooFarBack )
+		{
+			RepeatTooFarBack( guest, now );
+			return;
+		}
+		if ( guest.Phase == GuestPhase.Desynced )
 			return;
 		var behind = level.TickCount - progress.Ticks;
 		if ( guest.Phase != GuestPhase.Following )
@@ -505,12 +554,28 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 		guest.CatchingUpSince = null;
 		guest.ResendCursor = guest.ResendEnd = 0;
 		guest.InFlight.Clear();
+		guest.TooFarBackFrom = from;
+		guest.TooFarBackSentAt = seconds();
 		transport.Send( guest.Id, new CoopTooFarBack( from ).Encode() );
+	}
+
+	/// <summary>Tells a guest again that it is too far back, at most every <see cref="TooFarBackRepeatSeconds"/>: the first message may have been lost.</summary>
+	private void RepeatTooFarBack( Guest guest, double now )
+	{
+		if ( now - guest.TooFarBackSentAt < TooFarBackRepeatSeconds )
+			return;
+		guest.TooFarBackSentAt = now;
+		transport.Send( guest.Id, new CoopTooFarBack( guest.TooFarBackFrom ).Encode() );
 	}
 
 	private void Request( Guest guest, CoopResendRequest request, double now )
 	{
-		if ( guest.Phase is GuestPhase.Desynced or GuestPhase.TooFarBack || request.From == 0 )
+		if ( guest.Phase == GuestPhase.TooFarBack )
+		{
+			RepeatTooFarBack( guest, now );
+			return;
+		}
+		if ( guest.Phase == GuestPhase.Desynced || request.From == 0 )
 			return;
 		if ( request.From < OldestFrame )
 		{
@@ -520,8 +585,9 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 		var end = request.To == 0 ? nextSeq : Math.Min( request.To, nextSeq );
 		if ( request.From >= end )
 			return;
-		// a repeated request moves the cursor: it never starts a second copy while the last one is still on its way
-		if ( guest.Resending && request.From >= guest.ResendFrom && request.From <= guest.ResendCursor && now - guest.ResendSentAt < ResendRetrySeconds )
+		// a repeated request (with each progress while the gap lasts, and after the guest's resume) never starts a second copy while the last one may still be on its way:
+		// it only extends the copy
+		if ( request.From >= guest.ResendFrom && request.From <= guest.ResendCursor && now - guest.ResendSentAt < ResendRetrySeconds )
 		{
 			guest.ResendEnd = Math.Max( guest.ResendEnd, end );
 			return;
@@ -570,8 +636,9 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 	}
 
 	/// <summary>
-	/// Drops the frames no guest needs any more and the server is known to hold, oldest first; past the caps (10,000 frames, 32 MiB) the oldest go even if a guest still needs them
-	/// (it is told to resync when it asks), but never a frame the server is not known to hold.
+	/// Drops the frames no guest needs any more and the server is known to hold, oldest first. Past the caps (10,000 frames, 32 MiB) the oldest frames handed to the link go even if
+	/// a guest still needs them or the server never confirmed them (the server confirms nothing until a resume, a refusal or a guest's acknowledgement, so a host alone would never
+	/// trim): a guest that asks for one is told to resync, and a server that names one after a restart ends the session. A frame not yet handed to the link never goes.
 	/// </summary>
 	private void Trim()
 	{
@@ -589,7 +656,7 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 		var drop = 0;
 		var droppedBytes = 0L;
 		while ( drop < history.Count && (history[drop].Seq < keepFrom
-			|| (history.Count - drop > MaximumHistoryFrames || historyBytes - droppedBytes > MaximumHistoryBytes) && history[drop].Seq <= relayed && history[drop].Seq < sendNext) )
+			|| (history.Count - drop > MaximumHistoryFrames || historyBytes - droppedBytes > MaximumHistoryBytes) && history[drop].Seq < sendNext) )
 		{
 			droppedBytes += history[drop].Payload.Length;
 			drop++;
@@ -600,7 +667,7 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 			historyBytes -= droppedBytes;
 		}
 		if ( history.Count > MaximumHistoryFrames || historyBytes > MaximumHistoryBytes )
-			Fail( "The host's frames the server has not taken outgrew the history." );
+			Fail( "The host's frames the link has not taken outgrew the history." );
 	}
 
 	/// <summary>Ends the session for everyone with <paramref name="reason"/>: the stream cannot go on without skipping or losing a record.</summary>
@@ -633,5 +700,11 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 		commands.SessionRules = previousSessionRules;
 		commands.InTick = previousInTick;
 		commands.Rights = previousRights;
+		commands.Player = previousPlayer;
+		// the park's scripts read the machine's own clock again
+		if ( level.Objects?.ScriptWorld is { } scripts )
+			scripts.SessionTime = null;
+		if ( recording )
+			level.StopCommandRecording();
 	}
 }

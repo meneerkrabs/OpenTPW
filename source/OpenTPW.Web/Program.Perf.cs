@@ -812,10 +812,6 @@ internal static class PerfReachability
 		return totals.OrderByDescending( entry => entry.Bytes ).Take( top ).ToList();
 	}
 
-	/// <summary>
-	/// Bytes of the arrays of numbers (and strings) reachable from <paramref name="value"/>, counting only objects not yet in <paramref name="seen"/> (which it fills), so a
-	/// caller walking several roots counts every object once.
-	/// </summary>
 	/// <summary>When set, the walks count every object they visit by its type (<see cref="Program.PerfObjectCounts"/>).</summary>
 	internal static Dictionary<Type, int>? TypeCounts;
 
@@ -843,6 +839,10 @@ internal static class PerfReachability
 		return 8 + 4 * fields;
 	}
 
+	/// <summary>
+	/// Bytes of the arrays of numbers (and strings) reachable from <paramref name="value"/>, counting only objects not yet in <paramref name="seen"/> (which it fills), so a
+	/// caller walking several roots counts every object once.
+	/// </summary>
 	private static long ArrayBytesFrom( object value, HashSet<object> seen, int maximumObjects )
 	{
 		long bytes = 0;
@@ -1013,11 +1013,6 @@ internal static class PerfReachability
 			foreach ( var field in type.GetFields( System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.DeclaredOnly ) )
 			{
 				object? child;
-				if ( field == null )
-				{
-					Unreadable.Add( $"{type.FullName}: a null field" );
-					continue;
-				}
 				try
 				{
 					if ( field.FieldType.IsPrimitive || field.FieldType.IsPointer )

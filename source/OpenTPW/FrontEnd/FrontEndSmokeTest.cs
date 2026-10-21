@@ -132,16 +132,28 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 	private int lobbyTestShadersBeforePark = -1;
 	private static int TestShaderCount() => Asset.All.OfType<Shader>().Count( shader => System.IO.Path.GetFileName( shader.Path ) == "test.shader" );
 	/// <summary>
-	/// The textures alive that were not loaded by path (made from bytes or for a render target), with where they were made; the type signs
-	/// <see cref="ObjectSigns"/> keeps for the session on purpose are left out.
+	/// The textures alive that were not loaded by path (made from bytes or for a render target), counted by size. The textures kept for the session
+	/// on purpose are left out: the type signs of <see cref="ObjectSigns"/>, the bonus-content textures of <see cref="OriginalObject"/>,
+	/// <see cref="Texture.Missing"/> and <see cref="Texture.SignBoard"/>. By size rather than in total, so a texture left behind and an unrelated
+	/// one released cannot cancel out; the lobby makes its sign textures anew on every return, so the textures themselves differ.
 	/// </summary>
-	private static (int Count, string Origins) PathlessTextures()
+	private static Dictionary<string, int> PathlessTextures()
 	{
-		var kept = ObjectSigns.SessionTextures().ToHashSet();
-		var textures = Asset.All.OfType<Texture>().Where( texture => string.IsNullOrEmpty( texture.Path ) && !kept.Contains( texture ) ).ToList();
-		return (textures.Count, string.Join( ", ", textures.GroupBy( texture => texture.Origin ?? "?" ).OrderBy( group => group.Key ).Select( group => $"{group.Key} x{group.Count()}" ) ));
+		var kept = ObjectSigns.SessionTextures().Concat( OriginalObject.SessionTextures() ).Append( Texture.Missing ).Append( Texture.SignBoard ).ToHashSet();
+		return Asset.All.OfType<Texture>().Where( texture => string.IsNullOrEmpty( texture.Path ) && !kept.Contains( texture ) )
+			.GroupBy( texture => $"{texture.Width}x{texture.Height}" ).ToDictionary( group => group.Key, group => group.Count() );
 	}
-	private (int Count, string Origins) lobbyPathlessTexturesBeforePark = (-1, "");
+
+	/// <summary>The sizes whose count differs from <paramref name="before"/>, with where the textures of those sizes alive now were made (empty when none differs).</summary>
+	private static string PathlessTextureChanges( Dictionary<string, int> before )
+	{
+		var now = PathlessTextures();
+		var changed = before.Keys.Union( now.Keys ).Where( size => before.GetValueOrDefault( size ) != now.GetValueOrDefault( size ) ).OrderBy( size => size ).ToList();
+		return string.Join( "; ", changed.Select( size => $"{size}: {before.GetValueOrDefault( size )} -> {now.GetValueOrDefault( size )} (" + string.Join( ", ",
+			Asset.All.OfType<Texture>().Where( texture => string.IsNullOrEmpty( texture.Path ) && $"{texture.Width}x{texture.Height}" == size ).Select( texture => texture.Origin ?? "?" ) ) + ")" ) );
+	}
+
+	private Dictionary<string, int> lobbyPathlessTexturesBeforePark = new();
 	private Asset[] secondParkHeadAssets = Array.Empty<Asset>();
 	private Asset[] firstParkGuestAssets = Array.Empty<Asset>();
 	private Asset[] secondParkGuestAssets = Array.Empty<Asset>();
@@ -1459,8 +1471,8 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 			Require( Texture.Missing.NativeTexture is { IsDisposed: false } && Asset.All.OfType<Texture>().All( texture => texture.NativeTexture is not { IsDisposed: true } ), "no live texture lost its GPU texture when the park's materials were released" );
 			// Every park made a new area texture for its blueprint markers and none was released (one more texture per visit for the session):
 			// the textures not loaded by path are those of the lobby again, as before the park.
-			var pathless = PathlessTextures();
-			Require( pathless.Count == lobbyPathlessTexturesBeforePark.Count, $"leaving a park releases every texture it made from bytes ({lobbyPathlessTexturesBeforePark.Count} before: {lobbyPathlessTexturesBeforePark.Origins}; {pathless.Count} after: {pathless.Origins})" );
+			var changes = PathlessTextureChanges( lobbyPathlessTexturesBeforePark );
+			Require( changes.Length == 0, $"leaving a park releases every texture it made from bytes (textures not loaded by path, by size: {changes})" );
 			if ( parkLanguage != null )
 				Require( string.Equals( GameLanguage.Current.Name, parkLanguage, StringComparison.OrdinalIgnoreCase ) && flow.Strings.Language == parkLanguage,
 					"a language chosen in the park applies once the park is left" );
@@ -1484,8 +1496,8 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 		Wait( "instant action returns to lobby", 3 );
 		Do( "load original park after Instant Action", () =>
 		{
-			var pathless = PathlessTextures();
-			Require( pathless.Count == lobbyPathlessTexturesBeforePark.Count, $"a second park leaves no texture made from bytes behind either ({lobbyPathlessTexturesBeforePark.Count} before the first park; {pathless.Count} now: {pathless.Origins})" );
+			var changes = PathlessTextureChanges( lobbyPathlessTexturesBeforePark );
+			Require( changes.Length == 0, $"a second park leaves no texture made from bytes behind either (by size, against the lobby before the first park: {changes})" );
 			Texture.TrackOrigins = false;
 			flow.LoadPark( new ParkLoadEntry( "jungle", 0, false ) );
 			builtInOneGo = (flow.Level!.ComputeStateHash(), Entity.All.Count, flow.Level.Objects.Objects.Count);

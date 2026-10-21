@@ -267,6 +267,7 @@ public partial class Texture : Asset
 		lock ( wctTextures )
 		{
 			wctTextures.RemoveAll( reference => !reference.TryGetTarget( out _ ) );
+			wctPruneAt = Math.Max( 256, wctTextures.Count * 2 );
 			foreach ( var reference in wctTextures )
 				if ( reference.TryGetTarget( out var texture ) && seen.Add( texture.wctPath! ) )
 					result.Add( (texture.wctPath!, texture.wctFlags) );

@@ -656,6 +656,8 @@ const scenarios = {
 			const settleBegin = Date.now();
 			while ((await page.eval('opentpwPerf.counters().soundDecodesInFlight')) > 0 && Date.now() - settleBegin < 60000)
 				await sleep(250);
+			if ((await page.eval('opentpwPerf.counters().soundDecodesInFlight')) > 0)
+				console.warn(`switch ${name}: a sound decode was still in flight after 60 s; this point counts its buffers`);
 			await page.eval('opentpwPerf.program.PerfCollect()');
 			const memory = await page.memory();
 			const stale = memory.levelsAlive > (name.startsWith('lobby') ? 0 : 1) ? JSON.parse(await page.eval('opentpwPerf.program.PerfStaleLevelPaths()', 120000)) : [];

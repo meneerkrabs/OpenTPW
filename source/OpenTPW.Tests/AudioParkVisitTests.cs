@@ -13,7 +13,7 @@ namespace OpenTPW.Tests;
 /// <summary>
 /// The sound system across park visits, with the original data (inconclusive without OPENTPW_GAME_PATH) and a mixer without an output
 /// device: every visit (the lobby, a Jungle park with its music, placed ambients, crowd, a scream and a few effects, then the lobby again)
-/// must leave the same holdings behind (docs/BROWSER-PERFORMANCE.md, "Memory").
+/// must leave the same holdings behind (docs/BROWSER-PERFORMANCE.md, "The AudioMixer root across visits").
 /// </summary>
 [TestClass]
 [DoNotParallelize]
@@ -88,17 +88,18 @@ public class AudioParkVisitTests
 			GameAudio.LeavePark();
 			GameAudio.EnterLobby( "jungle" );
 			Run( mixer, 40 );
-			Settle( mixer );
-			after.Add( GameAudio.Counts!.Value );
+			after.Add( Settle( mixer ) );
 			Console.WriteLine( $"visit {visit + 1}: {after[^1]}" );
 		}
 		for ( var visit = 1; visit < after.Count; visit++ )
 		{
 			var (first, now) = (after[0], after[visit]);
 			Assert.AreEqual( 0, now.DecodesInFlight, $"visit {visit + 1}: settled" );
-			Assert.AreEqual( first with { VoiceSampleBytes = 0, DecodedBytes = 0, DecodedSamples = 0 }, now with { VoiceSampleBytes = 0, DecodedBytes = 0, DecodedSamples = 0 },
+			// EnterLobby takes no seed: the lobby's sentences draw their segments from the shared chooser, so the voices of a sentence between two
+			// segments (the ending one and its successor) and the PCM held may differ from the first visit, but by the segment playing, not by visit
+			Assert.AreEqual( first with { Voices = 0, VoiceSampleBytes = 0, DecodedBytes = 0, DecodedSamples = 0 }, now with { Voices = 0, VoiceSampleBytes = 0, DecodedBytes = 0, DecodedSamples = 0 },
 				$"visit {visit + 1} holds what the first held" );
-			// the lobby's own sentences draw their segments, so the PCM held differs by the segment playing, not by visit
+			Assert.IsTrue( now.Voices <= 2 * now.Sentences, $"visit {visit + 1}: at most an ending and a starting voice per running sentence: {now}" );
 			Assert.IsTrue( now.VoiceSampleBytes + now.DecodedBytes <= Math.Max( first.VoiceSampleBytes + first.DecodedBytes, 1 ) * 3,
 				$"visit {visit + 1}: {now.VoiceSampleBytes + now.DecodedBytes} PCM bytes against {first.VoiceSampleBytes + first.DecodedBytes} after the first" );
 		}
@@ -118,12 +119,23 @@ public class AudioParkVisitTests
 		}
 	}
 
-	/// <summary>Runs frames until no sample decode is in flight (the decodes run on worker threads here).</summary>
-	private static void Settle( AudioMixer mixer )
+	/// <summary>
+	/// Runs frames until no sample decode is in flight (the decodes run on worker threads here) on three checks in a row, and returns the counts of
+	/// the last check, so no frame runs between the check and the counts read.
+	/// </summary>
+	private static SoundSystemCounts Settle( AudioMixer mixer )
 	{
 		var clock = Stopwatch.StartNew();
-		while ( GameAudio.Counts!.Value.DecodesInFlight > 0 && clock.Elapsed < TimeSpan.FromSeconds( 60 ) )
+		var quiet = 0;
+		while ( clock.Elapsed < TimeSpan.FromSeconds( 60 ) )
+		{
 			Run( mixer, 1 );
-		Run( mixer, 2 );
+			var counts = GameAudio.Counts!.Value;
+			quiet = counts.DecodesInFlight == 0 ? quiet + 1 : 0;
+			if ( quiet >= 3 )
+				return counts;
+		}
+		Assert.Fail( $"a sample decode was still in flight after 60 s: {GameAudio.Counts}" );
+		return default;
 	}
 }

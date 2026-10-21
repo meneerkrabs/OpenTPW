@@ -397,6 +397,9 @@ public class OriginalObject : Entity, IPointLightSource, IObjectPickShape
 
 	private static readonly Dictionary<string, Texture> bonusTextures = new( StringComparer.OrdinalIgnoreCase );
 
+	/// <summary>The bonus-content textures made so far, kept for the session on purpose (for the tests that count what a park leaves behind).</summary>
+	internal static Texture[] SessionTextures() => bonusTextures.Values.ToArray();
+
 	/// <summary>Game-data textures go through the shared texture cache; bonus-content textures are decoded from their own root.</summary>
 	private static Texture LoadTexture( ObjectCatalogEntry entry, string name ) => TryLoadTexture( entry, name ) ?? Texture.Missing;
 

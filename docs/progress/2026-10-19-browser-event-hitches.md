@@ -24,6 +24,13 @@ Four behaviour-preserving changes made the difference:
 World hashes, sign hashes and determinism pins did not move.
 
 Remaining hitches are listed in docs/BROWSER-PERFORMANCE.md under "Event hitches":
-- the entering frame (live capture and advisor creation);
+- the entering frame (first draw and park HUD);
 - the autosave capture (37 ms);
 - the first preview of a ride with a sign (55 ms).
+
+The entering frame fell further, from 216 to 85 ms, on builds after merging origin/main (medians of three runs):
+- the first restart snapshot is now validated after entering, in steps;
+- the capture's code is warmed during the build;
+- the advisor's settings, models, clip lengths and theme costume are read during the build.
+
+The restart snapshot's guarantees are unchanged: the capture still happens in the entering frame, and the pending marker still blocks an earlier park until the snapshot is committed. The first draw (19 ms) and the HUD (16 ms) remain.

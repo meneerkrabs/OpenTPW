@@ -620,11 +620,35 @@ The build of a park now takes about 35 frames instead of 16, each within the 12 
 - **Park entry prepared in steps.** After the park is built and before it is entered, `GameFlow.PumpParkBuild` makes, in budgeted steps, what the first restart snapshot needs. One part is the JSON metadata of every type the snapshot reaches (`ParkResumeJson.WarmupSteps`), deepest first. The other is the asset manifest, one catalogue archive per step (`Level.PrepareAutosaveAssets`), which the snapshot and the autosave then reuse. Entering gets a frame of its own. The snapshot's bytes do not change. A refusal during the steps is left for the snapshot to report as before. Tests: `TheCodecsMetadataIsMadeInStepsAndChangesNoByte`, `TheStepsOfASyntheticParkMakeTheSameManifestInSeveralFrames` and `APreparedParkKeepsTheManifestItsStepsMadeForItsSnapshot`.
 - **File system answers remembered.** With `CacheLookups` (the browser's game data), `BaseFileSystem` remembers whether a path exists on disk and each directory's listing, under the same invalidation as its other lookups. The case correction of a path inside an archive therefore stops testing and listing every directory along it for each member. With remembered answers, the walk also replaces the whole-path test. `FileSystemLookupCacheTests` compares the cached and uncached answers on mixed-case synthetic paths and on every Jungle path in three spellings.
 
+### The entering frame (October 21)
+
+After the changes above, the frame that enters the park still took 147 ms. The rest of it came from the runtime's first-call work (method initialization and generic instantiation in the AOT build) and from file reads that only the entering frame made. Measured on published AOT builds of this branch after merging origin/main `926db9535`, without (before) and with (after) the changes below, same machine and harness as above, medians of three runs, in milliseconds. The `FrameMarks` names in the table come from the entering frame:
+
+| Part of the entering frame | Before | After |
+| --- | ---: | ---: |
+| Whole frame (also the largest frame of the park start) | 216 | 85 |
+| Construction part (the last entry of the build-frame list) | 134 | 35 |
+| Restart capture (`load:restart-capture`) | 71 | 7 |
+| Advisor creation (`load:advisor`) | 37 | 6 |
+| First speech (`advisor.play`; 5-6 ms of it is the first 5 ms decode slice) | 14 | 8 |
+| First draw (`frame.draw`) | 19 | 19 |
+| Park HUD, created and first update (`load:park-hud`, `park.hud`) | 23 | 16 |
+| Park ready after the click | 9,199 | 9,147 |
+| Largest frame before entering | 74 | 75 |
+
+The build takes 38 frames instead of 34. No frame of 40 ms or more follows the entering one. The other events of the `events` scenario stayed within noise.
+
+- **Validation after entering, in steps.** `ParkResumeSaveFile.ValidateSnapshotSteps` runs the same checks as `ValidateSnapshot`, in the same order, with a pause between groups of them. The first restart snapshot's write runs at least one step per slice, before its serialization (`[EXT:restart-snapshot-deferred-validation]`). The live capture still happens in the entering frame, between two ticks. The snapshot needs the advisor attached there, and the park's first update runs in that same frame. The pending marker is written in the entering frame as before, so a crash before the validation ends never restarts into an earlier park. A refusal removes the snapshot and the marker, as a refused capture did. Restart, park replacement and shutdown finish the steps at once. Because the steps include the shape check, the serialization does not repeat it. Tests: `DeferredValidationRunsInSlicesOfItsOwnAndTheBytesAreUnchanged`, `ARefusedDeferredValidationLeavesNoRestartPointAsARefusedCaptureDid` and `TheValidationInStepsIsTheWholeValidation`.
+- **The capture's code warmed in the build.** `Level.WarmResumeCaptureSteps` runs the capture parts that only read the park once and drops their results: the economy, layout, guest, thing-pool, script-world, weather, gate, staff, ride, pool, tour and extension captures, which the periodic autosave also runs on a live park. The economy capture alone fell from 14 to 0.6 ms in the entering frame. Runtime captures stay out because they prune effect records. Test: `TheCaptureWarmUpOfAParkBuildChangesNeitherTheParkNorItsSnapshot`, which checks the state hash and the snapshot bytes.
+- **The advisor's reads in the build.** `AdvisorEntryPreparation` reads what the advisor's creation and first line read: `Advisor.sam`, the global and the level advisor model, the clip lengths of both archives and the theme costume. It also loads the shipped response, caption and costume tables (`[EXT:park-entry-preparation]`). Each result is taken once, only by its own reader and only from the file system it was read from. A failed read is not kept, so its reader meets the failure and reports it as before. What a read logged is held (`Logger.BeginCapture`) and written when its result is taken. Whatever the park's first update did not take is dropped and disposed. Tests: `AdvisorEntryPreparationTests`.
+
+The welcome line's PCM is still decoded over frames (the sliced path above), starting in the entering frame. Which line comes first is the controller's choice in that frame, so it is not decoded ahead. The first draw did not change. The CPU profile of that frame did not name its cost, because the profile's window and the frame did not line up. Pipelines are already created with their materials during the build.
+
 ### Remaining hitches
 
 | Hitch | Worst frame | Cause | What a fix would take |
 | --- | ---: | --- | --- |
-| Entering the park | 147 ms | live restart capture (82 ms, mostly `ValidateSnapshot`), advisor creation (58 ms; `AdvisorBalance` parsing runs partly in the interpreter: `mono_interp_exec_method` under `AdvisorTables`), first speech play (22 ms), first draw (19 ms) | create the advisor during the build steps; validate the captured snapshot in the serialization slices (the capture itself must stay in one frame) |
+| Entering the park | 85 ms | first draw (19 ms), park HUD creation and first update (16 ms), first speech with its first decode slice (8 ms), live capture (7 ms), advisor creation (6 ms) | find what the first draw spends (a profile aligned with the frame); create the HUD in a build step |
 | Autosave capture | 37 ms, once per autosave interval | `CaptureResumeSnapshot` and its validation in the frame the autosave is due | the same deferred validation; a cheaper capture of the cell layout |
 | First buy preview of a ride with a sign | 55 ms | the sign's effects: `Ext.Add` in `SignEffectShape.Blur` and the relief's square roots through `BigInteger` (`Ext.IntegerSquareRoot`) | a word-pair square root and add-free blur passes, or composing the sign over frames before the preview shows it |
 | Park build steps | 73-83 ms | the economy's catalogue and balance parsing; the gate sign; guest sprite atlases | split those steps further (each is one step of `Level.Construct` now) |

@@ -302,6 +302,9 @@ public static class GameAudio
 	/// <summary>Bytes of the decoded samples the sound events keep (<see cref="SoundEventSystem.DecodedBytes"/>).</summary>
 	public static long DecodedSampleBytes => events?.DecodedBytes ?? 0;
 
+	/// <summary>What the sound system holds (<see cref="SoundEventSystem.Counts"/>); null before it starts.</summary>
+	public static SoundSystemCounts? Counts => events?.Counts();
+
 	public static void EnterPark( string level, uint? seed = null )
 	{
 		if ( !EnsureStarted() )

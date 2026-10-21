@@ -60,6 +60,10 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 	public const uint RetrySeconds = 5;
 	/// <summary>The least time between two repeats of an outstanding assignment to a member still on an older generation.</summary>
 	public const double ReassignSeconds = 1;
+	/// <summary>An upload that has not answered for this long is given up for now (its late answer is ignored), so no lost answer holds the captures back.</summary>
+	public const double UploadSeconds = 180;
+	/// <summary>The longest wait a failure for now asks of a member.</summary>
+	public const uint MaximumRetrySeconds = 3600;
 
 	private sealed record PendingRecord( long Number, CoopStreamRecord Record );
 	private readonly record struct HistoryFrame( ulong Seq, byte[] Payload );
@@ -138,10 +142,14 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 		public ulong WorldHash { get; } = worldHash;
 		public CoopJoinPayloadWriter? Writer { get; private set; }
 		public byte[]? Payload { get; private set; }
-		public bool Uploading { get; set; }
+		/// <summary>When the upload started; null before it.</summary>
+		public double? UploadingSince { get; set; }
 
-		/// <summary>One slice of the work: the save's serialization, then the payload's compression; true once the payload is complete. A park past the save's cap throws.</summary>
-		public bool Step( TimeSpan budget )
+		/// <summary>
+		/// One slice of the work: the save's serialization, then the payload's compression; true once the payload is complete. A save past <paramref name="maximumSave"/> bytes throws
+		/// <see cref="InvalidDataException"/> (the park is too large).
+		/// </summary>
+		public bool Step( TimeSpan budget, int maximumSave )
 		{
 			if ( Payload != null )
 				return true;
@@ -149,7 +157,10 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 			{
 				if ( !save.Run( budget ) )
 					return false;
-				Writer = new CoopJoinPayloadWriter( new CoopJoinPayload( Generation, Records, Ticks, Frame, Digest, WorldHash, state, ParkResumeSaveFile.CheckSize( save.Bytes ) ) );
+				var bytes = save.Bytes;
+				if ( bytes.Length > maximumSave )
+					throw new InvalidDataException( "World save exceeds the size limit." );
+				Writer = new CoopJoinPayloadWriter( new CoopJoinPayload( Generation, Records, Ticks, Frame, Digest, WorldHash, state, bytes ) );
 				return false;
 			}
 			if ( !Writer.Run( budget ) )
@@ -199,6 +210,8 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 	private double? collectSince;
 	private double? heldSince;
 	private JoinCapture? capture;
+	/// <summary>The uploads that failed for now in a row: each waits twice as long as the last, so a spent server limit is not asked for every few seconds.</summary>
+	private int uploadFailures;
 
 	/// <param name="seconds">A monotonic clock in seconds (wall time; the tests' virtual one).</param>
 	/// <param name="localTime">The host's civil clock the session clock samples.</param>
@@ -293,6 +306,12 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 
 	/// <summary>The time a frame spends on a capture's serialization and compression (the periodic autosave's slice).</summary>
 	internal TimeSpan CaptureSliceBudget { get; set; } = TimeSpan.FromMilliseconds( 2 );
+
+	/// <summary>The largest save a capture takes (the save's own cap; the tests lower it).</summary>
+	internal int MaximumSaveBytes { get; set; } = ParkResumeSaveFile.MaximumFileSize;
+
+	/// <summary>Test seam: runs as a capture is taken, at the cut; a throw is a park that cannot be captured.</summary>
+	internal Action<Level>? CaptureFault { get; set; }
 
 	public void AdvanceSimulation( double frameSeconds, float timeScale )
 	{
@@ -708,23 +727,29 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 	{
 		if ( capture is { } running )
 		{
-			if ( running.Uploading )
+			if ( running.UploadingSince is { } since )
+			{
+				// an answer that never comes holds no capture back: the upload is given up for now
+				if ( now - since >= UploadSeconds )
+					Uploaded( running, CoopSnapshotTransfer.Failed( "The upload did not answer." ) );
 				return;
+			}
 			bool complete;
 			try
 			{
-				complete = running.Step( CaptureSliceBudget );
+				complete = running.Step( CaptureSliceBudget, MaximumSaveBytes );
 			}
-			catch ( Exception error ) when ( error is InvalidDataException or InvalidOperationException )
+			catch ( Exception error ) when ( error is not OutOfMemoryException )
 			{
 				capture = null;
-				Log.Warning( $"The shared park is too large for a join snapshot: {error.Message}" );
-				Answer( running.Members, running.Generation, new CoopSnapshotFailed( CoopSnapshotFailure.TooLarge, true, 0 ) );
+				var tooLarge = error is InvalidDataException;
+				Log.Warning( $"The shared park {(tooLarge ? "is too large for" : "could not be written as")} a join snapshot: {error.Message}" );
+				Answer( running.Members, running.Generation, new CoopSnapshotFailed( tooLarge ? CoopSnapshotFailure.TooLarge : CoopSnapshotFailure.Uncapturable, true, 0 ) );
 				return;
 			}
 			if ( complete )
 			{
-				running.Uploading = true;
+				running.UploadingSince = now;
 				transport.UploadSnapshot( running.Payload!, result => Uploaded( running, result ) );
 			}
 			return;
@@ -755,12 +780,15 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 		var frame = LastFrame;
 		try
 		{
+			CaptureFault?.Invoke( level );
 			var digest = CoopDigest.Compute( level, out var world );
 			var state = level.CaptureJoinState();
+			_ = state.Encode();
 			var save = ParkResumeSaveFile.BeginSlicedSerialize( level.CaptureJoinSnapshot() );
 			capture = new JoinCapture( generation, members, records, ticks, frame, digest, world, state, save );
 		}
-		catch ( Exception error ) when ( error is InvalidOperationException or InvalidDataException )
+		// a park the save path refuses (catalogue defaults it cannot write, an object without its binding, a key past a bound): nothing is captured, and the members hear why
+		catch ( Exception error ) when ( error is not OutOfMemoryException )
 		{
 			Log.Warning( $"The shared park could not be captured for a join: {error.Message}" );
 			Answer( members, generation, new CoopSnapshotFailed( CoopSnapshotFailure.Uncapturable, true, 0 ) );
@@ -787,14 +815,19 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 		capture = null;
 		if ( result.Succeeded )
 		{
+			uploadFailures = 0;
 			CaptureStored?.Invoke( running.Generation, running.Payload! );
 			Answer( running.Members, running.Generation, new CoopSnapshotReady( running.Records, running.Ticks, running.Frame, running.Digest, running.WorldHash, result.Sha256!,
 				running.Payload!.Length ) );
 			return;
 		}
 		Log.Warning( $"The shared park's join snapshot could not be uploaded: {result.Failure}" );
+		// a server's Retry-After may name a past date: the wait is at least a second and at most an hour, and grows with the failures in a row
+		uploadFailures++;
+		var backOff = RetrySeconds * Math.Pow( 2, Math.Min( uploadFailures - 1, 10 ) );
+		var retry = Math.Clamp( Math.Max( result.RetryAfter?.TotalSeconds ?? 0, backOff ), 1, MaximumRetrySeconds );
 		Answer( running.Members, running.Generation, new CoopSnapshotFailed( result.TooLarge ? CoopSnapshotFailure.TooLarge : result.Permanent ? CoopSnapshotFailure.Uncapturable
-			: CoopSnapshotFailure.Busy, result.Permanent, (uint)Math.Ceiling( (result.RetryAfter ?? TimeSpan.FromSeconds( RetrySeconds )).TotalSeconds ) ) );
+			: CoopSnapshotFailure.Busy, result.Permanent, (uint)Math.Ceiling( retry ) ) );
 	}
 
 	/// <summary>Answers the members still assigned capture <paramref name="generation"/>; the answer is kept for the repeats.</summary>
@@ -842,8 +875,9 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 			return;
 		var behind = level.TickCount - progress.Ticks;
 		// [EXT:online-coop-snapshot-join] a joiner catches up within a join window of its own: its smallest lag plus the ordinary window, so its lag never grows by more than that and the park
-		// runs on while it catches up; once that lag is within the ordinary window it is an ordinary following guest
-		if ( first || guest.JoinWindow != null )
+		// runs on while it catches up; once that lag is within the ordinary window it is an ordinary following guest. Back from a stall or a reconnect, its report decides by its join window
+		// as an ordinary guest's does by the ordinary one, so a joiner that fell further behind meanwhile stops no park
+		if ( first || (guest.JoinWindow != null && guest.Phase == GuestPhase.Following) )
 		{
 			guest.SmallestLag = Math.Min( guest.SmallestLag ?? long.MaxValue, Math.Max( 0, behind ) );
 			guest.JoinWindow = guest.SmallestLag <= WindowTicks ? null : guest.SmallestLag + WindowTicks;
@@ -852,7 +886,7 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 			return;
 		}
 		if ( guest.Phase != GuestPhase.Following )
-			guest.Phase = behind <= WindowTicks ? GuestPhase.Following : GuestPhase.CatchingUp;
+			guest.Phase = behind <= (guest.JoinWindow ?? WindowTicks) ? GuestPhase.Following : GuestPhase.CatchingUp;
 		// the minute before a resync counts from the moment a catching-up guest holds every frame it asked for
 		if ( guest.Phase == GuestPhase.CatchingUp && progress.State != CoopGuestState.Gap )
 			guest.CatchingUpSince ??= now;

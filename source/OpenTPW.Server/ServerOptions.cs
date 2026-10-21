@@ -91,7 +91,7 @@ public sealed class ServerOptions
 	public int CoopInvitesPerHour { get; set; } = 60;
 	public int CoopKicksPerHour { get; set; } = 60;
 	public int CoopDownloadsPerHour { get; set; } = 30;
-	/// <summary>[EXT:online-coop-snapshot-join] Join snapshots one session's host may upload an hour, a limit of the session's own (not the address-wide park uploads).</summary>
+	/// <summary>[EXT:online-coop-snapshot-join] Join snapshots one session's host may upload an hour, a limit of the session's own, counted once the host is authenticated (not the address-wide park uploads).</summary>
 	public int CoopSnapshotsPerSessionPerHour { get; set; } = 60;
 	/// <summary>[EXT:online-coop-snapshot-join] A join snapshot (a gzipped world save and the session's state), and all of them together.</summary>
 	public long MaximumCoopSnapshotBytes { get; set; } = 96L * 1024 * 1024;

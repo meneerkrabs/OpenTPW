@@ -193,7 +193,7 @@ each side.
 `[EXT:online-coop-snapshot-join]` A member that joins a session already running, or a guest whose park
 lost the stream (a desync, frames the host no longer holds), gets the host's park from a join snapshot
 at a cut of the host's stream and goes on from there without leaving the session (design
-`coop-c2c-design.md`, v4).
+`coop-c2c-design.md`, v4.1).
 
 - **The cut.** The host takes a capture at the end of a frame, after it published everything: every
   record up to `P` is applied and published, tick `B` runs next and frame `F` is the last, whose
@@ -220,7 +220,9 @@ at a cut of the host's stream and goes on from there without leaving the session
   keeps, a capture that failed for now), and tells it (`SnapshotAssigned`): the member's old stream
   stops at once. The assignments made within two seconds share one capture, at most one capture is
   on its way, and a member gets at most one every ten seconds. A capture waits while a coaster drag
-  is held (its edited pylon is no part of the save), for 30 seconds at most. The answer is
+  is held (its edited pylon is no part of the save), for 30 seconds at most, then fails for now. A
+  park the save path refuses (catalogue defaults it cannot write, an object without its economy
+  binding) or one too large for a snapshot fails for good. The answer is
   `SnapshotReady` or `SnapshotFailed` (for now, with a delay; or for good: too large, cannot be
   captured, out of step, and the member leaves). A member asks with the newest generation it has an
   answer for: an older one gets its assignment and answer again, never a new capture, so a lost
@@ -231,15 +233,23 @@ at a cut of the host's stream and goes on from there without leaving the session
   generation it catches up within a join window of its own: the smallest lag it reported plus the
   ordinary window, so the park runs on while it catches up and its lag never grows by more than that;
   once that lag is within the ordinary window it is an ordinary following guest. A joiner that cannot
-  run faster than the park paces it, as every following guest does.
+  run faster than the park paces it, as every following guest does. Back from a stall or a
+  reconnect, it is waited for again only once it is within its join window, as an ordinary guest is
+  within the ordinary window, so a joiner that fell further behind meanwhile stops no park.
 - **The guest's session.** `CoopSession.JoinRunning` starts a guest's session without a park
   (`CoopGuestPhase.Joining`); a following guest's park that loses the stream resyncs the same way
   (`Resyncing`). It buffers the frames, downloads the capture and, at its step (once a game frame
   after the online pump, never inside a callback), lets the game build the candidate (`ICoopJoinHost`),
   checks `D` and `W` at the cut and swaps it in: the old park is detached from the session first, so
-  its teardown does not end it. A guest counts its failed joins: a failed download or check, and a
-  desync or too far back within three minutes of following a capture; the third within ten minutes
-  leaves the session. A failure for now and a snapshot the server rotated out do not count.
+  its teardown does not end it. Then it asks the host for any frame after the last one it holds: a
+  socket that dropped during the download lost frames that an idle host would never show. A guest
+  counts its failed joins: a failed download or check (a candidate the game cannot build is one), and
+  a desync or too far back within three minutes of following a park (a capture's, or the session's
+  identical start); the third within ten minutes leaves the session. A failure for now, a snapshot the
+  server rotated out, and a download the server asks to try again later (too many downloads, a server
+  error) do not count, unless the server still asks after ten retries. A download the server
+  refuses for good, or a candidate the game cannot install, leaves the session. Only a session with
+  the game's join host (`ICoopJoinHost`, C2c-2) resyncs: a guest without one stops as in C2b.
 - **Golden tickets in a session.** While a park is in a session it is outside its player's progress:
   every peer decides the global tickets by the park's own records. When the session ends, the park
   returns to its player's progress through a hand-back: each global ticket won in the session goes
@@ -257,9 +267,13 @@ the guest's candidate built by replay (a twin from the identical start driven by
 the cut, its per-player state cleared and the capture's applied): a late joiner with frames lost on
 their way, lost assignments and answers, a slow upload and a reconnect, joiners sharing a capture or
 getting the next, a request storm, a desync and too far back resynced without leaving, stale messages,
-the join window, failed and permanent failures, the failure budget, and a late join through the real
-links, the server's snapshot store and HTTP. The save path's completeness is the game's join's to prove
-(C2c-2, with data): the asset-free park has no full restore.
+the join window, failed and permanent failures, the failure budget, a held coaster drag, a park too
+large or impossible to capture, a socket lost during the download, a joiner back from a stall, busy and
+refused downloads, a candidate that cannot be built or installed, and a late join through the real
+links, the server's snapshot store and HTTP. `CoopSnapshotDownloadTests` runs the client's ranged
+download against a scripted server (a stall or a break resumed with a range, a server that ignores the
+range, a line that broke after its last byte, the length and digest checks). The save path's
+completeness is the game's join's to prove (C2c-2, with data): the asset-free park has no full restore.
 
 ### Measurements
 
@@ -586,8 +600,9 @@ guarded list.
   and a coaster station that goes drops the drags on it before this machine's panel closes, so that
   panel's release finds no drag to end.
 - The pylon each player is editing in a coaster panel drag (`CoasterEdits`) is not in the world hash,
-  as the employees in hand are not; the session digest covers both (C2b-1), and a session's join
-  snapshot (C2c) taken during a drag must carry it.
+  as the employees in hand are not; the session digest covers both (C2b-1). A join snapshot waits
+  for every drag's release instead of carrying it (C2c-1), since a drag's edited pylon is no part of
+  the save.
 - The developer and smoke options (`--perf-*`, `--debug-*`, `--smoke-test`, `--tpi-smoke-test`,
   `--park-resume-smoke`, `--smoke-presence`) set their parks up directly; a recording made with them
   does not replay, and a game started with them shares no park (C2b-2).
@@ -612,7 +627,8 @@ guarded list.
 - The employees in the players' hands (`StaffHands`) are not in the world hash, as the Move tool's
   carried entry is not (the session digest covers both, C2b-1). A save drops the employee in the saving machine's own hand first (a `DropStaffCommand`), so
   that hand is empty in the save; another player's held employee is saved picked up. A session's join
-  snapshot (C2) must not drop it, since the snapshot is taken on the host only.
+  snapshot does not drop it: it skips the save's preparations and carries every player's hand
+  (C2c-1).
 - The staff tool's cancel ends the tool even when its drop is refused, as a player's rights could
   refuse it mid-carry (C3): the employee then stays in that player's hand and the player's next
   pick-up is refused. C3 must always allow the drop back to where the employee came from.
@@ -629,6 +645,9 @@ guarded list.
   join's measurements. A snapshot's upload has the online client's overall 60-second timeout (its
   download resumes with a range instead). A server that names a frame the host no longer holds still
   ends the session (C2c-3).
+- A join capture uses the park's kept asset manifest; when the catalogue changed since the park's
+  start (the pools extension adds its objects as they are used), the capture's frame hashes it again,
+  as the periodic autosave's does.
 - An autosave taken inside a session goes through the player's ordinary ticket reconcile when it is
   loaded later (C6 records a session's tickets).
 - A guest's park must be built as a guest from its start (C2c's join): the game takes the restart

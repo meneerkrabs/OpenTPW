@@ -8,9 +8,8 @@ internal sealed partial class GameFlow
 	/// </summary>
 	private void LeaveCoopSession( string reason )
 	{
-		if ( Level?.CoopSession is not { } session )
-			return;
-		session.End( reason );
+		Level?.CoopSession?.End( reason );
+		// also when the session ended earlier in this frame (the server or the host's stream ended it): its hand-back is still pending
 		progressOwner?.Pump();
 	}
 

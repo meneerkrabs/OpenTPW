@@ -153,6 +153,8 @@ internal sealed partial class GameFlow
 
 	private void RequestProgressQuit()
 	{
+		// [EXT:online-coop-snapshot-join] a shared park leaves its session first, so the check below saves what the hand-back gave back
+		LeaveCoopSession( "The player quit the game." );
 		try { RequireProgressSaved(); Quit(); }
 		catch ( Exception error ) when ( ProgressFailure( error ) ) { ShowProgressFailure( error ); }
 	}
@@ -168,7 +170,7 @@ internal sealed partial class GameFlow
 			var state = PlayerTicketFile.ReadIfPresent( ProgressPath );
 			if ( state?.Ledger.Mode != ParkGameMode.FullSimulation ) { progressNotice = Strings.Extra( OpenTpwText.ProgressTrackingUnavailable ); return; }
 			progressOwner = new( ProgressPath, level.LevelName, state, runtime,
-				() => ReferenceEquals( Level, level ) && ReferenceEquals( level.Park, runtime ) && !level.IsReadOnlyVisit,
+				() => ReferenceEquals( Level, level ) && ReferenceEquals( level.Park, runtime ) && !level.IsReadOnlyVisit && !level.IsCoopGuestPark,
 				message => { progressNotice = message; shownProgressNotice = null; }, () => level.CoopSession != null );
 		}
 		catch ( Exception error ) when ( ProgressFailure( error ) ) { Log.Warning( $"OpenTPW tracking unavailable: {error.Message}" ); progressNotice = Strings.Extra( OpenTpwText.ProgressTrackingUnavailable ); }

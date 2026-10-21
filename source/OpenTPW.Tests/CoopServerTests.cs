@@ -904,7 +904,11 @@ public class CoopServerTests
 	[TestMethod]
 	public async Task TheJoinSnapshotIsTheHostsToUploadAndItsMembersToRead()
 	{
-		var server = await Start( options => options.MaximumCoopSnapshotBytes = 1024 * 1024 );
+		var server = await Start( options =>
+		{
+			options.MaximumCoopSnapshotBytes = 1024 * 1024;
+			options.CoopSnapshotsPerSessionPerHour = 3;
+		} );
 		await using var accounts = new Accounts();
 		try
 		{
@@ -953,6 +957,10 @@ public class CoopServerTests
 			Assert.AreEqual( HttpStatusCode.OK, (await Upload( hostAccount, third )).StatusCode );
 			Assert.AreEqual( HttpStatusCode.NotFound, (await Download( guestAccount, answer.Sha256 )).StatusCode );
 			Assert.AreEqual( HttpStatusCode.OK, (await Download( guestAccount, Convert.ToHexStringLower( SHA256.HashData( second ) ) )).StatusCode );
+
+			// the session's own snapshot limit counts only its host's uploads (the refused ones above spent none of it): the fourth within the hour waits
+			Assert.AreEqual( HttpStatusCode.TooManyRequests, (await Upload( hostAccount, RandomNumberGenerator.GetBytes( 1000 ) )).StatusCode );
+			Assert.AreEqual( HttpStatusCode.OK, (await Download( guestAccount, Convert.ToHexStringLower( SHA256.HashData( third ) ) )).StatusCode, "the downloads have a limit of their own" );
 
 			await host.SendAsync( new CoopLeave( "" ) );
 			await guest.NextAsync<CoopEnded>();

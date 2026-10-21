@@ -43,11 +43,12 @@ internal interface ICoopStreamTransport
 /// the snapshot (it keeps a session's newest two).
 /// </summary>
 internal sealed record CoopSnapshotTransfer( string? Sha256, byte[]? Payload, string? Failure, bool Permanent = false, TimeSpan? RetryAfter = null, bool Missing = false,
-	bool TooLarge = false )
+	bool TooLarge = false, bool Busy = false )
 {
 	public bool Succeeded => Failure == null;
 	public static CoopSnapshotTransfer Stored( string sha256 ) => new( sha256, null, null );
 	public static CoopSnapshotTransfer Downloaded( byte[] payload ) => new( null, payload, null );
-	public static CoopSnapshotTransfer Failed( string reason, bool permanent = false, TimeSpan? retryAfter = null, bool missing = false, bool tooLarge = false ) =>
-		new( null, null, reason, permanent || tooLarge, retryAfter, missing, tooLarge );
+	/// <param name="busy">The server asked to be tried again later (too many requests, a server error): nothing was wrong with the transfer itself.</param>
+	public static CoopSnapshotTransfer Failed( string reason, bool permanent = false, TimeSpan? retryAfter = null, bool missing = false, bool tooLarge = false, bool busy = false ) =>
+		new( null, null, reason, permanent || tooLarge, retryAfter, missing, tooLarge, busy );
 }

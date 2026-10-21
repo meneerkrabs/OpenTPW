@@ -20,7 +20,8 @@ internal sealed record CoopJoinState(
 	public const ushort Version = 1;
 	/// <summary>The most entries of a per-player list: one a player, with room for a replay's other player numbers.</summary>
 	public const int MaximumPlayerEntries = 64;
-	public const int MaximumEntryKeyLength = 256;
+	/// <summary>A carried entry's key at most: the command codec's string bound (<see cref="ParkCommandCodec.MaximumString"/>).</summary>
+	public const int MaximumEntryKeyLength = ParkCommandCodec.MaximumString;
 
 	public byte[] Encode()
 	{

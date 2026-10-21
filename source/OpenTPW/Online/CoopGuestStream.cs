@@ -114,6 +114,12 @@ internal sealed class CoopGuestStream : ILevelSessionStream, IDisposable
 	/// <summary>Takes a frame the session buffered before the stream started (<see cref="Accept"/>).</summary>
 	internal void Take( ulong seq, ReadOnlyMemory<byte> payload ) => Accept( seq, payload );
 
+	/// <summary>
+	/// Asks the host for the frames from the next one this stream needs: a stream that starts at a capture's cut may have lost frames on their way (a socket that dropped during the
+	/// download), and an idle host publishes no later frame that would show the gap. The host sends what it holds after the cut, or nothing.
+	/// </summary>
+	internal void RequestMissing() => RequestResend();
+
 	/// <summary>The host's horizon the guest holds: it runs every tick below it.</summary>
 	public long Horizon => horizon;
 

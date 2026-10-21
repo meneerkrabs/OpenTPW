@@ -88,12 +88,22 @@ public class CoopJoinSessionTests
 		public bool Breaks { get; set; }
 		/// <summary>Builds parks that differ from the host's at the cut, while set (a restore that misses something).</summary>
 		public bool Drifts { get; set; }
+		/// <summary>The next build throws this (a restore that refuses the payload for its own reasons), once.</summary>
+		public Exception? Throws { get; set; }
+		/// <summary>The next install fails halfway, once.</summary>
+		public bool InstallFails { get; set; }
+		public int Discarded { get; private set; }
 
 		public Level Build( CoopJoinPayload payload )
 		{
 			Builds++;
 			if ( Breaks )
 				throw new System.IO.InvalidDataException( "A broken build." );
+			if ( Throws is { } error )
+			{
+				Throws = null;
+				throw error;
+			}
 			var (level, list) = tests.Twin( payload );
 			if ( Drifts )
 				level.Park!.Economy.Ledger.Post( LedgerCategory.OtherIncome, 1 );
@@ -103,6 +113,11 @@ public class CoopJoinSessionTests
 
 		public void Install( Level? old, Level candidate )
 		{
+			if ( InstallFails )
+			{
+				InstallFails = false;
+				throw new InvalidOperationException( "The park's renderer could not start." );
+			}
 			if ( old != null )
 			{
 				member.Enter();
@@ -113,6 +128,17 @@ public class CoopJoinSessionTests
 			member.Level = candidate;
 			member.Entities = candidates[candidate];
 			candidates.Remove( candidate );
+		}
+
+		public void Discard( Level candidate )
+		{
+			Discarded++;
+			if ( !candidates.Remove( candidate, out var list ) )
+				return;
+			Entity.All = list;
+			candidate.Dispose();
+			foreach ( var entity in list.ToArray() )
+				entity.Delete();
 		}
 	}
 
@@ -443,6 +469,7 @@ public class CoopJoinSessionTests
 		joiner.Join.Drifts = false;
 		RoundsUntil( () => joiner.Level != null, "the next capture builds right", 20000 );
 		Assert.AreEqual( (2, 2), (host.Session!.HostStream!.CapturesTaken, joiner.Join.Builds) );
+		Assert.AreEqual( 1, joiner.Join.Discarded, "the candidate that differed was released" );
 		CatchUpAndCompare( joiner );
 	}
 
@@ -639,6 +666,186 @@ public class CoopJoinSessionTests
 		guest.Link.Send( host.Link.Id, new CoopSnapshotRequest( 5, CoopSnapshotReason.Desync, null ).Encode() );
 		RoundsUntil( () => guest.Session!.EndedWith != null, "the guest heard it is out of step" );
 		Assert.AreEqual( 0, host.Session!.HostStream!.CapturesTaken );
+	}
+
+	[TestMethod]
+	public void AHeldCoasterDragHoldsTheCaptureAndFailsForNowAfterItsWait()
+	{
+		Hosted();
+		Build( 60, 25 );
+		// the host holds a pylon in the coaster tool's panel: the drag's edited pylon is no part of the save (a station no park holds, so no command ever settles it)
+		host.Enter();
+		host.Level!.CoasterEdits.Begin( 1, new CoasterEdits.Held( 999_999, null!, new CoasterBuilder.NodeEdit( 0, new CoasterNode( 4, 4, 1, 0, false, 0, false ), 0, null ),
+			CoasterDrag.Height, new CoasterDragRange( 0, 4, 0, 0 ) ) );
+		var joiner = Joiner();
+		var assignedAt = clock;
+		var stream = host.Session!.HostStream!;
+		RoundsUntil( () => host.Link.Sent.Any( sent => sent.To == joiner.Link.Id && sent.Message is CoopSnapshotFailed { Reason: CoopSnapshotFailure.Held, Permanent: false } ),
+			"the capture gave up waiting for the drag's release" );
+		Assert.IsTrue( clock - assignedAt >= CoopHostStream.HeldDragSeconds, $"it waited for the release first: {clock - assignedAt:0.0} s" );
+		Assert.AreEqual( 0, stream.CapturesTaken );
+		// the member asks again after the wait it was told; that capture waits too, and is taken once the drag is released
+		RoundsUntil( () => stream.GenerationOf( joiner.Link.Id ) == 2, "the member asked again and was assigned the next capture" );
+		Rounds( 600 );
+		Assert.AreEqual( 0, stream.CapturesTaken, "the drag is still held" );
+		host.Level.CoasterEdits.Clear();
+		RoundsUntil( () => joiner.Level != null, "joined once the drag was released" );
+		Assert.AreEqual( (1, 2u, 0), (stream.CapturesTaken, joiner.Session!.Assigned, joiner.Session.FailedJoins), "a capture that waits for a drag is no failed join" );
+		Build( 60, 26 );
+		CatchUpAndCompare( joiner );
+	}
+
+	[TestMethod]
+	public void AParkTooLargeOrImpossibleToCaptureEndsItsJoinsForGoodAndTheNextCaptureStillRuns()
+	{
+		var other = Hosted( 1 ).Single();
+		Build( 60, 27 );
+		var stream = host.Session!.HostStream!;
+		// the save outgrows the snapshot's limit while it is written in slices over frames: taken, never uploaded
+		stream.MaximumSaveBytes = 1024;
+		var large = Joiner();
+		RoundsUntil( () => large.Session!.EndedWith != null, "the joiner of a park too large left" );
+		Assert.IsTrue( host.Link.Sent.Any( sent => sent.To == large.Link.Id && sent.Message is CoopSnapshotFailed { Reason: CoopSnapshotFailure.TooLarge, Permanent: true } ) );
+		Assert.AreEqual( (1, 0), (stream.CapturesTaken, network.Uploads) );
+		StringAssert.Contains( large.Link.LeftWith, "cannot be joined" );
+		stream.MaximumSaveBytes = ParkResumeSaveFile.MaximumFileSize;
+		// a park the save path refuses at the cut (catalogue defaults it cannot write): nothing is captured, and the joiner leaves
+		stream.CaptureFault = _ => throw new NotSupportedException( "This ride's catalogue defaults cannot be saved." );
+		var refused = Joiner();
+		RoundsUntil( () => refused.Session!.EndedWith != null, "the joiner of a park that cannot be captured left" );
+		Assert.IsTrue( host.Link.Sent.Any( sent => sent.To == refused.Link.Id && sent.Message is CoopSnapshotFailed { Reason: CoopSnapshotFailure.Uncapturable, Permanent: true } ) );
+		Assert.AreEqual( 1, stream.CapturesTaken );
+		// neither failure stopped the session or held a capture back: the next joiner is served
+		stream.CaptureFault = null;
+		var served = Joiner();
+		RoundsUntil( () => served.Level != null, "the next joiner was served" );
+		Assert.AreEqual( (2, 1), (stream.CapturesTaken, network.Uploads), "the capture too large was dropped, not uploaded once the limit allowed it" );
+		Assert.IsNull( host.Session.EndedWith );
+		Build( 60, 28 );
+		CatchUpAndCompare( served, other );
+	}
+
+	[TestMethod]
+	public void ASocketLostDuringTheDownloadAsksForTheFramesItMissed()
+	{
+		Hosted();
+		Build( 60, 29 );
+		network.TransferSeconds = 4;
+		ulong? cut = null;
+		host.Session!.HostStream!.CaptureStored += ( _, payload ) => cut = CoopJoinPayload.Decode( payload ).Frame;
+		var joiner = Joiner();
+		RoundsUntil( () => network.Downloads.Count == 1, "the joiner began its download" );
+		// frames after the cut came while the download ran; then the socket dropped, losing the frames on their way and those relayed while it was away
+		Build( 30, 30 );
+		joiner.Link.Drop();
+		Assert.IsTrue( host.Issue( new SetEntranceFeeCommand( 17 ) ).Accepted );
+		Rounds( 30 );
+		// the host's park then stands still: it publishes nothing that would show the joiner the gap
+		host.Holds = true;
+		Rounds( 10 );
+		joiner.Link.Resume();
+		RoundsUntil( () => joiner.Level != null, "the joiner swapped its capture in" );
+		Assert.IsTrue( joiner.Session!.GuestStream!.LastFrame > cut, "frames buffered before the drop were taken" );
+		Assert.IsTrue( joiner.Link.Sent.Any( sent => sent.Message is CoopResendRequest { Generation: 1 } ), "it asked for the frames after the last one it holds" );
+		CatchUpAndCompare( joiner );
+		Assert.AreEqual( 17, joiner.Economy.EntranceFee, "the record lost on its way arrived" );
+	}
+
+	[TestMethod]
+	public void AJoinerBackFromAStallIsNotWaitedForUntilItIsWithinItsJoinWindowAgain()
+	{
+		Hosted();
+		Assert.IsTrue( host.Issue( new SetGameSpeedCommand( GameSpeed.Fastest ) ).Accepted );
+		Build( 60, 31 );
+		network.TransferSeconds = 3;
+		var joiner = Joiner();
+		var stream = host.Session!.HostStream!;
+		RoundsUntil( () => joiner.Level != null && !stream.IsAwaitingSnapshot( joiner.Link.Id ), "joined and reported" );
+		Assert.IsNotNull( stream.JoinWindowOf( joiner.Link.Id ), "it catches up within a join window of its own" );
+		// its machine stalls (a browser tab asleep): after the stall time it is not waited for, and the park runs on far past its join window
+		joiner.Frozen = true;
+		Rounds( 60 * 25 );
+		Assert.IsFalse( stream.WaitedFor.Contains( joiner.Link.Id ) );
+		joiner.Frozen = false;
+		// back, it catches up as any guest back from a stall does: the park does not wait for it until it is within its join window again
+		var stood = 0;
+		for ( var round = 0; round < 120; round++ )
+		{
+			var ticks = host.Level!.TickCount;
+			Rounds( 1 );
+			if ( host.Level.TickCount == ticks )
+				stood++;
+		}
+		Assert.AreEqual( 0, stood, "the park never stood still for the returning joiner" );
+		RoundsUntil( () => stream.WaitedFor.Contains( joiner.Link.Id ), "waited for again once within its join window" );
+		CatchUpAndCompare( joiner );
+	}
+
+	[TestMethod]
+	public void ABusyServerIsAskedAgainWithoutCountingUntilItsRetriesRunOutAndARefusedDownloadLeaves()
+	{
+		Hosted();
+		Build( 60, 32 );
+		var stream = host.Session!.HostStream!;
+		// the server asks the joiner to wait (too many downloads): the same snapshot again after the wait, no failed join and no new capture
+		var attempts = new List<double>();
+		network.FailDownload = ( member, sha ) =>
+		{
+			attempts.Add( clock );
+			return attempts.Count <= 3 ? CoopSnapshotTransfer.Failed( "Too many downloads.", retryAfter: TimeSpan.FromSeconds( 2 ), busy: true ) : null;
+		};
+		var joiner = Joiner();
+		RoundsUntil( () => joiner.Level != null, "served after the server's waits" );
+		Assert.AreEqual( (4, 1, 0), (attempts.Count, stream.CapturesTaken, joiner.Session!.FailedJoins) );
+		Assert.AreEqual( 1, network.Downloads.Select( download => download.Sha256 ).Distinct().Count(), "the same snapshot each time" );
+		for ( var attempt = 1; attempt < attempts.Count; attempt++ )
+			Assert.IsTrue( attempts[attempt] - attempts[attempt - 1] >= 2 - 1e-9, "each after the wait the server asked for" );
+
+		// a server that stays busy: once the retries run out the download counts as failed, and the next capture serves the member
+		attempts.Clear();
+		network.FailDownload = ( member, sha ) =>
+		{
+			attempts.Add( clock );
+			return attempts.Count <= CoopSession.MaximumBusyRetries + 1 ? CoopSnapshotTransfer.Failed( "The server is busy.", retryAfter: TimeSpan.FromSeconds( 1 ), busy: true ) : null;
+		};
+		var patient = Joiner();
+		RoundsUntil( () => patient.Level != null, "served by the next capture", 20000 );
+		Assert.AreEqual( (CoopSession.MaximumBusyRetries + 2, 3, 1), (attempts.Count, stream.CapturesTaken, patient.Session!.FailedJoins) );
+
+		// a download the server refuses for good (no longer a player of the session) leaves at once
+		network.FailDownload = ( member, sha ) => CoopSnapshotTransfer.Failed( "Not a player of this shared park.", permanent: true );
+		var refused = Joiner();
+		RoundsUntil( () => refused.Session!.EndedWith != null, "the refused joiner left" );
+		StringAssert.Contains( refused.Link.LeftWith, "cannot be downloaded" );
+		Assert.AreEqual( 0, refused.Session.FailedJoins );
+		network.FailDownload = null;
+		Build( 60, 33 );
+		CatchUpAndCompare( joiner, patient );
+	}
+
+	[TestMethod]
+	public void ABuildThatThrowsIsAFailedCheckAndAFailedInstallEndsTheSessionWithTheCandidateReleased()
+	{
+		var guest = Hosted( 1 ).Single();
+		Build( 60, 34 );
+		// the game's restore refuses the first payload for a reason of its own: a failed check, and the next capture serves the joiner
+		var joiner = Joiner();
+		joiner.Join!.Throws = new NotSupportedException( "A restore step this park needs is missing." );
+		RoundsUntil( () => joiner.Level != null, "the second capture built", 20000 );
+		Assert.AreEqual( (2, 2, 1, 0), (joiner.Join.Builds, host.Session!.HostStream!.CapturesTaken, joiner.Session!.FailedJoins, joiner.Join.Discarded) );
+		Assert.IsTrue( joiner.Link.Sent.Any( sent => sent.Message is CoopSnapshotRequest { Reason: CoopSnapshotReason.FailedCheck } ) );
+
+		// a following guest whose resync fails to install (its old park half gone) leaves the session, and the candidate built for it is released
+		guest.Join!.InstallFails = true;
+		guest.Enter();
+		guest.Economy.Ledger.Post( LedgerCategory.OtherIncome, 1 );
+		RoundsUntil( () => guest.Session!.EndedWith != null, "the guest left" );
+		StringAssert.Contains( guest.Link.LeftWith, "could not be entered" );
+		Assert.AreEqual( 1, guest.Join.Discarded );
+		Assert.IsNull( guest.Session.Level );
+		Assert.IsNull( host.Session.EndedWith, "the session goes on without it" );
+		Build( 60, 35 );
+		CatchUpAndCompare( joiner );
 	}
 
 	[TestMethod]

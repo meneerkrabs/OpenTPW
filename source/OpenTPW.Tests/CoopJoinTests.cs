@@ -139,6 +139,9 @@ public class CoopJoinTests
 		} )
 			Assert.ThrowsException<InvalidDataException>( () => CoopJoinState.Decode( twice.Encode() ), "a player or a coaster named twice" );
 		Assert.ThrowsException<InvalidDataException>( () => CoopJoinState.Decode( (state with { PendingHire = -1 }).Encode() ), "a negative id" );
+		// a carried catalogue entry's key may be as long as a command's string (a mod's entry), so every park a command can make is captured
+		var longest = state with { CarriedEntries = new[] { (1, new string( 'k', ParkCommandCodec.MaximumString )) } };
+		AssertSameState( longest, CoopJoinState.Decode( longest.Encode() ) );
 	}
 
 	[TestMethod]

@@ -332,8 +332,8 @@ public sealed class CoopLink : ICoopStreamTransport
 			{
 				result = CoopSnapshotTransfer.Stored( (await client.PutCoopSnapshotAsync( session.Id, payload )).Sha256 );
 			}
-			catch ( Exception exception ) when ( exception is OnlineException or HttpRequestException or IOException or InvalidDataException or TaskCanceledException
-				or InvalidOperationException or ObjectDisposedException )
+			// every failure answers: the host's captures wait for this answer
+			catch ( Exception exception ) when ( exception is not OutOfMemoryException )
 			{
 				result = exception switch
 				{
@@ -345,6 +345,7 @@ public sealed class CoopLink : ICoopStreamTransport
 					_ => CoopSnapshotTransfer.Failed( exception.Message )
 				};
 			}
+			// a logout drops what was posted (its discard may run on this thread, so none is given): the link closes then, and the session ends with it
 			owner.Post( () => done( result ) );
 		} );
 	}
@@ -364,13 +365,15 @@ public sealed class CoopLink : ICoopStreamTransport
 			{
 				result = CoopSnapshotTransfer.Downloaded( await client.DownloadCoopSnapshotAsync( session.Id, sha256, bytes, SnapshotStall ) );
 			}
-			catch ( Exception exception ) when ( exception is OnlineException or HttpRequestException or IOException or InvalidDataException or OperationCanceledException
-				or InvalidOperationException or ObjectDisposedException or ArgumentException )
+			catch ( Exception exception ) when ( exception is not OutOfMemoryException )
 			{
 				result = exception switch
 				{
 					OnlineException { Status: System.Net.HttpStatusCode.NotFound } error => CoopSnapshotTransfer.Failed( error.Message, missing: true ),
 					OnlineException { Status: System.Net.HttpStatusCode.Forbidden } error => CoopSnapshotTransfer.Failed( error.Message, permanent: true ),
+					// too many downloads, a server error: the server asks to be tried again later
+					OnlineException { Status: System.Net.HttpStatusCode.TooManyRequests } or OnlineException { Status: >= System.Net.HttpStatusCode.InternalServerError } =>
+						CoopSnapshotTransfer.Failed( exception.Message, retryAfter: ((OnlineException)exception).RetryAfter, busy: true ),
 					OnlineException error => CoopSnapshotTransfer.Failed( error.Message, retryAfter: error.RetryAfter ),
 					_ => CoopSnapshotTransfer.Failed( exception.Message )
 				};

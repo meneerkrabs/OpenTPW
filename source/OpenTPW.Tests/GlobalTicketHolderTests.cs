@@ -3,6 +3,8 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Collections.Generic;
+using System.Reflection;
+using System.Runtime.CompilerServices;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace OpenTPW.Tests;
@@ -268,6 +270,36 @@ public class GlobalTicketHolderTests
 				owner.Pump();
 				Assert.IsTrue( economy.Objectives.GoldenTickets.Contains( GoldenTicketKind.CoasterHeight ), "a ticket from before the session stays" );
 			}
+		}
+		finally { Directory.Delete( root, true ); }
+	}
+
+	/// <summary>
+	/// [EXT:online-coop-snapshot-join] The game's way out of a shared park (<c>GameFlow.LeaveCoopSession</c>, first on every way out) runs the hand-back also when the session ended earlier in
+	/// the frame (the server or the host's stream ended it, so the game holds no session any more), before anything saves or detaches progress.
+	/// </summary>
+	[TestMethod]
+	public void TheWayOutOfASharedParkRunsTheHandBackAlsoWhenItsSessionEndedEarlier()
+	{
+		var root = Directory.CreateTempSubdirectory( "opentpw-global-leave-" ).FullName;
+		try
+		{
+			var path = Path.Combine( root, PlayerTicketFile.FileName );
+			PlayerTicketFile.Save( path, new PlayerTicketLedger().Capture() );
+			var shared = true;
+			var runtime = ParkEconomyRuntime.ForResume( EconomyTestData.Park(), ParkStartKind.FullSimulation );
+			using var owner = new PlayerProgressRuntimeOwner( path, "space", PlayerTicketFile.ReadIfPresent( path )!, runtime, () => true, _ => Assert.Fail(), () => shared );
+			runtime.Economy.OpenPark();
+			runtime.Economy.ReportRecord( ParkRecordKind.CoasterHeight, 0, 140 );
+			runtime.Economy.AdvanceMonths( 1 );
+			Assert.IsTrue( runtime.Economy.Objectives.GoldenTickets.Contains( GoldenTicketKind.CoasterHeight ), "won in the session" );
+			Assert.IsNull( PlayerTicketFile.LoadIfPresent( path )!.HolderOf( GoldenTicketKind.CoasterHeight ), "nothing of it recorded while shared" );
+			shared = false;
+			var flow = (GameFlow)RuntimeHelpers.GetUninitializedObject( typeof( GameFlow ) );
+			typeof( GameFlow ).GetField( "progressOwner", BindingFlags.Instance | BindingFlags.NonPublic )!.SetValue( flow, owner );
+			typeof( GameFlow ).GetMethod( "LeaveCoopSession", BindingFlags.Instance | BindingFlags.NonPublic )!.Invoke( flow, new object[] { "The park was closed." } );
+			Assert.AreEqual( new GlobalTicketHolder( GoldenTicketKind.CoasterHeight, "space", 140 ), PlayerTicketFile.LoadIfPresent( path )!.HolderOf( GoldenTicketKind.CoasterHeight ),
+				"the hand-back recorded the session's win" );
 		}
 		finally { Directory.Delete( root, true ); }
 	}

@@ -361,8 +361,8 @@ public sealed class OnlineClient : IDisposable
 	/// <summary>
 	/// [EXT:online-coop-snapshot-join] Downloads join snapshot <paramref name="sha256"/> of shared park <paramref name="sessionId"/>, <paramref name="length"/> bytes. Each read must come within
 	/// <paramref name="stall"/> (the client's overall timeout ends with the response's headers, so a large snapshot on a slow line is not cut off while it moves); a transfer that breaks or
-	/// stalls resumes from the bytes it has with a range, at most <paramref name="attempts"/> times in all. The bytes are checked against the digest. A snapshot the server no longer keeps is a
-	/// 404 <see cref="OnlineException"/>.
+	/// stalls resumes from the bytes it has with a range, at most <paramref name="attempts"/> times in all; one that broke after its last byte needs no other attempt. The bytes are checked
+	/// against the digest. A snapshot the server no longer keeps is a 404 <see cref="OnlineException"/>.
 	/// </summary>
 	public async Task<byte[]> DownloadCoopSnapshotAsync( string sessionId, string sha256, long length, TimeSpan stall, int attempts = 3, CancellationToken cancel = default )
 	{
@@ -402,17 +402,23 @@ public sealed class OnlineClient : IDisposable
 				}
 				if ( have != buffer.Length )
 					throw new IOException( "The snapshot's transfer ended early." );
-				if ( Convert.ToHexString( System.Security.Cryptography.SHA256.HashData( buffer ) ).ToLowerInvariant() != sha256 )
+				if ( !SnapshotMatches( buffer, sha256 ) )
 					throw new InvalidDataException( "The snapshot's bytes do not match its digest." );
 				return buffer;
 			}
-			catch ( Exception exception ) when ( attempt < attempts && !cancel.IsCancellationRequested
-				&& exception is IOException or HttpRequestException or OperationCanceledException )
+			catch ( Exception exception ) when ( !cancel.IsCancellationRequested && exception is IOException or HttpRequestException or OperationCanceledException )
 			{
+				// every byte came before the line broke or stalled, only its end was never read: the digest decides (a range from the end would be refused)
+				if ( have == buffer.Length && SnapshotMatches( buffer, sha256 ) )
+					return buffer;
+				if ( attempt >= attempts )
+					throw;
 				// a broken or stalled transfer: the next attempt asks for the rest
 			}
 		}
 	}
+
+	private static bool SnapshotMatches( byte[] bytes, string sha256 ) => Convert.ToHexString( System.Security.Cryptography.SHA256.HashData( bytes ) ).ToLowerInvariant() == sha256;
 
 	/// <summary>
 	/// Opens a WebSocket on <paramref name="route"/> with the session token: a header and a keep-alive on the desktop; in a browser, which can set neither,

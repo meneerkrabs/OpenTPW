@@ -35,6 +35,9 @@ internal interface ICoopJoinHost
 
 	/// <summary>Makes <paramref name="candidate"/> the game's park in place of <paramref name="old"/> (null on a first join), which it tears down without ending the session.</summary>
 	void Install( Level? old, Level candidate );
+
+	/// <summary>Releases a candidate it built that is not swapped in (it failed the check at the cut, or its install failed).</summary>
+	void Discard( Level candidate );
 }
 
 /// <summary>
@@ -54,6 +57,10 @@ internal sealed class CoopSession : IDisposable
 	public const int MaximumFailedJoins = 3;
 	/// <summary>A desync or too far back within this time of following a capture counts as a failed join (a divergence the restore misses would otherwise resync for ever).</summary>
 	public const double EarlyFailureSeconds = 180;
+	/// <summary>How long a guest waits before it downloads again when the server asked it to wait, unless the server said.</summary>
+	public const double BusyRetrySeconds = 5;
+	/// <summary>The downloads a server may ask to be tried again in a row before the download counts as failed.</summary>
+	public const int MaximumBusyRetries = 10;
 
 	private Level? level;
 	private readonly ICoopStreamTransport link;
@@ -70,6 +77,9 @@ internal sealed class CoopSession : IDisposable
 	private CoopDesyncReport? report;
 	private double waitingSince;
 	private double? retryAt;
+	/// <summary>When the snapshot the server asked to wait for is downloaded again; null while none waits.</summary>
+	private double? downloadAt;
+	private int busyRetries;
 	private double? followingSince;
 	private bool failureAsked;
 	private readonly SortedDictionary<ulong, ReadOnlyMemory<byte>> buffered = new();
@@ -277,7 +287,7 @@ internal sealed class CoopSession : IDisposable
 	}
 
 	/// <summary>Whether the guest waits for an assignment or its answer (not while it downloads, builds or follows).</summary>
-	private bool Waiting => Phase != CoopGuestPhase.Following && (assigned == 0 || !answered || failureAsked) && retryAt == null && payload == null;
+	private bool Waiting => Phase != CoopGuestPhase.Following && (assigned == 0 || !answered || failureAsked) && retryAt == null && downloadAt == null && payload == null;
 
 	/// <summary>A failed join: three within ten minutes leave the session.</summary>
 	private bool CountFailure( string why )
@@ -319,6 +329,13 @@ internal sealed class CoopSession : IDisposable
 			Ask( CoopSnapshotReason.Retry );
 			return;
 		}
+		if ( downloadAt is { } again && now >= again && ready is { } named )
+		{
+			downloadAt = null;
+			var generation = assigned;
+			link.DownloadSnapshot( named.Sha256, named.Bytes, result => Downloaded( generation, result ) );
+			return;
+		}
 		if ( Waiting && now - waitingSince >= AnswerWaitSeconds )
 		{
 			Ask( failureAsked ? reason : CoopSnapshotReason.NoAnswer );
@@ -339,16 +356,30 @@ internal sealed class CoopSession : IDisposable
 		{
 			candidate = joinHost!.Build( downloaded );
 		}
-		catch ( InvalidDataException error )
+		// a payload the game's restore refuses for any reason is a failed check: the guest's own park, if any, goes on waiting
+		catch ( Exception error ) when ( error is not OutOfMemoryException )
 		{
 			Failed( CoopSnapshotReason.FailedCheck, $"the park could not be built: {error.Message}" );
 			return;
 		}
-		var digest = CoopDigest.Compute( candidate, out var world );
+		ulong digest, world;
+		try
+		{
+			digest = CoopDigest.Compute( candidate, out world );
+		}
+		// a park built so far that it cannot even be hashed fails its check like one that differs
+		catch ( Exception error ) when ( error is not OutOfMemoryException )
+		{
+			joinHost.Discard( candidate );
+			Failed( CoopSnapshotReason.FailedCheck, $"the park built could not be checked: {error.Message}" );
+			return;
+		}
 		if ( candidate.TickCount != downloaded.Ticks || digest != downloaded.Digest || world != downloaded.WorldHash )
 		{
-			candidate.Dispose();
-			Failed( CoopSnapshotReason.FailedCheck, $"the park built at tick {candidate.TickCount} differs from the host's at its cut ({downloaded.Ticks}): digest {digest:X16} / {downloaded.Digest:X16}, world {world:X16} / {downloaded.WorldHash:X16}" );
+			var built = candidate.TickCount;
+			joinHost.Discard( candidate );
+			Failed( CoopSnapshotReason.FailedCheck, $"the park built at tick {built} differs from the host's at its cut ({downloaded.Ticks}): digest {digest:X16} / {downloaded.Digest:X16}, "
+				+ $"world {world:X16} / {downloaded.WorldHash:X16}" );
 			return;
 		}
 		var old = level;
@@ -370,6 +401,7 @@ internal sealed class CoopSession : IDisposable
 		catch ( Exception error ) when ( error is not OutOfMemoryException )
 		{
 			// the old park is gone or half gone: the session cannot go on
+			joinHost.Discard( candidate );
 			End( $"The shared park could not be entered: {error.Message}" );
 			return;
 		}
@@ -381,6 +413,9 @@ internal sealed class CoopSession : IDisposable
 			GuestStream.Take( seq, frame );
 		buffered.Clear();
 		bufferedBytes = 0;
+		// frames after the last one buffered may have been lost on their way (a socket that dropped during the download, whose resume no stream heard): they are asked for now, since an
+		// idle host publishes nothing that would show the gap
+		GuestStream.RequestMissing();
 		Phase = CoopGuestPhase.Following;
 		followingSince = now;
 		failureAsked = false;
@@ -445,7 +480,7 @@ internal sealed class CoopSession : IDisposable
 				answered = true;
 				answeredGeneration = generation;
 				failureAsked = false;
-				retryAt = seconds() + Math.Max( 1, failure.RetryAfterSeconds );
+				retryAt = seconds() + Math.Clamp( failure.RetryAfterSeconds, 1, CoopHostStream.MaximumRetrySeconds );
 				break;
 		}
 	}
@@ -459,6 +494,8 @@ internal sealed class CoopSession : IDisposable
 		ready = null;
 		payload = null;
 		retryAt = null;
+		downloadAt = null;
+		busyRetries = 0;
 		failureAsked = false;
 		reason = CoopSnapshotReason.NoAnswer;
 		waitingSince = seconds();
@@ -483,6 +520,19 @@ internal sealed class CoopSession : IDisposable
 			// the server keeps a session's newest two snapshots: several members' captures rotated this one out
 			failureAsked = true;
 			Ask( CoopSnapshotReason.Missing );
+			return;
+		}
+		if ( result.Permanent )
+		{
+			// the server no longer counts this game a player of the session
+			End( $"The shared park cannot be downloaded: {result.Failure}" );
+			return;
+		}
+		if ( result.Busy && busyRetries < MaximumBusyRetries )
+		{
+			// the server asked to wait (too many downloads, a server error): the same snapshot again later, no failed join and no new capture
+			busyRetries++;
+			downloadAt = seconds() + Math.Clamp( (result.RetryAfter ?? TimeSpan.FromSeconds( BusyRetrySeconds )).TotalSeconds, 1, CoopHostStream.MaximumRetrySeconds );
 			return;
 		}
 		if ( !result.Succeeded )

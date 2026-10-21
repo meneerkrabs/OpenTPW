@@ -1605,13 +1605,13 @@ public sealed class ParkEconomy : IParkEconomy
 		return total;
 	}
 
+	/// <summary>The park's record for global ticket <paramref name="kind"/> (<see cref="ParkObjectives.GlobalRecord"/>).</summary>
+	internal long GlobalTicketRecord( GoldenTicketKind kind ) => ParkObjectives.GlobalRecord( kind, Counters, CoveredCells() );
+
 	/// <summary>
 	/// The big park ticket's count (tp.exe <c>0x004CD7F0</c>): the cells, owned or not, whose type is 4, 9, 10 or 21 or that lie under a counted structure; null without a cell map.
 	/// </summary>
 	// [BIN:TPW-EXE:0x004CD7F0 covered cells] the loop over x and y from 127 down to 0 counts a cell when 0x00536340 (type 9), 0x00536350 (10), 0x00536380 (4), 0x005363F0 (the structure test of the net worth, ECON-026) or 0x005363E0 (type 21) answers
-	/// <summary>The park's record for global ticket <paramref name="kind"/> (<see cref="ParkObjectives.GlobalRecord"/>).</summary>
-	internal long GlobalTicketRecord( GoldenTicketKind kind ) => ParkObjectives.GlobalRecord( kind, Counters, CoveredCells() );
-
 	internal long? CoveredCells()
 	{
 		if ( Litter.Cells is not { } cells )

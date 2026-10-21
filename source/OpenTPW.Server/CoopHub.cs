@@ -1116,6 +1116,9 @@ public sealed class CoopHub
 					throw new StoreException( StatusCodes.Status409Conflict, "Nobody is joining." );
 				if ( session.Uploading )
 					throw new StoreException( StatusCodes.Status409Conflict, "An upload is running." );
+				// [EXT:online-coop-snapshot-join] the session's own limit, counted only for its authenticated host, so nobody else can spend it
+				if ( !quotas.Allow( session.Id, "snapshot", options.CoopSnapshotsPerSessionPerHour, TimeSpan.FromHours( 1 ) ) )
+					throw new StoreException( StatusCodes.Status429TooManyRequests, "Too many join snapshots for this shared park; try again later." );
 				if ( store.BlobBytes() + reservedUploadBytes + options.MaximumCoopSnapshotBytes > options.MaximumCoopStoreBytes )
 					throw new StoreException( StatusCodes.Status507InsufficientStorage, "The server has no room for the park now." );
 				reservedUploadBytes += options.MaximumCoopSnapshotBytes;

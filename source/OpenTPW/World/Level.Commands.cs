@@ -24,13 +24,6 @@ public partial class Level
 	public ParkCommandRecorder StartCommandRecording() =>
 		commandRecorder ??= new ParkCommandRecorder( Commands, LevelName ?? "", Seed.Value, simulationClock?.TickCount ?? 0, ComputeStateHash() );
 
-	/// <summary>Stops the recording of the park's commands, if one runs (a co-op session's own recording when the session ends).</summary>
-	internal void StopCommandRecording()
-	{
-		commandRecorder?.Dispose();
-		commandRecorder = null;
-	}
-
 	/// <summary>The command log recorded so far, with the world hash now as its final checkpoint; null while nothing records.</summary>
 	public ParkCommandLogFile? CommandLog() =>
 		commandRecorder?.ToLog( (simulationClock?.TickCount ?? 0, ComputeStateHash()) );

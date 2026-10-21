@@ -9,6 +9,7 @@ A park can now take part in a co-op session as the host's or a guest's ([COOP.md
 - A guest's park is never saved, restarted or published, also after its session.
 - Entering the queue tool no longer recomputes the ride's queue on one machine: it reads the queue from a copy, and the queue commands bring it up to date on every machine.
 - The digest's cost and the frame sizes at the fastest speed were measured (COOP.md, "Measurements"). A faster park now takes its digests once a second of real time.
+- The session's own recording reuses the digests' world hashes and records the session's rules (command log format 3), so its log replays offline.
 
 No screen starts a session yet: the join and the screens follow.
 

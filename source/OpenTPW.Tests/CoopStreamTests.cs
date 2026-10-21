@@ -696,7 +696,8 @@ public class CoopStreamTests
 		guests[0].Guest!.Dispose();
 		Assert.IsNull( host.Level.Objects.ScriptWorld.SessionTime );
 		Assert.IsNull( guests[0].Level.Objects.ScriptWorld.SessionTime );
-		Assert.IsNull( host.Level.CommandRecorder, "the session's own recording stops with it" );
+		Assert.IsNull( host.Level.CommandRecorder, "the session records on its own, not through the level's recording" );
 		Assert.AreEqual( host.Level.Commands.Log.Count, host.Host.SessionLog!.Entries.Count, "and its log stays with the stream" );
+		Assert.IsTrue( host.Host.SessionLog.SessionRules, "a session's log replays under the session's rules" );
 	}
 }

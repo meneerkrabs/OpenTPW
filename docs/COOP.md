@@ -434,10 +434,12 @@ new format version.
 
 `ParkCommandRecorder` (`Level.StartCommandRecording`) records every applied command with its tick and
 the world hash (`WorldStateHash`) every 60 ticks. `ParkCommandLogFile` is its file: the magic
-`OTPWCMDS`, format version2 (version1 logs remain readable but cannot contain new queue commands), the theme, the world seed, the start tick and start hash, then the
-commands and checkpoints in tick order and an end mark. `ParkCommandReplay.Run` schedules a log on a
-park that stands where the log started and runs it tick by tick, so each command lands where it was
-recorded; `FirstMismatch` compares the checkpoints.
+`OTPWCMDS`, format version 3, the theme, the world seed, the start tick and start hash, a flags byte
+(bit 0: the commands applied under a co-op session's rules), then the commands and checkpoints in
+tick order and an end mark. Versions 1 and 2 have no flags byte and remain readable (version 1 cannot
+contain the new queue commands). `ParkCommandReplay.Run` schedules a log on a park that stands where
+the log started and runs it tick by tick, so each command lands where it was recorded, under the
+session's rules when the log says so; `FirstMismatch` compares the checkpoints.
 
 `ParkCommandLevelTests` runs a scripted build session (objects, the path tool with lines, undo and
 cancel, path removals, Backspace, the Move tool, a sale, the remove tool and refused commands) on a
@@ -534,9 +536,12 @@ guarded list.
 - A guest's park must be built as a guest from its start (C2c's join): the game takes the restart
   snapshot when a park starts (`GameFlow.TakeRestartSnapshot`), before a session could mark the park
   as a guest's, and would write the host's park over the guest's own restart file.
-- A session's recorded log (`CoopHostStream.SessionLog`) replays only with the session's rules on: the
-  refusals of the cheats, the secret park name and the developer kinds, and of a command issued inside
-  another, read them, and the log does not record them yet. The replay of a session log must set them.
+- A session records its own log (`CoopHostStream.SessionLog`, kept at the first desync and when the
+  session ends): every command from the session's start, with the world hash of each tick digest as
+  its checkpoints (it takes no hash of its own, which would double the digests' cost). The log records
+  the session's rules (format 3), since the refusals of the cheats, the secret park name, the developer
+  kinds and a command issued inside another read them, and `ParkCommandReplay.Run` replays it under
+  them on the session's starting park.
 - A guest's HUD still offers the build tools (C2d): each refused click says "Only the host builds",
   once for a drag. Opening the loans window refreshes its offers by command, which a guest is refused,
   and the winning screen's Resume is the host's alone, so a guest's winning screen stays until the

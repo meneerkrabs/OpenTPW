@@ -10,12 +10,16 @@ internal static class CoopDigest
 	/// <summary>Bumped whenever the digest's sections or their order change.</summary>
 	public const int Version = 1;
 
-	public static ulong Compute( Level level )
+	public static ulong Compute( Level level ) => Compute( level, out _ );
+
+	/// <summary><see cref="Compute(Level)"/>, with the world hash it took (a session's recording keeps it as its checkpoint).</summary>
+	public static ulong Compute( Level level, out ulong worldHash )
 	{
 		ArgumentNullException.ThrowIfNull( level );
 		var hash = new StateHasher();
 		hash.Add( Version );
-		hash.Add( level.ComputeStateHash() );
+		worldHash = level.ComputeStateHash();
+		hash.Add( worldHash );
 		level.AddSessionState( hash );
 		return hash.Value;
 	}

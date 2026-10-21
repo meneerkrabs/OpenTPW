@@ -303,6 +303,27 @@ public class CoopSessionTests
 		foreach ( var command in refused )
 			Assert.IsTrue( host.Level.Commands.Log.Any( entry => entry.Command.Equals( command ) ), $"the refused {command} is in the stream" );
 		Assert.IsFalse( host.Economy.Cheats.Mode || guest.Economy.Cheats.Mode, "no cheats in a shared park" );
+
+		// the session's log replays offline on its starting park, under the session's rules it records
+		var hostStream = host.Session!.HostStream!;
+		host.Session.End( "Done." );
+		var log = ParkCommandLogFile.Deserialize( hostStream.SessionLog!.Serialize() );
+		Assert.IsTrue( log.SessionRules );
+		long? Replay( bool withRules )
+		{
+			var twin = NewPark();
+			twin.Enter();
+			var hashes = new Dictionary<long, ulong>();
+			if ( withRules )
+				ParkCommandReplay.Run( twin.Level.Commands, log, () => twin.Level.Commands.NextTick, () => twin.Level.RunTicks( 1 ), log.Checkpoints[^1].Ticks, ticks => hashes[ticks] = twin.Level.ComputeStateHash() );
+			else
+				ParkCommandReplay.Run( twin.Level.Commands, log.Entries, () => twin.Level.Commands.NextTick, () => twin.Level.RunTicks( 1 ), log.Checkpoints[^1].Ticks, ticks => hashes[ticks] = twin.Level.ComputeStateHash() );
+			hashes[log.Checkpoints[^1].Ticks] = twin.Level.ComputeStateHash();
+			Assert.IsFalse( twin.Level.Commands.SessionRules, "the replay restores the funnel's rules" );
+			return ParkCommandReplay.FirstMismatch( log, hashes )?.Ticks;
+		}
+		Assert.IsNull( Replay( withRules: true ), "every checkpoint of the session matches" );
+		Assert.IsNotNull( Replay( withRules: false ), "without the session's rules the refused cheats would apply" );
 	}
 
 	[TestMethod]
@@ -429,6 +450,12 @@ public class CoopSessionTests
 			$"a digest every fourth park second: {string.Join( ", ", digests )}" );
 		CollectionAssert.AreEqual( digests.Skip( 1 ).ToArray(), digests.SkipLast( 1 ).Select( at => at + CoopHostStream.CheckpointInterval( GameSpeed.Fastest ) ).ToArray(), "and no digest left out" );
 		CatchUpAndCompare( host, guest );
+		// the session's recording keeps the world hash of each digest and takes none of its own (a world hash is most of a digest's cost)
+		var hostStream = host.Session!.HostStream!;
+		host.Session.End( "Done." );
+		var recorded = hostStream.SessionLog!.Checkpoints.SkipLast( 1 ).Select( point => point.Ticks ).Where( ticks => ticks > digests[0] - CoopHostStream.CheckpointInterval( GameSpeed.Fastest ) ).ToArray();
+		CollectionAssert.IsSubsetOf( digests, recorded );
+		Assert.IsTrue( recorded.All( ticks => ticks % CoopHostStream.CheckpointInterval( GameSpeed.Fastest ) == 0 ), $"no hash between the digests: {string.Join( ", ", recorded )}" );
 	}
 
 	/// <summary>A queue of <paramref name="count"/> cells for <paramref name="item"/> from (<paramref name="x"/>, 6) up toward the path row (the queue removal tests' synthetic geometry).</summary>

@@ -301,5 +301,27 @@ public class ParkCommandCodecTests
 		Assert.ThrowsException<InvalidDataException>( () => ParkCommandLogFile.Deserialize( magic ) );
 		var backwards = log with { Entries = new[] { new ParkCommandLogEntry( 599, Schema[1].Command ) }, Checkpoints = Array.Empty<ParkCommandHashCheckpoint>() };
 		Assert.ThrowsException<InvalidDataException>( () => ParkCommandLogFile.Deserialize( backwards.Serialize() ), "a command before the start" );
+
+		// [EXT:online-coop-lockstep] a session's log says it applied under the session's rules (format 3's flags byte)
+		var session = ParkCommandLogFile.Deserialize( ( log with { SessionRules = true } ).Serialize() );
+		Assert.IsTrue( session.SessionRules );
+		Assert.IsFalse( read.SessionRules );
+		// a log of format 2 (no flags byte) reads as recorded without the session's rules, and holds no session log
+		var old = ParkCommandLogFile.Deserialize( log.Serialize( 2 ) );
+		Assert.IsFalse( old.SessionRules );
+		CollectionAssert.AreEqual( log.Entries.ToArray(), old.Entries.ToArray() );
+		Assert.ThrowsException<ArgumentOutOfRangeException>( () => ( log with { SessionRules = true } ).Serialize( 2 ) );
+		// a flag this version does not know is refused
+		var header = new ParkCommandWriter();
+		foreach ( var value in ParkCommandLogFile.Magic )
+			header.Byte( value );
+		header.Int( 3 );
+		header.String( "jungle" );
+		header.UInt64( 5 );
+		header.Long( 600 );
+		header.UInt64( 6 );
+		header.Byte( 2 );
+		header.Byte( 0 );
+		Assert.ThrowsException<InvalidDataException>( () => ParkCommandLogFile.Deserialize( header.ToArray() ), "an unknown flag" );
 	}
 }

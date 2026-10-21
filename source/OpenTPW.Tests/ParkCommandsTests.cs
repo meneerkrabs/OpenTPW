@@ -279,6 +279,11 @@ public class ParkCommandsTests
 		park.Commands.ApplyDue( 0 );
 		Assert.AreEqual( 1, park.Commands.Log.Count );
 		Assert.AreEqual( 1, raised );
+		// a held command the rights refuse (a stream record this park would not run) is refused as usual, and logged and raised, so the stream sees the refusal
+		park.Commands.Schedule( new RemoveAtCommand( 5, 5 ) { Player = 2 }, 0 );
+		park.Commands.ApplyDue( 0 );
+		Assert.AreEqual( 2, park.Commands.Log.Count );
+		Assert.AreEqual( 2, raised );
 	}
 
 	/// <summary>

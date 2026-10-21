@@ -95,6 +95,15 @@ internal sealed class CoopGuestStream : ILevelSessionStream, IDisposable
 	/// <summary>The frames held after a gap.</summary>
 	public int HeldFrames => held.Count;
 
+	/// <summary>The last stream record this guest took (scheduled or applied).</summary>
+	public long LastRecord => nextStream - 1;
+
+	/// <summary>The host's digests this guest compared so far (tick and record checkpoints).</summary>
+	public int Checks { get; private set; }
+
+	/// <summary>The digests after an errored record this guest compared so far.</summary>
+	public int RecordChecks { get; private set; }
+
 	/// <summary>The guest's state as its progress reports it.</summary>
 	public CoopGuestState State => Desync != null ? CoopGuestState.Desynced
 		: tooFarBack ? CoopGuestState.TooFarBack
@@ -322,7 +331,11 @@ internal sealed class CoopGuestStream : ILevelSessionStream, IDisposable
 			Fail( CoopDesyncKind.Flags, $"record {want.Number} ({entry.Command.Kind}) was {Outcome( want.Flags )} on the host and {Outcome( flags )} here", entry.Tick );
 			return;
 		}
-		if ( recordCheckpoints.Remove( want.Number, out var digest ) && CoopDigest.Compute( level ) is var mine && mine != digest )
+		if ( !recordCheckpoints.Remove( want.Number, out var digest ) )
+			return;
+		Checks++;
+		RecordChecks++;
+		if ( CoopDigest.Compute( level ) is var mine && mine != digest )
 			Fail( CoopDesyncKind.Digest, $"the digest after record {want.Number} differs", entry.Tick, digest, mine );
 	}
 
@@ -335,7 +348,10 @@ internal sealed class CoopGuestStream : ILevelSessionStream, IDisposable
 
 	private void OnTickEnded( long ticks )
 	{
-		if ( !Stopped && tickCheckpoints.Remove( ticks, out var digest ) && CoopDigest.Compute( level ) is var mine && mine != digest )
+		if ( Stopped || !tickCheckpoints.Remove( ticks, out var digest ) )
+			return;
+		Checks++;
+		if ( CoopDigest.Compute( level ) is var mine && mine != digest )
 			Fail( CoopDesyncKind.Digest, $"the digest after tick {ticks} differs", ticks, digest, mine );
 	}
 

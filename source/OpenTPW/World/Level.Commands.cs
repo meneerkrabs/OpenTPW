@@ -64,8 +64,17 @@ public partial class Level
 		_ => null
 	};
 
+	/// <summary>Test seam: runs before every command the park executes; a throw makes the command errored, as a rule its own checks missed would (the co-op stream's checks).</summary>
+	internal Action<ParkCommand>? CommandFault { get; set; }
+
 	/// <summary>Runs one well-formed command on the park (<see cref="ParkCommands"/> has checked the visit and the player's rights).</summary>
-	private ParkCommandResult ExecuteCommand( ParkCommand command ) => command switch
+	private ParkCommandResult ExecuteCommand( ParkCommand command )
+	{
+		CommandFault?.Invoke( command );
+		return ExecuteParkCommand( command );
+	}
+
+	private ParkCommandResult ExecuteParkCommand( ParkCommand command ) => command switch
 	{
 		PlaceObjectCommand place => ExecutePlaceObject( place ),
 		RemoveAtCommand remove => Outcome( RemoveAt( remove.X, remove.Y ) ),

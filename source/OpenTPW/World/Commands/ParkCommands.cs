@@ -88,8 +88,9 @@ public sealed class ParkCommands
 
 	/// <summary>
 	/// [EXT:online-coop-lockstep] The rules of a co-op session (docs/COOP.md): a command issued inside another (a HUD callback during an edit) is refused, since it would
-	/// run unstreamed on its issuer only; a command the rights refuse is neither logged nor raised, so a guest's own issues stay out of its log, which is the host's
-	/// stream; and a held command never rethrows (a strict run included): its error is in its result, which the stream compares.
+	/// run unstreamed on its issuer only; a command of this machine (not held) that the rights refuse is neither logged nor raised, so a guest's own issues stay out of its
+	/// log, which is the host's stream, while a held one the rights refuse is logged and raised as refused, so the stream sees it; and a held command never rethrows (a
+	/// strict run included): its error is in its result, which the stream compares.
 	/// </summary>
 	public bool SessionRules { get; set; }
 
@@ -142,8 +143,9 @@ public sealed class ParkCommands
 		// a malformed command never reaches the park and has no byte form to log: it is refused before the log
 		if ( !command.IsWellFormed )
 			return ParkCommandResult.Rejected( $"The {command.Kind} command has fields out of range." );
-		// [EXT:online-coop-lockstep] in a session a command the rights refuse leaves no trace: a guest's own issues stay out of its log, which is the host's stream
-		if ( SessionRules && command.Player >= 0 && Rights is { } rights && !rights.Allows( command.Player, command.Kind ) )
+		// [EXT:online-coop-lockstep] in a session a command of this machine the rights refuse leaves no trace: a guest's own issues stay out of its log, which is the host's stream. A held
+		// command (the host's stream) is refused as usual and logged, so the stream sees that it was refused here
+		if ( SessionRules && !applyingDue && command.Player >= 0 && Rights is { } rights && !rights.Allows( command.Player, command.Kind ) )
 			return ParkCommandResult.Rejected( $"Player {command.Player} may not {command.Kind}." );
 		var tick = nextTick();
 		ParkCommandResult result;

@@ -1,3 +1,3 @@
-## A park with a coaster loads its own save again (October 21, 2026)
+## A park with a coaster can be saved again (October 21, 2026)
 
 Since the coaster cell markers (#736), a coaster station's head marks its marker cell with the original's bit 0x100 (tp.exe 0x4343B3), and that value is also a pool wave height bit. The save's check that pool river and wave bits sit only on pool cells therefore refused every own-format save, autosave, restart snapshot and continuation of a park with a coaster ("carries pool river or wave flags but is no pool cell"); the co-op join smoke found it, since a join loads the host's park the same way. The check now leaves exactly that bit on a coaster's marker cell (type 21) and still refuses any other pool bit there and the bit on any other cell. A new test places a coaster station, saves and restores the cell map, and checks both refusals.

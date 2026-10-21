@@ -159,7 +159,43 @@ public enum CoopStreamMessageType : byte
 	Frames = 3,
 	TooFarBack = 4,
 	Desync = 5,
-	DesyncSeen = 6
+	DesyncSeen = 6,
+	SnapshotAssigned = 7,
+	SnapshotRequest = 8,
+	SnapshotReady = 9,
+	SnapshotFailed = 10
+}
+
+/// <summary>[EXT:online-coop-snapshot-join] Why a member asks for a join snapshot (<see cref="CoopSnapshotRequest"/>).</summary>
+public enum CoopSnapshotReason : byte
+{
+	/// <summary>It joined the session and holds no park of it yet.</summary>
+	Join = 1,
+	/// <summary>Its park desynced.</summary>
+	Desync = 2,
+	/// <summary>The host no longer holds a frame it needs.</summary>
+	TooFarBack = 3,
+	/// <summary>The download of its snapshot failed.</summary>
+	FailedDownload = 4,
+	/// <summary>The snapshot it downloaded failed its checks (its numbers, its digest at the cut).</summary>
+	FailedCheck = 5,
+	/// <summary>No assignment or answer came within its wait, or it resumed after a lost socket.</summary>
+	NoAnswer = 6,
+	/// <summary>The server no longer keeps the snapshot it was told of.</summary>
+	Missing = 7
+}
+
+/// <summary>[EXT:online-coop-snapshot-join] Why the host could not serve a capture (<see cref="CoopSnapshotFailed"/>).</summary>
+public enum CoopSnapshotFailure : byte
+{
+	/// <summary>The upload failed for now (a busy server, too many uploads, no room): the member asks again after the delay.</summary>
+	Busy = 1,
+	/// <summary>A coaster drag held the capture back past its wait.</summary>
+	Held = 2,
+	/// <summary>The park is too large for a join snapshot.</summary>
+	TooLarge = 3,
+	/// <summary>The park cannot be captured (an object without its economy binding: a bug).</summary>
+	Uncapturable = 4
 }
 
 /// <summary>
@@ -170,12 +206,19 @@ public abstract record CoopStreamMessage
 {
 	public abstract CoopStreamMessageType Type { get; }
 
+	/// <summary>
+	/// [EXT:online-coop-snapshot-join] The stream generation the message belongs to: the join snapshot its member's stream started from (0 a session's identical start). Each side ignores
+	/// a stream message of another generation than the member's current one; the snapshot messages say what it means for them.
+	/// </summary>
+	public uint Generation { get; init; }
+
 	private protected abstract void WriteFields( CoopWriter writer );
 
 	public byte[] Encode()
 	{
 		var writer = new CoopWriter();
 		writer.Byte( (byte)Type );
+		writer.U32( Generation );
 		WriteFields( writer );
 		return writer.ToArray();
 	}
@@ -183,26 +226,44 @@ public abstract record CoopStreamMessage
 	public static CoopStreamMessage Decode( ReadOnlySpan<byte> bytes )
 	{
 		var reader = new CoopReader( bytes );
-		CoopStreamMessage message = (CoopStreamMessageType)reader.Byte() switch
+		var type = (CoopStreamMessageType)reader.Byte();
+		var generation = reader.U32();
+		CoopStreamMessage message = type switch
 		{
 			CoopStreamMessageType.Progress => new CoopProgress( State( reader.Byte() ), reader.U64(), Signed( reader.U64() ), reader.U32() ),
 			CoopStreamMessageType.Resend => new CoopResendRequest( reader.U64(), reader.U64() ),
 			CoopStreamMessageType.Frames => CoopResentFrames.Read( ref reader ),
 			CoopStreamMessageType.TooFarBack => new CoopTooFarBack( reader.U64() ),
-			CoopStreamMessageType.Desync => new CoopDesyncReport( reader.U32(), Kind( reader.Byte() ), Signed( reader.U64() ), reader.U64(), reader.U64(), Signed( reader.U64() ),
-				Signed( reader.U64() ) ),
+			CoopStreamMessageType.Desync => CoopDesyncReport.Read( ref reader ),
 			CoopStreamMessageType.DesyncSeen => new CoopDesyncSeen( reader.U32() ),
+			CoopStreamMessageType.SnapshotAssigned => new CoopSnapshotAssigned(),
+			CoopStreamMessageType.SnapshotRequest => new CoopSnapshotRequest( reader.U32(), Reason( reader.Byte() ), reader.Bool() ? CoopDesyncReport.Read( ref reader ) : null ),
+			CoopStreamMessageType.SnapshotReady => new CoopSnapshotReady( Signed( reader.U64() ), Signed( reader.U64() ), reader.U64(), reader.U64(), reader.U64(), Sha256( reader.Text( 64 ) ),
+				Positive( reader.U64() ) ),
+			CoopStreamMessageType.SnapshotFailed => new CoopSnapshotFailed( Failure( reader.Byte() ), reader.Bool(), reader.U32() ),
 			var other => throw new InvalidDataException( $"Unknown stream message {(byte)other}." )
 		};
 		reader.End();
-		return message;
+		return message with { Generation = generation };
 	}
+
+	private static CoopSnapshotReason Reason( byte value ) => value is >= (byte)CoopSnapshotReason.Join and <= (byte)CoopSnapshotReason.Missing
+		? (CoopSnapshotReason)value
+		: throw new InvalidDataException( "The stream message has an unknown snapshot reason." );
+
+	private static CoopSnapshotFailure Failure( byte value ) => value is >= (byte)CoopSnapshotFailure.Busy and <= (byte)CoopSnapshotFailure.Uncapturable
+		? (CoopSnapshotFailure)value
+		: throw new InvalidDataException( "The stream message has an unknown snapshot failure." );
+
+	private static string Sha256( string value ) => CoopProtocol.IsSha256( value ) ? value : throw new InvalidDataException( "The stream message has an invalid snapshot digest." );
+
+	private static long Positive( ulong value ) => value is > 0 and <= long.MaxValue ? (long)value : throw new InvalidDataException( "The stream message has a number out of range." );
 
 	private static CoopGuestState State( byte value ) => value is >= (byte)CoopGuestState.Following and <= (byte)CoopGuestState.TooFarBack
 		? (CoopGuestState)value
 		: throw new InvalidDataException( "The stream message has an unknown guest state." );
 
-	private static CoopDesyncKind Kind( byte value ) => value is >= (byte)CoopDesyncKind.Digest and <= (byte)CoopDesyncKind.Protocol
+	private protected static CoopDesyncKind DesyncKind( byte value ) => value is >= (byte)CoopDesyncKind.Digest and <= (byte)CoopDesyncKind.Protocol
 		? (CoopDesyncKind)value
 		: throw new InvalidDataException( "The stream message has an unknown desync kind." );
 
@@ -281,6 +342,12 @@ public sealed record CoopDesyncReport( uint Id, CoopDesyncKind Kind, long Tick, 
 {
 	public override CoopStreamMessageType Type => CoopStreamMessageType.Desync;
 
+	internal static CoopDesyncReport Read( ref CoopReader reader ) =>
+		new( reader.U32(), DesyncKind( reader.Byte() ), Signed( reader.U64() ), reader.U64(), reader.U64(), Signed( reader.U64() ), Signed( reader.U64() ) );
+
+	/// <summary>The report's fields, without a message's type and generation (a snapshot request carries the report it repeats).</summary>
+	internal void WriteReport( CoopWriter writer ) => WriteFields( writer );
+
 	private protected override void WriteFields( CoopWriter writer )
 	{
 		writer.U32( Id );
@@ -298,4 +365,67 @@ public sealed record CoopDesyncSeen( uint Id ) : CoopStreamMessage
 {
 	public override CoopStreamMessageType Type => CoopStreamMessageType.DesyncSeen;
 	private protected override void WriteFields( CoopWriter writer ) => writer.U32( Id );
+}
+
+/// <summary>
+/// [EXT:online-coop-snapshot-join] The host assigned the member capture <see cref="CoopStreamMessage.Generation"/> (docs/COOP.md, "Joining a running session"): the member's old stream goes
+/// silent until the capture's <see cref="CoopSnapshotReady"/> or <see cref="CoopSnapshotFailed"/>.
+/// </summary>
+public sealed record CoopSnapshotAssigned : CoopStreamMessage
+{
+	public override CoopStreamMessageType Type => CoopStreamMessageType.SnapshotAssigned;
+	private protected override void WriteFields( CoopWriter writer ) { }
+}
+
+/// <summary>
+/// [EXT:online-coop-snapshot-join] A member asks for a join snapshot: <paramref name="Known"/> is the newest generation whose answer it received (0 none), with why, and the desync it
+/// reports with it (the host may not have seen the report itself).
+/// </summary>
+public sealed record CoopSnapshotRequest( uint Known, CoopSnapshotReason Reason, CoopDesyncReport? Report ) : CoopStreamMessage
+{
+	public override CoopStreamMessageType Type => CoopStreamMessageType.SnapshotRequest;
+
+	private protected override void WriteFields( CoopWriter writer )
+	{
+		writer.U32( Known );
+		writer.Byte( (byte)Reason );
+		writer.Bool( Report != null );
+		Report?.WriteReport( writer );
+	}
+}
+
+/// <summary>
+/// [EXT:online-coop-snapshot-join] The host's capture <see cref="CoopStreamMessage.Generation"/> is stored on the server: its cut (records up to <paramref name="Records"/>, tick
+/// <paramref name="Ticks"/> next, frame <paramref name="Frame"/> the last), the session digest and the world hash at it, and the stored payload's digest and length.
+/// </summary>
+public sealed record CoopSnapshotReady( long Records, long Ticks, ulong Frame, ulong Digest, ulong WorldHash, string Sha256, long Bytes ) : CoopStreamMessage
+{
+	public override CoopStreamMessageType Type => CoopStreamMessageType.SnapshotReady;
+
+	private protected override void WriteFields( CoopWriter writer )
+	{
+		writer.U64( checked( (ulong)Records ) );
+		writer.U64( checked( (ulong)Ticks ) );
+		writer.U64( Frame );
+		writer.U64( Digest );
+		writer.U64( WorldHash );
+		writer.Text( Sha256, 64 );
+		writer.U64( checked( (ulong)Bytes ) );
+	}
+}
+
+/// <summary>
+/// [EXT:online-coop-snapshot-join] The host's capture <see cref="CoopStreamMessage.Generation"/> failed: why, whether trying again cannot help (the member leaves then), and how many seconds the
+/// member waits before it asks again.
+/// </summary>
+public sealed record CoopSnapshotFailed( CoopSnapshotFailure Reason, bool Permanent, uint RetryAfterSeconds ) : CoopStreamMessage
+{
+	public override CoopStreamMessageType Type => CoopStreamMessageType.SnapshotFailed;
+
+	private protected override void WriteFields( CoopWriter writer )
+	{
+		writer.Byte( (byte)Reason );
+		writer.Bool( Permanent );
+		writer.U32( RetryAfterSeconds );
+	}
 }

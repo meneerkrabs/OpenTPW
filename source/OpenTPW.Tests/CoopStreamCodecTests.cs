@@ -101,11 +101,16 @@ public class CoopStreamCodecTests
 	private static IEnumerable<CoopStreamMessage> Messages() => new CoopStreamMessage[]
 	{
 		new CoopProgress( CoopGuestState.Gap, 41, 9000, 3 ),
-		new CoopResendRequest( 42, 50 ),
+		new CoopResendRequest( 42, 50 ) { Generation = 3 },
 		new CoopResentFrames( new (ulong, ReadOnlyMemory<byte>)[] { (42, Sample().Encode()), (43, new byte[] { 1, 2, 3 }) } ),
-		new CoopTooFarBack( 17 ),
+		new CoopTooFarBack( 17 ) { Generation = 4 },
 		new CoopDesyncReport( 2, CoopDesyncKind.Digest, 600, 0xAAAA, 0xBBBB, 1, 77 ),
-		new CoopDesyncSeen( 2 )
+		new CoopDesyncSeen( 2 ),
+		new CoopSnapshotAssigned { Generation = 5 },
+		new CoopSnapshotRequest( 4, CoopSnapshotReason.Desync, new CoopDesyncReport( 2, CoopDesyncKind.Flags, 600, 0, 0, 1, 77 ) ) { Generation = 4 },
+		new CoopSnapshotRequest( 0, CoopSnapshotReason.Join, null ),
+		new CoopSnapshotReady( 120, 3600, 88, 0xAAAA, 0xBBBB, new string( 'a', 64 ), 12345 ) { Generation = 5 },
+		new CoopSnapshotFailed( CoopSnapshotFailure.Busy, false, 30 ) { Generation = 5 }
 	};
 
 	[TestMethod]
@@ -115,7 +120,7 @@ public class CoopStreamCodecTests
 		{
 			var bytes = message.Encode();
 			var read = CoopStreamMessage.Decode( bytes );
-			Assert.AreEqual( message.GetType(), read.GetType() );
+			Assert.AreEqual( (message.GetType(), message.Generation), (read.GetType(), read.Generation), $"{message.Type} reads back, its generation included" );
 			CollectionAssert.AreEqual( bytes, read.Encode(), $"{message.Type} reads back to the same bytes" );
 			for ( var length = 0; length < bytes.Length; length++ )
 				Assert.ThrowsException<InvalidDataException>( () => CoopStreamMessage.Decode( bytes.AsSpan( 0, length ) ), $"{message.Type} cut to {length} bytes" );
@@ -131,15 +136,23 @@ public class CoopStreamCodecTests
 	{
 		Assert.ThrowsException<InvalidDataException>( () => CoopStreamMessage.Decode( new byte[] { 99 } ), "an unknown tag" );
 		var progress = new CoopProgress( CoopGuestState.Following, 1, 2, 0 ).Encode();
-		progress[1] = 9;
+		progress[5] = 9;
 		Assert.ThrowsException<InvalidDataException>( () => CoopStreamMessage.Decode( progress ), "an unknown guest state" );
 		var desync = new CoopDesyncReport( 1, CoopDesyncKind.Flags, 5, 0, 0, 1, 1 ).Encode();
-		desync[5] = 0;
+		desync[9] = 0;
 		Assert.ThrowsException<InvalidDataException>( () => CoopStreamMessage.Decode( desync ), "an unknown desync kind" );
 		var gap = new CoopResentFrames( new (ulong, ReadOnlyMemory<byte>)[] { (5, new byte[] { 1 }), (7, new byte[] { 1 }) } ).Encode();
 		Assert.ThrowsException<InvalidDataException>( () => CoopStreamMessage.Decode( gap ), "resent frames with a gap" );
 		var zero = new CoopResentFrames( new (ulong, ReadOnlyMemory<byte>)[] { (0, new byte[] { 1 }) } ).Encode();
 		Assert.ThrowsException<InvalidDataException>( () => CoopStreamMessage.Decode( zero ), "a resent frame 0" );
+		var reason = new CoopSnapshotRequest( 0, CoopSnapshotReason.Join, null ).Encode();
+		reason[9] = 0;
+		Assert.ThrowsException<InvalidDataException>( () => CoopStreamMessage.Decode( reason ), "an unknown snapshot reason" );
+		var failure = new CoopSnapshotFailed( CoopSnapshotFailure.Busy, false, 1 ).Encode();
+		failure[5] = 9;
+		Assert.ThrowsException<InvalidDataException>( () => CoopStreamMessage.Decode( failure ), "an unknown snapshot failure" );
+		Assert.ThrowsException<InvalidDataException>( () => CoopStreamMessage.Decode( new CoopSnapshotReady( 1, 1, 1, 0, 0, new string( 'G', 64 ), 1 ).Encode() ), "a digest that is no SHA-256" );
+		Assert.ThrowsException<InvalidDataException>( () => CoopStreamMessage.Decode( new CoopSnapshotReady( 1, 1, 1, 0, 0, new string( 'a', 64 ), 0 ).Encode() ), "an empty snapshot" );
 	}
 
 	[TestMethod]

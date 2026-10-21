@@ -158,9 +158,12 @@ class TpiArrivalRingContract(unittest.TestCase):
         resume = method(resume_source, "private Level ResumeStrict(")
         self.assertIn(refusal, resume)
         self.assertLess(resume.index("GameEditions.IsThemeParkInc"), resume.index("ParkSaveFile.Restore"))
-        # the overload that does the capture (the shorter overloads forward to it)
-        capture = method(read("source/OpenTPW/World/Level.Resume.cs"), "internal ParkResumeSnapshot CaptureResumeSnapshotUnchecked( AutomaticAdvisor? advisor, string displayName, out Action validate, out IEnumerable<bool> validationSteps,")
-        self.assertIn("if ( IsReadOnlyVisit || GameEditions.IsThemeParkInc || OriginalPark == null || Park == null || Guests == null )", capture)
+        # the overload that does the capture (the shorter overloads forward to it) hands it, as the co-op join capture does, to the parts that refuse first
+        level_resume = read("source/OpenTPW/World/Level.Resume.cs")
+        capture = method(level_resume, "internal ParkResumeSnapshot CaptureResumeSnapshotUnchecked( AutomaticAdvisor? advisor, string displayName, out Action validate, out IEnumerable<bool> validationSteps,")
+        self.assertIn("CaptureResumeSnapshotParts(", capture)
+        parts = method(level_resume, "private ParkResumeSnapshot CaptureResumeSnapshotParts(")
+        self.assertTrue(parts.lstrip().startswith("if ( IsReadOnlyVisit || GameEditions.IsThemeParkInc || OriginalPark == null || Park == null || Guests == null )"))
 
     def test_synthetic_empty_partial_full_and_every_wrapped_head(self):
         words = [-2147483648, -17, 0, 2147483647, -1]

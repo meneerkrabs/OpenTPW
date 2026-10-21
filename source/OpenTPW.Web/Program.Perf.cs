@@ -601,6 +601,57 @@ public static partial class Program
 		return result.ToJsonString();
 	}
 
+	/// <summary>
+	/// The bytes behind the runtime's own statics that the game's root walk does not see (<see cref="PerfReachability.BytesByRuntimeRoot"/>):
+	/// the shared array pools and the static fields of the framework's assemblies, as JSON megabytes, largest first.
+	/// </summary>
+	[JSExport]
+	public static string PerfRuntimeRoots()
+	{
+		var result = new JsonObject();
+		try
+		{
+			PerfReachability.Unreadable.Clear();
+			foreach ( var (root, bytes) in PerfReachability.BytesByRuntimeRoot() )
+				result[root] = root.StartsWith( "(objects" ) ? bytes : Math.Round( bytes / 1048576d, 2 );
+			if ( PerfReachability.Unreadable.Count > 0 )
+				result["(unreadable fields)"] = string.Join( "; ", PerfReachability.Unreadable.Take( 20 ) );
+		}
+		catch ( Exception exception )
+		{
+			result["(error)"] = exception.ToString();
+		}
+		return result.ToJsonString();
+	}
+
+	/// <summary>
+	/// The objects the game's and the framework's static roots reach, counted by type (the largest counts, as JSON): two points compared show
+	/// which types a change of scene leaves more of, where the array bytes alone do not.
+	/// </summary>
+	[JSExport]
+	public static string PerfObjectCounts()
+	{
+		var result = new JsonObject();
+		try
+		{
+			PerfReachability.TypeCounts = new();
+			PerfReachability.EstimatedBytes = 0;
+			PerfReachability.BytesByRuntimeRoot();
+			result["(estimated bytes)"] = PerfReachability.EstimatedBytes;
+			foreach ( var (type, count) in PerfReachability.TypeCounts.OrderByDescending( entry => entry.Value ).Take( 150 ) )
+				result[type.FullName ?? type.Name] = count;
+		}
+		catch ( Exception exception )
+		{
+			result["(error)"] = exception.ToString();
+		}
+		finally
+		{
+			PerfReachability.TypeCounts = null;
+		}
+		return result.ToJsonString();
+	}
+
 	/// <summary>The array bytes behind the assets in <see cref="Asset.All"/> by type (<see cref="PerfReachability.BytesByAssetType"/>), as JSON <c>{ type: { count, megabytes } }</c>.</summary>
 	[JSExport]
 	public static string PerfAssetBytes()
@@ -708,9 +759,90 @@ internal static class PerfReachability
 	}
 
 	/// <summary>
+	/// Like <see cref="BytesByStaticRoot"/>, after the game's own roots (so what they reach is not counted again): the shared array pools of
+	/// the common element types (their thread-local and per-core stores) and the static fields of the framework's assemblies.
+	/// </summary>
+	public static List<(string Root, long Bytes)> BytesByRuntimeRoot( int top = 20, int maximumObjects = 30_000_000 )
+	{
+		var seen = new HashSet<object>( ReferenceEqualityComparer.Instance );
+		foreach ( var (_, value) in StaticRoots() )
+			if ( seen.Add( value ) )
+				ArrayBytesFrom( value, seen, maximumObjects );
+		var totals = new List<(string Root, long Bytes)>();
+		void Add( string root, object? value )
+		{
+			if ( value != null && !IsWeakTable( value ) && seen.Add( value ) )
+				totals.Add( (root, ArrayBytesFrom( value, seen, maximumObjects )) );
+		}
+		foreach ( var pool in new object[] { System.Buffers.ArrayPool<byte>.Shared, System.Buffers.ArrayPool<char>.Shared, System.Buffers.ArrayPool<int>.Shared,
+			System.Buffers.ArrayPool<float>.Shared, System.Buffers.ArrayPool<short>.Shared, System.Buffers.ArrayPool<ushort>.Shared, System.Buffers.ArrayPool<uint>.Shared } )
+		{
+			var type = pool.GetType();
+			Add( $"{type.Name}<{type.GetGenericArguments().FirstOrDefault()?.Name}>", pool );
+			foreach ( var field in type.GetFields( System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public ) )
+			{
+				try { Add( $"{type.Name}<{type.GetGenericArguments().FirstOrDefault()?.Name}>.{field.Name}", field.GetValue( null ) ); }
+				catch ( Exception exception ) { Unreadable.Add( $"{type.Name}.{field.Name}: {exception.GetType().Name}" ); }
+			}
+		}
+		var game = new HashSet<System.Reflection.Assembly> { typeof( Level ).Assembly, typeof( BaseFileSystem ).Assembly, typeof( WadArchive ).Assembly };
+		foreach ( var assembly in AppDomain.CurrentDomain.GetAssemblies().Where( assembly => !game.Contains( assembly ) ) )
+		{
+			Type[] types;
+			try { types = assembly.GetTypes(); } catch { continue; }
+			foreach ( var type in types )
+			{
+				if ( type.ContainsGenericParameters )
+					continue;
+				System.Reflection.FieldInfo[] fields;
+				try { fields = type.GetFields( System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic ); } catch { continue; }
+				foreach ( var field in fields )
+				{
+					try
+					{
+						if ( field.FieldType.IsPrimitive || field.FieldType.IsPointer || field.IsLiteral )
+							continue;
+						Add( $"{assembly.GetName().Name}: {type.Name}.{field.Name}", field.GetValue( null ) );
+					}
+					catch ( Exception exception ) { Unreadable.Add( $"{type.FullName}.{field.Name}: {exception.GetType().Name}" ); }
+				}
+			}
+		}
+		totals.Add( ($"(objects visited{(seen.Count >= maximumObjects ? ", cut off" : "")})", seen.Count) );
+		return totals.OrderByDescending( entry => entry.Bytes ).Take( top ).ToList();
+	}
+
+	/// <summary>
 	/// Bytes of the arrays of numbers (and strings) reachable from <paramref name="value"/>, counting only objects not yet in <paramref name="seen"/> (which it fills), so a
 	/// caller walking several roots counts every object once.
 	/// </summary>
+	/// <summary>When set, the walks count every object they visit by its type (<see cref="Program.PerfObjectCounts"/>).</summary>
+	internal static Dictionary<Type, int>? TypeCounts;
+
+	/// <summary>With <see cref="TypeCounts"/>: the estimated bytes of the objects visited (<see cref="EstimateSize"/>).</summary>
+	internal static long EstimatedBytes;
+
+	/// <summary>
+	/// A rough size of one object on the browser's 32-bit runtime: an 8-byte header plus 4 bytes per instance field (an array: its elements
+	/// at their own size, references 4). Boxed copies of struct elements the walk makes count again; only differences between points mean much.
+	/// </summary>
+	private static long EstimateSize( object value )
+	{
+		var type = value.GetType();
+		if ( value is string text )
+			return 12 + text.Length * 2L;
+		if ( value is Array array )
+		{
+			var element = type.GetElementType()!;
+			long size = element.IsPrimitive ? System.Runtime.InteropServices.Marshal.SizeOf( element ) : element.IsValueType ? 8 : 4;
+			return 16 + array.LongLength * size;
+		}
+		long fields = 0;
+		for ( var walk = type; walk != null && walk != typeof( object ); walk = walk.BaseType )
+			fields += walk.GetFields( System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.DeclaredOnly ).Length;
+		return 8 + 4 * fields;
+	}
+
 	private static long ArrayBytesFrom( object value, HashSet<object> seen, int maximumObjects )
 	{
 		long bytes = 0;
@@ -719,6 +851,11 @@ internal static class PerfReachability
 		while ( queue.Count > 0 && seen.Count < maximumObjects )
 		{
 			var current = queue.Dequeue();
+			if ( TypeCounts != null )
+			{
+				TypeCounts[current.GetType()] = TypeCounts.GetValueOrDefault( current.GetType() ) + 1;
+				EstimatedBytes += EstimateSize( current );
+			}
 			if ( current is string text )
 			{
 				bytes += text.Length * 2L;

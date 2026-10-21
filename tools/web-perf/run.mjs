@@ -79,6 +79,7 @@ function parseArguments(argv) {
 			case '--evening': options.evening = value(); break;
 			case '--evening-lamps': options.eveningLamps = Math.max(0, Number(value()) || 0); break;
 			case '--audio-later': options.audioLater = true; break;
+			case '--runtime-roots': options.runtimeRoots = true; break;
 			case '--visits': options.visits = Math.max(3, Math.trunc(Number(value())) || 3); break;
 			case '--help': case '-h': console.log(usage()); process.exit(0);
 			default: throw new Error(`Unknown option ${flag}\n${usage()}`);
@@ -116,6 +117,7 @@ function usage() {
   --evening <mode>        jungle: after the steady window, hold the evening look (night, dusk, day) or turn the cycle and its lamps off, and measure a second window
   --evening-lamps <n>     with --evening: add n extra lamp lights around the camera target (the browser twin of the desktop's --debug-evening-lamps) for the second window
   --visits <n>            switch: park visits (default 3); each one past the third is another lobby and Jungle, to show whether memory grows per visit
+  --runtime-roots         switch: in the lobby, also the bytes behind the framework's own statics and shared array pools, and the reached objects by type (slow)
   --audio-later           switch: read what the sound mixer reaches again 20 s after each point (a decode in flight then has ended)
   --keep <mode>           keep the game files in the browser on the first visit: lazy, all or off (default off)
   --frame-cap <fps>       the display settings' frame cap (0 off, 30, 60; default 0)
@@ -660,12 +662,15 @@ const scenarios = {
 			const textureGroups = JSON.parse(await page.eval('opentpwPerf.program.PerfTextureGroups()'));
 			const textureBytes = JSON.parse(await page.eval('opentpwPerf.program.PerfTextureBytes()'));
 			const roots = name.startsWith('lobby') ? JSON.parse(await page.eval('opentpwPerf.program.PerfMemoryRoots()', 180000)) : undefined;
+			// the framework's own statics (the shared array pools among them), which the game's root walk does not see
+			const runtimeRoots = name.startsWith('lobby') && options.runtimeRoots ? JSON.parse(await page.eval('opentpwPerf.program.PerfRuntimeRoots()', 300000)) : undefined;
+			const objectCounts = name.startsWith('lobby') && options.runtimeRoots ? JSON.parse(await page.eval('opentpwPerf.program.PerfObjectCounts()', 300000)) : undefined;
 			const assetBytes = JSON.parse(await page.eval('opentpwPerf.program.PerfAssetBytes()', 180000));
 			// what the sound mixer reaches, by the field holding the bytes, and its object counts by type
 			const audio = JSON.parse(await page.eval('opentpwPerf.program.PerfAudioBytes()', 180000));
 			// the same 20 seconds later (a decode in flight at the point has ended by then)
 			const audioLater = options.audioLater ? (await sleep(20000), JSON.parse(await page.eval('opentpwPerf.program.PerfAudioBytes()', 180000))) : undefined;
-			steps.push({ step: name, ...memory, textureGroups, textureBytes, assetBytes, audio, ...(audioLater ? { audioLater } : {}), ...(roots ? { roots } : {}), ...(stale.length ? { staleLevelPaths: stale } : {}) });
+			steps.push({ step: name, ...memory, textureGroups, textureBytes, assetBytes, audio, ...(audioLater ? { audioLater } : {}), ...(roots ? { roots } : {}), ...(runtimeRoots ? { runtimeRoots } : {}), ...(objectCounts ? { objectCounts } : {}), ...(stale.length ? { staleLevelPaths: stale } : {}) });
 		};
 		const toLobby = async () => {
 			await page.call('PerfOpenPauseMenu');

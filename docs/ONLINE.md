@@ -482,7 +482,8 @@ no screen or park uses it yet (C2b to C2d).
   "Joining a running session".
 - **Limits.** A host may send far more than a guest, and an account's limits carry over a reconnect;
   per account the server counts sessions started, joins (and codes that matched no session),
-  invitations, removals and downloads from the start of a snapshot. A slow reader is cut off (it
+  invitations, removals and downloads from the start of a snapshot; a refusal of a snapshot limit says
+  when to try again (`Retry-After`). A slow reader is cut off (it
   resumes) instead of losing messages, and a connection whose login ends (a logout elsewhere, a ban, a
   recovery) closes within a minute. Every text the server sends fits what a game reads.
   [SERVER.md](SERVER.md) lists the settings.

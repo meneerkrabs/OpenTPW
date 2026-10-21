@@ -82,6 +82,13 @@ public static class ServerProgram
 				_ => new FixedWindowRateLimiterOptions { PermitLimit = options.AuthenticationsPerMinute, Window = TimeSpan.FromMinutes( 1 ), QueueLimit = 0 } ) );
 			limiter.AddPolicy( "upload", context => RateLimitPartition.GetFixedWindowLimiter( Address( context ),
 				_ => new FixedWindowRateLimiterOptions { PermitLimit = options.UploadsPerHour, Window = TimeSpan.FromHours( 1 ), QueueLimit = 0 } ) );
+			// [EXT:online-coop-snapshot-join] a refusal says when its window opens again (a joiner's download waits that long)
+			limiter.OnRejected = ( rejected, _ ) =>
+			{
+				if ( rejected.Lease.TryGetMetadata( MetadataName.RetryAfter, out var wait ) )
+					rejected.HttpContext.Response.Headers.RetryAfter = RetryAfterSeconds( wait );
+				return ValueTask.CompletedTask;
+			};
 		} );
 
 		var app = builder.Build();
@@ -256,6 +263,9 @@ public static class ServerProgram
 		}
 		catch ( StoreException exception )
 		{
+			// [EXT:online-coop-snapshot-join] a limit's refusal says when it may be tried again
+			if ( exception.RetryAfter is { } wait )
+				context.Response.Headers.RetryAfter = RetryAfterSeconds( wait );
 			return Results.Json( new ApiError( exception.Message, exception.Reason ), StrictJson.Options, statusCode: exception.Status );
 		}
 		catch ( InvalidDataException exception )
@@ -263,6 +273,9 @@ public static class ServerProgram
 			return Error( StatusCodes.Status400BadRequest, exception.Message );
 		}
 	}
+
+	/// <summary>[EXT:online-coop-snapshot-join] A Retry-After header's value: whole seconds, at least one.</summary>
+	private static string RetryAfterSeconds( TimeSpan wait ) => Math.Max( 1, (long)Math.Ceiling( wait.TotalSeconds ) ).ToString( System.Globalization.CultureInfo.InvariantCulture );
 
 	private static void RequireClean( WordFilter filter, string text, string what )
 	{

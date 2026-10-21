@@ -595,15 +595,26 @@ public class CoopJoinSessionTests
 	[TestMethod]
 	public void AFailedCaptureIsAskedForAgainAndAPermanentOneLeaves()
 	{
-		Hosted();
+		// a following guest's acknowledgements let the host trim its history
+		var other = Hosted( 1 ).Single();
 		Build( 60, 14 );
-		// the first upload fails for now: the joiner waits as the host says, asks again, and the next capture serves it
-		network.FailUpload = attempt => attempt == 1 ? CoopSnapshotTransfer.Failed( "Too many uploads.", retryAfter: TimeSpan.FromSeconds( 2 ) ) : null;
+		// the first uploads fail for now: the joiner waits as the host says, asks again, and a later capture serves it; the host's wait doubles with its failures in a row, and a
+		// server's Retry-After only raises it (one in the past is none)
+		var retries = new[] { TimeSpan.FromSeconds( 2 ), TimeSpan.FromSeconds( -5 ), TimeSpan.FromSeconds( 100 ) };
+		network.FailUpload = attempt => attempt <= retries.Length ? CoopSnapshotTransfer.Failed( "Too many uploads.", retryAfter: retries[attempt - 1] ) : null;
 		var joiner = Joiner();
-		RoundsUntil( () => joiner.Level != null, "served by the second capture", 20000 );
-		Assert.AreEqual( 2, host.Session!.HostStream!.CapturesTaken );
-		Assert.AreEqual( 2u, joiner.Session!.Assigned );
+		// while the member waits the hundred seconds, its failed capture pins no frames: it needs a new capture, with a cut of its own
+		RoundsUntil( () => host.Link.Sent.Any( sent => sent.To == joiner.Link.Id && sent.Message is CoopSnapshotFailed { RetryAfterSeconds: 100 } ), "the third failure", 20000 );
+		var failedAt = host.Session!.HostStream!.LastFrame;
+		Rounds( 60 * 30 );
+		Assert.IsTrue( host.Session.HostStream.OldestFrame > failedAt + 1, "the history moved on past the failed capture's cut" );
+		RoundsUntil( () => joiner.Level != null, "served by the fourth capture", 20000 );
+		Assert.AreEqual( 4, host.Session!.HostStream!.CapturesTaken );
+		Assert.AreEqual( 4u, joiner.Session!.Assigned );
 		Assert.AreEqual( 0, joiner.Session.FailedJoins, "a failure for now is no failed join" );
+		CollectionAssert.AreEqual( new uint[] { 5, 10, 100 }, host.Link.Sent.Where( sent => sent.To == joiner.Link.Id ).Select( sent => sent.Message ).OfType<CoopSnapshotFailed>()
+			.GroupBy( failed => failed.Generation ).Select( answers => answers.First().RetryAfterSeconds ).ToArray(), "the waits the host asked for" );
+		CatchUpAndCompare( joiner, other );
 
 		// a park too large to upload: the next joiner leaves with the reason
 		network.FailUpload = _ => CoopSnapshotTransfer.Failed( "The snapshot is too large.", tooLarge: true );
@@ -715,11 +726,18 @@ public class CoopJoinSessionTests
 		RoundsUntil( () => refused.Session!.EndedWith != null, "the joiner of a park that cannot be captured left" );
 		Assert.IsTrue( host.Link.Sent.Any( sent => sent.To == refused.Link.Id && sent.Message is CoopSnapshotFailed { Reason: CoopSnapshotFailure.Uncapturable, Permanent: true } ) );
 		Assert.AreEqual( 1, stream.CapturesTaken );
-		// neither failure stopped the session or held a capture back: the next joiner is served
 		stream.CaptureFault = null;
+		// a slice of the save's writing throws (the save's own check of an inconsistent park, or a value it cannot write): the capture is dropped as one that cannot be captured, no
+		// park too large, and the joiner leaves
+		stream.SliceFault = () => throw new System.IO.InvalidDataException( "World save is inconsistent: a value the save cannot hold." );
+		var unwritable = Joiner();
+		RoundsUntil( () => unwritable.Session!.EndedWith != null, "the joiner of a park whose save cannot be written left" );
+		Assert.IsTrue( host.Link.Sent.Any( sent => sent.To == unwritable.Link.Id && sent.Message is CoopSnapshotFailed { Reason: CoopSnapshotFailure.Uncapturable, Permanent: true } ) );
+		stream.SliceFault = null;
+		// no failure stopped the session or held a capture back: the next joiner is served
 		var served = Joiner();
 		RoundsUntil( () => served.Level != null, "the next joiner was served" );
-		Assert.AreEqual( (2, 1), (stream.CapturesTaken, network.Uploads), "the capture too large was dropped, not uploaded once the limit allowed it" );
+		Assert.AreEqual( (3, 1), (stream.CapturesTaken, network.Uploads), "the captures that failed were dropped, the one too large not uploaded once the limit allowed it" );
 		Assert.IsNull( host.Session.EndedWith );
 		Build( 60, 28 );
 		CatchUpAndCompare( served, other );
@@ -735,8 +753,12 @@ public class CoopJoinSessionTests
 		host.Session!.HostStream!.CaptureStored += ( _, payload ) => cut = CoopJoinPayload.Decode( payload ).Frame;
 		var joiner = Joiner();
 		RoundsUntil( () => network.Downloads.Count == 1, "the joiner began its download" );
-		// frames after the cut came while the download ran; then the socket dropped, losing the frames on their way and those relayed while it was away
+		// frames after the cut came while the download ran, one of them lost on its way; then the socket dropped, losing the frames on their way and those relayed while it was away
+		var lostOne = false;
+		joiner.Link.DropFrame = seq => !lostOne && seq > cut + 2 && (lostOne = true);
 		Build( 30, 30 );
+		joiner.Link.DropFrame = null;
+		Assert.IsTrue( lostOne );
 		joiner.Link.Drop();
 		Assert.IsTrue( host.Issue( new SetEntranceFeeCommand( 17 ) ).Accepted );
 		Rounds( 30 );
@@ -746,7 +768,7 @@ public class CoopJoinSessionTests
 		joiner.Link.Resume();
 		RoundsUntil( () => joiner.Level != null, "the joiner swapped its capture in" );
 		Assert.IsTrue( joiner.Session!.GuestStream!.LastFrame > cut, "frames buffered before the drop were taken" );
-		Assert.IsTrue( joiner.Link.Sent.Any( sent => sent.Message is CoopResendRequest { Generation: 1 } ), "it asked for the frames after the last one it holds" );
+		Assert.IsTrue( joiner.Link.Sent.Any( sent => sent.Message is CoopResendRequest { Generation: 1, To: 0 } ), "it asked for every frame from the first it lacks" );
 		CatchUpAndCompare( joiner );
 		Assert.AreEqual( 17, joiner.Economy.EntranceFee, "the record lost on its way arrived" );
 	}
@@ -812,6 +834,14 @@ public class CoopJoinSessionTests
 		RoundsUntil( () => patient.Level != null, "served by the next capture", 20000 );
 		Assert.AreEqual( (CoopSession.MaximumBusyRetries + 2, 3, 1), (attempts.Count, stream.CapturesTaken, patient.Session!.FailedJoins) );
 
+		// a server that asks for a wait longer than the host keeps the frames after the cut for: the join ends with the server's reason, to be tried again later
+		network.FailDownload = ( member, sha ) => CoopSnapshotTransfer.Failed( "Too many downloads; try again later.", retryAfter: TimeSpan.FromMinutes( 40 ), busy: true );
+		var late = Joiner();
+		RoundsUntil( () => late.Session!.EndedWith != null, "the joiner told to wait too long left" );
+		StringAssert.Contains( late.Link.LeftWith, "cannot be downloaded now" );
+		StringAssert.Contains( late.Link.LeftWith, "try again later" );
+		Assert.AreEqual( 0, late.Session.FailedJoins );
+
 		// a download the server refuses for good (no longer a player of the session) leaves at once
 		network.FailDownload = ( member, sha ) => CoopSnapshotTransfer.Failed( "Not a player of this shared park.", permanent: true );
 		var refused = Joiner();
@@ -821,6 +851,26 @@ public class CoopJoinSessionTests
 		network.FailDownload = null;
 		Build( 60, 33 );
 		CatchUpAndCompare( joiner, patient );
+	}
+
+	[TestMethod]
+	public void AnUploadThatNeverAnswersIsGivenUpAndItsLateAnswerChangesNothing()
+	{
+		Hosted();
+		Build( 60, 36 );
+		// the first upload's answer comes long after the host gave it up (a lost callback): the joiner is told to wait for now, then the next capture serves it
+		network.UploadSeconds = attempt => attempt == 1 ? CoopHostStream.UploadSeconds + 120 : null;
+		var joiner = Joiner();
+		RoundsUntil( () => host.Link.Sent.Any( sent => sent.To == joiner.Link.Id && sent.Message is CoopSnapshotFailed { Reason: CoopSnapshotFailure.Busy, Permanent: false } ),
+			"the host gave the upload up", 20000 );
+		Assert.IsTrue( clock >= CoopHostStream.UploadSeconds );
+		RoundsUntil( () => joiner.Level != null, "the next capture served the joiner", 20000 );
+		Assert.AreEqual( (2, 2u), (host.Session!.HostStream!.CapturesTaken, joiner.Session!.Assigned) );
+		// past the first upload's late answer: no answer for the capture given up, and nothing changes for the member that follows the next
+		RoundsUntil( () => clock >= CoopHostStream.UploadSeconds + 130, "past the late answer", 20000 );
+		Assert.IsFalse( host.Link.Sent.Any( sent => sent.Message is CoopSnapshotReady { Generation: 1 } ), "the late answer of the capture given up was ignored" );
+		Assert.AreEqual( CoopGuestPhase.Following, joiner.Session.Phase );
+		CatchUpAndCompare( joiner );
 	}
 
 	[TestMethod]

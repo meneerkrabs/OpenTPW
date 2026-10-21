@@ -211,7 +211,7 @@ at a cut of the host's stream and goes on from there without leaving the session
   and compresses it in slices over frames, as the periodic autosave does, and uploads it to the
   server (`PUT /api/v1/coop/{id}/snapshot`, its own limit per session); the guest downloads it with a
   stall timeout, resumes a broken download with a range and checks its digest, the zlib checksum and
-  the cut the host named.
+  the cut the host named. The server's limits answer a 429 with a `Retry-After`.
 - **Generations.** Each capture has a number, and every stream message carries the generation of its
   member's stream (0 a session's identical start); each side ignores a stream message of another
   generation, so a late resend, desync or too-far-back of an old stream changes nothing.
@@ -223,8 +223,10 @@ at a cut of the host's stream and goes on from there without leaving the session
   is held (its edited pylon is no part of the save), for 30 seconds at most, then fails for now. A
   park the save path refuses (catalogue defaults it cannot write, an object without its economy
   binding) or one too large for a snapshot fails for good. The answer is
-  `SnapshotReady` or `SnapshotFailed` (for now, with a delay; or for good: too large, cannot be
-  captured, out of step, and the member leaves). A member asks with the newest generation it has an
+  `SnapshotReady` or `SnapshotFailed` (for now, with a delay that doubles with the host's failed
+  uploads in a row and is at least the server's Retry-After; or for good: too large, cannot be
+  captured, out of step, and the member leaves). An upload that has not answered within three
+  minutes is given up for now, and its late answer changes nothing. A member asks with the newest generation it has an
   answer for: an older one gets its assignment and answer again, never a new capture, so a lost
   message, a reconnect or a slow upload is answered once. The host repeats an outstanding assignment
   on the member's reconnect, on its own resume and to a member still on an older generation; the
@@ -241,21 +243,27 @@ at a cut of the host's stream and goes on from there without leaving the session
   (`Resyncing`). It buffers the frames, downloads the capture and, at its step (once a game frame
   after the online pump, never inside a callback), lets the game build the candidate (`ICoopJoinHost`),
   checks `D` and `W` at the cut and swaps it in: the old park is detached from the session first, so
-  its teardown does not end it. Then it asks the host for any frame after the last one it holds: a
+  its teardown does not end it. Then it asks the host for every frame from the first it lacks: a
   socket that dropped during the download lost frames that an idle host would never show. A guest
   counts its failed joins: a failed download or check (a candidate the game cannot build is one), and
   a desync or too far back within three minutes of following a park (a capture's, or the session's
   identical start); the third within ten minutes leaves the session. A failure for now, a snapshot the
   server rotated out, and a download the server asks to try again later (too many downloads, a server
-  error) do not count, unless the server still asks after ten retries. A download the server
-  refuses for good, or a candidate the game cannot install, leaves the session. Only a session with
+  error) do not count, unless the server still asks after ten retries; the guest waits as long as the
+  server's `Retry-After` says (five seconds without one), and a wait longer than a minute ends the join
+  with the server's reason, since the host keeps the frames after the cut for a while only. A
+  download the server refuses for good, or a candidate the game cannot install, leaves the session.
+  Only a session with
   the game's join host (`ICoopJoinHost`, C2c-2) resyncs: a guest without one stops as in C2b.
 - **Golden tickets in a session.** While a park is in a session it is outside its player's progress:
   every peer decides the global tickets by the park's own records. When the session ends, the park
   returns to its player's progress through a hand-back: each global ticket won in the session goes
   through the player-wide rule with its record at the win, and one the rule keeps with another park is
   taken from the park. Every way out of a shared park (leaving it, a load, a restart, quitting) ends
-  the session and runs the hand-back before anything saves the park.
+  the session and runs the hand-back before anything saves the park, also when a progress check then
+  keeps the player in the park (the player asked to leave; a host's leave ends the session for
+  everyone). A guest's park, also one that joined at the session's identical start, never hands the
+  host's tickets to its player.
 - **The digest's version 2.** A capture read the coaster drags through a getter that made their set,
   and the digest counted whether the set existed: one machine's read would have been a desync. The
   capture reads the drags without making the set, and the digest hashes no set as an empty one.
@@ -267,12 +275,13 @@ the guest's candidate built by replay (a twin from the identical start driven by
 the cut, its per-player state cleared and the capture's applied): a late joiner with frames lost on
 their way, lost assignments and answers, a slow upload and a reconnect, joiners sharing a capture or
 getting the next, a request storm, a desync and too far back resynced without leaving, stale messages,
-the join window, failed and permanent failures, the failure budget, a held coaster drag, a park too
-large or impossible to capture, a socket lost during the download, a joiner back from a stall, busy and
-refused downloads, a candidate that cannot be built or installed, and a late join through the real
-links, the server's snapshot store and HTTP. `CoopSnapshotDownloadTests` runs the client's ranged
-download against a scripted server (a stall or a break resumed with a range, a server that ignores the
-range, a line that broke after its last byte, the length and digest checks). The save path's
+the join window, failed and permanent failures and the host's growing waits, the failure budget, a held
+coaster drag, a park too large or impossible to capture, an upload that never answers, a socket lost
+during the download, a joiner back from a stall, busy and refused downloads, a candidate that cannot be
+built or installed, and a late join through the real links, the server's snapshot store and HTTP.
+`CoopSnapshotDownloadTests` runs the client's ranged download against a scripted server (a stall or a
+break resumed with a range, a server that ignores the range, a line that broke after its last byte,
+the length and digest checks) and the link's reading of each transfer failure. The save path's
 completeness is the game's join's to prove (C2c-2, with data): the asset-free park has no full restore.
 
 ### Measurements

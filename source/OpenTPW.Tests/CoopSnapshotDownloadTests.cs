@@ -123,6 +123,32 @@ public class CoopSnapshotDownloadTests
 	}
 
 	[TestMethod]
+	public void TheLinkTellsTheJoinWhatEachTransferFailureMeans()
+	{
+		OnlineException Refused( HttpStatusCode status, TimeSpan? retryAfter = null ) => new( status, $"{(int)status}: refused", retryAfter: retryAfter );
+		var busy = CoopLink.DownloadFailure( Refused( HttpStatusCode.TooManyRequests, TimeSpan.FromSeconds( 30 ) ) );
+		Assert.IsTrue( busy.Busy && !busy.Permanent && !busy.Missing, "too many downloads: wait and download again" );
+		Assert.AreEqual( TimeSpan.FromSeconds( 30 ), busy.RetryAfter );
+		Assert.IsTrue( CoopLink.DownloadFailure( Refused( HttpStatusCode.ServiceUnavailable ) ).Busy, "a server error" );
+		Assert.IsTrue( CoopLink.DownloadFailure( Refused( HttpStatusCode.NotFound ) ).Missing, "a snapshot rotated out" );
+		var forbidden = CoopLink.DownloadFailure( Refused( HttpStatusCode.Forbidden ) );
+		Assert.IsTrue( forbidden.Permanent && !forbidden.Busy, "no longer the session's player" );
+		foreach ( var plain in new Exception[] { Refused( HttpStatusCode.BadRequest ), new IOException( "The line broke." ), new InvalidDataException( "The bytes do not match." ) } )
+		{
+			var failed = CoopLink.DownloadFailure( plain );
+			Assert.IsTrue( !failed.Succeeded && !failed.Busy && !failed.Permanent && !failed.Missing, $"a failed download: {plain.Message}" );
+		}
+		var large = CoopLink.UploadFailure( Refused( HttpStatusCode.RequestEntityTooLarge ) );
+		Assert.IsTrue( large.TooLarge && large.Permanent );
+		Assert.IsTrue( CoopLink.UploadFailure( Refused( HttpStatusCode.Forbidden ) ).Permanent && CoopLink.UploadFailure( Refused( HttpStatusCode.NotFound ) ).Permanent,
+			"not the host's, or the session gone" );
+		var later = CoopLink.UploadFailure( Refused( HttpStatusCode.TooManyRequests, TimeSpan.FromMinutes( 5 ) ) );
+		Assert.IsTrue( !later.Permanent && !later.TooLarge );
+		Assert.AreEqual( TimeSpan.FromMinutes( 5 ), later.RetryAfter );
+		Assert.IsFalse( CoopLink.UploadFailure( new HttpRequestException( "No route to the server." ) ).Permanent );
+	}
+
+	[TestMethod]
 	public async Task TheBytesAreCheckedAndAMissingSnapshotOrALineThatKeepsStallingFails()
 	{
 		var snapshot = Snapshot();

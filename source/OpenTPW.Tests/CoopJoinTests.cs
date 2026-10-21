@@ -214,6 +214,10 @@ public class CoopJoinTests
 		Assert.IsFalse( bindings.ContainsKey( host.One ) );
 		bindings[host.One] = record;
 
+		// a park renamed to two empty lines is still captured: the snapshot's display name is the park's level, as every save's is
+		typeof( Level ).GetProperty( nameof( Level.ParkName ) )!.SetValue( host.Level, new ParkNameLines( "", "" ) );
+		Assert.AreEqual( host.Level.LevelName, ParkResumeSaveFile.Deserialize( ParkResumeSaveFile.Serialize( host.Level.CaptureJoinSnapshot() ) ).DisplayName );
+
 		// reading the drags makes no set of them on this machine alone, and a set that is empty hashes as none
 		Assert.IsNull( typeof( Level ).GetField( "coasterEdits", BindingFlags.Instance | BindingFlags.NonPublic )!.GetValue( host.Level ) );
 		Assert.IsFalse( host.Level.CoasterDragHeld );

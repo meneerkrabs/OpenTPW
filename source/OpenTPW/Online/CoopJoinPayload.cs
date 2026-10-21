@@ -225,7 +225,7 @@ internal sealed class CoopJoinPayloadWriter
 		ArgumentNullException.ThrowIfNull( payload );
 		body = payload.Body();
 		if ( body.Length > CoopJoinPayload.MaximumBodyBytes )
-			throw new InvalidOperationException( "The park is too large for a join snapshot." );
+			throw new CoopSnapshotTooLargeException( "The park is too large for a join snapshot." );
 		Span<byte> header = stackalloc byte[CoopJoinPayload.HeaderBytes];
 		CoopJoinPayload.Magic.CopyTo( header );
 		BinaryPrimitives.WriteUInt16LittleEndian( header[8..], CoopJoinPayload.Version );
@@ -263,3 +263,6 @@ internal sealed class CoopJoinPayloadWriter
 		return true;
 	}
 }
+
+/// <summary>[EXT:online-coop-snapshot-join] A park too large for a join snapshot (its save past the save's cap, or its body past the payload's): the capture fails for good, as too large.</summary>
+internal sealed class CoopSnapshotTooLargeException( string message ) : InvalidOperationException( message );

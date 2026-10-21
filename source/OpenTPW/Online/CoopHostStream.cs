@@ -56,7 +56,7 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 	public const double CaptureBudgetSeconds = 10;
 	/// <summary>How long a capture waits for a held coaster drag before it fails for now.</summary>
 	public const double HeldDragSeconds = 30;
-	/// <summary>How long a member waits before it asks again after a capture failed for now, unless the server said.</summary>
+	/// <summary>The first wait a capture that failed for now asks of a member before it asks again: it doubles with the host's failures in a row, and a server's Retry-After only raises it.</summary>
 	public const uint RetrySeconds = 5;
 	/// <summary>The least time between two repeats of an outstanding assignment to a member still on an older generation.</summary>
 	public const double ReassignSeconds = 1;
@@ -147,7 +147,7 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 
 		/// <summary>
 		/// One slice of the work: the save's serialization, then the payload's compression; true once the payload is complete. A save past <paramref name="maximumSave"/> bytes throws
-		/// <see cref="InvalidDataException"/> (the park is too large).
+		/// <see cref="CoopSnapshotTooLargeException"/> (the park is too large); anything else thrown is a park that cannot be captured.
 		/// </summary>
 		public bool Step( TimeSpan budget, int maximumSave )
 		{
@@ -159,7 +159,7 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 					return false;
 				var bytes = save.Bytes;
 				if ( bytes.Length > maximumSave )
-					throw new InvalidDataException( "World save exceeds the size limit." );
+					throw new CoopSnapshotTooLargeException( "World save exceeds the size limit." );
 				Writer = new CoopJoinPayloadWriter( new CoopJoinPayload( Generation, Records, Ticks, Frame, Digest, WorldHash, state, bytes ) );
 				return false;
 			}
@@ -312,6 +312,9 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 
 	/// <summary>Test seam: runs as a capture is taken, at the cut; a throw is a park that cannot be captured.</summary>
 	internal Action<Level>? CaptureFault { get; set; }
+
+	/// <summary>Test seam: runs before each slice of a capture's serialization and compression; a throw is a park that cannot be captured.</summary>
+	internal Action? SliceFault { get; set; }
 
 	public void AdvanceSimulation( double frameSeconds, float timeScale )
 	{
@@ -737,12 +740,14 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 			bool complete;
 			try
 			{
+				SliceFault?.Invoke();
 				complete = running.Step( CaptureSliceBudget, MaximumSaveBytes );
 			}
+			// the save's own checks run in its first slice (an inconsistent park is no too-large one)
 			catch ( Exception error ) when ( error is not OutOfMemoryException )
 			{
 				capture = null;
-				var tooLarge = error is InvalidDataException;
+				var tooLarge = error is CoopSnapshotTooLargeException;
 				Log.Warning( $"The shared park {(tooLarge ? "is too large for" : "could not be written as")} a join snapshot: {error.Message}" );
 				Answer( running.Members, running.Generation, new CoopSnapshotFailed( tooLarge ? CoopSnapshotFailure.TooLarge : CoopSnapshotFailure.Uncapturable, true, 0 ) );
 				return;
@@ -957,6 +962,13 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 		var end = request.To == 0 ? nextSeq : Math.Min( request.To, nextSeq );
 		if ( request.From >= end )
 			return;
+		// [EXT:online-coop-snapshot-join] a request from the frame a copy not yet begun starts at widens it: a guest that started at a cut asks for its gap and for every frame after
+		// it in the same frame, in either order
+		if ( request.From == guest.ResendFrom && guest.ResendCursor == guest.ResendFrom && guest.Resending )
+		{
+			guest.ResendEnd = Math.Max( guest.ResendEnd, end );
+			return;
+		}
 		// a repeated request (with each progress while the gap lasts, and after the guest's resume) never starts a second copy while the last one may still be on its way:
 		// it only extends the copy
 		if ( request.From >= guest.ResendFrom && request.From <= guest.ResendCursor && now - guest.ResendSentAt < ResendRetrySeconds )
@@ -1021,6 +1033,9 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 		foreach ( var guest in guests.Values )
 		{
 			if ( guest.Phase is GuestPhase.Desynced or GuestPhase.TooFarBack )
+				continue;
+			// [EXT:online-coop-snapshot-join] a member whose capture failed for now needs a new one, which pins its own cut: it holds no frames back while it waits
+			if ( guest.Phase == GuestPhase.AwaitingSnapshot && guest.Answer is CoopSnapshotFailed )
 				continue;
 			var needs = guest.Report == null ? guest.NeedFrom : guest.Acknowledged + 1;
 			if ( guest.Resending )

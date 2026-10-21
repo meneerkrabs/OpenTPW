@@ -908,6 +908,7 @@ public class CoopServerTests
 		{
 			options.MaximumCoopSnapshotBytes = 1024 * 1024;
 			options.CoopSnapshotsPerSessionPerHour = 3;
+			options.CoopDownloadsPerHour = 3;
 		} );
 		await using var accounts = new Accounts();
 		try
@@ -958,9 +959,15 @@ public class CoopServerTests
 			Assert.AreEqual( HttpStatusCode.NotFound, (await Download( guestAccount, answer.Sha256 )).StatusCode );
 			Assert.AreEqual( HttpStatusCode.OK, (await Download( guestAccount, Convert.ToHexStringLower( SHA256.HashData( second ) ) )).StatusCode );
 
-			// the session's own snapshot limit counts only its host's uploads (the refused ones above spent none of it): the fourth within the hour waits
-			Assert.AreEqual( HttpStatusCode.TooManyRequests, (await Upload( hostAccount, RandomNumberGenerator.GetBytes( 1000 ) )).StatusCode );
+			// the session's own snapshot limit counts only its host's uploads (the refused ones above spent none of it): the fourth within the hour waits, and is told how long
+			var limited = await Upload( hostAccount, RandomNumberGenerator.GetBytes( 1000 ) );
+			Assert.AreEqual( HttpStatusCode.TooManyRequests, limited.StatusCode );
+			Assert.IsTrue( limited.Headers.RetryAfter?.Delta is { } wait && wait > TimeSpan.Zero && wait <= TimeSpan.FromHours( 1 ), "until the oldest upload leaves the hour" );
 			Assert.AreEqual( HttpStatusCode.OK, (await Download( guestAccount, Convert.ToHexStringLower( SHA256.HashData( third ) ) )).StatusCode, "the downloads have a limit of their own" );
+			// and so does a member's fourth download from the start within the hour
+			var downloads = await Download( guestAccount, Convert.ToHexStringLower( SHA256.HashData( third ) ) );
+			Assert.AreEqual( HttpStatusCode.TooManyRequests, downloads.StatusCode );
+			Assert.IsTrue( downloads.Headers.RetryAfter?.Delta is { } downloadWait && downloadWait > TimeSpan.Zero && downloadWait <= TimeSpan.FromHours( 1 ) );
 
 			await host.SendAsync( new CoopLeave( "" ) );
 			await guest.NextAsync<CoopEnded>();

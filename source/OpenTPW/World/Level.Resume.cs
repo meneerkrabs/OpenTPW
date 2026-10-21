@@ -157,11 +157,10 @@ public partial class Level
 	/// <summary>
 	/// [EXT:online-coop-snapshot-join] The park's save for a join snapshot (docs/COOP.md, "Joining a running session"), taken at the cut between two ticks: the parts of
 	/// <see cref="CaptureResumeSnapshot"/> without its preparations. The employees in hand are the join state's, not dropped; nothing is repaired, since a shared park changes only through its
-	/// commands, so an object without an economy binding refuses the capture; no advisor state (each player's advisor is its own); the park's kept asset manifest. Not validated here: the guest
-	/// validates what it loads.
+	/// commands, so an object without an economy binding refuses the capture; no advisor state (each player's advisor is its own); the park's kept asset manifest; the park's level as its display
+	/// name, as every save of the game has (a renamed park's lines may both be empty, which a save's name may not be). Not validated here: the guest validates what it loads.
 	/// </summary>
-	internal ParkResumeSnapshot CaptureJoinSnapshot() => CaptureResumeSnapshotParts( null, ParkName is { } name ? $"{name.Line1} {name.Line2}".Trim() : LevelName ?? "", AutosaveAssets(),
-		null, false, join: true );
+	internal ParkResumeSnapshot CaptureJoinSnapshot() => CaptureResumeSnapshotParts( null, LevelName ?? "", AutosaveAssets(), null, false, join: true );
 
 	private ParkResumeSnapshot CaptureResumeSnapshotParts( AutomaticAdvisor? advisor, string displayName, IReadOnlyDictionary<string, string>? verifiedAssets, DateTimeOffset? savedUtc,
 		bool advisorMaySpeak, bool join )

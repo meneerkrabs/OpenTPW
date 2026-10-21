@@ -335,15 +335,7 @@ public sealed class CoopLink : ICoopStreamTransport
 			// every failure answers: the host's captures wait for this answer
 			catch ( Exception exception ) when ( exception is not OutOfMemoryException )
 			{
-				result = exception switch
-				{
-					// too large, not the host's, the session gone: trying again cannot help
-					OnlineException { Status: System.Net.HttpStatusCode.RequestEntityTooLarge } error => CoopSnapshotTransfer.Failed( error.Message, tooLarge: true ),
-					OnlineException { Status: System.Net.HttpStatusCode.Forbidden or System.Net.HttpStatusCode.NotFound } error => CoopSnapshotTransfer.Failed( error.Message, permanent: true ),
-					// nobody joining yet, another upload running, too many uploads, no room now
-					OnlineException error => CoopSnapshotTransfer.Failed( error.Message, retryAfter: error.RetryAfter ),
-					_ => CoopSnapshotTransfer.Failed( exception.Message )
-				};
+				result = UploadFailure( exception );
 			}
 			// a logout drops what was posted (its discard may run on this thread, so none is given): the link closes then, and the session ends with it
 			owner.Post( () => done( result ) );
@@ -367,20 +359,36 @@ public sealed class CoopLink : ICoopStreamTransport
 			}
 			catch ( Exception exception ) when ( exception is not OutOfMemoryException )
 			{
-				result = exception switch
-				{
-					OnlineException { Status: System.Net.HttpStatusCode.NotFound } error => CoopSnapshotTransfer.Failed( error.Message, missing: true ),
-					OnlineException { Status: System.Net.HttpStatusCode.Forbidden } error => CoopSnapshotTransfer.Failed( error.Message, permanent: true ),
-					// too many downloads, a server error: the server asks to be tried again later
-					OnlineException { Status: System.Net.HttpStatusCode.TooManyRequests } or OnlineException { Status: >= System.Net.HttpStatusCode.InternalServerError } =>
-						CoopSnapshotTransfer.Failed( exception.Message, retryAfter: ((OnlineException)exception).RetryAfter, busy: true ),
-					OnlineException error => CoopSnapshotTransfer.Failed( error.Message, retryAfter: error.RetryAfter ),
-					_ => CoopSnapshotTransfer.Failed( exception.Message )
-				};
+				result = DownloadFailure( exception );
 			}
 			owner.Post( () => done( result ) );
 		} );
 	}
+
+	/// <summary>[EXT:online-coop-snapshot-join] What a failed snapshot upload means for the host's capture: too large, or refused for good (not the host's, the session gone), or for now.</summary>
+	internal static CoopSnapshotTransfer UploadFailure( Exception exception ) => exception switch
+	{
+		// too large, not the host's, the session gone: trying again cannot help
+		OnlineException { Status: System.Net.HttpStatusCode.RequestEntityTooLarge } error => CoopSnapshotTransfer.Failed( error.Message, tooLarge: true ),
+		OnlineException { Status: System.Net.HttpStatusCode.Forbidden or System.Net.HttpStatusCode.NotFound } error => CoopSnapshotTransfer.Failed( error.Message, permanent: true ),
+		// nobody joining yet, another upload running, too many uploads, no room now
+		OnlineException error => CoopSnapshotTransfer.Failed( error.Message, retryAfter: error.RetryAfter ),
+		_ => CoopSnapshotTransfer.Failed( exception.Message )
+	};
+
+	/// <summary>
+	/// [EXT:online-coop-snapshot-join] What a failed snapshot download means for the guest: the snapshot rotated out (404), the guest no longer the session's (403, for good), the server asking
+	/// to be tried again later (429, a server error), or a failed download.
+	/// </summary>
+	internal static CoopSnapshotTransfer DownloadFailure( Exception exception ) => exception switch
+	{
+		OnlineException { Status: System.Net.HttpStatusCode.NotFound } error => CoopSnapshotTransfer.Failed( error.Message, missing: true ),
+		OnlineException { Status: System.Net.HttpStatusCode.Forbidden } error => CoopSnapshotTransfer.Failed( error.Message, permanent: true ),
+		OnlineException { Status: System.Net.HttpStatusCode.TooManyRequests or >= System.Net.HttpStatusCode.InternalServerError } error =>
+			CoopSnapshotTransfer.Failed( error.Message, retryAfter: error.RetryAfter, busy: true ),
+		OnlineException error => CoopSnapshotTransfer.Failed( error.Message, retryAfter: error.RetryAfter ),
+		_ => CoopSnapshotTransfer.Failed( exception.Message )
+	};
 
 	/// <summary>Whether <paramref name="text"/> fits a field of <paramref name="maximumLength"/> characters (the writer refuses longer ones and control characters).</summary>
 	private static bool Fits( string text, int maximumLength ) => text.Length <= maximumLength && !text.Any( char.IsControl );

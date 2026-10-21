@@ -42,6 +42,9 @@ internal sealed class CoopTestNetwork( Func<double>? clock = null )
 	/// <summary>How long an upload or a download takes to answer (seconds of the network's clock).</summary>
 	public double TransferSeconds { get; set; }
 
+	/// <summary>How long the upload of the given attempt number (1 first) takes to answer instead of <see cref="TransferSeconds"/>; null keeps it.</summary>
+	public Func<int, double?>? UploadSeconds { get; set; }
+
 	/// <summary>Answers the upload of the given attempt number (1 first) instead of the store, e.g. with a failure; null lets the store answer.</summary>
 	public Func<int, CoopSnapshotTransfer?>? FailUpload { get; set; }
 
@@ -121,8 +124,9 @@ internal sealed class CoopTestNetwork( Func<double>? clock = null )
 		private readonly CoopTestNetwork network;
 		private readonly Queue<(double Due, Action Raise)> inbox = new();
 
-		/// <summary>The transfers' answers: HTTP is no part of the socket, so a lost socket loses none of them.</summary>
-		private readonly Queue<(double Due, Action Raise)> transfers = new();
+		/// <summary>The transfers' answers by their time, in order within it: HTTP is no part of the socket, so a lost socket loses none of them.</summary>
+		private readonly PriorityQueue<Action, (double Due, long Order)> transfers = new();
+		private long transferOrder;
 
 		public Member( CoopTestNetwork network, uint id, byte slot, bool host )
 		{
@@ -198,8 +202,11 @@ internal sealed class CoopTestNetwork( Func<double>? clock = null )
 			var now = network.clock();
 			for ( var count = 0; count < limit && inbox.TryPeek( out var next ) && next.Due <= now; count++ )
 				inbox.Dequeue().Raise();
-			while ( transfers.TryPeek( out var answer ) && answer.Due <= now )
-				transfers.Dequeue().Raise();
+			while ( transfers.TryPeek( out var answer, out var due ) && due.Due <= now )
+			{
+				transfers.Dequeue();
+				answer();
+			}
 		}
 
 		/// <summary>The store's rules: only the host uploads, only while another member is in the session; the newest two snapshots stay.</summary>
@@ -210,7 +217,7 @@ internal sealed class CoopTestNetwork( Func<double>? clock = null )
 				?? (!IsHost ? CoopSnapshotTransfer.Failed( "Only the host uploads the park.", permanent: true )
 				: network.members.Count < 2 ? CoopSnapshotTransfer.Failed( "Nobody is joining." )
 				: Store( payload ));
-			transfers.Enqueue( (network.clock() + network.TransferSeconds, () => done( answer )) );
+			transfers.Enqueue( () => done( answer ), (network.clock() + (network.UploadSeconds?.Invoke( attempt ) ?? network.TransferSeconds), transferOrder++) );
 		}
 
 		private CoopSnapshotTransfer Store( byte[] payload )
@@ -231,7 +238,7 @@ internal sealed class CoopTestNetwork( Func<double>? clock = null )
 				?? (stored == null ? CoopSnapshotTransfer.Failed( "No such snapshot.", missing: true )
 				: stored.Length != bytes ? CoopSnapshotTransfer.Failed( "The snapshot is not as long as its host said." )
 				: CoopSnapshotTransfer.Downloaded( stored.ToArray() ));
-			transfers.Enqueue( (network.clock() + network.TransferSeconds, () => done( answer )) );
+			transfers.Enqueue( () => done( answer ), (network.clock() + network.TransferSeconds, transferOrder++) );
 		}
 
 		/// <summary>The socket drops: what was on its way is lost, and the connected members see it go.</summary>

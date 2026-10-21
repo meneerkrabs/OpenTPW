@@ -24,10 +24,10 @@ public class QueueSegmentCommandTests
 		Assert.ThrowsException<InvalidDataException>( () => ParkCommandCodec.Decode( alias ) );
 		var forged = ParkCommandCodec.Encode( native ); forged[0] = 2;
 		Assert.ThrowsException<InvalidDataException>( () => ParkCommandCodec.Decode( forged ) );
-		var oldLog = log.Serialize(); oldLog[ParkCommandLogFile.Magic.Length] = 2;
+		var oldLog = log.Serialize( 1 );
 		Assert.ThrowsException<InvalidDataException>( () => ParkCommandLogFile.Deserialize( oldLog ) );
 		var onlyOld = log with { Entries = new[] { new ParkCommandLogEntry( 0, legacy ) } };
-		var bytes = onlyOld.Serialize(); bytes[ParkCommandLogFile.Magic.Length] = 2;
+		var bytes = onlyOld.Serialize( 1 );
 		Assert.AreEqual( legacy, ParkCommandLogFile.Deserialize( bytes ).Entries[0].Command );
 	}
 

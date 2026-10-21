@@ -67,6 +67,9 @@ public static class ParkSharing
 	{
 		if ( level.IsReadOnlyVisit )
 			throw new InvalidOperationException( "A visited park cannot be exported as the visitor's own park." );
+		// [EXT:online-coop-lockstep] a co-op guest's park is the host's: the host publishes it (also after the session ended)
+		if ( level.IsCoopGuestPark )
+			throw new InvalidOperationException( "A shared park is published by its host." );
 		if ( ModsRefusal( level ) is { } refusal )
 			throw new InvalidOperationException( refusal );
 		var snapshot = ParkSnapshotBuilder.FromLevel( level );

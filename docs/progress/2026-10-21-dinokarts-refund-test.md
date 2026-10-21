@@ -1,0 +1,7 @@
+## With-data backspace refund test follows the exit-tile protection (October 21, 2026)
+
+The with-data test `TrackEditRecoveryDataTests` failed on main since #739 (`Expected:<3>. Actual:<2>. DinoKarts`); CI does not run it, so the twin of the unit tests #739 updated was missed.
+
+- **Cause.** The test laid its station through the load path (`PlaceStation`), drew a three-tile line from the exit and expected backspace to refund all three. Since #739 the ordinary clear spares the exit and entry tiles, so only two refund.
+- **The game does the same.** The tile clear `0x53B280` spares the cells held in `0x7639E0/E4` and `0x7639E8/EC` (`0x53B2EF..0x53B350`). Every station placement path sets them to the exit, through `0x52A3A0` (rotation 0: anchor + (4, 1)), and the entry, through `0x52A420` (`0x524CB4`, `0x524FC9`, `0x5251F5`, `0x5255F0`, `0x525838`, `0x52788A`, `0x527A17`); the walk `0x52A970` steps back from `0x7639E0` to the first station tile. The station line `0x52A1A0` writes the first station tile there only for a moment, before the placement overwrites it (`0x524DFB` before `0x524FC9`, `0x525472` before `0x5255F0`).
+- **Test.** It now places the station as a fresh placement does (`PlaceInitialStation`: the exit and entry free), checks that the line reuses the exit and pays for two new tiles, and that backspace refunds exactly those two at each shipped kart and water ride's own scrap row while the exit stays. No game code changes.

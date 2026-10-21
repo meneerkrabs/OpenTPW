@@ -11,8 +11,9 @@ internal sealed partial class GameFlow
 	internal Func<Level, ParkResumeSnapshot>? AutomaticCaptureOverride { get; set; }
 	internal Action<string>? AutomaticRetireOverride { get; set; }
 	internal Action<ParkResumeSnapshot>? AutomaticResumeOverride { get; set; }
+	// [EXT:online-coop-lockstep] a co-op guest's park is never saved, also after its session ended: the park is the host's (no automatic checkpoint, autosave or exit checkpoint; it leaves as from a visit)
 	private static bool AutomaticEligible( Level level ) => GameEditions.Current == GameEdition.ThemeParkWorld && GameEditions.Capabilities.ParkSaves &&
-	 !level.IsReadOnlyVisit && !level.IsThemeParkIncSlice && level.OriginalPark != null && level.Guests != null &&
+	 !level.IsReadOnlyVisit && !level.IsThemeParkIncSlice && !level.IsCoopGuestPark && level.OriginalPark != null && level.Guests != null &&
 	 level.Park is { Start.Kind: ParkStartKind.FullSimulation or ParkStartKind.InstantAction } && ObjectCatalog.Themes.Contains( level.LevelName, StringComparer.Ordinal );
 
 	private string? AutomaticProgressReceipt( PlayerProgressRuntimeOwner? owner, string? unbound )

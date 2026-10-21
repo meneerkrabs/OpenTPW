@@ -8,6 +8,7 @@
 //   buy     the first buy-menu open and four first selections (the 12 October table)
 //   winterCost    the frame cost of a crowd in rain, then settled snow, then umbrellas, then warm items added one after the other (after jungle)
 //   umbrellaCost  the frame cost of a crowd in rain with and without an open umbrella over every guest, at the Home and the farthest zoom (after jungle)
+//   coopDigest    the co-op session digest's cost on the Jungle park with a staged crowd (after jungle; docs/COOP.md, "Measurements")
 //   memory  memory samples over a longer park session
 //   switch  memory across park changes: Jungle, the lobby, the next island's park, the lobby, Jungle again
 //   revisit a second visit in the same profile without the served folder: Play starts from the files kept in the browser
@@ -101,7 +102,7 @@ function usage() {
   --track-origins         jungle: record where the textures made from bytes come from (their stack), so the switch scenario names the largest ones (a few ms per texture)
   --label <name>          build label in the report (interpreter, aot, ...)
   --out <file.json>       report path (default reports/web-perf/<date>-<label>.json)
-  --scenarios <list>      comma list of start,lobby,jungle,buy,umbrellas,snow,winter,winterCost,umbrellaCost,events,door,lobbyEnter,memory,switch,revisit,digest,determinism,transfer,reload (default start,lobby,jungle,buy,digest)
+  --scenarios <list>      comma list of start,lobby,jungle,buy,umbrellas,snow,winter,winterCost,umbrellaCost,coopDigest,events,door,lobbyEnter,memory,switch,revisit,digest,determinism,transfer,reload (default start,lobby,jungle,buy,digest)
   --window <seconds>      steady window length (default 30)
   --memory-minutes <n>    memory scenario length (default 10)
   --music                 keep music and speech on (default: muted, effects on, as on 11 October)
@@ -113,7 +114,7 @@ function usage() {
   --door-wait <seconds>   door: how long each opening waits for the first new guest (default 20)
   --soak <seconds>        events: length of the closing soak at the fastest speed (default 90)
   --advice <ids>          events: advisor advice message ids to post and time, comma separated
-  --crowd <n>             umbrellaCost, winterCost: extra guests staged in the Jungle park (default 400)
+  --crowd <n>             umbrellaCost, winterCost, coopDigest: extra guests staged in the Jungle park (default 400)
   --shot <file>           umbrellas, snow, winter, winterCost: where the screenshot goes; buy: one screenshot per row, named <file>-<row>.png
   --follow <n>            winter, winterCost: the screenshot follows the visible guest after skipping |n| of them by id, counted from the newest when negative (winter default 0, the lowest; winterCost default -250, a guest of a fresh crowd standing in the open and not under the entrance roofs)
   --cover <0..1>          snow: the settled snow cover to hold (default 1)
@@ -404,6 +405,37 @@ const scenarios = {
 			result[`${key}Umbrellas`].drawn = await page.eval('opentpwPerf.program.PerfUmbrellaCrowdDrawn()');
 		}
 		return result;
+	},
+
+	/**
+	 * [EXT:online-coop-lockstep] The co-op session digest's cost (docs/COOP.md, "Measurements"): the host takes one a second of real time. After jungle, the median of 15 digests and
+	 * world hashes on the park as it stands; again after up to 80 of the buy menu's rides and shops are built (money cheated in for them) and after --crowd extra guests are staged
+	 * (Program.PerfCrowd); and once more after the park ran on for 20 s. The park is not a real run afterwards.
+	 */
+	async coopDigest(page, options) {
+		const state = await page.state();
+		if (!state.hud || state.level !== 'jungle')
+			throw new Error('The coopDigest scenario needs the Jungle park: run it after jungle');
+		const measure = async () => JSON.parse(await page.eval('opentpwPerf.program.PerfSessionDigest(15)', 600000));
+		const park = await measure();
+		for (let index = 0; index < 60; index++)
+			await page.call('PerfCheat', 'money', 0).catch(() => {});
+		await sleep(3000);
+		const items = [];
+		for (const category of ['Rides', 'Shops'])
+			for (const item of JSON.parse(await page.eval(`opentpwPerf.program.PerfBuyItems(${JSON.stringify(category)})`)))
+				items.push([category, item.archive]);
+		let placed = 0;
+		for (let index = 0; placed < 80 && index < 400 && items.length > 0; index++) {
+			const [category, archive] = items[index % items.length];
+			if (await page.eval(`opentpwPerf.program.PerfPlaceObject(${JSON.stringify(category)}, ${JSON.stringify(archive)})`))
+				placed++;
+		}
+		const objects = { placed, ...await measure() };
+		const guests = await page.eval(`opentpwPerf.program.PerfCrowd(${options.crowd})`);
+		const crowd = { staged: options.crowd, guests, ...await measure() };
+		await sleep(20000);
+		return { park, objects, crowd, later: await measure() };
 	},
 
 	/**

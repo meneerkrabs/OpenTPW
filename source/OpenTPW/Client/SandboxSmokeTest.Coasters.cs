@@ -43,9 +43,9 @@ internal sealed partial class SandboxSmokeTest
 			if ( !cells.All( cell => level.Objects.FindAt( cell.Item1, cell.Item2 ) == null && level.Objects.Grid.CheckTerrain( cell.Item1, cell.Item2 ) == OriginalPlacementResult.Allowed
 				&& !level.Guests!.Grid.Cells.FlagsAt( cell.Item1, cell.Item2 ).HasFlag( ParkCellFlags.Unowned ) ) )
 				continue;
-			// a player scrolls to the site: look at the circuit's middle first
-			// the circuit sits in the middle of the view, clear of the tool panel that opens at the bottom left
-			bool Centred( (int, int) cell ) => Clickable( cell, out var at ) && at.X > canvas.Width * 0.3f && at.Y < canvas.Height * 0.7f;
+			// the circuit sits in the middle of the view, clear of the tool panel that opens at the bottom left; the test only reads the view (it scrolls nothing):
+			// a site already centred in the current view passes as is, otherwise a player scrolls to the circuit's middle and the site is judged again there
+			bool Centred( (int, int) cell ) => TryClickPointInView( cell, out var at ) && at.X > canvas.Width * 0.3f && at.Y < canvas.Height * 0.7f;
 			if ( Camera.Mode is ParkCameraMode parkCamera && !cells.All( Centred ) )
 			{
 				var middle = OriginalParkPlacement.GetCellCenter( level.OriginalPark.Heightfield, (int)cells.Average( cell => cell.Item1 ), (int)cells.Average( cell => cell.Item2 ) );

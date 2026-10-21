@@ -43,10 +43,12 @@ public partial class Level
 		Objects.ObjectRemoving += OnAddOnRemoving;
 		Objects.ObjectRemoved += OnAddOnRemoved;
 		foreach ( var item in Objects.Objects )
-			OnTrackStationPlaced( item );
+			RegisterTrackStation( item, fresh: false );
 	}
 
-	private void OnTrackStationPlaced( OriginalObject item )
+	private void OnTrackStationPlaced( OriginalObject item ) => RegisterTrackStation( item, fresh: true );
+
+	private void RegisterTrackStation( OriginalObject item, bool fresh )
 	{
 		if ( waterTracks == null || kartTracks == null || item.Runtime.Bump is not { } bump || item.IsDeleted )
 			return;
@@ -68,7 +70,10 @@ public partial class Level
 		// A restored park carries its tiles and boats in the save's track part; the restore walks the circuit then.
 		if ( resumeState != null )
 			return;
-		BuilderOf( item )!.PlaceStation( station );
+		if ( fresh )
+			BuilderOf( item )!.PlaceInitialStation( station );
+		else
+			BuilderOf( item )!.PlaceStation( station );
 		// [EXT:track-placement-walk] the original's placement lays the station (0x0052A1A0 from 0x00529E10) and walks nothing; OpenTPW walks the fresh station so its controller has the station's sections and verdict at once, and the pieces take the add-on walk's rule (TrackPieceAnimations.ForWalk), which on the station's open circuit stops clips none of them plays yet
 		RewalkTrack( item, TrackWalkCause.Placement );
 	}

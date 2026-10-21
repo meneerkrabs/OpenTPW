@@ -91,6 +91,7 @@
 		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/GltfModelConverterTests.cs" />
 		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/WebClientTransportTests.cs" />
 		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/CoopLinkTests.cs" />
+		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/CoopSessionTests.cs" />
 		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/BrowserPinsExclusionTests.cs" />
 		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/StrictCommandsGameTests.cs" />
 		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/AudioParkVisitTests.cs" />

@@ -6,29 +6,41 @@ public readonly record struct ParkCommandHashCheckpoint( long Ticks, ulong Hash 
 /// <summary>
 /// [EXT:online-coop-commands] A recorded build session (docs/COOP.md, "Recording and replay"): the park it started in (theme, world seed, the tick and world hash at the
 /// start), every command with the tick it applied before, and hash checkpoints, so a replay from the same start can prove it reached the same world.
+/// [EXT:online-coop-lockstep] <paramref name="SessionRules"/>: the commands applied under a co-op session's rules (<see cref="ParkCommands.SessionRules"/>), which a replay must
+/// apply too (a session's own recording, <see cref="CoopHostStream.SessionLog"/>).
 /// </summary>
-public sealed record ParkCommandLogFile( string Theme, ulong Seed, long StartTick, ulong StartHash, IReadOnlyList<ParkCommandLogEntry> Entries, IReadOnlyList<ParkCommandHashCheckpoint> Checkpoints )
+public sealed record ParkCommandLogFile( string Theme, ulong Seed, long StartTick, ulong StartHash, IReadOnlyList<ParkCommandLogEntry> Entries, IReadOnlyList<ParkCommandHashCheckpoint> Checkpoints,
+	bool SessionRules = false )
 {
 	/// <summary>The file's magic bytes, "OTPWCMDS".</summary>
 	public static ReadOnlySpan<byte> Magic => "OTPWCMDS"u8;
-	/// <summary>The file format version.</summary>
-	public const int FormatVersion = 2;
+	/// <summary>The file format version: 3 adds the flags byte after the start hash (bit 0: the session rules).</summary>
+	public const int FormatVersion = 3;
+
+	private const byte SessionRulesFlag = 1;
 
 	private const byte EndTag = 0;
 	private const byte CommandTag = 1;
 	private const byte CheckpointTag = 2;
 
 	/// <summary>The file's bytes: the magic, the format version, the start, then the commands and checkpoints in tick order and an end mark.</summary>
-	public byte[] Serialize()
+	public byte[] Serialize() => Serialize( FormatVersion );
+
+	/// <summary><see cref="Serialize()"/> in an earlier format <paramref name="version"/> (tests of older files): format 1 and 2 have no flags byte, so they hold no session log.</summary>
+	internal byte[] Serialize( int version )
 	{
+		if ( version is < 1 or > FormatVersion || (version < 3 && SessionRules) )
+			throw new ArgumentOutOfRangeException( nameof( version ) );
 		var writer = new ParkCommandWriter();
 		foreach ( var value in Magic )
 			writer.Byte( value );
-		writer.Int( FormatVersion );
+		writer.Int( version );
 		writer.String( Theme );
 		writer.UInt64( Seed );
 		writer.Long( StartTick );
 		writer.UInt64( StartHash );
+		if ( version >= 3 )
+			writer.Byte( SessionRules ? SessionRulesFlag : (byte)0 );
 		var commands = 0;
 		var checkpoints = 0;
 		// commands and checkpoints merged by tick; the checkpoint after N ticks is taken before a command logged at N (which applies before tick N runs), so it comes first
@@ -61,7 +73,7 @@ public sealed record ParkCommandLogFile( string Theme, ulong Seed, long StartTic
 			throw new InvalidDataException( "Not an OpenTPW command log." );
 		var reader = new ParkCommandReader( bytes[Magic.Length..] );
 		var version = reader.Int();
-		if ( version is not (1 or FormatVersion) )
+		if ( version is not (1 or 2 or FormatVersion) )
 			throw new InvalidDataException( $"Command log format {version} is not {FormatVersion}." );
 		var theme = reader.String();
 		var seed = reader.UInt64();
@@ -69,6 +81,9 @@ public sealed record ParkCommandLogFile( string Theme, ulong Seed, long StartTic
 		var startHash = reader.UInt64();
 		if ( startTick < 0 )
 			throw new InvalidDataException( "The log starts at a negative tick." );
+		var flags = version >= 3 ? reader.Byte() : (byte)0;
+		if ( (flags & ~SessionRulesFlag) != 0 )
+			throw new InvalidDataException( $"Unknown command log flags {flags}." );
 		var entries = new List<ParkCommandLogEntry>();
 		var checkpoints = new List<ParkCommandHashCheckpoint>();
 		var last = startTick;
@@ -98,7 +113,7 @@ public sealed record ParkCommandLogFile( string Theme, ulong Seed, long StartTic
 		}
 		if ( !reader.AtEnd )
 			throw new InvalidDataException( "The command log has bytes after its end mark." );
-		return new ParkCommandLogFile( theme, seed, startTick, startHash, entries, checkpoints );
+		return new ParkCommandLogFile( theme, seed, startTick, startHash, entries, checkpoints, (flags & SessionRulesFlag) != 0 );
 	}
 }
 
@@ -132,6 +147,12 @@ public sealed class ParkCommandRecorder : IDisposable
 	public IReadOnlyList<ParkCommandLogEntry> Entries => entries;
 	public IReadOnlyList<ParkCommandHashCheckpoint> Checkpoints => checkpoints;
 
+	/// <summary>[EXT:online-coop-lockstep] Whether the recorded commands apply under a co-op session's rules (a session's own recording); the log says so.</summary>
+	public bool SessionRules { get; init; }
+
+	/// <summary>[EXT:online-coop-lockstep] A checkpoint whose hash the caller took (a session's recording keeps the world hash of each session digest instead of taking one of its own).</summary>
+	public void AddCheckpoint( long ticks, ulong hash ) => checkpoints.Add( new ParkCommandHashCheckpoint( ticks, hash ) );
+
 	/// <summary>Called by the level after a tick, with the ticks run so far; a checkpoint is taken every <see cref="CheckpointInterval"/> ticks from the start.</summary>
 	public void AfterTick( long ticks, Func<ulong> hash )
 	{
@@ -145,7 +166,7 @@ public sealed class ParkCommandRecorder : IDisposable
 		var all = checkpoints.ToList();
 		if ( final is { } last && (all.Count == 0 || all[^1].Ticks != last.Ticks) )
 			all.Add( new ParkCommandHashCheckpoint( last.Ticks, last.Hash ) );
-		return new ParkCommandLogFile( theme, seed, startTick, startHash, entries.ToArray(), all );
+		return new ParkCommandLogFile( theme, seed, startTick, startHash, entries.ToArray(), all, SessionRules );
 	}
 
 	private void OnApplied( ParkCommandLogEntry entry, ParkCommandResult result ) => entries.Add( entry );
@@ -169,6 +190,25 @@ public static class ParkCommandReplay
 		ArgumentNullException.ThrowIfNull( entries );
 		foreach ( var entry in entries )
 			commands.Schedule( entry.Command, entry.Tick );
+		RunTicks( commands, nextTick, tick, endTick, afterTick );
+	}
+
+	/// <summary>
+	/// <see cref="Run(ParkCommands, IReadOnlyList{ParkCommandLogEntry}, Func{long}, Action, long, Action{long}?)"/> for a whole <paramref name="log"/>, under the funnel's session rules
+	/// when the log was recorded under them ([EXT:online-coop-lockstep]: a session refuses the cheats, the developer kinds and a command issued inside another).
+	/// </summary>
+	public static void Run( ParkCommands commands, ParkCommandLogFile log, Func<long> nextTick, Action tick, long endTick, Action<long>? afterTick = null )
+	{
+		ArgumentNullException.ThrowIfNull( commands );
+		ArgumentNullException.ThrowIfNull( log );
+		var previous = commands.SessionRules;
+		commands.SessionRules = log.SessionRules;
+		try { Run( commands, log.Entries, nextTick, tick, endTick, afterTick ); }
+		finally { commands.SessionRules = previous; }
+	}
+
+	private static void RunTicks( ParkCommands commands, Func<long> nextTick, Action tick, long endTick, Action<long>? afterTick )
+	{
 		while ( nextTick() < endTick )
 		{
 			var before = nextTick();

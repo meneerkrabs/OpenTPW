@@ -165,7 +165,7 @@ public class TrackEditTests
 		Assert.IsTrue( rig.Walk().IsValid );
 		var cut = rig.Editor.Cut( (14, 10), (14, 14), commit: true );
 		Assert.IsFalse( cut.Failed );
-		CollectionAssert.AreEqual( new[] { (14, 10), (14, 14) }, cut.Cleared.ToArray(), "the crossing is not cleared" );
+		CollectionAssert.AreEqual( new[] { (14, 14) }, cut.Cleared.ToArray(), "the crossing and protected exit are not cleared" );
 		Assert.IsTrue( rig.Laid( 14, 12 ), "it stays with the cross line" );
 		Assert.AreEqual( 0x44, rig.Tracks.Get( 14, 12 ).Mask, "the arms along the cut went, the arms of the other pass stay" );
 		Assert.AreEqual( 0, rig.Tracks.Get( 14, 12 ).Overlap, "one pass counted down" );

@@ -106,6 +106,9 @@ public sealed class ParkCommands
 	/// <summary>Raised for every applied command (after it ran), with its tick and result: the hook of a recording (<see cref="ParkCommandRecorder"/>).</summary>
 	public event Action<ParkCommandLogEntry, ParkCommandResult>? Applied;
 
+	/// <summary>[EXT:online-coop-lockstep] Raised when a session's rights refuse a command of this machine (<see cref="SessionRules"/>), which leaves no trace in the log.</summary>
+	public event Action<ParkCommand>? SessionRefused;
+
 	/// <summary>Whether a command is being executed now (an edit inside an edit runs directly, unlogged, as part of the outer command).</summary>
 	public bool IsExecuting => depth > 0;
 
@@ -146,7 +149,10 @@ public sealed class ParkCommands
 		// [EXT:online-coop-lockstep] in a session a command of this machine the rights refuse leaves no trace: a guest's own issues stay out of its log, which is the host's stream. A held
 		// command (the host's stream) is refused as usual and logged, so the stream sees that it was refused here
 		if ( SessionRules && !applyingDue && command.Player >= 0 && Rights is { } rights && !rights.Allows( command.Player, command.Kind ) )
+		{
+			SessionRefused?.Invoke( command );
 			return ParkCommandResult.Rejected( $"Player {command.Player} may not {command.Kind}." );
+		}
 		var tick = nextTick();
 		ParkCommandResult result;
 		ExceptionDispatchInfo? thrown = null;

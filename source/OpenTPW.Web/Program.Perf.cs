@@ -187,6 +187,26 @@ public static partial class Program
 	public static int PerfCrowd( int count ) =>
 		flow?.Level?.Guests is { } guests ? UmbrellaPerf.Stage( guests, null, count, 0, false ).Guests : -1;
 
+	/// <summary>
+	/// [EXT:online-coop-lockstep] The page runs the performance harness (main.js calls this with <c>?perf=1</c> on a loopback address): its hooks change the park outside the commands,
+	/// so this page shares no park (<see cref="CoopSession.CanShare"/>).
+	/// </summary>
+	[JSExport]
+	public static void PerfMode() => CoopSession.ChangesParkOutsideCommands = true;
+
+	/// <summary>
+	/// [EXT:online-coop-lockstep] The co-op session digest's cost on the running park (<see cref="CoopDigest.MeasureCost"/>, docs/COOP.md "Measurements"), as JSON: the median of
+	/// <paramref name="repeats"/> digests and of as many world hashes in milliseconds, with the park's guests and objects; null outside a park.
+	/// </summary>
+	[JSExport]
+	public static string? PerfSessionDigest( int repeats )
+	{
+		if ( flow?.Level is not { Guests: { } guests } level || repeats < 1 )
+			return null;
+		var (digest, worldHash) = CoopDigest.MeasureCost( level, repeats );
+		return new JsonObject { ["digestMs"] = Math.Round( digest, 2 ), ["worldHashMs"] = Math.Round( worldHash, 2 ), ["guests"] = guests.Guests.Count, ["objects"] = level.Objects.Objects.Count }.ToJsonString();
+	}
+
 	/// <summary>Builds a coaster station with a small circuit near the paths (<see cref="Level.BuildDemoCoaster"/>, finished or left open with the tool active); true when it fitted. The coaster is free and not a real run's.</summary>
 	[JSExport]
 	public static bool PerfBuildCoaster( bool finished ) => flow?.Level?.BuildDemoCoaster( finished, null ) != null;

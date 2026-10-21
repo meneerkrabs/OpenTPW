@@ -1271,6 +1271,8 @@ public partial class Level : IDisposable
 
 	public void Dispose()
 	{
+		// [EXT:online-coop-lockstep] a park that closes (a load, a restart, a replaced park, leaving it) ends its co-op session for this game
+		CoopSession?.Dispose();
 		Guests?.ClearBodySprites();
 		rideBodyPoses = null;
 		ExitRideView();

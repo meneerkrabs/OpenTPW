@@ -659,8 +659,8 @@ public sealed record SetSessionClockCommand( long Seconds ) : ParkSettingCommand
 	/// <summary>The command for the local time <paramref name="time"/>, to the second.</summary>
 	public static SetSessionClockCommand For( DateTime time ) => new( time.Ticks / TimeSpan.TicksPerSecond );
 
-	/// <summary>The civil time it sets.</summary>
-	public DateTime Time => new( Seconds * TimeSpan.TicksPerSecond, DateTimeKind.Unspecified );
+	/// <summary>The civil time it sets (a well-formed command's only: not a public member, so a malformed command still prints).</summary>
+	internal DateTime Time => new( Seconds * TimeSpan.TicksPerSecond, DateTimeKind.Unspecified );
 
 	internal override ParkCommandResult Execute( Level level )
 	{

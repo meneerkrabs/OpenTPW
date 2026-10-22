@@ -138,8 +138,8 @@ park points counts-test and guest boarding read. A re-walk (commit mode) also re
 (`[TPW-EXE:0x545450]`).
 
 Messages: the walk posts no advisor or event message (`APPROX:TRACK-006` retired: `0x52A970` and the walk sites of the tool handler `0x524960` call no message builder `0x59B590`).
-The ids once listed for it are tool help of the cell build tool: 0xCC (204) is posted by the kart and water tool for a click with no line start (`0x526D41`,
-through the post at `0x527629`), which the tool reaches only when a line closes with exactly Ctrl held and no queue to follow (the placement presets the start at the
+The ids once listed for it are tool help of the cell build tool: 0xCC (204) is posted by the kart and water tool for a click with no line start (pushed at `0x526D41`,
+built at `0x527629` and posted at `0x52763c`), which the tool reaches only when a line closes with exactly Ctrl held and no queue to follow (the placement presets the start at the
 station's exit, `0x52A1A0`; `0x527146`, UI-031). OpenTPW's tool reaches that state the same way (the HUD's tool click passes the click's modifiers to the line's
 continuation), but does not post 204 there yet (ADVISOR-009: the advisor inventory still lists 204 as never said, and the restored advice posts it when the coaster
 tool starts). 0xB8 (184, the path tool's first click), 0xD6 (214, the third later click of the path or queue tool) and 0x151 (337,

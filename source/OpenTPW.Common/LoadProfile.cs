@@ -17,10 +17,18 @@ public static class LoadProfile
 	private static long excludedTicks;
 	private static long pausedAt = -1;
 
+	// Counted amounts (files opened, bytes read, shaders compiled, docs/ENGINE-PERFORMANCE.md "Start and build hitches"): unlike the sections they are
+	// counted on every thread while recording is on, so work handed to a helper thread is not lost.
+	private static readonly Dictionary<string, long> counters = new();
+	private static volatile bool counting;
+
 	/// <summary>Turns recording on (clearing what was recorded) or off, for the calling thread.</summary>
 	public static void Enable( bool enabled )
 	{
 		totals.Clear();
+		lock ( counters )
+			counters.Clear();
+		counting = enabled;
 		excludedTicks = 0;
 		pausedAt = -1;
 		threadId = enabled ? Environment.CurrentManagedThreadId : -1;
@@ -28,6 +36,25 @@ public static class LoadProfile
 
 	/// <summary>Starts a section; dispose it to record it. A no-op while recording is off.</summary>
 	public static Section Measure( string name ) => threadId == Environment.CurrentManagedThreadId || FrameMarks.Enabled ? new Section( name, Stopwatch.GetTimestamp(), excludedTicks ) : default;
+
+	/// <summary>True while a profile records (<see cref="Enable"/>).</summary>
+	public static bool Recording => counting;
+
+	/// <summary>Adds <paramref name="amount"/> to the counter <paramref name="name"/>, from any thread; a no-op while recording is off.</summary>
+	public static void Count( string name, long amount = 1 )
+	{
+		if ( !counting )
+			return;
+		lock ( counters )
+			counters[name] = counters.TryGetValue( name, out var total ) ? total + amount : amount;
+	}
+
+	/// <summary>The counters recorded so far (<see cref="Count"/>).</summary>
+	public static IReadOnlyDictionary<string, long> Counters()
+	{
+		lock ( counters )
+			return new Dictionary<string, long>( counters );
+	}
 
 	/// <summary>The load stops for other work until <see cref="Resume"/>; open sections do not count that time.</summary>
 	public static void Pause()

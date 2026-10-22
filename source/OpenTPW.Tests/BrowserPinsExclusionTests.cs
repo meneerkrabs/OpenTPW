@@ -76,7 +76,10 @@ public class BrowserPinsExclusionTests
 			.Select( match => match.Groups[1].Value ).ToHashSet( StringComparer.Ordinal );
 		var (desktopFiles, browserFiles) = PageSources( web, XDocument.Load( projectPath ) );
 		Assert.IsTrue( desktopFiles.Any( file => file.Name == "OpenTPW/Client/Game.cs" ), "the page's Compile Exclude list was not read" );
-		var desktopOnly = DesktopOnly( desktopFiles.Select( file => (file.Name, File.ReadAllText( file.Path )) ), browserFiles.Select( File.ReadAllText ) );
+		// the pins build compiles the test files it does not exclude into the page as well, so their types are browser types too
+		var browserTests = Directory.EnumerateFiles( tests, "*.cs", SearchOption.AllDirectories )
+			.Where( path => !InBuildOutput( Path.GetRelativePath( tests, path ) ) && !excluded.Contains( Path.GetRelativePath( tests, path ).Replace( '\\', '/' ) ) );
+		var desktopOnly = DesktopOnly( desktopFiles.Select( file => (file.Name, File.ReadAllText( file.Path )) ), browserFiles.Concat( browserTests ).Select( File.ReadAllText ) );
 		var missing = Directory.EnumerateFiles( tests, "*.cs", SearchOption.TopDirectoryOnly )
 			.Where( path => !excluded.Contains( Path.GetFileName( path ) ) )
 			.Select( path => (Name: Path.GetFileName( path ), Uses: DesktopOnlyUses( File.ReadAllText( path ), desktopOnly ).ToArray()) )
@@ -93,18 +96,23 @@ public class BrowserPinsExclusionTests
 		var desktopOnly = DesktopOnly(
 			[
 				("OpenTPW/Client/Game.cs", "namespace OpenTPW;\ninternal static class Game\n{\n\tinternal const string CopiedSavesMarker = \"x\";\n\tinternal static string ResolveSaveDirectory( string game, string settings = \"\" ) => game;\n}"),
-				("OpenTPW/UI/Layouts/ParkLayout.cs", "namespace OpenTPW;\npublic sealed class ParkLayout\n{\n\tprivate int level = 2;\n\tpublic static void Draw() { var inner = 1; }\n\tpublic static bool DrawOriginalImport( int count ) => count > 0;\n}"),
+				("OpenTPW/UI/Layouts/ParkLayout.cs", "namespace OpenTPW;\npublic sealed class ParkLayout\n{\n\tprivate int level = 2;\n\tpublic static int Width, Tidy = 1;\n\tpublic static void Draw() { var inner = 1; }\n\tpublic static bool DrawOriginalImport( int count ) => count > 0;\n}"),
 			],
-			["namespace OpenTPW;\npublic sealed class ParkLayout\n{\n\tpublic static void Draw() { }\n}"] );
+			["namespace OpenTPW;\npublic sealed class ParkLayout\n{\n\tpublic static int Width;\n\tpublic static void Draw() { }\n}"] );
 		CollectionAssert.AreEqual( new[] { "Game" }, desktopOnly.Types.Keys.ToArray() );
-		CollectionAssert.AreEquivalent( new[] { "level", "DrawOriginalImport" }, desktopOnly.Members["ParkLayout"].Keys.ToArray() );
+		CollectionAssert.AreEquivalent( new[] { "level", "Tidy", "DrawOriginalImport" }, desktopOnly.Members["ParkLayout"].Keys.ToArray() );
 
 		foreach ( var use in new[] { "var directory = Game.ResolveSaveDirectory( root );", "var marker = Game . CopiedSavesMarker;", "var name = nameof( Game );",
-			"using static OpenTPW.Game;", "var drawn = ParkLayout.DrawOriginalImport( 1 );" } )
+			"using static OpenTPW.Game;", "var drawn = ParkLayout.DrawOriginalImport( 1 );", "using static OpenTPW.ParkLayout;\nvar drawn = DrawOriginalImport( 1 );",
+			"var message = $\"saves in {Game.ResolveSaveDirectory( root )}\";", "var message = $@\"{( count > 0 ? Game.CopiedSavesMarker : \"\" )}\";",
+			"var message = $$\"\"\"{ {{Game.CopiedSavesMarker}} }\"\"\";", "var tidy = ParkLayout.Tidy;",
+			"void First( int Game ) { }\nvoid Second() { var directory = Game.ResolveSaveDirectory( root ); }" } )
 			Assert.AreNotEqual( 0, DesktopOnlyUses( use, desktopOnly ).Count(), use );
 		foreach ( var mention in new[] { "// Game.ResolveSaveDirectory\nvar count = 1;", "var path = \"Client/Game.cs\";", "var game = park.Game;",
 			"var options = new Options { Game = 1 };", "private static string? Game() => null;\nvar game = Game();", "ParkLayout.Draw();",
-			"private readonly Fixture Game = new();\nvar marker = Game.CopiedSavesMarker;", "var drawn = layout.DrawOriginalImport( 1 );" } )
+			"private readonly Fixture Game = new();\nvar marker = Game.CopiedSavesMarker;", "var drawn = layout.DrawOriginalImport( 1 );",
+			"var values = items.Select( Game => Game.Value );", "var values = items.Select( (Game, index) => Game.Value + index );", "var message = $\"Game {count} and {{Game}}\";",
+			"void First( int Game ) { var directory = Game.ResolveSaveDirectory( root ); }", "ParkLayout.Draw();\nvar drawn = DrawOriginalImport( 1 );" } )
 			Assert.AreEqual( 0, DesktopOnlyUses( mention, desktopOnly ).Count(), mention );
 	}
 
@@ -185,7 +193,7 @@ public class BrowserPinsExclusionTests
 				var type = declaration.Groups[1].Value;
 				files.TryAdd( type, name );
 				var members = desktop.TryGetValue( type, out var found ) ? found : desktop[type] = new( StringComparer.Ordinal );
-				foreach ( var member in DeclaredNames( MemberLevel( code, declaration ) ) )
+				foreach ( var member in DeclaredNames( MemberLevel( code, declaration ), memberLevel: true ) )
 					members.TryAdd( member, name );
 			}
 		}
@@ -197,7 +205,7 @@ public class BrowserPinsExclusionTests
 			{
 				var type = declaration.Groups[1].Value;
 				var members = browser.TryGetValue( type, out var found ) ? found : browser[type] = new( StringComparer.Ordinal );
-				members.UnionWith( DeclaredNames( MemberLevel( code, declaration ) ) );
+				members.UnionWith( DeclaredNames( MemberLevel( code, declaration ), memberLevel: true ) );
 			}
 		}
 		var types = desktop.Keys.Where( type => !browser.ContainsKey( type ) ).ToDictionary( type => type, type => files[type], StringComparer.Ordinal );
@@ -209,24 +217,35 @@ public class BrowserPinsExclusionTests
 	}
 
 	/// <summary>
-	/// The desktop-only types and members a test file uses, read like <see cref="CannotCompileForTheBrowser"/> (code only, no comments or literals). Game type
-	/// names are common member names (<c>Settings</c>, <c>Cursor</c>, <c>Game</c>), so a name after a dot (<c>park.Settings</c>), an initializer target
-	/// (<c>{ Cursor = 0 }</c>) or a name the file declares itself (a field, method, local or parameter, which C# would resolve first) is no use of the type.
+	/// The desktop-only types and members a test file uses, read like <see cref="CannotCompileForTheBrowser"/> (code only, no comments or literals, but with
+	/// the expressions of interpolated strings). Game type names are common member names (<c>Settings</c>, <c>Cursor</c>, <c>Game</c>), so a name after a dot
+	/// (<c>park.Settings</c>), an initializer target (<c>{ Cursor = 0 }</c>) or a name the file declares where it is visible (a field or method in its type, a local in
+	/// its block, a parameter in its body; C# resolves those first) is no use of the type. A <c>using static</c> of a shared type makes its desktop-only members bare uses.
 	/// </summary>
 	private static IEnumerable<string> DesktopOnlyUses( string text, DesktopOnlyCode desktopOnly )
 	{
 		var code = CodeOnly( text );
-		var own = DeclaredNames( code );
+		var scope = Scopes( code );
+		var declarations = Declarations( code ).ToArray();
+		var declared = declarations.Select( declaration => declaration.Index ).ToHashSet();
+		var own = declarations.GroupBy( declaration => declaration.Name, StringComparer.Ordinal )
+			.ToDictionary( group => group.Key, group => group.Select( declaration => scope( declaration.Index ) ).Distinct().ToArray(), StringComparer.Ordinal );
+		bool Shadowed( string name, int index ) =>
+			declared.Contains( index ) || (own.TryGetValue( name, out var scopes ) && scopes.Any( visible => visible.Start <= index && index <= visible.End ));
 		var uses = new SortedSet<string>( StringComparer.Ordinal );
-		foreach ( Match directive in Regex.Matches( code, @"^\s*using\s+(?:static\s+)?(?:\w+\s*=\s*)?(?:global::)?[\w.]*?\b(\w+)\s*;", RegexOptions.Multiline ) )
+		var imported = new List<string>();
+		foreach ( Match directive in Regex.Matches( code, @"^\s*using\s+(static\s+)?(?:\w+\s*=\s*)?(?:global::)?[\w.]*?\b(\w+)\s*;", RegexOptions.Multiline ) )
 		{
-			if ( desktopOnly.Types.TryGetValue( directive.Groups[1].Value, out var file ) )
-				uses.Add( $"{directive.Groups[1].Value} ({file})" );
+			var type = directive.Groups[2].Value;
+			if ( desktopOnly.Types.TryGetValue( type, out var file ) )
+				uses.Add( $"{type} ({file})" );
+			else if ( directive.Groups[1].Success && desktopOnly.Members.ContainsKey( type ) )
+				imported.Add( type );
 		}
 		foreach ( Match word in Regex.Matches( code, @"(?<![\w.])(?<!\.\s+)[A-Za-z_]\w*\b" ) )
 		{
 			var name = word.Value;
-			if ( own.Contains( name ) )
+			if ( Shadowed( name, word.Index ) )
 				continue;
 			var after = code.AsSpan( word.Index + word.Length ).TrimStart();
 			if ( desktopOnly.Types.TryGetValue( name, out var file ) && !(after.StartsWith( "=" ) && !after.StartsWith( "==" ) && !after.StartsWith( "=>" )) )
@@ -237,18 +256,69 @@ public class BrowserPinsExclusionTests
 				if ( member.Success && members.TryGetValue( member.Groups[1].Value, out var memberFile ) )
 					uses.Add( $"{name}.{member.Groups[1].Value} ({memberFile})" );
 			}
+			else if ( imported.FirstOrDefault( type => desktopOnly.Members[type].ContainsKey( name ) ) is { } owner )
+				uses.Add( $"{owner}.{name} ({desktopOnly.Members[owner][name]})" );
 		}
 		return uses;
 	}
 
 	/// <summary>
-	/// The names a piece of code declares: a field, property, method, local, parameter or type, written as a type (or a modifier) and then the name, ahead
-	/// of <c>=</c>, <c>;</c>, <c>(</c>, <c>{</c>, <c>,</c>, <c>)</c> or <c>=&gt;</c>. Expression keywords (<c>new</c>, <c>return</c>, <c>out</c> ...) declare nothing.
+	/// Where a name declared at an index of the code is visible: the innermost <c>{ }</c> block around it, or, for a parameter (inside parentheses opened in
+	/// that block), the body block after the closing parenthesis (and a lambda's <c>=&gt;</c>) when there is one. File level is the whole code.
 	/// </summary>
-	private static HashSet<string> DeclaredNames( string code )
+	private static Func<int, (int Start, int End)> Scopes( string code )
 	{
-		var names = new HashSet<string>( StringComparer.Ordinal );
-		foreach ( Match match in Regex.Matches( code, @"(?<=\s)(?<![\w.])([A-Za-z_]\w*)\s*(?:<[^<>;{}()=]*>\s*)?(?=(?:[;({,)]|=(?!=)))" ) )
+		var block = new int[code.Length];
+		var parenthesis = new int[code.Length];
+		var ends = new Dictionary<int, int>();
+		var braces = new Stack<int>();
+		var parentheses = new Stack<int>();
+		for ( var index = 0; index < code.Length; index++ )
+		{
+			block[index] = braces.Count > 0 ? braces.Peek() : -1;
+			parenthesis[index] = parentheses.Count > 0 ? parentheses.Peek() : -1;
+			if ( code[index] is '{' or '(' )
+				(code[index] == '{' ? braces : parentheses).Push( index );
+			else if ( code[index] == '}' && braces.Count > 0 )
+				ends[braces.Pop()] = index;
+			else if ( code[index] == ')' && parentheses.Count > 0 )
+				ends[parentheses.Pop()] = index;
+		}
+		foreach ( var open in braces.Concat( parentheses ) )
+			ends[open] = code.Length;
+		return index =>
+		{
+			if ( parenthesis[index] > block[index] )
+			{
+				var after = ends[parenthesis[index]] + 1;
+				while ( after < code.Length && char.IsWhiteSpace( code[after] ) )
+					after++;
+				if ( code.AsSpan( after ).StartsWith( "=>" ) )
+				{
+					after += 2;
+					while ( after < code.Length && char.IsWhiteSpace( code[after] ) )
+						after++;
+				}
+				if ( after < code.Length && code[after] == '{' )
+					return (after, ends[after]);
+			}
+			return block[index] < 0 ? (0, code.Length) : (block[index], ends[block[index]]);
+		};
+	}
+
+	/// <summary>The names a piece of code declares: see <see cref="Declarations"/>.</summary>
+	private static HashSet<string> DeclaredNames( string code, bool memberLevel = false ) =>
+		Declarations( code, memberLevel ).Select( declaration => declaration.Name ).ToHashSet( StringComparer.Ordinal );
+
+	/// <summary>
+	/// The names a piece of code declares, with where: a field, property, method, local, parameter or type, written as a type (or a modifier) and then the name,
+	/// ahead of <c>=</c>, <c>;</c>, <c>(</c>, <c>{</c>, <c>,</c>, <c>)</c>, <c>=&gt;</c> or <c>in</c>, and a lambda's parameters (<c>name =&gt;</c>, <c>(a, b) =&gt;</c>). Expression
+	/// keywords (<c>new</c>, <c>return</c>, <c>out</c> ...) declare nothing. At <paramref name="memberLevel"/> a name after a comma, ahead of <c>=</c>, <c>;</c> or
+	/// <c>,</c>, is declared too (<c>int first, second;</c>, an enum's members).
+	/// </summary>
+	private static IEnumerable<(string Name, int Index)> Declarations( string code, bool memberLevel = false )
+	{
+		foreach ( Match match in Regex.Matches( code, @"(?<=\s)(?<![\w.])([A-Za-z_]\w*)\s*(?:<[^<>;{}()=]*>\s*)?(?=(?:[;({,)]|=(?!=)|in\b))" ) )
 		{
 			var name = match.Groups[1].Value;
 			var before = code.AsSpan( 0, match.Index ).TrimEnd();
@@ -256,17 +326,28 @@ public class BrowserPinsExclusionTests
 				continue;
 			var last = before[^1];
 			if ( last is ']' or ')' || (last == '>' && !before.EndsWith( "=>" )) || (last == '?' && before.Length > 1 && !char.IsWhiteSpace( before[^2] )) )
-				names.Add( name );
+				yield return (name, match.Index);
+			else if ( last == ',' && memberLevel && code[match.Index + match.Length] is '=' or ';' or ',' )
+				yield return (name, match.Index);
 			else if ( char.IsLetterOrDigit( last ) || last == '_' )
 			{
 				var start = before.Length;
 				while ( start > 0 && (char.IsLetterOrDigit( before[start - 1] ) || before[start - 1] == '_') )
 					start--;
 				if ( !NotDeclaring.Contains( before[start..].ToString() ) )
-					names.Add( name );
+					yield return (name, match.Index);
 			}
 		}
-		return names;
+		foreach ( Match lambda in Regex.Matches( code, @"(?<![\w.])([A-Za-z_]\w*)\s*=>" ) )
+		{
+			if ( !NotDeclaring.Contains( lambda.Groups[1].Value ) )
+				yield return (lambda.Groups[1].Value, lambda.Index);
+		}
+		foreach ( Match lambda in Regex.Matches( code, @"\(\s*([A-Za-z_]\w*(?:\s*,\s*[A-Za-z_]\w*)*)\s*\)\s*=>" ) )
+		{
+			foreach ( var name in lambda.Groups[1].Value.Split( ',', StringSplitOptions.TrimEntries ) )
+				yield return (name, lambda.Index + 1);
+		}
 	}
 
 	private static readonly HashSet<string> NotDeclaring = new( StringComparer.Ordinal )
@@ -302,7 +383,7 @@ public class BrowserPinsExclusionTests
 		return level.ToString();
 	}
 
-	/// <summary>A C# file's code without its comments and its string and character literals (regular, verbatim and raw).</summary>
+	/// <summary>A C# file's code without its comments and its string and character literals (regular, verbatim and raw); an interpolated string keeps the code of its expressions.</summary>
 	private static string CodeOnly( string text )
 	{
 		var code = new StringBuilder( text.Length );
@@ -324,8 +405,12 @@ public class BrowserPinsExclusionTests
 			}
 			else if ( current == '"' )
 			{
-				index = AfterString( text, index );
+				var prefix = index;
+				while ( prefix > 0 && text[prefix - 1] is '$' or '@' )
+					prefix--;
+				var dollars = text.AsSpan( prefix, index - prefix ).Count( '$' );
 				code.Append( "\"\"" );
+				index = dollars == 0 ? AfterString( text, index ) : AfterInterpolatedString( text, index, dollars, text.AsSpan( prefix, index - prefix ).Contains( '@' ), code );
 			}
 			else if ( current == '\'' )
 			{
@@ -362,6 +447,67 @@ public class BrowserPinsExclusionTests
 				index += 2;
 			else if ( text[index++] == '"' )
 				return index;
+		}
+		return text.Length;
+	}
+
+	/// <summary>
+	/// The index after the interpolated string literal whose first quote is at <paramref name="start"/> (<paramref name="dollars"/> <c>$</c> signs ahead of it), appending
+	/// the code of each interpolation hole to <paramref name="code"/>: a regular one opens a hole with <c>{</c> (<c>{{</c> is a brace), a raw one with as many braces as dollars.
+	/// </summary>
+	private static int AfterInterpolatedString( string text, int start, int dollars, bool verbatim, StringBuilder? code )
+	{
+		var quotes = 0;
+		while ( start + quotes < text.Length && text[start + quotes] == '"' )
+			quotes++;
+		if ( quotes == 2 )
+			return start + 2;
+		var raw = quotes >= 3;
+		var opening = raw ? dollars : 1;
+		var index = start + (raw ? quotes : 1);
+		while ( index < text.Length )
+		{
+			var braces = 0;
+			while ( index + braces < text.Length && text[index + braces] == '{' )
+				braces++;
+			if ( raw && string.CompareOrdinal( text, index, new string( '"', quotes ), 0, quotes ) == 0 )
+				return index + quotes;
+			if ( !raw && verbatim && text[index] == '"' && index + 1 < text.Length && text[index + 1] == '"' )
+				index += 2;
+			else if ( !raw && !verbatim && text[index] == '\\' )
+				index += 2;
+			else if ( !raw && text[index] == '"' )
+				return index + 1;
+			else if ( braces == 0 || (!raw && braces >= 2) || braces < opening )
+				index += Math.Max( 1, raw ? braces : Math.Min( braces, 2 ) );
+			else
+			{
+				var hole = index + braces;
+				var end = hole;
+				for ( var depth = 0; end < text.Length && (depth > 0 || text[end] != '}'); )
+				{
+					if ( text[end] == '"' )
+					{
+						var nested = end;
+						while ( nested > hole && text[nested - 1] is '$' or '@' )
+							nested--;
+						var nestedDollars = text.AsSpan( nested, end - nested ).Count( '$' );
+						end = nestedDollars == 0 ? AfterString( text, end ) : AfterInterpolatedString( text, end, nestedDollars, text.AsSpan( nested, end - nested ).Contains( '@' ), null );
+						continue;
+					}
+					if ( text[end] == '\'' )
+					{
+						end = AfterCharacter( text, end );
+						continue;
+					}
+					depth += text[end] is '{' or '(' or '[' ? 1 : text[end] is '}' or ')' or ']' ? -1 : 0;
+					end++;
+				}
+				code?.Append( ' ' ).Append( CodeOnly( text[hole..end] ) ).Append( ' ' );
+				index = end;
+				while ( index < text.Length && text[index] == '}' && index - end < opening )
+					index++;
+			}
 		}
 		return text.Length;
 	}

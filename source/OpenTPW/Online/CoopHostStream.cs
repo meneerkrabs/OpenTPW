@@ -131,8 +131,12 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 
 	/// <summary>[EXT:online-coop-snapshot-join] A capture on its way: the cut, the session state and the save, serialized and compressed in slices, then uploaded.</summary>
 	private sealed class JoinCapture( uint generation, List<Guest> members, long records, long ticks, ulong frame, ulong digest, ulong worldHash, CoopJoinState state,
-		SlicedJsonSerializer save )
+		SlicedJsonSerializer save, CoopCaptureTimings timings )
 	{
+		/// <summary>What the capture costs (docs/COOP.md, "Measurements").</summary>
+		public CoopCaptureTimings Timings { get; } = timings;
+		/// <summary>When the upload started, on the wall clock (<see cref="System.Diagnostics.Stopwatch"/>).</summary>
+		public long UploadStarted { get; set; }
 		public uint Generation { get; } = generation;
 		public List<Guest> Members { get; } = members;
 		public long Records { get; } = records;
@@ -153,19 +157,33 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 		{
 			if ( Payload != null )
 				return true;
+			var started = System.Diagnostics.Stopwatch.GetTimestamp();
 			if ( Writer == null )
 			{
-				if ( !save.Run( budget ) )
+				var saved = save.Run( budget );
+				// this frame of the capture: the cut's was the first
+				Timings.Save.Add( CoopClock.Since( started ), Timings.Frames + 1 );
+				if ( !saved )
 					return false;
+				var copying = System.Diagnostics.Stopwatch.GetTimestamp();
 				var bytes = save.Bytes;
+				Timings.SaveCopyMilliseconds = CoopClock.Since( copying );
+				Timings.SaveBytes = bytes.Length;
 				if ( bytes.Length > maximumSave )
 					throw new CoopSnapshotTooLargeException( "World save exceeds the size limit." );
+				var writing = System.Diagnostics.Stopwatch.GetTimestamp();
 				Writer = new CoopJoinPayloadWriter( new CoopJoinPayload( Generation, Records, Ticks, Frame, Digest, WorldHash, state, bytes ) );
+				Timings.WriterSetupMilliseconds = CoopClock.Since( writing );
+				Timings.BodyBytes = Writer.BodyBytes;
 				return false;
 			}
-			if ( !Writer.Run( budget ) )
+			var complete = Writer.Run( budget );
+			Timings.Compression.Add( CoopClock.Since( started ), Timings.Frames + 1 );
+			if ( !complete )
 				return false;
 			Payload = Writer.Bytes;
+			Timings.FinishMilliseconds = Writer.FinishMilliseconds;
+			Timings.PayloadBytes = Payload.Length;
 			return true;
 		}
 	}
@@ -173,6 +191,7 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 	private readonly Level level;
 	private readonly ICoopStreamTransport transport;
 	private readonly Func<double> seconds;
+	private readonly List<CoopCaptureTimings> captureTimings = new();
 	private readonly Func<DateTime> localTime;
 	private readonly List<PendingRecord> pending = new();
 	private readonly List<CoopCheckpoint> pendingTicks = new();
@@ -305,6 +324,12 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 
 	/// <summary>The captures taken so far.</summary>
 	public int CapturesTaken { get; private set; }
+
+	/// <summary>[EXT:online-coop-snapshot-join] What the captures that reached their upload's answer cost, oldest first (at most <see cref="MaximumCaptureTimings"/>; a measurement only).</summary>
+	public IReadOnlyList<CoopCaptureTimings> CaptureTimings => captureTimings;
+
+	/// <summary>The most capture timings kept.</summary>
+	public const int MaximumCaptureTimings = 16;
 
 	/// <summary>Raised when a capture is uploaded, with its generation and its payload (the tests read the cut).</summary>
 	internal event Action<uint, byte[]>? CaptureStored;
@@ -784,6 +809,7 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 				return;
 			}
 			bool complete;
+			var sliceStarted = System.Diagnostics.Stopwatch.GetTimestamp();
 			try
 			{
 				SliceFault?.Invoke();
@@ -798,9 +824,12 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 				Answer( running.Members, running.Generation, new CoopSnapshotFailed( tooLarge ? CoopSnapshotFailure.TooLarge : CoopSnapshotFailure.Uncapturable, true, 0 ) );
 				return;
 			}
+			running.Timings.Frames++;
+			running.Timings.LongestFrameMilliseconds = Math.Max( running.Timings.LongestFrameMilliseconds, CoopClock.Since( sliceStarted ) );
 			if ( complete )
 			{
 				running.UploadingSince = now;
+				running.UploadStarted = System.Diagnostics.Stopwatch.GetTimestamp();
 				transport.UploadSnapshot( running.Payload!, result => Uploaded( running, result ) );
 			}
 			return;
@@ -825,18 +854,38 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 		if ( members.Count == 0 )
 			return;
 		// the cut: every record so far applied and published, the next tick and the last frame, whose horizon is that tick
+		var cutStarted = System.Diagnostics.Stopwatch.GetTimestamp();
+		var timings = new CoopCaptureTimings { Generation = generation, Ticks = level.TickCount };
+		var part = cutStarted;
+		double Part()
+		{
+			var now = System.Diagnostics.Stopwatch.GetTimestamp();
+			var milliseconds = System.Diagnostics.Stopwatch.GetElapsedTime( part, now ).TotalMilliseconds;
+			part = now;
+			return milliseconds;
+		}
 		PublishNow();
+		timings.PublishMilliseconds = Part();
 		var records = LastRecord;
 		var ticks = level.TickCount;
 		var frame = LastFrame;
 		try
 		{
 			CaptureFault?.Invoke( level );
+			// a test's hook at the cut (the native smoke's own digest of the cut) is no part of the capture's cost
+			Part();
 			var digest = CoopDigest.Compute( level, out var world );
+			timings.DigestMilliseconds = Part();
 			var state = level.CaptureJoinState();
 			_ = state.Encode();
-			var save = ParkResumeSaveFile.BeginSlicedSerialize( level.CaptureJoinSnapshot() );
-			capture = new JoinCapture( generation, members, records, ticks, frame, digest, world, state, save );
+			timings.StateMilliseconds = Part();
+			var snapshot = level.CaptureJoinSnapshot();
+			timings.SnapshotMilliseconds = Part();
+			var save = ParkResumeSaveFile.BeginSlicedSerialize( snapshot );
+			timings.SerializerSetupMilliseconds = Part();
+			timings.Frames = 1;
+			timings.LongestFrameMilliseconds = timings.CutMilliseconds;
+			capture = new JoinCapture( generation, members, records, ticks, frame, digest, world, state, save, timings );
 		}
 		// a park the save path refuses (catalogue defaults it cannot write, an object without its binding, a key past a bound): nothing is captured, and the members hear why
 		catch ( Exception error ) when ( error is not OutOfMemoryException )
@@ -864,6 +913,11 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 		if ( disposed || Failure != null || capture != running )
 			return;
 		capture = null;
+		running.Timings.UploadSeconds = CoopClock.Since( running.UploadStarted ) / 1000;
+		captureTimings.Add( running.Timings );
+		if ( captureTimings.Count > MaximumCaptureTimings )
+			captureTimings.RemoveAt( 0 );
+		Log.Trace( $"Co-op {running.Timings}{(result.Succeeded ? "" : $" (not stored: {result.Failure})")}." );
 		if ( result.Succeeded )
 		{
 			uploadFailures = 0;

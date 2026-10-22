@@ -254,6 +254,12 @@ internal sealed class CoopJoinPayloadWriter
 	/// <summary>The slices so far.</summary>
 	public int Slices { get; private set; }
 
+	/// <summary>The uncompressed body's bytes.</summary>
+	public int BodyBytes => body.Length;
+
+	/// <summary>[EXT:online-coop-snapshot-join] Of the last slice: the milliseconds zlib's end and the payload's copy took (docs/COOP.md, "Measurements").</summary>
+	public double FinishMilliseconds { get; private set; }
+
 	/// <summary>The payload once <see cref="Run"/> returned true.</summary>
 	public byte[] Bytes => bytes ?? throw new InvalidOperationException( "The join payload is not written yet." );
 
@@ -273,9 +279,11 @@ internal sealed class CoopJoinPayloadWriter
 		while ( written < body.Length && System.Diagnostics.Stopwatch.GetElapsedTime( start ) < budget );
 		if ( written < body.Length )
 			return false;
+		var finishing = System.Diagnostics.Stopwatch.GetTimestamp();
 		zlib!.Dispose();
 		zlib = null;
 		bytes = output.ToArray();
+		FinishMilliseconds = CoopClock.Since( finishing );
 		return true;
 	}
 }

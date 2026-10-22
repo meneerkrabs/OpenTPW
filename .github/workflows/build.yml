@@ -97,6 +97,7 @@ jobs:
           python tools/progress.py --check
           python -m unittest discover -s tools -p "test_progress.py" -v
           python -m unittest discover -s tools -p "test_release_train.py" -v
+          python -m unittest discover -s tools -p "test_coop_join_timings.py" -v
           python -m unittest discover -s tools -p "test_check_release_natives.py" -v
           python -m unittest discover -s tools -p "test_hire_portrait_geometry_contract.py" -v
           python -m unittest discover -s tools -p "test_employee_live_portrait_contract.py" -v

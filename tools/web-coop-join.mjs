@@ -16,6 +16,7 @@ import { execFileSync } from 'node:child_process';
 import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { Cdp, launchChrome, sleep, startServer, stopChrome } from './web-perf/lib.mjs';
 
 const DEFAULT_CHROME = {
@@ -267,7 +268,7 @@ function machineDescription() {
 		// no model to name
 	}
 	lines.push(`processor ${os.cpus()[0]?.model ?? 'unknown'}, ${os.cpus().length} cores${model ? `, model ${model}` : ''}, memory ${os.totalmem()} bytes`);
-	const repository = path.dirname(path.dirname(new URL(import.meta.url).pathname));
+	const repository = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 	try {
 		const commit = execFileSync('git', ['-C', repository, 'rev-parse', '--verify', 'HEAD'], { encoding: 'utf8' }).trim();
 		const changes = execFileSync('git', ['-C', repository, 'status', '--porcelain', '--', 'source', 'content', 'scripts', 'tools', 'global.json'], { encoding: 'utf8' });
@@ -285,6 +286,10 @@ async function main() {
 	await fs.access(path.join(webRoot, 'index.html')).catch(() => { throw new Error(`${webRoot} has no index.html: pass the published wwwroot`); });
 	const evidence = await readEvidence(path.resolve(options.evidence));
 	const out = path.resolve(options.out ?? path.join('reports', 'web-coop-join', `${new Date().toISOString().slice(0, 10)}-${options.label}-${options.mode}`));
+	// a folder of earlier runs would mix them with these (a run that fails early leaves the earlier one's files)
+	const earlier = await fs.readdir(out).catch(() => []);
+	if (earlier.some(name => name === 'machine.txt' || /^run-\d+$/.test(name)))
+		throw new Error(`${out} holds earlier runs: choose another folder`);
 	await fs.mkdir(out, { recursive: true });
 	await fs.writeFile(path.join(out, 'machine.txt'), machineDescription());
 	let failed = 0;

@@ -86,6 +86,10 @@ def require_whole(root, host, join):
         raise ValueError(f"{root}: the join phase's update frames are not whole")
     if not {"Joining", "Following", "Resyncing", "Resynced"} <= {item["Step"] for item in frames}:
         raise ValueError(f"{root}: the join phase's update frames lack a step of the join or the resync")
+    # a page times every frame's whole call, a native run none: a frame without its time would drop out of the longest
+    calls = [item.get("CallMilliseconds") for item in frames]
+    if any(value is not None for value in calls) and not all(is_number(value) for value in calls):
+        raise ValueError(f"{root}: some of the page's frames lack their whole call time")
 
 
 def load(directory):
@@ -106,8 +110,14 @@ def load(directory):
     require_whole(root, host, join)
     if not host.get("Environment") or not join.get("Environment"):
         raise ValueError(f"{root}: a phase's environment is missing")
-    page = root / "run.json"
-    return host, join, json.loads(page.read_text(encoding="utf-8")) if page.exists() else None
+    path = root / "run.json"
+    page = json.loads(path.read_text(encoding="utf-8")) if path.exists() else None
+    # a page's run is the driver's record of it: one that did not pass (its evidence may be an earlier run's) or that is missing is no measurement
+    if page is None and join["Environment"].get("Os") == "Browser":
+        raise ValueError(f"{root}: a page's run lacks the driver's record of it (run.json)")
+    if page is not None and (page.get("state") != "passed" or page.get("mode") != "measure"):
+        raise ValueError(f"{root}: the page's run did not pass in the measuring mode (run.json: {page.get('mode')!r}, {page.get('state')!r})")
+    return host, join, page
 
 
 def stage(timing, name):

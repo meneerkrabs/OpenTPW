@@ -834,16 +834,16 @@ The design fixed two constants only after measuring them (`coop-c2b-design.md`, 
     a frame of their own: 331 ms (313-364; native 325), of which about 245 ms (native 270) went to other
     work than the check and the swap. With its drawing, the longest frame while building took 392 ms
     (387-427), the save's parse, and the swap's 356 ms (338-384), the joined park's first drawing in it.
-    The guest stood 638 ticks (423-691) behind the host when it swapped the park in and caught up in 10
-    frames (0.59 s), its ticks within the session's catch-up budget. The resync over its park (the page's
-    second build) took 10 frames, the longest 57 ms (the level's last step, 54 ms); the save's parse took
-    52 ms (native 17), the check 8.3 ms, the swap 10 ms and the swap's frame, with the advisor's step,
-    140 ms (native 64).
-  - **Interpreted** (three runs), slower throughout: the objects' step 1.41 s (1.34-1.42), the save's
-    parse 508 ms, the level's last step 307 ms, the guests 250 ms, two validation steps 237 and 165 ms,
-    the terrain's second step 195 ms and the step after the terrain 194 ms; the check 101 ms and the
-    swap's frame 644 ms (706 ms with its drawing); 758 ticks behind, caught up in 29 frames (2.0 s). The
-    resync's longest build frame took 195 ms, its swap's frame 327 ms.
+    After the swap the guest ran 638 ticks (423-691) in 10 frames (0.59 s) before the session found it
+    caught up, within the session's catch-up budget (the host's frames went on arriving meanwhile). The
+    resync over its park (the page's second build) took 10 frames, the longest 57 ms (the level's last
+    step, 54 ms); the save's parse took 52 ms (native 17), the check 8.3 ms, the swap 10 ms and the
+    swap's frame, with the advisor's step, 140 ms (native 64).
+  - **Interpreted** (three runs), slower in the longest steps: the objects' step 1.41 s (1.34-1.42), the
+    save's parse 508 ms, the level's last step 307 ms, the guests 250 ms, two validation steps 237 and
+    165 ms, the terrain's second step 195 ms and the step after the terrain 194 ms; the check 101 ms and
+    the swap's frame 644 ms (706 ms with its drawing); caught up after 758 ticks in 29 frames (2.0 s).
+    The resync's longest build frame took 195 ms, its swap's frame 327 ms.
   - **The wait for the level's files.** A page copies a theme's folder on the theme's first use
     (docs/WEB.md, "Game files on demand"), and the join's build waits for it as a park start does: 375
     frames (258-382) and 6.4 s (4.5-6.6) by the page's own frame record (`page-frames.json`) ahead of

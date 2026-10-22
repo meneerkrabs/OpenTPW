@@ -25,6 +25,13 @@ if [[ -z "$output" ]]; then
   output="$(mktemp -d "${TMPDIR:-/tmp}/opentpw-coop-join-browser-XXXXXX")"
   trap 'rm -rf "$output"' EXIT
 fi
+# earlier runs in the folder would mix with these
+for existing in "$output/host" "$output/$label"; do
+  if [[ -e "$existing" ]]; then
+    printf '%s\n' "$existing exists already: choose another OPENTPW_MEASURE_DIR or label." >&2
+    exit 2
+  fi
+done
 mkdir -p "$output"
 # the host phase once: the page's runs replay its recording
 OPENTPW_CONFIGURATION=Release OPENTPW_COOP_JOIN_PHASE=host OPENTPW_SMOKE_LOG_DIR="$output/host" OPENTPW_SILENT=1 OPENTPW_OFFSCREEN=1 \
@@ -32,7 +39,7 @@ OPENTPW_CONFIGURATION=Release OPENTPW_COOP_JOIN_PHASE=host OPENTPW_SMOKE_LOG_DIR
 node tools/web-coop-join.mjs --web "$web" --game "$game" --evidence "$output/host/opentpw-coop-join-evidence" --mode measure --label "$label" \
   --runs "$runs" --out "$output/$label"
 runs_found=()
-for run in "$output/$label"/run-*; do
-  runs_found+=("$run")
+for ((run = 1; run <= runs; run++)); do
+  runs_found+=("$output/$label/run-$run")
 done
 python3 -I tools/coop_join_timings.py --machine "$output/$label/machine.txt" "${runs_found[@]}"

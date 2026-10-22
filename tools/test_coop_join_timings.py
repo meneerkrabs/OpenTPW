@@ -242,6 +242,18 @@ class CoopJoinTimingsTests(unittest.TestCase):
         self.assertIn("| joined: the swap's update frame (1 of 2 runs) | 160 | 160-160 | 160, - |", table)
         self.assertIn("| resynced: the swap's update frame | 90.0 |", table)
 
+    def test_a_pages_run_that_did_not_pass_or_lacks_its_record_or_a_frames_time_is_refused(self):
+        def gap(host, join):
+            browser(host, join)
+            del join["Frames"][1]["CallMilliseconds"]
+        for name, page, change in [("failed", dict(PAGE, state="failed"), browser), ("adversarial", dict(PAGE, mode="join"), browser),
+                                   ("no record", None, browser), ("a frame's time missing", PAGE, gap)]:
+            with self.subTest(name), tempfile.TemporaryDirectory() as temporary:
+                root = pathlib.Path(temporary) / "run"
+                write_run(root, 30.0, 3.0, change=change, page=page)
+                with self.assertRaises(ValueError):
+                    coop_join_timings.load(root)
+
     def test_pages_in_different_browsers_or_guests_in_different_builds_are_no_one_measurement(self):
         for name, second in [("another browser", {"page": dict(PAGE, chrome="Chrome/156")}),
                              ("another compilation", {"change": lambda host, join: (browser(host, join), join["Environment"].update(Compilation="interpreter"))}),

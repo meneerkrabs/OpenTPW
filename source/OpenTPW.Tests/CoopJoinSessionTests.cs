@@ -468,6 +468,26 @@ public partial class CoopJoinSessionTests
 	}
 
 	[TestMethod]
+	public void ASlowJoinersCatchUpEndsAtTheFramePointThatFollows()
+	{
+		Hosted();
+		Build( 60, 43 );
+		var joiner = Joiner();
+		// the joiner runs four frames a second against the host's frames every 100 ms: at each of its session steps a frame of the host's waits, which its frame point applies
+		joiner.Frozen = true;
+		for ( var round = 0; round < 60 * 120 && joiner.Session!.JoinTimings is not [{ CatchUpTicks: not null }]; round++ )
+		{
+			Rounds( 1 );
+			if ( round % 15 == 14 )
+				joiner.Frame( 15 / 60.0 );
+		}
+		joiner.Frozen = false;
+		var joined = joiner.Session!.JoinTimings.Single();
+		Assert.IsTrue( joined is { Outcome: "joined", CatchUpTicks: > 0, CatchUpFrames: > 0 } && joined.CatchUpSeconds > 0, $"the slow joiner caught up: {joined}" );
+		CatchUpAndCompare( joiner );
+	}
+
+	[TestMethod]
 	public void ADesyncedGuestResyncsWithoutLeavingTheSession()
 	{
 		var guest = Hosted( 1 ).Single();

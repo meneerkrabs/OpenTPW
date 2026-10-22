@@ -787,9 +787,9 @@ internal sealed class CoopSession : IDisposable
 	}
 
 	/// <summary>
-	/// [EXT:online-coop-snapshot-join] A park swapped in has caught up once its stream took a frame of the host's from after the cut and follows within its window with no frame waiting to
-	/// apply: its catch-up's ticks, live updates and time (the frames it had then; one still on its way is not known). Before such a frame the host's place is not known: a fresh stream
-	/// at the cut follows by its own horizon.
+	/// [EXT:online-coop-snapshot-join] A park swapped in has caught up once a frame point of its stream applied a frame of the host's from after the cut and left it following within its
+	/// window: its catch-up's ticks, live updates and time, read at the next session step (the frames it had then; one still on its way is not known). Before such a frame the host's
+	/// place is not known: a fresh stream at the cut follows by its own horizon. A frame point, not the session step, decides, since frames that came since the last one wait at the step.
 	/// </summary>
 	private void StepCatchUp()
 	{
@@ -802,7 +802,7 @@ internal sealed class CoopSession : IDisposable
 		}
 		// the frame before this step ran a live update of the park (the swap's own frame the first)
 		var frames = running.Frames + 1;
-		if ( stream.LastFrame <= running.CutFrame || stream.State != CoopGuestState.Following || stream.ReadyFrames > 0 )
+		if ( stream.FollowingThrough <= running.CutFrame )
 		{
 			catchUp = running with { Frames = frames };
 			return;

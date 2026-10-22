@@ -245,12 +245,14 @@ internal sealed partial class CoopJoinSmokeTest
 			// a stage of one step ends before its yield: the next step's start, which only begins the next stage, is no part of it
 			Require( timing.Build.Where( stage => stage.Name is "save" or "economy" or "hud" or "advisor" ).All( stage => stage.Steps == (stage.Status == CoopTimingStatus.Skipped ? 0 : 1) ),
 				$"the save's parse, the economy, the HUD and the advisor ran one step each ({timing})" );
-			// a part that alone took the budget: of a stage that ran, within its parts and its longest, the level's with its progress
+			// a part that alone took the budget: of a stage that ran, once, within its parts and its longest, the level's with its progress; each stage's longest part among them
 			Require( timing.LongSteps.All( step => timing.Build.SingleOrDefault( stage => stage.Name == step.Stage ) is { } stage && step.Step >= 1 && step.Step <= stage.Steps
 					&& double.IsFinite( step.Milliseconds ) && step.Milliseconds >= GameFlow.ParkBuildBudgetMilliseconds && step.Milliseconds <= stage.LongestMilliseconds
 					&& (step.Stage == "level" ? step.Progress is >= 0 and <= 1 : step.Progress == null) )
-				&& timing.Build.All( stage => stage.LongestMilliseconds < GameFlow.ParkBuildBudgetMilliseconds || timing.LongSteps.Any( step => step.Stage == stage.Name ) ),
-				$"every part that alone took the budget is listed with its stage ({timing})" );
+				&& timing.LongSteps.DistinctBy( step => (step.Stage, step.Step) ).Count() == timing.LongSteps.Count
+				&& timing.Build.All( stage => stage.LongestMilliseconds < GameFlow.ParkBuildBudgetMilliseconds
+					|| timing.LongSteps.Any( step => step.Stage == stage.Name && step.Milliseconds == stage.LongestMilliseconds ) ),
+				$"the parts that alone took the budget are listed once with their stages, each stage's longest among them ({timing})" );
 			if ( timing.Outcome is "joined" or "resynced" )
 			{
 				Require( timing.Build.Single( stage => stage.Name == "level" ).Steps > 0 && timing.Build.Single( stage => stage.Name == "hud" ).Status == CoopTimingStatus.Measured

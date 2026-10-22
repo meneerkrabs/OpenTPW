@@ -267,7 +267,8 @@ internal sealed partial class GameFlow
 			if ( complete )
 				return true;
 			var started = Stopwatch.GetTimestamp();
-			// the budget is the slice's time as without the timings (the scene's resume and pause in it), less their own bookkeeping, so the slices run as they did before them
+			// the budget is the slice's time as before the timings (the scene's resume and pause in it), less the timings' own bookkeeping (the profile's resume and pause among it), so
+			// the slices run as they did before them
 			double Worked() => (Stopwatch.GetTimestamp() - started - bookkeeping) * 1000d / Stopwatch.Frequency;
 			bool OverBudget() => Worked() >= ParkBuildBudgetMilliseconds;
 			slice++;

@@ -179,9 +179,9 @@ public sealed class CoopJoinTimings
 	/// <summary>The whole swap: the old stream's end, the install, and the new stream with the frames buffered for it.</summary>
 	public double SwapMilliseconds { get; set; }
 	/// <summary>
-	/// The live updates, ticks and time from the swap until the guest's stream has taken a frame of the host's from after the cut and follows within its window with no frame waiting to
-	/// apply (the frames it had when it caught up; a frame still on its way is not known). Null while it has not (a host that publishes nothing after the cut, a paused and idle one,
-	/// leaves it null), or no park was swapped in.
+	/// The live updates, ticks and time from the swap until a frame point of the guest's stream applied a frame of the host's from after the cut and left it following within its window,
+	/// read at the next session step (the frames it had then; a frame still on its way is not known). Null while it has not (a host that publishes nothing after the cut, a paused and
+	/// idle one, leaves it null), or no park was swapped in.
 	/// </summary>
 	public long? CatchUpTicks { get; set; }
 	public int? CatchUpFrames { get; set; }

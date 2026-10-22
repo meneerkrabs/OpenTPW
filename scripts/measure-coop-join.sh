@@ -21,23 +21,33 @@ if [[ -z "$output" ]]; then
 fi
 mkdir -p "$output"
 export OPENTPW_CONFIGURATION=Release OPENTPW_COOP_JOIN_PHASE=measure OPENTPW_SILENT=1 OPENTPW_OFFSCREEN=1
-# the machine, which the runtime does not name: its system, processor, model and memory
+# the machine, which the runtime does not name: its system, processor, model and memory; and the source measured, its commit and
+# whether its tree is clean (with changes, the build is no commit's)
 machine="$output/machine.txt"
 {
   uname -srm
   if [[ "$(uname -s)" == Darwin ]]; then
     printf 'processor %s, model %s, memory %s bytes\n' "$(sysctl -n machdep.cpu.brand_string 2>/dev/null)" "$(sysctl -n hw.model 2>/dev/null)" "$(sysctl -n hw.memsize 2>/dev/null)"
   else
-    # an Arm processor's /proc/cpuinfo names no model; lscpu does
+    # an Arm processor's /proc/cpuinfo names no model; lscpu does (its labels in English)
     if command -v lscpu > /dev/null 2>&1; then
-      lscpu | grep -m1 '^Model name:' || true
+      LC_ALL=C lscpu | grep -m1 '^Model name:' || true
     elif [[ -r /proc/cpuinfo ]]; then
       grep -m1 'model name' /proc/cpuinfo || true
     fi
     if [[ -r /sys/devices/virtual/dmi/id/product_name ]]; then
       printf 'model %s\n' "$(cat /sys/devices/virtual/dmi/id/product_name)"
+    elif [[ -r /proc/device-tree/model ]]; then
+      printf 'model %s\n' "$(tr -d '\0' < /proc/device-tree/model)"
     fi
     grep -m1 MemTotal /proc/meminfo 2> /dev/null || true
+  fi
+  if commit="$(git rev-parse --verify -q HEAD)"; then
+    if [[ -z "$(git status --porcelain -- source scripts tools)" ]]; then
+      printf 'source %s, clean\n' "$commit"
+    else
+      printf 'source %s, with uncommitted changes\n' "$commit"
+    fi
   fi
 } > "$machine"
 evidence=()

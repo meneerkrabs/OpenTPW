@@ -371,6 +371,8 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 		TypedQueueDirection = QueueEntryResolver != null && QueueFrontCell != null && QueueEntranceDirection >= 0 ? QueueEntranceDirection : null,
 		QueueEditCount = QueueEditCount,
 		JoinCell = JoinCell,
+		EntranceCell = HasCells ? EntranceCell : null,
+		ExitCell = HasCells ? ExitCell : null,
 		HeadNotReadyStreak = HeadNotReadyStreak,
 		MaximumHeadNotReadyStreak = MaximumHeadNotReadyStreak,
 		CalledAgeTurns = CalledAgeTurns,
@@ -404,6 +406,10 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 		}
 		if ( snapshot.TypedQueueFront.HasValue != snapshot.TypedQueueDirection.HasValue )
 			Error( "the typed queue front and direction must be present together." );
+		if ( snapshot.EntranceCell.HasValue != snapshot.ExitCell.HasValue )
+			Error( "the entrance and exit cells must be present together." );
+		if ( snapshot.EntranceCell is { } entranceCell && (entranceCell.X < 0 || entranceCell.Y < 0) || snapshot.ExitCell is { } exitCell && (exitCell.X < 0 || exitCell.Y < 0) )
+			Error( "the entrance or exit cell is outside the positive cell map." );
 		if ( snapshot.TypedQueueFront is { } typedFront && (typedFront.X < 0 || typedFront.Y < 0) )
 			Error( "the typed queue front is outside the positive cell map." );
 		if ( snapshot.TypedQueueDirection is { } typedDirection && (typedDirection < 0 || typedDirection > 3) )
@@ -580,6 +586,12 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 		}
 		QueueEditCount = snapshot.QueueEditCount;
 		JoinCell = snapshot.JoinCell;
+		// the cells as they stood, not as the registration resolved them on the restored grid: a path laid nearer since the placement resolved them did not move them
+		if ( HasCells && snapshot.EntranceCell is { } entrance && snapshot.ExitCell is { } exit )
+		{
+			EntranceCell = entrance;
+			ExitCell = exit;
+		}
 		HeadNotReadyStreak = snapshot.HeadNotReadyStreak;
 		MaximumHeadNotReadyStreak = snapshot.MaximumHeadNotReadyStreak;
 		CalledAgeTurns = snapshot.CalledAgeTurns;

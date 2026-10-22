@@ -28,6 +28,11 @@ retired ([the end-of-park finale](../reverse/INSTANT-ACTION-FINALE.md)).
 - End takes its thing slot in both game types (WALK-010 narrowed). Theme Park Inc (its twin of
   `0x5B0CA0` has no caller) and read-only visits still never start the flow.
 
+- **Limits.** As in the original, a park is recorded only when its research completes: a completion
+  in a co-op session, with a reclaim pending, in Instant Action without a progress file, or before
+  this change is never recorded later (no backfill). Builds from before this change refuse a progress
+  file that carries `ResearchCompleted`.
+
 No pin moves: the finale needs the player's records in the Full Simulation, which no pinned run
 has. Tests: `ParkFinaleTests`, `PlayerResearchRecordTests`, `UiWindowAnimationTests`, and with the
 game data `ParkFinaleCorpusTests`. No original game files are included.

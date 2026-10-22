@@ -38,7 +38,8 @@ six bytes, four (byte, int) pairs, 33 pairs of sign names (`mSignNameA`/`mSignNa
   record the current one (`+0x48`, `0x5B08A0`).
 - `0x5B0CA0` sets the current record's byte to 1. Nothing ever clears it.
 - `0x5B0C40` walks the map and returns 0 at the first record whose byte is 0, else 1.
-- The file is written with the park saves (`0x5AC780` → `0x5C8A10`).
+- The file is written with the park saves (`0x5AC780` → `0x5C8A10`). OpenTPW instead writes its
+  progress file at the completion itself.
 
 So the Full Simulation's finale needs the research of all four parks completed by the same
 player, in any game type; the park whose research has just completed counts, its byte being set
@@ -59,6 +60,16 @@ any recorded park does not write the field. `Level.ResearchRecords` connects a p
   peer's park takes the same decision. Read-only visits and Theme Park Inc never start the flow
   (Theme Park Inc's twin of `0x5B0CA0`, `0x74FBA0` in its no-CD `Game.exe`, is reached only
   through an incremental-link thunk nothing calls, and its executable has no finale strings).
+
+**Completions that are never recorded.** Like the original (`0x503E94`), OpenTPW records a park only
+at the moment its research completes; there is no later backfill. A completion that cannot be
+recorded at that moment is therefore never recorded: one in a co-op session or with a co-op reclaim
+still pending (`[EXT:online-coop-snapshot-join]`), one in Instant Action while no progress file
+exists yet (`[EXT:no-player-profiles]`: no player to record against), and every park whose research
+was completed before the record list existed (progress files written before October 22, 2026). Such
+a player reaches the Full Simulation finale only after completing those parks' research again in a
+new park. Filling the list from parks that are already complete would be a new rule, not the
+original's, and is not done.
 
 The advisor posts 167 under the same test (`Level.ResearchCompletionStartsFinale`).
 
@@ -125,7 +136,9 @@ and the park-door shortcuts.
   `0x74F920`: the `wdialog` window, white centred wrapped text, three button slots from the bottom)
   with UITEXT 471 ("Congratulations! Now you've completed Instant Action mode…", OpenTPW's
   `CongratulationsInstantAction`) and the cross as its only button, without an action. The box
-  pauses the park until it closes (`0x47F26C`), as OpenTPW's `winningMessage` screen does.
+  pauses the park until it closes (`0x47F26C`), as OpenTPW's `winningMessage` screen does. The
+  original takes that pause only while the pause object's enable word `[0x786BA4]` is 1 and
+  `[0xF82884]` is 0 (`0x47F251`–`0x47F261`), as for every message box.
 - The dismissal writes nothing to the player's file: the record was written at the completion.
 
 In OpenTPW the exit is a `DismissFinaleCommand` (`[EXT:online-coop-commands]`); an End removed in

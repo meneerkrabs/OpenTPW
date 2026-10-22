@@ -70,4 +70,30 @@ public class ParkFinaleCorpusTests
 		}
 		finally { GameLanguage.Current = previous ?? GameLanguage.Resolve( data, null, null ); }
 	}
+
+	/// <summary>A language switch reloads the banner from the new language's folder, here a CD overlay's <c>Dutch/Meshes/Dutch</c> (skipped without a Dutch overlay in the game folder).</summary>
+	[TestMethod]
+	public void TheBannerFollowsALanguageSwitchToAnOverlayFolder()
+	{
+		var data = OriginalParkImportTests.OriginalDataPath();
+		var overlay = Path.GetDirectoryName( data );
+		if ( overlay == null || !GameLanguage.Readable( data, overlay ).Contains( "Dutch", StringComparer.OrdinalIgnoreCase ) )
+			Assert.Inconclusive( "Needs a game folder with the Dutch CD language." );
+		var previous = GameLanguage.IsSelected ? GameLanguage.Current : null;
+		try
+		{
+			GameLanguage.Current = GameLanguage.Resolve( data, "English", null );
+			var models = new UiModels();
+			var english = models.Get( "s_congrats" );
+			Assert.IsNotNull( english );
+			GameLanguage.Current = GameLanguage.Resolve( data, "Dutch", overlay );
+			StringAssert.Contains( GameLanguage.Current.EnumerateMeshes().Single( path => Path.GetFileName( path ).Equals( "congrats.MD2", StringComparison.OrdinalIgnoreCase ) ),
+				Path.Combine( "Dutch", "Meshes", "Dutch" ), "the overlay's banner folder supplies it" );
+			var dutch = models.Get( "s_congrats" );
+			Assert.IsNotNull( dutch );
+			Assert.AreNotSame( english, dutch, "the switch drops the English banner" );
+			Assert.AreEqual( UiModels.RootNameKey( "s_congrats" ), dutch!.DrawingKey );
+		}
+		finally { GameLanguage.Current = previous ?? GameLanguage.Resolve( data, null, null ); }
+	}
 }

@@ -253,6 +253,51 @@ public class ParkFinaleTests
 		Assert.IsTrue( complete.DismissResearchFinale() ); Assert.IsFalse( complete.ResearchFinaleActive );
 	}
 
+
+	/// <summary>Whether the automatic advisor queues advice 167 for this level's all-research-complete event (tp.exe 0x503E8E, 0x503F96).</summary>
+	private static bool Posts167( Level level )
+	{
+		var advisor = new AutomaticAdvisor( new AdvisorController( AdvisorBalance.Parse( System.Text.Encoding.ASCII.GetBytes( AdvisorEventAdviceTests.Sam ), "test.sam" ) ), () => 0 );
+		Set( advisor, "level", level );
+		advisor.OnParkEvent( new ParkEvent( 0, ParkEventKind.ResearchAllDone, 0, 0, 0, "" ) );
+		return advisor.Controller.CaptureSnapshot().Queue.Slots.Any( slot => slot?.MessageId == 167 );
+	}
+
+	[TestMethod]
+	public void TheAdvisorSays167InTheFullSimulationOnlyWithEveryParkRecorded()
+	{
+		var incomplete = Named( LevelFor( Objects( Entry() ), ParkGameMode.FullSimulation ) ); incomplete.ResearchRecords = new Records( "hallow" );
+		Assert.IsFalse( Posts167( incomplete ), "game type 0 returns before the advice while a park's record is clear" );
+		var none = Named( LevelFor( Objects( Entry() ), ParkGameMode.FullSimulation ) );
+		Assert.IsFalse( Posts167( none ), "a Full Simulation park without the player's records" );
+		var complete = Named( LevelFor( Objects( Entry() ), ParkGameMode.FullSimulation ) ); complete.ResearchRecords = new Records( "hallow", "fantasy", "space" );
+		Assert.IsTrue( Posts167( complete ), "this park's completion completes the list, whichever handler runs first" );
+		Assert.IsTrue( Posts167( LevelFor( Objects( Entry() ) ) ), "Instant Action always" );
+	}
+
+	[TestMethod]
+	public void ARefusedDismissalLeavesTheScreenAndShowsNoMessage()
+	{
+		var level = LevelFor( Objects( Entry() ) ); Complete( level ); var hud = Hud( level ); var context = Context();
+		hud.Update( context, UiInput.Idle( new N.Vector2( -1 ) ), false, false, false ); var screen = hud.Stack.Top!;
+		// End leaves without the command (a co-op peer's dismissal arrives first): the stale screen's exit is refused
+		ParkFinale.Dismiss( level.Objects );
+		screen.Back!();
+		Assert.AreEqual( 1, level.Commands.Log.Count, "the exit was issued and refused: no finale was left" ); Assert.IsFalse( level.ResearchFinaleActive );
+		Assert.IsFalse( hud.Stack.Screens.Any( candidate => candidate.Name == ParkHud.WinningMessageScreen ), "no completion message after a refused exit" );
+		hud.Update( context, UiInput.Idle( new N.Vector2( -1 ) ), false, false, false );
+		Assert.AreEqual( "hud", hud.Stack.Top!.Name, "the next update retires the screen of the vanished End" );
+	}
+
+	[TestMethod]
+	public void ADebugFinaleAdoptsALiveEndWithoutASecondRecord()
+	{
+		var level = LevelFor( Objects( Entry() ), economy: FixedItemEconomy( ParkGameMode.InstantAction ) ); var economy = level.Park!.Economy;
+		Assert.IsTrue( level.DebugStartFinale() ); var records = economy.Objects.Count;
+		Assert.IsTrue( level.DebugStartFinale() );
+		Assert.AreEqual( records, economy.Objects.Count ); Assert.AreEqual( 1, economy.Counters[ParkCounters.Built( 1605 )] );
+	}
+
 	[TestMethod]
 	public void InstantActionRecordsTheParkAndStartsWithoutAskingTheRecords()
 	{

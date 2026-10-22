@@ -102,7 +102,9 @@ public sealed partial class ParkHud
 			if ( screen.IsRemoved || !ReferenceEquals( Stack.Top, screen ) )
 				return;
 			var instantAction = level.Park?.Economy.Mode == ParkGameMode.InstantAction;
-			level.Commands.Issue( new DismissFinaleCommand() );
+			// a refused exit (no finale left to dismiss) leaves the screen to the next update, which retires it if End is gone, and shows no message
+			if ( !level.Commands.Issue( new DismissFinaleCommand() ).Accepted )
+				return;
 			LeaveWinningScreen();
 			// [BIN:TPW-EXE:0x0048AA41 Instant Action message] after the cleanup the handler shows UITEXT 471 (OpenTPW's CongratulationsInstantAction) in a message box (0x47F020) whose only button is the cross, without an action; in game type 0 it shows nothing
 			if ( instantAction )

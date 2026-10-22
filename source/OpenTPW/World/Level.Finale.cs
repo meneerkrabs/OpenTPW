@@ -54,9 +54,14 @@ public partial class Level
 	/// <summary>[EXT:debug-hud] Builds End as a completion that starts the finale would, without the research or the records (captures); false without an End definition.</summary>
 	internal bool DebugStartFinale()
 	{
-		if ( Park == null || ParkFinale.StartForResearchCompletion( Objects ) is not { } finale )
+		if ( Park == null )
 			return false;
-		BindFixedItemMadeInPlay( finale );
+		// a live End is adopted, as StartResearchFinale adopts it: no second economy record or stamp
+		var adopted = ParkFinale.IsActive( Objects );
+		if ( ParkFinale.StartForResearchCompletion( Objects ) is not { } finale )
+			return false;
+		if ( !adopted )
+			BindFixedItemMadeInPlay( finale );
 		return true;
 	}
 

@@ -36,7 +36,7 @@ public enum ParkCommandKind : byte
 	RemovePrototype = 21,
 	/// <summary>Opens or closes the developer prototype ride (<see cref="SetPrototypeRunningCommand"/>).</summary>
 	SetPrototypeRunning = 22,
-	/// <summary>The winning screen's exit: removes the Instant Action research finale (<see cref="DismissFinaleCommand"/>).</summary>
+	/// <summary>The winning screen's exit: removes the end-of-park finale of either game type (<see cref="DismissFinaleCommand"/>).</summary>
 	DismissFinale = 23,
 	/// <summary>The developer object panel's open-all and close-all (<see cref="SetAllObjectsOpenCommand"/>).</summary>
 	SetAllObjectsOpen = 25,
@@ -356,7 +356,7 @@ public sealed record SetPrototypeRunningCommand( bool Running ) : ParkCommand
 	internal override void WriteFields( ParkCommandWriter writer ) => writer.Bool( Running );
 }
 
-/// <summary>The winning screen's exit (its Resume Game button and its Escape and right click): removes the Instant Action research finale's End object (<see cref="Level.DismissResearchFinale"/>).</summary>
+/// <summary>The winning screen's exit (its Escape and its late right click): removes the end-of-park finale's End object in either game type (<see cref="Level.DismissResearchFinale"/>).</summary>
 public sealed record DismissFinaleCommand : ParkCommand
 {
 	public override ParkCommandKind Kind => ParkCommandKind.DismissFinale;

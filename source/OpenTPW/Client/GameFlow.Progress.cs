@@ -197,7 +197,7 @@ internal sealed partial class GameFlow
 	/// </summary>
 	// [EXT:no-player-profiles] without an own progress file there is no player whose record could be marked (the file is made only with the player's consent), so nothing is written
 	// [EXT:online-coop-snapshot-join] a park in a co-op session leaves the player's records alone, as the Full Simulation's owner does
-	private sealed class InstantActionResearchRecords( string path, Func<bool> active ) : IPlayerResearchRecords
+	internal sealed class InstantActionResearchRecords( string path, Func<bool> active ) : IPlayerResearchRecords
 	{
 		public void RecordCompleted( string theme )
 		{

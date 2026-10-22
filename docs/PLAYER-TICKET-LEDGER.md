@@ -101,3 +101,12 @@ file without the field (written before it existed, or by a player who has comple
 loads with none, and such a ledger does not write it, so the file keeps its bytes. A Full
 Simulation park records through its owner; an Instant Action park marks the progress file when
 there is one. The finale and its rules are in [the end-of-park finale](reverse/INSTANT-ACTION-FINALE.md).
+
+Two limits follow from recording only at the completion, as the original does (`0x503E94`): a park
+whose research completed before the list existed, in a co-op session or with a co-op reclaim
+pending, or in Instant Action while no progress file existed, is never recorded later, so that
+player reaches the Full Simulation finale only after completing those parks again (no backfill:
+it would be a new rule). And a progress file that carries `ResearchCompleted` is refused as
+malformed by OpenTPW builds from before October 22, 2026, whose strict reader
+(`UnmappedMemberHandling.Disallow`) rejects unknown fields; the version number stays 1 or 2,
+since it tracks only the known purchases (version 2 exactly when `KnownPurchases` is present).

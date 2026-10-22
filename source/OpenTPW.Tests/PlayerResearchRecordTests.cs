@@ -72,6 +72,61 @@ public class PlayerResearchRecordTests
 	}
 
 	[TestMethod]
+	public void InstantActionMarksAnExistingFileOnlyAndNeverCreatesOne()
+	{
+		var active = true;
+		var records = new GameFlow.InstantActionResearchRecords( PathName, () => active );
+		records.RecordCompleted( "space" );
+		Assert.IsFalse( File.Exists( PathName ), "without a progress file there is no player to record against" );
+		Assert.IsFalse( records.CompletedEverywhereWith( "space" ), "an Instant Action park never reads the records" );
+
+		var start = new PlayerTicketLedger(); start.RecordEarned( "jungle", GoldenTicketKind.Visitors );
+		PlayerTicketFile.Save( PathName, start.Capture() );
+		records.RecordCompleted( "Space" );
+		var saved = PlayerTicketFile.LoadIfPresent( PathName )!;
+		CollectionAssert.AreEqual( new[] { "space" }, saved.ResearchCompleted.ToArray() );
+		Assert.AreEqual( 1, saved.EarnedTickets, "the rest of the file is kept" );
+
+		active = false; // a park in a co-op session
+		var before = File.ReadAllBytes( PathName );
+		records.RecordCompleted( "jungle" );
+		CollectionAssert.AreEqual( before, File.ReadAllBytes( PathName ), "a co-op park leaves the file untouched" );
+	}
+
+	[TestMethod]
+	public void ACorruptFileOnlyWarnsAndStaysAsItWas()
+	{
+		var messages = new System.Collections.Generic.List<string>();
+		var previous = Logger.OnLog;
+		Logger.OnLog += ( severity, text ) => messages.Add( text );
+		try
+		{
+			File.WriteAllText( PathName, "{ not json" );
+			new GameFlow.InstantActionResearchRecords( PathName, () => true ).RecordCompleted( "hallow" );
+			Assert.AreEqual( "{ not json", File.ReadAllText( PathName ) );
+			Assert.IsTrue( messages.Any( text => text.Contains( "research record of hallow was not saved" ) ), string.Join( " | ", messages ) );
+		}
+		finally { Logger.OnLog = previous; }
+	}
+
+	[TestMethod]
+	public void ATicketlessThemeStillSavesItsResearchRecord()
+	{
+		PlayerTicketFile.Save( PathName, new PlayerTicketLedger().Capture() );
+		var settings = new BalanceSettings( new SamSettings( new[] { SamDocument.Parse( EconomyTestData.StandardText( 50000 ), "Standard.sam" ) } ),
+			new SamSettings( new[] { SamDocument.Parse( EconomyTestData.ChallengesText, "Challenges.sam" ) } ),
+			new SamSettings( new[] { SamDocument.Parse( "Tickets.CanEarnTicketsInTheme 0\nTickets.CanSpendTicketsInTheme 1\nKeys.CostToEnter 1\n", "global.sam" ) } ), "jungle", false );
+		Assert.IsFalse( settings.CanEarnTickets );
+		var runtime = ParkEconomyRuntime.ForResume( new ParkEconomy( settings, EconomyTestData.Catalog(), ParkGameMode.FullSimulation, 7 ), ParkStartKind.FullSimulation );
+		using var owner = new PlayerProgressRuntimeOwner( PathName, "jungle", PlayerTicketFile.ReadIfPresent( PathName )!, runtime, () => true, _ => Assert.Fail() );
+		var before = File.ReadAllBytes( PathName );
+		Assert.IsTrue( owner.TryFlush() ); CollectionAssert.AreEqual( before, File.ReadAllBytes( PathName ), "the ticket owner leaves a ticketless theme's file alone" );
+		owner.RecordResearchCompleted();
+		CollectionAssert.AreEqual( new[] { "jungle" }, PlayerTicketFile.LoadIfPresent( PathName )!.ResearchCompleted.ToArray(), "0x5B0CA0 checks no ticket setting" );
+		Assert.IsFalse( owner.Dirty ); Assert.IsNull( owner.Error );
+	}
+
+	[TestMethod]
 	public void TheFullSimulationOwnerRecordsAndSavesItsParkAndAnswersForEveryPark()
 	{
 		var start = new PlayerTicketLedger();

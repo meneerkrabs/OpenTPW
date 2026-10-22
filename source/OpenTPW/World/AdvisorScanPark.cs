@@ -70,7 +70,10 @@ internal sealed partial class EconomyParkState : IAdvisorParkState
 		this.hireStampTurn = hireStampTurn;
 	}
 
-	/// <summary>The stamps a park without a record of them has: the newest standing object's and employed member's turn (0 without any), where the original keeps the stamp after a demolition or a quit.</summary>
+	/// <summary>
+	/// The stamps of a park the advisor has no record of (a new park, or an OpenTPW save from before the advisor's snapshot kept them; an original save's come from its analyser,
+	/// <see cref="OriginalEconomyImport.AnalyserStampTurns"/>): the newest standing object's and employed member's turn (0 without any), where the original keeps the stamp after a demolition or a quit.
+	/// </summary>
 	public static (long ObjectTurn, long HireTurn) NewestStamps( ParkEconomy economy ) => (
 		economy.Objects.Select( item => ParkCalendar.Turn( item.BuiltTick ) ).DefaultIfEmpty( 0 ).Max(),
 		economy.Staff.Members.Select( member => ParkCalendar.Turn( member.HiredTick ) ).DefaultIfEmpty( 0 ).Max() );

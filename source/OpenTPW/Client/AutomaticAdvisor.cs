@@ -101,8 +101,9 @@ internal sealed partial class AutomaticAdvisor : IDisposable
 		{
 			park.EventRaised += OnParkEvent;
 			park.Economy.Objectives.TimeShort += OnChallengeTimeShort;
-			// [BIN:TPW-EXE:0x004C58C0 park init] the analyser stamps the object and hire words with the current time (0x4C5CAF, 0x4C5CDE); a loaded park's snapshot or save then replaces them
-			(objectStampTurn, hireStampTurn) = EconomyParkState.NewestStamps( park.Economy );
+			// [BIN:TPW-EXE:0x004C58C0 park init] the analyser stamps the object and hire words with the current time (0x4C5CAF, 0x4C5CDE); an OpenTPW save's snapshot then replaces them
+			// [BIN:TPW-EXE:0x004C5D70 analyser serializer] a park from an original save keeps the words its analyser saved, which the load reads back (0x4C7289, 0x4C72B3) and nothing it loads restamps: the import's turns of them (OriginalEconomyImport.AnalyserStampTurns)
+			(objectStampTurn, hireStampTurn) = park.Import?.AnalyserStampTurns ?? EconomyParkState.NewestStamps( park.Economy );
 		}
 		guests = started.Guests;
 		if ( guests != null )
@@ -603,7 +604,7 @@ internal sealed partial class AutomaticAdvisor : IDisposable
 		ValidateSnapshot( snapshot );
 		Controller.RestoreSnapshot( snapshot.Controller );
 		lastScanTurn = null;
-		// a snapshot from before the stamps were kept leaves the ones derived at attach
+		// a snapshot from before the stamps were kept leaves the ones the attach derived (a resumed park has no import whose saved words it could take)
 		objectStampTurn = snapshot.ObjectStampTurn ?? objectStampTurn;
 		hireStampTurn = snapshot.HireStampTurn ?? hireStampTurn;
 		// Existing host snapshot policy treats absent and explicitly empty records with admissions as unrecorded. Native empty data at AttachLevel is authoritative, but this later restore stage still applies that legacy heuristic.

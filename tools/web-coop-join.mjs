@@ -84,12 +84,25 @@ class Page {
 		return result.result.value;
 	}
 
-	/** The smoke's status, or null before the harness object exists. */
-	status() { return this.eval("globalThis.opentpwPerf ? JSON.parse(opentpwPerf.program.CoopJoinSmokeStatus()) : null"); }
+	/** Whether an evaluation failed only because the page is between documents (while it loads), not because DevTools or the page is gone. */
+	static transient(error) { return /context|destroyed|navigat/i.test(error?.message ?? ''); }
+
+	/** The smoke's status, or null before the harness object exists (or while the page loads). */
+	status() {
+		return this.eval("globalThis.opentpwPerf ? JSON.parse(opentpwPerf.program.CoopJoinSmokeStatus()) : null").catch(error => {
+			if (Page.transient(error))
+				return null;
+			throw error;
+		});
+	}
 
 	/** Why the page's own loop stopped ('The game stopped: …' or a start that failed), or null. */
 	async stopped() {
-		const text = await this.eval("document.getElementById('status')?.textContent ?? ''").catch(() => '');
+		const text = await this.eval("document.getElementById('status')?.textContent ?? ''").catch(error => {
+			if (Page.transient(error))
+				return '';
+			throw error;
+		});
 		return /stopped|could not start/i.test(text) ? text : null;
 	}
 
@@ -108,7 +121,7 @@ class Page {
 		const begin = Date.now();
 		for (;;) {
 			await this.check();
-			const status = await this.status().catch(() => null);
+			const status = await this.status();
 			if (status && test(status))
 				return status;
 			if (Date.now() - begin > timeoutMs)
@@ -162,8 +175,8 @@ async function runOnce(options, evidence, webRoot, gameRoot, runDirectory) {
 		if (!ready.mode)
 			throw new Error('The page did not choose its co-op smoke mode');
 		// the pools extension's sprite sets arrive in the background: the run starts once they have (or the fetch gave up), so no fetch overlaps its frames
-		const settled = await page.waitFor('the pool sprites', status => status.poolSprites === 'settled', 120000).then(() => true).catch(() => false);
-		run.poolSprites = settled ? 'settled' : 'pending';
+		await page.waitFor('the pool sprites', status => status.poolSprites === 'settled', 120000);
+		run.poolSprites = 'settled';
 		for (const file of evidence.files)
 			await page.eval(`opentpwPerf.program.CoopSmokeAddFile(${JSON.stringify(file.name)}, Uint8Array.from(atob(${JSON.stringify(file.bytes.toString('base64'))}), c => c.charCodeAt(0)))`, 120000);
 		await page.eval('opentpwPerf.take(), opentpwPerf.takeSkipped(), true');
@@ -203,13 +216,19 @@ async function runOnce(options, evidence, webRoot, gameRoot, runDirectory) {
 		run.message = error.message;
 		return run;
 	} finally {
-		cdp?.close();
-		await stopChrome(chrome);
-		await server?.close();
+		// what could not be cleaned up is reported with the run, not hidden
+		const cleanup = [];
+		try {
+			cdp?.close();
+		} catch (error) {
+			cleanup.push(`DevTools: ${error.message}`);
+		}
+		await stopChrome(chrome).catch(error => cleanup.push(`Chrome: ${error.message}`));
+		await server?.close().catch(error => cleanup.push(`the server: ${error.message}`));
 		if (profile)
-			await fs.rm(profile, { recursive: true, force: true }).catch(() => {});
-		await fs.mkdir(runDirectory, { recursive: true }).catch(() => {});
-		await fs.writeFile(path.join(runDirectory, 'run.json'), JSON.stringify(run, null, 2) + '\n').catch(() => {});
+			await fs.rm(profile, { recursive: true, force: true }).catch(error => cleanup.push(`the profile ${profile}: ${error.message}`));
+		if (cleanup.length)
+			run.cleanup = cleanup;
 	}
 }
 
@@ -223,8 +242,20 @@ async function main() {
 	let failed = 0;
 	for (let index = 1; index <= options.runs; index++) {
 		process.stderr.write(`run ${index} of ${options.runs}…\n`);
-		const run = await runOnce(options, evidence, webRoot, gameRoot, path.join(out, `run-${index}`));
+		const runDirectory = path.join(out, `run-${index}`);
+		const run = await runOnce(options, evidence, webRoot, gameRoot, runDirectory);
 		console.log(`browser co-op join smoke [${options.mode}, ${options.label}] run ${index}: ${run.state} (${(run.message ?? '').slice(0, 300)})`);
+		for (const line of run.cleanup ?? [])
+			console.error(`  cleanup: ${line}`);
+		// the run's record is part of its evidence: a run whose record cannot be written did not pass
+		try {
+			await fs.mkdir(runDirectory, { recursive: true });
+			await fs.writeFile(path.join(runDirectory, 'run.json'), JSON.stringify(run, null, 2) + '\n');
+		} catch (error) {
+			console.error(`  the run's record could not be written: ${error.message}`);
+			failed++;
+			continue;
+		}
 		if (run.state !== 'passed')
 			failed++;
 	}

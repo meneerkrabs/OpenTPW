@@ -115,6 +115,8 @@ internal sealed partial class CoopJoinSmokeTest
 					{
 						Issue( new SetGameSpeedCommand( GameSpeed.Normal ), "the park runs again" );
 						Issue( new SetAttractionOpenCommand( coasters[1].Visitors.AttractionId, true ), "the closed coaster opens again" );
+						// in the frames the guest follows: the sale walks the circuit back to plain sections on every peer
+						SellAddOnOffTheTrack();
 						Next( HostStage.Tail );
 					}
 					return;
@@ -295,7 +297,7 @@ internal sealed partial class CoopJoinSmokeTest
 		var grid = level.Objects.Grid;
 		// a column of the basin whose approaches on both sides, three cells each, take a path: the bridge's land cells and its outer path ends
 		bool BridgeFits( (int X, int Y) cell ) => Enumerable.Range( 0, 6 ).Any( x => new[] { -3, -2, -1, 3, 4, 5 }.All( y =>
-			!used.Contains( (cell.X + x, cell.Y + y) ) && level.Paths!.CheckCell( cell.X + x, cell.Y + y ) == CellBuildResult.Ok ) );
+			!used.Contains( (cell.X + x, cell.Y + y) ) && level.Paths!.CheckCell( cell.X + x, cell.Y + y ) is CellBuildResult.Ok or CellBuildResult.Existing ) );
 		var origin = Enumerable.Range( 0, grid.Width * grid.Height ).Select( index => (X: index % grid.Width, Y: index / grid.Width) )
 			.OrderBy( cell => Math.Abs( cell.X - focus.X ) + Math.Abs( cell.Y - focus.Y ) ).ThenBy( cell => cell.Y ).ThenBy( cell => cell.X )
 			.Where( cell => shape.All( offset => builder.Check( cell.X + offset.X, cell.Y + offset.Y ) == PoolBuildResult.Ok
@@ -320,6 +322,14 @@ internal sealed partial class CoopJoinSmokeTest
 		Log.Trace( $"Co-op join smoke: a pool of {cells.Length} cells at {origin}, {attractions.Count} water attraction(s), a slide, a bridge, {swimmers} swimmer(s)." );
 	}
 
+	/// <summary>The type's research completed the way a saved park records it, so the purchase path stays the player's (the start has not researched it).</summary>
+	private void Research( int infoId )
+	{
+		var research = Economy.Research;
+		research.Restore( research.Completed.Append( (infoId, 0) ).Distinct().ToList(),
+			research.Items.Select( item => ((item.InfoId, item.Level), research.GetProgress( item )) ).Where( pair => pair.Item2 != 0 ).ToList(), research.Effort );
+	}
+
 	/// <summary>
 	/// [EXT:online-coop-snapshot-join] The tour ride the second cut buys while the park is paused (C5: a live tour ride whose script has not created its controller yet): researched, with the
 	/// golden ticket it needs, and a free site found before the park is shared, as the park-resume smoke's tour fixture prepares one.
@@ -330,9 +340,7 @@ internal sealed partial class CoopJoinSmokeTest
 		var entry = level.Objects.Catalog.Buildable.Where( candidate => candidate.Settings.GetInt( "Bumper.WhichTrackType" ) == 0 && candidate.ScriptPath != null
 			&& candidate.ScriptPath.Contains( "tour", StringComparison.OrdinalIgnoreCase ) ).OrderBy( candidate => candidate.InfoId ).FirstOrDefault();
 		Require( entry != null, "the theme's catalogue has a tour ride" );
-		var research = economy.Research;
-		research.Restore( research.Completed.Append( (entry!.InfoId, 0) ).Distinct().ToList(),
-			research.Items.Select( item => ((item.InfoId, item.Level), research.GetProgress( item )) ).Where( pair => pair.Item2 != 0 ).ToList(), research.Effort );
+		Research( entry!.InfoId );
 		var objectives = economy.Objectives;
 		objectives.Restore( objectives.NextOfferDay, objectives.NextListPosition, objectives.Current, objectives.Declines, objectives.Finished, objectives.GoldenTickets.Append( GoldenTicketKind.Visitors ).ToList() );
 		Require( economy.CheckBuild( entry.InfoId ) == ParkEconomy.PurchaseResult.Ok, $"the tour ride can be bought ({economy.CheckBuild( entry.InfoId )})" );
@@ -387,7 +395,10 @@ internal sealed partial class CoopJoinSmokeTest
 
 	// ---- The staged state ------------------------------------------------------------------
 
-	/// <summary>Before the first cut: an employee in hand, a pending hire, a carried Move entry and the coaster tool open on the second coaster, all by the tools' commands.</summary>
+	/// <summary>
+	/// Before the first cut: the water ride's track cut open beside its add-on with a line taken back by Backspace, an employee in hand, a pending hire, a carried Move entry and the coaster
+	/// tool open on the second coaster, all by the tools' commands.
+	/// </summary>
 	private void StageFirstCut()
 	{
 		// first: entering the track tool cancels the staff placement, which holds the hand and the hire staged below
@@ -442,7 +453,7 @@ internal sealed partial class CoopJoinSmokeTest
 		return staged.ToArray();
 	}
 
-	/// <summary>After the first cut: the hand put down where it was, the hire cancelled, the carried object placed back, the coaster tool left.</summary>
+	/// <summary>After the first cut: the hand put down where it was, the hire cancelled, the carried object placed back, the coaster tool left, the water ride's track mended.</summary>
 	private void UnstageFirstCut()
 	{
 		Issue( new DropStaffCommand( hand!.Value.Staff, hand.Value.X, hand.Value.Y ), "the employee is put back down" );
@@ -456,8 +467,9 @@ internal sealed partial class CoopJoinSmokeTest
 	}
 
 	/// <summary>
-	/// Before the second cut: the park paused with edits since its last tick: the entrance fee, and a coaster closed while built (state 2: the coaster tool's exit leaves it built until its
-	/// script opens it, which a paused park does not run), as the park's door closes one; a restore would let it out again.
+	/// Before the second cut: the park paused with edits since its last tick: the entrance fee, a coaster closed while built (state 2: the coaster tool's exit leaves it built until its
+	/// script opens it, which a paused park does not run), as the park's door closes one, which a restore would let out again, and a tour ride bought. The water ride stands mended with
+	/// its add-on's sections linked.
 	/// </summary>
 	private void StageSecondCut()
 	{
@@ -468,7 +480,6 @@ internal sealed partial class CoopJoinSmokeTest
 		Issue( new EndCoasterToolCommand( coaster.Visitors.AttractionId ), "the coaster tool closes, the coaster built" );
 		Issue( new SetAttractionOpenCommand( coaster.Visitors.AttractionId, false ), "the built coaster is closed" );
 		Require( !coaster.IsOpen && coaster.Runtime.Coaster is { BeingEdited: false, State: CoasterControllerState.Built }, "a coaster closed while built, its tool not open" );
-		SellAddOnOffTheTrack();
 		// a tour ride bought while paused: its script has not run, so it has no controller yet (C5)
 		var (entry, x, y) = tourSite!.Value;
 		Issue( new PlaceObjectCommand( ParkCommandCodec.EntryKey( entry ), x, y, 0 ), "the tour ride is bought while paused" );
@@ -519,10 +530,13 @@ internal sealed partial class CoopJoinSmokeTest
 		pendingStaged = null;
 		string[] expected = number == 1
 			? new[] { "employee in hand", "pending hire", "carried Move entry", "coaster tool open", "session clock", "several coasters", "entrance without its link",
-				"water track cut open after a Backspace", "pool with a river", "slide", "bridge", "swimmers" }
+				"water track cut open after a Backspace", "add-on on a track cut open", "pool with a river", "slide", "bridge", "swimmers" }
 			: new[] { "session clock", "several coasters", "paused with edits since its last tick", "built coaster closed", "tour ride without a live tour", "entrance without its link",
-				"add-on sold off a track", "pool with a river", "slide", "bridge" };
-		Require( expected.All( staged.Contains ), $"cut {number} holds what was staged for it (held: {string.Join( ", ", staged )})" );
+				"add-on on a mended track", "pool with a river", "slide", "bridge" };
+		// what the first cut staged and the second undid; not the Move tool's carried entry, which a placement does not clear in the command layer (docs/COOP.md, "Known limits")
+		string[] undone = number == 1 ? Array.Empty<string>()
+			: new[] { "employee in hand", "pending hire", "coaster tool open", "water track cut open after a Backspace", "add-on on a track cut open" };
+		Require( expected.All( staged.Contains ) && !undone.Any( staged.Contains ), $"cut {number} holds what was staged for it and nothing undone (held: {string.Join( ", ", staged )})" );
 		var file = $"capture-{number}.otpwjoin";
 		File.WriteAllBytes( Path.Combine( evidenceDirectory, file ), payload! );
 		cuts.Add( new CoopSmokeCut( ready.Generation, assigned, assignedFrame, ready.Records, ready.Ticks, ready.Frame, ready.Digest, ready.WorldHash, ready.Sha256, ready.Bytes, readyFrame, file, staged ) );

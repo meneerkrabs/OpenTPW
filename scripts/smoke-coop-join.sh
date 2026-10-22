@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# [EXT:online-coop-snapshot-join] The native join smoke (docs/COOP.md, "Joining a running session"): the host phase builds and shares a Jungle park and
+# [EXT:online-coop-snapshot-join] The native join smoke (docs/COOP.md, "The game's join"): the host phase builds and shares a Jungle park and
 # records its session (its frames, two captures and its evidence); the join phase, a fresh process, joins from the front end through the game's join
 # and follows the recorded host to the end, resyncing once on the way. Both phases are silent and offscreen.
 #

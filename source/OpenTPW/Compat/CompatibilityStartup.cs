@@ -26,7 +26,8 @@ internal static class CompatibilityStartup
 {
 	public static void Initialize( string[] args, string dataDirectory )
 	{
-		var smokeTest = args.Contains( "--smoke-test" );
+		// the smokes run the defaults whatever the developer's settings hold: the scripted smoke tests and the co-op join smoke, whose two processes must run the same simulation
+		var smokeTest = args.Contains( "--smoke-test" ) || args.Contains( "--coop-join-smoke" );
 		SdtArchive.Diagnostic = message => Log.Warning( message );
 
 		// Read-only CD overlay: --cd-data, then OPENTPW_CD_DATA.

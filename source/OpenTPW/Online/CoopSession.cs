@@ -52,6 +52,9 @@ internal interface ICoopJoinBuild
 
 	/// <summary>Releases what the build made (the candidate, its HUD and advisor, its scene); once only, in any state, and nothing once the candidate is installed.</summary>
 	void Abandon();
+
+	/// <summary>The steps of the park's level construction this build has run so far (a probe: the native join smoke abandons a build part way through them); 0 for a build without one.</summary>
+	int LevelSteps => 0;
 }
 
 /// <summary>
@@ -151,6 +154,9 @@ internal sealed class CoopSession : IDisposable
 
 	/// <summary>The game builds a downloaded capture (it holds the game's one construction scene meanwhile).</summary>
 	internal bool IsBuilding => building != null;
+
+	/// <summary>The build on its way, if any (a probe for the native join smoke, <see cref="ICoopJoinBuild.LevelSteps"/>).</summary>
+	internal ICoopJoinBuild? Building => building;
 
 	/// <summary>The frames this guest buffered for a capture's stream.</summary>
 	internal int BufferedFrames => buffered.Count;

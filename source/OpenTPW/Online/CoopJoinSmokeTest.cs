@@ -17,14 +17,16 @@ internal sealed record CoopSmokeHostEvidence( bool Completed, string? Failure, s
 internal sealed record CoopSmokeJoinEvidence( bool Completed, string? Failure, int Builds, int FailedJoins, string[] Steps, ulong FinalDigest, ulong FinalWorldHash, string[] SaveDifferences );
 
 /// <summary>
-/// [EXT:online-coop-snapshot-join] The native join smoke (docs/COOP.md, "Joining a running session"): <c>--coop-join-smoke host|join --coop-join-evidence &lt;directory&gt;</c>, two processes with the game's
-/// data, silent and offscreen. The host phase (<see cref="HostUpdate"/>) starts Jungle as Instant Action, builds two coasters by commands, hosts a session over a recording transport
-/// (<see cref="CoopSmokeHostTransport"/>), puts in place what a join must carry (an employee in hand, a pending hire, a carried Move entry, the coaster tool open on a coaster; later a paused
-/// park with edits since its last tick and a built coaster closed), takes two captures for a virtual member through the host's stream (the real cut), runs park minutes with commands at the
-/// normal and the fastest speed and writes the frames, the captures and its evidence. The join phase (<see cref="JoinUpdate"/>) is a fresh process that starts in the front end and runs the
-/// real game loop: it joins through the game's join host over a transport that plays the recorded host (<see cref="CoopSmokeReplayTransport"/>), whose first capture names a wrong digest
-/// (a failed check, its build abandoned beside the live front end) and whose second builds and swaps in; it follows the host's frames (the guest stream checks the host's digest at every
-/// checkpoint), is assigned the second capture while following (a resync over its park), and ends with the host's digest, world hash and save.
+/// [EXT:online-coop-snapshot-join] The native join smoke (docs/COOP.md, "The game's join"): <c>--coop-join-smoke host|join --coop-join-evidence &lt;directory&gt;</c>, two processes with the game's
+/// data, silent and offscreen. The host phase (<see cref="HostUpdate"/>) starts Jungle as Instant Action and builds what a join must carry: two coasters by commands, staff, a pool with a
+/// lazy river, a bridge, a slide and swimmers, a water ride with a track add-on, an object put back under a negative balance and a tour ride's site. It hosts a session over a recording
+/// transport (<see cref="CoopSmokeHostTransport"/>) and stages each cut: the first with the water track cut open beside its add-on, an employee in hand, a pending hire, a carried Move entry
+/// and the coaster tool open; the second with the track mended, a paused park with edits since its last tick, a built coaster closed and a tour ride bought while paused. It takes two
+/// captures for a virtual member through the host's stream (the real cut), runs park minutes with commands at the normal and the fastest speed, sells the add-on while the member follows,
+/// and writes the frames, the captures and its evidence. The join phase (<see cref="JoinUpdate"/>) is a fresh process that starts in the front end and runs the real game loop: it joins
+/// through the game's join host over a transport that plays the recorded host (<see cref="CoopSmokeReplayTransport"/>), whose first answer names a wrong digest (a failed check, its build
+/// abandoned beside the live front end), whose second is abandoned part way through its level by a newer assignment, and whose third builds and swaps in; it follows the host's frames (the
+/// guest stream checks the host's digest at every checkpoint), resyncs over its park from the second capture, and ends with the host's digest, world hash and save.
 /// </summary>
 internal sealed partial class CoopJoinSmokeTest : IDisposable
 {

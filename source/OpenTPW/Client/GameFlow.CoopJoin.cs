@@ -226,6 +226,8 @@ internal sealed partial class GameFlow
 		private int hudLanguage;
 		private AutomaticAdvisor? advisor;
 		private bool advisorTried;
+
+		public int LevelSteps { get; private set; }
 		private bool complete;
 		private bool abandoned;
 		private bool installed;
@@ -321,7 +323,10 @@ internal sealed partial class GameFlow
 			candidate.ShowDeveloperPanels = false;
 			yield return true;
 			while ( candidate.Step() )
+			{
+				LevelSteps++;
 				yield return true;
+			}
 			// in the candidate's scene, as an entry makes them in the park's: the HUD, then a fresh advisor as an entry decides it
 			hud = flow.CreateParkHud( candidate, flow.HudStatusFor( candidate ) );
 			hudLanguage = GameLanguage.Version;

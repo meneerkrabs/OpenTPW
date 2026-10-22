@@ -9,8 +9,18 @@ internal sealed partial class CoopJoinSmokeTest
 	private const int Pace = 2;
 	/// <summary>The most join frames the guest may take to reach the host's last tick once every frame is out.</summary>
 	private const int CatchUpFrames = 3600;
-	/// <summary>The save's top-level parts a session's peers may hold apart: presentation, which no simulation reads and no digest covers (docs/COOP.md, "Checks"). Only at the top level.</summary>
-	private static readonly HashSet<string> PresentationParts = new( StringComparer.Ordinal ) { "SavedUtc", "Particles", "SnowCover", "SoundSeed" };
+	/// <summary>
+	/// The save's parts a session's peers may hold apart, by their full paths: presentation, which no simulation reads and no digest covers (docs/COOP.md, "Checks"). The economy part carries
+	/// the world streams with their own copy of the sound seed.
+	/// </summary>
+	private static readonly HashSet<string> PresentationParts = new( StringComparer.Ordinal ) { "$.SavedUtc", "$.Particles", "$.SnowCover", "$.SoundSeed", "$.Economy.World.SoundSeed" };
+
+	/// <summary>The first capture's generations: the wrong digest's, the one abandoned part way through its build, and the one swapped in.</summary>
+	private const uint WrongGeneration = 1, AbandonedGeneration = 2, JoinedGeneration = 3;
+	/// <summary>The second capture's resync.</summary>
+	private const uint ResyncGeneration = 4;
+	/// <summary>How far through the first build's level construction the second is abandoned: a share of the steps the first ran (the same capture builds in the same steps).</summary>
+	private const double AbandonShare = 0.4;
 
 	private enum JoinStep { FrontEnd, Joining, Following, Approaching, Resyncing, Resynced, CatchingUp, Done }
 
@@ -23,8 +33,8 @@ internal sealed partial class CoopJoinSmokeTest
 	private List<Entity>? frontEndScene;
 	/// <summary>The front end's entities when the join began: no build may add to them or take from them.</summary>
 	private HashSet<Entity>? frontEndEntities;
-	/// <summary>The frames the first (wrong) capture's build ran, and the frames the second's has run: the second is abandoned part way, by a newer assignment.</summary>
-	private int firstBuildFrames, secondBuildFrames;
+	/// <summary>The level construction steps the first (wrong) capture's build was seen to run, and the second's when a newer assignment abandoned it part way.</summary>
+	private int firstLevelSteps, abandonedAtStep;
 	private bool abandonedMidBuild;
 	private Level? firstPark;
 	private int requestsAnswered;
@@ -97,11 +107,11 @@ internal sealed partial class CoopJoinSmokeTest
 						// every build runs set aside: the front end stays the live scene, whole, and no entity of a build (one abandoned included) is left in it
 						Require( ReferenceEquals( Entity.All, frontEndScene ) && Level.Current == null && flow.Menu != null, "the build runs beside the live front end" );
 						Require( Entity.All.Count == frontEndEntities!.Count && Entity.All.All( frontEndEntities.Contains ), "no entity of a build is in the front end's scene" );
-						if ( session.IsBuilding && requestsAnswered == 1 )
-							firstBuildFrames++;
-						// part way: once a frame of the second build's steps has run (a build with the art loaded already is quicker than the first, so no share of the first's frames is sure to come)
-						else if ( session.IsBuilding && requestsAnswered == 2 && !abandonedMidBuild && ++secondBuildFrames >= 2 )
-							ReassignMidBuild();
+						if ( session.Building is { } first && requestsAnswered == 1 )
+							firstLevelSteps = Math.Max( firstLevelSteps, first.LevelSteps );
+						// part way through the level's construction: a share of the steps the first build ran, which the same capture takes again however fast the frames come
+						else if ( session.Building is { } second && requestsAnswered == 2 && !abandonedMidBuild && second.LevelSteps >= Math.Max( 1, (int)(firstLevelSteps * AbandonShare) ) )
+							ReassignMidBuild( session, second.LevelSteps );
 					}
 					if ( session.Phase == CoopGuestPhase.Following && flow.Level != null )
 					{
@@ -188,22 +198,23 @@ internal sealed partial class CoopJoinSmokeTest
 		}
 	}
 
-	/// <summary>The generation of the second capture's resync: after the wrong first, the abandoned second and the third that is swapped in.</summary>
-	private const uint ResyncGeneration = 4;
-
 	/// <summary>
-	/// The host assigns the member a newer capture of the same cut while the second's build runs (after a frame of its steps): the session abandons that build part way, and the
-	/// third is built and swapped in.
+	/// The host assigns the member a newer capture of the same cut while the second's build constructs its level: the session abandons that build part way, at once (the replayed host's
+	/// messages go out within this frame), and the third is built and swapped in.
 	/// </summary>
-	private void ReassignMidBuild()
+	private void ReassignMidBuild( CoopSession session, int levelSteps )
 	{
+		Require( firstLevelSteps >= 3, $"the first build's level took {firstLevelSteps} steps: too few to abandon a later one part way" );
 		abandonedMidBuild = true;
+		abandonedAtStep = levelSteps;
 		var cut = hostEvidence.Cuts[0];
-		var payload = Rewrite( File.ReadAllBytes( Path.Combine( evidenceDirectory, cut.File ) ), 3 );
+		var payload = Rewrite( File.ReadAllBytes( Path.Combine( evidenceDirectory, cut.File ) ), JoinedGeneration );
 		var sha = replay.Serve( payload );
-		Answer( new CoopSnapshotAssigned( cut.Assigned ) { Generation = 3 } );
-		Answer( new CoopSnapshotReady( cut.Records, cut.Ticks, cut.Frame, cut.Digest, cut.WorldHash, sha, payload.Length ) { Generation = 3 } );
-		joinSteps.Add( $"a newer assignment abandoned the next build {secondBuildFrames} frames in (the first took {firstBuildFrames})" );
+		Answer( new CoopSnapshotAssigned( cut.Assigned ) { Generation = JoinedGeneration } );
+		Answer( new CoopSnapshotReady( cut.Records, cut.Ticks, cut.Frame, cut.Digest, cut.WorldHash, sha, payload.Length ) { Generation = JoinedGeneration } );
+		replay.Pump();
+		Require( !session.IsBuilding && session.Assigned == JoinedGeneration && flow.Level == null, "the newer assignment abandoned the build part way, beside the live front end" );
+		joinSteps.Add( $"a newer assignment abandoned the next build {levelSteps} of its level's steps in (the first build's level took {firstLevelSteps})" );
 	}
 
 	/// <summary>Sends a host message, kept as the generation's last assignment or answer.</summary>
@@ -235,19 +246,19 @@ internal sealed partial class CoopJoinSmokeTest
 			{
 				requestsAnswered = 1;
 				var digest = cut.Digest ^ 0x5A5A_5A5A_5A5A_5A5AUL;
-				var tampered = Rewrite( File.ReadAllBytes( Path.Combine( evidenceDirectory, cut.File ) ), 1, digest );
+				var tampered = Rewrite( File.ReadAllBytes( Path.Combine( evidenceDirectory, cut.File ) ), WrongGeneration, digest );
 				var sha = replay.Serve( tampered );
-				Answer( new CoopSnapshotAssigned( cut.Assigned ) { Generation = 1 } );
-				pendingAnswers.Add( (cut.ReadyHostFrame, new CoopSnapshotReady( cut.Records, cut.Ticks, cut.Frame, digest, cut.WorldHash, sha, tampered.Length ) { Generation = 1 }) );
+				Answer( new CoopSnapshotAssigned( cut.Assigned ) { Generation = WrongGeneration } );
+				pendingAnswers.Add( (cut.ReadyHostFrame, new CoopSnapshotReady( cut.Records, cut.Ticks, cut.Frame, digest, cut.WorldHash, sha, tampered.Length ) { Generation = WrongGeneration }) );
 				break;
 			}
-			case CoopSnapshotRequest { Reason: CoopSnapshotReason.FailedCheck, Known: 1 } when requestsAnswered == 1:
+			case CoopSnapshotRequest { Reason: CoopSnapshotReason.FailedCheck, Known: WrongGeneration } when requestsAnswered == 1:
 			{
 				requestsAnswered = 2;
-				var payload = Rewrite( File.ReadAllBytes( Path.Combine( evidenceDirectory, cut.File ) ), 2 );
+				var payload = Rewrite( File.ReadAllBytes( Path.Combine( evidenceDirectory, cut.File ) ), AbandonedGeneration );
 				var sha = replay.Serve( payload );
-				Answer( new CoopSnapshotAssigned( cut.Assigned ) { Generation = 2 } );
-				Answer( new CoopSnapshotReady( cut.Records, cut.Ticks, cut.Frame, cut.Digest, cut.WorldHash, sha, payload.Length ) { Generation = 2 } );
+				Answer( new CoopSnapshotAssigned( cut.Assigned ) { Generation = AbandonedGeneration } );
+				Answer( new CoopSnapshotReady( cut.Records, cut.Ticks, cut.Frame, cut.Digest, cut.WorldHash, sha, payload.Length ) { Generation = AbandonedGeneration } );
 				break;
 			}
 			case CoopSnapshotRequest { Reason: CoopSnapshotReason.NoAnswer }:
@@ -307,8 +318,7 @@ internal sealed partial class CoopJoinSmokeTest
 				var names = expected.EnumerateObject().Select( property => property.Name ).Union( actual.EnumerateObject().Select( property => property.Name ) );
 				foreach ( var name in names )
 				{
-					// the economy part carries the world streams with their own copy of the sound seed, presentation as the snapshot's (no hash covers it)
-					if ( path == "$" && PresentationParts.Contains( name ) || path == "$.Economy.World" && name == "SoundSeed" )
+					if ( PresentationParts.Contains( $"{path}.{name}" ) )
 						continue;
 					var inExpected = expected.TryGetProperty( name, out var left );
 					var inActual = actual.TryGetProperty( name, out var right );

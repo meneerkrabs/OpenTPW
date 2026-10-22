@@ -103,8 +103,8 @@ public static class ModStartup
 
 	/// <summary>
 	/// The desktop startup: <c>--mod-dir</c>, <c>OPENTPW_MOD_DIRS</c>, <c>&lt;config&gt;/mods</c> and
-	/// <c>&lt;program&gt;/content/mods</c>, the saved choices, then <c>--disable-extension</c>. Smoke tests ignore the
-	/// saved choices and the configuration folder's mods, like the compatibility settings.
+	/// <c>&lt;program&gt;/content/mods</c>, the saved choices, then <c>--disable-extension</c>. Smoke tests and the co-op join smoke ignore the
+	/// saved choices and the configuration folder's mods, like the compatibility and graphics settings (<see cref="IgnoresSavedChoices"/>).
 	/// </summary>
 	public static ModSet Initialize( string[] args, Action<string> trace, Action<string> warning ) =>
 		Initialize( args, trace, warning, Environment.GetEnvironmentVariable( ModDiscovery.EnvironmentVariable ), AppContext.BaseDirectory );

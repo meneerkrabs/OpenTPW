@@ -1,15 +1,14 @@
-using OpenTPW.UI.Original;
-
 namespace OpenTPW;
 
 /// <summary>
-/// [EXT:online-coop-snapshot-join] The native join smoke's water ride (docs/COOP.md, "The game's join"): a closed circuit with its track add-on bought, sold and bought again before the
-/// park is shared, as the park-resume smoke's add-on fixture builds it (docs/TRACKS.md, "Add-ons"); the first cut finds its track cut open by the edit tool with a line taken back by
-/// Backspace, the second finds the add-on sold off the mended track. Every edit in the session goes through the track tools' commands.
+/// [EXT:online-coop-snapshot-join] The native join smoke's water ride (docs/COOP.md, "The game's join"): a closed circuit with its track add-on placed, sold and placed again before the
+/// park is shared, as the park-resume smoke's add-on fixture builds it (docs/TRACKS.md, "Add-ons"). The first cut finds the track cut open by the edit tool beside the add-on, with a line
+/// taken back by Backspace; the second finds it mended, the add-on's sections walked again; the add-on is sold while the guest follows. Every edit in the session goes through the track
+/// tools' commands.
 /// </summary>
 internal sealed partial class CoopJoinSmokeTest
 {
-	/// <summary>The far side of the circuit: the add-on's loop is a tile deeper than the plain one, with a cell of margin, so the tunnel's straight is clear of the station.</summary>
+	/// <summary>The far side of the circuit: the loop is a tile deeper than the plain one, with a cell of margin, so its straights are clear of the station.</summary>
 	private const int WaterDepth = 6;
 	private const int WaterMargin = 1;
 
@@ -70,29 +69,24 @@ internal sealed partial class CoopJoinSmokeTest
 			+ $"{waterAddOn!.Entry.DisplayName} (sold once and bought again)." );
 	}
 
-	private void Research( int infoId )
-	{
-		var research = Economy.Research;
-		research.Restore( research.Completed.Append( (infoId, 0) ).Distinct().ToList(),
-			research.Items.Select( item => ((item.InfoId, item.Level), research.GetProgress( item )) ).Where( pair => pair.Item2 != 0 ).ToList(), research.Effort );
-	}
-
-	/// <summary>The ride's track add-on placed by the build tool as an add-on row arms it, sold and bought again, as the park-resume smoke's add-on fixture does it.</summary>
+	/// <summary>
+	/// The ride's track add-on placed by the build tool as an add-on row arms it, sold and placed again, as the park-resume smoke's add-on fixture does it, on a tile the first cut leaves.
+	/// No Instant Action player can buy one: its upgrade list lists nothing (<see cref="Level.UpgradeOffer"/>, UITEXT 27), and that list is the one way to an add-on row. The stand-in is
+	/// sound for the join: the flag gates the list, the level purchase and the advice only, and the placement, the walk, the save and the restore do not read the start kind.
+	/// </summary>
 	private void BuyAddOnTwice( OriginalObject ride )
 	{
 		var entry = level.Objects.Catalog.Entries.Where( candidate => TrackAddOns.IsTrackAddOn( candidate ) && candidate.Settings.GetInt( "AddOn.UpgradesId" ) == ride.Entry.InfoId )
 			.OrderBy( candidate => candidate.InfoId ).FirstOrDefault();
 		Require( entry != null, $"the theme has a track add-on of {ride.Entry.DisplayName}" );
 		Research( entry!.InfoId );
-		// Instant Action's upgrade list lists nothing (UITEXT 27, Level.UpgradeOffer), so the fixture arms the build tool as another mode's add-on row does: the join carries a
-		// track's add-on sections whatever the mode that bought them
 		Require( level.UpgradeOffer( ride ).Rows.Count == 0, "Instant Action's upgrade list lists nothing" );
 		OriginalObject? Buy()
 		{
-			Require( level.BeginAddOn( entry, ride ), "the add-on row arms the build tool for the ride" );
+			Require( level.BeginAddOn( entry, ride ), "the build tool is armed with the add-on for the ride" );
 			try
 			{
-				foreach ( var (x, y) in level.BuilderOf( ride )!.Tiles().ToArray() )
+				foreach ( var (x, y) in level.BuilderOf( ride )!.Tiles().Where( tile => !CutTile( tile ) ).ToArray() )
 				{
 					// the pointer on the tile's far cell: the hover counts even cells from the ride's anchor (TrackAddOns.HoverTarget)
 					var (targetX, targetY, rotation) = level.BuildTarget( entry, x + 1, y + 1 );
@@ -114,12 +108,19 @@ internal sealed partial class CoopJoinSmokeTest
 		Require( waterAddOn != null && AddOnSections( ride ) > 0, $"buy {entry.DisplayName} again" );
 	}
 
+	/// <summary>The two tiles of the circuit's left straight the first cut takes (<see cref="CutWaterTrack"/>), by their origin cells: the add-on needs the far straight.</summary>
+	private bool CutTile( (int X, int Y) tile ) => tile == WaterAt( -2, 2 ) || tile == WaterAt( -2, 4 );
+
+	/// <summary>The two ends of the left straight's gap: the corner at the far side and the one before the station.</summary>
+	private (int X, int Y) FarEnd => WaterAt( -2, WaterDepth );
+	private (int X, int Y) NearEnd => WaterAt( -2, 0 );
+
 	/// <summary>The ride's sections that carry an add-on (kind 12 or 13 with a linked add-on).</summary>
 	private static int AddOnSections( OriginalObject ride ) => ride.Runtime.Bump!.Sections.Count( section => section.Kind is 12 or 13 && section.AddOn != null );
 
 	/// <summary>
-	/// Before the first cut, by the track tools' commands: the edit tool cuts two tiles of the far straight (an add-on on them goes with them), and the line tool, going on from the open
-	/// end, lays a line and takes it back with Backspace. The circuit stays open over the cut.
+	/// Before the first cut, by the track tools' commands: the edit tool cuts the two tiles of the left straight (the add-on stands on the far one), and the line tool, going on from an open
+	/// end, lays a tile into the gap and takes it back with Backspace. The circuit stays open over the cut, with the add-on on it.
 	/// </summary>
 	private void CutWaterTrack()
 	{
@@ -128,37 +129,37 @@ internal sealed partial class CoopJoinSmokeTest
 		var builder = level.BuilderOf( ride )!;
 		var tiles = builder.Tiles().Count();
 		Require( level.EnterTrackTool( ride ) && level.CellTool.Mode == CellToolMode.WaterEdit && level.CellTool.Start == null, "the track button on the closed circuit opens the edit tool" );
-		Require( level.CellTool.Click( WaterAt( 3, WaterDepth + 1 ) ) == null && level.CellTool.Start == WaterAt( 3, WaterDepth + 1 ), "a click on the far straight picks its tile" );
-		var cut = level.CellTool.Click( WaterAt( 0, WaterDepth ) );
+		Require( level.CellTool.Click( WaterAt( -1, 5 ) ) == null && level.CellTool.Start == WaterAt( -1, 5 ), "a click on the left straight picks its tile" );
+		var cut = level.CellTool.Click( WaterAt( -2, 2 ) );
 		Require( cut is { Completed: true } && cut.Built.Count == 2 && !bump.IsTrackValid, "the second click cuts two tiles and opens the circuit" );
-		Require( level.CellTool.IsActive && level.CellTool.Mode == CellToolMode.WaterTrack && level.CellTool.Start == WaterAt( 4, WaterDepth ),
-			"the tool goes on as the line tool from the end of the track" );
-		var line = level.CellTool.Click( WaterAt( 2, WaterDepth ) );
+		Require( level.CellTool.IsActive && level.CellTool.Mode == CellToolMode.WaterTrack && level.CellTool.Start is { } end && (end == FarEnd || end == NearEnd),
+			$"the tool goes on as the line tool from an end of the gap ({level.CellTool.Start})" );
+		var line = level.CellTool.Click( level.CellTool.Start == FarEnd ? WaterAt( -2, 4 ) : WaterAt( -2, 2 ) );
 		Require( line is { Completed: true } && !bump.IsTrackValid && builder.Tiles().Count() == tiles - 1, "the line tool lays a tile into the gap" );
 		Require( level.CellTool.Undo() && builder.Tiles().Count() == tiles - 2 && !bump.IsTrackValid, "Backspace takes the line back" );
 		cutTiles = builder.Tiles().Count();
 		level.CellTool.Cancel();
+		Require( waterAddOn is { IsDeleted: false }, "the add-on stands on the track cut open" );
 	}
 
-	/// <summary>After the first cut: the line tool, opened on the open circuit, closes it again across the gap.</summary>
+	/// <summary>After the first cut: the line tool, opened on the open circuit, closes it again across the gap, and the walk links the add-on's sections again.</summary>
 	private void MendWaterTrack()
 	{
 		var ride = waterRide!;
 		Require( level.EnterTrackTool( ride ) && level.CellTool.Mode == CellToolMode.WaterTrack && level.CellTool.Start != null, "the track button on the open circuit opens the line tool" );
-		var across = level.CellTool.Start == WaterAt( 4, WaterDepth ) ? WaterAt( -2, WaterDepth ) : WaterAt( 4, WaterDepth );
+		var across = level.CellTool.Start == FarEnd ? NearEnd : FarEnd;
 		Require( level.CellTool.Click( across ) is { Completed: true } && ride.Runtime.Bump!.IsTrackValid, "the line across the gap closes the circuit again" );
 		level.CellTool.Cancel();
+		Require( AddOnSections( ride ) > 0, "the mended circuit's sections carry the add-on again" );
 	}
 
-	/// <summary>Before the second cut: the add-on, unless the first cut took it, is demolished by the remove tool's command, and the circuit is walked back to plain sections.</summary>
+	/// <summary>After the second cut, while the guest follows: the remove tool's command demolishes the add-on, and the circuit is walked back to plain sections.</summary>
 	private void SellAddOnOffTheTrack()
 	{
-		if ( waterAddOn is { IsDeleted: false } addOn )
-		{
-			var (x, y, _) = addOn.Cells.First();
-			Issue( new RemoveObjectAtCommand( x, y ), "the add-on is sold off the water ride's track" );
-		}
-		Require( waterAddOn!.IsDeleted && AddOnSections( waterRide! ) == 0 && waterRide!.Runtime.Bump!.IsTrackValid, "the mended circuit runs without its add-on" );
+		Require( waterAddOn is { IsDeleted: false }, "the add-on is still on the track to be sold" );
+		var (x, y, _) = waterAddOn!.Cells.First();
+		Issue( new RemoveObjectAtCommand( x, y ), "the add-on is sold off the water ride's track" );
+		Require( waterAddOn.IsDeleted && AddOnSections( waterRide! ) == 0 && waterRide!.Runtime.Bump!.IsTrackValid, "the mended circuit runs without its add-on" );
 	}
 
 	/// <summary>The water ride's staged state at a cut, in <paramref name="park"/>.</summary>
@@ -168,7 +169,9 @@ internal sealed partial class CoopJoinSmokeTest
 			yield break;
 		if ( !bump.IsTrackValid && builder.Tiles().Count() == cutTiles )
 			yield return "water track cut open after a Backspace";
-		if ( waterAddOn is { IsDeleted: true } && bump.IsTrackValid && AddOnSections( ride ) == 0 )
-			yield return "add-on sold off a track";
+		if ( waterAddOn is { IsDeleted: false } && !bump.IsTrackValid )
+			yield return "add-on on a track cut open";
+		if ( waterAddOn is { IsDeleted: false } && bump.IsTrackValid && AddOnSections( ride ) > 0 )
+			yield return "add-on on a mended track";
 	}
 }

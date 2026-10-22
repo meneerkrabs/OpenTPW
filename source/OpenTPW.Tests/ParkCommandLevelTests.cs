@@ -199,20 +199,23 @@ public class ParkCommandLevelTests
 		var moved = level.Commands.Issue( level.BuildCommand( entry, 14, 14, level.BuildRotation ) ).As<OriginalObject>();
 		Assert.IsNotNull( moved, level.LastActionMessage );
 		// the tool stays armed after a placement holding exactly Ctrl: the next of the type is the Move tool's too, and charged as the first
+		Assert.IsTrue( park.Economy.Catalog.TryGet( entry.InfoId, out var info ) && info.PurchaseCost > 0 );
 		var balance = park.Economy.Balance;
 		var again = level.Commands.Issue( level.BuildCommand( entry, 18, 14, level.BuildRotation ) ).As<OriginalObject>();
 		Assert.IsNotNull( again, level.LastActionMessage );
-		Assert.IsTrue( park.Economy.Balance < balance, "a move costs the whole price again" );
+		Assert.AreEqual( balance - info.PurchaseCost, park.Economy.Balance, "a move costs the whole price again" );
 		Assert.IsTrue( level.IsMoving );
 		// any other end of the tool (a placement without Ctrl, a cancel, another tool) leaves the build tool, and the command layer hears it
 		level.BuildEntry = null;
 		Assert.IsFalse( level.IsMoving );
 		Assert.IsInstanceOfType( level.Commands.Log[^1].Command, typeof( EndMoveCommand ), "the tool's end is logged" );
 		var before = level.ComputeStateHash();
-		Assert.IsFalse( level.Commands.Issue( new PlaceObjectCommand( ParkCommandCodec.EntryKey( entry ), 22, 14, 0, Moving: true ) ).Accepted, "the ended tool's type is carried no more" );
+		var refused = level.Commands.Issue( new PlaceObjectCommand( ParkCommandCodec.EntryKey( entry ), 22, 14, 0, Moving: true ) );
+		Assert.IsFalse( refused.Accepted, "the ended tool's type is carried no more" );
+		StringAssert.Contains( refused.Reason, "carries no", "refused by the carried test, not the cell" );
 		Assert.IsFalse( level.Commands.Issue( new EndMoveCommand() ).Accepted, "nothing is carried" );
 		Assert.AreEqual( before, level.ComputeStateHash() );
-		// a pick-up while the tool carries ends the old move before the new pick-up, and the new type is the one carried
+		// a pick-up while the tool carries ends the old move before the new pick-up (the fixture has one type, so the order of the log is the proof), and the move goes on
 		Assert.IsTrue( level.BeginMove( again! ) );
 		Assert.IsTrue( level.BeginMove( moved! ) );
 		CollectionAssert.AreEqual( new[] { ParkCommandKind.PickUpObject, ParkCommandKind.EndMove, ParkCommandKind.PickUpObject },

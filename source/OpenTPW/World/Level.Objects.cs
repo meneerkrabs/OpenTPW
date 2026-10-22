@@ -14,13 +14,15 @@ public partial class Level
 		{
 			if ( value != null )
 				StaffPlacement?.Cancel();
-			// [EXT:online-coop-commands] the Move tool's end is a command: its player carries the picked-up type no more (the command layer cannot tell a placement that ends the tool)
-			if ( IsMoving )
-				Commands.Issue( new EndMoveCommand() );
+			var moveEnds = IsMoving;
 			buildEntry = value;
 			// any other way of arming or leaving the build tool ends the Move tool (interface mode 0x3b) and the add-on mode; BeginMove and BeginAddOn set theirs after they armed the entry
 			IsMoving = false;
 			buildAddOnRide = null;
+			// [EXT:online-coop-commands] the Move tool's end is a command, once the tool's state is the ended one: its player carries the picked-up type no more (a placement cannot say
+			// whether the tool stays)
+			if ( moveEnds )
+				Commands.Issue( new EndMoveCommand() );
 		}
 	}
 

@@ -759,7 +759,7 @@ guarded list.
 
 | Area | Commands | State |
 | --- | --- | --- |
-| Objects | place (the build tool, the Move tool, track add-ons), the remove tool, remove at a cell, sell from the object and attraction windows, the Move tool's pick-up, the bulldozer (area clear: one command per cleared cell) | converted |
+| Objects | place (the build tool, the Move tool, track add-ons), the remove tool, remove at a cell, sell from the object and attraction windows, the Move tool's pick-up and its end, the bulldozer (area clear: one command per cleared cell) | converted |
 | Paths and queues | path and queue lines, undo inside the tool, path and queue cell removal, Backspace over a cell, the queue edit click | converted |
 | Developer prototype | place and remove the Totem, open and close it (the developer panel's button) | converted |
 | Winning screen | the Instant Action finale's dismissal (Resume Game, Escape, the right click) | converted |
@@ -833,6 +833,10 @@ guarded list.
 - The staff tool's cancel ends the tool even when its drop is refused, as a player's rights could
   refuse it mid-carry (C3): the employee then stays in that player's hand and the player's next
   pick-up is refused. C3 must always allow the drop back to where the employee came from.
+- The Move tool's end ends the issuer's tool whatever its command's result (`EndMoveCommand`): a
+  refusal would leave the picked-up type carried on every peer while the issuer's tool is gone. C3
+  must always allow it, and a member that leaves the session mid-move must have its Move tool ended
+  on every peer (as its hand and its hire), or the next player in its slot inherits the carried type.
 - A hire's pending candidate (`ParkStaff.PendingPlacementId`) is one per park: two players placing hires
   at once would take it from each other (C3 gives each player a placement).
 - Opening the queue tool (after a ride is placed, its track circuit closes or its coaster is completed,

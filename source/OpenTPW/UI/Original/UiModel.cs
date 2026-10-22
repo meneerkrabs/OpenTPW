@@ -107,6 +107,13 @@ public sealed class UiModel
 
 	internal static UiModel LoadAssetPath( string path ) => new( new ModelFile( path ), Path.GetFileNameWithoutExtension( path ) );
 
+	/// <summary>Loads a model file of the host file system (a language folder's banner mesh, <see cref="GameLanguage.EnumerateMeshes"/>).</summary>
+	internal static UiModel LoadHostPath( string path )
+	{
+		using var stream = File.Open( path, FileMode.Open, FileAccess.Read, FileShare.Read );
+		return new( new ModelFile( stream ), Path.GetFileNameWithoutExtension( path ) );
+	}
+
 	/// <summary>Frame for a button state; missing states fall back to the root frame.</summary>
 	public UiModelFrame GetFrame( int index ) => Frames[index >= 0 && index < Frames.Count ? index : 0];
 

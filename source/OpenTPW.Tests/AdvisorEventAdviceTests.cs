@@ -14,7 +14,7 @@ namespace OpenTPW.Tests;
 [DoNotParallelize]
 public class AdvisorEventAdviceTests
 {
-	private const string Sam = """
+	internal const string Sam = """
 		GeneralAdvisor.MinTimeAnyMessage	5
 		GeneralAdvisor.MinTimeSameMessage	120
 		GeneralAdvisor.MinScoreForConsideration	25

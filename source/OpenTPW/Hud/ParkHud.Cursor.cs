@@ -25,7 +25,7 @@ public sealed partial class ParkHud
 		var type = ChooseCursor();
 		Input.CursorType = type;
 		cursorPath = CursorArt( type );
-		if ( IsRiding )
+		if ( RideCrosshair )
 		{
 			// the ride view's crosshair is drawn from rectangles (its art is not in the data files), so the system pointer is hidden whenever the pointer is in the window
 			Input.SoftwareCursorRequested = pointer != null && !uiCapturesMouse;
@@ -38,9 +38,13 @@ public sealed partial class ParkHud
 	/// <summary>Whether the game's own pointer replaces the system pointer this frame.</summary>
 	internal static bool ShouldDrawSoftwareCursor( string? artPath, bool pointerInWindow, bool uiCapturesMouse ) => artPath != null && pointerInWindow && !uiCapturesMouse;
 
+	/// <summary>Whether the ride view's crosshair is the pointer: while riding, but not under the winning screen, whose window sets no pointer of its own (the camcorder window that sets the crosshair, 0x7CB2B0, is hidden then).</summary>
+	// [BIN:TPW-EXE:0x0048AF0C winning pointer] the winning screen hides the camcorder window (message 6), the window that gives the ride view its crosshair (pointer 0x15, 0x65F11D at 0x48A20B), and creates its own full-screen window 0x7472 with no pointer call, so the crosshair is not the pointer over the winning camera; OpenTPW shows the window pointer there
+	private bool RideCrosshair => IsRiding && finaleScreen == null;
+
 	private Input.CursorTypes ChooseCursor()
 	{
-		if ( IsRiding )
+		if ( RideCrosshair )
 			return Input.CursorTypes.Crosshair;
 		if ( pointerOverUi )
 			return Input.CursorTypes.Normal;
@@ -90,7 +94,7 @@ public sealed partial class ParkHud
 	/// <summary>Draws the game's pointer; the game flow calls it after every other layer so nothing covers it.</summary>
 	public void DrawCursor( UiContext context )
 	{
-		if ( IsRiding && pointer is { X: >= 0, Y: >= 0 } crosshairAt )
+		if ( RideCrosshair && pointer is { X: >= 0, Y: >= 0 } crosshairAt )
 		{
 			DrawCrosshair( context, crosshairAt );
 			return;

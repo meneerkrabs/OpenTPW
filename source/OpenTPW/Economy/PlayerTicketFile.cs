@@ -51,6 +51,9 @@ internal static partial class PlayerTicketFile
 		public List<HolderData>? GlobalHolders { get; init; }
 		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
 		public List<PurchaseData>? KnownPurchases { get; init; }
+		/// <summary>Optional: the parks whose research the player has completed (absent in files written before it existed and while none has, which load with none).</summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+		public List<string>? ResearchCompleted { get; init; }
 	}
 	private sealed record PurchaseData
 	{
@@ -78,7 +81,8 @@ internal static partial class PlayerTicketFile
 		return JsonSerializer.SerializeToUtf8Bytes( new Data { Format = FormatName, Version = copy.KnownPurchases == null ? 1 : 2, Mode = copy.Mode, ExtraKeys = copy.ExtraKeys,
 			SpentTickets = copy.SpentTickets, Earned = copy.Earned.Select( item => new TicketData { Theme = item.Theme, Kind = item.Kind, Cheated = copy.Cheated?.Contains( item ) == true } ).ToList(),
 			KnownPurchases = copy.KnownPurchases?.Select( item => new PurchaseData { InfoId = item.InfoId, Cost = item.Cost } ).ToList(),
-			GlobalHolders = copy.Holders?.Select( item => new HolderData { Kind = item.Kind, Theme = item.Theme, Record = item.Record } ).ToList() }, Context.Data );
+			GlobalHolders = copy.Holders?.Select( item => new HolderData { Kind = item.Kind, Theme = item.Theme, Record = item.Record } ).ToList(),
+			ResearchCompleted = copy.ResearchCompleted?.ToList() }, Context.Data );
 	}
 
 	public static PlayerTicketLedger Deserialize( ReadOnlySpan<byte> bytes )
@@ -87,7 +91,8 @@ internal static partial class PlayerTicketFile
 		Data? data;
 		try { data = JsonSerializer.Deserialize( bytes, Context.Data ); }
 		catch ( JsonException exception ) { throw new InvalidDataException( "Malformed own player progress.", exception ); }
-		if ( data == null || data.Format != FormatName || data.Version is not (1 or 2) || data.Earned == null || data.Earned.Count > PlayerTicketLedger.MaximumIdentities || data.Earned.Any( item => item == null ) || data.GlobalHolders?.Count > 4 )
+		if ( data == null || data.Format != FormatName || data.Version is not (1 or 2) || data.Earned == null || data.Earned.Count > PlayerTicketLedger.MaximumIdentities || data.Earned.Any( item => item == null ) || data.GlobalHolders?.Count > 4
+			|| data.ResearchCompleted?.Count > 4 )
 			throw new InvalidDataException( "Invalid own player progress envelope." );
 		// Version 1 remains byte/shape compatible when no purchase identities are known. Old strict readers reject version 2.
 		if ( data.Version == 1 ? data.KnownPurchases != null : data.KnownPurchases == null || data.KnownPurchases.Count == 0 )
@@ -97,7 +102,8 @@ internal static partial class PlayerTicketFile
 			data.Earned.Select( item => new EarnedTicketIdentity( item.Theme, item.Kind ) ).ToArray(),
 			data.GlobalHolders?.Select( item => item == null ? throw new InvalidDataException( "Invalid own player progress envelope." ) : new GlobalTicketHolder( item.Kind, item.Theme, item.Record ) ).ToArray(),
 			data.Earned.Any( item => item.Cheated ) ? data.Earned.Where( item => item.Cheated ).Select( item => new EarnedTicketIdentity( item.Theme, item.Kind ) ).ToArray() : null,
-			data.KnownPurchases?.Select( item => item == null ? throw new InvalidDataException( "Invalid known ticket purchase." ) : new KnownTicketPurchase( item.InfoId, item.Cost ) ).ToArray() ) );
+			data.KnownPurchases?.Select( item => item == null ? throw new InvalidDataException( "Invalid known ticket purchase." ) : new KnownTicketPurchase( item.InfoId, item.Cost ) ).ToArray(),
+			data.ResearchCompleted?.ToArray() ) );
 	}
 
 	public static void Save( string path, PlayerTicketSnapshot snapshot )

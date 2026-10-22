@@ -28,15 +28,24 @@ public sealed class CoopWorkTiming
 	public double Milliseconds { get; set; }
 	public double LongestMilliseconds { get; set; }
 
+	/// <summary>The frame (a build's slice, a capture's frame) this part last ran in, so each frame counts once.</summary>
+	private int lastFrame;
+
 	internal static CoopWorkTiming Of( string name ) => new() { Name = name };
 
-	internal void Add( double milliseconds )
+	/// <summary>A step of <paramref name="milliseconds"/>, in the frame numbered <paramref name="frame"/> (1 first).</summary>
+	internal void Add( double milliseconds, int frame )
 	{
 		Steps++;
 		Milliseconds += milliseconds;
 		LongestMilliseconds = Math.Max( LongestMilliseconds, milliseconds );
 		if ( Status == CoopTimingStatus.Skipped )
 			Status = CoopTimingStatus.Measured;
+		if ( frame != lastFrame )
+		{
+			Frames++;
+			lastFrame = frame;
+		}
 	}
 
 	public override string ToString() => Status == CoopTimingStatus.Skipped ? $"{Name} skipped"
@@ -89,15 +98,26 @@ public sealed class CoopCaptureTimings
 }
 
 /// <summary>
-/// [EXT:online-coop-snapshot-join] A build's own timings (<see cref="ICoopJoinBuild.Timings"/>): its stages in their order, the frames it ran in, the most one of them spent on it, and the
-/// level's construction by <see cref="LoadProfile"/> section while the profile records.
+/// [EXT:online-coop-snapshot-join] A build's own timings (<see cref="ICoopJoinBuild.Timings"/>): its stages in their order (each listed, a stage it never reached as skipped), the frames
+/// it ran in, the most one of them spent on it, which build of the process it is (the first is the process's cold one), and its work by <see cref="LoadProfile"/> section, taken over
+/// its own slices only, while the profile records.
 /// </summary>
 public sealed class CoopBuildTimings
 {
 	public List<CoopWorkTiming> Stages { get; } = new();
 	public int Frames { get; set; }
 	public double LongestFrameMilliseconds { get; set; }
-	public Dictionary<string, double> LevelSections { get; } = new();
+	public int ProcessBuild { get; set; }
+	public Dictionary<string, double> Sections { get; } = new();
+
+	/// <summary>A build's timings with its stages listed in their order, none run yet.</summary>
+	internal static CoopBuildTimings ForStages( params string[] names )
+	{
+		var timings = new CoopBuildTimings();
+		foreach ( var name in names )
+			timings.Stages.Add( CoopWorkTiming.Of( name ) );
+		return timings;
+	}
 
 	/// <summary>The stage named <paramref name="name"/>, added after the others the first time.</summary>
 	internal CoopWorkTiming Stage( string name )
@@ -118,29 +138,40 @@ public sealed class CoopBuildTimings
 public sealed class CoopJoinTimings
 {
 	public uint Generation { get; set; }
-	/// <summary>"joined", "resynced", "failed its check", "abandoned", "refused" or "failed"; empty while it runs.</summary>
+	/// <summary>
+	/// "joined", "resynced", "failed its check", "timed out" (the build's deadline), "abandoned" (a newer capture), "refused", "failed" (a download, a build or an install) or "ended" (the
+	/// session ended first); empty while it runs.
+	/// </summary>
 	public string Outcome { get; set; } = "";
 	public int DownloadAttempts { get; set; }
-	/// <summary>The last download's wall time, from its request to its answer.</summary>
+	/// <summary>The download's wall time, from its first request to the last answer, a server's waits between the attempts included.</summary>
 	public double DownloadSeconds { get; set; }
+	/// <summary>The last attempt's wall time, from its request to its answer.</summary>
+	public double LastAttemptSeconds { get; set; }
 	public long PayloadBytes { get; set; }
 	public double DecodeMilliseconds { get; set; }
 	/// <summary>The build's stages in their order (<see cref="ICoopJoinBuild.Timings"/>).</summary>
 	public List<CoopWorkTiming> Build { get; set; } = new();
-	/// <summary>The frames the build ran in, and the most one of them spent on it.</summary>
+	/// <summary>The frames the build ran in, the most one of them spent on it, and which build of the process it was (1 the process's first, its cold one; 0 none).</summary>
 	public int BuildFrames { get; set; }
 	public double LongestBuildFrameMilliseconds { get; set; }
-	/// <summary>The level's construction by <see cref="LoadProfile"/> section, milliseconds (empty while the profile is off).</summary>
-	public Dictionary<string, double> LevelSections { get; set; } = new();
+	public int ProcessBuild { get; set; }
+	/// <summary>The build's work by <see cref="LoadProfile"/> section, milliseconds, over its own slices (empty while the profile is off).</summary>
+	public Dictionary<string, double> Sections { get; set; } = new();
 	public double CheckMilliseconds { get; set; }
+	/// <summary>The whole swap: the old stream's end, the install, and the new stream with the frames buffered for it.</summary>
 	public double SwapMilliseconds { get; set; }
-	/// <summary>The ticks and frames from the swap until the guest followed within its window; null while it has not (or no park was swapped in).</summary>
+	/// <summary>
+	/// The live updates, ticks and time from the swap until the guest's stream follows within its window with no frame waiting to apply (the frames it had when it caught up; a frame
+	/// still on its way is not known); null while it has not, or no park was swapped in.
+	/// </summary>
 	public long? CatchUpTicks { get; set; }
 	public int? CatchUpFrames { get; set; }
 	public double? CatchUpSeconds { get; set; }
 
 	public override string ToString() => string.Create( CultureInfo.InvariantCulture,
 		$"join {Generation} {(Outcome.Length == 0 ? "running" : Outcome)}: download {DownloadSeconds:0.000} s ({PayloadBytes / 1024.0:0} KiB, {DownloadAttempts} attempt(s)), decode "
-		+ $"{DecodeMilliseconds:0.0} ms; build {BuildFrames} frames, longest {LongestBuildFrameMilliseconds:0.0} ms: {string.Join( "; ", Build )}; check {CheckMilliseconds:0.0} ms, swap "
-		+ $"{SwapMilliseconds:0.0} ms{(LevelSections.Count > 0 ? "; level " + string.Join( ", ", LevelSections.OrderByDescending( item => item.Value ).Select( item => $"{item.Key} {item.Value:0.0}" ) ) : "")}" );
+		+ $"{DecodeMilliseconds:0.0} ms; build {BuildFrames} frames (the process's build {ProcessBuild}), longest {LongestBuildFrameMilliseconds:0.0} ms: {string.Join( "; ", Build )}; "
+		+ $"check {CheckMilliseconds:0.0} ms, swap {SwapMilliseconds:0.0} ms"
+		+ $"{(Sections.Count > 0 ? "; sections " + string.Join( ", ", Sections.OrderByDescending( item => item.Value ).Select( item => $"{item.Key} {item.Value:0.0}" ) ) : "")}" );
 }

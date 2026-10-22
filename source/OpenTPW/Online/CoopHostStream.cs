@@ -161,8 +161,8 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 			if ( Writer == null )
 			{
 				var saved = save.Run( budget );
-				Timings.Save.Add( CoopClock.Since( started ) );
-				Timings.Save.Frames++;
+				// this frame of the capture: the cut's was the first
+				Timings.Save.Add( CoopClock.Since( started ), Timings.Frames + 1 );
 				if ( !saved )
 					return false;
 				var copying = System.Diagnostics.Stopwatch.GetTimestamp();
@@ -178,8 +178,7 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 				return false;
 			}
 			var complete = Writer.Run( budget );
-			Timings.Compression.Add( CoopClock.Since( started ) );
-			Timings.Compression.Frames++;
+			Timings.Compression.Add( CoopClock.Since( started ), Timings.Frames + 1 );
 			if ( !complete )
 				return false;
 			Payload = Writer.Bytes;
@@ -873,6 +872,8 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 		try
 		{
 			CaptureFault?.Invoke( level );
+			// a test's hook at the cut (the native smoke's own digest of the cut) is no part of the capture's cost
+			Part();
 			var digest = CoopDigest.Compute( level, out var world );
 			timings.DigestMilliseconds = Part();
 			var state = level.CaptureJoinState();
@@ -883,7 +884,7 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 			var save = ParkResumeSaveFile.BeginSlicedSerialize( snapshot );
 			timings.SerializerSetupMilliseconds = Part();
 			timings.Frames = 1;
-			timings.LongestFrameMilliseconds = CoopClock.Since( cutStarted );
+			timings.LongestFrameMilliseconds = timings.CutMilliseconds;
 			capture = new JoinCapture( generation, members, records, ticks, frame, digest, world, state, save, timings );
 		}
 		// a park the save path refuses (catalogue defaults it cannot write, an object without its binding, a key past a bound): nothing is captured, and the members hear why

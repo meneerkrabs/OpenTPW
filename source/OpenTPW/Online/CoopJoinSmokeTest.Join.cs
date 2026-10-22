@@ -230,19 +230,23 @@ internal sealed partial class CoopJoinSmokeTest
 		var timings = session.JoinTimings;
 		var expected = measuring ? new[] { "joined", "resynced" } : new[] { "failed its check", "abandoned", "joined", "resynced" };
 		Require( timings.Select( item => item.Outcome ).SequenceEqual( expected ), $"every build's timings are kept with its outcome ({string.Join( ", ", timings.Select( item => item.Outcome ) )})" );
+		// the process's builds in order, the first its cold one
+		Require( timings.Select( item => item.ProcessBuild ).SequenceEqual( Enumerable.Range( 1, timings.Count ) ), "the builds are the process's first ones, in order" );
 		foreach ( var timing in timings )
 		{
-			var values = new[] { timing.DownloadSeconds, timing.DecodeMilliseconds, timing.LongestBuildFrameMilliseconds, timing.CheckMilliseconds, timing.SwapMilliseconds,
-				timing.CatchUpSeconds ?? 0 }.Concat( timing.Build.SelectMany( stage => new[] { stage.Milliseconds, stage.LongestMilliseconds } ) ).Concat( timing.LevelSections.Values );
+			var values = new[] { timing.DownloadSeconds, timing.LastAttemptSeconds, timing.DecodeMilliseconds, timing.LongestBuildFrameMilliseconds, timing.CheckMilliseconds,
+				timing.SwapMilliseconds, timing.CatchUpSeconds ?? 0 }.Concat( timing.Build.SelectMany( stage => new[] { stage.Milliseconds, stage.LongestMilliseconds } ) ).Concat( timing.Sections.Values );
 			Require( values.All( value => double.IsFinite( value ) && value >= 0 ), $"build {timing.Generation}'s timings are finite and not negative ({timing})" );
-			Require( timing.DownloadAttempts == 1 && timing.PayloadBytes > 0 && timing.BuildFrames > 0 && timing.Build.Count > 0 && timing.Build[0] is { Name: "save", Status: CoopTimingStatus.Measured },
-				$"build {timing.Generation} was downloaded once and built over frames ({timing})" );
-			Require( timing.Build.All( stage => stage.Status != CoopTimingStatus.Measured || stage.Steps > 0 && stage.Frames > 0 ), $"every stage that ran was timed ({timing})" );
+			Require( timing.DownloadAttempts == 1 && timing.PayloadBytes > 0 && timing.BuildFrames > 0 && timing.Build[0] is { Name: "save", Status: CoopTimingStatus.Measured }
+				&& timing.Build.Select( stage => stage.Name ).SequenceEqual( new[] { "save", "files", "catalogue", "manifest", "validation", "economy", "level", "hud", "advisor" } ),
+				$"build {timing.Generation} was downloaded once and built over frames, every stage listed ({timing})" );
+			Require( timing.Build.All( stage => stage.Status != CoopTimingStatus.Measured || stage.Steps > 0 && stage.Frames > 0 && stage.Frames <= timing.BuildFrames ),
+				$"every stage that ran was timed within the build's frames ({timing})" );
 			if ( timing.Outcome is "joined" or "resynced" )
 			{
-				Require( timing.Build.Select( stage => stage.Name ).SequenceEqual( new[] { "save", "files", "catalogue", "manifest", "validation", "economy", "level", "hud", "advisor" } )
-					&& timing.Build.Single( stage => stage.Name == "level" ).Steps > 0 && timing.CheckMilliseconds > 0 && timing.CatchUpTicks != null && timing.LevelSections.ContainsKey( "resume" )
-					&& timing.LevelSections.ContainsKey( "join-state" ), $"build {timing.Generation} ran every stage, was checked, swapped in and caught up ({timing})" );
+				Require( timing.Build.Single( stage => stage.Name == "level" ).Steps > 0 && timing.Build.Single( stage => stage.Name == "hud" ).Status == CoopTimingStatus.Measured
+					&& timing.CatchUpTicks != null && timing.CatchUpFrames > 0 && timing.CatchUpSeconds != null && timing.Sections.ContainsKey( "resume" ) && timing.Sections.ContainsKey( "join-state" ),
+					$"build {timing.Generation} ran every stage, was swapped in and caught up ({timing})" );
 			}
 		}
 		var worst = updateFrames.Where( item => item.Step is nameof( JoinStep.Joining ) or nameof( JoinStep.Resyncing ) ).MaxBy( item => item.Milliseconds );

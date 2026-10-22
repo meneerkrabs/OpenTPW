@@ -139,6 +139,9 @@ internal sealed class CoopGuestStream : ILevelSessionStream, IDisposable
 	/// <summary>The digests after an errored record this guest compared so far.</summary>
 	public int RecordChecks { get; private set; }
 
+	/// <summary>The frames taken in order that wait for the next frame point to apply.</summary>
+	internal int ReadyFrames => ready.Count;
+
 	/// <summary>The guest's state as its progress reports it.</summary>
 	public CoopGuestState State => Desync != null ? CoopGuestState.Desynced
 		: tooFarBack ? CoopGuestState.TooFarBack

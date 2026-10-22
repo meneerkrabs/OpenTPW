@@ -495,29 +495,180 @@ The design fixed two constants only after measuring them (`coop-c2b-design.md`, 
 - **The join's cost (C2c-2b-1).** `scripts/measure-coop-join.sh` runs the native join smoke's host phase
   and its measuring join phase (`--coop-join-smoke measure`: the untouched captures, joined from the
   front end and resynced once each) five times in a Release build, each phase a fresh process, silent
-  and offscreen; `tools/coop_join_timings.py` prints every value's median, range and runs. The timings
-  are wall-clock (`Stopwatch`, never a session's clock), kept per capture on the host
-  (`CoopHostStream.CaptureTimings`) and per build on the guest (`CoopSession.JoinTimings`, with the
-  stages of `ICoopJoinBuild.Timings` and the level's `LoadProfile` sections), logged, and written into
-  the smoke's evidence with the phase's update frames and its environment. On an Apple M5 (macOS 26.6,
-  .NET 11 RC 2, the advisor on), medians of five:
-  - **The host, at a cut.** The first capture's cut took 39 ms in one frame, 34 ms of it the digest (the
-    process's first); the second's 12 ms, 10 ms of it the digest. The captures took 14 and 5 frames; the
-    save's longest slice took 34 ms (the serializer's first use) and 3.6 ms, the compression 1.3 ms, for a
-    128 and a 149 KiB payload of a 980 and a 1,107 KiB save.
-  - **The guest, joining from the front end** (the process's first build): 32 frames, the longest 598
-    ms, almost all of it the restore of the park's objects (`ParkLayoutSnapshot.RestoreObjects`, one
-    step of 592 ms). Other single steps over the build's 12 ms budget: the save's parse (154 ms), the
-    guests' restore (174 ms), the resume's restore (77 ms), the terrain (75 ms), the level's HUD (54
-    ms), the staff, gate and economy (51 ms), the catalogue's settings (47 ms), the advisor (27 ms), a
-    validation step (17 ms) and the economy (16 ms). The decode took 3.8 ms, the check at the cut 42 ms
-    (the process's first digest), the swap 7 ms, and the first frame after it 66 ms.
-  - **The guest, resyncing over its park** (warm): 12 frames, the longest 205 ms (the objects' restore
-    again), the guests' restore 98 ms, the catalogue's settings 41 ms, the terrain 34 ms; the decode 1.4
-    ms, the check 2.4 ms, the swap 9 ms, the first frame after it 73 ms. The host's digest of that park
-    took 10 ms at its cut, the guest's 2.4 ms; the difference is not explained yet.
-  A join thus stalls a guest's frames for up to 0.6 s at its worst step and the host's for one frame of
-  12 to 39 ms. The browser's numbers (C2c-2b-2) decide which steps C2c-2b-3 splits.
+  and offscreen, and records the machine; `tools/coop_join_timings.py` prints each timing's median,
+  range and runs (it refuses the adversarial join's evidence, whose rewritten payloads and refused and
+  abandoned builds warm the process first). The timings are wall-clock (`Stopwatch`, never a session's
+  clock), kept per capture on the host (`CoopHostStream.CaptureTimings`) and per build on the guest
+  (`CoopSession.JoinTimings`, with the stages of `ICoopJoinBuild.Timings` and the build's `LoadProfile`
+  sections over its own slices), logged, and written into the smoke's evidence with the phase's update
+  frames and its environment; a test's hook at the cut is left out. The smoke's upload and download are
+  local, so their times are no network's. On an Apple M5 (Mac17,2, 32 GB, macOS 26.6, .NET 11 RC 2, the
+  advisor on), medians of five with their ranges:
+  - **The host, at a cut.** The first capture's cut took 9.5 ms (9.0-10.4) in one frame: the digest 3.9
+    ms, the save's snapshot 4.5 ms; the second's 5.1 ms (4.4-6.5): the digest 2.4 ms, the snapshot 2.6
+    ms. The captures took 14 and 5 frames. The save's longest slice took 32 ms (31-35) in the first, the
+    serializer's first use in the process, and 3.9 ms (3.5-4.6) in the second; the compression 1.5 and
+    1.2 ms, for a 128 and a 149 KiB payload of a 980 and a 1,107 KiB save.
+  - **The guest, joining from the front end** (the process's first build): 30 frames (29-34), the
+    longest 599 ms (571-628), almost all of it one step of the level, the restore of the park's objects
+    (`ParkLayoutSnapshot.RestoreObjects`, 593 ms, 565-621). Other single steps over the build's 12 ms
+    budget: the guests' setup (177 ms), the save's parse (153 ms), the resume's restore (77 ms), the
+    terrain (73 ms), the level's HUD (54 ms), the staff, gate and economy (49 ms), the catalogue's
+    settings (43 ms), the advisor (30 ms), a validation step (18 ms) and the economy (15 ms). The decode
+    took 4.5 ms (4.0-4.9), the check at the cut 41 ms (39-44, the process's first digest), the swap 12
+    ms (9-16), the first update after it 66 ms (63-67); 0.6 s passed from the swap to the next frame's
+    step, most of it outside the timed updates (the first render of the new park).
+  - **The guest, resyncing over its park** (the process's second build, warm): 12 frames, the longest
+    197 ms (195-208), the objects' restore again; the guests' setup 74 ms, the catalogue's settings 35
+    ms, the terrain 34 ms, the staff, gate and economy 34 ms, the save's parse 18 ms. The decode took
+    1.8 ms, the check 2.2 ms, the swap 8 ms, the first update after it 72 ms, and 0.1 s passed to the
+    next frame's step.
+  A join thus stalls a guest's frames for up to 0.6 s at its worst step (0.2 s warm), and the host's for
+  one frame of 5 to 10 ms at the cut (a process's first capture also for a 32 ms slice). The browser's
+  numbers (C2c-2b-2) decide which steps C2c-2b-3 splits.
+
+  <details><summary>Every value of the five runs (tools/coop_join_timings.py)</summary>
+
+  | Value | Median | Range | Runs |
+  |---|---|---|---|
+  | capture 1: cut | 9.5 | 9.0-10.4 | 9.2, 9.0, 10.4, 9.5, 10.0 |
+  | capture 1: publish | 0.1 | 0.1-0.2 | 0.1, 0.1, 0.1, 0.2, 0.2 |
+  | capture 1: digest | 3.9 | 3.6-4.0 | 3.8, 3.6, 3.9, 4.0, 4.0 |
+  | capture 1: state | 0.9 | 0.8-0.9 | 0.9, 0.8, 0.9, 0.8, 0.9 |
+  | capture 1: snapshot | 4.5 | 4.4-5.5 | 4.4, 4.5, 5.5, 4.5, 4.8 |
+  | capture 1: serializer setup | 0.0 | 0.0-0.0 | 0.0, 0.0, 0.0, 0.0, 0.0 |
+  | capture 1: save | 64.1 | 63.2-67.0 | 67.0, 63.3, 66.9, 63.2, 64.1 |
+  | capture 1: save, longest slice | 32.0 | 31.3-34.9 | 34.9, 31.9, 33.7, 31.3, 32.0 |
+  | capture 1: save, slices | 12.0 | 11.0-12.0 | 12.0, 11.0, 12.0, 11.0, 12.0 |
+  | capture 1: save copy | 0.2 | 0.1-0.2 | 0.2, 0.2, 0.2, 0.2, 0.1 |
+  | capture 1: writer setup | 1.2 | 1.1-1.4 | 1.2, 1.2, 1.1, 1.4, 1.3 |
+  | capture 1: compression | 1.5 | 1.4-1.5 | 1.4, 1.5, 1.4, 1.5, 1.5 |
+  | capture 1: compression, slices | 1.0 | 1.0-1.0 | 1.0, 1.0, 1.0, 1.0, 1.0 |
+  | capture 1: finish | 0.1 | 0.1-0.1 | 0.1, 0.1, 0.1, 0.1, 0.1 |
+  | capture 1: longest frame | 32.3 | 31.6-35.2 | 35.2, 32.2, 34.0, 31.6, 32.3 |
+  | capture 1: frames | 14.0 | 13.0-14.0 | 14.0, 13.0, 14.0, 13.0, 14.0 |
+  | capture 1: upload s | 0.0 | 0.0-0.0 | 0.0, 0.0, 0.0, 0.0, 0.0 |
+  | capture 1: payload KiB | 128 | 128-128 | 128, 128, 128, 128, 128 |
+  | capture 1: body KiB | 981 | 981-981 | 981, 981, 981, 981, 981 |
+  | capture 1: save KiB | 980 | 980-980 | 980, 980, 980, 980, 980 |
+  | capture 2: cut | 5.1 | 4.4-6.5 | 4.4, 4.6, 5.1, 6.5, 6.2 |
+  | capture 2: publish | 0.0 | 0.0-0.0 | 0.0, 0.0, 0.0, 0.0, 0.0 |
+  | capture 2: digest | 2.4 | 2.0-2.8 | 2.2, 2.0, 2.4, 2.6, 2.8 |
+  | capture 2: state | 0.1 | 0.1-0.2 | 0.1, 0.1, 0.1, 0.2, 0.2 |
+  | capture 2: snapshot | 2.6 | 2.1-3.7 | 2.1, 2.5, 2.6, 3.7, 3.2 |
+  | capture 2: serializer setup | 0.0 | 0.0-0.0 | 0.0, 0.0, 0.0, 0.0, 0.0 |
+  | capture 2: save | 7.7 | 7.0-9.1 | 7.4, 7.0, 7.7, 8.8, 9.1 |
+  | capture 2: save, longest slice | 3.9 | 3.5-4.6 | 3.6, 3.5, 3.9, 4.6, 4.6 |
+  | capture 2: save, slices | 3.0 | 3.0-4.0 | 3.0, 3.0, 3.0, 4.0, 4.0 |
+  | capture 2: save copy | 0.1 | 0.0-0.5 | 0.1, 0.0, 0.1, 0.1, 0.5 |
+  | capture 2: writer setup | 0.1 | 0.1-0.2 | 0.1, 0.1, 0.1, 0.1, 0.2 |
+  | capture 2: compression | 1.2 | 1.2-1.5 | 1.2, 1.2, 1.2, 1.5, 1.3 |
+  | capture 2: compression, slices | 1.0 | 1.0-1.0 | 1.0, 1.0, 1.0, 1.0, 1.0 |
+  | capture 2: finish | 0.0 | 0.0-0.0 | 0.0, 0.0, 0.0, 0.0, 0.0 |
+  | capture 2: longest frame | 5.1 | 4.4-6.5 | 4.4, 4.6, 5.1, 6.5, 6.2 |
+  | capture 2: frames | 5.0 | 5.0-6.0 | 5.0, 5.0, 5.0, 6.0, 6.0 |
+  | capture 2: upload s | 0.0 | 0.0-0.0 | 0.0, 0.0, 0.0, 0.0, 0.0 |
+  | capture 2: payload KiB | 149 | 149-149 | 149, 149, 149, 149, 149 |
+  | capture 2: body KiB | 1107 | 1107-1107 | 1107, 1107, 1107, 1107, 1107 |
+  | capture 2: save KiB | 1107 | 1107-1107 | 1107, 1107, 1107, 1107, 1107 |
+  | joined: process's build | 1.0 | 1.0-1.0 | 1.0, 1.0, 1.0, 1.0, 1.0 |
+  | joined: download s | 0.0 | 0.0-0.0 | 0.0, 0.0, 0.0, 0.0, 0.0 |
+  | joined: decode | 4.5 | 4.0-4.9 | 4.0, 4.1, 4.5, 4.9, 4.8 |
+  | joined: check | 40.8 | 39.4-43.8 | 43.8, 40.8, 39.4, 42.4, 40.0 |
+  | joined: swap | 11.9 | 9.1-15.6 | 15.6, 13.9, 11.1, 11.9, 9.1 |
+  | joined: build frames | 30.0 | 29.0-34.0 | 30.0, 30.0, 30.0, 29.0, 34.0 |
+  | joined: longest build frame | 599 | 571-628 | 599, 628, 571, 582, 599 |
+  | joined: catch-up ticks | 8.0 | 8.0-15.0 | 8.0, 8.0, 8.0, 8.0, 15.0 |
+  | joined: catch-up frames | 1.0 | 1.0-2.0 | 1.0, 1.0, 1.0, 1.0, 2.0 |
+  | joined: catch-up s | 0.6 | 0.5-0.6 | 0.5, 0.6, 0.6, 0.5, 0.6 |
+  | joined: save | 153 | 150-159 | 159, 153, 150, 153, 152 |
+  | joined: save, longest step | 153 | 150-159 | 159, 153, 150, 153, 152 |
+  | joined: files | 0.0 | 0.0-0.0 | 0.0, 0.0, 0.0, 0.0, 0.0 |
+  | joined: files, longest step | 0.0 | 0.0-0.0 | 0.0, 0.0, 0.0, 0.0, 0.0 |
+  | joined: catalogue | 132 | 129-172 | 132, 129, 129, 133, 172 |
+  | joined: catalogue, longest step | 43.3 | 39.4-54.0 | 43.3, 43.3, 40.1, 39.4, 54.0 |
+  | joined: manifest | 129 | 126-162 | 133, 129, 126, 126, 162 |
+  | joined: manifest, longest step | 6.2 | 6.1-8.0 | 6.3, 6.2, 6.1, 6.2, 8.0 |
+  | joined: validation | 31.4 | 29.5-35.3 | 35.3, 29.5, 29.6, 31.4, 32.8 |
+  | joined: validation, longest step | 17.8 | 16.9-21.7 | 21.7, 16.9, 17.1, 17.8, 20.4 |
+  | joined: economy | 15.1 | 15.0-15.8 | 15.8, 15.0, 15.1, 15.6, 15.1 |
+  | joined: economy, longest step | 15.1 | 15.0-15.8 | 15.8, 15.0, 15.1, 15.6, 15.1 |
+  | joined: level | 1179 | 1140-1232 | 1232, 1225, 1140, 1159, 1179 |
+  | joined: level, longest step | 595 | 568-624 | 596, 624, 568, 579, 595 |
+  | joined: hud | 10.8 | 10.6-12.0 | 12.0, 10.8, 10.6, 10.9, 10.7 |
+  | joined: hud, longest step | 10.8 | 10.6-12.0 | 12.0, 10.8, 10.6, 10.9, 10.7 |
+  | joined: advisor | 30.0 | 27.0-32.2 | 32.2, 27.0, 30.0, 32.1, 29.9 |
+  | joined: advisor, longest step | 30.0 | 27.0-32.2 | 32.2, 27.0, 30.0, 32.1, 29.9 |
+  | joined: section coasters | 5.2 | 5.1-5.9 | 5.3, 5.9, 5.2, 5.1, 5.1 |
+  | joined: section economy | 0.3 | 0.3-0.4 | 0.3, 0.4, 0.3, 0.3, 0.3 |
+  | joined: section entities | 1003 | 971-1049 | 1049, 1046, 971, 992, 1003 |
+  | joined: section guest-sprites | 11.4 | 10.3-12.8 | 12.8, 11.3, 10.3, 11.7, 11.4 |
+  | joined: section guests | 177 | 174-195 | 195, 181, 174, 177, 174 |
+  | joined: section join-state | 2.4 | 2.3-3.1 | 2.4, 3.1, 2.4, 2.3, 2.3 |
+  | joined: section level-hud | 53.9 | 50.5-58.9 | 58.0, 58.9, 50.5, 53.9, 53.0 |
+  | joined: section model-parse | 39.2 | 38.2-41.6 | 39.2, 41.6, 40.0, 38.4, 38.2 |
+  | joined: section object-catalog | 26.8 | 26.1-35.5 | 32.7, 26.8, 26.7, 26.1, 35.5 |
+  | joined: section objects | 593 | 565-621 | 593, 621, 565, 576, 593 |
+  | joined: section original-park | 36.6 | 33.7-43.0 | 40.3, 34.5, 36.6, 33.7, 43.0 |
+  | joined: section paths | 4.1 | 3.8-4.3 | 4.3, 4.1, 4.1, 3.8, 3.9 |
+  | joined: section resume | 77.4 | 76.0-80.6 | 80.4, 80.6, 77.4, 76.0, 76.7 |
+  | joined: section staff-gate-economy | 48.7 | 47.4-53.5 | 53.5, 50.4, 47.4, 48.7, 47.7 |
+  | joined: section staff-sprites | 14.4 | 13.6-15.5 | 15.5, 14.4, 13.6, 14.1, 14.6 |
+  | joined: section terrain | 73.1 | 72.5-78.0 | 78.0, 73.1, 72.5, 72.9, 74.3 |
+  | joined: section texture-create | 24.2 | 23.5-26.5 | 26.5, 24.9, 23.8, 24.2, 23.5 |
+  | joined: section texture-decode | 75.8 | 72.6-80.6 | 80.6, 75.8, 72.6, 74.4, 79.0 |
+  | joined: section wad-read | 11.7 | 11.0-12.4 | 12.4, 11.6, 11.0, 11.7, 12.0 |
+  | joined: longest update frame while building | 599 | 582-628 | 599, 628, 610, 582, 599 |
+  | joined: first update frame after the swap | 66.3 | 62.6-67.3 | 64.1, 67.3, 66.6, 62.6, 66.3 |
+  | resynced: process's build | 2.0 | 2.0-2.0 | 2.0, 2.0, 2.0, 2.0, 2.0 |
+  | resynced: download s | 0.0 | 0.0-0.0 | 0.0, 0.0, 0.0, 0.0, 0.0 |
+  | resynced: decode | 1.8 | 1.3-2.7 | 1.8, 1.3, 1.3, 2.7, 1.8 |
+  | resynced: check | 2.2 | 2.0-3.1 | 3.1, 2.2, 2.4, 2.2, 2.0 |
+  | resynced: swap | 8.0 | 7.9-13.3 | 8.0, 13.3, 8.7, 7.9, 8.0 |
+  | resynced: build frames | 12.0 | 11.0-12.0 | 12.0, 11.0, 11.0, 12.0, 12.0 |
+  | resynced: longest build frame | 197 | 195-208 | 197, 199, 208, 195, 197 |
+  | resynced: catch-up ticks | 1.0 | 1.0-1.0 | 1.0, 1.0, 1.0, 1.0, 1.0 |
+  | resynced: catch-up frames | 1.0 | 1.0-1.0 | 1.0, 1.0, 1.0, 1.0, 1.0 |
+  | resynced: catch-up s | 0.1 | 0.1-0.1 | 0.1, 0.1, 0.1, 0.1, 0.1 |
+  | resynced: save | 18.2 | 14.3-24.3 | 19.0, 14.3, 16.0, 24.3, 18.2 |
+  | resynced: save, longest step | 18.2 | 14.3-24.3 | 19.0, 14.3, 16.0, 24.3, 18.2 |
+  | resynced: files | 0.0 | 0.0-0.0 | 0.0, 0.0, 0.0, 0.0, 0.0 |
+  | resynced: files, longest step | 0.0 | 0.0-0.0 | 0.0, 0.0, 0.0, 0.0, 0.0 |
+  | resynced: catalogue | 35.2 | 32.7-37.4 | 35.2, 35.8, 32.7, 37.4, 33.9 |
+  | resynced: catalogue, longest step | 35.2 | 32.7-37.4 | 35.2, 35.8, 32.7, 37.4, 33.9 |
+  | resynced: manifest | 0.1 | 0.0-0.1 | 0.0, 0.1, 0.1, 0.1, 0.1 |
+  | resynced: manifest, longest step | 0.1 | 0.0-0.1 | 0.0, 0.1, 0.1, 0.1, 0.1 |
+  | resynced: validation | 10.4 | 9.6-11.3 | 10.4, 10.0, 9.6, 10.4, 11.3 |
+  | resynced: validation, longest step | 5.8 | 5.4-6.4 | 5.4, 5.4, 5.8, 6.4, 6.1 |
+  | resynced: economy | 1.1 | 1.0-1.3 | 1.3, 1.1, 1.0, 1.1, 1.1 |
+  | resynced: economy, longest step | 1.1 | 1.0-1.3 | 1.3, 1.1, 1.0, 1.1, 1.1 |
+  | resynced: level | 445 | 439-463 | 439, 463, 463, 444, 445 |
+  | resynced: level, longest step | 197 | 194-208 | 196, 199, 208, 194, 197 |
+  | resynced: hud | 0.2 | 0.2-0.3 | 0.2, 0.3, 0.2, 0.2, 0.3 |
+  | resynced: hud, longest step | 0.2 | 0.2-0.3 | 0.2, 0.3, 0.2, 0.2, 0.3 |
+  | resynced: advisor | 1.7 | 1.6-3.3 | 1.6, 1.8, 1.7, 1.7, 3.3 |
+  | resynced: advisor, longest step | 1.7 | 1.6-3.3 | 1.6, 1.8, 1.7, 1.7, 3.3 |
+  | resynced: section coasters | 0.1 | 0.1-0.1 | 0.1, 0.1, 0.1, 0.1, 0.1 |
+  | resynced: section economy | 0.0 | 0.0-0.1 | 0.0, 0.0, 0.0, 0.1, 0.0 |
+  | resynced: section entities | 389 | 383-407 | 383, 404, 407, 386, 389 |
+  | resynced: section guest-sprites | 4.1 | 4.0-4.4 | 4.1, 4.3, 4.4, 4.1, 4.0 |
+  | resynced: section guests | 74.2 | 73.1-88.5 | 73.1, 88.5, 79.7, 74.2, 73.6 |
+  | resynced: section join-state | 0.1 | 0.1-0.1 | 0.1, 0.1, 0.1, 0.1, 0.1 |
+  | resynced: section level-hud | 1.4 | 1.4-1.5 | 1.4, 1.5, 1.4, 1.4, 1.5 |
+  | resynced: section model-parse | 14.8 | 13.7-15.0 | 14.9, 15.0, 13.7, 14.2, 14.8 |
+  | resynced: section object-catalog | 23.2 | 22.5-23.6 | 22.7, 23.2, 23.6, 23.6, 22.5 |
+  | resynced: section objects | 197 | 194-208 | 196, 199, 208, 194, 197 |
+  | resynced: section original-park | 38.1 | 37.6-38.5 | 38.1, 38.5, 37.6, 38.3, 37.8 |
+  | resynced: section paths | 0.4 | 0.4-0.5 | 0.4, 0.4, 0.5, 0.5, 0.4 |
+  | resynced: section resume | 18.9 | 18.3-19.8 | 18.3, 19.8, 18.9, 19.3, 18.3 |
+  | resynced: section staff-gate-economy | 34.3 | 31.6-36.7 | 35.7, 34.3, 36.7, 31.6, 32.9 |
+  | resynced: section staff-sprites | 9.4 | 8.8-10.4 | 10.4, 9.5, 9.4, 8.8, 9.0 |
+  | resynced: section terrain | 34.0 | 33.4-34.7 | 33.4, 34.0, 34.2, 34.7, 33.6 |
+  | resynced: section texture-create | 7.1 | 6.4-7.3 | 7.1, 7.2, 7.3, 6.5, 6.4 |
+  | resynced: longest update frame while building | 197 | 195-208 | 197, 199, 208, 195, 197 |
+  | resynced: first update frame after the swap | 72.1 | 71.4-80.0 | 71.4, 74.2, 80.0, 72.1, 71.7 |
+
+  </details>
 
 ## The command layer (C1)
 

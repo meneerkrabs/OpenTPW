@@ -21,9 +21,20 @@ if [[ -z "$output" ]]; then
 fi
 mkdir -p "$output"
 export OPENTPW_CONFIGURATION=Release OPENTPW_COOP_JOIN_PHASE=measure OPENTPW_SILENT=1 OPENTPW_OFFSCREEN=1
+# the machine, which the runtime does not name: its system, processor, model and memory
+machine="$output/machine.txt"
+{
+  uname -srm
+  if [[ "$(uname -s)" == Darwin ]]; then
+    printf 'processor %s, model %s, memory %s bytes\n' "$(sysctl -n machdep.cpu.brand_string 2>/dev/null)" "$(sysctl -n hw.model 2>/dev/null)" "$(sysctl -n hw.memsize 2>/dev/null)"
+  elif [[ -r /proc/cpuinfo ]]; then
+    grep -m1 'model name' /proc/cpuinfo || true
+    grep -m1 MemTotal /proc/meminfo || true
+  fi
+} > "$machine"
 evidence=()
 for run in $(seq 1 "$runs"); do
   OPENTPW_SMOKE_LOG_DIR="$output/run-$run" bash scripts/smoke-coop-join.sh "$game"
   evidence+=("$output/run-$run/opentpw-coop-join-evidence")
 done
-python3 -I tools/coop_join_timings.py "${evidence[@]}"
+python3 -I tools/coop_join_timings.py --machine "$machine" "${evidence[@]}"

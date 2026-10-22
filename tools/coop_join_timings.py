@@ -2,10 +2,12 @@
 """The co-op join's measurements (docs/COOP.md, "Measurements").
 
 Reads the evidence of the native join smoke's runs (scripts/measure-coop-join.sh writes one directory per run, each with the
-host phase's host-evidence.json and the measuring join phase's join-evidence.json) and prints, for every value, the median, the
-range and each run's value as a Markdown table, after the runs' environment. Milliseconds unless the row says otherwise.
+host phase's host-evidence.json and the measuring join phase's join-evidence.json) and prints, for each timing it reports, the
+median, the range and each run's value as a Markdown table, after the runs' environment and, with --machine, the machine's own
+description. A value some runs lack names how many runs have it. Milliseconds unless the row says otherwise. Evidence of the
+adversarial join phase is refused: its rewritten payloads and its refused and abandoned builds warm the process first.
 
-Usage: python3 -I tools/coop_join_timings.py <evidence directory> [<evidence directory> ...]
+Usage: python3 -I tools/coop_join_timings.py [--machine <file>] <evidence directory> [<evidence directory> ...]
 """
 import json
 import pathlib
@@ -20,6 +22,8 @@ def load(directory):
     join = json.loads((root / "join-evidence.json").read_text(encoding="utf-8"))
     if not host.get("Completed") or not join.get("Completed"):
         raise ValueError(f"{root}: a phase did not complete")
+    if join.get("Mode") != "measure":
+        raise ValueError(f"{root}: the join phase ran in its {join.get('Mode', 'join')!r} mode, not the measuring one")
     return host, join
 
 
@@ -59,26 +63,31 @@ def rows(runs):
     for index in range(2):
         label = f"capture {index + 1}"
         get = lambda run, index=index: capture(run[0], index)
-        for name, path in [("cut", ("CutMilliseconds",)), ("digest", ("DigestMilliseconds",)), ("snapshot", ("SnapshotMilliseconds",)),
-                           ("save", ("Save", "Milliseconds")), ("save, longest slice", ("Save", "LongestMilliseconds")),
-                           ("compression", ("Compression", "Milliseconds")), ("longest frame", ("LongestFrameMilliseconds",)),
-                           ("frames", ("Frames",)), ("payload KiB", ("PayloadBytes",)), ("save KiB", ("SaveBytes",))]:
+        for name, path in [("cut", ("CutMilliseconds",)), ("publish", ("PublishMilliseconds",)), ("digest", ("DigestMilliseconds",)),
+                           ("state", ("StateMilliseconds",)), ("snapshot", ("SnapshotMilliseconds",)), ("serializer setup", ("SerializerSetupMilliseconds",)),
+                           ("save", ("Save", "Milliseconds")), ("save, longest slice", ("Save", "LongestMilliseconds")), ("save, slices", ("Save", "Steps")),
+                           ("save copy", ("SaveCopyMilliseconds",)), ("writer setup", ("WriterSetupMilliseconds",)),
+                           ("compression", ("Compression", "Milliseconds")), ("compression, slices", ("Compression", "Steps")), ("finish", ("FinishMilliseconds",)),
+                           ("longest frame", ("LongestFrameMilliseconds",)), ("frames", ("Frames",)), ("upload s", ("UploadSeconds",)),
+                           ("payload KiB", ("PayloadBytes",)), ("body KiB", ("BodyBytes",)), ("save KiB", ("SaveBytes",))]:
             read = value(get, *path)
             if name.endswith("KiB"):
                 read = lambda run, read=read: None if read(run) is None else read(run) / 1024
             result.append((f"{label}: {name}", [read(run) for run in runs]))
     for outcome, swap_step in [("joined", "Following"), ("resynced", "Resynced")]:
         get = lambda run, outcome=outcome: join(run[1], outcome)
-        for name, path in [("decode", ("DecodeMilliseconds",)), ("check", ("CheckMilliseconds",)), ("swap", ("SwapMilliseconds",)),
-                           ("build frames", ("BuildFrames",)), ("longest build frame", ("LongestBuildFrameMilliseconds",)),
-                           ("catch-up ticks", ("CatchUpTicks",))]:
+        for name, path in [("process's build", ("ProcessBuild",)), ("download s", ("DownloadSeconds",)), ("decode", ("DecodeMilliseconds",)),
+                           ("check", ("CheckMilliseconds",)), ("swap", ("SwapMilliseconds",)), ("build frames", ("BuildFrames",)),
+                           ("longest build frame", ("LongestBuildFrameMilliseconds",)), ("catch-up ticks", ("CatchUpTicks",)),
+                           ("catch-up frames", ("CatchUpFrames",)), ("catch-up s", ("CatchUpSeconds",))]:
             result.append((f"{outcome}: {name}", [value(get, *path)(run) for run in runs]))
-        for name in ["save", "catalogue", "manifest", "validation", "economy", "level", "hud", "advisor"]:
+        for name in ["save", "files", "catalogue", "manifest", "validation", "economy", "level", "hud", "advisor"]:
             result.append((f"{outcome}: {name}", [None if get(run) is None or stage(get(run), name) is None else stage(get(run), name)["Milliseconds"] for run in runs]))
             result.append((f"{outcome}: {name}, longest step", [None if get(run) is None or stage(get(run), name) is None else stage(get(run), name)["LongestMilliseconds"]
                                                                 for run in runs]))
-        for section in ["objects", "guests", "terrain", "resume", "staff-gate-economy", "original-park", "level-hud", "join-state"]:
-            result.append((f"{outcome}: level section {section}", [None if get(run) is None else get(run).get("LevelSections", {}).get(section) for run in runs]))
+        sections = sorted({name for run in runs if get(run) is not None for name in get(run).get("Sections", {})})
+        for section in sections:
+            result.append((f"{outcome}: section {section}", [None if get(run) is None else get(run).get("Sections", {}).get(section) for run in runs]))
         building = "Joining" if outcome == "joined" else "Resyncing"
         result.append((f"{outcome}: longest update frame while building", [longest_frame(run[1].get("Frames") or [], building) for run in runs]))
         result.append((f"{outcome}: first update frame after the swap", [first_frame(run[1].get("Frames") or [], swap_step) for run in runs]))
@@ -96,7 +105,7 @@ def number(value):
     return "-" if value is None else (f"{value:.0f}" if abs(value) >= 100 else f"{value:.1f}")
 
 
-def table(runs):
+def table(runs, machine=None):
     lines = []
     environments = {json.dumps(run[0].get("Environment"), sort_keys=True) for run in runs} | {json.dumps(run[1].get("Environment"), sort_keys=True) for run in runs}
     environment = runs[0][1].get("Environment") or {}
@@ -104,6 +113,9 @@ def table(runs):
                  f"{environment.get('Os', '?')} {environment.get('Architecture', '?')}, {environment.get('Processors', '?')} processors, "
                  f"silent {environment.get('Silent', '?')}, advisor {environment.get('Advisor', '?')}"
                  + ("" if len(environments) == 1 else " (the runs' environments differ)"))
+    if machine:
+        lines.append("")
+        lines.extend(f"    {line}" for line in machine.strip().splitlines())
     lines.append("")
     lines.append("| Value | Median | Range | Runs |")
     lines.append("|---|---|---|---|")
@@ -112,15 +124,22 @@ def table(runs):
         if summary is None:
             continue
         median, low, high = summary
-        lines.append(f"| {name} | {number(median)} | {number(low)}-{number(high)} | {', '.join(number(item) for item in values)} |")
+        present = sum(item is not None for item in values)
+        label = name if present == len(values) else f"{name} ({present} of {len(values)} runs)"
+        lines.append(f"| {label} | {number(median)} | {number(low)}-{number(high)} | {', '.join(number(item) for item in values)} |")
     return "\n".join(lines)
 
 
 def main(argv):
-    if len(argv) < 2:
+    arguments = argv[1:]
+    machine = None
+    if arguments[:1] == ["--machine"] and len(arguments) >= 2:
+        machine = pathlib.Path(arguments[1]).read_text(encoding="utf-8")
+        arguments = arguments[2:]
+    if not arguments:
         print(__doc__.strip(), file=sys.stderr)
         return 2
-    print(table([load(directory) for directory in argv[1:]]))
+    print(table([load(directory) for directory in arguments], machine))
     return 0
 
 

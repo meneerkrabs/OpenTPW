@@ -1266,6 +1266,19 @@ public partial class CoopJoinSessionTests
 	}
 
 	[TestMethod]
+	public void ThePagesCoopSmokeModeIsOnlyForALoopbackPageThatAsksForIt()
+	{
+		// the page's co-op smoke mode checks the page's own address (Program.CoopSmokeMode), as the page's script decides it
+		foreach ( var href in new[] { "http://127.0.0.1:8123/index.html?coopSmoke=1&data=/game/", "http://localhost/?keep=off&coopSmoke=1", "http://[::1]:9000/?coopSmoke=1",
+			"https://127.0.0.1/?coopSmoke=1&perf=0", "http://127.0.0.1/?coopSmoke=1&coopSmoke=0" } )
+			Assert.IsTrue( CoopJoinSmokeTest.IsCoopSmokePageAddress( href ), href );
+		foreach ( var href in new[] { null, "", "not a url", "https://opentpw.example/?coopSmoke=1", "http://127.0.0.2/?coopSmoke=1", "http://10.0.0.1/?coopSmoke=1",
+			"http://127.0.0.1/", "http://127.0.0.1/?coopSmoke=0", "http://127.0.0.1/?coopSmoke=1&perf=1", "http://127.0.0.1/?perf=1&coopSmoke=1", "file:///index.html?coopSmoke=1",
+			"http://127.0.0.1.example/?coopSmoke=1", "http://localhost.example/?coopSmoke=1", "http://127.0.0.1/?coopSmoke=0&coopSmoke=1" } )
+			Assert.IsFalse( CoopJoinSmokeTest.IsCoopSmokePageAddress( href ), href ?? "null" );
+	}
+
+	[TestMethod]
 	public void ASecondDownloadAnswerBuildsNothingTwice()
 	{
 		Hosted();

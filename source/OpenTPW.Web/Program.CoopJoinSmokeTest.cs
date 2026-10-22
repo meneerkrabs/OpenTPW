@@ -22,6 +22,8 @@ public static partial class Program
 	private static CoopJoinSmokeTest? coopSmoke;
 	private static string coopSmokeState = "idle";
 	private static string? coopSmokeMessage;
+	/// <summary>The summary of a run that completed in the current frame: published as its pass once the whole frame has returned.</summary>
+	private static string? coopSmokeCompleted;
 	private static int coopSmokeFrames;
 	private static string? coopSmokePosition;
 
@@ -34,6 +36,10 @@ public static partial class Program
 		// the performance mode's hooks change parks outside the commands, which a shared park refuses
 		if ( CoopSession.ChangesParkOutsideCommands )
 			throw new InvalidOperationException( "The co-op smoke does not run in the performance mode." );
+		// the page's own address, which no script can change, not the word of the script that calls this
+		using var location = JSHost.GlobalThis.GetPropertyAsJSObject( "location" );
+		if ( !CoopJoinSmokeTest.IsCoopSmokePageAddress( location?.GetPropertyAsString( "href" ) ) )
+			throw new InvalidOperationException( "The co-op smoke mode is only for a page on a loopback address opened with ?coopSmoke=1." );
 		coopSmokeMode = true;
 	}
 
@@ -74,7 +80,7 @@ public static partial class Program
 		try
 		{
 			coopSmoke = CoopJoinSmokeTest.StartPageJoin( flow, CoopSmokeDirectory, measuring,
-				completedBy: summary => (coopSmokeState, coopSmokeMessage) = ("passed", summary),
+				completedBy: summary => coopSmokeCompleted = summary,
 				failedBy: line => (coopSmokeState, coopSmokeMessage) = ("failed", line) );
 		}
 		catch ( Exception error )
@@ -133,7 +139,11 @@ public static partial class Program
 			smoke.PageFrameEnded( Stopwatch.GetElapsedTime( started ).TotalMilliseconds );
 			if ( smoke.Ended )
 			{
+				// a pass only once the frame that completed the run returned whole (a throw after the completion made it a failure above)
+				if ( coopSmokeState == "running" && coopSmokeCompleted != null )
+					(coopSmokeState, coopSmokeMessage) = ("passed", coopSmokeCompleted);
 				(coopSmokeFrames, coopSmokePosition) = (smoke.Frames, smoke.Position);
+				smoke.PageEnded();
 				smoke.Detach( running );
 				smoke.Dispose();
 				coopSmoke = null;

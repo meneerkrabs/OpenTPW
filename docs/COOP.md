@@ -453,10 +453,14 @@ from the front end (`CoopJoinSmokeStart`: `join`, the adversarial one, or `measu
 status and reads its evidence back. The page is the smoke's runner (`CoopJoinSmokeTest.Page.cs`): it
 attaches the smoke's handlers around the game's update in the native order, times each whole frame call
 (the update and the drawing) for the smoke's frame, makes any throw out of a frame the run's failure
-before the page stops its loop, and takes the handlers off once the run has ended, the game running on
-with the player's saves and the profile back. One run a page, since the builds it checks must be the
-runtime's first; the driver starts a fresh profile for each. It fails fast on a page that crashed, could
-not copy a level's files, stopped its loop or drew no frame for two minutes. What it proves is the
+before the page stops its loop (also a throw after the run completed in that frame: a pass is published
+only once its frame returned whole, and the evidence is written again then, with that frame's time), and
+takes the handlers off once the run has ended, the game running on with the player's saves and the
+profile back. The mode checks the page's own address, not the word of the script that asks for it. One
+run a page, since the builds it checks must be the runtime's first; the driver starts a fresh profile
+for each. It fails fast on a page that crashed or lost its DevTools connection, could not copy a level's
+files, stopped its loop or drew no frame for two minutes, and on pool sprites still on their way after
+two minutes. What it proves is the
 native join phase's contract, unchanged: the cut's tick, digest and world hash, every checkpoint's
 digest, the final digest, world hash and join state, and the structural save comparison. Two limits of
 the session can end a slow page's run without a wrong digest: a build's 300 s deadline (the wait for the

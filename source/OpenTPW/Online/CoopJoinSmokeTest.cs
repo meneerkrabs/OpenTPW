@@ -85,6 +85,8 @@ internal sealed partial class CoopJoinSmokeTest : IDisposable
 	private int frame;
 	private bool completed;
 	private bool done;
+	/// <summary>The failure that ended the run, as its evidence names it.</summary>
+	private string? failure;
 
 	private CoopJoinSmokeTest( GameFlow flow, string evidenceDirectory, bool joining, bool measuring, string runner, Action<string> completedBy, Action<string> failedBy )
 	{
@@ -160,7 +162,7 @@ internal sealed partial class CoopJoinSmokeTest : IDisposable
 		if ( done )
 			return;
 		done = true;
-		var message = $"{error.GetType().Name}: {error.Message}";
+		var message = failure = $"{error.GetType().Name}: {error.Message}";
 		try
 		{
 			if ( joining )
@@ -193,6 +195,21 @@ internal sealed partial class CoopJoinSmokeTest : IDisposable
 	}
 
 	internal static string Sha256Hex( byte[] bytes ) => Convert.ToHexString( SHA256.HashData( bytes ) ).ToLowerInvariant();
+
+	/// <summary>
+	/// Whether a page's address asks for the co-op smoke on a loopback host, as the page's script decides it (<c>?coopSmoke=1</c> on 127.0.0.1, localhost or [::1], never with
+	/// <c>?perf=1</c>): the page's mode checks its own address, not its script's word.
+	/// </summary>
+	internal static bool IsCoopSmokePageAddress( string? href )
+	{
+		if ( !Uri.TryCreate( href, UriKind.Absolute, out var url ) || url.Scheme is not ("http" or "https") || url.Host is not ("127.0.0.1" or "localhost" or "[::1]") )
+			return false;
+		var query = url.Query.TrimStart( '?' ).Split( '&', StringSplitOptions.RemoveEmptyEntries ).Select( pair => pair.Split( '=', 2 ) )
+			.Select( pair => (Name: Uri.UnescapeDataString( pair[0] ), Value: pair.Length > 1 ? Uri.UnescapeDataString( pair[1] ) : "") ).ToList();
+		// the first value of each, as the page's URLSearchParams reads it
+		string? First( string name ) => query.FirstOrDefault( pair => pair.Name == name ).Value;
+		return First( "coopSmoke" ) == "1" && First( "perf" ) != "1";
+	}
 
 	/// <summary>
 	/// A file of the evidence directory: a flat name of letters, digits, dots, dashes and underscores, never a path out of the directory, nor a name Windows reads as another file (a

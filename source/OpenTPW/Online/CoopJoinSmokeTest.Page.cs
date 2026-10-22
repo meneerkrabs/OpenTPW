@@ -52,6 +52,19 @@ internal sealed partial class CoopJoinSmokeTest
 	/// <summary>Whether the run has ended, passed or failed.</summary>
 	internal bool Ended => done;
 
+	/// <summary>The evidence written again once the frame that ended the run has returned, with that frame's whole call time (written first inside the frame).</summary>
+	internal void PageEnded()
+	{
+		try
+		{
+			WriteJson( "join-evidence.json", JoinEvidence( completed, failure ) );
+		}
+		catch ( Exception error ) when ( error is not OutOfMemoryException )
+		{
+			Log.Warning( $"Co-op join smoke: writing the evidence after the run's last frame failed: {error.Message}" );
+		}
+	}
+
 	/// <summary>The frames the join phase has run.</summary>
 	internal int Frames => frame;
 
@@ -65,6 +78,14 @@ internal sealed partial class CoopJoinSmokeTest
 			updateFrames[^1] = updateFrames[^1] with { CallMilliseconds = milliseconds };
 	}
 
-	/// <summary>A throw out of the page's frame, the game's update or its drawing as much as the smoke's own: the run's failure (once).</summary>
-	internal void PageFailed( Exception error ) => Fail( error );
+	/// <summary>
+	/// A throw out of the page's frame, the game's update or its drawing as much as the smoke's own: the run's failure (once), also when the smoke completed earlier in the same frame
+	/// (its evidence is written again as a failure; the page publishes a pass only after the whole frame).
+	/// </summary>
+	internal void PageFailed( Exception error )
+	{
+		if ( completed )
+			(completed, done) = (false, false);
+		Fail( error );
+	}
 }

@@ -1140,8 +1140,8 @@ public sealed partial class ParkHud
 		// the click's modifiers go with it: a kart or water line that closes its circuit with exactly Ctrl and no queue to follow keeps its line tool (Level.ContinueTrackTool)
 		// [BIN:TPW-EXE:0x527146 track line end] with no queue start (0x8186c0 zero) the line tool's last click clears the start and keeps its mode (0xB or 0x10) when the modifier word is exactly 0xC, and any other word ends the tool (0x52f200(0, 0) at 0x527156)
 		var result = level.ClickCellTool( (cursorX, cursorY), Input.ModifierMaskDown );
-		// [BIN:TPW-EXE:0x526cb3 track click] every release in the kart (0xB) or water (0x10) track mode plays cat_ui 0xCE at the clicked cell, the first click included and whatever the line then does
-		if ( modeBefore is CellToolMode.KartTrack or CellToolMode.WaterTrack )
+		// [BIN:TPW-EXE:0x526cb3 track click] every release in the kart (0xB) or water (0x10) track mode that passes the refused-ghost latch plays cat_ui 0xCE at the clicked cell, the first click included and whatever the line then does
+		if ( PlaysTrackToolClick( modeBefore, result ) )
 			GameAudio.PlayUiAt( GameAudio.TrackToolClickEvent, GameAudio.CellSoundPosition( cursorX, cursorY ) );
 		if ( result is not { GhostRefused: true } )
 			ReportCellToolClick( hadStart, modeBefore, tool, queueJoin != null, interfaceBefore );
@@ -1161,6 +1161,10 @@ public sealed partial class ParkHud
 		}
 		return toolPress = true;
 	}
+
+	/// <summary>Whether a tool release plays the track tools' click (<see cref="GameAudio.TrackToolClickEvent"/>): a release in a kart or water line mode whose ghost was not refused.</summary>
+	// [BIN:TPW-EXE:0x524ab6 refused release] a release with the refused-ghost latch set plays the refusal cue 0xAF and leaves through the latch's own mode table (0x52766c: 0xB and 0x10 to SetMode(0, 0) at 0x5266a3), so it never reaches 0x526cb3 and its 0xCE
+	internal static bool PlaysTrackToolClick( CellToolMode modeBefore, SegmentResult? result ) => modeBefore is CellToolMode.KartTrack or CellToolMode.WaterTrack && result is not { GhostRefused: true };
 
 	/// <summary>The water track tool's help line (OpenTPW text; the original's track-tool help is not identified).</summary>
 	public const string TrackToolHelp = "Water track: click to lay a line of track tiles (two cells each), click again to continue; join the end of the station to complete the circuit. Right click or Escape leaves.";

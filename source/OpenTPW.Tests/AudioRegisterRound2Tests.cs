@@ -456,6 +456,19 @@ public class AudioRegisterRound2Tests
 	}
 
 	[TestMethod]
+	public void ARefusedTrackToolClickPlaysNoTrackClick()
+	{
+		// [BIN:TPW-EXE:0x524ab6] a release with the refused-ghost latch set leaves through the latch's mode table (0x52766c) to SetMode(0, 0) before 0x526cb3, which plays 0xCE
+		var refused = new SegmentResult( (2, 2), Array.Empty<(int X, int Y)>(), 0, CellBuildResult.Occupied, false ) { GhostRefused = true };
+		var accepted = refused with { StoppedBy = CellBuildResult.Ok, GhostRefused = false };
+		Assert.IsFalse( Hud.ParkHud.PlaysTrackToolClick( CellToolMode.KartTrack, refused ) );
+		Assert.IsFalse( Hud.ParkHud.PlaysTrackToolClick( CellToolMode.WaterTrack, refused ) );
+		Assert.IsTrue( Hud.ParkHud.PlaysTrackToolClick( CellToolMode.KartTrack, accepted ) );
+		Assert.IsTrue( Hud.ParkHud.PlaysTrackToolClick( CellToolMode.WaterTrack, null ), "the click that only stores the start plays it too" );
+		Assert.IsFalse( Hud.ParkHud.PlaysTrackToolClick( CellToolMode.Path, accepted ), "the path and queue modes lay with cat_ui 101" );
+	}
+
+	[TestMethod]
 	public void AClickOnThePauseMenuBackdropPlaysCatUi0xC1ButAClickOnALineDoesNot()
 	{
 		Use( "Ui", Category( (0xC1, 0x200, 40) ) );

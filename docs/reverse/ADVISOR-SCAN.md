@@ -27,6 +27,8 @@ Message 204 is the kart and water line tool's help: the click that gives the too
 | blocked | 12 | an input is missing or approximated |
 | none | 103 | nothing to produce: 21 are scored by the scan but their callback is the constant-zero stub, 82 have no producer in `tp.exe` at all |
 
+One wired message is not reached in play yet: 204's producer is ported, but with the shipped rides the kart and water line tool gets no click without a start until the placement's queue start is ported ([TRACKS.md](../TRACKS.md), "Messages").
+
 | Kind | Messages | Producer |
 | --- | ---: | --- |
 | scan | 134 | the background scan `0x59C680` scores it from park state (the 134 computed callbacks) |
@@ -51,7 +53,7 @@ Message 204 is the kart and water line tool's help: the click that gives the too
 | Total | 236 | 0 | 12 | 103 | 351 |
 
 Weather has no message: no score callback reads weather or season state, no poster is a weather event, and no `TAG_SYSTEM.str` caption
-of the advisor mentions rain, storm or snow. The "about 91" messages with a producer: **236** produce advice today: 68 posted by game code (every `event` row: 0, 323, 106, 128, 129, 33-57, 66,
+of the advisor mentions rain, storm or snow. The "about 91" messages with a producer: **236** have their producer here (204 is not reached with the shipped rides yet, see above): 68 posted by game code (every `event` row: 0, 323, 106, 128, 129, 33-57, 66,
 68-70, 93-97, 125-127, 133-136, 167, 215-217, 220-222, 225-227, 234-237, 258, 270-273, 311, 315 and 344), 43 help messages of windows and tools OpenTPW has, and 125 scored by the ported scan (the money
 batch: 100-105 and 107; the 31 park callbacks of the rides, cleanliness and guest mood batches: 3-10, 60, 62, 71, 73-75, 77-79, 81, 82, 85-89, 145, 158, 159 and 259-262; the 38 staff callbacks: 11, 13, 14, 18, 20, 23, 26, 28-32,
 108-112, 114-123, 144, 146-150, 169-172 and 263; the 31 callbacks of the queues, prices and research batches: 15-17, 61, 63, 64, 72, 76, 80, 91, 92 and 238-257; and the 18 callbacks

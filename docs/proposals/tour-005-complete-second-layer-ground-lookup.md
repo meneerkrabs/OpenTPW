@@ -37,3 +37,29 @@ Trace hoarding lay 0x524960/0x536100 and whether station tiles own mesh pieces.
 - Stop at a reviewable design/evidence package; this draft authorizes no tag removal or parity claim.
 - Do not publish original media or private game data in fixtures, screenshots, or commits.
 - A future implementation needs its own reviewed evidence and acceptance results; do not treat this proposal as merge-ready.
+
+## Current-main reconciliation (October 22, 2026)
+
+The earlier residual above is a historical snapshot, not the current evidence contract.
+Current main `ObjectHeightMaps.cs` and `docs/TOURS.md` correct the constructor family:
+
+- Hoarding type 25 selects family 5, whose secondary instancer calls `0x00522F20`
+  using table `0x00763608` (`ho_fos1`, `ho_end1`, `ho_fob1`).
+  `0x005229E0` and `0x00763388` are the primary-cell family-2 queue path,
+  not evidence for a hoarding instance. Do not implement from that old premise.
+- The constructor computes `360 - rotation`, normalizing exactly 360 to zero,
+  and applies a cardinal cell offset. Full downstream transform, map dimensions
+  and ownership of laid cells are still unqualified; an offset-once rule is not proven.
+- Station types 13/18 select family 1 through `0x00763138`. The traced secondary
+  instancer `0x0053AFA0` constructs only families 3/4/5. This normal route provides
+  no separate station mesh, but does not prove every historical handle is zero.
+
+The existing track-first, object-second, terrain-last fallback remains unchanged.
+Next implementation gate: qualify the hoarding laid-cell/head-cell relation,
+instance transform and map dimensions, then add synthetic rotated probes using
+those semantics. Keep malformed track-map rebuild as a separate unresolved case.
+Do not add a hypothetical station map or rewrite tour heights from the old proposal.
+
+This reconciliation inspects public source and recorded evidence only. It does
+not execute the original game or claim new runtime acceptance, and TOUR-005 stays open.
+

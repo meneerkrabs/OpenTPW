@@ -104,7 +104,7 @@ public class ShaderTests
 
 	[TestMethod]
 	[DoNotParallelize]
-	public void NativeShaderInstancesSurviveDisposalOfAnEarlierOwner()
+	public void NativeShaderProgramsAreSharedUntilTheLastOwnerReleasesThem()
 	{
 		if ( Environment.GetEnvironmentVariable( "OPENTPW_NATIVE_SHADER_TESTS" ) != "1" || !OperatingSystem.IsMacOS() )
 			Assert.Inconclusive( "Set OPENTPW_NATIVE_SHADER_TESTS=1 on macOS with native Metal/SPIR-V libraries." );
@@ -113,22 +113,26 @@ public class ShaderTests
 		global::Global.Device = device;
 		try
 		{
+			// issue #754: every material used to compile its own native pair (on Direct3D 11 an HLSL compile per stage and material)
 			var path = GetShaderPath( "text.shader" );
 			var first = ShaderCompiler.CompileShader( path );
-			first.VertexShader.Dispose();
-			first.FragmentShader.Dispose();
 			var second = ShaderCompiler.CompileShader( path );
+			Assert.AreSame( first.VertexShader, second.VertexShader, "the second owner takes the same native vertex shader" );
+			Assert.AreSame( first.FragmentShader, second.FragmentShader, "the second owner takes the same native fragment shader" );
+			Assert.AreEqual( 2, ShaderCompiler.References( second ) );
+			ShaderCompiler.Release( first );
+			Assert.IsFalse( second.VertexShader.IsDisposed || second.FragmentShader.IsDisposed, "an earlier owner's release keeps the program of a later owner alive" );
+			ShaderCompiler.Release( second );
+			Assert.IsTrue( second.VertexShader.IsDisposed && second.FragmentShader.IsDisposed, "the last release disposes the program (at once without a renderer)" );
+			var third = ShaderCompiler.CompileShader( path );
 			try
 			{
-				Assert.AreNotSame( first.VertexShader, second.VertexShader );
-				Assert.AreNotSame( first.FragmentShader, second.FragmentShader );
-				Assert.IsFalse( second.VertexShader.IsDisposed );
-				Assert.IsFalse( second.FragmentShader.IsDisposed );
+				Assert.AreNotSame( second.VertexShader, third.VertexShader, "a program made after the last release is a fresh one" );
+				Assert.IsFalse( third.VertexShader.IsDisposed || third.FragmentShader.IsDisposed );
 			}
 			finally
 			{
-				second.VertexShader.Dispose();
-				second.FragmentShader.Dispose();
+				ShaderCompiler.Release( third );
 			}
 		}
 		finally

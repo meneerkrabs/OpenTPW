@@ -126,6 +126,53 @@ public class NativeWorldShaderRenderTests
 		return $"({pixels[offset]}, {pixels[offset + 1]}, {pixels[offset + 2]}, {pixels[offset + 3]})";
 	}
 
+	/// <summary>
+	/// Issue #754 (a black window for about 30 seconds before the lobby and freezes when an object is placed, on Direct3D 11): every material used to make its
+	/// own native shader pair, and Veldrid compiles HLSL for each new Direct3D 11 shader. Now the engine's shaders share one native program per file
+	/// (ShaderCompiler.CompileShader): the second owner gets the same objects without a compile. The log line gives the device's cost of one native
+	/// program, the compile a material used to pay (docs/ENGINE-PERFORMANCE.md, "Start and build hitches").
+	/// </summary>
+	[DataTestMethod]
+	[DataRow( "test.shader" )]
+	[DataRow( "sprite.shader" )]
+	[DataRow( "particle.shader" )]
+	[DataRow( "ui-batch.shader" )]
+	public void NativeProgramIsCompiledOnceAndShared( string shader )
+	{
+		using var device = CreateDevice();
+		Log = new();
+		var previousDevice = global::Global.Device;
+		global::Global.Device = device;
+		try
+		{
+			var path = GetShaderPath( shader );
+			// the SPIR-V step is cached per file and is not the backend's compile: made (and the native pair released) first
+			ShaderCompiler.Release( ShaderCompiler.CompileShader( path ) );
+			var watch = System.Diagnostics.Stopwatch.StartNew();
+			var first = ShaderCompiler.CompileShader( path );
+			var compile = watch.Elapsed.TotalMilliseconds;
+			watch.Restart();
+			var second = ShaderCompiler.CompileShader( path );
+			var shared = watch.Elapsed.TotalMilliseconds;
+			try
+			{
+				Console.WriteLine( $"{device.BackendType} {shader}: native program {compile:F1} ms, shared by a second owner in {shared:F3} ms" );
+				Assert.AreSame( first.VertexShader, second.VertexShader );
+				Assert.AreSame( first.FragmentShader, second.FragmentShader );
+			}
+			finally
+			{
+				ShaderCompiler.Release( first );
+				ShaderCompiler.Release( second );
+			}
+			Assert.IsTrue( first.VertexShader.IsDisposed && first.FragmentShader.IsDisposed, "the last release disposes the shared program" );
+		}
+		finally
+		{
+			global::Global.Device = previousDevice;
+		}
+	}
+
 	private static GraphicsDevice CreateDevice()
 	{
 		// the engine's options (Renderer.CreateDevice) without its swapchain

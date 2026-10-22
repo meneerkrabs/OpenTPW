@@ -30,14 +30,22 @@ internal sealed partial class GameFlow : IDisposable
 	public GameFlow()
 	{
 		UiApproximations.LogOnce();
-		Strings = UiStringTable.Load( GameLanguage.Current );
-		Context = new UiContext( Strings, UiFonts.Load( GameLanguage.Current ), new UiModels() );
+		using ( LoadProfile.Measure( "strings" ) )
+			Strings = UiStringTable.Load( GameLanguage.Current );
+		UiFonts fonts;
+		using ( LoadProfile.Measure( "fonts" ) )
+			fonts = UiFonts.Load( GameLanguage.Current );
+		using ( LoadProfile.Measure( "ui-models" ) )
+			Context = new UiContext( Strings, fonts, new UiModels() );
 		OptionsPath = SaveFileSystem.GetAbsolutePath( GameOptions.FileName );
 		GameOptions.Current = GameOptions.Load( OptionsPath );
 		Display = IDisplaySettings.Instance ?? new StubDisplaySettings();
 		// Sky backdrop in the world pass; menus/HUD in the overlay pass at output pixels (after world upscaling).
-		backgroundRenderer = new UiRenderer( global::Global.Render.MultisampledFramebuffer.OutputDescription );
-		overlayRenderer = new UiRenderer( global::Global.Render.OutputDescription );
+		using ( LoadProfile.Measure( "ui-renderers" ) )
+		{
+			backgroundRenderer = new UiRenderer( global::Global.Render.MultisampledFramebuffer.OutputDescription );
+			overlayRenderer = new UiRenderer( global::Global.Render.OutputDescription );
+		}
 		global::Global.Render.OnOverlayRender += RenderOverlay;
 	}
 
@@ -173,8 +181,11 @@ internal sealed partial class GameFlow : IDisposable
 		if ( coopJoin == null )
 			ApplyPendingExtensions();
 		enterHold = false;
-		lobbyDefinition ??= LobbyDefinition.Load();
-		Lobby = new LobbyScene( lobbyDefinition, generator: lobbyEffects.Draw, flyerPercent: LobbyObjectsPercent );
+		using var frontEndProfile = LoadProfile.Measure( "front-end" );
+		using ( LoadProfile.Measure( "lobby-definition" ) )
+			lobbyDefinition ??= LobbyDefinition.Load();
+		using ( LoadProfile.Measure( "lobby-scene" ) )
+			Lobby = new LobbyScene( lobbyDefinition, generator: lobbyEffects.Draw, flyerPercent: LobbyObjectsPercent );
 		LobbyCameraMode.Radius = lobbyDefinition.SpinRadius;
 		LobbyCameraMode.VerticalOffset = lobbyDefinition.VerticalOffset;
 		LobbyCameraMode.SpinSpeed = lobbyDefinition.SpinSpeed;
@@ -205,6 +216,7 @@ internal sealed partial class GameFlow : IDisposable
 			ConfirmExtensions = ConfirmExtensions,
 		} );
 		Menu = createdMenu;
+		using var selectProfile = LoadProfile.Measure( "lobby-select-island" );
 		Menu.SelectIsland( 0 );
 		if ( selectLevel != null )
 			Menu.SelectLevel( selectLevel );

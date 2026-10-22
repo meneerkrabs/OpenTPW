@@ -131,8 +131,14 @@ internal sealed class TextRenderer : IDisposable
 		return (texture, Device.ResourceFactory.CreateResourceSet( new ResourceSetDescription( resourceLayout, resources ) ));
 	}
 
+	private bool disposed;
+
 	public void Dispose()
 	{
+		// the shader references are given back once (ShaderCompiler.Release)
+		if ( disposed )
+			return;
+		disposed = true;
 		foreach ( var (texture, set) in atlases.Values.Append( solid ) )
 		{
 			set.Dispose();
@@ -142,7 +148,7 @@ internal sealed class TextRenderer : IDisposable
 		vertexBuffer?.Dispose();
 		pipeline.Dispose();
 		resourceLayout.Dispose();
-		shader.VertexShader.Dispose();
-		shader.FragmentShader.Dispose();
+		// the native shaders are shared (ShaderCompiler.CompileShader): this renderer gives its reference back
+		ShaderCompiler.Release( shader );
 	}
 }

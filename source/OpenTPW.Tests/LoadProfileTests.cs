@@ -1,5 +1,6 @@
 using System;
 using System.Diagnostics;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
@@ -96,5 +97,46 @@ public class LoadProfileTests
 		LoadProfile.Enable( true );
 		Task.Run( () => { using ( LoadProfile.Measure( "worker" ) ) { } } ).Wait();
 		Assert.IsFalse( LoadProfile.Snapshot().ContainsKey( "worker" ) );
+	}
+
+	/// <summary>The counted amounts of --startup-profile and --hitch-report (docs/ENGINE-PERFORMANCE.md, "Start and build hitches"): every thread counts while on, nothing while off.</summary>
+	[TestMethod]
+	public void CountersAddOnEveryThreadWhileRecording()
+	{
+		LoadProfile.Enable( false );
+		LoadProfile.Count( "files", 3 );
+		Assert.AreEqual( 0, LoadProfile.Counters().Count, "nothing is counted while off" );
+		Assert.IsFalse( LoadProfile.Recording );
+
+		LoadProfile.Enable( true );
+		Assert.IsTrue( LoadProfile.Recording );
+		LoadProfile.Count( "files" );
+		Task.WaitAll( Enumerable.Range( 0, 4 ).Select( _ => Task.Run( () => { for ( var index = 0; index < 1000; index++ ) LoadProfile.Count( "bytes", 2 ); } ) ).ToArray() );
+		var counters = LoadProfile.Counters();
+		Assert.AreEqual( 1, counters["files"] );
+		Assert.AreEqual( 8000, counters["bytes"], "helper threads count too, without losing additions" );
+
+		LoadProfile.Enable( true );
+		Assert.AreEqual( 0, LoadProfile.Counters().Count, "enabling again starts new counters" );
+	}
+
+	/// <summary>Frame marks record only on the thread that turned them on: a section closed on a helper thread is left out (the desktop has such threads).</summary>
+	[TestMethod]
+	public void FrameMarksIgnoreOtherThreads()
+	{
+		try
+		{
+			FrameMarks.Enable( true );
+			FrameMarks.BeginFrame();
+			FrameMarks.Add( "main", 10 );
+			Task.Run( () => FrameMarks.Add( "worker", 10 ) ).Wait();
+			var snapshot = FrameMarks.Snapshot();
+			Assert.IsTrue( snapshot.ContainsKey( "main" ) );
+			Assert.IsFalse( snapshot.ContainsKey( "worker" ) );
+		}
+		finally
+		{
+			FrameMarks.Enable( false );
+		}
 	}
 }

@@ -9,6 +9,9 @@ internal static class Game
 	public static void Run( string[] args )
 	{
 		Log = new();
+		// [EXT:perf-run] --startup-profile: the start's phases up to the lobby (docs/ENGINE-PERFORMANCE.md, "Start and build hitches"); measurement only
+		if ( args.Contains( "--startup-profile" ) )
+			StartupProfile.Begin();
 		CoopSession.ChangesParkOutsideCommands = ChangesParkOutsideCommands( args );
 		SdlMovieAudioOutput.Suppressed = IsSilentRun( args, Environment.GetEnvironmentVariable( "OPENTPW_SILENT" ), Environment.GetEnvironmentVariable( "OPENTPW_OFFSCREEN" ) );
 		Window.OffscreenRequested = IsOffscreenRun( args, Environment.GetEnvironmentVariable( "OPENTPW_OFFSCREEN" ) );
@@ -141,9 +144,7 @@ internal static class Game
 			RequireThemeParkIncViewer( args, edition );
 
 		// Register game data directory
-		FileSystem = new BaseFileSystem( dataDirectory );
-		FileSystem.RegisterArchiveHandler<WadArchive>( ".wad" );
-		FileSystem.RegisterArchiveHandler<SdtArchive>( ".sdt" );
+		FileSystem = GameDataFileSystem.Create( dataDirectory );
 
 		// Debug export of every sign texture in one language (docs/RUNNING.md, "Sign textures"): the language is the option's own, the language data is found as below; no window, audio or park.
 		if ( args.Contains( "--export-signs" ) )
@@ -161,6 +162,7 @@ internal static class Game
 		// OPENTPW_LANGUAGE_DATA, then language.json, then the old Language / LanguageDataPath
 		// user settings (docs/LANGUAGES.md)
 		//
+		var languagePhase = StartupProfile.Phase( "language" );
 		var languageDiagnostics = new List<string>();
 		var languageSettings = LanguageSettings.Load( LanguageSettings.GetDefaultPath(), languageDiagnostics );
 		foreach ( var diagnostic in languageDiagnostics )
@@ -181,11 +183,15 @@ internal static class Game
 				Log.Trace( $"Interface archive: {LanguageInterfaceArchive.Current} (the language's own ui.wad)" );
 		}
 
+		languagePhase.Dispose();
+
 		// Compatibility: --cd-data overlay, media diagnostics, profile/fixes, graphics preset (docs/COMPATIBILITY.md)
-		CompatibilityStartup.Initialize( args, dataDirectory );
+		using ( StartupProfile.Phase( "compatibility" ) )
+			CompatibilityStartup.Initialize( args, dataDirectory );
 
 		// [EXT:mods] Extensions and data-only mods (docs/MODS.md): resolved once here; mods.json changes apply at the next start.
-		OpenTPW.Mods.ModStartup.Initialize( args, Log.Trace, Log.Warning );
+		using ( StartupProfile.Phase( "mods" ) )
+			OpenTPW.Mods.ModStartup.Initialize( args, Log.Trace, Log.Warning );
 
 		// Official bonus objects (docs/OBJECTS.md): --bonus-data, else OPENTPW_BONUS_DATA, else the saved bonus folder, else <config>/bonus.
 		var bonusSettings = SetupSettings.Load( SetupSettings.GetDefaultPath() );
@@ -313,7 +319,8 @@ internal static class Game
 		var visit = visitPath == null ? null : ParkSharing.PrepareVisit( OpenTPW.Online.Packages.ParkPackage.Load( visitPath ) );
 		if ( visit != null )
 			Log.Trace( ParkSharing.Describe( visit ) );
-		Render = DisplayStartup.CreateRenderer( args );
+		using ( StartupProfile.Phase( "renderer" ) )
+			Render = DisplayStartup.CreateRenderer( args );
 		// [EXT:script-mods] the crash marker was written at startup; it is removed after 15 seconds of frames (docs/SCRIPT-MODS.md)
 		if ( OpenTPW.Mods.ScriptSafeMode.Current is { } scriptStartMarker )
 			Render.OnUpdate += scriptStartMarker.Update;
@@ -333,7 +340,9 @@ internal static class Game
 		// plain --smoke-test bypass it as before; --front-end --smoke-test tests the front end.
 		GameAudio.Enabled = !args.Contains( "--mute" );
 		// --no-advisor turns automatic advice off; the manual --advisor-say/--advisor-response presentation replaces it.
+		var flowPhase = StartupProfile.Phase( "game-flow" );
 		using var flow = new GameFlow { OnlineFolders = onlineFolders, AutomaticAdvisorEnabled = !args.Contains( "--no-advisor" ) && !args.Contains( "--advisor-say" ) && !args.Contains( "--advisor-response" ) };
+		flowPhase.Dispose();
 		var capturePath = GetOption( args, "--capture-world", "a .png file for the world-only screenshot" );
 		var smoke = args.Contains( "--smoke-test" );
 		var parkResumePhase = GetOption( args, "--park-resume-smoke", "'capture' or 'restore'" );
@@ -446,6 +455,56 @@ internal static class Game
 				}
 				if ( perfDone >= perfFrames )
 					Render.Window.SdlWindow.Close();
+			};
+		}
+		// [EXT:perf-run] --hitch-report <ms> logs every frame at least that long with the work recorded in it; --perf-build (with --load-original-level) does what a player does when
+		// building: the buy window's tabs and rows, then one object of several types placed (PerfBuildScenario); --startup-profile logs the start's phases at the lobby's 120th frame
+		// and closes the window (docs/ENGINE-PERFORMANCE.md, "Start and build hitches"). Measurement only.
+		HitchReport? hitchReport = null;
+		if ( GetOption( args, "--hitch-report", "a frame length in milliseconds" ) is { } hitchText )
+		{
+			hitchReport = new HitchReport( double.TryParse( hitchText, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var hitchMilliseconds ) && hitchMilliseconds > 0
+				? hitchMilliseconds : throw new ArgumentException( "--hitch-report expects a frame length in milliseconds, for example 50." ) );
+			Render.PreUpdate += hitchReport.FrameStarted;
+		}
+		if ( args.Contains( "--perf-build" ) )
+		{
+			if ( originalLevelIndex < 0 )
+				throw new ArgumentException( "--perf-build needs --load-original-level." );
+			var buildPlacements = GetOption( args, "--perf-build-placements", "objects placed per buy tab" ) is { } placementText
+				? int.TryParse( placementText, out var parsedPlacements ) && parsedPlacements is >= 0 and <= 50 ? parsedPlacements : throw new ArgumentException( "--perf-build-placements expects 0 to 50." )
+				: 3;
+			if ( hitchReport == null )
+			{
+				hitchReport = new HitchReport( 50 );
+				Render.PreUpdate += hitchReport.FrameStarted;
+			}
+			var scenario = new PerfBuildScenario( flow, hitchReport, buildPlacements, () =>
+			{
+				foreach ( var line in StartupProfile.Sections() )
+					Log.Trace( "Build profile:" + line );
+				Render.Window.SdlWindow.Close();
+			} );
+			Render.PostUpdate += scenario.Update;
+		}
+		if ( StartupProfile.Active && startsFrontEnd )
+		{
+			var lobbyFrames = new List<double>();
+			var firstLobbyFrame = -1d;
+			var lastFrame = 0d;
+			Render.PostUpdate += () =>
+			{
+				if ( flow.Lobby == null || flow.Level != null || firstLobbyFrame < 0 && (firstLobbyFrame = StartupProfile.Elapsed) < 0 )
+					return;
+				var now = StartupProfile.Elapsed;
+				if ( lastFrame > 0 )
+					lobbyFrames.Add( now - lastFrame );
+				lastFrame = now;
+				if ( lobbyFrames.Count < 120 )
+					return;
+				foreach ( var line in StartupProfile.Report( firstLobbyFrame, lobbyFrames ) )
+					Log.Trace( line );
+				Render.Window.SdlWindow.Close();
 			};
 		}
 		// [EXT:debug-evening] smoke and performance runs (docs/EVENING.md; also in Release builds, unlike most debug options): --evening-pace <minutes10|minutes20|minutes40|day|dusk|night> sets the evening extension's day cycle for this run only (a run-scoped override in Level, never written to the options, so never saved), and
@@ -1161,7 +1220,7 @@ internal static class Game
 	private static readonly string[] AutomatedFlags = SmokeFlags.Concat( new[]
 	{
 		"--coop-join-smoke",
-		"--perf-run", "--perf-hash-tick",
+		"--perf-run", "--perf-hash-tick", "--startup-profile", "--hitch-report",
 		"--offscreen", "--headless", "--m3-gate", "--m4-gate", "--determinism-digest", "--guest-report", "--guest-compare", "--validate-assets", "--export-signs",
 	} ).ToArray();
 

@@ -850,6 +850,23 @@ public static class OriginalLayoutTables
 			} ),
 		} ),
 	} );
+
+	/// <summary>[BIN:TPW-EXE:0x74faf0] layout table WinningScreen.</summary>
+	public static readonly LayoutTable WinningScreen = new( "WinningScreen", 0x74FAF0, new LayoutNode[]
+	{
+		new( 1, 0x1u, 0x321u, 102, 536, 1946, 940, -1, -1, "s_congrats", null, null, System.Array.Empty<LayoutNode>() ),
+	} );
+
+	/// <summary>[BIN:TPW-EXE:0x74f920] layout table MessageBox.</summary>
+	public static readonly LayoutTable MessageBox = new( "MessageBox", 0x74F920, new LayoutNode[]
+	{
+		new( 1, 0x1u, 0x9873C7u, 500, 233, 1516, 830, -1, -1, "wdialog", null, new[] { 610, 276, 1345, 753 }, new LayoutNode[]
+		{
+			new( 2, 0x1u, 0x9873C8u, 1387, 610, 1470, 694, -1, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
+			new( 2, 0x1u, 0x9873C9u, 1379, 522, 1462, 605, -1, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
+			new( 2, 0x1u, 0x9873CAu, 1379, 433, 1462, 517, -1, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
+		} ),
+	} );
 }
 
 /// <summary>The original game pointers: their ids and .tga files, and the tool-to-pointer switch.</summary>

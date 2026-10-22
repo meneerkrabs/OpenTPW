@@ -765,7 +765,7 @@ guarded list.
 | Objects | place (the build tool, the Move tool, track add-ons), the remove tool, remove at a cell, sell from the object and attraction windows, the Move tool's pick-up and its end, the bulldozer (area clear: one command per cleared cell) | converted |
 | Paths and queues | path and queue lines, undo inside the tool, path and queue cell removal, Backspace over a cell, the queue edit click | converted |
 | Developer prototype | place and remove the Totem, open and close it (the developer panel's button) | converted |
-| Winning screen | the Instant Action finale's dismissal (Resume Game, Escape, the right click) | converted |
+| Winning screen | the end-of-park finale's dismissal in either game type (Escape, the late right click) | converted |
 | Settings | park open and close, ride open and close, the ride window's settings, entrance fee, prices, prizes and shop settings, loans and the loans dialog's list build, dismissal, training budget, research, challenges, maintenance, ride upgrades, park and staff rename, patrol areas, cheats, speed, the developer panel's open-all and close-all | converted |
 | Tools | land, staff hiring and the employee in hand, pool strokes and their undo, wave machines, slide pieces, pool bridges, kart and water track lines, their undo, the edit tool's cut and the line tool's walk to the open end | converted |
 | Coasters | the coaster tool's entry and exit, its pylons and Backspace, the circuit's closing and completion, the coaster panel's drags, stack swaps and cuts | converted |

@@ -217,6 +217,25 @@ public sealed class GameLanguage
 	public IEnumerable<string> EnumerateFiles() => System.IO.Directory.EnumerateFiles( Directory ).OrderBy( path => path, StringComparer.OrdinalIgnoreCase );
 
 	/// <summary>
+	/// The language's banner meshes (<c>bankrupt</c>, <c>congrats</c> and <c>paused</c> in the shipped languages): every <c>.md2</c> file of the language folder, then
+	/// those of the CD's <c>&lt;Lang&gt;/Meshes/&lt;Lang&gt;</c> folder an overlay adds, a file name found earlier winning.
+	/// </summary>
+	// [BIN:TPW-EXE:0x004893C0 language meshes] the UI start-up (0x489CA0) registers every .md2 of the language folder (0x41A820) with the ui.wad models, its textures read from data\ui\textures
+	public IReadOnlyList<string> EnumerateMeshes()
+	{
+		var found = new Dictionary<string, string>( StringComparer.OrdinalIgnoreCase );
+		foreach ( var directory in searchDirectories )
+		{
+			if ( !System.IO.Directory.Exists( directory ) )
+				continue;
+			foreach ( var path in System.IO.Directory.EnumerateFiles( directory ).OrderBy( path => path, StringComparer.OrdinalIgnoreCase ) )
+				if ( Path.GetExtension( path ).Equals( ".md2", StringComparison.OrdinalIgnoreCase ) )
+					found.TryAdd( Path.GetFileName( path ), path );
+		}
+		return found.Values.ToList();
+	}
+
+	/// <summary>
 	/// A string table a mod supplies for a language (docs/MODS.md): called with the language name and the table's file name
 	/// (<c>UITEXT.str</c>), it returns the replacement stream (disposed by the caller) or null for the language's own file. Null by default.
 	/// </summary>

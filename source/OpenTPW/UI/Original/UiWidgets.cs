@@ -234,20 +234,35 @@ public sealed class UiContext
 	}
 
 	/// <summary>Draws a model frame stretched so its selected-mesh fit bounds fill <paramref name="rect"/>.</summary>
-	public void DrawFrame( UiModelFrame frame, UiRect rect, RgbaByte? tint = null )
+	public void DrawFrame( UiModelFrame frame, UiRect rect, RgbaByte? tint = null ) => DrawFrame( frame, rect, tint, 0, default );
+
+	/// <summary>
+	/// Draws a model frame fitted to <paramref name="rect"/> and then turned <paramref name="turn"/> radians clockwise on the screen about <paramref name="pivot"/>
+	/// (framebuffer pixels), as a window's model takes its angle (window +0xE2) about its pivot (+0xE4).
+	/// </summary>
+	// [BIN:TPW-EXE:0x00476C50 UI model matrix] a nonzero angle a (4096 a turn: a·π/2048) makes the rows (cos a, −4/3 sin a) and (3/4 sin a, cos a) about the pivot in the 4:3 view's
+	// coordinates (y up), applied to row vectors: on the screen, a rigid turn clockwise
+	public void DrawFrame( UiModelFrame frame, UiRect rect, RgbaByte? tint, float turn, NVector2 pivot )
 	{
 		if ( !frame.TryGetFitBounds( out var fit ) )
 			return;
 		var scaleX = rect.Width / fit.Width;
 		var scaleY = rect.Height / fit.Height;
 		var color = tint ?? RgbaByte.White;
+		var (sin, cos) = turn == 0 ? (0f, 1f) : MathF.SinCos( turn );
 		foreach ( var part in frame.Parts )
 		{
 			var texture = TextureFor( part );
 			UiVertex Convert( int index )
 			{
 				var vertex = part.Vertices[index];
-				return new UiVertex( new NVector2( rect.X + (vertex.Position.X - fit.X) * scaleX, rect.Y + (vertex.Position.Y - fit.Y) * scaleY ), vertex.TexCoords, color );
+				var at = new NVector2( rect.X + (vertex.Position.X - fit.X) * scaleX, rect.Y + (vertex.Position.Y - fit.Y) * scaleY );
+				if ( turn != 0 )
+				{
+					var offset = at - pivot;
+					at = pivot + new NVector2( offset.X * cos - offset.Y * sin, offset.X * sin + offset.Y * cos );
+				}
+				return new UiVertex( at, vertex.TexCoords, color );
 			}
 			for ( var index = 0; index + 2 < part.Indices.Count; index += 3 )
 				Batch.AddTriangle( texture, Convert( part.Indices[index] ), Convert( part.Indices[index + 1] ), Convert( part.Indices[index + 2] ) );

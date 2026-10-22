@@ -327,7 +327,7 @@ the end-of-park sequence (8 uses, operand 1, never cleared by the script itself)
 
 OpenTPW: `RideVM.MusicDuckByte` (saved with the script, not hashed), `GameAudio.SetMusicDuck` and `AudioMixer.MusicDuckRequest` (the music channel's gain is 0 while it is non-zero; its voices keep playing, as the original's keep running at volume 0).
 The request word is presentation state: it is not saved and not part of any digest; a resumed park asks for it again from the script's byte, and `GameAudio.LeavePark` clears it (the park's scripts are destroyed). `Gates.RSE` runs in OpenTPW (the gate is created with every
-park), so its end-of-park command 2 now silences the park music; `End.RSE` is created and dismissed for Instant Action's finale, while Full Simulation's finale around it is not built yet (`APPROX:RIDES-019`, `ParkFinale`).
+park), so its end-of-park command 2 now silences the park music; `End.RSE` runs in the end-of-park finale of both game types and stops at its dismissal ([the end-of-park finale](reverse/INSTANT-ACTION-FINALE.md), `ParkFinale`).
 
 **SETREVERB** (`0x55649C`) stores its operand as a dword at +0xD8. The reader is `0x55A470`, called by the main loop (`0x54E360`): with the ride camera on a ride (`0x42A4E0`: camera byte `0x790AB0` bit 4,
 the ridden object `0x790A44`) it walks the script list for the ride's script with no parent and a non-zero +0xD8; a level of 0 or more goes to `0x51C8D0`, a negative one does nothing; with no such script, or outside

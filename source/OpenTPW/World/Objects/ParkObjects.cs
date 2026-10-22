@@ -653,7 +653,7 @@ public sealed class ParkObjects
 	/// </summary>
 	// [BIN:TPW-EXE:0x005156A0 world setup fixed items] world setup creates the definitions named "gates" (wide literal 0x762448) and "lights" (0x762454) through 0x4db090 (case-insensitive compare 0x67b140); a missing definition logs "Could not find the gates feature" or the LIGHTSNAME message; a loaded save then restores the handles (writer 0x517076)
 	// [BIN:TPW-EXE:0x0051A2F0 vehicle on demand] the bus, seaplane and Ferry are created by the vehicle dispatch the first time each is sent (0x004DB090 at 0x0051A57E), never at setup
-	// RIDES-019 (see ParkFinale): End is not a setup object: ParkFinale creates it only on new research completion in TPW Instant Action (0x503D40 -> 0x516B00, after advice 0xA7), and its dismissal destroys it (0x48A970 -> 0x516C10). Game type 1 never starts it; type 0 also needs the player-wide record list behind 0x5B0C40, still absent. 0x409CD0 constructs the advice's handle argument, not a flag clear. The winning-camera follow, original panel, post-dismissal profile/dialog changes and original winning-UI restoration remain open; see docs/reverse/INSTANT-ACTION-FINALE.md.
+	// End is not a setup object either: ParkFinale creates it only on a new research completion that starts the finale (0x503D40 -> 0x516B00, after advice 0xA7: Instant Action, and the Full Simulation when the player's records show every park complete, 0x5B0C40), and its dismissal destroys it (0x48A970 -> 0x516C10); see docs/reverse/INSTANT-ACTION-FINALE.md.
 	public int AddDefaultFixedItems() => AddDefaultFixedItemSteps().LastOrDefault().Placed;
 
 	/// <summary><see cref="AddDefaultFixedItems"/> one object at a time, as <see cref="ImportOriginalSteps"/>.</summary>

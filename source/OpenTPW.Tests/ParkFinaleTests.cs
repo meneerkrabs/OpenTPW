@@ -131,14 +131,10 @@ public class ParkFinaleTests
 	private static ParkHud Hud( Level level ) => new( level, OriginalUiTests.FakeStrings(), new EconomyParkStatus( () => level.Park!.Economy ), new EmptyCatalog(), new HudHost() );
 
 	[TestMethod]
-	public void MissingDefinitionAndOtherModesConsumeNoObjectsOrSeeds()
+	public void MissingDefinitionConsumesNoObjectsOrSeeds()
 	{
 		var objects = Objects();
-		Assert.IsNull( ParkFinale.StartForResearchCompletion( objects, ParkGameMode.InstantAction ) );
-		Assert.AreEqual( 1, objects.NextPlacementSeed );
-		objects = Objects( Entry() );
-		Assert.IsNull( ParkFinale.StartForResearchCompletion( objects, ParkGameMode.FullSimulation ) );
-		Assert.IsNull( ParkFinale.StartForResearchCompletion( objects, (ParkGameMode)99 ) );
+		Assert.IsNull( ParkFinale.StartForResearchCompletion( objects ) );
 		Assert.AreEqual( 0, objects.Objects.Count ); Assert.AreEqual( 1, objects.NextPlacementSeed );
 	}
 
@@ -149,13 +145,13 @@ public class ParkFinaleTests
 		var wrong = Entry( "Endless", true, 1606 ); wrong.DisplayName = "End";
 		var end = Entry( "eNd" ); end.DisplayName = "Localized finale";
 		var objects = Objects( ordinary, wrong, end );
-		var placed = ParkFinale.StartForResearchCompletion( objects, ParkGameMode.InstantAction )!;
+		var placed = ParkFinale.StartForResearchCompletion( objects )!;
 		Assert.AreSame( end, placed.Entry );
 		Assert.AreEqual( (0, 0, 0, 0f), (placed.Placement.X, placed.Placement.Y, placed.Placement.Rotation, placed.Placement.BaseHeight) );
 		Assert.AreEqual( objects.Grid.Origin, placed.Placement.GridOrigin );
 		Assert.AreEqual( 1 ^ objects.ObjectScriptKey, placed.CreationSeed );
 		Assert.AreEqual( 2, objects.NextPlacementSeed );
-		Assert.AreSame( placed, ParkFinale.StartForResearchCompletion( objects, ParkGameMode.InstantAction ) );
+		Assert.AreSame( placed, ParkFinale.StartForResearchCompletion( objects ) );
 		Assert.AreEqual( 1, objects.Objects.Count ); Assert.AreEqual( 2, objects.NextPlacementSeed );
 	}
 
@@ -166,7 +162,7 @@ public class ParkFinaleTests
 		var restored = objects.AddRestored( entry, 50, 60, 90, true, 9 ^ objects.ObjectScriptKey, 25 );
 		objects.RestoreSeedAllocator( 10 );
 		Assert.IsTrue( ParkFinale.IsActive( objects ) );
-		Assert.AreSame( restored, ParkFinale.StartForResearchCompletion( objects, ParkGameMode.InstantAction ) );
+		Assert.AreSame( restored, ParkFinale.StartForResearchCompletion( objects ) );
 		Assert.AreEqual( 10, objects.NextPlacementSeed ); Assert.AreEqual( 26, objects.NextAttractionId );
 		var level = LevelFor( objects );
 		Assert.IsTrue( level.ResearchFinaleActive ); Assert.IsTrue( level.Park!.Economy.WinningSequenceActive!() );
@@ -230,6 +226,112 @@ public class ParkFinaleTests
 		Assert.AreEqual( records + 1, economy.Objects.Count );
 	}
 
+	/// <summary>The player's records as a park reaches them: a real ledger, so the order of recording and asking does not matter.</summary>
+	private sealed class Records( params string[] completed ) : IPlayerResearchRecords
+	{
+		public PlayerTicketLedger Ledger { get; } = Recorded( completed );
+		private static PlayerTicketLedger Recorded( string[] themes ) { var ledger = new PlayerTicketLedger(); foreach ( var theme in themes ) ledger.RecordResearchCompleted( theme ); return ledger; }
+		public void RecordCompleted( string theme ) => Ledger.RecordResearchCompleted( theme );
+		public bool CompletedEverywhereWith( string theme ) => Ledger.ResearchCompletedEverywhereWith( theme );
+	}
+
+	private static Level Named( Level level, string theme = "jungle" ) { Set( level, "<LevelName>k__BackingField", theme ); return level; }
+
+	[TestMethod]
+	public void FullSimulationStartsTheFinaleOnlyWithEveryParksResearchRecorded()
+	{
+		var incomplete = Named( LevelFor( Objects( Entry() ), ParkGameMode.FullSimulation ) ); var some = new Records( "hallow", "space" ); incomplete.ResearchRecords = some;
+		Assert.IsFalse( incomplete.ResearchCompletionStartsFinale() );
+		Complete( incomplete );
+		CollectionAssert.AreEquivalent( new[] { "jungle", "hallow", "space" }, some.Ledger.ResearchCompleted.ToArray(), "the completion is recorded whether or not the finale starts" );
+		Assert.AreEqual( 0, incomplete.Objects.Objects.Count ); Assert.IsFalse( incomplete.ResearchFinaleActive );
+
+		var complete = Named( LevelFor( Objects( Entry() ), ParkGameMode.FullSimulation ) ); complete.ResearchRecords = new Records( "hallow", "fantasy", "space" );
+		Assert.IsTrue( complete.ResearchCompletionStartsFinale(), "this park's own completion completes the list" );
+		Complete( complete );
+		Assert.AreEqual( 1, complete.Objects.Objects.Count ); Assert.IsTrue( complete.ResearchFinaleActive ); Assert.IsTrue( complete.Park!.Economy.WinningSequenceActive!() );
+		Assert.IsTrue( complete.DismissResearchFinale() ); Assert.IsFalse( complete.ResearchFinaleActive );
+	}
+
+
+	/// <summary>Whether the automatic advisor queues advice 167 for this level's all-research-complete event (tp.exe 0x503E8E, 0x503F96).</summary>
+	private static bool Posts167( Level level )
+	{
+		var advisor = new AutomaticAdvisor( new AdvisorController( AdvisorBalance.Parse( System.Text.Encoding.ASCII.GetBytes( AdvisorEventAdviceTests.Sam ), "test.sam" ) ), () => 0 );
+		Set( advisor, "level", level );
+		advisor.OnParkEvent( new ParkEvent( 0, ParkEventKind.ResearchAllDone, 0, 0, 0, "" ) );
+		return advisor.Controller.CaptureSnapshot().Queue.Slots.Any( slot => slot?.MessageId == 167 );
+	}
+
+	[TestMethod]
+	public void TheAdvisorSays167InTheFullSimulationOnlyWithEveryParkRecorded()
+	{
+		var incomplete = Named( LevelFor( Objects( Entry() ), ParkGameMode.FullSimulation ) ); incomplete.ResearchRecords = new Records( "hallow" );
+		Assert.IsFalse( Posts167( incomplete ), "game type 0 returns before the advice while a park's record is clear" );
+		var none = Named( LevelFor( Objects( Entry() ), ParkGameMode.FullSimulation ) );
+		Assert.IsFalse( Posts167( none ), "a Full Simulation park without the player's records" );
+		var complete = Named( LevelFor( Objects( Entry() ), ParkGameMode.FullSimulation ) ); complete.ResearchRecords = new Records( "hallow", "fantasy", "space" );
+		Assert.IsTrue( Posts167( complete ), "this park's completion completes the list, whichever handler runs first" );
+		Assert.IsTrue( Posts167( LevelFor( Objects( Entry() ) ) ), "Instant Action always" );
+	}
+
+	[TestMethod]
+	public void ARefusedDismissalLeavesTheScreenAndShowsNoMessage()
+	{
+		var level = LevelFor( Objects( Entry() ) ); Complete( level ); var hud = Hud( level ); var context = Context();
+		hud.Update( context, UiInput.Idle( new N.Vector2( -1 ) ), false, false, false ); var screen = hud.Stack.Top!;
+		// End leaves without the command (a co-op peer's dismissal arrives first): the stale screen's exit is refused
+		ParkFinale.Dismiss( level.Objects );
+		screen.Back!();
+		Assert.AreEqual( 1, level.Commands.Log.Count, "the exit was issued and refused: no finale was left" ); Assert.IsFalse( level.ResearchFinaleActive );
+		Assert.IsFalse( hud.Stack.Screens.Any( candidate => candidate.Name == ParkHud.WinningMessageScreen ), "no completion message after a refused exit" );
+		hud.Update( context, UiInput.Idle( new N.Vector2( -1 ) ), false, false, false );
+		Assert.AreEqual( "hud", hud.Stack.Top!.Name, "the next update retires the screen of the vanished End" );
+	}
+
+	[TestMethod]
+	public void ADebugFinaleAdoptsALiveEndWithoutASecondRecord()
+	{
+		var level = LevelFor( Objects( Entry() ), economy: FixedItemEconomy( ParkGameMode.InstantAction ) ); var economy = level.Park!.Economy;
+		Assert.IsTrue( level.DebugStartFinale() ); var records = economy.Objects.Count;
+		Assert.IsTrue( level.DebugStartFinale() );
+		Assert.AreEqual( records, economy.Objects.Count ); Assert.AreEqual( 1, economy.Counters[ParkCounters.Built( 1605 )] );
+	}
+
+	[TestMethod]
+	public void InstantActionRecordsTheParkAndStartsWithoutAskingTheRecords()
+	{
+		var level = Named( LevelFor( Objects( Entry() ) ), "space" ); var records = new Records(); level.ResearchRecords = records;
+		Complete( level );
+		CollectionAssert.AreEqual( new[] { "space" }, records.Ledger.ResearchCompleted.ToArray() );
+		Assert.IsTrue( level.ResearchFinaleActive );
+	}
+
+	[TestMethod]
+	public void FullSimulationDismissalShowsNoMessage()
+	{
+		var level = Named( LevelFor( Objects( Entry() ), ParkGameMode.FullSimulation ) ); level.ResearchRecords = new Records( "hallow", "fantasy", "space" ); Complete( level );
+		var hud = Hud( level ); var context = Context();
+		hud.Update( context, UiInput.Idle( new N.Vector2( -1 ) ), false, false, false ); Assert.AreEqual( "researchFinale", hud.Stack.Top!.Name );
+		hud.Update( context, UiInput.Key( UiKeys.Back ), false, false, false );
+		Assert.IsFalse( level.ResearchFinaleActive ); Assert.AreEqual( "hud", hud.Stack.Top!.Name, "UITEXT 471 belongs to game type 2 only" );
+	}
+
+	[TestMethod]
+	public void TheWinningScreenIsTheOriginalBannerWindow()
+	{
+		var level = LevelFor( Objects( Entry() ) ); Complete( level ); var hud = Hud( level ); var context = Context( 10 );
+		hud.Update( context, UiInput.Idle( new N.Vector2( -1 ) ), false, false, false );
+		var screen = hud.Stack.Top!; Assert.AreEqual( "researchFinale", screen.Name );
+		var banner = (UiAnimatedModel)screen.Elements.Single();
+		Assert.AreEqual( "s_congrats", banner.Model );
+		Assert.AreEqual( new UiRect( 102, 536, 1844, 404 ), banner.Bounds );
+		Assert.AreEqual( new N.Vector2( 973, 470 ), banner.Pivot );
+		Assert.IsNotNull( banner.Animation ); Assert.AreEqual( 0, banner.Animation!.Index );
+		Assert.IsNull( level.RideView, "the synthetic End has no camera seat, so the camera stays (0x42A6EE)" );
+		Assert.IsInstanceOfType( Camera.Mode, typeof( ParkCameraMode ) );
+	}
+
 	[TestMethod]
 	public void AnObjectTheEconomyDoesNotKnowStillMovesTheAdvisorsStampAndAnAdoptedEndDoesNot()
 	{
@@ -256,7 +358,7 @@ public class ParkFinaleTests
 	public void FullSimulationVisitsAndThemeParkIncDoNotStartOrGuardFinales()
 	{
 		var full = LevelFor( Objects( Entry() ), ParkGameMode.FullSimulation ); Complete( full );
-		Assert.IsFalse( full.ResearchFinaleActive ); Assert.AreEqual( 0, full.Objects.Objects.Count );
+		Assert.IsFalse( full.ResearchFinaleActive, "a Full Simulation park without the player's records never starts it" ); Assert.AreEqual( 0, full.Objects.Objects.Count );
 		var visit = LevelFor( Objects( Entry() ) ); Set( visit, "<Visit>k__BackingField", Empty<ParkVisitInfo>() ); Complete( visit );
 		Assert.IsFalse( visit.ResearchFinaleActive ); Assert.AreEqual( 0, visit.Objects.Objects.Count );
 		var inc = LevelFor( Objects( Entry() ) ); GameEditions.Select( GameEdition.ThemeParkInc ); Complete( inc );
@@ -267,7 +369,7 @@ public class ParkFinaleTests
 	[TestMethod]
 	public void DismissalStopsTheLoopReleasesMusicAndParticlesAndIsIdempotent()
 	{
-		var objects = Objects( Entry() ); var end = ParkFinale.StartForResearchCompletion( objects, ParkGameMode.InstantAction )!;
+		var objects = Objects( Entry() ); var end = ParkFinale.StartForResearchCompletion( objects )!;
 		end.Script!.Advance( FixedStepClock.TickDuration );
 		Assert.AreEqual( 1, GameAudio.MusicDuckRequest ); Assert.AreEqual( 1, end.Script.MusicDuckByte );
 		var killed = new List<int>(); var previousKiller = OriginalObjectRuntime.ParticleKiller; var previousAlive = OriginalObjectRuntime.ParticleAlive;
@@ -305,7 +407,7 @@ public class ParkFinaleTests
 			decoded[(category, 1, 1)] = new Mp2Audio( AudioMixer.OutputRate, 1, Enumerable.Repeat( (short)1000, 200 ).ToArray(), 1, 0 );
 			Audio( "events", system ); Audio( "<LevelRides>k__BackingField", category ); Audio( "<Rides>k__BackingField", category );
 			File.WriteAllBytes( Path.Combine( root, "script.RSE" ), new RideVMTests.Asm().I( Opcode.ADDOBJ, 5, -1, 44, 1 ).Label( "idle" ).I( Opcode.ENDSLICE ).I( Opcode.BRANCH, "idle" ).Build( Enum.GetNames<RideVariables>() ) );
-			var objects = Objects( Entry() ); var end = ParkFinale.StartForResearchCompletion( objects, ParkGameMode.InstantAction )!;
+			var objects = Objects( Entry() ); var end = ParkFinale.StartForResearchCompletion( objects )!;
 			end.Script!.Advance( FixedStepClock.TickDuration ); Assert.AreEqual( 1, end.Runtime.HeldSounds.Count );
 			var voice = mixer.Voices.Single(); Assert.IsTrue( voice.Loops && !voice.IsFinished );
 			ParkFinale.Dismiss( objects ); Assert.IsTrue( voice.IsFinished ); Assert.AreEqual( 0, end.Runtime.HeldSounds.Count );
@@ -319,7 +421,7 @@ public class ParkFinaleTests
 		var entry = Entry(); var objects = Objects( entry );
 		var dead = objects.Add( entry, 0, 0, 0 ); dead.Delete();
 		Assert.IsFalse( ParkFinale.IsActive( objects ) );
-		var live = ParkFinale.StartForResearchCompletion( objects, ParkGameMode.InstantAction ); Assert.AreNotSame( dead, live );
+		var live = ParkFinale.StartForResearchCompletion( objects ); Assert.AreNotSame( dead, live );
 		objects.Add( entry, 0, 0, 0 ); Assert.IsTrue( ParkFinale.Dismiss( objects ) );
 		Assert.IsFalse( ParkFinale.IsActive( objects ) );
 	}
@@ -360,7 +462,11 @@ public class ParkFinaleTests
 		Assert.IsTrue( hud.Update( context, UiInput.Click( new N.Vector2( 20, 20 ) ), false, false, false ) );
 		Assert.IsTrue( level.ResearchFinaleActive );
 		Assert.IsTrue( hud.Update( context, UiInput.Key( UiKeys.Back | UiKeys.Pause ), false, false, false ) );
-		Assert.IsFalse( level.ResearchFinaleActive ); Assert.AreEqual( "hud", hud.Stack.Top!.Name ); Assert.AreEqual( speed, hud.Status.Speed );
+		Assert.IsFalse( level.ResearchFinaleActive ); Assert.AreEqual( speed, hud.Status.Speed );
+		// Instant Action: the completion message's box follows the dismissal and holds the park until it closes
+		Assert.AreEqual( ParkHud.WinningMessageScreen, hud.Stack.Top!.Name ); Assert.AreEqual( 0f, hud.SimulationTimeScale );
+		hud.Update( context, UiInput.Key( UiKeys.Back ), false, false, false );
+		Assert.AreEqual( "hud", hud.Stack.Top!.Name ); Assert.AreEqual( speed, hud.Status.Speed );
 		hud.Update( context, UiInput.Idle( new N.Vector2( -1 ) ), false, false, false );
 		Assert.IsFalse( ((ParkCameraMode)Camera.Mode).ModalOpen ); Assert.IsFalse( ((ParkCameraMode)Camera.Mode).UiCapturesKeyboard );
 	}
@@ -412,11 +518,14 @@ public class ParkFinaleTests
 	}
 
 	[TestMethod]
-	public void ResumeButtonDismissesAndAStaleScreenCannotDismissANewFinale()
+	public void TheWinningScreenHasNoButtonAndAStaleScreenCannotDismissANewFinale()
 	{
 		var level = LevelFor( Objects( Entry() ) ); Complete( level ); var hud = Hud( level ); var context = Context();
 		hud.Update( context, UiInput.Idle( new N.Vector2( -1 ) ), false, false, false ); var previous = hud.Stack.Top!;
-		hud.Update( context, UiInput.Click( new N.Vector2( 1000, 1440 ) ), false, false, false ); Assert.IsFalse( level.ResearchFinaleActive );
+		Assert.IsFalse( previous.FocusableElements.Any(), "the original's winning window has no button: Escape and the late right click are its only exits" );
+		hud.Update( context, UiInput.Click( new N.Vector2( 1000, 1440 ) ), false, false, false ); Assert.IsTrue( level.ResearchFinaleActive, "a click does not leave" );
+		hud.Update( context, UiInput.Key( UiKeys.Back ), false, false, false ); Assert.IsFalse( level.ResearchFinaleActive );
+		hud.Update( context, UiInput.Key( UiKeys.Back ), false, false, false ); Assert.AreEqual( "hud", hud.Stack.Top!.Name, "the message box closes" );
 		Complete( level ); hud.Update( context, UiInput.Idle( new N.Vector2( -1 ) ), false, false, false );
 		previous.Back!(); Assert.IsTrue( level.ResearchFinaleActive ); Assert.AreEqual( "researchFinale", hud.Stack.Top!.Name );
 	}
@@ -427,7 +536,7 @@ public class ParkFinaleTests
 	{
 		var level = LevelFor( Objects( Entry() ) ); Complete( level ); var hud = Hud( level ); var context = Context();
 		hud.Update( context, UiInput.Idle( new N.Vector2( -1 ) ), false, false, false );
-		hud.Update( context, UiInput.Click( new N.Vector2( 1000, 1440 ) ), false, false, false ); Assert.IsFalse( level.ResearchFinaleActive );
+		hud.Update( context, UiInput.Key( UiKeys.Back ), false, false, false ); Assert.IsFalse( level.ResearchFinaleActive );
 		Assert.AreEqual( 1, level.Commands.Log.Count ); Assert.IsInstanceOfType( level.Commands.Log[0].Command, typeof( DismissFinaleCommand ) );
 		Assert.IsFalse( level.Commands.Issue( new DismissFinaleCommand() ).Accepted ); Assert.AreEqual( 2, level.Commands.Log.Count );
 	}
@@ -438,7 +547,7 @@ public class ParkFinaleTests
 		var level = LevelFor( Objects( Entry() ) ); Complete( level ); var hud = Hud( level ); var context = Context();
 		hud.Update( context, UiInput.Key( UiKeys.Back ), false, true, false ); Assert.IsTrue( level.ResearchFinaleActive );
 		hud.Update( context, UiInput.Key( UiKeys.Back ), false, false, true ); Assert.IsTrue( level.ResearchFinaleActive );
-		hud.Update( context, UiInput.Click( new N.Vector2( 1000, 1440 ) ), true, false, false ); Assert.IsTrue( level.ResearchFinaleActive );
+		hud.Update( context, UiInput.Key( UiKeys.Back ), true, true, false ); Assert.IsTrue( level.ResearchFinaleActive );
 		hud.Update( context, UiInput.Key( UiKeys.Back ), false, false, false ); Assert.IsFalse( level.ResearchFinaleActive );
 	}
 
@@ -468,7 +577,7 @@ public class ParkFinaleTests
 	public void DismissalQueuesTheFinaleThingForNormalEndOfTurnDestruction()
 	{
 		var objects = Objects( Entry() ); objects.Things = new ThingPool();
-		var end = ParkFinale.StartForResearchCompletion( objects, ParkGameMode.InstantAction )!;
+		var end = ParkFinale.StartForResearchCompletion( objects )!;
 		Assert.AreNotEqual( 0, end.ThingId ); Assert.IsTrue( objects.Things.IsUsed( end.ThingId ) );
 		Assert.IsTrue( ParkFinale.Dismiss( objects ) ); Assert.IsFalse( ParkFinale.IsActive( objects ) );
 		Assert.IsTrue( objects.Things.IsUsed( end.ThingId ), "the slot remains allocated until the normal deferred-destroy pass" );

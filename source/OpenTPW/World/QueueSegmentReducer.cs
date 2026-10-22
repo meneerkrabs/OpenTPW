@@ -145,7 +145,7 @@ internal sealed class QueueSegmentReducer
 
 	internal void Undo( QueueSegmentReceipt receipt )
 	{
-		if ( receipt.Start == ParkPathBuilder.SnapEnd( receipt.Start, receipt.End ) || !SupportsDomain( receipt.Start, receipt.End, false ) ) throw new InvalidOperationException( "Queue undo leaves the supported plain domain." );
+		if ( receipt.Start == ParkPathBuilder.SnapEnd( receipt.Start, receipt.End ) || !SupportsUndo( receipt.Start, receipt.End ) ) throw new InvalidOperationException( "Queue undo leaves the supported plain domain." );
 		// 52FE50: the prior corner currently being a path suppresses the second removal click altogether.
 		if ( cells.RawTypeAt( receipt.Start.X, receipt.Start.Y ) == 1 ) return;
 		var line = ParkPathBuilder.LayLine( receipt.End, receipt.Start );

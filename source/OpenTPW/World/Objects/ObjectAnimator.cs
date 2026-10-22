@@ -403,7 +403,8 @@ public sealed class ObjectAnimator
 	/// <summary>
 	/// One saved animation time control of an original save (tp.exe loader 0x4647A0, <see cref="SaveRideSystemControl"/>) put back on a channel: the clip is bound
 	/// without a channel start (no node list, no copy-back, no deferred-slot carry), its start lies <paramref name="elapsedMilliseconds"/> before this animator's clock,
-	/// so the next <see cref="Advance"/> continues the saved frame, and an ended control (channel flag 0x4) stays frozen on its last frame.
+	/// so the next <see cref="Advance"/> continues the saved frame, and an ended control (channel flag 0x4) stays frozen on its last frame. At an import the clock is 0,
+	/// so the start is negative, which the snapshot keeps (<see cref="AnimatorChannelSnapshot.StartMilliseconds"/>).
 	/// </summary>
 	// [BIN:TPW-EXE:0x00464BEF anim control restore] the loader copies the saved words over the live control (+0 flags, +4 AnimID, +8 SubAnim, +0x10 StartAnimTime, +0x14 AnimTime, +0x18 NoPauseAnimTime, +0xC the speed, +0x24/+0x28/+0x2C/+0x30 the deferred AnimID, SubAnim, flags and speed; field names from the dump 0x464580), sets the sample-once flag 0x10 when the ended flag 0x4 is set (0x464BFB) and binds the clip when the AnimID is not 12 and the sub-animation exists (0x472D10, 0x472CB0); it calls no trigger (0x472F60), so no node list and no copy-back run
 	// [BIN:TPW-EXE:0x004735D0 restored channel update] the next channel update recomputes the frame as (u32)(clock − StartAnimTime) × speed × 0.03 on the clock the save writer stored and the loader set again (0x4164C0, 0x415270), and an ended control (flags & 6 = 4) keeps the frame at its total

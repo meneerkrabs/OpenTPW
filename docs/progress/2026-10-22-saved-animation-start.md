@@ -1,0 +1,3 @@
+## Parks started from an original save can be saved again (October 22, 2026)
+
+Since the objects of an original save keep their saved animations, a park started from one (every Instant Action park and every loaded original save) could not be saved until each of those animations had started again: an animation that began before the object's own clock starts in OpenTPW has a start before zero, which the save refused as corrupt. The save now keeps such a start, as far back as the original's 32-bit elapsed time reaches ([TPWS-PAYLOAD.md](../TPWS-PAYLOAD.md)), so the autosave, a save by hand and a shared park's capture work for these parks again. The co-op join smoke found it.

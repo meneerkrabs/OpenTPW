@@ -90,6 +90,16 @@ public class SavedObjectAnimationTests
 		Assert.AreEqual( 50f, animator.GetTick( 0 ) );
 		var channel = animator.CaptureSnapshot().Channels.Single();
 		Assert.AreEqual( (5, 1, "gatesm2", true), (channel.AnimationId, channel.Variant, channel.ClipName, channel.Ended) );
+		// The import's start lies before this animator's clock began, and a save keeps it: the snapshot validates and restores the same frame.
+		Assert.AreEqual( -2_000L, channel.StartMilliseconds );
+		var saved = animator.CaptureSnapshot();
+		saved.ValidateSnapshot();
+		var reloaded = new ObjectAnimator( model );
+		reloaded.RestoreSnapshot( saved, identity => new ResolvedAnimatorClip( identity.Name, clip ) );
+		Assert.AreEqual( (50f, -1), (reloaded.GetTick( 0 ), reloaded.GetAnimation( 0 )) );
+		// The saved elapsed time is a 32-bit count of milliseconds: a start further back is no import's.
+		var tooFar = saved with { Channels = new[] { channel with { StartMilliseconds = -(long)uint.MaxValue - 1 } } };
+		Assert.ThrowsException<InvalidDataException>( tooFar.ValidateSnapshot );
 
 		// A running control continues from its saved frame: 30 × elapsed / 1000 × speed.
 		var running = new ObjectAnimator( model );
@@ -230,6 +240,15 @@ public class SavedObjectAnimationTests
 					var runtime = new OriginalObjectRuntime( entry );
 					var gaps = runtime.RestoreSavedScene( scene, save.RuntimeBlocks?.ClockWords[0] );
 					Assert.AreEqual( 0, gaps.Count, $"{name} {entry.SettingsName}: {string.Join( "; ", gaps )}" );
+					// an OpenTPW save of the imported park keeps the restored channels
+					try
+					{
+						runtime.Animator.CaptureSnapshot().ValidateSnapshot();
+					}
+					catch ( InvalidDataException exception )
+					{
+						Assert.Fail( $"{name} {entry.SettingsName}: {exception.Message}" );
+					}
 					var channels = runtime.Animator.CaptureSnapshot().Channels.ToDictionary( channel => channel.ChannelIndex );
 					for ( var index = 0; index < scene.Controls.Length; index++ )
 					{

@@ -27,3 +27,33 @@ The existing umbrella owner retains U2/U3/U4 runtime work. Coordinate with `buil
 
 ## Completion boundary
 Keep draft until the evidence/scope decision is documented, any chosen implementation is tested, and independent review accepts the exact results. A legitimate decision to retain an extension approximation must be explicit; this proposal does not itself retire the ID.
+
+## Current-source reconciliation (2026-10-22)
+
+This addendum supersedes the historical “not identified”/view-condition premise above. Source inspection is pinned to public main `1c874922df6e42425dc5638f7e2554c9fde2c68c`; this audit did not independently disassemble or execute the original.
+
+### Identified predicates, not camera visibility
+
+The current `source/OpenTPW/World/Umbrellas/UmbrellaApproximations.cs` UMB-002 entry records the two predicates as tests on the guest's kart/water track cell, indexed by `[+7] * 128 + [+5] + 1`:
+
+- `0x67F890` (thunk `0x40A344`) follows the 72-byte tile record to its 40-byte record through the first word, and extension records through their owner to the head, then applies track predicate `0x6856D0`.
+- `0x685680` (thunk `0x405F01`) reads the 40-byte record at the same cell index. The register states both predicates must hold.
+- The register also identifies the draw route `0x60AE00`, which can close the umbrella through `0x6142E0`, not only scheduling and due-change execution.
+
+These are existing public reverse-engineering records, not fresh verification in this reconciliation. Do not replace them with frustum visibility, selection or online-identification state.
+
+### Current host behavior and evidence boundary
+
+`GuestSimulation.Umbrellas.cs` is now on main, so the historical unmerged-U2-base dependency is no longer an accurate description of where this implementation lives. `UpdateUmbrella` uses the age/day gate and weather action; `Schedule` checks the host inside-attraction predicate; `CarryOut` checks inside and due time. None queries a track-cell predicate. The code explicitly documents this omission.
+
+The register records 71,591 sampled Jungle guest positions, with and without kart/boat tracks, with no walking guest on a track cell; riders are represented as inside their attraction. This is bounded recorded sample evidence, not a universal reachability proof for every save, extension, malformed input or future movement path, and was not rerun here.
+
+### Next bounded action
+
+1. Preserve the existing omission for the supported host model while documenting it as an approximation, not a fidelity completion.
+2. Review every transition capable of placing a guest on a track cell, including restored and extension states. Establish whether the condition is actually reachable before adding new guest state or callbacks.
+3. If a supported reachable case is found, produce the two-predicate truth table and separate schedule, due-change and draw-close traces. Specify pending due-time retention, inside-attraction interaction and weather reversals before implementing a shared predicate.
+4. If no supported reachable case exists, record that bounded policy and its evidence without claiming that a finite sample proves all states impossible.
+
+The residual is the omitted track-cell test, not unknown camera/view state. UMB-001 delay, UMB-003 inside-state mapping and UMB-004 rendering remain separate owners. This is a documentation reconciliation only: no runtime change, new native evidence, tests-run claim, identifier retirement or full UMB-002 acceptance. Keep draft until the scoped policy/evidence and review gates are met.
+

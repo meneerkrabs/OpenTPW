@@ -1,0 +1,3 @@
+## Faster start: shaders are compiled once, not at every start (October 22, 2026)
+
+The game compiled its shaders from source at every start, about a third of a second on a fast Mac before the lobby could appear and more on a slower PC, and again for a few park shaders when a park started or the buy window first showed a turning preview. The compiled shaders are now kept in the user's cache folder and reused while the source and the compiler are the same, which brings the time from start to the lobby down by about 40 % on that Mac (issue #754). A damaged or missing cache file is simply compiled again ([ENGINE-PERFORMANCE.md](../ENGINE-PERFORMANCE.md), "Kept SPIR-V").

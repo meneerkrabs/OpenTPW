@@ -142,6 +142,94 @@ public class ShaderTests
 	}
 
 	/// <summary>
+	/// Issue #754 (start time): compiled SPIR-V is kept between runs. A kept stage is the compiler's own bytes for the same input, the second compile of the
+	/// program reads them instead of compiling, and a damaged file is compiled again and replaced (docs/ENGINE-PERFORMANCE.md, "Start and build hitches").
+	/// </summary>
+	[TestMethod]
+	[DoNotParallelize]
+	public void CompiledSpirvIsKeptBetweenRunsAndADamagedFileIsCompiledAgain()
+	{
+		if ( !OperatingSystem.IsWindows() && Environment.GetEnvironmentVariable( "OPENTPW_NATIVE_SHADER_TESTS" ) != "1" )
+			Assert.Inconclusive( "Set OPENTPW_NATIVE_SHADER_TESTS=1 with architecture-matching native SPIR-V libraries (Windows has them)." );
+		Log = new();
+		var path = GetShaderPath( "sprite.shader" );
+		var cache = Directory.CreateTempSubdirectory( "opentpw-spirv-" ).FullName;
+		var previous = ShaderCompiler.SpirvCacheDirectory;
+		try
+		{
+			ShaderCompiler.SpirvCacheDirectory = null;
+			var uncached = ShaderCompiler.CompileProgram( path, CrossCompileTarget.MSL );
+			ShaderCompiler.SpirvCacheDirectory = cache;
+			LoadProfile.Enable( true );
+			var first = ShaderCompiler.CompileProgram( path, CrossCompileTarget.MSL );
+			Assert.AreEqual( 2, LoadProfile.Counters()["spirv compiles"], "an empty cache compiles both stages" );
+			Assert.AreEqual( 2, Directory.GetFiles( cache, "*.spv" ).Length, "and keeps them" );
+			LoadProfile.Enable( true );
+			var second = ShaderCompiler.CompileProgram( path, CrossCompileTarget.MSL );
+			var counters = LoadProfile.Counters();
+			Assert.AreEqual( 2, counters["spirv cache hits"] );
+			Assert.IsFalse( counters.ContainsKey( "spirv compiles" ), "a kept program is not compiled again" );
+			CollectionAssert.AreEqual( uncached.Vertex, first.Vertex );
+			CollectionAssert.AreEqual( uncached.Fragment, first.Fragment );
+			CollectionAssert.AreEqual( uncached.Vertex, second.Vertex, "a kept stage is the compiler's own bytes" );
+			CollectionAssert.AreEqual( uncached.Fragment, second.Fragment );
+			Assert.AreEqual( uncached.Reflection.ResourceLayouts.Length, second.Reflection.ResourceLayouts.Length );
+			CollectionAssert.AreEqual( uncached.Reflection.ResourceLayouts.SelectMany( layout => layout.Elements ).Select( element => element.Name ).ToArray(),
+				second.Reflection.ResourceLayouts.SelectMany( layout => layout.Elements ).Select( element => element.Name ).ToArray() );
+
+			// a damaged file (cut to half a module after it was written) fails its digest: compiled again and replaced
+			var vertexFile = ShaderCompiler.SpirvCacheFile( path, Veldrid.ShaderStages.Vertex )!;
+			var fragmentFile = ShaderCompiler.SpirvCacheFile( path, Veldrid.ShaderStages.Fragment )!;
+			var whole = File.ReadAllBytes( vertexFile );
+			File.WriteAllBytes( vertexFile, whole.Take( whole.Length / 2 ).ToArray() );
+			LoadProfile.Enable( true );
+			var repaired = ShaderCompiler.CompileProgram( path, CrossCompileTarget.MSL );
+			Assert.AreEqual( 1, LoadProfile.Counters()["spirv compiles"] );
+			CollectionAssert.AreEqual( uncached.Vertex, repaired.Vertex );
+			CollectionAssert.AreEqual( uncached.Fragment, repaired.Fragment );
+			CollectionAssert.AreEqual( whole, File.ReadAllBytes( vertexFile ), "the damaged file is replaced" );
+
+			// a file that is whole (its digest matches) and starts as SPIR-V but is not what the compiler made (each stage halved, as a review did):
+			// the cross-compiler refuses it, the kept files are removed and the program is compiled from its source
+			ShaderCache.Write( cache, vertexFile, uncached.Vertex.Take( uncached.Vertex.Length / 8 * 4 ).ToArray() );
+			ShaderCache.Write( cache, fragmentFile, uncached.Fragment.Take( uncached.Fragment.Length / 8 * 4 ).ToArray() );
+			LoadProfile.Enable( true );
+			var recompiled = ShaderCompiler.CompileProgram( path, CrossCompileTarget.MSL );
+			counters = LoadProfile.Counters();
+			Assert.AreEqual( 1, counters["spirv cache refused"] );
+			Assert.AreEqual( 2, counters["spirv compiles"] );
+			CollectionAssert.AreEqual( uncached.Vertex, recompiled.Vertex );
+			CollectionAssert.AreEqual( uncached.Fragment, recompiled.Fragment );
+			LoadProfile.Enable( true );
+			var afterwards = ShaderCompiler.CompileProgram( path, CrossCompileTarget.MSL );
+			Assert.AreEqual( 2, LoadProfile.Counters()["spirv cache hits"], "the refused files were replaced by the compiler's own" );
+			CollectionAssert.AreEqual( uncached.Fragment, afterwards.Fragment );
+
+			// the expiry counts from the last use: a used file is kept, an unused one goes when a new file is written
+			var longAgo = DateTime.UtcNow - ShaderCache.Lifetime - TimeSpan.FromDays( 1 );
+			File.SetLastWriteTimeUtc( vertexFile, longAgo );
+			var unused = Path.Combine( cache, "unused.spv" );
+			File.WriteAllBytes( unused, [1, 2, 3] );
+			File.SetLastWriteTimeUtc( unused, longAgo );
+			ShaderCompiler.CompileProgram( path, CrossCompileTarget.MSL );
+			Assert.IsTrue( File.GetLastWriteTimeUtc( vertexFile ) > longAgo, "a used file's time is refreshed" );
+			ShaderCache.Write( cache, Path.Combine( cache, "new.spv" ), [3, 2, 0x23, 7] );
+			Assert.IsFalse( File.Exists( unused ), "a file unused for the lifetime is removed when a new one is written" );
+			Assert.IsTrue( File.Exists( vertexFile ) );
+
+			// another source is another key
+			Assert.AreNotEqual( ShaderCompiler.SpirvCacheKey( "void main() {}", path, Veldrid.ShaderStages.Vertex, new GlslCompileOptions( true ) ),
+				ShaderCompiler.SpirvCacheKey( "void main() { }", path, Veldrid.ShaderStages.Vertex, new GlslCompileOptions( true ) ) );
+		}
+		finally
+		{
+			LoadProfile.Enable( false );
+			ShaderCompiler.SpirvCacheDirectory = previous;
+			Directory.Delete( cache, true );
+		}
+	}
+
+	/// <summary>
 	/// Issue #754: Veldrid.SPIRV's HLSL passes a varying interface block (<c>out Name { ... } name;</c>) as its own main() parameter,
 	/// so on Direct3D 11 the vertex output and pixel input signatures disagree about register order and the pixel shader reads the
 	/// wrong varyings. Stage inputs and outputs must be plain variables or <c>struct</c> variables (uniform blocks are fine).

@@ -28,6 +28,8 @@ public static class LanguageInterfaceArchive
 		if ( string.Equals( replacement, Current, StringComparison.Ordinal ) && (replacement == null) == (files.ArchiveRedirect == null) )
 			return;
 		Current = replacement;
+		// the archive that stops being read keeps no file open
+		WadArchive.CloseFileHandles();
 		files.ArchiveRedirect = replacement == null ? null : candidate => string.Equals( Path.GetFullPath( candidate ), Path.GetFullPath( game! ), StringComparison.OrdinalIgnoreCase ) ? replacement : null;
 		files.InvalidateLookups();
 		UiImages.ResetListings();

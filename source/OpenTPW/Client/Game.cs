@@ -9,6 +9,10 @@ internal static class Game
 	public static void Run( string[] args )
 	{
 		Log = new();
+		// [EXT:perf-run] --startup-profile: the start's phases up to the lobby (docs/ENGINE-PERFORMANCE.md, "Start and build hitches"); measurement only
+		if ( args.Contains( "--startup-profile" ) )
+			StartupProfile.Begin();
+		CoopSession.ChangesParkOutsideCommands = ChangesParkOutsideCommands( args );
 		SdlMovieAudioOutput.Suppressed = IsSilentRun( args, Environment.GetEnvironmentVariable( "OPENTPW_SILENT" ), Environment.GetEnvironmentVariable( "OPENTPW_OFFSCREEN" ) );
 		Window.OffscreenRequested = IsOffscreenRun( args, Environment.GetEnvironmentVariable( "OPENTPW_OFFSCREEN" ) );
 		// [EXT:online-coop-commands] a strict run throws on a command applied inside a simulation tick and on one that throws (docs/COOP.md, "No command inside a tick"); only ever
@@ -140,9 +144,7 @@ internal static class Game
 			RequireThemeParkIncViewer( args, edition );
 
 		// Register game data directory
-		FileSystem = new BaseFileSystem( dataDirectory );
-		FileSystem.RegisterArchiveHandler<WadArchive>( ".wad" );
-		FileSystem.RegisterArchiveHandler<SdtArchive>( ".sdt" );
+		FileSystem = GameDataFileSystem.Create( dataDirectory );
 
 		// Debug export of every sign texture in one language (docs/RUNNING.md, "Sign textures"): the language is the option's own, the language data is found as below; no window, audio or park.
 		if ( args.Contains( "--export-signs" ) )
@@ -160,6 +162,7 @@ internal static class Game
 		// OPENTPW_LANGUAGE_DATA, then language.json, then the old Language / LanguageDataPath
 		// user settings (docs/LANGUAGES.md)
 		//
+		var languagePhase = StartupProfile.Phase( "language" );
 		var languageDiagnostics = new List<string>();
 		var languageSettings = LanguageSettings.Load( LanguageSettings.GetDefaultPath(), languageDiagnostics );
 		foreach ( var diagnostic in languageDiagnostics )
@@ -180,11 +183,15 @@ internal static class Game
 				Log.Trace( $"Interface archive: {LanguageInterfaceArchive.Current} (the language's own ui.wad)" );
 		}
 
+		languagePhase.Dispose();
+
 		// Compatibility: --cd-data overlay, media diagnostics, profile/fixes, graphics preset (docs/COMPATIBILITY.md)
-		CompatibilityStartup.Initialize( args, dataDirectory );
+		using ( StartupProfile.Phase( "compatibility" ) )
+			CompatibilityStartup.Initialize( args, dataDirectory );
 
 		// [EXT:mods] Extensions and data-only mods (docs/MODS.md): resolved once here; mods.json changes apply at the next start.
-		OpenTPW.Mods.ModStartup.Initialize( args, Log.Trace, Log.Warning );
+		using ( StartupProfile.Phase( "mods" ) )
+			OpenTPW.Mods.ModStartup.Initialize( args, Log.Trace, Log.Warning );
 
 		// Official bonus objects (docs/OBJECTS.md): --bonus-data, else OPENTPW_BONUS_DATA, else the saved bonus folder, else <config>/bonus.
 		var bonusSettings = SetupSettings.Load( SetupSettings.GetDefaultPath() );
@@ -300,9 +307,13 @@ internal static class Game
 		SaveFileSystem = new BaseFileSystem( GetSaveDirectory() );
 
 		//
-		// Custom OpenTPW cache directory (mainly for editor-related stuff)
+		// Custom OpenTPW cache directory (mainly for editor-related stuff), in the user configuration directory: the working
+		// directory may be a read-only install folder now that OpenTPW runs without administrator rights
 		//
-		CacheFileSystem = new BaseFileSystem( $"./.opentpw" );
+		var cacheDirectory = Path.Combine( Path.GetDirectoryName( SetupSettings.GetDefaultPath() )!, "cache" );
+		CacheFileSystem = new BaseFileSystem( cacheDirectory );
+		// compiled SPIR-V is kept between runs (ShaderCompiler.CompileStage): the same sources are not compiled again at every start
+		ShaderCompiler.SpirvCacheDirectory = Path.Combine( cacheDirectory, "shaders" );
 
 		//
 		// Init renderer
@@ -311,7 +322,8 @@ internal static class Game
 		var visit = visitPath == null ? null : ParkSharing.PrepareVisit( OpenTPW.Online.Packages.ParkPackage.Load( visitPath ) );
 		if ( visit != null )
 			Log.Trace( ParkSharing.Describe( visit ) );
-		Render = DisplayStartup.CreateRenderer( args );
+		using ( StartupProfile.Phase( "renderer" ) )
+			Render = DisplayStartup.CreateRenderer( args );
 		// [EXT:script-mods] the crash marker was written at startup; it is removed after 15 seconds of frames (docs/SCRIPT-MODS.md)
 		if ( OpenTPW.Mods.ScriptSafeMode.Current is { } scriptStartMarker )
 			Render.OnUpdate += scriptStartMarker.Update;
@@ -331,7 +343,9 @@ internal static class Game
 		// plain --smoke-test bypass it as before; --front-end --smoke-test tests the front end.
 		GameAudio.Enabled = !args.Contains( "--mute" );
 		// --no-advisor turns automatic advice off; the manual --advisor-say/--advisor-response presentation replaces it.
+		var flowPhase = StartupProfile.Phase( "game-flow" );
 		using var flow = new GameFlow { OnlineFolders = onlineFolders, AutomaticAdvisorEnabled = !args.Contains( "--no-advisor" ) && !args.Contains( "--advisor-say" ) && !args.Contains( "--advisor-response" ) };
+		flowPhase.Dispose();
 		var capturePath = GetOption( args, "--capture-world", "a .png file for the world-only screenshot" );
 		var smoke = args.Contains( "--smoke-test" );
 		var parkResumePhase = GetOption( args, "--park-resume-smoke", "'capture' or 'restore'" );
@@ -342,6 +356,14 @@ internal static class Game
 			if ( parkResumeFile == null || parkResumeEvidence == null )
 				throw new ArgumentException( "--park-resume-smoke also needs --park-resume-file and --park-resume-evidence." );
 			ParkResumeSmokeTest.Run( flow, parkResumePhase, parkResumeFile, parkResumeEvidence );
+			return;
+		}
+		// [EXT:online-coop-snapshot-join] the native join smoke (docs/COOP.md, "The game's join"): a host phase and a fresh join phase over recorded frames
+		if ( GetOption( args, "--coop-join-smoke", "'host' or 'join'" ) is { } coopJoinPhase )
+		{
+			var coopJoinEvidence = GetOption( args, "--coop-join-evidence", "an evidence directory" )
+				?? throw new ArgumentException( "--coop-join-smoke also needs --coop-join-evidence." );
+			CoopJoinSmokeTest.Run( flow, coopJoinPhase, coopJoinEvidence );
 			return;
 		}
 		var startsFrontEnd = visit == null && originalLevelIndex < 0 && !args.Contains( "--advisor-say" ) && !args.Contains( "--advisor-response" ) && !args.Contains( "--sandbox" ) && (!smoke || args.Contains( "--front-end" ));
@@ -393,6 +415,14 @@ internal static class Game
 			// [EXT:perf-run] --perf-hash-tick <tick> logs the park's world state hash (Level.ComputeStateHash) at the frame whose park tick is exactly that one, so two runs (the evening extension on and off, say)
 			// can be compared on a real level with its placed objects; use --perf-speed 1 so no frame steps over the tick
 			long? perfHashTick = GetOption( args, "--perf-hash-tick", "a park tick" ) is { } hashTickText && long.TryParse( hashTickText, out var parsedHashTick ) && parsedHashTick > 0 ? parsedHashTick : null;
+			// [EXT:perf-run] --perf-digest adds the co-op session digest's cost on the running park to every 600th frame's line (CoopDigest.MeasureCost, the median of five; docs/COOP.md,
+			// "Measurements"); the five digests run inside that frame, so leave it out of frame-time runs
+			var perfDigest = args.Contains( "--perf-digest" );
+			// [EXT:perf-run] --perf-crowd <n> stages n guests on the park's paths once the door opens (UmbrellaPerf.Stage without weather or umbrellas, as the browser harness's PerfCrowd), so a
+			// measurement sees a full park at once; the park is not a real run afterwards
+			int? perfCrowd = GetOption( args, "--perf-crowd", "a number of guests" ) is { } perfCrowdText
+				? int.TryParse( perfCrowdText, out var parsedPerfCrowd ) && parsedPerfCrowd is > 0 and <= 5000 ? parsedPerfCrowd : throw new ArgumentException( "--perf-crowd expects a number of guests from 1 to 5000." )
+				: null;
 			int perfWarmup = 0, perfDone = 0;
 			var perfOpened = false;
 			Render.PostUpdate += () =>
@@ -413,6 +443,8 @@ internal static class Game
 						perfCamera.SetPose( perfCamera.Target, zoom, perfCamera.Yaw );
 					if ( perfArrivals is { } arrivals && perfLevel.Guests != null )
 						perfLevel.Guests.Settings.ArrivalTimeBetween = arrivals;
+					if ( perfCrowd is { } crowd && perfLevel.Guests != null )
+						Log.Trace( $"--perf-crowd: {UmbrellaPerf.Stage( perfLevel.Guests, null, crowd, 0, false ).Guests} guests in the park." );
 				}
 				if ( perfHashTick is { } hashTick && perfPark.Economy.Tick == hashTick )
 				{
@@ -420,9 +452,62 @@ internal static class Game
 					Log.Trace( $"--perf-run: world state hash {perfLevel.ComputeStateHash():x16} at park tick {hashTick}, {perfLevel.PointLights.Count} point lights in view." );
 				}
 				if ( ++perfDone % 600 == 0 )
-					Log.Trace( $"--perf-run: frame {perfDone}: {perfLevel.Guests?.Guests.Count} guests, park tick {perfPark.Economy.Tick}, {(perfPark.Economy.IsParkOpen ? "open" : "closed")}, {perfPark.Economy.Counters[ParkCounters.Admissions]} admissions, balance ${perfPark.Economy.Balance}, {perfLevel.PointLights.Count} point lights in view." );
+				{
+					var digestCost = perfDigest && CoopDigest.MeasureCost( perfLevel, 5 ) is var (digest, worldHash) ? $", session digest {digest:0.00} ms (world hash {worldHash:0.00} ms) on {perfLevel.Objects.Objects.Count} objects" : "";
+					Log.Trace( $"--perf-run: frame {perfDone}: {perfLevel.Guests?.Guests.Count} guests, park tick {perfPark.Economy.Tick}, {(perfPark.Economy.IsParkOpen ? "open" : "closed")}, {perfPark.Economy.Counters[ParkCounters.Admissions]} admissions, balance ${perfPark.Economy.Balance}, {perfLevel.PointLights.Count} point lights in view{digestCost}." );
+				}
 				if ( perfDone >= perfFrames )
 					Render.Window.SdlWindow.Close();
+			};
+		}
+		// [EXT:perf-run] --hitch-report <ms> logs every frame at least that long with the work recorded in it; --perf-build (with --load-original-level) does what a player does when
+		// building: the buy window's tabs and rows, then one object of several types placed (PerfBuildScenario); --startup-profile logs the start's phases at the lobby's 120th frame
+		// and closes the window (docs/ENGINE-PERFORMANCE.md, "Start and build hitches"). Measurement only.
+		HitchReport? hitchReport = null;
+		if ( GetOption( args, "--hitch-report", "a frame length in milliseconds" ) is { } hitchText )
+		{
+			hitchReport = new HitchReport( double.TryParse( hitchText, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var hitchMilliseconds ) && hitchMilliseconds > 0
+				? hitchMilliseconds : throw new ArgumentException( "--hitch-report expects a frame length in milliseconds, for example 50." ) );
+			Render.PreUpdate += hitchReport.FrameStarted;
+		}
+		if ( args.Contains( "--perf-build" ) )
+		{
+			if ( originalLevelIndex < 0 )
+				throw new ArgumentException( "--perf-build needs --load-original-level." );
+			var buildPlacements = GetOption( args, "--perf-build-placements", "objects placed per buy tab" ) is { } placementText
+				? int.TryParse( placementText, out var parsedPlacements ) && parsedPlacements is >= 0 and <= 50 ? parsedPlacements : throw new ArgumentException( "--perf-build-placements expects 0 to 50." )
+				: 3;
+			if ( hitchReport == null )
+			{
+				hitchReport = new HitchReport( 50 );
+				Render.PreUpdate += hitchReport.FrameStarted;
+			}
+			var scenario = new PerfBuildScenario( flow, hitchReport, buildPlacements, () =>
+			{
+				foreach ( var line in StartupProfile.Sections() )
+					Log.Trace( "Build profile:" + line );
+				Render.Window.SdlWindow.Close();
+			} );
+			Render.PostUpdate += scenario.Update;
+		}
+		if ( StartupProfile.Active && startsFrontEnd )
+		{
+			var lobbyFrames = new List<double>();
+			var firstLobbyFrame = -1d;
+			var lastFrame = 0d;
+			Render.PostUpdate += () =>
+			{
+				if ( flow.Lobby == null || flow.Level != null || firstLobbyFrame < 0 && (firstLobbyFrame = StartupProfile.Elapsed) < 0 )
+					return;
+				var now = StartupProfile.Elapsed;
+				if ( lastFrame > 0 )
+					lobbyFrames.Add( now - lastFrame );
+				lastFrame = now;
+				if ( lobbyFrames.Count < 120 )
+					return;
+				foreach ( var line in StartupProfile.Report( firstLobbyFrame, lobbyFrames ) )
+					Log.Trace( line );
+				Render.Window.SdlWindow.Close();
 			};
 		}
 		// [EXT:debug-evening] smoke and performance runs (docs/EVENING.md; also in Release builds, unlike most debug options): --evening-pace <minutes10|minutes20|minutes40|day|dusk|night> sets the evening extension's day cycle for this run only (a run-scoped override in Level, never written to the options, so never saved), and
@@ -785,7 +870,10 @@ internal static class Game
 							var bridgeCells = shape.Select( cell => (X: originX + cell.X, Y: originY + cell.Y) ).ToArray();
 							var bridgeDelay = GetOption( args, "--debug-bridge-delay", "frames to wait after swimmers exist before building the bridge" ) is { } delayText
 								&& int.TryParse( delayText, out var delay ) && delay > 0 ? delay : 0;
-							var debugBridge = args.Contains( "--debug-bridge" ) && bridgeDelay == 0 ? level.BuildDebugPoolBridge( bridgeCells ) : null;
+							// [EXT:debug-pool] --debug-bridge-bare lays no path at the bridge's ends; --debug-bridge-direction N (0 north, 1 east, 2 south, 3 west) restricts the direction
+							var bridgeBare = args.Contains( "--debug-bridge-bare" );
+							int? bridgeDirection = GetOption( args, "--debug-bridge-direction", "0 north, 1 east, 2 south, 3 west" ) is { } directionText && int.TryParse( directionText, out var parsedDirection ) ? parsedDirection : null;
+							var debugBridge = args.Contains( "--debug-bridge" ) && bridgeDelay == 0 ? level.BuildDebugPoolBridge( bridgeCells, !bridgeBare, bridgeDirection ) : null;
 							if ( args.Contains( "--debug-bridge" ) && bridgeDelay > 0 )
 							{
 								var bridgeFrames = 0;
@@ -796,7 +884,7 @@ internal static class Game
 									if ( level.SwimmerRenderer == null || ++bridgeFrames < bridgeDelay ) return;
 									Render.PostUpdate -= BuildLateBridge;
 									Log.Trace( $"--debug-bridge-delay: building after {bridgeFrames} frames with existing guest/staff/swimmer renderers; swimmers {level.Guests!.Guests.Count( guest => guest.IsSwimming )}." );
-									if ( level.BuildDebugPoolBridge( bridgeCells ) is { } lateBridge ) level.StartDebugBridgeWalkers( lateBridge );
+									if ( level.BuildDebugPoolBridge( bridgeCells, !bridgeBare, bridgeDirection ) is { } lateBridge ) level.StartDebugBridgeWalkers( lateBridge );
 								}
 							}
 							// [EXT:debug-swimmers] smoke-only: --debug-swimmers N builds a changing room beside the pool (through the level's own placement, which charges it and needs the pool at its back) and
@@ -968,7 +1056,7 @@ internal static class Game
 			}
 		}
 		// [EXT:debug-hud] smoke-only (Debug builds): once the park's HUD is up, runs a list of interface actions for captures (--capture-interface):
-		// staff and buy open those windows, buyitem:<info id>[,<yaw degrees>] opens the buy window on that object type's row (making it available as the research cheat does when it is still in the lab, and holding its preview at that turn), msg:<text> posts a message, msgaction:<kind>+<kind> posts one with action buttons, pause and confirm open those menus, select:<n> selects the n-th placed object, waves opens the first wave machine's settings window (waves:select only selects it), help:<text> forces the popup help line, models:<a+b+c> draws ui.wad models.
+		// staff and buy open those windows, buyitem:<info id>[,<yaw degrees>] opens the buy window on that object type's row (making it available as the research cheat does when it is still in the lab, and holding its preview at that turn), msg:<text> posts a message, msgaction:<kind>+<kind> posts one with action buttons, pause and confirm open those menus, select:<n> selects the n-th placed object, waves opens the first wave machine's settings window (waves:select only selects it), help:<text> forces the popup help line, models:<a+b+c> draws ui.wad models, finale starts the end-of-park finale and winningmessage shows the Instant Action completion box.
 		var debugHud = GetOption( args, "--debug-hud", "a '|' separated action list for interface captures" );
 		if ( debugHud != null )
 		{
@@ -1011,6 +1099,7 @@ internal static class Game
 								Log.Warning( $"--debug-hud: no row {row} in the buy window's {tab}." );
 							break;
 						}
+						case "buyyaw": hud.DebugHoldBuyYaw( float.Parse( argument, System.Globalization.CultureInfo.InvariantCulture ) ); break;
 						case "msg": hud.PostGameMessage( argument ); break;
 						case "openmsg": hud.OpenPendingMessage( 0 ); break;
 						case "msgaction": hud.PostGameMessage( "A message with two actions", argument.Split( '+' ).Select( kind => new OpenTPW.Hud.GameMessageAction( Enum.Parse<OpenTPW.Hud.GameMessageKind>( kind, true ), () => { } ) ).ToArray() ); break;
@@ -1020,6 +1109,8 @@ internal static class Game
 						case "select": if ( flow.Level.Objects.Objects.Skip( int.Parse( argument ) ).FirstOrDefault() is { } selected ) hud.SelectObject( selected ); break;
 						case "help": hud.DebugHelp( argument ); break;
 						case "ride": hud.DebugRide( argument ); break;
+						case "finale": hud.DebugFinale(); break;
+						case "winningmessage": hud.DebugWinningMessage(); break;
 						case "models": hud.DebugShowModels( argument.Split( '+' ) ); break;
 						default: Log.Warning( $"--debug-hud: unknown action {name}." ); break;
 					}
@@ -1109,6 +1200,16 @@ internal static class Game
 	}
 
 	/// <summary>
+	/// [EXT:online-coop-lockstep] Whether a run's options may change the park outside the commands, so the game shares no park (<see cref="CoopSession.CanShare"/>): every
+	/// <c>--debug-*</c> and <c>--perf-*</c> option and every smoke (<see cref="SmokeFlags"/>).
+	/// </summary>
+	internal static bool ChangesParkOutsideCommands( string[] args ) =>
+		args.Any( arg => arg.StartsWith( "--debug-", StringComparison.Ordinal ) || arg.StartsWith( "--perf-", StringComparison.Ordinal ) ) || args.Intersect( SmokeFlags ).Any();
+
+	/// <summary>The smokes. Each builds or edits its park outside the commands (<see cref="ChangesParkOutsideCommands"/>), and each is an automated run (<see cref="IsAutomatedRun"/>).</summary>
+	internal static readonly string[] SmokeFlags = { "--smoke-test", "--tpi-smoke-test", "--park-resume-smoke", "--smoke-presence" };
+
+	/// <summary>
 	/// The automated modes that [EXT:silent-automated-runs] and [EXT:offscreen-automated-runs] share, so the two rules cannot drift apart: smokes
 	/// (<c>--smoke-test</c>, <c>--tpi-smoke-test</c>, <c>--park-resume-smoke</c>, <c>--smoke-presence</c>), captures (<c>--capture-*</c>), perf runs
 	/// (<c>--perf-*</c>), gates, guest reports, asset validation, every <c>--debug-*</c> option (they exist for smoke captures and agent runs, none is a
@@ -1119,11 +1220,16 @@ internal static class Game
 		args.Any( arg => arg.StartsWith( "--capture-", StringComparison.Ordinal ) || arg.StartsWith( "--perf-", StringComparison.Ordinal ) || arg.StartsWith( "--debug-", StringComparison.Ordinal ) )
 		|| args.Intersect( AutomatedFlags ).Any();
 
-	private static readonly string[] AutomatedFlags =
+	/// <summary>
+	/// The automated modes beyond the smokes. [EXT:online-coop-snapshot-join] <c>--coop-join-smoke</c> is one, never a <see cref="SmokeFlags"/> entry: its host phase shares the park it built before
+	/// the session started, which a smoke flag's <see cref="ChangesParkOutsideCommands"/> would refuse.
+	/// </summary>
+	private static readonly string[] AutomatedFlags = SmokeFlags.Concat( new[]
 	{
-		"--smoke-test", "--tpi-smoke-test", "--park-resume-smoke", "--smoke-presence", "--perf-run", "--perf-hash-tick",
+		"--coop-join-smoke",
+		"--perf-run", "--perf-hash-tick", "--startup-profile", "--hitch-report",
 		"--offscreen", "--headless", "--m3-gate", "--m4-gate", "--determinism-digest", "--guest-report", "--guest-compare", "--validate-assets", "--export-signs",
-	};
+	} ).ToArray();
 
 	/// <summary>
 	/// [EXT:silent-automated-runs] every automated run (<see cref="IsAutomatedRun"/>) opens no audio device, so tests and agents on a developer machine make
@@ -1407,21 +1513,73 @@ internal static class Game
 		}
 	}
 
-	private static string GetSaveDirectory()
+	private static string GetSaveDirectory() => ResolveSaveDirectory( Settings.Default.GamePath, Path.GetDirectoryName( SetupSettings.GetDefaultPath() )! );
+
+	/// <summary>
+	/// The game folder's <c>save</c> directory when files can be written there, else <c>save</c> under <paramref name="fallbackRoot"/>.
+	/// OpenTPW runs without administrator rights, so a game folder under Program Files usually is not writable even when its
+	/// <c>save</c> directory already exists: a probe file is written and deleted to find out before the first save does. Saves an
+	/// earlier, elevated OpenTPW wrote beside such a game are copied into the fallback once (an existing file is never replaced).
+	/// </summary>
+	internal static string ResolveSaveDirectory( string gamePath, string fallbackRoot )
 	{
-		var beside = Path.Combine( Settings.Default.GamePath, "save" );
+		var beside = Path.Combine( gamePath, "save" );
 		try
 		{
 			Directory.CreateDirectory( beside );
+			using ( new FileStream( Path.Combine( beside, $".opentpw-write-test-{Guid.NewGuid():N}" ), FileMode.CreateNew, FileAccess.Write, FileShare.None, 1, FileOptions.DeleteOnClose ) ) { }
 			return beside + Path.DirectorySeparatorChar;
 		}
 		catch ( Exception exception ) when ( exception is IOException or UnauthorizedAccessException )
 		{
-			var fallback = Path.Combine( Path.GetDirectoryName( SetupSettings.GetDefaultPath() )!, "save" );
+			var fallback = Path.Combine( fallbackRoot, "save" );
 			Directory.CreateDirectory( fallback );
 			Log.Warning( $"The game folder is read-only ({exception.Message}); saves go to {fallback}." );
+			// The marker makes the copy happen once: a save, autosave or restart snapshot deleted later must not come back
+			var marker = Path.Combine( fallback, CopiedSavesMarker );
+			if ( Directory.Exists( beside ) && !File.Exists( marker ) )
+			{
+				var copied = CopyMissingSaves( beside, fallback );
+				try { File.WriteAllText( marker, $"Earlier saves copied from {beside}{Environment.NewLine}" ); }
+				catch ( Exception markerException ) when ( markerException is IOException or UnauthorizedAccessException ) { Log.Warning( $"Could not write {marker} ({markerException.Message})." ); }
+				if ( copied > 0 )
+					Log.Info( $"Copied {copied} earlier save file(s) from {beside} to {fallback}; the originals are left in place." );
+			}
 			return fallback + Path.DirectorySeparatorChar;
 		}
+	}
+
+	/// <summary>Written in the fallback save folder once the earlier saves beside the game have been copied.</summary>
+	internal const string CopiedSavesMarker = ".copied-from-game-folder";
+
+	/// <summary>Copies every file under <paramref name="source"/> that <paramref name="destination"/> lacks; unreadable files are skipped.</summary>
+	private static int CopyMissingSaves( string source, string destination )
+	{
+		var copied = 0;
+		try
+		{
+			foreach ( var file in Directory.EnumerateFiles( source, "*", SearchOption.AllDirectories ) )
+			{
+				var target = Path.Combine( destination, Path.GetRelativePath( source, file ) );
+				if ( File.Exists( target ) )
+					continue;
+				try
+				{
+					Directory.CreateDirectory( Path.GetDirectoryName( target )! );
+					File.Copy( file, target, overwrite: false );
+					copied++;
+				}
+				catch ( Exception exception ) when ( exception is IOException or UnauthorizedAccessException )
+				{
+					Log.Warning( $"Could not copy the earlier save {file} ({exception.Message})." );
+				}
+			}
+		}
+		catch ( Exception exception ) when ( exception is IOException or UnauthorizedAccessException )
+		{
+			Log.Warning( $"Could not list the earlier saves in {source} ({exception.Message})." );
+		}
+		return copied;
 	}
 
 	/// <summary><c>--build-texture-pack --upscaler &lt;realesrgan-ncnn-vulkan&gt;</c>: builds the optional local texture pack (docs/TEXTURE-PACKS.md).</summary>

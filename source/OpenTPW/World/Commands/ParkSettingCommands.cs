@@ -624,8 +624,13 @@ public sealed record RenameParkCommand( string Line1, string Line2 ) : ParkSetti
 		writer.String( Line2 );
 	}
 
-	internal override ParkCommandResult Execute( Level level ) =>
-		level.RenamePark( Line1, Line2 ) ? ParkCommandResult.Ok() : ParkCommandResult.Rejected( "The park name is not valid." );
+	internal override ParkCommandResult Execute( Level level )
+	{
+		// [EXT:online-coop-lockstep] the secret park name turns the cheats on, and a session has none (decision Q17): refused alike on every peer (ParkCommands.SessionRules)
+		if ( level.Commands.SessionRules && SecretParkName.Matches( Line1, Line2 ) )
+			return ParkCommandResult.Rejected( "Cheats are off in a shared park." );
+		return level.RenamePark( Line1, Line2 ) ? ParkCommandResult.Ok() : ParkCommandResult.Rejected( "The park name is not valid." );
+	}
 }
 
 /// <summary>The park's game speed (the speed buttons and the time keys): paused, normal, fast or fastest. A park without an economy keeps its speed in the HUD.</summary>
@@ -686,6 +691,9 @@ public sealed record QueueCheatCommand( CheatKind Cheat, int Argument = 0 ) : Pa
 
 	internal override ParkCommandResult Execute( Level level )
 	{
+		// [EXT:online-coop-lockstep] a co-op session has no cheats (decision Q17), refused alike on every peer (ParkCommands.SessionRules)
+		if ( level.Commands.SessionRules )
+			return ParkCommandResult.Rejected( "Cheats are off in a shared park." );
 		if ( level.Park?.Economy is not { } economy )
 			return NoEconomy;
 		// the other cheats act once the cheat mode is on or waits for the next turn (the cheats window's rule; the Alt keys need it on)
@@ -706,6 +714,9 @@ public sealed record SetAllObjectsOpenCommand( bool Open ) : ParkSettingCommand
 
 	internal override ParkCommandResult Execute( Level level )
 	{
+		// [EXT:online-coop-lockstep] the developer panel's open-all and close-all skip the reopening guard: a co-op session refuses them alike on every peer
+		if ( level.Commands.SessionRules )
+			return ParkCommandResult.Rejected( "The developer panel is off in a shared park." );
 		if ( level.Objects is not { } objects )
 			return ParkCommandResult.Rejected( "The park has no objects." );
 		foreach ( var item in objects.Objects.ToArray() )

@@ -14,10 +14,15 @@ public partial class Level
 		{
 			if ( value != null )
 				StaffPlacement?.Cancel();
+			var moveEnds = IsMoving;
 			buildEntry = value;
 			// any other way of arming or leaving the build tool ends the Move tool (interface mode 0x3b) and the add-on mode; BeginMove and BeginAddOn set theirs after they armed the entry
 			IsMoving = false;
 			buildAddOnRide = null;
+			// [EXT:online-coop-commands] the Move tool's end is a command, once the tool's state is the ended one: its player carries the picked-up type no more (a placement cannot say
+			// whether the tool stays)
+			if ( moveEnds )
+				Commands.Issue( new EndMoveCommand() );
 		}
 	}
 
@@ -136,6 +141,11 @@ public partial class Level
 			var cells = Guests.Grid.Cells;
 			foreach ( var item in Objects.Objects )
 			{
+				// [EXT:online-coop-snapshot-join] a join's cells are the host's live ones as its snapshot holds them: no footprint is written again (a live park's writes nothing anyway:
+				// the writer writes only differences, and no Theme Park World shape has '@' or 'Q' cells) and nothing is repaired (a placement under a negative balance leaves its entrance
+				// and exit without links, which the repair would lay)
+				if ( joinRestore != null )
+					continue;
 				cells.WriteFootprint( item.Cells, OwnerWord( item ), item.Placement.Rotation );
 				// an imported park's entrance and exit cells carry the link byte its save holds, as the original's load reads it (a resumed park's cells come from its own snapshot)
 				if ( resumeState == null && visitLayout == null && OriginalPark?.Save is { } save )
@@ -199,7 +209,7 @@ public partial class Level
 		// The arrival update sends the level's bus, seaplane or Ferry (tp.exe 0x004CF3E0); a Theme Park Inc world keeps the vehicle-less step-off.
 		if ( !GameEditions.IsThemeParkInc && ArrivalVehicles.Available( Objects.Catalog ) )
 		{
-			Guests.ArrivalVehicles = new ArrivalVehicles( Objects );
+			Guests.ArrivalVehicles = new ArrivalVehicles( Objects, BindFixedItemMadeInPlay );
 		}
 	}
 
@@ -682,7 +692,7 @@ public partial class Level
 			return;
 		if ( Objects.Grid is OriginalParkGrid originalGrid )
 			originalGrid.LiveCells = () => Guests?.Grid.Cells;
-		Paths = new ParkPathBuilder( Guests.Grid.Cells, Guests.Grid, () => Park?.Economy, Objects.Grid, IsPathBlocked )
+		Paths = new ParkPathBuilder( Guests.Grid.Cells, Guests.Grid, () => Park?.Economy, Objects.Grid, IsPathBuildBlocked )
 		{
 			// [BIN:TPW-EXE:0x00534A91 queue neighbour sound] the writer plays cat_ui 139 only while game+36 (0x785A2C, the park's money) is clear: here, while a park economy runs
 			Effects = new LinkEffects( RefreshTile, ( x, y ) =>
@@ -719,6 +729,9 @@ public partial class Level
 	// Objects, fixed items (the gate and entrance included) and the sandbox Totem block paths like their original cell types do; an object of a lower
 	// overwrite priority than the path's gives way instead (ParkPathBuilder.ObjectGivesWay).
 	private bool IsPathBlocked( int x, int y ) => PoolBridges?.Reserves( x, y ) == true || Objects.FindAt( x, y ) != null || IsReservedByPrototype( x, y ) || (Guests != null && PoolSlides?.ReservesLand( x, y, Guests.Grid.Cells ) == true);
+
+	/// <summary>[EXT:pools-bridges] The same rule for laying a path, except that the cells just outside a bridge's two ends stay open: a bridge needs no path there, so the player lays one later.</summary>
+	private bool IsPathBuildBlocked( int x, int y ) => PoolBridges?.Covers( x, y ) == true || Objects.FindAt( x, y ) != null || IsReservedByPrototype( x, y ) || (Guests != null && PoolSlides?.ReservesLand( x, y, Guests.Grid.Cells ) == true);
 
 	/// <summary>How the cell map holds a path for the object build rule: none, a plain path (cleared by the placement) or a NoModify one (refused).</summary>
 	internal static ObjectPathCell? ObjectPathAt( ParkCellMap cells, int x, int y )
@@ -769,16 +782,18 @@ public partial class Level
 		if ( IsReadOnlyVisit || Guests == null || ride.QueueFrontCell is not { } front )
 			return false;
 		StaffPlacement?.Cancel();
-		ride.RecomputeQueue( Guests.Grid );
-		var start = Guests.Grid.IsQueue( front.X, front.Y ) ? ride.QueueBackCell : front;
+		// [EXT:online-coop-lockstep] the tool reads the queue as it stands now on a copy (a grid edit since the last recompute taken in): entering a tool changes nothing in
+		// the park, and each queue command brings the ride's own queue up to date first, on every peer
+		var queue = ride.QueueView( Guests.Grid );
+		var start = Guests.Grid.IsQueue( front.X, front.Y ) ? queue.QueueBackCell : front;
 		// [BIN:TPW-EXE:0x00530120 corner walk] the tool's entry walks the queue into the stack of corner points (0x81B740) and sets the line start to its last point; the tool's undo then takes the queue back segment by segment (Back 0x52FE50)
 		// a queue of its front cell alone (a ride just placed) keeps the one-point stack the placement leaves, so its first click lays from the front cell
-		var stack = Guests.Grid.IsQueue( front.X, front.Y ) && ride.QueueCells.Count >= 2 ? QueuePaths.CornerStack( Guests.Grid, ride ) : null;
+		var stack = Guests.Grid.IsQueue( front.X, front.Y ) && queue.QueueCells.Count >= 2 ? QueuePaths.CornerStack( Guests.Grid, queue ) : null;
 		if ( stack is not { Count: >= 2 } || stack[^1] != start )
 			stack = null;
 		// [EXT:online-coop-commands] the tool's previews read the ride's queue writer; each committed line is a command
 		CellTool.Enter( new ParkCommandLineWriter( CreateQueueWriter( ride ), Commands, ride.AttractionId ), start,
-			stack, stack == null ? null : QueuePaths.StackSegments( ride, stack ) );
+			stack, stack == null ? null : QueuePaths.StackSegments( queue, stack ) );
 		return true;
 	}
 
@@ -970,7 +985,7 @@ public partial class Level
 	{
 		if ( IsReadOnlyVisit || Paths == null )
 			return CellBuildResult.NotPath;
-		if ( PoolBridges?.Reserves( x, y ) == true ) return CellBuildResult.Occupied;
+		// the bridge protection (its own cells, and the last way off an occupied bridge) lives in ParkPathBuilder.Clear, which Remove and RemoveFixed share
 		// [EXT:removable-access-cells] the path cell the placement laid outside an entrance or exit (flag 0x20) can be removed, where tp.exe's cell clear keeps a NoModify cell that has neighbours (the forced clear 0x5367A0(0, 0) refuses it with "Removing path cell with no neighbours but NOMODIFY set" otherwise); the map start's initial path stays fixed
 		var access = IsAccessCell( x, y );
 		var result = access ? Paths.RemoveFixed( x, y ) : Paths.Remove( x, y );
@@ -1162,7 +1177,9 @@ public partial class Level
 		!QueueTerrainAllows( x, y ) || (Objects.FindAt( x, y ) != null && !QueueGivesWay( x, y )) || IsReservedByPrototype( x, y )
 		|| (Guests?.Grid.Cells is { } cells && cells.InBounds( x, y ) && cells.FlagsAt( x, y ).HasFlag( ParkCellFlags.Unowned ))
 		// [EXT:pools-slides] a slide's track keeps its land cells for its pylons
-		|| (Guests != null && PoolSlides?.ReservesLand( x, y, Guests.Grid.Cells ) == true);
+		|| (Guests != null && PoolSlides?.ReservesLand( x, y, Guests.Grid.Cells ) == true)
+		// [EXT:pools-bridges] a bridge's cells and the two outside end cells (bare or with a path) take no queue: a queue there would break the bridge's save and its entrance
+		|| PoolBridges?.Reserves( x, y ) == true;
 
 	/// <summary>The terrain rule for a queue cell; its path cells (the save's and the map start's) are the live cell map's to judge, as for objects.</summary>
 	private bool QueueTerrainAllows( int x, int y ) => Objects.Grid.CheckTerrain( x, y ) switch
@@ -1413,7 +1430,8 @@ public partial class Level
 		{
 			try
 			{
-				placed = Objects.TryPlace( entry, anchor.X, anchor.Y, rotation, out _, open: BuiltObjectStartsOpen( entry ), registered: item => registered = item )!;
+				using ( LoadProfile.Measure( "place-object" ) )
+					placed = Objects.TryPlace( entry, anchor.X, anchor.Y, rotation, out _, open: BuiltObjectStartsOpen( entry ), registered: item => registered = item )!;
 			}
 			finally
 			{
@@ -1423,9 +1441,11 @@ public partial class Level
 			if ( !BuiltObjectStartsOpen( entry ) )
 				placed.Runtime.Hoarding.SetState( ObjectHoardingState.CloseMode );
 			// [BIN:TPW-EXE:0x558e7c build effect] the type's CreateParticleEffect starts when the new object's script attaches, not when a park loads
-			placed.Runtime.StartObjectEffect( ObjectParticleEffect.Create );
+			using ( LoadProfile.Measure( "place-effect" ) )
+				placed.Runtime.StartObjectEffect( ObjectParticleEffect.Create );
 			// [BIN:TPW-EXE:0x528e30 placement cue] the commit pass of the placement plays its size-classed cat_ui cue
-			PlayPlacementCue( entry, x, y, rotation );
+			using ( LoadProfile.Measure( "place-cue" ) )
+				PlayPlacementCue( entry, x, y, rotation );
 		}
 		catch ( Exception error )
 		{
@@ -1697,6 +1717,25 @@ public partial class Level
 		if ( instance is not int id || !park.Economy.TryGetObject( id, out _ ) )
 			return null;
 		return park.Economy.Sell( id );
+	}
+
+	/// <summary>
+	/// Gives a fixed item the game makes while the park is played its uncharged economy record, as the park's start does for the fixed items already standing
+	/// (<see cref="ConnectObjectsToEconomy"/>): an arrival vehicle at its first trip and the research finale's End. The original builds them with the common object constructor,
+	/// which counts the type and stamps its first-purchase turn, and saves an attraction record for each (the Bus, Seaplane and Ferry of every shipped TPWS). Nothing is charged: the
+	/// constructor debits an object's price, and every fixed item's is 0. The constructor also stamps the park's newest construction, which the advisor keeps
+	/// (<see cref="ParkEventKind.FixedItemMade"/>): the park is told of every object made here, also of one the economy catalogue does not know, which gets no record.
+	/// Call it only for an object made now; an object already bound is left as it is.
+	/// </summary>
+	// [BIN:TPW-EXE:0x004DB690,0x004DB6CA object constructor] the type's record takes the turn at +0x1C while it is 0 and counts the object at +0x18, for every object it constructs
+	// [BIN:TPW-EXE:0x004DB4E2 object constructor] the price debit (0x4D01F0) of the type's price (+0x1B8): Upgrades[0].CostOfUpgrade, which every fixed item's file sets to 0
+	// [BIN:TPW-EXE:0x004DB7A3 object stamp] and its single exit stamps the park's mLastObjectBuilt with the park time (0x4C7680) for every object it constructs
+	private void BindFixedItemMadeInPlay( OriginalObject item )
+	{
+		if ( Park == null || economyInstances.ContainsKey( item ) )
+			return;
+		if ( Park.Economy.RegisterFixedItemMade( item.Entry.InfoId ) is { } record )
+			LinkEconomy( item, record.Id );
 	}
 
 	private void LinkEconomy( OriginalObject item, int instance )

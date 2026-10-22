@@ -82,11 +82,11 @@ public class EventKeyCensusTests
 	}
 
 	/// <summary>
-	/// Census of the EVENT instruction's type operand over every shipped script: the custom-bank type 10 (tp.exe 0x5573d0 case 10: the thing type's own numbered bank, slot 5, found by
-	/// 0x4145e0) has no shipped user, so the port's unrouted type 10 loses no sound. Skips without <c>OPENTPW_GAME_PATH</c>.
+	/// Census of the EVENT instruction's type operand over every shipped script: type 10 (tp.exe 0x5573d0 case 10: the object type's own sound list, type record +0x4F0, found by
+	/// 0x4145e0; ObjectTypeSoundsTests) has no shipped user. Skips without <c>OPENTPW_GAME_PATH</c>.
 	/// </summary>
 	[TestMethod]
-	public void NoShippedScriptSubmitsAnEventOfTheCustomBankType10()
+	public void NoShippedScriptSubmitsAnObjectSoundOfType10()
 	{
 		if ( ObjectCatalogCorpusTests.UseOriginalData( out var previous ) == null )
 			Assert.Inconclusive( "Set OPENTPW_GAME_PATH to the original game." );
@@ -95,6 +95,7 @@ public class EventKeyCensusTests
 			var types = new SortedDictionary<int, int>();
 			var variableTypes = 0;
 			var scripts = 0;
+			var otherTypeTen = new List<string>();
 			foreach ( var theme in ObjectCatalog.Themes )
 			{
 				foreach ( var entry in ObjectCatalog.Load( theme ).Entries )
@@ -115,12 +116,20 @@ public class EventKeyCensusTests
 							}
 							types[type.Value] = types.GetValueOrDefault( type.Value ) + 1;
 						}
+						// the other forms that reach the dispatcher 0x5573d0: EVENT_EXT, ADDOBJ and ADDOBJ_EXT
+						foreach ( var instruction in script.Instructions.Where( item => item.Opcode is (ushort)Opcode.EVENT_EXT or (ushort)Opcode.ADDOBJ or (ushort)Opcode.ADDOBJ_EXT && item.Operands.Count >= 3 ) )
+						{
+							var type = instruction.Operands[0];
+							if ( type.Kind != RideScriptOperandKind.Literal || type.Value == 10 )
+								otherTypeTen.Add( $"{entry.ArchivePath} {path} {(Opcode)instruction.Opcode} {type.Kind} {type.Value}" );
+						}
 					}
 				}
 			}
 			Console.WriteLine( $"EVENT type census: {scripts} scripts; " + string.Join( ", ", types.Select( pair => $"type {pair.Key}: {pair.Value}" ) ) + $"; variable types {variableTypes}" );
 			Assert.AreEqual( 0, variableTypes, "the type operand is a literal in every shipped script" );
-			Assert.IsFalse( types.ContainsKey( 10 ), "a shipped script submits an EVENT of the custom-bank type 10" );
+			Assert.IsFalse( types.ContainsKey( 10 ), "a shipped script submits an EVENT of type 10 (the object type's own sound list)" );
+			Assert.AreEqual( 0, otherTypeTen.Count, "an EVENT_EXT, ADDOBJ or ADDOBJ_EXT of type 10 or a variable type: " + string.Join( "; ", otherTypeTen.Take( 5 ) ) );
 		}
 		finally
 		{

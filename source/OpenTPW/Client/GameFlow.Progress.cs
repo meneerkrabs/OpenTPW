@@ -153,6 +153,8 @@ internal sealed partial class GameFlow
 
 	private void RequestProgressQuit()
 	{
+		// [EXT:online-coop-snapshot-join] a shared park leaves its session first, so the check below saves what the hand-back gave back
+		LeaveCoopSession( "The player quit the game." );
 		try { RequireProgressSaved(); Quit(); }
 		catch ( Exception error ) when ( ProgressFailure( error ) ) { ShowProgressFailure( error ); }
 	}
@@ -160,17 +162,56 @@ internal sealed partial class GameFlow
 	internal void AttachProgress( Level level )
 	{
 		DetachProgress();
-		if ( !ReferenceEquals( Level, level ) || level.IsReadOnlyVisit || level.IsThemeParkIncSlice || !GameEditions.Capabilities.Economy || !ObjectCatalog.Themes.Contains( level.LevelName, StringComparer.Ordinal ) ||
-			level.Park is not { Start.Kind: ParkStartKind.FullSimulation } runtime || runtime.Economy.Mode != ParkGameMode.FullSimulation ) return;
+		// [EXT:online-coop-snapshot-join] a co-op guest's park is the host's: it never takes part in this player's progress
+		if ( !ReferenceEquals( Level, level ) || level.IsReadOnlyVisit || level.IsCoopGuestPark || level.IsThemeParkIncSlice || !GameEditions.Capabilities.Economy || !ObjectCatalog.Themes.Contains( level.LevelName, StringComparer.Ordinal ) )
+			return;
+		if ( level.Park is { Start.Kind: ParkStartKind.InstantAction } instant && instant.Economy.Mode == ParkGameMode.InstantAction )
+		{
+			// Instant Action keeps no tickets or keys, but its research completion still marks the player's park record (InstantActionResearchRecords)
+			level.ResearchRecords = new InstantActionResearchRecords( ProgressPath, () => ReferenceEquals( Level, level ) && ReferenceEquals( level.Park, instant ) && level.CoopSession == null );
+			return;
+		}
+		if ( level.Park is not { Start.Kind: ParkStartKind.FullSimulation } runtime || runtime.Economy.Mode != ParkGameMode.FullSimulation ) return;
 		try
 		{
 			var state = PlayerTicketFile.ReadIfPresent( ProgressPath );
 			if ( state?.Ledger.Mode != ParkGameMode.FullSimulation ) { progressNotice = Strings.Extra( OpenTpwText.ProgressTrackingUnavailable ); return; }
-			progressOwner = new( ProgressPath, level.LevelName, state, runtime,
-				() => ReferenceEquals( Level, level ) && ReferenceEquals( level.Park, runtime ) && !level.IsReadOnlyVisit,
-				message => { progressNotice = message; shownProgressNotice = null; } );
+			var owner = progressOwner = new( ProgressPath, level.LevelName, state, runtime,
+				() => ReferenceEquals( Level, level ) && ReferenceEquals( level.Park, runtime ) && !level.IsReadOnlyVisit && !level.IsCoopGuestPark,
+				message => { progressNotice = message; shownProgressNotice = null; }, () => level.CoopSession != null );
+			level.ResearchRecords = new OwnerResearchRecords( owner );
 		}
 		catch ( Exception error ) when ( ProgressFailure( error ) ) { Log.Warning( $"OpenTPW tracking unavailable: {error.Message}" ); progressNotice = Strings.Extra( OpenTpwText.ProgressTrackingUnavailable ); }
+	}
+
+	/// <summary>A Full Simulation park's records: the attached progress owner's ledger, saved as the owner saves.</summary>
+	private sealed class OwnerResearchRecords( PlayerProgressRuntimeOwner owner ) : IPlayerResearchRecords
+	{
+		public void RecordCompleted( string theme ) => owner.RecordResearchCompleted();
+		public bool CompletedEverywhereWith( string theme ) => owner.ResearchCompletedEverywhere;
+	}
+
+	/// <summary>
+	/// An Instant Action park's records: its research completion marks the park's record in the player's progress file when there is one, as the original's completion handler
+	/// marks the current player's record in every game type; an Instant Action park never reads them (it starts its finale anyway).
+	/// </summary>
+	// [EXT:no-player-profiles] without an own progress file there is no player whose record could be marked (the file is made only with the player's consent), so nothing is written
+	// [EXT:online-coop-snapshot-join] a park in a co-op session leaves the player's records alone, as the Full Simulation's owner does
+	internal sealed class InstantActionResearchRecords( string path, Func<bool> active ) : IPlayerResearchRecords
+	{
+		public void RecordCompleted( string theme )
+		{
+			if ( !active() ) return;
+			try
+			{
+				if ( PlayerTicketFile.ReadIfPresent( path ) is not { } state || state.Ledger.Mode != ParkGameMode.FullSimulation || !state.Ledger.RecordResearchCompleted( theme ) )
+					return;
+				PlayerTicketFile.SaveIfUnchanged( path, state.Ledger.Capture(), state.Digest );
+			}
+			catch ( Exception error ) when ( ProgressFailure( error ) ) { Log.Warning( $"OpenTPW progress: the research record of {theme} was not saved: {error.Message}" ); }
+		}
+
+		public bool CompletedEverywhereWith( string theme ) => false;
 	}
 
 	/// <summary>The keys of the attached player ledger (the HUD's key counter), null while none is attached.</summary>
@@ -194,7 +235,11 @@ internal sealed partial class GameFlow
 		}
 	}
 
-	private void DetachProgress() { progressOwner?.Dispose(); progressOwner = null; progressNotice = null; shownProgressNotice = null; displayedProgressDetail = null; }
+	private void DetachProgress()
+	{
+		if ( Level is { } level ) level.ResearchRecords = null;
+		progressOwner?.Dispose(); progressOwner = null; progressNotice = null; shownProgressNotice = null; displayedProgressDetail = null;
+	}
 	private void PumpProgress()
 	{
 		progressOwner?.Pump();

@@ -71,10 +71,13 @@ jobs:
         with:
           python-version: '3.12'
       - name: Test release publication safeguards
-        run: python -I tools/test_publish_release.py
+        run: |
+          python -I tools/test_publish_release.py
+          python -I tools/test_check_release_natives.py
   natives:
     needs: configure
-    # Source builds of the pinned native libraries the NuGet packages lack for these runtimes.
+    # Source builds of the pinned native libraries the NuGet packages lack for these runtimes, plus SDL2 for win-x64/win-x86,
+    # where Veldrid.SDL2 carries SDL 2.0.8 (its WASAPI output drops audio, issue #754; docs/RELEASES.md).
     strategy:
       fail-fast: false
       matrix:
@@ -85,6 +88,12 @@ jobs:
           - rid: win-arm64
             os: windows-11-arm
             libraries: veldrid-spirv cimgui sdl2
+          - rid: win-x64
+            os: windows-latest
+            libraries: sdl2
+          - rid: win-x86
+            os: windows-latest
+            libraries: sdl2
           - rid: linux-arm64
             os: ubuntu-22.04-arm
             libraries: veldrid-spirv cimgui
@@ -114,8 +123,8 @@ jobs:
         include:
           - { rid: osx-arm64, os: macos-latest, native: true }
           - { rid: win-arm64, os: windows-latest, native: true }
-          - { rid: win-x64, os: windows-latest, native: false }
-          - { rid: win-x86, os: windows-latest, native: false }
+          - { rid: win-x64, os: windows-latest, native: true }
+          - { rid: win-x86, os: windows-latest, native: true }
           - { rid: linux-x64, os: ubuntu-22.04, native: false }
           - { rid: linux-arm64, os: ubuntu-22.04, native: true }
     runs-on: ${{ matrix.os }}
@@ -138,6 +147,13 @@ jobs:
           dotnet publish source/OpenTPW/OpenTPW.csproj --configuration Release --runtime ${{ matrix.rid }} \
             --self-contained true --nologo --output "publish/OpenTPW-${{ matrix.rid }}"
           cp README.md LICENSE.md docs/RELEASES.md "publish/OpenTPW-${{ matrix.rid }}/"
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+      # A Windows folder must hold exactly one SDL2.dll, no older than the source pin (never the package's 2.0.8).
+      - name: Check bundled native libraries
+        shell: bash
+        run: python -I tools/check_release_natives.py --rid ${{ matrix.rid }} "publish/OpenTPW-${{ matrix.rid }}"
       - name: Archive (Windows)
         if: ${{ startsWith(matrix.rid, 'win-') }}
         shell: pwsh

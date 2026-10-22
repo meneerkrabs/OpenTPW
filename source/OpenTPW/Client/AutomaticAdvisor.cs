@@ -101,8 +101,10 @@ internal sealed partial class AutomaticAdvisor : IDisposable
 		{
 			park.EventRaised += OnParkEvent;
 			park.Economy.Objectives.TimeShort += OnChallengeTimeShort;
-			// [BIN:TPW-EXE:0x004C58C0 park init] the analyser stamps the object and hire words with the current time (0x4C5CAF, 0x4C5CDE); a loaded park's snapshot or save then replaces them
-			(objectStampTurn, hireStampTurn) = EconomyParkState.NewestStamps( park.Economy );
+			// [BIN:TPW-EXE:0x004C58C0 park init] the analyser stamps the object and hire words with the current time (0x4C5CAF, 0x4C5CDE); an OpenTPW save's snapshot then replaces them
+			// [BIN:TPW-EXE:0x005156A0 park setup] after the init (0x5159C8) the setup constructs the gates and the lights (0x515BE1, 0x515C94), which stamp the object word again at the same turn 0: a new park's newest standing object
+			// [BIN:TPW-EXE:0x004C5D70 analyser serializer] a park from an original save keeps the words its analyser saved, which the load reads back (0x4C7289, 0x4C72B3) and nothing it loads restamps: the import's turns of them (OriginalEconomyImport.AnalyserStampTurns)
+			(objectStampTurn, hireStampTurn) = park.Import?.AnalyserStampTurns ?? EconomyParkState.NewestStamps( park.Economy );
 		}
 		guests = started.Guests;
 		if ( guests != null )
@@ -181,7 +183,8 @@ internal sealed partial class AutomaticAdvisor : IDisposable
 		if ( item.Kind == ParkEventKind.BankruptcyMessage )
 			Raise( AdvisorGameEvent.Bankrupted );
 		// [BIN:TPW-EXE:0x004DB7A3 object stamp] every object construction and every staff init (0x504C65) rewrites the park's stamp with the current time (mLastObjectBuilt, mLastStaffHired)
-		if ( item.Kind == ParkEventKind.ObjectBuilt )
+		// [BIN:TPW-EXE:0x004DB090 object constructor] the constructor runs for a build and the Move tool's re-placement (the build commit 0x529E10 at 0x529FD5), an arrival vehicle's first trip (0x51A57E) and the finale's End (0x516B8B); the park setup's gates and lights (0x515BE1, 0x515C94) are built at turn 0, before this advisor attaches
+		if ( item.Kind is ParkEventKind.ObjectBuilt or ParkEventKind.FixedItemMade )
 			objectStampTurn = ParkCalendar.Turn( item.Tick );
 		if ( item.Kind == ParkEventKind.StaffHired )
 			hireStampTurn = ParkCalendar.Turn( item.Tick );
@@ -204,8 +207,8 @@ internal sealed partial class AutomaticAdvisor : IDisposable
 			PostEventAdvice( groupAdvice, $"a new {(ResearchCategory)item.Amount} research group" );
 		if ( item.Kind == ParkEventKind.GlobalTicketMoved && GlobalTicketMovedMessage( (GoldenTicketKind)item.Amount ) is { } movedAdvice )
 			PostEventAdvice( movedAdvice, $"the {(GoldenTicketKind)item.Amount} ticket moved here" );
-		// [BIN:TPW-EXE:0x00503E8E all research done] 0x167 (167) is posted in Instant Action (the game-type word 0xFB3B7C is 2) without further test; in the full simulation only when the player's ledger has the flag +0xB9 of every park (0x5B0C40), which OpenTPW's ledger lacks
-		if ( item.Kind == ParkEventKind.ResearchAllDone && GameType == 2 )
+		// [BIN:TPW-EXE:0x00503E8E all research done] 167 (0xA7) is posted in Instant Action (the game-type word 0xFB3B7C is 2) without further test; in the full simulation only when the player's records have the byte +0xB9 of every park (0x5B0C40, 0x503F96), the same test that starts the finale
+		if ( item.Kind == ParkEventKind.ResearchAllDone && (GameType == 2 || GameType == 0 && level?.ResearchCompletionStartsFinale() == true) )
 			PostEventAdvice( 167, "all research done" );
 		ChallengesOnParkEvent( item );
 		RestoredOnParkEvent( item );
@@ -585,6 +588,9 @@ internal sealed partial class AutomaticAdvisor : IDisposable
 		if ( snapshot.SpeechWasActive )
 			throw new InvalidDataException( "Automatic advisor snapshot is inconsistent: it claims active speech, which cannot be restored." );
 		Controller.ValidateSnapshot( snapshot.Controller );
+		// the capture writes the two stamps together, and a snapshot from before they were kept holds neither
+		if ( snapshot.ObjectStampTurn.HasValue != snapshot.HireStampTurn.HasValue )
+			throw new InvalidDataException( "Automatic advisor snapshot is inconsistent: it holds only one of the object and hire stamps." );
 		// A group cut above the park limit is negative; the ring and the hype callback keep that signed value.
 		if ( snapshot.ArrivalWaves is { } waves && waves.Count > AdvisorArrivalRing.Capacity )
 			throw new InvalidDataException( "Automatic advisor snapshot is inconsistent: its arrival history contains more than five group sizes." );
@@ -603,7 +609,7 @@ internal sealed partial class AutomaticAdvisor : IDisposable
 		ValidateSnapshot( snapshot );
 		Controller.RestoreSnapshot( snapshot.Controller );
 		lastScanTurn = null;
-		// a snapshot from before the stamps were kept leaves the ones derived at attach
+		// a snapshot from before the stamps were kept leaves the ones the attach derived (a resumed park has no import whose saved words it could take)
 		objectStampTurn = snapshot.ObjectStampTurn ?? objectStampTurn;
 		hireStampTurn = snapshot.HireStampTurn ?? hireStampTurn;
 		// Existing host snapshot policy treats absent and explicitly empty records with admissions as unrecorded. Native empty data at AttachLevel is authoritative, but this later restore stage still applies that legacy heuristic.

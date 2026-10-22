@@ -9,7 +9,10 @@ public partial class Level
 {
 	private ParkCommands? commands;
 	private ParkCommandRecorder? commandRecorder;
-	/// <summary>The catalogue entry each player picked up with the Move tool (<see cref="PickUpObjectCommand"/>): a moving placement must name it (the Move tool's purchase skips research and the balance test).</summary>
+	/// <summary>
+	/// The catalogue entry each player picked up with the Move tool (<see cref="PickUpObjectCommand"/>), until its tool ends (<see cref="EndMoveCommand"/>): a moving placement must name it (the Move
+	/// tool's purchase skips research and the balance test). A placement keeps it, as the tool may stay for another of the type (a click holding exactly Ctrl).
+	/// </summary>
 	private Dictionary<int, string>? carriedEntries;
 	/// <summary>While a <see cref="PlaceObjectCommand"/> runs: whether it is the Move tool's placement (<see cref="PlaceObject(ObjectCatalogEntry, int, int, int)"/> reads it instead of <see cref="IsMoving"/>).</summary>
 	private bool? commandPlacementMoving;
@@ -23,13 +26,6 @@ public partial class Level
 	/// <summary>Starts recording the park's commands and its hash checkpoints from now on (<c>--record-commands</c>); a recording already running is kept.</summary>
 	public ParkCommandRecorder StartCommandRecording() =>
 		commandRecorder ??= new ParkCommandRecorder( Commands, LevelName ?? "", Seed.Value, simulationClock?.TickCount ?? 0, ComputeStateHash() );
-
-	/// <summary>Stops the recording of the park's commands, if one runs (a co-op session's own recording when the session ends).</summary>
-	internal void StopCommandRecording()
-	{
-		commandRecorder?.Dispose();
-		commandRecorder = null;
-	}
 
 	/// <summary>The command log recorded so far, with the world hash now as its final checkpoint; null while nothing records.</summary>
 	public ParkCommandLogFile? CommandLog() =>
@@ -63,11 +59,23 @@ public partial class Level
 	private RideVisitorBridge? ResolveCommandRide( int attraction ) =>
 		Guests?.Attractions.OfType<RideVisitorBridge>().FirstOrDefault( ride => ride.HasQueue && ride.AttractionId == attraction );
 
+	/// <summary>
+	/// <see cref="ResolveCommandRide"/> for a queue line command, which goes ahead once its ride is found, its queue brought up to date first (as the queue edit's is): the queue tool's
+	/// entry only reads the queue (<see cref="EnterQueueTool"/>), so a grid edit since the last recompute is taken in here, on every peer alike.
+	/// </summary>
+	private RideVisitorBridge? ResolveQueueCommandRide( int attraction )
+	{
+		if ( ResolveCommandRide( attraction ) is not { } ride || Guests == null )
+			return null;
+		ride.RecomputeQueue( Guests.Grid );
+		return ride;
+	}
+
 	/// <summary>The line writer a command's line is laid and taken back through: the path builder, or the queue writer of the ride.</summary>
 	private ICellLineWriter? CommandLineWriter( CellToolMode mode, int ride ) => mode switch
 	{
 		CellToolMode.Path => Paths,
-		CellToolMode.Queue when ResolveCommandRide( ride ) is { } bridge && Guests != null => CreateQueueWriter( bridge ),
+		CellToolMode.Queue when ResolveQueueCommandRide( ride ) is { } bridge => CreateQueueWriter( bridge ),
 		_ => null
 	};
 
@@ -90,6 +98,7 @@ public partial class Level
 			? Outcome( RemoveAttraction( item ), item )
 			: ParkCommandResult.Rejected( $"No attraction {remove.Attraction}." ),
 		PickUpObjectCommand pickUp => ExecutePickUp( pickUp ),
+		EndMoveCommand end => ExecuteEndMove( end ),
 		LayLineCommand line => CommandLineWriter( line.Mode, line.Ride ) is { } writer
 			? ParkCommandResult.Ok( writer is QueueLineWriter legacyQueue ? legacyQueue.CommitLegacy( (line.StartX, line.StartY), (line.EndX, line.EndY) ) : writer.Commit( (line.StartX, line.StartY), (line.EndX, line.EndY) ) )
 			: ParkCommandResult.Rejected( $"No {line.Mode} line can be laid here." ),
@@ -150,11 +159,22 @@ public partial class Level
 		return ParkCommandResult.Ok( (entry, rotation) );
 	}
 
+	private ParkCommandResult ExecuteEndMove( EndMoveCommand end )
+	{
+		if ( carriedEntries == null || !carriedEntries.Remove( end.Player ) )
+			return ParkCommandResult.Rejected( $"Player {end.Player} carries nothing." );
+		if ( carriedEntries.Count == 0 )
+			carriedEntries = null;
+		return ParkCommandResult.Ok();
+	}
+
 	private ParkCommandResult ExecuteQueueSegment( QueueSegmentCommand line )
 	{
 		if ( ResolveCommandRide( line.Ride ) is not { } ride || Guests == null ) return ParkCommandResult.Rejected( "No queue ride." );
 		var writer = CreateQueueWriter( ride );
 		if ( !writer.SupportsNativeStart( (line.StartX, line.StartY) ) || !writer.SupportsNative( (line.StartX, line.StartY), (line.EndX, line.EndY) ) ) return ParkCommandResult.Rejected( "Unsupported native queue domain." );
+		// [EXT:online-coop-lockstep] the checks read the grid alone; the segment goes ahead on the queue as it stands (a rejection leaves the ride as it was)
+		ride.RecomputeQueue( Guests.Grid );
 		// Even a partial type failure applied subsequent passes and must remain in the command log.
 		return ParkCommandResult.Ok( writer.CommitNative( (line.StartX, line.StartY), (line.EndX, line.EndY) ) );
 	}
@@ -164,6 +184,8 @@ public partial class Level
 		if ( ResolveCommandRide( undo.Ride ) is not { } ride || Guests == null ) return ParkCommandResult.Rejected( "No queue ride." );
 		var writer = CreateQueueWriter( ride );
 		if ( !writer.SupportsNativeUndo( (undo.StartX, undo.StartY), (undo.EndX, undo.EndY) ) ) return ParkCommandResult.Rejected( "Unsupported native queue undo domain." );
+		// [EXT:online-coop-lockstep] as the segment: brought up to date only once the undo goes ahead
+		ride.RecomputeQueue( Guests.Grid );
 		writer.UndoNative( new( (undo.StartX, undo.StartY), (undo.EndX, undo.EndY) ) );
 		return ParkCommandResult.Ok();
 	}
@@ -196,6 +218,9 @@ public partial class Level
 
 	private ParkCommandResult ExecuteSetPrototypeRunning( SetPrototypeRunningCommand running )
 	{
+		// [EXT:online-coop-lockstep] the developer prototype's run skips the reopening guard: a co-op session refuses it alike on every peer
+		if ( Commands.SessionRules )
+			return ParkCommandResult.Rejected( "The developer panel is off in a shared park." );
 		if ( PlacedRide == null )
 			return ParkCommandResult.Rejected( "No prototype ride is placed." );
 		if ( running.Running )

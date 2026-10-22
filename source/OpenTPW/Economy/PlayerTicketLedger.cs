@@ -8,8 +8,9 @@ internal sealed record KnownTicketPurchase( int InfoId, int Cost );
 internal enum TicketPurchaseOutcome { Purchased, AlreadyOwned, InsufficientTickets }
 
 /// <param name="Cheated">[EXT:cheats-ticket-provenance] The earned identities a cheat awarded (a subset of <paramref name="Earned"/>); null when none was.</param>
+/// <param name="ResearchCompleted">The parks (themes) whose research the player has completed, the original's per-theme <c>mAllResearchCompleted</c> records; null when none has.</param>
 internal sealed record PlayerTicketSnapshot( ParkGameMode Mode, int ExtraKeys, int SpentTickets, IReadOnlyList<EarnedTicketIdentity> Earned, IReadOnlyList<GlobalTicketHolder>? Holders = null,
-	IReadOnlyList<EarnedTicketIdentity>? Cheated = null, IReadOnlyList<KnownTicketPurchase>? KnownPurchases = null );
+	IReadOnlyList<EarnedTicketIdentity>? Cheated = null, IReadOnlyList<KnownTicketPurchase>? KnownPurchases = null, IReadOnlyList<string>? ResearchCompleted = null );
 
 /// <summary>
 /// Own player-wide history, separate from native profiles and the legacy count-only PlayerProgress.
@@ -23,6 +24,7 @@ internal sealed class PlayerTicketLedger
 	private readonly Dictionary<GoldenTicketKind, GlobalTicketHolder> holders = new();
 	private readonly HashSet<EarnedTicketIdentity> cheated = new();
 	private readonly Dictionary<int, KnownTicketPurchase> purchases = new();
+	private readonly HashSet<string> researchCompleted = new( StringComparer.Ordinal );
 	public ParkGameMode Mode { get; }
 	public int ExtraKeys { get; }
 	public int SpentTickets { get; private set; }
@@ -47,6 +49,30 @@ internal sealed class PlayerTicketLedger
 			purchases.Add( purchase.InfoId, purchase );
 		foreach ( var holder in snapshot.Holders ?? Array.Empty<GlobalTicketHolder>() )
 			holders[holder.Kind] = holder;
+		researchCompleted.UnionWith( snapshot.ResearchCompleted ?? Array.Empty<string>() );
+	}
+
+	/// <summary>
+	/// The parks whose research the player has completed: the original player's record list, one "global save info" record per theme with its
+	/// <c>mAllResearchCompleted</c> byte. OpenTPW has one player ([EXT:no-player-profiles]), so the list is this ledger's.
+	/// </summary>
+	// [BIN:TPW-EXE:0x005AFF50 player file] the player object (0xF7C58C, built by 0x5AEF50) keeps a map from theme name to a 0xBC-byte record (+0x3C); the player file writes and reads each record through 0x5B0D70, whose last field is the byte +0xB9 ("mAllResearchCompleted", 0x773320)
+	// [BIN:TPW-EXE:0x005C83B0 player selection] choosing a player loads its file (0x5AFD70) and then makes sure every theme of the theme list (0x786B90: the level folders jungle, hallow, fantasy, space) has a record (0x5B09C0 creates a missing one through 0x5B0A70 with the byte 0); nothing else ever clears the byte
+	public IReadOnlyCollection<string> ResearchCompleted => researchCompleted;
+
+	/// <summary>Records that the player completed the research of the park of <paramref name="theme"/>; true when it was not recorded yet.</summary>
+	// [BIN:TPW-EXE:0x005B0CA0 research completed record] sets the current theme's record byte +0xB9 to 1; the lab's completion handler 0x503D40 calls it (0x503E94) whenever nothing is left to research, before it tests the game type, so every game type records it
+	public bool RecordResearchCompleted( string theme ) => researchCompleted.Add( CanonicalTheme( theme ) );
+
+	/// <summary>
+	/// Whether every park's record has its research completed once the park of <paramref name="theme"/> has (its own completion counts, whether or not it is recorded yet):
+	/// the Full Simulation's condition for the end-of-park finale.
+	/// </summary>
+	// [BIN:TPW-EXE:0x005B0C40 all research completed] walks the player's theme records (+0x3C, in-order successor 0x5B2480) and returns 0 at the first whose byte +0xB9 is 0, else 1; 0x503D40 calls it after 0x5B0CA0 has set the current theme's byte, and in game type 0 only a 1 posts advice 0xA7 and starts the finale (0x516B00). The records cover the four themes of the theme list
+	public bool ResearchCompletedEverywhereWith( string theme )
+	{
+		var canonical = CanonicalTheme( theme );
+		return Themes.All( known => known == canonical || researchCompleted.Contains( known ) );
 	}
 
 	/// <summary>
@@ -157,7 +183,8 @@ internal sealed class PlayerTicketLedger
 		Array.AsReadOnly( earned.OrderBy( item => item.Kind ).ThenBy( item => item.Theme, StringComparer.Ordinal ).ToArray() ),
 		holders.Count == 0 ? null : Array.AsReadOnly( holders.Values.OrderBy( item => item.Kind ).ToArray() ),
 		cheated.Count == 0 ? null : Array.AsReadOnly( cheated.OrderBy( item => item.Kind ).ThenBy( item => item.Theme, StringComparer.Ordinal ).ToArray() ),
-		purchases.Count == 0 ? null : Array.AsReadOnly( purchases.Values.OrderBy( item => item.InfoId ).ToArray() ) );
+		purchases.Count == 0 ? null : Array.AsReadOnly( purchases.Values.OrderBy( item => item.InfoId ).ToArray() ),
+		researchCompleted.Count == 0 ? null : Array.AsReadOnly( Themes.Where( researchCompleted.Contains ).ToArray() ) );
 
 	/// <summary>Copies a validated own snapshot. Spending never removes earned identities or keys.</summary>
 	public static PlayerTicketLedger Restore( PlayerTicketSnapshot snapshot )
@@ -197,8 +224,13 @@ internal sealed class PlayerTicketLedger
 				throw new InvalidDataException( "Invalid known ticket purchase." );
 			knownCost += purchase.Cost;
 		}
+		var restoredResearch = new HashSet<string>( StringComparer.Ordinal );
+		foreach ( var theme in snapshot.ResearchCompleted ?? Array.Empty<string>() )
+			if ( theme == null || !Themes.Contains( theme, StringComparer.Ordinal ) || !restoredResearch.Add( theme ) )
+				throw new InvalidDataException( "Invalid research completion record." );
 		// A legacy scalar may include unknown purchases. Never manufacture their identities.
-		return new PlayerTicketLedger( snapshot with { Earned = unique.ToArray(), Holders = restoredHolders.Values.ToArray(), Cheated = restoredCheated.ToArray(), KnownPurchases = restoredPurchases.Values.ToArray() } );
+		return new PlayerTicketLedger( snapshot with { Earned = unique.ToArray(), Holders = restoredHolders.Values.ToArray(), Cheated = restoredCheated.ToArray(), KnownPurchases = restoredPurchases.Values.ToArray(),
+			ResearchCompleted = restoredResearch.ToArray() } );
 	}
 
 	/// <summary>
@@ -214,7 +246,10 @@ internal sealed class PlayerTicketLedger
 		return new AdvisorPlayerTickets( all.Count, all.Count - secret, ExtraKeys, themeKeyCosts );
 	}
 
-	private static bool IsGlobal( GoldenTicketKind kind ) => kind is >= GoldenTicketKind.CoasterHeight and <= GoldenTicketKind.BigPark;
+	internal static bool IsGlobal( GoldenTicketKind kind ) => kind is >= GoldenTicketKind.CoasterHeight and <= GoldenTicketKind.BigPark;
+
+	/// <summary>Whether the park of <paramref name="theme"/> holds global ticket <paramref name="kind"/> by this player's rule.</summary>
+	internal bool HeldBy( string theme, GoldenTicketKind kind ) => holders.TryGetValue( kind, out var holder ) && holder.Theme == CanonicalTheme( theme );
 
 	private static bool IsLocal( GoldenTicketKind kind ) => kind is GoldenTicketKind.Visitors or GoldenTicketKind.PeopleInPark
 		or GoldenTicketKind.Happiness or GoldenTicketKind.AllResearchedAndBuilt or GoldenTicketKind.ProfitYear or GoldenTicketKind.RecentVisitors;

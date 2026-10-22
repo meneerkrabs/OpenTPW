@@ -51,7 +51,7 @@ public class PlacedEventAudioOriginTests
 	private void EventKey(OriginalObjectRuntime owner, int type, int key, int id = 43)
 	{
 		using var stream = new MemoryStream(new RideVMTests.Asm().I(Opcode.EVENT, type, key, id).I(Opcode.ENDSLICE).Build(Array.Empty<string>()));
-		var vm = new RideVM(stream, new RideVMOptions { Effects = owner.Script!.Effects }); vm.Advance(FixedStepClock.TickDuration); Assert.AreNotEqual(RideVMState.Faulted, vm.State); Assert.AreEqual(type == 10 ? 1 : 0, vm.UnimplementedEffects.GetValueOrDefault(Opcode.EVENT), "only the object type's own sound list (type 10) stays an unimplemented effect"); vm.Stop();
+		var vm = new RideVM(stream, new RideVMOptions { Effects = owner.Script!.Effects }); vm.Advance(FixedStepClock.TickDuration); Assert.AreNotEqual(RideVMState.Faulted, vm.State); Assert.AreEqual(0, vm.UnimplementedEffects.GetValueOrDefault(Opcode.EVENT), "every EVENT type is served (type 10 from the object type's own sound list, ObjectTypeSoundsTests)"); vm.Stop();
 	}
 	[DataTestMethod]
 	[DataRow(3)][DataRow(4)][DataRow(5)][DataRow(6)][DataRow(7)][DataRow(8)][DataRow(9)]

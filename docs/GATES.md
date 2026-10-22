@@ -34,7 +34,11 @@ Calls during the same qualifying turn cannot repeat the command; faster speeds a
 still detect the crossed boundary. The fork records that the immediate close does not run this staff scan.
 
 **The census** applies the original predicate to the guest grid: it counts guests on cells of type 0, 1, 3, 9 and 10 (Mac predicates `0x85190`–`0x85258`).
-Preserved approach-road and outside types, out-of-bounds positions and departed guests do not count. A rider counts at their stored cell.
+Preserved approach-road and outside types, out-of-bounds positions and departed guests do not count. The cell is the one the guest's position stands on: tp.exe's predicate
+(`0x004FA990`) reads the thing's cell bytes, which every walk step rewrites whatever the new cell's type (`0x004FA2A0` → `0x0050B6A0`) and the teleport `0x004FA930` sets (the ride
+exit `0x005014E0`), so OpenTPW reads the walk position's cell (`GuestNavigation.Cell`, the cell its cell lists follow), not the stored cell a step moves only onto path and queue cells.
+A guest walking home leaves the census as it steps off the park onto the gate's road, so a closed park's gate shuts at the first 30-turn retry after the last guest walked out,
+not when the guests board the vehicle; a rider counts at the stand point it walked to (the ride's entrance cell).
 The grid holds the original's types: the world init types the cells without terrain 7, 2 or 30 (`0x00536490` with
 `0x00450420`), a placed object writes 4, 9 and 10 over its footprint (`0x00528A70`); only an object's removal is not traced (ECON-050).
 
@@ -67,7 +71,7 @@ The grid holds the original's types: the world init types the cells without terr
 ## Tests
 
 `ParkGateTests` covers the census cell types, the door's gate command and rides, the populated closure's hold
-until the last guest leaves, the 30-turn retry across normal/fast speeds and skipped updates, single retries per boundary, duplicate attraction aliases, and the staff blocker (including fractional and out-of-bounds positions).
+until the last guest leaves, the gate shutting at the first retry after the last guest walked out onto the road, the 30-turn retry across normal/fast speeds and skipped updates, single retries per boundary, duplicate attraction aliases, and the staff blocker (including fractional and out-of-bounds positions).
 `ParkInputGuardTests` checks armed tools and held/captured mouse edges, plus shortcut capture. The native
 jungle smoke calls the actual level input path with armed tools while riding, checks actual HUD shortcut
 dispatch behind a modal and ImGui capture, and checks that closing the park closes the prototype

@@ -5,6 +5,9 @@ public partial class Level
 	public FreeWalkCameraMode? FreeWalk { get; private set; }
 	private CameraMode? cameraBeforeFreeWalk;
 
+	/// <summary>[EXT:online-coop-snapshot-join] The park camera the free walk was entered from while it lasts, else null: a resync keeps the player's view from it.</summary>
+	internal ParkCameraMode? ParkCameraWhileWalking => FreeWalk != null ? cameraBeforeFreeWalk as ParkCameraMode : null;
+
 	public bool EnterFreeWalk( Vector3 position )
 	{
 		if ( GameEditions.Current != GameEdition.ThemeParkWorld || FreeWalk != null || RideView != null

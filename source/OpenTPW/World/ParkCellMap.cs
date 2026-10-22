@@ -34,7 +34,7 @@ public static class ParkCellTypes
 	/// <summary>
 	/// The coaster module's cell marker (<c>SetCell(0x15)</c> of <c>0x452D30</c>, called by the coaster tool code <c>0x434412</c>, <c>0x443057</c>, <c>0x444EE7</c> and <c>0x445B50</c>), which the
 	/// placement also writes on the cell beyond a track end (<c>&lt;</c>, <c>&gt;</c>, <c>D</c> of a coaster station) with the ride's owner word; the validator's modes 0x15 and 0x16
-	/// accept it (<c>0x535B53</c>). OpenTPW's coaster builder keeps its own area test and writes none.
+	/// accept it (<c>0x535B53</c>). OpenTPW's coaster cell markers write it (<see cref="CoasterCellMarkers"/>).
 	/// </summary>
 	public const byte TrackConnection = 0x15;
 	/// <summary>A park fence post on the structure layer.</summary>
@@ -86,7 +86,10 @@ public enum ParkCellFlags : ushort
 	PoolRiver = 0x1000,
 	/// <summary>[EXT:pools-waves] On a pool water cell: the pool's wave machine is switched on (<see cref="PoolWaveSettings"/>).</summary>
 	PoolWavesOn = 0x2000,
-	/// <summary>[EXT:pools-waves] The two wave-height bits (0 means the pool has no wave settings yet, 1 to 3 is the height).</summary>
+	/// <summary>
+	/// [EXT:pools-waves] The two wave-height bits (0 means the pool has no wave settings yet, 1 to 3 is the height). A coaster station head's marker cell (type 21) carries 0x100 as the
+	/// original's marker bit (<see cref="CoasterCellMarkers.StationHeadMark"/>), so these bits are a wave height on pool cells only: a reader must never scan other cells for them.
+	/// </summary>
 	PoolWaveHeightMask = 0x0300,
 	/// <summary>[EXT:pools-waves] The two wave-interval bits (0 to 2 is the interval; 3 is unused).</summary>
 	PoolWaveIntervalMask = 0xC000,

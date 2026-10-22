@@ -27,6 +27,36 @@ internal sealed class CoopTestNetwork( Func<double>? clock = null )
 	/// <summary>How often the host offered each frame to the server (taken or refused).</summary>
 	public Dictionary<ulong, int> Offered { get; } = new();
 
+	/// <summary>Every frame the server took, in order.</summary>
+	public List<byte[]> Taken { get; } = new();
+
+	/// <summary>[EXT:online-coop-snapshot-join] The host's skips the server took: the frame each named.</summary>
+	public List<ulong> Skips { get; } = new();
+
+	/// <summary>[EXT:online-coop-snapshot-join] The stored join snapshots by digest, the newest two (as the server keeps them), oldest first.</summary>
+	public List<(string Sha256, byte[] Payload)> Snapshots { get; } = new();
+
+	/// <summary>Every upload the host attempted, in order (stored or not).</summary>
+	public int Uploads { get; private set; }
+
+	/// <summary>Every download a member attempted, in order: the member and the digest.</summary>
+	public List<(uint Member, string Sha256)> Downloads { get; } = new();
+
+	/// <summary>How long an upload or a download takes to answer (seconds of the network's clock).</summary>
+	public double TransferSeconds { get; set; }
+
+	/// <summary>How long the upload of the given attempt number (1 first) takes to answer instead of <see cref="TransferSeconds"/>; null keeps it.</summary>
+	public Func<int, double?>? UploadSeconds { get; set; }
+
+	/// <summary>Answers every download a second time, this many seconds after the first (a callback raised twice); null answers once.</summary>
+	public double? RepeatDownloadAnswerAfter { get; set; }
+
+	/// <summary>Answers the upload of the given attempt number (1 first) instead of the store, e.g. with a failure; null lets the store answer.</summary>
+	public Func<int, CoopSnapshotTransfer?>? FailUpload { get; set; }
+
+	/// <summary>Answers the given member's download of the given digest instead of the store, e.g. with a failure; null lets the store answer.</summary>
+	public Func<uint, string, CoopSnapshotTransfer?>? FailDownload { get; set; }
+
 	public Member Host => members.First( member => member.IsHost );
 
 	/// <summary>A member joins: it sees the session as it stands, and the connected members hear of it.</summary>
@@ -69,6 +99,7 @@ internal sealed class CoopTestNetwork( Func<double>? clock = null )
 		LastFrame = seq;
 		SeqKnown = true;
 		var copy = payload.ToArray();
+		Taken.Add( copy );
 		foreach ( var guest in members.Where( member => !member.IsHost && member.Connected ) )
 		{
 			guest.Frames++;
@@ -76,6 +107,20 @@ internal sealed class CoopTestNetwork( Func<double>? clock = null )
 				continue;
 			guest.Enqueue( () => guest.RaiseFrame( new CoopFrame( seq, copy ) ) );
 		}
+	}
+
+	/// <summary>[EXT:online-coop-snapshot-join] The host's skip, as the server takes it: the sequence goes on at <paramref name="from"/>, never back.</summary>
+	private void Skip( Member host, ulong from )
+	{
+		if ( from <= LastFrame )
+		{
+			var expected = LastFrame + 1;
+			host.Enqueue( () => host.RaiseFrameRefused( new CoopFrameRefused( expected ) ) );
+			return;
+		}
+		Skips.Add( from );
+		LastFrame = from - 1;
+		SeqKnown = true;
 	}
 
 	private void Relay( Member from, uint to, ReadOnlyMemory<byte> payload )
@@ -98,6 +143,10 @@ internal sealed class CoopTestNetwork( Func<double>? clock = null )
 	{
 		private readonly CoopTestNetwork network;
 		private readonly Queue<(double Due, Action Raise)> inbox = new();
+
+		/// <summary>The transfers' answers by their time, in order within it: HTTP is no part of the socket, so a lost socket loses none of them.</summary>
+		private readonly PriorityQueue<Action, (double Due, long Order)> transfers = new();
+		private long transferOrder;
 
 		public Member( CoopTestNetwork network, uint id, byte slot, bool host )
 		{
@@ -139,12 +188,30 @@ internal sealed class CoopTestNetwork( Func<double>? clock = null )
 		public event Action<CoopMemberChanged>? MemberChanged;
 		public event Action<CoopFrame>? FrameReceived;
 		public event Action<CoopRelayed>? MessageReceived;
+		public event Action<CoopEnded>? SessionEnded;
 
 		public bool SendFrame( ulong seq, ReadOnlyMemory<byte> payload )
 		{
 			if ( !Connected || !IsHost )
 				return false;
 			network.Frame( this, seq, payload );
+			return true;
+		}
+
+		/// <summary>A server from before protocol 7, which cannot take the host's skip.</summary>
+		public bool SkipsUnsupported { get; set; }
+
+		/// <summary>Drops the host's skip on its way to the server (the socket lost it after the link took it) when it returns true.</summary>
+		public Func<ulong, bool>? DropSkipToServer { get; set; }
+
+		public bool CanSkipFrames => !SkipsUnsupported;
+
+		public bool SkipFrames( ulong from )
+		{
+			if ( !Connected || !IsHost || SkipsUnsupported )
+				return false;
+			if ( DropSkipToServer?.Invoke( from ) != true )
+				network.Skip( this, from );
 			return true;
 		}
 
@@ -166,12 +233,51 @@ internal sealed class CoopTestNetwork( Func<double>? clock = null )
 
 		internal void Enqueue( Action raise ) => inbox.Enqueue( (network.clock() + Latency, raise) );
 
-		/// <summary>Raises what has arrived by now, in order, as the game's pump does before its frame; at most <paramref name="limit"/> items.</summary>
+		/// <summary>Raises what has arrived by now, in order, as the game's pump does before its frame; at most <paramref name="limit"/> items. The transfers' answers come after.</summary>
 		public void Deliver( int limit = int.MaxValue )
 		{
 			var now = network.clock();
 			for ( var count = 0; count < limit && inbox.TryPeek( out var next ) && next.Due <= now; count++ )
 				inbox.Dequeue().Raise();
+			while ( transfers.TryPeek( out var answer, out var due ) && due.Due <= now )
+			{
+				transfers.Dequeue();
+				answer();
+			}
+		}
+
+		/// <summary>The store's rules: only the host uploads, only while another member is in the session; the newest two snapshots stay.</summary>
+		public void UploadSnapshot( byte[] payload, Action<CoopSnapshotTransfer> done )
+		{
+			var attempt = ++network.Uploads;
+			var answer = network.FailUpload?.Invoke( attempt )
+				?? (!IsHost ? CoopSnapshotTransfer.Failed( "Only the host uploads the park.", permanent: true )
+				: network.members.Count < 2 ? CoopSnapshotTransfer.Failed( "Nobody is joining." )
+				: Store( payload ));
+			transfers.Enqueue( () => done( answer ), (network.clock() + (network.UploadSeconds?.Invoke( attempt ) ?? network.TransferSeconds), transferOrder++) );
+		}
+
+		private CoopSnapshotTransfer Store( byte[] payload )
+		{
+			var sha256 = Convert.ToHexString( System.Security.Cryptography.SHA256.HashData( payload ) ).ToLowerInvariant();
+			network.Snapshots.RemoveAll( stored => stored.Sha256 == sha256 );
+			network.Snapshots.Add( (sha256, payload.ToArray()) );
+			while ( network.Snapshots.Count > 2 )
+				network.Snapshots.RemoveAt( 0 );
+			return CoopSnapshotTransfer.Stored( sha256 );
+		}
+
+		public void DownloadSnapshot( string sha256, long bytes, Action<CoopSnapshotTransfer> done )
+		{
+			network.Downloads.Add( (Id, sha256) );
+			var stored = network.Snapshots.FirstOrDefault( snapshot => snapshot.Sha256 == sha256 ).Payload;
+			var answer = network.FailDownload?.Invoke( Id, sha256 )
+				?? (stored == null ? CoopSnapshotTransfer.Failed( "No such snapshot.", missing: true )
+				: stored.Length != bytes ? CoopSnapshotTransfer.Failed( "The snapshot is not as long as its host said." )
+				: CoopSnapshotTransfer.Downloaded( stored.ToArray() ));
+			transfers.Enqueue( () => done( answer ), (network.clock() + network.TransferSeconds, transferOrder++) );
+			if ( network.RepeatDownloadAnswerAfter is { } after )
+				transfers.Enqueue( () => done( answer ), (network.clock() + network.TransferSeconds + after, transferOrder++) );
 		}
 
 		/// <summary>The socket drops: what was on its way is lost, and the connected members see it go.</summary>
@@ -215,6 +321,13 @@ internal sealed class CoopTestNetwork( Func<double>? clock = null )
 			}
 			MemberChanged?.Invoke( change );
 		}
+
+		/// <summary>The session ends for this member (the host left, a kick): what it hears next.</summary>
+		public void End( string reason ) => Enqueue( () =>
+		{
+			Snapshot = null;
+			SessionEnded?.Invoke( new CoopEnded( "s", CoopReason.Unknown, reason ) );
+		} );
 
 		internal void RaiseFrameRefused( CoopFrameRefused refused ) => FrameRefused?.Invoke( refused );
 		internal void RaiseFrame( CoopFrame frame ) => FrameReceived?.Invoke( frame );

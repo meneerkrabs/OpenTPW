@@ -51,7 +51,7 @@ public class ParticleEventRequestTests
 	{
 		using var stream = new MemoryStream(new RideVMTests.Asm().I(Opcode.EVENT, type, key, effect).I(Opcode.ENDSLICE).Build(Array.Empty<string>()));
 		var vm = new RideVM(stream, new RideVMOptions { Effects = runtime.Script!.Effects, World = runtime.Script.World }); vm.Flags = RideVM.VMFlags.Sign;
-		vm.Advance(FixedStepClock.TickDuration); Assert.AreEqual(RideVM.VMFlags.Sign, vm.Flags); Assert.AreEqual(type == 10 ? 1 : 0, vm.UnimplementedEffects.GetValueOrDefault(Opcode.EVENT), "only the object type's own sound list (type 10) stays an unimplemented effect"); Assert.AreNotEqual(RideVMState.Faulted, vm.State); vm.Stop();
+		vm.Advance(FixedStepClock.TickDuration); Assert.AreEqual(RideVM.VMFlags.Sign, vm.Flags); Assert.AreEqual(0, vm.UnimplementedEffects.GetValueOrDefault(Opcode.EVENT), "every EVENT type is served (type 10 from the object type's own sound list, ObjectTypeSoundsTests)"); Assert.AreNotEqual(RideVMState.Faulted, vm.State); vm.Stop();
 	}
 	[DataTestMethod]
 	[DataRow(0, -0.8f, 20.6f, 0f, 1f)][DataRow(90, 0.6f, 20.8f, 1f, 0f)][DataRow(180, 0.8f, 19.4f, 0f, -1f)][DataRow(270, -0.6f, 19.2f, -1f, 0f)]

@@ -20,6 +20,7 @@ internal static class SaveTestPayloads
 		public ushort PositionY { get; init; } = 23 * 256 + 128;
 		public uint Angle { get; init; } = 90;
 		public ushort InfoId { get; init; } = 1100;
+		/// <summary>The eight words <c>tv[t]</c>: year, month, day, day of the week (2000-01-01 was a Saturday, 6), hour, minute, second and milliseconds.</summary>
 		public uint[] Stamp { get; init; } = { 2000, 1, 1, 6, 15, 37, 30, 0 };
 		public uint MeshInstance { get; init; } = 110;
 		public string Line1 { get; init; } = "Belly";

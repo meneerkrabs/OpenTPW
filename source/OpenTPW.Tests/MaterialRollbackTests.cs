@@ -195,8 +195,9 @@ public sealed class MaterialRollbackTests
 			transaction.Dispose();
 
 			Assert.IsFalse( Asset.All.Contains( candidate ), "the ordinary candidate shader leaves Asset.All" );
-			Assert.IsTrue( candidateProgram.All( stage => stage.IsDisposed ),
-				"the ordinary candidate's native programs are disposed" );
+			// both shaders of one file share one native program (issue #754): the candidate gives its reference back, the shared shader keeps the program
+			Assert.IsFalse( candidate.HoldsNativeProgram, "the ordinary candidate gives its native program back" );
+			CollectionAssert.AreEqual( sharedProgram, candidateProgram, "both shaders of one file hold the same native program" );
 			Assert.IsTrue( Asset.All.Contains( shared ), "the process-lifetime shared shader stays registered" );
 			Assert.IsTrue( sharedProgram.All( stage => stage is not null && !stage.IsDisposed ),
 				"rollback keeps the native programs of a shared material's shader alive" );

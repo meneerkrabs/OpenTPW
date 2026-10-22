@@ -81,7 +81,7 @@ public class PoolBridgeWorldTests
 		for ( var x = 2; x <= 8; x++ ) Assert.IsTrue( world.Covers( x, 3 ) );
 		Assert.IsTrue( world.Reserves( 1, 3 ) );
 		Assert.IsTrue( world.Reserves( 9, 3 ) );
-		Assert.AreEqual( PoolBridgeResult.Occupied, world.TryAdd( 2, 3, 1 ) );
+		Assert.AreEqual( PoolBridgeResult.BridgeInTheWay, world.TryAdd( 2, 3, 1 ) );
 		Assert.AreEqual( version + 1, cells.Version );
 		Assert.AreEqual( PoolBridgeResult.Ok, world.RemoveAt( 5, 3 ) );
 		Assert.AreEqual( version + 2, cells.Version );
@@ -98,7 +98,9 @@ public class PoolBridgeWorldTests
 		Assert.AreEqual( PoolBridgeResult.NotOverPool, world.Check( 2, 3, 1 ) );
 		cells.SetType( 5, 3, ParkCellType.PoolWater );
 		cells.SetType( 9, 3, ParkCellType.Empty );
-		Assert.AreEqual( PoolBridgeResult.Occupied, world.Check( 2, 3, 1 ) );
+		Assert.AreEqual( PoolBridgeResult.Ok, world.Check( 2, 3, 1 ), "an outside end needs no path" );
+		cells.SetType( 9, 3, ParkCellType.PoolWater );
+		Assert.AreEqual( PoolBridgeResult.LandIsWater, world.Check( 2, 3, 1 ) );
 		cells.SetType( 9, 3, ParkCellType.Path );
 		cells.SetFlags( 3, 3, ParkCellFlags.Unowned );
 		Assert.AreEqual( PoolBridgeResult.NotOwned, world.Check( 2, 3, 1 ) );
@@ -113,6 +115,228 @@ public class PoolBridgeWorldTests
 	}
 
 	[TestMethod]
+	public void EachRefusalNamesItsReasonAndTheCellToBlame()
+	{
+		var cells = Crossing();
+		var world = new PoolBridgeWorld( cells, reserved: ( x, y ) => x == 7 && y == 3 && cells.TypeAt( 0, 0 ) == ParkCellType.Path );
+		Assert.AreEqual( PoolBridgeResult.Ok, world.Check( 2, 3, 1, out var none ) );
+		Assert.IsNull( none );
+		// the outside end after the bridge needs no path, but a bare end must be free ground: a queue there refuses
+		cells.SetType( 9, 3, ParkCellType.Empty );
+		Assert.AreEqual( PoolBridgeResult.Ok, world.Check( 2, 3, 1, out var bare ) );
+		Assert.IsNull( bare );
+		cells.SetType( 9, 3, ParkCellType.Queue );
+		Assert.AreEqual( PoolBridgeResult.Blocked, world.Check( 2, 3, 1, out var end ) );
+		Assert.AreEqual( (9, 3), end );
+		cells.SetType( 9, 3, ParkCellType.Path );
+		// the pool is four cells wide: the second approach cell after the span is water
+		cells.SetType( 7, 3, ParkCellType.PoolWater );
+		Assert.AreEqual( PoolBridgeResult.LandIsWater, world.Check( 2, 3, 1, out var wide ) );
+		Assert.AreEqual( (7, 3), wide );
+		cells.SetType( 7, 3, ParkCellType.Empty );
+		// a click on the second approach cell puts water where the first span cell's land must be
+		cells.SetType( 2, 3, ParkCellType.Path );
+		Assert.AreEqual( PoolBridgeResult.LandIsWater, world.Check( 3, 3, 1, out var late ) );
+		Assert.AreEqual( (4, 3), late );
+		// a span cell without water
+		cells.SetType( 5, 3, ParkCellType.Empty );
+		Assert.AreEqual( PoolBridgeResult.NotOverPool, world.Check( 2, 3, 1, out var dry ) );
+		Assert.AreEqual( (5, 3), dry );
+		cells.SetType( 5, 3, ParkCellType.PoolWater );
+		// a queue on an approach cell, then scenery the level reserves
+		cells.SetType( 3, 3, ParkCellType.Queue );
+		Assert.AreEqual( PoolBridgeResult.Blocked, world.Check( 2, 3, 1, out var queue ) );
+		Assert.AreEqual( (3, 3), queue );
+		cells.SetType( 3, 3, ParkCellType.Empty );
+		cells.SetType( 0, 0, ParkCellType.Path );
+		Assert.AreEqual( PoolBridgeResult.Blocked, world.Check( 2, 3, 1, out var scenery ) );
+		Assert.AreEqual( (7, 3), scenery );
+		cells.SetType( 0, 0, ParkCellType.Empty );
+		cells.SetFlags( 8, 3, ParkCellFlags.Unowned );
+		Assert.AreEqual( PoolBridgeResult.NotOwned, world.Check( 2, 3, 1, out var unowned ) );
+		Assert.AreEqual( (8, 3), unowned );
+		cells.SetFlags( 8, 3, 0 );
+		// the slope is the whole bridge's: no single cell to blame
+		var steep = new PoolBridgeWorld( cells, ground: ( x, _ ) => x * 0.1f );
+		Assert.AreEqual( PoolBridgeResult.TooSteep, steep.Check( 2, 3, 1, out var slope ) );
+		Assert.IsNull( slope );
+		Assert.AreEqual( PoolBridgeResult.OutsideTerrain, world.Check( 0, 3, 1, out var outside ) );
+		Assert.IsNull( outside );
+	}
+
+	[TestMethod]
+	public void StandingProtectedCellsAndMoneyBlameTheRightCell()
+	{
+		var cells = Crossing();
+		var economy = EconomyTestData.Park( initialCash: 100 );
+		var world = new PoolBridgeWorld( cells, occupied: ( x, y ) => x == 3 && y == 3, economy: () => economy );
+		Assert.AreEqual( PoolBridgeResult.Standing, world.Check( 2, 3, 1, out var standing ) );
+		Assert.AreEqual( (3, 3), standing );
+		var poor = new PoolBridgeWorld( Crossing(), economy: () => economy );
+		Assert.AreEqual( PoolBridgeResult.NotEnoughMoney, poor.Check( 2, 3, 1, out var money ) );
+		Assert.IsNull( money );
+		var protectedCells = Crossing();
+		protectedCells.SetFlags( 8, 3, ParkCellFlags.EntranceArea );
+		Assert.AreEqual( PoolBridgeResult.Blocked, new PoolBridgeWorld( protectedCells ).Check( 2, 3, 1, out var entrance ) );
+		Assert.AreEqual( (8, 3), entrance );
+	}
+
+	private static ParkCellMap BareCrossing()
+	{
+		var cells = new ParkCellMap( 16, 12 );
+		for ( var x = 4; x <= 6; x++ ) cells.SetType( x, 3, ParkCellType.PoolWater );
+		return cells;
+	}
+
+	[TestMethod]
+	public void BridgeWithoutEndPathsIsBuiltSavedAndRestoredAndOnlyAPathLaterMakesItWalkable()
+	{
+		var cells = BareCrossing();
+		var world = new PoolBridgeWorld( cells );
+		Assert.AreEqual( PoolBridgeResult.Ok, world.TryAdd( 2, 3, 1 ) );
+		Assert.AreEqual( 0, world.LinksAt( 1, 3 ), "no path at the end: nothing leads onto the bridge" );
+		Assert.IsFalse( world.Connects( 1, 3, 1 ) );
+		Assert.IsFalse( world.Connects( 9, 3, 3 ) );
+		Assert.IsTrue( world.Connects( 4, 3, 1 ), "the deck itself still links end to end" );
+		Assert.IsTrue( world.Reserves( 1, 3 ) && world.Reserves( 9, 3 ), "the open ends stay free of objects, ready for a path" );
+		// the paths come later
+		cells.SetType( 1, 3, ParkCellType.Path );
+		Assert.IsTrue( world.Connects( 1, 3, 1 ) );
+		Assert.IsTrue( world.Connects( 2, 3, 3 ) );
+		Assert.IsFalse( world.Connects( 9, 3, 3 ), "the far end still has no path" );
+		cells.SetType( 9, 3, ParkCellType.Path );
+		Assert.IsTrue( world.Connects( 9, 3, 3 ) );
+		Assert.AreNotEqual( 0, world.LinksAt( 9, 3 ) & GuestPathGrid.LinkValue( 3 ) );
+		// and a path removed again closes that entrance
+		cells.SetType( 1, 3, ParkCellType.Empty );
+		Assert.IsFalse( world.Connects( 1, 3, 1 ) );
+		// save and restore of a bridge that has no paths at all
+		cells.SetType( 9, 3, ParkCellType.Empty );
+		var data = ParkResumeJson.Deserialize<PoolBridgesSaveData>( ParkResumeJson.Serialize( world.CaptureSnapshot() ) );
+		var target = new PoolBridgeWorld( cells );
+		target.RestoreSnapshot( data );
+		Assert.AreEqual( 1, target.Count );
+		Assert.AreEqual( BridgeHash( world ), BridgeHash( target ) );
+	}
+
+	[TestMethod]
+	public void EveryDirectionOfASavedBridgeStillRestoresWithAndWithoutPaths()
+	{
+		for ( var direction = 0; direction < 4; direction++ )
+		{
+			var (dx, dy) = GuestPathGrid.Directions[direction];
+			foreach ( var paths in new[] { false, true } )
+			{
+				var cells = new ParkCellMap( 16, 16 );
+				var (startX, startY) = (direction switch { 0 => 6, 1 => 3, 2 => 6, _ => 12 }, direction switch { 0 => 12, 1 => 6, 2 => 3, _ => 6 });
+				for ( var i = 2; i <= 4; i++ ) cells.SetType( startX + i * dx, startY + i * dy, ParkCellType.PoolWater );
+				if ( paths )
+				{
+					cells.SetType( startX - dx, startY - dy, ParkCellType.Path );
+					cells.SetType( startX + 7 * dx, startY + 7 * dy, ParkCellType.Path );
+				}
+				var world = new PoolBridgeWorld( cells );
+				Assert.AreEqual( PoolBridgeResult.Ok, world.TryAdd( startX, startY, direction ), $"direction {direction}, paths {paths}" );
+				var data = ParkResumeJson.Deserialize<PoolBridgesSaveData>( ParkResumeJson.Serialize( world.CaptureSnapshot() ) );
+				var target = new PoolBridgeWorld( cells );
+				target.RestoreSnapshot( data );
+				Assert.AreEqual( direction, target.At( startX, startY )!.Direction );
+				Assert.AreEqual( BridgeHash( world ), BridgeHash( target ) );
+			}
+		}
+	}
+
+	[TestMethod]
+	public void RemovingAnEndPathIsRefusedOnlyWhenItWouldLeaveSomeoneOnTheBridgeWithoutAWayOff()
+	{
+		var cells = BareCrossing();
+		cells.SetType( 1, 3, ParkCellType.Path );
+		cells.SetType( 9, 3, ParkCellType.Path );
+		var standing = false;
+		var world = new PoolBridgeWorld( cells, occupied: ( x, y ) => standing && x == 5 && y == 3 );
+		Assert.AreEqual( PoolBridgeResult.Ok, world.TryAdd( 2, 3, 1 ) );
+		Assert.IsFalse( world.PathRemovalStrands( 1, 3 ) );
+		standing = true;
+		Assert.IsFalse( world.PathRemovalStrands( 1, 3 ), "the other end still has a path" );
+		Assert.IsFalse( world.PathRemovalStrands( 0, 0 ), "a path away from the bridge is free" );
+		cells.SetType( 9, 3, ParkCellType.Empty );
+		Assert.IsTrue( world.PathRemovalStrands( 1, 3 ), "the last path end would go while someone is on the bridge" );
+		standing = false;
+		Assert.IsFalse( world.PathRemovalStrands( 1, 3 ) );
+	}
+
+	[TestMethod]
+	public void PathsOutsideTheEndsCanBeLaidAndRemovedWhileTheDeckAndApproachesStayProtected()
+	{
+		var cells = BareCrossing();
+		var grid = new GuestPathGrid( cells );
+		var standing = false;
+		var world = new PoolBridgeWorld( cells, occupied: ( x, y ) => standing && x == 5 && y == 3 );
+		var paths = new ParkPathBuilder( cells, grid, (ParkEconomy?)null, new PoolsTests.FlatGrid( 16, 12 ), world.Covers );
+		Assert.AreEqual( PoolBridgeResult.Ok, world.TryAdd( 2, 3, 1 ) );
+		// the paths come later: the outside ends take them
+		Assert.IsTrue( paths.BuildSegment( (1, 3), (1, 3) ).Completed );
+		Assert.IsTrue( paths.BuildSegment( (9, 3), (9, 3) ).Completed );
+		Assert.AreEqual( ParkCellType.Path, cells.TypeAt( 1, 3 ) );
+		Assert.IsTrue( grid.AreConnected( 1, 3, 1 ), "a path laid after the bridge makes it walkable" );
+		// the bridge's own cells (approaches and span) take no path and no removal
+		Assert.AreEqual( CellBuildResult.Occupied, paths.CheckCell( 2, 3 ) );
+		Assert.AreEqual( CellBuildResult.Occupied, paths.CheckCell( 5, 3 ) );
+		Assert.AreEqual( CellBuildResult.Occupied, paths.Remove( 2, 3 ) );
+		Assert.AreEqual( CellBuildResult.Occupied, paths.Remove( 5, 3 ) );
+		// an end path may go, and the bridge closes at that end
+		Assert.AreEqual( CellBuildResult.Ok, paths.Remove( 1, 3 ) );
+		Assert.IsFalse( grid.AreConnected( 1, 3, 1 ) );
+		// with someone on the deck the last way off stays
+		Assert.IsTrue( paths.BuildSegment( (1, 3), (1, 3) ).Completed );
+		standing = true;
+		Assert.AreEqual( CellBuildResult.Ok, paths.Remove( 1, 3 ), "the other end still has a path" );
+		Assert.AreEqual( CellBuildResult.Occupied, paths.Remove( 9, 3 ), "removing the last path end would strand the person on the bridge" );
+		Assert.AreEqual( ParkCellType.Path, cells.TypeAt( 9, 3 ) );
+		standing = false;
+		Assert.AreEqual( CellBuildResult.Ok, paths.Remove( 9, 3 ) );
+	}
+
+	[TestMethod]
+	public void OnlyARemovalThatEmptiesTheEndCellCanStrandAndTheEndCellsOccupantCounts()
+	{
+		var cells = BareCrossing();
+		var grid = new GuestPathGrid( cells );
+		var onEnd = false;
+		var world = new PoolBridgeWorld( cells, occupied: ( x, y ) => onEnd && x == 1 && y == 3 );
+		var paths = new ParkPathBuilder( cells, grid, (ParkEconomy?)null, new PoolsTests.FlatGrid( 16, 12 ), world.Covers );
+		Assert.AreEqual( PoolBridgeResult.Ok, world.TryAdd( 2, 3, 1 ) );
+		Assert.IsTrue( paths.BuildSegment( (1, 3), (1, 3) ).Completed );
+		Assert.IsTrue( paths.BuildSegment( (1, 3), (1, 3) ).Completed, "laid twice: the placement counter holds one more" );
+		onEnd = true;
+		Assert.IsTrue( world.PathRemovalStrands( 1, 3 ), "someone on the end cell, and no other end path" );
+		Assert.AreEqual( CellBuildResult.Existing, paths.RemoveOnce( 1, 3 ), "a step that only lowers the counter leaves the path and strands no one" );
+		Assert.AreEqual( CellBuildResult.Occupied, paths.RemoveOnce( 1, 3 ), "the step that would empty the cell is refused" );
+		Assert.AreEqual( ParkCellType.Path, cells.TypeAt( 1, 3 ) );
+		onEnd = false;
+		Assert.AreEqual( CellBuildResult.Ok, paths.Remove( 1, 3 ) );
+	}
+
+	[TestMethod]
+	public void AnotherBridgeInTheWayIsNamedOnTheSharedCell()
+	{
+		var cells = Crossing();
+		var world = new PoolBridgeWorld( cells );
+		Assert.AreEqual( PoolBridgeResult.Ok, world.TryAdd( 2, 3, 1 ) );
+		// a north-south bridge whose span would cross the first one's deck
+		cells.SetType( 5, 0, ParkCellType.Path );
+		Assert.AreEqual( PoolBridgeResult.BridgeInTheWay, world.Check( 5, 1, 2, out var crossing ) );
+		Assert.AreEqual( (5, 3), crossing );
+		// a north-south bridge whose first approach cell is the first bridge's outside path end
+		cells.SetType( 9, 2, ParkCellType.Path );
+		Assert.AreEqual( PoolBridgeResult.BridgeInTheWay, world.Check( 9, 3, 2, out var end ) );
+		Assert.AreEqual( (9, 3), end );
+		// an east-west bridge whose outside path end is the first bridge's deck
+		Assert.AreEqual( PoolBridgeResult.BridgeInTheWay, world.Check( 9, 3, 1, out var deck ) );
+		Assert.AreEqual( (8, 3), deck );
+	}
+
+	[TestMethod]
 	public void ReservedCellsAndPeopleBlockPlacementAndPeopleBlockRefundUntilClear()
 	{
 		var cells = Crossing();
@@ -121,7 +345,7 @@ public class PoolBridgeWorldTests
 		var economy = EconomyTestData.Park( initialCash: 2400 );
 		var world = new PoolBridgeWorld( cells, reserved: ( x, y ) => reserved && x == 4 && y == 3,
 			occupied: ( x, y ) => standing && x == 5 && y == 3, economy: () => economy );
-		Assert.AreEqual( PoolBridgeResult.Occupied, world.TryAdd( 2, 3, 1 ) );
+		Assert.AreEqual( PoolBridgeResult.Blocked, world.TryAdd( 2, 3, 1 ) );
 		reserved = false;
 		standing = true;
 		Assert.AreEqual( PoolBridgeResult.Standing, world.TryAdd( 2, 3, 1 ) );

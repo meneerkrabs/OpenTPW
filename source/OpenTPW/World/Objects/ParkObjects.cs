@@ -597,10 +597,15 @@ public sealed class ParkObjects
 	/// <summary>
 	/// Replaces the Easymode markers with the real objects: every SYSG placed record at its saved anchor and
 	/// rotation (unresolved non-square rotations use the catalog shape), and the fixed items in park space.
-	/// Imported objects are opened (the saved open word is not imported, SAVE-006).
+	/// Imported objects are opened (the saved open word is not imported, SAVE-006). Each object takes the hoarding state, node states and animation channels of its RideSystem record (<see cref="OriginalObjectRuntime.RestoreSavedScene"/>); what could not be restored is listed in <see cref="SavedSceneGaps"/>.
 	/// </summary>
 	// [BIN:TPW-EXE:0x004DB712 built ride closes] a built object opens in the constructor (open word +0x68 = 1, 0x4DB3B9) and closes again when its type has Info.HasQueue (Level.BuiltObjectStartsOpen); an imported object is not built: its open word comes from the save in the original (mCanLoad), which this port does not import and opens every imported object instead (SAVE-006)
 	public int ImportOriginal( OriginalParkImport save ) => ImportOriginalSteps( save ).LastOrDefault().Placed;
+
+	private readonly List<string> savedSceneGaps = new();
+
+	/// <summary>What <see cref="ImportOriginal"/> could not restore of the saved scene records' node states and animation controls, one line each.</summary>
+	public IReadOnlyList<string> SavedSceneGaps => savedSceneGaps;
 
 	/// <summary><see cref="ImportOriginal"/> one object at a time: after each, the objects placed so far and the share of the records done.</summary>
 	internal IEnumerable<(int Placed, float Share)> ImportOriginalSteps( OriginalParkImport save )
@@ -621,7 +626,16 @@ public sealed class ParkObjects
 			var imported = Register( new OriginalObject( entry, ComputePlacement( entry, record.X, record.Y, record.Rotation ), ScriptWorld, nextSeed++ ^ scriptKey, true, attractionId: null, seedScript: false ), thingId );
 			// [BIN:TPW-EXE:0x004647A0 hoarding load] the RideSystem record's flag word +0x1C bits 0..6 and its +0x22 dword are the thing's hoarding flags and level (docs/OBJECTS.md, "Hoarding")
 			if ( save.RideSystem?.Records.FirstOrDefault( scene => scene.Offset == record.Offset ) is { } scene )
+			{
 				imported.Runtime.Hoarding.Restore( ObjectHoardingState.UnpackSavedFlags( scene.InstanceFlags ), BitConverter.UInt32BitsToSingle( scene.InstanceDword ) );
+				// [BIN:TPW-EXE:0x004647A0 scene record load] the same record's node states and animation time controls (OriginalObjectRuntime.RestoreSavedScene) on the save's game clock
+				foreach ( var gap in imported.Runtime.RestoreSavedScene( scene, save.RuntimeBlocks?.ClockWords[0] ) )
+				{
+					var line = $"{entry.DisplayName} (RideSystem slot {scene.Slot}): {gap}.";
+					savedSceneGaps.Add( line );
+					Log.Trace( $"Original scene import: {line}" );
+				}
+			}
 			count++;
 			yield return (count, (index + 1) / (float)records.Count);
 		}
@@ -639,7 +653,7 @@ public sealed class ParkObjects
 	/// </summary>
 	// [BIN:TPW-EXE:0x005156A0 world setup fixed items] world setup creates the definitions named "gates" (wide literal 0x762448) and "lights" (0x762454) through 0x4db090 (case-insensitive compare 0x67b140); a missing definition logs "Could not find the gates feature" or the LIGHTSNAME message; a loaded save then restores the handles (writer 0x517076)
 	// [BIN:TPW-EXE:0x0051A2F0 vehicle on demand] the bus, seaplane and Ferry are created by the vehicle dispatch the first time each is sent (0x004DB090 at 0x0051A57E), never at setup
-	// RIDES-019 (see ParkFinale): End is not a setup object: ParkFinale creates it only on new research completion in TPW Instant Action (0x503D40 -> 0x516B00, after advice 0xA7), and its dismissal destroys it (0x48A970 -> 0x516C10). Game type 1 never starts it; type 0 also needs the player-wide record list behind 0x5B0C40, still absent. 0x409CD0 constructs the advice's handle argument, not a flag clear. The winning-camera follow, original panel, post-dismissal profile/dialog changes and original winning-UI restoration remain open; see docs/reverse/INSTANT-ACTION-FINALE.md.
+	// End is not a setup object either: ParkFinale creates it only on a new research completion that starts the finale (0x503D40 -> 0x516B00, after advice 0xA7: Instant Action, and the Full Simulation when the player's records show every park complete, 0x5B0C40), and its dismissal destroys it (0x48A970 -> 0x516C10); see docs/reverse/INSTANT-ACTION-FINALE.md.
 	public int AddDefaultFixedItems() => AddDefaultFixedItemSteps().LastOrDefault().Placed;
 
 	/// <summary><see cref="AddDefaultFixedItems"/> one object at a time, as <see cref="ImportOriginalSteps"/>.</summary>

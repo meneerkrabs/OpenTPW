@@ -76,7 +76,7 @@ public sealed partial class ParkHud
 	// ECON-058/UI-096: the offline simulation focus-loss latch does not own these timers; focus return is not game resume.
 	// Other dialogs, online ownership gates and nested host screens are not claimed to reproduce the original's single global flag.
 	internal static bool ChallengeMessageSuspensionFor( bool userPaused, IEnumerable<string> screens ) => userPaused
-		|| screens.Any( name => name is PauseMenuScreen or MapScreenName or "options" or "confirmDelete" or "confirmDeleteAttraction" or "confirmDismissStaff" );
+		|| screens.Any( name => name is PauseMenuScreen or MapScreenName or "options" or "confirmDelete" or "confirmDeleteAttraction" or "confirmDismissStaff" or WinningMessageScreen );
 
 	private void SyncChallengeMessageSuspension() =>
 		SetChallengeMessageTimersSuspended( ChallengeMessageSuspensionFor( challengeUserPaused, Stack?.Screens.Select( screen => screen.Name ) ?? Array.Empty<string>() ) );

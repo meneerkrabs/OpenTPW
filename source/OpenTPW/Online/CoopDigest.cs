@@ -7,17 +7,44 @@ namespace OpenTPW;
 /// </summary>
 internal static class CoopDigest
 {
-	/// <summary>Bumped whenever the digest's sections or their order change.</summary>
-	public const int Version = 1;
+	/// <summary>Bumped whenever the digest's sections or their order change (2: no drags hash as an empty set of them).</summary>
+	public const int Version = 2;
 
-	public static ulong Compute( Level level )
+	public static ulong Compute( Level level ) => Compute( level, out _ );
+
+	/// <summary><see cref="Compute(Level)"/>, with the world hash it took (a session's recording keeps it as its checkpoint).</summary>
+	public static ulong Compute( Level level, out ulong worldHash )
 	{
 		ArgumentNullException.ThrowIfNull( level );
 		var hash = new StateHasher();
 		hash.Add( Version );
-		hash.Add( level.ComputeStateHash() );
+		worldHash = level.ComputeStateHash();
+		hash.Add( worldHash );
 		level.AddSessionState( hash );
 		return hash.Value;
+	}
+
+	/// <summary>
+	/// [EXT:perf-run] The digest's cost on <paramref name="level"/> (docs/COOP.md, "Measurements"): the median time of <paramref name="repeats"/> digests and of as many world hashes alone,
+	/// in milliseconds. Measurement only: it reads the park and changes nothing.
+	/// </summary>
+	internal static (double Digest, double WorldHash) MeasureCost( Level level, int repeats )
+	{
+		ArgumentNullException.ThrowIfNull( level );
+		ArgumentOutOfRangeException.ThrowIfLessThan( repeats, 1 );
+		static double Median( Func<ulong> work, int repeats )
+		{
+			var times = new double[repeats];
+			for ( var index = 0; index < repeats; index++ )
+			{
+				var start = System.Diagnostics.Stopwatch.GetTimestamp();
+				work();
+				times[index] = System.Diagnostics.Stopwatch.GetElapsedTime( start ).TotalMilliseconds;
+			}
+			Array.Sort( times );
+			return times[repeats / 2];
+		}
+		return (Median( () => Compute( level ), repeats ), Median( level.ComputeStateHash, repeats ));
 	}
 }
 
@@ -77,8 +104,11 @@ public partial class Level
 		var staff = Park?.Economy.Staff;
 		hash.Add( staff?.PendingPlacementId ?? -1 );
 		hash.Add( staff?.StaleOnPointerId ?? -1 );
-		hash.Add( coasterEdits != null );
-		coasterEdits?.AddSessionState( hash );
+		// [EXT:online-coop-snapshot-join] the set of drags is made the first time anything reads it, on one machine alone: none hashes as an empty set
+		if ( coasterEdits != null )
+			coasterEdits.AddSessionState( hash );
+		else
+			hash.Add( 0 );
 		var scripts = Objects?.ScriptWorld;
 		hash.Add( scripts?.Coasters.Rides.Count ?? -1 );
 		if ( scripts != null )

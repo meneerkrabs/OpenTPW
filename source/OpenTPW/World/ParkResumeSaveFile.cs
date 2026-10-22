@@ -778,6 +778,10 @@ internal static class ParkResumeSaveFile
 				Require( InBounds( x, y ), $"attraction {attraction.AttractionId}'s queue cell ({x}, {y}) is outside the cell map" );
 			if ( attraction.JoinCell is { } join )
 				Require( InBounds( join.X, join.Y ), $"attraction {attraction.AttractionId}'s join cell ({join.X}, {join.Y}) is outside the cell map" );
+			if ( attraction.EntranceCell is { } entranceCell )
+				Require( InBounds( entranceCell.X, entranceCell.Y ), $"attraction {attraction.AttractionId}'s entrance cell ({entranceCell.X}, {entranceCell.Y}) is outside the cell map" );
+			if ( attraction.ExitCell is { } exitCell )
+				Require( InBounds( exitCell.X, exitCell.Y ), $"attraction {attraction.AttractionId}'s exit cell ({exitCell.X}, {exitCell.Y}) is outside the cell map" );
 		}
 		// The prototype's guest record and its part's guest cells join both ways: the live park registered the Totem's
 		// bridge exactly when it derived its cells (one placement step), and the capture wrote both sides of that.
@@ -785,11 +789,15 @@ internal static class ParkResumeSaveFile
 		// queue the saved guests never knew.
 		if ( snapshot.Prototype is { } prototype )
 		{
-			var record = guests.Attractions!.Any( item => item!.AttractionId == prototype.AttractionId );
-			Require( record == (prototype.EntranceCell != null),
-				record
+			var record = guests.Attractions!.FirstOrDefault( item => item!.AttractionId == prototype.AttractionId );
+			Require( (record != null) == (prototype.EntranceCell != null),
+				record != null
 					? $"the guests hold attraction {prototype.AttractionId}'s record, but the prototype part carries no guest cells"
 					: $"the prototype part carries guest cells, but the guests hold no attraction {prototype.AttractionId} record" );
+			// the record keeps the cells too: both are the live bridge's, so they agree
+			if ( record?.EntranceCell is { } recordEntrance )
+				Require( recordEntrance == prototype.EntranceCell && record.ExitCell == prototype.ExitCell,
+					$"attraction {prototype.AttractionId}'s guest record and the prototype part name different guest cells" );
 		}
 		var seenEdits = new HashSet<int>();
 		for ( var index = 0; index < guests.SeenQueueEdits!.Length; index++ )

@@ -138,10 +138,28 @@ park points counts-test and guest boarding read. A re-walk (commit mode) also re
 (`[TPW-EXE:0x545450]`).
 
 Messages: the walk posts no advisor or event message (`APPROX:TRACK-006` retired: `0x52A970` and the walk sites of the tool handler `0x524960` call no message builder `0x59B590`).
-The ids once listed for it are tool help of the cell build tool: 0xCC (204) is posted by the kart and water tool for a click with no line start (`0x526D41`),
-which OpenTPW's tool never has (the placement presets the start at the station's exit, `0x52A1A0`; the original reaches it only when a line closes with exactly Ctrl
-held and no queue to follow, UI-031), and 0xB8 (184, the path tool's first click), 0xD6 (214, the third later click of the path or queue tool) and 0x151 (337,
-the end of the queue tool) belong to the path and queue tools (`0x5272F5`, `0x527351`, `0x527620`; their producers are open under ADVISOR-009).
+The ids once listed for it are tool help of the cell build tool: 0xCC (204) is posted by the kart and water tool for a click with no line start (pushed at `0x526D41`,
+built at `0x527629` and posted at `0x52763c`), which the tool reaches only when a line closes with exactly Ctrl held and no queue start pending (the placement presets the start at the
+station's exit, `0x52A1A0`, and the track button's switch from the edit tool at the open end, `0x530830`; `SetMode` `0x52F580` keeps both; `0x527146`, UI-031).
+
+The queue start is the placement's `0x8186C0`, the record of its queue's start cell (`0x52A050`, the cell in `0x7639B8`/`0x7639BC`). Only placements set it (`0x524DD7`,
+`0x525269`, `0x52544E`, the Move tool's `0x5258AC`). A closed circuit hands over to the queue tool only while it is pending (`0x526F95`), whatever the click held, and the
+handover takes it (`0x527056`); the queue tool starts at the stored cell, which is the last placement's and may belong to another ride. A build or Move click on an
+accepted ghost (`0x524B53`, `0x5253F3`; a click on a refused ghost returns at the latch `0x816D48` before the mode dispatch, `0x524A63`), the Move tool's pick-up
+(`0x525E5A`), a path or queue commit (`0x527483`) and the coaster tool's own handover (`0x526680`) drop it too. So a kart or water ride the player just placed goes on into
+its queue tool, and the exactly-Ctrl state is reached when a track is closed again later through the ride window's track button, with no other placement's start pending.
+OpenTPW keeps the same pending start for the issuer's tools (`Level.EnterPlacedTrackTool`, which the HUD's placement calls, and `Level.ContinueTrackTool`; the build click
+reads the refused ghost the HUD draws, `Level.BuildGhostAllowed`; a line whose command the park refused commits nothing; a start whose ride was sold since is dropped, an
+OpenTPW guard). The HUD's tool click passes the click's modifiers to the line's continuation, and the HUD's report of the next click posts 204
+(`ParkHud.ReportCellToolClick`, `AdvisorToolHelp.TrackLineStart`).
+
+A click whose tile the ghost refuses never gets there: the click handler tests the refused-ghost latch `0x816D48` before the mode dispatch (`0x524A63`), the tile preview
+without a start (`0x52453D`, `0x53AAC0` → `0x5370E0`) sets it, and the line modes then end the tool (`0x5266A3`), as `CellBuildTool` does for a refused first click. A line
+click with a start goes the same way: the preview walks the line from the start tile by tile (`0x52452E`) and stops at the first tile the ghost routine refuses, the money test
+of its chooser included (`0x539F95`), so the click lays none of the line and ends the tool. Neither of `SetMode`'s withdrawal lists names 0xCC, so the post is not held behind the frame's mode change and the
+tool's end does not take it back. The first producer map missed it because the push and the call are in different blocks (a jump into the queue tool's tail); the restored
+advice extension, which posted 204 as the roller coaster tool started, no longer does. 0xB8 (184, the path tool's first click), 0xD6 (214, the third later click of the path or queue tool) and 0x151 (337,
+the end of the queue tool) belong to the path and queue tools (`0x5272F5`, `0x527351`, `0x527620`; `ParkHud.ReportCellToolClick` posts them too).
 The tool handler's other direct calls of the message builder are tool help too (0xCD at `0x52644C`, in the cell-write path before the walk), and the tool-mode switch `0x52F580`
 posts the new mode's help (0xCB for mode 3); none follows a walk call site directly, so any help shown after a closed circuit would come from the mode switch, not from the walk (not traced).
 

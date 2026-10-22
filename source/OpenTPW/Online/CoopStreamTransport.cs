@@ -18,9 +18,44 @@ internal interface ICoopStreamTransport
 	bool Send( uint to, ReadOnlyMemory<byte> payload );
 	/// <summary>Leaves the session with <paramref name="reason"/> (a host's leave ends it for everyone).</summary>
 	bool Leave( string reason );
+	/// <summary>[EXT:online-coop-snapshot-join] Whether the server takes the host's skip of frames it no longer holds (<see cref="SkipFrames"/>); a transport without it cannot.</summary>
+	bool CanSkipFrames => false;
+	/// <summary>
+	/// [EXT:online-coop-snapshot-join] Tells the server the host's frames go on at <paramref name="from"/>: the host no longer holds the ones before it that the server needs, and every member is
+	/// assigned a capture past them (docs/COOP.md, "The host's trimmed frame"). False when it cannot go out now (a resume tells the host the server's position again).
+	/// </summary>
+	bool SkipFrames( ulong from ) => false;
 	event Action<CoopSessionState>? Resumed;
 	event Action<CoopFrameRefused>? FrameRefused;
 	event Action<CoopMemberChanged>? MemberChanged;
 	event Action<CoopFrame>? FrameReceived;
 	event Action<CoopRelayed>? MessageReceived;
+	/// <summary>This game is no longer in its session (kicked, the host left, it ended while away, the link closed).</summary>
+	event Action<CoopEnded>? SessionEnded;
+	/// <summary>
+	/// [EXT:online-coop-snapshot-join] Uploads the host's join snapshot of its session (docs/COOP.md, "Joining a running session"); <paramref name="done"/> runs once on the game thread, from a
+	/// later pump, with the stored snapshot's digest or why it failed.
+	/// </summary>
+	void UploadSnapshot( byte[] payload, Action<CoopSnapshotTransfer> done );
+	/// <summary>
+	/// [EXT:online-coop-snapshot-join] Downloads join snapshot <paramref name="sha256"/> of the session, <paramref name="bytes"/> long (a stalled or broken transfer resumes with a range);
+	/// <paramref name="done"/> runs once on the game thread, from a later pump, with the bytes checked against the digest, or why it failed.
+	/// </summary>
+	void DownloadSnapshot( string sha256, long bytes, Action<CoopSnapshotTransfer> done );
+}
+
+/// <summary>
+/// [EXT:online-coop-snapshot-join] What became of a join snapshot's upload or download (<see cref="ICoopStreamTransport.UploadSnapshot"/>, <see cref="ICoopStreamTransport.DownloadSnapshot"/>):
+/// the stored snapshot's digest or the downloaded bytes; else why it failed, whether trying again cannot help, when the server asks to be tried again, and whether the server no longer keeps
+/// the snapshot (it keeps a session's newest two).
+/// </summary>
+internal sealed record CoopSnapshotTransfer( string? Sha256, byte[]? Payload, string? Failure, bool Permanent = false, TimeSpan? RetryAfter = null, bool Missing = false,
+	bool TooLarge = false, bool Busy = false )
+{
+	public bool Succeeded => Failure == null;
+	public static CoopSnapshotTransfer Stored( string sha256 ) => new( sha256, null, null );
+	public static CoopSnapshotTransfer Downloaded( byte[] payload ) => new( null, payload, null );
+	/// <param name="busy">The server asked to be tried again later (too many requests, a server error): nothing was wrong with the transfer itself.</param>
+	public static CoopSnapshotTransfer Failed( string reason, bool permanent = false, TimeSpan? retryAfter = null, bool missing = false, bool tooLarge = false, bool busy = false ) =>
+		new( null, null, reason, permanent || tooLarge, retryAfter, missing, tooLarge, busy );
 }

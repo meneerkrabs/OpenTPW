@@ -314,7 +314,9 @@ public partial class Material : Asset
 			Outputs = Render.MultisampledFramebuffer.OutputDescription
 		};
 
-		Pipeline = Device.ResourceFactory.CreateGraphicsPipeline( pipelineDescription );
+		using ( LoadProfile.Measure( "pipeline" ) )
+			Pipeline = Device.ResourceFactory.CreateGraphicsPipeline( pipelineDescription );
+		LoadProfile.Count( "pipelines" );
 
 		var bufferDescription = new BufferDescription( 16 * 128, BufferUsage.UniformBuffer | BufferUsage.Dynamic );
 		ScratchBuffer = Device.ResourceFactory.CreateBuffer( bufferDescription );

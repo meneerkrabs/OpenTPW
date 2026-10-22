@@ -21,6 +21,7 @@ public class ParkCommandCodecTests
 		(new RemoveObjectAtCommand( 5, 6 ) { Player = 2 }, "0203040a0c"),
 		(new RemoveAttractionCommand( 17 ), "02040022"),
 		(new PickUpObjectCommand( 42 ) { Player = 3 }, "02050654"),
+		(new EndMoveCommand() { Player = 1 }, "020602"),
 		(new LayLineCommand( CellToolMode.Queue, 9, 1, 2, 1, 9 ), "020a00031202040212"),
 		(new UndoLineCommand( CellToolMode.Path, -1, 4, 5, new[] { (4, 5), (5, 5) }, new[] { (6, 5) } ) { Player = 1 }, "020b020101080a04080a0a0a020c0a"),
 		(new RemovePathCellCommand( 8, 9 ), "020c001012"),
@@ -101,6 +102,18 @@ public class ParkCommandCodecTests
 		CollectionAssert.AreEquivalent( types, Schema.Select( row => row.Command.GetType() ).ToArray(), "every command type has a schema row" );
 		foreach ( var (command, hex) in Schema )
 			Assert.AreEqual( hex, ParkCommandCodec.ToHex( command ), command.Kind.ToString() );
+	}
+
+	[TestMethod]
+	public void ThePoolBridgeCommandOfEveryDirectionKeepsItsBytes()
+	{
+		// one bridge entry builds in all four directions; saved and replicated commands of either direction decode as before
+		foreach ( var (direction, hex) in new[] { (0, "024c00181c00"), (1, "024c00181c02"), (2, "024c00181c04"), (3, "024c00181c06") } )
+		{
+			var command = new PlacePoolBridgeCommand( 12, 14, direction );
+			Assert.AreEqual( hex, ParkCommandCodec.ToHex( command ) );
+			Assert.AreEqual( command, ParkCommandCodec.Decode( Convert.FromHexString( hex ) ) );
+		}
 	}
 
 	[TestMethod]
@@ -301,5 +314,27 @@ public class ParkCommandCodecTests
 		Assert.ThrowsException<InvalidDataException>( () => ParkCommandLogFile.Deserialize( magic ) );
 		var backwards = log with { Entries = new[] { new ParkCommandLogEntry( 599, Schema[1].Command ) }, Checkpoints = Array.Empty<ParkCommandHashCheckpoint>() };
 		Assert.ThrowsException<InvalidDataException>( () => ParkCommandLogFile.Deserialize( backwards.Serialize() ), "a command before the start" );
+
+		// [EXT:online-coop-lockstep] a session's log says it applied under the session's rules (format 3's flags byte)
+		var session = ParkCommandLogFile.Deserialize( ( log with { SessionRules = true } ).Serialize() );
+		Assert.IsTrue( session.SessionRules );
+		Assert.IsFalse( read.SessionRules );
+		// a log of format 2 (no flags byte) reads as recorded without the session's rules, and holds no session log
+		var old = ParkCommandLogFile.Deserialize( log.Serialize( 2 ) );
+		Assert.IsFalse( old.SessionRules );
+		CollectionAssert.AreEqual( log.Entries.ToArray(), old.Entries.ToArray() );
+		Assert.ThrowsException<ArgumentOutOfRangeException>( () => ( log with { SessionRules = true } ).Serialize( 2 ) );
+		// a flag this version does not know is refused
+		var header = new ParkCommandWriter();
+		foreach ( var value in ParkCommandLogFile.Magic )
+			header.Byte( value );
+		header.Int( 3 );
+		header.String( "jungle" );
+		header.UInt64( 5 );
+		header.Long( 600 );
+		header.UInt64( 6 );
+		header.Byte( 2 );
+		header.Byte( 0 );
+		Assert.ThrowsException<InvalidDataException>( () => ParkCommandLogFile.Deserialize( header.ToArray() ), "an unknown flag" );
 	}
 }

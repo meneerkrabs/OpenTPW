@@ -81,6 +81,8 @@ public sealed class StoreException : Exception
 	public int Status { get; }
 	/// <summary>An <see cref="Online.Api.ApiErrorReasons"/> value, or null.</summary>
 	public string? Reason { get; }
+	/// <summary>[EXT:online-coop-snapshot-join] When a request a limit refused may be tried again (the answer's Retry-After), or null.</summary>
+	public TimeSpan? RetryAfter { get; init; }
 }
 
 /// <summary>A login result: a session, or a two-step enrollment the player has to confirm first.</summary>

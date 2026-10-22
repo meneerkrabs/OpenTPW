@@ -550,4 +550,13 @@ public class ModTests
 	{
 		Assert.IsNull( ModStartup.OpenTpwVersion( typeof( ModTests ).Assembly ), "the test assembly carries the SDK's default 1.0.0" );
 	}
+
+	[TestMethod]
+	public void TheSmokesIgnoreTheSavedModChoices()
+	{
+		Assert.IsTrue( ModStartup.IgnoresSavedChoices( new[] { "--smoke-test" } ) );
+		// the co-op join smoke's two phases run the default extensions, whatever mods.json holds
+		Assert.IsTrue( ModStartup.IgnoresSavedChoices( new[] { "--game-path", "x", "--coop-join-smoke", "join", "--coop-join-evidence", "y" } ) );
+		Assert.IsFalse( ModStartup.IgnoresSavedChoices( new[] { "--game-path", "x", "--load-original-level", "jungle" } ) );
+	}
 }

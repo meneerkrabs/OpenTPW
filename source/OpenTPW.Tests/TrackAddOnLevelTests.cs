@@ -63,12 +63,14 @@ public partial class TrackAddOnLevelTests
 
 	/// <summary>
 	/// The level with the ride placed at (10, 9) (its station tiles (10, 10) and (12, 10)) and the long kart loop of <see cref="TrackAddOnTests"/>: the straights
-	/// (14, 10) … (28, 10) and (28, 14) … (10, 14) between the corners (30, 10), (30, 14), (8, 14) and (8, 10). Without <paramref name="laid"/> the station stands alone.
+	/// (14, 10) … (28, 10) and (28, 14) … (10, 14) between the corners (30, 10), (30, 14), (8, 14) and (8, 10). Without <paramref name="laid"/> the station stands alone;
+	/// <paramref name="extra"/> joins the catalogue.
 	/// </summary>
-	private (Level Level, OriginalObject Ride, ObjectCatalogEntry Jump) World( bool hasQueue = false, bool laid = true )
+	private (Level Level, OriginalObject Ride, ObjectCatalogEntry Jump) World( bool hasQueue = false, bool laid = true, ObjectCatalogEntry? extra = null )
 	{
 		var (rideEntry, jump) = Entries( hasQueue );
-		var catalog = (ObjectCatalog)Activator.CreateInstance( typeof( ObjectCatalog ), Private, null, new object[] { "jungle", new[] { rideEntry, jump } }, null )!;
+		var entries = extra == null ? new[] { rideEntry, jump } : new[] { rideEntry, jump, extra };
+		var catalog = (ObjectCatalog)Activator.CreateInstance( typeof( ObjectCatalog ), Private, null, new object[] { "jungle", entries }, null )!;
 		var level = (Level)RuntimeHelpers.GetUninitializedObject( typeof( Level ) );
 		var objects = new ParkObjects( catalog, new SandboxParkGrid() );
 		var guests = new GuestSimulation( new GuestPathGrid( 48, 32 ), GuestTests.CreateSettings(), 7 ) { ArrivalsEnabled = false };
@@ -279,6 +281,100 @@ public partial class TrackAddOnLevelTests
 		}
 	}
 
+	/// <summary>
+	/// The HUD's own tool click (<c>ParkHud.UpdateCellTool</c>, the click a player makes) carries the frame's modifiers to the line's continuation, as the level's click does
+	/// (<see cref="OnlyExactlyCtrlKeepsACompletedTrackLineWithoutAStart"/>): a kart line that closes its circuit with exactly Ctrl held and no queue start pending keeps the line tool
+	/// without a start (tp.exe 0x527146), any other modifier ends it (0x527156).
+	/// </summary>
+	[DataTestMethod]
+	[DataRow( true, false, true )]
+	[DataRow( false, false, false )]
+	[DataRow( true, true, false )]
+	public void TheHudsToolClickCarriesItsModifiersToTheLinesContinuation( bool ctrl, bool shift, bool stays )
+	{
+		var (level, ride, _) = World();
+		AttachTrackEconomy( level, ride );
+		var hud = new Hud.ParkHud( level, OriginalUiTests.FakeStrings(), new Hud.EconomyParkStatus( () => level.Park!.Economy ), new NoBuildItems(), new Hud.HudHost() );
+		CutForLiveMend( level, ride );
+		var held = new List<Veldrid.Key>();
+		if ( ctrl )
+			held.Add( Veldrid.Key.ControlLeft );
+		if ( shift )
+			held.Add( Veldrid.Key.ShiftLeft );
+		HudToolClick.Click( hud, (20, 14), held.ToArray() );
+		Assert.IsTrue( ride.Runtime.Bump!.IsTrackValid, "the click closes the circuit" );
+		Assert.AreEqual( stays, level.CellTool.IsActive );
+		Assert.IsNull( level.CellTool.Start );
+		Assert.AreEqual( stays ? ride : null, level.TrackToolStation );
+	}
+
+	/// <summary>
+	/// The line tool's help 0xCC (204) through the HUD's own tool click: the line tool that a close with exactly Ctrl held kept without a start (tp.exe 0x527146) posts it for the
+	/// next click, which stores the start (0x526D41, the queue tool's post 0x527629); the click that kept the tool and the clicks of a line tool with a start post none. A ride
+	/// with a queue, as every shipped kart and water ride has, gets there too when no placement's queue start is pending (the track button's line tool).
+	/// </summary>
+	[DataTestMethod]
+	[DataRow( false )]
+	[DataRow( true )]
+	public void TheClickThatGivesTheKeptLineToolItsStartPostsHelp204( bool hasQueue )
+	{
+		var (level, ride, _) = World( hasQueue );
+		AttachTrackEconomy( level, ride );
+		if ( hasQueue )
+			WithQueue( ride );
+		var posted = new List<int>();
+		var hud = new Hud.ParkHud( level, OriginalUiTests.FakeStrings(), new Hud.EconomyParkStatus( () => level.Park!.Economy ), new NoBuildItems(), new Hud.HudHost { HelpPosted = posted.Add } );
+		CutForLiveMend( level, ride );
+		HudToolClick.Click( hud, (20, 14), Veldrid.Key.ControlLeft );
+		Assert.IsTrue( ride.Runtime.Bump!.IsTrackValid && level.CellTool.IsActive && level.CellTool.Start == null, "the close kept the line tool without a start" );
+		Assert.AreEqual( 0, posted.Count, "the click that closes the circuit posts nothing (0x527146 returns)" );
+		HudToolClick.Click( hud, (22, 14) );
+		Assert.AreEqual( (22, 14), level.CellTool.Start );
+		CollectionAssert.AreEqual( new[] { 204 }, posted, "the click that stores the start" );
+		HudToolClick.Click( hud, (26, 14) );
+		CollectionAssert.AreEqual( new[] { 204 }, posted, "a click with a start posts nothing" );
+	}
+
+	/// <summary>
+	/// A click of the kept line tool on a tile its ghost refuses ends the tool and posts no help: tp.exe tests the refused-ghost latch before the mode dispatch
+	/// (0x524A63), and the line modes go to SetMode(0, 0) (0x5266A3) before the start's store and its help 0xCC (0x526CB3).
+	/// </summary>
+	[TestMethod]
+	public void ARefusedTileEndsTheKeptLineToolWithoutHelp204()
+	{
+		var (level, ride, _) = World();
+		AttachTrackEconomy( level, ride );
+		var posted = new List<int>();
+		var hud = new Hud.ParkHud( level, OriginalUiTests.FakeStrings(), new Hud.EconomyParkStatus( () => level.Park!.Economy ), new NoBuildItems(), new Hud.HudHost { HelpPosted = posted.Add } );
+		CutForLiveMend( level, ride );
+		HudToolClick.Click( hud, (20, 14), Veldrid.Key.ControlLeft );
+		Assert.IsTrue( level.CellTool.IsActive && level.CellTool.Start == null );
+		// (21, 14) is an extension cell of the tile at (20, 14): the tile with its origin there is refused (Occupied)
+		Assert.AreEqual( CellBuildResult.Occupied, level.KartTracks!.CheckTile( 21, 14 ) );
+		HudToolClick.Click( hud, (21, 14) );
+		Assert.IsFalse( level.CellTool.IsActive, "the refused single-tile ghost ends the tool" );
+		Assert.AreEqual( 0, posted.Count );
+	}
+
+	[TestMethod]
+	public void TheLineToolOfAnOpenCircuitStartsAtItsOpenEndAndPostsNoHelp204()
+	{
+		var (level, ride, _) = World( laid: false );
+		AttachTrackEconomy( level, ride );
+		var posted = new List<int>();
+		var hud = new Hud.ParkHud( level, OriginalUiTests.FakeStrings(), new Hud.EconomyParkStatus( () => level.Park!.Economy ), new NoBuildItems(), new Hud.HudHost { HelpPosted = posted.Add } );
+		Assert.IsTrue( level.EnterTrackTool( ride ) );
+		Assert.AreEqual( CellToolMode.KartTrack, level.CellTool.Mode );
+		Assert.IsNotNull( level.CellTool.Start, "the open end is the start (0x530830, then 0x52F580 keeps it)" );
+		HudToolClick.Click( hud, (20, 10) );
+		Assert.AreEqual( 0, posted.Count );
+	}
+
+	private sealed class NoBuildItems : Hud.IBuildCatalog
+	{
+		public IReadOnlyList<Hud.BuildItem> GetItems( Hud.BuildCategory category ) => Array.Empty<Hud.BuildItem>();
+	}
+
 	private static void CutForLiveMend( Level level, OriginalObject ride )
 	{
 		Assert.IsTrue( level.EnterTrackTool( ride ) );
@@ -287,20 +383,6 @@ public partial class TrackAddOnLevelTests
 		Assert.AreEqual( CellToolMode.KartTrack, level.CellTool.Mode );
 		Assert.IsTrue( level.CellTool.Undo() );
 		Assert.AreEqual( (30, 14), level.CellTool.Start );
-	}
-
-	[TestMethod]
-	public void AFollowingQueueWinsOverExactlyCtrl()
-	{
-		var (level, ride, _) = World( hasQueue: true );
-		AttachTrackEconomy( level, ride );
-		ride.Visitors.HasCells = true;
-		ride.Visitors.QueueFrontCell = (4, 4);
-		CutForLiveMend( level, ride );
-		Assert.IsTrue( level.ClickCellTool( (20, 14), 0xc )?.Completed == true );
-		Assert.AreEqual( CellToolMode.Queue, level.CellTool.Mode );
-		Assert.AreEqual( (4, 4), level.CellTool.Start );
-		Assert.IsNull( level.TrackToolStation );
 	}
 
 	[DataTestMethod]

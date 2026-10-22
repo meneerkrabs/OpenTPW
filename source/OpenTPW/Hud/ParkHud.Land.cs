@@ -18,7 +18,7 @@ public sealed partial class ParkHud
 	private static IEnumerable<BuildItem> LandRows( BuildCategory category ) =>
 		category != BuildCategory.Features ? Enumerable.Empty<BuildItem>()
 			// [EXT:pools-ui] the pool rows follow the land rows while the opentpw.pools extension is on (ParkHud.Pools.cs)
-			: FeatureGates.Pools ? new[] { BuyLandRow, ClearLandRow, PoolPaintRow, PoolEraseRow, PoolRiverRow, PoolSlideRow, PoolBridgeEastRow, PoolBridgeSouthRow, PoolBridgeEraseRow } : new[] { BuyLandRow, ClearLandRow };
+			: FeatureGates.Pools ? new[] { BuyLandRow, ClearLandRow, PoolPaintRow, PoolEraseRow, PoolRiverRow, PoolSlideRow, PoolBridgeRow, PoolBridgeEraseRow } : new[] { BuyLandRow, ClearLandRow };
 
 	private string? LandRowName( BuildItem item ) => !IsLandRow( item ) ? null
 		: IsPoolRow( item ) ? PoolRowName( item )

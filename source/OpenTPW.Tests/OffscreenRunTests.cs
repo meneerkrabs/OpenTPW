@@ -13,6 +13,7 @@ public class OffscreenRunTests
 		Assert.IsTrue( Game.IsOffscreenRun( new[] { "--sandbox", "--smoke-test" }, null ) );
 		Assert.IsTrue( Game.IsOffscreenRun( new[] { "--load-original-level", "0", "--smoke-test" }, null ) );
 		Assert.IsTrue( Game.IsOffscreenRun( new[] { "--park-resume-smoke", "capture" }, null ) );
+		Assert.IsTrue( Game.IsOffscreenRun( new[] { "--coop-join-smoke", "join" }, null ) );
 		Assert.IsTrue( Game.IsOffscreenRun( new[] { "--play-movie", "bf", "--smoke-test" }, null ), "the movie smoke" );
 	}
 
@@ -28,6 +29,9 @@ public class OffscreenRunTests
 			new[] { "--load-original-level", "jungle", "--capture-camera", "10,-5,30,-135" },
 			new[] { "--load-original-level", "jungle", "--perf-run", "600" },
 			new[] { "--load-original-level", "jungle", "--perf-hash-tick", "100" },
+			new[] { "--load-original-level", "jungle", "--perf-build" },
+			new[] { "--startup-profile" },
+			new[] { "--hitch-report", "50" },
 			new[] { "--load-original-level", "jungle", "--debug-sim-minutes", "3" },
 			new[] { "--load-original-level", "jungle", "--debug-weather", "100" },
 			new[] { "--headless" },

@@ -347,7 +347,7 @@ public sealed class OnlineScreens
 				() => { if ( Session.IsLoggedIn ) Guard( () => { Session.Disconnect(); localStatus = ""; } ); else ShowLogin(); }, () => true),
 			("news", () => OnlineStrings.Get( OnlineLabel.News ), ShowNews, () => Session.Client != null),
 			("findParks", () => OnlineStrings.Ui( OnlineStrings.FindParks, "Find parks" ), ShowFindParks, () => Session.IsLoggedIn),
-			("publish", () => OnlineStrings.Ui( OnlineStrings.PublishPark, "Publish park" ), ShowPublish, () => level != null && !level.IsReadOnlyVisit && ParkSharing.ModsRefusal( level ) == null),
+			("publish", () => OnlineStrings.Ui( OnlineStrings.PublishPark, "Publish park" ), ShowPublish, () => level != null && !level.IsReadOnlyVisit && !level.IsCoopGuestPark && ParkSharing.ModsRefusal( level ) == null),
 			("sendPostcard", () => OnlineStrings.Ui( OnlineStrings.SendPostcard, "Send postcard" ), ShowSendPostcard, () => true),
 			("outbox", () => OnlineStrings.Ui( OnlineStrings.UnsentPostcards, "Unsent postcards" ), ShowOutbox, () => true),
 			("inbox", () => OnlineStrings.Get( OnlineLabel.Inbox ), ShowInbox, () => true),

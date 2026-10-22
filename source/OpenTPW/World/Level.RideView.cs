@@ -40,6 +40,26 @@ public partial class Level
 	}
 
 	/// <summary>
+	/// The winning screen's camera: the ride view of the finale object End, whose model carries the camera seat (seat 1, node 38 in the shipped End.MD2); false, and the camera
+	/// unchanged, when its model has no seat or a ride view is already open. The view follows the seat as End's animation moves it and takes the pointer's free look like any ride.
+	/// </summary>
+	// [BIN:TPW-EXE:0x0048AEBA winning camera] the winning screen calls 0x4E15B0(0) on the finale thing, the Ride it! routine: 0x42A560(model, type +0x80, 0, 0, 1) looks up seat 1 with 0x44B220(model, 0x1000, 1) and enters the seat camera, mode 4 (0x42AB20); without the seat it leaves the camera alone (0x42A6EE)
+	public bool EnterWinningView( OriginalObject end )
+	{
+		if ( RideView != null || end.IsDeleted || end.Runtime?.Model is not { } model || !Objects.Objects.Contains( end ) )
+			return false;
+		// the seat is the model's (a new End has no pose until its first animation step), followed from its pose once there is one
+		var seat = RideSeat.FindNode( model );
+		if ( seat < 0 )
+			return false;
+		parkCameraBeforeRide = Camera.Mode;
+		RideView = new RideCameraMode( end, Camera.Rotation.Forward, () => seat < end.NodeTransforms.Count ? end.GetNodeTransform( seat ) : null ) { LooksUnderWindows = true };
+		RideViewOpenedAt = Time.Now;
+		Camera.Mode = RideView;
+		return true;
+	}
+
+	/// <summary>
 	/// Leaves the ride view and restores the park camera it was entered from. The original leaves to the
 	/// first-person walk when the ride was entered from it, else to the orbit (ride-view exits: Escape, the
 	/// eject button, and a right click with RMB cancel on).

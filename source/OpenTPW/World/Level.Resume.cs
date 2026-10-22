@@ -14,19 +14,20 @@ public partial class Level
 
 	/// <summary>
 	/// Gives every placed object the economy catalogue knows an economy record before a save is captured: a save must hold a binding for each of them (<see cref="ParkResumeSaveFile.ValidateSnapshot"/>).
-	/// Every build path binds the object it places (<see cref="PlaceObject"/> does so even when a placement handler throws), so this only repairs a park that lost a binding anyway, and says so in the log.
+	/// Every build path binds the object it places (<see cref="PlaceObject"/> does so even when a placement handler throws), and so does the game for the fixed items it makes in play
+	/// (<see cref="BindFixedItemMadeInPlay"/>), so this only repairs a park that lost a binding anyway, and says so in the log.
 	/// The object adopts the lowest-numbered record of its type no other object holds: that is the record its own purchase made, which a failed build left unowned. Only when no such record exists is an
 	/// uncharged one registered, as the original-save import does (<see cref="ParkEconomy.RegisterExisting"/>), because nothing was bought for the object that the books could still refund or count.
 	/// </summary>
-	private void RepairMissingEconomyBindings()
+	internal void RepairMissingEconomyBindings()
 	{
 		if ( Park == null )
 			return;
-		foreach ( var item in Objects.Objects.ToArray() )
+		foreach ( var item in UnboundObjects().ToArray() )
 		{
-			if ( item.IsDeleted || item is PrototypeRide || economyInstances.ContainsKey( item ) || (PlacedRide != null && ReferenceEquals( item, PlacedRide ))
-				|| !Park.Economy.Catalog.TryGet( item.Entry.InfoId, out _ ) )
-				continue;
+			// [EXT:online-coop-lockstep] a shared park changes only through its commands: the host's save refuses instead of repairing on its own machine
+			if ( CoopRole != CoopRole.None )
+				throw new InvalidOperationException( $"{item.Entry.DisplayName} (attraction {item.Visitors.AttractionId}) has no economy binding, which a shared park cannot repair; save it after the session." );
 			var held = economyInstances.Values.ToHashSet();
 			if ( prototypeInstance is int prototype )
 				held.Add( prototype );
@@ -37,6 +38,11 @@ public partial class Level
 			LinkEconomy( item, state.Id );
 		}
 	}
+
+	/// <summary>The placed objects the economy catalogue knows that hold no economy binding (<see cref="RepairMissingEconomyBindings"/>).</summary>
+	private IEnumerable<OriginalObject> UnboundObjects() => Park == null ? Array.Empty<OriginalObject>()
+		: Objects.Objects.Where( item => !item.IsDeleted && item is not PrototypeRide && !economyInstances.ContainsKey( item ) && !(PlacedRide != null && ReferenceEquals( item, PlacedRide ))
+			&& Park.Economy.Catalog.TryGet( item.Entry.InfoId, out _ ) );
 
 	private IReadOnlyDictionary<string, string>? autosaveAssets;
 	private int autosaveAssetEntries = -1;
@@ -142,13 +148,35 @@ public partial class Level
 	internal ParkResumeSnapshot CaptureResumeSnapshotUnchecked( AutomaticAdvisor? advisor, string displayName, out Action validate, out IEnumerable<bool> validationSteps,
 		IReadOnlyDictionary<string, string>? verifiedAssets = null, DateTimeOffset? savedUtc = null, bool advisorMaySpeak = false )
 	{
+		var snapshot = CaptureResumeSnapshotParts( advisor, displayName, verifiedAssets, savedUtc, advisorMaySpeak, join: false );
+		var catalogue = Objects.Catalog; var settings = Park!.Economy.Settings; var economyCatalog = Park.Economy.Catalog; var assets = snapshot.AssetHashes;
+		validate = () => ParkResumeSaveFile.ValidateSnapshot( snapshot, catalogue, settings, economyCatalog, assets );
+		validationSteps = ParkResumeSaveFile.ValidateSnapshotSteps( snapshot, catalogue, settings, economyCatalog, assets );
+		return snapshot;
+	}
+
+	/// <summary>
+	/// [EXT:online-coop-snapshot-join] The park's save for a join snapshot (docs/COOP.md, "Joining a running session"), taken at the cut between two ticks: the parts of
+	/// <see cref="CaptureResumeSnapshot"/> without its preparations. The employees in hand are the join state's, not dropped; nothing is repaired, since a shared park changes only through its
+	/// commands, so an object without an economy binding refuses the capture; no advisor state (each player's advisor is its own); the park's kept asset manifest; the park's level as its display
+	/// name, as every save of the game has (a renamed park's lines may both be empty, which a save's name may not be). Not validated here: the guest validates what it loads.
+	/// </summary>
+	internal ParkResumeSnapshot CaptureJoinSnapshot() => CaptureResumeSnapshotParts( null, LevelName ?? "", AutosaveAssets(), null, false, join: true );
+
+	private ParkResumeSnapshot CaptureResumeSnapshotParts( AutomaticAdvisor? advisor, string displayName, IReadOnlyDictionary<string, string>? verifiedAssets, DateTimeOffset? savedUtc,
+		bool advisorMaySpeak, bool join )
+	{
 		if ( IsReadOnlyVisit || GameEditions.IsThemeParkInc || OriginalPark == null || Park == null || Guests == null )
 			throw new InvalidOperationException( "Only a writable Theme Park World park can be saved here." );
 		using ( FrameMarks.Measure( "capture.prepare" ) )
 		{
-			RepairMissingEconomyBindings();
+			if ( !join )
+				RepairMissingEconomyBindings();
+			else if ( UnboundObjects().FirstOrDefault() is { } unbound )
+				throw new InvalidOperationException( $"{unbound.Entry.DisplayName} (attraction {unbound.Visitors.AttractionId}) has no economy binding, which a shared park cannot repair." );
 			RequireResumableCatalogueDefaults();
-			StaffPlacement?.PrepareForSave();
+			if ( !join )
+				StaffPlacement?.PrepareForSave();
 		}
 		var prototype = CapturePrototypeSnapshot();
 		ParkResumeRuntime[] runtimes;
@@ -223,9 +251,6 @@ public partial class Level
 			ScriptMods = ScriptModsSave.Capture( Guests ),
 			AssetHashes = assets
 		};
-		var catalogue = Objects.Catalog; var settings = Park.Economy.Settings; var economyCatalog = Park.Economy.Catalog;
-		validate = () => ParkResumeSaveFile.ValidateSnapshot( snapshot, catalogue, settings, economyCatalog, assets );
-		validationSteps = ParkResumeSaveFile.ValidateSnapshotSteps( snapshot, catalogue, settings, economyCatalog, assets );
 		return snapshot;
 	}
 
@@ -330,6 +355,7 @@ public partial class Level
 		if ( gaps.Count != 0 ) throw new InvalidDataException( string.Join( "; ", gaps ) );
 		var registered = PrototypeRideSave.RestoreGuestCells( saved, ride.Visitors, Guests! );
 		// [EXT:developer-prototype] a prototype saved before the build laid its stand cell gets it at load (a cell that holds a type is left as it is)
+		// [EXT:online-coop-snapshot-join] kept for a join: a live prototype's stand cell holds its type already, so the lay changes nothing
 		if ( registered )
 		{
 			var (standX, standY) = GuestSimulation.StandCellOf( ride.Visitors );
@@ -369,16 +395,27 @@ public partial class Level
 			foreach ( var ride in target.Attractions.OfType<RideVisitorBridge>() )
 				ride.RecomputeQueue( target.Grid );
 		}
-		ValidateResumeQueueGeometry( snapshot, target );
+		ValidateResumeQueueGeometry( snapshot, target, restoreVisitorCells: true );
 		// Keep the original empty-bridge validation and restore order, including the saved map version.
 		if ( bridgeData == null ) world?.RestoreSnapshot( null );
 	}
 
-	/// <summary>Current cached queues must agree with the restored cells; a cache from before the last edit refreshes on the next tick.</summary>
-	internal static void ValidateResumeQueueGeometry( GuestSimulationSnapshot snapshot, GuestSimulation target )
+	/// <summary>
+	/// Current cached queues must agree with the restored cells; a cache from before the last edit refreshes on the next tick. With <paramref name="restoreVisitorCells"/> each ride's entrance
+	/// and exit go back as the save holds them once the snapshot is validated, and its queue is found from them again, before the comparison: the registration resolved them on the restored
+	/// grid, where a path laid nearer since the placement resolved them would move them (<see cref="RideVisitorBridge.RestoreVisitorCells"/>).
+	/// </summary>
+	internal static void ValidateResumeQueueGeometry( GuestSimulationSnapshot snapshot, GuestSimulation target, bool restoreVisitorCells = false )
 	{
 		var validation = target.ValidateSnapshot( snapshot );
 		if ( !validation.IsValid ) throw new InvalidDataException( string.Join( "; ", validation.Errors ) );
+		if ( restoreVisitorCells )
+		{
+			var registered = target.Attractions.OfType<RideVisitorBridge>().ToDictionary( item => item.AttractionId );
+			foreach ( var saved in snapshot.Attractions )
+				if ( registered.TryGetValue( saved.AttractionId, out var ride ) && ride.RestoreVisitorCells( saved ) )
+					ride.RecomputeQueue( target.Grid );
+		}
 		if ( snapshot.SeenGridVersion > target.Grid.Version )
 			throw new InvalidDataException( "The guests refer to a cell-map version newer than the saved layout." );
 		if ( snapshot.SeenGridVersion != target.Grid.Version ) return;

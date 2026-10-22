@@ -8,6 +8,9 @@ internal sealed partial class GameFlow
 	internal void SaveCurrentPark()
 	{
 		var level = Level ?? throw new InvalidOperationException( "There is no park to save." );
+		// [EXT:online-coop-lockstep] a co-op guest's park is the host's: the pause menu offers no Save for it, and nothing writes it
+		if ( level.IsCoopGuestPark )
+			throw new InvalidOperationException( "A shared park is saved by its host." );
 		if ( level.OriginalPark == null )
 		{
 			level.SaveSandbox();
@@ -70,6 +73,8 @@ internal sealed partial class GameFlow
 				candidateAdvisor.ValidateSnapshot( snapshot.Advisor );
 			}
 			AbandonParkBuild();
+			// [EXT:online-coop-snapshot-join] the player goes elsewhere: a join's build holds the one construction scene
+			LeaveJoinBuild();
 			using var scene = new EntityConstructionScope();
 			var candidate = new Level( snapshot, economy, OnlineFolders ) { ShowDeveloperPanels = false };
 			var candidateHud = CreateParkHud( candidate, EconomyParkStatus.ForLevel( candidate, PlayerKeys ) );

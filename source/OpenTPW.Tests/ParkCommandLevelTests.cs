@@ -182,6 +182,47 @@ public class ParkCommandLevelTests
 		Assert.IsNotNull( ParkCommandReplay.FirstMismatch( log, wrong ) );
 	}
 
+	/// <summary>
+	/// The Move tool's end is a command (<see cref="EndMoveCommand"/>), whatever ends the tool: after it the player carries the picked-up type no more, so a moving placement of the type, which
+	/// skips research and the balance test, is refused. While the tool stays (a placing click holding exactly Ctrl), another moving placement of the type is accepted, as the original's mode
+	/// 0x3b takes it; a pick-up while carrying ends the old move first, so the new type is the one carried.
+	/// </summary>
+	[TestMethod]
+	public void TheMoveToolsEndLeavesItsPlayerCarryingNothing()
+	{
+		var park = NewPark();
+		var level = park.Level;
+		var placed = level.Commands.Issue( level.BuildCommand( park.One.Entry, 10, 10, 0 ) ).As<OriginalObject>();
+		Assert.IsNotNull( placed, level.LastActionMessage );
+		Assert.IsTrue( level.BeginMove( placed! ) );
+		var entry = level.BuildEntry!;
+		var moved = level.Commands.Issue( level.BuildCommand( entry, 14, 14, level.BuildRotation ) ).As<OriginalObject>();
+		Assert.IsNotNull( moved, level.LastActionMessage );
+		// the tool stays armed after a placement holding exactly Ctrl: the next of the type is the Move tool's too, and charged as the first
+		Assert.IsTrue( park.Economy.Catalog.TryGet( entry.InfoId, out var info ) && info.PurchaseCost > 0 );
+		var balance = park.Economy.Balance;
+		var again = level.Commands.Issue( level.BuildCommand( entry, 18, 14, level.BuildRotation ) ).As<OriginalObject>();
+		Assert.IsNotNull( again, level.LastActionMessage );
+		Assert.AreEqual( balance - info.PurchaseCost, park.Economy.Balance, "a move costs the whole price again" );
+		Assert.IsTrue( level.IsMoving );
+		// any other end of the tool (a placement without Ctrl, a cancel, another tool) leaves the build tool, and the command layer hears it
+		level.BuildEntry = null;
+		Assert.IsFalse( level.IsMoving );
+		Assert.IsInstanceOfType( level.Commands.Log[^1].Command, typeof( EndMoveCommand ), "the tool's end is logged" );
+		var before = level.ComputeStateHash();
+		var refused = level.Commands.Issue( new PlaceObjectCommand( ParkCommandCodec.EntryKey( entry ), 22, 14, 0, Moving: true ) );
+		Assert.IsFalse( refused.Accepted, "the ended tool's type is carried no more" );
+		StringAssert.Contains( refused.Reason, "carries no", "refused by the carried test, not the cell" );
+		Assert.IsFalse( level.Commands.Issue( new EndMoveCommand() ).Accepted, "nothing is carried" );
+		Assert.AreEqual( before, level.ComputeStateHash() );
+		// a pick-up while the tool carries ends the old move before the new pick-up (the fixture has one type, so the order of the log is the proof), and the move goes on
+		Assert.IsTrue( level.BeginMove( again! ) );
+		Assert.IsTrue( level.BeginMove( moved! ) );
+		CollectionAssert.AreEqual( new[] { ParkCommandKind.PickUpObject, ParkCommandKind.EndMove, ParkCommandKind.PickUpObject },
+			level.Commands.Log.TakeLast( 3 ).Select( item => item.Command.Kind ).ToArray() );
+		Assert.IsNotNull( level.Commands.Issue( level.BuildCommand( level.BuildEntry!, 22, 14, level.BuildRotation ) ).As<OriginalObject>(), level.LastActionMessage );
+	}
+
 	[TestMethod]
 	public void AReadOnlyVisitRefusesEveryCommandAndKeepsItsHash()
 	{
@@ -248,7 +289,7 @@ public class ParkCommandLevelTests
 		long Amount() => Pick( -1L, long.MinValue, long.MaxValue, 0L, 100L, 10_000L, 10_001L, 18_000L );
 		bool Flag() => random.Below( 2 ) == 0;
 		string Text() => Pick( "Ann", "", "A\u0007B", "\ud800", new string( 'a', 600 ), "Kevin the", "Cosmic Cow" );
-		ParkCommand Next() => random.Below( 71 ) switch
+		ParkCommand Next() => random.Below( 72 ) switch
 		{
 			0 => new PlaceObjectCommand( Entry(), Coordinate(), Coordinate(), Rotation(), random.Below( 4 ) == 0, Pick( -1, -2, Id() ) ),
 			1 => new RemoveAtCommand( Coordinate(), Coordinate() ),
@@ -325,6 +366,8 @@ public class ParkCommandLevelTests
 			68 => new CutCoasterCommand( Id(), Pick( -1, 0, 3, 5 ), Pick( -1, 0, 4, 9 ) ),
 			// a co-op session's clock (C2b)
 			69 => new SetSessionClockCommand( Pick( -1L, long.MinValue, long.MaxValue, 0L, 63928191600L ) ),
+			// the Move tool's end
+			70 => new EndMoveCommand(),
 			_ => new RemoveAttractionCommand( Pick( -1, int.MinValue, 99_999 ) ),
 		};
 		CollectionAssert.IsSubsetOf( Enum.GetValues<ParkCommandKind>(), Enumerable.Range( 0, 1024 ).Select( _ => Next().Kind ).Distinct().ToArray(), "the stream draws every kind" );

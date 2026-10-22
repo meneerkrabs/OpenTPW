@@ -13,11 +13,15 @@ public readonly record struct SaveRideSystemNodeState( uint Packed, uint Flags )
 /// <summary>
 /// One animation time control of a RideSystem record: 11 u32 words of the loader's 14-word control, stored in
 /// the save's word order [0], [1], [2], [4], [5], [6], [3], [9], [10], [11], [12] (tp.exe 0x464bef-0x464bf4
-/// copies the seventh record word to control word 3). Word 0 is the flags word (the loader tests its bit 0x04
-/// at 0x464bf2 and then sets 0x10 at 0x464bfb); word 1 is the animation set (12 = none: 0x464bb6 logs when it
-/// is anything else, and the loader 0x464cbe sets the 0x400000 animated-instance flag when it is below 12); the remaining words
-/// are the animation, the times and a speed float (Easymode's words 9 and 11 hold 1.0 as a float, for instance).
-/// The loader bounds no word, so they are kept raw.
+/// copies the seventh record word to control word 3). The words are, in save order, Flags, AnimID, SubAnim,
+/// StartAnimTime, AnimTime, NoPauseAnimTime, the speed (a float), DeferredAnimID, DeferredSubAnim, DeferredFlags
+/// and the deferred speed (a float); the names are the ones the loader's debug dump 0x464580 prints for control words
+/// 0, 1, 2, 4, 5, 6, 9, 10 and 11, and the speed is control word 3, which the frame formula multiplies (0x473490).
+/// The flags word holds 0x1 loop, 0x2 held on the first frame (AnimID 13), 0x4 ended (AnimID 14; the loader then sets
+/// 0x10, sample once, at 0x464bfb), 0x8 an AnimID-0 clip ended, 0x40 the unscaled clock (0x472f60, 0x4735d0). AnimID 12 is
+/// "none": 0x464bb6 logs when it is anything else, and the loader 0x464cbe sets the 0x400000 animated-instance flag when it
+/// is below 12. The times are milliseconds of the game clock the save's Clock block stores. The loader bounds no word, so
+/// they are kept raw; OriginalObjectRuntime.RestoreSavedScene puts them back on the object's channels.
 /// </summary>
 public sealed record SaveRideSystemControl( uint Flags, uint AnimationSet, uint[] Words );
 

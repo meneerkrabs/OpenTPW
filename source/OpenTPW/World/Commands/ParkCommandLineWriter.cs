@@ -42,12 +42,13 @@ public sealed class ParkCommandLineWriter : ICellLineWriter
 			if ( native && result.As<SegmentResult>() is { } segment ) activeQueue.RememberNativeResult( segment );
 			else activeQueue.ResetToolSession();
 		}
-		// a refused command lays nothing: the tool sees a line stopped at its first cell
+		// a refused command lays nothing: the tool sees a line stopped at its first cell; one that threw while it ran may have laid some (CommandRefused stays false)
 		return result.As<SegmentResult>() ?? new SegmentResult( start, Array.Empty<(int X, int Y)>(), 0, CellBuildResult.Occupied, false )
 		{
 			Start = start,
 			Line = ParkPathBuilder.LayLine( start, Inner.SnapsToLine ? ParkPathBuilder.SnapEnd( start, end ) : end ),
-			StoppedAt = start
+			StoppedAt = start,
+			CommandRefused = result.Error == null
 		};
 	}
 

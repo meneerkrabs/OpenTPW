@@ -236,6 +236,7 @@ internal sealed partial class GameFlow
 			this.host = host;
 			this.payload = payload;
 			steps = Steps().GetEnumerator();
+			Timings.ProcessBuild = Interlocked.Increment( ref processBuilds );
 		}
 
 		public Level Candidate => complete && candidate != null ? candidate : throw new InvalidOperationException( "The shared park is not built yet." );
@@ -244,6 +245,21 @@ internal sealed partial class GameFlow
 
 		public int StagedEntities => scene?.StagedEntities ?? 0;
 
+		public CoopBuildTimings Timings { get; } = CoopBuildTimings.ForStages( "save", "files", "catalogue", "manifest", "validation", "economy", "level", "hud", "advisor" );
+
+		/// <summary>
+		/// The stage the build's work runs in now, and when its current part began (<see cref="Timings"/>): a stage is charged its part when the next begins or the step ends, so a step that
+		/// runs past a stage's end charges each stage its own part, and a step that throws is charged too.
+		/// </summary>
+		private CoopWorkTiming? stage;
+		private long partStarted;
+		/// <summary>The build's slices so far: the frame a stage last ran in.</summary>
+		private int slice;
+		/// <summary>The timings' own bookkeeping in the current slice, in <see cref="Stopwatch"/> ticks, which the slice's budget leaves out.</summary>
+		private long bookkeeping;
+		/// <summary>The builds of captures this process began; the first is the process's cold one.</summary>
+		private static int processBuilds;
+
 		public bool Step()
 		{
 			if ( abandoned || installed )
@@ -251,13 +267,31 @@ internal sealed partial class GameFlow
 			if ( complete )
 				return true;
 			var started = Stopwatch.GetTimestamp();
-			bool OverBudget() => Stopwatch.GetElapsedTime( started ).TotalMilliseconds >= ParkBuildBudgetMilliseconds;
+			// the budget is the slice's time as before the timings (the scene's resume and pause in it), less the timings' own bookkeeping (the profile's resume and pause among it), so
+			// the slices run as they did before them
+			double Worked() => (Stopwatch.GetTimestamp() - started - bookkeeping) * 1000d / Stopwatch.Frequency;
+			bool OverBudget() => Worked() >= ParkBuildBudgetMilliseconds;
+			slice++;
+			// the build's own work only: the live scene's frames between its slices are no part of its sections, which are taken slice by slice
+			LoadProfile.Resume();
+			var sections = LoadProfile.Snapshot();
+			bookkeeping = Stopwatch.GetTimestamp() - started;
 			scene?.Resume();
 			try
 			{
 				while ( !OverBudget() )
 				{
-					if ( !steps.MoveNext() )
+					partStarted = Stopwatch.GetTimestamp();
+					bool more;
+					try
+					{
+						more = steps.MoveNext();
+					}
+					finally
+					{
+						Charge( Stopwatch.GetTimestamp() );
+					}
+					if ( !more )
 					{
 						complete = true;
 						break;
@@ -268,13 +302,54 @@ internal sealed partial class GameFlow
 			{
 				// the live scene runs its frames between the build's: the candidate waits set aside, until the swap once it is complete
 				scene?.Pause();
+				var worked = Worked();
+				var counted = Stopwatch.GetTimestamp();
+				LoadProfile.Pause();
+				foreach ( var (name, section) in LoadProfile.Snapshot() )
+				{
+					var before = sections.TryGetValue( name, out var earlier ) ? earlier.Milliseconds : 0;
+					if ( section.Milliseconds > before )
+						Timings.Sections[name] = Timings.Sections.GetValueOrDefault( name ) + section.Milliseconds - before;
+				}
+				Timings.Frames++;
+				Timings.LongestFrameMilliseconds = Math.Max( Timings.LongestFrameMilliseconds, worked );
+				// the build is over: the profile runs on as it did before it
+				if ( complete )
+					LoadProfile.Resume();
+				bookkeeping += Stopwatch.GetTimestamp() - counted;
 			}
 			// the check at the cut and the swap get a frame of their own when this one is spent
 			return complete && !OverBudget();
 		}
 
+		/// <summary>
+		/// The current stage is charged its part up to <paramref name="now"/> (a part that alone took the budget is listed), the work from here on belongs to the stage <paramref name="next"/>
+		/// when one <paramref name="begins"/> (to none when null), and the next part begins after this bookkeeping, which the slice's budget leaves out.
+		/// </summary>
+		private void Charge( long now, bool begins = false, string? next = null )
+		{
+			if ( stage != null )
+			{
+				var milliseconds = Stopwatch.GetElapsedTime( partStarted, now ).TotalMilliseconds;
+				stage.Add( milliseconds, slice );
+				if ( milliseconds >= ParkBuildBudgetMilliseconds )
+					Timings.LongSteps.Add( new CoopLongStep( stage.Name, stage.Steps, milliseconds, stage.Name == "level" ? candidate?.ConstructionProgress : null ) );
+			}
+			if ( begins )
+				stage = next == null ? null : Timings.Stage( next );
+			partStarted = Stopwatch.GetTimestamp();
+			bookkeeping += partStarted - now;
+		}
+
+		/// <summary>The build's work from here on belongs to the stage <paramref name="name"/>.</summary>
+		private void Begin( string name ) => Charge( Stopwatch.GetTimestamp(), begins: true, next: name );
+
+		/// <summary>The current stage ends: until the next begins, the build's work is no stage's (a step that only resumes to begin the next adds it no part).</summary>
+		private void End() => Charge( Stopwatch.GetTimestamp(), begins: true );
+
 		private IEnumerable<bool> Steps()
 		{
+			Begin( "save" );
 			var saved = ParkResumeSaveFile.Deserialize( payload.Save );
 			if ( saved.Gate == null || saved.Staff == null )
 				throw new InvalidDataException( "The shared park's save is missing its gate or staff-world state." );
@@ -284,10 +359,13 @@ internal sealed partial class GameFlow
 			try { ParkResumeMods.Require( saved.Mods, OpenTpwExtensions.Active ); }
 			catch ( InvalidDataException error ) { throw new CoopJoinRefusedException( $"This game's simulation mods differ from the host's park: {error.Message}" ); }
 			snapshot = saved;
+			End();
 			yield return true;
 			// a browser copies a level's files on first use: the build waits for them
+			Begin( "files" );
 			while ( LevelDataReady?.Invoke( saved.Theme ) == false )
 				yield return true;
+			Begin( "catalogue" );
 			var easy = saved.Economy.Easy;
 			ObjectCatalog? loaded = null;
 			foreach ( var step in ObjectCatalog.LoadSteps( saved.Theme, easy ) )
@@ -298,10 +376,15 @@ internal sealed partial class GameFlow
 			var catalog = loaded ?? throw new InvalidOperationException( "The shared park's object catalogue did not load." );
 			var settings = BalanceSettings.Load( saved.Theme, easy );
 			var economyCatalog = EconomyObjectCatalog.Load( saved.Theme, easy );
+			End();
 			yield return true;
 			IReadOnlyDictionary<string, string> assets;
+			Begin( "manifest" );
 			if ( flow.joinAssets is { } kept && ReferenceEquals( kept.Catalog, catalog ) && kept.Entries == catalog.Entries.Count )
+			{
 				assets = kept.Manifest;
+				stage!.Status = CoopTimingStatus.Cached;
+			}
 			else
 			{
 				var entries = catalog.Entries.Count;
@@ -314,12 +397,16 @@ internal sealed partial class GameFlow
 					flow.joinAssets = (catalog, entries, manifest);
 			}
 			// both manifests are complete here: a difference is this game's files, and every build of a capture would meet it
+			Begin( "validation" );
 			try { ParkResumeSaveFile.RequireAssets( saved, catalog, assets ); }
 			catch ( InvalidDataException error ) { throw new CoopJoinRefusedException( $"This game's files differ from the host's: {error.Message}" ); }
 			foreach ( var step in ParkResumeSaveFile.ValidateSnapshotSteps( saved, catalog, settings, economyCatalog, assets ) )
 				yield return step;
+			Begin( "economy" );
 			var economy = ParkSaveFile.Restore( saved.Economy, settings, economyCatalog );
+			End();
 			yield return true;
+			Begin( "level" );
 			scene = new EntityConstructionScope();
 			candidate = Level.BeginJoinOverFrames( saved, economy, flow.OnlineFolders, payload.State );
 			candidate.ShowDeveloperPanels = false;
@@ -329,12 +416,17 @@ internal sealed partial class GameFlow
 				LevelSteps++;
 				yield return true;
 			}
-			// in the candidate's scene, as an entry makes them in the park's: the HUD, then a fresh advisor as an entry decides it
+			// in the candidate's scene, as an entry makes them in the park's: the HUD, then a fresh advisor as an entry decides it (the level's last step and the HUD share a step,
+			// each charged its own part)
+			Begin( "hud" );
 			hud = flow.CreateParkHud( candidate, flow.HudStatusFor( candidate ) );
 			hudLanguage = GameLanguage.Version;
+			End();
 			yield return true;
+			// a game without its advisor leaves the advisor's stage one that did not run
 			if ( flow.AutomaticAdvisorEnabled && !flow.advisorUnavailable )
 			{
+				Begin( "advisor" );
 				try
 				{
 					advisor = AutomaticAdvisor.TryCreate();
@@ -386,6 +478,8 @@ internal sealed partial class GameFlow
 			if ( abandoned || installed )
 				return;
 			abandoned = true;
+			// the profile was left paused at the end of the build's last slice
+			LoadProfile.Resume();
 			try
 			{
 				advisor?.Dispose();

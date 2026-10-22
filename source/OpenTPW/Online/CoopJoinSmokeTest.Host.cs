@@ -559,6 +559,11 @@ internal sealed partial class CoopJoinSmokeTest
 		File.WriteAllBytes( Path.Combine( evidenceDirectory, "host-final-save.json" ), save );
 		File.WriteAllBytes( Path.Combine( evidenceDirectory, "host-final-state.bin" ), level.CaptureJoinState().Encode() );
 		WriteFrames( transport.Frames );
+		var captureTimings = stream.CaptureTimings;
+		Require( captureTimings.Count == cuts.Count && captureTimings.Select( item => item.Generation ).SequenceEqual( cuts.Select( cut => cut.Generation ) ),
+			$"every capture's timings are kept ({captureTimings.Count} of {cuts.Count})" );
+		foreach ( var timings in captureTimings )
+			RequireTimings( timings );
 		var evidence = HostEvidence( completed: true, failure: null ) with { FinalDigest = digest, FinalWorldHash = world, FinalSaveSha256 = Sha256Hex( save ) };
 		WriteJson( "host-evidence.json", evidence );
 		session.End( "The smoke ended." );
@@ -567,6 +572,19 @@ internal sealed partial class CoopJoinSmokeTest
 			+ $"{cuts.Count} captures; digest {digest:X16}." );
 	}
 
+	/// <summary>A capture's timings are whole: every part ran and was timed (finite, not negative), the save and the compression in slices, the payload uploaded.</summary>
+	private static void RequireTimings( CoopCaptureTimings timings )
+	{
+		var parts = new[] { timings.PublishMilliseconds, timings.DigestMilliseconds, timings.StateMilliseconds, timings.SnapshotMilliseconds, timings.SerializerSetupMilliseconds,
+			timings.Save.Milliseconds, timings.SaveCopyMilliseconds, timings.WriterSetupMilliseconds, timings.Compression.Milliseconds, timings.FinishMilliseconds,
+			timings.LongestFrameMilliseconds, timings.UploadSeconds ?? -1 };
+		Require( parts.All( value => double.IsFinite( value ) && value >= 0 ), $"capture {timings.Generation}'s timings are finite and not negative ({timings})" );
+		Require( timings.Save is { Status: CoopTimingStatus.Measured, Steps: > 0 } && timings.Compression is { Status: CoopTimingStatus.Measured, Steps: > 0 }
+			&& timings.SaveBytes > 0 && timings.BodyBytes > timings.SaveBytes && timings.PayloadBytes > 0 && timings.Frames >= 3,
+			$"capture {timings.Generation}'s save and compression ran in slices over frames ({timings})" );
+	}
+
 	private CoopSmokeHostEvidence HostEvidence( bool completed, string? failure ) => new( completed, failure, level?.LevelName ?? "jungle", ParkStartKind.InstantAction.ToString(),
-		coasters.Count, cuts.ToArray(), transport?.Frames.Count > 0 ? transport.Frames[^1].Seq : 0, level?.TickCount ?? 0, session?.HostStream?.LastRecord ?? 0, 0, 0, "", hostFrame );
+		coasters.Count, cuts.ToArray(), transport?.Frames.Count > 0 ? transport.Frames[^1].Seq : 0, level?.TickCount ?? 0, session?.HostStream?.LastRecord ?? 0, 0, 0, "", hostFrame,
+		session?.HostStream?.CaptureTimings.ToArray() ?? Array.Empty<CoopCaptureTimings>(), CoopSmokeEnvironment.Of( flow ) );
 }

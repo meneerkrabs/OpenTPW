@@ -849,3 +849,19 @@ A guest's join of a co-op session builds the host's park over frames beside the 
 - **The wait for the files spins.** A page copies a theme's folder on the theme's first use, and the join's build waits for it. Its loop asks whether the files are there until the slice's 12 ms budget is spent, so every frame of the wait took 16 ms of update instead of the front end's 1 ms, for 6.4 s. A park start waits once a frame instead (`GameFlow.QueueLevel`).
 - **The swap's frame.** About 245 ms of it is neither the check nor the swap: the rest of that frame's update, the joined park's first among it. The join's build has none of the steps that prepare a park start's entering frame (`GameFlow.PrepareEntry`, "The entering frame" above).
 - **Next.** C2c-2b-3 splits the save's parse, the swap's frame, the objects' restore, the level's last step and the guests, and ends the wait's slice instead of spending it. It measures again first: the build steps split for a park start since ("Build steps", #741) are the join's level steps too.
+
+### Where a join's slice ends (C2c-2b-3a)
+
+On main after the build steps were split (#741), the join's level steps had shrunk (the level's last step 62 ms ahead of time, the guests 24 ms), but the wait for the files still spun, and the save's parse made the codec's reflection metadata in one go. C2c-2b-3a ends the wait's slice after one question, ends a slice before a step known to be long, and makes the metadata in steps of its own. Same machine and harness, medians in milliseconds (docs/COOP.md, "Measurements"):
+
+| Part of the join | AOT before | AOT after | Interpreter before | Interpreter after |
+| --- | ---: | ---: | ---: | ---: |
+| The wait for the level's files | 371 frames | 9 frames | 387 frames | 8 frames |
+| The join's build | 403 frames | 64 frames | 471 frames | 107 frames |
+| From asking to join to the swap (the page's frame record) | 8.9 s | 2.7 s | 13.2 s | 5.2 s |
+| The save's parse (the metadata in steps after) | 384 | 88 | 582 | 191 |
+| The objects' restore and the coasters | 283 | 288 | 1,361 | 1,230 |
+| The swap's frame, with its drawing | 341 | 345 | 658 | 627 |
+| Catching up after the swap | 0.57 s | 0.26 s | 2.17 s | 0.75 s |
+
+The page copies a theme's files between its frames, so the loop that spent every frame's budget asking for them most likely kept that copy waiting; these timings do not follow the copy itself. The measuring smoke's marks were on while each park was built, where the baseline had none, so small differences are no finding. The swap's frame is now the longest of a join ahead of time. Its marks show the joined park's first update of its level (185 ms: the pools' 72, the entities' first use of models, textures and pipelines 67, the first simulation step 45), the check at the cut (75) and the advisor's first update (39). A park start prepares much of that first-time work in its build (`GameFlow.PrepareEntry`); the join's build does not yet (C2c-2b-3c).

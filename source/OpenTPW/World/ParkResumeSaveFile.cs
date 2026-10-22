@@ -58,9 +58,11 @@ internal static class ParkResumeSaveFile
 		if ( bytes.Length > MaximumFileSize )
 			throw new InvalidDataException( "World save exceeds the size limit." );
 		ParkResumeSnapshot? snapshot;
+		// the parse and the shape apart in a load's profile (docs/COOP.md, "Measurements"): a no-op while none records
 		try
 		{
-			snapshot = ParkResumeJson.Deserialize<ParkResumeSnapshot>( bytes );
+			using ( LoadProfile.Measure( "save-json" ) )
+				snapshot = ParkResumeJson.Deserialize<ParkResumeSnapshot>( bytes );
 		}
 		catch ( JsonException exception )
 		{
@@ -78,7 +80,8 @@ internal static class ParkResumeSaveFile
 		}
 		if ( snapshot.Version != CurrentVersion )
 			throw new InvalidDataException( $"Unsupported world save version {snapshot.Version}." );
-		ValidateShape( snapshot );
+		using ( LoadProfile.Measure( "save-shape" ) )
+			ValidateShape( snapshot );
 		return snapshot;
 	}
 

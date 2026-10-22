@@ -259,6 +259,44 @@ class CoopJoinTimingsTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     coop_join_timings.load(root)
 
+    def test_the_swaps_marks_are_listed_by_mark_and_must_be_those_of_the_swaps_frame(self):
+        def marked(swap_frame=2, after_frame=3):
+            def change(host, join):
+                join["SwapFrames"] = [
+                    {"Outcome": "joined", "Role": "swap", "Frame": swap_frame, "Marks": {"coop.session": [120.0, 1], "park.level": [30.5, 1], "sim.guests": [0.4, 3]}},
+                    {"Outcome": "joined", "Role": "after", "Frame": after_frame, "Marks": {"park.level": [20.0, 1]}},
+                    {"Outcome": "resynced", "Role": "swap", "Frame": 4, "Marks": {"coop.session": [40.0, 1]}},
+                    {"Outcome": "resynced", "Role": "after", "Frame": 5, "Marks": {"park.hud": [2.0, 1]}}]
+            return change
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary)
+            write_run(root / "run-0", 30.0, 3.0, change=marked())
+            write_run(root / "run-1", 30.0, 3.0)
+            table = coop_join_timings.table([coop_join_timings.load(root / f"run-{index}") for index in range(2)])
+            # a mark under 1 ms in every run is left out; a run without marks has none
+            self.assertIn("| joined: the swap's frame, mark coop.session (1 of 2 runs) | 120 | 120-120 | 120, - |", table)
+            self.assertIn("| joined: the swap's frame, mark park.level (1 of 2 runs) | 30.5 |", table)
+            self.assertIn("| joined: the frame after the swap, mark park.level (1 of 2 runs) | 20.0 |", table)
+            self.assertIn("| resynced: the swap's frame, mark coop.session (1 of 2 runs) | 40.0 |", table)
+            self.assertNotIn("sim.guests", table)
+            # marks of another frame than the swap's, or than the one after it, are refused
+            write_run(root / "run-2", 30.0, 3.0, change=marked(swap_frame=1))
+            write_run(root / "run-3", 30.0, 3.0, change=marked(after_frame=4))
+            for run in ("run-2", "run-3"):
+                with self.subTest(run), self.assertRaises(ValueError):
+                    coop_join_timings.load(root / run)
+
+    def test_a_build_from_before_the_codec_stage_is_read_without_it(self):
+        def without_codec(host, join):
+            for timing in join["JoinTimings"]:
+                timing["Build"] = [stage for stage in timing["Build"] if stage["Name"] != "codec"]
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary)
+            write_run(root / "run-0", 30.0, 3.0, change=without_codec)
+            table = coop_join_timings.table([coop_join_timings.load(root / "run-0")])
+        self.assertIn("| joined: save | 1.5 |", table)
+        self.assertNotIn("codec", table)
+
     def test_pages_in_different_browsers_or_guests_in_different_builds_are_no_one_measurement(self):
         for name, second in [("another browser", {"page": dict(PAGE, chrome="Chrome/156")}),
                              ("another compilation", {"change": lambda host, join: (browser(host, join), join["Environment"].update(Compilation="interpreter"))}),

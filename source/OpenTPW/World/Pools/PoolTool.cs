@@ -36,6 +36,20 @@ public sealed class PoolTool
 	private int bridgeDirection;
 	/// <summary>Bridge mode uses one click per bridge and never paints water.</summary>
 	public bool IsBridge => IsActive && bridgeMode;
+	/// <summary>The direction the bridge in hand is built in (<see cref="GuestPathGrid.Directions"/>: 0 north, 1 east, 2 south, 3 west), the first land approach cell being the click.</summary>
+	public int BridgeDirection => bridgeDirection;
+	/// <summary>
+	/// Turns the bridge in hand by <paramref name="steps"/> quarter turns the way an object blueprint turns: a step is +90 degrees of build rotation, which maps the along axis (1, 0) to (0, -1), so comma takes east to north (<see cref="GuestPathGrid.Directions"/> index minus one; comma is one step, full stop three: <see cref="ParkHud.BlueprintTurnSteps"/>),
+	/// and checks the hovered place again so the blueprint follows. Does nothing outside the bridge placing mode.
+	/// </summary>
+	public void RotateBridge( int steps )
+	{
+		if ( !IsBridge || IsErasing )
+			return;
+		bridgeDirection = (((bridgeDirection - steps) % 4) + 4) % 4;
+		if ( HoverCell is { } cell )
+			Hover( cell.X, cell.Y );
+	}
 	public PoolBridgeResult? HoverBridgeResult { get; private set; }
 	/// <summary>The cell that refuses the hovered bridge, when one cell is to blame (<see cref="PoolBridgeWorld.Check(int, int, int, out (int X, int Y)?)"/>).</summary>
 	public (int X, int Y)? HoverBridgeBlocker { get; private set; }
@@ -116,7 +130,7 @@ public sealed class PoolTool
 		return true;
 	}
 
-	/// <summary>Starts single-click placement or removal. The anchor is the first land approach cell; directions follow GuestPathGrid.</summary>
+	/// <summary>Starts single-click placement or removal. The anchor is the first land approach cell; directions follow GuestPathGrid. The direction can be turned while placing (<see cref="RotateBridge"/>).</summary>
 	public bool BeginBridge( int direction, bool erase = false )
 	{
 		if ( Bridges == null || direction < 0 || direction > 3 || !FeatureGates.Pools )
@@ -339,7 +353,7 @@ public sealed class PoolTool
 		PoolBridgeResult.ExtensionOff => PoolBuildResult.ExtensionOff,
 		PoolBridgeResult.OutsideTerrain => PoolBuildResult.OutsideTerrain,
 		PoolBridgeResult.NotOwned => PoolBuildResult.NotOwned,
-		PoolBridgeResult.Occupied or PoolBridgeResult.EndNotPath or PoolBridgeResult.LandIsWater or PoolBridgeResult.Blocked or PoolBridgeResult.BridgeInTheWay => PoolBuildResult.Occupied,
+		PoolBridgeResult.Occupied or PoolBridgeResult.LandIsWater or PoolBridgeResult.Blocked or PoolBridgeResult.BridgeInTheWay => PoolBuildResult.Occupied,
 		PoolBridgeResult.TooSteep => PoolBuildResult.TooSteep,
 		PoolBridgeResult.Standing => PoolBuildResult.Standing,
 		PoolBridgeResult.NotEnoughMoney => PoolBuildResult.NotEnoughMoney,

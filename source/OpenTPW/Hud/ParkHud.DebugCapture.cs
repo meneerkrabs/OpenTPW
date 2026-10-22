@@ -46,6 +46,9 @@ public sealed partial class ParkHud
 	/// <summary>The buy preview's fixed turn in radians for a capture (<see cref="DebugBuyItem"/>), or null for the clock's turn.</summary>
 	internal float? DebugBuyYaw { get; private set; }
 
+	/// <summary>Holds the buy preview at a turn in degrees for a capture (null: the clock's turn).</summary>
+	internal void DebugHoldBuyYaw( float? yawDegrees ) => DebugBuyYaw = yawDegrees * MathF.PI / 180;
+
 	/// <summary>
 	/// Opens the buy window on the row of the object type <paramref name="infoId"/> (its category, then its row) and, when <paramref name="yawDegrees"/> is given,
 	/// holds the preview at that turn, so a capture shows one object's preview at a known angle. A type still in the lab is made available first, as the

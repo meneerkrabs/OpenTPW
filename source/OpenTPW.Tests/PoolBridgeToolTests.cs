@@ -62,12 +62,15 @@ public class PoolBridgeToolTests
 		Crossing( cells, 2, 3, 1 );
 		Assert.IsTrue( tool.BeginBridge( 1 ) );
 		tool.Hover( 2, 3 );
-		CollectionAssert.AreEqual( Enumerable.Range( 1, 9 ).Select( x => (x, 3) ).ToArray(), tool.HoverBridgeCells().ToArray(), "both outside path ends and the seven bridge cells" );
+		CollectionAssert.AreEqual( Enumerable.Range( 1, 9 ).Select( x => (x, 3) ).ToArray(), tool.HoverBridgeCells().ToArray(), "both outside ends and the seven bridge cells" );
 		Assert.IsNull( tool.HoverBridgeResult );
 		Assert.IsNull( tool.HoverBridgeBlocker );
 		cells.SetType( 9, 3, ParkCellType.Empty );
 		tool.Hover( 2, 3 );
-		Assert.AreEqual( PoolBridgeResult.EndNotPath, tool.HoverBridgeResult );
+		Assert.IsNull( tool.HoverBridgeResult, "an outside end without a path is fine: the player lays it later" );
+		cells.SetType( 9, 3, ParkCellType.PoolWater );
+		tool.Hover( 2, 3 );
+		Assert.AreEqual( PoolBridgeResult.LandIsWater, tool.HoverBridgeResult );
 		Assert.AreEqual( (9, 3), tool.HoverBridgeBlocker );
 		Assert.IsTrue( tool.HoverBridgeRefuses( (9, 3) ) );
 		Assert.IsFalse( tool.HoverBridgeRefuses( (5, 3) ), "only the cell to blame turns red" );
@@ -76,10 +79,9 @@ public class PoolBridgeToolTests
 		Assert.IsNotNull( tool.HoverBridgeResult );
 		Assert.IsFalse( tool.ShowsBridgeReason, "away from any pool the help keeps the instructions" );
 		tool.Hover( 2, 3 );
-		Assert.AreEqual( OpenTpwText.PoolBridgeEndNotPath, ParkHud.BridgeRefusalText( PoolBridgeResult.EndNotPath ) );
 		Assert.AreEqual( 0, world.Count, "Hover must not mutate the park" );
 		tool.Press( 2, 3 );
-		Assert.AreEqual( PoolBridgeResult.EndNotPath, tool.LastBridgeRefusal );
+		Assert.AreEqual( PoolBridgeResult.LandIsWater, tool.LastBridgeRefusal );
 		tool.Release();
 		Assert.IsTrue( tool.BeginBridge( 1, erase: true ) );
 		tool.Hover( 2, 3 );
@@ -176,12 +178,80 @@ public class PoolBridgeToolTests
 	[TestMethod]
 	public void BridgeRowsAreDistinctPoolRowsAndHaveLabelsInEveryLanguage()
 	{
-		var rows = new[] { ParkHud.PoolBridgeEastRow, ParkHud.PoolBridgeSouthRow, ParkHud.PoolBridgeEraseRow };
+		var rows = new[] { ParkHud.PoolBridgeRow, ParkHud.PoolBridgeEraseRow };
 		foreach ( var row in rows ) Assert.IsTrue( ParkHud.IsPoolRow( row ) );
 		Assert.AreNotEqual( rows[0].InfoId, rows[1].InfoId );
-		Assert.AreNotEqual( rows[1].InfoId, rows[2].InfoId );
 		foreach ( var language in SupplementaryStrings.SupportedLanguages )
-			foreach ( var key in new[] { OpenTpwText.PoolBridgeEast, OpenTpwText.PoolBridgeSouth, OpenTpwText.PoolBridgeErase, OpenTpwText.PoolBridgeHelp, OpenTpwText.PoolBridgeEraseHelp } )
+			foreach ( var key in new[] { OpenTpwText.PoolBridge, OpenTpwText.PoolBridgeErase, OpenTpwText.PoolBridgeHelp, OpenTpwText.PoolBridgeEraseHelp, OpenTpwText.PoolBridgeNeedsWater } )
 				Assert.IsFalse( string.IsNullOrWhiteSpace( SupplementaryStrings.Get( key, language ) ) );
+		foreach ( var language in SupplementaryStrings.SupportedLanguages )
+			foreach ( var key in Enum.GetValues<OpenTpwText>().Where( key => key.ToString().StartsWith( "PoolBridge" ) ) )
+				Assert.IsFalse( SupplementaryStrings.Get( key, language ).Contains( '\u2019' ), "the French fonts lack U+2019: plain apostrophes only" );
+	}
+
+	[TestMethod]
+	public void OneBridgeEntryTurnsThroughAllFourDirectionsLikeABlueprint()
+	{
+		using var scope = OpenTpwExtensions.Use( PoolsTests.PoolsSet( true ) );
+		var (cells, world, tool) = Rig();
+		Assert.IsTrue( tool.BeginBridge( 1 ) );
+		Assert.AreEqual( 1, tool.BridgeDirection );
+		tool.Hover( 5, 5 );
+		Assert.AreEqual( (4, 5), tool.HoverBridgeCells().First(), "east: the outside end is west of the click" );
+		// the object blueprint's own sense: rotation 90 (comma) maps the along axis (1, 0) to (X+v, Y-u) = (0, -1), so east turns to north
+		var turned = ObjectFootprint.ToGrid( 0, 0, 90, 1, 0 );
+		var expected = Array.FindIndex( GuestPathGrid.Directions, d => d == turned );
+		Assert.AreEqual( 0, expected, "an object's quarter turn takes east to north" );
+		tool.RotateBridge( ParkHud.BlueprintTurnSteps( HudScreenShortcut.TurnBlueprintLeft ) );
+		Assert.AreEqual( expected, tool.BridgeDirection );
+		Assert.AreEqual( (5, 6), tool.HoverBridgeCells().First(), "north: the outside end is south of the click, the bridge extends up the map" );
+		Assert.AreEqual( (5, -2), tool.HoverBridgeCells().Last(), "the far end is seven cells north of the click" );
+		// full stop adds 270 degrees (three steps), the same as three commas, so it takes north back to east
+		tool.RotateBridge( ParkHud.BlueprintTurnSteps( HudScreenShortcut.TurnBlueprintRight ) );
+		Assert.AreEqual( 1, tool.BridgeDirection );
+		tool.RotateBridge( 2 );
+		Assert.AreEqual( 3, tool.BridgeDirection );
+		tool.RotateBridge( 1 );
+		Assert.AreEqual( 2, tool.BridgeDirection );
+		tool.RotateBridge( -1 );
+		Assert.AreEqual( 3, tool.BridgeDirection );
+		// a bridge built after turning keeps the direction and every direction places
+		Crossing( cells, 9, 3, 3 );
+		tool.Hover( 9, 3 );
+		Assert.IsNull( tool.HoverBridgeResult );
+		Assert.AreEqual( PoolBuildResult.Ok, tool.Press( 9, 3 ) );
+		Assert.AreEqual( 3, world.At( 9, 3 )!.Direction );
+		tool.Release();
+		// turning does nothing outside the placing mode
+		tool.BeginBridge( 1, erase: true );
+		tool.RotateBridge( 1 );
+		Assert.AreEqual( 1, tool.BridgeDirection );
+		tool.Begin( false );
+		tool.RotateBridge( 1 );
+		Assert.AreEqual( 1, tool.BridgeDirection );
+	}
+
+	[TestMethod]
+	public void ABridgeCanBeBuiltWithoutAnyPathAtItsEnds()
+	{
+		using var scope = OpenTpwExtensions.Use( PoolsTests.PoolsSet( true ) );
+		var (cells, world, tool) = Rig();
+		foreach ( var direction in new[] { 0, 1, 2, 3 } )
+		{
+			var origin = direction switch { 0 => (13, 10), 1 => (2, 3), 2 => (4, 5), _ => (10, 14) };
+			var (dx, dy) = GuestPathGrid.Directions[direction];
+			for ( var i = 2; i <= 4; i++ )
+				cells.SetType( origin.Item1 + i * dx, origin.Item2 + i * dy, ParkCellType.PoolWater );
+			Assert.IsTrue( tool.BeginBridge( 1 ) );
+			while ( tool.BridgeDirection != direction ) tool.RotateBridge( 1 );
+			tool.Hover( origin.Item1, origin.Item2 );
+			Assert.IsNull( tool.HoverBridgeResult, $"direction {direction}" );
+			Assert.AreEqual( PoolBuildResult.Ok, tool.Press( origin.Item1, origin.Item2 ) );
+			tool.Release();
+			Assert.IsTrue( world.Covers( origin.Item1, origin.Item2 ) );
+			Assert.AreEqual( ParkCellType.Empty, cells.TypeAt( origin.Item1 - dx, origin.Item2 - dy ), "no path was laid or needed" );
+			tool.Cancel();
+		}
+		Assert.AreEqual( 4, world.Count );
 	}
 }

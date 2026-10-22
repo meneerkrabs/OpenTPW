@@ -53,7 +53,7 @@ public sealed partial class OriginalObjectRuntime
 	/// Resolves the key operand of an <c>EVENT</c> sound: a non-negative key is the model node of that key (selector 0x200), a negative key the footprint middle;
 	/// an unknown key plays nothing.
 	/// </summary>
-	// [BIN:TPW-EXE:0x556b90 EVENT anchor] called as (object, &position, 0, key, 0x200) by every sound type (3-9, from 0x5575c7 on): key >= 0 looks the key up with selector 0x200 (0x44b220) and takes the node's position (+0x30/+0x34/+0x38), key < 0 the footprint middle at the model height (0x556d42); an unknown key logs "RSSE: Invalid Node ID" (0x556d2c), returns 0 and the dispatcher submits nothing (0x5575e5)
+	// [BIN:TPW-EXE:0x556b90 EVENT anchor] called as (object, &position, 0, key, 0x200) by every sound type (3-9 from 0x5575c7 on, and 10 at 0x5576fb): key >= 0 looks the key up with selector 0x200 (0x44b220) and takes the node's position (+0x30/+0x34/+0x38), key < 0 the footprint middle at the model height (0x556d42); an unknown key logs "RSSE: Invalid Node ID" (0x556d2c), returns 0 and the dispatcher submits nothing (0x5575e5)
 	internal EventAnchorStatus ResolveEventAnchor(int key, out Vector3? position)
 	{
 		var status = ResolveEventAnchorFloat(key, out position);

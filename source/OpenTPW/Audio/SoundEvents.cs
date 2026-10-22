@@ -26,14 +26,18 @@ public sealed class SoundCategory
 	public SoundCatalog Catalog { get; }
 	public IReadOnlyList<string> BankNames => bankNames.Select( bank => bank.Name ).ToList();
 
-	/// <summary>Loads <c>&lt;directory&gt;/&lt;name&gt;SFX.map</c> and <c>…BANK.map</c>; returns null (with a log line) when either is missing or damaged.</summary>
-	public static SoundCategory? TryLoad( BaseFileSystem fileSystem, string directory, string name )
+	/// <summary>
+	/// Loads <c>&lt;directory&gt;/&lt;name&gt;SFX.map</c> and <c>…BANK.map</c>; returns null (with a log line) when either is missing or damaged. <paramref name="exists"/> tests the
+	/// maps' presence where <see cref="BaseFileSystem.FileExists"/> cannot see them (the members of an object archive); by default the file system's own test.
+	/// </summary>
+	public static SoundCategory? TryLoad( BaseFileSystem fileSystem, string directory, string name, Func<string, bool>? exists = null )
 	{
 		var sfx = $"{directory}/{name}SFX.map";
 		var bank = $"{directory}/{name}BANK.map";
+		exists ??= fileSystem.FileExists;
 		try
 		{
-			if ( !fileSystem.FileExists( sfx ) || !fileSystem.FileExists( bank ) )
+			if ( !exists( sfx ) || !exists( bank ) )
 			{
 				Log.Trace( $"Sound category {name}: no {sfx}." );
 				return null;

@@ -75,7 +75,16 @@ public sealed class ObjectCatalogEntry
 			fields[match.Groups[2].Value] = value;
 		}
 		Upgrades = levels.Select( pair => new ObjectUpgradeLevel( pair.Key, pair.Value ) ).ToList().AsReadOnly();
+		ownSounds = new Lazy<SoundCategory?>( () => ObjectTypeSounds.Load( this ) );
 	}
+
+	private readonly Lazy<SoundCategory?> ownSounds;
+
+	/// <summary>
+	/// The object type's own sound list (tp.exe type record <c>+0x4F0</c>): the <c>cat_ride</c> category its archive carries, which a ride script's <c>EVENT</c> and
+	/// <c>ADDOBJ</c> of type 10 play from; null when the archive does not carry one (<see cref="ObjectTypeSounds"/>). Loaded once per type, as the original's type loader does.
+	/// </summary>
+	internal SoundCategory? OwnSounds => ownSounds.Value;
 
 	private static readonly Regex UpgradeKey = new( @"^Upgrades\[(\d+)\]\.(.+)$", RegexOptions.CultureInvariant );
 

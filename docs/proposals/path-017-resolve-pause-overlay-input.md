@@ -7,24 +7,31 @@
 - Existing PR: none mapped for this independent residual.
 - Draft eligibility: evidence/scope gates below must remain visible; this is not a completed feature.
 
-## Current residual
-PATH-PAUSE-WINDOW: the pause key P (tp.exe 0x40bf70 → 0x409350(1)) toggles a window (the global handle 0x7cb2cc, 0x4a27f0 → 0x47ed80): a full-screen layer (0x65dd7b(1, 1, 1, 0, 0, 0x7ff, 0x5ff), the 'lolight' backdrop) under the panel 5094 (174,500)-(1874,900) of table 0x752e00; whether that layer stops the click route to the park click handler 0x4879d0 (which reads neither the pause flag 0x786b84 nor this handle, only the pause-menu object 0x7c2534 through 0x48c8d0) is not read, so OpenTPW's speed pause keeps the tool live as the click handler does (evidence needed: the window manager's hit test of the 0x65dd7b layer classes)
+## Current source reconciliation (October 22, 2026)
+
+Pinned main: `1c874922df6e42425dc5638f7e2554c9fde2c68c`. This is a public-source comparison only: no original executable, C# tests, browser or GPU was run here.
+
+The October 18 question about whether the P backdrop can own the click route is no longer wholly unresolved in current implementation. `source/OpenTPW/Hud/ParkHud.PointerInput.cs` implements bounded ordinary-window-manager batch admission before P/pointer drain, a separate pause-overlay owner, captured movement and original down/up recipients. `ParkHud.cs` records that the eligible backdrop covers windows existing when it is created, takes clicks without capturing the camera, and is distinct from a generic speed-pause flag.
+
+This narrows, not closes, PATH-017. Current source still explicitly excludes alternate buffered input, aggregate wheel/non-P keys and original backdrop/panel rendering from that contract. Original visual/input parity is not established by this reconciliation.
 
 ## Source inspection
-- `source/OpenTPW/Hud/ParkHud.cs:966`: 968: if ( paused || level.BuildEntry != null || level.IsPlacing || level.IsRemovingObjects || level.IsCoasterToolActive; 969: || level.PatrolTool is { IsActive: true } || level.StaffPlacement is { IsActive: true } || level.BuyLandTool is { IsActive: true }; 970: || level.AreaClearTool is { IsActive: true } || level.PoolTool is { IsActive: true } ); 971: return false;
+- `source/OpenTPW/Hud/ParkHud.PointerInput.cs`: `CreatePausePointerOverlay`, `RetirePausePointerOverlay`, ordered admission/drain and release-owner routing.
+- `source/OpenTPW/Hud/ParkHud.cs`: `UpdateCellTool` and its PATH-017 boundary annotation.
+- Native address comments (0x65db25, 0x658b1a/0x658b7f, 0x4879d0) remain source provenance; they are not a new independent original trace from this pass.
 
 ## Bounded work
-Determine full-screen lolight layer hit testing before changing tool-live speed-pause behavior.
+Preserve the landed ordinary-WM P/pointer contract. Investigate alternate buffered input, wheel/non-P routing and original lolight/panel rendering as separate residuals, without treating generic speed pause as an input owner.
 - Preserve already-implemented behavior described above; restrict future changes to the named residual.
 - For evidence-only items, establish an oracle first and file implementation only if a behavioral difference is proven.
 
 ## Missing evidence
-Decode window manager hit test/class of 0x65dd7b and dispatch to 0x4879d0.
+Obtain acceptance evidence for the current ordered pointer contract, and separately establish the unported alternate-input and backdrop/panel behavior. Do not repeat the old broad hit-test question as though current ownership routing were absent.
 - Source annotations record prior reverse engineering; this audit checked adjacent implementation but did not execute the original.
 
 ## Acceptance cases
-1. Press P with armed path tool and click overlay; compare event delivery and map mutation to original.
-2. Unpause leaves tool selection and cursor consistent; Escape menu behavior remains separately tested.
+1. Press P with armed path tool and click the overlay; verify current event delivery and map mutation, including down/up across overlay retirement, and compare with an identified original reference when available.
+2. Unpause leaves tool selection and cursor consistent; test camera movement separately from tool clicks and keep Escape menu behavior separate. Qualify alternate buffered input, wheel/non-P keys and backdrop/panel rendering independently rather than inferring them from pointer tests.
 3. Add a reproducible synthetic fixture or reference trace identifying input, expected output, and affected function; a passing build alone is insufficient.
 4. Re-run focused regression tests for the listed source owner and document what remains unproven.
 

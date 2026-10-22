@@ -21,9 +21,9 @@ public static class ObjectTypeSounds
 	/// numbered 5 takes the slot.
 	/// </summary>
 	// [BIN:TPW-EXE:0x413C10 object loader] after the type's settings the loader asks 0x41F420 whether the archive holds the custom bank and, when it does, registers it (0x41408D-0x4140A6) before the scoped particle templates (0x41F630, 0x414420 at 0x4140BC)
-	// [BIN:TPW-EXE:0x41F420 custom bank gate] three lookups through the archive's file system (vf+4): the static names 0x78C440, 0x78C248 and 0x78C4E8, built at 0x41ADA0, 0x41ADD0 and 0x41AE00 from "cat_rideBANK.map" (0x747888), "cat_rideSFX.map" (0x74789C) and "BankHD.sdt" (0x7478AC); all three must be found
+	// [BIN:TPW-EXE:0x41F420 custom bank gate] three lookups through the archive's file system (vf+4): the static strings 0x78C438, 0x78C240 and 0x78C4E0 (their text pointers at +8: 0x78C440, 0x78C248, 0x78C4E8), built at 0x41ADA0, 0x41ADD0 and 0x41AE00 from "cat_rideBANK.map" (0x747888), "cat_rideSFX.map" (0x74789C) and "BankHD.sdt" (0x7478AC); all three must be found
 	// [BIN:TPW-EXE:0x41408D custom bank load] 0x51B4F0(the archive's folder (vf+0x18), "cat_ride" 0x74787C) registers the category with the sound library (vf+4, the loader 0x6BF330 every category goes through) and the type record keeps the handle at +0x4F0 (0x4140A6); 0x51B4F0 returns 0 with the sound system off (0x802BC8, 0x802BD4), which OpenTPW's silent audio leaves to the submit
-	// The category is read with the loader every other category uses (SoundCategory.TryLoad), so its banks follow the same folder rule; Jungle's loudspeaker names its bank "Speaker\Bank", which that rule looks for at /levels/jungle/features/Speaker/BankHD.sdt, and the shipped data has the bank inside the archive instead
+	// The category is read with the loader every other category uses (SoundCategory.TryLoad), so its banks follow the same folder rule; Jungle's loudspeaker names its bank "Speaker\Bank", which that rule looks for at /levels/jungle/features/Speaker/BankHD.sdt, and the shipped data has the bank inside the archive instead; the folder 0x51B4F0 receives is the same archive object's (esi+0x2C, vf+0x18, 0x413DDA/0x41409A), so the original most likely misses that bank as well (a data mismatch, not reached: no shipped script plays type 10)
 	public static SoundCategory? Load( ObjectCatalogEntry entry )
 	{
 		var fileSystem = entry.FileSystem;
@@ -38,8 +38,9 @@ public static class ObjectTypeSounds
 		{
 			return null;
 		}
-		catch ( Exception exception ) when ( exception is IOException or UnauthorizedAccessException )
+		catch ( Exception exception )
 		{
+			// any failure, not only IO: the list loads once per type (a Lazy), and a kept exception would be rethrown by every later type-10 sound
 			Log?.Warning( $"Object {entry.ArchivePath}: its own sound list cannot be looked up: {exception.Message}" );
 			return null;
 		}

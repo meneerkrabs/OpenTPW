@@ -86,7 +86,7 @@ public class EventKeyCensusTests
 	/// 0x4145e0; ObjectTypeSoundsTests) has no shipped user. Skips without <c>OPENTPW_GAME_PATH</c>.
 	/// </summary>
 	[TestMethod]
-	public void NoShippedScriptSubmitsAnEventOfTheCustomBankType10()
+	public void NoShippedScriptSubmitsAnObjectSoundOfType10()
 	{
 		if ( ObjectCatalogCorpusTests.UseOriginalData( out var previous ) == null )
 			Assert.Inconclusive( "Set OPENTPW_GAME_PATH to the original game." );

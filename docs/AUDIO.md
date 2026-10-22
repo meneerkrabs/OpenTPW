@@ -552,7 +552,8 @@ category `cat_ride` from the archive's folder (`0x41408D`-`0x4140A6`). The scope
 The census over every shipped script (308 scripts, `EventKeyCensusTests`) finds the type operand literal everywhere and the counts type 1: 67, type 2: 104, type 3: 251, type 4: 13,
 type 5: 67, type 6: 25; **no script uses type 10** (or 7, 8, 9, 0). Only Jungle's loudspeaker (`features/speaker1`) ships a list (events 2-5, bank `Speaker\Bank`), and its script plays
 with `ADDOBJ 4`. Its bank is resolved by the folder rule above ("Bank folders"): the rule looks for `/levels/jungle/features/Speaker/BankHD.sdt` while the archive holds its own
-`BankHD.sdt`, and since the rule was read off the shipped level and global categories, where the candidates agree, whether the original plays the loudspeaker's bank is not settled.
+`BankHD.sdt`. The folder the original registers the list from is the same archive object's (`0x413DDA`/`0x41409A`), so it most likely misses that bank as well: a mismatch in the shipped
+data, which no shipped script reaches.
 
 ### Reverb (`[EXT:audio-reverb]`)
 

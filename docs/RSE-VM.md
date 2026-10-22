@@ -468,8 +468,8 @@ October 22, 2026. An object archive may carry a sound category of its own, and t
 - **Shipped data.** Of all shipped archives only Jungle's loudspeaker (`features/speaker1`, Info.Id 1417) carries the three members; its `cat_ride` holds the one-shots 2-5 and names its
   bank `Speaker\Bank`. Its script plays its sound with `ADDOBJ 4` (the level's ambient), and no shipped script uses type 10 (`EventKeyCensusTests`), so the list is for mods. The bank is resolved by the
   category loader's folder rule ([AUDIO.md](AUDIO.md), "Bank folders"), which looks for `Speaker\Bank` at `/levels/jungle/features/Speaker/BankHD.sdt`, while the loudspeaker's
-  `BankHD.sdt` lies inside its archive; that rule was read off the shipped level and global categories, where the alternatives agree, so whether the original finds the loudspeaker's
-  bank is not settled.
+  `BankHD.sdt` lies inside its archive. The folder `0x51B4F0` receives comes from the same archive object as the member checks (`esi+0x2C`, its `vf+0x18`, `0x413DDA`/`0x41409A`),
+  so under the same rule the original most likely misses the loudspeaker's bank as well: a mismatch in the shipped data, which no shipped script reaches.
 
 ## Visitors
 

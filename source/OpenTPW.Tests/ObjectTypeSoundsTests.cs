@@ -188,6 +188,9 @@ public class ObjectTypeSoundsTests
 		Assert.AreEqual( 1, mixer.Voices.Count );
 		Assert.AreSame( placed.Entry.OwnSounds, GameAudio.FindRseEvent( 10, 31, null, placed.Entry.OwnSounds )!.Value.Category );
 		Assert.IsNull( GameAudio.FindRseEvent( 10, 31 ), "type 10 has no category of the game's own" );
+		// EVENT_EXT type 10 plays from the same list (0x552707: EVENT with a control operand, which the sound types ignore)
+		Script( placed.Runtime, a => a.I( Opcode.EVENT_EXT, 10, -1, 31, 500 ) );
+		Assert.AreEqual( 2, mixer.Voices.Count );
 	}
 
 	[TestMethod]
@@ -211,21 +214,28 @@ public class ObjectTypeSoundsTests
 	{
 		// [BIN:TPW-EXE:0x557686] a type without the list logs 0x765E18 and returns 0 before 0x556B90 resolves the key
 		var runtime = new OriginalObjectRuntime( Archive( "plain", Array.Empty<string>() ) );
-		var footprints = 0;
-		runtime.SetEventAnchors( () => { footprints++; return new Vector3( 1, 2, 3 ); }, _ => Vector3.Zero );
-		var vm = Script( runtime, a => a.I( Opcode.EVENT, 10, -1, 31 ).I( Opcode.ADDOBJ, 10, -1, 31, 1 ).I( Opcode.ADDOBJ_EXT, 10, -1, 31, 1000, 2 ) );
-		Assert.AreEqual( 0, footprints, "the key is not resolved" );
-		Assert.AreEqual( 0, mixer.Voices.Count );
-		Assert.AreEqual( 0, runtime.HeldSounds.Count );
-		Assert.AreEqual( 0, vm.UnimplementedEffects.Count, "a refused submit is not an unimplemented effect" );
-		// a type with the list resolves the key for the same instruction
-		var withList = new OriginalObjectRuntime( WithOwnSounds( "listed" ) );
-		withList.SetEventAnchors( () => { footprints++; return new Vector3( 1, 2, 3 ); }, _ => Vector3.Zero );
-		Script( withList, a => a.I( Opcode.EVENT, 10, -1, 31 ) );
-		Assert.AreEqual( 1, footprints );
-		Assert.AreEqual( new Vector3( 1, 2, 3 ), mixer.Voices.Single().Position );
-		runtime.Stop();
-		withList.Stop();
+		OriginalObjectRuntime? withList = null;
+		try
+		{
+			var footprints = 0;
+			runtime.SetEventAnchors( () => { footprints++; return new Vector3( 1, 2, 3 ); }, _ => Vector3.Zero );
+			var vm = Script( runtime, a => a.I( Opcode.EVENT, 10, -1, 31 ).I( Opcode.ADDOBJ, 10, -1, 31, 1 ).I( Opcode.ADDOBJ_EXT, 10, -1, 31, 1000, 2 ) );
+			Assert.AreEqual( 0, footprints, "the key is not resolved" );
+			Assert.AreEqual( 0, mixer.Voices.Count );
+			Assert.AreEqual( 0, runtime.HeldSounds.Count );
+			Assert.AreEqual( 0, vm.UnimplementedEffects.Count, "a refused submit is not an unimplemented effect" );
+			// a type with the list resolves the key for the same instruction
+			withList = new OriginalObjectRuntime( WithOwnSounds( "listed" ) );
+			withList.SetEventAnchors( () => { footprints++; return new Vector3( 1, 2, 3 ); }, _ => Vector3.Zero );
+			Script( withList, a => a.I( Opcode.EVENT, 10, -1, 31 ) );
+			Assert.AreEqual( 1, footprints );
+			Assert.AreEqual( new Vector3( 1, 2, 3 ), mixer.Voices.Single().Position );
+		}
+		finally
+		{
+			runtime.Stop();
+			withList?.Stop();
+		}
 	}
 
 	/// <summary>

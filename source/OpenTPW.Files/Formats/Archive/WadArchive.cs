@@ -24,12 +24,19 @@ public sealed class WadArchiveFile : ArchiveFile
 	public long Size => Compressed ? DeclaredSize : SizeInArchive;
 	internal int OffsetInArchive { get; set; } 
 
-	internal byte[]? CachedData { get; set; }
+	private byte[]? cachedData;
 
+	/// <summary>The member's bytes once read (and decompressed), kept until <see cref="Free"/>.</summary>
+	internal byte[]? CachedData => Volatile.Read( ref cachedData );
+
+	/// <summary>
+	/// The member's bytes, read and decompressed on first use and kept. Several threads may ask at once (signs are composed on a worker): each gets
+	/// the same bytes, the first to finish is kept and counted once.
+	/// </summary>
 	public override byte[] GetData()
 	{
-		if ( CachedData != null )
-			return CachedData;
+		if ( Volatile.Read( ref cachedData ) is { } cached )
+			return cached;
 
 		var data = Archive.GetData( OffsetInArchive, SizeInArchive );
 
@@ -42,7 +49,8 @@ public sealed class WadArchiveFile : ArchiveFile
 		}
 
 		// Save off data so we can use it again quickly if we need to
-		CachedData = data;
+		if ( Interlocked.CompareExchange( ref cachedData, data, null ) is { } published )
+			return published;
 		Interlocked.Add( ref WadArchive.cachedMemberBytes, data.Length );
 
 		return data;
@@ -50,9 +58,8 @@ public sealed class WadArchiveFile : ArchiveFile
 
 	public void Free()
 	{
-		if ( CachedData != null )
-			Interlocked.Add( ref WadArchive.cachedMemberBytes, -CachedData.Length );
-		CachedData = null;
+		if ( Interlocked.Exchange( ref cachedData, null ) is { } freed )
+			Interlocked.Add( ref WadArchive.cachedMemberBytes, -freed.Length );
 	}
 }
 

@@ -25,11 +25,12 @@ public enum UiKeys
 /// One frame of UI input in framebuffer pixels. Built from <see cref="Input"/> at runtime and
 /// constructed directly by tests and the smoke test.
 /// </summary>
+/// <param name="BackspaceRepeating">Every Backspace of this frame is the auto-repeat of a held key (the pool bridge and water removal acts only on the first press).</param>
 /// <param name="NotClick">
 /// Set on a left release that is not a click: the press lasted longer than <see cref="UiInputSource.ClickMilliseconds"/> or the
 /// pointer strayed more than <see cref="UiInputSource.ClickSlop"/> pixels on an axis (tp.exe 0x65f6d1 / 0x65fa33). The release still ends drags.
 /// </param>
-public readonly record struct UiInput( NVector2 Mouse, bool LeftDown, bool LeftPressed, bool LeftReleased, bool RightPressed, UiKeys Pressed, float Wheel = 0, string Text = "", int Backspaces = 0, bool NotClick = false )
+public readonly record struct UiInput( NVector2 Mouse, bool LeftDown, bool LeftPressed, bool LeftReleased, bool RightPressed, UiKeys Pressed, float Wheel = 0, string Text = "", int Backspaces = 0, bool NotClick = false, bool BackspaceRepeating = false )
 {
 
 	public static UiInput Idle( NVector2 mouse ) => new( mouse, false, false, false, false, UiKeys.None );
@@ -101,7 +102,7 @@ public sealed class UiInputSource
 			notClick = IsNotClick( pressedAt, Clock(), pressMoved, pressFrames );
 		var input = new UiInput( new NVector2( mouse.Position.X * framebufferPerWindowX, mouse.Position.Y * framebufferPerWindowY ),
 			mouse.Left, mouse.Left && !wasLeft, !mouse.Left && wasLeft, mouse.Right && !wasRight, pressed, mouse.Wheel,
-			Input.Typed, Input.KeyPresses.Count( key => key == Key.BackSpace ), notClick );
+			Input.Typed, Input.KeyPresses.Count( key => key == Key.BackSpace ), notClick, Input.BackspaceRepeating );
 		wasLeft = mouse.Left;
 		wasRight = mouse.Right;
 		return input;

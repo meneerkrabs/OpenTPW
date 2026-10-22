@@ -925,9 +925,13 @@ public static class GameAudio
 	/// <summary>The path tool's refused click at the clicked cell (<see cref="PathRefusedEvent"/>, <c>cat_ui</c> 175 at (x*10, 0, z*10); tp.exe <c>0x524a80</c>).</summary>
 	public static void PlayPathRefused( int cellX, int cellY ) => PlayUiAt( PathRefusedEvent, CellSoundPosition( cellX, cellY ) );
 
+	/// <summary>Test seam: told the event of every <see cref="PlayUiAt"/> sound, played or not.</summary>
+	internal static Action<uint>? UiSoundObserver { get; set; }
+
 	/// <summary>A <c>cat_ui</c> sound at a park position: the queue joining a path (<see cref="QueueJoinEvent"/>) and the backtrack (<see cref="BacktrackEvent"/>).</summary>
 	public static void PlayUiAt( uint eventId, Vector3 position )
 	{
+		UiSoundObserver?.Invoke( eventId );
 		var voice = events?.PlayAt( Ui, eventId, AudioChannel.Effects, position );
 		Log.Trace( $"Sound: cat_ui {eventId} at a cell {(voice == null ? "not available" : "played")}." );
 	}

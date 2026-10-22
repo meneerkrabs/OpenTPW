@@ -16,6 +16,8 @@ public enum ParkCommandKind : byte
 	RemoveAttraction = 4,
 	/// <summary>The Move tool's pick-up: demolishes the object so it can be placed again (<see cref="PickUpObjectCommand"/>).</summary>
 	PickUpObject = 5,
+	/// <summary>The Move tool's end: the player no longer carries the type it picked up (<see cref="EndMoveCommand"/>).</summary>
+	EndMove = 6,
 	/// <summary>Commits one snapped line of the path or queue tool (<see cref="LayLineCommand"/>).</summary>
 	LayLine = 10,
 	/// <summary>Takes back one committed line of the path or queue tool (<see cref="UndoLineCommand"/>).</summary>
@@ -234,6 +236,16 @@ public sealed record PickUpObjectCommand( int Attraction ) : ParkCommand
 	public override ParkCommandKind Kind => ParkCommandKind.PickUpObject;
 	internal override bool IsWellFormed => Attraction >= 0;
 	internal override void WriteFields( ParkCommandWriter writer ) => writer.Int( Attraction );
+}
+
+/// <summary>
+/// The end of the issuer's Move tool (<see cref="Level.IsMoving"/>): a placement whose click did not hold exactly Ctrl, the queue or track tool a placed ride opens, a cancel, another tool.
+/// The player carries the type it picked up no more, so no moving placement of the type is accepted for it until its next pick-up. Nothing else changes: the picked-up object is gone already.
+/// </summary>
+public sealed record EndMoveCommand : ParkCommand
+{
+	public override ParkCommandKind Kind => ParkCommandKind.EndMove;
+	internal override void WriteFields( ParkCommandWriter writer ) { }
 }
 
 /// <summary>

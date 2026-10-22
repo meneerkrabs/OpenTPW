@@ -62,8 +62,6 @@ public static class BonusContent
 	/// </summary>
 	public static int Import( string source, string configDirectory )
 	{
-		// the bonus folder is moved aside and removed below: no archive may keep one of its files open (Windows refuses to move or remove a folder with an open file)
-		WadArchive.CloseFileHandles();
 		Directory.CreateDirectory( configDirectory );
 		var target = Path.Combine( configDirectory, FolderName );
 		var staging = Path.Combine( configDirectory, FolderName + ".importing-" + Guid.NewGuid().ToString( "N" ) );
@@ -79,7 +77,10 @@ public static class BonusContent
 			if ( count == 0 )
 				return 0;
 
-			// The previous import moves aside first, so a failed swap can be undone.
+			// The previous import moves aside first, so a failed swap can be undone. No archive may keep one of its files open
+			// (Windows refuses to move or remove a folder with an open file), so the handles close right before the move: a read
+			// during the extraction above could have reopened one.
+			WadArchive.CloseFileHandles();
 			var retired = Directory.Exists( target ) ? target + ".replaced-" + Guid.NewGuid().ToString( "N" ) : null;
 			if ( retired != null )
 				Directory.Move( target, retired );

@@ -334,7 +334,7 @@ read (a file of another length is refused and its handle closed, so a read after
 `WadArchive.MaxOpenHandles` files stay open (64; the least recently read is closed first, and its next read opens it again); the browser keeps
 none (its files are in memory, and a theme's files arrive while archives are in use). `WadArchive.CloseFileHandles` closes every kept file:
 before a bonus import moves the bonus folder aside, when the game files screen stores a new game, CD or bonus folder (they apply at the next
-start; the old folder can be moved or removed meanwhile), when the mod set is installed, when the interface language changes its archive, when a
+start; the session keeps reading the old folder, so a later read reopens a file there), when the mod set is installed, when the interface language changes its archive, when a
 texture pack switch begins, and when the game ends. A disposed archive closes its file.
 
 On Windows a kept file lets other readers in (they ask for read access, which it shares) and can be moved or deleted (it shares deleting); what it

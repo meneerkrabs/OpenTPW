@@ -103,6 +103,64 @@ public static class UiDialogs
 		return screen;
 	}
 
+	/// <summary>The buttons of the original's generic message box: the tick (<c>b_okay</c>) and the cross (<c>b_exit</c>).</summary>
+	public enum MessageBoxButton { Okay = 1, Exit = 2 }
+
+	/// <summary>
+	/// The original's generic message box (table 0x74F920): the wdialog window at (500,233)-(1516,830), its text white, centred and wrapped in the window's inner
+	/// rectangle (610,276)-(1345,753), and up to three round buttons stacked at the right, the first at the bottom; a button closes the box after its action.
+	/// </summary>
+	/// <param name="close">Removes the box from its stack; every button runs it before its action.</param>
+	/// <param name="buttons">The buttons from the bottom slot up, each the tick or the cross and its action (null closes only).</param>
+	// [BIN:TPW-EXE:0x0047F020 message box] builds table 0x74F920, gives the text control the colour of its descriptor (+4..+6), centred (+0xD8 = 1, 0x65C428) with wrapping (+0xDA = 1, 0x65C4B9), and fills the
+	// three button slots 0x9873C8, 0x9873C9, 0x9873CA from the bottom: a kind 1 slot takes b_okay, 2 b_exit, 0 hides it (0x65D9DD(0)); the handler 0x47EED0 calls the slot's callback and closes the box (message 4) when there is none or it returns nonzero
+	// [BIN:TPW-EXE:0x0048F862 text alignment] the text control's +0xD8 picks left, centre or right (0, 1, 2; Hebrew swaps 0 and 2, 0x4925A0) and +0xD9 the vertical placement (1, the default, centres it); +0xDA set wraps at the control's width
+	// [EXT:ui-font-tier-by-scale] the text's font is OpenTPW's label font: the descriptor's slot 4 names a bank font OpenTPW has no mode-to-bank rule for
+	public static UiScreen OriginalMessageBox( string name, Func<string> text, Action close, params (MessageBoxButton Kind, Func<string> Help, Action? Clicked)[] buttons )
+	{
+		if ( buttons.Length > 3 ) throw new ArgumentException( "The message box has three button slots.", nameof( buttons ) );
+		var screen = new UiScreen( name );
+		var table = OriginalLayoutTables.MessageBox;
+		var root = table.Root;
+		screen.Add( new UiModelImage { Id = "window", Model = root.Model!, Bounds = root.Rect, Anchor = UiAnchor.Center } );
+		screen.Add( new UiLabel
+		{
+			Id = "message",
+			Text = text,
+			Font = fonts => fonts.Label,
+			Color = new Veldrid.RgbaByte( 255, 255, 255, 255 ),
+			Align = UiAlign.Center,
+			Wrap = true,
+			Bounds = root.Inner!.Value,
+			Anchor = UiAnchor.Center
+		} );
+		var slots = new[] { 0x9873C8u, 0x9873C9u, 0x9873CAu };
+		for ( var index = 0; index < buttons.Length; index++ )
+		{
+			var (kind, help, clicked) = buttons[index];
+			void Click()
+			{
+				if ( screen.IsRemoved ) return;
+				close();
+				clicked?.Invoke();
+			}
+			screen.Add( new UiButton
+			{
+				Id = $"slot{index}",
+				Model = kind == MessageBoxButton.Okay ? "b_okay" : "b_exit",
+				HelpSource = help,
+				Clicked = Click,
+				Bounds = table.Control( slots[index] ).Rect,
+				Anchor = UiAnchor.Center
+			} );
+		}
+		// [EXT:ui-modal-right-click-back] Escape and the right click press the bottom button, as OpenTPW's other dialogs leave by their last choice
+		if ( buttons.Length > 0 )
+			screen.Back = ((UiButton)screen.Find( "slot0" )!).Clicked;
+		screen.Focus( screen.FocusableElements.FirstOrDefault() );
+		return screen;
+	}
+
 	/// <summary>
 	/// A frameless menu of large text lines: no window, no title, each line cyan and white while focused, the screen dimmed behind it.
 	/// Each line's box is its measured text in the menu font, centred; the default lines are 5 units apart, or contiguous in compact mode.

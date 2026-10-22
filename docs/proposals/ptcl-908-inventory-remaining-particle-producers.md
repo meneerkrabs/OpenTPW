@@ -38,3 +38,52 @@ Check #425/#435 current head, scoped template lookup, UI groups and guest/staff 
 - Stop at a reviewable design/evidence package; this draft authorizes no tag removal or parity claim.
 - Do not publish original media or private game data in fixtures, screenshots, or commits.
 - A future implementation needs its own reviewed evidence and acceptance results; do not treat this proposal as merge-ready.
+
+## 2026-10-22 public-source reconciliation
+
+Audit snapshot: main `f4be81cbbe120d1638cfb0355a701bdac3d59f1e`; proposal head
+`d44be284c03017ba8a5366a6ab7a854772d508d5`. This addendum refines the
+historical residual above; it is not a native capture, a test execution report,
+or permission to alter another owner's runtime.
+
+### What is already present, and what it proves
+
+| Producer / boundary | Inspected host evidence | Remaining distinction |
+| --- | --- | --- |
+| Land waterfall | `Level.PlacedParticles.StartPlacedParticles` filters scape records to type 2. `LandParticleEffectTests` covers record selection, refused effects, Jungle waterfall and other levels. | Several tests require shipped templates/assets. Their presence is not a fresh run or visual validation. |
+| Ride teleport beam 19 | `Level.PlacedParticles.StartGuestBeam` uses `GuestBeamPlace` and the heightfield. `GuestSimulation` exposes the ride teleport event. | This is not the unrelated guest-creation fallback at 0x4faec0. #435 explicitly left the full GameFlow-to-Level hookup test undone; this audit does not close it. |
+| Vehicle rider beam 19 | `BumpController.LoadWaiting` calls `RaiseRiderBeams`; the helper uses host-supplied seat-head flags and refuses unknown seats. Bumper unloading calls the same helper. | Existing host position is simulation position, not evidence that the native instance-root position and head-hung lifetime agree. |
+| Vehicle beam 15 | `BumpController.Launch` raises it only under `Template.IsKart`, after `Relaunch` and setting `Launched` (lines 647–694). Retire paths also raise it. | The current kart hook is at **launch**, not at first draw. The earlier phrase “kart's first-draw beam” must not be interpreted as proof of draw-time semantics. Boats/bumper creation and first-draw timing remain separate requirements. |
+| Script and scoped effects | `OriginalObjectRuntime.ParticleRequests.PrepareParticle` explicitly refuses bit 0x8000 as `UnsupportedScopedEffect`, IDs outside 0..104, and directed negative keys. `ParticleEventRequestTests.RefusalsHaveNoPoseAndReplacePreviousAttempt` and `ANegativeKeyStartsTheEffectAtTheFootprintMiddleAndATypeTwoOneStartsNothing` encode these boundaries. | Do not invent a direction for the undefined native directed-negative-key case or treat explicit refusal as implemented scoped-template lookup. |
+| Footprint-less paths | A type-1 negative-key script request with an installed footprint provider returning null prepares a world-origin request; an absent provider is refused. `StartObjectEffect` still requires a non-null footprint. | Script negative-key fallback and category build/demolish/repair/upgrade effects are different code paths. One does not close the other's missing-box residual. |
+| Tour smoke/fire | `OnTourEffect` owns emitter handles by car slot, kills replacement/stop handles and moves held emitters. `TourEffectTests` contains condition/repair ordering, draw-follow, save and randomness cases. | Authored tests are host evidence only; no new tour/native execution was performed. |
+| Lobby screen effects | `LobbyEnterEffectTests.InstantActionStartsNothingAndTheOtherModeStartsEffect0x62Once` and its menu test cover entry effect **0x62**. `GameFlow` starts that screen renderer/effect. | This does not implement the key-panel **0x61** residual, generic UI pool groups, or message-tag effects 90/91. Do not group these IDs together as one completed lobby feature. |
+
+Merged dependencies were rechecked through GitHub: [#425](https://github.com/meneerkrabs/OpenTPW/pull/425)
+merged as `3c1a090a8c186bbf437b0b8269633b5745d46fce`;
+[#435](https://github.com/meneerkrabs/OpenTPW/pull/435) merged as
+`5ccddcab56ffb9bda4ded1821988a8492bee8943`. Their reported historical test
+results are not results from this audit.
+
+### Next bounded implementation gates
+
+1. Agree the vehicle runtime boundary with its existing owner before changing it.
+   Capture/supply a producer trace for successful creation without a draw, first
+   draw, repeated draw, retirement before first draw and save/restore for each
+   kart/boat/bumper family. Assert emission ID, count, position and ordering.
+   Merely removing `Template.IsKart` would broaden a launch-time hook, not implement
+   the documented native first-draw flag.
+2. Guest-creation fallback, staff and online avatar beams need their own triggering
+   state and position/handle oracle; the ride teleport test is not a substitute.
+   These remain documented residuals, not newly demonstrated failures.
+3. Scoped effects need archive-name/type-slot resolution and handle lifetime
+   evidence before allowing 0x8000 requests. The shipped-script census distinguishes
+   literal operands from Jungle porkpie's variable operand; no literal use does
+   not prove the variable cannot become scoped.
+4. Keep lobby 0x61, entry 0x62, generic UI groups and message tags 90/91 as separate
+   cases with owner/control lifetime and coordinate-space evidence.
+
+Validation in this audit: public source and merge identities inspected, exact
+source blobs recorded in the review package, existing test names/conditions
+cross-checked. No C# compilation, CI rerun, browser, GPU or original executable
+execution. No runtime files changed; PTCL-908 and #581 remain open/draft.

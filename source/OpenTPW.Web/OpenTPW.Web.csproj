@@ -22,6 +22,16 @@
 		wasm-tools workload; docs/BROWSER-PERFORMANCE.md). A plain local publish stays an interpreter build that needs no workload. -->
 	</PropertyGroup>
 
+	<!-- [EXT:online-coop-snapshot-join] how the page was compiled, which the co-op join smoke's evidence names (docs/COOP.md, "The browser's join") -->
+	<ItemGroup>
+		<AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
+			<_Parameter1>OpenTpwBrowserCompilation</_Parameter1>
+			<_Parameter2 Condition="'$(UseMonoRuntime)' == 'false'">coreclr</_Parameter2>
+			<_Parameter2 Condition="'$(UseMonoRuntime)' != 'false' And '$(RunAOTCompilation)' == 'true'">aot</_Parameter2>
+			<_Parameter2 Condition="'$(UseMonoRuntime)' != 'false' And '$(RunAOTCompilation)' != 'true'">interpreter</_Parameter2>
+		</AssemblyAttribute>
+	</ItemGroup>
+
 	<PropertyGroup>
 		<GameSources>../OpenTPW</GameSources>
 		<CommonSources>../OpenTPW.Common</CommonSources>

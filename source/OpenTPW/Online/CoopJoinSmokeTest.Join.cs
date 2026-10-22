@@ -76,8 +76,12 @@ internal sealed partial class CoopJoinSmokeTest
 		try
 		{
 			stepFrame++;
+			// a build that ran past the session's deadline is a slow runner (a slow page, a slow copy of the level's files), not a wrong digest: said as such, before the unexpected
+			// request for a capture that follows it
+			Require( joinSession?.JoinTimings.All( item => item.Outcome != "timed out" ) ?? true,
+				$"every build finished within the session's {CoopSession.BuildDeadlineSeconds} s deadline (a slower run, not a wrong digest)" );
 			if ( scriptFailure != null )
-				throw new InvalidOperationException( $"Native co-op join smoke test failed: {scriptFailure}." );
+				throw new InvalidOperationException( $"Co-op join smoke test failed: {scriptFailure}." );
 			if ( joinStep == JoinStep.FrontEnd )
 			{
 				if ( frame < WarmUpFrames )
@@ -362,7 +366,7 @@ internal sealed partial class CoopJoinSmokeTest
 		RequireJoinTimings( joinSession! );
 		WriteJson( "join-evidence.json", JoinEvidence( completed: true, failure: null ) );
 		Advance( JoinStep.Done );
-		Complete( $"Native co-op join smoke (join): {string.Join( "; ", joinSteps )}; ended at tick {level.TickCount} with the host's digest {digest:X16}." );
+		Complete( $"{runner} co-op join smoke (join): {string.Join( "; ", joinSteps )}; ended at tick {level.TickCount} with the host's digest {digest:X16}." );
 	}
 
 	/// <summary>The paths where two JSON values differ, the presentation parts left out (at most 50).</summary>

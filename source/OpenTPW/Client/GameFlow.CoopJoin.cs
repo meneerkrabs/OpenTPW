@@ -305,10 +305,11 @@ internal sealed partial class GameFlow
 				var worked = Worked();
 				var counted = Stopwatch.GetTimestamp();
 				LoadProfile.Pause();
+				// a section that ran in the slice counts, its time even when the clock saw none of it (a browser's clock is coarse)
 				foreach ( var (name, section) in LoadProfile.Snapshot() )
 				{
-					var before = sections.TryGetValue( name, out var earlier ) ? earlier.Milliseconds : 0;
-					if ( section.Milliseconds > before )
+					var (before, ran) = sections.TryGetValue( name, out var earlier ) ? (earlier.Milliseconds, earlier.Count) : (0, 0);
+					if ( section.Count > ran )
 						Timings.Sections[name] = Timings.Sections.GetValueOrDefault( name ) + section.Milliseconds - before;
 				}
 				Timings.Frames++;

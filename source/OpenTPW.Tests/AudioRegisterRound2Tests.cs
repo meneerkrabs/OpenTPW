@@ -489,6 +489,14 @@ public class AudioRegisterRound2Tests
 			Assert.AreEqual( (4, 4), level.CellTool.Start, "an accepted click stores the start" );
 			Assert.AreEqual( 2, mixer.Voices.Count, "and plays the track click 0xCE" );
 			Assert.AreEqual( new Vector3( 40, 0, 40 ), mixer.Voices[^1].Position );
+			// a line click with a start whose ghost refuses a tile leaves the same way: the latch is tested before the mode dispatch, start or none (0x524A63)
+			level.CellTool.Enter( new RefusingTrackWriter( (8, 4) ), (4, 4) );
+			HudToolClick.Click( hud, (8, 4) );
+			Assert.IsFalse( level.CellTool.IsActive, "the refused ghost of the line ends the line tool" );
+			Assert.AreEqual( 2, mixer.Voices.Count, "and plays no track click 0xCE" );
+			hud.Update( context, new UiInput( new System.Numerics.Vector2( -1 ), false, false, true, false, UiKeys.None ), false, false, false );
+			Assert.AreEqual( 3, mixer.Voices.Count );
+			Assert.AreEqual( new Vector3( 80, 0, 40 ), mixer.Voices[^1].Position, "its release plays the refusal cue 0xAF" );
 		}
 		finally
 		{

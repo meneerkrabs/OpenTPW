@@ -466,7 +466,7 @@ coaster) and 292 (demolish) on the button press and withdraws all five when it g
 path tool posts 184 for its first accepted click and 214 for the third click after it (counter `0x8186DC`, in either path or queue mode), every way into the queue tool
 203 (`SetMode(3)`, `0x52F4B0`) and 337 when a click ends it without joining a path (`0x527200`, the link flag `0x816D60`); the kart and water line tool posts 204 for the click
 that stores the line start it had none of (`0x526D41`, a jump into the queue tool's post `0x527629`), which happens only after a line closed its circuit with exactly Ctrl held and no
-queue to follow, and no mode change withdraws it; the buy list posts 201 for a chosen ride while no
+placement's queue start pending (`0x8186C0`), and no mode change withdraws it; the buy list posts 201 for a chosen ride while no
 ride is placed and 206 otherwise, 346 for Buy Land (tool `0x39`) and 345 for Clear Land (tool `0x3A`) (`0x4AC5D0`); the patrol button posts 193 once the employee window
 closed (`0x4B5B50`) and the window's refresh 212 for an employee with an own patrol area (`0x4B5AB0`, withdrawn with 192); the object windows are chosen by
 `Info.WhichUIType` (`0x486920`): rides 207 or 297, shops 209, sideshows 208, a feature that provides relief 213 (the truncated state's low byte below 25) or 299

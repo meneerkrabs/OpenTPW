@@ -436,7 +436,11 @@ public partial class Level
 		CoasterToolStation = null;
 		CoasterPreview = null;
 		if ( station.Entry.HasQueue && station.Runtime.IsAttraction && station.Visitors.HasCells )
+		{
+			// [BIN:TPW-EXE:0x00526680 queue start] the queue tool that follows a coaster's completion takes the pending queue start
+			placedQueueStart = null;
 			EnterQueueTool( station.Visitors );
+		}
 	}
 
 	/// <summary>

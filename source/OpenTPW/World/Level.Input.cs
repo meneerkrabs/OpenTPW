@@ -46,38 +46,69 @@ public partial class Level
 		else if ( CellTool.IsActive && BuildEntry == null )
 			ClickCellTool( (x, y), clickModifierMask );
 		else
+			ClickBuildTool( x, y, clickModifierMask );
+	}
+
+	/// <summary>The build tool's (or the Move tool's) click on cell (<paramref name="x"/>, <paramref name="y"/>): the armed <see cref="BuildEntry"/> goes to its build target there.</summary>
+	internal void ClickBuildTool( int x, int y, int modifierMask = 0 )
+	{
+		KeepBuildToolOnPlace = KeepsBuildTool( modifierMask );
+		// [BIN:TPW-EXE:0x00524B53 queue start] the build tool's click (and the Move tool's, 0x5253F3) zeroes the pending queue start before it places, whether or not the placement goes ahead
+		placedQueueStart = null;
+		try
 		{
-			KeepBuildToolOnPlace = KeepsBuildTool( clickModifierMask );
-			try
-			{
-				// a track add-on goes to its hover position on its ride's track, at the angle of the tile's flow (TrackAddOns.HoverTarget); anything else stays at the cell
-				var entry = BuildEntry!;
-				var (targetX, targetY, rotation) = BuildTarget( entry, x, y );
-				SetBuildRotation( rotation );
-				Commands.Issue( BuildCommand( entry, targetX, targetY, rotation ) );
-			}
-			finally
-			{
-				KeepBuildToolOnPlace = false;
-			}
+			// a track add-on goes to its hover position on its ride's track, at the angle of the tile's flow (TrackAddOns.HoverTarget); anything else stays at the cell
+			var entry = BuildEntry!;
+			var (targetX, targetY, rotation) = BuildTarget( entry, x, y );
+			SetBuildRotation( rotation );
+			Commands.Issue( BuildCommand( entry, targetX, targetY, rotation ) );
+		}
+		finally
+		{
+			KeepBuildToolOnPlace = false;
 		}
 	}
 
 	// A live track click's continuation choice is local tool state, never a command or world input.
 	private bool keepTrackToolAfterLine;
 
+	/// <summary>
+	/// The ride whose queue start the last placement left pending (tp.exe <c>0x8186C0</c>): the queue tool follows a kart or water circuit's close only while one is
+	/// pending, from that ride's queue (<see cref="ContinueTrackTool"/>), and the close takes it. Local tool state of the issuer, never a command, saved or hashed.
+	/// </summary>
+	// [BIN:TPW-EXE:0x0052544E queue start] a placement of a type with an entrance stores the record of its queue's start cell (0x52A050, the cell's coordinates in 0x7639B8/0x7639BC; 0x524DD7, 0x525269, 0x52544E and the Move tool's 0x5258AC); every build or Move click zeroes it before it places (0x524B53, 0x5253F3), the Move tool's pick-up in mode 0x33 zeroes it (0x525E5A), a path or queue commit zeroes it (0x527483), and the queue tool that follows a ride's placement, a coaster's completion or a kart or water circuit's close takes it (0x5252EA, 0x526680, 0x527056)
+	private OriginalObject? placedQueueStart;
+
 	internal SegmentResult? ClickCellTool( (int X, int Y) cell, int modifierMask = 0 )
 	{
 		var previous = keepTrackToolAfterLine;
 		keepTrackToolAfterLine = KeepsBuildTool( modifierMask );
+		var mode = CellTool.Mode;
 		try
 		{
-			return CellTool.Click( cell );
+			var result = CellTool.Click( cell );
+			// [BIN:TPW-EXE:0x00527483 queue start] the path and queue handler zeroes the pending queue start after its commit LayLine (0x527472)
+			if ( mode is CellToolMode.Path or CellToolMode.Queue && result is { GhostRefused: false } )
+				placedQueueStart = null;
+			return result;
 		}
 		finally
 		{
 			keepTrackToolAfterLine = previous;
 		}
+	}
+
+	/// <summary>
+	/// The track tool a kart or water ride the player just placed opens (<see cref="EnterTrackTool"/>): a ride with a queue leaves its queue start pending, so the close of
+	/// its circuit hands over to the queue tool (<see cref="ContinueTrackTool"/>).
+	/// </summary>
+	internal bool EnterPlacedTrackTool( OriginalObject item )
+	{
+		ArgumentNullException.ThrowIfNull( item );
+		if ( !EnterTrackTool( item ) )
+			return false;
+		placedQueueStart = item.Entry.HasQueue && item.Runtime.IsAttraction && item.Visitors.HasCells ? item : null;
+		return true;
 	}
 
 	/// <summary>
@@ -103,6 +134,8 @@ public partial class Level
 		// a Move tool still carrying ends first, so the end does not take the new pick-up's type
 		if ( IsMoving )
 			BuildEntry = null;
+		// [BIN:TPW-EXE:0x00525E5A queue start] the pick-up's click in mode 0x33 zeroes the pending queue start
+		placedQueueStart = null;
 		if ( Commands.Issue( new PickUpObjectCommand( item.Visitors.AttractionId ) ).As<(ObjectCatalogEntry Entry, int Rotation)>() is not { Entry: { } entry } picked )
 			return false;
 		IsRemovingObjects = false;

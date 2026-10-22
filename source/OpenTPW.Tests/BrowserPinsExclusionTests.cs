@@ -106,12 +106,17 @@ public class BrowserPinsExclusionTests
 			"using static OpenTPW.Game;", "var drawn = ParkLayout.DrawOriginalImport( 1 );", "using static OpenTPW.ParkLayout;\nvar drawn = DrawOriginalImport( 1 );",
 			"var message = $\"saves in {Game.ResolveSaveDirectory( root )}\";", "var message = $@\"{( count > 0 ? Game.CopiedSavesMarker : \"\" )}\";",
 			"var message = $$\"\"\"{ {{Game.CopiedSavesMarker}} }\"\"\";", "var tidy = ParkLayout.Tidy;",
-			"void First( int Game ) { }\nvoid Second() { var directory = Game.ResolveSaveDirectory( root ); }" } )
+			"void First( int Game ) { }\nvoid Second() { var directory = Game.ResolveSaveDirectory( root ); }",
+			"var values = items.Select( Game => Game.Value );\nvar directory = Game.ResolveSaveDirectory( root );",
+			"items.ForEach( Game => { Use( Game ); } );\nvar directory = Game.ResolveSaveDirectory( root );",
+			"var values = items.Select( ( index, Game ) => Game.Value + index );\nvar directory = Game.ResolveSaveDirectory( root );",
+			"int Twice( int Game ) => Game * 2;\nvar directory = Game.ResolveSaveDirectory( root );" } )
 			Assert.AreNotEqual( 0, DesktopOnlyUses( use, desktopOnly ).Count(), use );
 		foreach ( var mention in new[] { "// Game.ResolveSaveDirectory\nvar count = 1;", "var path = \"Client/Game.cs\";", "var game = park.Game;",
 			"var options = new Options { Game = 1 };", "private static string? Game() => null;\nvar game = Game();", "ParkLayout.Draw();",
 			"private readonly Fixture Game = new();\nvar marker = Game.CopiedSavesMarker;", "var drawn = layout.DrawOriginalImport( 1 );",
-			"var values = items.Select( Game => Game.Value );", "var values = items.Select( (Game, index) => Game.Value + index );", "var message = $\"Game {count} and {{Game}}\";",
+			"var values = items.Select( Game => Game.Value );", "var values = items.Select( (Game, index) => Game.Value + index );", "items.ForEach( ( index, Game ) => { Use( Game.Value ); } );",
+			"int Twice( int Game ) => Game * 2;", "private static int Game => 2;\nvoid Use() { var twice = Game * 2; }", "var message = $\"Game {count} and {{Game}}\";",
 			"void First( int Game ) { var directory = Game.ResolveSaveDirectory( root ); }", "ParkLayout.Draw();\nvar drawn = DrawOriginalImport( 1 );" } )
 			Assert.AreEqual( 0, DesktopOnlyUses( mention, desktopOnly ).Count(), mention );
 	}
@@ -229,7 +234,7 @@ public class BrowserPinsExclusionTests
 		var declarations = Declarations( code ).ToArray();
 		var declared = declarations.Select( declaration => declaration.Index ).ToHashSet();
 		var own = declarations.GroupBy( declaration => declaration.Name, StringComparer.Ordinal )
-			.ToDictionary( group => group.Key, group => group.Select( declaration => scope( declaration.Index ) ).Distinct().ToArray(), StringComparer.Ordinal );
+			.ToDictionary( group => group.Key, group => group.Select( declaration => scope( declaration.Index, declaration.Lambda ) ).Distinct().ToArray(), StringComparer.Ordinal );
 		bool Shadowed( string name, int index ) =>
 			declared.Contains( index ) || (own.TryGetValue( name, out var scopes ) && scopes.Any( visible => visible.Start <= index && index <= visible.End ));
 		var uses = new SortedSet<string>( StringComparer.Ordinal );
@@ -263,10 +268,11 @@ public class BrowserPinsExclusionTests
 	}
 
 	/// <summary>
-	/// Where a name declared at an index of the code is visible: the innermost <c>{ }</c> block around it, or, for a parameter (inside parentheses opened in
-	/// that block), the body block after the closing parenthesis (and a lambda's <c>=&gt;</c>) when there is one. File level is the whole code.
+	/// Where a name declared at an index of the code is visible: the innermost <c>{ }</c> block around it; for a parameter (inside parentheses opened in that
+	/// block) the body after the closing parenthesis, and for a lambda's parameter (<paramref name="code"/>'s <c>name =&gt;</c> when the second argument is set)
+	/// the lambda's body: a block, or an expression up to the <c>,</c>, <c>;</c> or closing bracket that ends it. File level is the whole code.
 	/// </summary>
-	private static Func<int, (int Start, int End)> Scopes( string code )
+	private static Func<int, bool, (int Start, int End)> Scopes( string code )
 	{
 		var block = new int[code.Length];
 		var parenthesis = new int[code.Length];
@@ -286,22 +292,42 @@ public class BrowserPinsExclusionTests
 		}
 		foreach ( var open in braces.Concat( parentheses ) )
 			ends[open] = code.Length;
-		return index =>
+
+		int Skip( int index )
 		{
-			if ( parenthesis[index] > block[index] )
+			while ( index < code.Length && char.IsWhiteSpace( code[index] ) )
+				index++;
+			return index;
+		}
+		(int Start, int End)? Body( int index )
+		{
+			index = Skip( index );
+			if ( index < code.Length && code[index] == '{' )
+				return (index, ends[index]);
+			if ( !code.AsSpan( index ).StartsWith( "=>" ) )
+				return null;
+			var body = Skip( index + 2 );
+			if ( body < code.Length && code[body] == '{' )
+				return (body, ends[body]);
+			var end = body;
+			for ( var depth = 0; end < code.Length; end++ )
 			{
-				var after = ends[parenthesis[index]] + 1;
-				while ( after < code.Length && char.IsWhiteSpace( code[after] ) )
-					after++;
-				if ( code.AsSpan( after ).StartsWith( "=>" ) )
-				{
-					after += 2;
-					while ( after < code.Length && char.IsWhiteSpace( code[after] ) )
-						after++;
-				}
-				if ( after < code.Length && code[after] == '{' )
-					return (after, ends[after]);
+				if ( code[end] is '(' or '[' or '{' )
+					depth++;
+				else if ( code[end] is ')' or ']' or '}' && depth-- == 0 )
+					break;
+				else if ( code[end] is ',' or ';' && depth == 0 )
+					break;
 			}
+			return (body, end);
+		}
+		return ( index, lambda ) =>
+		{
+			var name = index;
+			while ( name < code.Length && (char.IsLetterOrDigit( code[name] ) || code[name] == '_') )
+				name++;
+			if ( (lambda ? Body( name ) : parenthesis[index] > block[index] ? Body( ends[parenthesis[index]] + 1 ) : null) is { } body )
+				return body;
 			return block[index] < 0 ? (0, code.Length) : (block[index], ends[block[index]]);
 		};
 	}
@@ -316,7 +342,7 @@ public class BrowserPinsExclusionTests
 	/// keywords (<c>new</c>, <c>return</c>, <c>out</c> ...) declare nothing. At <paramref name="memberLevel"/> a name after a comma, ahead of <c>=</c>, <c>;</c> or
 	/// <c>,</c>, is declared too (<c>int first, second;</c>, an enum's members).
 	/// </summary>
-	private static IEnumerable<(string Name, int Index)> Declarations( string code, bool memberLevel = false )
+	private static IEnumerable<(string Name, int Index, bool Lambda)> Declarations( string code, bool memberLevel = false )
 	{
 		foreach ( Match match in Regex.Matches( code, @"(?<=\s)(?<![\w.])([A-Za-z_]\w*)\s*(?:<[^<>;{}()=]*>\s*)?(?=(?:[;({,)]|=(?!=)|in\b))" ) )
 		{
@@ -326,27 +352,27 @@ public class BrowserPinsExclusionTests
 				continue;
 			var last = before[^1];
 			if ( last is ']' or ')' || (last == '>' && !before.EndsWith( "=>" )) || (last == '?' && before.Length > 1 && !char.IsWhiteSpace( before[^2] )) )
-				yield return (name, match.Index);
+				yield return (name, match.Index, false);
 			else if ( last == ',' && memberLevel && code[match.Index + match.Length] is '=' or ';' or ',' )
-				yield return (name, match.Index);
+				yield return (name, match.Index, false);
 			else if ( char.IsLetterOrDigit( last ) || last == '_' )
 			{
 				var start = before.Length;
 				while ( start > 0 && (char.IsLetterOrDigit( before[start - 1] ) || before[start - 1] == '_') )
 					start--;
 				if ( !NotDeclaring.Contains( before[start..].ToString() ) )
-					yield return (name, match.Index);
+					yield return (name, match.Index, false);
 			}
 		}
 		foreach ( Match lambda in Regex.Matches( code, @"(?<![\w.])([A-Za-z_]\w*)\s*=>" ) )
 		{
 			if ( !NotDeclaring.Contains( lambda.Groups[1].Value ) )
-				yield return (lambda.Groups[1].Value, lambda.Index);
+				yield return (lambda.Groups[1].Value, lambda.Index, true);
 		}
 		foreach ( Match lambda in Regex.Matches( code, @"\(\s*([A-Za-z_]\w*(?:\s*,\s*[A-Za-z_]\w*)*)\s*\)\s*=>" ) )
 		{
-			foreach ( var name in lambda.Groups[1].Value.Split( ',', StringSplitOptions.TrimEntries ) )
-				yield return (name, lambda.Index + 1);
+			foreach ( Match name in Regex.Matches( lambda.Groups[1].Value, @"[A-Za-z_]\w*" ) )
+				yield return (name.Value, lambda.Groups[1].Index + name.Index, false);
 		}
 	}
 

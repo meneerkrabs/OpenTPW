@@ -9,5 +9,5 @@ A co-op join now times itself ([COOP.md](../COOP.md), "Measurements"; `[EXT:onli
   - the build's work by section;
   - the check at the cut, the swap and the catch-up.
 - The native join smoke writes them into its evidence with every update frame of the join, and requires them whole. A measuring mode joins the untouched captures once each, and `scripts/measure-coop-join.sh` runs it five times in a Release build, with `tools/coop_join_timings.py` printing the medians and ranges.
-- First results on the desktop: the guest's worst build step is the restore of the park's objects. It took 0.6 s in a fresh process and 0.2 s warm, in a single frame. The host's cut takes one frame of 5 to 10 ms.
+- First results on the desktop: the guest's worst build step is the restore of the park's objects, about 0.45 s in a single frame in a fresh process; warm, the guests' setup leads with about 0.09 s. The host's cut takes one frame of 4 to 12 ms.
 - `scripts/run.sh` builds and runs the Release configuration with `OPENTPW_CONFIGURATION=Release`.

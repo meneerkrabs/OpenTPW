@@ -867,7 +867,7 @@ internal static class Game
 							var bridgeCells = shape.Select( cell => (X: originX + cell.X, Y: originY + cell.Y) ).ToArray();
 							var bridgeDelay = GetOption( args, "--debug-bridge-delay", "frames to wait after swimmers exist before building the bridge" ) is { } delayText
 								&& int.TryParse( delayText, out var delay ) && delay > 0 ? delay : 0;
-							// [EXT:debug-bridge] --debug-bridge-bare lays no path at the bridge's ends; --debug-bridge-direction N (0 north, 1 east, 2 south, 3 west) restricts the direction
+							// [EXT:debug-pool] --debug-bridge-bare lays no path at the bridge's ends; --debug-bridge-direction N (0 north, 1 east, 2 south, 3 west) restricts the direction
 							var bridgeBare = args.Contains( "--debug-bridge-bare" );
 							int? bridgeDirection = GetOption( args, "--debug-bridge-direction", "0 north, 1 east, 2 south, 3 west" ) is { } directionText && int.TryParse( directionText, out var parsedDirection ) ? parsedDirection : null;
 							var debugBridge = args.Contains( "--debug-bridge" ) && bridgeDelay == 0 ? level.BuildDebugPoolBridge( bridgeCells, !bridgeBare, bridgeDirection ) : null;

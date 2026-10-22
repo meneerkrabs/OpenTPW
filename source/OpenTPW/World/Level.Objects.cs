@@ -985,7 +985,7 @@ public partial class Level
 	{
 		if ( IsReadOnlyVisit || Paths == null )
 			return CellBuildResult.NotPath;
-		if ( PoolBridges is { } bridges && (bridges.Covers( x, y ) || bridges.PathRemovalStrands( x, y )) ) return CellBuildResult.Occupied;
+		// the bridge protection (its own cells, and the last way off an occupied bridge) lives in ParkPathBuilder.Clear, which Remove and RemoveFixed share
 		// [EXT:removable-access-cells] the path cell the placement laid outside an entrance or exit (flag 0x20) can be removed, where tp.exe's cell clear keeps a NoModify cell that has neighbours (the forced clear 0x5367A0(0, 0) refuses it with "Removing path cell with no neighbours but NOMODIFY set" otherwise); the map start's initial path stays fixed
 		var access = IsAccessCell( x, y );
 		var result = access ? Paths.RemoveFixed( x, y ) : Paths.Remove( x, y );
@@ -1177,7 +1177,9 @@ public partial class Level
 		!QueueTerrainAllows( x, y ) || (Objects.FindAt( x, y ) != null && !QueueGivesWay( x, y )) || IsReservedByPrototype( x, y )
 		|| (Guests?.Grid.Cells is { } cells && cells.InBounds( x, y ) && cells.FlagsAt( x, y ).HasFlag( ParkCellFlags.Unowned ))
 		// [EXT:pools-slides] a slide's track keeps its land cells for its pylons
-		|| (Guests != null && PoolSlides?.ReservesLand( x, y, Guests.Grid.Cells ) == true);
+		|| (Guests != null && PoolSlides?.ReservesLand( x, y, Guests.Grid.Cells ) == true)
+		// [EXT:pools-bridges] a bridge's cells and the two outside end cells (bare or with a path) take no queue: a queue there would break the bridge's save and its entrance
+		|| PoolBridges?.Reserves( x, y ) == true;
 
 	/// <summary>The terrain rule for a queue cell; its path cells (the save's and the map start's) are the live cell map's to judge, as for objects.</summary>
 	private bool QueueTerrainAllows( int x, int y ) => Objects.Grid.CheckTerrain( x, y ) switch

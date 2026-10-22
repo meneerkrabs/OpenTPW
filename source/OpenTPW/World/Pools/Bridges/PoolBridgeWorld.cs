@@ -66,7 +66,7 @@ public sealed class PoolBridgeWorld
 
 	/// <summary>
 	/// Whether removing the path at (x, y) would strand someone: it is an outside end of a bridge that is occupied right now and the bridge's other outside end has no path,
-	/// so the last way off the bridge would go. Removing an end path is otherwise free (guests then enter the bridge only through the end that still has a path).
+	/// so the last way off the bridge would go (someone on the end cell being removed counts too). Removing an end path is otherwise free (guests then enter the bridge only through the end that still has a path).
 	/// </summary>
 	public bool PathRemovalStrands( int x, int y )
 	{
@@ -78,6 +78,7 @@ public sealed class PoolBridgeWorld
 			if ( first != (x, y) && last != (x, y) ) continue;
 			var other = first == (x, y) ? last : first;
 			if ( cells.InBounds( other.X, other.Y ) && cells.TypeAt( other.X, other.Y ) == ParkCellType.Path ) continue;
+			if ( occupied( x, y ) ) return true;
 			for ( var i = 0; i < PoolBridge.Length; i++ )
 			{
 				var c = bridge.Cell( i );

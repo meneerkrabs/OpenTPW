@@ -185,7 +185,7 @@ public class PoolBridgeToolTests
 			foreach ( var key in new[] { OpenTpwText.PoolBridge, OpenTpwText.PoolBridgeErase, OpenTpwText.PoolBridgeHelp, OpenTpwText.PoolBridgeEraseHelp, OpenTpwText.PoolBridgeNeedsWater } )
 				Assert.IsFalse( string.IsNullOrWhiteSpace( SupplementaryStrings.Get( key, language ) ) );
 		foreach ( var language in SupplementaryStrings.SupportedLanguages )
-			foreach ( var key in new[] { OpenTpwText.PoolBridge, OpenTpwText.PoolBridgeHelp } )
+			foreach ( var key in Enum.GetValues<OpenTpwText>().Where( key => key.ToString().StartsWith( "PoolBridge" ) ) )
 				Assert.IsFalse( SupplementaryStrings.Get( key, language ).Contains( '\u2019' ), "the French fonts lack U+2019: plain apostrophes only" );
 	}
 
@@ -198,17 +198,21 @@ public class PoolBridgeToolTests
 		Assert.AreEqual( 1, tool.BridgeDirection );
 		tool.Hover( 5, 5 );
 		Assert.AreEqual( (4, 5), tool.HoverBridgeCells().First(), "east: the outside end is west of the click" );
-		// comma: one quarter turn clockwise, full stop: three (the keys of an object's blueprint)
+		// the object blueprint's own sense: rotation 90 (comma) maps the along axis (1, 0) to (X+v, Y-u) = (0, -1), so east turns to north
+		var turned = ObjectFootprint.ToGrid( 0, 0, 90, 1, 0 );
+		var expected = Array.FindIndex( GuestPathGrid.Directions, d => d == turned );
+		Assert.AreEqual( 0, expected, "an object's quarter turn takes east to north" );
 		tool.RotateBridge( ParkHud.BlueprintTurnSteps( HudScreenShortcut.TurnBlueprintLeft ) );
-		Assert.AreEqual( 2, tool.BridgeDirection );
-		Assert.AreEqual( (5, 4), tool.HoverBridgeCells().First(), "south: the blueprint follows the direction" );
-		Assert.AreEqual( (5, 12), tool.HoverBridgeCells().Last() );
+		Assert.AreEqual( expected, tool.BridgeDirection );
+		Assert.AreEqual( (5, 6), tool.HoverBridgeCells().First(), "north: the outside end is south of the click, the bridge extends up the map" );
+		Assert.AreEqual( (5, -2), tool.HoverBridgeCells().Last(), "the far end is seven cells north of the click" );
+		// full stop adds 270 degrees (three steps), the same as three commas, so it takes north back to east
 		tool.RotateBridge( ParkHud.BlueprintTurnSteps( HudScreenShortcut.TurnBlueprintRight ) );
 		Assert.AreEqual( 1, tool.BridgeDirection );
 		tool.RotateBridge( 2 );
 		Assert.AreEqual( 3, tool.BridgeDirection );
 		tool.RotateBridge( 1 );
-		Assert.AreEqual( 0, tool.BridgeDirection );
+		Assert.AreEqual( 2, tool.BridgeDirection );
 		tool.RotateBridge( -1 );
 		Assert.AreEqual( 3, tool.BridgeDirection );
 		// a bridge built after turning keeps the direction and every direction places

@@ -36,6 +36,41 @@ public class PoolBridgePreviewTests
 	}
 
 	[TestMethod]
+	public void EveryTriangleHasATextureThatMapsToAnExistingPartPng()
+	{
+		var asset = PoolBridgeAsset.Load( Path.Combine( Folder(), "bridge.json" ) );
+		var model = PoolBridgePreview.Model( asset );
+		var pngs = asset.Parts.Select( part => Path.GetFileNameWithoutExtension( part.Texture ) ).ToHashSet( StringComparer.OrdinalIgnoreCase );
+		var triangles = 0;
+		foreach ( var mesh in model.Meshes )
+		{
+			Assert.IsTrue( mesh.Materials.Length > 0 );
+			foreach ( var material in mesh.Materials )
+			{
+				Assert.IsTrue( material.TextureIndex >= 0, "no untextured material" );
+				Assert.IsTrue( pngs.Contains( material.Name ), $"{material.Name} is a part texture" );
+			}
+			triangles += mesh.Indices.Length / 3;
+		}
+		Assert.AreEqual( asset.Parts.Sum( part => part.Indices.Length / 3 ), triangles );
+		foreach ( var part in asset.Parts )
+			Assert.IsTrue( File.Exists( Path.Combine( Folder(), part.Texture ) ), part.Texture );
+	}
+
+	[TestMethod]
+	public void AMalformedMeshFileIsAnInvalidDataErrorTheHudCatches()
+	{
+		var folder = Directory.CreateTempSubdirectory().FullName;
+		try
+		{
+			File.WriteAllText( Path.Combine( folder, "bridge.json" ), "{ not json" );
+			Assert.ThrowsException<InvalidDataException>( () => PoolBridgeAsset.Load( Path.Combine( folder, "bridge.json" ) ) );
+			Assert.ThrowsException<InvalidDataException>( () => PoolBridgePreview.Create( folder ) );
+		}
+		finally { Directory.Delete( folder, true ); }
+	}
+
+	[TestMethod]
 	public void ThePreviewTurnsAndFitsTheBuyPreviewFrame()
 	{
 		var icon = PoolBridgePreview.Create( Folder() )!;

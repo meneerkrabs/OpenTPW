@@ -39,14 +39,14 @@ public sealed class PoolTool
 	/// <summary>The direction the bridge in hand is built in (<see cref="GuestPathGrid.Directions"/>: 0 north, 1 east, 2 south, 3 west), the first land approach cell being the click.</summary>
 	public int BridgeDirection => bridgeDirection;
 	/// <summary>
-	/// Turns the bridge in hand by <paramref name="steps"/> quarter turns clockwise, as the blueprint of an object turns (comma one step, full stop three: <see cref="ParkHud.BlueprintTurnSteps"/>),
+	/// Turns the bridge in hand by <paramref name="steps"/> quarter turns the way an object blueprint turns: a step is +90 degrees of build rotation, which maps the along axis (1, 0) to (0, -1), so comma takes east to north (<see cref="GuestPathGrid.Directions"/> index minus one; comma is one step, full stop three: <see cref="ParkHud.BlueprintTurnSteps"/>),
 	/// and checks the hovered place again so the blueprint follows. Does nothing outside the bridge placing mode.
 	/// </summary>
 	public void RotateBridge( int steps )
 	{
 		if ( !IsBridge || IsErasing )
 			return;
-		bridgeDirection = (((bridgeDirection + steps) % 4) + 4) % 4;
+		bridgeDirection = (((bridgeDirection - steps) % 4) + 4) % 4;
 		if ( HoverCell is { } cell )
 			Hover( cell.X, cell.Y );
 	}

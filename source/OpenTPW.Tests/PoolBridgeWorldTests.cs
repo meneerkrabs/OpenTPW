@@ -298,6 +298,26 @@ public class PoolBridgeWorldTests
 	}
 
 	[TestMethod]
+	public void OnlyARemovalThatEmptiesTheEndCellCanStrandAndTheEndCellsOccupantCounts()
+	{
+		var cells = BareCrossing();
+		var grid = new GuestPathGrid( cells );
+		var onEnd = false;
+		var world = new PoolBridgeWorld( cells, occupied: ( x, y ) => onEnd && x == 1 && y == 3 );
+		var paths = new ParkPathBuilder( cells, grid, (ParkEconomy?)null, new PoolsTests.FlatGrid( 16, 12 ), world.Covers );
+		Assert.AreEqual( PoolBridgeResult.Ok, world.TryAdd( 2, 3, 1 ) );
+		Assert.IsTrue( paths.BuildSegment( (1, 3), (1, 3) ).Completed );
+		Assert.IsTrue( paths.BuildSegment( (1, 3), (1, 3) ).Completed, "laid twice: the placement counter holds one more" );
+		onEnd = true;
+		Assert.IsTrue( world.PathRemovalStrands( 1, 3 ), "someone on the end cell, and no other end path" );
+		Assert.AreEqual( CellBuildResult.Existing, paths.RemoveOnce( 1, 3 ), "a step that only lowers the counter leaves the path and strands no one" );
+		Assert.AreEqual( CellBuildResult.Occupied, paths.RemoveOnce( 1, 3 ), "the step that would empty the cell is refused" );
+		Assert.AreEqual( ParkCellType.Path, cells.TypeAt( 1, 3 ) );
+		onEnd = false;
+		Assert.AreEqual( CellBuildResult.Ok, paths.Remove( 1, 3 ) );
+	}
+
+	[TestMethod]
 	public void AnotherBridgeInTheWayIsNamedOnTheSharedCell()
 	{
 		var cells = Crossing();

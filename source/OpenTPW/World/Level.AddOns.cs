@@ -98,6 +98,13 @@ public partial class Level
 	public OriginalPlacementResult CheckBuildTarget( ObjectCatalogEntry entry, int x, int y, int rotation ) =>
 		BuildAddOnRide is { } ride && TrackAddOns.IsTrackAddOn( entry ) ? CheckAddOn( entry, x, y, rotation, ride ) : CheckObject( entry, x, y, rotation );
 
+	/// <summary>
+	/// Whether the build ghost at a build target is accepted: the build rule allowed it (<paramref name="placement"/>, <see cref="CheckBuildTarget"/>) and the park can buy the object.
+	/// The HUD draws a refused ghost red, and the build click on it does not drop a pending queue start (<see cref="ClickBuildTool"/>).
+	/// </summary>
+	internal bool BuildGhostAllowed( ObjectCatalogEntry entry, OriginalPlacementResult placement ) =>
+		placement == OriginalPlacementResult.Allowed && (Park == null || Park.Economy.CheckBuild( entry.InfoId, IsMoving ) == ParkEconomy.PurchaseResult.Ok);
+
 	/// <summary>Builds the armed entry at a build target: the track add-on of <see cref="BuildAddOnRide"/> through <see cref="PlaceAddOn"/>, anything else through <see cref="PlaceObject"/>.</summary>
 	private OriginalObject? PlaceBuildTarget( ObjectCatalogEntry entry, int x, int y, int rotation ) =>
 		BuildAddOnRide is { } ride && TrackAddOns.IsTrackAddOn( entry ) ? PlaceAddOn( entry, x, y, rotation, ride ) : PlaceObject( entry, x, y, rotation );

@@ -2,7 +2,8 @@
 
 This implements one existing documented continuation rule: after a live kart or water
 line click produces a valid circuit, exactly Ctrl keeps the line tool armed without
-a start when no queue follows. The existing queue transition takes priority.
+a start when no placement's queue start is pending (tp.exe `0x8186C0`). A pending start
+takes the queue tool first, whatever the click held, and the handover uses it up.
 Mixed Ctrl modifiers and clicks without Ctrl retain the prior end behavior.
 
 The public provenance is the existing track-tool-help annotation in
@@ -32,11 +33,12 @@ no command payload or shared-world result is conditional on it.
 ## Acceptance and remaining scope
 
 Synthetic real-level kart tests cover a cut and live mend, exact/mixed modifiers,
-queue priority, same-writer reset, the next start click, headless/non-Line calls
-after Ctrl, and exception cleanup. These tests require exact-head C# CI; they were
+the pending queue start (its priority, its use and the clicks that drop it), same-writer
+reset, the next start click, headless/non-Line calls after Ctrl, and exception cleanup. These tests require exact-head C# CI; they were
 not executed locally. They are not rendered or original-executable parity proof.
 
 UI-031 remains open. This slice does not establish all native station/queue-tail
-submodes, invalid-line termination, coaster placement-to-track transitions, or
-water-specific rendered behavior. It preserves the existing host queue eligibility
-predicate rather than claiming that every native queue gate is mapped.
+submodes, coaster placement-to-track transitions, or water-specific rendered behavior.
+The queue handover follows the placement's pending queue start (`0x526F95`; docs/TRACKS.md,
+"Messages"), and a line click whose ghost has a refused tile ends the tool and lays nothing,
+with or without a start (`0x524A63`).

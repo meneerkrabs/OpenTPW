@@ -6,7 +6,7 @@ using System.Text;
 namespace OpenTPW.Tests;
 
 /// <summary>
-/// Issue #754: the desktop's game-data file system remembers its path lookups (Game.CreateGameDataFileSystem), so reading the members of an archive
+/// Issue #754: the desktop's game-data file system remembers its path lookups (GameDataFileSystem.Create), so reading the members of an archive
 /// again does not list the directories along their paths again (docs/ENGINE-PERFORMANCE.md, "Start and build hitches").
 /// </summary>
 [TestClass]
@@ -26,7 +26,7 @@ public class GameDataFileSystemTests
 			Directory.CreateDirectory( Path.Combine( data, "levels", "jungle" ) );
 			File.WriteAllText( Path.Combine( data, "levels", "jungle", "global.sam" ), "loose" );
 			WriteWad( Path.Combine( data, "levels", "jungle", "rides.wad" ), "member" );
-			var files = Game.CreateGameDataFileSystem( data );
+			var files = GameDataFileSystem.Create( data );
 			Assert.IsTrue( files.CacheLookups );
 
 			LoadProfile.Enable( true );

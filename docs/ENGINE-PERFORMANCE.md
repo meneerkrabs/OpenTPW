@@ -269,7 +269,7 @@ old build differ from each other (0.3 % of the pixels, the moving guests); the n
 The desktop's game-data file system did not remember its path lookups, so every read listed the directories along its path again (to find the
 archive a path lies in and, on case-sensitive systems, the on-disk spelling): 1,063 listings before the lobby, 15,770 for a park start, 300 to
 480 for an object's first placement. It now remembers them as the browser's does (`BaseFileSystem.CacheLookups`, made in
-`Game.CreateGameDataFileSystem`). Nothing in a session adds files below the data folder (a new game folder applies at the next start), and what
+`GameDataFileSystem.Create`, which the browser now uses too). Nothing in a session adds files below the data folder (a new game folder applies at the next start), and what
 changes what the lookups see invalidates them itself: the mod overrides, the language's interface archive and the mod content roots. The files
 read are the same; `FileSystemTests` now run on the desktop's own file system.
 

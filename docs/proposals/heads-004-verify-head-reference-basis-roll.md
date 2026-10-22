@@ -7,7 +7,7 @@
 - One ID per proposal; shared dependencies are coordination edges, not duplicated ownership.
 
 ## Source-verified residual
-HeadPresentation computes roll from world-matrix M21/M22; PC composition includes selected frame reference basis, not yet compared instruction by instruction.
+The former world-matrix-only roll description is stale. Current HeadPresentation expresses the camera in the node frame, selects the art frame, builds its reference basis and removes that basis before extracting roll. Native sine-table/x87 precision and rendered reference equivalence remain unresolved.
 
 ## Source sites
 - `source/OpenTPW/World/Guests/HeadPresentation.cs:22` — APPROX annotation and adjacent implementation inspected.
@@ -46,3 +46,15 @@ HeadPresentation computes roll from world-matrix M21/M22; PC composition include
 - This deliverable is a documentation proposal only; no gameplay source files are changed by this PR.
 - Runtime work remains blocked on the evidence/ownership decisions listed above where applicable.
 - No approximation is retired by creating this plan; no PR is claimed implemented or ready to merge.
+
+## Current-source reconciliation (2026-10-22)
+
+Inspected public main `1c874922df6e42425dc5638f7e2554c9fde2c68c`, not merely the historical proposal:
+
+- [HeadPresentation.cs](https://github.com/meneerkrabs/OpenTPW/blob/1c874922df6e42425dc5638f7e2554c9fde2c68c/source/OpenTPW/World/Guests/HeadPresentation.cs#L74-L121): `Compute` forms `cameraWorld * inverse`, selects the nearest frame, constructs direction/up/right rows, then computes `cameraInNode * inverseBasis` before `Atan2(-remaining.M21, remaining.M22)`. The selected-frame basis is therefore already implemented and must not be reimplemented as a missing feature.
+- [HeadPresentationTests.cs](https://github.com/meneerkrabs/OpenTPW/blob/1c874922df6e42425dc5638f7e2554c9fde2c68c/source/OpenTPW.Tests/HeadPresentationTests.cs) already covers direction selection, pole columns, opposite quarter-turn bank rolls, uniform scale, mirroring, hidden nodes and singular-matrix fallback. Reading these tests is not a claim that they were executed in this audit.
+- The current `HEADS-004` annotation explicitly retains native sine-table/x87 and general-inversion precision differences plus rendered reference comparison. The existing MathF trigonometry and general matrix inverse do not establish bit-exact parity.
+
+Next action: reconcile the evidence ledger with this implemented composition, then obtain an independently evidenced native numeric oracle for nonuniform transforms, camera rotations and frame-boundary/tie cases. Extend regression coverage only for identified gaps. A synthetic 7x8 consistency check alone cannot retire the native precision or rendered-reference residual.
+
+This reconciliation changes no runtime code, executes no original binary or C# test, publishes no original media and makes no whole-ID completion or merge-readiness claim.

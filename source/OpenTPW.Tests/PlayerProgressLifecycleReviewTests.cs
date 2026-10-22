@@ -195,7 +195,7 @@ public class PlayerProgressLifecycleReviewTests
 		try
 		{
 			var stale = PrepareStale();
-			Call( flow, "TearDown", false, false );
+			Call( flow, "TearDown", false, false, false );
 			Assert.AreEqual( 0, AdvisorEntryPreparation.Count ); Assert.IsTrue( stale.Disposed );
 		}
 		finally { AdvisorEntryPreparation.Drop(); }
@@ -239,7 +239,7 @@ public class PlayerProgressLifecycleReviewTests
 	public void SuccessfulActualTearDownFlushesThenUnsubscribesRetiredRuntime()
 	{
 		KnownOwner(); Award(); Assert.AreEqual( 1, PlayerTicketFile.LoadIfPresent( Profile )!.EarnedTickets );
-		Call( flow, "TearDown", false, false ); Assert.IsNull( flow.Level ); Assert.IsNull( flow.Menu ); Assert.AreEqual( 1, liveEntity.Deleted );
+		Call( flow, "TearDown", false, false, false ); Assert.IsNull( flow.Level ); Assert.IsNull( flow.Menu ); Assert.AreEqual( 1, liveEntity.Deleted );
 		var events = typeof( ParkEconomyRuntime ).GetField( "EventRaised", BindingFlags.Instance | BindingFlags.NonPublic )!;
 		Assert.AreEqual( 0, ((Delegate?)events.GetValue( runtime ))?.GetInvocationList().Length ?? 0 );
 		var source = File.ReadAllBytes( Profile ); runtime.Economy.Counters.Max( ParkCounters.Record( ParkRecordKind.CoasterHeight, 1 ), 106 );

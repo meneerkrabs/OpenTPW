@@ -139,6 +139,11 @@ public partial class Level
 			var cells = Guests.Grid.Cells;
 			foreach ( var item in Objects.Objects )
 			{
+				// [EXT:online-coop-snapshot-join] a join's cells are the host's live ones as its snapshot holds them: no footprint is written again (a live park's writes nothing anyway:
+				// the writer writes only differences, and no Theme Park World shape has '@' or 'Q' cells) and nothing is repaired (a placement under a negative balance leaves its entrance
+				// and exit without links, which the repair would lay)
+				if ( joinRestore != null )
+					continue;
 				cells.WriteFootprint( item.Cells, OwnerWord( item ), item.Placement.Rotation );
 				// an imported park's entrance and exit cells carry the link byte its save holds, as the original's load reads it (a resumed park's cells come from its own snapshot)
 				if ( resumeState == null && visitLayout == null && OriginalPark?.Save is { } save )

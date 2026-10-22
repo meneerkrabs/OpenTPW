@@ -35,6 +35,57 @@ internal sealed class CoasterCellMarkers : IDisposable
 		Synchronize();
 	}
 
+	/// <summary>
+	/// [EXT:online-coop-snapshot-join] A live park's binding taken over from its cells without writing, as a join's build makes it (docs/COOP.md, "Joining a running session"): the bind
+	/// above synchronizes at once and would claim wanted cells the host's binding never claimed (one another coaster's marker held when the pylon was placed, released since). Each wanted
+	/// cell that is a marker with this owner word is held; the cells the host's binding did not hold (<paramref name="unheld"/>) stay unheld, the displaced ones displaced. The next change of
+	/// the track synchronizes, as on the host.
+	/// </summary>
+	internal CoasterCellMarkers( ParkCellMap cells, CoasterTrack track, ushort owner, IEnumerable<(int X, int Y)>? stationEnds, IEnumerable<(int X, int Y, bool Displaced)> unheld )
+	{
+		this.cells = cells;
+		this.track = track;
+		this.owner = owner;
+		this.stationEnds = stationEnds?.Distinct().ToArray() ?? Array.Empty<(int X, int Y)>();
+		var desired = Desired();
+		var skipped = new HashSet<(int X, int Y)>();
+		foreach ( var (x, y, isDisplaced) in unheld )
+		{
+			skipped.Add( (x, y) );
+			if ( isDisplaced && desired.ContainsKey( (x, y) ) )
+				displaced.Add( (x, y) );
+		}
+		foreach ( var (cell, nodes) in desired )
+			if ( !skipped.Contains( cell ) && cells.RawTypeAt( cell.X, cell.Y ) == MarkerType && cells.OwnerAt( cell.X, cell.Y ) == owner )
+				leases[cell] = new( cells.CoasterGenerationAt( cell.X, cell.Y ), nodes.FirstOrDefault(), nodes );
+	}
+
+	/// <summary>
+	/// [EXT:online-coop-snapshot-join] For a join snapshot, read only: the wanted cells this binding does not hold although the join's adoption would (markers with its owner word and no lease),
+	/// and the displaced cells with the cells of leases it no longer owns (its next synchronization displaces them), in cell order.
+	/// </summary>
+	internal IEnumerable<(int X, int Y, bool Displaced)> UnheldCells()
+	{
+		if ( disposed )
+			yield break;
+		foreach ( var cell in Desired().Keys.Order() )
+		{
+			var held = leases.TryGetValue( cell, out var lease );
+			if ( displaced.Contains( cell ) || held && !Owns( cell, lease! ) )
+				yield return (cell.X, cell.Y, true);
+			else if ( !held && cells.RawTypeAt( cell.X, cell.Y ) == MarkerType && cells.OwnerAt( cell.X, cell.Y ) == owner )
+				yield return (cell.X, cell.Y, false);
+		}
+	}
+
+	/// <summary>The cells the pylons want, each with its nodes lowest in the stack first, and the station's end cells.</summary>
+	private Dictionary<(int X, int Y), CoasterNode[]> Desired()
+	{
+		var desired = track.Nodes.Where( node => !node.IsPylonless ).GroupBy( node => (node.X, node.Y) ).ToDictionary( group => group.Key, group => group.OrderBy( node => node.StackIndex ).ToArray() );
+		foreach ( var end in stationEnds ) desired.TryAdd( end, Array.Empty<CoasterNode>() );
+		return desired;
+	}
+
 	/// <summary>The single-cell tool preview: first and last are both set by 0x53628C. Geometric validity is a separate test.</summary>
 	// [BIN:TPW-EXE:0x5240D5,0x5242F1,0x53578E,0x535AFB] place15 accepts equal type21 even with another owner; move16 accepts equal type22, but a type21 requires its owner.
 	// The host has no sticky multi-cell refusal globals. Each builder request is one independent cell; this models that zero-prior-failure context, not all native tool state.
@@ -91,8 +142,7 @@ internal sealed class CoasterCellMarkers : IDisposable
 	internal void Synchronize()
 	{
 		if ( disposed ) return;
-		var desired = track.Nodes.Where( node => !node.IsPylonless ).GroupBy( node => (node.X, node.Y) ).ToDictionary( group => group.Key, group => group.OrderBy( node => node.StackIndex ).ToArray() );
-		foreach ( var end in stationEnds ) desired.TryAdd( end, Array.Empty<CoasterNode>() );
+		var desired = Desired();
 		foreach ( var (cell, lease) in leases.ToArray() )
 		{
 			if ( !Owns( cell, lease ) )

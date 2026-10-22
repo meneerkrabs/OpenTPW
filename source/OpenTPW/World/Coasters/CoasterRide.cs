@@ -1437,6 +1437,7 @@ public sealed class CoasterRide
 		var migrated = Track.RestoreSnapshot( saved.Track );
 		Initialised = saved.Initialised;
 		// A save from before the controller state held only the closed flag: a finished track is open or closed, an unfinished one has no state to be in but 1.
+		// [EXT:online-coop-snapshot-join] kept for a join: a live coaster is never runnable-less outside state 1 (the tool's exit gives Built only when runnable, every runnability change goes through it)
 		State = !Track.IsRunnable ? CoasterControllerState.Incomplete
 			: saved.State is { } savedState ? (CoasterControllerState)savedState
 			: saved.Closed ? CoasterControllerState.Closed : CoasterControllerState.Open;

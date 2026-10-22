@@ -297,7 +297,7 @@ public class GlobalTicketHolderTests
 			shared = false;
 			var flow = (GameFlow)RuntimeHelpers.GetUninitializedObject( typeof( GameFlow ) );
 			typeof( GameFlow ).GetField( "progressOwner", BindingFlags.Instance | BindingFlags.NonPublic )!.SetValue( flow, owner );
-			typeof( GameFlow ).GetMethod( "LeaveCoopSession", BindingFlags.Instance | BindingFlags.NonPublic )!.Invoke( flow, new object[] { "The park was closed." } );
+			typeof( GameFlow ).GetMethod( "LeaveCoopSession", BindingFlags.Instance | BindingFlags.NonPublic )!.Invoke( flow, new object[] { "The park was closed.", false } );
 			Assert.AreEqual( new GlobalTicketHolder( GoldenTicketKind.CoasterHeight, "space", 140 ), PlayerTicketFile.LoadIfPresent( path )!.HolderOf( GoldenTicketKind.CoasterHeight ),
 				"the hand-back recorded the session's win" );
 		}
@@ -343,7 +343,7 @@ public class GlobalTicketHolderTests
 			Assert.IsNull( PlayerTicketFile.LoadIfPresent( path )!.HolderOf( GoldenTicketKind.CoasterHeight ), "nothing of it during the session" );
 			// the session ended; the way out finds no session and pumps the progress: the guest's player gets nothing of the host's park
 			level.CoopSession = null;
-			typeof( GameFlow ).GetMethod( "LeaveCoopSession", BindingFlags.Instance | BindingFlags.NonPublic )!.Invoke( flow, new object[] { "The park was closed." } );
+			typeof( GameFlow ).GetMethod( "LeaveCoopSession", BindingFlags.Instance | BindingFlags.NonPublic )!.Invoke( flow, new object[] { "The park was closed.", false } );
 			Assert.IsNull( PlayerTicketFile.LoadIfPresent( path )!.HolderOf( GoldenTicketKind.CoasterHeight ) );
 			Assert.IsFalse( owner.Dirty );
 			typeof( GameFlow ).GetMethod( "DetachProgress", BindingFlags.Instance | BindingFlags.NonPublic )!.Invoke( flow, null );

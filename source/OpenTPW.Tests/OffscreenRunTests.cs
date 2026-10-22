@@ -13,6 +13,7 @@ public class OffscreenRunTests
 		Assert.IsTrue( Game.IsOffscreenRun( new[] { "--sandbox", "--smoke-test" }, null ) );
 		Assert.IsTrue( Game.IsOffscreenRun( new[] { "--load-original-level", "0", "--smoke-test" }, null ) );
 		Assert.IsTrue( Game.IsOffscreenRun( new[] { "--park-resume-smoke", "capture" }, null ) );
+		Assert.IsTrue( Game.IsOffscreenRun( new[] { "--coop-join-smoke", "join" }, null ) );
 		Assert.IsTrue( Game.IsOffscreenRun( new[] { "--play-movie", "bf", "--smoke-test" }, null ), "the movie smoke" );
 	}
 

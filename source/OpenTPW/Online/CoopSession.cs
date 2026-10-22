@@ -22,26 +22,49 @@ public enum CoopGuestPhase
 }
 
 /// <summary>
-/// [EXT:online-coop-snapshot-join] What the game does for a guest's join (docs/COOP.md, "Joining a running session"): it builds a park from a join payload and swaps it in, at the session's
-/// step (never inside a link's callback or a level's frame).
+/// [EXT:online-coop-snapshot-join] What the game does for a guest's join (docs/COOP.md, "Joining a running session"): it builds a park from a join payload over frames and swaps it in,
+/// at the session's step (never inside a link's callback or a level's frame).
 /// </summary>
 internal interface ICoopJoinHost
 {
 	/// <summary>
-	/// Builds the park of <paramref name="payload"/>, a guest's from its build: the save restored with the join restore, the session state applied, standing at the cut's tick. A payload that
-	/// cannot be built throws (any exception but running out of memory is a failed check) and leaves nothing behind: no candidate, and nothing of the game's own park touched.
+	/// Starts building the park of <paramref name="payload"/>, a guest's from its build: the save restored with the join restore, the session state applied, standing at the cut's tick. It
+	/// does nothing heavy here: the session steps the build once a frame (<see cref="ICoopJoinBuild.Step"/>). A throw here or in a step is a failed check (any exception but running out of
+	/// memory, or <see cref="CoopJoinRefusedException"/>, which ends the join) and leaves nothing behind: no candidate, and nothing of the game's own park touched.
 	/// </summary>
-	Level Build( CoopJoinPayload payload );
+	ICoopJoinBuild Build( CoopJoinPayload payload );
 
 	/// <summary>
-	/// Makes <paramref name="candidate"/> the game's park in place of <paramref name="old"/> (null on a first join), which it tears down without ending the session. A throw ends the session,
-	/// and the candidate must not have become the game's park then: the session releases it (<see cref="Discard"/>).
+	/// Makes the completed build's candidate the game's park in place of <paramref name="old"/> (null on a first join), which it tears down without ending the session. A throw ends the
+	/// session, and the candidate must not have become the game's park then: the session abandons the build.
 	/// </summary>
-	void Install( Level? old, Level candidate );
-
-	/// <summary>Releases a candidate it built that is not swapped in (it failed the check at the cut, or its install failed).</summary>
-	void Discard( Level candidate );
+	void Install( Level? old, ICoopJoinBuild build );
 }
+
+/// <summary>[EXT:online-coop-snapshot-join] A guest's park being built from a join payload, over frames (<see cref="ICoopJoinHost.Build"/>).</summary>
+internal interface ICoopJoinBuild
+{
+	/// <summary>One frame's slice of the build: true once the candidate is complete and the check at the cut and the swap may run in this frame (else they get the next).</summary>
+	bool Step();
+
+	/// <summary>The completed candidate, set aside from the game's scene (valid once <see cref="Step"/> returned true).</summary>
+	Level Candidate { get; }
+
+	/// <summary>Releases what the build made (the candidate, its HUD and advisor, its scene); once only, in any state, and nothing once the candidate is installed.</summary>
+	void Abandon();
+
+	/// <summary>The steps of the park's level construction this build has run so far (a probe: the native join smoke abandons a build part way through them); 0 for a build without one.</summary>
+	int LevelSteps => 0;
+
+	/// <summary>The entities this build has staged in its scene so far (a probe: the native join smoke abandons a build only once it has staged some); 0 for a build without a scene.</summary>
+	int StagedEntities => 0;
+}
+
+/// <summary>
+/// [EXT:online-coop-snapshot-join] A join every build of the payload would refuse, proven by a completed comparison (this game's simulation mods or files differ from the host's): the join
+/// ends at once with the reason instead of asking for more captures.
+/// </summary>
+internal sealed class CoopJoinRefusedException( string message ) : Exception( message );
 
 /// <summary>
 /// [EXT:online-coop-lockstep] A level in a co-op session (docs/COOP.md, "The level in a session"): the stream it runs over the link (the host's, or a guest's), and the session's
@@ -62,6 +85,8 @@ internal sealed class CoopSession : IDisposable
 	public const double EarlyFailureSeconds = 180;
 	/// <summary>How long a guest waits before it downloads again when the server asked it to wait, unless the server said.</summary>
 	public const double BusyRetrySeconds = 5;
+	/// <summary>How long the game's build of a capture may take before it counts as a failed check (nothing asks again while it runs).</summary>
+	public const double BuildDeadlineSeconds = 300;
 	/// <summary>The downloads a server may ask to be tried again in a row before the download counts as failed.</summary>
 	public const int MaximumBusyRetries = 10;
 	/// <summary>
@@ -89,6 +114,10 @@ internal sealed class CoopSession : IDisposable
 	private double? downloadAt;
 	private int busyRetries;
 	private double? followingSince;
+	/// <summary>The game's build of the downloaded capture while it runs over frames, with its payload and when it began.</summary>
+	private ICoopJoinBuild? building;
+	private CoopJoinPayload? buildingPayload;
+	private double buildStarted;
 	private bool failureAsked;
 	private readonly SortedDictionary<ulong, ReadOnlyMemory<byte>> buffered = new();
 	private long bufferedBytes;
@@ -125,6 +154,12 @@ internal sealed class CoopSession : IDisposable
 
 	/// <summary>The failed joins this guest counts now (within <see cref="FailedJoinWindowSeconds"/>).</summary>
 	public int FailedJoins => failedJoins.Count;
+
+	/// <summary>The game builds a downloaded capture (it holds the game's one construction scene meanwhile).</summary>
+	internal bool IsBuilding => building != null;
+
+	/// <summary>The build on its way, if any (a probe for the native join smoke: <see cref="ICoopJoinBuild.LevelSteps"/>, <see cref="ICoopJoinBuild.StagedEntities"/>).</summary>
+	internal ICoopJoinBuild? Building => building;
 
 	/// <summary>The frames this guest buffered for a capture's stream.</summary>
 	internal int BufferedFrames => buffered.Count;
@@ -271,6 +306,7 @@ internal sealed class CoopSession : IDisposable
 			level.CoopSession = null;
 		buffered.Clear();
 		payload = null;
+		AbandonBuild();
 		if ( leave )
 			link.Leave( reason );
 		// a listener that throws keeps neither the other listeners nor a closing park from the rest of its teardown
@@ -295,7 +331,8 @@ internal sealed class CoopSession : IDisposable
 	}
 
 	/// <summary>Whether the guest waits for an assignment or its answer (not while it downloads, builds or follows).</summary>
-	private bool Waiting => Phase != CoopGuestPhase.Following && (assigned == 0 || !answered || failureAsked) && retryAt == null && downloadAt == null && payload == null;
+	private bool Waiting => Phase != CoopGuestPhase.Following && (assigned == 0 || !answered || failureAsked) && retryAt == null && downloadAt == null && payload == null
+		&& building == null;
 
 	/// <summary>A failed join: three within ten minutes leave the session.</summary>
 	private bool CountFailure( string why )
@@ -352,22 +389,93 @@ internal sealed class CoopSession : IDisposable
 		if ( payload is { } downloaded )
 		{
 			payload = null;
-			Swap( downloaded, now );
+			StartBuild( downloaded, now );
 		}
+		if ( building != null )
+			StepBuild( now );
 	}
 
-	/// <summary>Builds the capture's park, checks it at the cut and swaps it in; a failure keeps the old park (if any) and asks again.</summary>
-	private void Swap( CoopJoinPayload downloaded, double now )
+	/// <summary>Starts the game's build of a downloaded capture, which the session then steps once a frame.</summary>
+	private void StartBuild( CoopJoinPayload downloaded, double now )
+	{
+		// the answer is spent: a second download answer for it builds nothing again
+		ready = null;
+		try
+		{
+			building = joinHost!.Build( downloaded );
+		}
+		catch ( Exception error ) when ( error is not OutOfMemoryException )
+		{
+			BuildFailed( error );
+			return;
+		}
+		buildingPayload = downloaded;
+		buildStarted = now;
+	}
+
+	/// <summary>One frame of the game's build; the one that completes it checks the candidate at the cut and swaps it in.</summary>
+	private void StepBuild( double now )
+	{
+		var build = building!;
+		var downloaded = buildingPayload!;
+		if ( now - buildStarted >= BuildDeadlineSeconds )
+		{
+			AbandonBuild();
+			Failed( CoopSnapshotReason.FailedCheck, $"the park's build did not finish within {BuildDeadlineSeconds} seconds" );
+			return;
+		}
+		bool complete;
+		try
+		{
+			complete = build.Step();
+		}
+		catch ( Exception error ) when ( error is not OutOfMemoryException )
+		{
+			AbandonBuild();
+			BuildFailed( error );
+			return;
+		}
+		if ( !complete )
+			return;
+		building = null;
+		buildingPayload = null;
+		Swap( build, downloaded, now );
+	}
+
+	/// <summary>
+	/// A build that threw: a refusal every build of the payload would meet ends the join; anything else the game's restore refuses is a failed check, and the guest's own park, if any,
+	/// goes on waiting.
+	/// </summary>
+	private void BuildFailed( Exception error )
+	{
+		if ( error is CoopJoinRefusedException )
+			End( $"The shared park cannot be joined: {error.Message}" );
+		else
+			Failed( CoopSnapshotReason.FailedCheck, $"the park could not be built: {error.Message}" );
+	}
+
+	/// <summary>Abandons the build on its way, if any (a newer capture, the session's end, a failure).</summary>
+	private void AbandonBuild()
+	{
+		if ( building is not { } build )
+			return;
+		building = null;
+		buildingPayload = null;
+		Release( build );
+	}
+
+	/// <summary>Checks the built candidate at the cut and swaps it in; a failure keeps the old park (if any) and asks again.</summary>
+	private void Swap( ICoopJoinBuild build, CoopJoinPayload downloaded, double now )
 	{
 		Level candidate;
 		try
 		{
-			candidate = joinHost!.Build( downloaded );
+			candidate = build.Candidate;
 		}
-		// a payload the game's restore refuses for any reason is a failed check: the guest's own park, if any, goes on waiting
 		catch ( Exception error ) when ( error is not OutOfMemoryException )
 		{
-			Failed( CoopSnapshotReason.FailedCheck, $"the park could not be built: {error.Message}" );
+			Release( build );
+			Failed( CoopSnapshotReason.FailedCheck, $"the park built is missing: {error.Message}" );
 			return;
 		}
 		ulong digest, world;
@@ -378,14 +486,14 @@ internal sealed class CoopSession : IDisposable
 		// a park built so far that it cannot even be hashed fails its check like one that differs
 		catch ( Exception error ) when ( error is not OutOfMemoryException )
 		{
-			Release( candidate );
+			Release( build );
 			Failed( CoopSnapshotReason.FailedCheck, $"the park built could not be checked: {error.Message}" );
 			return;
 		}
 		if ( candidate.TickCount != downloaded.Ticks || digest != downloaded.Digest || world != downloaded.WorldHash )
 		{
 			var built = candidate.TickCount;
-			Release( candidate );
+			Release( build );
 			Failed( CoopSnapshotReason.FailedCheck, $"the park built at tick {built} differs from the host's at its cut ({downloaded.Ticks}): digest {digest:X16} / {downloaded.Digest:X16}, "
 				+ $"world {world:X16} / {downloaded.WorldHash:X16}" );
 			return;
@@ -404,12 +512,12 @@ internal sealed class CoopSession : IDisposable
 		candidate.IsCoopGuestPark = true;
 		try
 		{
-			joinHost!.Install( old, candidate );
+			joinHost!.Install( old, build );
 		}
 		catch ( Exception error ) when ( error is not OutOfMemoryException )
 		{
 			// the old park is gone or half gone: the session cannot go on
-			Release( candidate );
+			Release( build );
 			End( $"The shared park could not be entered: {error.Message}" );
 			return;
 		}
@@ -431,12 +539,12 @@ internal sealed class CoopSession : IDisposable
 		ready = null;
 	}
 
-	/// <summary>Lets the game release a candidate that is not swapped in; a release that throws is logged, so the join goes on to its failure.</summary>
-	private void Release( Level candidate )
+	/// <summary>Lets the game release a build that is not swapped in; a release that throws is logged, so the join goes on to its failure.</summary>
+	private void Release( ICoopJoinBuild build )
 	{
 		try
 		{
-			joinHost!.Discard( candidate );
+			build.Abandon();
 		}
 		catch ( Exception error ) when ( error is not OutOfMemoryException )
 		{
@@ -514,6 +622,7 @@ internal sealed class CoopSession : IDisposable
 		answered = false;
 		ready = null;
 		payload = null;
+		AbandonBuild();
 		retryAt = null;
 		downloadAt = null;
 		busyRetries = 0;

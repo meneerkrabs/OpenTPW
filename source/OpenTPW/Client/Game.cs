@@ -346,6 +346,14 @@ internal static class Game
 			ParkResumeSmokeTest.Run( flow, parkResumePhase, parkResumeFile, parkResumeEvidence );
 			return;
 		}
+		// [EXT:online-coop-snapshot-join] the native join smoke (docs/COOP.md, "The game's join"): a host phase and a fresh join phase over recorded frames
+		if ( GetOption( args, "--coop-join-smoke", "'host' or 'join'" ) is { } coopJoinPhase )
+		{
+			var coopJoinEvidence = GetOption( args, "--coop-join-evidence", "an evidence directory" )
+				?? throw new ArgumentException( "--coop-join-smoke also needs --coop-join-evidence." );
+			CoopJoinSmokeTest.Run( flow, coopJoinPhase, coopJoinEvidence );
+			return;
+		}
 		var startsFrontEnd = visit == null && originalLevelIndex < 0 && !args.Contains( "--advisor-say" ) && !args.Contains( "--advisor-response" ) && !args.Contains( "--sandbox" ) && (!smoke || args.Contains( "--front-end" ));
 		// [EXT:tpi-viewer] the experimental Theme Park Inc slice's own native smoke test: injected HUD input
 		// drives the real user flow (docs/THEME-PARK-INC.md); it needs the slice, not a Theme Park World park.
@@ -1144,8 +1152,13 @@ internal static class Game
 		args.Any( arg => arg.StartsWith( "--capture-", StringComparison.Ordinal ) || arg.StartsWith( "--perf-", StringComparison.Ordinal ) || arg.StartsWith( "--debug-", StringComparison.Ordinal ) )
 		|| args.Intersect( AutomatedFlags ).Any();
 
+	/// <summary>
+	/// The automated modes beyond the smokes. [EXT:online-coop-snapshot-join] <c>--coop-join-smoke</c> is one, never a <see cref="SmokeFlags"/> entry: its host phase shares the park it built before
+	/// the session started, which a smoke flag's <see cref="ChangesParkOutsideCommands"/> would refuse.
+	/// </summary>
 	private static readonly string[] AutomatedFlags = SmokeFlags.Concat( new[]
 	{
+		"--coop-join-smoke",
 		"--perf-run", "--perf-hash-tick",
 		"--offscreen", "--headless", "--m3-gate", "--m4-gate", "--determinism-digest", "--guest-report", "--guest-compare", "--validate-assets", "--export-signs",
 	} ).ToArray();

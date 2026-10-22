@@ -66,7 +66,8 @@ public class CoopJoinTests
 	private static CoopJoinState SampleState() => new(
 		new[] { (0, "jungle/ride.wad#3"), (2, "jungle/shop.wad#1") },
 		new[] { (0, 5, 3, 1), (3, 7, -1, 12) },
-		9, 4, new[] { 12, 40 }, new DateTime( 2026, 10, 21, 15, 0, 0 ).Ticks );
+		9, 4, new[] { 12, 40 }, new DateTime( 2026, 10, 21, 15, 0, 0 ).Ticks,
+		new[] { (12, 30, 41, true), (12, 31, 41, false), (40, 5, -2, true) } );
 
 	private static CoopJoinPayload SamplePayload() => new( 7, 120, 3600, 88, 0x1234_5678_9ABC_DEF0, 0x0FED_CBA9_8765_4321, SampleState(),
 		Enumerable.Range( 0, 5000 ).Select( index => (byte)(index * 31) ).ToArray() );
@@ -77,6 +78,7 @@ public class CoopJoinTests
 		CollectionAssert.AreEqual( expected.StaffHands.ToArray(), actual.StaffHands.ToArray() );
 		Assert.AreEqual( (expected.PendingHire, expected.StaleOnPointer, expected.SessionClockTicks), (actual.PendingHire, actual.StaleOnPointer, actual.SessionClockTicks) );
 		CollectionAssert.AreEqual( expected.CoastersBeingEdited.ToArray(), actual.CoastersBeingEdited.ToArray() );
+		CollectionAssert.AreEqual( expected.CoasterUnheldCells.ToArray(), actual.CoasterUnheldCells.ToArray() );
 	}
 
 	[TestMethod]
@@ -135,9 +137,12 @@ public class CoopJoinTests
 		{
 			state with { CarriedEntries = new[] { (1, "a"), (1, "b") } },
 			state with { StaffHands = new[] { (2, 1, 0, 0), (2, 2, 0, 0) } },
-			state with { CoastersBeingEdited = new[] { 5, 5 } }
+			state with { CoastersBeingEdited = new[] { 5, 5 } },
+			state with { CoasterUnheldCells = new[] { (12, 30, 41, true), (12, 30, 41, false) } }
 		} )
-			Assert.ThrowsException<InvalidDataException>( () => CoopJoinState.Decode( twice.Encode() ), "a player or a coaster named twice" );
+			Assert.ThrowsException<InvalidDataException>( () => CoopJoinState.Decode( twice.Encode() ), "a player, a coaster or a coaster's cell named twice" );
+		Assert.ThrowsException<InvalidOperationException>( () => (state with { CoasterUnheldCells = Enumerable.Range( 0, CoopJoinState.MaximumUnheldCells + 1 )
+			.Select( index => (1, index, 0, false) ).ToArray() }).Encode(), "more unheld cells than a join state carries" );
 		Assert.ThrowsException<InvalidDataException>( () => CoopJoinState.Decode( (state with { PendingHire = -1 }).Encode() ), "a negative id" );
 		// a carried catalogue entry's key may be as long as a command's string (a mod's entry), so every park a command can make is captured
 		var longest = state with { CarriedEntries = new[] { (1, new string( 'k', ParkCommandCodec.MaximumString )) } };
@@ -185,6 +190,8 @@ public class CoopJoinTests
 		Assert.AreEqual( digest, CoopDigest.Compute( twin.Level, out var twinWorld ), "the session state brought back what the digest covers beyond the save" );
 		Assert.AreEqual( world, twinWorld );
 		Assert.ThrowsException<InvalidDataException>( () => twin.Level.ApplyJoinState( state with { CoastersBeingEdited = new[] { 999 } } ), "a coaster the park does not hold" );
+		Assert.ThrowsException<InvalidDataException>( () => twin.Level.ApplyJoinState( state with { CoasterUnheldCells = new[] { (999, 1, 1, true) } } ),
+			"marker cells of a coaster the park does not hold" );
 	}
 
 	[TestMethod]

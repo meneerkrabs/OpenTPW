@@ -1,0 +1,10 @@
+## Co-op: the game joins a shared park (October 22, 2026)
+
+The game can now join a running shared park itself, and a guest whose park lost the stream gets the host's park again without leaving the session ([COOP.md](../COOP.md), "The game's join"; `[EXT:online-coop-snapshot-join]`). This is C2c-2a: the screens that start a join (C2d) and the measurements and the browser's join (C2c-2b) follow.
+
+- The game builds the host's park from the join snapshot over frames, beside the live front end (or the guest's own park in a resync), in a construction scene of its own, and swaps it in once it passes the check at the cut. A resync keeps the player's view.
+- The build refuses at once when this game's simulation mods or files differ from the host's: no capture could build then.
+- A join keeps the host's live park exactly as its snapshot holds it: the load's repairs (entrance links, a closed coaster reopened, a fresh tour controller, the land, the park's name) do not run, and each coaster's marker cells are taken over without writing.
+- A park start, a load or any other teardown ends a join that is still building; the front end's rebuild for a new language keeps it; a join that ends without a park says why on the front end.
+
+`CoopJoinSessionTests` runs the game's join host asset-free (the build is a replay twin); a new native smoke, `scripts/smoke-coop-join.sh`, hosts a Jungle with coasters, pools with a bridge and a slide, a water ride with a track edit and an add-on it sells while the guest follows, a tour and staged tool state, records its session, and joins it in a second process from the front end: a capture with a wrong digest is refused beside the front end, a newer assignment abandons the next build part way, the newer one is built and swapped in, a resync follows, and the guest ends with the host's digest, world hash and save. Four bugs it found are fixed in their own changes: a coaster's marker bit refused every save of a park with a coaster; the arrival vehicles and the finale's End had no economy record; a park started from an original save could not be saved; and a load moved a ride's entrance and exit to a path laid nearer since.

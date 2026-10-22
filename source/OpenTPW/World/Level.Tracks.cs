@@ -676,6 +676,7 @@ public partial class Level
 		if ( Guests == null || waterTracks == null )
 			throw new InvalidDataException( "The saved park has tracks, but this level has no track layer." );
 		// a controller saved before the station followed the original's line (no station layout field) keeps its old station tiles and reference
+		// [EXT:online-coop-snapshot-join] kept for a join: only a ride restored from such a save keeps its legacy station live (saved as layout 0), and this sets that same station again
 		foreach ( var entry in saved.Controllers.Where( entry => entry.StationLayout == 0 ) )
 		{
 			if ( controllers.FirstOrDefault( item => item.Runtime.AttractionId == entry.AttractionId ) is { } ride && ride.Runtime.Bump is { Template.IsBumper: false } track )

@@ -204,7 +204,8 @@ internal sealed partial class CoopJoinSmokeTest : IDisposable
 	{
 		if ( !Uri.TryCreate( href, UriKind.Absolute, out var url ) || url.Scheme is not ("http" or "https") || url.Host is not ("127.0.0.1" or "localhost" or "[::1]") )
 			return false;
-		var query = url.Query.TrimStart( '?' ).Split( '&', StringSplitOptions.RemoveEmptyEntries ).Select( pair => pair.Split( '=', 2 ) )
+		// the query without its one delimiter, as the page's URLSearchParams reads location.search (a second '?' belongs to the first key)
+		var query = (url.Query.StartsWith( '?' ) ? url.Query[1..] : url.Query).Split( '&', StringSplitOptions.RemoveEmptyEntries ).Select( pair => pair.Split( '=', 2 ) )
 			.Select( pair => (Name: Uri.UnescapeDataString( pair[0] ), Value: pair.Length > 1 ? Uri.UnescapeDataString( pair[1] ) : "") ).ToList();
 		// the first value of each, as the page's URLSearchParams reads it
 		string? First( string name ) => query.FirstOrDefault( pair => pair.Name == name ).Value;

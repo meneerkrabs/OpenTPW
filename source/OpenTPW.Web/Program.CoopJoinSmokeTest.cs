@@ -139,11 +139,12 @@ public static partial class Program
 			smoke.PageFrameEnded( Stopwatch.GetElapsedTime( started ).TotalMilliseconds );
 			if ( smoke.Ended )
 			{
-				// a pass only once the frame that completed the run returned whole (a throw after the completion made it a failure above)
+				// the evidence written again with the last frame's time; a pass only once the frame that completed the run returned whole (a throw after the completion made it a
+				// failure above) and its evidence is written
+				var unwritten = smoke.PageEnded();
 				if ( coopSmokeState == "running" && coopSmokeCompleted != null )
-					(coopSmokeState, coopSmokeMessage) = ("passed", coopSmokeCompleted);
+					(coopSmokeState, coopSmokeMessage) = unwritten == null ? ("passed", coopSmokeCompleted) : ("failed", $"The run's evidence could not be written: {unwritten}");
 				(coopSmokeFrames, coopSmokePosition) = (smoke.Frames, smoke.Position);
-				smoke.PageEnded();
 				smoke.Detach( running );
 				smoke.Dispose();
 				coopSmoke = null;

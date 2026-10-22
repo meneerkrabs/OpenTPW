@@ -454,7 +454,7 @@ status and reads its evidence back. The page is the smoke's runner (`CoopJoinSmo
 attaches the smoke's handlers around the game's update in the native order, times each whole frame call
 (the update and the drawing) for the smoke's frame, makes any throw out of a frame the run's failure
 before the page stops its loop (also a throw after the run completed in that frame: a pass is published
-only once its frame returned whole, and the evidence is written again then, with that frame's time), and
+only once its frame returned whole and the evidence is written again, with that frame's time), and
 takes the handlers off once the run has ended, the game running on with the player's saves and the
 profile back. The mode checks the page's own address, not the word of the script that asks for it. One
 run a page, since the builds it checks must be the runtime's first; the driver starts a fresh profile

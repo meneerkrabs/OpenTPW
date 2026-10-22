@@ -79,13 +79,19 @@ class Page {
 
 	async eval(expression, timeoutMs = 30000) {
 		const result = await this.send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true }, timeoutMs);
-		if (result.exceptionDetails)
-			throw new Error(`${expression.slice(0, 120)}: ${result.exceptionDetails.exception?.description ?? result.exceptionDetails.text}`);
+		if (result.exceptionDetails) {
+			const error = new Error(`${expression.slice(0, 120)}: ${result.exceptionDetails.exception?.description ?? result.exceptionDetails.text}`);
+			// the page's own exception, never mistaken for the protocol's word that the page is between documents
+			error.pageException = true;
+			throw error;
+		}
 		return result.result.value;
 	}
 
-	/** Whether an evaluation failed only because the page is between documents (while it loads), not because DevTools or the page is gone. */
-	static transient(error) { return /context|destroyed|navigat/i.test(error?.message ?? ''); }
+	/** Whether an evaluation failed only because the page is between documents (while it loads): DevTools' own errors for that, not the page's exceptions. */
+	static transient(error) {
+		return !error?.pageException && /^(Execution context was destroyed|Cannot find context with specified id|Inspected target navigated or closed)/.test(error?.message ?? '');
+	}
 
 	/** The smoke's status, or null before the harness object exists (or while the page loads). */
 	status() {
@@ -205,6 +211,10 @@ async function runOnce(options, evidence, webRoot, gameRoot, runDirectory) {
 		// the page's whole frame calls ([start, milliseconds]), the smoke's frames carry the same calls by frame number
 		const pageFrames = await page.eval('opentpwPerf.take()', 120000);
 		const joinEvidence = await page.eval("new TextDecoder().decode(opentpwPerf.program.ReadFile('/coop-smoke/join-evidence.json'))", 120000);
+		// the evidence read back says what the status says, or the run has not passed
+		const parsed = JSON.parse(joinEvidence);
+		if (status.state === 'passed' && (parsed.Completed !== true || parsed.Mode !== options.mode))
+			throw new Error(`The page passed, but its evidence says completed ${parsed.Completed} in its ${parsed.Mode} mode`);
 		await fs.mkdir(runDirectory, { recursive: true });
 		await fs.writeFile(path.join(runDirectory, 'join-evidence.json'), joinEvidence);
 		await fs.writeFile(path.join(runDirectory, 'host-evidence.json'), JSON.stringify(evidence.host, null, 2) + '\n');
@@ -224,7 +234,15 @@ async function runOnce(options, evidence, webRoot, gameRoot, runDirectory) {
 			cleanup.push(`DevTools: ${error.message}`);
 		}
 		await stopChrome(chrome).catch(error => cleanup.push(`Chrome: ${error.message}`));
-		await server?.close().catch(error => cleanup.push(`the server: ${error.message}`));
+		if (chrome && chrome.exitCode === null && chrome.signalCode === null)
+			cleanup.push(`Chrome (process ${chrome.pid}) had not exited`);
+		// the server's own close, whose error the shared helper drops
+		if (server)
+			await new Promise(resolve => server.server.close(error => {
+				if (error)
+					cleanup.push(`the server: ${error.message}`);
+				resolve();
+			}));
 		if (profile)
 			await fs.rm(profile, { recursive: true, force: true }).catch(error => cleanup.push(`the profile ${profile}: ${error.message}`));
 		if (cleanup.length)
@@ -244,18 +262,17 @@ async function main() {
 		process.stderr.write(`run ${index} of ${options.runs}…\n`);
 		const runDirectory = path.join(out, `run-${index}`);
 		const run = await runOnce(options, evidence, webRoot, gameRoot, runDirectory);
-		console.log(`browser co-op join smoke [${options.mode}, ${options.label}] run ${index}: ${run.state} (${(run.message ?? '').slice(0, 300)})`);
-		for (const line of run.cleanup ?? [])
-			console.error(`  cleanup: ${line}`);
 		// the run's record is part of its evidence: a run whose record cannot be written did not pass
 		try {
 			await fs.mkdir(runDirectory, { recursive: true });
 			await fs.writeFile(path.join(runDirectory, 'run.json'), JSON.stringify(run, null, 2) + '\n');
 		} catch (error) {
-			console.error(`  the run's record could not be written: ${error.message}`);
-			failed++;
-			continue;
+			run.state = 'failed';
+			run.message = `its record could not be written: ${error.message} (${run.message ?? ''})`;
 		}
+		console.log(`browser co-op join smoke [${options.mode}, ${options.label}] run ${index}: ${run.state} (${(run.message ?? '').slice(0, 300)})`);
+		for (const line of run.cleanup ?? [])
+			console.error(`  cleanup: ${line}`);
 		if (run.state !== 'passed')
 			failed++;
 	}

@@ -374,29 +374,46 @@ through it would pass without the adoption.
 The native smoke, `scripts/smoke-coop-join.sh` (two processes with the game's data, silent and
 offscreen: `--coop-join-smoke host|join --coop-join-evidence <directory>`), runs the game's join for real:
 
-- **The host phase** starts Jungle as Instant Action and builds what a join must carry: two coasters by
-  the coaster tool's commands (the start has not researched them, so the stations are placed without a
-  purchase before the park is shared), staff, a pool with a lazy river, its changing room, water
-  attractions, a slide and swimmers, and an object put back by the Move tool while the balance is below
-  zero (its entrance without its link). It hosts a session over a recording transport. Before the first
-  cut it puts an employee in hand, a pending hire, a carried Move entry and the coaster tool open on a
-  coaster; before the second, the park paused with edits since its last tick, a built coaster closed and
-  a tour ride bought while paused (its script has not run, so it has no controller). A virtual member
-  joins, and later asks again with a desync, so the host takes two captures through its stream. The
-  phase checks that each cut holds what was staged and that the capture changed nothing, runs park
-  minutes at the normal and the fastest speed, and writes the frames, the captures and its final state.
+- **The host phase** starts Jungle as Instant Action, with the default extensions whatever the
+  developer's `mods.json` holds (as every smoke), and builds what a join must carry: two coasters by the
+  coaster tool's commands (the start has not researched them, so the stations are placed without a
+  purchase before the park is shared), staff, a pool with a lazy river, a bridge over it, its changing
+  room, water attractions, a slide and swimmers, a water ride whose track add-on was placed, sold and
+  placed again (Instant Action's upgrade list lists nothing, so the build tool is armed as another
+  mode's add-on row arms it), and an object put back by the Move tool while the balance is below zero
+  (its entrance without its link). It hosts a session over a recording transport. Before the first cut
+  it cuts the water ride's track open with the track edit tool and takes a line back with Backspace, and
+  puts an employee in hand, a pending hire, a carried Move entry and the coaster tool open on a coaster.
+  Before the second, it mends the track and sells the add-on off it, and leaves the park paused with
+  edits since its last tick, a built coaster closed and a tour ride bought while paused (its script has
+  not run, so it has no controller). A virtual member joins, and later asks again with a desync, so the
+  host takes two captures through its stream. The phase checks that each cut holds what was staged and
+  that the capture changed nothing, runs park minutes at the normal and the fastest speed, and writes
+  the frames, the captures and its final state.
 - **The join phase** is a fresh process. It starts in the front end, runs the real game loop and joins
   through `GameFlow.JoinSharedPark` over a transport that replays the recorded host. The first capture's
   answer names a wrong digest: it builds beside the front end, fails its check at the cut and is
-  abandoned while the front end stays. The guest asks again and gets the first capture, which builds and
-  swaps in. The guest follows the host's frames at twice the recorded pace, its stream checking the
-  host's digest at every checkpoint (80 up to the second cut). At the second cut its park's digest and
-  world hash equal the host's; it is then assigned the second capture while following, a resync over its
-  park, and follows to the end (20 more checkpoints). It ends with the host's digest, world hash, join
-  state and save, apart from the save's presentation parts (the time, the particles, the snow cover and
-  the sound seed).
+  abandoned while the front end stays. The guest asks again and gets the first capture; a frame into
+  its build the host assigns a newer one of the same cut, so that build is abandoned part way, and the
+  newer one builds and swaps in. Every frame before the swap checks that the front end is the live scene,
+  whole, with no entity of a build in it. The guest follows the host's frames at twice the recorded pace,
+  its stream checking the host's digest at every checkpoint (80 up to the second cut). At the second cut
+  its park's digest and world hash equal the host's; it is then assigned the second capture while
+  following, a resync over its park, and follows to the end (20 more checkpoints). It ends with the
+  host's digest, world hash, join state and save, apart from the save's presentation parts (the time, the
+  particles, the snow cover and the sound seed, also the economy part's copy of it).
 
-MUTATIONS
+A mutation run took each skip of the restore mode that the smoke stages out, in turn, and the smoke caught
+every one: a join that reopens a closed built coaster, gives a tour ride a fresh controller, repairs the
+links and re-stamps the footprints, or applies no session state builds a park that differs from the host's
+at the cut, and the guest asks for the capture again. The land and the park name's fallback are kept by
+reading (the Jungle has both), and the coaster binding's adoption is proven at the binding level.
+
+The smoke found four bugs in the save path, each fixed on its own: a coaster's station-head marker read
+as a pool wave flag refused every save of a park with a coaster; the arrival vehicles and the finale's End
+had no economy record; a park started from an original save could not be saved, its imported animations
+starting before their clocks; and a ride's entrance and exit, resolved once to the nearest walkable cell,
+were resolved again on a load, so a path laid nearer since moved them.
 
 Known limits: the guest's files and simulation mods must be the host's (the build refuses otherwise); a
 park state with a non-finite float (NaN or an infinity) cannot be captured, since the save's JSON holds

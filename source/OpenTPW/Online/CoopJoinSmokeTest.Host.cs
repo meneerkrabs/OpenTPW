@@ -293,20 +293,24 @@ internal sealed partial class CoopJoinSmokeTest
 		// three cells deep: a bridge spans three water cells (Level.BuildDebugPoolBridge)
 		var shape = PoolBuilder.Rectangle( (0, 0), (5, 2) ).ToArray();
 		var grid = level.Objects.Grid;
+		// a column of the basin whose approaches on both sides, three cells each, take a path: the bridge's land cells and its outer path ends
+		bool BridgeFits( (int X, int Y) cell ) => Enumerable.Range( 0, 6 ).Any( x => new[] { -3, -2, -1, 3, 4, 5 }.All( y =>
+			!used.Contains( (cell.X + x, cell.Y + y) ) && level.Paths!.CheckCell( cell.X + x, cell.Y + y ) == CellBuildResult.Ok ) );
 		var origin = Enumerable.Range( 0, grid.Width * grid.Height ).Select( index => (X: index % grid.Width, Y: index / grid.Width) )
 			.OrderBy( cell => Math.Abs( cell.X - focus.X ) + Math.Abs( cell.Y - focus.Y ) ).ThenBy( cell => cell.Y ).ThenBy( cell => cell.X )
 			.Where( cell => shape.All( offset => builder.Check( cell.X + offset.X, cell.Y + offset.Y ) == PoolBuildResult.Ok
-				&& !used.Contains( (cell.X + offset.X, cell.Y + offset.Y) ) ) ).Cast<(int X, int Y)?>().FirstOrDefault();
+				&& !used.Contains( (cell.X + offset.X, cell.Y + offset.Y) ) ) && BridgeFits( cell ) ).Cast<(int X, int Y)?>().FirstOrDefault();
 		Require( origin != null, "find a free site for a pool near the paths" );
 		var cells = shape.Select( offset => (X: origin!.Value.X + offset.X, Y: origin.Value.Y + offset.Y) ).ToArray();
 		Require( builder.PaintCells( cells ).Completed, "paint the pool through the pool builder" );
 		foreach ( var cell in cells.Where( cell => cell.X == origin!.Value.X || cell.X == origin.Value.X + 5 || cell.Y == origin.Value.Y || cell.Y == origin.Value.Y + 2 ) )
 			level.Guests!.Grid.Cells.SetFlags( cell.X, cell.Y, ParkCellFlags.PoolRiver );
+		// the bridge first, as --debug-bridge builds it: its approaches and their paths need the land beside the basin that the room, the attractions and the slide would take
+		var bridge = level.BuildDebugPoolBridge( cells );
 		var room = level.BuildChangingRoomBeside( cells );
 		Require( room != null, "build a changing room beside the pool" );
 		var attractions = level.BuildPoolAttractionsBeside( cells, "all" );
 		var tower = level.BuildSlideBeside( cells, PoolSlideProfile.Flume );
-		var bridge = level.BuildDebugPoolBridge( cells );
 		var swimmers = level.Guests!.DebugStartSwimmers( room!.Visitors, 3 );
 		foreach ( var cell in cells )
 			for ( var mx = -4; mx <= 4; mx++ )

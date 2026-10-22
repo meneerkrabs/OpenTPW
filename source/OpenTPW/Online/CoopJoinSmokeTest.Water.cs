@@ -77,14 +77,16 @@ internal sealed partial class CoopJoinSmokeTest
 			research.Items.Select( item => ((item.InfoId, item.Level), research.GetProgress( item )) ).Where( pair => pair.Item2 != 0 ).ToList(), research.Effort );
 	}
 
-	/// <summary>The ride's track add-on bought from its upgrade list, sold and bought again, as the park-resume smoke's add-on fixture does it.</summary>
+	/// <summary>The ride's track add-on placed by the build tool as an add-on row arms it, sold and bought again, as the park-resume smoke's add-on fixture does it.</summary>
 	private void BuyAddOnTwice( OriginalObject ride )
 	{
 		var entry = level.Objects.Catalog.Entries.Where( candidate => TrackAddOns.IsTrackAddOn( candidate ) && candidate.Settings.GetInt( "AddOn.UpgradesId" ) == ride.Entry.InfoId )
 			.OrderBy( candidate => candidate.InfoId ).FirstOrDefault();
 		Require( entry != null, $"the theme has a track add-on of {ride.Entry.DisplayName}" );
 		Research( entry!.InfoId );
-		Require( level.UpgradeOffer( ride ).Rows.Any( row => row.Kind == RideUpgradeRowKind.AddOn && row.AddOn == entry ), "the ride's upgrade list offers its researched add-on" );
+		// Instant Action's upgrade list lists nothing (UITEXT 27, Level.UpgradeOffer), so the fixture arms the build tool as another mode's add-on row does: the join carries a
+		// track's add-on sections whatever the mode that bought them
+		Require( level.UpgradeOffer( ride ).Rows.Count == 0, "Instant Action's upgrade list lists nothing" );
 		OriginalObject? Buy()
 		{
 			Require( level.BeginAddOn( entry, ride ), "the add-on row arms the build tool for the ride" );

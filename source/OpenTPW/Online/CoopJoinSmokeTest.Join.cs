@@ -23,7 +23,7 @@ internal sealed partial class CoopJoinSmokeTest
 	private List<Entity>? frontEndScene;
 	/// <summary>The front end's entities when the join began: no build may add to them or take from them.</summary>
 	private HashSet<Entity>? frontEndEntities;
-	/// <summary>The frames the first (wrong) capture's build ran, and the frames the second's has run: the second is abandoned half way, by a newer assignment.</summary>
+	/// <summary>The frames the first (wrong) capture's build ran, and the frames the second's has run: the second is abandoned part way, by a newer assignment.</summary>
 	private int firstBuildFrames, secondBuildFrames;
 	private bool abandonedMidBuild;
 	private Level? firstPark;
@@ -99,12 +99,13 @@ internal sealed partial class CoopJoinSmokeTest
 						Require( Entity.All.Count == frontEndEntities!.Count && Entity.All.All( frontEndEntities.Contains ), "no entity of a build is in the front end's scene" );
 						if ( session.IsBuilding && requestsAnswered == 1 )
 							firstBuildFrames++;
-						else if ( session.IsBuilding && requestsAnswered == 2 && !abandonedMidBuild && ++secondBuildFrames >= Math.Max( 2, firstBuildFrames / 2 ) )
+						// part way: once a frame of the second build's steps has run (a build with the art loaded already is quicker than the first, so no share of the first's frames is sure to come)
+						else if ( session.IsBuilding && requestsAnswered == 2 && !abandonedMidBuild && ++secondBuildFrames >= 2 )
 							ReassignMidBuild();
 					}
 					if ( session.Phase == CoopGuestPhase.Following && flow.Level != null )
 					{
-						// the first answer's wrong digest failed its check at the cut; the second's build was abandoned half way for a newer assignment; the third built and swapped in
+						// the first answer's wrong digest failed its check at the cut; the second's build was abandoned part way for a newer assignment; the third built and swapped in
 						Require( requestsAnswered == 2 && session.FailedJoins == 1 && abandonedMidBuild,
 							$"one failed check and one abandoned build before the swap ({session.FailedJoins} failed joins, {requestsAnswered} answers, abandoned {abandonedMidBuild})" );
 						Require( ReferenceEquals( flow.Level, session.Level ) && flow.HeldJoin == null && flow.Menu == null && flow.Hud != null, "the join's park is the game's, with its HUD" );
@@ -191,7 +192,7 @@ internal sealed partial class CoopJoinSmokeTest
 	private const uint ResyncGeneration = 4;
 
 	/// <summary>
-	/// The host assigns the member a newer capture of the same cut while the second's build runs (half as long as the first's took): the session abandons that build part way, and the
+	/// The host assigns the member a newer capture of the same cut while the second's build runs (after a frame of its steps): the session abandons that build part way, and the
 	/// third is built and swapped in.
 	/// </summary>
 	private void ReassignMidBuild()
@@ -306,7 +307,8 @@ internal sealed partial class CoopJoinSmokeTest
 				var names = expected.EnumerateObject().Select( property => property.Name ).Union( actual.EnumerateObject().Select( property => property.Name ) );
 				foreach ( var name in names )
 				{
-					if ( path == "$" && PresentationParts.Contains( name ) )
+					// the economy part carries the world streams with their own copy of the sound seed, presentation as the snapshot's (no hash covers it)
+					if ( path == "$" && PresentationParts.Contains( name ) || path == "$.Economy.World" && name == "SoundSeed" )
 						continue;
 					var inExpected = expected.TryGetProperty( name, out var left );
 					var inActual = actual.TryGetProperty( name, out var right );

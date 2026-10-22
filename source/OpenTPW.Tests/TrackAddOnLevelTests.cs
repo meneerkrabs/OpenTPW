@@ -328,6 +328,27 @@ public partial class TrackAddOnLevelTests
 		CollectionAssert.AreEqual( new[] { 204 }, posted, "a click with a start posts nothing" );
 	}
 
+	/// <summary>
+	/// A click of the kept line tool on a tile its ghost refuses ends the tool and posts no help: tp.exe tests the refused-ghost latch before the mode dispatch
+	/// (0x524A63), and the line modes go to SetMode(0, 0) (0x5266A3) before the start's store and its help 0xCC (0x526CB3).
+	/// </summary>
+	[TestMethod]
+	public void ARefusedTileEndsTheKeptLineToolWithoutHelp204()
+	{
+		var (level, ride, _) = World();
+		AttachTrackEconomy( level, ride );
+		var posted = new List<int>();
+		var hud = new Hud.ParkHud( level, OriginalUiTests.FakeStrings(), new Hud.EconomyParkStatus( () => level.Park!.Economy ), new NoBuildItems(), new Hud.HudHost { HelpPosted = posted.Add } );
+		CutForLiveMend( level, ride );
+		HudToolClick.Click( hud, (20, 14), Veldrid.Key.ControlLeft );
+		Assert.IsTrue( level.CellTool.IsActive && level.CellTool.Start == null );
+		// (21, 14) is an extension cell of the tile at (20, 14): the tile with its origin there is refused (Occupied)
+		Assert.AreEqual( CellBuildResult.Occupied, level.KartTracks!.CheckTile( 21, 14 ) );
+		HudToolClick.Click( hud, (21, 14) );
+		Assert.IsFalse( level.CellTool.IsActive, "the refused single-tile ghost ends the tool" );
+		Assert.AreEqual( 0, posted.Count );
+	}
+
 	[TestMethod]
 	public void TheLineToolOfAnOpenCircuitStartsAtItsOpenEndAndPostsNoHelp204()
 	{

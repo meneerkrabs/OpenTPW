@@ -140,9 +140,14 @@ park points counts-test and guest boarding read. A re-walk (commit mode) also re
 Messages: the walk posts no advisor or event message (`APPROX:TRACK-006` retired: `0x52A970` and the walk sites of the tool handler `0x524960` call no message builder `0x59B590`).
 The ids once listed for it are tool help of the cell build tool: 0xCC (204) is posted by the kart and water tool for a click with no line start (pushed at `0x526D41`,
 built at `0x527629` and posted at `0x52763c`), which the tool reaches only when a line closes with exactly Ctrl held and no queue to follow (the placement presets the start at the
-station's exit, `0x52A1A0`, and the track button's switch from the edit tool at the open end, `0x530830`; `SetMode` `0x52F580` keeps both; `0x527146`, UI-031). OpenTPW's
-tool reaches that state the same way (the HUD's tool click passes the click's modifiers to the line's continuation), and the HUD's report of the next click posts 204
-(`ParkHud.ReportCellToolClick`, `AdvisorToolHelp.TrackLineStart`). Neither of `SetMode`'s withdrawal lists names 0xCC, so the post is not held behind the frame's mode change and the
+station's exit, `0x52A1A0`, and the track button's switch from the edit tool at the open end, `0x530830`; `SetMode` `0x52F580` keeps both; `0x527146`, UI-031). "No queue to
+follow" is the placement's queue start `0x8186C0` being zero (`0x526F95`): only placements set it and the first handover to the queue tool clears it (`0x527056`), so
+the state is reached when a track is closed again later, through the ride window's track button. OpenTPW's tool reaches it the same way when no queue follows (the HUD's
+tool click passes the click's modifiers to the line's continuation), and the HUD's report of the next click posts 204 (`ParkHud.ReportCellToolClick`,
+`AdvisorToolHelp.TrackLineStart`); but `Level.ContinueTrackTool` still takes the queue tool on every close of a ride with a queue, and every shipped kart and water ride
+has one (`Info.HasQueue 1` in `Rides.sam`), so with the shipped rides the state waits for the queue start to be ported. A click whose tile the ghost refuses never gets there: the click handler tests the refused-ghost latch
+`0x816D48` before the mode dispatch (`0x524A63`), the tile preview without a start (`0x52453D`, `0x53AAC0` → `0x5370E0`) sets it, and the line modes then end the tool
+(`0x5266A3`), as `CellBuildTool` does for a refused first click. Neither of `SetMode`'s withdrawal lists names 0xCC, so the post is not held behind the frame's mode change and the
 tool's end does not take it back. The first producer map missed it because the push and the call are in different blocks (a jump into the queue tool's tail); the restored
 advice extension, which posted 204 as the roller coaster tool started, no longer does. 0xB8 (184, the path tool's first click), 0xD6 (214, the third later click of the path or queue tool) and 0x151 (337,
 the end of the queue tool) belong to the path and queue tools (`0x5272F5`, `0x527351`, `0x527620`; `ParkHud.ReportCellToolClick` posts them too).

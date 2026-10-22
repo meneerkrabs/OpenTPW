@@ -282,6 +282,35 @@ public class AdvisorToolHelpTests
 		CollectionAssert.AreEqual( new[] { "post 204" }, events, "a click with a start posts nothing: the path and queue help is 0x527200's" );
 	}
 
+	/// <summary>A line writer that refuses one cell's ghost and accepts the rest.</summary>
+	private sealed class RefusingLineWriter( CellToolMode mode, (int X, int Y) refused ) : ICellLineWriter
+	{
+		public CellToolMode Mode => mode;
+		public SegmentResult Preview( (int X, int Y) start, (int X, int Y) cursor ) =>
+			new( cursor, System.Array.Empty<(int X, int Y)>(), 0, start == refused || cursor == refused ? CellBuildResult.Occupied : CellBuildResult.Ok, false )
+			{ Start = start, Line = ParkPathBuilder.LayLine( start, cursor ), StoppedAt = start == refused || cursor == refused ? refused : null };
+		public SegmentResult Commit( (int X, int Y) start, (int X, int Y) end ) => Preview( start, end );
+		public void Undo( SegmentResult segment ) { }
+	}
+
+	[TestMethod]
+	[DataRow( CellToolMode.KartTrack )]
+	[DataRow( CellToolMode.WaterTrack )]
+	public void ARefusedFirstClickOfTheLineToolEndsItWithoutHelp204( CellToolMode mode )
+	{
+		var hud = NewHud( out var events, out var level );
+		Frame( hud );
+		var tool = level.CellTool;
+		tool.Enter( new RefusingLineWriter( mode, (2, 2) ), null );
+		Frame( hud );
+		events.Clear();
+		var result = ToolClick( hud, tool, (2, 2) );
+		Assert.IsTrue( result is { GhostRefused: true }, "0x524A63: the refused ghost of the tile under the cursor" );
+		Assert.IsFalse( tool.IsActive, "the line modes go to SetMode(0, 0) (0x5266A3)" );
+		Frame( hud );
+		CollectionAssert.AreEqual( new[] { "mode" }, events, "the click never reaches the start's store and its help 0xCC (0x526CB3)" );
+	}
+
 	[TestMethod]
 	public void ALineToolThatStartsWithAStartNeverPostsHelp204()
 	{

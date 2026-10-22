@@ -323,14 +323,27 @@ the live game, and swaps it in.
      has the automatic advisor on, a fresh advisor. A construction step that announces a long one next
      (`Level.NextStepIsLong`) ends the frame's slice, so the long one starts a slice of its own, as in a
      park start (docs/BROWSER-PERFORMANCE.md, "Build steps").
+  7. It does the one-time work of the joined park's first frame where an entity can do it ahead
+     (`IFirstFramePreparation`, `[EXT:park-entry-preparation]`, the stage `prepare`): the coasters'
+     views, their types' assets and their meshes, the pool bridges' assets and meshes, and the
+     swimmers' sprite sets, read and decoded ahead (`Level.PrepareSwimSpriteSteps`; their renderer is
+     still made in the first frame, in its place among the entities). Presentation only: the steps read
+     the park and change neither its state nor the entities' order, and a preparation that fails leaves
+     its work to the first frame, which meets the same failure as before.
 
   A refusal (`CoopJoinRefusedException`) ends the join, since no capture would build; any other failure
   is a failed check (above), and so is a build that runs longer than 300 seconds.
 - **Beside the live game.** The build runs in a construction scene of its own
   (`EntityConstructionScope`). Each step resumes it and pauses it again, so the front end, or the
   guest's own park in a resync, stays live and untouched while the build runs.
-- **The swap** (`GameFlow.InstallJoin`), once the build completes and passes the check at the cut (in
-  the frame of its last step, or the next when that step spent the frame's budget):
+- **The check and the swap.** The check at the cut takes the frame the build completes in (or the next,
+  when its last step spent the frame's budget), and the swap the frame after it (C2c-2b-3c): each has a
+  frame's worth of first-time work, so they never share one. The candidate waits set aside and unchanged
+  between them; a failed check ends the build there. The swapped-in park's first frame applies the
+  host's frames that came but runs no ticks (`CoopGuestStream.HoldTicksOneFrame`): they run from the
+  next frame on, deferred, never dropped, since the park after a tick depends on the ticks and the
+  records only. A join's catch-up ends at a frame point that ran ticks.
+- **The swap** (`GameFlow.InstallJoin`), the frame after the check:
   1. The build's HUD is made again if the player switched the language meanwhile.
   2. The old park (none on a first join) is torn down without ending the session and without applying a
      pending language.

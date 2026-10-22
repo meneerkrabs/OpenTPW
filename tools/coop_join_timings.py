@@ -23,9 +23,9 @@ import pathlib
 import statistics
 import sys
 
-STAGES = ["codec", "save", "files", "catalogue", "manifest", "validation", "economy", "level", "hud", "advisor"]
-# a build before the codec's metadata was made in steps of its own (C2c-2b-3) lists no codec stage
-STAGES_WITHOUT_CODEC = STAGES[1:]
+STAGES = ["codec", "save", "files", "catalogue", "manifest", "validation", "economy", "level", "hud", "advisor", "prepare"]
+# a build from before the codec's metadata was made in steps of its own (C2c-2b-3a) or the entities prepared their first frame (C2c-2b-3c) lists no such stage
+OLDER_STAGES = [STAGES[:-1], STAGES[1:-1]]
 OUTCOMES = [("joined", 1, "Following"), ("resynced", 2, "Resynced")]
 CAPTURE_FIELDS = ["Ticks", "PublishMilliseconds", "DigestMilliseconds", "StateMilliseconds", "SnapshotMilliseconds", "SerializerSetupMilliseconds",
                   "SaveCopyMilliseconds", "WriterSetupMilliseconds", "FinishMilliseconds", "SaveBytes", "BodyBytes", "PayloadBytes", "Frames",
@@ -63,7 +63,7 @@ def require_whole(root, host, join):
         number_fields(timing, JOIN_FIELDS, where)
         stages = timing.get("Build") or []
         names = [item.get("Name") if isinstance(item, dict) else None for item in stages]
-        if names not in (STAGES, STAGES_WITHOUT_CODEC):
+        if names != STAGES and names not in OLDER_STAGES:
             raise ValueError(f"{where} lists the stages {names}, not {STAGES}")
         for item in stages:
             number_fields(item, WORK_FIELDS, f"{where}'s stage {item['Name']}")

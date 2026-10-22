@@ -610,6 +610,26 @@ public partial class Level
 		var sets = swimSpriteSets = PoolSwimSprites.Load();
 		System.Threading.Tasks.Task.Run( () => { foreach ( var atlas in sets ) _ = atlas.Pixels; } );
 	}
+	/// <summary>
+	/// [EXT:pools-swim] [EXT:park-entry-preparation] The swim sets the swimmers' renderer reads when the park's first frame makes it, read ahead in a park build's steps where they
+	/// are there (in the browser once delivered, where <see cref="PreloadSwimSprites"/> reads nothing): the sets, then one set's pixels a step. The renderer itself is still made in
+	/// that frame, in its place among the entities; presentation only.
+	/// </summary>
+	internal IEnumerable<bool> PrepareSwimSpriteSteps()
+	{
+		if ( swimSpriteSets != null || swimSpritesTried || !FeatureGates.Pools || Guests == null || OriginalPark == null
+			|| PoolSpriteDelivery.IsPending( PoolSpriteDelivery.SwimGroup ) || Guests.Grid.Cells.CountOf( ParkCellType.PoolWater ) == 0 )
+			yield break;
+		var sets = PoolSwimSprites.Load();
+		yield return true;
+		foreach ( var atlas in sets )
+		{
+			_ = atlas.Pixels;
+			yield return true;
+		}
+		swimSpriteSets = sets;
+	}
+
 	private List<PoolExtraSite>? poolExtraSites;
 	private long poolExtraSitesTurn = -1;
 

@@ -245,7 +245,8 @@ internal sealed partial class GameFlow
 
 		public int StagedEntities => scene?.StagedEntities ?? 0;
 
-		public CoopBuildTimings Timings { get; } = CoopBuildTimings.ForStages( "codec", "save", "files", "catalogue", "manifest", "validation", "economy", "level", "hud", "advisor" );
+		public CoopBuildTimings Timings { get; } = CoopBuildTimings.ForStages( "codec", "save", "files", "catalogue", "manifest", "validation", "economy", "level", "hud", "advisor",
+			"prepare" );
 
 		/// <summary>
 		/// The stage the build's work runs in now, and when its current part began (<see cref="Timings"/>): a stage is charged its part when the next begins or the step ends, so a step that
@@ -470,6 +471,39 @@ internal sealed partial class GameFlow
 					advisorTried = false;
 					Log.Warning( $"The shared park's advisor could not start: {error.Message}" );
 				}
+			}
+			// [EXT:park-entry-preparation] the one-time work of the first update of each entity that can do it ahead (its resources, presentation only), so the swap's frame does
+			// not; an entity whose preparation fails leaves it to that update, which meets the same failure as before
+			Begin( "prepare" );
+			foreach ( var entity in Entity.All.ToArray() )
+			{
+				if ( entity is IFirstFramePreparation prepared )
+				{
+					foreach ( var step in Guarded( entity.GetType().Name, prepared.PrepareFirstFrame() ) )
+						yield return step;
+				}
+			}
+			// the swimmers' sets, read ahead; their renderer is still made in the first frame, in its place among the entities
+			foreach ( var step in Guarded( "swim sprites", candidate.PrepareSwimSpriteSteps() ) )
+				yield return step;
+		}
+
+		/// <summary>A preparation's steps, a failure ending them (logged): what they left undone the park's first frame does, meeting the same failure as before.</summary>
+		private static IEnumerable<bool> Guarded( string what, IEnumerable<bool> steps )
+		{
+			using var parts = steps.GetEnumerator();
+			while ( true )
+			{
+				bool more;
+				try { more = parts.MoveNext(); }
+				catch ( Exception error ) when ( error is not OutOfMemoryException )
+				{
+					Log.Warning( $"The shared park's {what} could not prepare its first frame: {error.Message}" );
+					yield break;
+				}
+				if ( !more )
+					yield break;
+				yield return parts.Current;
 			}
 		}
 

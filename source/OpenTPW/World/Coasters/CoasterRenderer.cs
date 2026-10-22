@@ -23,7 +23,7 @@ internal sealed class CoasterHeadSources : IHeadSourceProvider
 // [BIN:TPW-EXE:0x43eb70 track rebuild] the original rebuilds the track mesh as a dynamic model when the track changes (0x43eb70 from 0x435a30/0x447d30), animates the scrolling textures by shifting the V of the faces of scrolling textures every frame (0x435a30) and poses each car from its sample coordinate (0x43ce20)
 // [BIN:TPW-EXE:0x435adf scroll shift] the per-frame tick shifts V by δ = (now − ctl+0x138)·P·0.001 for every polygon of a texture the loader flagged (definition flag 4, set when any fScrollRate is nonzero; texture flag 0x20), P the power factor at controller +0x2c; the stored fScrollRate (texture +0xc) is not read in that loop
 // [APPROX:COAST-026] self-illuminated textures (asTextureData bIsSelfIlluminating, texture flag 4) and the marker textures (flags 7) are lit by the scene light like the rest: the shader has no unlit path and its browser build cannot be regenerated here; another reader of the stored scroll rate (texture +0xc) outside the controller tick is not excluded — evidence needed: a scan of the generic texture library for readers of texture +0xc; the coaster MD2 models' Add-mode UV animation (the add paths of 0x471860) is not modelled, the pylons' vertex and position keys are added (CoasterPylonRig)
-public sealed class CoasterRenderer : Entity
+public sealed class CoasterRenderer : Entity, IFirstFramePreparation
 {
 	/// <summary>
 	/// The marker texture of the pair of knots starting at <paramref name="node"/> and ending in <paramref name="next"/> (the same node for a pair between two tags of one pylon), or null.
@@ -159,6 +159,21 @@ public sealed class CoasterRenderer : Entity
 			triangles += view.Triangles;
 		}
 		DrawnTriangles = triangles;
+	}
+
+	/// <summary>
+	/// [EXT:park-entry-preparation] Each coaster's view, its type's assets and its meshes, one coaster a step, as the first update makes them: the view's update reads the ride and
+	/// the scene clock, which stand still until the park's first frame, so that frame's update finds them made and redraws nothing.
+	/// </summary>
+	IEnumerable<bool> IFirstFramePreparation.PrepareFirstFrame()
+	{
+		if ( deleted )
+			yield break;
+		foreach ( var ride in coasters().ToList() )
+		{
+			ViewOf( ride )?.Update();
+			yield return true;
+		}
 	}
 
 	private RideView? ViewOf( CoasterRide ride )

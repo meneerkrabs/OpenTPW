@@ -36,8 +36,8 @@ public sealed record AnimatorChannelSnapshot
 	/// <summary>Bind serial of this start; the mesh caches compare against it.</summary>
 	public required long Serial { get; init; }
 	/// <summary>
-	/// StartAnimTime: the animator clock (whole ms) this clip started at. A clip an original save restored (<see cref="ObjectAnimator.RestoreSaved"/>) may have started before this
-	/// animator's clock began, up to the save's 32-bit elapsed time back: its start is then negative.
+	/// StartAnimTime: the animator clock (whole ms) this clip started at, never after the clock. A clip an original save restored (<see cref="ObjectAnimator.RestoreSaved"/>) may have
+	/// started before this animator's clock began, up to the save's 32-bit elapsed time back: its start is then negative.
 	/// </summary>
 	public required long StartMilliseconds { get; init; }
 	/// <summary>AnimID-14 semantics: frozen at the last frame, still posing, GETANIM −1.</summary>
@@ -162,9 +162,11 @@ public sealed record ObjectAnimatorSnapshot
 				throw new InvalidDataException( $"channel {channel.ChannelIndex} speed {channel.Speed} is not positive finite." );
 			if ( channel.Serial < 1 )
 				throw new InvalidDataException( $"channel {channel.ChannelIndex} serial {channel.Serial} is not positive." );
-			// a clip an original save restored started up to the save's u32 elapsed time before this animator's clock began
-			if ( channel.StartMilliseconds < -(long)uint.MaxValue )
+			// a clip an original save restored started up to the save's u32 elapsed time before this animator's clock began, and no clip starts after the clock
+			if ( channel.StartMilliseconds < -ObjectAnimator.MaximumSavedElapsedMilliseconds )
 				throw new InvalidDataException( $"channel {channel.ChannelIndex} start {channel.StartMilliseconds} lies further back than a saved 32-bit elapsed time." );
+			if ( channel.StartMilliseconds > (long)Math.Floor( ClockMilliseconds + 1e-6 ) )
+				throw new InvalidDataException( $"channel {channel.ChannelIndex} start {channel.StartMilliseconds} lies after the animator clock {ClockMilliseconds}." );
 			if ( !float.IsFinite( channel.Tick ) || channel.Tick < 0 )
 				throw new InvalidDataException( $"channel {channel.ChannelIndex} tick {channel.Tick} is not finite and non-negative." );
 			if ( channel.ClipDurationTicks < 0 )

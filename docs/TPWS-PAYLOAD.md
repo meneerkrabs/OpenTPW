@@ -388,8 +388,8 @@ and embedded-node counts are the model's nodes and dummy attribute records (`0x4
 control below AnimID 12 on its channel, bound without a trigger (`0x472d10`, `0x472cb0`), with its start
 `clock − StartAnimTime` milliseconds back on the saved game clock, so the next channel update
 (`0x4735d0`) continues the saved frame; an ended control stays on its last frame. The object's animator
-clock starts at 0 at the import, so that start is negative, up to the 32-bit elapsed time back, and an
-OpenTPW save of the park keeps it as it is. Jungle Easymode's gate
+clock starts at 0 at the import, so that start is zero or negative, up to the 32-bit elapsed time back,
+and an OpenTPW save of the park keeps it until the clip starts again. Jungle Easymode's gate
 saved the open command's clip (5/1) ended on frame 50 of 50, so it stands open; the Bus its leaving clip
 (5/2) ended, with its three meshes hidden; the Traffic Lights loop 5/0. Flag 0x2 and 0x40 controls, which
 no corpus save holds, are reported and not restored.

@@ -97,20 +97,38 @@ public class SavedObjectAnimationTests
 		var reloaded = new ObjectAnimator( model );
 		reloaded.RestoreSnapshot( saved, identity => new ResolvedAnimatorClip( identity.Name, clip ) );
 		Assert.AreEqual( (50f, -1), (reloaded.GetTick( 0 ), reloaded.GetAnimation( 0 )) );
-		// The saved elapsed time is a 32-bit count of milliseconds: a start further back is no import's.
-		var tooFar = saved with { Channels = new[] { channel with { StartMilliseconds = -(long)uint.MaxValue - 1 } } };
-		Assert.ThrowsException<InvalidDataException>( tooFar.ValidateSnapshot );
+		// The saved elapsed time is a 32-bit count of milliseconds: a start further back is no import's, and no start lies after the clock.
+		ObjectAnimatorSnapshot WithStart( long start ) => saved with { Channels = new[] { channel with { StartMilliseconds = start } } };
+		WithStart( -ObjectAnimator.MaximumSavedElapsedMilliseconds ).ValidateSnapshot();
+		StringAssert.Contains( Assert.ThrowsException<InvalidDataException>( WithStart( -ObjectAnimator.MaximumSavedElapsedMilliseconds - 1 ).ValidateSnapshot ).Message,
+			"further back than a saved 32-bit elapsed time" );
+		StringAssert.Contains( Assert.ThrowsException<InvalidDataException>( WithStart( 10_001 ).ValidateSnapshot ).Message, "after the animator clock" );
+		Assert.ThrowsException<ArgumentOutOfRangeException>( () => new ObjectAnimator( model ).RestoreSaved( 0, clip, "gatesm2", 5, 1, loop: false, speed: 1f,
+			elapsedMilliseconds: ObjectAnimator.MaximumSavedElapsedMilliseconds + 1, ended: true ) );
 
 		// A running control continues from its saved frame: 30 × elapsed / 1000 × speed.
 		var running = new ObjectAnimator( model );
 		running.RestoreSaved( 0, clip, "m1", 5, 0, loop: true, speed: 1f, elapsedMilliseconds: 1_000, ended: false );
 		Assert.AreEqual( 30f, running.GetTick( 0 ) );
 		Assert.AreEqual( 5, running.GetAnimation( 0 ) );
+		// a save of it continues it as well: its start, 1,000 ms before the clock began, is read again at the next update
+		var resumed = new ObjectAnimator( model );
+		resumed.RestoreSnapshot( ParkResumeJson.Deserialize<ObjectAnimatorSnapshot>( ParkResumeJson.Serialize( running.CaptureSnapshot() ) ),
+			identity => new ResolvedAnimatorClip( identity.Name, clip ) );
 		running.Advance( 0.5 );
+		resumed.Advance( 0.5 );
 		Assert.AreEqual( 45f, running.GetTick( 0 ), 1e-4f );
+		Assert.AreEqual( running.GetTick( 0 ), resumed.GetTick( 0 ) );
 		running.Advance( 0.6 );
+		resumed.Advance( 0.6 );
 		Assert.IsTrue( running.IsChannelPlaying( 0 ), "the looping clip replays past its end" );
 		Assert.IsTrue( running.GetTick( 0 ) < 50f );
+		Assert.AreEqual( running.GetTick( 0 ), resumed.GetTick( 0 ) );
+
+		// A finite speed that takes the saved frame past a float is a corrupt control: refused before the channel changes.
+		var corrupt = new ObjectAnimator( model );
+		Assert.ThrowsException<InvalidDataException>( () => corrupt.RestoreSaved( 0, clip, "m1", 5, 0, loop: true, speed: 1e38f, elapsedMilliseconds: 1_000, ended: false ) );
+		Assert.AreEqual( 0, corrupt.CaptureSnapshot().Channels.Count );
 
 		// A saved deferred clip follows the running one at its end.
 		var deferring = new ObjectAnimator( model );
@@ -243,7 +261,7 @@ public class SavedObjectAnimationTests
 					// an OpenTPW save of the imported park keeps the restored channels
 					try
 					{
-						runtime.Animator.CaptureSnapshot().ValidateSnapshot();
+						runtime.CaptureSnapshot().ValidateSnapshot();
 					}
 					catch ( InvalidDataException exception )
 					{

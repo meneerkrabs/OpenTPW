@@ -35,6 +35,8 @@ public sealed class ObjectAnimator
 
 	/// <summary>Channel AnimID / deferred-slot sentinel for "no clip" (0xa6ca8).</summary>
 	public const int NoAnimation = 12;
+	/// <summary>The furthest a saved control's start lies before the clock: the original's elapsed time is a 32-bit difference of milliseconds (<see cref="RestoreSaved"/>).</summary>
+	public const long MaximumSavedElapsedMilliseconds = uint.MaxValue;
 	/// <summary>AnimID a non-looping clip restarts as when it ends without a deferred clip (0xa7498).</summary>
 	public const int EndedAnimation = 14;
 	/// <summary>What the trigger reports for a clip that does not exist (0xa6f54) or a missing deferred clip (0xa6f04).</summary>
@@ -404,7 +406,8 @@ public sealed class ObjectAnimator
 	/// One saved animation time control of an original save (tp.exe loader 0x4647A0, <see cref="SaveRideSystemControl"/>) put back on a channel: the clip is bound
 	/// without a channel start (no node list, no copy-back, no deferred-slot carry), its start lies <paramref name="elapsedMilliseconds"/> before this animator's clock,
 	/// so the next <see cref="Advance"/> continues the saved frame, and an ended control (channel flag 0x4) stays frozen on its last frame. At an import the clock is 0,
-	/// so the start is negative, which the snapshot keeps (<see cref="AnimatorChannelSnapshot.StartMilliseconds"/>).
+	/// so the start is zero or negative, which a save keeps until the clip starts again (<see cref="AnimatorChannelSnapshot.StartMilliseconds"/>). A control whose saved frame is
+	/// not a finite one is refused (<see cref="InvalidDataException"/>) before anything changes.
 	/// </summary>
 	// [BIN:TPW-EXE:0x00464BEF anim control restore] the loader copies the saved words over the live control (+0 flags, +4 AnimID, +8 SubAnim, +0x10 StartAnimTime, +0x14 AnimTime, +0x18 NoPauseAnimTime, +0xC the speed, +0x24/+0x28/+0x2C/+0x30 the deferred AnimID, SubAnim, flags and speed; field names from the dump 0x464580), sets the sample-once flag 0x10 when the ended flag 0x4 is set (0x464BFB) and binds the clip when the AnimID is not 12 and the sub-animation exists (0x472D10, 0x472CB0); it calls no trigger (0x472F60), so no node list and no copy-back run
 	// [BIN:TPW-EXE:0x004735D0 restored channel update] the next channel update recomputes the frame as (u32)(clock − StartAnimTime) × speed × 0.03 on the clock the save writer stored and the loader set again (0x4164C0, 0x415270), and an ended control (flags & 6 = 4) keeps the frame at its total
@@ -418,10 +421,13 @@ public sealed class ObjectAnimator
 			throw new ArgumentOutOfRangeException( nameof( animationId ), "Only a saved AnimID below 12 binds a clip." );
 		if ( !float.IsFinite( speed ) || speed <= 0 )
 			throw new ArgumentOutOfRangeException( nameof( speed ), "Channel speeds outside the positive finite domain are not traced." );
-		if ( elapsedMilliseconds < 0 )
-			throw new ArgumentOutOfRangeException( nameof( elapsedMilliseconds ) );
+		if ( elapsedMilliseconds is < 0 or > MaximumSavedElapsedMilliseconds )
+			throw new ArgumentOutOfRangeException( nameof( elapsedMilliseconds ), "A saved elapsed time is a 32-bit count of milliseconds." );
 		if ( deferred is { } queued && (!float.IsFinite( queued.Speed ) || queued.Speed <= 0) )
 			throw new ArgumentOutOfRangeException( nameof( deferred ), "Channel speeds outside the positive finite domain are not traced." );
+		// a finite speed may still take the saved frame past a float (a corrupt control): refused before the channel changes
+		if ( !ended && !float.IsFinite( GetFrame( elapsedMilliseconds, speed ) ) )
+			throw new InvalidDataException( $"the saved frame of {elapsedMilliseconds} ms at speed {speed} is not finite." );
 		var state = BindChannel( new Clip { Animation = clip, Name = clipName, AnimationId = animationId, Variant = variant, Loop = loop, Speed = speed } );
 		state.Serial = ++serial;
 		var now = NowMilliseconds;

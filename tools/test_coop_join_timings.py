@@ -136,12 +136,47 @@ class CoopJoinTimingsTests(unittest.TestCase):
         def status_missing(host, join):
             del join["JoinTimings"][1]["Build"][2]["Status"]
 
-        for change in [section_null, long_step_missing, status_missing]:
+        def status_unknown(host, join):
+            join["JoinTimings"][0]["Build"][2]["Status"] = "Partly"
+
+        def long_step_under_the_budget(host, join):
+            join["JoinTimings"][0]["LongSteps"].append({"Stage": "save", "Step": 1, "Milliseconds": 11.9, "Progress": None})
+
+        def long_step_over_its_stage(host, join):
+            join["JoinTimings"][0]["LongSteps"][0]["Milliseconds"] = 158
+
+        def long_step_twice(host, join):
+            join["JoinTimings"][0]["LongSteps"].append(dict(join["JoinTimings"][0]["LongSteps"][0], Milliseconds=150))
+
+        def long_step_past_its_stage(host, join):
+            join["JoinTimings"][0]["LongSteps"][0]["Step"] = 41
+
+        def not_finite(host, join):
+            join["JoinTimings"][0]["DecodeMilliseconds"] = float("nan")
+
+        def stage_not_an_object(host, join):
+            join["JoinTimings"][0]["Build"][0] = "save"
+
+        for change in [section_null, long_step_missing, status_missing, status_unknown, long_step_under_the_budget, long_step_over_its_stage, long_step_twice,
+                       long_step_past_its_stage, not_finite, stage_not_an_object]:
             with self.subTest(change.__name__), tempfile.TemporaryDirectory() as temporary:
                 root = pathlib.Path(temporary) / "run"
                 write_run(root, 30.0, 3.0, change=change)
                 with self.assertRaises(ValueError):
                     coop_join_timings.load(root)
+
+    def test_a_skipped_stage_and_a_long_step_below_its_stage_longest_are_whole(self):
+        def skipped_advisor_and_shorter_step(host, join):
+            for timing in join["JoinTimings"]:
+                timing["Build"][-1] = {"Name": "advisor", "Status": "Skipped", "Steps": 0, "Frames": 0, "Milliseconds": 0, "LongestMilliseconds": 0}
+            join["JoinTimings"][0]["LongSteps"].append({"Stage": "level", "Step": 22, "Milliseconds": 156, "Progress": 0.7})
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary) / "run"
+            write_run(root, 30.0, 3.0, change=skipped_advisor_and_shorter_step)
+            table = coop_join_timings.table([coop_join_timings.load(root)])
+        self.assertIn("| joined: advisor (skipped) | 0.0 |", table)
+        self.assertIn("| joined: long step, level 22 (to 0.7) | 156 |", table)
 
     def test_runs_of_different_builds_are_no_one_measurement(self):
         with tempfile.TemporaryDirectory() as temporary:

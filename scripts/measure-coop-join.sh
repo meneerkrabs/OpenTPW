@@ -22,7 +22,8 @@ fi
 mkdir -p "$output"
 export OPENTPW_CONFIGURATION=Release OPENTPW_COOP_JOIN_PHASE=measure OPENTPW_SILENT=1 OPENTPW_OFFSCREEN=1
 # the machine, which the runtime does not name: its system, processor, model and memory; and the source measured, its commit and
-# whether its tree is clean (with changes, the build is no commit's)
+# whether what the build reads is clean (the source, the content it copies, the scripts, the tools, the SDK's pin; with changes,
+# the build is no commit's)
 machine="$output/machine.txt"
 {
   uname -srm
@@ -44,7 +45,7 @@ machine="$output/machine.txt"
   fi
   if ! commit="$(git rev-parse --verify -q HEAD 2> /dev/null)"; then
     printf 'source unknown (no git checkout)\n'
-  elif ! changes="$(git status --porcelain -- source scripts tools 2> /dev/null)"; then
+  elif ! changes="$(git status --porcelain -- source content scripts tools global.json 2> /dev/null)"; then
     printf 'source %s, its state unknown\n' "$commit"
   elif [[ -z "$changes" ]]; then
     printf 'source %s, clean\n' "$commit"

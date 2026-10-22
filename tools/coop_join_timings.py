@@ -14,6 +14,7 @@ warm the process first.
 Usage: python3 -I tools/coop_join_timings.py [--machine <file>] <evidence directory> [<evidence directory> ...]
 """
 import json
+import math
 import pathlib
 import statistics
 import sys
@@ -32,7 +33,7 @@ BUDGET_MILLISECONDS = 12
 
 
 def is_number(value):
-    return isinstance(value, (int, float)) and not isinstance(value, bool)
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
 
 
 def number_fields(item, fields, where):
@@ -52,8 +53,9 @@ def require_whole(root, host, join):
         where = f"{root}: build {timing.get('Generation')}"
         number_fields(timing, JOIN_FIELDS, where)
         stages = timing.get("Build") or []
-        if [item.get("Name") for item in stages] != STAGES:
-            raise ValueError(f"{where} lists the stages {[item.get('Name') for item in stages]}, not {STAGES}")
+        names = [item.get("Name") if isinstance(item, dict) else None for item in stages]
+        if names != STAGES:
+            raise ValueError(f"{where} lists the stages {names}, not {STAGES}")
         for item in stages:
             number_fields(item, WORK_FIELDS, f"{where}'s stage {item['Name']}")
             if item.get("Status") not in STATUSES:
@@ -62,10 +64,14 @@ def require_whole(root, host, join):
         if not isinstance(sections, dict) or not sections or not all(is_number(value) for value in sections.values()):
             raise ValueError(f"{where} lacks its sections")
         long_steps = timing.get("LongSteps")
+        by_name = {item["Name"]: item for item in stages}
+        # a long step: of a stage, once, within the stage's parts, at least the budget and at most the stage's longest
         if not isinstance(long_steps, list) or not all(isinstance(item, dict) and item.get("Stage") in STAGES and is_number(item.get("Step"))
-                                                       and is_number(item.get("Milliseconds")) and item["Milliseconds"] >= BUDGET_MILLISECONDS
-                                                       for item in long_steps):
-            raise ValueError(f"{where} lacks its long steps")
+                                                       and 1 <= item["Step"] <= by_name[item["Stage"]]["Steps"] and is_number(item.get("Milliseconds"))
+                                                       and BUDGET_MILLISECONDS <= item["Milliseconds"] <= by_name[item["Stage"]]["LongestMilliseconds"]
+                                                       for item in long_steps) \
+                or len({(item["Stage"], item["Step"]) for item in long_steps}) != len(long_steps):
+            raise ValueError(f"{where} lacks its long steps, or lists one that is not whole")
         # each stage's longest part, when it took the budget alone, is among them
         for item in stages:
             if item["LongestMilliseconds"] >= BUDGET_MILLISECONDS and not any(step["Stage"] == item["Name"] and step["Milliseconds"] == item["LongestMilliseconds"]

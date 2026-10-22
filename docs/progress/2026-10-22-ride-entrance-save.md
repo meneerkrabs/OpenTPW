@@ -1,0 +1,3 @@
+## A ride's entrance stays where it was across a save (October 22, 2026)
+
+A ride whose entrance had no laid path takes the nearest path cell as its entrance, and keeps it until a cell it uses is removed: a path laid nearer later does not move it. A save did not record it, so loading the park resolved the entrance again on the loaded paths and could move it, and the guests then walked to another cell than before the save. The save now keeps a ride's entrance and exit as they stand ([PATHS.md](../PATHS.md)), and a load puts them back; a save from before keeps the cells the load resolves. A shared park's join needs exactly this: the co-op join smoke found a joining guest's park differing from the host's at a coaster whose entrance a path laid nearer had not moved.

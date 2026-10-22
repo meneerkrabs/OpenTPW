@@ -65,6 +65,45 @@ public class AccessCellRemovalTests
 			Level.RefreshVisitorCells( new[] { ((IEnumerable<ObjectAccessPoint>)Points, Ride) }, Grid, removed.ToHashSet() );
 	}
 
+	/// <summary>
+	/// A ride's entrance and exit stand where its placement resolved them until a cell they use is removed; a path laid nearer later moves neither. A save keeps them as they stand, so
+	/// a restore, whose registration resolves them on the restored grid, puts them back where they were (a shared park's join restores the host's park this way, and its check compares them).
+	/// </summary>
+	[TestMethod]
+	public void ASaveKeepsTheEntranceAndExitAPathLaidNearerSinceDidNotMove()
+	{
+		static void LayNearer( Site site )
+		{
+			site.Grid.SetPath( 5, 5, true );
+			site.Grid.SetPath( 6, 10, true );
+		}
+		// nothing laid the ride's access cells, so its entrance and exit fell back to the nearest path cells on the spine
+		var site = new Site( laid: false );
+		var fallback = (site.Ride.EntranceCell, site.Ride.ExitCell);
+		Assert.AreEqual( ((5, 0), (6, 0)), fallback );
+		LayNearer( site );
+		Assert.AreEqual( fallback, (site.Ride.EntranceCell, site.Ride.ExitCell), "a path laid nearer moves neither" );
+		var saved = site.Ride.CaptureSnapshot();
+		Assert.AreEqual( fallback, (saved.EntranceCell!.Value, saved.ExitCell!.Value) );
+
+		// the restore registers the ride on the restored grid, which resolves the nearer cells, then takes the saved ones
+		var restored = new Site( laid: false );
+		LayNearer( restored );
+		restored.Resolve();
+		Assert.AreEqual( ((5, 5), (6, 10)), (restored.Ride.EntranceCell, restored.Ride.ExitCell), "a fresh resolution finds the nearer paths" );
+		restored.Ride.RestoreSnapshot( saved );
+		Assert.AreEqual( fallback, (restored.Ride.EntranceCell, restored.Ride.ExitCell) );
+
+		// a save from before keeps the cells the restore resolved, and the two cells go together
+		var older = new Site( laid: false );
+		LayNearer( older );
+		older.Resolve();
+		older.Ride.RestoreSnapshot( saved with { EntranceCell = null, ExitCell = null } );
+		Assert.AreEqual( ((5, 5), (6, 10)), (older.Ride.EntranceCell, older.Ride.ExitCell) );
+		Assert.IsTrue( RideVisitorBridge.ValidateSnapshot( saved with { ExitCell = null } ).Any( error => error.Contains( "together" ) ) );
+		Assert.IsTrue( RideVisitorBridge.ValidateSnapshot( saved with { EntranceCell = (-1, 0) } ).Any( error => error.Contains( "outside" ) ) );
+	}
+
 	[TestMethod]
 	public void TheLaidQueueFrontGoesWithTheQueueBehindItAndTheRideFallsBackToThePath()
 	{

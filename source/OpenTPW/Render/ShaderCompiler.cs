@@ -39,6 +39,7 @@ internal static class ShaderCompiler
 
 	internal static (byte[] Vertex, byte[] Fragment, SpirvReflection Reflection) CompileProgram( string path, CrossCompileTarget target )
 	{
+		using var profile = LoadProfile.Measure( "shader-spirv" );
 		var preprocessedShader = ShaderPreprocessor.PreprocessShader( path );
 		var vertexSource = preprocessedShader.VertexShader;
 		var fragmentSource = preprocessedShader.FragmentShader;
@@ -73,6 +74,9 @@ internal static class ShaderCompiler
 			}
 		}
 
+		using var nativeProfile = LoadProfile.Measure( "shader-native" );
+		LoadProfile.Count( "native shader programs" );
+		LoadProfile.Count( "native shader programs of " + Path.GetFileName( path ) );
 		var shaders = Device.ResourceFactory.CreateFromSpirv(
 			new ShaderDescription( ShaderStages.Vertex, program.Vertex, "main" ),
 			new ShaderDescription( ShaderStages.Fragment, program.Fragment, "main" ) );

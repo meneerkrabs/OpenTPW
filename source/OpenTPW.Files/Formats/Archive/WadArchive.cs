@@ -34,6 +34,7 @@ public sealed class WadArchiveFile : ArchiveFile
 		// Decompress file if necessary
 		if ( Compressed )
 		{
+			using var profile = LoadProfile.Measure( "wad-decompress" );
 			var refpack = new Refpack( data );
 			data = refpack.Decompress();
 		}
@@ -82,7 +83,11 @@ public sealed class WadArchive : IArchive
 	public WadArchive( string path )
 	{
 		this.path = path;
+		using var profile = LoadProfile.Measure( "wad-index" );
 		using var fileStream = File.OpenRead( path );
+		LoadProfile.Count( "file opens" );
+		LoadProfile.Count( "wad archives indexed" );
+		LoadProfile.Count( "bytes read", fileStream.Length );
 		ReadFromStream( fileStream, keepInMemory: false );
 	}
 
@@ -386,6 +391,9 @@ public sealed class WadArchive : IArchive
 			// Opened per read and closed again, so the file can still be replaced or deleted (a bonus import on Windows) while the
 			// archive is open; a file of another length is not the one whose directory was read.
 			using var file = new FileStream( path!, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, bufferSize: 1 );
+			LoadProfile.Count( "file opens" );
+			LoadProfile.Count( "wad member reads" );
+			LoadProfile.Count( "bytes read", length );
 			if ( file.Length != fileSize )
 				throw new IOException( $"{path} changed on disk after its directory was read." );
 			var data = new byte[length];

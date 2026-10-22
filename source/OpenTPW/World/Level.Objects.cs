@@ -543,11 +543,15 @@ public partial class Level
 		{
 			if ( Guests.Grid.Cells.CountOf( ParkCellType.PoolWater ) == 0 )
 				return;
-			PoolRenderer = new PoolRenderer( Guests.Grid.Cells, Objects.Grid, PoolStyles.ForTheme( OriginalPark.LevelName ) );
+			using ( FrameMarks.Measure( "pools.water" ) )
+				PoolRenderer = new PoolRenderer( Guests.Grid.Cells, Objects.Grid, PoolStyles.ForTheme( OriginalPark.LevelName ) );
 		}
 		// [EXT:pools-slides] the slides are drawn with the pool, before the swimmers and the riders (entities draw in the order they are made)
 		if ( PoolSlideRenderer == null && PoolSlides != null && PoolRenderer != null )
-			PoolSlideRenderer = new PoolSlideRenderer( PoolSlides, SlideSite, Guests.Grid.Cells, Objects.Grid.Origin, PoolStyles.ForTheme( OriginalPark.LevelName ) );
+		{
+			using ( FrameMarks.Measure( "pools.slides" ) )
+				PoolSlideRenderer = new PoolSlideRenderer( PoolSlides, SlideSite, Guests.Grid.Cells, Objects.Grid.Origin, PoolStyles.ForTheme( OriginalPark.LevelName ) );
+		}
 		// [EXT:pools-swim] the swimmers are drawn after the water (entities draw in the order they are made), with the swim sprites loaded at level setup
 		// the sets are looked for once per level: a missing or broken folder is one warning, not a scan every frame
 		switch ( NextSwimSpriteStep( SwimmerRenderer != null, swimSpritesTried, PoolRenderer != null, PoolSpriteDelivery.IsPending( PoolSpriteDelivery.SwimGroup ) ) )
@@ -558,10 +562,12 @@ public partial class Level
 				break;
 			case SwimSpriteStep.Create:
 				swimSpritesTried = true;
-				SwimmerRenderer = CreateSwimmerRenderer( Guests, OriginalPark );
+				using ( FrameMarks.Measure( "pools.swimmers" ) )
+					SwimmerRenderer = CreateSwimmerRenderer( Guests, OriginalPark );
 				break;
 		}
-		RefreshPoolEffects();
+		using ( FrameMarks.Measure( "pools.effects" ) )
+			RefreshPoolEffects();
 	}
 
 	/// <summary>What <see cref="RefreshPools"/> does about the swimmers' renderer this frame.</summary>

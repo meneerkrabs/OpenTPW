@@ -122,6 +122,8 @@ internal sealed class CoopSession : IDisposable
 	private ICoopJoinBuild? building;
 	private CoopJoinPayload? buildingPayload;
 	private double buildStarted;
+	/// <summary>Set once the completed build passed its check at the cut, in the frame it completed in; the swap follows in the next (docs/COOP.md, "The game's join").</summary>
+	private bool buildChecked;
 	private bool failureAsked;
 	private readonly SortedDictionary<ulong, ReadOnlyMemory<byte>> buffered = new();
 	private long bufferedBytes;
@@ -429,6 +431,7 @@ internal sealed class CoopSession : IDisposable
 		}
 		buildingPayload = downloaded;
 		buildStarted = now;
+		buildChecked = false;
 	}
 
 	/// <summary>One frame of the game's build; the one that completes it checks the candidate at the cut and swaps it in.</summary>
@@ -457,6 +460,15 @@ internal sealed class CoopSession : IDisposable
 			return;
 		building = null;
 		buildingPayload = null;
+		// the check at the cut takes the frame the build completed in and the swap the next, so the two never share a frame; the candidate waits set aside, unchanged, between
+		// them. A failed check ends the build there, its handlers finding no build on its way, as the swap's do
+		if ( !buildChecked )
+		{
+			if ( Check( build, downloaded ) )
+				(building, buildingPayload, buildChecked) = (build, downloaded, true);
+			return;
+		}
+		buildChecked = false;
 		Swap( build, downloaded, now );
 	}
 
@@ -480,26 +492,17 @@ internal sealed class CoopSession : IDisposable
 			return;
 		building = null;
 		buildingPayload = null;
+		buildChecked = false;
 		Release( build );
 		if ( outcome != null )
 			FinishTiming( outcome, build );
 	}
 
-	/// <summary>Checks the built candidate at the cut and swaps it in; a failure keeps the old park (if any) and asks again.</summary>
-	private void Swap( ICoopJoinBuild build, CoopJoinPayload downloaded, double now )
+	/// <summary>Checks the built candidate at the cut; false when it failed (the candidate released, the failure counted, the old park, if any, kept, a new capture asked for).</summary>
+	private bool Check( ICoopJoinBuild build, CoopJoinPayload downloaded )
 	{
-		Level candidate;
-		try
-		{
-			candidate = build.Candidate;
-		}
-		catch ( Exception error ) when ( error is not OutOfMemoryException )
-		{
-			Release( build );
-			FinishTiming( "failed", build );
-			Failed( CoopSnapshotReason.FailedCheck, $"the park built is missing: {error.Message}" );
-			return;
-		}
+		if ( Candidate( build ) is not { } candidate )
+			return false;
 		ulong digest, world;
 		var checkStarted = Stopwatch.GetTimestamp();
 		try
@@ -513,7 +516,7 @@ internal sealed class CoopSession : IDisposable
 			Release( build );
 			FinishTiming( "failed its check", build );
 			Failed( CoopSnapshotReason.FailedCheck, $"the park built could not be checked: {error.Message}" );
-			return;
+			return false;
 		}
 		if ( timing != null )
 			timing.CheckMilliseconds = CoopClock.Since( checkStarted );
@@ -524,8 +527,32 @@ internal sealed class CoopSession : IDisposable
 			FinishTiming( "failed its check", build );
 			Failed( CoopSnapshotReason.FailedCheck, $"the park built at tick {built} differs from the host's at its cut ({downloaded.Ticks}): digest {digest:X16} / {downloaded.Digest:X16}, "
 				+ $"world {world:X16} / {downloaded.WorldHash:X16}" );
-			return;
+			return false;
 		}
+		return true;
+	}
+
+	/// <summary>The completed build's candidate, or null when the build has none (released, the failure counted, a new capture asked for).</summary>
+	private Level? Candidate( ICoopJoinBuild build )
+	{
+		try
+		{
+			return build.Candidate;
+		}
+		catch ( Exception error ) when ( error is not OutOfMemoryException )
+		{
+			Release( build );
+			FinishTiming( "failed", build );
+			Failed( CoopSnapshotReason.FailedCheck, $"the park built is missing: {error.Message}" );
+			return null;
+		}
+	}
+
+	/// <summary>Swaps the checked candidate in, the frame after its check; a failure to enter it ends the session.</summary>
+	private void Swap( ICoopJoinBuild build, CoopJoinPayload downloaded, double now )
+	{
+		if ( Candidate( build ) is not { } candidate )
+			return;
 		var swapStarted = Stopwatch.GetTimestamp();
 		var old = level;
 		var desyncs = GuestStream?.Desyncs ?? 0;
@@ -563,6 +590,8 @@ internal sealed class CoopSession : IDisposable
 		// frames after the last one buffered may have been lost on their way (a socket that dropped during the download, whose resume no stream heard): they are asked for now, since an
 		// idle host publishes nothing that would show the gap
 		GuestStream.RequestMissing();
+		// the swap's frame has the park's first update: its ticks wait for the next frame
+		GuestStream.HoldTicksOneFrame();
 		Phase = CoopGuestPhase.Following;
 		followingSince = now;
 		failureAsked = false;

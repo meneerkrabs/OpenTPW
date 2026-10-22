@@ -453,7 +453,9 @@ internal sealed partial class CoopJoinSmokeTest
 		return staged.ToArray();
 	}
 
-	/// <summary>After the first cut: the hand put down where it was, the hire cancelled, the carried object placed back, the coaster tool left, the water ride's track mended.</summary>
+	/// <summary>
+	/// After the first cut: the hand put down where it was, the hire cancelled, the carried object placed back and the Move tool ended, the coaster tool left, the water ride's track mended.
+	/// </summary>
 	private void UnstageFirstCut()
 	{
 		Issue( new DropStaffCommand( hand!.Value.Staff, hand.Value.X, hand.Value.Y ), "the employee is put back down" );
@@ -461,7 +463,9 @@ internal sealed partial class CoopJoinSmokeTest
 		var (entry, x, y, rotation) = carried!.Value;
 		var click = Level.GetClickCell( entry, x, y, rotation );
 		if ( !level.Commands.Issue( new PlaceObjectCommand( ParkCommandCodec.EntryKey( entry ), click.X, click.Y, rotation, Moving: true ) ).Accepted )
-			Log.Trace( "Co-op join smoke: the carried object stays in the hand (its place was taken meanwhile)." );
+			Log.Trace( "Co-op join smoke: the carried object's place was taken meanwhile; the Move tool's cancel leaves it gone." );
+		// a placement without Ctrl ends the Move tool, as a cancel does: its type is carried no more
+		Issue( new EndMoveCommand(), "the Move tool ends" );
 		Issue( new EndCoasterToolCommand( coasters[1].Visitors.AttractionId ), "the coaster tool closes" );
 		MendWaterTrack();
 	}
@@ -533,9 +537,9 @@ internal sealed partial class CoopJoinSmokeTest
 				"water track cut open after a Backspace", "add-on on a track cut open", "pool with a river", "slide", "bridge", "swimmers" }
 			: new[] { "session clock", "several coasters", "paused with edits since its last tick", "built coaster closed", "tour ride without a live tour", "entrance without its link",
 				"add-on on a mended track", "pool with a river", "slide", "bridge" };
-		// what the first cut staged and the second undid; not the Move tool's carried entry, which a placement does not clear in the command layer (docs/COOP.md, "Known limits")
+		// what the first cut staged and the second undid
 		string[] undone = number == 1 ? Array.Empty<string>()
-			: new[] { "employee in hand", "pending hire", "coaster tool open", "water track cut open after a Backspace", "add-on on a track cut open" };
+			: new[] { "employee in hand", "pending hire", "carried Move entry", "coaster tool open", "water track cut open after a Backspace", "add-on on a track cut open" };
 		Require( expected.All( staged.Contains ) && !undone.Any( staged.Contains ), $"cut {number} holds what was staged for it and nothing undone (held: {string.Join( ", ", staged )})" );
 		var file = $"capture-{number}.otpwjoin";
 		File.WriteAllBytes( Path.Combine( evidenceDirectory, file ), payload! );

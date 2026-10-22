@@ -6,3 +6,4 @@ The command layer now hears when a player's Move tool ends ([COOP.md](../COOP.md
 - While the tool stays (a placement holding exactly Ctrl), another placement of the type is still the Move tool's and is charged in full, as in the original.
 - A pick-up while the tool still carries ends the old move first.
 - Recorded command logs from before replay as they did: they hold no `EndMoveCommand`, and a single-player park's world does not change.
+- The co-op join smoke now requires its second capture to carry no Move entry, as it requires the other tool states the first capture staged to be gone.

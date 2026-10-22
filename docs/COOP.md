@@ -393,9 +393,9 @@ offscreen: `--coop-join-smoke host|join --coop-join-evidence <directory>`), runs
   the park paused with edits since its last tick, a built coaster closed and a tour ride bought while
   paused (its script has not run, so it has no controller). A virtual member joins, and later asks again
   with a desync, so the host takes two captures through its stream. The phase checks that each cut holds
-  what was staged, that the second holds nothing the first staged and undid (but the Move tool's carried
-  entry, a known limit below), and that the capture changed nothing. It runs park minutes at the normal
-  and the fastest speed, sells the add-on after the second cut while the member follows, and writes the
+  what was staged, that the second holds nothing the first staged and undid (the Move tool's end among
+  them, `EndMoveCommand`), and that the capture changed nothing. It runs park minutes at the normal and
+  the fastest speed, sells the add-on after the second cut while the member follows, and writes the
   frames, the captures and its final state.
 - **The join phase** is a fresh process. It starts in the front end, runs the real game loop and joins
   through `GameFlow.JoinSharedPark` over a transport that replays the recorded host. The first capture's
@@ -431,12 +431,7 @@ were resolved again on a load, so a path laid nearer since moved them.
 
 Known limits: the guest's files and simulation mods must be the host's (the build refuses otherwise); a
 park state with a non-finite float (NaN or an infinity) cannot be captured, since the save's JSON holds
-none; a single build step can take longer than the frame budget, which C2c-2b measures. The Move tool's
-carried entry stays in the command layer after its placement (the session digest and the join state carry
-it): the tool's end is the issuer's own, and with exactly Ctrl the original keeps the tool for another
-placement of the type, so the layer cannot tell the last one. A peer's command could place the type
-again without research or the balance test; the smoke therefore does not require the second cut to be
-without one.
+none; a single build step can take longer than the frame budget, which C2c-2b measures.
 
 ### The host's trimmed frame (C2c-3)
 

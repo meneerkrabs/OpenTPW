@@ -436,7 +436,12 @@ public partial class Level
 		CoasterToolStation = null;
 		CoasterPreview = null;
 		if ( station.Entry.HasQueue && station.Runtime.IsAttraction && station.Visitors.HasCells )
+		{
+			// [BIN:TPW-EXE:0x00526680 queue start] where the coaster tool's click (mode 0x15) hands over to the queue tool it takes the pending queue start (0x52656E tests it, 0x526680 zeroes it),
+			// and with none pending it ends the tool (0x5266BC); OpenTPW's coaster completion enters the queue tool either way (UI-031)
+			placedQueueStart = null;
 			EnterQueueTool( station.Visitors );
+		}
 	}
 
 	/// <summary>

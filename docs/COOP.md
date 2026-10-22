@@ -497,8 +497,8 @@ The design fixed two constants only after measuring them (`coop-c2b-design.md`, 
   and its measuring join phase (`--coop-join-smoke measure`: the untouched captures, joined from the
   front end and resynced once each) five times in a Release build, each phase a fresh process, silent
   and offscreen, and records the machine and the source's commit; `tools/coop_join_timings.py` prints
-  each timing's median, range and runs (it refuses a run whose timings are not whole, runs of different
-  builds or machines, and the adversarial join's evidence, whose rewritten payloads and refused and
+  each timing's median, range and runs (it refuses a run whose timings are not whole, runs whose recorded
+  environments differ, and the adversarial join's evidence, whose rewritten payloads and refused and
   abandoned builds warm the process first). The timings are wall-clock (`Stopwatch`, never a session's
   clock), kept per capture on the host (`CoopHostStream.CaptureTimings`) and per build on the guest
   (`CoopSession.JoinTimings`: the stages of `ICoopJoinBuild.Timings`, every part of a step that alone
@@ -538,9 +538,9 @@ The design fixed two constants only after measuring them (`coop-c2b-design.md`, 
     five the catalogue's settings 16 ms. The decode took 1.5 ms, the check 2.3 ms, the swap 8 ms and the
     next frame's update 49 ms, and 0.06 s passed to the session step that found it caught up.
 
-  A join thus stalls a guest's frames for up to about 0.45 s at its worst step (0.1 s warm), and the
-  host's for one frame of 4 to 12 ms at the cut (a process's first capture also for a 35 ms slice). The
-  browser's numbers (C2c-2b-2) decide which steps C2c-2b-3 splits.
+  A join thus stalls a guest's frames for 0.44 s at its worst step (0.40 to 0.48 s in these runs; 0.09
+  s warm), and the host's for one frame of 4 to 12 ms at the cut (a process's first capture also for a
+  35 ms slice). The browser's numbers (C2c-2b-2) decide which steps C2c-2b-3 splits.
 
   <details><summary>Every value of the five runs (tools/coop_join_timings.py)</summary>
 

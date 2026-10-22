@@ -42,12 +42,14 @@ machine="$output/machine.txt"
     fi
     grep -m1 MemTotal /proc/meminfo 2> /dev/null || true
   fi
-  if commit="$(git rev-parse --verify -q HEAD)"; then
-    if [[ -z "$(git status --porcelain -- source scripts tools)" ]]; then
-      printf 'source %s, clean\n' "$commit"
-    else
-      printf 'source %s, with uncommitted changes\n' "$commit"
-    fi
+  if ! commit="$(git rev-parse --verify -q HEAD 2> /dev/null)"; then
+    printf 'source unknown (no git checkout)\n'
+  elif ! changes="$(git status --porcelain -- source scripts tools 2> /dev/null)"; then
+    printf 'source %s, its state unknown\n' "$commit"
+  elif [[ -z "$changes" ]]; then
+    printf 'source %s, clean\n' "$commit"
+  else
+    printf 'source %s, with uncommitted changes\n' "$commit"
   fi
 } > "$machine"
 evidence=()

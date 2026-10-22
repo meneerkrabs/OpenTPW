@@ -20,7 +20,9 @@ def write_run(root, cut, decode, completed=True, mode="measure", captures=(1, 2)
                "SaveCopyMilliseconds": 0.2, "WriterSetupMilliseconds": 1.2, "Compression": work, "FinishMilliseconds": 0.1, "LongestFrameMilliseconds": cut,
                "Frames": 6, "UploadSeconds": 0.0125, "PayloadBytes": 2048, "BodyBytes": 10300, "SaveBytes": 10240}
     stages = [dict(work, Name=name, Status="Measured") for name in coop_join_timings.STAGES]
-    stages[coop_join_timings.STAGES.index("level")] = {"Name": "level", "Status": "Measured", "Milliseconds": 480, "LongestMilliseconds": 157, "Steps": 40, "Frames": 12}
+    # a level whose longest part took the budget lists it among the long steps
+    level = {"Name": "level", "Status": "Measured", "Milliseconds": 480, "LongestMilliseconds": 157 if long_step else 11, "Steps": 40, "Frames": 12}
+    stages[coop_join_timings.STAGES.index("level")] = level
     stages[coop_join_timings.STAGES.index("manifest")] = {"Name": "manifest", "Status": "Measured", "Milliseconds": 30, "LongestMilliseconds": 6, "Steps": 90,
                                                           "Frames": 9}
     join = {"Generation": 1, "Outcome": "joined", "DownloadAttempts": 1, "DownloadSeconds": 0.0151, "LastAttemptSeconds": 0.0151, "PayloadBytes": 2048,
@@ -28,9 +30,10 @@ def write_run(root, cut, decode, completed=True, mode="measure", captures=(1, 2)
             "CatchUpFrames": 2, "CatchUpSeconds": 0.07, "ProcessBuild": 1, "Build": stages, "Sections": {"objects": 156},
             "LongSteps": [{"Stage": "level", "Step": 23, "Milliseconds": 157, "Progress": 0.75}] if long_step else []}
     manifest = coop_join_timings.STAGES.index("manifest")
+    resynced = [dict(stage, LongestMilliseconds=11) if stage is level else stage for stage in stages]
     resync = dict(join, Outcome="resynced", Generation=2, DecodeMilliseconds=decode / 2, ProcessBuild=2, LongSteps=[],
-                  Build=stages[:manifest] + [dict(stages[manifest], Status="Cached", Milliseconds=0.1, LongestMilliseconds=0.1, Steps=1, Frames=1)]
-                  + stages[manifest + 1:])
+                  Build=resynced[:manifest] + [dict(stages[manifest], Status="Cached", Milliseconds=0.1, LongestMilliseconds=0.1, Steps=1, Frames=1)]
+                  + resynced[manifest + 1:])
     joins = [{"joined": join, "resynced": resync}[outcome] for outcome in outcomes]
     frames = [{"Frame": 1, "Step": "Joining", "Milliseconds": 20}, {"Frame": 2, "Step": "Joining", "Milliseconds": 160}, {"Frame": 3, "Step": "Following", "Milliseconds": 600},
               {"Frame": 4, "Step": "Resyncing", "Milliseconds": 90}, {"Frame": 5, "Step": "Resynced", "Milliseconds": 70}]
@@ -64,7 +67,8 @@ class CoopJoinTimingsTests(unittest.TestCase):
         self.assertIn("| joined: payload KiB | 2.0 |", table)
         self.assertIn("| joined: decode | 4.0 | 3.0-6.0 | 3.0, 6.0, 4.0 |", table)
         self.assertIn("| resynced: decode | 2.0 | 1.5-3.0 | 1.5, 3.0, 2.0 |", table)
-        self.assertIn("| joined: level, longest step | 157 | 157-157 | 157, 157, 157 |", table)
+        self.assertIn("| joined: level, longest step | 157 | 11.0-157 | 11.0, 157, 157 |", table)
+        self.assertIn("| resynced: level, longest step | 11.0 | 11.0-11.0 | 11.0, 11.0, 11.0 |", table)
         self.assertIn("| joined: level, steps | 40 |", table)
         self.assertIn("| joined: level, frames | 12 |", table)
         self.assertIn("| joined: save | 1.5 |", table)
@@ -115,10 +119,27 @@ class CoopJoinTimingsTests(unittest.TestCase):
         for path in [("host", "CaptureTimings", 1, "DigestMilliseconds"), ("host", "CaptureTimings", 0, "Save", "Steps"),
                      ("join", "JoinTimings", 0, "CheckMilliseconds"), ("join", "JoinTimings", 1, "CatchUpSeconds"), ("join", "JoinTimings", 0, "Build", 3),
                      ("join", "JoinTimings", 1, "Build", 6, "LongestMilliseconds"), ("join", "JoinTimings", 0, "LongSteps"), ("join", "Frames", 4),
-                     ("join", "Environment")]:
+                     ("join", "Frames", 2, "Milliseconds"), ("join", "Environment")]:
             with self.subTest(path), tempfile.TemporaryDirectory() as temporary:
                 root = pathlib.Path(temporary) / "run"
                 write_run(root, 30.0, 3.0, change=drop(path))
+                with self.assertRaises(ValueError):
+                    coop_join_timings.load(root)
+
+    def test_a_run_with_a_partial_nested_timing_is_refused(self):
+        def section_null(host, join):
+            join["JoinTimings"][0]["Sections"]["objects"] = None
+
+        def long_step_missing(host, join):
+            join["JoinTimings"][0]["LongSteps"] = []
+
+        def status_missing(host, join):
+            del join["JoinTimings"][1]["Build"][2]["Status"]
+
+        for change in [section_null, long_step_missing, status_missing]:
+            with self.subTest(change.__name__), tempfile.TemporaryDirectory() as temporary:
+                root = pathlib.Path(temporary) / "run"
+                write_run(root, 30.0, 3.0, change=change)
                 with self.assertRaises(ValueError):
                     coop_join_timings.load(root)
 

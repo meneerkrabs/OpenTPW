@@ -6,9 +6,10 @@ host phase's host-evidence.json and the measuring join phase's join-evidence.jso
 median, the range and each run's value as a Markdown table, after the runs' environment and, with --machine, the machine's own
 description. A value some runs lack names how many runs have it (a part of a build's step that took the frame's budget in some
 runs only, say). Milliseconds unless the row says otherwise. A run must be complete: both phases completed, the host's two
-captures and the guest's join of the first and resync to the second, each with every timing, and all runs of one build on one
-machine. Evidence of the adversarial join phase is refused: its rewritten payloads and its refused and abandoned builds warm
-the process first.
+captures and the guest's join of the first and resync to the second, each with every timing, and all runs with one recorded
+environment (build, runtime, system, processors and settings; the evidence names no machine, so the measure script records the
+one it ran on). Evidence of the adversarial join phase is refused: its rewritten payloads and its refused and abandoned builds
+warm the process first.
 
 Usage: python3 -I tools/coop_join_timings.py [--machine <file>] <evidence directory> [<evidence directory> ...]
 """
@@ -25,11 +26,18 @@ CAPTURE_FIELDS = ["Ticks", "PublishMilliseconds", "DigestMilliseconds", "StateMi
 JOIN_FIELDS = ["DownloadAttempts", "DownloadSeconds", "LastAttemptSeconds", "PayloadBytes", "DecodeMilliseconds", "BuildFrames",
                "LongestBuildFrameMilliseconds", "ProcessBuild", "CheckMilliseconds", "SwapMilliseconds", "CatchUpTicks", "CatchUpFrames", "CatchUpSeconds"]
 WORK_FIELDS = ["Steps", "Frames", "Milliseconds", "LongestMilliseconds"]
+STATUSES = {"Skipped", "Measured", "Cached"}
+# the build's budget a frame (GameFlow.ParkBuildBudgetMilliseconds): a part of a step that alone takes it is a long step
+BUDGET_MILLISECONDS = 12
+
+
+def is_number(value):
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
 
 
 def number_fields(item, fields, where):
     """Every field a number (a whole timing, not a partial one)."""
-    missing = [field for field in fields if not isinstance(item.get(field), (int, float)) or isinstance(item.get(field), bool)]
+    missing = [field for field in fields if not isinstance(item, dict) or not is_number(item.get(field))]
     if missing:
         raise ValueError(f"{where} lacks {', '.join(missing)}")
 
@@ -48,10 +56,26 @@ def require_whole(root, host, join):
             raise ValueError(f"{where} lists the stages {[item.get('Name') for item in stages]}, not {STAGES}")
         for item in stages:
             number_fields(item, WORK_FIELDS, f"{where}'s stage {item['Name']}")
-        if not isinstance(timing.get("LongSteps"), list) or not isinstance(timing.get("Sections"), dict) or not timing["Sections"]:
-            raise ValueError(f"{where} lacks its long steps or its sections")
-    steps = {item.get("Step") for item in join.get("Frames") or []}
-    if not {"Joining", "Following", "Resyncing", "Resynced"} <= steps:
+            if item.get("Status") not in STATUSES:
+                raise ValueError(f"{where}'s stage {item['Name']} has no status")
+        sections = timing.get("Sections")
+        if not isinstance(sections, dict) or not sections or not all(is_number(value) for value in sections.values()):
+            raise ValueError(f"{where} lacks its sections")
+        long_steps = timing.get("LongSteps")
+        if not isinstance(long_steps, list) or not all(isinstance(item, dict) and item.get("Stage") in STAGES and is_number(item.get("Step"))
+                                                       and is_number(item.get("Milliseconds")) and item["Milliseconds"] >= BUDGET_MILLISECONDS
+                                                       for item in long_steps):
+            raise ValueError(f"{where} lacks its long steps")
+        # each stage's longest part, when it took the budget alone, is among them
+        for item in stages:
+            if item["LongestMilliseconds"] >= BUDGET_MILLISECONDS and not any(step["Stage"] == item["Name"] and step["Milliseconds"] == item["LongestMilliseconds"]
+                                                                                for step in long_steps):
+                raise ValueError(f"{where}'s long steps lack the longest of its stage {item['Name']}")
+    frames = join.get("Frames") or []
+    if not all(isinstance(item, dict) and is_number(item.get("Frame")) and isinstance(item.get("Step"), str) and is_number(item.get("Milliseconds"))
+               for item in frames):
+        raise ValueError(f"{root}: the join phase's update frames are not whole")
+    if not {"Joining", "Following", "Resyncing", "Resynced"} <= {item["Step"] for item in frames}:
         raise ValueError(f"{root}: the join phase's update frames lack a step of the join or the resync")
 
 
@@ -182,7 +206,7 @@ def table(runs, machine=None):
     lines = []
     environments = {json.dumps(run[0].get("Environment"), sort_keys=True) for run in runs} | {json.dumps(run[1].get("Environment"), sort_keys=True) for run in runs}
     if len(environments) != 1:
-        raise ValueError("the runs' environments differ (another build, machine or setting): their timings are not one measurement")
+        raise ValueError("the runs' environments differ (another build, runtime, system or setting): their timings are not one measurement")
     environment = runs[0][1].get("Environment") or {}
     lines.append(f"{len(runs)} runs; {environment.get('Configuration', '?')} build {environment.get('Version', '?')}, {environment.get('Runtime', '?')}, "
                  f"{environment.get('Os', '?')} {environment.get('Architecture', '?')}, {environment.get('Processors', '?')} processors, "

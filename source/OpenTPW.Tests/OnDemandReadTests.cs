@@ -54,7 +54,7 @@ public class OnDemandReadTests
 	}
 
 	/// <summary>A one-member WAD (the layout of PortableFileSystemTests' synthetic archive).</summary>
-	private static void WriteWad( string path, string contents )
+	internal static void WriteWad( string path, string contents )
 	{
 		var filename = System.Text.Encoding.ASCII.GetBytes( "file.txt\0" );
 		var bytes = System.Text.Encoding.ASCII.GetBytes( contents );
@@ -90,9 +90,11 @@ public class OnDemandReadTests
 			var member = Members( archive.Root ).Single();
 			Assert.AreEqual( "first contents", System.Text.Encoding.ASCII.GetString( member.GetData() ) );
 
-			// No handle stays open between reads: the file can be replaced (a bonus import does that, also on Windows).
+			// The kept file shares deleting: it can be moved while the archive is open, also on Windows. Wherever archives may change (a bonus
+			// import), the kept files are closed first; then the file can be replaced, and the next read opens it again.
 			File.Move( path, path + ".old" );
 			File.Move( path + ".old", path );
+			WadArchive.CloseFileHandles();
 			Assert.ThrowsException<ArgumentOutOfRangeException>( () => archive.GetData( -1, 4 ) );
 
 			// A file of another length is not the archive whose directory was read: a clear error, not other bytes.
@@ -174,6 +176,8 @@ public class OnDemandReadTests
 			Assert.AreEqual( 0, archive.GetData( 0, 0 ).Length );
 			CollectionAssert.AreEqual( new byte[8], archive.GetData( checked((int)size), 8 ) );
 			CollectionAssert.AreEqual( new byte[8], archive.GetData( int.MaxValue, 8 ), "Wide beyond-end offsets keep their existing padding behavior." );
+			// the kept file (issue #754) still reads the deleted file; once it is closed, a request that needs original bytes opens the path again
+			WadArchive.CloseFileHandles();
 			Assert.ThrowsException<FileNotFoundException>( () => archive.GetData( 0, 1 ), "A request that needs original bytes still reopens the source." );
 		}
 		finally { Directory.Delete( directory, recursive: true ); }

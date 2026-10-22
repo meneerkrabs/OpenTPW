@@ -62,6 +62,8 @@ public static class BonusContent
 	/// </summary>
 	public static int Import( string source, string configDirectory )
 	{
+		// the bonus folder is moved aside and removed below: no archive may keep one of its files open (Windows refuses to move or remove a folder with an open file)
+		WadArchive.CloseFileHandles();
 		Directory.CreateDirectory( configDirectory );
 		var target = Path.Combine( configDirectory, FolderName );
 		var staging = Path.Combine( configDirectory, FolderName + ".importing-" + Guid.NewGuid().ToString( "N" ) );

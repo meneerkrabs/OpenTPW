@@ -12,7 +12,15 @@ public class Program
 			if ( InstallationDiscovery.RunChild( args ) is { } childExitCode )
 				return childExitCode;
 			LinuxNativeLibraries.Register();
-			Game.Run( args );
+			try
+			{
+				Game.Run( args );
+			}
+			finally
+			{
+				// the archives' kept files (issue #754) are closed before the process ends, as wherever archives may change
+				WadArchive.CloseFileHandles();
+			}
 			// a normal return is a clean start; an exception skips this and leaves the script mods' crash marker (docs/SCRIPT-MODS.md)
 			OpenTPW.Mods.ScriptSafeMode.CleanShutdown();
 			// Headless commands such as --m3-gate report failure through the exit code.

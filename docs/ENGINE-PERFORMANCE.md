@@ -264,6 +264,23 @@ After the change (same runs, alternating with the build before it):
 The world capture of the Jungle park (`--capture-world`, 120 frames) differs from the build before the change by as many pixels as two runs of the
 old build differ from each other (0.3 % of the pixels, the moving guests); the native smokes pass.
 
+### Remembered path lookups (October 22, 2026)
+
+The desktop's game-data file system did not remember its path lookups, so every read listed the directories along its path again (to find the
+archive a path lies in and, on case-sensitive systems, the on-disk spelling): 1,063 listings before the lobby, 15,770 for a park start, 300 to
+480 for an object's first placement. It now remembers them as the browser's does (`BaseFileSystem.CacheLookups`, made in
+`Game.CreateGameDataFileSystem`). Nothing in a session adds files below the data folder (a new game folder applies at the next start), and what
+changes what the lookups see invalidates them itself: the mod overrides, the language's interface archive and the mod content roots. The files
+read are the same; `FileSystemTests` now run on the desktop's own file system.
+
+| Measure (Release, Mac, three alternating runs) | Before | After |
+| --- | ---: | ---: |
+| Directory listings to the lobby | 1,063 | 10 |
+| Directory listings, park start plus the build scenario | 15,770 | 724 |
+| `start-level` (Jungle) | 1,675 to 1,831 ms | 1,213 to 1,410 ms |
+| `perf.place` of a type with few parts (1100) | 4.0 to 4.3 ms | 1.4 to 1.7 ms |
+| Main to the lobby's first frame | 915 to 1,453 ms | 935 to 1,430 ms (within the noise) |
+
 ### What is left
 
 1. **The remaining placement cost is the sign.** A ride with a sign composes it on its first placement (`object-sign`, 36 to 46 ms on the Mac for
@@ -273,8 +290,5 @@ old build differ from each other (0.3 % of the pixels, the moving guests); the n
 2. **GLSL to SPIR-V on every start** (`shader-spirv`, 343 to 348 ms for 7 files before the lobby, 9 files and 450 ms with a park, and a 52 ms
    frame the first time the buy window's turning preview draws). The result depends only on the shader source and the compiler, so it could be
    kept in the cache folder between runs; on Direct3D 11 the compiled HLSL could be kept the same way.
-3. **Directory listings.** The desktop's game-data file system does not remember its path lookups (`CacheLookups`, which the browser uses), so
-   each read lists the directories along its path again: 1,063 listings before the lobby, 15,770 for a park start, 300 to 480 for a first
-   placement. Each is cheap on a warm cache, but on Windows every listing is a directory enumeration in the kernel.
-4. **One file open per WAD member read.** A member read opens the archive again (so a bonus import can replace the file on Windows): 466 opens
+3. **One file open per WAD member read.** A member read opens the archive again (so a bonus import can replace the file on Windows): 466 opens
    before the lobby, 1,311 in a park start. On a hard disk with an antivirus filter each open has a cost.

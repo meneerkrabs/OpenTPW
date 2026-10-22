@@ -144,9 +144,7 @@ internal static class Game
 			RequireThemeParkIncViewer( args, edition );
 
 		// Register game data directory
-		FileSystem = new BaseFileSystem( dataDirectory );
-		FileSystem.RegisterArchiveHandler<WadArchive>( ".wad" );
-		FileSystem.RegisterArchiveHandler<SdtArchive>( ".sdt" );
+		FileSystem = CreateGameDataFileSystem( dataDirectory );
 
 		// Debug export of every sign texture in one language (docs/RUNNING.md, "Sign textures"): the language is the option's own, the language data is found as below; no window, audio or park.
 		if ( args.Contains( "--export-signs" ) )
@@ -1249,6 +1247,21 @@ internal static class Game
 	/// <c>--no-offscreen</c>, its alias <c>--visible</c> (the window's counterpart of <c>--audible</c>), or <c>OPENTPW_OFFSCREEN=0</c> keeps the visible
 	/// window. Sound is a separate choice (<see cref="IsSilentRun"/>): <c>--audible</c> does not show the window and <c>--visible</c> does not unmute.
 	/// </summary>
+	/// <summary>
+	/// The game data's file system, with the WAD and SDT archive handlers. It remembers its path lookups (<see cref="BaseFileSystem.CacheLookups"/>), as the
+	/// browser's does: without that every read listed each directory along its path again, 15,770 listings for a park start and a few hundred for an object's
+	/// first placement (issue #754, docs/ENGINE-PERFORMANCE.md, "Start and build hitches"). Nothing in a session adds files below the data folder (a new game
+	/// folder applies at the next start); what changes what the lookups see invalidates them itself: the mod overrides, the language's interface archive and
+	/// the mod content roots.
+	/// </summary>
+	internal static BaseFileSystem CreateGameDataFileSystem( string dataDirectory )
+	{
+		var files = new BaseFileSystem( dataDirectory ) { CacheLookups = true };
+		files.RegisterArchiveHandler<WadArchive>( ".wad" );
+		files.RegisterArchiveHandler<SdtArchive>( ".sdt" );
+		return files;
+	}
+
 	internal static bool IsOffscreenRun( string[] args, string? offscreenEnvironment )
 	{
 		if ( WantsVisibleWindow( args ) || offscreenEnvironment == "0" )

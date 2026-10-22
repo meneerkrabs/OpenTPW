@@ -315,10 +315,13 @@ about 0.1 s on that PC, so these are about 1.3 s of every start (an estimate; no
 shader's bytes already are bytecode (`DXBC`), which it takes as they are. With a cache folder, `ShaderCompiler.CreateNative` now makes the same
 cross-compile and the same HLSL compile itself (`Direct3D11Bytecode`), keeps the bytecode beside the SPIR-V (`cache/shaders/*.dxbc`, keyed by a
 SHA-256 of the HLSL, the profile, the flags and the version, size and time of `d3dcompiler_47.dll`, which Windows updates replace) and hands the
-bytecode to Veldrid. A missing or malformed file (not a whole `DXBC` container) is compiled again; without the system compiler's identity nothing
-is kept. `NativeWorldShaderRenderTests.KeptDirect3D11BytecodeIsVeldridsOwnCompile` checks on the Windows CI runner's Direct3D 11 device that the
-kept bytecode is byte for byte the bytecode Veldrid compiles for the same shader, that a second request reads it, and that shaders made from it
-draw the same pixels as Veldrid's. Other backends are unchanged (Metal compiles its source when the pipeline is made and caches it itself).
+bytecode to Veldrid. The files are `ShaderCache` files like the SPIR-V: a missing, damaged (digest mismatch) or malformed file (not a whole `DXBC`
+container) is compiled again and replaced, and bytecode the device refuses anyway makes `CreateNative` remove the program's kept files and
+compile its HLSL again; without the system compiler's identity nothing is kept. Old files go with the cache's 30-day expiry by last use.
+`NativeWorldShaderRenderTests.KeptDirect3D11BytecodeIsVeldridsOwnCompile` checks on the Windows CI runner's Direct3D 11 device that the kept
+bytecode is byte for byte the bytecode Veldrid compiles for the same shader, that a second request reads it, that a file cut short is compiled
+again, that shaders made from the kept bytecode draw the same pixels as Veldrid's, and that a whole but wrong container is refused, compiled
+again and drawn the same. Other backends are unchanged (Metal compiles its source when the pipeline is made and caches it itself).
 
 ### What is left
 

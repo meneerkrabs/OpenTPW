@@ -13,16 +13,22 @@ namespace OpenTPW;
 /// new Direct3D 11 shader with the system HLSL compiler (<c>D3D11Shader.CompileCode</c>: <c>vs_5_0</c>/<c>ps_5_0</c>, entry point <c>main</c>,
 /// <c>OptimizationLevel3</c>, no defines, include or source name) and takes bytecode that starts with <c>DXBC</c> as it is. <see cref="Get"/> makes the same
 /// compile once and keeps its result in the cache folder under a SHA-256 of the HLSL, the profile, the flags and the compiler DLL's identity, so a
-/// kept file is the bytecode the compiler would make now; a missing or malformed file is compiled again and replaced.
+/// kept file is the bytecode the compiler would make now; a missing, damaged or malformed file is compiled again and replaced, and bytecode the device
+/// refuses is removed and compiled again by <see cref="ShaderCompiler.CreateNative"/>.
 /// </summary>
 [SupportedOSPlatform( "windows" )]
 internal static class Direct3D11Bytecode
 {
 	private const ShaderFlags Flags = ShaderFlags.OptimizationLevel3;
 
-	/// <summary>The bytecode of <paramref name="hlsl"/> for <paramref name="stage"/>, kept in <paramref name="directory"/>.</summary>
-	public static byte[] Get( string directory, string hlsl, ShaderStages stage )
+	/// <summary>
+	/// The bytecode of <paramref name="hlsl"/> for <paramref name="stage"/>, kept in <paramref name="directory"/> (<see cref="ShaderCache"/>: a damaged file fails its
+	/// digest and is compiled again). <paramref name="kept"/> is the file the bytecode was read from, or null when it was compiled; with
+	/// <paramref name="readCache"/> false it is always compiled (and kept again).
+	/// </summary>
+	public static byte[] Get( string directory, string hlsl, ShaderStages stage, bool readCache, out string? kept )
 	{
+		kept = null;
 		var profile = stage switch
 		{
 			ShaderStages.Vertex => "vs_5_0",
@@ -31,24 +37,34 @@ internal static class Direct3D11Bytecode
 		};
 		// Veldrid's D3D11 backend hands the HLSL to the compiler as ASCII bytes (Veldrid.SPIRV GetBytes)
 		var source = Encoding.ASCII.GetBytes( hlsl );
-		var file = CompilerIdentity is { } compiler ? Path.Combine( directory, Key( source, profile, compiler ) + ".dxbc" ) : null;
-		if ( file != null && Read( file ) is { } kept )
+		var file = CacheFile( directory, source, profile );
+		if ( file != null && readCache && ShaderCache.Read( file, IsContainer ) is { } cached )
 		{
 			LoadProfile.Count( "hlsl cache hits" );
-			return kept;
+			kept = file;
+			return cached;
 		}
 		var bytecode = Compile( source, profile );
 		LoadProfile.Count( "hlsl compiles" );
 		if ( file != null )
-			Write( directory, file, bytecode );
+			ShaderCache.Write( directory, file, bytecode );
 		return bytecode;
 	}
+
+	/// <summary>Where the bytecode of <paramref name="source"/> is kept, or null when the compiler's identity is unknown (then nothing is kept).</summary>
+	internal static string? CacheFile( string directory, byte[] source, string profile ) =>
+		CompilerIdentity is { } compiler ? Path.Combine( directory, Key( source, profile, compiler ) + ".dxbc" ) : null;
+
+	/// <summary>A DXBC container: the magic, a 16-byte checksum, version 1 and its own total size.</summary>
+	private static bool IsContainer( byte[] bytes ) =>
+		bytes.Length >= 32 && bytes[0] == (byte)'D' && bytes[1] == (byte)'X' && bytes[2] == (byte)'B' && bytes[3] == (byte)'C'
+		&& BitConverter.ToUInt32( bytes, 24 ) == (uint)bytes.Length;
 
 	/// <summary>The compile Veldrid's <c>D3D11Shader.CompileCode</c> makes (Veldrid 4.9.0).</summary>
 	internal static byte[] Compile( byte[] source, string profile )
 	{
 		using var profileSection = LoadProfile.Measure( "hlsl-compile" );
-		Compiler.Compile( source, null, null, "main", null, profile, Flags, out Blob result, out Blob error );
+		Compiler.Compile( source, null!, null!, "main", null!, profile, Flags, out Blob result, out Blob error );
 		try
 		{
 			if ( result == null )
@@ -65,7 +81,7 @@ internal static class Direct3D11Bytecode
 	internal static string Key( byte[] source, string profile, string compiler )
 	{
 		using var hash = IncrementalHash.CreateHash( HashAlgorithmName.SHA256 );
-		hash.AppendData( Encoding.UTF8.GetBytes( $"opentpw-dxbc-cache 1\n{compiler}\n{profile}\n{Flags}\n" ) );
+		hash.AppendData( Encoding.UTF8.GetBytes( $"opentpw-dxbc-cache 2\n{compiler}\n{profile}\n{Flags}\n" ) );
 		hash.AppendData( source );
 		return Convert.ToHexString( hash.GetHashAndReset() ).ToLowerInvariant();
 	}
@@ -88,38 +104,6 @@ internal static class Direct3D11Bytecode
 		catch ( Exception exception ) when ( exception is IOException or UnauthorizedAccessException )
 		{
 			return null;
-		}
-	}
-
-	private static byte[]? Read( string file )
-	{
-		try
-		{
-			if ( !File.Exists( file ) )
-				return null;
-			var bytes = File.ReadAllBytes( file );
-			// a DXBC container: the magic, a 16-byte checksum, version 1 and its own total size
-			return bytes.Length >= 32 && bytes[0] == (byte)'D' && bytes[1] == (byte)'X' && bytes[2] == (byte)'B' && bytes[3] == (byte)'C'
-				&& BitConverter.ToUInt32( bytes, 24 ) == (uint)bytes.Length ? bytes : null;
-		}
-		catch ( Exception exception ) when ( exception is IOException or UnauthorizedAccessException )
-		{
-			return null;
-		}
-	}
-
-	private static void Write( string directory, string file, byte[] bytecode )
-	{
-		try
-		{
-			Directory.CreateDirectory( directory );
-			var temporary = file + "." + Guid.NewGuid().ToString( "N" ) + ".tmp";
-			File.WriteAllBytes( temporary, bytecode );
-			File.Move( temporary, file, overwrite: true );
-		}
-		catch ( Exception exception ) when ( exception is IOException or UnauthorizedAccessException )
-		{
-			Log?.Trace( $"Shader cache not written ({exception.Message}); the shaders are compiled at every start." );
 		}
 	}
 }

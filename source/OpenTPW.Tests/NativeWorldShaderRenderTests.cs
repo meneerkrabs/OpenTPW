@@ -184,8 +184,15 @@ public class NativeWorldShaderRenderTests
 	[DataRow( "unlit.shader" )]
 	public void KeptDirect3D11BytecodeIsVeldridsOwnCompile( string shader )
 	{
-		if ( !OperatingSystem.IsWindows() )
+		if ( OperatingSystem.IsWindows() )
+			KeptBytecode( shader );
+		else
 			Assert.Inconclusive( "Direct3D 11 runs on Windows." );
+	}
+
+	[System.Runtime.Versioning.SupportedOSPlatform( "windows" )]
+	private static void KeptBytecode( string shader )
+	{
 		using var device = CreateDevice();
 		Log = new();
 		var cache = Directory.CreateTempSubdirectory( "opentpw-dxbc-" ).FullName;
@@ -198,20 +205,33 @@ public class NativeWorldShaderRenderTests
 				new ShaderDescription( ShaderStages.Vertex, program.Vertex, "main" ),
 				new ShaderDescription( ShaderStages.Fragment, program.Fragment, "main" ) );
 			var hlsl = Veldrid.SPIRV.SpirvCompilation.CompileVertexFragment( program.Vertex, program.Fragment, Veldrid.SPIRV.CrossCompileTarget.HLSL, new Veldrid.SPIRV.CrossCompileOptions() );
+			var vertexFile = Direct3D11Bytecode.CacheFile( cache, System.Text.Encoding.ASCII.GetBytes( hlsl.VertexShader ), "vs_5_0" )!;
+			byte[] vertex, fragment;
 			try
 			{
 				LoadProfile.Enable( true );
-				var vertex = Direct3D11Bytecode.Get( cache, hlsl.VertexShader, ShaderStages.Vertex );
-				var fragment = Direct3D11Bytecode.Get( cache, hlsl.FragmentShader, ShaderStages.Fragment );
+				vertex = Direct3D11Bytecode.Get( cache, hlsl.VertexShader, ShaderStages.Vertex, true, out var keptVertex );
+				fragment = Direct3D11Bytecode.Get( cache, hlsl.FragmentShader, ShaderStages.Fragment, true, out var keptFragment );
 				Assert.AreEqual( 2, LoadProfile.Counters()["hlsl compiles"] );
+				Assert.IsNull( keptVertex ?? keptFragment, "an empty cache compiles" );
 				CollectionAssert.AreEqual( VeldridBytecode( veldrid[0] ), vertex, "the kept vertex bytecode is Veldrid's own compile" );
 				CollectionAssert.AreEqual( VeldridBytecode( veldrid[1] ), fragment, "the kept fragment bytecode is Veldrid's own compile" );
 				LoadProfile.Enable( true );
-				CollectionAssert.AreEqual( vertex, Direct3D11Bytecode.Get( cache, hlsl.VertexShader, ShaderStages.Vertex ) );
-				CollectionAssert.AreEqual( fragment, Direct3D11Bytecode.Get( cache, hlsl.FragmentShader, ShaderStages.Fragment ) );
+				CollectionAssert.AreEqual( vertex, Direct3D11Bytecode.Get( cache, hlsl.VertexShader, ShaderStages.Vertex, true, out keptVertex ) );
+				CollectionAssert.AreEqual( fragment, Direct3D11Bytecode.Get( cache, hlsl.FragmentShader, ShaderStages.Fragment, true, out keptFragment ) );
+				Assert.AreEqual( vertexFile, keptVertex );
 				var counters = LoadProfile.Counters();
 				Assert.AreEqual( 2, counters["hlsl cache hits"] );
 				Assert.IsFalse( counters.ContainsKey( "hlsl compiles" ), "kept bytecode is not compiled again" );
+
+				// a file cut short after it was written fails its digest: compiled again and replaced
+				var whole = File.ReadAllBytes( vertexFile );
+				File.WriteAllBytes( vertexFile, whole.Take( whole.Length / 2 ).ToArray() );
+				LoadProfile.Enable( true );
+				CollectionAssert.AreEqual( vertex, Direct3D11Bytecode.Get( cache, hlsl.VertexShader, ShaderStages.Vertex, true, out keptVertex ) );
+				Assert.IsNull( keptVertex );
+				Assert.AreEqual( 1, LoadProfile.Counters()["hlsl compiles"] );
+				CollectionAssert.AreEqual( whole, File.ReadAllBytes( vertexFile ), "the damaged file is replaced" );
 			}
 			finally
 			{
@@ -225,9 +245,21 @@ public class NativeWorldShaderRenderTests
 			ShaderCompiler.SpirvCacheDirectory = cache;
 			var kept = Draw( device, shader, 0u, materialScratchBuffer: false, ShaderCompiler.CreateNative );
 			CollectionAssert.AreEqual( expected, kept, $"{shader} draws the same picture from the kept bytecode" );
+
+			// a whole file (its digest matches) that starts as a DXBC container of the right size but is not what the compiler made: the device refuses it,
+			// CreateNative removes the kept files, compiles the HLSL again and draws the same picture, and the file holds the compiler's bytecode again
+			var garbage = (byte[])vertex.Clone();
+			Array.Fill( garbage, (byte)0x5A, 32, garbage.Length - 32 );
+			ShaderCache.Write( cache, vertexFile, garbage );
+			LoadProfile.Enable( true );
+			var recovered = Draw( device, shader, 0u, materialScratchBuffer: false, ShaderCompiler.CreateNative );
+			Assert.AreEqual( 1, LoadProfile.Counters()["hlsl cache refused"] );
+			CollectionAssert.AreEqual( expected, recovered, $"{shader} draws the same picture after its refused bytecode was compiled again" );
+			CollectionAssert.AreEqual( vertex, ShaderCache.Read( vertexFile, _ => true ), "the refused file holds the compiler's bytecode again" );
 		}
 		finally
 		{
+			LoadProfile.Enable( false );
 			ShaderCompiler.SpirvCacheDirectory = previousCache;
 			Directory.Delete( cache, true );
 		}

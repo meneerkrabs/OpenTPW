@@ -209,21 +209,46 @@ internal static class ShaderCompiler
 		if ( factory.BackendType == GraphicsBackend.Direct3D11 && OperatingSystem.IsWindows() && SpirvCacheDirectory is { } directory )
 		{
 			var hlsl = SpirvCompilation.CompileVertexFragment( vertexSpirv, fragmentSpirv, CrossCompileTarget.HLSL, new CrossCompileOptions() );
-			var vertex = factory.CreateShader( new ShaderDescription( ShaderStages.Vertex, Direct3D11Bytecode.Get( directory, hlsl.VertexShader, ShaderStages.Vertex ), "main" ) );
+			var kept = new List<string>();
 			try
 			{
-				var fragment = factory.CreateShader( new ShaderDescription( ShaderStages.Fragment, Direct3D11Bytecode.Get( directory, hlsl.FragmentShader, ShaderStages.Fragment ), "main" ) );
-				return [vertex, fragment];
+				return CreateDirect3D11( factory, directory, hlsl, kept );
 			}
-			catch
+			catch ( Exception exception ) when ( exception is not OutOfMemoryException && kept.Count > 0 )
 			{
-				vertex.Dispose();
-				throw;
+				// kept bytecode the device refuses (a whole file that is not what the compiler made): forget it and compile the HLSL again
+				Log?.Trace( $"Shader cache: kept Direct3D 11 bytecode was not usable ({exception.Message}); compiled again." );
+				LoadProfile.Count( "hlsl cache refused" );
+				foreach ( var file in kept )
+					ShaderCache.Delete( file );
+				return CreateDirect3D11( factory, directory, hlsl, kept: null );
 			}
 		}
 		return factory.CreateFromSpirv(
 			new ShaderDescription( ShaderStages.Vertex, vertexSpirv, "main" ),
 			new ShaderDescription( ShaderStages.Fragment, fragmentSpirv, "main" ) );
+	}
+
+	[System.Runtime.Versioning.SupportedOSPlatform( "windows" )]
+	/// <summary>The program's two shaders from kept or compiled bytecode; <paramref name="kept"/> collects the files read (null: read none, compile both).</summary>
+	private static Veldrid.Shader[] CreateDirect3D11( ResourceFactory factory, string directory, VertexFragmentCompilationResult hlsl, List<string>? kept )
+	{
+		var vertexBytecode = Direct3D11Bytecode.Get( directory, hlsl.VertexShader, ShaderStages.Vertex, kept != null, out var keptVertex );
+		var fragmentBytecode = Direct3D11Bytecode.Get( directory, hlsl.FragmentShader, ShaderStages.Fragment, kept != null, out var keptFragment );
+		foreach ( var file in new[] { keptVertex, keptFragment } )
+			if ( file != null )
+				kept!.Add( file );
+		var vertex = factory.CreateShader( new ShaderDescription( ShaderStages.Vertex, vertexBytecode, "main" ) );
+		try
+		{
+			var fragment = factory.CreateShader( new ShaderDescription( ShaderStages.Fragment, fragmentBytecode, "main" ) );
+			return [vertex, fragment];
+		}
+		catch
+		{
+			vertex.Dispose();
+			throw;
+		}
 	}
 
 	/// <summary>

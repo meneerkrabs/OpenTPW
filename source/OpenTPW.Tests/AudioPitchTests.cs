@@ -134,7 +134,7 @@ public class AudioPitchTests
 	}
 
 	[TestMethod]
-	public void RangeExitStopsSamplesButRetainsTheLoopOwner()
+	public void RangeExitReleasesSamplesButRetainsCatalogueOwners()
 	{
 		// [BIN:TPW-EXE:0x6bca10] out of range without the any-distance flag 0x200: the sample is stopped (0x6bca70, message 3)
 		var far = new Vector3( 1000, 1000, 0 );
@@ -147,7 +147,8 @@ public class AudioPitchTests
 		var (near, _) = Category( 0, Sound( 0, 0 ) );
 		var close = system.PlayAt( near, 5, AudioChannel.Effects, Vector3.Zero, 10 )!;
 		system.Pump();
-		Assert.IsTrue( stopped.IsFinished, "out of range: stopped" );
+		Assert.IsFalse( stopped.IsFinished, "out of range: finite logical owner retained until expiry" );
+		Assert.IsFalse( stopped.HasOutput, "out of range: physical output released" );
 		Assert.IsFalse( heard.IsFinished, "flag 0x200: heard at any distance" );
 		Assert.IsTrue( loop.Loops );
 		Assert.IsFalse( loop.IsFinished, "a loop retains its logical owner for re-admission" );

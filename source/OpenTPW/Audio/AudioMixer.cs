@@ -23,7 +23,7 @@ public sealed class AudioVoice
 	private readonly int channels;
 	private double step;
 	private readonly int outputRate;
-	// A catalogue loop keeps its public control handle while an out-of-range output is released.
+	// A catalogue sample keeps its public control handle while an out-of-range output is released.
 	// Re-admission creates a fresh cursor, rather than seeking or advancing the old output silently.
 	private sealed class SampleOutput { internal double Position; }
 	private SampleOutput? output = new();
@@ -79,18 +79,18 @@ public sealed class AudioVoice
 		output = null;
 	}
 
-	/// <summary>Releases a loop's output without completing its logical owner or invoking a successor callback.</summary>
-	internal bool ReleaseLoopOutput()
+	/// <summary>Releases a sample's output without completing its logical owner or invoking a successor callback.</summary>
+	internal bool ReleaseSampleOutput()
 	{
-		if ( !Loops || !HasOutput ) return false;
+		if ( !HasOutput ) return false;
 		output = null;
 		return true;
 	}
 
-	/// <summary>Creates a fresh output for an admitted loop; an explicit Stop is terminal.</summary>
-	internal void RestartLoopOutput()
+	/// <summary>Creates a fresh output for an admitted sample; an explicit Stop is terminal.</summary>
+	internal void RestartSampleOutput()
 	{
-		if ( !Loops || IsFinished || output != null ) return;
+		if ( IsFinished || output != null ) return;
 		output = new SampleOutput();
 		StartOutputFrame = -1;
 		BufferOffset = 0;

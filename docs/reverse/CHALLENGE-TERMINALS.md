@@ -21,10 +21,15 @@ individual row instances independently of replacement identity. Reading, deletin
 duplicate never closes or deletes another.
 
 Progress refresh/open/close/delete behavior is unchanged. Offers keep their wording, buttons, ordinary
-message ownership and repost behavior. Generic messages still leave on opening and retain immediate
-oldest-item eviction. That existing policy can release a terminal, including a hidden one, before its
-own delayed callback. This is an explicit UI-025 boundary, not original tube parity. The host limit remains
-five; the traced tube's ten reusable slots are separate from the advisor queue.
+message ownership and repost behavior. Generic messages still leave on opening. All new rows now
+share the traced ten-slot limit and refuse full occupancy without eviction, insertion sound or help.
+The configured DWORD at `0x750610` is ten; `0x48EC40` scans ten reusable records independently of the
+advisor queue. Hidden rows remain occupied until their final callback (`0x48DC58`). Reuse appends
+after surviving rows (`0x4A1278` / `0x65F447`), represented by the host's ordered lists, not a widget pool.
+`PostGameMessage` and `KeepChallengeOfferPosted` report actual insertion. A full tube leaves an absent
+offer awaiting its answer, and an ordinary later update retries after space opens; no decline or queue
+is invented. `ApplyChallengePresentation` still reports a recognized processed transition, not admission.
+This bounded capacity/admission correction does not close UI-025 or claim layout, timer or save parity.
 
 ## Clock and terminal states
 
@@ -106,6 +111,6 @@ Deterministic synthetic tests cover all terminal types, formatting and missing l
 replacement, full/hidden occupancy, duplicate-instance selection, read/close/delete differences,
 25/30-second and 500 ms boundaries, queue/read races, resume restart/idempotence, stopped pre-expiry,
 delayed delivery, the named screen mapping, speed controls, read-only action guards, new-HUD load isolation,
-follow-up ordering, generic eviction, full-screen finale/captured-input pumping, and the explicit long-clock wrap boundary. The existing progress,
+follow-up ordering, generic refusal and slot reuse, full-screen finale/captured-input pumping, and the explicit long-clock wrap boundary. The existing progress,
 message/audio, presentation-state and challenge suites remain applicable. No original execution or
 runtime visual validation is claimed; the progress fragment records checks actually run.

@@ -66,20 +66,25 @@ public class HudVideoRoundTests
 	}
 
 	[TestMethod]
-	public void TheMessageTubeHoldsFiveMessagesAndOpeningOrDeletingRemovesThem()
+	public void TheMessageTubeAdmitsTenRefusesEleventhAndReusesReleasedSlotsAtTheTail()
 	{
 		var hud = Hud();
-		for ( var index = 0; index < 7; index++ )
-			hud.PostGameMessage( $"m{index}" );
-		Assert.AreEqual( ParkHud.MessageTubeCapacity, hud.PendingMessages.Count );
-		Assert.AreEqual( "m2", hud.PendingMessages[0], "the oldest messages go when the tube is full" );
+		Assert.AreEqual( 10, ParkHud.MessageTubeCapacity );
+		Assert.IsFalse( hud.PostGameMessage( "  " ) );
+		for ( var index = 0; index < 10; index++ )
+			Assert.IsTrue( hud.PostGameMessage( $"m{index}" ) );
+		Assert.IsFalse( hud.PostGameMessage( "eleventh" ) );
+		CollectionAssert.AreEqual( Enumerable.Range( 0, 10 ).Select( i => $"m{i}" ).ToArray(), hud.PendingMessages.ToArray() );
 		Assert.IsTrue( hud.OpenPendingMessage( 1 ) );
-		Assert.AreEqual( "m3", hud.OpenedMessage, "a left click opens that message" );
-		Assert.AreEqual( 4, hud.PendingMessages.Count, "and it leaves the tube" );
+		Assert.AreEqual( "m1", hud.OpenedMessage );
+		Assert.AreEqual( 9, hud.PendingMessages.Count );
 		Assert.IsTrue( hud.DeletePendingMessage( 0 ) );
-		Assert.AreEqual( 3, hud.PendingMessages.Count );
-		Assert.AreEqual( "m3", hud.OpenedMessage, "deleting a pending message leaves the open one alone" );
-		Assert.IsFalse( hud.DeletePendingMessage( 9 ) );
+		Assert.AreEqual( 8, hud.PendingMessages.Count );
+		Assert.AreEqual( "m1", hud.OpenedMessage, "deleting a pending message leaves the open one alone" );
+		Assert.IsTrue( hud.PostGameMessage( "reuse-first" ) );
+		Assert.IsTrue( hud.PostGameMessage( "reuse-second" ) );
+		CollectionAssert.AreEqual( Enumerable.Range( 2, 8 ).Select( i => $"m{i}" ).Concat( new[] { "reuse-first", "reuse-second" } ).ToArray(), hud.PendingMessages.ToArray() );
+		Assert.IsFalse( hud.DeletePendingMessage( 10 ) );
 		hud.CloseMessagePanel();
 		Assert.IsNull( hud.OpenedMessage );
 	}
@@ -133,14 +138,34 @@ public class HudVideoRoundTests
 		Assert.IsFalse( hud.KeepChallengeOfferPosted( park ), "the open panel holds it" );
 		hud.CloseMessagePanel();
 		Assert.IsTrue( hud.KeepChallengeOfferPosted( park ) );
-		// pushed out of a full tube
+		// Incoming ordinary messages cannot push the waiting offer out.
 		for ( var index = 0; index < ParkHud.MessageTubeCapacity; index++ )
 			hud.PostGameMessage( $"m{index}" );
-		Assert.IsTrue( hud.KeepChallengeOfferPosted( park ) );
-		Assert.IsTrue( hud.OpenPendingMessage( hud.PendingMessages.Count - 1 ) );
+		Assert.IsFalse( hud.KeepChallengeOfferPosted( park ) );
+		Assert.IsTrue( hud.OpenPendingMessage( 0 ) );
 		hud.OpenedActions[0].Clicked();
 		Assert.IsTrue( park.Objectives.Current!.Accepted );
 		Assert.IsFalse( hud.KeepChallengeOfferPosted( park ), "an answered offer is not posted again" );
+	}
+
+	[TestMethod]
+	public void AWaitingOfferRetriesAfterAFullTubeFreesASlotWithoutDeclining()
+	{
+		var hud = Hud();
+		var park = EconomyTestData.Park(); park.OpenPark();
+		park.AdvanceDays( 541 );
+		var offer = park.Objectives.Current;
+		for ( var i = 0; i < 10; i++ ) Assert.IsTrue( hud.PostGameMessage( "ordinary-" + i ) );
+		Assert.IsFalse( hud.KeepChallengeOfferPosted( park ) );
+		Assert.AreSame( offer, park.Objectives.Current );
+		Assert.IsFalse( park.Objectives.Current!.Accepted );
+		Assert.AreEqual( 10, hud.PendingMessages.Count );
+		Assert.IsTrue( hud.DeletePendingMessage( 3 ) );
+		Assert.IsTrue( hud.KeepChallengeOfferPosted( park ) );
+		Assert.IsFalse( hud.KeepChallengeOfferPosted( park ), "the later update must not duplicate the offer" );
+		Assert.AreEqual( 10, hud.PendingMessages.Count );
+		Assert.IsTrue( hud.OpenPendingMessage( 9 ) );
+		CollectionAssert.AreEqual( new[] { GameMessageKind.Accept, GameMessageKind.Decline }, hud.OpenedActions.Select( action => action.Kind ).ToArray() );
 	}
 
 	[TestMethod]

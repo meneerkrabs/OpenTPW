@@ -176,13 +176,12 @@ public class PoolBridgeToolTests
 	}
 
 	[TestMethod]
-	public void BridgeRowsAreDistinctPoolRowsAndHaveLabelsInEveryLanguage()
+	public void TheBridgeRowIsAPoolRowAndHasLabelsInEveryLanguageAndTheRemovalRowIsGone()
 	{
-		var rows = new[] { ParkHud.PoolBridgeRow, ParkHud.PoolBridgeEraseRow };
-		foreach ( var row in rows ) Assert.IsTrue( ParkHud.IsPoolRow( row ) );
-		Assert.AreNotEqual( rows[0].InfoId, rows[1].InfoId );
+		Assert.IsTrue( ParkHud.IsPoolRow( ParkHud.PoolBridgeRow ) );
+		Assert.IsFalse( ParkHud.IsPoolRow( new BuildItem( "pool:bridge-erase", -23, BuildCategory.Features, 0, 0, null, Array.Empty<string>() ) ), "the bridge removal row is gone: Backspace removes a bridge" );
 		foreach ( var language in SupplementaryStrings.SupportedLanguages )
-			foreach ( var key in new[] { OpenTpwText.PoolBridge, OpenTpwText.PoolBridgeErase, OpenTpwText.PoolBridgeHelp, OpenTpwText.PoolBridgeEraseHelp, OpenTpwText.PoolBridgeNeedsWater } )
+			foreach ( var key in new[] { OpenTpwText.PoolBridge, OpenTpwText.PoolBridgeHelp, OpenTpwText.PoolBridgeNeedsWater } )
 				Assert.IsFalse( string.IsNullOrWhiteSpace( SupplementaryStrings.Get( key, language ) ) );
 		foreach ( var language in SupplementaryStrings.SupportedLanguages )
 			foreach ( var key in Enum.GetValues<OpenTpwText>().Where( key => key.ToString().StartsWith( "PoolBridge" ) ) )

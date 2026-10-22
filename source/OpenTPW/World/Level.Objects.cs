@@ -918,20 +918,23 @@ public partial class Level
 	internal Vector3 CellSoundPosition( int x, int y ) => GameAudio.CellSoundPosition( x, y );
 
 	/// <summary>What Backspace with no build tool on takes off a cell (<see cref="Level.BacktrackAt"/>).</summary>
-	internal enum BacktrackTarget { None, Path, Queue }
+	internal enum BacktrackTarget { None, Path, Queue, PoolBridge, PoolWater }
 
 	/// <summary>
-	/// Backspace's target at (x, y): a path cell (the original's backtrack), a queue cell (OpenTPW's extension), else none.
+	/// Backspace's target at (x, y): a path cell (the original's backtrack), a queue cell, a pool bridge or pool water (OpenTPW's extensions), else none.
+	/// A pool bridge wins over the water it stands on (the water under a bridge is protected anyway). The target depends only on the cell map and the bridges, so every peer finds the same one.
 	/// </summary>
-	internal static BacktrackTarget BacktrackTargetAt( ParkCellMap cells, int x, int y ) => cells.TypeAt( x, y ) switch
-	{
-		ParkCellType.Path => BacktrackTarget.Path,
-		ParkCellType.Queue => BacktrackTarget.Queue,
-		_ => BacktrackTarget.None
-	};
+	internal static BacktrackTarget BacktrackTargetAt( ParkCellMap cells, int x, int y, PoolBridgeWorld? bridges = null ) =>
+		bridges?.Covers( x, y ) == true ? BacktrackTarget.PoolBridge : cells.TypeAt( x, y ) switch
+		{
+			ParkCellType.Path => BacktrackTarget.Path,
+			ParkCellType.Queue => BacktrackTarget.Queue,
+			ParkCellType.PoolWater => BacktrackTarget.PoolWater,
+			_ => BacktrackTarget.None
+		};
 
 	/// <summary>
-	/// Backspace in the park view with no build tool on (<see cref="GameAudio.BacktrackEvent"/>): over a path cell it plays the
+	/// Backspace in the park view with no build tool on (<see cref="GameAudio.BacktrackEvent"/>): over a pool bridge it takes the bridge down and over a pool water cell it erases that cell (the pools extension's, below); over a path cell it plays the
 	/// backtrack sound, then takes one placement off that cell, which goes only when it was laid once; the sound plays even
 	/// when the cell stays (a fixed or a re-laid cell). Over a queue cell it plays the same sound and removes that cell and
 	/// every cell behind it, with the remove tool's refund (<see cref="RemoveQueueCell"/>). False on any other cell, so the
@@ -939,13 +942,42 @@ public partial class Level
 	/// </summary>
 	// [BIN:TPW-EXE:0x40BE8B backtrack click] the key handler clicks the cell in mode 0x32, whose one-cell LayLine (0x536100) calls SetCell(0x32, 0, 1) and so ClearCell 0x5367A0 with (0, 1): the counted removal, not the forced one
 	// [EXT:queue-backtrack] tp.exe's key handler backtracks only a type-1 (path) cell: it tests the tile's +8 through 0x536310 at 0x40BE3C and does nothing over a queue cell, whose cells the original takes back only with Backspace inside the queue tool (Back 0x52FE50, the segment just laid); OpenTPW also takes a queue back from the cursor, as the remove tool does (QueuePaths.RemoveFrom, so the queue stays one line from the ride)
-	public bool BacktrackAt( int x, int y )
+	public bool BacktrackAt( int x, int y ) => Backtrack( x, y ).Accepted;
+
+	/// <summary>
+	/// <see cref="BacktrackAt"/> with its verdict: a refused pool target answers with the pool's own refusal (<see cref="PoolBridgeResult"/> or <see cref="PoolBuildResult"/>) as the value, so the HUD can say why.
+	/// </summary>
+	// [EXT:pools-bridges] Backspace over a pool bridge takes the bridge down with the rules and the refund of the removal (PoolBridgeWorld.RemoveAt): not while somebody is on it
+	// [EXT:pools-tool] Backspace over a pool water cell erases that cell with the erase rules and the refund of the pool tool (PoolBuilder.Erase): not with swimmers, a changing room's access, an extra or attraction that needs it, or a bridge over it; the original has no pools
+	internal ParkCommandResult Backtrack( int x, int y )
 	{
 		if ( IsReadOnlyVisit || Paths == null )
-			return false;
-		var target = BacktrackTargetAt( Paths.Cells, x, y );
+			return ParkCommandResult.Rejected( "Nothing to take back." );
+		var target = BacktrackTargetAt( Paths.Cells, x, y, PoolBridges );
 		if ( target == BacktrackTarget.None )
-			return false;
+			return ParkCommandResult.Rejected( "Nothing to take back here." );
+		if ( target == BacktrackTarget.PoolBridge )
+		{
+			if ( PoolBridges is not { } bridges )
+				return ParkCommandResult.Rejected( "The park builds no pools." );
+			var bridge = bridges.RemoveAt( x, y );
+			if ( bridge != PoolBridgeResult.Ok )
+				return new ParkCommandResult( false, $"The bridge is not removed: {bridge}.", bridge );
+			GameAudio.PlayUiAt( GameAudio.BacktrackEvent, CellSoundPosition( x, y ) );
+			LastActionMessage = "Removed a pool bridge.";
+			return ParkCommandResult.Ok( bridge );
+		}
+		if ( target == BacktrackTarget.PoolWater )
+		{
+			if ( PoolBuilder is not { } builder )
+				return ParkCommandResult.Rejected( "The park builds no pools." );
+			var water = builder.Erase( x, y );
+			if ( water != PoolBuildResult.Ok )
+				return new ParkCommandResult( false, $"The pool cell is not erased: {water}.", water );
+			GameAudio.PlayUiAt( GameAudio.BacktrackEvent, CellSoundPosition( x, y ) );
+			LastActionMessage = "Removed a pool cell.";
+			return ParkCommandResult.Ok( water );
+		}
 		GameAudio.PlayUiAt( GameAudio.BacktrackEvent, CellSoundPosition( x, y ) );
 		if ( target == BacktrackTarget.Path )
 		{
@@ -954,7 +986,7 @@ public partial class Level
 		}
 		else if ( RemoveQueueCell( x, y ) is var removed and > 0 )
 			LastActionMessage = removed == 1 ? "Removed a queue cell." : $"Removed {removed} queue cells.";
-		return true;
+		return ParkCommandResult.Ok();
 	}
 
 	/// <summary>

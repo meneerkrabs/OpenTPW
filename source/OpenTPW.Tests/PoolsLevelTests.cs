@@ -434,4 +434,81 @@ public class PoolsLevelTests
 			return 0;
 		} );
 	}
+
+	// ---- Backspace over pool water (docs/POOLS.md, "Removing with Backspace") ---------------------------------------------
+
+	private ParkCommandResult Backspace( int x, int y ) => level.Commands.Issue( new BacktrackCommand( x, y ) );
+
+	[TestMethod]
+	public void BackspaceOverPoolWaterErasesThatOneCellWithTheEraseToolsRefundAndTheRiverFlagGoes()
+	{
+		With( true, () =>
+		{
+			Assert.AreEqual( 9, level.PoolBuilder!.PaintCells( PoolBuilder.Rectangle( (12, 12), (14, 14) ), river: true ).Cells.Count );
+			Assert.IsTrue( Cells.FlagsAt( 13, 13 ).HasFlag( ParkCellFlags.PoolRiver ), "a river cell" );
+			Assert.AreEqual( Level.BacktrackTarget.PoolWater, Level.BacktrackTargetAt( Cells, 13, 13 ) );
+			var before = economy.Balance;
+			var result = Backspace( 13, 13 );
+			Assert.IsTrue( result.Accepted, result.Reason );
+			Assert.AreEqual( ParkCellType.Empty, Cells.TypeAt( 13, 13 ), "that cell is empty again" );
+			Assert.AreEqual( 0, (int)(Cells.FlagsAt( 13, 13 ) & ParkCellFlags.PoolRiver ), "its river flag went with it" );
+			Assert.AreEqual( before + ParkEconomy.PoolCellCost, economy.Balance, "the erase tool's refund of 75" );
+			Assert.AreEqual( 8, Enumerable.Range( 12, 3 ).SelectMany( x => Enumerable.Range( 12, 3 ).Select( y => Cells.TypeAt( x, y ) ) ).Count( type => type == ParkCellType.PoolWater ), "the neighbours stay" );
+			Assert.IsFalse( Backspace( 13, 13 ).Accepted, "the key does nothing on the empty cell" );
+			Assert.AreEqual( Level.BacktrackTarget.None, Level.BacktrackTargetAt( Cells, 13, 13 ) );
+			return 0;
+		} );
+	}
+
+	[TestMethod]
+	public void BackspaceOverPoolWaterIsRefusedForSwimmersTheChangingRoomsAccessAndAnExtrasWater()
+	{
+		MakeChangingRoom();
+		With( true, () =>
+		{
+			var before = economy.Balance;
+			var access = Backspace( 12, 12 );
+			Assert.IsFalse( access.Accepted );
+			Assert.AreEqual( PoolBuildResult.ChangingRoomAccess, access.Value );
+			Assert.AreEqual( ParkCellTypes.PoolWater, Cells.RawTypeAt( 12, 12 ) );
+			Assert.AreEqual( 1, level.Guests!.DebugStartSwimmers( one.Visitors, 1 ) );
+			var under = level.Guests.Guests.Single( guest => guest.IsSwimming ).Cell;
+			var swimmer = Backspace( under.X, under.Y );
+			Assert.AreEqual( PoolBuildResult.Swimmers, swimmer.Value );
+			Assert.IsFalse( swimmer.Accepted );
+			Assert.AreEqual( ParkCellTypes.PoolWater, Cells.RawTypeAt( under.X, under.Y ) );
+			Assert.AreEqual( before, economy.Balance, "a refused cell refunds nothing" );
+			return 0;
+		} );
+	}
+
+	[TestMethod]
+	public void BackspaceOverPoolWaterKeepsTheWaterAnExtraNeeds()
+	{
+		With( true, () =>
+		{
+			Assert.AreEqual( 12, level.PoolBuilder!.PaintCells( PoolBuilder.Rectangle( (4, 1), (7, 3) ) ).Cells.Count );
+			var lounger = level.Objects.TryPlace( ExtraEntry( 66004, PoolExtraKind.Lounger, "**" ), 5, 4, 180, out _ );
+			Assert.IsNotNull( lounger, "a lounger beside the pool" );
+			var result = Backspace( 5, 3 );
+			Assert.IsFalse( result.Accepted );
+			Assert.AreEqual( PoolBuildResult.ExtraNeedsWater, result.Value );
+			Assert.AreEqual( ParkCellTypes.PoolWater, Cells.RawTypeAt( 5, 3 ) );
+			Assert.IsTrue( Backspace( 7, 3 ).Accepted, "control: a corner no extra stands beside" );
+			return 0;
+		} );
+	}
+
+	[TestMethod]
+	public void BackspaceOverPoolWaterDoesNothingWithTheExtensionOff()
+	{
+		Assert.AreEqual( 9, With( true, () => level.PoolBuilder!.PaintCells( PoolBuilder.Rectangle( (12, 12), (14, 14) ) ) ).Cells.Count );
+		With( false, () =>
+		{
+			var result = Backspace( 13, 13 );
+			Assert.IsFalse( result.Accepted );
+			Assert.AreEqual( ParkCellTypes.PoolWater, Cells.RawTypeAt( 13, 13 ) );
+			return 0;
+		} );
+	}
 }

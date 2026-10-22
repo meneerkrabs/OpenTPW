@@ -107,7 +107,7 @@ public partial class Level
 		UndoLineCommand undo => ExecuteUndoLine( undo ),
 		RemovePathCellCommand remove => RemovePathCell( remove.X, remove.Y ) is var result && result == CellBuildResult.Ok ? ParkCommandResult.Ok( result ) : new ParkCommandResult( false, $"No path cell removed: {result}.", result ),
 		RemoveQueueCellCommand remove => RemoveQueueCell( remove.X, remove.Y ) is var count and > 0 ? ParkCommandResult.Ok( count ) : ParkCommandResult.Rejected( "No queue cell here." ),
-		BacktrackCommand backtrack => Outcome( BacktrackAt( backtrack.X, backtrack.Y ) ),
+		BacktrackCommand backtrack => Backtrack( backtrack.X, backtrack.Y ),
 		EditQueueCommand edit => ExecuteEditQueue( edit ),
 		PlacePrototypeCommand prototype => Outcome( PlaceRide( new Vector3( prototype.X, prototype.Y, prototype.Z ) ) ),
 		RemovePrototypeCommand => ExecuteRemovePrototype(),

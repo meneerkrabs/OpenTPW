@@ -1089,7 +1089,7 @@ public sealed partial class ParkHud
 		if ( !tool.IsActive )
 		{
 			// Backspace over a path or queue cell with no tool on: the backtrack sound, then that cell is removed (GameAudio.BacktrackEvent; a queue is [EXT:queue-backtrack]).
-			if ( inPark && input.Backspaces > 0 && Stack.Screens.Count == 1 && !Input.TextEntryActive && Camera.Mode is ParkCameraMode && level.Commands.Issue( new BacktrackCommand( cursorX, cursorY ) ).Accepted )
+			if ( inPark && input.Backspaces > 0 && Stack.Screens.Count == 1 && !Input.TextEntryActive && Camera.Mode is ParkCameraMode && BacktrackKey() )
 				return true;
 			if ( !inPark || !input.LeftPressed || level.IsReadOnlyVisit || level.Objects.FindAt( cursorX, cursorY ) != null )
 				return false;

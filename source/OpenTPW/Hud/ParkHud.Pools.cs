@@ -5,7 +5,7 @@ namespace OpenTPW.Hud;
 /// <summary>
 /// The HUD side of the pool tool of the <c>opentpw.pools</c> extension (docs/POOLS.md). The original HUD has no pool entry, so the extension adds pool, slide, river and bridge rows to
 /// the buy window's Miscellaneous list (beside Buy Land and Clear Land) while it is on: "Pool water" arms the paint mode and "Remove pool water" the erase mode. Press and drag in the
-/// park to paint or erase; bridges use a single click. Right click or Escape leaves.
+/// park to paint or erase; bridges use a single click. Backspace with no tool on removes the pool bridge or the one pool water cell under the cursor (<see cref="Level.BacktrackAt"/>). Right click or Escape leaves.
 /// </summary>
 // [EXT:pools-ui] OpenTPW's own rows and texts; the original game has no pools
 public sealed partial class ParkHud
@@ -23,19 +23,17 @@ public sealed partial class ParkHud
 
 	/// <summary>[EXT:pools-bridges] The Miscellaneous list's single pool bridge row (row id -21). One bridge is built in every direction: it turns with the blueprint keys (<see cref="PoolTool.RotateBridge"/>). Its buy-window preview is the bridge's own Blender mesh (<see cref="PoolBridgePreview"/>).</summary>
 	public static readonly BuildItem PoolBridgeRow = new( "pool:bridge", -21, BuildCategory.Features, 0, PoolBridgeWorld.Price, null, Array.Empty<string>() );
-	public static readonly BuildItem PoolBridgeEraseRow = new( "pool:bridge-erase", -23, BuildCategory.Features, 0, 0, null, Array.Empty<string>() );
 
-	private static bool IsPoolBridgeRow( BuildItem item ) => item.InfoId is -21 or -23;
+	private static bool IsPoolBridgeRow( BuildItem item ) => item.InfoId == PoolBridgeRow.InfoId;
 
 	/// <summary>Whether <paramref name="item"/> is one of the pool rows.</summary>
-	public static bool IsPoolRow( BuildItem item ) => item.InfoId is -3 or -4 or -5 or -20 or -21 or -23 && item.Entry == null && item.Category == BuildCategory.Features;
+	public static bool IsPoolRow( BuildItem item ) => item.InfoId is -3 or -4 or -5 or -20 or -21 && item.Entry == null && item.Category == BuildCategory.Features;
 
 	private string PoolRowName( BuildItem item ) => strings.Extra( item.InfoId == PoolBridgeRow.InfoId ? OpenTpwText.PoolBridge
-		: item.InfoId == PoolBridgeEraseRow.InfoId ? OpenTpwText.PoolBridgeErase
 		: item.InfoId == PoolPaintRow.InfoId ? OpenTpwText.PoolRowPaint : item.InfoId == PoolRiverRow.InfoId ? OpenTpwText.PoolRowRiver
 		: item.InfoId == PoolSlideRow.InfoId ? OpenTpwText.PoolRowSlide : OpenTpwText.PoolRowErase );
 
-	private long PoolRowPrice( BuildItem item ) => IsPoolBridgeRow( item ) ? (item.InfoId == PoolBridgeEraseRow.InfoId ? 0 : PoolBridgeWorld.Price) : item.InfoId == PoolSlideRow.InfoId ? (level.Park?.Economy.CellCost( CellPurchase.SlidePiece ) ?? 0)
+	private long PoolRowPrice( BuildItem item ) => IsPoolBridgeRow( item ) ? PoolBridgeWorld.Price : item.InfoId == PoolSlideRow.InfoId ? (level.Park?.Economy.CellCost( CellPurchase.SlidePiece ) ?? 0)
 		: item.InfoId != PoolEraseRow.InfoId ? (level.Park?.Economy.CellCost( CellPurchase.Pool ) ?? 0) : 0;
 
 	private bool IsPoolRowAvailable() => FeatureGates.Pools && !level.IsReadOnlyVisit && level.PoolTool != null;
@@ -68,7 +66,7 @@ public sealed partial class ParkHud
 			}
 			return;
 		}
-		var erase = item.InfoId == PoolEraseRow.InfoId || item.InfoId == PoolBridgeEraseRow.InfoId;
+		var erase = item.InfoId == PoolEraseRow.InfoId;
 		if ( !tool.IsActive )
 		{
 			level.EndBuildTools();
@@ -77,10 +75,10 @@ public sealed partial class ParkHud
 		}
 		var river = item.InfoId == PoolRiverRow.InfoId;
 		var bridge = IsPoolBridgeRow( item );
-		if ( !(bridge ? tool.BeginBridge( 1, erase ) : tool.Begin( erase, river )) )
+		if ( !(bridge ? tool.BeginBridge( 1 ) : tool.Begin( erase, river )) )
 			return;
 		CloseBuyWindow();
-		PostMessage( strings.Extra( bridge ? (erase ? OpenTpwText.PoolBridgeEraseHelp : OpenTpwText.PoolBridgeHelp) : erase ? OpenTpwText.PoolEraseHint : river ? OpenTpwText.PoolRiverHint : OpenTpwText.PoolPaintHint ) );
+		PostMessage( strings.Extra( bridge ? OpenTpwText.PoolBridgeHelp : erase ? OpenTpwText.PoolEraseHint : river ? OpenTpwText.PoolRiverHint : OpenTpwText.PoolPaintHint ) );
 	}
 
 	/// <summary>
@@ -110,7 +108,7 @@ public sealed partial class ParkHud
 		}
 		tool.Hover( cursorX, cursorY );
 		// a bridge the pointer cannot place over a pool says why instead of the help, so the player sees the reason before clicking (the blueprint marks the cell to blame)
-		context.HoverHelp = strings.Extra( tool.ShowsBridgeReason && tool.HoverBridgeResult is { } hoverRefusal ? BridgeRefusalText( hoverRefusal ) : tool.IsBridge ? (tool.IsErasing ? OpenTpwText.PoolBridgeEraseHelp : OpenTpwText.PoolBridgeHelp) : tool.IsSlide ? OpenTpwText.PoolSlideHelp : tool.IsErasing ? OpenTpwText.PoolEraseHelp : tool.IsRiver ? OpenTpwText.PoolRiverHelp : OpenTpwText.PoolPaintHelp );
+		context.HoverHelp = strings.Extra( tool.ShowsBridgeReason && tool.HoverBridgeResult is { } hoverRefusal ? BridgeRefusalText( hoverRefusal ) : tool.IsBridge ? OpenTpwText.PoolBridgeHelp : tool.IsSlide ? OpenTpwText.PoolSlideHelp : tool.IsErasing ? OpenTpwText.PoolEraseHelp : tool.IsRiver ? OpenTpwText.PoolRiverHelp : OpenTpwText.PoolPaintHelp );
 		if ( input.LeftPressed )
 		{
 			refusalClick.Press();
@@ -158,9 +156,35 @@ public sealed partial class ParkHud
 			PostMessage( strings.Extra( BridgeRefusalText( bridgeRefusal ) ) );
 			return;
 		}
-		PostMessage( strings.Extra( refusal.Reason switch
+		PostMessage( strings.Extra( PoolRefusalText( refusal.Reason, tool.LastSlideRefusal ) ) );
+	}
+
+	/// <summary>
+	/// Backspace with no tool on (<see cref="BacktrackCommand"/>). True when the key did something: it took a cell or a pool bridge off, or a pool target was refused, which says why with the error sound. False over any other cell, so the key does nothing there.
+	/// </summary>
+	// [EXT:pools-bridges] [EXT:pools-tool] the refusals of removing a bridge or a water cell with Backspace read as the pool tool's own (BridgeRefusalText, PoolRefusalText)
+	private bool BacktrackKey()
+	{
+		var result = level.Commands.Issue( new BacktrackCommand( cursorX, cursorY ) );
+		if ( result.Accepted )
+			return true;
+		OpenTpwText? why = result.Value switch
 		{
-			PoolBuildResult.SlideRefused => tool.LastSlideRefusal switch
+			PoolBridgeResult bridge => BridgeRefusalText( bridge ),
+			PoolBuildResult water => PoolRefusalText( water ),
+			_ => null
+		};
+		if ( why is not { } text )
+			return false;
+		GameAudio.PlayUiAt( GameAudio.ErrorEvent, level.CellSoundPosition( cursorX, cursorY ) );
+		PostMessage( strings.Extra( text ) );
+		return true;
+	}
+
+	/// <summary>What a refused pool cell write or erase tells the player (<paramref name="slide"/> says why a slide piece was refused).</summary>
+	internal static OpenTpwText PoolRefusalText( PoolBuildResult reason, PoolSlideResult? slide = null ) => reason switch
+	{
+			PoolBuildResult.SlideRefused => slide switch
 			{
 				PoolSlideResult.TooSteep => OpenTpwText.PoolSlideTooSteep,
 				PoolSlideResult.TooGentle => OpenTpwText.PoolSlideTooGentle,
@@ -179,8 +203,7 @@ public sealed partial class ParkHud
 			PoolBuildResult.AttractionAccess => OpenTpwText.PoolAttractionNeedsWater,
 			PoolBuildResult.ExtraNeedsWater => OpenTpwText.PoolExtraNeedsWater,
 			_ => OpenTpwText.CannotBuildHere
-		} ) );
-	}
+	};
 
 	private UiButton? waveSettingsButton;
 

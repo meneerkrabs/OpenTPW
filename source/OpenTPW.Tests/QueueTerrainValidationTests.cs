@@ -69,6 +69,10 @@ public class QueueTerrainValidationTests
 		Assert.ThrowsException<InvalidOperationException>( () => Reducer( terrain, cells ).Commit( (2, 3), (5, 3) ) );
 		Assert.AreEqual( ParkCellFlags.NoModify, cells.FlagsAt( 4, 3 ) );
 		Assert.IsFalse( Reducer( terrain, cells ).SupportsUndo( (2, 3), (4, 3) ), "terminal exception must not expand undo" );
+		Assert.ThrowsException<InvalidOperationException>( () => Reducer( terrain, cells ).Undo( new QueueSegmentReceipt( (2, 3), (4, 3) ) ),
+			"direct undo must use the same narrow admission as SupportsUndo" );
+		Assert.AreEqual( ParkCellType.Path, cells.TypeAt( 4, 3 ) );
+		Assert.AreEqual( ParkCellFlags.NoModify, cells.FlagsAt( 4, 3 ) );
 		cells.SetFlags( 4, 3, ParkCellFlags.NoModify | ParkCellFlags.Unowned );
 		Assert.AreEqual( CellBuildResult.Occupied, Reducer( terrain, cells ).Preview( (2, 3), (4, 3) ).StoppedBy );
 		Assert.ThrowsException<InvalidOperationException>( () => Reducer( terrain, cells ).Commit( (2, 3), (4, 3) ) );

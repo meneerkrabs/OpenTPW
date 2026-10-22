@@ -314,8 +314,10 @@ park again instead (`CoopHostStream.SkipTrimmed`, design `coop-c2c-design.md` se
 The server keeps the skip rare. A frame number a deploy stores exactly holds for the next run only: that
 start stores it again as unknown at once, so a crash later in the run brings it back unknown, never as an
 exact number behind the frames relayed since, and the host resends from its oldest frame (a guest drops
-what it has) instead of skipping. What is left is a long outage: past its caps the host trims frames it
-handed to the link before the server took them.
+what it has) instead of skipping. Two cases are left. A long stretch in which no member acknowledges a
+frame lets the caps trim frames the host handed to the link before the server confirmed them, which a
+lost socket then takes with it. And a start whose rewrite of the stored positions fails (a full disk,
+reported) followed by a crash before any later write brings the old exact number back.
 
 `CoopServerTests` covers the server's side (a skip from the host, one back, one from a guest or from
 outside a session, a stored position exact for the next run only, a hello of an older protocol);

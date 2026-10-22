@@ -116,6 +116,9 @@ public static class ServerProgram
 		app.Lifetime.ApplicationStopping.Register( hub.Restarting );
 		app.Lifetime.ApplicationStopping.Register( coop.Restarting );
 		coop.Warn = message => app.Logger.LogWarning( "{Message}", message );
+		// the start stores the loaded frame positions again as unknown before a logger exists: a failed write is reported here, and the next change writes them
+		if ( coop.Store.Unsaved )
+			coop.Warn( "The co-op sessions could not be stored at the start; their frame positions are written with the next change." );
 		// [EXT:online-coop-session] ends the shared parks whose host stayed away, once a minute
 		app.Lifetime.ApplicationStarted.Register( () => _ = Task.Run( async () =>
 		{

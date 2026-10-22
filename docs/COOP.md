@@ -865,7 +865,11 @@ The design fixed two constants only after measuring them (`coop-c2b-design.md`, 
   native second-longest frame too), the objects' step, the level's last step and the guests; and the wait
   for the files ends its slice instead of spending it. The join's build also lacks the steps that prepare
   a park start's entering frame (`GameFlow.PrepareEntry`, docs/BROWSER-PERFORMANCE.md, "The entering
-  frame"), the first lead for the swap's frame.
+  frame"), the first lead for the swap's frame. Main's #741, merged after these runs, splits several of
+  the level's construction steps for a park start (the guests by their sprite sets, the gate sign, the
+  ride scripts' handlers, the level's last step in parts), which the join's build shares, and lets a step
+  known to be long start a frame of its own: C2c-2b-3 measures the desktop and the page again before it
+  changes anything.
 
   <details><summary>Every value of the five runs compiled ahead of time (tools/coop_join_timings.py)</summary>
 

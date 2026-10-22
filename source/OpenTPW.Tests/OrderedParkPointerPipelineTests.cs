@@ -667,13 +667,13 @@ public class OrderedParkPointerPipelineTests
 		Assert.AreEqual( 0, commands.Count );
 	}
 
-	/// <summary>One HUD frame fed with injected input, as GameFlow does: the pointer edges become a synthetic ordered batch.</summary>
+	/// <summary>One HUD frame fed with hand-built (injected) input, as the smoke tests and GameFlow's InjectedInput do.</summary>
 	private UiInput InjectedFrame( UiInput injected )
 	{
-		var input = injected.WithSyntheticOrderedEvents();
-		var captured = hud.Update( context, input, false, false, false );
-		level.UpdateWorldInput( false, captured, input.Mouse, new N.Vector2( context.Canvas.Width, context.Canvas.Height ), 0 );
-		return input;
+		Assert.IsNull( injected.OrderedEvents ); Assert.IsFalse( injected.OrderedUnavailable );
+		var captured = hud.Update( context, injected, false, false, false );
+		level.UpdateWorldInput( false, captured, injected.Mouse, new N.Vector2( context.Canvas.Width, context.Canvas.Height ), 0 );
+		return injected;
 	}
 
 	[TestMethod]
@@ -681,39 +681,41 @@ public class OrderedParkPointerPipelineTests
 	{
 		var clicks = 0; var point = AddButton( () => clicks++ );
 		Frame( Array.Empty<OrderedInputEvent>(), mouse: point );
-		var injected = InjectedFrame( UiInput.Click( point ) );
-		Assert.IsNotNull( injected.OrderedEvents );
-		CollectionAssert.AreEqual( new[] { OrderedInputEventKind.Motion, OrderedInputEventKind.ButtonDown, OrderedInputEventKind.ButtonUp },
-			injected.OrderedEvents!.Select( item => item.Kind ).ToArray() );
-		Assert.AreEqual( 1, clicks );
-		// A bare release with no batch at all is "unknown ordering", which never activates anything.
-		hud.Update( context, UiInput.Click( point ), false, false, false );
+		InjectedFrame( UiInput.Click( point ) );
 		Assert.AreEqual( 1, clicks );
 		Assert.AreEqual( 0, commands.Count );
+		// A batch the platform could not supply is "unknown ordering", which never activates anything.
+		hud.Update( context, UiInput.Click( point ) with { OrderedUnavailable = true }, false, false, false );
+		Assert.AreEqual( 1, clicks );
 	}
 
 	[TestMethod]
-	public void InjectedClickReachesThePark_AndInputWithoutPointerEdgesIsLeftAlone()
+	public void InjectedPressThenReleaseIsOneClickNotTwo()
+	{
+		var clicks = 0; var point = AddButton( () => clicks++ );
+		Frame( Array.Empty<OrderedInputEvent>(), mouse: point );
+		InjectedFrame( new UiInput( point, true, true, false, false, UiKeys.None ) );
+		Assert.AreEqual( 0, clicks );
+		InjectedFrame( new UiInput( point, false, false, true, false, UiKeys.None ) );
+		Assert.AreEqual( 1, clicks, "A release with a press already held ends that press; it adds none of its own." );
+	}
+
+	[TestMethod]
+	public void InjectedClickReachesThePark()
 	{
 		Frame( Array.Empty<OrderedInputEvent>() );
 		InjectedFrame( UiInput.Click( ParkPoint ) );
 		Assert.AreEqual( 1, commands.Count ); Assert.IsTrue( commands[0] is RemoveAtCommand );
-		var idle = UiInput.Idle( ParkPoint ) with { Wheel = -1 };
-		Assert.IsNull( idle.WithSyntheticOrderedEvents().OrderedEvents );
-		Assert.IsNull( UiInput.Key( UiKeys.Accept ).WithSyntheticOrderedEvents().OrderedEvents );
-		var held = UiInput.Click( ParkPoint ) with { OrderedEvents = Array.Empty<OrderedInputEvent>() };
-		Assert.AreEqual( 0, held.WithSyntheticOrderedEvents().OrderedEvents!.Count, "A real batch is never replaced." );
+		InjectedFrame( UiInput.Idle( ParkPoint ) with { Wheel = -1 } );
+		InjectedFrame( UiInput.Key( UiKeys.Accept ) );
+		Assert.AreEqual( 1, commands.Count );
 	}
 
 	[TestMethod]
-	public void InjectedRightClickAndNotClickKeepTheirMeaning()
+	public void InjectedNotClickReleaseIsNoClick()
 	{
 		var clicks = 0; var point = AddButton( () => clicks++ );
 		Frame( Array.Empty<OrderedInputEvent>(), mouse: point );
-		var right = (UiInput.Idle( point ) with { RightPressed = true }).WithSyntheticOrderedEvents();
-		Assert.AreEqual( (int)MouseButton.Right, right.OrderedEvents![1].Button );
-		var slow = (UiInput.Click( point ) with { NotClick = true }).WithSyntheticOrderedEvents();
-		Assert.IsTrue( slow.OrderedEvents![2].TimestampMilliseconds - slow.OrderedEvents[1].TimestampMilliseconds > UiInputSource.ClickMilliseconds );
 		InjectedFrame( UiInput.Click( point ) with { NotClick = true } );
 		Assert.AreEqual( 0, clicks, "A held-too-long injected release is not a click." );
 	}

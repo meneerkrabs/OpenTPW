@@ -84,6 +84,36 @@ internal sealed class UiPointerRouter
 		return result;
 	}
 
+	/// <summary>
+	/// Hand-built input (smoke tests, fixtures) has no raw batch but states its pointer edges on purpose: a move to the pointer when it
+	/// differs from the last position, a press for <see cref="UiInput.LeftPressed"/> or for a release with nothing held (a lone
+	/// <see cref="UiInput.Click"/> is a whole quick click), then the release. A <see cref="UiInput.NotClick"/> release is stamped
+	/// past the click time. Unlike <see cref="AdmitUnavailable"/> this never quarantines a press.
+	/// </summary>
+	public IReadOnlyList<UiRoutedEvent> AdmitInjected( UiInput input, Func<NVector2, UiPointerOwner?> hitTest )
+	{
+		var events = new List<OrderedInputEvent>();
+		var point = input.Mouse;
+		if ( point.X < 0 )
+			return Array.Empty<UiRoutedEvent>();
+		OrderedInputEvent At( OrderedInputEventKind kind, int button = -1, long time = 0 ) =>
+			new( events.Count + 1, kind, point.X, point.Y, button, TimestampMilliseconds: time, PositionIsExact: true );
+		var left = (int)Veldrid.MouseButton.Left;
+		if ( !positioned || point != position )
+			events.Add( At( OrderedInputEventKind.Motion ) );
+		if ( input.LeftPressed || input.LeftReleased && !LeftDown )
+			events.Add( At( OrderedInputEventKind.ButtonDown, left ) );
+		if ( input.LeftReleased )
+			events.Add( At( OrderedInputEventKind.ButtonUp, left, input.NotClick ? UiInputSource.ClickMilliseconds + 1 : 0 ) );
+		if ( input.RightPressed )
+		{
+			var right = (int)Veldrid.MouseButton.Right;
+			events.Add( At( OrderedInputEventKind.ButtonDown, right ) );
+			events.Add( At( OrderedInputEventKind.ButtonUp, right ) );
+		}
+		return Admit( events, hitTest );
+	}
+
 	public IReadOnlyList<UiRoutedEvent> Admit( IReadOnlyList<OrderedInputEvent> events, Func<NVector2, UiPointerOwner?> hitTest )
 	{
 		var result = new List<UiRoutedEvent>( events.Count );

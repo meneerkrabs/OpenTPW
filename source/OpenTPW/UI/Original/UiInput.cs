@@ -25,11 +25,16 @@ public enum UiKeys
 /// One frame of UI input in framebuffer pixels. Built from <see cref="Input"/> at runtime and
 /// constructed directly by tests and the smoke test.
 /// </summary>
+/// <param name="OrderedUnavailable">
+/// Set by <see cref="UiInputSource.Poll"/> when the platform could not supply the raw ordered batch for this frame. Hand-built input
+/// (the smoke tests and fixtures) has no batch either, but its pointer edges are deliberate: the park routes them as injected edges
+/// (<see cref="UiPointerRouter.AdmitInjected"/>), whereas an unavailable batch never starts a gesture.
+/// </param>
 /// <param name="NotClick">
 /// Set on a left release that is not a click: the press lasted longer than <see cref="UiInputSource.ClickMilliseconds"/> or the
 /// pointer strayed more than <see cref="UiInputSource.ClickSlop"/> pixels on an axis (tp.exe 0x65f6d1 / 0x65fa33). The release still ends drags.
 /// </param>
-public readonly record struct UiInput( NVector2 Mouse, bool LeftDown, bool LeftPressed, bool LeftReleased, bool RightPressed, UiKeys Pressed, float Wheel = 0, string Text = "", int Backspaces = 0, bool NotClick = false, IReadOnlyList<OrderedInputEvent>? OrderedEvents = null, bool PointerSuppressed = false, float PointerScaleX = 1, float PointerScaleY = 1, bool PointerHostBlocked = false )
+public readonly record struct UiInput( NVector2 Mouse, bool LeftDown, bool LeftPressed, bool LeftReleased, bool RightPressed, UiKeys Pressed, float Wheel = 0, string Text = "", int Backspaces = 0, bool NotClick = false, IReadOnlyList<OrderedInputEvent>? OrderedEvents = null, bool PointerSuppressed = false, float PointerScaleX = 1, float PointerScaleY = 1, bool PointerHostBlocked = false, bool OrderedUnavailable = false )
 {
 
 	public static UiInput Idle( NVector2 mouse ) => new( mouse, false, false, false, false, UiKeys.None );
@@ -37,35 +42,6 @@ public readonly record struct UiInput( NVector2 Mouse, bool LeftDown, bool LeftP
 	public static UiInput Key( UiKeys keys ) => new( new NVector2( -1, -1 ), false, false, false, false, keys );
 	public static UiInput Type( string text, int backspaces = 0 ) => new( new NVector2( -1, -1 ), false, false, false, false, UiKeys.None, 0, text, backspaces );
 	public bool Has( UiKeys key ) => (Pressed & key) != 0;
-
-	/// <summary>
-	/// Injected input (the smoke tests and unit fixtures) states pointer edges directly and has no raw batch. Once the park
-	/// routes ordered input a missing batch is "unknown", which never starts a gesture, so express those edges as the
-	/// batch a real frame would have produced: a move to the pointer, then the press and release (a release-only
-	/// <see cref="Click"/> is a whole quick click). Input that already carries a batch, or has no pointer edge, is returned as is.
-	/// </summary>
-	public UiInput WithSyntheticOrderedEvents()
-	{
-		if ( OrderedEvents != null || Mouse.X < 0 || !(LeftPressed || LeftReleased || RightPressed) )
-			return this;
-		var events = new List<OrderedInputEvent>();
-		var point = Mouse;
-		OrderedInputEvent At( OrderedInputEventKind kind, int button = -1, long time = 0 ) =>
-			new( events.Count + 1, kind, point.X, point.Y, button, TimestampMilliseconds: time, PositionIsExact: true );
-		events.Add( At( OrderedInputEventKind.Motion ) );
-		var left = (int)MouseButton.Left;
-		if ( LeftPressed || LeftReleased )
-			events.Add( At( OrderedInputEventKind.ButtonDown, left ) );
-		if ( LeftReleased )
-			events.Add( At( OrderedInputEventKind.ButtonUp, left, NotClick ? UiInputSource.ClickMilliseconds + 1 : 0 ) );
-		if ( RightPressed )
-		{
-			var right = (int)MouseButton.Right;
-			events.Add( At( OrderedInputEventKind.ButtonDown, right ) );
-			events.Add( At( OrderedInputEventKind.ButtonUp, right ) );
-		}
-		return this with { OrderedEvents = events };
-	}
 }
 
 /// <summary>Turns the global <see cref="Input"/> state into <see cref="UiInput"/> edges.</summary>
@@ -132,7 +108,7 @@ public sealed class UiInputSource
 			mouse.Left, mouse.Left && !wasLeft, !mouse.Left && wasLeft, mouse.Right && !wasRight, pressed, mouse.Wheel,
 			Input.Typed, Input.KeyPresses.Count( key => key == Key.BackSpace ), notClick,
 			NormalizeOrderedEvents( Input.OrderedEvents, keys, framebufferPerWindowX, framebufferPerWindowY ),
-			PointerScaleX: framebufferPerWindowX, PointerScaleY: framebufferPerWindowY );
+			PointerScaleX: framebufferPerWindowX, PointerScaleY: framebufferPerWindowY, OrderedUnavailable: Input.OrderedEvents == null );
 		wasLeft = mouse.Left;
 		wasRight = mouse.Right;
 		return input;

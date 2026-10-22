@@ -109,8 +109,9 @@ public sealed partial class ParkHud
 		level.WorldPointerRouted = true;
 		pointerRoutingStarted = true;
 		pointerRoutingActive = true;
-		return input.OrderedEvents == null ? pointerRouter.AdmitUnavailable( input )
-			: pointerRouter.Admit( input.OrderedEvents, point => HitPointer( context, point ) );
+		return input.OrderedEvents != null ? pointerRouter.Admit( input.OrderedEvents, point => HitPointer( context, point ) )
+			: input.OrderedUnavailable ? pointerRouter.AdmitUnavailable( input )
+			: pointerRouter.AdmitInjected( input, point => HitPointer( context, point ) );
 	}
 
 	private bool DrainPointerEvents( UiContext context, IReadOnlyList<UiRoutedEvent> events, UiInput frameInput, bool rideOwnsInput, bool mouseCaptured, bool keyboardCaptured, bool textCaptured )

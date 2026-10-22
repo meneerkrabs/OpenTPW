@@ -99,4 +99,25 @@ public class UiPointerRouterTests
 		screen.Remove( button ); screen.Remove( other );
 		Assert.AreEqual( 0, screen.ElementGeneration( other ) );
 	}
+
+	[TestMethod]
+	public void InjectedEdgesBecomeOrderedEventsAndAReleaseNeverAddsAPressWhileOneIsHeld()
+	{
+		var router = new UiPointerRouter();
+		var owner = new UiPointerOwner( new object() );
+		var click = router.AdmitInjected( UiInput.Click( new NVector2( 5, 6 ) ), _ => owner );
+		CollectionAssert.AreEqual( new[] { OrderedInputEventKind.Motion, OrderedInputEventKind.ButtonDown, OrderedInputEventKind.ButtonUp },
+			click.Select( item => item.Event.Kind ).ToArray() );
+		Assert.IsTrue( click.All( item => ReferenceEquals( item.Owner, owner ) ) );
+		var press = router.AdmitInjected( new UiInput( new NVector2( 5, 6 ), true, true, false, false, UiKeys.None ), _ => owner );
+		CollectionAssert.AreEqual( new[] { OrderedInputEventKind.ButtonDown }, press.Select( item => item.Event.Kind ).ToArray(), "No move: the pointer did not move." );
+		var release = router.AdmitInjected( new UiInput( new NVector2( 5, 6 ), false, false, true, false, UiKeys.None ), _ => null );
+		CollectionAssert.AreEqual( new[] { OrderedInputEventKind.ButtonUp }, release.Select( item => item.Event.Kind ).ToArray() );
+		Assert.AreSame( owner, release[0].Owner, "The release belongs to its original press." );
+		var right = router.AdmitInjected( UiInput.Idle( new NVector2( 5, 6 ) ) with { RightPressed = true }, _ => owner );
+		CollectionAssert.AreEqual( new[] { (int)MouseButton.Right, (int)MouseButton.Right }, right.Select( item => item.Event.Button ).ToArray() );
+		var slow = router.AdmitInjected( UiInput.Click( new NVector2( 5, 6 ) ) with { NotClick = true }, _ => owner );
+		Assert.IsTrue( slow[^1].Event.TimestampMilliseconds - slow[^2].Event.TimestampMilliseconds > UiInputSource.ClickMilliseconds );
+		Assert.AreEqual( 0, router.AdmitInjected( UiInput.Key( UiKeys.Accept ), _ => owner ).Count, "Input without a pointer position carries no pointer event." );
+	}
 }

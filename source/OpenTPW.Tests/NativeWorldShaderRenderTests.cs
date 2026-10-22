@@ -173,6 +173,70 @@ public class NativeWorldShaderRenderTests
 		}
 	}
 
+	/// <summary>
+	/// Issue #754 (start time on Windows): the engine keeps the Direct3D 11 bytecode of its shaders between runs (Direct3D11Bytecode). The kept bytecode must be
+	/// exactly what Veldrid's own HLSL compile makes for the same shader, the second request must read it instead of compiling, and the engine's shaders made
+	/// from it must draw the same picture as Veldrid's.
+	/// </summary>
+	[DataTestMethod]
+	[DataRow( "test.shader" )]
+	[DataRow( "sprite.shader" )]
+	[DataRow( "unlit.shader" )]
+	public void KeptDirect3D11BytecodeIsVeldridsOwnCompile( string shader )
+	{
+		if ( !OperatingSystem.IsWindows() )
+			Assert.Inconclusive( "Direct3D 11 runs on Windows." );
+		using var device = CreateDevice();
+		Log = new();
+		var cache = Directory.CreateTempSubdirectory( "opentpw-dxbc-" ).FullName;
+		var previousCache = ShaderCompiler.SpirvCacheDirectory;
+		try
+		{
+			Assert.IsNotNull( Direct3D11Bytecode.CompilerIdentity, "the system HLSL compiler is found, so its bytecode is kept" );
+			var program = ShaderCompiler.CompileProgram( GetShaderPath( shader ), Veldrid.SPIRV.CrossCompileTarget.HLSL );
+			var veldrid = Veldrid.SPIRV.ResourceFactoryExtensions.CreateFromSpirv( device.ResourceFactory,
+				new ShaderDescription( ShaderStages.Vertex, program.Vertex, "main" ),
+				new ShaderDescription( ShaderStages.Fragment, program.Fragment, "main" ) );
+			var hlsl = Veldrid.SPIRV.SpirvCompilation.CompileVertexFragment( program.Vertex, program.Fragment, Veldrid.SPIRV.CrossCompileTarget.HLSL, new Veldrid.SPIRV.CrossCompileOptions() );
+			try
+			{
+				LoadProfile.Enable( true );
+				var vertex = Direct3D11Bytecode.Get( cache, hlsl.VertexShader, ShaderStages.Vertex );
+				var fragment = Direct3D11Bytecode.Get( cache, hlsl.FragmentShader, ShaderStages.Fragment );
+				Assert.AreEqual( 2, LoadProfile.Counters()["hlsl compiles"] );
+				CollectionAssert.AreEqual( VeldridBytecode( veldrid[0] ), vertex, "the kept vertex bytecode is Veldrid's own compile" );
+				CollectionAssert.AreEqual( VeldridBytecode( veldrid[1] ), fragment, "the kept fragment bytecode is Veldrid's own compile" );
+				LoadProfile.Enable( true );
+				CollectionAssert.AreEqual( vertex, Direct3D11Bytecode.Get( cache, hlsl.VertexShader, ShaderStages.Vertex ) );
+				CollectionAssert.AreEqual( fragment, Direct3D11Bytecode.Get( cache, hlsl.FragmentShader, ShaderStages.Fragment ) );
+				var counters = LoadProfile.Counters();
+				Assert.AreEqual( 2, counters["hlsl cache hits"] );
+				Assert.IsFalse( counters.ContainsKey( "hlsl compiles" ), "kept bytecode is not compiled again" );
+			}
+			finally
+			{
+				LoadProfile.Enable( false );
+				foreach ( var compiled in veldrid )
+					compiled.Dispose();
+			}
+
+			// the engine's path (ShaderCompiler.CreateNative with a cache folder) draws what Veldrid's draws
+			var expected = Draw( device, shader, 0u, materialScratchBuffer: false );
+			ShaderCompiler.SpirvCacheDirectory = cache;
+			var kept = Draw( device, shader, 0u, materialScratchBuffer: false, ShaderCompiler.CreateNative );
+			CollectionAssert.AreEqual( expected, kept, $"{shader} draws the same picture from the kept bytecode" );
+		}
+		finally
+		{
+			ShaderCompiler.SpirvCacheDirectory = previousCache;
+			Directory.Delete( cache, true );
+		}
+	}
+
+	/// <summary>The bytecode Veldrid compiled for a Direct3D 11 shader (D3D11Shader.Bytecode, internal to Veldrid).</summary>
+	private static byte[] VeldridBytecode( Veldrid.Shader shader ) =>
+		(byte[])shader.GetType().GetProperty( "Bytecode" )!.GetValue( shader )!;
+
 	private static GraphicsDevice CreateDevice()
 	{
 		// the engine's options (Renderer.CreateDevice) without its swapchain
@@ -193,7 +257,7 @@ public class NativeWorldShaderRenderTests
 		return null!;
 	}
 
-	private static byte[] Draw( GraphicsDevice device, string shader, uint matFlags, bool materialScratchBuffer )
+	private static byte[] Draw( GraphicsDevice device, string shader, uint matFlags, bool materialScratchBuffer, Func<ResourceFactory, byte[], byte[], Veldrid.Shader[]>? createShaders = null )
 	{
 		var factory = device.ResourceFactory;
 		var target = device.BackendType switch
@@ -203,7 +267,7 @@ public class NativeWorldShaderRenderTests
 			_ => Veldrid.SPIRV.CrossCompileTarget.GLSL
 		};
 		var program = ShaderCompiler.CompileProgram( GetShaderPath( shader ), target );
-		var shaders = Veldrid.SPIRV.ResourceFactoryExtensions.CreateFromSpirv( factory,
+		var shaders = createShaders?.Invoke( factory, program.Vertex, program.Fragment ) ?? Veldrid.SPIRV.ResourceFactoryExtensions.CreateFromSpirv( factory,
 			new ShaderDescription( ShaderStages.Vertex, program.Vertex, "main" ),
 			new ShaderDescription( ShaderStages.Fragment, program.Fragment, "main" ) );
 

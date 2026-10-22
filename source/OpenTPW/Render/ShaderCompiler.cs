@@ -172,9 +172,7 @@ internal static class ShaderCompiler
 				using var nativeProfile = LoadProfile.Measure( "shader-native" );
 				LoadProfile.Count( "native shader programs" );
 				LoadProfile.Count( "native shader programs of " + Path.GetFileName( path ) );
-				var shaders = Device.ResourceFactory.CreateFromSpirv(
-					new ShaderDescription( ShaderStages.Vertex, program.Vertex, "main" ),
-					new ShaderDescription( ShaderStages.Fragment, program.Fragment, "main" ) );
+				var shaders = CreateNative( Device.ResourceFactory, program.Vertex, program.Fragment );
 				natives[key] = native = new SharedShaderProgram( key, shaders[0], shaders[1] );
 			}
 			native.References++;
@@ -187,6 +185,33 @@ internal static class ShaderCompiler
 			Reflection = program.Reflection,
 			Owner = native
 		};
+	}
+
+	/// <summary>
+	/// The native shaders of a program, as Veldrid's <c>CreateFromSpirv</c> makes them. On Direct3D 11 with a cache folder the HLSL bytecode is kept between
+	/// runs (<see cref="Direct3D11Bytecode"/>): Veldrid compiles the cross-compiled HLSL of each new shader with the system HLSL compiler, which was the
+	/// slowest part of a start on Windows; the same compile is made here once and its bytecode handed to Veldrid, which takes bytecode as it is.
+	/// </summary>
+	internal static Veldrid.Shader[] CreateNative( ResourceFactory factory, byte[] vertexSpirv, byte[] fragmentSpirv )
+	{
+		if ( factory.BackendType == GraphicsBackend.Direct3D11 && OperatingSystem.IsWindows() && SpirvCacheDirectory is { } directory )
+		{
+			var hlsl = SpirvCompilation.CompileVertexFragment( vertexSpirv, fragmentSpirv, CrossCompileTarget.HLSL, new CrossCompileOptions() );
+			var vertex = factory.CreateShader( new ShaderDescription( ShaderStages.Vertex, Direct3D11Bytecode.Get( directory, hlsl.VertexShader, ShaderStages.Vertex ), "main" ) );
+			try
+			{
+				var fragment = factory.CreateShader( new ShaderDescription( ShaderStages.Fragment, Direct3D11Bytecode.Get( directory, hlsl.FragmentShader, ShaderStages.Fragment ), "main" ) );
+				return [vertex, fragment];
+			}
+			catch
+			{
+				vertex.Dispose();
+				throw;
+			}
+		}
+		return factory.CreateFromSpirv(
+			new ShaderDescription( ShaderStages.Vertex, vertexSpirv, "main" ),
+			new ShaderDescription( ShaderStages.Fragment, fragmentSpirv, "main" ) );
 	}
 
 	/// <summary>

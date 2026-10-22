@@ -302,14 +302,27 @@ and replaced, and files not written for 30 days are removed when a new one is wr
 
 The first start after an install or a shader change compiles as before and fills the cache.
 
+### Kept Direct3D 11 bytecode (October 22, 2026)
+
+With one native program per shader file (above) Direct3D 11 still compiled the HLSL of each program once per run: 14 compiles (7 programs, two
+stages) before the lobby and a few more when a park starts. If the issue's 30 seconds were mostly the 312 compiles before the change, one took
+about 0.1 s on that PC, so these are about 1.3 s of every start (an estimate; no Windows machine measured it here). Veldrid's Direct3D 11 backend compiles the cross-compiled HLSL of a new shader with the system compiler
+(`D3D11Shader.CompileCode`: `vs_5_0` or `ps_5_0`, entry point `main`, `OptimizationLevel3`, no defines, include or source name) unless the
+shader's bytes already are bytecode (`DXBC`), which it takes as they are. With a cache folder, `ShaderCompiler.CreateNative` now makes the same
+cross-compile and the same HLSL compile itself (`Direct3D11Bytecode`), keeps the bytecode beside the SPIR-V (`cache/shaders/*.dxbc`, keyed by a
+SHA-256 of the HLSL, the profile, the flags and the version, size and time of `d3dcompiler_47.dll`, which Windows updates replace) and hands the
+bytecode to Veldrid. A missing or malformed file (not a whole `DXBC` container) is compiled again; without the system compiler's identity nothing
+is kept. `NativeWorldShaderRenderTests.KeptDirect3D11BytecodeIsVeldridsOwnCompile` checks on the Windows CI runner's Direct3D 11 device that the
+kept bytecode is byte for byte the bytecode Veldrid compiles for the same shader, that a second request reads it, and that shaders made from it
+draw the same pixels as Veldrid's. Other backends are unchanged (Metal compiles its source when the pipeline is made and caches it itself).
+
 ### What is left
 
 1. **The remaining placement cost is the sign.** A ride with a sign composes it on its first placement (`object-sign`, 36 to 46 ms on the Mac for
    types 1104 and 1101, on the frame of the click), and its textures decode then (`texture-decode`, 5 to 11 ms). Composing the sign of a type
    when the buy window first lists it, off the render thread, would take it out of the placement frame; the composer and the file system it reads
    would have to be checked for use from a worker first.
-2. **The backend's own compile of each shader once per run.** Direct3D 11 still compiles the HLSL of the 7 programs before the lobby (14
-   compiles) and of the park's few more once per run. Its bytecode could be kept beside the SPIR-V; that needs the system HLSL compiler called
-   as Veldrid calls it and is not done yet.
+2. **The first start after an install or a Windows update** compiles the shaders as before and fills the cache; nothing shows that start's
+   progress (the window stays black until the lobby is drawn). A loading indicator would be a visible change and is not made here.
 3. **One file open per WAD member read.** A member read opens the archive again (so a bonus import can replace the file on Windows): 466 opens
    before the lobby, 1,311 in a park start. On a hard disk with an antivirus filter each open has a cost.

@@ -116,7 +116,7 @@ public class BrowserPinsExclusionTests
 			"var options = new Options { Game = 1 };", "private static string? Game() => null;\nvar game = Game();", "ParkLayout.Draw();",
 			"private readonly Fixture Game = new();\nvar marker = Game.CopiedSavesMarker;", "var drawn = layout.DrawOriginalImport( 1 );",
 			"var values = items.Select( Game => Game.Value );", "var values = items.Select( (Game, index) => Game.Value + index );", "items.ForEach( ( index, Game ) => { Use( Game.Value ); } );",
-			"int Twice( int Game ) => Game * 2;", "private static int Game => 2;\nvoid Use() { var twice = Game * 2; }", "var message = $\"Game {count} and {{Game}}\";",
+			"int Twice( int Game ) => Game * 2;", "var values = items.Select( Game => Map<int, Dictionary<int, int>>( Game.Value ) );", "private static int Game => 2;\nvoid Use() { var twice = Game * 2; }", "var message = $\"Game {count} and {{Game}}\";",
 			"void First( int Game ) { var directory = Game.ResolveSaveDirectory( root ); }", "ParkLayout.Draw();\nvar drawn = DrawOriginalImport( 1 );" } )
 			Assert.AreEqual( 0, DesktopOnlyUses( mention, desktopOnly ).Count(), mention );
 	}
@@ -270,7 +270,7 @@ public class BrowserPinsExclusionTests
 	/// <summary>
 	/// Where a name declared at an index of the code is visible: the innermost <c>{ }</c> block around it; for a parameter (inside parentheses opened in that
 	/// block) the body after the closing parenthesis, and for a lambda's parameter (<paramref name="code"/>'s <c>name =&gt;</c> when the second argument is set)
-	/// the lambda's body: a block, or an expression up to the <c>,</c>, <c>;</c> or closing bracket that ends it. File level is the whole code.
+	/// the lambda's body: a block, or an expression up to the <c>,</c>, <c>;</c> or closing bracket that ends it (type argument lists are skipped). File level is the whole code.
 	/// </summary>
 	private static Func<int, bool, (int Start, int End)> Scopes( string code )
 	{
@@ -312,7 +312,10 @@ public class BrowserPinsExclusionTests
 			var end = body;
 			for ( var depth = 0; end < code.Length; end++ )
 			{
-				if ( code[end] is '(' or '[' or '{' )
+				var arguments = code[end] == '<' && end > 0 && (char.IsLetterOrDigit( code[end - 1] ) || code[end - 1] == '_') ? TypeArguments.Match( code, end ) : Match.Empty;
+				if ( arguments.Success )
+					end += arguments.Length - 1;
+				else if ( code[end] is '(' or '[' or '{' )
 					depth++;
 				else if ( code[end] is ')' or ']' or '}' && depth-- == 0 )
 					break;
@@ -331,6 +334,9 @@ public class BrowserPinsExclusionTests
 			return block[index] < 0 ? (0, code.Length) : (block[index], ends[block[index]]);
 		};
 	}
+
+	/// <summary>A type argument list glued to a name (<c>Map&lt;int, (int, string)&gt;</c>, one level of nesting), whose commas end no lambda.</summary>
+	private static readonly Regex TypeArguments = new( @"\G<(?:[\w\s,.?\[\]()]|<[\w\s,.?\[\]()]*>)*>" );
 
 	/// <summary>The names a piece of code declares: see <see cref="Declarations"/>.</summary>
 	private static HashSet<string> DeclaredNames( string code, bool memberLevel = false ) =>

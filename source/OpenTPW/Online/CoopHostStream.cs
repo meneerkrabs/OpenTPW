@@ -203,6 +203,11 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 	/// <summary>The frame the last refusal rewound to, and how many refusals of the frames that were on their way after it (naming the same frame) are still to come.</summary>
 	private ulong? rewoundTo;
 	private long staleRefusals;
+	/// <summary>
+	/// [EXT:online-coop-snapshot-join] The frame the host's last skip goes on at (<see cref="SkipTrimmed"/>): a refusal naming an earlier frame was on its way before the server took the skip,
+	/// and a resume whose server has not taken it hears it again.
+	/// </summary>
+	private ulong? skippedTo;
 	private bool disposed;
 	/// <summary>[EXT:online-coop-snapshot-join] The number the next capture takes, which the members assigned to it get.</summary>
 	private uint nextGeneration = 1;
@@ -486,12 +491,21 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 				return;
 			}
 			relayed = Math.Max( relayed, last );
-			if ( last + 1 < OldestFrame )
+			// [EXT:online-coop-snapshot-join] a skip lost with the socket goes out again, without assigning the members anew
+			if ( skippedTo is { } skip && last + 1 < skip )
 			{
-				Fail( $"The server needs frame {last + 1}, which the host no longer holds." );
+				transport.SkipFrames( skip );
+				sendNext = skip;
+			}
+			else if ( last + 1 < OldestFrame )
+			{
+				// the members as the server has them, so one that joined while the host was away is assigned too
+				Reconcile( session );
+				SkipTrimmed( last + 1 );
 				return;
 			}
-			sendNext = last + 1;
+			else
+				sendNext = last + 1;
 		}
 		else
 		{
@@ -546,6 +560,9 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 			staleRefusals--;
 			return;
 		}
+		// [EXT:online-coop-snapshot-join] a refusal of a frame sent before the server took the host's skip names a frame the skip passed over
+		if ( expected < skippedTo )
+			return;
 		if ( expected > nextSeq )
 		{
 			Fail( $"The server expects frame {expected}, after the host's last." );
@@ -554,7 +571,7 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 		relayed = Math.Max( relayed, expected - 1 );
 		if ( expected < OldestFrame )
 		{
-			Fail( $"The server needs frame {expected}, which the host no longer holds." );
+			SkipTrimmed( expected );
 			return;
 		}
 		// the frames after the first refused one, up to the last one handed over, were on their way too: each is refused with the same number
@@ -562,6 +579,34 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 		rewoundTo = expected;
 		sendNext = expected;
 		Flush();
+	}
+
+	/// <summary>
+	/// [EXT:online-coop-snapshot-join] The server needs frame <paramref name="needed"/>, which the host no longer holds (its stored position fell behind the host's trimmed history; docs/COOP.md,
+	/// "The host's trimmed frame"): every member is assigned a capture at once, past the host's last frame, and the server is told the frames go on after it, so no member needs the frames
+	/// between. A transport whose server cannot take the skip ends the session, as before.
+	/// </summary>
+	private void SkipTrimmed( ulong needed )
+	{
+		if ( !transport.CanSkipFrames )
+		{
+			Fail( $"The server needs frame {needed}, which the host no longer holds." );
+			return;
+		}
+		var skip = nextSeq;
+		Log.Warning( $"The server needs frame {needed}, which the host no longer holds: every member gets the shared park again, and its frames go on at {skip}." );
+		var now = seconds();
+		foreach ( var guest in guests.Values )
+			Assign( guest, now, force: true );
+		// nobody needs the frames before the skip: every member's capture starts after them
+		relayed = Math.Max( relayed, skip - 1 );
+		skippedTo = skip;
+		rewoundTo = null;
+		staleRefusals = 0;
+		sendNext = skip;
+		// a skip that cannot go out now goes out with the next resume
+		if ( transport.SkipFrames( skip ) )
+			Flush();
 	}
 
 	private void OnMemberChanged( CoopMemberChanged change )
@@ -682,11 +727,11 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 
 	/// <summary>
 	/// Assigns <paramref name="guest"/> the next capture and tells it at once, so its old stream stops; the capture waits for the others assigned within <see cref="CollectSeconds"/>. A member
-	/// assigned within <see cref="CaptureBudgetSeconds"/> of its last assignment is assigned at the mark.
+	/// assigned within <see cref="CaptureBudgetSeconds"/> of its last assignment is assigned at the mark, unless <paramref name="force"/> (the frames it would follow are gone).
 	/// </summary>
-	private void Assign( Guest guest, double now )
+	private void Assign( Guest guest, double now, bool force = false )
 	{
-		if ( now - guest.LastAssigned < CaptureBudgetSeconds )
+		if ( !force && now - guest.LastAssigned < CaptureBudgetSeconds )
 		{
 			guest.CaptureDue = true;
 			return;

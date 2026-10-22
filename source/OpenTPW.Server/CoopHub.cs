@@ -555,6 +555,9 @@ public sealed class CoopHub
 				return true;
 			case CoopPong:
 				return true;
+			case CoopSkipFrames skip:
+				SkipFrames( peer, skip );
+				return true;
 			case CoopCreate create:
 				Create( peer, create );
 				return true;
@@ -849,6 +852,36 @@ public sealed class CoopHub
 				if ( other.Peer != null && other != seat )
 					Enqueue( other.Peer, relayed );
 			}
+		}
+	}
+
+	/// <summary>
+	/// [EXT:online-coop-snapshot-join] The host's skip: it no longer holds the frames this server needs, and every member is assigned a capture past them, so the sequence goes on at the
+	/// frame the skip names. A skip never goes back: one to a frame already relayed is answered with the frame the server takes next, as a frame out of turn is.
+	/// </summary>
+	private void SkipFrames( Peer peer, CoopSkipFrames skip )
+	{
+		if ( peer.Session is not { } session )
+		{
+			Refuse( peer, CoopMessageType.SkipFrames, CoopReason.NotInSession, "You are in no shared park." );
+			return;
+		}
+		lock ( session.Gate )
+		{
+			if ( restarting || session.Ended || session.Seat( peer.Account.Key ) is not { } seat || seat.Peer != peer )
+				return;
+			if ( seat.Id != session.HostMember )
+			{
+				Refuse( peer, CoopMessageType.SkipFrames, CoopReason.NotHost, "Only the host skips frames." );
+				return;
+			}
+			if ( skip.From <= session.LastSeq )
+			{
+				Enqueue( peer, new CoopFrameRefused( session.LastSeq + 1 ).Encode() );
+				return;
+			}
+			session.LastSeq = skip.From - 1;
+			session.SeqKnown = true;
 		}
 	}
 

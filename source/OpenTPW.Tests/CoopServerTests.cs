@@ -460,6 +460,48 @@ public class CoopServerTests
 		}
 	}
 
+	/// <summary>
+	/// [EXT:online-coop-snapshot-join] The host's skip (protocol 7, docs/COOP.md "The host's trimmed frame"): the sequence goes on at the frame it names, which the server takes next; the
+	/// members never see the frames passed over. A skip never goes back, and only the host skips.
+	/// </summary>
+	[TestMethod]
+	public async Task TheHostsSkipLetsTheFramesGoOnPastFramesItNoLongerHolds()
+	{
+		var server = await Start();
+		await using var accounts = new Accounts();
+		try
+		{
+			var (host, _) = await CoopTestClient.ConnectAsync( server, await accounts.Add( server, "Hostess" ) );
+			var created = await Create( host );
+			var (guest, _) = await CoopTestClient.ConnectAsync( server, await accounts.Add( server, "Guest" ) );
+			await Join( guest, created.Session.Code );
+			await Refused( guest, new CoopSkipFrames( 9 ), CoopReason.NotHost );
+			await host.SendAsync( new CoopHostFrame( 1, Payload( 1 ) ) );
+			Assert.AreEqual( 1UL, (await guest.NextAsync<CoopFrame>()).Seq );
+			// the host no longer holds frames 2 to 8: its frame 9 is refused until it skips to it
+			await host.SendAsync( new CoopHostFrame( 9, Payload( 9 ) ) );
+			Assert.AreEqual( 2UL, (await host.NextAsync<CoopFrameRefused>()).Expected );
+			await host.SendAsync( new CoopSkipFrames( 9 ) );
+			await host.SendAsync( new CoopHostFrame( 9, Payload( 9 ) ) );
+			await host.SendAsync( new CoopHostFrame( 10, Payload( 10 ) ) );
+			Assert.AreEqual( 9UL, (await guest.NextAsync<CoopFrame>()).Seq, "the guest never saw the frames passed over" );
+			Assert.AreEqual( 10UL, (await guest.NextAsync<CoopFrame>()).Seq );
+			// a skip back to a frame already relayed is refused with the frame taken next
+			await host.SendAsync( new CoopSkipFrames( 5 ) );
+			Assert.AreEqual( 11UL, (await host.NextAsync<CoopFrameRefused>()).Expected );
+			await host.SendAsync( new CoopHostFrame( 11, Payload( 11 ) ) );
+			Assert.AreEqual( 11UL, (await guest.NextAsync<CoopFrame>()).Seq );
+			Assert.AreEqual( WebSocketState.Open, host.State );
+			var (outsider, _) = await CoopTestClient.ConnectAsync( server, await accounts.Add( server, "Outsider" ) );
+			await Refused( outsider, new CoopSkipFrames( 3 ), CoopReason.NotInSession );
+		}
+		finally
+		{
+			await server.DisposeAsync();
+			server.DeleteData();
+		}
+	}
+
 	[TestMethod]
 	public async Task GuestsLeaveTheHostKicksAndTheHostsLeaveEndsTheSession()
 	{

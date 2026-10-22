@@ -8,8 +8,9 @@ phases (C1 to C7) and the comparison of the architectures is in the project note
 (`plans/coop-plan.md`); this page records what is built and the decisions it rests on.
 
 Status: the command layer (C1) is in place, and of the sessions (C2) the server, the game's link, the
-host's command stream, the level in a session and the stream's join and resync are built. The game's
-join (C2c-2) and the screens (C2d) follow, so no game starts a session yet.
+host's command stream, the level in a session, the stream's join and resync, and the host's skip of
+frames it no longer holds are built. The game's join (C2c-2) and the screens (C2d) follow, so no game
+starts a session yet.
 
 ## User decisions
 
@@ -111,7 +112,8 @@ host's ticks, checked by digests (`CoopHostStream`, `CoopGuestStream`; the frame
     of reach for a minute is told to resync.
   - While the host's own link is down, its park holds.
   - After a server restart that lost the frame number, the host resends from its oldest frame. A
-    server that needs a frame the host no longer holds ends the session with the reason.
+    server that needs a frame the host no longer holds is told the frames go on past it, and every
+    member gets the park again (C2c-3, "The host's trimmed frame" below).
 - **The session clock.** The ride scripts read the civil time (`[EXT:vm-host-time]`, which two machines
   never share). In a session the host issues a clock command (`SetSessionClockCommand`, kind 100)
   before the session's first tick and, while its park runs, whenever its clock's second changes, so
@@ -286,6 +288,30 @@ built or installed, and a late join through the real links, the server's snapsho
 break resumed with a range, a server that ignores the range, a line that broke after its last byte,
 the length and digest checks) and the link's reading of each transfer failure. The save path's
 completeness is the game's join's to prove (C2c-2, with data): the asset-free park has no full restore.
+
+### The host's trimmed frame (C2c-3)
+
+`[EXT:online-coop-snapshot-join]` The host trims the frames every member is known to hold. A server
+whose stored frame number fell behind that (a restart that stored a number older than what it relayed
+since) used to end the session: it needed a frame no one holds any more. Now the host gets everyone the
+park again instead (`CoopHostStream.SkipTrimmed`, design `coop-c2c-design.md` section 6.6):
+
+- It assigns every member a capture at once, past its last frame `L`, also a member assigned within the
+  last ten seconds and one that is away (it hears the assignment when it is back). The members' old
+  streams stop, and each starts from its capture, as a resync does; a forced resync is no failed join.
+- It tells the server its frames go on at `L+1` (`CoopSkipFrames`, server protocol 7), which the server
+  takes next. No member needs the frames between, since every capture starts after them. The server
+  never goes back: a skip to a frame it already relayed is answered with the frame it takes next, as a
+  frame out of turn is, and only the host skips.
+- A refusal of a frame sent before the server took the skip names a frame the skip passed over, and
+  changes nothing. A skip lost with the host's socket goes out again with its resume, without assigning
+  the members anew. A server from before protocol 7 cannot take a skip, and the session ends as before
+  (a game offers co-op on protocol 7 servers only).
+
+`CoopServerTests` covers the server's side (a skip from the host, one back, one from a guest or from
+outside a session); `CoopStreamTests` the host's (one skip, the assignments, a stale refusal, a skip lost
+with the socket, a server that cannot skip); `CoopJoinSessionTests` a session whose two members resync
+from their captures and follow the host's park, equal at the end.
 
 ### Measurements
 
@@ -655,8 +681,7 @@ guarded list.
 - The game's join (C2c-2) is not built yet: the game's candidate build with a join restore mode (the
   audit of every restore step against a live park), the swap in `GameFlow`, its native smoke and the
   join's measurements. A snapshot's upload has the online client's overall 60-second timeout (its
-  download resumes with a range instead). A server that names a frame the host no longer holds still
-  ends the session (C2c-3).
+  download resumes with a range instead).
 - A join capture uses the park's kept asset manifest; when the catalogue changed since the park's
   start (the pools extension adds its objects as they are used), the capture's frame hashes it again,
   as the periodic autosave's does.

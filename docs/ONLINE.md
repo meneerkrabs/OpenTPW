@@ -447,7 +447,7 @@ exit (`artifacts/native-smoke-online-visit-presence.png`, `native-smoke-online-v
 stream and the players' messages without reading them. The game has its link to the server's sessions;
 no screen or park uses it yet (C2b to C2d).
 
-- **The co-op socket.** `/api/v1/coop` (server protocol 6) is a WebSocket of binary messages
+- **The co-op socket.** `/api/v1/coop` (server protocol 7) is a WebSocket of binary messages
   (`OpenTPW.Online.Coop.CoopProtocol`), beside the text chat socket. A desktop game sends its login
   token as a header, a browser as the chat's first frame. The first message is a hello with the game's
   build, its simulation-changing mods in load order and a random id of the game process; the server
@@ -472,7 +472,10 @@ no screen or park uses it yet (C2b to C2d).
   closes each queue to new messages and each socket after what its queue holds, so a guest that reads
   its queue within three seconds gets every frame up to the stored number; a hello during the stop is
   told to come back and a request is ignored, and the game resumes on the new server. After a crash
-  the number may be behind, the welcome says so, and the host's next later frame sets it. A game whose
+  the number may be behind, the welcome says so, and the host's next later frame sets it. A host that
+  no longer holds the frames the server needs gets every member the park again and tells the server its
+  frames go on past them (protocol 7, `[EXT:online-coop-snapshot-join]`, [COOP.md](COOP.md), "The host's
+  trimmed frame"); the server takes that frame next and never goes back. A game whose
   release or mods changed while it was away cannot resume: it leaves (a host's change ends the
   session). A message to one member is delivered at most once (C2b asks again after a resume).
 - **Join snapshots** `[EXT:online-coop-snapshot-join]`. The host uploads the park a joiner starts from

@@ -268,6 +268,12 @@ public sealed class CoopLink : ICoopStreamTransport
 	/// The host's frame <paramref name="seq"/> (each one after the last, from 1) for the other members; false when it cannot go out now (the link is
 	/// reconnecting: the host resends after <see cref="Resumed"/>) or the payload is over <see cref="MaximumFramePayload"/>.
 	/// </summary>
+	/// <summary>[EXT:online-coop-snapshot-join] The server takes the host's skip from protocol 7 on (<see cref="CoopSkipFrames"/>), the protocol this link needs.</summary>
+	public bool CanSkipFrames => true;
+
+	/// <summary>[EXT:online-coop-snapshot-join] The host's skip of the frames it no longer holds: the server takes frame <paramref name="from"/> next.</summary>
+	public bool SkipFrames( ulong from ) => IsHost && from is > 0 and < ulong.MaxValue && Send( new CoopSkipFrames( from ) );
+
 	public bool SendFrame( ulong seq, ReadOnlyMemory<byte> payload )
 	{
 		if ( !IsHost || seq is 0 or ulong.MaxValue || payload.Length > MaximumFramePayload || !Send( new CoopHostFrame( seq, payload ) ) )

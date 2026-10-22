@@ -568,6 +568,31 @@ public class CoopJoinSessionTests
 		CatchUpAndCompare( guest );
 	}
 
+	/// <summary>
+	/// [EXT:online-coop-snapshot-join] A server that needs a frame the host trimmed (docs/COOP.md, "The host's trimmed frame"): the host assigns every member a capture and the frames go on
+	/// past the gap; each member resyncs from its capture without leaving and without a failed join, and follows the host's park.
+	/// </summary>
+	[TestMethod]
+	public void EveryMemberResyncsWhenTheServerNeedsAFrameTheHostNoLongerHolds()
+	{
+		var members = Hosted( 2 );
+		Build( 120, 41 );
+		Assert.IsTrue( host.Session!.HostStream!.OldestFrame > 2 );
+		var parks = members.Select( member => member.Level ).ToArray();
+		network.Restart( lastFrame: 1, seqKnown: true );
+		RoundsUntil( () => members.All( member => member.Level != null && !parks.Contains( member.Level ) && member.Session!.Phase == CoopGuestPhase.Following ),
+			"every member swapped the host's park in again" );
+		Assert.AreEqual( 1, network.Skips.Count );
+		foreach ( var member in members )
+		{
+			Assert.IsNull( member.Session!.EndedWith );
+			Assert.IsNull( member.Link.LeftWith );
+			Assert.AreEqual( 0, member.Session.FailedJoins, "a forced resync is no failed join" );
+		}
+		Build( 120, 42 );
+		CatchUpAndCompare( members );
+	}
+
 	[TestMethod]
 	public void AJoinerCatchesUpWithinItsOwnWindowWhileTheParkRunsOn()
 	{

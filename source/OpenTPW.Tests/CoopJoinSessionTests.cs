@@ -437,6 +437,54 @@ public partial class CoopJoinSessionTests
 		Assert.IsNull( host.Session.HostStream.JoinWindowOf( joiner.Link.Id ), "caught up: an ordinary following guest" );
 		Assert.IsTrue( host.Session.HostStream.WaitedFor.Contains( joiner.Link.Id ) );
 		Assert.IsNull( joiner.Link.LeftWith );
+		// what the join cost (docs/COOP.md, "Measurements"): the host's capture over frames and its upload; the joiner's download, decode, check, swap and catch-up
+		var capture = host.Session.HostStream.CaptureTimings.Single();
+		Assert.IsTrue( capture is { Generation: 1, Save: { Status: CoopTimingStatus.Measured, Steps: > 0 }, Compression.Steps: > 0, PayloadBytes: > 0, UploadSeconds: not null }
+			&& capture.CutMilliseconds > 0 && capture.DigestMilliseconds > 0 && capture.BodyBytes > capture.SaveBytes && capture.Frames >= 3, capture.ToString() );
+		var joined = joiner.Session.JoinTimings.Single();
+		Assert.IsTrue( joined is { Generation: 1, Outcome: "joined", DownloadAttempts: 1, CatchUpTicks: not null } && joined.PayloadBytes == capture.PayloadBytes
+			&& joined.DecodeMilliseconds > 0 && joined.CheckMilliseconds > 0 && joined.DownloadSeconds > 0, joined.ToString() );
+		Assert.AreEqual( 0, joined.Build.Count, "the replay build keeps no stages of its own" );
+		Assert.AreEqual( 0, other.Session!.JoinTimings.Count, "a guest that followed from the session's start built nothing" );
+	}
+
+	[TestMethod]
+	public void AJoinersCatchUpEndsOnlyAfterAFrameFromAfterTheCut()
+	{
+		Hosted();
+		Build( 60, 41 );
+		// the host's park stands still: after the cut it publishes nothing, so the joiner cannot know where the host is
+		host.Holds = true;
+		var joiner = Joiner();
+		RoundsUntil( () => joiner.Level != null, "the joiner swapped its capture in" );
+		Rounds( 30 );
+		var joined = joiner.Session!.JoinTimings.Single();
+		Assert.IsTrue( joined is { Outcome: "joined", CatchUpTicks: null, CatchUpFrames: null, CatchUpSeconds: null }, $"no catch-up before a frame from after the cut: {joined}" );
+		// the park runs on: the host's frames come, and the joiner has caught up once it follows them
+		host.Holds = false;
+		RoundsUntil( () => joined.CatchUpTicks != null, "the joiner caught up" );
+		Assert.IsTrue( joined is { CatchUpTicks: > 0, CatchUpFrames: > 30 } && joined.CatchUpSeconds > 0, joined.ToString() );
+		CatchUpAndCompare( joiner );
+	}
+
+	[TestMethod]
+	public void ASlowJoinersCatchUpEndsAtTheFramePointThatFollows()
+	{
+		Hosted();
+		Build( 60, 43 );
+		var joiner = Joiner();
+		// the joiner runs four frames a second against the host's frames every 100 ms: at each of its session steps a frame of the host's waits, which its frame point applies
+		joiner.Frozen = true;
+		for ( var round = 0; round < 60 * 120 && joiner.Session!.JoinTimings is not [{ CatchUpTicks: not null }]; round++ )
+		{
+			Rounds( 1 );
+			if ( round % 15 == 14 )
+				joiner.Frame( 15 / 60.0 );
+		}
+		joiner.Frozen = false;
+		var joined = joiner.Session!.JoinTimings.Single();
+		Assert.IsTrue( joined is { Outcome: "joined", CatchUpTicks: > 0, CatchUpFrames: > 0 } && joined.CatchUpSeconds > 0, $"the slow joiner caught up: {joined}" );
+		CatchUpAndCompare( joiner );
 	}
 
 	[TestMethod]
@@ -458,6 +506,7 @@ public partial class CoopJoinSessionTests
 		Build( 200, 6 );
 		CatchUpAndCompare( guest );
 		Assert.AreEqual( 1, host.Session!.HostStream!.CapturesTaken );
+		Assert.AreEqual( "resynced", guest.Session.JoinTimings.Single().Outcome, "a resync over the guest's park" );
 	}
 
 	[TestMethod]
@@ -554,6 +603,7 @@ public partial class CoopJoinSessionTests
 		RoundsUntil( () => joiner.Level != null, "the next capture builds right", 20000 );
 		Assert.AreEqual( (2, 2), (host.Session!.HostStream!.CapturesTaken, joiner.Join.Builds) );
 		Assert.AreEqual( 1, joiner.Join.Discarded, "the candidate that differed was released" );
+		CollectionAssert.AreEqual( new[] { "failed its check", "joined" }, joiner.Session!.JoinTimings.Select( timing => timing.Outcome ).ToArray() );
 		CatchUpAndCompare( joiner );
 	}
 
@@ -807,6 +857,8 @@ public partial class CoopJoinSessionTests
 		Assert.AreEqual( 4, answers.Count, "a missing snapshot, then three failed downloads" );
 		Assert.IsTrue( joiner.Link.Sent.Any( sent => sent.Message is CoopSnapshotRequest { Reason: CoopSnapshotReason.Missing } ) );
 		StringAssert.Contains( joiner.Link.LeftWith, "could not be joined" );
+		CollectionAssert.AreEqual( new[] { "failed", "failed", "failed", "failed" }, joiner.Session!.JoinTimings.Select( timing => timing.Outcome ).ToArray(), "every download's capture is finished once" );
+		Assert.IsTrue( joiner.Session.JoinTimings.All( timing => timing is { DownloadAttempts: 1, PayloadBytes: 0 } && timing.Build.Count == 0 ) );
 	}
 
 	[TestMethod]
@@ -988,6 +1040,9 @@ public partial class CoopJoinSessionTests
 		Assert.AreEqual( 1, network.Downloads.Select( download => download.Sha256 ).Distinct().Count(), "the same snapshot each time" );
 		for ( var attempt = 1; attempt < attempts.Count; attempt++ )
 			Assert.IsTrue( attempts[attempt] - attempts[attempt - 1] >= 2 - 1e-9, "each after the wait the server asked for" );
+		// the download's time is the whole of it, the server's waits between the attempts included (a wall clock: the tests' rounds run in it too)
+		var served = joiner.Session.JoinTimings.Single();
+		Assert.IsTrue( served is { Outcome: "joined", DownloadAttempts: 4 } && served.DownloadSeconds >= served.LastAttemptSeconds && served.LastAttemptSeconds >= 0, served.ToString() );
 
 		// a server that stays busy: once the retries run out the download counts as failed, and the next capture serves the member
 		attempts.Clear();
@@ -999,6 +1054,8 @@ public partial class CoopJoinSessionTests
 		var patient = Joiner();
 		RoundsUntil( () => patient.Level != null, "served by the next capture", 20000 );
 		Assert.AreEqual( (CoopSession.MaximumBusyRetries + 2, 3, 1), (attempts.Count, stream.CapturesTaken, patient.Session!.FailedJoins) );
+		CollectionAssert.AreEqual( new[] { ("failed", CoopSession.MaximumBusyRetries + 1), ("joined", 1) },
+			patient.Session.JoinTimings.Select( timing => (timing.Outcome, timing.DownloadAttempts) ).ToArray(), "the retries are one download's attempts" );
 
 		// a server that asks for a wait longer than the host keeps the frames after the cut for: the join ends with the server's reason, to be tried again later
 		network.FailDownload = ( member, sha ) => CoopSnapshotTransfer.Failed( "Too many downloads; try again later.", retryAfter: TimeSpan.FromMinutes( 40 ), busy: true );
@@ -1007,6 +1064,7 @@ public partial class CoopJoinSessionTests
 		StringAssert.Contains( late.Link.LeftWith, "cannot be downloaded now" );
 		StringAssert.Contains( late.Link.LeftWith, "try again later" );
 		Assert.AreEqual( 0, late.Session.FailedJoins );
+		Assert.AreEqual( "failed", late.Session.JoinTimings.Single().Outcome );
 
 		// a download the server refuses for good (no longer a player of the session) leaves at once
 		network.FailDownload = ( member, sha ) => CoopSnapshotTransfer.Failed( "Not a player of this shared park.", permanent: true );
@@ -1014,6 +1072,7 @@ public partial class CoopJoinSessionTests
 		RoundsUntil( () => refused.Session!.EndedWith != null, "the refused joiner left" );
 		StringAssert.Contains( refused.Link.LeftWith, "cannot be downloaded" );
 		Assert.AreEqual( 0, refused.Session.FailedJoins );
+		Assert.AreEqual( "failed", refused.Session.JoinTimings.Single().Outcome );
 		network.FailDownload = null;
 		Build( 60, 33 );
 		CatchUpAndCompare( joiner, patient );
@@ -1085,6 +1144,7 @@ public partial class CoopJoinSessionTests
 		RoundsUntil( () => joiner.Level != null, "the second capture built", 20000 );
 		Assert.AreEqual( (2, 2, 1, 0), (joiner.Join.Builds, host.Session!.HostStream!.CapturesTaken, joiner.Session!.FailedJoins, joiner.Join.Discarded) );
 		Assert.IsTrue( joiner.Link.Sent.Any( sent => sent.Message is CoopSnapshotRequest { Reason: CoopSnapshotReason.FailedCheck } ) );
+		CollectionAssert.AreEqual( new[] { "failed", "joined" }, joiner.Session.JoinTimings.Select( timing => timing.Outcome ).ToArray(), "a build that throws failed" );
 
 		// a following guest whose resync fails to install (its old park half gone) leaves the session, and the candidate built for it is released
 		guest.Join!.InstallFails = true;
@@ -1094,6 +1154,7 @@ public partial class CoopJoinSessionTests
 		StringAssert.Contains( guest.Link.LeftWith, "could not be entered" );
 		Assert.AreEqual( 1, guest.Join.Discarded );
 		Assert.IsNull( guest.Session.Level );
+		Assert.AreEqual( "failed", guest.Session.JoinTimings.Single().Outcome, "an install that fails" );
 		Assert.IsNull( host.Session.EndedWith, "the session goes on without it" );
 		Build( 60, 35 );
 		CatchUpAndCompare( joiner );
@@ -1112,6 +1173,7 @@ public partial class CoopJoinSessionTests
 		RoundsUntil( () => joiner.Level != null, "the next capture built and swapped in", 20000 );
 		Assert.AreEqual( (2, 1, 0), (joiner.Join.Builds, joiner.Join.Abandoned, joiner.Join.Discarded), "the first build abandoned before it had a park" );
 		Assert.AreEqual( 2u, joiner.Session!.Assigned );
+		CollectionAssert.AreEqual( new[] { (1u, "abandoned"), (2u, "joined") }, joiner.Session.JoinTimings.Select( timing => (timing.Generation, timing.Outcome) ).ToArray() );
 		Build( 60, 41 );
 		CatchUpAndCompare( joiner );
 	}
@@ -1135,6 +1197,8 @@ public partial class CoopJoinSessionTests
 		StringAssert.Contains( refused.Link.LeftWith, "files differ" );
 		Assert.AreEqual( (1, 0), (refused.Join.Builds, refused.Session.FailedJoins) );
 		Assert.AreEqual( captures + 1, host.Session.HostStream.CapturesTaken, "one capture, no more" );
+		Assert.AreEqual( "refused", refused.Session.JoinTimings.Single().Outcome );
+		CollectionAssert.AreEqual( new[] { "failed", "joined" }, joiner.Session.JoinTimings.Select( timing => timing.Outcome ).ToArray(), "a step that throws failed" );
 		// a refusal in a later step ends it the same way
 		var late = Joiner();
 		late.Join!.Steps = _ => 4;
@@ -1142,6 +1206,7 @@ public partial class CoopJoinSessionTests
 		RoundsUntil( () => late.Session!.EndedWith != null, "the late refusal left" );
 		StringAssert.Contains( late.Link.LeftWith, "mods differ" );
 		Assert.AreEqual( (1, 1, 0), (late.Join.Builds, late.Join.Abandoned, late.Session.FailedJoins) );
+		Assert.AreEqual( "refused", late.Session.JoinTimings.Single().Outcome );
 		Build( 60, 43 );
 		CatchUpAndCompare( joiner );
 	}
@@ -1159,7 +1224,45 @@ public partial class CoopJoinSessionTests
 		Assert.IsTrue( clock - began >= CoopSession.BuildDeadlineSeconds - 1, $"{clock - began:0.0} s" );
 		RoundsUntil( () => joiner.Level != null, "the next capture built", 20000 );
 		Assert.AreEqual( (2, 1), (joiner.Join.Builds, joiner.Join.Abandoned) );
+		CollectionAssert.AreEqual( new[] { "timed out", "joined" }, joiner.Session!.JoinTimings.Select( timing => timing.Outcome ).ToArray() );
 		CatchUpAndCompare( joiner );
+	}
+
+	/// <summary>A capture still on its way when the session ends is finished as ended; one superseded while downloading, as abandoned.</summary>
+	[TestMethod]
+	public void ACaptureOnItsWayWhenTheSessionEndsOrANewerOneComesIsFinishedOnce()
+	{
+		Hosted();
+		Build( 60, 45 );
+		// the server asks the joiner to wait: its download is on its way while a newer capture is assigned (it reports a failure its build never had)
+		network.FailDownload = ( member, sha ) => CoopSnapshotTransfer.Failed( "Too many downloads.", retryAfter: TimeSpan.FromSeconds( 30 ), busy: true );
+		var joiner = Joiner();
+		RoundsUntil( () => joiner.Session!.JoinTimings.Count == 0 && network.Downloads.Count > 0, "the first download began" );
+		joiner.Link.Send( host.Link.Id, new CoopSnapshotRequest( 1, CoopSnapshotReason.FailedCheck, null ).Encode() );
+		RoundsUntil( () => joiner.Session!.Assigned == 2, "a newer capture was assigned" );
+		Assert.AreEqual( (1u, "abandoned"), (joiner.Session!.JoinTimings.Single().Generation, joiner.Session.JoinTimings.Single().Outcome) );
+		RoundsUntil( () => network.Downloads.Count > 1, "the newer capture's download began" );
+		joiner.Session.End( "The player left." );
+		CollectionAssert.AreEqual( new[] { (1u, "abandoned"), (2u, "ended") }, joiner.Session.JoinTimings.Select( timing => (timing.Generation, timing.Outcome) ).ToArray() );
+		network.FailDownload = null;
+	}
+
+	[TestMethod]
+	public void TheJoinSmokeReadsOnlyFlatEvidenceNames()
+	{
+		// the join smoke reads its captures by the names the host evidence gives, and a page copies files in by name: never a path out of the evidence directory
+		// every file the two phases write
+		foreach ( var name in new[] { "capture-1.otpwjoin", "capture-2.otpwjoin", "frames.bin", "host-evidence.json", "host-final-save.json", "host-final-state.bin", "join-evidence.json",
+			"join-final-save.json", "a", "Capture_2.v1", "console.log", "com10.bin", "nul-1", "LPTA" } )
+			Assert.IsTrue( CoopJoinSmokeTest.IsEvidenceFileName( name ), name );
+		foreach ( var name in new[] { null, "", ".hidden", "../frames.bin", "/save/opentpw-options.json", "saves-join/x.json", "a\\b", "c:x", "frames.bin ", "-x", new string( 'a', 129 ),
+			"capture.bin.", "frames." } )
+			Assert.IsFalse( CoopJoinSmokeTest.IsEvidenceFileName( name ), name ?? "null" );
+		// the names Windows reads as devices, in any case and with any extension
+		var devices = new[] { "CON", "PRN", "AUX", "NUL" }.Concat( Enumerable.Range( 0, 10 ).SelectMany( digit => new[] { $"COM{digit}", $"LPT{digit}" } ) );
+		foreach ( var device in devices )
+			foreach ( var name in new[] { device, device.ToLowerInvariant(), device[..1] + device[1..].ToLowerInvariant(), device + ".bin", device.ToLowerInvariant() + ".json.gz" } )
+				Assert.IsFalse( CoopJoinSmokeTest.IsEvidenceFileName( name ), name );
 	}
 
 	[TestMethod]

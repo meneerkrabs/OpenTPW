@@ -107,7 +107,7 @@ What works today, with your own original game data:
   minutes into its own slot per theme (an OpenTPW extra that never touches your manual save, on by
   default under Options, OpenTPW): after a crash the theme menu offers "Continue autosave"
   ([periodic autosave](https://opentpw.io/docs/PARK-SAVES.html#periodic-autosave)).
-- **Advisor, music and movies:** the advisor speaks with lip sync for 235 of the 248 messages the original game gives (money, rides, litter, guest mood, staff, research, golden tickets, window and tool help; the full list is in `content/data/advisor-producers.toml`), plus 42 restored lines, the
+- **Advisor, music and movies:** the advisor speaks with lip sync for 236 of the 248 messages the original game gives (money, rides, litter, guest mood, staff, research, golden tickets, window and tool help; the full list is in `content/data/advisor-producers.toml`), plus 42 restored lines, the
   park and the front-end lobby play their original music, rides, the crowd and the interface play
   their original sounds, and all nine movies play. Placed ambients, rain and thunder, ride screams,
   staff voices, build-tool feedback, coaster crashes and a software reverb (OpenTPW's own by design) are wired. Focused real-data tests verify decoded

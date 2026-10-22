@@ -27,8 +27,6 @@ Message 204 is the kart and water line tool's help: the click that gives the too
 | blocked | 12 | an input is missing or approximated |
 | none | 103 | nothing to produce: 21 are scored by the scan but their callback is the constant-zero stub, 82 have no producer in `tp.exe` at all |
 
-One wired message is not reached in play yet: 204's producer is ported, but with the shipped rides the kart and water line tool gets no click without a start until the placement's queue start is ported ([TRACKS.md](../TRACKS.md), "Messages").
-
 | Kind | Messages | Producer |
 | --- | ---: | --- |
 | scan | 134 | the background scan `0x59C680` scores it from park state (the 134 computed callbacks) |
@@ -53,7 +51,7 @@ One wired message is not reached in play yet: 204's producer is ported, but with
 | Total | 236 | 0 | 12 | 103 | 351 |
 
 Weather has no message: no score callback reads weather or season state, no poster is a weather event, and no `TAG_SYSTEM.str` caption
-of the advisor mentions rain, storm or snow. The "about 91" messages with a producer: **236** have their producer here (204 is not reached with the shipped rides yet, see above): 68 posted by game code (every `event` row: 0, 323, 106, 128, 129, 33-57, 66,
+of the advisor mentions rain, storm or snow. The "about 91" messages with a producer: **236** have their producer here: 68 posted by game code (every `event` row: 0, 323, 106, 128, 129, 33-57, 66,
 68-70, 93-97, 125-127, 133-136, 167, 215-217, 220-222, 225-227, 234-237, 258, 270-273, 311, 315 and 344), 43 help messages of windows and tools OpenTPW has, and 125 scored by the ported scan (the money
 batch: 100-105 and 107; the 31 park callbacks of the rides, cleanliness and guest mood batches: 3-10, 60, 62, 71, 73-75, 77-79, 81, 82, 85-89, 145, 158, 159 and 259-262; the 38 staff callbacks: 11, 13, 14, 18, 20, 23, 26, 28-32,
 108-112, 114-123, 144, 146-150, 169-172 and 263; the 31 callbacks of the queues, prices and research batches: 15-17, 61, 63, 64, 72, 76, 80, 91, 92 and 238-257; and the 18 callbacks
@@ -558,8 +556,8 @@ Of these, **344** is posted after all: the challenge system's first offer (`0x4D
 **204** was in that list until its producer was found: the kart and water line tool (modes 0xB and 0x10, `0x525A1C` → `0x526CB3`) stores a click as the line start when it has
 none (`0x526D0F`), pushes 0xCC at `0x526D41` and jumps into the queue tool's post at `0x527629` (`0x59B590`, `0x5194D0` on `[0x7CF83C]`, `0x59A940`: the body of `0x486B00`),
 the call the poster search had read as 0x151's only. The placement presets the start at the station's exit (`0x52A1A0`) and the track button's switch from the edit tool at the
-open end (`0x530830`), and `0x52F580` keeps both, so the line tool reaches the click only after a line closed its circuit with exactly Ctrl held and no queue to follow
-(`0x527146`). Neither of `SetMode`'s withdrawal lists names 0xCC. Its row is `help` and `wired` now (`AdvisorToolHelp.TrackLineStart`, posted by `ParkHud.ReportCellToolClick`).
+open end (`0x530830`), and `0x52F580` keeps both, so the line tool reaches the click only after a line closed its circuit with exactly Ctrl held and no placement's queue
+start pending (`0x526F95`, `0x527146`). Neither of `SetMode`'s withdrawal lists names 0xCC. Its row is `help` and `wired` now (`AdvisorToolHelp.TrackLineStart`, posted by `ParkHud.ReportCellToolClick`).
 
 ## Other
 

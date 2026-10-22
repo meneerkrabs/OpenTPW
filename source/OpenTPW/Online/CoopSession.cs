@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using OpenTPW.Online.Coop;
 
 namespace OpenTPW;
@@ -58,6 +59,9 @@ internal interface ICoopJoinBuild
 
 	/// <summary>The entities this build has staged in its scene so far (a probe: the native join smoke abandons a build only once it has staged some); 0 for a build without a scene.</summary>
 	int StagedEntities => 0;
+
+	/// <summary>What the build's stages cost so far, on the wall clock (docs/COOP.md, "Measurements"); null for a build that keeps none.</summary>
+	CoopBuildTimings? Timings => null;
 }
 
 /// <summary>
@@ -122,6 +126,14 @@ internal sealed class CoopSession : IDisposable
 	private readonly SortedDictionary<ulong, ReadOnlyMemory<byte>> buffered = new();
 	private long bufferedBytes;
 	private readonly List<double> failedJoins = new();
+	/// <summary>The capture's timings while its download, build, check and swap run (docs/COOP.md, "Measurements"); the finished ones, newest last.</summary>
+	private CoopJoinTimings? timing;
+	private long downloadPhaseStarted, downloadStarted;
+	private readonly List<CoopJoinTimings> joinTimings = new();
+	/// <summary>The swapped-in park's catch-up while it runs: its timings, the tick it started at, when, and the frames so far.</summary>
+	private (CoopJoinTimings Timing, long Tick, ulong CutFrame, long Started, int Frames)? catchUp;
+	/// <summary>The most finished timings kept.</summary>
+	public const int MaximumJoinTimings = 16;
 
 	private CoopSession( Level? level, ICoopStreamTransport link, CoopRole role, Func<double>? seconds, ICoopJoinHost? joinHost )
 	{
@@ -154,6 +166,9 @@ internal sealed class CoopSession : IDisposable
 
 	/// <summary>The failed joins this guest counts now (within <see cref="FailedJoinWindowSeconds"/>).</summary>
 	public int FailedJoins => failedJoins.Count;
+
+	/// <summary>What the guest's finished builds of captures cost, oldest first (at most <see cref="MaximumJoinTimings"/>; a measurement only).</summary>
+	public IReadOnlyList<CoopJoinTimings> JoinTimings => joinTimings;
 
 	/// <summary>The game builds a downloaded capture (it holds the game's one construction scene meanwhile).</summary>
 	internal bool IsBuilding => building != null;
@@ -306,7 +321,8 @@ internal sealed class CoopSession : IDisposable
 			level.CoopSession = null;
 		buffered.Clear();
 		payload = null;
-		AbandonBuild();
+		AbandonBuild( outcome: "ended" );
+		FinishTiming( "ended" );
 		if ( leave )
 			link.Leave( reason );
 		// a listener that throws keeps neither the other listeners nor a closing park from the rest of its teardown
@@ -356,6 +372,7 @@ internal sealed class CoopSession : IDisposable
 		if ( EndedWith != null || Role != CoopRole.Guest || joinHost == null )
 			return;
 		var now = seconds();
+		StepCatchUp();
 		if ( Phase == CoopGuestPhase.Following && GuestStream is { Stopped: true, Silenced: false } stopped )
 		{
 			// the park lost the stream: a desync, or frames the host no longer holds
@@ -378,6 +395,7 @@ internal sealed class CoopSession : IDisposable
 		{
 			downloadAt = null;
 			var generation = assigned;
+			StartDownload( generation );
 			link.DownloadSnapshot( named.Sha256, named.Bytes, result => Downloaded( generation, result ) );
 			return;
 		}
@@ -420,7 +438,7 @@ internal sealed class CoopSession : IDisposable
 		var downloaded = buildingPayload!;
 		if ( now - buildStarted >= BuildDeadlineSeconds )
 		{
-			AbandonBuild();
+			AbandonBuild( outcome: "timed out" );
 			Failed( CoopSnapshotReason.FailedCheck, $"the park's build did not finish within {BuildDeadlineSeconds} seconds" );
 			return;
 		}
@@ -431,8 +449,8 @@ internal sealed class CoopSession : IDisposable
 		}
 		catch ( Exception error ) when ( error is not OutOfMemoryException )
 		{
-			AbandonBuild();
-			BuildFailed( error );
+			AbandonBuild( outcome: null );
+			BuildFailed( error, build );
 			return;
 		}
 		if ( !complete )
@@ -446,22 +464,25 @@ internal sealed class CoopSession : IDisposable
 	/// A build that threw: a refusal every build of the payload would meet ends the join; anything else the game's restore refuses is a failed check, and the guest's own park, if any,
 	/// goes on waiting.
 	/// </summary>
-	private void BuildFailed( Exception error )
+	private void BuildFailed( Exception error, ICoopJoinBuild? build = null )
 	{
+		FinishTiming( error is CoopJoinRefusedException ? "refused" : "failed", build );
 		if ( error is CoopJoinRefusedException )
 			End( $"The shared park cannot be joined: {error.Message}" );
 		else
 			Failed( CoopSnapshotReason.FailedCheck, $"the park could not be built: {error.Message}" );
 	}
 
-	/// <summary>Abandons the build on its way, if any (a newer capture, the session's end, a failure).</summary>
-	private void AbandonBuild()
+	/// <summary>Abandons the build on its way, if any (a newer capture, the session's end, a failure); its timings finish with <paramref name="outcome"/>, or a failure finishes them (null).</summary>
+	private void AbandonBuild( string? outcome = "abandoned" )
 	{
 		if ( building is not { } build )
 			return;
 		building = null;
 		buildingPayload = null;
 		Release( build );
+		if ( outcome != null )
+			FinishTiming( outcome, build );
 	}
 
 	/// <summary>Checks the built candidate at the cut and swaps it in; a failure keeps the old park (if any) and asks again.</summary>
@@ -475,10 +496,12 @@ internal sealed class CoopSession : IDisposable
 		catch ( Exception error ) when ( error is not OutOfMemoryException )
 		{
 			Release( build );
+			FinishTiming( "failed", build );
 			Failed( CoopSnapshotReason.FailedCheck, $"the park built is missing: {error.Message}" );
 			return;
 		}
 		ulong digest, world;
+		var checkStarted = Stopwatch.GetTimestamp();
 		try
 		{
 			digest = CoopDigest.Compute( candidate, out world );
@@ -487,17 +510,22 @@ internal sealed class CoopSession : IDisposable
 		catch ( Exception error ) when ( error is not OutOfMemoryException )
 		{
 			Release( build );
+			FinishTiming( "failed its check", build );
 			Failed( CoopSnapshotReason.FailedCheck, $"the park built could not be checked: {error.Message}" );
 			return;
 		}
+		if ( timing != null )
+			timing.CheckMilliseconds = CoopClock.Since( checkStarted );
 		if ( candidate.TickCount != downloaded.Ticks || digest != downloaded.Digest || world != downloaded.WorldHash )
 		{
 			var built = candidate.TickCount;
 			Release( build );
+			FinishTiming( "failed its check", build );
 			Failed( CoopSnapshotReason.FailedCheck, $"the park built at tick {built} differs from the host's at its cut ({downloaded.Ticks}): digest {digest:X16} / {downloaded.Digest:X16}, "
 				+ $"world {world:X16} / {downloaded.WorldHash:X16}" );
 			return;
 		}
+		var swapStarted = Stopwatch.GetTimestamp();
 		var old = level;
 		var desyncs = GuestStream?.Desyncs ?? 0;
 		if ( old != null )
@@ -518,6 +546,7 @@ internal sealed class CoopSession : IDisposable
 		{
 			// the old park is gone or half gone: the session cannot go on
 			Release( build );
+			FinishTiming( "failed", build );
 			End( $"The shared park could not be entered: {error.Message}" );
 			return;
 		}
@@ -537,6 +566,12 @@ internal sealed class CoopSession : IDisposable
 		failureAsked = false;
 		report = null;
 		ready = null;
+		if ( timing is { } swapped )
+		{
+			swapped.SwapMilliseconds = CoopClock.Since( swapStarted );
+			catchUp = (swapped, candidate.TickCount, downloaded.Frame, Stopwatch.GetTimestamp(), 0);
+		}
+		FinishTiming( old == null ? "joined" : "resynced", build );
 	}
 
 	/// <summary>Lets the game release a build that is not swapped in; a release that throws is logged, so the join goes on to its failure.</summary>
@@ -593,6 +628,7 @@ internal sealed class CoopSession : IDisposable
 				answeredGeneration = generation;
 				failureAsked = false;
 				ready = answer;
+				StartDownload( generation );
 				link.DownloadSnapshot( answer.Sha256, answer.Bytes, result => Downloaded( generation, result ) );
 				break;
 			case CoopSnapshotFailed failure:
@@ -623,6 +659,9 @@ internal sealed class CoopSession : IDisposable
 		ready = null;
 		payload = null;
 		AbandonBuild();
+		// an older capture that was still on its way (downloading, waiting for the server, downloaded but not built)
+		if ( timing is { } older && older.Generation < generation )
+			FinishTiming( "abandoned" );
 		retryAt = null;
 		downloadAt = null;
 		busyRetries = 0;
@@ -645,9 +684,16 @@ internal sealed class CoopSession : IDisposable
 	{
 		if ( EndedWith != null || generation != assigned || ready is not { } answer )
 			return;
+		if ( timing is { } downloading && downloading.Generation == generation )
+		{
+			downloading.LastAttemptSeconds = CoopClock.Since( downloadStarted ) / 1000;
+			downloading.DownloadSeconds = CoopClock.Since( downloadPhaseStarted ) / 1000;
+			downloading.PayloadBytes = result.Payload?.Length ?? 0;
+		}
 		if ( result.Missing )
 		{
 			// the server keeps a session's newest two snapshots: several members' captures rotated this one out
+			FinishTiming( "failed" );
 			failureAsked = true;
 			Ask( CoopSnapshotReason.Missing );
 			return;
@@ -655,6 +701,7 @@ internal sealed class CoopSession : IDisposable
 		if ( result.Permanent )
 		{
 			// the server no longer counts this game a player of the session
+			FinishTiming( "failed" );
 			End( $"The shared park cannot be downloaded: {result.Failure}" );
 			return;
 		}
@@ -665,6 +712,7 @@ internal sealed class CoopSession : IDisposable
 			var wait = result.RetryAfter?.TotalSeconds ?? BusyRetrySeconds;
 			if ( wait > MaximumBusyWaitSeconds )
 			{
+				FinishTiming( "failed" );
 				End( $"The shared park cannot be downloaded now: {result.Failure}" );
 				return;
 			}
@@ -677,12 +725,16 @@ internal sealed class CoopSession : IDisposable
 		}
 		if ( !result.Succeeded )
 		{
+			FinishTiming( "failed" );
 			Failed( CoopSnapshotReason.FailedDownload, $"the park's download failed: {result.Failure}" );
 			return;
 		}
+		var decodeStarted = Stopwatch.GetTimestamp();
 		try
 		{
 			var read = CoopJoinPayload.Decode( result.Payload );
+			if ( timing != null )
+				timing.DecodeMilliseconds = CoopClock.Since( decodeStarted );
 			if ( read.Generation != generation || read.Records != answer.Records || read.Ticks != answer.Ticks || read.Frame != answer.Frame || read.Digest != answer.Digest
 				|| read.WorldHash != answer.WorldHash )
 				throw new InvalidDataException( "The snapshot is not the capture the host named." );
@@ -690,8 +742,77 @@ internal sealed class CoopSession : IDisposable
 		}
 		catch ( InvalidDataException error )
 		{
+			FinishTiming( "failed its check" );
 			Failed( CoopSnapshotReason.FailedCheck, error.Message );
 		}
+	}
+
+	/// <summary>[EXT:online-coop-snapshot-join] The download of capture <paramref name="generation"/> starts (again, after a server's wait): its timings begin, or go on.</summary>
+	private void StartDownload( uint generation )
+	{
+		if ( timing is not { } current || current.Generation != generation )
+		{
+			// a newer capture's: whatever the older one's came to, it was abandoned
+			FinishTiming( "abandoned" );
+			timing = new CoopJoinTimings { Generation = generation };
+			downloadPhaseStarted = Stopwatch.GetTimestamp();
+		}
+		timing.DownloadAttempts++;
+		downloadStarted = Stopwatch.GetTimestamp();
+	}
+
+	/// <summary>
+	/// [EXT:online-coop-snapshot-join] The current capture's timings end with <paramref name="outcome"/>, the stages of <paramref name="build"/> (if any) with them: kept (the newest
+	/// <see cref="MaximumJoinTimings"/>) and logged.
+	/// </summary>
+	private void FinishTiming( string outcome, ICoopJoinBuild? build = null )
+	{
+		if ( timing is not { } finished )
+			return;
+		timing = null;
+		finished.Outcome = outcome;
+		if ( build?.Timings is { } stages )
+		{
+			finished.Build = stages.Stages.ToList();
+			finished.LongSteps = stages.LongSteps.ToList();
+			finished.BuildFrames = stages.Frames;
+			finished.LongestBuildFrameMilliseconds = stages.LongestFrameMilliseconds;
+			finished.ProcessBuild = stages.ProcessBuild;
+			finished.Sections = new Dictionary<string, double>( stages.Sections );
+		}
+		joinTimings.Add( finished );
+		if ( joinTimings.Count > MaximumJoinTimings )
+			joinTimings.RemoveAt( 0 );
+		Log.Trace( $"Co-op {finished}." );
+	}
+
+	/// <summary>
+	/// [EXT:online-coop-snapshot-join] A park swapped in has caught up once a frame point of its stream applied a frame of the host's from after the cut and left it following within its
+	/// window: its catch-up's ticks, live updates and time, read at the next session step (the frames it had then; one still on its way is not known). Before such a frame the host's
+	/// place is not known: a fresh stream at the cut follows by its own horizon. A frame point, not the session step, decides, since frames that came since the last one wait at the step.
+	/// </summary>
+	private void StepCatchUp()
+	{
+		if ( catchUp is not { } running )
+			return;
+		if ( GuestStream is not { } stream || level == null )
+		{
+			catchUp = null;
+			return;
+		}
+		// the frame before this step ran a live update of the park (the swap's own frame the first)
+		var frames = running.Frames + 1;
+		if ( stream.FollowingThrough <= running.CutFrame )
+		{
+			catchUp = running with { Frames = frames };
+			return;
+		}
+		catchUp = null;
+		running.Timing.CatchUpTicks = level.TickCount - running.Tick;
+		running.Timing.CatchUpFrames = frames;
+		running.Timing.CatchUpSeconds = CoopClock.Since( running.Started ) / 1000;
+		Log.Trace( $"Co-op join {running.Timing.Generation} caught up with the host after {running.Timing.CatchUpTicks} ticks in {frames} frames "
+			+ $"({running.Timing.CatchUpSeconds:0.000} s)." );
 	}
 
 	/// <summary>The frames while no stream of the current capture runs, buffered for it (within the stream's caps).</summary>

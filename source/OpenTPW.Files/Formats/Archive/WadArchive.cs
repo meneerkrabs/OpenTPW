@@ -1,4 +1,6 @@
-﻿namespace OpenTPW;
+﻿using Microsoft.Win32.SafeHandles;
+
+namespace OpenTPW;
 
 /*
  * Special thanks to Fatbag: http://wiki.niotso.org/RefPack, 
@@ -67,7 +69,7 @@ public sealed class WadArchive : IArchive
 	internal static long cachedMemberBytes;
 
 	/// <summary>
-	/// Bytes of the archive files read into memory so far (archives are never closed, so this is also what they hold) and of the members
+	/// Bytes of the archive files read into memory so far (archives held in memory are never released, so this is also what they hold) and of the members
 	/// kept decompressed now, for the memory accounting of the browser harness.
 	/// </summary>
 	public static (long Archives, long Members) MemoryInUse => (Interlocked.Read( ref loadedBytes ), Interlocked.Read( ref cachedMemberBytes ));
@@ -87,15 +89,175 @@ public sealed class WadArchive : IArchive
 	/// </summary>
 	private readonly string? path;
 
+	/// <summary>
+	/// The open file of an archive with a path (guarded by <see cref="readLock"/>), kept between member reads: a park start read 1,311 members
+	/// and opened the archive for each, and on a hard disk with an antivirus filter every open costs (issue #754). It shares reading, writing
+	/// and deleting, so other readers and a replacement of the file are not refused by it; <see cref="CloseFileHandles"/> closes every kept
+	/// file wherever archives may change, and at most <see cref="MaxOpenHandles"/> stay open.
+	/// </summary>
+	private SafeFileHandle? handle;
+
+	/// <summary>This archive's place among <see cref="openHandles"/> while its file is open, from the open to the close (guarded by <see cref="openHandles"/>).</summary>
+	private LinkedListNode<WadArchive>? handleNode;
+
+	/// <summary>When this archive's file was last read, on <see cref="useClock"/> (guarded by <see cref="openHandles"/>).</summary>
+	private long lastUse;
+
+	/// <summary>Every archive whose file is open, the least recently read first; an archive joins it when it opens its file and leaves it when it closes it.</summary>
+	private static readonly LinkedList<WadArchive> openHandles = new();
+
+	/// <summary>Counts the reads through kept files, to tell whether a file chosen for closing was read again meanwhile (guarded by <see cref="openHandles"/>).</summary>
+	private static long useClock;
+
+	/// <summary>
+	/// How many archive files stay open between reads (the least recently read is closed first). The browser keeps none: its files are in
+	/// memory, opening one costs nothing, and its theme files arrive while archives are in use.
+	/// </summary>
+	public static int MaxOpenHandles { get; set; } = OperatingSystem.IsBrowser() ? 0 : 64;
+
+	/// <summary>The archive files open now (tests and measurements).</summary>
+	public static int OpenHandleCount
+	{
+		get
+		{
+			lock ( openHandles )
+				return openHandles.Count;
+		}
+	}
+
+	/// <summary>
+	/// Closes the file of every archive whose file is open when it is called, waiting for a read in progress to end; the next read of an archive
+	/// opens its file again. Called wherever archives may change on disk or be replaced (a bonus import, a new game folder, the mod set, the
+	/// interface language, a texture pack switch) and at shutdown, so that no kept handle stands in the way (on Windows a folder with an open file
+	/// cannot be moved or removed). Never called while holding an archive's <see cref="readLock"/>.
+	/// </summary>
+	public static void CloseFileHandles()
+	{
+		WadArchive[] open;
+		lock ( openHandles )
+			open = openHandles.ToArray();
+		// Lock order: an archive's read lock, then the list. A file opened by a read in progress is on the list from its open, so it is closed
+		// once that read ends.
+		foreach ( var archive in open )
+			lock ( archive.readLock )
+				archive.CloseHandle();
+	}
+
+	/// <summary>
+	/// Closes the least recently read files until at most <paramref name="keep"/> stay open; a file read again since it was chosen stays open.
+	/// Never called while holding an archive's <see cref="readLock"/>.
+	/// </summary>
+	private static void TrimFileHandles( int keep )
+	{
+		(WadArchive Archive, long LastUse)[] victims;
+		lock ( openHandles )
+		{
+			var excess = openHandles.Count - Math.Max( 0, keep );
+			if ( excess <= 0 )
+				return;
+			victims = openHandles.Take( excess ).Select( archive => (archive, archive.lastUse) ).ToArray();
+		}
+		foreach ( var (victim, chosenAt) in victims )
+		{
+			lock ( victim.readLock )
+			{
+				bool readAgain;
+				lock ( openHandles )
+					readAgain = victim.lastUse != chosenAt;
+				if ( !readAgain )
+					victim.CloseHandle();
+			}
+		}
+	}
+
+	/// <summary>The kept file, or the file opened now and put on <see cref="openHandles"/> (under <see cref="readLock"/>).</summary>
+	private SafeFileHandle OpenHandle()
+	{
+		if ( handle is { IsClosed: false } open )
+			return open;
+		handle = File.OpenHandle( path!, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete );
+		LoadProfile.Count( "file opens" );
+		lock ( openHandles )
+		{
+			handleNode ??= openHandles.AddLast( this );
+			lastUse = ++useClock;
+		}
+		return handle;
+	}
+
+	/// <summary>Marks the kept file as the most recently read (under <see cref="readLock"/>, with the file open).</summary>
+	private void TouchHandle()
+	{
+		lock ( openHandles )
+		{
+			lastUse = ++useClock;
+			if ( handleNode == null )
+				handleNode = openHandles.AddLast( this );
+			else if ( handleNode != openHandles.Last )
+			{
+				openHandles.Remove( handleNode );
+				openHandles.AddLast( handleNode );
+			}
+		}
+	}
+
+	/// <summary>Closes the kept file and takes it off <see cref="openHandles"/> (under <see cref="readLock"/>).</summary>
+	private void CloseHandle()
+	{
+		lock ( openHandles )
+		{
+			if ( handleNode != null )
+				openHandles.Remove( handleNode );
+			handleNode = null;
+		}
+		handle?.Dispose();
+		handle = null;
+	}
+
 	public WadArchive( string path )
 	{
 		this.path = path;
-		using var profile = LoadProfile.Measure( "wad-index" );
-		using var fileStream = File.OpenRead( path );
-		LoadProfile.Count( "file opens" );
-		LoadProfile.Count( "wad archives indexed" );
-		LoadProfile.Count( "bytes read", fileStream.Length );
-		ReadFromStream( fileStream, keepInMemory: false );
+		using ( LoadProfile.Measure( "wad-index" ) )
+		{
+			lock ( readLock )
+			{
+				// the file the directory is read from stays open for the member reads
+				var file = OpenHandle();
+				try
+				{
+					var length = RandomAccess.GetLength( file );
+					LoadProfile.Count( "wad archives indexed" );
+					LoadProfile.Count( "bytes read", length );
+					if ( length > Array.MaxLength )
+						throw new InvalidDataException( "WAD input exceeds the supported managed buffer range." );
+					var bytes = new byte[length];
+					if ( ReadAt( file, bytes, 0 ) != bytes.Length )
+						throw new InvalidDataException( "WAD input stream is truncated." );
+					ReadFromBytes( bytes, keepInMemory: false );
+					TouchHandle();
+				}
+				catch
+				{
+					CloseHandle();
+					throw;
+				}
+			}
+		}
+		TrimFileHandles( MaxOpenHandles );
+	}
+
+	/// <summary>Fills <paramref name="buffer"/> from <paramref name="offset"/> of the file, or as much of it as the file has; returns the bytes read.</summary>
+	private static int ReadAt( SafeFileHandle file, Span<byte> buffer, long offset )
+	{
+		var filled = 0;
+		while ( filled < buffer.Length )
+		{
+			var read = RandomAccess.Read( file, buffer[filled..], offset + filled );
+			if ( read == 0 )
+				break;
+			filled += read;
+		}
+		return filled;
 	}
 
 	public WadArchive( Stream stream )
@@ -109,6 +271,7 @@ public sealed class WadArchive : IArchive
 		{
 			disposed = true;
 			memoryStream?.Dispose();
+			CloseHandle();
 		}
 	}
 
@@ -291,7 +454,13 @@ public sealed class WadArchive : IArchive
 			throw new InvalidDataException( "WAD input stream is truncated.", exception );
 		}
 		tempStreamReader.Close();
+		ReadFromBytes( bytes, keepInMemory );
+	}
 
+	/// <summary>Reads the directory from the whole archive's bytes; with <paramref name="keepInMemory"/> false (an archive with a path) the bytes are dropped afterwards.</summary>
+	private void ReadFromBytes( byte[] bytes, bool keepInMemory )
+	{
+		var fileLength = bytes.Length;
 		memoryStream = new ExpandedMemoryStream( bytes );
 		Root = new ArchiveDirectory( "/" );
 
@@ -378,12 +547,16 @@ public sealed class WadArchive : IArchive
 
 	private readonly object readLock = new();
 
-	/// <summary>Seek and read are one step: a texture pack switch reads members on a worker thread while the game thread may read the same archive.</summary>
+	/// <summary>
+	/// Seek and read are one step: a texture pack switch reads members on a worker thread while the game thread may read the same archive. An
+	/// archive with a path reads through its kept file (<see cref="handle"/>), opening it again when it was closed.
+	/// </summary>
 	public byte[] GetData( int offset, int length )
 	{
 		using var profile = LoadProfile.Measure( "wad-read" );
 		ArgumentOutOfRangeException.ThrowIfNegative( offset );
 		ArgumentOutOfRangeException.ThrowIfNegative( length );
+		byte[] data;
 		lock ( readLock )
 		{
 			ObjectDisposedException.ThrowIf( disposed, this );
@@ -395,26 +568,28 @@ public sealed class WadArchive : IArchive
 			// From the file, the same bytes the in-memory copy gave: a range past its end comes back padded with zeros.
 			if ( offset >= fileSize || length == 0 )
 				return new byte[length];
-			// Opened per read and closed again, so the file can still be replaced or deleted (a bonus import on Windows) while the
-			// archive is open; a file of another length is not the one whose directory was read.
-			using var file = new FileStream( path!, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, bufferSize: 1 );
-			LoadProfile.Count( "file opens" );
+			var file = OpenHandle();
 			LoadProfile.Count( "wad member reads" );
 			LoadProfile.Count( "bytes read", length );
-			if ( file.Length != fileSize )
-				throw new IOException( $"{path} changed on disk after its directory was read." );
-			var data = new byte[length];
-			file.Seek( offset, SeekOrigin.Begin );
-			var filled = 0;
-			while ( filled < length )
+			try
 			{
-				var read = file.Read( data, filled, length - filled );
-				if ( read == 0 )
-					break;
-				filled += read;
+				// A file of another length is not the one whose directory was read: refused, and its handle closed, so a read after the
+				// original bytes are back opens it again.
+				if ( RandomAccess.GetLength( file ) != fileSize )
+					throw new IOException( $"{path} changed on disk after its directory was read." );
+				data = new byte[length];
+				ReadAt( file, data, offset );
 			}
-			return data;
+			catch
+			{
+				// a refused or failed read (a file of another length, an I/O error, no memory for the bytes) leaves no file open
+				CloseHandle();
+				throw;
+			}
+			TouchHandle();
 		}
+		TrimFileHandles( MaxOpenHandles );
+		return data;
 	}
 
 	public Stream OpenFile( string path )

@@ -499,7 +499,7 @@ public sealed partial class ParkHud
 		PostToolHelp( AdvisorToolHelp.BuildStart( entry.WhichUIType, level.Objects.Objects.Any( placed => !placed.IsDeleted && placed.Entry.WhichUIType == 0 ) ) );
 	}
 
-	// [BIN:TPW-EXE:0x5253b8 placement dispatcher] a placement without an entrance keeps the build tool armed when the click held exactly Ctrl (modifier mask 0xc), else the tool returns to mode 0 (0x52f580); a ride with an entrance (0x52fab0, the type's +0x40) continues into the queue tool (0x52f580(3, 0): 0x52529e, the Move tool's 0x5258e1; a kart or water ride once its station line closes, 0x527004), whose last click ends the tool whatever the modifier (0x5275f2). Level.PlaceObject owns purchase/guest linkage and its removal handler owns scrap credits
+	// [BIN:TPW-EXE:0x5253b8 placement dispatcher] a placement without an entrance keeps the build tool armed when the click held exactly Ctrl (modifier mask 0xc), else the tool returns to mode 0 (0x52f580); a ride with an entrance (0x52fab0, the type's +0x40) continues into the queue tool (0x52f580(3, 0): 0x52529e, the Move tool's 0x5258e1; a kart or water ride once its circuit closes while the placement's queue start is pending, 0x526f95 and 0x527004), whose last click ends the tool whatever the modifier (0x5275f2). Level.PlaceObject owns purchase/guest linkage and its removal handler owns scrap credits
 	// [APPROX:UI-031] the coaster tool ends the build tool at the placement whatever the modifier, where the original's coaster placement goes on into the queue tool (0x52519f → 0x525259) and its track tool (mode 0x15) is not entered in 0x524960; an entrance-bearing placement keeps the angle through the queue tool whatever the modifier, where the original keeps it only for exactly Ctrl (0x5259f4, else 0x52f1b0(0, 0) at 0x5259fe), which shows only in a tool armed while the queue tool runs (OpenTPW starts it at 0); and a queue whose start cell is a path (the cell type +0x29c = 1, 0x5259cf) ends the tool at once in the original — evidence needed: where the original's coaster placement enters its track tool, which of OpenTPW's placements have a path cell as the queue's start, and whether a tool armed from the queue tool keeps the angle
 	private void OnObjectPlaced( OriginalObject item )
 	{
@@ -542,8 +542,8 @@ public sealed partial class ParkHud
 			PostMessage( strings.Extra( OpenTpwText.PoolSlideHint ) );
 			return;
 		}
-		// a placed water ride enters the water track tool (tool mode 16) at its station; the queue tool follows once the circuit is valid (Level.RewalkTrack)
-		if ( item.Runtime.Bump != null && level.EnterTrackTool( item ) )
+		// a placed kart or water ride enters its track tool (tool mode 11 or 16) at its station with its queue start pending; the queue tool follows once the circuit is valid (Level.ContinueTrackTool)
+		if ( item.Runtime.Bump != null && level.EnterPlacedTrackTool( item ) )
 		{
 			level.ResetBuildRotation();
 			PostMessage( TrackToolHelp );
@@ -1137,7 +1137,7 @@ public sealed partial class ParkHud
 		var modeBefore = tool.Mode;
 		var interfaceBefore = InterfaceMode();
 		var sessionRefusals = level.SessionRefusals;
-		// the click's modifiers go with it: a kart or water line that closes its circuit with exactly Ctrl and no queue to follow keeps its line tool (Level.ContinueTrackTool)
+		// the click's modifiers go with it: a kart or water line that closes its circuit with exactly Ctrl and no queue start pending keeps its line tool (Level.ContinueTrackTool)
 		// [BIN:TPW-EXE:0x527146 track line end] with no queue start (0x8186c0 zero) the line tool's last click clears the start and keeps its mode (0xB or 0x10) when the modifier word is exactly 0xC, and any other word ends the tool (0x52f200(0, 0) at 0x527156)
 		var result = level.ClickCellTool( (cursorX, cursorY), Input.ModifierMaskDown );
 		// [BIN:TPW-EXE:0x526cb3 track click] every release in the kart (0xB) or water (0x10) track mode that passes the refused-ghost latch plays cat_ui 0xCE at the clicked cell, the first click included and whatever the line then does
@@ -1241,8 +1241,7 @@ public sealed partial class ParkHud
 			level.SetBuildRotation( rotation );
 			var anchor = Level.GetCentredAnchor( entry, targetX, targetY, rotation );
 			var placementResult = level.CheckBuildTarget( entry, targetX, targetY, rotation );
-			var allowed = placementResult == OriginalPlacementResult.Allowed
-				&& (level.Park == null || level.Park.Economy.CheckBuild( entry.InfoId, level.IsMoving ) == ParkEconomy.PurchaseResult.Ok);
+			var allowed = level.BuildGhostAllowed( entry, placementResult );
 			placementRefused = !allowed;
 			var footprint = level.ObjectBlueprint( entry, anchor.X, anchor.Y, rotation, placementResult, allowed );
 			cells.AddRange( footprint.Cells );

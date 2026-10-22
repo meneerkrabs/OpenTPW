@@ -162,8 +162,9 @@ public sealed class CoasterRenderer : Entity, IFirstFramePreparation
 	}
 
 	/// <summary>
-	/// [EXT:park-entry-preparation] Each coaster's view, its type's assets and its meshes, one coaster a step, as the first update makes them: the view's update reads the ride and
-	/// the scene clock, which stand still until the park's first frame, so that frame's update finds them made and redraws nothing.
+	/// [EXT:park-entry-preparation] Each coaster's view, its type's assets and its track's and cars' models, one coaster a step, as the first update makes them (the ride stands
+	/// still until the park's first frame); that update then finds them made, and takes the scroll's clock as a view made in it does. A view whose preparation fails is dropped, so
+	/// the first update makes it again and meets the same failure as before.
 	/// </summary>
 	IEnumerable<bool> IFirstFramePreparation.PrepareFirstFrame()
 	{
@@ -171,7 +172,20 @@ public sealed class CoasterRenderer : Entity, IFirstFramePreparation
 			yield break;
 		foreach ( var ride in coasters().ToList() )
 		{
-			ViewOf( ride )?.Update();
+			if ( ViewOf( ride ) is { } view )
+			{
+				try
+				{
+					view.Prepare();
+				}
+				catch
+				{
+					views.Remove( view );
+					view.Dispose();
+					ReleaseAssets( view.Assets );
+					throw;
+				}
+			}
 			yield return true;
 		}
 	}
@@ -301,6 +315,26 @@ public sealed class CoasterRenderer : Entity, IFirstFramePreparation
 		{
 			if ( disposed )
 				return;
+			EnsureTrack();
+			UpdateScroll();
+			UpdateCars();
+		}
+
+		/// <summary>
+		/// [EXT:park-entry-preparation] The track's and the cars' models ahead of the park's first frame, without the frame's update: that update takes the scroll's clock again,
+		/// so the scroll starts there as it does for a view made in that frame.
+		/// </summary>
+		public void Prepare()
+		{
+			if ( disposed )
+				return;
+			EnsureTrack();
+			EnsureCars();
+			rebaseScroll = true;
+		}
+
+		private void EnsureTrack()
+		{
 			var preview = Ride.IsOperational ? null : owner.previewOf( Ride );
 			var key = (Ride.Track.Version, Ride.IsOperational, Ride.BeingEdited, Ride.Samples.Count, preview);
 			if ( dirty || key != built )
@@ -309,9 +343,9 @@ public sealed class CoasterRenderer : Entity, IFirstFramePreparation
 				built = key;
 				dirty = false;
 			}
-			UpdateScroll();
-			UpdateCars();
 		}
+
+		private bool rebaseScroll;
 
 		// ---- Track and pylons ----------------------------------------------------------------------
 
@@ -480,9 +514,13 @@ public sealed class CoasterRenderer : Entity, IFirstFramePreparation
 			if ( owner.sceneMilliseconds is { } clock )
 			{
 				var now = clock();
+				// a view prepared ahead takes its clock in the park's first frame, as one made there does
+				if ( rebaseScroll )
+					lastSceneMilliseconds = now;
 				gapSeconds = unchecked( now - lastSceneMilliseconds ) * 0.001f;
 				lastSceneMilliseconds = now;
 			}
+			rebaseScroll = false;
 			scrollPhase = AdvanceScroll( scrollPhase, Ride.PowerFactor, gapSeconds );
 			for ( var index = 0; index < scrollVertices.Length; index++ )
 				scrollVertices[index].TexCoords = new SVector2( scrollU[index], scrollBase[index] - scrollPhase );
@@ -539,10 +577,15 @@ public sealed class CoasterRenderer : Entity, IFirstFramePreparation
 			}
 		}
 
-		private void UpdateCars()
+		private void EnsureCars()
 		{
 			if ( carTrains != Ride.Trains.Count || carsOperational != Ride.IsOperational )
 				RebuildCars();
+		}
+
+		private void UpdateCars()
+		{
+			EnsureCars();
 			if ( cars.Count == 0 || Ride.Spacing <= 0 )
 				return;
 			var engine = owner.ToEngine();

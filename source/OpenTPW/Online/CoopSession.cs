@@ -434,12 +434,13 @@ internal sealed class CoopSession : IDisposable
 		buildChecked = false;
 	}
 
-	/// <summary>One frame of the game's build; the one that completes it checks the candidate at the cut and swaps it in.</summary>
+	/// <summary>One frame of the game's build; the frame it completes in checks the candidate at the cut, and the next swaps it in.</summary>
 	private void StepBuild( double now )
 	{
 		var build = building!;
 		var downloaded = buildingPayload!;
-		if ( now - buildStarted >= BuildDeadlineSeconds )
+		// a build checked in time is swapped in the next frame, whatever the clock says then
+		if ( !buildChecked && now - buildStarted >= BuildDeadlineSeconds )
 		{
 			AbandonBuild( outcome: "timed out" );
 			Failed( CoopSnapshotReason.FailedCheck, $"the park's build did not finish within {BuildDeadlineSeconds} seconds" );

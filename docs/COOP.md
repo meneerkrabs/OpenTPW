@@ -415,6 +415,10 @@ offscreen: `--coop-join-smoke host|join --coop-join-evidence <directory>`), runs
   A measuring mode (`--coop-join-smoke measure`; `OPENTPW_COOP_JOIN_PHASE=measure` for the script) joins
   the untouched captures once each, for the numbers below ("Measurements"); both modes require every
   build's timings with its outcome, finite and not negative, and the host phase every capture's.
+  `OPENTPW_COOP_JOIN_PHASE=host` runs the host phase only, for a join phase elsewhere (C2c-2b-2's
+  browser). The smoke's runner owns its loop and its end: the native one runs `Render.Run` with a
+  watchdog, closes the window on completion and exits on a failure, and the join phase reads the captures
+  only by flat file names in its evidence directory.
 
 A mutation run took each skip of the restore mode that the smoke stages out, in turn, and the smoke caught
 every one: a join that reopens a closed built coaster, gives a tour ride a fresh controller, repairs the

@@ -1248,6 +1248,24 @@ public partial class CoopJoinSessionTests
 	}
 
 	[TestMethod]
+	public void TheJoinSmokeReadsOnlyFlatEvidenceNames()
+	{
+		// the join smoke reads its captures by the names the host evidence gives, and a page copies files in by name: never a path out of the evidence directory
+		// every file the two phases write
+		foreach ( var name in new[] { "capture-1.otpwjoin", "capture-2.otpwjoin", "frames.bin", "host-evidence.json", "host-final-save.json", "host-final-state.bin", "join-evidence.json",
+			"join-final-save.json", "a", "Capture_2.v1", "console.log", "com10.bin", "nul-1", "LPTA" } )
+			Assert.IsTrue( CoopJoinSmokeTest.IsEvidenceFileName( name ), name );
+		foreach ( var name in new[] { null, "", ".hidden", "../frames.bin", "/save/opentpw-options.json", "saves-join/x.json", "a\\b", "c:x", "frames.bin ", "-x", new string( 'a', 129 ),
+			"capture.bin.", "frames." } )
+			Assert.IsFalse( CoopJoinSmokeTest.IsEvidenceFileName( name ), name ?? "null" );
+		// the names Windows reads as devices, in any case and with any extension
+		var devices = new[] { "CON", "PRN", "AUX", "NUL" }.Concat( Enumerable.Range( 0, 10 ).SelectMany( digit => new[] { $"COM{digit}", $"LPT{digit}" } ) );
+		foreach ( var device in devices )
+			foreach ( var name in new[] { device, device.ToLowerInvariant(), device[..1] + device[1..].ToLowerInvariant(), device + ".bin", device.ToLowerInvariant() + ".json.gz" } )
+				Assert.IsFalse( CoopJoinSmokeTest.IsEvidenceFileName( name ), name );
+	}
+
+	[TestMethod]
 	public void ASecondDownloadAnswerBuildsNothingTwice()
 	{
 		Hosted();

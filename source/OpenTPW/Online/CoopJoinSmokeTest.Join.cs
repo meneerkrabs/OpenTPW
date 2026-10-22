@@ -50,6 +50,8 @@ internal sealed partial class CoopJoinSmokeTest
 	{
 		hostEvidence = ReadJson<CoopSmokeHostEvidence>( "host-evidence.json" );
 		Require( hostEvidence.Completed && hostEvidence.Failure == null && hostEvidence.Cuts.Length == 2, "read the completed host phase's evidence as the oracle" );
+		// the captures are read from the evidence directory by the names the evidence gives
+		Require( hostEvidence.Cuts.All( cut => IsEvidenceFileName( cut.File ) ), "the host evidence names its captures by flat file names" );
 		var frames = ReadFrames();
 		var joinedAt = hostEvidence.Cuts[0].Assigned;
 		// the server relays a member the frames after its join
@@ -58,7 +60,9 @@ internal sealed partial class CoopJoinSmokeTest
 		replay = new CoopSmokeReplayTransport( after, joinedAt ) { Heard = Heard };
 		checkpointsIn = after.ToDictionary( item => item.Seq, item => CoopStreamFrame.Decode( item.Payload ).Checkpoints.Count );
 		paceFrame = hostEvidence.Cuts[0].AssignedHostFrame;
-		flow.ShowFrontEnd();
+		// a page's start shows the front end already; the native run starts without one
+		if ( flow.Menu == null )
+			flow.ShowFrontEnd();
 		frontEndScene = Entity.All;
 		joinStep = JoinStep.FrontEnd;
 	}

@@ -52,16 +52,21 @@ internal sealed partial class CoopJoinSmokeTest
 	/// <summary>Whether the run has ended, passed or failed.</summary>
 	internal bool Ended => done;
 
-	/// <summary>The evidence written again once the frame that ended the run has returned, with that frame's whole call time (written first inside the frame).</summary>
-	internal void PageEnded()
+	/// <summary>
+	/// The evidence written again once the frame that ended the run has returned, with that frame's whole call time (written first inside the frame); null when it was written, else
+	/// why not (a run whose evidence could not be written has not passed).
+	/// </summary>
+	internal string? PageEnded()
 	{
 		try
 		{
 			WriteJson( "join-evidence.json", JoinEvidence( completed, failure ) );
+			return null;
 		}
 		catch ( Exception error ) when ( error is not OutOfMemoryException )
 		{
 			Log.Warning( $"Co-op join smoke: writing the evidence after the run's last frame failed: {error.Message}" );
+			return error.Message;
 		}
 	}
 

@@ -146,7 +146,12 @@ internal sealed partial class GameFlow
 		try
 		{
 			while ( !build.Constructed && !OverBudget() )
+			{
 				build.Constructed = !build.Level.Step();
+				// the step just run announced that the next one is long: it starts a frame of its own (docs/BROWSER-PERFORMANCE.md, "Build steps")
+				if ( !build.Constructed && build.Level.NextStepIsLong )
+					break;
+			}
 		}
 		catch ( Exception error )
 		{
@@ -186,6 +191,9 @@ internal sealed partial class GameFlow
 					// entering is the heaviest step of all (the snapshot, the advisor, the first update): after preparation work it gets a frame of its own
 					preparedNow = build.PreparationStepped;
 				}
+				// false: the step just run announced that the next one is long, which starts a frame of its own (docs/BROWSER-PERFORMANCE.md, "Build steps")
+				else if ( !build.Preparation.Current )
+					break;
 			}
 		}
 		// Entering (retiring the live scene, park audio, HUD, then the park's first update and draw) waits for a frame of its own
@@ -231,13 +239,19 @@ internal sealed partial class GameFlow
 		Transitioned?.Invoke();
 	}
 
-	/// <summary>The steps that make ready what entering the park would do whole: see <see cref="ParkBuild.Preparation"/>.</summary>
+	/// <summary>
+	/// The steps that make ready what entering the park would do whole: see <see cref="ParkBuild.Preparation"/>. A step that returns false did its
+	/// work and announces that the next one is long: the frame ends after it, and the long step starts the next frame (<see cref="PumpParkBuild"/>).
+	/// </summary>
 	private IEnumerable<bool> PrepareEntry( ParkBuild build )
 	{
 		// what an earlier build read and nobody took (one that failed while no park was live) is not this park's
 		DropAdvisorPreparation();
 		foreach ( var step in PrepareAdvisorAndSnapshot( build ) )
 			yield return step;
+		// the own player progress a progress park writes as it is entered (PlayerProgressAdmission.BeforeRetirement): its serializer's metadata, as a head start
+		if ( build.BeforeEnter != null && HeadStart( "the player progress file's serializer", PlayerTicketFile.WarmUp ) )
+			yield return true;
 		foreach ( var step in PrepareFirstFrame( build ) )
 			yield return step;
 	}
@@ -302,11 +316,14 @@ internal sealed partial class GameFlow
 	/// <summary>The advisor's and the first restart snapshot's preparation. None for a park without the automatic advisor and a restart snapshot.</summary>
 	private IEnumerable<bool> PrepareAdvisorAndSnapshot( ParkBuild build )
 	{
+		var snapshot = build.Original && build.Visit == null && TakesRestartSnapshot( build.Level );
 		// the automatic advisor EnterLevel creates and whose first line it says: its settings, its shipped tables and what its presentation reads (AdvisorEntryPreparation)
 		if ( AutomaticAdvisorEnabled && build.Original && build.Visit == null && !advisorUnavailable && !build.Level.IsThemeParkIncSlice )
 		{
 			if ( Advisor == null )
 			{
+				foreach ( var step in AdvisorTables.WarmSteps() )
+					yield return step;
 				AdvisorEntryPreparation.Prepare( AdvisorEntryPreparation.BalanceKey, FileSystem, AdvisorBalance.Load );
 				yield return true;
 			}
@@ -317,18 +334,34 @@ internal sealed partial class GameFlow
 				_ = AdvisorCostumeTable.Table;
 			}
 			catch ( Exception ) { /* only a head start: the first line meets the same failure and handles it as before */ }
-			yield return true;
-			foreach ( var step in AdvisorEntryPreparation.PresentationSteps( FileSystem, build.Level.LevelName, globalRig: Advisor?.Presentation == null ) )
+			var globalRig = Advisor?.Presentation == null;
+			// false: the presentation's steps start with the advisor shader's program, a long step
+			yield return !globalRig;
+			// after them, a separate boundary announces the economy capture, whose first step is a long one
+			foreach ( var step in snapshot ? EndingBeforeLong( AdvisorEntryPreparation.PresentationSteps( FileSystem, build.Level.LevelName, globalRig ) )
+				: AdvisorEntryPreparation.PresentationSteps( FileSystem, build.Level.LevelName, globalRig ) )
 				yield return step;
 		}
-		if ( !(build.Original && build.Visit == null && TakesRestartSnapshot( build.Level )) )
+		if ( !snapshot )
 			yield break;
 		foreach ( var step in build.Level.WarmResumeCaptureSteps() )
 			yield return step;
 		foreach ( var step in ParkResumeJson.WarmupSteps() )
 			yield return step;
+		// the sliced serializer the snapshot's write starts in the entering frame
+		if ( HeadStart( "the sliced serializer", SlicedJsonSerializer.WarmUp ) )
+			yield return true;
 		foreach ( var step in build.Level.PrepareAutosaveAssets() )
 			yield return step;
+	}
+
+	/// <summary>Passes through each step without lookahead, then ends the frame before the following long step (<see cref="PumpParkBuild"/>).</summary>
+	internal static IEnumerable<bool> EndingBeforeLong( IEnumerable<bool> steps )
+	{
+		foreach ( var step in steps )
+			yield return step;
+		// Never advance a side-effecting iterator to discover its last step: that can run the next long step in this frame.
+		yield return false;
 	}
 
 	/// <summary>Drops what <see cref="PrepareEntry"/> read for the advisor and no advisor took.</summary>

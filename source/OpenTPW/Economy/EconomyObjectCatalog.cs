@@ -183,7 +183,13 @@ public sealed class EconomyObjectCatalog : IEconomyObjectCatalog
 	/// declaring <c>Info.Id</c>; it is layered over the category file (<c>Rides.sam</c> …) and, in easy
 	/// mode, under <c>Easy_&lt;object file&gt;</c>. <c>Online_</c> files are ignored (offline game).
 	/// </summary>
-	public static EconomyObjectCatalog Load( string theme, bool easy )
+	public static EconomyObjectCatalog Load( string theme, bool easy ) => LoadSteps( theme, easy ).Last()!;
+
+	/// <summary>
+	/// <see cref="Load"/> in steps, for a park built over frames (docs/BROWSER-PERFORMANCE.md, "Build steps"): null after each object
+	/// archive and after each archive of the object catalogue the mods' objects are read from, then the catalogue. The work and its order are those of <see cref="Load"/>.
+	/// </summary>
+	internal static IEnumerable<EconomyObjectCatalog?> LoadSteps( string theme, bool easy )
 	{
 		BalanceSettings.GetStandardLayers( theme, false );
 		var result = new List<EconomyObjectInfo>();
@@ -214,10 +220,16 @@ public sealed class EconomyObjectCatalog : IEconomyObjectCatalog
 						layers.Add( SamDocument.Parse( FileSystem.ReadAllText( easyPath ), easyPath ) );
 					result.Add( FromSettings( new SamSettings( layers ), kind, archivePath ) );
 				}
+				yield return null;
 			}
 		}
+		// the mods' objects come from the object catalogue (AddModObjects), which is loaded here in its own steps; the objects step finds it cached
+		if ( ObjectCatalog.ContentRoots.Count != 0 )
+			foreach ( var loaded in ObjectCatalog.LoadSteps( theme, easy ) )
+				if ( loaded == null )
+					yield return null;
 		AddModObjects( theme, easy, result );
-		return new EconomyObjectCatalog( result );
+		yield return new EconomyObjectCatalog( result );
 	}
 
 	/// <summary>

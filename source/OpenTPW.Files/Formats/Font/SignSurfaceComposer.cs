@@ -22,6 +22,25 @@ public static class SignSurfaceComposer
 	// [APPROX:COMPAT-003] glyph coverage: tp.exe draws each line with GDI (CreateFontIndirectA with the sign's LOGFONT, lfQuality 4 = ANTIALIASED_QUALITY, grayscale smoothing, through Uniscribe ScriptStringOut) onto an 8-bit gray DIB; OpenTPW models its gray levels with the documented Windows 2000/XP grayscale smoothing (TrueTypeRasterizer CoverageModel.GdiGray4: 4x4 samples = 17 levels, (level * 255 + 8) / 16, no gamma, no hinting) but the oversampling factor, sample positions, hinted outline, dropout control and the byte mapping are not verified against a GDI capture (docs/COMPATIBILITY.md COMPAT-003); the coverage feeds the blur, shape and relief arithmetic, which follow tp.exe instruction for instruction at the x87 single precision of its thread (X87Precision)
 	public static (byte[] Left, byte[] Right, int TextPixelCount) Compose( SignFile sign, SignFontLibrary fonts, IReadOnlyList<string?> lines, ICollection<string> diagnostics, SignPaint? firstPaintOverride = null )
 	{
+		var composition = new Composition();
+		foreach ( var _ in ComposeSteps( sign, fonts, lines, diagnostics, composition, firstPaintOverride ) ) { }
+		return composition.Result;
+	}
+
+	/// <summary>The result of <see cref="ComposeSteps"/>, set by its last step.</summary>
+	public sealed class Composition
+	{
+		public (byte[] Left, byte[] Right, int TextPixelCount) Result { get; internal set; }
+	}
+
+	/// <summary>
+	/// <see cref="Compose"/> in steps, for a sign composed over frames (docs/BROWSER-PERFORMANCE.md, "Build steps"): a value after each
+	/// glyph mask, paint mask, effect shape and group of relief rows; the last step sets <paramref name="into"/>. The work and its order are
+	/// those of <see cref="Compose"/>, so the pixels are the same.
+	/// </summary>
+	public static IEnumerable<bool> ComposeSteps( SignFile sign, SignFontLibrary fonts, IReadOnlyList<string?> lines, ICollection<string> diagnostics, Composition into, SignPaint? firstPaintOverride = null )
+	{
+		ArgumentNullException.ThrowIfNull( into );
 		ArgumentNullException.ThrowIfNull( sign );
 		ArgumentNullException.ThrowIfNull( fonts );
 		ArgumentNullException.ThrowIfNull( lines );
@@ -50,6 +69,7 @@ public static class SignSurfaceComposer
 		{
 			masks[slot] = RenderMask( sign, fonts, lines, slot, diagnostics );
 			textPixels += masks[slot].Count( value => value != 0 );
+			yield return true;
 		}
 		if ( textPixels != 0 )
 			diagnostics.Add( "COMPAT-003: the glyph coverage is the documented GDI grayscale model (4x4 samples, 17 levels, no hinting), not a capture of the original text DIB's gray levels." );
@@ -57,8 +77,11 @@ public static class SignSurfaceComposer
 		// [BIN:TPW-EXE:0x005ECC69..0x005ECCC0 paint masks] each slot whose selector is nonzero gets its paint mask shaped from its glyph mask by its own paint record (0x5EBF10); a zero selector leaves an empty paint mask
 		var paintMasks = new byte[masks.Length][];
 		for ( var slot = 0; slot < masks.Length; slot++ )
+		{
 			paintMasks[slot] = sign.Effects[slot].Style != 0 && (slot == 0 ? firstPaintOverride ?? sign.Paints[slot] : sign.Paints[slot]) is { } record
 				? SignMaskShaping.Shape( masks[slot], Width, SurfaceHeight, record ) : new byte[Width * SurfaceHeight];
+			yield return true;
+		}
 
 		// [BIN:STP-PPC:0x100AC25C..0x100AC49C] style 2 is drawn before either relief effect;
 		// [BIN:TPW-EXE:0x005ECD8C..0x005ECDCE two style-2 masks] the two shaped paint masks are combined by maximum (copy 0x5E77C0, max 0x5E7EF0) and coloured with paint zero's RGBA
@@ -81,7 +104,8 @@ public static class SignSurfaceComposer
 			var slot = sign.HeaderFlag == 0 ? step : masks.Length - step - 1;
 			if ( sign.Effects[slot].Style == 1 )
 				Paint( surface, paintMasks[slot], slot == 0 ? firstPaintOverride ?? sign.Paints[slot] : sign.Paints[slot] );
-			Effect( surface, masks[slot], sign.SourceImages[slot], sign.Effects[slot], diagnostics );
+			foreach ( var part in EffectSteps( surface, masks[slot], sign.SourceImages[slot], sign.Effects[slot], diagnostics ) )
+				yield return part;
 		}
 
 		// [BIN:TPW-EXE:0x005ECF2C pack] only the first Height rows of the surface reach the textures
@@ -101,7 +125,7 @@ public static class SignSurfaceComposer
 			half[destination + 2] = surface[source + 3];
 			half[destination + 3] = surface[source];
 		}
-		return (left, right, textPixels);
+		into.Result = (left, right, textPixels);
 	}
 
 	/// <summary>
@@ -224,7 +248,16 @@ public static class SignSurfaceComposer
 	// [BIN:TPW-EXE:0x005EB820 relief] for each effect the shape (SignEffectShape: the mask word's erosion levels, then the Gaussian of the first parameter) is built from the glyph coverage, and 0x5EB8A0 shades every pixel whose coverage byte is not 0 into an ARGB bitmap that is alpha-blitted onto the surface (0x5E7D70)
 	internal static void Effect( byte[] destination, byte[] mask, SignBitmap strip, SignEffect effect, ICollection<string> diagnostics )
 	{
-		if ( !mask.Any( value => value != 0 ) ) return;
+		foreach ( var _ in EffectSteps( destination, mask, strip, effect, diagnostics ) ) { }
+	}
+
+	/// <summary>The relief rows <see cref="EffectSteps"/> shades between two steps.</summary>
+	private const int ReliefRowsPerStep = 16;
+
+	/// <summary><see cref="Effect"/> in steps: a value after the effect's shape and after each <see cref="ReliefRowsPerStep"/> rows of its relief.</summary>
+	internal static IEnumerable<bool> EffectSteps( byte[] destination, byte[] mask, SignBitmap strip, SignEffect effect, ICollection<string> diagnostics )
+	{
+		if ( !mask.Any( value => value != 0 ) ) yield break;
 		if ( strip.BytesPerPixel != 4 || strip.Payload.Length != strip.Width * strip.Height * 4 || effect.Parameters.Any( value => !float.IsFinite( value ) ) )
 			throw new NotSupportedException( "Sign material pixels or coefficients are not supported by the compositor." );
 		// [BIN:TPW-EXE:0x005EB035 text extent] the first row with a nonzero coverage byte before its last pixel is the top, the last such row plus one is the bottom (0x5EB04E..0x5EB07C; a text of one row leaves the bottom at -1, which the original cannot shade), and the extent is bottom - top (0x5ECCC5); the mask is the whole 256-row surface mask
@@ -237,30 +270,35 @@ public static class SignSurfaceComposer
 				bottom = y;
 			}
 		var extent = bottom - top + 1;
-		if ( extent <= 0 ) return;
+		if ( extent <= 0 ) yield break;
 		var materialStrip = DescimateStrip( strip, extent );
 		if ( extent > strip.Height )
 			diagnostics.Add( "COMPAT-003: relief source upsampling uses nearest rows; the native resampler (0x5E80D0) has no upsampling branch." );
 		var shape = SignEffectShape.Build( mask, Width, SurfaceHeight, effect.MaskWord, effect.Parameters[1] );
+		yield return true;
 		// [BIN:TPW-EXE:0x005EB8A0 relief arithmetic] the light, the normals, the dots and the colour sum run on emulated x87 registers at the precision control of the original's thread (SignRelief, X87Precision)
 		var relief = new SignRelief( effect.Parameters );
 		for ( var y = top; y <= bottom; y++ )
-		for ( var x = 0; x < Width; x++ )
 		{
-			var at = y * Width + x;
-			var alpha = mask[at];
-			if ( alpha == 0 ) continue;
-			// [BIN:TPW-EXE:0x005EB8A0 relief normal] the shape differences to the next byte and to the byte one row below are read without any clamp (the last column reads the first pixel of the next row; a read past the end of the shape is heap memory in the original and 0 here)
-			var right = at + 1 < shape.Length ? shape[at + 1] : 0;
-			var below = at + Width < shape.Length ? shape[at + Width] : 0;
-			// [BIN:STP-PPC:0x100AB1C8,0x100AB3B8..0x100AB444] 16-pixel horizontal tiling and measured-height vertical phase.
-			var source = ((y - top) * strip.Width + x % strip.Width) * 4;
-			var target = at * 4;
-			destination[target] = Math.Max( destination[target], alpha );
-			var (red, green, blue) = relief.Shade( right - shape[at], below - shape[at], materialStrip[source + 1], materialStrip[source + 2], materialStrip[source + 3] );
-			BlendChannel( destination, target + 1, red, alpha );
-			BlendChannel( destination, target + 2, green, alpha );
-			BlendChannel( destination, target + 3, blue, alpha );
+			if ( y > top && (y - top) % ReliefRowsPerStep == 0 )
+				yield return true;
+			for ( var x = 0; x < Width; x++ )
+			{
+				var at = y * Width + x;
+				var alpha = mask[at];
+				if ( alpha == 0 ) continue;
+				// [BIN:TPW-EXE:0x005EB8A0 relief normal] the shape differences to the next byte and to the byte one row below are read without any clamp (the last column reads the first pixel of the next row; a read past the end of the shape is heap memory in the original and 0 here)
+				var right = at + 1 < shape.Length ? shape[at + 1] : 0;
+				var below = at + Width < shape.Length ? shape[at + Width] : 0;
+				// [BIN:STP-PPC:0x100AB1C8,0x100AB3B8..0x100AB444] 16-pixel horizontal tiling and measured-height vertical phase.
+				var source = ((y - top) * strip.Width + x % strip.Width) * 4;
+				var target = at * 4;
+				destination[target] = Math.Max( destination[target], alpha );
+				var (red, green, blue) = relief.Shade( right - shape[at], below - shape[at], materialStrip[source + 1], materialStrip[source + 2], materialStrip[source + 3] );
+				BlendChannel( destination, target + 1, red, alpha );
+				BlendChannel( destination, target + 2, green, alpha );
+				BlendChannel( destination, target + 3, blue, alpha );
+			}
 		}
 	}
 

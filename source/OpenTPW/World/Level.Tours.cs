@@ -139,6 +139,9 @@ public partial class Level
 			ride.Runtime.RestoreTour( entry );
 			restored.Add( entry.AttractionId );
 		}
+		// [EXT:online-coop-snapshot-join] a join's tour rides are the host's live ones: one between its script's TOUR 2 and TOUR 1 has no controller, and gets none here
+		if ( joinRestore != null )
+			return;
 		foreach ( var ride in rides )
 		{
 			if ( restored.Contains( ride.Runtime.AttractionId ) )

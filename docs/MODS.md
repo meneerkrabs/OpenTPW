@@ -199,7 +199,8 @@ puts back before the game starts):
 
 A missing file means the defaults. A file that cannot be read, is larger than 256 KiB or is not valid strict JSON adds
 a startup warning and the defaults are used; invalid entries in an otherwise valid file are dropped one by one, each
-with a warning. Smoke tests (`--smoke-test`) ignore `mods.json` and `<config>/mods`, like the compatibility settings.
+with a warning. Smoke tests (`--smoke-test`, and the co-op join smoke `--coop-join-smoke`) ignore `mods.json` and
+`<config>/mods`, like the compatibility and graphics settings.
 
 `--disable-extension <id>` (repeatable) switches an extension or mod off for one run without changing `mods.json`;
 an id that names no extension or installed mod is an error. `--enable-mod <id>` (repeatable) switches an extension or mod on, and
@@ -402,9 +403,9 @@ Their names and descriptions exist in the nine interface languages for the scree
 
 ## Restored advice (`opentpw.restored-advice`)
 
-An official extension that gives the advisor the lines the original game recorded but never says: tp.exe v2.0 scores 21 of its scanned messages with a constant-zero stub and nothing posts 84 more. The extension restores **43** of those 105 messages, by trigger: security cover gaps, long queues, blocked ride exits, riders stuck in a
+An official extension that gives the advisor the lines the original game recorded but never says: tp.exe v2.0 scores 21 of its scanned messages with a constant-zero stub and nothing posts 82 more. The extension restores **42** of those 103 messages, by trigger: security cover gaps, long queues, blocked ride exits, riders stuck in a
 broken or condemned ride, low balances, land running out, buses, seaplanes and Ferries arriving, award news for the global golden tickets, upgrades without a mechanic, a few tutorial hints and the lines of the online screens. The messages, triggers, scores and the messages skipped on purpose are in
-[reverse/ADVISOR-SCAN.md](reverse/ADVISOR-SCAN.md) "Restored advice" (twelve lines of the first 55, the golden ticket wins, the first challenge offer and the double-or-nothing lines 319 and 320, stood down because the original's own ticket advice 215-227, first-offer line 344 and challenge lines 270 and 272 are now ported); the mechanism (one scan hook, one poll, a driver for events) is in [LIPS.md](LIPS.md) "Restored advice".
+[reverse/ADVISOR-SCAN.md](reverse/ADVISOR-SCAN.md) "Restored advice" (thirteen lines of the first 55, the golden ticket wins, the first challenge offer, the double-or-nothing lines 319 and 320 and the track ride hint 204, stood down because the original's own ticket advice 215-227, first-offer line 344, challenge lines 270 and 272 and kart and water line tool help 204 are now ported); the mechanism (one scan hook, one poll, a driver for events) is in [LIPS.md](LIPS.md) "Restored advice".
 
 - **On by default**, `PlayerSelectable` (the Extensions and mods screen lists it with its name and description in the nine languages; a restart applies a change like every extension), version 1.0.0.
 - **It never changes the simulation** (`AffectsSimulation` false), which is what lets it be on by default: it only reads park state and posts advice through the advisor's queue, the advisor is outside the world state hash, and it keeps no state a save would carry. A park save

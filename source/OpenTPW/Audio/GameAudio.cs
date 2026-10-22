@@ -148,9 +148,9 @@ public static class GameAudio
 	// [BIN:STP-PPC:0x10073D1C refused click] cat_ui 175 behind the latch test; [BIN:TPW-EXE:0x524a80] the release handler 0x524960 plays cat_ui 0xAF at (x*10, 0, z*10) of the clicked cell (0x524a80-0x524aae) before its tool switch, while tool 0x38 is off, the refusal latch (0x816d48) is set, no layout replay runs (0x785a2c == 0) and the park view's press handler ran since the last release (0x8186d8, PathRefusalClick)
 	public const uint PathRefusedEvent = 175;
 	/// <summary>
-	/// The track tools' click: <c>cat_ui</c> 0xCE at the clicked cell (x*10, 0, z*10) for every release in the kart (0xB) and water (0x10) track modes, the first click included.
+	/// The track tools' click: <c>cat_ui</c> 0xCE at the clicked cell (x*10, 0, z*10) for every release in the kart (0xB) and water (0x10) track modes whose ghost was not refused, the first click included.
 	/// </summary>
-	// [BIN:TPW-EXE:0x526cb3 track click] the release handler 0x524960 reaches 0x526cb3 from its mode tests 0xB (0x525a1c) and 0x10 (0x525a2e) and, unless a layout replays (0x785a2c), submits 0x51bfc0(0, cat_ui 0x803a2c, 0xCE, x*10, 0, z*10) at 0x526ce9 before the start/line logic; the refused-ghost cue 0xAF (0x524aae) does not stop it (the mode switch follows at 0x524ab6)
+	// [BIN:TPW-EXE:0x526cb3 track click] the release handler 0x524960 reaches 0x526cb3 from its mode tests 0xB (0x525a1c) and 0x10 (0x525a2e) and, unless a layout replays (0x785a2c), submits 0x51bfc0(0, cat_ui 0x803a2c, 0xCE, x*10, 0, z*10) at 0x526ce9 before the start/line logic; a release with the refused-ghost latch set never gets there: after the cue 0xAF (0x524aae) it leaves through the latch's own mode table (0x524ab6, table 0x52766c: 0xB and 0x10 to SetMode(0, 0) at 0x5266a3), so it plays no 0xCE (ParkHud.PlaysTrackToolClick)
 	public const uint TrackToolClickEvent = 0xCE;
 	/// <summary>
 	/// The coaster tool's click: the path tool's laying sound <c>cat_ui</c> 101 at the clicked cell for every release in mode 0x15, building or editing.
@@ -977,7 +977,7 @@ public static class GameAudio
 		(9, "cat_ui", 12, 0x100AEE10),          // global UI
 	};
 
-	/// <summary>The audio category selected by an RSE <c>EVENT</c> type; null for particles (1/2), the default (0) or the unsupported custom bank (10).</summary>
+	/// <summary>The audio category selected by an RSE <c>EVENT</c> type; null for particles (1/2), the default (0) and the object type's own sound list (10, which belongs to the type: <see cref="ObjectCatalogEntry.OwnSounds"/>).</summary>
 	public static SoundCategory? RseEventCategory( int type ) => type switch
 	{
 		3 => LevelRides,
@@ -997,18 +997,19 @@ public static class GameAudio
 	/// </summary>
 	// [BIN:TPW-EXE:0x5575c7 RSE EVENT dispatch] the PC dispatcher submits type 3 to the level cat_rides (0x803a3c) and type 4 to the level cat_ambient with no handle check and no global retry (the submit 0x51bfc0 returns 0 for event id 0 or with sound off, 0x802bc8/0x802bd4; an empty category slot returns in 0x6b9b30)
 	// [BIN:TPW-EXE:0x6b87d0 event lookup] the submit takes the category by its handle (0x6b9b30, a deque index; an empty slot returns) and searches only that category's 20-byte event records for the id (0x6c5870, linear, null when absent), returning without a voice (0x6b8919); the level category is loaded from the level's own data under its own path key (0x51ec50 -> 0x51b530 -> 0x6bf330, path joined at 0x6b8690), so nothing falls back to the global category
-	public static (SoundCategory Category, SoundEvent Event)? FindRseEvent( int type, uint eventId, RseSoundSource? source = null )
+	// [BIN:TPW-EXE:0x557686 EVENT type 10] case 10 submits to the object type's own category (type record +0x4F0, 0x4145E0) the same way, so its events are looked up in that category only
+	public static (SoundCategory Category, SoundEvent Event)? FindRseEvent( int type, uint eventId, RseSoundSource? source = null, SoundCategory? ownSounds = null )
 	{
 		// [EXT:cross-edition-objects] an object from another content root looks the event up in that root's categories only, with no fallback to the running game's
-		var category = source is { } other ? other.Category( type ) : RseEventCategory( type );
+		var category = type == 10 ? ownSounds : source is { } other ? other.Category( type ) : RseEventCategory( type );
 		var soundEvent = category?.Catalog.Find( eventId );
 		return soundEvent == null || category == null ? null : (category, soundEvent);
 	}
 
-	/// <summary>Plays an RSE <c>EVENT</c> instruction's sound at the object's place (see <see cref="RseEventCategory"/>); returns the voice, or null when the type is untraced or nothing plays.</summary>
-	public static AudioVoice? PlayRseEvent( int type, uint eventId, Vector3? position = null, RseSoundSource? source = null )
+	/// <summary>Plays an RSE <c>EVENT</c> instruction's sound at the object's place (see <see cref="RseEventCategory"/>; type 10 plays from <paramref name="ownSounds"/>, the object type's own list); returns the voice, or null when the type is untraced or nothing plays.</summary>
+	public static AudioVoice? PlayRseEvent( int type, uint eventId, Vector3? position = null, RseSoundSource? source = null, SoundCategory? ownSounds = null )
 	{
-		var sound = FindRseEvent( type, eventId, source );
+		var sound = FindRseEvent( type, eventId, source, ownSounds );
 		if ( sound == null || events == null )
 			return null;
 		// The traced switch submits every routed event at the object's position; the sound's own range applies when the object has one.
@@ -1016,14 +1017,14 @@ public static class GameAudio
 	}
 
 	/// <summary>
-	/// Starts an event for a script's <c>ADDOBJ</c> record (types 3-9): the same category lookup and submit as <see cref="PlayRseEvent"/>, but the sound is kept so the script can
+	/// Starts an event for a script's <c>ADDOBJ</c> record (types 3-10): the same category lookup and submit as <see cref="PlayRseEvent"/>, but the sound is kept so the script can
 	/// move, parameterise and end it; null when the event is missing or no sound system runs (the original's submit returns handle 0, so the record is freed).
 	/// </summary>
 	// [BIN:TPW-EXE:0x557970 ADDOBJ record] the dispatcher 0x5573D0 returns the submit's handle (0x51BFC0, 0 for event 0 or with the sound system off, 0x802BC8/0x802BD4) and 0x557970 keeps the record only when it is not 0
-	public static HeldSound? StartHeldRseEvent( int type, uint eventId, Vector3? position = null, RseSoundSource? source = null )
+	public static HeldSound? StartHeldRseEvent( int type, uint eventId, Vector3? position = null, RseSoundSource? source = null, SoundCategory? ownSounds = null )
 	{
 		if ( !Enabled ) return null;
-		var sound = FindRseEvent( type, eventId, source );
+		var sound = FindRseEvent( type, eventId, source, ownSounds );
 		if ( sound == null || events == null )
 			return null;
 		return events.PlayHeld( sound.Value.Category, eventId, AudioChannel.Effects, position );

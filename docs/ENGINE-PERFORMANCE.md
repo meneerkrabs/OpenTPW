@@ -179,3 +179,191 @@ Longer runs (9000 frames, a guest arriving every turn, 20 to 25 guests in the pa
 display's 60 Hz pacing). So zooming all the way out costs about 1.7 times the frame time of the Home view in this park, an extra 2 to 3 ms of drawing (the park's whole object set is now in view
 and the terrain fills the screen), and stays far inside the 16.7 ms of 60 Hz. The run is unthrottled, so the numbers carry the other sessions' load; the Jungle park has few guests, so a crowded
 park costs more (guest sprites in view scale with the guests), which this run did not measure. Nothing caps the frame rate or the draw distance at the wide zoom.
+
+## Start and build hitches (October 22, 2026)
+
+Issue #754: on a Windows PC (Direct3D 11, a hard disk, German data) the window stayed black for about 30 seconds after the start-up movies before
+the lobby appeared, and the park froze for 0.5 to 2 seconds several times while the player opened the build menu and placed objects.
+
+### Measuring
+
+| What | Command |
+| --- | --- |
+| The start up to the lobby | `dotnet OpenTPW.dll --no-intro --no-autorun --mute --startup-profile` |
+| The buy window and the first placement of each object type | `dotnet OpenTPW.dll --load-original-level jungle --mute --no-advisor --perf-build --hitch-report 30` |
+| Any slow frame in a normal run | add `--hitch-report <ms>` |
+
+`--startup-profile` records the start with the load profile of the browser harness (`LoadProfile`): named sections (`startup.language`,
+`startup.mods`, `startup.renderer`, `front-end`, `lobby-scene`, `shader-spirv`, `shader-native`, `model-parse`, `texture-decode`, `wad-read`, ...)
+and counted amounts on every thread (file opens, bytes read, directory listings, WAD archives indexed and member reads, native shader programs,
+pipelines, GPU textures and their bytes). It logs them when the lobby has drawn 120 frames and closes the window. `--hitch-report` logs each frame
+of at least the given length with its frame marks (the browser harness's `FrameMarks`, the load sections as `load:<name>`) and its counted amounts.
+`--perf-build` does what the player in the issue's video did, one step every 20 frames: the buy window, each tab and its pages of rows (the preview
+icons), a selected row (the turning preview), then one object of each of several types placed through the build tool's command; each step's frame
+is logged, with `perf.place` (the placement) and `perf.site-search` (the scenario's own search for a free site) as separate marks. All three are
+measurement only and run offscreen and silent by default. The file counts are what the game asks for; the numbers below come from the same Mac
+as the sections above (warm file cache, Metal), so a cold hard disk adds seek time per file open and per first read of a directory, and Direct3D 11
+adds the shader compiles described next.
+
+### What took the time
+
+Every `Material` made its own `Shader`, and every `Shader` asked Veldrid for new native shader objects of the same file. The SPIR-V was
+already compiled once per file, but Veldrid turns SPIR-V into the backend's own form for each new native shader: on Direct3D 11 that is HLSL
+handed to the system's HLSL compiler (`D3DCompile`, optimisation level 3), once per stage, for every material. The lobby makes 146 materials
+of the lit object shader (`test.shader`) for its islands, so the start compiled 156 native programs (312 HLSL compiles); a park start made 225,
+and the first placement of a ride type 9 to 15, one per model part. On Metal a native program costs about 1 ms (the source is compiled when the
+pipeline is made, and Metal caches compiled libraries), which is why the Mac never showed it; an optimised HLSL compile of the lit shader takes
+far longer, which matches both the 30 seconds before the lobby and the freezes when an object is placed.
+
+Start to the lobby, before the change (Release, three alternating runs, `--startup-profile`):
+
+| Phase | Time | Count |
+| --- | ---: | ---: |
+| Main to the lobby's first frame | 1,091 to 1,771 ms | |
+| `front-end` (lobby definition, scene and menu) | 471 to 500 ms | 1 |
+| `lobby-scene` | 456 ms | 1 |
+| `shader-spirv` (GLSL to SPIR-V, once per file and process) | 343 to 348 ms | 7 |
+| `shader-native` (Veldrid's backend shaders) | 174 to 183 ms | 156 |
+| `startup.renderer` (window, device) | 152 to 160 ms | 1 |
+| `startup.game-flow` (strings, fonts, interface renderers) | 87 ms | 1 |
+| `model-parse` | 64 ms | 316 |
+| `texture-decode` | 44 ms | 135 |
+| `startup.compatibility`, `startup.mods`, `startup.language` | 21 to 23, 22, 7 ms | |
+| `wad-read`, `wad-decompress`, `wad-index` | 8, 10, 4 ms | 483, 383, 2 |
+| `pipeline` | 3 ms | 153 |
+| counted | 477 file opens, 4.4 MB read, 1,063 directory listings, 2 WAD archives indexed, 466 member reads, 150 GPU textures (6.6 MB) | |
+
+The pools extension's guest sprites and the other content packs are not read before the lobby (the counts above have no access to them); they load
+with a park. Reading the data is small: 4.4 MB in 477 opens, almost all of `lobby.wad` and `ui.wad` (each member read opens the archive again) and
+the fonts. Cold, on a hard disk, that is a few hundred milliseconds of seeks and reads at most; it cannot explain 30 seconds.
+
+The build steps of `--perf-build` (Jungle, before the change): the buy window, its four tabs and their 85 rows each cost no frame over 17 ms (the
+preview icons decode a few textures; the first turning preview compiles the interface's depth shader, a 62 ms frame once per process). The
+placements are what costs: the first placement of type 1104 took a 100 ms frame on the Mac, of which `perf.place` was 69 ms, with
+9 native shader programs, 25 GPU textures and 302 directory listings counted in it; later types 5 to 83 ms.
+
+### What changed
+
+| Change | Why it is behaviour-neutral | Effect |
+| --- | --- | --- |
+| `ShaderCompiler.CompileShader` shares one native shader pair per shader file among all its users, counting references; the last `Release` disposes it after the last frame that may draw it (the browser's compiler does the same) | native shader objects are immutable and every pipeline only reads them; each material still makes its own pipeline, layouts and buffers from the same compiled program | 7 native programs to the lobby instead of 156, 9 instead of 225 over a park start and the build scenario, none for a placed object once its shaders are in use |
+
+After the change (same runs, alternating with the build before it):
+
+| Measure | Before | After |
+| --- | ---: | ---: |
+| Native shader programs to the lobby | 156 (312 HLSL compiles on Direct3D 11) | 7 (14) |
+| `shader-native` to the lobby | 174 to 183 ms | 3.4 to 3.6 ms |
+| `front-end` | 471 to 500 ms | 295 to 339 ms |
+| Main to the lobby's first frame | 1,091 to 1,771 ms | 908 to 1,193 ms |
+| Native shader programs, park start plus the build scenario | 225 | 9 |
+| First placement of type 1104: frame / `perf.place` | 100 to 104 / 69 ms | 78 to 80 / 54 to 56 ms |
+| First placement of type 1101: frame / `perf.place` | 83 to 84 / 81 to 83 ms | 65 to 70 / 64 to 68 ms |
+| Native shader programs made by a placement | 9 to 15 | 0 |
+
+The world capture of the Jungle park (`--capture-world`, 120 frames) differs from the build before the change by as many pixels as two runs of the
+old build differ from each other (0.3 % of the pixels, the moving guests); the native smokes pass.
+
+### Remembered path lookups (October 22, 2026)
+
+The desktop's game-data file system did not remember its path lookups, so every read listed the directories along its path again (to find the
+archive a path lies in and, on case-sensitive systems, the on-disk spelling): 1,063 listings before the lobby, 15,770 for a park start, 300 to
+480 for an object's first placement. It now remembers them as the browser's does (`BaseFileSystem.CacheLookups`, made in
+`GameDataFileSystem.Create`, which the browser now uses too). Nothing in a session adds files below the data folder (a new game folder applies at the next start), and what
+changes what the lookups see invalidates them itself: the mod overrides, the language's interface archive and the mod content roots. The files
+read are the same; `FileSystemTests` now run on the desktop's own file system.
+
+| Measure (Release, Mac, three alternating runs) | Before | After |
+| --- | ---: | ---: |
+| Directory listings to the lobby | 1,063 | 10 |
+| Directory listings, park start plus the build scenario | 15,770 | 724 |
+| `start-level` (Jungle) | 1,675 to 1,831 ms | 1,213 to 1,410 ms |
+| `perf.place` of a type with few parts (1100) | 4.0 to 4.3 ms | 1.4 to 1.7 ms |
+| Main to the lobby's first frame | 915 to 1,453 ms | 935 to 1,430 ms (within the noise) |
+
+### Kept SPIR-V (October 22, 2026)
+
+Every start compiled the same GLSL sources to SPIR-V again (`shader-spirv`, 343 to 384 ms for 7 files before the lobby on the Mac, about 30 ms per
+stage whatever its size; 450 ms with a park, and a 52 to 58 ms frame the first time the buy window's turning preview draws its depth image).
+`ShaderCompiler.CompileStage` now keeps each stage's SPIR-V in the user's cache folder (`cache/shaders`) under a SHA-256 of everything the
+compile reads: the preprocessed source, the stage, the source name the debug information records, the options, and the compiler's managed
+assembly version and native library (`libveldrid-spirv`, its name, size and time). A kept file is therefore the bytes the compiler would make now.
+Each file (`ShaderCache`) holds a format tag and the SHA-256 of its payload, so a file damaged after it was written (cut short, overwritten) is
+refused and compiled again; a payload that is whole but that the cross-compiler refuses anyway (a review wrote each stage cut to half, with a
+matching digest) makes `CompileProgram` remove the kept files of that program and compile both stages from the source, which replaces them. A
+file's time is refreshed whenever it is used, files unused for 30 days are removed when a new one is written, and a write that fails only logs a
+trace line. The reflection still comes from the cross-compile (about 1 to 6 ms per program). The cache holds 14 files (about 116 KB) after a start,
+a few more after a park.
+
+| Measure (Release, Mac, runs alternating with the build before) | Before | After, cache filled |
+| --- | ---: | ---: |
+| `shader-spirv` to the lobby | 362 to 384 ms (14 compiles) | 7.5 to 7.8 ms (14 kept) |
+| Main to the lobby's first frame | 918 to 948 ms | 554 to 558 ms |
+| `shader-spirv`, park start plus the build scenario | 450 to 460 ms | 25 ms |
+| `start-level` (Jungle) | 1,251 to 1,258 ms | 969 ms |
+| First park frame | 225 to 229 ms | 171 to 177 ms |
+| First turning preview in the buy window | 66 to 68 ms frame | under 30 ms |
+
+The first start after an install or a shader change compiles as before and fills the cache.
+
+### Kept Direct3D 11 bytecode (October 22, 2026)
+
+With one native program per shader file (above) Direct3D 11 still compiled the HLSL of each program once per run: 14 compiles (7 programs, two
+stages) before the lobby and a few more when a park starts. If the issue's 30 seconds were mostly the 312 compiles before the change, one took
+about 0.1 s on that PC, so these are about 1.3 s of every start (an estimate; no Windows machine measured it here). Veldrid's Direct3D 11 backend compiles the cross-compiled HLSL of a new shader with the system compiler
+(`D3D11Shader.CompileCode`: `vs_5_0` or `ps_5_0`, entry point `main`, `OptimizationLevel3`, no defines, include or source name) unless the
+shader's bytes already are bytecode (`DXBC`), which it takes as they are. With a cache folder, `ShaderCompiler.CreateNative` now makes the same
+cross-compile and the same HLSL compile itself (`Direct3D11Bytecode`), keeps the bytecode beside the SPIR-V (`cache/shaders/*.dxbc`, keyed by a
+SHA-256 of the HLSL, the profile, the flags and the version, size and time of `d3dcompiler_47.dll`, which Windows updates replace) and hands the
+bytecode to Veldrid. The files are `ShaderCache` files like the SPIR-V: a missing, damaged (digest mismatch) or malformed file (not a whole `DXBC`
+container) is compiled again and replaced, and bytecode the device refuses anyway makes `CreateNative` remove the program's kept files and
+compile its HLSL again; without the system compiler's identity nothing is kept. Old files go with the cache's 30-day expiry by last use.
+`NativeWorldShaderRenderTests.KeptDirect3D11BytecodeIsVeldridsOwnCompile` checks on the Windows CI runner's Direct3D 11 device that the kept
+bytecode is byte for byte the bytecode Veldrid compiles for the same shader, that a second request reads it, that a file cut short is compiled
+again, that shaders made from the kept bytecode draw the same pixels as Veldrid's, and that a whole but wrong container is refused, compiled
+again and drawn the same. Other backends are unchanged (Metal compiles its source when the pipeline is made and caches it itself).
+
+### Kept archive files (October 22, 2026)
+
+An archive opened from a path (`WadArchive`) reads its directory once and each member on demand, and it opened the file again for every member
+read, so that the file could be replaced or deleted while the archive was in use: 477 file opens before the lobby (466 of them member reads of
+`lobby.wad` and `ui.wad`) and 1,561 over a park start and the build scenario. On a hard disk with an antivirus filter every open is scanned. The
+archive now keeps the file its directory was read from open (`File.OpenHandle`, sharing reading, writing and deleting) and reads every member
+through it with positional reads (`RandomAccess`), still one read at a time per archive under its lock, with the same length check before each
+read (a file of another length is refused and its handle closed, so a read after the original is back opens it again). At most
+`WadArchive.MaxOpenHandles` files stay open (64; the least recently read is closed first, and its next read opens it again); the browser keeps
+none (its files are in memory, and a theme's files arrive while archives are in use). `WadArchive.CloseFileHandles` closes every kept file:
+before a bonus import moves the bonus folder aside, when the game files screen stores a new game, CD or bonus folder (they apply at the next
+start; the session keeps reading the old folder, so a later read reopens a file there), when the mod set is installed, when the interface language changes its archive, when a
+texture pack switch begins, and when the game ends. A disposed archive closes its file.
+
+On Windows a kept file lets other readers in (they ask for read access, which it shares) and can be moved or deleted (it shares deleting); what it
+refuses is a writer that wants the file to itself, such as a tool overwriting the archive in place, until the handles are closed. Moved away or
+deleted, the archive keeps reading the file its directory came from instead of failing; the next open after a close reads what is at the path.
+The archive cache of a file system (`BaseFileSystem.GetArchive`) is now locked, as members are read from worker threads too (texture packs).
+
+`WadFileHandleTests` check one open for a directory and ten reads, the reopen after a close, the bound and its least-recently-read order, that
+another reader is let in and the file can be moved and deleted while kept, and reads from eight threads over six archives with two kept files and
+closes in between. `OnDemandReadTests` (every member of every archive of the game folder read from the file and from memory, byte for byte) pass.
+
+| Measure (Release, Mac, warm file cache, runs alternating with the build before) | Before | After |
+| --- | ---: | ---: |
+| File opens to the lobby (`--startup-profile`) | 477 | 11 |
+| `wad-read` to the lobby | 9.6 to 11.0 ms (483 reads) | 1.0 to 1.2 ms |
+| Main to the lobby's first frame | 542 to 630 ms | 534 to 671 ms (within the noise) |
+| File opens, park start plus the build scenario (`--perf-build`) | 1,561 | 303 |
+| `wad-read`, park start plus the build scenario | 22.5 to 33.1 ms (1,311 reads) | 4.1 to 6.6 ms |
+| `start-level` (Jungle) | 863 to 1,036 ms | 881 to 939 ms (within the noise) |
+
+Of the 303 opens, 191 are loose files and 76 the archives' first opens (their directories); the other 36 open an archive again after it was
+closed as the least recently read. With a bound of 32 they were 68. On the Mac the saved time is small because an open costs microseconds with a
+warm cache; on the issue's hard disk with an antivirus filter each of the 1,258 opens no longer made is a scan and possibly a seek.
+
+### What is left
+
+1. **The remaining placement cost is the sign.** A ride with a sign composes it on its first placement (`object-sign`, 36 to 46 ms on the Mac for
+   types 1104 and 1101, on the frame of the click), and its textures decode then (`texture-decode`, 5 to 11 ms). Composing the sign of a type
+   when the buy window first lists it, off the render thread, would take it out of the placement frame; the composer and the file system it reads
+   would have to be checked for use from a worker first.
+2. **The first start after an install or a Windows update** compiles the shaders as before and fills the cache; nothing shows that start's
+   progress (the window stays black until the lobby is drawn). A loading indicator would be a visible change and is not made here.

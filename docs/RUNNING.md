@@ -9,7 +9,8 @@ Install the pinned .NET 11 SDK (`global.json`). Apple Silicon uses native arm64 
 the matching libraries are available; see MACOS-NATIVE.md for reproduction.
 The launcher falls back to an Intel/Rosetta bootstrap when those files are absent.
 Linux currently uses Vulkan and needs a working Vulkan driver. Windows uses
-Direct3D 11. Windows/Linux GPU execution is not yet locally qualified.
+Direct3D 11. Windows/Linux GPU execution is not yet locally qualified; CI draws the textured
+park shaders on Direct3D 11 (the Windows runner's WARP adapter) in `NativeWorldShaderRenderTests`.
 
 Linux (x64) needs the system packages for SDL2, the Vulkan loader and a Vulkan
 driver (Debian/Ubuntu: `libsdl2-2.0-0 libvulkan1 mesa-vulkan-drivers`) and an X11
@@ -343,7 +344,7 @@ bash scripts/run.sh --game-path '/path/to/Theme Park World' --play-movie bf --sm
 Plays `Data/Movies/<name>.tgq` with SDL2 audio (`--mute` disables it); a key
 press or click skips.
 
-Automated runs are silent: `--smoke-test`, `--tpi-smoke-test`, `--park-resume-smoke`, `--smoke-presence`, any `--capture-*` or
+Automated runs are silent: `--smoke-test`, `--tpi-smoke-test`, `--park-resume-smoke`, `--coop-join-smoke`, `--smoke-presence`, any `--capture-*` or
 `--perf-*` option, every `--debug-*` option (`--debug-sim-minutes`, `--debug-weather` and the other capture helpers), `--offscreen` (or `OPENTPW_OFFSCREEN=1`), `--headless`, the gates and the guest reports open no audio
 device (the game runs on its wall clock exactly as without a sound card), so tests and agents make no sound on a developer machine.
 Add `--smoke-audio` or `--audible` to hear one. `--silent` or `OPENTPW_SILENT=1` silences any run; a plain launch is never silenced.
@@ -407,6 +408,9 @@ bash scripts/run.sh --game-path '/path/to/Theme Park World' --fullscreen --upsca
 | `--no-vsync` | Presents frames as fast as they are made instead of at the display's refresh rate; for performance measurements. |
 | `--frame-stats` | Logs frames per second, average/p99/max frame time, CPU use, allocation rate and garbage collections every 5 seconds, and where a frame goes: the update (and inside it the simulation), the world drawing, the interface overlay, submit and present, the GPU wait and the whole `Renderer.Update` call. |
 | `--perf-run <frames>` | For performance runs ([ENGINE-PERFORMANCE.md](ENGINE-PERFORMANCE.md)): once the original level is up it hides the developer panels as a front-end park does, opens the park door, runs the simulation at `--perf-speed 1\|2\|4` (default 4) with a guest arriving every `--perf-arrivals N` turns, and closes the window after that many frames; `--perf-zoom <value>` holds the park camera at that zoom value (40 to 300 with the wide zoom range, 70 to 130 without). Combine it with `--load-original-level`, `--frame-stats` and, for CPU-bound frames, `--no-vsync`; it is offscreen by default (`--visible` for the presented path, whose numbers are not comparable to the baselines). `--perf-digest` adds the co-op session digest's cost on the running park to every 600th frame's line ([COOP.md](COOP.md), "Measurements"); its five digests run inside that frame, so leave it out of frame-time runs. `--perf-crowd <n>` stages n guests on the park's paths when the door opens (the browser harness's crowd), so a run sees a full park at once; the park is not a real run afterwards. |
+| `--startup-profile` | Measures the start up to the lobby ([ENGINE-PERFORMANCE.md](ENGINE-PERFORMANCE.md), "Start and build hitches"): logs the time from Main to the lobby's first frame, the named phases (language, mods, renderer, lobby scene, shader compiles, model parses, texture decodes) and the counted file opens, bytes read, directory listings, native shader programs, pipelines and GPU textures once the lobby has drawn 120 frames, then closes the window. Offscreen and silent by default like the other measurement runs (`--visible` to see it). |
+| `--hitch-report <ms>` | Logs every frame that took at least that many milliseconds with the work recorded in it (the frame marks of the browser harness and the load sections) and what it counted. Offscreen and silent by default. |
+| `--perf-build` | With `--load-original-level`: once the park and its interface are up, opens the buy window, shows each tab and pages through its rows, selects a row, closes the window and places `--perf-build-placements N` (default 3) objects of each tab near the camera's target through the build tool's command, one step every 20 frames; every step's frame is logged as by `--hitch-report` (50 ms unless given), then the load profile, and the window closes. The park is a measurement park afterwards. |
 | `--save-display-settings` | Also stores these values as the user's display settings. |
 | `--export-ps2 <ps2 DATA dir> <out dir>` | Lists the PS2 version's archives and exports its textures as PNG for viewing (PS2.md). |
 | `--debug-light x,y,height,radius[,red,green,blue]` | Smoke-only: once the original level is up, adds one fixed point light at x, y, height relative to the park camera's target (engine units, a cell is 2) with a radius in engine units (20 is the original engine's default of 100 model units) and an optional colour of three 0..1 channels; for captures and a look at what a light does ([LIGHTS.md](LIGHTS.md)). |

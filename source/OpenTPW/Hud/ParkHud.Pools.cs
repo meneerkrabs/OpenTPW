@@ -21,17 +21,17 @@ public sealed partial class ParkHud
 	/// <summary>[EXT:pools-river] The Miscellaneous list's lazy river row (row id -20): paints pool water with the river option.</summary>
 	public static readonly BuildItem PoolRiverRow = new( "pool:river", -20, BuildCategory.Features, 0, ParkEconomy.PoolCellCost, null, Array.Empty<string>() );
 
-	public static readonly BuildItem PoolBridgeEastRow = new( "pool:bridge-east", -21, BuildCategory.Features, 0, PoolBridgeWorld.Price, null, Array.Empty<string>() );
-	public static readonly BuildItem PoolBridgeSouthRow = new( "pool:bridge-south", -22, BuildCategory.Features, 0, PoolBridgeWorld.Price, null, Array.Empty<string>() );
+	/// <summary>[EXT:pools-bridges] The Miscellaneous list's single pool bridge row (row id -21). One bridge is built in every direction: it turns with the blueprint keys (<see cref="PoolTool.RotateBridge"/>). Its buy-window preview is the bridge's own Blender mesh (<see cref="PoolBridgePreview"/>).</summary>
+	public static readonly BuildItem PoolBridgeRow = new( "pool:bridge", -21, BuildCategory.Features, 0, PoolBridgeWorld.Price, null, Array.Empty<string>() );
 	public static readonly BuildItem PoolBridgeEraseRow = new( "pool:bridge-erase", -23, BuildCategory.Features, 0, 0, null, Array.Empty<string>() );
 
-	private static bool IsPoolBridgeRow( BuildItem item ) => item.InfoId is -21 or -22 or -23;
+	private static bool IsPoolBridgeRow( BuildItem item ) => item.InfoId is -21 or -23;
 
 	/// <summary>Whether <paramref name="item"/> is one of the pool rows.</summary>
-	public static bool IsPoolRow( BuildItem item ) => item.InfoId is -3 or -4 or -5 or -20 or -21 or -22 or -23 && item.Entry == null && item.Category == BuildCategory.Features;
+	public static bool IsPoolRow( BuildItem item ) => item.InfoId is -3 or -4 or -5 or -20 or -21 or -23 && item.Entry == null && item.Category == BuildCategory.Features;
 
-	private string PoolRowName( BuildItem item ) => strings.Extra( item.InfoId == PoolBridgeEastRow.InfoId ? OpenTpwText.PoolBridgeEast
-		: item.InfoId == PoolBridgeSouthRow.InfoId ? OpenTpwText.PoolBridgeSouth : item.InfoId == PoolBridgeEraseRow.InfoId ? OpenTpwText.PoolBridgeErase
+	private string PoolRowName( BuildItem item ) => strings.Extra( item.InfoId == PoolBridgeRow.InfoId ? OpenTpwText.PoolBridge
+		: item.InfoId == PoolBridgeEraseRow.InfoId ? OpenTpwText.PoolBridgeErase
 		: item.InfoId == PoolPaintRow.InfoId ? OpenTpwText.PoolRowPaint : item.InfoId == PoolRiverRow.InfoId ? OpenTpwText.PoolRowRiver
 		: item.InfoId == PoolSlideRow.InfoId ? OpenTpwText.PoolRowSlide : OpenTpwText.PoolRowErase );
 
@@ -77,7 +77,7 @@ public sealed partial class ParkHud
 		}
 		var river = item.InfoId == PoolRiverRow.InfoId;
 		var bridge = IsPoolBridgeRow( item );
-		if ( !(bridge ? tool.BeginBridge( item.InfoId == PoolBridgeEastRow.InfoId ? 1 : 2, erase ) : tool.Begin( erase, river )) )
+		if ( !(bridge ? tool.BeginBridge( 1, erase ) : tool.Begin( erase, river )) )
 			return;
 		CloseBuyWindow();
 		PostMessage( strings.Extra( bridge ? (erase ? OpenTpwText.PoolBridgeEraseHelp : OpenTpwText.PoolBridgeHelp) : erase ? OpenTpwText.PoolEraseHint : river ? OpenTpwText.PoolRiverHint : OpenTpwText.PoolPaintHint ) );
@@ -109,7 +109,8 @@ public sealed partial class ParkHud
 			return false;
 		}
 		tool.Hover( cursorX, cursorY );
-		context.HoverHelp = strings.Extra( tool.IsBridge ? (tool.IsErasing ? OpenTpwText.PoolBridgeEraseHelp : OpenTpwText.PoolBridgeHelp) : tool.IsSlide ? OpenTpwText.PoolSlideHelp : tool.IsErasing ? OpenTpwText.PoolEraseHelp : tool.IsRiver ? OpenTpwText.PoolRiverHelp : OpenTpwText.PoolPaintHelp );
+		// a bridge the pointer cannot place over a pool says why instead of the help, so the player sees the reason before clicking (the blueprint marks the cell to blame)
+		context.HoverHelp = strings.Extra( tool.ShowsBridgeReason && tool.HoverBridgeResult is { } hoverRefusal ? BridgeRefusalText( hoverRefusal ) : tool.IsBridge ? (tool.IsErasing ? OpenTpwText.PoolBridgeEraseHelp : OpenTpwText.PoolBridgeHelp) : tool.IsSlide ? OpenTpwText.PoolSlideHelp : tool.IsErasing ? OpenTpwText.PoolEraseHelp : tool.IsRiver ? OpenTpwText.PoolRiverHelp : OpenTpwText.PoolPaintHelp );
 		if ( input.LeftPressed )
 		{
 			refusalClick.Press();
@@ -126,6 +127,21 @@ public sealed partial class ParkHud
 		return false;
 	}
 
+	/// <summary>[EXT:pools-bridges] What a refused bridge placement or removal tells the player, on the click and in the hover help.</summary>
+	internal static OpenTpwText BridgeRefusalText( PoolBridgeResult result ) => result switch
+	{
+		PoolBridgeResult.NotEnoughMoney => OpenTpwText.NotEnoughMoney,
+		PoolBridgeResult.NotOverPool => OpenTpwText.PoolBridgeNeedsWater,
+		PoolBridgeResult.NotBridge => OpenTpwText.PoolBridgeNotBridge,
+		PoolBridgeResult.Standing => OpenTpwText.PoolBridgeStanding,
+		PoolBridgeResult.TooSteep => OpenTpwText.PoolBridgeTooSteep,
+		PoolBridgeResult.LandIsWater => OpenTpwText.PoolBridgeLandIsWater,
+		PoolBridgeResult.Blocked => OpenTpwText.PoolBridgeBlocked,
+		PoolBridgeResult.BridgeInTheWay => OpenTpwText.PoolBridgeInTheWay,
+		PoolBridgeResult.NotOwned => OpenTpwText.PoolBridgeNotOwned,
+		_ => OpenTpwText.CannotBuildHere
+	};
+
 	/// <summary>Ends the stroke: the lay sound if it wrote cells, and one refusal sound and message if a cell was refused.</summary>
 	private void ReportPoolStroke( PoolTool tool )
 	{
@@ -139,15 +155,7 @@ public sealed partial class ParkHud
 		refusalClick.Refused( refusal.Cell.X, refusal.Cell.Y );
 		if ( tool.LastBridgeRefusal is { } bridgeRefusal )
 		{
-			PostMessage( strings.Extra( bridgeRefusal switch
-			{
-				PoolBridgeResult.NotEnoughMoney => OpenTpwText.NotEnoughMoney,
-				PoolBridgeResult.NotOverPool => OpenTpwText.PoolBridgeNeedsWater,
-				PoolBridgeResult.NotBridge => OpenTpwText.PoolBridgeNotBridge,
-				PoolBridgeResult.Standing => OpenTpwText.PoolBridgeStanding,
-				PoolBridgeResult.TooSteep => OpenTpwText.PoolTooSteep,
-				_ => OpenTpwText.CannotBuildHere
-			} ) );
+			PostMessage( strings.Extra( BridgeRefusalText( bridgeRefusal ) ) );
 			return;
 		}
 		PostMessage( strings.Extra( refusal.Reason switch

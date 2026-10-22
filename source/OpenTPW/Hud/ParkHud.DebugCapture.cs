@@ -33,8 +33,21 @@ public sealed partial class ParkHud
 			Log.Trace( $"--debug-hud ride: riding {match.Entry.DisplayName}." );
 	}
 
+	/// <summary>Starts the end-of-park finale now, whatever the research and the player's records say (a capture of the winning screen); the screen opens on the next update.</summary>
+	internal void DebugFinale()
+	{
+		if ( !level.DebugStartFinale() )
+			Log.Warning( "--debug-hud finale: this park has no End to build." );
+	}
+
+	/// <summary>Shows the Instant Action completion message box (a capture of it in any game type).</summary>
+	internal void DebugWinningMessage() => Stack.Push( WinningMessage() );
+
 	/// <summary>The buy preview's fixed turn in radians for a capture (<see cref="DebugBuyItem"/>), or null for the clock's turn.</summary>
 	internal float? DebugBuyYaw { get; private set; }
+
+	/// <summary>Holds the buy preview at a turn in degrees for a capture (null: the clock's turn).</summary>
+	internal void DebugHoldBuyYaw( float? yawDegrees ) => DebugBuyYaw = yawDegrees * MathF.PI / 180;
 
 	/// <summary>
 	/// Opens the buy window on the row of the object type <paramref name="infoId"/> (its category, then its row) and, when <paramref name="yawDegrees"/> is given,

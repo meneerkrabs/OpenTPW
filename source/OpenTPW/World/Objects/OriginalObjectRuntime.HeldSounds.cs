@@ -2,7 +2,7 @@ namespace OpenTPW;
 
 public sealed partial class OriginalObjectRuntime
 {
-	/// <summary>One sound an <c>ADDOBJ</c> of type 3-9 keeps: the script that added it, the record's slot (tp.exe record +0x18), type (+8) and key (+0x10), and the held sound (its handle, +0xC).</summary>
+	/// <summary>One sound an <c>ADDOBJ</c> of type 3-10 keeps: the script that added it, the record's slot (tp.exe record +0x18), type (+8) and key (+0x10), and the held sound (its handle, +0xC).</summary>
 	internal sealed record HeldSoundRecord( int ScriptId, int Slot, int Type, int Key, HeldSound Sound );
 
 	/// <summary>The sound records of this object's scripts, newest first as the original links them (the script's object list, +0xB0). Sounds are presentation: they are in no hash and no saved state.</summary>
@@ -14,7 +14,7 @@ public sealed partial class OriginalObjectRuntime
 	internal IReadOnlyList<HeldSoundRecord> HeldSounds => heldSounds;
 
 	/// <summary>
-	/// <c>ADDOBJ</c> and <c>ADDOBJ_EXT</c> with a sound type (3-9): the event is submitted exactly as an <c>EVENT</c> of that type would be, at the key's place, and the handle is kept under the slot operand
+	/// <c>ADDOBJ</c> and <c>ADDOBJ_EXT</c> with a sound type (3-10, 10 from the object type's own sound list): the event is submitted exactly as an <c>EVENT</c> of that type would be, at the key's place, and the handle is kept under the slot operand
 	/// so <c>KILLOBJ</c>, <c>FADEOBJ</c> and <c>SETOBJPARAM</c> reach it; a submit that returns no handle (an unknown key or event, no sound system) keeps no record.
 	/// </summary>
 	// [BIN:TPW-EXE:0x551F5F ADDOBJ] operands type, key, event, slot; one 0x1C-byte record on the script's list; 0x557970 calls the dispatcher 0x5573D0, which for types 3-9 resolves the key (0x556B90, selector 0x200) and submits 0x51BFC0(0, the type's category, event, the place truncated to whole units), and keeps the record only for a non-zero handle (0x5579F9; a zero handle frees it again, 0x557A0A)
@@ -25,13 +25,20 @@ public sealed partial class OriginalObjectRuntime
 		if ( stopped || call.OperandCount < (extended ? 5 : 4) )
 			return;
 		var type = Word( call, 0 );
-		if ( type is < 3 or > 9 )
+		if ( type is < 3 or > 10 )
 			return;
 		PruneHeldSounds();
+		// [BIN:TPW-EXE:0x557686 ADDOBJ type 10] the dispatcher takes the type's own category first: without one it logs 0x765E18 and returns handle 0, so the record is freed
+		var own = type == 10 ? OwnSounds : null;
+		if ( type == 10 && own == null )
+		{
+			Log?.Trace( NoOwnSoundsMessage );
+			return;
+		}
 		var key = Word( call, 1 );
 		if ( ResolveEventAnchor( key, out var place ) != EventAnchorStatus.Play )
 			return;
-		var sound = GameAudio.StartHeldRseEvent( type, unchecked((uint)Word( call, 2 )), place, SoundSource );
+		var sound = GameAudio.StartHeldRseEvent( type, unchecked((uint)Word( call, 2 )), place, SoundSource, own );
 		if ( sound != null )
 			heldSounds.Insert( 0, new HeldSoundRecord( call.VM.ScriptId, call.Argument( extended ? 4 : 3 ), type, key, sound ) );
 	}

@@ -267,7 +267,7 @@ public sealed partial class ParkStaff
 	/// (<see cref="EndPlacement"/>). 0 when none. Not saved with an OpenTPW park: a resumed park keeps the candidate as an ordinary one.
 	/// </summary>
 	// [BIN:TPW-EXE:0x5084f0 staff pool update] the expiry loop skips a candidate whose +0xB is set (it tests +0xB == 0 before it clears the valid byte), and the census counts it as valid; [BIN:TPW-EXE:0x5083b0 tool exit] every flagged candidate loses the flag, and with a 0 argument (the placement was made) its valid byte too
-	public int StaleOnPointerId { get; private set; }
+	public int StaleOnPointerId { get; internal set; }
 
 	/// <summary>
 	/// A placement tool ended (<c>0x5083b0</c>): the pending candidate is no longer being placed and a candidate the load left flagged loses its flag; when <paramref name="placed"/> the flagged candidate is

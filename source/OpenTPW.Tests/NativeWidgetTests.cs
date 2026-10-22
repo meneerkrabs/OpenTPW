@@ -19,6 +19,13 @@ public class NativeWidgetTests
 
 	private static NVector2 Centre( UiContext context, UiElement element ) => element.ScreenRect( context.Canvas ).Center;
 
+	/// <summary>
+	/// A focused text field sets <see cref="Input.TextEntryActive"/> in a screen's update, and the game flow clears it each frame: here the cleanup does, for the tests after it (a flag left set
+	/// shuts the park input gates of later HUD tests, such as the wave machine window of <see cref="PoolsAttractionsLevelTests"/>).
+	/// </summary>
+	[TestCleanup]
+	public void Cleanup() => Input.TextEntryActive = false;
+
 	[TestMethod]
 	public void TypedFolderActionsAreDisabledUntilInspectionCompletes()
 	{
@@ -147,7 +154,6 @@ public class NativeWidgetTests
 		Assert.AreEqual( "wasd", name.Text );
 		screen.Update( context, new UiInput( new NVector2( -1, -1 ), false, false, false, true, UiKeys.None ) );
 		Assert.AreEqual( 1, backs, "Right click backs out of a modal screen even while a field has the focus." );
-		Input.TextEntryActive = false;
 	}
 
 	[TestMethod]

@@ -71,6 +71,32 @@ public partial class TrackAddOnLevelTests
 	}
 
 	[TestMethod]
+	public void AStationHeadsMarkerBitGoesThroughTheLayoutSaveBesideThePoolFlags()
+	{
+		var (level, entry) = CoasterMarkerLevel();
+		var station = level.Objects.TryPlace( entry, 20, 16, 0, out _ )!;
+		Assert.IsNotNull( station.Runtime.Coaster );
+		var cells = level.Guests!.Grid.Cells;
+		var all = Enumerable.Range( 0, cells.Width * cells.Height ).Select( index => (X: index % cells.Width, Y: index / cells.Width) ).ToArray();
+		var marked = all.Where( cell => cells.RawTypeAt( cell.X, cell.Y ) == CoasterCellMarkers.MarkerType && ((ushort)cells.FlagsAt( cell.X, cell.Y ) & CoasterCellMarkers.StationHeadMark) != 0 )
+			.ToArray();
+		Assert.AreEqual( 1, marked.Length, "the station head's marker cell carries the original's marker bit" );
+		// a park with a coaster can be saved: on a marker cell the bit is no pool flag, though a wave height bit shares its value
+		var layout = ParkLayoutSnapshot.CaptureSnapshot( cells, level.Objects );
+		var restored = ParkLayoutSnapshot.RestoreCellMap( layout );
+		Assert.AreEqual( cells.FlagsAt( marked[0].X, marked[0].Y ), restored.FlagsAt( marked[0].X, marked[0].Y ) );
+		// any other pool bit on the marker cell, and the marker bit on an object cell, are still forged pool flags
+		var marker = layout.Cells.Cells.Single( cell => (cell.X, cell.Y) == marked[0] );
+		var footprint = layout.Cells.Cells.First( cell => cell.Type == ParkCellTypes.Object );
+		foreach ( var (record, forged) in new[] { (marker, marker with { Flags = (ushort)(marker.Flags | (ushort)ParkCellFlags.PoolRiver) }),
+			(marker, marker with { Flags = (ushort)(marker.Flags | 0x200) }), (footprint, footprint with { Flags = (ushort)(footprint.Flags | CoasterCellMarkers.StationHeadMark) }) } )
+		{
+			var data = layout with { Cells = layout.Cells with { Cells = layout.Cells.Cells.Select( cell => ReferenceEquals( cell, record ) ? forged : cell ).ToList() } };
+			StringAssert.Contains( Assert.ThrowsException<System.IO.InvalidDataException>( () => ParkLayoutSnapshot.RestoreCellMap( data ) ).Message, "no pool cell" );
+		}
+	}
+
+	[TestMethod]
 	public void LevelRestoreHelpersRebindDerivedMarkersAfterEmptyTrackRestore()
 	{
 		var (level, entry) = CoasterMarkerLevel();
@@ -84,6 +110,7 @@ public partial class TrackAddOnLevelTests
 			.Select( index => (X: index % cells.Width, Y: index / cells.Width) )
 			.Where( cell => cells.RawTypeAt( cell.X, cell.Y ) == 21 )
 			.Select( cell => (cell.X, cell.Y, Owner: cells.OwnerAt( cell.X, cell.Y ), Flags: cells.FlagsAt( cell.X, cell.Y )) ).ToArray();
+		Assert.IsTrue( markers.Any( cell => ((ushort)cell.Flags & CoasterCellMarkers.StationHeadMark) != 0 ), "the station head's marker cell carries the marker bit" );
 		builder.Track.DetachCells();
 		Set( level, "coasterCellsReady", false );
 		level.RestoreCoastersSnapshot( saved );
@@ -97,6 +124,9 @@ public partial class TrackAddOnLevelTests
 		typeof( Level ).GetMethod( "BindCoasterCellsAfterLoad", Private )!.Invoke( level, null );
 		Assert.IsNotNull( builder.Track.CellMarkers!.TokenAt( 28, 20 ) );
 		Assert.AreEqual( stamp, cells.StampCounter, "restored markers only acquire derived tokens" );
+		// the preview's same-owner accept and a joiner's hash equality read the saved marker bit, so the rebind keeps every marker's flags
+		foreach ( var cell in markers )
+			Assert.AreEqual( cell.Flags, cells.FlagsAt( cell.X, cell.Y ), $"the rebind leaves the flags of marker ({cell.X}, {cell.Y}) intact" );
 		builder.Delete();
 		Assert.AreEqual( (byte)0, cells.RawTypeAt( 28, 20 ) );
 	}

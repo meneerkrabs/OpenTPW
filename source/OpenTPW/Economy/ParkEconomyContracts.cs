@@ -98,7 +98,14 @@ public enum ParkEventKind
 	/// A cheat was applied at the turn boundary (<see cref="ParkCheats"/>, docs/CHEATS.md): <see cref="ParkEvent.InfoId"/> the <see cref="CheatKind"/>, <see cref="ParkEvent.Amount"/> its argument (a ticket's
 	/// <see cref="GoldenTicketKind"/>), <see cref="ParkEvent.Detail"/> its outcome (a ticket's <see cref="GlobalTicketOutcome"/>). Unlike <see cref="GoldenTicketWon"/> the advisor says nothing: the original's ticket cheats are silent.
 	/// </summary>
-	CheatApplied
+	CheatApplied,
+	/// <summary>
+	/// The game made a fixed item while the park is played, with the common object constructor every purchase also runs (tp.exe <c>0x004DB090</c>): an arrival vehicle at its
+	/// first trip (<c>0x0051A57E</c>) or the end-of-park finale's End in either game type (<c>0x00516B8B</c>). <see cref="ParkEvent.InstanceId"/> its uncharged record
+	/// (<see cref="ParkEconomy.RegisterFixedItemMade"/>; 0 when the economy catalogue does not know the type), <see cref="ParkEvent.InfoId"/> its type. Nothing was bought,
+	/// unlike <see cref="ObjectBuilt"/>; the advisor's construction stamp moves for both.
+	/// </summary>
+	FixedItemMade
 }
 
 /// <summary>

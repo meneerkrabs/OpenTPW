@@ -117,12 +117,24 @@ public static class GameInstallation
 		{
 			if ( new DriveInfo( directory ).DriveType == DriveType.CDRom )
 				return false;
+			if ( OperatingSystem.IsWindows() )
+				return !IsUnderProgramFiles( directory );
 			const UnixFileMode anyWrite = UnixFileMode.UserWrite | UnixFileMode.GroupWrite | UnixFileMode.OtherWrite;
-			return OperatingSystem.IsWindows() || (File.GetUnixFileMode( directory ) & anyWrite) != 0;
+			return (File.GetUnixFileMode( directory ) & anyWrite) != 0;
 		}
 		catch ( Exception exception ) when ( exception is IOException or UnauthorizedAccessException or ArgumentException )
 		{
 			return true;
 		}
+	}
+
+	/// <summary>OpenTPW runs without administrator rights, so a game under Program Files cannot take saves beside it.</summary>
+	private static bool IsUnderProgramFiles( string directory )
+	{
+		var full = Path.TrimEndingDirectorySeparator( Path.GetFullPath( directory ) ) + Path.DirectorySeparatorChar;
+		// a 32-bit process sees Program Files (x86) for both folders; ProgramW6432 names the 64-bit one
+		return new[] { Environment.GetFolderPath( Environment.SpecialFolder.ProgramFiles ), Environment.GetFolderPath( Environment.SpecialFolder.ProgramFilesX86 ), Environment.GetEnvironmentVariable( "ProgramW6432" ) ?? "" }
+			.Where( root => root.Length > 0 )
+			.Any( root => full.StartsWith( Path.TrimEndingDirectorySeparator( root ) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase ) );
 	}
 }

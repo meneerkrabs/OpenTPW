@@ -22,6 +22,7 @@ public static class ServerProgram
 	/// answers each room's first movement with where everyone stands, which a visit's online players rely on (docs/ONLINE.md, "Players in a visited park").
 	/// 5: movements carry a mode (<see cref="ChatMoveMode"/>, <see cref="ChatProtocol.MoveModesVersion"/>), so a player riding a ride is hidden.
 	/// 6: the co-op socket of shared parks (<see cref="CoopProtocol"/>), their open list and join snapshots.
+	/// 7: the co-op host's skip of frames it no longer holds (<see cref="CoopSkipFrames"/>).
 	/// </summary>
 	public const int ProtocolVersion = CoopProtocol.Version;
 	private const string WebsitePolicy = "website";
@@ -82,6 +83,13 @@ public static class ServerProgram
 				_ => new FixedWindowRateLimiterOptions { PermitLimit = options.AuthenticationsPerMinute, Window = TimeSpan.FromMinutes( 1 ), QueueLimit = 0 } ) );
 			limiter.AddPolicy( "upload", context => RateLimitPartition.GetFixedWindowLimiter( Address( context ),
 				_ => new FixedWindowRateLimiterOptions { PermitLimit = options.UploadsPerHour, Window = TimeSpan.FromHours( 1 ), QueueLimit = 0 } ) );
+			// [EXT:online-coop-snapshot-join] a refusal says when to try again: the window's length, at most what is left of it (a joiner's download waits that long)
+			limiter.OnRejected = ( rejected, _ ) =>
+			{
+				if ( rejected.Lease.TryGetMetadata( MetadataName.RetryAfter, out var wait ) )
+					rejected.HttpContext.Response.Headers.RetryAfter = RetryAfterSeconds( wait );
+				return ValueTask.CompletedTask;
+			};
 		} );
 
 		var app = builder.Build();
@@ -108,6 +116,9 @@ public static class ServerProgram
 		app.Lifetime.ApplicationStopping.Register( hub.Restarting );
 		app.Lifetime.ApplicationStopping.Register( coop.Restarting );
 		coop.Warn = message => app.Logger.LogWarning( "{Message}", message );
+		// the start stores the loaded frame positions again as unknown before a logger exists: a failed write is reported here, and the next change writes them
+		if ( coop.Store.Unsaved )
+			coop.Warn( "The co-op sessions could not be stored at the start; their frame positions are written with the next change." );
 		// [EXT:online-coop-session] ends the shared parks whose host stayed away, once a minute
 		app.Lifetime.ApplicationStarted.Register( () => _ = Task.Run( async () =>
 		{
@@ -256,6 +267,9 @@ public static class ServerProgram
 		}
 		catch ( StoreException exception )
 		{
+			// [EXT:online-coop-snapshot-join] a limit's refusal says when it may be tried again
+			if ( exception.RetryAfter is { } wait )
+				context.Response.Headers.RetryAfter = RetryAfterSeconds( wait );
 			return Results.Json( new ApiError( exception.Message, exception.Reason ), StrictJson.Options, statusCode: exception.Status );
 		}
 		catch ( InvalidDataException exception )
@@ -263,6 +277,9 @@ public static class ServerProgram
 			return Error( StatusCodes.Status400BadRequest, exception.Message );
 		}
 	}
+
+	/// <summary>[EXT:online-coop-snapshot-join] A Retry-After header's value: whole seconds, at least one.</summary>
+	private static string RetryAfterSeconds( TimeSpan wait ) => Math.Max( 1, (long)Math.Ceiling( wait.TotalSeconds ) ).ToString( System.Globalization.CultureInfo.InvariantCulture );
 
 	private static void RequireClean( WordFilter filter, string text, string what )
 	{
@@ -690,7 +707,8 @@ public static class ServerProgram
 				throw new StoreException( StatusCodes.Status404NotFound, "No such shared park." );
 			if ( context.Request.ContentLength > options.MaximumCoopSnapshotBytes )
 				throw new StoreException( StatusCodes.Status413PayloadTooLarge, "The snapshot is too large." );
-			// authenticated, the host's and with room: only now may the body be larger than the server's default limit
+			// authenticated, the host's, within the session's own snapshot limit and with room: only now may the body be larger than the server's default limit
+			// ([EXT:online-coop-snapshot-join] the limit is counted in CoopHub.BeginUpload, not against the address's park uploads)
 			var upload = coop.BeginUpload( user!, id );
 			string? temporary = null;
 			string? sha256 = null;
@@ -719,7 +737,7 @@ public static class ServerProgram
 				if ( temporary != null && File.Exists( temporary ) )
 					File.Delete( temporary );
 			}
-		} ) ).RequireRateLimiting( "upload" );
+		} ) );
 
 		app.MapGet( ApiRoutes.Coop + "/{id}/snapshot/{sha256}", ( HttpContext context, string id, string sha256 ) => Guarded( context, store, true, user =>
 		{

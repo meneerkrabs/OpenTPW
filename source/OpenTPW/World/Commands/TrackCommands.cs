@@ -126,13 +126,14 @@ public sealed class ParkCommandTrackWriter : ICellLineWriter
 				continueTool();
 			return segment;
 		}
-		// a refused command lays nothing: the tool sees a line stopped at its first cell
+		// a refused command lays nothing: the tool sees a line stopped at its first cell; one that threw while it ran may have laid some (CommandRefused stays false)
 		var snapped = TrackLineWriter.SnapEnd( start, end );
 		return new SegmentResult( snapped, Array.Empty<(int X, int Y)>(), 0, CellBuildResult.Occupied, false )
 		{
 			Start = start,
 			Line = TrackLineWriter.LayLine( start, snapped ).SelectMany( tile => TrackStation.TileCellsOf( tile.X, tile.Y ) ).ToArray(),
-			StoppedAt = start
+			StoppedAt = start,
+			CommandRefused = result.Error == null
 		};
 	}
 

@@ -88,24 +88,15 @@ public class Shader : Asset
 		lock ( watchers )
 			if ( watchers.TryGetValue( Path, out var watcher ) && watcher != null )
 				watcher.Changed -= OnWatcherChanged;
-		var program = ShaderProgram;
-		// The constructor registers before compiling, so a shader whose file was missing or whose
-		// compilation threw owns no native objects to retire.
-		if ( program[0] == null && program[1] == null )
-			return;
-		// A partially failed compile can still own one stage, so each stage is disposed on its own.
-		// Without a renderer the shader was never submitted to a frame, so its objects are freed at
-		// once instead of after the last drawn frame.
-		if ( Render is { } renderer )
-			renderer.ScheduleDelete( () =>
-			{
-				foreach ( var shader in program )
-					shader?.Dispose();
-			} );
-		else
-			foreach ( var shader in program )
-				shader?.Dispose();
+		// The constructor registers before compiling, so a shader whose file was missing or whose compilation threw holds no native program.
+		// The native shaders are shared by every Shader of the same program (ShaderCompiler.CompileShader); the last reference given back
+		// disposes them after the last frame that may draw with them, or at once without a renderer.
+		ShaderCompiler.Release( shaderInfo );
+		shaderInfo = shaderInfo with { Owner = null };
 	}
+
+	/// <summary>Whether this shader still holds a reference to its native program (false once released); for the smoke tests.</summary>
+	internal bool HoldsNativeProgram => shaderInfo.Owner != null;
 
 	public static bool IsFileReady( string path )
 	{
@@ -131,8 +122,11 @@ public class Shader : Asset
 		if ( released || !IsFileReady( Path ) )
 			return;
 
+		var previous = shaderInfo;
 		shaderInfo = ShaderCompiler.CompileShader( Path );
 		OnRecompile?.Invoke();
+		// the materials have made their pipelines from the new program; the old one is given back (the same program when the file did not change)
+		ShaderCompiler.Release( previous );
 		IsDirty = false;
 	}
 }

@@ -41,6 +41,8 @@ public static class GameFilesScreen
 
 		void Store( SetupSettings settings )
 		{
+			// a new game, CD or bonus folder applies at the next start; the files of the old one are closed here, but the session still reads it and a later read reopens a file
+			WadArchive.CloseFileHandles();
 			try
 			{
 				settings.Save( settingsPath );

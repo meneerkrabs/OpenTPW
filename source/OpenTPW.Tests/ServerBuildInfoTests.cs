@@ -127,6 +127,8 @@ public class ServerBuildInfoTests
 			using var second = await http.GetAsync( ServerProgram.BuildInfoRoute );
 			Assert.AreEqual( HttpStatusCode.TooManyRequests, second.StatusCode );
 			Assert.IsTrue( second.Headers.CacheControl!.NoStore );
+			// [EXT:online-coop-snapshot-join] the refusal says when to try again: the window's length at most
+			Assert.IsTrue( second.Headers.RetryAfter?.Delta is { } wait && wait >= TimeSpan.FromSeconds( 1 ) && wait <= TimeSpan.FromMinutes( 1 ), $"{second.Headers.RetryAfter}" );
 		}
 		finally { server.DeleteData(); }
 	}

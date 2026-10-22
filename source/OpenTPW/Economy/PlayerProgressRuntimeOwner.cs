@@ -7,6 +7,11 @@ internal sealed class PlayerProgressRuntimeOwner : IDisposable
 	private readonly string theme;
 	private readonly ParkEconomyRuntime runtime;
 	private readonly Func<bool> active;
+	private readonly Func<bool>? shared;
+	/// <summary>[EXT:online-coop-snapshot-join] The park was seen in a co-op session and is not reclaimed yet (<see cref="Reclaim"/>).</summary>
+	private bool reclaimPending;
+	/// <summary>[EXT:online-coop-snapshot-join] The global tickets the park won in the session, with its record at each win (the record the check compared).</summary>
+	private readonly Dictionary<GoldenTicketKind, long> wonInSession = new();
 	private readonly Action<string> report;
 	private ParkEconomy observed;
 	private string digest;
@@ -16,12 +21,17 @@ internal sealed class PlayerProgressRuntimeOwner : IDisposable
 	public bool Dirty { get; private set; }
 	public string? Error { get; private set; }
 	internal string CommittedDigest => digest;
-	private bool Eligible => !disposed && active() && Ledger.Mode == ParkGameMode.FullSimulation &&
-		runtime.Start.Kind == ParkStartKind.FullSimulation && runtime.Economy.Mode == ParkGameMode.FullSimulation && runtime.Economy.Settings.CanEarnTickets;
+	// [EXT:online-coop-snapshot-join] a park in a co-op session is outside its player's progress until it is reclaimed: every peer decides its global tickets by the park's own records
+	private bool Eligible => RecordsEligible && runtime.Economy.Settings.CanEarnTickets;
+	// [EXT:online-coop-snapshot-join] a park in a co-op session neither reads nor writes its player's research records, so every peer's park takes the same finale decision
+	private bool RecordsEligible => !disposed && active() && !reclaimPending && shared?.Invoke() != true && Ledger.Mode == ParkGameMode.FullSimulation &&
+		runtime.Start.Kind == ParkStartKind.FullSimulation && runtime.Economy.Mode == ParkGameMode.FullSimulation;
 
-	public PlayerProgressRuntimeOwner( string path, string theme, PlayerTicketFile.ReadState state, ParkEconomyRuntime runtime, Func<bool> active, Action<string> report )
+	/// <param name="shared">[EXT:online-coop-snapshot-join] Whether the park is in a co-op session now; null for a park that never is.</param>
+	public PlayerProgressRuntimeOwner( string path, string theme, PlayerTicketFile.ReadState state, ParkEconomyRuntime runtime, Func<bool> active, Action<string> report,
+		Func<bool>? shared = null )
 	{
-		this.path = path; this.theme = theme; this.runtime = runtime; this.active = active; this.report = report;
+		this.path = path; this.theme = theme; this.runtime = runtime; this.active = active; this.report = report; this.shared = shared;
 		authority = Authority;
 		Ledger = state.Ledger; digest = state.Digest; observed = runtime.Economy;
 		Reconcile();
@@ -48,6 +58,14 @@ internal sealed class PlayerProgressRuntimeOwner : IDisposable
 
 	private void OnEvent( ParkEvent item )
 	{
+		// [EXT:online-coop-snapshot-join] a shared park's global wins are noted, outside the simulation, for the hand-back; the event comes in the check's own tick
+		if ( reclaimPending || shared?.Invoke() == true )
+		{
+			reclaimPending = true;
+			if ( item.Kind == ParkEventKind.GoldenTicketWon && item.Amount is >= 0 and <= int.MaxValue && PlayerTicketLedger.IsGlobal( (GoldenTicketKind)item.Amount ) )
+				wonInSession[(GoldenTicketKind)item.Amount] = runtime.Economy.GlobalTicketRecord( (GoldenTicketKind)item.Amount );
+			return;
+		}
 		// [EXT:cheats-ticket-provenance] a ticket cheat (silent: no GoldenTicketWon) earns the ticket like a win and records that a cheat awarded it; a global one was earned through the authority already
 		if ( Eligible && item.Kind == ParkEventKind.CheatApplied && item.InfoId == (int)CheatKind.Ticket && item.Amount is >= 0 and <= int.MaxValue
 			&& Enum.IsDefined( (GoldenTicketKind)item.Amount ) && runtime.Economy.Objectives.GoldenTickets.Contains( (GoldenTicketKind)item.Amount )
@@ -64,9 +82,66 @@ internal sealed class PlayerProgressRuntimeOwner : IDisposable
 		if ( Dirty ) TryFlush();
 	}
 
+	/// <summary>Records that this park's research is complete in the player's record list and saves it (tp.exe <c>0x5B0CA0</c>, which no ticket setting gates).</summary>
+	public void RecordResearchCompleted()
+	{
+		if ( !RecordsEligible ) return;
+		if ( Ledger.RecordResearchCompleted( theme ) ) Dirty = true;
+		if ( Dirty ) TryFlushRecords();
+	}
+
+	/// <summary>Whether every park's research is complete in the player's record list once this park's is (tp.exe <c>0x5B0C40</c>); false while the park is outside the player's progress.</summary>
+	public bool ResearchCompletedEverywhere => RecordsEligible && Ledger.ResearchCompletedEverywhereWith( theme );
+
+	/// <summary>Saves the records even in a theme whose tickets cannot be earned (where <see cref="TryFlush"/> leaves the file alone).</summary>
+	private void TryFlushRecords()
+	{
+		if ( Eligible ) { TryFlush(); return; }
+		try
+		{
+			digest = PlayerTicketFile.SaveIfUnchanged( path, Ledger.Capture(), digest );
+			Dirty = false; Error = null;
+		}
+		catch ( Exception exception ) when ( exception is IOException or InvalidDataException or UnauthorizedAccessException )
+		{
+			Error = exception.Message; report( Error );
+		}
+	}
+
 	public void Pump()
 	{
+		if ( shared?.Invoke() == true )
+		{
+			reclaimPending = true;
+			return;
+		}
+		if ( reclaimPending )
+		{
+			reclaimPending = false;
+			Reclaim();
+			return;
+		}
 		if ( Eligible && !ReferenceEquals( observed, runtime.Economy ) ) { Reconcile(); TryFlush(); }
+	}
+
+	/// <summary>
+	/// [EXT:online-coop-snapshot-join] A park back from a co-op session returns to this player's progress (docs/COOP.md, "Golden tickets in a session"): while shared it decided its global
+	/// tickets by its own records, as every peer's park did, so each global ticket it won in the session goes through the player-wide rule now, with its record at the win; one the rule keeps
+	/// with another park is taken from this park, as the rule would have decided at the win. The tickets it held before the session, and its local tickets, reconcile as ever.
+	/// </summary>
+	private void Reclaim()
+	{
+		if ( !Eligible ) { wonInSession.Clear(); return; }
+		var objectives = runtime.Economy.Objectives;
+		foreach ( var (kind, record) in wonInSession.OrderBy( pair => pair.Key ) )
+		{
+			if ( !objectives.GoldenTickets.Contains( kind ) ) continue;
+			var before = Ledger.HolderOf( kind );
+			if ( Ledger.RecordGlobal( theme, kind, record ) != GlobalTicketOutcome.None || before != Ledger.HolderOf( kind ) ) Dirty = true;
+			if ( !Ledger.HeldBy( theme, kind ) ) objectives.TakeGoldenTicket( kind );
+		}
+		wonInSession.Clear();
+		TryFlush();
 	}
 
 	public bool TryFlush( bool requireUnchangedWhenClean = false )

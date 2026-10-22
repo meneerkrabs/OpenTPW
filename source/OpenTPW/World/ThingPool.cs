@@ -103,11 +103,11 @@ public sealed class ThingPool
 	/// <summary>
 	/// Keeps a used slot for a thing of an imported original save that OpenTPW does not rebuild: the original still has that thing, so its id is not handed out again and later things
 	/// get the ids the original gives them. The slot keeps its place in the used list and its model; nothing in OpenTPW names it, and it is never destroyed by a request. False for a slot
-	/// that is not in use.
+	/// that is not in use or already waits for destruction. Holding a slot cannot cancel an existing destroy request.
 	/// </summary>
 	public bool Hold( int id )
 	{
-		if ( !IsUsed( id ) )
+		if ( !IsUsed( id ) || queued[id] )
 			return false;
 		held[id] = true;
 		return true;

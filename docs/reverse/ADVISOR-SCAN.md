@@ -18,20 +18,22 @@ values are game data: the inventory stores the `TAG_SYSTEM.str` entry numbers an
 
 Message 344 is posted by the first challenge offer, despite retaining the help-score descriptor callback and response 606. It is an event producer, not an unused or window-help producer; the existing first-offer runtime and restored-advice catalog are unchanged.
 
+Message 204 is the kart and water line tool's help: the click that gives the tool the line start it lacks posts it (`0x526D41`, a jump into the queue tool's post `0x527629`; see "Tutorial and help"). It is a `help` row, `wired`, and the restored-advice extension no longer posts it as the roller coaster tool starts.
+
 | Status | Messages | Meaning |
 | --- | ---: | --- |
-| wired | 235 | OpenTPW produces the message today |
+| wired | 236 | OpenTPW produces the message today |
 | ready | 0 | every input exists in OpenTPW (the inventory names the class or field); only the producer is missing |
 | blocked | 12 | an input is missing or approximated |
-| none | 104 | nothing to produce: 21 are scored by the scan but their callback is the constant-zero stub, 83 have no producer in `tp.exe` at all |
+| none | 103 | nothing to produce: 21 are scored by the scan but their callback is the constant-zero stub, 82 have no producer in `tp.exe` at all |
 
 | Kind | Messages | Producer |
 | --- | ---: | --- |
 | scan | 134 | the background scan `0x59C680` scores it from park state (the 134 computed callbacks) |
 | scan-zero | 21 | the scan reaches it, the callback is `0x5D60C0` (returns 0): it can never pass `MinScoreForConsideration` |
 | event | 68 | game code posts it (bus message or direct call) |
-| help | 45 | a window or tool posts it through `0x486B00` (score callback `0x59E8C0`) |
-| unused | 83 | no producer found (36 of these are help descriptors that nothing posts) |
+| help | 46 | a window or tool posts it through `0x486B00` (score callback `0x59E8C0`) |
+| unused | 82 | no producer found (35 of these are help descriptors that nothing posts) |
 
 | Batch | wired | ready | blocked | none | Total |
 | --- | ---: | ---: | ---: | ---: | ---: |
@@ -44,13 +46,13 @@ Message 344 is posted by the first challenge offer, despite retaining the help-s
 | Research | 19 | 0 | 0 | 0 | 19 |
 | Weather | 0 | 0 | 0 | 0 | 0 |
 | Challenges and golden tickets | 30 | 0 | 0 | 0 | 30 |
-| Tutorial and help | 45 | 0 | 3 | 36 | 84 |
+| Tutorial and help | 46 | 0 | 3 | 35 | 84 |
 | Other | 9 | 0 | 0 | 68 | 77 |
-| Total | 235 | 0 | 12 | 104 | 351 |
+| Total | 236 | 0 | 12 | 103 | 351 |
 
 Weather has no message: no score callback reads weather or season state, no poster is a weather event, and no `TAG_SYSTEM.str` caption
-of the advisor mentions rain, storm or snow. The "about 91" messages with a producer: **235** produce advice today: 68 posted by game code (every `event` row: 0, 323, 106, 128, 129, 33-57, 66,
-68-70, 93-97, 125-127, 133-136, 167, 215-217, 220-222, 225-227, 234-237, 258, 270-273, 311, 315 and 344), 42 help messages of windows and tools OpenTPW has, and 125 scored by the ported scan (the money
+of the advisor mentions rain, storm or snow. The "about 91" messages with a producer: **236** have their producer here: 68 posted by game code (every `event` row: 0, 323, 106, 128, 129, 33-57, 66,
+68-70, 93-97, 125-127, 133-136, 167, 215-217, 220-222, 225-227, 234-237, 258, 270-273, 311, 315 and 344), 43 help messages of windows and tools OpenTPW has, and 125 scored by the ported scan (the money
 batch: 100-105 and 107; the 31 park callbacks of the rides, cleanliness and guest mood batches: 3-10, 60, 62, 71, 73-75, 77-79, 81, 82, 85-89, 145, 158, 159 and 259-262; the 38 staff callbacks: 11, 13, 14, 18, 20, 23, 26, 28-32,
 108-112, 114-123, 144, 146-150, 169-172 and 263; the 31 callbacks of the queues, prices and research batches: 15-17, 61, 63, 64, 72, 76, 80, 91, 92 and 238-257; and the 18 callbacks
 of the park-opening, congratulation, tutorial and golden ticket group: 1, 2, 124, 140, 156, 157, 185, 274-276, 278-282, 314, 316 and 317, see "Challenges and golden tickets").
@@ -89,7 +91,7 @@ outside the simulation hash, so the scan moves no determinism pin. `AutomaticAdv
 
 Callback conventions: the world is `[0x80239C]` (also `[[0x7CF6EC]]`). `0x519510` returns the **park thing** (handle at world `+0x1DA720`,
 pool `0x7CFB90`, stride `0x14`); the park thing holds the statistics the helpers read (visitor counter `+0x21C08`, visitor ring
-`+0x216D8`, the 20 price rings of 50 values from `+0x216FC`, the first-object and first-hire stamps `+0x21C30` / `+0x21C38`, the
+`+0x216D8`, the 20 price rings of 50 values from `+0x216FC`, the stamps of the newest object construction and the newest hire `+0x21C30` / `+0x21C38`, the
 prank counters `+0x21BFC` / `+0x21C00`). `0x5195D0` is the **bank** (handle `+0x1DA726`: balance `+0xC`, 8 loan slots of `0x20` bytes
 from `+0x20`, year profit `+0x124`, the turn entered red `+0x120`), `0x519550` the **research manager** (`+0x1DA722`),
 `0x5194D0` the **advisor thing** itself (`+0x1DA71C`, the `this` of `0x59A940`), `0x519450` the **training** thing (`+0x1DA718`).
@@ -119,7 +121,7 @@ Confidence: high = whole body read, medium = shape read and role inferred from t
 | `0x4C81E0` | "busy points": guests in the park / 2, capped at 100 | high |
 | `0x4C81B0` | developed cells (the 1024 map blocks via `0x4C8C40`) | medium |
 | `0x4C9050` | the park is open (`0x51A280` clear) | high |
-| `0x4C9070` / `0x4C90D0` | days since the object stamp `+0x21C30` (rewritten by every object construction, `0x4DB090` calling `0x4C7680`: the newest, not the first) / the hire stamp `+0x21C38` (rewritten by every staff thing init, `0x504B90` calling `0x4C76D0`) | high |
+| `0x4C9070` / `0x4C90D0` | days since the object stamp `+0x21C30` (rewritten by every object construction: the single exit of the common constructor `0x4DB090` calls `0x4C7680` at `0x4DB7A3`, the newest, not the first; the constructor's five callers are the build commit `0x529E10` at `0x529FD5`, which a build and the Move tool's re-placement both reach, the park setup's gates and lights at `0x515BE1` and `0x515C94` after the park init at `0x5159C8`, the finale's End at `0x516B8B` and an arrival vehicle's first trip at `0x51A57E`; the loader `0x5179C0` constructs nothing through it and reads the saved `mLastObjectBuilt` back at `0x4C7289`) / the hire stamp `+0x21C38` (rewritten by every staff thing init, `0x504B90` calling `0x4C76D0`): (park time now - stamp) / one day (`0x5FC550`, then `__alldiv` by 864,000,000,000), the park time being the calendar's `FunnyTimeStart` + floor(turn x rate / 4) x 10^7 (`0x4F8690`). The analyser serializer `0x4C5D70` saves both raw as the fifth and sixth of its six 8-byte stamps (`0x4C6B9A`, `0x4C6BC4`, after `mLastStrike`, `mLastPuke`, `mLastPrank` and `mParkLastOpened`) and its load reads them back (`0x4C7289`, `0x4C72B3`); the loader zeroes the six before that read (`0x518A43`-`0x518A85`) and restamps neither, as it builds the staff through `0x518E20`, not through the staff init | high |
 | `0x4C91C0` | guests in state 3 (waiting at the booth) on the two ticket-booth cells (`0x4D8610` of sides 0 and 1, counted once per side) | high |
 | `0x4C9290` / `0x4C9340` / `0x4C93F0` | guests in the park whose toilet (`+0x1AC`) / hunger (`+0x1A8`) / thirst (`+0x1A4`) byte is **strictly above** the argument | high |
 | `0x4C94A0(flag)` | the park counters `+0x21BFC` (flag 0) / `+0x21C00` (flag 1): pranks and escaped pranksters | medium |
@@ -194,7 +196,7 @@ to it (the advisor stays outside the world hash). 31 callbacks: rides 5, 6, 7, 6
 | Helper | OpenTPW | Reading |
 | --- | --- | --- |
 | `0x4C9960` | `ParkStaff.OfType(role).Count()` | things of the models 4 to 8 equal to the argument with flag byte `+3` clear |
-| `0x4C9070`, `0x4C90D0` | the advisor's own record of the turn of the newest object construction and newest hire (`mLastObjectBuilt`, `mLastStaffHired`), kept from the `ObjectBuilt` and `StaffHired` events, stamped at park init like `0x4C58C0` (`0x4C5CAF`, `0x4C5CDE`) and saved in the advisor snapshot | days = (park time - stamp, both from the calendar base) / one day; outside the economy and its hashes. A loaded or original-save park derives them at attach from its newest standing object and employed member, since the save's park words are not parsed (ADVISOR-009) |
+| `0x4C9070`, `0x4C90D0` | the advisor's own record of the turn of the newest object construction and newest hire (`mLastObjectBuilt`, `mLastStaffHired`), kept from the construction events (`ObjectBuilt` for a purchase or the Move tool's re-placement, `FixedItemMade` for an arrival vehicle at its first trip and the finale's End) and the `StaffHired` event, stamped at park init like `0x4C58C0` (`0x4C5CAF`, `0x4C5CDE`; a new park's gates and lights, constructed after it, stamp the same turn 0) and saved in the advisor snapshot | days = (park time - stamp, both from the calendar base) / one day; outside the economy and its hashes. Days are signed: a stamp still to come, which only a modified save holds, counts negative days as `__alldiv` does. A park from an original save takes its analyser's saved words (`SaveAnalyserStamps`) as the turns of the save's calendar (its `FunnyTimeStart` and rate) whose park time they are (`OriginalEconomyImport.AnalyserStampTurns`; a stamp between two turns' times, which only a modified save holds, is taken at the earlier turn and reported). Only an OpenTPW save from before the snapshot kept them, and a save that names no analyser, derive them at attach from the newest standing object and employed member (ADVISOR-009) |
 | `0x4CA450`, `0x4CA510`, `0x4CA570`, `0x4CA5D0` | catalog types by `RatingType` (`+0x4AC`) that are available (`+0x10` of the object control: outside the research tables, or researched) | rides skip the types with a golden ticket cost (`+0xC4`) at flag 0, the others do not test it |
 | `0x4CA7B0(kind, flag)` | catalog types with `Counters[Built]` above 0 | the control's built count (`+0x18`) is never lowered: a sold ride still counts as built |
 | `0x4CA8E0`, `0x4CA9B0` | standing objects of the kind (a ride also by upgrade level), the closed ones | closed is the open word `+0x68` clear: the player's close, and the broken, upgrading and condemned states clear it (`0x4E0FD8`, `0x4E10DC`, case 4 of `0x4E0E60`) |
@@ -545,11 +547,17 @@ which the response table does not have, so the table generator (and `AdvisorHelp
 `advisor-descriptors.toml` and in the inventory (kind unused). The "81 versus 82" counts in the comments and docs are the same table
 counted with and without 291.
 
-- wired (42): 184, 188-189, 191-193, 195, 197-201, 203, 205-209, 212-214, 284, 286-287, 289, 292-295, 297-305, 309, 337, 345-346
+- wired (43): 184, 188-189, 191-193, 195, 197-201, 203-209, 212-214, 284, 286-287, 289, 292-295, 297-305, 309, 337, 345-346
 - posted in the original, no window here (3): 285, 307-308 (285 All Staff window, 308 address book, 307 postcard)
-- posted by no window or tool in `tp.exe` (37 descriptors; 344 is the exception, see below): 186-187, 190, 194, 196, 202, 204, 210-211, 266, 283, 288, 290-291, 296, 306, 322, 324-336, 338-344
+- posted by no window or tool in `tp.exe` (36 descriptors; 344 is the exception, see below): 186-187, 190, 194, 196, 202, 210-211, 266, 283, 288, 290-291, 296, 306, 322, 324-336, 338-344
 
-Of these, **344** is posted after all: the challenge system's first offer (`0x4D2C50`, the nonzero argument of `0x4D2A70`) posts it in place of 270, as an event (`AutomaticAdvisor.Challenges`). Its inventory row keeps the help descriptor's `unused` kind and `none` status (no call of `0x486B00` or `0x59B590` names it), so the counts here stay those of the rows; the other 36 are posted by nothing.
+Of these, **344** is posted after all: the challenge system's first offer (`0x4D2C50`, the nonzero argument of `0x4D2A70`) posts it in place of 270, as an event (`AutomaticAdvisor.Challenges`), so its inventory row is an `event` row, `wired` (no call of `0x486B00` or `0x59B590` names it); the other 35 are the inventory's `unused` help rows, posted by nothing.
+
+**204** was in that list until its producer was found: the kart and water line tool (modes 0xB and 0x10, `0x525A1C` → `0x526CB3`) stores a click as the line start when it has
+none (`0x526D0F`), pushes 0xCC at `0x526D41` and jumps into the queue tool's post at `0x527629` (`0x59B590`, `0x5194D0` on `[0x7CF83C]`, `0x59A940`: the body of `0x486B00`),
+the call the poster search had read as 0x151's only. The placement presets the start at the station's exit (`0x52A1A0`) and the track button's switch from the edit tool at the
+open end (`0x530830`), and `0x52F580` keeps both, so the line tool reaches the click only after a line closed its circuit with exactly Ctrl held and no placement's queue
+start pending (`0x526F95`, `0x527146`). Neither of `SetMode`'s withdrawal lists names 0xCC. Its row is `help` and `wired` now (`AdvisorToolHelp.TrackLineStart`, posted by `ParkHud.ReportCellToolClick`).
 
 ## Other
 
@@ -584,7 +592,7 @@ Whether the spoken clip says the same words is not verifiable without the audio.
 
 ## Restored advice (the `opentpw.restored-advice` extension)
 
-Of the 105 messages tp.exe v2.0 never says (the status "none" rows), the official extension `opentpw.restored-advice` (version 1.0.0, **on by default**, listed on the Extensions and mods screen) restores **43**. Twelve of the first 55 stood down (the ticket-win lines 99, 164, 165, 218, 219, 223, 224, 228, 229, the first-challenge hint 344 and the double-or-nothing lines 319 and 320) because the original's own ticket advice (215-227), first-offer line (344) and challenge offer and win lines (270, 272) are now ported; a restored line never tells an event the original already tells. The extension gives them a trigger and posts
+Of the 103 messages tp.exe v2.0 never says (the status "none" rows), the official extension `opentpw.restored-advice` (version 1.0.0, **on by default**, listed on the Extensions and mods screen) restores **42**. Thirteen of the first 55 stood down (the ticket-win lines 99, 164, 165, 218, 219, 223, 224, 228, 229, the first-challenge hint 344, the double-or-nothing lines 319 and 320 and the track ride hint 204) because the original's own ticket advice (215-227), first-offer line (344), challenge offer and win lines (270, 272) and kart and water line tool help (204) are now ported; a restored line never tells an event the original already tells. The extension gives them a trigger and posts
 them through the advisor's own queue. The producer map keeps the original's status for them (the rows stay `none`, `scan-zero` or `unused`); each restored row carries an extra `restored = "<topic>"` field in `content/data/advisor-producers.toml`, and
 `RestoredAdvice.Entries` (`source/OpenTPW/World/RestoredAdvice.cs`) is the one list of them, kept equal to the inventory by `AdvisorProducerInventoryTests`. Every trigger is labelled `[EXT:restored-advice-<topic>]` at its site. Messages are
 referred to by id only: the captions, the `Advisor.sam` values and the speech transcripts are game content and are not in the repository.
@@ -625,8 +633,8 @@ stranded-people and condemned keys); else the extension's own constant, document
 | New tracking (5) | 24, 25 | security cover below, after `StaffSetGuardArea` months: the cover row's own gates (at least `AtLeastThisMany` guards, one with a patrol area) and 9 percent or more of the path cells uncovered (24); no guard and no camera in a park of 30 path cells (25); both scores capped at 60 |
 | | 265 | a ride's exit has no path (below) |
 | | 349, 350 | guests aboard a broken-down ride (349), or a condemned one (350) |
-| Tutorial leftovers (7) | 196, 211 | the training budget window and the ride upgrade window open (screens `staffCosts`, `rideUpgrade`) |
-| | 202, 204 | a blueprint is chosen to place; the roller coaster tool starts |
+| Tutorial leftovers (6) | 196, 211 | the training budget window and the ride upgrade window open (screens `staffCosts`, `rideUpgrade`) |
+| | 202 | a blueprint is chosen to place (204, which the extension posted as the roller coaster tool started, is the kart and water line tool's own help now) |
 | | 283, 306, 322 | a park starts with the pop-up help off; the camcorder is armed; the first message reaches the tube (344, the first challenge, is the original's own now) |
 | Online and postcards (6) | 328, 329, 331, 332, 333, 334 | the Publish Park, park details, other parks, Find Parks, unsent postcards (outbox) and online world screens open (the online extension's own screens, also over a park through Go Online) |
 
@@ -652,8 +660,10 @@ stranded-people and condemned keys); else the extension's own constant, document
   captions. Formulas are readings of the instruction sequence; the coverage `0x4CD500` still needs a line-by-line port from the bytes before it is implemented (`0x4CCA40` is computed and discarded by 85; the litter points `0x4CCDF0` and the other helpers below are ported).
 - The poster search lists every caller of `0x59B590`, `0x59A940`, `0x486B00` and the seven bus message types the controller registers
   (5, 8, 14, 17, 19, 23, 25 - `0x59B060` dispatch table). The constant-id scan inside the posting functions agrees; an id computed at run time
-  from a table would not show up, so "no producer" means "no producer found".
-- `0x4D4FA0` / `0x4D5270` / `0x4D5870` (golden tickets) post the outcomes 1-3 only (215-217, 220-222, 225-227); 218-219, 223-224 and 228-229 have no caller. 272 is the win of the last part of a challenge chain (`0x4D1A00`), 273 the loss (`0x4D1AE0`); 344 is posted by the first challenge offer (`0x4D2C50` with a nonzero argument) although its inventory row stays `unused` (the row model has no help descriptor posted by an event).
+  from a table would not show up, so "no producer" means "no producer found". The search read the id pushed in each call's own block, so it missed 204, whose push
+  jumps into another post's tail (`0x526D41` → `0x527629`, above). A byte scan for `push <id>` of each of the other 35 help ids no post names finds none that leads to
+  `0x59B590`: nine are never pushed as a constant, and the other pushes feed text lookups, sounds and window, renderer or allocation calls.
+- `0x4D4FA0` / `0x4D5270` / `0x4D5870` (golden tickets) post the outcomes 1-3 only (215-217, 220-222, 225-227); 218-219, 223-224 and 228-229 have no caller. 272 is the win of the last part of a challenge chain (`0x4D1A00`), 273 the loss (`0x4D1AE0`); 344 is posted by the first challenge offer (`0x4D2C50` with a nonzero argument), so its help descriptor's inventory row is an `event` row.
 - Status "ready" says the input state exists, not that the formula is trivial; it also needs the scan driver (cursor, one descriptor per update, `MinScoreForConsideration`).
 
 ## Implementation order

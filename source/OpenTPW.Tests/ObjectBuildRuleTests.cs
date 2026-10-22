@@ -346,6 +346,91 @@ public class ObjectBuildRuleTests
 		Assert.AreEqual( OriginalPlacementResult.OutsideTerrain, park.Objects.Check( shop, 3, 0, 0 ) );
 	}
 
+	// Host-contract coverage for RIDES-018; not an oracle for native secondary-link predicates.
+	[DataTestMethod]
+	[DataRow( 0 )]
+	[DataRow( 90 )]
+	[DataRow( 180 )]
+	[DataRow( 270 )]
+	public void LateAccessRefusalDiscardsTheWholeOverwritePlanWithoutMutatingEitherLayer( int rotation )
+	{
+		var park = new Park();
+		var ride = Ride();
+		var footprint = ObjectFootprint.GetCells( ride.Shape, 12, 12, rotation ).ToArray();
+		var first = footprint[0];
+		var second = footprint[1];
+		var bush = park.Objects.TryPlace( Bush(), first.X, first.Y, 0, out _ )!;
+		park.Path( (second.X, second.Y), (second.X, second.Y) );
+		var exit = ObjectFootprint.GetAccessPoints( ride.Shape, 12, 12, rotation ).Single( point => point.Kind == ObjectCellKind.Exit );
+		// An unrelated secondary record must survive failed placement too. No native layout is used.
+		park.Grid.Cells.Tracks.Set( 25, 25, new TrackCell { Type = TrackCellTypes.KartOrigin, Mask = TrackHeading.PosX, Owner = 77 } );
+		var cellVersion = park.Grid.Cells.Version;
+		var trackVersion = park.Grid.Cells.Tracks.Version;
+		var objectVersion = park.Objects.Version;
+		var seed = park.Objects.NextPlacementSeed;
+		var placed = 0;
+		var removed = 0;
+		var cleared = 0;
+		park.Objects.ObjectPlaced += _ => placed++;
+		park.Objects.ObjectRemoved += _ => removed++;
+		park.Objects.ClearPath = ( _, _ ) => cleared++;
+		var pathRule = park.Objects.PathRuleAllows!;
+		park.Objects.PathRuleAllows = ( x, y ) => x == exit.OutsideX && y == exit.OutsideY ? false : pathRule( x, y );
+		Assert.AreEqual( OriginalPlacementResult.AccessBlocked, park.Objects.Check( ride, 12, 12, rotation, out var refused ) );
+		Assert.AreSame( ObjectPlacementPlan.None, refused, "a rejected candidate must not expose a partial demolition or path-clear plan" );
+		Assert.IsNull( park.Objects.TryPlace( ride, 12, 12, rotation, out var result ) );
+		Assert.AreEqual( OriginalPlacementResult.AccessBlocked, result );
+		Assert.AreEqual( cellVersion, park.Grid.Cells.Version );
+		Assert.AreEqual( trackVersion, park.Grid.Cells.Tracks.Version );
+		Assert.AreEqual( objectVersion, park.Objects.Version );
+		Assert.AreEqual( seed, park.Objects.NextPlacementSeed );
+		Assert.AreEqual( 0, placed + removed + cleared );
+		Assert.AreSame( bush, park.Objects.FindAt( first.X, first.Y ) );
+		Assert.IsFalse( bush.IsDeleted );
+		Assert.AreEqual( (byte)ParkCellType.Path, park.Grid.Cells.RawTypeAt( second.X, second.Y ) );
+		// Positive control: the rejected proposal really had both destructive operations pending.
+		park.Objects.PathRuleAllows = pathRule;
+		Assert.AreEqual( OriginalPlacementResult.Allowed, park.Objects.Check( ride, 12, 12, rotation, out var allowed ) );
+		CollectionAssert.AreEqual( new[] { bush }, allowed.Overwritten.ToArray() );
+		CollectionAssert.AreEqual( new[] { (second.X, second.Y) }, allowed.ClearedPaths.ToArray() );
+	}
+
+	[DataTestMethod]
+	[DataRow( 0 )]
+	[DataRow( 90 )]
+	[DataRow( 180 )]
+	[DataRow( 270 )]
+	public void TrackEndpointChecksSecondaryOriginsAndBothExtensionTypesWithoutClearingThePrimaryPath( int rotation )
+	{
+		var entry = Entry( 1891, ObjectCategory.Ride, "Info.OverwritePriority 5\n", ">" );
+		var endpoint = ObjectFootprint.GetCells( entry.Shape, 12, 12, rotation ).Single();
+		var direction = GuestPathGrid.LinkDirection( ObjectFootprint.RotateDirectionByte( endpoint.Cell.Direction, rotation ) );
+		var x = endpoint.X + GuestPathGrid.Directions[direction].DX;
+		var y = endpoint.Y + GuestPathGrid.Directions[direction].DY;
+		foreach ( var type in new byte[] { 11, 13, 16, 18, 25 } )
+		foreach ( var extension in new byte[] { 0, 12, 17 } )
+		{
+			var park = new Park();
+			park.Objects.TrackEndCellRule = ( cx, cy ) => CoasterCellMarkers.AllowsOrdinaryGround( park.Grid.Cells, cx, cy );
+			park.Path( (x, y), (x, y) );
+			Assert.AreEqual( OriginalPlacementResult.Allowed, park.Objects.Check( entry, 12, 12, rotation ), "empty secondary layer is the positive control" );
+			park.Grid.Cells.Tracks.Set( x, y, extension == 0
+				? new TrackCell { Type = type }
+				: new TrackCell { Type = extension, Parent = park.Grid.Cells.Tracks.IndexOf( 25, 25 ) } );
+			if ( extension != 0 ) park.Grid.Cells.Tracks.Set( 25, 25, new TrackCell { Type = type } );
+			var cellVersion = park.Grid.Cells.Version;
+			var trackVersion = park.Grid.Cells.Tracks.Version;
+			Assert.AreEqual( OriginalPlacementResult.Occupied, park.Objects.Check( entry, 12, 12, rotation, out var plan ), $"type {type}, extension {extension}" );
+			Assert.AreSame( ObjectPlacementPlan.None, plan );
+			Assert.IsNull( park.Objects.TryPlace( entry, 12, 12, rotation, out var result ) );
+			Assert.AreEqual( OriginalPlacementResult.Occupied, result );
+			Assert.AreEqual( cellVersion, park.Grid.Cells.Version );
+			Assert.AreEqual( trackVersion, park.Grid.Cells.Tracks.Version );
+			Assert.AreEqual( (byte)ParkCellType.Path, park.Grid.Cells.RawTypeAt( x, y ) );
+			Assert.AreEqual( 0, park.Objects.Objects.Count );
+		}
+	}
+
 	// ---- The path and queue tools ---------------------------------------------------------------
 
 	[TestMethod]

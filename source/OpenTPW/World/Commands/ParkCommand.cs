@@ -16,6 +16,8 @@ public enum ParkCommandKind : byte
 	RemoveAttraction = 4,
 	/// <summary>The Move tool's pick-up: demolishes the object so it can be placed again (<see cref="PickUpObjectCommand"/>).</summary>
 	PickUpObject = 5,
+	/// <summary>The Move tool's end: the player no longer carries the type it picked up (<see cref="EndMoveCommand"/>).</summary>
+	EndMove = 6,
 	/// <summary>Commits one snapped line of the path or queue tool (<see cref="LayLineCommand"/>).</summary>
 	LayLine = 10,
 	/// <summary>Takes back one committed line of the path or queue tool (<see cref="UndoLineCommand"/>).</summary>
@@ -36,7 +38,7 @@ public enum ParkCommandKind : byte
 	RemovePrototype = 21,
 	/// <summary>Opens or closes the developer prototype ride (<see cref="SetPrototypeRunningCommand"/>).</summary>
 	SetPrototypeRunning = 22,
-	/// <summary>The winning screen's exit: removes the Instant Action research finale (<see cref="DismissFinaleCommand"/>).</summary>
+	/// <summary>The winning screen's exit: removes the end-of-park finale of either game type (<see cref="DismissFinaleCommand"/>).</summary>
 	DismissFinale = 23,
 	/// <summary>The developer object panel's open-all and close-all (<see cref="SetAllObjectsOpenCommand"/>).</summary>
 	SetAllObjectsOpen = 25,
@@ -237,6 +239,16 @@ public sealed record PickUpObjectCommand( int Attraction ) : ParkCommand
 }
 
 /// <summary>
+/// The end of the issuer's Move tool (<see cref="Level.IsMoving"/>): a placement whose click did not hold exactly Ctrl, the queue or track tool a placed ride opens, a cancel, another tool.
+/// The player carries the type it picked up no more, so no moving placement of the type is accepted for it until its next pick-up. Nothing else changes: the picked-up object is gone already.
+/// </summary>
+public sealed record EndMoveCommand : ParkCommand
+{
+	public override ParkCommandKind Kind => ParkCommandKind.EndMove;
+	internal override void WriteFields( ParkCommandWriter writer ) { }
+}
+
+/// <summary>
 /// One committed line of the path tool (<paramref name="Mode"/> <see cref="CellToolMode.Path"/>) or of a ride's queue tool (<see cref="CellToolMode.Queue"/>, <paramref name="Ride"/> the
 /// ride's attraction id, else -1), from <paramref name="StartX"/>, <paramref name="StartY"/> toward <paramref name="EndX"/>, <paramref name="EndY"/> (snapped by the writer).
 /// </summary>
@@ -356,7 +368,7 @@ public sealed record SetPrototypeRunningCommand( bool Running ) : ParkCommand
 	internal override void WriteFields( ParkCommandWriter writer ) => writer.Bool( Running );
 }
 
-/// <summary>The winning screen's exit (its Resume Game button and its Escape and right click): removes the Instant Action research finale's End object (<see cref="Level.DismissResearchFinale"/>).</summary>
+/// <summary>The winning screen's exit (its Escape and its late right click): removes the end-of-park finale's End object in either game type (<see cref="Level.DismissResearchFinale"/>).</summary>
 public sealed record DismissFinaleCommand : ParkCommand
 {
 	public override ParkCommandKind Kind => ParkCommandKind.DismissFinale;

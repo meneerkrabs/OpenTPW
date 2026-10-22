@@ -72,7 +72,8 @@ public sealed class CoopHub
 		quotas = new Quotas( this.clock );
 		// a start counts as everyone disconnecting now: a host has the away limit to come back
 		var started = this.clock();
-		foreach ( var record in store.Load() )
+		var loaded = store.Load();
+		foreach ( var record in loaded )
 		{
 			var session = Session.FromRecord( record, started );
 			sessions[session.Id] = session;
@@ -81,6 +82,11 @@ public sealed class CoopHub
 				memberships[seat.AccountKey] = session;
 		}
 		store.SweepOrphans( sessions.Keys.ToHashSet() );
+		// a position stored at a stop is exact for this run only: it is stored again as unknown at once, so a crash later in the run, after frames went on, brings it back
+		// unknown (the host then resends from its oldest frame and a guest drops what it has), never as an exact number behind frames the guests hold. A failed write here
+		// leaves the store unsaved, and the next change writes it.
+		if ( loaded.Any( record => record.SeqExact ) )
+			Persist( () => store.PutAll( sessions.Values.Select( session => session.ToRecord( exact: false ) ).ToList() ) );
 	}
 
 	// ---- connections ----
@@ -555,6 +561,9 @@ public sealed class CoopHub
 				return true;
 			case CoopPong:
 				return true;
+			case CoopSkipFrames skip:
+				SkipFrames( peer, skip );
+				return true;
 			case CoopCreate create:
 				Create( peer, create );
 				return true;
@@ -852,6 +861,36 @@ public sealed class CoopHub
 		}
 	}
 
+	/// <summary>
+	/// [EXT:online-coop-snapshot-join] The host's skip: it no longer holds the frames this server needs, and every member is assigned a capture past them, so the sequence goes on at the
+	/// frame the skip names. A skip never goes back: one to a frame already relayed is answered with the frame the server takes next, as a frame out of turn is.
+	/// </summary>
+	private void SkipFrames( Peer peer, CoopSkipFrames skip )
+	{
+		if ( peer.Session is not { } session )
+		{
+			Refuse( peer, CoopMessageType.SkipFrames, CoopReason.NotInSession, "You are in no shared park." );
+			return;
+		}
+		lock ( session.Gate )
+		{
+			if ( restarting || session.Ended || session.Seat( peer.Account.Key ) is not { } seat || seat.Peer != peer )
+				return;
+			if ( seat.Id != session.HostMember )
+			{
+				Refuse( peer, CoopMessageType.SkipFrames, CoopReason.NotHost, "Only the host skips frames." );
+				return;
+			}
+			if ( skip.From <= session.LastSeq )
+			{
+				Enqueue( peer, new CoopFrameRefused( session.LastSeq + 1 ).Encode() );
+				return;
+			}
+			session.LastSeq = skip.From - 1;
+			session.SeqKnown = true;
+		}
+	}
+
 	/// <summary>A member's message, forwarded as received with the server's type and the sender's member id in place of the addressee (the layouts match).</summary>
 	private void RelaySend( Peer peer, CoopSend send, byte[] bytes )
 	{
@@ -1118,6 +1157,12 @@ public sealed class CoopHub
 					throw new StoreException( StatusCodes.Status409Conflict, "An upload is running." );
 				if ( store.BlobBytes() + reservedUploadBytes + options.MaximumCoopSnapshotBytes > options.MaximumCoopStoreBytes )
 					throw new StoreException( StatusCodes.Status507InsufficientStorage, "The server has no room for the park now." );
+				// [EXT:online-coop-snapshot-join] the session's own limit, counted only for its authenticated host with room for the upload, so nobody else and no full store can spend it
+				if ( !quotas.Allow( session.Id, "snapshot", options.CoopSnapshotsPerSessionPerHour, TimeSpan.FromHours( 1 ) ) )
+					throw new StoreException( StatusCodes.Status429TooManyRequests, "Too many join snapshots for this shared park; try again later." )
+					{
+						RetryAfter = quotas.Wait( session.Id, "snapshot", TimeSpan.FromHours( 1 ) )
+					};
 				reservedUploadBytes += options.MaximumCoopSnapshotBytes;
 				session.Uploading = true;
 				return new Upload( id );
@@ -1177,7 +1222,11 @@ public sealed class CoopHub
 		if ( !File.Exists( path ) )
 			return null;
 		if ( counts && !quotas.Allow( user.Key, "download", options.CoopDownloadsPerHour, TimeSpan.FromHours( 1 ) ) )
-			throw new StoreException( StatusCodes.Status429TooManyRequests, "Too many downloads; try again later." );
+			throw new StoreException( StatusCodes.Status429TooManyRequests, "Too many downloads; try again later." )
+			{
+				// [EXT:online-coop-snapshot-join] a joiner waits as long as it says, or gives up the join when that is too long
+				RetryAfter = quotas.Wait( user.Key, "download", TimeSpan.FromHours( 1 ) )
+			};
 		return path;
 	}
 
@@ -1396,6 +1445,16 @@ public sealed class CoopHub
 		{
 			lock ( events )
 				return Queue( key, kind, window ).Count;
+		}
+
+		/// <summary>How long until the oldest counted request of <paramref name="kind"/> leaves <paramref name="window"/>: when a refused one may be tried again.</summary>
+		public TimeSpan Wait( string key, string kind, TimeSpan window )
+		{
+			lock ( events )
+			{
+				var queue = Queue( key, kind, window );
+				return queue.Count == 0 ? TimeSpan.Zero : queue.Peek() + window - clock();
+			}
 		}
 
 		private Queue<DateTimeOffset> Queue( string key, string kind, TimeSpan window )

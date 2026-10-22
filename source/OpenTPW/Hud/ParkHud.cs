@@ -37,7 +37,7 @@ public sealed class HudHost
 	public Action<string>? WindowClosed { get; init; }
 	/// <summary>The HUD posts an advisor help message (0x486B00) that belongs to no screen, such as the camera panel's.</summary>
 	public Action<int>? HelpPosted { get; init; }
-	/// <summary>[EXT:restored-advice-tutorial] Asks the advisor for a help message the restored advice extension adds (<see cref="RestoredAdvice"/>: 202, 204, 306, 322); the advisor posts it only while the extension is on. Separate from <see cref="HelpPosted"/>, which carries the original's own posts.</summary>
+	/// <summary>[EXT:restored-advice-tutorial] Asks the advisor for a help message the restored advice extension adds (<see cref="RestoredAdvice"/>: 202, 306, 322); the advisor posts it only while the extension is on. Separate from <see cref="HelpPosted"/>, which carries the original's own posts.</summary>
 	public Action<int>? RestoredHelp { get; init; }
 	/// <summary>The HUD withdraws an advisor help message it posted (0x486B40).</summary>
 	public Action<int>? HelpWithdrawn { get; init; }
@@ -131,7 +131,7 @@ public sealed partial class ParkHud
 	private void OnBuildToolsEnded()
 	{
 		pendingItem = null;
-		queueRearmItem = null;
+		queueAfterPlacement = false;
 	}
 
 	/// <summary>Removes every handler the constructor puts on the level and its park (removing one that was not added is a no-op).</summary>
@@ -147,6 +147,16 @@ public sealed partial class ParkHud
 			level.Park.EventRaised -= OnStaffStrikeEvent;
 			level.Park.ChallengePresentationPosted -= OnChallengePresentation;
 		}
+	}
+
+	/// <summary>
+	/// [EXT:online-coop-snapshot-join] Retires a HUD whose park lives on without it (a join's build makes the park's HUD again after a language change): its handlers leave the level and
+	/// its park, and its screens close.
+	/// </summary>
+	internal void Retire()
+	{
+		UnhookLevel();
+		Stack.Clear();
 	}
 
 	public UiScreenStack Stack { get; } = new();
@@ -176,11 +186,13 @@ public sealed partial class ParkHud
 	// and calls the resume 0x10110598. The pause freezes the scaled clock (0x1010E888 → 0x10117C54) that drives the
 	// scheduler's 31 ms substeps and park turns, together with the advisor's unscaled clock (0x10117AE8).
 	// [BIN:TPW-EXE:0x4092a0 game pause] the game pause (object 0x786b68, +0x1c = 1) is called by the pause menu 0x48c830 (0x48c87e, from Esc), by the full-screen map window 0x5f0b40 (0x5f0b7f, from Space) and by the postcard 0x4a9380 (0x4a93d7, Ctrl+P), by the generic message box 0x47f020 (0x47f26c), by the main window procedure 0x46b600 when the application is deactivated (0x46b74c) and by the three screens the pause menu's handler 0x48b6a0 opens (0x49efba, 0x49f29f, 0x4a3a6c); the park pauses here for the pause menu with the screens opened from it and for the map window
+	// [BIN:TPW-EXE:0x0048AAC2 winning message pause] the Instant Action completion message after the winning screen is a 0x47F020 message box too (its call at 0x48AAC2 and 0x48AC06), so winningMessage stops the park until it closes
 	// [BIN:TPW-EXE:0x48cd10 delete confirmation] the delete confirmation of an object or staff member (the object windows 0x4af600, 0x4b0b30, 0x4b2150, the attractions window 0x497640 and the All Staff window 0x4b4fc0) is a generic message box 0x47f020 with UITEXT 0x18c and the b_exit and b_okay buttons when the Confirmations option is on, so it pauses (0x47f26c) and its close resumes (0x47eed0, message 0x14 → 0x409300); the postcard (Ctrl+P, 0x4a9380) pauses the same way: confirmDelete, confirmDeleteAttraction and the postcard screen stop the park here; the employee dismiss box (0x4b5e5d, UITEXT 0x18d) is a 0x47f020 caller too (its call at 0x4b5eac, yes callback 0x4b6070), so confirmDismissStaff stops it as well
 	// [APPROX:UI-096] the other message boxes (0x47f020's 27 call sites: the alert queue 0x47f620 that the goal and challenge code feeds through 0x47f410, the file errors of 0x4237f0, 0x4a77f0, the online notices 0x4bc500 and 0x4ec030) pause in the original and not here; application deactivation has a bounded offline host focus-loss latch (ParkHud.ApplicationPause), not full native activation/modal/audio parity — evidence needed: which of OpenTPW's other dialogs (the loan boxes, the restart and quit boxes) correspond to those call sites, and the remaining native activation/modal ownership gates
 	// [EXT:texture-pack] A first-run download may take a long time; its modal keeps the park turn paused.
 	public static float TimeScaleFor( float speedScale, IEnumerable<string> openScreens ) =>
-		openScreens.Any( name => name is PauseMenuScreen or MapScreenName or "texturePackDownload" or PostcardScreen or "confirmDelete" or "confirmDeleteAttraction" or "confirmDismissStaff" ) ? 0 : speedScale;
+		openScreens.Any( name => name is PauseMenuScreen or MapScreenName or "texturePackDownload" or PostcardScreen or "confirmDelete" or "confirmDeleteAttraction" or "confirmDismissStaff"
+			or WinningMessageScreen ) ? 0 : speedScale;
 
 	/// <summary>The name of the postcard composer's screen (it pauses the park while open, as Ctrl+P does).</summary>
 	public const string PostcardScreen = "sendPostcard";
@@ -487,8 +499,8 @@ public sealed partial class ParkHud
 		PostToolHelp( AdvisorToolHelp.BuildStart( entry.WhichUIType, level.Objects.Objects.Any( placed => !placed.IsDeleted && placed.Entry.WhichUIType == 0 ) ) );
 	}
 
-	// [BIN:TPW-EXE:0x5253b8 placement dispatcher] a placement without an entrance keeps the build tool armed when the click held exactly Ctrl (modifier mask 0xc), else the tool returns to mode 0 (0x52f580); a ride with an entrance continues into the entrance, exit and queue sub-modes (0x52fab0 / 0x52faf0, 0x52f580(3,0)), whose last click does the same Ctrl test. Level.PlaceObject owns purchase/guest linkage and its removal handler owns scrap credits
-	// [APPROX:UI-031] the coaster and water-track tools (whose original sub-modes are not traced) end the build tool whatever the modifier, and the Ctrl tests at 0x5259e2/0x5259f4 (another exit path that keeps the tool on exactly Ctrl and otherwise leaves it and resets the angle) (Ctrl alone, the builder 0x46b420) are only partly mapped: an entrance-bearing item (0x52fab0, sub-record +0x40) resets the angle to 0x80 and, with the record flag +0x29c = 1, ends the tool whatever the modifier — evidence needed: the coaster sub-mode's continuation and what +0x29c = 1 stands for
+	// [BIN:TPW-EXE:0x5253b8 placement dispatcher] a placement without an entrance keeps the build tool armed when the click held exactly Ctrl (modifier mask 0xc), else the tool returns to mode 0 (0x52f580); a ride with an entrance (0x52fab0, the type's +0x40) continues into the queue tool (0x52f580(3, 0): 0x52529e, the Move tool's 0x5258e1; a kart or water ride once its circuit closes while the placement's queue start is pending, 0x526f95 and 0x527004), whose last click ends the tool whatever the modifier (0x5275f2). Level.PlaceObject owns purchase/guest linkage and its removal handler owns scrap credits
+	// [APPROX:UI-031] the coaster tool ends the build tool at the placement whatever the modifier, where the original's coaster placement goes on into the queue tool (0x52519f → 0x525259) and its track tool (mode 0x15) is not entered in 0x524960; an entrance-bearing placement keeps the angle through the queue tool whatever the modifier, where the original keeps it only for exactly Ctrl (0x5259f4, else 0x52f1b0(0, 0) at 0x5259fe), which shows only in a tool armed while the queue tool runs (OpenTPW starts it at 0); and a queue whose start cell is a path (the cell type +0x29c = 1, 0x5259cf) ends the tool at once in the original — evidence needed: where the original's coaster placement enters its track tool, which of OpenTPW's placements have a path cell as the queue's start, and whether a tool armed from the queue tool keeps the angle
 	private void OnObjectPlaced( OriginalObject item )
 	{
 		// [EXT:online-coop-commands] a placement inside a command: the HUD follows its own player's placement once the command has returned, so the tool the placed ride opens issues commands of its own;
@@ -508,7 +520,6 @@ public sealed partial class ParkHud
 			return;
 		// Level.PlaceObject owns the purchase and guest link; this callback only finishes the HUD tool.
 		PostMessage( string.Format( strings.Extra( OpenTpwText.Built ), ItemName( pendingItem ) ) );
-		var placed = pendingItem;
 		var queueFollows = item.Entry.HasQueue && item.Runtime.IsAttraction && item.Visitors.HasCells;
 		if ( level.KeepBuildToolOnPlace && item.Runtime.Coaster == null && item.Runtime.Bump == null && !queueFollows )
 		{
@@ -531,8 +542,8 @@ public sealed partial class ParkHud
 			PostMessage( strings.Extra( OpenTpwText.PoolSlideHint ) );
 			return;
 		}
-		// a placed water ride enters the water track tool (tool mode 16) at its station; the queue tool follows once the circuit is valid (Level.RewalkTrack)
-		if ( item.Runtime.Bump != null && level.EnterTrackTool( item ) )
+		// a placed kart or water ride enters its track tool (tool mode 11 or 16) at its station with its queue start pending; the queue tool follows once the circuit is valid (Level.ContinueTrackTool)
+		if ( item.Runtime.Bump != null && level.EnterPlacedTrackTool( item ) )
 		{
 			level.ResetBuildRotation();
 			PostMessage( TrackToolHelp );
@@ -541,44 +552,27 @@ public sealed partial class ParkHud
 		// [BIN:STP-PPC:0x1007497C ride placement] a placed HasQueue ride (type record +64) enters tool mode 3, the queue tool (PATH-plan §8); park clicks lay its queue until Back
 		if ( queueFollows && level.EnterQueueTool( item.Visitors ) )
 		{
-			// The queue tool's last click decides whether the build tool re-arms (Ctrl) or ends (OnCellToolEnded); the angle stays until then.
-			queueRearmItem = placed;
+			// The build tool (and a move with it) ended above whatever the click held: the queue tool ends in mode 0 (OnCellToolEnded), and the angle stays until then.
+			queueAfterPlacement = true;
 			PostMessage( strings.Extra( OpenTpwText.LayQueue ) );
 			return;
 		}
 		level.ResetBuildRotation();
 	}
 
-	/// <summary>The item whose queue the queue tool is laying: the build tool re-arms with it when the queue ends on a click holding exactly Ctrl.</summary>
-	private BuildItem? queueRearmItem;
-	private bool cellToolClicking;
+	/// <summary>Whether the queue tool on is the one a placed ride opened (<see cref="FinishPlacement"/>): its end resets the build angle the placement kept.</summary>
+	private bool queueAfterPlacement;
 
-	/// <summary>The path/queue tool turned off. Inside a click the decision waits for the click's result (<see cref="ResolveQueueRearm"/>); any other end (Escape, right click) returns the build tool to mode 0.</summary>
+	/// <summary>
+	/// The path/queue tool turned off. The queue tool a placed ride opened ends in mode 0 however it ends (its last click, Escape, a right click): neither the build tool nor the Move
+	/// tool is armed again, and the build angle returns to 0.
+	/// </summary>
+	// [BIN:TPW-EXE:0x5275f2 queue end] the queue tool's last click (a click on the line's start, or a line whose commit ends on a path or queue cell, 0x536100(0x81) and 0x527517; both reach 0x5275b1) runs 0x52f200(0, 0) whatever the modifier, which the queue tool's click (0x5271b7..0x527669) never reads: the mode is 0, the angle 0 (0x52f3b6) and the build tool object, with its mode 4 or 0x3b and its type (0x46c5a0), is replaced by the default tool (0x46c6a0 installed by 0x46c350, 0x52f46c), so a click holding exactly Ctrl arms neither the build tool nor the Move tool again
 	private void OnCellToolEnded()
 	{
-		if ( queueRearmItem == null || cellToolClicking )
+		if ( !queueAfterPlacement )
 			return;
-		queueRearmItem = null;
-		level.ResetBuildRotation();
-	}
-
-	/// <summary>Whether a queue ended by a click re-arms the build tool: the click held exactly Ctrl and the line was not refused.</summary>
-	// [BIN:TPW-EXE:0x5253b8 queue end] the queue end does the same Ctrl test as a placement: exactly Ctrl continues, else the build tool ends and the angle returns to 0 (0x52f3b6); a refused cell ends the tool without a placement, so it does not continue
-	internal static bool RearmsAfterQueue( int modifierMask, SegmentResult? result ) => Level.KeepsBuildTool( modifierMask ) && result is not { Completed: false };
-
-	/// <summary>Called after a queue-tool click: when that click ended the tool, re-arm the build tool or reset the angle.</summary>
-	private void ResolveQueueRearm( SegmentResult? result )
-	{
-		var item = queueRearmItem;
-		if ( item == null || level.CellTool.IsActive )
-			return;
-		queueRearmItem = null;
-		if ( RearmsAfterQueue( Input.ModifierMaskDown, result ) && item.Entry is { } entry )
-		{
-			pendingItem = item;
-			level.BuildEntry = entry;
-			return;
-		}
+		queueAfterPlacement = false;
 		level.ResetBuildRotation();
 	}
 
@@ -752,7 +746,8 @@ public sealed partial class ParkHud
 		if ( UpdateResearchFinale( context, input, mouseCaptured, keyboardCaptured, textCaptured ) )
 		{
 			// The full-screen owner consumes input, not the unscaled UI timer/delayed-release pumps.
-			rideStatic.SkipFrame(); // no camera observation or timestamp refresh while the finale owns this update
+			if ( !finaleObservedCamera )
+				rideStatic.SkipFrame(); // the frame that retires the screen observes no camera and refreshes no timestamp
 			FinishChallengeMessageFrame();
 			return true;
 		}
@@ -1169,22 +1164,14 @@ public sealed partial class ParkHud
 		var modeBefore = tool.Mode;
 		var interfaceBefore = InterfaceMode();
 		var sessionRefusals = level.SessionRefusals;
-		cellToolClicking = true;
-		SegmentResult? result;
-		try
-		{
-			result = tool.Click( (cursorX, cursorY) );
-		}
-		finally
-		{
-			cellToolClicking = false;
-		}
-		// [BIN:TPW-EXE:0x526cb3 track click] every release in the kart (0xB) or water (0x10) track mode plays cat_ui 0xCE at the clicked cell, the first click included and whatever the line then does
-		if ( modeBefore is CellToolMode.KartTrack or CellToolMode.WaterTrack )
+		// the click's modifiers go with it: a kart or water line that closes its circuit with exactly Ctrl and no queue start pending keeps its line tool (Level.ContinueTrackTool)
+		// [BIN:TPW-EXE:0x527146 track line end] with no queue start (0x8186c0 zero) the line tool's last click clears the start and keeps its mode (0xB or 0x10) when the modifier word is exactly 0xC, and any other word ends the tool (0x52f200(0, 0) at 0x527156)
+		var result = level.ClickCellTool( (cursorX, cursorY), Input.ModifierMaskDown );
+		// [BIN:TPW-EXE:0x526cb3 track click] every release in the kart (0xB) or water (0x10) track mode that passes the refused-ghost latch plays cat_ui 0xCE at the clicked cell, the first click included and whatever the line then does
+		if ( PlaysTrackToolClick( modeBefore, result ) )
 			GameAudio.PlayUiAt( GameAudio.TrackToolClickEvent, GameAudio.CellSoundPosition( cursorX, cursorY ) );
 		if ( result is not { GhostRefused: true } )
 			ReportCellToolClick( hadStart, modeBefore, tool, queueJoin != null, interfaceBefore );
-		ResolveQueueRearm( result );
 		// [BIN:TPW-EXE:0x527587 queue-join sound] it follows every commit; a click on a refused ghost lays nothing and returns before the commit (0x524A63)
 		if ( result is { GhostRefused: false } )
 			level.PlayQueueJoin( queueJoin );
@@ -1201,6 +1188,10 @@ public sealed partial class ParkHud
 		}
 		return toolPress = true;
 	}
+
+	/// <summary>Whether a tool release plays the track tools' click (<see cref="GameAudio.TrackToolClickEvent"/>): a release in a kart or water line mode whose ghost was not refused.</summary>
+	// [BIN:TPW-EXE:0x524ab6 refused release] a release with the refused-ghost latch set plays the refusal cue 0xAF and leaves through the latch's own mode table (0x52766c: 0xB and 0x10 to SetMode(0, 0) at 0x5266a3), so it never reaches 0x526cb3 and its 0xCE
+	internal static bool PlaysTrackToolClick( CellToolMode modeBefore, SegmentResult? result ) => modeBefore is CellToolMode.KartTrack or CellToolMode.WaterTrack && result is not { GhostRefused: true };
 
 	/// <summary>The water track tool's help line (OpenTPW text; the original's track-tool help is not identified).</summary>
 	public const string TrackToolHelp = "Water track: click to lay a line of track tiles (two cells each), click again to continue; join the end of the station to complete the circuit. Right click or Escape leaves.";
@@ -1254,6 +1245,13 @@ public sealed partial class ParkHud
 			if ( patrol.FirstCorner == null && patrol.HoverCell is { } corner )
 				cells.Add( (corner.X, corner.Y, BlueprintMarker.Allowed) );
 		}
+		else if ( level.PoolTool is { IsBridge: true, IsErasing: false, HoverCell: not null } bridgeTool )
+		{
+			// [EXT:pools-bridges] the bridge tool previews the whole bridge: its two outside path ends and its seven cells, blue while it can be built, the cell to blame red when one is
+			// (a missing path, water where land must be, something in the way), and every cell red when the refusal is the bridge's as a whole (the slope, the money)
+			foreach ( var (x, y) in bridgeTool.HoverBridgeCells() )
+				cells.Add( (x, y, bridgeTool.HoverBridgeRefuses( (x, y) ) ? BlueprintMarker.Refused : BlueprintMarker.Allowed) );
+		}
 		else if ( level.PoolTool is { IsActive: true, HoverCell: { } poolCell, HoverResult: { } poolResult } )
 		{
 			// [EXT:pools-tool] the pool tool marks the cell under the pointer: blue where it can be painted (or erased), red where it is refused
@@ -1270,8 +1268,7 @@ public sealed partial class ParkHud
 			level.SetBuildRotation( rotation );
 			var anchor = Level.GetCentredAnchor( entry, targetX, targetY, rotation );
 			var placementResult = level.CheckBuildTarget( entry, targetX, targetY, rotation );
-			var allowed = placementResult == OriginalPlacementResult.Allowed
-				&& (level.Park == null || level.Park.Economy.CheckBuild( entry.InfoId, level.IsMoving ) == ParkEconomy.PurchaseResult.Ok);
+			var allowed = level.BuildGhostAllowed( entry, placementResult );
 			placementRefused = !allowed;
 			var footprint = level.ObjectBlueprint( entry, anchor.X, anchor.Y, rotation, placementResult, allowed );
 			cells.AddRange( footprint.Cells );
@@ -1380,6 +1377,12 @@ public sealed partial class ParkHud
 			return icon;
 		try
 		{
+			// [EXT:pools-bridges] the bridge row has no object behind it: its preview is the committed Blender mesh
+			if ( item.InfoId == PoolBridgeRow.InfoId && IsPoolRow( item ) )
+			{
+				icons[item.Id] = icon = PoolBridgePreview.Create();
+				return icon;
+			}
 			var clipMember = item.PreviewModel != null && item.Entry != null ? PreviewIcon.BuyClipMember( item.PreviewModel, item.Entry.Models ) : null;
 			icon = item.PreviewModel == null ? null : new PreviewIcon( LoadPreviewModel( item, item.PreviewModel ),
 				name => item.TextureDirectories.Select( directory => UiImages.Resolve( name, directory ) ).FirstOrDefault( path => path != null ),

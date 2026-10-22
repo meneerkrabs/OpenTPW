@@ -106,14 +106,20 @@ Three pinned packages carry native code, but only for some runtimes:
 
 | Runtime | SDL2 | veldrid-spirv | cimgui |
 | --- | --- | --- | --- |
-| `win-x64`, `win-x86` | package | package | package |
+| `win-x64`, `win-x86` | **built** | package | package |
 | `linux-x64` | system `libSDL2-2.0.so.0` | package | package |
 | `osx-arm64` | **built** | **built** | package (universal) |
 | `win-arm64` | **built** | **built** | **built** |
 | `linux-arm64` | system `libSDL2-2.0.so.0` | **built** | **built** |
 
 `scripts/build-native.py` builds the missing ones from the **same pinned source
-revisions** the packages were made from, so a release adds no new dependency:
+revisions** the packages were made from, so a release adds no new dependency.
+SDL2 is the exception: Veldrid.SDL2 4.8.0 does carry `win-x64` and `win-x86`
+binaries, but they are SDL 2.0.8 (2018), whose WASAPI output drops about 15% of
+the audio on current Windows ([#754](https://github.com/meneerkrabs/OpenTPW/issues/754)).
+Every Windows release therefore ships the SDL2 built from the pin below, and the
+package's `SDL2.dll` is left out of those builds. The package veldrid-spirv and
+cimgui binaries are the same versions as their pins and stay.
 
 | Library | Package | Source revision |
 | --- | --- | --- |
@@ -125,19 +131,26 @@ The script refuses modified or mismatched sources, builds Release with CMake
 (static C runtime on Windows; static libstdc++/libgcc on Linux; macOS 11.0 deployment
 target with an `@rpath` install name), then checks the produced binary's CPU type
 and the exports the managed bindings call before copying it, under the file name
-the loader probes, to `native/<rid>/`. It must run natively on the target
-architecture; the workflow uses `macos-latest`, `windows-11-arm` and
-`ubuntu-22.04-arm` runners. Generated binaries are not committed.
+the loader probes, to `native/<rid>/`. A Windows SDL2 must also carry the pin's
+FileVersion. It must run natively on the target architecture (an x64 Windows host
+also builds `win-x86`); the workflow uses `macos-latest`, `windows-11-arm`,
+`windows-latest` and `ubuntu-22.04-arm` runners. Generated binaries are not committed.
 
 ```sh
 python3 scripts/build-native.py --rid osx-arm64 veldrid-spirv sdl2
 python3 scripts/build-native.py --rid linux-arm64 veldrid-spirv cimgui
 py scripts/build-native.py --rid win-arm64 veldrid-spirv cimgui sdl2
+py scripts/build-native.py --rid win-x64 sdl2
+py scripts/build-native.py --rid win-x86 sdl2
 ```
 
-The OpenTPW project copies every file in `native/<rid>/` next to the executable and
-fails the build for `osx-arm64`, `win-arm64` and `linux-arm64` when a required file is
-missing. For local arm64 macOS development without a built SDL2 it still falls back
+The OpenTPW project copies every file in `native/<rid>/` next to the executable, in
+place of a package file of the same name, and fails the build for `osx-arm64`,
+`win-arm64` and `linux-arm64` when a required file is missing. A local `win-x64` or
+`win-x86` publish without a built SDL2 still takes the package's 2.0.8; the release
+workflow refuses that: after publishing, `tools/check_release_natives.py` fails a
+Windows folder that does not hold exactly one `SDL2.dll`, for the runtime's CPU, with
+a FileVersion no older than the pin. For local arm64 macOS development without a built SDL2 it still falls back
 to Homebrew's SDL2 (and SDL3 for sdl2-compat; [native macOS libraries](MACOS-NATIVE.md)); release builds always
 ship the SDL2 built above.
 

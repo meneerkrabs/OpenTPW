@@ -14,15 +14,18 @@ namespace OpenTPW.Tests;
 [TestClass]
 public class ThemeParkIncAttractionHistoryTests
 {
-	/// <summary>The attraction body of the serializer 0x5dc430 in load order, 312 bytes before any history.</summary>
-	private static byte[] Body( float unread, float life, float repair, IReadOnlyList<(int Current, bool Wrapped, int Running, int[] Entries)>? rings )
+	/// <summary>
+	/// The attraction body of the serializer 0x5dc430 in load order, 312 bytes before any history; <paramref name="stamp"/> is the eight words <c>tv[t]</c>
+	/// (year, month, day, day of the week, hour, minute, second, milliseconds), by default Tuesday 2000-01-04 09:30.
+	/// </summary>
+	internal static byte[] Body( float unread, float life, float repair, IReadOnlyList<(int Current, bool Wrapped, int Running, int[] Entries)>? rings, uint[]? stamp = null )
 	{
 		using var stream = new MemoryStream();
 		using var writer = new BinaryWriter( stream );
 		writer.Write( (ushort)(5 * 256 + 128) ); writer.Write( (ushort)(7 * 256 + 128) ); writer.Write( (ushort)0 ); writer.Write( (ushort)0 );
 		writer.Write( 90u );
 		writer.Write( (ushort)1001 );
-		foreach ( var word in new uint[] { 2000, 1, 4, 9, 30, 0, 0, 0 } )
+		foreach ( var word in stamp ?? new uint[] { 2000, 1, 4, 2, 9, 30, 0, 0 } )
 			writer.Write( word );
 		writer.Write( 77u );
 		writer.Write( (ushort)0 );

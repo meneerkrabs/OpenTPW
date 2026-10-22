@@ -23,9 +23,8 @@ public class FileSystemTests
 		if ( !File.Exists( Path.Combine( dataPath, "Challenges.sam" ) ) )
 			Assert.Inconclusive( "OPENTPW_GAME_PATH does not contain the required game assets (Challenges.sam)." );
 
-		FileSystem = new BaseFileSystem( dataPath );
-		FileSystem.RegisterArchiveHandler<WadArchive>( ".wad" );
-		FileSystem.RegisterArchiveHandler<SdtArchive>( ".sdt" );
+		// the desktop game's own file system (remembered lookups, issue #754)
+		FileSystem = GameDataFileSystem.Create( dataPath );
 	}
 
 	private static void RequireFile( string path )

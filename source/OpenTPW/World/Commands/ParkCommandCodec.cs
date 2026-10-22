@@ -77,6 +77,7 @@ public static class ParkCommandCodec
 			ParkCommandKind.RemoveObjectAt => new RemoveObjectAtCommand( reader.Int(), reader.Int() ),
 			ParkCommandKind.RemoveAttraction => new RemoveAttractionCommand( reader.Int() ),
 			ParkCommandKind.PickUpObject => new PickUpObjectCommand( reader.Int() ),
+			ParkCommandKind.EndMove => new EndMoveCommand(),
 			ParkCommandKind.QueueSegment => new QueueSegmentCommand( reader.Int(), reader.Int(), reader.Int(), reader.Int(), reader.Int() ),
 			ParkCommandKind.UndoQueueSegment => new UndoQueueSegmentCommand( reader.Int(), reader.Int(), reader.Int(), reader.Int(), reader.Int() ),
 			ParkCommandKind.LayLine => new LayLineCommand( (CellToolMode)reader.Byte(), reader.Int(), reader.Int(), reader.Int(), reader.Int(), reader.Int() ),

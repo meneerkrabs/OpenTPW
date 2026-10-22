@@ -149,7 +149,7 @@ public class OnlineServerTests
 		{
 			using var client = new OnlineClient( server.Url );
 			var info = await client.GetServerInfoAsync();
-			Assert.AreEqual( 6, info.ProtocolVersion, "6: the co-op socket of shared parks" );
+			Assert.AreEqual( 7, info.ProtocolVersion, "7: the co-op host's skip of frames it no longer holds" );
 			Assert.IsFalse( info.WordFilterLoaded );
 			await client.RegisterAsync( "Alice", "correct horse" );
 			Assert.AreEqual( HttpStatusCode.Conflict, (await Fails( () => client.RegisterAsync( "ALICE", "another one" ) )).Status );
@@ -597,7 +597,9 @@ public class OnlineServerTests
 			using var client = new OnlineClient( server.Url );
 			for ( var attempt = 0; attempt < 3; attempt++ )
 				await Fails( () => client.LoginAsync( "Nobody", "wrong password" ) );
-			Assert.AreEqual( HttpStatusCode.TooManyRequests, (await Fails( () => client.LoginAsync( "Nobody", "wrong password" ) )).Status );
+			var refused = await Fails( () => client.LoginAsync( "Nobody", "wrong password" ) );
+			Assert.AreEqual( HttpStatusCode.TooManyRequests, refused.Status );
+			Assert.IsTrue( refused.RetryAfter is { } wait && wait > TimeSpan.Zero && wait <= TimeSpan.FromMinutes( 1 ), "the client reads when to try again" );
 		}
 		finally
 		{

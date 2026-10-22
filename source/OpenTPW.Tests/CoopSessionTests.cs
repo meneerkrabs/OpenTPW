@@ -295,6 +295,9 @@ public class CoopSessionTests
 			Assert.IsTrue( Game.IsAutomatedRun( new[] { smoke } ), $"{smoke} stays an automated run" );
 		}
 		CollectionAssert.AreEquivalent( new[] { "--smoke-test", "--tpi-smoke-test", "--park-resume-smoke", "--smoke-presence" }, Game.SmokeFlags );
+		// [EXT:online-coop-snapshot-join] the join smoke shares the park it built before its session: an automated run that changes no park outside the commands
+		Assert.IsFalse( Game.ChangesParkOutsideCommands( new[] { "--coop-join-smoke", "host", "--coop-join-evidence", "evidence" } ) );
+		Assert.IsTrue( Game.IsAutomatedRun( new[] { "--coop-join-smoke", "join" } ) );
 	}
 
 	[TestMethod]
@@ -351,6 +354,23 @@ public class CoopSessionTests
 		}
 		Assert.IsNull( Replay( withRules: true ), "every checkpoint of the session matches" );
 		Assert.IsNotNull( Replay( withRules: false ), "without the session's rules the refused cheats would apply" );
+	}
+
+	[TestMethod]
+	public void ARetiredHudLeavesNoHandlerOnItsPark()
+	{
+		var park = NewPark();
+		park.Enter();
+		var level = park.Level;
+		var hud = new ParkHud( level, OriginalUiTests.FakeStrings(), new EconomyParkStatus( () => park.Economy ), new NoItems(), new HudHost() );
+		object?[] owners = { level.Objects, (CellBuildTool?)level.CellTool, level, level.Park };
+		int Handlers() => owners.Where( owner => owner != null ).Sum( owner => owner!.GetType().GetFields( BindingFlags.Instance | BindingFlags.NonPublic )
+			.Where( field => typeof( Delegate ).IsAssignableFrom( field.FieldType ) )
+			.Sum( field => ((Delegate?)field.GetValue( owner ))?.GetInvocationList().Count( handler => ReferenceEquals( handler.Target, hud ) ) ?? 0 ) );
+		Assert.IsTrue( Handlers() >= 5, "the HUD hears the park: placements, the cell tool, the build tools, strikes and challenges" );
+		hud.Retire();
+		Assert.AreEqual( 0, Handlers(), "a retired HUD hears nothing of the park that lives on" );
+		Assert.AreEqual( 0, hud.Stack.Screens.Count, "and its screens are closed" );
 	}
 
 	[TestMethod]

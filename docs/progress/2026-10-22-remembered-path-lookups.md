@@ -1,0 +1,3 @@
+## Faster park starts: the game data's paths are looked up once (October 22, 2026)
+
+Every file the game read from its data folder listed the folders along its path again to find the archive it lies in: about 1,000 folder listings before the lobby and nearly 16,000 for a park start. The desktop now remembers those lookups, as the browser version already did, which cuts a park start's listings to about 700 and its time by a fifth on a Mac; on Windows, and on a hard disk, each listing costs more (issue #754). The files read are the same ([ENGINE-PERFORMANCE.md](../ENGINE-PERFORMANCE.md), "Remembered path lookups").

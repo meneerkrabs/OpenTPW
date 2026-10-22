@@ -31,6 +31,8 @@ internal sealed partial class GameFlow
 		var screen = hud.Stack.Top;
 		if ( BuildingPark || ProgressCaptured() || !ReferenceEquals( Level, level ) || !ReferenceEquals( Hud, hud ) || screen == null || screen.IsRemoved ||
 		 automaticExitQueued != null && ReferenceEquals( pending, automaticExitQueued ) ) return;
+		// [EXT:online-coop-snapshot-join] the session ends before the exit checkpoint, so it holds the park its player's progress took back
+		LeaveCoopSession( "The player left the park." );
 		if ( !AutomaticEligible( level ) ) { QueueProgressTransition( () => RetireAutomaticPark( level.LevelName ) ); return; }
 		var runtime = level.Park; var files = SaveFileSystem; var owner = progressOwner;
 		bool Current() => !BuildingPark && !ProgressCaptured() && ReferenceEquals( Level, level ) && ReferenceEquals( Hud, hud ) && ReferenceEquals( level.Park, runtime ) &&

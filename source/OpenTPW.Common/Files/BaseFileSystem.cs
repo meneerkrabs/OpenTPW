@@ -65,8 +65,11 @@ public class BaseFileSystem
 	private string[]? DiskEntries( string directory, bool filesOnly ) =>
 		CacheLookups ? Remembered( listingLookups, (directory, filesOnly), key => ListDisk( key.Item1, key.Item2 ) ) : ListDisk( directory, filesOnly );
 
-	private static string[]? ListDisk( string directory, bool filesOnly ) =>
-		!Directory.Exists( directory ) ? null : filesOnly ? Directory.EnumerateFiles( directory ).ToArray() : Directory.EnumerateFileSystemEntries( directory ).ToArray();
+	private static string[]? ListDisk( string directory, bool filesOnly )
+	{
+		LoadProfile.Count( "directory listings" );
+		return !Directory.Exists( directory ) ? null : filesOnly ? Directory.EnumerateFiles( directory ).ToArray() : Directory.EnumerateFileSystemEntries( directory ).ToArray();
+	}
 
 	/// <summary>The remembered answer for <paramref name="key"/> of this generation, else a fresh one, kept only if no invalidation came between.</summary>
 	private TValue Remembered<TKey, TValue>( ConcurrentDictionary<TKey, (int Generation, TValue Value)> lookups, TKey key, Func<TKey, TValue> find ) where TKey : notnull
@@ -202,6 +205,7 @@ public class BaseFileSystem
 			return archive?.OpenFile( internalPath );
 		}
 
+		LoadProfile.Count( "file opens" );
 		return File.Open( absolutePath, FileMode.Open, FileAccess.Read, FileShare.Read );
 	}
 
@@ -274,22 +278,26 @@ public class BaseFileSystem
 		}
 	}
 
+	/// <summary>The archive at <paramref name="archivePath"/>, opened once per file system; reads may come from several threads (signs composed ahead, texture packs).</summary>
 	private IArchive GetArchive( string archivePath )
 	{
-		if ( archiveCache.TryGetValue( archivePath, out var archive ) )
+		lock ( archiveCache )
 		{
-			return archive;
-		}
+			if ( archiveCache.TryGetValue( archivePath, out var archive ) )
+			{
+				return archive;
+			}
 
-		var extension = Path.GetExtension( archivePath );
-		if ( archiveHandlers.TryGetValue( extension, out var handlerType ) )
-		{
-			archive = (IArchive)Activator.CreateInstance( handlerType, new[] { archivePath } );
-			archiveCache[archivePath] = archive;
-			return archive;
-		}
+			var extension = Path.GetExtension( archivePath );
+			if ( archiveHandlers.TryGetValue( extension, out var handlerType ) )
+			{
+				archive = (IArchive)Activator.CreateInstance( handlerType, new[] { archivePath } );
+				archiveCache[archivePath] = archive;
+				return archive;
+			}
 
-		return null;
+			return null;
+		}
 	}
 
 	private (string ArchivePath, string InternalPath) FindArchivePath( string path, bool includeExplicitRoot = false ) =>

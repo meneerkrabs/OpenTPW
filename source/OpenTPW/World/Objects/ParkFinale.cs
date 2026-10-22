@@ -1,6 +1,6 @@
 namespace OpenTPW;
 
-/// <summary>The Instant Action research finale's fixed object and its explicit dismissal.</summary>
+/// <summary>The end-of-park finale's fixed object, End, and its explicit dismissal (docs/reverse/INSTANT-ACTION-FINALE.md).</summary>
 public static class ParkFinale
 {
 	private static bool IsEnd( ObjectCatalogEntry entry ) =>
@@ -10,23 +10,30 @@ public static class ParkFinale
 	// [BIN:TPW-EXE:0x00516C00 winning sequence active] the bank tests whether the finale's thing handle is nonzero.
 	public static bool IsActive( ParkObjects objects ) => objects.Objects.Any( item => !item.IsDeleted && IsEnd( item.Entry ) );
 
-	/// <summary>Only a new research-completion notification creates the finale; opening an already researched park does not.</summary>
-	// [BIN:TPW-EXE:0x00503ED3 Instant Action research finale] the last research item in game type 2 posts advice 167 and calls 0x516B00. Type 0 also requires the player-wide records, and type 1 never enters this path.
-	// [BIN:TPW-EXE:0x00516B31 finale object] finds End case-insensitively, constructs it at the fixed-item origin and stores its thing handle.
-	// [APPROX:RIDES-019] Instant Action creates and dismisses End, with its bankruptcy guard. Full Simulation's player-wide prerequisite, winning-camera follow, original winning-screen layout and post-dismissal profile/dialog changes remain unimplemented; a resumed finale reopens the bounded dismissal screen instead of restoring the original winning UI state.
-	public static OriginalObject? StartForResearchCompletion( ParkObjects objects, ParkGameMode mode )
+	/// <summary>Whether <paramref name="item"/> is a finale object (live or removed).</summary>
+	public static bool IsFinaleObject( OriginalObject item ) => IsEnd( item.Entry );
+
+	/// <summary>The live finale object, null when there is none.</summary>
+	public static OriginalObject? Find( ParkObjects objects ) => objects.Objects.FirstOrDefault( item => !item.IsDeleted && IsEnd( item.Entry ) );
+
+	/// <summary>
+	/// Creates End for a new research completion that starts the finale (the caller decides that: <see cref="Level.ResearchCompletionStartsFinale"/>); opening an already
+	/// researched park does not. End takes its slot in the park's thing pool like every object, as the original's constructor allocates one.
+	/// </summary>
+	// [BIN:TPW-EXE:0x00503ED3 research finale] when nothing is left to research, game type 2 (and type 0 with the player's records complete) posts advice 167 and calls 0x516B00
+	// [BIN:TPW-EXE:0x00516B31 finale object] finds End case-insensitively, constructs it at the fixed-item origin and stores its thing handle; 0x481B60 then opens the winning screen (0x48AE70)
+	public static OriginalObject? StartForResearchCompletion( ParkObjects objects )
 	{
-		if ( mode != ParkGameMode.InstantAction )
-			return null;
-		if ( objects.Objects.FirstOrDefault( item => !item.IsDeleted && IsEnd( item.Entry ) ) is { } existing )
+		if ( Find( objects ) is { } existing )
 			return existing;
 		var entry = objects.Catalog.Entries.FirstOrDefault( IsEnd );
 		// Missing/modded catalogues remain usable: no substitute object, charge or claimed victory.
+		// [BIN:TPW-EXE:0x00516BC7 missing End] without the definition the original logs "Could not find the %s feature", keeps a zero handle and still calls 0x481B60 with no thing, whose ride camera call (0x4E15B0) reads through it; a catalogue without End starts nothing here
 		return entry == null ? null : objects.Add( entry, 0, 0, 0 );
 	}
 
 	/// <summary>Removes the finale through normal object cleanup: scripts, ducking, held sounds, particles and thing ownership end with it.</summary>
-	// [BIN:TPW-EXE:0x00516C10 winning sequence exit] requests destruction of the winning thing (0x50B780) and clears its handle; the script destructor clears DIPMUSIC (0x558513).
+	// [BIN:TPW-EXE:0x00516C10 winning sequence exit] requests destruction of the winning thing (0x50B780), clears its handle and leaves the ride camera (0x42A190); the script destructor clears DIPMUSIC (0x558513).
 	public static bool Dismiss( ParkObjects objects )
 	{
 		var removed = false;

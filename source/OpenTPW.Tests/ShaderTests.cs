@@ -177,15 +177,45 @@ public class ShaderTests
 			CollectionAssert.AreEqual( uncached.Reflection.ResourceLayouts.SelectMany( layout => layout.Elements ).Select( element => element.Name ).ToArray(),
 				second.Reflection.ResourceLayouts.SelectMany( layout => layout.Elements ).Select( element => element.Name ).ToArray() );
 
-			// a damaged file (half a module) is compiled again and replaced
-			var damaged = Directory.GetFiles( cache, "*.spv" ).First();
-			File.WriteAllBytes( damaged, File.ReadAllBytes( damaged ).Take( 6 ).ToArray() );
+			// a damaged file (cut to half a module after it was written) fails its digest: compiled again and replaced
+			var vertexFile = ShaderCompiler.SpirvCacheFile( path, Veldrid.ShaderStages.Vertex )!;
+			var fragmentFile = ShaderCompiler.SpirvCacheFile( path, Veldrid.ShaderStages.Fragment )!;
+			var whole = File.ReadAllBytes( vertexFile );
+			File.WriteAllBytes( vertexFile, whole.Take( whole.Length / 2 ).ToArray() );
 			LoadProfile.Enable( true );
 			var repaired = ShaderCompiler.CompileProgram( path, CrossCompileTarget.MSL );
 			Assert.AreEqual( 1, LoadProfile.Counters()["spirv compiles"] );
 			CollectionAssert.AreEqual( uncached.Vertex, repaired.Vertex );
 			CollectionAssert.AreEqual( uncached.Fragment, repaired.Fragment );
-			Assert.IsTrue( File.ReadAllBytes( damaged ).Length > 6, "the damaged file is replaced" );
+			CollectionAssert.AreEqual( whole, File.ReadAllBytes( vertexFile ), "the damaged file is replaced" );
+
+			// a file that is whole (its digest matches) and starts as SPIR-V but is not what the compiler made (each stage halved, as a review did):
+			// the cross-compiler refuses it, the kept files are removed and the program is compiled from its source
+			ShaderCache.Write( cache, vertexFile, uncached.Vertex.Take( uncached.Vertex.Length / 8 * 4 ).ToArray() );
+			ShaderCache.Write( cache, fragmentFile, uncached.Fragment.Take( uncached.Fragment.Length / 8 * 4 ).ToArray() );
+			LoadProfile.Enable( true );
+			var recompiled = ShaderCompiler.CompileProgram( path, CrossCompileTarget.MSL );
+			counters = LoadProfile.Counters();
+			Assert.AreEqual( 1, counters["spirv cache refused"] );
+			Assert.AreEqual( 2, counters["spirv compiles"] );
+			CollectionAssert.AreEqual( uncached.Vertex, recompiled.Vertex );
+			CollectionAssert.AreEqual( uncached.Fragment, recompiled.Fragment );
+			LoadProfile.Enable( true );
+			var afterwards = ShaderCompiler.CompileProgram( path, CrossCompileTarget.MSL );
+			Assert.AreEqual( 2, LoadProfile.Counters()["spirv cache hits"], "the refused files were replaced by the compiler's own" );
+			CollectionAssert.AreEqual( uncached.Fragment, afterwards.Fragment );
+
+			// the expiry counts from the last use: a used file is kept, an unused one goes when a new file is written
+			var longAgo = DateTime.UtcNow - ShaderCache.Lifetime - TimeSpan.FromDays( 1 );
+			File.SetLastWriteTimeUtc( vertexFile, longAgo );
+			var unused = Path.Combine( cache, "unused.spv" );
+			File.WriteAllBytes( unused, [1, 2, 3] );
+			File.SetLastWriteTimeUtc( unused, longAgo );
+			ShaderCompiler.CompileProgram( path, CrossCompileTarget.MSL );
+			Assert.IsTrue( File.GetLastWriteTimeUtc( vertexFile ) > longAgo, "a used file's time is refreshed" );
+			ShaderCache.Write( cache, Path.Combine( cache, "new.spv" ), [3, 2, 0x23, 7] );
+			Assert.IsFalse( File.Exists( unused ), "a file unused for the lifetime is removed when a new one is written" );
+			Assert.IsTrue( File.Exists( vertexFile ) );
 
 			// another source is another key
 			Assert.AreNotEqual( ShaderCompiler.SpirvCacheKey( "void main() {}", path, Veldrid.ShaderStages.Vertex, new GlslCompileOptions( true ) ),

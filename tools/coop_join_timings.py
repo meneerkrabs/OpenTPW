@@ -88,7 +88,8 @@ def require_whole(root, host, join):
         raise ValueError(f"{root}: the join phase's update frames lack a step of the join or the resync")
     # a page times every frame's whole call, a native run none: a frame without its time would drop out of the longest
     calls = [item.get("CallMilliseconds") for item in frames]
-    if any(value is not None for value in calls) and not all(is_number(value) for value in calls):
+    page = (join.get("Environment") or {}).get("Os") == "Browser"
+    if (page or any(value is not None for value in calls)) and not all(is_number(value) for value in calls):
         raise ValueError(f"{root}: some of the page's frames lack their whole call time")
 
 

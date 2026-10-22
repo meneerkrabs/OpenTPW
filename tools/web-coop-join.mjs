@@ -41,7 +41,13 @@ function parseArguments(argv) {
 			case '--game': options.game = value(); break;
 			case '--evidence': options.evidence = value(); break;
 			case '--mode': options.mode = value(); break;
-			case '--runs': options.runs = Math.max(1, Math.trunc(Number(value())) || 1); break;
+			case '--runs': {
+				const runs = value();
+				if (!/^[1-9][0-9]*$/.test(runs))
+					throw new Error(`--runs takes a whole number of runs, not '${runs}'`);
+				options.runs = Number(runs);
+				break;
+			}
 			case '--out': options.out = value(); break;
 			case '--label': options.label = value(); break;
 			case '--chrome': options.chrome = value(); break;
@@ -285,7 +291,7 @@ async function main() {
 	const gameRoot = path.resolve(options.game);
 	await fs.access(path.join(webRoot, 'index.html')).catch(() => { throw new Error(`${webRoot} has no index.html: pass the published wwwroot`); });
 	const evidence = await readEvidence(path.resolve(options.evidence));
-	const out = path.resolve(options.out ?? path.join('reports', 'web-coop-join', `${new Date().toISOString().slice(0, 10)}-${options.label}-${options.mode}`));
+	const out = path.resolve(options.out ?? path.join('reports', 'web-coop-join', `${new Date().toISOString().replace(/[:.]/g, '-')}-${options.label}-${options.mode}`));
 	// a folder of earlier runs would mix them with these (a run that fails early leaves the earlier one's files)
 	const earlier = await fs.readdir(out).catch(() => []);
 	if (earlier.some(name => name === 'machine.txt' || /^run-\d+$/.test(name)))

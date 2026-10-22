@@ -246,8 +246,13 @@ class CoopJoinTimingsTests(unittest.TestCase):
         def gap(host, join):
             browser(host, join)
             del join["Frames"][1]["CallMilliseconds"]
+
+        def untimed(host, join):
+            browser(host, join)
+            for item in join["Frames"]:
+                del item["CallMilliseconds"]
         for name, page, change in [("failed", dict(PAGE, state="failed"), browser), ("adversarial", dict(PAGE, mode="join"), browser),
-                                   ("no record", None, browser), ("a frame's time missing", PAGE, gap)]:
+                                   ("no record", None, browser), ("a frame's time missing", PAGE, gap), ("no frame's time", PAGE, untimed)]:
             with self.subTest(name), tempfile.TemporaryDirectory() as temporary:
                 root = pathlib.Path(temporary) / "run"
                 write_run(root, 30.0, 3.0, change=change, page=page)

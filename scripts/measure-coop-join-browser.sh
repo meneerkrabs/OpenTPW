@@ -19,6 +19,10 @@ if [[ -z "$web" || -z "$label" || -z "$game" ]]; then
   printf '%s\n' 'Pass the published wwwroot, a label and the Theme Park World path (or set OPENTPW_GAME_PATH).' >&2
   exit 2
 fi
+if [[ ! "$runs" =~ ^[1-9][0-9]*$ ]]; then
+  printf '%s\n' "The runs are a whole number, not '$runs'." >&2
+  exit 2
+fi
 web="$(cd "$web" && pwd)"
 output="${OPENTPW_MEASURE_DIR:-}"
 if [[ -z "$output" ]]; then

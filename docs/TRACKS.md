@@ -144,11 +144,13 @@ station's exit, `0x52A1A0`, and the track button's switch from the edit tool at 
 
 The queue start is the placement's `0x8186C0`, the record of its queue's start cell (`0x52A050`, the cell in `0x7639B8`/`0x7639BC`). Only placements set it (`0x524DD7`,
 `0x525269`, `0x52544E`, the Move tool's `0x5258AC`). A closed circuit hands over to the queue tool only while it is pending (`0x526F95`), whatever the click held, and the
-handover takes it (`0x527056`); the queue tool starts at the stored cell, which is the last placement's and may belong to another ride. A build or Move click (`0x524B53`,
-`0x5253F3`), the Move tool's pick-up (`0x525E5A`), a path or queue commit (`0x527483`) and the coaster tool's own handover (`0x526680`) drop it too. So a kart or water ride
-the player just placed goes on into its queue tool, and the exactly-Ctrl state is reached when a track is closed again later, through the ride window's track button.
-OpenTPW keeps the same pending start for the issuer's tools (`Level.EnterPlacedTrackTool`, which the HUD's placement calls, and `Level.ContinueTrackTool`; a start whose ride
-was sold since is dropped, an OpenTPW guard). The HUD's tool click passes the click's modifiers to the line's continuation, and the HUD's report of the next click posts 204
+handover takes it (`0x527056`); the queue tool starts at the stored cell, which is the last placement's and may belong to another ride. A build or Move click on an
+accepted ghost (`0x524B53`, `0x5253F3`; a click on a refused ghost returns at the latch `0x816D48` before the mode dispatch, `0x524A63`), the Move tool's pick-up
+(`0x525E5A`), a path or queue commit (`0x527483`) and the coaster tool's own handover (`0x526680`) drop it too. So a kart or water ride the player just placed goes on into
+its queue tool, and the exactly-Ctrl state is reached when a track is closed again later through the ride window's track button, with no other placement's start pending.
+OpenTPW keeps the same pending start for the issuer's tools (`Level.EnterPlacedTrackTool`, which the HUD's placement calls, and `Level.ContinueTrackTool`; the build click
+reads the refused ghost the HUD draws, `Level.BuildGhostAllowed`; a line whose command the park refused commits nothing; a start whose ride was sold since is dropped, an
+OpenTPW guard). The HUD's tool click passes the click's modifiers to the line's continuation, and the HUD's report of the next click posts 204
 (`ParkHud.ReportCellToolClick`, `AdvisorToolHelp.TrackLineStart`).
 
 A click whose tile the ghost refuses never gets there: the click handler tests the refused-ghost latch `0x816D48` before the mode dispatch (`0x524A63`), the tile preview

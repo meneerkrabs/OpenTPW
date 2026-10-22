@@ -1754,7 +1754,7 @@ public class PoolsAttractionsLevelTests
 	{
 		var wave = Entry( 1309, "wavemachine", "N", "**" );
 		var swing = Entry( 1310, "ropeswing", "N", "*" );
-		using var camera = ParkCamera();
+		using var gates = WindowGates();
 		With( () =>
 		{
 			level.PoolBuilder!.PaintCells( PoolBuilder.Rectangle( (4, 12), (9, 14) ) );
@@ -1816,7 +1816,7 @@ public class PoolsAttractionsLevelTests
 	public void TheWaveMachineWindowsChoicesFitItAndAreNamedInEveryLanguage()
 	{
 		var wave = Entry( 1311, "wavemachine", "N", "**" );
-		using var camera = ParkCamera();
+		using var gates = WindowGates();
 		With( () =>
 		{
 			level.PoolBuilder!.PaintCells( PoolBuilder.Rectangle( (4, 12), (9, 14) ) );
@@ -1844,15 +1844,19 @@ public class PoolsAttractionsLevelTests
 			}
 	}
 
-	/// <summary>The park camera the settings window wants (it does not open while the camera rides or walks), restored on dispose.</summary>
-	private IDisposable ParkCamera()
+	/// <summary>
+	/// The shared input state the settings window's gate wants, restored on dispose: the park camera (it does not open while the camera rides or walks) and a keyboard no text field holds (it does
+	/// not open while text is typed, and a field an earlier test focused leaves <see cref="Input.TextEntryActive"/> set, which only the game's frame clears).
+	/// </summary>
+	private IDisposable WindowGates()
 	{
 		// the fixture's level is made without its constructor; the window's input gate asks the cell tool whether it is armed
 		if ( level.CellTool == null )
 			typeof( Level ).GetField( "<CellTool>k__BackingField", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic )!.SetValue( level, new CellBuildTool() );
-		var previous = Camera.Mode;
+		var previous = (Camera.Mode, Input.TextEntryActive);
 		Camera.Mode = new ParkCameraMode();
-		return new Restore( () => Camera.Mode = previous );
+		Input.TextEntryActive = false;
+		return new Restore( () => (Camera.Mode, Input.TextEntryActive) = previous );
 	}
 
 	private sealed class Restore( Action action ) : IDisposable { public void Dispose() => action(); }

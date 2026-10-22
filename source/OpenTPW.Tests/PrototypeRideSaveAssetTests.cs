@@ -290,5 +290,9 @@ public class PrototypeRideSaveAssetTests
 			"entrance cell" );
 		Rejects( snapshot with { Prototype = part with { EntranceCell = null, ExitCell = null, EconomyInstanceId = null } },
 			"carries no guest cells" );
+		// the guests' record of the Totem keeps the cells too, and the two agree
+		var record = snapshot.Guests.Attractions.Single( attraction => attraction.AttractionId == part.AttractionId );
+		Assert.AreEqual( (part.EntranceCell, part.ExitCell), (record.EntranceCell, record.ExitCell) );
+		Rejects( snapshot with { Prototype = part with { EntranceCell = (part.EntranceCell!.Value.X + 1, part.EntranceCell.Value.Y) } }, "name different guest cells" );
 	}
 }

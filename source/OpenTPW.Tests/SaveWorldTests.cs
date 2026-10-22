@@ -149,7 +149,7 @@ public class SaveWorldTests
 			new SaveTestPayloads.AttractionFields { Gauge48 = 256f },
 			new SaveTestPayloads.AttractionFields { Stamp = new uint[] { 2000, 13, 1, 6, 15, 37, 30, 0 } },
 			new SaveTestPayloads.AttractionFields { Stamp = new uint[] { 2000, 1, 0, 6, 15, 37, 30, 0 } },
-			new SaveTestPayloads.AttractionFields { Stamp = new uint[] { 2000, 1, 1, 24, 15, 37, 30, 0 } },
+			new SaveTestPayloads.AttractionFields { Stamp = new uint[] { 2000, 1, 1, 6, 24, 37, 30, 0 } },
 			new SaveTestPayloads.AttractionFields { State = ushort.MaxValue + 1u },
 			new SaveTestPayloads.AttractionFields { QueueCells = ushort.MaxValue + 1u },
 			new SaveTestPayloads.AttractionFields { RingFlag = 2 },

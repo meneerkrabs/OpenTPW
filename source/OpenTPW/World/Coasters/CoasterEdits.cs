@@ -44,6 +44,9 @@ public sealed class CoasterEdits
 	/// <summary>The edit <paramref name="player"/> holds, or null.</summary>
 	public Held? Of( int player ) => edits.GetValueOrDefault( player );
 
+	/// <summary>[EXT:online-coop-snapshot-join] Whether no player holds a drag (a join capture waits for that: a drag's edited pylon is no part of the save).</summary>
+	internal bool IsEmpty => edits.Count == 0;
+
 	/// <summary>[EXT:online-coop-lockstep] Every player's drag, lowest player first, for the session digest: the drag's later steps and its release read it on every peer.</summary>
 	internal void AddSessionState( StateHasher hash )
 	{

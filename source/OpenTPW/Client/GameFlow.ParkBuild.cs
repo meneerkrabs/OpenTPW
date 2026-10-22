@@ -61,6 +61,8 @@ internal sealed partial class GameFlow
 		ParkStartKind start = ParkStartKind.OriginalSaveReference, Action<Level>? ready = null, Action<Level>? beforeEnter = null )
 	{
 		RequireProgressSaved();
+		// [EXT:online-coop-snapshot-join] the player goes elsewhere: the join they leave ends before this park builds a scene of its own
+		LeaveJoinBuild();
 		// [EXT:extensions-apply-at-load] from the lobby (no park simulates) a new park is built with the extension choices waiting; a park still running keeps its set until it is left
 		if ( Level == null )
 			ApplyPendingExtensions();

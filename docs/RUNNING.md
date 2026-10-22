@@ -9,7 +9,8 @@ Install the pinned .NET 11 SDK (`global.json`). Apple Silicon uses native arm64 
 the matching libraries are available; see MACOS-NATIVE.md for reproduction.
 The launcher falls back to an Intel/Rosetta bootstrap when those files are absent.
 Linux currently uses Vulkan and needs a working Vulkan driver. Windows uses
-Direct3D 11. Windows/Linux GPU execution is not yet locally qualified.
+Direct3D 11. Windows/Linux GPU execution is not yet locally qualified; CI draws the textured
+park shaders on Direct3D 11 (the Windows runner's WARP adapter) in `NativeWorldShaderRenderTests`.
 
 Linux (x64) needs the system packages for SDL2, the Vulkan loader and a Vulkan
 driver (Debian/Ubuntu: `libsdl2-2.0-0 libvulkan1 mesa-vulkan-drivers`) and an X11
@@ -343,7 +344,7 @@ bash scripts/run.sh --game-path '/path/to/Theme Park World' --play-movie bf --sm
 Plays `Data/Movies/<name>.tgq` with SDL2 audio (`--mute` disables it); a key
 press or click skips.
 
-Automated runs are silent: `--smoke-test`, `--tpi-smoke-test`, `--park-resume-smoke`, `--smoke-presence`, any `--capture-*` or
+Automated runs are silent: `--smoke-test`, `--tpi-smoke-test`, `--park-resume-smoke`, `--coop-join-smoke`, `--smoke-presence`, any `--capture-*` or
 `--perf-*` option, every `--debug-*` option (`--debug-sim-minutes`, `--debug-weather` and the other capture helpers), `--offscreen` (or `OPENTPW_OFFSCREEN=1`), `--headless`, the gates and the guest reports open no audio
 device (the game runs on its wall clock exactly as without a sound card), so tests and agents make no sound on a developer machine.
 Add `--smoke-audio` or `--audible` to hear one. `--silent` or `OPENTPW_SILENT=1` silences any run; a plain launch is never silenced.

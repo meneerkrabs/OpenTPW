@@ -199,7 +199,8 @@ puts back before the game starts):
 
 A missing file means the defaults. A file that cannot be read, is larger than 256 KiB or is not valid strict JSON adds
 a startup warning and the defaults are used; invalid entries in an otherwise valid file are dropped one by one, each
-with a warning. Smoke tests (`--smoke-test`) ignore `mods.json` and `<config>/mods`, like the compatibility settings.
+with a warning. Smoke tests (`--smoke-test`, and the co-op join smoke `--coop-join-smoke`) ignore `mods.json` and
+`<config>/mods`, like the compatibility and graphics settings.
 
 `--disable-extension <id>` (repeatable) switches an extension or mod off for one run without changing `mods.json`;
 an id that names no extension or installed mod is an error. `--enable-mod <id>` (repeatable) switches an extension or mod on, and

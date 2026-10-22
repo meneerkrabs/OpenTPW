@@ -414,6 +414,16 @@ public sealed record RideVisitorBridgeSnapshot
 	public int? TypedQueueDirection { get; init; }
 	public required int QueueEditCount { get; init; }
 	public required (int X, int Y)? JoinCell { get; init; }
+	/// <summary>
+	/// The cells the guests enter and leave the attraction by, as they stand: a placement resolves them once (<c>Level.ResolveVisitorCells</c>, the nearest walkable cell when nothing laid
+	/// the access cell), and only the removal of a cell a placement laid or a queue cell they use resolves them again (<c>Level.RefreshVisitorCells</c>), so a path laid nearer later leaves
+	/// them where they were. The resume puts them back before it finds the queues from them, rather than resolve them on the restored grid. Absent in older saves, which take the cells the
+	/// restore resolves.
+	/// </summary>
+	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )]
+	public (int X, int Y)? EntranceCell { get; init; }
+	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )]
+	public (int X, int Y)? ExitCell { get; init; }
 	public required long HeadNotReadyStreak { get; init; }
 	public required long MaximumHeadNotReadyStreak { get; init; }
 	public required long CalledAgeTurns { get; init; }

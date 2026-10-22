@@ -30,7 +30,7 @@ public class AudioTriggerTests
 		Assert.AreEqual( (3, "cat_rides", 28, 0x100AEBC0u), GameAudio.RseEventRoutes.Single( route => route.Type == 3 ), "the level's rides" );
 		Assert.AreEqual( (8, "cat_ambient", 0, 0x100AED48u), GameAudio.RseEventRoutes.Single( route => route.Type == 8 ), "global ambient" );
 		Assert.IsNull( GameAudio.RseEventCategory( 0 ) );
-		Assert.IsNull( GameAudio.RseEventCategory( 10 ), "the custom-bank type is not routed" );
+		Assert.IsNull( GameAudio.RseEventCategory( 10 ), "type 10 plays from the object type's own sound list, not a category of the game" );
 	}
 
 	[DataTestMethod]

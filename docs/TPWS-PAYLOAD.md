@@ -299,7 +299,7 @@ and bus. Its body is 1,091 bytes while the history buffers hold 30 entries:
 | --- | --- |
 | 2 + 2 + 4 | base thing (`0xfa808`): position X, Y in 1/256 cell (buildable objects: cell = position / 256, equal to the RideSystem record cell; fixed items store 128, 128), `mMapChild`, `mMapParent` |
 | 4 + 2 | `mAngle` (0/90/180/270), `mId` (= Info.Id) |
-| 8 × 4 | `tv[t]`: game-time stamp year, month, day, hour, minute, second, two opaque values |
+| 8 × 4 | `tv[t]`: the park time at +0x18 as the fields of FileTimeToSystemTime (tp.exe `0x4DB8EE` → `0x5FC660`): year, month, day, day of the week (0 = Sunday), hour, minute, second, milliseconds. The loader rebuilds +0x18 with SystemTimeToFileTime from all of them but the day of the week (`0x4DC8A1` → `0x5FC5C0`) and checks nothing. The Mac build agrees: its serializer writes the out-words of the imported `TbTimeStamp::GetTime` (eight int pointers, `0x100dafd8`) in order, and its loader passes every word but the fourth to `TbTimeStamp::SetTime` (seven ints, `0x100db7d0`) |
 | 4 + 2 | `MeshInstanceID` (110–125 in Easymode), `mFlags` |
 | 33 × (2 + 2) | `mNameA[i]`, `mNameB[i]` interleaved: the two UTF-16 sign lines ("Belly"/"Bounce", gates "LOST"/"Kingdom") |
 | 4 × 3 | `mRideScriptHandle`, `mTrackRideHandle`, `mState` (+0x19c: 0 working, 1 broken down, 2 upgrade requested, 3 not choosable, 4 condemned; SetState `0x4e0e60` closes the object for 1, 2 and 4) |
@@ -311,8 +311,9 @@ and bus. Its body is 1,091 bytes while the history buffers hold 30 entries:
 | 4 × 5 + 1 | `mRequestedService`, `mTimeMarkedForMaintenance`, `mTotalCosts`, `mTotalTakings`, `mUpgradeBalloonSprite`, `mUpgradeLevel` (u8) |
 
 `SaveAttraction.Read` parses the body completely and rejects it outside these bounds: non-zero Info.Id;
-angle a multiple of 90; a valid month/day/hour/minute/second; history buffers of at most 31 entries with
-flag 0/1; price at most 500; gauges finite in 0–255; upgrade level at most 3. `SaveAttractionList` returns
+angle a multiple of 90; a time stamp with year up to 9999, month 1–12, day 1–31, hour 0–23, minute and second
+0–59 and milliseconds 0–999 (the day-of-the-week word is kept as read, as the loader skips it); history buffers
+of at most 31 entries with flag 0/1; price at most 500; gauges finite in 0–255; upgrade level at most 3. `SaveAttractionList` returns
 every model-3 thing of the chain in list order; there is no signature search any more.
 
 Easymode has 14 attraction things, IDs 15, 24–16 and 14–11 (the earlier signature scan reported the
@@ -371,11 +372,28 @@ node-state words — bits 0–3 and 5–11 map onto the flag constants 0x10, 0x2
 loader `0x464af6`; bit 4 and bits 12+ are empty in every corpus save, so the reader refuses them) — and
 then `T` animation-time controls (`SaveRideSystemControl`), 0x2C bytes each: 11 u32 words in the save's
 word order [0], [1], [2], [4], [5], [6], [3], [9], [10], [11], [12] (PC loader `0x464bef`-`0x464bf4`
-copies the seventh record word to control word 3). Word 0 is the flags word (the loader tests its
-bit `0x04` at `0x464bf2` and sets `0x10` at `0x464bfb`), word 1 the animation set (12 = none: `0x464bb6`
-logs when it is anything else, and `0x464cbe` sets the `0x400000` animated-instance flag when it is
-below 12), and the rest are animation times and speed floats the loader bounds nowhere — all raw (the
-corpus holds pointer-like run-time values in word 3–5 of Easymode's controls).
+copies the seventh record word to control word 3). In save order the words are Flags, AnimID,
+SubAnim, StartAnimTime, AnimTime, NoPauseAnimTime, the speed (float, control word 3, the factor of the
+frame formula `0x473490`), DeferredAnimID, DeferredSubAnim, DeferredFlags and the deferred speed (float);
+the names are those the loader's debug dump `0x464580` prints. The flags are 0x1 loop, 0x2 held on the
+first frame (AnimID 13), 0x4 ended (AnimID 14, frozen on the last frame; the loader then sets `0x10`,
+sample once, at `0x464bfb`), 0x8 an AnimID-0 clip ended and 0x40 the unscaled clock (`0x472f60`,
+`0x4735d0`). AnimID 12 is none (`0x464bb6` logs when it is anything else, and `0x464cbe` sets the
+`0x400000` animated-instance flag when it is below 12). The times are milliseconds of the game clock that
+the Clock block stores and the loader sets again (`0x4164c0`, `0x415270`); the loader bounds no word, so
+the reader keeps them raw.
+
+On import (`ParkObjects.ImportOriginal`, `OriginalObjectRuntime.RestoreSavedScene`) OpenTPW restores
+what the loader restores of a record: the node states' bits 0x10 and 0x80000000 when the record's node
+and embedded-node counts are the model's nodes and dummy attribute records (`0x464ab4`), and every
+control below AnimID 12 on its channel, bound without a trigger (`0x472d10`, `0x472cb0`), with its start
+`clock − StartAnimTime` milliseconds back on the saved game clock, so the next channel update
+(`0x4735d0`) continues the saved frame; an ended control stays on its last frame. The object's animator
+clock starts at 0 at the import, so that start is zero or negative, up to the 32-bit elapsed time back,
+and an OpenTPW save of the park keeps it until the clip starts again. Jungle Easymode's gate
+saved the open command's clip (5/1) ended on frame 50 of 50, so it stands open; the Bus its leaving clip
+(5/2) ended, with its three meshes hidden; the Traffic Lights loop 5/0. Flag 0x2 and 0x40 controls, which
+no corpus save holds, are reported and not restored.
 
 The control count `T` is the one thing the block never stores: the loader reads it from the live
 instance at +0xe (`0x464b98`), which `0x4557c0` copies with the instance's 0xfc-byte header from the
@@ -884,7 +902,7 @@ open flag, and the advisor's pending advice and history of bound messages. The s
 Still read and not imported, each reported with its SAVE approximation: those dropped guests (SAVE-002), a research project of an object the archives lack or a current project the picker would not offer (SAVE-007), the hiring
 pool's candidates saved on the pointer (SAVE-004), the advisor presentation block, the world state, the arrival variables and bytes, the calendar session start, the advisor
 controller's presentation words (its current record is the last tutorial advice when an automatic advisor attaches) and the weather, park analyser apart from its recent-research rings,
-tag system, mechanic HQ and UI receiver things (SAVE-010). The Scripts block's sprite scripts, the saved guests' and litter's animations, are decoded and not applied (SAVE-013): guests and staff animate from their state and litter from the cell. The Particles pool is restored, minus the emitter and effector fields SAVE-013 drops. The RSSE block's script ids, list order, next id, pass counter and run state are applied (`SavedScriptImport`, `RideVM.ImportSavedRunState`: the program counter, stack, variables, limbo table, waits and timers on the saved game clock); the records' object lists, node, bounce and walk tables, and the animations playing on their objects, are not restored. A script with a saved child or sound child keeps its fresh state; saved child records are left for their parent to recreate. Of the Sound block a park started from an original save applies its volumes and on-flags for the session (see "Sound block"); the rest of it, the message-centre lists and the Track and Flying ride chunks are not restored (`[EXT:original-engine-state-dumps]`). Staff
+tag system, mechanic HQ and UI receiver things (SAVE-010). The Scripts block's sprite scripts, the saved guests' and litter's animations, are decoded and not applied (SAVE-013): guests and staff animate from their state and litter from the cell. The Particles pool is restored, minus the emitter and effector fields SAVE-013 drops. The RSSE block's script ids, list order, next id, pass counter and run state are applied (`SavedScriptImport`, `RideVM.ImportSavedRunState`: the program counter, stack, variables, limbo table, waits and timers on the saved game clock); the records' animation controls (below AnimID 12, on the saved game clock, ended or looping as saved, with their deferred clip) and node bits 0x10/0x80000000 are restored (`OriginalObjectRuntime.RestoreSavedScene`, loader 0x4647A0); the RSSE records' object lists, object node tables, bounce and walk tables, and controls held on the first frame (flag 0x2) or on the unscaled clock (flag 0x40) are not. A script with a saved child or sound child keeps its fresh state; saved child records are left for their parent to recreate. Of the Sound block a park started from an original save applies its volumes and on-flags for the session (see "Sound block"); the rest of it, the message-centre lists and the Track and Flying ride chunks are not restored (`[EXT:original-engine-state-dumps]`). Staff
 values outside OpenTPW's ranges (happiness outside the traced 0–100, a 100 %
 training percentage, a state without a STAFFSTATES entry, a hire time outside
 the calendar or inside a park turn, which is rounded down to the turn) are adjusted and each adjustment is reported; an attraction whose
@@ -948,6 +966,8 @@ The eleven private saves come back through import and export with the same field
 The reader requires the complete 73,536-byte fixed body, checks all four short-ring and sixteen monthly capacities, and validates each selected ring's head and wrapped byte. Only active happiness words are reinterpreted as floats and required to be finite; signed integer samples are preserved, including negatives and outliers. Inactive words are retained in the immutable native carrier but normalized to zero in host statistics. Negative live arrivals are rejected by host continuation policy. A malformed selected ring or continuation input rejects the entire bundle before economy application; there is no partial graph recovery. No timestamps, old bank transactions, financial months or simulation caches are invented.
 
 Rating has its own host ring. Month close samples it once for both statistics and the financial ledger. Legacy host saves lacking rating seed it once from their existing ledger; a present empty ring remains empty. The whole statistics section stays excluded from the simulation hash. Native statistics export is unchanged: original export keeps the template's statistics bytes, and host JSON is not a byte-identical analyser round trip. Theme Park Inc uses the separate `SaveThemeParkIncStatistics` named-field decoder and independently traced ordinals, with the [fresh-host-start boundary](THEME-PARK-INC.md#historical-statistics-and-the-host-start-boundary) kept explicit; no TPW offset or ordinal mapping is reused. The shipped one-month TPW fixture is an import witness; wrapped and continuation coverage is synthetic, not a claim of a real long-running save or original execution. UI-914 remains open for its other residuals.
+
+**Object and hire stamps (`SaveAnalyserStamps`).** After the arrival ring (body bytes 72,227 to 72,259) the analyser serializer `0x4C5D70` writes twenty byte rings of 60 bytes, the counters `mMisbehavingKids`, `mMisbehavingKidsThatGotAwayWithIt`, `mMisbehavingKidsEver` and `mLifetimeVisitors`, six 8-byte time stamps at body bytes 73,476 to 73,523 and the three words `mMostPaidForTicket`, `mLargestBusLoad` and `mLongestStay` that end the body. The stamps are written raw (`0x4CEDE0`) and read back raw (`0x510240`) in the order `mLastStrike`, `mLastPuke`, `mLastPrank`, `mParkLastOpened`, `mLastObjectBuilt` and `mLastStaffHired`. Each is the park time of its moment, the calendar's `FunnyTimeStart` plus floor(turn x rate / 4) x 10^7 in 100 ns units (`0x4F8690`), so in an original save it lies a whole park turn from the calendar's start; all six do in the eleven private saves (the four restart saves hold turn 0; in the seven played ones `mLastObjectBuilt` lies at turns 1,169 to 1,777 and `mLastStaffHired` at 2,609 to 3,702). The loader `0x5179C0` zeroes the six before the read (`0x518A43`-`0x518A85`) and nothing it loads restamps them, so the import converts the last two to the turns of the save's calendar (its start and rate) whose park time they are and hands them to the automatic advisor (`OriginalEconomyImport.AnalyserStampTurns`). For every stamp an original save holds, a whole turn at or before the park's turn, the advisor's days since the newest construction and hire then count exactly as tp.exe's `0x4C9070` and `0x4C90D0` count them. A stamp between two turns' times, which only a modified save holds, is taken at the earlier turn and reported, and can move the count by the day its seconds cross; one before the calendar's start or past the park's turn keeps its turn (a stamp still to come counts negative days, as the original's signed division does). The days count on OpenTPW's calendar of 3,750 seconds a turn, so for a modified save whose calendar runs at another rate than 15000 they follow the park's own calendar, as its dates do; the import reports that the save's calendar does not agree. The reader refuses a byte ring before the stamps that is not the 50-entry shape, which would move them. The other four stamps are not imported.
 
 **Things of a new park (`SaveNewParkThings`).** The park analyser (73,536 bytes: the grid words, 1,024 cell records whose extents the setup `0x4C7A90` fills, the history rings and extreme trackers at the
 constructor `0x4C58C0`'s values, in the order of the serializer `0x4C5D70`), the advisor controller (`0x599E70`; its first pending record, message 0 at score 100,000, is in all four restart saves and its posting site is

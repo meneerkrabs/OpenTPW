@@ -217,6 +217,12 @@ public sealed class CoasterTrack
 		DetachCells();
 		CellMarkers = new CoasterCellMarkers( cells, this, owner, stationEnds );
 	}
+	/// <summary>[EXT:online-coop-snapshot-join] Binds the cells as a join's build takes a live park's binding over, without writing (<see cref="CoasterCellMarkers"/>'s adoption).</summary>
+	internal void AdoptCells( ParkCellMap cells, ushort owner, IEnumerable<(int X, int Y)>? stationEnds, IEnumerable<(int X, int Y, bool Displaced)> unheld )
+	{
+		DetachCells();
+		CellMarkers = new CoasterCellMarkers( cells, this, owner, stationEnds, unheld );
+	}
 	internal void DetachCells()
 	{
 		CellMarkers?.Dispose();

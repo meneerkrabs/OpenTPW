@@ -152,6 +152,14 @@ public class ParkResumeValidationTests
 		{
 			Guests = snapshot.Guests with { Attractions = snapshot.Guests.Attractions.Select( attraction => attraction with { QueueCells = attraction.QueueCells.Append( (99, 99) ).ToArray() } ).ToArray() }
 		}, "queue cell (99, 99) is outside" );
+		Rejects( snapshot with
+		{
+			Guests = snapshot.Guests with { Attractions = snapshot.Guests.Attractions.Select( attraction => attraction with { EntranceCell = (99, 99), ExitCell = (0, 0) } ).ToArray() }
+		}, "entrance cell (99, 99) is outside" );
+		Rejects( snapshot with
+		{
+			Guests = snapshot.Guests with { Attractions = snapshot.Guests.Attractions.Select( attraction => attraction with { EntranceCell = (0, 0), ExitCell = (0, 99) } ).ToArray() }
+		}, "exit cell (0, 99) is outside" );
 		Rejects( snapshot with { Guests = snapshot.Guests with { SchemaVersion = 7, NextGuestId = 1 } }, "not below the next guest id" );
 
 		var first = snapshot.Guests.Guests[0];

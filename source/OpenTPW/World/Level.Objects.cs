@@ -136,6 +136,11 @@ public partial class Level
 			var cells = Guests.Grid.Cells;
 			foreach ( var item in Objects.Objects )
 			{
+				// [EXT:online-coop-snapshot-join] a join's cells are the host's live ones as its snapshot holds them: no footprint is written again (a live park's writes nothing anyway:
+				// the writer writes only differences, and no Theme Park World shape has '@' or 'Q' cells) and nothing is repaired (a placement under a negative balance leaves its entrance
+				// and exit without links, which the repair would lay)
+				if ( joinRestore != null )
+					continue;
 				cells.WriteFootprint( item.Cells, OwnerWord( item ), item.Placement.Rotation );
 				// an imported park's entrance and exit cells carry the link byte its save holds, as the original's load reads it (a resumed park's cells come from its own snapshot)
 				if ( resumeState == null && visitLayout == null && OriginalPark?.Save is { } save )
@@ -199,7 +204,7 @@ public partial class Level
 		// The arrival update sends the level's bus, seaplane or Ferry (tp.exe 0x004CF3E0); a Theme Park Inc world keeps the vehicle-less step-off.
 		if ( !GameEditions.IsThemeParkInc && ArrivalVehicles.Available( Objects.Catalog ) )
 		{
-			Guests.ArrivalVehicles = new ArrivalVehicles( Objects );
+			Guests.ArrivalVehicles = new ArrivalVehicles( Objects, BindFixedItemMadeInPlay );
 		}
 	}
 
@@ -1699,6 +1704,25 @@ public partial class Level
 		if ( instance is not int id || !park.Economy.TryGetObject( id, out _ ) )
 			return null;
 		return park.Economy.Sell( id );
+	}
+
+	/// <summary>
+	/// Gives a fixed item the game makes while the park is played its uncharged economy record, as the park's start does for the fixed items already standing
+	/// (<see cref="ConnectObjectsToEconomy"/>): an arrival vehicle at its first trip and the research finale's End. The original builds them with the common object constructor,
+	/// which counts the type and stamps its first-purchase turn, and saves an attraction record for each (the Bus, Seaplane and Ferry of every shipped TPWS). Nothing is charged: the
+	/// constructor debits an object's price, and every fixed item's is 0. The constructor also stamps the park's newest construction, which the advisor keeps
+	/// (<see cref="ParkEventKind.FixedItemMade"/>): the park is told of every object made here, also of one the economy catalogue does not know, which gets no record.
+	/// Call it only for an object made now; an object already bound is left as it is.
+	/// </summary>
+	// [BIN:TPW-EXE:0x004DB690,0x004DB6CA object constructor] the type's record takes the turn at +0x1C while it is 0 and counts the object at +0x18, for every object it constructs
+	// [BIN:TPW-EXE:0x004DB4E2 object constructor] the price debit (0x4D01F0) of the type's price (+0x1B8): Upgrades[0].CostOfUpgrade, which every fixed item's file sets to 0
+	// [BIN:TPW-EXE:0x004DB7A3 object stamp] and its single exit stamps the park's mLastObjectBuilt with the park time (0x4C7680) for every object it constructs
+	private void BindFixedItemMadeInPlay( OriginalObject item )
+	{
+		if ( Park == null || economyInstances.ContainsKey( item ) )
+			return;
+		if ( Park.Economy.RegisterFixedItemMade( item.Entry.InfoId ) is { } record )
+			LinkEconomy( item, record.Id );
 	}
 
 	private void LinkEconomy( OriginalObject item, int instance )

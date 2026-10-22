@@ -34,8 +34,7 @@ public class ParkGateTests
 		var (simulation, _) = InsideGuests();
 		var inside = simulation.SpawnInPark( 2, 0 ); // path (type 1)
 		var queueing = simulation.SpawnInPark( 3, 0 );
-		queueing.CellX = 4;
-		queueing.CellY = 4; // a queue cell (type 3): the census counts it like the original does
+		StandOn( queueing, 4, 4 ); // a queue cell (type 3): the census counts it like the original does
 		var economy = new ParkEconomy( EconomyTestData.Settings(), EconomyTestData.Catalog(), ParkGameMode.FullSimulation, 7 );
 		var gate = new ParkGate( economy, () => null, () => Array.Empty<OriginalObjectRuntime>(), simulation );
 		Assert.AreEqual( 2, gate.GuestCensus );
@@ -54,12 +53,10 @@ public class ParkGateTests
 		var onPath = simulation.SpawnInPark( 2, 0 );
 		var onBody = simulation.SpawnInPark( 3, 0 );
 		grid.Cells.SetType( 20, 20, ParkCellTypes.Object );
-		onBody.CellX = 20;
-		onBody.CellY = 20;
+		StandOn( onBody, 20, 20 );
 		var outside = simulation.SpawnInPark( 4, 0 );
 		grid.Cells.SetType( 30, 30, ParkCellTypes.FixedWalkway );
-		outside.CellX = 30;
-		outside.CellY = 30;
+		StandOn( outside, 30, 30 );
 		var economy = new ParkEconomy( EconomyTestData.Settings(), EconomyTestData.Catalog(), ParkGameMode.FullSimulation, 7 );
 		var bridge = new GuestEconomyBridge( () => economy, simulation );
 		Assert.AreEqual( 3, bridge.PeopleInPark );
@@ -161,6 +158,81 @@ public class ParkGateTests
 		economy.Advance( 1 );
 		populated.Tick();
 		Assert.AreEqual( 0, gateObject.GetVariableByName( ParkGate.CommandVariable ), "park turn 30: the retry closes the gate" );
+	}
+
+	private sealed class ClosablePayments : IGuestPayments
+	{
+		public bool Closed;
+		public int AdmissionFee => 0;
+		public bool ParkClosed => Closed;
+		public bool TryPayAdmission( out int feePaid ) { feePaid = 0; return true; }
+		public bool TryPayVisit( IRideVisitorBridge attraction, long guestMoney, out int pricePaid ) { pricePaid = 0; return true; }
+	}
+
+	/// <summary>
+	/// The census reads the cell a guest's walk stands on (tp.exe <c>0x004FA990</c> on the thing cell that every walk step rewrites, <c>0x004FA2A0</c> → <c>0x0050B6A0</c>): guests the closed
+	/// park sends home leave it as they step off the park's path onto the gate's road (fixed walkway, type 30), though their stored cell is still the last path cell, and the deferred retry
+	/// (<c>0x00516380</c>, every 30 park turns) shuts the gate at the first boundary after the last one walked out, while they still wait outside for a vehicle.
+	/// </summary>
+	[TestMethod]
+	public void AClosedParkShutsItsGateAtTheFirstRetryAfterTheLastGuestWalkedOut()
+	{
+		UseOriginalData();
+		// the Jungle's entrance in a small map (ArrivalWalkTests.Rig): the road y = 5 and the crossings x = 9, 10 are fixed walkway, the park's path is the row y = 17
+		var grid = new GuestPathGrid( 30, 24 );
+		for ( var x = 4; x <= 20; x++ )
+			grid.Cells.SetType( x, 5, ParkCellTypes.FixedWalkway );
+		foreach ( var x in new[] { 9, 10 } )
+			for ( var y = 5; y <= 16; y++ )
+				grid.Cells.SetType( x, y, ParkCellTypes.FixedWalkway );
+		for ( var x = 5; x <= 25; x++ )
+			grid.SetPath( x, 17, true );
+		var settings = GuestTests.CreateSettings();
+		settings.ArrivalLaneA = new[] { (4, 5), (9, 5), (9, 9), (9, 13), (9, 17) };
+		settings.ArrivalLaneB = new[] { (20, 5), (10, 5), (10, 9), (10, 13), (10, 17) };
+		var payments = new ClosablePayments();
+		var simulation = new GuestSimulation( grid, settings, 3 ) { ArrivalsEnabled = false, Payments = payments };
+		var economy = ParkEconomy.CreateForTheme( "jungle", easy: false );
+		var gateObject = GateObject();
+		var door = new ParkGate( economy, () => gateObject, Array.Empty<OriginalObjectRuntime>, simulation );
+		economy.OpenPark();
+		door.InitializeFromParkState();
+		gateObject.SetVariable( ParkGate.StatusVariable, ParkGate.GateIsOpen );
+		var guests = Enumerable.Range( 0, 4 ).Select( index => simulation.SpawnInPark( 12 + 3 * index, 17 ) ).ToList();
+		Assert.AreEqual( 4, door.GuestCensus );
+
+		economy.ClosePark();
+		payments.Closed = true;
+		door.DoorMoved( closed: true );
+		Assert.AreEqual( 1, gateObject.GetVariableByName( ParkGate.CommandVariable ), "the guests inside hold the gate open" );
+
+		const float tick = 1f / FixedStepClock.TicksPerSecond;
+		long? emptyTick = null, emptyTurn = null, retryTick = null, shutTick = null, shutTurn = null;
+		var previousTurn = economy.Turn;
+		for ( var step = 1L; step <= 60 * 120 && shutTick == null; step++ )
+		{
+			simulation.Tick( tick );
+			economy.Advance( 1 );
+			door.Tick();
+			var turn = economy.Turn;
+			if ( emptyTick == null && door.GuestCensus == 0 )
+				(emptyTick, emptyTurn) = (step, turn);
+			if ( emptyTick != null && retryTick == null && turn / ParkGate.RetryPeriodTurns > previousTurn / ParkGate.RetryPeriodTurns )
+				retryTick = step;
+			if ( gateObject.GetVariableByName( ParkGate.CommandVariable ) == 0 )
+				(shutTick, shutTurn) = (step, turn);
+			previousTurn = turn;
+		}
+		Assert.IsNotNull( emptyTick, "every guest walks off the park's cells" );
+		Assert.IsNotNull( shutTick, "the retry shuts the gate" );
+		Assert.AreEqual( retryTick, shutTick, $"the gate shuts at the first 30-turn retry after the census emptied at turn {emptyTurn}, not later" );
+		Assert.AreEqual( 0, shutTurn!.Value % ParkGate.RetryPeriodTurns );
+		Assert.IsTrue( shutTurn.Value - emptyTurn!.Value <= ParkGate.RetryPeriodTurns, $"emptied at turn {emptyTurn}, shut at turn {shutTurn}" );
+		// They are outside, not gone: no vehicle has come for them, and their stored cells still name the park's path.
+		Assert.IsTrue( guests.All( guest => guest.State != GuestState.Gone ) );
+		Assert.IsTrue( guests.All( guest => !ParkGate.CountsCellType( grid.Cells.RawTypeAt( guest.Navigation.Cell.X, guest.Navigation.Cell.Y ) ) ) );
+		Assert.IsTrue( guests.Any( guest => ParkGate.CountsCellType( grid.Cells.RawTypeAt( guest.Cell.X, guest.Cell.Y ) ) ),
+			"the stored cell a step moves only onto path and queue cells would still count them" );
 	}
 
 	[TestMethod]
@@ -309,8 +381,7 @@ public class ParkGateTests
 		var gate = new ParkGate( economy, () => null, () => Array.Empty<OriginalObjectRuntime>(), simulation );
 		foreach ( var cell in new[] { (-1, 0), (0, -1), (grid.CountX, 0), (0, grid.CountY) } )
 		{
-			guest.CellX = cell.Item1;
-			guest.CellY = cell.Item2;
+			StandOn( guest, cell.Item1, cell.Item2 );
 			Assert.AreEqual( 0, gate.GuestCensus, $"{cell} is outside, despite RawTypeAt returning counted type 0" );
 		}
 	}
@@ -330,6 +401,13 @@ public class ParkGateTests
 
 	private static StaffMember Staff( float? x, float? y ) =>
 		new() { Id = 1, Type = StaffType.Mechanic, NameIndex = 0, Grade = 1, CellX = x, CellY = y };
+
+	/// <summary>Puts a guest's walk position (the cell the census reads) and its stored cell on a cell, as a walk step onto it does.</summary>
+	private static void StandOn( Guest guest, int x, int y )
+	{
+		(guest.Navigation.X, guest.Navigation.Y) = GuestNavigation.Centre( (x, y) );
+		(guest.CellX, guest.CellY) = (x, y);
+	}
 
 	/// <summary>A path row y = 0 with a queue cell at (4, 4): cells the census counts and cells it does not.</summary>
 	private static (GuestSimulation Simulation, GuestPathGrid Grid) InsideGuests()

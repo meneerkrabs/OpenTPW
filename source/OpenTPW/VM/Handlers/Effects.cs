@@ -13,7 +13,7 @@ public static partial class OpcodeHandlers
 	/// <summary>Objects, particles, sound, screams and the park clock. All are pure game effects (inputs only) unless noted.</summary>
 	public static class Effects
 	{
-		[OpcodeHandler( Opcode.ADDOBJ, RideOpcodeStatus.Hooked, "TPW-EXE 0x551F5F (`type key id slot`, each resolved: a variable's value or the literal sign-extended from 16 bits): one 0x1C-byte record on the script's object list (+0xB0, newest first) keyed by the slot; the dispatcher 0x5573D0(type, key, id, control 1000) via 0x557970 gives its handle, a zero handle frees the record again; types 1-2 are particle effects, 3-9 sounds by category, 10 the object type's own list; a negative key (the corpus's 0xFFFF) is the footprint middle" )]
+		[OpcodeHandler( Opcode.ADDOBJ, RideOpcodeStatus.Hooked, "TPW-EXE 0x551F5F (`type key id slot`, each resolved: a variable's value or the literal sign-extended from 16 bits): one 0x1C-byte record on the script's object list (+0xB0, newest first) keyed by the slot; the dispatcher 0x5573D0(type, key, id, control 1000) via 0x557970 gives its handle, a zero handle frees the record again; types 1-2 are particle effects, 3-9 sounds by category, 10 the object type's own sound list; a negative key (the corpus's 0xFFFF) is the footprint middle" )]
 		public static void AddObj( RideVM vm, Operand type, Operand parameter, Operand id, Operand slot ) => vm.Effect( Opcode.ADDOBJ, new[] { type, parameter, id, slot } );
 
 		[OpcodeHandler( Opcode.ADDOBJ_EXT, RideOpcodeStatus.Hooked, "TPW-EXE 0x5520E8 (`type key id control slot`, each resolved): ADDOBJ with the control operand in place of 1000; no corpus use" )]
@@ -28,7 +28,7 @@ public static partial class OpcodeHandlers
 		[OpcodeHandler( Opcode.SETOBJPARAM, RideOpcodeStatus.Hooked, "TPW-EXE 0x5524D9 (`slot param value`, each resolved): for every record with the slot, types 3-10 call 0x51BC40(handle, param, value) and keep the handle it returns, types 1-2 do nothing; the corpus sets param 20 to 0 or 75 on slot 1" )]
 		public static void SetObjParam( RideVM vm, Operand slot, Operand parameter, Operand value ) => vm.Effect( Opcode.SETOBJPARAM, new[] { slot, parameter, value } );
 
-		[OpcodeHandler( Opcode.EVENT, RideOpcodeStatus.Hooked, "TPW-EXE 0x552615 (`type key id`, each resolved): the dispatcher 0x5573D0(type, key, id, control 1000), its handle dropped; types 1-2 are particle effects (PARTICLES.md), 3-9 sounds by category (AUDIO.md), 10 the object type's own list (0x557686); the corpus uses types 1-6 and key 0xFFFF (-1, the footprint middle) 341 times" )]
+		[OpcodeHandler( Opcode.EVENT, RideOpcodeStatus.Hooked, "TPW-EXE 0x552615 (`type key id`, each resolved): the dispatcher 0x5573D0(type, key, id, control 1000), its handle dropped; types 1-2 are particle effects (PARTICLES.md), 3-9 sounds by category (AUDIO.md), 10 the object type's own sound list (0x557686); the corpus uses types 1-6 and key 0xFFFF (-1, the footprint middle) 341 times" )]
 		public static void Event( RideVM vm, Operand type, Operand unknown, Operand id ) => vm.Effect( Opcode.EVENT, new[] { type, unknown, id } );
 
 		[OpcodeHandler( Opcode.EVENT_EXT, RideOpcodeStatus.Hooked, "TPW-EXE 0x552707 (`type key id control`, each resolved): EVENT with the control operand in place of 1000 (the dispatcher 0x5573D0 applies a control other than 1000 to a particle effect of types 1-2 through 0x51FFD0; the sound types ignore it); no corpus use" )]

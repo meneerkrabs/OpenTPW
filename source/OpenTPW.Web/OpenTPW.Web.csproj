@@ -79,6 +79,7 @@
 		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/ObjectLightTests.cs" />
 		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/TgqPngExportTests.cs" />
 		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/ShaderTests.cs" />
+		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/NativeWorldShaderRenderTests.cs" />
 		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/InstallationDiscoveryTests.cs" />
 		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/MaterialRollbackTests.cs" />
 		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/LinuxNativeLibrariesTests.cs" />
@@ -92,9 +93,13 @@
 		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/WebClientTransportTests.cs" />
 		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/CoopLinkTests.cs" />
 		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/CoopSessionTests.cs" />
+		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/CoopJoinSessionTests.cs" />
+		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/CoopJoinSessionTests.GameFlow.cs" />
+		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/CoopSnapshotDownloadTests.cs" />
 		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/BrowserPinsExclusionTests.cs" />
 		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/StrictCommandsGameTests.cs" />
 		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/AudioParkVisitTests.cs" />
+		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/SaveDirectoryTests.cs" />
 	</ItemGroup>
 	<ItemGroup Condition="'$(OpenTpwDeterminismPins)' == 'true'">
 		<Compile Include="../OpenTPW.Tests/**/*.cs" Exclude="../OpenTPW.Tests/obj/**;../OpenTPW.Tests/bin/**;@(DeterminismPinsExcludedTests)" Link="Tests/%(RecursiveDir)%(Filename)%(Extension)" />

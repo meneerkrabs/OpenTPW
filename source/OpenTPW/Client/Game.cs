@@ -301,9 +301,10 @@ internal static class Game
 		SaveFileSystem = new BaseFileSystem( GetSaveDirectory() );
 
 		//
-		// Custom OpenTPW cache directory (mainly for editor-related stuff)
+		// Custom OpenTPW cache directory (mainly for editor-related stuff), in the user configuration directory: the working
+		// directory may be a read-only install folder now that OpenTPW runs without administrator rights
 		//
-		CacheFileSystem = new BaseFileSystem( $"./.opentpw" );
+		CacheFileSystem = new BaseFileSystem( Path.Combine( Path.GetDirectoryName( SetupSettings.GetDefaultPath() )!, "cache" ) );
 
 		//
 		// Init renderer
@@ -343,6 +344,14 @@ internal static class Game
 			if ( parkResumeFile == null || parkResumeEvidence == null )
 				throw new ArgumentException( "--park-resume-smoke also needs --park-resume-file and --park-resume-evidence." );
 			ParkResumeSmokeTest.Run( flow, parkResumePhase, parkResumeFile, parkResumeEvidence );
+			return;
+		}
+		// [EXT:online-coop-snapshot-join] the native join smoke (docs/COOP.md, "The game's join"): a host phase and a fresh join phase over recorded frames
+		if ( GetOption( args, "--coop-join-smoke", "'host' or 'join'" ) is { } coopJoinPhase )
+		{
+			var coopJoinEvidence = GetOption( args, "--coop-join-evidence", "an evidence directory" )
+				?? throw new ArgumentException( "--coop-join-smoke also needs --coop-join-evidence." );
+			CoopJoinSmokeTest.Run( flow, coopJoinPhase, coopJoinEvidence );
 			return;
 		}
 		var startsFrontEnd = visit == null && originalLevelIndex < 0 && !args.Contains( "--advisor-say" ) && !args.Contains( "--advisor-response" ) && !args.Contains( "--sandbox" ) && (!smoke || args.Contains( "--front-end" ));
@@ -1143,8 +1152,13 @@ internal static class Game
 		args.Any( arg => arg.StartsWith( "--capture-", StringComparison.Ordinal ) || arg.StartsWith( "--perf-", StringComparison.Ordinal ) || arg.StartsWith( "--debug-", StringComparison.Ordinal ) )
 		|| args.Intersect( AutomatedFlags ).Any();
 
+	/// <summary>
+	/// The automated modes beyond the smokes. [EXT:online-coop-snapshot-join] <c>--coop-join-smoke</c> is one, never a <see cref="SmokeFlags"/> entry: its host phase shares the park it built before
+	/// the session started, which a smoke flag's <see cref="ChangesParkOutsideCommands"/> would refuse.
+	/// </summary>
 	private static readonly string[] AutomatedFlags = SmokeFlags.Concat( new[]
 	{
+		"--coop-join-smoke",
 		"--perf-run", "--perf-hash-tick",
 		"--offscreen", "--headless", "--m3-gate", "--m4-gate", "--determinism-digest", "--guest-report", "--guest-compare", "--validate-assets", "--export-signs",
 	} ).ToArray();
@@ -1431,21 +1445,73 @@ internal static class Game
 		}
 	}
 
-	private static string GetSaveDirectory()
+	private static string GetSaveDirectory() => ResolveSaveDirectory( Settings.Default.GamePath, Path.GetDirectoryName( SetupSettings.GetDefaultPath() )! );
+
+	/// <summary>
+	/// The game folder's <c>save</c> directory when files can be written there, else <c>save</c> under <paramref name="fallbackRoot"/>.
+	/// OpenTPW runs without administrator rights, so a game folder under Program Files usually is not writable even when its
+	/// <c>save</c> directory already exists: a probe file is written and deleted to find out before the first save does. Saves an
+	/// earlier, elevated OpenTPW wrote beside such a game are copied into the fallback once (an existing file is never replaced).
+	/// </summary>
+	internal static string ResolveSaveDirectory( string gamePath, string fallbackRoot )
 	{
-		var beside = Path.Combine( Settings.Default.GamePath, "save" );
+		var beside = Path.Combine( gamePath, "save" );
 		try
 		{
 			Directory.CreateDirectory( beside );
+			using ( new FileStream( Path.Combine( beside, $".opentpw-write-test-{Guid.NewGuid():N}" ), FileMode.CreateNew, FileAccess.Write, FileShare.None, 1, FileOptions.DeleteOnClose ) ) { }
 			return beside + Path.DirectorySeparatorChar;
 		}
 		catch ( Exception exception ) when ( exception is IOException or UnauthorizedAccessException )
 		{
-			var fallback = Path.Combine( Path.GetDirectoryName( SetupSettings.GetDefaultPath() )!, "save" );
+			var fallback = Path.Combine( fallbackRoot, "save" );
 			Directory.CreateDirectory( fallback );
 			Log.Warning( $"The game folder is read-only ({exception.Message}); saves go to {fallback}." );
+			// The marker makes the copy happen once: a save, autosave or restart snapshot deleted later must not come back
+			var marker = Path.Combine( fallback, CopiedSavesMarker );
+			if ( Directory.Exists( beside ) && !File.Exists( marker ) )
+			{
+				var copied = CopyMissingSaves( beside, fallback );
+				try { File.WriteAllText( marker, $"Earlier saves copied from {beside}{Environment.NewLine}" ); }
+				catch ( Exception markerException ) when ( markerException is IOException or UnauthorizedAccessException ) { Log.Warning( $"Could not write {marker} ({markerException.Message})." ); }
+				if ( copied > 0 )
+					Log.Info( $"Copied {copied} earlier save file(s) from {beside} to {fallback}; the originals are left in place." );
+			}
 			return fallback + Path.DirectorySeparatorChar;
 		}
+	}
+
+	/// <summary>Written in the fallback save folder once the earlier saves beside the game have been copied.</summary>
+	internal const string CopiedSavesMarker = ".copied-from-game-folder";
+
+	/// <summary>Copies every file under <paramref name="source"/> that <paramref name="destination"/> lacks; unreadable files are skipped.</summary>
+	private static int CopyMissingSaves( string source, string destination )
+	{
+		var copied = 0;
+		try
+		{
+			foreach ( var file in Directory.EnumerateFiles( source, "*", SearchOption.AllDirectories ) )
+			{
+				var target = Path.Combine( destination, Path.GetRelativePath( source, file ) );
+				if ( File.Exists( target ) )
+					continue;
+				try
+				{
+					Directory.CreateDirectory( Path.GetDirectoryName( target )! );
+					File.Copy( file, target, overwrite: false );
+					copied++;
+				}
+				catch ( Exception exception ) when ( exception is IOException or UnauthorizedAccessException )
+				{
+					Log.Warning( $"Could not copy the earlier save {file} ({exception.Message})." );
+				}
+			}
+		}
+		catch ( Exception exception ) when ( exception is IOException or UnauthorizedAccessException )
+		{
+			Log.Warning( $"Could not list the earlier saves in {source} ({exception.Message})." );
+		}
+		return copied;
 	}
 
 	/// <summary><c>--build-texture-pack --upscaler &lt;realesrgan-ncnn-vulkan&gt;</c>: builds the optional local texture pack (docs/TEXTURE-PACKS.md).</summary>

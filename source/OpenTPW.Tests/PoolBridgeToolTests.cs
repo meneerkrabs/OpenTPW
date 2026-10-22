@@ -1,3 +1,5 @@
+using System;
+using System.Linq;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using OpenTPW.Hud;
 using OpenTPW.Mods;
@@ -50,6 +52,47 @@ public class PoolBridgeToolTests
 		Assert.IsFalse( tool.IsBridge );
 		Assert.IsFalse( tool.Undo(), "A bridge must never be erased through pool-water undo" );
 		Assert.AreEqual( 1, world.Count );
+	}
+
+	[TestMethod]
+	public void HoverPreviewsTheWholeBridgeAndBlamesTheRefusingCell()
+	{
+		using var scope = OpenTpwExtensions.Use( PoolsTests.PoolsSet( true ) );
+		var (cells, world, tool) = Rig();
+		Crossing( cells, 2, 3, 1 );
+		Assert.IsTrue( tool.BeginBridge( 1 ) );
+		tool.Hover( 2, 3 );
+		CollectionAssert.AreEqual( Enumerable.Range( 1, 9 ).Select( x => (x, 3) ).ToArray(), tool.HoverBridgeCells().ToArray(), "both outside path ends and the seven bridge cells" );
+		Assert.IsNull( tool.HoverBridgeResult );
+		Assert.IsNull( tool.HoverBridgeBlocker );
+		cells.SetType( 9, 3, ParkCellType.Empty );
+		tool.Hover( 2, 3 );
+		Assert.AreEqual( PoolBridgeResult.EndNotPath, tool.HoverBridgeResult );
+		Assert.AreEqual( (9, 3), tool.HoverBridgeBlocker );
+		Assert.IsTrue( tool.HoverBridgeRefuses( (9, 3) ) );
+		Assert.IsFalse( tool.HoverBridgeRefuses( (5, 3) ), "only the cell to blame turns red" );
+		Assert.IsTrue( tool.ShowsBridgeReason, "the line reaches the pool, so the help names the reason" );
+		tool.Hover( 9, 9 );
+		Assert.IsNotNull( tool.HoverBridgeResult );
+		Assert.IsFalse( tool.ShowsBridgeReason, "away from any pool the help keeps the instructions" );
+		tool.Hover( 2, 3 );
+		Assert.AreEqual( OpenTpwText.PoolBridgeEndNotPath, ParkHud.BridgeRefusalText( PoolBridgeResult.EndNotPath ) );
+		Assert.AreEqual( 0, world.Count, "Hover must not mutate the park" );
+		tool.Press( 2, 3 );
+		Assert.AreEqual( PoolBridgeResult.EndNotPath, tool.LastBridgeRefusal );
+		tool.Release();
+		Assert.IsTrue( tool.BeginBridge( 1, erase: true ) );
+		tool.Hover( 2, 3 );
+		Assert.AreEqual( 0, tool.HoverBridgeCells().Count(), "removal marks only the cell under the pointer" );
+	}
+
+	[TestMethod]
+	public void EveryFixableBridgeRefusalHasItsOwnMessage()
+	{
+		var refusals = Enum.GetValues<PoolBridgeResult>().Where( result => result is not (PoolBridgeResult.Ok or PoolBridgeResult.ExtensionOff or PoolBridgeResult.OutsideTerrain or PoolBridgeResult.Occupied) ).ToArray();
+		var texts = refusals.Select( ParkHud.BridgeRefusalText ).ToArray();
+		Assert.IsFalse( texts.Contains( OpenTpwText.CannotBuildHere ), "a refusal the player can fix says what to fix" );
+		Assert.AreEqual( texts.Length, texts.Distinct().Count() );
 	}
 
 	[TestMethod]

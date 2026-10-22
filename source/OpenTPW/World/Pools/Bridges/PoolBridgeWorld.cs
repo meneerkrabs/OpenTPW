@@ -2,7 +2,12 @@ using OpenTPW.Mods;
 
 namespace OpenTPW;
 
-public enum PoolBridgeResult { Ok, ExtensionOff, OutsideTerrain, NotOwned, Occupied, NotOverPool, TooSteep, Standing, NotEnoughMoney, NotBridge }
+/// <summary>
+/// A bridge check's answer. <see cref="Occupied"/> is the 256-bridge limit; the values after <see cref="NotBridge"/> name what refuses a placement so the tool can say it:
+/// an outside end that is no ordinary path, an approach cell that is pool water (the pool is wider than three cells there, or the click was not on the first land cell),
+/// a ride, track, queue, post, protected cell or scenery on a covered cell, and a cell another bridge already uses.
+/// </summary>
+public enum PoolBridgeResult { Ok, ExtensionOff, OutsideTerrain, NotOwned, Occupied, NotOverPool, TooSteep, Standing, NotEnoughMoney, NotBridge, EndNotPath, LandIsWater, Blocked, BridgeInTheWay }
 
 /// <summary>[EXT:pools-bridges] An elevated route over unchanged water cells: two approach cells, three span cells, two approach cells.</summary>
 public sealed record PoolBridge( int X, int Y, int Direction, int GroundMillimetres )
@@ -54,6 +59,8 @@ public sealed class PoolBridgeWorld
 		cells.PoolBridges = this;
 	}
 
+	public bool CellsInBounds( int x, int y ) => cells.InBounds( x, y );
+	public bool IsWater( int x, int y ) => cells.TypeAt( x, y ) == ParkCellType.PoolWater;
 	public PoolBridge? At( int x, int y ) => coverage.GetValueOrDefault( (x, y) );
 	public bool Covers( int x, int y ) => coverage.ContainsKey( (x, y) );
 	public bool Reserves( int x, int y ) => Covers( x, y ) || bridges.Values.Any( b => b.Cell( -1 ) == (x, y) || b.Cell( PoolBridge.Length ) == (x, y) );
@@ -79,9 +86,13 @@ public sealed class PoolBridgeWorld
 		return links;
 	}
 
-	public PoolBridgeResult Check( int x, int y, int direction ) => Check( x, y, direction, restoring: false );
-	private PoolBridgeResult Check( int x, int y, int direction, bool restoring )
+	public PoolBridgeResult Check( int x, int y, int direction ) => Check( x, y, direction, restoring: false, out _ );
+	/// <summary>The check, with the cell that refuses the placement (null when it passes or when no single cell is to blame: the slope, the money, the limit).</summary>
+	public PoolBridgeResult Check( int x, int y, int direction, out (int X, int Y)? blocker ) => Check( x, y, direction, restoring: false, out blocker );
+	private PoolBridgeResult Check( int x, int y, int direction, bool restoring ) => Check( x, y, direction, restoring, out _ );
+	private PoolBridgeResult Check( int x, int y, int direction, bool restoring, out (int X, int Y)? blocker )
 	{
+		blocker = null;
 		if ( !enabled() ) return PoolBridgeResult.ExtensionOff;
 		if ( Count >= 256 ) return PoolBridgeResult.Occupied;
 		if ( direction is < 0 or > 3 ) return PoolBridgeResult.OutsideTerrain;
@@ -90,21 +101,26 @@ public sealed class PoolBridgeWorld
 		for ( var i = -1; i <= PoolBridge.Length; i++ )
 		{
 			var (cx, cy) = candidate.Cell( i );
-			if ( !cells.InBounds( cx, cy ) ) return PoolBridgeResult.OutsideTerrain;
+			if ( !cells.InBounds( cx, cy ) ) { blocker = null; return PoolBridgeResult.OutsideTerrain; }
+			blocker = (cx, cy);
 			if ( cells.FlagsAt( cx, cy ).HasFlag( ParkCellFlags.Unowned ) ) return PoolBridgeResult.NotOwned;
 			if ( i is -1 or PoolBridge.Length )
 			{
-				if ( cells.TypeAt( cx, cy ) != ParkCellType.Path || Covers( cx, cy ) ) return PoolBridgeResult.Occupied;
+				if ( Covers( cx, cy ) ) return PoolBridgeResult.BridgeInTheWay;
+				if ( cells.TypeAt( cx, cy ) != ParkCellType.Path ) return PoolBridgeResult.EndNotPath;
 				continue;
 			}
-			if ( Reserves( cx, cy ) || cells.Tracks.Get( cx, cy ) is { Type: not 0 } || cells.Land?.IsPost( cx, cy ) == true || reserved?.Invoke( cx, cy ) == true ) return PoolBridgeResult.Occupied;
-			if ( (cells.FlagsAt( cx, cy ) & (ParkCellFlags.NoModify | ParkCellFlags.EntranceArea | ParkCellFlags.MapBit04 | ParkCellFlags.AddOn)) != 0 ) return PoolBridgeResult.Occupied;
+			if ( Reserves( cx, cy ) ) return PoolBridgeResult.BridgeInTheWay;
+			if ( cells.Tracks.Get( cx, cy ) is { Type: not 0 } || cells.Land?.IsPost( cx, cy ) == true || reserved?.Invoke( cx, cy ) == true ) return PoolBridgeResult.Blocked;
+			if ( (cells.FlagsAt( cx, cy ) & (ParkCellFlags.NoModify | ParkCellFlags.EntranceArea | ParkCellFlags.MapBit04 | ParkCellFlags.AddOn)) != 0 ) return PoolBridgeResult.Blocked;
 			if ( i is >= 2 and <= 4 )
 			{
 				if ( cells.TypeAt( cx, cy ) != ParkCellType.PoolWater ) return PoolBridgeResult.NotOverPool;
 			}
-			else if ( cells.TypeAt( cx, cy ) is not (ParkCellType.Empty or ParkCellType.Path) ) return PoolBridgeResult.Occupied;
+			else if ( cells.TypeAt( cx, cy ) == ParkCellType.PoolWater ) return PoolBridgeResult.LandIsWater;
+			else if ( cells.TypeAt( cx, cy ) is not (ParkCellType.Empty or ParkCellType.Path) ) return PoolBridgeResult.Blocked;
 			if ( !restoring && occupied?.Invoke( cx, cy ) == true ) return PoolBridgeResult.Standing;
+			blocker = null;
 			for ( var ox = 0; ox <= 1; ox++ ) for ( var oy = 0; oy <= 1; oy++ )
 			{
 				var h = ground( cx + ox, cy + oy );
@@ -112,6 +128,7 @@ public sealed class PoolBridgeWorld
 				minimum = Math.Min( minimum, h ); maximum = Math.Max( maximum, h );
 			}
 		}
+		blocker = null;
 		// The fixed bridge model needs flat approaches: a tilted bank would leave a step at either end.
 		if ( maximum - minimum > 0.01f ) return PoolBridgeResult.TooSteep;
 		if ( !restoring && economy() is { } park && park.Balance < Price ) return PoolBridgeResult.NotEnoughMoney;

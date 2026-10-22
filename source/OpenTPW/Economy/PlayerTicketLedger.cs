@@ -214,7 +214,10 @@ internal sealed class PlayerTicketLedger
 		return new AdvisorPlayerTickets( all.Count, all.Count - secret, ExtraKeys, themeKeyCosts );
 	}
 
-	private static bool IsGlobal( GoldenTicketKind kind ) => kind is >= GoldenTicketKind.CoasterHeight and <= GoldenTicketKind.BigPark;
+	internal static bool IsGlobal( GoldenTicketKind kind ) => kind is >= GoldenTicketKind.CoasterHeight and <= GoldenTicketKind.BigPark;
+
+	/// <summary>Whether the park of <paramref name="theme"/> holds global ticket <paramref name="kind"/> by this player's rule.</summary>
+	internal bool HeldBy( string theme, GoldenTicketKind kind ) => holders.TryGetValue( kind, out var holder ) && holder.Theme == CanonicalTheme( theme );
 
 	private static bool IsLocal( GoldenTicketKind kind ) => kind is GoldenTicketKind.Visitors or GoldenTicketKind.PeopleInPark
 		or GoldenTicketKind.Happiness or GoldenTicketKind.AllResearchedAndBuilt or GoldenTicketKind.ProfitYear or GoldenTicketKind.RecentVisitors;

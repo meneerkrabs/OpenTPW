@@ -125,9 +125,10 @@ public class OriginalObject : Entity, IPointLightSource, IObjectPickShape
 				throw new ArgumentOutOfRangeException( nameof( placement ) );
 			Placement = placement;
 			CreationSeed = seed;
-			Runtime = attractionId is { } restored
-				? OriginalObjectRuntime.CreateForRestore( entry, world ?? new RideScriptWorld(), seedScript ? seed : null, open, restored )
-				: new OriginalObjectRuntime( entry, world, seedScript ? seed : null, open );
+			using ( LoadProfile.Measure( "object-runtime" ) )
+				Runtime = attractionId is { } restored
+					? OriginalObjectRuntime.CreateForRestore( entry, world ?? new RideScriptWorld(), seedScript ? seed : null, open, restored )
+					: new OriginalObjectRuntime( entry, world, seedScript ? seed : null, open );
 			Name = entry.DisplayName;
 			Position = System.Numerics.Vector3.Transform( System.Numerics.Vector3.Zero, placement.ModelToEngine );
 			Vector3 ToSound(System.Numerics.Vector3 engine)
@@ -162,10 +163,12 @@ public class OriginalObject : Entity, IPointLightSource, IObjectPickShape
 				() => Placement.GridOrigin );
 			Runtime.SetTourStation( ComputeTourStation );
 			Runtime.SetNodeEngine( GetNodeTransform );
-			BuildModels();
+			using ( LoadProfile.Measure( "object-models" ) )
+				BuildModels();
 			// the type's hoarding (docs/OBJECTS.md, "Hoarding"), on the level's terrain at this footprint; its state lives in the runtime
 			var level = Level ?? Level.Current;
-			hoarding = ObjectHoardingRenderer.Create( entry, Runtime.Model, placement, level?.OriginalPark?.Heightfield, level?.OriginalPark?.LevelName, Runtime.Hoarding, level?.HoardingCache );
+			using ( LoadProfile.Measure( "object-hoarding" ) )
+				hoarding = ObjectHoardingRenderer.Create( entry, Runtime.Model, placement, level?.OriginalPark?.Heightfield, level?.OriginalPark?.LevelName, Runtime.Hoarding, level?.HoardingCache );
 			UpdateTransforms();
 			// [EXT:object-lights] an object whose model has light dummies shows them through its level's point lights
 			if ( Runtime.Lights != null )
@@ -321,9 +324,11 @@ public class OriginalObject : Entity, IPointLightSource, IObjectPickShape
 			var hasSignSlot = part.Textures.Any( ObjectSigns.IsSignSlot );
 			// the object's own level: its gate and that gate's sign (made before the level's objects, SetupParkName then SetupObjects)
 			var level = Level ?? Level.Current;
-			var plan = hasSignSlot
-				? SignSlotPlan.For( Entry.IsFixedItem, Entry.InfoId, Entry.ArchivePath, level?.GateInfoId, level?.GateSign?.Images, () => ObjectSigns.Get( Entry ) )
-				: SignSlotPlan.None;
+			SignSlotPlan plan;
+			using ( LoadProfile.Measure( "object-sign" ) )
+				plan = hasSignSlot
+					? SignSlotPlan.For( Entry.IsFixedItem, Entry.InfoId, Entry.ArchivePath, level?.GateInfoId, level?.GateSign?.Images, () => ObjectSigns.Get( Entry ) )
+					: SignSlotPlan.None;
 			var sign = plan.Images;
 			var fallbackBaseSign = plan.UsesFallback ? SignSlotPlan.FallbackBoard : null;
 			if ( sign != null )

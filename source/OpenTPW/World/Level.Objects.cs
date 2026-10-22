@@ -1420,7 +1420,8 @@ public partial class Level
 		{
 			try
 			{
-				placed = Objects.TryPlace( entry, anchor.X, anchor.Y, rotation, out _, open: BuiltObjectStartsOpen( entry ), registered: item => registered = item )!;
+				using ( LoadProfile.Measure( "place-object" ) )
+					placed = Objects.TryPlace( entry, anchor.X, anchor.Y, rotation, out _, open: BuiltObjectStartsOpen( entry ), registered: item => registered = item )!;
 			}
 			finally
 			{
@@ -1430,9 +1431,11 @@ public partial class Level
 			if ( !BuiltObjectStartsOpen( entry ) )
 				placed.Runtime.Hoarding.SetState( ObjectHoardingState.CloseMode );
 			// [BIN:TPW-EXE:0x558e7c build effect] the type's CreateParticleEffect starts when the new object's script attaches, not when a park loads
-			placed.Runtime.StartObjectEffect( ObjectParticleEffect.Create );
+			using ( LoadProfile.Measure( "place-effect" ) )
+				placed.Runtime.StartObjectEffect( ObjectParticleEffect.Create );
 			// [BIN:TPW-EXE:0x528e30 placement cue] the commit pass of the placement plays its size-classed cat_ui cue
-			PlayPlacementCue( entry, x, y, rotation );
+			using ( LoadProfile.Measure( "place-cue" ) )
+				PlayPlacementCue( entry, x, y, rotation );
 		}
 		catch ( Exception error )
 		{

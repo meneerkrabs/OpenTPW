@@ -1222,7 +1222,7 @@ internal static class Game
 	private static readonly string[] AutomatedFlags = SmokeFlags.Concat( new[]
 	{
 		"--coop-join-smoke",
-		"--perf-run", "--perf-hash-tick",
+		"--perf-run", "--perf-hash-tick", "--startup-profile", "--hitch-report",
 		"--offscreen", "--headless", "--m3-gate", "--m4-gate", "--determinism-digest", "--guest-report", "--guest-compare", "--validate-assets", "--export-signs",
 	} ).ToArray();
 

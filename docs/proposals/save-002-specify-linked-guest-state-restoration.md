@@ -45,3 +45,35 @@ Plan transactional two-pass guest/attraction/guard restore; distinguish debug-on
 - Deliver the evidence ledger, agreed contract and concrete regression cases described above.
 - Keep this proposal draft while required original evidence or scope decisions are unavailable.
 - Any later implementation, approximation retirement and merge require separate verified results; this document performs none.
+
+## Current-main reconciliation (October 22, 2026)
+
+The historical statement that all off-path guests are dropped is no longer current.
+`GuestSimulation.OriginalImport.cs` imports supported in-park states where they
+stand, including queue cells and non-walkable cells, and lets the state handler
+recover. `OriginalGuestImportTests` covers queue-cell preservation, off-path
+recovery and an enclosed guest. It also verifies known imported arrival age and
+its integer display phase. These implemented subparts must not be redone.
+
+The functional remainder is still substantial:
+
+- States 11–17 (queue, boarding, leaving/using an attraction and guard-held) are
+  rejected. State 8 activity is flattened; pre-save activity stamps do not yet
+  reconstruct the linked activity's elapsed time.
+- Admission and reciprocal queue links are not restored. Guard chasing can resume
+  when its target was imported, but an escort or chase of a dropped target falls
+  back to idle. Restoring one endpoint alone would be unsafe.
+- The 32-slot event ring remains omitted. Establish whether a field is functional
+  or debug history before making it a prerequisite of linked-state restoration.
+
+The bounded regression addition in #803 exercises rejection/placeholder behavior;
+passing those tests does not restore these missing states or complete this proposal.
+Next implementation needs a staged two-pass mapping of guest IDs to attraction,
+queue and guard identities, validation of reciprocal/acyclic links and timer units,
+and atomic publication only after all linked endpoints validate. Obtain an allowed
+save witness or independently supported synthetic contract for each restored state;
+reject malformed links without partially installing either endpoint.
+
+This reconciliation is source review, not a new original-game oracle or runtime
+test run. SAVE-002 remains open; retain the evidence and review gates above.
+

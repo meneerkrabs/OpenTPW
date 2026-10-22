@@ -216,10 +216,13 @@ public class AdvisorSavedStampsTests
 		long StampAt( long turn, int rate ) => Start + turn * rate / 4 * 10_000_000;
 		foreach ( var rate in new[] { 12_000, 15_001, 1 } )
 		{
-			var (_, import) = Imported( Save( settings, StampAt( 1000, rate ), StampAt( 401, rate ), rate: rate ), settings );
+			var (economy, import) = Imported( Save( settings, StampAt( 1000, rate ), StampAt( 401, rate ), rate: rate ), settings );
 			// below a rate of 4 several turns share a park second (400 to 403 at rate 1), and the first of them is taken
 			Assert.AreEqual( (1000L, rate == 1 ? 400L : 401L), import.AnalyserStampTurns, $"rate {rate}" );
 			Assert.IsFalse( import.Evidence.Any( line => line.StartsWith( "Park analyser value adjusted", StringComparison.Ordinal ) ), $"rate {rate}" );
+			// the days count on the park's own calendar of 3,750 seconds a turn, as its dates do, and the import reports that the save's calendar does not agree
+			Assert.AreEqual( (int)((SavedTurn - 1000L) * ParkCalendar.SecondsPerTurn / ParkCalendar.SecondsPerDay), new EconomyParkState( economy, 1000, 401 ).DaysSinceObjectStamp, $"rate {rate}" );
+			Assert.IsTrue( import.Evidence.Any( line => line.StartsWith( $"Park turn {SavedTurn} imported", StringComparison.Ordinal ) && line.Contains( $"(rate {rate}," ) && line.EndsWith( "does not agree with that date.", StringComparison.Ordinal ) ), $"rate {rate}" );
 		}
 		// a stamp between two turns' times takes the earlier turn at any rate
 		var (_, between) = Imported( Save( settings, StampAt( 1000, 15_001 ) + 10_000_000, StampAt( 401, 15_001 ), rate: 15_001 ), settings );

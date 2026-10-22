@@ -25,7 +25,7 @@ tags = [
   { tag = "profitYear", ready = true, state = "ParkEconomy.Ledger.ProfitThisYear" },
   { tag = "ledgerMonths", ready = true, state = "ParkLedger.History (LedgerMonth.MoneyIn, StaffCosts)" },
   { tag = "clock", ready = true, state = "ParkEconomy.Tick, ParkCalendar (days and months since the start)" },
-  { tag = "firstStamps", ready = true, state = "the advisor's record of the turn of the newest construction (ObjectBuilt, FixedItemMade) and StaffHired (mLastObjectBuilt, mLastStaffHired: rewritten at every construction and hire, stamped at park init), the analyser's saved words for a park from an original save, derived at attach only for an OpenTPW save from before the snapshot kept them" },
+  { tag = "firstStamps", ready = true, state = "the advisor's record of the turn of the newest construction (ObjectBuilt, FixedItemMade) and StaffHired (mLastObjectBuilt, mLastStaffHired: rewritten at every construction and hire, stamped at park init), the analyser's saved words for a park from an original save, derived at attach only for an OpenTPW save from before the snapshot kept them and an original save that names no analyser" },
   { tag = "parkOpen", ready = true, state = "ParkEconomy.IsParkOpen" },
   { tag = "guestCount", ready = true, state = "IParkGuestStatistics.GuestCensus / PeopleInPark" },
   { tag = "guestHappiness", ready = true, state = "IParkGuestStatistics.AverageHappiness, CountHappierThan" },

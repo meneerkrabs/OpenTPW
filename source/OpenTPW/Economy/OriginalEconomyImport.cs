@@ -276,7 +276,9 @@ public sealed partial class OriginalEconomyImport
 	/// <summary>
 	/// The park turns of the analyser's saved object and hire stamps (<see cref="AnalyserStampTurns"/>): the turn of the save's calendar, its start and rate, whose park time each stamp
 	/// is. The original's clock writes only such times, so a stamp between two of them (a modified save) is taken at the earlier turn's and reported. A stamp before the calendar's
-	/// start or past the park's turn keeps its turn, which the advisor counts days from as the original counts them from the word.
+	/// start or past the park's turn keeps its turn, which the advisor counts days from as the original counts them from the word. The days count on OpenTPW's calendar of 3,750
+	/// seconds a turn: for a modified save whose calendar runs at another rate than 15000 they follow the park's own calendar, as its dates do (<see cref="ImportTurn"/> reports that
+	/// the save's calendar does not agree).
 	/// </summary>
 	// [BIN:TPW-EXE:0x004C7680 object stamp] mLastObjectBuilt (+0x21C30) and mLastStaffHired (+0x21C38, 0x004C76D0) take the park time 0x4F8690 returns: the calendar's FunnyTimeStart (+0) plus floor(turn x rate (+0x1C, 15000) / 4) x 10^7 (0x5FC530); only the calendar constructor 0x4F7E80 and the loader 0x4F7F30 write those two words, so every stamp of an original save is a whole turn from the calendar's start
 	// [BIN:TPW-EXE:0x005179C0 world loader] the analyser case zeroes the six stamps (0x518A43-0x518A85) and runs the serializer's load (0x518ABA), which reads them back raw (0x4C7289, 0x4C72B3); the analyser constructor 0x4C58C0, which stamps a new park's time, runs only in the new-world setup 0x5156A0, and the loader builds the staff through 0x518E20 and their role serializers, not through the staff init 0x504B90 that restamps mLastStaffHired, and no object through 0x4DB090: a loaded park keeps the saved words until its next construction or hire

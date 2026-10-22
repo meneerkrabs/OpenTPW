@@ -24,7 +24,7 @@ public class FileSystemTests
 			Assert.Inconclusive( "OPENTPW_GAME_PATH does not contain the required game assets (Challenges.sam)." );
 
 		// the desktop game's own file system (remembered lookups, issue #754)
-		FileSystem = Game.CreateGameDataFileSystem( dataPath );
+		FileSystem = GameDataFileSystem.Create( dataPath );
 	}
 
 	private static void RequireFile( string path )

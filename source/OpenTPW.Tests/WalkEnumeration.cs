@@ -278,7 +278,7 @@ internal static class WalkEnumeration
 	/// queue link toward the front; the cell ahead of the destination is a queue cell too (the next queue cell, or the front cell beside the ride entrance), the cell behind the
 	/// start a path cell linked to the start, as the queue tool writes them (docs/reverse/WALK-plan.md §15, QueuePaths).
 	/// </summary>
-	private static ParkCellMap QueueMap( List<(int X, int Y)> route, int exit, (int X, int Y) behind, (int X, int Y) offset )
+	internal static ParkCellMap QueueMap( List<(int X, int Y)> route, int exit, (int X, int Y) behind, (int X, int Y) offset )
 	{
 		var map = new ParkCellMap( 96, 96 );
 		(int X, int Y) At( (int X, int Y) cell ) => (cell.X + offset.X, cell.Y + offset.Y);
@@ -318,7 +318,7 @@ internal static class WalkEnumeration
 	/// Updates until tp.exe's walk (<see cref="GuestNavigation.Navigate"/> over <paramref name="map"/>, stepped by <see cref="GuestNavigation.Step(int, int, ParkCellMap, Func{int, int, bool}, Func{GuestNavigation, ValueTuple{int, int}}?)"/>)
 	/// reports arrival, or −1 when its search fails, the step reports stuck or the limit is hit.
 	/// </summary>
-	public static int WalkOriginal( ParkCellMap map, (int X, int Y) position, (int X, int Y) velocity, (int X, int Y) target, float speed, out int reroutes, bool opposeSeparation = false, int limit = 5000 )
+	public static int WalkOriginal( ParkCellMap map, (int X, int Y) position, (int X, int Y) velocity, (int X, int Y) target, float speed, out int reroutes, bool opposeSeparation = false, int limit = 5000, Func<GuestNavigation, (int X, int Y)>? separation = null )
 	{
 		var (maxSpeed, maxForce) = GuestSpeed.Caps( speed );
 		var navigation = new GuestNavigation { X = position.X, Y = position.Y, VelocityX = velocity.X, VelocityY = velocity.Y };
@@ -327,7 +327,7 @@ internal static class WalkEnumeration
 			return -1;
 		for ( var update = 1; update <= limit; update++ )
 		{
-			var result = navigation.Step( maxSpeed, maxForce, map, ( _, _ ) => true, opposeSeparation ? opposing : null );
+			var result = navigation.Step( maxSpeed, maxForce, map, ( _, _ ) => true, separation ?? (opposeSeparation ? opposing : null) );
 			reroutes = navigation.Reroutes;
 			if ( result == WalkResult.Stuck )
 				return -1;

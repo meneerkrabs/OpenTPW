@@ -87,6 +87,7 @@ OpenTPW also removes a queue there, from the cell under the cursor to the queue'
 back with the remove tool's refund (`[EXT:queue-backtrack]`). A queue cell that no ride's queue reaches
 (a stray piece, such as one an older save left) goes alone there and with the remove tool, refunding nothing,
 as the original's `ClearCell` clears one queue cell (tp.exe `0x5367A0`).
+With the pools extension on, Backspace with no tool on also removes a pool bridge, or one pool water cell, under the cursor (`[EXT:pools-bridges]`, `[EXT:pools-tool]`, docs/POOLS.md "Removing with Backspace"). That is OpenTPW's: the original has no pools, and its key does nothing over such a cell. A bridge wins over the water under it, and over a path laid on one of its approach cells before the bridge: the first press takes the bridge, the next one the path.
 
 ## Tool
 

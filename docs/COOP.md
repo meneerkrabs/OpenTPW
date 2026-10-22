@@ -1052,7 +1052,7 @@ new format version.
 tick order and an end mark. Versions 1 and 2 have no flags byte and remain readable (version 1 cannot
 contain the new queue commands). `ParkCommandReplay.Run` schedules a log on a park that stands where
 the log started and runs it tick by tick, so each command lands where it was recorded, under the
-session's rules when the log says so; `FirstMismatch` compares the checkpoints.
+session's rules when the log says so; `FirstMismatch` compares the checkpoints. A log is guaranteed to replay only on the build that recorded it: kind 14 (`BacktrackCommand`) gained meaning over pool water and pool bridge cells with the pools extension's Backspace removal, so a log recorded before that, with the key pressed over such a cell, did nothing then and does something now.
 
 A co-op session records its own log (`CoopHostStream.SessionLog`, kept at the first desync and when
 the session ends): every command from the session's start, with the world hash of each tick digest as

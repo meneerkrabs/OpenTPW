@@ -460,7 +460,8 @@ Traced in the binary and played:
   a path cell under the cursor it plays at that cell, then that cell loses one placement (ClearCell's counted path case,
   tp.exe `0x40BE8B`) and goes only when it was laid once; the sound plays even when the cell stays. Over a queue cell OpenTPW plays it too and takes the queue back from that cell
   (`[EXT:queue-backtrack]`; the original's key does nothing there). Inside the path tool the original's Backspace is Back (tp.exe `0x52FE50`): it takes the last segment back without
-  a refund and plays no sound, as OpenTPW's segment undo does.
+  a refund and plays no sound, as OpenTPW's segment undo does. With the pools extension on, the key also takes a pool bridge down, or erases one pool water cell, under the cursor and plays the same
+  sound there (`[EXT:pools-bridges]`, `[EXT:pools-tool]`; the original has no pools); a refused removal plays the error sound instead (docs/POOLS.md "Removing with Backspace").
 * The weather's own visuals are drawn as procedural approximations (AUDIO-900..902, 904,
   "Weather visuals" below); the forecast's warning is shown as an OpenTPW extension (banner, wording
   and cadence are `[EXT:forecast-banner]`, `[EXT:forecast-wording]`, `[EXT:forecast-cadence]`): the PC has

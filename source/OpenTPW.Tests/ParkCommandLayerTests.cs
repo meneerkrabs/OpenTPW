@@ -41,6 +41,7 @@ public class ParkCommandLayerTests
 		new( "Level.BuildQueueCell", Call( "BuildQueueCell" ), nameof( LayLineCommand ) ),
 		new( "Level.RemoveQueueCell", Call( "RemoveQueueCell" ), nameof( RemoveQueueCellCommand ) ),
 		new( "Level.BacktrackAt", Call( "BacktrackAt" ), nameof( BacktrackCommand ) ),
+		new( "Level.Backtrack", Call( "Backtrack" ), nameof( BacktrackCommand ) ),
 		new( "ParkPathBuilder writes", @"\bPaths\??\.(BuildSegment|TryLayLine|Remove|RemoveFixed|RemoveOnce|Undo|Commit)\s*\(", nameof( LayLineCommand ) ),
 		new( "QueuePaths writes", @"\bQueuePaths\.(TryExtend|RemoveFrom|DetachFromPath|Connect)\s*\(", nameof( EditQueueCommand ) ),
 		// the park's settings (C1 part 2)

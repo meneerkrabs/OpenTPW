@@ -144,9 +144,7 @@ internal static class Game
 			RequireThemeParkIncViewer( args, edition );
 
 		// Register game data directory
-		FileSystem = new BaseFileSystem( dataDirectory );
-		FileSystem.RegisterArchiveHandler<WadArchive>( ".wad" );
-		FileSystem.RegisterArchiveHandler<SdtArchive>( ".sdt" );
+		FileSystem = GameDataFileSystem.Create( dataDirectory );
 
 		// Debug export of every sign texture in one language (docs/RUNNING.md, "Sign textures"): the language is the option's own, the language data is found as below; no window, audio or park.
 		if ( args.Contains( "--export-signs" ) )

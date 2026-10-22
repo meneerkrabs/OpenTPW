@@ -369,7 +369,12 @@ the issuing player's session slot (`Player`, 0 = the local player and host).
   (`LayLineCommand`, `UndoLineCommand`) through `ParkCommandLineWriter`. The Move tool's pick-up is a
   command (`PickUpObjectCommand`) and the placement another (`PlaceObjectCommand` with `Moving`); a
   moving placement is accepted only for the entry the same player picked up, because the Move tool's
-  purchase skips research and the balance test.
+  purchase skips research and the balance test. The entry stays carried until the player's Move tool
+  ends, whatever ends it (a placement without exactly Ctrl, the queue or track tool a placed ride
+  opens, a cancel, another tool): the end is a command of its own (`EndMoveCommand`, issued as the
+  build tool leaves the Move mode), since a placement cannot say whether the tool stays. While it
+  stays (a placement holding exactly Ctrl), another moving placement of the type is accepted and
+  charged, as the original's mode 0x3b takes it.
 - **Refusals.** A command whose fields are out of range, any command in a read-only visit (economy
   commands included: `ParkEconomy` itself has no visit gate), and a command the player's
   rights refuse are rejected before they touch the park. A refusal changes nothing and is logged

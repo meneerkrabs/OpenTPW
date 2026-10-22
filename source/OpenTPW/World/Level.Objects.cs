@@ -14,6 +14,9 @@ public partial class Level
 		{
 			if ( value != null )
 				StaffPlacement?.Cancel();
+			// [EXT:online-coop-commands] the Move tool's end is a command: its player carries the picked-up type no more (the command layer cannot tell a placement that ends the tool)
+			if ( IsMoving )
+				Commands.Issue( new EndMoveCommand() );
 			buildEntry = value;
 			// any other way of arming or leaving the build tool ends the Move tool (interface mode 0x3b) and the add-on mode; BeginMove and BeginAddOn set theirs after they armed the entry
 			IsMoving = false;

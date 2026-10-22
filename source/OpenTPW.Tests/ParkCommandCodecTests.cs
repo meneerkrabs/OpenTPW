@@ -21,6 +21,7 @@ public class ParkCommandCodecTests
 		(new RemoveObjectAtCommand( 5, 6 ) { Player = 2 }, "0203040a0c"),
 		(new RemoveAttractionCommand( 17 ), "02040022"),
 		(new PickUpObjectCommand( 42 ) { Player = 3 }, "02050654"),
+		(new EndMoveCommand() { Player = 1 }, "020602"),
 		(new LayLineCommand( CellToolMode.Queue, 9, 1, 2, 1, 9 ), "020a00031202040212"),
 		(new UndoLineCommand( CellToolMode.Path, -1, 4, 5, new[] { (4, 5), (5, 5) }, new[] { (6, 5) } ) { Player = 1 }, "020b020101080a04080a0a0a020c0a"),
 		(new RemovePathCellCommand( 8, 9 ), "020c001012"),

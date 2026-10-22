@@ -1093,8 +1093,8 @@ public sealed partial class ParkHud
 		// [BIN:TPW-EXE:0x0048C8D0 pause-menu click gate] the handler tests the pause-menu object, not the speed flag;
 		// admission is separate: 0x65db25 chooses the topmost eligible window, and 0x658b1a/0x658b7f save down/up recipients.
 		// [APPROX:PATH-017] ParkHud.PointerInput implements bounded ordinary-WM batch admission then P/pointer drain,
-		// including captured movement and original release owners. The P window's backdrop (an eligible receiver of 0x65db25, flags 1) is created by the P key alone
-		// and covers only the windows that existed then. Alternate buffered input, aggregate wheel/non-P keys,
+		// including captured movement and original release owners. The P window's backdrop (an eligible receiver of 0x65db25, flags 1) is created by the P key and by the offline focus-loss pause (0x4a27f0, 0x4a2790)
+		// and covers only the windows that existed then; it takes the click without stopping the camera. Alternate buffered input, aggregate wheel/non-P keys,
 		// and the original backdrop/panel rendering remain outside this contract; a generic speed flag is not an input owner.
 		// The remove tool owns the park click while it is on (Level.RemoveAt clears paths and queues too).
 		if ( paused || level.BuildEntry != null || level.IsPlacing || level.IsRemovingObjects || level.IsCoasterToolActive

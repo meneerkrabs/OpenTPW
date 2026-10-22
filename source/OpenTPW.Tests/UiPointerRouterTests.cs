@@ -120,4 +120,18 @@ public class UiPointerRouterTests
 		Assert.IsTrue( slow[^1].Event.TimestampMilliseconds - slow[^2].Event.TimestampMilliseconds > UiInputSource.ClickMilliseconds );
 		Assert.AreEqual( 0, router.AdmitInjected( UiInput.Key( UiKeys.Accept ), _ => owner ).Count, "Input without a pointer position carries no pointer event." );
 	}
+
+	[TestMethod]
+	public void UnavailableBatchNeverMixesTheWallClockIntoEventTimes()
+	{
+		var router = new UiPointerRouter();
+		var owner = new UiPointerOwner( new object() );
+		router.Admit( new[] { new OrderedInputEvent( 1, OrderedInputEventKind.ButtonDown, 10, 10, (int)MouseButton.Left, TimestampMilliseconds: 5000 ) }, _ => owner );
+		var release = router.AdmitUnavailable( UiInput.Idle( new NVector2( 10, 10 ) ) );
+		Assert.AreEqual( 5000 + UiInputSource.ClickMilliseconds + 1, release.Single().Event.TimestampMilliseconds, "A release without platform time is explicitly not a click." );
+		Assert.AreSame( owner, release.Single().Owner );
+		var press = router.AdmitUnavailable( new UiInput( new NVector2( 10, 10 ), true, true, false, false, UiKeys.None ) );
+		Assert.AreEqual( 5000L, press.Single().Event.TimestampMilliseconds );
+		Assert.IsFalse( press.Single().Owner!.CapturesMouse );
+	}
 }

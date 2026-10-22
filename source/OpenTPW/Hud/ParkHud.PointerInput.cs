@@ -20,6 +20,14 @@ public sealed partial class ParkHud
 	/// <summary>Unit-test seam: the level this HUD was built for (the fixtures build the HUD around a hand-made level).</summary>
 	internal Level LevelForTests => level;
 
+	// Unit-test seams for the private screens and state the routed-pointer tests need; they build nothing the game would not.
+	internal static UiScreen NewPriceScreenForTests( string id ) => new ShopPriceScreen( id );
+	internal static UiScreen NewUpgradeScreenForTests() => new RideUpgradeScreen( null! );
+	internal static UiScreen NewAttractionsScreenForTests( ParkHud owner ) => new AttractionsScreen( owner );
+	internal static UiElement NewAttractionHeaderForTests( ParkHud owner, BuildCategory category, int column, UIStrings header ) => new AttractionHeader( owner, category, column, header );
+	internal void SetAttractionStateForTests( BuildCategory category, float valueAge ) { attractionCategory = category; attractionValueAge = valueAge; }
+	internal float AttractionValueAgeForTests => attractionValueAge;
+
 	private UiPointerOwner ParkPointerOwner => parkPointerOwner ??= new UiPointerOwner( this );
 
 	private UiPointerOwner ScreenPointerOwner( UiScreen screen, UiElement? element )
@@ -33,14 +41,15 @@ public sealed partial class ParkHud
 	/// <summary>
 	/// [BIN:TPW-EXE:0x47ed80 P window] the P window's 'lolight' backdrop (0x65dd7b, rect 0,0,0x7ff,0x5ff, flags 1, hidden byte 0) is an eligible receiver of
 	/// the hit test 0x65db25 (flag bit 0x2 clear, byte +4 clear, bit 0x1 set), so it takes every pointer event over the windows that existed when P created it.
-	/// Only the P key creates it, and only offline: the owner dies with the pause (a co-op or read-only visit never gets one).
+	/// [BIN:TPW-EXE:0x409350 / 0x4092a0 creators] only the P key (0x4a27f0) and the offline focus-loss pause (0x4a2790) create it, and every resume destroys it (0x4a27c0).
+	/// OpenTPW makes it offline only (a co-op or read-only visit never gets one).
 	/// </summary>
 	private void CreatePausePointerOverlay()
 	{
-		if ( level == null || level.CoopRole != CoopRole.None || level.IsReadOnlyVisit )
+		// [BIN:TPW-EXE:0x4a2790 create] the window is made only while [0x7cb2cc] is still empty
+		if ( pausePointerOverlay != null || level == null || level.CoopRole != CoopRole.None || level.IsReadOnlyVisit )
 			return;
-		RetirePausePointerOverlay();
-		pausePointerOverlay = new UiPointerOwner( new object() );
+		pausePointerOverlay = new UiPointerOwner( new object(), capturesMouse: false );
 		pauseOverlayBelow = Stack.Screens.ToArray();
 	}
 
@@ -114,10 +123,20 @@ public sealed partial class ParkHud
 			: pointerRouter.AdmitInjected( input, point => HitPointer( context, point ) );
 	}
 
+	private bool IsPlainPauseKey( OrderedInputEvent item, UiInput frameInput, bool keyboardCaptured, bool textCaptured ) =>
+		item.Kind == OrderedInputEventKind.KeyDown && !item.Repeat && item.Key == (int)Input.ChordKey( InputButton.Pause )
+		&& ((ModifierKeys)item.Modifiers & ModifierKeys.Control) == 0 && !frameInput.PointerHostBlocked && !Paused && !IsRiding && !Input.TextEntryActive && !keyboardCaptured && !textCaptured;
+
 	private bool DrainPointerEvents( UiContext context, IReadOnlyList<UiRoutedEvent> events, UiInput frameInput, bool rideOwnsInput, bool mouseCaptured, bool keyboardCaptured, bool textCaptured )
 	{
 		if ( frameInput.PointerHostBlocked || mouseCaptured )
 		{
+			// A P key that arrived with the batch still toggles the pause while ImGui has the mouse (the key is not a pointer fact);
+			// only a host block (a park being built) swallows it.
+			if ( !frameInput.PointerHostBlocked && level.CoopRole == CoopRole.None && !level.IsReadOnlyVisit )
+				foreach ( var delivery in events )
+					if ( IsPlainPauseKey( delivery.Event, frameInput, keyboardCaptured, textCaptured ) )
+						ToggleUserPause();
 			SuspendParkPointer();
 			return true;
 		}
@@ -136,8 +155,7 @@ public sealed partial class ParkHud
 			var item = delivery.Event;
 			if ( item.Kind is OrderedInputEventKind.KeyDown or OrderedInputEventKind.KeyUp )
 			{
-				if ( item.Kind == OrderedInputEventKind.KeyDown && !item.Repeat && item.Key == (int)Input.ChordKey( InputButton.Pause )
-					&& ((ModifierKeys)item.Modifiers & ModifierKeys.Control) == 0 && !frameInput.PointerHostBlocked && !Paused && !IsRiding && !Input.TextEntryActive && !keyboardCaptured && !textCaptured )
+				if ( IsPlainPauseKey( item, frameInput, keyboardCaptured, textCaptured ) )
 				{
 					ToggleUserPause();
 					pointerRouter.RefreshHover( point => HitPointer( context, point ) );
@@ -171,7 +189,11 @@ public sealed partial class ParkHud
 		// Preserve the existing once-per-frame hover/held-repeat work, without inventing a second button edge.
 		var resting = frameInput with { Mouse = pointerRouter.Position, LeftDown = pointerRouter.LeftDown, LeftPressed = false, LeftReleased = false,
 			RightPressed = false, Pressed = UiKeys.None, Text = "", Wheel = 0, OrderedEvents = null };
-		consumed |= DispatchPointerOwner( context, pointerRouter.Capture ?? HitPointer( context, resting.Mouse ), resting,
+		var restingOwner = pointerRouter.Capture ?? HitPointer( context, resting.Mouse );
+		// Hover help belongs to the screen element under the pointer; once the pointer rests on the park or a backdrop the last help is stale.
+		if ( restingOwner?.Target is not ValueTuple<UiScreen, UiElement?, int, int> )
+			context.HoverHelp = null;
+		consumed |= DispatchPointerOwner( context, restingOwner, resting,
 			rideOwnsInput, mouseCaptured, keyboardCaptured, textCaptured );
 		// Level's separate WorldPointerRouted latch prevents replay, without claiming the park captures the camera every frame.
 		return consumed;
@@ -179,7 +201,8 @@ public sealed partial class ParkHud
 
 	private bool DispatchPointerOwner( UiContext context, UiPointerOwner? owner, UiInput input, bool rideOwnsInput, bool mouseCaptured, bool keyboardCaptured, bool textCaptured )
 	{
-		if ( owner == null || owner.Retired ) return true;
+		if ( owner == null ) return true;
+		if ( owner.Retired ) return owner.CapturesMouse;
 		UpdateRideUpgradeButton( input );
 		if ( mouseCaptured ) return true;
 		var isPark = ReferenceEquals( owner, ParkPointerOwner );
@@ -213,7 +236,7 @@ public sealed partial class ParkHud
 			else
 				owner.Retire();
 		}
-		// A local pause backdrop owns its entire down/up pair, even when its generation is now retired.
-		return true;
+		// A local pause backdrop owns its entire down/up pair, even when its generation is now retired. It takes the click without capturing the camera.
+		return owner.CapturesMouse;
 	}
 }

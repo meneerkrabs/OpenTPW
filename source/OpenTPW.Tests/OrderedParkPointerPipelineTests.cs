@@ -31,6 +31,8 @@ public class OrderedParkPointerPipelineTests
 	private long sequence;
 	private long milliseconds = 1000;
 	private int updating;
+	/// <summary>What the last frame told Level as UiCapturesMouse: true switches off the camera's wheel, right-drag and edge scrolling.</summary>
+	private bool lastCaptured;
 
 	private sealed class EmptyCatalog : IBuildCatalog
 	{
@@ -133,7 +135,7 @@ public class OrderedParkPointerPipelineTests
 		Key[]? keys = null, float scaleX = 1, float scaleY = 1, bool hostBlocked = false, bool mouseCaptured = false, float wheel = 0 )
 	{
 		var input = Poll( events, left, mouse, keys, scaleX, scaleY, wheel ) with { PointerHostBlocked = hostBlocked };
-		var captured = hud.Update( context, input, mouseCaptured, false, false );
+		var captured = lastCaptured = hud.Update( context, input, mouseCaptured, false, false );
 		// This is the actual next-stage API used by Level.Update, including snapshot-only fallback.
 		level.UpdateWorldInput( Input.Mouse.Left, captured, input.Mouse,
 			new N.Vector2( context.Canvas.Width, context.Canvas.Height ), Input.ModifierMaskDown );
@@ -820,5 +822,86 @@ public class OrderedParkPointerPipelineTests
 		Frame( Array.Empty<OrderedInputEvent>(), mouse: point );
 		Assert.AreEqual( 1, adjusted, "A frame without a wheel tick has nothing to replay." );
 		Assert.AreEqual( 0, commands.Count );
+	}
+
+	[TestMethod]
+	public void CameraKeepsWorkingUnderTheBackdropButNotOverAScreen()
+	{
+		TapPause();
+		Frame( new[] { Event( OrderedInputEventKind.Motion ) }, wheel: 1 );
+		Assert.IsFalse( lastCaptured, "Wheel zoom stays on under P." );
+		var rightDown = Down() with { Button = (int)MouseButton.Right }; var rightUp = Up() with { Button = (int)MouseButton.Right };
+		Frame( new[] { rightDown, rightUp } );
+		Assert.IsFalse( lastCaptured, "Right-drag scrolling stays on under P." );
+		var edge = new N.Vector2( 1, 500 );
+		Frame( new[] { Event( OrderedInputEventKind.Motion, edge ) }, mouse: edge );
+		Assert.IsFalse( lastCaptured, "Edge scrolling stays on under P." );
+		Frame( new[] { Down(), Up() } );
+		Assert.IsFalse( lastCaptured, "A click the backdrop takes does not stop the camera either." );
+		Assert.AreEqual( 0, commands.Count );
+		// A real screen still captures the mouse.
+		var point = AddButton( () => { }, hud.Screen );
+		hud.Stack.Push( new UiScreen( "pipeline-capture" ) );
+		Frame( new[] { Event( OrderedInputEventKind.Motion, point ) }, mouse: point );
+		Assert.IsTrue( lastCaptured );
+	}
+
+	[TestMethod]
+	public void FocusLossOfflineOpensTheBackdropAndEveryResumeClosesIt()
+	{
+		var clicks = 0; var point = AddButton( () => clicks++ );
+		hud.ObserveApplicationFocus( true, false, false );
+		hud.ObserveApplicationFocus( false, false, false );
+		Frame( new[] { Down( point ), Up( point ) }, mouse: point );
+		Assert.AreEqual( 0, clicks, "The focus-loss pause opens the P window's backdrop (0x4092a0(1))." );
+		// P resumes the stored speed and destroys the window.
+		TapPause();
+		Frame( new[] { Down( point ), Up( point ) }, mouse: point );
+		Assert.AreEqual( 1, clicks ); Assert.AreEqual( GameSpeed.Normal, hud.Status.Speed );
+		// An explicit speed choice resumes as well.
+		hud.ObserveApplicationFocus( true, false, false ); hud.ObserveApplicationFocus( false, false, false );
+		hud.SetUserGameSpeed( GameSpeed.Normal );
+		Frame( new[] { Down( point ), Up( point ) }, mouse: point );
+		Assert.AreEqual( 2, clicks );
+		// Offscreen or logged-in sessions never latch it.
+		hud.ObserveApplicationFocus( true, true, false ); hud.ObserveApplicationFocus( false, true, false );
+		Frame( new[] { Down( point ), Up( point ) }, mouse: point );
+		Assert.AreEqual( 3, clicks );
+	}
+
+	[TestMethod]
+	public void FocusLossPauseAlreadyUnderAPWindowKeepsOneBackdrop()
+	{
+		var clicks = 0; var point = AddButton( () => clicks++ );
+		TapPause();
+		hud.ObserveApplicationFocus( true, false, false ); hud.ObserveApplicationFocus( false, false, false );
+		Frame( new[] { Down( point ), Up( point ) }, mouse: point );
+		Assert.AreEqual( 0, clicks );
+	}
+
+	[TestMethod]
+	public void HoverHelpDoesNotOutliveTheScreenElementUnderThePointer()
+	{
+		var point = AddButton( () => { } );
+		context.HoverHelp = "stale";
+		Frame( new[] { Event( OrderedInputEventKind.Motion ) } );
+		Assert.IsNull( context.HoverHelp, "Over the park the old button help is gone." );
+		context.HoverHelp = "stale";
+		TapPause();
+		Frame( new[] { Event( OrderedInputEventKind.Motion, point ) }, mouse: point );
+		Assert.IsNull( context.HoverHelp, "Under the backdrop no element help applies." );
+	}
+
+	[TestMethod]
+	public void PauseKeyStillTogglesWhileImGuiHoldsTheMouse()
+	{
+		var pause = Input.ChordKey( InputButton.Pause );
+		Frame( new[] { KeyDown( pause ), KeyUp( pause ) }, mouseCaptured: true );
+		Assert.AreEqual( GameSpeed.Paused, hud.Status.Speed );
+		Frame( new[] { KeyDown( pause ), KeyUp( pause ) }, mouseCaptured: true );
+		Assert.AreEqual( GameSpeed.Normal, hud.Status.Speed );
+		// A host block (a park being built) still swallows it.
+		Frame( new[] { KeyDown( pause ), KeyUp( pause ) }, hostBlocked: true );
+		Assert.AreEqual( GameSpeed.Normal, hud.Status.Speed );
 	}
 }

@@ -3,9 +3,14 @@ using NVector2 = System.Numerics.Vector2;
 namespace OpenTPW.UI.Original;
 
 /// <summary>A receiver lifetime, not a receiver category. Reopening a panel requires a new token.</summary>
-internal sealed class UiPointerOwner( object target )
+internal sealed class UiPointerOwner( object target, bool capturesMouse = true )
 {
 	public object Target { get; } = target;
+	/// <summary>
+	/// Whether an event this owner takes counts as the interface capturing the mouse (<c>Level.UiCapturesMouse</c>, which switches off the camera's
+	/// wheel, right-drag and edge scrolling). The pause backdrop takes the click without that: the camera keeps working under P, as before routing.
+	/// </summary>
+	public bool CapturesMouse { get; } = capturesMouse;
 	public bool Retired { get; private set; }
 	public void Retire() => Retired = true;
 }
@@ -53,7 +58,8 @@ internal sealed class UiPointerRouter
 		positioned = false;
 	}
 
-	private readonly UiPointerOwner unavailableOwner = new( new object() );
+	private readonly UiPointerOwner unavailableOwner = new( new object(), capturesMouse: false );
+	private long lastTimestamp;
 
 	/// <summary>
 	/// Missing order is not an empty batch. Preserve an established movement/release owner, but quarantine new
@@ -63,7 +69,9 @@ internal sealed class UiPointerRouter
 	{
 		var result = new List<UiRoutedEvent>();
 		var point = input.Mouse;
-		var now = Environment.TickCount64;
+		// No platform time exists for this frame, and a wall clock would mix bases with the event times: reuse the last event time for a motion or a quarantined press,
+		// and stamp a release past the click time, so a release whose press time is unknown is explicitly not a click.
+		var now = lastTimestamp;
 		if ( Capture != null && (!positioned || point != position) )
 			result.Add( new UiRoutedEvent( new( 0, OrderedInputEventKind.Motion, point.X, point.Y, TimestampMilliseconds: now ), Capture, LeftDown ) );
 		position = point;
@@ -79,7 +87,7 @@ internal sealed class UiPointerRouter
 		{
 			presses.Remove( left, out var owner );
 			down.Remove( left );
-			result.Add( new UiRoutedEvent( new( 0, OrderedInputEventKind.ButtonUp, point.X, point.Y, left, TimestampMilliseconds: now ), owner, false ) );
+			result.Add( new UiRoutedEvent( new( 0, OrderedInputEventKind.ButtonUp, point.X, point.Y, left, TimestampMilliseconds: now + UiInputSource.ClickMilliseconds + 1 ), owner, false ) );
 		}
 		return result;
 	}
@@ -120,6 +128,7 @@ internal sealed class UiPointerRouter
 		foreach ( var item in events )
 		{
 			UiPointerOwner? owner = null;
+			lastTimestamp = item.TimestampMilliseconds;
 			if ( item.Kind is OrderedInputEventKind.Motion or OrderedInputEventKind.ButtonDown or OrderedInputEventKind.ButtonUp )
 			{
 				position = new NVector2( item.X, item.Y );

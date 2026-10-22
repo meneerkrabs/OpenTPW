@@ -94,10 +94,8 @@ public class CustomRoutedPointerTests
 	[DataRow( "RideUpgradeScreen" )]
 	public void PriceAndUpgradeRoutedCancellationPrecedesClickWithoutFrameWork( string name )
 	{
-		var type = typeof( ParkHud ).GetNestedType( name, BindingFlags.NonPublic )!;
 		// The upgrade owner is deliberately absent: pointer dispatch must not rerun owner-dependent frame work.
-		var arguments = name == "ShopPriceScreen" ? new object?[] { "price" } : new object?[] { null };
-		var screen = (UiScreen)Activator.CreateInstance( type, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic, null, arguments, null )!;
+		var screen = name == "ShopPriceScreen" ? ParkHud.NewPriceScreenForTests( "price" ) : ParkHud.NewUpgradeScreenForTests();
 		var clicks = 0; var backs = 0; var updating = 0;
 		screen.Back = () => backs++;
 		screen.Updating = _ => updating++;
@@ -141,26 +139,20 @@ public class CustomRoutedPointerTests
 	{
 		// An owner without a park makes any accidental data refresh fail instead of hiding it behind a valid fixture.
 		var owner = (ParkHud)RuntimeHelpers.GetUninitializedObject( typeof( ParkHud ) );
-		const BindingFlags hidden = BindingFlags.Instance | BindingFlags.NonPublic;
-		var category = typeof( ParkHud ).GetProperty( "attractionCategory", hidden )!;
-		var age = typeof( ParkHud ).GetField( "attractionValueAge", hidden )!;
-		age.SetValue( owner, 1.5f );
-		var type = typeof( ParkHud ).GetNestedType( "AttractionsScreen", BindingFlags.NonPublic )!;
-		var screen = (UiScreen)Activator.CreateInstance( type, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic, null, new object[] { owner }, null )!;
+		owner.SetAttractionStateForTests( BuildCategory.Rides, 1.5f );
+		var screen = ParkHud.NewAttractionsScreenForTests( owner );
 		var updates = 0; screen.Updating = _ => updates++;
 		var list = screen.Add( new UiButton { Id = "attractionList" } );
-		var headerType = typeof( ParkHud ).GetNestedType( "AttractionHeader", BindingFlags.NonPublic )!;
-		UiElement Header( BuildCategory value ) => screen.Add( (UiElement)Activator.CreateInstance( headerType,
-			BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic, null, new object[] { owner, value, 0, UIStrings.AllRides }, null )! );
+		UiElement Header( BuildCategory value ) => screen.Add( ParkHud.NewAttractionHeaderForTests( owner, value, 0, UIStrings.AllRides ) );
 		var rides = Header( BuildCategory.Rides ); var features = Header( BuildCategory.Features );
 		var context = Context();
-		category.SetValue( owner, BuildCategory.Rides ); screen.PreparePointerGeometry( context );
+		owner.SetAttractionStateForTests( BuildCategory.Rides, owner.AttractionValueAgeForTests ); screen.PreparePointerGeometry( context );
 		Assert.AreEqual( OriginalLayoutTables.RideShopList.Root.Inner!.Value, list.Bounds );
 		Assert.IsTrue( rides.Visible ); Assert.IsFalse( features.Visible );
-		category.SetValue( owner, BuildCategory.Features ); screen.PreparePointerGeometry( context );
+		owner.SetAttractionStateForTests( BuildCategory.Features, owner.AttractionValueAgeForTests ); screen.PreparePointerGeometry( context );
 		Assert.AreEqual( OriginalLayoutTables.FeatureList.Root.Inner!.Value, list.Bounds );
 		Assert.IsFalse( rides.Visible ); Assert.IsTrue( features.Visible );
-		Assert.AreEqual( 1.5f, (float)age.GetValue( owner )! ); Assert.AreEqual( 0, updates );
+		Assert.AreEqual( 1.5f, owner.AttractionValueAgeForTests ); Assert.AreEqual( 0, updates );
 	}
 
 	private sealed class ChatSource : IChatPanelSource
@@ -234,8 +226,7 @@ public class CustomRoutedPointerTests
 			// Pick-only globe: no constructor, models, rendering, or original game data.
 			var scene = (GlobeScene)RuntimeHelpers.GetUninitializedObject( typeof( GlobeScene ) );
 			var city = new CityInfo( 1, "Synthetic", "", 0, 0, 0 );
-			typeof( GlobeScene ).GetField( "cityPoints", BindingFlags.Instance | BindingFlags.NonPublic )!.SetValue( scene,
-				new List<(CityInfo, NVector3)> { (city, new NVector3( 0, 0, -GlobeScene.PickRadius )) } );
+			scene.UseCityPointsForTests( new List<(CityInfo City, NVector3 Point)> { (city, new NVector3( 0, 0, -GlobeScene.PickRadius )) } );
 			var centre = GlobeScene.Centre.GetSystemVector3();
 			Camera.ViewMatrix = NMatrix4x4.CreateTranslation( -centre.X, -centre.Y, 200 - centre.Z );
 			Camera.ProjMatrix = NMatrix4x4.CreateScale( 0.01f );

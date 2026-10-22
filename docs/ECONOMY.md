@@ -349,7 +349,7 @@ tests compare saves before/after load and after identical continuations byte for
   `PlaySideshow`, `RecordRideUse`; rides report `ReportRecord(ParkRecordKind, instance, value)`
   (coaster height/loops, go-kart excitement/crossroads/sections, water length, cells owned/covered,
   all land, toilet cleanliness); everything publishes `ParkEvent`s through `EventRaised`
-  (GuestPaid, ObjectBuilt/Sold, UpgradeBought/Completed, StaffHired/Fired, WagesPaid, Loan*,
+  (GuestPaid, ObjectBuilt/Sold, FixedItemMade, UpgradeBought/Completed, StaffHired/Fired, WagesPaid, Loan*,
   ItemResearched, Day/Month/YearEnded, InTheRed, BankruptcyWarning, Bankrupt, RideWorn/BrokeDown/
   Repaired, Challenge*, GoldenTicketWon).
 - Guests are wired: `GuestSimulation.Payments` (`IGuestPayments`) is a `GuestEconomyBridge`, so
@@ -363,8 +363,9 @@ tests compare saves before/after load and after identical continuations byte for
   OpenTPW opens imported parks on load (the original open state is not decoded).
 - `IEconomyObjectCatalog` / `EconomyObjectInfo` (rides/objects slice may supply its own catalogue);
   `ParkEconomy.TryBuild(infoId)` returns the instance id the placed object should keep;
-  `RegisterExisting` for imported/fixed items (also for the fixed items made in play, an arrival vehicle at its
-  first trip and the finale's End: `Level.BindFixedItemMadeInPlay`); `SetObjectOpen`, `Sell`, `TryBuyUpgrade`,
+  `RegisterExisting` for imported/fixed items; `RegisterFixedItemMade` for the fixed items made in play, an arrival vehicle at its
+  first trip and the finale's End (`Level.BindFixedItemMadeInPlay`): the same uncharged record, plus the `FixedItemMade` event that
+  moves the advisor's construction stamp as `ObjectBuilt` does (tp.exe `0x4DB7A3`); `SetObjectOpen`, `Sell`, `TryBuyUpgrade`,
   `TryBuyCells(CellPurchase, count)` for batches of paths, queues, tracks and land;
   `TrySpendCell(CellPurchase)` charges one path/queue cell when it is written, refused only
   when balance − cost < 0 (`SetCellType` `0x82ac4`, PATH-plan §3.2); `RefundQueueCell(ride)`

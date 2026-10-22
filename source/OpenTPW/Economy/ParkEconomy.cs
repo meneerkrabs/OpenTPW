@@ -1914,6 +1914,19 @@ public sealed class ParkEconomy : IParkEconomy
 		return AddObject( info, imported: true, builtTick, timesUsed );
 	}
 
+	/// <summary>
+	/// Registers a fixed item the game makes while the park is played (an arrival vehicle at its first trip, the research finale's End): uncharged, as
+	/// <see cref="RegisterExisting"/> registers it, and made now, so it raises <see cref="ParkEventKind.FixedItemMade"/> as <see cref="TryBuild"/> raises
+	/// <see cref="ParkEventKind.ObjectBuilt"/>. The event adds no state: the record is the one <see cref="RegisterExisting"/> makes.
+	/// </summary>
+	// [BIN:TPW-EXE:0x004DB7A3 object stamp] the common object constructor ends every construction, a fixed item made in play included, by stamping the park's mLastObjectBuilt (0x4C7680), which only the advisor reads (0x4C9070): the event carries that moment to the advisor's own record
+	public ParkObjectState RegisterFixedItemMade( int infoId )
+	{
+		var made = RegisterExisting( infoId );
+		Raise( ParkEventKind.FixedItemMade, 0, made.Id, infoId, Catalog.TryGet( infoId, out var info ) ? info.Name : "" );
+		return made;
+	}
+
 	private ParkObjectState AddObject( EconomyObjectInfo info, bool imported, long? builtTick = null, long timesUsed = 0 )
 	{
 		var item = new ParkObjectState

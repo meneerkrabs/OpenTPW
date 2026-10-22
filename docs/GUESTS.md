@@ -241,7 +241,9 @@ already holds gets its trigger set; a new one is placed then (not at world setup
 level lacks falls back to the Ferry, then the seaplane, then the bus. A new vehicle is built with the common object
 constructor (`0x004db090`, called at `0x51a57e`), which counts the type and stamps its first-purchase turn, and every
 shipped TPWS saves an attraction record for the Bus, Seaplane and Ferry; so the vehicle gets the uncharged economy
-record the fixed items at the park's start get (`Level.BindFixedItemMadeInPlay`). While the vehicle reports status 2 (at
+record the fixed items at the park's start get (`Level.BindFixedItemMadeInPlay`). The constructor's last call stamps the
+park's newest construction (`0x4c7680` at `0x4db7a3`), so the first vehicle also restarts the advisor's days since an object
+was built (`ParkEventKind.FixedItemMade`). While the vehicle reports status 2 (at
 its stop) one guest steps off per world turn; the turn that finds the group empty restarts the timer and sets
 the trigger, and the vehicle drives off. Status 6 (gone) releases it (`0x51a690` writes 0 back). Guests
 waiting to go home call a vehicle when none is at work (size 0: one world draw picks the kind, `0x51a34b`;

@@ -880,4 +880,40 @@ public class AdvisorScanParkTests
 		restored.RestoreSnapshot( snapshot );
 		Assert.AreEqual( snapshot.ObjectStampTurn, restored.CaptureSnapshot().ObjectStampTurn );
 	}
+
+	[TestMethod]
+	public void TheStampFollowsTheFixedItemsTheGameMakesButNoRegistration()
+	{
+		var (park, advisor) = Attached();
+		var raised = new List<ParkEvent>();
+		park.EventRaised += raised.Add;
+		EconomyTestData.AdvanceToTurn( park, 2304 );
+		park.TryBuild( 1100, out _ );
+		EconomyTestData.AdvanceToTurn( park, 2880 );
+		// an object registered as it stands (an original save's, a park's own fixed items at its start) was not constructed now: the loader reads the saved stamp back (0x4C7289)
+		park.RegisterExisting( 1601 );
+		Assert.AreEqual( 2304, advisor.CaptureSnapshot().ObjectStampTurn, "a registration moves no stamp" );
+		// an arrival vehicle at its first trip or the finale's End: the common constructor stamps the park (0x4DB7A3) as it does for a purchase
+		var made = park.RegisterFixedItemMade( 1601 );
+		Assert.AreEqual( 2880, advisor.CaptureSnapshot().ObjectStampTurn, "a fixed item made in play moves the stamp" );
+		var item = raised.Single( candidate => candidate.Kind == ParkEventKind.FixedItemMade );
+		Assert.AreEqual( (made.Id, 1601, 0L, "Gates"), (item.InstanceId, item.InfoId, item.Amount, item.Detail) );
+		Assert.IsTrue( made.Imported, "nothing was bought" );
+		EconomyTestData.AdvanceToTurn( park, 3456 );
+		Assert.AreEqual( 25, new EconomyParkState( park, advisor.CaptureSnapshot().ObjectStampTurn ).DaysSinceObjectStamp, "the days count from the fixed item" );
+	}
+
+	[TestMethod]
+	public void AFixedItemMadeInPlayLeavesTheEconomyAndItsHashAsARegistrationDoes()
+	{
+		// the stamp is the advisor's own record (tp.exe's mLastObjectBuilt is read by the advisor only, 0x4C9070): the event adds nothing the park save or the world hash reads
+		var made = EconomyTestData.Park();
+		var registered = EconomyTestData.Park();
+		EconomyTestData.AdvanceToTurn( made, 2880 );
+		EconomyTestData.AdvanceToTurn( registered, 2880 );
+		made.RegisterFixedItemMade( 1601 );
+		registered.RegisterExisting( 1601 );
+		Assert.AreEqual( ParkSaveFile.Serialize( registered ), ParkSaveFile.Serialize( made ) );
+		Assert.AreEqual( WorldStateHash.Compute( new WorldStateSources { Economy = registered } ), WorldStateHash.Compute( new WorldStateSources { Economy = made } ) );
+	}
 }

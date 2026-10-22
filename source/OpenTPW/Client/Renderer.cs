@@ -126,6 +126,7 @@ public partial class Renderer : IDisplaySettings
 		// Slots not used yet start signaled; the first frame's own fence is reset like every later one.
 		frameFences = Enumerable.Range( 0, FramesInFlight ).Select( slot => Device.ResourceFactory.CreateFence( signaled: slot != 0 ) ).ToArray();
 		_lastFrame = Stopwatch.GetTimestamp();
+		EnsureOrderedInputObserver();
 	}
 
 	public Renderer() : this( DisplaySettings.Default, null ) { }
@@ -411,11 +412,17 @@ public partial class Renderer : IDisplaySettings
 	/// <summary>Runs frames until the window closes, then saves changed display settings.</summary>
 	public void Run()
 	{
-		Start();
-		while ( Frame() )
+		try
 		{
+			Start();
+			while ( Frame() )
+			{
+			}
 		}
-		Stop();
+		finally
+		{
+			Stop();
+		}
 	}
 
 	/// <summary>
@@ -424,6 +431,7 @@ public partial class Renderer : IDisplaySettings
 	/// </summary>
 	public void Start()
 	{
+		EnsureOrderedInputObserver();
 		var layoutDescription = new ResourceLayoutDescription(
 			new ResourceLayoutElementDescription( "g_tInput", ResourceKind.TextureReadOnly, ShaderStages.Fragment ),
 			new ResourceLayoutElementDescription( "g_sSampler", ResourceKind.Sampler, ShaderStages.Fragment )
@@ -483,6 +491,7 @@ public partial class Renderer : IDisplaySettings
 	/// <summary>Ends a run started with <see cref="Start"/>.</summary>
 	public void Stop()
 	{
+		StopOrderedInputObserver();
 		FrameStats?.Dispose();
 		SaveDisplaySettings();
 	}
@@ -609,12 +618,12 @@ public partial class Renderer : IDisplaySettings
 		float deltaTime = (float)Stopwatch.GetElapsedTime( _lastFrame, currentFrame ).TotalSeconds;
 		_lastFrame = currentFrame;
 
-		InputSnapshot inputSnapshot = Window.SdlWindow.PumpEvents();
+		InputSnapshot inputSnapshot = PumpOrderedInput( out var orderedEvents );
 		if ( !Window.SdlWindow.Exists )
 			return false;
 
 		Time.Update( deltaTime );
-		Input.UpdateFrom( inputSnapshot );
+		Input.UpdateFromOrderedSnapshot( inputSnapshot, orderedEvents );
 
 		if ( IsFullscreenTogglePressed( inputSnapshot ) )
 			ToggleFullscreen();
@@ -664,6 +673,162 @@ public partial class Renderer : IDisplaySettings
 		}
 		return true;
 	}
+
+	/// <summary>Keep the normal Veldrid snapshot for ImGui and existing consumers; observe, never replace, its pump.</summary>
+	private InputSnapshot PumpOrderedInput( out IReadOnlyList<OrderedInputEvent>? orderedEvents )
+	{
+		EnsureOrderedInputObserver();
+		var snapshot = Window.SdlWindow.PumpEvents();
+#if OPENTPW_BROWSER
+		orderedEvents = (snapshot as IOrderedInputSnapshot)?.OrderedEvents;
+#else
+		var batch = pendingOrderedEvents.ToArray();
+		pendingOrderedEvents.Clear();
+		orderedEvents = ResolveOrderedInput( batch, snapshot );
+#endif
+		return snapshot;
+	}
+
+	/// <summary>
+	/// Veldrid 4.8 HandleKeyboardEvent appends one mapped KeyEvent per raw key event, in
+	/// per-window order. Resolve those raw slots without duplicating its private scancode map.
+	/// Correlation must match completely; it cannot manufacture an authoritative empty batch.
+	/// A mouse button SDL numbers outside Left/Middle/Right/X1/X2 has no <see cref="MouseButton"/> of its own: Veldrid files it
+	/// as a Left event in its snapshot. Its slot is consumed so the rest of the batch still lines up, but the router never sees it.
+	/// </summary>
+	internal static IReadOnlyList<OrderedInputEvent>? ResolveOrderedInput( OrderedInputEvent[] batch, InputSnapshot snapshot )
+	{
+		var keyIndex = 0;
+		var buttonIndex = 0;
+		List<int>? skipped = null;
+		for ( var index = 0; index < batch.Length; index++ )
+		{
+			var item = batch[index];
+			if ( item.Kind is OrderedInputEventKind.KeyDown or OrderedInputEventKind.KeyUp )
+			{
+				if ( keyIndex >= snapshot.KeyEvents.Count )
+					return null;
+				var key = snapshot.KeyEvents[keyIndex++];
+				if ( key.Down != (item.Kind == OrderedInputEventKind.KeyDown) || key.Repeat != item.Repeat )
+					return null;
+				batch[index] = item with { Key = (int)key.Key, Modifiers = (int)key.Modifiers };
+			}
+			else if ( item.Kind is OrderedInputEventKind.ButtonDown or OrderedInputEventKind.ButtonUp )
+			{
+				if ( buttonIndex >= snapshot.MouseEvents.Count )
+					return null;
+				var button = snapshot.MouseEvents[buttonIndex++];
+				if ( button.Down != (item.Kind == OrderedInputEventKind.ButtonDown) )
+					return null;
+				if ( item.Button < 0 )
+					(skipped ??= new()).Add( index );
+				else if ( (int)button.MouseButton != item.Button )
+					return null;
+			}
+		}
+		if ( keyIndex != snapshot.KeyEvents.Count || buttonIndex != snapshot.MouseEvents.Count )
+			return null;
+		return skipped == null ? batch : batch.Where( ( _, index ) => !skipped.Contains( index ) ).ToArray();
+	}
+
+	/// <summary>SDL timestamps are 32-bit milliseconds that wrap after about 49.7 days; widen them so differences stay monotonic.</summary>
+	internal struct SdlTimestampWidener
+	{
+		private uint last;
+		private long epoch;
+
+		public long Widen( uint ticks )
+		{
+			if ( ticks < last && last - ticks > int.MaxValue )
+				epoch += 1L << 32;
+			last = ticks;
+			return epoch + ticks;
+		}
+	}
+
+#if OPENTPW_BROWSER
+	private void EnsureOrderedInputObserver() { }
+	private void StopOrderedInputObserver() { }
+#else
+	private readonly List<OrderedInputEvent> pendingOrderedEvents = new();
+	private Veldrid.Sdl2.Sdl2Window? orderedInputWindow;
+	private Veldrid.Sdl2.SDLEventHandler? orderedInputHandler;
+	private uint orderedInputWindowId;
+	private long orderedInputSequence;
+	private float orderedMouseX, orderedMouseY;
+	private SdlTimestampWidener orderedClock;
+
+	private void EnsureOrderedInputObserver()
+	{
+		if ( ReferenceEquals( orderedInputWindow, Window.SdlWindow ) )
+			return;
+		StopOrderedInputObserver();
+		orderedInputWindow = Window.SdlWindow;
+		orderedMouseX = orderedMouseY = 0;
+		orderedClock = default;
+		orderedInputWindowId = Veldrid.Sdl2.Sdl2Native.SDL_GetWindowID( orderedInputWindow.SdlWindowHandle );
+		orderedInputHandler = ObserveOrderedInput;
+		orderedInputWindow.Closed += StopOrderedInputObserver;
+		// The Window creates a non-threaded Sdl2Window. This callback only copies scalars,
+		// filters the intended window, and runs before HandleEvent reduces the snapshot.
+		Veldrid.Sdl2.Sdl2Events.Subscribe( orderedInputHandler );
+	}
+
+	private void StopOrderedInputObserver()
+	{
+		if ( orderedInputHandler != null )
+			Veldrid.Sdl2.Sdl2Events.Unsubscribe( orderedInputHandler );
+		if ( orderedInputWindow != null )
+			orderedInputWindow.Closed -= StopOrderedInputObserver;
+		orderedInputHandler = null;
+		orderedInputWindow = null;
+		pendingOrderedEvents.Clear();
+	}
+
+	private void ObserveOrderedInput( ref Veldrid.Sdl2.SDL_Event ev )
+	{
+		if ( ev.windowID != orderedInputWindowId )
+			return;
+		// The SDL event's own time, not the moment this frame reads the batch: one long frame must not stretch a click's duration.
+		var now = orderedClock.Widen( ev.timestamp );
+		switch ( ev.type )
+		{
+			case Veldrid.Sdl2.SDL_EventType.MouseMotion:
+				var motion = System.Runtime.CompilerServices.Unsafe.As<Veldrid.Sdl2.SDL_Event, Veldrid.Sdl2.SDL_MouseMotionEvent>( ref ev );
+				orderedMouseX = motion.x;
+				orderedMouseY = motion.y;
+				pendingOrderedEvents.Add( new OrderedInputEvent( ++orderedInputSequence, OrderedInputEventKind.Motion,
+					motion.x, motion.y, TimestampMilliseconds: now, Source: OrderedInputEventSource.Sdl, PositionIsExact: true ) );
+				break;
+			case Veldrid.Sdl2.SDL_EventType.MouseButtonDown:
+			case Veldrid.Sdl2.SDL_EventType.MouseButtonUp:
+				var button = System.Runtime.CompilerServices.Unsafe.As<Veldrid.Sdl2.SDL_Event, Veldrid.Sdl2.SDL_MouseButtonEvent>( ref ev );
+				orderedMouseX = button.x;
+				orderedMouseY = button.y;
+				var mappedButton = button.button switch
+				{
+					Veldrid.Sdl2.SDL_MouseButton.Left => (int)MouseButton.Left,
+					Veldrid.Sdl2.SDL_MouseButton.Middle => (int)MouseButton.Middle,
+					Veldrid.Sdl2.SDL_MouseButton.Right => (int)MouseButton.Right,
+					Veldrid.Sdl2.SDL_MouseButton.X1 => (int)MouseButton.Button1,
+					Veldrid.Sdl2.SDL_MouseButton.X2 => (int)MouseButton.Button2,
+					_ => -1
+				};
+				// An unmapped button is still recorded (Button -1) so ResolveOrderedInput can consume Veldrid's matching snapshot slot, then drop it.
+				pendingOrderedEvents.Add( new OrderedInputEvent( ++orderedInputSequence,
+					ev.type == Veldrid.Sdl2.SDL_EventType.MouseButtonDown ? OrderedInputEventKind.ButtonDown : OrderedInputEventKind.ButtonUp,
+					button.x, button.y, Button: mappedButton, TimestampMilliseconds: now, Source: OrderedInputEventSource.Sdl, PositionIsExact: true ) );
+				break;
+			case Veldrid.Sdl2.SDL_EventType.KeyDown:
+			case Veldrid.Sdl2.SDL_EventType.KeyUp:
+				var key = System.Runtime.CompilerServices.Unsafe.As<Veldrid.Sdl2.SDL_Event, Veldrid.Sdl2.SDL_KeyboardEvent>( ref ev );
+				pendingOrderedEvents.Add( new OrderedInputEvent( ++orderedInputSequence,
+					ev.type == Veldrid.Sdl2.SDL_EventType.KeyDown ? OrderedInputEventKind.KeyDown : OrderedInputEventKind.KeyUp,
+					orderedMouseX, orderedMouseY, Repeat: key.repeat == 1, TimestampMilliseconds: now, Source: OrderedInputEventSource.Sdl ) );
+				break;
+		}
+	}
+#endif
 
 	private static bool IsFullscreenTogglePressed( InputSnapshot snapshot )
 	{

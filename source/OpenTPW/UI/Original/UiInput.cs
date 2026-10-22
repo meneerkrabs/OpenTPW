@@ -25,11 +25,17 @@ public enum UiKeys
 /// One frame of UI input in framebuffer pixels. Built from <see cref="Input"/> at runtime and
 /// constructed directly by tests and the smoke test.
 /// </summary>
+/// <param name="OrderedUnavailable">
+/// Set by <see cref="UiInputSource.Poll"/> when the platform could not supply the raw ordered batch for this frame. Hand-built input
+/// (the smoke tests and fixtures) has no batch either, but its pointer edges are deliberate: the park routes them as injected edges
+/// (<see cref="UiPointerRouter.AdmitInjected"/>), whereas an unavailable batch never starts a gesture.
+/// </param>
+/// <param name="BackspaceRepeating">Every Backspace of this frame is the auto-repeat of a held key (the pool bridge and water removal acts only on the first press).</param>
 /// <param name="NotClick">
 /// Set on a left release that is not a click: the press lasted longer than <see cref="UiInputSource.ClickMilliseconds"/> or the
 /// pointer strayed more than <see cref="UiInputSource.ClickSlop"/> pixels on an axis (tp.exe 0x65f6d1 / 0x65fa33). The release still ends drags.
 /// </param>
-public readonly record struct UiInput( NVector2 Mouse, bool LeftDown, bool LeftPressed, bool LeftReleased, bool RightPressed, UiKeys Pressed, float Wheel = 0, string Text = "", int Backspaces = 0, bool NotClick = false )
+public readonly record struct UiInput( NVector2 Mouse, bool LeftDown, bool LeftPressed, bool LeftReleased, bool RightPressed, UiKeys Pressed, float Wheel = 0, string Text = "", int Backspaces = 0, bool NotClick = false, IReadOnlyList<OrderedInputEvent>? OrderedEvents = null, bool PointerSuppressed = false, float PointerScaleX = 1, float PointerScaleY = 1, bool PointerHostBlocked = false, bool OrderedUnavailable = false, bool BackspaceRepeating = false )
 {
 
 	public static UiInput Idle( NVector2 mouse ) => new( mouse, false, false, false, false, UiKeys.None );
@@ -101,10 +107,45 @@ public sealed class UiInputSource
 			notClick = IsNotClick( pressedAt, Clock(), pressMoved, pressFrames );
 		var input = new UiInput( new NVector2( mouse.Position.X * framebufferPerWindowX, mouse.Position.Y * framebufferPerWindowY ),
 			mouse.Left, mouse.Left && !wasLeft, !mouse.Left && wasLeft, mouse.Right && !wasRight, pressed, mouse.Wheel,
-			Input.Typed, Input.KeyPresses.Count( key => key == Key.BackSpace ), notClick );
+			Input.Typed, Input.KeyPresses.Count( key => key == Key.BackSpace ), notClick,
+			NormalizeOrderedEvents( Input.OrderedEvents, keys, framebufferPerWindowX, framebufferPerWindowY ),
+			PointerScaleX: framebufferPerWindowX, PointerScaleY: framebufferPerWindowY, OrderedUnavailable: Input.OrderedEvents == null, BackspaceRepeating: Input.BackspaceRepeating );
 		wasLeft = mouse.Left;
 		wasRight = mouse.Right;
 		return input;
+	}
+
+	/// <summary>Reconstruct event-local modifiers from this batch and its final physical key snapshot.
+	/// Do not seed from a prior frame: focus changes and missing raw batches may invalidate that state.</summary>
+	internal static IReadOnlyList<OrderedInputEvent>? NormalizeOrderedEvents( IReadOnlyList<OrderedInputEvent>? batch, HashSet<Key> finalKeys, float scaleX, float scaleY )
+	{
+		if ( batch == null ) return null;
+		var held = new HashSet<Key>( finalKeys );
+		for ( var i = batch.Count - 1; i >= 0; i-- )
+		{
+			var item = batch[i];
+			if ( item.Kind == OrderedInputEventKind.KeyDown && !item.Repeat ) held.Remove( (Key)item.Key );
+			else if ( item.Kind == OrderedInputEventKind.KeyUp ) held.Add( (Key)item.Key );
+		}
+		var normalized = new OrderedInputEvent[batch.Count];
+		int? observedModifiers = null;
+		for ( var i = 0; i < batch.Count; i++ )
+		{
+			var item = batch[i];
+			if ( item.Kind == OrderedInputEventKind.KeyDown ) held.Add( (Key)item.Key );
+			else if ( item.Kind == OrderedInputEventKind.KeyUp ) held.Remove( (Key)item.Key );
+			var modifiers = (held.Contains( Key.ShiftLeft ) || held.Contains( Key.ShiftRight ) ? ModifierKeys.Shift : 0)
+				| (held.Contains( Key.ControlLeft ) || held.Contains( Key.ControlRight ) ? ModifierKeys.Control : 0)
+				| (held.Contains( Key.AltLeft ) || held.Contains( Key.AltRight ) ? ModifierKeys.Alt : 0);
+			// A real key carries an authoritative mask even when a modifier's original down was
+			// outside this window. It also synchronizes later pointer masks in this pump batch.
+			if ( item.Source != OrderedInputEventSource.Synthetic && item.Kind is OrderedInputEventKind.KeyDown or OrderedInputEventKind.KeyUp )
+				observedModifiers = item.Modifiers;
+			var eventModifiers = observedModifiers ?? (int)modifiers;
+			normalized[i] = item with { X = item.X * scaleX, Y = item.Y * scaleY, Modifiers = eventModifiers,
+				ModifiersAreExact = observedModifiers.HasValue };
+		}
+		return normalized;
 	}
 
 	/// <summary>Whether a release <paramref name="releasedAt"/> after a press at <paramref name="pressedAt"/> (milliseconds), with the press marked moved or not, is no click.</summary>

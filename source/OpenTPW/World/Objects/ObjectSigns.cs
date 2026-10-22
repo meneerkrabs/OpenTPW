@@ -119,19 +119,242 @@ public static class ObjectSigns
 	/// <summary>
 	/// The CPU-composed sign of an object (cached per archive and text), or null when the object has no <c>.sgn</c>. A sign
 	/// with two empty lines is composed too (its board alone). Drawing problems (missing glyphs or fonts) are logged once, not thrown.
+	/// A composition started by <see cref="ComposeAhead"/> is used when it is finished, waited for when it is running, and run here
+	/// when it has not started, so the result and the log are the same whichever thread composed the pixels (issue #754).
 	/// </summary>
 	public static ObjectSignImages? Get( ObjectCatalogEntry entry )
 	{
 		// Two empty lines still compose: the original draws the board and the paint and effect layers of empty masks (0x467A80 only skips a null name).
 		var (line1, line2) = Lines( entry );
-		var key = $"{entry.FileSystem.GetAbsolutePath( entry.ArchivePath )}\0{line1}\0{line2}";
+		var key = Key( entry, line1, line2 );
+		while ( true )
+		{
+			SignComposition composition;
+			lock ( cache )
+			{
+				if ( cache.TryGetValue( key, out var cached ) )
+					return cached;
+				// one composition per key until its result is applied below, shared by every caller (the worker's included)
+				if ( !ahead.TryGetValue( key, out composition! ) || !composition.Matches( entry.FileSystem ) )
+					ahead[key] = composition = new SignComposition( entry, line1, line2 );
+			}
+			var outcome = composition.Outcome;
+			lock ( cache )
+			{
+				if ( cache.TryGetValue( key, out var cached ) )
+					return cached;
+				// Another caller applied this composition without keeping it (a failure that may pass, or an exception) or replaced it: compose
+				// again, as a caller that waited for the cache lock did before.
+				if ( !ahead.TryGetValue( key, out var current ) || current != composition )
+					continue;
+				ahead.Remove( key );
+				// What the file system's lookups or the data corrections see changed while it ran, or the worker's composition failed (a file
+				// busy then may be readable now): compose again here, so a result and a failure are those of a composition made on use.
+				if ( !composition.Matches( entry.FileSystem ) || outcome.ComposedAhead && (outcome.Failure != null || outcome.Unexpected != null) )
+					continue;
+				// what the composition logged, in its order, as if it had run now
+				Logger.Replay( outcome.Messages );
+				outcome.Unexpected?.Throw();
+				var images = outcome.Images;
+				var failure = outcome.Failure;
+				var failures = 0;
+				if ( failure != null )
+				{
+					failedReads.TryGetValue( key, out failures );
+					failedReads[key] = ++failures;
+				}
+				// A missing result stays uncached unless the archive is there without a sign: a failure that may pass, or an archive whose files have not arrived yet (the browser copies a theme's files when a park starts), must not leave the placeholder for the rest of the session
+				var final = CanCache( failure, images, outcome.ArchiveWithoutSign, failures );
+				// logged once per sign (the park HUD asks for a sign on every preview draw), and once more when it is given up
+				if ( failure != null && (failures == 1 || final) )
+					Log?.Warning( $"Sign of {entry.ArchiveName} unavailable: {failure.Message}{(final ? "; it is not drawn" : "; it is tried again")}" );
+				if ( final )
+				{
+					cache[key] = images;
+					failedReads.Remove( key );
+				}
+				return images;
+			}
+		}
+	}
+
+	private static string Key( ObjectCatalogEntry entry, string line1, string line2 ) => $"{entry.FileSystem.GetAbsolutePath( entry.ArchivePath )}\0{line1}\0{line2}";
+
+	/// <summary>Compositions started and not yet applied by <see cref="Get"/>, by the same key as <see cref="cache"/> (guarded by <see cref="cache"/>).</summary>
+	private static readonly Dictionary<string, SignComposition> ahead = new( StringComparer.Ordinal );
+	/// <summary>The compositions <see cref="ComposeAhead"/> queued for the worker, oldest first (guarded by <see cref="cache"/>).</summary>
+	private static readonly Queue<SignComposition> aheadQueue = new();
+	private static bool aheadWorkerRunning;
+	[ThreadStatic] private static bool onAheadWorker;
+
+	/// <summary>
+	/// Whether <see cref="ComposeAhead"/> starts compositions on a worker: the desktop's game, not the browser, whose single thread would run the
+	/// queued work on the frames anyway and whose theme files may not have arrived yet.
+	/// </summary>
+	internal static bool ComposeAheadEnabled { get; set; } = !OperatingSystem.IsBrowser();
+
+	/// <summary>
+	/// Starts composing the sign of <paramref name="entry"/> on a worker, so that its first placement does not compose it on the frame of the
+	/// click (issue #754: 36 to 46 ms for a ride with a sign on the Mac). The worker composes one sign at a time, in the order asked; only the CPU
+	/// part runs there (the <c>.sgn</c> read, the board's wavelet decode, the glyph rasters and the layers), the GPU textures are made on the render
+	/// thread when a material first asks for them (<see cref="ObjectSignImages.LeftTexture"/>). What the composition logs is held and written by
+	/// <see cref="Get"/> when it uses the result. A sign already composed, already asked for, or not composable (no entry) is left alone.
+	/// </summary>
+	public static void ComposeAhead( ObjectCatalogEntry entry )
+	{
+		if ( !ComposeAheadEnabled )
+			return;
+		string key;
+		string line1, line2;
+		try
+		{
+			// Get reads the lines again (and logs what that read logs) when it uses the composition
+			using ( Logger.BeginCapture() )
+				(line1, line2) = Lines( entry );
+			key = Key( entry, line1, line2 );
+		}
+		catch ( Exception exception ) when ( exception is IOException or InvalidDataException or ArgumentException or UnauthorizedAccessException )
+		{
+			return;
+		}
 		lock ( cache )
 		{
-			if ( cache.TryGetValue( key, out var cached ) )
-				return cached;
+			if ( cache.ContainsKey( key ) || ahead.TryGetValue( key, out var known ) && known.Matches( entry.FileSystem ) )
+				return;
+			// a composition made before the file system changed (a mod set, the interface language) is never used: forget those that wait unused
+			foreach ( var stale in ahead.Where( pair => !pair.Value.Matches( pair.Value.FileSystem ) ).Select( pair => pair.Key ).ToArray() )
+				ahead.Remove( stale );
+			var composition = new SignComposition( entry, line1, line2 );
+			ahead[key] = composition;
+			aheadQueue.Enqueue( composition );
+			if ( aheadWorkerRunning )
+				return;
+			aheadWorkerRunning = true;
+		}
+		Task.Run( ComposeQueued );
+	}
+
+	private static void ComposeQueued()
+	{
+		onAheadWorker = true;
+		try
+		{
+			while ( true )
+			{
+				SignComposition next;
+				lock ( cache )
+				{
+					// the queue is empty: the worker ends in the same step, so a composition queued after it starts a new one
+					if ( !aheadQueue.TryDequeue( out next! ) )
+					{
+						aheadWorkerRunning = false;
+						Monitor.PulseAll( cache );
+						return;
+					}
+				}
+				next.Run();
+			}
+		}
+		catch
+		{
+			// a composition catches what it may throw; whatever else ends the worker, the queue does not wait for a worker that is gone
+			lock ( cache )
+			{
+				aheadWorkerRunning = false;
+				Monitor.PulseAll( cache );
+			}
+			throw;
+		}
+		finally
+		{
+			onAheadWorker = false;
+		}
+	}
+
+	/// <summary>
+	/// Waits until the worker has run every composition queued so far (tests and measurements); returns false when they are not done within
+	/// <paramref name="timeout"/>.
+	/// </summary>
+	internal static bool WaitForComposeAhead( TimeSpan timeout )
+	{
+		lock ( cache )
+		{
+			// the worker pulses when its queue is empty
+			while ( aheadWorkerRunning )
+				if ( !Monitor.Wait( cache, timeout ) )
+					return !aheadWorkerRunning;
+			return true;
+		}
+	}
+
+	/// <summary>Whether a composition for <paramref name="entry"/> has been started ahead and has finished (tests).</summary>
+	internal static bool ComposedAhead( ObjectCatalogEntry entry )
+	{
+		var (line1, line2) = Lines( entry );
+		var key = Key( entry, line1, line2 );
+		lock ( cache )
+			return ahead.TryGetValue( key, out var composition ) && composition.IsComposed;
+	}
+
+	/// <summary>Forgets every composed sign and every composition started ahead (tests that compare a fresh composition with another).</summary>
+	internal static void ForgetForTests()
+	{
+		WaitForComposeAhead( TimeSpan.FromMinutes( 5 ) );
+		lock ( cache )
+		{
+			cache.Clear();
+			ahead.Clear();
+			failedReads.Clear();
+		}
+	}
+
+	/// <summary>
+	/// The CPU part of one sign: the <c>.sgn</c> read and the composition, run once (on the worker or by the first caller of <see cref="Outcome"/>)
+	/// with what it logs held for <see cref="Get"/>. Its inputs are fixed when it is made (the entry's archive and file system, the two lines);
+	/// <see cref="Matches"/> refuses it once what the file system's lookups or the data corrections see has changed since.
+	/// </summary>
+	private sealed class SignComposition
+	{
+		private readonly ObjectCatalogEntry entry;
+		private readonly string line1;
+		private readonly string line2;
+		private readonly int lookupGeneration;
+		private readonly CompatibilityFlags flags;
+		private readonly Lazy<SignOutcome> outcome;
+
+		public SignComposition( ObjectCatalogEntry entry, string line1, string line2 )
+		{
+			this.entry = entry;
+			this.line1 = line1;
+			this.line2 = line2;
+			FileSystem = entry.FileSystem;
+			lookupGeneration = FileSystem.LookupGeneration;
+			flags = CompatibilityRuntime.Flags;
+			// ExecutionAndPublication: one composition whoever asks first; a second caller waits for it
+			outcome = new Lazy<SignOutcome>( Compose, LazyThreadSafetyMode.ExecutionAndPublication );
+		}
+
+		public BaseFileSystem FileSystem { get; }
+
+		/// <summary>Whether this composition reads what a new one would: the same file system with no invalidation since, and the same data corrections.</summary>
+		public bool Matches( BaseFileSystem fileSystem ) =>
+			ReferenceEquals( fileSystem, FileSystem ) && FileSystem.LookupGeneration == lookupGeneration && ReferenceEquals( CompatibilityRuntime.Flags, flags );
+
+		public bool IsComposed => outcome.IsValueCreated;
+
+		/// <summary>The result: composed now when nobody started it, else the running composition's once it ends.</summary>
+		public SignOutcome Outcome => outcome.Value;
+
+		public void Run() => _ = outcome.Value;
+
+		private SignOutcome Compose()
+		{
+			LoadProfile.Count( onAheadWorker ? "signs composed ahead" : "signs composed on use" );
 			ObjectSignImages? images = null;
 			var archiveWithoutSign = false;
 			Exception? failure = null;
+			System.Runtime.ExceptionServices.ExceptionDispatchInfo? unexpected = null;
+			using var capture = Logger.BeginCapture();
 			try
 			{
 				var sign = SignTextRenderer.LoadSignFile( entry.ArchivePath, entry.FileSystem );
@@ -149,25 +372,18 @@ public static class ObjectSigns
 			{
 				failure = exception;
 			}
-			var failures = 0;
-			if ( failure != null )
+			// anything else is thrown to the caller of Get, after what was logged before it, as when the composition ran inside Get
+			catch ( Exception exception )
 			{
-				failedReads.TryGetValue( key, out failures );
-				failedReads[key] = ++failures;
+				unexpected = System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture( exception );
 			}
-			// A missing result stays uncached unless the archive is there without a sign: a failure that may pass, or an archive whose files have not arrived yet (the browser copies a theme's files when a park starts), must not leave the placeholder for the rest of the session
-			var final = CanCache( failure, images, archiveWithoutSign, failures );
-			// logged once per sign (the park HUD asks for a sign on every preview draw), and once more when it is given up
-			if ( failure != null && (failures == 1 || final) )
-				Log?.Warning( $"Sign of {entry.ArchiveName} unavailable: {failure.Message}{(final ? "; it is not drawn" : "; it is tried again")}" );
-			if ( final )
-			{
-				cache[key] = images;
-				failedReads.Remove( key );
-			}
-			return images;
+			return new SignOutcome( images, archiveWithoutSign, failure, capture.Messages, unexpected, onAheadWorker );
 		}
 	}
+
+	/// <param name="ComposedAhead">Whether the worker composed it (<see cref="ComposeAhead"/>); <see cref="Get"/> composes a failed one again.</param>
+	private sealed record SignOutcome( ObjectSignImages? Images, bool ArchiveWithoutSign, Exception? Failure,
+		IReadOnlyList<(Logger.Level Severity, string Text, bool Quiet)> Messages, System.Runtime.ExceptionServices.ExceptionDispatchInfo? Unexpected, bool ComposedAhead );
 }
 
 /// <summary>

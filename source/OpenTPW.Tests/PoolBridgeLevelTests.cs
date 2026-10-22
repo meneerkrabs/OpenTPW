@@ -118,4 +118,79 @@ public class PoolBridgeLevelTests
 		var bytes = ParkResumeSaveFile.Serialize( snapshot );
 		Assert.IsTrue( bytes.Length > 0 );
 	}
+
+	// ---- Backspace over a pool bridge (docs/POOLS.md, "Removing with Backspace") ------------------------------------------
+
+	private ParkCommandResult Backspace( int x, int y ) => level.Commands.Issue( new BacktrackCommand( x, y ) );
+
+	[TestMethod]
+	public void BackspaceOverABridgeTakesItDownWithTheRemovalsRefundAndTheBridgeWinsOverTheWaterUnderIt()
+	{
+		using var scope = OpenTpwExtensions.Use( PoolsTests.PoolsSet( true ) );
+		BareBridge();
+		var before = economy.Balance;
+		Assert.AreEqual( Level.BacktrackTarget.PoolBridge, Level.BacktrackTargetAt( Cells, 13, 15, level.PoolBridges ), "water under the bridge: the bridge is the target" );
+		Assert.AreEqual( Level.BacktrackTarget.PoolWater, Level.BacktrackTargetAt( Cells, 13, 14, level.PoolBridges ), "water beside it" );
+		var result = Backspace( 13, 15 );
+		Assert.IsTrue( result.Accepted, result.Reason );
+		Assert.AreEqual( 0, level.PoolBridges!.Count );
+		Assert.AreEqual( ParkCellType.PoolWater, Cells.TypeAt( 13, 15 ), "the water under it stays: one press takes one thing off" );
+		Assert.AreEqual( before + PoolBridgeWorld.Price, economy.Balance, "the same refund as the removal" );
+		Assert.IsTrue( Backspace( 13, 15 ).Accepted, "the next press over the now bare water erases that cell" );
+		Assert.AreEqual( ParkCellType.Empty, Cells.TypeAt( 13, 15 ) );
+	}
+
+	[TestMethod]
+	public void BackspaceOverTheLandCellsOfABridgeRemovesItToo()
+	{
+		using var scope = OpenTpwExtensions.Use( PoolsTests.PoolsSet( true ) );
+		var bridge = BareBridge();
+		Assert.IsTrue( Backspace( bridge.Cell( 0 ).X, bridge.Cell( 0 ).Y ).Accepted );
+		Assert.AreEqual( 0, level.PoolBridges!.Count );
+		Assert.AreEqual( Level.BacktrackTarget.None, Level.BacktrackTargetAt( Cells, bridge.Cell( 0 ).X, bridge.Cell( 0 ).Y, level.PoolBridges ) );
+	}
+
+	[TestMethod]
+	public void BackspaceOverABridgeSomeoneIsOnIsRefusedAndRefundsNothing()
+	{
+		using var scope = OpenTpwExtensions.Use( PoolsTests.PoolsSet( true ) );
+		var bridge = BareBridge();
+		var land = bridge.Cell( 1 );
+		level.Guests!.Grid.SetPath( land.X, land.Y, true );
+		var guest = level.Guests.SpawnInPark( land.X, land.Y );
+		Cells.SetType( land.X, land.Y, ParkCellType.Empty );
+		Assert.AreEqual( land, guest.Cell );
+		var before = economy.Balance;
+		var result = Backspace( 13, 15 );
+		Assert.IsFalse( result.Accepted );
+		Assert.AreEqual( PoolBridgeResult.Standing, result.Value );
+		Assert.AreEqual( 1, level.PoolBridges!.Count );
+		Assert.AreEqual( before, economy.Balance );
+	}
+
+	[TestMethod]
+	public void TheBackspaceCommandIsUnchangedOnTheWireAndItsReplayRemovesTheBridge()
+	{
+		using var scope = OpenTpwExtensions.Use( PoolsTests.PoolsSet( true ) );
+		BareBridge();
+		var command = new BacktrackCommand( 13, 15 );
+		var round = ParkCommandCodec.Decode( ParkCommandCodec.Encode( command ) );
+		Assert.AreEqual( command, round, "the command is unchanged on the wire" );
+		Assert.IsTrue( level.Commands.Issue( round ).Accepted );
+		Assert.AreEqual( 0, level.PoolBridges!.Count );
+	}
+
+	[TestMethod]
+	public void BackspaceOverAnApproachCellWithAPathLaidBeforeTheBridgeTakesTheBridgeFirstAndThePathNext()
+	{
+		using var scope = OpenTpwExtensions.Use( PoolsTests.PoolsSet( true ) );
+		Assert.IsTrue( level.PoolBuilder!.PaintCells( PoolBuilder.Rectangle( (12, 10), (14, 20) ) ).Completed );
+		Cells.SetType( 10, 15, ParkCellType.Path );
+		Assert.AreEqual( PoolBridgeResult.Ok, level.PoolBridges!.TryAdd( 10, 15, 1 ), "a bridge over a path laid first" );
+		Assert.AreEqual( Level.BacktrackTarget.PoolBridge, Level.BacktrackTargetAt( Cells, 10, 15, level.PoolBridges ), "the bridge is the target, not the path" );
+		Assert.IsTrue( Backspace( 10, 15 ).Accepted );
+		Assert.AreEqual( 0, level.PoolBridges.Count );
+		Assert.AreEqual( ParkCellType.Path, Cells.TypeAt( 10, 15 ), "the path stays after the first press" );
+		Assert.AreEqual( Level.BacktrackTarget.Path, Level.BacktrackTargetAt( Cells, 10, 15, level.PoolBridges ), "and is the next press's target" );
+	}
 }

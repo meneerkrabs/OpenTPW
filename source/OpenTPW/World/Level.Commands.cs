@@ -20,6 +20,9 @@ public partial class Level
 	/// <summary>The park's edit funnel; every edit of a HUD window or tool goes through it.</summary>
 	public ParkCommands Commands => commands ??= new ParkCommands( () => simulationClock?.TickCount ?? 0, ExecuteCommand, () => IsReadOnlyVisit );
 
+	/// <summary>Unit-test seam: replaces the command funnel so a fixture records what a click issues, without running the park's rules.</summary>
+	internal void UseCommandsForTests( ParkCommands replacement ) => commands = replacement;
+
 	/// <summary>The recording of this park's commands (<c>--record-commands</c>), or null.</summary>
 	public ParkCommandRecorder? CommandRecorder => commandRecorder;
 
@@ -107,7 +110,7 @@ public partial class Level
 		UndoLineCommand undo => ExecuteUndoLine( undo ),
 		RemovePathCellCommand remove => RemovePathCell( remove.X, remove.Y ) is var result && result == CellBuildResult.Ok ? ParkCommandResult.Ok( result ) : new ParkCommandResult( false, $"No path cell removed: {result}.", result ),
 		RemoveQueueCellCommand remove => RemoveQueueCell( remove.X, remove.Y ) is var count and > 0 ? ParkCommandResult.Ok( count ) : ParkCommandResult.Rejected( "No queue cell here." ),
-		BacktrackCommand backtrack => Outcome( BacktrackAt( backtrack.X, backtrack.Y ) ),
+		BacktrackCommand backtrack => Backtrack( backtrack.X, backtrack.Y ),
 		EditQueueCommand edit => ExecuteEditQueue( edit ),
 		PlacePrototypeCommand prototype => Outcome( PlaceRide( new Vector3( prototype.X, prototype.Y, prototype.Z ) ) ),
 		RemovePrototypeCommand => ExecuteRemovePrototype(),

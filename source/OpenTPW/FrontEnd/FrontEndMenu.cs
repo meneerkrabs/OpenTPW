@@ -385,6 +385,16 @@ public sealed partial class FrontEndMenu
 			try { return base.Update( context, input ); }
 			finally { dispatching = false; }
 		}
+
+		internal override bool UpdatePointer( UiContext context, UiInput input, UiElement? recipient )
+		{
+			if ( IsRemoved ) return true;
+			if ( RightCancels( input ) && Modal ) { Back?.Invoke(); return true; }
+			dispatching = true;
+			activated = false;
+			try { return base.UpdatePointer( context, input, recipient ); }
+			finally { dispatching = false; }
+		}
 	}
 
 	public void ShowOptions()

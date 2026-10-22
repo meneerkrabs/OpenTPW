@@ -109,6 +109,13 @@ public sealed partial class ParkHud
 			}
 			return base.Update( context, input );
 		}
+
+		internal override bool UpdatePointer( UiContext context, UiInput input, UiElement? recipient )
+		{
+			if ( IsRemoved ) return true;
+			if ( RightCancels( input ) ) { Back?.Invoke(); return true; }
+			return base.UpdatePointer( context, input, recipient );
+		}
 	}
 
 }

@@ -89,20 +89,25 @@ public sealed partial class ParkHud
 	}
 
 	/// <summary>The explicit pause key and host speed controls, rather than an arbitrary zero simulation scale, own user suspension.</summary>
-	internal void SetUserGameSpeed( GameSpeed speed )
+	internal bool SetUserGameSpeed( GameSpeed speed )
 	{
-		// an explicit speed choice also ends the focus-loss pause
-		applicationPaused = false;
+		// an explicit speed choice also ends the focus-loss pause (and the window it opened)
+		ClearApplicationPause();
 		// a park's speed is part of its state and goes through its commands; a park without an economy keeps its speed in the HUD's status
 		if ( level?.Park != null )
 		{
 			if ( !level.Commands.Issue( new SetGameSpeedCommand( speed ) ).Accepted )
-				return;
+				return false;
 		}
 		else
 			Status.Speed = speed;
+		// [BIN:TPW-EXE:0x409300 resume] a resume destroys the P window (0x481450 -> 0x48a700 -> 0x4a27c0; about 26 callers), so any speed other than Paused closes it.
+		// The speed itself never creates it: only P and the focus-loss pause do (ParkHud.ApplicationPause).
+		if ( speed != GameSpeed.Paused )
+			RetirePausePointerOverlay();
 		challengeUserPaused = speed == GameSpeed.Paused;
 		SyncChallengeMessageSuspension();
+		return true;
 	}
 
 	/// <summary>Produces bounded terminal timer events before HUD input; dispatch can observe a read/delete in between.</summary>

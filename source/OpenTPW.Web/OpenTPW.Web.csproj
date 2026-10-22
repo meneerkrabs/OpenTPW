@@ -14,6 +14,7 @@
 		<Nullable>enable</Nullable>
 		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
 		<LangVersion>preview</LangVersion>
+		<DefineConstants>$(DefineConstants);OPENTPW_BROWSER</DefineConstants>
 		<!-- The settings files use reflection-based System.Text.Json, which trimming turns off by default. -->
 		<JsonSerializerIsReflectionEnabledByDefault>true</JsonSerializerIsReflectionEnabledByDefault>
 		<!-- Readable exception messages instead of resource keys. -->
@@ -42,7 +43,7 @@
 	     supplies the shared fallback API without System.Configuration. -->
 	<ItemGroup>
 		<Compile Include="$(FilesSources)/**/*.cs" Exclude="$(FilesSources)/obj/**;$(FilesSources)/bin/**" Link="Files/%(RecursiveDir)%(Filename)%(Extension)" />
-		<Compile Include="$(CommonSources)/**/*.cs" Exclude="$(CommonSources)/obj/**;$(CommonSources)/bin/**;$(CommonSources)/Client/SdlDisplay.cs" Link="Common/%(RecursiveDir)%(Filename)%(Extension)" />
+		<Compile Include="$(CommonSources)/**/*.cs" Exclude="$(CommonSources)/obj/**;$(CommonSources)/bin/**;$(CommonSources)/Client/SdlDisplay.cs;$(CommonSources)/Client/OrderedInputEvent.cs" Link="Common/%(RecursiveDir)%(Filename)%(Extension)" />
 		<Compile Include="$(GameSources)/**/*.cs" Link="Game/%(RecursiveDir)%(Filename)%(Extension)" Exclude="$(GameSources)/obj/**;$(GameSources)/bin/**;$(GameSources)/Formats/Model/**;&#xA;				$(GameSources)/Program.cs;&#xA;				$(GameSources)/Client/Game.cs;&#xA;				$(GameSources)/Client/GameDir.cs;&#xA;				$(GameSources)/Client/LegacySettings.cs;&#xA;				$(GameSources)/Settings.Designer.cs;&#xA;				$(GameSources)/UI/Cursor.cs;&#xA;				$(GameSources)/Client/TgqPngExport.cs;&#xA;				$(GameSources)/Client/SdtWavExport.cs;&#xA;				$(GameSources)/Client/SignExport.cs;&#xA;				$(GameSources)/Client/LinuxNativeLibraries.cs;&#xA;				$(GameSources)/Render/Assets/TexturePackBuilder.cs;&#xA;				$(GameSources)/Render/Assets/ImagePrepass.cs;&#xA;				$(GameSources)/Render/ShaderCompiler.cs;&#xA;				$(GameSources)/Render/Direct3D11Bytecode.cs;&#xA;				$(GameSources)/Client/Setup/SetupWizard.cs;&#xA;				$(GameSources)/Client/Movie/SdlMovieAudioOutput.cs;&#xA;				$(GameSources)/Online/OnlinePanel.cs;&#xA;				$(GameSources)/UI/DisplaySettingsPanel.cs;&#xA;				$(GameSources)/UI/Layouts/ObjectBuildPanel.cs;&#xA;				$(GameSources)/UI/Layouts/ParkLayout.cs" />
 	</ItemGroup>
 
@@ -96,6 +97,10 @@
 		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/FshPngExportTests.cs" />
 		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/FshPngExportReviewTests.cs" />
 		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/SignExportTests.cs" />
+		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/CanvasInputSnapshotTests.cs" />
+		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/OrderedInputIngressTests.cs" />
+		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/OrderedParkPointerPipelineTests.cs" />
+		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/UiPointerRouterTests.cs" />
 		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/ObjectVertexAnimationTests.cs" />
 		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/MpegPartialTailReviewTests.cs" />
 		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/GlbBuilder.cs" />
@@ -110,6 +115,7 @@
 		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/StrictCommandsGameTests.cs" />
 		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/AudioParkVisitTests.cs" />
 		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/SaveDirectoryTests.cs" />
+		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/ObjectSignComposeAheadTests.cs" />
 	</ItemGroup>
 	<ItemGroup Condition="'$(OpenTpwDeterminismPins)' == 'true'">
 		<Compile Include="../OpenTPW.Tests/**/*.cs" Exclude="../OpenTPW.Tests/obj/**;../OpenTPW.Tests/bin/**;@(DeterminismPinsExcludedTests)" Link="Tests/%(RecursiveDir)%(Filename)%(Extension)" />

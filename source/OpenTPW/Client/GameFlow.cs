@@ -640,7 +640,7 @@ internal sealed partial class GameFlow : IDisposable
 		InjectedInput = null;
 		// [EXT:park-build-over-frames] while a park is built the live scene runs on without input
 		if ( parkBuild != null )
-			input = UiInput.Idle( input.Mouse );
+			input = UiInput.Idle( input.Mouse ) with { PointerHostBlocked = true };
 		Input.TextEntryActive = false;
 		onlineSession?.Pump();
 		// [EXT:online-coop-snapshot-join] a guest's join and resync: the build's slice, the check at the cut and the swap run here, before the HUD and the level

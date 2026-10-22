@@ -87,6 +87,7 @@ OpenTPW also removes a queue there, from the cell under the cursor to the queue'
 back with the remove tool's refund (`[EXT:queue-backtrack]`). A queue cell that no ride's queue reaches
 (a stray piece, such as one an older save left) goes alone there and with the remove tool, refunding nothing,
 as the original's `ClearCell` clears one queue cell (tp.exe `0x5367A0`).
+With the pools extension on, Backspace with no tool on also removes a pool bridge, or one pool water cell, under the cursor (`[EXT:pools-bridges]`, `[EXT:pools-tool]`, docs/POOLS.md "Removing with Backspace"). That is OpenTPW's: the original has no pools, and its key does nothing over such a cell. A bridge wins over the water under it, and over a path laid on one of its approach cells before the bridge: the first press takes the bridge, the next one the path.
 
 ## Tool
 
@@ -106,7 +107,7 @@ each cell of that segment loses one placement count and goes when it falls
 below zero. Right click, Escape and Back cancel.
 Escape or Back inside the tool only ends the tool; the next one opens the
 pause menu (tp.exe key dispatch `0x488921`, Escape row `0x40c180`). While the pause menu is open the tool takes no clicks;
-the speed pause does not stop it (PATH-013).
+the click handler does not itself test the speed flag. The separate P-window input owner now has bounded ordinary-WM pointer routing (PATH-017, still open).
 
 In the park view the hover help is 441 over an empty owned cell, 442 over a
 path and 444 over a queue; inside the tools it is 443 and 445. A left click on a
@@ -188,7 +189,7 @@ and `Level.RemovePathCell(x, y)` wrap it with the read-only visit check.
 | ID | Plan name | Interim behaviour |
 | --- | --- | --- |
 | PATH-007 | PATH-LAND | the land (`ParkLand`: the Hoardings.sam fence from the gate posts, an imported save's own flags and fence, Buy Land) follows the original, except that the fence fill's cell outcome is modelled instead of its scan (0x5311c0), the fence of level flag 0x79d86c bit 0x400 is not laid and a purchase in front of the gate is refused (the original's validator accepts some; its ring walk `0x52ba50` then likely keeps the old ring and drops the new hoardings, charging for no land, or may not terminate) |
-| PATH-017 | PATH-PAUSE-WINDOW | the pause menu blocks tool clicks and the speed pause does not, as tp.exe's click gate (`0x48c8d0` reads the pause-menu object `0x7c2534`; `APPROX:PATH-013`, retired); the P key's full-screen layer (`0x47ed80` → `0x65dd7b`) under its panel is not drawn and whether it stops the park click route is not read | The window manager's hit test of the layer |
+| PATH-017 | PATH-PAUSE-WINDOW | Bounded ordinary-WM pump/admission then drain is implemented for offline motion/button ownership and P: topmost eligible receiver, stable screen/element lifetime, separate movement capture, saved release owner, and the P key's pause backdrop (the 'lolight' layer `0x65dd7b` has flags 1, so `0x65db25` accepts it; the P key (`0x409350`, from the key row `0x40bf77` and the window's own procedure `0x4a2706`) and the offline focus-loss pause (`0x46b74c` -> `0x4092a0(1)` -> `0x481440` -> `0x4a2790`) create it and every resume destroys it (`0x409300` -> `0x4a27c0`), and it covers just the windows that existed then, so a window opened later is above it; the speed buttons, the numpad and a park loaded paused create none, and the backdrop takes the click without stopping the camera). The handler-only speed test does not describe the upstream window routing (`0x65db25`, `0x658b1a`, `0x658b7f`, outer pump `0x45ab13`, drain `0x48a5be`). Still open: alternate buffered-input scheduling; full native keyboard/wheel routing (legacy aggregate wheel/non-P paths can still act below the backdrop); original backdrop/panel rendering and full modal/audio parity; unobserved focus-modifier limits; whether a path or pool drag released over the HUD uses the stored hover cell (the click dispatcher `0x4879d0` takes no message coordinates and acts on the stored cursor mode `0x7b05d8`) is not settled, so the release over the HUD computes the cell under the pointer. |
 | PATH-015 | QUEUE-MODELS | queue cells carry the theme's queue models as tp.exe places them (0x535dd0 class 2, 0x5229e0); baked at the cell's mean height, without their .hmp ground deformation, texture-frame animation (the fire0 torches) and quedead's load flag 0x100000 |
 
 Retired: `APPROX:PATH-016` (the links of MAP InitialPath cells: the map init `0x536490` types each cell and links it with the link writer `0x5348d0` in mode 1, the cells in index order, so a cell links only toward the path cells before it and the later cells link back when their own turn comes; `ParkCellMap.FromOriginal` runs the ported writer in that order and no longer links toward non-path neighbours).

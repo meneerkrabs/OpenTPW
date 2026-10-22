@@ -416,16 +416,21 @@ public sealed partial class ParkHud
 	{
 		private readonly ParkHud owner;
 		public AttractionsScreen( ParkHud owner ) : base( "attractions" ) => this.owner = owner;
+		internal override void PreparePointerGeometry( UiContext context )
+		{
+			if ( Find( "attractionList" ) is { } list )
+				list.Bounds = AttractionContent( owner.attractionCategory );
+			foreach ( var element in Elements.OfType<AttractionHeader>() )
+				element.Visible = element.Category == owner.attractionCategory;
+		}
+
 		public override bool Update( UiContext context, UiInput input )
 		{
 			owner.attractionValueAge += Math.Max( 0, context.Delta );
 			// [BIN:TPW-EXE:0x004955e0 list refresh] every 2000 ms (timer 0x80083) the rows of rides, shops and sideshows take new values; features keep theirs
 			owner.RefreshAttractionRows( values: owner.attractionValueAge >= AttractionValueRefreshSeconds && owner.attractionCategory != BuildCategory.Features );
 			owner.EnsureAttractionSelection();
-			if ( Find( "attractionList" ) is { } list )
-				list.Bounds = AttractionContent( owner.attractionCategory );
-			foreach ( var element in Elements.OfType<AttractionHeader>() )
-				element.Visible = element.Category == owner.attractionCategory;
+			PreparePointerGeometry( context );
 			if ( Find( "gotoAttraction" ) is UiButton gotoButton )
 				gotoButton.Enabled = owner.selectedAttractionId != 0;
 			if ( input.Wheel != 0 )

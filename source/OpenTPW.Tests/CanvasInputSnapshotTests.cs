@@ -123,4 +123,19 @@ public class CanvasInputSnapshotTests
 		Assert.AreEqual( (int)CanvasModifiers.Control, snapshot.OrderedEvents[2].Modifiers );
 		Assert.IsTrue( snapshot.OrderedEvents.Zip( snapshot.OrderedEvents.Skip( 1 ), (a, b) => a.TimestampMilliseconds <= b.TimestampMilliseconds ).All( value => value ) );
 	}
+
+	[TestMethod]
+	public void PressesCarryCoordinatesAndEveryRecordUsesTheDomEventTime()
+	{
+		var snapshot = new CanvasSnapshot();
+		snapshot.Apply( "m 1 2 1000.4\nb 1 0 10 20 1000.6\nb 0 0 11 21 1100.2\nk 1 F8 0 0 1200.5\nb 1 0\nb 0 0 12 22" );
+		var raw = snapshot.OrderedEvents;
+		CollectionAssert.AreEqual( new long[] { 1000, 1001, 1100, 1200 }, raw.Take( 4 ).Select( item => item.TimestampMilliseconds ).ToArray() );
+		Assert.IsTrue( raw[1].PositionIsExact );
+		Assert.AreEqual( 10f, raw[1].X );
+		Assert.AreEqual( 20f, raw[1].Y );
+		Assert.IsFalse( raw[4].PositionIsExact, "A press written without coordinates stays explicitly inexact." );
+		Assert.AreEqual( 1200L, raw[4].TimestampMilliseconds, "A record without a time reuses the last event time, not the frame's clock." );
+		Assert.AreEqual( 1200L, raw[5].TimestampMilliseconds );
+	}
 }

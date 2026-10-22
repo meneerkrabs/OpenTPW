@@ -127,8 +127,9 @@ namespace Veldrid
 
 		/// <summary>
 		/// Applies the events opentpw-gl.js queued, one per line:
-		/// <c>k down key modifiers repeat</c>, <c>b down button [x y]</c>, <c>m x y</c>, <c>w delta</c>, <c>c codepoint</c>, <c>r</c> (resized).
-		/// Key names are Veldrid's <see cref="Key"/> names. Returns whether the canvas was resized.
+		/// <c>k down key modifiers repeat [time]</c>, <c>b down button [x y [time]]</c>, <c>m x y [time]</c>, <c>w delta</c>, <c>c codepoint</c>, <c>r</c> (resized).
+		/// The optional time is the DOM event's own <c>timeStamp</c> in milliseconds; a record without one (a blur-generated release) reuses the last
+		/// time seen, so a long frame never stretches a click. Key names are Veldrid's <see cref="Key"/> names. Returns whether the canvas was resized.
 		/// </summary>
 		public bool Apply( string events )
 		{
@@ -141,25 +142,25 @@ namespace Veldrid
 					case "k" when parts.Length >= 5 && Enum.TryParse<Key>( parts[2], out var key ):
 						var keyEvent = new KeyEvent( key, parts[1] == "1", (ModifierKeys)int.Parse( parts[3], CultureInfo.InvariantCulture ), parts[4] == "1" );
 						Record( keyEvent.Down ? OrderedInputEventKind.KeyDown : OrderedInputEventKind.KeyUp,
-							key: (int)keyEvent.Key, modifiers: (int)keyEvent.Modifiers, repeat: keyEvent.Repeat );
+							key: (int)keyEvent.Key, modifiers: (int)keyEvent.Modifiers, repeat: keyEvent.Repeat, time: parts.Length >= 6 ? parts[5] : null );
 						AddKey( keyEvent );
 						break;
 					case "b" when parts.Length >= 3:
 						var button = (MouseButton)int.Parse( parts[2], CultureInfo.InvariantCulture );
 						var down = parts[1] == "1";
-						// Physical releases include canvas-relative coordinates even outside the canvas.
+						// Physical presses and releases include canvas-relative coordinates, even outside the canvas for a release.
 						// Old/blur-generated records have none, so keep their position explicitly inexact.
 						// Do not invent a motion event or change the legacy snapshot's final position.
 						var exactPosition = parts.Length >= 5;
 						var x = exactPosition ? float.Parse( parts[3], CultureInfo.InvariantCulture ) : MousePosition.X;
 						var y = exactPosition ? float.Parse( parts[4], CultureInfo.InvariantCulture ) : MousePosition.Y;
 						Record( down ? OrderedInputEventKind.ButtonDown : OrderedInputEventKind.ButtonUp,
-							button: (int)button, exactPosition: exactPosition, x: x, y: y );
+							button: (int)button, exactPosition: exactPosition, x: x, y: y, time: parts.Length >= 6 ? parts[5] : null );
 						SetButton( button, down );
 						break;
 					case "m" when parts.Length >= 3:
 						MousePosition = new Vector2( float.Parse( parts[1], CultureInfo.InvariantCulture ), float.Parse( parts[2], CultureInfo.InvariantCulture ) );
-						Record( OrderedInputEventKind.Motion, exactPosition: true );
+						Record( OrderedInputEventKind.Motion, exactPosition: true, time: parts.Length >= 4 ? parts[3] : null );
 						break;
 					case "w" when parts.Length >= 2:
 						WheelDelta += float.Parse( parts[1], CultureInfo.InvariantCulture );
@@ -175,9 +176,15 @@ namespace Veldrid
 			return resized;
 		}
 
-		private void Record( OrderedInputEventKind kind, int button = -1, int key = 0, int modifiers = 0, bool repeat = false, bool exactPosition = false, float? x = null, float? y = null ) =>
+		private long lastTimestamp;
+
+		private void Record( OrderedInputEventKind kind, int button = -1, int key = 0, int modifiers = 0, bool repeat = false, bool exactPosition = false, float? x = null, float? y = null, string? time = null )
+		{
+			if ( time != null && double.TryParse( time, NumberStyles.Float, CultureInfo.InvariantCulture, out var milliseconds ) && double.IsFinite( milliseconds ) )
+				lastTimestamp = (long)Math.Round( milliseconds );
 			orderedEvents.Add( new OrderedInputEvent( ++orderedSequence, kind, x ?? MousePosition.X, y ?? MousePosition.Y,
-				button, key, modifiers, repeat, Environment.TickCount64, OrderedInputEventSource.Browser, exactPosition ) );
+				button, key, modifiers, repeat, lastTimestamp, OrderedInputEventSource.Browser, exactPosition ) );
+		}
 	}
 }
 

@@ -20,7 +20,6 @@ namespace OpenTPW.Tests;
 public class OrderedParkPointerPipelineTests
 {
 	private const BindingFlags InstancePrivate = BindingFlags.Instance | BindingFlags.NonPublic;
-	private const BindingFlags StaticPrivate = BindingFlags.Static | BindingFlags.NonPublic;
 	private static readonly N.Vector2 ParkPoint = new( 500, 400 );
 	private ParkHud hud = null!;
 	private Level level = null!;
@@ -38,18 +37,17 @@ public class OrderedParkPointerPipelineTests
 		public IReadOnlyList<BuildItem> GetItems( BuildCategory category ) => Array.Empty<BuildItem>();
 	}
 
-	private static FieldInfo InputField( string name ) => typeof( Input ).GetField( name, StaticPrivate )
-		?? throw new AssertFailedException( "Input fixture field not found: " + name );
+	// Only the HUD's and the session's private markers still go through reflection; Input and Level expose test seams.
 	private static void Set( object target, string name, object? value ) =>
-		(typeof( Level ).IsInstanceOfType( target ) ? typeof( Level ) : target.GetType()).GetField( name, InstancePrivate )!.SetValue( target, value );
+		target.GetType().GetField( name, InstancePrivate )!.SetValue( target, value );
 
 	[TestInitialize]
 	public void Initialize()
 	{
 		commands.Clear(); commandModifiers.Clear(); sequence = 0; milliseconds = 1000; updating = 0;
 		// UpdateFrom invokes SDL_ShowCursor, and UpdateButtons drains injected keys/localizes bindings.
-		// Save and inject only the managed state consumed by Poll and the HUD. Preserve old collection
-		// identities and the private frame-key contents so unrelated fixtures cannot inherit our state.
+		// Save and inject only the managed state consumed by Poll and the HUD (Input's test seams), so
+		// unrelated fixtures cannot inherit our state.
 		var oldMouse = Input.Mouse;
 		var oldKeyboard = Input.Keyboard;
 		var oldDown = Input.KeysDown;
@@ -57,14 +55,7 @@ public class OrderedParkPointerPipelineTests
 		var oldText = Input.TextEntryActive;
 		var oldCursor = Input.CursorType;
 		var oldSoftwareCursor = Input.SoftwareCursorRequested;
-		var oldTyped = Input.Typed;
-		var oldPresses = Input.KeyPresses;
-		var oldOrdered = Input.OrderedEvents;
-		var frameKeys = (HashSet<Key>)InputField( "frameKeys" ).GetValue( null )!;
-		var oldFrameKeys = frameKeys.ToArray();
-		var bindings = InputField( "Bindings" );
-		var oldBindings = (Dictionary<InputButton, Key[]>)bindings.GetValue( null )!;
-		var oldPointerModifiers = InputField( "pointerModifierMask" ).GetValue( null );
+		var restoreFrame = Input.CaptureFrameStateForTests();
 		var oldMode = Camera.Mode;
 		var oldView = Camera.ViewMatrix;
 		var oldProjection = Camera.ProjMatrix;
@@ -81,12 +72,7 @@ public class OrderedParkPointerPipelineTests
 			Input.TextEntryActive = oldText;
 			Input.CursorType = oldCursor;
 			Input.SoftwareCursorRequested = oldSoftwareCursor;
-			InputField( "<Typed>k__BackingField" ).SetValue( null, oldTyped );
-			InputField( "<KeyPresses>k__BackingField" ).SetValue( null, oldPresses );
-			InputField( "<OrderedEvents>k__BackingField" ).SetValue( null, oldOrdered );
-			InputField( "pointerModifierMask" ).SetValue( null, oldPointerModifiers );
-			frameKeys.Clear(); frameKeys.UnionWith( oldFrameKeys );
-			bindings.SetValue( null, oldBindings );
+			restoreFrame();
 			Camera.Mode = oldMode; Camera.ViewMatrix = oldView; Camera.ProjMatrix = oldProjection;
 			GameEditions.Select( oldEdition );
 			GameOptions.Current = oldOptions; RideCameraMode.PointerOverride = oldRidePointer;
@@ -94,19 +80,14 @@ public class OrderedParkPointerPipelineTests
 		};
 		Input.Mouse = new(); Input.Keyboard = new(); Input.KeysDown = new(); Input.LastKeysDown = new();
 		Input.TextEntryActive = false;
-		InputField( "<Typed>k__BackingField" ).SetValue( null, "" );
-		InputField( "<KeyPresses>k__BackingField" ).SetValue( null, Array.Empty<Key>() );
-		InputField( "<OrderedEvents>k__BackingField" ).SetValue( null, null );
-		InputField( "pointerModifierMask" ).SetValue( null, null );
-		frameKeys.Clear();
-		bindings.SetValue( null, oldBindings.ToDictionary( pair => pair.Key, pair => (Key[])pair.Value.Clone() ) );
+		Input.ResetFrameStateForTests();
 		GameEditions.Select( GameEdition.ThemeParkWorld );
 		GameOptions.Current = new GameOptions();
 		Camera.Mode = new ParkCameraMode(); Camera.ViewMatrix = Camera.ProjMatrix = N.Matrix4x4.Identity;
 		var fixture = VisitorWorldSelectionTests.Fixture( out _, out _ );
-		level = (Level)typeof( ParkHud ).GetField( "level", InstancePrivate )!.GetValue( fixture )!;
+		level = fixture.LevelForTests;
 		// Record calls at the real Level fallback boundary without loading or mutating a rendered park.
-		Set( level, "commands", new ParkCommands( () => 0, command =>
+		level.UseCommandsForTests( new ParkCommands( () => 0, command =>
 		{
 			commands.Add( command ); commandModifiers.Add( Input.ModifierMaskDown );
 			return ParkCommandResult.Ok();
@@ -139,21 +120,19 @@ public class OrderedParkPointerPipelineTests
 	private OrderedInputEvent KeyUp( Key key ) => Event( OrderedInputEventKind.KeyUp, key: key );
 
 	private UiInput Poll( IReadOnlyList<OrderedInputEvent>? events, bool left = false, N.Vector2? mouse = null,
-		Key[]? keys = null, float scaleX = 1, float scaleY = 1 )
+		Key[]? keys = null, float scaleX = 1, float scaleY = 1, float wheel = 0 )
 	{
 		var position = mouse ?? ParkPoint;
-		Input.Mouse = new Input.MouseInfo { Position = new( position.X, position.Y ), Left = left };
+		Input.Mouse = new Input.MouseInfo { Position = new( position.X, position.Y ), Left = left, Wheel = wheel };
 		Input.Keyboard = new Input.KeyboardInfo( (keys ?? Array.Empty<Key>()).ToList() );
-		var frameKeys = (HashSet<Key>)InputField( "frameKeys" ).GetValue( null )!;
-		frameKeys.Clear(); frameKeys.UnionWith( Input.Keyboard.KeysDown );
-		InputField( "<OrderedEvents>k__BackingField" ).SetValue( null, events );
+		Input.SetFrameForTests( Input.Keyboard.KeysDown, events );
 		return source.Poll( scaleX, scaleY );
 	}
 
 	private UiInput Frame( IReadOnlyList<OrderedInputEvent>? events, bool left = false, N.Vector2? mouse = null,
-		Key[]? keys = null, float scaleX = 1, float scaleY = 1, bool hostBlocked = false, bool mouseCaptured = false )
+		Key[]? keys = null, float scaleX = 1, float scaleY = 1, bool hostBlocked = false, bool mouseCaptured = false, float wheel = 0 )
 	{
-		var input = Poll( events, left, mouse, keys, scaleX, scaleY ) with { PointerHostBlocked = hostBlocked };
+		var input = Poll( events, left, mouse, keys, scaleX, scaleY, wheel ) with { PointerHostBlocked = hostBlocked };
 		var captured = hud.Update( context, input, mouseCaptured, false, false );
 		// This is the actual next-stage API used by Level.Update, including snapshot-only fallback.
 		level.UpdateWorldInput( Input.Mouse.Left, captured, input.Mouse,
@@ -341,8 +320,7 @@ public class OrderedParkPointerPipelineTests
 	[TestMethod]
 	public void ActualPollAndHudHonorRemappedPauseAndIgnoreRepeatAndControlChord()
 	{
-		var bindings = (Dictionary<InputButton, Key[]>)InputField( "Bindings" ).GetValue( null )!;
-		bindings[InputButton.Pause] = new[] { Key.F8 };
+		Input.RebindForTests( InputButton.Pause, Key.F8 );
 		Frame( new[] { KeyDown( Key.P ), KeyUp( Key.P ) } );
 		Assert.AreEqual( GameSpeed.Normal, hud.Status.Speed );
 		var input = Frame( new[] { KeyDown( Key.F8 ) }, keys: new[] { Key.F8 } );
@@ -444,13 +422,13 @@ public class OrderedParkPointerPipelineTests
 			clicks++;
 			// Enter only the mode marker; do not create a renderer, open a ride or execute a camera.
 			if ( mode == "camcorder" ) Set( hud, "<CamcorderArmed>k__BackingField", true );
-			else if ( mode == "ride" ) Set( level, "<RideView>k__BackingField", RuntimeHelpers.GetUninitializedObject( typeof( RideCameraMode ) ) );
-			else Set( level, "<FreeWalk>k__BackingField", RuntimeHelpers.GetUninitializedObject( typeof( FreeWalkCameraMode ) ) );
+			else if ( mode == "ride" ) level.UseRideViewForTests( (RideCameraMode)RuntimeHelpers.GetUninitializedObject( typeof( RideCameraMode ) ) );
+			else level.UseFreeWalkForTests( (FreeWalkCameraMode)RuntimeHelpers.GetUninitializedObject( typeof( FreeWalkCameraMode ) ) );
 		} );
 		Frame( new[] { Down( point ), Up( point ), Down( point ) }, left: true, mouse: point );
 		Assert.AreEqual( 1, clicks ); Assert.AreEqual( 0, commands.Count );
 		Set( hud, "<CamcorderArmed>k__BackingField", false );
-		Set( level, "<RideView>k__BackingField", null ); Set( level, "<FreeWalk>k__BackingField", null );
+		level.UseRideViewForTests( null ); level.UseFreeWalkForTests( null );
 		Frame( new[] { Up( point ) }, mouse: point );
 		Assert.AreEqual( 1, clicks, "Returning cannot revive a release from the suspended view's press." );
 		Frame( new[] { Down( point ), Up( point ) }, mouse: point );
@@ -533,7 +511,7 @@ public class OrderedParkPointerPipelineTests
 		Assert.IsTrue( panel.IsDragging ); Assert.IsNotNull( panel.DragCost );
 		// Seed the already-started real tool, not its private drag flag. The following Poll/HUD frame
 		// owns host cancellation; synthetic geometry is sufficient and no pylon rendering is needed.
-		Set( level, "<CoasterPanel>k__BackingField", panel );
+		level.UseCoasterPanelForTests( panel );
 		Frame( new[] { Event( OrderedInputEventKind.Motion ) }, left: true, hostBlocked: true );
 		Assert.IsFalse( panel.IsDragging ); Assert.IsNull( panel.DragCost );
 		Assert.AreEqual( 1, applied.Count( command => command is EndCoasterNodeEditCommand ) );
@@ -577,7 +555,7 @@ public class OrderedParkPointerPipelineTests
 		Assert.AreEqual( CoasterPlaceResult.Ok, builder.Place( 24, 20 ) );
 		var edits = new CoasterEdits();
 		var executed = new List<ParkCommand>();
-		Set( level, "commands", new ParkCommands( () => 0, command =>
+		level.UseCommandsForTests( new ParkCommands( () => 0, command =>
 		{
 			executed.Add( command );
 			return CoasterPanelCommand.ApplyTo( command, builder, edits );
@@ -592,7 +570,7 @@ public class OrderedParkPointerPipelineTests
 		} );
 		Assert.IsTrue( panel.Select( CoasterToolButton.Height ) );
 		Assert.IsTrue( panel.Press( CoasterTrack.StationNodeCount, new N.Vector2( 100, 100 ), 24, 20 ) );
-		Set( level, "<CoasterPanel>k__BackingField", panel );
+		level.UseCoasterPanelForTests( panel );
 		Assert.IsNotNull( edits.Of( ParkCommands.LocalPlayer ) );
 		ulong State()
 		{
@@ -689,4 +667,156 @@ public class OrderedParkPointerPipelineTests
 		Assert.AreEqual( 0, commands.Count );
 	}
 
+	/// <summary>One HUD frame fed with injected input, as GameFlow does: the pointer edges become a synthetic ordered batch.</summary>
+	private UiInput InjectedFrame( UiInput injected )
+	{
+		var input = injected.WithSyntheticOrderedEvents();
+		var captured = hud.Update( context, input, false, false, false );
+		level.UpdateWorldInput( false, captured, input.Mouse, new N.Vector2( context.Canvas.Width, context.Canvas.Height ), 0 );
+		return input;
+	}
+
+	[TestMethod]
+	public void InjectedClickReachesAHudButtonAfterRoutingHasStarted()
+	{
+		var clicks = 0; var point = AddButton( () => clicks++ );
+		Frame( Array.Empty<OrderedInputEvent>(), mouse: point );
+		var injected = InjectedFrame( UiInput.Click( point ) );
+		Assert.IsNotNull( injected.OrderedEvents );
+		CollectionAssert.AreEqual( new[] { OrderedInputEventKind.Motion, OrderedInputEventKind.ButtonDown, OrderedInputEventKind.ButtonUp },
+			injected.OrderedEvents!.Select( item => item.Kind ).ToArray() );
+		Assert.AreEqual( 1, clicks );
+		// A bare release with no batch at all is "unknown ordering", which never activates anything.
+		hud.Update( context, UiInput.Click( point ), false, false, false );
+		Assert.AreEqual( 1, clicks );
+		Assert.AreEqual( 0, commands.Count );
+	}
+
+	[TestMethod]
+	public void InjectedClickReachesThePark_AndInputWithoutPointerEdgesIsLeftAlone()
+	{
+		Frame( Array.Empty<OrderedInputEvent>() );
+		InjectedFrame( UiInput.Click( ParkPoint ) );
+		Assert.AreEqual( 1, commands.Count ); Assert.IsTrue( commands[0] is RemoveAtCommand );
+		var idle = UiInput.Idle( ParkPoint ) with { Wheel = -1 };
+		Assert.IsNull( idle.WithSyntheticOrderedEvents().OrderedEvents );
+		Assert.IsNull( UiInput.Key( UiKeys.Accept ).WithSyntheticOrderedEvents().OrderedEvents );
+		var held = UiInput.Click( ParkPoint ) with { OrderedEvents = Array.Empty<OrderedInputEvent>() };
+		Assert.AreEqual( 0, held.WithSyntheticOrderedEvents().OrderedEvents!.Count, "A real batch is never replaced." );
+	}
+
+	[TestMethod]
+	public void InjectedRightClickAndNotClickKeepTheirMeaning()
+	{
+		var clicks = 0; var point = AddButton( () => clicks++ );
+		Frame( Array.Empty<OrderedInputEvent>(), mouse: point );
+		var right = (UiInput.Idle( point ) with { RightPressed = true }).WithSyntheticOrderedEvents();
+		Assert.AreEqual( (int)MouseButton.Right, right.OrderedEvents![1].Button );
+		var slow = (UiInput.Click( point ) with { NotClick = true }).WithSyntheticOrderedEvents();
+		Assert.IsTrue( slow.OrderedEvents![2].TimestampMilliseconds - slow.OrderedEvents[1].TimestampMilliseconds > UiInputSource.ClickMilliseconds );
+		InjectedFrame( UiInput.Click( point ) with { NotClick = true } );
+		Assert.AreEqual( 0, clicks, "A held-too-long injected release is not a click." );
+	}
+
+	[TestMethod]
+	public void SpeedButtonPauseNeverCreatesThePointerBackdrop()
+	{
+		var clicks = 0; var point = AddButton( () => clicks++ );
+		Frame( Array.Empty<OrderedInputEvent>(), mouse: point );
+		// The [EXT:speed-buttons] "||" button runs exactly this; the original window is created by the P key alone (0x4a27f0).
+		hud.SetUserGameSpeed( GameSpeed.Paused );
+		Assert.AreEqual( GameSpeed.Paused, hud.Status.Speed );
+		Frame( new[] { Down( point ), Up( point ) }, mouse: point );
+		Assert.AreEqual( 1, clicks, "The HUD (its \">\" button included) stays live under a speed pause." );
+	}
+
+	[TestMethod]
+	public void NumpadStepToPausedNeverCreatesThePointerBackdrop()
+	{
+		var clicks = 0; var point = AddButton( () => clicks++ );
+		Input.KeysDown = new() { InputButton.TimeSlowDown };
+		Frame( Array.Empty<OrderedInputEvent>(), mouse: point );
+		Input.KeysDown = new(); Input.LastKeysDown = new();
+		Assert.AreEqual( GameSpeed.Paused, hud.Status.Speed );
+		Frame( new[] { Down( point ), Up( point ) }, mouse: point );
+		Assert.AreEqual( 1, clicks );
+	}
+
+	[TestMethod]
+	public void ParkLoadedPausedHasNoPointerBackdropButTheKeyPauseHasOne()
+	{
+		var clicks = 0; var point = AddButton( () => clicks++ );
+		hud.Status.Speed = GameSpeed.Paused; // a park whose saved speed is Paused: no P window exists in the original either
+		Frame( new[] { Down( point ), Up( point ) }, mouse: point );
+		Assert.AreEqual( 1, clicks );
+		hud.Status.Speed = GameSpeed.Normal;
+		TapPause();
+		Assert.AreEqual( GameSpeed.Paused, hud.Status.Speed );
+		Frame( new[] { Down( point ), Up( point ) }, mouse: point );
+		Assert.AreEqual( 1, clicks, "The P window's backdrop takes the pointer." );
+	}
+
+	[TestMethod]
+	public void SpeedChoiceAfterPClosesTheBackdrop()
+	{
+		var clicks = 0; var point = AddButton( () => clicks++ );
+		TapPause();
+		hud.SetUserGameSpeed( GameSpeed.Normal );
+		Frame( new[] { Down( point ), Up( point ) }, mouse: point );
+		Assert.AreEqual( 1, clicks );
+	}
+
+	[TestMethod]
+	public void ScreenOpenedAfterTheBackdropIsAboveItWhileOlderWindowsStayCovered()
+	{
+		var below = 0; var above = 0;
+		var lowPoint = AddButton( () => below++ );
+		TapPause();
+		Frame( new[] { Down( lowPoint ), Up( lowPoint ) }, mouse: lowPoint );
+		Assert.AreEqual( 0, below, "What existed when P created the window lies under its backdrop." );
+		// The Escape menu, a confirm box or a message box is created later, hence topmost in the hit test 0x65db25.
+		var modal = new UiScreen( "pipeline-after-pause" );
+		var modalPoint = AddButton( () => above++, modal );
+		hud.Stack.Push( modal );
+		Frame( new[] { Down( modalPoint ), Up( modalPoint ) }, mouse: modalPoint );
+		Assert.AreEqual( 1, above ); Assert.AreEqual( 0, commands.Count );
+		hud.Stack.Pop();
+		Frame( new[] { Down( lowPoint ), Up( lowPoint ) }, mouse: lowPoint );
+		Assert.AreEqual( 0, below, "Closing it returns the pointer to the backdrop." );
+		Assert.AreEqual( 0, commands.Count );
+	}
+
+	[DataTestMethod]
+	[DataRow( 100L, 1 )]
+	[DataRow( 499L, 1 )]
+	[DataRow( 600L, 0 )]
+	public void ClickDurationComesFromTheEventTimestampsNotFromWhenTheFrameReadsThem( long heldMilliseconds, int expected )
+	{
+		var clicks = 0; var point = AddButton( () => clicks++ );
+		var down = Down( point ) with { TimestampMilliseconds = 5000 };
+		var up = Up( point ) with { TimestampMilliseconds = 5000 + heldMilliseconds };
+		// A long frame: the batch is read a minute after its events happened.
+		milliseconds += 60_000;
+		Frame( new[] { down, up }, mouse: point );
+		Assert.AreEqual( expected, clicks );
+	}
+
+	[DataTestMethod]
+	[DataRow( false )]
+	[DataRow( true )]
+	public void WheelStaysOnItsLegacyOncePerFramePath( bool underPauseBackdrop )
+	{
+		// Documented residual of PATH-017: the aggregate wheel is not an ordered event. Routing neither replays it
+		// from the resting delivery nor swallows it, so it still adjusts what lies under the pointer, once per frame.
+		var adjusted = 0;
+		var button = hud.Screen.Add( new UiButton { Bounds = new UiRect( 980, 530, 100, 100 ), Anchor = UiAnchor.Center,
+			Adjusted = _ => adjusted++, WheelAdjusts = true } );
+		var point = button.ScreenRect( context.Canvas ).Center;
+		if ( underPauseBackdrop ) TapPause();
+		Frame( new[] { Event( OrderedInputEventKind.Motion, point ) }, mouse: point, wheel: 1 );
+		Assert.AreEqual( 1, adjusted );
+		Frame( Array.Empty<OrderedInputEvent>(), mouse: point );
+		Assert.AreEqual( 1, adjusted, "A frame without a wheel tick has nothing to replay." );
+		Assert.AreEqual( 0, commands.Count );
+	}
 }

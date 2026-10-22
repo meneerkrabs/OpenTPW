@@ -81,4 +81,22 @@ public class UiPointerRouterTests
 		Assert.IsFalse( router.LeftDown );
 		Assert.IsNull( router.Admit( new[] { Event( OrderedInputEventKind.ButtonUp ) }, _ => park ).Single().Owner );
 	}
+
+	[TestMethod]
+	public void RemovedElementsLeaveNoGenerationAndAReaddedOneIsNewlyIdentified()
+	{
+		var screen = new UiScreen( "membership" );
+		var button = screen.Add( new UiButton() );
+		var other = screen.Add( new UiButton() );
+		var first = screen.ElementGeneration( button );
+		Assert.AreNotEqual( 0, first );
+		Assert.AreNotEqual( first, screen.ElementGeneration( other ) );
+		screen.Remove( button );
+		Assert.AreEqual( 0, screen.ElementGeneration( button ), "A removed element keeps no entry." );
+		screen.Add( button );
+		Assert.AreNotEqual( 0, screen.ElementGeneration( button ) );
+		Assert.AreNotEqual( first, screen.ElementGeneration( button ), "Re-adding must never reuse the earlier recipient identity." );
+		screen.Remove( button ); screen.Remove( other );
+		Assert.AreEqual( 0, screen.ElementGeneration( other ) );
+	}
 }

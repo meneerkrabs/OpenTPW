@@ -37,6 +37,35 @@ public readonly record struct UiInput( NVector2 Mouse, bool LeftDown, bool LeftP
 	public static UiInput Key( UiKeys keys ) => new( new NVector2( -1, -1 ), false, false, false, false, keys );
 	public static UiInput Type( string text, int backspaces = 0 ) => new( new NVector2( -1, -1 ), false, false, false, false, UiKeys.None, 0, text, backspaces );
 	public bool Has( UiKeys key ) => (Pressed & key) != 0;
+
+	/// <summary>
+	/// Injected input (the smoke tests and unit fixtures) states pointer edges directly and has no raw batch. Once the park
+	/// routes ordered input a missing batch is "unknown", which never starts a gesture, so express those edges as the
+	/// batch a real frame would have produced: a move to the pointer, then the press and release (a release-only
+	/// <see cref="Click"/> is a whole quick click). Input that already carries a batch, or has no pointer edge, is returned as is.
+	/// </summary>
+	public UiInput WithSyntheticOrderedEvents()
+	{
+		if ( OrderedEvents != null || Mouse.X < 0 || !(LeftPressed || LeftReleased || RightPressed) )
+			return this;
+		var events = new List<OrderedInputEvent>();
+		var point = Mouse;
+		OrderedInputEvent At( OrderedInputEventKind kind, int button = -1, long time = 0 ) =>
+			new( events.Count + 1, kind, point.X, point.Y, button, TimestampMilliseconds: time, PositionIsExact: true );
+		events.Add( At( OrderedInputEventKind.Motion ) );
+		var left = (int)MouseButton.Left;
+		if ( LeftPressed || LeftReleased )
+			events.Add( At( OrderedInputEventKind.ButtonDown, left ) );
+		if ( LeftReleased )
+			events.Add( At( OrderedInputEventKind.ButtonUp, left, NotClick ? UiInputSource.ClickMilliseconds + 1 : 0 ) );
+		if ( RightPressed )
+		{
+			var right = (int)MouseButton.Right;
+			events.Add( At( OrderedInputEventKind.ButtonDown, right ) );
+			events.Add( At( OrderedInputEventKind.ButtonUp, right ) );
+		}
+		return this with { OrderedEvents = events };
+	}
 }
 
 /// <summary>Turns the global <see cref="Input"/> state into <see cref="UiInput"/> edges.</summary>
@@ -149,4 +178,3 @@ public sealed class UiInputSource
 	/// <summary>Frames a press may last and still be a click whatever the clock says.</summary>
 	public const int MaxQuickClickFrames = 2;
 }
-

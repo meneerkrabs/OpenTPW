@@ -518,7 +518,7 @@ function attachInput() {
 				heldKeys.add(name);
 			else
 				heldKeys.delete(name);
-			events.push(`k ${down ? 1 : 0} ${name} ${modifiers(event)} ${event.repeat ? 1 : 0}`);
+			events.push(`k ${down ? 1 : 0} ${name} ${modifiers(event)} ${event.repeat ? 1 : 0} ${event.timeStamp}`);
 		}
 		if (down && event.key.length === 1 && !event.ctrlKey && !event.metaKey)
 			events.push(`c ${event.key.codePointAt(0)}`);
@@ -528,7 +528,7 @@ function attachInput() {
 	};
 	canvas.addEventListener('keydown', key(true));
 	canvas.addEventListener('keyup', key(false));
-	const position = event => events.push(`m ${event.offsetX} ${event.offsetY}`);
+	const position = event => events.push(`m ${event.offsetX} ${event.offsetY} ${event.timeStamp}`);
 	const button = event => event.button === 0 ? 0 : event.button === 1 ? 1 : event.button === 2 ? 2 : 3 + event.button - 3;
 	canvas.addEventListener('mousemove', position);
 	// a pointer that leaves the canvas reports no position (the ride view's free look centres on it)
@@ -537,7 +537,8 @@ function attachInput() {
 		canvas.focus();
 		position(event);
 		heldButtons.add(button(event));
-		events.push(`b 1 ${button(event)}`);
+		// the press carries its own position and DOM time, like the release (the ordered router needs both)
+		events.push(`b 1 ${button(event)} ${event.offsetX} ${event.offsetY} ${event.timeStamp}`);
 	});
 	window.addEventListener('mouseup', event => {
 		if (!heldButtons.delete(button(event)))
@@ -550,7 +551,7 @@ function attachInput() {
 		const scaleY = rect.height > 0 && canvas.offsetHeight > 0 ? canvas.offsetHeight / rect.height : 1;
 		const x = (event.clientX - rect.left) * scaleX - canvas.clientLeft;
 		const y = (event.clientY - rect.top) * scaleY - canvas.clientTop;
-		events.push(`b 0 ${button(event)} ${x} ${y}`);
+		events.push(`b 0 ${button(event)} ${x} ${y} ${event.timeStamp}`);
 	});
 	canvas.addEventListener('blur', releaseAll);
 	window.addEventListener('blur', releaseAll);

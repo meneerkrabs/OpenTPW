@@ -12,7 +12,9 @@ public class UiScreen
 	private readonly List<UiElement> elements = new();
 	private readonly Dictionary<UiElement, int> memberships = new();
 	internal int ElementGeneration( UiElement? element ) => element != null && memberships.TryGetValue( element, out var generation ) ? generation : 0;
-	private void ChangeMembership( UiElement element ) => memberships[element] = ElementGeneration( element ) + 1;
+	private int membershipCounter;
+	/// <summary>Every addition takes a fresh, screen-wide generation, so an element removed and added again is a new pointer recipient.</summary>
+	private void AddMembership( UiElement element ) => memberships[element] = ++membershipCounter;
 	private UiElement? pressed;
 	private NVector2 pressPoint;
 	private bool capturedClick;
@@ -62,7 +64,7 @@ public class UiScreen
 	public T Add<T>( T element ) where T : UiElement
 	{
 		elements.Add( element );
-		ChangeMembership( element );
+		AddMembership( element );
 		return element;
 	}
 
@@ -71,13 +73,14 @@ public class UiScreen
 	{
 		var index = before == null ? -1 : elements.IndexOf( before );
 		if ( index < 0 ) elements.Add( element ); else elements.Insert( index, element );
-		ChangeMembership( element );
+		AddMembership( element );
 		return element;
 	}
 
 	public void Remove( UiElement element )
 	{
-		if ( elements.Remove( element ) ) ChangeMembership( element );
+		// A removed element has no generation (0), so tokens issued for it no longer match and the map cannot grow without bound.
+		if ( elements.Remove( element ) ) memberships.Remove( element );
 		if ( pressed == element ) CancelCapturedPress();
 		if ( Focused == element )
 			Focused = null;
@@ -449,4 +452,3 @@ public sealed class UiScreenStack
 		context.DrawText( context.Fonts.Small, text, area, UiColors.Text, UiAlign.Center, wrap: true, shadow: false );
 	}
 }
-

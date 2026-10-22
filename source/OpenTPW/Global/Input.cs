@@ -62,6 +62,52 @@ public static partial class Input
 	private static readonly HashSet<Key> frameKeys = new();
 	internal static bool IsFrameKeyDown( Key key ) => frameKeys.Contains( key );
 
+	/// <summary>
+	/// Unit-test seam: pointer fixtures feed the managed frame state a real SDL pump would have produced (UpdateFrom also shows the cursor and
+	/// drains injected keys, so it cannot run in a CPU-only test). Returns the action that puts the previous state back.
+	/// </summary>
+	internal static Action CaptureFrameStateForTests()
+	{
+		var typed = Typed;
+		var presses = KeyPresses;
+		var ordered = OrderedEvents;
+		var modifiers = pointerModifierMask;
+		var held = frameKeys.ToArray();
+		var bindings = Bindings;
+		return () =>
+		{
+			Typed = typed;
+			KeyPresses = presses;
+			OrderedEvents = ordered;
+			pointerModifierMask = modifiers;
+			frameKeys.Clear();
+			frameKeys.UnionWith( held );
+			Bindings = bindings;
+		};
+	}
+
+	/// <summary>Unit-test seam: an empty frame with private copies of the key bindings, so a fixture cannot change another test's.</summary>
+	internal static void ResetFrameStateForTests()
+	{
+		Typed = "";
+		KeyPresses = Array.Empty<Key>();
+		OrderedEvents = null;
+		pointerModifierMask = null;
+		frameKeys.Clear();
+		Bindings = Bindings.ToDictionary( pair => pair.Key, pair => (Key[])pair.Value.Clone() );
+	}
+
+	/// <summary>Unit-test seam: rebinds one button; call <see cref="ResetFrameStateForTests"/> first so the change stays in the fixture's private copy.</summary>
+	internal static void RebindForTests( InputButton button, params Key[] keys ) => Bindings[button] = keys;
+
+	/// <summary>Unit-test seam: the physically held keys and the raw ordered batch of one synthetic frame.</summary>
+	internal static void SetFrameForTests( IEnumerable<Key> held, IReadOnlyList<OrderedInputEvent>? ordered )
+	{
+		frameKeys.Clear();
+		frameKeys.UnionWith( held );
+		OrderedEvents = ordered;
+	}
+
 	/// <summary>Modifier mask of a Shift/Ctrl/Alt state as the original builds it: Shift 3, Ctrl 0xc, Alt 0x30.</summary>
 	// [BIN:TPW-EXE:0x486aa0 modifier mask] GetAsyncKeyState of VK_SHIFT (0x10), VK_CONTROL (0x11) and VK_MENU (0x12) gives 3, 0xc and 0x30, or-ed together
 	internal static int ModifierMask( bool shift, bool control, bool alt ) => (shift ? 3 : 0) | (control ? 0xc : 0) | (alt ? 0x30 : 0);

@@ -70,7 +70,7 @@ public sealed class OnlineGlobeScreen : UiScreen
 			if ( !overUi && globe() is { } scene && Ray( input.Mouse, canvas ) is { } ray )
 				Hovered = scene.Pick( ray.Origin, ray.Direction );
 			// [BIN:TPW-EXE:0x005DD530 online globe input] a click (event 0x10005) on a hovered pin selects that city (DAT_00f82888) and switches to its lobby, whose top-10 request reads it (0x005E23F0); zooming is the zoom button (event 0x10006, param 2)
-			if ( !input.PointerSuppressed && input.LeftReleased && !overUi && Hovered is { } city )
+			if ( !input.PointerSuppressed && input.LeftReleased && !input.NotClick && !overUi && Hovered is { } city )
 				CityClicked?.Invoke( city );
 		}
 		// Arrow keys turn the globe instead of moving the focus; the right button steers instead of going back.

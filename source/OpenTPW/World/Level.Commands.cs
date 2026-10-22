@@ -20,6 +20,9 @@ public partial class Level
 	/// <summary>The park's edit funnel; every edit of a HUD window or tool goes through it.</summary>
 	public ParkCommands Commands => commands ??= new ParkCommands( () => simulationClock?.TickCount ?? 0, ExecuteCommand, () => IsReadOnlyVisit );
 
+	/// <summary>Unit-test seam: replaces the command funnel so a fixture records what a click issues, without running the park's rules.</summary>
+	internal void UseCommandsForTests( ParkCommands replacement ) => commands = replacement;
+
 	/// <summary>The recording of this park's commands (<c>--record-commands</c>), or null.</summary>
 	public ParkCommandRecorder? CommandRecorder => commandRecorder;
 

@@ -11,10 +11,14 @@ public sealed partial class ParkHud
 	private bool pointerRoutingStarted;
 	private bool pointerRoutingActive;
 	private UiPointerOwner? pausePointerOverlay;
+	private UiScreen[] pauseOverlayBelow = Array.Empty<UiScreen>();
 	private readonly Dictionary<(UiScreen Screen, UiElement? Element, int Generation, int Membership), UiPointerOwner> screenPointerOwners = new();
 	private NVector2 routedPressPoint;
 	private long routedPressTime;
 	private bool routedPressMoved;
+
+	/// <summary>Unit-test seam: the level this HUD was built for (the fixtures build the HUD around a hand-made level).</summary>
+	internal Level LevelForTests => level;
 
 	private UiPointerOwner ParkPointerOwner => parkPointerOwner ??= new UiPointerOwner( this );
 
@@ -26,10 +30,33 @@ public sealed partial class ParkHud
 		return owner;
 	}
 
+	/// <summary>
+	/// [BIN:TPW-EXE:0x47ed80 P window] the P window's 'lolight' backdrop (0x65dd7b, rect 0,0,0x7ff,0x5ff, flags 1, hidden byte 0) is an eligible receiver of
+	/// the hit test 0x65db25 (flag bit 0x2 clear, byte +4 clear, bit 0x1 set), so it takes every pointer event over the windows that existed when P created it.
+	/// Only the P key creates it, and only offline: the owner dies with the pause (a co-op or read-only visit never gets one).
+	/// </summary>
+	private void CreatePausePointerOverlay()
+	{
+		if ( level == null || level.CoopRole != CoopRole.None || level.IsReadOnlyVisit )
+			return;
+		RetirePausePointerOverlay();
+		pausePointerOverlay = new UiPointerOwner( new object() );
+		pauseOverlayBelow = Stack.Screens.ToArray();
+	}
+
+	private void RetirePausePointerOverlay()
+	{
+		pausePointerOverlay?.Retire();
+		pausePointerOverlay = null;
+		pauseOverlayBelow = Array.Empty<UiScreen>();
+	}
+
 	private UiPointerOwner? HitPointer( UiContext context, NVector2 point )
 	{
 		if ( point.X < 0 || point.Y < 0 || point.X >= context.Canvas.Width || point.Y >= context.Canvas.Height ) return null;
-		if ( pausePointerOverlay != null ) return pausePointerOverlay;
+		// [BIN:TPW-EXE:0x65db25 topmost eligible window] the last created sibling wins, so a window opened after the P window (the Escape menu,
+		// a confirm or message box) lies above its backdrop; the backdrop covers only what existed when it was created.
+		if ( pausePointerOverlay != null && (Stack.Top is not { } above || Array.IndexOf( pauseOverlayBelow, above ) >= 0) ) return pausePointerOverlay;
 		if ( Stack.Top is { } screen && (screen.Covers( context.Canvas, point ) || Stack.Screens.Count > 1) )
 			return ScreenPointerOwner( screen, screen.HitTest( context.Canvas, point ) );
 		return ParkPointerOwner;
@@ -52,10 +79,7 @@ public sealed partial class ParkHud
 	{
 		pointerRoutingActive = false;
 		if ( level.CoopRole != CoopRole.None || level.IsReadOnlyVisit )
-		{
-			pausePointerOverlay?.Retire();
-			pausePointerOverlay = null;
-		}
+			RetirePausePointerOverlay();
 		pointerRouter.Suspend();
 		foreach ( var screen in Stack.Screens ) screen.CancelPointerGesture();
 		if ( level.CoasterPanel is { IsDragging: true } panel ) panel.Release( null, null );

@@ -32,7 +32,16 @@ public sealed partial class ParkHud
 		if ( applicationPaused && Status.Speed != GameSpeed.Paused )
 			applicationPaused = false; // Resume the stored speed; do not convert focus pause into explicit user pause.
 		else
-			SetUserGameSpeed( Status.Speed == GameSpeed.Paused ? GameSpeed.Normal : GameSpeed.Paused );
+		{
+			// [BIN:TPW-EXE:0x4a27f0 P window toggle] the P key (thunk 0x48a720, referenced from the key table at 0x481460) is the only caller that
+			// creates or destroys the window [0x7cb2cc]; a park loaded already paused, the speed buttons and the numpad never create it.
+			var pausing = Status.Speed != GameSpeed.Paused;
+			if ( SetUserGameSpeed( pausing ? GameSpeed.Paused : GameSpeed.Normal ) )
+			{
+				if ( pausing ) CreatePausePointerOverlay();
+				else RetirePausePointerOverlay();
+			}
+		}
 	}
 
 	private void ResumeGameAfterApplicationPause()

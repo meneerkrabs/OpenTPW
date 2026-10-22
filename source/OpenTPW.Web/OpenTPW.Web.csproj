@@ -87,6 +87,10 @@
 		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/FshPngExportTests.cs" />
 		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/FshPngExportReviewTests.cs" />
 		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/SignExportTests.cs" />
+		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/CanvasInputSnapshotTests.cs" />
+		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/OrderedInputIngressTests.cs" />
+		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/OrderedParkPointerPipelineTests.cs" />
+		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/UiPointerRouterTests.cs" />
 		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/ObjectVertexAnimationTests.cs" />
 		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/MpegPartialTailReviewTests.cs" />
 		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/GlbBuilder.cs" />

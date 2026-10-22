@@ -636,7 +636,7 @@ internal sealed partial class GameFlow : IDisposable
 		Context.PopupHelp = GameOptions.Current.PopupHelp;
 		// Input is in logical window units; the UI works in drawable pixels.
 		var logical = Screen.Size;
-		var input = InjectedInput ?? inputSource.Poll( Context.Canvas.Width / (float)Math.Max( 1, logical.X ), Context.Canvas.Height / (float)Math.Max( 1, logical.Y ) );
+		var input = InjectedInput?.WithSyntheticOrderedEvents() ?? inputSource.Poll( Context.Canvas.Width / (float)Math.Max( 1, logical.X ), Context.Canvas.Height / (float)Math.Max( 1, logical.Y ) );
 		InjectedInput = null;
 		// [EXT:park-build-over-frames] while a park is built the live scene runs on without input
 		if ( parkBuild != null )
@@ -1250,4 +1250,3 @@ internal sealed partial class GameFlow : IDisposable
 		overlayRenderer.Dispose();
 	}
 }
-

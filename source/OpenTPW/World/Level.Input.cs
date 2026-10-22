@@ -9,6 +9,11 @@ public partial class Level
 {
 	internal bool WorldPointerRouted { get; set; }
 
+	// Unit-test seams: the pointer fixtures mark which tool or view the level is in without building a renderer, a ride or a walk.
+	internal void UseCoasterPanelForTests( CoasterToolPanel? panel ) => CoasterPanel = panel;
+	internal void UseRideViewForTests( RideCameraMode? view ) => RideView = view;
+	internal void UseFreeWalkForTests( FreeWalkCameraMode? walk ) => FreeWalk = walk;
+
 	internal enum WorldClickAction { None, PlacePrototype, UseTool }
 
 	/// <summary>World input stays suspended in ride and walking views, including tools armed through the HUD.</summary>
@@ -192,4 +197,3 @@ public partial class Level
 		return false;
 	}
 }
-

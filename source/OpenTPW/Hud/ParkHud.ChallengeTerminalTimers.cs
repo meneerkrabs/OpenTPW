@@ -89,7 +89,7 @@ public sealed partial class ParkHud
 	}
 
 	/// <summary>The explicit pause key and host speed controls, rather than an arbitrary zero simulation scale, own user suspension.</summary>
-	internal void SetUserGameSpeed( GameSpeed speed )
+	internal bool SetUserGameSpeed( GameSpeed speed )
 	{
 		// an explicit speed choice also ends the focus-loss pause
 		applicationPaused = false;
@@ -97,23 +97,17 @@ public sealed partial class ParkHud
 		if ( level?.Park != null )
 		{
 			if ( !level.Commands.Issue( new SetGameSpeedCommand( speed ) ).Accepted )
-				return;
+				return false;
 		}
 		else
 			Status.Speed = speed;
-		// Only an accepted explicit local speed choice owns this backdrop. Focus loss and session speed do not.
-		if ( level != null && level.CoopRole == CoopRole.None && !level.IsReadOnlyVisit )
-		{
-			if ( speed == GameSpeed.Paused )
-				pausePointerOverlay ??= new OpenTPW.UI.Original.UiPointerOwner( new object() );
-			else
-			{
-				pausePointerOverlay?.Retire();
-				pausePointerOverlay = null;
-			}
-		}
+		// The P window, not a generic speed, owns the pointer backdrop (ParkHud.PointerInput): a speed button or numpad step
+		// never creates it, and any speed other than Paused closes one that P left open.
+		if ( speed != GameSpeed.Paused )
+			RetirePausePointerOverlay();
 		challengeUserPaused = speed == GameSpeed.Paused;
 		SyncChallengeMessageSuspension();
+		return true;
 	}
 
 	/// <summary>Produces bounded terminal timer events before HUD input; dispatch can observe a read/delete in between.</summary>
@@ -184,4 +178,3 @@ public sealed partial class ParkHud
 				RemovePendingMessageAt( index );
 	}
 }
-

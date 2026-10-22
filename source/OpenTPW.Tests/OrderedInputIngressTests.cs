@@ -83,6 +83,37 @@ public class OrderedInputIngressTests
 	}
 
 	[TestMethod]
+	public void UnmappedSdlButtonIsSkippedWithoutInvalidatingTheRestOfTheBatch()
+	{
+		// Veldrid files an SDL button it cannot map (a 6th button) as a Left event; the observer records it with Button -1.
+		var raw = new[]
+		{
+			new OrderedInputEvent( 1, OrderedInputEventKind.ButtonDown, 1, 2, (int)MouseButton.Left ),
+			new OrderedInputEvent( 2, OrderedInputEventKind.ButtonDown, 1, 2, -1 ),
+			new OrderedInputEvent( 3, OrderedInputEventKind.ButtonUp, 1, 2, -1 ),
+			new OrderedInputEvent( 4, OrderedInputEventKind.ButtonUp, 1, 2, (int)MouseButton.Left )
+		};
+		var snapshot = new Snapshot { MouseEvents = new[] { new MouseEvent( MouseButton.Left, true ), new MouseEvent( MouseButton.Left, true ),
+			new MouseEvent( MouseButton.Left, false ), new MouseEvent( MouseButton.Left, false ) } };
+		var resolved = Renderer.ResolveOrderedInput( raw, snapshot );
+		CollectionAssert.AreEqual( new long[] { 1, 4 }, resolved!.Select( item => item.Sequence ).ToArray() );
+		// The skipped slot still has to agree on direction, or the batch is not trustworthy.
+		Assert.IsNull( Renderer.ResolveOrderedInput( raw, new Snapshot { MouseEvents = new[] { new MouseEvent( MouseButton.Left, true ),
+			new MouseEvent( MouseButton.Left, false ), new MouseEvent( MouseButton.Left, false ), new MouseEvent( MouseButton.Left, false ) } } ) );
+	}
+
+	[TestMethod]
+	public void SdlTimestampsStayMonotonicAcrossThe32BitWrap()
+	{
+		var clock = new Renderer.SdlTimestampWidener();
+		Assert.AreEqual( 10L, clock.Widen( 10 ) );
+		Assert.AreEqual( 5L, clock.Widen( 5 ), "A small step back is event reordering, not a wrap." );
+		Assert.AreEqual( uint.MaxValue - 4L, clock.Widen( uint.MaxValue - 4 ) );
+		Assert.AreEqual( (1L << 32) + 3, clock.Widen( 3 ) );
+		Assert.AreEqual( (1L << 32) + 700, clock.Widen( 700 ) );
+	}
+
+	[TestMethod]
 	public void EmptyObservationIsAvailableAndRepeatFlagIsPreserved()
 	{
 		Assert.IsNotNull( Renderer.ResolveOrderedInput( Array.Empty<OrderedInputEvent>(), new Snapshot() ) );
@@ -105,6 +136,9 @@ public class OrderedInputIngressTests
 		Assert.IsTrue( input.IndexOf( "Record( down ?", StringComparison.Ordinal ) < input.IndexOf( "SetButton( button, down );", StringComparison.Ordinal ) );
 		StringAssert.Contains( input, "orderedEvents.Clear();" );
 		StringAssert.Contains( input, "exactPosition = false" );
+		var script = File.ReadAllText( Path.Combine( root, "source", "OpenTPW.Web", "wwwroot", "opentpw-gl.js" ) );
+		StringAssert.Contains( script, "`b 1 ${button(event)} ${event.offsetX} ${event.offsetY} ${event.timeStamp}`" );
+		StringAssert.Contains( script, "${x} ${y} ${event.timeStamp}`" );
 		var web = File.ReadAllText( Path.Combine( root, "source", "OpenTPW.Web", "OpenTPW.Web.csproj" ) );
 		StringAssert.Contains( web, ";OPENTPW_BROWSER</DefineConstants>" );
 		StringAssert.Contains( web, ";$(CommonSources)/Client/OrderedInputEvent.cs\"" );
@@ -123,6 +157,8 @@ public class OrderedInputIngressTests
 		StringAssert.Contains( source, "Sdl2Events.Unsubscribe( orderedInputHandler )" );
 		StringAssert.Contains( source, "orderedInputWindow.Closed += StopOrderedInputObserver" );
 		StringAssert.Contains( source, "orderedInputWindow.Closed -= StopOrderedInputObserver" );
+		StringAssert.Contains( source, "orderedClock.Widen( ev.timestamp )" );
+		Assert.IsFalse( source.Contains( "var now = Environment.TickCount64;" ), "Event times come from SDL, not from when the frame reads the batch." );
 	}
 
 	private static string RepositoryFolder()

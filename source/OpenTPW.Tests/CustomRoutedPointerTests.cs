@@ -253,6 +253,11 @@ public class CustomRoutedPointerTests
 			var button = Button( screen, () => { } );
 			screen.UpdatePointer( context, UiInput.Click( point ), button );
 			Assert.AreEqual( 1, clicks.Count, "The admitted UI owner excludes city activation even over a pin." );
+			// The frame path qualifies the click the same way as the routed one.
+			screen.Update( context, UiInput.Click( point ) with { NotClick = true } );
+			Assert.AreEqual( 1, clicks.Count, "A release that is no click never enters a city on the frame path either." );
+			screen.Update( context, UiInput.Click( point ) );
+			Assert.AreEqual( 2, clicks.Count );
 		}
 		finally { Camera.ViewMatrix = oldView; Camera.ProjMatrix = oldProjection; }
 	}

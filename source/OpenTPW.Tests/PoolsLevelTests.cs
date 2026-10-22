@@ -5,7 +5,9 @@ using System.Linq;
 using System.Reflection;
 using System.Text;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using OpenTPW.Hud;
 using OpenTPW.Mods;
+using OpenTPW.UI.Original;
 
 namespace OpenTPW.Tests;
 
@@ -505,10 +507,74 @@ public class PoolsLevelTests
 		Assert.AreEqual( 9, With( true, () => level.PoolBuilder!.PaintCells( PoolBuilder.Rectangle( (12, 12), (14, 14) ) ) ).Cells.Count );
 		With( false, () =>
 		{
+			var balance = economy.Balance;
+			var message = level.LastActionMessage;
 			var result = Backspace( 13, 13 );
 			Assert.IsFalse( result.Accepted );
+			Assert.IsNull( result.Value, "no pool verdict: the HUD stays silent" );
+			Assert.AreEqual( message, level.LastActionMessage, "no message" );
+			Assert.AreEqual( balance, economy.Balance );
 			Assert.AreEqual( ParkCellTypes.PoolWater, Cells.RawTypeAt( 13, 13 ) );
 			return 0;
 		} );
+	}
+
+	private sealed class NoCatalog : IBuildCatalog
+	{
+		public IReadOnlyList<BuildItem> GetItems( BuildCategory category ) => Array.Empty<BuildItem>();
+	}
+
+	private (OpenTPW.Hud.ParkHud Hud, List<uint> Sounds) HudAt( int x, int y )
+	{
+		var hud = new OpenTPW.Hud.ParkHud( level, OriginalUiTests.FakeStrings(), new EconomyParkStatus( () => economy ), new NoCatalog(), new HudHost() );
+		typeof( OpenTPW.Hud.ParkHud ).GetField( "cursorX", BindingFlags.Instance | BindingFlags.NonPublic )!.SetValue( hud, x );
+		typeof( OpenTPW.Hud.ParkHud ).GetField( "cursorY", BindingFlags.Instance | BindingFlags.NonPublic )!.SetValue( hud, y );
+		var sounds = new List<uint>();
+		GameAudio.UiSoundObserver = sounds.Add;
+		return (hud, sounds);
+	}
+
+	[TestMethod]
+	public void TheBackspaceKeyOfTheHudSaysWhyAPoolTargetIsRefusedAndIgnoresOtherCells()
+	{
+		MakeChangingRoom();
+		try
+		{
+			With( true, () =>
+			{
+				var (hud, sounds) = HudAt( 12, 12 );
+				Assert.IsTrue( hud.BacktrackKey(), "a refused pool target still consumes the key" );
+				CollectionAssert.AreEqual( new[] { GameAudio.ErrorEvent }, sounds, "the error sound" );
+				CollectionAssert.AreEqual( new[] { OriginalUiTests.FakeStrings().Extra( OpenTpwText.PoolChangingRoomNeedsWater ) }, hud.Messages.ToArray(), "the pool tool's own message" );
+				Assert.AreEqual( ParkCellTypes.PoolWater, Cells.RawTypeAt( 12, 12 ) );
+				var (empty, quiet) = HudAt( 1, 28 );
+				Assert.AreEqual( Level.BacktrackTarget.None, Level.BacktrackTargetAt( Cells, 1, 28 ) );
+				Assert.IsFalse( empty.BacktrackKey(), "a cell with nothing to take: the key does nothing" );
+				Assert.AreEqual( 0, quiet.Count );
+				Assert.AreEqual( 0, empty.Messages.Count );
+				return 0;
+			} );
+		}
+		finally { GameAudio.UiSoundObserver = null; }
+	}
+
+	[TestMethod]
+	public void AHeldBackspaceActsOnAPoolTargetOnlyOnItsFirstPress()
+	{
+		Assert.AreEqual( 9, With( true, () => level.PoolBuilder!.PaintCells( PoolBuilder.Rectangle( (12, 12), (14, 14) ) ) ).Cells.Count );
+		try
+		{
+			With( true, () =>
+			{
+				var (hud, sounds) = HudAt( 14, 14 );
+				Assert.IsTrue( hud.BacktrackKey( repeating: true ), "the key repeat is consumed" );
+				Assert.AreEqual( ParkCellTypes.PoolWater, Cells.RawTypeAt( 14, 14 ), "and takes nothing" );
+				Assert.AreEqual( 0, sounds.Count );
+				Assert.IsTrue( hud.BacktrackKey() );
+				Assert.AreEqual( ParkCellType.Empty, Cells.TypeAt( 14, 14 ), "the first press erased the cell" );
+				return 0;
+			} );
+		}
+		finally { GameAudio.UiSoundObserver = null; }
 	}
 }

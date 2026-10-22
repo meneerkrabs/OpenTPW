@@ -1088,8 +1088,8 @@ public sealed partial class ParkHud
 			context.HoverHelp = strings.Help( help );
 		if ( !tool.IsActive )
 		{
-			// Backspace over a path or queue cell with no tool on: the backtrack sound, then that cell is removed (GameAudio.BacktrackEvent; a queue is [EXT:queue-backtrack]).
-			if ( inPark && input.Backspaces > 0 && Stack.Screens.Count == 1 && !Input.TextEntryActive && Camera.Mode is ParkCameraMode && BacktrackKey() )
+			// Backspace over a path, queue, pool bridge or pool water cell with no tool on: the backtrack sound, then that cell is removed (GameAudio.BacktrackEvent; a queue is [EXT:queue-backtrack], a pool bridge or water cell [EXT:pools-bridges] [EXT:pools-tool]); a held key repeats only over path and queue cells.
+			if ( inPark && input.Backspaces > 0 && Stack.Screens.Count == 1 && !Input.TextEntryActive && Camera.Mode is ParkCameraMode && BacktrackKey( input.BackspaceRepeating ) )
 				return true;
 			if ( !inPark || !input.LeftPressed || level.IsReadOnlyVisit || level.Objects.FindAt( cursorX, cursorY ) != null )
 				return false;
@@ -1218,7 +1218,7 @@ public sealed partial class ParkHud
 			if ( patrol.FirstCorner == null && patrol.HoverCell is { } corner )
 				cells.Add( (corner.X, corner.Y, BlueprintMarker.Allowed) );
 		}
-		else if ( level.PoolTool is { IsBridge: true, IsErasing: false, HoverCell: not null } bridgeTool )
+		else if ( level.PoolTool is { IsBridge: true, HoverCell: not null } bridgeTool )
 		{
 			// [EXT:pools-bridges] the bridge tool previews the whole bridge: its two outside path ends and its seven cells, blue while it can be built, the cell to blame red when one is
 			// (a missing path, water where land must be, something in the way), and every cell red when the refusal is the bridge's as a whole (the slope, the money)

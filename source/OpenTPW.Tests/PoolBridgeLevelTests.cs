@@ -179,4 +179,18 @@ public class PoolBridgeLevelTests
 		Assert.IsTrue( level.Commands.Issue( round ).Accepted );
 		Assert.AreEqual( 0, level.PoolBridges!.Count );
 	}
+
+	[TestMethod]
+	public void BackspaceOverAnApproachCellWithAPathLaidBeforeTheBridgeTakesTheBridgeFirstAndThePathNext()
+	{
+		using var scope = OpenTpwExtensions.Use( PoolsTests.PoolsSet( true ) );
+		Assert.IsTrue( level.PoolBuilder!.PaintCells( PoolBuilder.Rectangle( (12, 10), (14, 20) ) ).Completed );
+		Cells.SetType( 10, 15, ParkCellType.Path );
+		Assert.AreEqual( PoolBridgeResult.Ok, level.PoolBridges!.TryAdd( 10, 15, 1 ), "a bridge over a path laid first" );
+		Assert.AreEqual( Level.BacktrackTarget.PoolBridge, Level.BacktrackTargetAt( Cells, 10, 15, level.PoolBridges ), "the bridge is the target, not the path" );
+		Assert.IsTrue( Backspace( 10, 15 ).Accepted );
+		Assert.AreEqual( 0, level.PoolBridges.Count );
+		Assert.AreEqual( ParkCellType.Path, Cells.TypeAt( 10, 15 ), "the path stays after the first press" );
+		Assert.AreEqual( Level.BacktrackTarget.Path, Level.BacktrackTargetAt( Cells, 10, 15, level.PoolBridges ), "and is the next press's target" );
+	}
 }

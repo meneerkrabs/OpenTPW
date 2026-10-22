@@ -956,6 +956,9 @@ public partial class Level
 		var target = BacktrackTargetAt( Paths.Cells, x, y, PoolBridges );
 		if ( target == BacktrackTarget.None )
 			return ParkCommandResult.Rejected( "Nothing to take back here." );
+		// [EXT:pools-tool] with the extension off the pool targets are no targets: no refusal, no sound, no message
+		if ( target is BacktrackTarget.PoolBridge or BacktrackTarget.PoolWater && !FeatureGates.Pools )
+			return ParkCommandResult.Rejected( "Nothing to take back here." );
 		if ( target == BacktrackTarget.PoolBridge )
 		{
 			if ( PoolBridges is not { } bridges )

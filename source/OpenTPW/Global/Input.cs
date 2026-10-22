@@ -11,6 +11,8 @@ public static partial class Input
 	public static string Typed { get; private set; } = "";
 	/// <summary>Key presses this frame including auto-repeat, in order (for text editing keys).</summary>
 	public static IReadOnlyList<Key> KeyPresses { get; private set; } = Array.Empty<Key>();
+	/// <summary>True when every Backspace press this frame is the keyboard's auto-repeat of a key held down (a first press makes it false).</summary>
+	public static bool BackspaceRepeating { get; private set; }
 	/// <summary>Set by the UI while a text field has the focus: the park camera and hotkeys ignore the keyboard.</summary>
 	public static bool TextEntryActive { get; set; }
 
@@ -151,6 +153,8 @@ public static partial class Input
 		if ( GameLanguage.IsSelected && GameLanguage.Current.IsRightToLeft )
 			Typed = HebrewKeyboard.Map( Typed );
 		KeyPresses = inputSnapshot.KeyEvents.Where( keyEvent => keyEvent.Down ).Select( keyEvent => keyEvent.Key ).ToArray();
+
+		BackspaceRepeating = inputSnapshot.KeyEvents.Where( keyEvent => keyEvent.Down && keyEvent.Key == Key.BackSpace ) is var backspaces && backspaces.Any() && backspaces.All( keyEvent => keyEvent.Repeat );
 
 		Right = 0;
 		Forward = 0;

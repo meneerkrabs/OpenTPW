@@ -4,6 +4,7 @@ using System.Linq;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using OpenTPW.Mods;
 
 namespace OpenTPW.Tests;
 
@@ -136,6 +137,46 @@ public class ParkCommandLevelTests
 		Assert.AreEqual( before, level.ComputeStateHash() );
 		Run( level, 60, hashes );
 		return hashes;
+	}
+
+	/// <summary>The pool Backspace cases of the scripted session: water and a bridge laid, then taken with the key's command (a bridge, the bare water under it, a lone water cell), and refused presses.</summary>
+	private static List<ulong> PoolBackspaceSession( Park park )
+	{
+		var level = park.Level;
+		var hashes = new List<ulong>();
+		Run( level, 5, hashes );
+		var water = PoolBuilder.Rectangle( (12, 10), (14, 20) ).ToArray();
+		Assert.IsTrue( level.Commands.Issue( new PaintPoolCellCommand( 12, 10, false ) ).Accepted );
+		foreach ( var (x, y) in water.Skip( 1 ) )
+			Assert.IsTrue( level.Commands.Issue( new PaintPoolCellCommand( x, y, false ) ).Accepted );
+		Run( level, 3, hashes );
+		Assert.IsTrue( level.Commands.Issue( new PlacePoolBridgeCommand( 10, 15, 1 ) ).Accepted, "a bridge across the pool" );
+		Run( level, 3, hashes );
+		Assert.IsTrue( level.Commands.Issue( new BacktrackCommand( 13, 15 ) ).Accepted, "Backspace over the water under the bridge takes the bridge" );
+		Assert.IsTrue( level.Commands.Issue( new BacktrackCommand( 13, 15 ) ).Accepted, "and then the bare water cell" );
+		Assert.IsTrue( level.Commands.Issue( new BacktrackCommand( 12, 11 ) ).Accepted, "a lone water cell" );
+		Assert.IsFalse( level.Commands.Issue( new BacktrackCommand( 13, 15 ) ).Accepted, "the emptied cell: nothing to take" );
+		Run( level, 10, hashes );
+		return hashes;
+	}
+
+	[TestMethod]
+	public void PoolBackspaceCommandsReplayOnATwinParkWithTheSameHashAfterEveryTick()
+	{
+		using var scope = OpenTpwExtensions.Use( PoolsTests.PoolsSet( true ) );
+		var recorded = NewPark();
+		var twin = NewPark();
+		var start = recorded.Level.ComputeStateHash();
+		var hashes = PoolBackspaceSession( recorded );
+		Assert.AreNotEqual( start, hashes[^1] );
+		var replayed = new List<ulong>();
+		ParkCommandReplay.Run( twin.Level.Commands, recorded.Level.Commands.Log, () => twin.Level.Commands.NextTick,
+			() => twin.Level.AdvanceSimulation( FixedStepClock.TickDuration ), recorded.Level.Commands.NextTick, _ => replayed.Add( twin.Level.ComputeStateHash() ) );
+		Assert.AreEqual( hashes.Count, replayed.Count );
+		for ( var tick = 0; tick < hashes.Count; tick++ )
+			Assert.AreEqual( hashes[tick], replayed[tick], $"tick {tick + 1}" );
+		Assert.AreEqual( recorded.Economy.Balance, twin.Economy.Balance );
+		Assert.AreEqual( 0, twin.Level.PoolBridges!.Count );
 	}
 
 	[TestMethod]

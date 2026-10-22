@@ -83,9 +83,6 @@ public class PoolBridgeToolTests
 		tool.Press( 2, 3 );
 		Assert.AreEqual( PoolBridgeResult.LandIsWater, tool.LastBridgeRefusal );
 		tool.Release();
-		Assert.IsTrue( tool.BeginBridge( 1, erase: true ) );
-		tool.Hover( 2, 3 );
-		Assert.AreEqual( 0, tool.HoverBridgeCells().Count(), "removal marks only the cell under the pointer" );
 	}
 
 	[TestMethod]
@@ -109,19 +106,13 @@ public class PoolBridgeToolTests
 		Assert.IsFalse( tool.IsActive );
 		Assert.IsFalse( tool.IsBridge );
 		Assert.AreEqual( 1, world.Count );
-		Assert.IsTrue( tool.BeginBridge( 2, erase: true ) );
-		tool.Hover( 4, 5 );
-		Assert.AreEqual( PoolBuildResult.Ok, tool.HoverResult );
+		// a bridge comes down by any covered cell (Backspace issues this removal, Level.Backtrack)
+		Assert.AreEqual( PoolBridgeResult.Ok, world.CheckRemove( 4, 5 ) );
 		Assert.AreEqual( 1, world.Count );
-		Assert.AreEqual( PoolBuildResult.Ok, tool.Press( 4, 5 ) );
-		tool.Release();
+		Assert.AreEqual( PoolBridgeResult.Ok, world.RemoveAt( 4, 5 ) );
 		Assert.AreEqual( 0, world.Count );
 		Assert.AreEqual( ParkCellType.PoolWater, cells.TypeAt( 4, 5 ) );
-		tool.Hover( 4, 5 );
-		Assert.AreEqual( PoolBridgeResult.NotBridge, tool.HoverBridgeResult );
-		tool.Press( 4, 5 );
-		Assert.AreEqual( PoolBridgeResult.NotBridge, tool.LastBridgeRefusal );
-		Assert.IsNull( tool.Release() );
+		Assert.AreEqual( PoolBridgeResult.NotBridge, world.RemoveAt( 4, 5 ) );
 	}
 
 	[TestMethod]
@@ -140,13 +131,8 @@ public class PoolBridgeToolTests
 		tool.BeginBridge( 1 );
 		tool.Press( 2, 3 );
 		tool.Release();
-		tool.BeginBridge( 1, erase: true );
 		occupied = true;
-		tool.Hover( 4, 3 );
-		Assert.AreEqual( PoolBridgeResult.Standing, tool.HoverBridgeResult );
-		Assert.AreEqual( PoolBuildResult.Standing, tool.Press( 4, 3 ) );
-		Assert.AreEqual( PoolBridgeResult.Standing, tool.LastBridgeRefusal );
-		Assert.IsNull( tool.Release() );
+		Assert.AreEqual( PoolBridgeResult.Standing, world.RemoveAt( 4, 3 ) );
 		Assert.AreEqual( 1, world.Count );
 		Assert.IsFalse( tool.Undo() );
 		Assert.AreEqual( 1, tool.StrokeCount );
@@ -222,12 +208,10 @@ public class PoolBridgeToolTests
 		Assert.AreEqual( 3, world.At( 9, 3 )!.Direction );
 		tool.Release();
 		// turning does nothing outside the placing mode
-		tool.BeginBridge( 1, erase: true );
-		tool.RotateBridge( 1 );
-		Assert.AreEqual( 1, tool.BridgeDirection );
 		tool.Begin( false );
+		var kept = tool.BridgeDirection;
 		tool.RotateBridge( 1 );
-		Assert.AreEqual( 1, tool.BridgeDirection );
+		Assert.AreEqual( kept, tool.BridgeDirection );
 	}
 
 	[TestMethod]

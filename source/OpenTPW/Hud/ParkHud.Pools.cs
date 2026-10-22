@@ -163,8 +163,11 @@ public sealed partial class ParkHud
 	/// Backspace with no tool on (<see cref="BacktrackCommand"/>). True when the key did something: it took a cell or a pool bridge off, or a pool target was refused, which says why with the error sound. False over any other cell, so the key does nothing there.
 	/// </summary>
 	// [EXT:pools-bridges] [EXT:pools-tool] the refusals of removing a bridge or a water cell with Backspace read as the pool tool's own (BridgeRefusalText, PoolRefusalText)
-	private bool BacktrackKey()
+	internal bool BacktrackKey( bool repeating = false )
 	{
+		// a held key removes the bridge and then, on its repeats, the water under it: the pool targets act on the first press only
+		if ( repeating && level.Paths is { } paths && Level.BacktrackTargetAt( paths.Cells, cursorX, cursorY, level.PoolBridges ) is Level.BacktrackTarget.PoolBridge or Level.BacktrackTarget.PoolWater )
+			return true;
 		var result = level.Commands.Issue( new BacktrackCommand( cursorX, cursorY ) );
 		if ( result.Accepted )
 			return true;
@@ -184,25 +187,25 @@ public sealed partial class ParkHud
 	/// <summary>What a refused pool cell write or erase tells the player (<paramref name="slide"/> says why a slide piece was refused).</summary>
 	internal static OpenTpwText PoolRefusalText( PoolBuildResult reason, PoolSlideResult? slide = null ) => reason switch
 	{
-			PoolBuildResult.SlideRefused => slide switch
-			{
-				PoolSlideResult.TooSteep => OpenTpwText.PoolSlideTooSteep,
-				PoolSlideResult.TooGentle => OpenTpwText.PoolSlideTooGentle,
-				PoolSlideResult.TooLow => OpenTpwText.PoolSlideTooLow,
-				PoolSlideResult.NotNext => OpenTpwText.PoolSlideNotNext,
-				PoolSlideResult.NotOverPool => OpenTpwText.PoolSlideNotPool,
-				PoolSlideResult.BadStart => OpenTpwText.PoolSlideBadStart,
-				_ => OpenTpwText.CannotBuildHere
-			},
-			PoolBuildResult.NotEnoughMoney => OpenTpwText.NotEnoughMoney,
-			PoolBuildResult.TooSteep => OpenTpwText.PoolTooSteep,
-			PoolBuildResult.Swimmers => OpenTpwText.PoolSwimmersInWater,
-			PoolBuildResult.ChangingRoomAccess => OpenTpwText.PoolChangingRoomNeedsWater,
-			PoolBuildResult.SlideRiders => OpenTpwText.PoolSlideRiders,
-			PoolBuildResult.SlideWater => OpenTpwText.PoolSlideWaterNeeded,
-			PoolBuildResult.AttractionAccess => OpenTpwText.PoolAttractionNeedsWater,
-			PoolBuildResult.ExtraNeedsWater => OpenTpwText.PoolExtraNeedsWater,
+		PoolBuildResult.SlideRefused => slide switch
+		{
+			PoolSlideResult.TooSteep => OpenTpwText.PoolSlideTooSteep,
+			PoolSlideResult.TooGentle => OpenTpwText.PoolSlideTooGentle,
+			PoolSlideResult.TooLow => OpenTpwText.PoolSlideTooLow,
+			PoolSlideResult.NotNext => OpenTpwText.PoolSlideNotNext,
+			PoolSlideResult.NotOverPool => OpenTpwText.PoolSlideNotPool,
+			PoolSlideResult.BadStart => OpenTpwText.PoolSlideBadStart,
 			_ => OpenTpwText.CannotBuildHere
+		},
+		PoolBuildResult.NotEnoughMoney => OpenTpwText.NotEnoughMoney,
+		PoolBuildResult.TooSteep => OpenTpwText.PoolTooSteep,
+		PoolBuildResult.Swimmers => OpenTpwText.PoolSwimmersInWater,
+		PoolBuildResult.ChangingRoomAccess => OpenTpwText.PoolChangingRoomNeedsWater,
+		PoolBuildResult.SlideRiders => OpenTpwText.PoolSlideRiders,
+		PoolBuildResult.SlideWater => OpenTpwText.PoolSlideWaterNeeded,
+		PoolBuildResult.AttractionAccess => OpenTpwText.PoolAttractionNeedsWater,
+		PoolBuildResult.ExtraNeedsWater => OpenTpwText.PoolExtraNeedsWater,
+		_ => OpenTpwText.CannotBuildHere
 	};
 
 	private UiButton? waveSettingsButton;

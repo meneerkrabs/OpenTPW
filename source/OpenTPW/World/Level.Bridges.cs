@@ -27,8 +27,11 @@ public partial class Level
 		return feet;
 	}
 
-	/// <summary>Smoke-only: find a real seven-cell bridge footprint and build it through the ordinary paid builders.</summary>
-	internal PoolBridge? BuildDebugPoolBridge( IReadOnlyList<(int X, int Y)> pool )
+	/// <summary>
+	/// Smoke-only: find a real seven-cell bridge footprint and build it through the ordinary paid builders. <paramref name="withPaths"/> false lays no path at the outside ends
+	/// (a bridge needs none); <paramref name="onlyDirection"/> restricts the search to one direction.
+	/// </summary>
+	internal PoolBridge? BuildDebugPoolBridge( IReadOnlyList<(int X, int Y)> pool, bool withPaths = true, int? onlyDirection = null )
 	{
 		if ( PoolBridges == null || Paths == null || Guests == null || IsReadOnlyVisit || pool.Count == 0 )
 		{
@@ -41,7 +44,7 @@ public partial class Level
 		var attempts = 0;
 		string refusal = "no three-water-cell span with two land cells at either end";
 		foreach ( var centre in pool.OrderBy( c => Math.Abs( c.X - centreX ) + Math.Abs( c.Y - centreY ) ).ThenBy( c => c.Y ).ThenBy( c => c.X ) )
-			foreach ( var direction in new[] { 1, 2, 3, 0 } )
+			foreach ( var direction in new[] { 1, 2, 3, 0 }.Where( direction => onlyDirection == null || onlyDirection == direction ) )
 			{
 				var (dx, dy) = GuestPathGrid.Directions[direction];
 				var candidate = new PoolBridge( centre.X - 3 * dx, centre.Y - 3 * dy, direction, 0 );
@@ -53,6 +56,17 @@ public partial class Level
 						: cells.TypeAt( c.X, c.Y ) is ParkCellType.Empty or ParkCellType.Path);
 				} ) ) continue;
 				var ends = new[] { candidate.Cell( -1 ), candidate.Cell( PoolBridge.Length ) };
+				if ( !withPaths )
+				{
+					var bare = PoolBridges.TryAdd( candidate.X, candidate.Y, direction );
+					if ( bare == PoolBridgeResult.Ok )
+					{
+						Log.Trace( $"--debug-bridge: built at {candidate.X},{candidate.Y}, direction {direction}, with no path at either end; price {PoolBridgeWorld.Price}." );
+						return PoolBridges.At( candidate.X, candidate.Y );
+					}
+					refusal = bare.ToString();
+					continue;
+				}
 				if ( !ends.All( c => cells.InBounds( c.X, c.Y ) && cells.TypeAt( c.X, c.Y ) is ParkCellType.Empty or ParkCellType.Path
 					&& Paths.CheckCell( c.X, c.Y ) is CellBuildResult.Ok or CellBuildResult.Existing ) )
 				{
@@ -96,6 +110,12 @@ public partial class Level
 	internal void StartDebugBridgeWalkers( PoolBridge bridge )
 	{
 		if ( Guests == null || PoolBridges?.At( bridge.X, bridge.Y ) != bridge ) return;
+		if ( bridge.Cell( -1 ) is var first && bridge.Cell( PoolBridge.Length ) is var last
+			&& (Guests.Grid.Cells.TypeAt( first.X, first.Y ) != ParkCellType.Path || Guests.Grid.Cells.TypeAt( last.X, last.Y ) != ParkCellType.Path) )
+		{
+			Log.Trace( "--debug-bridge: no walkers: the bridge has no path at an outside end." );
+			return;
+		}
 		Park?.Economy.OpenPark();
 		foreach ( var reverse in new[] { false, true } )
 		{

@@ -4,10 +4,10 @@ namespace OpenTPW;
 
 /// <summary>
 /// A bridge check's answer. <see cref="Occupied"/> is the 256-bridge limit; the values after <see cref="NotBridge"/> name what refuses a placement so the tool can say it:
-/// an outside end that is no ordinary path, an approach cell that is pool water (the pool is wider than three cells there, or the click was not on the first land cell),
+/// an outside end cell with something on it (a bridge needs no path at its outside ends: the player lays them later), an approach cell that is pool water (the pool is wider than three cells there, or the click was not on the first land cell),
 /// a ride, track, queue, post, protected cell or scenery on a covered cell, and a cell another bridge already uses.
 /// </summary>
-public enum PoolBridgeResult { Ok, ExtensionOff, OutsideTerrain, NotOwned, Occupied, NotOverPool, TooSteep, Standing, NotEnoughMoney, NotBridge, EndNotPath, LandIsWater, Blocked, BridgeInTheWay }
+public enum PoolBridgeResult { Ok, ExtensionOff, OutsideTerrain, NotOwned, Occupied, NotOverPool, TooSteep, Standing, NotEnoughMoney, NotBridge, LandIsWater, Blocked, BridgeInTheWay }
 
 /// <summary>[EXT:pools-bridges] An elevated route over unchanged water cells: two approach cells, three span cells, two approach cells.</summary>
 public sealed record PoolBridge( int X, int Y, int Direction, int GroundMillimetres )
@@ -63,6 +63,29 @@ public sealed class PoolBridgeWorld
 	public bool IsWater( int x, int y ) => cells.TypeAt( x, y ) == ParkCellType.PoolWater;
 	public PoolBridge? At( int x, int y ) => coverage.GetValueOrDefault( (x, y) );
 	public bool Covers( int x, int y ) => coverage.ContainsKey( (x, y) );
+
+	/// <summary>
+	/// Whether removing the path at (x, y) would strand someone: it is an outside end of a bridge that is occupied right now and the bridge's other outside end has no path,
+	/// so the last way off the bridge would go. Removing an end path is otherwise free (guests then enter the bridge only through the end that still has a path).
+	/// </summary>
+	public bool PathRemovalStrands( int x, int y )
+	{
+		if ( Count == 0 || occupied == null ) return false;
+		foreach ( var bridge in bridges.Values )
+		{
+			var first = bridge.Cell( -1 );
+			var last = bridge.Cell( PoolBridge.Length );
+			if ( first != (x, y) && last != (x, y) ) continue;
+			var other = first == (x, y) ? last : first;
+			if ( cells.InBounds( other.X, other.Y ) && cells.TypeAt( other.X, other.Y ) == ParkCellType.Path ) continue;
+			for ( var i = 0; i < PoolBridge.Length; i++ )
+			{
+				var c = bridge.Cell( i );
+				if ( occupied( c.X, c.Y ) ) return true;
+			}
+		}
+		return false;
+	}
 	public bool Reserves( int x, int y ) => Covers( x, y ) || bridges.Values.Any( b => b.Cell( -1 ) == (x, y) || b.Cell( PoolBridge.Length ) == (x, y) );
 
 	public bool Connects( int x, int y, int direction )
@@ -107,7 +130,14 @@ public sealed class PoolBridgeWorld
 			if ( i is -1 or PoolBridge.Length )
 			{
 				if ( Covers( cx, cy ) ) return PoolBridgeResult.BridgeInTheWay;
-				if ( cells.TypeAt( cx, cy ) != ParkCellType.Path ) return PoolBridgeResult.EndNotPath;
+				// The outside ends need no path: the player lays one later. A bare end must still be land the bridge can open onto, so it obeys the approach rules.
+				if ( cells.TypeAt( cx, cy ) != ParkCellType.Path )
+				{
+					if ( cells.Tracks.Get( cx, cy ) is { Type: not 0 } || cells.Land?.IsPost( cx, cy ) == true || reserved?.Invoke( cx, cy ) == true ) return PoolBridgeResult.Blocked;
+					if ( (cells.FlagsAt( cx, cy ) & (ParkCellFlags.NoModify | ParkCellFlags.EntranceArea | ParkCellFlags.MapBit04 | ParkCellFlags.AddOn)) != 0 ) return PoolBridgeResult.Blocked;
+					if ( cells.TypeAt( cx, cy ) == ParkCellType.PoolWater ) return PoolBridgeResult.LandIsWater;
+					if ( cells.TypeAt( cx, cy ) != ParkCellType.Empty ) return PoolBridgeResult.Blocked;
+				}
 				continue;
 			}
 			if ( Reserves( cx, cy ) ) return PoolBridgeResult.BridgeInTheWay;

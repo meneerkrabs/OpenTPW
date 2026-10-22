@@ -1347,6 +1347,12 @@ public sealed partial class ParkHud
 			return icon;
 		try
 		{
+			// [EXT:pools-bridges] the bridge row has no object behind it: its preview is the committed Blender mesh
+			if ( item.InfoId == PoolBridgeRow.InfoId && IsPoolRow( item ) )
+			{
+				icons[item.Id] = icon = PoolBridgePreview.Create();
+				return icon;
+			}
 			var clipMember = item.PreviewModel != null && item.Entry != null ? PreviewIcon.BuyClipMember( item.PreviewModel, item.Entry.Models ) : null;
 			icon = item.PreviewModel == null ? null : new PreviewIcon( LoadPreviewModel( item, item.PreviewModel ),
 				name => item.TextureDirectories.Select( directory => UiImages.Resolve( name, directory ) ).FirstOrDefault( path => path != null ),

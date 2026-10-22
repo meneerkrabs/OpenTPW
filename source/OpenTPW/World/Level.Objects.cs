@@ -692,7 +692,7 @@ public partial class Level
 			return;
 		if ( Objects.Grid is OriginalParkGrid originalGrid )
 			originalGrid.LiveCells = () => Guests?.Grid.Cells;
-		Paths = new ParkPathBuilder( Guests.Grid.Cells, Guests.Grid, () => Park?.Economy, Objects.Grid, IsPathBlocked )
+		Paths = new ParkPathBuilder( Guests.Grid.Cells, Guests.Grid, () => Park?.Economy, Objects.Grid, IsPathBuildBlocked )
 		{
 			// [BIN:TPW-EXE:0x00534A91 queue neighbour sound] the writer plays cat_ui 139 only while game+36 (0x785A2C, the park's money) is clear: here, while a park economy runs
 			Effects = new LinkEffects( RefreshTile, ( x, y ) =>
@@ -729,6 +729,9 @@ public partial class Level
 	// Objects, fixed items (the gate and entrance included) and the sandbox Totem block paths like their original cell types do; an object of a lower
 	// overwrite priority than the path's gives way instead (ParkPathBuilder.ObjectGivesWay).
 	private bool IsPathBlocked( int x, int y ) => PoolBridges?.Reserves( x, y ) == true || Objects.FindAt( x, y ) != null || IsReservedByPrototype( x, y ) || (Guests != null && PoolSlides?.ReservesLand( x, y, Guests.Grid.Cells ) == true);
+
+	/// <summary>[EXT:pools-bridges] The same rule for laying a path, except that the cells just outside a bridge's two ends stay open: a bridge needs no path there, so the player lays one later.</summary>
+	private bool IsPathBuildBlocked( int x, int y ) => PoolBridges?.Covers( x, y ) == true || Objects.FindAt( x, y ) != null || IsReservedByPrototype( x, y ) || (Guests != null && PoolSlides?.ReservesLand( x, y, Guests.Grid.Cells ) == true);
 
 	/// <summary>How the cell map holds a path for the object build rule: none, a plain path (cleared by the placement) or a NoModify one (refused).</summary>
 	internal static ObjectPathCell? ObjectPathAt( ParkCellMap cells, int x, int y )
@@ -982,7 +985,7 @@ public partial class Level
 	{
 		if ( IsReadOnlyVisit || Paths == null )
 			return CellBuildResult.NotPath;
-		if ( PoolBridges?.Reserves( x, y ) == true ) return CellBuildResult.Occupied;
+		if ( PoolBridges is { } bridges && (bridges.Covers( x, y ) || bridges.PathRemovalStrands( x, y )) ) return CellBuildResult.Occupied;
 		// [EXT:removable-access-cells] the path cell the placement laid outside an entrance or exit (flag 0x20) can be removed, where tp.exe's cell clear keeps a NoModify cell that has neighbours (the forced clear 0x5367A0(0, 0) refuses it with "Removing path cell with no neighbours but NOMODIFY set" otherwise); the map start's initial path stays fixed
 		var access = IsAccessCell( x, y );
 		var result = access ? Paths.RemoveFixed( x, y ) : Paths.Remove( x, y );

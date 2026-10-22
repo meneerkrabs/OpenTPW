@@ -367,7 +367,8 @@ public sealed class ParkPathBuilder : ICellLineWriter
 
 	private CellBuildResult Clear( int x, int y, bool forced, bool removeFixed = false )
 	{
-		if ( Cells.PoolBridges?.Reserves( x, y ) == true ) return CellBuildResult.Occupied;
+		// [EXT:pools-bridges] a bridge's own seven cells are protected; the path outside either end may go, unless someone on the bridge would lose their last way off
+		if ( Cells.PoolBridges is { } bridges && (bridges.Covers( x, y ) || bridges.PathRemovalStrands( x, y )) ) return CellBuildResult.Occupied;
 		if ( Cells.TypeAt( x, y ) != ParkCellType.Path )
 			return CellBuildResult.NotPath;
 		if ( Cells.FlagsAt( x, y ).HasFlag( ParkCellFlags.NoModify ) )

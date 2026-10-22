@@ -21,8 +21,14 @@ public sealed partial class FrontEndMenu
 	// [EXT:theme-continue] the theme entry offers distinct own-save actions (Continue saved, Continue automatic or [EXT:periodic-autosave] autosave, New): host UI with no original rule to match; no native profile or autosave flow is reproduced
 	private void ShowThemeStart()
 	{
-		var saved = actions.ContinuePark == null ? null : actions.ContinueEntry( Selected.Level );
-		var automatic = actions.ContinueAutomatic == null ? null : actions.AutomaticEntry( Selected.Level );
+		ParkContinueEntry? saved;
+		AutomaticParkContinueEntry? automatic;
+		// the island's saved parks, read to be offered (FrameMarks name this work for the browser harness)
+		using ( FrameMarks.Measure( "menu.themeStartSaves" ) )
+		{
+			saved = actions.ContinuePark == null ? null : actions.ContinueEntry( Selected.Level );
+			automatic = actions.ContinueAutomatic == null ? null : actions.AutomaticEntry( Selected.Level );
+		}
 		if ( saved == null && automatic == null ) { ShowGameMode(); return; }
 		var theme = Selected.Level;
 		ProgressChoiceScreen? choice = null;

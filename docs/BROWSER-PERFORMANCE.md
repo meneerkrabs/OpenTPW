@@ -34,6 +34,8 @@ node tools/web-perf/run.mjs --web out/web/wwwroot --game "/path/to/Theme Park Wo
 | `coopDigest` | (after `jungle`) the co-op session digest's cost, which the host takes once a second of real time: the median of 15 digests and world hashes on the park as it stands, again after up to 80 of the buy menu's rides and shops are built (money cheated in for them), again after `--crowd` extra guests are staged, and once more after 20 s of play (`Program.PerfSessionDigest`, `PerfPlaceObject`, `PerfCrowd`; docs/COOP.md "Measurements") |
 | `winterCost` | (after `jungle`) the frame cost of a staged crowd (`--crowd`, default 400) in rain at the Home zoom, one window per step, each added to the one before: `rain` (a rain-only crowd, no snow: the staging applies weather quality 30 and every step applies it again before its window), `rainSnow` (the settled snow held at `--cover`, default 1), `rainSnowUmbrellas` (an open umbrella over every guest, held open), `rainSnowDressed` (and every guest in warm items) and the same at the farthest zoom (`rainSnowDressedFar`); each window records whether it still rained at its end, and the umbrellas and items drawn. The items' own cost is `rainSnowDressed` minus `rainSnowUmbrellas`. Last it saves a screenshot of a freshly staged dressed crowd in snow without umbrellas (`--shot`, `--zoom` default 70, the camera on one guest chosen by `--follow`, default -250: it skips the 250 newest visible guests, so with the default crowd of 400 it is the 150th guest of the new crowd, which stands in the open away from the entrance roofs; guests are picked by id order, so look at the picture and adjust `--follow` if a run lands under a roof) (`PerfSnow`, `PerfUmbrellas`, `PerfUmbrellasOff`, `PerfWinter`, `PerfRaining`; docs/WINTER.md "Tuning") |
 | `events` | (after `jungle`) the frames after each event a player causes in a park session ("Event hitches" below): every HUD window opened, closed and reopened; the first buy previews and builds; weather; a bus arrival; the evening; research completing; the autosave; a month end and a year end; a coaster built; a crowd of `--crowd` guests; and a soak at the fastest speed (`--soak` seconds). For each event it reports the worst frame, the p95 and the slowest frames with the game's named work in them (`FrameMarks`). `--profile` adds the functions a CPU profile spent each slow frame in, named with `--symbols` |
+| `door` | (after `jungle`) the entry price window's park door clicked through the HUD's input three times in the fresh, closed park: open, close, open again. Each click gets its worst frame, p95, the time until the economy reports the new state and, for an opening, the time until the first new guest (at most `--door-wait` seconds, default 20). The `events` scenario ends with the same clicks |
+| `lobbyEnter` | (after `jungle`) the lobby's enter-park button in a session that starts with saved parks: the park is left to the lobby, which writes its automatic checkpoint, and the page is loaded again in the same profile. Then three clicks on the button, each followed up to the screen it opens and back, with its frames and the time until that screen |
 | `digest` | deterministic work that must give the same result in every build, timed: every texture of the theme decoded and hashed, and the fixed park run of the original-data determinism test (seed 2026, 3000 ticks at the fastest speed; economy and guests) reduced to its world state hash. It blocks the page while it runs, so it comes last |
 
 `tools/web-perf/compare.mjs --a <reports> --b <reports>` prints the medians of two builds side by
@@ -736,13 +738,93 @@ What the entering frame still spends, apart from the advisor's creation, first u
 - **The HUD's first update (7.4 ms).** Almost all of it is the runtime's first-call work in the update's parts. Running the update during the build would warm it, but it would also change the HUD's state: its timers, the happiness sample, the pointer and the camera flags it sets. So it stays in the entering frame. `RuntimeHelpers.PrepareMethod` cannot warm it either: Mono does not implement it.
 - **The first draws of the entities, the advisor model and the HUD (about 6 ms).** These are first calls as well. The advisor is made in the entering frame, so its model cannot be drawn before.
 
+### Build steps (October 21)
+
+After the entering frame's changes, the largest frames of the park start were steps of the park's build. Each did one piece of work at once. The harness named them: `--profile` with the new `--cold-mark-ms` option marks and profiles every frame of the cold start from the given length (20 ms here), and `tools/web-perf` reports the cold start's frames over 33 ms. Measured on the published AOT build of origin/main `6ecadcbd9`, same machine and harness as above, one profiled run (times under the profiler run about 1.5 times longer than without it). Construction ms of one step:
+
+| Step | ms | What it was |
+| --- | ---: | --- |
+| Economy | 77-84 | `ObjectCatalog.Load`, called inside the economy's catalogue for the mods' objects (`EconomyObjectCatalog.AddModObjects`): with the official extensions on, their content roots count as mods, so the whole object catalogue was read here at once (about 44 ms). The economy's own catalogue (13), the balance settings (4) and the `ParkEconomy` constructor (10, of which `ParkResearch` 6). |
+| Terrain and gate sign | 44 | the gate sign's composition (`SignSurfaceComposer.Compose`, 30: the effects 17, of which the shape's blur 6 and the relief 11; the paint masks' shaping 6; the text masks 5) and the blueprint markers |
+| Objects | 53 | the ride script handler table (`RideOpcodes`, 33): its static constructor searched the assembly by reflection and compiled every handler with `Expression.Compile`, on the first object's script |
+| Guests | 70 | `SetupGuests` (61): the kid, pool, umbrella and winter sprite sets and anchors (6-8 each), and the renderers' atlases and their texture uploads (8-10 each) |
+| Staff, gate and economy | 58 | the staff's sprite sets (16) and renderer (17), the level HUD (7), the placed particles (4) |
+| Entry preparation | 40 | the warm-up of the economy capture (15-20); in another run the advisor's settings (30, of which 10 a scan of every message per descriptor row in `AdvisorTables.UnproducedMessages` and 8 the scan messages) |
+| Terrain | under 33 | the ground mesh and its textures, the terrain meshes' textures |
+
+The work was not the problem; each step held a whole part of it. The steps were split, and the steps that remained long now start a frame of their own. What each step makes, and the order, is unchanged:
+
+- **The economy in steps.** `ParkEconomyRuntime.ForOriginalLevelSteps` makes the balance settings, then one object archive per step (`EconomyObjectCatalog.LoadSteps`), the object catalogue the mods' objects come from in its own steps (`ObjectCatalog.LoadSteps`; the objects step later finds it cached, as before), the park, then the import. `ForOriginalLevel` runs the same steps to the end.
+- **The gate sign composed in steps.** `SignSurfaceComposer.ComposeSteps` has a step after each text mask, each paint mask, each effect's shape and every 16 rows of relief. `Compose` runs it to the end, so the pixels are the same; `OriginalGateSign.CreateSteps` builds the gate's sign with it, and a sign that fails is left out as before.
+- **The ride script handler table in steps.** `RideOpcodes.TableBuilder` looks at up to 256 methods and compiles up to 8 handlers per step, in the assembly's order. The level runs it before the objects (`RideOpcodes.PrepareStep`), and a use meanwhile finishes it at once. The table and its order are those of the former static constructor.
+- **The guests, the staff and the terrain in more steps.** `SetupGuests` yields after each sprite set and renderer, the staff after its world, its sprites and its renderer, the staff-gate-economy section after each group of imports, the ground mesh after each texture and the terrain meshes after each mesh and batch texture.
+- **Long steps in a frame of their own.** A park build frame runs steps until 12 ms have gone, so a long step that started late in a frame made it longer still. A construction step that knows the next one is long sets `Level.NextStepIsLong` (before the sprite sets and the renderers). A preparation step returns false (the steps before the advisor shader, the advisor's global model and the economy capture's warm-up). Either way the announcing step has done its work: the frame ends after it, and the long step starts the next frame. The advisor shader's GL program, which the browser's renderer keeps for later materials, is compiled in a step of its own (`AdvisorRig.WarmShader` makes a material of it and releases it). Before, it was compiled inside the model's step.
+- **Smaller preparation steps.** The economy capture's warm-up runs its parts first, one per step. `ParkSaveFile.CapturePartSteps` runs the ledger, objects, staff, research and objectives, which the capture now takes from methods of their own, in the same order. The warm-up also runs the snapshot's extension and asset filters over the placed objects with a one-key manifest of the manifest's own type (a sorted dictionary), and drops the results. The advisor's message tables are made one per step (`AdvisorTables.WarmSteps`). The unproduced messages are found with a set of the produced ids instead of a scan per row, which gives the same list.
+- **First calls of the entering frame done in the build.** Three were no-ops that could run earlier: the blueprint markers' `Show` while no cell is shown (its queries' first calls were 9.6 ms of the HUD's first update), the player progress file's serializer metadata (5 ms, written as the park is entered; `PlayerTicketFile.WarmUp` writes nothing) and the sliced serializer's constructor (6 ms of AOT method initialization; `SlicedJsonSerializer.WarmUp` serializes an empty string with options of its own).
+
+Tests: `BuildStepsTests` compares the economy made in steps with the one made at once (Full Simulation and Instant Action Jungle, its whole save and import evidence), signs composed in interleaved steps with signs composed at once, the opcode table built in steps with every handler in the assembly's order, and the unproduced advisor messages with the former scan. The front-end smoke also compares the gate sign's pixels of the park built over frames with the park built in one go (digest `F22DF07B950D3E1C` both). The world hash `9C04AE5746B2E140`, 124 entities and 14 objects are as on origin/main. The sign corpus hashes, the restart snapshot's tests (its capture warm-up changes neither the park nor its snapshot) and the determinism tests pass.
+
+Published AOT builds of origin/main (before) and this branch (after), alternating, medians of three runs, in milliseconds. The machine carried other work (load average 6-14):
+
+| Measure | Before | After |
+| --- | ---: | ---: |
+| Largest frame of the park start | 80 (the economy step) | 56 (entering) |
+| Largest frame apart from the entering one | 80 | 36 (the advisor's global model) |
+| Largest construction part of a build step (the harness's build-frame list, without the entering one) | 79 | 34 |
+| Build steps whose construction part is over 20 ms | 12 | 3 |
+| Frames over 33 ms, from the click until 5 s after the park is ready | 8 | 2 |
+| Frames of 50 ms or more, same window | 5 | 1 |
+| Entering frame | 68 | 56 |
+| Of it: the HUD's first update (`park.hud`) | 14.9 | 4.8 |
+| Of it: the restart snapshot (`load:restart-snapshot`) | 8.2 | 11.7 |
+| Frames the park is built over | 40 | 63 |
+| Park ready after the click | 9,227 | 9,376 |
+
+The park is ready about 150 ms later: it is built over 63 frames instead of 40, and each frame also updates and draws the lobby. The frames over 33 ms left are:
+
+- the entering frame;
+- the step that reads the advisor's global model (about 35 ms, see below);
+- in one run, a frame of the restart snapshot's slices after entering.
+
+The restart snapshot in the entering frame rose by about 3.5 ms. Its profile shows the runtime's generic-context work (`mini_init_method_rgctx` and its hash table) in the snapshot's asset filter (`ParkResumeMods.AssetsForUse`), which happened elsewhere before. The filter's warm-up with the manifest's own type took half of it back. Such first-call work moves between frames when other first calls move, so this part of the entering frame varies by a few milliseconds.
+
+### The lobby's enter-park button (October 21)
+
+The lobby's enter-park button (`enterPark`, `b_entpark`) opens the island's theme start: the parks to continue and New park, or the game mode screen when there is none. To offer the saved parks, the click reads them (`ThemeContinuation.Probe`, `AutomaticThemeContinuation.Newest`: each slot's file parsed and checked, the automatic ones also serialized again for their digest). The first such read of a session also made the world-save codec's reflection metadata, which took a whole frame. The new `lobbyEnter` scenario measures it. After the Jungle park, it leaves the park to the lobby, which writes the automatic checkpoint, then loads the page again in the same profile, as a player returning to the game does. It then clicks the button three times. Each click is followed up to the screen it opens and back to the lobby.
+
+| Click | Before: frame | Before: until the screen | After: frame | After: until the screen |
+| --- | ---: | ---: | ---: | ---: |
+| First click of the session | 397 | 402 | 126 | 132 |
+| Second click | 53 | 63 | 67 | 74 |
+| Third click | 53 | 63 | 62 | 67 |
+
+Values are in milliseconds: the worst frame after the click, and the time from the click until the game reports the theme start. Medians of five runs of each build. The later clicks differ only by the machine's load: in the two pairs of runs taken alternately they were 59-69 ms before and 56-67 ms after. The first click's frame was the codec's metadata (`ParkResumeJson.Deserialize`: `decode_klass_ref`, `mono_metadata_type_hash` and the other type work of the runtime). Every click then reads and checks the saves. The automatic ones are also serialized again for their digest (`menu.themeStartSaves`, 45-65 ms). The first click still spends about 60 ms more than the later ones, mostly in the runtime's interpreter on the codec's first runs (`mono_interp_exec_method`, `do_jit_call`). No click was ignored or needed a second click in these runs. The harness clicks through the game's own input injection (`PerfClick`), not through the browser's mouse events, so a focus problem of the page itself would not show here.
+
+**The codec's metadata in the lobby's idle frames.** When any theme has a saved park, the lobby's frames now make that metadata in steps (`ParkResumeJson.WarmupSteps`, the same steps a park's build runs for its first restart snapshot). Each frame runs steps until at least 4 ms have gone. Nothing is read or written, and the codec's output does not change. A click before the steps end makes the rest itself, as before. A session without saved parks skips it. Every click still reads the saves, as before (about 50 ms); caching them would need a guarantee that the files have not changed.
+
+### The park door (October 21)
+
+The new `door` scenario clicks the entry price window's door through the HUD's input three times in the fresh Jungle park (closed): open, close, open again. It is also the last part of the `events` scenario, so the events before it keep their closed park. The new `PerfParkOpen` hook reads the door's state; the clicks go through `PerfClick`.
+
+| Click | Worst frame | p95 | Until the economy reports the new state |
+| --- | ---: | ---: | ---: |
+| First (opens) | 9.5 | 1.4 | 17 |
+| Second (closes) | 3.0 | 1.5 | 11 |
+| Third (opens again) | 3.6 | 1.5 | 13 |
+
+Values are in milliseconds, medians of three runs of the final build. The state time includes the harness's polling.
+
+The door's first opening has no hitch: the economy reports the park open within a frame or two. The wait after it is the original's arrival schedule. A park's first arrival group is due at turn 604 of the economy's clock, counted from the park's start and not from the door (`GuestSimulation.UpdateArrivals`; a turn is 248 ms, so about 150 s at normal speed). Then the bus brings the group. The door does not reset that timer. In the long run, the first new guest was in the park 146 s after the first click. Nothing was changed there.
+
 ### Remaining hitches
 
 | Hitch | Worst frame | Cause | What a fix would take |
 | --- | ---: | --- | --- |
-| Entering the park | 60 ms | the advisor's creation, first update and first speech (about 15 ms), the first draw (8 ms: the first calls of the entities', the advisor model's and the HUD's draws), the HUD's first update (7 ms, first calls), the live capture (7 ms) | first calls are the runtime's: warming them needs a side-effect-free way to run the code once before entering |
+| Entering the park | 56 ms | the advisor's creation, first update and first speech (about 17 ms), the restart snapshot's live capture (12 ms), the first draw (8 ms: first calls of the entities', the advisor model's and the HUD's draws), the HUD's first update (5 ms) and the park's audio (3 ms) | first calls are the runtime's: warming them needs a side-effect-free way to run the code once before entering |
 | Autosave capture | 37 ms, once per autosave interval | `CaptureResumeSnapshot` and its validation in the frame the autosave is due | the same deferred validation; a cheaper capture of the cell layout |
 | First buy preview of a ride with a sign | 55 ms | the sign's effects: `Ext.Add` in `SignEffectShape.Blur` and the relief's square roots through `BigInteger` (`Ext.IntegerSquareRoot`) | a word-pair square root and add-free blur passes, or composing the sign over frames before the preview shows it |
-| Park build steps | 71-77 ms (now the largest frames of the park start) | the economy's catalogue and balance parsing; the gate sign; guest sprite atlases | split those steps further (each is one step of `Level.Construct` now) |
+| The advisor's global model (a park build step) | about 35 ms | one step reads the model, its textures and its clips (`AdvisorRig.Load`) | a read in steps: `AdvisorEntryPreparation.Prepare` would need steps, with its log capture around each one |
+| A click on the lobby's enter-park button with saved parks | 50-65 ms per click (125 ms for the session's first) | the theme start reads and checks every saved park of the island, and serializes the automatic ones again for their digest | keep what the probe read for files that have not changed, or read them over frames before the screen shows |
+| The restart snapshot's first slices after entering | 30-35 ms | its validation of the cells and its first serialization slices meet their first calls | finer validation slices |
 | Coaster first built | 17 ms | first use of the coaster's models and textures | preload them with the park's catalogue |
 | Advisor line, while decoding | p95 about 6 ms | the 5 ms slices | none needed (under a 60 Hz frame) |

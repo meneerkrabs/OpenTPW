@@ -85,6 +85,16 @@ internal static partial class PlayerTicketFile
 			ResearchCompleted = copy.ResearchCompleted?.ToList() }, Context.Data );
 	}
 
+	/// <summary>
+	/// Writes and reads an empty ledger and drops both: nothing is stored, but the serializer's metadata of the file is made before the park is
+	/// entered, whose frame writes the file (docs/BROWSER-PERFORMANCE.md, "Build steps").
+	/// </summary>
+	internal static void WarmUp()
+	{
+		var bytes = JsonSerializer.SerializeToUtf8Bytes( new Data { Format = FormatName, Version = 1, Mode = ParkGameMode.FullSimulation, ExtraKeys = 0, SpentTickets = 0, Earned = [] }, Context.Data );
+		_ = JsonSerializer.Deserialize( bytes, Context.Data );
+	}
+
 	public static PlayerTicketLedger Deserialize( ReadOnlySpan<byte> bytes )
 	{
 		if ( bytes.Length > MaximumFileSize ) throw new InvalidDataException( "Own player progress exceeds the size limit." );

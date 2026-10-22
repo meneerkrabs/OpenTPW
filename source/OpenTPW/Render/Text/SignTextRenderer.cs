@@ -78,6 +78,13 @@ public sealed class SignTextRenderer
 		return (composed.Left, composed.Right, diagnostics, composed.TextPixelCount);
 	}
 
+	/// <summary>
+	/// <see cref="ComposeSign"/> in steps (<see cref="SignSurfaceComposer.ComposeSteps"/>), for a sign composed over frames: each step adds the diagnostics
+	/// of its part to <paramref name="diagnostics"/> as it runs (together those <see cref="ComposeSign"/> returns), and the last sets <paramref name="into"/>.
+	/// </summary>
+	internal IEnumerable<bool> ComposeSignSteps( SignFile sign, IReadOnlyList<string?> lines, List<string> diagnostics, SignSurfaceComposer.Composition into, SignPaint? firstPaintOverride = null ) =>
+		SignSurfaceComposer.ComposeSteps( sign, Fonts, lines, diagnostics, into, firstPaintOverride );
+
 	/// <summary>Reads the first <c>*.sgn</c> member of an object archive such as <c>/levels/jungle/features/gates</c>.</summary>
 	public static SignFile? LoadSignFile( string archivePath, BaseFileSystem? fileSystem = null )
 	{

@@ -28,7 +28,7 @@ import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { Cdp, launchChrome, mainThreadBusy, medianResults, sleep, startServer, stopChrome, summarizeFrames } from './lib.mjs';
 import { markdown } from './report.mjs';
-import { eventsScenario, profileClockOffset, profileFrames, profileOfFrame, useSymbols } from './events.mjs';
+import { doorScenario, eventsScenario, lobbyEnterClick, profileClockOffset, recordEvent, profileFrames, profileOfFrame, useSymbols } from './events.mjs';
 
 const DEFAULT_CHROME = {
 	darwin: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
@@ -43,7 +43,7 @@ const SELECTIONS = [['Rides', 'Belly Bounce'], ['Shops', 'Balloon Shop'], ['Shop
 function parseArguments(argv) {
 	const options = {
 		web: null, game: null, upstream: null, trackOrigins: false, gc: null, label: 'unlabelled', out: null, chrome: process.env.CHROME ?? DEFAULT_CHROME, headed: false, audible: false,
-		scenarios: ['start', 'lobby', 'jungle', 'buy', 'digest'], window: 30, memoryMinutes: 10, music: false, width: 1280, height: 900, runs: 1, frameCap: 0, keep: 'off', zoom: null, shot: null, follow: null, crowd: 400, profile: false, soakSeconds: 90, advice: [], cover: 1, evening: null, eveningLamps: 0, visits: 3,
+		scenarios: ['start', 'lobby', 'jungle', 'buy', 'digest'], window: 30, memoryMinutes: 10, music: false, width: 1280, height: 900, runs: 1, frameCap: 0, keep: 'off', zoom: null, shot: null, follow: null, crowd: 400, profile: false, soakSeconds: 90, doorWaitSeconds: 20, coldMarkMs: 40, advice: [], cover: 1, evening: null, eveningLamps: 0, visits: 3,
 	};
 	for (let index = 2; index < argv.length; index++) {
 		const [flag, inline] = argv[index].split(/=(.*)/s);
@@ -72,6 +72,8 @@ function parseArguments(argv) {
 			case '--profile': options.profile = true; break;
 			case '--profile-out': options.profileOut = value(); break;
 			case '--symbols': useSymbols(readFileSync(value(), 'utf8')); break;
+			case '--cold-mark-ms': options.coldMarkMs = Math.max(1, Number(value()) || 40); options.coldMarks = true; break;
+			case '--door-wait': options.doorWaitSeconds = Math.max(1, Number(value()) || 20); break;
 			case '--soak': options.soakSeconds = Math.max(1, Number(value()) || 90); break;
 			case '--advice': options.advice = value().split(',').map(Number).filter(Number.isFinite); break;
 			case '--shot': options.shot = value(); break;
@@ -100,7 +102,7 @@ function usage() {
   --track-origins         jungle: record where the textures made from bytes come from (their stack), so the switch scenario names the largest ones (a few ms per texture)
   --label <name>          build label in the report (interpreter, aot, ...)
   --out <file.json>       report path (default reports/web-perf/<date>-<label>.json)
-  --scenarios <list>      comma list of start,lobby,jungle,buy,umbrellas,snow,winter,winterCost,umbrellaCost,coopDigest,events,memory,switch,revisit,digest,determinism,transfer,reload (default start,lobby,jungle,buy,digest)
+  --scenarios <list>      comma list of start,lobby,jungle,buy,umbrellas,snow,winter,winterCost,umbrellaCost,coopDigest,events,door,lobbyEnter,memory,switch,revisit,digest,determinism,transfer,reload (default start,lobby,jungle,buy,digest)
   --window <seconds>      steady window length (default 30)
   --memory-minutes <n>    memory scenario length (default 10)
   --music                 keep music and speech on (default: muted, effects on, as on 11 October)
@@ -108,6 +110,8 @@ function usage() {
   --profile               jungle (cold start) and events: also record a CPU profile (Profiler domain) and name the functions each slow frame spent its time in
   --profile-out <file>    with --profile: also write the cold start's raw CPU profile (.cpuprofile JSON with the slow frames' page times)
   --symbols <file>        with --profile: name the AOT functions from the publish's Emscripten symbol map (-p:WasmEmitSymbolMap=true)
+  --cold-mark-ms <ms>     jungle: record the cold start's named work (also without events or --profile), in its frames of at least this long; default 40
+  --door-wait <seconds>   door: how long each opening waits for the first new guest (default 20)
   --soak <seconds>        events: length of the closing soak at the fastest speed (default 90)
   --advice <ids>          events: advisor advice message ids to post and time, comma separated
   --crowd <n>             umbrellaCost, winterCost, coopDigest: extra guests staged in the Jungle park (default 400)
@@ -254,7 +258,7 @@ class Page {
 	 * Runs act(), waits until done(state) and a frame has been drawn after it, then settles; returns the frames from the action on
 	 * (the first-use cost). readyMs is page time from the action to that drawn frame.
 	 */
-	async action(what, act, done, { timeoutMs = 10000, settleMs = 1500, onReady } = {}) {
+	async action(what, act, done, { timeoutMs = 10000, settleMs = 1500, onReady, slowMs = 40 } = {}) {
 		const start = await this.mark();
 		await act();
 		await this.waitFor(what, done, timeoutMs);
@@ -265,8 +269,8 @@ class Page {
 		const end = await this.mark();
 		const summary = summarizeFrames(end.frames, end.now - start.now);
 		// With the game's named work on (the events scenario turns it on) the slowest frames come with it.
-		const slowFrames = end.frames.filter(frame => frame[2] && frame[1] >= 40).map(([begin, duration, marks]) => ({ atMs: Math.round(begin - start.now), beginMs: begin, ms: Math.round(duration * 10) / 10, marks }));
-		const result = { readyMs, maxFrameMs: summary.maxMs, over50Ms: summary.over50Ms, longFramesMs: summary.longFramesMs, frames: summary.frames, p95Ms: summary.p95Ms, ...(slowFrames.length ? { slowFrames } : {}), ...(atReady ? { atReady } : {}) };
+		const slowFrames = end.frames.filter(frame => frame[2] && frame[1] >= slowMs).map(([begin, duration, marks]) => ({ atMs: Math.round(begin - start.now), beginMs: begin, ms: Math.round(duration * 10) / 10, marks }));
+		const result = { readyMs, maxFrameMs: summary.maxMs, over33Ms: summary.over33Ms, over50Ms: summary.over50Ms, longFramesMs: summary.longFramesMs, frames: summary.frames, p95Ms: summary.p95Ms, ...(slowFrames.length ? { slowFrames } : {}), ...(atReady ? { atReady } : {}) };
 		// every frame ([begin, ms]), to line a CPU profile up with the page's clock; not enumerable, so it stays out of the report
 		Object.defineProperty(result, 'pageFrames', { value: end.frames.map(([begin, duration]) => [begin, duration]) });
 		return result;
@@ -297,9 +301,9 @@ const scenarios = {
 		// The load profile covers the click, the construction and the first seconds after (textures that load lazily).
 		await page.eval('opentpwPerf.program.PerfProfile(true)');
 		// The events scenario (and --profile) also wants the named work of the cold start's slow frames.
-		const coldMarks = options.scenarios.includes('events') || options.profile;
+		const coldMarks = options.scenarios.includes('events') || options.profile || options.coldMarks;
 		if (coldMarks)
-			await page.eval('opentpwPerf.marks = true, opentpwPerf.markMs = 40, opentpwPerf.program.PerfFrameMarks(true), 0');
+			await page.eval(`opentpwPerf.marks = true, opentpwPerf.markMs = ${options.coldMarkMs}, opentpwPerf.program.PerfFrameMarks(true), 0`);
 		// --profile: a CPU profile of the cold start names the functions of each slow frame
 		let coldProfile = null;
 		if (options.profile) {
@@ -311,7 +315,7 @@ const scenarios = {
 		if (options.trackOrigins)
 			await page.eval('opentpwPerf.program.PerfTrackTextureOrigins(true)');
 		const cold = await page.action('the Jungle park', () => page.enterFullSimulation('jungle'),
-			current => current.hud && current.level === 'jungle', { timeoutMs: 300000, settleMs: 5000,
+			current => current.hud && current.level === 'jungle', { timeoutMs: 300000, settleMs: 5000, slowMs: options.coldMarkMs,
 				onReady: async () => ({
 					profile: JSON.parse(await page.eval('opentpwPerf.program.PerfLoadProfile()')),
 					// Builds from before parks were built over frames have no such hook.
@@ -546,6 +550,55 @@ const scenarios = {
 	/** The frames each event of a park session causes, with the game's named work in the slow ones (events.mjs; run after jungle). */
 	async events(page, options) {
 		return eventsScenario(page, options);
+	},
+
+	/**
+	 * The lobby's enter-park button in a session that starts with saved parks (run after jungle): the park is left to the lobby, which
+	 * writes its automatic checkpoint, the page is loaded again in the same profile, and the first and a second click on the button are
+	 * measured, each up to the screen it opens and back.
+	 */
+	async lobbyEnter(page, options, context) {
+		const state = await page.state();
+		if (!state.hud || state.level !== 'jungle')
+			throw new Error('The lobbyEnter scenario needs the Jungle park: run it after jungle');
+		await page.call('PerfOpenPauseMenu');
+		await page.waitFor('the pause menu', current => current.hudScreen === 'pause', 10000);
+		for (let frame = 0; frame < 3; frame++)
+			await page.nextFrame();
+		await page.call('PerfClick', 'ExitToLobby');
+		await page.waitFor('the lobby', current => current.menu === 'lobby' && !current.hud, 60000);
+		// the checkpoint reaches the browser's storage after the lobby shows: a reload too soon finds no saved park to offer
+		await sleep(10000);
+		await page.send('Page.navigate', { url: context.url });
+		await page.waitFor('the page loaded again', current => current.started, 600000);
+		await page.waitFor('the lobby', current => current.menu === 'lobby', 120000);
+		await sleep(3000);
+		const profile = !!options.profile;
+		if (profile) {
+			await page.send('Profiler.enable');
+			await page.send('Profiler.setSamplingInterval', { interval: 250 });
+		}
+		await page.eval('opentpwPerf.marks = true, opentpwPerf.program.PerfFrameMarks(true), 0');
+		const events = {};
+		const run = async (name, act, extra) => {
+			process.stderr.write(`  ${name}\n`);
+			const record = await recordEvent(page, name, act, extra).catch(error => ({ name, missing: true, error: error.message }));
+			events[name] = record;
+			return record;
+		};
+		try {
+			await lobbyEnterClick(page, run, 'lobby enter park: first click of the session', { profile });
+			await lobbyEnterClick(page, run, 'lobby enter park: second click', { profile });
+			await lobbyEnterClick(page, run, 'lobby enter park: third click', { profile });
+			return { events };
+		} finally {
+			await page.eval('opentpwPerf.marks = false, opentpwPerf.program.PerfFrameMarks(false), 0').catch(() => {});
+		}
+	},
+
+	/** The park door button's first and later presses in the fresh Jungle park (events.mjs; run after jungle). */
+	async door(page, options) {
+		return doorScenario(page, options);
 	},
 
 	async buy(page, options) {

@@ -67,7 +67,24 @@ public sealed class ParkEconomy : IParkEconomy
 
 	/// <summary>Loads the original settings and objects of <paramref name="theme"/> and starts a new park.</summary>
 	public static ParkEconomy CreateForTheme( string theme, bool easy, ParkGameMode mode = ParkGameMode.FullSimulation, ulong seed = 1 ) =>
-		new( BalanceSettings.Load( theme, easy ), EconomyObjectCatalog.Load( theme, easy ), mode, seed );
+		CreateForThemeSteps( theme, easy, mode, seed ).Last()!;
+
+	/// <summary><see cref="CreateForTheme"/> in steps (the settings, the catalogue's steps, then the park): null after each part, then the park.</summary>
+	internal static IEnumerable<ParkEconomy?> CreateForThemeSteps( string theme, bool easy, ParkGameMode mode = ParkGameMode.FullSimulation, ulong seed = 1 )
+	{
+		var settings = BalanceSettings.Load( theme, easy );
+		yield return null;
+		EconomyObjectCatalog? catalog = null;
+		foreach ( var loaded in EconomyObjectCatalog.LoadSteps( theme, easy ) )
+		{
+			if ( loaded == null )
+				yield return null;
+			else
+				catalog = loaded;
+		}
+		yield return null;
+		yield return new ParkEconomy( settings, catalog!, mode, seed );
+	}
 
 	public BalanceSettings Settings { get; }
 	public IEconomyObjectCatalog Catalog { get; }

@@ -30,11 +30,12 @@ public enum UiKeys
 /// (the smoke tests and fixtures) has no batch either, but its pointer edges are deliberate: the park routes them as injected edges
 /// (<see cref="UiPointerRouter.AdmitInjected"/>), whereas an unavailable batch never starts a gesture.
 /// </param>
+/// <param name="BackspaceRepeating">Every Backspace of this frame is the auto-repeat of a held key (the pool bridge and water removal acts only on the first press).</param>
 /// <param name="NotClick">
 /// Set on a left release that is not a click: the press lasted longer than <see cref="UiInputSource.ClickMilliseconds"/> or the
 /// pointer strayed more than <see cref="UiInputSource.ClickSlop"/> pixels on an axis (tp.exe 0x65f6d1 / 0x65fa33). The release still ends drags.
 /// </param>
-public readonly record struct UiInput( NVector2 Mouse, bool LeftDown, bool LeftPressed, bool LeftReleased, bool RightPressed, UiKeys Pressed, float Wheel = 0, string Text = "", int Backspaces = 0, bool NotClick = false, IReadOnlyList<OrderedInputEvent>? OrderedEvents = null, bool PointerSuppressed = false, float PointerScaleX = 1, float PointerScaleY = 1, bool PointerHostBlocked = false, bool OrderedUnavailable = false )
+public readonly record struct UiInput( NVector2 Mouse, bool LeftDown, bool LeftPressed, bool LeftReleased, bool RightPressed, UiKeys Pressed, float Wheel = 0, string Text = "", int Backspaces = 0, bool NotClick = false, IReadOnlyList<OrderedInputEvent>? OrderedEvents = null, bool PointerSuppressed = false, float PointerScaleX = 1, float PointerScaleY = 1, bool PointerHostBlocked = false, bool OrderedUnavailable = false, bool BackspaceRepeating = false )
 {
 
 	public static UiInput Idle( NVector2 mouse ) => new( mouse, false, false, false, false, UiKeys.None );
@@ -108,7 +109,7 @@ public sealed class UiInputSource
 			mouse.Left, mouse.Left && !wasLeft, !mouse.Left && wasLeft, mouse.Right && !wasRight, pressed, mouse.Wheel,
 			Input.Typed, Input.KeyPresses.Count( key => key == Key.BackSpace ), notClick,
 			NormalizeOrderedEvents( Input.OrderedEvents, keys, framebufferPerWindowX, framebufferPerWindowY ),
-			PointerScaleX: framebufferPerWindowX, PointerScaleY: framebufferPerWindowY, OrderedUnavailable: Input.OrderedEvents == null );
+			PointerScaleX: framebufferPerWindowX, PointerScaleY: framebufferPerWindowY, OrderedUnavailable: Input.OrderedEvents == null, BackspaceRepeating: Input.BackspaceRepeating );
 		wasLeft = mouse.Left;
 		wasRight = mouse.Right;
 		return input;

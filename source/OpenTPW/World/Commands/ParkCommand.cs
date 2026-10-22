@@ -26,7 +26,7 @@ public enum ParkCommandKind : byte
 	RemovePathCell = 12,
 	/// <summary>Removes a queue cell and the cells behind it (<see cref="RemoveQueueCellCommand"/>).</summary>
 	RemoveQueueCell = 13,
-	/// <summary>Backspace over a path or queue cell with no tool on (<see cref="BacktrackCommand"/>).</summary>
+	/// <summary>Backspace over a path, queue, pool bridge or pool water cell with no tool on (<see cref="BacktrackCommand"/>).</summary>
 	Backtrack = 14,
 	/// <summary>A click on a queue cell that starts editing the ride's queue (<see cref="EditQueueCommand"/>).</summary>
 	EditQueue = 15,
@@ -317,7 +317,7 @@ public sealed record RemoveQueueCellCommand( int X, int Y ) : ParkCommand
 	}
 }
 
-/// <summary>Backspace in the park view with no build tool on, over (<paramref name="X"/>, <paramref name="Y"/>): one placement off a path cell, or the queue from that cell back.</summary>
+/// <summary>Backspace in the park view with no build tool on, over (<paramref name="X"/>, <paramref name="Y"/>): one placement off a path cell, the queue from that cell back, the pool bridge over it, or the one pool water cell. The target is read from the park alone, so every peer finds the same one.</summary>
 public sealed record BacktrackCommand( int X, int Y ) : ParkCommand
 {
 	public override ParkCommandKind Kind => ParkCommandKind.Backtrack;

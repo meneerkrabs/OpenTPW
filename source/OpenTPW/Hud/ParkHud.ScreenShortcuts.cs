@@ -292,7 +292,7 @@ public sealed partial class ParkHud
 	private void RotateBlueprint( HudScreenShortcut shortcut )
 	{
 		// [EXT:pools-bridges] the bridge in hand turns with the same two keys as an object's blueprint
-		if ( level.PoolTool is { IsBridge: true, IsErasing: false } bridgeTool )
+		if ( level.PoolTool is { IsBridge: true } bridgeTool )
 		{
 			bridgeTool.RotateBridge( BlueprintTurnSteps( shortcut ) );
 			return;

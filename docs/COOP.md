@@ -441,6 +441,41 @@ Known limits: the guest's files and simulation mods must be the host's (the buil
 park state with a non-finite float (NaN or an infinity) cannot be captured, since the save's JSON holds
 none; a single build step can take longer than the frame budget, which C2c-2b measures.
 
+### The browser's join (C2c-2b-2)
+
+`[EXT:online-coop-snapshot-join]` The same join phase runs in the browser's game (Mono WASM, compiled
+ahead of time or interpreted) over a join recorded on the desktop, so a desktop host and a browser guest
+are proven to run one simulation: `tools/web-coop-join.mjs` serves a published page and the game's
+folder on 127.0.0.1, opens the page in a fresh headless, muted Chrome profile with `?coopSmoke=1`
+(docs/WEB.md), copies the host phase's evidence (`OPENTPW_COOP_JOIN_PHASE=host` for
+`scripts/smoke-coop-join.sh`) into `/coop-smoke` with `Program.CoopSmokeAddFile`, starts the join phase
+from the front end (`CoopJoinSmokeStart`: `join`, the adversarial one, or `measure`), follows its
+status and reads its evidence back. The page is the smoke's runner (`CoopJoinSmokeTest.Page.cs`): it
+attaches the smoke's handlers around the game's update in the native order, times each whole frame call
+(the update and the drawing) for the smoke's frame, makes any throw out of a frame the run's failure
+before the page stops its loop (also a throw after the run completed in that frame: a pass is published
+only once its frame returned whole and the evidence is written again, with that frame's time), and
+takes the handlers off once the run has ended, the game running on with the player's saves and the
+profile back. The mode checks the page's own address, not the word of the script that asks for it. One
+run a page, since the builds it checks must be the runtime's first; the driver starts a fresh profile
+for each. It fails fast on a page that crashed or lost its DevTools connection, could not copy a level's
+files, stopped its loop or drew no frame for two minutes, and on pool sprites still on their way after
+two minutes. What it proves is the
+native join phase's contract, unchanged: the cut's tick, digest and world hash, every checkpoint's
+digest, the final digest, world hash and join state, and the structural save comparison. Two limits of
+the session can end a slow page's run without a wrong digest: a build's 300 s deadline (the wait for the
+level's files included) and the smoke's catch-up limit of 3,600 frames; the failure says which.
+The evidence names how the page was compiled (`OpenTpwBrowserCompilation`: `aot`, `interpreter` or
+`coreclr`; `jit` natively). The audio differs from the native smoke's: Chrome is muted, but its Web
+Audio runs (the native silent run opens no device).
+
+Both modes pass in the page compiled ahead of time and in the interpreted one (Chrome 155 headless on an
+Apple M5, over a host phase recorded by the desktop build of the same source): the failed check, the
+abandon, the join, all 80 checkpoints to the second cut, the resync, the 20 to the end, and the final
+digest, world hash, join state and save, in about a minute and some 3,200 frames each. So a desktop host
+and a browser guest run one simulation through a whole session, a stronger check than the determinism
+pins' fixed runs. The browser's numbers follow in "Measurements" (C2c-2b-2c).
+
 ### The host's trimmed frame (C2c-3)
 
 `[EXT:online-coop-snapshot-join]` The host trims the frames every member is known to hold. A server
@@ -1017,7 +1052,7 @@ new format version.
 tick order and an end mark. Versions 1 and 2 have no flags byte and remain readable (version 1 cannot
 contain the new queue commands). `ParkCommandReplay.Run` schedules a log on a park that stands where
 the log started and runs it tick by tick, so each command lands where it was recorded, under the
-session's rules when the log says so; `FirstMismatch` compares the checkpoints.
+session's rules when the log says so; `FirstMismatch` compares the checkpoints. A log is guaranteed to replay only on the build that recorded it: kind 14 (`BacktrackCommand`) gained meaning over pool water and pool bridge cells with the pools extension's Backspace removal, so a log recorded before that, with the key pressed over such a cell, did nothing then and does something now.
 
 A co-op session records its own log (`CoopHostStream.SessionLog`, kept at the first desync and when
 the session ends): every command from the session's start, with the world hash of each tick digest as

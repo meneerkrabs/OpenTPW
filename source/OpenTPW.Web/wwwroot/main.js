@@ -33,7 +33,13 @@ status.textContent = 'Ready.';
 const perfQuery = new URLSearchParams(location.search);
 const perfSeedPaths = new Set(['/save/opentpw-options.json', '/config/display.json']);
 const loopback = ['127.0.0.1', 'localhost', '[::1]'].includes(location.hostname);
-const perf = loopback && perfQuery.get('perf') === '1' ? {
+// The co-op join smoke's page (tools/web-coop-join.mjs, docs/COOP.md "The browser's join"): with ?coopSmoke=1 the page exposes the same harness object, but
+// chooses the game's co-op smoke mode instead of the performance mode, whose hooks change parks outside the commands (a shared park refuses them). Never both.
+const perfRequested = loopback && perfQuery.get('perf') === '1';
+const coopSmokeRequested = loopback && perfQuery.get('coopSmoke') === '1';
+if (perfRequested && coopSmokeRequested)
+	console.error('?perf=1 and ?coopSmoke=1 exclude each other; the page runs without either.');
+const perf = perfRequested !== coopSmokeRequested ? {
 	program,
 	frames: [],
 	skipped: 0,
@@ -51,8 +57,11 @@ const perf = loopback && perfQuery.get('perf') === '1' ? {
 } : null;
 if (perf) {
 	globalThis.opentpwPerf = perf;
-	// the harness's hooks change the park outside the commands, so this page shares no park (docs/COOP.md, "The level in a session")
-	program.PerfMode();
+	if (coopSmokeRequested)
+		program.CoopSmokeMode();
+	else
+		// the harness's hooks change the park outside the commands, so this page shares no park (docs/COOP.md, "The level in a session")
+		program.PerfMode();
 }
 
 let levelSources = [];

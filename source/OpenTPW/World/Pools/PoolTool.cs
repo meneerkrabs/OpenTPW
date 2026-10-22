@@ -44,7 +44,7 @@ public sealed class PoolTool
 	/// </summary>
 	public void RotateBridge( int steps )
 	{
-		if ( !IsBridge || IsErasing )
+		if ( !IsBridge )
 			return;
 		bridgeDirection = (((bridgeDirection - steps) % 4) + 4) % 4;
 		if ( HoverCell is { } cell )
@@ -57,14 +57,14 @@ public sealed class PoolTool
 	/// Whether the hover help names the hovered bridge's refusal instead of the instructions: only while the line under the pointer reaches pool water, so the
 	/// instructions still show while the pointer is away from any pool (where every place refuses).
 	/// </summary>
-	public bool ShowsBridgeReason => HoverBridgeResult != null && !IsErasing && Bridges != null
+	public bool ShowsBridgeReason => HoverBridgeResult != null && Bridges != null
 		&& HoverBridgeCells().Skip( 1 ).Take( PoolBridge.Length ).Any( cell => Bridges.CellsInBounds( cell.X, cell.Y ) && Bridges.IsWater( cell.X, cell.Y ) );
 	/// <summary>Whether the blueprint marks this preview cell red: the cell to blame, or every cell when the refusal is the whole bridge's (the slope, the money).</summary>
 	public bool HoverBridgeRefuses( (int X, int Y) cell ) => HoverBridgeResult != null && (HoverBridgeBlocker == null || HoverBridgeBlocker == cell);
 	/// <summary>The cells the hovered bridge would use while placing one: the outside path end before it, its seven cells and the path end after it (the cells inside the park).</summary>
 	public IEnumerable<(int X, int Y)> HoverBridgeCells()
 	{
-		if ( !IsBridge || IsErasing || HoverCell is not { } cell || Bridges == null )
+		if ( !IsBridge || HoverCell is not { } cell || Bridges == null )
 			yield break;
 		var candidate = new PoolBridge( cell.X, cell.Y, bridgeDirection, 0 );
 		for ( var i = -1; i <= PoolBridge.Length; i++ )
@@ -130,12 +130,12 @@ public sealed class PoolTool
 		return true;
 	}
 
-	/// <summary>Starts single-click placement or removal. The anchor is the first land approach cell; directions follow GuestPathGrid. The direction can be turned while placing (<see cref="RotateBridge"/>).</summary>
-	public bool BeginBridge( int direction, bool erase = false )
+	/// <summary>Starts single-click placement (a bridge is taken down with Backspace, <see cref="Level.BacktrackAt"/>). The anchor is the first land approach cell; directions follow GuestPathGrid. The direction can be turned while placing (<see cref="RotateBridge"/>).</summary>
+	public bool BeginBridge( int direction )
 	{
 		if ( Bridges == null || direction < 0 || direction > 3 || !FeatureGates.Pools )
 			return false;
-		if ( !Begin( erase ) )
+		if ( !Begin( false ) )
 			return false;
 		bridgeMode = true;
 		bridgeDirection = direction;
@@ -181,7 +181,7 @@ public sealed class PoolTool
 		if ( bridgeMode )
 		{
 			(int X, int Y)? blocker = null;
-			var result = IsErasing ? Bridges!.CheckRemove( x, y ) : Bridges!.Check( x, y, bridgeDirection, out blocker );
+			var result = Bridges!.Check( x, y, bridgeDirection, out blocker );
 			HoverBridgeResult = result == PoolBridgeResult.Ok ? null : result;
 			HoverBridgeBlocker = blocker;
 			HoverResult = Map( result );
@@ -365,7 +365,7 @@ public sealed class PoolTool
 		// [EXT:online-coop-commands] every write is a command; a command the funnel refuses on its own (a peer's rights) answers as a cell taken
 		if ( bridgeMode )
 		{
-			var bridge = issue( IsErasing ? new RemovePoolBridgeCommand( x, y ) : new PlacePoolBridgeCommand( x, y, bridgeDirection ) ).Value is PoolBridgeResult answer
+			var bridge = issue( new PlacePoolBridgeCommand( x, y, bridgeDirection ) ).Value is PoolBridgeResult answer
 				? answer : PoolBridgeResult.Occupied;
 			var mapped = Map( bridge );
 			if ( bridge == PoolBridgeResult.Ok )

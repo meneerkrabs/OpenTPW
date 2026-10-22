@@ -10,11 +10,12 @@ namespace OpenTPW.Hud;
 /// </summary>
 public sealed partial class ParkHud
 {
-	/// <summary>How many messages the tube holds; the oldest goes when a sixth arrives.</summary>
-	// [DATA:video 15:20, 51:40, 76:03] up to about five icons are stacked in the tube at once
+	/// <summary>Ten occupied slots, including hidden terminals awaiting final release; a full tube refuses new rows.</summary>
+	// [BIN:TPW-EXE:0x48ec04,0x750610,0x48ec40] admission checks the configured count of ten and scans ten reusable records; there is no oldest eviction.
+	// [BIN:TPW-EXE:0x4a1278,0x65f447] attaching a reused slot appends it after surviving rows, represented here by list order.
 	// [EXT:message-tube-art] the red tube body is drawn as rectangles and the white icons as discs, the growth per message (77 units) read off the video, instead of the original's tube art
-	// [APPROX:UI-025] pending tube messages are not saved with the park; the capacity of five is the most the video shows, while the traced tube insertion scans ten slots (0x48eb20); generic messages still evict the oldest at the host limit, whereas new challenge rows refuse a full tube (including hidden terminal slots awaiting release) and same-tag progress refresh bypasses capacity
-	public const int MessageTubeCapacity = 5;
+	// [APPROX:UI-025] pending tube messages are not saved; original offer removal, timer integration and other action-bearing sources remain incomplete.
+	public const int MessageTubeCapacity = 10;
 
 	/// <summary>The advisor help the open message panel carries (0x11C, 284).</summary>
 	public const int MessagePanelHelp = 284;
@@ -58,12 +59,12 @@ public sealed partial class ParkHud
 
 	/// <summary>
 	/// Adds a game message to the tube. It stays until it is opened or deleted. A message may carry up to two actions, drawn as the panel's action buttons with
-	/// the art of their kind.
+	/// the art of their kind. Returns false for blank text or a full tube, without changing rows, sound or help.
 	/// </summary>
-	public void PostGameMessage( string text, params GameMessageAction[] actions )
+	public bool PostGameMessage( string text, params GameMessageAction[] actions )
 	{
-		if ( string.IsNullOrWhiteSpace( text ) )
-			return;
+		if ( string.IsNullOrWhiteSpace( text ) || PendingMessages.Count >= MessageTubeCapacity )
+			return false;
 		pendingMessages ??= new List<string>();
 		pendingActions ??= new List<GameMessageAction[]>();
 		pendingChallengeRows ??= new List<ChallengeTubeRow?>();
@@ -74,11 +75,7 @@ public sealed partial class ParkHud
 		// [EXT:restored-advice-tutorial] 322 (a message icon sits on the control panel antenna): the first message of the tube; the advisor posts it only while the extension is on, once (the tutorial group)
 		if ( pendingMessages.Count == 1 )
 			host?.RestoredHelp?.Invoke( RestoredAdvice.MessageIconHelp );
-		// UI-025: preserve generic immediate eviction, including a terminal awaiting its own delayed release.
-		while ( pendingMessages.Count > MessageTubeCapacity )
-		{
-			RemovePendingMessageAt( 0 );
-		}
+		return true;
 	}
 
 	/// <summary>
@@ -104,9 +101,8 @@ public sealed partial class ParkHud
 				openedMessage = text;
 			return true;
 		}
-		if ( PendingMessages.Count >= MessageTubeCapacity )
+		if ( !PostGameMessage( text ) )
 			return false;
-		PostGameMessage( text );
 		pendingChallengeRows![^1] = new ChallengeTubeRow( identity );
 		return true;
 	}

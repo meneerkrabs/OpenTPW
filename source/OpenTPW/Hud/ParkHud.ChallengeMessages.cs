@@ -71,6 +71,7 @@ public sealed partial class ParkHud
 
 	/// <summary>
 	/// Offer/result transitions remove only their traced replacement row; terminal captions use the immutable event payload.
+	/// Returns whether a recognized transition was processed, not whether a row was admitted; a full tube is a normal refusal.
 	/// A challenge caption is omitted when its localized typed template or required name is unavailable; there is no invented generic fallback.
 	/// </summary>
 	internal bool ApplyChallengePresentation( ChallengePresentation message, StringFile? templates, Func<int, string?> objectName, Func<int, string?> staffEntry ) =>
@@ -107,7 +108,8 @@ public sealed partial class ParkHud
 
 	/// <summary>
 	/// Keeps a waiting offer answerable: while the challenge system waits on an answer and neither the tube nor the open panel holds the offer's
-	/// message (it was closed, deleted, pushed out of a full tube, or the park was loaded), the offer is posted again.
+	/// message (it was closed, deleted, or the park was loaded), the offer is posted again when a slot is free.
+	/// Returns true only on insertion. A full tube leaves the offer awaiting its answer for a later ordinary update to retry.
 	/// </summary>
 	// [EXT:challenge-offer-repost] an offer whose message is deleted unanswered is posted again, so the challenge system (which waits on the answer) never stalls; the original removal path invokes Decline for action 27, whereas this existing extension keeps offers answerable; expiry/removal parity is separate from progress refresh
 	internal bool KeepChallengeOfferPosted( ParkEconomy? economy )
@@ -116,8 +118,7 @@ public sealed partial class ParkHud
 			return false;
 		if ( openedActions?.Any( IsChallengeAction ) == true || pendingActions != null && pendingActions.Any( actions => actions.Any( IsChallengeAction ) ) )
 			return false;
-		PostGameMessage( economy.Objectives.Describe( definition ), ChallengeActions( () => economy ) );
-		return true;
+		return PostGameMessage( economy.Objectives.Describe( definition ), ChallengeActions( () => economy ) );
 	}
 
 	private static bool IsChallengeAction( GameMessageAction action ) => action.Kind is GameMessageKind.Accept or GameMessageKind.Decline;

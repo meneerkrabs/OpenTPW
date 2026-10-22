@@ -28,6 +28,32 @@ public class ChallengeProgressTubeTests
 	}
 
 	[TestMethod]
+	public void BlankAndFullAdmissionDoNotChangeHelpAudioActionsOrRows()
+	{
+		using var audio = new AudioTriggerProbe();
+		var hud = Hud();
+		var help = 0;
+		var clicked = 0;
+		typeof( ParkHud ).GetField( "host", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic )!.SetValue( hud,
+			new HudHost { RestoredHelp = _ => help++ } );
+		Assert.IsFalse( hud.PostGameMessage( " " ) );
+		Assert.AreEqual( 0, help );
+		Assert.AreEqual( 0, audio.Events( "cat_ui" ).Count() );
+		Assert.IsTrue( hud.PostChallengeProgress( 280, "selected" ) );
+		for ( var i = 1; i < 10; i++ ) Assert.IsTrue( hud.PostGameMessage( "ordinary-" + i ) );
+		Assert.IsTrue( hud.OpenPendingMessage( 0 ) );
+		var before = hud.PendingMessages.ToArray();
+		Assert.IsFalse( hud.PostGameMessage( "rejected", new GameMessageAction( GameMessageKind.Accept, () => clicked++ ) ) );
+		Assert.IsFalse( hud.PostGameMessage( " " ) );
+		CollectionAssert.AreEqual( before, hud.PendingMessages.ToArray() );
+		Assert.AreEqual( "selected", hud.OpenedMessage );
+		Assert.AreEqual( 0, hud.OpenedActions.Count );
+		Assert.AreEqual( 0, clicked );
+		Assert.AreEqual( 1, help );
+		Assert.AreEqual( 10, audio.Events( "cat_ui" ).Count( id => id == ParkHud.MessagePostedEvent ) );
+	}
+
+	[TestMethod]
 	public void PendingOpenAndClosedProgressRefreshInPlaceAndDeleteReinsertsOnce()
 	{
 		using var probe = new AudioTriggerProbe();
@@ -77,10 +103,13 @@ public class ChallengeProgressTubeTests
 		Assert.AreEqual( ParkHud.MessageTubeCapacity, hud.PendingMessages.Count );
 		Assert.AreEqual( "updated", hud.PendingMessages[0] );
 		Assert.AreEqual( ParkHud.MessageTubeCapacity, probe.Events( "cat_ui" ).Count( id => id == ParkHud.MessagePostedEvent ) );
-		// Generic messages preserve their existing oldest-eviction policy, including selected-row cleanup.
-		hud.PostGameMessage( "new ordinary" );
-		Assert.IsNull( hud.OpenedMessage );
-		Assert.AreEqual( "ordinary-1", hud.PendingMessages[0] );
+		// Generic refusal must preserve the selected progress instance and insertion sound count.
+		Assert.IsFalse( hud.PostGameMessage( "new ordinary" ) );
+		Assert.AreEqual( "updated", hud.OpenedMessage );
+		Assert.AreEqual( "updated", hud.PendingMessages[0] );
+		Assert.AreEqual( 10, probe.Events( "cat_ui" ).Count( id => id == ParkHud.MessagePostedEvent ) );
+		Assert.IsTrue( hud.OpenPendingMessage( 9 ) );
+		Assert.AreEqual( 9, hud.PendingMessages.Count, "failed progress admission must not tag the last ordinary row" );
 	}
 
 	[TestMethod]

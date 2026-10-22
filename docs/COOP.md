@@ -411,6 +411,9 @@ offscreen: `--coop-join-smoke host|join --coop-join-evidence <directory>`), runs
   more checkpoints), the add-on's sale among the frames. It ends with the host's digest, world hash,
   join state and save, apart from the save's presentation parts (the time, the particles, the snow cover
   and the sound seed, also the economy part's copy of it).
+  A measuring mode (`--coop-join-smoke measure`; `OPENTPW_COOP_JOIN_PHASE=measure` for the script) joins
+  the untouched captures once each, for the numbers below ("Measurements"); both modes require every
+  build's timings with its outcome, finite and not negative, and the host phase every capture's.
 
 A mutation run took each skip of the restore mode that the smoke stages out, in turn, and the smoke caught
 every one: a join that reopens a closed built coaster, gives a tour ride a fresh controller, repairs the
@@ -489,6 +492,32 @@ The design fixed two constants only after measuring them (`coop-c2b-design.md`, 
 - **Frames.** Through a build session at the fastest speed (`CoopSessionTests`) the host published
   9.2 frames a second, 25 bytes on average and 81 at most (231 bytes a second), and 19 digests in 20
   seconds. The 100 ms frame period stays.
+- **The join's cost (C2c-2b-1).** `scripts/measure-coop-join.sh` runs the native join smoke's host phase
+  and its measuring join phase (`--coop-join-smoke measure`: the untouched captures, joined from the
+  front end and resynced once each) five times in a Release build, each phase a fresh process, silent
+  and offscreen; `tools/coop_join_timings.py` prints every value's median, range and runs. The timings
+  are wall-clock (`Stopwatch`, never a session's clock), kept per capture on the host
+  (`CoopHostStream.CaptureTimings`) and per build on the guest (`CoopSession.JoinTimings`, with the
+  stages of `ICoopJoinBuild.Timings` and the level's `LoadProfile` sections), logged, and written into
+  the smoke's evidence with the phase's update frames and its environment. On an Apple M5 (macOS 26.6,
+  .NET 11 RC 2, the advisor on), medians of five:
+  - **The host, at a cut.** The first capture's cut took 39 ms in one frame, 34 ms of it the digest (the
+    process's first); the second's 12 ms, 10 ms of it the digest. The captures took 14 and 5 frames; the
+    save's longest slice took 34 ms (the serializer's first use) and 3.6 ms, the compression 1.3 ms, for a
+    128 and a 149 KiB payload of a 980 and a 1,107 KiB save.
+  - **The guest, joining from the front end** (the process's first build): 32 frames, the longest 598
+    ms, almost all of it the restore of the park's objects (`ParkLayoutSnapshot.RestoreObjects`, one
+    step of 592 ms). Other single steps over the build's 12 ms budget: the save's parse (154 ms), the
+    guests' restore (174 ms), the resume's restore (77 ms), the terrain (75 ms), the level's HUD (54
+    ms), the staff, gate and economy (51 ms), the catalogue's settings (47 ms), the advisor (27 ms), a
+    validation step (17 ms) and the economy (16 ms). The decode took 3.8 ms, the check at the cut 42 ms
+    (the process's first digest), the swap 7 ms, and the first frame after it 66 ms.
+  - **The guest, resyncing over its park** (warm): 12 frames, the longest 205 ms (the objects' restore
+    again), the guests' restore 98 ms, the catalogue's settings 41 ms, the terrain 34 ms; the decode 1.4
+    ms, the check 2.4 ms, the swap 9 ms, the first frame after it 73 ms. The host's digest of that park
+    took 10 ms at its cut, the guest's 2.4 ms; the difference is not explained yet.
+  A join thus stalls a guest's frames for up to 0.6 s at its worst step and the host's for one frame of
+  12 to 39 ms. The browser's numbers (C2c-2b-2) decide which steps C2c-2b-3 splits.
 
 ## The command layer (C1)
 

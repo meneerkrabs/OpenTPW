@@ -108,19 +108,23 @@ internal sealed partial class CoopJoinSmokeTest
 						if ( session.Building is { } first && requestsAnswered == 1 )
 							firstBuild = first;
 						// part way through the level's construction, once the build has staged entities in its scene: the check above must find none of them left behind
-						else if ( session.Building is { StagedEntities: > 0 } second && requestsAnswered == 2 && !abandonedMidBuild )
+						else if ( session.Building is { StagedEntities: > 0 } second && requestsAnswered == 2 && !abandonedMidBuild && !measuring )
 							ReassignMidBuild( session, second );
 					}
 					if ( session.Phase == CoopGuestPhase.Following && flow.Level != null )
 					{
-						// the first answer's wrong digest failed its check at the cut; the second's build was abandoned part way for a newer assignment; the third built and swapped in
-						Require( requestsAnswered == 2 && session.FailedJoins == 1 && abandonedMidBuild,
-							$"one failed check and one abandoned build before the swap ({session.FailedJoins} failed joins, {requestsAnswered} answers, abandoned {abandonedMidBuild})" );
+						// the first answer's wrong digest failed its check at the cut; the second's build was abandoned part way for a newer assignment; the third built and swapped in. Measuring,
+						// the untouched first capture built and swapped in at once
+						if ( measuring )
+							Require( requestsAnswered == 1 && session.FailedJoins == 0 && !abandonedMidBuild, $"the untouched first capture joined at once ({session.FailedJoins} failed joins)" );
+						else
+							Require( requestsAnswered == 2 && session.FailedJoins == 1 && abandonedMidBuild,
+								$"one failed check and one abandoned build before the swap ({session.FailedJoins} failed joins, {requestsAnswered} answers, abandoned {abandonedMidBuild})" );
 						Require( ReferenceEquals( flow.Level, session.Level ) && flow.HeldJoin == null && flow.Menu == null && flow.Hud != null, "the join's park is the game's, with its HUD" );
 						Require( frontEndScene != null && frontEndScene.Count == 0 && !ReferenceEquals( Entity.All, frontEndScene ), "the swap retired the front end's scene" );
 						Require( flow.Level!.IsCoopGuestPark && flow.Level.CoopSession == session, "a guest's park in the session" );
 						firstPark = flow.Level;
-						joinSteps.Add( $"joined at tick {flow.Level.TickCount} after one failed check" );
+						joinSteps.Add( measuring ? $"joined at tick {flow.Level.TickCount} from the untouched first capture" : $"joined at tick {flow.Level.TickCount} after one failed check" );
 						Advance( JoinStep.Following );
 					}
 					else if ( session.FailedJoins == 1 && joinSteps.Count == 0 )
@@ -153,20 +157,22 @@ internal sealed partial class CoopJoinSmokeTest
 					var expected = checkpointsIn.Where( pair => pair.Key > hostEvidence.Cuts[0].Frame && pair.Key <= resync.Frame ).Sum( pair => pair.Value );
 					Require( stream.Checks == expected && expected > 0, $"the followed stream compared every checkpoint of its frames ({stream.Checks} of {expected})" );
 					joinSteps.Add( $"followed to the second cut, {stream.Checks} checkpoints compared" );
-					// the host assigns the member the second capture (it asked for one), then answers it once uploaded
-					Answer( new CoopSnapshotAssigned( resync.Assigned ) { Generation = ResyncGeneration } );
-					var payload = Rewrite( File.ReadAllBytes( Path.Combine( evidenceDirectory, resync.File ) ), ResyncGeneration );
+					// the host assigns the member the second capture (it asked for one), then answers it once uploaded; measuring, the capture as the host wrote it
+					var generation = measuring ? resync.Generation : ResyncGeneration;
+					Answer( new CoopSnapshotAssigned( resync.Assigned ) { Generation = generation } );
+					var recorded = File.ReadAllBytes( Path.Combine( evidenceDirectory, resync.File ) );
+					var payload = measuring ? recorded : Rewrite( recorded, ResyncGeneration );
 					var sha = replay.Serve( payload );
 					pendingAnswers.Add( (resync.ReadyHostFrame, new CoopSnapshotReady( resync.Records, resync.Ticks, resync.Frame, resync.Digest, resync.WorldHash, sha, payload.Length )
-						{ Generation = ResyncGeneration }) );
+						{ Generation = generation }) );
 					Advance( JoinStep.Resyncing );
 					return;
 				}
 				case JoinStep.Resyncing:
-					if ( session.Phase == CoopGuestPhase.Following && session.GuestStream?.Generation == ResyncGeneration )
+					if ( session.Phase == CoopGuestPhase.Following && session.GuestStream?.Generation == (measuring ? hostEvidence.Cuts[1].Generation : ResyncGeneration) )
 					{
 						Require( !ReferenceEquals( flow.Level, firstPark ) && ReferenceEquals( flow.Level, session.Level ) && flow.Hud != null, "the resync swapped the host's park in over the old one" );
-						Require( session.FailedJoins == 1, "the resync was no failed join" );
+						Require( session.FailedJoins == (measuring ? 0 : 1), "the resync was no failed join" );
 						joinSteps.Add( $"resynced at tick {flow.Level!.TickCount}" );
 						Advance( JoinStep.Resynced );
 					}
@@ -215,6 +221,35 @@ internal sealed partial class CoopJoinSmokeTest
 		joinSteps.Add( $"a newer assignment abandoned the next build {steps} of its level's {total} steps in, with {staged} entities staged" );
 	}
 
+	/// <summary>
+	/// Every build's timings are kept with its outcome, in the order of their generations, and are whole: finite and not negative, each stage that ran timed, the joined and the resynced
+	/// park checked, swapped and caught up. The adversarial join has four (a failed check, an abandoned build, a join and a resync), the measuring mode two (a join and a resync).
+	/// </summary>
+	private void RequireJoinTimings( CoopSession session )
+	{
+		var timings = session.JoinTimings;
+		var expected = measuring ? new[] { "joined", "resynced" } : new[] { "failed its check", "abandoned", "joined", "resynced" };
+		Require( timings.Select( item => item.Outcome ).SequenceEqual( expected ), $"every build's timings are kept with its outcome ({string.Join( ", ", timings.Select( item => item.Outcome ) )})" );
+		foreach ( var timing in timings )
+		{
+			var values = new[] { timing.DownloadSeconds, timing.DecodeMilliseconds, timing.LongestBuildFrameMilliseconds, timing.CheckMilliseconds, timing.SwapMilliseconds,
+				timing.CatchUpSeconds ?? 0 }.Concat( timing.Build.SelectMany( stage => new[] { stage.Milliseconds, stage.LongestMilliseconds } ) ).Concat( timing.LevelSections.Values );
+			Require( values.All( value => double.IsFinite( value ) && value >= 0 ), $"build {timing.Generation}'s timings are finite and not negative ({timing})" );
+			Require( timing.DownloadAttempts == 1 && timing.PayloadBytes > 0 && timing.BuildFrames > 0 && timing.Build.Count > 0 && timing.Build[0] is { Name: "save", Status: CoopTimingStatus.Measured },
+				$"build {timing.Generation} was downloaded once and built over frames ({timing})" );
+			Require( timing.Build.All( stage => stage.Status != CoopTimingStatus.Measured || stage.Steps > 0 && stage.Frames > 0 ), $"every stage that ran was timed ({timing})" );
+			if ( timing.Outcome is "joined" or "resynced" )
+			{
+				Require( timing.Build.Select( stage => stage.Name ).SequenceEqual( new[] { "save", "files", "catalogue", "manifest", "validation", "economy", "level", "hud", "advisor" } )
+					&& timing.Build.Single( stage => stage.Name == "level" ).Steps > 0 && timing.CheckMilliseconds > 0 && timing.CatchUpTicks != null && timing.LevelSections.ContainsKey( "resume" )
+					&& timing.LevelSections.ContainsKey( "join-state" ), $"build {timing.Generation} ran every stage, was checked, swapped in and caught up ({timing})" );
+			}
+		}
+		var worst = updateFrames.Where( item => item.Step is nameof( JoinStep.Joining ) or nameof( JoinStep.Resyncing ) ).MaxBy( item => item.Milliseconds );
+		if ( worst != null )
+			joinSteps.Add( $"longest update frame while building {worst.Milliseconds:0.0} ms (frame {worst.Frame}, {worst.Step})" );
+	}
+
 	/// <summary>Sends a host message, kept as the generation's last assignment or answer.</summary>
 	private void Answer( CoopStreamMessage message )
 	{
@@ -240,6 +275,16 @@ internal sealed partial class CoopJoinSmokeTest
 		var cut = hostEvidence.Cuts[0];
 		switch ( message )
 		{
+			case CoopSnapshotRequest { Reason: CoopSnapshotReason.Join } when requestsAnswered == 0 && measuring:
+			{
+				// the capture as the host wrote it, under its own generation
+				requestsAnswered = 1;
+				var payload = File.ReadAllBytes( Path.Combine( evidenceDirectory, cut.File ) );
+				var sha = replay.Serve( payload );
+				Answer( new CoopSnapshotAssigned( cut.Assigned ) { Generation = cut.Generation } );
+				pendingAnswers.Add( (cut.ReadyHostFrame, new CoopSnapshotReady( cut.Records, cut.Ticks, cut.Frame, cut.Digest, cut.WorldHash, sha, payload.Length ) { Generation = cut.Generation }) );
+				break;
+			}
 			case CoopSnapshotRequest { Reason: CoopSnapshotReason.Join } when requestsAnswered == 0:
 			{
 				requestsAnswered = 1;
@@ -295,6 +340,7 @@ internal sealed partial class CoopJoinSmokeTest
 			Differences( hostSave.RootElement, joined.RootElement, "$", differences );
 		saveDifferences = differences.ToArray();
 		Require( differences.Count == 0, $"the guest's save is the host's outside presentation ({differences.Count} differences; first: {string.Join( "; ", differences.Take( 5 ) )})" );
+		RequireJoinTimings( joinSession! );
 		WriteJson( "join-evidence.json", JoinEvidence( completed: true, failure: null ) );
 		Advance( JoinStep.Done );
 		Complete( $"Native co-op join smoke (join): {string.Join( "; ", joinSteps )}; ended at tick {level.TickCount} with the host's digest {digest:X16}." );
@@ -345,5 +391,18 @@ internal sealed partial class CoopJoinSmokeTest
 	private static string Clip( string text ) => text.Length <= 60 ? text : text[..57] + "...";
 
 	private CoopSmokeJoinEvidence JoinEvidence( bool completed, string? failure ) => new( completed, failure, replay?.Downloads.Count ?? 0, joinSession?.FailedJoins ?? 0, joinSteps.ToArray(),
-		joinFinal.Digest, joinFinal.World, saveDifferences );
+		joinFinal.Digest, joinFinal.World, saveDifferences, measuring ? "measure" : "join", joinSession?.JoinTimings.ToArray() ?? Array.Empty<CoopJoinTimings>(), updateFrames.ToArray(),
+		CoopSmokeEnvironment.Of( flow ) );
+
+	/// <summary>Every update frame of the phase, timed from before the smoke's driver to after the game's update (docs/COOP.md, "Measurements").</summary>
+	private readonly List<CoopSmokeFrame> updateFrames = new();
+	private long frameStarted;
+
+	private void FrameStarts() => frameStarted = System.Diagnostics.Stopwatch.GetTimestamp();
+
+	private void FrameEnds()
+	{
+		if ( frameStarted != 0 )
+			updateFrames.Add( new CoopSmokeFrame( frame, joinStep.ToString(), CoopClock.Since( frameStarted ) ) );
+	}
 }

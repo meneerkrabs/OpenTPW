@@ -27,8 +27,10 @@ if ! command -v "$dotnet_command" >/dev/null 2>&1 && [[ ! -x "$dotnet_command" ]
     exit 1
   fi
 fi
-build_arguments=(build source/OpenTPW/OpenTPW.csproj --nologo)
-output_directory=source/OpenTPW/bin/Debug/net11.0
+# OPENTPW_CONFIGURATION=Release builds and runs the Release configuration (the measurements, docs/COOP.md "Measurements"); Debug otherwise
+configuration="${OPENTPW_CONFIGURATION:-Debug}"
+build_arguments=(build source/OpenTPW/OpenTPW.csproj --nologo -c "$configuration")
+output_directory="source/OpenTPW/bin/$configuration/net11.0"
 if [[ -n "$runtime" ]]; then
   build_arguments+=(-r "$runtime")
   output_directory+="/$runtime"

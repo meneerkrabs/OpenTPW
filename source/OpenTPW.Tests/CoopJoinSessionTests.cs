@@ -437,6 +437,15 @@ public partial class CoopJoinSessionTests
 		Assert.IsNull( host.Session.HostStream.JoinWindowOf( joiner.Link.Id ), "caught up: an ordinary following guest" );
 		Assert.IsTrue( host.Session.HostStream.WaitedFor.Contains( joiner.Link.Id ) );
 		Assert.IsNull( joiner.Link.LeftWith );
+		// what the join cost (docs/COOP.md, "Measurements"): the host's capture over frames and its upload; the joiner's download, decode, check, swap and catch-up
+		var capture = host.Session.HostStream.CaptureTimings.Single();
+		Assert.IsTrue( capture is { Generation: 1, Save: { Status: CoopTimingStatus.Measured, Steps: > 0 }, Compression.Steps: > 0, PayloadBytes: > 0, UploadSeconds: not null }
+			&& capture.CutMilliseconds > 0 && capture.DigestMilliseconds > 0 && capture.BodyBytes > capture.SaveBytes && capture.Frames >= 3, capture.ToString() );
+		var joined = joiner.Session.JoinTimings.Single();
+		Assert.IsTrue( joined is { Generation: 1, Outcome: "joined", DownloadAttempts: 1, CatchUpTicks: not null } && joined.PayloadBytes == capture.PayloadBytes
+			&& joined.DecodeMilliseconds > 0 && joined.CheckMilliseconds > 0 && joined.DownloadSeconds > 0, joined.ToString() );
+		Assert.AreEqual( 0, joined.Build.Count, "the replay build keeps no stages of its own" );
+		Assert.AreEqual( 0, other.Session!.JoinTimings.Count, "a guest that followed from the session's start built nothing" );
 	}
 
 	[TestMethod]
@@ -458,6 +467,7 @@ public partial class CoopJoinSessionTests
 		Build( 200, 6 );
 		CatchUpAndCompare( guest );
 		Assert.AreEqual( 1, host.Session!.HostStream!.CapturesTaken );
+		Assert.AreEqual( "resynced", guest.Session.JoinTimings.Single().Outcome, "a resync over the guest's park" );
 	}
 
 	[TestMethod]
@@ -554,6 +564,7 @@ public partial class CoopJoinSessionTests
 		RoundsUntil( () => joiner.Level != null, "the next capture builds right", 20000 );
 		Assert.AreEqual( (2, 2), (host.Session!.HostStream!.CapturesTaken, joiner.Join.Builds) );
 		Assert.AreEqual( 1, joiner.Join.Discarded, "the candidate that differed was released" );
+		CollectionAssert.AreEqual( new[] { "failed its check", "joined" }, joiner.Session!.JoinTimings.Select( timing => timing.Outcome ).ToArray() );
 		CatchUpAndCompare( joiner );
 	}
 
@@ -1112,6 +1123,7 @@ public partial class CoopJoinSessionTests
 		RoundsUntil( () => joiner.Level != null, "the next capture built and swapped in", 20000 );
 		Assert.AreEqual( (2, 1, 0), (joiner.Join.Builds, joiner.Join.Abandoned, joiner.Join.Discarded), "the first build abandoned before it had a park" );
 		Assert.AreEqual( 2u, joiner.Session!.Assigned );
+		CollectionAssert.AreEqual( new[] { (1u, "abandoned"), (2u, "joined") }, joiner.Session.JoinTimings.Select( timing => (timing.Generation, timing.Outcome) ).ToArray() );
 		Build( 60, 41 );
 		CatchUpAndCompare( joiner );
 	}

@@ -363,9 +363,17 @@ public partial class Level : IDisposable
 			foreach ( var progress in SetupEntities() )
 				yield return progress;
 		}
-		if ( resume != null ) RestoreResumeSimulation( resume );
+		if ( resume != null )
+		{
+			using ( LoadProfile.Measure( "resume" ) )
+				RestoreResumeSimulation( resume );
+		}
 		// [EXT:online-coop-snapshot-join] a join's session state, before the park's first frame
-		if ( joinRestore is { } joined ) ApplyJoinState( joined );
+		if ( joinRestore is { } joined )
+		{
+			using ( LoadProfile.Measure( "join-state" ) )
+				ApplyJoinState( joined );
+		}
 		using ( LoadProfile.Measure( "level-hud" ) )
 			SetupHud( onlineFolders );
 		resumeState = null;

@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using System.Reflection;
 using System.Security.Cryptography;
 using System.Text.Json;
 using OpenTPW.Online.Coop;
@@ -9,12 +10,35 @@ namespace OpenTPW;
 internal sealed record CoopSmokeCut( uint Generation, ulong Assigned, long AssignedHostFrame, long Records, long Ticks, ulong Frame, ulong Digest, ulong WorldHash, string Sha256, long Bytes,
 	long ReadyHostFrame, string File, string[] Staged );
 
-/// <summary>The host phase's evidence: the join phase's oracle.</summary>
+/// <summary>The host phase's evidence: the join phase's oracle, with what each capture cost the host (docs/COOP.md, "Measurements").</summary>
 internal sealed record CoopSmokeHostEvidence( bool Completed, string? Failure, string Theme, string StartKind, int Coasters, CoopSmokeCut[] Cuts, ulong LastFrame, long LastTick,
-	long LastRecord, ulong FinalDigest, ulong FinalWorldHash, string FinalSaveSha256, long HostFrames );
+	long LastRecord, ulong FinalDigest, ulong FinalWorldHash, string FinalSaveSha256, long HostFrames, CoopCaptureTimings[]? CaptureTimings = null,
+	CoopSmokeEnvironment? Environment = null );
 
-/// <summary>The join phase's evidence.</summary>
-internal sealed record CoopSmokeJoinEvidence( bool Completed, string? Failure, int Builds, int FailedJoins, string[] Steps, ulong FinalDigest, ulong FinalWorldHash, string[] SaveDifferences );
+/// <summary>
+/// The join phase's evidence, with what each build of a capture cost the guest and the phase's update frames (docs/COOP.md, "Measurements"). <paramref name="Mode"/> is "join" (the
+/// adversarial join) or "measure" (the untouched captures, joined and resynced once each).
+/// </summary>
+internal sealed record CoopSmokeJoinEvidence( bool Completed, string? Failure, int Builds, int FailedJoins, string[] Steps, ulong FinalDigest, ulong FinalWorldHash, string[] SaveDifferences,
+	string Mode = "join", CoopJoinTimings[]? JoinTimings = null, CoopSmokeFrame[]? Frames = null, CoopSmokeEnvironment? Environment = null );
+
+/// <summary>One update frame of the join phase: its number, the join step it ran in, and the milliseconds of its update (the smoke's driver, the online pump and the game's).</summary>
+internal sealed record CoopSmokeFrame( int Frame, string Step, double Milliseconds );
+
+/// <summary>Where a phase ran (docs/COOP.md, "Measurements"): the build's version and configuration, the runtime, the machine, and the settings that change its work.</summary>
+internal sealed record CoopSmokeEnvironment( string Version, string Configuration, string Runtime, string Os, string Architecture, int Processors, bool Silent, bool Advisor )
+{
+	public static CoopSmokeEnvironment Of( GameFlow flow ) => new(
+		typeof( CoopSmokeEnvironment ).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "unknown",
+#if DEBUG
+		"Debug",
+#else
+		"Release",
+#endif
+		System.Runtime.InteropServices.RuntimeInformation.FrameworkDescription, System.Runtime.InteropServices.RuntimeInformation.OSDescription,
+		System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture.ToString(), Environment.ProcessorCount,
+		Environment.GetEnvironmentVariable( "OPENTPW_SILENT" ) is "1" or "true", flow.AutomaticAdvisorEnabled );
+}
 
 /// <summary>
 /// [EXT:online-coop-snapshot-join] The native join smoke (docs/COOP.md, "The game's join"): <c>--coop-join-smoke host|join --coop-join-evidence &lt;directory&gt;</c>, two processes with the game's
@@ -38,17 +62,20 @@ internal sealed partial class CoopJoinSmokeTest : IDisposable
 	private readonly GameFlow flow;
 	private readonly string evidenceDirectory;
 	private readonly bool joining;
+	/// <summary>The join phase's measuring mode (<c>measure</c>): the untouched captures, joined and resynced once each, for the numbers; the adversarial join stays the check.</summary>
+	private readonly bool measuring;
 	private readonly System.Threading.Timer watchdog;
 	private readonly BaseFileSystem originalSaveFileSystem;
 	private int frame;
 	private bool completed;
 	private bool done;
 
-	private CoopJoinSmokeTest( GameFlow flow, string evidenceDirectory, bool joining )
+	private CoopJoinSmokeTest( GameFlow flow, string evidenceDirectory, bool joining, bool measuring )
 	{
 		this.flow = flow;
 		this.evidenceDirectory = evidenceDirectory;
 		this.joining = joining;
+		this.measuring = measuring;
 		// the phases write nothing to the player's saves
 		originalSaveFileSystem = SaveFileSystem;
 		SaveFileSystem = new BaseFileSystem( Path.Combine( evidenceDirectory, joining ? "saves-join" : "saves-host" ) );
@@ -59,31 +86,39 @@ internal sealed partial class CoopJoinSmokeTest : IDisposable
 		}, null, TimeSpan.FromSeconds( MaximumSeconds ), System.Threading.Timeout.InfiniteTimeSpan );
 	}
 
-	/// <summary>Root's CLI hook: <c>--coop-join-smoke host|join</c> with <c>--coop-join-evidence</c>.</summary>
+	/// <summary>Root's CLI hook: <c>--coop-join-smoke host|join|measure</c> with <c>--coop-join-evidence</c>.</summary>
 	internal static void Run( GameFlow flow, string phase, string evidenceDirectory )
 	{
 		ArgumentNullException.ThrowIfNull( flow );
 		ArgumentException.ThrowIfNullOrWhiteSpace( evidenceDirectory );
-		var joining = phase switch
+		var (joining, measuring) = phase switch
 		{
-			"host" => false,
-			"join" => true,
-			_ => throw new ArgumentException( $"--coop-join-smoke expects 'host' or 'join', not '{phase}'." )
+			"host" => (false, false),
+			"join" => (true, false),
+			"measure" => (true, true),
+			_ => throw new ArgumentException( $"--coop-join-smoke expects 'host', 'join' or 'measure', not '{phase}'." )
 		};
 		Directory.CreateDirectory( evidenceDirectory );
-		using var test = new CoopJoinSmokeTest( flow, Path.GetFullPath( evidenceDirectory ), joining );
+		using var test = new CoopJoinSmokeTest( flow, Path.GetFullPath( evidenceDirectory ), joining, measuring );
 		Render.CaptureOutput = true;
 		if ( joining )
 		{
+			// the level's construction by section, in the builds' timings (docs/COOP.md, "Measurements")
+			LoadProfile.Enable( true );
 			test.StartJoin();
-			// the smoke's driver first (the replayed host's frames and answers arrive as a link's pump raises them), then the game's own frame
+			// the smoke's driver first (the replayed host's frames and answers arrive as a link's pump raises them), then the game's own frame, the whole update timed
+			Render.OnUpdate += test.FrameStarts;
 			Render.OnUpdate += test.JoinUpdate;
 			Render.OnUpdate += flow.Update;
+			Render.OnUpdate += test.FrameEnds;
 			Render.OnRender += flow.Render;
 			Render.Run();
+			Render.OnUpdate -= test.FrameStarts;
 			Render.OnUpdate -= test.JoinUpdate;
 			Render.OnUpdate -= flow.Update;
+			Render.OnUpdate -= test.FrameEnds;
 			Render.OnRender -= flow.Render;
+			LoadProfile.Enable( false );
 		}
 		else
 		{

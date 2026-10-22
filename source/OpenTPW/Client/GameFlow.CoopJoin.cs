@@ -244,6 +244,12 @@ internal sealed partial class GameFlow
 
 		public int StagedEntities => scene?.StagedEntities ?? 0;
 
+		public CoopBuildTimings Timings { get; } = new();
+
+		/// <summary>The stage the steps run in now (<see cref="Timings"/>): each step is the work since the last yield, so a stage begins right after one.</summary>
+		private CoopWorkTiming? stage;
+		private IReadOnlyDictionary<string, (double Milliseconds, int Count)>? sectionsBeforeLevel;
+
 		public bool Step()
 		{
 			if ( abandoned || installed )
@@ -252,12 +258,22 @@ internal sealed partial class GameFlow
 				return true;
 			var started = Stopwatch.GetTimestamp();
 			bool OverBudget() => Stopwatch.GetElapsedTime( started ).TotalMilliseconds >= ParkBuildBudgetMilliseconds;
+			// the build's own work only: the live scene's frames between its slices are no part of its sections
+			LoadProfile.Resume();
 			scene?.Resume();
+			var stages = new HashSet<CoopWorkTiming>( ReferenceEqualityComparer.Instance );
 			try
 			{
 				while ( !OverBudget() )
 				{
-					if ( !steps.MoveNext() )
+					var stepStarted = Stopwatch.GetTimestamp();
+					var more = steps.MoveNext();
+					if ( stage is { } running )
+					{
+						running.Add( CoopClock.Since( stepStarted ) );
+						stages.Add( running );
+					}
+					if ( !more )
 					{
 						complete = true;
 						break;
@@ -268,13 +284,23 @@ internal sealed partial class GameFlow
 			{
 				// the live scene runs its frames between the build's: the candidate waits set aside, until the swap once it is complete
 				scene?.Pause();
+				foreach ( var ran in stages )
+					ran.Frames++;
+				Timings.Frames++;
+				Timings.LongestFrameMilliseconds = Math.Max( Timings.LongestFrameMilliseconds, CoopClock.Since( started ) );
+				if ( !complete )
+					LoadProfile.Pause();
 			}
 			// the check at the cut and the swap get a frame of their own when this one is spent
 			return complete && !OverBudget();
 		}
 
+		/// <summary>The steps from here on belong to the stage <paramref name="name"/>.</summary>
+		private void Begin( string name ) => stage = Timings.Stage( name );
+
 		private IEnumerable<bool> Steps()
 		{
+			Begin( "save" );
 			var saved = ParkResumeSaveFile.Deserialize( payload.Save );
 			if ( saved.Gate == null || saved.Staff == null )
 				throw new InvalidDataException( "The shared park's save is missing its gate or staff-world state." );
@@ -286,8 +312,10 @@ internal sealed partial class GameFlow
 			snapshot = saved;
 			yield return true;
 			// a browser copies a level's files on first use: the build waits for them
+			Begin( "files" );
 			while ( LevelDataReady?.Invoke( saved.Theme ) == false )
 				yield return true;
+			Begin( "catalogue" );
 			var easy = saved.Economy.Easy;
 			ObjectCatalog? loaded = null;
 			foreach ( var step in ObjectCatalog.LoadSteps( saved.Theme, easy ) )
@@ -300,8 +328,12 @@ internal sealed partial class GameFlow
 			var economyCatalog = EconomyObjectCatalog.Load( saved.Theme, easy );
 			yield return true;
 			IReadOnlyDictionary<string, string> assets;
+			Begin( "manifest" );
 			if ( flow.joinAssets is { } kept && ReferenceEquals( kept.Catalog, catalog ) && kept.Entries == catalog.Entries.Count )
+			{
 				assets = kept.Manifest;
+				stage!.Status = CoopTimingStatus.Cached;
+			}
 			else
 			{
 				var entries = catalog.Entries.Count;
@@ -314,12 +346,16 @@ internal sealed partial class GameFlow
 					flow.joinAssets = (catalog, entries, manifest);
 			}
 			// both manifests are complete here: a difference is this game's files, and every build of a capture would meet it
+			Begin( "validation" );
 			try { ParkResumeSaveFile.RequireAssets( saved, catalog, assets ); }
 			catch ( InvalidDataException error ) { throw new CoopJoinRefusedException( $"This game's files differ from the host's: {error.Message}" ); }
 			foreach ( var step in ParkResumeSaveFile.ValidateSnapshotSteps( saved, catalog, settings, economyCatalog, assets ) )
 				yield return step;
+			Begin( "economy" );
 			var economy = ParkSaveFile.Restore( saved.Economy, settings, economyCatalog );
 			yield return true;
+			Begin( "level" );
+			sectionsBeforeLevel = LoadProfile.Snapshot();
 			scene = new EntityConstructionScope();
 			candidate = Level.BeginJoinOverFrames( saved, economy, flow.OnlineFolders, payload.State );
 			candidate.ShowDeveloperPanels = false;
@@ -329,12 +365,28 @@ internal sealed partial class GameFlow
 				LevelSteps++;
 				yield return true;
 			}
+			foreach ( var (name, section) in LoadProfile.Snapshot() )
+			{
+				var before = sectionsBeforeLevel.TryGetValue( name, out var earlier ) ? earlier.Milliseconds : 0;
+				if ( section.Milliseconds > before )
+					Timings.LevelSections[name] = section.Milliseconds - before;
+			}
+			// the level's last step (its restore, the join state and its HUD) ends its stage: the park HUD is a step of its own
+			yield return true;
 			// in the candidate's scene, as an entry makes them in the park's: the HUD, then a fresh advisor as an entry decides it
+			Begin( "hud" );
 			hud = flow.CreateParkHud( candidate, flow.HudStatusFor( candidate ) );
 			hudLanguage = GameLanguage.Version;
 			yield return true;
-			if ( flow.AutomaticAdvisorEnabled && !flow.advisorUnavailable )
+			if ( !flow.AutomaticAdvisorEnabled || flow.advisorUnavailable )
 			{
+				// listed, as a stage that did not run
+				Timings.Stage( "advisor" );
+				stage = null;
+			}
+			else
+			{
+				Begin( "advisor" );
 				try
 				{
 					advisor = AutomaticAdvisor.TryCreate();
@@ -386,6 +438,8 @@ internal sealed partial class GameFlow
 			if ( abandoned || installed )
 				return;
 			abandoned = true;
+			// the profile was left paused at the end of the build's last slice
+			LoadProfile.Resume();
 			try
 			{
 				advisor?.Dispose();

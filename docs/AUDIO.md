@@ -10,9 +10,8 @@ and screams through the positional API (the census over 262 shipped objects and 
 coaster trains that bump hard crash; the weather plays its rain and thunder; the level's placed ambients (`scape.omp`, types 1 and
 3) play with the mixer's distance law; the crowd sentence, the guests' and the staff's voices (walking, idle and work sounds from their
 state machines), the visitor click, the queue-joins-a-path cue and the advisor's speech and its two key sounds play; and the positioned
-effects go through a software reverb that follows the ridden ride's `SndReverb.map` preset (OpenTPW's own stand-in by design, `[EXT:audio-reverb]`). A button plays `cat_ui` 0xBD instead of 0x1F when its parent has style bit 0x10 (AUDIO-004 is retired; see "Triggered sounds"). Still not played:
-the custom-bank EVENT type 10 (no shipped script
-uses it). No list row clicks: every list owner of tp.exe is traced and none turns a row into message 0x100; a still click on a scroll thumb plays nothing; and the keyboard clicks only where a dialog turns Enter in its text field (or the save screen's Escape) into its tick ("List owners"; AUDIO-041 is retired). The slap reactions 639–641 of `cat_speech` are played by the
+effects go through a software reverb that follows the ridden ride's `SndReverb.map` preset (OpenTPW's own stand-in by design, `[EXT:audio-reverb]`). A button plays `cat_ui` 0xBD instead of 0x1F when its parent has style bit 0x10 (AUDIO-004 is retired; see "Triggered sounds"). Ride-script sounds of type 10
+play from the object type's own sound list ("The object type's own sound list (EVENT type 10)"; no shipped script uses it). No list row clicks: every list owner of tp.exe is traced and none turns a row into message 0x100; a still click on a scroll thumb plays nothing; and the keyboard clicks only where a dialog turns Enter in its text field (or the save screen's Escape) into its tick ("List owners"; AUDIO-041 is retired). The slap reactions 639–641 of `cat_speech` are played by the
 cut-off path in `AutomaticAdvisor.CutOffSpeech`: withdrawing a help message while its speech is still playing cuts the speech off and plays
 one of the three (`cat_speech` 0x27F + `rand() % 3`; tp.exe `0x5994E0`/`0x5995A4`;
 `AdvisorHelpTests.ACutOffSlapsOnlyWhileTheSpeechPlays`). No original data is in the repository.
@@ -507,7 +506,7 @@ Traced in the binary and played:
 
 Not played:
 
-* The custom-bank `EVENT` type 10: see "Custom-bank EVENT type 10" below. Type 0 is the dispatcher's default/unsupported path.
+* `EVENT` type 0, the dispatcher's default/unsupported path. Type 10 plays from the object type's own sound list ("The object type's own sound list (EVENT type 10)" below).
 
 ### Event coverage (round 7)
 
@@ -540,13 +539,21 @@ at its nearest point (turned down by the distance law, silent past its range) ou
 clamp of the listener and `GameAudio.Update` moves it every frame (`RectangleSoundPlace`). Not verified against a capture: how audible the five ambients are (their events' own
 ranges decide).
 
-### Custom-bank EVENT type 10
+### The object type's own sound list (EVENT type 10)
 
-The dispatcher `0x5573d0` accepts types 1 to 10. Case 10 reads the thing type from `+0xAC`, takes the type's custom bank (`0x4145e0`: slot 5 of the per-type table at `+0x4DC`, filled by `0x414420`
-from the numbered files in the thing type's folder), logs `RSSE: Tried to trigger a custom effect with no registered custom sound bank` (`0x765E18`) and returns 0 when there is none, and
-otherwise submits `0x51bfc0(0, bank, id, x, y, z)` with the key resolved by `0x556b90` as for types 3 to 9. The census over every shipped script (308 scripts, `EventKeyCensusTests`) finds the type
-operand literal everywhere and the counts type 1: 67, type 2: 104, type 3: 251, type 4: 13, type 5: 67, type 6: 25; **no script uses type 10** (or 7, 8, 9, 0), so the unrouted type 10 loses no
-shipped sound and the path is documented, not built.
+The dispatcher `0x5573d0` accepts types 1 to 10. Case 10 (`0x557686`) reads the thing type from `+0xAC` and takes the type's own sound category (`0x4145e0`, type record `+0x4F0`). The
+type loader fills that slot: `0x41F420` looks for `cat_rideBANK.map`, `cat_rideSFX.map` and `BankHD.sdt` in the type's archive and, when all three are there, `0x51B4F0` registers the
+category `cat_ride` from the archive's folder (`0x41408D`-`0x4140A6`). The scoped particle templates `0x414420` loads afterwards share the table: each `*.emt` member goes to
+`+0x4DC + 4 x atoi(the last character of its stem)`, so a template numbered 5 overwrites the list (OpenTPW plays nothing then; no shipped archive has one). Without a list case 10 logs
+`RSSE: Tried to trigger a custom effect with no registered custom sound bank` (`0x765E18`) and returns 0 before the key is resolved; otherwise it submits
+`0x51bfc0(0, the type's category, id, x, y, z)` with the key resolved by `0x556b90` as for types 3 to 9, and ADDOBJ keeps the handle as for those types. `ObjectTypeSounds` and
+`ObjectCatalogEntry.OwnSounds` load the list once per type, `OriginalObjectRuntime` plays it (`ObjectTypeSoundsTests`; [RSE-VM.md](RSE-VM.md#the-object-types-own-sound-list-type-10)).
+
+The census over every shipped script (308 scripts, `EventKeyCensusTests`) finds the type operand literal everywhere and the counts type 1: 67, type 2: 104, type 3: 251, type 4: 13,
+type 5: 67, type 6: 25; **no script uses type 10** (or 7, 8, 9, 0). Only Jungle's loudspeaker (`features/speaker1`) ships a list (events 2-5, bank `Speaker\Bank`), and its script plays
+with `ADDOBJ 4`. Its bank is resolved by the folder rule above ("Bank folders"): the rule looks for `/levels/jungle/features/Speaker/BankHD.sdt` while the archive holds its own
+`BankHD.sdt`. The folder the original registers the list from is the same archive object's (`0x413DDA`/`0x41409A`), so it most likely misses that bank as well: a mismatch in the shipped
+data, which no shipped script reaches.
 
 ### Reverb (`[EXT:audio-reverb]`)
 

@@ -76,8 +76,9 @@ neighbours the flag is dropped and the cell is removed. The one exception is `[E
 entrance or exit (the queue front and the path stubs, all `NoModify`) can be removed by the path and queue removal tools, which the original's cell clear keeps (`0x5367D4`).
 The map start's initial path stays fixed. The ride's entrance and exit then resolve to the nearest walkable path as for a ride nothing laid cells for, the guests standing
 on the emptied cells are set down (queued guests leave the queue, QUEUE-015), a queue or path can be laid on the cell again, and demolishing the ride clears what is left.
-The entrance and exit stay where they resolved until a cell they use is removed again; a path laid nearer later moves neither. A save keeps them as they stand, so a load (and a
-shared park's join) puts them back there instead of resolving them on the loaded grid; a save from before keeps the cells the load resolves.
+The entrance and exit stay where they resolved until a removal like this one takes a cell they use; a path laid nearer later moves neither, and nor does removing the plain path cell
+an entrance fell back to. A save keeps them as they stand, so a load (and a shared park's join) puts them back there before it finds the queues from them, instead of resolving them on
+the loaded grid; a save from before keeps the cells the load resolves.
 Backspace over a path cell with no tool on uses the counted case (tp.exe
 `0x40BE8B`, `ClearCell(0, 1)`): the cell loses one placement and goes only
 when it was laid once (`ParkPathBuilder.RemoveOnce`). The original's key does

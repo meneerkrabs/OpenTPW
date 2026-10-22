@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Net.WebSockets;
+using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
@@ -205,6 +206,17 @@ public class CoopLinkTests
 			CollectionAssert.AreEqual( new[] { 10, 20, 30 }, guest.Frames.Select( frame => Value( frame.Payload ) ).ToArray() );
 			Assert.AreEqual( 3UL, guest.Link.LastFrameSeq );
 
+			// [EXT:online-coop-snapshot-join] the host's skip: the frames go on at the number it names, and a skip back is answered with the frame the server takes next
+			Assert.IsTrue( host.Link.CanSkipFrames );
+			Assert.IsFalse( guest.Link.SkipFrames( 10 ), "only the host skips frames" );
+			Assert.IsTrue( host.Link.SkipFrames( 10 ) );
+			Assert.IsTrue( host.Link.SendFrame( 10, Payload( 100 ) ) );
+			await Until( () => guest.Frames.Count == 4, "the frame after the skip", guest );
+			Assert.AreEqual( (10UL, 100), (guest.Frames[3].Seq, Value( guest.Frames[3].Payload )) );
+			Assert.IsTrue( host.Link.SkipFrames( 6 ) );
+			await Until( () => host.Refusals.Count == 2, "the refused skip", host );
+			Assert.AreEqual( 11UL, host.Refusals[1].Expected );
+
 			Assert.IsTrue( guest.Link.Send( hostId, Payload( 7 ) ) );
 			Assert.IsTrue( host.Link.Send( CoopProtocol.EveryOtherMember, Payload( 8 ) ) );
 			await Until( () => host.Messages.Count == 1 && guest.Messages.Count == 1, "the messages", host, guest );
@@ -216,6 +228,24 @@ public class CoopLinkTests
 			await Until( () => host.Link.Session!.Members.Count == 1, "the host to see the guest leave", host, guest );
 			Assert.AreEqual( CoopMemberState.Left, host.Changes.Last().State );
 			Assert.AreEqual( 0, guest.Ended.Count, "the leaver's own leave is no ended session" );
+		} );
+	}
+
+	[TestMethod]
+	public async Task AWelcomeOfAnOlderProtocolStopsTheLinkAsAServerTooOld()
+	{
+		await WithServer( async ( server, players ) =>
+		{
+			var host = await players.Add( server, "Hostess" );
+			await Open( host );
+			Assert.IsTrue( host.Link.Create( listed: false, "Our park", 2 ) );
+			await Until( () => host.Link.Session != null, "the session", host );
+			// a server of protocol 6 takes this game's hello but not the host's skip (7): its welcome stops the link as a server too old, and the session the link held ends
+			typeof( CoopLink ).GetMethod( "Welcomed", BindingFlags.Instance | BindingFlags.NonPublic )!
+				.Invoke( host.Link, new object[] { new CoopWelcome( (ushort)(CoopProtocol.Version - 1), null, null ) } );
+			Assert.AreEqual( (CoopStop.ServerTooOld, CoopLinkState.Closed), (host.Link.Stopped, host.Link.State) );
+			Assert.IsNull( host.Link.Session );
+			Assert.AreEqual( "The server is too old to share parks with this game.", host.Ended.Single().Text );
 		} );
 	}
 

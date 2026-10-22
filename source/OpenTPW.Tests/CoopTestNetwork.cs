@@ -30,6 +30,9 @@ internal sealed class CoopTestNetwork( Func<double>? clock = null )
 	/// <summary>Every frame the server took, in order.</summary>
 	public List<byte[]> Taken { get; } = new();
 
+	/// <summary>[EXT:online-coop-snapshot-join] The host's skips the server took: the frame each named.</summary>
+	public List<ulong> Skips { get; } = new();
+
 	/// <summary>[EXT:online-coop-snapshot-join] The stored join snapshots by digest, the newest two (as the server keeps them), oldest first.</summary>
 	public List<(string Sha256, byte[] Payload)> Snapshots { get; } = new();
 
@@ -101,6 +104,20 @@ internal sealed class CoopTestNetwork( Func<double>? clock = null )
 				continue;
 			guest.Enqueue( () => guest.RaiseFrame( new CoopFrame( seq, copy ) ) );
 		}
+	}
+
+	/// <summary>[EXT:online-coop-snapshot-join] The host's skip, as the server takes it: the sequence goes on at <paramref name="from"/>, never back.</summary>
+	private void Skip( Member host, ulong from )
+	{
+		if ( from <= LastFrame )
+		{
+			var expected = LastFrame + 1;
+			host.Enqueue( () => host.RaiseFrameRefused( new CoopFrameRefused( expected ) ) );
+			return;
+		}
+		Skips.Add( from );
+		LastFrame = from - 1;
+		SeqKnown = true;
 	}
 
 	private void Relay( Member from, uint to, ReadOnlyMemory<byte> payload )
@@ -175,6 +192,23 @@ internal sealed class CoopTestNetwork( Func<double>? clock = null )
 			if ( !Connected || !IsHost )
 				return false;
 			network.Frame( this, seq, payload );
+			return true;
+		}
+
+		/// <summary>A server from before protocol 7, which cannot take the host's skip.</summary>
+		public bool SkipsUnsupported { get; set; }
+
+		/// <summary>Drops the host's skip on its way to the server (the socket lost it after the link took it) when it returns true.</summary>
+		public Func<ulong, bool>? DropSkipToServer { get; set; }
+
+		public bool CanSkipFrames => !SkipsUnsupported;
+
+		public bool SkipFrames( ulong from )
+		{
+			if ( !Connected || !IsHost || SkipsUnsupported )
+				return false;
+			if ( DropSkipToServer?.Invoke( from ) != true )
+				network.Skip( this, from );
 			return true;
 		}
 

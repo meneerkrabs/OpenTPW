@@ -1,15 +1,18 @@
 #!/usr/bin/env python3
 """The co-op join's measurements (docs/COOP.md, "Measurements").
 
-Reads the evidence of the native join smoke's runs (scripts/measure-coop-join.sh writes one directory per run, each with the
-host phase's host-evidence.json and the measuring join phase's join-evidence.json) and prints, for each timing it reports, the
-median, the range and each run's value as a Markdown table, after the runs' environment and, with --machine, the machine's own
+Reads the evidence of the join smoke's runs, one directory per run with the host phase's host-evidence.json and the measuring
+join phase's join-evidence.json: the native ones (scripts/measure-coop-join.sh) or the browser's (tools/web-coop-join.mjs, a
+desktop host with a guest in the page, whose run.json the directory holds too). It prints, for each timing it reports, the
+median, the range and each run's value as a Markdown table, after the runs' environments and, with --machine, the machine's own
 description. A value some runs lack names how many runs have it (a part of a build's step that took the frame's budget in some
 runs only, say). Milliseconds unless the row says otherwise. A run must be complete: both phases completed, the host's two
-captures and the guest's join of the first and resync to the second, each with every timing, and all runs with one recorded
-environment (build, runtime, system, processors and settings; the evidence names no machine, so the measure script records the
-one it ran on). Evidence of the adversarial join phase is refused: its rewritten payloads and its refused and abandoned builds
-warm the process first.
+captures and the guest's join of the first and resync to the second, each with every timing. Each phase must have run in one
+recorded environment in every run (build, runtime, system, processors, settings, compilation; the evidence names no machine, so
+the measure scripts record the one they ran on), and a page's runs in one browser setting (run.json); the host and the guest may
+differ (a desktop host, a browser guest). One host phase reused by every run (the browser's runs replay one recording) is one
+sample: its rows show it once. Evidence of the adversarial join phase is refused: its rewritten payloads and its refused and
+abandoned builds warm the process first.
 
 Usage: python3 -I tools/coop_join_timings.py [--machine <file>] <evidence directory> [<evidence directory> ...]
 """
@@ -101,9 +104,10 @@ def load(directory):
     if builds != [(outcome, generation) for outcome, generation, _ in OUTCOMES]:
         raise ValueError(f"{root}: the guest's builds are {builds}, not the join of the first capture and the resync to the second")
     require_whole(root, host, join)
-    if not host.get("Environment") or host.get("Environment") != join.get("Environment"):
-        raise ValueError(f"{root}: the phases' environments differ or are missing")
-    return host, join
+    if not host.get("Environment") or not join.get("Environment"):
+        raise ValueError(f"{root}: a phase's environment is missing")
+    page = root / "run.json"
+    return host, join, json.loads(page.read_text(encoding="utf-8")) if page.exists() else None
 
 
 def stage(timing, name):
@@ -114,13 +118,22 @@ def first_frame(frames, step):
     return next((item["Milliseconds"] for item in frames if item["Step"] == step), None)
 
 
-def longest_frame(frames, step):
-    values = [item["Milliseconds"] for item in frames if item["Step"] == step]
+def longest_frame(frames, step, key="Milliseconds"):
+    values = [item[key] for item in frames if item["Step"] == step and item.get(key) is not None]
     return max(values) if values else None
 
 
+def first_call(frames, step):
+    return next((item.get("CallMilliseconds") for item in frames if item["Step"] == step), None)
+
+
+def host_reused(runs):
+    """Whether every run replays one host phase (the browser's runs): its timings are then one sample, not one a run."""
+    return len(runs) > 1 and len({json.dumps(run[0], sort_keys=True) for run in runs}) == 1
+
+
 def rows(runs):
-    """(row name, unit, one value per run) for every measured value; a value a run lacks is None."""
+    """(row name, unit, one value per run) for every measured value; a value a run lacks is None. A host phase every run reused gives one value."""
     def capture(host, index):
         return (host.get("CaptureTimings") or [])[index]
 
@@ -141,6 +154,7 @@ def rows(runs):
         return lambda run: None if read(run) is None else read(run) / 1024
 
     result = []
+    host_runs = runs[:1] if host_reused(runs) else runs
     for index in range(2):
         label = f"capture {index + 1}"
         get = lambda run, index=index: capture(run[0], index)
@@ -155,7 +169,7 @@ def rows(runs):
                                  ("upload s", "s", ("UploadSeconds",)), ("payload KiB", "KiB", ("PayloadBytes",)),
                                  ("body KiB", "KiB", ("BodyBytes",)), ("save KiB", "KiB", ("SaveBytes",))]:
             read = value(get, *path)
-            result.append((f"{label}: {name}", unit, [(kib(read) if unit == "KiB" else read)(run) for run in runs]))
+            result.append((f"{label}: {name}", unit, [(kib(read) if unit == "KiB" else read)(run) for run in host_runs]))
     for outcome, _, swap_step in OUTCOMES:
         get = lambda run, outcome=outcome: join(run[1], outcome)
         for name, unit, path in [("process's build", "count", ("ProcessBuild",)), ("download attempts", "count", ("DownloadAttempts",)),
@@ -188,6 +202,12 @@ def rows(runs):
         building = "Joining" if outcome == "joined" else "Resyncing"
         result.append((f"{outcome}: longest update frame while building", "ms", [longest_frame(run[1].get("Frames") or [], building) for run in runs]))
         result.append((f"{outcome}: first update frame after the swap", "ms", [first_frame(run[1].get("Frames") or [], swap_step) for run in runs]))
+        # a page times each whole frame call too, the drawing with the update (its presentation not)
+        result.append((f"{outcome}: longest whole frame while building", "ms", [longest_frame(run[1].get("Frames") or [], building, "CallMilliseconds") for run in runs]))
+        result.append((f"{outcome}: first whole frame after the swap", "ms", [first_call(run[1].get("Frames") or [], swap_step) for run in runs]))
+    # the run's last frame holds its final check (the digest, the world hash, the join state and the save compared with the host's)
+    result.append(("final check: update frame", "ms", [(run[1].get("Frames") or [{}])[-1].get("Milliseconds") for run in runs]))
+    result.append(("final check: whole frame", "ms", [(run[1].get("Frames") or [{}])[-1].get("CallMilliseconds") for run in runs]))
     return result
 
 
@@ -208,15 +228,34 @@ def number(value, unit):
     return f"{value:.0f}" if abs(value) >= 100 else f"{value:.1f}"
 
 
+def describe(environment):
+    return (f"{environment.get('Configuration', '?')} build {environment.get('Version', '?')}, {environment.get('Runtime', '?')}, "
+            f"{environment.get('Os', '?')} {environment.get('Architecture', '?')}, {environment.get('Processors', '?')} processors, "
+            f"silent {environment.get('Silent', '?')}, advisor {environment.get('Advisor', '?')}"
+            + (f", compiled {environment['Compilation']}" if environment.get("Compilation") else ""))
+
+
+# what a page's run records of its browser (tools/web-coop-join.mjs), which every run of a measurement must share
+PAGE_SETTING = ["mode", "label", "chrome", "renderer", "size", "muted", "frameCap", "poolSprites"]
+
+
 def table(runs, machine=None):
     lines = []
-    environments = {json.dumps(run[0].get("Environment"), sort_keys=True) for run in runs} | {json.dumps(run[1].get("Environment"), sort_keys=True) for run in runs}
-    if len(environments) != 1:
-        raise ValueError("the runs' environments differ (another build, runtime, system or setting): their timings are not one measurement")
-    environment = runs[0][1].get("Environment") or {}
-    lines.append(f"{len(runs)} runs; {environment.get('Configuration', '?')} build {environment.get('Version', '?')}, {environment.get('Runtime', '?')}, "
-                 f"{environment.get('Os', '?')} {environment.get('Architecture', '?')}, {environment.get('Processors', '?')} processors, "
-                 f"silent {environment.get('Silent', '?')}, advisor {environment.get('Advisor', '?')}")
+    for phase, index in [("host", 0), ("join", 1)]:
+        if len({json.dumps(run[index].get("Environment"), sort_keys=True) for run in runs}) != 1:
+            raise ValueError(f"the runs' {phase} phases ran in different environments (another build, runtime, system or setting): their timings are not one measurement")
+    pages = {json.dumps({key: (run[2] or {}).get(key) for key in PAGE_SETTING}, sort_keys=True) if run[2] else None for run in runs}
+    if len(pages) != 1:
+        raise ValueError("the runs' pages ran in different browsers or settings (run.json): their timings are not one measurement")
+    host, join, page = runs[0][0]["Environment"], runs[0][1]["Environment"], runs[0][2]
+    if host == join:
+        lines.append(f"{len(runs)} runs; {describe(join)}")
+    else:
+        reused = " (one host phase, reused by every run)" if host_reused(runs) else ""
+        lines.append(f"{len(runs)} runs; host phase{reused}: {describe(host)}; join phase: {describe(join)}")
+    if page:
+        lines.append(f"page: {page.get('chrome', '?')}, {page.get('renderer', '?')}, {page.get('size', '?')}, muted {page.get('muted', '?')}, "
+                     f"frame cap {page.get('frameCap', '?')}, pool sprites {page.get('poolSprites', '?')}")
     if machine:
         lines.append("")
         lines.extend(f"    {line}" for line in machine.strip().splitlines())

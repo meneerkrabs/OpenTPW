@@ -89,7 +89,7 @@ outside the simulation hash, so the scan moves no determinism pin. `AutomaticAdv
 
 Callback conventions: the world is `[0x80239C]` (also `[[0x7CF6EC]]`). `0x519510` returns the **park thing** (handle at world `+0x1DA720`,
 pool `0x7CFB90`, stride `0x14`); the park thing holds the statistics the helpers read (visitor counter `+0x21C08`, visitor ring
-`+0x216D8`, the 20 price rings of 50 values from `+0x216FC`, the first-object and first-hire stamps `+0x21C30` / `+0x21C38`, the
+`+0x216D8`, the 20 price rings of 50 values from `+0x216FC`, the stamps of the newest object construction and the newest hire `+0x21C30` / `+0x21C38`, the
 prank counters `+0x21BFC` / `+0x21C00`). `0x5195D0` is the **bank** (handle `+0x1DA726`: balance `+0xC`, 8 loan slots of `0x20` bytes
 from `+0x20`, year profit `+0x124`, the turn entered red `+0x120`), `0x519550` the **research manager** (`+0x1DA722`),
 `0x5194D0` the **advisor thing** itself (`+0x1DA71C`, the `this` of `0x59A940`), `0x519450` the **training** thing (`+0x1DA718`).
@@ -119,7 +119,7 @@ Confidence: high = whole body read, medium = shape read and role inferred from t
 | `0x4C81E0` | "busy points": guests in the park / 2, capped at 100 | high |
 | `0x4C81B0` | developed cells (the 1024 map blocks via `0x4C8C40`) | medium |
 | `0x4C9050` | the park is open (`0x51A280` clear) | high |
-| `0x4C9070` / `0x4C90D0` | days since the object stamp `+0x21C30` (rewritten by every object construction, `0x4DB090` calling `0x4C7680`: the newest, not the first) / the hire stamp `+0x21C38` (rewritten by every staff thing init, `0x504B90` calling `0x4C76D0`) | high |
+| `0x4C9070` / `0x4C90D0` | days since the object stamp `+0x21C30` (rewritten by every object construction: the single exit of the common constructor `0x4DB090` calls `0x4C7680` at `0x4DB7A3`, the newest, not the first; the constructor's five callers are the build commit `0x529E10` at `0x529FD5`, which a build and the Move tool's re-placement both reach, the park setup's gates and lights at `0x515BE1` and `0x515C94` after the park init at `0x5159C8`, the finale's End at `0x516B8B` and an arrival vehicle's first trip at `0x51A57E`; the loader `0x5179C0` constructs nothing through it and reads the saved `mLastObjectBuilt` back at `0x4C7289`) / the hire stamp `+0x21C38` (rewritten by every staff thing init, `0x504B90` calling `0x4C76D0`) | high |
 | `0x4C91C0` | guests in state 3 (waiting at the booth) on the two ticket-booth cells (`0x4D8610` of sides 0 and 1, counted once per side) | high |
 | `0x4C9290` / `0x4C9340` / `0x4C93F0` | guests in the park whose toilet (`+0x1AC`) / hunger (`+0x1A8`) / thirst (`+0x1A4`) byte is **strictly above** the argument | high |
 | `0x4C94A0(flag)` | the park counters `+0x21BFC` (flag 0) / `+0x21C00` (flag 1): pranks and escaped pranksters | medium |
@@ -194,7 +194,7 @@ to it (the advisor stays outside the world hash). 31 callbacks: rides 5, 6, 7, 6
 | Helper | OpenTPW | Reading |
 | --- | --- | --- |
 | `0x4C9960` | `ParkStaff.OfType(role).Count()` | things of the models 4 to 8 equal to the argument with flag byte `+3` clear |
-| `0x4C9070`, `0x4C90D0` | the advisor's own record of the turn of the newest object construction and newest hire (`mLastObjectBuilt`, `mLastStaffHired`), kept from the `ObjectBuilt` and `StaffHired` events, stamped at park init like `0x4C58C0` (`0x4C5CAF`, `0x4C5CDE`) and saved in the advisor snapshot | days = (park time - stamp, both from the calendar base) / one day; outside the economy and its hashes. A loaded or original-save park derives them at attach from its newest standing object and employed member, since the save's park words are not parsed (ADVISOR-009) |
+| `0x4C9070`, `0x4C90D0` | the advisor's own record of the turn of the newest object construction and newest hire (`mLastObjectBuilt`, `mLastStaffHired`), kept from the construction events (`ObjectBuilt` for a purchase or the Move tool's re-placement, `FixedItemMade` for an arrival vehicle at its first trip and the finale's End) and the `StaffHired` event, stamped at park init like `0x4C58C0` (`0x4C5CAF`, `0x4C5CDE`; a new park's gates and lights, constructed after it, stamp the same turn 0) and saved in the advisor snapshot | days = (park time - stamp, both from the calendar base) / one day; outside the economy and its hashes. A loaded or original-save park derives them at attach from its newest standing object and employed member, since the save's park words are not parsed (ADVISOR-009) |
 | `0x4CA450`, `0x4CA510`, `0x4CA570`, `0x4CA5D0` | catalog types by `RatingType` (`+0x4AC`) that are available (`+0x10` of the object control: outside the research tables, or researched) | rides skip the types with a golden ticket cost (`+0xC4`) at flag 0, the others do not test it |
 | `0x4CA7B0(kind, flag)` | catalog types with `Counters[Built]` above 0 | the control's built count (`+0x18`) is never lowered: a sold ride still counts as built |
 | `0x4CA8E0`, `0x4CA9B0` | standing objects of the kind (a ride also by upgrade level), the closed ones | closed is the open word `+0x68` clear: the player's close, and the broken, upgrading and condemned states clear it (`0x4E0FD8`, `0x4E10DC`, case 4 of `0x4E0E60`) |

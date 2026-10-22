@@ -511,16 +511,77 @@ public class CoopStreamTests
 		CatchUpAndCompare( host, guests, random );
 	}
 
+	/// <summary>
+	/// [EXT:online-coop-snapshot-join] A server that needs a frame the host trimmed (docs/COOP.md, "The host's trimmed frame") no longer ends the session: every member is assigned a capture,
+	/// and the server is told once that the frames go on past the host's last one; a refusal of a frame sent before it took the skip changes nothing.
+	/// </summary>
 	[TestMethod]
-	public void AServerThatNeedsAFrameTheHostNoLongerHoldsEndsTheSession()
+	public void AServerThatNeedsAFrameTheHostNoLongerHoldsIsToldTheFramesGoOnAndEveryMemberGetsTheParkAgain()
 	{
 		var random = new Random( 23 );
-		var (host, guests, network) = Session( 1 );
+		var (host, guests, network) = Session( 2 );
 		Rounds( 120, random );
 		Assert.IsTrue( host.Host!.OldestFrame > 2 );
+		var relayed = network.LastFrame;
 		network.Restart( lastFrame: 1, seqKnown: true );
 		Rounds( 5, random );
-		Assert.IsNotNull( host.Host.Failure );
+		Assert.IsNull( host.Host.Failure, "the session goes on" );
+		Assert.IsNull( host.Link.LeftWith );
+		Assert.AreEqual( 1, network.Skips.Count, "the host told the server once" );
+		var skip = network.Skips[0];
+		Assert.IsTrue( skip > relayed, "past every frame the server had relayed before" );
+		foreach ( var guest in guests )
+		{
+			// a stream-only guest goes on reporting its old generation, so the host repeats the one assignment
+			Assert.AreEqual( 1, host.Link.Sent.Where( sent => sent.To == guest.Link.Id && sent.Message is CoopSnapshotAssigned ).Select( sent => sent.Message.Generation ).Distinct().Count(),
+				$"member {guest.Link.Id} is assigned one capture" );
+			Assert.AreEqual( skip - 1, ((CoopSnapshotAssigned)host.Link.Sent.Last( sent => sent.To == guest.Link.Id && sent.Message is CoopSnapshotAssigned ).Message).Frame,
+				"its capture starts past the host's last frame before the skip" );
+		}
+		// a refusal of a frame that was on its way before the server took the skip is stale
+		host.Link.RaiseFrameRefused( new CoopFrameRefused( 2 ) );
+		Rounds( 60, random );
+		Assert.IsNull( host.Host.Failure );
+		Assert.AreEqual( 1, network.Skips.Count, "no second skip" );
+		Assert.IsTrue( network.LastFrame >= skip, "the server takes the frames from the skip on" );
+	}
+
+	/// <summary>[EXT:online-coop-snapshot-join] A skip lost with the host's socket goes out again with its resume, without assigning the members anew.</summary>
+	[TestMethod]
+	public void AHostsSkipLostWithItsSocketGoesOutAgainWithTheResume()
+	{
+		var random = new Random( 29 );
+		var (host, guests, network) = Session( 1 );
+		Rounds( 120, random );
+		host.Link.DropSkipToServer = _ => true;
+		network.Restart( lastFrame: 1, seqKnown: true );
+		// long enough for the members' capture to be taken: a second assignment would be another one
+		Rounds( 60 * 4, random );
+		Assert.IsNull( host.Host!.Failure );
+		Assert.AreEqual( 1, host.Host.CapturesTaken );
+		Assert.AreEqual( 0, network.Skips.Count, "the skip was lost" );
+		Assert.AreEqual( 1UL, network.LastFrame, "and the server takes nothing else" );
+		host.Link.DropSkipToServer = null;
+		network.Restart( lastFrame: 1, seqKnown: true );
+		Rounds( 60, random );
+		Assert.IsNull( host.Host.Failure );
+		Assert.AreEqual( 1, network.Skips.Count, "the resume sent it again" );
+		Assert.IsTrue( network.LastFrame >= network.Skips[0] );
+		Assert.AreEqual( 1, host.Link.Sent.Where( sent => sent.To == guests[0].Link.Id && sent.Message is CoopSnapshotAssigned ).Select( sent => sent.Message.Generation ).Distinct().Count(),
+			"the resume assigned no second capture" );
+	}
+
+	/// <summary>A transport whose server cannot take a skip ends the session with the reason, as before protocol 7.</summary>
+	[TestMethod]
+	public void AServerThatCannotTakeASkipStillEndsTheSession()
+	{
+		var random = new Random( 31 );
+		var (host, _, network) = Session( 1 );
+		host.Link.SkipsUnsupported = true;
+		Rounds( 120, random );
+		network.Restart( lastFrame: 1, seqKnown: true );
+		Rounds( 5, random );
+		Assert.IsNotNull( host.Host!.Failure );
 		Assert.AreEqual( host.Host.Failure, host.Link.LeftWith, "the host left the session with the reason" );
 	}
 

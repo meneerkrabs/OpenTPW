@@ -102,6 +102,7 @@ internal sealed partial class AutomaticAdvisor : IDisposable
 			park.EventRaised += OnParkEvent;
 			park.Economy.Objectives.TimeShort += OnChallengeTimeShort;
 			// [BIN:TPW-EXE:0x004C58C0 park init] the analyser stamps the object and hire words with the current time (0x4C5CAF, 0x4C5CDE); a loaded park's snapshot or save then replaces them
+			// [BIN:TPW-EXE:0x005156A0 park setup] after the init (0x5159C8) the setup constructs the gates and the lights (0x515BE1, 0x515C94), which stamp the object word again at the same turn 0: a new park's newest standing object
 			(objectStampTurn, hireStampTurn) = EconomyParkState.NewestStamps( park.Economy );
 		}
 		guests = started.Guests;
@@ -181,7 +182,8 @@ internal sealed partial class AutomaticAdvisor : IDisposable
 		if ( item.Kind == ParkEventKind.BankruptcyMessage )
 			Raise( AdvisorGameEvent.Bankrupted );
 		// [BIN:TPW-EXE:0x004DB7A3 object stamp] every object construction and every staff init (0x504C65) rewrites the park's stamp with the current time (mLastObjectBuilt, mLastStaffHired)
-		if ( item.Kind == ParkEventKind.ObjectBuilt )
+		// [BIN:TPW-EXE:0x004DB090 object constructor] the constructor runs for a build and the Move tool's re-placement (the build commit 0x529E10 at 0x529FD5), an arrival vehicle's first trip (0x51A57E) and the finale's End (0x516B8B); the park setup's gates and lights (0x515BE1, 0x515C94) are built at turn 0, before this advisor attaches
+		if ( item.Kind is ParkEventKind.ObjectBuilt or ParkEventKind.FixedItemMade )
 			objectStampTurn = ParkCalendar.Turn( item.Tick );
 		if ( item.Kind == ParkEventKind.StaffHired )
 			hireStampTurn = ParkCalendar.Turn( item.Tick );

@@ -4,15 +4,18 @@ using System.Text;
 namespace OpenTPW.Online.Coop;
 
 /// <summary>
-/// [EXT:online-coop-session] The co-op socket (<c>/api/v1/coop</c>, server protocol 6): binary messages between a game and the server, which relays a
+/// [EXT:online-coop-session] The co-op socket (<c>/api/v1/coop</c>, server protocol 6, the host's skip from 7): binary messages between a game and the server, which relays a
 /// shared session's frames and messages without reading them (docs/ONLINE.md, "Shared parks"). A message is one binary WebSocket message: a type byte and
 /// its fields, little-endian, strings UTF-8 with a 16-bit length, bytes with a 32-bit length.
 /// </summary>
 public static class CoopProtocol
 {
 	public const string Path = "/api/v1/coop";
-	/// <summary>The server protocol that has the co-op socket; a game offers co-op on this protocol or later.</summary>
-	public const int Version = 6;
+	/// <summary>
+	/// The server protocol that has the co-op socket; a game offers co-op on this protocol or later. Version 7 added the host's skip of frames it no longer holds
+	/// (<see cref="CoopSkipFrames"/>).
+	/// </summary>
+	public const int Version = 7;
 	/// <summary>The largest message either side sends or reads; a join snapshot goes over HTTP instead.</summary>
 	public const int MaximumMessageBytes = 256 * 1024;
 	/// <summary>Players in a session, the host included (decision Q5).</summary>
@@ -116,6 +119,7 @@ public enum CoopMessageType : byte
 	HostFrame = 7,
 	Send = 8,
 	Pong = 9,
+	SkipFrames = 10,
 	// the server to a game
 	Welcome = 101,
 	Created = 102,
@@ -216,6 +220,7 @@ public abstract record CoopMessage
 			CoopMessageType.HostFrame => new CoopHostFrame( reader.U64(), reader.Bytes() ),
 			CoopMessageType.Send => new CoopSend( reader.U32(), reader.Bytes() ),
 			CoopMessageType.Pong => new CoopPong(),
+			CoopMessageType.SkipFrames => new CoopSkipFrames( reader.U64() ),
 			CoopMessageType.Welcome => CoopWelcome.Read( ref reader ),
 			CoopMessageType.Created => new CoopCreated( reader.Session() ),
 			CoopMessageType.Joined => new CoopJoined( reader.Session(), reader.Text( CoopProtocol.MaximumBuildLength ), reader.Mods() ),
@@ -358,6 +363,18 @@ public sealed record CoopSend( uint To, ReadOnlyMemory<byte> Payload ) : CoopMes
 		writer.U32( To );
 		writer.Bytes( Payload.Span );
 	}
+}
+
+/// <summary>
+/// [EXT:online-coop-snapshot-join] The host no longer holds the frames the server needs (docs/COOP.md, "The host's trimmed frame"): every member is assigned a capture past them, and the
+/// frame sequence goes on at <paramref name="From"/>, which the server takes next. The server never goes back: a skip to a frame it already relayed is refused with the next one it takes.
+/// </summary>
+public sealed record CoopSkipFrames( ulong From ) : CoopMessage
+{
+	public override CoopMessageType Type => CoopMessageType.SkipFrames;
+	private protected override void WriteFields( CoopWriter writer ) => writer.U64( From );
+	// the largest number is never a frame, so the next one always exists
+	private protected override void Validate() => Require( From is > 0 and < ulong.MaxValue, "frame number" );
 }
 
 /// <summary>Answers <see cref="CoopPing"/>.</summary>

@@ -30,7 +30,7 @@ public enum CoopStop
 	InUseElsewhere,
 	/// <summary>Another game of the account took the co-op socket over (close 4001).</summary>
 	Replaced,
-	/// <summary>The server is older than protocol 6 and has no shared parks.</summary>
+	/// <summary>The server is older than this game's co-op protocol (<see cref="CoopProtocol.Version"/>) and cannot share its parks.</summary>
 	ServerTooOld,
 	/// <summary>
 	/// The link cannot go on: no login, a login the server refuses, a protocol or size refusal, a close the link does not resume after, or a hello this
@@ -263,6 +263,12 @@ public sealed class CoopLink : ICoopStreamTransport
 		player = player.Trim();
 		return IsHost && player.Length > 0 && Fits( player, CoopProtocol.MaximumInviteNameLength ) && Send( new CoopInvite( player ) );
 	}
+
+	/// <summary>[EXT:online-coop-snapshot-join] The server takes the host's skip from protocol 7 on (<see cref="CoopSkipFrames"/>), the protocol this link needs.</summary>
+	public bool CanSkipFrames => ServerProtocol >= CoopProtocol.Version;
+
+	/// <summary>[EXT:online-coop-snapshot-join] The host's skip of the frames it no longer holds: the server takes frame <paramref name="from"/> next.</summary>
+	public bool SkipFrames( ulong from ) => IsHost && CanSkipFrames && from is > 0 and < ulong.MaxValue && Send( new CoopSkipFrames( from ) );
 
 	/// <summary>
 	/// The host's frame <paramref name="seq"/> (each one after the last, from 1) for the other members; false when it cannot go out now (the link is
@@ -628,6 +634,12 @@ public sealed class CoopLink : ICoopStreamTransport
 	/// </summary>
 	private void Welcomed( CoopWelcome welcome )
 	{
+		// an older server takes this game's hello, but not what its protocol added since (the host's skip, protocol 7): the link stops as before an older server
+		if ( welcome.Protocol < CoopProtocol.Version )
+		{
+			Stop( CoopStop.ServerTooOld );
+			return;
+		}
 		ServerProtocol = welcome.Protocol;
 		welcomedAt = Environment.TickCount64;
 		takeOver = false;
@@ -742,7 +754,7 @@ public sealed class CoopLink : ICoopStreamTransport
 			{
 				CoopStop.InUseElsewhere => "Another game of this account holds the link to shared parks.",
 				CoopStop.Replaced => "Another game of this account took the shared park over.",
-				CoopStop.ServerTooOld => "The server does not share parks.",
+				CoopStop.ServerTooOld => "The server is too old to share parks with this game.",
 				CoopStop.Lost => "The connection to the server was lost.",
 				_ => "The server closed the connection."
 			} ) );

@@ -6,9 +6,13 @@ internal sealed partial class GameFlow
 	/// [EXT:online-coop-snapshot-join] Every way out of a shared park (leaving it, a load, a restart, quitting) ends its session first and lets the player's progress take the park back (its
 	/// hand-back, docs/COOP.md "Golden tickets in a session"), before anything saves the park or detaches progress, so an exit checkpoint holds the reclaimed park.
 	/// </summary>
-	private void LeaveCoopSession( string reason )
+	/// <param name="keepJoin">The front end only rebuilds itself: a join held in it goes on.</param>
+	private void LeaveCoopSession( string reason, bool keepJoin = false )
 	{
 		Level?.CoopSession?.End( reason );
+		// and a join that has no park yet (the player went elsewhere from the front end)
+		if ( !keepJoin && coopJoin is { } joining )
+			EndJoin( joining, reason );
 		// also when the session ended earlier in this frame (the server or the host's stream ended it): its hand-back is still pending
 		progressOwner?.Pump();
 	}

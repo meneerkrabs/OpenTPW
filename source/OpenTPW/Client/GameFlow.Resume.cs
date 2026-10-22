@@ -73,6 +73,8 @@ internal sealed partial class GameFlow
 				candidateAdvisor.ValidateSnapshot( snapshot.Advisor );
 			}
 			AbandonParkBuild();
+			// [EXT:online-coop-snapshot-join] the player goes elsewhere: a join's build holds the one construction scene
+			LeaveJoinBuild();
 			using var scene = new EntityConstructionScope();
 			var candidate = new Level( snapshot, economy, OnlineFolders ) { ShowDeveloperPanels = false };
 			var candidateHud = CreateParkHud( candidate, EconomyParkStatus.ForLevel( candidate, PlayerKeys ) );

@@ -165,11 +165,13 @@ internal sealed partial class GameFlow : IDisposable
 
 	// ---- Front end -------------------------------------------------------------------------
 
-	public void ShowFrontEnd( string? selectLevel = null )
+	/// <param name="keepJoin">[EXT:online-coop-snapshot-join] The front end's own rebuild (a language change): a join held in it goes on, and extension choices wait for it as in a park.</param>
+	public void ShowFrontEnd( string? selectLevel = null, bool keepJoin = false )
 	{
-		TearDown();
+		TearDown( keepJoin: keepJoin );
 		// [EXT:extensions-apply-at-load] extension choices made in the park just left are active in the lobby and for the next park
-		ApplyPendingExtensions();
+		if ( coopJoin == null )
+			ApplyPendingExtensions();
 		enterHold = false;
 		lobbyDefinition ??= LobbyDefinition.Load();
 		Lobby = new LobbyScene( lobbyDefinition, generator: lobbyEffects.Draw, flyerPercent: LobbyObjectsPercent );
@@ -516,9 +518,10 @@ internal sealed partial class GameFlow : IDisposable
 	public const int CrowdRadiusCells = 4;
 
 	/// <param name="keepAdvisorPreparation">The park being entered tears down the live one: what its build read for the advisor is kept for its first update.</param>
-	private void TearDown( bool applyPendingLanguage = true, bool keepAdvisorPreparation = false )
+	/// <param name="keepJoin">[EXT:online-coop-snapshot-join] The front end only rebuilds itself (a language change): a join held in it goes on. Every other teardown ends it.</param>
+	private void TearDown( bool applyPendingLanguage = true, bool keepAdvisorPreparation = false, bool keepJoin = false )
 	{
-		LeaveCoopSession( "The park was closed." );
+		LeaveCoopSession( "The park was closed.", keepJoin );
 		RequireProgressSaved();
 		FlushRestartSnapshot();
 		DetachProgress();
@@ -628,6 +631,8 @@ internal sealed partial class GameFlow : IDisposable
 			input = UiInput.Idle( input.Mouse );
 		Input.TextEntryActive = false;
 		onlineSession?.Pump();
+		// [EXT:online-coop-snapshot-join] a guest's join and resync: the build's slice, the check at the cut and the swap run here, before the HUD and the level
+		StepCoopSession();
 		var imguiMouse = ImGuiNET.ImGui.GetIO().WantCaptureMouse;
 		if ( imguiMouse )
 			input = input with { LeftPressed = false, LeftReleased = false, RightPressed = false, Wheel = 0 };
@@ -708,7 +713,8 @@ internal sealed partial class GameFlow : IDisposable
 		if ( pendingLanguage != null && Level == null && Menu != null && Menu.Stack.Top == Menu.Main && SettlePendingLanguage() && pendingLanguage != null )
 		{
 			var selected = Menu.Selected.Level;
-			ShowFrontEnd( selected );
+			// [EXT:online-coop-snapshot-join] the front end's own rebuild keeps a join under way: the player has not gone elsewhere
+			ShowFrontEnd( selected, keepJoin: true );
 			Menu?.ShowOptions();
 		}
 	}

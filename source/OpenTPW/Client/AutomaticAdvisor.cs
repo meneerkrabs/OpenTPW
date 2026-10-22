@@ -101,9 +101,10 @@ internal sealed partial class AutomaticAdvisor : IDisposable
 		{
 			park.EventRaised += OnParkEvent;
 			park.Economy.Objectives.TimeShort += OnChallengeTimeShort;
-			// [BIN:TPW-EXE:0x004C58C0 park init] the analyser stamps the object and hire words with the current time (0x4C5CAF, 0x4C5CDE); a loaded park's snapshot or save then replaces them
+			// [BIN:TPW-EXE:0x004C58C0 park init] the analyser stamps the object and hire words with the current time (0x4C5CAF, 0x4C5CDE); an OpenTPW save's snapshot then replaces them
 			// [BIN:TPW-EXE:0x005156A0 park setup] after the init (0x5159C8) the setup constructs the gates and the lights (0x515BE1, 0x515C94), which stamp the object word again at the same turn 0: a new park's newest standing object
-			(objectStampTurn, hireStampTurn) = EconomyParkState.NewestStamps( park.Economy );
+			// [BIN:TPW-EXE:0x004C5D70 analyser serializer] a park from an original save keeps the words its analyser saved, which the load reads back (0x4C7289, 0x4C72B3) and nothing it loads restamps: the import's turns of them (OriginalEconomyImport.AnalyserStampTurns)
+			(objectStampTurn, hireStampTurn) = park.Import?.AnalyserStampTurns ?? EconomyParkState.NewestStamps( park.Economy );
 		}
 		guests = started.Guests;
 		if ( guests != null )
@@ -587,6 +588,9 @@ internal sealed partial class AutomaticAdvisor : IDisposable
 		if ( snapshot.SpeechWasActive )
 			throw new InvalidDataException( "Automatic advisor snapshot is inconsistent: it claims active speech, which cannot be restored." );
 		Controller.ValidateSnapshot( snapshot.Controller );
+		// the capture writes the two stamps together, and a snapshot from before they were kept holds neither
+		if ( snapshot.ObjectStampTurn.HasValue != snapshot.HireStampTurn.HasValue )
+			throw new InvalidDataException( "Automatic advisor snapshot is inconsistent: it holds only one of the object and hire stamps." );
 		// A group cut above the park limit is negative; the ring and the hype callback keep that signed value.
 		if ( snapshot.ArrivalWaves is { } waves && waves.Count > AdvisorArrivalRing.Capacity )
 			throw new InvalidDataException( "Automatic advisor snapshot is inconsistent: its arrival history contains more than five group sizes." );
@@ -605,7 +609,7 @@ internal sealed partial class AutomaticAdvisor : IDisposable
 		ValidateSnapshot( snapshot );
 		Controller.RestoreSnapshot( snapshot.Controller );
 		lastScanTurn = null;
-		// a snapshot from before the stamps were kept leaves the ones derived at attach
+		// a snapshot from before the stamps were kept leaves the ones the attach derived (a resumed park has no import whose saved words it could take)
 		objectStampTurn = snapshot.ObjectStampTurn ?? objectStampTurn;
 		hireStampTurn = snapshot.HireStampTurn ?? hireStampTurn;
 		// Existing host snapshot policy treats absent and explicitly empty records with admissions as unrecorded. Native empty data at AttachLevel is authoritative, but this later restore stage still applies that legacy heuristic.

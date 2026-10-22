@@ -12,6 +12,7 @@ public class SilentRunTests
 		Assert.IsTrue( Game.IsSilentRun( new[] { "--front-end", "--smoke-test" }, null ) );
 		Assert.IsTrue( Game.IsSilentRun( new[] { "--capture-world", "a.png" }, null ) );
 		Assert.IsTrue( Game.IsSilentRun( new[] { "--park-resume-smoke", "capture" }, null ) );
+		Assert.IsTrue( Game.IsSilentRun( new[] { "--coop-join-smoke", "host" }, null ) );
 		Assert.IsFalse( Game.IsSilentRun( new[] { "--smoke-test", "--smoke-audio" }, null ) );
 	}
 

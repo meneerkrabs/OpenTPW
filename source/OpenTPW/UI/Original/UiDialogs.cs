@@ -226,7 +226,7 @@ public static class UiDialogs
 
 	private sealed class TextMenuScreen( string name, bool compact ) : UiScreen( name )
 	{
-		public override bool Update( UiContext context, UiInput input )
+		internal override void PreparePointerGeometry( UiContext context )
 		{
 			if ( context.HasFonts )
 			{
@@ -236,10 +236,27 @@ public static class UiDialogs
 				for ( var index = 0; index < items.Length; index++ )
 					items[index].Bounds = lines[index];
 			}
-			// [BIN:TPW-EXE:0x492d80 pause backdrop click] a click (message 0x10006, either button) on the menu's full-canvas window outside its lines plays cat_ui 0xC1 flat, then sends the activate message 0x100001 to the window's owner; the window is made with parent 0 (0x492ef0), so the owner is probably none and 0x658d9f returns at once (what the pause menu's callback 0x48b6a0 does with 0x100001 for the backdrop is not read, so no OpenTPW rule follows from it); a click on a line goes to the line
-			if ( input.Mouse.X >= 0 && (input.LeftReleased && !input.NotClick || input.RightPressed) && HitTest( context.Canvas, input.Mouse ) == null )
-				GameAudio.PlayUi( GameAudio.PauseBackdropEvent );
+		}
+
+		public override bool Update( UiContext context, UiInput input )
+		{
+			PreparePointerGeometry( context );
+			if ( !input.PointerSuppressed ) PlayBackdropClick( input, HitTest( context.Canvas, input.Mouse ) );
 			return base.Update( context, input );
+		}
+
+		internal override bool UpdatePointer( UiContext context, UiInput input, UiElement? recipient )
+		{
+			if ( IsRemoved ) return true;
+			PlayBackdropClick( input, recipient );
+			return base.UpdatePointer( context, input, recipient );
+		}
+
+		private static void PlayBackdropClick( UiInput input, UiElement? recipient )
+		{
+			// [BIN:TPW-EXE:0x492d80 pause backdrop click] a click (message 0x10006, either button) on the menu's full-canvas window outside its lines plays cat_ui 0xC1 flat, then sends the activate message 0x100001 to the window's owner; the window is made with parent 0 (0x492ef0), so the owner is probably none and 0x658d9f returns at once (what the pause menu's callback 0x48b6a0 does with 0x100001 for the backdrop is not read, so no OpenTPW rule follows from it); a click on a line goes to the line
+			if ( input.Mouse.X >= 0 && (input.LeftReleased && !input.NotClick || input.RightPressed) && recipient == null )
+				GameAudio.PlayUi( GameAudio.PauseBackdropEvent );
 		}
 	}
 

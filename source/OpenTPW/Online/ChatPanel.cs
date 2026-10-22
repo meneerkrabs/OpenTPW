@@ -459,6 +459,24 @@ public sealed class ChatPanel
 			owner.Update();
 			if ( IsRemoved )
 				return true;
+			if ( !input.PointerSuppressed && HandlePointer( context, input ) )
+				return true;
+			if ( closing )
+				return true;
+			base.Update( context, input );
+			// the popup stands over the park: nothing under it takes the pointer while it is open
+			return true;
+		}
+
+		internal override bool UpdatePointer( UiContext context, UiInput input, UiElement? recipient )
+		{
+			if ( IsRemoved || HandlePointer( context, input ) ) return true;
+			base.UpdatePointer( context, input, recipient );
+			return true;
+		}
+
+		private bool HandlePointer( UiContext context, UiInput input )
+		{
 			if ( closing )
 			{
 				if ( input.LeftReleased || !input.LeftDown )
@@ -476,9 +494,7 @@ public sealed class ChatPanel
 				owner.ClosePopup();
 				return true;
 			}
-			base.Update( context, input );
-			// the popup stands over the park: nothing under it takes the pointer while it is open
-			return true;
+			return false;
 		}
 	}
 
@@ -512,6 +528,14 @@ public sealed class ChatPanel
 			else if ( consumed && ReferenceEquals( Focused, panel.Entry ) && !Covers( context.Canvas, input.Mouse ) )
 				consumed = false;
 			if ( ReferenceEquals( Focused, panel.Entry ) && panel.Entry.Text.Length > 0 )
+				context.HoverHelp = null;
+			return consumed;
+		}
+
+		internal override bool UpdatePointer( UiContext context, UiInput input, UiElement? recipient )
+		{
+			var consumed = base.UpdatePointer( context, input, recipient );
+			if ( !IsRemoved && ReferenceEquals( Focused, panel.Entry ) && panel.Entry.Text.Length > 0 )
 				context.HoverHelp = null;
 			return consumed;
 		}

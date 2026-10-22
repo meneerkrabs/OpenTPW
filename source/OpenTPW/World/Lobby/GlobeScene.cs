@@ -26,7 +26,10 @@ public sealed class GlobeScene : OriginalModelScene
 	public const string BullfrogCity = "North Pole";
 
 	private readonly List<ModelEntity> pins = new();
-	private readonly List<(CityInfo City, NVector3 Point)> cityPoints = new();
+	private List<(CityInfo City, NVector3 Point)> cityPoints = new();
+
+	/// <summary>Unit-test seam: a pick-only globe (built without a constructor, models or rendering) with the given pin positions.</summary>
+	internal void UseCityPointsForTests( List<(CityInfo City, NVector3 Point)> points ) => cityPoints = points;
 	private ModelFile? cityPin;
 	private ModelFile? bullfrogPin;
 

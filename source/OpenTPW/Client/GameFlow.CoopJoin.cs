@@ -7,7 +7,7 @@ using OpenTPW.UI.Original;
 namespace OpenTPW;
 
 /// <summary>
-/// [EXT:online-coop-snapshot-join] The game's side of a guest's join (docs/COOP.md, "Joining a running session"): the join host that builds the host's park from its join snapshot over
+/// [EXT:online-coop-snapshot-join] The game's side of a guest's join (docs/COOP.md, "The game's join"): the join host that builds the host's park from its join snapshot over
 /// frames, in the join restore mode, in a scene set aside beside the live one, and swaps it in at the session's step; and the lifecycle of a join that has no park on this machine yet.
 /// The screens that start a join are C2d's: <see cref="JoinSharedPark(CoopLink)"/> and <see cref="FollowSharedPark(CoopLink)"/> are their entries.
 /// </summary>
@@ -150,7 +150,7 @@ internal sealed partial class GameFlow
 		Camera.Mode as ParkCameraMode ?? parkCamera as ParkCameraMode ?? level.ParkCameraWhileRiding ?? level.ParkCameraWhileWalking;
 
 	/// <summary>
-	/// The swap (docs/COOP.md, "Joining a running session"): the live scene (the front end, or a resyncing guest's old park, which the session detached from first) is torn down as a park
+	/// The swap (docs/COOP.md, "The game's join"): the live scene (the front end, or a resyncing guest's old park, which the session detached from first) is torn down as a park
 	/// entry tears it down, without ending the joining session, and the candidate's scene is activated and entered. Only work that cannot throw follows the activation: a throw before it
 	/// leaves the candidate the session's to abandon. Not run: the progress (a guest's park is the host's), the restart snapshot and a saved sound (a guest's park has neither).
 	/// </summary>
@@ -226,8 +226,6 @@ internal sealed partial class GameFlow
 		private int hudLanguage;
 		private AutomaticAdvisor? advisor;
 		private bool advisorTried;
-
-		public int LevelSteps { get; private set; }
 		private bool complete;
 		private bool abandoned;
 		private bool installed;
@@ -241,6 +239,10 @@ internal sealed partial class GameFlow
 		}
 
 		public Level Candidate => complete && candidate != null ? candidate : throw new InvalidOperationException( "The shared park is not built yet." );
+
+		public int LevelSteps { get; private set; }
+
+		public int StagedEntities => scene?.StagedEntities ?? 0;
 
 		public bool Step()
 		{

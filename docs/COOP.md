@@ -382,34 +382,35 @@ offscreen: `--coop-join-smoke host|join --coop-join-evidence <directory>`), runs
   pool with a lazy river, a bridge over it, its changing room, water attractions, a slide and swimmers,
   a water ride whose track add-on was placed, sold and placed again, and an object put back by the Move
   tool while the balance is below zero (its entrance without its link). No Instant Action player can buy
-  the add-on: its upgrade list lists nothing (UITEXT 27), and that list is the one way to an add-on row.
-  The smoke arms the build tool as the row would, which is sound for the join: the flag gates the list,
-  the level purchase and the advice only, and the placement, the walk, the save and the restore do not
-  read the start kind. The phase hosts a session over a recording transport. Before the first cut it
-  cuts the water ride's track open beside the add-on with the track edit tool and takes a line back with
-  Backspace, and puts an employee in hand, a pending hire, a carried Move entry and the coaster tool open
-  on a coaster. Before the second it has undone those and mended the track, the add-on's sections linked
-  again, and it leaves the park paused with edits since its last tick, a built coaster closed and a tour
-  ride bought while paused (its script has not run, so it has no controller). A virtual member joins,
-  and later asks again with a desync, so the host takes two captures through its stream. The phase
-  checks that each cut holds what was staged, that the second holds nothing the first staged and undid,
-  and that the capture changed nothing. It runs park minutes at the normal and the fastest speed, sells
-  the add-on after the second cut while the member follows, and writes the frames, the captures and its
-  final state.
+  the add-on: its upgrade list lists nothing (UITEXT 27; `ParkEconomy.Features.Upgrades` is false), and
+  the list's add-on row is the one way to arm the build tool with an add-on. The smoke arms the build
+  tool as the row would, which is sound for the join: the flag gates only the list, the level purchase
+  and the advice, and the placement, the walk, the save and the restore do not read the start kind. The
+  phase hosts a session over a recording transport. Before the first cut it cuts the water ride's track
+  open off the add-on's tiles with the track edit tool and takes a line back with Backspace, and puts an
+  employee in hand, a pending hire, a carried Move entry and the coaster tool open on a coaster. Before
+  the second it has undone those and mended the track, the add-on's sections linked again, and it leaves
+  the park paused with edits since its last tick, a built coaster closed and a tour ride bought while
+  paused (its script has not run, so it has no controller). A virtual member joins, and later asks again
+  with a desync, so the host takes two captures through its stream. The phase checks that each cut holds
+  what was staged, that the second holds nothing the first staged and undid (but the Move tool's carried
+  entry, a known limit below), and that the capture changed nothing. It runs park minutes at the normal
+  and the fastest speed, sells the add-on after the second cut while the member follows, and writes the
+  frames, the captures and its final state.
 - **The join phase** is a fresh process. It starts in the front end, runs the real game loop and joins
   through `GameFlow.JoinSharedPark` over a transport that replays the recorded host. The first capture's
   answer names a wrong digest: it builds beside the front end, fails its check at the cut and is
-  abandoned while the front end stays. The guest asks again and gets the first capture; part way
-  through its level's construction (at 40% of the steps the first build's level took, which the same
-  capture takes again however fast the frames come) the host assigns a newer one of the same cut, the
-  session abandons that build at once, and the newer one builds and swaps in. Every frame before the
-  swap checks that the front end is the live scene, whole, with no entity of a build in it. The guest
-  follows the host's frames at twice the recorded pace, its stream checking the host's digest at every
-  checkpoint (80 up to the second cut). At the second cut its park's digest and world hash equal the
-  host's; it is then assigned the second capture while following, a resync over its park, and follows to
-  the end (20 more checkpoints), the add-on's sale among the frames. It ends with the host's digest,
-  world hash, join state and save, apart from the save's presentation parts (the time, the particles,
-  the snow cover and the sound seed, also the economy part's copy of it).
+  abandoned while the front end stays. The guest asks again and gets the first capture; part way through
+  its level's construction (once the build has staged entities in its scene, with steps of its level
+  left: the same capture takes the same steps) the host assigns a newer one of the same cut, the session
+  abandons that build at once, and the newer one builds and swaps in. Every frame before the swap checks
+  that the front end is the live scene, whole, with no entity of a build in it. The guest follows the
+  host's frames at twice the recorded pace, its stream checking the host's digest at every checkpoint
+  (80 up to the second cut). At the second cut its park's digest and world hash equal the host's; it is
+  then assigned the second capture while following, a resync over its park, and follows to the end (20
+  more checkpoints), the add-on's sale among the frames. It ends with the host's digest, world hash,
+  join state and save, apart from the save's presentation parts (the time, the particles, the snow cover
+  and the sound seed, also the economy part's copy of it).
 
 A mutation run took each skip of the restore mode that the smoke stages out, in turn, and the smoke caught
 every one: a join that reopens a closed built coaster, gives a tour ride a fresh controller, repairs the

@@ -346,7 +346,7 @@ internal static class Game
 			ParkResumeSmokeTest.Run( flow, parkResumePhase, parkResumeFile, parkResumeEvidence );
 			return;
 		}
-		// [EXT:online-coop-snapshot-join] the native join smoke (docs/COOP.md, "Joining a running session"): a host phase and a fresh join phase over recorded frames
+		// [EXT:online-coop-snapshot-join] the native join smoke (docs/COOP.md, "The game's join"): a host phase and a fresh join phase over recorded frames
 		if ( GetOption( args, "--coop-join-smoke", "'host' or 'join'" ) is { } coopJoinPhase )
 		{
 			var coopJoinEvidence = GetOption( args, "--coop-join-evidence", "an evidence directory" )

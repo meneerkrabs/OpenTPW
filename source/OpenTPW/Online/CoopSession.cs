@@ -55,6 +55,9 @@ internal interface ICoopJoinBuild
 
 	/// <summary>The steps of the park's level construction this build has run so far (a probe: the native join smoke abandons a build part way through them); 0 for a build without one.</summary>
 	int LevelSteps => 0;
+
+	/// <summary>The entities this build has staged in its scene so far (a probe: the native join smoke abandons a build only once it has staged some); 0 for a build without a scene.</summary>
+	int StagedEntities => 0;
 }
 
 /// <summary>
@@ -155,7 +158,7 @@ internal sealed class CoopSession : IDisposable
 	/// <summary>The game builds a downloaded capture (it holds the game's one construction scene meanwhile).</summary>
 	internal bool IsBuilding => building != null;
 
-	/// <summary>The build on its way, if any (a probe for the native join smoke, <see cref="ICoopJoinBuild.LevelSteps"/>).</summary>
+	/// <summary>The build on its way, if any (a probe for the native join smoke: <see cref="ICoopJoinBuild.LevelSteps"/>, <see cref="ICoopJoinBuild.StagedEntities"/>).</summary>
 	internal ICoopJoinBuild? Building => building;
 
 	/// <summary>The frames this guest buffered for a capture's stream.</summary>

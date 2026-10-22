@@ -71,8 +71,9 @@ internal sealed partial class CoopJoinSmokeTest
 
 	/// <summary>
 	/// The ride's track add-on placed by the build tool as an add-on row arms it, sold and placed again, as the park-resume smoke's add-on fixture does it, on a tile the first cut leaves.
-	/// No Instant Action player can buy one: its upgrade list lists nothing (<see cref="Level.UpgradeOffer"/>, UITEXT 27), and that list is the one way to an add-on row. The stand-in is
-	/// sound for the join: the flag gates the list, the level purchase and the advice only, and the placement, the walk, the save and the restore do not read the start kind.
+	/// No Instant Action player can buy one: its upgrade list lists nothing (<see cref="Level.UpgradeOffer"/>, UITEXT 27; <see cref="ParkEconomy.Features"/>' Upgrades is false), and the
+	/// list's add-on row is the one way to arm the build tool with an add-on. The stand-in is sound for the join: the flag gates only the list, the level purchase and the advice, and the
+	/// placement, the walk, the save and the restore do not read the start kind.
 	/// </summary>
 	private void BuyAddOnTwice( OriginalObject ride )
 	{
@@ -108,7 +109,7 @@ internal sealed partial class CoopJoinSmokeTest
 		Require( waterAddOn != null && AddOnSections( ride ) > 0, $"buy {entry.DisplayName} again" );
 	}
 
-	/// <summary>The two tiles of the circuit's left straight the first cut takes (<see cref="CutWaterTrack"/>), by their origin cells: the add-on needs the far straight.</summary>
+	/// <summary>The two tiles of the circuit's left straight the first cut takes (<see cref="CutWaterTrack"/>), by their origin cells: the add-on is placed off them (on the far straight in Jungle).</summary>
 	private bool CutTile( (int X, int Y) tile ) => tile == WaterAt( -2, 2 ) || tile == WaterAt( -2, 4 );
 
 	/// <summary>The two ends of the left straight's gap: the corner at the far side and the one before the station.</summary>
@@ -119,8 +120,8 @@ internal sealed partial class CoopJoinSmokeTest
 	private static int AddOnSections( OriginalObject ride ) => ride.Runtime.Bump!.Sections.Count( section => section.Kind is 12 or 13 && section.AddOn != null );
 
 	/// <summary>
-	/// Before the first cut, by the track tools' commands: the edit tool cuts the two tiles of the left straight (the add-on stands on the far one), and the line tool, going on from an open
-	/// end, lays a tile into the gap and takes it back with Backspace. The circuit stays open over the cut, with the add-on on it.
+	/// Before the first cut, by the track tools' commands: the edit tool cuts the two tiles of the left straight (the add-on stands off the cut, on the far straight in Jungle), and the
+	/// line tool, going on from an open end, lays a tile into the gap and takes it back with Backspace. The circuit stays open over the cut, with the add-on on it.
 	/// </summary>
 	private void CutWaterTrack()
 	{

@@ -19,6 +19,9 @@ internal sealed class EntityConstructionScope : IDisposable
 
 	internal static bool IsStaging => active != null && active.candidate == null && active.paused == null;
 
+	/// <summary>The entities staged in the candidate scene so far, paused or not.</summary>
+	internal int StagedEntities => entities.Count;
+
 	private readonly record struct SceneState( List<Entity> Entities, Level? Level, CameraMode Camera,
 		float TargetExtent, Vector3 InitialTarget, Vector3 ListenerPosition, Vector3 ListenerForward, Vector3 ListenerFront, Vector3 ListenerUp )
 	{

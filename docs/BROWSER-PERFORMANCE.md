@@ -745,3 +745,24 @@ What the entering frame still spends, apart from the advisor's creation, first u
 | Park build steps | 71-77 ms (now the largest frames of the park start) | the economy's catalogue and balance parsing; the gate sign; guest sprite atlases | split those steps further (each is one step of `Level.Construct` now) |
 | Coaster first built | 17 ms | first use of the coaster's models and textures | preload them with the park's catalogue |
 | Advisor line, while decoding | p95 about 6 ms | the 5 ms slices | none needed (under a 60 Hz frame) |
+
+## Joining a shared park (October 22, 2026)
+
+A guest's join of a co-op session builds the host's park over frames beside the live scene, as a park start does, and swaps it in once it is checked (docs/COOP.md, "The game's join"). `scripts/measure-coop-join-browser.sh` measures it in a published page: the co-op join smoke's measuring join phase (`tools/web-coop-join.mjs`, `?coopSmoke=1`) over a host phase recorded once by the desktop's Release build of the same source. Chrome 155 headless and muted, Apple M5 through ANGLE/Metal, 1280 x 900, no frame cap; medians of five runs compiled ahead of time and three interpreted, in milliseconds. The native column is the desktop's first build in a process (Release, compiled as it first runs), from the measurement of C2c-2b-1; it times the update only, the page also each whole frame. Every value of every run is in docs/COOP.md, "Measurements".
+
+| Part of the join | AOT | Interpreter | Native |
+| --- | ---: | ---: | ---: |
+| The save's parse (one step) | 374 | 508 | 167 |
+| The objects' restore and the coasters (one step) | 320 | 1,413 | 436 |
+| The level's last step | 141 | 307 | 172 |
+| The guests (one step) | 85 | 250 | 135 |
+| The check at the cut | 76 | 101 | 45 |
+| The swap's frame (the check, the swap and the rest of the frame's update) | 331 | 644 | 325 |
+| The longest frame while building, with its drawing | 392 | 1,420 | 440 (update) |
+| The wait for the level's files | 375 frames, 6.4 s | 383 frames, 7.2 s | none |
+| Catching up after the swap | 638 ticks in 10 frames, 0.59 s | 758 ticks in 29 frames, 2.0 s | 1 tick, 1 frame |
+| The resync over the guest's park, longest frame | 142 | 333 | 88 (update) |
+
+- **The wait for the files spins.** A page copies a theme's folder on the theme's first use, and the join's build waits for it. Its loop asks whether the files are there until the slice's 12 ms budget is spent, so every frame of the wait took 16 ms of update instead of the front end's 1 ms, for 6.4 s. A park start waits once a frame instead (`GameFlow.QueueLevel`).
+- **The swap's frame.** About 245 ms of it is neither the check nor the swap: the rest of that frame's update, the joined park's first among it. The join's build has none of the steps that prepare a park start's entering frame (`GameFlow.PrepareEntry`, "The entering frame" above).
+- **Next.** C2c-2b-3 splits the save's parse, the swap's frame, the objects' restore, the level's last step and the guests, and ends the wait's slice instead of spending it.

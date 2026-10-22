@@ -127,6 +127,19 @@ def first_call(frames, step):
     return next((item.get("CallMilliseconds") for item in frames if item["Step"] == step), None)
 
 
+def swap_frame(frames, building, step, key="Milliseconds"):
+    """The frame that checked the build and swapped it in: the last one of the build's step, right before the first of the step after the swap (the smoke takes that step
+    in the frame after the swap's)."""
+    index = next((position for position, item in enumerate(frames) if item["Step"] == step), None)
+    return frames[index - 1].get(key) if index and frames[index - 1]["Step"] == building else None
+
+
+def final_frame(frames, key="Milliseconds"):
+    """The frame of the run's final check (the digest, the world hash, the join state and the save compared with the host's), its last once recorded: a page writes the
+    evidence again after that frame, a native run only within it, before the frame's end is recorded."""
+    return frames[-1].get(key) if frames and frames[-1]["Step"] == "Done" else None
+
+
 def host_reused(runs):
     """Whether every run replays one host phase (the browser's runs): its timings are then one sample, not one a run."""
     return len(runs) > 1 and len({json.dumps(run[0], sort_keys=True) for run in runs}) == 1
@@ -201,13 +214,15 @@ def rows(runs):
             result.append((f"{outcome}: section {section}", "ms", [get(run).get("Sections", {}).get(section) for run in runs]))
         building = "Joining" if outcome == "joined" else "Resyncing"
         result.append((f"{outcome}: longest update frame while building", "ms", [longest_frame(run[1].get("Frames") or [], building) for run in runs]))
+        # the check at the cut, the swap and whatever else that frame ran (the build's last step when it fitted the slice, the park's first update after the swap)
+        result.append((f"{outcome}: the swap's update frame", "ms", [swap_frame(run[1].get("Frames") or [], building, swap_step) for run in runs]))
         result.append((f"{outcome}: first update frame after the swap", "ms", [first_frame(run[1].get("Frames") or [], swap_step) for run in runs]))
         # a page times each whole frame call too, the drawing with the update (its presentation not)
         result.append((f"{outcome}: longest whole frame while building", "ms", [longest_frame(run[1].get("Frames") or [], building, "CallMilliseconds") for run in runs]))
+        result.append((f"{outcome}: the swap's whole frame", "ms", [swap_frame(run[1].get("Frames") or [], building, swap_step, "CallMilliseconds") for run in runs]))
         result.append((f"{outcome}: first whole frame after the swap", "ms", [first_call(run[1].get("Frames") or [], swap_step) for run in runs]))
-    # the run's last frame holds its final check (the digest, the world hash, the join state and the save compared with the host's)
-    result.append(("final check: update frame", "ms", [(run[1].get("Frames") or [{}])[-1].get("Milliseconds") for run in runs]))
-    result.append(("final check: whole frame", "ms", [(run[1].get("Frames") or [{}])[-1].get("CallMilliseconds") for run in runs]))
+    result.append(("final check: update frame", "ms", [final_frame(run[1].get("Frames") or []) for run in runs]))
+    result.append(("final check: whole frame", "ms", [final_frame(run[1].get("Frames") or [], "CallMilliseconds") for run in runs]))
     return result
 
 

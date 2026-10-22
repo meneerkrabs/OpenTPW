@@ -352,8 +352,8 @@ composition made before the lookups changed is composed again. `SignRasterCorpus
 
 | Measure (Release, Mac, `--perf-build --hitch-report 30`, runs alternating with the build before) | Before | After |
 | --- | ---: | ---: |
-| First placement of type 1104: frame / `perf.place` | 86 to 101 / 50 to 63 ms | 46 to 47 / 16 to 19 ms |
-| First placement of type 1101: frame / `perf.place` | 62 to 64 / 60 to 63 ms | 17 / 10 to 14 ms |
+| First placement of type 1104: frame / `perf.place` | 86 to 101 / 50 to 63 ms | 44 to 47 / 16 to 19 ms |
+| First placement of type 1101: frame / `perf.place` | 62 to 64 / 60 to 63 ms | 17 / 10 to 16 ms |
 | `object-sign` in those frames | 36 to 48 ms | under 0.5 ms |
 
 The rest of the 1104 frame is the scenario's own search for a free site (`perf.site-search`, 27 to 29 ms, not part of a player's click) and the

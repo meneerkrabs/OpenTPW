@@ -53,14 +53,17 @@ public partial class Level
 	internal void ClickBuildTool( int x, int y, int modifierMask = 0 )
 	{
 		KeepBuildToolOnPlace = KeepsBuildTool( modifierMask );
-		// [BIN:TPW-EXE:0x00524B53 queue start] the build tool's click (and the Move tool's, 0x5253F3) zeroes the pending queue start before it places, whether or not the placement goes ahead
-		placedQueueStart = null;
 		try
 		{
 			// a track add-on goes to its hover position on its ride's track, at the angle of the tile's flow (TrackAddOns.HoverTarget); anything else stays at the cell
 			var entry = BuildEntry!;
 			var (targetX, targetY, rotation) = BuildTarget( entry, x, y );
 			SetBuildRotation( rotation );
+			// [BIN:TPW-EXE:0x00524B53 queue start] the build tool's click (and the Move tool's, 0x5253F3) zeroes the pending queue start before it places; a click on a refused ghost
+			// never gets there: the placement preview 0x528A70 runs the object's cells through 0x532FC0(0x104), whose validator refusal sets the latch 0x816D48 (0x533933), and the click
+			// handler tests the latch before the mode dispatch (0x524A63), which sends modes 4 and 0x3B to 0x52765B. OpenTPW reads that refusal from the ghost the HUD draws
+			if ( BuildGhostAllowed( entry, CheckBuildTarget( entry, targetX, targetY, rotation ) ) )
+				placedQueueStart = null;
 			Commands.Issue( BuildCommand( entry, targetX, targetY, rotation ) );
 		}
 		finally
@@ -76,7 +79,7 @@ public partial class Level
 	/// The ride whose queue start the last placement left pending (tp.exe <c>0x8186C0</c>): the queue tool follows a kart or water circuit's close only while one is
 	/// pending, from that ride's queue (<see cref="ContinueTrackTool"/>), and the close takes it. Local tool state of the issuer, never a command, saved or hashed.
 	/// </summary>
-	// [BIN:TPW-EXE:0x0052544E queue start] a placement of a type with an entrance stores the record of its queue's start cell (0x52A050, the cell's coordinates in 0x7639B8/0x7639BC; 0x524DD7, 0x525269, 0x52544E and the Move tool's 0x5258AC); every build or Move click zeroes it before it places (0x524B53, 0x5253F3), the Move tool's pick-up in mode 0x33 zeroes it (0x525E5A), a path or queue commit zeroes it (0x527483), and the queue tool that follows a ride's placement, the coaster tool's click or a kart or water circuit's close takes it (0x5252EA, 0x526680, 0x527056)
+	// [BIN:TPW-EXE:0x0052544E queue start] a placement of a type with an entrance stores the record of its queue's start cell (0x52A050, the cell's coordinates in 0x7639B8/0x7639BC; 0x524DD7, 0x525269, 0x52544E and the Move tool's 0x5258AC); every build or Move click on an accepted ghost zeroes it before it places (0x524B53, 0x5253F3), the Move tool's pick-up in mode 0x33 zeroes it (0x525E5A), a path or queue commit zeroes it (0x527483), and the queue tool that follows a ride's placement, the coaster tool's click or a kart or water circuit's close takes it (0x5252EA, 0x526680, 0x527056)
 	private OriginalObject? placedQueueStart;
 
 	internal SegmentResult? ClickCellTool( (int X, int Y) cell, int modifierMask = 0 )
@@ -87,8 +90,9 @@ public partial class Level
 		try
 		{
 			var result = CellTool.Click( cell );
-			// [BIN:TPW-EXE:0x00527483 queue start] the path and queue handler zeroes the pending queue start after its commit LayLine (0x527472)
-			if ( mode is CellToolMode.Path or CellToolMode.Queue && result is { GhostRefused: false } )
+			// [BIN:TPW-EXE:0x00527483 queue start] the path and queue handler zeroes the pending queue start after its commit LayLine (0x527472); a click on a refused ghost returns before
+			// it (0x524A63), and a line whose command the park refused ([EXT:online-coop-commands]) laid nothing either
+			if ( mode is CellToolMode.Path or CellToolMode.Queue && result is { GhostRefused: false, CommandRefused: false } )
 				placedQueueStart = null;
 			return result;
 		}

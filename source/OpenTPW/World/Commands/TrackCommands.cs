@@ -132,7 +132,8 @@ public sealed class ParkCommandTrackWriter : ICellLineWriter
 		{
 			Start = start,
 			Line = TrackLineWriter.LayLine( start, snapped ).SelectMany( tile => TrackStation.TileCellsOf( tile.X, tile.Y ) ).ToArray(),
-			StoppedAt = start
+			StoppedAt = start,
+			CommandRefused = true
 		};
 	}
 

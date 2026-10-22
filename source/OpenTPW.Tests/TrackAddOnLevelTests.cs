@@ -63,12 +63,14 @@ public partial class TrackAddOnLevelTests
 
 	/// <summary>
 	/// The level with the ride placed at (10, 9) (its station tiles (10, 10) and (12, 10)) and the long kart loop of <see cref="TrackAddOnTests"/>: the straights
-	/// (14, 10) … (28, 10) and (28, 14) … (10, 14) between the corners (30, 10), (30, 14), (8, 14) and (8, 10). Without <paramref name="laid"/> the station stands alone.
+	/// (14, 10) … (28, 10) and (28, 14) … (10, 14) between the corners (30, 10), (30, 14), (8, 14) and (8, 10). Without <paramref name="laid"/> the station stands alone;
+	/// <paramref name="extra"/> joins the catalogue.
 	/// </summary>
-	private (Level Level, OriginalObject Ride, ObjectCatalogEntry Jump) World( bool hasQueue = false, bool laid = true )
+	private (Level Level, OriginalObject Ride, ObjectCatalogEntry Jump) World( bool hasQueue = false, bool laid = true, ObjectCatalogEntry? extra = null )
 	{
 		var (rideEntry, jump) = Entries( hasQueue );
-		var catalog = (ObjectCatalog)Activator.CreateInstance( typeof( ObjectCatalog ), Private, null, new object[] { "jungle", new[] { rideEntry, jump } }, null )!;
+		var entries = extra == null ? new[] { rideEntry, jump } : new[] { rideEntry, jump, extra };
+		var catalog = (ObjectCatalog)Activator.CreateInstance( typeof( ObjectCatalog ), Private, null, new object[] { "jungle", entries }, null )!;
 		var level = (Level)RuntimeHelpers.GetUninitializedObject( typeof( Level ) );
 		var objects = new ParkObjects( catalog, new SandboxParkGrid() );
 		var guests = new GuestSimulation( new GuestPathGrid( 48, 32 ), GuestTests.CreateSettings(), 7 ) { ArrivalsEnabled = false };

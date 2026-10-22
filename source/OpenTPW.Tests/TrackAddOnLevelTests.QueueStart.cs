@@ -6,15 +6,15 @@ namespace OpenTPW.Tests;
 /// <summary>
 /// The placement's pending queue start (tp.exe <c>0x8186C0</c>), on the same asset-free level: the line tool a kart or water ride's placement opens hands the close of its circuit
 /// to the queue tool whatever the click held (<c>0x526F95</c>) and takes the start (<c>0x527056</c>); with none pending the close is the modifier's, exactly Ctrl keeping the line
-/// tool without a start (<c>0x527146</c>). A build click (<c>0x524B53</c>), a path or queue commit (<c>0x527483</c>) and the Move tool's pick-up (<c>0x525E5A</c>) drop it. A line
-/// click with a start whose ghost has a refused tile ends the line tool and lays nothing (<c>0x524A63</c>).
+/// tool without a start (<c>0x527146</c>). A build click on an accepted ghost (<c>0x524B53</c>), a path or queue commit (<c>0x527483</c>) and the Move tool's pick-up (<c>0x525E5A</c>)
+/// drop it; a click on a refused ghost returns before them (<c>0x524A63</c>). A line click with a start whose ghost has a refused tile ends the line tool and lays nothing.
 /// </summary>
 public partial class TrackAddOnLevelTests
 {
 	/// <summary>The station alone, of a ride with a queue (its back cell (4, 4)), with its track tool opened as the ride's placement opens it.</summary>
-	private (Level Level, OriginalObject Ride) PlacedWithQueue()
+	private (Level Level, OriginalObject Ride) PlacedWithQueue( ObjectCatalogEntry? extra = null )
 	{
-		var (level, ride, _) = World( hasQueue: true, laid: false );
+		var (level, ride, _) = World( hasQueue: true, laid: false, extra );
 		AttachTrackEconomy( level, ride );
 		WithQueue( ride );
 		Assert.IsTrue( level.EnterPlacedTrackTool( ride ) );
@@ -41,6 +41,7 @@ public partial class TrackAddOnLevelTests
 	/// <summary>The track button's line tool of the open circuit, and the close of the loop with exactly Ctrl held: with no queue start pending the line tool stays without a start.</summary>
 	private static void AssertTheTrackButtonsCloseKeepsTheLineTool( Level level, OriginalObject ride )
 	{
+		level.CellTool.Cancel();
 		Assert.IsTrue( level.EnterTrackTool( ride ), "the track button" );
 		Assert.IsTrue( LayLoop( level, 0xc )?.Completed == true );
 		Assert.IsTrue( ride.Runtime.Bump!.IsTrackValid, "the last line closes the circuit" );
@@ -98,18 +99,47 @@ public partial class TrackAddOnLevelTests
 		Assert.AreEqual( stays ? ride : null, level.TrackToolStation );
 	}
 
+	/// <summary>The track button's line tool of the open circuit, and the close of the loop with exactly Ctrl held: the start is still pending, so the close hands over to the queue tool.</summary>
+	private static void AssertTheTrackButtonsCloseHandsOverToTheQueue( Level level, OriginalObject ride )
+	{
+		level.CellTool.Cancel();
+		Assert.IsTrue( level.EnterTrackTool( ride ), "the track button" );
+		Assert.IsTrue( LayLoop( level, 0xc )?.Completed == true );
+		Assert.AreEqual( CellToolMode.Queue, level.CellTool.Mode, "the start is still pending: the close hands over to the queue tool" );
+		Assert.AreEqual( (4, 4), level.CellTool.Start );
+	}
+
 	[TestMethod]
-	public void ABuildClickDropsThePendingQueueStart()
+	public void AnAcceptedBuildClickDropsThePendingQueueStart()
+	{
+		// its own archive path, so the placing command's entry key names it and not the ride (ParkCommandCodec.EntryKey)
+		var toilet = new ObjectCatalogEntry( "jungle", ObjectCategory.Feature, "/synthetic-toilet",
+			new ObjectSettings( new[] { new ObjectSettingsFile( "Info.Id 1402\nInfo.Name SyntheticToilet\nInfo.WhichUIType 3\n", "synthetic.sam" ) } ), new ObjectShape( new[] { "*" } ), "/synthetic/model.MD2", null,
+			"/synthetic/script.RSE", System.Array.Empty<string>(), System.Array.Empty<ObjectAnimationFile>(), System.Array.Empty<string>(), System.Array.Empty<string>(), FileSystem, null );
+		var (level, ride) = PlacedWithQueue( toilet );
+		level.CellTool.Cancel();
+		level.BuildEntry = toilet;
+		Assert.IsTrue( level.BuildGhostAllowed( toilet, level.CheckBuildTarget( toilet, 20, 20, 0 ) ), "the ghost on free ground is accepted" );
+		// the click zeroes the start before it places (0x524B53)
+		level.ClickBuildTool( 20, 20 );
+		Assert.IsTrue( level.Objects.Objects.Any( item => !item.IsDeleted && item.Entry == toilet ), $"the click places the object ({level.LastActionMessage})" );
+		level.BuildEntry = null;
+		AssertTheTrackButtonsCloseKeepsTheLineTool( level, ride );
+	}
+
+	[TestMethod]
+	public void ABuildClickOnARefusedGhostKeepsThePendingQueueStart()
 	{
 		var (level, ride) = PlacedWithQueue();
 		level.CellTool.Cancel();
-		// the build tool's click on the ride's own cell: the placement is refused, and the click drops the start all the same (0x524B53)
+		// the ghost on the ride's own cell is refused: the click returns at the latch before the mode dispatch (0x524A63, modes 4 and 0x3B to 0x52765B)
 		level.BuildEntry = ride.Entry;
+		Assert.IsFalse( level.BuildGhostAllowed( ride.Entry, level.CheckBuildTarget( ride.Entry, 10, 9, 0 ) ) );
 		var objects = level.Objects.Objects.Count;
 		level.ClickBuildTool( 10, 9 );
 		Assert.AreEqual( objects, level.Objects.Objects.Count, "nothing was placed" );
 		level.BuildEntry = null;
-		AssertTheTrackButtonsCloseKeepsTheLineTool( level, ride );
+		AssertTheTrackButtonsCloseHandsOverToTheQueue( level, ride );
 	}
 
 	[TestMethod]
@@ -130,9 +160,32 @@ public partial class TrackAddOnLevelTests
 		// a queue click whose ghost is refused ends that tool before the commit (0x524A63), so the start stays pending
 		level.CellTool.Enter( new AcceptingLineWriter( CellToolMode.Queue, refuses: true ), (4, 4) );
 		Assert.IsTrue( level.ClickCellTool( (4, 8) ) is { GhostRefused: true } );
-		Assert.IsTrue( level.EnterTrackTool( ride ), "the track button" );
+		AssertTheTrackButtonsCloseHandsOverToTheQueue( level, ride );
+	}
+
+	[TestMethod]
+	public void AQueueLineWhoseCommandIsRefusedKeepsThePendingQueueStart()
+	{
+		var (level, ride) = PlacedWithQueue();
+		// the real command writer: the park refuses the line of a ride it does not have, so nothing is laid and the start stays pending
+		level.CellTool.Enter( new ParkCommandLineWriter( new AcceptingLineWriter( CellToolMode.Queue ), level.Commands, 9999 ), (4, 4) );
+		Assert.IsTrue( level.ClickCellTool( (4, 8) ) is { GhostRefused: false, CommandRefused: true } );
+		AssertTheTrackButtonsCloseHandsOverToTheQueue( level, ride );
+	}
+
+	[TestMethod]
+	public void TheHudsPlacementOfAKartRideLeavesItsQueueStartPending()
+	{
+		var (level, ride, _) = World( hasQueue: true, laid: false );
+		AttachTrackEconomy( level, ride );
+		WithQueue( ride );
+		var hud = new Hud.ParkHud( level, OriginalUiTests.FakeStrings(), new Hud.EconomyParkStatus( () => level.Park!.Economy ), new NoBuildItems(), new Hud.HudHost() );
+		// the HUD's own end of a placement (ParkHud.FinishPlacement, after the placing command) for the ride it was placing
+		typeof( Hud.ParkHud ).GetField( "pendingItem", Private )!.SetValue( hud, new Hud.BuildItem( "ride:1150", 1150, Hud.BuildCategory.Rides, -1, 0, null, System.Array.Empty<string>(), Entry: ride.Entry ) );
+		typeof( Hud.ParkHud ).GetMethod( "FinishPlacement", Private )!.Invoke( hud, new object[] { ride } );
+		Assert.AreEqual( CellToolMode.KartTrack, level.CellTool.Mode, "the placement opens the ride's track tool" );
 		Assert.IsTrue( LayLoop( level, 0xc )?.Completed == true );
-		Assert.AreEqual( CellToolMode.Queue, level.CellTool.Mode, "the start is still pending: the close hands over to the queue tool" );
+		Assert.AreEqual( CellToolMode.Queue, level.CellTool.Mode, "the placement left the ride's queue start pending" );
 	}
 
 	[TestMethod]

@@ -47,7 +47,8 @@ public sealed class ParkCommandLineWriter : ICellLineWriter
 		{
 			Start = start,
 			Line = ParkPathBuilder.LayLine( start, Inner.SnapsToLine ? ParkPathBuilder.SnapEnd( start, end ) : end ),
-			StoppedAt = start
+			StoppedAt = start,
+			CommandRefused = true
 		};
 	}
 

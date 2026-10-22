@@ -142,6 +142,64 @@ public class ShaderTests
 	}
 
 	/// <summary>
+	/// Issue #754 (start time): compiled SPIR-V is kept between runs. A kept stage is the compiler's own bytes for the same input, the second compile of the
+	/// program reads them instead of compiling, and a damaged file is compiled again and replaced (docs/ENGINE-PERFORMANCE.md, "Start and build hitches").
+	/// </summary>
+	[TestMethod]
+	[DoNotParallelize]
+	public void CompiledSpirvIsKeptBetweenRunsAndADamagedFileIsCompiledAgain()
+	{
+		if ( !OperatingSystem.IsWindows() && Environment.GetEnvironmentVariable( "OPENTPW_NATIVE_SHADER_TESTS" ) != "1" )
+			Assert.Inconclusive( "Set OPENTPW_NATIVE_SHADER_TESTS=1 with architecture-matching native SPIR-V libraries (Windows has them)." );
+		Log = new();
+		var path = GetShaderPath( "sprite.shader" );
+		var cache = Directory.CreateTempSubdirectory( "opentpw-spirv-" ).FullName;
+		var previous = ShaderCompiler.SpirvCacheDirectory;
+		try
+		{
+			ShaderCompiler.SpirvCacheDirectory = null;
+			var uncached = ShaderCompiler.CompileProgram( path, CrossCompileTarget.MSL );
+			ShaderCompiler.SpirvCacheDirectory = cache;
+			LoadProfile.Enable( true );
+			var first = ShaderCompiler.CompileProgram( path, CrossCompileTarget.MSL );
+			Assert.AreEqual( 2, LoadProfile.Counters()["spirv compiles"], "an empty cache compiles both stages" );
+			Assert.AreEqual( 2, Directory.GetFiles( cache, "*.spv" ).Length, "and keeps them" );
+			LoadProfile.Enable( true );
+			var second = ShaderCompiler.CompileProgram( path, CrossCompileTarget.MSL );
+			var counters = LoadProfile.Counters();
+			Assert.AreEqual( 2, counters["spirv cache hits"] );
+			Assert.IsFalse( counters.ContainsKey( "spirv compiles" ), "a kept program is not compiled again" );
+			CollectionAssert.AreEqual( uncached.Vertex, first.Vertex );
+			CollectionAssert.AreEqual( uncached.Fragment, first.Fragment );
+			CollectionAssert.AreEqual( uncached.Vertex, second.Vertex, "a kept stage is the compiler's own bytes" );
+			CollectionAssert.AreEqual( uncached.Fragment, second.Fragment );
+			Assert.AreEqual( uncached.Reflection.ResourceLayouts.Length, second.Reflection.ResourceLayouts.Length );
+			CollectionAssert.AreEqual( uncached.Reflection.ResourceLayouts.SelectMany( layout => layout.Elements ).Select( element => element.Name ).ToArray(),
+				second.Reflection.ResourceLayouts.SelectMany( layout => layout.Elements ).Select( element => element.Name ).ToArray() );
+
+			// a damaged file (half a module) is compiled again and replaced
+			var damaged = Directory.GetFiles( cache, "*.spv" ).First();
+			File.WriteAllBytes( damaged, File.ReadAllBytes( damaged ).Take( 6 ).ToArray() );
+			LoadProfile.Enable( true );
+			var repaired = ShaderCompiler.CompileProgram( path, CrossCompileTarget.MSL );
+			Assert.AreEqual( 1, LoadProfile.Counters()["spirv compiles"] );
+			CollectionAssert.AreEqual( uncached.Vertex, repaired.Vertex );
+			CollectionAssert.AreEqual( uncached.Fragment, repaired.Fragment );
+			Assert.IsTrue( File.ReadAllBytes( damaged ).Length > 6, "the damaged file is replaced" );
+
+			// another source is another key
+			Assert.AreNotEqual( ShaderCompiler.SpirvCacheKey( "void main() {}", path, Veldrid.ShaderStages.Vertex, new GlslCompileOptions( true ) ),
+				ShaderCompiler.SpirvCacheKey( "void main() { }", path, Veldrid.ShaderStages.Vertex, new GlslCompileOptions( true ) ) );
+		}
+		finally
+		{
+			LoadProfile.Enable( false );
+			ShaderCompiler.SpirvCacheDirectory = previous;
+			Directory.Delete( cache, true );
+		}
+	}
+
+	/// <summary>
 	/// Issue #754: Veldrid.SPIRV's HLSL passes a varying interface block (<c>out Name { ... } name;</c>) as its own main() parameter,
 	/// so on Direct3D 11 the vertex output and pixel input signatures disagree about register order and the pixel shader reads the
 	/// wrong varyings. Stage inputs and outputs must be plain variables or <c>struct</c> variables (uniform blocks are fine).

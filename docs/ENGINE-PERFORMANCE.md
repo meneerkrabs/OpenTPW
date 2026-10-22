@@ -281,14 +281,35 @@ read are the same; `FileSystemTests` now run on the desktop's own file system.
 | `perf.place` of a type with few parts (1100) | 4.0 to 4.3 ms | 1.4 to 1.7 ms |
 | Main to the lobby's first frame | 915 to 1,453 ms | 935 to 1,430 ms (within the noise) |
 
+### Kept SPIR-V (October 22, 2026)
+
+Every start compiled the same GLSL sources to SPIR-V again (`shader-spirv`, 343 to 384 ms for 7 files before the lobby on the Mac, about 30 ms per
+stage whatever its size; 450 ms with a park, and a 52 to 58 ms frame the first time the buy window's turning preview draws its depth image).
+`ShaderCompiler.CompileStage` now keeps each stage's SPIR-V in the user's cache folder (`cache/shaders`) under a SHA-256 of everything the
+compile reads: the preprocessed source, the stage, the source name the debug information records, the options and the compiler's version. A
+kept file is therefore the bytes the compiler would make now; one that is missing, unreadable or not a whole SPIR-V module is compiled again
+and replaced, and files not written for 30 days are removed when a new one is written. The reflection still comes from the cross-compile
+(about 1 to 6 ms per program). The cache holds 14 files (116 KB) after a start, a few more after a park.
+
+| Measure (Release, Mac, runs alternating with the build before) | Before | After, cache filled |
+| --- | ---: | ---: |
+| `shader-spirv` to the lobby | 362 to 384 ms (14 compiles) | 7.5 to 7.8 ms (14 kept) |
+| Main to the lobby's first frame | 918 to 948 ms | 554 to 558 ms |
+| `shader-spirv`, park start plus the build scenario | 450 to 460 ms | 25 ms |
+| `start-level` (Jungle) | 1,251 to 1,258 ms | 969 ms |
+| First park frame | 225 to 229 ms | 171 to 177 ms |
+| First turning preview in the buy window | 66 to 68 ms frame | under 30 ms |
+
+The first start after an install or a shader change compiles as before and fills the cache.
+
 ### What is left
 
 1. **The remaining placement cost is the sign.** A ride with a sign composes it on its first placement (`object-sign`, 36 to 46 ms on the Mac for
    types 1104 and 1101, on the frame of the click), and its textures decode then (`texture-decode`, 5 to 11 ms). Composing the sign of a type
    when the buy window first lists it, off the render thread, would take it out of the placement frame; the composer and the file system it reads
    would have to be checked for use from a worker first.
-2. **GLSL to SPIR-V on every start** (`shader-spirv`, 343 to 348 ms for 7 files before the lobby, 9 files and 450 ms with a park, and a 52 ms
-   frame the first time the buy window's turning preview draws). The result depends only on the shader source and the compiler, so it could be
-   kept in the cache folder between runs; on Direct3D 11 the compiled HLSL could be kept the same way.
+2. **The backend's own compile of each shader once per run.** Direct3D 11 still compiles the HLSL of the 7 programs before the lobby (14
+   compiles) and of the park's few more once per run. Its bytecode could be kept beside the SPIR-V; that needs the system HLSL compiler called
+   as Veldrid calls it and is not done yet.
 3. **One file open per WAD member read.** A member read opens the archive again (so a bonus import can replace the file on Windows): 466 opens
    before the lobby, 1,311 in a park start. On a hard disk with an antivirus filter each open has a cost.

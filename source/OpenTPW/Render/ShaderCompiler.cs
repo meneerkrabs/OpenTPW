@@ -60,13 +60,89 @@ internal static class ShaderCompiler
 		var fragmentSource = preprocessedShader.FragmentShader;
 
 		var compileOptions = new GlslCompileOptions( true );
-		var vertexSpirv = SpirvCompilation.CompileGlslToSpirv( vertexSource, path, ShaderStages.Vertex, compileOptions );
-		var fragmentSpirv = SpirvCompilation.CompileGlslToSpirv( fragmentSource, path, ShaderStages.Fragment, compileOptions );
-		var compilationResult = SpirvCompilation.CompileVertexFragment( vertexSpirv.SpirvBytes, fragmentSpirv.SpirvBytes, target );
+		var vertexSpirv = CompileStage( vertexSource, path, ShaderStages.Vertex, compileOptions );
+		var fragmentSpirv = CompileStage( fragmentSource, path, ShaderStages.Fragment, compileOptions );
+		var compilationResult = SpirvCompilation.CompileVertexFragment( vertexSpirv, fragmentSpirv, target );
 
-		Debug.Assert( HasSpirvHeader( vertexSpirv.SpirvBytes ) );
-		Debug.Assert( HasSpirvHeader( fragmentSpirv.SpirvBytes ) );
-		return (vertexSpirv.SpirvBytes, fragmentSpirv.SpirvBytes, compilationResult.Reflection);
+		Debug.Assert( HasSpirvHeader( vertexSpirv ) );
+		Debug.Assert( HasSpirvHeader( fragmentSpirv ) );
+		return (vertexSpirv, fragmentSpirv, compilationResult.Reflection);
+	}
+
+	/// <summary>
+	/// Where compiled SPIR-V is kept between runs (the user's cache folder, set at the start), or null to compile every time (tests, tools). The GLSL to
+	/// SPIR-V compile takes about 30 ms per stage even for a small shader, so a start used to spend some 350 ms (more on a slower PC) compiling the same
+	/// sources again, and a park its first frames (docs/ENGINE-PERFORMANCE.md, "Start and build hitches").
+	/// </summary>
+	internal static string? SpirvCacheDirectory { get; set; }
+
+	/// <summary>Cached files not written for this long are removed when a new one is written (an old install's sources, an old compiler).</summary>
+	internal static readonly TimeSpan SpirvCacheLifetime = TimeSpan.FromDays( 30 );
+
+	/// <summary>
+	/// The SPIR-V of one stage: kept in <see cref="SpirvCacheDirectory"/> under a digest of everything the compile reads (the preprocessed source, the
+	/// stage, the source name the debug information records, the options and the compiler's version), so a kept file is the bytes the compiler would
+	/// make now. A missing, unreadable or malformed file is compiled again; the cache never changes what is drawn.
+	/// </summary>
+	internal static byte[] CompileStage( string source, string path, ShaderStages stage, GlslCompileOptions options )
+	{
+		var directory = SpirvCacheDirectory;
+		var file = directory == null ? null : Path.Combine( directory, SpirvCacheKey( source, path, stage, options ) + ".spv" );
+		if ( file != null && ReadCachedSpirv( file ) is { } cached )
+		{
+			LoadProfile.Count( "spirv cache hits" );
+			return cached;
+		}
+		var spirv = SpirvCompilation.CompileGlslToSpirv( source, path, stage, options ).SpirvBytes;
+		LoadProfile.Count( "spirv compiles" );
+		if ( file != null )
+			WriteCachedSpirv( directory!, file, spirv );
+		return spirv;
+	}
+
+	internal static string SpirvCacheKey( string source, string path, ShaderStages stage, GlslCompileOptions options )
+	{
+		var compiler = typeof( SpirvCompilation ).Assembly;
+		var compilerVersion = compiler.GetCustomAttributes( typeof( System.Reflection.AssemblyInformationalVersionAttribute ), false ) is [System.Reflection.AssemblyInformationalVersionAttribute informational, ..]
+			? informational.InformationalVersion : compiler.GetName().Version?.ToString() ?? "";
+		var text = $"opentpw-spirv-cache 1\n{compilerVersion}\n{stage}\n{options.Debug}\n{string.Join( ";", options.Macros?.Select( macro => macro.Name + "=" + macro.Value ) ?? [] )}\n{path}\n{source}";
+		return Convert.ToHexString( System.Security.Cryptography.SHA256.HashData( System.Text.Encoding.UTF8.GetBytes( text ) ) ).ToLowerInvariant();
+	}
+
+	private static byte[]? ReadCachedSpirv( string file )
+	{
+		try
+		{
+			if ( !File.Exists( file ) )
+				return null;
+			var bytes = File.ReadAllBytes( file );
+			// a SPIR-V module is whole words with the magic number first and a five-word header
+			return bytes.Length >= 20 && bytes.Length % 4 == 0 && HasSpirvHeader( bytes ) ? bytes : null;
+		}
+		catch ( Exception exception ) when ( exception is IOException or UnauthorizedAccessException )
+		{
+			return null;
+		}
+	}
+
+	private static void WriteCachedSpirv( string directory, string file, byte[] spirv )
+	{
+		try
+		{
+			Directory.CreateDirectory( directory );
+			// written beside and moved into place, so a reader never sees half a file
+			var temporary = file + "." + Guid.NewGuid().ToString( "N" ) + ".tmp";
+			File.WriteAllBytes( temporary, spirv );
+			File.Move( temporary, file, overwrite: true );
+			var expired = DateTime.UtcNow - SpirvCacheLifetime;
+			foreach ( var old in Directory.EnumerateFiles( directory ) )
+				if ( File.GetLastWriteTimeUtc( old ) < expired )
+					File.Delete( old );
+		}
+		catch ( Exception exception ) when ( exception is IOException or UnauthorizedAccessException )
+		{
+			Log?.Trace( $"Shader cache not written ({exception.Message}); the shaders are compiled at every start." );
+		}
 	}
 
 	private static readonly Dictionary<(string Path, DateTime Modified, GraphicsBackend Backend), (byte[] Vertex, byte[] Fragment, SpirvReflection Reflection)> compiled = new();

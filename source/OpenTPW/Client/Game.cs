@@ -310,7 +310,10 @@ internal static class Game
 		// Custom OpenTPW cache directory (mainly for editor-related stuff), in the user configuration directory: the working
 		// directory may be a read-only install folder now that OpenTPW runs without administrator rights
 		//
-		CacheFileSystem = new BaseFileSystem( Path.Combine( Path.GetDirectoryName( SetupSettings.GetDefaultPath() )!, "cache" ) );
+		var cacheDirectory = Path.Combine( Path.GetDirectoryName( SetupSettings.GetDefaultPath() )!, "cache" );
+		CacheFileSystem = new BaseFileSystem( cacheDirectory );
+		// compiled SPIR-V is kept between runs (ShaderCompiler.CompileStage): the same sources are not compiled again at every start
+		ShaderCompiler.SpirvCacheDirectory = Path.Combine( cacheDirectory, "shaders" );
 
 		//
 		// Init renderer

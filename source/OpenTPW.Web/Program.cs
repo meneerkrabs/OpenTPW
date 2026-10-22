@@ -123,9 +123,7 @@ public static partial class Program
 		var edition = BrowserStartup.Validate( dataDirectory, theme );
 		GameEditions.Select( edition.Edition );
 		// The game data changes only through AddFile, which invalidates the remembered lookups.
-		FileSystem = new BaseFileSystem( dataDirectory ) { CacheLookups = true };
-		FileSystem.RegisterArchiveHandler<WadArchive>( ".wad" );
-		FileSystem.RegisterArchiveHandler<SdtArchive>( ".sdt" );
+		FileSystem = GameDataFileSystem.Create( dataDirectory );
 		// Like the desktop: the saved choice (/config/language.json, kept by the page) and the CD's other languages
 		// beside Data (the page copies their text, docs/WEB.md). A saved language the folder lacks falls back to the default.
 		var languageDiagnostics = new List<string>();

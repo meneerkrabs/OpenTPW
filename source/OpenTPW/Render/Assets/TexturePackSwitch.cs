@@ -77,6 +77,8 @@ public sealed class TexturePackSwitch : ITexturePackSwitch
 		if ( !string.IsNullOrEmpty( Environment.GetEnvironmentVariable( "OPENTPW_TEXTURE_PACK" ) ) )
 			return null;
 		Current?.Cancel();
+		// a pack choice is where data files on disk may have changed (a pack installed); the switch's worker opens the archives it reads again
+		WadArchive.CloseFileHandles();
 		TexturePack.Activate( name, diagnostics, packsDirectory );
 		return Current = new TexturePackSwitch( Texture.ReloadTargets(), budget ?? TimeSpan.FromMilliseconds( 8 ), Texture.DecodeWct );
 	}

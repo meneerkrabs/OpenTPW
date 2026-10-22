@@ -323,6 +323,42 @@ bytecode is byte for byte the bytecode Veldrid compiles for the same shader, tha
 again, that shaders made from the kept bytecode draw the same pixels as Veldrid's, and that a whole but wrong container is refused, compiled
 again and drawn the same. Other backends are unchanged (Metal compiles its source when the pipeline is made and caches it itself).
 
+### Kept archive files (October 22, 2026)
+
+An archive opened from a path (`WadArchive`) reads its directory once and each member on demand, and it opened the file again for every member
+read, so that the file could be replaced or deleted while the archive was in use: 477 file opens before the lobby (466 of them member reads of
+`lobby.wad` and `ui.wad`) and 1,561 over a park start and the build scenario. On a hard disk with an antivirus filter every open is scanned. The
+archive now keeps the file its directory was read from open (`File.OpenHandle`, sharing reading, writing and deleting) and reads every member
+through it with positional reads (`RandomAccess`), still one read at a time per archive under its lock, with the same length check before each
+read (a file of another length is refused and its handle closed, so a read after the original is back opens it again). At most
+`WadArchive.MaxOpenHandles` files stay open (64; the least recently read is closed first, and its next read opens it again); the browser keeps
+none (its files are in memory, and a theme's files arrive while archives are in use). `WadArchive.CloseFileHandles` closes every kept file:
+before a bonus import moves the bonus folder aside, when the game files screen stores a new game, CD or bonus folder (they apply at the next
+start; the session keeps reading the old folder, so a later read reopens a file there), when the mod set is installed, when the interface language changes its archive, when a
+texture pack switch begins, and when the game ends. A disposed archive closes its file.
+
+On Windows a kept file lets other readers in (they ask for read access, which it shares) and can be moved or deleted (it shares deleting); what it
+refuses is a writer that wants the file to itself, such as a tool overwriting the archive in place, until the handles are closed. Moved away or
+deleted, the archive keeps reading the file its directory came from instead of failing; the next open after a close reads what is at the path.
+The archive cache of a file system (`BaseFileSystem.GetArchive`) is now locked, as members are read from worker threads too (texture packs).
+
+`WadFileHandleTests` check one open for a directory and ten reads, the reopen after a close, the bound and its least-recently-read order, that
+another reader is let in and the file can be moved and deleted while kept, and reads from eight threads over six archives with two kept files and
+closes in between. `OnDemandReadTests` (every member of every archive of the game folder read from the file and from memory, byte for byte) pass.
+
+| Measure (Release, Mac, warm file cache, runs alternating with the build before) | Before | After |
+| --- | ---: | ---: |
+| File opens to the lobby (`--startup-profile`) | 477 | 11 |
+| `wad-read` to the lobby | 9.6 to 11.0 ms (483 reads) | 1.0 to 1.2 ms |
+| Main to the lobby's first frame | 542 to 630 ms | 534 to 671 ms (within the noise) |
+| File opens, park start plus the build scenario (`--perf-build`) | 1,561 | 303 |
+| `wad-read`, park start plus the build scenario | 22.5 to 33.1 ms (1,311 reads) | 4.1 to 6.6 ms |
+| `start-level` (Jungle) | 863 to 1,036 ms | 881 to 939 ms (within the noise) |
+
+Of the 303 opens, 191 are loose files and 76 the archives' first opens (their directories); the other 36 open an archive again after it was
+closed as the least recently read. With a bound of 32 they were 68. On the Mac the saved time is small because an open costs microseconds with a
+warm cache; on the issue's hard disk with an antivirus filter each of the 1,258 opens no longer made is a scan and possibly a seek.
+
 ### What is left
 
 1. **The remaining placement cost is the sign.** A ride with a sign composes it on its first placement (`object-sign`, 36 to 46 ms on the Mac for
@@ -331,5 +367,3 @@ again and drawn the same. Other backends are unchanged (Metal compiles its sourc
    would have to be checked for use from a worker first.
 2. **The first start after an install or a Windows update** compiles the shaders as before and fills the cache; nothing shows that start's
    progress (the window stays black until the lobby is drawn). A loading indicator would be a visible change and is not made here.
-3. **One file open per WAD member read.** A member read opens the archive again (so a bonus import can replace the file on Windows): 466 opens
-   before the lobby, 1,311 in a park start. On a hard disk with an antivirus filter each open has a cost.

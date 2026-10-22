@@ -278,22 +278,26 @@ public class BaseFileSystem
 		}
 	}
 
+	/// <summary>The archive at <paramref name="archivePath"/>, opened once per file system; reads may come from several threads (signs composed ahead, texture packs).</summary>
 	private IArchive GetArchive( string archivePath )
 	{
-		if ( archiveCache.TryGetValue( archivePath, out var archive ) )
+		lock ( archiveCache )
 		{
-			return archive;
-		}
+			if ( archiveCache.TryGetValue( archivePath, out var archive ) )
+			{
+				return archive;
+			}
 
-		var extension = Path.GetExtension( archivePath );
-		if ( archiveHandlers.TryGetValue( extension, out var handlerType ) )
-		{
-			archive = (IArchive)Activator.CreateInstance( handlerType, new[] { archivePath } );
-			archiveCache[archivePath] = archive;
-			return archive;
-		}
+			var extension = Path.GetExtension( archivePath );
+			if ( archiveHandlers.TryGetValue( extension, out var handlerType ) )
+			{
+				archive = (IArchive)Activator.CreateInstance( handlerType, new[] { archivePath } );
+				archiveCache[archivePath] = archive;
+				return archive;
+			}
 
-		return null;
+			return null;
+		}
 	}
 
 	private (string ArchivePath, string InternalPath) FindArchivePath( string path, bool includeExplicitRoot = false ) =>

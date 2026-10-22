@@ -1,0 +1,3 @@
+## Faster loading on hard disks: game archives stay open (October 22, 2026)
+
+Every read of a file inside one of the game's archives (`.wad`) opened the archive file again: 466 opens before the lobby and about 1,300 more for a park start. On a hard disk with a virus scanner each open costs time (issue #754). The game now keeps the archives it reads open, at most 64 at a time, and closes them wherever an archive may change on disk (a bonus import, a new game folder, the mods, the interface language, a texture pack switch) and when it quits. A start to the lobby now opens 11 files instead of 477, a park start with the build scenario 303 instead of 1,561; the bytes read are the same ([ENGINE-PERFORMANCE.md](../ENGINE-PERFORMANCE.md), "Kept archive files").

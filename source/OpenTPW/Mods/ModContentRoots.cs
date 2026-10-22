@@ -54,6 +54,8 @@ public static class ModContentRoots
 
 	private static void Install( ModSet set, BaseFileSystem? fileSystem )
 	{
+		// archives of mods that are no longer in the set keep no file open (a removed or updated mod's folder can be replaced)
+		WadArchive.CloseFileHandles();
 		var index = FileIndex.Build( set );
 		if ( fileSystem != null )
 		{

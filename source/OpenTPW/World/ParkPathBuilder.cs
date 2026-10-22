@@ -367,9 +367,12 @@ public sealed class ParkPathBuilder : ICellLineWriter
 
 	private CellBuildResult Clear( int x, int y, bool forced, bool removeFixed = false )
 	{
-		if ( Cells.PoolBridges?.Reserves( x, y ) == true ) return CellBuildResult.Occupied;
+		// [EXT:pools-bridges] a bridge's own seven cells are protected; the path outside either end may go, unless someone on the bridge would lose their last way off
+		if ( Cells.PoolBridges is { } bridges && bridges.Covers( x, y ) ) return CellBuildResult.Occupied;
 		if ( Cells.TypeAt( x, y ) != ParkCellType.Path )
 			return CellBuildResult.NotPath;
+		// only a removal that really empties the cell can strand someone: a step that just lowers the placement counter leaves the path (and reports Existing below)
+		if ( Cells.PoolBridges is { } ends && (forced || Cells.PlacementCountAt( x, y ) - 1 < 0) && ends.PathRemovalStrands( x, y ) ) return CellBuildResult.Occupied;
 		if ( Cells.FlagsAt( x, y ).HasFlag( ParkCellFlags.NoModify ) )
 		{
 			if ( !removeFixed && HasPathNeighbours( x, y ) )

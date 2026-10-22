@@ -105,6 +105,18 @@ public class ParkCommandCodecTests
 	}
 
 	[TestMethod]
+	public void ThePoolBridgeCommandOfEveryDirectionKeepsItsBytes()
+	{
+		// one bridge entry builds in all four directions; saved and replicated commands of either direction decode as before
+		foreach ( var (direction, hex) in new[] { (0, "024c00181c00"), (1, "024c00181c02"), (2, "024c00181c04"), (3, "024c00181c06") } )
+		{
+			var command = new PlacePoolBridgeCommand( 12, 14, direction );
+			Assert.AreEqual( hex, ParkCommandCodec.ToHex( command ) );
+			Assert.AreEqual( command, ParkCommandCodec.Decode( Convert.FromHexString( hex ) ) );
+		}
+	}
+
+	[TestMethod]
 	public void EveryCommandRoundTripsByteExactly()
 	{
 		foreach ( var (command, hex) in Schema )

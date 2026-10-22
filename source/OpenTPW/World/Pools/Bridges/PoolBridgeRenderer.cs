@@ -7,8 +7,18 @@ namespace OpenTPW;
 /// <summary>Original, triangulated Blender geometry. No procedural substitute is used in the game.</summary>
 public sealed record PoolBridgeAsset( int Version, float UnitsPerCell, float SpanStart, float SpanEnd, float DeckHeight, PoolBridgeAssetPart[] Parts )
 {
-	public static PoolBridgeAsset Load( string path ) => JsonSerializer.Deserialize<PoolBridgeAsset>( File.ReadAllBytes( path ), new JsonSerializerOptions { PropertyNameCaseInsensitive = true } )
-		?? throw new InvalidDataException( "The pool bridge mesh is empty." );
+	public static PoolBridgeAsset Load( string path )
+	{
+		try
+		{
+			return JsonSerializer.Deserialize<PoolBridgeAsset>( File.ReadAllBytes( path ), new JsonSerializerOptions { PropertyNameCaseInsensitive = true } )
+				?? throw new InvalidDataException( "The pool bridge mesh is empty." );
+		}
+		catch ( JsonException exception )
+		{
+			throw new InvalidDataException( "The pool bridge mesh is malformed: " + exception.Message, exception );
+		}
+	}
 }
 public sealed record PoolBridgeAssetPart( string Name, string Texture, float[][] Vertices, int[] Indices );
 

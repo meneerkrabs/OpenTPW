@@ -10,9 +10,13 @@
 // Usage:
 //   node tools/web-coop-join.mjs --web out/web/wwwroot --game "/path/to/Theme Park World" --evidence <host evidence directory>
 //        [--mode join|measure] [--runs N] [--out <directory>] [--label <name>] [--chrome <executable>] [--headed] [--timeout-minutes M]
+// Each run's evidence goes to <out>/run-N, with machine.txt beside them; scripts/measure-coop-join-browser.sh records the host phase, runs the measuring
+// mode and prints the summary.
+import { execFileSync } from 'node:child_process';
 import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { Cdp, launchChrome, sleep, startServer, stopChrome } from './web-perf/lib.mjs';
 
 const DEFAULT_CHROME = {
@@ -37,7 +41,13 @@ function parseArguments(argv) {
 			case '--game': options.game = value(); break;
 			case '--evidence': options.evidence = value(); break;
 			case '--mode': options.mode = value(); break;
-			case '--runs': options.runs = Math.max(1, Math.trunc(Number(value())) || 1); break;
+			case '--runs': {
+				const runs = value();
+				if (!/^[1-9][0-9]*$/.test(runs))
+					throw new Error(`--runs takes a whole number of runs, not '${runs}'`);
+				options.runs = Number(runs);
+				break;
+			}
 			case '--out': options.out = value(); break;
 			case '--label': options.label = value(); break;
 			case '--chrome': options.chrome = value(); break;
@@ -250,13 +260,44 @@ async function runOnce(options, evidence, webRoot, gameRoot, runDirectory) {
 	}
 }
 
+/**
+ * The machine and the source the driver ran from, which the evidence does not name (machine.txt beside the runs, for tools/coop_join_timings.py --machine):
+ * its system, processor, model and memory, and the driver's checkout's commit and whether what a build reads is clean (the page's own build names its commit
+ * in the evidence).
+ */
+function machineDescription() {
+	const lines = [`${os.type()} ${os.release()} ${os.arch()}`];
+	let model = null;
+	try {
+		model = process.platform === 'darwin' ? execFileSync('sysctl', ['-n', 'hw.model'], { encoding: 'utf8' }).trim() : null;
+	} catch {
+		// no model to name
+	}
+	lines.push(`processor ${os.cpus()[0]?.model ?? 'unknown'}, ${os.cpus().length} cores${model ? `, model ${model}` : ''}, memory ${os.totalmem()} bytes`);
+	const repository = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
+	try {
+		const commit = execFileSync('git', ['-C', repository, 'rev-parse', '--verify', 'HEAD'], { encoding: 'utf8' }).trim();
+		const changes = execFileSync('git', ['-C', repository, 'status', '--porcelain', '--', 'source', 'content', 'scripts', 'tools', 'global.json'], { encoding: 'utf8' });
+		lines.push(`source ${commit}, ${changes.trim() ? 'with uncommitted changes' : 'clean'} (the driver's checkout)`);
+	} catch {
+		lines.push('source unknown (no git checkout)');
+	}
+	return lines.join('\n') + '\n';
+}
+
 async function main() {
 	const options = parseArguments(process.argv);
 	const webRoot = path.resolve(options.web);
 	const gameRoot = path.resolve(options.game);
 	await fs.access(path.join(webRoot, 'index.html')).catch(() => { throw new Error(`${webRoot} has no index.html: pass the published wwwroot`); });
 	const evidence = await readEvidence(path.resolve(options.evidence));
-	const out = path.resolve(options.out ?? path.join('reports', 'web-coop-join', `${new Date().toISOString().slice(0, 10)}-${options.label}-${options.mode}`));
+	const out = path.resolve(options.out ?? path.join('reports', 'web-coop-join', `${new Date().toISOString().replace(/[:.]/g, '-')}-${options.label}-${options.mode}`));
+	// a folder of earlier runs would mix them with these (a run that fails early leaves the earlier one's files)
+	const earlier = await fs.readdir(out).catch(() => []);
+	if (earlier.some(name => name === 'machine.txt' || /^run-\d+$/.test(name)))
+		throw new Error(`${out} holds earlier runs: choose another folder`);
+	await fs.mkdir(out, { recursive: true });
+	await fs.writeFile(path.join(out, 'machine.txt'), machineDescription());
 	let failed = 0;
 	for (let index = 1; index <= options.runs; index++) {
 		process.stderr.write(`run ${index} of ${options.runs}…\n`);

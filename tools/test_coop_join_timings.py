@@ -10,7 +10,7 @@ import coop_join_timings  # noqa: E402
 
 
 def write_run(root, cut, decode, completed=True, mode="measure", captures=(1, 2), outcomes=("joined", "resynced"), long_step=True, version="1.0+abc",
-              change=None):
+              change=None, page=None):
     root.mkdir(parents=True)
     environment = {"Version": version, "Configuration": "Release", "Runtime": ".NET 11", "Os": "macOS", "Architecture": "Arm64", "Processors": 8,
                    "Silent": True, "Advisor": True}
@@ -43,6 +43,20 @@ def write_run(root, cut, decode, completed=True, mode="measure", captures=(1, 2)
         change(host, evidence)
     (root / "host-evidence.json").write_text(json.dumps(host), encoding="utf-8")
     (root / "join-evidence.json").write_text(json.dumps(evidence), encoding="utf-8")
+    if page is not None:
+        (root / "run.json").write_text(json.dumps(page), encoding="utf-8")
+
+
+PAGE = {"mode": "measure", "label": "aot", "chrome": "Chrome/155", "renderer": "ANGLE (Apple M5)", "size": "1280x900", "muted": True, "frameCap": 0,
+        "poolSprites": "settled", "state": "passed", "seconds": 56}
+
+
+def browser(host, join):
+    """The browser's run: the guest in a page compiled ahead of time, its frames with their whole call times and the final check's frame (a page records it)."""
+    join["Environment"] = dict(join["Environment"], Os="Browser", Architecture="Wasm", Processors=1, Silent=False, Compilation="aot")
+    join["Frames"].append({"Frame": 6, "Step": "Done", "Milliseconds": 80})
+    for index, item in enumerate(join["Frames"]):
+        item["CallMilliseconds"] = item["Milliseconds"] + 10 + index
 
 
 class CoopJoinTimingsTests(unittest.TestCase):
@@ -81,8 +95,11 @@ class CoopJoinTimingsTests(unittest.TestCase):
         self.assertIn("| joined: long step, level 23 (to 0.75) (2 of 3 runs) | 157 | 157-157 | -, 157, 157 |", table)
         self.assertNotIn("resynced: long step", table)
         self.assertIn("| joined: longest update frame while building | 160 |", table)
+        # the swap's frame is the build step's last, right before the step after the swap
+        self.assertIn("| joined: the swap's update frame | 160 |", table)
         self.assertIn("| joined: first update frame after the swap | 600 |", table)
         self.assertIn("| resynced: longest update frame while building | 90.0 |", table)
+        self.assertIn("| resynced: the swap's update frame | 90.0 |", table)
         self.assertIn("| resynced: first update frame after the swap | 70.0 |", table)
 
     def test_a_run_whose_phase_did_not_complete_is_refused(self):
@@ -177,6 +194,81 @@ class CoopJoinTimingsTests(unittest.TestCase):
             table = coop_join_timings.table([coop_join_timings.load(root)])
         self.assertIn("| joined: advisor (skipped) | 0.0 |", table)
         self.assertIn("| joined: long step, level 22 (to 0.7) | 156 |", table)
+
+    def test_a_browser_guest_of_one_desktop_host_phase(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary)
+            for index, decode in enumerate([3.0, 6.0, 4.0]):
+                write_run(root / f"run-{index}", 30.0, decode, change=browser, page=dict(PAGE, seconds=50 + index))
+            table = coop_join_timings.table([coop_join_timings.load(root / f"run-{index}") for index in range(3)])
+        # each phase's environment, the host's once: the browser's runs replay one recording
+        self.assertIn("3 runs; host phase (one host phase, reused by every run): Release build 1.0+abc, .NET 11, macOS Arm64, 8 processors", table)
+        self.assertIn("join phase: Release build 1.0+abc, .NET 11, Browser Wasm, 1 processors, silent False, advisor True, compiled aot", table)
+        self.assertIn("page: Chrome/155, ANGLE (Apple M5), 1280x900, muted True, frame cap 0, pool sprites settled", table)
+        self.assertIn("| capture 1: cut | 30.0 | 30.0-30.0 | 30.0 |", table)
+        self.assertIn("| joined: decode | 4.0 | 3.0-6.0 | 3.0, 6.0, 4.0 |", table)
+        # the page's whole frame calls beside the updates, and the final check's frame
+        self.assertIn("| joined: longest whole frame while building | 171 |", table)
+        self.assertIn("| joined: the swap's whole frame | 171 |", table)
+        self.assertIn("| joined: first whole frame after the swap | 612 |", table)
+        self.assertIn("| resynced: longest whole frame while building | 103 |", table)
+        self.assertIn("| resynced: the swap's whole frame | 103 |", table)
+        self.assertIn("| final check: update frame | 80.0 |", table)
+        self.assertIn("| final check: whole frame | 95.0 |", table)
+
+    def test_a_native_run_has_no_whole_frames_and_a_host_phase_each(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary)
+            for index, cut in enumerate([30.0, 40.0]):
+                write_run(root / f"run-{index}", cut, 3.0)
+            table = coop_join_timings.table([coop_join_timings.load(root / f"run-{index}") for index in range(2)])
+        self.assertIn("2 runs; Release build 1.0+abc", table)
+        self.assertNotIn("host phase", table)
+        self.assertNotIn("page:", table)
+        self.assertNotIn("whole frame", table)
+        # a native run's evidence is written within its last frame, which it does not hold
+        self.assertNotIn("final check", table)
+        self.assertIn("| capture 1: cut | 35.0 | 30.0-40.0 | 30.0, 40.0 |", table)
+
+    def test_the_swaps_frame_is_only_a_frame_of_the_build_right_before_the_step_after_it(self):
+        def gap(host, join):
+            # a frame of another step between the build's last and the first after the swap: no frame is known to be the swap's
+            join["Frames"].insert(2, {"Frame": 3, "Step": "FrontEnd", "Milliseconds": 5})
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary)
+            write_run(root / "run-0", 30.0, 3.0)
+            write_run(root / "run-1", 30.0, 3.0, change=gap)
+            table = coop_join_timings.table([coop_join_timings.load(root / f"run-{index}") for index in range(2)])
+        self.assertIn("| joined: the swap's update frame (1 of 2 runs) | 160 | 160-160 | 160, - |", table)
+        self.assertIn("| resynced: the swap's update frame | 90.0 |", table)
+
+    def test_a_pages_run_that_did_not_pass_or_lacks_its_record_or_a_frames_time_is_refused(self):
+        def gap(host, join):
+            browser(host, join)
+            del join["Frames"][1]["CallMilliseconds"]
+
+        def untimed(host, join):
+            browser(host, join)
+            for item in join["Frames"]:
+                del item["CallMilliseconds"]
+        for name, page, change in [("failed", dict(PAGE, state="failed"), browser), ("adversarial", dict(PAGE, mode="join"), browser),
+                                   ("no record", None, browser), ("a frame's time missing", PAGE, gap), ("no frame's time", PAGE, untimed)]:
+            with self.subTest(name), tempfile.TemporaryDirectory() as temporary:
+                root = pathlib.Path(temporary) / "run"
+                write_run(root, 30.0, 3.0, change=change, page=page)
+                with self.assertRaises(ValueError):
+                    coop_join_timings.load(root)
+
+    def test_pages_in_different_browsers_or_guests_in_different_builds_are_no_one_measurement(self):
+        for name, second in [("another browser", {"page": dict(PAGE, chrome="Chrome/156")}),
+                             ("another compilation", {"change": lambda host, join: (browser(host, join), join["Environment"].update(Compilation="interpreter"))}),
+                             ("a page and a native run", {"change": None, "page": None})]:
+            with self.subTest(name), tempfile.TemporaryDirectory() as temporary:
+                root = pathlib.Path(temporary)
+                write_run(root / "run-0", 30.0, 3.0, change=browser, page=PAGE)
+                write_run(root / "run-1", 30.0, 3.0, **{"change": browser, "page": PAGE, **second})
+                with self.assertRaises(ValueError):
+                    coop_join_timings.table([coop_join_timings.load(root / f"run-{index}") for index in range(2)])
 
     def test_runs_of_different_builds_are_no_one_measurement(self):
         with tempfile.TemporaryDirectory() as temporary:

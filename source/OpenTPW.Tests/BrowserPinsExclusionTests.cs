@@ -110,7 +110,8 @@ public class BrowserPinsExclusionTests
 			"var values = items.Select( Game => Game.Value );\nvar directory = Game.ResolveSaveDirectory( root );",
 			"items.ForEach( Game => { Use( Game ); } );\nvar directory = Game.ResolveSaveDirectory( root );",
 			"var values = items.Select( ( index, Game ) => Game.Value + index );\nvar directory = Game.ResolveSaveDirectory( root );",
-			"int Twice( int Game ) => Game * 2;\nvar directory = Game.ResolveSaveDirectory( root );" } )
+			"int Twice( int Game ) => Game * 2;\nvar directory = Game.ResolveSaveDirectory( root );",
+			"Use( Game => Game.Value<limit, Game.ResolveSaveDirectory( root ).Length>0 );" } )
 			Assert.AreNotEqual( 0, DesktopOnlyUses( use, desktopOnly ).Count(), use );
 		foreach ( var mention in new[] { "// Game.ResolveSaveDirectory\nvar count = 1;", "var path = \"Client/Game.cs\";", "var game = park.Game;",
 			"var options = new Options { Game = 1 };", "private static string? Game() => null;\nvar game = Game();", "ParkLayout.Draw();",
@@ -335,8 +336,9 @@ public class BrowserPinsExclusionTests
 		};
 	}
 
-	/// <summary>A type argument list glued to a name (<c>Map&lt;int, (int, string)&gt;</c>, one level of nesting), whose commas end no lambda.</summary>
-	private static readonly Regex TypeArguments = new( @"\G<(?:[\w\s,.?\[\]()]|<[\w\s,.?\[\]()]*>)*>" );
+	/// <summary>A type argument list glued to a name (<c>Map&lt;int, (int, string)&gt;</c>, one level of nesting), whose commas end no lambda: as C# decides
+	/// (spec §6.2.5), only when one of <c>( ) ] } : ; , . ? [</c> follows, so <c>a&lt;b, c&gt;0</c> stays two comparisons.</summary>
+	private static readonly Regex TypeArguments = new( @"\G<(?:[\w\s,.?\[\]()]|<[\w\s,.?\[\]()]*>)*>(?=\s*[()\]}:;,.?\[])" );
 
 	/// <summary>The names a piece of code declares: see <see cref="Declarations"/>.</summary>
 	private static HashSet<string> DeclaredNames( string code, bool memberLevel = false ) =>

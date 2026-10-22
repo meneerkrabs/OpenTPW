@@ -56,3 +56,23 @@ At public main `fd8ff52eec12354fba02f23d23c5a217b2515a3b`, the host caller is pr
 `RideWindowGaugeTests.TheLocalHappinessIsTheAverageHappinessByteOfTheGuestsOnTheThreeByThreeCells` already covers radius inclusion/exclusion, integer averaging, an empty neighborhood, the upper cell boundary and negative-value low-byte conversion. `UiGauge.OfPercent` scales with `(long)percent << 10` divided by 100 and clamps the result. These existing tests must not be recreated as missing averaging coverage.
 
 No runtime defect was established by this public-source review. The unresolved native contract is equivalence of thing-cell list membership and object anchoring, especially for queued, riding, held and multi-cell cases. Public annotations are evidence leads, not a new native verification. Any additional host integration fixture should first establish an uncovered null-versus-zero or state/cell-membership contract; previews remain a separate residual. The historical baseline above is retained. No C# or GPU execution was performed for this reconciliation.
+
+## Current-source reconciliation (2026-10-22)
+
+This addendum supersedes the 2026-10-19 census description where it conflicts. Source inspection is pinned to public main `1c874922df6e42425dc5638f7e2554c9fde2c68c`; it is not a new original-game trace or a runtime test.
+
+### Census work already present
+
+- `source/OpenTPW/Hud/ParkHud.ObjectGauges.cs:72–79` returns null for a read-only visit or missing guest simulation. Otherwise it calls `LocalHappiness(guests.CellListHappiness(), item.Placement.X, item.Placement.Y)`, then `UiGauge.OfPercent`. It no longer filters through `IsOnParkCell`.
+- `source/OpenTPW/World/Guests/GuestSimulation.cs:1381–1387` enumerates the existing `occupants` lists, newest member first, and yields the list's cell coordinates, not each guest's potentially unsynchronized navigation position. The reader performs no synchronization and imposes no additional state predicate.
+- `LocalHappiness` still performs the radius-one census, low-byte conversion, integer division and empty-neighborhood zero. The existing `RideWindowGaugeTests.TheLocalHappinessIsTheAverageHappinessByteOfTheGuestsOnTheThreeByThreeCells` covers these arithmetic/boundary cases. `GuestCellChainLifecycleTests` additionally contains synthetic movement, same-cell stability and save/restore ordering checks. These tests are source-inspected here, not newly executed.
+- The host comment records a zero-MapOffset anchor match for inspected shipped objects. This is an existing recorded scope claim, not a new corpus inspection or proof for arbitrary custom objects.
+
+### Remaining boundary and next action
+
+Do not implement another radius loop or reintroduce a park-state filter. The next evidence work is to compare the actual membership writers and removal timing for queued, riding, held and swimming guests against native cell lists; the host explicitly retains its swim exclusion and synchronization policy. A regression fixture must exercise a demonstrated lifecycle distinction rather than invent membership by assigning a state alone.
+
+For anchors, retain the existing placement anchor until a nonzero MapOffset or multi-cell example establishes a different native thing-cell position. Record its input geometry, native thing position, census cell and expected included guests separately. The object-window orthographic preview remains its own UI-024 residual in `ParkHud.ObjectWindow.cs:18` and is not fixed by census work.
+
+The census-reader implementation is already present, but full UI-024 acceptance, original membership equivalence, custom-anchor equivalence and preview parity are not established by this audit. Keep this proposal draft. No runtime change, approximation retirement, C# execution, GPU execution or new original-media inspection is claimed.
+

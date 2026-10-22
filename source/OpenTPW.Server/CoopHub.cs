@@ -72,7 +72,8 @@ public sealed class CoopHub
 		quotas = new Quotas( this.clock );
 		// a start counts as everyone disconnecting now: a host has the away limit to come back
 		var started = this.clock();
-		foreach ( var record in store.Load() )
+		var loaded = store.Load();
+		foreach ( var record in loaded )
 		{
 			var session = Session.FromRecord( record, started );
 			sessions[session.Id] = session;
@@ -81,6 +82,11 @@ public sealed class CoopHub
 				memberships[seat.AccountKey] = session;
 		}
 		store.SweepOrphans( sessions.Keys.ToHashSet() );
+		// a position stored at a stop is exact for this run only: it is stored again as unknown at once, so a crash later in the run, after frames went on, brings it back
+		// unknown (the host then resends from its oldest frame and a guest drops what it has), never as an exact number behind frames the guests hold. A failed write here
+		// leaves the store unsaved, and the next change writes it.
+		if ( loaded.Any( record => record.SeqExact ) )
+			Persist( () => store.PutAll( sessions.Values.Select( session => session.ToRecord( exact: false ) ).ToList() ) );
 	}
 
 	// ---- connections ----

@@ -305,13 +305,25 @@ park again instead (`CoopHostStream.SkipTrimmed`, design `coop-c2c-design.md` se
   frame out of turn is, and only the host skips.
 - A refusal of a frame sent before the server took the skip names a frame the skip passed over, and
   changes nothing. A skip lost with the host's socket goes out again with its resume, without assigning
-  the members anew. A server from before protocol 7 cannot take a skip, and the session ends as before
-  (a game offers co-op on protocol 7 servers only).
+  the members anew, while the host still holds the frames from it; a server back behind a skip whose
+  frames the host trimmed since gets a new one.
+- A game opens its co-op link on protocol 7 servers only: an older server's welcome stops the link as a
+  server too old for the game, so a session's server can always take the skip. A transport that cannot
+  take one ends the session as before.
+
+The server keeps the skip rare. A frame number a deploy stores exactly holds for the next run only: that
+start stores it again as unknown at once, so a crash later in the run brings it back unknown, never as an
+exact number behind the frames relayed since, and the host resends from its oldest frame (a guest drops
+what it has) instead of skipping. What is left is a long outage: past its caps the host trims frames it
+handed to the link before the server took them.
 
 `CoopServerTests` covers the server's side (a skip from the host, one back, one from a guest or from
-outside a session); `CoopStreamTests` the host's (one skip, the assignments, a stale refusal, a skip lost
-with the socket, a server that cannot skip); `CoopJoinSessionTests` a session whose two members resync
-from their captures and follow the host's park, equal at the end.
+outside a session, a stored position exact for the next run only, a hello of an older protocol);
+`CoopLinkTests` the link's skip through the real server; `CoopStreamTests` the host's (one skip, the
+assignments, a stale refusal, a skip lost with the socket, a server that cannot skip);
+`CoopJoinSessionTests` sessions whose members resync from their captures and follow the host's park,
+equal at the end: after one skip and a second over the first, with a member away at the skip, and with a
+capture on its way up at the skip, which serves no one.
 
 ### Measurements
 

@@ -258,7 +258,7 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 
 	internal static double DefaultSeconds() => System.Diagnostics.Stopwatch.GetTimestamp() / (double)System.Diagnostics.Stopwatch.Frequency;
 
-	/// <summary>Why the stream ended the session (a record that does not encode, a frame the server needs that the history no longer has); null while it runs.</summary>
+	/// <summary>Why the stream ended the session (a record that does not encode, a frame the server needs that the history no longer has on a server that cannot take a skip); null while it runs.</summary>
 	public string? Failure { get; private set; }
 
 	/// <summary>Raised once when the stream ends the session, with the reason.</summary>
@@ -491,8 +491,9 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 				return;
 			}
 			relayed = Math.Max( relayed, last );
-			// [EXT:online-coop-snapshot-join] a skip lost with the socket goes out again, without assigning the members anew
-			if ( skippedTo is { } skip && last + 1 < skip )
+			// [EXT:online-coop-snapshot-join] a skip lost with the socket goes out again, without assigning the members anew, while the host still holds the frames from it;
+			// a server back behind a skip whose frames are trimmed since needs a new one
+			if ( skippedTo is { } skip && last + 1 < skip && skip >= OldestFrame )
 			{
 				transport.SkipFrames( skip );
 				sendNext = skip;
@@ -1066,7 +1067,8 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 	/// <summary>
 	/// Drops the frames no guest needs any more and the server is known to hold, oldest first. Past the caps (10,000 frames, 32 MiB) the oldest frames handed to the link go even if
 	/// a guest still needs them or the server never confirmed them (the server confirms nothing until a resume, a refusal or a guest's acknowledgement, so a host alone would never
-	/// trim): a guest that asks for one is told to resync, and a server that names one after a restart ends the session. A frame not yet handed to the link never goes.
+	/// trim): a guest that asks for one is told to resync, and a server that names one after a restart is told the frames go on past the host's last one, every member assigned a capture
+	/// (<see cref="SkipTrimmed"/>). A frame not yet handed to the link never goes.
 	/// </summary>
 	private void Trim()
 	{

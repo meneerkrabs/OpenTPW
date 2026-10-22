@@ -4,7 +4,7 @@ using System.Text;
 namespace OpenTPW.Online.Coop;
 
 /// <summary>
-/// [EXT:online-coop-session] The co-op socket (<c>/api/v1/coop</c>, server protocol 6): binary messages between a game and the server, which relays a
+/// [EXT:online-coop-session] The co-op socket (<c>/api/v1/coop</c>, server protocol 6, the host's skip from 7): binary messages between a game and the server, which relays a
 /// shared session's frames and messages without reading them (docs/ONLINE.md, "Shared parks"). A message is one binary WebSocket message: a type byte and
 /// its fields, little-endian, strings UTF-8 with a 16-bit length, bytes with a 32-bit length.
 /// </summary>

@@ -944,6 +944,29 @@ public class CoopServerTests
 	}
 
 	[TestMethod]
+	public async Task AHelloOfAnOlderProtocolIsToldWhyAndClosed()
+	{
+		var server = await Start();
+		await using var accounts = new Accounts();
+		try
+		{
+			// a game of protocol 6 lacks the host's skip (7), so its host could not go on past frames it no longer holds
+			var older = await CoopTestClient.OpenAsync( server, await accounts.Add( server, "Older" ) );
+			await older.SendAsync( new CoopHello( (ushort)(CoopProtocol.Version - 1), CoopTestClient.Build, Array.Empty<CoopMod>(), older.Instance, false, null ) );
+			var refusal = await older.NextAsync<CoopError>();
+			Assert.AreEqual( CoopReason.ProtocolTooOld, refusal.Reason );
+			Assert.AreEqual( CoopMessageType.Hello, refusal.Request );
+			Assert.AreEqual( CoopCloseStatus.ProtocolError, await older.ClosedAsync() );
+		}
+		finally
+		{
+			// stopped first: a server still at work writes into the folder being deleted
+			await server.DisposeAsync();
+			server.DeleteData();
+		}
+	}
+
+	[TestMethod]
 	public async Task TheJoinSnapshotIsTheHostsToUploadAndItsMembersToRead()
 	{
 		var server = await Start( options =>
@@ -1496,6 +1519,61 @@ public class CoopServerTests
 			Assert.AreEqual( 4UL, (await guestAgain.NextAsync<CoopFrame>()).Seq );
 			await hostAgain.SendAsync( new CoopHostFrame( 6, Payload( 6 ) ) );
 			Assert.AreEqual( 5UL, (await hostAgain.NextAsync<CoopFrameRefused>()).Expected, "then frames follow each other again" );
+		}
+		finally
+		{
+			if ( Directory.Exists( directory ) )
+				Directory.Delete( directory, true );
+		}
+	}
+
+	[TestMethod]
+	public async Task APositionStoredAtAStopIsExactForTheNextRunOnly()
+	{
+		var directory = Path.Combine( Path.GetTempPath(), $"opentpw-server-{Guid.NewGuid():N}" );
+		await using var accounts = new Accounts();
+		try
+		{
+			var file = Path.Combine( directory, "coop", "sessions.json" );
+			CoopSessionRecord Stored() => System.Text.Json.JsonSerializer.Deserialize<List<CoopSessionRecord>>( File.ReadAllBytes( file ), CoopFileOptions )!.Single();
+			// a frame out of turn is answered after the frames before it, so the server has taken them
+			static async Task SendFrames( CoopTestClient host, ulong first, ulong last )
+			{
+				for ( var seq = first; seq <= last; seq++ )
+					await host.SendAsync( new CoopHostFrame( seq, Payload( (int)seq ) ) );
+				await host.SendAsync( new CoopHostFrame( last + 2, Payload( 0 ) ) );
+				Assert.AreEqual( last + 1, (await host.NextAsync<CoopFrameRefused>()).Expected );
+			}
+			OnlineClient hostAccount;
+			CoopCreated created;
+			Guid hostInstance;
+			await using ( var server = await Start( directory: directory ) )
+			{
+				hostAccount = await accounts.Add( server, "Hostess" );
+				var (host, _) = await CoopTestClient.ConnectAsync( server, hostAccount );
+				created = await Create( host );
+				await SendFrames( host, 1, 3 );
+				hostInstance = host.Instance;
+			}
+			Assert.IsTrue( Stored().SeqExact, "the stop stores the position exactly" );
+			Assert.AreEqual( 3UL, Stored().LastFrameSeq );
+			byte[] crashed;
+			await using ( var restarted = await Start( directory: directory ) )
+			{
+				Assert.IsFalse( Stored().SeqExact, "the next start stores it again as unknown" );
+				var (host, welcome) = await CoopTestClient.ConnectAsync( restarted, hostAccount, instance: hostInstance,
+					resume: new CoopResume( created.Session.Id, created.Session.You, 3 ) );
+				Assert.IsTrue( welcome.Session!.SeqKnown, "while that run knows it exactly" );
+				Assert.AreEqual( 3UL, welcome.Session.LastFrameSeq );
+				await SendFrames( host, 4, 5 );
+				// a crash: the file as it is while the frames go on
+				crashed = File.ReadAllBytes( file );
+			}
+			File.WriteAllBytes( file, crashed );
+			await using var again = await Start( directory: directory );
+			var (_, after) = await CoopTestClient.ConnectAsync( again, hostAccount, instance: hostInstance, resume: new CoopResume( created.Session.Id, created.Session.You, 5 ) );
+			Assert.IsFalse( after.Session!.SeqKnown, "the crash brings the position back unknown, not as the stop's number behind the frames relayed since" );
+			Assert.AreEqual( 3UL, after.Session.LastFrameSeq );
 		}
 		finally
 		{

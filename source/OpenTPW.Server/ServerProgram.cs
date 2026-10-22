@@ -22,6 +22,7 @@ public static class ServerProgram
 	/// answers each room's first movement with where everyone stands, which a visit's online players rely on (docs/ONLINE.md, "Players in a visited park").
 	/// 5: movements carry a mode (<see cref="ChatMoveMode"/>, <see cref="ChatProtocol.MoveModesVersion"/>), so a player riding a ride is hidden.
 	/// 6: the co-op socket of shared parks (<see cref="CoopProtocol"/>), their open list and join snapshots.
+	/// 7: the co-op host's skip of frames it no longer holds (<see cref="CoopSkipFrames"/>).
 	/// </summary>
 	public const int ProtocolVersion = CoopProtocol.Version;
 	private const string WebsitePolicy = "website";

@@ -471,8 +471,9 @@ no screen or park uses it yet (C2b to C2d).
   session ends when its host has been away ten minutes. A deploy stores that number exactly, then
   closes each queue to new messages and each socket after what its queue holds, so a guest that reads
   its queue within three seconds gets every frame up to the stored number; a hello during the stop is
-  told to come back and a request is ignored, and the game resumes on the new server. After a crash
-  the number may be behind, the welcome says so, and the host's next later frame sets it. A host that
+  told to come back and a request is ignored, and the game resumes on the new server. That number is
+  exact for the next run only: the new server stores it again as unknown at once, so after a crash the
+  number may be behind, the welcome says so, and the host's next later frame sets it. A host that
   no longer holds the frames the server needs gets every member the park again and tells the server its
   frames go on past them (protocol 7, `[EXT:online-coop-snapshot-join]`, [COOP.md](COOP.md), "The host's
   trimmed frame"); the server takes that frame next and never goes back. A game whose

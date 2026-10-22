@@ -32,7 +32,7 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 	private readonly BaseFileSystem originalSaveFileSystem;
 	private readonly OnlineFolders? originalOnlineFolders;
 	private ParkVisitInfo? readOnlyVisit;
-	private (ulong Hash, int Entities, int Objects) builtInOneGo, builtOverFrames;
+	private (ulong Hash, int Entities, int Objects, string GateSign) builtInOneGo, builtOverFrames;
 	private int framesBuilding;
 	// [EXT:park-entry-preparation] the HUD a build step made, the HUDs' state as each park was entered, and whether the sky was loaded before the first draw
 	private ParkHud? preparedHud, droppedHud;
@@ -42,11 +42,15 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 	private Action? afterNextUpdate;
 	private (List<Entity> Entities, int Count, int Materials) lobbyBeforeAbandon;
 
+	/// <summary>The SHA-256 of the park gate sign's two halves (composed in build steps over frames), or "none".</summary>
+	private static string GateSignDigest( Level level ) => level.GateSign?.Images is { } images
+		? Convert.ToHexString( System.Security.Cryptography.SHA256.HashData( images.Left.Concat( images.Right ).ToArray() ) )[..16] : "none";
+
 	private void RecordBuiltOverFrames()
 	{
 		if ( flow.Level is { } level )
 		{
-			builtOverFrames = (level.ComputeStateHash(), Entity.All.Count, level.Objects.Objects.Count);
+			builtOverFrames = (level.ComputeStateHash(), Entity.All.Count, level.Objects.Objects.Count, GateSignDigest( level ));
 			hudOverFrames = flow.Hud is { } hud ? HudState( hud ) : null;
 			skyBeforeFirstDraw = level.SkyLoaded;
 			// Transitioned runs inside the entering frame's update, before the HUD's first update; this frame's end comes after it
@@ -1501,7 +1505,7 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 			Require( changes.Length == 0, $"a second park leaves no texture made from bytes behind either (by size, against the lobby before the first park: {changes})" );
 			Texture.TrackOrigins = false;
 			flow.LoadPark( new ParkLoadEntry( "jungle", 0, false ) );
-			builtInOneGo = (flow.Level!.ComputeStateHash(), Entity.All.Count, flow.Level.Objects.Objects.Count);
+			builtInOneGo = (flow.Level!.ComputeStateHash(), Entity.All.Count, flow.Level.Objects.Objects.Count, GateSignDigest( flow.Level ));
 			hudInOneGo = HudState( flow.Hud! );
 			afterNextUpdate = () => hudInOneGoUpdated = flow.Hud is { } updated ? HudState( updated ) : null;
 			Require( !flow.Level.SkyLoaded, "a park built in one go loads its sky on its first draw" );
@@ -1583,7 +1587,7 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 			flow.Transitioned -= RecordBuiltOverFrames;
 			Require( framesBuilding >= 2, $"the park is built over several frames ({framesBuilding})" );
 			Require( builtOverFrames == builtInOneGo,
-				$"built over frames: hash, entities and objects {builtOverFrames} equal the park built in one go {builtInOneGo}" );
+				$"built over frames: hash, entities, objects and gate sign pixels {builtOverFrames} equal the park built in one go {builtInOneGo}" );
 			Require( preparedHud != null && ReferenceEquals( flow.Hud, preparedHud ), "the park built over frames is entered with the HUD a build step made" );
 			Require( hudOverFrames == hudInOneGo, $"the HUD made in a build step is entered as the HUD made on entering: {hudOverFrames} / {hudInOneGo}" );
 			Require( hudOverFramesUpdated != null && hudOverFramesUpdated == hudInOneGoUpdated,
@@ -1591,7 +1595,7 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 			Require( skyBeforeFirstDraw, "the park built over frames has its sky loaded before its first draw" );
 			Require( flow.Level != null && flow.Hud != null && flow.Lobby == null && flow.StartKind == ParkStartKind.OriginalSaveReference,
 				"the park built over frames is entered with its HUD, and the lobby is gone" );
-			Log.Trace( $"Park built over {framesBuilding} frames: hash {builtOverFrames.Hash:X16}, {builtOverFrames.Entities} entities, {builtOverFrames.Objects} objects, as built in one go." );
+			Log.Trace( $"Park built over {framesBuilding} frames: hash {builtOverFrames.Hash:X16}, {builtOverFrames.Entities} entities, {builtOverFrames.Objects} objects, gate sign {builtOverFrames.GateSign}, as built in one go." );
 			var park = OriginalPark.Load( "jungle" );
 			var snapshot = ParkSnapshotBuilder.FromOriginal( park, null );
 			readOnlyVisit = ParkSharing.PrepareVisit( ParkSharing.CreatePackage( snapshot, "HUD read-only smoke", "", "OpenTPW", park.Map ) );

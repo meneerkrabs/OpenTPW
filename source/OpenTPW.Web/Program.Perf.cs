@@ -221,6 +221,10 @@ public static partial class Program
 		return true;
 	}
 
+	/// <summary>Whether the park's economy has its door open (null economy: false).</summary>
+	[JSExport]
+	public static bool PerfParkOpen() => flow?.Level?.Park?.Economy.IsParkOpen == true;
+
 	/// <summary>The guests in the park, as the harness's crowd windows report them.</summary>
 	[JSExport]
 	public static int PerfGuests() => flow?.Level?.Guests?.Guests.Count ?? -1;

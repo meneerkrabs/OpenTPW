@@ -99,6 +99,18 @@ public partial class Level
 			try { read(); }
 			catch ( Exception exception ) when ( exception is InvalidDataException or NotSupportedException or InvalidOperationException or ArgumentException ) { }
 		}
+		// the economy capture's parts first, one per step: its first call alone was a long step in the browser
+		using ( var parts = ParkSaveFile.CapturePartSteps( Park.Economy ).GetEnumerator() )
+		{
+			while ( true )
+			{
+				var more = false;
+				Read( () => more = parts.MoveNext() );
+				if ( !more )
+					break;
+				yield return true;
+			}
+		}
 		Read( () => ParkSaveFile.Capture( Park.Economy, CaptureRandomState() ) );
 		yield return true;
 		Read( () => ParkLayoutSnapshot.CaptureSnapshot( Guests.Grid.Cells, Objects ) );
@@ -111,6 +123,16 @@ public partial class Level
 			yield return true;
 		}
 		Read( () => Objects.ScriptWorld.CaptureSnapshot() );
+		yield return true;
+		// the snapshot's extension and asset filters over the placed objects, with a one-key manifest of an extension's prefix: the filters' queries meet their first calls here
+		Read( () =>
+		{
+			var placed = Objects.Objects.Where( item => !item.IsDeleted ).Select( item => item.Entry ).ToArray();
+			_ = ParkResumeMods.InUse( Guests.Grid.Cells, placed.Any( ParkResumeMods.IsPoolsObject ), ParkResumeMods.UmbrellasInUse( placed, Guests ), ParkResumeMods.WinterInUse( placed, Guests ),
+				Park.Economy.Cheats.UsesExtension, ParkResumeMods.EveningInUse( placed ) );
+			// the manifest's own type (a sorted dictionary, as ParkResumeAssetManifest makes it): its enumerators' first calls are of that type
+			_ = ParkResumeMods.AssetsForUse( new SortedDictionary<string, string>( StringComparer.Ordinal ) { [ContentRoot.Mod( OfficialExtensions.Pools.Id ).KeyPrefix] = "" }, placed );
+		} );
 		yield return true;
 		Read( () =>
 		{

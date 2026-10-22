@@ -683,57 +683,8 @@ public static class ParkSaveFile
 			TicketItems = park.TicketItems.Order().ToList(),
 			NextObjectId = park.NextObjectId,
 			DroppedAdmissions = park.DroppedAdmissions,
-			Ledger = new LedgerData
-			{
-				Balance = park.Ledger.Balance,
-				OpeningBalance = park.Ledger.CurrentOpeningBalance,
-				MonthIndex = park.Ledger.CurrentMonthIndex,
-				CurrentTotals = new Dictionary<LedgerCategory, long>( park.Ledger.CurrentTotals ),
-				ProfitThisYear = park.Ledger.ProfitThisYear,
-				History = park.Ledger.History.Select( month => new MonthData
-				{
-					MonthIndex = month.MonthIndex,
-					Totals = new Dictionary<LedgerCategory, long>( month.Totals ),
-					OpeningBalance = month.OpeningBalance,
-					ClosingBalance = month.ClosingBalance,
-					ParkRating = month.ParkRating,
-					ParkValue = month.ParkValue
-				} ).ToList()
-			},
-			Objects = park.Objects.Select( item => new ObjectData
-			{
-				Id = item.Id,
-				InfoId = item.InfoId,
-				Kind = item.Kind,
-				BuiltTick = item.BuiltTick,
-				Imported = item.Imported,
-				Level = item.Level,
-				PendingLevel = item.PendingLevel,
-				UpgradeCostDue = item.UpgradeCostDue,
-				TotalSpent = item.TotalSpent,
-				Price = item.Price,
-				CostOfGoods = item.CostOfGoods,
-				ChanceOfLosingPercent = item.ChanceOfLosingPercent,
-				QualityOfGoods = item.QualityOfGoods == GuestAppearance.BuiltQualityOfGoods ? null : item.QualityOfGoods,
-				IngredientAmount = item.IngredientAmount == GuestSpeed.DefaultIngredientAmount ? null : item.IngredientAmount,
-				IsOpen = item.IsOpen,
-				StateOfRepair = item.StateOfRepair,
-				Repair = item.Repair,
-				LifeGauge = item.LifeGauge,
-				IsBrokenDown = item.IsBrokenDown,
-				ScriptStateBroken = item.ScriptStateBroken,
-				MechanicId = item.MechanicId,
-				// the releases clear the claim word and leave its turn: a turn belongs to a claim only
-				ClaimTurn = item.MechanicId == 0 ? 0 : item.ClaimTurn,
-				MaintenanceRequested = item.MaintenanceRequested,
-				FireworksSpent = item.FireworksSpent,
-				TimesUsed = item.TimesUsed,
-				Statistics = new[] { item.CustomersThisMonth, item.CustomersLastMonth, item.TakingsThisMonth, item.TakingsLastMonth, item.CostsThisMonth, item.CostsLastMonth, item.WinnersThisMonth, item.WinnersLastMonth, item.TotalProfit },
-				WalkAways = item.WalkAways,
-				WalkAwaysToday = item.WalkAwaysToday,
-				WalkAwayDays = item.WalkAwayDays.Any( day => day != 0 ) ? item.WalkAwayDays.ToArray() : null,
-				Rings = RingsOf( item )
-			} ).ToList(),
+			Ledger = CaptureLedger( park ),
+			Objects = CaptureObjects( park ),
 			Loans = park.Loans.Select( loan => new LoanData
 			{
 				OfferIndex = loan.OfferIndex,
@@ -748,70 +699,9 @@ public static class ParkSaveFile
 			TakenLoanOffers = park.TakenOffers.OrderBy( index => index ).ToList(),
 			AvailableLoanOffers = park.AvailableOfferIndices.ToList(),
 			MonthlyAdmissions = park.MonthlyAdmissions.ToList(),
-			Staff = new StaffData
-			{
-				Members = park.Staff.Members.Select( member => new StaffMemberData
-				{
-					Id = member.Id,
-					ThingId = member.ThingId,
-					Type = member.Type,
-					NameIndex = member.NameIndex,
-					Name = member.Name,
-					ResumeDestination = member.ResumeDestination is { } resume ? new[] { resume.X, resume.Y } : null,
-					ResumeClaimTurn = member.ResumeClaimTurn,
-					Variant = member.Variant >= 0 ? member.Variant : null,
-					Grade = member.Grade,
-					TrainingPoints = member.TrainingPoints,
-					HiredTick = member.HiredTick,
-					Happiness = member.Happiness,
-					Energy = member.Energy,
-					State = member.State,
-					BusyTurns = member.BusyTicks,
-					AwaitingJobArrival = member.AwaitingJobArrival,
-					AssignedInstanceId = member.AssignedInstanceId,
-					LitterCell = member.LitterCell is { } litter ? new[] { litter.X, litter.Y } : null,
-					WorldState = (member.Navigation != null || member.Job != StaffJob.Idle || member.EffectCell != null || member.HasPatrolArea
-						|| member.Thought != 0 || member.BubbleThought != 0 || member.BubbleTurn != 0) ? StaffWorldData.Capture( member ) : null,
-					CellX = member.CellX,
-					CellY = member.CellY,
-					TravelSeconds = member.TravelSeconds
-				} ).ToList(),
-				RoleOrder = park.Staff.CaptureRoleOrder(),
-				Candidates = park.Staff.Candidates.ToList(),
-				TrainingBudgets = Enum.GetValues<StaffType>().Select( park.Staff.GetTrainingBudget ).ToList(),
-				NextId = park.Staff.NextId,
-				NextPoolUpdateTick = park.Staff.NextPoolUpdateTick,
-				HaveEverTrained = park.Staff.HaveEverTrained ? true : null,
-				Strikes = CaptureStrikes( park.Staff.Strikes )
-			},
-			Research = new ResearchData
-			{
-				RecentItems = park.Research.RecentItems.ToList(),
-				Completed = park.Research.Completed.OrderBy( key => key.InfoId ).ThenBy( key => key.Level ).Select( key => new[] { key.InfoId, key.Level } ).ToList(),
-				Progress = park.Research.ProgressEntries.OrderBy( entry => entry.Key.InfoId ).ThenBy( entry => entry.Key.Level ).Select( entry => new[] { entry.Key.InfoId, entry.Key.Level, entry.Points } ).ToList(),
-				Effort = park.Research.Effort.ToList(),
-				Current = park.Research.CurrentEntries.Any() ? park.Research.CurrentEntries.Select( entry => new[] { (int)entry.Category, entry.InfoId, entry.Level } ).ToList() : null,
-				Workload = park.Research.Workload == Math.Clamp( park.Settings.ResearchStartingWorkLoad, 0, 100 ) ? null : park.Research.Workload,
-				UpgradeOrder = park.Research.UpgradeTableToSave?.Select( key => new[] { key.InfoId, key.Level } ).ToList(),
-				HighestGroups = park.Research.HighestGroupsToSave?.ToList(),
-				CheatAvailable = park.Research.CheatAvailable.Count == 0 ? null : park.Research.CheatAvailable.ToList()
-			},
-			Objectives = new ObjectivesData
-			{
-				NextOfferDay = park.Objectives.NextOfferDay,
-				// only a second that is not the start of its day needs the field; the others are NextOfferDay
-				NextOfferSeconds = park.Objectives.NextOfferSeconds % ParkCalendar.SecondsPerDay == 0 ? null : park.Objectives.NextOfferSeconds,
-				NextListPosition = park.Objectives.NextListPosition,
-				Current = park.Objectives.Current,
-				Declines = new Dictionary<int, int>( park.Objectives.Declines ),
-				Finished = park.Objectives.Finished.OrderBy( index => index ).ToList(),
-				GoldenTickets = park.Objectives.GoldenTickets.OrderBy( kind => kind ).ToList(),
-				SwitchedOn = park.Objectives.SwitchedOn ? true : null,
-				ActualThing = park.Objectives.ActualThing,
-				CarriedThings = park.Objectives.CarriedThings.Count == 0 ? null : new Dictionary<int, int>( park.Objectives.CarriedThings ),
-				AdoptedChallenges = park.Settings.AdoptedChallenges?.Select( definition => new[] { definition.Index, definition.Type, definition.FollowupType, definition.TargetTime, definition.TargetValue, definition.TargetObject,
-					definition.TargetObject2, definition.TargetStaffType, definition.Prize, definition.CheckAtEndOnly ? 1 : 0, definition.Independent ? 1 : 0 } ).ToList()
-			},
+			Staff = CaptureStaff( park ),
+			Research = CaptureResearch( park ),
+			Objectives = CaptureObjectives( park ),
 			Counters = new Dictionary<string, long>( park.Counters.Values ),
 			MechanicCursor = park.MechanicCursor,
 			PriceStatistics = park.PriceStatistics.Capture() is { Count: > 0 } rings
@@ -821,6 +711,144 @@ public static class ParkSaveFile
 			// [EXT:cheats-save] null for a park that never cheated, so its save and its hash keep their bytes
 			Cheats = park.Cheats.Capture()
 		};
+	}
+
+	private static LedgerData CaptureLedger( ParkEconomy park ) =>
+		new LedgerData
+		{
+			Balance = park.Ledger.Balance,
+			OpeningBalance = park.Ledger.CurrentOpeningBalance,
+			MonthIndex = park.Ledger.CurrentMonthIndex,
+			CurrentTotals = new Dictionary<LedgerCategory, long>( park.Ledger.CurrentTotals ),
+			ProfitThisYear = park.Ledger.ProfitThisYear,
+			History = park.Ledger.History.Select( month => new MonthData
+			{
+				MonthIndex = month.MonthIndex,
+				Totals = new Dictionary<LedgerCategory, long>( month.Totals ),
+				OpeningBalance = month.OpeningBalance,
+				ClosingBalance = month.ClosingBalance,
+				ParkRating = month.ParkRating,
+				ParkValue = month.ParkValue
+			} ).ToList()
+		};
+
+	private static List<ObjectData> CaptureObjects( ParkEconomy park ) =>
+		park.Objects.Select( item => new ObjectData
+		{
+			Id = item.Id,
+			InfoId = item.InfoId,
+			Kind = item.Kind,
+			BuiltTick = item.BuiltTick,
+			Imported = item.Imported,
+			Level = item.Level,
+			PendingLevel = item.PendingLevel,
+			UpgradeCostDue = item.UpgradeCostDue,
+			TotalSpent = item.TotalSpent,
+			Price = item.Price,
+			CostOfGoods = item.CostOfGoods,
+			ChanceOfLosingPercent = item.ChanceOfLosingPercent,
+			QualityOfGoods = item.QualityOfGoods == GuestAppearance.BuiltQualityOfGoods ? null : item.QualityOfGoods,
+			IngredientAmount = item.IngredientAmount == GuestSpeed.DefaultIngredientAmount ? null : item.IngredientAmount,
+			IsOpen = item.IsOpen,
+			StateOfRepair = item.StateOfRepair,
+			Repair = item.Repair,
+			LifeGauge = item.LifeGauge,
+			IsBrokenDown = item.IsBrokenDown,
+			ScriptStateBroken = item.ScriptStateBroken,
+			MechanicId = item.MechanicId,
+			// the releases clear the claim word and leave its turn: a turn belongs to a claim only
+			ClaimTurn = item.MechanicId == 0 ? 0 : item.ClaimTurn,
+			MaintenanceRequested = item.MaintenanceRequested,
+			FireworksSpent = item.FireworksSpent,
+			TimesUsed = item.TimesUsed,
+			Statistics = new[] { item.CustomersThisMonth, item.CustomersLastMonth, item.TakingsThisMonth, item.TakingsLastMonth, item.CostsThisMonth, item.CostsLastMonth, item.WinnersThisMonth, item.WinnersLastMonth, item.TotalProfit },
+			WalkAways = item.WalkAways,
+			WalkAwaysToday = item.WalkAwaysToday,
+			WalkAwayDays = item.WalkAwayDays.Any( day => day != 0 ) ? item.WalkAwayDays.ToArray() : null,
+			Rings = RingsOf( item )
+		} ).ToList();
+
+	private static StaffData CaptureStaff( ParkEconomy park ) =>
+		new StaffData
+		{
+			Members = park.Staff.Members.Select( member => new StaffMemberData
+			{
+				Id = member.Id,
+				ThingId = member.ThingId,
+				Type = member.Type,
+				NameIndex = member.NameIndex,
+				Name = member.Name,
+				ResumeDestination = member.ResumeDestination is { } resume ? new[] { resume.X, resume.Y } : null,
+				ResumeClaimTurn = member.ResumeClaimTurn,
+				Variant = member.Variant >= 0 ? member.Variant : null,
+				Grade = member.Grade,
+				TrainingPoints = member.TrainingPoints,
+				HiredTick = member.HiredTick,
+				Happiness = member.Happiness,
+				Energy = member.Energy,
+				State = member.State,
+				BusyTurns = member.BusyTicks,
+				AwaitingJobArrival = member.AwaitingJobArrival,
+				AssignedInstanceId = member.AssignedInstanceId,
+				LitterCell = member.LitterCell is { } litter ? new[] { litter.X, litter.Y } : null,
+				WorldState = (member.Navigation != null || member.Job != StaffJob.Idle || member.EffectCell != null || member.HasPatrolArea
+					|| member.Thought != 0 || member.BubbleThought != 0 || member.BubbleTurn != 0) ? StaffWorldData.Capture( member ) : null,
+				CellX = member.CellX,
+				CellY = member.CellY,
+				TravelSeconds = member.TravelSeconds
+			} ).ToList(),
+			RoleOrder = park.Staff.CaptureRoleOrder(),
+			Candidates = park.Staff.Candidates.ToList(),
+			TrainingBudgets = Enum.GetValues<StaffType>().Select( park.Staff.GetTrainingBudget ).ToList(),
+			NextId = park.Staff.NextId,
+			NextPoolUpdateTick = park.Staff.NextPoolUpdateTick,
+			HaveEverTrained = park.Staff.HaveEverTrained ? true : null,
+			Strikes = CaptureStrikes( park.Staff.Strikes )
+		};
+
+	private static ResearchData CaptureResearch( ParkEconomy park ) =>
+		new ResearchData
+		{
+			RecentItems = park.Research.RecentItems.ToList(),
+			Completed = park.Research.Completed.OrderBy( key => key.InfoId ).ThenBy( key => key.Level ).Select( key => new[] { key.InfoId, key.Level } ).ToList(),
+			Progress = park.Research.ProgressEntries.OrderBy( entry => entry.Key.InfoId ).ThenBy( entry => entry.Key.Level ).Select( entry => new[] { entry.Key.InfoId, entry.Key.Level, entry.Points } ).ToList(),
+			Effort = park.Research.Effort.ToList(),
+			Current = park.Research.CurrentEntries.Any() ? park.Research.CurrentEntries.Select( entry => new[] { (int)entry.Category, entry.InfoId, entry.Level } ).ToList() : null,
+			Workload = park.Research.Workload == Math.Clamp( park.Settings.ResearchStartingWorkLoad, 0, 100 ) ? null : park.Research.Workload,
+			UpgradeOrder = park.Research.UpgradeTableToSave?.Select( key => new[] { key.InfoId, key.Level } ).ToList(),
+			HighestGroups = park.Research.HighestGroupsToSave?.ToList(),
+			CheatAvailable = park.Research.CheatAvailable.Count == 0 ? null : park.Research.CheatAvailable.ToList()
+		};
+
+	private static ObjectivesData CaptureObjectives( ParkEconomy park ) =>
+		new ObjectivesData
+		{
+			NextOfferDay = park.Objectives.NextOfferDay,
+			// only a second that is not the start of its day needs the field; the others are NextOfferDay
+			NextOfferSeconds = park.Objectives.NextOfferSeconds % ParkCalendar.SecondsPerDay == 0 ? null : park.Objectives.NextOfferSeconds,
+			NextListPosition = park.Objectives.NextListPosition,
+			Current = park.Objectives.Current,
+			Declines = new Dictionary<int, int>( park.Objectives.Declines ),
+			Finished = park.Objectives.Finished.OrderBy( index => index ).ToList(),
+			GoldenTickets = park.Objectives.GoldenTickets.OrderBy( kind => kind ).ToList(),
+			SwitchedOn = park.Objectives.SwitchedOn ? true : null,
+			ActualThing = park.Objectives.ActualThing,
+			CarriedThings = park.Objectives.CarriedThings.Count == 0 ? null : new Dictionary<int, int>( park.Objectives.CarriedThings ),
+			AdoptedChallenges = park.Settings.AdoptedChallenges?.Select( definition => new[] { definition.Index, definition.Type, definition.FollowupType, definition.TargetTime, definition.TargetValue, definition.TargetObject,
+				definition.TargetObject2, definition.TargetStaffType, definition.Prize, definition.CheckAtEndOnly ? 1 : 0, definition.Independent ? 1 : 0 } ).ToList()
+		};
+
+	/// <summary>
+	/// The parts of <see cref="Capture"/> one per step, their results dropped: the runtime's first-call work of each (its queries and their generic
+	/// instantiations) is then done in steps of its own before a park's first capture (docs/BROWSER-PERFORMANCE.md, "Build steps"). Read only, as the capture.
+	/// </summary>
+	internal static IEnumerable<bool> CapturePartSteps( ParkEconomy park )
+	{
+		foreach ( var part in new Func<ParkEconomy, object>[] { CaptureLedger, CaptureObjects, CaptureStaff, CaptureResearch, CaptureObjectives } )
+		{
+			_ = part( park );
+			yield return true;
+		}
 	}
 
 	public static string Serialize( ParkEconomy park, WorldRandomState? world = null ) => JsonSerializer.Serialize( Capture( park, world ), Options );

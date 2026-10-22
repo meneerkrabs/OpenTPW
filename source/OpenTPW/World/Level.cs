@@ -88,17 +88,37 @@ public partial class Level : IDisposable
 	/// The park name and the gate sign of an original level: a resumed park keeps its saved lines, which the sign draws as the
 	/// original's rebuild after loading does (0x468500); a new park takes the gate's default lines.
 	/// </summary>
+	// kept beside its steps for the tests that call it by reflection (ParkNameTests)
 	private void SetupParkName()
+	{
+		foreach ( var _ in SetupParkNameSteps() ) { }
+	}
+
+	/// <summary><see cref="SetupParkName"/> in steps: the gate sign is composed over several (<see cref="OriginalGateSign.CreateSteps"/>).</summary>
+	private IEnumerable<bool> SetupParkNameSteps()
 	{
 		// [EXT:online-coop-snapshot-join] a join keeps the host's name as its snapshot holds it, none included: the sign's default lines are not its name
 		var savedName = resumeState?.ParkName is { } saved ? new ParkNameLines( saved.Line1, saved.Line2 ) : joinRestore != null ? null : SavedGateName();
 		if ( OriginalPark != null )
 		{
-			try { GateSign = OriginalGateSign.TryCreate( OriginalPark, Global, savedName, reloaded: savedName != null ); }
-			// the sign is decoration: a font or board that cannot be read in this file system must not stop the park, and the gate then shows its plain board (SignSlotPlan)
-			catch ( Exception exception ) when ( IsGateSignFailure( exception ) )
+			var created = new OriginalGateSign.Creation();
+			using var steps = OriginalGateSign.CreateSteps( OriginalPark, Global, created, savedName, reloaded: savedName != null ).GetEnumerator();
+			while ( true )
 			{
-				Log.Warning( $"Gate sign: {exception.GetType().Name}: {exception.Message}" );
+				bool more;
+				try { more = steps.MoveNext(); }
+				// the sign is decoration: a font or board that cannot be read in this file system must not stop the park, and the gate then shows its plain board (SignSlotPlan)
+				catch ( Exception exception ) when ( IsGateSignFailure( exception ) )
+				{
+					Log.Warning( $"Gate sign: {exception.GetType().Name}: {exception.Message}" );
+					break;
+				}
+				if ( !more )
+				{
+					GateSign = created.Sign;
+					break;
+				}
+				yield return true;
 			}
 		}
 		ParkName = joinRestore != null ? savedName : savedName ?? GateSign?.Lines;
@@ -308,9 +328,16 @@ public partial class Level : IDisposable
 	/// <summary>How far the construction has come, from 0 to 1 (a rough share of the work, for a progress bar).</summary>
 	internal float ConstructionProgress { get; private set; }
 
+	/// <summary>
+	/// Set by a construction step whose next step is a long one (docs/BROWSER-PERFORMANCE.md, "Build steps"): a park built over frames then starts it in a
+	/// frame of its own instead of after other steps. It changes only where a frame ends, never the work.
+	/// </summary>
+	internal bool NextStepIsLong { get; private set; }
+
 	/// <summary>Runs the next construction step; false once the level is complete. A failed step leaves the level to be disposed.</summary>
 	internal bool Step()
 	{
+		NextStepIsLong = false;
 		if ( construction == null )
 			return false;
 		if ( construction.MoveNext() )
@@ -349,9 +376,19 @@ public partial class Level : IDisposable
 			// the calendar, running costs) and not the staff, research or challenges (docs/THEME-PARK-INC.md, "Economy").
 			using ( LoadProfile.Measure( "economy" ) )
 			{
-				if ( !IsReadOnlyVisit && GameEditions.Capabilities.Economy )
-					Park = resume == null ? ParkEconomyRuntime.ForOriginalLevel( OriginalPark, start, Seed, playerSave: playerSavePayload != null )
-						: ParkEconomyRuntime.ForResume( resumedEconomy ?? throw new InvalidDataException( "The resumed economy is missing." ), start );
+				if ( !IsReadOnlyVisit && GameEditions.Capabilities.Economy && resume == null )
+				{
+					// the settings and catalogues in steps of their own (docs/BROWSER-PERFORMANCE.md, "Build steps")
+					foreach ( var created in ParkEconomyRuntime.ForOriginalLevelSteps( OriginalPark, start, Seed, playerSave: playerSavePayload != null ) )
+					{
+						if ( created == null )
+							yield return 0.15f;
+						else
+							Park = created;
+					}
+				}
+				else if ( !IsReadOnlyVisit && GameEditions.Capabilities.Economy )
+					Park = ParkEconomyRuntime.ForResume( resumedEconomy ?? throw new InvalidDataException( "The resumed economy is missing." ), start );
 				else if ( !IsReadOnlyVisit && GameEditions.IsThemeParkInc && GameEditions.Capabilities.Money && resume == null )
 					Park = ParkEconomyRuntime.ForThemeParkIncLevel( OriginalPark, Seed );
 			}
@@ -470,7 +507,10 @@ public partial class Level : IDisposable
 			}
 			yield return 0.35f;
 			Blueprint = new BlueprintMarkers( OriginalPark.Heightfield, BlueprintHeightOffset );
-			SetupParkName();
+			Blueprint.WarmUp();
+			yield return 0.35f;
+			foreach ( var _ in SetupParkNameSteps() )
+				yield return 0.35f;
 			var origin = OriginalParkPlacement.GetOrigin( OriginalPark.Heightfield );
 			ParkCameraMode.TargetExtent = Math.Max( origin.X, origin.Y );
 			var save = OriginalPark.Save;
@@ -494,6 +534,12 @@ public partial class Level : IDisposable
 				+ (visitLayout != null ? $"; shared layout: {visitLayout.Cells?.Count ?? 0} cells, {visitLayout.Objects.Count} objects, {visitLayout.Coasters?.Count ?? 0} coasters." : "") );
 		}
 		yield return 0.4f;
+		// the ride script handlers are compiled in steps of their own before the first object's script needs them (docs/BROWSER-PERFORMANCE.md, "Build steps")
+		using ( LoadProfile.Measure( "ride-opcodes" ) )
+		{
+			while ( RideOpcodes.PrepareStep() )
+				yield return 0.4f;
+		}
 		using ( LoadProfile.Measure( "objects" ) )
 		{
 			foreach ( var share in SetupObjects() )
@@ -507,7 +553,10 @@ public partial class Level : IDisposable
 		if ( OriginalPark != null )
 		{
 			using ( LoadProfile.Measure( "guests" ) )
-				SetupGuests( OriginalPark );
+			{
+				foreach ( var _ in SetupGuestsSteps( OriginalPark ) )
+					yield return 0.85f;
+			}
 			LinkWorldGenerator();
 			yield return 0.9f;
 			using ( LoadProfile.Measure( "paths" ) )
@@ -559,6 +608,7 @@ public partial class Level : IDisposable
 			}
 			using var connectProfile = LoadProfile.Measure( "staff-gate-economy" );
 			ConnectObjectsToEconomy();
+			yield return 0.95f;
 			if ( Park != null )
 			{
 				litterEffects = new ParkLitterEffects( Park.Economy.Litter, ParticleRendererModule.AdvisorPool );
@@ -569,18 +619,24 @@ public partial class Level : IDisposable
 					UpgradeBalloons = new UpgradeBalloonRenderer( OriginalPark.Heightfield, GuestSpriteAtlas.LoadSpecialEffects() );
 				}
 			}
+			yield return 0.95f;
 			ImportOriginalGuests();
 			ImportOriginalRideSettings();
 			ImportOriginalScripts();
+			yield return 0.95f;
 			ImportOriginalCoasters();
 			ImportOriginalRetainedRideStates();
 			ImportOriginalArrivals();
+			yield return 0.95f;
 			StartPlacedParticles();
 			ImportOriginalParticles();
+			yield return 0.95f;
 			if ( resumeState == null && !GameEditions.IsThemeParkInc && OriginalPark.Save != null && visitLayout == null )
 				ReleaseUnimportedThings();
 			if ( GameEditions.Capabilities.Staff )
-				SetupStaff();
+				foreach ( var _ in SetupStaffSteps() )
+					yield return 0.95f;
+			yield return 0.95f;
 			// [EXT:tpi-park-open] the Theme Park Inc park runs no gate commands: its gate script is not traced, so the economy neither drives nor closes the park door
 			if ( !GameEditions.IsThemeParkInc )
 				SetupParkGate();
@@ -598,7 +654,8 @@ public partial class Level : IDisposable
 		Objects.ScriptWorld.AttachWorld( world );
 	}
 
-	private void SetupGuests( OriginalPark park )
+	/// <summary>The guests and their renderers; each value is a point where a frame may end (docs/BROWSER-PERFORMANCE.md, "Build steps").</summary>
+	private IEnumerable<bool> SetupGuestsSteps( OriginalPark park )
 	{
 		var settings = GuestSettings.Load( park.LevelName );
 		var land = LandSetup( park, settings );
@@ -621,15 +678,20 @@ public partial class Level : IDisposable
 			Guests.ArrivalClock = VisitArrivalClock( Guests, park.Save?.World.Variables.GameTick );
 		Guests.AttachThings( Things );
 		RegisterPoolActivities();
+		NextStepIsLong = true;
+		yield return true;
 		List<GuestSpriteAtlas> sprites;
 		using ( LoadProfile.Measure( "guest-sprites" ) )
 			sprites = GuestSpriteAtlas.LoadKids();
+		yield return true;
 		// [EXT:pools-guest-art] with the pools extension on, the kid and head sets are the extension's 2x ones (together, and only where the game's kid sets are the Theme Park World ones)
 		var poolGuestSprites = PoolGuestSprites.LoadReplacement( sprites );
+		yield return true;
 		var gameKidCount = sprites.Count;
 		var headSprites = poolGuestSprites?.Heads ?? GuestSpriteAtlas.LoadKidHeads();
 		if ( poolGuestSprites != null )
 			sprites = poolGuestSprites.Kids;
+		yield return true;
 		// [EXT:pools-swim] the swim sets (64 MiB decoded) are decoded on a worker only for a park that has pool water already; any other park starts that when its first pool cell is painted (PreloadSwimSprites)
 		swimSpriteSets = null;
 		swimSpritesPreloaded = false;
@@ -637,13 +699,20 @@ public partial class Level : IDisposable
 			PreloadSwimSprites();
 		// A guest in costume is drawn with the theme's costume set (sprite category 2, tp.exe 0x004FE65E: +0x20 from 0x00541F70(2)), its head on a ride with the costume heads where the theme has them
 		var costumes = GuestSpriteAtlas.LoadCostumes( park.LevelName );
+		yield return true;
 		var costumeHeads = GuestSpriteAtlas.LoadCostumeHeads( park.LevelName );
+		NextStepIsLong = true;
+		yield return true;
 		// [EXT:pools-swim] swimmers are drawn by the pools' own renderer with the swim sprites (RefreshPools), whatever they wear
 		// Reserve opaque bridge draw slots before every guest and staff sprite, including bridges built after swimmers appear.
 		PoolBridgeRenderer = new PoolBridgeRenderer( () => PoolBridges, Objects.Grid.Origin, PoolStyles.ForTheme( park.LevelName ) );
 		GuestRenderer = new GuestRenderer( Guests, park.Heightfield, sprites ) { FeetChooser = BridgeGuestFeet, Draws = guest => (!(guest.IsSwimming || guest.InPoolActivity) || SwimmerRenderer == null) && (costumes.Count == 0 || !guest.InCostume), DrawsRideBody = guest => costumes.Count == 0 || !guest.BodySpriteInCostume };
+		NextStepIsLong = true;
+		yield return true;
 		if ( costumes.Count > 0 )
 			CostumeRenderer = new GuestRenderer( Guests, park.Heightfield, costumes ) { FeetChooser = BridgeGuestFeet, Draws = guest => guest.InCostume && (!(guest.IsSwimming || guest.InPoolActivity) || SwimmerRenderer == null), DrawsRideBody = guest => guest.BodySpriteInCostume };
+		NextStepIsLong = true;
+		yield return true;
 		// the riders of the bounce rides are drawn as bodies on the ride (tp.exe 0x00557AB0, BounceRiders), by the set of the guest's own kind
 		var bounceRiders = rideBodyPoses = new FlatRideBounceRiders( Objects );
 		GuestRenderer.BounceRiders = bounceRiders;
@@ -653,6 +722,7 @@ public partial class Level : IDisposable
 		RideHeadRenderer.AddSource( new TrackHeadSources( () => trackRenderers.Values ) );
 		RideHeadRenderer.AddSource( new TourHeadSources( () => tourRenderer ) );
 		AddCoasterHeads( RideHeadRenderer );
+		yield return true;
 		if ( costumeHeads.Count > 0 )
 		{
 			CostumeHeadRenderer = new RideHeadRenderer( Guests, costumeHeads, Objects ) { Draws = guest => guest.InCostume };
@@ -660,15 +730,19 @@ public partial class Level : IDisposable
 			CostumeHeadRenderer.AddSource( new TourHeadSources( () => tourRenderer ) );
 			AddCoasterHeads( CostumeHeadRenderer );
 		}
+		yield return true;
 		BalloonRenderer = new BalloonRenderer( Guests, park.Heightfield, GuestSpriteAtlas.LoadBalloons() );
+		yield return true;
 		// [EXT:umbrellas-draw] the open umbrellas, drawn with the umbrellas extension's own sprites at the guests' hands (the kids' renderer, then the costumes'); parks without the extension or its content have none
 		UmbrellaRenderer = null;
 		if ( UmbrellaSprites.Load() is { Count: > 0 } umbrellaSets && UmbrellaContent.Directory is { } umbrellaFolder )
 			UmbrellaRenderer = new UmbrellaRenderer( Guests, park.Heightfield, umbrellaSets, new[] { GuestRenderer, CostumeRenderer }.OfType<GuestRenderer>().ToArray(), UmbrellaAnchors.Load( umbrellaFolder ) );
+		yield return true;
 		// [EXT:winter-draw] the warm items (hat, earmuffs, mittens) at the guests' heads and hands; parks without the extension or its content have none
 		WarmItemRenderer = null;
 		if ( WinterSprites.Load() is { Count: > 0 } winterSets && WinterContent.Directory is { } winterFolder )
 			WarmItemRenderer = new WarmItemRenderer( Guests, winterSets, new[] { GuestRenderer, CostumeRenderer }.OfType<GuestRenderer>().ToArray(), WinterAnchorTable.Load( winterFolder ) );
+		yield return true;
 		ThoughtRenderer = new ThoughtRenderer( Guests, park.Heightfield, GuestSpriteAtlas.LoadThoughts(),
 			() => Park?.Economy.Staff.Members ?? (IReadOnlyList<StaffMember>)Array.Empty<StaffMember>(),
 			member => member.State != StaffState.PickedUp && StaffRenderer != null && StaffRenderer.TryGetDrawCell( member, out var x, out var y ) ? (x, y) : null )

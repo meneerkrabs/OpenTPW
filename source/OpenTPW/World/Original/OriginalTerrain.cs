@@ -64,7 +64,8 @@ public sealed class OriginalTerrain : Entity
 	private IEnumerable<bool> Build()
 	{
 		var textures = new Dictionary<string, Texture>( StringComparer.OrdinalIgnoreCase );
-		BuildHeightfield( textures );
+		foreach ( var _ in BuildHeightfield( textures ) )
+			yield return true;
 		yield return true;
 		foreach ( var _ in BuildTerrainMeshes( textures ) )
 			yield return true;
@@ -151,7 +152,8 @@ public sealed class OriginalTerrain : Entity
 		return hash;
 	}
 
-	private void BuildHeightfield( Dictionary<string, Texture> textures )
+	/// <summary>The ground mesh and the path layer; a value after each ground texture and after the mesh (a park built over frames, docs/BROWSER-PERFORMANCE.md, "Build steps").</summary>
+	private IEnumerable<bool> BuildHeightfield( Dictionary<string, Texture> textures )
 	{
 		heightfieldTextures = textures;
 		var field = Park.Heightfield;
@@ -165,6 +167,7 @@ public sealed class OriginalTerrain : Entity
 			if ( slots.Count >= MaximumTextureSlots || modelSlot >= Park.TerrainModel.Textures.Count )
 				throw new InvalidDataException( "The original heightfield uses more ground textures than the renderer supports." );
 			slotIndices.Add( modelSlot, AddSlot( slots, LoadTexture( textures, Park.TerrainModel.Textures[modelSlot].FrameNames[0] ) ) );
+			yield return true;
 		}
 		var material = new Material<ObjectUniformBuffer>( "content/shaders/test.shader" );
 		while ( slots.Count < MaximumTextureSlots )
@@ -175,6 +178,7 @@ public sealed class OriginalTerrain : Entity
 		SurfaceCellCount = HeightfieldCells( field, null ).Count();
 		heightfieldHoleSignature = HoleSignature();
 		heightfieldPart = AddPart( BuildHeightfieldModel( material, slotIndices ), "heightfield" );
+		yield return true;
 		BuildPaths( textures );
 	}
 
@@ -423,13 +427,16 @@ public sealed class OriginalTerrain : Entity
 		var batchIndices = new List<uint>();
 		foreach ( var model in new[] { Park.TerrainModel, Park.LakeModel }.OfType<ModelFile>() )
 		{
-			BuildTerrainMeshes( textures, model, batchTextures, batchVertices, batchIndices );
+			foreach ( var _ in BuildTerrainMeshes( textures, model, batchTextures, batchVertices, batchIndices ) )
+				yield return true;
 			yield return true;
 		}
-		FlushBatch( textures, batchTextures, batchVertices, batchIndices );
+		foreach ( var _ in FlushBatch( textures, batchTextures, batchVertices, batchIndices ) )
+			yield return true;
 	}
 
-	private void BuildTerrainMeshes( Dictionary<string, Texture> textures, ModelFile model, List<string> batchTextures, List<Vertex> batchVertices, List<uint> batchIndices )
+	/// <summary>The terrain meshes of one model into batches; a value after each mesh and each texture a full batch loads.</summary>
+	private IEnumerable<bool> BuildTerrainMeshes( Dictionary<string, Texture> textures, ModelFile model, List<string> batchTextures, List<Vertex> batchVertices, List<uint> batchIndices )
 	{
 		foreach ( var mesh in model.Meshes )
 		{
@@ -437,7 +444,8 @@ public sealed class OriginalTerrain : Entity
 				continue;
 			var names = mesh.Materials.Select( material => material.Name ).ToArray();
 			if ( batchTextures.Union( names, StringComparer.OrdinalIgnoreCase ).Count() > MaximumTextureSlots )
-				FlushBatch( textures, batchTextures, batchVertices, batchIndices );
+				foreach ( var _ in FlushBatch( textures, batchTextures, batchVertices, batchIndices ) )
+					yield return true;
 			var slotOfMaterial = names.Select( name =>
 			{
 				var slot = batchTextures.FindIndex( existing => string.Equals( existing, name, StringComparison.OrdinalIgnoreCase ) );
@@ -470,16 +478,22 @@ public sealed class OriginalTerrain : Entity
 			foreach ( var index in mesh.Indices )
 				batchIndices.Add( first + index );
 			TerrainMeshCount++;
+			yield return true;
 		}
 	}
 
-	private void FlushBatch( Dictionary<string, Texture> textures, List<string> names, List<Vertex> vertices, List<uint> indices )
+	/// <summary>Makes a batch's model; a value after each of its textures.</summary>
+	private IEnumerable<bool> FlushBatch( Dictionary<string, Texture> textures, List<string> names, List<Vertex> vertices, List<uint> indices )
 	{
 		if ( vertices.Count > 0 )
 		{
 			var slots = new Texture[MaximumTextureSlots];
 			for ( var index = 0; index < slots.Length; index++ )
+			{
 				slots[index] = index < names.Count ? LoadTexture( textures, names[index] ) : slots[0];
+				if ( index < names.Count )
+					yield return true;
+			}
 			var material = new Material<ObjectUniformBuffer>( "content/shaders/test.shader" );
 			material.Set( "Color", slots );
 			AddPart( new Model( vertices.ToArray(), indices.ToArray(), material ), $"terrain batch {models.Count}" );

@@ -1,0 +1,3 @@
+## MD2-901: the texture-frame consumers are traced (October 22, 2026)
+
+The open question of `APPROX:MD2-901`, how the original consumes a texture frame outside the slot's frame list, is now answered from tp.exe. The binder `0x57A420` and the draw reader `0x580530` both pass the stored frame word to the accessor `0x575F90`, which reads the frame pointer array without a count check, clamp or wrap. The writer `0x470C90` addresses the slot unchecked as well. There is no portable native outcome to reproduce, so OpenTPW keeps ignoring such frames and slots as a documented defensive divergence (docs/reverse/TEXTURE-FRAME-LIFETIME.md, docs/OBJECTS.md). No runtime behaviour changes.

@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { chromeArguments, keyMetrics, listFiles, loopbackOrigin, mainThreadBusy, median, medianResults, percentile, safeResolve, startServer, summarizeFrames } from './web-perf/lib.mjs';
 import { markdown } from './web-perf/report.mjs';
-import { profileClockOffset, profileFrames, profileOfFrame } from './web-perf/events.mjs';
+import { doorEvents, profileClockOffset, profileFrames, profileOfFrame } from './web-perf/events.mjs';
 
 // The browser performance harness (tools/web-perf/run.mjs) without a browser: its server, path handling, statistics and reports.
 
@@ -81,6 +81,7 @@ test('frame summaries count rate, slow frames and the largest gap', () => {
 	assert.equal(summary.frames, 5);
 	assert.equal(summary.fps, 5);
 	assert.equal(summary.maxMs, 60);
+	assert.equal(summary.over33Ms, 1);
 	assert.equal(summary.over50Ms, 1);
 	assert.deepEqual(summary.longFramesMs, [60]);
 	assert.equal(summary.largestGapMs, 67);
@@ -229,4 +230,43 @@ test('the profile\'s clock is lined up with the page\'s by the frames both saw',
 	assert.equal(view.profileOffsetMs, 7);
 	// the moved window holds the frame's own samples only, not the idle time before it
 	assert.deepEqual(view.functions.map(entry => entry.name), ['draw', '(garbage collector)']);
+});
+
+test('the park door is clicked through the entry price window: open, close, open again, each with its state time', async () => {
+	const calls = [];
+	let open = false, guests = 0;
+	const page = {
+		async call(method, ...args) {
+			calls.push([method, ...args]);
+			if (method === 'PerfClick') {
+				open = !open;
+				if (open)
+					guests++;
+			}
+			return true;
+		},
+		async eval(expression) {
+			if (expression.includes('PerfParkOpen'))
+				return open;
+			if (expression.includes('PerfGuests'))
+				return guests;
+			throw new Error(`unexpected ${expression}`);
+		},
+	};
+	const records = {};
+	await doorEvents(page, async (name, act) => {
+		await act();
+		return (records[name] = { name });
+	}, 1);
+	assert.deepEqual(calls, [['PerfOpenWindow', 'entryPrice'], ['PerfClick', 'door'], ['PerfClick', 'door'], ['PerfClick', 'door'], ['PerfKey', 'Back']]);
+	assert.deepEqual(Object.keys(records), ['park door: first click (opens)', 'park door: second click (closes)', 'park door: third click (opens again)']);
+	for (const record of Object.values(records))
+		assert.ok(record.stateMs >= 0);
+	assert.ok(records['park door: first click (opens)'].firstGuestMs >= 0);
+	assert.equal(records['park door: second click (closes)'].firstGuestMs, null);
+});
+
+test('the Markdown report lists the door scenario\'s presses', () => {
+	const press = { name: 'park door: first click (opens)', maxMs: 12, p95Ms: 2, over20Ms: 0, longTasks: 0, slow: [] };
+	assert.ok(format({ door: { events: { [press.name]: press } } }).includes('| park door: first click (opens) | 12 | 2 | 0 | 0 |  |'));
 });

@@ -148,9 +148,9 @@ public static class GameAudio
 	// [BIN:STP-PPC:0x10073D1C refused click] cat_ui 175 behind the latch test; [BIN:TPW-EXE:0x524a80] the release handler 0x524960 plays cat_ui 0xAF at (x*10, 0, z*10) of the clicked cell (0x524a80-0x524aae) before its tool switch, while tool 0x38 is off, the refusal latch (0x816d48) is set, no layout replay runs (0x785a2c == 0) and the park view's press handler ran since the last release (0x8186d8, PathRefusalClick)
 	public const uint PathRefusedEvent = 175;
 	/// <summary>
-	/// The track tools' click: <c>cat_ui</c> 0xCE at the clicked cell (x*10, 0, z*10) for every release in the kart (0xB) and water (0x10) track modes, the first click included.
+	/// The track tools' click: <c>cat_ui</c> 0xCE at the clicked cell (x*10, 0, z*10) for every release in the kart (0xB) and water (0x10) track modes whose ghost was not refused, the first click included.
 	/// </summary>
-	// [BIN:TPW-EXE:0x526cb3 track click] the release handler 0x524960 reaches 0x526cb3 from its mode tests 0xB (0x525a1c) and 0x10 (0x525a2e) and, unless a layout replays (0x785a2c), submits 0x51bfc0(0, cat_ui 0x803a2c, 0xCE, x*10, 0, z*10) at 0x526ce9 before the start/line logic; the refused-ghost cue 0xAF (0x524aae) does not stop it (the mode switch follows at 0x524ab6)
+	// [BIN:TPW-EXE:0x526cb3 track click] the release handler 0x524960 reaches 0x526cb3 from its mode tests 0xB (0x525a1c) and 0x10 (0x525a2e) and, unless a layout replays (0x785a2c), submits 0x51bfc0(0, cat_ui 0x803a2c, 0xCE, x*10, 0, z*10) at 0x526ce9 before the start/line logic; a release with the refused-ghost latch set never gets there: after the cue 0xAF (0x524aae) it leaves through the latch's own mode table (0x524ab6, table 0x52766c: 0xB and 0x10 to SetMode(0, 0) at 0x5266a3), so it plays no 0xCE (ParkHud.PlaysTrackToolClick)
 	public const uint TrackToolClickEvent = 0xCE;
 	/// <summary>
 	/// The coaster tool's click: the path tool's laying sound <c>cat_ui</c> 101 at the clicked cell for every release in mode 0x15, building or editing.

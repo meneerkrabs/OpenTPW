@@ -134,7 +134,7 @@ internal static class RestoredAdvice
 	};
 
 	/// <summary>The restored help messages a tool or a hook posts through <see cref="Hud.ParkHud"/>'s help channel.</summary>
-	public const int RotateBlueprintHelp = 202, TrackRideHelp = 204, CamcorderHelp = 306, MessageIconHelp = 322, PopUpHelpOffHelp = 283;
+	public const int RotateBlueprintHelp = 202, CamcorderHelp = 306, MessageIconHelp = 322, PopUpHelpOffHelp = 283;
 
 	/// <summary>The online screens' help messages (<see cref="OnlineScreenHelp"/>).</summary>
 	public const int PublishHelp = 328, ParkDetailsHelp = 329, OtherParksHelp = 331, FindPlayerHelp = 332, OutboxHelp = 333, WorldHelp = 334;
@@ -185,7 +185,7 @@ internal static class RestoredAdvice
 		// ---- the tutorial and help messages ----
 		Help( 196, "tutorial", "the training budget window opens (screen staffCosts)" ),
 		Help( 202, "tutorial", "an object's blueprint is chosen to place" ),
-		Help( 204, "tutorial", "the roller coaster tool starts" ),
+		// 204 (building track rides) is the original's own now: the kart and water line tool posts it for the click that sets its start (AdvisorToolHelp.TrackLineStart), so the extension no longer posts it as the coaster tool starts
 		Help( 211, "tutorial", "the ride upgrade window opens (screen rideUpgrade)" ),
 		Help( 283, "tutorial", "a park starts with the pop-up help option off" ),
 		Help( 306, "tutorial", "the camcorder is armed" ),
@@ -238,8 +238,8 @@ internal static class RestoredAdvice
 		return history.SavedGameTick >> 2 == 0 || AdvisorScoreQueue.HistoryElapsed( liveGameTick, history.SavedGameTick ) >= (uint)entry.RepeatGroups;
 	}
 
-	/// <summary>The restored help messages the interface mode change withdraws (the tool they belong to has ended): the blueprint and roller coaster hints.</summary>
-	public static readonly IReadOnlyList<int> ModeHelp = new[] { RotateBlueprintHelp, TrackRideHelp };
+	/// <summary>The restored help messages the interface mode change withdraws (the tool they belong to has ended): the blueprint hint.</summary>
+	public static readonly IReadOnlyList<int> ModeHelp = new[] { RotateBlueprintHelp };
 
 	/// <summary>The award message of a global ticket (230 coaster height, 231 go-kart excitement, 232 water length, 233 big park); none for the others.</summary>
 	// [BIN:TPW-EXE:0x0076E300 award descriptors] 230 to 233 return AwardGiven.Score (0x59E8A0), the responses 470 to 473 are the height of the coaster, the excitement of the go-kart track, the length of the water ride and the size of the park

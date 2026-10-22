@@ -38,7 +38,7 @@ internal sealed partial class AutomaticAdvisor
 		Restored.ObserveVehicle( guests?.ArrivalVehicle ?? -1 );
 	}
 
-	/// <summary>The restored hints of the tools end with their mode (the blueprint and roller coaster hints).</summary>
+	/// <summary>The restored hints of the tools end with their mode (the blueprint hint).</summary>
 	private bool WithdrawRestoredModeHelp()
 	{
 		var cancelled = false;

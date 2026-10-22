@@ -21,7 +21,9 @@ modifier from a previous click.
 
 A restart calls `CellBuildTool.Enter` with the same writer and no start, clearing
 its ghost, last commit and undo stacks. The in-progress click detects that reset
-and does not append its old segment afterward. The next click chooses a start.
+and does not append its old segment afterward. The next click chooses a start, and the HUD
+posts the advisor's line tool help 204 for that click (docs/TRACKS.md, "Messages"); a click on a
+tile the ghost refuses ends the tool instead.
 
 This does not expand the co-op command protocol. `docs/COOP.md` still lists kart
 and water tracks among part 3's remaining tools. The modifier is local tool state;

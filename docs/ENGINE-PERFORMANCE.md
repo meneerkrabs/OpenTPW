@@ -286,10 +286,14 @@ read are the same; `FileSystemTests` now run on the desktop's own file system.
 Every start compiled the same GLSL sources to SPIR-V again (`shader-spirv`, 343 to 384 ms for 7 files before the lobby on the Mac, about 30 ms per
 stage whatever its size; 450 ms with a park, and a 52 to 58 ms frame the first time the buy window's turning preview draws its depth image).
 `ShaderCompiler.CompileStage` now keeps each stage's SPIR-V in the user's cache folder (`cache/shaders`) under a SHA-256 of everything the
-compile reads: the preprocessed source, the stage, the source name the debug information records, the options and the compiler's version. A
-kept file is therefore the bytes the compiler would make now; one that is missing, unreadable or not a whole SPIR-V module is compiled again
-and replaced, and files not written for 30 days are removed when a new one is written. The reflection still comes from the cross-compile
-(about 1 to 6 ms per program). The cache holds 14 files (116 KB) after a start, a few more after a park.
+compile reads: the preprocessed source, the stage, the source name the debug information records, the options, and the compiler's managed
+assembly version and native library (`libveldrid-spirv`, its name, size and time). A kept file is therefore the bytes the compiler would make now.
+Each file (`ShaderCache`) holds a format tag and the SHA-256 of its payload, so a file damaged after it was written (cut short, overwritten) is
+refused and compiled again; a payload that is whole but that the cross-compiler refuses anyway (a review wrote each stage cut to half, with a
+matching digest) makes `CompileProgram` remove the kept files of that program and compile both stages from the source, which replaces them. A
+file's time is refreshed whenever it is used, files unused for 30 days are removed when a new one is written, and a write that fails only logs a
+trace line. The reflection still comes from the cross-compile (about 1 to 6 ms per program). The cache holds 14 files (about 116 KB) after a start,
+a few more after a park.
 
 | Measure (Release, Mac, runs alternating with the build before) | Before | After, cache filled |
 | --- | ---: | ---: |

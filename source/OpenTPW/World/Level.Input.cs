@@ -91,7 +91,8 @@ public partial class Level
 	/// <summary>
 	/// The Move tool's pick-up (<c>0x48cfa0</c>): the object is demolished exactly as its window's erase button does (the same click handler 0x524960 in mode 0x33 runs the erase 0x527ee0, with its
 	/// scrap credit and its queue and track clearing), then the build tool arms the same type at the object's own angle in mode 0x3b. Nothing else of the object is kept: the state is the new
-	/// object's, and a cancel leaves the object gone. [EXT:online-coop-commands] The demolition is a <see cref="PickUpObjectCommand"/>; arming the tool is the issuer's own.
+	/// object's, and a cancel leaves the object gone. [EXT:online-coop-commands] The demolition is a <see cref="PickUpObjectCommand"/>; arming the tool is the issuer's own, and its end, whatever
+	/// ends it, an <see cref="EndMoveCommand"/> (<see cref="BuildEntry"/>).
 	/// </summary>
 	// [BIN:TPW-EXE:0x48cfa0 move pick-up] 0x48c940 holds the thing, 0x5276d0 takes its cell, a type with a footprint (+0x40) saves the queue's corner points (0x530120, 0x52fc30), mode 0x33 and the click 0x524960(cell, 0, 0) erase it (0x527ee0 with the last argument 0: the very call of the window's erase button 0x48cd10), 0x46c5a0(0x3b, type) builds the tool, 0x52f200(0x3b) sets the mode and 0x52f1b0 the angle (+0x10); 0x81b3ac and 0x81b14c are written and read nowhere, so the saved state is never restored
 	public bool BeginMove( OriginalObject item )
@@ -99,6 +100,9 @@ public partial class Level
 		ArgumentNullException.ThrowIfNull( item );
 		if ( IsReadOnlyVisit || item.IsDeleted )
 			return false;
+		// a Move tool still carrying ends first, so the end does not take the new pick-up's type
+		if ( IsMoving )
+			BuildEntry = null;
 		if ( Commands.Issue( new PickUpObjectCommand( item.Visitors.AttractionId ) ).As<(ObjectCatalogEntry Entry, int Rotation)>() is not { Entry: { } entry } picked )
 			return false;
 		IsRemovingObjects = false;

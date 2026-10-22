@@ -262,6 +262,63 @@ public class ParkToolCommandLevelTests
 		Assert.AreEqual( level.ComputeStateHash(), twin.Level.ComputeStateHash() );
 	}
 
+	/// <summary>
+	/// The Move tool's end follows the HUD's own placement once its command has returned (<see cref="ParkCommands.AfterIssue"/>), as a command of its own under a session's rules (a command
+	/// issued inside another would be refused there): a placement whose click held exactly Ctrl keeps the tool, so the next placement of the type is the Move tool's and charged in full; a
+	/// placement without it ends the tool, its <see cref="EndMoveCommand"/> logged after the placement, and a moving placement of the type is refused after it. A twin replaying the log
+	/// ends with the same world and nothing carried.
+	/// </summary>
+	[TestMethod]
+	public void TheMoveToolsEndFollowsTheHudsOwnPlacementAsACommandOfItsOwn()
+	{
+		ParkHud Hud( ParkSettingCommandLevelTests.Park park ) =>
+			new( park.Level, OriginalUiTests.FakeStrings(), new EconomyParkStatus( () => park.Economy ), new NoItems(), new HudHost() );
+		var park = NewPark();
+		var level = park.Level;
+		var hud = Hud( park );
+		level.Commands.SessionRules = true;
+		var entry = park.Two.Entry;
+		var keep = typeof( Level ).GetProperty( nameof( Level.KeepBuildToolOnPlace ) )!;
+		OriginalObject? Place( int x, int y, bool ctrl )
+		{
+			// the placing click (Level.UpdateWorldInput): whether it held exactly Ctrl is set while its placement runs
+			keep.SetValue( level, ctrl );
+			try
+			{
+				return level.Commands.Issue( level.BuildCommand( level.BuildEntry!, x, y, level.BuildRotation ) ).As<OriginalObject>();
+			}
+			finally
+			{
+				keep.SetValue( level, false );
+			}
+		}
+		// as the object window's move button leaves the HUD (ParkHud.MoveObject): its item pending, the object picked up, the Move tool armed with its type
+		hud.BeginPlacing( new BuildItem( "move", entry.InfoId, (BuildCategory)entry.WhichUIType, 0, 0, null, System.Array.Empty<string>(), Entry: entry ) );
+		Assert.IsTrue( level.BeginMove( park.Two ) );
+		Assert.IsTrue( level.IsMoving );
+		Assert.IsTrue( park.Economy.Catalog.TryGet( entry.InfoId, out var info ) && info.PurchaseCost > 0 );
+		var start = level.Commands.Log.Count;
+		var balance = park.Economy.Balance;
+		Assert.IsNotNull( Place( 10, 10, ctrl: true ), level.LastActionMessage );
+		Assert.IsTrue( level.IsMoving, "exactly Ctrl keeps the Move tool for another of the type" );
+		Assert.IsNotNull( Place( 14, 10, ctrl: false ), level.LastActionMessage );
+		Assert.AreEqual( balance - 2 * info.PurchaseCost, park.Economy.Balance, "each placement of a move costs the whole price" );
+		Assert.IsFalse( level.IsMoving, "a placement without Ctrl ends the Move tool" );
+		CollectionAssert.AreEqual( new[] { ParkCommandKind.PlaceObject, ParkCommandKind.PlaceObject, ParkCommandKind.EndMove },
+			level.Commands.Log.Skip( start ).Select( logged => logged.Command.Kind ).ToArray(), "the end is logged on its own, after the placement that ended the tool" );
+		Assert.IsTrue( level.Commands.Log.Skip( start ).Take( 2 ).All( logged => logged.Command is PlaceObjectCommand { Moving: true } ), "both placements are the Move tool's" );
+		var refused = level.Commands.Issue( new PlaceObjectCommand( ParkCommandCodec.EntryKey( entry ), 18, 10, 0, Moving: true ) );
+		Assert.IsFalse( refused.Accepted, "the ended tool's type is carried no more" );
+		StringAssert.Contains( refused.Reason, "carries no" );
+		Assert.AreEqual( 0, level.CaptureJoinState().CarriedEntries.Count );
+
+		var twin = NewPark();
+		foreach ( var logged in level.Commands.Log )
+			Assert.AreEqual( !ReferenceEquals( logged.Command, level.Commands.Log[^1].Command ), twin.Level.Commands.Apply( logged.Command ).Accepted, logged.Command.ToString() );
+		Assert.AreEqual( level.ComputeStateHash(), twin.Level.ComputeStateHash() );
+		Assert.AreEqual( 0, twin.Level.CaptureJoinState().CarriedEntries.Count, "the twin carries nothing either" );
+	}
+
 	[TestMethod]
 	public void AFullThingPoolRefusesTheHireBeforeItsPlacementEnds()
 	{

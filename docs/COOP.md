@@ -393,9 +393,9 @@ offscreen: `--coop-join-smoke host|join --coop-join-evidence <directory>`), runs
   the park paused with edits since its last tick, a built coaster closed and a tour ride bought while
   paused (its script has not run, so it has no controller). A virtual member joins, and later asks again
   with a desync, so the host takes two captures through its stream. The phase checks that each cut holds
-  what was staged, that the second holds nothing the first staged and undid (but the Move tool's carried
-  entry, a known limit below), and that the capture changed nothing. It runs park minutes at the normal
-  and the fastest speed, sells the add-on after the second cut while the member follows, and writes the
+  what was staged, that the second holds nothing the first staged and undid (the Move tool's end among
+  them, `EndMoveCommand`), and that the capture changed nothing. It runs park minutes at the normal and
+  the fastest speed, sells the add-on after the second cut while the member follows, and writes the
   frames, the captures and its final state.
 - **The join phase** is a fresh process. It starts in the front end, runs the real game loop and joins
   through `GameFlow.JoinSharedPark` over a transport that replays the recorded host. The first capture's
@@ -431,12 +431,7 @@ were resolved again on a load, so a path laid nearer since moved them.
 
 Known limits: the guest's files and simulation mods must be the host's (the build refuses otherwise); a
 park state with a non-finite float (NaN or an infinity) cannot be captured, since the save's JSON holds
-none; a single build step can take longer than the frame budget, which C2c-2b measures. The Move tool's
-carried entry stays in the command layer after its placement (the session digest and the join state carry
-it): the tool's end is the issuer's own, and with exactly Ctrl the original keeps the tool for another
-placement of the type, so the layer cannot tell the last one. A peer's command could place the type
-again without research or the balance test; the smoke therefore does not require the second cut to be
-without one.
+none; a single build step can take longer than the frame budget, which C2c-2b measures.
 
 ### The host's trimmed frame (C2c-3)
 
@@ -518,7 +513,12 @@ the issuing player's session slot (`Player`, 0 = the local player and host).
   (`LayLineCommand`, `UndoLineCommand`) through `ParkCommandLineWriter`. The Move tool's pick-up is a
   command (`PickUpObjectCommand`) and the placement another (`PlaceObjectCommand` with `Moving`); a
   moving placement is accepted only for the entry the same player picked up, because the Move tool's
-  purchase skips research and the balance test.
+  purchase skips research and the balance test. The entry stays carried until the player's Move tool
+  ends, whatever ends it (a placement without exactly Ctrl, the queue or track tool a placed ride
+  opens, a cancel, another tool): the end is a command of its own (`EndMoveCommand`, issued as the
+  build tool leaves the Move mode), since a placement cannot say whether the tool stays. While it
+  stays (a placement holding exactly Ctrl), another moving placement of the type is accepted and
+  charged, as the original's mode 0x3b takes it.
 - **Refusals.** A command whose fields are out of range, any command in a read-only visit (economy
   commands included: `ParkEconomy` itself has no visit gate), and a command the player's
   rights refuse are rejected before they touch the park. A refusal changes nothing and is logged
@@ -759,7 +759,7 @@ guarded list.
 
 | Area | Commands | State |
 | --- | --- | --- |
-| Objects | place (the build tool, the Move tool, track add-ons), the remove tool, remove at a cell, sell from the object and attraction windows, the Move tool's pick-up, the bulldozer (area clear: one command per cleared cell) | converted |
+| Objects | place (the build tool, the Move tool, track add-ons), the remove tool, remove at a cell, sell from the object and attraction windows, the Move tool's pick-up and its end, the bulldozer (area clear: one command per cleared cell) | converted |
 | Paths and queues | path and queue lines, undo inside the tool, path and queue cell removal, Backspace over a cell, the queue edit click | converted |
 | Developer prototype | place and remove the Totem, open and close it (the developer panel's button) | converted |
 | Winning screen | the end-of-park finale's dismissal in either game type (Escape, the late right click) | converted |
@@ -833,6 +833,11 @@ guarded list.
 - The staff tool's cancel ends the tool even when its drop is refused, as a player's rights could
   refuse it mid-carry (C3): the employee then stays in that player's hand and the player's next
   pick-up is refused. C3 must always allow the drop back to where the employee came from.
+- The Move tool's end ends the issuer's tool whatever its command's result (`EndMoveCommand`): a
+  refusal would leave the picked-up type carried on every peer while the issuer's tool is gone. C3
+  must always allow it, and a member that leaves the session mid-move must have its Move tool ended
+  on every peer (as its hand and its hire must be), or the next player in its slot inherits the
+  carried type.
 - A hire's pending candidate (`ParkStaff.PendingPlacementId`) is one per park: two players placing hires
   at once would take it from each other (C3 gives each player a placement).
 - Opening the queue tool (after a ride is placed, its track circuit closes or its coaster is completed,

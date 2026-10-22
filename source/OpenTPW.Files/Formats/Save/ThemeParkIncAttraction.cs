@@ -11,6 +11,7 @@ namespace OpenTPW;
 /// </summary>
 // [BIN:TPI-EXE:0x5dc430 attraction serializer] mAngle 4, mId 2, 8 x tv[t] 4, MeshInstanceID 4, mFlags 2, 33 x (mNameA[i] 2, mNameB[i] 2), mRideScriptHandle 4, mTrackRideHandle 4, mState 4, mTopLeft 2, mEntryPos 2, mNext 2, mAssignedStaffMember 2, mBackOfQueue 2, mCanLoad 4, mExitPos 2, mFirstInQ 2, mIsTrackRideValid 4, mUpgradeParent 2, m_runningCost 4, mNumWalkAways 4, mOperatingCapacity 1, mOperatingDuration 1, mOperatingSpeed 4, mPersonBeingLoaded 2, mCostOfGoods 4, mQualityOfGoods 4, mChanceOfWinning 4, mPricePerUse 4, mAmountOfSpecialIngredient 4, mPortionSize 4, mGoneFirstPersonFlg 1, mQueueSizeInCells 4, three gauges written as a float truncated to a byte (the log names each "pv"; members +0x60, +0x58, +0x54), mRequestedService 4, mTimeMarkedForMaintenance 4, mUpgradeBalloonSprite 4, mUpgradeLevel 1, mPhotoBooth 2, mBooby 2, mPrebuiltTrackOpen 1, mBeenAroundAtLeastAMonth 1, mPrebuiltTrackEdited 1, mPromotedAttraction 2, mTimeOfLastSurveyReset 8, mBeenActivated 1, mHasBeenOpenedAtSomePoint 1, m_bFlashUnconnectedExit 1, mClosedDueToWeather 1, HasHistory 1, then the history object 0x5ea020 when HasHistory
 // [BIN:TPI-EXE:0x5db52f attraction constructor] +0x54 (state of repair) and +0x60 start at 100.0, +0x58 (life gauge) at the info's life word or 100.0; the breakdown test 0x5e48df reads +0x58 and +0x54 as truncated bytes and a breakdown takes 5.0 off +0x58 (0x5e4940, the constant 0x93aa70), and repairs write 100.0 to +0x54 (0x5e293d, 0x5e3364, 0x5e791a), the Theme Park World order of life and repair; no float read of +0x60 exists outside the serializer (tp.exe's +0x4c is the same: set to 100.0 with the other two at 0x4db35b, read only by its serializer)
+// [BIN:TPI-EXE:0x5db9dd attraction constructor] the constructor gives the time stamp (+0x20, Timestamp) and mTimeOfLastSurveyReset (+0x138) one clock value (0x5db9dd, 0x5db9e8)
 // [APPROX:SAVE-940] the names of the history rings are descriptions of what the game adds to each ring (ThemeParkIncAttractionRing, read from the code that increments it), not names the loader's log gives: DailyRatedVisits, DailyDeclinedGuests and DailyNeedChecksFailed stand for several or only partly identified conditions (the info word +0x21c and the guest thresholds at 0xa01b1c..0xa01b44 are named by no log), and the prebuilt's rings are all empty, so no value has been seen in a save
 public sealed partial record ThemeParkIncAttraction(
 	int Offset, int Id, SaveThingBase Base, int InfoId, int Angle, SaveTimestamp Timestamp, uint MeshInstanceId, ushort Flags,
@@ -64,11 +65,7 @@ public sealed partial record ThemeParkIncAttraction(
 		var infoId = reader.U16();
 		if ( infoId == 0 || angle % 90 != 0 || angle >= 360 )
 			throw new InvalidDataException( $"Save attraction thing {id} has Info.Id {infoId} and angle {angle}; expected a nonzero Info.Id and 0/90/180/270." );
-		var stamp = new uint[8];
-		for ( var index = 0; index < stamp.Length; index++ )
-			stamp[index] = reader.U32();
-		if ( stamp[1] is < 1 or > 12 || stamp[2] is < 1 or > 31 || stamp[3] > 23 || stamp[4] > 59 || stamp[5] > 59 || stamp[0] > 9999 )
-			throw new InvalidDataException( $"Save attraction thing {id} has an invalid game-time stamp {stamp[0]}-{stamp[1]}-{stamp[2]} {stamp[3]}:{stamp[4]}:{stamp[5]}." );
+		var timestamp = SaveTimestamp.Read( ref reader, id );
 		var meshInstance = reader.U32();
 		var flags = reader.U16();
 		var line1 = new char[NameCharacters];
@@ -120,8 +117,7 @@ public sealed partial record ThemeParkIncAttraction(
 		}
 		if ( reader.Position - offset != length )
 			throw new InvalidDataException( $"Save attraction thing {id} read {reader.Position - offset} bytes, not the {length} its flags promise." );
-		return new ThemeParkIncAttraction( offset, id, thingBase, infoId, (int)angle,
-			new SaveTimestamp( (int)stamp[0], (int)stamp[1], (int)stamp[2], (int)stamp[3], (int)stamp[4], (int)stamp[5] ), meshInstance, flags,
+		return new ThemeParkIncAttraction( offset, id, thingBase, infoId, (int)angle, timestamp, meshInstance, flags,
 			Text( line1 ), Text( line2 ), scriptHandle, trackHandle, state, topLeft, entryPos, next, assigned, backOfQueue, canLoad, exitPos, firstInQueue,
 			trackValid, upgradeParent, runningCost, walkAways, capacity, duration, speed, personBeingLoaded, costOfGoods, quality, chance, price,
 			ingredient, portion, goneFirst, queueCells, unreadGauge, lifeGauge, repair, requested, marked, balloon, level, photoBooth, booby, prebuiltOpen,

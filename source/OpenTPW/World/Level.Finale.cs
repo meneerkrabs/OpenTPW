@@ -44,8 +44,10 @@ public partial class Level
 		ResearchRecords?.RecordCompleted( LevelName );
 		if ( !ResearchCompletionStartsFinale() )
 			return;
+		// a live End is adopted (ParkFinale.StartForResearchCompletion): nothing is constructed, so nothing is recorded or stamped
+		var adopted = ParkFinale.IsActive( Objects );
 		// [BIN:TPW-EXE:0x00516B8B finale construction] End is constructed with the common object constructor 0x004DB090, so it gets its economy record like an arrival vehicle
-		if ( ParkFinale.StartForResearchCompletion( Objects ) is { } finale )
+		if ( ParkFinale.StartForResearchCompletion( Objects ) is { } finale && !adopted )
 			BindFixedItemMadeInPlay( finale );
 	}
 

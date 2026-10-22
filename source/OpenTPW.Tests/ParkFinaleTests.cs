@@ -110,6 +110,18 @@ public class ParkFinaleTests
 	}
 
 	private static void Complete( Level level ) => Invoke( level.Park!, "ForwardEvent", new ParkEvent( 0, ParkEventKind.ResearchAllDone, 0, 0, 0, "" ) );
+
+	/// <summary>An advisor attached to the level as a started park attaches it: it keeps its record of the park's newest construction (<c>mLastObjectBuilt</c>) from the park's events.</summary>
+	private static AutomaticAdvisor AdvisorOf( Level level )
+	{
+		var advisor = new AutomaticAdvisor( new AdvisorController( AdvisorSnapshotTests.Balance() ), () => 0 );
+		advisor.AttachLevel( level );
+		return advisor;
+	}
+
+	/// <summary>The advisor's whole days since the park's newest construction, as its scan reads them (tp.exe 0x4C9070).</summary>
+	private static int DaysSinceConstruction( AutomaticAdvisor advisor, ParkEconomy economy ) => new EconomyParkState( economy, advisor.CaptureSnapshot().ObjectStampTurn ).DaysSinceObjectStamp;
+
 	private static UiContext Context( float time = 0 )
 	{
 		var font = new FontAtlas( FontAtlasTests.CreateFont( 8, new FontAtlasTests.SyntheticGlyph( 'A', 2, 2, 0, 0, 3 ) ) );
@@ -172,10 +184,14 @@ public class ParkFinaleTests
 	public void TheFinalesEndGetsItsUnchargedEconomyRecordAsTheOriginalsConstructorGivesIt()
 	{
 		var level = LevelFor( Objects( Entry() ), economy: FixedItemEconomy( ParkGameMode.InstantAction ) ); var economy = level.Park!.Economy;
+		using var advisor = AdvisorOf( level );
 		// a day into the park: the record's build tick and the type's first-purchase turn are the clock's, not a new park's 0
 		economy.AdvanceDays( 1 ); Assert.IsTrue( economy.Turn > 0 );
+		Assert.AreEqual( 1, DaysSinceConstruction( advisor, economy ), "nothing constructed since the park's start" );
 		var cash = economy.Balance; var records = economy.Objects.Count;
 		Complete( level ); Complete( level );
+		Assert.AreEqual( economy.Turn, advisor.CaptureSnapshot().ObjectStampTurn, "the constructor's last call stamps the park's newest construction (0x4DB7A3), which the advisor keeps" );
+		Assert.AreEqual( 0, DaysSinceConstruction( advisor, economy ) );
 		var state = RecordOf( level, level.Objects.Objects.Single(), 1605 );
 		Assert.AreEqual( records + 1, economy.Objects.Count, "the second notification adopts End and makes no second record" );
 		Assert.AreEqual( cash, economy.Balance );
@@ -192,9 +208,13 @@ public class ParkFinaleTests
 		// the level's own wiring makes the vehicles' host
 		Invoke( level, "ConnectObjectsToGuests" );
 		var economy = level.Park!.Economy;
+		using var advisor = AdvisorOf( level );
 		economy.AdvanceDays( 1 ); Assert.IsTrue( economy.Turn > 0 );
+		Assert.AreEqual( 1, DaysSinceConstruction( advisor, economy ), "nothing constructed since the park's start" );
 		var cash = economy.Balance; var records = economy.Objects.Count;
 		Assert.IsTrue( level.Guests!.ArrivalVehicles!.Create( 1 ) );
+		Assert.AreEqual( economy.Turn, advisor.CaptureSnapshot().ObjectStampTurn, "the first trip constructs the vehicle, and the constructor stamps the park's newest construction" );
+		Assert.AreEqual( 0, DaysSinceConstruction( advisor, economy ) );
 		var state = RecordOf( level, level.Objects.Objects.Single(), 1602 );
 		Assert.AreEqual( records + 1, economy.Objects.Count );
 		Assert.AreEqual( cash, economy.Balance );
@@ -265,6 +285,28 @@ public class ParkFinaleTests
 		Assert.IsNotNull( banner.Animation ); Assert.AreEqual( 0, banner.Animation!.Index );
 		Assert.IsNull( level.RideView, "the synthetic End has no camera seat, so the camera stays (0x42A6EE)" );
 		Assert.IsInstanceOfType( Camera.Mode, typeof( ParkCameraMode ) );
+	}
+
+	[TestMethod]
+	public void AnObjectTheEconomyDoesNotKnowStillMovesTheAdvisorsStampAndAnAdoptedEndDoesNot()
+	{
+		// the test economy knows neither End (1605) nor the Seaplane (1602): both are made without a record, and both are constructed
+		var level = LevelFor( Objects( Entry(), Entry( "Plane", id: 1602, archive: "/seaplane" ) ) ); var economy = level.Park!.Economy;
+		Set( level, "demolishedQueues", new HashSet<OriginalObject>() );
+		Invoke( level, "ConnectObjectsToGuests" );
+		using var advisor = AdvisorOf( level );
+		var records = economy.Objects.Count;
+		economy.AdvanceDays( 1 );
+		Complete( level );
+		var endTurn = economy.Turn;
+		Assert.AreEqual( endTurn, advisor.CaptureSnapshot().ObjectStampTurn, "End was constructed (0x516B8B), record or not" );
+		economy.AdvanceDays( 1 );
+		Complete( level );
+		Assert.AreEqual( endTurn, advisor.CaptureSnapshot().ObjectStampTurn, "a second notification adopts the live End: nothing is constructed" );
+		Assert.IsTrue( level.Guests!.ArrivalVehicles!.Create( 1 ) );
+		Assert.AreEqual( economy.Turn, advisor.CaptureSnapshot().ObjectStampTurn, "the vehicle was constructed (0x51A57E), record or not" );
+		Assert.AreEqual( 2, level.Objects.Objects.Count );
+		Assert.AreEqual( records, economy.Objects.Count, "neither got a record" );
 	}
 
 	[TestMethod]

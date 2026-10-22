@@ -68,7 +68,13 @@ The advisor posts 167 under the same test (`Level.ResearchCompletionStartsFinale
 origin with the common constructor `0x4DB090` (call `0x516B8B`), which counts the type, stamps its
 first-purchase turn and allocates its thing slot, and stores its thing handle (`0x7CF4F4`). OpenTPW
 builds it through `ParkObjects.Add`: an uncharged economy record (`Level.BindFixedItemMadeInPlay`;
-End's price is 0) and a slot in the park's thing pool, in both game types. `0x516C00` answers
+End's price is 0) and a slot in the park's thing pool, in both game types. The constructor's last
+call stamps the park's newest construction (`0x4C7680` at `0x4DB7A3`), which only the advisor reads
+(`0x4C9070`), so End also moves the advisor's construction stamp (`ParkEventKind.FixedItemMade`),
+also when the economy catalogue does not know End and it gets no record. `0x516B00` itself has no
+test for a live End; it runs once, as the last research item completes. A repeated notification
+adopts the live End instead, which constructs nothing, so it neither records nor stamps. The
+dismissal removes End like any object, which sells the record for its scrap value of 0. `0x516C00` answers
 whether the handle is nonzero; the bank handler uses it to suppress bankruptcy while End lives.
 A catalogue without End starts nothing (the original logs "Could not find the %s feature" and
 would go on with a null thing).

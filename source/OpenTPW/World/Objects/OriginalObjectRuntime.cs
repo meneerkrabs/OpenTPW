@@ -191,6 +191,11 @@ public sealed partial class OriginalObjectRuntime
 	/// <summary>Where the script's sound events are looked up when the object comes from another content root (null: the running game's categories).</summary>
 	// [EXT:cross-edition-objects] a Theme Park Inc ride's event ids belong to Theme Park Inc's catalogues
 	internal RseSoundSource? SoundSource => ContentSoundRoots.SourceOf( Entry );
+	/// <summary>The object type's own sound list, which <c>EVENT</c> and <c>ADDOBJ</c> type 10 play from (null when the type has none; <see cref="ObjectTypeSounds"/>).</summary>
+	internal SoundCategory? OwnSounds => Entry.OwnSounds;
+
+	/// <summary>The log line of a type-10 sound on a type without its own sound list (tp.exe <c>0x765E18</c>).</summary>
+	internal const string NoOwnSoundsMessage = "RSSE: Tried to trigger a custom effect with no registered custom sound bank";
 	/// <summary>The attraction id this runtime's bridge carries (allocated at construction or restored; the allocator frontier moves past it).</summary>
 	public int AttractionId { get; }
 	/// <summary>The coaster controller of a coaster station (<c>Bumper.WhichTrackType 3</c>), else null.</summary>
@@ -760,10 +765,10 @@ public sealed partial class OriginalObjectRuntime
 /// turns into the script's waits; FLUSHANIM(_CH) clears only the deferred clip; GETANIM(_CH) report the AnimID or −1.
 /// COAST goes to the station's <see cref="CoasterRide"/>. Visitor opcodes go to the object's
 /// <see cref="RideVisitorBridge"/> (guests slice). EVENT and REPAIREFFECT play their original sounds and particles, STARTSCREAM/STOPSCREAM/SCREAMLEVEL/SINGLESCREAM
-/// the screams. ADDOBJ keeps the particle effects (types 1-2) and sounds (types 3-9) it starts under its slot (<see cref="OriginalObjectRuntime"/>), KILLOBJ and FADEOBJ end them, SETOBJPARAM
+/// the screams. ADDOBJ keeps the particle effects (types 1-2) and sounds (types 3-10) it starts under its slot (<see cref="OriginalObjectRuntime"/>), KILLOBJ and FADEOBJ end them, SETOBJPARAM
 /// gives the sounds a parameter, and a script's end ends what it still holds (<see cref="IRideScriptLifetime"/>). TPW YEAR/MONTH/DAY/HOUR/MIN/SEC sample host civil time. The ride-type controllers
 /// TOUR/BUMP/COAST go to their controllers. The ride lights (ENABLELIGHT, DISABLELIGHT, SETLIGHT, COLOURLIGHT) act on the model's light dummies when it has them (<see cref="OriginalObjectRuntime.Lights"/>, docs/LIGHTS.md) and are a logged no-op when it does not. What stays an unimplemented effect (<see cref="RideVM.UnimplementedEffects"/>): the bounce rider opcodes where their object has no bounce
-/// rider rendering, and ADDOBJ/EVENT type 10 (the object type's own sound list). DIPMUSIC sets the sound service's music duck request; SETREVERB's level is read by <see cref="ReverbSelector"/>.
+/// rider rendering. EVENT and ADDOBJ type 10 play from the object type's own sound list (<see cref="ObjectTypeSounds"/>). DIPMUSIC sets the sound service's music duck request; SETREVERB's level is read by <see cref="ReverbSelector"/>.
 /// </summary>
 public sealed class OriginalObjectEffects : IRideScriptEffects, IRideAnimationQuery, IRideCanonicalEffects, IRideScriptLifetime, IRideSliceTail
 {
@@ -974,12 +979,10 @@ public sealed class OriginalObjectEffects : IRideScriptEffects, IRideAnimationQu
 			}
 			return 0;
 		}
-		// ADDOBJ and ADDOBJ_EXT of type 1/2 start particle effects (docs/PARTICLES.md) and of types 3-9 sounds, each kept under the record's slot; KILLOBJ and FADEOBJ end the records of the slot (type 10, the object type's own sound list, is the one that stays an unimplemented effect)
+		// ADDOBJ and ADDOBJ_EXT of type 1/2 start particle effects (docs/PARTICLES.md) and of types 3-10 sounds (10 from the object type's own sound list), each kept under the record's slot; KILLOBJ and FADEOBJ end the records of the slot
 		if ( call.Opcode is Opcode.ADDOBJ or Opcode.ADDOBJ_EXT )
 		{
-			// [BIN:TPW-EXE:0x5573D0 object dispatcher] type 10 takes the object type's own sound bank (0x557686, 0x4145E0); no type outside 1-10 is served (0x557931 logs, the handle is 0 and the record is freed)
-			if ( call.OperandCount > 0 && call.Argument( 0 ) == 10 )
-				return UnimplementedRideScriptEffects.Instance.Perform( call );
+			// [BIN:TPW-EXE:0x5573D0 object dispatcher] no type outside 1-10 is served (0x557931 logs, the handle is 0 and the record is freed)
 			ride.ObserveParticleObject(call);
 			ride.ObserveHeldSound(call);
 			return 0;
@@ -1010,12 +1013,20 @@ public sealed class OriginalObjectEffects : IRideScriptEffects, IRideAnimationQu
 				if (ride.ResolveEventAnchor(call.Argument(1), out var anchor) == OriginalObjectRuntime.EventAnchorStatus.Play)
 					voice = GameAudio.PlayRseEvent(type, unchecked((uint)call.Argument(2)), anchor, ride.SoundSource);
 			}
+			else if (type == 10)
+			{
+				// [BIN:TPW-EXE:0x557686 EVENT type 10] the thing's type (+0xAC through 0x7CFB90, 0x412E90) gives its own category (0x4145E0, +0x4F0); none logs 0x765E18 and submits nothing, before the key is looked at (0x55773F); otherwise the key resolves as for types 3-9 (0x556B90, selector 0x200; an unknown key submits nothing) and 0x51BFC0(0, the type's category, id, the place truncated to whole units) plays it
+				if (ride.OwnSounds is not { } own)
+					Log?.Trace(OriginalObjectRuntime.NoOwnSoundsMessage);
+				else if (ride.ResolveEventAnchor(call.Argument(1), out var anchor) == OriginalObjectRuntime.EventAnchorStatus.Play)
+					voice = GameAudio.PlayRseEvent(type, unchecked((uint)call.Argument(2)), anchor, ride.SoundSource, own);
+			}
 			else
 				voice = GameAudio.PlayRseEvent(type, unchecked((uint)call.Argument(2)), null, ride.SoundSource);
 			ownedEventLoops.RemoveAll(loop => loop.IsFinished);
 			if (voice is { Loops: true }) ownedEventLoops.Add(voice);
-			// [BIN:TPW-EXE:0x557686 EVENT type 10] the object type's own sound list is not served; it is the one EVENT part that stays an unimplemented effect (types 0 and above 10 only log in the original)
-			return type == 10 ? UnimplementedRideScriptEffects.Instance.Perform( call ) : 0;
+			// types 0 and above 10 only log in the original (0x557931)
+			return 0;
 		}
 		if ( call.Opcode == Opcode.DIPMUSIC )
 		{

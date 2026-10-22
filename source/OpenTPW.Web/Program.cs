@@ -305,6 +305,7 @@ public static partial class Program
 		if ( renderer == null )
 			return false;
 		FrameMarks.BeginFrame();
-		return renderer.Frame();
+		// [EXT:online-coop-snapshot-join] the co-op join smoke's frame while it runs (Program.CoopJoinSmokeTest.cs)
+		return coopSmoke is { } smoke ? CoopSmokeFrame( renderer, smoke ) : renderer.Frame();
 	}
 }

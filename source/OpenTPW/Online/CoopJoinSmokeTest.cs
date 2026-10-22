@@ -22,11 +22,18 @@ internal sealed record CoopSmokeHostEvidence( bool Completed, string? Failure, s
 internal sealed record CoopSmokeJoinEvidence( bool Completed, string? Failure, int Builds, int FailedJoins, string[] Steps, ulong FinalDigest, ulong FinalWorldHash, string[] SaveDifferences,
 	string Mode = "join", CoopJoinTimings[]? JoinTimings = null, CoopSmokeFrame[]? Frames = null, CoopSmokeEnvironment? Environment = null );
 
-/// <summary>One update frame of the join phase: its number, the join step it ran in, and the milliseconds of its update (the smoke's driver, the online pump and the game's).</summary>
-internal sealed record CoopSmokeFrame( int Frame, string Step, double Milliseconds );
+/// <summary>
+/// One update frame of the join phase: its number, the join step it ran in, and the milliseconds of its update (the smoke's driver, the online pump and the game's); in a page, also
+/// of the whole frame call (the update and the drawing, not the frame's presentation; null natively).
+/// </summary>
+internal sealed record CoopSmokeFrame( int Frame, string Step, double Milliseconds, double? CallMilliseconds = null );
 
-/// <summary>Where a phase ran (docs/COOP.md, "Measurements"): the build's version and configuration, the runtime, the machine, and the settings that change its work.</summary>
-internal sealed record CoopSmokeEnvironment( string Version, string Configuration, string Runtime, string Os, string Architecture, int Processors, bool Silent, bool Advisor )
+/// <summary>
+/// Where a phase ran (docs/COOP.md, "Measurements"): the build's version and configuration, the runtime, the machine, the settings that change its work, and how the code was
+/// compiled ("jit" natively; a page's "aot", "interpreter" or "coreclr", as its build names it).
+/// </summary>
+internal sealed record CoopSmokeEnvironment( string Version, string Configuration, string Runtime, string Os, string Architecture, int Processors, bool Silent, bool Advisor,
+	string? Compilation = null )
 {
 	public static CoopSmokeEnvironment Of( GameFlow flow ) => new(
 		typeof( CoopSmokeEnvironment ).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "unknown",
@@ -37,7 +44,9 @@ internal sealed record CoopSmokeEnvironment( string Version, string Configuratio
 #endif
 		System.Runtime.InteropServices.RuntimeInformation.FrameworkDescription, System.Runtime.InteropServices.RuntimeInformation.OSDescription,
 		System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture.ToString(), Environment.ProcessorCount,
-		Environment.GetEnvironmentVariable( "OPENTPW_SILENT" ) is "1" or "true", flow.AutomaticAdvisorEnabled );
+		Environment.GetEnvironmentVariable( "OPENTPW_SILENT" ) is "1" or "true", flow.AutomaticAdvisorEnabled,
+		typeof( CoopSmokeEnvironment ).Assembly.GetCustomAttributes<AssemblyMetadataAttribute>().FirstOrDefault( item => item.Key == "OpenTpwBrowserCompilation" )?.Value
+			?? (System.Runtime.CompilerServices.RuntimeFeature.IsDynamicCodeCompiled ? "jit" : "aot") );
 }
 
 /// <summary>
@@ -180,7 +189,7 @@ internal sealed partial class CoopJoinSmokeTest : IDisposable
 	internal static void Require( bool condition, string step )
 	{
 		if ( !condition )
-			throw new InvalidOperationException( $"Native co-op join smoke test failed: {step}." );
+			throw new InvalidOperationException( $"Co-op join smoke test failed: {step}." );
 	}
 
 	internal static string Sha256Hex( byte[] bytes ) => Convert.ToHexString( SHA256.HashData( bytes ) ).ToLowerInvariant();

@@ -1,0 +1,143 @@
+using System.Diagnostics;
+using System.Runtime.InteropServices.JavaScript;
+using System.Text.Json.Nodes;
+
+namespace OpenTPW;
+
+/// <summary>
+/// [EXT:online-coop-snapshot-join] The co-op join smoke's join phase in the page (docs/COOP.md, "The browser's join"; tools/web-coop-join.mjs): the harness copies a join recorded on
+/// the desktop (the native smoke's host phase) into <c>/coop-smoke</c>, starts the join from the front end and reads the outcome and the evidence back. Only in the page's co-op smoke
+/// mode (<c>?coopSmoke=1</c> on a loopback address), which unlike the performance mode changes no park outside the commands; one run a page, since the builds it measures must be the
+/// runtime's first.
+/// </summary>
+public static partial class Program
+{
+	private const string CoopSmokeDirectory = "/coop-smoke";
+	/// <summary>The evidence's limits in memory: a recorded join is about 1.5 MB (the host's final save the largest file).</summary>
+	private const int CoopSmokeFileBytes = 16 << 20;
+	private const long CoopSmokeTotalBytes = 64L << 20;
+
+	private static bool coopSmokeMode;
+	private static long coopSmokeBytes;
+	private static CoopJoinSmokeTest? coopSmoke;
+	private static string coopSmokeState = "idle";
+	private static string? coopSmokeMessage;
+	private static int coopSmokeFrames;
+	private static string? coopSmokePosition;
+
+	/// <summary>The page's co-op smoke mode, chosen before the game starts: the smoke's exports work only in it.</summary>
+	[JSExport]
+	public static void CoopSmokeMode()
+	{
+		if ( renderer != null || flow != null )
+			throw new InvalidOperationException( "The co-op smoke mode is chosen before the game starts." );
+		// the performance mode's hooks change parks outside the commands, which a shared park refuses
+		if ( CoopSession.ChangesParkOutsideCommands )
+			throw new InvalidOperationException( "The co-op smoke does not run in the performance mode." );
+		coopSmokeMode = true;
+	}
+
+	/// <summary>Stores one file of the recorded join (a flat name) in the smoke's folder, which the page does not keep; before the run starts.</summary>
+	[JSExport]
+	public static void CoopSmokeAddFile( string name, byte[] contents )
+	{
+		RequireCoopSmokeMode();
+		if ( coopSmokeState != "idle" )
+			throw new InvalidOperationException( "The recorded join is copied before the co-op join smoke starts." );
+		if ( !CoopJoinSmokeTest.IsEvidenceFileName( name ) )
+			throw new ArgumentException( $"'{name}' is not a file name of the recorded join." );
+		var path = Path.Combine( CoopSmokeDirectory, name );
+		var replaced = File.Exists( path ) ? new FileInfo( path ).Length : 0;
+		if ( contents.Length > CoopSmokeFileBytes || coopSmokeBytes - replaced + contents.Length > CoopSmokeTotalBytes )
+			throw new ArgumentException( $"The recorded join's files are limited to {CoopSmokeFileBytes >> 20} MiB each and {CoopSmokeTotalBytes >> 20} MiB together." );
+		Directory.CreateDirectory( CoopSmokeDirectory );
+		File.WriteAllBytes( path, contents );
+		coopSmokeBytes += contents.Length - replaced;
+	}
+
+	/// <summary>Starts the join phase (<c>join</c>, the adversarial one, or <c>measure</c>) from the front end, over the recorded join copied in.</summary>
+	[JSExport]
+	public static void CoopJoinSmokeStart( string mode )
+	{
+		RequireCoopSmokeMode();
+		var measuring = mode switch
+		{
+			"join" => false,
+			"measure" => true,
+			_ => throw new ArgumentException( $"The co-op join smoke runs 'join' or 'measure', not '{mode}'." )
+		};
+		if ( coopSmokeState != "idle" )
+			throw new InvalidOperationException( "One co-op join smoke a page: its builds must be the runtime's first. Load the page again for another." );
+		if ( renderer == null || flow == null || flow.Level != null || flow.Menu == null )
+			throw new InvalidOperationException( "The co-op join smoke starts from the front end." );
+		coopSmokeState = "running";
+		try
+		{
+			coopSmoke = CoopJoinSmokeTest.StartPageJoin( flow, CoopSmokeDirectory, measuring,
+				completedBy: summary => (coopSmokeState, coopSmokeMessage) = ("passed", summary),
+				failedBy: line => (coopSmokeState, coopSmokeMessage) = ("failed", line) );
+		}
+		catch ( Exception error )
+		{
+			(coopSmokeState, coopSmokeMessage) = ("failed", $"The co-op join smoke could not start: {error.Message}");
+			throw;
+		}
+		coopSmoke.Attach( renderer );
+	}
+
+	/// <summary>
+	/// Where the co-op join smoke stands, as JSON: its state (<c>idle</c>, <c>running</c>, <c>passed</c>, <c>failed</c>), its frames and step, its summary or failure, and whether the
+	/// pools extension's sprite sets are still on their way (the harness starts the run once they are not, so no fetch overlaps the frames it measures).
+	/// </summary>
+	[JSExport]
+	public static string CoopJoinSmokeStatus()
+	{
+		var pending = PoolSpriteDelivery.IsPending( PoolSpriteDelivery.SwimGroup ) || PoolSpriteDelivery.IsPending( PoolSpriteDelivery.LandGroup );
+		return new JsonObject
+		{
+			["mode"] = coopSmokeMode,
+			["started"] = flow != null,
+			["frontEnd"] = flow is { Level: null, Menu: not null },
+			["state"] = coopSmokeState,
+			["frames"] = coopSmoke?.Frames ?? coopSmokeFrames,
+			["step"] = coopSmoke?.Position ?? coopSmokePosition,
+			["message"] = coopSmokeMessage,
+			["poolSprites"] = pending ? "pending" : "settled",
+		}.ToJsonString();
+	}
+
+	private static void RequireCoopSmokeMode()
+	{
+		if ( !coopSmokeMode )
+			throw new InvalidOperationException( "The co-op join smoke runs only in the page's co-op smoke mode (?coopSmoke=1 on a loopback address)." );
+	}
+
+	/// <summary>
+	/// A frame while the smoke runs: the whole call timed for the smoke's frame, a throw out of it the smoke's failure (the page then stops its loop), and once the smoke has ended its
+	/// handlers taken off after the frame, the game running on.
+	/// </summary>
+	private static bool CoopSmokeFrame( Renderer running, CoopJoinSmokeTest smoke )
+	{
+		var started = Stopwatch.GetTimestamp();
+		try
+		{
+			return running.Frame();
+		}
+		catch ( Exception error )
+		{
+			smoke.PageFailed( error );
+			throw;
+		}
+		finally
+		{
+			smoke.PageFrameEnded( Stopwatch.GetElapsedTime( started ).TotalMilliseconds );
+			if ( smoke.Ended )
+			{
+				(coopSmokeFrames, coopSmokePosition) = (smoke.Frames, smoke.Position);
+				smoke.Detach( running );
+				smoke.Dispose();
+				coopSmoke = null;
+			}
+		}
+	}
+}

@@ -70,7 +70,10 @@ internal sealed partial class EconomyParkState : IAdvisorParkState
 		this.hireStampTurn = hireStampTurn;
 	}
 
-	/// <summary>The stamps a park without a record of them has: the newest standing object's and employed member's turn (0 without any), where the original keeps the stamp after a demolition or a quit.</summary>
+	/// <summary>
+	/// The stamps of a park the advisor has no record of (a new park, or an OpenTPW save from before the advisor's snapshot kept them; an original save's come from its analyser,
+	/// <see cref="OriginalEconomyImport.AnalyserStampTurns"/>): the newest standing object's and employed member's turn (0 without any), where the original keeps the stamp after a demolition or a quit.
+	/// </summary>
 	public static (long ObjectTurn, long HireTurn) NewestStamps( ParkEconomy economy ) => (
 		economy.Objects.Select( item => ParkCalendar.Turn( item.BuiltTick ) ).DefaultIfEmpty( 0 ).Max(),
 		economy.Staff.Members.Select( member => ParkCalendar.Turn( member.HiredTick ) ).DefaultIfEmpty( 0 ).Max() );
@@ -87,8 +90,8 @@ internal sealed partial class EconomyParkState : IAdvisorParkState
 	// [BIN:TPW-EXE:0x004C76D0 hire stamp] every staff thing init (0x504B90, at 0x504C65) overwrites mLastStaffHired (+0x21C38, saved at 0x4C6BC4) with the park time: the newest hire; the park init stamps it too (0x4C5CDE)
 	public int DaysSinceHireStamp => DaysSince( hireStampTurn ?? NewestStamps( economy ).HireTurn );
 
-	// [BIN:TPW-EXE:0x004C9070 days since a stamp] (0x4F8690 park time now − stamp, both from the calendar base) divided by 864,000,000,000 (100 ns per day) with __alldiv
-	private int DaysSince( long stampTurn ) => (int)(Math.Max( 0, economy.Turn - stampTurn ) * ParkCalendar.SecondsPerTurn / ParkCalendar.SecondsPerDay);
+	// [BIN:TPW-EXE:0x004C9070 days since a stamp] (0x4F8690 park time now − stamp, both from the calendar base) divided by 864,000,000,000 (100 ns per day) with __alldiv: signed, truncated toward zero, so a stamp still to come (only a modified save holds one) counts negative days
+	private int DaysSince( long stampTurn ) => (int)((economy.Turn - stampTurn) * ParkCalendar.SecondsPerTurn / ParkCalendar.SecondsPerDay);
 
 	// [BIN:TPW-EXE:0x0059DB04 days since start] 0x4F8800 (world + 0x2A0) divided by 0xC92A69C000 with __alldiv
 	public int DaysSinceStart => (int)(economy.Turn * ParkCalendar.SecondsPerTurn / ParkCalendar.SecondsPerDay);

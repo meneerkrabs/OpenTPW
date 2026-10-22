@@ -48,6 +48,11 @@ public sealed partial class OriginalEconomyImport
 	public IReadOnlyList<string> Evidence => evidence;
 	/// <summary>The economy object id of each imported attraction thing, by its thing id (the save's references to attractions name them so).</summary>
 	public IReadOnlyDictionary<int, int> AttractionInstances { get; }
+	/// <summary>
+	/// The park turns of the analyser's saved <c>mLastObjectBuilt</c> and <c>mLastStaffHired</c>, the newest construction and the newest hire, which the automatic advisor takes as its
+	/// stamps when it attaches; null when the save names no analyser.
+	/// </summary>
+	public (long ObjectTurn, long HireTurn)? AnalyserStampTurns { get; private init; }
 
 	/// <summary>Adds the outcome of a later import step (the automatic advisor's controller import) to <see cref="Evidence"/>.</summary>
 	public void Report( string line )
@@ -89,6 +94,7 @@ public sealed partial class OriginalEconomyImport
 		}
 		else
 			economy.StatisticsHistory.Restore( new ParkStatisticsHistory().Capture() );
+		var stampTurns = ImportAnalyserStamps( economy, save, evidence );
 		var (objects, fixedItems, things) = ImportObjects( economy, save, evidence );
 		ImportLitter( economy, save, evidence );
 		// after the objects: the carried object of a follow-up is one of their thing ids
@@ -105,7 +111,10 @@ public sealed partial class OriginalEconomyImport
 		// [BIN:STP-PPC:0x10106708 world reader] mParkClosed is restored with the world variables (0 = open)
 		var closed = world.Variables.ParkClosed != 0;
 		evidence.Add( $"Park {(closed ? "closed" : "open")} (mParkClosed {world.Variables.ParkClosed}), {world.Variables.NumberOfVisitorsToDate} visitors to date (the guest simulation's count)." );
-		return new OriginalEconomyImport( save.Economy, closed, objects, fixedItems, staff, evidence, things.ToDictionary( pair => pair.Key, pair => pair.Value.Id ) );
+		return new OriginalEconomyImport( save.Economy, closed, objects, fixedItems, staff, evidence, things.ToDictionary( pair => pair.Key, pair => pair.Value.Id ) )
+		{
+			AnalyserStampTurns = stampTurns
+		};
 	}
 
 	/// <summary>The cheat mode of the save's <c>CHTS</c> chunk (docs/CHEATS.md): byte 0 on marks the park as cheated, with or without the cheats extension; a Theme Park Inc park keeps it unapplied.</summary>
@@ -262,6 +271,57 @@ public sealed partial class OriginalEconomyImport
 		{
 			return null;
 		}
+	}
+
+	/// <summary>
+	/// The park turns of the analyser's saved object and hire stamps (<see cref="AnalyserStampTurns"/>): the turn of the save's calendar, its start and rate, whose park time each stamp
+	/// is. The original's clock writes only such times, so a stamp between two of them (a modified save) is taken at the earlier turn's and reported. A stamp before the calendar's
+	/// start or past the park's turn keeps its turn, which the advisor counts days from as the original counts them from the word. The days count on OpenTPW's calendar of 3,750
+	/// seconds a turn: for a modified save whose calendar runs at another rate than 15000 they follow the park's own calendar, as its dates do (<see cref="ImportTurn"/> reports that
+	/// the save's calendar does not agree).
+	/// </summary>
+	// [BIN:TPW-EXE:0x004C7680 object stamp] mLastObjectBuilt (+0x21C30) and mLastStaffHired (+0x21C38, 0x004C76D0) take the park time 0x4F8690 returns: the calendar's FunnyTimeStart (+0) plus floor(turn x rate (+0x1C, 15000) / 4) x 10^7 (0x5FC530); only the calendar constructor 0x4F7E80 and the loader 0x4F7F30 write those two words, so every stamp of an original save is a whole turn from the calendar's start
+	// [BIN:TPW-EXE:0x005179C0 world loader] the analyser case zeroes the six stamps (0x518A43-0x518A85) and runs the serializer's load (0x518ABA), which reads them back raw (0x4C7289, 0x4C72B3); the analyser constructor 0x4C58C0, which stamps a new park's time, runs only in the new-world setup 0x5156A0, and the loader builds the staff through 0x518E20 and their role serializers, not through the staff init 0x504B90 that restamps mLastStaffHired, and no object through 0x4DB090: a loaded park keeps the saved words until its next construction or hire
+	private static (long ObjectTurn, long HireTurn)? ImportAnalyserStamps( ParkEconomy economy, OriginalParkImport save, List<string> evidence )
+	{
+		if ( save.AnalyserStamps is not { } stamps )
+			return null;
+		// the World reader refuses a calendar without a positive rate (SaveCalendar.IsUpdated, IsInitial), so every stamp has a turn
+		var (start, rate) = (save.World.Calendar.FunnyTimeStart, save.World.Calendar.FunnySecsPerRealSec);
+		var adjusted = new List<string>();
+		long Turn( string name, long stamp )
+		{
+			var (turn, rest) = StampTurn( stamp, start, rate );
+			if ( rest != 0 )
+				adjusted.Add( $"{name} time stamp {stamp} lies {rest / (double)TimeStampUnitsPerSecond} park seconds into turn {turn}, imported as that turn's start" );
+			return turn;
+		}
+		var turns = (ObjectTurn: Turn( "mLastObjectBuilt", stamps.LastObjectBuilt ), HireTurn: Turn( "mLastStaffHired", stamps.LastStaffHired ));
+		evidence.Add( $"Park analyser: the stamps of the newest construction, mLastObjectBuilt (turn {turns.ObjectTurn}), and of the newest hire, mLastStaffHired (turn {turns.HireTurn}), imported for the automatic advisor's days-since tests (calendar start {start}, park turn {economy.Turn})." );
+		foreach ( var adjustment in adjusted )
+			evidence.Add( $"Park analyser value adjusted on import: {adjustment}." );
+		return turns;
+	}
+
+	/// <summary>
+	/// The park turn of a saved 100 ns time stamp on a calendar, whose turns have the park time of its start plus floor(turn x rate / 4) seconds: the first turn of the stamp's second, or
+	/// the last turn before it when no turn has that second, and the units the stamp lies past that turn's time; exact for any saved words and a positive rate.
+	/// </summary>
+	private static (long Turn, long Remainder) StampTurn( long stamp, long calendarStart, int rate )
+	{
+		var offset = (Int128)stamp - calendarStart;
+		var seconds = FloorDivide( offset, TimeStampUnitsPerSecond );
+		// the first turn whose second is not before the stamp's: floor(turn x rate / 4) >= seconds exactly when turn x rate >= 4 x seconds
+		var turn = -FloorDivide( -4 * seconds, rate );
+		if ( FloorDivide( turn * rate, 4 ) > seconds )
+			turn--;
+		return ((long)turn, (long)(offset - FloorDivide( turn * rate, 4 ) * TimeStampUnitsPerSecond));
+	}
+
+	private static Int128 FloorDivide( Int128 value, Int128 divisor )
+	{
+		var (quotient, remainder) = Int128.DivRem( value, divisor );
+		return remainder < 0 ? quotient - 1 : quotient;
 	}
 
 	/// <summary>Registers the save's objects; returns the counts and the economy object of each matched attraction thing id.</summary>
@@ -834,10 +894,10 @@ public sealed partial class OriginalEconomyImport
 		var byState = string.Join( ", ", save.Guests.GroupBy( guest => guest.State ).OrderBy( group => group.Key ).Select( group => $"{group.Count()} in state {group.Key}" ) );
 		evidence.Add( $"{save.GuestCount} saved guests{(byState.Length == 0 ? "" : $" ({byState})")} are imported by the guest simulation when a level attaches it." );
 		// [EXT:original-engine-state-dumps] the raw dumps of the original's own engine structures that OpenTPW's engines have no counterpart for (the Scripts SCPT records: the sprite scripts of the saved guests and litter, which OpenTPW animates from their state and the cell; the RSSE scripts' object lists, node, bounce and walk tables, whose saved ids, list order, pass counter and run state are imported, RideScriptWorld.ImportSaved and RideVM.ImportSavedRunState; the Sound block's engine state: the sound flags, voice handles, crowd, rain and reverb words and the sound library's voice list (not QMixer data; the saved volumes and on-flags are applied, GameAudio.ApplySavedSound); the message-centre lists and the Track and Flying ride chunks) are not restored: OpenTPW has different engines that restart from the archives; the widths are traced (SaveBlockWidths) to split the save; the Particles block's pool is restored (SAVE-013)
-		// [APPROX:SAVE-010] the advisor presentation block, the second clock word (the advisor clock, applied when the automatic advisor attaches; the first, the game clock the saved scripts' waits count from, is applied with their run state when the level imports its objects, SavedScriptImport), vanilla time, game-system words, the cheat chunk's second byte (+0xB of the cheat object 0xFB3520, which only its constructor and the loader 0x405570 write; the first, the cheat mode, is imported, docs/CHEATS.md), advisor scoring and UI record count (SaveRuntimeBlocks), the weather, park analyser apart from its recent-research rings, five monthly graph rings, live arrivals and recent stays, tag system, mechanic HQ and UI message receiver things, world states other than TPW loss state 4, arrival vehicle handles and bytes (the saved scripts of the arrival vehicles resume on their own, but the arrival scheduler's words that point at them are not imported) and the calendar session start and the advisor controller's time signature, sound, three raw words, mRequestedLastTutorial and mMessagePlaying are not imported (its current record is imported as the last tutorial advice when an automatic advisor attaches), nor are its pending advice and history when no automatic advisor is attached; the camera is imported (zoom, yaw and the required point of interest, loader 0x42CEC0) without the loader's yaw correction by the word 0x78D912; of the cell map the path cells, occupancy, MAP attributes, each path cell's texture and turn and the litter (type, claim) are read, and a saved path tile is drawn only while the cell's path neighbours equal the saved ones and its turn is 0/90/180/270 (otherwise the tile is chosen from the neighbours) — evidence needed: how the world state and arrival words (the current arrival vehicle's handle and the arrival bytes) steer the original's arrival update beyond what OpenTPW's arrival scheduler rebuilds and the camera's yaw correction word
+		// [APPROX:SAVE-010] the advisor presentation block, the second clock word (the advisor clock, applied when the automatic advisor attaches; the first, the game clock the saved scripts' waits count from, is applied with their run state when the level imports its objects, SavedScriptImport), vanilla time, game-system words, the cheat chunk's second byte (+0xB of the cheat object 0xFB3520, which only its constructor and the loader 0x405570 write; the first, the cheat mode, is imported, docs/CHEATS.md), advisor scoring and UI record count (SaveRuntimeBlocks), the weather, park analyser apart from its recent-research rings, five monthly graph rings, live arrivals and recent stays and the arrival ring and the object and hire stamps the automatic advisor takes when it attaches, tag system, mechanic HQ and UI message receiver things, world states other than TPW loss state 4, arrival vehicle handles and bytes (the saved scripts of the arrival vehicles resume on their own, but the arrival scheduler's words that point at them are not imported) and the calendar session start and the advisor controller's time signature, sound, three raw words, mRequestedLastTutorial and mMessagePlaying are not imported (its current record is imported as the last tutorial advice when an automatic advisor attaches), nor are its pending advice and history when no automatic advisor is attached; the camera is imported (zoom, yaw and the required point of interest, loader 0x42CEC0) without the loader's yaw correction by the word 0x78D912; of the cell map the path cells, occupancy, MAP attributes, each path cell's texture and turn and the litter (type, claim) are read, and a saved path tile is drawn only while the cell's path neighbours equal the saved ones and its turn is 0/90/180/270 (otherwise the tile is chosen from the neighbours) — evidence needed: how the world state and arrival words (the current arrival vehicle's handle and the arrival bytes) steer the original's arrival update beyond what OpenTPW's arrival scheduler rebuilds and the camera's yaw correction word
 		var engineDumps = save.Layout.Blocks.Where( block => block.Block is SaveBlock.Scripts or SaveBlock.MessageCentre or SaveBlock.TrackRides or SaveBlock.FlyingRides or SaveBlock.Rsse or SaveBlock.Sound ).ToList();
 		evidence.Add( $"[EXT:original-engine-state-dumps] Not restored (OpenTPW's engines restart from the archives): {string.Join( ", ", engineDumps.Select( block => $"{block.Block} {block.Length} bytes" ) )}; the Rsse block's script ids, list order, pass counter and run state are imported when the level attaches its objects, the Particles block's pool when the level builds its particle system." );
-		evidence.Add( $"[APPROX:SAVE-010] Not imported: {string.Join( ", ", save.Layout.Blocks.Where( block => block.Block is not (SaveBlock.ActionRecording or SaveBlock.World or SaveBlock.RideSystem or SaveBlock.Particles or SaveBlock.Camera) && !engineDumps.Contains( block ) ).Select( block => $"{block.Block} {block.Length} bytes" ) )}; {Things( save.World, SaveThingModel.Weather, SaveThingModel.TagSystem, SaveThingModel.MechanicHq, SaveThingModel.UIMsgReceiver )}; park analyser apart from its recent-research rings, five monthly graph rings, live arrivals and recent stays." );
+		evidence.Add( $"[APPROX:SAVE-010] Not imported: {string.Join( ", ", save.Layout.Blocks.Where( block => block.Block is not (SaveBlock.ActionRecording or SaveBlock.World or SaveBlock.RideSystem or SaveBlock.Particles or SaveBlock.Camera) && !engineDumps.Contains( block ) ).Select( block => $"{block.Block} {block.Length} bytes" ) )}; {Things( save.World, SaveThingModel.Weather, SaveThingModel.TagSystem, SaveThingModel.MechanicHq, SaveThingModel.UIMsgReceiver )}; park analyser apart from its recent-research rings, five monthly graph rings, live arrivals and recent stays and the arrival ring and the object and hire stamps the automatic advisor takes when it attaches." );
 		if ( save.RuntimeBlocks is { } blocks )
 		{
 			var camera = blocks.Camera;

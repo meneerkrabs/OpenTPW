@@ -395,16 +395,27 @@ public partial class Level
 			foreach ( var ride in target.Attractions.OfType<RideVisitorBridge>() )
 				ride.RecomputeQueue( target.Grid );
 		}
-		ValidateResumeQueueGeometry( snapshot, target );
+		ValidateResumeQueueGeometry( snapshot, target, restoreVisitorCells: true );
 		// Keep the original empty-bridge validation and restore order, including the saved map version.
 		if ( bridgeData == null ) world?.RestoreSnapshot( null );
 	}
 
-	/// <summary>Current cached queues must agree with the restored cells; a cache from before the last edit refreshes on the next tick.</summary>
-	internal static void ValidateResumeQueueGeometry( GuestSimulationSnapshot snapshot, GuestSimulation target )
+	/// <summary>
+	/// Current cached queues must agree with the restored cells; a cache from before the last edit refreshes on the next tick. With <paramref name="restoreVisitorCells"/> each ride's entrance
+	/// and exit go back as the save holds them once the snapshot is validated, and its queue is found from them again, before the comparison: the registration resolved them on the restored
+	/// grid, where a path laid nearer since the placement resolved them would move them (<see cref="RideVisitorBridge.RestoreVisitorCells"/>).
+	/// </summary>
+	internal static void ValidateResumeQueueGeometry( GuestSimulationSnapshot snapshot, GuestSimulation target, bool restoreVisitorCells = false )
 	{
 		var validation = target.ValidateSnapshot( snapshot );
 		if ( !validation.IsValid ) throw new InvalidDataException( string.Join( "; ", validation.Errors ) );
+		if ( restoreVisitorCells )
+		{
+			var registered = target.Attractions.OfType<RideVisitorBridge>().ToDictionary( item => item.AttractionId );
+			foreach ( var saved in snapshot.Attractions )
+				if ( registered.TryGetValue( saved.AttractionId, out var ride ) && ride.RestoreVisitorCells( saved ) )
+					ride.RecomputeQueue( target.Grid );
+		}
 		if ( snapshot.SeenGridVersion > target.Grid.Version )
 			throw new InvalidDataException( "The guests refer to a cell-map version newer than the saved layout." );
 		if ( snapshot.SeenGridVersion != target.Grid.Version ) return;

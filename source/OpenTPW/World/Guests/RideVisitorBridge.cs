@@ -340,9 +340,10 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 
 	/// <summary>
 	/// Captures the queue and rider bookkeeping as a typed deep copy: the guest-id linked list front first, the
-	/// script-held guests with their timers, the computed queue geometry and the admission counters. The script, the
-	/// open delegate and the placement's cells metadata (entrance/exit, stand position, queue parameters) are owned by
-	/// the object/script slices and are re-attached around a restore, not captured.
+	/// script-held guests with their timers, the computed queue geometry, the admission counters and the entrance and exit
+	/// cells as they stand (a placement resolved them once; <see cref="RestoreVisitorCells"/>). The script, the open
+	/// delegate and the placement's other cells metadata (stand position, queue parameters) are owned by the object/script
+	/// slices and are re-attached around a restore, not captured.
 	/// </summary>
 	public RideVisitorBridgeSnapshot CaptureSnapshot() => new()
 	{
@@ -371,6 +372,8 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 		TypedQueueDirection = QueueEntryResolver != null && QueueFrontCell != null && QueueEntranceDirection >= 0 ? QueueEntranceDirection : null,
 		QueueEditCount = QueueEditCount,
 		JoinCell = JoinCell,
+		EntranceCell = HasCells ? EntranceCell : null,
+		ExitCell = HasCells ? ExitCell : null,
 		HeadNotReadyStreak = HeadNotReadyStreak,
 		MaximumHeadNotReadyStreak = MaximumHeadNotReadyStreak,
 		CalledAgeTurns = CalledAgeTurns,
@@ -404,6 +407,10 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 		}
 		if ( snapshot.TypedQueueFront.HasValue != snapshot.TypedQueueDirection.HasValue )
 			Error( "the typed queue front and direction must be present together." );
+		if ( snapshot.EntranceCell.HasValue != snapshot.ExitCell.HasValue )
+			Error( "the entrance and exit cells must be present together." );
+		if ( snapshot.EntranceCell is { } entranceCell && (entranceCell.X < 0 || entranceCell.Y < 0) || snapshot.ExitCell is { } exitCell && (exitCell.X < 0 || exitCell.Y < 0) )
+			Error( "the entrance or exit cell is outside the positive cell map." );
 		if ( snapshot.TypedQueueFront is { } typedFront && (typedFront.X < 0 || typedFront.Y < 0) )
 			Error( "the typed queue front is outside the positive cell map." );
 		if ( snapshot.TypedQueueDirection is { } typedDirection && (typedDirection < 0 || typedDirection > 3) )
@@ -580,6 +587,7 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 		}
 		QueueEditCount = snapshot.QueueEditCount;
 		JoinCell = snapshot.JoinCell;
+		RestoreVisitorCells( snapshot );
 		HeadNotReadyStreak = snapshot.HeadNotReadyStreak;
 		MaximumHeadNotReadyStreak = snapshot.MaximumHeadNotReadyStreak;
 		CalledAgeTurns = snapshot.CalledAgeTurns;
@@ -590,6 +598,20 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 		legacyLeftovers.Clear();
 		if ( !snapshot.VmOwnsHeapAndLimbo )
 			MigrateLegacyScriptState( snapshot );
+	}
+
+	/// <summary>
+	/// Puts back the entrance and exit cells <paramref name="snapshot"/> holds, as they stood rather than as the registration resolved them on the restored grid (a path laid nearer since the
+	/// placement resolved them did not move them); false when it holds none (a save from before) or this bridge has no cells. The resume does it before it compares the queues found from them
+	/// (<see cref="Level.RestoreResumeRoutingGeometry"/>); <see cref="RestoreSnapshot"/> does it again for a caller that restores a bridge on its own.
+	/// </summary>
+	internal bool RestoreVisitorCells( RideVisitorBridgeSnapshot snapshot )
+	{
+		if ( !HasCells || snapshot.EntranceCell is not { } entrance || snapshot.ExitCell is not { } exit )
+			return false;
+		EntranceCell = entrance;
+		ExitCell = exit;
+		return true;
 	}
 
 	private readonly List<int> legacyLeftovers = new();

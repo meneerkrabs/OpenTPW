@@ -455,17 +455,45 @@ public class AudioRegisterRound2Tests
 		Assert.AreEqual( new Vector3( 30, 0, 40 ), mixer.Voices.Single().Position, "(x * 10, 0, z * 10) of the clicked cell" );
 	}
 
-	[TestMethod]
-	public void ARefusedTrackToolClickPlaysNoTrackClick()
+	/// <summary>A kart line writer whose ghost refuses one tile and accepts the rest.</summary>
+	private sealed class RefusingTrackWriter( (int X, int Y) refused ) : ICellLineWriter
 	{
-		// [BIN:TPW-EXE:0x524ab6] a release with the refused-ghost latch set leaves through the latch's mode table (0x52766c) to SetMode(0, 0) before 0x526cb3, which plays 0xCE
-		var refused = new SegmentResult( (2, 2), Array.Empty<(int X, int Y)>(), 0, CellBuildResult.Occupied, false ) { GhostRefused = true };
-		var accepted = refused with { StoppedBy = CellBuildResult.Ok, GhostRefused = false };
-		Assert.IsFalse( Hud.ParkHud.PlaysTrackToolClick( CellToolMode.KartTrack, refused ) );
-		Assert.IsFalse( Hud.ParkHud.PlaysTrackToolClick( CellToolMode.WaterTrack, refused ) );
-		Assert.IsTrue( Hud.ParkHud.PlaysTrackToolClick( CellToolMode.KartTrack, accepted ) );
-		Assert.IsTrue( Hud.ParkHud.PlaysTrackToolClick( CellToolMode.WaterTrack, null ), "the click that only stores the start plays it too" );
-		Assert.IsFalse( Hud.ParkHud.PlaysTrackToolClick( CellToolMode.Path, accepted ), "the path and queue modes lay with cat_ui 101" );
+		public CellToolMode Mode => CellToolMode.KartTrack;
+		public SegmentResult Preview( (int X, int Y) start, (int X, int Y) cursor ) =>
+			new( cursor, Array.Empty<(int X, int Y)>(), 0, start == refused || cursor == refused ? CellBuildResult.Occupied : CellBuildResult.Ok, false )
+			{ Start = start, Line = ParkPathBuilder.LayLine( start, cursor ), StoppedAt = start == refused || cursor == refused ? refused : null };
+		public SegmentResult Commit( (int X, int Y) start, (int X, int Y) end ) => Preview( start, end );
+		public void Undo( SegmentResult segment ) { }
+	}
+
+	[TestMethod]
+	public void ARefusedTrackToolClickThroughTheHudPlaysTheRefusalCueAndNoTrackClick()
+	{
+		// [BIN:TPW-EXE:0x524ab6] a release with the refused-ghost latch set plays 0xAF and leaves through the latch's mode table (0x52766c) to SetMode(0, 0) before 0x526cb3, which plays 0xCE
+		Use( "Ui", Category( (GameAudio.TrackToolClickEvent, 0x1, 4), (GameAudio.PathRefusedEvent, 0x1, 4) ) );
+		var fixture = new RideUpgradeIngressTests();
+		fixture.Setup();
+		try
+		{
+			var hud = fixture.Fixture( Hud.BuildCategory.Rides, out var level, out _, out _, out _, out _ );
+			var context = RideUpgradeIngressTests.Context();
+			context.Delta = 0.016f;
+			level.CellTool.Enter( new RefusingTrackWriter( (2, 2) ), null );
+			HudToolClick.Click( hud, (2, 2) );
+			Assert.IsFalse( level.CellTool.IsActive, "the refused ghost of the tile ends the line tool" );
+			Assert.AreEqual( 0, mixer.Voices.Count, "the refused click plays no track click 0xCE" );
+			hud.Update( context, new UiInput( new System.Numerics.Vector2( -1 ), false, false, true, false, UiKeys.None ), false, false, false );
+			Assert.AreEqual( new Vector3( 20, 0, 20 ), mixer.Voices.Single().Position, "its release plays the refusal cue 0xAF at the clicked cell" );
+			level.CellTool.Enter( new RefusingTrackWriter( (9, 9) ), null );
+			HudToolClick.Click( hud, (4, 4) );
+			Assert.AreEqual( (4, 4), level.CellTool.Start, "an accepted click stores the start" );
+			Assert.AreEqual( 2, mixer.Voices.Count, "and plays the track click 0xCE" );
+			Assert.AreEqual( new Vector3( 40, 0, 40 ), mixer.Voices[^1].Position );
+		}
+		finally
+		{
+			fixture.Cleanup();
+		}
 	}
 
 	[TestMethod]

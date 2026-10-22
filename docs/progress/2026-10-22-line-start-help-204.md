@@ -15,7 +15,7 @@ tp.exe posts advisor help 0xCC (204) when the kart or water line tool takes a cl
     - `ARefusedTileEndsTheKeptLineToolWithoutHelp204`: a click on a refused tile ends that tool without help 204.
     - `TheLineToolOfAnOpenCircuitStartsAtItsOpenEndAndPostsNoHelp204` covers the track button's line tool.
   - `AdvisorToolHelpTests`: both line modes post 204 for their first click and no path help after it, a refused first click ends them without it, a line tool entered with a start never posts it, and the post outlives the tool's end.
-  - `AudioRegisterRound2Tests.ARefusedTrackToolClickPlaysNoTrackClick` checks the sound gate.
+  - `AudioRegisterRound2Tests.ARefusedTrackToolClickThroughTheHudPlaysTheRefusalCueAndNoTrackClick` drives the HUD's own tool click: a refused first click plays no 0xCE and its release plays 0xAF, and an accepted one plays 0xCE.
   - `AdvisorProducerInventoryTests` checks the row.
   - `AdvisorRestoredAdviceTests` checks that a mode change keeps 204 pending while it takes the blueprint hint, and that 204 is posted with the extension off.
   - The producer and refusal tests fail without their change.

@@ -323,13 +323,47 @@ bytecode is byte for byte the bytecode Veldrid compiles for the same shader, tha
 again, that shaders made from the kept bytecode draw the same pixels as Veldrid's, and that a whole but wrong container is refused, compiled
 again and drawn the same. Other backends are unchanged (Metal compiles its source when the pipeline is made and caches it itself).
 
+### Signs composed ahead (October 22, 2026)
+
+The first placement of a ride, shop or sideshow with a sign composed the sign on the frame of the click (`ObjectSigns.Get` from the object's
+model build: the `.sgn` read, the wavelet decode of its board, the glyph rasters and the paint and relief layers; `object-sign`, 36 to 48 ms on the
+Mac for types 1104 and 1101). The buy window now hands every type it lists to `ObjectSigns.ComposeAhead` whenever its list changes (a tab, a
+sort), and one worker composes those signs in the order asked. Only the CPU part moves: the RGBA halves. The GPU textures are still made on the
+render thread when a material first asks for them. `Get` uses a composition that has finished, waits for one that is running, and runs one that
+has not started on the calling thread (one `Lazy` per sign and text, shared by the worker and every caller). The composition holds what it logs
+(`Logger.BeginCapture`) and `Get` writes it when it uses the result, so the log reads as before. A composition records the file system it read
+and that file system's lookup generation and the data corrections in force; when any of them changed before it is used (a mod set, the interface
+language), even while it ran, `Get` composes again; it also composes again when the worker's composition failed (a file busy then may be
+readable now), so a failure that `Get` counts and logs is always one met on use. The failure counting and caching of `Get` are unchanged. The browser does not compose ahead (one thread, and a
+theme's files may not have arrived yet).
+
+What the worker touches was checked for use from a second thread. The composer keeps no state between signs except its kernel tables (already
+locked, and filled per value with interlocked writes); `SignFontLibrary` and `TrueTypeFont` are only read after loading; the shared renderer
+(`SignTextRenderer.Shared`) is now made once under a lock. In the file system, the remembered lookups were already safe for several threads
+(PR #787: each answer carries its generation), but the open archives were kept in a plain dictionary: `GetArchive` now takes a lock. A WAD
+member's decompressed bytes are published with one compare-exchange, so two readers of the same member keep one copy and count it once; the
+member read itself was already locked (texture packs read on a worker too). The x87 precision of the sign arithmetic is a thread-static test
+setting whose default, the original's 24 bits, holds on every thread. `LoadProfile` counts on every thread, and frame marks ignore other threads.
+
+`ObjectSignComposeAheadTests` compose every sign of the four themes (over the game data's own file system with its remembered lookups) on the
+calling thread and on the worker, and compare the two byte for byte, with the same diagnostics and log; the same for signs taken in reverse
+order while the worker runs (some waited for, some composed by the caller), for the debug sign export (`--export-signs`, every PNG), and a
+composition made before the lookups changed is composed again. `SignRasterCorpusHashTests` (the frozen hashes of the 75 signs) still pass.
+
+| Measure (Release, Mac, `--perf-build --hitch-report 30`, runs alternating with the build before) | Before | After |
+| --- | ---: | ---: |
+| First placement of type 1104: frame / `perf.place` | 86 to 101 / 50 to 63 ms | 46 to 47 / 16 to 19 ms |
+| First placement of type 1101: frame / `perf.place` | 62 to 64 / 60 to 63 ms | 17 / 10 to 14 ms |
+| `object-sign` in those frames | 36 to 48 ms | under 0.5 ms |
+
+The rest of the 1104 frame is the scenario's own search for a free site (`perf.site-search`, 27 to 29 ms, not part of a player's click) and the
+part textures (`texture-decode`, 5 to 6 ms). Composing the listed types' signs reads a little more in the background (1,576 file opens instead of
+1,561 and 832 directory listings instead of 724 over the whole run, for signs of types that are listed but not placed); each sign keeps 128 KB
+of pixels for the session, as a placed type's sign already did.
+
 ### What is left
 
-1. **The remaining placement cost is the sign.** A ride with a sign composes it on its first placement (`object-sign`, 36 to 46 ms on the Mac for
-   types 1104 and 1101, on the frame of the click), and its textures decode then (`texture-decode`, 5 to 11 ms). Composing the sign of a type
-   when the buy window first lists it, off the render thread, would take it out of the placement frame; the composer and the file system it reads
-   would have to be checked for use from a worker first.
-2. **The first start after an install or a Windows update** compiles the shaders as before and fills the cache; nothing shows that start's
+1. **The first start after an install or a Windows update** compiles the shaders as before and fills the cache; nothing shows that start's
    progress (the window stays black until the lobby is drawn). A loading indicator would be a visible change and is not made here.
-3. **One file open per WAD member read.** A member read opens the archive again (so a bonus import can replace the file on Windows): 466 opens
+2. **One file open per WAD member read.** A member read opens the archive again (so a bonus import can replace the file on Windows): 466 opens
    before the lobby, 1,311 in a park start. On a hard disk with an antivirus filter each open has a cost.

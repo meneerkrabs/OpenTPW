@@ -17,14 +17,27 @@ public sealed record SignTextTexture( Texture Texture, int Width, int Height, in
 public sealed class SignTextRenderer
 {
 	private static SignTextRenderer? shared;
+	private static readonly object sharedLock = new();
 
 	public SignTextRenderer( SignFontLibrary fonts )
 	{
 		Fonts = fonts ?? throw new ArgumentNullException( nameof( fonts ) );
 	}
 
-	/// <summary>The renderer over the game's <c>fonts.wad</c> (loaded on first use).</summary>
-	public static SignTextRenderer Shared => shared ??= new SignTextRenderer( SignFontLibrary.LoadFromGameData() );
+	/// <summary>
+	/// The renderer over the game's <c>fonts.wad</c> (loaded on first use, once, by whichever thread asks first: signs are also composed on a
+	/// worker, <see cref="ObjectSigns.ComposeAhead"/>). The fonts are only read after loading, so the renderer may compose on several threads.
+	/// </summary>
+	public static SignTextRenderer Shared
+	{
+		get
+		{
+			if ( Volatile.Read( ref shared ) is { } current )
+				return current;
+			lock ( sharedLock )
+				return shared ??= new SignTextRenderer( SignFontLibrary.LoadFromGameData() );
+		}
+	}
 
 	public SignFontLibrary Fonts { get; }
 

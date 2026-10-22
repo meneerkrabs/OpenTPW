@@ -1,0 +1,3 @@
+## Smoother first placements: ride signs are drawn before the click (October 22, 2026)
+
+The first time a ride, shop or sideshow with a sign was placed, the game drew its sign (the board picture and the lettering in the sign's own fonts) on the frame of the click: 36 to 48 ms on a Mac, more on a slower PC (issue #754). The buy window now starts drawing the signs of the types it lists on a background thread, so the placement takes the finished sign; a sign that is not finished yet is waited for or drawn then. The pixels are the same either way, byte for byte, and the first placement of a ride with a sign costs about a quarter of what it did ([ENGINE-PERFORMANCE.md](../ENGINE-PERFORMANCE.md), "Signs composed ahead").

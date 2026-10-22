@@ -146,6 +146,7 @@ public sealed partial class ParkHud
 	// [BIN:TPW-EXE:0x4ac9e8 buy list selection] the list's selection message 0x401 (posted by 0x66525c on every change of the selected row) updates the stats frame at once (0x4abb00) and arms the preview when the row's type differs from the pending one ([0x7cc1e4], time [0x7cc1f0]); a selection of nothing (-1) does nothing
 	internal void UpdateBuyPreview( float time )
 	{
+		ComposeListedSignsAhead();
 		var selected = buy.SelectedItem;
 		if ( selected != null && !Equals( selected, buyLastSelection ) )
 		{
@@ -162,6 +163,25 @@ public sealed partial class ParkHud
 			if ( BuyPreviewModelItem is { } shown && icons?.GetValueOrDefault( shown.Id ) is { } icon )
 				icon.StartBuyAnimation( time );
 		}
+	}
+
+	/// <summary>The list whose signs were last handed to <see cref="ObjectSigns.ComposeAhead"/>.</summary>
+	private IReadOnlyList<BuildItem>? signsComposedAheadFor;
+
+	/// <summary>
+	/// Starts composing the signs of the types the list shows, on a worker, whenever the list changes (a tab, a sort, a catalogue change): a type's
+	/// first placement then takes the finished sign instead of composing it on the frame of the click (issue #754). The pixels are the same either way
+	/// (<see cref="ObjectSigns.Get"/>). The preview's own sign is asked for the same way (<see cref="SignTexture"/>).
+	/// </summary>
+	private void ComposeListedSignsAhead()
+	{
+		var items = buy.Items;
+		if ( ReferenceEquals( items, signsComposedAheadFor ) )
+			return;
+		signsComposedAheadFor = items;
+		foreach ( var item in items )
+			if ( item.Entry is { IsFixedItem: false } entry )
+				ObjectSigns.ComposeAhead( entry );
 	}
 
 	public void SelectCategory( BuildCategory category ) => buy.SelectCategory( category );

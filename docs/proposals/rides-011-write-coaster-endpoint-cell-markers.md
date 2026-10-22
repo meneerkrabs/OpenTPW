@@ -36,3 +36,20 @@ Trace marker lifetime through coaster edit/delete operations and second-layer ow
 - Stop at a reviewable design/evidence package; this draft authorizes no tag removal or parity claim.
 - Do not publish original media or private game data in fixtures, screenshots, or commits.
 - A future implementation needs its own reviewed evidence and acceptance results; do not treat this proposal as merge-ready.
+
+## 2026-10-22 source reconciliation
+
+This addendum supersedes conflicting historical implementation claims above. Source baseline: main `1c874922df6e42425dc5638f7e2554c9fde2c68c`. This is source inspection, not a new original-executable trace or an executed C# / browser test. The proposal remains draft; no whole-identifier retirement is claimed.
+
+### Already implemented and corrected evidence
+
+- [CoasterCellMarkers.cs](https://github.com/meneerkrabs/OpenTPW/blob/1c874922df6e42425dc5638f7e2554c9fde2c68c/source/OpenTPW/World/Coasters/CoasterCellMarkers.cs) provides live type21 owner reservations and derived secondary node references. The historical assertion that the builder neither writes nor reads these markers is no longer current.
+- [COASTER-CELL-MARKERS.md](https://github.com/meneerkrabs/OpenTPW/blob/1c874922df6e42425dc5638f7e2554c9fde2c68c/docs/COASTER-CELL-MARKERS.md) records the integrated station/node lifetime, stack republish, clear-versus-full-teardown, save/load rebinding and native preview priority evidence. Rotated `<` / `>` endpoints require a beyond cell; directionless `D` is refused in every rotation. Replace acceptance case 1's blanket assumption that every `D` writes a marker with this evidenced distinction. Add-on `+` / `#` behavior remains a separate preserved path.
+- [CoasterCellMarkerTests.cs](https://github.com/meneerkrabs/OpenTPW/blob/1c874922df6e42425dc5638f7e2554c9fde2c68c/source/OpenTPW.Tests/CoasterCellMarkerTests.cs) supplies synthetic preview/ownership/lifetime cases. [CoasterCellMarkerLevelTests.cs](https://github.com/meneerkrabs/OpenTPW/blob/1c874922df6e42425dc5638f7e2554c9fde2c68c/source/OpenTPW.Tests/CoasterCellMarkerLevelTests.cs) covers actual placement registration and the restore-helper sequence. These assertions were inspected, not executed in this reconciliation.
+
+### Remaining evidence and next action
+
+Keep the documented defensive owner/type/generation lease: it deliberately avoids native unconditional foreign-cell commits and unsafe cleanup. Independent host single-cell previews do not reproduce sticky native failure globals or whole-drag aggregation. Derived tokens are live references, not native model-pointer identity, including clone/move-cancel stack reconstruction.
+
+The Level fixture uses a null secondary restore payload. It is not proof of a populated secondary-map restore, complete disk-load order or rendered behavior. The next bounded verification is a populated secondary-map restoration fixture and exact-revision execution of the existing marker suites, followed by review of which host adaptations remain intentional. Do not reimplement type21 storage, duplicate current lifetime tests, or remove defensive ownership protections merely to match an unsafe native write. Full RIDES-011 remains open until the remaining contract and evidence are explicitly resolved.
+

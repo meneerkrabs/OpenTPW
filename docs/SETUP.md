@@ -135,6 +135,9 @@ was chosen. An empty string means the bonus content was removed.
 
 An unreadable file is ignored with a warning and the setup asks again.
 
+The same directory holds a `cache` folder of things the game can make again: `cache/shaders` keeps the compiled shaders between runs (SPIR-V, and on Windows the Direct3D 11 bytecode)
+([ENGINE-PERFORMANCE.md](ENGINE-PERFORMANCE.md), "Kept SPIR-V"). Deleting it only makes the next start compile them again.
+
 ## Background and limits
 
 The flow follows OpenRCT2's first start (search known places, then ask, then

@@ -242,6 +242,15 @@ internal sealed partial class CoopJoinSmokeTest
 				$"build {timing.Generation} was downloaded once and built over frames, every stage listed ({timing})" );
 			Require( timing.Build.All( stage => stage.Status != CoopTimingStatus.Measured || stage.Steps > 0 && stage.Frames > 0 && stage.Frames <= timing.BuildFrames ),
 				$"every stage that ran was timed within the build's frames ({timing})" );
+			// a stage of one step ends before its yield: the next step's start, which only begins the next stage, is no part of it
+			Require( timing.Build.Where( stage => stage.Name is "save" or "economy" or "hud" or "advisor" ).All( stage => stage.Steps == (stage.Status == CoopTimingStatus.Skipped ? 0 : 1) ),
+				$"the save's parse, the economy, the HUD and the advisor ran one step each ({timing})" );
+			// a part that alone took the budget: of a stage that ran, within its parts and its longest, the level's with its progress
+			Require( timing.LongSteps.All( step => timing.Build.SingleOrDefault( stage => stage.Name == step.Stage ) is { } stage && step.Step >= 1 && step.Step <= stage.Steps
+					&& double.IsFinite( step.Milliseconds ) && step.Milliseconds >= GameFlow.ParkBuildBudgetMilliseconds && step.Milliseconds <= stage.LongestMilliseconds
+					&& (step.Stage == "level" ? step.Progress is >= 0 and <= 1 : step.Progress == null) )
+				&& timing.Build.All( stage => stage.LongestMilliseconds < GameFlow.ParkBuildBudgetMilliseconds || timing.LongSteps.Any( step => step.Stage == stage.Name ) ),
+				$"every part that alone took the budget is listed with its stage ({timing})" );
 			if ( timing.Outcome is "joined" or "resynced" )
 			{
 				Require( timing.Build.Single( stage => stage.Name == "level" ).Steps > 0 && timing.Build.Single( stage => stage.Name == "hud" ).Status == CoopTimingStatus.Measured

@@ -131,7 +131,7 @@ internal sealed class CoopSession : IDisposable
 	private long downloadPhaseStarted, downloadStarted;
 	private readonly List<CoopJoinTimings> joinTimings = new();
 	/// <summary>The swapped-in park's catch-up while it runs: its timings, the tick it started at, when, and the frames so far.</summary>
-	private (CoopJoinTimings Timing, long Tick, long Started, int Frames)? catchUp;
+	private (CoopJoinTimings Timing, long Tick, ulong CutFrame, long Started, int Frames)? catchUp;
 	/// <summary>The most finished timings kept.</summary>
 	public const int MaximumJoinTimings = 16;
 
@@ -569,7 +569,7 @@ internal sealed class CoopSession : IDisposable
 		if ( timing is { } swapped )
 		{
 			swapped.SwapMilliseconds = CoopClock.Since( swapStarted );
-			catchUp = (swapped, candidate.TickCount, Stopwatch.GetTimestamp(), 0);
+			catchUp = (swapped, candidate.TickCount, downloaded.Frame, Stopwatch.GetTimestamp(), 0);
 		}
 		FinishTiming( old == null ? "joined" : "resynced", build );
 	}
@@ -774,6 +774,7 @@ internal sealed class CoopSession : IDisposable
 		if ( build?.Timings is { } stages )
 		{
 			finished.Build = stages.Stages.ToList();
+			finished.LongSteps = stages.LongSteps.ToList();
 			finished.BuildFrames = stages.Frames;
 			finished.LongestBuildFrameMilliseconds = stages.LongestFrameMilliseconds;
 			finished.ProcessBuild = stages.ProcessBuild;
@@ -786,8 +787,9 @@ internal sealed class CoopSession : IDisposable
 	}
 
 	/// <summary>
-	/// [EXT:online-coop-snapshot-join] A park swapped in has caught up once its stream follows within its window with no frame waiting to apply: its catch-up's ticks, live updates and
-	/// time (the frames it had then; one still on its way is not known).
+	/// [EXT:online-coop-snapshot-join] A park swapped in has caught up once its stream took a frame of the host's from after the cut and follows within its window with no frame waiting to
+	/// apply: its catch-up's ticks, live updates and time (the frames it had then; one still on its way is not known). Before such a frame the host's place is not known: a fresh stream
+	/// at the cut follows by its own horizon.
 	/// </summary>
 	private void StepCatchUp()
 	{
@@ -800,7 +802,7 @@ internal sealed class CoopSession : IDisposable
 		}
 		// the frame before this step ran a live update of the park (the swap's own frame the first)
 		var frames = running.Frames + 1;
-		if ( stream.State != CoopGuestState.Following || stream.ReadyFrames > 0 )
+		if ( stream.LastFrame <= running.CutFrame || stream.State != CoopGuestState.Following || stream.ReadyFrames > 0 )
 		{
 			catchUp = running with { Frames = frames };
 			return;

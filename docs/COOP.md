@@ -9,8 +9,8 @@ phases (C1 to C7) and the comparison of the architectures is in the project note
 
 Status: the command layer (C1) is in place, and of the sessions (C2) the server, the game's link, the
 host's command stream, the level in a session, the stream's join and resync, the host's skip of frames it
-no longer holds and the game's join are built. The join's measurements and the browser's join (C2c-2b) and
-the screens (C2d) follow, so no player starts a session yet.
+no longer holds and the game's join are built, and the join is measured on the desktop (C2c-2b-1). The
+browser's join (the rest of C2c-2b) and the screens (C2d) follow, so no player starts a session yet.
 
 ## User decisions
 
@@ -66,8 +66,9 @@ order, resume after a lost connection or a restart, and the join snapshots
 `OnlineSession`): it opens, resumes and closes the socket and offers the requests and events a shared
 park needs. The host's command stream runs over it (C2b-1, below), a level takes part in a session
 through `CoopSession` (C2b-2, below), and a member joins a running session or resyncs from a join
-snapshot (C2c-1, below), which the game builds and swaps in (C2c-2a, below). The join's measurements and
-the browser's join (C2c-2b) and the game's screens (C2d) follow; until then no player starts a session.
+snapshot (C2c-1, below), which the game builds and swaps in (C2c-2a, below) and which is measured on the
+desktop (C2c-2b-1, "Measurements"). The browser's join (the rest of C2c-2b) and the game's screens (C2d)
+follow; until then no player starts a session.
 
 ### The host's command stream (C2b-1)
 

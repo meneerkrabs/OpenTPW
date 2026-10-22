@@ -98,13 +98,25 @@ public sealed class CoopCaptureTimings
 }
 
 /// <summary>
-/// [EXT:online-coop-snapshot-join] A build's own timings (<see cref="ICoopJoinBuild.Timings"/>): its stages in their order (each listed, a stage it never reached as skipped), the frames
-/// it ran in, the most one of them spent on it, which build of the process it is (the first is the process's cold one), and its work by <see cref="LoadProfile"/> section, taken over
-/// its own slices only, while the profile records.
+/// [EXT:online-coop-snapshot-join] A part of a build's step that alone took a frame's budget or more: its stage, its number among the stage's parts (1 the first), its milliseconds and, in
+/// the level's stage, the level's construction progress after it (from 0 to 1, as the level reports it at its yields), which tells the part of the construction it ran.
+/// </summary>
+public sealed record CoopLongStep( string Stage, int Step, double Milliseconds, float? Progress )
+{
+	public override string ToString() => Progress is { } progress
+		? string.Create( CultureInfo.InvariantCulture, $"{Stage} {Step} (to {progress:0.###}) {Milliseconds:0.0} ms" )
+		: string.Create( CultureInfo.InvariantCulture, $"{Stage} {Step} {Milliseconds:0.0} ms" );
+}
+
+/// <summary>
+/// [EXT:online-coop-snapshot-join] A build's own timings (<see cref="ICoopJoinBuild.Timings"/>): its stages in their order (each listed, a stage it never reached as skipped), the parts of
+/// its steps that took a frame's budget alone, the frames it ran in, the most one of them spent on it, which build of the process it is (the first is the process's cold one), and its
+/// work by <see cref="LoadProfile"/> section, taken over its own slices only while the profile records (a section still open when a build ends early, abandoned or failed, is not in it).
 /// </summary>
 public sealed class CoopBuildTimings
 {
 	public List<CoopWorkTiming> Stages { get; } = new();
+	public List<CoopLongStep> LongSteps { get; } = new();
 	public int Frames { get; set; }
 	public double LongestFrameMilliseconds { get; set; }
 	public int ProcessBuild { get; set; }
@@ -152,18 +164,24 @@ public sealed class CoopJoinTimings
 	public double DecodeMilliseconds { get; set; }
 	/// <summary>The build's stages in their order (<see cref="ICoopJoinBuild.Timings"/>).</summary>
 	public List<CoopWorkTiming> Build { get; set; } = new();
+	/// <summary>The parts of the build's steps that alone took a frame's budget or more, in their order.</summary>
+	public List<CoopLongStep> LongSteps { get; set; } = new();
 	/// <summary>The frames the build ran in, the most one of them spent on it, and which build of the process it was (1 the process's first, its cold one; 0 none).</summary>
 	public int BuildFrames { get; set; }
 	public double LongestBuildFrameMilliseconds { get; set; }
 	public int ProcessBuild { get; set; }
-	/// <summary>The build's work by <see cref="LoadProfile"/> section, milliseconds, over its own slices (empty while the profile is off).</summary>
+	/// <summary>
+	/// The build's work by <see cref="LoadProfile"/> section, milliseconds, over its own slices (empty while the profile is off; a section still open when the build ended early is not in
+	/// it).
+	/// </summary>
 	public Dictionary<string, double> Sections { get; set; } = new();
 	public double CheckMilliseconds { get; set; }
 	/// <summary>The whole swap: the old stream's end, the install, and the new stream with the frames buffered for it.</summary>
 	public double SwapMilliseconds { get; set; }
 	/// <summary>
-	/// The live updates, ticks and time from the swap until the guest's stream follows within its window with no frame waiting to apply (the frames it had when it caught up; a frame
-	/// still on its way is not known); null while it has not, or no park was swapped in.
+	/// The live updates, ticks and time from the swap until the guest's stream has taken a frame of the host's from after the cut and follows within its window with no frame waiting to
+	/// apply (the frames it had when it caught up; a frame still on its way is not known). Null while it has not (a host that publishes nothing after the cut, a paused and idle one,
+	/// leaves it null), or no park was swapped in.
 	/// </summary>
 	public long? CatchUpTicks { get; set; }
 	public int? CatchUpFrames { get; set; }
@@ -173,5 +191,6 @@ public sealed class CoopJoinTimings
 		$"join {Generation} {(Outcome.Length == 0 ? "running" : Outcome)}: download {DownloadSeconds:0.000} s ({PayloadBytes / 1024.0:0} KiB, {DownloadAttempts} attempt(s)), decode "
 		+ $"{DecodeMilliseconds:0.0} ms; build {BuildFrames} frames (the process's build {ProcessBuild}), longest {LongestBuildFrameMilliseconds:0.0} ms: {string.Join( "; ", Build )}; "
 		+ $"check {CheckMilliseconds:0.0} ms, swap {SwapMilliseconds:0.0} ms"
-		+ $"{(Sections.Count > 0 ? "; sections " + string.Join( ", ", Sections.OrderByDescending( item => item.Value ).Select( item => $"{item.Key} {item.Value:0.0}" ) ) : "")}" );
+		+ $"{(LongSteps.Count > 0 ? "; long steps " + string.Join( ", ", LongSteps ) : "")}"
+		+ $"{(Sections.Count > 0 ? "; sections " + string.Join( ", ", Sections.OrderByDescending( item => item.Value ).Select( item => FormattableString.Invariant( $"{item.Key} {item.Value:0.0}" ) ) ) : "")}" );
 }

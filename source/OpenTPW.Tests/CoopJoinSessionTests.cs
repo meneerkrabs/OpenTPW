@@ -449,6 +449,25 @@ public partial class CoopJoinSessionTests
 	}
 
 	[TestMethod]
+	public void AJoinersCatchUpEndsOnlyAfterAFrameFromAfterTheCut()
+	{
+		Hosted();
+		Build( 60, 41 );
+		// the host's park stands still: after the cut it publishes nothing, so the joiner cannot know where the host is
+		host.Holds = true;
+		var joiner = Joiner();
+		RoundsUntil( () => joiner.Level != null, "the joiner swapped its capture in" );
+		Rounds( 30 );
+		var joined = joiner.Session!.JoinTimings.Single();
+		Assert.IsTrue( joined is { Outcome: "joined", CatchUpTicks: null, CatchUpFrames: null, CatchUpSeconds: null }, $"no catch-up before a frame from after the cut: {joined}" );
+		// the park runs on: the host's frames come, and the joiner has caught up once it follows them
+		host.Holds = false;
+		RoundsUntil( () => joined.CatchUpTicks != null, "the joiner caught up" );
+		Assert.IsTrue( joined is { CatchUpTicks: > 0, CatchUpFrames: > 30 } && joined.CatchUpSeconds > 0, joined.ToString() );
+		CatchUpAndCompare( joiner );
+	}
+
+	[TestMethod]
 	public void ADesyncedGuestResyncsWithoutLeavingTheSession()
 	{
 		var guest = Hosted( 1 ).Single();

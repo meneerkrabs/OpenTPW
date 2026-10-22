@@ -4,8 +4,10 @@
 Reads the evidence of the native join smoke's runs (scripts/measure-coop-join.sh writes one directory per run, each with the
 host phase's host-evidence.json and the measuring join phase's join-evidence.json) and prints, for each timing it reports, the
 median, the range and each run's value as a Markdown table, after the runs' environment and, with --machine, the machine's own
-description. A value some runs lack names how many runs have it. Milliseconds unless the row says otherwise. Evidence of the
-adversarial join phase is refused: its rewritten payloads and its refused and abandoned builds warm the process first.
+description. A value some runs lack names how many runs have it (a part of a build's step that took the frame's budget in some
+runs only, say). Milliseconds unless the row says otherwise. A run must be complete: both phases completed, the host's two
+captures, and the guest's join of the first and resync to the second. Evidence of the adversarial join phase is refused: its
+rewritten payloads and its refused and abandoned builds warm the process first.
 
 Usage: python3 -I tools/coop_join_timings.py [--machine <file>] <evidence directory> [<evidence directory> ...]
 """
@@ -14,9 +16,12 @@ import pathlib
 import statistics
 import sys
 
+STAGES = ["save", "files", "catalogue", "manifest", "validation", "economy", "level", "hud", "advisor"]
+OUTCOMES = [("joined", 1, "Following"), ("resynced", 2, "Resynced")]
+
 
 def load(directory):
-    """One run: its host and join evidence (the join phase's in its measuring mode)."""
+    """One run: its host and join evidence (the join phase's in its measuring mode), refused when incomplete."""
     root = pathlib.Path(directory)
     host = json.loads((root / "host-evidence.json").read_text(encoding="utf-8"))
     join = json.loads((root / "join-evidence.json").read_text(encoding="utf-8"))
@@ -24,6 +29,12 @@ def load(directory):
         raise ValueError(f"{root}: a phase did not complete")
     if join.get("Mode") != "measure":
         raise ValueError(f"{root}: the join phase ran in its {join.get('Mode', 'join')!r} mode, not the measuring one")
+    captures = [item.get("Generation") for item in host.get("CaptureTimings") or []]
+    if captures != [1, 2]:
+        raise ValueError(f"{root}: the host's captures are {captures}, not the generations 1 and 2")
+    builds = [(item.get("Outcome"), item.get("Generation")) for item in join.get("JoinTimings") or []]
+    if builds != [(outcome, generation) for outcome, generation, _ in OUTCOMES]:
+        raise ValueError(f"{root}: the guest's builds are {builds}, not the join of the first capture and the resync to the second")
     return host, join
 
 
@@ -41,13 +52,12 @@ def longest_frame(frames, step):
 
 
 def rows(runs):
-    """(row name, one value per run) for every measured value; a value a run lacks is None."""
+    """(row name, unit, one value per run) for every measured value; a value a run lacks is None."""
     def capture(host, index):
-        timings = host.get("CaptureTimings") or []
-        return timings[index] if index < len(timings) else None
+        return (host.get("CaptureTimings") or [])[index]
 
     def join(evidence, outcome):
-        return next((item for item in evidence.get("JoinTimings") or [] if item["Outcome"] == outcome), None)
+        return next(item for item in evidence.get("JoinTimings") or [] if item["Outcome"] == outcome)
 
     def value(get, *path):
         def read(run):
@@ -59,38 +69,57 @@ def rows(runs):
             return item
         return read
 
+    def kib(read):
+        return lambda run: None if read(run) is None else read(run) / 1024
+
     result = []
     for index in range(2):
         label = f"capture {index + 1}"
         get = lambda run, index=index: capture(run[0], index)
-        for name, path in [("cut", ("CutMilliseconds",)), ("publish", ("PublishMilliseconds",)), ("digest", ("DigestMilliseconds",)),
-                           ("state", ("StateMilliseconds",)), ("snapshot", ("SnapshotMilliseconds",)), ("serializer setup", ("SerializerSetupMilliseconds",)),
-                           ("save", ("Save", "Milliseconds")), ("save, longest slice", ("Save", "LongestMilliseconds")), ("save, slices", ("Save", "Steps")),
-                           ("save copy", ("SaveCopyMilliseconds",)), ("writer setup", ("WriterSetupMilliseconds",)),
-                           ("compression", ("Compression", "Milliseconds")), ("compression, slices", ("Compression", "Steps")), ("finish", ("FinishMilliseconds",)),
-                           ("longest frame", ("LongestFrameMilliseconds",)), ("frames", ("Frames",)), ("upload s", ("UploadSeconds",)),
-                           ("payload KiB", ("PayloadBytes",)), ("body KiB", ("BodyBytes",)), ("save KiB", ("SaveBytes",))]:
+        for name, unit, path in [("cut", "ms", ("CutMilliseconds",)), ("publish", "ms", ("PublishMilliseconds",)),
+                                 ("digest", "ms", ("DigestMilliseconds",)), ("state", "ms", ("StateMilliseconds",)),
+                                 ("snapshot", "ms", ("SnapshotMilliseconds",)), ("serializer setup", "ms", ("SerializerSetupMilliseconds",)),
+                                 ("save", "ms", ("Save", "Milliseconds")), ("save, longest slice", "ms", ("Save", "LongestMilliseconds")),
+                                 ("save, slices", "count", ("Save", "Steps")), ("save copy", "ms", ("SaveCopyMilliseconds",)),
+                                 ("writer setup", "ms", ("WriterSetupMilliseconds",)), ("compression", "ms", ("Compression", "Milliseconds")),
+                                 ("compression, slices", "count", ("Compression", "Steps")), ("finish", "ms", ("FinishMilliseconds",)),
+                                 ("longest frame", "ms", ("LongestFrameMilliseconds",)), ("frames", "count", ("Frames",)),
+                                 ("upload s", "s", ("UploadSeconds",)), ("payload KiB", "KiB", ("PayloadBytes",)),
+                                 ("body KiB", "KiB", ("BodyBytes",)), ("save KiB", "KiB", ("SaveBytes",))]:
             read = value(get, *path)
-            if name.endswith("KiB"):
-                read = lambda run, read=read: None if read(run) is None else read(run) / 1024
-            result.append((f"{label}: {name}", [read(run) for run in runs]))
-    for outcome, swap_step in [("joined", "Following"), ("resynced", "Resynced")]:
+            result.append((f"{label}: {name}", unit, [(kib(read) if unit == "KiB" else read)(run) for run in runs]))
+    for outcome, _, swap_step in OUTCOMES:
         get = lambda run, outcome=outcome: join(run[1], outcome)
-        for name, path in [("process's build", ("ProcessBuild",)), ("download s", ("DownloadSeconds",)), ("decode", ("DecodeMilliseconds",)),
-                           ("check", ("CheckMilliseconds",)), ("swap", ("SwapMilliseconds",)), ("build frames", ("BuildFrames",)),
-                           ("longest build frame", ("LongestBuildFrameMilliseconds",)), ("catch-up ticks", ("CatchUpTicks",)),
-                           ("catch-up frames", ("CatchUpFrames",)), ("catch-up s", ("CatchUpSeconds",))]:
-            result.append((f"{outcome}: {name}", [value(get, *path)(run) for run in runs]))
-        for name in ["save", "files", "catalogue", "manifest", "validation", "economy", "level", "hud", "advisor"]:
-            result.append((f"{outcome}: {name}", [None if get(run) is None or stage(get(run), name) is None else stage(get(run), name)["Milliseconds"] for run in runs]))
-            result.append((f"{outcome}: {name}, longest step", [None if get(run) is None or stage(get(run), name) is None else stage(get(run), name)["LongestMilliseconds"]
-                                                                for run in runs]))
-        sections = sorted({name for run in runs if get(run) is not None for name in get(run).get("Sections", {})})
+        for name, unit, path in [("process's build", "count", ("ProcessBuild",)), ("download attempts", "count", ("DownloadAttempts",)),
+                                 ("download s", "s", ("DownloadSeconds",)), ("last attempt s", "s", ("LastAttemptSeconds",)),
+                                 ("payload KiB", "KiB", ("PayloadBytes",)), ("decode", "ms", ("DecodeMilliseconds",)),
+                                 ("check", "ms", ("CheckMilliseconds",)), ("swap", "ms", ("SwapMilliseconds",)),
+                                 ("build frames", "count", ("BuildFrames",)), ("longest build frame", "ms", ("LongestBuildFrameMilliseconds",)),
+                                 ("catch-up ticks", "count", ("CatchUpTicks",)), ("catch-up frames", "count", ("CatchUpFrames",)),
+                                 ("catch-up s", "s", ("CatchUpSeconds",))]:
+            read = value(get, *path)
+            result.append((f"{outcome}: {name}", unit, [(kib(read) if unit == "KiB" else read)(run) for run in runs]))
+        for name in STAGES:
+            timings = [stage(get(run), name) for run in runs]
+            # a stage that did not run its own work in every run says so (a manifest kept from the earlier build is cached, an advisor that is off skipped)
+            statuses = sorted({item["Status"] for item in timings if item is not None})
+            label = f"{outcome}: {name}" + ("" if statuses == ["Measured"] else f" ({', '.join(status.lower() for status in statuses)})")
+            for suffix, unit, key in [("", "ms", "Milliseconds"), (", longest step", "ms", "LongestMilliseconds"), (", steps", "count", "Steps"),
+                                      (", frames", "count", "Frames")]:
+                result.append((label + suffix, unit, [None if item is None else item[key] for item in timings]))
+        # the parts of a step that took the budget alone, by stage and part (the level's with its construction progress after it)
+        steps = sorted({(item["Stage"], item["Step"], item.get("Progress")) for run in runs for item in get(run).get("LongSteps") or []},
+                       key=lambda key: (STAGES.index(key[0]) if key[0] in STAGES else len(STAGES), key[1], key[2] or 0))
+        for name, number, progress in steps:
+            label = f"{outcome}: long step, {name} {number}" + ("" if progress is None else f" (to {progress:.3g})")
+            result.append((label, "ms", [next((item["Milliseconds"] for item in get(run).get("LongSteps") or []
+                                              if (item["Stage"], item["Step"], item.get("Progress")) == (name, number, progress)), None) for run in runs]))
+        sections = sorted({name for run in runs for name in get(run).get("Sections", {})})
         for section in sections:
-            result.append((f"{outcome}: section {section}", [None if get(run) is None else get(run).get("Sections", {}).get(section) for run in runs]))
+            result.append((f"{outcome}: section {section}", "ms", [get(run).get("Sections", {}).get(section) for run in runs]))
         building = "Joining" if outcome == "joined" else "Resyncing"
-        result.append((f"{outcome}: longest update frame while building", [longest_frame(run[1].get("Frames") or [], building) for run in runs]))
-        result.append((f"{outcome}: first update frame after the swap", [first_frame(run[1].get("Frames") or [], swap_step) for run in runs]))
+        result.append((f"{outcome}: longest update frame while building", "ms", [longest_frame(run[1].get("Frames") or [], building) for run in runs]))
+        result.append((f"{outcome}: first update frame after the swap", "ms", [first_frame(run[1].get("Frames") or [], swap_step) for run in runs]))
     return result
 
 
@@ -101,8 +130,14 @@ def summarize(values):
     return statistics.median(present), min(present), max(present)
 
 
-def number(value):
-    return "-" if value is None else (f"{value:.0f}" if abs(value) >= 100 else f"{value:.1f}")
+def number(value, unit):
+    if value is None:
+        return "-"
+    if unit == "s":
+        return f"{value:.3f}"
+    if unit == "count" and float(value).is_integer():
+        return f"{value:.0f}"
+    return f"{value:.0f}" if abs(value) >= 100 else f"{value:.1f}"
 
 
 def table(runs, machine=None):
@@ -119,14 +154,14 @@ def table(runs, machine=None):
     lines.append("")
     lines.append("| Value | Median | Range | Runs |")
     lines.append("|---|---|---|---|")
-    for name, values in rows(runs):
+    for name, unit, values in rows(runs):
         summary = summarize(values)
         if summary is None:
             continue
         median, low, high = summary
         present = sum(item is not None for item in values)
         label = name if present == len(values) else f"{name} ({present} of {len(values)} runs)"
-        lines.append(f"| {label} | {number(median)} | {number(low)}-{number(high)} | {', '.join(number(item) for item in values)} |")
+        lines.append(f"| {label} | {number(median, unit)} | {number(low, unit)}-{number(high, unit)} | {', '.join(number(item, unit) for item in values)} |")
     return "\n".join(lines)
 
 

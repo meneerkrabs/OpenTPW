@@ -255,6 +255,8 @@ internal sealed partial class GameFlow
 		private long partStarted;
 		/// <summary>The build's slices so far: the frame a stage last ran in.</summary>
 		private int slice;
+		/// <summary>The timings' own bookkeeping in the current slice, in <see cref="Stopwatch"/> ticks, which the slice's budget leaves out.</summary>
+		private long bookkeeping;
 		/// <summary>The builds of captures this process began; the first is the process's cold one.</summary>
 		private static int processBuilds;
 
@@ -265,13 +267,14 @@ internal sealed partial class GameFlow
 			if ( complete )
 				return true;
 			var started = Stopwatch.GetTimestamp();
-			// the budget counts the build's work, read as each step returns and before the timings' bookkeeping, so the slices run as without it
-			var worked = started;
-			bool OverBudget() => Stopwatch.GetElapsedTime( started, worked ).TotalMilliseconds >= ParkBuildBudgetMilliseconds;
+			// the budget is the slice's time as without the timings (the scene's resume and pause in it), less their own bookkeeping, so the slices run as they did before them
+			double Worked() => (Stopwatch.GetTimestamp() - started - bookkeeping) * 1000d / Stopwatch.Frequency;
+			bool OverBudget() => Worked() >= ParkBuildBudgetMilliseconds;
 			slice++;
 			// the build's own work only: the live scene's frames between its slices are no part of its sections, which are taken slice by slice
 			LoadProfile.Resume();
 			var sections = LoadProfile.Snapshot();
+			bookkeeping = Stopwatch.GetTimestamp() - started;
 			scene?.Resume();
 			try
 			{
@@ -285,8 +288,7 @@ internal sealed partial class GameFlow
 					}
 					finally
 					{
-						worked = Stopwatch.GetTimestamp();
-						Charge( worked );
+						Charge( Stopwatch.GetTimestamp() );
 					}
 					if ( !more )
 					{
@@ -299,6 +301,8 @@ internal sealed partial class GameFlow
 			{
 				// the live scene runs its frames between the build's: the candidate waits set aside, until the swap once it is complete
 				scene?.Pause();
+				var worked = Worked();
+				var counted = Stopwatch.GetTimestamp();
 				LoadProfile.Pause();
 				foreach ( var (name, section) in LoadProfile.Snapshot() )
 				{
@@ -307,28 +311,40 @@ internal sealed partial class GameFlow
 						Timings.Sections[name] = Timings.Sections.GetValueOrDefault( name ) + section.Milliseconds - before;
 				}
 				Timings.Frames++;
-				Timings.LongestFrameMilliseconds = Math.Max( Timings.LongestFrameMilliseconds, CoopClock.Since( started ) );
+				Timings.LongestFrameMilliseconds = Math.Max( Timings.LongestFrameMilliseconds, worked );
+				// the build is over: the profile runs on as it did before it
+				if ( complete )
+					LoadProfile.Resume();
+				bookkeeping += Stopwatch.GetTimestamp() - counted;
 			}
-			// the build is over: the profile runs on as it did before it
-			if ( complete )
-				LoadProfile.Resume();
 			// the check at the cut and the swap get a frame of their own when this one is spent
 			return complete && !OverBudget();
 		}
 
-		/// <summary>The current stage is charged its part up to <paramref name="now"/>, and the next part begins.</summary>
-		private void Charge( long now )
+		/// <summary>
+		/// The current stage is charged its part up to <paramref name="now"/> (a part that alone took the budget is listed), the work from here on belongs to the stage <paramref name="next"/>
+		/// when one <paramref name="begins"/> (to none when null), and the next part begins after this bookkeeping, which the slice's budget leaves out.
+		/// </summary>
+		private void Charge( long now, bool begins = false, string? next = null )
 		{
-			stage?.Add( Stopwatch.GetElapsedTime( partStarted, now ).TotalMilliseconds, slice );
-			partStarted = now;
+			if ( stage != null )
+			{
+				var milliseconds = Stopwatch.GetElapsedTime( partStarted, now ).TotalMilliseconds;
+				stage.Add( milliseconds, slice );
+				if ( milliseconds >= ParkBuildBudgetMilliseconds )
+					Timings.LongSteps.Add( new CoopLongStep( stage.Name, stage.Steps, milliseconds, stage.Name == "level" ? candidate?.ConstructionProgress : null ) );
+			}
+			if ( begins )
+				stage = next == null ? null : Timings.Stage( next );
+			partStarted = Stopwatch.GetTimestamp();
+			bookkeeping += partStarted - now;
 		}
 
 		/// <summary>The build's work from here on belongs to the stage <paramref name="name"/>.</summary>
-		private void Begin( string name )
-		{
-			Charge( Stopwatch.GetTimestamp() );
-			stage = Timings.Stage( name );
-		}
+		private void Begin( string name ) => Charge( Stopwatch.GetTimestamp(), begins: true, next: name );
+
+		/// <summary>The current stage ends: until the next begins, the build's work is no stage's (a step that only resumes to begin the next adds it no part).</summary>
+		private void End() => Charge( Stopwatch.GetTimestamp(), begins: true );
 
 		private IEnumerable<bool> Steps()
 		{
@@ -342,6 +358,7 @@ internal sealed partial class GameFlow
 			try { ParkResumeMods.Require( saved.Mods, OpenTpwExtensions.Active ); }
 			catch ( InvalidDataException error ) { throw new CoopJoinRefusedException( $"This game's simulation mods differ from the host's park: {error.Message}" ); }
 			snapshot = saved;
+			End();
 			yield return true;
 			// a browser copies a level's files on first use: the build waits for them
 			Begin( "files" );
@@ -358,6 +375,7 @@ internal sealed partial class GameFlow
 			var catalog = loaded ?? throw new InvalidOperationException( "The shared park's object catalogue did not load." );
 			var settings = BalanceSettings.Load( saved.Theme, easy );
 			var economyCatalog = EconomyObjectCatalog.Load( saved.Theme, easy );
+			End();
 			yield return true;
 			IReadOnlyDictionary<string, string> assets;
 			Begin( "manifest" );
@@ -385,6 +403,7 @@ internal sealed partial class GameFlow
 				yield return step;
 			Begin( "economy" );
 			var economy = ParkSaveFile.Restore( saved.Economy, settings, economyCatalog );
+			End();
 			yield return true;
 			Begin( "level" );
 			scene = new EntityConstructionScope();
@@ -401,14 +420,10 @@ internal sealed partial class GameFlow
 			Begin( "hud" );
 			hud = flow.CreateParkHud( candidate, flow.HudStatusFor( candidate ) );
 			hudLanguage = GameLanguage.Version;
+			End();
 			yield return true;
-			if ( !flow.AutomaticAdvisorEnabled || flow.advisorUnavailable )
-			{
-				// the advisor's stage stays one that did not run
-				Charge( Stopwatch.GetTimestamp() );
-				stage = null;
-			}
-			else
+			// a game without its advisor leaves the advisor's stage one that did not run
+			if ( flow.AutomaticAdvisorEnabled && !flow.advisorUnavailable )
 			{
 				Begin( "advisor" );
 				try

@@ -27,9 +27,17 @@ machine="$output/machine.txt"
   uname -srm
   if [[ "$(uname -s)" == Darwin ]]; then
     printf 'processor %s, model %s, memory %s bytes\n' "$(sysctl -n machdep.cpu.brand_string 2>/dev/null)" "$(sysctl -n hw.model 2>/dev/null)" "$(sysctl -n hw.memsize 2>/dev/null)"
-  elif [[ -r /proc/cpuinfo ]]; then
-    grep -m1 'model name' /proc/cpuinfo || true
-    grep -m1 MemTotal /proc/meminfo || true
+  else
+    # an Arm processor's /proc/cpuinfo names no model; lscpu does
+    if command -v lscpu > /dev/null 2>&1; then
+      lscpu | grep -m1 '^Model name:' || true
+    elif [[ -r /proc/cpuinfo ]]; then
+      grep -m1 'model name' /proc/cpuinfo || true
+    fi
+    if [[ -r /sys/devices/virtual/dmi/id/product_name ]]; then
+      printf 'model %s\n' "$(cat /sys/devices/virtual/dmi/id/product_name)"
+    fi
+    grep -m1 MemTotal /proc/meminfo 2> /dev/null || true
   fi
 } > "$machine"
 evidence=()

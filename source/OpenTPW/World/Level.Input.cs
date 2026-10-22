@@ -76,7 +76,7 @@ public partial class Level
 	/// The ride whose queue start the last placement left pending (tp.exe <c>0x8186C0</c>): the queue tool follows a kart or water circuit's close only while one is
 	/// pending, from that ride's queue (<see cref="ContinueTrackTool"/>), and the close takes it. Local tool state of the issuer, never a command, saved or hashed.
 	/// </summary>
-	// [BIN:TPW-EXE:0x0052544E queue start] a placement of a type with an entrance stores the record of its queue's start cell (0x52A050, the cell's coordinates in 0x7639B8/0x7639BC; 0x524DD7, 0x525269, 0x52544E and the Move tool's 0x5258AC); every build or Move click zeroes it before it places (0x524B53, 0x5253F3), the Move tool's pick-up in mode 0x33 zeroes it (0x525E5A), a path or queue commit zeroes it (0x527483), and the queue tool that follows a ride's placement, a coaster's completion or a kart or water circuit's close takes it (0x5252EA, 0x526680, 0x527056)
+	// [BIN:TPW-EXE:0x0052544E queue start] a placement of a type with an entrance stores the record of its queue's start cell (0x52A050, the cell's coordinates in 0x7639B8/0x7639BC; 0x524DD7, 0x525269, 0x52544E and the Move tool's 0x5258AC); every build or Move click zeroes it before it places (0x524B53, 0x5253F3), the Move tool's pick-up in mode 0x33 zeroes it (0x525E5A), a path or queue commit zeroes it (0x527483), and the queue tool that follows a ride's placement, the coaster tool's click or a kart or water circuit's close takes it (0x5252EA, 0x526680, 0x527056)
 	private OriginalObject? placedQueueStart;
 
 	internal SegmentResult? ClickCellTool( (int X, int Y) cell, int modifierMask = 0 )

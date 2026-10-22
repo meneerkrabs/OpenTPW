@@ -10,6 +10,9 @@
 // Usage:
 //   node tools/web-coop-join.mjs --web out/web/wwwroot --game "/path/to/Theme Park World" --evidence <host evidence directory>
 //        [--mode join|measure] [--runs N] [--out <directory>] [--label <name>] [--chrome <executable>] [--headed] [--timeout-minutes M]
+// Each run's evidence goes to <out>/run-N, with machine.txt beside them; scripts/measure-coop-join-browser.sh records the host phase, runs the measuring
+// mode and prints the summary.
+import { execFileSync } from 'node:child_process';
 import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -250,6 +253,31 @@ async function runOnce(options, evidence, webRoot, gameRoot, runDirectory) {
 	}
 }
 
+/**
+ * The machine and the source the driver ran from, which the evidence does not name (machine.txt beside the runs, for tools/coop_join_timings.py --machine):
+ * its system, processor, model and memory, and the driver's checkout's commit and whether what a build reads is clean (the page's own build names its commit
+ * in the evidence).
+ */
+function machineDescription() {
+	const lines = [`${os.type()} ${os.release()} ${os.arch()}`];
+	let model = null;
+	try {
+		model = process.platform === 'darwin' ? execFileSync('sysctl', ['-n', 'hw.model'], { encoding: 'utf8' }).trim() : null;
+	} catch {
+		// no model to name
+	}
+	lines.push(`processor ${os.cpus()[0]?.model ?? 'unknown'}, ${os.cpus().length} cores${model ? `, model ${model}` : ''}, memory ${os.totalmem()} bytes`);
+	const repository = path.dirname(path.dirname(new URL(import.meta.url).pathname));
+	try {
+		const commit = execFileSync('git', ['-C', repository, 'rev-parse', '--verify', 'HEAD'], { encoding: 'utf8' }).trim();
+		const changes = execFileSync('git', ['-C', repository, 'status', '--porcelain', '--', 'source', 'content', 'scripts', 'tools', 'global.json'], { encoding: 'utf8' });
+		lines.push(`source ${commit}, ${changes.trim() ? 'with uncommitted changes' : 'clean'} (the driver's checkout)`);
+	} catch {
+		lines.push('source unknown (no git checkout)');
+	}
+	return lines.join('\n') + '\n';
+}
+
 async function main() {
 	const options = parseArguments(process.argv);
 	const webRoot = path.resolve(options.web);
@@ -257,6 +285,8 @@ async function main() {
 	await fs.access(path.join(webRoot, 'index.html')).catch(() => { throw new Error(`${webRoot} has no index.html: pass the published wwwroot`); });
 	const evidence = await readEvidence(path.resolve(options.evidence));
 	const out = path.resolve(options.out ?? path.join('reports', 'web-coop-join', `${new Date().toISOString().slice(0, 10)}-${options.label}-${options.mode}`));
+	await fs.mkdir(out, { recursive: true });
+	await fs.writeFile(path.join(out, 'machine.txt'), machineDescription());
 	let failed = 0;
 	for (let index = 1; index <= options.runs; index++) {
 		process.stderr.write(`run ${index} of ${options.runs}…\n`);

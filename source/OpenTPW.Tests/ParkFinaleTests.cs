@@ -231,6 +231,28 @@ public class ParkFinaleTests
 	}
 
 	[TestMethod]
+	public void AnObjectTheEconomyDoesNotKnowStillMovesTheAdvisorsStampAndAnAdoptedEndDoesNot()
+	{
+		// the test economy knows neither End (1605) nor the Seaplane (1602): both are made without a record, and both are constructed
+		var level = LevelFor( Objects( Entry(), Entry( "Plane", id: 1602, archive: "/seaplane" ) ) ); var economy = level.Park!.Economy;
+		Set( level, "demolishedQueues", new HashSet<OriginalObject>() );
+		Invoke( level, "ConnectObjectsToGuests" );
+		using var advisor = AdvisorOf( level );
+		var records = economy.Objects.Count;
+		economy.AdvanceDays( 1 );
+		Complete( level );
+		var endTurn = economy.Turn;
+		Assert.AreEqual( endTurn, advisor.CaptureSnapshot().ObjectStampTurn, "End was constructed (0x516B8B), record or not" );
+		economy.AdvanceDays( 1 );
+		Complete( level );
+		Assert.AreEqual( endTurn, advisor.CaptureSnapshot().ObjectStampTurn, "a second notification adopts the live End: nothing is constructed" );
+		Assert.IsTrue( level.Guests!.ArrivalVehicles!.Create( 1 ) );
+		Assert.AreEqual( economy.Turn, advisor.CaptureSnapshot().ObjectStampTurn, "the vehicle was constructed (0x51A57E), record or not" );
+		Assert.AreEqual( 2, level.Objects.Objects.Count );
+		Assert.AreEqual( records, economy.Objects.Count, "neither got a record" );
+	}
+
+	[TestMethod]
 	public void FullSimulationVisitsAndThemeParkIncDoNotStartOrGuardFinales()
 	{
 		var full = LevelFor( Objects( Entry() ), ParkGameMode.FullSimulation ); Complete( full );

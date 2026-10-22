@@ -32,8 +32,11 @@ also changes profile state and, in Instant Action, shows UITEXT 471; those steps
   economy record when it is made, like the fixed items at the park's start (`Level.BindFixedItemMadeInPlay`);
   nothing is charged, since End's price is 0. The constructor's last call stamps the park's newest
   construction (`0x4C7680` at `0x4DB7A3`), which only the advisor reads (`0x4C9070`), so End also moves the
-  advisor's construction stamp (`ParkEventKind.FixedItemMade`). Its dismissal removes it like any object, which
-  sells the record for its scrap value of 0.
+  advisor's construction stamp (`ParkEventKind.FixedItemMade`), also when the economy catalogue does not know
+  End and it gets no record. `0x516B00` itself has no test for a live End; it runs once, as the last research
+  item completes. A repeated notification adopts the live End instead (the reuse above), which constructs
+  nothing, so it neither records nor stamps. Its dismissal removes End like any object, which sells the record
+  for its scrap value of 0.
 - The economy's bank predicate follows the live object and is rebound when the economy is replaced.
 - Startup/load only binds that predicate. Completed research alone never triggers creation.
 - A restored live End is dismissible through the same screen without a second allocation.

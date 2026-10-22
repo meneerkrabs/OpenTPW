@@ -901,6 +901,12 @@ public class AdvisorScanParkTests
 		Assert.IsTrue( made.Imported, "nothing was bought" );
 		EconomyTestData.AdvanceToTurn( park, 3456 );
 		Assert.AreEqual( 25, new EconomyParkState( park, advisor.CaptureSnapshot().ObjectStampTurn ).DaysSinceObjectStamp, "the days count from the fixed item" );
+		// a type the economy catalogue does not know gets no record, but the object was constructed all the same
+		var records = park.Objects.Count;
+		Assert.IsNull( park.RegisterFixedItemMade( 9999 ) );
+		Assert.AreEqual( records, park.Objects.Count );
+		Assert.AreEqual( 3456, advisor.CaptureSnapshot().ObjectStampTurn );
+		Assert.AreEqual( (0, 9999), (raised[^1].InstanceId, raised[^1].InfoId) );
 	}
 
 	[TestMethod]

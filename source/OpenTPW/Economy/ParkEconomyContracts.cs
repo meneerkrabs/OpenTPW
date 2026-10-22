@@ -102,8 +102,8 @@ public enum ParkEventKind
 	/// <summary>
 	/// The game made a fixed item while the park is played, with the common object constructor every purchase also runs (tp.exe <c>0x004DB090</c>): an arrival vehicle at its
 	/// first trip (<c>0x0051A57E</c>) or the Instant Action finale's End (<c>0x00516B8B</c>). <see cref="ParkEvent.InstanceId"/> its uncharged record
-	/// (<see cref="ParkEconomy.RegisterFixedItemMade"/>), <see cref="ParkEvent.InfoId"/> its type. Nothing was bought, unlike <see cref="ObjectBuilt"/>; the advisor's
-	/// construction stamp moves for both.
+	/// (<see cref="ParkEconomy.RegisterFixedItemMade"/>; 0 when the economy catalogue does not know the type), <see cref="ParkEvent.InfoId"/> its type. Nothing was bought,
+	/// unlike <see cref="ObjectBuilt"/>; the advisor's construction stamp moves for both.
 	/// </summary>
 	FixedItemMade
 }

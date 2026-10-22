@@ -1915,15 +1915,16 @@ public sealed class ParkEconomy : IParkEconomy
 	}
 
 	/// <summary>
-	/// Registers a fixed item the game makes while the park is played (an arrival vehicle at its first trip, the research finale's End): uncharged, as
-	/// <see cref="RegisterExisting"/> registers it, and made now, so it raises <see cref="ParkEventKind.FixedItemMade"/> as <see cref="TryBuild"/> raises
-	/// <see cref="ParkEventKind.ObjectBuilt"/>. The event adds no state: the record is the one <see cref="RegisterExisting"/> makes.
+	/// A fixed item the game made while the park is played (an arrival vehicle at its first trip, the research finale's End): registered uncharged, as
+	/// <see cref="RegisterExisting"/> registers it, when the catalogue knows its type, else not recorded (null). <see cref="ParkEventKind.FixedItemMade"/> is raised
+	/// either way, as <see cref="TryBuild"/> raises <see cref="ParkEventKind.ObjectBuilt"/>: the object was constructed. The event adds no state.
 	/// </summary>
 	// [BIN:TPW-EXE:0x004DB7A3 object stamp] the common object constructor ends every construction, a fixed item made in play included, by stamping the park's mLastObjectBuilt (0x4C7680), which only the advisor reads (0x4C9070): the event carries that moment to the advisor's own record
-	public ParkObjectState RegisterFixedItemMade( int infoId )
+	public ParkObjectState? RegisterFixedItemMade( int infoId )
 	{
-		var made = RegisterExisting( infoId );
-		Raise( ParkEventKind.FixedItemMade, 0, made.Id, infoId, Catalog.TryGet( infoId, out var info ) ? info.Name : "" );
+		var known = Catalog.TryGet( infoId, out var info );
+		var made = known ? AddObject( info, imported: true ) : null;
+		Raise( ParkEventKind.FixedItemMade, 0, made?.Id ?? 0, infoId, known ? info.Name : "" );
 		return made;
 	}
 

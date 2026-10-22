@@ -184,9 +184,7 @@ internal static class ShaderCompiler
 				using var nativeProfile = LoadProfile.Measure( "shader-native" );
 				LoadProfile.Count( "native shader programs" );
 				LoadProfile.Count( "native shader programs of " + Path.GetFileName( path ) );
-				var shaders = Device.ResourceFactory.CreateFromSpirv(
-					new ShaderDescription( ShaderStages.Vertex, program.Vertex, "main" ),
-					new ShaderDescription( ShaderStages.Fragment, program.Fragment, "main" ) );
+				var shaders = CreateNative( Device.ResourceFactory, program.Vertex, program.Fragment );
 				natives[key] = native = new SharedShaderProgram( key, shaders[0], shaders[1] );
 			}
 			native.References++;
@@ -199,6 +197,58 @@ internal static class ShaderCompiler
 			Reflection = program.Reflection,
 			Owner = native
 		};
+	}
+
+	/// <summary>
+	/// The native shaders of a program, as Veldrid's <c>CreateFromSpirv</c> makes them. On Direct3D 11 with a cache folder the HLSL bytecode is kept between
+	/// runs (<see cref="Direct3D11Bytecode"/>): Veldrid compiles the cross-compiled HLSL of each new shader with the system HLSL compiler, which was the
+	/// slowest part of a start on Windows; the same compile is made here once and its bytecode handed to Veldrid, which takes bytecode as it is.
+	/// </summary>
+	internal static Veldrid.Shader[] CreateNative( ResourceFactory factory, byte[] vertexSpirv, byte[] fragmentSpirv )
+	{
+		if ( factory.BackendType == GraphicsBackend.Direct3D11 && OperatingSystem.IsWindows() && SpirvCacheDirectory is { } directory )
+		{
+			var hlsl = SpirvCompilation.CompileVertexFragment( vertexSpirv, fragmentSpirv, CrossCompileTarget.HLSL, new CrossCompileOptions() );
+			var kept = new List<string>();
+			try
+			{
+				return CreateDirect3D11( factory, directory, hlsl, kept );
+			}
+			catch ( Exception exception ) when ( exception is not OutOfMemoryException && kept.Count > 0 )
+			{
+				// kept bytecode the device refuses (a whole file that is not what the compiler made): forget it and compile the HLSL again
+				Log?.Trace( $"Shader cache: kept Direct3D 11 bytecode was not usable ({exception.Message}); compiled again." );
+				LoadProfile.Count( "hlsl cache refused" );
+				foreach ( var file in kept )
+					ShaderCache.Delete( file );
+				return CreateDirect3D11( factory, directory, hlsl, kept: null );
+			}
+		}
+		return factory.CreateFromSpirv(
+			new ShaderDescription( ShaderStages.Vertex, vertexSpirv, "main" ),
+			new ShaderDescription( ShaderStages.Fragment, fragmentSpirv, "main" ) );
+	}
+
+	[System.Runtime.Versioning.SupportedOSPlatform( "windows" )]
+	/// <summary>The program's two shaders from kept or compiled bytecode; <paramref name="kept"/> collects the files read (null: read none, compile both).</summary>
+	private static Veldrid.Shader[] CreateDirect3D11( ResourceFactory factory, string directory, VertexFragmentCompilationResult hlsl, List<string>? kept )
+	{
+		var vertexBytecode = Direct3D11Bytecode.Get( directory, hlsl.VertexShader, ShaderStages.Vertex, kept != null, out var keptVertex );
+		var fragmentBytecode = Direct3D11Bytecode.Get( directory, hlsl.FragmentShader, ShaderStages.Fragment, kept != null, out var keptFragment );
+		foreach ( var file in new[] { keptVertex, keptFragment } )
+			if ( file != null )
+				kept!.Add( file );
+		var vertex = factory.CreateShader( new ShaderDescription( ShaderStages.Vertex, vertexBytecode, "main" ) );
+		try
+		{
+			var fragment = factory.CreateShader( new ShaderDescription( ShaderStages.Fragment, fragmentBytecode, "main" ) );
+			return [vertex, fragment];
+		}
+		catch
+		{
+			vertex.Dispose();
+			throw;
+		}
 	}
 
 	/// <summary>

@@ -836,7 +836,8 @@ guarded list.
 - The Move tool's end ends the issuer's tool whatever its command's result (`EndMoveCommand`): a
   refusal would leave the picked-up type carried on every peer while the issuer's tool is gone. C3
   must always allow it, and a member that leaves the session mid-move must have its Move tool ended
-  on every peer (as its hand and its hire), or the next player in its slot inherits the carried type.
+  on every peer (as its hand and its hire must be), or the next player in its slot inherits the
+  carried type.
 - A hire's pending candidate (`ParkStaff.PendingPlacementId`) is one per park: two players placing hires
   at once would take it from each other (C3 gives each player a placement).
 - Opening the queue tool (after a ride is placed, its track circuit closes or its coaster is completed,

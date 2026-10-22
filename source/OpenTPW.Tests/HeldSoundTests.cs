@@ -11,7 +11,7 @@ using N = System.Numerics;
 namespace OpenTPW.Tests;
 
 /// <summary>
-/// The sounds a ride script keeps with ADDOBJ types 3-9 and the opcodes that reach them (KILLOBJ, FADEOBJ, SETOBJPARAM): tp.exe 0x551F5F, 0x557970, 0x5573D0, the object pass
+/// The sounds a ride script keeps with ADDOBJ types 3-9 (type 10: ObjectTypeSoundsTests) and the opcodes that reach them (KILLOBJ, FADEOBJ, SETOBJPARAM): tp.exe 0x551F5F, 0x557970, 0x5573D0, the object pass
 /// 0x5516B0 (re-position every eighth pass, 0x551A1C -> 0x51C270), 0x5522C5 (0x51C2C0), 0x5523D0 (0x51C300 -> 0x6B8930), 0x5524D9 (0x51BC40 -> 0x6BBB80) and the script destructor 0x558500.
 /// </summary>
 [TestClass]
@@ -153,7 +153,7 @@ public class HeldSoundTests
 	}
 
 	[TestMethod]
-	public void AnAddObjThatSubmitsNothingKeepsNoRecordAndOnlyTypeTenStaysUnimplemented()
+	public void AnAddObjThatSubmitsNothingKeepsNoRecord()
 	{
 		var placed = Placed();
 		// an event the category lacks, an event id 0, a key naming no node: the submit has no handle (0x557A0A frees the record)
@@ -165,9 +165,9 @@ public class HeldSoundTests
 		Script( placed.Runtime, a => a.I( Opcode.ADDOBJ, 0, -1, 43, 1 ).I( Opcode.ADDOBJ, 11, -1, 43, 1 ).I( Opcode.ADDOBJ, 1, -1, 43, 1 ).I( Opcode.ADDOBJ, 2, 7, 43, 1 ) );
 		Assert.AreEqual( 0, placed.Runtime.HeldSounds.Count );
 		Assert.AreEqual( 0, mixer.Voices.Count );
-		// type 10 is the object type's own sound list: the one ADDOBJ part that is still unimplemented
+		// type 10 plays from the object type's own sound list, which this type does not have (0x557686 logs and returns handle 0; ObjectTypeSoundsTests)
 		var ten = Script( placed.Runtime, a => a.I( Opcode.ADDOBJ, 10, -1, 43, 1 ) );
-		Assert.AreEqual( 1, ten.UnimplementedEffects[Opcode.ADDOBJ] );
+		Assert.AreEqual( 0, ten.UnimplementedEffects.Count );
 		Assert.AreEqual( 0, placed.Runtime.HeldSounds.Count );
 	}
 
@@ -516,9 +516,10 @@ public class HeldSoundTests
 			.I( Opcode.ADDOBJ, 1, -1, 43, 1 ).I( Opcode.ADDOBJ, 3, -1, 43, 2 ).I( Opcode.ADDOBJ_EXT, 9, -1, 43, 500, 3 )
 			.I( Opcode.SETOBJPARAM, 2, 20, 5 ).I( Opcode.FADEOBJ, 2 ).I( Opcode.KILLOBJ, 3 ).I( Opcode.KILLOBJ, 1 ) );
 		Assert.AreEqual( 0, vm.UnimplementedEffects.Count, string.Join( ", ", vm.UnimplementedEffects ) );
+		// type 10 is served too: it plays from the object type's own sound list, and a type without one submits nothing (ObjectTypeSoundsTests)
 		var rest = Script( placed.Runtime, a => a
 			.I( Opcode.ADDOBJ, 10, -1, 43, 1 ).I( Opcode.EVENT, 10, -1, 43 ) );
-		CollectionAssert.AreEquivalent( new[] { "ADDOBJ=1", "EVENT=1" }, rest.UnimplementedEffects.Select( x => $"{x.Key}={x.Value}" ).ToArray() );
+		Assert.AreEqual( 0, rest.UnimplementedEffects.Count, string.Join( ", ", rest.UnimplementedEffects ) );
 		// the light opcodes are served ([EXT:object-lights]): on an object whose model has no light dummy they change nothing and are not counted as unimplemented
 		var lights = Script( placed.Runtime, a => a
 			.I( Opcode.ENABLELIGHT, 1 ).I( Opcode.DISABLELIGHT, 1 ).I( Opcode.SETLIGHT, 1, 50 ).I( Opcode.COLOURLIGHT, 1, 10, 20, 30 ) );

@@ -223,10 +223,10 @@ scripts declare different subsets.
 Corpus run (`EveryObjectScriptRunsInItsParkWithOriginalAnimations`): all 262
 scripted objects, every theme in one shared world, 60 s at 60 Hz: no faults,
 258 played original clips (1,451 plays). EVENT and REPAIREFFECT play their
-original sounds ([AUDIO.md](AUDIO.md)); ADDOBJ keeps the particles (types 1-2) and sounds (types 3-9) it starts under their slots and KILLOBJ, FADEOBJ,
+original sounds ([AUDIO.md](AUDIO.md)); ADDOBJ keeps the particles (types 1-2) and sounds (types 3-10; type 10 from the object type's own sound list, [RSE-VM.md](RSE-VM.md#the-object-types-own-sound-list-type-10)) it starts under their slots and KILLOBJ, FADEOBJ,
 SETOBJPARAM and a script's end reach them ([RSE-VM.md](RSE-VM.md), "The sounds an ADDOBJ keeps"); the screams, the TOUR, BUMP and COAST controllers ([TOURS.md](TOURS.md), [TRACKS.md](TRACKS.md),
 [COASTERS.md](COASTERS.md)), DIPMUSIC and SETREVERB (through the sound service) are served. What the unimplemented-effect hook still records
-(`RideVM.UnimplementedEffects`): the bounce riders' node and base words where the rider is not rendered at its node, and ADDOBJ/EVENT type 10 (the object type's own sound list, no shipped script).
+(`RideVM.UnimplementedEffects`): the bounce riders' node and base words where the rider is not rendered at its node.
 
 ## Building (`ParkObjects`)
 

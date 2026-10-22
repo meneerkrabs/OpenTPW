@@ -672,20 +672,24 @@ The design fixed two constants only after measuring them (`coop-c2b-design.md`, 
 - **Where a join's slice ends (C2c-2b-3a).** The build ends a frame's slice after the wait asked for the
   level's files once and before a step known to be long, and makes the save codec's metadata in a stage
   of its own (`codec`) before the parse; the measuring smoke records the named work of the swaps' frames
-  (`FrameMarks`). Measured at `864ec4dc9` (clean) as above, medians with their ranges:
+  (`FrameMarks`). Measured at `864ec4dc9` (clean) as above, medians with their ranges. The marks were on
+  while each park was built and for the frame after its swap, where the baseline had none: their clock
+  reads and records cost a little in those frames, so small differences from the baseline are no
+  finding. They cover each frame's update, not its drawing.
   - **The wait for the files was most of a page's join.** Asked once a frame, the level's files arrived
-    in 9 frames (8-10) ahead of time instead of 371 and in 8 interpreted instead of 387: the page's copy
-    runs between its frames, and the loop that spent every frame's budget asking for them had left it
-    almost no time. The join's build took 64 frames (63-68) ahead of time instead of 403 and 107
-    interpreted instead of 471; from the frame that asked to join to the swap's, 2.7 s instead of 8.9
-    (interpreted 5.2 s instead of 13.2), and the catch-up after the swap took 0.26 s instead of 0.57
-    (0.75 instead of 2.17).
+    in 9 frames (8-10) ahead of time instead of 371 and in 8 interpreted instead of 387. The page's copy
+    runs between its frames, so the loop that spent every frame's budget asking for them most likely kept
+    it waiting (these timings do not follow the copy itself). The join's build took 64 frames (63-68)
+    ahead of time instead of 403 and 107 interpreted instead of 471; from the frame that asked to join to
+    the swap's, 2.7 s instead of 8.9 (interpreted 5.2 s instead of 13.2), and the catch-up after the swap
+    took 0.26 s instead of 0.57 (0.75 instead of 2.17).
   - **The save's parse without the codec's metadata.** The metadata took 230 steps of one type each (on
     the desktop 69 ms over 6 frames, the longest step 5 ms; ahead of time 298 ms over 21 frames, the
     longest 19 ms), and the parse fell to 83 ms on the desktop (154), 88 ms ahead of time (384) and 191
     ms interpreted (582): of it, the JSON 45, 61 and 141 ms and the shape's check 37, 26 and 48 ms.
-  - **The swap's frame**, now the longest frame of a join everywhere but the interpreted page (whose
-    objects' step took 1.23 s): 352 ms on the desktop (293-384), 323 ms ahead of time (345 ms with its
+  - **The swap's frame**, now the longest frame of a join ahead of time, and on the desktop about as long
+    as the longest frame while building (359 ms, the objects' step; interpreted, the objects' step took
+    1.23 s): 352 ms on the desktop (293-384), 323 ms ahead of time (345 ms with its
     drawing) and 573 ms interpreted (627 ms). Its marks, the medians of the desktop's and of the page's
     compiled ahead of time:
     - the session's step, the check at the cut and the swap among it: 54 and 88 ms (the check 40 and

@@ -260,11 +260,11 @@ class CoopJoinTimingsTests(unittest.TestCase):
                     coop_join_timings.load(root)
 
     def test_the_swaps_marks_are_listed_by_mark_and_must_be_those_of_the_swaps_frame(self):
-        def marked(swap_frame=2):
+        def marked(swap_frame=2, after_frame=3):
             def change(host, join):
                 join["SwapFrames"] = [
                     {"Outcome": "joined", "Role": "swap", "Frame": swap_frame, "Marks": {"coop.session": [120.0, 1], "park.level": [30.5, 1], "sim.guests": [0.4, 3]}},
-                    {"Outcome": "joined", "Role": "after", "Frame": 3, "Marks": {"park.level": [20.0, 1]}},
+                    {"Outcome": "joined", "Role": "after", "Frame": after_frame, "Marks": {"park.level": [20.0, 1]}},
                     {"Outcome": "resynced", "Role": "swap", "Frame": 4, "Marks": {"coop.session": [40.0, 1]}},
                     {"Outcome": "resynced", "Role": "after", "Frame": 5, "Marks": {"park.hud": [2.0, 1]}}]
             return change
@@ -279,10 +279,12 @@ class CoopJoinTimingsTests(unittest.TestCase):
             self.assertIn("| joined: the frame after the swap, mark park.level (1 of 2 runs) | 20.0 |", table)
             self.assertIn("| resynced: the swap's frame, mark coop.session (1 of 2 runs) | 40.0 |", table)
             self.assertNotIn("sim.guests", table)
-            # marks of another frame than the swap's are refused
+            # marks of another frame than the swap's, or than the one after it, are refused
             write_run(root / "run-2", 30.0, 3.0, change=marked(swap_frame=1))
-            with self.assertRaises(ValueError):
-                coop_join_timings.load(root / "run-2")
+            write_run(root / "run-3", 30.0, 3.0, change=marked(after_frame=4))
+            for run in ("run-2", "run-3"):
+                with self.subTest(run), self.assertRaises(ValueError):
+                    coop_join_timings.load(root / run)
 
     def test_a_build_from_before_the_codec_stage_is_read_without_it(self):
         def without_codec(host, join):

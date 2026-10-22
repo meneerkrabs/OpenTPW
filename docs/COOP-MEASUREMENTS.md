@@ -8,6 +8,8 @@ page (the desktop's host phase once, then the page's measuring join phase in fre
 Each measurement names its source and whether it was clean. The swaps' marks are FrameMarks sections, which nest (a
 parent's time includes its children's); a construction section that spans several of the build's slices adds its
 whole time to the frame it closes in (`load:entities` in a resync's swap frame, whose build's last slice runs there).
+They cover each frame's update, not its drawing, and are recorded from C2c-2b-3a on, on while a park is built and for
+the frame after its swap: their small cost is in those frames' timings, which earlier measurements do not carry.
 
 ## The desktop's join (C2c-2b-1)
 

@@ -107,9 +107,11 @@ def require_whole(root, host, join):
         for outcome, _, step in OUTCOMES:
             roles = sorted(item.get("Role") for item in marks if item.get("Outcome") == outcome)
             swapped = swap_frame(frames, "Joining" if outcome == "joined" else "Resyncing", step, "Frame")
-            recorded = next((item["Frame"] for item in marks if item.get("Outcome") == outcome and item.get("Role") == "swap"), None)
-            if roles != ["after", "swap"] or recorded != swapped:
-                raise ValueError(f"{root}: the {outcome} build's marks are not those of its swap's frame ({roles}, frame {recorded} for {swapped})")
+            following = next((item["Frame"] for item in frames if item["Step"] == step), None)
+            recorded = {item.get("Role"): item["Frame"] for item in marks if item.get("Outcome") == outcome}
+            if roles != ["after", "swap"] or recorded["swap"] != swapped or recorded["after"] != following:
+                raise ValueError(f"{root}: the {outcome} build's marks are not those of its swap's frame and the next ({roles}, frames {recorded} "
+                                 f"for {swapped} and {following})")
 
 
 def load(directory):

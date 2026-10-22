@@ -22,8 +22,10 @@ internal sealed class PlayerProgressRuntimeOwner : IDisposable
 	public string? Error { get; private set; }
 	internal string CommittedDigest => digest;
 	// [EXT:online-coop-snapshot-join] a park in a co-op session is outside its player's progress until it is reclaimed: every peer decides its global tickets by the park's own records
-	private bool Eligible => !disposed && active() && !reclaimPending && shared?.Invoke() != true && Ledger.Mode == ParkGameMode.FullSimulation &&
-		runtime.Start.Kind == ParkStartKind.FullSimulation && runtime.Economy.Mode == ParkGameMode.FullSimulation && runtime.Economy.Settings.CanEarnTickets;
+	private bool Eligible => RecordsEligible && runtime.Economy.Settings.CanEarnTickets;
+	// [EXT:online-coop-snapshot-join] a park in a co-op session neither reads nor writes its player's research records, so every peer's park takes the same finale decision
+	private bool RecordsEligible => !disposed && active() && !reclaimPending && shared?.Invoke() != true && Ledger.Mode == ParkGameMode.FullSimulation &&
+		runtime.Start.Kind == ParkStartKind.FullSimulation && runtime.Economy.Mode == ParkGameMode.FullSimulation;
 
 	/// <param name="shared">[EXT:online-coop-snapshot-join] Whether the park is in a co-op session now; null for a park that never is.</param>
 	public PlayerProgressRuntimeOwner( string path, string theme, PlayerTicketFile.ReadState state, ParkEconomyRuntime runtime, Func<bool> active, Action<string> report,
@@ -78,6 +80,32 @@ internal sealed class PlayerProgressRuntimeOwner : IDisposable
 		if ( !Enum.IsDefined( kind ) || !runtime.Economy.Objectives.GoldenTickets.Contains( kind ) ) return;
 		if ( Ledger.RecordEarned( theme, kind ) ) Dirty = true;
 		if ( Dirty ) TryFlush();
+	}
+
+	/// <summary>Records that this park's research is complete in the player's record list and saves it (tp.exe <c>0x5B0CA0</c>, which no ticket setting gates).</summary>
+	public void RecordResearchCompleted()
+	{
+		if ( !RecordsEligible ) return;
+		if ( Ledger.RecordResearchCompleted( theme ) ) Dirty = true;
+		if ( Dirty ) TryFlushRecords();
+	}
+
+	/// <summary>Whether every park's research is complete in the player's record list once this park's is (tp.exe <c>0x5B0C40</c>); false while the park is outside the player's progress.</summary>
+	public bool ResearchCompletedEverywhere => RecordsEligible && Ledger.ResearchCompletedEverywhereWith( theme );
+
+	/// <summary>Saves the records even in a theme whose tickets cannot be earned (where <see cref="TryFlush"/> leaves the file alone).</summary>
+	private void TryFlushRecords()
+	{
+		if ( Eligible ) { TryFlush(); return; }
+		try
+		{
+			digest = PlayerTicketFile.SaveIfUnchanged( path, Ledger.Capture(), digest );
+			Dirty = false; Error = null;
+		}
+		catch ( Exception exception ) when ( exception is IOException or InvalidDataException or UnauthorizedAccessException )
+		{
+			Error = exception.Message; report( Error );
+		}
 	}
 
 	public void Pump()

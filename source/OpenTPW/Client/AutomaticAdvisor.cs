@@ -204,8 +204,8 @@ internal sealed partial class AutomaticAdvisor : IDisposable
 			PostEventAdvice( groupAdvice, $"a new {(ResearchCategory)item.Amount} research group" );
 		if ( item.Kind == ParkEventKind.GlobalTicketMoved && GlobalTicketMovedMessage( (GoldenTicketKind)item.Amount ) is { } movedAdvice )
 			PostEventAdvice( movedAdvice, $"the {(GoldenTicketKind)item.Amount} ticket moved here" );
-		// [BIN:TPW-EXE:0x00503E8E all research done] 0x167 (167) is posted in Instant Action (the game-type word 0xFB3B7C is 2) without further test; in the full simulation only when the player's ledger has the flag +0xB9 of every park (0x5B0C40), which OpenTPW's ledger lacks
-		if ( item.Kind == ParkEventKind.ResearchAllDone && GameType == 2 )
+		// [BIN:TPW-EXE:0x00503E8E all research done] 167 (0xA7) is posted in Instant Action (the game-type word 0xFB3B7C is 2) without further test; in the full simulation only when the player's records have the byte +0xB9 of every park (0x5B0C40, 0x503F96), the same test that starts the finale
+		if ( item.Kind == ParkEventKind.ResearchAllDone && (GameType == 2 || GameType == 0 && level?.ResearchCompletionStartsFinale() == true) )
 			PostEventAdvice( 167, "all research done" );
 		ChallengesOnParkEvent( item );
 		RestoredOnParkEvent( item );

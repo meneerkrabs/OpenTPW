@@ -90,8 +90,8 @@ internal sealed partial class EconomyParkState : IAdvisorParkState
 	// [BIN:TPW-EXE:0x004C76D0 hire stamp] every staff thing init (0x504B90, at 0x504C65) overwrites mLastStaffHired (+0x21C38, saved at 0x4C6BC4) with the park time: the newest hire; the park init stamps it too (0x4C5CDE)
 	public int DaysSinceHireStamp => DaysSince( hireStampTurn ?? NewestStamps( economy ).HireTurn );
 
-	// [BIN:TPW-EXE:0x004C9070 days since a stamp] (0x4F8690 park time now − stamp, both from the calendar base) divided by 864,000,000,000 (100 ns per day) with __alldiv
-	private int DaysSince( long stampTurn ) => (int)(Math.Max( 0, economy.Turn - stampTurn ) * ParkCalendar.SecondsPerTurn / ParkCalendar.SecondsPerDay);
+	// [BIN:TPW-EXE:0x004C9070 days since a stamp] (0x4F8690 park time now − stamp, both from the calendar base) divided by 864,000,000,000 (100 ns per day) with __alldiv: signed, truncated toward zero, so a stamp still to come (only a modified save holds one) counts negative days
+	private int DaysSince( long stampTurn ) => (int)((economy.Turn - stampTurn) * ParkCalendar.SecondsPerTurn / ParkCalendar.SecondsPerDay);
 
 	// [BIN:TPW-EXE:0x0059DB04 days since start] 0x4F8800 (world + 0x2A0) divided by 0xC92A69C000 with __alldiv
 	public int DaysSinceStart => (int)(economy.Turn * ParkCalendar.SecondsPerTurn / ParkCalendar.SecondsPerDay);

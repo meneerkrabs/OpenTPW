@@ -52,7 +52,7 @@ public class AdvisorSavedStampsTests
 	}
 
 	/// <summary>A Theme Park World save on a 3 x 3 map whose world names the analyser thing 5 (or none), at park turn <see cref="SavedTurn"/>.</summary>
-	private static OriginalParkImport Save( BalanceSettings settings, long objectStamp, long hireStamp, long calendarStart = Start, bool analyser = true )
+	private static OriginalParkImport Save( BalanceSettings settings, long objectStamp, long hireStamp, long calendarStart = Start, bool analyser = true, int rate = SaveCalendar.InitialRate )
 	{
 		var map = OriginalParkImportTests.CreateMap( 3, 3, ( _, _ ) => 0 );
 		var body = Analyser( Stamp( 0, calendarStart ), Stamp( 0, calendarStart ), Stamp( 0, calendarStart ), Stamp( 0, calendarStart ), objectStamp, hireStamp );
@@ -69,7 +69,7 @@ public class AdvisorSavedStampsTests
 		} );
 		var variables = SaveTestPayloads.Variables( bank: 8, gameTick: SavedTurn );
 		BinaryPrimitives.WriteUInt16LittleEndian( variables.AsSpan( 20, 2 ), analyser ? (ushort)5 : (ushort)0 );
-		var world = SaveTestPayloads.World( variables, SaveTestPayloads.Grid( map ), things, calendar: SaveTestPayloads.CalendarAndArrivals( funnyTimeStart: calendarStart ) );
+		var world = SaveTestPayloads.World( variables, SaveTestPayloads.Grid( map ), things, calendar: SaveTestPayloads.CalendarAndArrivals( rate: rate, funnyTimeStart: calendarStart ) );
 		return OriginalParkImport.Import( SaveTestPayloads.Payload( world ), map );
 	}
 
@@ -138,6 +138,15 @@ public class AdvisorSavedStampsTests
 		Assert.AreEqual( new SaveAnalyserStamps( Start, Start, Start, Start, Start, Start ), Read( body.AsSpan( 0, SaveAnalyserStamps.BodyOffset + SaveAnalyserStamps.Bytes ).ToArray() ), "the stamps need no more of the body" );
 		Assert.ThrowsException<InvalidDataException>( () => SaveAnalyserStamps.Read( body, Thing( body.Length, SaveThingModel.Weather ) ) );
 		Assert.ThrowsException<InvalidDataException>( () => SaveAnalyserStamps.Read( body.AsSpan( 0, 100 ), Thing( body.Length ) ) );
+		// a byte ring of another size would move the stamps (0x4CEA00 writes as many entries as its mNumEntries holds)
+		for ( var ring = 0; ring < SaveAnalyserStamps.ByteRings; ring += 19 )
+		{
+			var resized = SaveNewParkThings.ParkAnalyser( 0, 0 );
+			var capacity = SaveArrivalRing.BodyOffset + SaveArrivalRing.Bytes + ring * SaveAnalyserStamps.ByteRingBytes + 4;
+			Assert.AreEqual( SaveAnalyserStamps.ByteRingCapacity, BinaryPrimitives.ReadInt32LittleEndian( resized.AsSpan( capacity, 4 ) ) );
+			BinaryPrimitives.WriteInt32LittleEndian( resized.AsSpan( capacity, 4 ), SaveAnalyserStamps.ByteRingCapacity - 1 );
+			Assert.ThrowsException<InvalidDataException>( () => Read( resized ), $"byte ring {ring}" );
+		}
 	}
 
 	[TestMethod]
@@ -169,6 +178,11 @@ public class AdvisorSavedStampsTests
 		StringAssert.Contains( adjusted[0], "mLastObjectBuilt time stamp " + (Stamp( 1000 ) + 1800L * 10_000_000) + " lies 1800 park seconds into turn 1000, imported as that turn's start" );
 		StringAssert.Contains( adjusted[1], "mLastStaffHired time stamp " );
 		StringAssert.Contains( adjusted[1], "into turn 400" );
+		// counting from the turn's start can add the day the stamp's seconds cross: 3,700 seconds into a turn 24 turns (90,000 seconds) back
+		var crossing = Stamp( SavedTurn - 24 ) + 3700L * 10_000_000;
+		var (economy, late) = Imported( Save( settings, crossing, Stamp( 400 ) ), settings );
+		Assert.AreEqual( (SavedTurn - 24L, 400L), late.AnalyserStampTurns );
+		Assert.AreEqual( (1, 0L), (new EconomyParkState( economy, late.AnalyserStampTurns!.Value.ObjectTurn, 400 ).DaysSinceObjectStamp, OriginalDays( SavedTurn, crossing )) );
 	}
 
 	[TestMethod]
@@ -181,8 +195,8 @@ public class AdvisorSavedStampsTests
 		Assert.AreEqual( -3_357_643L, hireTurn );
 		Assert.AreEqual( (5000L, hireTurn), import.AnalyserStampTurns );
 		var park = new EconomyParkState( economy, import.AnalyserStampTurns!.Value.ObjectTurn, import.AnalyserStampTurns.Value.HireTurn );
-		Assert.AreEqual( 0, park.DaysSinceObjectStamp, "no days have passed since a stamp still to come" );
-		Assert.IsTrue( OriginalDays( SavedTurn, Stamp( 5000 ) ) < 0, "the original's count is negative there: it fails the same waiting-time tests (WaitingTimes.DaysForObjects and DaysForStaff are 30)" );
+		Assert.AreEqual( -92, park.DaysSinceObjectStamp, "a stamp still to come counts negative days, divided signed toward zero" );
+		Assert.AreEqual( OriginalDays( SavedTurn, Stamp( 5000 ) ), park.DaysSinceObjectStamp );
 		Assert.AreEqual( (int)((SavedTurn - hireTurn) * ParkCalendar.SecondsPerTurn / ParkCalendar.SecondsPerDay), park.DaysSinceHireStamp );
 		Assert.AreEqual( OriginalDays( SavedTurn, 0 ), park.DaysSinceHireStamp, "the 2850 seconds the stamp lies into its turn, which the import reports, cross no day here" );
 		// any word a modified save holds converts without overflow
@@ -192,6 +206,27 @@ public class AdvisorSavedStampsTests
 			var expected = (long)BigInteger.Divide( new BigInteger( wild ) - Start - (wild < Start ? UnitsPerTurn - 1 : 0), UnitsPerTurn );
 			Assert.AreEqual( (expected, expected), extreme.AnalyserStampTurns, $"stamp {wild}" );
 		}
+	}
+
+	[TestMethod]
+	public void AStampIsTheTurnOfTheSaveCalendarsOwnRate()
+	{
+		var settings = OriginalSaveImportTests.Settings();
+		// the park time of a turn is the start plus floor(turn x rate / 4) seconds (0x4F8690); only a modified save has a rate other than 15000
+		long StampAt( long turn, int rate ) => Start + turn * rate / 4 * 10_000_000;
+		foreach ( var rate in new[] { 12_000, 15_001, 1 } )
+		{
+			var (_, import) = Imported( Save( settings, StampAt( 1000, rate ), StampAt( 401, rate ), rate: rate ), settings );
+			// below a rate of 4 several turns share a park second (400 to 403 at rate 1), and the first of them is taken
+			Assert.AreEqual( (1000L, rate == 1 ? 400L : 401L), import.AnalyserStampTurns, $"rate {rate}" );
+			Assert.IsFalse( import.Evidence.Any( line => line.StartsWith( "Park analyser value adjusted", StringComparison.Ordinal ) ), $"rate {rate}" );
+		}
+		// a stamp between two turns' times takes the earlier turn at any rate
+		var (_, between) = Imported( Save( settings, StampAt( 1000, 15_001 ) + 10_000_000, StampAt( 401, 15_001 ), rate: 15_001 ), settings );
+		Assert.AreEqual( (1000L, 401L), between.AnalyserStampTurns );
+		Assert.IsTrue( between.Evidence.Any( line => line.StartsWith( "Park analyser value adjusted on import: mLastObjectBuilt", StringComparison.Ordinal ) && line.Contains( "lies 1 park seconds into turn 1000" ) ) );
+		// the World reader refuses a calendar without a positive rate before any stamp is converted
+		Assert.ThrowsException<InvalidDataException>( () => Save( settings, Stamp( 1000 ), Stamp( 400 ), rate: 0 ) );
 	}
 
 	[TestMethod]
@@ -250,6 +285,20 @@ public class AdvisorSavedStampsTests
 		advisor.AttachLevel( LevelWith( save, ParkEconomyRuntime.ForResume( economy, ParkStartKind.FullSimulation ) ) );
 		advisor.RestoreSnapshot( snapshot with { ObjectStampTurn = null, HireStampTurn = null } );
 		Assert.AreEqual( (300L, 0L), (advisor.CaptureSnapshot().ObjectStampTurn!.Value, advisor.CaptureSnapshot().HireStampTurn!.Value) );
+	}
+
+	[TestMethod]
+	public void ASnapshotThatHoldsOnlyOneStampIsRefused()
+	{
+		using var advisor = Advisor();
+		advisor.AttachEconomy( EconomyTestData.Park() );
+		var snapshot = advisor.CaptureSnapshot();
+		advisor.ValidateSnapshot( snapshot with { ObjectStampTurn = null, HireStampTurn = null } );
+		foreach ( var half in new[] { snapshot with { HireStampTurn = null }, snapshot with { ObjectStampTurn = null } } )
+		{
+			Assert.ThrowsException<InvalidDataException>( () => advisor.ValidateSnapshot( half ) );
+			Assert.ThrowsException<InvalidDataException>( () => advisor.RestoreSnapshot( half ) );
+		}
 	}
 
 	[TestMethod]

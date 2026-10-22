@@ -274,9 +274,9 @@ public sealed partial class OriginalEconomyImport
 	}
 
 	/// <summary>
-	/// The park turns of the analyser's saved object and hire stamps (<see cref="AnalyserStampTurns"/>): the whole turns from the save calendar's start to each stamp, as the staff import
-	/// takes a hire stamp. The original's clock writes only whole turns, so a stamp inside a turn (a modified save) is taken at that turn's start and reported. A stamp before the
-	/// calendar's start or past the park's turn keeps its turn: the advisor counts the days since it as the original counts them from the word.
+	/// The park turns of the analyser's saved object and hire stamps (<see cref="AnalyserStampTurns"/>): the turn of the save's calendar, its start and rate, whose park time each stamp
+	/// is. The original's clock writes only such times, so a stamp between two of them (a modified save) is taken at the earlier turn's and reported. A stamp before the calendar's
+	/// start or past the park's turn keeps its turn, which the advisor counts days from as the original counts them from the word.
 	/// </summary>
 	// [BIN:TPW-EXE:0x004C7680 object stamp] mLastObjectBuilt (+0x21C30) and mLastStaffHired (+0x21C38, 0x004C76D0) take the park time 0x4F8690 returns: the calendar's FunnyTimeStart (+0) plus floor(turn x rate (+0x1C, 15000) / 4) x 10^7 (0x5FC530); only the calendar constructor 0x4F7E80 and the loader 0x4F7F30 write those two words, so every stamp of an original save is a whole turn from the calendar's start
 	// [BIN:TPW-EXE:0x005179C0 world loader] the analyser case zeroes the six stamps (0x518A43-0x518A85) and runs the serializer's load (0x518ABA), which reads them back raw (0x4C7289, 0x4C72B3); the analyser constructor 0x4C58C0, which stamps a new park's time, runs only in the new-world setup 0x5156A0, and the loader builds the staff through 0x518E20 and their role serializers, not through the staff init 0x504B90 that restamps mLastStaffHired, and no object through 0x4DB090: a loaded park keeps the saved words until its next construction or hire
@@ -284,11 +284,12 @@ public sealed partial class OriginalEconomyImport
 	{
 		if ( save.AnalyserStamps is not { } stamps )
 			return null;
-		var start = save.World.Calendar.FunnyTimeStart;
+		// the World reader refuses a calendar without a positive rate (SaveCalendar.IsUpdated, IsInitial), so every stamp has a turn
+		var (start, rate) = (save.World.Calendar.FunnyTimeStart, save.World.Calendar.FunnySecsPerRealSec);
 		var adjusted = new List<string>();
 		long Turn( string name, long stamp )
 		{
-			var (turn, rest) = StampTurn( stamp, start );
+			var (turn, rest) = StampTurn( stamp, start, rate );
 			if ( rest != 0 )
 				adjusted.Add( $"{name} time stamp {stamp} lies {rest / (double)TimeStampUnitsPerSecond} park seconds into turn {turn}, imported as that turn's start" );
 			return turn;
@@ -300,14 +301,25 @@ public sealed partial class OriginalEconomyImport
 		return turns;
 	}
 
-	/// <summary>The whole park turns from the calendar's start to a saved 100 ns time stamp, rounded down, and the units the stamp lies past that turn's start; exact for any two saved words.</summary>
-	private static (long Turn, long Remainder) StampTurn( long stamp, long calendarStart )
+	/// <summary>
+	/// The park turn of a saved 100 ns time stamp on a calendar, whose turns have the park time of its start plus floor(turn x rate / 4) seconds: the first turn of the stamp's second, or
+	/// the last turn before it when no turn has that second, and the units the stamp lies past that turn's time; exact for any saved words and a positive rate.
+	/// </summary>
+	private static (long Turn, long Remainder) StampTurn( long stamp, long calendarStart, int rate )
 	{
-		const long unitsPerTurn = TimeStampUnitsPerSecond * ParkCalendar.SecondsPerTurn;
-		var (turn, rest) = Int128.DivRem( (Int128)stamp - calendarStart, unitsPerTurn );
-		if ( rest < 0 )
-			(turn, rest) = (turn - 1, rest + unitsPerTurn);
-		return ((long)turn, (long)rest);
+		var offset = (Int128)stamp - calendarStart;
+		var seconds = FloorDivide( offset, TimeStampUnitsPerSecond );
+		// the first turn whose second is not before the stamp's: floor(turn x rate / 4) >= seconds exactly when turn x rate >= 4 x seconds
+		var turn = -FloorDivide( -4 * seconds, rate );
+		if ( FloorDivide( turn * rate, 4 ) > seconds )
+			turn--;
+		return ((long)turn, (long)(offset - FloorDivide( turn * rate, 4 ) * TimeStampUnitsPerSecond));
+	}
+
+	private static Int128 FloorDivide( Int128 value, Int128 divisor )
+	{
+		var (quotient, remainder) = Int128.DivRem( value, divisor );
+		return remainder < 0 ? quotient - 1 : quotient;
 	}
 
 	/// <summary>Registers the save's objects; returns the counts and the economy object of each matched attraction thing id.</summary>

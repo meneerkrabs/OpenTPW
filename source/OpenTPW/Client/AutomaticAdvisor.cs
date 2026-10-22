@@ -588,6 +588,9 @@ internal sealed partial class AutomaticAdvisor : IDisposable
 		if ( snapshot.SpeechWasActive )
 			throw new InvalidDataException( "Automatic advisor snapshot is inconsistent: it claims active speech, which cannot be restored." );
 		Controller.ValidateSnapshot( snapshot.Controller );
+		// the capture writes the two stamps together, and a snapshot from before they were kept holds neither
+		if ( snapshot.ObjectStampTurn.HasValue != snapshot.HireStampTurn.HasValue )
+			throw new InvalidDataException( "Automatic advisor snapshot is inconsistent: it holds only one of the object and hire stamps." );
 		// A group cut above the park limit is negative; the ring and the hype callback keep that signed value.
 		if ( snapshot.ArrivalWaves is { } waves && waves.Count > AdvisorArrivalRing.Capacity )
 			throw new InvalidDataException( "Automatic advisor snapshot is inconsistent: its arrival history contains more than five group sizes." );

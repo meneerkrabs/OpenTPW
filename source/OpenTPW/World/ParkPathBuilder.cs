@@ -44,7 +44,10 @@ public sealed record SegmentResult( (int X, int Y) SnappedEnd, IReadOnlyList<(in
 	public bool StoppedByOwnLimit { get; init; }
 	/// <summary>True for the ghost a click returns when the line had a refused cell and nothing was committed (tp.exe <c>0x524A63</c>).</summary>
 	public bool GhostRefused { get; init; }
-	/// <summary>[EXT:online-coop-commands] True for the line a tool's writer returns when the park refused its command: nothing was laid, as if the click had never reached the commit.</summary>
+	/// <summary>
+	/// [EXT:online-coop-commands] True for the line a tool's writer returns when the park refused its command before running it: nothing was laid, as if the click had never reached
+	/// the commit. A command that threw while it ran is not refused this way: it keeps what it wrote before the throw (<see cref="ParkCommandResult.Error"/>).
+	/// </summary>
 	public bool CommandRefused { get; init; }
 	/// <summary>A successful preview visited the path/queue validator's link branch; only completed ghosts expose it in the HUD.</summary>
 	public bool LinkPointer { get; init; }

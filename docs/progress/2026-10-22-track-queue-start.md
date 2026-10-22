@@ -12,7 +12,7 @@ A kart or water ride the player has just placed goes on into its queue tool once
 - **The port.** `Level.EnterPlacedTrackTool` opens the track tool of a placed kart or water ride and leaves the ride's queue start pending. `ParkHud.FinishPlacement` calls it. `Level.ContinueTrackTool` hands a line's close to the pending ride's queue tool and takes the start. With none pending, the close goes to the exactly-Ctrl rule. The clicks above drop the start:
   - `Level.ClickBuildTool`, the build and Move tools' click, now its own method, when the ghost is accepted (`Level.BuildGhostAllowed`, the rule the HUD's ghost already drew with);
   - `Level.BeginMove`;
-  - a path or queue commit in `Level.ClickCellTool`. A click on a refused ghost commits nothing and keeps the start, and so does a line whose command the park refused (`SegmentResult.CommandRefused`, set by the command writers);
+  - a path or queue commit in `Level.ClickCellTool`. A click on a refused ghost commits nothing and keeps the start, and so does a line whose command the park refused before running it (`SegmentResult.CommandRefused`, set by the command writers). A command that threw while it ran keeps what it wrote, so it drops the start like a commit;
   - `Level.FinishCoasterTool`.
 
   The start is local tool state of the issuer, never a command, saved or hashed. It may belong to another ride than the circuit that closes, as in the original. A start whose ride was sold since is dropped: an OpenTPW guard, since its queue tool needs the ride.
@@ -26,10 +26,10 @@ A kart or water ride the player has just placed goes on into its queue tool once
   - `TrackAddOnLevelTests` (the new `TrackAddOnLevelTests.QueueStart.cs`), on the asset-free kart level:
     - a placed ride's close hands over to its queue whatever the close held (no modifier, exactly Ctrl, Ctrl+Shift), and the handover uses the start up;
     - with no start pending, a ride with a queue keeps the line tool for exactly Ctrl and ends it otherwise;
-    - an accepted build click, a queue commit and the Move tool's pick-up each drop the start; a build click on a refused ghost, a refused queue click and a queue line whose command the park refuses (through the real command writer) keep it;
-    - the HUD's own end of a placement (`ParkHud.FinishPlacement`) leaves the kart ride's start pending;
+    - an accepted build click, a queue commit, a queue command that throws after a write, and the Move tool's pick-up each drop the start; a build click on a refused ghost, a refused queue click and a queue line whose command the park refuses (through the real command writer) keep it;
+    - a kart ride the HUD places through the build click and its command (`ParkHud.OnObjectPlaced`, `AfterIssue`, `FinishPlacement`) gets its track tool with its start pending, and its close goes into the queue tool;
     - a line with a start across a queue cell, or across more tiles than the park can pay for, lays nothing, charges nothing, issues no line command and ends the tool.
   - `TheClickThatGivesTheKeptLineToolItsStartPostsHelp204` also runs for a ride with a queue.
   - `AudioRegisterRound2Tests.ARefusedTrackToolClickThroughTheHudPlaysTheRefusalCueAndNoTrackClick` also covers a line with a start: no track click 0xCE, and the refusal cue 0xAF on release.
   - `AFollowingQueueWinsOverExactlyCtrl` is replaced: the track button's line tool has no queue start pending.
-  - Each part was taken out once to check that a test catches it. Without the start set at placement or by the HUD's placement, its use at the handover, any one of the three drops, the refused-ghost gate of the build click, the refused-click or refused-command exception, or the started-line refusal, its own tests fail. With the old rule, which follows the queue on every close, eight tests fail.
+  - Each part was taken out once to check that a test catches it. Without the start set at placement, the HUD's call of it or its deferred end of the placement, its use at the handover, any one of the three drops, the refused-ghost gate of the build click, the refused-click or refused-command exception (or with a command that threw counted as refused), or the started-line refusal, its own tests fail. With the old rule, which follows the queue on every close, eight tests fail.

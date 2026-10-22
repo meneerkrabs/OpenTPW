@@ -174,17 +174,60 @@ public partial class TrackAddOnLevelTests
 	}
 
 	[TestMethod]
+	public void AQueueLineWhoseCommandThrewAfterAWriteDropsThePendingQueueStart()
+	{
+		var (level, ride) = PlacedWithQueue();
+		var strict = ParkCommands.Strict;
+		ParkCommands.Strict = false;
+		try
+		{
+			// a command that throws while it runs keeps what it wrote (ParkCommands): the line counts as reached, so the start is dropped as after the original's LayLine (0x527483)
+			level.CommandFault = command =>
+			{
+				if ( command is LayLineCommand )
+				{
+					level.Guests!.Grid.Cells.SetType( 4, 5, ParkCellType.Queue );
+					throw new System.InvalidOperationException( "after a write" );
+				}
+			};
+			level.CellTool.Enter( new ParkCommandLineWriter( new AcceptingLineWriter( CellToolMode.Queue ), level.Commands, 9999 ), (4, 4) );
+			Assert.IsTrue( level.ClickCellTool( (4, 8) ) is { GhostRefused: false, CommandRefused: false } );
+			Assert.AreEqual( ParkCellType.Queue, level.Guests!.Grid.Cells.TypeAt( 4, 5 ), "the write before the throw stays" );
+		}
+		finally
+		{
+			level.CommandFault = null;
+			ParkCommands.Strict = strict;
+		}
+		AssertTheTrackButtonsCloseKeepsTheLineTool( level, ride );
+	}
+
+	[TestMethod]
 	public void TheHudsPlacementOfAKartRideLeavesItsQueueStartPending()
 	{
-		var (level, ride, _) = World( hasQueue: true, laid: false );
-		AttachTrackEconomy( level, ride );
-		WithQueue( ride );
-		var hud = new Hud.ParkHud( level, OriginalUiTests.FakeStrings(), new Hud.EconomyParkStatus( () => level.Park!.Economy ), new NoBuildItems(), new Hud.HudHost() );
-		// the HUD's own end of a placement (ParkHud.FinishPlacement, after the placing command) for the ride it was placing
-		typeof( Hud.ParkHud ).GetField( "pendingItem", Private )!.SetValue( hud, new Hud.BuildItem( "ride:1150", 1150, Hud.BuildCategory.Rides, -1, 0, null, System.Array.Empty<string>(), Entry: ride.Entry ) );
-		typeof( Hud.ParkHud ).GetMethod( "FinishPlacement", Private )!.Invoke( hud, new object[] { ride } );
-		Assert.AreEqual( CellToolMode.KartTrack, level.CellTool.Mode, "the placement opens the ride's track tool" );
-		Assert.IsTrue( LayLoop( level, 0xc )?.Completed == true );
+		var (level, first, _) = World( hasQueue: true, laid: false );
+		// the queue cells the guest link gives a placed ride with an entrance (the synthetic shape has none)
+		level.Objects.ObjectPlaced += item =>
+		{
+			if ( item != first && item.Runtime.Bump != null )
+				WithQueue( item );
+		};
+		var hud = new Hud.ParkHud( level, OriginalUiTests.FakeStrings(), Hud.EconomyParkStatus.ForLevel( level ), new NoBuildItems(), new Hud.HudHost() );
+		// the buy list armed the ride (the HUD's pending item) and the build click places it through its command; the HUD ends the placement once the command returned (AfterIssue)
+		typeof( Hud.ParkHud ).GetField( "pendingItem", Private )!.SetValue( hud, new Hud.BuildItem( "ride:1150", 1150, Hud.BuildCategory.Rides, -1, 0, null, System.Array.Empty<string>(), Entry: first.Entry ) );
+		level.BuildEntry = first.Entry;
+		level.ClickBuildTool( 10, 20 );
+		var placed = level.Objects.Objects.Single( item => !item.IsDeleted && item != first );
+		Assert.AreSame( placed, level.TrackToolStation, "the placement opens the new ride's track tool" );
+		Assert.AreEqual( CellToolMode.KartTrack, level.CellTool.Mode );
+		Assert.AreEqual( level.TrackStations[placed].Exit, level.CellTool.Start );
+		Assert.AreEqual( (14, 21), level.CellTool.Start );
+		// the long loop of World, eleven cells further down, closed with exactly Ctrl held
+		level.ClickCellTool( (30, 21) );
+		level.ClickCellTool( (30, 25) );
+		level.ClickCellTool( (8, 25) );
+		Assert.IsTrue( level.ClickCellTool( (8, 21), 0xc )?.Completed == true );
+		Assert.IsTrue( placed.Runtime.Bump!.IsTrackValid, "the last line closes the new ride's circuit" );
 		Assert.AreEqual( CellToolMode.Queue, level.CellTool.Mode, "the placement left the ride's queue start pending" );
 	}
 

@@ -1137,7 +1137,9 @@ public sealed partial class ParkHud
 		var modeBefore = tool.Mode;
 		var interfaceBefore = InterfaceMode();
 		var sessionRefusals = level.SessionRefusals;
-		var result = tool.Click( (cursorX, cursorY) );
+		// the click's modifiers go with it: a kart or water line that closes its circuit with exactly Ctrl and no queue to follow keeps its line tool (Level.ContinueTrackTool)
+		// [BIN:TPW-EXE:0x527146 track line end] with no queue start (0x8186c0 zero) the line tool's last click clears the start and keeps its mode (0xB or 0x10) when the modifier word is exactly 0xC, and any other word ends the tool (0x52f200(0, 0) at 0x527156)
+		var result = level.ClickCellTool( (cursorX, cursorY), Input.ModifierMaskDown );
 		// [BIN:TPW-EXE:0x526cb3 track click] every release in the kart (0xB) or water (0x10) track mode plays cat_ui 0xCE at the clicked cell, the first click included and whatever the line then does
 		if ( modeBefore is CellToolMode.KartTrack or CellToolMode.WaterTrack )
 			GameAudio.PlayUiAt( GameAudio.TrackToolClickEvent, GameAudio.CellSoundPosition( cursorX, cursorY ) );

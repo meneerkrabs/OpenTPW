@@ -279,6 +279,38 @@ public partial class TrackAddOnLevelTests
 		}
 	}
 
+	/// <summary>
+	/// The HUD's own tool click (<c>ParkHud.UpdateCellTool</c>, the click a player makes) carries the frame's modifiers to the line's continuation, as the level's click does
+	/// (<see cref="OnlyExactlyCtrlKeepsACompletedTrackLineWithoutAStart"/>): a kart line that closes its circuit with exactly Ctrl held and no queue to follow keeps the line tool
+	/// without a start (tp.exe 0x527146), any other modifier ends it (0x527156).
+	/// </summary>
+	[DataTestMethod]
+	[DataRow( true, false, true )]
+	[DataRow( false, false, false )]
+	[DataRow( true, true, false )]
+	public void TheHudsToolClickCarriesItsModifiersToTheLinesContinuation( bool ctrl, bool shift, bool stays )
+	{
+		var (level, ride, _) = World();
+		AttachTrackEconomy( level, ride );
+		var hud = new Hud.ParkHud( level, OriginalUiTests.FakeStrings(), new Hud.EconomyParkStatus( () => level.Park!.Economy ), new NoBuildItems(), new Hud.HudHost() );
+		CutForLiveMend( level, ride );
+		var held = new List<Veldrid.Key>();
+		if ( ctrl )
+			held.Add( Veldrid.Key.ControlLeft );
+		if ( shift )
+			held.Add( Veldrid.Key.ShiftLeft );
+		HudToolClick.Click( hud, (20, 14), held.ToArray() );
+		Assert.IsTrue( ride.Runtime.Bump!.IsTrackValid, "the click closes the circuit" );
+		Assert.AreEqual( stays, level.CellTool.IsActive );
+		Assert.IsNull( level.CellTool.Start );
+		Assert.AreEqual( stays ? ride : null, level.TrackToolStation );
+	}
+
+	private sealed class NoBuildItems : Hud.IBuildCatalog
+	{
+		public IReadOnlyList<Hud.BuildItem> GetItems( Hud.BuildCategory category ) => Array.Empty<Hud.BuildItem>();
+	}
+
 	private static void CutForLiveMend( Level level, OriginalObject ride )
 	{
 		Assert.IsTrue( level.EnterTrackTool( ride ) );

@@ -3,7 +3,6 @@ using System.Linq;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using OpenTPW.Hud;
 using OpenTPW.Mods;
-using OpenTPW.UI.Original;
 
 namespace OpenTPW.Tests;
 
@@ -341,7 +340,6 @@ public class ParkToolCommandLevelTests
 	[DataRow( true, DisplayName = "the Move tool (mode 0x3b)" )]
 	public void TheQueueToolAPlacedRideOpensEndsTheToolWhateverItsLastClickHeld( bool moving )
 	{
-		const System.Reflection.BindingFlags flags = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic;
 		var park = NewPark();
 		var level = park.Level;
 		var hud = new ParkHud( level, OriginalUiTests.FakeStrings(), new EconomyParkStatus( () => park.Economy ), new NoItems(), new HudHost() );
@@ -375,33 +373,15 @@ public class ParkToolCommandLevelTests
 		Assert.IsFalse( level.IsMoving );
 		CollectionAssert.AreEqual( moving ? new[] { ParkCommandKind.PlaceObject, ParkCommandKind.EndMove } : new[] { ParkCommandKind.PlaceObject },
 			level.Commands.Log.Skip( start ).Select( logged => logged.Command.Kind ).ToArray(), "a move ends as its queue tool opens" );
-		// the queue's clicks through the HUD's tool click: a line, then a click on its end, which ends the tool laying nothing (a writer that takes every line: the tool's end is under test)
-		void Click( (int X, int Y) cell )
-		{
-			typeof( ParkHud ).GetField( "cursorX", flags )!.SetValue( hud, cell.X );
-			typeof( ParkHud ).GetField( "cursorY", flags )!.SetValue( hud, cell.Y );
-			var press = new UiInput( new System.Numerics.Vector2( -1 ), true, true, false, false, UiKeys.None );
-			typeof( ParkHud ).GetMethod( "UpdateCellTool", flags )!.Invoke( hud, new object[] { RideUpgradeIngressTests.Context(), press, true, false } );
-		}
+		// the queue's clicks through the HUD's tool click, holding exactly Ctrl: a line, then a click on its end, which ends the tool laying nothing (a writer that takes every line:
+		// the tool's end is under test, not its cells)
 		var front = level.CellTool.Start!.Value;
 		level.CellTool.Enter( new AnyQueueLine(), front );
 		var logged = level.Commands.Log.Count;
-		var previous = Input.Keyboard;
-		try
-		{
-			Input.Keyboard = new Input.KeyboardInfo( new List<Veldrid.Key> { Veldrid.Key.ControlLeft } );
-			Input.UpdateButtons();
-			Assert.AreEqual( 0xc, Input.ModifierMaskDown );
-			Click( (front.X, front.Y + 3) );
-			Assert.AreEqual( (front.X, front.Y + 3), level.CellTool.Start, "the line goes on from its end" );
-			Assert.AreEqual( 90, level.BuildRotation, "the angle stays while the queue tool runs" );
-			Click( (front.X, front.Y + 3) );
-		}
-		finally
-		{
-			Input.Keyboard = previous;
-			Input.UpdateButtons();
-		}
+		HudToolClick.Click( hud, (front.X, front.Y + 3), Veldrid.Key.ControlLeft );
+		Assert.AreEqual( (front.X, front.Y + 3), level.CellTool.Start, "the line goes on from its end" );
+		Assert.AreEqual( 90, level.BuildRotation, "the angle stays while the queue tool runs" );
+		HudToolClick.Click( hud, (front.X, front.Y + 3), Veldrid.Key.ControlLeft );
 		Assert.IsFalse( level.CellTool.IsActive, "a click on the line's end ends the queue tool (0x5275b1)" );
 		Assert.IsNull( level.BuildEntry, "exactly Ctrl at the queue's last click arms no build tool (mode 4)" );
 		Assert.IsFalse( level.IsMoving, "nor the Move tool (mode 0x3b)" );

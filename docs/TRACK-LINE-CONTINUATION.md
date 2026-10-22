@@ -11,6 +11,9 @@ The public provenance is the existing track-tool-help annotation in
 ## Ownership and implementation
 
 `Level.Input.ClickCellTool` scopes the click's continuation choice with `finally`.
+The HUD's own tool click (`ParkHud.UpdateCellTool`, the click a player makes) goes through it
+with the frame's modifier mask, so the continuation applies to that click too
+(`TrackAddOnLevelTests.TheHudsToolClickCarriesItsModifiersToTheLinesContinuation`).
 `RewalkTrack` still performs the same circuit refresh, animation, add-on and opening
 work before it decides the local tool continuation. Only `TrackWalkCause.Line`
 qualifies. A headless build, restore, placement or edit does not acquire a persisted

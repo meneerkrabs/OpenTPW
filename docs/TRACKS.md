@@ -138,9 +138,11 @@ park points counts-test and guest boarding read. A re-walk (commit mode) also re
 (`[TPW-EXE:0x545450]`).
 
 Messages: the walk posts no advisor or event message (`APPROX:TRACK-006` retired: `0x52A970` and the walk sites of the tool handler `0x524960` call no message builder `0x59B590`).
-The ids once listed for it are tool help of the cell build tool: 0xCC (204) is posted by the kart and water tool for a click with no line start (`0x526D41`),
-which OpenTPW's tool never has (the placement presets the start at the station's exit, `0x52A1A0`; the original reaches it only when a line closes with exactly Ctrl
-held and no queue to follow, UI-031), and 0xB8 (184, the path tool's first click), 0xD6 (214, the third later click of the path or queue tool) and 0x151 (337,
+The ids once listed for it are tool help of the cell build tool: 0xCC (204) is posted by the kart and water tool for a click with no line start (`0x526D41`,
+through the post at `0x527629`), which the tool reaches only when a line closes with exactly Ctrl held and no queue to follow (the placement presets the start at the
+station's exit, `0x52A1A0`; `0x527146`, UI-031). OpenTPW's tool reaches that state the same way (the HUD's tool click passes the click's modifiers to the line's
+continuation), but does not post 204 there yet (ADVISOR-009: the advisor inventory still lists 204 as never said, and the restored advice posts it when the coaster
+tool starts). 0xB8 (184, the path tool's first click), 0xD6 (214, the third later click of the path or queue tool) and 0x151 (337,
 the end of the queue tool) belong to the path and queue tools (`0x5272F5`, `0x527351`, `0x527620`; their producers are open under ADVISOR-009).
 The tool handler's other direct calls of the message builder are tool help too (0xCD at `0x52644C`, in the cell-write path before the walk), and the tool-mode switch `0x52F580`
 posts the new mode's help (0xCB for mode 3); none follows a walk call site directly, so any help shown after a closed circuit would come from the mode switch, not from the walk (not traced).

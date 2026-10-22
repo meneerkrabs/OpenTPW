@@ -48,3 +48,21 @@ ParkHud and ThemeParkIncHud use Objects.FindAt on terrain-hit cell instead of or
 - This deliverable is a documentation proposal only; no gameplay source files are changed by this PR.
 - Runtime work remains blocked on the evidence/ownership decisions listed above where applicable.
 - No approximation is retired by creating this plan; no PR is claimed implemented or ready to merge.
+
+## 2026-10-22 source reconciliation
+
+This addendum supersedes conflicting historical implementation claims above. Source baseline: main `1c874922df6e42425dc5638f7e2554c9fde2c68c`. This is source inspection, not a new original-executable trace or an executed C# / browser test. The proposal remains draft; no whole-identifier retirement is claimed.
+
+### Already implemented and corrected evidence
+
+- [Level.Objects.cs](https://github.com/meneerkrabs/OpenTPW/blob/1c874922df6e42425dc5638f7e2554c9fde2c68c/source/OpenTPW/World/Level.Objects.cs), `ComputeGroundHit` / `TryPickObject` / `PickOwnerAt`, includes object-model hits before returning the cursor point. `Objects.FindAt(cursorX, cursorY)` at the HUD is therefore not evidence of a terrain-only pick.
+- [ObjectRayPick.cs](https://github.com/meneerkrabs/OpenTPW/blob/1c874922df6e42425dc5638f7e2554c9fde2c68c/source/OpenTPW/World/Original/ObjectRayPick.cs) walks cells from the camera, tests eligible owner models until the first model hit, and accepts that point only when nearer than the terrain hit (or when terrain was missed). It is not a global nearest-face sorting algorithm.
+- [ParkHud.cs](https://github.com/meneerkrabs/OpenTPW/blob/1c874922df6e42425dc5638f7e2554c9fde2c68c/source/OpenTPW/Hud/ParkHud.cs) now records the traced distinction: model-ray cells select rides/shops; pick sprites select people, not class-3 ride/shop objects. The visitor locator/Shift and active-tool guards remain. [ThemeParkIncHud.cs](https://github.com/meneerkrabs/OpenTPW/blob/1c874922df6e42425dc5638f7e2554c9fde2c68c/source/OpenTPW/Client/ThemeParkIncHud.cs) uses the same cursor-cell contract. Do not implement the historical proposal's object pick-sprite path.
+- [ObjectRayPickTests.cs](https://github.com/meneerkrabs/OpenTPW/blob/1c874922df6e42425dc5638f7e2554c9fde2c68c/source/OpenTPW.Tests/ObjectRayPickTests.cs) already includes synthetic tall-object hits, terrain occlusion, off-grid clamping, absent height maps, model node/material traversal, and a ParkHud click that selects a tall ride rather than starting a path behind it. The shipped-model test is corpus-dependent and can be inconclusive without private assets; this review did not run it.
+
+### Remaining verification and ownership
+
+Do not duplicate the model picker. Map any remaining UI-027 acceptance cases to existing tests and add only uncovered arbitration/tool-suppression or Theme Park Inc integration witnesses. Record actual focused test execution for the reviewed revision and any visual comparisons separately.
+
+The current picker explicitly retains RIDES-021 residuals for second-layer track-piece models, grouped instances, node-state/normal-refresh behavior and hover highlighting. These are separate ownership boundaries, not permission to silently broaden UI-027 or claim full model-pick parity. A closure decision needs that boundary reviewed, plus evidence for the original proposal's still-relevant acceptance cases; the obsolete sprite premise is not a reason to replace working code.
+

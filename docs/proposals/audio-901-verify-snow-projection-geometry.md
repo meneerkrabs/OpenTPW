@@ -36,3 +36,22 @@ Resolve z+0.1 and fourth word z+0.1501 and projection relationship to display he
 - Stop at a reviewable design/evidence package; this draft authorizes no tag removal or parity claim.
 - Do not publish original media or private game data in fixtures, screenshots, or commits.
 - A future implementation needs its own reviewed evidence and acceptance results; do not treat this proposal as merge-ready.
+
+## 2026-10-22 source reconciliation
+
+This addendum supersedes conflicting historical implementation claims above. Source baseline: main `1c874922df6e42425dc5638f7e2554c9fde2c68c`. This is source inspection, not a new original-executable trace or an executed C# / browser test. The proposal remains draft; no whole-identifier retirement is claimed.
+
+### Corrected evidence boundary
+
+[WeatherVisualState.cs](https://github.com/meneerkrabs/OpenTPW/blob/1c874922df6e42425dc5638f7e2554c9fde2c68c/source/OpenTPW/World/Weather/WeatherVisualState.cs) now records `0x57f490`'s vertex as homogeneous clip-space `(x, y, z + 0.1, w = z + 0.1501)`, supported by the clipping comparisons at `0x565bb0` / `0x561bc0`. The old AUDIO-901 annotation immediately below still says that space is unread; that part is stale relative to the newer source evidence. This review checked those public annotations, not the original binary.
+
+`WriteSnow` still emits a triangle using equal camera-space half-extents and moves the centre depth by `SnowProjectionBias`; it preserves atlas quadrant selection and jitter. [WeatherRenderer.cs](https://github.com/meneerkrabs/OpenTPW/blob/1c874922df6e42425dc5638f7e2554c9fde2c68c/source/OpenTPW/World/Weather/WeatherRenderer.cs) converts the generated camera-space vertices to the host view and projects them through the scene camera.
+
+### What remains unproven
+
+- The original x half-width has the display height/width factor. Establish, at both 4:3 and widescreen, whether the host projection's aspect correction yields the same pixel dimensions. Equal camera-space half-extents alone do not prove equivalence.
+- The explicit `EXT:snow-depth-value` limitation remains: native depth is `(z + 0.1) / (z + 0.1501)`, whereas the host scene projection determines its depth. The precompiled browser weather shader does not expose the required clip-space vertex route. Do not silently fold this platform extension into a proven AUDIO-901 match.
+- Use synthetic flakes with fixed input/jitter and known projection matrices for a deterministic screen-space oracle, then validate near/far scene intersections on supported renderers. Record platform, viewport, projection and depth behavior. This source reconciliation supplies neither those captures nor their test results.
+
+The next action is the bounded projection oracle and aspect comparison, not another investigation of whether the vertex's fourth word is camera or clip space. Change geometry only after a measurable discrepancy is established; preserve the independent browser depth-path limitation and the existing atlas/jitter contract.
+

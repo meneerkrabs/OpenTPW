@@ -159,9 +159,15 @@ internal sealed class CoopGuestStream : ILevelSessionStream, IDisposable
 	{
 		var now = seconds();
 		if ( !Stopped )
-			ApplyReady();
+		{
+			using ( FrameMarks.Measure( "coop.ready" ) )
+				ApplyReady();
+		}
 		if ( !Stopped )
-			RunTicks( frameSeconds, now );
+		{
+			using ( FrameMarks.Measure( "coop.ticks" ) )
+				RunTicks( frameSeconds, now );
+		}
 		FollowingThrough = !Stopped && ready.Count == 0 && State == CoopGuestState.Following ? LastFrame : 0;
 		if ( !silenced )
 			Progress( now );

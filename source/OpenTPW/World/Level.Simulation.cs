@@ -59,7 +59,25 @@ public partial class Level
 			return;
 		using ( FrameMarks.Measure( "level.entities" ) )
 			foreach ( var entity in Entity.All.ToArray() )
-				entity.Update();
+			{
+				if ( !FrameMarks.Enabled )
+				{
+					entity.Update();
+					continue;
+				}
+				using ( FrameMarks.Measure( UpdateMarkName( entity.GetType() ) ) )
+					entity.Update();
+			}
+	}
+
+	private static readonly Dictionary<Type, string> updateMarkNames = new();
+
+	/// <summary>The frame mark of an entity type's updates ("update:PoolRenderer"), as its draws have theirs (<see cref="RenderMarkName"/>).</summary>
+	private static string UpdateMarkName( Type type )
+	{
+		if ( !updateMarkNames.TryGetValue( type, out var name ) )
+			updateMarkNames[type] = name = "update:" + type.Name;
+		return name;
 	}
 
 	/// <summary>The frame, the replay and the smoke harnesses advance the same fixed-step simulation; every tick ends with the shared body pose phase.</summary>
@@ -84,7 +102,8 @@ public partial class Level
 	{
 		// [EXT:online-coop-commands] the commands held for this tick apply before it (a replayed log; in single player the HUD's commands have run already); no command may be applied while
 		// the tick itself runs, since a replay or a peer would apply it at the tick's start (ParkCommands.Strict)
-		ApplyDueCommands();
+		using ( FrameMarks.Measure( "sim.commands" ) )
+			ApplyDueCommands();
 		using var tickScope = Commands.EnterTick();
 		// The staff host's bookkeeping, after the commands and before anything of the tick reads a member: a member saved picked up that no hand holds goes back to idle (an imported save),
 		// and a member without a position (hired since the last tick, or loaded so) is put on the gate path. Both ran once per frame before the world input; inside the tick they see the

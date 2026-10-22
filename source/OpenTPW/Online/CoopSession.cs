@@ -504,7 +504,8 @@ internal sealed class CoopSession : IDisposable
 		var checkStarted = Stopwatch.GetTimestamp();
 		try
 		{
-			digest = CoopDigest.Compute( candidate, out world );
+			using ( FrameMarks.Measure( "coop.check" ) )
+				digest = CoopDigest.Compute( candidate, out world );
 		}
 		// a park built so far that it cannot even be hashed fails its check like one that differs
 		catch ( Exception error ) when ( error is not OutOfMemoryException )
@@ -540,7 +541,8 @@ internal sealed class CoopSession : IDisposable
 		candidate.IsCoopGuestPark = true;
 		try
 		{
-			joinHost!.Install( old, build );
+			using ( FrameMarks.Measure( "coop.install" ) )
+				joinHost!.Install( old, build );
 		}
 		catch ( Exception error ) when ( error is not OutOfMemoryException )
 		{

@@ -1251,9 +1251,10 @@ public partial class CoopJoinSessionTests
 	public void TheJoinSmokeReadsOnlyFlatEvidenceNames()
 	{
 		// the join smoke reads its captures by the names the host evidence gives, and a page copies files in by name: never a path out of the evidence directory
-		foreach ( var name in new[] { "capture-1.bin", "host-evidence.json", "frames.bin", "a", "Capture_2.v1" } )
+		foreach ( var name in new[] { "capture-1.bin", "host-evidence.json", "frames.bin", "a", "Capture_2.v1", "console.log", "com10.bin", "nul-1" } )
 			Assert.IsTrue( CoopJoinSmokeTest.IsEvidenceFileName( name ), name );
-		foreach ( var name in new[] { null, "", ".hidden", "../frames.bin", "/save/opentpw-options.json", "saves-join/x.json", "a\\b", "c:x", "frames.bin ", "-x", new string( 'a', 129 ) } )
+		foreach ( var name in new[] { null, "", ".hidden", "../frames.bin", "/save/opentpw-options.json", "saves-join/x.json", "a\\b", "c:x", "frames.bin ", "-x", new string( 'a', 129 ),
+			"capture.bin.", "NUL", "nul.bin", "Con", "aux.json", "PRN", "COM1", "com1.bin", "LPT9.txt" } )
 			Assert.IsFalse( CoopJoinSmokeTest.IsEvidenceFileName( name ), name ?? "null" );
 	}
 

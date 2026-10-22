@@ -185,9 +185,15 @@ internal sealed partial class CoopJoinSmokeTest : IDisposable
 
 	internal static string Sha256Hex( byte[] bytes ) => Convert.ToHexString( SHA256.HashData( bytes ) ).ToLowerInvariant();
 
-	/// <summary>A file of the evidence directory: a flat name of letters, digits, dots, dashes and underscores, never a path out of the directory.</summary>
-	internal static bool IsEvidenceFileName( string? name ) => name is { Length: > 0 and <= 128 } && char.IsAsciiLetterOrDigit( name[0] )
-		&& name.All( character => char.IsAsciiLetterOrDigit( character ) || character is '.' or '-' or '_' );
+	/// <summary>
+	/// A file of the evidence directory: a flat name of letters, digits, dots, dashes and underscores, never a path out of the directory, nor a name Windows reads as another file (a
+	/// device such as <c>NUL</c> or <c>COM1.bin</c>, or a name with a trailing dot).
+	/// </summary>
+	internal static bool IsEvidenceFileName( string? name ) => name is { Length: > 0 and <= 128 } && char.IsAsciiLetterOrDigit( name[0] ) && name[^1] != '.'
+		&& name.All( character => char.IsAsciiLetterOrDigit( character ) || character is '.' or '-' or '_' ) && !IsWindowsDeviceName( name.Split( '.' )[0] );
+
+	private static bool IsWindowsDeviceName( string stem ) => stem.ToUpperInvariant() is "CON" or "PRN" or "AUX" or "NUL" or "CONIN$" or "CONOUT$"
+		|| stem.Length == 4 && (stem.StartsWith( "COM", StringComparison.OrdinalIgnoreCase ) || stem.StartsWith( "LPT", StringComparison.OrdinalIgnoreCase )) && char.IsAsciiDigit( stem[3] );
 
 	private static readonly JsonSerializerOptions evidenceOptions = new() { WriteIndented = true };
 

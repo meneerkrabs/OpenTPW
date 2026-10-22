@@ -64,26 +64,31 @@ internal sealed partial class CoopJoinSmokeTest : IDisposable
 	private readonly bool joining;
 	/// <summary>The join phase's measuring mode (<c>measure</c>): the untouched captures, joined and resynced once each, for the numbers; the adversarial join stays the check.</summary>
 	private readonly bool measuring;
-	private readonly System.Threading.Timer watchdog;
+	/// <summary>Who runs the smoke and owns its loop ("Native": the process's own; a browser page's), named in its failure lines.</summary>
+	private readonly string runner;
+	/// <summary>
+	/// What ends a run, once: the native runner closes the window on completion and exits on a failure; a page's runner records the outcome and lets the game run on. Both get the
+	/// summary or the failure's line.
+	/// </summary>
+	private readonly Action<string> completedBy;
+	private readonly Action<string> failedBy;
 	private readonly BaseFileSystem originalSaveFileSystem;
 	private int frame;
 	private bool completed;
 	private bool done;
 
-	private CoopJoinSmokeTest( GameFlow flow, string evidenceDirectory, bool joining, bool measuring )
+	private CoopJoinSmokeTest( GameFlow flow, string evidenceDirectory, bool joining, bool measuring, string runner, Action<string> completedBy, Action<string> failedBy )
 	{
 		this.flow = flow;
 		this.evidenceDirectory = evidenceDirectory;
 		this.joining = joining;
 		this.measuring = measuring;
+		this.runner = runner;
+		this.completedBy = completedBy;
+		this.failedBy = failedBy;
 		// the phases write nothing to the player's saves
 		originalSaveFileSystem = SaveFileSystem;
 		SaveFileSystem = new BaseFileSystem( Path.Combine( evidenceDirectory, joining ? "saves-join" : "saves-host" ) );
-		watchdog = new System.Threading.Timer( _ =>
-		{
-			Console.Error.WriteLine( $"Native co-op join smoke test failed: timed out after {MaximumSeconds} s at frame {frame} ({Where()})." );
-			Environment.Exit( 1 );
-		}, null, TimeSpan.FromSeconds( MaximumSeconds ), System.Threading.Timeout.InfiniteTimeSpan );
 	}
 
 	/// <summary>Root's CLI hook: <c>--coop-join-smoke host|join|measure</c> with <c>--coop-join-evidence</c>.</summary>
@@ -99,7 +104,14 @@ internal sealed partial class CoopJoinSmokeTest : IDisposable
 			_ => throw new ArgumentException( $"--coop-join-smoke expects 'host', 'join' or 'measure', not '{phase}'." )
 		};
 		Directory.CreateDirectory( evidenceDirectory );
-		using var test = new CoopJoinSmokeTest( flow, Path.GetFullPath( evidenceDirectory ), joining, measuring );
+		using var test = new CoopJoinSmokeTest( flow, Path.GetFullPath( evidenceDirectory ), joining, measuring, "Native", completedBy: _ => Render.Window.SdlWindow.Close(),
+			failedBy: _ => Environment.Exit( 1 ) );
+		// a run that stops getting frames fails, not hangs
+		using var watchdog = new System.Threading.Timer( _ =>
+		{
+			Console.Error.WriteLine( $"Native co-op join smoke test failed: timed out after {MaximumSeconds} s at frame {test.frame} ({test.Where()})." );
+			Environment.Exit( 1 );
+		}, null, TimeSpan.FromSeconds( MaximumSeconds ), System.Threading.Timeout.InfiniteTimeSpan );
 		Render.CaptureOutput = true;
 		if ( joining )
 		{
@@ -151,9 +163,10 @@ internal sealed partial class CoopJoinSmokeTest : IDisposable
 		{
 			Log.Warning( $"Co-op join smoke: writing the failure evidence failed too: {writeError.Message}" );
 		}
-		Console.Error.WriteLine( $"Native co-op join smoke test failed ({Where()}): {message}" );
-		Log.Error( $"Native co-op join smoke test failed ({Where()}): {message}\n{error.StackTrace}" );
-		Environment.Exit( 1 );
+		var line = $"{runner} co-op join smoke test failed ({Where()}): {message}";
+		Console.Error.WriteLine( line );
+		Log.Error( $"{line}\n{error.StackTrace}" );
+		failedBy( line );
 	}
 
 	private void Complete( string summary )
@@ -161,7 +174,7 @@ internal sealed partial class CoopJoinSmokeTest : IDisposable
 		completed = true;
 		done = true;
 		Log.Trace( summary );
-		Render.Window.SdlWindow.Close();
+		completedBy( summary );
 	}
 
 	internal static void Require( bool condition, string step )
@@ -171,6 +184,10 @@ internal sealed partial class CoopJoinSmokeTest : IDisposable
 	}
 
 	internal static string Sha256Hex( byte[] bytes ) => Convert.ToHexString( SHA256.HashData( bytes ) ).ToLowerInvariant();
+
+	/// <summary>A file of the evidence directory: a flat name of letters, digits, dots, dashes and underscores, never a path out of the directory.</summary>
+	internal static bool IsEvidenceFileName( string? name ) => name is { Length: > 0 and <= 128 } && char.IsAsciiLetterOrDigit( name[0] )
+		&& name.All( character => char.IsAsciiLetterOrDigit( character ) || character is '.' or '-' or '_' );
 
 	private static readonly JsonSerializerOptions evidenceOptions = new() { WriteIndented = true };
 
@@ -223,9 +240,5 @@ internal sealed partial class CoopJoinSmokeTest : IDisposable
 		return writer.Bytes;
 	}
 
-	public void Dispose()
-	{
-		watchdog.Dispose();
-		SaveFileSystem = originalSaveFileSystem;
-	}
+	public void Dispose() => SaveFileSystem = originalSaveFileSystem;
 }

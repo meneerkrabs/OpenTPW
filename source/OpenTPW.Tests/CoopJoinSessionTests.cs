@@ -1248,6 +1248,16 @@ public partial class CoopJoinSessionTests
 	}
 
 	[TestMethod]
+	public void TheJoinSmokeReadsOnlyFlatEvidenceNames()
+	{
+		// the join smoke reads its captures by the names the host evidence gives, and a page copies files in by name: never a path out of the evidence directory
+		foreach ( var name in new[] { "capture-1.bin", "host-evidence.json", "frames.bin", "a", "Capture_2.v1" } )
+			Assert.IsTrue( CoopJoinSmokeTest.IsEvidenceFileName( name ), name );
+		foreach ( var name in new[] { null, "", ".hidden", "../frames.bin", "/save/opentpw-options.json", "saves-join/x.json", "a\\b", "c:x", "frames.bin ", "-x", new string( 'a', 129 ) } )
+			Assert.IsFalse( CoopJoinSmokeTest.IsEvidenceFileName( name ), name ?? "null" );
+	}
+
+	[TestMethod]
 	public void ASecondDownloadAnswerBuildsNothingTwice()
 	{
 		Hosted();

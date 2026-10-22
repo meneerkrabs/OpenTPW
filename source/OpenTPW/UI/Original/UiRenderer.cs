@@ -389,8 +389,14 @@ internal sealed class UiRenderer : IDisposable
 		} );
 	}
 
+	private bool disposed;
+
 	public void Dispose()
 	{
+		// the shader references are given back once (ShaderCompiler.Release)
+		if ( disposed )
+			return;
+		disposed = true;
 		TexturePackSwitch.PackChanged -= ReloadImages;
 		LanguageInterfaceArchive.Changed -= ReloadImages;
 		foreach ( var set in renderedSets.Values )
@@ -416,14 +422,11 @@ internal sealed class UiRenderer : IDisposable
 		}
 		preparedImages.Clear();
 		depthPipeline?.Dispose();
+		// the native shaders are shared (ShaderCompiler.CompileShader): this renderer gives its references back
 		if ( depthShader is { } depthShaderInfo )
-		{
-			depthShaderInfo.VertexShader.Dispose();
-			depthShaderInfo.FragmentShader.Dispose();
-		}
+			ShaderCompiler.Release( depthShaderInfo );
 		pipeline.Dispose();
 		resourceLayout.Dispose();
-		shader.VertexShader.Dispose();
-		shader.FragmentShader.Dispose();
+		ShaderCompiler.Release( shader );
 	}
 }

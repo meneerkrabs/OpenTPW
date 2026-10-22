@@ -263,7 +263,72 @@ public class AdvisorToolHelpTests
 	}
 
 	[TestMethod]
-	public void TheKartAndWaterToolsPostNoPathHelp()
+	[DataRow( CellToolMode.KartTrack )]
+	[DataRow( CellToolMode.WaterTrack )]
+	public void TheKartAndWaterLineToolsPostHelp204ForTheClickThatSetsTheirStartAndNoPathHelp( CellToolMode mode )
+	{
+		var hud = NewHud( out var events, out var level );
+		Frame( hud );
+		var tool = level.CellTool;
+		tool.Enter( new LineWriter( mode ), null );
+		Frame( hud );
+		events.Clear();
+		ToolClick( hud, tool, (2, 2) );
+		CollectionAssert.AreEqual( new[] { "post 204" }, events, "0x526D41: the click that stores the start pushes 0xCC into the queue tool's post (0x527629), at once" );
+		ToolClick( hud, tool, (2, 6) );
+		ToolClick( hud, tool, (6, 6) );
+		ToolClick( hud, tool, (6, 2) );
+		Frame( hud );
+		CollectionAssert.AreEqual( new[] { "post 204" }, events, "a click with a start posts nothing: the path and queue help is 0x527200's" );
+	}
+
+	/// <summary>A line writer that refuses one cell's ghost and accepts the rest.</summary>
+	private sealed class RefusingLineWriter( CellToolMode mode, (int X, int Y) refused ) : ICellLineWriter
+	{
+		public CellToolMode Mode => mode;
+		public SegmentResult Preview( (int X, int Y) start, (int X, int Y) cursor ) =>
+			new( cursor, System.Array.Empty<(int X, int Y)>(), 0, start == refused || cursor == refused ? CellBuildResult.Occupied : CellBuildResult.Ok, false )
+			{ Start = start, Line = ParkPathBuilder.LayLine( start, cursor ), StoppedAt = start == refused || cursor == refused ? refused : null };
+		public SegmentResult Commit( (int X, int Y) start, (int X, int Y) end ) => Preview( start, end );
+		public void Undo( SegmentResult segment ) { }
+	}
+
+	[TestMethod]
+	[DataRow( CellToolMode.KartTrack )]
+	[DataRow( CellToolMode.WaterTrack )]
+	public void ARefusedFirstClickOfTheLineToolEndsItWithoutHelp204( CellToolMode mode )
+	{
+		var hud = NewHud( out var events, out var level );
+		Frame( hud );
+		var tool = level.CellTool;
+		tool.Enter( new RefusingLineWriter( mode, (2, 2) ), null );
+		Frame( hud );
+		events.Clear();
+		var result = ToolClick( hud, tool, (2, 2) );
+		Assert.IsTrue( result is { GhostRefused: true }, "0x524A63: the refused ghost of the tile under the cursor" );
+		Assert.IsFalse( tool.IsActive, "the line modes go to SetMode(0, 0) (0x5266A3)" );
+		Frame( hud );
+		CollectionAssert.AreEqual( new[] { "mode" }, events, "the click never reaches the start's store and its help 0xCC (0x526CB3)" );
+	}
+
+	[TestMethod]
+	public void ALineToolThatStartsWithAStartNeverPostsHelp204()
+	{
+		var hud = NewHud( out var events, out var level );
+		Frame( hud );
+		var tool = level.CellTool;
+		// the placement presets the start at the station's exit (0x52A1A0) and the track button at the open end (0x530830); SetMode 0x52F580 keeps it
+		tool.Enter( new LineWriter( CellToolMode.KartTrack ), (2, 2) );
+		Frame( hud );
+		events.Clear();
+		ToolClick( hud, tool, (2, 6) );
+		ToolClick( hud, tool, (6, 6) );
+		Frame( hud );
+		Assert.AreEqual( 0, events.Count );
+	}
+
+	[TestMethod]
+	public void Help204OutlivesTheEndOfItsTool()
 	{
 		var hud = NewHud( out var events, out var level );
 		Frame( hud );
@@ -272,11 +337,10 @@ public class AdvisorToolHelpTests
 		Frame( hud );
 		events.Clear();
 		ToolClick( hud, tool, (2, 2) );
-		ToolClick( hud, tool, (2, 6) );
-		ToolClick( hud, tool, (6, 6) );
-		ToolClick( hud, tool, (6, 2) );
+		tool.Cancel();
 		Frame( hud );
-		Assert.AreEqual( 0, events.Count, "the handler 0x527200 is the path and queue modes' only" );
+		CollectionAssert.AreEqual( new[] { "post 204", "mode" }, events, "posted by the click itself; the tool's end (SetMode) does not take it back" );
+		Assert.IsFalse( AdvisorUiHelp.ModeHelpMessages.Contains( AdvisorToolHelp.TrackLineStart ), "neither withdrawal list of SetMode names 0xCC" );
 	}
 
 	// ---- The buy list ---------------------------------------------------------------------------------------
@@ -508,7 +572,7 @@ public class AdvisorToolHelpTests
 	{
 		var help = AdvisorHelpTable.Parse( ShippedData( AdvisorHelpTable.RelativePath ) ).ToDictionary( row => row.MessageId );
 		var posted = AdvisorUiHelp.AllWindowMessages.Concat( AdvisorUiHelp.ModeHelpMessages ).Concat( AdvisorToolHelp.All ).Distinct().ToArray();
-		Assert.AreEqual( 42, posted.Length, "forty-two of the 81 help messages have a producer here" );
+		Assert.AreEqual( 43, posted.Length, "forty-three of the 81 help messages have a producer here" );
 		foreach ( var message in posted )
 		{
 			Assert.IsTrue( help.TryGetValue( message, out var row ), $"message {message} is a help descriptor" );

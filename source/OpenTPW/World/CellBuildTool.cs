@@ -181,15 +181,16 @@ public sealed class CellBuildTool
 	}
 
 	/// <summary>
-	/// A click while the tool has no start (the click that entered it): a refused single-cell ghost ends the tool, as after a start;
-	/// otherwise the cell becomes the start when the writer's start check accepts it, else the tool stays on without one.
-	/// Returns the refused ghost when it ended the tool, else null.
+	/// A click while the tool has no start (the click that entered it, or the kart or water line tool's click after an exactly-Ctrl close): a refused single-cell
+	/// or single-tile ghost ends the tool, as after a start; otherwise the cell becomes the start when the writer's start check accepts it, else the tool stays on
+	/// without one. Returns the refused ghost when it ended the tool, else null.
 	/// </summary>
 	// [BIN:TPW-EXE:0x00524A63 refused ghost] the click handler 0x524960 tests the latch 0x816D48 before the mode dispatch whether or not a start is set: a single-cell ghost the preview 0x5234D0 refused (LayLine(mode | 0x100) from the cursor) ends the path or queue tool (0x5266A3: SetMode(0, 0)); while game+36 (0x785A2C) is set the click first previews its own cell again (0x5249B6), which this re-preview always does
+	// [BIN:TPW-EXE:0x0052453D line tool ghost] without a start the kart and water line modes preview the tile under the cursor alone (0x53AAC0 with mode | 0x100 from the cursor to itself), whose ghost routine 0x5370E0 sets the latch for a refused tile (0x537A1B → 0x527940(1)); the mode table 0x52766C sends 0xB and 0x10 to the same 0x5266A3, so such a click ends the tool and never reaches the start's store and its help 0xCC (0x526CB3)
 	// [BIN:TPW-EXE:0x00527222 first click] with the start at −1 (0x81EDE4/0x81EDE8) the path mode runs the start check 0x535670(1, 0) and the queue mode 0x535670(3, 0) on the clicked cell: a refusal (1) leaves the tool on without a start (0x52765B), anything else (0, 8, 0xB) makes the cell the start (0x5272B3) and the first vertex (0x52FBD0, 0x52FBF0)
 	private SegmentResult? ClickWithoutStart( (int X, int Y) cell )
 	{
-		if ( Mode is CellToolMode.Path or CellToolMode.Queue && Writer!.Preview( cell, cell ) is { Completed: false, StoppedByOwnLimit: false } refused )
+		if ( Mode is CellToolMode.Path or CellToolMode.Queue or CellToolMode.KartTrack or CellToolMode.WaterTrack && Writer!.Preview( cell, cell ) is { Completed: false, StoppedByOwnLimit: false } refused )
 		{
 			End();
 			return refused with { GhostRefused = true };

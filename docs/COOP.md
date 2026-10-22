@@ -783,7 +783,10 @@ the issuing player's session slot (`Player`, 0 = the local player and host).
   opens, a cancel, another tool): the end is a command of its own (`EndMoveCommand`, issued as the
   build tool leaves the Move mode), since a placement cannot say whether the tool stays. While it
   stays (a placement holding exactly Ctrl), another moving placement of the type is accepted and
-  charged, as the original's mode 0x3b takes it.
+  charged, as the original's mode 0x3b takes it. The queue or track tool a moved ride opens ends the
+  move for good, so its end is issued as that tool opens, not when it ends: the original's queue tool
+  ends in mode 0 at its last click whatever the modifier (tp.exe `0x5275f2`), with neither mode 0x3b
+  nor the build tool's mode 4 armed again (docs/UI.md, "The Move tool").
 - **Refusals.** A command whose fields are out of range, any command in a read-only visit (economy
   commands included: `ParkEconomy` itself has no visit gate), and a command the player's
   rights refuse are rejected before they touch the park. A refusal changes nothing and is logged

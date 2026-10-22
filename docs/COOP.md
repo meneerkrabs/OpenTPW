@@ -708,12 +708,13 @@ The design fixed two constants only after measuring them (`coop-c2b-design.md`, 
     - the session's step, the check at the cut and the swap among it: 54 and 88 ms (the check 40 and
       75 ms);
     - the joined park's first update of its level (`park.level`): 116 and 185 ms, of it its entities'
-      first update 65 and 67 ms (on the desktop 57 ms of shaders compiled on first use,
-      `load:shader-spirv`; in the page the first uses of object models, textures and pipelines), the
-      pools' 19 and 72 ms and the first simulation step 29 and 45 ms;
+      first update 65 and 67 ms (the first uses of object models, textures and materials), the pools' 19
+      and 72 ms and the first simulation step 29 and 45 ms;
     - the advisor's first update (`park.advisor`): 166 ms on the desktop, where loading its welcome line
-      takes 79 ms, 77 of them decoding the line's MP2 audio in one go, and 39 ms in the page, which decodes
-      it over frames (`[EXT:advisor-sliced-decode]`);
+      takes 79 ms, 77 of them decoding the line's MP2 audio in one go, and compiling shaders on first use
+      most of the rest (57 ms, `load:shader-spirv`; first put in the entities' first update here, until
+      C2c-2b-3c's marks left no other part of the frame long enough to hold them), and 39 ms in the page,
+      which decodes it over frames (`[EXT:advisor-sliced-decode]`);
     - the HUD's first update: 14 and 5 ms.
 
     A resync's swap's frame took 62 ms on the desktop and 141 ms ahead of time (`park.level` 42 and
@@ -725,6 +726,44 @@ The design fixed two constants only after measuring them (`coop-c2b-design.md`, 
   does not yet; the objects' step (352, 288 and 1,230 ms) is C2c-2b-3d's.
 
   Every value: [COOP-MEASUREMENTS.md](COOP-MEASUREMENTS.md), "Where a join's slice ends".
+
+- **The swap's frame (C2c-2b-3c).** The session now checks the candidate at the cut in the frame the
+  build completes in and swaps it in the next, the swapped-in stream holds its ticks to the frame after
+  the swap, and the build's last stage (`prepare`) prepares the joined park's first frame: the coasters'
+  views (their track, cars, models and textures), the pool bridges' assets and meshes, and the swimmers'
+  sprite sets read ahead. Marks for the swap's parts (`coop.check`, `coop.install`, `coop.ready`,
+  `coop.ticks`, `sim.commands`, each entity type's `update:<type>`, from the second measurement the
+  pools' `pools.*`) first named the old swap's frame ahead of time: the session's step 90 ms, 77 of it
+  the check at the cut; the park's first update of its level 184 ms, of it the pools' first frame 72, the
+  first ticks 42 (a host's placement replayed among them) and the bridge's and the coasters' first
+  updates 35 and 20 (their models, textures and materials made on first use); the advisor's first update
+  39 ms. The pools' own marks then put 60 of their 70 ms in the swimmers' renderer, which read and decoded
+  the swimmers' sprite sets in one go. Medians, in milliseconds (C2c-2b-3a's measurement five runs, the
+  others three):
+
+  | The swap's frame | Before | Check and swap apart, no ticks | First frame prepared |
+  | --- | ---: | ---: | ---: |
+  | Desktop, its update | 352 | 279 | 233 |
+  | Desktop, a resync's update | 62.0 | 49.1 | 28.5 |
+  | Ahead of time, with its drawing | 345 | 229 | 119 |
+  | Ahead of time, a resync's, with its drawing | 144 | 121 | 39.0 |
+
+  The check moved to the frame the build completes in (74 ms ahead of time, 39 on the desktop), the
+  first ticks to the frame after the swap (that frame 51 ms ahead of time and 52 on the desktop, a
+  replayed placement's first models among it: `sim.commands` 23 ms), and the prepared work to the
+  build's last stage (113 ms ahead of time over 7 frames, its longest step 39 ms; 52 ms over 4 frames on
+  the desktop, its longest 25 ms). What the swap's frame keeps: ahead of time the advisor's first update
+  37 ms, the pools' first frame 23 ms (the swimmers' renderer, still made there, 15 of it), the session's
+  step 13 ms, the entities' first update 12 ms (the pool's and the slides' renderers) and the HUD's 6 ms;
+  on the desktop the advisor's first update, 109 to 170 ms (decoding its welcome line's MP2 audio in one
+  go, 23 to 78 ms by the line it picks, and compiling its shaders on first use, 54 ms, which no other
+  part of the frame is long enough to hold), then the pools' 18 ms, the entities' 15 and the HUD's 15. A
+  join's longest frame is now the objects' step in both builds measured (292 ms ahead of time with its
+  drawing, 357 ms on the desktop's update), C2c-2b-3d's; the interpreted build was not measured again.
+  These marks cover more than C2c-2b-3a's did, and their clock reads cost a little in the frames they
+  cover.
+
+  Every value: [COOP-MEASUREMENTS.md](COOP-MEASUREMENTS.md), "The swap's frame".
 
 ## The command layer (C1)
 

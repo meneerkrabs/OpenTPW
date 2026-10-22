@@ -1,0 +1,9 @@
+## Co-op: the swap's frame split up (October 23, 2026)
+
+The frame that swaps a guest's built park in no longer does the check, the swap, the first ticks and the park's first-time work all at once ([COOP.md](../COOP.md), "The game's join" and "Measurements"; `[EXT:online-coop-snapshot-join]`, `[EXT:park-entry-preparation]`). This is the second part of C2c-2b-3.
+
+- The session checks the built park against the host's digest at the cut in the frame the build completes in, and swaps it in the next. A build that passed its check is swapped in even when the build's deadline passes in between.
+- The swapped-in park's ticks wait for the frame after the swap; a frame point that held its ticks reports no frame it follows yet, so a join's catch-up still ends at a frame point that ran ticks. Ticks are deferred, never dropped.
+- A last build stage, `prepare`, makes the joined park's first-frame work ahead, in steps, without changing the order of anything that is drawn: the coasters' views (track, cars, models and textures), the pool bridges' assets and meshes, and the swimmers' sprite sets. A prepared coaster view starts its scrolling textures at its first frame's clock, as an unprepared one does, and a preparation that fails leaves that work to the first frame as before.
+- In the page compiled ahead of time the swap's frame takes 119 ms with its drawing instead of 345, a resync's 39 instead of 144; on the desktop the swap's update takes 233 ms instead of 352. The longest frame of a join is now the objects' restore in both builds measured, C2c-2b-3d's.
+- Marks name each entity type's first update, the session's check, install, applied frames and ticks, the first commands and the pools' parts. They placed the desktop's 54 ms of shader compiles on first use in the advisor's first update, not in the entities' as C2c-2b-3a's notes had it.

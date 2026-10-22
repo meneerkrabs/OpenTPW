@@ -33,6 +33,8 @@ internal sealed partial class CoopJoinSmokeTest
 	/// <summary>The smoke's handlers around the game's update, in the native order: its frame start, its join update, the game's update, its frame end.</summary>
 	internal void Attach( Renderer renderer )
 	{
+		// the page's loop starts each frame's marks before the frame (Program.Frame)
+		runnerClearsMarks = true;
 		renderer.OnUpdate -= flow.Update;
 		renderer.OnUpdate += FrameStarts;
 		renderer.OnUpdate += JoinUpdate;

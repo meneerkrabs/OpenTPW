@@ -60,6 +60,8 @@ internal sealed partial class CoopJoinSmokeTest
 		replay = new CoopSmokeReplayTransport( after, joinedAt ) { Heard = Heard };
 		checkpointsIn = after.ToDictionary( item => item.Seq, item => CoopStreamFrame.Decode( item.Payload ).Checkpoints.Count );
 		paceFrame = hostEvidence.Cuts[0].AssignedHostFrame;
+		// measuring, the named work of the frames that swap a park in, unless another recording of it runs (a page's performance harness, a hitch report)
+		swapMarks = measuring && !FrameMarks.Enabled ? new List<CoopSmokeFrameMarks>() : null;
 		// a page's start shows the front end already; the native run starts without one
 		if ( flow.Menu == null )
 			flow.ShowFrontEnd();
@@ -245,14 +247,18 @@ internal sealed partial class CoopJoinSmokeTest
 			var values = new[] { timing.DownloadSeconds, timing.LastAttemptSeconds, timing.DecodeMilliseconds, timing.LongestBuildFrameMilliseconds, timing.CheckMilliseconds,
 				timing.SwapMilliseconds, timing.CatchUpSeconds ?? 0 }.Concat( timing.Build.SelectMany( stage => new[] { stage.Milliseconds, stage.LongestMilliseconds } ) ).Concat( timing.Sections.Values );
 			Require( values.All( value => double.IsFinite( value ) && value >= 0 ), $"build {timing.Generation}'s timings are finite and not negative ({timing})" );
-			Require( timing.DownloadAttempts == 1 && timing.PayloadBytes > 0 && timing.BuildFrames > 0 && timing.Build[0] is { Name: "save", Status: CoopTimingStatus.Measured }
-				&& timing.Build.Select( stage => stage.Name ).SequenceEqual( new[] { "save", "files", "catalogue", "manifest", "validation", "economy", "level", "hud", "advisor" } ),
+			Require( timing.DownloadAttempts == 1 && timing.PayloadBytes > 0 && timing.BuildFrames > 0
+				&& timing.Build.Select( stage => stage.Name ).SequenceEqual( new[] { "codec", "save", "files", "catalogue", "manifest", "validation", "economy", "level", "hud", "advisor" } )
+				&& timing.Build.Take( 2 ).All( stage => stage.Status == CoopTimingStatus.Measured ),
 				$"build {timing.Generation} was downloaded once and built over frames, every stage listed ({timing})" );
 			Require( timing.Build.All( stage => stage.Status != CoopTimingStatus.Measured || stage.Steps > 0 && stage.Frames > 0 && stage.Frames <= timing.BuildFrames ),
 				$"every stage that ran was timed within the build's frames ({timing})" );
 			// a stage of one step ends before its yield: the next step's start, which only begins the next stage, is no part of it
 			Require( timing.Build.Where( stage => stage.Name is "save" or "economy" or "hud" or "advisor" ).All( stage => stage.Steps == (stage.Status == CoopTimingStatus.Skipped ? 0 : 1) ),
 				$"the save's parse, the economy, the HUD and the advisor ran one step each ({timing})" );
+			// the wait for the level's files asks once a slice and leaves the rest of it to the live scene
+			Require( timing.Build.Single( stage => stage.Name == "files" ) is { } files && files.Steps == files.Frames,
+				$"the wait for the level's files asked once a frame ({timing})" );
 			// a part that alone took the budget: of a stage that ran, once, within its parts and its longest, the level's with its progress; each stage's longest part among them
 			Require( timing.LongSteps.All( step => timing.Build.SingleOrDefault( stage => stage.Name == step.Stage ) is { } stage && step.Step >= 1 && step.Step <= stage.Steps
 					&& double.IsFinite( step.Milliseconds ) && step.Milliseconds >= GameFlow.ParkBuildBudgetMilliseconds && step.Milliseconds <= stage.LongestMilliseconds
@@ -415,17 +421,60 @@ internal sealed partial class CoopJoinSmokeTest
 
 	private CoopSmokeJoinEvidence JoinEvidence( bool completed, string? failure ) => new( completed, failure, replay?.Downloads.Count ?? 0, joinSession?.FailedJoins ?? 0, joinSteps.ToArray(),
 		joinFinal.Digest, joinFinal.World, saveDifferences, measuring ? "measure" : "join", joinSession?.JoinTimings.ToArray() ?? Array.Empty<CoopJoinTimings>(), updateFrames.ToArray(),
-		CoopSmokeEnvironment.Of( flow ) );
+		CoopSmokeEnvironment.Of( flow ), swapMarks?.ToArray() );
 
 	/// <summary>Every update frame of the phase, timed from before the smoke's driver to after the game's update (docs/COOP.md, "Measurements").</summary>
 	private readonly List<CoopSmokeFrame> updateFrames = new();
 	private long frameStarted;
 
-	private void FrameStarts() => frameStarted = System.Diagnostics.Stopwatch.GetTimestamp();
+	/// <summary>Measuring, the named work of the swaps' frames (null when not recorded); the builds seen in it so far, and the build whose swap's next frame is recorded next.</summary>
+	private List<CoopSmokeFrameMarks>? swapMarks;
+	private int marksBuilds;
+	private string? marksAfter;
+	/// <summary>Whether the runner clears the frame's marks at each frame's start itself (a page does, before the frame).</summary>
+	private bool runnerClearsMarks;
+
+	private void FrameStarts()
+	{
+		frameStarted = System.Diagnostics.Stopwatch.GetTimestamp();
+		if ( swapMarks == null || done )
+			return;
+		// on while a park is built and for the frame after its swap, so the following frames' timings carry no marks' cost
+		var wanted = joinStep is JoinStep.Joining or JoinStep.Resyncing || marksAfter != null;
+		if ( wanted != FrameMarks.Enabled )
+			FrameMarks.Enable( wanted );
+		else if ( wanted && !runnerClearsMarks )
+			FrameMarks.BeginFrame();
+	}
 
 	private void FrameEnds()
 	{
 		if ( frameStarted != 0 )
 			updateFrames.Add( new CoopSmokeFrame( frame, joinStep.ToString(), CoopClock.Since( frameStarted ) ) );
+		if ( swapMarks == null || !FrameMarks.Enabled || joinSession == null )
+			return;
+		// a build that ended in this frame was checked and swapped in by it (its timings close there); the next frame is the first after the swap
+		if ( joinSession.JoinTimings.Count > marksBuilds )
+		{
+			marksBuilds = joinSession.JoinTimings.Count;
+			if ( joinSession.JoinTimings[^1].Outcome is "joined" or "resynced" )
+			{
+				swapMarks.Add( new CoopSmokeFrameMarks( joinSession.JoinTimings[^1].Outcome, "swap", frame, FrameMarks.Snapshot() ) );
+				marksAfter = joinSession.JoinTimings[^1].Outcome;
+			}
+		}
+		else if ( marksAfter != null )
+		{
+			swapMarks.Add( new CoopSmokeFrameMarks( marksAfter, "after", frame, FrameMarks.Snapshot() ) );
+			marksAfter = null;
+		}
+	}
+
+	/// <summary>The recording of the swaps' work ends with the run, whatever ends it.</summary>
+	private void StopMarks()
+	{
+		if ( swapMarks != null && FrameMarks.Enabled )
+			FrameMarks.Enable( false );
+		marksAfter = null;
 	}
 }

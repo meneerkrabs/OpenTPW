@@ -307,16 +307,22 @@ the live game, and swaps it in.
   waits: there is one construction scene at a time, and a queued transition would tear the guest's park
   down after the swap.
 - **The build** (`CoopJoinBuild`, in steps within the park build's frame budget):
-  1. It reads the save, which must hold the gate's and the staff's state.
+  1. It makes the save codec's reflection metadata in steps, one type each, as a park start makes it for
+     its first snapshot (`ParkResumeJson.WarmupSteps`; a process's first parse would make it in one go,
+     a warm process finds it made), then reads the save, which must hold the gate's and the staff's state.
   2. It refuses at once when this game's simulation mods are not the host's or the park's (decision Q16).
   3. It waits for the theme's files, loads the object catalogue in steps, and reads the balance settings
-     and the economy catalogue.
+     and the economy catalogue. A browser copies a theme's files on its first use, between frames: the
+     build asks once a frame whether they are there and leaves the rest of the frame to the live game
+     (C2c-2b-3), instead of asking until the frame's budget is spent.
   4. It hashes this game's asset manifest in steps (kept for the next join while the catalogue is the
      same) and refuses at once when it differs from the host's (decision Q11): "This game's files differ
      from the host's".
   5. It validates the snapshot in steps and restores the save.
   6. It builds the level over frames in the join restore mode (below), with its HUD and, when the player
-     has the automatic advisor on, a fresh advisor.
+     has the automatic advisor on, a fresh advisor. A construction step that announces a long one next
+     (`Level.NextStepIsLong`) ends the frame's slice, so the long one starts a slice of its own, as in a
+     park start (docs/BROWSER-PERFORMANCE.md, "Build steps").
 
   A refusal (`CoopJoinRefusedException`) ends the join, since no capture would build; any other failure
   is a failed check (above), and so is a build that runs longer than 300 seconds.

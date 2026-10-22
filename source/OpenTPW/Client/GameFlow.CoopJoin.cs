@@ -245,7 +245,7 @@ internal sealed partial class GameFlow
 
 		public int StagedEntities => scene?.StagedEntities ?? 0;
 
-		public CoopBuildTimings Timings { get; } = CoopBuildTimings.ForStages( "save", "files", "catalogue", "manifest", "validation", "economy", "level", "hud", "advisor" );
+		public CoopBuildTimings Timings { get; } = CoopBuildTimings.ForStages( "codec", "save", "files", "catalogue", "manifest", "validation", "economy", "level", "hud", "advisor" );
 
 		/// <summary>
 		/// The stage the build's work runs in now, and when its current part began (<see cref="Timings"/>): a stage is charged its part when the next begins or the step ends, so a step that
@@ -259,6 +259,11 @@ internal sealed partial class GameFlow
 		private long bookkeeping;
 		/// <summary>The builds of captures this process began; the first is the process's cold one.</summary>
 		private static int processBuilds;
+		/// <summary>
+		/// Set by a step after which the slice ends, whatever its budget left (docs/COOP.md, "The game's join"): a wait for the level's files, which asks once a slice instead of spending
+		/// it, and a construction step that announced a long one next (<see cref="Level.NextStepIsLong"/>), which then starts a slice of its own, as in a park start.
+		/// </summary>
+		private bool endsSlice;
 
 		public bool Step()
 		{
@@ -272,6 +277,7 @@ internal sealed partial class GameFlow
 			double Worked() => (Stopwatch.GetTimestamp() - started - bookkeeping) * 1000d / Stopwatch.Frequency;
 			bool OverBudget() => Worked() >= ParkBuildBudgetMilliseconds;
 			slice++;
+			endsSlice = false;
 			// the build's own work only: the live scene's frames between its slices are no part of its sections, which are taken slice by slice
 			LoadProfile.Resume();
 			var sections = LoadProfile.Snapshot();
@@ -296,6 +302,9 @@ internal sealed partial class GameFlow
 						complete = true;
 						break;
 					}
+					// the step ended the slice: the rest of the frame is the live scene's
+					if ( endsSlice )
+						break;
 				}
 			}
 			finally
@@ -350,22 +359,33 @@ internal sealed partial class GameFlow
 
 		private IEnumerable<bool> Steps()
 		{
+			// the save codec's reflection metadata in steps, one type each, as a park start makes it for its first snapshot (ParkResumeJson.WarmupSteps): a process's first parse
+			// makes it in one go otherwise, about 0.3 s of a page's frame; a warm process finds it made
+			Begin( "codec" );
+			foreach ( var step in ParkResumeJson.WarmupSteps() )
+				yield return step;
 			Begin( "save" );
 			var saved = ParkResumeSaveFile.Deserialize( payload.Save );
 			if ( saved.Gate == null || saved.Staff == null )
 				throw new InvalidDataException( "The shared park's save is missing its gate or staff-world state." );
-			// a completed comparison: every build of a capture of this session would meet the difference
-			if ( !host.ModsMatch() )
-				throw new CoopJoinRefusedException( "This game's simulation mods differ from the host's." );
-			try { ParkResumeMods.Require( saved.Mods, OpenTpwExtensions.Active ); }
-			catch ( InvalidDataException error ) { throw new CoopJoinRefusedException( $"This game's simulation mods differ from the host's park: {error.Message}" ); }
+			using ( LoadProfile.Measure( "save-mods" ) )
+			{
+				// a completed comparison: every build of a capture of this session would meet the difference
+				if ( !host.ModsMatch() )
+					throw new CoopJoinRefusedException( "This game's simulation mods differ from the host's." );
+				try { ParkResumeMods.Require( saved.Mods, OpenTpwExtensions.Active ); }
+				catch ( InvalidDataException error ) { throw new CoopJoinRefusedException( $"This game's simulation mods differ from the host's park: {error.Message}" ); }
+			}
 			snapshot = saved;
 			End();
 			yield return true;
-			// a browser copies a level's files on first use: the build waits for them
+			// a browser copies a level's files on first use: the build waits for them, asking once a slice (the page copies them between frames)
 			Begin( "files" );
 			while ( LevelDataReady?.Invoke( saved.Theme ) == false )
+			{
+				endsSlice = true;
 				yield return true;
+			}
 			Begin( "catalogue" );
 			var easy = saved.Economy.Easy;
 			ObjectCatalog? loaded = null;
@@ -415,6 +435,8 @@ internal sealed partial class GameFlow
 			while ( candidate.Step() )
 			{
 				LevelSteps++;
+				// a step that announced a long one next ends the slice, so the long one starts a slice of its own (as GameFlow.PumpParkBuild does)
+				endsSlice = candidate.NextStepIsLong;
 				yield return true;
 			}
 			// in the candidate's scene, as an entry makes them in the park's: the HUD, then a fresh advisor as an entry decides it (the level's last step and the HUD share a step,

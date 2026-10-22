@@ -12,7 +12,8 @@ recorded environment in every run (build, runtime, system, processors, settings,
 the measure scripts record the one they ran on), and a page's runs in one browser setting (run.json); the host and the guest may
 differ (a desktop host, a browser guest). One host phase reused by every run (the browser's runs replay one recording) is one
 sample: its rows show it once. Evidence of the adversarial join phase is refused: its rewritten payloads and its refused and
-abandoned builds warm the process first.
+abandoned builds warm the process first. The named work of the swaps' frames and of the frames after them (the smoke's marks, which
+nest: a parent's time includes its children's, so they are never added up) is listed for every mark of at least 1 ms in some run.
 
 Usage: python3 -I tools/coop_join_timings.py [--machine <file>] <evidence directory> [<evidence directory> ...]
 """
@@ -22,7 +23,9 @@ import pathlib
 import statistics
 import sys
 
-STAGES = ["save", "files", "catalogue", "manifest", "validation", "economy", "level", "hud", "advisor"]
+STAGES = ["codec", "save", "files", "catalogue", "manifest", "validation", "economy", "level", "hud", "advisor"]
+# a build before the codec's metadata was made in steps of its own (C2c-2b-3) lists no codec stage
+STAGES_WITHOUT_CODEC = STAGES[1:]
 OUTCOMES = [("joined", 1, "Following"), ("resynced", 2, "Resynced")]
 CAPTURE_FIELDS = ["Ticks", "PublishMilliseconds", "DigestMilliseconds", "StateMilliseconds", "SnapshotMilliseconds", "SerializerSetupMilliseconds",
                   "SaveCopyMilliseconds", "WriterSetupMilliseconds", "FinishMilliseconds", "SaveBytes", "BodyBytes", "PayloadBytes", "Frames",
@@ -33,6 +36,9 @@ WORK_FIELDS = ["Steps", "Frames", "Milliseconds", "LongestMilliseconds"]
 STATUSES = {"Skipped", "Measured", "Cached"}
 # the build's budget a frame (GameFlow.ParkBuildBudgetMilliseconds): a part of a step that alone takes it is a long step
 BUDGET_MILLISECONDS = 12
+# the frames whose named work the measuring smoke records, and the smallest mark the summary lists
+MARK_ROLES = [("swap", "the swap's frame"), ("after", "the frame after the swap")]
+MARK_MILLISECONDS = 1
 
 
 def is_number(value):
@@ -57,7 +63,7 @@ def require_whole(root, host, join):
         number_fields(timing, JOIN_FIELDS, where)
         stages = timing.get("Build") or []
         names = [item.get("Name") if isinstance(item, dict) else None for item in stages]
-        if names != STAGES:
+        if names not in (STAGES, STAGES_WITHOUT_CODEC):
             raise ValueError(f"{where} lists the stages {names}, not {STAGES}")
         for item in stages:
             number_fields(item, WORK_FIELDS, f"{where}'s stage {item['Name']}")
@@ -91,6 +97,19 @@ def require_whole(root, host, join):
     page = (join.get("Environment") or {}).get("Os") == "Browser"
     if (page or any(value is not None for value in calls)) and not all(is_number(value) for value in calls):
         raise ValueError(f"{root}: some of the page's frames lack their whole call time")
+    # the swaps' named work, when recorded: one swap's frame and one after it a build, the swap's the frame the step labels name
+    marks = join.get("SwapFrames")
+    if marks is not None:
+        if not isinstance(marks, list) or not all(isinstance(item, dict) and isinstance(item.get("Marks"), dict) and is_number(item.get("Frame"))
+                                                  and all(isinstance(value, list) and len(value) == 2 and all(is_number(part) for part in value)
+                                                          for value in item["Marks"].values()) for item in marks):
+            raise ValueError(f"{root}: the swaps' marks are not whole")
+        for outcome, _, step in OUTCOMES:
+            roles = sorted(item.get("Role") for item in marks if item.get("Outcome") == outcome)
+            swapped = swap_frame(frames, "Joining" if outcome == "joined" else "Resyncing", step, "Frame")
+            recorded = next((item["Frame"] for item in marks if item.get("Outcome") == outcome and item.get("Role") == "swap"), None)
+            if roles != ["after", "swap"] or recorded != swapped:
+                raise ValueError(f"{root}: the {outcome} build's marks are not those of its swap's frame ({roles}, frame {recorded} for {swapped})")
 
 
 def load(directory):
@@ -232,6 +251,14 @@ def rows(runs):
         result.append((f"{outcome}: longest whole frame while building", "ms", [longest_frame(run[1].get("Frames") or [], building, "CallMilliseconds") for run in runs]))
         result.append((f"{outcome}: the swap's whole frame", "ms", [swap_frame(run[1].get("Frames") or [], building, swap_step, "CallMilliseconds") for run in runs]))
         result.append((f"{outcome}: first whole frame after the swap", "ms", [first_call(run[1].get("Frames") or [], swap_step) for run in runs]))
+    # the swaps' named work, every mark of at least 1 ms in some run (marks nest: never added up)
+    for outcome, _, _ in OUTCOMES:
+        for role, label in MARK_ROLES:
+            def marks_of(run, outcome=outcome, role=role):
+                return next((item["Marks"] for item in run[1].get("SwapFrames") or [] if item.get("Outcome") == outcome and item.get("Role") == role), {})
+            names = sorted({name for run in runs for name, value in marks_of(run).items() if value[0] >= MARK_MILLISECONDS})
+            for name in names:
+                result.append((f"{outcome}: {label}, mark {name}", "ms", [(marks_of(run).get(name) or [None])[0] for run in runs]))
     result.append(("final check: update frame", "ms", [final_frame(run[1].get("Frames") or []) for run in runs]))
     result.append(("final check: whole frame", "ms", [final_frame(run[1].get("Frames") or [], "CallMilliseconds") for run in runs]))
     return result

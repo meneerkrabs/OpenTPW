@@ -20,7 +20,13 @@ internal sealed record CoopSmokeHostEvidence( bool Completed, string? Failure, s
 /// adversarial join) or "measure" (the untouched captures, joined and resynced once each).
 /// </summary>
 internal sealed record CoopSmokeJoinEvidence( bool Completed, string? Failure, int Builds, int FailedJoins, string[] Steps, ulong FinalDigest, ulong FinalWorldHash, string[] SaveDifferences,
-	string Mode = "join", CoopJoinTimings[]? JoinTimings = null, CoopSmokeFrame[]? Frames = null, CoopSmokeEnvironment? Environment = null );
+	string Mode = "join", CoopJoinTimings[]? JoinTimings = null, CoopSmokeFrame[]? Frames = null, CoopSmokeEnvironment? Environment = null, CoopSmokeFrameMarks[]? SwapFrames = null );
+
+/// <summary>
+/// The named work (<see cref="FrameMarks"/>) of an update frame that swapped a built park in (<paramref name="Role"/> "swap") or of the frame after it ("after"), measuring: each
+/// section's milliseconds and count; sections nest, a parent's time including its children's. <paramref name="Outcome"/> names the build ("joined" or "resynced").
+/// </summary>
+internal sealed record CoopSmokeFrameMarks( string Outcome, string Role, int Frame, System.Text.Json.Nodes.JsonObject Marks );
 
 /// <summary>
 /// One update frame of the join phase: its number, the join step it ran in, and the milliseconds of its update (the smoke's driver, the online pump and the game's); in a page, also
@@ -162,6 +168,7 @@ internal sealed partial class CoopJoinSmokeTest : IDisposable
 		if ( done )
 			return;
 		done = true;
+		StopMarks();
 		var message = failure = $"{error.GetType().Name}: {error.Message}";
 		try
 		{
@@ -184,6 +191,7 @@ internal sealed partial class CoopJoinSmokeTest : IDisposable
 	{
 		completed = true;
 		done = true;
+		StopMarks();
 		Log.Trace( summary );
 		completedBy( summary );
 	}
@@ -273,5 +281,9 @@ internal sealed partial class CoopJoinSmokeTest : IDisposable
 		return writer.Bytes;
 	}
 
-	public void Dispose() => SaveFileSystem = originalSaveFileSystem;
+	public void Dispose()
+	{
+		StopMarks();
+		SaveFileSystem = originalSaveFileSystem;
+	}
 }

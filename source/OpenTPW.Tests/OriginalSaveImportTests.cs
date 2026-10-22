@@ -164,8 +164,8 @@ public class OriginalSaveImportTests
 		Assert.AreEqual( 80, bouncy.IngredientAmount, "mAmountOfSpecialIngredient is imported as saved (tp.exe 0x4dcdc1)" );
 		Assert.AreEqual( (100, 70), (bouncy.QualityOfGoods, bouncy.ChanceOfLosingPercent), "mQualityOfGoods and the win byte mChanceOfWinning (0x4dcd29): losing = 100 - 30" );
 		var attraction = save.Attractions.Single( item => item.InfoId == 1100 );
-		var stamp = attraction.Timestamp;
-		Assert.AreEqual( ParkCalendar.TickAtSeconds( (long)(new DateTime( stamp.Year, stamp.Month, stamp.Day, stamp.Hour, stamp.Minute, stamp.Second ) - ParkCalendar.Epoch).TotalSeconds ), bouncy.BuiltTick, "the saved time stamp is the build time" );
+		Assert.AreEqual( new SaveTimestamp( 2000, 1, 1, 6, 15, 37, 30, 0 ), attraction.Timestamp );
+		Assert.AreEqual( ParkCalendar.TickOfTurn( 15 ), bouncy.BuiltTick, "the saved time stamp, 2000-01-01 15:37:30 (56,250 park seconds, turn 15), is the build time; the day-of-week word 6 is not the hour" );
 		Assert.AreEqual( attraction.CustomerCount, (uint)bouncy.TimesUsed, "the saved customer count is the use count: an imported used object never refunds the unused 100 %" );
 		Assert.AreEqual( attraction.WalkAwayCount, (uint)bouncy.WalkAways, "mNumWalkAways is the walk-away count" );
 

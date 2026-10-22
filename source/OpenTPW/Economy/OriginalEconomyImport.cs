@@ -250,13 +250,12 @@ public sealed partial class OriginalEconomyImport
 		evidence.Add( $"Loan offers' stored credit tests imported: {(available.Length == 0 ? "no offer passed" : $"{(available.Length == 1 ? "offer" : "offers")} {string.Join( ", ", available )} passed")}; the Available tab lists {string.Join( ", ", economy.AvailableLoans.Select( offer => offer.Index ).DefaultIfEmpty( -1 ).Select( index => index < 0 ? "none" : index.ToString() ) )} until the dialog tests them again." );
 	}
 
-	/// <summary>The park tick of a saved attraction time stamp (a calendar date and time of the park clock); null when it is not a date.</summary>
+	/// <summary>The park tick of a saved attraction time stamp (the date and time of the park clock the loader rebuilds); null when it is not a date.</summary>
 	private static long? SavedBuildTick( SaveTimestamp stamp )
 	{
 		try
 		{
-			var date = new DateTime( stamp.Year, stamp.Month, stamp.Day, stamp.Hour, stamp.Minute, stamp.Second );
-			return ParkCalendar.TickAtSeconds( Math.Max( 0, (long)(date - ParkCalendar.Epoch).TotalSeconds ) );
+			return ParkCalendar.TickAtSeconds( Math.Max( 0, (long)(stamp.ToDateTime() - ParkCalendar.Epoch).TotalSeconds ) );
 		}
 		catch ( ArgumentOutOfRangeException )
 		{

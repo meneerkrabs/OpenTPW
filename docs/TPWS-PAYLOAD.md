@@ -299,7 +299,7 @@ and bus. Its body is 1,091 bytes while the history buffers hold 30 entries:
 | --- | --- |
 | 2 + 2 + 4 | base thing (`0xfa808`): position X, Y in 1/256 cell (buildable objects: cell = position / 256, equal to the RideSystem record cell; fixed items store 128, 128), `mMapChild`, `mMapParent` |
 | 4 + 2 | `mAngle` (0/90/180/270), `mId` (= Info.Id) |
-| 8 × 4 | `tv[t]`: game-time stamp year, month, day, hour, minute, second, two opaque values |
+| 8 × 4 | `tv[t]`: the park time at +0x18 as the fields of FileTimeToSystemTime (tp.exe `0x4DB8EE` → `0x5FC660`): year, month, day, day of the week (0 = Sunday), hour, minute, second, milliseconds. The loader rebuilds +0x18 with SystemTimeToFileTime from all of them but the day of the week (`0x4DC8A1` → `0x5FC5C0`) and checks nothing |
 | 4 + 2 | `MeshInstanceID` (110–125 in Easymode), `mFlags` |
 | 33 × (2 + 2) | `mNameA[i]`, `mNameB[i]` interleaved: the two UTF-16 sign lines ("Belly"/"Bounce", gates "LOST"/"Kingdom") |
 | 4 × 3 | `mRideScriptHandle`, `mTrackRideHandle`, `mState` (+0x19c: 0 working, 1 broken down, 2 upgrade requested, 3 not choosable, 4 condemned; SetState `0x4e0e60` closes the object for 1, 2 and 4) |
@@ -311,8 +311,9 @@ and bus. Its body is 1,091 bytes while the history buffers hold 30 entries:
 | 4 × 5 + 1 | `mRequestedService`, `mTimeMarkedForMaintenance`, `mTotalCosts`, `mTotalTakings`, `mUpgradeBalloonSprite`, `mUpgradeLevel` (u8) |
 
 `SaveAttraction.Read` parses the body completely and rejects it outside these bounds: non-zero Info.Id;
-angle a multiple of 90; a valid month/day/hour/minute/second; history buffers of at most 31 entries with
-flag 0/1; price at most 500; gauges finite in 0–255; upgrade level at most 3. `SaveAttractionList` returns
+angle a multiple of 90; a time stamp with year up to 9999, month 1–12, day 1–31, hour 0–23, minute and second
+0–59 and milliseconds 0–999 (the day-of-the-week word is kept as read, as the loader skips it); history buffers
+of at most 31 entries with flag 0/1; price at most 500; gauges finite in 0–255; upgrade level at most 3. `SaveAttractionList` returns
 every model-3 thing of the chain in list order; there is no signature search any more.
 
 Easymode has 14 attraction things, IDs 15, 24–16 and 14–11 (the earlier signature scan reported the

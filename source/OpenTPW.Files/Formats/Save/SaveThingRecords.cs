@@ -7,8 +7,33 @@ public readonly record struct SaveThingBase( ushort X, ushort Y, ushort MapChild
 	public const int Bytes = 8;
 }
 
-/// <summary>Game-time stamp stored in each attraction record (year, month, day, hour, minute, second).</summary>
-public readonly record struct SaveTimestamp( int Year, int Month, int Day, int Hour, int Minute, int Second );
+/// <summary>
+/// The park-clock time stamp of an attraction record, its eight words <c>tv[t]</c>: the attraction serializer converts the thing's 64-bit park time
+/// with FileTimeToSystemTime and writes the SYSTEMTIME fields year, month, day, day of the week (0 = Sunday), hour, minute, second and milliseconds.
+/// The loader rebuilds the time with SystemTimeToFileTime from every word but <see cref="DayOfWeek"/>, which it skips; that word is kept as read.
+/// </summary>
+public readonly record struct SaveTimestamp( int Year, int Month, int Day, uint DayOfWeek, int Hour, int Minute, int Second, int Millisecond )
+{
+	public const int Words = 8;
+
+	/// <summary>The time the loader rebuilds from every word but <see cref="DayOfWeek"/>, as a UTC date; throws <see cref="ArgumentOutOfRangeException"/> when the words name no date (such as 30 February).</summary>
+	public DateTime ToDateTime() => new( Year, Month, Day, Hour, Minute, Second, Millisecond, DateTimeKind.Utc );
+
+	/// <summary>Reads the eight words; throws when a word the loader converts lies outside year 0–9999, month 1–12, day 1–31, hour 0–23, minute and second 0–59 or milliseconds 0–999.</summary>
+	// [BIN:TPW-EXE:0x4DB8EE attraction serializer stamp] tv[0..7] are the out-fields of 0x5FC660 (FileTimeToSystemTime, IAT 0x6FD0BC) on the park time at +0x18: wYear, wMonth, wDay (SYSTEMTIME +6), wDayOfWeek (+4), wHour, wMinute, wSecond, wMilliseconds, written in that order (0x4DB8FB..0x4DB953)
+	// [BIN:TPW-EXE:0x4DC8A1 attraction loader stamp] the loader reads the eight words back (0x4DC849..0x4DC874) and passes tv[0], tv[1], tv[2], tv[4], tv[5], tv[6], tv[7] to 0x5FC5C0 (SystemTimeToFileTime, IAT 0x6FD150), which takes each word's low 16 bits; it skips the day of the week and checks nothing: a field SystemTimeToFileTime refuses keeps +0x18 as it was and writes -1 to a status word the loader never reads
+	// [BIN:TPI-EXE:0x5DD68E attraction loader stamp] Theme Park Inc's serializer 0x5DC430 is the same: it writes the fields of 0x7D91E0 (FileTimeToSystemTime) on +0x20 (0x5DC56E) and loads them through 0x7D9140 (SystemTimeToFileTime) without tv[3] or a check
+	internal static SaveTimestamp Read( ref SaveFieldReader reader, int id )
+	{
+		Span<uint> tv = stackalloc uint[Words];
+		for ( var index = 0; index < Words; index++ )
+			tv[index] = reader.U32();
+		// Host input policy: a word outside these ranges is refused as a damaged save, where the loader would keep the thing's time as it was
+		if ( tv[0] > 9999 || tv[1] is < 1 or > 12 || tv[2] is < 1 or > 31 || tv[4] > 23 || tv[5] > 59 || tv[6] > 59 || tv[7] > 999 )
+			throw new InvalidDataException( $"Save attraction thing {id} has an invalid game-time stamp {tv[0]}-{tv[1]}-{tv[2]} {tv[4]}:{tv[5]}:{tv[6]}.{tv[7]}." );
+		return new SaveTimestamp( (int)tv[0], (int)tv[1], (int)tv[2], tv[3], (int)tv[4], (int)tv[5], (int)tv[6], (int)tv[7] );
+	}
+}
 
 /// <summary>
 /// One model-3 thing (ride, shop, sideshow, feature, gate, traffic lights or bus): tp.exe's attraction serializer <c>0x004DB7D0</c>
@@ -17,8 +42,8 @@ public readonly record struct SaveTimestamp( int Year, int Month, int Day, int H
 /// RideSystem record cell, fixed items store 128, 128. The loader puts the three floats at thing +0x4C (<see cref="Gauge48"/>, the Mac's +0x48),
 /// +0x48 (<see cref="LifeGauge"/>) and +0x44 (<see cref="StateOfRepair"/>); the original saves each as a whole number 0–255.
 /// <see cref="TotalCosts"/>/<see cref="TotalTakings"/> are read as signed 32-bit values (+0x184/+0x180; the panel's total profit 0x004E1C60 is their
-/// difference). <see cref="State"/> is <c>mState</c> (+0x19C) and the other properties name the remaining fields; only the time stamp's two trailing words are skipped
-/// (<see cref="AmountOfSpecialIngredient"/> is <c>mAmountOfSpecialIngredient</c>).
+/// difference). <see cref="State"/> is <c>mState</c> (+0x19C) and the other properties name the remaining fields (<see cref="Timestamp"/> is the park time at +0x18,
+/// <see cref="AmountOfSpecialIngredient"/> is <c>mAmountOfSpecialIngredient</c>).
 /// </summary>
 public readonly record struct SaveAttraction(
 	int Offset, int Id, SaveThingBase Base, int InfoId, int Angle, SaveTimestamp Timestamp,
@@ -57,12 +82,7 @@ public readonly record struct SaveAttraction(
 		var infoId = reader.U16();
 		if ( infoId == 0 || angle % 90 != 0 || angle >= 360 )
 			throw new InvalidDataException( $"Save attraction thing {id} has Info.Id {infoId} and angle {angle}; expected a nonzero Info.Id and 0/90/180/270." );
-		var stamp = new uint[8];
-		for ( var index = 0; index < stamp.Length; index++ )
-			stamp[index] = reader.U32();
-		if ( stamp[1] is < 1 or > 12 || stamp[2] is < 1 or > 31 || stamp[3] > 23 || stamp[4] > 59 || stamp[5] > 59 || stamp[0] > 9999 )
-			throw new InvalidDataException( $"Save attraction thing {id} has an invalid game-time stamp {stamp[0]}-{stamp[1]}-{stamp[2]} {stamp[3]}:{stamp[4]}:{stamp[5]}." );
-		var timestamp = new SaveTimestamp( (int)stamp[0], (int)stamp[1], (int)stamp[2], (int)stamp[3], (int)stamp[4], (int)stamp[5] );
+		var timestamp = SaveTimestamp.Read( ref reader, id );
 		var meshInstance = reader.U32();
 		var flags = reader.U16();
 		var line1 = new char[NameCharacters];

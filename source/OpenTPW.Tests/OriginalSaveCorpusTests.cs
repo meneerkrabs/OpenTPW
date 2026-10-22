@@ -1,5 +1,6 @@
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using System;
+using System.Buffers.Binary;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -22,15 +23,7 @@ public class OriginalSaveCorpusTests
 	[TestMethod]
 	public void OriginalSavesPassEveryProvenReader()
 	{
-		var folder = Environment.GetEnvironmentVariable( "OPENTPW_TPWS_SAVES" );
-		if ( string.IsNullOrWhiteSpace( folder ) || !Directory.Exists( folder ) )
-			Assert.Inconclusive( "Set OPENTPW_TPWS_SAVES to a folder with original .TPWS/.INTS saves in per-theme subfolders." );
-		var files = Directory.EnumerateFiles( folder!, "*", SearchOption.AllDirectories )
-			.Where( file => Path.GetExtension( file ).ToUpperInvariant() is ".TPWS" or ".INTS" )
-			.Select( file => (Path: file, Theme: Path.GetFileName( Path.GetDirectoryName( file ) )!.ToLowerInvariant()) )
-			.Where( file => Themes.Contains( file.Theme ) ).OrderBy( file => file.Path, StringComparer.Ordinal ).ToList();
-		if ( files.Count == 0 )
-			Assert.Inconclusive( "The OPENTPW_TPWS_SAVES folder has no .TPWS/.INTS files in a theme subfolder." );
+		var files = CorpusFiles();
 		foreach ( var theme in Themes )
 			foreach ( var extension in new[] { ".TPWS", ".INTS" } )
 				Assert.IsTrue( files.Any( file => file.Theme == theme && Path.GetExtension( file.Path ).Equals( extension, StringComparison.OrdinalIgnoreCase ) ),
@@ -139,15 +132,7 @@ public class OriginalSaveCorpusTests
 	[TestMethod]
 	public void OriginalSavesReadTheirRsseBlocksAndNavigationStates()
 	{
-		var folder = Environment.GetEnvironmentVariable( "OPENTPW_TPWS_SAVES" );
-		if ( string.IsNullOrWhiteSpace( folder ) || !Directory.Exists( folder ) )
-			Assert.Inconclusive( "Set OPENTPW_TPWS_SAVES to a folder with original .TPWS/.INTS saves in per-theme subfolders." );
-		var files = Directory.EnumerateFiles( folder!, "*", SearchOption.AllDirectories )
-			.Where( file => Path.GetExtension( file ).ToUpperInvariant() is ".TPWS" or ".INTS" )
-			.Select( file => (Path: file, Theme: Path.GetFileName( Path.GetDirectoryName( file ) )!.ToLowerInvariant()) )
-			.Where( file => Themes.Contains( file.Theme ) ).OrderBy( file => file.Path, StringComparer.Ordinal ).ToList();
-		if ( files.Count == 0 )
-			Assert.Inconclusive( "The OPENTPW_TPWS_SAVES folder has no .TPWS/.INTS files in a theme subfolder." );
+		var files = CorpusFiles();
 		UseOriginalData();
 		var failures = new List<string>();
 		foreach ( var (path, theme) in files )
@@ -185,6 +170,52 @@ public class OriginalSaveCorpusTests
 			}
 		}
 		Assert.AreEqual( 0, failures.Count, string.Join( Environment.NewLine, failures ) );
+	}
+
+	/// <summary>
+	/// Each corpus attraction's time stamp, read in the loader's order (tp.exe 0x4DC8A1 rebuilds it without tv[3]), holds that date's day of the week in its fourth word, and the
+	/// newest one is the park analyser's mLastObjectBuilt to the 100 ns: no corpus park demolished anything after building its newest object. The economy import dates that
+	/// object at the same park turn.
+	/// </summary>
+	[TestMethod]
+	public void OriginalSavesStampTheirNewestAttractionAtTheAnalysersLastConstruction()
+	{
+		var files = CorpusFiles();
+		UseOriginalData();
+		foreach ( var (path, theme) in files )
+		{
+			var name = $"{theme}/{Path.GetFileName( path )}";
+			using var reader = new SaveReader( path );
+			var payload = reader.ReadFile();
+			var park = OriginalParkImport.Import( payload, new MapFile( new MemoryStream( OriginalParkImportTests.ReadArchiveMember( $"levels/{theme}/terrain.wad", "base.map" ) ) ) );
+			foreach ( var attraction in park.Attractions )
+				Assert.AreEqual( (uint)attraction.Timestamp.ToDateTime().DayOfWeek, attraction.Timestamp.DayOfWeek, $"{name}: thing {attraction.Id} {attraction.Timestamp}" );
+			// [BIN:TPW-EXE:0x4C5D70 analyser serializer] the body ends with six 8-byte stamps (mLastStrike, mLastPuke, mLastPrank, mParkLastOpened, mLastObjectBuilt +0x21C30, mLastStaffHired) and three words
+			var analyser = park.World.Find( park.World.Variables.ParkAnalyser )!.Value;
+			var lastObjectBuilt = BinaryPrimitives.ReadInt64LittleEndian( payload.AsSpan( analyser.BodyOffset + SaveParkStatistics.BodyBytes - 3 * 4 - 2 * 8, 8 ) );
+			var newest = park.Attractions.Max( attraction => attraction.Timestamp.ToDateTime() );
+			Assert.AreEqual( lastObjectBuilt, newest.ToFileTimeUtc(), $"{name}: newest attraction {newest:yyyy-MM-dd HH:mm:ss}, mLastObjectBuilt {DateTime.FromFileTimeUtc( lastObjectBuilt ):yyyy-MM-dd HH:mm:ss}" );
+
+			var economy = new ParkEconomy( BalanceSettings.Load( theme, easy: false ), EconomyObjectCatalog.Load( theme, easy: false ), ParkGameMode.FullSimulation, 1 );
+			OriginalEconomyImport.Apply( economy, park );
+			var seconds = (lastObjectBuilt - SaveCalendar.InitialFunnyTimeStart) / TimeSpan.TicksPerSecond;
+			Assert.AreEqual( ParkCalendar.TickAtSeconds( seconds ), economy.Objects.Max( item => item.BuiltTick ), $"{name}: the newest object is dated at the last construction, {seconds} park seconds after 2000-01-01" );
+		}
+	}
+
+	/// <summary>The corpus saves in path order with their theme folders; inconclusive without <c>OPENTPW_TPWS_SAVES</c> or saves in it.</summary>
+	private static List<(string Path, string Theme)> CorpusFiles()
+	{
+		var folder = Environment.GetEnvironmentVariable( "OPENTPW_TPWS_SAVES" );
+		if ( string.IsNullOrWhiteSpace( folder ) || !Directory.Exists( folder ) )
+			Assert.Inconclusive( "Set OPENTPW_TPWS_SAVES to a folder with original .TPWS/.INTS saves in per-theme subfolders." );
+		var files = Directory.EnumerateFiles( folder!, "*", SearchOption.AllDirectories )
+			.Where( file => Path.GetExtension( file ).ToUpperInvariant() is ".TPWS" or ".INTS" )
+			.Select( file => (Path: file, Theme: Path.GetFileName( Path.GetDirectoryName( file ) )!.ToLowerInvariant()) )
+			.Where( file => Themes.Contains( file.Theme ) ).OrderBy( file => file.Path, StringComparer.Ordinal ).ToList();
+		if ( files.Count == 0 )
+			Assert.Inconclusive( "The OPENTPW_TPWS_SAVES folder has no .TPWS/.INTS files in a theme subfolder." );
+		return files;
 	}
 
 	private void UseOriginalData()

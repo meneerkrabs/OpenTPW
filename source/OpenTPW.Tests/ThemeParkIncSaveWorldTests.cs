@@ -282,6 +282,23 @@ public class ThemeParkIncSaveWorldTests
 		Assert.AreEqual( 1700, world.FindAttraction( world.Variables.CurrentObstacle )!.InfoId );
 	}
 
+	/// <summary>
+	/// The attraction constructor gives the time stamp and mTimeOfLastSurveyReset one clock value (0x5db9dd); the prebuilt's attractions still hold that pair, so each survey stamp is
+	/// its time stamp read in the loader's order (0x5dd68e rebuilds it without tv[3]), and the fourth word is that date's day of the week.
+	/// </summary>
+	[TestMethod]
+	public void AttractionTimeStampsAreTheirSurveyStampsInTheLoadersOrder()
+	{
+		var world = World( Prebuilt() );
+		foreach ( var item in world.Attractions )
+		{
+			var time = item.Timestamp.ToDateTime();
+			Assert.AreEqual( item.TimeOfLastSurveyReset, time.ToFileTimeUtc(), $"{item.InfoId} {item.Timestamp}" );
+			Assert.AreEqual( (uint)time.DayOfWeek, item.Timestamp.DayOfWeek, $"{item.InfoId} {item.Timestamp}" );
+		}
+		Assert.AreEqual( new SaveTimestamp( 2000, 1, 2, 0, 10, 22, 30, 0 ), world.Attractions.Single( item => item.InfoId == 1101 ).Timestamp, "the robot was built on Sunday 2000-01-02 at 10:22:30" );
+	}
+
 	[TestMethod]
 	public void WorldRejectsMalformedBytes()
 	{

@@ -22,13 +22,14 @@ public readonly record struct SaveTimestamp( int Year, int Month, int Day, uint 
 	/// <summary>Reads the eight words; throws when a word the loader converts lies outside year 0–9999, month 1–12, day 1–31, hour 0–23, minute and second 0–59 or milliseconds 0–999.</summary>
 	// [BIN:TPW-EXE:0x4DB8EE attraction serializer stamp] tv[0..7] are the out-fields of 0x5FC660 (FileTimeToSystemTime, IAT 0x6FD0BC) on the park time at +0x18: wYear, wMonth, wDay (SYSTEMTIME +6), wDayOfWeek (+4), wHour, wMinute, wSecond, wMilliseconds, written in that order (0x4DB8FB..0x4DB953)
 	// [BIN:TPW-EXE:0x4DC8A1 attraction loader stamp] the loader reads the eight words back (0x4DC849..0x4DC874) and passes tv[0], tv[1], tv[2], tv[4], tv[5], tv[6], tv[7] to 0x5FC5C0 (SystemTimeToFileTime, IAT 0x6FD150), which takes each word's low 16 bits; it skips the day of the week and checks nothing: a field SystemTimeToFileTime refuses keeps +0x18 as it was and writes -1 to a status word the loader never reads
+	// [BIN:STP-PPC:0x100DB7D0 attraction loader stamp] the Mac serializer writes the out-words of the imported TbTimeStamp::GetTime (eight int pointers, 0x100DAFD8) in order, and its loader passes every word but the fourth to TbTimeStamp::SetTime (seven ints)
 	// [BIN:TPI-EXE:0x5DD68E attraction loader stamp] Theme Park Inc's serializer 0x5DC430 is the same: it writes the fields of 0x7D91E0 (FileTimeToSystemTime) on +0x20 (0x5DC56E) and loads them through 0x7D9140 (SystemTimeToFileTime) without tv[3] or a check
 	internal static SaveTimestamp Read( ref SaveFieldReader reader, int id )
 	{
 		Span<uint> tv = stackalloc uint[Words];
 		for ( var index = 0; index < Words; index++ )
 			tv[index] = reader.U32();
-		// Host input policy: a word outside these ranges is refused as a damaged save, where the loader would keep the thing's time as it was
+		// Host input policy: a word outside these ranges is refused as a damaged save. The loader converts each word's low 16 bits and keeps the thing's old time only when SystemTimeToFileTime refuses them
 		if ( tv[0] > 9999 || tv[1] is < 1 or > 12 || tv[2] is < 1 or > 31 || tv[4] > 23 || tv[5] > 59 || tv[6] > 59 || tv[7] > 999 )
 			throw new InvalidDataException( $"Save attraction thing {id} has an invalid game-time stamp {tv[0]}-{tv[1]}-{tv[2]} {tv[4]}:{tv[5]}:{tv[6]}.{tv[7]}." );
 		return new SaveTimestamp( (int)tv[0], (int)tv[1], (int)tv[2], tv[3], (int)tv[4], (int)tv[5], (int)tv[6], (int)tv[7] );

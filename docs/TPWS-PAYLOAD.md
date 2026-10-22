@@ -299,7 +299,7 @@ and bus. Its body is 1,091 bytes while the history buffers hold 30 entries:
 | --- | --- |
 | 2 + 2 + 4 | base thing (`0xfa808`): position X, Y in 1/256 cell (buildable objects: cell = position / 256, equal to the RideSystem record cell; fixed items store 128, 128), `mMapChild`, `mMapParent` |
 | 4 + 2 | `mAngle` (0/90/180/270), `mId` (= Info.Id) |
-| 8 × 4 | `tv[t]`: the park time at +0x18 as the fields of FileTimeToSystemTime (tp.exe `0x4DB8EE` → `0x5FC660`): year, month, day, day of the week (0 = Sunday), hour, minute, second, milliseconds. The loader rebuilds +0x18 with SystemTimeToFileTime from all of them but the day of the week (`0x4DC8A1` → `0x5FC5C0`) and checks nothing |
+| 8 × 4 | `tv[t]`: the park time at +0x18 as the fields of FileTimeToSystemTime (tp.exe `0x4DB8EE` → `0x5FC660`): year, month, day, day of the week (0 = Sunday), hour, minute, second, milliseconds. The loader rebuilds +0x18 with SystemTimeToFileTime from all of them but the day of the week (`0x4DC8A1` → `0x5FC5C0`) and checks nothing. The Mac build agrees: its serializer writes the out-words of the imported `TbTimeStamp::GetTime` (eight int pointers, `0x100dafd8`) in order, and its loader passes every word but the fourth to `TbTimeStamp::SetTime` (seven ints, `0x100db7d0`) |
 | 4 + 2 | `MeshInstanceID` (110–125 in Easymode), `mFlags` |
 | 33 × (2 + 2) | `mNameA[i]`, `mNameB[i]` interleaved: the two UTF-16 sign lines ("Belly"/"Bounce", gates "LOST"/"Kingdom") |
 | 4 × 3 | `mRideScriptHandle`, `mTrackRideHandle`, `mState` (+0x19c: 0 working, 1 broken down, 2 upgrade requested, 3 not choosable, 4 condemned; SetState `0x4e0e60` closes the object for 1, 2 and 4) |

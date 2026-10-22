@@ -192,7 +192,8 @@ public class OriginalSaveCorpusTests
 				Assert.AreEqual( (uint)attraction.Timestamp.ToDateTime().DayOfWeek, attraction.Timestamp.DayOfWeek, $"{name}: thing {attraction.Id} {attraction.Timestamp}" );
 			// [BIN:TPW-EXE:0x4C5D70 analyser serializer] the body ends with six 8-byte stamps (mLastStrike, mLastPuke, mLastPrank, mParkLastOpened, mLastObjectBuilt +0x21C30, mLastStaffHired) and three words
 			var analyser = park.World.Find( park.World.Variables.ParkAnalyser )!.Value;
-			var lastObjectBuilt = BinaryPrimitives.ReadInt64LittleEndian( payload.AsSpan( analyser.BodyOffset + SaveParkStatistics.BodyBytes - 3 * 4 - 2 * 8, 8 ) );
+			Assert.AreEqual( SaveParkStatistics.BodyBytes, analyser.BodyLength, name );
+			var lastObjectBuilt = BinaryPrimitives.ReadInt64LittleEndian( payload.AsSpan( analyser.End - 3 * 4 - 2 * 8, 8 ) );
 			var newest = park.Attractions.Max( attraction => attraction.Timestamp.ToDateTime() );
 			Assert.AreEqual( lastObjectBuilt, newest.ToFileTimeUtc(), $"{name}: newest attraction {newest:yyyy-MM-dd HH:mm:ss}, mLastObjectBuilt {DateTime.FromFileTimeUtc( lastObjectBuilt ):yyyy-MM-dd HH:mm:ss}" );
 

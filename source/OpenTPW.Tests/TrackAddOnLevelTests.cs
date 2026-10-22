@@ -306,6 +306,42 @@ public partial class TrackAddOnLevelTests
 		Assert.AreEqual( stays ? ride : null, level.TrackToolStation );
 	}
 
+	/// <summary>
+	/// The line tool's help 0xCC (204) through the HUD's own tool click: the line tool that a close with exactly Ctrl held kept without a start (tp.exe 0x527146) posts it for the
+	/// next click, which stores the start (0x526D41, the queue tool's post 0x527629); the click that kept the tool and the clicks of a line tool with a start post none.
+	/// </summary>
+	[TestMethod]
+	public void TheClickThatGivesTheKeptLineToolItsStartPostsHelp204()
+	{
+		var (level, ride, _) = World();
+		AttachTrackEconomy( level, ride );
+		var posted = new List<int>();
+		var hud = new Hud.ParkHud( level, OriginalUiTests.FakeStrings(), new Hud.EconomyParkStatus( () => level.Park!.Economy ), new NoBuildItems(), new Hud.HudHost { HelpPosted = posted.Add } );
+		CutForLiveMend( level, ride );
+		HudToolClick.Click( hud, (20, 14), Veldrid.Key.ControlLeft );
+		Assert.IsTrue( ride.Runtime.Bump!.IsTrackValid && level.CellTool.IsActive && level.CellTool.Start == null, "the close kept the line tool without a start" );
+		Assert.AreEqual( 0, posted.Count, "the click that closes the circuit posts nothing (0x527146 returns)" );
+		HudToolClick.Click( hud, (22, 14) );
+		Assert.AreEqual( (22, 14), level.CellTool.Start );
+		CollectionAssert.AreEqual( new[] { 204 }, posted, "the click that stores the start" );
+		HudToolClick.Click( hud, (26, 14) );
+		CollectionAssert.AreEqual( new[] { 204 }, posted, "a click with a start posts nothing" );
+	}
+
+	[TestMethod]
+	public void TheLineToolOfAnOpenCircuitStartsAtItsOpenEndAndPostsNoHelp204()
+	{
+		var (level, ride, _) = World( laid: false );
+		AttachTrackEconomy( level, ride );
+		var posted = new List<int>();
+		var hud = new Hud.ParkHud( level, OriginalUiTests.FakeStrings(), new Hud.EconomyParkStatus( () => level.Park!.Economy ), new NoBuildItems(), new Hud.HudHost { HelpPosted = posted.Add } );
+		Assert.IsTrue( level.EnterTrackTool( ride ) );
+		Assert.AreEqual( CellToolMode.KartTrack, level.CellTool.Mode );
+		Assert.IsNotNull( level.CellTool.Start, "the open end is the start (0x530830, then 0x52F580 keeps it)" );
+		HudToolClick.Click( hud, (20, 10) );
+		Assert.AreEqual( 0, posted.Count );
+	}
+
 	private sealed class NoBuildItems : Hud.IBuildCatalog
 	{
 		public IReadOnlyList<Hud.BuildItem> GetItems( Hud.BuildCategory category ) => Array.Empty<Hud.BuildItem>();

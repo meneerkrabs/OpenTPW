@@ -104,8 +104,8 @@ public sealed partial class ParkHud
 			// [BIN:TPW-EXE:0x0052F4B0 queue tool start] SetMode(3) (and the variant 0x52F580, 0x52F7B2) posts 0xCB (203) after the withdrawal, for every way into the queue tool
 			if ( mode == $"cell/{CellToolMode.Queue}" )
 				(toolHelp ??= new()).Add( (AdvisorToolHelp.QueueTool, mode) );
-			// [EXT:restored-advice-tutorial] a blueprint to place (202, rotate it with the comma and full stop keys) and the roller coaster tool (204, build track rides), after the original's own help of the mode: the advisor posts them only while the extension is on
-			restoredTip = mode == "build" ? RestoredAdvice.RotateBlueprintHelp : mode == "coaster" ? RestoredAdvice.TrackRideHelp : 0;
+			// [EXT:restored-advice-tutorial] a blueprint to place (202, rotate it with the comma and full stop keys), after the original's own help of the mode: the advisor posts it only while the extension is on
+			restoredTip = mode == "build" ? RestoredAdvice.RotateBlueprintHelp : 0;
 		}
 		reportedMode = mode;
 		if ( toolHelp is { Count: > 0 } )
@@ -123,8 +123,8 @@ public sealed partial class ParkHud
 	private int cellToolClicks;
 
 	/// <summary>
-	/// The advisor help of a path or queue tool click that was not refused: the first click that sets the start posts 0xB8 (184) in the path tool, the third click after
-	/// it 0xD6 (214), and a click that ends the queue tool without joining a path 0x151 (337).
+	/// The advisor help of a path, queue or track line tool click that was not refused: the first click that sets the start posts 0xB8 (184) in the path tool, the third click after
+	/// it 0xD6 (214), and a click that ends the queue tool without joining a path 0x151 (337); in the kart and water line tool the click that sets the start it had none of posts 0xCC (204).
 	/// </summary>
 	/// <param name="hadStart">The tool had a start before the click.</param>
 	/// <param name="mode">The tool's mode before the click.</param>
@@ -135,6 +135,14 @@ public sealed partial class ParkHud
 	// [BIN:TPW-EXE:0x005275B1 tool end] a click that ends the tool (the start reached, or the line ending on an existing path or queue cell) sets the mode to 0 (0x5275F2); in the queue mode (the check 0x52F860(3) before it) with the layout replay word 0x785A2C and the link flag 0x816D60 both clear it then posts 0x151 (0x527629)
 	internal void ReportCellToolClick( bool hadStart, CellToolMode mode, CellBuildTool tool, bool joinedPath, string? modeBefore = null )
 	{
+		if ( mode is CellToolMode.KartTrack or CellToolMode.WaterTrack )
+		{
+			// [BIN:TPW-EXE:0x00526D41 line start help] the click that stores the start posts 0xCC (AdvisorToolHelp.TrackLineStart), with no test of the replay word 0x785A2C or the link flag
+			// 0x816D60 that gate 0x151; no SetMode withdraws it, so it is posted at once rather than held behind the frame's mode change, and the tool ending before the next frame does not drop it
+			if ( !hadStart && tool.Start != null )
+				host?.HelpPosted?.Invoke( AdvisorToolHelp.TrackLineStart );
+			return;
+		}
 		if ( mode is not (CellToolMode.Path or CellToolMode.Queue) )
 			return;
 		if ( !hadStart )

@@ -856,15 +856,28 @@ public class AdvisorRestoredAdviceTests
 	}
 
 	[TestMethod]
-	public void TheToolHintsEndWithTheirMode()
+	public void TheBlueprintHintEndsWithItsModeAndTheLineToolsHelpDoesNot()
 	{
 		var advisor = Attached( out _ );
 		advisor.PostHelp( RestoredAdvice.RotateBlueprintHelp );
-		advisor.PostHelp( RestoredAdvice.TrackRideHelp );
+		advisor.PostHelp( AdvisorToolHelp.TrackLineStart );
 		advisor.PostHelp( RestoredAdvice.CamcorderHelp );
 		CollectionAssert.AreEquivalent( new[] { 202, 204, 306 }, Pending( advisor.Controller ).ToArray() );
 		advisor.OnModeChanged();
-		CollectionAssert.AreEqual( new[] { 306 }, Pending( advisor.Controller ).ToArray(), "the blueprint and roller coaster hints go with their tool; the camcorder's stays" );
+		CollectionAssert.AreEquivalent( new[] { 204, 306 }, Pending( advisor.Controller ).ToArray(),
+			"the blueprint hint goes with its tool; the camcorder's stays, and so does the line tool's 204, which neither SetMode withdraws (0x52F245..0x52F326, 0x52F5BF..0x52F6A0)" );
+	}
+
+	[TestMethod]
+	public void TheLineToolsHelpIsTheOriginalsAndIsPostedWithTheExtensionOff()
+	{
+		Assert.IsFalse( RestoredAdvice.IsRestored( AdvisorToolHelp.TrackLineStart ), "204 is the kart and water line tool's own help now (0x526D41), no longer the coaster tool's restored hint" );
+		using var scope = OpenTpwExtensions.Use( Off() );
+		Assert.IsFalse( RestoredAdvice.Enabled );
+		var advisor = Attached( out _ );
+		advisor.PostHelp( AdvisorToolHelp.TrackLineStart );
+		advisor.PostHelp( RestoredAdvice.RotateBlueprintHelp );
+		CollectionAssert.AreEqual( new[] { 204 }, Pending( advisor.Controller ).ToArray(), "the original's help is posted whatever the extension; the restored hint only while it is on" );
 	}
 
 	[TestMethod]

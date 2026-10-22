@@ -37,7 +37,7 @@ public sealed class HudHost
 	public Action<string>? WindowClosed { get; init; }
 	/// <summary>The HUD posts an advisor help message (0x486B00) that belongs to no screen, such as the camera panel's.</summary>
 	public Action<int>? HelpPosted { get; init; }
-	/// <summary>[EXT:restored-advice-tutorial] Asks the advisor for a help message the restored advice extension adds (<see cref="RestoredAdvice"/>: 202, 204, 306, 322); the advisor posts it only while the extension is on. Separate from <see cref="HelpPosted"/>, which carries the original's own posts.</summary>
+	/// <summary>[EXT:restored-advice-tutorial] Asks the advisor for a help message the restored advice extension adds (<see cref="RestoredAdvice"/>: 202, 306, 322); the advisor posts it only while the extension is on. Separate from <see cref="HelpPosted"/>, which carries the original's own posts.</summary>
 	public Action<int>? RestoredHelp { get; init; }
 	/// <summary>The HUD withdraws an advisor help message it posted (0x486B40).</summary>
 	public Action<int>? HelpWithdrawn { get; init; }

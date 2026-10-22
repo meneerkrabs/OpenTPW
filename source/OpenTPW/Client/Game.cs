@@ -870,7 +870,10 @@ internal static class Game
 							var bridgeCells = shape.Select( cell => (X: originX + cell.X, Y: originY + cell.Y) ).ToArray();
 							var bridgeDelay = GetOption( args, "--debug-bridge-delay", "frames to wait after swimmers exist before building the bridge" ) is { } delayText
 								&& int.TryParse( delayText, out var delay ) && delay > 0 ? delay : 0;
-							var debugBridge = args.Contains( "--debug-bridge" ) && bridgeDelay == 0 ? level.BuildDebugPoolBridge( bridgeCells ) : null;
+							// [EXT:debug-pool] --debug-bridge-bare lays no path at the bridge's ends; --debug-bridge-direction N (0 north, 1 east, 2 south, 3 west) restricts the direction
+							var bridgeBare = args.Contains( "--debug-bridge-bare" );
+							int? bridgeDirection = GetOption( args, "--debug-bridge-direction", "0 north, 1 east, 2 south, 3 west" ) is { } directionText && int.TryParse( directionText, out var parsedDirection ) ? parsedDirection : null;
+							var debugBridge = args.Contains( "--debug-bridge" ) && bridgeDelay == 0 ? level.BuildDebugPoolBridge( bridgeCells, !bridgeBare, bridgeDirection ) : null;
 							if ( args.Contains( "--debug-bridge" ) && bridgeDelay > 0 )
 							{
 								var bridgeFrames = 0;
@@ -881,7 +884,7 @@ internal static class Game
 									if ( level.SwimmerRenderer == null || ++bridgeFrames < bridgeDelay ) return;
 									Render.PostUpdate -= BuildLateBridge;
 									Log.Trace( $"--debug-bridge-delay: building after {bridgeFrames} frames with existing guest/staff/swimmer renderers; swimmers {level.Guests!.Guests.Count( guest => guest.IsSwimming )}." );
-									if ( level.BuildDebugPoolBridge( bridgeCells ) is { } lateBridge ) level.StartDebugBridgeWalkers( lateBridge );
+									if ( level.BuildDebugPoolBridge( bridgeCells, !bridgeBare, bridgeDirection ) is { } lateBridge ) level.StartDebugBridgeWalkers( lateBridge );
 								}
 							}
 							// [EXT:debug-swimmers] smoke-only: --debug-swimmers N builds a changing room beside the pool (through the level's own placement, which charges it and needs the pool at its back) and
@@ -1096,6 +1099,7 @@ internal static class Game
 								Log.Warning( $"--debug-hud: no row {row} in the buy window's {tab}." );
 							break;
 						}
+						case "buyyaw": hud.DebugHoldBuyYaw( float.Parse( argument, System.Globalization.CultureInfo.InvariantCulture ) ); break;
 						case "msg": hud.PostGameMessage( argument ); break;
 						case "openmsg": hud.OpenPendingMessage( 0 ); break;
 						case "msgaction": hud.PostGameMessage( "A message with two actions", argument.Split( '+' ).Select( kind => new OpenTPW.Hud.GameMessageAction( Enum.Parse<OpenTPW.Hud.GameMessageKind>( kind, true ), () => { } ) ).ToArray() ); break;

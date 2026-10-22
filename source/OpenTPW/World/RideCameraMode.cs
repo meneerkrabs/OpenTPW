@@ -70,13 +70,17 @@ public sealed class RideCameraMode : CameraMode
 	// [EXT:debug-hud] developer/screenshot helper, not original behaviour
 	internal static NVector2? PointerOverride { get; set; }
 
+	/// <summary>Whether the free look follows the pointer under an interface window too: the winning screen's full-screen window lies over the whole winning view.</summary>
+	// [BIN:TPW-EXE:0x0042B8C7 winning look] the look reads the pointer against the park view's centre whenever the camera flags have 0x3C, not the window under the pointer, so the winning window (0x7472, full screen) leaves it working
+	public bool LooksUnderWindows { get; init; }
+
 	public override void Update()
 	{
 		var size = Screen.Size;
 		var position = Input.Mouse.Position;
 		// like the terrain walk: without focus, with the pointer outside the window or while a developer panel owns the mouse the view looks straight ahead
 		var active = Window.Current?.Focused == true && size.X > 0 && size.Y > 0 && position.X >= 0 && position.Y >= 0 && position.X < size.X && position.Y < size.Y
-			&& !ImGuiNET.ImGui.GetIO().WantCaptureMouse && Level.Current?.UiCapturesMouse != true;
+			&& !ImGuiNET.ImGui.GetIO().WantCaptureMouse && (LooksUnderWindows || Level.Current?.UiCapturesMouse != true);
 		var pointer = PointerOverride ?? (active ? PointerOffset( position.X, position.Y, size.X, size.Y ) : NVector2.Zero);
 		Advance( Time.Delta * 1000f, pointer );
 	}

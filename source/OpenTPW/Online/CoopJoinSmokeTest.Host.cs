@@ -453,7 +453,9 @@ internal sealed partial class CoopJoinSmokeTest
 		return staged.ToArray();
 	}
 
-	/// <summary>After the first cut: the hand put down where it was, the hire cancelled, the carried object placed back, the coaster tool left, the water ride's track mended.</summary>
+	/// <summary>
+	/// After the first cut: the hand put down where it was, the hire cancelled, the carried object placed back and the Move tool ended, the coaster tool left, the water ride's track mended.
+	/// </summary>
 	private void UnstageFirstCut()
 	{
 		Issue( new DropStaffCommand( hand!.Value.Staff, hand.Value.X, hand.Value.Y ), "the employee is put back down" );
@@ -461,7 +463,9 @@ internal sealed partial class CoopJoinSmokeTest
 		var (entry, x, y, rotation) = carried!.Value;
 		var click = Level.GetClickCell( entry, x, y, rotation );
 		if ( !level.Commands.Issue( new PlaceObjectCommand( ParkCommandCodec.EntryKey( entry ), click.X, click.Y, rotation, Moving: true ) ).Accepted )
-			Log.Trace( "Co-op join smoke: the carried object stays in the hand (its place was taken meanwhile)." );
+			Log.Trace( "Co-op join smoke: the carried object's place was taken meanwhile; the Move tool's cancel leaves it gone." );
+		// a placement without Ctrl ends the Move tool, as a cancel does: its type is carried no more
+		Issue( new EndMoveCommand(), "the Move tool ends" );
 		Issue( new EndCoasterToolCommand( coasters[1].Visitors.AttractionId ), "the coaster tool closes" );
 		MendWaterTrack();
 	}
@@ -533,9 +537,9 @@ internal sealed partial class CoopJoinSmokeTest
 				"water track cut open after a Backspace", "add-on on a track cut open", "pool with a river", "slide", "bridge", "swimmers" }
 			: new[] { "session clock", "several coasters", "paused with edits since its last tick", "built coaster closed", "tour ride without a live tour", "entrance without its link",
 				"add-on on a mended track", "pool with a river", "slide", "bridge" };
-		// what the first cut staged and the second undid; not the Move tool's carried entry, which a placement does not clear in the command layer (docs/COOP.md, "Known limits")
+		// what the first cut staged and the second undid
 		string[] undone = number == 1 ? Array.Empty<string>()
-			: new[] { "employee in hand", "pending hire", "coaster tool open", "water track cut open after a Backspace", "add-on on a track cut open" };
+			: new[] { "employee in hand", "pending hire", "carried Move entry", "coaster tool open", "water track cut open after a Backspace", "add-on on a track cut open" };
 		Require( expected.All( staged.Contains ) && !undone.Any( staged.Contains ), $"cut {number} holds what was staged for it and nothing undone (held: {string.Join( ", ", staged )})" );
 		var file = $"capture-{number}.otpwjoin";
 		File.WriteAllBytes( Path.Combine( evidenceDirectory, file ), payload! );
@@ -555,6 +559,11 @@ internal sealed partial class CoopJoinSmokeTest
 		File.WriteAllBytes( Path.Combine( evidenceDirectory, "host-final-save.json" ), save );
 		File.WriteAllBytes( Path.Combine( evidenceDirectory, "host-final-state.bin" ), level.CaptureJoinState().Encode() );
 		WriteFrames( transport.Frames );
+		var captureTimings = stream.CaptureTimings;
+		Require( captureTimings.Count == cuts.Count && captureTimings.Select( item => item.Generation ).SequenceEqual( cuts.Select( cut => cut.Generation ) ),
+			$"every capture's timings are kept ({captureTimings.Count} of {cuts.Count})" );
+		foreach ( var timings in captureTimings )
+			RequireTimings( timings );
 		var evidence = HostEvidence( completed: true, failure: null ) with { FinalDigest = digest, FinalWorldHash = world, FinalSaveSha256 = Sha256Hex( save ) };
 		WriteJson( "host-evidence.json", evidence );
 		session.End( "The smoke ended." );
@@ -563,6 +572,19 @@ internal sealed partial class CoopJoinSmokeTest
 			+ $"{cuts.Count} captures; digest {digest:X16}." );
 	}
 
+	/// <summary>A capture's timings are whole: every part ran and was timed (finite, not negative), the save and the compression in slices, the payload uploaded.</summary>
+	private static void RequireTimings( CoopCaptureTimings timings )
+	{
+		var parts = new[] { timings.PublishMilliseconds, timings.DigestMilliseconds, timings.StateMilliseconds, timings.SnapshotMilliseconds, timings.SerializerSetupMilliseconds,
+			timings.Save.Milliseconds, timings.SaveCopyMilliseconds, timings.WriterSetupMilliseconds, timings.Compression.Milliseconds, timings.FinishMilliseconds,
+			timings.LongestFrameMilliseconds, timings.UploadSeconds ?? -1 };
+		Require( parts.All( value => double.IsFinite( value ) && value >= 0 ), $"capture {timings.Generation}'s timings are finite and not negative ({timings})" );
+		Require( timings.Save is { Status: CoopTimingStatus.Measured, Steps: > 0 } && timings.Compression is { Status: CoopTimingStatus.Measured, Steps: > 0 }
+			&& timings.SaveBytes > 0 && timings.BodyBytes > timings.SaveBytes && timings.PayloadBytes > 0 && timings.Frames >= 3,
+			$"capture {timings.Generation}'s save and compression ran in slices over frames ({timings})" );
+	}
+
 	private CoopSmokeHostEvidence HostEvidence( bool completed, string? failure ) => new( completed, failure, level?.LevelName ?? "jungle", ParkStartKind.InstantAction.ToString(),
-		coasters.Count, cuts.ToArray(), transport?.Frames.Count > 0 ? transport.Frames[^1].Seq : 0, level?.TickCount ?? 0, session?.HostStream?.LastRecord ?? 0, 0, 0, "", hostFrame );
+		coasters.Count, cuts.ToArray(), transport?.Frames.Count > 0 ? transport.Frames[^1].Seq : 0, level?.TickCount ?? 0, session?.HostStream?.LastRecord ?? 0, 0, 0, "", hostFrame,
+		session?.HostStream?.CaptureTimings.ToArray() ?? Array.Empty<CoopCaptureTimings>(), CoopSmokeEnvironment.Of( flow ) );
 }

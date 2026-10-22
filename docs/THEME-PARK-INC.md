@@ -93,7 +93,7 @@ world and only file, language, display or sound options) opens the Personnel Fil
 path layer (`pathtex` textures), the monorail (part of the terrain meshes), guests with their sprites,
 and the world's sound and music. Science also loads the sole shipped `PreBuilt/prebuilt.TPWS`: its
 paths, placed objects and fixed-item records. Arabian and water have no matching shipped prebuilt
-save and still use the default fixed items (RIDES-019). The camera is the park camera (pan, rotate,
+save and still use the default fixed items (the Bus from setup is `[EXT:tpi-bus-from-setup]`). The camera is the park camera (pan, rotate,
 zoom); the sandbox developer panels are off. On top of that the slice adds:
 
 - The **experimental HUD** (`ThemeParkIncHud`, `[EXT:tpi-text-hud]`): an OpenTPW text interface — a state line that
@@ -182,7 +182,7 @@ TPI-904 are retired).
 
 **Approximations and open questions.** (The `0x2D` palette and the drained lake are extensions now: `[EXT:fsh-0x2d-palette]`, `[EXT:tpi-lake-drained]`.)
 RIDES-031 (`@`), RIDES-030 (non-finite texture coordinates in ten vertices of `science/sideshow/natnav`,
-drawn as 0, 0), RIDES-019 (the End object; the Bus from setup is `[EXT:tpi-bus-from-setup]`), RIDES-040 (zero-coordinate fixed
+drawn as 0, 0), RIDES-040 (zero-coordinate fixed
 scene records). Open: how the original game transforms the zero-coordinate scene records and
 places the gate and bus in worlds without a prebuilt save; what the `*_newenv.MD2` files are for (`3ns_newenv` and `4ns_newenv` carry a heightfield and an `arrival_*` mesh set); the
 missing lake bed textures; the viewer's lighting and water transparency against the original.

@@ -400,9 +400,17 @@ public partial class Level : IDisposable
 			foreach ( var progress in SetupEntities() )
 				yield return progress;
 		}
-		if ( resume != null ) RestoreResumeSimulation( resume );
+		if ( resume != null )
+		{
+			using ( LoadProfile.Measure( "resume" ) )
+				RestoreResumeSimulation( resume );
+		}
 		// [EXT:online-coop-snapshot-join] a join's session state, before the park's first frame
-		if ( joinRestore is { } joined ) ApplyJoinState( joined );
+		if ( joinRestore is { } joined )
+		{
+			using ( LoadProfile.Measure( "join-state" ) )
+				ApplyJoinState( joined );
+		}
 		using ( LoadProfile.Measure( "level-hud" ) )
 			SetupHud( onlineFolders );
 		resumeState = null;
@@ -1088,8 +1096,8 @@ public partial class Level : IDisposable
 
 	public void Update()
 	{
-		// the ride ends when it is deleted or loses what the view rides on (a coaster's train)
-		if ( RideView is { } riding && (riding.Ride.IsDeleted || !RideCameraMode.CanRide( riding.Ride )) )
+		// the ride ends when it is deleted or loses what the view rides on (a coaster's train); the winning camera rides End, which is no ride, until End goes
+		if ( RideView is { } riding && (riding.Ride.IsDeleted || !RideCameraMode.CanRide( riding.Ride ) && !ParkFinale.IsFinaleObject( riding.Ride )) )
 			ExitRideView();
 		Camera.Update();
 		if ( ShowDeveloperPanels && !HidesInterface )

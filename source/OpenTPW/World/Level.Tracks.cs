@@ -215,19 +215,22 @@ public partial class Level
 	}
 
 	/// <summary>
-	/// The track tool's step after a walk that found <paramref name="item"/>'s circuit valid: the tool on that ride ends and the queue tool follows the ride's queue, or, for a live line click with exactly Ctrl and
-	/// no queue to follow, the line tool restarts without a start. The issuer's machine alone takes it ([EXT:online-coop-commands]: a peer's or a replayed command moves no tool).
+	/// The track tool's step after a walk that found <paramref name="item"/>'s circuit valid: the tool on that ride ends and, while a placement's queue start is pending
+	/// (<see cref="placedQueueStart"/>), the queue tool follows that ride's queue; with none pending, a live line click with exactly Ctrl restarts the line tool without a start.
+	/// The issuer's machine alone takes it ([EXT:online-coop-commands]: a peer's or a replayed command moves no tool).
 	/// </summary>
 	internal void ContinueTrackTool( OriginalObject item, TrackWalkCause cause )
 	{
 		// [BIN:TPW-EXE:0x0052A970 circuit walk] a valid circuit closes the tool; the walk itself posts no advisor or event message (it calls no message builder 0x0059B590)
-		// [BIN:TPW-EXE:0x00526D41 track tool help] the kart and water tool posts tool help 0xCC (204) only for a click with no line start (0x0081EDE4/E8 = −1), which sets the start (0x00525A1C → 0x00526CB3); the placement presets the start at the station's exit (0x0052A1A0), so it is reached only when the tool stays on without one after a line closes with exactly Ctrl and no queue to follow (0x00526FB3, UI-031); 0xB8, 0xD6 and 0x151 are the path and queue tool's help (0x005272F5, 0x00527351, 0x00527620)
+		// [BIN:TPW-EXE:0x00526D41 track tool help] the kart and water tool posts tool help 0xCC (204) only for a click with no line start (0x0081EDE4/E8 = −1), which sets the start (0x00525A1C → 0x00526CB3); the placement presets the start at the station's exit (0x0052A1A0), so it is reached only when the tool stays on without one after a line closes with exactly Ctrl and no queue start pending (0x00526FB3, UI-031), and the HUD's report of that click posts it (ParkHud.ReportCellToolClick, AdvisorToolHelp.TrackLineStart); 0xB8, 0xD6 and 0x151 are the path and queue tool's help (0x005272F5, 0x00527351, 0x00527620)
 		if ( TrackToolStation == item )
 		{
-			var queueFollows = cause != TrackWalkCause.Edit && item.Entry.HasQueue && item.Runtime.IsAttraction && item.Visitors.HasCells;
-			// UI-031: the live line click with exactly Ctrl and no queue keeps this mode, with no start.
+			// [BIN:TPW-EXE:0x00526F95 queue start test] the line's close takes the queue tool only while the placement's queue start 0x8186C0 is pending: it starts the queue tool at that start's cell (0x7639B8/0x7639BC, 0x526FB9..0x527004), which the last placement of a ride with an entrance stored and which may be another ride's, and takes it (0x527056); with none pending the modifier word decides (0x527146)
+			// A pending start whose ride was sold since is dropped (an OpenTPW guard): the original's record stays pending and the close hands its cell to the queue tool, where OpenTPW's queue tool needs the ride
+			var queue = cause != TrackWalkCause.Edit && placedQueueStart is { IsDeleted: false } placed ? placed : null;
+			// UI-031: the live line click with exactly Ctrl and no queue start keeps this mode, with no start.
 			// The circuit refresh above is identical; only the issuer's local tool continuation differs.
-			if ( cause == TrackWalkCause.Line && keepTrackToolAfterLine && !queueFollows && CellTool.Writer is ParkCommandTrackWriter or TrackLineWriter )
+			if ( cause == TrackWalkCause.Line && keepTrackToolAfterLine && queue == null && CellTool.Writer is ParkCommandTrackWriter or TrackLineWriter )
 			{
 				CellTool.Enter( CellTool.Writer!, null );
 				return;
@@ -235,8 +238,11 @@ public partial class Level
 			CellTool.Cancel();
 			trackToolStation = null;
 			// [BIN:TPW-EXE:0x00526C70 edit walk end] a cut that leaves a valid circuit ends the tool (0x52F580(0), 0x526C6E): no queue tool follows, as it does a line that closes the circuit
-			if ( queueFollows )
-				EnterQueueTool( item.Visitors );
+			if ( queue != null )
+			{
+				placedQueueStart = null;
+				EnterQueueTool( queue.Visitors );
+			}
 		}
 	}
 

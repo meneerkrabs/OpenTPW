@@ -11,14 +11,16 @@ twin) and was checked against the PC dispatcher instruction by instruction:
 * 6, 7, 8, 9, 12, 14, 15, 16: implied children (type, attributes and id fixed by the command; 12 and 16 read a number).
 
 A model hash is the root-name hash of ``UiModels.RootNameKey`` ((h ^ c) * 47 over the Latin-1 bytes). The names are
-resolved from the game's ui.wad, and an unresolved or ambiguous hash is an error. Rectangles are (left, top, right,
-bottom) in the 2048 x 1536 virtual canvas.
+resolved from the game's ui.wad and from the banner meshes of the language folder (bankrupt, congrats and paused .md2:
+the mesh loader 0x4893C0 registers every .md2 file of the language folder with the ui.wad models), and an unresolved
+or ambiguous hash is an error. Rectangles are (left, top, right, bottom) in the 2048 x 1536 virtual canvas.
 
 The pointer part reads the cursor loader 0x4899C0 (the .tga file of each pointer id) and the tool-to-pointer
 switch 0x52F950 (byte table 0x52FA48 over the tool mode, jump table 0x52FA1C, five blocks of flag tests and pushes).
 
 Only derived values are written: rectangles, help ids, model names, pointer ids and file names, and the pointer
-rule per tool mode. Usage: python3 tpw_exe_layouts.py <tp.exe> <ui.wad> --write FILE | --check FILE
+rule per tool mode. Usage: python3 tpw_exe_layouts.py <tp.exe> <ui.wad> <language folder> --write FILE | --check FILE
+(the language folder is the game's Data/Language/<language>, e.g. Data/Language/English).
 """
 from __future__ import annotations
 
@@ -67,6 +69,8 @@ TABLES = [
     ('ChatOverlay', 0x758AE8, 0xC3122, (0, 0, 2048, 1536), 0x758CD6, 17),
     ('ChatBuddyPopup', 0x758CD8, 0x1788, (0, 0, 2048, 1536), 0x758E14, 8),
     ('ChatPlayerPopup', 0x758E18, 0x3002, (0, 0, 2048, 1536), 0x758F04, 6),
+    ('WinningScreen', 0x74FAF0, 0x321, (102, 536, 1946, 940), 0x74FB1A, 1),
+    ('MessageBox', 0x74F920, 0x9873C7, (500, 233, 1516, 830), 0x74F9BA, 4),
 ]
 # The second confirm-dialog table must be the same stream, byte for byte in its decoded tree.
 CONFIRM_TWIN = 0x7585A8
@@ -106,6 +110,8 @@ REQUIRED = {
     'ChatOverlay': ['chat', 'b_up', 'b_down', 'b_scroller', 'b_speeps', 'b_sbuddi', 'b_muff', 'b_vote', 'b_chtpcard'],
     'ChatBuddyPopup': ['!f_plain', 'b_bmark', 'b_gopeep', 'b_ignore', 'b_unbuddi', 'b_peeploc', 'b_page'],
     'ChatPlayerPopup': ['!f_plain', 'b_bmark', 'b_gopeep', 'b_ignore', 'b_unbuddi'],
+    'WinningScreen': ['s_congrats'],
+    'MessageBox': ['wdialog'],
 }
 
 LOADER = 0x4899C0
@@ -290,6 +296,28 @@ def refpack(data: bytes) -> bytes:
     return bytes(out)
 
 
+def md2_root_name(data: bytes) -> str | None:
+    """The root node's name of one (decompressed) .md2 model, None when it has none."""
+    if len(data) <= 0xB0:
+        return None
+    offsets = struct.unpack_from('<12I', data, 0x50)
+    root = offsets[10]
+    if root + 88 > len(data):
+        return None
+    pointer = struct.unpack_from('<I', data, root + 84)[0]
+    end = data.find(b'\0', pointer)
+    if pointer == 0 or end < 0:
+        return None
+    return data[pointer:end].decode('latin1')
+
+
+def add_root_name(names: dict[int, str], name: str) -> None:
+    key = root_name_hash(name)
+    if key in names and names[key] != name:
+        raise ValueError(f'UI root names {names[key]!r} and {name!r} share hash {key:#x}')
+    names[key] = name
+
+
 def ui_root_names(wad: bytes) -> dict[int, str]:
     """Root-node name of every ui.wad model by its hash; two names with one hash are an error."""
     if wad[:4] != b'DWFB':
@@ -304,22 +332,20 @@ def ui_root_names(wad: bytes) -> dict[int, str]:
         data = wad[data_offset:data_offset + data_length]
         if compression == 4:
             data = refpack(data)
-        if len(data) <= 0xB0:
-            continue
-        offsets = struct.unpack_from('<12I', data, 0x50)
-        root = offsets[10]
-        if root + 88 > len(data):
-            continue
-        pointer = struct.unpack_from('<I', data, root + 84)[0]
-        end = data.find(b'\0', pointer)
-        if pointer == 0 or end < 0:
-            continue
-        name = data[pointer:end].decode('latin1')
-        key = root_name_hash(name)
-        if key in names and names[key] != name:
-            raise ValueError(f'ui.wad root names {names[key]!r} and {name!r} share hash {key:#x}')
-        names[key] = name
+        name = md2_root_name(data)
+        if name is not None:
+            add_root_name(names, name)
     return names
+
+
+def language_root_names(meshes: list[bytes], names: dict[int, str]) -> dict[int, str]:
+    """The ui.wad names plus the root names of the language folder's .md2 banner meshes (0x4893C0 registers them alike)."""
+    merged = dict(names)
+    for data in meshes:
+        name = md2_root_name(data)
+        if name is not None:
+            add_root_name(merged, name)
+    return merged
 
 
 # ---------------------------------------------------------------------------------------------------------------
@@ -479,12 +505,12 @@ def render(tables: dict[str, tuple[int, list[dict]]], pointers: dict[int, str], 
     return '\n'.join(lines)
 
 
-def build(exe: bytes, wad: bytes) -> str:
+def build(exe: bytes, wad: bytes, language_meshes: list[bytes] | None = None) -> str:
     digest = hashlib.sha256(exe).hexdigest()
     if digest != TPW_SHA:
         raise ValueError(f'tp.exe has SHA-256 {digest}, expected {TPW_SHA}')
     image = Image(exe)
-    names = ui_root_names(wad)
+    names = language_root_names(language_meshes or [], ui_root_names(wad))
     tables: dict[str, tuple[int, list[dict]]] = {}
     for name, address, root_id, rect, end, nodes in TABLES:
         roots, after = parse_layout(image, address)
@@ -512,11 +538,13 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('exe', type=Path)
     parser.add_argument('ui_wad', type=Path)
+    parser.add_argument('language', type=Path, help='the language folder with the banner meshes (Data/Language/<language>)')
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument('--write', type=Path)
     group.add_argument('--check', type=Path)
     args = parser.parse_args()
-    text = build(args.exe.read_bytes(), args.ui_wad.read_bytes())
+    meshes = [path.read_bytes() for path in sorted(args.language.iterdir()) if path.is_file() and path.suffix.lower() == '.md2']
+    text = build(args.exe.read_bytes(), args.ui_wad.read_bytes(), meshes)
     path = args.write or args.check
     if args.write:
         path.write_text(text, encoding='utf-8', newline='\n')

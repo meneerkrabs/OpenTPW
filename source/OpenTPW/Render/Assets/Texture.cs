@@ -414,6 +414,8 @@ public partial class Texture : Asset
 			TextureUsage.Sampled | TextureUsage.GenerateMipmaps
 		);
 
+		LoadProfile.Count( "gpu textures" );
+		LoadProfile.Count( "gpu texture bytes", data.Length );
 		var texture = Device.ResourceFactory.CreateTexture( textureDescription );
 
 		var textureDataPtr = Marshal.AllocHGlobal( data.Length );

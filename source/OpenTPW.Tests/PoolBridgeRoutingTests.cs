@@ -166,4 +166,39 @@ public class PoolBridgeRoutingTests
 		Assert.AreEqual( 8, grid.Distance( start.X, start.Y, end.X, end.Y ) );
 	}
 
+	[TestMethod]
+	public void BridgeWithoutEndPathsIsAnIslandUntilAPathIsLaidAndClosesAgainWhenItGoes()
+	{
+		foreach ( var direction in new[] { 0, 1, 2, 3 } )
+		{
+			var (grid, world, bridge) = Fixture( direction );
+			var start = bridge.Cell( -1 );
+			var end = bridge.Cell( PoolBridge.Length );
+			grid.Cells.SetType( start.X, start.Y, ParkCellType.Empty );
+			grid.Cells.SetType( end.X, end.Y, ParkCellType.Empty );
+			Assert.AreEqual( PoolBridgeResult.Ok, world.TryAdd( bridge.X, bridge.Y, direction ), "built with no path at either end" );
+			var inside = bridge.Cell( 0 );
+			var far = bridge.Cell( PoolBridge.Length - 1 );
+			Assert.AreEqual( 0, grid.Distance( inside.X, inside.Y, inside.X, inside.Y ) );
+			Assert.AreEqual( PoolBridge.Length - 1, grid.Distance( inside.X, inside.Y, far.X, far.Y ), "the deck links end to end by itself" );
+			for ( var mask = 0; mask <= 2; mask++ )
+				Assert.IsTrue( WalkEdges.Blocked( grid.Cells, start.X, start.Y, direction, mask ), "nothing leads from an open end onto the bridge" );
+			// a path laid at the first end opens that entrance only
+			grid.Cells.SetType( start.X, start.Y, ParkCellType.Path );
+			Assert.AreEqual( PoolBridge.Length, grid.Distance( start.X, start.Y, far.X, far.Y ) );
+			Assert.IsFalse( grid.AreConnected( far.X, far.Y, direction ), "the far end stays closed" );
+			Assert.IsTrue( WalkEdges.Blocked( grid.Cells, far.X, far.Y, direction, 0 ) );
+			for ( var mask = 0; mask <= 2; mask++ )
+				Assert.IsFalse( WalkEdges.Blocked( grid.Cells, start.X, start.Y, direction, mask ), "the path opens the first entrance" );
+			// and one at the second end completes the crossing, with every walk mask
+			grid.Cells.SetType( end.X, end.Y, ParkCellType.Path );
+			Assert.AreEqual( PoolBridge.Length + 1, grid.Distance( start.X, start.Y, end.X, end.Y ) );
+			for ( var mask = 0; mask <= 2; mask++ )
+				Assert.IsFalse( WalkEdges.Blocked( grid.Cells, far.X, far.Y, direction, mask ) );
+			// the path removed again closes that entrance
+			grid.Cells.SetType( start.X, start.Y, ParkCellType.Empty );
+			Assert.IsFalse( grid.AreConnected( start.X, start.Y, direction ) );
+			Assert.AreEqual( -1, grid.Distance( start.X, start.Y, end.X, end.Y ) );
+		}
+	}
 }

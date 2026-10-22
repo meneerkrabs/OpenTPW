@@ -181,7 +181,8 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 	{
 		Texture texture => texture.NativeTexture.IsDisposed && AtlasViewReleased( texture ),
 		Material material => material.Pipeline.IsDisposed,
-		Shader shader => shader.ShaderProgram.All( program => program.IsDisposed ),
+		// a shader gives its reference to the shared native program back (ShaderCompiler.Release); the program goes with its last reference
+		Shader shader => !shader.HoldsNativeProgram,
 		_ => false
 	} );
 

@@ -60,6 +60,25 @@ class LayoutTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             layouts.tool_block(Flat(b'\x90' * 16), 0, 8)
 
+    @staticmethod
+    def md2(name: str) -> bytes:
+        # a minimal model: the offset table at 0x50 names the root node record (+84: pointer to its name)
+        data = bytearray(0x200)
+        root = 0x100
+        struct.pack_into('<12I', data, 0x50, *([0] * 10 + [root, 0]))
+        struct.pack_into('<I', data, root + 84, 0x180)
+        data[0x180:0x180 + len(name) + 1] = name.encode('latin1') + b'\0'
+        return bytes(data)
+
+    def test_language_banner_meshes_join_the_names(self):
+        self.assertEqual('s_congrats', layouts.md2_root_name(self.md2('s_congrats')))
+        self.assertIsNone(layouts.md2_root_name(b'\0' * 16))
+        names = layouts.language_root_names([self.md2('s_congrats')], {layouts.root_name_hash('b_okay'): 'b_okay'})
+        self.assertEqual('s_congrats', names[0x706DE86B])
+        self.assertEqual('b_okay', names[0x14A7E48B])
+        with self.assertRaises(ValueError):
+            layouts.add_root_name({0x706DE86B: 'other'}, 's_congrats')
+
     def test_unresolved_hash_fails(self):
         with self.assertRaises(ValueError):
             layouts.resolve({'hash': 1, 'id': 2}, {}, 'T')

@@ -139,6 +139,12 @@ internal sealed class CoopGuestStream : ILevelSessionStream, IDisposable
 	/// <summary>The digests after an errored record this guest compared so far.</summary>
 	public int RecordChecks { get; private set; }
 
+	/// <summary>
+	/// [EXT:online-coop-snapshot-join] The last frame the stream had applied when its last frame point left it following within its window (every frame it held applied, its ticks
+	/// run); 0 when that frame point did not. A join's catch-up ends at the first such frame point past the cut.
+	/// </summary>
+	internal ulong FollowingThrough { get; private set; }
+
 	/// <summary>The guest's state as its progress reports it.</summary>
 	public CoopGuestState State => Desync != null ? CoopGuestState.Desynced
 		: tooFarBack ? CoopGuestState.TooFarBack
@@ -156,6 +162,7 @@ internal sealed class CoopGuestStream : ILevelSessionStream, IDisposable
 			ApplyReady();
 		if ( !Stopped )
 			RunTicks( frameSeconds, now );
+		FollowingThrough = !Stopped && ready.Count == 0 && State == CoopGuestState.Following ? LastFrame : 0;
 		if ( !silenced )
 			Progress( now );
 	}

@@ -9,7 +9,10 @@ public partial class Level
 {
 	private ParkCommands? commands;
 	private ParkCommandRecorder? commandRecorder;
-	/// <summary>The catalogue entry each player picked up with the Move tool (<see cref="PickUpObjectCommand"/>): a moving placement must name it (the Move tool's purchase skips research and the balance test).</summary>
+	/// <summary>
+	/// The catalogue entry each player picked up with the Move tool (<see cref="PickUpObjectCommand"/>), until its tool ends (<see cref="EndMoveCommand"/>): a moving placement must name it (the Move
+	/// tool's purchase skips research and the balance test). A placement keeps it, as the tool may stay for another of the type (a click holding exactly Ctrl).
+	/// </summary>
 	private Dictionary<int, string>? carriedEntries;
 	/// <summary>While a <see cref="PlaceObjectCommand"/> runs: whether it is the Move tool's placement (<see cref="PlaceObject(ObjectCatalogEntry, int, int, int)"/> reads it instead of <see cref="IsMoving"/>).</summary>
 	private bool? commandPlacementMoving;
@@ -95,6 +98,7 @@ public partial class Level
 			? Outcome( RemoveAttraction( item ), item )
 			: ParkCommandResult.Rejected( $"No attraction {remove.Attraction}." ),
 		PickUpObjectCommand pickUp => ExecutePickUp( pickUp ),
+		EndMoveCommand end => ExecuteEndMove( end ),
 		LayLineCommand line => CommandLineWriter( line.Mode, line.Ride ) is { } writer
 			? ParkCommandResult.Ok( writer is QueueLineWriter legacyQueue ? legacyQueue.CommitLegacy( (line.StartX, line.StartY), (line.EndX, line.EndY) ) : writer.Commit( (line.StartX, line.StartY), (line.EndX, line.EndY) ) )
 			: ParkCommandResult.Rejected( $"No {line.Mode} line can be laid here." ),
@@ -153,6 +157,15 @@ public partial class Level
 			return ParkCommandResult.Rejected( $"{entry.DisplayName} cannot be picked up." );
 		(carriedEntries ??= new Dictionary<int, string>())[pickUp.Player] = ParkCommandCodec.EntryKey( entry );
 		return ParkCommandResult.Ok( (entry, rotation) );
+	}
+
+	private ParkCommandResult ExecuteEndMove( EndMoveCommand end )
+	{
+		if ( carriedEntries == null || !carriedEntries.Remove( end.Player ) )
+			return ParkCommandResult.Rejected( $"Player {end.Player} carries nothing." );
+		if ( carriedEntries.Count == 0 )
+			carriedEntries = null;
+		return ParkCommandResult.Ok();
 	}
 
 	private ParkCommandResult ExecuteQueueSegment( QueueSegmentCommand line )

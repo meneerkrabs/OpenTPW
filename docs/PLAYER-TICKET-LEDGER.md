@@ -88,3 +88,25 @@ advisor says nothing, as in the original. `PlayerProgressRuntimeOwner` records t
 moves from a park with a lower record, a record of 100 or more keeps it). `[EXT:cheats-ticket-provenance]` The ledger also keeps which earned identities a cheat awarded
 (`PlayerTicketLedger.Cheated`, `"Cheated": true` on the ticket in the progress file, absent otherwise, so a file without cheats keeps its bytes), only when the cheat earned the identity:
 a ticket the player had earned before, or a global that only moved, keeps its honest provenance. Nothing reads the mark yet; it lets a later online profile leave cheat tickets out.
+
+## Parks whose research is complete (tp.exe 0x5B0C40)
+
+The original player's file keeps one record per park (theme) with a byte `mAllResearchCompleted`
+(`+0xB9`, written through `0x5B0D70`); the lab's completion handler sets the current park's byte
+whenever nothing is left to research (`0x5B0CA0`, every game type), and the Full Simulation starts
+the end-of-park finale only when every park's byte is set (`0x5B0C40`). The ledger keeps that list
+(`PlayerTicketLedger.ResearchCompleted`, `"ResearchCompleted": ["jungle", ...]` in the progress
+file in theme order), optional and validated: canonical theme names, each once, at most four. A
+file without the field (written before it existed, or by a player who has completed no park)
+loads with none, and such a ledger does not write it, so the file keeps its bytes. A Full
+Simulation park records through its owner; an Instant Action park marks the progress file when
+there is one. The finale and its rules are in [the end-of-park finale](reverse/INSTANT-ACTION-FINALE.md).
+
+Two limits follow from recording only at the completion, as the original does (`0x503E94`): a park
+whose research completed before the list existed, in a co-op session or with a co-op reclaim
+pending, or in Instant Action while no progress file existed, is never recorded later, so that
+player reaches the Full Simulation finale only after completing those parks again (no backfill:
+it would be a new rule). And a progress file that carries `ResearchCompleted` is refused as
+malformed by OpenTPW builds from before October 22, 2026, whose strict reader
+(`UnmappedMemberHandling.Disallow`) rejects unknown fields; the version number stays 1 or 2,
+since it tracks only the known purchases (version 2 exactly when `KnownPurchases` is present).

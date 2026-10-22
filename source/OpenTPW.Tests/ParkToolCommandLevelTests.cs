@@ -122,6 +122,16 @@ public class ParkToolCommandLevelTests
 		public IReadOnlyList<BuildItem> GetItems( BuildCategory category ) => System.Array.Empty<BuildItem>();
 	}
 
+	/// <summary>A queue line writer that takes every line, laying nothing: the tool's ends are under test, not its cells.</summary>
+	private sealed class AnyQueueLine : ICellLineWriter
+	{
+		public CellToolMode Mode => CellToolMode.Queue;
+		public SegmentResult Preview( (int X, int Y) start, (int X, int Y) cursor ) =>
+			new( cursor, System.Array.Empty<(int X, int Y)>(), 0, CellBuildResult.Ok, false ) { Start = start, Line = ParkPathBuilder.LayLine( start, cursor ) };
+		public SegmentResult Commit( (int X, int Y) start, (int X, int Y) end ) => Preview( start, end );
+		public void Undo( SegmentResult segment ) { }
+	}
+
 	/// <summary>The no-data park with two coaster stations.</summary>
 	private ParkSettingCommandLevelTests.Park Coaster()
 	{
@@ -260,6 +270,127 @@ public class ParkToolCommandLevelTests
 		Assert.IsTrue( twinPlaced.Runtime.Coaster!.BeingEdited, "the twin marks the coaster as the issuer's park does" );
 		Assert.IsNull( twin.Level.CoasterToolStation, "the twin's HUD, though it places the same item, opens no tool for a replayed placement" );
 		Assert.AreEqual( level.ComputeStateHash(), twin.Level.ComputeStateHash() );
+	}
+
+	/// <summary>
+	/// The Move tool's end follows the HUD's own placement once its command has returned (<see cref="ParkCommands.AfterIssue"/>), as a command of its own under a session's rules (a command
+	/// issued inside another would be refused there): a placement whose click held exactly Ctrl keeps the tool, so the next placement of the type is the Move tool's and charged in full; a
+	/// placement without it ends the tool, its <see cref="EndMoveCommand"/> logged after the placement, and a moving placement of the type is refused after it. A twin replaying the log
+	/// ends with the same world and nothing carried.
+	/// </summary>
+	[TestMethod]
+	public void TheMoveToolsEndFollowsTheHudsOwnPlacementAsACommandOfItsOwn()
+	{
+		ParkHud Hud( ParkSettingCommandLevelTests.Park park ) =>
+			new( park.Level, OriginalUiTests.FakeStrings(), new EconomyParkStatus( () => park.Economy ), new NoItems(), new HudHost() );
+		var park = NewPark();
+		var level = park.Level;
+		var hud = Hud( park );
+		level.Commands.SessionRules = true;
+		var entry = park.Two.Entry;
+		var keep = typeof( Level ).GetProperty( nameof( Level.KeepBuildToolOnPlace ) )!;
+		OriginalObject? Place( int x, int y, bool ctrl )
+		{
+			// the placing click (Level.UpdateWorldInput): whether it held exactly Ctrl is set while its placement runs
+			keep.SetValue( level, ctrl );
+			try
+			{
+				return level.Commands.Issue( level.BuildCommand( level.BuildEntry!, x, y, level.BuildRotation ) ).As<OriginalObject>();
+			}
+			finally
+			{
+				keep.SetValue( level, false );
+			}
+		}
+		// as the object window's move button leaves the HUD (ParkHud.MoveObject): its item pending, the object picked up, the Move tool armed with its type
+		hud.BeginPlacing( new BuildItem( "move", entry.InfoId, (BuildCategory)entry.WhichUIType, 0, 0, null, System.Array.Empty<string>(), Entry: entry ) );
+		Assert.IsTrue( level.BeginMove( park.Two ) );
+		Assert.IsTrue( level.IsMoving );
+		Assert.IsTrue( park.Economy.Catalog.TryGet( entry.InfoId, out var info ) && info.PurchaseCost > 0 );
+		var start = level.Commands.Log.Count;
+		var balance = park.Economy.Balance;
+		Assert.IsNotNull( Place( 10, 10, ctrl: true ), level.LastActionMessage );
+		Assert.IsTrue( level.IsMoving, "exactly Ctrl keeps the Move tool for another of the type" );
+		Assert.IsNotNull( Place( 14, 10, ctrl: false ), level.LastActionMessage );
+		Assert.AreEqual( balance - 2 * info.PurchaseCost, park.Economy.Balance, "each placement of a move costs the whole price" );
+		Assert.IsFalse( level.IsMoving, "a placement without Ctrl ends the Move tool" );
+		CollectionAssert.AreEqual( new[] { ParkCommandKind.PlaceObject, ParkCommandKind.PlaceObject, ParkCommandKind.EndMove },
+			level.Commands.Log.Skip( start ).Select( logged => logged.Command.Kind ).ToArray(), "the end is logged on its own, after the placement that ended the tool" );
+		Assert.IsTrue( level.Commands.Log.Skip( start ).Take( 2 ).All( logged => logged.Command is PlaceObjectCommand { Moving: true } ), "both placements are the Move tool's" );
+		var refused = level.Commands.Issue( new PlaceObjectCommand( ParkCommandCodec.EntryKey( entry ), 18, 10, 0, Moving: true ) );
+		Assert.IsFalse( refused.Accepted, "the ended tool's type is carried no more" );
+		StringAssert.Contains( refused.Reason, "carries no" );
+		Assert.AreEqual( 0, level.CaptureJoinState().CarriedEntries.Count );
+
+		var twin = NewPark();
+		foreach ( var logged in level.Commands.Log )
+			Assert.AreEqual( !ReferenceEquals( logged.Command, level.Commands.Log[^1].Command ), twin.Level.Commands.Apply( logged.Command ).Accepted, logged.Command.ToString() );
+		Assert.AreEqual( level.ComputeStateHash(), twin.Level.ComputeStateHash() );
+		Assert.AreEqual( 0, twin.Level.CaptureJoinState().CarriedEntries.Count, "the twin carries nothing either" );
+	}
+
+	/// <summary>
+	/// The queue tool a placed ride opens ends the tool at its last click whatever the modifier (tp.exe 0x5275b1..0x5275f2: 0x52f200(0, 0), which reads no modifier, sets mode 0 and
+	/// replaces the tool object, mode 4 or 0x3b with its type, by the default tool): a last click holding exactly Ctrl, made through the HUD's own tool click, arms neither the build
+	/// tool (mode 4) nor the Move tool (mode 0x3b) again, and the angle returns to 0 (0x52f3b6). A move ends as its queue tool opens: its <see cref="EndMoveCommand"/> follows the
+	/// placement at once, the queue tool's end is no command, and the type is carried no more.
+	/// </summary>
+	[DataTestMethod]
+	[DataRow( false, DisplayName = "the build tool (mode 4)" )]
+	[DataRow( true, DisplayName = "the Move tool (mode 0x3b)" )]
+	public void TheQueueToolAPlacedRideOpensEndsTheToolWhateverItsLastClickHeld( bool moving )
+	{
+		var park = NewPark();
+		var level = park.Level;
+		var hud = new ParkHud( level, OriginalUiTests.FakeStrings(), new EconomyParkStatus( () => park.Economy ), new NoItems(), new HudHost() );
+		level.Commands.SessionRules = true;
+		var entry = park.Two.Entry;
+		// the fixture's one-cell footprint has no entrance: the placed ride takes a queue front as a ride with an entrance does, so its queue tool follows the placement
+		level.Objects.ObjectPlaced += placed =>
+		{
+			placed.Visitors.HasCells = true;
+			placed.Visitors.QueueFrontCell = (placed.Placement.X, placed.Placement.Y + 2);
+		};
+		// the build tool armed from the buy list, or the Move tool as the object window's move button leaves it (ParkHud.MoveObject)
+		hud.BeginPlacing( new BuildItem( "ride", entry.InfoId, (BuildCategory)entry.WhichUIType, 0, 0, null, System.Array.Empty<string>(), Entry: entry ) );
+		if ( moving )
+			Assert.IsTrue( level.BeginMove( park.Two ) );
+		level.RotateBuild();
+		var start = level.Commands.Log.Count;
+		// the placing click (Level.UpdateWorldInput), holding exactly Ctrl
+		var keep = typeof( Level ).GetProperty( nameof( Level.KeepBuildToolOnPlace ) )!;
+		keep.SetValue( level, true );
+		try
+		{
+			Assert.IsNotNull( level.Commands.Issue( level.BuildCommand( level.BuildEntry!, 10, 10, level.BuildRotation ) ).As<OriginalObject>(), level.LastActionMessage );
+		}
+		finally
+		{
+			keep.SetValue( level, false );
+		}
+		Assert.AreEqual( CellToolMode.Queue, level.CellTool.Mode, "the placed ride's queue tool follows whatever the click held (0x52f580(3, 0))" );
+		Assert.IsNull( level.BuildEntry );
+		Assert.IsFalse( level.IsMoving );
+		CollectionAssert.AreEqual( moving ? new[] { ParkCommandKind.PlaceObject, ParkCommandKind.EndMove } : new[] { ParkCommandKind.PlaceObject },
+			level.Commands.Log.Skip( start ).Select( logged => logged.Command.Kind ).ToArray(), "a move ends as its queue tool opens" );
+		// the queue's clicks through the HUD's tool click, holding exactly Ctrl: a line, then a click on its end, which ends the tool laying nothing (a writer that takes every line:
+		// the tool's end is under test, not its cells)
+		var front = level.CellTool.Start!.Value;
+		level.CellTool.Enter( new AnyQueueLine(), front );
+		var logged = level.Commands.Log.Count;
+		HudToolClick.Click( hud, (front.X, front.Y + 3), Veldrid.Key.ControlLeft );
+		Assert.AreEqual( (front.X, front.Y + 3), level.CellTool.Start, "the line goes on from its end" );
+		Assert.AreEqual( 90, level.BuildRotation, "the angle stays while the queue tool runs" );
+		HudToolClick.Click( hud, (front.X, front.Y + 3), Veldrid.Key.ControlLeft );
+		Assert.IsFalse( level.CellTool.IsActive, "a click on the line's end ends the queue tool (0x5275b1)" );
+		Assert.IsNull( level.BuildEntry, "exactly Ctrl at the queue's last click arms no build tool (mode 4)" );
+		Assert.IsFalse( level.IsMoving, "nor the Move tool (mode 0x3b)" );
+		Assert.AreEqual( 0, level.BuildRotation, "the angle returns to 0 (0x52f3b6)" );
+		Assert.AreEqual( logged, level.Commands.Log.Count, "the queue tool's end is no command" );
+		var again = level.Commands.Issue( new PlaceObjectCommand( ParkCommandCodec.EntryKey( entry ), 18, 10, 0, Moving: true ) );
+		Assert.IsFalse( again.Accepted, "no type is carried after the queue" );
+		StringAssert.Contains( again.Reason, "carries no" );
+		Assert.AreEqual( 0, level.CaptureJoinState().CarriedEntries.Count );
 	}
 
 	[TestMethod]

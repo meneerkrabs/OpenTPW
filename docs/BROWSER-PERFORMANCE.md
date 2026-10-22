@@ -257,8 +257,9 @@ goes on drawing and playing meanwhile. Two costs remain:
 The second part of the memory phase closed the three items left open below:
 
 - **Whole files in memory.** A WAD archive opened from a path keeps its directory and reads a member
-  from the file when it is asked for (the file is opened for that read and closed again, so it can
-  still be replaced, also on Windows); an SDT sound bank read from a file keeps its offset table and
+  from the file when it is asked for (the file was opened for that read and closed again; since
+  October 22, 2026 the desktop keeps it open between reads and closes it wherever archives may change,
+  ENGINE-PERFORMANCE.md "Kept archive files", while the browser still opens it per read); an SDT sound bank read from a file keeps its offset table and
   reads one entry at a time. A file that changed length since its directory was read gives a clear
   error instead of other bytes, and a closed archive refuses reads. Both used to hold the whole
   file (about 29 MB of archives and 35 MB of banks in a park), which the browser already holds.

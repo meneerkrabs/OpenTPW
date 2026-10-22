@@ -44,6 +44,11 @@ public sealed record SegmentResult( (int X, int Y) SnappedEnd, IReadOnlyList<(in
 	public bool StoppedByOwnLimit { get; init; }
 	/// <summary>True for the ghost a click returns when the line had a refused cell and nothing was committed (tp.exe <c>0x524A63</c>).</summary>
 	public bool GhostRefused { get; init; }
+	/// <summary>
+	/// [EXT:online-coop-commands] True for the line a tool's writer returns when the park refused its command before running it: nothing was laid, as if the click had never reached
+	/// the commit. A command that threw while it ran is not refused this way: it keeps what it wrote before the throw (<see cref="ParkCommandResult.Error"/>).
+	/// </summary>
+	public bool CommandRefused { get; init; }
 	/// <summary>A successful preview visited the path/queue validator's link branch; only completed ghosts expose it in the HUD.</summary>
 	public bool LinkPointer { get; init; }
 	/// <summary>True when no cell of the line was refused.</summary>
@@ -367,9 +372,12 @@ public sealed class ParkPathBuilder : ICellLineWriter
 
 	private CellBuildResult Clear( int x, int y, bool forced, bool removeFixed = false )
 	{
-		if ( Cells.PoolBridges?.Reserves( x, y ) == true ) return CellBuildResult.Occupied;
+		// [EXT:pools-bridges] a bridge's own seven cells are protected; the path outside either end may go, unless someone on the bridge would lose their last way off
+		if ( Cells.PoolBridges is { } bridges && bridges.Covers( x, y ) ) return CellBuildResult.Occupied;
 		if ( Cells.TypeAt( x, y ) != ParkCellType.Path )
 			return CellBuildResult.NotPath;
+		// only a removal that really empties the cell can strand someone: a step that just lowers the placement counter leaves the path (and reports Existing below)
+		if ( Cells.PoolBridges is { } ends && (forced || Cells.PlacementCountAt( x, y ) - 1 < 0) && ends.PathRemovalStrands( x, y ) ) return CellBuildResult.Occupied;
 		if ( Cells.FlagsAt( x, y ).HasFlag( ParkCellFlags.NoModify ) )
 		{
 			if ( !removeFixed && HasPathNeighbours( x, y ) )

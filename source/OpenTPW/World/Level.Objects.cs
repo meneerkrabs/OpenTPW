@@ -14,10 +14,15 @@ public partial class Level
 		{
 			if ( value != null )
 				StaffPlacement?.Cancel();
+			var moveEnds = IsMoving;
 			buildEntry = value;
 			// any other way of arming or leaving the build tool ends the Move tool (interface mode 0x3b) and the add-on mode; BeginMove and BeginAddOn set theirs after they armed the entry
 			IsMoving = false;
 			buildAddOnRide = null;
+			// [EXT:online-coop-commands] the Move tool's end is a command, once the tool's state is the ended one: its player carries the picked-up type no more (a placement cannot say
+			// whether the tool stays)
+			if ( moveEnds )
+				Commands.Issue( new EndMoveCommand() );
 		}
 	}
 
@@ -687,7 +692,7 @@ public partial class Level
 			return;
 		if ( Objects.Grid is OriginalParkGrid originalGrid )
 			originalGrid.LiveCells = () => Guests?.Grid.Cells;
-		Paths = new ParkPathBuilder( Guests.Grid.Cells, Guests.Grid, () => Park?.Economy, Objects.Grid, IsPathBlocked )
+		Paths = new ParkPathBuilder( Guests.Grid.Cells, Guests.Grid, () => Park?.Economy, Objects.Grid, IsPathBuildBlocked )
 		{
 			// [BIN:TPW-EXE:0x00534A91 queue neighbour sound] the writer plays cat_ui 139 only while game+36 (0x785A2C, the park's money) is clear: here, while a park economy runs
 			Effects = new LinkEffects( RefreshTile, ( x, y ) =>
@@ -724,6 +729,9 @@ public partial class Level
 	// Objects, fixed items (the gate and entrance included) and the sandbox Totem block paths like their original cell types do; an object of a lower
 	// overwrite priority than the path's gives way instead (ParkPathBuilder.ObjectGivesWay).
 	private bool IsPathBlocked( int x, int y ) => PoolBridges?.Reserves( x, y ) == true || Objects.FindAt( x, y ) != null || IsReservedByPrototype( x, y ) || (Guests != null && PoolSlides?.ReservesLand( x, y, Guests.Grid.Cells ) == true);
+
+	/// <summary>[EXT:pools-bridges] The same rule for laying a path, except that the cells just outside a bridge's two ends stay open: a bridge needs no path there, so the player lays one later.</summary>
+	private bool IsPathBuildBlocked( int x, int y ) => PoolBridges?.Covers( x, y ) == true || Objects.FindAt( x, y ) != null || IsReservedByPrototype( x, y ) || (Guests != null && PoolSlides?.ReservesLand( x, y, Guests.Grid.Cells ) == true);
 
 	/// <summary>How the cell map holds a path for the object build rule: none, a plain path (cleared by the placement) or a NoModify one (refused).</summary>
 	internal static ObjectPathCell? ObjectPathAt( ParkCellMap cells, int x, int y )
@@ -977,7 +985,7 @@ public partial class Level
 	{
 		if ( IsReadOnlyVisit || Paths == null )
 			return CellBuildResult.NotPath;
-		if ( PoolBridges?.Reserves( x, y ) == true ) return CellBuildResult.Occupied;
+		// the bridge protection (its own cells, and the last way off an occupied bridge) lives in ParkPathBuilder.Clear, which Remove and RemoveFixed share
 		// [EXT:removable-access-cells] the path cell the placement laid outside an entrance or exit (flag 0x20) can be removed, where tp.exe's cell clear keeps a NoModify cell that has neighbours (the forced clear 0x5367A0(0, 0) refuses it with "Removing path cell with no neighbours but NOMODIFY set" otherwise); the map start's initial path stays fixed
 		var access = IsAccessCell( x, y );
 		var result = access ? Paths.RemoveFixed( x, y ) : Paths.Remove( x, y );
@@ -1169,7 +1177,9 @@ public partial class Level
 		!QueueTerrainAllows( x, y ) || (Objects.FindAt( x, y ) != null && !QueueGivesWay( x, y )) || IsReservedByPrototype( x, y )
 		|| (Guests?.Grid.Cells is { } cells && cells.InBounds( x, y ) && cells.FlagsAt( x, y ).HasFlag( ParkCellFlags.Unowned ))
 		// [EXT:pools-slides] a slide's track keeps its land cells for its pylons
-		|| (Guests != null && PoolSlides?.ReservesLand( x, y, Guests.Grid.Cells ) == true);
+		|| (Guests != null && PoolSlides?.ReservesLand( x, y, Guests.Grid.Cells ) == true)
+		// [EXT:pools-bridges] a bridge's cells and the two outside end cells (bare or with a path) take no queue: a queue there would break the bridge's save and its entrance
+		|| PoolBridges?.Reserves( x, y ) == true;
 
 	/// <summary>The terrain rule for a queue cell; its path cells (the save's and the map start's) are the live cell map's to judge, as for objects.</summary>
 	private bool QueueTerrainAllows( int x, int y ) => Objects.Grid.CheckTerrain( x, y ) switch
@@ -1420,7 +1430,8 @@ public partial class Level
 		{
 			try
 			{
-				placed = Objects.TryPlace( entry, anchor.X, anchor.Y, rotation, out _, open: BuiltObjectStartsOpen( entry ), registered: item => registered = item )!;
+				using ( LoadProfile.Measure( "place-object" ) )
+					placed = Objects.TryPlace( entry, anchor.X, anchor.Y, rotation, out _, open: BuiltObjectStartsOpen( entry ), registered: item => registered = item )!;
 			}
 			finally
 			{
@@ -1430,9 +1441,11 @@ public partial class Level
 			if ( !BuiltObjectStartsOpen( entry ) )
 				placed.Runtime.Hoarding.SetState( ObjectHoardingState.CloseMode );
 			// [BIN:TPW-EXE:0x558e7c build effect] the type's CreateParticleEffect starts when the new object's script attaches, not when a park loads
-			placed.Runtime.StartObjectEffect( ObjectParticleEffect.Create );
+			using ( LoadProfile.Measure( "place-effect" ) )
+				placed.Runtime.StartObjectEffect( ObjectParticleEffect.Create );
 			// [BIN:TPW-EXE:0x528e30 placement cue] the commit pass of the placement plays its size-classed cat_ui cue
-			PlayPlacementCue( entry, x, y, rotation );
+			using ( LoadProfile.Measure( "place-cue" ) )
+				PlayPlacementCue( entry, x, y, rotation );
 		}
 		catch ( Exception error )
 		{

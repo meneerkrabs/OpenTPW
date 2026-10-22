@@ -1,4 +1,3 @@
-using System;
 using System.Linq;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using OpenTPW.FrontEnd;
@@ -163,44 +162,6 @@ public class UiRegisterRound2Tests
 		finally
 		{
 			GameOptions.Current = previous;
-		}
-	}
-
-	private static SegmentResult Refused() => new( (0, 0), Array.Empty<(int X, int Y)>(), 0, CellBuildResult.OutsideTerrain, false );
-
-	[TestMethod]
-	public void AQueueEndedByACtrlClickRearmsTheBuildToolButARefusedOneDoesNot()
-	{
-		Assert.IsTrue( ParkHud.RearmsAfterQueue( 0xc, null ), "Ctrl on the click that ends the queue on its start" );
-		Assert.IsFalse( ParkHud.RearmsAfterQueue( 0, null ), "no Ctrl ends the build tool" );
-		Assert.IsFalse( ParkHud.RearmsAfterQueue( 0xc, Refused() ), "a refused cell ends the tool without re-arming" );
-		var runtime = typeof( ParkHud );
-		const System.Reflection.BindingFlags flags = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic;
-		var previous = Input.Keyboard;
-		try
-		{
-			foreach ( var (ctrl, completed, expectArmed) in new[] { (true, true, true), (true, false, false), (false, true, false) } )
-			{
-				var level = (Level)System.Runtime.CompilerServices.RuntimeHelpers.GetUninitializedObject( typeof( Level ) );
-				typeof( Level ).GetField( "<CellTool>k__BackingField", flags )!.SetValue( level, new CellBuildTool() );
-				var hud = (ParkHud)System.Runtime.CompilerServices.RuntimeHelpers.GetUninitializedObject( runtime );
-				runtime.GetField( "level", flags )!.SetValue( hud, level );
-				var entry = (ObjectCatalogEntry)System.Runtime.CompilerServices.RuntimeHelpers.GetUninitializedObject( typeof( ObjectCatalogEntry ) );
-				var item = new BuildItem( "x", 1, BuildCategory.Rides, 0, 0, null, Array.Empty<string>(), null, entry );
-				runtime.GetField( "queueRearmItem", flags )!.SetValue( hud, item );
-				level.RotateBuild();
-				Input.Keyboard = new Input.KeyboardInfo( ctrl ? new System.Collections.Generic.List<Veldrid.Key> { Veldrid.Key.ControlLeft } : new() );
-				Input.UpdateButtons();
-				runtime.GetMethod( "ResolveQueueRearm", flags )!.Invoke( hud, new object?[] { completed ? null : Refused() } );
-				Assert.AreEqual( expectArmed, level.BuildEntry == entry, $"ctrl {ctrl}, completed {completed}" );
-				Assert.AreEqual( expectArmed ? 90 : 0, level.BuildRotation, "the angle stays while armed and resets when the tool ends" );
-				Assert.IsNull( runtime.GetField( "queueRearmItem", flags )!.GetValue( hud ), "the pending re-arm is consumed" );
-			}
-		}
-		finally
-		{
-			Input.Keyboard = previous;
-			Input.UpdateButtons();
 		}
 	}
 }

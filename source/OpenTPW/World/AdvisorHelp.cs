@@ -272,6 +272,13 @@ internal static class AdvisorToolHelp
 	/// <summary>Posted when the queue tool starts, by every way into it (SetMode(3), 0x52F4B0).</summary>
 	public const int QueueTool = 203;
 
+	/// <summary>
+	/// Posted by the kart and water line tool for a click that sets the line start it had none of: the tool is left without a start only when a line closed its circuit
+	/// with exactly Ctrl held and no placement's queue start pending (<see cref="Level.ContinueTrackTool"/>). No interface mode change withdraws it.
+	/// </summary>
+	// [BIN:TPW-EXE:0x00526D41 line start help] in the line modes 0xB and 0x10 (0x525A1C → 0x526CB3) a click with the start 0x81EDE4/0x81EDE8 at −1 stores the clicked cell as the start (0x526D0F) and the first corner (0x52FBD0, 0x52FBF0), pushes 0xCC (204) and jumps into the queue tool's post (0x527629: 0x59B590, 0x5194D0 on [0x7CF83C], 0x59A940, the body of 0x486B00); the placement presets the start at the station's exit (0x52A1A0 at 0x525472, then 0x52F580(0xB or 0x10), which keeps it) and the edit tool's switch to the line tool at the open end (0x530830, then 0x52F580), so only the start the exactly-Ctrl end clears (0x526F97, 0x527146) is reached; neither SetMode withdrawal list names 0xCC (0x52F245..0x52F326, 0x52F5BF..0x52F6A0), and no call of 0x486B40 or 0x59AA70 does
+	public const int TrackLineStart = 204;
+
 	// [BIN:TPW-EXE:0x004AC5D0 buy list click] choosing an item builds the placement tool and posts 0xC9 (201) when the item is a ride and no ride is placed yet, else 0xCE (206); the land rows build tool 0x3A (0x159, 345) and 0x39 (0x15A, 346)
 	public const int FirstRide = 201, Placement = 206, ClearLandTool = 345, BuyLandTool = 346;
 
@@ -285,5 +292,5 @@ internal static class AdvisorToolHelp
 	public const int PatrolTool = 193, PatrolAreaSet = 212;
 
 	/// <summary>Every message a tool or panel posts, for the withdrawal when a park ends.</summary>
-	public static IEnumerable<int> All => CoasterPanelMessages.Concat( new[] { CoasterToolClick, PathStart, PathLaterClick, QueueEnd, QueueTool, FirstRide, Placement, ClearLandTool, BuyLandTool, PatrolTool, PatrolAreaSet, StaffLocator, VisitorLocator } );
+	public static IEnumerable<int> All => CoasterPanelMessages.Concat( new[] { CoasterToolClick, PathStart, PathLaterClick, QueueEnd, QueueTool, TrackLineStart, FirstRide, Placement, ClearLandTool, BuyLandTool, PatrolTool, PatrolAreaSet, StaffLocator, VisitorLocator } );
 }

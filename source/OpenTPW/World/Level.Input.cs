@@ -46,38 +46,73 @@ public partial class Level
 		else if ( CellTool.IsActive && BuildEntry == null )
 			ClickCellTool( (x, y), clickModifierMask );
 		else
+			ClickBuildTool( x, y, clickModifierMask );
+	}
+
+	/// <summary>The build tool's (or the Move tool's) click on cell (<paramref name="x"/>, <paramref name="y"/>): the armed <see cref="BuildEntry"/> goes to its build target there.</summary>
+	internal void ClickBuildTool( int x, int y, int modifierMask = 0 )
+	{
+		KeepBuildToolOnPlace = KeepsBuildTool( modifierMask );
+		try
 		{
-			KeepBuildToolOnPlace = KeepsBuildTool( clickModifierMask );
-			try
-			{
-				// a track add-on goes to its hover position on its ride's track, at the angle of the tile's flow (TrackAddOns.HoverTarget); anything else stays at the cell
-				var entry = BuildEntry!;
-				var (targetX, targetY, rotation) = BuildTarget( entry, x, y );
-				SetBuildRotation( rotation );
-				Commands.Issue( BuildCommand( entry, targetX, targetY, rotation ) );
-			}
-			finally
-			{
-				KeepBuildToolOnPlace = false;
-			}
+			// a track add-on goes to its hover position on its ride's track, at the angle of the tile's flow (TrackAddOns.HoverTarget); anything else stays at the cell
+			var entry = BuildEntry!;
+			var (targetX, targetY, rotation) = BuildTarget( entry, x, y );
+			SetBuildRotation( rotation );
+			// [BIN:TPW-EXE:0x00524B53 queue start] the build tool's click (and the Move tool's, 0x5253F3) zeroes the pending queue start before it places; a click on a refused ghost
+			// never gets there: the placement preview 0x528A70 runs the object's cells through 0x532FC0(0x104), whose validator refusal sets the latch 0x816D48 (0x533933), and the click
+			// handler tests the latch before the mode dispatch (0x524A63), which sends modes 4 and 0x3B to 0x52765B. OpenTPW reads that refusal from the ghost the HUD draws
+			if ( BuildGhostAllowed( entry, CheckBuildTarget( entry, targetX, targetY, rotation ) ) )
+				placedQueueStart = null;
+			Commands.Issue( BuildCommand( entry, targetX, targetY, rotation ) );
+		}
+		finally
+		{
+			KeepBuildToolOnPlace = false;
 		}
 	}
 
 	// A live track click's continuation choice is local tool state, never a command or world input.
 	private bool keepTrackToolAfterLine;
 
+	/// <summary>
+	/// The ride whose queue start the last placement left pending (tp.exe <c>0x8186C0</c>): the queue tool follows a kart or water circuit's close only while one is
+	/// pending, from that ride's queue (<see cref="ContinueTrackTool"/>), and the close takes it. Local tool state of the issuer, never a command, saved or hashed.
+	/// </summary>
+	// [BIN:TPW-EXE:0x0052544E queue start] a placement of a type with an entrance stores the record of its queue's start cell (0x52A050, the cell's coordinates in 0x7639B8/0x7639BC; 0x524DD7, 0x525269, 0x52544E and the Move tool's 0x5258AC); every build or Move click on an accepted ghost zeroes it before it places (0x524B53, 0x5253F3), the Move tool's pick-up in mode 0x33 zeroes it (0x525E5A), a path or queue commit zeroes it (0x527483), and the queue tool that follows a ride's placement, the coaster tool's click or a kart or water circuit's close takes it (0x5252EA, 0x526680, 0x527056)
+	private OriginalObject? placedQueueStart;
+
 	internal SegmentResult? ClickCellTool( (int X, int Y) cell, int modifierMask = 0 )
 	{
 		var previous = keepTrackToolAfterLine;
 		keepTrackToolAfterLine = KeepsBuildTool( modifierMask );
+		var mode = CellTool.Mode;
 		try
 		{
-			return CellTool.Click( cell );
+			var result = CellTool.Click( cell );
+			// [BIN:TPW-EXE:0x00527483 queue start] the path and queue handler zeroes the pending queue start after its commit LayLine (0x527472); a click on a refused ghost returns before
+			// it (0x524A63), and a line whose command the park refused ([EXT:online-coop-commands]) laid nothing either
+			if ( mode is CellToolMode.Path or CellToolMode.Queue && result is { GhostRefused: false, CommandRefused: false } )
+				placedQueueStart = null;
+			return result;
 		}
 		finally
 		{
 			keepTrackToolAfterLine = previous;
 		}
+	}
+
+	/// <summary>
+	/// The track tool a kart or water ride the player just placed opens (<see cref="EnterTrackTool"/>): a ride with a queue leaves its queue start pending, so the close of
+	/// its circuit hands over to the queue tool (<see cref="ContinueTrackTool"/>).
+	/// </summary>
+	internal bool EnterPlacedTrackTool( OriginalObject item )
+	{
+		ArgumentNullException.ThrowIfNull( item );
+		if ( !EnterTrackTool( item ) )
+			return false;
+		placedQueueStart = item.Entry.HasQueue && item.Runtime.IsAttraction && item.Visitors.HasCells ? item : null;
+		return true;
 	}
 
 	/// <summary>
@@ -91,7 +126,8 @@ public partial class Level
 	/// <summary>
 	/// The Move tool's pick-up (<c>0x48cfa0</c>): the object is demolished exactly as its window's erase button does (the same click handler 0x524960 in mode 0x33 runs the erase 0x527ee0, with its
 	/// scrap credit and its queue and track clearing), then the build tool arms the same type at the object's own angle in mode 0x3b. Nothing else of the object is kept: the state is the new
-	/// object's, and a cancel leaves the object gone. [EXT:online-coop-commands] The demolition is a <see cref="PickUpObjectCommand"/>; arming the tool is the issuer's own.
+	/// object's, and a cancel leaves the object gone. [EXT:online-coop-commands] The demolition is a <see cref="PickUpObjectCommand"/>; arming the tool is the issuer's own, and its end, whatever
+	/// ends it, an <see cref="EndMoveCommand"/> (<see cref="BuildEntry"/>).
 	/// </summary>
 	// [BIN:TPW-EXE:0x48cfa0 move pick-up] 0x48c940 holds the thing, 0x5276d0 takes its cell, a type with a footprint (+0x40) saves the queue's corner points (0x530120, 0x52fc30), mode 0x33 and the click 0x524960(cell, 0, 0) erase it (0x527ee0 with the last argument 0: the very call of the window's erase button 0x48cd10), 0x46c5a0(0x3b, type) builds the tool, 0x52f200(0x3b) sets the mode and 0x52f1b0 the angle (+0x10); 0x81b3ac and 0x81b14c are written and read nowhere, so the saved state is never restored
 	public bool BeginMove( OriginalObject item )
@@ -99,6 +135,11 @@ public partial class Level
 		ArgumentNullException.ThrowIfNull( item );
 		if ( IsReadOnlyVisit || item.IsDeleted )
 			return false;
+		// a Move tool still carrying ends first, so the end does not take the new pick-up's type
+		if ( IsMoving )
+			BuildEntry = null;
+		// [BIN:TPW-EXE:0x00525E5A queue start] the pick-up's click in mode 0x33 zeroes the pending queue start
+		placedQueueStart = null;
 		if ( Commands.Issue( new PickUpObjectCommand( item.Visitors.AttractionId ) ).As<(ObjectCatalogEntry Entry, int Rotation)>() is not { Entry: { } entry } picked )
 			return false;
 		IsRemovingObjects = false;

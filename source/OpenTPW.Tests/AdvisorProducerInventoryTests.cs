@@ -268,7 +268,29 @@ public class AdvisorProducerInventoryTests
 		Assert.AreEqual( 606, descriptor.FirstResponseId );
 		Assert.IsFalse( RestoredAdvice.Entries.Any( item => item.MessageId == id ), "the real first-offer producer supersedes the old restored hint" );
 		Assert.AreEqual( 68, messages.Count( item => item.Kind == "event" ) );
-		Assert.AreEqual( 83, messages.Count( item => item.Kind == "unused" ) );
+		Assert.AreEqual( 82, messages.Count( item => item.Kind == "unused" ) );
+	}
+
+	[TestMethod]
+	public void TheLineToolsStartHelpIsWiredAndNoLongerRestored()
+	{
+		var (_, messages) = Inventory();
+		var id = AdvisorToolHelp.TrackLineStart;
+		Assert.AreEqual( 204, id );
+		var row = messages[id];
+		Assert.AreEqual( "help", row.Kind );
+		Assert.AreEqual( "wired", row.Status );
+		Assert.AreEqual( "tutorial", row.Batch );
+		Assert.AreEqual( "HelpMessage.Score", row.Score );
+		StringAssert.Contains( row.Producer_, "0x526D41", "the push in the line tool's click" );
+		StringAssert.Contains( row.Producer_, "0x527629", "the queue tool's post it jumps into" );
+		Assert.IsNull( row.Restored, "the original's producer supersedes the restored coaster tool hint" );
+		Assert.IsFalse( RestoredAdvice.IsRestored( id ) );
+		CollectionAssert.Contains( AdvisorToolHelp.All.ToArray(), id );
+		CollectionAssert.DoesNotContain( AdvisorUiHelp.ModeHelpMessages.ToArray(), id, "neither SetMode list withdraws 0xCC (0x52F245..0x52F326, 0x52F5BF..0x52F6A0)" );
+		CollectionAssert.DoesNotContain( RestoredAdvice.ModeHelp.ToArray(), id );
+		Assert.AreEqual( HelpCallback, Descriptors().Single( item => item.MessageId == id ).Callback );
+		Assert.AreEqual( 43, messages.Count( item => item.Kind == "help" && item.Status == "wired" ), "the 42 help rows wired before, and 204" );
 	}
 
 	[TestMethod]

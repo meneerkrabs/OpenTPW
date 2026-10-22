@@ -22,6 +22,7 @@ public static class ServerProgram
 	/// answers each room's first movement with where everyone stands, which a visit's online players rely on (docs/ONLINE.md, "Players in a visited park").
 	/// 5: movements carry a mode (<see cref="ChatMoveMode"/>, <see cref="ChatProtocol.MoveModesVersion"/>), so a player riding a ride is hidden.
 	/// 6: the co-op socket of shared parks (<see cref="CoopProtocol"/>), their open list and join snapshots.
+	/// 7: the co-op host's skip of frames it no longer holds (<see cref="CoopSkipFrames"/>).
 	/// </summary>
 	public const int ProtocolVersion = CoopProtocol.Version;
 	private const string WebsitePolicy = "website";
@@ -115,6 +116,9 @@ public static class ServerProgram
 		app.Lifetime.ApplicationStopping.Register( hub.Restarting );
 		app.Lifetime.ApplicationStopping.Register( coop.Restarting );
 		coop.Warn = message => app.Logger.LogWarning( "{Message}", message );
+		// the start stores the loaded frame positions again as unknown before a logger exists: a failed write is reported here, and the next change writes them
+		if ( coop.Store.Unsaved )
+			coop.Warn( "The co-op sessions could not be stored at the start; their frame positions are written with the next change." );
 		// [EXT:online-coop-session] ends the shared parks whose host stayed away, once a minute
 		app.Lifetime.ApplicationStarted.Register( () => _ = Task.Run( async () =>
 		{

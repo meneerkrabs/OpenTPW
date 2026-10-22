@@ -32,6 +32,7 @@ public class CoopProtocolTests
 		new CoopHostFrame( 7, new byte[] { 1, 2, 3 } ),
 		new CoopSend( 0, Array.Empty<byte>() ),
 		new CoopPong(),
+		new CoopSkipFrames( 12 ),
 		new CoopWelcome( 6, State(), null ),
 		new CoopWelcome( 6, null, new CoopEnded( "0123456789abcdef", CoopReason.Expired, "The host did not come back." ) ),
 		new CoopCreated( State( 1 ) ),
@@ -88,6 +89,8 @@ public class CoopProtocolTests
 		Refused( controlCharacter, "a control character" );
 		Refused( Raw( (byte)CoopMessageType.Join, 33, (byte)'A' ), "an overlong code" );
 		Refused( new CoopFrameRefused( 0 ).Encode(), "frame 0 expected" );
+		Refused( new CoopSkipFrames( 0 ).Encode(), "a skip to frame 0" );
+		Refused( new CoopSkipFrames( ulong.MaxValue ).Encode(), "a skip to the largest frame number, which has no next one" );
 		var invalidUtf8 = new CoopInvite( "ab" ).Encode();
 		invalidUtf8[^1] = 0xFF;
 		Refused( invalidUtf8, "invalid UTF-8" );

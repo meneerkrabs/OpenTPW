@@ -568,6 +568,88 @@ public class CoopJoinSessionTests
 		CatchUpAndCompare( guest );
 	}
 
+	/// <summary>
+	/// [EXT:online-coop-snapshot-join] A server that needs a frame the host trimmed (docs/COOP.md, "The host's trimmed frame"): the host assigns every member a capture and the frames go on
+	/// past the gap; each member resyncs from its capture without leaving and without a failed join, and follows the host's park.
+	/// </summary>
+	[TestMethod]
+	public void EveryMemberResyncsWhenTheServerNeedsAFrameTheHostNoLongerHolds()
+	{
+		var members = Hosted( 2 );
+		Build( 120, 41 );
+		Assert.IsTrue( host.Session!.HostStream!.OldestFrame > 2 );
+		var parks = members.Select( member => member.Level ).ToArray();
+		network.Restart( lastFrame: 1, seqKnown: true );
+		RoundsUntil( () => members.All( member => member.Level != null && !parks.Contains( member.Level ) && member.Session!.Phase == CoopGuestPhase.Following ),
+			"every member swapped the host's park in again" );
+		Assert.AreEqual( 1, network.Skips.Count );
+		foreach ( var member in members )
+		{
+			Assert.IsNull( member.Session!.EndedWith );
+			Assert.IsNull( member.Link.LeftWith );
+			Assert.AreEqual( 0, member.Session.FailedJoins, "a forced resync is no failed join" );
+		}
+		Build( 120, 42 );
+		var stream = host.Session!.HostStream!;
+		Assert.IsTrue( stream.OldestFrame > network.Skips[0], "the members' acknowledgements trimmed the history past the skip" );
+		// the server comes back behind the skip again (a second crash to the same stored position): the frames from the skip are gone too, so the host skips anew
+		parks = members.Select( member => member.Level ).ToArray();
+		network.Restart( lastFrame: 1, seqKnown: true );
+		RoundsUntil( () => members.All( member => member.Level != null && !parks.Contains( member.Level ) && member.Session!.Phase == CoopGuestPhase.Following ),
+			"every member swapped the host's park in once more" );
+		Assert.IsNull( stream.Failure );
+		Assert.AreEqual( 2, network.Skips.Count );
+		Assert.IsTrue( network.Skips[1] > network.Skips[0] );
+		Build( 120, 43 );
+		CatchUpAndCompare( members );
+	}
+
+	[TestMethod]
+	public void AMemberAwayAtTheHostsSkipGetsTheParkAgainWhenItComesBack()
+	{
+		var members = Hosted( 2 );
+		Build( 120, 45 );
+		Assert.IsTrue( host.Session!.HostStream!.OldestFrame > 2 );
+		var (there, away) = (members[0], members[1]);
+		var parks = members.Select( member => member.Level ).ToArray();
+		// the server comes back behind the frames the host holds, and one member's new socket drops before it reads a word: that member is away at the host's skip
+		network.Restart( lastFrame: 1, seqKnown: true );
+		away.Link.Drop();
+		RoundsUntil( () => there.Level != null && !parks.Contains( there.Level ) && there.Session!.Phase == CoopGuestPhase.Following, "the member there swapped the host's park in" );
+		Assert.AreEqual( 1, network.Skips.Count );
+		Assert.AreSame( parks[1], away.Level, "the member away still has its old park" );
+		away.Link.Resume();
+		RoundsUntil( () => away.Level != null && !parks.Contains( away.Level ) && away.Session!.Phase == CoopGuestPhase.Following, "the member back swapped the host's park in" );
+		Assert.IsNull( away.Session!.EndedWith );
+		Assert.AreEqual( 0, away.Session.FailedJoins, "a forced resync is no failed join" );
+		Build( 120, 46 );
+		CatchUpAndCompare( members );
+	}
+
+	[TestMethod]
+	public void ACaptureOnItsWayUpAtTheHostsSkipServesNoOneAndTheNextServesEveryMember()
+	{
+		var members = Hosted( 1 );
+		Build( 120, 47 );
+		var stream = host.Session!.HostStream!;
+		Assert.IsTrue( stream.OldestFrame > 2 );
+		// a joiner's capture is on its way up when the server comes back behind the frames the host holds
+		network.UploadSeconds = attempt => attempt == 1 ? 10 : null;
+		var joiner = Joiner();
+		RoundsUntil( () => network.Uploads == 1, "the joiner's capture is on its way up" );
+		var parks = members.Select( member => member.Level ).ToArray();
+		network.Restart( lastFrame: 1, seqKnown: true );
+		RoundsUntil( () => joiner.Level != null && joiner.Session!.Phase == CoopGuestPhase.Following
+			&& members.All( member => member.Level != null && !parks.Contains( member.Level ) && member.Session!.Phase == CoopGuestPhase.Following ), "every member swapped the host's park in", 20000 );
+		Assert.AreEqual( 1, network.Skips.Count );
+		Assert.AreEqual( 2, stream.CapturesTaken, "the skip's own capture" );
+		Assert.IsFalse( host.Link.Sent.Any( sent => sent.Message is CoopSnapshotReady { Generation: 1 } ), "the capture on its way at the skip served no one" );
+		Assert.AreEqual( 2u, joiner.Session!.Assigned );
+		Assert.AreEqual( 0, joiner.Session.FailedJoins );
+		Build( 60, 48 );
+		CatchUpAndCompare( members.Append( joiner ).ToArray() );
+	}
+
 	[TestMethod]
 	public void AJoinerCatchesUpWithinItsOwnWindowWhileTheParkRunsOn()
 	{

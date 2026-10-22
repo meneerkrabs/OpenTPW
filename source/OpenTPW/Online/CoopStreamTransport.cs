@@ -18,6 +18,13 @@ internal interface ICoopStreamTransport
 	bool Send( uint to, ReadOnlyMemory<byte> payload );
 	/// <summary>Leaves the session with <paramref name="reason"/> (a host's leave ends it for everyone).</summary>
 	bool Leave( string reason );
+	/// <summary>[EXT:online-coop-snapshot-join] Whether the server takes the host's skip of frames it no longer holds (<see cref="SkipFrames"/>); a transport without it cannot.</summary>
+	bool CanSkipFrames => false;
+	/// <summary>
+	/// [EXT:online-coop-snapshot-join] Tells the server the host's frames go on at <paramref name="from"/>: the host no longer holds the ones before it that the server needs, and every member is
+	/// assigned a capture past them (docs/COOP.md, "The host's trimmed frame"). False when it cannot go out now (a resume tells the host the server's position again).
+	/// </summary>
+	bool SkipFrames( ulong from ) => false;
 	event Action<CoopSessionState>? Resumed;
 	event Action<CoopFrameRefused>? FrameRefused;
 	event Action<CoopMemberChanged>? MemberChanged;

@@ -180,4 +180,37 @@ public class GuestThoughtTests
 		var future = snapshot with { Guests = snapshot.Guests.Select( guest => guest with { BubbleTurn = long.MaxValue } ).ToArray() };
 		Assert.ThrowsException<System.IO.InvalidDataException>( () => new GuestSimulation( GuestTests.CreateCross(), settings, 9 ).RestoreSnapshot( future ) );
 	}
+
+	[TestMethod]
+	public void ABubbleShownWhereTheGuestsTurnLeadsTheirTicksTurnRestoresAndRunsOnAsTheOriginal()
+	{
+		var settings = GuestTests.CreateSettings();
+		var simulation = new GuestSimulation( GuestTests.CreateCross(), settings, 9 ) { ArrivalsEnabled = false };
+		var guest = simulation.SpawnInPark( 6, 5 );
+		// an economy 5 ticks ahead (one that started at an original save's turn): the guests cut their turns where it does, so in some ticks their park turn is one past their own tick's
+		const int phase = 5;
+		simulation.AlignTurns( phase );
+		while ( simulation.ParkTurn == ParkCalendar.Turn( simulation.TickCount ) )
+			simulation.Tick( GuestSnapshotTests.Tick );
+		Assert.AreEqual( ParkCalendar.Turn( simulation.TickCount ) + 1, simulation.ParkTurn, "the park turn leads by one" );
+		// a thought shown in such a tick stamps its bubble with the park turn (Think)
+		guest.BubbleThought = GuestThought.Happy;
+		guest.BubbleTurn = simulation.ParkTurn;
+		var snapshot = simulation.CaptureSnapshot();
+		var restored = new GuestSimulation( GuestTests.CreateCross(), settings, 9 ) { ArrivalsEnabled = false };
+		restored.RestoreSnapshot( snapshot );
+		Assert.AreEqual( (GuestThought.Happy, simulation.ParkTurn), (restored.Find( guest.Id )!.BubbleThought, restored.Find( guest.Id )!.BubbleTurn ), "the bubble is restored" );
+		// aligned again as the level aligns it before its next running tick, the restored park runs on as the original, the bubble's end included
+		restored.AlignTurns( restored.TickCount + phase );
+		Assert.AreEqual( simulation.ParkTurn, restored.ParkTurn, "the same park turn once aligned" );
+		for ( var tick = 0; tick < (GuestThoughts.BubbleTurns + 2) * 15; tick++ )
+		{
+			simulation.Tick( GuestSnapshotTests.Tick );
+			restored.Tick( GuestSnapshotTests.Tick );
+		}
+		Assert.AreEqual( System.Text.Json.JsonSerializer.Serialize( simulation.CaptureSnapshot() ), System.Text.Json.JsonSerializer.Serialize( restored.CaptureSnapshot() ), "the same park after the bubble's turns" );
+		// a turn no phase reaches is still refused
+		var later = snapshot with { Guests = snapshot.Guests.Select( item => item with { BubbleTurn = ParkCalendar.Turn( snapshot.TickCount ) + 2 } ).ToArray() };
+		Assert.ThrowsException<System.IO.InvalidDataException>( () => new GuestSimulation( GuestTests.CreateCross(), settings, 9 ).RestoreSnapshot( later ) );
+	}
 }

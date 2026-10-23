@@ -151,6 +151,14 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	private long turnPhase;
 
 	/// <summary>
+	/// The latest <see cref="ParkTurn"/> the guests can be on at <paramref name="tickCount"/> of their own ticks, whatever phase their turns are cut at (<see cref="AlignTurns"/>, which a
+	/// snapshot does not hold, and which a restored simulation only takes again on its next running tick): the tick count's <see cref="ParkCalendar.Turn"/> or one more, as for a bubble
+	/// shown on the first tick of a turn that starts a tick before the tick count's own (<see cref="ParkCalendar.LatestPhasedTurn"/>). The bound of every turn a restore reads that the
+	/// guests stamped.
+	/// </summary>
+	internal static long LatestParkTurn( long tickCount ) => ParkCalendar.LatestPhasedTurn( tickCount );
+
+	/// <summary>
 	/// Puts the guests' turn boundaries on the economy's: the guests' tick count started at 0 where an economy that begins at an original save's turn started at that turn's tick, so the two
 	/// clocks cut the ticks into turns at different places (a tick apart in two of five turns) and one park turn could not be swept as a whole. The guests' <see cref="ParkTurn"/> still counts
 	/// from their own start. Nothing changes while both start together.
@@ -4119,7 +4127,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 				Error( $"Guest {guest.Id} is already gone; gone guests are removed at the end of their tick." );
 			if ( !Enum.IsDefined( guest.Thought ) )
 				Error( $"Guest {guest.Id} thought {(int)guest.Thought} is not a guest thought." );
-			if ( !Enum.IsDefined( guest.BubbleThought ) || guest.BubbleTurn < 0 || guest.BubbleTurn > ParkCalendar.Turn( snapshot.TickCount ) )
+			if ( !Enum.IsDefined( guest.BubbleThought ) || guest.BubbleTurn < 0 || guest.BubbleTurn > LatestParkTurn( snapshot.TickCount ) )
 				Error( $"Guest {guest.Id} bubble {(int)guest.BubbleThought} at turn {guest.BubbleTurn} is not a thought bubble." );
 			if ( (uint)guest.Type >= (uint)typeCount )
 				Error( $"Guest {guest.Id} type {guest.Type} is not one of the park's {typeCount} guest types." );

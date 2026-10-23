@@ -453,8 +453,16 @@ arrival timer's start turn and group flag instead of its countdown, version 11 t
 | `script_table_digest` | the script world's scheduler clock, then every live script in id order: id, name, parent, state, PC, flags, call stack, variables, clock origin, clock, wake time, timers, WAIT4ANIM deadline, LOOPANIM and TRIGWAITANIM tokens, instruction and slice counts, seed and RNG call count; for a root object script also its animator channels (AnimID, variant, loop, speed, start, ended, tick, deferred clip) and clock | yes |
 | (coasters) | `RideScriptWorld.Coasters`: the coaster generator, then every coaster in creation order: station ends, closed and complete flags, nodes (cell, height, t, pylon kind, stack index, station end, flags, bank, loop rotate, the exact position of the middle station node), controller state (initialised, the state 1/2/4/8, ride mode, speed setting, seats, speed cap, the lead car coordinate a reopened track keeps for the next train placement, net track money, time, whether the motion tick has run, braking start, station window, self-intersection count), samples (flags, height, roll, speed), rating, winch sections, trains (position, speed, train flags, boarding span, the riders of the lap and the guests seated at the station per car), the admission ring and the riders waiting to leave | yes (extra, after the script digest) |
 | (tracks) | the track layer after the cell map (every track cell: type, mask, link, flags, piece, parent, rotation, overlap, segment) and `RideScriptWorld.Bumpers`: the cosmetic LCG, then every controller (type, laps, performance, phase, state, validity, tick count and clock, station, sections, waiting and leaving guests, every boat's slot, flags, position, velocity, heading, spin, target buoy, laps and rider count) — both only while a track or controller exists, so every park without one keeps its earlier digests and the schema stays 14 (TRACKS.md); bumper cars add the chase target and the drawn heading and yaw to their boats' fields (the same conditional extension: only while a controller exists, no schema bump, as for the water and kart fields); boats draw their aiming jitter from the script stream (`RideScriptWorld.NextWorldDraw`, DET-013) | yes (extra, after the coasters) |
-| `economy_digest` | the park save's economy part as canonical JSON (sorted keys) | yes |
+| `economy_digest` | the park save's economy part as canonical JSON (keys in ordinal order, compact, as the default JSON writer writes it), hashed as text | yes |
 | `input_log_cursor` | no input log | **missing** |
+
+The economy digest's text is the park save serialized with the serializer's default options and written again canonically:
+every object's members in ordinal order of their names, the parts the table below leaves out skipped at their place, and every
+name and value as the default JSON writer writes it, so every character outside ASCII as an escape. It is hashed as text: its
+length, then each character as a whole number. Since C2c-2b-4b (docs/COOP.md, "The digest's canonical text") a JSON writer
+writes that text from the save's UTF-8 bytes (`WorldStateHash.CanonicalEconomy`) instead of from a JSON tree, and an ASCII text
+is hashed a byte a step (`StateHasher.AddAscii`). The text and the hash are the tree's, byte for byte (`WorldStateHashCanonicalTests`
+keeps the tree's form as its reference), and no pin moved.
 
 The sound seed is saved with the park but is not part of the hash. In the PC
 executable the chooser **advances**: every draw stores `s·0x19660D + 0x3C6EF35F` back

@@ -368,8 +368,8 @@ the live game, and swaps it in.
      no time it waits. A park start decodes the same lines in its own preparation.
   8. It runs the economy digest's serialization once ahead, over the candidate's economy, a part of its
      park save a step (the stage `digest`, `WorldStateHash.SerializationWarmupSteps`, C2c-2b-3i): the
-     save's capture, then each of its parts serialized to a JSON tree and written in the digest's
-     canonical form, then the whole save. The check at the cut then runs none of that code for the first
+     save's capture, then each of its parts serialized and written in the digest's canonical form, then
+     the whole save's part of the digest. The check at the cut then runs none of that code for the first
      time, but for a part that failed here. Nothing is kept, the economy is only read and no hash changes; a save that cannot be captured or
      a part that cannot be written is left for the check to meet.
 
@@ -566,6 +566,23 @@ stream's first checkpoint and a capture's cut run none of it for the first time.
 the native one too, runs the steps while its park settles, so neither host's first checkpoint is the
 digest's first run any more. The game's own sharing does not run them yet: it comes with the sharing's
 flow (C2d).
+
+### The digest's canonical text (C2c-2b-4b)
+
+The session digest hashes the park save's economy part as canonical text (docs/DETERMINISM.md, "Canonical
+state hash"): at every checkpoint on the host and on every guest, at a capture's cut and at a
+join's check. That text was built from a JSON tree: the save serialized into nodes, every object's keys
+sorted into a new string, and the string hashed a character at a time, eight FNV steps each. Now the
+save is serialized to UTF-8 bytes and read as a document, and a JSON writer writes the canonical form
+straight into bytes (`WorldStateHash.CanonicalEconomy`): every object's members in ordinal order of
+their names, the parts the digest leaves out skipped at their place. The writer escapes every character
+outside ASCII, so each byte of the text is one character, and the hasher takes it a byte a step
+(`StateHasher.AddAscii`: the seven zero bytes of a character's eight fold into one multiplication by the
+prime's eighth power); a string's characters take two steps each. The text and the hash are the old
+ones, byte for byte. `WorldStateHashCanonicalTests` keeps the tree's form as its reference, every pinned
+hash is unchanged, and the join smokes compare every checkpoint between the desktop and the page in both
+directions. The serialization of the save is as it was, and it is now most of the digest's time
+("Measurements", below).
 
 ### The browser's link to a real server (C2c-2b-5)
 
@@ -1068,6 +1085,32 @@ The design fixed two constants only after measuring them (`coop-c2b-design.md`, 
   to 18 of them, its serialization 9 to 10).
 
   Every value: [COOP-MEASUREMENTS.md](COOP-MEASUREMENTS.md), "The browser's host".
+
+- **The digest's canonical text (C2c-2b-4b).** The economy's canonical text written from the save's
+  bytes, without a JSON tree (above, "The digest's canonical text"). Three runs each, medians in
+  milliseconds, before (`996b0e133`, C2c-2b-4's head) and after (`43bf2274e`); the page's join and the
+  desktop's join each over a desktop host, the page's host over the desktop's join:
+
+  | Part | Desktop before | Desktop after | Page before | Page after |
+  | --- | ---: | ---: | ---: | ---: |
+  | The guest's check at the join's cut | 13.1 | 9.7 | 12.6 | 11.2 |
+  | The guest's check at the resync's cut | 2.0 | 1.1 | 7.6 | 5.9 |
+  | The join's digest stage | 27.3 | 24.7 | 45.5 | 42.6 |
+  | The resync's digest stage | 7.2 | 2.3 | 23.3 | 11.8 |
+  | The host's digest at capture 1's cut, at capture 2's | 2.1, 2.5 | 1.7, 2.0 | 7.2, 11.7 | 6.1, 11.5 |
+
+  In the page host's long frames the economy's canonical text took 7.9 to 14.0 ms and now 4.4 to 8.8
+  (the medians of the `hash.economyCanonical` mark by stage), while the save's serialization took 8 to
+  18 ms and still does (`hash.economyNode`, now `hash.economySave`). The page host's checkpoint frames
+  in its last 1,500 frames (every 60th) took a median of 17 to 23 ms a run before, at most 32, and now
+  16 to 18, at most 21: no checkpoint frame reaches 30 ms any more, and the last stage's long frames are
+  its final checks alone. The save's serialization is the digest's remaining cost in the page.
+
+  The resync's longest build frame in the page is the prepare stage's third step: 31 to 36 ms before,
+  37 to 50 after, with a full collection in it in two of three runs (none before). That step is not this
+  change's work.
+
+  Every value: [COOP-MEASUREMENTS.md](COOP-MEASUREMENTS.md), "The digest's canonical text".
 
 ## The command layer (C1)
 

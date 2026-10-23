@@ -687,7 +687,7 @@ The build takes 38 frames instead of 34. No frame of 40 ms or more follows the e
 - **The capture's code warmed in the build.** `Level.WarmResumeCaptureSteps` runs the capture parts that only read the park once and drops their results: the economy, layout, guest, thing-pool, script-world, weather, gate, staff, ride, pool, tour and extension captures, which the periodic autosave also runs on a live park. The economy capture alone fell from 14 to 0.6 ms in the entering frame. Runtime captures stay out because they prune effect records. Test: `TheCaptureWarmUpOfAParkBuildChangesNeitherTheParkNorItsSnapshot`, which checks the state hash and the snapshot bytes.
 - **The advisor's reads in the build.** `AdvisorEntryPreparation` reads what the advisor's creation and first line read: `Advisor.sam`, the global and the level advisor model, the clip lengths of both archives and the theme costume. It also loads the shipped response, caption and costume tables (`[EXT:park-entry-preparation]`). Each result is taken once, only by its own reader, only from the file system it was read from and only while that file system's lookup generation (`BaseFileSystem.LookupGeneration`, raised by every invalidation and every change of its mod overrides or archive redirect) is the one it was read under. A failed read is not kept, so its reader meets the failure and reports it as before. What a read logged is held (`Logger.BeginCapture`) and written when its result is taken. Whatever the park's first update did not take is dropped and disposed. Everything is also dropped when a build starts its preparation, when a build fails or is abandoned, and when the game tears down (except the tear-down of the park a build replaces, whose results are for the new park). Tests: `AdvisorEntryPreparationTests`.
 
-The welcome line's PCM is still decoded over frames (the sliced path above), starting in the entering frame. Which line comes first is the controller's choice in that frame, so it is not decoded ahead. The first draw did not change. The CPU profile of that frame did not name its cost, because the profile's window and the frame did not line up. Pipelines are already created with their materials during the build.
+The welcome line's PCM was still decoded over frames (the sliced path above), starting in the entering frame. Since C2c-2b-3e the park build decodes the lines a park's start says first (the Welcome, which has one response, and in Instant Action the prebuilt park's) ahead, a 5 ms slice of their MPEG a step (`AdvisorEntryPreparation.LineSteps`), and the advisor takes their PCM when it says them; a line decoded ahead starts at its time instead of a few frames late. The first draw did not change. The CPU profile of that frame did not name its cost, because the profile's window and the frame did not line up. Pipelines are already created with their materials during the build.
 
 ### The first draw and the park HUD (October 21)
 
@@ -891,4 +891,18 @@ C2c-2b-3d restores a joined park's saved objects one a build step instead of all
 | A join's longest frame, with its drawing | 292 (the objects' restore) | 110 (the swap's) |
 
 The restore's longest step is now its first: the snapshot's checks and the first object, 87 ms. A type's sign is still composed on the step of its first object (134 ms in all), since the page has no worker to compose it on; on the desktop the sign worker takes most of that work. The swap's frame is a join's longest again; its largest parts are the park's first update of its level and the advisor's first update, about 35 ms each.
+
+### The advisor prepared for a join (C2c-2b-3e)
+
+C2c-2b-3e reads in the join's build what the joined park's advisor reads for its first line, as a park start's build does, and decodes that line ahead (docs/COOP.md, "The game's join"). Same machine and harness, medians of three runs in milliseconds, compiled ahead of time:
+
+| Part of the join | Before | After |
+| --- | ---: | ---: |
+| The swap's frame, with its drawing | 110 | 90.1 |
+| Of it the advisor's first update | 33.9 | 4.3 |
+| The first frame after the swap, with its drawing | 48.5 | 41.8 |
+| The build's `prepare` stage | 103 over 7 frames | 187 over 14 |
+| A join's longest frame, with its drawing | 110 (the swap's) | 94.4 (the restore's first step) |
+
+The `prepare` stage's longest step is still a coaster's (38 ms); the advisor's steps took at most 14 ms, and the line's decode is spread over 5 ms slices. This measurement ran about 8% slower in the steps it does not change (the save's parse 87.6 against 80.7 ms). The restore's first step, the snapshot's checks and the first object with its sign, is a join's longest frame now.
 

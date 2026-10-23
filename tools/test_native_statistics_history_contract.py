@@ -93,7 +93,8 @@ class NativeStatisticsHistoryContract(unittest.TestCase):
         self.assertIn("RecentStays.SumNewest( StayWindow )", close)
         self.assertNotIn("LegacyRating", close)
         state_hash = read("source/OpenTPW/World/WorldStateHash.cs")
-        self.assertIn("root.Remove( nameof( ParkSaveFile.Data.StatisticsHistory ) );", state_hash)
+        # the digest's canonical text leaves the statistics history out at the save's top level (WorldStateHash.LeftOut)
+        self.assertIn("EconomyPart.Save => name is nameof( ParkSaveFile.Data.AnalyserCaches ) or nameof( ParkSaveFile.Data.StatisticsHistory ),", state_hash)
 
     def test_actual_draw_consumer_reads_independent_rating_without_ledger_reconstruction(self):
         self.assertIn("_ => history.Rating", self.graph)

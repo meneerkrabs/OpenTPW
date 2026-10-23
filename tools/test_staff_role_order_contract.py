@@ -87,9 +87,12 @@ class StaffRoleOrderContract(unittest.TestCase):
 
     def test_only_nested_role_order_is_newly_excluded_from_gameplay_hash(self):
         hashing = read("source/OpenTPW/World/WorldStateHash.cs")
-        self.assertIn("staff.Remove( nameof( ParkSaveFile.StaffData.RoleOrder ) )", hashing)
-        self.assertNotIn("root.Remove( nameof( ParkSaveFile.Data.Staff ) )", hashing)
-        self.assertNotIn("Remove( nameof( ParkSaveFile.StaffData.HaveEverTrained )", hashing)
+        # the digest's canonical text leaves only the staff's role order out, inside the save's staff (WorldStateHash.LeftOut and PartOf)
+        self.assertIn("EconomyPart.Staff => name == nameof( ParkSaveFile.StaffData.RoleOrder ),", hashing)
+        self.assertIn("(EconomyPart.Save, nameof( ParkSaveFile.Data.Staff )) => EconomyPart.Staff,", hashing)
+        top_level = next(line for line in hashing.splitlines() if line.strip().startswith("EconomyPart.Save =>"))
+        self.assertNotIn("ParkSaveFile.Data.Staff", top_level)
+        self.assertNotIn("ParkSaveFile.StaffData.HaveEverTrained", hashing)
         self.assertIn("public const int SchemaVersion = 21", hashing)
         employee = read("source/OpenTPW/Hud/ParkHud.EmployeeWindow.cs")
         self.assertIn("EmployeeWindowRules.Cycle( StaffMembers, member.Id, forward, (Status.EconomySource as ParkEconomy)?.Staff.Things )", employee)

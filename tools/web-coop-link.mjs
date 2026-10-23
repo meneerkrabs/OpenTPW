@@ -79,15 +79,20 @@ async function startServer(dll, web, data, log, started) {
 	const args = [dll, '--urls', 'http://127.0.0.1:0', `--OpenTPW:DataDirectory=${data}`, '--OpenTPW:RequireTotp=false', `--OpenTPW:WebClientDirectory=${web}`,
 		'--Logging:LogLevel:Default=Warning', '--Logging:LogLevel:Microsoft.Hosting.Lifetime=Information'];
 	const child = spawn(process.env.DOTNET ?? 'dotnet', args, { cwd: path.dirname(dll), stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, DOTNET_CLI_TELEMETRY_OPTOUT: '1' } });
+	// a process that could not be started says so here, and never ends (no exit follows a spawn error)
+	let failed = null;
+	child.once('error', error => failed = error);
 	started(child);
 	let output = '';
 	const take = chunk => {
 		output += chunk;
 		log.push(String(chunk));
 	};
-	child.stdout.on('data', take);
-	child.stderr.on('data', take);
+	child.stdout?.on('data', take);
+	child.stderr?.on('data', take);
 	const origin = await new Promise((resolve, reject) => {
+		if (failed)
+			return reject(new Error(`The server could not start: ${failed.message}`));
 		const timer = setTimeout(() => reject(new Error(`The server did not say where it listens within 60 s:\n${output.slice(-2000)}`)), 60000);
 		const listening = () => {
 			const match = /Now listening on: (http:\/\/127\.0\.0\.1:\d+)/.exec(output);
@@ -96,17 +101,17 @@ async function startServer(dll, web, data, log, started) {
 				resolve(match[1]);
 			}
 		};
-		child.stdout.on('data', listening);
-		child.stderr.on('data', listening);
+		child.stdout?.on('data', listening);
+		child.stderr?.on('data', listening);
 		child.once('error', error => { clearTimeout(timer); reject(new Error(`The server could not start: ${error.message}`)); });
 		child.once('exit', code => { clearTimeout(timer); reject(new Error(`The server exited (${code}) before it listened:\n${output.slice(-2000)}`)); });
 	});
 	return origin;
 }
 
-/** Ends the server and waits until it has exited (at most a few seconds). */
+/** Ends the server and waits until it has exited (at most a few seconds); a process that never started (no pid) has nothing to end. */
 async function stopServer(child) {
-	if (!child || child.exitCode !== null || child.signalCode !== null)
+	if (!child || child.pid === undefined || child.exitCode !== null || child.signalCode !== null)
 		return;
 	const exited = new Promise(resolve => child.once('exit', resolve));
 	child.kill('SIGTERM');
@@ -320,8 +325,13 @@ async function run(options) {
 			cleanup.push(`DevTools: ${error.message}`);
 		}
 		await stopChrome(chrome).catch(error => cleanup.push(`Chrome: ${error.message}`));
+		// the shared helper sends its last kill without waiting for the exit: wait for it here, a little, before calling Chrome left behind
+		if (chrome && chrome.exitCode === null && chrome.signalCode === null)
+			await Promise.race([new Promise(resolve => chrome.once('exit', resolve)), sleep(3000)]);
+		if (chrome && chrome.pid !== undefined && chrome.exitCode === null && chrome.signalCode === null)
+			cleanup.push(`Chrome (process ${chrome.pid}) had not exited`);
 		await stopServer(server).catch(error => cleanup.push(`the server: ${error.message}`));
-		if (server && server.exitCode === null && server.signalCode === null)
+		if (server && server.pid !== undefined && server.exitCode === null && server.signalCode === null)
 			cleanup.push(`the server (process ${server.pid}) had not exited`);
 		for (const folder of [profile, data].filter(Boolean))
 			await fs.rm(folder, { recursive: true, force: true }).catch(error => cleanup.push(`${folder}: ${error.message}`));

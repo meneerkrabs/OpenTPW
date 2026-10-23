@@ -9,6 +9,7 @@ partial class Texture
 		if ( string.IsNullOrEmpty( path ) )
 			return false;
 
+		using var profile = LoadProfile.Measure( "texture-lookup" );
 		var existingTexture = Asset.All.OfType<Texture>().ToList().FirstOrDefault( t => t.Path == path );
 		if ( existingTexture != null )
 		{

@@ -310,13 +310,20 @@ public class OriginalObject : Entity, IPointLightSource, IObjectPickShape
 
 	private void BuildModels()
 	{
-		var vertexAnimated = ObjectRenderParts.FindVertexAnimatedMeshes( Entry, Runtime.Model );
+		bool[] vertexAnimated;
+		using ( LoadProfile.Measure( "object-parts" ) )
+			vertexAnimated = ObjectRenderParts.FindVertexAnimatedMeshes( Entry, Runtime.Model );
 		// The model's multi-frame texture slots that one of the object's clips addresses with a texture-frame
 		// track (RIDES-035): each frame decodes once, and the part bindings record which material slots show them.
-		var frameSlots = FindFrameAnimatedSlots( Entry, Runtime.Model );
+		Dictionary<int, FrameTextures> frameSlots;
+		using ( LoadProfile.Measure( "object-textures" ) )
+			frameSlots = FindFrameAnimatedSlots( Entry, Runtime.Model );
 		foreach ( var frames in frameSlots.Values )
 			Runtime.Animator.SetTextureFrameAvailability( frames.Slot, frames.Frames.Select( texture => texture != null ).ToArray() );
-		foreach ( var part in ObjectRenderParts.Build( Entry, Runtime.Model ) )
+		IReadOnlyList<ObjectRenderPart> built;
+		using ( LoadProfile.Measure( "object-parts" ) )
+			built = ObjectRenderParts.Build( Entry, Runtime.Model );
+		foreach ( var part in built )
 		{
 			var slots = new Texture[16];
 			Array.Fill( slots, Texture.Missing );
@@ -333,14 +340,19 @@ public class OriginalObject : Entity, IPointLightSource, IObjectPickShape
 			var fallbackBaseSign = plan.UsesFallback ? SignSlotPlan.FallbackBoard : null;
 			if ( sign != null )
 				Sign = sign;
-			for ( var index = 0; index < part.Textures.Length; index++ )
+			using ( LoadProfile.Measure( "object-textures" ) )
+				for ( var index = 0; index < part.Textures.Length; index++ )
+				{
+					var name = part.Textures[index];
+					slots[index] = sign?.TextureFor( name )
+						?? (fallbackBaseSign != null && ObjectSigns.IsSignSlot( name ) ? fallbackBaseSign : LoadTexture( Entry, name ));
+				}
+			Material<ObjectUniformBuffer> material;
+			using ( LoadProfile.Measure( "object-materials" ) )
 			{
-				var name = part.Textures[index];
-				slots[index] = sign?.TextureFor( name )
-					?? (fallbackBaseSign != null && ObjectSigns.IsSignSlot( name ) ? fallbackBaseSign : LoadTexture( Entry, name ));
+				material = new Material<ObjectUniformBuffer>( "content/shaders/test.shader" );
+				material.Set( TextureArrayName, slots );
 			}
-			var material = new Material<ObjectUniformBuffer>( "content/shaders/test.shader" );
-			material.Set( TextureArrayName, slots );
 			// A texture-frame track swaps the frames of the model slots the part shows, unless a runtime sign
 			// face owns that slot's texture.
 			if ( part.TextureSlots != null )
@@ -352,7 +364,9 @@ public class OriginalObject : Entity, IPointLightSource, IObjectPickShape
 						frames.Bindings.Add( (material, index) );
 				}
 			var dynamic = part.MeshIndex >= 0 && vertexAnimated[part.MeshIndex];
-			var model = new Model( part.Vertices, part.Indices, material, dynamic );
+			Model model;
+			using ( LoadProfile.Measure( "object-materials" ) )
+				model = new Model( part.Vertices, part.Indices, material, dynamic );
 			models.Add( model );
 			// Build gives every object its own vertex arrays, so the part's array is this instance's to rewrite;
 			// version -1 makes the first update show the pose of a clip the script may already have started.

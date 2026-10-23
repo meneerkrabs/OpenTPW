@@ -20,13 +20,21 @@ internal sealed record CoopSmokeHostEvidence( bool Completed, string? Failure, s
 /// adversarial join) or "measure" (the untouched captures, joined and resynced once each).
 /// </summary>
 internal sealed record CoopSmokeJoinEvidence( bool Completed, string? Failure, int Builds, int FailedJoins, string[] Steps, ulong FinalDigest, ulong FinalWorldHash, string[] SaveDifferences,
-	string Mode = "join", CoopJoinTimings[]? JoinTimings = null, CoopSmokeFrame[]? Frames = null, CoopSmokeEnvironment? Environment = null, CoopSmokeFrameMarks[]? SwapFrames = null );
+	string Mode = "join", CoopJoinTimings[]? JoinTimings = null, CoopSmokeFrame[]? Frames = null, CoopSmokeEnvironment? Environment = null, CoopSmokeFrameMarks[]? SwapFrames = null,
+	CoopSmokeBuildFrame[]? LongBuildFrames = null );
 
 /// <summary>
 /// The named work (<see cref="FrameMarks"/>) of an update frame that swapped a built park in (<paramref name="Role"/> "swap") or of the frame after it ("after"), measuring: each
 /// section's milliseconds and count; sections nest, a parent's time including its children's. <paramref name="Outcome"/> names the build ("joined" or "resynced").
 /// </summary>
 internal sealed record CoopSmokeFrameMarks( string Outcome, string Role, int Frame, System.Text.Json.Nodes.JsonObject Marks );
+
+/// <summary>
+/// A build's update frame of <see cref="CoopJoinSmokeTest.LongBuildFrameMilliseconds"/> or more, measuring (<paramref name="Outcome"/> names the build, "joined" or "resynced"): its
+/// milliseconds, the stage its build's last step of the frame ran in and that stage's steps so far (a step that ran long ends its slice, so a long one is that stage's
+/// <paramref name="Steps"/>th, as the build's long steps number it), and the frame's named work, as <see cref="CoopSmokeFrameMarks"/> has it.
+/// </summary>
+internal sealed record CoopSmokeBuildFrame( string Outcome, int Frame, double Milliseconds, string Stage, int Steps, System.Text.Json.Nodes.JsonObject Marks );
 
 /// <summary>
 /// One update frame of the join phase: its number, the join step it ran in, and the milliseconds of its update (the smoke's driver, the online pump and the game's); in a page, also

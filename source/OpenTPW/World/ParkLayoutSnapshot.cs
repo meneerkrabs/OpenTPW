@@ -254,6 +254,7 @@ public static class ParkLayoutSnapshot
 	{
 		ArgumentNullException.ThrowIfNull( snapshot );
 		ArgumentNullException.ThrowIfNull( catalog );
+		using var profile = LoadProfile.Measure( "layout-checks" );
 		void Require( bool condition, string message )
 		{
 			if ( !condition )
@@ -343,6 +344,7 @@ public static class ParkLayoutSnapshot
 
 	private static void ValidateCells( Data snapshot, ModSet? activeMods = null )
 	{
+		using var profile = LoadProfile.Measure( "cell-checks" );
 		var cells = snapshot.Cells;
 		void Require( bool condition, string message )
 		{

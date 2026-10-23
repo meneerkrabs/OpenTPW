@@ -62,6 +62,7 @@ internal sealed partial class CoopJoinSmokeTest
 		paceFrame = hostEvidence.Cuts[0].AssignedHostFrame;
 		// measuring, the named work of the frames that swap a park in, unless another recording of it runs (a page's performance harness, a hitch report)
 		swapMarks = measuring && !FrameMarks.Enabled ? new List<CoopSmokeFrameMarks>() : null;
+		buildMarks = swapMarks != null ? new List<CoopSmokeBuildFrame>() : null;
 		// a page's start shows the front end already; the native run starts without one
 		if ( flow.Menu == null )
 			flow.ShowFrontEnd();
@@ -427,7 +428,7 @@ internal sealed partial class CoopJoinSmokeTest
 
 	private CoopSmokeJoinEvidence JoinEvidence( bool completed, string? failure ) => new( completed, failure, replay?.Downloads.Count ?? 0, joinSession?.FailedJoins ?? 0, joinSteps.ToArray(),
 		joinFinal.Digest, joinFinal.World, saveDifferences, measuring ? "measure" : "join", joinSession?.JoinTimings.ToArray() ?? Array.Empty<CoopJoinTimings>(), updateFrames.ToArray(),
-		CoopSmokeEnvironment.Of( flow ), swapMarks?.ToArray() );
+		CoopSmokeEnvironment.Of( flow ), swapMarks?.ToArray(), buildMarks?.ToArray() );
 
 	/// <summary>Every update frame of the phase, timed from before the smoke's driver to after the game's update (docs/COOP.md, "Measurements").</summary>
 	private readonly List<CoopSmokeFrame> updateFrames = new();
@@ -439,6 +440,11 @@ internal sealed partial class CoopJoinSmokeTest
 	private string? marksAfter;
 	/// <summary>Whether the runner clears the frame's marks at each frame's start itself (a page does, before the frame).</summary>
 	private bool runnerClearsMarks;
+	/// <summary>Measuring, the builds' long frames with their named work (null when the swaps' work is not recorded either).</summary>
+	private List<CoopSmokeBuildFrame>? buildMarks;
+
+	/// <summary>A build's update frame this long or longer is recorded with its named work, measuring: past twice the slice's budget, a step of it ran long.</summary>
+	internal const double LongBuildFrameMilliseconds = 30;
 
 	private void FrameStarts()
 	{
@@ -455,8 +461,9 @@ internal sealed partial class CoopJoinSmokeTest
 
 	private void FrameEnds()
 	{
+		var milliseconds = frameStarted != 0 ? CoopClock.Since( frameStarted ) : 0d;
 		if ( frameStarted != 0 )
-			updateFrames.Add( new CoopSmokeFrame( frame, joinStep.ToString(), CoopClock.Since( frameStarted ) ) );
+			updateFrames.Add( new CoopSmokeFrame( frame, joinStep.ToString(), milliseconds ) );
 		if ( swapMarks == null || !FrameMarks.Enabled || joinSession == null )
 			return;
 		// a build that ended in this frame was checked and swapped in by it (its timings close there); the next frame is the first after the swap
@@ -474,6 +481,10 @@ internal sealed partial class CoopJoinSmokeTest
 			swapMarks.Add( new CoopSmokeFrameMarks( marksAfter, "after", frame, FrameMarks.Snapshot() ) );
 			marksAfter = null;
 		}
+		// a long frame of a build that goes on: what it, and so its long last step, was made of
+		else if ( buildMarks != null && milliseconds >= LongBuildFrameMilliseconds && (joinStep is JoinStep.Joining or JoinStep.Resyncing)
+			&& joinSession.Building?.Timings?.Stages.LastOrDefault( stage => stage.Steps > 0 ) is { } stage )
+			buildMarks.Add( new CoopSmokeBuildFrame( joinStep == JoinStep.Joining ? "joined" : "resynced", frame, milliseconds, stage.Name, stage.Steps, FrameMarks.Snapshot() ) );
 	}
 
 	/// <summary>The recording of the swaps' work ends with the run, whatever ends it.</summary>

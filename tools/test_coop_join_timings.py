@@ -287,6 +287,33 @@ class CoopJoinTimingsTests(unittest.TestCase):
                 with self.subTest(run), self.assertRaises(ValueError):
                     coop_join_timings.load(root / run)
 
+    def test_the_builds_long_frames_are_listed_by_their_step_and_mark_and_must_be_frames_of_their_builds(self):
+        def marked(frame=2, steps=23, milliseconds=160):
+            def change(host, join):
+                join["LongBuildFrames"] = [
+                    {"Outcome": "joined", "Frame": frame, "Milliseconds": milliseconds, "Stage": "level", "Steps": steps,
+                     "Marks": {"park.build": [150.0, 1], "load:object-sign": [61.5, 2], "load:texture-decode": [2.5, 4]}},
+                    {"Outcome": "resynced", "Frame": 4, "Milliseconds": 90, "Stage": "save", "Steps": 1, "Marks": {"load:save-json": [70.0, 1]}}]
+            return change
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary)
+            write_run(root / "run-0", 30.0, 3.0, change=marked())
+            write_run(root / "run-1", 30.0, 3.0)
+            table = coop_join_timings.table([coop_join_timings.load(root / f"run-{index}") for index in range(2)])
+            # each long frame by the stage and step that ended it, a mark under 3 ms in every run left out; a run without them has none
+            self.assertIn("| joined: long frame, level 23 (1 of 2 runs) | 160 | 160-160 | 160, - |", table)
+            self.assertIn("| joined: long frame, level 23, mark load:object-sign (1 of 2 runs) | 61.5 |", table)
+            self.assertIn("| joined: long frame, level 23, mark park.build (1 of 2 runs) | 150 |", table)
+            self.assertIn("| resynced: long frame, save 1, mark load:save-json (1 of 2 runs) | 70.0 |", table)
+            self.assertNotIn("texture-decode", table)
+            # a frame of another step than its build's, a step its stage never reached, or a frame under the length that records it is refused
+            write_run(root / "run-2", 30.0, 3.0, change=marked(frame=3))
+            write_run(root / "run-3", 30.0, 3.0, change=marked(steps=41))
+            write_run(root / "run-4", 30.0, 3.0, change=marked(milliseconds=20))
+            for run in ("run-2", "run-3", "run-4"):
+                with self.subTest(run), self.assertRaises(ValueError):
+                    coop_join_timings.load(root / run)
+
     def test_builds_from_before_the_codec_and_the_prepare_stages_are_read_without_them(self):
         def without(*names):
             def change(host, join):

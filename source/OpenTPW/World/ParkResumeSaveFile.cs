@@ -347,6 +347,8 @@ internal static class ParkResumeSaveFile
 	/// </summary>
 	internal static void RequireAssets( ParkResumeSnapshot snapshot, ObjectCatalog catalog, IReadOnlyDictionary<string, string> currentAssetHashes )
 	{
+		// its work by name, for a measured build (LoadProfile: a no-op while off)
+		using var profile = LoadProfile.Measure( "assets-check" );
 		void require( bool condition, string message )
 		{
 			if ( !condition )

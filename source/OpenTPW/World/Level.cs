@@ -402,8 +402,10 @@ public partial class Level : IDisposable
 		}
 		if ( resume != null )
 		{
+			// the saved simulation's restore a part a step (its section open over them counts only their own work)
 			using ( LoadProfile.Measure( "resume" ) )
-				RestoreResumeSimulation( resume );
+				foreach ( var _ in RestoreResumeSimulationSteps( resume ) )
+					yield return 0.95f;
 		}
 		// [EXT:online-coop-snapshot-join] a join's session state, before the park's first frame
 		if ( joinRestore is { } joined )

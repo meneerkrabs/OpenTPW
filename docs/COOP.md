@@ -880,8 +880,10 @@ The design fixed two constants only after measuring them (`coop-c2b-design.md`, 
   of more than 50 ms are now the save's parse (86 ms ahead of time), the check at the cut (71 ms, in the
   frame its build completes in) and the level's last step (64 ms, the resume's restore). The review fixes
   after the measured commit leave the level's hoarding textures for the boards to gather (the steps
-  still make each of them first) and a failed read of a texture folder unremembered ahead of use; they
-  move no measured work but the gathering of four made textures to the first boards' step.
+  still make each of them first) and a failed read of a texture folder unremembered ahead of use. They
+  move one piece of work to the first boards' step: the four hoarding textures' paths are resolved
+  again there and their textures made over the ones the steps made, which they share. These timings
+  are of the measured commit, not of the fixes.
 
   Every value: [COOP-MEASUREMENTS.md](COOP-MEASUREMENTS.md), "A type's first use in steps of its own".
 

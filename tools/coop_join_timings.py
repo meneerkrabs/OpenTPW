@@ -16,7 +16,7 @@ abandoned builds warm the process first. The named work of the swaps' frames and
 nest: a parent's time includes its children's, so they are never added up) is listed for every mark of at least 1 ms in some run;
 that of the builds' long frames (30 ms or more), named by the stage and step that ended each, for every mark of at least 3 ms, with
 the garbage collections each ran when the evidence keeps them, as it keeps those of each stage's steps. A page host's long frames (30 ms or more, with their
-drawing) are listed by the host stage they ended in, with the longest's named work.
+drawing) are listed by the host stage whose step each ran (recordings before C2c-2b-4's review named the stage each ended in), with the longest's named work.
 
 Usage: python3 -I tools/coop_join_timings.py [--machine <file>] <evidence directory> [<evidence directory> ...]
 """
@@ -264,7 +264,7 @@ def rows(runs):
                                  ("body KiB", "KiB", ("BodyBytes",)), ("save KiB", "KiB", ("SaveBytes",))]:
             read = value(get, *path)
             result.append((f"{label}: {name}", unit, [(kib(read) if unit == "KiB" else read)(run) for run in host_runs]))
-    # a page host's long frames (30 ms or more, with their drawing) by the host stage they ended in: how many, the longest, and the longest's named work of at least
+    # a page host's long frames (30 ms or more, with their drawing) by the host stage whose step each ran: how many, the longest, and the longest's named work of at least
     # 3 ms (marks nest: never added up)
     for stage_name in sorted({item["Stage"] for run in host_runs for item in run[0].get("LongFrames") or []}):
         def frames_in(run, stage_name=stage_name):

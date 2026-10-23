@@ -443,8 +443,8 @@ render binding reuse, cooperative audio decoding and remaining park-load stalls.
 `Program.Frame` and exposes the measurement hooks of `Program.Perf.cs`; without it the page
 behaves as before.
 
-The co-op join smoke's browser run (`tools/web-coop-join.mjs`, [COOP.md](COOP.md), "The browser's
-join") opens the page with `?coopSmoke=1` instead: the same harness object, but the game's co-op
+The co-op join smoke's browser runs (`tools/web-coop-join.mjs`, [COOP.md](COOP.md), "The browser's
+join" and "The browser's host") open the page with `?coopSmoke=1` instead: the same harness object, but the game's co-op
 smoke mode (`Program.CoopJoinSmokeTest.cs`) rather than the performance mode, whose hooks change parks
 outside the commands, which a shared park refuses. Both switches work only on a loopback address, and
 not together. The smoke's files go to `/coop-smoke`, which the page does not keep.

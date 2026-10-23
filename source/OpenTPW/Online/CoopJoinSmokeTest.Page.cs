@@ -106,9 +106,10 @@ internal sealed partial class CoopJoinSmokeTest
 	{
 		try
 		{
-			// the host phase's evidence again with its long frames, the last one's among them
+			// the host phase's evidence again with its long frames, the last one's among them: as the completed phase wrote it only when nothing failed after (its session's
+			// end, the frame's drawing), else the failure's
 			if ( !joining )
-				WriteJson( "host-evidence.json", (hostWritten ?? HostEvidence( completed, failure )) with { LongFrames = hostLongFrames?.ToArray() } );
+				WriteJson( "host-evidence.json", ((completed && failure == null ? hostWritten : null) ?? HostEvidence( completed, failure )) with { LongFrames = hostLongFrames?.ToArray() } );
 			else
 				WriteJson( "join-evidence.json", JoinEvidence( completed, failure ) );
 			return null;
@@ -132,7 +133,7 @@ internal sealed partial class CoopJoinSmokeTest
 		if ( !joining )
 		{
 			if ( hostLongFrames != null && milliseconds >= LongBuildFrameMilliseconds )
-				hostLongFrames.Add( new CoopSmokeHostFrame( frame, hostStage.ToString(), milliseconds, FrameMarks.Snapshot() ) );
+				hostLongFrames.Add( new CoopSmokeHostFrame( frame, frameStage.ToString(), milliseconds, FrameMarks.Snapshot() ) );
 			return;
 		}
 		if ( updateFrames.Count > 0 && updateFrames[^1].Frame == frame && updateFrames[^1].CallMilliseconds == null )

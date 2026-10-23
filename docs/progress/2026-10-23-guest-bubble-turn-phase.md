@@ -1,0 +1,3 @@
+## A guest's bubble from the turn's first tick no longer stops a save from loading (October 23, 2026)
+
+Since the guests cut their turns where the economy does (October 17), a guest's park turn is one past the turn of the guests' own tick count in some ticks of a park whose economy started ahead of them, such as Instant Action's prebuilt park. A thought shown on such a tick stamps its bubble with that turn, and the guest snapshot's check refused it as a bubble from the future. A save, a co-op join's capture or a resync's taken on that tick then did not load: "Guest 52 bubble 17 at turn 856 is not a thought bubble". The check now allows the one turn a phase can add, and still refuses a later turn.

@@ -5079,8 +5079,8 @@ page: Chrome/155.0.8059.85, ANGLE (Apple, ANGLE Metal Renderer: Apple M5, Unspec
 ## The advisor and its first lines prepared (C2c-2b-3e)
 
 Three runs each, on the same machine and harness as "The objects' restore over steps", whose measurement is the before.
-First the advisor's presentation prepared alone (`4fdb4979a`): it ran after the Mac had slept, 10 to 20% slower in
-the steps the change does not touch, so only its marks compare. Then the presentation and the first lines decoded
+First the advisor's presentation prepared alone (`4fdb4979a`): it ran after the Mac had slept, and ahead of time its
+save stage, which the change does not touch, took 97.8 ms against the before's 80.7, so only its marks compare. Then the presentation and the first lines decoded
 ahead (`86de0f752`).
 
 ### The presentation prepared: the desktop

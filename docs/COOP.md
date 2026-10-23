@@ -822,20 +822,21 @@ The design fixed two constants only after measuring them (`coop-c2b-design.md`, 
   | Of it the advisor's first update (`park.advisor`) | 106 | 5.3 | 33.9 | 4.3 |
   | The first frame after the swap | 47.1 (update) | 53.1 (update) | 48.5 with its drawing | 41.8 with its drawing |
   | The build's `prepare` stage | 47.3 over 4 frames | 235 over 14 | 103 over 7 frames | 187 over 14 |
-  | The join's longest frame | 173, the swap's | 84.6, the restore's first step | 110 with its drawing, the swap's | 94.4 with its drawing, the restore's first step |
+  | The join's longest frame | 173, the swap's | 84.6, a build frame | 110 with its drawing, the swap's | 94.4 with its drawing, a build frame |
 
-  On the desktop the Welcome (28.6 s) was decoded in one go in the swap's frame, in about 22 or about 77
+  On the desktop the Welcome (28.6 s) was decoded in one go in the swap's frame, in about 22 or about 75
   ms by the run (the same line), so the swap's frame took 168 to 228 ms; now it takes 70 to 78. Its
   advisor shader no longer compiles there (`load:shader-spirv` 50 ms before, 2 after). In the page the
   advisor's first update fell from 34 to 4 ms, and a line decoded ahead now starts at its time, as on the
   desktop, instead of a few frames late after its decode over frames (`[EXT:advisor-sliced-decode]`
   still decodes every later line). The `prepare` stage's longest step took 51 ms on the desktop, one of
   the advisor's, and 38 ms ahead of time, a coaster's as before (the advisor's took at most 14 there);
-  the lines' decode is spread over slices of 5 ms. The join's longest frame is now the restore's first step on both (C2c-2b-3d's): 61 to 68 ms on
-  the desktop, once 189, and 93 ms ahead of time (94 with its drawing). Ahead of time this measurement
-  ran about 8% slower in the steps it does not change than the before (the save's parse 87.6 against
-  80.7 ms). A measurement of the presentation's part alone (`4fdb4979a`) is kept with the tables; it ran
-  10 to 20% slower there, after the Mac had slept. The review fixes after the measured commit (the
+  the lines' decode is spread over slices of 5 ms. The join's longest frame is now a build frame: on the
+  desktop 79 to 84 ms (once 189), whose longest step is the restore's first (C2c-2b-3d's: 61 to 68 ms,
+  that once 189); ahead of time 94 ms with its drawing, the restore's first step 93 ms of it. Ahead of
+  time the save stage, which this change does not touch, took 87.6 ms against the before's 80.7. A
+  measurement of the presentation's part alone (`4fdb4979a`) is kept with the tables; it ran after the
+  Mac had slept, and its save stage took 97.8 ms ahead of time. The review fixes after the measured commit (the
   advisor's clock held until its first update, the kept preparation's end when the presentation cannot
   be made, the lines kept until said) move none of the measured work.
 

@@ -152,10 +152,11 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 
 	/// <summary>
 	/// The latest <see cref="ParkTurn"/> the guests can be on at <paramref name="tickCount"/> of their own ticks, whatever phase their turns are cut at (<see cref="AlignTurns"/>, which a
-	/// snapshot does not hold): a phase moves the turn boundaries, so the park turn is the tick count's <see cref="ParkCalendar.Turn"/> or one more, as for a bubble shown on the first tick
-	/// of a turn that starts a tick before the tick count's own.
+	/// snapshot does not hold, and which a restored simulation only takes again on its next running tick): the tick count's <see cref="ParkCalendar.Turn"/> or one more, as for a bubble
+	/// shown on the first tick of a turn that starts a tick before the tick count's own (<see cref="ParkCalendar.LatestPhasedTurn"/>). The bound of every turn a restore reads that the
+	/// guests stamped.
 	/// </summary>
-	internal static long LatestParkTurn( long tickCount ) => ParkCalendar.Turn( tickCount ) + 1;
+	internal static long LatestParkTurn( long tickCount ) => ParkCalendar.LatestPhasedTurn( tickCount );
 
 	/// <summary>
 	/// Puts the guests' turn boundaries on the economy's: the guests' tick count started at 0 where an economy that begins at an original save's turn started at that turn's tick, so the two

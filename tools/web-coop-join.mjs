@@ -15,7 +15,8 @@
 //   node tools/web-coop-join.mjs --web out/web/wwwroot --game "/path/to/Theme Park World" --mode host --out <recording directory>
 //        [--label <name>] [--chrome <executable>] [--headed] [--timeout-minutes M]
 // Each join run's evidence goes to <out>/run-N, with machine.txt beside them; scripts/measure-coop-join-browser.sh records the host phase, runs the measuring
-// mode and prints the summary. The host phase's recording goes to <out> itself, with its run.json and machine.txt.
+// mode and prints the summary. The host phase's recording goes to <out> itself, with the page's record (host-run.json), its frame calls
+// (host-page-frames.json) and machine.txt.
 import { execFileSync } from 'node:child_process';
 import { promises as fs } from 'node:fs';
 import os from 'node:os';
@@ -323,7 +324,7 @@ function runHost(options, webRoot, gameRoot, out) {
 			throw new Error(`The page passed, but its recording says completed ${host.Completed} with ${host.Cuts?.length} captures`);
 		await fs.writeFile(path.join(out, 'host-evidence.json'), hostBytes);
 		// the page's whole frame calls ([start, milliseconds]) beside the recording
-		await fs.writeFile(path.join(out, 'page-frames.json'), JSON.stringify(await page.eval('opentpwPerf.take()', 120000)) + '\n');
+		await fs.writeFile(path.join(out, 'host-page-frames.json'), JSON.stringify(await page.eval('opentpwPerf.take()', 120000)) + '\n');
 		if (status.state !== 'passed')
 			return;
 		for (const name of [...FIXED_FILES.filter(name => name !== 'host-evidence.json'), ...host.Cuts.map(cut => cut.File)])
@@ -370,8 +371,9 @@ async function main() {
 		await fs.writeFile(path.join(recording, 'machine.txt'), machineDescription());
 		process.stderr.write('host phase…\n');
 		const run = await runHost(options, webRoot, gameRoot, recording);
+		// the host's page record, apart from a join page's run.json, as the join phase's evidence gathers both in one folder
 		try {
-			await fs.writeFile(path.join(recording, 'run.json'), JSON.stringify(run, null, 2) + '\n');
+			await fs.writeFile(path.join(recording, 'host-run.json'), JSON.stringify(run, null, 2) + '\n');
 		} catch (error) {
 			run.state = 'failed';
 			run.message = `its record could not be written: ${error.message} (${run.message ?? ''})`;

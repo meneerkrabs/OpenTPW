@@ -181,7 +181,14 @@ def load(directory):
         raise ValueError(f"{root}: a page's run lacks the driver's record of it (run.json)")
     if page is not None and (page.get("state") != "passed" or page.get("mode") != "measure"):
         raise ValueError(f"{root}: the page's run did not pass in the measuring mode (run.json: {page.get('mode')!r}, {page.get('state')!r})")
-    return host, join, page
+    # a page host's run, its driver's record of it (host-run.json): one that did not pass, or a page host without it, is no measurement either
+    host_path = root / "host-run.json"
+    host_page = json.loads(host_path.read_text(encoding="utf-8")) if host_path.exists() else None
+    if host_page is None and host["Environment"].get("Os") == "Browser":
+        raise ValueError(f"{root}: a page host's run lacks the driver's record of it (host-run.json)")
+    if host_page is not None and (host_page.get("state") != "passed" or host_page.get("mode") != "host"):
+        raise ValueError(f"{root}: the page host's run did not pass (host-run.json: {host_page.get('mode')!r}, {host_page.get('state')!r})")
+    return host, join, page, host_page
 
 
 def stage(timing, name):
@@ -374,18 +381,20 @@ def table(runs, machine=None):
     for phase, index in [("host", 0), ("join", 1)]:
         if len({json.dumps(run[index].get("Environment"), sort_keys=True) for run in runs}) != 1:
             raise ValueError(f"the runs' {phase} phases ran in different environments (another build, runtime, system or setting): their timings are not one measurement")
-    pages = {json.dumps({key: (run[2] or {}).get(key) for key in PAGE_SETTING}, sort_keys=True) if run[2] else None for run in runs}
-    if len(pages) != 1:
-        raise ValueError("the runs' pages ran in different browsers or settings (run.json): their timings are not one measurement")
-    host, join, page = runs[0][0]["Environment"], runs[0][1]["Environment"], runs[0][2]
+    for index, record in [(2, "run.json"), (3, "host-run.json")]:
+        pages = {json.dumps({key: (run[index] or {}).get(key) for key in PAGE_SETTING}, sort_keys=True) if run[index] else None for run in runs}
+        if len(pages) != 1:
+            raise ValueError(f"the runs' pages ran in different browsers or settings ({record}): their timings are not one measurement")
+    host, join, page, host_page = runs[0][0]["Environment"], runs[0][1]["Environment"], runs[0][2], runs[0][3]
     if host == join:
         lines.append(f"{len(runs)} runs; {describe(join)}")
     else:
         reused = " (one host phase, reused by every run)" if host_reused(runs) else ""
         lines.append(f"{len(runs)} runs; host phase{reused}: {describe(host)}; join phase: {describe(join)}")
-    if page:
-        lines.append(f"page: {page.get('chrome', '?')}, {page.get('renderer', '?')}, {page.get('size', '?')}, muted {page.get('muted', '?')}, "
-                     f"frame cap {page.get('frameCap', '?')}, pool sprites {page.get('poolSprites', '?')}")
+    for label, record in [("page", page), ("host page", host_page)]:
+        if record:
+            lines.append(f"{label}: {record.get('chrome', '?')}, {record.get('renderer', '?')}, {record.get('size', '?')}, muted {record.get('muted', '?')}, "
+                         f"frame cap {record.get('frameCap', '?')}, pool sprites {record.get('poolSprites', '?')}")
     if machine:
         lines.append("")
         lines.extend(f"    {line}" for line in machine.strip().splitlines())

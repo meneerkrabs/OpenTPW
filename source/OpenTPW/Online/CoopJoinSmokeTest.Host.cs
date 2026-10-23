@@ -21,6 +21,9 @@ internal sealed partial class CoopJoinSmokeTest
 
 	private HostStage hostStage;
 	private int stageFrame;
+	/// <summary>What the host runs before it hosts (<see cref="CoopSession.PrepareHostSteps"/>), and whether it has run to its end.</summary>
+	private IEnumerator<bool>? prepareHost;
+	private bool prepared;
 	private Level level = null!;
 	private CoopSmokeHostTransport transport = null!;
 	private CoopSession session = null!;
@@ -70,9 +73,14 @@ internal sealed partial class CoopJoinSmokeTest
 					Next( HostStage.Settle );
 					return;
 				case HostStage.Settle:
+					// what a host runs before it hosts, a step a frame, as the game's sharing does (CoopSession.PrepareHostSteps)
+					prepareHost ??= CoopSession.PrepareHostSteps( level ).GetEnumerator();
+					if ( !prepared && !prepareHost.MoveNext() )
+						prepared = true;
 					AdvanceHost();
 					if ( stageFrame >= SettleFrames )
 					{
+						Require( prepared, "the host was prepared before it hosts" );
 						Host();
 						Next( HostStage.Stage1 );
 					}

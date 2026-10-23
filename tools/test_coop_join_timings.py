@@ -319,6 +319,26 @@ class CoopJoinTimingsTests(unittest.TestCase):
                 with self.subTest(run), self.assertRaises(ValueError):
                     coop_join_timings.load(root / run)
 
+    def test_a_page_host_needs_its_passed_record_which_the_table_names(self):
+        def browser_host(host, join):
+            host["Environment"] = dict(host["Environment"], Os="Browser", Architecture="Wasm", Processors=1, Silent=False, Compilation="aot")
+        record = dict(PAGE, mode="host")
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary)
+            write_run(root / "run-0", 30.0, 3.0, change=browser_host)
+            (root / "run-0" / "host-run.json").write_text(json.dumps(record), encoding="utf-8")
+            table = coop_join_timings.table([coop_join_timings.load(root / "run-0")])
+            self.assertIn("host page: Chrome/155, ANGLE (Apple M5), 1280x900, muted True, frame cap 0, pool sprites settled", table)
+            # a page host without its record, or with one that did not pass as a host, is refused
+            write_run(root / "run-1", 30.0, 3.0, change=browser_host)
+            write_run(root / "run-2", 30.0, 3.0, change=browser_host)
+            (root / "run-2" / "host-run.json").write_text(json.dumps(dict(record, state="failed")), encoding="utf-8")
+            write_run(root / "run-3", 30.0, 3.0, change=browser_host)
+            (root / "run-3" / "host-run.json").write_text(json.dumps(dict(record, mode="measure")), encoding="utf-8")
+            for run in ("run-1", "run-2", "run-3"):
+                with self.subTest(run), self.assertRaises(ValueError):
+                    coop_join_timings.load(root / run)
+
     def test_a_page_hosts_long_frames_are_listed_by_stage_and_must_be_whole(self):
         def hosted(frames):
             def change(host, join):

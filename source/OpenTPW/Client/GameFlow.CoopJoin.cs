@@ -382,16 +382,18 @@ internal sealed partial class GameFlow
 			}
 			if ( begins )
 				stage = next == null ? null : Timings.Stage( next );
+			bookkeeping += Stopwatch.GetTimestamp() - now;
 			StartPart();
-			bookkeeping += partStarted - now;
 		}
 
-		/// <summary>A part of the build's work begins: its time and garbage collections count from here.</summary>
+		/// <summary>A part of the build's work begins: its time and garbage collections count from here, the readings themselves the timings' bookkeeping.</summary>
 		private void StartPart()
 		{
-			partStarted = Stopwatch.GetTimestamp();
+			var reading = Stopwatch.GetTimestamp();
 			partCollections = GC.CollectionCount( 0 );
 			partFullCollections = GC.CollectionCount( GC.MaxGeneration );
+			partStarted = Stopwatch.GetTimestamp();
+			bookkeeping += partStarted - reading;
 		}
 
 		/// <summary>The build's work from here on belongs to the stage <paramref name="name"/>.</summary>

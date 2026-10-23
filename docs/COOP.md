@@ -309,7 +309,11 @@ the live game, and swaps it in.
 - **The build** (`CoopJoinBuild`, in steps within the park build's frame budget):
   1. It makes the save codec's reflection metadata in steps, one type each, as a park start makes it for
      its first snapshot (`ParkResumeJson.WarmupSteps`; a process's first parse would make it in one go,
-     a warm process finds it made), then reads the save, which must hold the gate's and the staff's state.
+     a warm process finds it made), then reads the save over steps (`ParkResumeSaveFile.DeserializeSteps`,
+     C2c-2b-3h): its parse takes a 32 KiB slice of the bytes a step, by the serializer's own asynchronous
+     reader fed a slice a step (`SlicedJsonDeserializer`: the same value and the same failures, message for
+     message, as one parse), and then its shape's checks run in their steps. The save must hold the gate's
+     and the staff's state.
   2. It refuses at once when this game's simulation mods are not the host's or the park's (decision Q16).
   3. It waits for the theme's files, loads the object catalogue in steps, and reads the balance settings
      and the economy catalogue. A browser copies a theme's files on its first use, between frames: the
@@ -886,6 +890,45 @@ The design fixed two constants only after measuring them (`coop-c2b-design.md`, 
   are of the measured commit, not of the fixes.
 
   Every value: [COOP-MEASUREMENTS.md](COOP-MEASUREMENTS.md), "A type's first use in steps of its own".
+
+- **The save's read over steps (C2c-2b-3h).** A join's save is parsed a 32 KiB slice a step and its shape
+  checked in steps of their own (step 1 above), and the save's checks format a message only when one fails
+  (`CheckMessage`). The build's stages now also count the garbage collections their steps ran
+  (`Collections`, `FullCollections`, as `GC.CollectionCount` counts them), the measuring smoke those of each
+  long build frame, and the check and the level's last step name their parts: the world hash's and the
+  session digest's sections (`hash.*`, `digest.session`) and the resume's restore (`resume-*`). Three runs
+  each, medians in milliseconds, before (`9e48a4ee4`, C2c-2b-3g's last commit) and after (`0d7383931`):
+
+  | Part of the join | Desktop before | Desktop after | Ahead of time before | Ahead of time after |
+  | --- | ---: | ---: | ---: | ---: |
+  | The save stage's longest step | 79.8 | 14.6 | 91.4 | 14.7 |
+  | The save stage | 79.8 in one step | 87.6 over 43 steps and 7 frames | 91.4 in one step | 90.0 over 43 steps and 7 frames |
+  | A resync's save stage's longest step | 25.9 | 1.8 | 53.8 | 3.5 |
+  | The join's longest build frame | 82.5, the save's parse | 76.8, the level's last step | 91.5, the save's parse | 76.9, the level's last step |
+  | A resync's longest build frame | 33.9 | 33.0 | 55.7 | 30.3 |
+
+  The parse costs what it did (`save-json`: on the desktop 42.4 ms before, 46.8 after; ahead of time 62.9
+  and 62.7), spread over its steps. Ahead of time the validation stage's last step, the comparison of the
+  asset manifests, took 19.7 ms in five of the six runs of this change (`5baf9f4fb` and `0d7383931`)
+  against 7 to 9 before, and 7.1 in the sixth; no garbage collection ran in it, and the cause is not known.
+  It and the economy's step share a frame of 45 ms. The collections show that a cold join's build
+  collects mostly in its level stage (13 young and 14 full collections ahead of time) and its `prepare`
+  stage (4 and 4). A join's steps of more than 50 ms are now two, and both are mostly a process's first
+  use of their code:
+  - the check at the cut, 71.5 ms ahead of time against 7.9 in a resync: 56.5 ms of it is the economy's
+    serialization for its digest (`hash.economyNode`), whose first run makes the serializer's metadata for
+    the park save;
+  - the level's last step, 69 ms: the resume's restore takes 59 ms of it against 6.3 in a resync (the
+    coasters' 24.7, the drawn tracks' 11.1, the guests' 6.5).
+
+  The review fixes after the measured commit complete the parse's reads with the thread's synchronization
+  context set aside, so the serializer's own continuations run in the step too, and leave a save that begins
+  with a UTF-8 byte order mark to the whole parse, which refuses it. They also make the save's last eager
+  checks format their messages only on failure: the thing pool's, the coasters' riders' and the asset
+  manifests' comparison, which runs twice in a join's validation. These timings are of the measured commit,
+  not of the fixes.
+
+  Every value: [COOP-MEASUREMENTS.md](COOP-MEASUREMENTS.md), "The save's read over steps".
 
 ## The command layer (C1)
 

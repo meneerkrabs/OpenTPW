@@ -55,12 +55,45 @@ public class ParkResumeSaveStepsTests
 			["null"] = Encoding.UTF8.GetBytes( "null" ),
 			["another format"] = Encoding.UTF8.GetBytes( json.Replace( $"\"Format\":\"{ParkResumeSaveFile.FormatName}\"", "\"Format\":\"something else\"" ) ),
 			["an inconsistent shape"] = Encoding.UTF8.GetBytes( json.Replace( "\"DisplayName\":\"", "\"DisplayName\":\"\\u0001" ) ),
+			// a stream's reader skips a leading byte order mark that a span's refuses: such bytes are left to the whole parse
+			["a byte order mark first"] = [.. "\uFEFF"u8.ToArray(), .. bytes],
+			["a value after the value"] = [.. bytes, .. " {}"u8.ToArray()],
+			["a comment"] = Encoding.UTF8.GetBytes( json.Replace( "\"Format\":", "/* a note */ \"Format\":" ) ),
+			["an invalid token at the end"] = [.. bytes[..^1], .. "x"u8.ToArray()],
 		};
 		foreach ( var (name, input) in cases )
 		{
 			var whole = RefusalOf( () => ParkResumeSaveFile.Deserialize( input ) );
-			foreach ( var slice in new[] { 13, SlicedJsonDeserializer.SliceBytes } )
+			foreach ( var slice in new[] { 1, 13, SlicedJsonDeserializer.SliceBytes } )
 				Assert.AreEqual( whole, RefusalOf( () => Stepped( input, slice ) ), $"{name}, slice {slice}" );
+		}
+	}
+
+	/// <summary>A context that holds whatever is posted to it and never runs it.</summary>
+	private sealed class HoldingContext : System.Threading.SynchronizationContext
+	{
+		public int Held;
+		public override void Post( System.Threading.SendOrPostCallback callback, object? state ) => Held++;
+		public override void Send( System.Threading.SendOrPostCallback callback, object? state ) => Held++;
+	}
+
+	[TestMethod]
+	public void TheParseRunsInTheStepsThatFeedItWhateverContextIsCurrent()
+	{
+		var bytes = ParkResumeSaveFile.Serialize( ParkResumeSaveFileTests.Envelope() );
+		var previous = System.Threading.SynchronizationContext.Current;
+		var context = new HoldingContext();
+		System.Threading.SynchronizationContext.SetSynchronizationContext( context );
+		try
+		{
+			// a read's continuation posted elsewhere would leave the parse neither ended nor waiting, which a step refuses
+			var (snapshot, _) = Stepped( bytes, 4096 );
+			Assert.IsNotNull( snapshot );
+			Assert.AreEqual( 0, context.Held, "no part of the parse waited for another place" );
+		}
+		finally
+		{
+			System.Threading.SynchronizationContext.SetSynchronizationContext( previous );
 		}
 	}
 

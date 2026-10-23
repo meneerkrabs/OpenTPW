@@ -68,6 +68,83 @@ internal static class ParkResumeSaveFile
 		{
 			throw new InvalidDataException( $"World save is malformed: {exception.Message}", exception );
 		}
+		snapshot = ParsedVersion( snapshot );
+		using ( LoadProfile.Measure( "save-shape" ) )
+			ValidateShape( snapshot );
+		return snapshot;
+	}
+
+	/// <summary>
+	/// [EXT:online-coop-snapshot-join] <see cref="Deserialize"/> in steps, for a save read over frames (a co-op join's or resync's build, docs/COOP.md "The game's join"): the parse a
+	/// slice of the bytes a step (<see cref="ParkResumeJson.SliceDeserialize{T}"/>, the same value and failures as the parse of the whole span), the format's and version's checks,
+	/// then the shape's checks in their steps (<see cref="ValidateShapeSteps"/>). The last step hands the snapshot to <paramref name="parsed"/>; a step that finds the save malformed
+	/// or inconsistent throws what <see cref="Deserialize"/> throws. Bytes that begin with a UTF-8 byte order mark, which the stepped parse would skip and the whole parse refuses,
+	/// are read by <see cref="Deserialize"/> itself, in one step.
+	/// </summary>
+	internal static IEnumerable<bool> DeserializeSteps( ReadOnlyMemory<byte> bytes, Action<ParkResumeSnapshot> parsed, int slice = SlicedJsonDeserializer.SliceBytes )
+	{
+		ArgumentNullException.ThrowIfNull( parsed );
+		if ( bytes.Span.StartsWith( "\uFEFF"u8 ) )
+		{
+			parsed( Deserialize( bytes.Span ) );
+			yield break;
+		}
+		if ( bytes.Length > MaximumFileSize )
+			throw new InvalidDataException( "World save exceeds the size limit." );
+		ParkResumeSnapshot? snapshot;
+		using ( var parse = ParkResumeJson.SliceDeserialize<ParkResumeSnapshot>( bytes, slice ) )
+		{
+			while ( true )
+			{
+				bool done;
+				using ( LoadProfile.Measure( "save-json" ) )
+					done = parse.Step();
+				if ( done )
+					break;
+				yield return true;
+			}
+			try
+			{
+				// the whole span's parse refuses a null value with this message (ParkResumeJson.Deserialize)
+				snapshot = parse.Result ?? throw new InvalidDataException( "The park snapshot is null." );
+			}
+			catch ( JsonException exception )
+			{
+				throw new InvalidDataException( $"World save is malformed: {exception.Message}", exception );
+			}
+		}
+		snapshot = ParsedVersion( snapshot );
+		yield return true;
+		using var shape = ValidateShapeSteps( snapshot ).GetEnumerator();
+		while ( true )
+		{
+			bool more;
+			using ( LoadProfile.Measure( "save-shape" ) )
+				more = shape.MoveNext();
+			if ( !more )
+				break;
+			yield return true;
+		}
+		parsed( snapshot );
+	}
+
+	/// <summary>Throws the save's inconsistency that <paramref name="message"/> names unless <paramref name="condition"/> holds.</summary>
+	private static void Require( bool condition, string message )
+	{
+		if ( !condition )
+			throw new InvalidDataException( $"World save is inconsistent: {message}." );
+	}
+
+	/// <summary><see cref="Require(bool, string)"/> with a message formatted only when the check fails (<see cref="CheckMessage"/>): a pass over a park's records makes no string.</summary>
+	private static void Require( bool condition, [System.Runtime.CompilerServices.InterpolatedStringHandlerArgument( nameof( condition ) )] ref CheckMessage message )
+	{
+		if ( !condition )
+			throw new InvalidDataException( $"World save is inconsistent: {message.ToStringAndClear()}." );
+	}
+
+	/// <summary>The parsed save once its format and version are known: a version 1 save without the queue pass fields is read as the current one.</summary>
+	private static ParkResumeSnapshot ParsedVersion( ParkResumeSnapshot? snapshot )
+	{
 		if ( snapshot == null )
 			throw new InvalidDataException( "The world save is null." );
 		if ( snapshot.Format != FormatName )
@@ -80,8 +157,6 @@ internal static class ParkResumeSaveFile
 		}
 		if ( snapshot.Version != CurrentVersion )
 			throw new InvalidDataException( $"Unsupported world save version {snapshot.Version}." );
-		using ( LoadProfile.Measure( "save-shape" ) )
-			ValidateShape( snapshot );
 		return snapshot;
 	}
 
@@ -165,11 +240,6 @@ internal static class ParkResumeSaveFile
 		// [EXT:script-mods] the section exists exactly when a script mod is active (and so recorded), and names exactly those mods
 		if ( ScriptModsSave.ActiveProblem( snapshot.ScriptMods, activeMods ?? OpenTpwExtensions.Active ) is { } scriptMismatch )
 			throw new InvalidDataException( $"World save is inconsistent: {scriptMismatch}." );
-		void Require( bool condition, string message )
-		{
-			if ( !condition )
-				throw new InvalidDataException( $"World save is inconsistent: {message}." );
-		}
 		yield return true;
 		ParkLayoutSnapshot.ValidateSnapshot( snapshot.Layout, catalog, activeMods );
 		yield return true;
@@ -283,23 +353,18 @@ internal static class ParkResumeSaveFile
 	/// </summary>
 	internal static void RequireAssets( ParkResumeSnapshot snapshot, ObjectCatalog catalog, IReadOnlyDictionary<string, string> currentAssetHashes )
 	{
-		void require( bool condition, string message )
-		{
-			if ( !condition )
-				throw new InvalidDataException( $"World save is inconsistent: {message}." );
-		}
 		var placed = snapshot.Layout.Objects.Select( record => catalog.Find( record.InfoId ) ).OfType<ObjectCatalogEntry>().ToArray();
 		var park = ParkResumeMods.AssetsForUse( currentAssetHashes, placed );
 		var saved = ParkResumeMods.AssetsForUse( snapshot.AssetHashes, placed );
 		foreach ( var (key, hash) in saved )
 		{
-			require( park.TryGetValue( key, out var current ),
+			Require( park.TryGetValue( key, out var current ),
 				$"the save expects asset '{key}', which the park's assets do not provide" );
-			require( string.Equals( hash, current, StringComparison.Ordinal ),
+			Require( string.Equals( hash, current, StringComparison.Ordinal ),
 				$"asset '{key}' hashes to '{current}', not the saved '{hash}'" );
 		}
 		foreach ( var key in park.Keys )
-			require( saved.ContainsKey( key ),
+			Require( saved.ContainsKey( key ),
 				$"the park provides asset '{key}', which the save does not expect" );
 	}
 
@@ -324,11 +389,6 @@ internal static class ParkResumeSaveFile
 	internal static IEnumerable<bool> ValidateShapeSteps( ParkResumeSnapshot snapshot )
 	{
 		ArgumentNullException.ThrowIfNull( snapshot );
-		void Require( bool condition, string message )
-		{
-			if ( !condition )
-				throw new InvalidDataException( $"World save is inconsistent: {message}." );
-		}
 		Require( snapshot.Format == FormatName, $"the format is '{snapshot.Format}', not '{FormatName}'" );
 		Require( snapshot.Version == CurrentVersion, $"version {snapshot.Version} is not {CurrentVersion}" );
 		Require( snapshot.Theme != null && ObjectCatalog.Themes.Contains( snapshot.Theme, StringComparer.OrdinalIgnoreCase ),
@@ -690,58 +750,69 @@ internal static class ParkResumeSaveFile
 	/// rider membership both ways, and every attraction reference resolving to a placed object. The destination's
 	/// own <see cref="GuestSimulation.ValidateSnapshot"/> re-checks everything against the restored park.
 	/// </summary>
+	/// <summary>Throws the thing pool's inconsistency that <paramref name="message"/> names unless <paramref name="condition"/> holds (worded as a park save's, as its checks always were).</summary>
+	private static void RequireThing( bool condition, string message )
+	{
+		if ( !condition )
+			throw new InvalidDataException( $"Park save is inconsistent: {message}." );
+	}
+
+	/// <summary><see cref="RequireThing(bool, string)"/> with a message formatted only when the check fails (<see cref="CheckMessage"/>).</summary>
+	private static void RequireThing( bool condition, [System.Runtime.CompilerServices.InterpolatedStringHandlerArgument( nameof( condition ) )] ref CheckMessage message )
+	{
+		if ( !condition )
+			throw new InvalidDataException( $"Park save is inconsistent: {message.ToStringAndClear()}." );
+	}
+
 	/// <summary>
 	/// The thing pool and the things that hold its slots: with a pool every placed object, guest and staff member names a slot of its own model, nothing else holds a slot of those models, and the
 	/// pool itself is well formed; without one (a save from before it) no object or member names a slot.
 	/// </summary>
 	private static void ValidateThings( ParkResumeSnapshot snapshot )
 	{
-		void Require( bool condition, string message )
-		{
-			if ( !condition )
-				throw new InvalidDataException( $"Park save is inconsistent: {message}." );
-		}
 		var objects = snapshot.Layout.Objects!;
 		var members = snapshot.Economy.Staff.Members;
 		if ( snapshot.Things == null )
 		{
-			Require( objects.All( record => record!.ThingId == 0 ), "an object names a thing id but the save holds no thing pool" );
-			Require( members.All( member => member.ThingId == 0 ), "a staff member names a thing id but the save holds no thing pool" );
+			RequireThing( objects.All( record => record!.ThingId == 0 ), "an object names a thing id but the save holds no thing pool" );
+			RequireThing( members.All( member => member.ThingId == 0 ), "a staff member names a thing id but the save holds no thing pool" );
 			return;
 		}
 		var problems = ThingPool.Problems( snapshot.Things );
-		Require( problems.Count == 0, $"the thing pool: {(problems.Count == 0 ? "" : problems[0])}" );
+		RequireThing( problems.Count == 0, $"the thing pool: {(problems.Count == 0 ? "" : problems[0])}" );
 		var models = snapshot.Things.Used.ToDictionary( slot => slot.Id, slot => (SaveThingModel)slot.Model );
 		// a thing demolished or dismissed since the turn's last end still holds its slot, and nothing names it
 		var pending = (snapshot.Things.Pending ?? Array.Empty<int>()).ToHashSet();
 		var named = new HashSet<int>();
-		void Names( int id, SaveThingModel model, string what )
+		// what names a thing, worded only when a check fails: an object by its cell, a staff member or a guest by its id
+		static string What( SaveThingModel model, int first, int second ) => model switch
 		{
-			Require( models.TryGetValue( id, out var held ) && held == model, $"{what} names thing id {id}, which is not a {model} slot of the thing pool" );
-			Require( named.Add( id ), $"two things name thing id {id}" );
+			SaveThingModel.Attraction => $"the object at ({first}, {second})",
+			SaveThingModel.Guest => $"guest {first}",
+			_ => $"staff member {first}"
+		};
+		void Names( int id, SaveThingModel model, int first, int second = 0 )
+		{
+			RequireThing( models.TryGetValue( id, out var held ) && held == model, $"{What( model, first, second )} names thing id {id}, which is not a {model} slot of the thing pool" );
+			RequireThing( named.Add( id ), $"two things name thing id {id}" );
 		}
 		foreach ( var record in objects )
-			Names( record!.ThingId, SaveThingModel.Attraction, $"the object at ({record.X}, {record.Y})" );
+			Names( record!.ThingId, SaveThingModel.Attraction, record.X, record.Y );
 		foreach ( var member in members )
-			Names( member.ThingId, ParkStaff.ThingModelOf( member.Type ), $"staff member {member.Id}" );
+			Names( member.ThingId, ParkStaff.ThingModelOf( member.Type ), member.Id );
 		if ( snapshot.Guests!.SchemaVersion >= GuestSimulationSnapshot.ThingPoolSchemaVersion )
 			foreach ( var guest in snapshot.Guests.Guests! )
-				Names( guest!.Id, SaveThingModel.Guest, $"guest {guest.Id}" );
-		Require( !named.Overlaps( pending ), "a thing waiting for its destruction is named by a thing" );
+				Names( guest!.Id, SaveThingModel.Guest, guest.Id );
+		RequireThing( !named.Overlaps( pending ), "a thing waiting for its destruction is named by a thing" );
 		// a placeholder slot (a thing of an imported original save that OpenTPW does not rebuild) is named by no thing either
 		var placeholders = (snapshot.Things.Held ?? Array.Empty<int>()).ToHashSet();
-		Require( !named.Overlaps( placeholders ), "a placeholder slot of the thing pool is named by a thing" );
+		RequireThing( !named.Overlaps( placeholders ), "a placeholder slot of the thing pool is named by a thing" );
 		var held = snapshot.Things.Used.Count( slot => slot.Model is 1 or 3 or (>= 4 and <= 8) && !pending.Contains( slot.Id ) && !placeholders.Contains( slot.Id ) );
-		Require( held == named.Count || snapshot.Guests.SchemaVersion < GuestSimulationSnapshot.ThingPoolSchemaVersion, "the thing pool holds a guest, attraction or staff slot no thing names" );
+		RequireThing( held == named.Count || snapshot.Guests.SchemaVersion < GuestSimulationSnapshot.ThingPoolSchemaVersion, "the thing pool holds a guest, attraction or staff slot no thing names" );
 	}
 
 	private static void ValidateGuests( ParkResumeSnapshot snapshot )
 	{
-		void Require( bool condition, string message )
-		{
-			if ( !condition )
-				throw new InvalidDataException( $"World save is inconsistent: {message}." );
-		}
 		var guests = snapshot.Guests!;
 		foreach ( var problem in GuestSimulation.DisplayAgeProblems( guests ) )
 			Require( false, problem );
@@ -953,11 +1024,6 @@ internal static class ParkResumeSaveFile
 	/// </summary>
 	private static void ValidateTracks( ParkResumeSnapshot snapshot )
 	{
-		void Require( bool condition, string message )
-		{
-			if ( !condition )
-				throw new InvalidDataException( $"World save is inconsistent: {message}." );
-		}
 		if ( snapshot.Tracks is not { } tracks )
 			return;
 		Require( tracks.Cells != null && tracks.Controllers != null, "the track part holds no cell or controller list" );
@@ -1062,11 +1128,6 @@ internal static class ParkResumeSaveFile
 	/// </summary>
 	private static void ValidateTours( ParkResumeSnapshot snapshot )
 	{
-		void Require( bool condition, string message )
-		{
-			if ( !condition )
-				throw new InvalidDataException( $"World save is inconsistent: {message}." );
-		}
 		if ( snapshot.Tours is not { } tours )
 			return;
 		Require( tours.Controllers != null, "the tour part holds no controller list" );
@@ -1112,11 +1173,6 @@ internal static class ParkResumeSaveFile
 	/// </summary>
 	private static void ValidateCoasters( ParkResumeSnapshot snapshot )
 	{
-		void Require( bool condition, string message )
-		{
-			if ( !condition )
-				throw new InvalidDataException( $"World save is inconsistent: {message}." );
-		}
 		if ( snapshot.Coasters is not { } coasters )
 			return;
 		Require( coasters.Rides != null, "the coaster part holds no ride list" );
@@ -1252,10 +1308,12 @@ internal static class ParkResumeSaveFile
 				$"coaster {ride.AttractionId} holds {ride.Trains.Count} trains, above {CoasterSave.MaximumTrains}" );
 			Require( (track.IsComplete && track.CutAfter == null) || ride.Trains!.Count == 0,
 				$"coaster {ride.AttractionId} holds {ride.Trains!.Count} trains on a track that never completed" );
-			void RequireRider( int guestId, string where )
+			// a rider's place, "train {train} {where} {car}" in a train, else the place itself, named only when a check fails
+			static string Place( string where, int train, int car ) => train < 0 ? where : $"train {train} {where} {car}";
+			void RequireRider( int guestId, string where, int train = -1, int car = -1 )
 			{
 				Require( guestsById.TryGetValue( guestId, out var guest ),
-					$"{where} of coaster {ride.AttractionId} holds guest {guestId}, which the guest snapshot does not hold" );
+					$"{Place( where, train, car )} of coaster {ride.AttractionId} holds guest {guestId}, which the guest snapshot does not hold" );
 				if ( guest!.State == GuestState.Using )
 				{
 					Require( guest.AttractionId == ride.AttractionId,
@@ -1303,13 +1361,13 @@ internal static class ParkResumeSaveFile
 					Require( saved.Cars[car] != null, $"coaster {ride.AttractionId}'s train {train} car {car} is missing" );
 					riders += saved.Cars[car]!.Count;
 					foreach ( var guestId in saved.Cars[car]! )
-						RequireRider( guestId, $"train {train} car {car}" );
+						RequireRider( guestId, "car", train, car );
 					if ( saved.BoardingCars == null || car >= saved.BoardingCars.Count )
 						continue;
 					Require( saved.BoardingCars[car] != null, $"coaster {ride.AttractionId}'s train {train} boarding list {car} is missing" );
 					riders += saved.BoardingCars[car]!.Count;
 					foreach ( var guestId in saved.BoardingCars[car]! )
-						RequireRider( guestId, $"train {train} boarding car {car}" );
+						RequireRider( guestId, "boarding car", train, car );
 				}
 				Require( riders <= ride.SeatsPerTrain,
 					$"coaster {ride.AttractionId}'s train {train} holds {riders} riders above its {ride.SeatsPerTrain} seats" );

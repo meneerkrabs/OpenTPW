@@ -285,6 +285,8 @@ internal sealed partial class GameFlow
 		/// </summary>
 		private CoopWorkTiming? stage;
 		private long partStarted;
+		/// <summary>The garbage collections, generation 0's and the oldest generation's, when the current part began (<see cref="CoopWorkTiming.Collections"/>).</summary>
+		private int partCollections, partFullCollections;
 		/// <summary>The build's slices so far: the frame a stage last ran in.</summary>
 		private int slice;
 		/// <summary>The timings' own bookkeeping in the current slice, in <see cref="Stopwatch"/> ticks, which the slice's budget leaves out.</summary>
@@ -319,7 +321,7 @@ internal sealed partial class GameFlow
 			{
 				while ( !OverBudget() )
 				{
-					partStarted = Stopwatch.GetTimestamp();
+					StartPart();
 					bool more;
 					try
 					{
@@ -374,13 +376,24 @@ internal sealed partial class GameFlow
 			{
 				var milliseconds = Stopwatch.GetElapsedTime( partStarted, now ).TotalMilliseconds;
 				stage.Add( milliseconds, slice );
+				stage.AddCollections( GC.CollectionCount( 0 ) - partCollections, GC.CollectionCount( GC.MaxGeneration ) - partFullCollections );
 				if ( milliseconds >= ParkBuildBudgetMilliseconds )
 					Timings.LongSteps.Add( new CoopLongStep( stage.Name, stage.Steps, milliseconds, stage.Name == "level" ? candidate?.ConstructionProgress : null ) );
 			}
 			if ( begins )
 				stage = next == null ? null : Timings.Stage( next );
+			bookkeeping += Stopwatch.GetTimestamp() - now;
+			StartPart();
+		}
+
+		/// <summary>A part of the build's work begins: its time and garbage collections count from here, the readings themselves the timings' bookkeeping.</summary>
+		private void StartPart()
+		{
+			var reading = Stopwatch.GetTimestamp();
+			partCollections = GC.CollectionCount( 0 );
+			partFullCollections = GC.CollectionCount( GC.MaxGeneration );
 			partStarted = Stopwatch.GetTimestamp();
-			bookkeeping += partStarted - now;
+			bookkeeping += partStarted - reading;
 		}
 
 		/// <summary>The build's work from here on belongs to the stage <paramref name="name"/>.</summary>
@@ -396,8 +409,12 @@ internal sealed partial class GameFlow
 			Begin( "codec" );
 			foreach ( var step in ParkResumeJson.WarmupSteps() )
 				yield return step;
+			// the save read over steps: its parse a slice of the bytes each, then its checks in their own steps (ParkResumeSaveFile.DeserializeSteps)
 			Begin( "save" );
-			var saved = ParkResumeSaveFile.Deserialize( payload.Save );
+			ParkResumeSnapshot? parsed = null;
+			foreach ( var step in ParkResumeSaveFile.DeserializeSteps( payload.Save, value => parsed = value ) )
+				yield return step;
+			var saved = parsed!;
 			if ( saved.Gate == null || saved.Staff == null )
 				throw new InvalidDataException( "The shared park's save is missing its gate or staff-world state." );
 			using ( LoadProfile.Measure( "save-mods" ) )

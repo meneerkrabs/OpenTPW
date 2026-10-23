@@ -80,9 +80,12 @@ public static class WorldStateHash
 		hash.Add( ParkCalendar.Epoch.Ticks );
 		// thing_table_digest: guests in id order, then the registered attractions.
 		hash.Add( sources.Guests != null );
-		sources.Guests?.AddCanonicalState( hash );
+		// the sections' work by name, for a measured frame (FrameMarks: a boolean test while off)
+		using ( FrameMarks.Measure( "hash.guests" ) )
+			sources.Guests?.AddCanonicalState( hash );
 		// cell_map_digest: the park cell map (path and queue cells, flags, placement counters, links) guests walk on.
-		sources.Guests?.Grid.Cells.AddCanonicalState( hash );
+		using ( FrameMarks.Measure( "hash.cells" ) )
+			sources.Guests?.Grid.Cells.AddCanonicalState( hash );
 		// script_table_digest: every live script in id order.
 		hash.Add( sources.Scripts != null );
 		if ( sources.Scripts != null )
@@ -93,10 +96,12 @@ public static class WorldStateHash
 			// the script pass counter (which pass of eight a script's slice falls on) joins the hash once a pass has run, so a world that never ran one keeps its pin
 			if ( sources.Scripts.PassCounter != 0 )
 				hash.Add( sources.Scripts.PassCounter );
-			foreach ( var script in sources.Scripts.Scripts.OrderBy( script => script.ScriptId ) )
-				script.AddCanonicalState( hash );
+			using ( FrameMarks.Measure( "hash.scripts" ) )
+				foreach ( var script in sources.Scripts.Scripts.OrderBy( script => script.ScriptId ) )
+					script.AddCanonicalState( hash );
 			// coaster_rng_state and the coasters (tracks, samples, ratings, trains and riders) in creation order.
-			sources.Scripts.Coasters.AddCanonicalState( hash );
+			using ( FrameMarks.Measure( "hash.coasters" ) )
+				sources.Scripts.Coasters.AddCanonicalState( hash );
 			// the kart and water ride controllers join the hash only while one exists (every other park keeps its pins)
 			if ( sources.Scripts.Bumpers.Controllers.Count > 0 )
 				sources.Scripts.Bumpers.AddCanonicalState( hash );
@@ -108,7 +113,9 @@ public static class WorldStateHash
 		if ( economy != null )
 		{
 			// the analyser's caches are saved for an exact continuation but are a reading aid, not park state: they stay out of the digest
-			var node = JsonSerializer.SerializeToNode( ParkSaveFile.Capture( economy ) );
+			JsonNode? node;
+			using ( FrameMarks.Measure( "hash.economyNode" ) )
+				node = JsonSerializer.SerializeToNode( ParkSaveFile.Capture( economy ) );
 			if ( node is JsonObject root )
 			{
 				root.Remove( nameof( ParkSaveFile.Data.AnalyserCaches ) );
@@ -124,7 +131,8 @@ public static class WorldStateHash
 				if ( root[nameof( ParkSaveFile.Data.Objectives )] is JsonObject objectives && objectives[nameof( ParkSaveFile.ObjectivesData.Current )] is JsonObject challenge )
 					challenge.Remove( nameof( ActiveChallenge.RawValue ) );
 			}
-			hash.Add( Canonical( node ) );
+			using ( FrameMarks.Measure( "hash.economyCanonical" ) )
+				hash.Add( Canonical( node ) );
 		}
 		// [EXT:smarter-guests] the identity state joins the hash only while the extension or a script mod is on, so every park without it keeps its pins and SchemaVersion
 		if ( sources.Guests?.SmarterGuests is { } smarter )

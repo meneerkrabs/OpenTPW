@@ -27,6 +27,12 @@ public sealed class CoopWorkTiming
 	public int Frames { get; set; }
 	public double Milliseconds { get; set; }
 	public double LongestMilliseconds { get; set; }
+	/// <summary>
+	/// The garbage collections its steps ran, as <see cref="GC.CollectionCount"/> counts them: generation 0's and the runtime's oldest generation's (whether generation 0's count
+	/// includes the full collections depends on the runtime). A build's stages count them; null where nothing does.
+	/// </summary>
+	public int? Collections { get; set; }
+	public int? FullCollections { get; set; }
 
 	/// <summary>The frame (a build's slice, a capture's frame) this part last ran in, so each frame counts once.</summary>
 	private int lastFrame;
@@ -46,6 +52,13 @@ public sealed class CoopWorkTiming
 			Frames++;
 			lastFrame = frame;
 		}
+	}
+
+	/// <summary>A step's garbage collections (<see cref="Collections"/>).</summary>
+	internal void AddCollections( int collections, int fullCollections )
+	{
+		Collections = (Collections ?? 0) + collections;
+		FullCollections = (FullCollections ?? 0) + fullCollections;
 	}
 
 	public override string ToString() => Status == CoopTimingStatus.Skipped ? $"{Name} skipped"

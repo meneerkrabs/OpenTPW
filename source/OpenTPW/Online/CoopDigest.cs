@@ -20,7 +20,8 @@ internal static class CoopDigest
 		hash.Add( Version );
 		worldHash = level.ComputeStateHash();
 		hash.Add( worldHash );
-		level.AddSessionState( hash );
+		using ( FrameMarks.Measure( "digest.session" ) )
+			level.AddSessionState( hash );
 		return hash.Value;
 	}
 

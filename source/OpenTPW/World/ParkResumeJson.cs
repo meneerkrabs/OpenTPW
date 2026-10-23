@@ -66,4 +66,13 @@ internal static class ParkResumeJson
 
 	public static T Deserialize<T>( ReadOnlySpan<byte> bytes ) =>
 		JsonSerializer.Deserialize<T>( bytes, options ) ?? throw new InvalidDataException( "The park snapshot is null." );
+
+	/// <summary><see cref="Deserialize"/> over steps, a slice of the bytes each (<see cref="SlicedJsonDeserializer{T}"/>): the same value and failures.</summary>
+	internal static SlicedJsonDeserializer<T> SliceDeserialize<T>( ReadOnlyMemory<byte> bytes, int slice = SlicedJsonDeserializer.SliceBytes )
+	{
+		// options that have parsed nothing yet have no resolver: the serializer's own default is used, as on first use
+		if ( !options.IsReadOnly )
+			options.MakeReadOnly( populateMissingResolver: true );
+		return new SlicedJsonDeserializer<T>( bytes, options, slice );
+	}
 }

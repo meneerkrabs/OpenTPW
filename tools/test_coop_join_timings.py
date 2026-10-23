@@ -288,11 +288,11 @@ class CoopJoinTimingsTests(unittest.TestCase):
                     coop_join_timings.load(root / run)
 
     def test_the_builds_long_frames_are_listed_by_their_step_and_mark_and_must_be_frames_of_their_builds(self):
-        def marked(frame=2, steps=23, milliseconds=160):
+        def marked(frame=2, steps=23, milliseconds=160, collections=(2, 1, 1)):
             def change(host, join):
                 join["LongBuildFrames"] = [
                     {"Outcome": "joined", "Frame": frame, "Milliseconds": milliseconds, "Stage": "level", "Steps": steps,
-                     "Marks": {"park.build": [150.0, 1], "load:object-sign": [61.5, 2], "load:texture-decode": [2.5, 4]}},
+                     "Marks": {"park.build": [150.0, 1], "load:object-sign": [61.5, 2], "load:texture-decode": [2.5, 4]}, "Collections": list(collections)},
                     {"Outcome": "resynced", "Frame": 4, "Milliseconds": 90, "Stage": "save", "Steps": 1, "Marks": {"load:save-json": [70.0, 1]}}]
             return change
         with tempfile.TemporaryDirectory() as temporary:
@@ -306,11 +306,44 @@ class CoopJoinTimingsTests(unittest.TestCase):
             self.assertIn("| joined: long frame, level 23, mark park.build (1 of 2 runs) | 150 |", table)
             self.assertIn("| resynced: long frame, save 1, mark load:save-json (1 of 2 runs) | 70.0 |", table)
             self.assertNotIn("texture-decode", table)
-            # a frame of another step than its build's, a step its stage never reached, or a frame under the length that records it is refused
+            # the garbage collections the frame ran, generation 0's and full; a frame from before they were kept has none
+            self.assertIn("| joined: long frame, level 23, collections (1 of 2 runs) | 2 |", table)
+            self.assertIn("| joined: long frame, level 23, full collections (1 of 2 runs) | 1 |", table)
+            self.assertNotIn("save 1, collections", table)
+            # a frame of another step than its build's, a step its stage never reached, a frame under the length that records it, or collections that are no counts are refused
             write_run(root / "run-2", 30.0, 3.0, change=marked(frame=3))
             write_run(root / "run-3", 30.0, 3.0, change=marked(steps=41))
             write_run(root / "run-4", 30.0, 3.0, change=marked(milliseconds=20))
-            for run in ("run-2", "run-3", "run-4"):
+            write_run(root / "run-5", 30.0, 3.0, change=marked(collections=(1, -1)))
+            for run in ("run-2", "run-3", "run-4", "run-5"):
+                with self.subTest(run), self.assertRaises(ValueError):
+                    coop_join_timings.load(root / run)
+
+    def test_a_stages_garbage_collections_are_listed_when_kept_and_must_be_counts(self):
+        def collected(collections=3, full=1, stage="validation"):
+            def change(host, join):
+                for timing in join["JoinTimings"]:
+                    for item in timing["Build"]:
+                        if item["Name"] == stage:
+                            item["Collections"], item["FullCollections"] = collections, full
+            return change
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary)
+            write_run(root / "run-0", 30.0, 3.0, change=collected())
+            write_run(root / "run-1", 30.0, 3.0)
+            table = coop_join_timings.table([coop_join_timings.load(root / f"run-{index}") for index in range(2)])
+            # a stage's collections, generation 0's and full, in the runs that kept them; a stage nothing counted lists none
+            self.assertIn("| joined: validation, collections (1 of 2 runs) | 3 |", table)
+            self.assertIn("| joined: validation, full collections (1 of 2 runs) | 1 |", table)
+            self.assertIn("| resynced: validation, collections (1 of 2 runs) | 3 |", table)
+            self.assertNotIn("| joined: save, collections", table)
+            # null is a stage nothing counted; a count below 0 or no whole number is refused
+            write_run(root / "run-2", 30.0, 3.0, change=collected(collections=None, full=None))
+            self.assertNotIn("collections", coop_join_timings.table([coop_join_timings.load(root / "run-2")]))
+            write_run(root / "run-3", 30.0, 3.0, change=collected(collections=-1))
+            write_run(root / "run-4", 30.0, 3.0, change=collected(full=1.5))
+            write_run(root / "run-5", 30.0, 3.0, change=collected(full=True))
+            for run in ("run-3", "run-4", "run-5"):
                 with self.subTest(run), self.assertRaises(ValueError):
                     coop_join_timings.load(root / run)
 

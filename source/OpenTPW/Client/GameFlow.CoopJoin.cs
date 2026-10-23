@@ -407,6 +407,9 @@ internal sealed partial class GameFlow
 			Begin( "codec" );
 			foreach ( var step in ParkResumeJson.WarmupSteps() )
 				yield return step;
+			// the check at the cut hashes the park's economy with the serializer's default options (WorldStateHash): their metadata in steps too, or the check's frame makes it
+			foreach ( var step in WorldStateHash.WarmupSteps() )
+				yield return step;
 			// the save read over steps: its parse a slice of the bytes each, then its checks in their own steps (ParkResumeSaveFile.DeserializeSteps)
 			Begin( "save" );
 			ParkResumeSnapshot? parsed = null;

@@ -142,6 +142,12 @@ public static class WorldStateHash
 		return hash.Value;
 	}
 
+	/// <summary>
+	/// Makes the reflection metadata of the economy's digest (<see cref="Compute"/> serializes the park save with the serializer's default options) in steps, one type each
+	/// (<see cref="JsonMetadataWarmup"/>): a process's first hash with an economy makes it in one go otherwise. No hash changes.
+	/// </summary>
+	internal static IEnumerable<bool> WarmupSteps() => JsonMetadataWarmup.Steps( JsonSerializerOptions.Default, typeof( ParkSaveFile.Data ) );
+
 	private static string Canonical( JsonNode? node ) => node switch
 	{
 		JsonObject item => "{" + string.Join( ",", item.OrderBy( pair => pair.Key, StringComparer.Ordinal ).Select( pair => JsonValue.Create( pair.Key ).ToJsonString() + ":" + Canonical( pair.Value ) ) ) + "}",

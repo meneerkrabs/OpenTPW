@@ -954,3 +954,17 @@ The metadata with the resume's steps alone took the check to 46 to 81 ms. No bui
 ### A browser host (C2c-2b-4)
 
 The co-op join smoke's host phase runs in the page, and the desktop's join phase replays its recording with every checkpoint equal (docs/COOP.md, "The browser's host"). Same machine and harness, medians of three runs in milliseconds, compiled ahead of time. A capture's cut takes 17.0 ms (the desktop's 9.9) and 20.7 at the second capture, and its save serializes in slices, the longest 22.7 ms in the median run (26.6 in the slowest). The stream's first checkpoint after the park was shared took a frame of 69 to 77 ms, the economy's digest running its code for the first time. The smoke's host now runs that code once ahead before it hosts (`CoopSession.PrepareHostSteps`, which the game's own sharing does not run yet), and that frame takes 31 to 33 ms or less. What remains of a host's work is the digest at each checkpoint, once a second: at the session's end 30 ms in a frame of 33 to 37.
+
+### The digest's canonical text (C2c-2b-4b)
+
+The session digest's economy part is now written as canonical text straight from the park save's bytes, without a JSON tree, and hashed a byte a step; the text and the hash are the same (docs/COOP.md, "The digest's canonical text"). Same machine and harness, medians of three runs in milliseconds, compiled ahead of time; the before is `996b0e133`:
+
+| Part | Before | After |
+| --- | ---: | ---: |
+| The guest's check at the join's cut | 12.6 | 11.2 |
+| The guest's check at the resync's cut | 7.6 | 5.9 |
+| The join's digest stage | 45.5 | 42.6 |
+| The resync's digest stage | 23.3 | 11.8 |
+| The page host's digest at capture 1's cut, at capture 2's | 7.2, 11.7 | 6.1, 11.5 |
+
+The economy's canonical text takes 4.4 to 8.8 ms of a digest in the page host instead of 7.9 to 14.0. The page host's checkpoint frames near the session's end take a median of 16 to 18 ms a run instead of 17 to 23, at most 21 instead of 32, so none reaches 30 ms any more. The save's serialization (8 to 18 ms in those frames, as before) is now the digest's largest part in the page.

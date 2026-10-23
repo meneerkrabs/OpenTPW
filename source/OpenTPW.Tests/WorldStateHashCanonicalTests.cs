@@ -94,6 +94,41 @@ public class WorldStateHashCanonicalTests
 		StringAssert.Contains( Written( bytes ), "\"Nested\":{\"AnalyserCaches\":9,\"RecentItems\":7,\"RoleOrder\":8}", "a left-out name elsewhere is kept" );
 	}
 
+	/// <summary>What the old tree-built text did with <paramref name="save"/>, and what the canonical writer does: the same text, or both refusing it.</summary>
+	private static void SameOrBothRefused( byte[] save, string name, bool refused )
+	{
+		string? expected = null, written = null;
+		Exception? treeError = null, writerError = null;
+		try { expected = Reference( JsonNode.Parse( save ) ); }
+		catch ( Exception error ) { treeError = error; }
+		try { written = Written( save ); }
+		catch ( Exception error ) { writerError = error; }
+		Assert.AreEqual( refused, treeError != null, $"{name}: the tree {(treeError == null ? "took it" : $"refused it: {treeError.Message}")}" );
+		Assert.AreEqual( treeError == null, writerError == null, $"{name}: the writer {(writerError == null ? "took it" : $"refused it: {writerError.Message}")}" );
+		if ( treeError != null )
+			Assert.IsInstanceOfType( writerError, treeError.GetType(), name );
+		else
+			Assert.AreEqual( expected, written, name );
+	}
+
+	[TestMethod]
+	public void ANameTwiceInAnObjectIsRefusedWhereTheTreeRefusedIt()
+	{
+		// two counters whose keys differ only in an unpaired surrogate: the default encoder writes both as U+FFFD, so the save names one key twice
+		var economy = EconomyTestData.Park();
+		economy.Counters.Max( "\uD800", 1 );
+		economy.Counters.Max( "\uFFFD", 2 );
+		var save = JsonSerializer.SerializeToUtf8Bytes( ParkSaveFile.Capture( economy ) );
+		SameOrBothRefused( save, "a park's counters", refused: true );
+		Assert.ThrowsException<ArgumentException>( () => WorldStateHash.Compute( new WorldStateSources { Economy = economy } ) );
+		// a name twice anywhere the tree reads, a left-out name among them; and inside a left-out part, which the tree never read
+		SameOrBothRefused( Encoding.UTF8.GetBytes( "{\"a\":{\"x\":1,\"x\":2}}" ), "nested", refused: true );
+		SameOrBothRefused( Encoding.UTF8.GetBytes( "{\"a\":[{\"x\":1},{\"y\":1,\"y\":1}]}" ), "in an array", refused: true );
+		SameOrBothRefused( Encoding.UTF8.GetBytes( "{\"Research\":{\"RecentItems\":1,\"RecentItems\":2}}" ), "a left-out name twice", refused: true );
+		SameOrBothRefused( Encoding.UTF8.GetBytes( "{\"AnalyserCaches\":{\"x\":1,\"x\":2},\"a\":1}" ), "inside a left-out part", refused: false );
+		SameOrBothRefused( Encoding.UTF8.GetBytes( "{\"Staff\":{\"RoleOrder\":{\"y\":1,\"y\":2},\"Members\":[]}}" ), "inside a left-out member", refused: false );
+	}
+
 	[TestMethod]
 	public void TheHashersFastPathsHashTextAsItsCharactersDo()
 	{

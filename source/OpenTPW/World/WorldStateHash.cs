@@ -211,7 +211,9 @@ public static class WorldStateHash
 
 	/// <summary>
 	/// Writes <paramref name="element"/> canonically at <paramref name="part"/>. <paramref name="members"/> holds each open object's members, its name read once: an object's
-	/// own lie past its parents' and are taken off when it is written.
+	/// own lie past its parents' and are taken off when it is written. An object with a name twice is refused (<see cref="ArgumentException"/>), as the JSON tree the text
+	/// was built from refused it: the serializer writes two keys that differ only in an unpaired surrogate as one, which the default encoder replaces. The parts left out are
+	/// counted, since the tree held them, but never entered, as the tree never read them.
 	/// </summary>
 	private static void WriteCanonical( Utf8JsonWriter writer, JsonElement element, EconomyPart part, List<(string Name, JsonElement Value)> members )
 	{
@@ -221,17 +223,18 @@ public static class WorldStateHash
 			{
 				var start = members.Count;
 				foreach ( var member in element.EnumerateObject() )
-				{
-					var name = member.Name;
-					if ( !LeftOut( part, name ) )
-						members.Add( (name, member.Value) );
-				}
+					members.Add( (member.Name, member.Value) );
 				var count = members.Count - start;
 				members.Sort( start, count, ByName );
+				for ( var index = start + 1; index < start + count; index++ )
+					if ( members[index].Name == members[index - 1].Name )
+						throw new ArgumentException( $"The park save names '{members[index].Name}' twice in one object." );
 				writer.WriteStartObject();
 				for ( var index = start; index < start + count; index++ )
 				{
 					var (name, value) = members[index];
+					if ( LeftOut( part, name ) )
+						continue;
 					writer.WritePropertyName( name );
 					WriteCanonical( writer, value, PartOf( part, name ), members );
 				}

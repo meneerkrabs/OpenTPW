@@ -323,14 +323,15 @@ the live game, and swaps it in.
      has the automatic advisor on, a fresh advisor. A construction step that announces a long one next
      (`Level.NextStepIsLong`) ends the frame's slice, so the long one starts a slice of its own, as in a
      park start (docs/BROWSER-PERFORMANCE.md, "Build steps"). Before it restores the saved objects, the
-     level reads what each saved type's first use reads, in steps of its own (`Level.PrepareSavedTypeSteps`,
+     level reads what each saved type's first use reads, in steps of its own (`SavedTypePreparation`,
      C2c-2b-3g): first every type's model and, when its parts show a sign and it is not the gate, its
      sign, composed on the desktop's sign worker (`ObjectSigns.ComposeAhead`) or in the page over the
      composition's own steps (`ObjectSigns.ComposeAheadSteps`) and handed to the type's first object as
      the worker's is, its log written then; then every type's clips, each texture its parts and its
      animated slots draw, and its hoarding boards with the level's hoarding textures. The steps fill only
-     the caches an object reads, a read that fails leaves its failure to the object, and they take the
-     build's files as unchanged while it runs. The level then restores the saved objects one a step
+     the caches an object reads and touch nothing of the park. A read that fails leaves its failure to the
+     object: a texture's lookup ahead of use remembers no failed read of a folder, only a missing folder.
+     The steps take the build's files as unchanged while it runs. The level then restores the saved objects one a step
      (`ParkLayoutSnapshot.RestoreObjectSteps`, C2c-2b-3d): the first step checks the whole snapshot and
      places nothing, each next places one object in the saved order with its saved seed and ids, and the
      last restores the allocators. A restore given up between its steps is not rolled back: the build
@@ -877,7 +878,10 @@ The design fixed two constants only after measuring them (`coop-c2b-design.md`, 
   (`2615b32c0`) left that wait as it was in a measurement of the order before it. The save stage is
   untouched: its frame is the desktop's longest before and after (78 to 98 ms, 80 to 91). A join's steps
   of more than 50 ms are now the save's parse (86 ms ahead of time), the check at the cut (71 ms, in the
-  frame its build completes in) and the level's last step (64 ms, the resume's restore).
+  frame its build completes in) and the level's last step (64 ms, the resume's restore). The review fixes
+  after the measured commit leave the level's hoarding textures for the boards to gather (the steps
+  still make each of them first) and a failed read of a texture folder unremembered ahead of use; they
+  move no measured work but the gathering of four made textures to the first boards' step.
 
   Every value: [COOP-MEASUREMENTS.md](COOP-MEASUREMENTS.md), "A type's first use in steps of its own".
 

@@ -434,9 +434,12 @@ public class OriginalObject : Entity, IPointLightSource, IObjectPickShape
 	private static Texture LoadTexture( ObjectCatalogEntry entry, string name ) => TryLoadTexture( entry, name ) ?? Texture.Missing;
 
 	/// <summary>The texture of a material or frame name, or null when no searched directory has it (also the buy window's preview of an object outside the game data).</summary>
-	internal static Texture? TryLoadTexture( ObjectCatalogEntry entry, string name )
+	internal static Texture? TryLoadTexture( ObjectCatalogEntry entry, string name ) => TryLoadTexture( entry, name, aheadOfUse: false );
+
+	/// <summary><see cref="TryLoadTexture(ObjectCatalogEntry, string)"/>, ahead of the object's own load when <paramref name="aheadOfUse"/> (<see cref="ObjectAssets.ResolveTexture(ObjectCatalogEntry, string, bool)"/>).</summary>
+	internal static Texture? TryLoadTexture( ObjectCatalogEntry entry, string name, bool aheadOfUse )
 	{
-		var resolved = ObjectAssets.ResolveTexture( entry, name );
+		var resolved = ObjectAssets.ResolveTexture( entry, name, aheadOfUse );
 		if ( resolved == null )
 			return null;
 		var (fileSystem, path) = resolved.Value;

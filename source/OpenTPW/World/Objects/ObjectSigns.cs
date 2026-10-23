@@ -395,6 +395,15 @@ public static class ObjectSigns
 			return ahead.TryGetValue( key, out var composition ) && composition.IsComposed;
 	}
 
+	/// <summary>The composition ahead for <paramref name="entry"/>'s sign, or null (tests that tell one composition from another).</summary>
+	internal static object? AheadComposition( ObjectCatalogEntry entry )
+	{
+		var (line1, line2) = Lines( entry );
+		var key = Key( entry, line1, line2 );
+		lock ( cache )
+			return ahead.TryGetValue( key, out var composition ) ? composition : null;
+	}
+
 	/// <summary>Forgets every composed sign and every composition started ahead (tests that compare a fresh composition with another).</summary>
 	internal static void ForgetForTests()
 	{

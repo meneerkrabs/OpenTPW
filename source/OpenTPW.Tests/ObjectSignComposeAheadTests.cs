@@ -224,6 +224,30 @@ public class ObjectSignComposeAheadTests
 	}
 
 	[TestMethod]
+	public void ASignTheWorkerComposesWhileItIsComposedAheadOverStepsKeepsTheWorkersOne()
+	{
+		var entry = SignEntries().First();
+		var onUse = GetAll( new[] { entry } );
+		ObjectSigns.ForgetForTests();
+		ObjectSigns.ComposeAheadEnabled = false;
+		using var steps = ObjectSigns.ComposeAheadSteps( entry ).GetEnumerator();
+		Assert.IsTrue( steps.MoveNext() );
+		Assert.IsTrue( steps.MoveNext() );
+		// between two steps another caller has the worker compose it (the buy window, say): that composition is current when the steps end
+		ObjectSigns.ComposeAheadEnabled = true;
+		ObjectSigns.ComposeAhead( entry );
+		Assert.IsTrue( ObjectSigns.WaitForComposeAhead( TimeSpan.FromMinutes( 1 ) ) );
+		ObjectSigns.ComposeAheadEnabled = false;
+		var worker = ObjectSigns.AheadComposition( entry );
+		Assert.IsNotNull( worker );
+		while ( steps.MoveNext() )
+		{
+		}
+		Assert.AreSame( worker, ObjectSigns.AheadComposition( entry ), "the worker's composition stands" );
+		AssertSame( new[] { entry }, onUse, GetAll( new[] { entry } ) );
+	}
+
+	[TestMethod]
 	public void ASignComposedAheadOverStepsFromChangedDataOrGivenUpPartWayIsNotHandedOver()
 	{
 		var entry = SignEntries().First();

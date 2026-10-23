@@ -315,6 +315,12 @@ public sealed class CoasterRenderer : Entity, IFirstFramePreparation
 		{
 			if ( disposed )
 				return;
+			// a view prepared ahead takes its clock in the park's first frame, as one made there does in its constructor, scrolling mesh or not
+			if ( rebaseScroll )
+			{
+				lastSceneMilliseconds = owner.sceneMilliseconds?.Invoke() ?? 0;
+				rebaseScroll = false;
+			}
 			EnsureTrack();
 			UpdateScroll();
 			UpdateCars();
@@ -514,13 +520,9 @@ public sealed class CoasterRenderer : Entity, IFirstFramePreparation
 			if ( owner.sceneMilliseconds is { } clock )
 			{
 				var now = clock();
-				// a view prepared ahead takes its clock in the park's first frame, as one made there does
-				if ( rebaseScroll )
-					lastSceneMilliseconds = now;
 				gapSeconds = unchecked( now - lastSceneMilliseconds ) * 0.001f;
 				lastSceneMilliseconds = now;
 			}
-			rebaseScroll = false;
 			scrollPhase = AdvanceScroll( scrollPhase, Ride.PowerFactor, gapSeconds );
 			for ( var index = 0; index < scrollVertices.Length; index++ )
 				scrollVertices[index].TexCoords = new SVector2( scrollU[index], scrollBase[index] - scrollPhase );
@@ -564,14 +566,30 @@ public sealed class CoasterRenderer : Entity, IFirstFramePreparation
 					var carModels = assets.GetCarModels( rig );
 					var parts = new ModelEntity[carModels.Length];
 					Model?[]? own = null;
-					for ( var part = 0; part < parts.Length; part++ )
+					try
 					{
-						// a part whose texture coordinates follow the car's wheel clip has a model of its own: every car turns its wheels at its own speed
-						if ( rig.IsDynamic( part ) )
-							(own ??= new Model?[parts.Length])[part] = assets.CreateOwnPartModel( rig, part );
-						parts[part] = new ModelEntity { Model = own?[part] ?? carModels[part], Name = "coaster car" };
-						carTriangles += rig.Parts[part].Indices.Length / 3;
+						for ( var part = 0; part < parts.Length; part++ )
+						{
+							// a part whose texture coordinates follow the car's wheel clip has a model of its own: every car turns its wheels at its own speed
+							if ( rig.IsDynamic( part ) )
+								(own ??= new Model?[parts.Length])[part] = assets.CreateOwnPartModel( rig, part );
+							parts[part] = new ModelEntity { Model = own?[part] ?? carModels[part], Name = "coaster car" };
+						}
 					}
+					catch
+					{
+						// a car that failed half-way is not one of the view's cars, so nothing else would release what it made
+						foreach ( var made in parts )
+							made?.Delete();
+						foreach ( var model in own ?? Array.Empty<Model?>() )
+						{
+							model?.ReleaseBuffers();
+							model?.Material.ReleaseOwnedResources();
+						}
+						throw;
+					}
+					for ( var part = 0; part < parts.Length; part++ )
+						carTriangles += rig.Parts[part].Indices.Length / 3;
 					cars.Add( new CarInstance { Rig = rig, Parts = parts, OwnModels = own, YOffset = typeIndex < types.Types.Count ? types.Types[typeIndex].YOffset : 0, Train = train, Car = car, TypeIndex = typeIndex } );
 				}
 			}

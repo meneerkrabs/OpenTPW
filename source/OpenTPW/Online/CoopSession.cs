@@ -45,7 +45,10 @@ internal interface ICoopJoinHost
 /// <summary>[EXT:online-coop-snapshot-join] A guest's park being built from a join payload, over frames (<see cref="ICoopJoinHost.Build"/>).</summary>
 internal interface ICoopJoinBuild
 {
-	/// <summary>One frame's slice of the build: true once the candidate is complete and the check at the cut and the swap may run in this frame (else they get the next).</summary>
+	/// <summary>
+	/// One frame's slice of the build: true once the candidate is complete, and from then on without doing more. The session checks the candidate at the cut in the frame this
+	/// first returns true and swaps it in the next (docs/COOP.md, "The game's join").
+	/// </summary>
 	bool Step();
 
 	/// <summary>The completed candidate, set aside from the game's scene (valid once <see cref="Step"/> returned true).</summary>

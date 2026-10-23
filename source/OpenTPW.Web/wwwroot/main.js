@@ -35,8 +35,23 @@ const perfSeedPaths = new Set(['/save/opentpw-options.json', '/config/display.js
 const loopback = ['127.0.0.1', 'localhost', '[::1]'].includes(location.hostname);
 // The co-op join smoke's page (tools/web-coop-join.mjs, docs/COOP.md "The browser's join"): with ?coopSmoke=1 the page exposes the same harness object, but
 // chooses the game's co-op smoke mode instead of the performance mode, whose hooks change parks outside the commands (a shared park refuses them). Never both.
-const perfRequested = loopback && perfQuery.get('perf') === '1';
-const coopSmokeRequested = loopback && perfQuery.get('coopSmoke') === '1';
+// The co-op link check's page (tools/web-coop-link.mjs, docs/COOP.md "The browser's link to a real server"): with ?coopLinkSmoke=1 the page starts no game, reads
+// no game file and claims none of the page's stores; the harness drives the game's own online client against the server that serves this page. Never with
+// ?perf=1 or ?coopSmoke=1: asked together, the page runs none of the three.
+const linkRequested = loopback && perfQuery.get('coopLinkSmoke') === '1';
+const perfRequested = loopback && perfQuery.get('perf') === '1' && !linkRequested;
+const coopSmokeRequested = loopback && perfQuery.get('coopSmoke') === '1' && !linkRequested;
+if (linkRequested) {
+	if (perfQuery.get('perf') === '1' || perfQuery.get('coopSmoke') === '1')
+		console.error('?coopLinkSmoke=1 excludes ?perf=1 and ?coopSmoke=1; the page runs none of them.');
+	else {
+		program.CoopLinkSmokeMode();
+		globalThis.opentpwLink = { program };
+		status.textContent = 'Co-op link check.';
+		// the rest of the page (the game's files, its stores, its start) never runs in this mode
+		await new Promise(() => {});
+	}
+}
 if (perfRequested && coopSmokeRequested)
 	console.error('?perf=1 and ?coopSmoke=1 exclude each other; the page runs without either.');
 const perf = perfRequested !== coopSmokeRequested ? {

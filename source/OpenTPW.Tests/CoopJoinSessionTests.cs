@@ -1317,8 +1317,21 @@ public partial class CoopJoinSessionTests
 			Assert.IsTrue( CoopJoinSmokeTest.IsCoopSmokePageAddress( href ), href );
 		foreach ( var href in new[] { null, "", "not a url", "https://opentpw.example/?coopSmoke=1", "http://127.0.0.2/?coopSmoke=1", "http://10.0.0.1/?coopSmoke=1",
 			"http://127.0.0.1/", "http://127.0.0.1/?coopSmoke=0", "http://127.0.0.1/?coopSmoke=1&perf=1", "http://127.0.0.1/?perf=1&coopSmoke=1", "file:///index.html?coopSmoke=1",
-			"http://127.0.0.1.example/?coopSmoke=1", "http://localhost.example/?coopSmoke=1", "http://127.0.0.1/?coopSmoke=0&coopSmoke=1", "http://localhost/??coopSmoke=1" } )
+			"http://127.0.0.1.example/?coopSmoke=1", "http://localhost.example/?coopSmoke=1", "http://127.0.0.1/?coopSmoke=0&coopSmoke=1", "http://localhost/??coopSmoke=1",
+			"http://127.0.0.1/?coopSmoke=1&coopLinkSmoke=1" } )
 			Assert.IsFalse( CoopJoinSmokeTest.IsCoopSmokePageAddress( href ), href ?? "null" );
+	}
+
+	[TestMethod]
+	public void ThePagesCoopLinkModeIsOnlyForALoopbackPageThatAsksForItAlone()
+	{
+		// the link check's mode (Program.CoopLinkSmokeMode) excludes both other harness modes, as the page's script does
+		foreach ( var href in new[] { "http://127.0.0.1:8123/index.html?coopLinkSmoke=1", "http://localhost/?coopLinkSmoke=1&perf=0", "http://[::1]:9000/?coopLinkSmoke=1&coopSmoke=0",
+			"http://127.0.0.1/?coopLinkSmoke=1&coopLinkSmoke=0" } )
+			Assert.IsTrue( CoopLinkProbe.IsPageAddress( href ), href );
+		foreach ( var href in new[] { null, "", "https://opentpw.example/?coopLinkSmoke=1", "http://10.0.0.1/?coopLinkSmoke=1", "http://127.0.0.1/", "http://127.0.0.1/?coopLinkSmoke=0",
+			"http://127.0.0.1/?coopLinkSmoke=1&perf=1", "http://127.0.0.1/?coopSmoke=1&coopLinkSmoke=1", "file:///index.html?coopLinkSmoke=1", "http://localhost/??coopLinkSmoke=1" } )
+			Assert.IsFalse( CoopLinkProbe.IsPageAddress( href ), href ?? "null" );
 	}
 
 	[TestMethod]

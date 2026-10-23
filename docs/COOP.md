@@ -68,8 +68,8 @@ park needs. The host's command stream runs over it (C2b-1, below), a level takes
 through `CoopSession` (C2b-2, below), and a member joins a running session or resyncs from a join
 snapshot (C2c-1, below), which the game builds and swaps in (C2c-2a, below) and which is measured on the
 desktop (C2c-2b-1, "Measurements"). A browser joins (C2c-2b-2, below) and hosts (C2c-2b-4, below) in the
-smokes; the browser's link to a real server (C2c-2b-5) and the game's screens (C2d) follow, and until
-then no player starts a session.
+smokes, and its own transport carries a session through the real server (C2c-2b-5, below); the game's
+screens (C2d) follow, and until then no player starts a session.
 
 ### The host's command stream (C2b-1)
 
@@ -566,6 +566,39 @@ stream's first checkpoint and a capture's cut run none of it for the first time.
 the native one too, runs the steps while its park settles, so neither host's first checkpoint is the
 digest's first run any more. The game's own sharing does not run them yet: it comes with the sharing's
 flow (C2d).
+
+### The browser's link to a real server (C2c-2b-5)
+
+`[EXT:online-coop-session]` The browser's own transport carries the co-op link through the real server.
+The browser's join and host above run over recordings, so until this check the browser runtime's
+WebSocket and HttpClient had carried chat but never a shared session. `scripts/smoke-coop-link-browser.sh
+<wwwroot>` builds the server, and `tools/web-coop-link.mjs` runs it on 127.0.0.1 with a fresh data
+folder, no two-step login and the published page as its own (`WebClientDirectory`: one origin, so no
+CORS and no proxy). It registers two players and opens two pages of that server in headless, muted
+Chrome, each in a browser context of its own and in the page's link check mode (`?coopLinkSmoke=1`,
+which starts no game, reads no game file and claims none of the page's stores). Each page runs a
+`CoopLinkProbe` (`Program.CoopLinkSmoke.cs`): the game's own `OnlineSession` in a folder of its own, its
+login, and its `CoopLink`, which in a browser sends the login's token in the socket's first frame. In
+order:
+
+1. Both log in over HTTP and open the link, and the server welcomes both.
+2. The host creates an unlisted session, the guest joins it with its code, and the host hears the
+   guest join.
+3. The host stores a snapshot through the link's own upload (an HTTP PUT of 150 KiB of seeded bytes,
+   which the server takes only once a member has joined), and the guest downloads it through the link's
+   own download (an HTTP GET, checked against its SHA-256).
+4. The host's frame reaches the guest, and a message goes each way.
+5. The host leaves, and the guest hears its session end.
+
+The driver chooses every payload and checks each one the pages record against its own length and
+SHA-256; a refusal, a lost or stopped link, a failed transfer or a step past its deadline fails the run.
+No token or password is written anywhere. `CoopLinkProbeTests` runs the same probes in the same order
+against the loopback server on the desktop. The check needs no game data, so the browser determinism
+workflow runs it against both of its pages (compiled ahead of time and interpreted). Locally (Chrome 155
+headless on an Apple M5) both pages pass all ten checks over the server's protocol 7.
+
+What it does not cover yet is a whole live join over the server (a captured park downloaded, built and
+followed) and the link's timeouts and retries in the page; they come with the game's sharing (C2d).
 
 ### The host's trimmed frame (C2c-3)
 

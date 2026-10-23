@@ -448,9 +448,16 @@ internal sealed partial class CoopJoinSmokeTest
 	/// <summary>A build's update frame this long or longer is recorded with its named work, measuring: past twice the slice's budget, a step of it ran long.</summary>
 	internal const double LongBuildFrameMilliseconds = 30;
 
+	/// <summary>The garbage collections by generation when the frame started (<see cref="CoopSmokeBuildFrame.Collections"/>).</summary>
+	private int[] collectionsAtStart = Array.Empty<int>();
+
+	private static int[] Collections() => Enumerable.Range( 0, GC.MaxGeneration + 1 ).Select( GC.CollectionCount ).ToArray();
+
 	private void FrameStarts()
 	{
 		frameStarted = System.Diagnostics.Stopwatch.GetTimestamp();
+		if ( buildMarks != null )
+			collectionsAtStart = Collections();
 		if ( swapMarks == null || done )
 			return;
 		// on while a park is built and for the frame after its swap, so the following frames' timings carry no marks' cost
@@ -486,7 +493,8 @@ internal sealed partial class CoopJoinSmokeTest
 		// a long frame of a build that goes on: what it, and so its long last step, was made of
 		else if ( buildMarks != null && milliseconds >= LongBuildFrameMilliseconds && (joinStep is JoinStep.Joining or JoinStep.Resyncing)
 			&& joinSession.Building?.Timings?.Stages.LastOrDefault( stage => stage.Steps > 0 ) is { } stage )
-			buildMarks.Add( new CoopSmokeBuildFrame( joinStep == JoinStep.Joining ? "joined" : "resynced", frame, milliseconds, stage.Name, stage.Steps, FrameMarks.Snapshot() ) );
+			buildMarks.Add( new CoopSmokeBuildFrame( joinStep == JoinStep.Joining ? "joined" : "resynced", frame, milliseconds, stage.Name, stage.Steps, FrameMarks.Snapshot(),
+				Collections().Zip( collectionsAtStart, ( now, then ) => now - then ).ToArray() ) );
 	}
 
 	/// <summary>The recording of the swaps' work ends with the run, whatever ends it.</summary>

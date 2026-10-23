@@ -32,9 +32,11 @@ internal sealed record CoopSmokeFrameMarks( string Outcome, string Role, int Fra
 /// <summary>
 /// A build's update frame of <see cref="CoopJoinSmokeTest.LongBuildFrameMilliseconds"/> or more, measuring (<paramref name="Outcome"/> names the build, "joined" or "resynced"): its
 /// milliseconds, the stage its build's last step of the frame ran in and that stage's steps so far (a step that ran long ends its slice, so a long one is that stage's
-/// <paramref name="Steps"/>th, as the build's long steps number it), and the frame's named work, as <see cref="CoopSmokeFrameMarks"/> has it.
+/// <paramref name="Steps"/>th, as the build's long steps number it), the frame's named work, as <see cref="CoopSmokeFrameMarks"/> has it, and the garbage collections the frame
+/// ran, by generation from 0 to the runtime's oldest, as <see cref="GC.CollectionCount"/> counts them (null in evidence from before they were kept).
 /// </summary>
-internal sealed record CoopSmokeBuildFrame( string Outcome, int Frame, double Milliseconds, string Stage, int Steps, System.Text.Json.Nodes.JsonObject Marks );
+internal sealed record CoopSmokeBuildFrame( string Outcome, int Frame, double Milliseconds, string Stage, int Steps, System.Text.Json.Nodes.JsonObject Marks,
+	int[]? Collections = null );
 
 /// <summary>
 /// One update frame of the join phase: its number, the join step it ran in, and the milliseconds of its update (the smoke's driver, the online pump and the game's); in a page, also

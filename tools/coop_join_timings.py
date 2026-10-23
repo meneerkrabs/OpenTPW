@@ -14,7 +14,8 @@ differ (a desktop host, a browser guest). One host phase reused by every run (th
 sample: its rows show it once. Evidence of the adversarial join phase is refused: its rewritten payloads and its refused and
 abandoned builds warm the process first. The named work of the swaps' frames and of the frames after them (the smoke's marks, which
 nest: a parent's time includes its children's, so they are never added up) is listed for every mark of at least 1 ms in some run;
-that of the builds' long frames (30 ms or more), named by the stage and step that ended each, for every mark of at least 3 ms.
+that of the builds' long frames (30 ms or more), named by the stage and step that ended each, for every mark of at least 3 ms, with
+the garbage collections each ran when the evidence keeps them, as it keeps those of each stage's steps.
 
 Usage: python3 -I tools/coop_join_timings.py [--machine <file>] <evidence directory> [<evidence directory> ...]
 """
@@ -73,6 +74,11 @@ def require_whole(root, host, join):
             number_fields(item, WORK_FIELDS, f"{where}'s stage {item['Name']}")
             if item.get("Status") not in STATUSES:
                 raise ValueError(f"{where}'s stage {item['Name']} has no status")
+            # its garbage collections, when kept: counts, or null where nothing counted them
+            for key in ("Collections", "FullCollections"):
+                count = item.get(key)
+                if count is not None and (not isinstance(count, int) or isinstance(count, bool) or count < 0):
+                    raise ValueError(f"{where}'s stage {item['Name']} has a {key} that is no count")
         sections = timing.get("Sections")
         if not isinstance(sections, dict) or not sections or not all(is_number(value) for value in sections.values()):
             raise ValueError(f"{where} lacks its sections")
@@ -128,6 +134,11 @@ def require_whole(root, host, join):
             timing = next((build for build in join["JoinTimings"] if build.get("Outcome") == item["Outcome"]), None)
             stage = next((part for part in (timing or {}).get("Build") or [] if part.get("Name") == item["Stage"]), None)
             step = "Joining" if item["Outcome"] == "joined" else "Resyncing"
+            # the garbage collections the frame ran, by generation (absent in evidence from before they were kept)
+            collections = item.get("Collections")
+            if collections is not None and not (isinstance(collections, list) and collections
+                                                and all(isinstance(count, int) and not isinstance(count, bool) and count >= 0 for count in collections)):
+                return False
             return (stage is not None and 1 <= item["Steps"] <= stage["Steps"] and item["Milliseconds"] >= LONG_FRAME_MILLISECONDS
                     and any(frame["Frame"] == item["Frame"] and frame["Step"] == step for frame in frames))
         if not isinstance(long_frames, list) or not all(whole(item) for item in long_frames) \
@@ -255,6 +266,10 @@ def rows(runs):
             for suffix, unit, key in [("", "ms", "Milliseconds"), (", longest step", "ms", "LongestMilliseconds"), (", steps", "count", "Steps"),
                                       (", frames", "count", "Frames")]:
                 result.append((label + suffix, unit, [None if item is None else item[key] for item in timings]))
+            # the garbage collections its steps ran, generation 0's count and the oldest generation's, when the evidence keeps them
+            for suffix, key in [(", collections", "Collections"), (", full collections", "FullCollections")]:
+                if any(item is not None and item.get(key) is not None for item in timings):
+                    result.append((label + suffix, "count", [None if item is None else item.get(key) for item in timings]))
         # the parts of a step that took the budget alone, by stage and part (the level's with its construction progress after it)
         steps = sorted({(item["Stage"], item["Step"], item.get("Progress")) for run in runs for item in get(run).get("LongSteps") or []},
                        key=lambda key: (STAGES.index(key[0]) if key[0] in STAGES else len(STAGES), key[1], key[2] or 0))
@@ -291,6 +306,12 @@ def rows(runs):
         for name, number in keys:
             frames_of = [long_frames_of(run).get((name, number)) for run in runs]
             result.append((f"{outcome}: long frame, {name} {number}", "ms", [None if item is None else item["Milliseconds"] for item in frames_of]))
+            # the garbage collections it ran: generation 0's count and the runtime's oldest generation's (a full collection)
+            if any(item is not None and item.get("Collections") for item in frames_of):
+                result.append((f"{outcome}: long frame, {name} {number}, collections", "count",
+                               [None if item is None or not item.get("Collections") else item["Collections"][0] for item in frames_of]))
+                result.append((f"{outcome}: long frame, {name} {number}, full collections", "count",
+                               [None if item is None or not item.get("Collections") else item["Collections"][-1] for item in frames_of]))
             marks = sorted({mark for item in frames_of if item is not None for mark, value in item["Marks"].items() if value[0] >= LONG_FRAME_MARK_MILLISECONDS})
             for mark in marks:
                 result.append((f"{outcome}: long frame, {name} {number}, mark {mark}", "ms",

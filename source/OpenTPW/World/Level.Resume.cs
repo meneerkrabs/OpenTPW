@@ -294,56 +294,80 @@ public partial class Level
 		if ( Guests == null || Park == null || snapshot.Runtimes.Count != Objects.Objects.Count )
 			throw new InvalidDataException( "The saved park cannot be rebuilt with the current objects." );
 		var roots = new Dictionary<int, RideVM>();
-		for ( var index = 0; index < Objects.Objects.Count; index++ )
+		// the restore's parts by name, for a measured build (LoadProfile: a no-op while off)
+		using ( LoadProfile.Measure( "resume-runtimes" ) )
+			for ( var index = 0; index < Objects.Objects.Count; index++ )
+			{
+				var saved = snapshot.Runtimes[index];
+				var runtime = Objects.Objects[index].Runtime;
+				var gaps = runtime.RestoreSnapshot( saved.State );
+				if ( gaps.Count != 0 ) throw new InvalidDataException( string.Join( "; ", gaps ) );
+				if ( saved.RootScriptId != 0 ) roots.Add( saved.RootScriptId, runtime.Script! );
+			}
+		using ( LoadProfile.Measure( "resume-scripts" ) )
 		{
-			var saved = snapshot.Runtimes[index];
-			var runtime = Objects.Objects[index].Runtime;
-			var gaps = runtime.RestoreSnapshot( saved.State );
-			if ( gaps.Count != 0 ) throw new InvalidDataException( string.Join( "; ", gaps ) );
-			if ( saved.RootScriptId != 0 ) roots.Add( saved.RootScriptId, runtime.Script! );
+			// The prototype Totem goes in beside the placed objects: before the script world (its fresh VM is a restore
+			// root like every object's) and before the guests (its bridge must be registered for the queue-geometry check
+			// and the guest restore to see it).
+			PlacedRide = RestorePrototypeRideSnapshot( snapshot.Prototype, roots );
+			Objects.ScriptWorld.RestoreSnapshot( snapshot.Scripts, roots );
 		}
-		// The prototype Totem goes in beside the placed objects: before the script world (its fresh VM is a restore
-		// root like every object's) and before the guests (its bridge must be registered for the queue-geometry check
-		// and the guest restore to see it).
-		PlacedRide = RestorePrototypeRideSnapshot( snapshot.Prototype, roots );
-		Objects.ScriptWorld.RestoreSnapshot( snapshot.Scripts, roots );
-		RestoreResumeRoutingGeometry( snapshot.Guests, snapshot.PoolBridges, Guests );
-		Guests.RestoreSnapshot( snapshot.Guests );
-		// [EXT:smarter-guests] the extension's birth ids, keyed by the guest ids the restore just rebuilt
-		SmarterGuestsSave.Restore( Guests, snapshot.SmarterGuests );
-		// [EXT:script-mods] the script mods' state, counters and flags
-		ScriptModsSave.Restore( Guests, snapshot.ScriptMods );
+		using ( LoadProfile.Measure( "resume-routing" ) )
+			RestoreResumeRoutingGeometry( snapshot.Guests, snapshot.PoolBridges, Guests );
+		using ( LoadProfile.Measure( "resume-guests" ) )
+		{
+			Guests.RestoreSnapshot( snapshot.Guests );
+			// [EXT:smarter-guests] the extension's birth ids, keyed by the guest ids the restore just rebuilt
+			SmarterGuestsSave.Restore( Guests, snapshot.SmarterGuests );
+			// [EXT:script-mods] the script mods' state, counters and flags
+			ScriptModsSave.Restore( Guests, snapshot.ScriptMods );
+		}
 		simulationClock.RestoreSnapshot( snapshot.Clock );
-		if ( snapshot.Weather != null )
+		using ( LoadProfile.Measure( "resume-weather" ) )
 		{
-			Weather = new ParkWeather( Park.Economy.Settings.Standard, Seed.WeatherStream, Guests.Grid.CountX, Guests.Grid.CountY, FeatureGates.WinterWeather, FeatureGates.WinterAlways );
-			Weather.RestoreSnapshot( snapshot.Weather );
-			// [EXT:winter-snow-save] a resumed park keeps its snow (ignored while the extension is off)
-			resumedSnowCover = snapshot.SnowCover;
-			AttachSnow();
+			if ( snapshot.Weather != null )
+			{
+				Weather = new ParkWeather( Park.Economy.Settings.Standard, Seed.WeatherStream, Guests.Grid.CountX, Guests.Grid.CountY, FeatureGates.WinterWeather, FeatureGates.WinterAlways );
+				Weather.RestoreSnapshot( snapshot.Weather );
+				// [EXT:winter-snow-save] a resumed park keeps its snow (ignored while the extension is off)
+				resumedSnowCover = snapshot.SnowCover;
+				AttachSnow();
+			}
+			// the particle pool's emitters and effectors (no particles), rebuilt by the renderer module when the host draws
+			if ( snapshot.Particles != null )
+				ParticlesResumed?.Invoke( this, snapshot.Particles );
 		}
-		// the particle pool's emitters and effectors (no particles), rebuilt by the renderer module when the host draws
-		if ( snapshot.Particles != null )
-			ParticlesResumed?.Invoke( this, snapshot.Particles );
-		if ( snapshot.Gate != null )
-			(Gate ?? throw new InvalidDataException( "The saved park gate is unavailable." )).RestoreSnapshot( snapshot.Gate );
-		if ( snapshot.Staff != null )
-			(StaffWorld ?? throw new InvalidDataException( "The saved staff world is unavailable." )).RestoreSnapshot( snapshot.Staff );
-		// The coasters go last: their stations were placed above (each placement reset the track to its station
-		// node), and this restores the saved tracks, controller state, trains and riders over them.
-		RestoreCoastersSnapshot( snapshot.Coasters );
-		ValidateResumeBridgeCoasterGeometry( PoolBridges, Coasters );
-		RestoreTracksSnapshot( snapshot.Tracks );
-		// Rebuild only derived coaster tokens, after both primary and secondary layers exist.
-		BindCoasterCellsAfterLoad();
-		// [EXT:pools-slides] the slides go back over their towers and the pool cells the layout restored
-		PoolSlides?.RestoreSnapshot( snapshot.PoolSlides );
-		PoolSlides?.ValidateGuests( Guests.Guests );
-		RestoreToursSnapshot( snapshot.Tours );
-		// the resumed tiles and boats are drawn from the first frame, as they were when the park was saved
-		UpdateTrackRendering();
-		UpdateTourRendering();
-		MarkCellsRendered( Guests.Grid.Cells );
+		using ( LoadProfile.Measure( "resume-staff" ) )
+		{
+			if ( snapshot.Gate != null )
+				(Gate ?? throw new InvalidDataException( "The saved park gate is unavailable." )).RestoreSnapshot( snapshot.Gate );
+			if ( snapshot.Staff != null )
+				(StaffWorld ?? throw new InvalidDataException( "The saved staff world is unavailable." )).RestoreSnapshot( snapshot.Staff );
+		}
+		using ( LoadProfile.Measure( "resume-coasters" ) )
+		{
+			// The coasters go last: their stations were placed above (each placement reset the track to its station
+			// node), and this restores the saved tracks, controller state, trains and riders over them.
+			RestoreCoastersSnapshot( snapshot.Coasters );
+			ValidateResumeBridgeCoasterGeometry( PoolBridges, Coasters );
+			RestoreTracksSnapshot( snapshot.Tracks );
+			// Rebuild only derived coaster tokens, after both primary and secondary layers exist.
+			BindCoasterCellsAfterLoad();
+		}
+		using ( LoadProfile.Measure( "resume-rides" ) )
+		{
+			// [EXT:pools-slides] the slides go back over their towers and the pool cells the layout restored
+			PoolSlides?.RestoreSnapshot( snapshot.PoolSlides );
+			PoolSlides?.ValidateGuests( Guests.Guests );
+			RestoreToursSnapshot( snapshot.Tours );
+		}
+		using ( LoadProfile.Measure( "resume-rendering" ) )
+		{
+			// the resumed tiles and boats are drawn from the first frame, as they were when the park was saved
+			UpdateTrackRendering();
+			UpdateTourRendering();
+			MarkCellsRendered( Guests.Grid.Cells );
+		}
 	}
 
 	/// <summary>

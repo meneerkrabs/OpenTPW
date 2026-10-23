@@ -8,7 +8,9 @@ namespace OpenTPW;
 /// browser has no second thread to hand it to; the counterpart of <see cref="SlicedJsonSerializer"/>). The serializer reads from a stream whose reads complete only when a step
 /// feeds them: each <see cref="Step"/> hands the waiting reads up to a slice of bytes in all (<see cref="SlicedJsonDeserializer.SliceBytes"/> unless a test asks for another).
 /// A read completes inline, in the step that feeds it, with the thread's synchronization context set aside meanwhile, so the serializer parses what it was handed, on the
-/// step's thread, before it asks for more and the step returns; a step after which the parse has neither ended nor asked for a read throws. The result and every failure are the serializer's own: the same converters, options and checks as a parse of the whole span,
+/// step's thread, before it asks for more and the step returns. Should the runtime still run a continuation elsewhere (it may when a thread's stack runs short), the parse
+/// fails instead of going on outside its steps: the step that finds it neither ended nor waiting for a read throws, and a read asked for on another thread, or after the
+/// parse was given up, fails. The result and every failure are the serializer's own: the same converters, options and checks as a parse of the whole span,
 /// but for a leading UTF-8 byte order mark, which a stream's reader skips and a span's refuses (<see cref="ParkResumeSaveFile.DeserializeSteps"/> leaves such bytes to the
 /// whole parse). Disposing the parse part way fails its waiting read, so the serializer gives its buffers back.
 /// </summary>
@@ -40,12 +42,17 @@ internal sealed class SlicedJsonDeserializer<T> : IDisposable
 		{
 			Steps++;
 			stream.Feed( slice );
-			// the serializer parses only in the steps that feed it: a parse that neither ended nor waits for its next read went on elsewhere
+			// the serializer parses only in the steps that feed it: a parse that neither ended nor waits for its next read went on elsewhere, and is given up
 			if ( !parse.IsCompleted && !stream.Waiting )
-				throw new InvalidOperationException( "The sliced parse went on outside its step." );
+			{
+				stream.Abandon();
+				throw new InvalidOperationException( OutsideItsStep );
+			}
 		}
 		return parse.IsCompleted;
 	}
+
+	private const string OutsideItsStep = "The sliced parse went on outside its step.";
 
 	/// <summary>The parsed value, or the parse's failure thrown as the serializer threw it; only once <see cref="Done"/>.</summary>
 	internal T? Result => parse.IsCompleted ? parse.GetAwaiter().GetResult() : throw new InvalidOperationException( "The parse has not ended." );
@@ -64,28 +71,45 @@ internal sealed class SlicedJsonDeserializer<T> : IDisposable
 	/// </summary>
 	private sealed class FedStream( ReadOnlyMemory<byte> bytes ) : Stream, IValueTaskSource<int>
 	{
+		/// <summary>The thread of the steps, the only one the serializer may ask for a read on.</summary>
+		private readonly int owner = Environment.CurrentManagedThreadId;
+		/// <summary>Guards the read's state, should a continuation the runtime did not run inline ask for a read on another thread.</summary>
+		private readonly object gate = new();
 		private int position;
 		private ManualResetValueTaskSourceCore<int> read;
 		private Memory<byte> waitingBuffer;
+		private bool waiting;
+		/// <summary>Set once the parse is given up: every read asked for later fails.</summary>
+		private bool abandoned;
 
 		/// <summary>True while a read waits for <see cref="Feed"/>.</summary>
-		internal bool Waiting { get; private set; }
+		internal bool Waiting
+		{
+			get
+			{
+				lock ( gate )
+					return waiting;
+			}
+		}
 
 		/// <summary>Hands waiting reads up to <paramref name="budget"/> bytes; a read after the last byte reads the end.</summary>
 		internal void Feed( int budget )
 		{
-			while ( Waiting && budget > 0 )
+			lock ( gate )
 			{
-				var count = Math.Min( Math.Min( waitingBuffer.Length, budget ), bytes.Length - position );
-				bytes.Slice( position, count ).CopyTo( waitingBuffer );
-				position += count;
-				budget -= count;
-				Waiting = false;
-				waitingBuffer = default;
-				// the serializer parses what it got here, and has asked for its next read or ended when this returns
-				Inline( count, null );
-				if ( count == 0 )
-					return;
+				while ( waiting && budget > 0 )
+				{
+					var count = Math.Min( Math.Min( waitingBuffer.Length, budget ), bytes.Length - position );
+					bytes.Slice( position, count ).CopyTo( waitingBuffer );
+					position += count;
+					budget -= count;
+					waiting = false;
+					waitingBuffer = default;
+					// the serializer parses what it got here, and has asked for its next read or ended when this returns
+					Inline( count, null );
+					if ( count == 0 )
+						return;
+				}
 			}
 		}
 
@@ -111,26 +135,41 @@ internal sealed class SlicedJsonDeserializer<T> : IDisposable
 			}
 		}
 
-		/// <summary>Fails the waiting read: the serializer ends with that failure and gives its buffers back.</summary>
+		/// <summary>Gives the parse up: its waiting read fails, so the serializer ends with that failure and gives its buffers back, and so does any read asked for later.</summary>
 		internal void Abandon()
 		{
-			if ( !Waiting )
-				return;
-			Waiting = false;
-			waitingBuffer = default;
-			Inline( 0, new OperationCanceledException( "The sliced parse was given up." ) );
+			lock ( gate )
+			{
+				abandoned = true;
+				if ( !waiting )
+					return;
+				waiting = false;
+				waitingBuffer = default;
+				Inline( 0, new OperationCanceledException( "The sliced parse was given up." ) );
+			}
 		}
 
 		public override ValueTask<int> ReadAsync( Memory<byte> buffer, CancellationToken cancellationToken = default )
 		{
-			if ( Waiting )
-				throw new InvalidOperationException( "A read is already waiting." );
-			if ( buffer.Length == 0 )
-				return ValueTask.FromResult( 0 );
-			read.Reset();
-			Waiting = true;
-			waitingBuffer = buffer;
-			return new ValueTask<int>( this, read.Version );
+			lock ( gate )
+			{
+				if ( abandoned )
+					return ValueTask.FromException<int>( new OperationCanceledException( "The sliced parse was given up." ) );
+				// a continuation the runtime ran elsewhere: the parse fails rather than go on outside its steps
+				if ( Environment.CurrentManagedThreadId != owner )
+				{
+					abandoned = true;
+					return ValueTask.FromException<int>( new InvalidOperationException( OutsideItsStep ) );
+				}
+				if ( waiting )
+					throw new InvalidOperationException( "A read is already waiting." );
+				if ( buffer.Length == 0 )
+					return ValueTask.FromResult( 0 );
+				read.Reset();
+				waiting = true;
+				waitingBuffer = buffer;
+				return new ValueTask<int>( this, read.Version );
+			}
 		}
 
 		int IValueTaskSource<int>.GetResult( short token ) => read.GetResult( token );

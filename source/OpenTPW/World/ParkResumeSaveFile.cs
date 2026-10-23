@@ -786,18 +786,25 @@ internal static class ParkResumeSaveFile
 		// a thing demolished or dismissed since the turn's last end still holds its slot, and nothing names it
 		var pending = (snapshot.Things.Pending ?? Array.Empty<int>()).ToHashSet();
 		var named = new HashSet<int>();
-		void Names( int id, SaveThingModel model, string what )
+		// what names a thing, worded only when a check fails: an object by its cell, a staff member or a guest by its id
+		static string What( SaveThingModel model, int first, int second ) => model switch
 		{
-			RequireThing( models.TryGetValue( id, out var held ) && held == model, $"{what} names thing id {id}, which is not a {model} slot of the thing pool" );
+			SaveThingModel.Attraction => $"the object at ({first}, {second})",
+			SaveThingModel.Guest => $"guest {first}",
+			_ => $"staff member {first}"
+		};
+		void Names( int id, SaveThingModel model, int first, int second = 0 )
+		{
+			RequireThing( models.TryGetValue( id, out var held ) && held == model, $"{What( model, first, second )} names thing id {id}, which is not a {model} slot of the thing pool" );
 			RequireThing( named.Add( id ), $"two things name thing id {id}" );
 		}
 		foreach ( var record in objects )
-			Names( record!.ThingId, SaveThingModel.Attraction, $"the object at ({record.X}, {record.Y})" );
+			Names( record!.ThingId, SaveThingModel.Attraction, record.X, record.Y );
 		foreach ( var member in members )
-			Names( member.ThingId, ParkStaff.ThingModelOf( member.Type ), $"staff member {member.Id}" );
+			Names( member.ThingId, ParkStaff.ThingModelOf( member.Type ), member.Id );
 		if ( snapshot.Guests!.SchemaVersion >= GuestSimulationSnapshot.ThingPoolSchemaVersion )
 			foreach ( var guest in snapshot.Guests.Guests! )
-				Names( guest!.Id, SaveThingModel.Guest, $"guest {guest.Id}" );
+				Names( guest!.Id, SaveThingModel.Guest, guest.Id );
 		RequireThing( !named.Overlaps( pending ), "a thing waiting for its destruction is named by a thing" );
 		// a placeholder slot (a thing of an imported original save that OpenTPW does not rebuild) is named by no thing either
 		var placeholders = (snapshot.Things.Held ?? Array.Empty<int>()).ToHashSet();

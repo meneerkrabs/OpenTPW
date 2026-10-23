@@ -98,6 +98,17 @@ public class ParkResumeSaveStepsTests
 	}
 
 	[TestMethod]
+	public void AParseGoesOnOnlyOnTheThreadOfItsStepsAndFailsOnAnother()
+	{
+		var bytes = ParkResumeSaveFile.Serialize( ParkResumeSaveFileTests.Envelope() );
+		using var parse = ParkResumeJson.SliceDeserialize<ParkResumeSnapshot>( bytes, 1024 );
+		// a step on another thread: the read the serializer then asks for there fails, and so does the parse, instead of going on there
+		Assert.IsTrue( System.Threading.Tasks.Task.Run( parse.Step ).GetAwaiter().GetResult() );
+		var error = Assert.ThrowsException<InvalidOperationException>( () => parse.Result );
+		Assert.AreEqual( "The sliced parse went on outside its step.", error.Message );
+	}
+
+	[TestMethod]
 	public void AParseGivenUpPartWayEndsAndLeavesNothing()
 	{
 		var bytes = ParkResumeSaveFile.Serialize( ParkResumeSaveFileTests.Envelope() );

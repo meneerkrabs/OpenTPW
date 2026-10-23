@@ -372,6 +372,15 @@ public class CoopServerTests
 				await ChatNextAsync( guestChat, item => item.Kind == ChatEventKind.Notice && item.Notice == (int)ChatNotice.NoPark );
 			}
 
+			// the stranger, once a member, enters; leaving the session takes it back to the lobby
+			var (leaver, _) = await CoopTestClient.ConnectAsync( server, strangerAccount );
+			await Join( leaver, created.Session.Code );
+			await strangerChat.JoinAsync( room );
+			CollectionAssert.AreEquivalent( new[] { "Hostess", "Stranger" }, (await ChatNextAsync( strangerChat, RosterOf( room ) )).Args!.ToArray() );
+			await leaver.SendAsync( new CoopLeave( "Off home." ) );
+			await ChatNextAsync( strangerChat, RosterOf( ChatProtocol.LobbyRoom ) );
+			await leaver.DisposeAsync();
+
 			// a member's new chat connection enters again; the host's leave ends the session and takes it back to the lobby
 			await hostChat.DisposeAsync();
 			// the account's next connection is welcome once the server has let the old one go

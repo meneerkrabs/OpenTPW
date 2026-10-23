@@ -247,14 +247,18 @@ internal static class AdvisorTables
 	/// </summary>
 	internal static IEnumerable<bool> WarmSteps()
 	{
-		var parts = new Action[] { () => _ = EventMessages, () => _ = ScanMessages, () => _ = HelpMessages, () => _ = UnproducedMessages };
-		foreach ( var part in parts )
+		foreach ( var part in WarmParts )
 		{
 			try { part(); }
 			catch ( Exception ) { /* only a head start */ }
 			yield return true;
 		}
 	}
+
+	/// <summary>The steps of <see cref="WarmSteps"/>.</summary>
+	internal static int WarmStepCount => WarmParts.Length;
+
+	private static readonly Action[] WarmParts = { () => _ = EventMessages, () => _ = ScanMessages, () => _ = HelpMessages, () => _ = UnproducedMessages };
 
 	/// <summary>Whether a message's game-mode selector admits the game type (2 = Instant Action, else the full simulation).</summary>
 	// [BIN:TPW-EXE:0x0059C0A0 descriptor score] selector 2 always passes, 0 passes only while the game-mode global 0xFB3B7C is 0, 1 only while it is 2; any other state scores -1 and nothing is said

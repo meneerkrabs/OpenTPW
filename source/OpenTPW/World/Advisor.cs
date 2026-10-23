@@ -389,7 +389,15 @@ internal sealed class Advisor : IDisposable
 			// its length, which the sequence and the span the controller waits are built from, comes from the frame headers and equals the decoded one. The audio starts
 			// when it is decoded and the advisor clock has reached its start, so a line can start a few frames later than it would with the whole decode first; the mouth
 			// then follows the audio that started late (see LipPosition), and the speech's end and the cut-off's slap follow the player, so they move with it.
-			if ( SlicedDecoding && clock != null && Mp2Decoder.TryMeasure( mpeg, playbackBytes, out var sampleRate, out var sampleFrames ) )
+			// [EXT:park-entry-preparation] a line its park's build decoded ahead (AdvisorEntryPreparation.LineSteps; the PCM is a function of these bytes alone) is taken
+			// instead of decoded, and starts as a line decoded in one go does
+			if ( AdvisorEntryPreparation.TryTake<Mp2Audio>( AdvisorEntryPreparation.LineKey( source, response.Sample, playbackBytes, mpeg.Length ), FileSystem, out var decoded )
+				&& decoded != null )
+			{
+				audio = decoded;
+				seconds = audio.DurationSeconds;
+			}
+			else if ( SlicedDecoding && clock != null && Mp2Decoder.TryMeasure( mpeg, playbackBytes, out var sampleRate, out var sampleFrames ) )
 			{
 				pending = new Mp2Decoder.SlicedDecode( mpeg, playbackBytes );
 				seconds = (double)sampleFrames / sampleRate;

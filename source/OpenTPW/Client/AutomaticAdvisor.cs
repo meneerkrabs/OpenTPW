@@ -62,6 +62,15 @@ internal sealed partial class AutomaticAdvisor : IDisposable
 	/// <summary>The presentation, once a response has been said.</summary>
 	public Advisor? Presentation => presentation;
 
+	/// <summary>Whether making the presentation failed: this advisor says no line from then on (<see cref="Play"/>).</summary>
+	internal bool PresentationFailed => presentationFailed;
+
+	/// <summary>
+	/// [EXT:online-coop-snapshot-join] Holds the advisor's clock still until its first update, which sets it running or paused as the game is (<see cref="Update"/>): an advisor
+	/// a co-op join's build makes waits through the build's remaining frames without its clock running, as an advisor a park's entering frame makes has none to wait through.
+	/// </summary>
+	internal void HoldClock() => clock.SetPaused( true );
+
 	/// <summary>Loads <c>Advisor/Advisor.sam</c>; null (logged) when it is missing or unreadable.</summary>
 	public static AutomaticAdvisor? TryCreate()
 	{
@@ -86,7 +95,10 @@ internal sealed partial class AutomaticAdvisor : IDisposable
 	// [BIN:STP-PPC:0x10121098 history setter] history saves the world's mGameTick (+0x1DA70C), which the park economy counts as park turns
 	private uint GameTick => level?.Park is { } running ? unchecked((uint)running.Economy.Turn) : 0;
 	// [BIN:STP-PPC:0x1013781C player selection] game type 2 = Instant Action, 0 otherwise (offline)
-	private int GameType => level?.Park?.Economy.Mode == ParkGameMode.InstantAction ? 2 : 0;
+	private int GameType => GameTypeOf( level );
+
+	/// <summary>The original game type of <paramref name="level"/>'s park, as the advisor's events and scans read it (2 = Instant Action, else 0).</summary>
+	internal static int GameTypeOf( Level? level ) => level?.Park?.Economy.Mode == ParkGameMode.InstantAction ? 2 : 0;
 	// [BIN:STP-PPC:0x10009038 eligibility check] byte +0x35 of the object at TOC −0x763C, which the options serializer (0x10129308 → 0x1012653C) writes as "TutorialOn" and the defaults (0x10125B7C) set to 1
 	private static bool TutorialEnabled => GameOptions.Current.Tutorial;
 

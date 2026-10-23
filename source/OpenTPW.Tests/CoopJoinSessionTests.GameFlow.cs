@@ -71,7 +71,7 @@ public partial class CoopJoinSessionTests
 			}
 			scene!.Resume();
 			scene.Detach();
-			return new GameJoinEntry( scene, candidate!, hud!, null, false, candidate!.LevelName, 7, ParkStartKind.FullSimulation );
+			return new GameJoinEntry( scene, candidate!, hud!, null, false, new AdvisorEntryPreparation.Store(), candidate!.LevelName, 7, ParkStartKind.FullSimulation );
 		}
 
 		public void MarkInstalled() => installed = true;

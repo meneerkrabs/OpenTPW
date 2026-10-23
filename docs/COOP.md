@@ -336,7 +336,19 @@ the live game, and swaps it in.
      swimmers' sprite sets, read and decoded ahead (`Level.PrepareSwimSpriteSteps`; their renderer is
      still made in the first frame, in its place among the entities). Presentation only: the steps read
      the park and change neither its state nor the entities' order, and a preparation that fails leaves
-     its work to the first frame, which meets the same failure as before.
+     its work to the first frame, which meets the same failure as before. When the build made an
+     advisor, the stage then reads what that advisor's first line reads, as a park start's build does
+     (`AdvisorEntryPreparation`, C2c-2b-3e): the response, caption and costume tables, the advisor
+     shader in a slice of its own, the global and level rigs, both archives' clip lengths and the theme
+     costume. Then it decodes the lines the park's start says first (the Welcome, in Instant Action
+     also the prebuilt park's), a slice of their MPEG a step (`AdvisorEntryPreparation.LineSteps`). It
+     keeps them in a store of its own (`AdvisorEntryPreparation.Store`), which the live game's frames do
+     not drop. The swap hands that store to the shared one once the candidate is the game's park. The
+     results are kept until the joined advisor has made its presentation, cannot make one, or advice is
+     off; a line decoded ahead waits for its own saying until a teardown. Before the advisor is made,
+     its stage warms the shipped message tables a step each (`AdvisorTables.WarmSteps`), and the
+     advisor's clock is held from its creation until its first update, so the build's last frames are
+     no time it waits. A park start decodes the same lines in its own preparation.
 
   A refusal (`CoopJoinRefusedException`) ends the join, since no capture would build; any other failure
   is a failed check (above), and so is a build that runs longer than 300 seconds.
@@ -798,6 +810,38 @@ The design fixed two constants only after measuring them (`coop-c2b-design.md`, 
   signs' queue in steps of their own) and, in the page, a type's sign in a step of its own.
 
   Every value: [COOP-MEASUREMENTS.md](COOP-MEASUREMENTS.md), "The objects' restore over steps".
+
+- **The advisor and its first lines prepared in the build (C2c-2b-3e).** The join's build reads what its
+  advisor's first line reads and decodes the lines its start says first, so the swap's frame does
+  neither. Three runs each, medians in milliseconds, before (`34606a26a`, the objects' restore over
+  steps) and after (`86de0f752`):
+
+  | Part of the join | Desktop before | Desktop after | Ahead of time before | Ahead of time after |
+  | --- | ---: | ---: | ---: | ---: |
+  | The swap's frame | 173 (update) | 75.3 (update) | 110 with its drawing | 90.1 with its drawing |
+  | Of it the advisor's first update (`park.advisor`) | 106 | 5.3 | 33.9 | 4.3 |
+  | The first frame after the swap | 47.1 (update) | 53.1 (update) | 48.5 with its drawing | 41.8 with its drawing |
+  | The build's `prepare` stage | 47.3 over 4 frames | 235 over 14 | 103 over 7 frames | 187 over 14 |
+  | The join's longest frame | 173, the swap's | 84.6, a build frame | 110 with its drawing, the swap's | 94.4 with its drawing, a build frame |
+
+  On the desktop the Welcome (28.6 s) was decoded in one go in the swap's frame, in about 22 or about 75
+  ms by the run (the same line), so the swap's frame took 168 to 228 ms; now it takes 70 to 78. Its
+  advisor shader no longer compiles there (`load:shader-spirv` 50 ms before, 2 after). In the page the
+  advisor's first update fell from 34 to 4 ms, and a line decoded ahead now starts at its time, as on the
+  desktop, instead of a few frames late after its decode over frames (`[EXT:advisor-sliced-decode]`
+  still decodes every later line). The `prepare` stage's longest step took 51 ms on the desktop, one of
+  the advisor's, and 38 ms ahead of time, a coaster's as before (the advisor's took at most 14 there);
+  the lines' decode is spread over slices of 5 ms. The join's longest frame is now a build frame: on the
+  desktop 79 to 84 ms, the frame of the save's parse (79 to 85 ms), and in one run 189 ms, the restore's
+  first step's (C2c-2b-3d's, 61 to 68 ms in the others); ahead of time 94 ms with its drawing (median),
+  while the restore's first step took 93 ms and the save's parse 88 (medians). Ahead of
+  time the save stage, which this change does not touch, took 87.6 ms against the before's 80.7. A
+  measurement of the presentation's part alone (`4fdb4979a`) is kept with the tables; it ran after the
+  Mac had slept, and its save stage took 97.8 ms ahead of time. The review fixes after the measured commit (the
+  advisor's clock held until its first update, the kept preparation's end when the presentation cannot
+  be made, the lines kept until said) move none of the measured work.
+
+  Every value: [COOP-MEASUREMENTS.md](COOP-MEASUREMENTS.md), "The advisor and its first lines prepared".
 
 ## The command layer (C1)
 

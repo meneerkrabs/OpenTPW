@@ -57,6 +57,162 @@ public class AdvisorEntryPreparationTests
 		Assert.IsNull( nothing );
 	}
 
+	/// <summary>A co-op join build's own store: its results are no reader's until its swap hands them to the shared store, whose frame drops leave it alone.</summary>
+	[TestMethod]
+	public void AJoinBuildsStoreIsNoReadersUntilItsSwapAdoptsIt()
+	{
+		var files = EmptyFileSystem();
+		var written = new List<string>();
+		Logger.LogDelegate record = ( _, text ) => written.Add( text );
+		Logger.OnLog += record;
+		try
+		{
+			var own = new AdvisorEntryPreparation.Store();
+			own.Prepare( "rig", files, () => { Log.Warning( "rig read" ); return "the rig"; } );
+			Assert.AreEqual( (1, 0), (own.Count, AdvisorEntryPreparation.Count) );
+			Assert.IsFalse( AdvisorEntryPreparation.TryTake<string>( "rig", files, out _ ), "the build's own result is no reader's yet" );
+			AdvisorEntryPreparation.Drop();
+			Assert.AreEqual( 1, own.Count, "the live game's frames drop the shared store, not the build's" );
+
+			AdvisorEntryPreparation.Adopt( own );
+			Assert.AreEqual( (0, 1), (own.Count, AdvisorEntryPreparation.Count), "the swap moves the results" );
+			Assert.AreEqual( 0, written.Count, "nothing is written until the result is taken" );
+			Assert.IsTrue( AdvisorEntryPreparation.TryTake<string>( "rig", files, out var rig ) );
+			Assert.AreEqual( "the rig", rig );
+			CollectionAssert.AreEqual( new[] { "rig read" }, written, "the read's messages are written when its result is taken" );
+		}
+		finally
+		{
+			Logger.OnLog -= record;
+		}
+	}
+
+	/// <summary>A result the swap hands over takes the place of the shared store's for its key, which is disposed; dropping a build's store disposes its results and writes nothing.</summary>
+	[TestMethod]
+	public void AnAdoptedResultReplacesTheSharedOneAndADroppedStoreDisposesItsOwn()
+	{
+		var files = EmptyFileSystem();
+		var (older, newer, abandoned) = (new Disposable(), new Disposable(), new Disposable());
+		AdvisorEntryPreparation.Prepare( "rig", files, () => older );
+		var own = new AdvisorEntryPreparation.Store();
+		own.Prepare( "rig", files, () => newer );
+		AdvisorEntryPreparation.Adopt( own );
+		Assert.IsTrue( older.Disposed, "the replaced result is disposed" );
+		Assert.IsTrue( AdvisorEntryPreparation.TryTake<Disposable>( "rig", files, out var taken ) );
+		Assert.AreSame( newer, taken );
+		Assert.IsFalse( newer.Disposed );
+
+		var written = new List<string>();
+		Logger.LogDelegate record = ( _, text ) => written.Add( text );
+		Logger.OnLog += record;
+		try
+		{
+			var gone = new AdvisorEntryPreparation.Store();
+			gone.Prepare( "rig", files, () => { Log.Warning( "abandoned read" ); return abandoned; } );
+			gone.Drop();
+			Assert.IsTrue( abandoned.Disposed, "an abandoned build's results are disposed" );
+			Assert.AreEqual( 0, gone.Count );
+			Assert.AreEqual( 0, written.Count, "and what their reads logged is not written" );
+		}
+		finally
+		{
+			Logger.OnLog -= record;
+		}
+	}
+
+	/// <summary>
+	/// The frame after a park's entry drops what nobody took but the lines decoded ahead, which wait for their own saying (Instant Action's prebuilt park after the Welcome);
+	/// a teardown's full drop takes them too.
+	/// </summary>
+	[TestMethod]
+	public void TheFrameAfterAnEntryDropsAllButTheLinesDecodedAhead()
+	{
+		var files = EmptyFileSystem();
+		var rig = new Disposable();
+		AdvisorEntryPreparation.Prepare( AdvisorEntryPreparation.GlobalRigKey, files, () => rig );
+		var line = AdvisorEntryPreparation.LineKey( "global", 606, null, 1234 );
+		var own = new AdvisorEntryPreparation.Store();
+		own.Keep( line, files, files.LookupGeneration, "decoded" );
+		AdvisorEntryPreparation.Adopt( own );
+		AdvisorEntryPreparation.DropAllButLines();
+		Assert.IsTrue( rig.Disposed, "what nobody took is dropped" );
+		Assert.AreEqual( 1, AdvisorEntryPreparation.Count, "the line waits for its saying" );
+		Assert.IsTrue( AdvisorEntryPreparation.TryTake<string>( line, files, out var decoded ) );
+		Assert.AreEqual( "decoded", decoded );
+
+		var later = new AdvisorEntryPreparation.Store();
+		later.Keep( line, files, files.LookupGeneration, "decoded again" );
+		AdvisorEntryPreparation.Adopt( later );
+		AdvisorEntryPreparation.Drop();
+		Assert.AreEqual( 0, AdvisorEntryPreparation.Count, "a teardown drops the lines too" );
+	}
+
+	/// <summary>A value made over steps is kept only while the file system reads what it read when the steps began.</summary>
+	[TestMethod]
+	public void AValueMadeOverStepsIsNotKeptAcrossAFileSystemChange()
+	{
+		var files = EmptyFileSystem();
+		var stale = new Disposable();
+		var own = new AdvisorEntryPreparation.Store();
+		var began = files.LookupGeneration;
+		files.InvalidateLookups();
+		own.Keep( "line:x", files, began, stale );
+		Assert.AreEqual( 0, own.Count );
+		Assert.IsTrue( stale.Disposed );
+	}
+
+	/// <summary>A join build's result read before its file system changed what it reads (a mod or language switch during the join) is stale after the swap too: refused and disposed.</summary>
+	[TestMethod]
+	public void AJoinBuildsResultReadBeforeAFileSystemChangeIsRefusedAfterTheSwap()
+	{
+		var files = EmptyFileSystem();
+		var stale = new Disposable();
+		var own = new AdvisorEntryPreparation.Store();
+		own.Prepare( "rig", files, () => stale );
+		files.InvalidateLookups();
+		AdvisorEntryPreparation.Adopt( own );
+		Assert.IsFalse( AdvisorEntryPreparation.TryTake<Disposable>( "rig", files, out _ ), "read before the file system changed what it reads" );
+		Assert.AreEqual( 0, AdvisorEntryPreparation.Count, "and dropped" );
+		Assert.IsTrue( stale.Disposed );
+	}
+
+	/// <summary>
+	/// The steps that decode a park start's first lines (the original data's Jungle): the Welcome decoded a slice a step to the one-go decode's PCM, under the key its line asks
+	/// for; Instant Action adds the prebuilt park's line.
+	/// </summary>
+	[TestMethod]
+	public void TheLineStepsDecodeTheWelcomeToTheOneGoDecodesPcm()
+	{
+		if ( ObjectCatalogCorpusTests.UseOriginalData( out var original ) == null )
+			Assert.Inconclusive( "Set OPENTPW_GAME_PATH to the original game for its speech." );
+		var sliceBefore = Advisor.DecodeSliceBudget;
+		try
+		{
+			Advisor.DecodeSliceBudget = TimeSpan.Zero;
+			var store = new AdvisorEntryPreparation.Store();
+			var steps = AdvisorEntryPreparation.LineSteps( FileSystem, "jungle", null, gameType: 0, store ).Count();
+			Assert.AreEqual( 1, store.Count, "the Welcome's one response" );
+			var response = AdvisorResponses.Table[1];
+			var parts = Advisor.LoadResponseParts( FileSystem, response, "jungle" );
+			var once = Mp2Decoder.Decode( parts.Mpeg, parts.PlaybackBytes );
+			Assert.IsTrue( steps > once.FrameCount, $"the read, a step per MPEG frame and the keeping ({steps} steps, {once.FrameCount} frames)" );
+			AdvisorEntryPreparation.Adopt( store );
+			Assert.IsTrue( AdvisorEntryPreparation.TryTake<Mp2Audio>( AdvisorEntryPreparation.LineKey( parts.Source, response.Sample, parts.PlaybackBytes, parts.Mpeg.Length ), FileSystem, out var ahead ) );
+			Assert.AreEqual( (once.SampleRate, once.Channels), (ahead!.SampleRate, ahead.Channels) );
+			CollectionAssert.AreEqual( once.Samples, ahead.Samples, "the same PCM as the one-go decode" );
+
+			var instant = new AdvisorEntryPreparation.Store();
+			_ = AdvisorEntryPreparation.LineSteps( FileSystem, "jungle", null, gameType: 2, instant ).Count();
+			Assert.AreEqual( 2, instant.Count, "Instant Action's start says the prebuilt park's line too" );
+			instant.Drop();
+		}
+		finally
+		{
+			Advisor.DecodeSliceBudget = sliceBefore;
+			FileSystem = original!;
+		}
+	}
+
 	[TestMethod]
 	public void AFailedReadIsNotKeptAndItsMessagesAreNotWritten()
 	{

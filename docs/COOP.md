@@ -921,6 +921,13 @@ The design fixed two constants only after measuring them (`coop-c2b-design.md`, 
   - the level's last step, 69 ms: the resume's restore takes 59 ms of it against 6.3 in a resync (the
     coasters' 24.7, the drawn tracks' 11.1, the guests' 6.5).
 
+  The review fixes after the measured commit complete the parse's reads with the thread's synchronization
+  context set aside, so the serializer's own continuations run in the step too, and leave a save that begins
+  with a UTF-8 byte order mark to the whole parse, which refuses it. They also make the save's last eager
+  checks format their messages only on failure: the thing pool's, the coasters' riders' and the asset
+  manifests' comparison, which runs twice in a join's validation. These timings are of the measured commit,
+  not of the fixes.
+
   Every value: [COOP-MEASUREMENTS.md](COOP-MEASUREMENTS.md), "The save's read over steps".
 
 ## The command layer (C1)

@@ -1,13 +1,16 @@
 using System.Text.Json;
+using System.Threading.Tasks.Sources;
 
 namespace OpenTPW;
 
 /// <summary>
 /// Deserializes a JSON value with the serializer's own asynchronous reader, fed a slice of the bytes a step, so that a large save's parse spreads over several frames (the
 /// browser has no second thread to hand it to; the counterpart of <see cref="SlicedJsonSerializer"/>). The serializer reads from a stream whose reads complete only when a step
-/// feeds them: each <see cref="Step"/> hands the waiting reads up to a slice of bytes in all (<see cref="SlicedJsonDeserializer.SliceBytes"/> unless a test asks for another), and
-/// the serializer parses what it was handed before it asks for more and the step returns. The result and every failure are the serializer's own: the same converters, options and checks as a parse of the whole span. Disposing the parse part way
-/// fails its waiting read, so the serializer gives its buffers back.
+/// feeds them: each <see cref="Step"/> hands the waiting reads up to a slice of bytes in all (<see cref="SlicedJsonDeserializer.SliceBytes"/> unless a test asks for another).
+/// A read completes inline, in the step that feeds it, with the thread's synchronization context set aside meanwhile, so the serializer parses what it was handed, on the
+/// step's thread, before it asks for more and the step returns; a step after which the parse has neither ended nor asked for a read throws. The result and every failure are the serializer's own: the same converters, options and checks as a parse of the whole span,
+/// but for a leading UTF-8 byte order mark, which a stream's reader skips and a span's refuses (<see cref="ParkResumeSaveFile.DeserializeSteps"/> leaves such bytes to the
+/// whole parse). Disposing the parse part way fails its waiting read, so the serializer gives its buffers back.
 /// </summary>
 internal sealed class SlicedJsonDeserializer<T> : IDisposable
 {
@@ -37,6 +40,9 @@ internal sealed class SlicedJsonDeserializer<T> : IDisposable
 		{
 			Steps++;
 			stream.Feed( slice );
+			// the serializer parses only in the steps that feed it: a parse that neither ended nor waits for its next read went on elsewhere
+			if ( !parse.IsCompleted && !stream.Waiting )
+				throw new InvalidOperationException( "The sliced parse went on outside its step." );
 		}
 		return parse.IsCompleted;
 	}
@@ -52,51 +58,88 @@ internal sealed class SlicedJsonDeserializer<T> : IDisposable
 		_ = parse.Exception;
 	}
 
-	/// <summary>A read-only stream over the bytes whose reads wait for <see cref="Feed"/>.</summary>
-	private sealed class FedStream( ReadOnlyMemory<byte> bytes ) : Stream
+	/// <summary>
+	/// A read-only stream over the bytes whose reads wait for <see cref="Feed"/>. Its reads are its own value task source, which runs the reader's continuation inline when
+	/// it completes a read (<see cref="ManualResetValueTaskSourceCore{TResult}"/>, never asynchronously and never through a scheduling context).
+	/// </summary>
+	private sealed class FedStream( ReadOnlyMemory<byte> bytes ) : Stream, IValueTaskSource<int>
 	{
 		private int position;
-		private TaskCompletionSource<int>? waiting;
+		private ManualResetValueTaskSourceCore<int> read;
 		private Memory<byte> waitingBuffer;
+
+		/// <summary>True while a read waits for <see cref="Feed"/>.</summary>
+		internal bool Waiting { get; private set; }
 
 		/// <summary>Hands waiting reads up to <paramref name="budget"/> bytes; a read after the last byte reads the end.</summary>
 		internal void Feed( int budget )
 		{
-			while ( waiting is { } read && budget > 0 )
+			while ( Waiting && budget > 0 )
 			{
 				var count = Math.Min( Math.Min( waitingBuffer.Length, budget ), bytes.Length - position );
 				bytes.Slice( position, count ).CopyTo( waitingBuffer );
 				position += count;
 				budget -= count;
-				waiting = null;
+				Waiting = false;
 				waitingBuffer = default;
-				// the serializer parses what it got here, and may wait for its next read before this returns
-				read.SetResult( count );
+				// the serializer parses what it got here, and has asked for its next read or ended when this returns
+				Inline( count, null );
 				if ( count == 0 )
 					return;
+			}
+		}
+
+		/// <summary>
+		/// Completes the waiting read with <paramref name="count"/> bytes, or with <paramref name="failure"/>, while the thread has no synchronization context: the reader's
+		/// continuation and those of the serializer's own asynchronous steps after it then run inline, here (a thread with a context of its own has the runtime queue a
+		/// task's continuations elsewhere, even those that asked for no context).
+		/// </summary>
+		private void Inline( int count, Exception? failure )
+		{
+			var context = SynchronizationContext.Current;
+			SynchronizationContext.SetSynchronizationContext( null );
+			try
+			{
+				if ( failure == null )
+					read.SetResult( count );
+				else
+					read.SetException( failure );
+			}
+			finally
+			{
+				SynchronizationContext.SetSynchronizationContext( context );
 			}
 		}
 
 		/// <summary>Fails the waiting read: the serializer ends with that failure and gives its buffers back.</summary>
 		internal void Abandon()
 		{
-			if ( waiting is { } read )
-			{
-				waiting = null;
-				read.SetException( new OperationCanceledException( "The sliced parse was given up." ) );
-			}
+			if ( !Waiting )
+				return;
+			Waiting = false;
+			waitingBuffer = default;
+			Inline( 0, new OperationCanceledException( "The sliced parse was given up." ) );
 		}
 
 		public override ValueTask<int> ReadAsync( Memory<byte> buffer, CancellationToken cancellationToken = default )
 		{
-			if ( waiting != null )
+			if ( Waiting )
 				throw new InvalidOperationException( "A read is already waiting." );
 			if ( buffer.Length == 0 )
 				return ValueTask.FromResult( 0 );
-			waiting = new TaskCompletionSource<int>();
+			read.Reset();
+			Waiting = true;
 			waitingBuffer = buffer;
-			return new ValueTask<int>( waiting.Task );
+			return new ValueTask<int>( this, read.Version );
 		}
+
+		int IValueTaskSource<int>.GetResult( short token ) => read.GetResult( token );
+
+		ValueTaskSourceStatus IValueTaskSource<int>.GetStatus( short token ) => read.GetStatus( token );
+
+		// inline in the feeding step, whatever context the reader asked to resume on: the step is the parse's only place
+		void IValueTaskSource<int>.OnCompleted( Action<object?> continuation, object? state, short token, ValueTaskSourceOnCompletedFlags flags ) =>
+			read.OnCompleted( continuation, state, token, flags & ~ValueTaskSourceOnCompletedFlags.UseSchedulingContext );
 
 		public override int Read( byte[] buffer, int offset, int count ) => throw new NotSupportedException( "The sliced parse reads asynchronously only." );
 		public override bool CanRead => true;

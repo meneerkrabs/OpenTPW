@@ -46,7 +46,8 @@ public sealed partial class OriginalObjectRuntime
 		RememberCatalogueDefaults();
 		if ( CoasterDefinition.IsCoaster( entry.Settings ) )
 		{
-			Coaster = new CoasterRide( CoasterDefinition.FromCatalogEntry( entry ), world.Coasters, entry.DisplayName );
+			using ( LoadProfile.Measure( "object-coaster" ) )
+				Coaster = new CoasterRide( CoasterDefinition.FromCatalogEntry( entry ), world.Coasters, entry.DisplayName );
 			Visitors.ExcitementSource = () => Coaster.GuestExcitement;
 			// [BIN:TPW-EXE:0x4398cd coaster crash sound] two trains bumping hard play the global cat_rides crash sound 12 at the bump's whole-unit place
 			Coaster.Crashed += place => GameAudio.PlayRidesAt( GameAudio.CoasterCrashEvent, new Vector3( place.X, place.Y, place.Z ) );
@@ -80,14 +81,15 @@ public sealed partial class OriginalObjectRuntime
 		if ( entry.ScriptPath != null )
 		{
 			using var stream = entry.FileSystem.OpenRead( entry.ScriptPath );
-			Script = new RideVM( stream, new RideVMOptions
-			{
-				Effects = effects,
-				World = world,
-				Seed = seed,
-				SourceName = entry.ScriptPath,
-				ResolveScript = ResolveChildScript
-			} );
+			using ( LoadProfile.Measure( "object-script" ) )
+				Script = new RideVM( stream, new RideVMOptions
+				{
+					Effects = effects,
+					World = world,
+					Seed = seed,
+					SourceName = entry.ScriptPath,
+					ResolveScript = ResolveChildScript
+				} );
 			// Upgrade level 0 values from the .sam layers.
 			// [BIN:TPW-EXE:0x4db54f ride init capacity] [DATA:<object>.sam:Upgrades[0].InitCapacity] written only when above 0, through the capacity setter 0x4dd7f0 (its low byte clamped to UsageInfo.MinCapacity..MaxCapacity when the two sum above 0) into script variable 2 and ride +0x5d
 			if ( entry.InitialCapacity > 0 )

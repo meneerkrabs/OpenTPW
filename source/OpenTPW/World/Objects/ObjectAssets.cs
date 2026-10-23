@@ -100,9 +100,8 @@ public static class ObjectAssets
 			return new[] { (ConvertMesh( mesh, bake ), mesh.Indices.ToArray(), mesh.Materials.Select( material => material.Name ).ToArray(),
 				mesh.Materials.Select( material => material.TextureIndex ).ToArray()) };
 		var parts = new List<(Vertex[], uint[], string[], int[])>();
-		for ( var first = 0; first < mesh.Materials.Length; first += 16 )
+		foreach ( var (first, count) in PartMaterialRanges( mesh ) )
 		{
-			var count = Math.Min( 16, mesh.Materials.Length - first );
 			var chunk = new ModelFile.Mesh
 			{
 				Name = mesh.Name,
@@ -120,6 +119,45 @@ public static class ObjectAssets
 					chunk.Materials.Select( material => material.TextureIndex ).ToArray()) );
 		}
 		return parts;
+	}
+
+	/// <summary>
+	/// The runs of a mesh's materials that <see cref="ConvertMeshParts"/> makes a part of each, as first material and count: the whole mesh when it has at most 16 materials, else each
+	/// run of 16 that some face uses wholly (all three corners carry a material of the run). None for a mesh without vertices, indices or materials. Their materials' names are the
+	/// parts' <c>Textures</c>, so the names a model's parts draw can be known without converting it (<see cref="ObjectRenderParts.TextureNames"/>).
+	/// </summary>
+	internal static IEnumerable<(int First, int Count)> PartMaterialRanges( ModelFile.Mesh mesh )
+	{
+		if ( mesh.Vertices.Length == 0 || mesh.Indices.Length == 0 || mesh.Materials.Length == 0 )
+			yield break;
+		if ( mesh.Materials.Length <= 16 )
+		{
+			yield return (0, mesh.Materials.Length);
+			yield break;
+		}
+		for ( var first = 0; first < mesh.Materials.Length; first += 16 )
+		{
+			var count = Math.Min( 16, mesh.Materials.Length - first );
+			if ( HasFaceOf( mesh, first, count ) )
+				yield return (first, count);
+		}
+	}
+
+	/// <summary>Whether a face of <paramref name="mesh"/> has every corner on a vertex of a material in <paramref name="first"/> .. <paramref name="first"/> + <paramref name="count"/>.</summary>
+	private static bool HasFaceOf( ModelFile.Mesh mesh, int first, int count )
+	{
+		for ( var face = 0; face < mesh.Indices.Length / 3; face++ )
+		{
+			var whole = true;
+			for ( var corner = 0; corner < 3 && whole; corner++ )
+			{
+				var index = mesh.Indices[face * 3 + corner];
+				whole = index < mesh.Vertices.Length && mesh.Vertices[index].TextureIndex >= first && mesh.Vertices[index].TextureIndex < first + count;
+			}
+			if ( whole )
+				return true;
+		}
+		return false;
 	}
 
 	private static bool IsFinite( System.Numerics.Vector3 value ) => float.IsFinite( value.X ) && float.IsFinite( value.Y ) && float.IsFinite( value.Z );

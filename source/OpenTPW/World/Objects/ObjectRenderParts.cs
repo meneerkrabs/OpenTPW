@@ -135,6 +135,27 @@ public static class ObjectRenderParts
 
 	public static IReadOnlyList<ObjectRenderPart> Build( ObjectCatalogEntry entry, ModelFile model ) => Build( entry, model, entry.Animations );
 
+	/// <summary>
+	/// The texture names the parts of <paramref name="model"/> draw (the <see cref="ObjectRenderPart.Textures"/> of <see cref="Build"/>'s parts, each once, case ignored), without
+	/// building them: the materials of the meshes <see cref="Build"/> keeps, in the runs <see cref="ObjectAssets.ConvertMeshParts"/> makes parts of
+	/// (<see cref="ObjectAssets.PartMaterialRanges"/>). Which parts batch together changes no name.
+	/// </summary>
+	public static IReadOnlyList<string> TextureNames( ModelFile model )
+	{
+		var names = new List<string>();
+		var seen = new HashSet<string>( StringComparer.OrdinalIgnoreCase );
+		foreach ( var mesh in model.Meshes )
+		{
+			if ( ObjectAssets.GetUnrenderableReason( mesh ) is "no geometry" or "no materials" )
+				continue;
+			foreach ( var (first, count) in ObjectAssets.PartMaterialRanges( mesh ) )
+				for ( var material = first; material < first + count; material++ )
+					if ( seen.Add( mesh.Materials[material].Name ) )
+						names.Add( mesh.Materials[material].Name );
+		}
+		return names;
+	}
+
 	/// <summary>The render parts of <paramref name="model"/> with the nodes <paramref name="animations"/> move kept apart (a ride's supplemental mesh with its own clips).</summary>
 	public static IReadOnlyList<ObjectRenderPart> Build( ObjectCatalogEntry entry, ModelFile model, IReadOnlyList<ObjectAnimationFile> animations )
 	{

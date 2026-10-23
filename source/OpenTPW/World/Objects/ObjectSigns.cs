@@ -234,6 +234,105 @@ public static class ObjectSigns
 		Task.Run( ComposeQueued );
 	}
 
+	/// <summary>
+	/// <see cref="ComposeAhead"/> on the calling thread over steps, for a park built over frames where no worker composes (the page: <see cref="ComposeAheadEnabled"/> off): the sign's
+	/// read, then the composition's parts (<see cref="SignTextRenderer.ComposeSignSteps"/>, the steps <see cref="SignSurfaceComposer.Compose"/> runs too), each under a log capture closed
+	/// before it yields, so the frames between them log as ever. A finished sign is handed to <see cref="Get"/> as the worker's composition is (its log, in order, written when a first
+	/// object uses it), and only when nothing else has meanwhile: no sign cached for its key, no other composition ahead that is still current, and the same file system with no
+	/// invalidation and the same data corrections as at its start. A sign already composed or asked for, an archive without a sign, or a read or composition that fails hands over
+	/// nothing: a first use composes it then, as it would have. Disposing the steps part way leaves nothing behind.
+	/// </summary>
+	internal static IEnumerable<bool> ComposeAheadSteps( ObjectCatalogEntry entry )
+	{
+		string line1, line2, key;
+		try
+		{
+			// Get reads the lines again (and logs what that read logs) when it uses the composition, as for one the worker composed
+			using ( Logger.BeginCapture() )
+				(line1, line2) = Lines( entry );
+			key = Key( entry, line1, line2 );
+		}
+		catch ( Exception exception ) when ( exception is IOException or InvalidDataException or ArgumentException or UnauthorizedAccessException )
+		{
+			yield break;
+		}
+		if ( Known( key, entry.FileSystem ) )
+			yield break;
+		var fileSystem = entry.FileSystem;
+		var generation = fileSystem.LookupGeneration;
+		var flags = CompatibilityRuntime.Flags;
+		var messages = new List<(Logger.Level Severity, string Text, bool Quiet)>();
+		// one part of the composition under a capture of its own, closed before the steps yield: false when it threw, which hands over nothing
+		bool Run( Action part )
+		{
+			using var capture = Logger.BeginCapture();
+			using var profile = LoadProfile.Measure( "sign-ahead" );
+			try
+			{
+				part();
+				return true;
+			}
+			catch
+			{
+				return false;
+			}
+			finally
+			{
+				messages.AddRange( capture.Messages );
+			}
+		}
+		LoadProfile.Count( "signs composed ahead" );
+		SignFile? sign = null;
+		if ( !Run( () => sign = SignTextRenderer.LoadSignFile( entry.ArchivePath, entry.FileSystem ) ) || sign == null )
+			yield break;
+		yield return true;
+		var diagnostics = new List<string>();
+		var composition = new SignSurfaceComposer.Composition();
+		IEnumerator<bool>? parts = null;
+		try
+		{
+			if ( !Run( () => parts = SignTextRenderer.Shared.ComposeSignSteps( sign, new[] { line1, line2 }, diagnostics, composition ).GetEnumerator() ) )
+				yield break;
+			var more = false;
+			while ( true )
+			{
+				if ( !Run( () => more = parts!.MoveNext() ) )
+					yield break;
+				if ( !more )
+					break;
+				yield return true;
+			}
+		}
+		finally
+		{
+			parts?.Dispose();
+		}
+		ObjectSignImages? images = null;
+		// what Compose logs after the composition: its drawing problems, once each
+		if ( !Run( () =>
+		{
+			foreach ( var diagnostic in diagnostics.Where( diagnostic => !diagnostic.StartsWith( "COMPAT-003", StringComparison.Ordinal ) ).Distinct() )
+				Log?.Warning( $"Sign of {entry.ArchiveName}: {diagnostic}" );
+			var (left, right, textPixels) = composition.Result;
+			images = new ObjectSignImages( line1, line2, left, right, textPixels, diagnostics );
+		} ) )
+			yield break;
+		var finished = new SignComposition( entry, line1, line2, generation, flags, new SignOutcome( images, false, null, messages, null, ComposedAhead: true ) );
+		lock ( cache )
+		{
+			// a sign cached meanwhile (the live game's own use between the steps), or another composition still current, stands; one of changed data is no one's
+			if ( !cache.ContainsKey( key ) && !(ahead.TryGetValue( key, out var other ) && other.Matches( entry.FileSystem )) && finished.Matches( entry.FileSystem ) )
+				ahead[key] = finished;
+		}
+	}
+
+	/// <summary>Whether a sign of <paramref name="key"/> is cached, or composed or being composed ahead from what <paramref name="fileSystem"/> reads now.</summary>
+	private static bool Known( string key, BaseFileSystem fileSystem )
+	{
+		lock ( cache )
+			return cache.ContainsKey( key ) || ahead.TryGetValue( key, out var known ) && known.Matches( fileSystem );
+	}
+
 	private static void ComposeQueued()
 	{
 		onAheadWorker = true;
@@ -332,6 +431,19 @@ public static class ObjectSigns
 			flags = CompatibilityRuntime.Flags;
 			// ExecutionAndPublication: one composition whoever asks first; a second caller waits for it
 			outcome = new Lazy<SignOutcome>( Compose, LazyThreadSafetyMode.ExecutionAndPublication );
+		}
+
+		/// <summary>A composition finished over steps (<see cref="ComposeAheadSteps"/>), with what the file system's lookups and the data corrections were when they began.</summary>
+		public SignComposition( ObjectCatalogEntry entry, string line1, string line2, int lookupGeneration, CompatibilityFlags flags, SignOutcome composed )
+		{
+			this.entry = entry;
+			this.line1 = line1;
+			this.line2 = line2;
+			FileSystem = entry.FileSystem;
+			this.lookupGeneration = lookupGeneration;
+			this.flags = flags;
+			outcome = new Lazy<SignOutcome>( () => composed, LazyThreadSafetyMode.ExecutionAndPublication );
+			_ = outcome.Value;
 		}
 
 		public BaseFileSystem FileSystem { get; }

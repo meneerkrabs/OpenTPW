@@ -426,6 +426,24 @@ public class ObjectCatalogCorpusTests
 		Assert.IsTrue( ObjectAnimations.HasOnlyBaseClips( Clips( "xm2" ) ), "m2 lies behind the missing m1, so no clip loads for AnimID 5" );
 	}
 
+	/// <summary>The names a type's first use reads ahead (<see cref="ObjectRenderParts.TextureNames"/>, a co-op join's type steps) are its parts' names, over every entry of every theme.</summary>
+	[TestMethod]
+	public void EveryEntrysTextureNamesAreTheNamesItsPartsDraw()
+	{
+		var entries = 0;
+		foreach ( var theme in ObjectCatalog.Themes )
+			foreach ( var entry in ObjectCatalog.Load( theme ).Entries )
+			{
+				entries++;
+				var model = ObjectAssets.LoadModel( entry.FileSystem, entry.ModelPath );
+				var drawn = ObjectRenderParts.Build( entry, model ).SelectMany( part => part.Textures ).ToHashSet( StringComparer.OrdinalIgnoreCase );
+				var names = ObjectRenderParts.TextureNames( model );
+				Assert.AreEqual( names.Count, names.Distinct( StringComparer.OrdinalIgnoreCase ).Count(), $"{entry}: each name once" );
+				Assert.IsTrue( drawn.SetEquals( names ), $"{entry}: {string.Join( ", ", names )} / {string.Join( ", ", drawn )}" );
+			}
+		Assert.IsTrue( entries > 250, $"every theme's entries ({entries})" );
+	}
+
 	[TestMethod]
 	public void EveryEntryResolvesItsModelAnimationsAndTextures()
 	{

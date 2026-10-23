@@ -95,12 +95,13 @@ public partial class Level
 		}
 		else if ( resumeState != null )
 		{
-			// the saved types' signs are composed on a worker while the objects are placed, one a step, as the buy window has its listed types' composed (desktop only)
-			ComposeSavedSignsAhead( resumeState.Layout );
+			// the saved types' first use in steps of their own, then their objects one a step
+			foreach ( var share in PrepareSavedTypeSteps( resumeState.Layout ) )
+				yield return 0.3f + 0.1f * share;
 			var restored = new List<OriginalObject>();
 			RestoringObjects = true;
 			foreach ( var share in ParkLayoutSnapshot.RestoreObjectSteps( resumeState.Layout, Objects, restored ) )
-				yield return 0.3f + 0.7f * share;
+				yield return 0.4f + 0.6f * share;
 			RestoringObjects = false;
 			count = restored.Count;
 		}
@@ -126,17 +127,101 @@ public partial class Level
 	}
 
 	/// <summary>
-	/// Starts composing the signs of a saved layout's types on a worker, first saved first, before the restore places them (<see cref="ObjectSigns.ComposeAhead"/>; the desktop only): a
-	/// type's first object then takes the finished sign, or waits for the one being composed, instead of composing it on its step. The pixels are the same either way. Every type but the
-	/// gate's, whose slots show the park's name (composed before the objects, <see cref="SetupParkNameSteps"/>): a fixed item with its own sign draws it as any type does
-	/// (<see cref="SignSlotPlan.For"/>). A record this catalogue does not know is the restore's to refuse.
+	/// [EXT:online-coop-snapshot-join] What the saved layout's types read on their first use, read ahead in steps of their own before the restore places their objects (a co-op join's or
+	/// resync's build, docs/COOP.md "The game's join"), each type in the order the layout first uses it: its model, then each of its clips; its sign when its parts show one and it is
+	/// not the gate (whose slots show the park's name), composed on the desktop's worker (<see cref="ObjectSigns.ComposeAhead"/>) or, where there is none, over steps
+	/// (<see cref="ObjectSigns.ComposeAheadSteps"/>); each texture its parts and its animated texture slots draw (a sign slot's shipped placeholder, drawn only when its sign cannot be,
+	/// is left to the object); and its hoarding boards over this level's terrain, with the level's four hoarding textures once a type has boards. Each step gives the share of the
+	/// types done. The steps fill only the caches an object reads (the models, the path and bonus textures, the signs ahead, this level's hoarding), so the type's first object finds them
+	/// as its later ones do: they make no object, runtime or controller and touch no seed, allocator or <see cref="Current"/>. A read that fails leaves nothing and drops what it logged,
+	/// so the object meets the failure as it did; one that succeeds logs at once (the reads log nothing when they succeed). They take the build's files as they are when the build has
+	/// them (the files stage), unchanged while it runs: a file that changed after its type's step is read from that step's cache.
 	/// </summary>
-	private void ComposeSavedSignsAhead( ParkLayoutSnapshot.Data layout )
+	private IEnumerable<float> PrepareSavedTypeSteps( ParkLayoutSnapshot.Data layout )
 	{
-		var asked = new HashSet<ObjectCatalogEntry>();
-		foreach ( var record in layout.Objects )
-			if ( Objects.Catalog.Find( record.InfoId ) is { } entry && !SignSlotPlan.IsGate( entry.IsFixedItem, entry.InfoId, entry.ArchivePath, GateInfoId ) && asked.Add( entry ) )
-				ObjectSigns.ComposeAhead( entry );
+		var types = new List<ObjectCatalogEntry>();
+		var seen = new HashSet<ObjectCatalogEntry>( ReferenceEqualityComparer.Instance );
+		// a record the catalogue does not know is the restore's to refuse
+		foreach ( var record in layout.Objects ?? [] )
+			if ( record != null && Objects.Catalog.Find( record.InfoId ) is { } known && seen.Add( known ) )
+				types.Add( known );
+		var hoardingTextures = false;
+		for ( var index = 0; index < types.Count; index++ )
+		{
+			var entry = types[index];
+			var share = index / (float)types.Count;
+			ModelFile? model = null;
+			using ( LoadProfile.Measure( "type-model" ) )
+				Prepare( () => model = ObjectAssets.LoadModel( entry.FileSystem, entry.ModelPath ) );
+			yield return share;
+			foreach ( var animation in entry.Animations )
+			{
+				using ( LoadProfile.Measure( "type-model" ) )
+					Prepare( () => ObjectAssets.LoadModel( entry.FileSystem, animation.Path ) );
+				yield return share;
+			}
+			if ( model is not { Kind: ModelFileKind.Geometry } geometry )
+				continue;
+			var names = ObjectRenderParts.TextureNames( geometry );
+			if ( names.Any( ObjectSigns.IsSignSlot ) && !SignSlotPlan.IsGate( entry.IsFixedItem, entry.InfoId, entry.ArchivePath, GateInfoId ) )
+			{
+				if ( ObjectSigns.ComposeAheadEnabled )
+					ObjectSigns.ComposeAhead( entry );
+				else
+					foreach ( var _ in ObjectSigns.ComposeAheadSteps( entry ) )
+						yield return share;
+			}
+			var frames = new List<string>();
+			Prepare( () => frames.AddRange( OriginalObject.FrameAnimatedSlots( entry, geometry ).SelectMany( slot => slot.Frames ) ) );
+			foreach ( var name in names.Where( name => !ObjectSigns.IsSignSlot( name ) ).Concat( frames ).Distinct( StringComparer.OrdinalIgnoreCase ) )
+			{
+				using ( LoadProfile.Measure( "type-texture" ) )
+					Prepare( () => OriginalObject.TryLoadTexture( entry, name ) );
+				yield return share;
+			}
+			// the boards ObjectHoardingRenderer.Create reads, on the same terrain, and its textures once a type has boards
+			if ( OriginalPark?.Heightfield is not { } field || OriginalPark.LevelName is not { } levelName )
+				continue;
+			ObjectHoardingGeometry? boards = null;
+			using ( LoadProfile.Measure( "type-hoarding" ) )
+				Prepare( () => boards = HoardingCache.Geometry( entry, geometry, field ) );
+			yield return share;
+			if ( boards == null || hoardingTextures )
+				continue;
+			hoardingTextures = true;
+			foreach ( var name in ObjectHoardingGeometry.TextureNames )
+			{
+				using ( LoadProfile.Measure( "type-hoarding" ) )
+					Prepare( () =>
+					{
+						if ( ObjectHoardingRenderer.ResolveTexture( levelName, name ) is { } path )
+							_ = new Texture( path, TextureFlags.Repeat );
+					} );
+				yield return share;
+			}
+			using ( LoadProfile.Measure( "type-hoarding" ) )
+				Prepare( () => HoardingCache.Textures( levelName ) );
+			yield return share;
+		}
+	}
+
+	/// <summary>A read of <see cref="PrepareSavedTypeSteps"/>: what it logs is written when it succeeds and dropped when it fails, which the object then meets itself.</summary>
+	private static void Prepare( Action read )
+	{
+		IReadOnlyList<(Logger.Level Severity, string Text, bool Quiet)> logged;
+		using ( var capture = Logger.BeginCapture() )
+		{
+			try
+			{
+				read();
+			}
+			catch
+			{
+				return;
+			}
+			logged = capture.Messages;
+		}
+		Logger.Replay( logged );
 	}
 
 	/// <summary>Whether the construction is part way through restoring a saved layout's objects, one a step (a probe: the native join smoke abandons a build there).</summary>

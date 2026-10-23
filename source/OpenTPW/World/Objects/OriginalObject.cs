@@ -386,6 +386,23 @@ public class OriginalObject : Entity, IPointLightSource, IObjectPickShape
 	private static Dictionary<int, FrameTextures> FindFrameAnimatedSlots( ObjectCatalogEntry entry, ModelFile model )
 	{
 		var slots = new Dictionary<int, FrameTextures>();
+		foreach ( var (slot, frames) in FrameAnimatedSlots( entry, model ) )
+			slots[slot] = new FrameTextures
+			{
+				Slot = slot,
+				Frames = frames.Select( name => TryLoadTexture( entry, name ) ).ToArray(),
+				Bindings = new List<(Material, int)>()
+			};
+		return slots;
+	}
+
+	/// <summary>
+	/// The model's multi-frame texture slots that an enabled texture-frame track of the type's animation members addresses, each once in the order the tracks first name it, with its
+	/// frame names: the slots <see cref="FindFrameAnimatedSlots"/> decodes every frame of (a member that cannot be read is passed over), and the frames a type's first use reads.
+	/// </summary>
+	internal static IEnumerable<(int Slot, IReadOnlyList<string> Frames)> FrameAnimatedSlots( ObjectCatalogEntry entry, ModelFile model )
+	{
+		var seen = new HashSet<int>();
 		foreach ( var animation in entry.Animations )
 		{
 			ModelAnimation? clip;
@@ -401,17 +418,11 @@ public class OriginalObject : Entity, IPointLightSource, IObjectPickShape
 				continue;
 			foreach ( var track in clip.TextureFrameTracks )
 			{
-				if ( track.Slot >= model.Textures.Count || model.Textures[track.Slot].FrameNames.Count < 2 || slots.ContainsKey( track.Slot ) )
+				if ( track.Slot >= model.Textures.Count || model.Textures[track.Slot].FrameNames.Count < 2 || !seen.Add( track.Slot ) )
 					continue;
-				slots[track.Slot] = new FrameTextures
-				{
-					Slot = track.Slot,
-					Frames = model.Textures[track.Slot].FrameNames.Select( name => TryLoadTexture( entry, name ) ).ToArray(),
-					Bindings = new List<(Material, int)>()
-				};
+				yield return (track.Slot, model.Textures[track.Slot].FrameNames);
 			}
 		}
-		return slots;
 	}
 
 	private static readonly Dictionary<string, Texture> bonusTextures = new( StringComparer.OrdinalIgnoreCase );

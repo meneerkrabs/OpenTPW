@@ -357,5 +357,12 @@ public class ChatSatelliteTests
 		Assert.IsNull( ChatProtocol.SatelliteIndexOf( "satellite:" ) );
 		Assert.IsFalse( ChatProtocol.IsValidRoom( "satellite:001" ) );
 		Assert.IsTrue( ChatProtocol.IsValidRoom( ChatProtocol.SatelliteRoom( 3 ) ) );
+		// [EXT:online-coop-session] a shared park's room: its session id, sixteen lowercase hexadecimal digits
+		Assert.IsTrue( ChatProtocol.IsValidRoom( ChatProtocol.CoopRoom( "0123456789abcdef" ) ) );
+		Assert.AreEqual( "0123456789abcdef", ChatProtocol.CoopSessionOf( "coop:0123456789abcdef" ) );
+		foreach ( var room in new[] { "coop:", "coop:0123456789ABCDEF", "coop:0123456789abcde", "coop:0123456789abcdef0", "coop:0123456789abcdeg", "Coop:0123456789abcdef", "park:coop" } )
+			Assert.IsNull( ChatProtocol.CoopSessionOf( room ), room );
+		foreach ( var room in new[] { "coop:", "coop:0123456789ABCDEF", "coop:0123456789abcde", "coop:xyz" } )
+			Assert.IsFalse( ChatProtocol.IsValidRoom( room ), room );
 	}
 }

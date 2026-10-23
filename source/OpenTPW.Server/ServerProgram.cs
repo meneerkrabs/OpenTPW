@@ -65,6 +65,8 @@ public static class ServerProgram
 		var cities = new CityDirectory( options.DataDirectory );
 		var hub = new ChatHub( store, options, filter, chatParks, cities );
 		var coop = new CoopHub( store, options, filter, new CoopStore( options.DataDirectory ) );
+		// [EXT:online-coop-session] a shared park's chat room admits its members only, and takes out those who leave it
+		hub.UseCoopMembership( coop );
 		builder.Services.AddSingleton( options );
 		builder.Services.AddSingleton( store );
 		builder.Services.AddSingleton( chatParks );

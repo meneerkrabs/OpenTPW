@@ -281,6 +281,14 @@ Parks published by players keep their own chat rooms (`park:<id>`) with the same
 visit of a published park joins its room and shows the other visitors walking (docs/ONLINE.md,
 "Players in a visited park").
 
+`[EXT:online-coop-session]` A shared park's session has a room too, `coop:<id>` with its session id
+(docs/ONLINE.md, "Shared parks"). The chat asks the co-op hub whether a player is a member
+(`ICoopMembership`) as a join or a goto takes them in, while it holds its rooms. The co-op hub tells the
+chat when an account stops being a member (it left or was kicked, or the session ended), and the chat
+then takes its connections back to the lobby. That move waits for the rooms too, so it comes after any
+entry that was let in before, and no one who is not a member stays in the room. `/locate` answers that
+the player is in a shared park, without naming it, and no buddy is told a player entered one.
+
 Movement is relayed only inside a park's room (the lobby's are dropped) and only to connections
 that have moved, so a client without a walking view never receives it. A player's first movement
 in each room is answered with where everyone else in the room stands; entering a room forgets the

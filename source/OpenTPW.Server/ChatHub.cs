@@ -18,6 +18,8 @@ public static class ChatSystemKeys
 	public const string BuddyList = "buddy-list";
 	/// <summary>A buddy of the receiver entered a park; arguments: the buddy's name, the park (with its city).</summary>
 	public const string BuddyEnters = "buddy-enters";
+	/// <summary>[EXT:online-coop-session] The located player is in a shared park, whose room is its members' alone; argument: the player's name.</summary>
+	public const string InSharedPark = "in-shared-park";
 }
 
 /// <summary>
@@ -47,6 +49,8 @@ public sealed class ChatHub
 	/// </summary>
 	private readonly object rooms = new();
 	private volatile bool restarting;
+	/// <summary>[EXT:online-coop-session] Who may enter a shared park's room (<see cref="UseCoopMembership"/>); none while unset.</summary>
+	private ICoopMembership? coopMembership;
 
 	public ChatHub( ServerStore store, ServerOptions options, WordFilter filter, ChatParkDirectory chatParks, CityDirectory cities )
 	{
@@ -58,6 +62,30 @@ public sealed class ChatHub
 	}
 
 	public int PlayersIn( string room ) => sessions.Values.Count( session => session.Room == room );
+
+	/// <summary>
+	/// [EXT:online-coop-session] Lets the members of a shared park's session into its room (<see cref="ChatProtocol.CoopRoom"/>), by a join or a goto, and takes each
+	/// one back to the lobby once it stops being a member (it left or was kicked, or the session ended). Without it, no session's room admits anyone.
+	/// </summary>
+	public void UseCoopMembership( ICoopMembership membership )
+	{
+		ArgumentNullException.ThrowIfNull( membership );
+		coopMembership = membership;
+		// raised under the shared parks' locks: the move runs on its own
+		membership.MemberGone += ( accountKey, sessionId ) => ThreadPool.QueueUserWorkItem( _ => LeaveCoopRoom( accountKey, sessionId ) );
+	}
+
+	/// <summary>Takes the account's connections that are in the session's room back to the lobby.</summary>
+	private void LeaveCoopRoom( string accountKey, string sessionId )
+	{
+		var room = ChatProtocol.CoopRoom( sessionId );
+		foreach ( var session in sessions.Values.Where( session => session.Key == accountKey ) )
+			EnterRoom( session, ChatProtocol.LobbyRoom, onlyFrom: room );
+	}
+
+	/// <summary>Whether <paramref name="session"/>'s player is a member of the shared park whose room is <paramref name="room"/>.</summary>
+	private bool IsCoopMember( ChatSession session, string room ) =>
+		ChatProtocol.CoopSessionOf( room ) is { } sessionId && coopMembership?.IsMember( session.Key, sessionId ) == true;
 
 	public int ConnectedCount => sessions.Count;
 
@@ -279,7 +307,8 @@ public sealed class ChatHub
 					return;
 				}
 			}
-			else if ( room != ChatProtocol.LobbyRoom && store.FindPark( room[ChatProtocol.ParkRoomPrefix.Length..] ) == null )
+			// [EXT:online-coop-session] a shared park's room is no published park: EnterRoom admits its members alone
+			else if ( room != ChatProtocol.LobbyRoom && ChatProtocol.CoopSessionOf( room ) == null && store.FindPark( room[ChatProtocol.ParkRoomPrefix.Length..] ) == null )
 			{
 				Send( session, ChatEvent.ForNotice( ChatNotice.NoPark ) );
 				return;
@@ -334,11 +363,21 @@ public sealed class ChatHub
 	/// player is already in (a retried join whose answer came late) only answers the roster: the player keeps their
 	/// place and nobody is told again.
 	/// </summary>
-	private void EnterRoom( ChatSession session, string room )
+	private void EnterRoom( ChatSession session, string room, string? onlyFrom = null )
 	{
 		lock ( rooms )
 		{
 			var left = session.Room;
+			// a move out of one room only (a shared park's member that stopped being one): a player who has moved on since stays where they are
+			if ( onlyFrom != null && left != onlyFrom )
+				return;
+			// [EXT:online-coop-session] a shared park's room is its members' alone, asked while the rooms are held: the move out of a member that stops being
+			// one waits for them, so it comes after this entry and no one who is not a member stays in the room
+			if ( ChatProtocol.CoopSessionOf( room ) != null && !IsCoopMember( session, room ) )
+			{
+				Send( session, ChatEvent.ForNotice( ChatNotice.NoPark ) );
+				return;
+			}
 			if ( left == room )
 			{
 				Send( session, RoomEvent( room ) );
@@ -599,6 +638,9 @@ public sealed class ChatHub
 				var target = name == null ? null : Online( name );
 				if ( target == null )
 					Send( session, name == null ? ChatEvent.ForNotice( ChatNotice.NeedName ) : ChatEvent.ForNotice( ChatNotice.NoSuchPlayer, name ) );
+				else if ( ChatProtocol.CoopSessionOf( target.Room ) != null )
+					// [EXT:online-coop-session] a shared park is named to no one: the player is in one
+					Send( session, new ChatEvent( ChatEventKind.System, Text: ChatSystemKeys.InSharedPark, Args: new[] { target.Name } ) );
 				else
 					Send( session, new ChatEvent( ChatEventKind.Notice, target.Name, target.Room, Notice: (int)ChatNotice.ThePark, Args: new[] { target.Name, RoomName( target.Room ) } ) );
 				break;
@@ -613,20 +655,25 @@ public sealed class ChatHub
 			{
 				var (name, _) = ChatCommands.SplitName( argument );
 				var target = name == null ? null : Online( name );
+				// the target's room, read once: the target may move on while this runs
+				var room = target?.Room;
 				if ( name == null )
 					Send( session, ChatEvent.ForNotice( ChatNotice.NeedName ) );
 				else if ( target == session )
 					Send( session, ChatEvent.ForNotice( ChatNotice.CannotGotoSelf ) );
-				else if ( target == null )
+				else if ( target == null || room == null )
 					Send( session, ChatEvent.ForNotice( ChatNotice.NoSuchPlayer, name ) );
-				else if ( session.Room != ChatProtocol.LobbyRoom && target.Room != session.Room )
+				else if ( session.Room != ChatProtocol.LobbyRoom && room != session.Room )
 					// [EXT:online-goto-leave-park] the server refuses a goto into another park from inside a park with
 					// CHAT_COMMANDS 127, whose text the original has; where the original enforced it is not reproduced.
 					Send( session, ChatEvent.ForNotice( ChatNotice.LeaveParkToGoTo, target.Name ) );
+				else if ( ChatProtocol.CoopSessionOf( room ) != null && !IsCoopMember( session, room ) )
+					// [EXT:online-coop-session] only a shared park's members go to someone in its room (EnterRoom asks again as it enters)
+					Send( session, ChatEvent.ForNotice( ChatNotice.NoPark ) );
 				else
 				{
 					Send( session, ChatEvent.ForNotice( ChatNotice.YouGoTo, target.Name ) );
-					EnterRoom( session, target.Room );
+					EnterRoom( session, room );
 				}
 				break;
 			}
@@ -669,6 +716,9 @@ public sealed class ChatHub
 			return "";
 		if ( ChatProtocol.SatelliteIndexOf( room ) is { } satellite )
 			return chatParks.Find( satellite )?.Name ?? "";
+		// [EXT:online-coop-session] a shared park is named to no one (so no buddy hears of it)
+		if ( ChatProtocol.CoopSessionOf( room ) != null )
+			return "";
 		var park = store.FindPark( room[ChatProtocol.ParkRoomPrefix.Length..] );
 		if ( park == null )
 			return "";

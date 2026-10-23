@@ -311,6 +311,104 @@ public class CoopServerTests
 		return bytes;
 	}
 
+	/// <summary>A chat event on <paramref name="chat"/> that <paramref name="match"/> accepts, within the integration tests' deadline.</summary>
+	private static async Task<ChatEvent> ChatNextAsync( ChatConnection chat, Func<ChatEvent, bool> match )
+	{
+		using var timeout = new CancellationTokenSource( OnlineIntegrationTests.Deadline );
+		while ( true )
+		{
+			var item = await chat.ReceiveAsync( timeout.Token ) ?? throw new AssertFailedException( "Chat closed." );
+			if ( match( item ) )
+				return item;
+		}
+	}
+
+	private static Func<ChatEvent, bool> RosterOf( string room ) => item => item.Kind == ChatEventKind.Room && item.Room == room;
+
+	[TestMethod]
+	public async Task ASharedParksChatRoomAdmitsItsMembersAloneAndLetsThemGo()
+	{
+		var server = await Start();
+		await using var accounts = new Accounts();
+		try
+		{
+			var hostAccount = await accounts.Add( server, "Hostess" );
+			var guestAccount = await accounts.Add( server, "Guest" );
+			var strangerAccount = await accounts.Add( server, "Stranger" );
+			var (host, _) = await CoopTestClient.ConnectAsync( server, hostAccount );
+			var (guest, _) = await CoopTestClient.ConnectAsync( server, guestAccount );
+			var created = await Create( host );
+			var room = ChatProtocol.CoopRoom( created.Session.Id );
+			Assert.IsTrue( ChatProtocol.IsValidRoom( room ) );
+
+			var hostChat = await hostAccount.ConnectChatAsync();
+			await using var strangerChat = await strangerAccount.ConnectChatAsync();
+			await ChatNextAsync( hostChat, RosterOf( ChatProtocol.LobbyRoom ) );
+			await ChatNextAsync( strangerChat, RosterOf( ChatProtocol.LobbyRoom ) );
+			// the host, a member, enters; a stranger can neither join nor go to the host there
+			await hostChat.JoinAsync( room );
+			CollectionAssert.AreEqual( new[] { "Hostess" }, (await ChatNextAsync( hostChat, RosterOf( room ) )).Args!.ToArray() );
+			await strangerChat.JoinAsync( room );
+			await ChatNextAsync( strangerChat, item => item.Kind == ChatEventKind.Notice && item.Notice == (int)ChatNotice.NoPark );
+			await strangerChat.SendAsync( ChatCommand.Goto, "Hostess" );
+			await ChatNextAsync( strangerChat, item => item.Kind == ChatEventKind.Notice && item.Notice == (int)ChatNotice.NoPark );
+			// locating the host says a shared park, never its title or room
+			await strangerChat.SendAsync( ChatCommand.Locate, "Hostess" );
+			var located = await ChatNextAsync( strangerChat, item => item.Kind == ChatEventKind.System );
+			Assert.AreEqual( ("in-shared-park", "Hostess"), (located.Text, located.Args!.Single()) );
+
+			// a guest that joined the session goes to the host there, and is taken back to the lobby once kicked
+			var joined = await Join( guest, created.Session.Code );
+			await using ( var guestChat = await guestAccount.ConnectChatAsync() )
+			{
+				await ChatNextAsync( guestChat, RosterOf( ChatProtocol.LobbyRoom ) );
+				await guestChat.SendAsync( ChatCommand.Goto, "Hostess" );
+				CollectionAssert.AreEquivalent( new[] { "Guest", "Hostess" }, (await ChatNextAsync( guestChat, RosterOf( room ) )).Args!.ToArray() );
+				await host.SendAsync( new CoopKick( joined.Session.You ) );
+				await ChatNextAsync( guestChat, RosterOf( ChatProtocol.LobbyRoom ) );
+				CollectionAssert.AreEqual( new[] { "Hostess" }, (await ChatNextAsync( hostChat, item => RosterOf( room )( item ) && item.Args!.Count == 1 )).Args!.ToArray() );
+				// and cannot come back
+				await guestChat.JoinAsync( room );
+				await ChatNextAsync( guestChat, item => item.Kind == ChatEventKind.Notice && item.Notice == (int)ChatNotice.NoPark );
+			}
+
+			// a member's new chat connection enters again; the host's leave ends the session and takes it back to the lobby
+			await hostChat.DisposeAsync();
+			// the account's next connection is welcome once the server has let the old one go
+			ChatConnection? hostAgain = null;
+			var deadline = DateTime.UtcNow + OnlineIntegrationTests.Deadline;
+			while ( hostAgain == null )
+			{
+				var attempt = await hostAccount.ConnectChatAsync();
+				var first = await ChatNextAsync( attempt, item => item.Kind == ChatEventKind.Notice || item.Kind == ChatEventKind.Room );
+				if ( first.Kind == ChatEventKind.Notice && first.Notice == (int)ChatNotice.NameAlreadyOnline )
+				{
+					await attempt.DisposeAsync();
+					Assert.IsTrue( DateTime.UtcNow < deadline, "the old chat connection was never let go" );
+					await Task.Delay( 50 );
+					continue;
+				}
+				hostAgain = attempt;
+				if ( !RosterOf( ChatProtocol.LobbyRoom )( first ) )
+					await ChatNextAsync( hostAgain, RosterOf( ChatProtocol.LobbyRoom ) );
+			}
+			await using var hostAgainScope = hostAgain;
+			await hostAgain.JoinAsync( room );
+			await ChatNextAsync( hostAgain, RosterOf( room ) );
+			await host.SendAsync( new CoopLeave( "Closing up." ) );
+			await ChatNextAsync( hostAgain, RosterOf( ChatProtocol.LobbyRoom ) );
+			await hostAgain.JoinAsync( room );
+			await ChatNextAsync( hostAgain, item => item.Kind == ChatEventKind.Notice && item.Notice == (int)ChatNotice.NoPark );
+			await host.DisposeAsync();
+			await guest.DisposeAsync();
+		}
+		finally
+		{
+			await server.DisposeAsync();
+			server.DeleteData();
+		}
+	}
+
 	[TestMethod]
 	public async Task AHostAndThreeGuestsShareFramesAndMessages()
 	{

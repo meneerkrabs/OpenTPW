@@ -18,7 +18,7 @@ namespace OpenTPW.Server;
 /// of another session waits for.
 /// </para>
 /// </summary>
-public sealed class CoopHub
+public sealed class CoopHub : ICoopMembership
 {
 	/// <summary>How long a session lives while its host is away (a reconnect, a restart); then it ends.</summary>
 	public static readonly TimeSpan HostAwayLimit = TimeSpan.FromMinutes( 10 );
@@ -955,6 +955,16 @@ public sealed class CoopHub
 		}
 	}
 
+	/// <inheritdoc/>
+	public event Action<string, string>? MemberGone;
+
+	/// <inheritdoc/>
+	public bool IsMember( string accountKey, string sessionId )
+	{
+		lock ( registry )
+			return memberships.TryGetValue( accountKey, out var session ) && session.Id == sessionId && !session.Ended;
+	}
+
 	/// <summary>A guest leaves or is kicked: its seat goes, the change is stored, then announced. Under the registry lock and the session's gate.</summary>
 	private void RemoveSeat( Session session, Seat seat, CoopMemberState state )
 	{
@@ -963,6 +973,7 @@ public sealed class CoopHub
 		// while the server stops the frame position can no longer move, so the stored one stays exact (an account deleted during the stop)
 		Persist( () => store.Put( session.ToRecord( exact: restarting && session.SeqKnown ) ) );
 		memberships.Remove( seat.AccountKey );
+		MemberGone?.Invoke( seat.AccountKey, session.Id );
 		if ( seat.Peer != null )
 		{
 			seat.Peer.Session = null;
@@ -990,6 +1001,7 @@ public sealed class CoopHub
 		foreach ( var seat in session.Seats )
 		{
 			memberships.Remove( seat.AccountKey );
+			MemberGone?.Invoke( seat.AccountKey, session.Id );
 			endedSessions[seat.AccountKey] = (session.Id, reason, text, now);
 			if ( seat.Peer is { } peer )
 			{

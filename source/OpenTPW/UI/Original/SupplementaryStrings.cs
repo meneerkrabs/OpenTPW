@@ -407,6 +407,10 @@ public enum OpenTpwText
 	ModsSavedAfterThisPark,
 	/// <summary>[EXT:online-coop-lockstep] A guest's click in a shared park: only the host builds (C2).</summary>
 	OnlyTheHostBuilds,
+	/// <summary>[EXT:online-coop-session] The name of a shared park's chat room when its session's title is not at hand.</summary>
+	SharedPark,
+	/// <summary>[EXT:online-coop-session] The chat's answer to locating a player who is in a shared park, whose room is named to no one ({0}: the player).</summary>
+	PlayerInSharedPark,
 }
 
 public static class SupplementaryStrings
@@ -994,6 +998,8 @@ public static class SupplementaryStrings
 			"ההרחבות נשמרו\n\nהשינויים יחולו כשתצא מהפארק הזה או תטען פארק אחר. אין צורך להפעיל מחדש." },
 		[OpenTpwText.ExtensionPoolsName] = new[] { "Pools", "Svømmebassiner", "Zwembaden", "Piscines", "Schwimmbecken", "수영장", "Baseny", "Piscinas", "Pooler", "Piscine", "בריכות" },
 		[OpenTpwText.OnlyTheHostBuilds] = new[] { "Only the host builds in a shared park", "Kun værten bygger i en delt park", "Alleen de host bouwt in een gedeeld park", "Seul l'hôte construit dans un parc partagé", "In einem geteilten Park baut nur der Gastgeber", "공유 공원에서는 호스트만 건설할 수 있습니다", "We wspólnym parku buduje tylko gospodarz", "En un parque compartido solo construye el anfitrión", "Bara värden bygger i en delad park", "In un parco condiviso costruisce solo l'host", "בפארק משותף רק המארח בונה" },
+		[OpenTpwText.SharedPark] = new[] { "Shared park", "Delt park", "Gedeeld park", "Parc partagé", "Geteilter Park", "공유 공원", "Wspólny park", "Parque compartido", "Delad park", "Parco condiviso", "פארק משותף" },
+		[OpenTpwText.PlayerInSharedPark] = new[] { "{0} is in a shared park", "{0} er i en delt park", "{0} is in een gedeeld park", "{0} est dans un parc partagé", "{0} ist in einem geteilten Park", "{0} 님은 공유 공원에 있습니다", "{0} jest we wspólnym parku", "{0} está en un parque compartido", "{0} är i en delad park", "{0} è in un parco condiviso", "{0} - בפארק משותף" },
 	};
 
 	public static IReadOnlyList<string> SupportedLanguages => Languages;

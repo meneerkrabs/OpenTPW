@@ -45,6 +45,9 @@ public static class ChatFormatter
 			ChatEventKind.System when item.Text == "buddy-enters" && item.Args is { Count: 2 } enters =>
 				string.Format( label( OnlineLabel.BuddyEnters ), enters[0], enters[1] ),
 			ChatEventKind.System when item.Text == "server-message" => Notice( OnlineStrings.SystemMessage, item.Args ),
+			// [EXT:online-coop-session] a located player in a shared park, which the server names to no one
+			ChatEventKind.System when item.Text == "in-shared-park" && item.Args is { Count: 1 } shared =>
+				string.Format( UI.Original.SupplementaryStrings.Get( UI.Original.OpenTpwText.PlayerInSharedPark, GameLanguage.IsSelected ? GameLanguage.Current.Name : GameLanguage.DefaultLanguage ), shared[0] ),
 			ChatEventKind.System => item.Text ?? "",
 			ChatEventKind.Room => $"{roomName( item.Room ?? "" )}: {string.Join( ", ", item.Args ?? Array.Empty<string>() )}",
 			_ => item.Text ?? "",
@@ -1011,6 +1014,10 @@ public sealed class OnlineSession : IDisposable, IPresenceSession, IChatPanelSou
 
 	private string RoomName( string room ) => room == ChatProtocol.LobbyRoom || room.Length == 0
 		? OnlineStrings.Ui( OnlineStrings.OnlineWorld, "Online World" )
+		// [EXT:online-coop-session] a shared park's room: its session's title, which its members know
+		: ChatProtocol.CoopSessionOf( room ) is { } sessionId
+			? Coop.Session is { } shared && shared.Id == sessionId ? shared.Title
+				: UI.Original.SupplementaryStrings.Get( UI.Original.OpenTpwText.SharedPark, GameLanguage.IsSelected ? GameLanguage.Current.Name : GameLanguage.DefaultLanguage )
 		: ChatParks.FirstOrDefault( park => ChatProtocol.SatelliteRoom( park.Id ) == room )?.Name
 			?? Parks.FirstOrDefault( park => ChatProtocol.ParkRoom( park.Id ) == room )?.Name ?? room;
 

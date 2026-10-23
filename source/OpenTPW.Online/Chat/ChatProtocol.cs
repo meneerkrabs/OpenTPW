@@ -17,6 +17,8 @@ public static class ChatProtocol
 	public const string ParkRoomPrefix = "park:";
 	/// <summary>Rooms of the online world's chat satellites ("chat parks").</summary>
 	public const string SatelliteRoomPrefix = "satellite:";
+	/// <summary>[EXT:online-coop-session] The room of a shared park's session: its members' chat and figures (docs/ONLINE.md, "Shared parks").</summary>
+	public const string CoopRoomPrefix = "coop:";
 	// [BIN:STP-PPC:0x1b8808 chatellite connector] the online world's globe holds five chat satellites (Mac layout
 	// table data:0x523f0, controls 90120-90124); each shows the player count of one chat park's room
 	public const int SatelliteRoomCount = 5;
@@ -30,6 +32,13 @@ public static class ChatProtocol
 
 	public static string ParkRoom( string parkId ) => ParkRoomPrefix + parkId;
 
+	/// <summary>[EXT:online-coop-session] The room of the shared park's session <paramref name="sessionId"/>.</summary>
+	public static string CoopRoom( string sessionId ) => CoopRoomPrefix + sessionId;
+
+	/// <summary>[EXT:online-coop-session] The session a shared park's room belongs to, or null for any other room.</summary>
+	public static string? CoopSessionOf( string? room ) =>
+		room != null && room.StartsWith( CoopRoomPrefix, StringComparison.Ordinal ) && Coop.CoopProtocol.IsSessionId( room[CoopRoomPrefix.Length..] ) ? room[CoopRoomPrefix.Length..] : null;
+
 	/// <summary>The room of chat satellite <paramref name="index"/> (1-<see cref="SatelliteRoomCount"/>).</summary>
 	public static string SatelliteRoom( int index ) =>
 		SatelliteRoomPrefix + index.ToString( System.Globalization.CultureInfo.InvariantCulture );
@@ -42,7 +51,8 @@ public static class ChatProtocol
 
 	public static bool IsValidRoom( string? room ) => room == LobbyRoom
 		|| room != null && room.StartsWith( ParkRoomPrefix, StringComparison.Ordinal ) && room.Length is > 5 and <= 69 && room[5..].All( char.IsAsciiLetterOrDigit )
-		|| SatelliteIndexOf( room ) != null;
+		|| SatelliteIndexOf( room ) != null
+		|| CoopSessionOf( room ) != null;
 }
 
 /// <summary>

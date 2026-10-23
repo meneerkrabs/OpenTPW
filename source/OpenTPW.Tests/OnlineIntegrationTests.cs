@@ -426,6 +426,11 @@ public class OnlineIntegrationTests
 		var entered = ChatFormatter.Format( new ChatEvent( ChatEventKind.System, Text: "buddy-enters", Args: new[] { "Ann", "The Fairground" } ),
 			null, _ => "Online World", OnlineStrings.Get );
 		Assert.AreEqual( "Your buddy Ann has entered The Fairground", entered );
+		// [EXT:online-coop-session] a located player in a shared park: OpenTPW's own sentence, the park unnamed
+		var shared = ChatFormatter.Format( new ChatEvent( ChatEventKind.System, Text: "in-shared-park", Args: new[] { "Ann" } ), null, _ => "Online World", OnlineStrings.Get );
+		Assert.AreEqual( string.Format( OpenTPW.UI.Original.SupplementaryStrings.Get( OpenTPW.UI.Original.OpenTpwText.PlayerInSharedPark,
+			GameLanguage.IsSelected ? GameLanguage.Current.Name : GameLanguage.DefaultLanguage ), "Ann" ), shared );
+		StringAssert.Contains( shared, "Ann" );
 	}
 
 	[TestMethod]

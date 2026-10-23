@@ -9788,7 +9788,9 @@ the economy digest's serialization once ahead, with C2c-2b-3h's first review fix
 manifests' comparison, `assets-check`, which no longer formats messages while its checks hold). The tables of `059006236`, without the
 stage `digest`, show the metadata and the resume's steps alone. The last two tables are two more rounds of two runs each of the pages of
 `0d7383931` and `7e725f699`, alternating, from their builds of the tables above, for the swap's frame. Both pages join one host phase
-of `7e725f699`'s desktop build there, whose captures are those of the other host phases: the change touches only the guest's build.
+of `7e725f699`'s desktop build there, whose captures are those of the other host phases: the change touches only the guest's build. In
+`7e725f699` the section `resume` is still open over the restore's nine steps, so the frame that ends it shows the whole restore (a
+`load:resume` mark of 55 ms in a frame of about 30); the review fixes take it a step at a time.
 
 ### After: the desktop
 

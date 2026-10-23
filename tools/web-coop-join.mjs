@@ -106,6 +106,26 @@ class Page {
 		return result.result.value;
 	}
 
+	/**
+	 * Calls `functionDeclaration` in the page with `args` (JSON values) as its arguments and returns its value, awaiting a promise it returns: the values travel
+	 * as the protocol's arguments, never inside code the page compiles.
+	 */
+	async call(functionDeclaration, args = [], timeoutMs = 30000) {
+		const { result: global } = await this.send('Runtime.evaluate', { expression: 'globalThis', objectGroup: 'opentpw-driver' });
+		try {
+			const result = await this.send('Runtime.callFunctionOn', { functionDeclaration, objectId: global.objectId, arguments: args.map(value => ({ value })),
+				returnByValue: true, awaitPromise: true }, timeoutMs);
+			if (result.exceptionDetails) {
+				const error = new Error(`${functionDeclaration.slice(0, 120)}: ${result.exceptionDetails.exception?.description ?? result.exceptionDetails.text}`);
+				error.pageException = true;
+				throw error;
+			}
+			return result.result.value;
+		} finally {
+			await this.send('Runtime.releaseObjectGroup', { objectGroup: 'opentpw-driver' }).catch(() => {});
+		}
+	}
+
 	/** Whether an evaluation failed only because the page is between documents (while it loads): DevTools' own errors for that, not the page's exceptions. */
 	static transient(error) {
 		return !error?.pageException && /^(Execution context was destroyed|Cannot find context with specified id|Inspected target navigated or closed)/.test(error?.message ?? '');
@@ -262,10 +282,11 @@ async function untilEnded(page, options, begin, what) {
 function runOnce(options, evidence, webRoot, gameRoot, runDirectory) {
 	return inPage(options, webRoot, gameRoot, async (page, run) => {
 		for (const file of evidence.files)
-			await page.eval(`opentpwPerf.program.CoopSmokeAddFile(${JSON.stringify(file.name)}, Uint8Array.from(atob(${JSON.stringify(file.bytes.toString('base64'))}), c => c.charCodeAt(0)))`, 120000);
+			await page.call('(name, base64) => opentpwPerf.program.CoopSmokeAddFile(name, Uint8Array.from(atob(base64), c => c.charCodeAt(0)))',
+				[file.name, file.bytes.toString('base64')], 120000);
 		await page.eval('opentpwPerf.take(), opentpwPerf.takeSkipped(), true');
 		const begin = Date.now();
-		await page.eval(`opentpwPerf.program.CoopJoinSmokeStart(${JSON.stringify(options.mode)})`);
+		await page.call('mode => opentpwPerf.program.CoopJoinSmokeStart(mode)', [options.mode]);
 		const status = await untilEnded(page, options, begin, 'The join phase');
 		run.seconds = (Date.now() - begin) / 1000;
 		run.state = status.state;
@@ -289,8 +310,8 @@ function runOnce(options, evidence, webRoot, gameRoot, runDirectory) {
 async function readPageFile(page, name) {
 	if (!isEvidenceFileName(name))
 		throw new Error(`'${name}' is not a file name of a recorded join`);
-	const base64 = await page.eval(`(() => { const bytes = opentpwPerf.program.ReadFile(${JSON.stringify(`/coop-smoke/${name}`)}); let text = '';
-		for (let at = 0; at < bytes.length; at += 0x8000) text += String.fromCharCode(...bytes.subarray(at, at + 0x8000)); return btoa(text); })()`, 120000);
+	const base64 = await page.call(`path => { const bytes = opentpwPerf.program.ReadFile(path); let text = '';
+		for (let at = 0; at < bytes.length; at += 0x8000) text += String.fromCharCode(...bytes.subarray(at, at + 0x8000)); return btoa(text); }`, [`/coop-smoke/${name}`], 120000);
 	return Buffer.from(base64, 'base64');
 }
 

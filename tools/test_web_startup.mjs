@@ -116,8 +116,8 @@ test('only explicit themes dispatch the experimental entry point; TPW retains it
 // Execute the actual page module and its registered folder handler. DOM and .NET exports
 // are synthetic; this protects their wiring, not browser APIs, graphics or native data.
 const pageSource = (await readFile(new URL('../source/OpenTPW.Web/wwwroot/main.js', import.meta.url), 'utf8')).replace(/^import .*;\r?\n/gm, '');
-async function page(theme, active = false, frame = () => false) {
-	let released = 0;
+async function page(theme, active = false, frame = () => false, { search = '', hostname = 'test.invalid', origin = 'https://test.invalid', settles = true } = {}) {
+	let released = 0, claims = 0;
 	const calls = [], files = new Map([['Data/old.wad', 9]]), elements = new Map(), witnesses = [];
 	const element = id => {
 		if (!elements.has(id)) elements.set(id, { value: id === 'edition' ? theme : '', textContent: '', handlers: new Map(),
@@ -130,23 +130,27 @@ async function page(theme, active = false, frame = () => false) {
 		LevelLoaded(value) { calls.push(['ready', value]); },
 		StartExperimental(origin, value) { calls.push(['experimental', value]); }, Start() { calls.push(['lobby']); },
 		ReadFile() { throw new Error('no saved language'); }, Frame() { return frame(); },
+		CoopLinkSmokeMode() { calls.push(['link-mode']); }, CoopSmokeMode() { calls.push(['coop-mode']); }, PerfMode() { calls.push(['perf-mode']); },
 	};
 	const store = { manifest: null, bytes: { stored: 0 }, begin() { calls.push(['cache-begin']); }, async flush() {} };
 	const environment = {
 		dotnet: { async create() { return { setModuleImports() {}, async getAssemblyExports() { return { OpenTPW: { Program: program } }; },
 			getConfig() { return { mainAssemblyName: 'synthetic' }; }, async runMain() {} }; } },
 		webgl: {}, audio: {}, text: {}, storage: { async restore() {}, async sync() {} },
-		originals: { supported() { return true; }, async claimKeeping() { return { acquired: true, unavailable: false, release() { released++; } }; }, MODES: ['lazy', 'all', 'off'], async openOriginalStore() { return store; } },
+		originals: { supported() { return true; }, async claimKeeping() { claims++; return { acquired: true, unavailable: false, release() { released++; } }; }, MODES: ['lazy', 'all', 'off'], async openOriginalStore() { return store; } },
 		...startup, ...poolSprites, inputs, document: { getElementById: element, addEventListener() {} },
-		location: { search: '', hostname: 'test.invalid', origin: 'https://test.invalid' },
+		location: { search, hostname, origin },
 		navigator: { locks: { async request(name, options, callback) { callback({}); } }, storage: { async getDirectory() { return {}; } } },
 		localStorage: { getItem() { return 'off'; }, setItem() {} }, window: { addEventListener() {} },
 		requestAnimationFrame(callback) { queueMicrotask(() => callback(0)); }, setInterval() {},
 		console: { warn() {}, error() {} },
 	};
 	const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
-	await new AsyncFunction(...Object.keys(environment), pageSource)(...Object.values(environment));
-	return { calls, files, witnesses, element, get released() { return released; }, choose(sources) { element('folder').handlers.get('change')({ target: { files: sources } }); } };
+	const evaluation = new AsyncFunction(...Object.keys(environment), pageSource)(...Object.values(environment));
+	// the link check's page never finishes its script (it starts no game): the test looks at what it did so far
+	if (settles)
+		await evaluation;
+	return { calls, files, witnesses, element, get released() { return released; }, get claims() { return claims; }, choose(sources) { element('folder').handlers.get('change')({ target: { files: sources } }); } };
 }
 const folderFile = (path, value = 1, fail = false) => ({ webkitRelativePath: `synthetic/${path}`, size: 1,
 	async arrayBuffer() { if (fail) throw new Error('synthetic read failure'); return new Uint8Array([value]).buffer; } });
@@ -287,4 +291,28 @@ test('browser audio startup only reads legacy settings through the browser-safe 
 	assert.equal((ensureStarted.match(/LegacySettings\.GamePath/g) ?? []).length, 1, 'read the optional path once');
 	assert.match(ensureStarted, /if\s*\(\s*!string\.IsNullOrEmpty\(\s*gamePath\s*\)\s*\)\s*LoadReverbMap\(\s*gamePath\s*\)/);
 	assert.match(legacy, /if\s*\(\s*OperatingSystem\.IsBrowser\(\)\s*\)\s*return null;\s*try\s*\{\s*return read\(\s*Settings\.Default\s*\)/, 'browser returns before the legacy settings are touched');
+});
+
+test('the link check page chooses its mode, publishes the harness and starts nothing else', async () => {
+	const context = await page('', false, () => false, { search: '?coopLinkSmoke=1', hostname: '127.0.0.1', origin: 'http://127.0.0.1:5000', settles: false });
+	await settled(() => context.calls.length > 0);
+	for (let tick = 0; tick < 20; tick++)
+		await new Promise(resolve => setImmediate(resolve));
+	assert.deepEqual(context.calls, [['link-mode']]);
+	assert.equal(context.claims, 0, 'the page claims none of its stores');
+	assert.equal(context.element('status').textContent, 'Co-op link check.');
+	assert.ok(globalThis.opentpwLink?.program?.CoopLinkSmokeMode);
+	delete globalThis.opentpwLink;
+});
+
+test('the link check excludes the other harness modes, and runs only on a loopback page', async () => {
+	for (const search of ['?coopLinkSmoke=1&perf=1', '?coopSmoke=1&coopLinkSmoke=1']) {
+		const context = await page('', false, () => false, { search, hostname: '127.0.0.1', origin: 'http://127.0.0.1:5000' });
+		assert.deepEqual(context.calls.filter(([kind]) => kind.endsWith('-mode')), [], search);
+		assert.equal(context.claims, 1, `${search}: the ordinary page`);
+	}
+	const elsewhere = await page('', false, () => false, { search: '?coopLinkSmoke=1', hostname: 'opentpw.example', origin: 'https://opentpw.example' });
+	assert.deepEqual(elsewhere.calls, []);
+	assert.equal(elsewhere.claims, 1);
+	assert.equal(globalThis.opentpwLink, undefined);
 });

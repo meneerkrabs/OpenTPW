@@ -87,6 +87,10 @@ public class ParkLayoutSnapshotTests
 		void Rejects( ParkLayoutSnapshot.Data data, string message ) =>
 			StringAssert.Contains( Assert.ThrowsException<InvalidDataException>( () => ParkLayoutSnapshot.RestoreCellMap( data ) ).Message, message );
 		Rejects( WithCells( 16, 12, 0, cell, cell with { Links = 1 } ), "recorded twice" );
+		// a check's message is formatted only when it fails, and reads as it did when every check formatted its own
+		Assert.AreEqual( "Layout snapshot is inconsistent: cell (3, 4) is recorded twice.",
+			Assert.ThrowsException<InvalidDataException>( () => ParkLayoutSnapshot.RestoreCellMap( WithCells( 16, 12, 0, cell, cell with { Links = 1 } ) ) ).Message );
+		Assert.AreEqual( "Layout snapshot is inconsistent: cell map is 2000×12.", Assert.ThrowsException<InvalidDataException>( () => ParkLayoutSnapshot.RestoreCellMap( WithCells( 2000, 12, 0 ) ) ).Message );
 		Rejects( WithCells( 16, 12, 0, cell, cell with { X = 16 } ), "outside the map" );
 		Rejects( WithCells( 16, 12, 0, cell with { Type = 3, QueueLink = 3 } ), "queue link 3" );
 		Rejects( WithCells( 16, 12, 0, cell with { QueueLink = 4 } ), "queue link but type 1" );
@@ -357,7 +361,7 @@ public class ParkLayoutSnapshotTests
 	}
 
 	[TestMethod]
-	public void RestoreStepsCheckTheWholeSnapshotInTheirFirstStepBeforePlacingAnything()
+	public void RestoreStepsCheckTheWholeSnapshotInTheirFirstStepAndPlaceNothingThere()
 	{
 		var (park, catalog, grid) = Jungle();
 		var snapshot = EasymodeLayout( park, catalog, grid );
@@ -370,10 +374,16 @@ public class ParkLayoutSnapshotTests
 		Assert.ThrowsException<InvalidDataException>( () => steps.MoveNext() );
 		Assert.AreEqual( (0, 0), (candidate.Objects.Count, placed.Count), "a rejected snapshot places nothing" );
 		Assert.AreEqual( 1, candidate.NextPlacementSeed, "a rejected snapshot does not move the allocator" );
+
+		// an accepted one: the checks end their step with nothing placed (the first object is the next step's, ObjectAccessCellsTests)
+		var accepted = new ParkObjects( catalog, grid, WorldSeed.Default );
+		using var restore = ParkLayoutSnapshot.RestoreObjectSteps( snapshot, accepted, placed ).GetEnumerator();
+		Assert.IsTrue( restore.MoveNext() );
+		Assert.AreEqual( (0f, 0, 0), (restore.Current, accepted.Objects.Count, placed.Count), "the checks' step places nothing" );
 	}
 
 	[TestMethod]
-	public void RestoreStepsOfALayoutWithoutObjectsRestoreTheAllocatorsInTheirOneStep()
+	public void RestoreStepsOfALayoutWithoutObjectsCheckItThenRestoreTheAllocators()
 	{
 		var (park, catalog, grid) = Jungle();
 		var empty = ParkLayoutSnapshot.CaptureSnapshot( new ParkCellMap( 4, 4 ), new ParkObjects( catalog, grid, WorldSeed.Default ) );
@@ -384,9 +394,9 @@ public class ParkLayoutSnapshotTests
 		foreach ( var share in ParkLayoutSnapshot.RestoreObjectSteps( empty with { NextSeed = 7, NextAttractionId = 9 }, candidate, placed ) )
 		{
 			shares.Add( share );
-			Assert.AreEqual( (7, 9), (candidate.NextPlacementSeed, candidate.ScriptWorld.NextAttractionId), "the step that ends the restore restores the allocators" );
+			Assert.AreEqual( share == 1, (candidate.NextPlacementSeed, candidate.ScriptWorld.NextAttractionId) == (7, 9), "the step that ends the restore restores the allocators, the checks' step not" );
 		}
-		CollectionAssert.AreEqual( new[] { 1f }, shares );
+		CollectionAssert.AreEqual( new[] { 0f, 1f }, shares );
 		Assert.AreEqual( 0, placed.Count );
 	}
 

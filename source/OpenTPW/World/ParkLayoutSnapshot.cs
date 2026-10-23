@@ -255,11 +255,6 @@ public static class ParkLayoutSnapshot
 		ArgumentNullException.ThrowIfNull( snapshot );
 		ArgumentNullException.ThrowIfNull( catalog );
 		using var profile = LoadProfile.Measure( "layout-checks" );
-		void Require( bool condition, string message )
-		{
-			if ( !condition )
-				throw new InvalidDataException( $"Layout snapshot is inconsistent: {message}." );
-		}
 		Require( snapshot.Cells != null, "the snapshot has no cell map" );
 		Require( snapshot.Objects != null, "the snapshot has no object list" );
 		var cellMap = snapshot.Cells!;
@@ -317,6 +312,20 @@ public static class ParkLayoutSnapshot
 		}
 	}
 
+	/// <summary>Throws the snapshot's inconsistency that <paramref name="message"/> names unless <paramref name="condition"/> holds.</summary>
+	private static void Require( bool condition, string message )
+	{
+		if ( !condition )
+			throw new InvalidDataException( $"Layout snapshot is inconsistent: {message}." );
+	}
+
+	/// <summary><see cref="Require(bool, string)"/> with a message formatted only when the check fails (<see cref="CheckMessage"/>): a pass over every cell record makes no string.</summary>
+	private static void Require( bool condition, [System.Runtime.CompilerServices.InterpolatedStringHandlerArgument( nameof( condition ) )] ref CheckMessage message )
+	{
+		if ( !condition )
+			throw new InvalidDataException( $"Layout snapshot is inconsistent: {message.ToStringAndClear()}." );
+	}
+
 	private static void ValidateQueuePassResidues( CellMapData map )
 	{
 		if ( map.QueuePassSchemaVersion == 0 && map.QueuePassResidues == null ) return;
@@ -346,11 +355,6 @@ public static class ParkLayoutSnapshot
 	{
 		using var profile = LoadProfile.Measure( "cell-checks" );
 		var cells = snapshot.Cells;
-		void Require( bool condition, string message )
-		{
-			if ( !condition )
-				throw new InvalidDataException( $"Layout snapshot is inconsistent: {message}." );
-		}
 		Require( cells.Width > 0 && cells.Height > 0 && cells.Width <= 1024 && cells.Height <= 1024, $"cell map is {cells.Width}×{cells.Height}" );
 		Require( cells.Version >= 0, "cell map version is negative" );
 		Require( cells.Cells != null, "the cell map has no cell records" );
@@ -405,11 +409,6 @@ public static class ParkLayoutSnapshot
 	/// <summary>The land and unowned-cell bits of a land record; throws <see cref="InvalidDataException"/> for an inconsistent one.</summary>
 	private static (ParkLand Land, byte[] Unowned) ReadLand( LandData data, int width, int height )
 	{
-		void Require( bool condition, string message )
-		{
-			if ( !condition )
-				throw new InvalidDataException( $"Layout snapshot is inconsistent: {message}." );
-		}
 		Require( data.Ring != null && data.Unowned != null, "the land record is incomplete" );
 		Require( data.Ring!.Count is >= 2 and <= ParkLand.MaximumPosts, $"the fence has {data.Ring.Count} posts" );
 		Require( data.Ring.All( post => post is { Length: 2 } && post[0] >= 0 && post[1] >= 0 && post[0] < width && post[1] < height ),
@@ -505,7 +504,7 @@ public static class ParkLayoutSnapshot
 
 	/// <summary>
 	/// <see cref="RestoreObjects"/> one object a step, for a park built over frames (a co-op join or resync: docs/COOP.md, "The game's join"). The first step checks the whole
-	/// snapshot before it places anything; each step places one object in the saved order into <paramref name="placed"/>, the last restores the allocators, and every step gives the
+	/// snapshot and places nothing; each next step places one object in the saved order into <paramref name="placed"/>, the last restores the allocators, and every step gives the
 	/// share done (1 only in the last). A failure clears the target, as the call does. This is no rollback: a restore given up between its steps leaves its objects in the target and the
 	/// script world advanced, so it is for a candidate its owner drops whole when it gives up (a join's build disposes its scene and level), as an original save's import given up
 	/// between its objects is (<see cref="ParkObjects.ImportOriginalSteps"/>).
@@ -537,6 +536,8 @@ public static class ParkLayoutSnapshot
 				if ( x < 0 || y < 0 || x >= target.Grid.Width || y >= target.Grid.Height )
 					throw new InvalidDataException( $"object {index} ({entry.DisplayName}) reaches outside this level's grid at ({x}, {y})." );
 		}
+		// the checks are a step of their own: the first object's placement, which may be its type's first use, starts the next
+		yield return 0;
 		// a step places its object and checks it under the clean-up a failure needs; the step ends outside it (no yield inside a try with a catch)
 		for ( var index = 0; index < snapshot.Objects.Count; index++ )
 		{

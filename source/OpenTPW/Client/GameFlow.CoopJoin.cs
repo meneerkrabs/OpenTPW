@@ -158,10 +158,17 @@ internal sealed partial class GameFlow
 	/// <summary>Whether the shared advisor preparation is still kept for a joined park's advisor (<see cref="keepJoinAdvisorPreparation"/>), which ends once it is not.</summary>
 	private bool KeepingJoinAdvisorPreparation()
 	{
-		if ( keepJoinAdvisorPreparation && (Advisor == null || Advisor.Presentation != null || !GameOptions.Current.Advisor) )
+		if ( keepJoinAdvisorPreparation && !AdvisorMayStillTake( Advisor, GameOptions.Current.Advisor ) )
 			keepJoinAdvisorPreparation = false;
 		return keepJoinAdvisorPreparation;
 	}
+
+	/// <summary>
+	/// Whether a joined park's advisor may still take what its build prepared for its first line: there is one, it has made no presentation yet, making one has not failed, and the
+	/// player hears advice.
+	/// </summary>
+	internal static bool AdvisorMayStillTake( AutomaticAdvisor? advisor, bool adviceOn ) =>
+		advisor != null && advisor.Presentation == null && !advisor.PresentationFailed && adviceOn;
 
 	/// <summary>
 	/// The swap (docs/COOP.md, "The game's join"): the live scene (the front end, or a resyncing guest's old park, which the session detached from first) is torn down as a park
@@ -489,6 +496,8 @@ internal sealed partial class GameFlow
 					advisorTried = true;
 					if ( advisor != null )
 					{
+						// its clock starts with the joined park's first update, not here: the build's frames still to come are no time the advisor waits
+						advisor.HoldClock();
 						advisor.AttachLevel( candidate );
 						advisor.CaptionSink = hud.PostAdvisorCaption;
 						advisor.PlayerTickets = flow.PlayerTickets;

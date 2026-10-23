@@ -120,6 +120,47 @@ public class AdvisorEntryPreparationTests
 		}
 	}
 
+	/// <summary>
+	/// The frame after a park's entry drops what nobody took but the lines decoded ahead, which wait for their own saying (Instant Action's prebuilt park after the Welcome);
+	/// a teardown's full drop takes them too.
+	/// </summary>
+	[TestMethod]
+	public void TheFrameAfterAnEntryDropsAllButTheLinesDecodedAhead()
+	{
+		var files = EmptyFileSystem();
+		var rig = new Disposable();
+		AdvisorEntryPreparation.Prepare( AdvisorEntryPreparation.GlobalRigKey, files, () => rig );
+		var line = AdvisorEntryPreparation.LineKey( "global", 606, null, 1234 );
+		var own = new AdvisorEntryPreparation.Store();
+		own.Keep( line, files, files.LookupGeneration, "decoded" );
+		AdvisorEntryPreparation.Adopt( own );
+		AdvisorEntryPreparation.DropAllButLines();
+		Assert.IsTrue( rig.Disposed, "what nobody took is dropped" );
+		Assert.AreEqual( 1, AdvisorEntryPreparation.Count, "the line waits for its saying" );
+		Assert.IsTrue( AdvisorEntryPreparation.TryTake<string>( line, files, out var decoded ) );
+		Assert.AreEqual( "decoded", decoded );
+
+		var later = new AdvisorEntryPreparation.Store();
+		later.Keep( line, files, files.LookupGeneration, "decoded again" );
+		AdvisorEntryPreparation.Adopt( later );
+		AdvisorEntryPreparation.Drop();
+		Assert.AreEqual( 0, AdvisorEntryPreparation.Count, "a teardown drops the lines too" );
+	}
+
+	/// <summary>A value made over steps is kept only while the file system reads what it read when the steps began.</summary>
+	[TestMethod]
+	public void AValueMadeOverStepsIsNotKeptAcrossAFileSystemChange()
+	{
+		var files = EmptyFileSystem();
+		var stale = new Disposable();
+		var own = new AdvisorEntryPreparation.Store();
+		var began = files.LookupGeneration;
+		files.InvalidateLookups();
+		own.Keep( "line:x", files, began, stale );
+		Assert.AreEqual( 0, own.Count );
+		Assert.IsTrue( stale.Disposed );
+	}
+
 	/// <summary>A join build's result read before its file system changed what it reads (a mod or language switch during the join) is stale after the swap too: refused and disposed.</summary>
 	[TestMethod]
 	public void AJoinBuildsResultReadBeforeAFileSystemChangeIsRefusedAfterTheSwap()

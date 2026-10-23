@@ -674,9 +674,10 @@ internal sealed partial class GameFlow : IDisposable
 			using ( FrameMarks.Measure( "park.advisor" ) )
 				Advisor?.Update( Hud.Paused, parkPaused: Level.SimulationTimeScale <= 0 );
 			// [EXT:park-entry-preparation] what the build prepared for the advisor and its first line is used by the update of the frame that entered the park; anything left is dropped
-			// (a joined park's, once its advisor has said its first line: a resync's says it the frame after the swap)
+			// (a joined park's, once its advisor has said its first line: a resync's says it the frame after the swap), but for the lines decoded ahead, which wait for their own
+			// saying until a teardown
 			if ( parkBuild == null && !KeepingJoinAdvisorPreparation() )
-				DropAdvisorPreparation();
+				AdvisorEntryPreparation.DropAllButLines();
 			using ( FrameMarks.Measure( "park.autosave" ) )
 				UpdateAutosave( Level, Hud );
 			var parkLost = Level.Park?.Economy.IsBankrupt == true;

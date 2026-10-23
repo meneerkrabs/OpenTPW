@@ -105,6 +105,13 @@ internal static class AdvisorEntryPreparation
 			(item.Value as IDisposable)?.Dispose();
 		}
 
+		/// <summary>Drops (and disposes) every result nobody took but the lines decoded ahead (<see cref="LineKey"/>), which wait for their own saying.</summary>
+		internal void DropAllButLines()
+		{
+			foreach ( var (key, item) in prepared.Where( pair => !pair.Key.StartsWith( LinePrefix, StringComparison.Ordinal ) ).ToArray() )
+				Remove( key, item );
+		}
+
 		/// <summary>Drops (and disposes) every result nobody took, with what its read logged.</summary>
 		internal void Drop()
 		{
@@ -125,7 +132,9 @@ internal static class AdvisorEntryPreparation
 	internal static string ThemeKey( string level ) => $"theme:{level}";
 
 	/// <summary>The key of a line's decoded audio: its bank as <see cref="Advisor.LoadResponseParts"/> names it, its sample, the length it plays and its MPEG bytes' length.</summary>
-	internal static string LineKey( string source, int sample, int? playbackBytes, int mpegBytes ) => $"line:{source}:{sample}:{playbackBytes?.ToString() ?? "all"}:{mpegBytes}";
+	internal static string LineKey( string source, int sample, int? playbackBytes, int mpegBytes ) => $"{LinePrefix}{source}:{sample}:{playbackBytes?.ToString() ?? "all"}:{mpegBytes}";
+
+	private const string LinePrefix = "line:";
 
 	/// <summary>The number of results prepared in the shared store and not yet taken or dropped (tests).</summary>
 	internal static int Count => shared.Count;
@@ -141,6 +150,12 @@ internal static class AdvisorEntryPreparation
 
 	/// <summary>Drops (and disposes) every result of the shared store nobody took, with what its read logged; a join build's own store is its own to drop.</summary>
 	internal static void Drop() => shared.Drop();
+
+	/// <summary>
+	/// What the frame after a park's entry drops: every result of the shared store nobody took but the lines decoded ahead, which wait for their own saying (Instant Action's
+	/// prebuilt park after the Welcome) until a teardown or the next park build drops them.
+	/// </summary>
+	internal static void DropAllButLines() => shared.DropAllButLines();
 
 	/// <summary>Hands a co-op join build's results to the shared store, for the joined park's advisor (<see cref="Store.Adopt"/>).</summary>
 	internal static void Adopt( Store from ) => shared.Adopt( from );

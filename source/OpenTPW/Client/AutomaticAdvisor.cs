@@ -62,6 +62,15 @@ internal sealed partial class AutomaticAdvisor : IDisposable
 	/// <summary>The presentation, once a response has been said.</summary>
 	public Advisor? Presentation => presentation;
 
+	/// <summary>Whether making the presentation failed: this advisor says no line from then on (<see cref="Play"/>).</summary>
+	internal bool PresentationFailed => presentationFailed;
+
+	/// <summary>
+	/// [EXT:online-coop-snapshot-join] Holds the advisor's clock still until its first update, which sets it running or paused as the game is (<see cref="Update"/>): an advisor
+	/// a co-op join's build makes waits through the build's remaining frames without its clock running, as an advisor a park's entering frame makes has none to wait through.
+	/// </summary>
+	internal void HoldClock() => clock.SetPaused( true );
+
 	/// <summary>Loads <c>Advisor/Advisor.sam</c>; null (logged) when it is missing or unreadable.</summary>
 	public static AutomaticAdvisor? TryCreate()
 	{

@@ -29,6 +29,43 @@ public class AdvisorModalStopTests
 		} );
 	}
 
+	/// <summary>
+	/// [EXT:online-coop-snapshot-join] An advisor a co-op join's build makes holds its clock still until its first update, which sets it running: the build's frames still to come are
+	/// no time it waits.
+	/// </summary>
+	[TestMethod]
+	public void AHeldClockStandsStillUntilTheAdvisorsFirstUpdate()
+	{
+		var now = 1000L;
+		var advisor = new AutomaticAdvisor( HelpController(), () => now );
+		advisor.HoldClock();
+		now += 5000;
+		Assert.AreEqual( 1000u, advisor.CaptureSnapshot().AdvisorClockMilliseconds, "held through the build's frames" );
+		advisor.Update();
+		now += 100;
+		Assert.AreEqual( 1100u, advisor.CaptureSnapshot().AdvisorClockMilliseconds, "running from the first update on" );
+	}
+
+	/// <summary>
+	/// [EXT:park-entry-preparation] What a joined park's build prepared for its advisor's first line is kept only while that advisor may still take it: there is one, it has made no
+	/// presentation, making one did not fail, and advice is on.
+	/// </summary>
+	[TestMethod]
+	public void AJoinedAdvisorMayTakeItsPreparationOnlyBeforeItsPresentationIsMadeOrFails()
+	{
+		var advisor = new AutomaticAdvisor( HelpController(), () => 1000L );
+		Assert.IsTrue( GameFlow.AdvisorMayStillTake( advisor, adviceOn: true ) );
+		Assert.IsFalse( GameFlow.AdvisorMayStillTake( advisor, adviceOn: false ), "advice off: no line takes it" );
+		Assert.IsFalse( GameFlow.AdvisorMayStillTake( null, adviceOn: true ), "no advisor" );
+		var failed = typeof( AutomaticAdvisor ).GetField( "presentationFailed", BindingFlags.Instance | BindingFlags.NonPublic )!;
+		failed.SetValue( advisor, true );
+		Assert.IsFalse( GameFlow.AdvisorMayStillTake( advisor, adviceOn: true ), "a presentation that could not be made takes nothing" );
+		failed.SetValue( advisor, false );
+		using var presentation = Advisor.WithoutModel( () => 1000L );
+		typeof( AutomaticAdvisor ).GetField( "presentation", BindingFlags.Instance | BindingFlags.NonPublic )!.SetValue( advisor, presentation );
+		Assert.IsFalse( GameFlow.AdvisorMayStillTake( advisor, adviceOn: true ), "a presentation made has taken what it needed" );
+	}
+
 	[DataTestMethod]
 	[DataRow( "map" )]
 	[DataRow( "options" )]

@@ -150,6 +150,20 @@ internal sealed partial class GameFlow
 		Camera.Mode as ParkCameraMode ?? parkCamera as ParkCameraMode ?? level.ParkCameraWhileRiding ?? level.ParkCameraWhileWalking;
 
 	/// <summary>
+	/// [EXT:park-entry-preparation] Set by a swap that handed its build's advisor preparation to the shared store: kept past the swap's frame until the joined park's advisor
+	/// has said its first line, which can come in a later frame (a resync's did, the frame after its swap), or will not say one (no advisor, or the player's advice off).
+	/// </summary>
+	private bool keepJoinAdvisorPreparation;
+
+	/// <summary>Whether the shared advisor preparation is still kept for a joined park's advisor (<see cref="keepJoinAdvisorPreparation"/>), which ends once it is not.</summary>
+	private bool KeepingJoinAdvisorPreparation()
+	{
+		if ( keepJoinAdvisorPreparation && (Advisor == null || Advisor.Presentation != null || !GameOptions.Current.Advisor) )
+			keepJoinAdvisorPreparation = false;
+		return keepJoinAdvisorPreparation;
+	}
+
+	/// <summary>
 	/// The swap (docs/COOP.md, "The game's join"): the live scene (the front end, or a resyncing guest's old park, which the session detached from first) is torn down as a park
 	/// entry tears it down, without ending the joining session, and the candidate's scene is activated and entered. Only work that cannot throw follows the activation: a throw before it
 	/// leaves the candidate the session's to abandon. Not run: the progress (a guest's park is the host's), the restart snapshot and a saved sound (a guest's park has neither).
@@ -171,6 +185,10 @@ internal sealed partial class GameFlow
 		}
 		entry.Scene.Activate();
 		build.MarkInstalled();
+		// [EXT:park-entry-preparation] what the build read for the advisor's first line, for that line, as a park start keeps its own (the teardown dropped the shared store): handed
+		// over once the candidate is the game's park, so a failed activation leaves it the build's to drop
+		AdvisorEntryPreparation.Adopt( entry.AdvisorPrepared );
+		keepJoinAdvisorPreparation = entry.Advisor != null && AdvisorEntryPreparation.Count > 0;
 		var level = entry.Level;
 		Level = level;
 		StartKind = entry.StartKind;
@@ -226,6 +244,8 @@ internal sealed partial class GameFlow
 		private int hudLanguage;
 		private AutomaticAdvisor? advisor;
 		private bool advisorTried;
+		/// <summary>What this build read for its advisor's first line (<see cref="AdvisorSteps"/>), its own until the swap hands it over.</summary>
+		private readonly AdvisorEntryPreparation.Store advisorPrepared = new();
 		private bool complete;
 		private bool abandoned;
 		private bool installed;
@@ -455,6 +475,13 @@ internal sealed partial class GameFlow
 			if ( flow.AutomaticAdvisorEnabled && !flow.advisorUnavailable )
 			{
 				Begin( "advisor" );
+				// [EXT:park-entry-preparation] its shipped message tables in steps of their own, as a park start's build warms them, before the advisor reads them all; a table that
+				// fails is left to the advisor, which meets the same failure as before
+				foreach ( var more in Guarded( "advisor's tables", AdvisorTables.WarmSteps() ) )
+				{
+					endsSlice = !more;
+					yield return true;
+				}
 				try
 				{
 					advisor = AutomaticAdvisor.TryCreate();
@@ -490,6 +517,37 @@ internal sealed partial class GameFlow
 			// the swimmers' sets, read ahead; their renderer is still made in the first frame, in its place among the entities
 			foreach ( var step in Guarded( "swim sprites", candidate.PrepareSwimSpriteSteps() ) )
 				yield return step;
+			// what the joined park's advisor reads for its first line, as a park start's build reads it (AdvisorEntryPreparation), into this build's own store: the live game's
+			// frames drop the shared one, and the swap hands this one over to the advisor's first update
+			if ( advisor != null )
+			{
+				foreach ( var step in Guarded( "advisor", AdvisorSteps() ) )
+					yield return step;
+			}
+		}
+
+		/// <summary>
+		/// The joined park's advisor's preparation: its shipped tables, then what its presentation reads (<see cref="AdvisorEntryPreparation.PresentationSteps"/>, a false
+		/// step announcing a long one next, which then starts a slice of its own).
+		/// </summary>
+		private IEnumerable<bool> AdvisorSteps()
+		{
+			try
+			{
+				_ = AdvisorResponses.Table;
+				_ = AdvisorCaptionTable.Table;
+				_ = AdvisorCostumeTable.Table;
+			}
+			catch ( Exception error ) when ( error is not OutOfMemoryException ) { /* only a head start: the first line meets the same failure and handles it as before */ }
+			// the presentation's steps start with the advisor shader's program, a long step
+			endsSlice = true;
+			yield return true;
+			// a fresh advisor makes its presentation, and the global model with it, when it says its first line
+			foreach ( var more in AdvisorEntryPreparation.PresentationSteps( FileSystem, candidate!.LevelName, globalRig: true, into: advisorPrepared ) )
+			{
+				endsSlice = !more;
+				yield return true;
+			}
 		}
 
 		/// <summary>A preparation's steps, a failure ending them (logged): what they left undone the park's first frame does, meeting the same failure as before.</summary>
@@ -529,7 +587,7 @@ internal sealed partial class GameFlow
 					advisor.CaptionSink = hud.PostAdvisorCaption;
 			}
 			scene.Detach();
-			return new GameJoinEntry( scene, candidate, hud, advisor, advisorTried, snapshot.Theme, snapshot.SoundSeed, snapshot.StartKind );
+			return new GameJoinEntry( scene, candidate, hud, advisor, advisorTried, advisorPrepared, snapshot.Theme, snapshot.SoundSeed, snapshot.StartKind );
 		}
 
 		public void MarkInstalled() => installed = true;
@@ -550,17 +608,25 @@ internal sealed partial class GameFlow
 			{
 				advisor = null;
 				hud = null;
-				steps.Dispose();
-				// the scene disposes the candidate and its entities and brings the live scene back, in any state it was left in
-				scene?.Dispose();
+				try
+				{
+					// what this build read for its advisor goes with it
+					advisorPrepared.Drop();
+				}
+				finally
+				{
+					steps.Dispose();
+					// the scene disposes the candidate and its entities and brings the live scene back, in any state it was left in
+					scene?.Dispose();
+				}
 			}
 		}
 	}
 }
 
 /// <summary>[EXT:online-coop-snapshot-join] What entering a built join candidate needs (<see cref="IGameJoinBuild.Stage"/>).</summary>
-internal sealed record GameJoinEntry( EntityConstructionScope Scene, Level Level, ParkHud Hud, AutomaticAdvisor? Advisor, bool AdvisorTried, string Theme, uint SoundSeed,
-	ParkStartKind StartKind );
+internal sealed record GameJoinEntry( EntityConstructionScope Scene, Level Level, ParkHud Hud, AutomaticAdvisor? Advisor, bool AdvisorTried,
+	AdvisorEntryPreparation.Store AdvisorPrepared, string Theme, uint SoundSeed, ParkStartKind StartKind );
 
 /// <summary>[EXT:online-coop-snapshot-join] A join's build as the game installs it.</summary>
 internal interface IGameJoinBuild : ICoopJoinBuild

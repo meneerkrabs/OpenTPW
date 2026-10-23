@@ -57,6 +57,84 @@ public class AdvisorEntryPreparationTests
 		Assert.IsNull( nothing );
 	}
 
+	/// <summary>A co-op join build's own store: its results are no reader's until its swap hands them to the shared store, whose frame drops leave it alone.</summary>
+	[TestMethod]
+	public void AJoinBuildsStoreIsNoReadersUntilItsSwapAdoptsIt()
+	{
+		var files = EmptyFileSystem();
+		var written = new List<string>();
+		Logger.LogDelegate record = ( _, text ) => written.Add( text );
+		Logger.OnLog += record;
+		try
+		{
+			var own = new AdvisorEntryPreparation.Store();
+			own.Prepare( "rig", files, () => { Log.Warning( "rig read" ); return "the rig"; } );
+			Assert.AreEqual( (1, 0), (own.Count, AdvisorEntryPreparation.Count) );
+			Assert.IsFalse( AdvisorEntryPreparation.TryTake<string>( "rig", files, out _ ), "the build's own result is no reader's yet" );
+			AdvisorEntryPreparation.Drop();
+			Assert.AreEqual( 1, own.Count, "the live game's frames drop the shared store, not the build's" );
+
+			AdvisorEntryPreparation.Adopt( own );
+			Assert.AreEqual( (0, 1), (own.Count, AdvisorEntryPreparation.Count), "the swap moves the results" );
+			Assert.AreEqual( 0, written.Count, "nothing is written until the result is taken" );
+			Assert.IsTrue( AdvisorEntryPreparation.TryTake<string>( "rig", files, out var rig ) );
+			Assert.AreEqual( "the rig", rig );
+			CollectionAssert.AreEqual( new[] { "rig read" }, written, "the read's messages are written when its result is taken" );
+		}
+		finally
+		{
+			Logger.OnLog -= record;
+		}
+	}
+
+	/// <summary>A result the swap hands over takes the place of the shared store's for its key, which is disposed; dropping a build's store disposes its results and writes nothing.</summary>
+	[TestMethod]
+	public void AnAdoptedResultReplacesTheSharedOneAndADroppedStoreDisposesItsOwn()
+	{
+		var files = EmptyFileSystem();
+		var (older, newer, abandoned) = (new Disposable(), new Disposable(), new Disposable());
+		AdvisorEntryPreparation.Prepare( "rig", files, () => older );
+		var own = new AdvisorEntryPreparation.Store();
+		own.Prepare( "rig", files, () => newer );
+		AdvisorEntryPreparation.Adopt( own );
+		Assert.IsTrue( older.Disposed, "the replaced result is disposed" );
+		Assert.IsTrue( AdvisorEntryPreparation.TryTake<Disposable>( "rig", files, out var taken ) );
+		Assert.AreSame( newer, taken );
+		Assert.IsFalse( newer.Disposed );
+
+		var written = new List<string>();
+		Logger.LogDelegate record = ( _, text ) => written.Add( text );
+		Logger.OnLog += record;
+		try
+		{
+			var gone = new AdvisorEntryPreparation.Store();
+			gone.Prepare( "rig", files, () => { Log.Warning( "abandoned read" ); return abandoned; } );
+			gone.Drop();
+			Assert.IsTrue( abandoned.Disposed, "an abandoned build's results are disposed" );
+			Assert.AreEqual( 0, gone.Count );
+			Assert.AreEqual( 0, written.Count, "and what their reads logged is not written" );
+		}
+		finally
+		{
+			Logger.OnLog -= record;
+		}
+	}
+
+	/// <summary>A join build's result read before its file system changed what it reads (a mod or language switch during the join) is stale after the swap too: refused and disposed.</summary>
+	[TestMethod]
+	public void AJoinBuildsResultReadBeforeAFileSystemChangeIsRefusedAfterTheSwap()
+	{
+		var files = EmptyFileSystem();
+		var stale = new Disposable();
+		var own = new AdvisorEntryPreparation.Store();
+		own.Prepare( "rig", files, () => stale );
+		files.InvalidateLookups();
+		AdvisorEntryPreparation.Adopt( own );
+		Assert.IsFalse( AdvisorEntryPreparation.TryTake<Disposable>( "rig", files, out _ ), "read before the file system changed what it reads" );
+		Assert.AreEqual( 0, AdvisorEntryPreparation.Count, "and dropped" );
+		Assert.IsTrue( stale.Disposed );
+	}
+
 	[TestMethod]
 	public void AFailedReadIsNotKeptAndItsMessagesAreNotWritten()
 	{

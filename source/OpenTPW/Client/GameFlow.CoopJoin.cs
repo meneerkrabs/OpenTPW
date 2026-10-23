@@ -277,7 +277,7 @@ internal sealed partial class GameFlow
 		public int PlacedObjects => candidate?.Objects?.Objects.Count ?? 0;
 
 		public CoopBuildTimings Timings { get; } = CoopBuildTimings.ForStages( "codec", "save", "files", "catalogue", "manifest", "validation", "economy", "level", "hud", "advisor",
-			"prepare" );
+			"prepare", "digest" );
 
 		/// <summary>
 		/// The stage the build's work runs in now, and when its current part began (<see cref="Timings"/>): a stage is charged its part when the next begins or the step ends, so a step that
@@ -551,6 +551,14 @@ internal sealed partial class GameFlow
 			if ( advisor != null )
 			{
 				foreach ( var step in Guarded( "advisor", AdvisorSteps() ) )
+					yield return step;
+			}
+			// the check at the cut hashes the park's economy: its serialization runs once here first, a part a step (WorldStateHash.SerializationWarmupSteps), so the check's
+			// frame runs none of its code for the first time
+			if ( candidate.Park?.Economy is { } joinedEconomy )
+			{
+				Begin( "digest" );
+				foreach ( var step in WorldStateHash.SerializationWarmupSteps( joinedEconomy ) )
 					yield return step;
 			}
 		}

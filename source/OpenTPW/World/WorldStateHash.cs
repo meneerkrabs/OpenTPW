@@ -148,6 +148,37 @@ public static class WorldStateHash
 	/// </summary>
 	internal static IEnumerable<bool> WarmupSteps() => JsonMetadataWarmup.Steps( JsonSerializerOptions.Default, typeof( ParkSaveFile.Data ) );
 
+	/// <summary>
+	/// Runs the economy digest's serialization once ahead (<see cref="Compute"/>), a part a step: the park save's capture of <paramref name="economy"/>, then each of its parts
+	/// serialized to a JSON tree with the serializer's default options and written in the digest's canonical form, then the whole save so. The code a process's first hash
+	/// would run for the first time has then run, compiled ahead of time or not. Nothing is kept, the economy is only read and no hash changes; a part that cannot be written is
+	/// left for the hash to meet.
+	/// </summary>
+	internal static IEnumerable<bool> SerializationWarmupSteps( ParkEconomy economy )
+	{
+		ArgumentNullException.ThrowIfNull( economy );
+		var data = ParkSaveFile.Capture( economy );
+		yield return true;
+		foreach ( var property in typeof( ParkSaveFile.Data ).GetProperties( System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance ) )
+		{
+			if ( property.GetIndexParameters().Length != 0 || property.GetMethod == null )
+				continue;
+			Warm( () => property.GetValue( data ) is { } value ? JsonSerializer.SerializeToNode( value, property.PropertyType ) : null );
+			yield return true;
+		}
+		Warm( () => JsonSerializer.SerializeToNode( data ) );
+	}
+
+	/// <summary>Writes what <paramref name="serialize"/> makes in the digest's canonical form and drops it; a failure is the hash's to meet.</summary>
+	private static void Warm( Func<JsonNode?> serialize )
+	{
+		try
+		{
+			_ = Canonical( serialize() );
+		}
+		catch ( Exception exception ) when ( exception is not OutOfMemoryException ) { }
+	}
+
 	private static string Canonical( JsonNode? node ) => node switch
 	{
 		JsonObject item => "{" + string.Join( ",", item.OrderBy( pair => pair.Key, StringComparer.Ordinal ).Select( pair => JsonValue.Create( pair.Key ).ToJsonString() + ":" + Canonical( pair.Value ) ) ) + "}",

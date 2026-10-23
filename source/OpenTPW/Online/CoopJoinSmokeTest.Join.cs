@@ -253,7 +253,7 @@ internal sealed partial class CoopJoinSmokeTest
 			Require( values.All( value => double.IsFinite( value ) && value >= 0 ), $"build {timing.Generation}'s timings are finite and not negative ({timing})" );
 			Require( timing.DownloadAttempts == 1 && timing.PayloadBytes > 0 && timing.BuildFrames > 0
 				&& timing.Build.Select( stage => stage.Name ).SequenceEqual( new[] { "codec", "save", "files", "catalogue", "manifest", "validation", "economy", "level", "hud", "advisor",
-					"prepare" } )
+					"prepare", "digest" } )
 				&& timing.Build.Take( 2 ).All( stage => stage.Status == CoopTimingStatus.Measured ),
 				$"build {timing.Generation} was downloaded once and built over frames, every stage listed ({timing})" );
 			Require( timing.Build.All( stage => stage.Status != CoopTimingStatus.Measured || stage.Steps > 0 && stage.Frames > 0 && stage.Frames <= timing.BuildFrames ),

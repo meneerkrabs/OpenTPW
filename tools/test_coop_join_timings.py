@@ -347,13 +347,13 @@ class CoopJoinTimingsTests(unittest.TestCase):
                 with self.subTest(run), self.assertRaises(ValueError):
                     coop_join_timings.load(root / run)
 
-    def test_builds_from_before_the_codec_and_the_prepare_stages_are_read_without_them(self):
+    def test_builds_from_before_the_codec_the_prepare_and_the_digest_stages_are_read_without_them(self):
         def without(*names):
             def change(host, join):
                 for timing in join["JoinTimings"]:
                     timing["Build"] = [stage for stage in timing["Build"] if stage["Name"] not in names]
             return change
-        for names in [("prepare",), ("codec", "prepare")]:
+        for names in [("digest",), ("prepare", "digest"), ("codec", "prepare", "digest")]:
             with self.subTest(names), tempfile.TemporaryDirectory() as temporary:
                 root = pathlib.Path(temporary)
                 write_run(root / "run-0", 30.0, 3.0, change=without(*names))
@@ -362,11 +362,12 @@ class CoopJoinTimingsTests(unittest.TestCase):
                 for name in names:
                     self.assertNotIn(f"joined: {name}", table)
         # a list no build ever had is refused
-        with tempfile.TemporaryDirectory() as temporary:
-            root = pathlib.Path(temporary)
-            write_run(root / "run-0", 30.0, 3.0, change=without("codec"))
-            with self.assertRaises(ValueError):
-                coop_join_timings.load(root / "run-0")
+        for names in [("codec",), ("prepare",)]:
+            with self.subTest(names), tempfile.TemporaryDirectory() as temporary:
+                root = pathlib.Path(temporary)
+                write_run(root / "run-0", 30.0, 3.0, change=without(*names))
+                with self.assertRaises(ValueError):
+                    coop_join_timings.load(root / "run-0")
 
     def test_pages_in_different_browsers_or_guests_in_different_builds_are_no_one_measurement(self):
         for name, second in [("another browser", {"page": dict(PAGE, chrome="Chrome/156")}),

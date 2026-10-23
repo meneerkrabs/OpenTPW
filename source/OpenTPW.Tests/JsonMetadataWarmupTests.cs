@@ -6,7 +6,8 @@ namespace OpenTPW.Tests;
 
 /// <summary>
 /// A serializer's reflection metadata made ahead in steps (<see cref="JsonMetadataWarmup"/>): one type a step, deepest first, the fields only when the options serialize them;
-/// the economy digest's (<see cref="WorldStateHash.WarmupSteps"/>) changes no hash.
+/// the economy digest's (<see cref="WorldStateHash.WarmupSteps"/>) and the run of its serialization ahead (<see cref="WorldStateHash.SerializationWarmupSteps"/>) change no
+/// hash.
 /// </summary>
 [TestClass]
 public class JsonMetadataWarmupTests
@@ -52,5 +53,20 @@ public class JsonMetadataWarmupTests
 		Assert.IsTrue( steps > 40, $"{steps} steps" );
 		Assert.AreEqual( expected, WorldStateHash.Compute( new WorldStateSources { Economy = park } ) );
 		Assert.AreEqual( steps, WorldStateHash.WarmupSteps().Count(), "running it again makes nothing new and fails nowhere" );
+	}
+
+	[TestMethod]
+	public void TheDigestsSerializationRunsAheadAPartAStepAndChangesNoHashAndNoEconomy()
+	{
+		var park = EconomyTestData.Park();
+		var expected = WorldStateHash.Compute( new WorldStateSources { Economy = park } );
+		var saved = ParkSaveFile.Serialize( park );
+		var parts = typeof( ParkSaveFile.Data ).GetProperties( System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance )
+			.Count( property => property.GetIndexParameters().Length == 0 && property.GetMethod != null );
+		// the save's capture, then a step a part (the step that ends the enumeration writes the whole save)
+		Assert.AreEqual( 1 + parts, WorldStateHash.SerializationWarmupSteps( park ).Count() );
+		Assert.IsTrue( parts > 10, $"{parts} parts" );
+		Assert.AreEqual( expected, WorldStateHash.Compute( new WorldStateSources { Economy = park } ) );
+		Assert.AreEqual( saved, ParkSaveFile.Serialize( park ), "the economy is only read" );
 	}
 }

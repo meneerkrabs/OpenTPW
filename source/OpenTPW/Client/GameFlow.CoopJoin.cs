@@ -245,6 +245,10 @@ internal sealed partial class GameFlow
 
 		public int StagedEntities => scene?.StagedEntities ?? 0;
 
+		public bool RestoringObjects => candidate?.RestoringObjects ?? false;
+
+		public int PlacedObjects => candidate?.Objects?.Objects.Count ?? 0;
+
 		public CoopBuildTimings Timings { get; } = CoopBuildTimings.ForStages( "codec", "save", "files", "catalogue", "manifest", "validation", "economy", "level", "hud", "advisor",
 			"prepare" );
 

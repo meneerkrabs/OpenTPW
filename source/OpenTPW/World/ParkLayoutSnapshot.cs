@@ -494,8 +494,25 @@ public static class ParkLayoutSnapshot
 	/// </summary>
 	public static IReadOnlyList<OriginalObject> RestoreObjects( Data snapshot, ParkObjects target )
 	{
+		var placed = new List<OriginalObject>();
+		foreach ( var _ in RestoreObjectSteps( snapshot, target, placed ) )
+		{
+		}
+		return placed;
+	}
+
+	/// <summary>
+	/// <see cref="RestoreObjects"/> one object a step, for a park built over frames (a co-op join or resync: docs/COOP.md, "The game's join"). The first step checks the whole
+	/// snapshot before it places anything; each step places one object in the saved order into <paramref name="placed"/>, the last restores the allocators, and every step gives the
+	/// share done (1 only in the last). A failure clears the target, as the call does. This is no rollback: a restore given up between its steps leaves its objects in the target and the
+	/// script world advanced, so it is for a candidate its owner drops whole when it gives up (a join's build disposes its scene and level), as an original save's import given up
+	/// between its objects is (<see cref="ParkObjects.ImportOriginalSteps"/>).
+	/// </summary>
+	internal static IEnumerable<float> RestoreObjectSteps( Data snapshot, ParkObjects target, List<OriginalObject> placed )
+	{
 		ArgumentNullException.ThrowIfNull( snapshot );
 		ArgumentNullException.ThrowIfNull( target );
+		ArgumentNullException.ThrowIfNull( placed );
 		ValidateSnapshot( snapshot, target.Catalog );
 		if ( target.Objects.Count != 0 )
 			throw new InvalidDataException( "Layout objects restore into an unused ParkObjects (the fresh candidate level); this one already placed objects." );
@@ -518,28 +535,23 @@ public static class ParkLayoutSnapshot
 				if ( x < 0 || y < 0 || x >= target.Grid.Width || y >= target.Grid.Height )
 					throw new InvalidDataException( $"object {index} ({entry.DisplayName}) reaches outside this level's grid at ({x}, {y})." );
 		}
-		var placed = new List<OriginalObject>( snapshot.Objects.Count );
+		// a step places its object and checks it under the clean-up a failure needs; the step ends outside it (no yield inside a try with a catch)
+		for ( var index = 0; index < snapshot.Objects.Count; index++ )
+		{
+			try
+			{
+				placed.Add( RestoreObject( snapshot, target, index ) );
+			}
+			catch
+			{
+				target.Clear();
+				throw;
+			}
+			// the share reaches 1 only with the allocators restored, in the last step
+			yield return (index + 1) / (float)(snapshot.Objects.Count + 1);
+		}
 		try
 		{
-			for ( var index = 0; index < snapshot.Objects.Count; index++ )
-			{
-				var record = snapshot.Objects[index];
-				var entry = target.Catalog.Find( record.InfoId )!;
-				// The runtime adopts the record's saved attraction id; validation has already proven the ids increase
-				// with placement order, so no id is taken twice and no dead id is ever replayed.
-				var item = target.AddRestored( entry, record.X, record.Y, record.Rotation, record.Open, record.CreationSeed, record.AttractionId, legacyBaseHeight: record.BaseHeightRule == null, thingId: record.ThingId );
-				var placement = item.Placement;
-				if ( placement.X != record.X || placement.Y != record.Y || placement.Rotation != record.Rotation )
-					throw new InvalidDataException(
-						$"object {index} ({entry.DisplayName}) restored at ({placement.X}, {placement.Y}, {placement.Rotation}), not the saved ({record.X}, {record.Y}, {record.Rotation})." );
-				if ( placement.BaseHeight != record.BaseHeight )
-					throw new InvalidDataException(
-						$"object {index} ({entry.DisplayName}) stands at base height {placement.BaseHeight}, not the saved {record.BaseHeight}: the terrain under it changed." );
-				if ( item.Visitors.AttractionId != record.AttractionId )
-					throw new InvalidDataException(
-						$"object {index} ({entry.DisplayName}) got attraction id {item.Visitors.AttractionId}, not the saved {record.AttractionId}: the restore path stopped preserving ids." );
-				placed.Add( item );
-			}
 			// Ids the park burned after its last surviving object: adopt the saved frontier, no per-id work.
 			target.RestoreAttractionIdAllocator( snapshot.NextAttractionId );
 			if ( target.NextAttractionId != snapshot.NextAttractionId )
@@ -551,6 +563,27 @@ public static class ParkLayoutSnapshot
 			throw;
 		}
 		target.RestoreSeedAllocator( snapshot.NextSeed );
-		return placed;
+		yield return 1;
+	}
+
+	/// <summary>Places the snapshot's object of <paramref name="index"/> and checks that it stands where, how high and under the id it was saved with.</summary>
+	private static OriginalObject RestoreObject( Data snapshot, ParkObjects target, int index )
+	{
+		var record = snapshot.Objects[index];
+		var entry = target.Catalog.Find( record.InfoId )!;
+		// The runtime adopts the record's saved attraction id; validation has already proven the ids increase
+		// with placement order, so no id is taken twice and no dead id is ever replayed.
+		var item = target.AddRestored( entry, record.X, record.Y, record.Rotation, record.Open, record.CreationSeed, record.AttractionId, legacyBaseHeight: record.BaseHeightRule == null, thingId: record.ThingId );
+		var placement = item.Placement;
+		if ( placement.X != record.X || placement.Y != record.Y || placement.Rotation != record.Rotation )
+			throw new InvalidDataException(
+				$"object {index} ({entry.DisplayName}) restored at ({placement.X}, {placement.Y}, {placement.Rotation}), not the saved ({record.X}, {record.Y}, {record.Rotation})." );
+		if ( placement.BaseHeight != record.BaseHeight )
+			throw new InvalidDataException(
+				$"object {index} ({entry.DisplayName}) stands at base height {placement.BaseHeight}, not the saved {record.BaseHeight}: the terrain under it changed." );
+		if ( item.Visitors.AttractionId != record.AttractionId )
+			throw new InvalidDataException(
+				$"object {index} ({entry.DisplayName}) got attraction id {item.Visitors.AttractionId}, not the saved {record.AttractionId}: the restore path stopped preserving ids." );
+		return item;
 	}
 }

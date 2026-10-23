@@ -124,6 +124,8 @@ public partial class CoopJoinSessionTests
 		public int Discarded { get; set; }
 		/// <summary>The builds abandoned, with a candidate or before one.</summary>
 		public int Abandoned { get; set; }
+		/// <summary>Called with each build's candidate in the step that completes it.</summary>
+		public Action<Level>? Completed { get; set; }
 
 		public ICoopJoinBuild Build( CoopJoinPayload payload )
 		{
@@ -169,6 +171,9 @@ public partial class CoopJoinSessionTests
 
 		public bool Step()
 		{
+			// a complete build is complete from then on: its candidate is the one checked at the cut and swapped in
+			if ( candidate != null )
+				return true;
 			done++;
 			if ( join.ThrowsAtStep is { } fault && fault.Step == done )
 			{
@@ -188,6 +193,7 @@ public partial class CoopJoinSessionTests
 			if ( join.Drifts )
 				level.Park!.Economy.Ledger.Post( LedgerCategory.OtherIncome, 1 );
 			(candidate, Entities) = (level, list);
+			join.Completed?.Invoke( level );
 			return true;
 		}
 
@@ -1225,6 +1231,43 @@ public partial class CoopJoinSessionTests
 		RoundsUntil( () => joiner.Level != null, "the next capture built", 20000 );
 		Assert.AreEqual( (2, 1), (joiner.Join.Builds, joiner.Join.Abandoned) );
 		CollectionAssert.AreEqual( new[] { "timed out", "joined" }, joiner.Session!.JoinTimings.Select( timing => timing.Outcome ).ToArray() );
+		CatchUpAndCompare( joiner );
+	}
+
+	/// <summary>A build checked at the cut before its deadline is swapped in the next frame, however late that frame comes.</summary>
+	[TestMethod]
+	public void ABuildCheckedBeforeItsDeadlineIsSwappedInAfterIt()
+	{
+		Hosted();
+		Build( 60, 49 );
+		var joiner = Joiner();
+		joiner.Join!.Steps = _ => 3;
+		RoundsUntil( () => joiner.Join.Builds == 1, "the build began" );
+		var began = clock;
+		// the frame the build completes in checks it; the next comes after the deadline
+		joiner.Join.Completed = _ => clock = began + CoopSession.BuildDeadlineSeconds;
+		RoundsUntil( () => joiner.Level != null, "the checked build swapped in" );
+		Assert.IsTrue( clock - began >= CoopSession.BuildDeadlineSeconds, $"{clock - began:0.0} s" );
+		Assert.AreEqual( (1, 0, 0), (joiner.Join.Builds, joiner.Join.Abandoned, joiner.Session!.FailedJoins) );
+		Assert.AreEqual( "joined", joiner.Session.JoinTimings.Single().Outcome );
+		CatchUpAndCompare( joiner );
+	}
+
+	/// <summary>The swap's frame runs none of the park's ticks; the next frame runs them, deferred, never dropped.</summary>
+	[TestMethod]
+	public void TheSwapsFrameRunsNoTicksAndTheNextRunsTheHeldOnes()
+	{
+		Hosted();
+		Build( 60, 50 );
+		var joiner = Joiner();
+		joiner.Join!.Steps = _ => 30;
+		long? atCut = null;
+		joiner.Join.Completed = candidate => atCut = candidate.TickCount;
+		RoundsUntil( () => joiner.Level != null, "the build swapped in" );
+		Assert.AreEqual( atCut, joiner.Level!.TickCount, "the swap's frame runs no ticks" );
+		Assert.IsTrue( host.Level!.TickCount > atCut, $"the host ticked past the cut ({atCut}) while the member built: {host.Level.TickCount}" );
+		Rounds( 1 );
+		Assert.IsTrue( joiner.Level.TickCount > atCut, $"the frame after the swap runs the ticks the swap's frame held: {joiner.Level.TickCount}" );
 		CatchUpAndCompare( joiner );
 	}
 

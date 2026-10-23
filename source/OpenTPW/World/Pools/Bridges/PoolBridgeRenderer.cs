@@ -46,7 +46,7 @@ public static class PoolBridgeMeshBuilder
 }
 
 /// <summary>[EXT:pools-bridges] Opaque, depth-tested Blender bridge meshes above the independent swimming layer.</summary>
-public sealed class PoolBridgeRenderer : Entity
+public sealed class PoolBridgeRenderer : Entity, IFirstFramePreparation
 {
 	private readonly Func<PoolBridgeWorld?> worldSource;
 	private readonly SVector2 origin;
@@ -84,6 +84,13 @@ public sealed class PoolBridgeRenderer : Entity
 			parts[i].PartMaterial = material;
 		}
 		asset = loaded;
+	}
+
+	/// <summary>[EXT:park-entry-preparation] The assets and the meshes of the bridges built so far, as the first update would make them; that update then finds them made.</summary>
+	IEnumerable<bool> IFirstFramePreparation.PrepareFirstFrame()
+	{
+		OnUpdate();
+		yield return true;
 	}
 
 	protected override void OnUpdate()

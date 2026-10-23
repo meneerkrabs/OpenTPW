@@ -865,3 +865,17 @@ On main after the build steps were split (#741), the join's level steps had shru
 | Catching up after the swap | 0.57 s | 0.26 s | 2.17 s | 0.75 s |
 
 The page copies a theme's files between its frames, so the loop that spent every frame's budget asking for them most likely kept that copy waiting; these timings do not follow the copy itself. The measuring smoke's marks were on while each park was built, where the baseline had none, so small differences are no finding. The swap's frame is now the longest of a join ahead of time. Its marks show the joined park's first update of its level (185 ms: the pools' 72, the entities' first use of models, textures and pipelines 67, the first simulation step 45), the check at the cut (75) and the advisor's first update (39). A park start prepares much of that first-time work in its build (`GameFlow.PrepareEntry`); the join's build does not yet (C2c-2b-3c).
+
+### The swap's frame (C2c-2b-3c)
+
+C2c-2b-3c checks the joined park at the cut in the frame its build completes in and swaps it in the next, holds the stream's ticks to the frame after the swap, and prepares the park's first frame in a last build stage (`prepare`, `[EXT:park-entry-preparation]`): the coasters' views, the pool bridges' meshes and the swimmers' sprite sets. Same machine and harness, medians of three runs (five before) in milliseconds, compiled ahead of time (docs/COOP.md, "Measurements"):
+
+| Part of the join | Before | Check and swap apart | First frame prepared |
+| --- | ---: | ---: | ---: |
+| The swap's frame, with its drawing | 345 | 229 | 119 |
+| A resync's swap's frame, with its drawing | 144 | 121 | 39 |
+| The frame after the swap, with its drawing | 38.6 | 52.7 | 53.2 |
+| A join's longest frame, with its drawing | 345 (the swap's) | 290 (the objects' restore) | 292 (the objects' restore) |
+
+The check (74 ms) now shares the frame its build completes in, the first ticks (a replayed placement's first models among them) the frame after the swap, and the prepared work 113 ms over 7 build frames, its longest step 39 ms. The swap's frame keeps the advisor's first update (37 ms), the pools' (23 ms, the swimmers' renderer still made there) and the session's step (13 ms). The longest frame of a join is now the objects' restore (C2c-2b-3d).
+

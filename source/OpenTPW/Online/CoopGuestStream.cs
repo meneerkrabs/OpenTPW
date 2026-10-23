@@ -141,7 +141,7 @@ internal sealed class CoopGuestStream : ILevelSessionStream, IDisposable
 
 	/// <summary>
 	/// [EXT:online-coop-snapshot-join] The last frame the stream had applied when its last frame point left it following within its window (every frame it held applied, its ticks
-	/// run); 0 when that frame point did not. A join's catch-up ends at the first such frame point past the cut.
+	/// run); 0 when that frame point did not, or held its ticks (<see cref="HoldTicksOneFrame"/>). A join's catch-up ends at the first such frame point past the cut.
 	/// </summary>
 	internal ulong FollowingThrough { get; private set; }
 
@@ -154,15 +154,32 @@ internal sealed class CoopGuestStream : ILevelSessionStream, IDisposable
 
 	private long WindowTicks => (long)(CoopHostStream.WindowSeconds * FixedStepClock.TicksPerSecond * Math.Max( 1f, GameSpeedScale.Of( level.Park?.Economy.Speed ?? GameSpeed.Normal ) ));
 
+	private bool holdTicks;
+
+	/// <summary>
+	/// The next frame point applies the frames that came but runs no ticks: the frame that swapped this stream's park in has its first-time work, and the ticks wait for the next frame
+	/// (deferred, never dropped: the park after a tick depends on the ticks and the records only).
+	/// </summary>
+	internal void HoldTicksOneFrame() => holdTicks = true;
+
 	/// <summary>The frame point: the frames that came since the last game frame apply (never inside a tick), then the guest runs its ticks toward the horizon.</summary>
 	public void AdvanceSimulation( double frameSeconds, float timeScale )
 	{
 		var now = seconds();
 		if ( !Stopped )
-			ApplyReady();
-		if ( !Stopped )
-			RunTicks( frameSeconds, now );
-		FollowingThrough = !Stopped && ready.Count == 0 && State == CoopGuestState.Following ? LastFrame : 0;
+		{
+			using ( FrameMarks.Measure( "coop.ready" ) )
+				ApplyReady();
+		}
+		var held = holdTicks;
+		holdTicks = false;
+		if ( !Stopped && !held )
+		{
+			using ( FrameMarks.Measure( "coop.ticks" ) )
+				RunTicks( frameSeconds, now );
+		}
+		// a frame point that held its ticks follows nothing yet: it ran none toward the frames it applied
+		FollowingThrough = !Stopped && !held && ready.Count == 0 && State == CoopGuestState.Following ? LastFrame : 0;
 		if ( !silenced )
 			Progress( now );
 	}

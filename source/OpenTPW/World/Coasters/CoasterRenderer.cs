@@ -23,7 +23,7 @@ internal sealed class CoasterHeadSources : IHeadSourceProvider
 // [BIN:TPW-EXE:0x43eb70 track rebuild] the original rebuilds the track mesh as a dynamic model when the track changes (0x43eb70 from 0x435a30/0x447d30), animates the scrolling textures by shifting the V of the faces of scrolling textures every frame (0x435a30) and poses each car from its sample coordinate (0x43ce20)
 // [BIN:TPW-EXE:0x435adf scroll shift] the per-frame tick shifts V by δ = (now − ctl+0x138)·P·0.001 for every polygon of a texture the loader flagged (definition flag 4, set when any fScrollRate is nonzero; texture flag 0x20), P the power factor at controller +0x2c; the stored fScrollRate (texture +0xc) is not read in that loop
 // [APPROX:COAST-026] self-illuminated textures (asTextureData bIsSelfIlluminating, texture flag 4) and the marker textures (flags 7) are lit by the scene light like the rest: the shader has no unlit path and its browser build cannot be regenerated here; another reader of the stored scroll rate (texture +0xc) outside the controller tick is not excluded — evidence needed: a scan of the generic texture library for readers of texture +0xc; the coaster MD2 models' Add-mode UV animation (the add paths of 0x471860) is not modelled, the pylons' vertex and position keys are added (CoasterPylonRig)
-public sealed class CoasterRenderer : Entity
+public sealed class CoasterRenderer : Entity, IFirstFramePreparation
 {
 	/// <summary>
 	/// The marker texture of the pair of knots starting at <paramref name="node"/> and ending in <paramref name="next"/> (the same node for a pair between two tags of one pylon), or null.
@@ -161,6 +161,35 @@ public sealed class CoasterRenderer : Entity
 		DrawnTriangles = triangles;
 	}
 
+	/// <summary>
+	/// [EXT:park-entry-preparation] Each coaster's view, its type's assets and its track's and cars' models, one coaster a step, as the first update makes them (the ride stands
+	/// still until the park's first frame); that update then finds them made, and takes the scroll's clock as a view made in it does. A view whose preparation fails is dropped, so
+	/// the first update makes it again and meets the same failure as before.
+	/// </summary>
+	IEnumerable<bool> IFirstFramePreparation.PrepareFirstFrame()
+	{
+		if ( deleted )
+			yield break;
+		foreach ( var ride in coasters().ToList() )
+		{
+			if ( ViewOf( ride ) is { } view )
+			{
+				try
+				{
+					view.Prepare();
+				}
+				catch
+				{
+					views.Remove( view );
+					view.Dispose();
+					ReleaseAssets( view.Assets );
+					throw;
+				}
+			}
+			yield return true;
+		}
+	}
+
 	private RideView? ViewOf( CoasterRide ride )
 	{
 		for ( var index = 0; index < views.Count; index++ )
@@ -286,6 +315,32 @@ public sealed class CoasterRenderer : Entity
 		{
 			if ( disposed )
 				return;
+			// a view prepared ahead takes its clock in the park's first frame, as one made there does in its constructor, scrolling mesh or not
+			if ( rebaseScroll )
+			{
+				lastSceneMilliseconds = owner.sceneMilliseconds?.Invoke() ?? 0;
+				rebaseScroll = false;
+			}
+			EnsureTrack();
+			UpdateScroll();
+			UpdateCars();
+		}
+
+		/// <summary>
+		/// [EXT:park-entry-preparation] The track's and the cars' models ahead of the park's first frame, without the frame's update: that update takes the scroll's clock again,
+		/// so the scroll starts there as it does for a view made in that frame.
+		/// </summary>
+		public void Prepare()
+		{
+			if ( disposed )
+				return;
+			EnsureTrack();
+			EnsureCars();
+			rebaseScroll = true;
+		}
+
+		private void EnsureTrack()
+		{
 			var preview = Ride.IsOperational ? null : owner.previewOf( Ride );
 			var key = (Ride.Track.Version, Ride.IsOperational, Ride.BeingEdited, Ride.Samples.Count, preview);
 			if ( dirty || key != built )
@@ -294,9 +349,9 @@ public sealed class CoasterRenderer : Entity
 				built = key;
 				dirty = false;
 			}
-			UpdateScroll();
-			UpdateCars();
 		}
+
+		private bool rebaseScroll;
 
 		// ---- Track and pylons ----------------------------------------------------------------------
 
@@ -511,23 +566,44 @@ public sealed class CoasterRenderer : Entity
 					var carModels = assets.GetCarModels( rig );
 					var parts = new ModelEntity[carModels.Length];
 					Model?[]? own = null;
-					for ( var part = 0; part < parts.Length; part++ )
+					try
 					{
-						// a part whose texture coordinates follow the car's wheel clip has a model of its own: every car turns its wheels at its own speed
-						if ( rig.IsDynamic( part ) )
-							(own ??= new Model?[parts.Length])[part] = assets.CreateOwnPartModel( rig, part );
-						parts[part] = new ModelEntity { Model = own?[part] ?? carModels[part], Name = "coaster car" };
-						carTriangles += rig.Parts[part].Indices.Length / 3;
+						for ( var part = 0; part < parts.Length; part++ )
+						{
+							// a part whose texture coordinates follow the car's wheel clip has a model of its own: every car turns its wheels at its own speed
+							if ( rig.IsDynamic( part ) )
+								(own ??= new Model?[parts.Length])[part] = assets.CreateOwnPartModel( rig, part );
+							parts[part] = new ModelEntity { Model = own?[part] ?? carModels[part], Name = "coaster car" };
+						}
 					}
+					catch
+					{
+						// a car that failed half-way is not one of the view's cars, so nothing else would release what it made
+						foreach ( var made in parts )
+							made?.Delete();
+						foreach ( var model in own ?? Array.Empty<Model?>() )
+						{
+							model?.ReleaseBuffers();
+							model?.Material.ReleaseOwnedResources();
+						}
+						throw;
+					}
+					for ( var part = 0; part < parts.Length; part++ )
+						carTriangles += rig.Parts[part].Indices.Length / 3;
 					cars.Add( new CarInstance { Rig = rig, Parts = parts, OwnModels = own, YOffset = typeIndex < types.Types.Count ? types.Types[typeIndex].YOffset : 0, Train = train, Car = car, TypeIndex = typeIndex } );
 				}
 			}
 		}
 
-		private void UpdateCars()
+		private void EnsureCars()
 		{
 			if ( carTrains != Ride.Trains.Count || carsOperational != Ride.IsOperational )
 				RebuildCars();
+		}
+
+		private void UpdateCars()
+		{
+			EnsureCars();
 			if ( cars.Count == 0 || Ride.Spacing <= 0 )
 				return;
 			var engine = owner.ToEngine();

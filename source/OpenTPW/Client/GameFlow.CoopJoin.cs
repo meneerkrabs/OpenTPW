@@ -396,8 +396,12 @@ internal sealed partial class GameFlow
 			Begin( "codec" );
 			foreach ( var step in ParkResumeJson.WarmupSteps() )
 				yield return step;
+			// the save read over steps: its parse a slice of the bytes each, then its checks in their own steps (ParkResumeSaveFile.DeserializeSteps)
 			Begin( "save" );
-			var saved = ParkResumeSaveFile.Deserialize( payload.Save );
+			ParkResumeSnapshot? parsed = null;
+			foreach ( var step in ParkResumeSaveFile.DeserializeSteps( payload.Save, value => parsed = value ) )
+				yield return step;
+			var saved = parsed!;
 			if ( saved.Gate == null || saved.Staff == null )
 				throw new InvalidDataException( "The shared park's save is missing its gate or staff-world state." );
 			using ( LoadProfile.Measure( "save-mods" ) )

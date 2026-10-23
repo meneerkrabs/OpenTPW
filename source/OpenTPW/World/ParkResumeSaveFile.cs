@@ -68,6 +68,77 @@ internal static class ParkResumeSaveFile
 		{
 			throw new InvalidDataException( $"World save is malformed: {exception.Message}", exception );
 		}
+		snapshot = ParsedVersion( snapshot );
+		using ( LoadProfile.Measure( "save-shape" ) )
+			ValidateShape( snapshot );
+		return snapshot;
+	}
+
+	/// <summary>
+	/// [EXT:online-coop-snapshot-join] <see cref="Deserialize"/> in steps, for a save read over frames (a co-op join's or resync's build, docs/COOP.md "The game's join"): the parse a
+	/// slice of the bytes a step (<see cref="ParkResumeJson.SliceDeserialize{T}"/>, the same value and failures as the parse of the whole span), the format's and version's checks,
+	/// then the shape's checks in their steps (<see cref="ValidateShapeSteps"/>). The last step hands the snapshot to <paramref name="parsed"/>; a step that finds the save malformed
+	/// or inconsistent throws what <see cref="Deserialize"/> throws.
+	/// </summary>
+	internal static IEnumerable<bool> DeserializeSteps( ReadOnlyMemory<byte> bytes, Action<ParkResumeSnapshot> parsed, int slice = SlicedJsonDeserializer.SliceBytes )
+	{
+		ArgumentNullException.ThrowIfNull( parsed );
+		if ( bytes.Length > MaximumFileSize )
+			throw new InvalidDataException( "World save exceeds the size limit." );
+		ParkResumeSnapshot? snapshot;
+		using ( var parse = ParkResumeJson.SliceDeserialize<ParkResumeSnapshot>( bytes, slice ) )
+		{
+			while ( true )
+			{
+				bool done;
+				using ( LoadProfile.Measure( "save-json" ) )
+					done = parse.Step();
+				if ( done )
+					break;
+				yield return true;
+			}
+			try
+			{
+				// the whole span's parse refuses a null value with this message (ParkResumeJson.Deserialize)
+				snapshot = parse.Result ?? throw new InvalidDataException( "The park snapshot is null." );
+			}
+			catch ( JsonException exception )
+			{
+				throw new InvalidDataException( $"World save is malformed: {exception.Message}", exception );
+			}
+		}
+		snapshot = ParsedVersion( snapshot );
+		yield return true;
+		using var shape = ValidateShapeSteps( snapshot ).GetEnumerator();
+		while ( true )
+		{
+			bool more;
+			using ( LoadProfile.Measure( "save-shape" ) )
+				more = shape.MoveNext();
+			if ( !more )
+				break;
+			yield return true;
+		}
+		parsed( snapshot );
+	}
+
+	/// <summary>Throws the save's inconsistency that <paramref name="message"/> names unless <paramref name="condition"/> holds.</summary>
+	private static void Require( bool condition, string message )
+	{
+		if ( !condition )
+			throw new InvalidDataException( $"World save is inconsistent: {message}." );
+	}
+
+	/// <summary><see cref="Require(bool, string)"/> with a message formatted only when the check fails (<see cref="CheckMessage"/>): a pass over a park's records makes no string.</summary>
+	private static void Require( bool condition, [System.Runtime.CompilerServices.InterpolatedStringHandlerArgument( nameof( condition ) )] ref CheckMessage message )
+	{
+		if ( !condition )
+			throw new InvalidDataException( $"World save is inconsistent: {message.ToStringAndClear()}." );
+	}
+
+	/// <summary>The parsed save once its format and version are known: a version 1 save without the queue pass fields is read as the current one.</summary>
+	private static ParkResumeSnapshot ParsedVersion( ParkResumeSnapshot? snapshot )
+	{
 		if ( snapshot == null )
 			throw new InvalidDataException( "The world save is null." );
 		if ( snapshot.Format != FormatName )
@@ -80,8 +151,6 @@ internal static class ParkResumeSaveFile
 		}
 		if ( snapshot.Version != CurrentVersion )
 			throw new InvalidDataException( $"Unsupported world save version {snapshot.Version}." );
-		using ( LoadProfile.Measure( "save-shape" ) )
-			ValidateShape( snapshot );
 		return snapshot;
 	}
 
@@ -165,11 +234,6 @@ internal static class ParkResumeSaveFile
 		// [EXT:script-mods] the section exists exactly when a script mod is active (and so recorded), and names exactly those mods
 		if ( ScriptModsSave.ActiveProblem( snapshot.ScriptMods, activeMods ?? OpenTpwExtensions.Active ) is { } scriptMismatch )
 			throw new InvalidDataException( $"World save is inconsistent: {scriptMismatch}." );
-		void Require( bool condition, string message )
-		{
-			if ( !condition )
-				throw new InvalidDataException( $"World save is inconsistent: {message}." );
-		}
 		yield return true;
 		ParkLayoutSnapshot.ValidateSnapshot( snapshot.Layout, catalog, activeMods );
 		yield return true;
@@ -324,11 +388,6 @@ internal static class ParkResumeSaveFile
 	internal static IEnumerable<bool> ValidateShapeSteps( ParkResumeSnapshot snapshot )
 	{
 		ArgumentNullException.ThrowIfNull( snapshot );
-		void Require( bool condition, string message )
-		{
-			if ( !condition )
-				throw new InvalidDataException( $"World save is inconsistent: {message}." );
-		}
 		Require( snapshot.Format == FormatName, $"the format is '{snapshot.Format}', not '{FormatName}'" );
 		Require( snapshot.Version == CurrentVersion, $"version {snapshot.Version} is not {CurrentVersion}" );
 		Require( snapshot.Theme != null && ObjectCatalog.Themes.Contains( snapshot.Theme, StringComparer.OrdinalIgnoreCase ),
@@ -737,11 +796,6 @@ internal static class ParkResumeSaveFile
 
 	private static void ValidateGuests( ParkResumeSnapshot snapshot )
 	{
-		void Require( bool condition, string message )
-		{
-			if ( !condition )
-				throw new InvalidDataException( $"World save is inconsistent: {message}." );
-		}
 		var guests = snapshot.Guests!;
 		foreach ( var problem in GuestSimulation.DisplayAgeProblems( guests ) )
 			Require( false, problem );
@@ -953,11 +1007,6 @@ internal static class ParkResumeSaveFile
 	/// </summary>
 	private static void ValidateTracks( ParkResumeSnapshot snapshot )
 	{
-		void Require( bool condition, string message )
-		{
-			if ( !condition )
-				throw new InvalidDataException( $"World save is inconsistent: {message}." );
-		}
 		if ( snapshot.Tracks is not { } tracks )
 			return;
 		Require( tracks.Cells != null && tracks.Controllers != null, "the track part holds no cell or controller list" );
@@ -1062,11 +1111,6 @@ internal static class ParkResumeSaveFile
 	/// </summary>
 	private static void ValidateTours( ParkResumeSnapshot snapshot )
 	{
-		void Require( bool condition, string message )
-		{
-			if ( !condition )
-				throw new InvalidDataException( $"World save is inconsistent: {message}." );
-		}
 		if ( snapshot.Tours is not { } tours )
 			return;
 		Require( tours.Controllers != null, "the tour part holds no controller list" );
@@ -1112,11 +1156,6 @@ internal static class ParkResumeSaveFile
 	/// </summary>
 	private static void ValidateCoasters( ParkResumeSnapshot snapshot )
 	{
-		void Require( bool condition, string message )
-		{
-			if ( !condition )
-				throw new InvalidDataException( $"World save is inconsistent: {message}." );
-		}
 		if ( snapshot.Coasters is not { } coasters )
 			return;
 		Require( coasters.Rides != null, "the coaster part holds no ride list" );

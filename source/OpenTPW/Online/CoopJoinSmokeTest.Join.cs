@@ -260,9 +260,11 @@ internal sealed partial class CoopJoinSmokeTest
 				$"every stage that ran was timed within the build's frames ({timing})" );
 			// a stage of one step ends before its yield: the next step's start, which only begins the next stage, is no part of it; the advisor's warms its message tables a step
 			// each first (AdvisorTables.WarmSteps)
-			Require( timing.Build.Where( stage => stage.Name is "save" or "economy" or "hud" or "advisor" )
+			Require( timing.Build.Where( stage => stage.Name is "economy" or "hud" or "advisor" )
 				.All( stage => stage.Steps == (stage.Status == CoopTimingStatus.Skipped ? 0 : stage.Name == "advisor" ? AdvisorTables.WarmStepCount + 1 : 1) ),
-				$"the save's parse, the economy and the HUD ran one step each, the advisor its tables' warm steps and one ({timing})" );
+				$"the economy and the HUD ran one step each, the advisor its tables' warm steps and one ({timing})" );
+			// the save's parse a slice of its bytes a step, then its checks in theirs (ParkResumeSaveFile.DeserializeSteps)
+			Require( timing.Build.Single( stage => stage.Name == "save" ).Steps >= 3, $"the save's parse ran a step a slice of its bytes and its checks their own ({timing})" );
 			// the wait for the level's files asks once a slice and leaves the rest of it to the live scene
 			Require( timing.Build.Single( stage => stage.Name == "files" ) is { } files && files.Steps == files.Frames,
 				$"the wait for the level's files asked once a frame ({timing})" );

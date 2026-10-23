@@ -215,15 +215,17 @@ internal static class SmarterGuestsSave
 			throw new InvalidDataException( $"The saved park has guest identity state ({ExtensionId} or script mods), but neither is active." );
 		if ( SectionProblem( section, guests.Guests.Select( guest => guest.Id ), guests.Attractions.Select( attraction => attraction.AttractionId ) ) is { } problem )
 			throw new InvalidDataException( $"The saved smarter-guests state is inconsistent: {problem}." );
+		// the stamps are the guests' park turns, which the turns' phase may put one past the restored tick count's turn: the phase is taken again on the next running tick
+		var latest = GuestSimulation.LatestParkTurn( guests.TickCount );
 		foreach ( var entry in section.Throughputs ?? [] )
-			if ( Math.Max( entry.LastBoardTurn, entry.ClockTurn ) > guests.ParkTurn )
-				throw new InvalidDataException( $"The saved smarter-guests state is inconsistent: attraction {entry.AttractionId} has a turn {Math.Max( entry.LastBoardTurn, entry.ClockTurn )}, after the park's turn {guests.ParkTurn}." );
+			if ( Math.Max( entry.LastBoardTurn, entry.ClockTurn ) > latest )
+				throw new InvalidDataException( $"The saved smarter-guests state is inconsistent: attraction {entry.AttractionId} has a turn {Math.Max( entry.LastBoardTurn, entry.ClockTurn )}, after the park's turn {latest}." );
 		foreach ( var entry in section.Meals ?? [] )
-			if ( entry.Turn > guests.ParkTurn )
-				throw new InvalidDataException( $"The saved smarter-guests state is inconsistent: birth id {entry.BirthId} has a meal on turn {entry.Turn}, after the park's turn {guests.ParkTurn}." );
+			if ( entry.Turn > latest )
+				throw new InvalidDataException( $"The saved smarter-guests state is inconsistent: birth id {entry.BirthId} has a meal on turn {entry.Turn}, after the park's turn {latest}." );
 		foreach ( var entry in section.Complaints ?? [] )
-			if ( entry.Turn > guests.ParkTurn )
-				throw new InvalidDataException( $"The saved smarter-guests state is inconsistent: birth id {entry.BirthId} has a complaint on turn {entry.Turn}, after the park's turn {guests.ParkTurn}." );
+			if ( entry.Turn > latest )
+				throw new InvalidDataException( $"The saved smarter-guests state is inconsistent: birth id {entry.BirthId} has a complaint on turn {entry.Turn}, after the park's turn {latest}." );
 		foreach ( var guest in guests.Guests )
 			guest.BirthId = 0;
 		var byId = guests.Guests.ToDictionary( guest => guest.Id );

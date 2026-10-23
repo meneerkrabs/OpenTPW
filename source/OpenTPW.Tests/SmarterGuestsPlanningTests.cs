@@ -395,13 +395,16 @@ public class SmarterGuestsPlanningTests
 		StringAssert.Contains( SmarterGuestsSave.ShapeProblem( withMeals, ids, null, true, attractions )!, "does not record" );
 		StringAssert.Contains( SmarterGuestsSave.ShapeProblem( section with { Stalls = [new PriceStall( births[0], 1 )] }, ids, null, true, attractions )!, "does not record" );
 		Assert.IsNull( SmarterGuestsSave.ShapeProblem( section with { Meals = null, Stalls = null, Throughputs = null }, ids, null, true, attractions ) );
-		// a meal after the park's own turn is not a state the park can have been in
+		// a meal after the latest turn the park's guests can be on is not a state the park can have been in (their turns' phase may put the latest one past the tick count's turn)
 		using var scope = OpenTpwExtensions.Use( SmarterGuestsTests.On() );
 		var fresh = SmarterGuestsTests.Fresh( park );
-		var future = section with { Meals = [new MealTime( births[0], park.Guests.ParkTurn + 1 )] };
+		var future = section with { Meals = [new MealTime( births[0], GuestSimulation.LatestParkTurn( fresh.Guests.TickCount ) + 1 )] };
 		var refused = Assert.ThrowsException<InvalidDataException>( () => SmarterGuestsSave.Restore( fresh.Guests, future ) );
 		StringAssert.Contains( refused.Message, "after the park's turn" );
 		Assert.AreEqual( 0, fresh.Guests.SmarterGuests!.Meals.Count, "nothing was half-restored" );
+		// a meal on that latest turn restores: the guests stamp their park turn, which the phase can put there
+		SmarterGuestsSave.Restore( fresh.Guests, section with { Meals = [new MealTime( births[0], GuestSimulation.LatestParkTurn( fresh.Guests.TickCount ) )] } );
+		Assert.AreEqual( 1, fresh.Guests.SmarterGuests!.Meals.Count, "the meal on the latest turn is restored" );
 	}
 
 	[TestMethod]

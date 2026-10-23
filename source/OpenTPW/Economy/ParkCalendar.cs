@@ -75,6 +75,13 @@ public static class ParkCalendar
 	/// <summary>The park turn reached at a fixed tick.</summary>
 	public static long Turn( long tick ) => tick * TickTurnNumerator / TickTurnDenominator;
 
+	/// <summary>
+	/// The latest turn a clock whose turns are cut a phase apart from the ticks' own can be on at <paramref name="tick"/> (the guests' park turn after
+	/// <see cref="GuestSimulation.AlignTurns"/>, <c>Turn( tick + phase ) - Turn( phase )</c>, for a phase a snapshot does not hold): the tick's
+	/// <see cref="Turn"/>, or one more, which some phase gives unless a turn boundary falls exactly at the tick.
+	/// </summary>
+	public static long LatestPhasedTurn( long tick ) => Turn( tick ) + (tick * TickTurnNumerator % TickTurnDenominator == 0 ? 0 : 1);
+
 	/// <summary>The first fixed tick at which <paramref name="turn"/> is reached.</summary>
 	public static long TickOfTurn( long turn ) => (turn * TickTurnDenominator + TickTurnNumerator - 1) / TickTurnNumerator;
 

@@ -832,8 +832,9 @@ The design fixed two constants only after measuring them (`coop-c2b-design.md`, 
   still decodes every later line). The `prepare` stage's longest step took 51 ms on the desktop, one of
   the advisor's, and 38 ms ahead of time, a coaster's as before (the advisor's took at most 14 there);
   the lines' decode is spread over slices of 5 ms. The join's longest frame is now a build frame: on the
-  desktop 79 to 84 ms (once 189), whose longest step is the restore's first (C2c-2b-3d's: 61 to 68 ms,
-  that once 189); ahead of time 94 ms with its drawing, the restore's first step 93 ms of it. Ahead of
+  desktop 79 to 84 ms, the frame of the save's parse (79 to 85 ms), and in one run 189 ms, the restore's
+  first step's (C2c-2b-3d's, 61 to 68 ms in the others); ahead of time 94 ms with its drawing (median),
+  while the restore's first step took 93 ms and the save's parse 88 (medians). Ahead of
   time the save stage, which this change does not touch, took 87.6 ms against the before's 80.7. A
   measurement of the presentation's part alone (`4fdb4979a`) is kept with the tables; it ran after the
   Mac had slept, and its save stage took 97.8 ms ahead of time. The review fixes after the measured commit (the

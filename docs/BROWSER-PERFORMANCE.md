@@ -904,5 +904,5 @@ C2c-2b-3e reads in the join's build what the joined park's advisor reads for its
 | The build's `prepare` stage | 103 over 7 frames | 187 over 14 |
 | A join's longest frame, with its drawing | 110 (the swap's) | 94.4 (the restore's first step) |
 
-The `prepare` stage's longest step is still a coaster's (38 ms); the advisor's steps took at most 14 ms, and the line's decode is spread over 5 ms slices. The save stage, which this change does not touch, took 87.6 ms against the before's 80.7. A join's longest frame is now a build frame: the restore's first step (93 ms), the snapshot's checks and the first object with its sign.
+The `prepare` stage's longest step is still a coaster's (38 ms); the advisor's steps took at most 14 ms, and the line's decode is spread over 5 ms slices. The save stage, which this change does not touch, took 87.6 ms against the before's 80.7. A join's longest frame is now a build frame (94 ms with its drawing, median); the longest steps are the restore's first (93 ms: the snapshot's checks and the first object with its sign) and the save's parse (88 ms).
 

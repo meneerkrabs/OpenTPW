@@ -922,3 +922,17 @@ C2c-2b-3g reads what each saved type's first object reads in build steps of its 
 | A join's longest build frame | 94.1 (the restore's first step) | 86.3 (the save's parse) |
 
 The snapshot's checks, before in the restore's first step with the first object, are a step of their own under the budget. The signs cost the same (141 ms composed in steps ahead against 142 ms on their objects' steps), now spread over the level's 314 more steps, and no frame of the objects' part of the level reaches 30 ms. Of the minecart's 20.5 ms, 16.8 ms are its coaster ride's first use. A join's steps of more than 50 ms are now the save's parse (86 ms), the check at the cut (71 ms, in the frame its build completes in) and the level's last step (64 ms, the resume's restore).
+
+### The save's read over steps (C2c-2b-3h)
+
+C2c-2b-3h parses a join's save a 32 KiB slice a step, with the serializer's own asynchronous reader fed a slice a step (`SlicedJsonDeserializer`), and checks its shape in steps of their own (docs/COOP.md, "The game's join"). The page has no thread to parse on, so the parse is spread over frames instead. Same machine and harness, medians of three runs in milliseconds, compiled ahead of time; the before is `9e48a4ee4`:
+
+| Part of the join | Before | After |
+| --- | ---: | ---: |
+| The save stage's longest step | 91.4 | 14.7 |
+| The save stage | 91.4 in one step | 90.0 over 43 steps and 7 frames |
+| A resync's save stage's longest step | 53.8 | 3.5 |
+| A join's longest build frame | 91.5 (the save's parse) | 76.9 (the level's last step) |
+| A resync's longest build frame | 55.7 | 30.3 |
+
+The parse costs what it did, spread over its steps. The validation stage's last step, the comparison of the asset manifests, took 19.7 ms in five of six runs against 7 to 9 before, with no garbage collection in it; its cause is not known. A join's steps of more than 50 ms are now the check at the cut (71.5 ms, of which 56.5 ms is the economy's serialization for its digest making the serializer's metadata in a process's first check; 7.9 ms in a resync) and the level's last step (69 ms, of which the resume's restore takes 59 ms against 6.3 in a resync). Both are mostly a process's first use of their code.

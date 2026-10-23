@@ -27,6 +27,20 @@ public class ParkCalendarTurnTests
 	}
 
 	[TestMethod]
+	public void ThePhasedTurnsLatestIsTheTurnOrOneMoreUnlessATurnStartsAtTheTick()
+	{
+		// a clock whose turns are cut a phase apart (the guests' after AlignTurns): over every phase the latest turn it can be on at a tick of its own;
+		// 25 turns repeat every 372 ticks, so the phases 0..371 are all there are
+		for ( long tick = 0; tick < 3 * 372; tick++ )
+		{
+			var latest = Enumerable.Range( 0, 372 ).Max( phase => ParkCalendar.Turn( tick + phase ) - ParkCalendar.Turn( phase ) );
+			Assert.AreEqual( latest, ParkCalendar.LatestPhasedTurn( tick ), $"tick {tick}" );
+		}
+		Assert.AreEqual( ParkCalendar.Turn( 372 ), ParkCalendar.LatestPhasedTurn( 372 ), "a turn that starts at the tick leads under no phase" );
+		Assert.AreEqual( ParkCalendar.Turn( 373 ) + 1, ParkCalendar.LatestPhasedTurn( 373 ) );
+	}
+
+	[TestMethod]
 	public void CatchUpCapNeverReachesTheOriginalsThreeTurnsPerFrameLimit()
 	{
 		// [EXT:fixed-catch-up-cap] the original runs at most three park turns a frame (0x54E360 case 10); OpenTPW's clock runs at most

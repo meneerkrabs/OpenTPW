@@ -594,7 +594,8 @@ public class SmarterGuestsPathsTests
 		StringAssert.Contains( SmarterGuestsSave.ShapeProblem( withComplaint, ids, null, true, attractions )!, "does not record" );
 		using var scope = OpenTpwExtensions.Use( SmarterGuestsTests.On() );
 		var fresh = SmarterGuestsTests.Fresh( park );
-		var future = section with { Complaints = [new MealTime( births[0], park.Guests.ParkTurn + 1 )] };
+		// after the latest turn the park's guests can be on (their turns' phase may put it one past the tick count's turn)
+		var future = section with { Complaints = [new MealTime( births[0], GuestSimulation.LatestParkTurn( fresh.Guests.TickCount ) + 1 )] };
 		var refused = Assert.ThrowsException<InvalidDataException>( () => SmarterGuestsSave.Restore( fresh.Guests, future ) );
 		StringAssert.Contains( refused.Message, "complaint" );
 		Assert.AreEqual( 0, fresh.Guests.SmarterGuests!.Complaints.Count, "nothing was half-restored" );

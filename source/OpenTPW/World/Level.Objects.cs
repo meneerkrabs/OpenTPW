@@ -95,12 +95,13 @@ public partial class Level
 		}
 		else if ( resumeState != null )
 		{
-			// the saved types' signs are composed on a worker while the objects are placed, one a step, as the buy window has its listed types' composed (desktop only)
-			ComposeSavedSignsAhead( resumeState.Layout );
+			// the saved types' first use in steps of their own, then their objects one a step
+			foreach ( var share in PrepareSavedTypeSteps( resumeState.Layout ) )
+				yield return 0.3f + 0.1f * share;
 			var restored = new List<OriginalObject>();
 			RestoringObjects = true;
 			foreach ( var share in ParkLayoutSnapshot.RestoreObjectSteps( resumeState.Layout, Objects, restored ) )
-				yield return 0.3f + 0.7f * share;
+				yield return 0.4f + 0.6f * share;
 			RestoringObjects = false;
 			count = restored.Count;
 		}
@@ -126,18 +127,17 @@ public partial class Level
 	}
 
 	/// <summary>
-	/// Starts composing the signs of a saved layout's types on a worker, first saved first, before the restore places them (<see cref="ObjectSigns.ComposeAhead"/>; the desktop only): a
-	/// type's first object then takes the finished sign, or waits for the one being composed, instead of composing it on its step. The pixels are the same either way. Every type but the
-	/// gate's, whose slots show the park's name (composed before the objects, <see cref="SetupParkNameSteps"/>): a fixed item with its own sign draws it as any type does
-	/// (<see cref="SignSlotPlan.For"/>). A record this catalogue does not know is the restore's to refuse.
+	/// The saved types' first use read ahead in steps of their own before the restore places their objects (<see cref="SavedTypePreparation"/>): with this level's catalogue, gate,
+	/// terrain and hoarding cache, and the objects' own texture loads ahead of use.
 	/// </summary>
-	private void ComposeSavedSignsAhead( ParkLayoutSnapshot.Data layout )
-	{
-		var asked = new HashSet<ObjectCatalogEntry>();
-		foreach ( var record in layout.Objects )
-			if ( Objects.Catalog.Find( record.InfoId ) is { } entry && !SignSlotPlan.IsGate( entry.IsFixedItem, entry.InfoId, entry.ArchivePath, GateInfoId ) && asked.Add( entry ) )
-				ObjectSigns.ComposeAhead( entry );
-	}
+	private IEnumerable<float> PrepareSavedTypeSteps( ParkLayoutSnapshot.Data layout ) =>
+		SavedTypePreparation.Steps( layout, new SavedTypePreparation.Reads( Objects.Catalog, GateInfoId, OriginalPark?.Heightfield, OriginalPark?.LevelName, HoardingCache,
+			( entry, name ) => OriginalObject.TryLoadTexture( entry, name, aheadOfUse: true ),
+			( levelName, name ) =>
+			{
+				if ( ObjectHoardingRenderer.ResolveTexture( levelName, name ) is { } path )
+					_ = new Texture( path, TextureFlags.Repeat );
+			} ) );
 
 	/// <summary>Whether the construction is part way through restoring a saved layout's objects, one a step (a probe: the native join smoke abandons a build there).</summary>
 	internal bool RestoringObjects { get; private set; }

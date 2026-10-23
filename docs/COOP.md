@@ -322,14 +322,20 @@ the live game, and swaps it in.
   6. It builds the level over frames in the join restore mode (below), with its HUD and, when the player
      has the automatic advisor on, a fresh advisor. A construction step that announces a long one next
      (`Level.NextStepIsLong`) ends the frame's slice, so the long one starts a slice of its own, as in a
-     park start (docs/BROWSER-PERFORMANCE.md, "Build steps"). The level restores the saved objects one a
-     step (`ParkLayoutSnapshot.RestoreObjectSteps`, C2c-2b-3d): the first step checks the whole snapshot
-     before it places anything, each places one object in the saved order with its saved seed and ids,
-     and the last restores the allocators. Before that, on the desktop, the saved types' signs are queued
-     for the sign worker (`ObjectSigns.ComposeAhead`, every type but the gate's), so an object's step
-     takes its finished sign or waits for the one being composed. A restore given up between its steps
-     is not rolled back: the build drops its candidate whole. An ordinary resume still builds its level
-     in one call.
+     park start (docs/BROWSER-PERFORMANCE.md, "Build steps"). Before it restores the saved objects, the
+     level reads what each saved type's first use reads, in steps of its own (`SavedTypePreparation`,
+     C2c-2b-3g): first every type's model and, when its parts show a sign and it is not the gate, its
+     sign, composed on the desktop's sign worker (`ObjectSigns.ComposeAhead`) or in the page over the
+     composition's own steps (`ObjectSigns.ComposeAheadSteps`) and handed to the type's first object as
+     the worker's is, its log written then; then every type's clips, each texture its parts and its
+     animated slots draw, and its hoarding boards with the level's hoarding textures. The steps fill only
+     the caches an object reads and touch nothing of the park. A read that fails leaves its failure to the
+     object: a texture's lookup ahead of use remembers no failed read of a folder, only a missing folder.
+     The steps take the build's files as unchanged while it runs. The level then restores the saved objects one a step
+     (`ParkLayoutSnapshot.RestoreObjectSteps`, C2c-2b-3d): the first step checks the whole snapshot and
+     places nothing, each next places one object in the saved order with its saved seed and ids, and the
+     last restores the allocators. A restore given up between its steps is not rolled back: the build
+     drops its candidate whole. An ordinary resume still builds its level in one call.
   7. It does the one-time work of the joined park's first frame where an entity can do it ahead
      (`IFirstFramePreparation`, `[EXT:park-entry-preparation]`, the stage `prepare`): the coasters'
      views, their types' assets and their meshes, the pool bridges' assets and meshes, and the
@@ -842,6 +848,44 @@ The design fixed two constants only after measuring them (`coop-c2b-design.md`, 
   be made, the lines kept until said) move none of the measured work.
 
   Every value: [COOP-MEASUREMENTS.md](COOP-MEASUREMENTS.md), "The advisor and its first lines prepared".
+
+- **A type's first use in steps of its own (C2c-2b-3g).** The level reads every saved type's model, sign,
+  clips, textures and hoarding in steps of its own before the restore places the objects (step 6 above),
+  the restore's checks end a step of their own, and the layout's checks format a message only when one
+  fails (`CheckMessage`): the cell map's checks had made about ten strings for each of its 9,642 records,
+  three times a join. The measuring smoke now also records each build frame of 30 ms or more with the
+  stage and the step that ended it and its named work (`LongBuildFrames`), which
+  `tools/coop_join_timings.py` lists by step and mark; a section open over several steps (the objects',
+  the entities') shows its whole time in the frame it ends in. Three runs each, medians in milliseconds,
+  before (`b5de0764e`, these records alone; the desktop's runs at `424247027`, the same with #810's fix of
+  the guests' bubble turns) and after (`2615b32c0`):
+
+  | Part of the join | Desktop before | Desktop after | Ahead of time before | Ahead of time after |
+  | --- | ---: | ---: | ---: | ---: |
+  | The restore's first object | 62.4, with the checks | 15.6 | 94.0, with the checks | 12.1 |
+  | A type's first object, the longest | 36.0, the water ride | 32.0, the water ride | 62.2, the water ride | 20.5, the minecart |
+  | The types' own steps, the longest | none | under the budget | none | 13.5 |
+  | The validation stage's longest step | 20.9 | 8.0 | 27.4 | 6.7 |
+  | The cells' checks, three a join (`cell-checks`) | 42.3 | 15.9 | 63.1 | 12.4 |
+  | The level stage | 657 over 30 frames | 605 over 35 | 656 over 27 | 620 over 41 |
+  | The join's longest build frame | 97.1, the save's parse | 86.4, the save's parse | 94.1, the restore's first step | 86.3, the save's parse |
+
+  The objects' part of the level has no step over 21 ms ahead of time and no frame of 30 ms; its signs
+  cost what they did (141 ms composed in steps against 142 on their objects' steps), spread over 314
+  more steps. Of the minecart's 20.5 ms, 16.8 are its coaster ride's first use (`object-coaster`). On
+  the desktop the water ride's object still waits for its sign on the worker (27 to 35 ms), one of the
+  last signs the worker composes; reading every type's model and queueing its sign before the rest
+  (`2615b32c0`) left that wait as it was in a measurement of the order before it. The save stage is
+  untouched: its frame is the desktop's longest before and after (78 to 98 ms, 80 to 91). A join's steps
+  of more than 50 ms are now the save's parse (86 ms ahead of time), the check at the cut (71 ms, in the
+  frame its build completes in) and the level's last step (64 ms, the resume's restore). The review fixes
+  after the measured commit leave the level's hoarding textures for the boards to gather (the steps
+  still make each of them first) and a failed read of a texture folder unremembered ahead of use. They
+  move one piece of work to the first boards' step: the four hoarding textures' paths are resolved
+  again there and their textures made over the ones the steps made, which they share. These timings
+  are of the measured commit, not of the fixes.
+
+  Every value: [COOP-MEASUREMENTS.md](COOP-MEASUREMENTS.md), "A type's first use in steps of its own".
 
 ## The command layer (C1)
 

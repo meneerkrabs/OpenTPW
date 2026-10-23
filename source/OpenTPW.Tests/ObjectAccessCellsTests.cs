@@ -542,7 +542,7 @@ public class ObjectAccessCellsTests
 		Assert.AreEqual( 0, old.LinksAt( 5, 5 ), "no queue cell outside the entrance to link to" );
 	}
 	/// <summary>
-	/// A layout's restore over steps (a co-op join's build): one object a step in the saved order, the allocators in the last, and every object as its record holds it: its place, its base
+	/// A layout's restore over steps (a co-op join's build): the checks, then one object a step in the saved order, the allocators in the last, and every object as its record holds it: its place, its base
 	/// height, its attraction id past the hole a removed object left, its thing id in a pool whose first slot is another thing's, and its seed. The call restores the same park.
 	/// </summary>
 	[TestMethod]
@@ -569,10 +569,10 @@ public class ObjectAccessCellsTests
 		foreach ( var share in ParkLayoutSnapshot.RestoreObjectSteps( layout, stepped, placed ) )
 		{
 			shares.Add( share );
-			Assert.AreEqual( Math.Min( shares.Count, 3 ), stepped.Objects.Count, "one object a step" );
+			Assert.AreEqual( Math.Min( shares.Count - 1, 3 ), stepped.Objects.Count, "the checks, then one object a step" );
 			Assert.AreEqual( share == 1, stepped.NextAttractionId == layout.NextAttractionId && stepped.NextPlacementSeed == layout.NextSeed, "the allocators are restored in the last step only" );
 		}
-		CollectionAssert.AreEqual( new[] { 0.25f, 0.5f, 0.75f, 1f }, shares );
+		CollectionAssert.AreEqual( new[] { 0f, 0.25f, 0.5f, 0.75f, 1f }, shares );
 		Assert.AreEqual( 3, placed.Count );
 		for ( var index = 0; index < layout.Objects.Count; index++ )
 		{
@@ -603,6 +603,7 @@ public class ObjectAccessCellsTests
 		var candidate = new ParkObjects( rig.Catalog, new SandboxParkGrid() );
 		var placed = new List<OriginalObject>();
 		using var steps = ParkLayoutSnapshot.RestoreObjectSteps( moved, candidate, placed ).GetEnumerator();
+		Assert.IsTrue( steps.MoveNext(), "the checks" );
 		Assert.IsTrue( steps.MoveNext() );
 		Assert.AreEqual( 1, candidate.Objects.Count, "the first object stands as saved" );
 		StringAssert.Contains( Assert.ThrowsException<InvalidDataException>( () => steps.MoveNext() ).Message, "base height" );

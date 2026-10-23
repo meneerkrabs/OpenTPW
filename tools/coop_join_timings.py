@@ -13,7 +13,8 @@ the measure scripts record the one they ran on), and a page's runs in one browse
 differ (a desktop host, a browser guest). One host phase reused by every run (the browser's runs replay one recording) is one
 sample: its rows show it once. Evidence of the adversarial join phase is refused: its rewritten payloads and its refused and
 abandoned builds warm the process first. The named work of the swaps' frames and of the frames after them (the smoke's marks, which
-nest: a parent's time includes its children's, so they are never added up) is listed for every mark of at least 1 ms in some run.
+nest: a parent's time includes its children's, so they are never added up) is listed for every mark of at least 1 ms in some run;
+that of the builds' long frames (30 ms or more), named by the stage and step that ended each, for every mark of at least 3 ms.
 
 Usage: python3 -I tools/coop_join_timings.py [--machine <file>] <evidence directory> [<evidence directory> ...]
 """
@@ -39,6 +40,9 @@ BUDGET_MILLISECONDS = 12
 # the frames whose named work the measuring smoke records, and the smallest mark the summary lists
 MARK_ROLES = [("swap", "the swap's frame"), ("after", "the frame after the swap")]
 MARK_MILLISECONDS = 1
+# the build frames the measuring smoke records with their named work (CoopJoinSmokeTest.LongBuildFrameMilliseconds), and the smallest of their marks the summary lists
+LONG_FRAME_MILLISECONDS = 30
+LONG_FRAME_MARK_MILLISECONDS = 3
 
 
 def is_number(value):
@@ -112,6 +116,23 @@ def require_whole(root, host, join):
             if roles != ["after", "swap"] or recorded["swap"] != swapped or recorded["after"] != following:
                 raise ValueError(f"{root}: the {outcome} build's marks are not those of its swap's frame and the next ({roles}, frames {recorded} "
                                  f"for {swapped} and {following})")
+    # the builds' long frames, when recorded: each a frame of its build's step, at least the length that records it, with its build's stage and that stage's steps so far
+    long_frames = join.get("LongBuildFrames")
+    if long_frames is not None:
+        def whole(item):
+            if not (isinstance(item, dict) and isinstance(item.get("Marks"), dict) and is_number(item.get("Frame")) and is_number(item.get("Milliseconds"))
+                    and item.get("Outcome") in {outcome for outcome, _, _ in OUTCOMES} and isinstance(item.get("Stage"), str)
+                    and isinstance(item.get("Steps"), int) and not isinstance(item.get("Steps"), bool)
+                    and all(isinstance(value, list) and len(value) == 2 and all(is_number(part) for part in value) for value in item["Marks"].values())):
+                return False
+            timing = next((build for build in join["JoinTimings"] if build.get("Outcome") == item["Outcome"]), None)
+            stage = next((part for part in (timing or {}).get("Build") or [] if part.get("Name") == item["Stage"]), None)
+            step = "Joining" if item["Outcome"] == "joined" else "Resyncing"
+            return (stage is not None and 1 <= item["Steps"] <= stage["Steps"] and item["Milliseconds"] >= LONG_FRAME_MILLISECONDS
+                    and any(frame["Frame"] == item["Frame"] and frame["Step"] == step for frame in frames))
+        if not isinstance(long_frames, list) or not all(whole(item) for item in long_frames) \
+                or len({(item["Outcome"], item["Frame"]) for item in long_frames}) != len(long_frames):
+            raise ValueError(f"{root}: the builds' long frames are not whole, or not frames of their builds")
 
 
 def load(directory):
@@ -261,6 +282,19 @@ def rows(runs):
             names = sorted({name for run in runs for name, value in marks_of(run).items() if value[0] >= MARK_MILLISECONDS})
             for name in names:
                 result.append((f"{outcome}: {label}, mark {name}", "ms", [(marks_of(run).get(name) or [None])[0] for run in runs]))
+    # the builds' long frames' named work, by the stage and step that ended them (a long step ends its slice, so its frame is the step and the short ones before it), every mark of
+    # at least 3 ms in some run (marks nest: never added up)
+    for outcome, _, _ in OUTCOMES:
+        def long_frames_of(run, outcome=outcome):
+            return {(item["Stage"], item["Steps"]): item for item in run[1].get("LongBuildFrames") or [] if item.get("Outcome") == outcome}
+        keys = sorted({key for run in runs for key in long_frames_of(run)}, key=lambda key: (STAGES.index(key[0]) if key[0] in STAGES else len(STAGES), key[1]))
+        for name, number in keys:
+            frames_of = [long_frames_of(run).get((name, number)) for run in runs]
+            result.append((f"{outcome}: long frame, {name} {number}", "ms", [None if item is None else item["Milliseconds"] for item in frames_of]))
+            marks = sorted({mark for item in frames_of if item is not None for mark, value in item["Marks"].items() if value[0] >= LONG_FRAME_MARK_MILLISECONDS})
+            for mark in marks:
+                result.append((f"{outcome}: long frame, {name} {number}, mark {mark}", "ms",
+                               [None if item is None else (item["Marks"].get(mark) or [None])[0] for item in frames_of]))
     result.append(("final check: update frame", "ms", [final_frame(run[1].get("Frames") or []) for run in runs]))
     result.append(("final check: whole frame", "ms", [final_frame(run[1].get("Frames") or [], "CallMilliseconds") for run in runs]))
     return result

@@ -158,6 +158,163 @@ public class ObjectSignComposeAheadTests
 		finally { LoadProfile.Enable( false ); }
 	}
 
+	/// <summary>Runs <paramref name="steps"/> to their end and returns how many there were; a log written by them reaches the log there and then (a capture left open would hold it).</summary>
+	private static int Drain( IEnumerable<bool> steps, List<string> logged )
+	{
+		var count = 0;
+		var before = logged.Count;
+		foreach ( var _ in steps )
+		{
+			count++;
+			// between the steps the live game logs as ever: no capture of the steps is open
+			Log.Info( $"between {count}" );
+		}
+		Assert.AreEqual( count, logged.Skip( before ).Count( text => text.StartsWith( "between ", StringComparison.Ordinal ) ), "every line logged between the steps is written" );
+		return count;
+	}
+
+	[TestMethod]
+	public void ASignComposedAheadOverStepsIsTheSignComposedOnUseWithItsLogWrittenThen()
+	{
+		var entries = SignEntries();
+		var onUse = GetAll( entries );
+		ObjectSigns.ForgetForTests();
+		ObjectSigns.ComposeAheadEnabled = false;
+		var logged = new List<string>();
+		void Record( Logger.Level severity, string text ) => logged.Add( text );
+		Logger.OnLog += Record;
+		LoadProfile.Enable( true );
+		try
+		{
+			foreach ( var entry in entries )
+				Assert.IsTrue( Drain( ObjectSigns.ComposeAheadSteps( entry ), logged ) >= 3, $"{entry.ArchivePath}: the sign's read and its parts in steps" );
+			CollectionAssert.AreEqual( Array.Empty<string>(), logged.Where( text => !text.StartsWith( "between ", StringComparison.Ordinal ) ).ToArray(),
+				"the steps log nothing themselves: Get writes what the composition logged when it uses it" );
+			Assert.IsTrue( entries.All( ObjectSigns.ComposedAhead ), "every sign is handed over composed" );
+		}
+		finally { Logger.OnLog -= Record; }
+		try
+		{
+			AssertSame( entries, onUse, GetAll( entries ) );
+			Assert.AreEqual( (long)entries.Count, LoadProfile.Counters().GetValueOrDefault( "signs composed ahead" ) );
+			Assert.AreEqual( 0L, LoadProfile.Counters().GetValueOrDefault( "signs composed on use" ), "Get composed none itself" );
+		}
+		finally { LoadProfile.Enable( false ); }
+	}
+
+	[TestMethod]
+	public void ASignTheLiveGameUsesWhileItIsComposedAheadOverStepsKeepsTheLiveOne()
+	{
+		var entry = SignEntries().First();
+		var onUse = GetAll( new[] { entry } );
+		ObjectSigns.ForgetForTests();
+		ObjectSigns.ComposeAheadEnabled = false;
+		using var steps = ObjectSigns.ComposeAheadSteps( entry ).GetEnumerator();
+		Assert.IsTrue( steps.MoveNext() );
+		Assert.IsTrue( steps.MoveNext() );
+		// the live game's frame between two steps asks for the sign: it composes it on use, with its log then
+		var live = GetAll( new[] { entry } );
+		AssertSame( new[] { entry }, onUse, live );
+		var cached = ObjectSigns.Get( entry );
+		while ( steps.MoveNext() )
+		{
+		}
+		Assert.IsFalse( ObjectSigns.ComposedAhead( entry ), "the finished steps hand over nothing" );
+		Assert.AreSame( cached, ObjectSigns.Get( entry ), "the live game's sign stands" );
+	}
+
+	[TestMethod]
+	public void ASignTheWorkerComposesWhileItIsComposedAheadOverStepsKeepsTheWorkersOne()
+	{
+		var entry = SignEntries().First();
+		var onUse = GetAll( new[] { entry } );
+		ObjectSigns.ForgetForTests();
+		ObjectSigns.ComposeAheadEnabled = false;
+		using var steps = ObjectSigns.ComposeAheadSteps( entry ).GetEnumerator();
+		Assert.IsTrue( steps.MoveNext() );
+		Assert.IsTrue( steps.MoveNext() );
+		// between two steps another caller has the worker compose it (the buy window, say): that composition is current when the steps end
+		ObjectSigns.ComposeAheadEnabled = true;
+		ObjectSigns.ComposeAhead( entry );
+		Assert.IsTrue( ObjectSigns.WaitForComposeAhead( TimeSpan.FromMinutes( 1 ) ) );
+		ObjectSigns.ComposeAheadEnabled = false;
+		var worker = ObjectSigns.AheadComposition( entry );
+		Assert.IsNotNull( worker );
+		while ( steps.MoveNext() )
+		{
+		}
+		Assert.AreSame( worker, ObjectSigns.AheadComposition( entry ), "the worker's composition stands" );
+		AssertSame( new[] { entry }, onUse, GetAll( new[] { entry } ) );
+	}
+
+	[TestMethod]
+	public void ASignComposedAheadOverStepsFromChangedDataOrGivenUpPartWayIsNotHandedOver()
+	{
+		var entry = SignEntries().First();
+		var onUse = GetAll( new[] { entry } );
+		ObjectSigns.ForgetForTests();
+		ObjectSigns.ComposeAheadEnabled = false;
+		// what changes the lookups (a mod set, the interface language) between the steps leaves their sign unused
+		using ( var steps = ObjectSigns.ComposeAheadSteps( entry ).GetEnumerator() )
+		{
+			Assert.IsTrue( steps.MoveNext() );
+			FileSystem.InvalidateLookups();
+			while ( steps.MoveNext() )
+			{
+			}
+		}
+		Assert.IsFalse( ObjectSigns.ComposedAhead( entry ), "a sign of changed data is not handed over" );
+		// steps given up part way hold no log capture and hand over nothing
+		var logged = new List<string>();
+		void Record( Logger.Level severity, string text ) => logged.Add( text );
+		Logger.OnLog += Record;
+		try
+		{
+			using ( var steps = ObjectSigns.ComposeAheadSteps( entry ).GetEnumerator() )
+			{
+				Assert.IsTrue( steps.MoveNext() );
+				Assert.IsTrue( steps.MoveNext() );
+			}
+			Log.Info( "after the steps" );
+		}
+		finally { Logger.OnLog -= Record; }
+		CollectionAssert.AreEqual( new[] { "after the steps" }, logged, "nothing captured, nothing logged by the steps" );
+		Assert.IsFalse( ObjectSigns.ComposedAhead( entry ) );
+		LoadProfile.Enable( true );
+		try
+		{
+			AssertSame( new[] { entry }, onUse, GetAll( new[] { entry } ) );
+			Assert.AreEqual( 1L, LoadProfile.Counters().GetValueOrDefault( "signs composed on use" ), "the first use composes it" );
+		}
+		finally { LoadProfile.Enable( false ); }
+	}
+
+	[TestMethod]
+	public void ASignThatCannotBeReadIsLeftToItsFirstUseWhichMeetsTheFailureAsBefore()
+	{
+		var archive = Path.Combine( root, "unreadable" );
+		Directory.CreateDirectory( archive );
+		File.WriteAllBytes( Path.Combine( archive, "bad.sgn" ), new byte[] { 1, 2, 3 } );
+		var settings = new ObjectSettings( new[] { new ObjectSettingsFile( "Info.Id 1100\nInfo.Name Wobbly Ride\n", "unreadable.sam" ) } );
+		var entry = new ObjectCatalogEntry( "jungle", ObjectCategory.Ride, "/unreadable", settings, new ObjectShape( new[] { "*" } ), "/model.MD2", null, null, Array.Empty<string>(),
+			Array.Empty<ObjectAnimationFile>(), Array.Empty<string>(), Array.Empty<string>(), new BaseFileSystem( root ), null );
+		ObjectSigns.ComposeAheadEnabled = false;
+		var logged = new List<string>();
+		void Record( Logger.Level severity, string text ) => logged.Add( text );
+		Logger.OnLog += Record;
+		try
+		{
+			foreach ( var _ in ObjectSigns.ComposeAheadSteps( entry ) )
+			{
+			}
+			Assert.AreEqual( 0, logged.Count, "the steps log nothing" );
+			Assert.IsFalse( ObjectSigns.ComposedAhead( entry ), "a failure is handed over to no one" );
+			Assert.IsNull( ObjectSigns.Get( entry ) );
+		}
+		finally { Logger.OnLog -= Record; }
+		Assert.AreEqual( 1, logged.Count( text => text.StartsWith( "Sign of unreadable unavailable", StringComparison.Ordinal ) ), $"the first use logs the failure once ({string.Join( " | ", logged )})" );
+	}
+
 	[TestMethod]
 	public void TheSignExportIsTheSameWithSignsComposedAhead()
 	{

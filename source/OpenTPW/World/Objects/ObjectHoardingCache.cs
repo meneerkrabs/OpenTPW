@@ -18,6 +18,9 @@ internal sealed class ObjectHoardingCache
 		return geometry;
 	}
 
+	/// <summary>Whether the boards of <paramref name="entry"/>'s type were built (tests).</summary>
+	internal bool Holds( ObjectCatalogEntry entry ) => geometries.ContainsKey( entry );
+
 	/// <summary>The four texture sets of <paramref name="levelName"/> (<see cref="ObjectHoardingRenderer.LoadTextures"/>), loaded on the first hoarding.</summary>
 	public Texture[] Textures( string levelName )
 	{

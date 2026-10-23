@@ -310,13 +310,20 @@ public class OriginalObject : Entity, IPointLightSource, IObjectPickShape
 
 	private void BuildModels()
 	{
-		var vertexAnimated = ObjectRenderParts.FindVertexAnimatedMeshes( Entry, Runtime.Model );
+		bool[] vertexAnimated;
+		using ( LoadProfile.Measure( "object-parts" ) )
+			vertexAnimated = ObjectRenderParts.FindVertexAnimatedMeshes( Entry, Runtime.Model );
 		// The model's multi-frame texture slots that one of the object's clips addresses with a texture-frame
 		// track (RIDES-035): each frame decodes once, and the part bindings record which material slots show them.
-		var frameSlots = FindFrameAnimatedSlots( Entry, Runtime.Model );
+		Dictionary<int, FrameTextures> frameSlots;
+		using ( LoadProfile.Measure( "object-textures" ) )
+			frameSlots = FindFrameAnimatedSlots( Entry, Runtime.Model );
 		foreach ( var frames in frameSlots.Values )
 			Runtime.Animator.SetTextureFrameAvailability( frames.Slot, frames.Frames.Select( texture => texture != null ).ToArray() );
-		foreach ( var part in ObjectRenderParts.Build( Entry, Runtime.Model ) )
+		IReadOnlyList<ObjectRenderPart> built;
+		using ( LoadProfile.Measure( "object-parts" ) )
+			built = ObjectRenderParts.Build( Entry, Runtime.Model );
+		foreach ( var part in built )
 		{
 			var slots = new Texture[16];
 			Array.Fill( slots, Texture.Missing );
@@ -333,14 +340,19 @@ public class OriginalObject : Entity, IPointLightSource, IObjectPickShape
 			var fallbackBaseSign = plan.UsesFallback ? SignSlotPlan.FallbackBoard : null;
 			if ( sign != null )
 				Sign = sign;
-			for ( var index = 0; index < part.Textures.Length; index++ )
+			using ( LoadProfile.Measure( "object-textures" ) )
+				for ( var index = 0; index < part.Textures.Length; index++ )
+				{
+					var name = part.Textures[index];
+					slots[index] = sign?.TextureFor( name )
+						?? (fallbackBaseSign != null && ObjectSigns.IsSignSlot( name ) ? fallbackBaseSign : LoadTexture( Entry, name ));
+				}
+			Material<ObjectUniformBuffer> material;
+			using ( LoadProfile.Measure( "object-materials" ) )
 			{
-				var name = part.Textures[index];
-				slots[index] = sign?.TextureFor( name )
-					?? (fallbackBaseSign != null && ObjectSigns.IsSignSlot( name ) ? fallbackBaseSign : LoadTexture( Entry, name ));
+				material = new Material<ObjectUniformBuffer>( "content/shaders/test.shader" );
+				material.Set( TextureArrayName, slots );
 			}
-			var material = new Material<ObjectUniformBuffer>( "content/shaders/test.shader" );
-			material.Set( TextureArrayName, slots );
 			// A texture-frame track swaps the frames of the model slots the part shows, unless a runtime sign
 			// face owns that slot's texture.
 			if ( part.TextureSlots != null )
@@ -352,7 +364,9 @@ public class OriginalObject : Entity, IPointLightSource, IObjectPickShape
 						frames.Bindings.Add( (material, index) );
 				}
 			var dynamic = part.MeshIndex >= 0 && vertexAnimated[part.MeshIndex];
-			var model = new Model( part.Vertices, part.Indices, material, dynamic );
+			Model model;
+			using ( LoadProfile.Measure( "object-materials" ) )
+				model = new Model( part.Vertices, part.Indices, material, dynamic );
 			models.Add( model );
 			// Build gives every object its own vertex arrays, so the part's array is this instance's to rewrite;
 			// version -1 makes the first update show the pose of a clip the script may already have started.
@@ -372,6 +386,23 @@ public class OriginalObject : Entity, IPointLightSource, IObjectPickShape
 	private static Dictionary<int, FrameTextures> FindFrameAnimatedSlots( ObjectCatalogEntry entry, ModelFile model )
 	{
 		var slots = new Dictionary<int, FrameTextures>();
+		foreach ( var (slot, frames) in FrameAnimatedSlots( entry, model ) )
+			slots[slot] = new FrameTextures
+			{
+				Slot = slot,
+				Frames = frames.Select( name => TryLoadTexture( entry, name ) ).ToArray(),
+				Bindings = new List<(Material, int)>()
+			};
+		return slots;
+	}
+
+	/// <summary>
+	/// The model's multi-frame texture slots that an enabled texture-frame track of the type's animation members addresses, each once in the order the tracks first name it, with its
+	/// frame names: the slots <see cref="FindFrameAnimatedSlots"/> decodes every frame of (a member that cannot be read is passed over), and the frames a type's first use reads.
+	/// </summary>
+	internal static IEnumerable<(int Slot, IReadOnlyList<string> Frames)> FrameAnimatedSlots( ObjectCatalogEntry entry, ModelFile model )
+	{
+		var seen = new HashSet<int>();
 		foreach ( var animation in entry.Animations )
 		{
 			ModelAnimation? clip;
@@ -387,17 +418,11 @@ public class OriginalObject : Entity, IPointLightSource, IObjectPickShape
 				continue;
 			foreach ( var track in clip.TextureFrameTracks )
 			{
-				if ( track.Slot >= model.Textures.Count || model.Textures[track.Slot].FrameNames.Count < 2 || slots.ContainsKey( track.Slot ) )
+				if ( track.Slot >= model.Textures.Count || model.Textures[track.Slot].FrameNames.Count < 2 || !seen.Add( track.Slot ) )
 					continue;
-				slots[track.Slot] = new FrameTextures
-				{
-					Slot = track.Slot,
-					Frames = model.Textures[track.Slot].FrameNames.Select( name => TryLoadTexture( entry, name ) ).ToArray(),
-					Bindings = new List<(Material, int)>()
-				};
+				yield return (track.Slot, model.Textures[track.Slot].FrameNames);
 			}
 		}
-		return slots;
 	}
 
 	private static readonly Dictionary<string, Texture> bonusTextures = new( StringComparer.OrdinalIgnoreCase );
@@ -409,9 +434,12 @@ public class OriginalObject : Entity, IPointLightSource, IObjectPickShape
 	private static Texture LoadTexture( ObjectCatalogEntry entry, string name ) => TryLoadTexture( entry, name ) ?? Texture.Missing;
 
 	/// <summary>The texture of a material or frame name, or null when no searched directory has it (also the buy window's preview of an object outside the game data).</summary>
-	internal static Texture? TryLoadTexture( ObjectCatalogEntry entry, string name )
+	internal static Texture? TryLoadTexture( ObjectCatalogEntry entry, string name ) => TryLoadTexture( entry, name, aheadOfUse: false );
+
+	/// <summary><see cref="TryLoadTexture(ObjectCatalogEntry, string)"/>, ahead of the object's own load when <paramref name="aheadOfUse"/> (<see cref="ObjectAssets.ResolveTexture(ObjectCatalogEntry, string, bool)"/>).</summary>
+	internal static Texture? TryLoadTexture( ObjectCatalogEntry entry, string name, bool aheadOfUse )
 	{
-		var resolved = ObjectAssets.ResolveTexture( entry, name );
+		var resolved = ObjectAssets.ResolveTexture( entry, name, aheadOfUse );
 		if ( resolved == null )
 			return null;
 		var (fileSystem, path) = resolved.Value;

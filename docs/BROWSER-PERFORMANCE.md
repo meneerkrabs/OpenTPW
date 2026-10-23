@@ -906,3 +906,19 @@ C2c-2b-3e reads in the join's build what the joined park's advisor reads for its
 
 The `prepare` stage's longest step is still a coaster's (38 ms); the advisor's steps took at most 14 ms, and the line's decode is spread over 5 ms slices. The save stage, which this change does not touch, took 87.6 ms against the before's 80.7. A join's longest frame is now a build frame (94 ms with its drawing, median); the longest steps are the restore's first (93 ms: the snapshot's checks and the first object with its sign) and the save's parse (88 ms).
 
+
+### A type's first use in steps of its own (C2c-2b-3g)
+
+C2c-2b-3g reads what each saved type's first object reads in build steps of its own before the restore places the objects: its model and clips, its sign, its textures and its hoarding (docs/COOP.md, "The game's join"). The page has no sign worker, so it composes a type's sign over the composition's own steps and hands it to the type's first object as the desktop's worker hands over its signs. The restore's checks end a step of their own, and the layout's checks format a message only when one fails. Same machine and harness, medians of three runs in milliseconds, compiled ahead of time; the before is `b5de0764e`, which only adds the measuring smoke's records of the build's long frames:
+
+| Part of the join | Before | After |
+| --- | ---: | ---: |
+| The restore's first object | 94.0, with the checks | 12.1 |
+| A type's first object, the longest step | 62.2 (the water ride) | 20.5 (the minecart) |
+| The types' own steps, the longest | none | 13.5 |
+| The validation stage's longest step | 27.4 | 6.7 |
+| The cells' checks, three a join | 63.1 | 12.4 |
+| The level stage | 656 over 27 frames | 620 over 41 |
+| A join's longest build frame | 94.1 (the restore's first step) | 86.3 (the save's parse) |
+
+The snapshot's checks, before in the restore's first step with the first object, are a step of their own under the budget. The signs cost the same (141 ms composed in steps ahead against 142 ms on their objects' steps), now spread over the level's 314 more steps, and no frame of the objects' part of the level reaches 30 ms. Of the minecart's 20.5 ms, 16.8 ms are its coaster ride's first use. A join's steps of more than 50 ms are now the save's parse (86 ms), the check at the cut (71 ms, in the frame its build completes in) and the level's last step (64 ms, the resume's restore).

@@ -309,7 +309,9 @@ the live game, and swaps it in.
 - **The build** (`CoopJoinBuild`, in steps within the park build's frame budget):
   1. It makes the save codec's reflection metadata in steps, one type each, as a park start makes it for
      its first snapshot (`ParkResumeJson.WarmupSteps`; a process's first parse would make it in one go,
-     a warm process finds it made), then reads the save over steps (`ParkResumeSaveFile.DeserializeSteps`,
+     a warm process finds it made), and so the metadata of the economy's digest, which serializes the
+     park save with the serializer's default options (`WorldStateHash.WarmupSteps`, C2c-2b-3i; both
+     through `JsonMetadataWarmup`). It then reads the save over steps (`ParkResumeSaveFile.DeserializeSteps`,
      C2c-2b-3h): its parse takes a 32 KiB slice of the bytes a step, by the serializer's own asynchronous
      reader fed a slice a step (`SlicedJsonDeserializer`: the same value and the same failures, message for
      message, as one parse), and then its shape's checks run in their steps. The save must hold the gate's
@@ -338,8 +340,12 @@ the live game, and swaps it in.
      The steps take the build's files as unchanged while it runs. The level then restores the saved objects one a step
      (`ParkLayoutSnapshot.RestoreObjectSteps`, C2c-2b-3d): the first step checks the whole snapshot and
      places nothing, each next places one object in the saved order with its saved seed and ids, and the
-     last restores the allocators. A restore given up between its steps is not rolled back: the build
-     drops its candidate whole. An ordinary resume still builds its level in one call.
+     last restores the allocators. After the level's entities it restores the saved simulation a part a
+     step (`Level.RestoreResumeSimulationSteps`, C2c-2b-3j): the objects' runtimes, the scripts, the
+     guests' routing, the guests, the weather, the gate and the staff, the coasters with the tracks, the
+     slides and tours, then the drawn tracks, in the order of one call. A restore given up between its
+     steps is not rolled back: the build drops its candidate whole. An ordinary resume still builds its
+     level in one call.
   7. It does the one-time work of the joined park's first frame where an entity can do it ahead
      (`IFirstFramePreparation`, `[EXT:park-entry-preparation]`, the stage `prepare`): the coasters'
      views, their types' assets and their meshes, the pool bridges' assets and meshes, and the
@@ -359,6 +365,12 @@ the live game, and swaps it in.
      its stage warms the shipped message tables a step each (`AdvisorTables.WarmSteps`), and the
      advisor's clock is held from its creation until its first update, so the build's last frames are
      no time it waits. A park start decodes the same lines in its own preparation.
+  8. It runs the economy digest's serialization once ahead, over the candidate's economy, a part of its
+     park save a step (the stage `digest`, `WorldStateHash.SerializationWarmupSteps`, C2c-2b-3i): the
+     save's capture, then each of its parts serialized to a JSON tree and written in the digest's
+     canonical form, then the whole save. The check at the cut then runs none of that code for the first
+     time. Nothing is kept, the economy is only read and no hash changes; a part that cannot be written is
+     left for the check to meet.
 
   A refusal (`CoopJoinRefusedException`) ends the join, since no capture would build; any other failure
   is a failed check (above), and so is a build that runs longer than 300 seconds.
@@ -930,6 +942,39 @@ The design fixed two constants only after measuring them (`coop-c2b-design.md`, 
   measured commit, not of the fixes.
 
   Every value: [COOP-MEASUREMENTS.md](COOP-MEASUREMENTS.md), "The save's read over steps".
+
+- **The check and the level's last step (C2c-2b-3i, 3j).** Both were mostly a process's first use of
+  their code: in the page, compiled ahead of time, the code a call runs for the first time still costs its
+  compilation by the browser's WebAssembly engine. The build now runs the economy digest's serialization
+  once ahead in a last stage of its own (step 8), after making that serialization's metadata in the codec
+  stage (step 1), and restores the saved simulation a part a step (step 6). Three runs each, medians in
+  milliseconds, before (`0d7383931`, C2c-2b-3h's measured commit) and after (`7e725f699`):
+
+  | Part of the join | Desktop before | Desktop after | Ahead of time before | Ahead of time after |
+  | --- | ---: | ---: | ---: | ---: |
+  | The check at the cut | 40.2 | 12.2 | 71.5 | 13.4 |
+  | The level stage's longest step | 66.3, its last | 39.8 | 68.9, its last | 28.1 |
+  | The digest stage | none | 27.6 over 43 steps and 2 frames, longest 12.3 | none | 49.1 over 43 steps and 3 frames, longest 23.7 |
+  | The codec stage | 67.5 over 230 steps | 77.1 over 312 | 288 over 230 steps | 308 over 312 |
+  | The join's longest build frame | 76.8, the level's last step | 51.9, the advisor's shader | 76.9, the level's last step | 40.5 |
+  | A resync's check | 2.0 | 2.5 | 7.9 | 8.0 |
+  | A resync's digest stage | none | 7.0 | none | 25.0 over 3 frames |
+
+  The resume's restore costs what it did (ahead of time 59.0 ms before and 55.2 after, the coasters'
+  part the largest at 19.4), now over nine steps. The metadata with the resume's steps alone (`059006236`,
+  without the digest stage) took the check ahead of time to 46 to 81 ms; the serialization run ahead takes it
+  to 13.4 to 14.0. No build frame of a join now reaches 50 ms ahead of time: the longest are the
+  validation's last step with the economy's (39 to 45 ms), the `prepare` stage's first and third steps
+  (38 to 41) and the level's guests (37). On the desktop the advisor shader's compilation (52 ms, in
+  `prepare`) remains a join's longest build frame.
+
+  The swap's frame ahead of time measured 93 to 106 ms with its drawing (88.7 before, 87 to 92). That
+  frame's pool swimmers (`pools.swimmers`) vary from run to run: in two more rounds of two runs each,
+  alternating the pages of `0d7383931` and `7e725f699`, the before's swap frames took 101 to 119 ms and
+  its swimmers 20 to 40, the after's 95 to 114 ms and 21 to 35. The change does not move it; the
+  swimmers' first update is a lead.
+
+  Every value: [COOP-MEASUREMENTS.md](COOP-MEASUREMENTS.md), "The check and the level's last step".
 
 ## The command layer (C1)
 

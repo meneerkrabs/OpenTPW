@@ -560,7 +560,7 @@ the abandon, the join, all 80 checkpoints to the second cut, the resync, the 20 
 digest, world hash, join state and save. So a browser host and a desktop guest run one simulation too.
 The page's host phase takes about two minutes for its 6,900 frames.
 
-A host prepares before it hosts (`CoopSession.PrepareHostSteps`, a step a frame): it runs the session
+`CoopSession.PrepareHostSteps` is what a host is to run before it hosts, a step a frame: the session
 digest's code once ahead over the park's economy (`WorldStateHash.SerializationWarmupSteps`), so the
 stream's first checkpoint and a capture's cut run none of it for the first time. The smoke's host phase,
 the native one too, runs the steps while its park settles, so neither host's first checkpoint is the

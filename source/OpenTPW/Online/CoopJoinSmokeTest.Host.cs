@@ -76,7 +76,7 @@ internal sealed partial class CoopJoinSmokeTest
 					Next( HostStage.Settle );
 					return;
 				case HostStage.Settle:
-					// what a host runs before it hosts, a step a frame, as the game's sharing does (CoopSession.PrepareHostSteps)
+					// what a host is to run before it hosts, a step a frame (CoopSession.PrepareHostSteps; the game's own sharing does not run it yet)
 					prepareHost ??= CoopSession.PrepareHostSteps( level ).GetEnumerator();
 					if ( !prepared && !prepareHost.MoveNext() )
 						prepared = true;

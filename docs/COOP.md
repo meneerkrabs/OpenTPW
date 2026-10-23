@@ -369,7 +369,7 @@ the live game, and swaps it in.
      park save a step (the stage `digest`, `WorldStateHash.SerializationWarmupSteps`, C2c-2b-3i): the
      save's capture, then each of its parts serialized to a JSON tree and written in the digest's
      canonical form, then the whole save. The check at the cut then runs none of that code for the first
-     time. Nothing is kept, the economy is only read and no hash changes; a save that cannot be captured or
+     time, but for a part that failed here. Nothing is kept, the economy is only read and no hash changes; a save that cannot be captured or
      a part that cannot be written is left for the check to meet.
 
   A refusal (`CoopJoinRefusedException`) ends the join, since no capture would build; any other failure

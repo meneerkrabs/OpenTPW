@@ -18,8 +18,11 @@ internal sealed class SlicedJsonDeserializer<T> : IDisposable
 {
 	private readonly FedStream stream;
 	private readonly Task<T?> parse;
-	/// <summary>The thread the parse ended on (the steps' when it ended in a step: its end runs this inline).</summary>
-	private readonly Task<int> ending;
+	/// <summary>
+	/// Whether the parse ended within its steps: the parse's end runs this inline, so it is true only when it ran on the steps' thread while a step (or the parse's start)
+	/// was running the parse there. An end the runtime ran elsewhere, or an observation it queued and ran later, finds no step running.
+	/// </summary>
+	private readonly Task<bool> ending;
 	private readonly int slice;
 
 	internal SlicedJsonDeserializer( ReadOnlyMemory<byte> bytes, JsonSerializerOptions options, int slice = SlicedJsonDeserializer.SliceBytes )
@@ -27,13 +30,17 @@ internal sealed class SlicedJsonDeserializer<T> : IDisposable
 		ArgumentOutOfRangeException.ThrowIfLessThan( slice, 1 );
 		this.slice = slice;
 		stream = new FedStream( bytes );
-		// the parse runs until its first read waits for a step
-		parse = JsonSerializer.DeserializeAsync<T>( stream, options ).AsTask();
-		ending = parse.ContinueWith( static _ => Environment.CurrentManagedThreadId, CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default );
+		// the parse runs until its first read waits for a step (a parse that fails at once ends here, in its start)
+		using ( stream.Running() )
+		{
+			parse = JsonSerializer.DeserializeAsync<T>( stream, options ).AsTask();
+			ending = parse.ContinueWith( static ( _, state ) => ((FedStream)state!).InItsStep, stream, CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously,
+				TaskScheduler.Default );
+		}
 	}
 
-	/// <summary>True once the parse has ended on the thread of its steps (a parse that ended elsewhere went on outside them).</summary>
-	private bool EndedInItsSteps => ending.IsCompleted && ending.Result == stream.Owner;
+	/// <summary>True once the parse has ended within its steps (a parse that ended elsewhere went on outside them).</summary>
+	private bool EndedInItsSteps => ending.IsCompleted && ending.Result;
 
 	/// <summary>True once the parse has ended, with its value or its failure (<see cref="Result"/>).</summary>
 	internal bool Done => parse.IsCompleted;
@@ -90,6 +97,25 @@ internal sealed class SlicedJsonDeserializer<T> : IDisposable
 		/// <summary>Set once the parse is given up: every read asked for later fails.</summary>
 		private bool abandoned;
 
+		/// <summary>Set by the steps' thread while it runs the parse (its start, a read's completion).</summary>
+		private bool running;
+
+		/// <summary>True when called on the steps' thread while it runs the parse: from within the parse's start or a read's completion there.</summary>
+		internal bool InItsStep => Environment.CurrentManagedThreadId == Owner && running;
+
+		/// <summary>The parse's start, run on the steps' thread.</summary>
+		internal Run Running()
+		{
+			running = true;
+			return new Run( this );
+		}
+
+		/// <summary>The end of <see cref="Running"/>.</summary>
+		internal readonly struct Run( FedStream stream ) : IDisposable
+		{
+			public void Dispose() => stream.running = false;
+		}
+
 		/// <summary>True while a read waits for <see cref="Feed"/>.</summary>
 		internal bool Waiting
 		{
@@ -130,6 +156,10 @@ internal sealed class SlicedJsonDeserializer<T> : IDisposable
 		{
 			var context = SynchronizationContext.Current;
 			SynchronizationContext.SetSynchronizationContext( null );
+			// a completion on another thread runs no part of the parse within its steps, whatever it sets here
+			var owned = Environment.CurrentManagedThreadId == Owner;
+			if ( owned )
+				running = true;
 			try
 			{
 				if ( failure == null )
@@ -139,6 +169,8 @@ internal sealed class SlicedJsonDeserializer<T> : IDisposable
 			}
 			finally
 			{
+				if ( owned )
+					running = false;
 				SynchronizationContext.SetSynchronizationContext( context );
 			}
 		}

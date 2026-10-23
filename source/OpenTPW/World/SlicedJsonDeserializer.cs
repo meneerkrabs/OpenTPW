@@ -9,8 +9,8 @@ namespace OpenTPW;
 /// feeds them: each <see cref="Step"/> hands the waiting reads up to a slice of bytes in all (<see cref="SlicedJsonDeserializer.SliceBytes"/> unless a test asks for another).
 /// A read completes inline, in the step that feeds it, with the thread's synchronization context set aside meanwhile, so the serializer parses what it was handed, on the
 /// step's thread, before it asks for more and the step returns. Should the runtime still run a continuation elsewhere (it may when a thread's stack runs short), the parse
-/// fails instead of going on outside its steps: the step that finds it neither ended nor waiting for a read throws, and a read asked for on another thread, or after the
-/// parse was given up, fails. The result and every failure are the serializer's own: the same converters, options and checks as a parse of the whole span,
+/// fails instead of going on outside its steps: the step that finds it neither ended nor waiting for a read, or ended on another thread, throws, and a read asked for on
+/// another thread, or after the parse was given up, fails. The result and every failure are the serializer's own: the same converters, options and checks as a parse of the whole span,
 /// but for a leading UTF-8 byte order mark, which a stream's reader skips and a span's refuses (<see cref="ParkResumeSaveFile.DeserializeSteps"/> leaves such bytes to the
 /// whole parse). Disposing the parse part way fails its waiting read, so the serializer gives its buffers back.
 /// </summary>
@@ -18,6 +18,8 @@ internal sealed class SlicedJsonDeserializer<T> : IDisposable
 {
 	private readonly FedStream stream;
 	private readonly Task<T?> parse;
+	/// <summary>The thread the parse ended on (the steps' when it ended in a step: its end runs this inline).</summary>
+	private readonly Task<int> ending;
 	private readonly int slice;
 
 	internal SlicedJsonDeserializer( ReadOnlyMemory<byte> bytes, JsonSerializerOptions options, int slice = SlicedJsonDeserializer.SliceBytes )
@@ -27,7 +29,11 @@ internal sealed class SlicedJsonDeserializer<T> : IDisposable
 		stream = new FedStream( bytes );
 		// the parse runs until its first read waits for a step
 		parse = JsonSerializer.DeserializeAsync<T>( stream, options ).AsTask();
+		ending = parse.ContinueWith( static _ => Environment.CurrentManagedThreadId, CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default );
 	}
+
+	/// <summary>True once the parse has ended on the thread of its steps (a parse that ended elsewhere went on outside them).</summary>
+	private bool EndedInItsSteps => ending.IsCompleted && ending.Result == stream.Owner;
 
 	/// <summary>True once the parse has ended, with its value or its failure (<see cref="Result"/>).</summary>
 	internal bool Done => parse.IsCompleted;
@@ -42,8 +48,9 @@ internal sealed class SlicedJsonDeserializer<T> : IDisposable
 		{
 			Steps++;
 			stream.Feed( slice );
-			// the serializer parses only in the steps that feed it: a parse that neither ended nor waits for its next read went on elsewhere, and is given up
-			if ( !parse.IsCompleted && !stream.Waiting )
+			// the serializer parses only in the steps that feed it, on their thread: a parse that neither ended nor waits for its next read, or that ended elsewhere, went on
+			// outside them, and is given up
+			if ( parse.IsCompleted ? !EndedInItsSteps : !stream.Waiting )
 			{
 				stream.Abandon();
 				throw new InvalidOperationException( OutsideItsStep );
@@ -54,8 +61,9 @@ internal sealed class SlicedJsonDeserializer<T> : IDisposable
 
 	private const string OutsideItsStep = "The sliced parse went on outside its step.";
 
-	/// <summary>The parsed value, or the parse's failure thrown as the serializer threw it; only once <see cref="Done"/>.</summary>
-	internal T? Result => parse.IsCompleted ? parse.GetAwaiter().GetResult() : throw new InvalidOperationException( "The parse has not ended." );
+	/// <summary>The parsed value, or the parse's failure thrown as the serializer threw it; only once <see cref="Done"/>, and never of a parse that ended outside its steps.</summary>
+	internal T? Result => !parse.IsCompleted ? throw new InvalidOperationException( "The parse has not ended." )
+		: EndedInItsSteps ? parse.GetAwaiter().GetResult() : throw new InvalidOperationException( OutsideItsStep );
 
 	public void Dispose()
 	{
@@ -72,7 +80,7 @@ internal sealed class SlicedJsonDeserializer<T> : IDisposable
 	private sealed class FedStream( ReadOnlyMemory<byte> bytes ) : Stream, IValueTaskSource<int>
 	{
 		/// <summary>The thread of the steps, the only one the serializer may ask for a read on.</summary>
-		private readonly int owner = Environment.CurrentManagedThreadId;
+		internal int Owner { get; } = Environment.CurrentManagedThreadId;
 		/// <summary>Guards the read's state, should a continuation the runtime did not run inline ask for a read on another thread.</summary>
 		private readonly object gate = new();
 		private int position;
@@ -156,7 +164,7 @@ internal sealed class SlicedJsonDeserializer<T> : IDisposable
 				if ( abandoned )
 					return ValueTask.FromException<int>( new OperationCanceledException( "The sliced parse was given up." ) );
 				// a continuation the runtime ran elsewhere: the parse fails rather than go on outside its steps
-				if ( Environment.CurrentManagedThreadId != owner )
+				if ( Environment.CurrentManagedThreadId != Owner )
 				{
 					abandoned = true;
 					return ValueTask.FromException<int>( new InvalidOperationException( OutsideItsStep ) );

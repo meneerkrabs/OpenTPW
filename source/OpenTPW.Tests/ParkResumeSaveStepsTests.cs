@@ -102,10 +102,24 @@ public class ParkResumeSaveStepsTests
 	{
 		var bytes = ParkResumeSaveFile.Serialize( ParkResumeSaveFileTests.Envelope() );
 		using var parse = ParkResumeJson.SliceDeserialize<ParkResumeSnapshot>( bytes, 1024 );
-		// a step on another thread: the read the serializer then asks for there fails, and so does the parse, instead of going on there
-		Assert.IsTrue( System.Threading.Tasks.Task.Run( parse.Step ).GetAwaiter().GetResult() );
-		var error = Assert.ThrowsException<InvalidOperationException>( () => parse.Result );
-		Assert.AreEqual( "The sliced parse went on outside its step.", error.Message );
+		// a step on another thread: the read the serializer then asks for there fails, the parse ends there, and the step refuses it
+		var step = Assert.ThrowsException<InvalidOperationException>( () => System.Threading.Tasks.Task.Run( parse.Step ).GetAwaiter().GetResult() );
+		Assert.AreEqual( "The sliced parse went on outside its step.", step.Message );
+		Assert.IsTrue( parse.Done );
+		var result = Assert.ThrowsException<InvalidOperationException>( () => parse.Result );
+		Assert.AreEqual( "The sliced parse went on outside its step.", result.Message, "a parse that ended outside its steps has no value" );
+	}
+
+	[TestMethod]
+	public void AParseThatEndsOnAnotherThreadHasNoValueEvenWhenItsLastPartParsed()
+	{
+		var bytes = ParkResumeSaveFile.Serialize( ParkResumeSaveFileTests.Envelope() );
+		using var parse = ParkResumeJson.SliceDeserialize<ParkResumeSnapshot>( bytes, bytes.Length );
+		// every byte in a step on this thread, then the end of the bytes read in a step on another: the parse ends there without asking for another read, and is refused
+		Assert.IsFalse( parse.Step() );
+		var step = Assert.ThrowsException<InvalidOperationException>( () => System.Threading.Tasks.Task.Run( parse.Step ).GetAwaiter().GetResult() );
+		Assert.AreEqual( "The sliced parse went on outside its step.", step.Message );
+		Assert.ThrowsException<InvalidOperationException>( () => parse.Result );
 	}
 
 	[TestMethod]

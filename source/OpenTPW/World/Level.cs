@@ -402,8 +402,17 @@ public partial class Level : IDisposable
 		}
 		if ( resume != null )
 		{
-			using ( LoadProfile.Measure( "resume" ) )
-				RestoreResumeSimulation( resume );
+			// the saved simulation's restore a part a step, its section taken a step at a time, so a measured frame names only its own part of it
+			using var restore = RestoreResumeSimulationSteps( resume ).GetEnumerator();
+			while ( true )
+			{
+				bool more;
+				using ( LoadProfile.Measure( "resume" ) )
+					more = restore.MoveNext();
+				if ( !more )
+					break;
+				yield return 0.95f;
+			}
 		}
 		// [EXT:online-coop-snapshot-join] a join's session state, before the park's first frame
 		if ( joinRestore is { } joined )

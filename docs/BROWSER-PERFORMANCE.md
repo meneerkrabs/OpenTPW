@@ -936,3 +936,17 @@ C2c-2b-3h parses a join's save a 32 KiB slice a step, with the serializer's own 
 | A resync's longest build frame | 55.7 | 30.3 |
 
 The parse costs what it did, spread over its steps. The validation stage's last step, the comparison of the asset manifests, took 19.7 ms in five of six runs against 7 to 9 before, with no garbage collection in it; its cause is not known. A join's steps of more than 50 ms are now the check at the cut (71.5 ms, of which 56.5 ms is the economy's serialization for its digest making the serializer's metadata in a process's first check; 7.9 ms in a resync) and the level's last step (69 ms, of which the resume's restore takes 59 ms against 6.3 in a resync). Both are mostly a process's first use of their code. The review fixes after the measured commit make the asset manifests' comparison, among the save's last eager checks, format no message while its checks hold.
+
+### The check and the level's last step (C2c-2b-3i, 3j)
+
+Both were mostly a process's first use of their code: compiled ahead of time, the code a call runs for the first time still costs its compilation by the browser's WebAssembly engine, which is not the serializer's metadata alone. C2c-2b-3i runs the economy digest's serialization once ahead in the join's build, over the joined park's economy, a part of its save a step (a last build stage, `digest`), after making the metadata in the codec stage; C2c-2b-3j restores the saved simulation a part a step (docs/COOP.md, "The game's join"). Same machine and harness, medians of three runs in milliseconds, compiled ahead of time; the before is `0d7383931`:
+
+| Part of the join | Before | After |
+| --- | ---: | ---: |
+| The check at the cut | 71.5 | 13.4 |
+| The level stage's longest step | 68.9 (its last) | 28.1 |
+| The digest stage | none | 49.1 over 43 steps and 3 frames, longest 23.7 |
+| A join's longest build frame | 76.9 (the level's last step) | 40.5 |
+| A resync's digest stage | none | 25.0 over 3 frames |
+
+The metadata with the resume's steps alone took the check to 46 to 81 ms. No build frame of a join now reaches 50 ms. The swap's frame measured 93 to 106 ms with its drawing against 87 to 92 before, but its pool swimmers vary from run to run: in alternating runs of both pages the before's swap frames took 101 to 119 ms and the after's 95 to 114.

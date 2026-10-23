@@ -25,9 +25,10 @@ import pathlib
 import statistics
 import sys
 
-STAGES = ["codec", "save", "files", "catalogue", "manifest", "validation", "economy", "level", "hud", "advisor", "prepare"]
-# a build from before the codec's metadata was made in steps of its own (C2c-2b-3a) or the entities prepared their first frame (C2c-2b-3c) lists no such stage
-OLDER_STAGES = [STAGES[:-1], STAGES[1:-1]]
+STAGES = ["codec", "save", "files", "catalogue", "manifest", "validation", "economy", "level", "hud", "advisor", "prepare", "digest"]
+# a build from before the digest's serialization ran ahead (C2c-2b-3i), the entities prepared their first frame (C2c-2b-3c) or the codec's metadata was made in steps of its
+# own (C2c-2b-3a) lists no such stage
+OLDER_STAGES = [STAGES[:-1], STAGES[:-2], STAGES[1:-2]]
 OUTCOMES = [("joined", 1, "Following"), ("resynced", 2, "Resynced")]
 CAPTURE_FIELDS = ["Ticks", "PublishMilliseconds", "DigestMilliseconds", "StateMilliseconds", "SnapshotMilliseconds", "SerializerSetupMilliseconds",
                   "SaveCopyMilliseconds", "WriterSetupMilliseconds", "FinishMilliseconds", "SaveBytes", "BodyBytes", "PayloadBytes", "Frames",

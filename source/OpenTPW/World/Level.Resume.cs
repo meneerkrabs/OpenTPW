@@ -288,11 +288,22 @@ public partial class Level
 		return PrototypeRideSave.Capture( ride.Runtime, ride.Position, ride.IsOpen, prototypeInstance, prototypeBought );
 	}
 
-	/// <summary>Called only during construction of a staged candidate, before it can simulate or replace the live park.</summary>
+	/// <summary>Called only during construction of a staged candidate, before it can simulate or replace the live park: <see cref="RestoreResumeSimulationSteps"/> in one go.</summary>
 	private void RestoreResumeSimulation( ParkResumeSnapshot snapshot )
+	{
+		foreach ( var _ in RestoreResumeSimulationSteps( snapshot ) ) { }
+	}
+
+	/// <summary>
+	/// The saved simulation's restore over the objects the layout placed, a part a step (docs/BROWSER-PERFORMANCE.md, "Build steps"): the parts in the same order as one call, the
+	/// next part waiting for the next step. Called only during construction of a staged candidate, before it can simulate or replace the live park; a restore given up between its
+	/// steps leaves a candidate that is dropped whole.
+	/// </summary>
+	private IEnumerable<bool> RestoreResumeSimulationSteps( ParkResumeSnapshot snapshot )
 	{
 		if ( Guests == null || Park == null || snapshot.Runtimes.Count != Objects.Objects.Count )
 			throw new InvalidDataException( "The saved park cannot be rebuilt with the current objects." );
+		var guests = Guests;
 		var roots = new Dictionary<int, RideVM>();
 		// the restore's parts by name, for a measured build (LoadProfile: a no-op while off)
 		using ( LoadProfile.Measure( "resume-runtimes" ) )
@@ -304,6 +315,7 @@ public partial class Level
 				if ( gaps.Count != 0 ) throw new InvalidDataException( string.Join( "; ", gaps ) );
 				if ( saved.RootScriptId != 0 ) roots.Add( saved.RootScriptId, runtime.Script! );
 			}
+		yield return true;
 		using ( LoadProfile.Measure( "resume-scripts" ) )
 		{
 			// The prototype Totem goes in beside the placed objects: before the script world (its fresh VM is a restore
@@ -312,22 +324,25 @@ public partial class Level
 			PlacedRide = RestorePrototypeRideSnapshot( snapshot.Prototype, roots );
 			Objects.ScriptWorld.RestoreSnapshot( snapshot.Scripts, roots );
 		}
+		yield return true;
 		using ( LoadProfile.Measure( "resume-routing" ) )
-			RestoreResumeRoutingGeometry( snapshot.Guests, snapshot.PoolBridges, Guests );
+			RestoreResumeRoutingGeometry( snapshot.Guests, snapshot.PoolBridges, guests );
+		yield return true;
 		using ( LoadProfile.Measure( "resume-guests" ) )
 		{
-			Guests.RestoreSnapshot( snapshot.Guests );
+			guests.RestoreSnapshot( snapshot.Guests );
 			// [EXT:smarter-guests] the extension's birth ids, keyed by the guest ids the restore just rebuilt
-			SmarterGuestsSave.Restore( Guests, snapshot.SmarterGuests );
+			SmarterGuestsSave.Restore( guests, snapshot.SmarterGuests );
 			// [EXT:script-mods] the script mods' state, counters and flags
-			ScriptModsSave.Restore( Guests, snapshot.ScriptMods );
+			ScriptModsSave.Restore( guests, snapshot.ScriptMods );
 		}
+		yield return true;
 		simulationClock.RestoreSnapshot( snapshot.Clock );
 		using ( LoadProfile.Measure( "resume-weather" ) )
 		{
 			if ( snapshot.Weather != null )
 			{
-				Weather = new ParkWeather( Park.Economy.Settings.Standard, Seed.WeatherStream, Guests.Grid.CountX, Guests.Grid.CountY, FeatureGates.WinterWeather, FeatureGates.WinterAlways );
+				Weather = new ParkWeather( Park.Economy.Settings.Standard, Seed.WeatherStream, guests.Grid.CountX, guests.Grid.CountY, FeatureGates.WinterWeather, FeatureGates.WinterAlways );
 				Weather.RestoreSnapshot( snapshot.Weather );
 				// [EXT:winter-snow-save] a resumed park keeps its snow (ignored while the extension is off)
 				resumedSnowCover = snapshot.SnowCover;
@@ -337,6 +352,7 @@ public partial class Level
 			if ( snapshot.Particles != null )
 				ParticlesResumed?.Invoke( this, snapshot.Particles );
 		}
+		yield return true;
 		using ( LoadProfile.Measure( "resume-staff" ) )
 		{
 			if ( snapshot.Gate != null )
@@ -344,6 +360,7 @@ public partial class Level
 			if ( snapshot.Staff != null )
 				(StaffWorld ?? throw new InvalidDataException( "The saved staff world is unavailable." )).RestoreSnapshot( snapshot.Staff );
 		}
+		yield return true;
 		using ( LoadProfile.Measure( "resume-coasters" ) )
 		{
 			// The coasters go last: their stations were placed above (each placement reset the track to its station
@@ -354,19 +371,21 @@ public partial class Level
 			// Rebuild only derived coaster tokens, after both primary and secondary layers exist.
 			BindCoasterCellsAfterLoad();
 		}
+		yield return true;
 		using ( LoadProfile.Measure( "resume-rides" ) )
 		{
 			// [EXT:pools-slides] the slides go back over their towers and the pool cells the layout restored
 			PoolSlides?.RestoreSnapshot( snapshot.PoolSlides );
-			PoolSlides?.ValidateGuests( Guests.Guests );
+			PoolSlides?.ValidateGuests( guests.Guests );
 			RestoreToursSnapshot( snapshot.Tours );
 		}
+		yield return true;
 		using ( LoadProfile.Measure( "resume-rendering" ) )
 		{
 			// the resumed tiles and boats are drawn from the first frame, as they were when the park was saved
 			UpdateTrackRendering();
 			UpdateTourRendering();
-			MarkCellsRendered( Guests.Grid.Cells );
+			MarkCellsRendered( guests.Grid.Cells );
 		}
 	}
 

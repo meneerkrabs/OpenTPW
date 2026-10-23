@@ -319,6 +319,33 @@ class CoopJoinTimingsTests(unittest.TestCase):
                 with self.subTest(run), self.assertRaises(ValueError):
                     coop_join_timings.load(root / run)
 
+    def test_a_page_hosts_long_frames_are_listed_by_stage_and_must_be_whole(self):
+        def hosted(frames):
+            def change(host, join):
+                host["LongFrames"] = frames
+            return change
+        frames = [{"Frame": 700, "Stage": "Settle", "Milliseconds": 41.5, "Marks": {"digest.session": [3.5, 1], "hash.economyNode": [30.2, 1], "coop.ready": [1.0, 1]}},
+                  {"Frame": 900, "Stage": "Settle", "Milliseconds": 33.0, "Marks": {}},
+                  {"Frame": 1500, "Stage": "Capture1", "Milliseconds": 35.0, "Marks": {}}]
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary)
+            write_run(root / "run-0", 30.0, 3.0, change=hosted(frames))
+            write_run(root / "run-1", 30.0, 3.0)
+            table = coop_join_timings.table([coop_join_timings.load(root / f"run-{index}") for index in range(2)])
+            # by stage: how many, the longest and its marks of at least 3 ms; a host that recorded none lists none
+            self.assertIn("| host: long frames, Settle (1 of 2 runs) | 2 |", table)
+            self.assertIn("| host: longest frame, Settle (1 of 2 runs) | 41.5 |", table)
+            self.assertIn("| host: longest frame, Settle, mark hash.economyNode (1 of 2 runs) | 30.2 |", table)
+            self.assertIn("| host: longest frame, Settle, mark digest.session (1 of 2 runs) | 3.5 |", table)
+            self.assertNotIn("coop.ready", table)
+            self.assertIn("| host: long frames, Capture1 (1 of 2 runs) | 1 |", table)
+            # a frame under the length that records it, or without its stage, is refused
+            write_run(root / "run-2", 30.0, 3.0, change=hosted([dict(frames[0], Milliseconds=20)]))
+            write_run(root / "run-3", 30.0, 3.0, change=hosted([{k: v for k, v in frames[0].items() if k != "Stage"}]))
+            for run in ("run-2", "run-3"):
+                with self.subTest(run), self.assertRaises(ValueError):
+                    coop_join_timings.load(root / run)
+
     def test_a_stages_garbage_collections_are_listed_when_kept_and_must_be_counts(self):
         def collected(collections=3, full=1, stage="validation"):
             def change(host, join):

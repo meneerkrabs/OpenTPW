@@ -1,17 +1,21 @@
 #!/usr/bin/env node
-// The co-op join smoke's join phase in the browser (docs/COOP.md, "The browser's join"). Serves a published web build and the player's own game folder on
-// 127.0.0.1 (tools/web-perf/lib.mjs), opens the page in a fresh headless, muted Chrome profile with ?coopSmoke=1, copies a join the native smoke recorded on
-// the desktop into the page, runs the join phase (join, the adversarial one, or measure) and writes each run's evidence for tools/coop_join_timings.py.
-// One run a page and a profile: the builds the smoke checks must be the runtime's first. The game files and the recorded join stay on this machine.
+// The co-op join smoke's phases in the browser (docs/COOP.md, "The browser's join" and "The browser's host"). Serves a published web build and the player's
+// own game folder on 127.0.0.1 (tools/web-perf/lib.mjs) and opens the page in a fresh headless, muted Chrome profile with ?coopSmoke=1. The join phase: it
+// copies a join the native smoke recorded on the desktop into the page, runs the join phase (join, the adversarial one, or measure) and writes each run's
+// evidence for tools/coop_join_timings.py. The host phase (--mode host): the page records a join, which the driver reads back into --out for a desktop
+// join phase to replay (scripts/smoke-coop-join-browser-host.sh). One run a page and a profile: the builds the smoke checks must be the runtime's first.
+// The game files and the recordings stay on this machine.
 //
-// The recorded join comes from the native smoke's host phase:
+// The recorded join for the join phase comes from the native smoke's host phase:
 //   OPENTPW_COOP_JOIN_PHASE=host OPENTPW_SMOKE_LOG_DIR=<logs> scripts/smoke-coop-join.sh   (its evidence: <logs>/opentpw-coop-join-evidence)
 //
 // Usage:
 //   node tools/web-coop-join.mjs --web out/web/wwwroot --game "/path/to/Theme Park World" --evidence <host evidence directory>
 //        [--mode join|measure] [--runs N] [--out <directory>] [--label <name>] [--chrome <executable>] [--headed] [--timeout-minutes M]
-// Each run's evidence goes to <out>/run-N, with machine.txt beside them; scripts/measure-coop-join-browser.sh records the host phase, runs the measuring
-// mode and prints the summary.
+//   node tools/web-coop-join.mjs --web out/web/wwwroot --game "/path/to/Theme Park World" --mode host --out <recording directory>
+//        [--label <name>] [--chrome <executable>] [--headed] [--timeout-minutes M]
+// Each join run's evidence goes to <out>/run-N, with machine.txt beside them; scripts/measure-coop-join-browser.sh records the host phase, runs the measuring
+// mode and prints the summary. The host phase's recording goes to <out> itself, with its run.json and machine.txt.
 import { execFileSync } from 'node:child_process';
 import { promises as fs } from 'node:fs';
 import os from 'node:os';
@@ -57,10 +61,13 @@ function parseArguments(argv) {
 			default: throw new Error(`Unknown option ${flag}`);
 		}
 	}
-	if (!options.web || !options.game || !options.evidence)
-		throw new Error('Pass --web <published wwwroot>, --game <Theme Park World folder> and --evidence <the host phase\'s evidence directory>.');
-	if (!['join', 'measure'].includes(options.mode))
-		throw new Error(`--mode is 'join' or 'measure', not '${options.mode}'.`);
+	if (!['join', 'measure', 'host'].includes(options.mode))
+		throw new Error(`--mode is 'join', 'measure' or 'host', not '${options.mode}'.`);
+	if (options.mode === 'host' ? !options.web || !options.game || !options.out || options.evidence || options.runs !== 1
+		: !options.web || !options.game || !options.evidence)
+		throw new Error(options.mode === 'host'
+			? 'The host phase takes --web <published wwwroot>, --game <Theme Park World folder> and --out <the recording\'s directory>, one run and no --evidence.'
+			: 'Pass --web <published wwwroot>, --game <Theme Park World folder> and --evidence <the host phase\'s evidence directory>.');
 	if (!/^[A-Za-z0-9._-]+$/.test(options.label))
 		throw new Error('--label is letters, digits, dots, dashes and underscores.');
 	return options;
@@ -147,8 +154,11 @@ class Page {
 	}
 }
 
-/** One run in a fresh profile: the page in its co-op smoke mode, the recorded join copied in, the join phase to its end, its evidence written to runDirectory. */
-async function runOnce(options, evidence, webRoot, gameRoot, runDirectory) {
+/**
+ * One run in a fresh profile: the page in its co-op smoke mode, at its front end with the pool sprites settled, then `body` with it; everything cleaned up after,
+ * and the run's record returned (failed, with why, when anything threw).
+ */
+async function inPage(options, webRoot, gameRoot, body) {
 	const run = { mode: options.mode, label: options.label, started: new Date().toISOString(), size: `${options.width}x${options.height}`, muted: true, frameCap: 0 };
 	let server, profile, chrome, cdp;
 	try {
@@ -193,42 +203,7 @@ async function runOnce(options, evidence, webRoot, gameRoot, runDirectory) {
 		// the pools extension's sprite sets arrive in the background: the run starts once they have (or the fetch gave up), so no fetch overlaps its frames
 		await page.waitFor('the pool sprites', status => status.poolSprites === 'settled', 120000);
 		run.poolSprites = 'settled';
-		for (const file of evidence.files)
-			await page.eval(`opentpwPerf.program.CoopSmokeAddFile(${JSON.stringify(file.name)}, Uint8Array.from(atob(${JSON.stringify(file.bytes.toString('base64'))}), c => c.charCodeAt(0)))`, 120000);
-		await page.eval('opentpwPerf.take(), opentpwPerf.takeSkipped(), true');
-		const begin = Date.now();
-		await page.eval(`opentpwPerf.program.CoopJoinSmokeStart(${JSON.stringify(options.mode)})`);
-		// to the end: a page whose loop stops drawing frames while the smoke runs has stopped, whatever its status says
-		let drawn = await page.eval('opentpwPerf.program.PerfFramesDrawn()'), drawnAt = Date.now(), status;
-		for (;;) {
-			await page.check();
-			status = await page.status();
-			if (status.state !== 'running')
-				break;
-			const now = await page.eval('opentpwPerf.program.PerfFramesDrawn()');
-			if (now !== drawn)
-				[drawn, drawnAt] = [now, Date.now()];
-			else if (Date.now() - drawnAt > 120000)
-				throw new Error(`The page drew no frame for 120 s at ${status.step} (frame ${status.frames})`);
-			if (Date.now() - begin > options.timeoutMinutes * 60000)
-				throw new Error(`The join phase did not end within ${options.timeoutMinutes} minutes; it stands at ${status.step} (frame ${status.frames})`);
-			await sleep(1000);
-		}
-		run.seconds = (Date.now() - begin) / 1000;
-		run.state = status.state;
-		run.message = status.message;
-		run.frames = status.frames;
-		// the page's whole frame calls ([start, milliseconds]), the smoke's frames carry the same calls by frame number
-		const pageFrames = await page.eval('opentpwPerf.take()', 120000);
-		const joinEvidence = await page.eval("new TextDecoder().decode(opentpwPerf.program.ReadFile('/coop-smoke/join-evidence.json'))", 120000);
-		// the evidence read back says what the status says, or the run has not passed
-		const parsed = JSON.parse(joinEvidence);
-		if (status.state === 'passed' && (parsed.Completed !== true || parsed.Mode !== options.mode))
-			throw new Error(`The page passed, but its evidence says completed ${parsed.Completed} in its ${parsed.Mode} mode`);
-		await fs.mkdir(runDirectory, { recursive: true });
-		await fs.writeFile(path.join(runDirectory, 'join-evidence.json'), joinEvidence);
-		await fs.writeFile(path.join(runDirectory, 'host-evidence.json'), JSON.stringify(evidence.host, null, 2) + '\n');
-		await fs.writeFile(path.join(runDirectory, 'page-frames.json'), JSON.stringify(pageFrames) + '\n');
+		await body(page, run);
 		run.pageErrors = page.errors.slice(0, 20);
 		return run;
 	} catch (error) {
@@ -261,6 +236,102 @@ async function runOnce(options, evidence, webRoot, gameRoot, runDirectory) {
 }
 
 /**
+ * Waits for the phase begun at `begin` to end and returns its status: a page whose loop stops drawing frames while the smoke runs has stopped, whatever its status
+ * says, and a phase that outlasts --timeout-minutes has failed.
+ */
+async function untilEnded(page, options, begin, what) {
+	let drawn = await page.eval('opentpwPerf.program.PerfFramesDrawn()'), drawnAt = Date.now(), status;
+	for (;;) {
+		await page.check();
+		status = await page.status();
+		if (status.state !== 'running')
+			return status;
+		const now = await page.eval('opentpwPerf.program.PerfFramesDrawn()');
+		if (now !== drawn)
+			[drawn, drawnAt] = [now, Date.now()];
+		else if (Date.now() - drawnAt > 120000)
+			throw new Error(`The page drew no frame for 120 s at ${status.step} (frame ${status.frames})`);
+		if (Date.now() - begin > options.timeoutMinutes * 60000)
+			throw new Error(`${what} did not end within ${options.timeoutMinutes} minutes; it stands at ${status.step} (frame ${status.frames})`);
+		await sleep(1000);
+	}
+}
+
+/** One join run: the recorded join copied in, the join phase to its end, its evidence written to runDirectory. */
+function runOnce(options, evidence, webRoot, gameRoot, runDirectory) {
+	return inPage(options, webRoot, gameRoot, async (page, run) => {
+		for (const file of evidence.files)
+			await page.eval(`opentpwPerf.program.CoopSmokeAddFile(${JSON.stringify(file.name)}, Uint8Array.from(atob(${JSON.stringify(file.bytes.toString('base64'))}), c => c.charCodeAt(0)))`, 120000);
+		await page.eval('opentpwPerf.take(), opentpwPerf.takeSkipped(), true');
+		const begin = Date.now();
+		await page.eval(`opentpwPerf.program.CoopJoinSmokeStart(${JSON.stringify(options.mode)})`);
+		const status = await untilEnded(page, options, begin, 'The join phase');
+		run.seconds = (Date.now() - begin) / 1000;
+		run.state = status.state;
+		run.message = status.message;
+		run.frames = status.frames;
+		// the page's whole frame calls ([start, milliseconds]), the smoke's frames carry the same calls by frame number
+		const pageFrames = await page.eval('opentpwPerf.take()', 120000);
+		const joinEvidence = await page.eval("new TextDecoder().decode(opentpwPerf.program.ReadFile('/coop-smoke/join-evidence.json'))", 120000);
+		// the evidence read back says what the status says, or the run has not passed
+		const parsed = JSON.parse(joinEvidence);
+		if (status.state === 'passed' && (parsed.Completed !== true || parsed.Mode !== options.mode))
+			throw new Error(`The page passed, but its evidence says completed ${parsed.Completed} in its ${parsed.Mode} mode`);
+		await fs.mkdir(runDirectory, { recursive: true });
+		await fs.writeFile(path.join(runDirectory, 'join-evidence.json'), joinEvidence);
+		await fs.writeFile(path.join(runDirectory, 'host-evidence.json'), JSON.stringify(evidence.host, null, 2) + '\n');
+		await fs.writeFile(path.join(runDirectory, 'page-frames.json'), JSON.stringify(pageFrames) + '\n');
+	});
+}
+
+/** A file of the page's /coop-smoke folder, its bytes. */
+async function readPageFile(page, name) {
+	if (!isEvidenceFileName(name))
+		throw new Error(`'${name}' is not a file name of a recorded join`);
+	const base64 = await page.eval(`(() => { const bytes = opentpwPerf.program.ReadFile(${JSON.stringify(`/coop-smoke/${name}`)}); let text = '';
+		for (let at = 0; at < bytes.length; at += 0x8000) text += String.fromCharCode(...bytes.subarray(at, at + 0x8000)); return btoa(text); })()`, 120000);
+	return Buffer.from(base64, 'base64');
+}
+
+/**
+ * The host phase's run: the host's level copied into the page (its level start reads the files at once), the phase to its end, and the recording it wrote read
+ * back into `out`: the host evidence and every file of it a join phase reads.
+ */
+function runHost(options, webRoot, gameRoot, out) {
+	return inPage(options, webRoot, gameRoot, async (page, run) => {
+		const asked = Date.now();
+		while (!await page.eval('opentpwPerf.program.CoopSmokeLevelReady()')) {
+			await page.check();
+			if (Date.now() - asked > 10 * 60000)
+				throw new Error('The host\'s level was not in the page within 10 minutes');
+			await sleep(500);
+		}
+		run.levelSeconds = (Date.now() - asked) / 1000;
+		await page.eval('opentpwPerf.take(), opentpwPerf.takeSkipped(), true');
+		const begin = Date.now();
+		// the level's start runs within this call
+		await page.eval("opentpwPerf.program.CoopJoinSmokeStart('host')", 600000);
+		const status = await untilEnded(page, options, begin, 'The host phase');
+		run.seconds = (Date.now() - begin) / 1000;
+		run.state = status.state;
+		run.message = status.message;
+		run.frames = status.frames;
+		const hostBytes = await readPageFile(page, 'host-evidence.json');
+		const host = JSON.parse(hostBytes.toString('utf8'));
+		// the recording read back says what the status says, or the run has not passed
+		if (status.state === 'passed' && (host.Completed !== true || host.Failure || !Array.isArray(host.Cuts) || host.Cuts.length !== 2))
+			throw new Error(`The page passed, but its recording says completed ${host.Completed} with ${host.Cuts?.length} captures`);
+		await fs.writeFile(path.join(out, 'host-evidence.json'), hostBytes);
+		// the page's whole frame calls ([start, milliseconds]) beside the recording
+		await fs.writeFile(path.join(out, 'page-frames.json'), JSON.stringify(await page.eval('opentpwPerf.take()', 120000)) + '\n');
+		if (status.state !== 'passed')
+			return;
+		for (const name of [...FIXED_FILES.filter(name => name !== 'host-evidence.json'), ...host.Cuts.map(cut => cut.File)])
+			await fs.writeFile(path.join(out, name), await readPageFile(page, name));
+	});
+}
+
+/**
  * The machine and the source the driver ran from, which the evidence does not name (machine.txt beside the runs, for tools/coop_join_timings.py --machine):
  * its system, processor, model and memory, and the driver's checkout's commit and whether what a build reads is clean (the page's own build names its commit
  * in the evidence).
@@ -290,6 +361,28 @@ async function main() {
 	const webRoot = path.resolve(options.web);
 	const gameRoot = path.resolve(options.game);
 	await fs.access(path.join(webRoot, 'index.html')).catch(() => { throw new Error(`${webRoot} has no index.html: pass the published wwwroot`); });
+	if (options.mode === 'host') {
+		const recording = path.resolve(options.out);
+		// a folder with a recording in it would mix the two
+		if ((await fs.readdir(recording).catch(() => [])).length)
+			throw new Error(`${recording} is not empty: the host phase records into an empty folder`);
+		await fs.mkdir(recording, { recursive: true });
+		await fs.writeFile(path.join(recording, 'machine.txt'), machineDescription());
+		process.stderr.write('host phase…\n');
+		const run = await runHost(options, webRoot, gameRoot, recording);
+		try {
+			await fs.writeFile(path.join(recording, 'run.json'), JSON.stringify(run, null, 2) + '\n');
+		} catch (error) {
+			run.state = 'failed';
+			run.message = `its record could not be written: ${error.message} (${run.message ?? ''})`;
+		}
+		console.log(`browser co-op join smoke [host, ${options.label}]: ${run.state} (${(run.message ?? '').slice(0, 300)})`);
+		for (const line of run.cleanup ?? [])
+			console.error(`  cleanup: ${line}`);
+		console.log(`Recording: ${recording}`);
+		process.exitCode = run.state === 'passed' ? 0 : 1;
+		return;
+	}
 	const evidence = await readEvidence(path.resolve(options.evidence));
 	const out = path.resolve(options.out ?? path.join('reports', 'web-coop-join', `${new Date().toISOString().replace(/[:.]/g, '-')}-${options.label}-${options.mode}`));
 	// a folder of earlier runs would mix them with these (a run that fails early leaves the earlier one's files)

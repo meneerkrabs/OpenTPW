@@ -15,7 +15,8 @@ sample: its rows show it once. Evidence of the adversarial join phase is refused
 abandoned builds warm the process first. The named work of the swaps' frames and of the frames after them (the smoke's marks, which
 nest: a parent's time includes its children's, so they are never added up) is listed for every mark of at least 1 ms in some run;
 that of the builds' long frames (30 ms or more), named by the stage and step that ended each, for every mark of at least 3 ms, with
-the garbage collections each ran when the evidence keeps them, as it keeps those of each stage's steps.
+the garbage collections each ran when the evidence keeps them, as it keeps those of each stage's steps. A page host's long frames (30 ms or more, with their
+drawing) are listed by the host stage they ended in, with the longest's named work.
 
 Usage: python3 -I tools/coop_join_timings.py [--machine <file>] <evidence directory> [<evidence directory> ...]
 """
@@ -64,6 +65,14 @@ def require_whole(root, host, join):
         number_fields(capture, CAPTURE_FIELDS, where)
         for part in ("Save", "Compression"):
             number_fields(capture.get(part) or {}, WORK_FIELDS, f"{where}'s {part.lower()}")
+    # a page host's long frames, when recorded: whole frames of at least the length that records them, each with its stage and its named work
+    host_frames = host.get("LongFrames")
+    if host_frames is not None and (not isinstance(host_frames, list) or not all(
+            isinstance(item, dict) and isinstance(item.get("Frame"), int) and not isinstance(item.get("Frame"), bool) and isinstance(item.get("Stage"), str)
+            and is_number(item.get("Milliseconds")) and item["Milliseconds"] >= LONG_FRAME_MILLISECONDS and isinstance(item.get("Marks"), dict)
+            and all(isinstance(value, list) and len(value) == 2 and all(is_number(part) for part in value) for value in item["Marks"].values())
+            for item in host_frames)):
+        raise ValueError(f"{root}: the host's long frames are not whole")
     for timing in join["JoinTimings"]:
         where = f"{root}: build {timing.get('Generation')}"
         number_fields(timing, JOIN_FIELDS, where)
@@ -248,6 +257,16 @@ def rows(runs):
                                  ("body KiB", "KiB", ("BodyBytes",)), ("save KiB", "KiB", ("SaveBytes",))]:
             read = value(get, *path)
             result.append((f"{label}: {name}", unit, [(kib(read) if unit == "KiB" else read)(run) for run in host_runs]))
+    # a page host's long frames (30 ms or more, with their drawing) by the host stage they ended in: how many, the longest, and the longest's named work of at least
+    # 3 ms (marks nest: never added up)
+    for stage_name in sorted({item["Stage"] for run in host_runs for item in run[0].get("LongFrames") or []}):
+        def frames_in(run, stage_name=stage_name):
+            return [item for item in run[0].get("LongFrames") or [] if item["Stage"] == stage_name]
+        result.append((f"host: long frames, {stage_name}", "count", [None if run[0].get("LongFrames") is None else len(frames_in(run)) for run in host_runs]))
+        longest = [max(frames_in(run), key=lambda item: item["Milliseconds"], default=None) for run in host_runs]
+        result.append((f"host: longest frame, {stage_name}", "ms", [None if item is None else item["Milliseconds"] for item in longest]))
+        for mark in sorted({mark for item in longest if item is not None for mark, value in item["Marks"].items() if value[0] >= LONG_FRAME_MARK_MILLISECONDS}):
+            result.append((f"host: longest frame, {stage_name}, mark {mark}", "ms", [None if item is None else (item["Marks"].get(mark) or [None])[0] for item in longest]))
     for outcome, _, swap_step in OUTCOMES:
         get = lambda run, outcome=outcome: join(run[1], outcome)
         for name, unit, path in [("process's build", "count", ("ProcessBuild",)), ("download attempts", "count", ("DownloadAttempts",)),

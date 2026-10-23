@@ -1,11 +1,15 @@
+using System.Buffers;
 using System.Text.Json;
-using System.Text.Json.Nodes;
 
 namespace OpenTPW;
 
 /// <summary>FNV-1a 64 over little-endian values; floats are hashed by bit pattern, never with a tolerance.</summary>
 public sealed class StateHasher
 {
+	private const ulong Prime = 1099511628211UL;
+	/// <summary>The prime to the 7th and the 8th power: zero bytes only multiply by the prime (x ^ 0 = x), so a value's upper zero bytes hash as one multiplication.</summary>
+	private const ulong Prime7 = 0xC5527B8A51D3D2DBUL, Prime8 = 0x1EFAC7090AEF4A21UL;
+
 	public ulong Value { get; private set; } = 14695981039346656037UL;
 
 	public void Add( long value )
@@ -19,17 +23,30 @@ public sealed class StateHasher
 	public void Add( float value ) => Add( BitConverter.SingleToInt32Bits( value ) );
 	public void Add( double value ) => Add( BitConverter.DoubleToInt64Bits( value ) );
 
+	/// <summary>The length, then each character as <see cref="Add(long)"/> hashes it: its two bytes and six zero bytes.</summary>
 	public void Add( string value )
 	{
 		Add( value.Length );
+		var hash = Value;
 		foreach ( var character in value )
-			Add( character );
+			hash = (((hash ^ (byte)character) * Prime) ^ (byte)(character >> 8)) * Prime7;
+		Value = hash;
+	}
+
+	/// <summary>ASCII text given as its bytes, hashed as <see cref="Add(string)"/> hashes the same characters (a character below 128: its byte and seven zero bytes).</summary>
+	internal void AddAscii( ReadOnlySpan<byte> text )
+	{
+		Add( text.Length );
+		var hash = Value;
+		foreach ( var character in text )
+			hash = (hash ^ character) * Prime8;
+		Value = hash;
 	}
 
 	private void AddByte( byte value )
 	{
 		Value ^= value;
-		Value *= 1099511628211UL;
+		Value *= Prime;
 	}
 }
 
@@ -111,29 +128,7 @@ public static class WorldStateHash
 		}
 		// economy_digest: everything the park save stores, with object keys sorted.
 		if ( economy != null )
-		{
-			// the analyser's caches are saved for an exact continuation but are a reading aid, not park state: they stay out of the digest
-			JsonNode? node;
-			using ( FrameMarks.Measure( "hash.economyNode" ) )
-				node = JsonSerializer.SerializeToNode( ParkSaveFile.Capture( economy ) );
-			if ( node is JsonObject root )
-			{
-				root.Remove( nameof( ParkSaveFile.Data.AnalyserCaches ) );
-				// the statistics history only feeds the park information window's graph, which no simulation step reads: it stays out of the digest so the pins keep
-				root.Remove( nameof( ParkSaveFile.Data.StatisticsHistory ) );
-				// The buy-list stars are presentation only. Completion, progress, effort and every other research field remain hashed.
-				if ( root[nameof( ParkSaveFile.Data.Research )] is JsonObject research )
-					research.Remove( nameof( ParkSaveFile.ResearchData.RecentItems ) );
-				// Role order feeds only the locator radios. Roster order, training, candidates and all staff gameplay state remain hashed.
-				if ( root[nameof( ParkSaveFile.Data.Staff )] is JsonObject staff )
-					staff.Remove( nameof( ParkSaveFile.StaffData.RoleOrder ) );
-				// Challenge RawValue feeds only the localized progress caption; scoring continues to use Baseline and the live measures.
-				if ( root[nameof( ParkSaveFile.Data.Objectives )] is JsonObject objectives && objectives[nameof( ParkSaveFile.ObjectivesData.Current )] is JsonObject challenge )
-					challenge.Remove( nameof( ActiveChallenge.RawValue ) );
-			}
-			using ( FrameMarks.Measure( "hash.economyCanonical" ) )
-				hash.Add( Canonical( node ) );
-		}
+			AddEconomy( hash, economy );
 		// [EXT:smarter-guests] the identity state joins the hash only while the extension or a script mod is on, so every park without it keeps its pins and SchemaVersion
 		if ( sources.Guests?.SmarterGuests is { } smarter )
 			smarter.AddCanonicalState( hash, sources.Guests.Guests );
@@ -149,10 +144,121 @@ public static class WorldStateHash
 	internal static IEnumerable<bool> WarmupSteps() => JsonMetadataWarmup.Steps( JsonSerializerOptions.Default, typeof( ParkSaveFile.Data ) );
 
 	/// <summary>
-	/// Runs the economy digest's serialization once ahead (<see cref="Compute"/>), a part a step: the park save's capture of <paramref name="economy"/>, then each of its parts
-	/// serialized to a JSON tree with the serializer's default options and written in the digest's canonical form, then the whole save so. The code a process's first hash
-	/// would run for the first time has then run, compiled ahead of time or not. Nothing is kept, the economy is only read and no hash changes; a save that cannot be captured or
-	/// a part that cannot be written is left for the hash to meet.
+	/// The economy's part of the hash: everything the park save stores (its serialization with the serializer's default options), its object keys sorted ordinally and the parts
+	/// no simulation reads left out, written compact (<see cref="CanonicalEconomy"/>) and hashed as the text it is.
+	/// </summary>
+	private static void AddEconomy( StateHasher hash, ParkEconomy economy )
+	{
+		byte[] save;
+		using ( FrameMarks.Measure( "hash.economySave" ) )
+			save = JsonSerializer.SerializeToUtf8Bytes( ParkSaveFile.Capture( economy ) );
+		using ( FrameMarks.Measure( "hash.economyCanonical" ) )
+		{
+			var text = new ArrayBufferWriter<byte>( save.Length );
+			CanonicalEconomy( save, text );
+			// the writer's default encoder escapes every character outside ASCII: the text is its bytes
+			if ( text.WrittenSpan.IndexOfAnyExceptInRange( (byte)0, (byte)127 ) < 0 )
+				hash.AddAscii( text.WrittenSpan );
+			else
+				hash.Add( System.Text.Encoding.UTF8.GetString( text.WrittenSpan ) );
+		}
+	}
+
+	/// <summary>
+	/// Writes the canonical form of the park save serialized as <paramref name="save"/> to <paramref name="text"/>: compact JSON, every object's keys in ordinal order, written as the
+	/// default writer writes names and values (its default encoder), and without the save's parts no simulation reads:
+	/// <list type="bullet">
+	/// <item>the analyser's caches, saved for an exact continuation but a reading aid, not park state;</item>
+	/// <item>the statistics history, which only feeds the park information window's graph (so the pins keep);</item>
+	/// <item>the research's buy-list stars (completion, progress, effort and every other research field remain);</item>
+	/// <item>the staff's role order, which feeds only the locator radios (roster order, training, candidates and all staff gameplay state remain);</item>
+	/// <item>the current challenge's raw value, which feeds only the localized progress caption (scoring uses its baseline and the live measures).</item>
+	/// </list>
+	/// </summary>
+	internal static void CanonicalEconomy( ReadOnlyMemory<byte> save, IBufferWriter<byte> text )
+	{
+		using var document = JsonDocument.Parse( save );
+		using var writer = new Utf8JsonWriter( text );
+		WriteCanonical( writer, document.RootElement, EconomyPart.Save, new List<(string Name, JsonElement Value)>() );
+	}
+
+	/// <summary>Where a value of the park save lies, as far as the parts the digest leaves out need it.</summary>
+	private enum EconomyPart { Elsewhere, Save, Research, Staff, Objectives, Challenge }
+
+	/// <summary>Whether the member <paramref name="name"/> of an object at <paramref name="part"/> is left out (<see cref="CanonicalEconomy"/>).</summary>
+	private static bool LeftOut( EconomyPart part, string name ) => part switch
+	{
+		EconomyPart.Save => name is nameof( ParkSaveFile.Data.AnalyserCaches ) or nameof( ParkSaveFile.Data.StatisticsHistory ),
+		EconomyPart.Research => name == nameof( ParkSaveFile.ResearchData.RecentItems ),
+		EconomyPart.Staff => name == nameof( ParkSaveFile.StaffData.RoleOrder ),
+		EconomyPart.Challenge => name == nameof( ActiveChallenge.RawValue ),
+		_ => false
+	};
+
+	/// <summary>Where the member <paramref name="name"/> of an object at <paramref name="part"/> lies.</summary>
+	private static EconomyPart PartOf( EconomyPart part, string name ) => (part, name) switch
+	{
+		(EconomyPart.Save, nameof( ParkSaveFile.Data.Research )) => EconomyPart.Research,
+		(EconomyPart.Save, nameof( ParkSaveFile.Data.Staff )) => EconomyPart.Staff,
+		(EconomyPart.Save, nameof( ParkSaveFile.Data.Objectives )) => EconomyPart.Objectives,
+		(EconomyPart.Objectives, nameof( ParkSaveFile.ObjectivesData.Current )) => EconomyPart.Challenge,
+		_ => EconomyPart.Elsewhere
+	};
+
+	/// <summary>Orders an object's members by their names, ordinally (a serialized object's names are distinct: the order is the names' alone).</summary>
+	private static readonly Comparer<(string Name, JsonElement Value)> ByName = Comparer<(string Name, JsonElement Value)>.Create(
+		static ( first, second ) => string.CompareOrdinal( first.Name, second.Name ) );
+
+	/// <summary>
+	/// Writes <paramref name="element"/> canonically at <paramref name="part"/>. <paramref name="members"/> holds each open object's members, its name read once: an object's
+	/// own lie past its parents' and are taken off when it is written. An object with a name twice is refused (<see cref="ArgumentException"/>), as the JSON tree the text
+	/// was built from refused it: the serializer writes two keys that differ only in an unpaired surrogate as one, which the default encoder replaces. The parts left out are
+	/// counted, since the tree held them, but never entered, as the tree never read them.
+	/// </summary>
+	private static void WriteCanonical( Utf8JsonWriter writer, JsonElement element, EconomyPart part, List<(string Name, JsonElement Value)> members )
+	{
+		switch ( element.ValueKind )
+		{
+			case JsonValueKind.Object:
+			{
+				var start = members.Count;
+				foreach ( var member in element.EnumerateObject() )
+					members.Add( (member.Name, member.Value) );
+				var count = members.Count - start;
+				members.Sort( start, count, ByName );
+				for ( var index = start + 1; index < start + count; index++ )
+					if ( members[index].Name == members[index - 1].Name )
+						throw new ArgumentException( $"The park save names '{members[index].Name}' twice in one object." );
+				writer.WriteStartObject();
+				for ( var index = start; index < start + count; index++ )
+				{
+					var (name, value) = members[index];
+					if ( LeftOut( part, name ) )
+						continue;
+					writer.WritePropertyName( name );
+					WriteCanonical( writer, value, PartOf( part, name ), members );
+				}
+				writer.WriteEndObject();
+				members.RemoveRange( start, count );
+				break;
+			}
+			case JsonValueKind.Array:
+				writer.WriteStartArray();
+				foreach ( var item in element.EnumerateArray() )
+					WriteCanonical( writer, item, EconomyPart.Elsewhere, members );
+				writer.WriteEndArray();
+				break;
+			default:
+				element.WriteTo( writer );
+				break;
+		}
+	}
+
+	/// <summary>
+	/// Runs the economy digest's code once ahead (<see cref="Compute"/>), a part a step: the park save's capture of <paramref name="economy"/>, then each of its parts serialized
+	/// with the serializer's default options and written in the digest's canonical form, then the whole save's part of the hash. The code a process's first hash would run for
+	/// the first time has then run, compiled ahead of time or not. Nothing is kept, the economy is only read and no hash changes; a save that cannot be captured or a part that
+	/// cannot be written is left for the hash to meet.
 	/// </summary>
 	internal static IEnumerable<bool> SerializationWarmupSteps( ParkEconomy economy )
 	{
@@ -165,10 +271,14 @@ public static class WorldStateHash
 		{
 			if ( property.GetIndexParameters().Length != 0 || property.GetMethod == null )
 				continue;
-			Warm( () => property.GetValue( data ) is { } value ? JsonSerializer.SerializeToNode( value, property.PropertyType ) : null );
+			Warm( () =>
+			{
+				if ( property.GetValue( data ) is { } value )
+					CanonicalEconomy( JsonSerializer.SerializeToUtf8Bytes( value, property.PropertyType ), new ArrayBufferWriter<byte>() );
+			} );
 			yield return true;
 		}
-		Warm( () => JsonSerializer.SerializeToNode( data ) );
+		Warm( () => AddEconomy( new StateHasher(), economy ) );
 	}
 
 	private static ParkSaveFile.Data? Captured( ParkEconomy economy )
@@ -183,21 +293,13 @@ public static class WorldStateHash
 		}
 	}
 
-	/// <summary>Writes what <paramref name="serialize"/> makes in the digest's canonical form and drops it; a failure is the hash's to meet.</summary>
-	private static void Warm( Func<JsonNode?> serialize )
+	/// <summary>Runs <paramref name="work"/>; a failure is the hash's to meet.</summary>
+	private static void Warm( Action work )
 	{
 		try
 		{
-			_ = Canonical( serialize() );
+			work();
 		}
 		catch ( Exception exception ) when ( exception is not OutOfMemoryException ) { }
 	}
-
-	private static string Canonical( JsonNode? node ) => node switch
-	{
-		JsonObject item => "{" + string.Join( ",", item.OrderBy( pair => pair.Key, StringComparer.Ordinal ).Select( pair => JsonValue.Create( pair.Key ).ToJsonString() + ":" + Canonical( pair.Value ) ) ) + "}",
-		JsonArray list => "[" + string.Join( ",", list.Select( Canonical ) ) + "]",
-		null => "null",
-		_ => node.ToJsonString()
-	};
 }

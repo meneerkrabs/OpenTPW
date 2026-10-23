@@ -922,11 +922,12 @@ The design fixed two constants only after measuring them (`coop-c2b-design.md`, 
     coasters' 24.7, the drawn tracks' 11.1, the guests' 6.5).
 
   The review fixes after the measured commit complete the parse's reads with the thread's synchronization
-  context set aside, so the serializer's own continuations run in the step too, and leave a save that begins
-  with a UTF-8 byte order mark to the whole parse, which refuses it. They also make the save's last eager
-  checks format their messages only on failure: the thing pool's, the coasters' riders' and the asset
-  manifests' comparison, which runs twice in a join's validation. These timings are of the measured commit,
-  not of the fixes.
+  context set aside, so the serializer's own continuations run in the step too. Should the runtime still
+  run one elsewhere, the parse fails instead of going on outside its steps. A save that begins with a UTF-8
+  byte order mark is left to the whole parse, which refuses it. The fixes also make the save's last eager
+  checks format their messages only on failure: the thing pool's names, the coasters' riders' places and
+  the asset manifests' comparison, which runs twice in a join's validation. These timings are of the
+  measured commit, not of the fixes.
 
   Every value: [COOP-MEASUREMENTS.md](COOP-MEASUREMENTS.md), "The save's read over steps".
 

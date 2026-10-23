@@ -215,6 +215,18 @@ internal sealed class CoopSession : IDisposable
 		return reason.Length == 0;
 	}
 
+	/// <summary>
+	/// What a host is to run over the frames before it hosts <paramref name="level"/> (<see cref="Host"/>), a step a frame: the session digest's serialization once ahead
+	/// (<see cref="WorldStateHash.SerializationWarmupSteps"/>), so the stream's first checkpoint and a capture's cut run none of its code for the first time (about 50 ms of a
+	/// page's frame otherwise, docs/COOP.md "The browser's host"). The park is only read; nothing when it has no economy. The smoke's host runs it; the game's own sharing does
+	/// not yet.
+	/// </summary>
+	public static IEnumerable<bool> PrepareHostSteps( Level level )
+	{
+		ArgumentNullException.ThrowIfNull( level );
+		return level.Park?.Economy is { } economy ? WorldStateHash.SerializationWarmupSteps( economy ) : Array.Empty<bool>();
+	}
+
 	/// <summary>Hosts the session <paramref name="link"/> is in with <paramref name="level"/>: the host's stream starts (the session clock with it).</summary>
 	public static CoopSession Host( Level level, ICoopStreamTransport link, Func<double>? seconds = null, Func<DateTime>? localTime = null )
 	{

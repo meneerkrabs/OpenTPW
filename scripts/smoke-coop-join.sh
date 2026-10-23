@@ -6,7 +6,8 @@
 # Usage: scripts/smoke-coop-join.sh ['/path/to/Theme Park World'] (the game path may also come from OPENTPW_GAME_PATH).
 # OPENTPW_SMOKE_LOG_DIR keeps both runs' logs and the evidence; a failed run's log is kept in any case. OPENTPW_COOP_JOIN_PHASE=measure runs the
 # measuring join phase instead of the adversarial one (scripts/measure-coop-join.sh; docs/COOP.md, "Measurements"); OPENTPW_COOP_JOIN_PHASE=host
-# runs the host phase only, for a join phase elsewhere (the browser's, with OPENTPW_SMOKE_LOG_DIR to keep its evidence).
+# runs the host phase only, for a join phase elsewhere (the browser's, with OPENTPW_SMOKE_LOG_DIR to keep its evidence). OPENTPW_COOP_HOST_EVIDENCE
+# names a host phase recorded elsewhere (the browser's, scripts/smoke-coop-join-browser-host.sh), which the join phase replays instead of a native one.
 set -euo pipefail
 repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repository_root"
@@ -31,6 +32,15 @@ export OPENTPW_CONFIG_DIR="$work/config"
 export OPENTPW_SILENT=1 OPENTPW_OFFSCREEN=1
 status=0
 phases=(host)
+if [[ -n "${OPENTPW_COOP_HOST_EVIDENCE:-}" ]]; then
+  # a host phase recorded elsewhere: its files copied in, the join phase alone
+  if [[ ! -f "$OPENTPW_COOP_HOST_EVIDENCE/host-evidence.json" || "${OPENTPW_COOP_JOIN_PHASE:-join}" == host ]]; then
+    printf '%s\n' 'OPENTPW_COOP_HOST_EVIDENCE names a host recording (its host-evidence.json) for a join phase, not a host phase.' >&2
+    exit 2
+  fi
+  cp -R "$OPENTPW_COOP_HOST_EVIDENCE"/. "$work/evidence/"
+  phases=()
+fi
 if [[ "${OPENTPW_COOP_JOIN_PHASE:-join}" != host ]]; then
   phases+=("${OPENTPW_COOP_JOIN_PHASE:-join}")
 fi

@@ -67,8 +67,9 @@ order, resume after a lost connection or a restart, and the join snapshots
 park needs. The host's command stream runs over it (C2b-1, below), a level takes part in a session
 through `CoopSession` (C2b-2, below), and a member joins a running session or resyncs from a join
 snapshot (C2c-1, below), which the game builds and swaps in (C2c-2a, below) and which is measured on the
-desktop (C2c-2b-1, "Measurements"). The browser's join (the rest of C2c-2b) and the game's screens (C2d)
-follow; until then no player starts a session.
+desktop (C2c-2b-1, "Measurements"). A browser joins (C2c-2b-2, below) and hosts (C2c-2b-4, below) in the
+smokes; the browser's link to a real server (C2c-2b-5) and the game's screens (C2d) follow, and until
+then no player starts a session.
 
 ### The host's command stream (C2b-1)
 
@@ -536,6 +537,36 @@ digest, world hash, join state and save, in about a minute and some 3,200 frames
 and a browser guest run one simulation through a whole session, a stronger check than the determinism
 pins' fixed runs. The browser's numbers follow in "Measurements" (C2c-2b-2c).
 
+### The browser's host (C2c-2b-4)
+
+`[EXT:online-coop-snapshot-join]` The host phase runs in the browser's game too, so a browser host and a
+desktop guest are proven to run one simulation: `tools/web-coop-join.mjs --mode host` opens the page as
+for the join (`?coopSmoke=1`, a fresh headless, muted Chrome profile), has it copy the host's level
+(`CoopSmokeLevelReady`, which asks the page for the level's files, since the phase's level start reads
+them at once), starts the host phase from the front end (`CoopJoinSmokeStart("host")`) and reads back
+the recording the phase wrote into `/coop-smoke` (`ReadFile`): the host evidence, the frames, both
+captures, and the final save and join state, with the page's record (`host-run.json`) and its frame
+calls beside them. The page runs the native host phase (`CoopJoinSmokeTest.StartPageHost`) with its
+handler in the game update's place, as the native runner has it: the host's frame advances the park
+itself, through the session's stream. It records each frame of 30 ms or more with its drawing, the host
+stage whose step it ran and its named work (`LongFrames`); the native host times no frame.
+`scripts/smoke-coop-join-browser-host.sh` records the host phase in the page and has the native join
+phase replay it (`OPENTPW_COOP_HOST_EVIDENCE` for `scripts/smoke-coop-join.sh`), and
+`scripts/measure-coop-join-browser-host.sh` measures it.
+
+Both the adversarial and the measuring join phases pass over the page's recordings (Chrome 155 headless
+on an Apple M5, the page compiled ahead of time, the desktop build of the same source): the failed check,
+the abandon, the join, all 80 checkpoints to the second cut, the resync, the 20 to the end, and the final
+digest, world hash, join state and save. So a browser host and a desktop guest run one simulation too.
+The page's host phase takes about two minutes for its 6,900 frames.
+
+`CoopSession.PrepareHostSteps` is what a host is to run before it hosts, a step a frame: the session
+digest's code once ahead over the park's economy (`WorldStateHash.SerializationWarmupSteps`), so the
+stream's first checkpoint and a capture's cut run none of it for the first time. The smoke's host phase,
+the native one too, runs the steps while its park settles, so neither host's first checkpoint is the
+digest's first run any more. The game's own sharing does not run them yet: it comes with the sharing's
+flow (C2d).
+
 ### The host's trimmed frame (C2c-3)
 
 `[EXT:online-coop-snapshot-join]` The host trims the frames every member is known to hold. A server
@@ -975,6 +1006,35 @@ The design fixed two constants only after measuring them (`coop-c2b-design.md`, 
   swimmers' first update is a lead.
 
   Every value: [COOP-MEASUREMENTS.md](COOP-MEASUREMENTS.md), "The check and the level's last step".
+
+- **The browser's host (C2c-2b-4).** The page records the host phase and the desktop's measuring join
+  phase replays it (above, "The browser's host"). Three runs, medians in milliseconds, the page compiled
+  ahead of time against the desktop host of "The check and the level's last step" (`7e725f699`):
+
+  | Part of a capture | Desktop host, capture 1 | Page host, capture 1 | Desktop host, capture 2 | Page host, capture 2 |
+  | --- | ---: | ---: | ---: | ---: |
+  | The cut (one step at a tick) | 9.9 | 17.0 | 8.3 | 20.7 |
+  | Of it the session digest | 4.2 | 7.3 | 4.3 | 14.6 |
+  | The save's serialization | 64.9 over 12 slices, longest 31.9 | 62.4 over 12, longest 22.7 | 11.0, longest 5.9 | 31.7, longest 17.5 |
+  | The compression | 1.6 | 4.1 | 1.8 | 2.5 |
+  | The capture's longest frame | 32.2 | 22.7 | 8.3 | 20.7 |
+
+  Every frame of the page's host phase of 30 ms or more is recorded with its named work. Before the
+  host's preparation (`ae3695e68`), the frame of the stream's first checkpoint after the park was
+  shared took 69 to 77 ms, 48 to 51 of them the economy's digest running its code for the first time.
+  With it (`10fdc69dd`) that frame took 31 to 33 ms in two runs and under 30 in the third, its digest
+  warm. The other long frames are the smoke's own work, not a host's:
+  - the fixture it builds (370 to 380 ms) and the first frame of its new rides and pools (about 180);
+  - the cut's frames (51 to 63 ms), where the smoke takes two digests of its own besides the capture's;
+  - the tour ride it buys at the second cut, whose type is used for the first time (59 to 68, its sign
+    47 to 55 of them);
+  - its final checks (83 to 104).
+
+  What remains of a host's own work is the digest at each checkpoint, once a second of real time. At the
+  session's end, ahead of time, it took 30 ms in a frame of 33 to 37 ms (the economy's canonical text 16
+  to 18 of them, its serialization 9 to 10).
+
+  Every value: [COOP-MEASUREMENTS.md](COOP-MEASUREMENTS.md), "The browser's host".
 
 ## The command layer (C1)
 

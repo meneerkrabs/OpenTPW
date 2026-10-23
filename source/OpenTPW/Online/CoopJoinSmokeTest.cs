@@ -13,7 +13,13 @@ internal sealed record CoopSmokeCut( uint Generation, ulong Assigned, long Assig
 /// <summary>The host phase's evidence: the join phase's oracle, with what each capture cost the host (docs/COOP.md, "Measurements").</summary>
 internal sealed record CoopSmokeHostEvidence( bool Completed, string? Failure, string Theme, string StartKind, int Coasters, CoopSmokeCut[] Cuts, ulong LastFrame, long LastTick,
 	long LastRecord, ulong FinalDigest, ulong FinalWorldHash, string FinalSaveSha256, long HostFrames, CoopCaptureTimings[]? CaptureTimings = null,
-	CoopSmokeEnvironment? Environment = null );
+	CoopSmokeEnvironment? Environment = null, CoopSmokeHostFrame[]? LongFrames = null );
+
+/// <summary>
+/// A page's host frame of <see cref="CoopJoinSmokeTest.LongBuildFrameMilliseconds"/> or more, its whole call with its drawing (C2c-2b-4): its number, the host stage whose step it
+/// ran (the stage it began in) and its named work (<see cref="FrameMarks"/>), as <see cref="CoopSmokeFrameMarks"/> has it. The native host times no frame.
+/// </summary>
+internal sealed record CoopSmokeHostFrame( int Frame, string Stage, double Milliseconds, System.Text.Json.Nodes.JsonObject Marks );
 
 /// <summary>
 /// The join phase's evidence, with what each build of a capture cost the guest and the phase's update frames (docs/COOP.md, "Measurements"). <paramref name="Mode"/> is "join" (the
@@ -294,6 +300,7 @@ internal sealed partial class CoopJoinSmokeTest : IDisposable
 	public void Dispose()
 	{
 		StopMarks();
+		StopHostMarks();
 		SaveFileSystem = originalSaveFileSystem;
 	}
 }

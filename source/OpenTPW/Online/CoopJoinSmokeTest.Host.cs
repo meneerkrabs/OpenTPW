@@ -20,7 +20,12 @@ internal sealed partial class CoopJoinSmokeTest
 	private enum HostStage { WarmUp, Fixture, Settle, Stage1, Capture1, Normal, Fastest, Stage2, Capture2, Tail, Done }
 
 	private HostStage hostStage;
+	/// <summary>The stage whose step the host's current frame runs: the stage it began in (a step that ends its stage has moved <see cref="hostStage"/> on).</summary>
+	private HostStage frameStage;
 	private int stageFrame;
+	/// <summary>What the host runs before it hosts (<see cref="CoopSession.PrepareHostSteps"/>), and whether it has run to its end.</summary>
+	private IEnumerator<bool>? prepareHost;
+	private bool prepared;
 	private Level level = null!;
 	private CoopSmokeHostTransport transport = null!;
 	private CoopSession session = null!;
@@ -37,10 +42,13 @@ internal sealed partial class CoopJoinSmokeTest
 	private (ObjectCatalogEntry Entry, int X, int Y)? tourSite;
 	private ParkEconomy Economy => level.Park!.Economy;
 
+	/// <summary>The level the host phase shares (a page copies its files before the phase starts: its level start reads them at once).</summary>
+	internal const string HostLevel = "jungle";
+
 	private void StartHost()
 	{
 		// Instant Action: the shipped Easymode seed with its rides, shops, paths and staff, so most of the shared park is the original's own
-		level = flow.StartLevel( "jungle", original: true, developerPanels: false, start: ParkStartKind.InstantAction );
+		level = flow.StartLevel( HostLevel, original: true, developerPanels: false, start: ParkStartKind.InstantAction );
 		Require( level.Park != null && level.Guests != null && level.OriginalPark != null && level.StaffHands != null, "start a writable original Jungle park in Instant Action" );
 		Require( CoopSession.CanShare( level, out var refusal ), $"the park can be shared ({refusal})" );
 		hostStage = HostStage.WarmUp;
@@ -50,6 +58,7 @@ internal sealed partial class CoopJoinSmokeTest
 	private void HostUpdate()
 	{
 		++frame;
+		frameStage = hostStage;
 		if ( done )
 			return;
 		try
@@ -67,9 +76,14 @@ internal sealed partial class CoopJoinSmokeTest
 					Next( HostStage.Settle );
 					return;
 				case HostStage.Settle:
+					// what a host is to run before it hosts, a step a frame (CoopSession.PrepareHostSteps; the game's own sharing does not run it yet)
+					prepareHost ??= CoopSession.PrepareHostSteps( level ).GetEnumerator();
+					if ( !prepared && !prepareHost.MoveNext() )
+						prepared = true;
 					AdvanceHost();
 					if ( stageFrame >= SettleFrames )
 					{
+						Require( prepared, "the host was prepared before it hosts" );
 						Host();
 						Next( HostStage.Stage1 );
 					}
@@ -566,10 +580,27 @@ internal sealed partial class CoopJoinSmokeTest
 			RequireTimings( timings );
 		var evidence = HostEvidence( completed: true, failure: null ) with { FinalDigest = digest, FinalWorldHash = world, FinalSaveSha256 = Sha256Hex( save ) };
 		WriteJson( "host-evidence.json", evidence );
+		hostWritten = evidence;
 		session.End( "The smoke ended." );
 		Next( HostStage.Done );
-		Complete( $"Native co-op join smoke (host): {transport.Frames.Count} frames to frame {evidence.LastFrame}, tick {evidence.LastTick}, record {evidence.LastRecord}; "
+		Complete( $"{runner} co-op join smoke (host): {transport.Frames.Count} frames to frame {evidence.LastFrame}, tick {evidence.LastTick}, record {evidence.LastRecord}; "
 			+ $"{cuts.Count} captures; digest {digest:X16}." );
+	}
+
+	/// <summary>The completed host phase's evidence as written, which a page writes again with its long frames (<see cref="PageEnded"/>).</summary>
+	private CoopSmokeHostEvidence? hostWritten;
+
+	/// <summary>A page's host frames of <see cref="LongBuildFrameMilliseconds"/> or more, with their named work; null for the native host, which times no frame.</summary>
+	private List<CoopSmokeHostFrame>? hostLongFrames;
+
+	/// <summary>Whether the host phase turned the frames' named work on for its long frames (and so turns it off again).</summary>
+	private bool hostMarks;
+
+	private void StopHostMarks()
+	{
+		if ( hostMarks && FrameMarks.Enabled )
+			FrameMarks.Enable( false );
+		hostMarks = false;
 	}
 
 	/// <summary>A capture's timings are whole: every part ran and was timed (finite, not negative), the save and the compression in slices, the payload uploaded.</summary>

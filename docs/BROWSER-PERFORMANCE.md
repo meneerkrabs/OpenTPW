@@ -950,3 +950,7 @@ Both were mostly a process's first use of their code: compiled ahead of time, th
 | A resync's digest stage | none | 25.0 over 3 frames |
 
 The metadata with the resume's steps alone took the check to 46 to 81 ms. No build frame of a join now reaches 50 ms. The swap's frame measured 93 to 106 ms with its drawing against 87 to 92 before, but its pool swimmers vary from run to run: in alternating runs of both pages the before's swap frames took 101 to 119 ms and the after's 95 to 114.
+
+### A browser host (C2c-2b-4)
+
+The co-op join smoke's host phase runs in the page, and the desktop's join phase replays its recording with every checkpoint equal (docs/COOP.md, "The browser's host"). Same machine and harness, medians of three runs in milliseconds, compiled ahead of time. A capture's cut takes 17.0 ms (the desktop's 9.9) and 20.7 at the second capture, and its save serializes in slices, the longest 22.7 ms in the median run (26.6 in the slowest). The stream's first checkpoint after the park was shared took a frame of 69 to 77 ms, the economy's digest running its code for the first time. The smoke's host now runs that code once ahead before it hosts (`CoopSession.PrepareHostSteps`, which the game's own sharing does not run yet), and that frame takes 31 to 33 ms or less. What remains of a host's work is the digest at each checkpoint, once a second: at the session's end 30 ms in a frame of 33 to 37.

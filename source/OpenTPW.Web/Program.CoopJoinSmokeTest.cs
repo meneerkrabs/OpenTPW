@@ -5,10 +5,11 @@ using System.Text.Json.Nodes;
 namespace OpenTPW;
 
 /// <summary>
-/// [EXT:online-coop-snapshot-join] The co-op join smoke's join phase in the page (docs/COOP.md, "The browser's join"; tools/web-coop-join.mjs): the harness copies a join recorded on
-/// the desktop (the native smoke's host phase) into <c>/coop-smoke</c>, starts the join from the front end and reads the outcome and the evidence back. Only in the page's co-op smoke
-/// mode (<c>?coopSmoke=1</c> on a loopback address), which unlike the performance mode changes no park outside the commands; one run a page, since the builds it measures must be the
-/// runtime's first.
+/// [EXT:online-coop-snapshot-join] The co-op join smoke's phases in the page (docs/COOP.md, "The browser's join" and "The browser's host"; tools/web-coop-join.mjs). The join phase:
+/// the harness copies a join recorded on the desktop (the native smoke's host phase) into <c>/coop-smoke</c>, starts the join from the front end and reads the outcome and the
+/// evidence back. The host phase (C2c-2b-4): the harness has the page copy the host's level, starts the phase from the front end and reads the recording it writes into
+/// <c>/coop-smoke</c> back, for a desktop join phase to replay. Only in the page's co-op smoke mode (<c>?coopSmoke=1</c> on a loopback address), which unlike the performance mode
+/// changes no park outside the commands; one run a page, since the builds it measures must be the runtime's first.
 /// </summary>
 public static partial class Program
 {
@@ -61,27 +62,45 @@ public static partial class Program
 		coopSmokeBytes += contents.Length - replaced;
 	}
 
-	/// <summary>Starts the join phase (<c>join</c>, the adversarial one, or <c>measure</c>) from the front end, over the recorded join copied in.</summary>
+	/// <summary>Whether the host phase's level is in the page, asking the page to copy it the first time: the phase's level start reads its files at once.</summary>
+	[JSExport]
+	public static bool CoopSmokeLevelReady()
+	{
+		RequireCoopSmokeMode();
+		return GameFlow.LevelDataReady?.Invoke( CoopJoinSmokeTest.HostLevel ) != false;
+	}
+
+	/// <summary>
+	/// Starts a phase from the front end: the join phase (<c>join</c>, the adversarial one, or <c>measure</c>) over the recorded join copied in, or the host phase (<c>host</c>), which
+	/// records a join for a desktop join phase once its level is in the page (<see cref="CoopSmokeLevelReady"/>).
+	/// </summary>
 	[JSExport]
 	public static void CoopJoinSmokeStart( string mode )
 	{
 		RequireCoopSmokeMode();
-		var measuring = mode switch
+		var (hosting, measuring) = mode switch
 		{
-			"join" => false,
-			"measure" => true,
-			_ => throw new ArgumentException( $"The co-op join smoke runs 'join' or 'measure', not '{mode}'." )
+			"join" => (false, false),
+			"measure" => (false, true),
+			"host" => (true, false),
+			_ => throw new ArgumentException( $"The co-op join smoke runs 'join', 'measure' or 'host', not '{mode}'." )
 		};
 		if ( coopSmokeState != "idle" )
 			throw new InvalidOperationException( "One co-op join smoke a page: its builds must be the runtime's first. Load the page again for another." );
 		if ( renderer == null || flow == null || flow.Level != null || flow.Menu == null )
 			throw new InvalidOperationException( "The co-op join smoke starts from the front end." );
+		if ( hosting && GameFlow.LevelDataReady?.Invoke( CoopJoinSmokeTest.HostLevel ) == false )
+			throw new InvalidOperationException( "The host phase starts once its level is in the page (CoopSmokeLevelReady)." );
 		coopSmokeState = "running";
 		try
 		{
-			coopSmoke = CoopJoinSmokeTest.StartPageJoin( flow, CoopSmokeDirectory, measuring,
-				completedBy: summary => coopSmokeCompleted = summary,
-				failedBy: line => (coopSmokeState, coopSmokeMessage) = ("failed", line) );
+			coopSmoke = hosting
+				? CoopJoinSmokeTest.StartPageHost( flow, CoopSmokeDirectory,
+					completedBy: summary => coopSmokeCompleted = summary,
+					failedBy: line => (coopSmokeState, coopSmokeMessage) = ("failed", line) )
+				: CoopJoinSmokeTest.StartPageJoin( flow, CoopSmokeDirectory, measuring,
+					completedBy: summary => coopSmokeCompleted = summary,
+					failedBy: line => (coopSmokeState, coopSmokeMessage) = ("failed", line) );
 		}
 		catch ( Exception error )
 		{

@@ -63,6 +63,12 @@ internal interface ICoopJoinBuild
 	/// <summary>The entities this build has staged in its scene so far (a probe: the native join smoke abandons a build only once it has staged some); 0 for a build without a scene.</summary>
 	int StagedEntities => 0;
 
+	/// <summary>Whether this build's level is part way through restoring the saved objects, and how many it placed so far (probes: the native join smoke abandons a build there).</summary>
+	bool RestoringObjects => false;
+
+	/// <inheritdoc cref="RestoringObjects"/>
+	int PlacedObjects => 0;
+
 	/// <summary>What the build's stages cost so far, on the wall clock (docs/COOP.md, "Measurements"); null for a build that keeps none.</summary>
 	CoopBuildTimings? Timings => null;
 }

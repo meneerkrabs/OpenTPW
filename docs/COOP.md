@@ -322,7 +322,14 @@ the live game, and swaps it in.
   6. It builds the level over frames in the join restore mode (below), with its HUD and, when the player
      has the automatic advisor on, a fresh advisor. A construction step that announces a long one next
      (`Level.NextStepIsLong`) ends the frame's slice, so the long one starts a slice of its own, as in a
-     park start (docs/BROWSER-PERFORMANCE.md, "Build steps").
+     park start (docs/BROWSER-PERFORMANCE.md, "Build steps"). The level restores the saved objects one a
+     step (`ParkLayoutSnapshot.RestoreObjectSteps`, C2c-2b-3d): the first step checks the whole snapshot
+     before it places anything, each places one object in the saved order with its saved seed and ids,
+     and the last restores the allocators. Before that, on the desktop, the saved types' signs are queued
+     for the sign worker (`ObjectSigns.ComposeAhead`, every type but the gate's), so an object's step
+     takes its finished sign or waits for the one being composed. A restore given up between its steps
+     is not rolled back: the build drops its candidate whole. An ordinary resume still builds its level
+     in one call.
   7. It does the one-time work of the joined park's first frame where an entity can do it ahead
      (`IFirstFramePreparation`, `[EXT:park-entry-preparation]`, the stage `prepare`): the coasters'
      views, their types' assets and their meshes, the pool bridges' assets and meshes, and the
@@ -764,6 +771,33 @@ The design fixed two constants only after measuring them (`coop-c2b-design.md`, 
   cover.
 
   Every value: [COOP-MEASUREMENTS.md](COOP-MEASUREMENTS.md), "The swap's frame".
+
+- **The objects' restore over steps (C2c-2b-3d).** The level restores a joined park's saved objects one a
+  step instead of all in one, and on the desktop the saved types' signs are composed on the sign worker.
+  Three runs each, medians in milliseconds, before (`7d5b99985`, the first frame prepared) and after
+  (`34606a26a`):
+
+  | Part of the join | Desktop before | Desktop after | Ahead of time before | Ahead of time after |
+  | --- | ---: | ---: | ---: | ---: |
+  | The longest build frame, its update | 357 | 83.3 | 290 | 87.0 |
+  | The objects' sections (`objects`) | 348 | 194 | 287 | 266 |
+  | Of it the signs (`object-sign`) | 190 | 48.8 | 143 | 134 |
+  | The level stage | 779 over 24 frames | 581 over 28 | 672 over 23 | 622 over 27 |
+  | The join's longest frame | 357, the objects' step | 173, the swap's | 292 with its drawing, the objects' step | 110 with its drawing, the swap's |
+
+  The level stage has 24 more steps, one per saved object and the allocators' last, over 4 more frames.
+  Its longest step is now the restore's first, with the snapshot's checks and the first object: 60 ms on
+  the desktop, 87 ms ahead of time. Three more of the restore's steps took 15 to 37 ms on the desktop and
+  35 to 58 ms ahead of time. On the desktop 49 of the signs' 190 ms are still spent on the frames, where
+  an object's step waits for its sign or composes one the worker has not reached; the page has no
+  worker, and its signs are still composed on their objects' steps. A join's longest frame is now the
+  swap's in both builds measured: 173 ms on the desktop (168-228), the advisor's first update most of
+  it, and 110 ms with its drawing ahead of time, the park's first update of its level and the advisor's
+  about 35 ms each. A resync's longest frame stays its save's parse (58.6
+  ms ahead of time). Leads: the advisor's first update, the restore's first step (the checks and the
+  signs' queue in steps of their own) and, in the page, a type's sign in a step of its own.
+
+  Every value: [COOP-MEASUREMENTS.md](COOP-MEASUREMENTS.md), "The objects' restore over steps".
 
 ## The command layer (C1)
 

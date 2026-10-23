@@ -405,18 +405,21 @@ internal readonly record struct SignSlotPlan( ObjectSignImages? Images, bool Use
 	/// <param name="typeSign">The object type's own sign, asked for every object but the gate.</param>
 	public static SignSlotPlan For( bool isFixedItem, int infoId, string entryArchivePath, int? gateInfoId, ObjectSignImages? gateImages, Func<ObjectSignImages?> typeSign )
 	{
-		// [DATA:levels/<level>/global.sam:ParkName.GateObjectId] the level names its gate, whether or not its sign could be drawn; without that line the fixed item named "gates" stands in
-		var isGate = gateInfoId is { } gate
-			? infoId == gate
-			: isFixedItem && string.Equals( Path.GetFileName( entryArchivePath.TrimEnd( '/' ) ), "gates", StringComparison.OrdinalIgnoreCase );
 		// the gate never draws its type sign: that would be its default lines, not the park's name
-		if ( isGate )
+		if ( IsGate( isFixedItem, infoId, entryArchivePath, gateInfoId ) )
 			return gateImages != null ? new( gateImages, false ) : new( null, true );
 		// [BIN:TPW-EXE:0x004629D0 object builder] every model the builder makes, fixed items included, reaches the sign generator 0x467A80 once its mesh has loaded (0x461F10 returns 1 at 0x462C18; the 0x400 flag test at 0x462DCC and its fall-through both reach 0x462E94, and 0x468250 fails only without the fonts directory), with the info record's name when no lines are passed (0x412F50 at 0x462ECE): a fixed item with its own .sgn draws its own sign as any catalogue object does
 		if ( typeSign() is { } own )
 			return new( own, false );
 		return isFixedItem ? new( null, true ) : None;
 	}
+
+	/// <summary>Whether an object is its level's gate, whose sign slots show the park's name (<see cref="For"/>) and never its type's own sign.</summary>
+	public static bool IsGate( bool isFixedItem, int infoId, string entryArchivePath, int? gateInfoId ) =>
+		// [DATA:levels/<level>/global.sam:ParkName.GateObjectId] the level names its gate, whether or not its sign could be drawn; without that line the fixed item named "gates" stands in
+		gateInfoId is { } gate
+			? infoId == gate
+			: isFixedItem && string.Equals( Path.GetFileName( entryArchivePath.TrimEnd( '/' ) ), "gates", StringComparison.OrdinalIgnoreCase );
 
 	/// <summary>
 	/// The plan of a front-end scene's model (the lobby islands and gates, the globe): its runtime sign once it is composed, else the plain board; a front-end model

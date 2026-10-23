@@ -542,6 +542,74 @@ public class ObjectAccessCellsTests
 		Assert.AreEqual( 0, old.LinksAt( 5, 5 ), "no queue cell outside the entrance to link to" );
 	}
 	/// <summary>
+	/// A layout's restore over steps (a co-op join's build): one object a step in the saved order, the allocators in the last, and every object as its record holds it: its place, its base
+	/// height, its attraction id past the hole a removed object left, its thing id in a pool whose first slot is another thing's, and its seed. The call restores the same park.
+	/// </summary>
+	[TestMethod]
+	public void TheRestoreOverStepsPlacesOneObjectAStepAsTheLayoutSavedIt()
+	{
+		var ride = Entry( 1100, 5, true, "*2S" );
+		var shop = Entry( 1203, 5, false, "*2S" );
+		var rig = new Rig( ride, shop );
+		rig.Objects.Things = new ThingPool();
+		Assert.AreEqual( 1, rig.Objects.Things.Allocate( SaveThingModel.Guest ), "the pool's first slot is a guest's" );
+		rig.Place( ride, 4, 5 );
+		var removed = rig.Place( shop, 10, 12 )!;
+		rig.Place( shop, 20, 12 );
+		rig.Place( shop, 20, 20 );
+		Assert.IsTrue( rig.Objects.Remove( removed ) );
+		var layout = ParkLayoutSnapshot.CaptureSnapshot( rig.Cells, rig.Objects );
+		CollectionAssert.AreEqual( new[] { 1, 3, 4 }, layout.Objects.Select( record => record.AttractionId ).ToArray(), "the removed object's id stays a hole" );
+		CollectionAssert.AreEqual( new[] { 2, 4, 5 }, layout.Objects.Select( record => record.ThingId ).ToArray(), "the thing ids are the pool's, not the objects' places" );
+		Assert.AreEqual( 5, layout.NextAttractionId );
+
+		var stepped = new ParkObjects( rig.Catalog, new SandboxParkGrid() ) { Things = new ThingPool() };
+		var placed = new List<OriginalObject>();
+		var shares = new List<float>();
+		foreach ( var share in ParkLayoutSnapshot.RestoreObjectSteps( layout, stepped, placed ) )
+		{
+			shares.Add( share );
+			Assert.AreEqual( Math.Min( shares.Count, 3 ), stepped.Objects.Count, "one object a step" );
+			Assert.AreEqual( share == 1, stepped.NextAttractionId == layout.NextAttractionId && stepped.NextPlacementSeed == layout.NextSeed, "the allocators are restored in the last step only" );
+		}
+		CollectionAssert.AreEqual( new[] { 0.25f, 0.5f, 0.75f, 1f }, shares );
+		Assert.AreEqual( 3, placed.Count );
+		for ( var index = 0; index < layout.Objects.Count; index++ )
+		{
+			var (record, item) = (layout.Objects[index], placed[index]);
+			Assert.AreEqual( record.InfoId, item.Entry.InfoId, $"object {index}'s type" );
+			Assert.AreEqual( (record.X, record.Y, record.Rotation, record.BaseHeight), (item.Placement.X, item.Placement.Y, item.Placement.Rotation, item.Placement.BaseHeight), $"object {index}'s placement" );
+			Assert.AreEqual( (record.AttractionId, record.ThingId, (int?)record.CreationSeed), (item.Visitors.AttractionId, item.ThingId, item.CreationSeed), $"object {index}'s ids and seed" );
+			Assert.AreEqual( SaveThingModel.Attraction, stepped.Things!.ModelOf( record.ThingId ) );
+		}
+		Assert.AreEqual( 5, stepped.ScriptWorld.AllocateAttractionId(), "the next object takes the saved next id" );
+
+		var atOnce = new ParkObjects( rig.Catalog, new SandboxParkGrid() ) { Things = new ThingPool() };
+		CollectionAssert.AreEqual( placed.Select( item => (item.Placement, item.Visitors.AttractionId, item.ThingId, item.CreationSeed) ).ToArray(),
+			ParkLayoutSnapshot.RestoreObjects( layout, atOnce ).Select( item => (item.Placement, item.Visitors.AttractionId, item.ThingId, item.CreationSeed) ).ToArray(), "the call restores the same park" );
+	}
+
+	/// <summary>A step whose object does not stand as it was saved clears the candidate, as the call does, with the objects of the steps before it.</summary>
+	[TestMethod]
+	public void ARestoreStepWhoseObjectStandsElsewhereClearsTheCandidate()
+	{
+		var shop = Entry( 1203, 5, false, "*2S" );
+		var rig = new Rig( shop );
+		rig.Place( shop, 10, 12 );
+		rig.Place( shop, 20, 12 );
+		var layout = ParkLayoutSnapshot.CaptureSnapshot( rig.Cells, rig.Objects );
+		var moved = layout with { Objects = [layout.Objects[0], layout.Objects[1] with { BaseHeight = layout.Objects[1].BaseHeight + 1 }] };
+
+		var candidate = new ParkObjects( rig.Catalog, new SandboxParkGrid() );
+		var placed = new List<OriginalObject>();
+		using var steps = ParkLayoutSnapshot.RestoreObjectSteps( moved, candidate, placed ).GetEnumerator();
+		Assert.IsTrue( steps.MoveNext() );
+		Assert.AreEqual( 1, candidate.Objects.Count, "the first object stands as saved" );
+		StringAssert.Contains( Assert.ThrowsException<InvalidDataException>( () => steps.MoveNext() ).Message, "base height" );
+		Assert.AreEqual( 0, candidate.Objects.Count, "the failure removes the objects of the steps before it too" );
+	}
+
+	/// <summary>
 	/// The whole repair through a real resume: a park with a queue ride and a shop is captured, its entrance and exit link bytes are stripped as a save made before the import took them
 	/// holds them, the layout goes through the save codec, and <c>Level.ConnectObjectsToGuests</c> (the resume branch of Level.Objects.cs) repairs the bytes; a guest called from the queue
 	/// then walks into the entrance cell through the search, and the same resume of an unstripped save writes nothing.

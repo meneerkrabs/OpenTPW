@@ -356,6 +356,40 @@ public class ParkLayoutSnapshotTests
 		Assert.AreEqual( 1_000_000_000, sparse.ScriptWorld.AllocateAttractionId(), "allocation continues from the adopted frontier" );
 	}
 
+	[TestMethod]
+	public void RestoreStepsCheckTheWholeSnapshotInTheirFirstStepBeforePlacingAnything()
+	{
+		var (park, catalog, grid) = Jungle();
+		var snapshot = EasymodeLayout( park, catalog, grid );
+		var candidate = new ParkObjects( catalog, grid, WorldSeed.Default );
+		var placed = new List<OriginalObject>();
+
+		// a record the catalogue does not know, last in the saved order: the first step refuses the snapshot before its first object
+		var corrupt = snapshot with { Objects = [.. snapshot.Objects, snapshot.Objects[0] with { InfoId = 999999 }] };
+		using var steps = ParkLayoutSnapshot.RestoreObjectSteps( corrupt, candidate, placed ).GetEnumerator();
+		Assert.ThrowsException<InvalidDataException>( () => steps.MoveNext() );
+		Assert.AreEqual( (0, 0), (candidate.Objects.Count, placed.Count), "a rejected snapshot places nothing" );
+		Assert.AreEqual( 1, candidate.NextPlacementSeed, "a rejected snapshot does not move the allocator" );
+	}
+
+	[TestMethod]
+	public void RestoreStepsOfALayoutWithoutObjectsRestoreTheAllocatorsInTheirOneStep()
+	{
+		var (park, catalog, grid) = Jungle();
+		var empty = ParkLayoutSnapshot.CaptureSnapshot( new ParkCellMap( 4, 4 ), new ParkObjects( catalog, grid, WorldSeed.Default ) );
+		var candidate = new ParkObjects( catalog, grid, WorldSeed.Default );
+		var placed = new List<OriginalObject>();
+
+		var shares = new List<float>();
+		foreach ( var share in ParkLayoutSnapshot.RestoreObjectSteps( empty with { NextSeed = 7, NextAttractionId = 9 }, candidate, placed ) )
+		{
+			shares.Add( share );
+			Assert.AreEqual( (7, 9), (candidate.NextPlacementSeed, candidate.ScriptWorld.NextAttractionId), "the step that ends the restore restores the allocators" );
+		}
+		CollectionAssert.AreEqual( new[] { 1f }, shares );
+		Assert.AreEqual( 0, placed.Count );
+	}
+
 	// --- the DTOs are JSON data: a serialize/deserialize round-trip keeps them valid and exact ---
 
 	[TestMethod]

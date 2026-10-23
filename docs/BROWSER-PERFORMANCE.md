@@ -879,3 +879,16 @@ C2c-2b-3c checks the joined park at the cut in the frame its build completes in 
 
 The check (74 ms) now shares the frame its build completes in, the first ticks (a replayed placement's first models among them) the frame after the swap, and the prepared work 113 ms over 7 build frames, its longest step 39 ms. The swap's frame keeps the advisor's first update (37 ms), the pools' (23 ms, the swimmers' renderer still made there) and the session's step (13 ms). The longest frame of a join is now the objects' restore (C2c-2b-3d).
 
+### The objects' restore over steps (C2c-2b-3d)
+
+C2c-2b-3d restores a joined park's saved objects one a build step instead of all in one, so the build's budget ends its slices between them (`ParkLayoutSnapshot.RestoreObjectSteps`). Same machine and harness, medians of three runs in milliseconds, compiled ahead of time (docs/COOP.md, "Measurements"):
+
+| Part of the join | Before | After |
+| --- | ---: | ---: |
+| The longest build frame, its update | 290 | 87.0 |
+| The objects' sections | 287 | 266 |
+| The level stage | 672 over 23 frames | 622 over 27 |
+| A join's longest frame, with its drawing | 292 (the objects' restore) | 110 (the swap's) |
+
+The restore's longest step is now its first: the snapshot's checks and the first object, 87 ms. A type's sign is still composed on the step of its first object (134 ms in all), since the page has no worker to compose it on; on the desktop the sign worker takes most of that work. The swap's frame is a join's longest again; its largest parts are the park's first update of its level and the advisor's first update, about 35 ms each.
+

@@ -117,8 +117,10 @@ internal sealed partial class CoopJoinSmokeTest
 						Require( Entity.All.Count == frontEndEntities!.Count && Entity.All.All( frontEndEntities.Contains ), "no entity of a build is in the front end's scene" );
 						if ( session.Building is { } first && requestsAnswered == 1 )
 							firstBuild = first;
-						// part way through the level's construction, once the build has staged entities in its scene: the check above must find none of them left behind
-						else if ( session.Building is { StagedEntities: > 0 } second && requestsAnswered == 2 && !abandonedMidBuild && !measuring )
+						// part way through the level's construction, at the first frame with saved objects placed in its scene: while it restores them one a step when the restore
+						// spans frames, as it does in a process's first build, else just after (a warm one may restore them in one frame's slice); the check above must find none
+						// of them left behind
+						else if ( session.Building is { PlacedObjects: > 0 } second && requestsAnswered == 2 && !abandonedMidBuild && !measuring )
 							ReassignMidBuild( session, second );
 					}
 					if ( session.Phase == CoopGuestPhase.Following && flow.Level != null )
@@ -218,8 +220,8 @@ internal sealed partial class CoopJoinSmokeTest
 	/// </summary>
 	private void ReassignMidBuild( CoopSession session, ICoopJoinBuild build )
 	{
-		var (steps, total, staged) = (build.LevelSteps, firstBuild?.LevelSteps ?? 0, build.StagedEntities);
-		Require( staged > 0 && steps < total, $"the next build is part way through its level ({steps} of {total} steps, {staged} entities staged)" );
+		var (steps, total, staged, placed, restoring) = (build.LevelSteps, firstBuild?.LevelSteps ?? 0, build.StagedEntities, build.PlacedObjects, build.RestoringObjects);
+		Require( staged > 0 && placed > 0 && steps < total, $"the next build is part way through its level ({steps} of {total} steps, {placed} objects placed, {staged} entities staged)" );
 		abandonedMidBuild = true;
 		var cut = hostEvidence.Cuts[0];
 		var payload = Rewrite( File.ReadAllBytes( Path.Combine( evidenceDirectory, cut.File ) ), JoinedGeneration );
@@ -228,7 +230,8 @@ internal sealed partial class CoopJoinSmokeTest
 		Answer( new CoopSnapshotReady( cut.Records, cut.Ticks, cut.Frame, cut.Digest, cut.WorldHash, sha, payload.Length ) { Generation = JoinedGeneration } );
 		replay.Pump();
 		Require( !session.IsBuilding && session.Assigned == JoinedGeneration && flow.Level == null, "the newer assignment abandoned the build part way, beside the live front end" );
-		joinSteps.Add( $"a newer assignment abandoned the next build {steps} of its level's {total} steps in, with {staged} entities staged" );
+		joinSteps.Add( $"a newer assignment abandoned the next build {steps} of its level's {total} steps in, {(restoring ? "while it restored" : "just after it restored")} the saved objects "
+			+ $"({placed} placed), with {staged} entities staged" );
 	}
 
 	/// <summary>

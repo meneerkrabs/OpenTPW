@@ -135,6 +135,43 @@ public class AdvisorEntryPreparationTests
 		Assert.IsTrue( stale.Disposed );
 	}
 
+	/// <summary>
+	/// The steps that decode a park start's first lines (the original data's Jungle): the Welcome decoded a slice a step to the one-go decode's PCM, under the key its line asks
+	/// for; Instant Action adds the prebuilt park's line.
+	/// </summary>
+	[TestMethod]
+	public void TheLineStepsDecodeTheWelcomeToTheOneGoDecodesPcm()
+	{
+		if ( ObjectCatalogCorpusTests.UseOriginalData( out var original ) == null )
+			Assert.Inconclusive( "Set OPENTPW_GAME_PATH to the original game for its speech." );
+		var sliceBefore = Advisor.DecodeSliceBudget;
+		try
+		{
+			Advisor.DecodeSliceBudget = TimeSpan.Zero;
+			var store = new AdvisorEntryPreparation.Store();
+			var steps = AdvisorEntryPreparation.LineSteps( FileSystem, "jungle", null, gameType: 0, store ).Count();
+			Assert.AreEqual( 1, store.Count, "the Welcome's one response" );
+			var response = AdvisorResponses.Table[1];
+			var parts = Advisor.LoadResponseParts( FileSystem, response, "jungle" );
+			var once = Mp2Decoder.Decode( parts.Mpeg, parts.PlaybackBytes );
+			Assert.IsTrue( steps > once.FrameCount, $"the read, a step per MPEG frame and the keeping ({steps} steps, {once.FrameCount} frames)" );
+			AdvisorEntryPreparation.Adopt( store );
+			Assert.IsTrue( AdvisorEntryPreparation.TryTake<Mp2Audio>( AdvisorEntryPreparation.LineKey( parts.Source, response.Sample, parts.PlaybackBytes, parts.Mpeg.Length ), FileSystem, out var ahead ) );
+			Assert.AreEqual( (once.SampleRate, once.Channels), (ahead!.SampleRate, ahead.Channels) );
+			CollectionAssert.AreEqual( once.Samples, ahead.Samples, "the same PCM as the one-go decode" );
+
+			var instant = new AdvisorEntryPreparation.Store();
+			_ = AdvisorEntryPreparation.LineSteps( FileSystem, "jungle", null, gameType: 2, instant ).Count();
+			Assert.AreEqual( 2, instant.Count, "Instant Action's start says the prebuilt park's line too" );
+			instant.Drop();
+		}
+		finally
+		{
+			Advisor.DecodeSliceBudget = sliceBefore;
+			FileSystem = original!;
+		}
+	}
+
 	[TestMethod]
 	public void AFailedReadIsNotKeptAndItsMessagesAreNotWritten()
 	{

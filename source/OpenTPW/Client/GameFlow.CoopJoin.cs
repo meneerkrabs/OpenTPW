@@ -548,6 +548,13 @@ internal sealed partial class GameFlow
 				endsSlice = !more;
 				yield return true;
 			}
+			// the lines the joined park's advisor says first (its Welcome), decoded a slice a step in the language it will speak
+			foreach ( var more in AdvisorEntryPreparation.LineSteps( FileSystem, candidate.LevelName, GameLanguage.IsSelected ? GameLanguage.Current : null,
+				AutomaticAdvisor.GameTypeOf( candidate ), into: advisorPrepared ) )
+			{
+				endsSlice = !more;
+				yield return true;
+			}
 		}
 
 		/// <summary>A preparation's steps, a failure ending them (logged): what they left undone the park's first frame does, meeting the same failure as before.</summary>

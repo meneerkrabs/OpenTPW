@@ -71,6 +71,22 @@ internal static class AdvisorEntryPreparation
 			return true;
 		}
 
+		/// <summary>
+		/// Keeps <paramref name="value"/>, made over several steps from <paramref name="fileSystem"/> as it read when they began (<paramref name="generation"/>), for the next
+		/// <see cref="TryTake"/> of <paramref name="key"/>; a value made while the file system changed what it reads is disposed instead, as a stale result is.
+		/// </summary>
+		internal void Keep( string key, BaseFileSystem fileSystem, int generation, object? value )
+		{
+			if ( fileSystem.LookupGeneration != generation )
+			{
+				(value as IDisposable)?.Dispose();
+				return;
+			}
+			if ( prepared.TryGetValue( key, out var existing ) )
+				Remove( key, existing );
+			prepared[key] = new Prepared( fileSystem, generation, value, new() );
+		}
+
 		/// <summary>Moves every result of <paramref name="from"/> into this store, each in place of (and disposing) one prepared here for its key; <paramref name="from"/> is left empty.</summary>
 		internal void Adopt( Store from )
 		{
@@ -107,6 +123,9 @@ internal static class AdvisorEntryPreparation
 	internal static string LevelRigKey( string level ) => $"rig:{level}";
 	internal static string DurationsKey( string archive ) => $"durations:{archive}";
 	internal static string ThemeKey( string level ) => $"theme:{level}";
+
+	/// <summary>The key of a line's decoded audio: its bank as <see cref="Advisor.LoadResponseParts"/> names it, its sample, the length it plays and its MPEG bytes' length.</summary>
+	internal static string LineKey( string source, int sample, int? playbackBytes, int mpegBytes ) => $"line:{source}:{sample}:{playbackBytes?.ToString() ?? "all"}:{mpegBytes}";
 
 	/// <summary>The number of results prepared in the shared store and not yet taken or dropped (tests).</summary>
 	internal static int Count => shared.Count;
@@ -153,5 +172,46 @@ internal static class AdvisorEntryPreparation
 		}
 		store.Prepare( ThemeKey( level ), fileSystem, () => AdvisorThemeCostume.Load( fileSystem, level ) );
 		yield return true;
+	}
+
+	/// <summary>
+	/// The steps that decode the lines a park's start says first, in its game type (<see cref="AdvisorTables.AdviceFor"/> of <see cref="AdvisorGameEvent.LevelStarted"/>: the
+	/// Welcome, and in Instant Action the prebuilt park's), each response of their advice: its bank read in one step, its MPEG decoded a slice a step
+	/// (<see cref="Mp2Decoder.SlicedDecode"/>, the same decode in parts), for the advisor to take its PCM instead of decoding it when it says the line
+	/// (<see cref="Advisor.SayResponseParts"/>). A line whose read or decode fails is not kept: the advisor meets the same failure when it says it. The results go to
+	/// <paramref name="into"/>, a co-op join build's own store, or else to the shared one.
+	/// </summary>
+	internal static IEnumerable<bool> LineSteps( BaseFileSystem fileSystem, string level, GameLanguage? language, int gameType, Store? into = null )
+	{
+		var store = into ?? shared;
+		foreach ( var message in AdvisorTables.AdviceFor( AdvisorGameEvent.LevelStarted, gameType ) )
+		{
+			foreach ( var row in AdvisorDescriptorTable.Rows.Where( row => row.MessageId == message ) )
+			{
+				for ( var id = row.FirstResponseId; id < row.FirstResponseId + row.ResponseCount; id++ )
+				{
+					if ( !AdvisorResponses.Table.TryGetValue( id, out var response ) )
+						continue;
+					var generation = fileSystem.LookupGeneration;
+					(byte[] Mpeg, int? PlaybackBytes, LipSyncTimeline Timeline, string Source) parts;
+					try { parts = Advisor.LoadResponseParts( fileSystem, response, level, language ); }
+					catch ( Exception exception ) when ( exception is not OutOfMemoryException ) { continue; }
+					yield return true;
+					var decode = new Mp2Decoder.SlicedDecode( parts.Mpeg, parts.PlaybackBytes );
+					var decoded = false;
+					while ( true )
+					{
+						try { decoded = decode.Run( Advisor.DecodeSliceBudget ); }
+						catch ( Exception exception ) when ( exception is not OutOfMemoryException ) { break; }
+						if ( decoded )
+							break;
+						yield return true;
+					}
+					if ( decoded && decode.Result is { } audio )
+						store.Keep( LineKey( parts.Source, response.Sample, parts.PlaybackBytes, parts.Mpeg.Length ), fileSystem, generation, audio );
+					yield return true;
+				}
+			}
+		}
 	}
 }

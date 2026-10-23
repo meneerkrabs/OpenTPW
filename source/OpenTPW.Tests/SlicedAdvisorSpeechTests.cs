@@ -59,6 +59,81 @@ public class SlicedAdvisorSpeechTests
 		Advisor.SlicedDecoding = slicedBefore;
 		Advisor.DecodeSliceBudget = budgetBefore;
 		Advisor.PlayerFactory = null;
+		AdvisorEntryPreparation.Drop();
+	}
+
+	/// <summary>A line a park's build decoded ahead (<see cref="AdvisorEntryPreparation.LineSteps"/>), as its key names the test's parts, in the shared store.</summary>
+	private static Mp2Audio DecodedAhead( byte[] mpeg, BaseFileSystem files )
+	{
+		var audio = Mp2Decoder.Decode( mpeg, null );
+		var store = new AdvisorEntryPreparation.Store();
+		store.Keep( AdvisorEntryPreparation.LineKey( "test", Response( 0 ).Sample, null, mpeg.Length ), files, files.LookupGeneration, audio );
+		AdvisorEntryPreparation.Adopt( store );
+		return audio;
+	}
+
+	/// <summary>
+	/// A line its park's build decoded ahead is taken, not decoded again, in either mode: it starts at its due time with no lateness however long its decode over frames would
+	/// have taken, and it plays the very PCM the build made.
+	/// </summary>
+	[TestMethod]
+	public void ALineDecodedAheadIsTakenAndStartsWhenDue()
+	{
+		var previous = FileSystem;
+		FileSystem = new BaseFileSystem( Directory.CreateTempSubdirectory( "opentpw-advisor-line-" ).FullName );
+		try
+		{
+			foreach ( var sliced in new[] { true, false } )
+			{
+				Advisor.SlicedDecoding = sliced;
+				Mp2Audio? played = null;
+				Advisor.PlayerFactory = audio => new SpeechAudioPlayer( played = audio, new ClockedOutput( audio.SampleRate, () => now ) );
+				using var advisor = NewAdvisor();
+				var mpeg = Speech( 40 );
+				var ahead = DecodedAhead( mpeg, FileSystem );
+				var request = now;
+				Say( advisor, DelayedAnimation, mpeg );
+				Assert.AreEqual( 0, AdvisorEntryPreparation.Count, $"sliced {sliced}: the line took its decoded audio" );
+				var start = AdvisorSpeechStart.For( request, DelayedAnimation );
+				// 40 frames decoded one per update of 50 ms would end about 2 s after the request (TheMouthFollowsTheAudioAfterALateStart): this one is due at its start
+				var started = UpdateUntilStarted( advisor, 50 );
+				Assert.IsTrue( started >= start.AudioStartMilliseconds && started - start.AudioStartMilliseconds < 50, $"sliced {sliced}: started at the first update at its start ({started})" );
+				Assert.AreEqual( TimeSpan.Zero, advisor.LipPosition, $"sliced {sliced}: no lateness" );
+				Assert.AreSame( ahead, played, $"sliced {sliced}: the build's PCM plays" );
+			}
+		}
+		finally
+		{
+			FileSystem = previous;
+		}
+	}
+
+	/// <summary>A line decoded ahead before the file system changed what it reads (a mod or language switch) is not taken: the line is decoded again.</summary>
+	[TestMethod]
+	public void ALineDecodedAheadBeforeAFileSystemChangeIsDecodedAgain()
+	{
+		Advisor.SlicedDecoding = false;
+		Mp2Audio? played = null;
+		Advisor.PlayerFactory = audio => new SpeechAudioPlayer( played = audio, new ClockedOutput( audio.SampleRate, () => now ) );
+		var files = new BaseFileSystem( Directory.CreateTempSubdirectory( "opentpw-advisor-line-" ).FullName );
+		var previous = FileSystem;
+		FileSystem = files;
+		try
+		{
+			using var advisor = NewAdvisor();
+			var mpeg = Speech( 10 );
+			var ahead = DecodedAhead( mpeg, files );
+			files.InvalidateLookups();
+			Say( advisor, DelayedAnimation, mpeg );
+			UpdateUntilStarted( advisor, 10 );
+			Assert.IsNotNull( played );
+			Assert.AreNotSame( ahead, played, "a stale line is decoded again" );
+			CollectionAssert.AreEqual( ahead.Samples, played!.Samples, "to the same PCM" );
+		}
+		finally
+		{
+			FileSystem = previous;
+		}
 	}
 
 	private Advisor NewAdvisor()

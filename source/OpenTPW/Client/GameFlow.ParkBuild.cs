@@ -337,9 +337,11 @@ internal sealed partial class GameFlow
 			var globalRig = Advisor?.Presentation == null;
 			// false: the presentation's steps start with the advisor shader's program, a long step
 			yield return !globalRig;
-			// after them, a separate boundary announces the economy capture, whose first step is a long one
-			foreach ( var step in snapshot ? EndingBeforeLong( AdvisorEntryPreparation.PresentationSteps( FileSystem, build.Level.LevelName, globalRig ) )
-				: AdvisorEntryPreparation.PresentationSteps( FileSystem, build.Level.LevelName, globalRig ) )
+			// then the lines the park's start says first, decoded a slice a step; after them, a separate boundary announces the economy capture, whose first step is a long one
+			var advisorSteps = AdvisorEntryPreparation.PresentationSteps( FileSystem, build.Level.LevelName, globalRig )
+				.Concat( AdvisorEntryPreparation.LineSteps( FileSystem, build.Level.LevelName, GameLanguage.IsSelected ? GameLanguage.Current : null,
+					AutomaticAdvisor.GameTypeOf( build.Level ) ) );
+			foreach ( var step in snapshot ? EndingBeforeLong( advisorSteps ) : advisorSteps )
 				yield return step;
 		}
 		if ( !snapshot )

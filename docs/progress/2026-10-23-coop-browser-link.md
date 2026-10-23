@@ -1,4 +1,4 @@
-## The browser's own transport carries a shared park through the real server (October 23, 2026)
+## The browser's own transport carries the co-op link through the real server (October 23, 2026)
 
 The browser's co-op link now runs end to end through the real server, not over a recording ([COOP.md](../COOP.md), "The browser's link to a real server"; `[EXT:online-coop-session]`). This is C2c-2b-5.
 

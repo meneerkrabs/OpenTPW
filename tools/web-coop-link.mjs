@@ -64,14 +64,22 @@ function seeded(length, seed) {
 
 const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
 
+/** `promise`, or a failure naming `what` once `milliseconds` have passed. */
+function within(promise, milliseconds, what) {
+	let timer;
+	const deadline = new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(`${what} did not answer within ${milliseconds / 1000} s`)), milliseconds); });
+	return Promise.race([promise, deadline]).finally(() => clearTimeout(timer));
+}
+
 /**
- * Starts the server with a fresh data folder, no two-step login and the page as its own; resolves once it says where it listens (a port of its own choice on
- * 127.0.0.1). Its output goes to `log` as it comes.
+ * Starts the server with a fresh data folder, no two-step login and the page as its own, and hands its process to `started` at once (so a start that fails can be
+ * stopped); resolves once it says where it listens (a port of its own choice on 127.0.0.1). Its output goes to `log` as it comes.
  */
-async function startServer(dll, web, data, log) {
+async function startServer(dll, web, data, log, started) {
 	const args = [dll, '--urls', 'http://127.0.0.1:0', `--OpenTPW:DataDirectory=${data}`, '--OpenTPW:RequireTotp=false', `--OpenTPW:WebClientDirectory=${web}`,
 		'--Logging:LogLevel:Default=Warning', '--Logging:LogLevel:Microsoft.Hosting.Lifetime=Information'];
 	const child = spawn(process.env.DOTNET ?? 'dotnet', args, { cwd: path.dirname(dll), stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, DOTNET_CLI_TELEMETRY_OPTOUT: '1' } });
+	started(child);
 	let output = '';
 	const take = chunk => {
 		output += chunk;
@@ -93,7 +101,7 @@ async function startServer(dll, web, data, log) {
 		child.once('error', error => { clearTimeout(timer); reject(new Error(`The server could not start: ${error.message}`)); });
 		child.once('exit', code => { clearTimeout(timer); reject(new Error(`The server exited (${code}) before it listened:\n${output.slice(-2000)}`)); });
 	});
-	return { child, origin };
+	return origin;
 }
 
 /** Ends the server and waits until it has exited (at most a few seconds). */
@@ -103,13 +111,16 @@ async function stopServer(child) {
 	const exited = new Promise(resolve => child.once('exit', resolve));
 	child.kill('SIGTERM');
 	await Promise.race([exited, sleep(10000)]);
-	if (child.exitCode === null && child.signalCode === null)
+	if (child.exitCode === null && child.signalCode === null) {
 		child.kill('SIGKILL');
+		await Promise.race([exited, sleep(2000)]);
+	}
 }
 
-/** Registers a player on the server (the server takes it at once: no two-step login). */
+/** Registers a player on the server (the server takes it at once: no two-step login), within 30 seconds. */
 async function register(origin, name) {
-	const response = await fetch(`${origin}/api/v1/accounts`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name, password: PASSWORD }) });
+	const response = await fetch(`${origin}/api/v1/accounts`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name, password: PASSWORD }),
+		signal: AbortSignal.timeout(30000) });
 	if (response.status !== 201)
 		throw new Error(`Registering ${name} answered ${response.status}: ${(await response.text()).slice(0, 300)}`);
 }
@@ -214,21 +225,21 @@ function compare(checks, what, expected, actual) {
 async function run(options) {
 	const record = { started: new Date().toISOString(), state: 'failed', checks: [] };
 	const serverLog = [];
-	let server, profile, data, chrome, cdp, host, guest;
+	let server, origin, profile, data, chrome, cdp, host, guest;
 	try {
 		await fs.access(path.join(options.web, 'index.html')).catch(() => { throw new Error(`${options.web} has no index.html: pass the published wwwroot`); });
 		await fs.access(options.server).catch(() => { throw new Error(`${options.server} does not exist: pass the built OpenTPW.Server.dll`); });
 		data = await fs.mkdtemp(path.join(os.tmpdir(), 'opentpw-coop-link-data-'));
-		server = await startServer(path.resolve(options.server), path.resolve(options.web), data, serverLog);
-		await register(server.origin, PLAYERS.host);
-		await register(server.origin, PLAYERS.guest);
+		origin = await startServer(path.resolve(options.server), path.resolve(options.web), data, serverLog, child => server = child);
+		await register(origin, PLAYERS.host);
+		await register(origin, PLAYERS.guest);
 		profile = await fs.mkdtemp(path.join(os.tmpdir(), 'opentpw-coop-link-chrome-'));
 		const launched = await launchChrome(options.chrome, profile, { headed: options.headed, audible: false });
 		chrome = launched.chrome;
-		cdp = await Cdp.connect(launched.url);
+		cdp = await within(Cdp.connect(launched.url), 30000, 'Chrome\'s DevTools');
 		record.chrome = (await cdp.send('Browser.getVersion')).product;
-		host = await openPage(cdp, server.origin, 'host');
-		guest = await openPage(cdp, server.origin, 'guest');
+		host = await openPage(cdp, origin, 'host');
+		guest = await openPage(cdp, origin, 'guest');
 		const pages = [host, guest];
 		const wait = (done, what) => until(pages, done, what, options.timeoutSeconds);
 
@@ -281,9 +292,11 @@ async function run(options) {
 			[guest.records('message')[0].from, guest.records('message')[0].length, guest.records('message')[0].sha256]);
 
 		// the host's leave ends the session, which the guest hears
-		await host.call('CoopLinkSmokeLeave', 'The check ended.');
+		if (!await host.call('CoopLinkSmokeLeave', 'The check ended.'))
+			throw new Error('The host page\'s link did not take the leave');
 		await wait(() => guest.status.ended === true, 'the session\'s end');
-		compare(record.checks, 'the guest hears its session end', created.id, guest.records('ended')[0]?.session);
+		const ended = guest.records('ended')[0];
+		compare(record.checks, 'the guest hears the host\'s leave end its session', [created.id, 'HostLeft', 'The check ended.'], [ended?.session, ended?.reason, ended?.text]);
 		for (const page of pages)
 			await page.call('CoopLinkSmokeEnd');
 		for (const page of pages)
@@ -307,11 +320,19 @@ async function run(options) {
 			cleanup.push(`DevTools: ${error.message}`);
 		}
 		await stopChrome(chrome).catch(error => cleanup.push(`Chrome: ${error.message}`));
-		await stopServer(server?.child).catch(error => cleanup.push(`the server: ${error.message}`));
+		await stopServer(server).catch(error => cleanup.push(`the server: ${error.message}`));
+		if (server && server.exitCode === null && server.signalCode === null)
+			cleanup.push(`the server (process ${server.pid}) had not exited`);
 		for (const folder of [profile, data].filter(Boolean))
 			await fs.rm(folder, { recursive: true, force: true }).catch(error => cleanup.push(`${folder}: ${error.message}`));
-		if (cleanup.length)
+		if (cleanup.length) {
+			// what was left running or on disk fails the run, which would otherwise pass with it
 			record.cleanup = cleanup;
+			if (record.state === 'passed') {
+				record.state = 'failed';
+				record.message = `The run passed, but its cleanup did not: ${cleanup.join('; ')}`;
+			}
+		}
 	}
 	return { record, serverLog: serverLog.join('') };
 }

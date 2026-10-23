@@ -6383,3 +6383,1626 @@ page: Chrome/155.0.8059.85, ANGLE (Apple, ANGLE Metal Renderer: Apple M5, Unspec
 | resynced: the frame after the swap, mark sim.sweptTurn | 1.4 | 1.4-1.5 | 1.5, 1.4, 1.4 |
 | final check: update frame | 523 | 512-525 | 525, 523, 512 |
 | final check: whole frame | 524 | 513-526 | 526, 524, 513 |
+
+## A type's first use in steps of its own (C2c-2b-3g)
+
+Three runs each, on the same machine and harness as "The advisor and its first lines prepared". The before is `b5de0764e`, which only adds the
+measuring smoke's records of the build's long frames (`LongBuildFrames`, the "long frame" rows) and the load-profile sections `layout-checks`,
+`cell-checks`, `object-parts`, `object-textures`, `object-materials` and `texture-lookup`. Its desktop runs are of `424247027`, the same with
+#810's fix of the guests' bubble turns merged, after a desktop run of `b5de0764e` had failed its resync on that bug. The after is `2615b32c0`,
+whose builds also name `object-coaster`, `object-script`, `type-model`, `type-texture`, `type-hoarding` and `sign-ahead`. A long frame's marks
+are its own work but for a section open over several steps (`objects`, `entities`, `guests`, `ride-opcodes`), which shows its whole time in the
+frame it ends in.
+
+### Before: the desktop
+
+3 runs; Release build 1.0.0+424247027508015071638637d6be8d45dbeb4667, .NET 11.0.0-rc.2.26504.105, macOS 26.6.0 Arm64, 10 processors, silent True, advisor True, compiled jit
+
+    Darwin 25.6.0 arm64
+    processor Apple M5, model Mac17,2, memory 34359738368 bytes
+    source 424247027508015071638637d6be8d45dbeb4667, clean
+
+| Value | Median | Range | Runs |
+|---|---|---|---|
+| capture 1: cut | 9.4 | 8.6-14.1 | 14.1, 8.6, 9.4 |
+| capture 1: publish | 0.1 | 0.1-0.1 | 0.1, 0.1, 0.1 |
+| capture 1: digest | 3.8 | 3.5-3.9 | 3.8, 3.5, 3.9 |
+| capture 1: state | 0.9 | 0.8-1.6 | 1.6, 0.8, 0.9 |
+| capture 1: snapshot | 4.4 | 4.2-8.6 | 8.6, 4.2, 4.4 |
+| capture 1: serializer setup | 0.0 | 0.0-0.1 | 0.1, 0.0, 0.0 |
+| capture 1: save | 65.3 | 62.9-76.1 | 76.1, 65.3, 62.9 |
+| capture 1: save, longest slice | 32.2 | 31.6-40.1 | 40.1, 32.2, 31.6 |
+| capture 1: save, slices | 12 | 11-12 | 12, 12, 11 |
+| capture 1: save copy | 0.3 | 0.2-0.6 | 0.6, 0.3, 0.2 |
+| capture 1: writer setup | 1.6 | 1.4-2.6 | 2.6, 1.4, 1.6 |
+| capture 1: compression | 1.5 | 1.5-1.6 | 1.6, 1.5, 1.5 |
+| capture 1: compression, slices | 1 | 1-1 | 1, 1, 1 |
+| capture 1: finish | 0.1 | 0.1-0.2 | 0.2, 0.1, 0.1 |
+| capture 1: longest frame | 32.5 | 31.9-40.4 | 40.4, 32.5, 31.9 |
+| capture 1: frames | 14 | 13-14 | 14, 14, 13 |
+| capture 1: upload s | 0.015 | 0.015-0.016 | 0.015, 0.015, 0.016 |
+| capture 1: payload KiB | 128 | 128-128 | 128, 128, 128 |
+| capture 1: body KiB | 981 | 981-981 | 981, 981, 981 |
+| capture 1: save KiB | 980 | 980-980 | 980, 980, 980 |
+| capture 2: cut | 8.8 | 5.8-9.7 | 5.8, 9.7, 8.8 |
+| capture 2: publish | 0.0 | 0.0-0.0 | 0.0, 0.0, 0.0 |
+| capture 2: digest | 4.5 | 3.0-5.2 | 3.0, 5.2, 4.5 |
+| capture 2: state | 0.3 | 0.2-0.7 | 0.3, 0.7, 0.2 |
+| capture 2: snapshot | 3.7 | 2.5-4.1 | 2.5, 3.7, 4.1 |
+| capture 2: serializer setup | 0.0 | 0.0-0.0 | 0.0, 0.0, 0.0 |
+| capture 2: save | 10.4 | 9.9-10.7 | 9.9, 10.4, 10.7 |
+| capture 2: save, longest slice | 5.6 | 4.5-5.8 | 4.5, 5.6, 5.8 |
+| capture 2: save, slices | 4 | 4-4 | 4, 4, 4 |
+| capture 2: save copy | 0.1 | 0.1-0.2 | 0.2, 0.1, 0.1 |
+| capture 2: writer setup | 0.2 | 0.1-0.2 | 0.2, 0.2, 0.1 |
+| capture 2: compression | 1.7 | 1.7-1.8 | 1.7, 1.7, 1.8 |
+| capture 2: compression, slices | 1 | 1-1 | 1, 1, 1 |
+| capture 2: finish | 0.0 | 0.0-0.0 | 0.0, 0.0, 0.0 |
+| capture 2: longest frame | 8.8 | 5.8-9.7 | 5.8, 9.7, 8.8 |
+| capture 2: frames | 6 | 6-6 | 6, 6, 6 |
+| capture 2: upload s | 0.015 | 0.015-0.015 | 0.015, 0.015, 0.015 |
+| capture 2: payload KiB | 149 | 149-149 | 149, 149, 149 |
+| capture 2: body KiB | 1107 | 1107-1107 | 1107, 1107, 1107 |
+| capture 2: save KiB | 1107 | 1107-1107 | 1107, 1107, 1107 |
+| joined: process's build | 1 | 1-1 | 1, 1, 1 |
+| joined: download attempts | 1 | 1-1 | 1, 1, 1 |
+| joined: download s | 0.016 | 0.015-0.016 | 0.016, 0.016, 0.015 |
+| joined: last attempt s | 0.016 | 0.015-0.016 | 0.016, 0.016, 0.015 |
+| joined: payload KiB | 128 | 128-128 | 128, 128, 128 |
+| joined: decode | 4.8 | 4.4-5.2 | 4.4, 5.2, 4.8 |
+| joined: check | 39.3 | 36.4-41.6 | 41.6, 39.3, 36.4 |
+| joined: swap | 9.1 | 8.0-13.6 | 13.6, 9.1, 8.0 |
+| joined: build frames | 62 | 59-62 | 62, 62, 59 |
+| joined: longest build frame | 96.1 | 77.8-98.0 | 98.0, 96.1, 77.8 |
+| joined: catch-up ticks | 14 | 13-15 | 13, 15, 14 |
+| joined: catch-up frames | 2 | 2-2 | 2, 2, 2 |
+| joined: catch-up s | 0.150 | 0.132-0.157 | 0.132, 0.157, 0.150 |
+| joined: codec | 68.2 | 64.8-71.5 | 68.2, 71.5, 64.8 |
+| joined: codec, longest step | 5.2 | 2.7-6.3 | 2.7, 5.2, 6.3 |
+| joined: codec, steps | 230 | 230-230 | 230, 230, 230 |
+| joined: codec, frames | 6 | 6-6 | 6, 6, 6 |
+| joined: save | 84.6 | 77.7-90.7 | 90.7, 84.6, 77.7 |
+| joined: save, longest step | 84.6 | 77.7-90.7 | 90.7, 84.6, 77.7 |
+| joined: save, steps | 1 | 1-1 | 1, 1, 1 |
+| joined: save, frames | 1 | 1-1 | 1, 1, 1 |
+| joined: files | 0.0 | 0.0-0.0 | 0.0, 0.0, 0.0 |
+| joined: files, longest step | 0.0 | 0.0-0.0 | 0.0, 0.0, 0.0 |
+| joined: files, steps | 1 | 1-1 | 1, 1, 1 |
+| joined: files, frames | 1 | 1-1 | 1, 1, 1 |
+| joined: catalogue | 80.9 | 75.5-94.7 | 94.7, 80.9, 75.5 |
+| joined: catalogue, longest step | 16.8 | 15.3-17.1 | 17.1, 16.8, 15.3 |
+| joined: catalogue, steps | 90 | 90-90 | 90, 90, 90 |
+| joined: catalogue, frames | 6 | 5-6 | 6, 6, 5 |
+| joined: manifest | 40.0 | 38.0-43.4 | 43.4, 40.0, 38.0 |
+| joined: manifest, longest step | 2.9 | 2.5-2.9 | 2.5, 2.9, 2.9 |
+| joined: manifest, steps | 92 | 92-92 | 92, 92, 92 |
+| joined: manifest, frames | 4 | 4-4 | 4, 4, 4 |
+| joined: validation | 32.3 | 31.7-35.8 | 31.7, 35.8, 32.3 |
+| joined: validation, longest step | 20.9 | 17.8-22.6 | 17.8, 22.6, 20.9 |
+| joined: validation, steps | 17 | 17-17 | 17, 17, 17 |
+| joined: validation, frames | 2 | 2-3 | 3, 2, 2 |
+| joined: economy | 15.3 | 14.0-15.9 | 15.3, 15.9, 14.0 |
+| joined: economy, longest step | 15.3 | 14.0-15.9 | 15.3, 15.9, 14.0 |
+| joined: economy, steps | 1 | 1-1 | 1, 1, 1 |
+| joined: economy, frames | 1 | 1-1 | 1, 1, 1 |
+| joined: level | 657 | 594-670 | 657, 670, 594 |
+| joined: level, longest step | 65.6 | 60.8-66.8 | 65.6, 66.8, 60.8 |
+| joined: level, steps | 618 | 618-618 | 618, 618, 618 |
+| joined: level, frames | 30 | 29-31 | 30, 31, 29 |
+| joined: hud | 10.2 | 9.6-12.5 | 12.5, 10.2, 9.6 |
+| joined: hud, longest step | 10.2 | 9.6-12.5 | 12.5, 10.2, 9.6 |
+| joined: hud, steps | 1 | 1-1 | 1, 1, 1 |
+| joined: hud, frames | 1 | 1-1 | 1, 1, 1 |
+| joined: advisor | 22.5 | 21.1-23.4 | 23.4, 22.5, 21.1 |
+| joined: advisor, longest step | 12.5 | 11.5-12.8 | 12.8, 12.5, 11.5 |
+| joined: advisor, steps | 5 | 5-5 | 5, 5, 5 |
+| joined: advisor, frames | 1 | 1-1 | 1, 1, 1 |
+| joined: prepare | 249 | 228-255 | 255, 249, 228 |
+| joined: prepare, longest step | 56.2 | 50.4-61.7 | 61.7, 56.2, 50.4 |
+| joined: prepare, steps | 35 | 33-35 | 35, 35, 33 |
+| joined: prepare, frames | 14 | 14-14 | 14, 14, 14 |
+| joined: long step, save 1 | 84.6 | 77.7-90.7 | 90.7, 84.6, 77.7 |
+| joined: long step, catalogue 1 (1 of 3 runs) | 13.7 | 13.7-13.7 | 13.7, -, - |
+| joined: long step, catalogue 90 | 16.8 | 15.3-17.1 | 17.1, 16.8, 15.3 |
+| joined: long step, validation 13 | 20.9 | 17.8-22.6 | 17.8, 22.6, 20.9 |
+| joined: long step, economy 1 | 15.3 | 14.0-15.9 | 15.3, 15.9, 14.0 |
+| joined: long step, level 530 (to 0.35) (1 of 3 runs) | 12.0 | 12.0-12.0 | -, 12.0, - |
+| joined: long step, level 532 (to 0.35) | 18.1 | 17.7-18.7 | 18.7, 18.1, 17.7 |
+| joined: long step, level 544 (to 0.4) (1 of 3 runs) | 12.7 | 12.7-12.7 | 12.7, -, - |
+| joined: long step, level 571 (to 0.515) | 62.4 | 59.5-64.6 | 64.6, 62.4, 59.5 |
+| joined: long step, level 583 (to 0.638) | 34.3 | 31.7-34.3 | 34.3, 34.3, 31.7 |
+| joined: long step, level 584 (to 0.648) (1 of 3 runs) | 15.2 | 15.2-15.2 | -, 15.2, - |
+| joined: long step, level 585 (to 0.658) (1 of 3 runs) | 12.5 | 12.5-12.5 | -, -, 12.5 |
+| joined: long step, level 591 (to 0.719) | 36.0 | 33.0-52.3 | 36.0, 52.3, 33.0 |
+| joined: long step, level 596 (to 0.85) | 20.1 | 17.5-20.2 | 20.2, 20.1, 17.5 |
+| joined: long step, level 597 (to 0.85) (1 of 3 runs) | 15.8 | 15.8-15.8 | -, 15.8, - |
+| joined: long step, level 598 (to 0.85) (1 of 3 runs) | 13.6 | 13.6-13.6 | 13.6, -, - |
+| joined: long step, level 600 (to 0.85) | 30.9 | 29.7-37.3 | 37.3, 29.7, 30.9 |
+| joined: long step, level 602 (to 0.85) (1 of 3 runs) | 12.8 | 12.8-12.8 | -, 12.8, - |
+| joined: long step, level 610 (to 0.95) | 42.8 | 38.5-43.6 | 43.6, 42.8, 38.5 |
+| joined: long step, level 616 (to 0.95) | 13.1 | 12.7-13.2 | 13.2, 13.1, 12.7 |
+| joined: long step, level 617 (to 0.95) | 17.4 | 16.2-17.8 | 17.8, 17.4, 16.2 |
+| joined: long step, level 618 (to 1) | 65.6 | 60.8-66.8 | 65.6, 66.8, 60.8 |
+| joined: long step, hud 1 (1 of 3 runs) | 12.5 | 12.5-12.5 | 12.5, -, - |
+| joined: long step, advisor 5 (2 of 3 runs) | 12.6 | 12.5-12.8 | 12.8, 12.5, - |
+| joined: long step, prepare 1 | 13.5 | 12.6-13.7 | 13.5, 13.7, 12.6 |
+| joined: long step, prepare 2 | 13.9 | 12.6-14.1 | 13.9, 14.1, 12.6 |
+| joined: long step, prepare 3 | 27.0 | 22.5-29.3 | 27.0, 29.3, 22.5 |
+| joined: long step, prepare 5 | 56.2 | 50.4-61.7 | 61.7, 56.2, 50.4 |
+| joined: long step, prepare 6 | 17.4 | 16.8-18.0 | 18.0, 17.4, 16.8 |
+| joined: section cell-checks | 42.3 | 40.6-46.2 | 40.6, 46.2, 42.3 |
+| joined: section coasters | 5.3 | 4.9-5.5 | 5.5, 5.3, 4.9 |
+| joined: section economy | 0.3 | 0.3-0.3 | 0.3, 0.3, 0.3 |
+| joined: section entities | 582 | 523-593 | 582, 593, 523 |
+| joined: section guest-sprites | 11.3 | 10.2-15.8 | 10.2, 15.8, 11.3 |
+| joined: section guests | 115 | 103-118 | 118, 115, 103 |
+| joined: section image-decode | 4.6 | 4.1-7.1 | 4.6, 7.1, 4.1 |
+| joined: section join-state | 2.3 | 2.1-2.4 | 2.4, 2.3, 2.1 |
+| joined: section layout-checks | 35.6 | 33.9-38.6 | 33.9, 38.6, 35.6 |
+| joined: section level-hud | 7.4 | 6.2-7.6 | 6.2, 7.6, 7.4 |
+| joined: section model-parse | 43.7 | 41.3-45.3 | 43.7, 45.3, 41.3 |
+| joined: section object-catalog | 4.4 | 3.5-4.9 | 3.5, 4.9, 4.4 |
+| joined: section object-hoarding | 9.0 | 8.4-9.6 | 9.6, 9.0, 8.4 |
+| joined: section object-materials | 5.7 | 4.4-6.1 | 6.1, 5.7, 4.4 |
+| joined: section object-models | 124 | 112-143 | 124, 143, 112 |
+| joined: section object-parts | 18.6 | 17.5-19.5 | 19.5, 18.6, 17.5 |
+| joined: section object-runtime | 50.2 | 47.0-51.8 | 50.2, 51.8, 47.0 |
+| joined: section object-sign | 40.1 | 33.5-57.2 | 40.1, 57.2, 33.5 |
+| joined: section object-textures | 57.4 | 55.5-60.0 | 57.4, 60.0, 55.5 |
+| joined: section objects | 209 | 190-229 | 209, 229, 190 |
+| joined: section original-park | 10.9 | 10.7-12.5 | 10.7, 12.5, 10.9 |
+| joined: section paths | 3.9 | 3.6-4.0 | 3.9, 4.0, 3.6 |
+| joined: section pipeline | 4.9 | 3.9-5.6 | 5.6, 4.9, 3.9 |
+| joined: section resume | 56.2 | 50.9-56.5 | 56.5, 56.2, 50.9 |
+| joined: section ride-opcodes | 41.4 | 39.6-45.7 | 45.7, 41.4, 39.6 |
+| joined: section save-json | 46.7 | 41.8-50.8 | 50.8, 46.7, 41.8 |
+| joined: section save-mods | 1.0 | 0.9-1.0 | 1.0, 1.0, 0.9 |
+| joined: section save-shape | 36.4 | 34.5-38.4 | 38.4, 36.4, 34.5 |
+| joined: section shader-native | 2.2 | 2.1-2.8 | 2.8, 2.2, 2.1 |
+| joined: section shader-spirv | 64.7 | 58.0-65.8 | 64.7, 65.8, 58.0 |
+| joined: section staff-gate-economy | 44.8 | 41.3-45.6 | 45.6, 44.8, 41.3 |
+| joined: section staff-sprites | 13.1 | 12.7-13.2 | 13.2, 13.1, 12.7 |
+| joined: section terrain | 46.8 | 43.4-51.5 | 51.5, 46.8, 43.4 |
+| joined: section texture-create | 29.8 | 27.4-30.9 | 29.8, 30.9, 27.4 |
+| joined: section texture-decode | 69.7 | 69.1-77.2 | 69.1, 77.2, 69.7 |
+| joined: section texture-lookup | 10.4 | 9.6-11.8 | 10.4, 11.8, 9.6 |
+| joined: section wad-decompress | 18.6 | 17.8-18.7 | 18.6, 18.7, 17.8 |
+| joined: section wad-index | 25.4 | 20.3-26.2 | 26.2, 20.3, 25.4 |
+| joined: section wad-read | 3.6 | 3.0-3.6 | 3.6, 3.6, 3.0 |
+| joined: longest update frame while building | 97.1 | 78.1-98.3 | 98.3, 97.1, 78.1 |
+| joined: the swap's update frame | 76.6 | 73.2-82.5 | 82.5, 76.6, 73.2 |
+| joined: first update frame after the swap | 51.9 | 28.9-54.0 | 28.9, 54.0, 51.9 |
+| resynced: process's build | 2 | 2-2 | 2, 2, 2 |
+| resynced: download attempts | 1 | 1-1 | 1, 1, 1 |
+| resynced: download s | 0.017 | 0.016-0.017 | 0.017, 0.016, 0.017 |
+| resynced: last attempt s | 0.017 | 0.016-0.017 | 0.017, 0.016, 0.017 |
+| resynced: payload KiB | 149 | 149-149 | 149, 149, 149 |
+| resynced: decode | 2.4 | 2.1-2.4 | 2.4, 2.4, 2.1 |
+| resynced: check | 3.2 | 3.0-6.6 | 3.2, 6.6, 3.0 |
+| resynced: swap | 6.9 | 6.9-13.3 | 13.3, 6.9, 6.9 |
+| resynced: build frames | 24 | 23-26 | 26, 23, 24 |
+| resynced: longest build frame | 33.2 | 33.2-33.4 | 33.4, 33.2, 33.2 |
+| resynced: catch-up ticks | 12 | 12-13 | 13, 12, 12 |
+| resynced: catch-up frames | 2 | 2-2 | 2, 2, 2 |
+| resynced: catch-up s | 0.032 | 0.029-0.041 | 0.041, 0.032, 0.029 |
+| resynced: codec | 0.9 | 0.6-1.0 | 0.6, 1.0, 0.9 |
+| resynced: codec, longest step | 0.0 | 0.0-0.1 | 0.0, 0.1, 0.0 |
+| resynced: codec, steps | 230 | 230-230 | 230, 230, 230 |
+| resynced: codec, frames | 1 | 1-1 | 1, 1, 1 |
+| resynced: save | 27.0 | 22.6-28.4 | 22.6, 27.0, 28.4 |
+| resynced: save, longest step | 27.0 | 22.6-28.4 | 22.6, 27.0, 28.4 |
+| resynced: save, steps | 1 | 1-1 | 1, 1, 1 |
+| resynced: save, frames | 1 | 1-1 | 1, 1, 1 |
+| resynced: files | 0.0 | 0.0-0.0 | 0.0, 0.0, 0.0 |
+| resynced: files, longest step | 0.0 | 0.0-0.0 | 0.0, 0.0, 0.0 |
+| resynced: files, steps | 1 | 1-1 | 1, 1, 1 |
+| resynced: files, frames | 1 | 1-1 | 1, 1, 1 |
+| resynced: catalogue | 10.9 | 10.1-12.6 | 10.1, 12.6, 10.9 |
+| resynced: catalogue, longest step | 10.9 | 10.1-12.6 | 10.1, 12.6, 10.9 |
+| resynced: catalogue, steps | 2 | 2-2 | 2, 2, 2 |
+| resynced: catalogue, frames | 1 | 1-1 | 1, 1, 1 |
+| resynced: manifest (cached) | 0.1 | 0.0-0.2 | 0.2, 0.1, 0.0 |
+| resynced: manifest (cached), longest step | 0.1 | 0.0-0.2 | 0.2, 0.1, 0.0 |
+| resynced: manifest (cached), steps | 1 | 1-1 | 1, 1, 1 |
+| resynced: manifest (cached), frames | 1 | 1-1 | 1, 1, 1 |
+| resynced: validation | 11.6 | 10.3-11.8 | 11.8, 10.3, 11.6 |
+| resynced: validation, longest step | 6.4 | 6.0-6.6 | 6.6, 6.0, 6.4 |
+| resynced: validation, steps | 17 | 17-17 | 17, 17, 17 |
+| resynced: validation, frames | 2 | 1-2 | 2, 1, 2 |
+| resynced: economy | 1.2 | 1.1-1.3 | 1.3, 1.2, 1.1 |
+| resynced: economy, longest step | 1.2 | 1.1-1.3 | 1.3, 1.2, 1.1 |
+| resynced: economy, steps | 1 | 1-1 | 1, 1, 1 |
+| resynced: economy, frames | 1 | 1-1 | 1, 1, 1 |
+| resynced: level | 192 | 190-221 | 221, 190, 192 |
+| resynced: level, longest step | 23.3 | 22.9-27.8 | 27.8, 22.9, 23.3 |
+| resynced: level, steps | 596 | 596-596 | 596, 596, 596 |
+| resynced: level, frames | 16 | 15-18 | 18, 15, 16 |
+| resynced: hud | 0.3 | 0.2-0.3 | 0.3, 0.2, 0.3 |
+| resynced: hud, longest step | 0.3 | 0.2-0.3 | 0.3, 0.2, 0.3 |
+| resynced: hud, steps | 1 | 1-1 | 1, 1, 1 |
+| resynced: hud, frames | 1 | 1-1 | 1, 1, 1 |
+| resynced: advisor | 1.5 | 1.5-1.7 | 1.7, 1.5, 1.5 |
+| resynced: advisor, longest step | 1.5 | 1.5-1.7 | 1.7, 1.5, 1.5 |
+| resynced: advisor, steps | 5 | 5-5 | 5, 5, 5 |
+| resynced: advisor, frames | 1 | 1-1 | 1, 1, 1 |
+| resynced: prepare | 66.6 | 65.8-78.3 | 78.3, 66.6, 65.8 |
+| resynced: prepare, longest step | 16.4 | 13.2-23.2 | 23.2, 13.2, 16.4 |
+| resynced: prepare, steps | 20 | 20-20 | 20, 20, 20 |
+| resynced: prepare, frames | 7 | 7-7 | 7, 7, 7 |
+| resynced: long step, save 1 | 27.0 | 22.6-28.4 | 22.6, 27.0, 28.4 |
+| resynced: long step, catalogue 2 (1 of 3 runs) | 12.6 | 12.6-12.6 | -, 12.6, - |
+| resynced: long step, level 3 (to 0.008) | 15.0 | 14.4-15.2 | 15.0, 15.2, 14.4 |
+| resynced: long step, level 532 (to 0.35) | 20.7 | 19.9-21.3 | 21.3, 20.7, 19.9 |
+| resynced: long step, level 574 (to 0.85) (1 of 3 runs) | 13.6 | 13.6-13.6 | 13.6, -, - |
+| resynced: long step, level 578 (to 0.85) | 23.3 | 22.9-27.8 | 27.8, 22.9, 23.3 |
+| resynced: long step, level 595 (to 0.95) | 16.6 | 16.2-16.7 | 16.6, 16.2, 16.7 |
+| resynced: long step, prepare 3 | 16.4 | 13.2-23.2 | 23.2, 13.2, 16.4 |
+| resynced: section cell-checks | 16.2 | 15.3-16.3 | 16.3, 16.2, 15.3 |
+| resynced: section coasters | 0.1 | 0.1-0.2 | 0.1, 0.2, 0.1 |
+| resynced: section economy | 0.0 | 0.0-0.0 | 0.0, 0.0, 0.0 |
+| resynced: section entities | 174 | 171-202 | 202, 171, 174 |
+| resynced: section guest-sprites | 3.5 | 3.3-3.5 | 3.5, 3.5, 3.3 |
+| resynced: section guests | 67.9 | 65.6-90.9 | 90.9, 65.6, 67.9 |
+| resynced: section join-state | 0.0 | 0.0-0.1 | 0.1, 0.0, 0.0 |
+| resynced: section layout-checks | 10.5 | 10.5-10.9 | 10.9, 10.5, 10.5 |
+| resynced: section level-hud | 1.4 | 1.3-1.5 | 1.5, 1.4, 1.3 |
+| resynced: section model-parse | 29.4 | 28.5-30.8 | 30.8, 29.4, 28.5 |
+| resynced: section object-catalog | 1.1 | 1.0-1.1 | 1.1, 1.1, 1.0 |
+| resynced: section object-hoarding | 1.0 | 0.8-1.1 | 1.1, 1.0, 0.8 |
+| resynced: section object-materials | 3.6 | 3.3-3.9 | 3.9, 3.6, 3.3 |
+| resynced: section object-models | 9.3 | 8.6-10.9 | 10.9, 9.3, 8.6 |
+| resynced: section object-parts | 1.2 | 1.0-2.2 | 2.2, 1.2, 1.0 |
+| resynced: section object-runtime | 3.0 | 2.7-3.2 | 3.2, 3.0, 2.7 |
+| resynced: section object-sign | 0.0 | 0.0-0.0 | 0.0, 0.0, 0.0 |
+| resynced: section object-textures | 4.3 | 4.1-4.6 | 4.6, 4.3, 4.1 |
+| resynced: section objects | 18.4 | 16.7-20.3 | 20.3, 18.4, 16.7 |
+| resynced: section original-park | 16.3 | 15.6-16.6 | 16.3, 16.6, 15.6 |
+| resynced: section paths | 0.4 | 0.4-0.4 | 0.4, 0.4, 0.4 |
+| resynced: section pipeline | 2.8 | 2.5-3.1 | 3.1, 2.8, 2.5 |
+| resynced: section resume | 3.0 | 2.8-3.2 | 3.2, 3.0, 2.8 |
+| resynced: section ride-opcodes | 0.0 | 0.0-0.0 | 0.0, 0.0, 0.0 |
+| resynced: section save-json | 22.8 | 19.1-24.4 | 19.1, 22.8, 24.4 |
+| resynced: section save-mods | 0.0 | 0.0-0.0 | 0.0, 0.0, 0.0 |
+| resynced: section save-shape | 3.9 | 3.4-4.1 | 3.4, 4.1, 3.9 |
+| resynced: section staff-gate-economy | 29.6 | 28.9-30.2 | 30.2, 29.6, 28.9 |
+| resynced: section staff-sprites | 8.7 | 8.3-9.4 | 8.7, 9.4, 8.3 |
+| resynced: section terrain | 14.3 | 13.7-14.6 | 14.6, 14.3, 13.7 |
+| resynced: section texture-create | 7.1 | 6.2-7.7 | 7.7, 7.1, 6.2 |
+| resynced: section texture-lookup | 5.7 | 4.9-6.6 | 6.6, 5.7, 4.9 |
+| resynced: section wad-index | 0.1 | 0.1-0.1 | 0.1, 0.1, 0.1 |
+| resynced: section wad-read | 0.0 | 0.0-0.0 | 0.0, 0.0, 0.0 |
+| resynced: longest update frame while building | 33.4 | 33.4-35.2 | 35.2, 33.4, 33.4 |
+| resynced: the swap's update frame | 27.1 | 26.7-35.2 | 35.2, 27.1, 26.7 |
+| resynced: first update frame after the swap | 3.8 | 3.3-6.1 | 3.8, 6.1, 3.3 |
+| joined: the swap's frame, mark advisor.play | 2.7 | 2.7-2.7 | 2.7, 2.7, 2.7 |
+| joined: the swap's frame, mark coop.install | 5.9 | 4.9-10.2 | 10.2, 5.9, 4.9 |
+| joined: the swap's frame, mark coop.ready | 3.7 | 3.7-3.7 | 3.7, 3.7, 3.7 |
+| joined: the swap's frame, mark coop.session | 11.2 | 10.1-16.7 | 16.7, 11.2, 10.1 |
+| joined: the swap's frame, mark level.entities | 16.5 | 16.3-18.9 | 18.9, 16.5, 16.3 |
+| joined: the swap's frame, mark level.evening | 1.1 | 1.1-1.2 | 1.2, 1.1, 1.1 |
+| joined: the swap's frame, mark level.pools | 19.5 | 19.4-21.3 | 19.4, 21.3, 19.5 |
+| joined: the swap's frame, mark level.simulation | 4.0 | 4.0-4.0 | 4.0, 4.0, 4.0 |
+| joined: the swap's frame, mark load:shader-native | 0.8 | 0.8-2.6 | 0.8, 2.6, 0.8 |
+| joined: the swap's frame, mark load:shader-spirv | 2.3 | 2.2-2.3 | 2.3, 2.3, 2.2 |
+| joined: the swap's frame, mark load:texture-create | 10.8 | 10.8-11.1 | 10.8, 10.8, 11.1 |
+| joined: the swap's frame, mark park.advisor | 5.3 | 5.3-5.4 | 5.4, 5.3, 5.3 |
+| joined: the swap's frame, mark park.audio | 1.3 | 1.2-1.4 | 1.2, 1.4, 1.3 |
+| joined: the swap's frame, mark park.hud | 12.4 | 12.3-12.4 | 12.4, 12.4, 12.3 |
+| joined: the swap's frame, mark park.level | 43.9 | 42.0-44.6 | 44.6, 43.9, 42.0 |
+| joined: the swap's frame, mark pools.effects | 1.2 | 1.2-1.2 | 1.2, 1.2, 1.2 |
+| joined: the swap's frame, mark pools.slides | 1.6 | 1.4-3.2 | 1.4, 1.6, 3.2 |
+| joined: the swap's frame, mark pools.swimmers | 10.9 | 9.4-11.0 | 11.0, 10.9, 9.4 |
+| joined: the swap's frame, mark pools.water | 5.5 | 5.4-7.3 | 5.5, 7.3, 5.4 |
+| joined: the swap's frame, mark update:CoasterRenderer | 2.0 | 2.0-2.0 | 2.0, 2.0, 2.0 |
+| joined: the swap's frame, mark update:ParticleRenderer | 1.0 | 1.0-1.0 | 1.0, 1.0, 1.0 |
+| joined: the swap's frame, mark update:PoolRenderer | 10.0 | 9.9-12.1 | 12.1, 10.0, 9.9 |
+| joined: the swap's frame, mark update:PoolSlideRenderer | 2.4 | 2.4-2.5 | 2.5, 2.4, 2.4 |
+| joined: the frame after the swap, mark audio.decodeSync (2 of 3 runs) | 1.5 | 1.5-1.5 | -, 1.5, 1.5 |
+| joined: the frame after the swap, mark coop.ticks | 45.5 | 24.0-47.2 | 24.0, 47.2, 45.5 |
+| joined: the frame after the swap, mark level.entities | 1.7 | 0.1-2.0 | 0.1, 2.0, 1.7 |
+| joined: the frame after the swap, mark level.simulation | 45.5 | 24.1-47.3 | 24.1, 47.3, 45.5 |
+| joined: the frame after the swap, mark load:object-models (2 of 3 runs) | 7.8 | 7.4-8.1 | -, 8.1, 7.4 |
+| joined: the frame after the swap, mark load:object-textures (2 of 3 runs) | 6.6 | 6.4-6.9 | -, 6.9, 6.4 |
+| joined: the frame after the swap, mark load:place-cue (2 of 3 runs) | 1.8 | 1.8-1.8 | -, 1.8, 1.8 |
+| joined: the frame after the swap, mark load:place-object (2 of 3 runs) | 10.0 | 9.6-10.5 | -, 10.5, 9.6 |
+| joined: the frame after the swap, mark load:texture-create (2 of 3 runs) | 1.2 | 1.1-1.2 | -, 1.2, 1.1 |
+| joined: the frame after the swap, mark load:texture-decode (2 of 3 runs) | 4.6 | 4.5-4.7 | -, 4.7, 4.5 |
+| joined: the frame after the swap, mark load:texture-lookup (2 of 3 runs) | 0.9 | 0.8-1.1 | -, 1.1, 0.8 |
+| joined: the frame after the swap, mark park.advisor | 1.1 | 1.1-1.1 | 1.1, 1.1, 1.1 |
+| joined: the frame after the swap, mark park.audio | 1.3 | 1.2-1.4 | 1.2, 1.4, 1.3 |
+| joined: the frame after the swap, mark park.hud | 2.2 | 2.1-2.3 | 2.3, 2.2, 2.1 |
+| joined: the frame after the swap, mark park.level | 47.2 | 24.2-49.3 | 24.2, 49.3, 47.2 |
+| joined: the frame after the swap, mark sim.commands | 22.3 | 0.0-23.3 | 0.0, 23.3, 22.3 |
+| joined: the frame after the swap, mark sim.guests | 2.3 | 2.3-2.3 | 2.3, 2.3, 2.3 |
+| joined: the frame after the swap, mark sim.objects | 4.8 | 4.8-5.0 | 4.8, 5.0, 4.8 |
+| joined: the frame after the swap, mark sim.sweptTurn | 12.7 | 12.4-13.1 | 13.1, 12.7, 12.4 |
+| joined: the frame after the swap, mark update:CoasterRenderer | 0.9 | 0.1-1.1 | 0.1, 1.1, 0.9 |
+| resynced: the swap's frame, mark audio.decodeSync | 2.0 | 2.0-2.2 | 2.2, 2.0, 2.0 |
+| resynced: the swap's frame, mark coop.install | 6.4 | 6.4-12.8 | 12.8, 6.4, 6.4 |
+| resynced: the swap's frame, mark coop.ready | 8.3 | 8.1-8.8 | 8.8, 8.3, 8.1 |
+| resynced: the swap's frame, mark coop.session | 7.0 | 6.9-13.4 | 13.4, 7.0, 6.9 |
+| resynced: the swap's frame, mark level.pools | 10.9 | 10.8-11.9 | 11.9, 10.9, 10.8 |
+| resynced: the swap's frame, mark level.simulation | 8.3 | 8.1-8.8 | 8.8, 8.3, 8.1 |
+| resynced: the swap's frame, mark load:shader-native | 0.9 | 0.9-1.0 | 1.0, 0.9, 0.9 |
+| resynced: the swap's frame, mark load:texture-create | 7.9 | 7.8-8.7 | 8.7, 7.9, 7.8 |
+| resynced: the swap's frame, mark park.level | 19.9 | 19.5-21.5 | 21.5, 19.9, 19.5 |
+| resynced: the swap's frame, mark pools.slides | 1.1 | 1.1-1.2 | 1.2, 1.1, 1.1 |
+| resynced: the swap's frame, mark pools.swimmers | 7.7 | 7.6-8.5 | 8.5, 7.7, 7.6 |
+| resynced: the swap's frame, mark pools.water | 1.9 | 1.9-2.1 | 2.1, 1.9, 1.9 |
+| resynced: the frame after the swap, mark coop.ticks | 2.4 | 2.3-2.5 | 2.5, 2.4, 2.3 |
+| resynced: the frame after the swap, mark level.cells | 0.6 | 0.5-3.1 | 0.6, 3.1, 0.5 |
+| resynced: the frame after the swap, mark level.simulation | 2.4 | 2.3-2.5 | 2.5, 2.4, 2.3 |
+| resynced: the frame after the swap, mark park.level | 3.1 | 2.8-5.5 | 3.1, 5.5, 2.8 |
+| resynced: the frame after the swap, mark sim.rendering | 1.9 | 1.9-2.0 | 2.0, 1.9, 1.9 |
+| joined: long frame, save 1 | 97.1 | 78.1-98.3 | 98.3, 97.1, 78.1 |
+| joined: long frame, save 1, mark coop.session | 96.3 | 77.9-98.2 | 98.2, 96.3, 77.9 |
+| joined: long frame, save 1, mark load:save-json | 46.7 | 41.8-50.8 | 50.8, 46.7, 41.8 |
+| joined: long frame, save 1, mark load:save-shape | 36.4 | 34.5-38.4 | 38.4, 36.4, 34.5 |
+| joined: long frame, validation 13 (1 of 3 runs) | 32.0 | 32.0-32.0 | -, 32.0, - |
+| joined: long frame, validation 13, mark coop.session (1 of 3 runs) | 31.8 | 31.8-31.8 | -, 31.8, - |
+| joined: long frame, validation 13, mark load:cell-checks (1 of 3 runs) | 20.5 | 20.5-20.5 | -, 20.5, - |
+| joined: long frame, validation 13, mark load:layout-checks (1 of 3 runs) | 22.0 | 22.0-22.0 | -, 22.0, - |
+| joined: long frame, level 571 | 65.9 | 62.7-71.6 | 71.6, 62.7, 65.9 |
+| joined: long frame, level 571, mark coop.session | 65.7 | 62.5-71.5 | 71.5, 62.5, 65.7 |
+| joined: long frame, level 571, mark load:cell-checks | 16.4 | 15.2-16.7 | 16.7, 16.4, 15.2 |
+| joined: long frame, level 571, mark load:layout-checks | 16.5 | 15.3-16.7 | 16.7, 16.5, 15.3 |
+| joined: long frame, level 571, mark load:model-parse | 5.7 | 5.5-6.0 | 5.7, 6.0, 5.5 |
+| joined: long frame, level 571, mark load:object-hoarding | 8.2 | 7.7-8.8 | 8.8, 8.2, 7.7 |
+| joined: long frame, level 571, mark load:object-models | 28.3 | 27.4-29.6 | 29.6, 28.3, 27.4 |
+| joined: long frame, level 571, mark load:object-parts | 13.6 | 12.5-13.7 | 13.6, 13.7, 12.5 |
+| joined: long frame, level 571, mark load:object-runtime | 5.7 | 5.6-5.7 | 5.7, 5.7, 5.6 |
+| joined: long frame, level 571, mark load:object-sign | 6.6 | 5.8-6.7 | 6.6, 5.8, 6.7 |
+| joined: long frame, level 571, mark load:object-textures | 7.3 | 6.9-7.8 | 7.8, 7.3, 6.9 |
+| joined: long frame, level 571, mark load:ride-opcodes (2 of 3 runs) | 42.7 | 39.6-45.7 | 45.7, -, 39.6 |
+| joined: long frame, level 571, mark load:texture-decode | 3.8 | 3.3-4.3 | 4.3, 3.3, 3.8 |
+| joined: long frame, level 583 | 34.7 | 34.6-42.6 | 34.6, 34.7, 42.6 |
+| joined: long frame, level 583, mark coop.session | 34.4 | 34.4-41.5 | 34.4, 34.4, 41.5 |
+| joined: long frame, level 583, mark load:model-parse | 8.4 | 8.2-9.8 | 8.2, 8.4, 9.8 |
+| joined: long frame, level 583, mark load:object-models | 13.2 | 13.2-20.1 | 13.2, 13.2, 20.1 |
+| joined: long frame, level 583, mark load:object-parts | 2.9 | 2.5-3.5 | 2.9, 2.5, 3.5 |
+| joined: long frame, level 583, mark load:object-runtime | 21.0 | 20.9-21.0 | 21.0, 21.0, 20.9 |
+| joined: long frame, level 583, mark load:object-textures | 10.0 | 9.6-15.0 | 9.6, 10.0, 15.0 |
+| joined: long frame, level 583, mark load:texture-decode | 6.9 | 6.8-10.0 | 6.8, 6.9, 10.0 |
+| joined: long frame, level 591 | 41.7 | 36.5-61.7 | 41.7, 61.7, 36.5 |
+| joined: long frame, level 591, mark coop.session | 41.6 | 36.4-61.5 | 41.6, 61.5, 36.4 |
+| joined: long frame, level 591, mark load:object-models | 39.6 | 34.8-58.7 | 39.6, 58.7, 34.8 |
+| joined: long frame, level 591, mark load:object-sign | 29.9 | 26.7-45.1 | 29.9, 45.1, 26.7 |
+| joined: long frame, level 591, mark load:object-textures | 8.1 | 6.9-11.3 | 8.1, 11.3, 6.9 |
+| joined: long frame, level 596 (2 of 3 runs) | 31.6 | 31.4-31.8 | 31.8, 31.4, - |
+| joined: long frame, level 596, mark coop.session (2 of 3 runs) | 31.4 | 31.1-31.7 | 31.7, 31.1, - |
+| joined: long frame, level 596, mark load:cell-checks (2 of 3 runs) | 8.8 | 8.3-9.3 | 8.3, 9.3, - |
+| joined: long frame, level 596, mark load:coasters (2 of 3 runs) | 5.4 | 5.3-5.5 | 5.5, 5.3, - |
+| joined: long frame, level 596, mark load:object-models (2 of 3 runs) | 4.4 | 4.2-4.6 | 4.6, 4.2, - |
+| joined: long frame, level 596, mark load:object-textures (2 of 3 runs) | 3.1 | 3.0-3.2 | 3.0, 3.2, - |
+| joined: long frame, level 596, mark load:objects (2 of 3 runs) | 219 | 209-229 | 209, 229, - |
+| joined: long frame, level 600 | 37.7 | 31.2-39.7 | 37.7, 39.7, 31.2 |
+| joined: long frame, level 600, mark coop.session | 37.6 | 31.1-39.5 | 37.6, 39.5, 31.1 |
+| joined: long frame, level 610 | 51.8 | 45.8-52.7 | 52.7, 51.8, 45.8 |
+| joined: long frame, level 610, mark coop.session | 51.5 | 45.6-52.6 | 52.6, 51.5, 45.6 |
+| joined: long frame, level 610, mark load:guests | 115 | 103-118 | 118, 115, 103 |
+| joined: long frame, level 610, mark load:paths | 3.9 | 3.6-4.0 | 3.9, 4.0, 3.6 |
+| joined: long frame, level 610, mark load:texture-decode | 4.7 | 4.2-4.7 | 4.7, 4.7, 4.2 |
+| joined: long frame, hud 1 | 77.3 | 70.7-78.4 | 78.4, 77.3, 70.7 |
+| joined: long frame, hud 1, mark coop.session | 77.1 | 70.5-78.2 | 78.2, 77.1, 70.5 |
+| joined: long frame, hud 1, mark load:entities | 582 | 523-593 | 582, 593, 523 |
+| joined: long frame, hud 1, mark load:level-hud | 7.4 | 6.2-7.6 | 6.2, 7.6, 7.4 |
+| joined: long frame, hud 1, mark load:resume | 56.2 | 50.9-56.5 | 56.5, 56.2, 50.9 |
+| joined: long frame, hud 1, mark load:shader-spirv | 4.9 | 3.5-4.9 | 3.5, 4.9, 4.9 |
+| joined: long frame, hud 1, mark load:staff-gate-economy | 44.9 | 41.3-45.6 | 45.6, 44.9, 41.3 |
+| joined: long frame, prepare 1 | 36.5 | 34.0-37.1 | 37.1, 36.5, 34.0 |
+| joined: long frame, prepare 1, mark coop.session | 36.3 | 33.8-37.0 | 37.0, 36.3, 33.8 |
+| joined: long frame, prepare 1, mark load:texture-decode | 3.2 | 2.7-3.2 | 2.7, 3.2, 3.2 |
+| joined: long frame, prepare 5 | 56.5 | 50.7-61.9 | 61.9, 56.5, 50.7 |
+| joined: long frame, prepare 5, mark coop.session | 56.3 | 50.5-61.8 | 61.8, 56.3, 50.5 |
+| joined: long frame, prepare 5, mark load:shader-spirv | 54.4 | 48.9-59.1 | 59.1, 54.4, 48.9 |
+| joined: long frame, prepare 33 (1 of 3 runs) | 41.3 | 41.3-41.3 | -, -, 41.3 |
+| joined: long frame, prepare 33, mark coop.check (1 of 3 runs) | 36.4 | 36.4-36.4 | -, -, 36.4 |
+| joined: long frame, prepare 33, mark coop.session (1 of 3 runs) | 41.2 | 41.2-41.2 | -, -, 41.2 |
+| joined: long frame, prepare 35 (2 of 3 runs) | 51.7 | 50.6-52.8 | 52.8, 50.6, - |
+| joined: long frame, prepare 35, mark coop.check (2 of 3 runs) | 40.4 | 39.3-41.6 | 41.6, 39.3, - |
+| joined: long frame, prepare 35, mark coop.session (2 of 3 runs) | 51.5 | 50.4-52.7 | 52.7, 50.4, - |
+| resynced: long frame, save 1 (2 of 3 runs) | 31.3 | 30.7-31.8 | -, 30.7, 31.8 |
+| resynced: long frame, save 1, mark coop.session (2 of 3 runs) | 28.8 | 28.1-29.4 | -, 28.1, 29.4 |
+| resynced: long frame, save 1, mark load:save-json (2 of 3 runs) | 23.6 | 22.8-24.4 | -, 22.8, 24.4 |
+| resynced: long frame, save 1, mark load:save-shape (2 of 3 runs) | 4.0 | 3.9-4.1 | -, 4.1, 3.9 |
+| resynced: long frame, level 578 (2 of 3 runs) | 33.4 | 33.4-33.4 | -, 33.4, 33.4 |
+| resynced: long frame, level 578, mark coop.session (2 of 3 runs) | 33.2 | 33.2-33.2 | -, 33.2, 33.2 |
+| resynced: long frame, level 578, mark load:guest-sprites (2 of 3 runs) | 3.4 | 3.3-3.5 | -, 3.5, 3.3 |
+| resynced: long frame, prepare 3 (1 of 3 runs) | 33.6 | 33.6-33.6 | 33.6, -, - |
+| resynced: long frame, prepare 3, mark coop.session (1 of 3 runs) | 33.4 | 33.4-33.4 | 33.4, -, - |
+| resynced: long frame, prepare 3, mark load:entities (1 of 3 runs) | 202 | 202-202 | 202, -, - |
+| resynced: long frame, prepare 3, mark load:resume (1 of 3 runs) | 3.2 | 3.2-3.2 | 3.2, -, - |
+| resynced: long frame, prepare 3, mark load:staff-gate-economy (1 of 3 runs) | 30.2 | 30.2-30.2 | 30.2, -, - |
+
+### Before: compiled ahead of time
+
+3 runs; host phase (one host phase, reused by every run): Release build 1.0.0+b5de0764e487a823b29ca29e9653e5df1d443802, .NET 11.0.0-rc.2.26504.105, macOS 26.6.0 Arm64, 10 processors, silent True, advisor True, compiled jit; join phase: Release build 1.0.0+b5de0764e487a823b29ca29e9653e5df1d443802, .NET 11.0.0-rc.2.26504.105, Browser Wasm, 1 processors, silent False, advisor True, compiled aot
+page: Chrome/155.0.8059.85, ANGLE (Apple, ANGLE Metal Renderer: Apple M5, Unspecified Version), 1280x900, muted True, frame cap 0, pool sprites settled
+
+    Darwin 25.6.0 arm64
+    processor Apple M5, 10 cores, model Mac17,2, memory 34359738368 bytes
+    source b5de0764e487a823b29ca29e9653e5df1d443802, clean (the driver's checkout)
+
+| Value | Median | Range | Runs |
+|---|---|---|---|
+| capture 1: cut | 9.1 | 9.1-9.1 | 9.1 |
+| capture 1: publish | 0.2 | 0.2-0.2 | 0.2 |
+| capture 1: digest | 3.8 | 3.8-3.8 | 3.8 |
+| capture 1: state | 0.8 | 0.8-0.8 | 0.8 |
+| capture 1: snapshot | 4.3 | 4.3-4.3 | 4.3 |
+| capture 1: serializer setup | 0.0 | 0.0-0.0 | 0.0 |
+| capture 1: save | 64.0 | 64.0-64.0 | 64.0 |
+| capture 1: save, longest slice | 33.7 | 33.7-33.7 | 33.7 |
+| capture 1: save, slices | 11 | 11-11 | 11 |
+| capture 1: save copy | 0.2 | 0.2-0.2 | 0.2 |
+| capture 1: writer setup | 1.4 | 1.4-1.4 | 1.4 |
+| capture 1: compression | 1.6 | 1.6-1.6 | 1.6 |
+| capture 1: compression, slices | 1 | 1-1 | 1 |
+| capture 1: finish | 0.1 | 0.1-0.1 | 0.1 |
+| capture 1: longest frame | 33.9 | 33.9-33.9 | 33.9 |
+| capture 1: frames | 13 | 13-13 | 13 |
+| capture 1: upload s | 0.015 | 0.015-0.015 | 0.015 |
+| capture 1: payload KiB | 128 | 128-128 | 128 |
+| capture 1: body KiB | 981 | 981-981 | 981 |
+| capture 1: save KiB | 980 | 980-980 | 980 |
+| capture 2: cut | 7.1 | 7.1-7.1 | 7.1 |
+| capture 2: publish | 0.0 | 0.0-0.0 | 0.0 |
+| capture 2: digest | 3.6 | 3.6-3.6 | 3.6 |
+| capture 2: state | 0.3 | 0.3-0.3 | 0.3 |
+| capture 2: snapshot | 3.2 | 3.2-3.2 | 3.2 |
+| capture 2: serializer setup | 0.0 | 0.0-0.0 | 0.0 |
+| capture 2: save | 10.4 | 10.4-10.4 | 10.4 |
+| capture 2: save, longest slice | 5.6 | 5.6-5.6 | 5.6 |
+| capture 2: save, slices | 4 | 4-4 | 4 |
+| capture 2: save copy | 0.1 | 0.1-0.1 | 0.1 |
+| capture 2: writer setup | 0.2 | 0.2-0.2 | 0.2 |
+| capture 2: compression | 1.5 | 1.5-1.5 | 1.5 |
+| capture 2: compression, slices | 1 | 1-1 | 1 |
+| capture 2: finish | 0.0 | 0.0-0.0 | 0.0 |
+| capture 2: longest frame | 7.1 | 7.1-7.1 | 7.1 |
+| capture 2: frames | 6 | 6-6 | 6 |
+| capture 2: upload s | 0.015 | 0.015-0.015 | 0.015 |
+| capture 2: payload KiB | 149 | 149-149 | 149 |
+| capture 2: body KiB | 1107 | 1107-1107 | 1107 |
+| capture 2: save KiB | 1107 | 1107-1107 | 1107 |
+| joined: process's build | 1 | 1-1 | 1, 1, 1 |
+| joined: download attempts | 1 | 1-1 | 1, 1, 1 |
+| joined: download s | 0.012 | 0.012-0.013 | 0.013, 0.012, 0.012 |
+| joined: last attempt s | 0.012 | 0.012-0.013 | 0.013, 0.012, 0.012 |
+| joined: payload KiB | 128 | 128-128 | 128, 128, 128 |
+| joined: decode | 17.3 | 8.4-17.4 | 8.4, 17.3, 17.4 |
+| joined: check | 70.9 | 70.4-73.0 | 73.0, 70.4, 70.9 |
+| joined: swap | 9.2 | 9.1-9.6 | 9.6, 9.1, 9.2 |
+| joined: build frames | 83 | 81-86 | 86, 83, 81 |
+| joined: longest build frame | 94.1 | 93.1-97.7 | 97.7, 94.1, 93.1 |
+| joined: catch-up ticks | 14 | 14-14 | 14, 14, 14 |
+| joined: catch-up frames | 2 | 2-2 | 2, 2, 2 |
+| joined: catch-up s | 0.128 | 0.122-0.148 | 0.148, 0.128, 0.122 |
+| joined: codec | 285 | 284-304 | 285, 304, 284 |
+| joined: codec, longest step | 18.6 | 17.9-19.3 | 19.3, 18.6, 17.9 |
+| joined: codec, steps | 230 | 230-230 | 230, 230, 230 |
+| joined: codec, frames | 21 | 21-22 | 21, 22, 21 |
+| joined: save | 86.7 | 85.9-89.2 | 89.2, 86.7, 85.9 |
+| joined: save, longest step | 86.7 | 85.9-89.2 | 89.2, 86.7, 85.9 |
+| joined: save, steps | 1 | 1-1 | 1, 1, 1 |
+| joined: save, frames | 1 | 1-1 | 1, 1, 1 |
+| joined: files | 0.5 | 0.3-0.6 | 0.5, 0.6, 0.3 |
+| joined: files, longest step | 0.4 | 0.3-0.4 | 0.4, 0.4, 0.3 |
+| joined: files, steps | 10 | 9-11 | 11, 10, 9 |
+| joined: files, frames | 10 | 9-11 | 11, 10, 9 |
+| joined: catalogue | 79.3 | 77.5-80.5 | 80.5, 79.3, 77.5 |
+| joined: catalogue, longest step | 17.6 | 16.7-18.0 | 18.0, 17.6, 16.7 |
+| joined: catalogue, steps | 90 | 90-90 | 90, 90, 90 |
+| joined: catalogue, frames | 5 | 5-6 | 6, 5, 5 |
+| joined: manifest | 55.5 | 54.5-56.6 | 56.6, 55.5, 54.5 |
+| joined: manifest, longest step | 6.8 | 6.7-6.9 | 6.9, 6.7, 6.8 |
+| joined: manifest, steps | 92 | 92-92 | 92, 92, 92 |
+| joined: manifest, frames | 5 | 5-5 | 5, 5, 5 |
+| joined: validation | 53.6 | 51.1-54.3 | 51.1, 54.3, 53.6 |
+| joined: validation, longest step | 27.4 | 27.1-33.0 | 33.0, 27.4, 27.1 |
+| joined: validation, steps | 17 | 17-17 | 17, 17, 17 |
+| joined: validation, frames | 2 | 2-2 | 2, 2, 2 |
+| joined: economy | 17.5 | 16.4-22.4 | 22.4, 17.5, 16.4 |
+| joined: economy, longest step | 17.5 | 16.4-22.4 | 22.4, 17.5, 16.4 |
+| joined: economy, steps | 1 | 1-1 | 1, 1, 1 |
+| joined: economy, frames | 1 | 1-1 | 1, 1, 1 |
+| joined: level | 656 | 647-703 | 703, 656, 647 |
+| joined: level, longest step | 94.0 | 93.1-97.7 | 97.7, 94.0, 93.1 |
+| joined: level, steps | 622 | 622-622 | 622, 622, 622 |
+| joined: level, frames | 27 | 27-29 | 29, 27, 27 |
+| joined: hud | 8.1 | 7.8-8.2 | 7.8, 8.1, 8.2 |
+| joined: hud, longest step | 8.1 | 7.8-8.2 | 7.8, 8.1, 8.2 |
+| joined: hud, steps | 1 | 1-1 | 1, 1, 1 |
+| joined: hud, frames | 1 | 1-1 | 1, 1, 1 |
+| joined: advisor | 25.6 | 25.6-26.2 | 26.2, 25.6, 25.6 |
+| joined: advisor, longest step | 16.6 | 16.5-16.8 | 16.8, 16.5, 16.6 |
+| joined: advisor, steps | 5 | 5-5 | 5, 5, 5 |
+| joined: advisor, frames | 1 | 1-1 | 1, 1, 1 |
+| joined: prepare | 187 | 186-191 | 191, 186, 187 |
+| joined: prepare, longest step | 37.5 | 37.0-38.0 | 38.0, 37.0, 37.5 |
+| joined: prepare, steps | 32 | 32-33 | 33, 32, 32 |
+| joined: prepare, frames | 14 | 14-14 | 14, 14, 14 |
+| joined: long step, codec 84 | 12.6 | 12.3-14.8 | 12.6, 14.8, 12.3 |
+| joined: long step, codec 114 | 18.6 | 17.9-19.3 | 19.3, 18.6, 17.9 |
+| joined: long step, codec 229 | 14.5 | 14.4-15.2 | 15.2, 14.4, 14.5 |
+| joined: long step, save 1 | 86.7 | 85.9-89.2 | 89.2, 86.7, 85.9 |
+| joined: long step, catalogue 1 | 13.7 | 13.6-13.9 | 13.6, 13.9, 13.7 |
+| joined: long step, catalogue 90 | 17.6 | 16.7-18.0 | 18.0, 17.6, 16.7 |
+| joined: long step, validation 13 | 27.4 | 27.1-33.0 | 33.0, 27.4, 27.1 |
+| joined: long step, economy 1 | 17.5 | 16.4-22.4 | 22.4, 17.5, 16.4 |
+| joined: long step, level 82 (to 0.3) | 12.3 | 12.3-13.1 | 13.1, 12.3, 12.3 |
+| joined: long step, level 544 (to 0.4) (1 of 3 runs) | 12.2 | 12.2-12.2 | 12.2, -, - |
+| joined: long step, level 575 (to 0.515) | 94.0 | 93.1-97.7 | 97.7, 94.0, 93.1 |
+| joined: long step, level 587 (to 0.638) | 53.3 | 52.7-54.7 | 54.7, 53.3, 52.7 |
+| joined: long step, level 588 (to 0.648) | 36.8 | 36.2-37.5 | 37.5, 36.8, 36.2 |
+| joined: long step, level 595 (to 0.719) | 62.2 | 60.8-63.4 | 63.4, 62.2, 60.8 |
+| joined: long step, level 600 (to 0.85) | 24.6 | 24.3-25.4 | 25.4, 24.6, 24.3 |
+| joined: long step, level 601 (to 0.85) | 12.8 | 12.7-13.0 | 13.0, 12.8, 12.7 |
+| joined: long step, level 606 (to 0.85) | 12.3 | 12.1-13.0 | 13.0, 12.3, 12.1 |
+| joined: long step, level 614 (to 0.95) | 27.4 | 27.3-28.1 | 28.1, 27.4, 27.3 |
+| joined: long step, level 620 (to 0.95) | 13.2 | 13.1-13.6 | 13.6, 13.2, 13.1 |
+| joined: long step, level 621 (to 0.95) | 19.5 | 17.2-21.7 | 21.7, 19.5, 17.2 |
+| joined: long step, level 622 (to 1) | 66.3 | 65.6-85.2 | 85.2, 66.3, 65.6 |
+| joined: long step, advisor 5 | 16.6 | 16.5-16.8 | 16.8, 16.5, 16.6 |
+| joined: long step, prepare 2 | 13.2 | 13.1-13.6 | 13.6, 13.1, 13.2 |
+| joined: long step, prepare 3 | 37.5 | 37.0-38.0 | 38.0, 37.0, 37.5 |
+| joined: long step, prepare 4 | 19.5 | 19.3-19.5 | 19.3, 19.5, 19.5 |
+| joined: long step, prepare 15 | 14.0 | 13.8-14.2 | 14.2, 13.8, 14.0 |
+| joined: section cell-checks | 63.1 | 62.2-69.2 | 69.2, 63.1, 62.2 |
+| joined: section coasters | 4.4 | 4.2-4.5 | 4.2, 4.4, 4.5 |
+| joined: section economy | 0.1 | 0.1-0.2 | 0.1, 0.1, 0.2 |
+| joined: section entities | 585 | 578-610 | 610, 585, 578 |
+| joined: section guest-sprites | 12.8 | 12.7-13.0 | 13.0, 12.8, 12.7 |
+| joined: section guests | 84.8 | 83.8-88.4 | 88.4, 84.8, 83.8 |
+| joined: section image-decode | 0.6 | 0.6-0.8 | 0.8, 0.6, 0.6 |
+| joined: section join-state | 3.7 | 3.7-3.9 | 3.9, 3.7, 3.7 |
+| joined: section layout-checks | 46.0 | 45.5-51.7 | 51.7, 46.0, 45.5 |
+| joined: section level-hud | 5.2 | 5.0-6.5 | 6.5, 5.2, 5.0 |
+| joined: section model-parse | 10.5 | 10.1-12.2 | 12.2, 10.5, 10.1 |
+| joined: section object-catalog | 2.3 | 2.2-2.4 | 2.4, 2.3, 2.2 |
+| joined: section object-hoarding | 15.5 | 15.2-16.1 | 16.1, 15.5, 15.2 |
+| joined: section object-materials | 3.9 | 3.1-4.3 | 4.3, 3.1, 3.9 |
+| joined: section object-models | 220 | 217-227 | 227, 220, 217 |
+| joined: section object-parts | 15.8 | 15.3-17.2 | 17.2, 15.3, 15.8 |
+| joined: section object-runtime | 25.5 | 24.7-27.4 | 27.4, 25.5, 24.7 |
+| joined: section object-sign | 142 | 140-144 | 144, 142, 140 |
+| joined: section object-textures | 56.2 | 55.2-58.8 | 58.8, 56.2, 55.2 |
+| joined: section objects | 286 | 282-296 | 296, 286, 282 |
+| joined: section original-park | 8.6 | 8.4-12.5 | 12.5, 8.6, 8.4 |
+| joined: section paths | 3.2 | 3.1-3.4 | 3.4, 3.2, 3.1 |
+| joined: section pipeline | 12.9 | 12.6-16.5 | 16.5, 12.6, 12.9 |
+| joined: section resume | 56.8 | 56.6-74.3 | 74.3, 56.8, 56.6 |
+| joined: section ride-opcodes | 36.7 | 36.7-38.0 | 38.0, 36.7, 36.7 |
+| joined: section save-json | 60.5 | 59.9-62.6 | 62.6, 60.5, 59.9 |
+| joined: section save-mods | 0.8 | 0.8-0.9 | 0.8, 0.9, 0.8 |
+| joined: section save-shape | 25.0 | 24.9-25.3 | 25.3, 25.0, 24.9 |
+| joined: section staff-gate-economy | 53.0 | 50.2-57.1 | 57.1, 53.0, 50.2 |
+| joined: section staff-sprites | 13.2 | 13.1-13.6 | 13.6, 13.2, 13.1 |
+| joined: section terrain | 52.4 | 52.1-54.6 | 54.6, 52.4, 52.1 |
+| joined: section texture-create | 25.0 | 23.3-31.5 | 31.5, 25.0, 23.3 |
+| joined: section texture-decode | 77.9 | 75.1-79.5 | 79.5, 77.9, 75.1 |
+| joined: section texture-lookup | 21.8 | 20.0-21.9 | 21.9, 20.0, 21.8 |
+| joined: section wad-decompress | 24.2 | 22.9-24.4 | 24.2, 24.4, 22.9 |
+| joined: section wad-index | 4.7 | 4.7-5.5 | 4.7, 4.7, 5.5 |
+| joined: section wad-read | 12.1 | 11.6-12.6 | 11.6, 12.1, 12.6 |
+| joined: longest update frame while building | 95.1 | 94.1-98.8 | 98.8, 95.1, 94.1 |
+| joined: the swap's update frame | 66.1 | 62.9-77.2 | 77.2, 66.1, 62.9 |
+| joined: first update frame after the swap | 39.6 | 38.3-43.3 | 43.3, 39.6, 38.3 |
+| joined: longest whole frame while building | 95.6 | 94.5-109 | 109, 95.6, 94.5 |
+| joined: the swap's whole frame | 93.8 | 88.9-109 | 109, 93.8, 88.9 |
+| joined: first whole frame after the swap | 42.0 | 40.6-46.3 | 46.3, 42.0, 40.6 |
+| resynced: process's build | 2 | 2-2 | 2, 2, 2 |
+| resynced: download attempts | 1 | 1-1 | 1, 1, 1 |
+| resynced: download s | 0.017 | 0.016-0.018 | 0.017, 0.016, 0.018 |
+| resynced: last attempt s | 0.017 | 0.016-0.018 | 0.017, 0.016, 0.018 |
+| resynced: payload KiB | 149 | 149-149 | 149, 149, 149 |
+| resynced: decode | 2.8 | 2.3-4.7 | 2.3, 2.8, 4.7 |
+| resynced: check | 7.8 | 7.8-8.0 | 7.8, 7.8, 8.0 |
+| resynced: swap | 10.3 | 10.1-10.7 | 10.1, 10.3, 10.7 |
+| resynced: build frames | 29 | 29-30 | 29, 29, 30 |
+| resynced: longest build frame | 56.2 | 50.9-61.4 | 50.9, 61.4, 56.2 |
+| resynced: catch-up ticks | 15 | 15-17 | 15, 15, 17 |
+| resynced: catch-up frames | 2 | 2-2 | 2, 2, 2 |
+| resynced: catch-up s | 0.042 | 0.042-0.046 | 0.042, 0.042, 0.046 |
+| resynced: codec | 2.8 | 1.7-2.9 | 1.7, 2.9, 2.8 |
+| resynced: codec, longest step | 0.2 | 0.2-0.2 | 0.2, 0.2, 0.2 |
+| resynced: codec, steps | 230 | 230-230 | 230, 230, 230 |
+| resynced: codec, frames | 1 | 1-1 | 1, 1, 1 |
+| resynced: save | 53.3 | 49.1-58.4 | 49.1, 58.4, 53.3 |
+| resynced: save, longest step | 53.3 | 49.1-58.4 | 49.1, 58.4, 53.3 |
+| resynced: save, steps | 1 | 1-1 | 1, 1, 1 |
+| resynced: save, frames | 1 | 1-1 | 1, 1, 1 |
+| resynced: files | 0.0 | 0.0-0.0 | 0.0, 0.0, 0.0 |
+| resynced: files, longest step | 0.0 | 0.0-0.0 | 0.0, 0.0, 0.0 |
+| resynced: files, steps | 1 | 1-1 | 1, 1, 1 |
+| resynced: files, frames | 1 | 1-1 | 1, 1, 1 |
+| resynced: catalogue | 10.3 | 10.2-10.6 | 10.6, 10.3, 10.2 |
+| resynced: catalogue, longest step | 10.3 | 10.2-10.6 | 10.6, 10.3, 10.2 |
+| resynced: catalogue, steps | 2 | 2-2 | 2, 2, 2 |
+| resynced: catalogue, frames | 1 | 1-1 | 1, 1, 1 |
+| resynced: manifest (cached) | 0.0 | 0.0-0.0 | 0.0, 0.0, 0.0 |
+| resynced: manifest (cached), longest step | 0.0 | 0.0-0.0 | 0.0, 0.0, 0.0 |
+| resynced: manifest (cached), steps | 1 | 1-1 | 1, 1, 1 |
+| resynced: manifest (cached), frames | 1 | 1-1 | 1, 1, 1 |
+| resynced: validation | 25.6 | 25.4-25.6 | 25.6, 25.6, 25.4 |
+| resynced: validation, longest step | 18.4 | 18.2-19.1 | 18.4, 18.2, 19.1 |
+| resynced: validation, steps | 17 | 17-17 | 17, 17, 17 |
+| resynced: validation, frames | 3 | 3-3 | 3, 3, 3 |
+| resynced: economy | 3.1 | 2.8-3.2 | 3.2, 3.1, 2.8 |
+| resynced: economy, longest step | 3.1 | 2.8-3.2 | 3.2, 3.1, 2.8 |
+| resynced: economy, steps | 1 | 1-1 | 1, 1, 1 |
+| resynced: economy, frames | 1 | 1-1 | 1, 1, 1 |
+| resynced: level | 198 | 198-203 | 198, 198, 203 |
+| resynced: level, longest step | 21.0 | 20.9-21.1 | 21.0, 20.9, 21.1 |
+| resynced: level, steps | 596 | 596-596 | 596, 596, 596 |
+| resynced: level, frames | 17 | 17-17 | 17, 17, 17 |
+| resynced: hud | 0.6 | 0.5-0.8 | 0.5, 0.6, 0.8 |
+| resynced: hud, longest step | 0.6 | 0.5-0.8 | 0.5, 0.6, 0.8 |
+| resynced: hud, steps | 1 | 1-1 | 1, 1, 1 |
+| resynced: hud, frames | 1 | 1-1 | 1, 1, 1 |
+| resynced: advisor | 4.7 | 4.6-4.9 | 4.7, 4.6, 4.9 |
+| resynced: advisor, longest step | 4.7 | 4.6-4.9 | 4.7, 4.6, 4.9 |
+| resynced: advisor, steps | 5 | 5-5 | 5, 5, 5 |
+| resynced: advisor, frames | 1 | 1-1 | 1, 1, 1 |
+| resynced: prepare | 128 | 128-148 | 128, 128, 148 |
+| resynced: prepare, longest step | 25.4 | 25.0-26.0 | 25.0, 25.4, 26.0 |
+| resynced: prepare, steps | 32 | 32-32 | 32, 32, 32 |
+| resynced: prepare, frames | 10 | 10-11 | 10, 10, 11 |
+| resynced: long step, save 1 | 53.3 | 49.1-58.4 | 49.1, 58.4, 53.3 |
+| resynced: long step, validation 13 | 18.4 | 18.2-19.1 | 18.4, 18.2, 19.1 |
+| resynced: long step, level 545 (to 0.514) | 21.0 | 20.9-21.1 | 21.0, 20.9, 21.1 |
+| resynced: long step, level 574 (to 0.85) | 19.9 | 19.7-20.3 | 19.9, 19.7, 20.3 |
+| resynced: long step, level 588 (to 0.95) (1 of 3 runs) | 16.3 | 16.3-16.3 | -, -, 16.3 |
+| resynced: long step, level 595 (to 0.95) | 17.1 | 12.9-17.3 | 17.3, 17.1, 12.9 |
+| resynced: long step, prepare 1 (1 of 3 runs) | 20.7 | 20.7-20.7 | -, -, 20.7 |
+| resynced: long step, prepare 3 | 25.4 | 25.0-26.0 | 25.0, 25.4, 26.0 |
+| resynced: long step, prepare 4 | 20.5 | 20.4-20.7 | 20.5, 20.4, 20.7 |
+| resynced: section cell-checks | 54.5 | 53.9-55.4 | 54.5, 53.9, 55.4 |
+| resynced: section coasters | 0.4 | 0.3-0.4 | 0.3, 0.4, 0.4 |
+| resynced: section economy | 0.0 | 0.0-0.0 | 0.0, 0.0, 0.0 |
+| resynced: section entities | 186 | 185-192 | 186, 185, 192 |
+| resynced: section guest-sprites | 2.7 | 2.4-2.8 | 2.7, 2.8, 2.4 |
+| resynced: section guests | 48.8 | 48.7-49.6 | 48.8, 48.7, 49.6 |
+| resynced: section join-state | 0.0 | 0.0-0.0 | 0.0, 0.0, 0.0 |
+| resynced: section layout-checks | 36.6 | 36.1-37.2 | 36.6, 36.1, 37.2 |
+| resynced: section level-hud | 3.1 | 3.0-3.3 | 3.1, 3.0, 3.3 |
+| resynced: section model-parse | 4.1 | 3.8-8.6 | 4.1, 3.8, 8.6 |
+| resynced: section object-catalog | 2.2 | 2.1-2.2 | 2.2, 2.1, 2.2 |
+| resynced: section object-hoarding | 2.8 | 2.6-2.8 | 2.8, 2.6, 2.8 |
+| resynced: section object-materials | 7.6 | 3.0-8.9 | 7.6, 8.9, 3.0 |
+| resynced: section object-models | 27.1 | 23.3-27.6 | 27.1, 27.6, 23.3 |
+| resynced: section object-parts | 3.0 | 2.9-3.7 | 2.9, 3.0, 3.7 |
+| resynced: section object-runtime | 5.3 | 5.1-5.5 | 5.3, 5.1, 5.5 |
+| resynced: section object-sign | 0.1 | 0.1-0.2 | 0.1, 0.1, 0.2 |
+| resynced: section object-textures | 15.5 | 15.2-15.9 | 15.5, 15.2, 15.9 |
+| resynced: section objects | 54.3 | 50.4-54.6 | 54.6, 54.3, 50.4 |
+| resynced: section original-park | 4.9 | 4.7-9.2 | 4.9, 4.7, 9.2 |
+| resynced: section paths | 0.1 | 0.1-0.2 | 0.2, 0.1, 0.1 |
+| resynced: section pipeline | 7.8 | 4.1-7.8 | 7.8, 7.8, 4.1 |
+| resynced: section resume | 6.4 | 6.3-6.7 | 6.4, 6.3, 6.7 |
+| resynced: section ride-opcodes | 0.0 | 0.0-0.0 | 0.0, 0.0, 0.0 |
+| resynced: section save-json | 48.4 | 45.0-54.0 | 45.0, 54.0, 48.4 |
+| resynced: section save-mods | 0.0 | 0.0-0.2 | 0.0, 0.2, 0.0 |
+| resynced: section save-shape | 4.2 | 4.1-4.9 | 4.1, 4.2, 4.9 |
+| resynced: section staff-gate-economy | 26.2 | 25.8-28.0 | 25.8, 26.2, 28.0 |
+| resynced: section staff-sprites | 5.7 | 5.5-5.9 | 5.5, 5.7, 5.9 |
+| resynced: section terrain | 16.7 | 16.5-17.7 | 16.5, 16.7, 17.7 |
+| resynced: section texture-create | 8.3 | 7.8-8.7 | 8.3, 7.8, 8.7 |
+| resynced: section texture-lookup | 21.4 | 20.8-21.6 | 21.4, 20.8, 21.6 |
+| resynced: section wad-index | 0.1 | 0.1-0.2 | 0.1, 0.2, 0.1 |
+| resynced: section wad-read | 0.0 | 0.0-0.0 | 0.0, 0.0, 0.0 |
+| resynced: longest update frame while building | 61.9 | 54.2-65.1 | 54.2, 65.1, 61.9 |
+| resynced: the swap's update frame | 37.4 | 36.5-38.5 | 36.5, 37.4, 38.5 |
+| resynced: first update frame after the swap | 10.7 | 10.5-11.9 | 10.7, 10.5, 11.9 |
+| resynced: longest whole frame while building | 63.4 | 55.5-66.8 | 55.5, 66.8, 63.4 |
+| resynced: the swap's whole frame | 39.9 | 39.0-41.3 | 39.0, 39.9, 41.3 |
+| resynced: first whole frame after the swap | 12.6 | 11.9-13.6 | 12.6, 11.9, 13.6 |
+| joined: the swap's frame, mark advisor.play | 2.0 | 1.9-2.1 | 2.1, 1.9, 2.0 |
+| joined: the swap's frame, mark coop.install | 5.4 | 5.3-5.8 | 5.8, 5.3, 5.4 |
+| joined: the swap's frame, mark coop.ready | 2.7 | 2.6-3.0 | 3.0, 2.7, 2.6 |
+| joined: the swap's frame, mark coop.session | 12.7 | 12.5-13.0 | 13.0, 12.5, 12.7 |
+| joined: the swap's frame, mark level.entities | 12.0 | 11.9-12.3 | 12.3, 12.0, 11.9 |
+| joined: the swap's frame, mark level.pools | 26.3 | 23.0-34.1 | 34.1, 26.3, 23.0 |
+| joined: the swap's frame, mark level.simulation | 2.9 | 2.8-3.0 | 3.0, 2.8, 2.9 |
+| joined: the swap's frame, mark load:pipeline | 4.7 | 4.6-4.9 | 4.9, 4.7, 4.6 |
+| joined: the swap's frame, mark load:texture-create | 18.2 | 15.0-25.2 | 25.2, 18.2, 15.0 |
+| joined: the swap's frame, mark park.advisor | 4.3 | 4.3-6.6 | 6.6, 4.3, 4.3 |
+| joined: the swap's frame, mark park.hud | 5.2 | 5.1-5.3 | 5.1, 5.2, 5.3 |
+| joined: the swap's frame, mark park.level | 42.0 | 38.7-50.3 | 50.3, 42.0, 38.7 |
+| joined: the swap's frame, mark pools.effects | 1.0 | 1.0-1.0 | 1.0, 1.0, 1.0 |
+| joined: the swap's frame, mark pools.swimmers | 18.4 | 15.2-26.1 | 26.1, 18.4, 15.2 |
+| joined: the swap's frame, mark pools.water | 6.2 | 6.1-6.4 | 6.4, 6.2, 6.1 |
+| joined: the swap's frame, mark update:PoolRenderer | 7.5 | 7.3-7.7 | 7.7, 7.3, 7.5 |
+| joined: the swap's frame, mark update:PoolSlideRenderer | 3.3 | 3.2-3.5 | 3.3, 3.5, 3.2 |
+| joined: the frame after the swap, mark audio.decodeSync | 0.9 | 0.9-1.0 | 1.0, 0.9, 0.9 |
+| joined: the frame after the swap, mark coop.ticks | 32.8 | 31.7-35.7 | 35.7, 32.8, 31.7 |
+| joined: the frame after the swap, mark level.entities | 4.6 | 4.5-4.9 | 4.9, 4.6, 4.5 |
+| joined: the frame after the swap, mark level.simulation | 32.8 | 31.7-35.7 | 35.7, 32.8, 31.7 |
+| joined: the frame after the swap, mark load:object-models | 7.2 | 6.9-7.2 | 7.2, 7.2, 6.9 |
+| joined: the frame after the swap, mark load:object-textures | 5.9 | 5.4-6.1 | 5.9, 6.1, 5.4 |
+| joined: the frame after the swap, mark load:place-cue | 1.2 | 1.1-1.2 | 1.2, 1.2, 1.1 |
+| joined: the frame after the swap, mark load:place-object | 9.3 | 8.9-9.5 | 9.5, 9.3, 8.9 |
+| joined: the frame after the swap, mark load:texture-create | 1.2 | 0.9-1.3 | 0.9, 1.3, 1.2 |
+| joined: the frame after the swap, mark load:texture-decode | 3.6 | 3.1-4.1 | 4.1, 3.6, 3.1 |
+| joined: the frame after the swap, mark load:texture-lookup | 1.5 | 1.0-2.2 | 1.0, 2.2, 1.5 |
+| joined: the frame after the swap, mark park.hud | 1.2 | 1.2-1.4 | 1.4, 1.2, 1.2 |
+| joined: the frame after the swap, mark park.level | 37.5 | 36.2-40.7 | 40.7, 37.5, 36.2 |
+| joined: the frame after the swap, mark sim.commands | 17.4 | 16.8-18.8 | 18.8, 17.4, 16.8 |
+| joined: the frame after the swap, mark sim.guests | 1.3 | 1.3-1.5 | 1.3, 1.5, 1.3 |
+| joined: the frame after the swap, mark sim.objects | 4.3 | 4.1-4.4 | 4.4, 4.3, 4.1 |
+| joined: the frame after the swap, mark sim.sweptTurn | 6.1 | 6.0-6.8 | 6.8, 6.1, 6.0 |
+| joined: the frame after the swap, mark update:CoasterRenderer | 2.4 | 2.3-2.4 | 2.4, 2.3, 2.4 |
+| joined: the frame after the swap, mark update:PoolRenderer | 2.1 | 2.0-2.4 | 2.4, 2.1, 2.0 |
+| resynced: the swap's frame, mark audio.decodeSync | 2.6 | 2.6-2.7 | 2.6, 2.6, 2.7 |
+| resynced: the swap's frame, mark coop.install | 9.9 | 9.6-10.3 | 9.6, 9.9, 10.3 |
+| resynced: the swap's frame, mark coop.ready | 6.8 | 6.6-7.1 | 6.8, 6.6, 7.1 |
+| resynced: the swap's frame, mark coop.session | 10.6 | 10.3-11.0 | 10.3, 10.6, 11.0 |
+| resynced: the swap's frame, mark level.entities | 3.3 | 3.2-3.4 | 3.2, 3.4, 3.3 |
+| resynced: the swap's frame, mark level.pools | 16.6 | 15.6-16.7 | 15.6, 16.6, 16.7 |
+| resynced: the swap's frame, mark level.simulation | 6.9 | 6.6-7.1 | 6.9, 6.6, 7.1 |
+| resynced: the swap's frame, mark load:texture-create | 15.0 | 14.2-15.5 | 14.2, 15.0, 15.5 |
+| resynced: the swap's frame, mark park.level | 26.6 | 25.7-27.1 | 25.7, 26.6, 27.1 |
+| resynced: the swap's frame, mark pools.swimmers | 15.0 | 14.3-15.2 | 14.3, 15.0, 15.2 |
+| resynced: the swap's frame, mark update:PoolRenderer | 1.8 | 1.7-1.9 | 1.9, 1.7, 1.8 |
+| resynced: the swap's frame, mark update:PoolSlideRenderer | 1.3 | 1.2-1.4 | 1.2, 1.3, 1.4 |
+| resynced: the frame after the swap, mark advisor.loadResponse | 0.7 | 0.5-1.2 | 0.7, 0.5, 1.2 |
+| resynced: the frame after the swap, mark coop.ticks | 7.4 | 7.3-7.8 | 7.4, 7.3, 7.8 |
+| resynced: the frame after the swap, mark level.cells | 1.3 | 1.2-1.3 | 1.2, 1.3, 1.3 |
+| resynced: the frame after the swap, mark level.simulation | 7.4 | 7.4-7.9 | 7.4, 7.4, 7.9 |
+| resynced: the frame after the swap, mark park.advisor | 1.5 | 1.2-2.0 | 1.5, 1.2, 2.0 |
+| resynced: the frame after the swap, mark park.level | 8.9 | 8.7-9.5 | 8.7, 8.9, 9.5 |
+| resynced: the frame after the swap, mark sim.objects | 2.2 | 1.9-2.3 | 1.9, 2.2, 2.3 |
+| resynced: the frame after the swap, mark sim.rendering | 3.5 | 3.4-3.5 | 3.4, 3.5, 3.5 |
+| resynced: the frame after the swap, mark sim.sweptTurn | 0.9 | 0.9-1.0 | 0.9, 1.0, 0.9 |
+| joined: long frame, codec 19 (2 of 3 runs) | 35.4 | 35.1-35.7 | -, 35.7, 35.1 |
+| joined: long frame, codec 19, mark coop.session (2 of 3 runs) | 16.0 | 15.6-16.4 | -, 16.4, 15.6 |
+| joined: long frame, save 1 | 90.3 | 89.6-92.9 | 92.9, 90.3, 89.6 |
+| joined: long frame, save 1, mark coop.session | 89.5 | 88.7-91.9 | 91.9, 89.5, 88.7 |
+| joined: long frame, save 1, mark load:save-json | 60.5 | 59.9-62.6 | 62.6, 60.5, 59.9 |
+| joined: long frame, save 1, mark load:save-shape | 25.0 | 24.9-25.3 | 25.3, 25.0, 24.9 |
+| joined: long frame, validation 13 | 36.0 | 35.8-43.3 | 43.3, 36.0, 35.8 |
+| joined: long frame, validation 13, mark coop.session | 35.2 | 34.9-41.4 | 41.4, 35.2, 34.9 |
+| joined: long frame, validation 13, mark load:cell-checks | 26.1 | 25.7-31.5 | 31.5, 26.1, 25.7 |
+| joined: long frame, validation 13, mark load:layout-checks | 27.1 | 26.9-32.8 | 32.8, 27.1, 26.9 |
+| joined: long frame, economy 1 | 36.2 | 33.3-37.6 | 33.3, 37.6, 36.2 |
+| joined: long frame, economy 1, mark coop.session | 35.2 | 32.3-36.8 | 32.3, 36.8, 35.2 |
+| joined: long frame, level 575 | 95.1 | 94.1-98.8 | 98.8, 95.1, 94.1 |
+| joined: long frame, level 575, mark coop.session | 94.2 | 93.1-97.9 | 97.9, 94.2, 93.1 |
+| joined: long frame, level 575, mark load:cell-checks | 18.7 | 18.4-18.7 | 18.7, 18.7, 18.4 |
+| joined: long frame, level 575, mark load:layout-checks | 18.9 | 18.6-18.9 | 18.9, 18.9, 18.6 |
+| joined: long frame, level 575, mark load:object-hoarding | 13.7 | 13.3-14.3 | 14.3, 13.7, 13.3 |
+| joined: long frame, level 575, mark load:object-models | 55.7 | 55.4-58.5 | 58.5, 55.7, 55.4 |
+| joined: long frame, level 575, mark load:object-parts | 9.4 | 9.4-10.5 | 10.5, 9.4, 9.4 |
+| joined: long frame, level 575, mark load:object-runtime | 3.4 | 3.4-3.5 | 3.5, 3.4, 3.4 |
+| joined: long frame, level 575, mark load:object-sign | 39.7 | 39.5-40.5 | 40.5, 39.7, 39.5 |
+| joined: long frame, level 575, mark load:object-textures | 5.0 | 4.9-5.6 | 5.6, 5.0, 4.9 |
+| joined: long frame, level 575, mark load:texture-decode | 6.3 | 6.1-6.3 | 6.3, 6.1, 6.3 |
+| joined: long frame, level 587 | 64.4 | 55.8-65.1 | 55.8, 65.1, 64.4 |
+| joined: long frame, level 587, mark coop.session | 63.5 | 54.9-64.2 | 54.9, 64.2, 63.5 |
+| joined: long frame, level 587, mark load:object-models | 47.6 | 38.4-48.1 | 38.4, 48.1, 47.6 |
+| joined: long frame, level 587, mark load:object-parts | 4.3 | 3.6-4.5 | 3.6, 4.3, 4.5 |
+| joined: long frame, level 587, mark load:object-runtime | 15.3 | 14.9-15.8 | 15.8, 15.3, 14.9 |
+| joined: long frame, level 587, mark load:object-sign | 21.5 | 21.4-21.8 | 21.8, 21.5, 21.4 |
+| joined: long frame, level 587, mark load:object-textures | 19.8 | 12.8-20.4 | 12.8, 20.4, 19.8 |
+| joined: long frame, level 587, mark load:texture-decode | 15.7 | 9.6-16.1 | 9.6, 16.1, 15.7 |
+| joined: long frame, level 588 | 37.9 | 37.3-38.5 | 38.5, 37.9, 37.3 |
+| joined: long frame, level 588, mark coop.session | 36.9 | 36.3-37.7 | 37.7, 36.9, 36.3 |
+| joined: long frame, level 588, mark load:object-models | 33.4 | 33.0-34.2 | 34.2, 33.4, 33.0 |
+| joined: long frame, level 588, mark load:object-sign | 28.3 | 28.0-28.7 | 28.7, 28.3, 28.0 |
+| joined: long frame, level 588, mark load:object-textures | 4.7 | 4.7-5.0 | 5.0, 4.7, 4.7 |
+| joined: long frame, level 588, mark load:texture-decode | 2.9 | 2.8-3.0 | 3.0, 2.9, 2.8 |
+| joined: long frame, level 595 | 70.8 | 69.1-73.7 | 73.7, 70.8, 69.1 |
+| joined: long frame, level 595, mark coop.session | 69.8 | 68.3-72.7 | 72.7, 69.8, 68.3 |
+| joined: long frame, level 595, mark load:object-models | 66.5 | 65.0-68.5 | 68.5, 66.5, 65.0 |
+| joined: long frame, level 595, mark load:object-runtime | 2.7 | 2.4-3.2 | 3.2, 2.7, 2.4 |
+| joined: long frame, level 595, mark load:object-sign | 52.2 | 51.1-52.8 | 52.8, 52.2, 51.1 |
+| joined: long frame, level 595, mark load:object-textures | 12.6 | 12.5-13.4 | 13.4, 12.6, 12.5 |
+| joined: long frame, level 595, mark load:texture-decode | 5.5 | 5.2-5.6 | 5.5, 5.6, 5.2 |
+| joined: long frame, level 600 | 35.4 | 35.4-37.1 | 37.1, 35.4, 35.4 |
+| joined: long frame, level 600, mark coop.session | 34.6 | 34.4-36.2 | 36.2, 34.6, 34.4 |
+| joined: long frame, level 600, mark load:cell-checks | 18.3 | 18.1-19.0 | 19.0, 18.3, 18.1 |
+| joined: long frame, level 600, mark load:coasters | 4.4 | 4.2-4.5 | 4.2, 4.4, 4.5 |
+| joined: long frame, level 600, mark load:object-models | 4.5 | 4.3-5.1 | 5.1, 4.3, 4.5 |
+| joined: long frame, level 600, mark load:object-textures | 3.8 | 3.5-4.2 | 4.2, 3.5, 3.8 |
+| joined: long frame, level 600, mark load:objects | 286 | 282-296 | 296, 286, 282 |
+| joined: long frame, level 614 | 35.8 | 30.3-35.9 | 30.3, 35.8, 35.9 |
+| joined: long frame, level 614, mark coop.session | 35.0 | 29.5-35.1 | 29.5, 35.1, 35.0 |
+| joined: long frame, level 614, mark load:guests | 84.8 | 83.8-88.4 | 88.4, 84.8, 83.8 |
+| joined: long frame, level 614, mark load:paths | 3.2 | 3.1-3.4 | 3.4, 3.2, 3.1 |
+| joined: long frame, level 614, mark load:texture-decode | 4.2 | 3.7-4.7 | 4.7, 4.2, 3.7 |
+| joined: long frame, hud 1 | 75.4 | 75.0-94.1 | 94.1, 75.4, 75.0 |
+| joined: long frame, hud 1, mark coop.session | 74.4 | 74.0-93.0 | 93.0, 74.4, 74.0 |
+| joined: long frame, hud 1, mark load:entities | 585 | 578-610 | 610, 585, 578 |
+| joined: long frame, hud 1, mark load:join-state | 3.7 | 3.7-3.9 | 3.9, 3.7, 3.7 |
+| joined: long frame, hud 1, mark load:level-hud | 5.2 | 5.0-6.5 | 6.5, 5.2, 5.0 |
+| joined: long frame, hud 1, mark load:resume | 56.8 | 56.6-74.3 | 74.3, 56.8, 56.6 |
+| joined: long frame, hud 1, mark load:staff-gate-economy | 53.0 | 50.2-57.1 | 57.1, 53.0, 50.2 |
+| joined: long frame, hud 1, mark load:texture-create | 0.1 | 0.1-3.3 | 3.3, 0.1, 0.1 |
+| joined: long frame, prepare 1 | 38.5 | 38.0-39.0 | 39.0, 38.0, 38.5 |
+| joined: long frame, prepare 1, mark coop.session | 37.4 | 37.1-38.2 | 38.2, 37.1, 37.4 |
+| joined: long frame, prepare 3 | 38.6 | 38.0-39.0 | 39.0, 38.0, 38.6 |
+| joined: long frame, prepare 3, mark coop.session | 37.8 | 37.2-38.1 | 38.1, 37.2, 37.8 |
+| joined: long frame, prepare 32 (2 of 3 runs) | 71.8 | 71.5-72.0 | -, 71.5, 72.0 |
+| joined: long frame, prepare 32, mark coop.check (2 of 3 runs) | 70.7 | 70.4-70.9 | -, 70.4, 70.9 |
+| joined: long frame, prepare 32, mark coop.session (2 of 3 runs) | 71.0 | 70.7-71.2 | -, 70.7, 71.2 |
+| joined: long frame, prepare 33 (1 of 3 runs) | 74.2 | 74.2-74.2 | 74.2, -, - |
+| joined: long frame, prepare 33, mark coop.check (1 of 3 runs) | 73.0 | 73.0-73.0 | 73.0, -, - |
+| joined: long frame, prepare 33, mark coop.session (1 of 3 runs) | 73.3 | 73.3-73.3 | 73.3, -, - |
+| resynced: long frame, save 1 | 61.9 | 54.2-65.1 | 54.2, 65.1, 61.9 |
+| resynced: long frame, save 1, mark coop.session | 56.4 | 51.2-61.5 | 51.2, 61.5, 56.4 |
+| resynced: long frame, save 1, mark load:save-json | 48.4 | 45.0-54.0 | 45.0, 54.0, 48.4 |
+| resynced: long frame, save 1, mark load:save-shape | 4.2 | 4.1-4.9 | 4.1, 4.2, 4.9 |
+| resynced: long frame, level 545 (1 of 3 runs) | 33.1 | 33.1-33.1 | -, -, 33.1 |
+| resynced: long frame, level 545, mark coop.session (1 of 3 runs) | 32.6 | 32.6-32.6 | -, -, 32.6 |
+| resynced: long frame, level 545, mark load:cell-checks (1 of 3 runs) | 17.9 | 17.9-17.9 | -, -, 17.9 |
+| resynced: long frame, level 545, mark load:layout-checks (1 of 3 runs) | 18.1 | 18.1-18.1 | -, -, 18.1 |
+| resynced: long frame, prepare 1 (1 of 3 runs) | 37.2 | 37.2-37.2 | -, -, 37.2 |
+| resynced: long frame, prepare 1, mark coop.session (1 of 3 runs) | 36.7 | 36.7-36.7 | -, -, 36.7 |
+| resynced: long frame, prepare 1, mark load:entities (1 of 3 runs) | 192 | 192-192 | -, -, 192 |
+| resynced: long frame, prepare 1, mark load:level-hud (1 of 3 runs) | 3.3 | 3.3-3.3 | -, -, 3.3 |
+| resynced: long frame, prepare 1, mark load:resume (1 of 3 runs) | 6.7 | 6.7-6.7 | -, -, 6.7 |
+| resynced: long frame, prepare 1, mark load:staff-gate-economy (1 of 3 runs) | 28.0 | 28.0-28.0 | -, -, 28.0 |
+| resynced: long frame, prepare 3 (1 of 3 runs) | 30.3 | 30.3-30.3 | -, -, 30.3 |
+| resynced: long frame, prepare 3, mark coop.session (1 of 3 runs) | 29.7 | 29.7-29.7 | -, -, 29.7 |
+| final check: update frame | 522 | 514-527 | 522, 514, 527 |
+| final check: whole frame | 523 | 515-528 | 523, 515, 528 |
+
+### After: the desktop
+
+3 runs; Release build 1.0.0+2615b32c0a2f8517199e863cfc35ac93da64943f, .NET 11.0.0-rc.2.26504.105, macOS 26.6.0 Arm64, 10 processors, silent True, advisor True, compiled jit
+
+    Darwin 25.6.0 arm64
+    processor Apple M5, model Mac17,2, memory 34359738368 bytes
+    source 2615b32c0a2f8517199e863cfc35ac93da64943f, clean
+
+| Value | Median | Range | Runs |
+|---|---|---|---|
+| capture 1: cut | 9.4 | 9.1-9.4 | 9.4, 9.4, 9.1 |
+| capture 1: publish | 0.1 | 0.1-0.1 | 0.1, 0.1, 0.1 |
+| capture 1: digest | 3.9 | 3.7-4.0 | 3.9, 4.0, 3.7 |
+| capture 1: state | 0.8 | 0.8-0.8 | 0.8, 0.8, 0.8 |
+| capture 1: snapshot | 4.5 | 4.4-4.5 | 4.5, 4.4, 4.5 |
+| capture 1: serializer setup | 0.0 | 0.0-0.0 | 0.0, 0.0, 0.0 |
+| capture 1: save | 65.6 | 61.4-66.0 | 65.6, 61.4, 66.0 |
+| capture 1: save, longest slice | 33.2 | 30.8-33.6 | 33.6, 30.8, 33.2 |
+| capture 1: save, slices | 12 | 11-12 | 12, 11, 12 |
+| capture 1: save copy | 0.2 | 0.2-0.2 | 0.2, 0.2, 0.2 |
+| capture 1: writer setup | 1.5 | 1.2-1.6 | 1.6, 1.5, 1.2 |
+| capture 1: compression | 1.6 | 1.3-1.6 | 1.6, 1.6, 1.3 |
+| capture 1: compression, slices | 1 | 1-1 | 1, 1, 1 |
+| capture 1: finish | 0.1 | 0.1-0.1 | 0.1, 0.1, 0.1 |
+| capture 1: longest frame | 33.4 | 31.1-33.8 | 33.8, 31.1, 33.4 |
+| capture 1: frames | 14 | 13-14 | 14, 13, 14 |
+| capture 1: upload s | 0.015 | 0.015-0.016 | 0.015, 0.015, 0.016 |
+| capture 1: payload KiB | 128 | 128-128 | 128, 128, 128 |
+| capture 1: body KiB | 981 | 981-981 | 981, 981, 981 |
+| capture 1: save KiB | 980 | 980-980 | 980, 980, 980 |
+| capture 2: cut | 8.1 | 7.0-10.2 | 7.0, 8.1, 10.2 |
+| capture 2: publish | 0.0 | 0.0-0.0 | 0.0, 0.0, 0.0 |
+| capture 2: digest | 4.1 | 3.5-5.9 | 3.5, 4.1, 5.9 |
+| capture 2: state | 0.2 | 0.1-0.3 | 0.1, 0.2, 0.3 |
+| capture 2: snapshot | 3.8 | 3.4-4.0 | 3.4, 3.8, 4.0 |
+| capture 2: serializer setup | 0.0 | 0.0-0.0 | 0.0, 0.0, 0.0 |
+| capture 2: save | 11.5 | 10.7-12.1 | 10.7, 12.1, 11.5 |
+| capture 2: save, longest slice | 6.1 | 5.6-7.0 | 5.6, 7.0, 6.1 |
+| capture 2: save, slices | 4 | 4-4 | 4, 4, 4 |
+| capture 2: save copy | 0.1 | 0.1-0.1 | 0.1, 0.1, 0.1 |
+| capture 2: writer setup | 0.2 | 0.1-0.2 | 0.2, 0.2, 0.1 |
+| capture 2: compression | 1.8 | 1.8-1.9 | 1.8, 1.9, 1.8 |
+| capture 2: compression, slices | 1 | 1-1 | 1, 1, 1 |
+| capture 2: finish | 0.0 | 0.0-0.1 | 0.0, 0.1, 0.0 |
+| capture 2: longest frame | 8.1 | 7.0-10.2 | 7.0, 8.1, 10.2 |
+| capture 2: frames | 6 | 6-6 | 6, 6, 6 |
+| capture 2: upload s | 0.015 | 0.015-0.015 | 0.015, 0.015, 0.015 |
+| capture 2: payload KiB | 149 | 149-149 | 149, 149, 149 |
+| capture 2: body KiB | 1107 | 1107-1107 | 1107, 1107, 1107 |
+| capture 2: save KiB | 1107 | 1107-1107 | 1107, 1107, 1107 |
+| joined: process's build | 1 | 1-1 | 1, 1, 1 |
+| joined: download attempts | 1 | 1-1 | 1, 1, 1 |
+| joined: download s | 0.015 | 0.015-0.016 | 0.015, 0.015, 0.016 |
+| joined: last attempt s | 0.015 | 0.015-0.016 | 0.015, 0.015, 0.016 |
+| joined: payload KiB | 128 | 128-128 | 128, 128, 128 |
+| joined: decode | 5.1 | 4.2-9.2 | 9.2, 5.1, 4.2 |
+| joined: check | 39.7 | 39.4-41.0 | 39.4, 39.7, 41.0 |
+| joined: swap | 13.2 | 8.3-13.8 | 8.3, 13.2, 13.8 |
+| joined: build frames | 65 | 61-66 | 65, 66, 61 |
+| joined: longest build frame | 86.1 | 79.6-90.6 | 79.6, 90.6, 86.1 |
+| joined: catch-up ticks | 15 | 14-15 | 15, 14, 15 |
+| joined: catch-up frames | 2 | 2-2 | 2, 2, 2 |
+| joined: catch-up s | 0.157 | 0.152-0.157 | 0.152, 0.157, 0.157 |
+| joined: codec | 69.8 | 64.6-76.1 | 76.1, 69.8, 64.6 |
+| joined: codec, longest step | 5.3 | 5.0-5.5 | 5.0, 5.5, 5.3 |
+| joined: codec, steps | 230 | 230-230 | 230, 230, 230 |
+| joined: codec, frames | 6 | 6-7 | 7, 6, 6 |
+| joined: save | 81.5 | 79.6-84.1 | 79.6, 84.1, 81.5 |
+| joined: save, longest step | 81.5 | 79.6-84.1 | 79.6, 84.1, 81.5 |
+| joined: save, steps | 1 | 1-1 | 1, 1, 1 |
+| joined: save, frames | 1 | 1-1 | 1, 1, 1 |
+| joined: files | 0.0 | 0.0-0.0 | 0.0, 0.0, 0.0 |
+| joined: files, longest step | 0.0 | 0.0-0.0 | 0.0, 0.0, 0.0 |
+| joined: files, steps | 1 | 1-1 | 1, 1, 1 |
+| joined: files, frames | 1 | 1-1 | 1, 1, 1 |
+| joined: catalogue | 76.1 | 74.2-79.4 | 79.4, 76.1, 74.2 |
+| joined: catalogue, longest step | 16.4 | 15.4-16.7 | 15.4, 16.7, 16.4 |
+| joined: catalogue, steps | 90 | 90-90 | 90, 90, 90 |
+| joined: catalogue, frames | 5 | 5-5 | 5, 5, 5 |
+| joined: manifest | 43.0 | 40.7-43.1 | 40.7, 43.0, 43.1 |
+| joined: manifest, longest step | 2.9 | 2.8-3.3 | 2.8, 3.3, 2.9 |
+| joined: manifest, steps | 92 | 92-92 | 92, 92, 92 |
+| joined: manifest, frames | 4 | 4-4 | 4, 4, 4 |
+| joined: validation | 20.2 | 19.6-23.0 | 19.6, 20.2, 23.0 |
+| joined: validation, longest step | 8.0 | 7.6-8.1 | 7.6, 8.1, 8.0 |
+| joined: validation, steps | 17 | 17-17 | 17, 17, 17 |
+| joined: validation, frames | 3 | 2-3 | 2, 3, 3 |
+| joined: economy | 14.6 | 14.3-15.3 | 14.3, 15.3, 14.6 |
+| joined: economy, longest step | 14.6 | 14.3-15.3 | 14.3, 15.3, 14.6 |
+| joined: economy, steps | 1 | 1-1 | 1, 1, 1 |
+| joined: economy, frames | 1 | 1-1 | 1, 1, 1 |
+| joined: level | 605 | 597-612 | 597, 612, 605 |
+| joined: level, longest step | 60.9 | 60.6-62.6 | 60.6, 62.6, 60.9 |
+| joined: level, steps | 880 | 880-880 | 880, 880, 880 |
+| joined: level, frames | 35 | 34-35 | 34, 35, 35 |
+| joined: hud | 10.0 | 9.9-10.2 | 9.9, 10.2, 10.0 |
+| joined: hud, longest step | 10.0 | 9.9-10.2 | 9.9, 10.2, 10.0 |
+| joined: hud, steps | 1 | 1-1 | 1, 1, 1 |
+| joined: hud, frames | 1 | 1-1 | 1, 1, 1 |
+| joined: advisor | 23.6 | 21.7-24.2 | 23.6, 24.2, 21.7 |
+| joined: advisor, longest step | 13.6 | 11.6-13.6 | 13.6, 13.6, 11.6 |
+| joined: advisor, steps | 5 | 5-5 | 5, 5, 5 |
+| joined: advisor, frames | 1 | 1-1 | 1, 1, 1 |
+| joined: prepare | 236 | 165-240 | 236, 240, 165 |
+| joined: prepare, longest step | 53.1 | 52.1-53.2 | 52.1, 53.2, 53.1 |
+| joined: prepare, steps | 34 | 20-34 | 34, 34, 20 |
+| joined: prepare, frames | 14 | 9-14 | 14, 14, 9 |
+| joined: long step, save 1 | 81.5 | 79.6-84.1 | 79.6, 84.1, 81.5 |
+| joined: long step, catalogue 90 | 16.4 | 15.4-16.7 | 15.4, 16.7, 16.4 |
+| joined: long step, economy 1 | 14.6 | 14.3-15.3 | 14.3, 15.3, 14.6 |
+| joined: long step, level 532 (to 0.35) | 18.2 | 18.0-18.7 | 18.2, 18.0, 18.7 |
+| joined: long step, level 833 (to 0.549) | 15.6 | 15.5-16.0 | 15.6, 15.5, 16.0 |
+| joined: long step, level 845 (to 0.654) | 15.6 | 15.1-16.6 | 16.6, 15.6, 15.1 |
+| joined: long step, level 853 (to 0.724) | 32.0 | 29.6-37.1 | 29.6, 37.1, 32.0 |
+| joined: long step, level 858 (to 0.85) (1 of 3 runs) | 12.9 | 12.9-12.9 | -, -, 12.9 |
+| joined: long step, level 859 (to 0.85) | 13.4 | 13.2-14.9 | 14.9, 13.4, 13.2 |
+| joined: long step, level 860 (to 0.85) | 13.0 | 12.7-13.0 | 12.7, 13.0, 13.0 |
+| joined: long step, level 862 (to 0.85) | 33.9 | 33.1-36.1 | 33.1, 33.9, 36.1 |
+| joined: long step, level 872 (to 0.95) | 40.1 | 39.2-41.2 | 40.1, 41.2, 39.2 |
+| joined: long step, level 878 (to 0.95) | 13.1 | 12.2-13.1 | 12.2, 13.1, 13.1 |
+| joined: long step, level 879 (to 0.95) | 16.2 | 16.2-16.6 | 16.2, 16.2, 16.6 |
+| joined: long step, level 880 (to 1) | 60.9 | 60.6-62.6 | 60.6, 62.6, 60.9 |
+| joined: long step, advisor 5 (2 of 3 runs) | 13.6 | 13.6-13.6 | 13.6, 13.6, - |
+| joined: long step, prepare 1 | 12.5 | 12.3-13.0 | 12.3, 12.5, 13.0 |
+| joined: long step, prepare 2 | 12.8 | 12.6-13.1 | 12.8, 13.1, 12.6 |
+| joined: long step, prepare 3 | 23.7 | 23.4-27.2 | 27.2, 23.7, 23.4 |
+| joined: long step, prepare 5 | 53.1 | 52.1-53.2 | 52.1, 53.2, 53.1 |
+| joined: long step, prepare 6 | 15.7 | 15.7-15.9 | 15.7, 15.7, 15.9 |
+| joined: section cell-checks | 15.9 | 15.5-16.4 | 15.5, 16.4, 15.9 |
+| joined: section coasters | 5.1 | 5.0-5.1 | 5.0, 5.1, 5.1 |
+| joined: section economy | 0.3 | 0.3-0.3 | 0.3, 0.3, 0.3 |
+| joined: section entities | 535 | 525-537 | 525, 537, 535 |
+| joined: section guest-sprites | 13.3 | 13.2-14.9 | 14.9, 13.3, 13.2 |
+| joined: section guests | 110 | 107-111 | 107, 110, 111 |
+| joined: section image-decode | 4.3 | 3.8-4.3 | 3.8, 4.3, 4.3 |
+| joined: section join-state | 2.2 | 2.2-2.4 | 2.2, 2.4, 2.2 |
+| joined: section layout-checks | 16.4 | 16.0-16.9 | 16.0, 16.9, 16.4 |
+| joined: section level-hud | 5.6 | 5.5-5.6 | 5.5, 5.6, 5.6 |
+| joined: section model-parse | 42.0 | 41.6-42.5 | 41.6, 42.5, 42.0 |
+| joined: section object-catalog | 5.4 | 3.1-5.6 | 5.4, 5.6, 3.1 |
+| joined: section object-coaster | 13.5 | 13.5-13.9 | 13.5, 13.5, 13.9 |
+| joined: section object-hoarding | 1.0 | 1.0-1.1 | 1.0, 1.1, 1.0 |
+| joined: section object-materials | 3.8 | 3.7-5.0 | 3.7, 5.0, 3.8 |
+| joined: section object-models | 48.7 | 47.7-55.8 | 47.7, 55.8, 48.7 |
+| joined: section object-parts | 9.2 | 8.8-9.6 | 9.2, 9.6, 8.8 |
+| joined: section object-runtime | 20.8 | 20.6-21.8 | 20.6, 20.8, 21.8 |
+| joined: section object-script | 2.7 | 2.6-3.5 | 2.6, 2.7, 3.5 |
+| joined: section object-sign | 30.2 | 27.7-35.0 | 27.7, 35.0, 30.2 |
+| joined: section object-textures | 5.0 | 4.7-6.0 | 6.0, 4.7, 5.0 |
+| joined: section objects | 187 | 186-194 | 186, 194, 187 |
+| joined: section original-park | 13.0 | 10.7-13.7 | 13.0, 13.7, 10.7 |
+| joined: section paths | 3.6 | 3.6-4.0 | 3.6, 4.0, 3.6 |
+| joined: section pipeline | 3.8 | 3.7-4.3 | 3.8, 4.3, 3.7 |
+| joined: section resume | 52.6 | 52.3-54.0 | 52.3, 54.0, 52.6 |
+| joined: section ride-opcodes | 38.8 | 38.3-41.6 | 38.3, 38.8, 41.6 |
+| joined: section save-json | 43.2 | 42.8-45.8 | 42.8, 45.8, 43.2 |
+| joined: section save-mods | 0.9 | 0.9-1.0 | 0.9, 0.9, 1.0 |
+| joined: section save-shape | 36.8 | 35.3-36.9 | 35.3, 36.9, 36.8 |
+| joined: section shader-native | 2.1 | 2.1-2.1 | 2.1, 2.1, 2.1 |
+| joined: section shader-spirv | 56.6 | 56.6-59.7 | 59.7, 56.6, 56.6 |
+| joined: section staff-gate-economy | 42.9 | 41.6-44.2 | 41.6, 44.2, 42.9 |
+| joined: section staff-sprites | 13.1 | 12.2-13.1 | 12.2, 13.1, 13.1 |
+| joined: section terrain | 44.1 | 43.9-44.9 | 44.1, 44.9, 43.9 |
+| joined: section texture-create | 25.3 | 25.2-27.2 | 25.2, 27.2, 25.3 |
+| joined: section texture-decode | 67.2 | 66.6-69.6 | 69.6, 66.6, 67.2 |
+| joined: section texture-lookup | 10.4 | 9.8-12.2 | 12.2, 9.8, 10.4 |
+| joined: section type-hoarding | 11.0 | 8.3-11.7 | 8.3, 11.7, 11.0 |
+| joined: section type-model | 32.6 | 32.2-32.8 | 32.2, 32.8, 32.6 |
+| joined: section type-texture | 52.4 | 51.1-56.0 | 56.0, 51.1, 52.4 |
+| joined: section wad-decompress | 18.6 | 18.0-21.5 | 18.6, 18.0, 21.5 |
+| joined: section wad-index | 17.9 | 10.9-32.5 | 32.5, 17.9, 10.9 |
+| joined: section wad-read | 3.5 | 3.1-4.1 | 3.1, 3.5, 4.1 |
+| joined: longest update frame while building | 86.4 | 79.9-90.9 | 79.9, 90.9, 86.4 |
+| joined: the swap's update frame | 79.4 | 70.3-81.2 | 70.3, 79.4, 81.2 |
+| joined: first update frame after the swap | 55.7 | 54.5-56.0 | 55.7, 54.5, 56.0 |
+| resynced: process's build | 2 | 2-2 | 2, 2, 2 |
+| resynced: download attempts | 1 | 1-1 | 1, 1, 1 |
+| resynced: download s | 0.016 | 0.016-0.017 | 0.016, 0.016, 0.017 |
+| resynced: last attempt s | 0.016 | 0.016-0.017 | 0.016, 0.016, 0.017 |
+| resynced: payload KiB | 149 | 149-149 | 149, 149, 149 |
+| resynced: decode | 2.5 | 2.4-3.1 | 3.1, 2.5, 2.4 |
+| resynced: check | 2.1 | 1.9-4.6 | 1.9, 2.1, 4.6 |
+| resynced: swap | 7.0 | 6.9-13.5 | 7.0, 6.9, 13.5 |
+| resynced: build frames | 24 | 23-25 | 24, 23, 25 |
+| resynced: longest build frame | 34.1 | 29.4-35.1 | 34.1, 35.1, 29.4 |
+| resynced: catch-up ticks | 13 | 12-13 | 12, 13, 13 |
+| resynced: catch-up frames | 2 | 2-2 | 2, 2, 2 |
+| resynced: catch-up s | 0.042 | 0.030-0.045 | 0.030, 0.045, 0.042 |
+| resynced: codec | 0.8 | 0.7-0.9 | 0.8, 0.9, 0.7 |
+| resynced: codec, longest step | 0.0 | 0.0-0.1 | 0.0, 0.0, 0.1 |
+| resynced: codec, steps | 230 | 230-230 | 230, 230, 230 |
+| resynced: codec, frames | 1 | 1-1 | 1, 1, 1 |
+| resynced: save | 26.1 | 20.4-26.2 | 26.1, 26.2, 20.4 |
+| resynced: save, longest step | 26.1 | 20.4-26.2 | 26.1, 26.2, 20.4 |
+| resynced: save, steps | 1 | 1-1 | 1, 1, 1 |
+| resynced: save, frames | 1 | 1-1 | 1, 1, 1 |
+| resynced: files | 0.0 | 0.0-0.0 | 0.0, 0.0, 0.0 |
+| resynced: files, longest step | 0.0 | 0.0-0.0 | 0.0, 0.0, 0.0 |
+| resynced: files, steps | 1 | 1-1 | 1, 1, 1 |
+| resynced: files, frames | 1 | 1-1 | 1, 1, 1 |
+| resynced: catalogue | 12.5 | 11.7-12.9 | 12.5, 12.9, 11.7 |
+| resynced: catalogue, longest step | 12.5 | 11.7-12.9 | 12.5, 12.9, 11.7 |
+| resynced: catalogue, steps | 2 | 2-2 | 2, 2, 2 |
+| resynced: catalogue, frames | 1 | 1-1 | 1, 1, 1 |
+| resynced: manifest (cached) | 0.1 | 0.1-0.1 | 0.1, 0.1, 0.1 |
+| resynced: manifest (cached), longest step | 0.1 | 0.1-0.1 | 0.1, 0.1, 0.1 |
+| resynced: manifest (cached), steps | 1 | 1-1 | 1, 1, 1 |
+| resynced: manifest (cached), frames | 1 | 1-1 | 1, 1, 1 |
+| resynced: validation | 6.0 | 6.0-6.1 | 6.0, 6.1, 6.0 |
+| resynced: validation, longest step | 1.7 | 1.7-1.7 | 1.7, 1.7, 1.7 |
+| resynced: validation, steps | 17 | 17-17 | 17, 17, 17 |
+| resynced: validation, frames | 1 | 1-2 | 1, 1, 2 |
+| resynced: economy | 1.1 | 1.1-1.3 | 1.1, 1.3, 1.1 |
+| resynced: economy, longest step | 1.1 | 1.1-1.3 | 1.1, 1.3, 1.1 |
+| resynced: economy, steps | 1 | 1-1 | 1, 1, 1 |
+| resynced: economy, frames | 1 | 1-1 | 1, 1, 1 |
+| resynced: level | 200 | 191-208 | 200, 191, 208 |
+| resynced: level, longest step | 23.6 | 23.5-26.3 | 23.6, 23.5, 26.3 |
+| resynced: level, steps | 929 | 929-929 | 929, 929, 929 |
+| resynced: level, frames | 16 | 15-17 | 16, 15, 17 |
+| resynced: hud | 0.2 | 0.2-1.2 | 0.2, 0.2, 1.2 |
+| resynced: hud, longest step | 0.2 | 0.2-1.2 | 0.2, 0.2, 1.2 |
+| resynced: hud, steps | 1 | 1-1 | 1, 1, 1 |
+| resynced: hud, frames | 1 | 1-1 | 1, 1, 1 |
+| resynced: advisor | 1.6 | 1.6-1.7 | 1.6, 1.6, 1.7 |
+| resynced: advisor, longest step | 1.6 | 1.6-1.7 | 1.6, 1.6, 1.7 |
+| resynced: advisor, steps | 5 | 5-5 | 5, 5, 5 |
+| resynced: advisor, frames | 1 | 1-1 | 1, 1, 1 |
+| resynced: prepare | 70.3 | 69.0-73.8 | 69.0, 70.3, 73.8 |
+| resynced: prepare, longest step | 18.0 | 17.0-18.5 | 18.5, 17.0, 18.0 |
+| resynced: prepare, steps | 20 | 20-20 | 20, 20, 20 |
+| resynced: prepare, frames | 7 | 7-7 | 7, 7, 7 |
+| resynced: long step, save 1 | 26.1 | 20.4-26.2 | 26.1, 26.2, 20.4 |
+| resynced: long step, catalogue 2 (2 of 3 runs) | 12.7 | 12.5-12.9 | 12.5, 12.9, - |
+| resynced: long step, level 3 (to 0.008) | 15.0 | 14.4-15.1 | 14.4, 15.1, 15.0 |
+| resynced: long step, level 532 (to 0.35) | 21.4 | 20.9-21.5 | 21.5, 20.9, 21.4 |
+| resynced: long step, level 909 (to 0.85) (1 of 3 runs) | 12.5 | 12.5-12.5 | -, -, 12.5 |
+| resynced: long step, level 911 (to 0.85) | 23.6 | 23.5-26.3 | 23.6, 23.5, 26.3 |
+| resynced: long step, level 921 (to 0.95) (1 of 3 runs) | 14.2 | 14.2-14.2 | 14.2, -, - |
+| resynced: long step, level 928 (to 0.95) | 17.6 | 17.0-18.3 | 17.0, 17.6, 18.3 |
+| resynced: long step, prepare 3 | 18.0 | 17.0-18.5 | 18.5, 17.0, 18.0 |
+| resynced: section cell-checks | 3.4 | 3.3-3.4 | 3.4, 3.3, 3.4 |
+| resynced: section coasters | 0.1 | 0.1-0.1 | 0.1, 0.1, 0.1 |
+| resynced: section economy | 0.0 | 0.0-0.0 | 0.0, 0.0, 0.0 |
+| resynced: section entities | 180 | 172-189 | 180, 172, 189 |
+| resynced: section guest-sprites | 3.4 | 3.3-3.4 | 3.4, 3.3, 3.4 |
+| resynced: section guests | 67.8 | 66.5-76.5 | 67.8, 66.5, 76.5 |
+| resynced: section join-state | 0.0 | 0.0-0.1 | 0.0, 0.1, 0.0 |
+| resynced: section layout-checks | 2.6 | 2.5-2.6 | 2.6, 2.5, 2.6 |
+| resynced: section level-hud | 1.3 | 1.3-1.5 | 1.3, 1.3, 1.5 |
+| resynced: section model-parse | 30.8 | 28.7-31.5 | 28.7, 30.8, 31.5 |
+| resynced: section object-catalog | 1.2 | 1.2-3.0 | 3.0, 1.2, 1.2 |
+| resynced: section object-coaster | 1.8 | 1.7-2.5 | 1.7, 2.5, 1.8 |
+| resynced: section object-hoarding | 0.3 | 0.3-0.3 | 0.3, 0.3, 0.3 |
+| resynced: section object-materials | 3.5 | 3.4-3.8 | 3.4, 3.5, 3.8 |
+| resynced: section object-models | 7.6 | 7.5-10.3 | 7.5, 7.6, 10.3 |
+| resynced: section object-parts | 1.1 | 1.1-2.0 | 1.1, 1.1, 2.0 |
+| resynced: section object-runtime | 3.3 | 2.8-3.7 | 2.8, 3.7, 3.3 |
+| resynced: section object-script | 0.3 | 0.3-0.3 | 0.3, 0.3, 0.3 |
+| resynced: section object-sign | 0.0 | 0.0-0.0 | 0.0, 0.0, 0.0 |
+| resynced: section object-textures | 2.8 | 2.8-4.4 | 2.8, 2.8, 4.4 |
+| resynced: section objects | 15.7 | 15.3-19.0 | 15.3, 15.7, 19.0 |
+| resynced: section original-park | 16.4 | 16.4-17.6 | 17.6, 16.4, 16.4 |
+| resynced: section paths | 0.4 | 0.4-0.5 | 0.4, 0.4, 0.5 |
+| resynced: section pipeline | 2.7 | 2.7-3.1 | 2.7, 2.7, 3.1 |
+| resynced: section resume | 3.1 | 2.9-3.4 | 3.1, 2.9, 3.4 |
+| resynced: section ride-opcodes | 0.0 | 0.0-0.0 | 0.0, 0.0, 0.0 |
+| resynced: section save-json | 22.1 | 16.9-22.2 | 22.1, 22.2, 16.9 |
+| resynced: section save-mods | 0.0 | 0.0-0.0 | 0.0, 0.0, 0.0 |
+| resynced: section save-shape | 3.9 | 3.4-4.0 | 3.9, 4.0, 3.4 |
+| resynced: section staff-gate-economy | 30.2 | 29.3-31.2 | 30.2, 29.3, 31.2 |
+| resynced: section staff-sprites | 8.3 | 7.7-9.1 | 9.1, 7.7, 8.3 |
+| resynced: section terrain | 15.4 | 13.6-16.2 | 13.6, 15.4, 16.2 |
+| resynced: section texture-create | 7.1 | 7.0-7.3 | 7.1, 7.0, 7.3 |
+| resynced: section texture-lookup | 5.6 | 5.0-8.8 | 5.6, 5.0, 8.8 |
+| resynced: section type-hoarding | 0.6 | 0.6-0.7 | 0.6, 0.6, 0.7 |
+| resynced: section type-model | 0.1 | 0.1-0.1 | 0.1, 0.1, 0.1 |
+| resynced: section type-texture | 2.3 | 1.7-2.6 | 2.3, 1.7, 2.6 |
+| resynced: section wad-index | 0.1 | 0.1-0.1 | 0.1, 0.1, 0.1 |
+| resynced: section wad-read | 0.0 | 0.0-0.0 | 0.0, 0.0, 0.0 |
+| resynced: longest update frame while building | 35.3 | 34.2-37.2 | 34.2, 35.3, 37.2 |
+| resynced: the swap's update frame | 35.3 | 27.6-37.2 | 27.6, 35.3, 37.2 |
+| resynced: first update frame after the swap | 3.5 | 3.4-3.7 | 3.4, 3.5, 3.7 |
+| joined: the swap's frame, mark advisor.play | 2.7 | 2.7-3.9 | 2.7, 2.7, 3.9 |
+| joined: the swap's frame, mark coop.install | 10.0 | 5.1-10.6 | 5.1, 10.0, 10.6 |
+| joined: the swap's frame, mark coop.ready | 3.7 | 3.6-3.7 | 3.6, 3.7, 3.7 |
+| joined: the swap's frame, mark coop.session | 16.2 | 10.4-16.7 | 10.4, 16.2, 16.7 |
+| joined: the swap's frame, mark level.entities | 16.5 | 16.2-16.6 | 16.2, 16.5, 16.6 |
+| joined: the swap's frame, mark level.evening | 1.1 | 1.1-1.1 | 1.1, 1.1, 1.1 |
+| joined: the swap's frame, mark level.pools | 18.9 | 16.3-19.9 | 16.3, 19.9, 18.9 |
+| joined: the swap's frame, mark level.simulation | 4.0 | 3.9-4.0 | 3.9, 4.0, 4.0 |
+| joined: the swap's frame, mark load:shader-spirv | 2.2 | 2.1-2.2 | 2.2, 2.2, 2.1 |
+| joined: the swap's frame, mark load:texture-create | 10.7 | 8.2-11.4 | 8.2, 11.4, 10.7 |
+| joined: the swap's frame, mark park.advisor | 5.4 | 5.2-6.5 | 5.2, 5.4, 6.5 |
+| joined: the swap's frame, mark park.audio | 1.3 | 1.2-2.2 | 1.3, 1.2, 2.2 |
+| joined: the swap's frame, mark park.hud | 11.9 | 11.8-12.5 | 12.5, 11.8, 11.9 |
+| joined: the swap's frame, mark park.level | 41.6 | 38.6-42.6 | 38.6, 42.6, 41.6 |
+| joined: the swap's frame, mark pools.effects | 1.2 | 1.2-1.3 | 1.2, 1.3, 1.2 |
+| joined: the swap's frame, mark pools.slides | 1.4 | 1.4-1.5 | 1.4, 1.5, 1.4 |
+| joined: the swap's frame, mark pools.swimmers | 10.9 | 8.3-11.5 | 8.3, 11.5, 10.9 |
+| joined: the swap's frame, mark pools.water | 5.2 | 5.2-5.4 | 5.2, 5.4, 5.2 |
+| joined: the swap's frame, mark update:CoasterRenderer | 2.0 | 2.0-2.0 | 2.0, 2.0, 2.0 |
+| joined: the swap's frame, mark update:ParticleRenderer | 1.0 | 1.0-1.0 | 1.0, 1.0, 1.0 |
+| joined: the swap's frame, mark update:PoolRenderer | 10.0 | 9.8-10.0 | 9.8, 10.0, 10.0 |
+| joined: the swap's frame, mark update:PoolSlideRenderer | 2.4 | 2.4-2.4 | 2.4, 2.4, 2.4 |
+| joined: the frame after the swap, mark audio.decodeSync | 1.7 | 1.5-4.5 | 1.5, 1.7, 4.5 |
+| joined: the frame after the swap, mark coop.ticks | 49.3 | 47.9-50.7 | 49.3, 47.9, 50.7 |
+| joined: the frame after the swap, mark level.entities | 1.8 | 1.7-1.8 | 1.8, 1.8, 1.7 |
+| joined: the frame after the swap, mark level.simulation | 49.4 | 47.9-50.8 | 49.4, 47.9, 50.8 |
+| joined: the frame after the swap, mark load:model-parse | 1.0 | 0.3-1.1 | 1.0, 1.1, 0.3 |
+| joined: the frame after the swap, mark load:object-models | 8.8 | 8.2-9.6 | 9.6, 8.8, 8.2 |
+| joined: the frame after the swap, mark load:object-parts | 0.3 | 0.2-1.1 | 0.2, 1.1, 0.3 |
+| joined: the frame after the swap, mark load:object-runtime | 0.3 | 0.3-1.0 | 1.0, 0.3, 0.3 |
+| joined: the frame after the swap, mark load:object-textures | 6.9 | 6.8-8.4 | 8.4, 6.8, 6.9 |
+| joined: the frame after the swap, mark load:place-cue | 2.1 | 1.9-4.9 | 1.9, 2.1, 4.9 |
+| joined: the frame after the swap, mark load:place-object | 11.2 | 10.7-12.8 | 12.8, 11.2, 10.7 |
+| joined: the frame after the swap, mark load:texture-create | 1.2 | 1.1-1.3 | 1.3, 1.1, 1.2 |
+| joined: the frame after the swap, mark load:texture-decode | 4.9 | 4.8-6.2 | 6.2, 4.9, 4.8 |
+| joined: the frame after the swap, mark park.advisor | 1.1 | 1.1-1.1 | 1.1, 1.1, 1.1 |
+| joined: the frame after the swap, mark park.audio | 1.3 | 0.2-1.4 | 1.3, 1.4, 0.2 |
+| joined: the frame after the swap, mark park.hud | 2.1 | 2.1-2.2 | 2.1, 2.2, 2.1 |
+| joined: the frame after the swap, mark park.level | 51.1 | 49.7-52.5 | 51.1, 49.7, 52.5 |
+| joined: the frame after the swap, mark sim.commands | 25.7 | 24.4-26.6 | 25.7, 24.4, 26.6 |
+| joined: the frame after the swap, mark sim.guests | 2.3 | 2.3-2.3 | 2.3, 2.3, 2.3 |
+| joined: the frame after the swap, mark sim.objects | 4.9 | 4.7-5.1 | 4.9, 4.7, 5.1 |
+| joined: the frame after the swap, mark sim.sweptTurn | 12.7 | 12.5-12.9 | 12.5, 12.7, 12.9 |
+| resynced: the swap's frame, mark audio.decodeSync | 2.2 | 2.0-3.0 | 2.0, 3.0, 2.2 |
+| resynced: the swap's frame, mark coop.install | 6.5 | 6.5-12.2 | 6.5, 6.5, 12.2 |
+| resynced: the swap's frame, mark coop.ready | 8.6 | 8.1-12.3 | 8.1, 12.3, 8.6 |
+| resynced: the swap's frame, mark coop.session | 7.1 | 7.0-13.6 | 7.1, 7.0, 13.6 |
+| resynced: the swap's frame, mark level.pools | 14.0 | 11.5-15.0 | 11.5, 15.0, 14.0 |
+| resynced: the swap's frame, mark level.simulation | 8.6 | 8.1-12.3 | 8.1, 12.3, 8.6 |
+| resynced: the swap's frame, mark load:texture-create | 10.8 | 8.4-11.9 | 8.4, 11.9, 10.8 |
+| resynced: the swap's frame, mark park.level | 23.3 | 20.3-28.0 | 20.3, 28.0, 23.3 |
+| resynced: the swap's frame, mark pools.slides | 1.1 | 1.1-1.1 | 1.1, 1.1, 1.1 |
+| resynced: the swap's frame, mark pools.swimmers | 10.7 | 8.3-11.8 | 8.3, 11.8, 10.7 |
+| resynced: the swap's frame, mark pools.water | 2.0 | 2.0-2.0 | 2.0, 2.0, 2.0 |
+| resynced: the frame after the swap, mark coop.ticks | 2.5 | 2.3-2.5 | 2.3, 2.5, 2.5 |
+| resynced: the frame after the swap, mark level.simulation | 2.5 | 2.3-2.5 | 2.3, 2.5, 2.5 |
+| resynced: the frame after the swap, mark park.level | 3.0 | 2.8-3.1 | 2.8, 3.0, 3.1 |
+| resynced: the frame after the swap, mark sim.rendering | 2.0 | 1.9-2.0 | 1.9, 2.0, 2.0 |
+| joined: long frame, save 1 | 86.4 | 79.9-90.9 | 79.9, 90.9, 86.4 |
+| joined: long frame, save 1, mark coop.session | 86.3 | 79.8-90.7 | 79.8, 90.7, 86.3 |
+| joined: long frame, save 1, mark load:save-json | 43.2 | 42.8-45.8 | 42.8, 45.8, 43.2 |
+| joined: long frame, save 1, mark load:save-shape | 36.8 | 35.3-36.9 | 35.3, 36.9, 36.8 |
+| joined: long frame, level 853 | 37.2 | 34.6-54.6 | 34.6, 54.6, 37.2 |
+| joined: long frame, level 853, mark audio.decodeSync (1 of 3 runs) | 12.2 | 12.2-12.2 | -, 12.2, - |
+| joined: long frame, level 853, mark coop.session | 37.1 | 34.5-42.3 | 34.5, 42.3, 37.1 |
+| joined: long frame, level 853, mark load:object-models | 33.2 | 30.8-39.1 | 30.8, 39.1, 33.2 |
+| joined: long frame, level 853, mark load:object-runtime | 2.9 | 2.9-3.6 | 2.9, 2.9, 3.6 |
+| joined: long frame, level 853, mark load:object-sign | 29.9 | 27.4-34.7 | 27.4, 34.7, 29.9 |
+| joined: long frame, level 862 | 34.1 | 33.4-36.4 | 33.4, 34.1, 36.4 |
+| joined: long frame, level 862, mark coop.session | 34.0 | 33.3-36.3 | 33.3, 34.0, 36.3 |
+| joined: long frame, level 872 | 48.5 | 48.4-52.2 | 48.4, 52.2, 48.5 |
+| joined: long frame, level 872, mark coop.session | 48.3 | 48.3-52.0 | 48.3, 52.0, 48.3 |
+| joined: long frame, level 872, mark load:guests | 110 | 107-111 | 107, 110, 111 |
+| joined: long frame, level 872, mark load:paths | 3.6 | 3.6-4.0 | 3.6, 4.0, 3.6 |
+| joined: long frame, level 872, mark load:texture-decode | 5.2 | 5.1-5.3 | 5.1, 5.3, 5.2 |
+| joined: long frame, hud 1 | 71.1 | 70.8-73.1 | 70.8, 73.1, 71.1 |
+| joined: long frame, hud 1, mark coop.session | 71.0 | 70.6-72.9 | 70.6, 72.9, 71.0 |
+| joined: long frame, hud 1, mark load:entities | 535 | 525-537 | 525, 537, 535 |
+| joined: long frame, hud 1, mark load:level-hud | 5.6 | 5.5-5.6 | 5.5, 5.6, 5.6 |
+| joined: long frame, hud 1, mark load:resume | 52.6 | 52.4-54.0 | 52.4, 54.0, 52.6 |
+| joined: long frame, hud 1, mark load:shader-spirv | 3.0 | 3.0-3.1 | 3.0, 3.0, 3.1 |
+| joined: long frame, hud 1, mark load:staff-gate-economy | 42.9 | 41.6-44.2 | 41.6, 44.2, 42.9 |
+| joined: long frame, prepare 1 | 36.1 | 35.0-37.0 | 36.1, 37.0, 35.0 |
+| joined: long frame, prepare 1, mark coop.session | 36.0 | 34.8-36.8 | 36.0, 36.8, 34.8 |
+| joined: long frame, prepare 5 | 53.3 | 52.3-53.4 | 52.3, 53.4, 53.3 |
+| joined: long frame, prepare 5, mark coop.session | 53.2 | 52.2-53.3 | 52.2, 53.3, 53.2 |
+| joined: long frame, prepare 5, mark load:shader-spirv | 51.5 | 50.5-51.6 | 50.5, 51.6, 51.5 |
+| joined: long frame, prepare 20 (1 of 3 runs) | 53.1 | 53.1-53.1 | -, -, 53.1 |
+| joined: long frame, prepare 20, mark coop.check (1 of 3 runs) | 41.0 | 41.0-41.0 | -, -, 41.0 |
+| joined: long frame, prepare 20, mark coop.session (1 of 3 runs) | 53.0 | 53.0-53.0 | -, -, 53.0 |
+| joined: long frame, prepare 34 (2 of 3 runs) | 47.6 | 44.9-50.2 | 44.9, 50.2, - |
+| joined: long frame, prepare 34, mark coop.check (2 of 3 runs) | 39.5 | 39.4-39.7 | 39.4, 39.7, - |
+| joined: long frame, prepare 34, mark coop.session (2 of 3 runs) | 47.5 | 44.8-50.1 | 44.8, 50.1, - |
+| resynced: long frame, save 1 (2 of 3 runs) | 30.2 | 30.1-30.3 | 30.3, 30.1, - |
+| resynced: long frame, save 1, mark coop.session (2 of 3 runs) | 27.1 | 27.0-27.3 | 27.0, 27.3, - |
+| resynced: long frame, save 1, mark load:save-json (2 of 3 runs) | 22.1 | 22.1-22.2 | 22.1, 22.2, - |
+| resynced: long frame, save 1, mark load:save-shape (2 of 3 runs) | 3.9 | 3.9-4.0 | 3.9, 4.0, - |
+| resynced: long frame, level 911 (2 of 3 runs) | 34.7 | 34.2-35.3 | 34.2, 35.3, - |
+| resynced: long frame, level 911, mark coop.session (2 of 3 runs) | 34.6 | 34.1-35.1 | 34.1, 35.1, - |
+| resynced: long frame, level 911, mark load:guest-sprites (2 of 3 runs) | 3.4 | 3.4-3.4 | 3.4, 3.4, - |
+
+### After: compiled ahead of time
+
+3 runs; host phase (one host phase, reused by every run): Release build 1.0.0+2615b32c0a2f8517199e863cfc35ac93da64943f, .NET 11.0.0-rc.2.26504.105, macOS 26.6.0 Arm64, 10 processors, silent True, advisor True, compiled jit; join phase: Release build 1.0.0+2615b32c0a2f8517199e863cfc35ac93da64943f, .NET 11.0.0-rc.2.26504.105, Browser Wasm, 1 processors, silent False, advisor True, compiled aot
+page: Chrome/155.0.8059.85, ANGLE (Apple, ANGLE Metal Renderer: Apple M5, Unspecified Version), 1280x900, muted True, frame cap 0, pool sprites settled
+
+    Darwin 25.6.0 arm64
+    processor Apple M5, 10 cores, model Mac17,2, memory 34359738368 bytes
+    source 2615b32c0a2f8517199e863cfc35ac93da64943f, clean (the driver's checkout)
+
+| Value | Median | Range | Runs |
+|---|---|---|---|
+| capture 1: cut | 10.1 | 10.1-10.1 | 10.1 |
+| capture 1: publish | 0.1 | 0.1-0.1 | 0.1 |
+| capture 1: digest | 4.0 | 4.0-4.0 | 4.0 |
+| capture 1: state | 1.1 | 1.1-1.1 | 1.1 |
+| capture 1: snapshot | 4.8 | 4.8-4.8 | 4.8 |
+| capture 1: serializer setup | 0.0 | 0.0-0.0 | 0.0 |
+| capture 1: save | 69.8 | 69.8-69.8 | 69.8 |
+| capture 1: save, longest slice | 35.8 | 35.8-35.8 | 35.8 |
+| capture 1: save, slices | 12 | 12-12 | 12 |
+| capture 1: save copy | 0.1 | 0.1-0.1 | 0.1 |
+| capture 1: writer setup | 1.4 | 1.4-1.4 | 1.4 |
+| capture 1: compression | 1.6 | 1.6-1.6 | 1.6 |
+| capture 1: compression, slices | 1 | 1-1 | 1 |
+| capture 1: finish | 0.1 | 0.1-0.1 | 0.1 |
+| capture 1: longest frame | 36.2 | 36.2-36.2 | 36.2 |
+| capture 1: frames | 14 | 14-14 | 14 |
+| capture 1: upload s | 0.015 | 0.015-0.015 | 0.015 |
+| capture 1: payload KiB | 128 | 128-128 | 128 |
+| capture 1: body KiB | 981 | 981-981 | 981 |
+| capture 1: save KiB | 980 | 980-980 | 980 |
+| capture 2: cut | 7.1 | 7.1-7.1 | 7.1 |
+| capture 2: publish | 0.0 | 0.0-0.0 | 0.0 |
+| capture 2: digest | 3.8 | 3.8-3.8 | 3.8 |
+| capture 2: state | 0.2 | 0.2-0.2 | 0.2 |
+| capture 2: snapshot | 3.1 | 3.1-3.1 | 3.1 |
+| capture 2: serializer setup | 0.0 | 0.0-0.0 | 0.0 |
+| capture 2: save | 10.1 | 10.1-10.1 | 10.1 |
+| capture 2: save, longest slice | 4.9 | 4.9-4.9 | 4.9 |
+| capture 2: save, slices | 4 | 4-4 | 4 |
+| capture 2: save copy | 0.2 | 0.2-0.2 | 0.2 |
+| capture 2: writer setup | 0.2 | 0.2-0.2 | 0.2 |
+| capture 2: compression | 1.6 | 1.6-1.6 | 1.6 |
+| capture 2: compression, slices | 1 | 1-1 | 1 |
+| capture 2: finish | 0.1 | 0.1-0.1 | 0.1 |
+| capture 2: longest frame | 7.1 | 7.1-7.1 | 7.1 |
+| capture 2: frames | 6 | 6-6 | 6 |
+| capture 2: upload s | 0.015 | 0.015-0.015 | 0.015 |
+| capture 2: payload KiB | 149 | 149-149 | 149 |
+| capture 2: body KiB | 1107 | 1107-1107 | 1107 |
+| capture 2: save KiB | 1107 | 1107-1107 | 1107 |
+| joined: process's build | 1 | 1-1 | 1, 1, 1 |
+| joined: download attempts | 1 | 1-1 | 1, 1, 1 |
+| joined: download s | 0.013 | 0.012-0.013 | 0.013, 0.013, 0.012 |
+| joined: last attempt s | 0.013 | 0.012-0.013 | 0.013, 0.013, 0.012 |
+| joined: payload KiB | 128 | 128-128 | 128, 128, 128 |
+| joined: decode | 15.5 | 12.8-16.6 | 12.8, 16.6, 15.5 |
+| joined: check | 70.9 | 70.4-70.9 | 70.9, 70.4, 70.9 |
+| joined: swap | 9.1 | 9.1-9.2 | 9.1, 9.1, 9.2 |
+| joined: build frames | 96 | 93-97 | 97, 96, 93 |
+| joined: longest build frame | 86.3 | 85.8-87.8 | 87.8, 86.3, 85.8 |
+| joined: catch-up ticks | 63 | 62-64 | 62, 64, 63 |
+| joined: catch-up frames | 3 | 3-3 | 3, 3, 3 |
+| joined: catch-up s | 0.162 | 0.154-0.176 | 0.176, 0.162, 0.154 |
+| joined: codec | 288 | 281-289 | 288, 281, 289 |
+| joined: codec, longest step | 18.0 | 17.8-18.1 | 18.0, 17.8, 18.1 |
+| joined: codec, steps | 230 | 230-230 | 230, 230, 230 |
+| joined: codec, frames | 21 | 20-21 | 21, 21, 20 |
+| joined: save | 86.2 | 85.8-87.8 | 87.8, 86.2, 85.8 |
+| joined: save, longest step | 86.2 | 85.8-87.8 | 87.8, 86.2, 85.8 |
+| joined: save, steps | 1 | 1-1 | 1, 1, 1 |
+| joined: save, frames | 1 | 1-1 | 1, 1, 1 |
+| joined: files | 0.4 | 0.3-0.5 | 0.5, 0.4, 0.3 |
+| joined: files, longest step | 0.3 | 0.3-0.4 | 0.4, 0.3, 0.3 |
+| joined: files, steps | 10 | 9-10 | 10, 10, 9 |
+| joined: files, frames | 10 | 9-10 | 10, 10, 9 |
+| joined: catalogue | 78.9 | 78.0-79.3 | 79.3, 78.0, 78.9 |
+| joined: catalogue, longest step | 17.0 | 17.0-17.1 | 17.0, 17.1, 17.0 |
+| joined: catalogue, steps | 90 | 90-90 | 90, 90, 90 |
+| joined: catalogue, frames | 5 | 5-5 | 5, 5, 5 |
+| joined: manifest | 54.4 | 54.4-54.5 | 54.4, 54.4, 54.5 |
+| joined: manifest, longest step | 6.7 | 6.7-6.8 | 6.8, 6.7, 6.7 |
+| joined: manifest, steps | 92 | 92-92 | 92, 92, 92 |
+| joined: manifest, frames | 5 | 5-5 | 5, 5, 5 |
+| joined: validation | 23.5 | 23.4-23.7 | 23.7, 23.5, 23.4 |
+| joined: validation, longest step | 6.7 | 6.7-6.8 | 6.7, 6.8, 6.7 |
+| joined: validation, steps | 17 | 17-17 | 17, 17, 17 |
+| joined: validation, frames | 2 | 2-2 | 2, 2, 2 |
+| joined: economy | 18.6 | 18.2-19.0 | 18.6, 18.2, 19.0 |
+| joined: economy, longest step | 18.6 | 18.2-19.0 | 18.6, 18.2, 19.0 |
+| joined: economy, steps | 1 | 1-1 | 1, 1, 1 |
+| joined: economy, frames | 1 | 1-1 | 1, 1, 1 |
+| joined: level | 620 | 619-635 | 635, 620, 619 |
+| joined: level, longest step | 64.2 | 61.7-66.6 | 66.6, 61.7, 64.2 |
+| joined: level, steps | 936 | 936-936 | 936, 936, 936 |
+| joined: level, frames | 41 | 40-42 | 42, 41, 40 |
+| joined: hud | 7.9 | 7.8-8.2 | 7.8, 7.9, 8.2 |
+| joined: hud, longest step | 7.9 | 7.8-8.2 | 7.8, 7.9, 8.2 |
+| joined: hud, steps | 1 | 1-1 | 1, 1, 1 |
+| joined: hud, frames | 1 | 1-1 | 1, 1, 1 |
+| joined: advisor | 24.9 | 24.9-25.2 | 24.9, 25.2, 24.9 |
+| joined: advisor, longest step | 16.0 | 15.9-16.1 | 16.0, 15.9, 16.1 |
+| joined: advisor, steps | 5 | 5-5 | 5, 5, 5 |
+| joined: advisor, frames | 1 | 1-1 | 1, 1, 1 |
+| joined: prepare | 184 | 184-189 | 189, 184, 184 |
+| joined: prepare, longest step | 37.1 | 36.7-40.3 | 40.3, 36.7, 37.1 |
+| joined: prepare, steps | 32 | 32-32 | 32, 32, 32 |
+| joined: prepare, frames | 14 | 14-14 | 14, 14, 14 |
+| joined: long step, codec 84 | 12.5 | 12.2-12.8 | 12.8, 12.2, 12.5 |
+| joined: long step, codec 114 | 18.0 | 17.8-18.1 | 18.0, 17.8, 18.1 |
+| joined: long step, codec 229 | 14.6 | 14.4-15.0 | 15.0, 14.6, 14.4 |
+| joined: long step, save 1 | 86.2 | 85.8-87.8 | 87.8, 86.2, 85.8 |
+| joined: long step, catalogue 1 | 14.0 | 13.5-14.2 | 14.2, 13.5, 14.0 |
+| joined: long step, catalogue 90 | 17.0 | 17.0-17.1 | 17.0, 17.1, 17.0 |
+| joined: long step, economy 1 | 18.6 | 18.2-19.0 | 18.6, 18.2, 19.0 |
+| joined: long step, level 82 (to 0.3) | 12.2 | 12.1-12.5 | 12.1, 12.5, 12.2 |
+| joined: long step, level 581 (to 0.505) | 13.5 | 13.4-13.5 | 13.5, 13.5, 13.4 |
+| joined: long step, level 889 (to 0.549) (2 of 3 runs) | 12.1 | 12.0-12.1 | 12.0, 12.1, - |
+| joined: long step, level 901 (to 0.654) | 20.5 | 20.4-20.7 | 20.7, 20.4, 20.5 |
+| joined: long step, level 915 (to 0.85) | 12.6 | 12.4-12.8 | 12.6, 12.8, 12.4 |
+| joined: long step, level 920 (to 0.85) | 12.6 | 12.5-12.7 | 12.7, 12.6, 12.5 |
+| joined: long step, level 928 (to 0.95) | 27.3 | 26.9-27.4 | 27.4, 27.3, 26.9 |
+| joined: long step, level 932 (to 0.95) (1 of 3 runs) | 13.4 | 13.4-13.4 | 13.4, -, - |
+| joined: long step, level 934 (to 0.95) | 13.3 | 13.2-13.4 | 13.3, 13.4, 13.2 |
+| joined: long step, level 935 (to 0.95) | 17.6 | 17.1-19.6 | 19.6, 17.6, 17.1 |
+| joined: long step, level 936 (to 1) | 64.2 | 61.7-66.6 | 66.6, 61.7, 64.2 |
+| joined: long step, advisor 5 | 16.0 | 15.9-16.1 | 16.0, 15.9, 16.1 |
+| joined: long step, prepare 2 | 13.0 | 12.9-13.2 | 13.2, 13.0, 12.9 |
+| joined: long step, prepare 3 | 37.1 | 36.7-40.3 | 40.3, 36.7, 37.1 |
+| joined: long step, prepare 4 | 19.2 | 19.1-19.5 | 19.5, 19.2, 19.1 |
+| joined: long step, prepare 15 | 13.4 | 13.2-13.6 | 13.6, 13.4, 13.2 |
+| joined: section cell-checks | 12.4 | 12.1-12.5 | 12.4, 12.5, 12.1 |
+| joined: section coasters | 4.3 | 4.1-4.4 | 4.4, 4.1, 4.3 |
+| joined: section economy | 0.1 | 0.0-0.2 | 0.1, 0.0, 0.2 |
+| joined: section entities | 555 | 550-566 | 566, 555, 550 |
+| joined: section guest-sprites | 12.6 | 12.4-12.8 | 12.6, 12.8, 12.4 |
+| joined: section guests | 67.1 | 66.6-69.8 | 69.8, 67.1, 66.6 |
+| joined: section image-decode | 0.7 | 0.6-0.7 | 0.7, 0.7, 0.6 |
+| joined: section join-state | 3.7 | 3.6-3.7 | 3.6, 3.7, 3.7 |
+| joined: section layout-checks | 11.6 | 11.6-11.8 | 11.6, 11.6, 11.8 |
+| joined: section level-hud | 5.3 | 4.9-7.8 | 7.8, 4.9, 5.3 |
+| joined: section model-parse | 10.5 | 10.2-10.8 | 10.2, 10.8, 10.5 |
+| joined: section object-catalog | 2.3 | 2.2-2.4 | 2.2, 2.3, 2.4 |
+| joined: section object-coaster | 16.8 | 16.8-17.1 | 17.1, 16.8, 16.8 |
+| joined: section object-hoarding | 0.7 | 0.5-0.9 | 0.9, 0.7, 0.5 |
+| joined: section object-materials | 2.8 | 2.2-3.5 | 2.2, 2.8, 3.5 |
+| joined: section object-models | 24.9 | 24.3-25.1 | 24.3, 25.1, 24.9 |
+| joined: section object-parts | 9.8 | 9.2-10.2 | 9.2, 10.2, 9.8 |
+| joined: section object-runtime | 23.7 | 23.3-24.4 | 24.4, 23.3, 23.7 |
+| joined: section object-script | 2.7 | 2.7-2.8 | 2.8, 2.7, 2.7 |
+| joined: section object-sign | 0.2 | 0.1-0.3 | 0.3, 0.2, 0.1 |
+| joined: section object-textures | 9.7 | 9.2-10.5 | 10.5, 9.7, 9.2 |
+| joined: section objects | 275 | 273-275 | 275, 275, 273 |
+| joined: section original-park | 8.7 | 8.6-8.8 | 8.6, 8.7, 8.8 |
+| joined: section paths | 3.2 | 3.1-3.2 | 3.2, 3.2, 3.1 |
+| joined: section pipeline | 13.8 | 13.2-20.4 | 20.4, 13.8, 13.2 |
+| joined: section resume | 54.8 | 52.6-54.8 | 54.8, 52.6, 54.8 |
+| joined: section ride-opcodes | 36.4 | 36.4-37.0 | 37.0, 36.4, 36.4 |
+| joined: section save-json | 59.8 | 59.8-61.3 | 61.3, 59.8, 59.8 |
+| joined: section save-mods | 0.9 | 0.8-0.9 | 0.8, 0.9, 0.9 |
+| joined: section save-shape | 25.0 | 24.8-25.2 | 25.2, 25.0, 24.8 |
+| joined: section sign-ahead | 141 | 140-141 | 141, 141, 140 |
+| joined: section staff-gate-economy | 51.4 | 50.5-58.5 | 58.5, 51.4, 50.5 |
+| joined: section staff-sprites | 13.3 | 13.2-13.4 | 13.3, 13.4, 13.2 |
+| joined: section terrain | 52.2 | 51.8-52.7 | 52.2, 52.7, 51.8 |
+| joined: section texture-create | 23.3 | 22.6-25.5 | 25.5, 23.3, 22.6 |
+| joined: section texture-decode | 71.8 | 71.5-72.9 | 71.8, 71.5, 72.9 |
+| joined: section texture-lookup | 23.5 | 22.4-24.3 | 24.3, 23.5, 22.4 |
+| joined: section type-hoarding | 15.2 | 15.1-15.3 | 15.2, 15.3, 15.1 |
+| joined: section type-model | 3.2 | 3.1-3.3 | 3.2, 3.3, 3.1 |
+| joined: section type-texture | 46.2 | 46.1-46.5 | 46.2, 46.5, 46.1 |
+| joined: section wad-decompress | 25.1 | 21.9-27.7 | 21.9, 27.7, 25.1 |
+| joined: section wad-index | 5.6 | 5.4-6.0 | 6.0, 5.6, 5.4 |
+| joined: section wad-read | 12.9 | 11.1-14.0 | 12.9, 14.0, 11.1 |
+| joined: longest update frame while building | 89.8 | 89.2-91.5 | 91.5, 89.8, 89.2 |
+| joined: the swap's update frame | 64.8 | 61.8-70.9 | 70.9, 64.8, 61.8 |
+| joined: first update frame after the swap | 40.0 | 38.9-40.1 | 40.0, 40.1, 38.9 |
+| joined: longest whole frame while building | 93.4 | 89.7-108 | 108, 93.4, 89.7 |
+| joined: the swap's whole frame | 93.4 | 88.1-108 | 108, 93.4, 88.1 |
+| joined: first whole frame after the swap | 42.1 | 40.9-42.2 | 42.1, 42.2, 40.9 |
+| resynced: process's build | 2 | 2-2 | 2, 2, 2 |
+| resynced: download attempts | 1 | 1-1 | 1, 1, 1 |
+| resynced: download s | 0.017 | 0.016-0.017 | 0.017, 0.016, 0.017 |
+| resynced: last attempt s | 0.017 | 0.016-0.017 | 0.017, 0.016, 0.017 |
+| resynced: payload KiB | 149 | 149-149 | 149, 149, 149 |
+| resynced: decode | 3.0 | 2.3-3.1 | 3.0, 2.3, 3.1 |
+| resynced: check | 8.0 | 7.7-8.1 | 8.1, 8.0, 7.7 |
+| resynced: swap | 10.6 | 10.0-11.0 | 11.0, 10.6, 10.0 |
+| resynced: build frames | 29 | 29-29 | 29, 29, 29 |
+| resynced: longest build frame | 51.8 | 47.2-58.7 | 47.2, 51.8, 58.7 |
+| resynced: catch-up ticks | 15 | 15-16 | 15, 15, 16 |
+| resynced: catch-up frames | 2 | 2-2 | 2, 2, 2 |
+| resynced: catch-up s | 0.053 | 0.051-0.067 | 0.051, 0.053, 0.067 |
+| resynced: codec | 2.8 | 1.8-3.2 | 2.8, 1.8, 3.2 |
+| resynced: codec, longest step | 0.2 | 0.2-0.3 | 0.2, 0.3, 0.2 |
+| resynced: codec, steps | 230 | 230-230 | 230, 230, 230 |
+| resynced: codec, frames | 1 | 1-1 | 1, 1, 1 |
+| resynced: save | 50.0 | 44.1-55.3 | 44.1, 50.0, 55.3 |
+| resynced: save, longest step | 50.0 | 44.1-55.3 | 44.1, 50.0, 55.3 |
+| resynced: save, steps | 1 | 1-1 | 1, 1, 1 |
+| resynced: save, frames | 1 | 1-1 | 1, 1, 1 |
+| resynced: files | 0.0 | 0.0-0.0 | 0.0, 0.0, 0.0 |
+| resynced: files, longest step | 0.0 | 0.0-0.0 | 0.0, 0.0, 0.0 |
+| resynced: files, steps | 1 | 1-1 | 1, 1, 1 |
+| resynced: files, frames | 1 | 1-1 | 1, 1, 1 |
+| resynced: catalogue | 10.3 | 10.1-10.4 | 10.1, 10.4, 10.3 |
+| resynced: catalogue, longest step | 10.3 | 10.0-10.4 | 10.0, 10.4, 10.3 |
+| resynced: catalogue, steps | 2 | 2-2 | 2, 2, 2 |
+| resynced: catalogue, frames | 1 | 1-1 | 1, 1, 1 |
+| resynced: manifest (cached) | 0.0 | 0.0-0.0 | 0.0, 0.0, 0.0 |
+| resynced: manifest (cached), longest step | 0.0 | 0.0-0.0 | 0.0, 0.0, 0.0 |
+| resynced: manifest (cached), steps | 1 | 1-1 | 1, 1, 1 |
+| resynced: manifest (cached), frames | 1 | 1-1 | 1, 1, 1 |
+| resynced: validation | 8.9 | 8.3-9.0 | 8.3, 9.0, 8.9 |
+| resynced: validation, longest step | 2.1 | 1.9-2.2 | 2.1, 2.2, 1.9 |
+| resynced: validation, steps | 17 | 17-17 | 17, 17, 17 |
+| resynced: validation, frames | 2 | 2-2 | 2, 2, 2 |
+| resynced: economy | 2.7 | 2.6-3.4 | 2.7, 3.4, 2.6 |
+| resynced: economy, longest step | 2.7 | 2.6-3.4 | 2.7, 3.4, 2.6 |
+| resynced: economy, steps | 1 | 1-1 | 1, 1, 1 |
+| resynced: economy, frames | 1 | 1-1 | 1, 1, 1 |
+| resynced: level | 184 | 179-184 | 184, 184, 179 |
+| resynced: level, longest step | 15.5 | 13.3-16.7 | 13.3, 15.5, 16.7 |
+| resynced: level, steps | 929 | 929-929 | 929, 929, 929 |
+| resynced: level, frames | 18 | 18-18 | 18, 18, 18 |
+| resynced: hud | 0.7 | 0.5-0.8 | 0.7, 0.8, 0.5 |
+| resynced: hud, longest step | 0.7 | 0.5-0.8 | 0.7, 0.8, 0.5 |
+| resynced: hud, steps | 1 | 1-1 | 1, 1, 1 |
+| resynced: hud, frames | 1 | 1-1 | 1, 1, 1 |
+| resynced: advisor | 4.7 | 4.7-4.9 | 4.7, 4.9, 4.7 |
+| resynced: advisor, longest step | 4.7 | 4.7-4.9 | 4.7, 4.9, 4.7 |
+| resynced: advisor, steps | 5 | 5-5 | 5, 5, 5 |
+| resynced: advisor, frames | 1 | 1-1 | 1, 1, 1 |
+| resynced: prepare | 129 | 127-131 | 131, 129, 127 |
+| resynced: prepare, longest step | 25.1 | 25.1-25.9 | 25.9, 25.1, 25.1 |
+| resynced: prepare, steps | 32 | 32-32 | 32, 32, 32 |
+| resynced: prepare, frames | 10 | 10-10 | 10, 10, 10 |
+| resynced: long step, save 1 | 50.0 | 44.1-55.3 | 44.1, 50.0, 55.3 |
+| resynced: long step, level 921 (to 0.95) (2 of 3 runs) | 16.1 | 15.5-16.7 | -, 15.5, 16.7 |
+| resynced: long step, level 928 (to 0.95) | 13.3 | 12.3-14.1 | 13.3, 14.1, 12.3 |
+| resynced: long step, prepare 3 | 25.1 | 25.1-25.9 | 25.9, 25.1, 25.1 |
+| resynced: long step, prepare 4 | 20.6 | 20.1-21.1 | 21.1, 20.6, 20.1 |
+| resynced: section cell-checks | 4.9 | 4.8-4.9 | 4.9, 4.8, 4.9 |
+| resynced: section coasters | 0.3 | 0.2-0.3 | 0.3, 0.3, 0.2 |
+| resynced: section economy | 0.1 | 0.0-0.1 | 0.0, 0.1, 0.1 |
+| resynced: section entities | 170 | 166-172 | 172, 170, 166 |
+| resynced: section guest-sprites | 3.2 | 2.9-3.3 | 3.3, 3.2, 2.9 |
+| resynced: section guests | 33.2 | 33.0-34.1 | 34.1, 33.2, 33.0 |
+| resynced: section join-state | 0.0 | 0.0-0.1 | 0.0, 0.0, 0.1 |
+| resynced: section layout-checks | 3.5 | 3.4-3.6 | 3.5, 3.4, 3.6 |
+| resynced: section level-hud | 3.1 | 3.0-3.3 | 3.1, 3.3, 3.0 |
+| resynced: section model-parse | 9.6 | 9.2-11.9 | 9.2, 11.9, 9.6 |
+| resynced: section object-catalog | 1.9 | 1.8-1.9 | 1.8, 1.9, 1.9 |
+| resynced: section object-coaster | 2.0 | 2.0-2.2 | 2.2, 2.0, 2.0 |
+| resynced: section object-hoarding | 0.3 | 0.2-0.4 | 0.4, 0.3, 0.2 |
+| resynced: section object-materials | 3.3 | 3.1-4.1 | 4.1, 3.1, 3.3 |
+| resynced: section object-models | 22.5 | 22.4-23.6 | 23.6, 22.4, 22.5 |
+| resynced: section object-parts | 3.3 | 3.1-4.0 | 4.0, 3.1, 3.3 |
+| resynced: section object-runtime | 5.6 | 5.2-5.7 | 5.7, 5.6, 5.2 |
+| resynced: section object-script | 1.4 | 1.2-1.5 | 1.2, 1.5, 1.4 |
+| resynced: section object-sign | 0.1 | 0.0-0.1 | 0.0, 0.1, 0.1 |
+| resynced: section object-textures | 15.5 | 14.9-15.8 | 14.9, 15.8, 15.5 |
+| resynced: section objects | 43.1 | 43.1-45.5 | 45.5, 43.1, 43.1 |
+| resynced: section original-park | 10.6 | 10.1-12.0 | 10.1, 12.0, 10.6 |
+| resynced: section paths | 0.1 | 0.1-0.2 | 0.2, 0.1, 0.1 |
+| resynced: section pipeline | 3.9 | 3.1-4.4 | 4.4, 3.9, 3.1 |
+| resynced: section resume | 6.7 | 6.4-7.5 | 7.5, 6.7, 6.4 |
+| resynced: section ride-opcodes | 0.0 | 0.0-0.0 | 0.0, 0.0, 0.0 |
+| resynced: section save-json | 44.9 | 39.0-50.7 | 39.0, 44.9, 50.7 |
+| resynced: section save-mods | 0.2 | 0.0-0.2 | 0.2, 0.2, 0.0 |
+| resynced: section save-shape | 4.9 | 4.5-4.9 | 4.9, 4.9, 4.5 |
+| resynced: section staff-gate-economy | 29.8 | 26.8-34.9 | 34.9, 29.8, 26.8 |
+| resynced: section staff-sprites | 5.8 | 5.6-6.0 | 6.0, 5.8, 5.6 |
+| resynced: section terrain | 17.5 | 16.6-18.9 | 16.6, 18.9, 17.5 |
+| resynced: section texture-create | 10.0 | 9.6-10.8 | 10.0, 10.8, 9.6 |
+| resynced: section texture-lookup | 29.2 | 28.5-30.0 | 29.2, 30.0, 28.5 |
+| resynced: section type-hoarding | 2.3 | 2.2-2.4 | 2.2, 2.3, 2.4 |
+| resynced: section type-model | 0.1 | 0.1-0.1 | 0.1, 0.1, 0.1 |
+| resynced: section type-texture | 8.8 | 8.5-8.9 | 8.9, 8.5, 8.8 |
+| resynced: section wad-index | 0.2 | 0.0-0.2 | 0.2, 0.0, 0.2 |
+| resynced: section wad-read | 0.0 | 0.0-0.0 | 0.0, 0.0, 0.0 |
+| resynced: longest update frame while building | 55.1 | 51.3-62.9 | 51.3, 55.1, 62.9 |
+| resynced: the swap's update frame | 45.2 | 43.4-58.3 | 45.2, 43.4, 58.3 |
+| resynced: first update frame after the swap | 10.8 | 10.7-10.8 | 10.8, 10.8, 10.7 |
+| resynced: longest whole frame while building | 57.7 | 53.1-64.5 | 53.1, 57.7, 64.5 |
+| resynced: the swap's whole frame | 47.9 | 46.1-60.8 | 47.9, 46.1, 60.8 |
+| resynced: first whole frame after the swap | 12.3 | 12.2-12.3 | 12.3, 12.2, 12.3 |
+| joined: the swap's frame, mark advisor.play | 2.0 | 1.8-2.2 | 2.0, 2.2, 1.8 |
+| joined: the swap's frame, mark coop.install | 5.5 | 5.4-5.6 | 5.5, 5.4, 5.6 |
+| joined: the swap's frame, mark coop.ready | 2.7 | 2.6-2.8 | 2.8, 2.7, 2.6 |
+| joined: the swap's frame, mark coop.session | 12.4 | 12.4-12.6 | 12.4, 12.4, 12.6 |
+| joined: the swap's frame, mark level.entities | 12.2 | 12.1-12.4 | 12.4, 12.2, 12.1 |
+| joined: the swap's frame, mark level.pools | 24.7 | 22.1-30.4 | 30.4, 24.7, 22.1 |
+| joined: the swap's frame, mark level.simulation | 2.9 | 2.7-2.9 | 2.9, 2.9, 2.7 |
+| joined: the swap's frame, mark load:pipeline | 4.7 | 4.5-4.8 | 4.8, 4.7, 4.5 |
+| joined: the swap's frame, mark load:texture-create | 16.6 | 14.3-21.9 | 21.9, 16.6, 14.3 |
+| joined: the swap's frame, mark park.advisor | 4.4 | 4.3-4.7 | 4.4, 4.7, 4.3 |
+| joined: the swap's frame, mark park.hud | 5.0 | 5.0-5.2 | 5.0, 5.0, 5.2 |
+| joined: the swap's frame, mark park.level | 40.7 | 37.9-46.6 | 46.6, 40.7, 37.9 |
+| joined: the swap's frame, mark pools.effects | 1.1 | 0.9-1.1 | 1.1, 1.1, 0.9 |
+| joined: the swap's frame, mark pools.swimmers | 16.9 | 14.7-22.4 | 22.4, 16.9, 14.7 |
+| joined: the swap's frame, mark pools.water | 6.2 | 5.8-6.3 | 6.3, 6.2, 5.8 |
+| joined: the swap's frame, mark update:PoolRenderer | 7.6 | 7.5-7.6 | 7.6, 7.6, 7.5 |
+| joined: the swap's frame, mark update:PoolSlideRenderer | 3.3 | 3.3-3.5 | 3.5, 3.3, 3.3 |
+| joined: the frame after the swap, mark coop.ticks | 33.0 | 32.2-33.4 | 33.0, 33.4, 32.2 |
+| joined: the frame after the swap, mark level.entities | 4.5 | 4.5-4.8 | 4.8, 4.5, 4.5 |
+| joined: the frame after the swap, mark level.simulation | 33.0 | 32.2-33.4 | 33.0, 33.4, 32.2 |
+| joined: the frame after the swap, mark load:object-models | 6.8 | 6.7-6.8 | 6.8, 6.8, 6.7 |
+| joined: the frame after the swap, mark load:object-textures | 5.4 | 5.3-6.0 | 6.0, 5.4, 5.3 |
+| joined: the frame after the swap, mark load:place-cue | 1.2 | 1.1-1.2 | 1.1, 1.2, 1.2 |
+| joined: the frame after the swap, mark load:place-object | 8.9 | 8.7-9.0 | 9.0, 8.9, 8.7 |
+| joined: the frame after the swap, mark load:texture-decode | 3.4 | 3.4-3.4 | 3.4, 3.4, 3.4 |
+| joined: the frame after the swap, mark load:texture-lookup | 1.5 | 1.3-2.3 | 2.3, 1.5, 1.3 |
+| joined: the frame after the swap, mark park.hud | 1.2 | 1.0-1.3 | 1.2, 1.3, 1.0 |
+| joined: the frame after the swap, mark park.level | 37.8 | 36.8-37.9 | 37.8, 37.9, 36.8 |
+| joined: the frame after the swap, mark sim.commands | 16.4 | 16.1-16.5 | 16.4, 16.5, 16.1 |
+| joined: the frame after the swap, mark sim.guests | 1.5 | 1.3-1.6 | 1.6, 1.3, 1.5 |
+| joined: the frame after the swap, mark sim.objects | 4.3 | 4.3-4.4 | 4.3, 4.3, 4.4 |
+| joined: the frame after the swap, mark sim.sweptTurn | 6.8 | 6.5-7.0 | 7.0, 6.8, 6.5 |
+| joined: the frame after the swap, mark update:CoasterRenderer | 2.3 | 2.2-2.3 | 2.3, 2.2, 2.3 |
+| joined: the frame after the swap, mark update:PoolRenderer | 2.2 | 2.1-2.3 | 2.3, 2.2, 2.1 |
+| resynced: the swap's frame, mark audio.decodeSync | 2.6 | 2.5-2.6 | 2.6, 2.5, 2.6 |
+| resynced: the swap's frame, mark coop.install | 10.2 | 9.5-10.6 | 10.6, 10.2, 9.5 |
+| resynced: the swap's frame, mark coop.ready | 7.1 | 6.8-7.2 | 7.2, 6.8, 7.1 |
+| resynced: the swap's frame, mark coop.session | 10.9 | 10.3-11.3 | 11.3, 10.9, 10.3 |
+| resynced: the swap's frame, mark level.entities | 3.4 | 3.3-3.4 | 3.4, 3.4, 3.3 |
+| resynced: the swap's frame, mark level.pools | 22.7 | 22.0-37.2 | 22.7, 22.0, 37.2 |
+| resynced: the swap's frame, mark level.simulation | 7.1 | 6.8-7.3 | 7.3, 6.8, 7.1 |
+| resynced: the swap's frame, mark load:texture-create | 21.4 | 20.6-36.0 | 21.4, 20.6, 36.0 |
+| resynced: the swap's frame, mark park.level | 33.5 | 32.2-47.6 | 33.5, 32.2, 47.6 |
+| resynced: the swap's frame, mark pools.swimmers | 21.4 | 20.6-36.0 | 21.4, 20.6, 36.0 |
+| resynced: the swap's frame, mark update:PoolRenderer | 1.8 | 1.8-1.8 | 1.8, 1.8, 1.8 |
+| resynced: the swap's frame, mark update:PoolSlideRenderer | 1.4 | 1.3-1.4 | 1.4, 1.4, 1.3 |
+| resynced: the frame after the swap, mark coop.ticks | 7.3 | 7.3-7.4 | 7.4, 7.3, 7.3 |
+| resynced: the frame after the swap, mark level.cells | 1.4 | 1.2-1.4 | 1.4, 1.4, 1.2 |
+| resynced: the frame after the swap, mark level.simulation | 7.3 | 7.3-7.4 | 7.4, 7.3, 7.3 |
+| resynced: the frame after the swap, mark park.advisor | 1.5 | 1.5-1.5 | 1.5, 1.5, 1.5 |
+| resynced: the frame after the swap, mark park.level | 9.0 | 8.9-9.0 | 9.0, 9.0, 8.9 |
+| resynced: the frame after the swap, mark sim.objects | 1.8 | 1.6-2.0 | 1.8, 1.6, 2.0 |
+| resynced: the frame after the swap, mark sim.rendering | 3.4 | 3.4-3.6 | 3.4, 3.6, 3.4 |
+| resynced: the frame after the swap, mark sim.sweptTurn | 1.1 | 1.0-1.1 | 1.1, 1.1, 1.0 |
+| joined: long frame, codec 19 (1 of 3 runs) | 33.6 | 33.6-33.6 | -, -, 33.6 |
+| joined: long frame, codec 19, mark coop.session (1 of 3 runs) | 15.9 | 15.9-15.9 | -, -, 15.9 |
+| joined: long frame, codec 20 (1 of 3 runs) | 33.2 | 33.2-33.2 | -, 33.2, - |
+| joined: long frame, codec 20, mark coop.session (1 of 3 runs) | 15.0 | 15.0-15.0 | -, 15.0, - |
+| joined: long frame, save 1 | 89.8 | 89.2-91.5 | 91.5, 89.8, 89.2 |
+| joined: long frame, save 1, mark coop.session | 88.9 | 88.3-90.4 | 90.4, 88.9, 88.3 |
+| joined: long frame, save 1, mark load:save-json | 59.8 | 59.8-61.3 | 61.3, 59.8, 59.8 |
+| joined: long frame, save 1, mark load:save-shape | 25.0 | 24.8-25.2 | 25.2, 25.0, 24.8 |
+| joined: long frame, level 928 (2 of 3 runs) | 35.4 | 35.2-35.5 | -, 35.5, 35.2 |
+| joined: long frame, level 928, mark coop.session (2 of 3 runs) | 34.6 | 34.4-34.8 | -, 34.8, 34.4 |
+| joined: long frame, level 928, mark load:guests (2 of 3 runs) | 66.8 | 66.6-67.1 | -, 67.1, 66.6 |
+| joined: long frame, level 928, mark load:paths (2 of 3 runs) | 3.2 | 3.1-3.2 | -, 3.2, 3.1 |
+| joined: long frame, level 928, mark load:texture-decode (2 of 3 runs) | 4.1 | 4.0-4.2 | -, 4.0, 4.2 |
+| joined: long frame, hud 1 | 73.4 | 70.7-75.5 | 75.5, 70.7, 73.4 |
+| joined: long frame, hud 1, mark coop.session | 72.6 | 69.8-74.7 | 74.7, 69.8, 72.6 |
+| joined: long frame, hud 1, mark load:entities | 555 | 550-566 | 566, 555, 550 |
+| joined: long frame, hud 1, mark load:join-state | 3.7 | 3.6-3.7 | 3.6, 3.7, 3.7 |
+| joined: long frame, hud 1, mark load:level-hud | 5.3 | 4.9-7.8 | 7.8, 4.9, 5.3 |
+| joined: long frame, hud 1, mark load:resume | 54.8 | 52.6-54.8 | 54.8, 52.6, 54.8 |
+| joined: long frame, hud 1, mark load:staff-gate-economy | 51.4 | 50.5-58.5 | 58.5, 51.4, 50.5 |
+| joined: long frame, prepare 1 | 37.6 | 37.4-37.8 | 37.4, 37.8, 37.6 |
+| joined: long frame, prepare 1, mark coop.session | 36.5 | 36.4-36.8 | 36.4, 36.8, 36.5 |
+| joined: long frame, prepare 3 | 38.1 | 37.7-41.3 | 41.3, 37.7, 38.1 |
+| joined: long frame, prepare 3, mark coop.session | 37.3 | 36.9-40.5 | 40.5, 36.9, 37.3 |
+| joined: long frame, prepare 3, mark load:pipeline | 1.9 | 1.9-4.6 | 4.6, 1.9, 1.9 |
+| joined: long frame, prepare 32 | 72.0 | 71.5-72.2 | 72.0, 71.5, 72.2 |
+| joined: long frame, prepare 32, mark coop.check | 70.9 | 70.4-70.9 | 70.9, 70.4, 70.9 |
+| joined: long frame, prepare 32, mark coop.session | 71.1 | 70.7-71.2 | 71.1, 70.7, 71.2 |
+| resynced: long frame, save 1 | 55.1 | 51.3-62.9 | 51.3, 55.1, 62.9 |
+| resynced: long frame, save 1, mark coop.session | 51.9 | 47.3-58.9 | 47.3, 51.9, 58.9 |
+| resynced: long frame, save 1, mark load:save-json | 44.9 | 39.0-50.7 | 39.0, 44.9, 50.7 |
+| resynced: long frame, save 1, mark load:save-shape | 4.9 | 4.5-4.9 | 4.9, 4.9, 4.5 |
+| final check: update frame | 515 | 510-515 | 510, 515, 515 |
+| final check: whole frame | 516 | 511-516 | 511, 516, 516 |

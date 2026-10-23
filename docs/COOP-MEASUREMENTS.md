@@ -12659,7 +12659,10 @@ page: Chrome/155.0.8059.85, ANGLE (Apple, ANGLE Metal Renderer: Apple M5, Unspec
 Three runs each, on the same machine as "The check and the level's last step": each run the page's host phase (Chrome 155 headless,
 compiled ahead of time) and the desktop's measuring join phase over its recording, from one source each
 (`scripts/measure-coop-join-browser-host.sh`). The capture rows are the page host's; the "host:" rows list the page host's frames of
-30 ms or more by the host stage they ended in, with the longest one's named work (marks nest: never added up). The before is
+30 ms or more by the host stage they ended in, with the longest one's named work (marks nest: never added up). That was the
+recording's stage at these commits, so a frame whose step ended its stage is listed under the next: the fixture's frame under Settle,
+the last settling frame (which shares the park and takes the first checkpoint) under Stage1, and the final checks under Done. Since
+the review the recording names the stage whose step a frame ran. The before is
 `ae3695e68`, whose host is not prepared before it hosts; the after is `10fdc69dd`, whose host runs `CoopSession.PrepareHostSteps` while
 its park settles. In the before's runs the page's record was named `run.json`; it is `host-run.json` now.
 
@@ -13202,18 +13205,6 @@ host page: Chrome/155.0.8059.85, ANGLE (Apple, ANGLE Metal Renderer: Apple M5, U
 
 ### After it
 
-browser co-op join smoke [host, unlabelled]: passed (Browser co-op join smoke (host): 889 frames to frame 889, tick 13935, record 170; 2 captures; digest 50616993BCCE5C9D.)
-Recording: /private/tmp/presence-re/bh3/run-1/browser-host
-smoke [coop-join-measure] passed ([3:54:11 PM] Native co-op join smoke (join): joined at tick 721 from the untouched first capture; followed to the second cut, 80 checkpoints compared; resynced at tick 12735; followed to the end, 20 c)
-  log: /private/tmp/presence-re/bh3/run-1/opentpw-coop-join-measure.log
-browser co-op join smoke [host, unlabelled]: passed (Browser co-op join smoke (host): 889 frames to frame 889, tick 13935, record 170; 2 captures; digest 50616993BCCE5C9D.)
-Recording: /private/tmp/presence-re/bh3/run-2/browser-host
-smoke [coop-join-measure] passed ([3:57:12 PM] Native co-op join smoke (join): joined at tick 721 from the untouched first capture; followed to the second cut, 80 checkpoints compared; resynced at tick 12735; followed to the end, 20 c)
-  log: /private/tmp/presence-re/bh3/run-2/opentpw-coop-join-measure.log
-browser co-op join smoke [host, unlabelled]: passed (Browser co-op join smoke (host): 889 frames to frame 889, tick 13935, record 170; 2 captures; digest 50616993BCCE5C9D.)
-Recording: /private/tmp/presence-re/bh3/run-3/browser-host
-smoke [coop-join-measure] passed ([4:00:17 PM] Native co-op join smoke (join): joined at tick 721 from the untouched first capture; followed to the second cut, 80 checkpoints compared; resynced at tick 12735; followed to the end, 20 c)
-  log: /private/tmp/presence-re/bh3/run-3/opentpw-coop-join-measure.log
 3 runs; host phase: Release build 1.0.0+10fdc69ddbf27653fad71d68e15d0783d2a64fb9, .NET 11.0.0-rc.2.26504.105, Browser Wasm, 1 processors, silent False, advisor True, compiled aot; join phase: Release build 1.0.0+10fdc69ddbf27653fad71d68e15d0783d2a64fb9, .NET 11.0.0-rc.2.26504.105, macOS 26.6.0 Arm64, 10 processors, silent True, advisor True, compiled jit
 host page: Chrome/155.0.8059.85, ANGLE (Apple, ANGLE Metal Renderer: Apple M5, Unspecified Version), 1280x900, muted True, frame cap 0, pool sprites settled
 

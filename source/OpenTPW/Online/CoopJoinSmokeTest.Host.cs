@@ -20,6 +20,8 @@ internal sealed partial class CoopJoinSmokeTest
 	private enum HostStage { WarmUp, Fixture, Settle, Stage1, Capture1, Normal, Fastest, Stage2, Capture2, Tail, Done }
 
 	private HostStage hostStage;
+	/// <summary>The stage whose step the host's current frame runs: the stage it began in (a step that ends its stage has moved <see cref="hostStage"/> on).</summary>
+	private HostStage frameStage;
 	private int stageFrame;
 	/// <summary>What the host runs before it hosts (<see cref="CoopSession.PrepareHostSteps"/>), and whether it has run to its end.</summary>
 	private IEnumerator<bool>? prepareHost;
@@ -56,6 +58,7 @@ internal sealed partial class CoopJoinSmokeTest
 	private void HostUpdate()
 	{
 		++frame;
+		frameStage = hostStage;
 		if ( done )
 			return;
 		try

@@ -549,7 +549,7 @@ captures, and the final save and join state, with the page's record (`host-run.j
 calls beside them. The page runs the native host phase (`CoopJoinSmokeTest.StartPageHost`) with its
 handler in the game update's place, as the native runner has it: the host's frame advances the park
 itself, through the session's stream. It records each frame of 30 ms or more with its drawing, the host
-stage it ended in and its named work (`LongFrames`); the native host times no frame.
+stage whose step it ran and its named work (`LongFrames`); the native host times no frame.
 `scripts/smoke-coop-join-browser-host.sh` records the host phase in the page and has the native join
 phase replay it (`OPENTPW_COOP_HOST_EVIDENCE` for `scripts/smoke-coop-join.sh`), and
 `scripts/measure-coop-join-browser-host.sh` measures it.
@@ -562,8 +562,10 @@ The page's host phase takes about two minutes for its 6,900 frames.
 
 A host prepares before it hosts (`CoopSession.PrepareHostSteps`, a step a frame): it runs the session
 digest's code once ahead over the park's economy (`WorldStateHash.SerializationWarmupSteps`), so the
-stream's first checkpoint and a capture's cut run none of it for the first time. The host phase runs
-the steps while its park settles; the game's sharing (C2d) runs them before it hosts.
+stream's first checkpoint and a capture's cut run none of it for the first time. The smoke's host phase,
+the native one too, runs the steps while its park settles, so neither host's first checkpoint is the
+digest's first run any more. The game's own sharing does not run them yet: it comes with the sharing's
+flow (C2d).
 
 ### The host's trimmed frame (C2c-3)
 

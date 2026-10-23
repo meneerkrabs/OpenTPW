@@ -16,8 +16,8 @@ internal sealed record CoopSmokeHostEvidence( bool Completed, string? Failure, s
 	CoopSmokeEnvironment? Environment = null, CoopSmokeHostFrame[]? LongFrames = null );
 
 /// <summary>
-/// A page's host frame of <see cref="CoopJoinSmokeTest.LongBuildFrameMilliseconds"/> or more, its whole call with its drawing (C2c-2b-4): its number, the host stage it ended in and
-/// its named work (<see cref="FrameMarks"/>), as <see cref="CoopSmokeFrameMarks"/> has it. The native host times no frame.
+/// A page's host frame of <see cref="CoopJoinSmokeTest.LongBuildFrameMilliseconds"/> or more, its whole call with its drawing (C2c-2b-4): its number, the host stage whose step it
+/// ran (the stage it began in) and its named work (<see cref="FrameMarks"/>), as <see cref="CoopSmokeFrameMarks"/> has it. The native host times no frame.
 /// </summary>
 internal sealed record CoopSmokeHostFrame( int Frame, string Stage, double Milliseconds, System.Text.Json.Nodes.JsonObject Marks );
 

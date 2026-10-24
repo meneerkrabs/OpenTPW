@@ -40,6 +40,12 @@ internal sealed partial class GameFlow : ICoopHosting
 	/// <summary>The attempt to share the open park, until a new one replaces it or the player dismisses its outcome.</summary>
 	private CoopShare? coopShare;
 
+	/// <summary>A dismissed attempt whose session ended without the player ending it: the status line says so for its time all the same.</summary>
+	private CoopShare? endedNotice;
+
+	/// <summary>The attempt the status line speaks of: the current one, or a dismissed one whose end it still shows.</summary>
+	internal CoopShare? StatusShare => coopShare ?? endedNotice;
+
 	/// <inheritdoc/>
 	public CoopShare? Sharing => coopShare;
 
@@ -55,6 +61,7 @@ internal sealed partial class GameFlow : ICoopHosting
 		if ( coopShare is { Stage: not CoopShareStage.Done } || !Online.IsLoggedIn || CoopSession.ShareRefusal( level ) != CoopShareRefusal.None )
 			return false;
 		coopShare?.Dispose();
+		endedNotice = null;
 		coopShare = new CoopShare( level, Online.Coop, request, CoopSessionClock );
 		return true;
 	}
@@ -66,6 +73,8 @@ internal sealed partial class GameFlow : ICoopHosting
 			return;
 		done.Dispose();
 		coopShare = null;
+		if ( done is { Outcome: CoopShareOutcome.Ended, EndedBySelf: false } )
+			endedNotice = done;
 	}
 
 	/// <inheritdoc/>
@@ -114,7 +123,7 @@ internal sealed partial class GameFlow : ICoopHosting
 	internal void StepCoopShare() => coopShare?.Step( parkBuild == null && pending == null ? Level : null );
 
 	/// <summary>The shared park's status line for the HUD (<see cref="Hud.HudHost.SessionStatus"/>), for the game's attempt; see the static overload.</summary>
-	internal string? SessionStatusLine( Level level ) => SessionStatusLine( coopShare, level, Strings.Extra );
+	internal string? SessionStatusLine( Level level ) => SessionStatusLine( StatusShare, level, Strings.Extra );
 
 	/// <summary>
 	/// The shared park's status line for <paramref name="level"/> (in the player's language, <paramref name="text"/>): while it is being shared, while it is hosted
@@ -134,7 +143,7 @@ internal sealed partial class GameFlow : ICoopHosting
 				if ( share.Link.State == CoopLinkState.Reconnecting )
 					return string.Format( text( OpenTpwText.SharedParkReconnecting ), state.Code );
 				return string.Format( text( OpenTpwText.SharedParkStatus ), state.Code, state.Members.Count( member => member.Connected ), state.MaximumPlayers );
-			case CoopShareStage.Done when share is { Outcome: CoopShareOutcome.Ended, EndedBySelf: false, EndedAt: { } at } && Time.Now - at < SharingEndedSeconds:
+			case CoopShareStage.Done when share is { Outcome: CoopShareOutcome.Ended, EndedBySelf: false, EndedAt: { } at } && share.Now - at < SharingEndedSeconds:
 				return text( OpenTpwText.SharedParkEnded );
 			default:
 				return null;

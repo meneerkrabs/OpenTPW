@@ -42,8 +42,9 @@ public enum CoopShareOutcome
 public sealed record CoopShareRequest( string Title, bool Listed, int MaximumPlayers );
 
 /// <summary>
-/// [EXT:online-coop-session] What the host last heard of an invitation or a removal (<see cref="CoopShare.LastNotice"/>): the request; the invited player when the
-/// notice is one invitation's (null for a removal, and for a refusal that came after its invitation's wait); and the server's refusal (null: the invitation went out).
+/// [EXT:online-coop-session] What the host last heard of an invitation or a removal (<see cref="CoopShare.LastNotice"/>): the request; the invited player when it is
+/// known whose (an invitation that went out, and a refusal whose text names its player; null for any other refusal and for a removal); and the server's refusal (null:
+/// the invitation went out).
 /// </summary>
 public sealed record CoopShareNotice( CoopMessageType Request, string? Player, CoopError? Refusal );
 
@@ -65,24 +66,30 @@ internal sealed class CoopShare : IDisposable
 	/// <summary>The reason the others hear when the host ends its shared park.</summary>
 	internal const string EndedByHost = "The host ended the shared park.";
 	/// <summary>
-	/// How long an invitation waits for the server's answer (<see cref="Time.Now"/> seconds). The server answers an invitation only with a refusal, at once and in
-	/// order, so the host invites one player at a time: a refusal is the waiting invitation's, and one without a refusal by then went out.
+	/// How long an invitation waits for the server's answer, in seconds of the attempt's clock. The server answers an invitation only with a refusal, at once, so the
+	/// host invites one player at a time: one without a refusal by then went out, and the line under the invitation speaks of one player at a time.
 	/// </summary>
-	internal const float InviteAnswerSeconds = 3;
+	internal const double InviteAnswerSeconds = 3;
 
 	private readonly CoopLink link;
 	private readonly CoopShareRequest request;
 	private readonly Func<double>? clock;
+	private readonly Func<double> now;
 	private readonly IEnumerator<bool> preparation;
 	private bool prepared;
 	private bool createSent;
 	private CoopSessionState? answered;
 	private CoopError? createRefused;
 	private bool endingSelf;
-	private (string Player, float At)? inviting;
+	private (string Player, double At)? inviting;
+	/// <summary>The players this attempt invited, newest last: a refusal whose text names one is that invitation's.</summary>
+	private readonly List<string> invited = new();
 	private bool disposed;
 
-	/// <summary>Starts sharing <paramref name="level"/> over <paramref name="link"/> (its session clock <paramref name="clock"/>, the session's own when null): the link opens now.</summary>
+	/// <summary>
+	/// Starts sharing <paramref name="level"/> over <paramref name="link"/>: the link opens now. <paramref name="clock"/> is the session's clock and the attempt's own (the
+	/// invitation's wait, the end's time), in seconds; a monotonic one when null.
+	/// </summary>
 	internal CoopShare( Level level, CoopLink link, CoopShareRequest request, Func<double>? clock = null )
 	{
 		ArgumentNullException.ThrowIfNull( level );
@@ -92,6 +99,7 @@ internal sealed class CoopShare : IDisposable
 		this.link = link;
 		this.request = request;
 		this.clock = clock;
+		now = clock ?? CoopHostStream.DefaultSeconds;
 		preparation = CoopSession.PrepareHostSteps( level ).GetEnumerator();
 		link.SessionStarted += OnSessionStarted;
 		link.Refused += OnRefused;
@@ -123,8 +131,11 @@ internal sealed class CoopShare : IDisposable
 	/// <summary>Whether the player ended the hosted session (rather than the server, a logout or a failure).</summary>
 	public bool EndedBySelf { get; private set; }
 
-	/// <summary>When the hosted session ended, by the game's clock (<see cref="Time.Now"/>); null while it has not.</summary>
-	public float? EndedAt { get; private set; }
+	/// <summary>The attempt's clock now, in seconds (<see cref="EndedAt"/> is by it).</summary>
+	public double Now => now();
+
+	/// <summary>When the hosted session ended, by the attempt's clock (<see cref="Now"/>); null while it has not.</summary>
+	public double? EndedAt { get; private set; }
 
 	/// <summary>The invited player whose invitation waits for the server's answer (<see cref="InviteAnswerSeconds"/>); null when none waits.</summary>
 	public string? Inviting => inviting?.Player;
@@ -155,7 +166,7 @@ internal sealed class CoopShare : IDisposable
 				return;
 			case CoopShareStage.Hosting:
 				// an invitation without a refusal by now went out
-				if ( inviting is { } waiting && Time.Now - waiting.At >= InviteAnswerSeconds )
+				if ( inviting is { } waiting && now() - waiting.At >= InviteAnswerSeconds )
 					inviting = null;
 				return;
 		}
@@ -283,7 +294,10 @@ internal sealed class CoopShare : IDisposable
 	{
 		if ( Stage != CoopShareStage.Hosting || inviting != null || !link.Invite( player ) )
 			return false;
-		inviting = (player, Time.Now);
+		inviting = (player, now());
+		invited.Add( player );
+		if ( invited.Count > 32 )
+			invited.RemoveAt( 0 );
 		LastNotice = new CoopShareNotice( CoopMessageType.Invite, player, null );
 		return true;
 	}
@@ -301,9 +315,12 @@ internal sealed class CoopShare : IDisposable
 			createRefused = error;
 		else if ( Stage == CoopShareStage.Hosting && error.Request == CoopMessageType.Invite )
 		{
-			// the waiting invitation's; one that came after its wait names no one (a newer invitation may wait by then)
-			LastNotice = new CoopShareNotice( CoopMessageType.Invite, inviting?.Player, error );
-			inviting = null;
+			// a refusal whose text names its player (not online) is that player's invitation's, whenever it comes; any other names no one (the screen says it without a
+			// name) and ends the wait, as the waiting invitation's or an older one's
+			var named = error.Reason == CoopReason.NotOnline ? invited.LastOrDefault( player => error.Text == CoopProtocol.NotOnlineText( player ) ) : null;
+			LastNotice = new CoopShareNotice( CoopMessageType.Invite, named, error );
+			if ( named == null || named == inviting?.Player )
+				inviting = null;
 		}
 		else if ( Stage == CoopShareStage.Hosting && error.Request == CoopMessageType.Kick )
 			LastNotice = new CoopShareNotice( CoopMessageType.Kick, null, error );
@@ -313,7 +330,7 @@ internal sealed class CoopShare : IDisposable
 	{
 		EndedBySelf = endingSelf;
 		// the end comes when it comes (often in the online pump, before the flow's step): its time is what the status line counts from
-		EndedAt = Time.Now;
+		EndedAt = now();
 		Finish( CoopShareOutcome.Ended, reason );
 	}
 

@@ -60,6 +60,12 @@ public static class CoopProtocol
 	}
 
 	/// <summary>
+	/// [EXT:online-coop-session] The server's refusal of an invitation to <paramref name="player"/>, who is not online with a game that shares parks. The server answers
+	/// an invitation only with a refusal, so the host's game tells by this text whose invitation a refusal answers, whenever it comes (C2d-2).
+	/// </summary>
+	public static string NotOnlineText( string player ) => Clip( $"{player} is not online with a game that shares parks." );
+
+	/// <summary>
 	/// <paramref name="text"/> as a field of at most <paramref name="maximumLength"/> characters a reader takes: control characters become spaces and the end
 	/// is cut, never inside a surrogate pair. The server's own texts (a refusal that lists mods or builds) go through it.
 	/// </summary>

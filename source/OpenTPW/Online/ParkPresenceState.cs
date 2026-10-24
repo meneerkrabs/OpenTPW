@@ -137,8 +137,6 @@ public sealed class ParkPresenceState
 	private (float X, float Y)? followed;
 	/// <summary>The ground's version when the view's centre was last followed.</summary>
 	private int followedVersion;
-	/// <summary>The figure was sent to the followed centre itself, not to a free cell near it (the centre's own cell blocked) nor left where it stood.</summary>
-	private bool followReached;
 	/// <summary>When the walk to the view's centre was last planned (<see cref="FollowView"/>).</summary>
 	private double lastFollow = double.NegativeInfinity;
 	private (float X, float Y) lastSent;
@@ -317,9 +315,9 @@ public sealed class ParkPresenceState
 		if ( Riding || !float.IsFinite( x ) || !float.IsFinite( y ) )
 			return;
 		var goal = ClampToPark( x, y );
-		// a view that stays put plans nothing more, but for a centre the figure could not be sent to itself (its cell blocked, or no free cell near) on a ground changed
-		// since: what a co-builder opened may let it go there now
-		if ( followed is { } last && Distance( last, goal ) < ViewReplanCells && (ground.Version == followedVersion || followReached) )
+		// a view that stays put plans nothing more, but for a centre the figure is not on its way to itself (its cell blocked, no free cell near, or built on during the
+		// walk) on a ground changed since: what a co-builder opened may let it go there now
+		if ( followed is { } last && Distance( last, goal ) < ViewReplanCells && (ground.Version == followedVersion || Own.Target == last) )
 			return;
 		if ( Distance( (Own.X, Own.Y), goal ) >= ViewJumpCells )
 		{
@@ -335,12 +333,11 @@ public sealed class ParkPresenceState
 		Followed( goal, time );
 	}
 
-	/// <summary>Notes the view's centre followed (<paramref name="goal"/>, clamped) and whether the figure was sent to it itself.</summary>
+	/// <summary>Notes the view's centre followed (<paramref name="goal"/>, clamped), on the ground as it is.</summary>
 	private void Followed( (float X, float Y) goal, double time )
 	{
 		followed = goal;
 		followedVersion = ground.Version;
-		followReached = Own.Target == goal;
 		lastFollow = time;
 	}
 

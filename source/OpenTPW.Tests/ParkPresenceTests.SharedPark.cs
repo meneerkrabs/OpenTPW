@@ -331,6 +331,27 @@ public partial class ParkPresenceTests
 	}
 
 	[TestMethod]
+	public void ACentreBuiltOnDuringTheWalkIsFollowedAgainOnceItIsOpened()
+	{
+		var ground = new EditedGround( 30, 12 );
+		var park = new SharedPark( ground, start: (2.5f, 5.5f) );
+		park.Frames( 1, 0.3f );
+		park.Centre = (10.5f, 5.5f);
+		park.Frames( 1, 0.3f );
+		Assert.AreEqual( (10.5f, 5.5f), park.Presence.State.Own.Target );
+		// a co-builder builds on the view's centre before the figure gets there: the walk goes to a free cell beside it
+		ground.Block( new[] { (10, 5) } );
+		park.Frames( 1, 0.3f );
+		var beside = park.Presence.State.Own.Target;
+		Assert.AreNotEqual( (10.5f, 5.5f), beside );
+		Assert.IsFalse( ground.Blocked( (int)beside.X, (int)beside.Y ) );
+		// the cell is opened again: the view that stayed there is followed again
+		ground.Free( (10, 5) );
+		park.Frames( 1, 0.3f );
+		Assert.AreEqual( (10.5f, 5.5f), park.Presence.State.Own.Target );
+	}
+
+	[TestMethod]
 	public void AWalkStopsInFrontOfACellBuiltOnUntilItIsPlannedAgain()
 	{
 		var ground = new EditedGround( 30, 12 );

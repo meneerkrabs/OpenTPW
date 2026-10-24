@@ -313,6 +313,24 @@ public partial class ParkPresenceTests
 	}
 
 	[TestMethod]
+	public void AViewOnABlockedCellIsFollowedThereOnceItIsOpened()
+	{
+		// the view looks at a ride's cell whose nearest free cell is less than a cell away: the figure goes beside it, and to the view itself once the cell is free
+		var ground = new EditedGround( 30, 12 );
+		ground.Block( new[] { (10, 5), (10, 4), (10, 6), (9, 5) } );
+		var park = new SharedPark( ground, start: (14.5f, 5.5f) );
+		park.Frames( 1, 0.3f );
+		park.Centre = (10.9f, 5.5f);
+		park.Frames( 1, 0.3f );
+		Assert.AreEqual( (11.5f, 5.5f), park.Presence.State.Own.Target );
+		park.Frames( 40 );
+		Assert.AreEqual( (11.5f, 5.5f), park.Presence.State.Own.Target, "a view that stays plans nothing more" );
+		ground.Free( (10, 5) );
+		park.Frames( 1, 0.3f );
+		Assert.AreEqual( (10.9f, 5.5f), park.Presence.State.Own.Target, "the opened cell is followed" );
+	}
+
+	[TestMethod]
 	public void AWalkStopsInFrontOfACellBuiltOnUntilItIsPlannedAgain()
 	{
 		var ground = new EditedGround( 30, 12 );

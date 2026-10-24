@@ -137,6 +137,8 @@ public sealed class ParkPresenceState
 	private (float X, float Y)? followed;
 	/// <summary>The ground's version when the view's centre was last followed.</summary>
 	private int followedVersion;
+	/// <summary>The figure was sent to the followed centre itself, not to a free cell near it (the centre's own cell blocked) nor left where it stood.</summary>
+	private bool followReached;
 	/// <summary>When the walk to the view's centre was last planned (<see cref="FollowView"/>).</summary>
 	private double lastFollow = double.NegativeInfinity;
 	private (float X, float Y) lastSent;
@@ -315,9 +317,9 @@ public sealed class ParkPresenceState
 		if ( Riding || !float.IsFinite( x ) || !float.IsFinite( y ) )
 			return;
 		var goal = ClampToPark( x, y );
-		// a view that stays put plans nothing more, but for a centre the figure could not be sent to (over water or a ride, or out of reach) on a ground changed since:
-		// what a co-builder opened may let it go there now
-		if ( followed is { } last && Distance( last, goal ) < ViewReplanCells && (ground.Version == followedVersion || Distance( Own.Target, last ) < ViewReplanCells) )
+		// a view that stays put plans nothing more, but for a centre the figure could not be sent to itself (its cell blocked, or no free cell near) on a ground changed
+		// since: what a co-builder opened may let it go there now
+		if ( followed is { } last && Distance( last, goal ) < ViewReplanCells && (ground.Version == followedVersion || followReached) )
 			return;
 		if ( Distance( (Own.X, Own.Y), goal ) >= ViewJumpCells )
 		{
@@ -329,14 +331,16 @@ public sealed class ParkPresenceState
 		}
 		if ( time - lastFollow < ViewReplanSeconds )
 			return;
-		Followed( goal, time );
 		WalkTo( goal.X, goal.Y );
+		Followed( goal, time );
 	}
 
+	/// <summary>Notes the view's centre followed (<paramref name="goal"/>, clamped) and whether the figure was sent to it itself.</summary>
 	private void Followed( (float X, float Y) goal, double time )
 	{
 		followed = goal;
 		followedVersion = ground.Version;
+		followReached = Own.Target == goal;
 		lastFollow = time;
 	}
 
@@ -367,7 +371,7 @@ public sealed class ParkPresenceState
 			var dy = next.Y - Own.Y;
 			var distance = MathF.Sqrt( dx * dx + dy * dy );
 			var step = Math.Min( 1f, budget / Math.Max( distance, float.Epsilon ) );
-			if ( routed && groundChanged && Enters( Own.X + dx * step, Own.Y + dy * step ) is false )
+			if ( routed && groundChanged && !StepFree( Own.X, Own.Y, Own.X + dx * step, Own.Y + dy * step ) )
 			{
 				route.Clear();
 				groundStopped = true;
@@ -655,15 +659,46 @@ public sealed class ParkPresenceState
 	private bool Passable( int x, int y ) => (uint)x < (uint)ground.Width && (uint)y < (uint)ground.Height && ground.IsPassable( x, y );
 
 	/// <summary>
-	/// Whether the own figure may step to (<paramref name="x"/>, <paramref name="y"/>): within its cell, or into a cell it may stand on; null when it stays in its cell. A step
-	/// within a cell built on is allowed, so a figure a co-builder built over walks out.
+	/// Whether the straight step from (<paramref name="fromX"/>, <paramref name="fromY"/>) to (<paramref name="toX"/>, <paramref name="toY"/>) enters only cells a figure may
+	/// stand on, the cells it passes on the way included (both side cells of a step through a cell's corner). The cell it starts in is not asked, so a figure a co-builder
+	/// built over walks out.
 	/// </summary>
-	private bool? Enters( float x, float y )
+	internal bool StepFree( float fromX, float fromY, float toX, float toY )
 	{
-		var (cellX, cellY) = ((int)MathF.Floor( x ), (int)MathF.Floor( y ));
-		if ( cellX == (int)MathF.Floor( Own.X ) && cellY == (int)MathF.Floor( Own.Y ) )
-			return null;
-		return Passable( cellX, cellY );
+		int x = (int)MathF.Floor( fromX ), y = (int)MathF.Floor( fromY );
+		int endX = (int)MathF.Floor( toX ), endY = (int)MathF.Floor( toY );
+		float dx = toX - fromX, dy = toY - fromY;
+		int stepX = Math.Sign( dx ), stepY = Math.Sign( dy );
+		// the share of the step at which it crosses the next column and row boundary, and the share one cell takes
+		var nextX = stepX == 0 ? float.PositiveInfinity : (stepX > 0 ? x + 1 - fromX : fromX - x) / MathF.Abs( dx );
+		var nextY = stepY == 0 ? float.PositiveInfinity : (stepY > 0 ? y + 1 - fromY : fromY - y) / MathF.Abs( dy );
+		var cellX = stepX == 0 ? float.PositiveInfinity : 1f / MathF.Abs( dx );
+		var cellY = stepY == 0 ? float.PositiveInfinity : 1f / MathF.Abs( dy );
+		for ( var cells = 0; (x != endX || y != endY) && cells < 64; cells++ )
+		{
+			if ( nextX < nextY )
+			{
+				x += stepX;
+				nextX += cellX;
+			}
+			else if ( nextY < nextX )
+			{
+				y += stepY;
+				nextY += cellY;
+			}
+			else
+			{
+				if ( !Passable( x + stepX, y ) || !Passable( x, y + stepY ) )
+					return false;
+				x += stepX;
+				y += stepY;
+				nextX += cellX;
+				nextY += cellY;
+			}
+			if ( !Passable( x, y ) )
+				return false;
+		}
+		return true;
 	}
 
 	/// <summary>

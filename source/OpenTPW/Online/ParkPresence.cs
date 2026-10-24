@@ -134,7 +134,7 @@ public sealed class ParkPresence : IVisitPresence, IChatPanelSource, IDisposable
 	/// <summary>
 	/// [EXT:online-coop-figures] The presence of the shared park <paramref name="level"/> in its session's chat room <paramref name="room"/> (C2d-4): the members connected to
 	/// the room walk as figures with their names, the player's own following the view (<paramref name="view"/>) while the session runs (<paramref name="running"/>); null
-	/// without a player name, a shared park's room, or the level's terrain and cell map.
+	/// without a player name, a shared park's room, the level's terrain and cell map, or a free cell for the figure near the view or the entrance.
 	/// </summary>
 	internal static ParkPresence? ForSharedPark( IPresenceSession session, Level level, string room, Func<(float X, float Y)?> view, Func<bool> running )
 	{
@@ -143,8 +143,11 @@ public sealed class ParkPresence : IVisitPresence, IChatPanelSource, IDisposable
 			return null;
 		var stopwatch = Stopwatch.StartNew();
 		var ground = new PresenceGround( cells );
-		// the figure enters where the view looks, on a cell it may stand on; with none near (the view over a lake), at the entrance
-		var start = view() is { } centre && ParkPresenceState.StandingNear( ground, centre ) is { } near ? near : StartOf( level.Guests.Settings, cells );
+		// the figure enters where the view looks, on a cell it may stand on; with none near (the view over a lake), at the entrance; with none there either, the presence
+		// waits (the game flow asks again the next frame)
+		var near = view() is { } centre ? ParkPresenceState.StandingNear( ground, centre ) : null;
+		if ( (near ?? ParkPresenceState.StandingNear( ground, StartOf( level.Guests.Settings, cells ) )) is not { } start )
+			return null;
 		var presence = new ParkPresence( session, room, name, ground, start, () => stopwatch.Elapsed.TotalSeconds, sharedPark: true )
 		{
 			Ride = () => level.RideView is { } ride ? new PresenceRide( ExitOf( ride.Ride ) ) : null,

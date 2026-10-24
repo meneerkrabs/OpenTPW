@@ -29,6 +29,27 @@ public class ParkPresenceStateTests
 		new( 10, 10, Enumerable.Range( 0, 10 ).Where( y => y != gap ).Select( y => (5, y) ) );
 
 	[TestMethod]
+	public void AStepIsFreeOnlyThroughCellsAFigureMayStandOn()
+	{
+		// [EXT:online-coop-figures] a shared park's walk on a changed ground stops in front of a cell built on since its plan, also one a step only passes through
+		var state = new ParkPresenceState( new Ground( 12, 12, new[] { (6, 5) } ), "Ann", (5.99f, 5.05f) );
+		Assert.IsFalse( state.StepFree( 5.99f, 5.05f, 6.2f, 4.5f ), "a diagonal step through the blocked cell's corner side, ending in a free cell" );
+		Assert.IsFalse( state.StepFree( 5.5f, 5.5f, 6.5f, 5.5f ), "into the blocked cell" );
+		Assert.IsTrue( state.StepFree( 5.5f, 5.5f, 5.9f, 5.9f ), "within the figure's own cell" );
+		Assert.IsTrue( state.StepFree( 5.5f, 5.5f, 5.5f, 3.5f ), "past it" );
+		Assert.IsTrue( state.StepFree( 6.5f, 5.5f, 7.5f, 5.5f ), "out of a cell built over the figure" );
+		Assert.IsTrue( state.StepFree( 3.5f, 3.5f, 3.5f, 3.5f ), "no step" );
+		// through a corner exactly: both cells beside it count
+		var corner = new ParkPresenceState( new Ground( 12, 12, new[] { (3, 2) } ), "Ann", (2.5f, 2.5f) );
+		Assert.IsFalse( corner.StepFree( 2.5f, 2.5f, 3.5f, 3.5f ) );
+		Assert.IsTrue( corner.StepFree( 2.5f, 2.5f, 1.5f, 3.5f ) );
+		// a long step across several cells asks each
+		var row = new ParkPresenceState( new Ground( 12, 12, new[] { (8, 1) } ), "Ann", (1.5f, 1.5f) );
+		Assert.IsFalse( row.StepFree( 1.5f, 1.5f, 10.5f, 1.5f ) );
+		Assert.IsTrue( row.StepFree( 1.5f, 1.5f, 7.5f, 1.5f ) );
+	}
+
+	[TestMethod]
 	public void RelayedPlacesAreFractionsOfTheParkMap()
 	{
 		var state = new ParkPresenceState( new Ground( 128, 64 ), "Ann", (1, 1) );

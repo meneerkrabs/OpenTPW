@@ -6,6 +6,7 @@ In a run with original data, 31 test classes left their own game-data `FileSyste
   - With the game data (`OPENTPW_GAME_PATH`): `AudioIntegrationTests` (the first in name order), `HeldSoundCorpusTests`, `KeptBodyAssetTests`, `OriginalThingSlotsTests`, `ParkLandOriginalDataTests`, `PoolsTerrainCorpusTests`, `PreviewDepthOrderTests`, `ShopVisitAssetTests` and `WinterPriceMeasureTests`.
   - With Theme Park Inc data (`OPENTPW_TPI_PATH`): `ThemeParkIncFrontEndTests`, `ThemeParkIncLanguageTests`, `ThemeParkIncPlayTests` and `ThemeParkIncViewerTests`.
   - With both: `TpiRidesEndToEndTests` and `TpiRidesShippedModTests`.
+  - These fifteen are the "Still open" list of the visitor portrait entry (#818), which this change closes.
 - **Sixteen classes replaced it and never put it back.**
   - In `[TestInitialize]`: `BumperTypeCoverageTests`, `FileSystemTests`, `GuestAssetTests`, `GuestMeasurementAssetTests`, `M3GateAssetTests`, `ParticleSpriteAtlasTests`, `PathAssetTests`, `PrototypeRideSaveAssetTests`, `RideCameraTests`, `RidesSweepTests`, `TourAssetTests`, `TrackAddOnDataTests`, `TrackAssetTests` and `TrackPieceClipDataTests`.
   - In two of their tests: `TourEffectTests` and `VehicleEngineVoiceTests`.

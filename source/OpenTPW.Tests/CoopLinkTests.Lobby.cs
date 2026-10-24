@@ -73,13 +73,18 @@ public partial class CoopLinkTests
 			await Until( () => guest.Link.Session != null, "the guest's seat", guest );
 			guestLobby.Step( false, LoginOf( guest ), false );
 			Assert.AreEqual( CoopLinkState.Open, guest.Link.State );
-			// once the guest left, the link is idle: an attempt or a share that uses it keeps it, else it closes
+			// the guest leaves: the link stays until the server confirms the leave
 			Assert.IsTrue( guest.Link.Leave( "Bye." ) );
+			Assert.IsTrue( guest.Link.Settling );
+			guestLobby.Step( false, LoginOf( guest ), false );
+			Assert.AreEqual( CoopLinkState.Open, guest.Link.State );
+			await Until( () => !guest.Link.Settling, "the leave's confirmation", host, guest );
+			Assert.AreEqual( 1, host.Link.Session!.Members.Count );
+			// then the link is idle: an attempt or a share that uses it keeps it, else it closes
 			guestLobby.Step( false, LoginOf( guest ), inUse: true );
 			Assert.AreEqual( CoopLinkState.Open, guest.Link.State );
 			guestLobby.Step( false, LoginOf( guest ), inUse: false );
 			Assert.AreEqual( CoopLinkState.Closed, guest.Link.State );
-			await Until( () => host.Link.Session!.Members.Count == 1, "the guest's leave", host );
 		} );
 	}
 
@@ -246,6 +251,36 @@ public partial class CoopLinkTests
 			await Until( () => host.Link.Session!.Members.Count == 1, "the seat to be left", host, guest );
 			Assert.AreEqual( (CoopLinkState.Open, CoopStop.None), (guest.Link.State, guest.Link.Stopped) );
 			Assert.IsFalse( guest.Link.Settling );
+		} );
+	}
+
+	[TestMethod]
+	public async Task AnOwnLeaveLostBeforeItWentOutGoesAgainAtTheNextWelcome()
+	{
+		await WithServer( async ( server, players ) =>
+		{
+			var host = await players.Add( server, "Hostess" );
+			var guest = await players.Add( server, "Guest" );
+			var lobby = new CoopLobbyLink( guest.Link, () => 0 );
+			lobby.Step( true, LoginOf( guest ), false );
+			// the leave the next welcome sends is lost with its socket before it goes out
+			var down = true;
+			await SeatWithALostAnswer( host, guest, () => down );
+			guest.Link.DropSent = message => message is CoopLeave;
+			var connections = guest.Link.Connections;
+			down = false;
+			await Until( () => guest.Link.State == CoopLinkState.Open && guest.Link.Connections > connections, "the welcome", host, guest );
+			Assert.IsTrue( guest.Link.Settling, "an unconfirmed leave is kept" );
+			Assert.AreEqual( 2, host.Link.Session!.Members.Count );
+			lobby.Step( false, LoginOf( guest ), false );
+			Assert.AreEqual( CoopLinkState.Open, guest.Link.State, "the lobby keeps the link while the leave waits" );
+			// the next welcome sends it again, and the server's confirmation settles it
+			guest.Link.DropSent = null;
+			guest.Link.DropSocket();
+			await Until( () => host.Link.Session!.Members.Count == 1, "the seat to be left", host, guest );
+			await Until( () => !guest.Link.Settling, "the confirmation", host, guest );
+			lobby.Step( false, LoginOf( guest ), false );
+			Assert.AreEqual( CoopLinkState.Closed, guest.Link.State );
 		} );
 	}
 

@@ -455,7 +455,34 @@ public class CoopShareTests
 		await Frames( share, () => share.LastInvite?.Refusal != null, "the latest invitation's refusal", new[] { host } );
 		Assert.AreEqual( ("Friend", CoopReason.Rate), (share.LastInvite!.Player, share.LastInvite.Refusal!.Reason) );
 		Assert.AreEqual( ("Busy", CoopReason.Rate), (share.LateRefusal!.Player, share.LateRefusal.Refusal!.Reason), "the older invitations' refusals are late results" );
+		// the screen names the player of each
+		var (screens, stack) = Screens( host.Session, new Hosting( () => share ) );
+		screens.ShowBuildTogether();
+		Update( stack );
+		Assert.AreEqual( string.Format( English( UI.Original.OpenTpwText.InviteTooMany ), "Friend" ), Element<UI.Original.UiLabel>( stack, "inviteResult" ).Text() );
+		Assert.AreEqual( string.Format( English( UI.Original.OpenTpwText.InviteTooMany ), "Busy" ), Element<UI.Original.UiLabel>( stack, "inviteLate" ).Text() );
 	}, options => options.CoopInvitesPerHour = 1 );
+
+	[TestMethod]
+	public async Task APlayerInvitedLatelyIsNotInvitedAgainSoTwoInvitationsNeverShareARefusal() => await CoopLinkTests.WithServer( async ( server, players ) =>
+	{
+		var host = await players.Add( server, "Hostess" );
+		var (level, _) = NewPark();
+		var share = Share( level, host );
+		await Frames( share, () => share.Stage == CoopShareStage.Hosting, "the park to be hosted", new[] { host } );
+		Assert.IsTrue( share.Invite( "Nobody" ) );
+		clock += CoopShare.InviteAnswerSeconds;
+		share.Step( level );
+		// the wait is over, but the first invitation's refusal may still come and would name the same player
+		Assert.IsNull( share.Inviting );
+		Assert.IsTrue( share.InvitedLately( "Nobody" ) );
+		Assert.IsFalse( share.Invite( "Nobody" ) );
+		Assert.IsFalse( share.InvitedLately( "nobody" ), "the refusal echoes the name as typed" );
+		clock += CoopShare.RepeatInviteSeconds;
+		Assert.IsTrue( share.Invite( "Nobody" ) );
+		await Frames( share, () => share.LastInvite?.Refusal != null, "the refusal", new[] { host } );
+		Assert.AreEqual( ("Nobody", CoopReason.NotOnline), (share.LastInvite!.Player, share.LastInvite.Refusal!.Reason) );
+	} );
 
 	/// <summary>The online screens over <paramref name="session"/> with <paramref name="hosting"/>, on a stack of their own (the pause menu below).</summary>
 	private static (UI.OnlineScreens Screens, UI.Original.UiScreenStack Stack) Screens( OnlineSession session, ICoopHosting hosting )
@@ -581,11 +608,25 @@ public class CoopShareTests
 		Assert.AreEqual( string.Format( English( UI.Original.OpenTpwText.InviteNotOnline ), "Absent" ), Element<UI.Original.UiLabel>( stack, "inviteResult" ).Text() );
 		Assert.AreEqual( "", Element<UI.Original.UiLabel>( stack, "inviteLate" ).Text() );
 		Assert.IsTrue( Element<UI.Original.UiButton>( stack, "invite" ).Enabled );
+		// a refusal that comes after its wait, while a newer invitation is the latest, has its own line; the latest keeps its own
+		void InviteOnScreen( string name )
+		{
+			Element<UI.Original.UiTextField>( stack, "inviteName" ).Text = name;
+			Element<UI.Original.UiButton>( stack, "invite" ).Clicked!();
+		}
+		InviteOnScreen( "Nobody" );
+		clock += CoopShare.InviteAnswerSeconds;
+		share.Step( level );
+		InviteOnScreen( "Guest" );
+		await Frames( share, () => share.LateRefusal != null, "the late refusal", new[] { host, guest } );
+		Update( stack );
+		Assert.AreEqual( string.Format( English( UI.Original.OpenTpwText.InviteSent ), "Guest" ), Element<UI.Original.UiLabel>( stack, "inviteResult" ).Text() );
+		Assert.AreEqual( string.Format( English( UI.Original.OpenTpwText.InviteNotOnline ), "Nobody" ), Element<UI.Original.UiLabel>( stack, "inviteLate" ).Text() );
 		// a refused removal is no invitation's answer
 		Assert.IsTrue( share.Kick( 99 ) );
 		await Frames( share, () => share.KickRefusal != null, "the removal's refusal", new[] { host, guest } );
 		Update( stack );
-		Assert.AreEqual( string.Format( English( UI.Original.OpenTpwText.InviteNotOnline ), "Absent" ), Element<UI.Original.UiLabel>( stack, "inviteResult" ).Text() );
+		Assert.AreEqual( string.Format( English( UI.Original.OpenTpwText.InviteSent ), "Guest" ), Element<UI.Original.UiLabel>( stack, "inviteResult" ).Text() );
 		// End sharing asks first; its yes ends the park for everyone
 		Element<UI.Original.UiButton>( stack, "endSharing" ).Clicked!();
 		Assert.AreEqual( "confirmEndSharing", stack.Top!.Name );

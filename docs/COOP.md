@@ -639,9 +639,11 @@ screen is in the player's language.
   so the host invites one player at a time: the next invitation waits three seconds for the refusal
   (`CoopShare.InviteAnswerSeconds`), and one without a refusal by then went out. Every refusal names
   its player (`CoopProtocol.InviteRefusalText`, which the server builds it with), so a refusal is the
-  invitation its text names, whenever it comes. The line under the invitation keeps the latest
-  invitation's outcome; a refusal of an older one (a slow link) has its own line below it. A player
-  who is not online for shared parks is to be given the code. Of a removal's refusals only too many
+  invitation its text names, whenever it comes; a player invited in the last thirty seconds is not
+  invited again (`RepeatInviteSeconds`), so two invitations never share a refusal. The line under the
+  invitation keeps the latest invitation's outcome; a refusal of an older one (a slow link) has its own
+  line below it. Both name their player: a player who is not online for shared parks is to be given
+  the code, and too many invitations says who was not invited. Of a removal's refusals only too many
   requests is said, on the screen's status line; the player list shows the rest. End sharing ends the
   park for everyone, asked first; the park stays the host's.
 
@@ -706,7 +708,8 @@ asset-free park and a second player's link as the guest:
 - an invitation to a player who is not online, and a kick;
 - one invitation at a time (late in a long run too), a refusal that comes after its wait while a newer
   invitation waits (a late result of its own player; the newer one keeps its outcome), refusals for
-  too many requests that name their players, and a refused removal (no invitation's answer);
+  too many invitations that name their players on both lines, no second invitation of a player within
+  thirty seconds, and a refused removal (no invitation's answer);
 - the screen before sharing (the login, the choices, a refusal in words) and while hosted (the code,
   the players and their removals, the invitation's answer for its own player, End sharing asked first).
 

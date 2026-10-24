@@ -600,14 +600,15 @@ public sealed class OnlineScreens
 		: member.Name;
 
 	/// <summary>
-	/// [EXT:online-coop-session] What the host heard of an invitation: it went out, its player is not online for shared parks (give them the code), too many requests,
-	/// or another refusal.
+	/// [EXT:online-coop-session] What the host heard of an invitation, named for its player when known: it went out, its player is not online for shared parks (give
+	/// them the code), too many invitations, or another refusal.
 	/// </summary>
 	private string InviteText( CoopInviteNotice notice ) => (notice.Refusal?.Reason, notice.Player) switch
 	{
-		(CoopReason.Rate, _) => strings.Extra( OpenTpwText.SharedParkTryLater ),
 		(null, { } player) => string.Format( strings.Extra( OpenTpwText.InviteSent ), player ),
 		(CoopReason.NotOnline, { } player) => string.Format( strings.Extra( OpenTpwText.InviteNotOnline ), player ),
+		(CoopReason.Rate, { } player) => string.Format( strings.Extra( OpenTpwText.InviteTooMany ), player ),
+		(CoopReason.Rate, null) => strings.Extra( OpenTpwText.SharedParkTryLater ),
 		_ => strings.Extra( OpenTpwText.InviteRefused ),
 	};
 

@@ -69,6 +69,11 @@ internal sealed class CoopShare : IDisposable
 	/// host invites one player at a time: one without a refusal by then went out, and the line under the invitation speaks of one player at a time.
 	/// </summary>
 	internal const double InviteAnswerSeconds = 3;
+	/// <summary>
+	/// How long a player invited once is not invited again (seconds of the attempt's clock): a refusal is matched to its invitation by the player it names, so two
+	/// invitations of one player could not be told apart while the first one's refusal may still come.
+	/// </summary>
+	internal const double RepeatInviteSeconds = 30;
 
 	private readonly CoopLink link;
 	private readonly CoopShareRequest request;
@@ -81,8 +86,8 @@ internal sealed class CoopShare : IDisposable
 	private CoopError? createRefused;
 	private bool endingSelf;
 	private (string Player, double At)? inviting;
-	/// <summary>The players this attempt invited, newest last: a refusal is the invitation its text names (<see cref="CoopProtocol.InviteRefusalText"/>).</summary>
-	private readonly List<string> invited = new();
+	/// <summary>The players this attempt invited and when, newest last: a refusal is the invitation its text names (<see cref="CoopProtocol.InviteRefusalText"/>).</summary>
+	private readonly List<(string Player, double At)> invited = new();
 	private bool disposed;
 
 	/// <summary>
@@ -301,21 +306,24 @@ internal sealed class CoopShare : IDisposable
 	}
 
 	/// <summary>
-	/// The host invites <paramref name="player"/>: false while another invitation waits for its answer (<see cref="Inviting"/>) and when it cannot be sent. The server
-	/// answers only a refusal (<see cref="LastInvite"/>).
+	/// The host invites <paramref name="player"/>: false while another invitation waits for its answer (<see cref="Inviting"/>), for a player invited in the last
+	/// <see cref="RepeatInviteSeconds"/>, and when it cannot be sent. The server answers only a refusal (<see cref="LastInvite"/>).
 	/// </summary>
 	public bool Invite( string player )
 	{
-		if ( Stage != CoopShareStage.Hosting || inviting != null || !link.Invite( player ) )
+		if ( Stage != CoopShareStage.Hosting || inviting != null || InvitedLately( player ) || !link.Invite( player ) )
 			return false;
 		inviting = (player, now());
-		invited.Add( player );
+		invited.Add( (player, inviting.Value.At) );
 		if ( invited.Count > 32 )
 			invited.RemoveAt( 0 );
 		LastInvite = new CoopInviteNotice( player, null );
 		LateRefusal = null;
 		return true;
 	}
+
+	/// <summary>Whether <paramref name="player"/>, exactly as typed (the server's refusal echoes the name so), was invited in the last <see cref="RepeatInviteSeconds"/>.</summary>
+	public bool InvitedLately( string player ) => invited.Any( entry => entry.Player == player && now() - entry.At < RepeatInviteSeconds );
 
 	private void OnSessionStarted( CoopSessionState state )
 	{
@@ -332,7 +340,7 @@ internal sealed class CoopShare : IDisposable
 		{
 			// every refusal names its player, so it is the invitation its text names, whenever it comes: the latest invitation's is its outcome (and ends its wait); an
 			// older one's, or one that names no player this attempt invited, is a late result of its own and leaves the latest invitation be
-			var named = invited.LastOrDefault( player => error.Text == CoopProtocol.InviteRefusalText( error.Reason, player ) );
+			var named = invited.LastOrDefault( entry => error.Text == CoopProtocol.InviteRefusalText( error.Reason, entry.Player ) ).Player;
 			if ( named != null && named == LastInvite?.Player )
 			{
 				LastInvite = new CoopInviteNotice( named, error );

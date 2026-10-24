@@ -42,11 +42,10 @@ public enum CoopShareOutcome
 public sealed record CoopShareRequest( string Title, bool Listed, int MaximumPlayers );
 
 /// <summary>
-/// [EXT:online-coop-session] What the host last heard of an invitation or a removal (<see cref="CoopShare.LastNotice"/>): the request; the invited player when it is
-/// known whose (an invitation that went out, and a refusal whose text names its player; null for any other refusal and for a removal); and the server's refusal (null:
-/// the invitation went out).
+/// [EXT:online-coop-session] What the host heard of an invitation (<see cref="CoopShare.LastInvite"/>, <see cref="CoopShare.LateRefusal"/>): the invited player (null for a
+/// refusal that names no player this attempt invited) and the server's refusal (null: the invitation went out).
 /// </summary>
-public sealed record CoopShareNotice( CoopMessageType Request, string? Player, CoopError? Refusal );
+public sealed record CoopInviteNotice( string? Player, CoopError? Refusal );
 
 /// <summary>
 /// [EXT:online-coop-session] One attempt of this game to share its open park (C2d-2; docs/COOP.md, "Sharing the park from the game"). The attempt owns its create from
@@ -70,6 +69,11 @@ internal sealed class CoopShare : IDisposable
 	/// host invites one player at a time: one without a refusal by then went out, and the line under the invitation speaks of one player at a time.
 	/// </summary>
 	internal const double InviteAnswerSeconds = 3;
+	/// <summary>
+	/// How long a player invited once is not invited again (seconds of the attempt's clock): a refusal is matched to its invitation by the player it names, so two
+	/// invitations of one player could not be told apart while the first one's refusal may still come.
+	/// </summary>
+	internal const double RepeatInviteSeconds = 30;
 
 	private readonly CoopLink link;
 	private readonly CoopShareRequest request;
@@ -82,8 +86,8 @@ internal sealed class CoopShare : IDisposable
 	private CoopError? createRefused;
 	private bool endingSelf;
 	private (string Player, double At)? inviting;
-	/// <summary>The players this attempt invited, newest last: a refusal whose text names one is that invitation's.</summary>
-	private readonly List<string> invited = new();
+	/// <summary>The players this attempt invited and when, newest last: a refusal is the invitation its text names (<see cref="CoopProtocol.InviteRefusalText"/>).</summary>
+	private readonly List<(string Player, double At)> invited = new();
 	private bool disposed;
 
 	/// <summary>
@@ -140,8 +144,17 @@ internal sealed class CoopShare : IDisposable
 	/// <summary>The invited player whose invitation waits for the server's answer (<see cref="InviteAnswerSeconds"/>); null when none waits.</summary>
 	public string? Inviting => inviting?.Player;
 
-	/// <summary>What the host last heard of an invitation (it went out, or the server refused it) or a refused removal; null before either.</summary>
-	public CoopShareNotice? LastNotice { get; private set; }
+	/// <summary>The latest invitation's outcome: it went out, or the server refused it; null before any.</summary>
+	public CoopInviteNotice? LastInvite { get; private set; }
+
+	/// <summary>
+	/// A refusal of an older invitation that came after the latest one went out (a slow link), or one that names no player this attempt invited; null since the latest
+	/// invitation when none came. The latest invitation's outcome stays its own.
+	/// </summary>
+	public CoopInviteNotice? LateRefusal { get; private set; }
+
+	/// <summary>The server's refusal of the latest removal; null since it when none came (a removal is answered by its player leaving the list).</summary>
+	public CoopError? KickRefusal { get; private set; }
 
 	/// <summary>The session as the link holds it while it runs (its code, its members); null otherwise.</summary>
 	public CoopSessionState? State => Stage == CoopShareStage.Hosting ? link.Session : null;
@@ -284,23 +297,33 @@ internal sealed class CoopShare : IDisposable
 	}
 
 	/// <summary>The host removes member <paramref name="memberId"/>; it cannot join this session again.</summary>
-	public bool Kick( uint memberId ) => Stage == CoopShareStage.Hosting && link.Kick( memberId );
+	public bool Kick( uint memberId )
+	{
+		if ( Stage != CoopShareStage.Hosting || !link.Kick( memberId ) )
+			return false;
+		KickRefusal = null;
+		return true;
+	}
 
 	/// <summary>
-	/// The host invites <paramref name="player"/>: false while another invitation waits for its answer (<see cref="Inviting"/>) and when it cannot be sent. The server
-	/// answers only a refusal (<see cref="LastNotice"/>).
+	/// The host invites <paramref name="player"/>: false while another invitation waits for its answer (<see cref="Inviting"/>), for a player invited in the last
+	/// <see cref="RepeatInviteSeconds"/>, and when it cannot be sent. The server answers only a refusal (<see cref="LastInvite"/>).
 	/// </summary>
 	public bool Invite( string player )
 	{
-		if ( Stage != CoopShareStage.Hosting || inviting != null || !link.Invite( player ) )
+		if ( Stage != CoopShareStage.Hosting || inviting != null || InvitedLately( player ) || !link.Invite( player ) )
 			return false;
 		inviting = (player, now());
-		invited.Add( player );
+		invited.Add( (player, inviting.Value.At) );
 		if ( invited.Count > 32 )
 			invited.RemoveAt( 0 );
-		LastNotice = new CoopShareNotice( CoopMessageType.Invite, player, null );
+		LastInvite = new CoopInviteNotice( player, null );
+		LateRefusal = null;
 		return true;
 	}
+
+	/// <summary>Whether <paramref name="player"/>, exactly as typed (the server's refusal echoes the name so), was invited in the last <see cref="RepeatInviteSeconds"/>.</summary>
+	public bool InvitedLately( string player ) => invited.Any( entry => entry.Player == player && now() - entry.At < RepeatInviteSeconds );
 
 	private void OnSessionStarted( CoopSessionState state )
 	{
@@ -315,15 +338,20 @@ internal sealed class CoopShare : IDisposable
 			createRefused = error;
 		else if ( Stage == CoopShareStage.Hosting && error.Request == CoopMessageType.Invite )
 		{
-			// a refusal whose text names its player (not online) is that player's invitation's, whenever it comes; any other names no one (the screen says it without a
-			// name) and ends the wait, as the waiting invitation's or an older one's
-			var named = error.Reason == CoopReason.NotOnline ? invited.LastOrDefault( player => error.Text == CoopProtocol.NotOnlineText( player ) ) : null;
-			LastNotice = new CoopShareNotice( CoopMessageType.Invite, named, error );
-			if ( named == null || named == inviting?.Player )
-				inviting = null;
+			// every refusal names its player, so it is the invitation its text names, whenever it comes: the latest invitation's is its outcome (and ends its wait); an
+			// older one's, or one that names no player this attempt invited, is a late result of its own and leaves the latest invitation be
+			var named = invited.LastOrDefault( entry => error.Text == CoopProtocol.InviteRefusalText( error.Reason, entry.Player ) ).Player;
+			if ( named != null && named == LastInvite?.Player )
+			{
+				LastInvite = new CoopInviteNotice( named, error );
+				if ( inviting?.Player == named )
+					inviting = null;
+			}
+			else
+				LateRefusal = new CoopInviteNotice( named, error );
 		}
 		else if ( Stage == CoopShareStage.Hosting && error.Request == CoopMessageType.Kick )
-			LastNotice = new CoopShareNotice( CoopMessageType.Kick, null, error );
+			KickRefusal = error;
 	}
 
 	private void OnEnded( string reason )

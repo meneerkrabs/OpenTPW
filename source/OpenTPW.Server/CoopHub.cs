@@ -804,20 +804,21 @@ public sealed class CoopHub : ICoopMembership
 		{
 			if ( !Current( peer ) )
 				return;
+			// every refusal names the invited player, which tells the host's game whose invitation it answers (CoopProtocol.InviteRefusalText)
 			if ( peer.Session is not { } session || !peer.Hosting )
 			{
-				Refuse( peer, CoopMessageType.Invite, CoopReason.NotHost, "Only the host invites players." );
+				Refuse( peer, CoopMessageType.Invite, CoopReason.NotHost, CoopProtocol.InviteRefusalText( CoopReason.NotHost, invite.Player ) );
 				return;
 			}
 			if ( !quotas.Allow( peer.Account.Key, "invite", options.CoopInvitesPerHour, TimeSpan.FromHours( 1 ) ) )
 			{
-				Refuse( peer, CoopMessageType.Invite, CoopReason.Rate, "Too many invitations; try again later." );
+				Refuse( peer, CoopMessageType.Invite, CoopReason.Rate, CoopProtocol.InviteRefusalText( CoopReason.Rate, invite.Player ) );
 				return;
 			}
 			var target = OnlineText.IsValidPlayerName( invite.Player ) ? accounts.FindAccount( invite.Player ) : null;
 			if ( target == null || target.Key == peer.Account.Key || !peers.TryGetValue( target.Key, out var invited ) )
 			{
-				Refuse( peer, CoopMessageType.Invite, CoopReason.NotOnline, CoopProtocol.NotOnlineText( invite.Player ) );
+				Refuse( peer, CoopMessageType.Invite, CoopReason.NotOnline, CoopProtocol.InviteRefusalText( CoopReason.NotOnline, invite.Player ) );
 				return;
 			}
 			Enqueue( invited, new CoopInvited( session.Id, session.Code, session.Title, peer.Account.Name ).Encode() );

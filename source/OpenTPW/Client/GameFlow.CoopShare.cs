@@ -120,7 +120,13 @@ internal sealed partial class GameFlow : ICoopHosting
 	/// The share attempt's step, once a frame right after the online pump and before the co-op session's step and the level's update: it hosts the park only while
 	/// that park is still the game's and no transition or park build waits.
 	/// </summary>
-	internal void StepCoopShare() => coopShare?.Step( parkBuild == null && pending == null ? Level : null );
+	internal void StepCoopShare()
+	{
+		coopShare?.Step( parkBuild == null && pending == null ? Level : null );
+		// a dismissed end's notice goes once its time is over or its park is no longer the game's (it holds that park)
+		if ( endedNotice is { EndedAt: { } at } notice && (notice.Now - at >= SharingEndedSeconds || !ReferenceEquals( notice.Level, Level )) )
+			endedNotice = null;
+	}
 
 	/// <summary>The shared park's status line for the HUD (<see cref="Hud.HudHost.SessionStatus"/>), for the game's attempt; see the static overload.</summary>
 	internal string? SessionStatusLine( Level level ) => SessionStatusLine( StatusShare, level, Strings.Extra );

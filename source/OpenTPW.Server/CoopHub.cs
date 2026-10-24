@@ -15,7 +15,8 @@ namespace OpenTPW.Server;
 /// <para>
 /// Locks: <c>registry</c> (connections, sessions by id and code, memberships) before a session's own gate (its members and relays) before the store's lock
 /// (its file). A relay takes only its session's gate; a membership change is stored before it is announced; nothing writes a file under a lock a relay
-/// of another session waits for.
+/// of another session waits for. [EXT:online-coop-session] The chat's lock comes after all of these: <see cref="MemberGone"/> is raised under them and its
+/// handler takes the chat's rooms, while the chat asks <see cref="IsMember"/> without waiting on any lock of the hub.
 /// </para>
 /// </summary>
 public sealed class CoopHub : ICoopMembership
@@ -44,6 +45,8 @@ public sealed class CoopHub : ICoopMembership
 	private readonly Dictionary<string, Session> sessions = new();
 	private readonly Dictionary<string, Session> codes = new();
 	private readonly Dictionary<string, Session> memberships = new();
+	/// <summary>[EXT:online-coop-session] The session id each member account holds a seat in: <see cref="memberships"/> as the chat reads it, without the registry lock (written under it, with it).</summary>
+	private readonly System.Collections.Concurrent.ConcurrentDictionary<string, string> memberSessions = new();
 	private readonly Dictionary<string, (string SessionId, CoopReason Reason, string Text, DateTimeOffset At)> endedSessions = new();
 	/// <summary>Each account's relay buckets, kept over reconnects so a new socket starts with what the last one left. Under the registry lock.</summary>
 	private readonly Dictionary<string, AccountLimits> limits = new();
@@ -79,7 +82,7 @@ public sealed class CoopHub : ICoopMembership
 			sessions[session.Id] = session;
 			codes[session.Code] = session;
 			foreach ( var seat in session.Seats )
-				memberships[seat.AccountKey] = session;
+				AddMembership( seat.AccountKey, session );
 		}
 		store.SweepOrphans( sessions.Keys.ToHashSet() );
 		// a position stored at a stop is exact for this run only: it is stored again as unknown at once, so a crash later in the run, after frames went on, brings it back
@@ -649,7 +652,7 @@ public sealed class CoopHub : ICoopMembership
 				Persist( () => store.Put( session.ToRecord( exact: false ) ) );
 				sessions[session.Id] = session;
 				codes[session.Code] = session;
-				memberships[peer.Account.Key] = session;
+				AddMembership( peer.Account.Key, session );
 				peer.Session = session;
 				peer.MemberId = seat.Id;
 				peer.Hosting = true;
@@ -703,7 +706,7 @@ public sealed class CoopHub : ICoopMembership
 				var joined = new Seat( session.NextMember++, slot, key, peer.Account.Name ) { Peer = peer };
 				session.Seats.Add( joined );
 				Persist( () => store.Put( session.ToRecord( exact: false ) ) );
-				memberships[key] = session;
+				AddMembership( key, session );
 				peer.Session = session;
 				peer.MemberId = joined.Id;
 				peer.Hosting = false;
@@ -959,10 +962,28 @@ public sealed class CoopHub : ICoopMembership
 	public event Action<string, string>? MemberGone;
 
 	/// <inheritdoc/>
-	public bool IsMember( string accountKey, string sessionId )
+	public bool IsMember( string accountKey, string sessionId ) => memberSessions.TryGetValue( accountKey, out var id ) && id == sessionId;
+
+	/// <summary>[EXT:online-coop-session] <paramref name="accountKey"/> holds a seat in <paramref name="session"/>. Under the registry lock.</summary>
+	private void AddMembership( string accountKey, Session session )
 	{
-		lock ( registry )
-			return memberships.TryGetValue( accountKey, out var session ) && session.Id == sessionId && !session.Ended;
+		memberships[accountKey] = session;
+		memberSessions[accountKey] = session.Id;
+	}
+
+	/// <summary>
+	/// [EXT:online-coop-session] <paramref name="accountKey"/>'s seat in <paramref name="session"/> is gone: it is no member from here on, and then the chat hears of it
+	/// (<see cref="MemberGone"/>). A listener's failure is reported, never thrown into the change. Under the registry lock and the session's gate.
+	/// </summary>
+	private void RemoveMembership( string accountKey, Session session )
+	{
+		memberships.Remove( accountKey );
+		memberSessions.TryRemove( accountKey, out _ );
+		foreach ( var listener in MemberGone?.GetInvocationList() ?? Array.Empty<Delegate>() )
+		{
+			try { ((Action<string, string>)listener)( accountKey, session.Id ); }
+			catch ( Exception exception ) when ( exception is not OutOfMemoryException ) { Warn?.Invoke( $"A co-op membership listener failed: {exception.Message}" ); }
+		}
 	}
 
 	/// <summary>A guest leaves or is kicked: its seat goes, the change is stored, then announced. Under the registry lock and the session's gate.</summary>
@@ -972,8 +993,7 @@ public sealed class CoopHub : ICoopMembership
 		session.Seats.Remove( seat );
 		// while the server stops the frame position can no longer move, so the stored one stays exact (an account deleted during the stop)
 		Persist( () => store.Put( session.ToRecord( exact: restarting && session.SeqKnown ) ) );
-		memberships.Remove( seat.AccountKey );
-		MemberGone?.Invoke( seat.AccountKey, session.Id );
+		RemoveMembership( seat.AccountKey, session );
 		if ( seat.Peer != null )
 		{
 			seat.Peer.Session = null;
@@ -1000,8 +1020,7 @@ public sealed class CoopHub : ICoopMembership
 		var now = clock();
 		foreach ( var seat in session.Seats )
 		{
-			memberships.Remove( seat.AccountKey );
-			MemberGone?.Invoke( seat.AccountKey, session.Id );
+			RemoveMembership( seat.AccountKey, session );
 			endedSessions[seat.AccountKey] = (session.Id, reason, text, now);
 			if ( seat.Peer is { } peer )
 			{

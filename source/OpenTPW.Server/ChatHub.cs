@@ -71,17 +71,21 @@ public sealed class ChatHub
 	{
 		ArgumentNullException.ThrowIfNull( membership );
 		coopMembership = membership;
-		// raised under the shared parks' locks: the move runs on its own
-		membership.MemberGone += ( accountKey, sessionId ) => ThreadPool.QueueUserWorkItem( _ => LeaveCoopRoom( accountKey, sessionId ) );
+		// at once, under the shared parks' locks (the rooms come after them, and nothing here waits on them): by the time the change is announced, the account's
+		// connections are out of the room, and a later entry asks again
+		membership.MemberGone += LeaveCoopRoom;
 	}
 
-	/// <summary>Takes the account's connections that are in the session's room back to the lobby.</summary>
+	/// <summary>Takes the account's connections that are in the session's room back to the lobby (one that moved on stays where it is).</summary>
 	private void LeaveCoopRoom( string accountKey, string sessionId )
 	{
 		var room = ChatProtocol.CoopRoom( sessionId );
 		foreach ( var session in sessions.Values.Where( session => session.Key == accountKey ) )
 			EnterRoom( session, ChatProtocol.LobbyRoom, onlyFrom: room );
 	}
+
+	/// <summary>[EXT:online-coop-session] The room an event names to players who may be outside it: a shared park's is named to none (null).</summary>
+	private static string? PublicRoom( string room ) => ChatProtocol.CoopSessionOf( room ) != null ? null : room;
 
 	/// <summary>Whether <paramref name="session"/>'s player is a member of the shared park whose room is <paramref name="room"/>.</summary>
 	private bool IsCoopMember( ChatSession session, string room ) =>
@@ -395,7 +399,8 @@ public sealed class ChatHub
 			foreach ( var other in sessions.Values.Where( other => other.Room == left ) )
 				Send( other, parted );
 		}
-		NotifyBuddiesOfEntry( session );
+		// the room this entry made (the player may have moved on since); the lobby, where a shared park's member is taken back to, names no park
+		NotifyBuddiesOfEntry( session, room );
 	}
 
 	/// <summary>
@@ -405,9 +410,9 @@ public sealed class ChatHub
 	// [EXT:online-buddy-enters-text] the client shows OpenTPW's own sentence for this system key: the original
 	// notification's string is not recovered (CHAT_COMMANDS 111-113, "Your buddy ", have empty English suffixes and
 	// no enter-the-park variant)
-	private void NotifyBuddiesOfEntry( ChatSession session )
+	private void NotifyBuddiesOfEntry( ChatSession session, string entered )
 	{
-		var room = RoomName( session.Room );
+		var room = RoomName( entered );
 		if ( room.Length == 0 )
 			return;
 		foreach ( var other in sessions.Values.Where( other => other != session && store.BuddyNames( other.Account ).Contains( session.Name ) ) )
@@ -496,8 +501,9 @@ public sealed class ChatHub
 				if ( argument.Length == 0 )
 					break;
 				var world = command is ChatCommand.WShout or ChatCommand.UShout;
-				var shout = new ChatEvent( command == ChatCommand.EShout ? ChatEventKind.Emote : world ? ChatEventKind.WorldShout : ChatEventKind.Shout, from, session.Room, argument,
-					Command: ChatCommands.CanonicalName( command ) );
+				// a world shout reaches players outside the room: it names a shared park's to none
+				var shout = new ChatEvent( command == ChatCommand.EShout ? ChatEventKind.Emote : world ? ChatEventKind.WorldShout : ChatEventKind.Shout, from,
+					world ? PublicRoom( session.Room ) : session.Room, argument, Command: ChatCommands.CanonicalName( command ) );
 				foreach ( var other in sessions.Values.Where( other => (world || other.Room == session.Room) && !other.Earmuffs ) )
 					Deliver( other, shout );
 				break;
@@ -628,7 +634,7 @@ public sealed class ChatHub
 					Send( session, ChatEvent.ForNotice( ChatNotice.NoSuchPlayer, name ) );
 					break;
 				}
-				Deliver( target, new ChatEvent( ChatEventKind.Page, from, session.Room, Text: text ) );
+				Deliver( target, new ChatEvent( ChatEventKind.Page, from, PublicRoom( session.Room ), Text: text ) );
 				Send( session, ChatEvent.ForNotice( ChatNotice.YouPage, target.Name, Filtered( session, text ) ) );
 				break;
 			}
@@ -636,13 +642,15 @@ public sealed class ChatHub
 			{
 				var (name, _) = ChatCommands.SplitName( argument );
 				var target = name == null ? null : Online( name );
-				if ( target == null )
+				// the target's room, read once: the answer names the room it was asked of
+				var room = target?.Room;
+				if ( target == null || room == null )
 					Send( session, name == null ? ChatEvent.ForNotice( ChatNotice.NeedName ) : ChatEvent.ForNotice( ChatNotice.NoSuchPlayer, name ) );
-				else if ( ChatProtocol.CoopSessionOf( target.Room ) != null )
+				else if ( ChatProtocol.CoopSessionOf( room ) != null )
 					// [EXT:online-coop-session] a shared park is named to no one: the player is in one
 					Send( session, new ChatEvent( ChatEventKind.System, Text: ChatSystemKeys.InSharedPark, Args: new[] { target.Name } ) );
 				else
-					Send( session, new ChatEvent( ChatEventKind.Notice, target.Name, target.Room, Notice: (int)ChatNotice.ThePark, Args: new[] { target.Name, RoomName( target.Room ) } ) );
+					Send( session, new ChatEvent( ChatEventKind.Notice, target.Name, room, Notice: (int)ChatNotice.ThePark, Args: new[] { target.Name, RoomName( room ) } ) );
 				break;
 			}
 			case ChatCommand.Afk:

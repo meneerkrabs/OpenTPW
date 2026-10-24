@@ -251,6 +251,8 @@ public sealed class CoopLink : ICoopStreamTransport
 		reason = CoopProtocol.Clip( reason.Trim() );
 		pendingLeave = Send( new CoopLeave( reason ) ) ? null : (session.Id, reason);
 		ForgetSession();
+		// the session is over for this game without an end event: its chat leaves the session's room
+		owner.LeftCoopSession( session.Id );
 		return true;
 	}
 

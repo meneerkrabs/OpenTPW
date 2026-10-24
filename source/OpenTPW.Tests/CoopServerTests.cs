@@ -418,6 +418,97 @@ public class CoopServerTests
 		}
 	}
 
+	/// <summary>A host and a guest whose chats are in their session's room, and a stranger's chat in the lobby.</summary>
+	private static async Task<(CoopTestClient Host, CoopTestClient Guest, uint GuestId, ChatConnection HostChat, ChatConnection GuestChat, ChatConnection StrangerChat)> SharedRoom(
+		LoopbackServer server, Accounts accounts )
+	{
+		var hostAccount = await accounts.Add( server, "Hostess" );
+		var guestAccount = await accounts.Add( server, "Guest" );
+		var strangerAccount = await accounts.Add( server, "Stranger" );
+		var (host, _) = await CoopTestClient.ConnectAsync( server, hostAccount );
+		var (guest, _) = await CoopTestClient.ConnectAsync( server, guestAccount );
+		var created = await Create( host );
+		var joined = await Join( guest, created.Session.Code );
+		var room = ChatProtocol.CoopRoom( created.Session.Id );
+		var hostChat = await hostAccount.ConnectChatAsync();
+		var guestChat = await guestAccount.ConnectChatAsync();
+		var strangerChat = await strangerAccount.ConnectChatAsync();
+		foreach ( var chat in new[] { hostChat, guestChat, strangerChat } )
+			await ChatNextAsync( chat, RosterOf( ChatProtocol.LobbyRoom ) );
+		await hostChat.JoinAsync( room );
+		await ChatNextAsync( hostChat, RosterOf( room ) );
+		await guestChat.JoinAsync( room );
+		await ChatNextAsync( guestChat, item => RosterOf( room )( item ) && item.Args!.Count == 2 );
+		await ChatNextAsync( hostChat, item => RosterOf( room )( item ) && item.Args!.Count == 2 );
+		return (host, guest, joined.Session.You, hostChat, guestChat, strangerChat);
+	}
+
+	[TestMethod]
+	public async Task AKickedMemberIsOutOfTheRoomOnceTheHostHearsOfTheKick()
+	{
+		var server = await Start();
+		await using var accounts = new Accounts();
+		try
+		{
+			var (host, guest, guestId, hostChat, guestChat, strangerChat) = await SharedRoom( server, accounts );
+			await using ( host )
+			await using ( guest )
+			await using ( hostChat )
+			await using ( guestChat )
+			await using ( strangerChat )
+			{
+				await host.SendAsync( new CoopKick( guestId ) );
+				await host.NextAsync<CoopMemberChanged>( change => change.State == CoopMemberState.Kicked );
+				// what the guest says now is the lobby's: it left the room before the kick was announced
+				await guestChat.SendAsync( ChatCommand.Say, "after the kick" );
+				var heard = await ChatNextAsync( strangerChat, item => item.Kind == ChatEventKind.Say && item.From == "Guest" );
+				Assert.AreEqual( ("after the kick", ChatProtocol.LobbyRoom), (heard.Text, heard.Room) );
+				// and never reached the room: the host's next line there is its own
+				await hostChat.SendAsync( ChatCommand.Say, "still here" );
+				var next = await ChatNextAsync( hostChat, item => item.Kind == ChatEventKind.Say );
+				Assert.AreEqual( ("Hostess", "still here"), (next.From, next.Text) );
+			}
+		}
+		finally
+		{
+			await server.DisposeAsync();
+			server.DeleteData();
+		}
+	}
+
+	[TestMethod]
+	public async Task EventsThatLeaveASharedParksRoomDoNotNameIt()
+	{
+		var server = await Start();
+		await using var accounts = new Accounts();
+		try
+		{
+			var (host, guest, _, hostChat, guestChat, strangerChat) = await SharedRoom( server, accounts );
+			await using ( host )
+			await using ( guest )
+			await using ( hostChat )
+			await using ( guestChat )
+			await using ( strangerChat )
+			{
+				// a world shout from the room reaches the lobby, a page reaches the stranger: neither names the room
+				await guestChat.SendAsync( ChatCommand.WShout, "hello world" );
+				var shout = await ChatNextAsync( strangerChat, item => item.Kind == ChatEventKind.WorldShout );
+				Assert.AreEqual( ("Guest", "hello world", (string?)null), (shout.From, shout.Text, shout.Room) );
+				await guestChat.SendAsync( ChatCommand.Page, "Stranger over here" );
+				var page = await ChatNextAsync( strangerChat, item => item.Kind == ChatEventKind.Page );
+				Assert.AreEqual( ("Guest", "over here", (string?)null), (page.From, page.Text, page.Room) );
+				// a world shout from the lobby still names it
+				await strangerChat.SendAsync( ChatCommand.WShout, "hi all" );
+				Assert.AreEqual( ChatProtocol.LobbyRoom, (await ChatNextAsync( hostChat, item => item.Kind == ChatEventKind.WorldShout && item.From == "Stranger" )).Room );
+			}
+		}
+		finally
+		{
+			await server.DisposeAsync();
+			server.DeleteData();
+		}
+	}
+
 	[TestMethod]
 	public async Task AHostAndThreeGuestsShareFramesAndMessages()
 	{

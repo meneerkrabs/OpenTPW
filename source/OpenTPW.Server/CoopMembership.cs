@@ -6,12 +6,13 @@ namespace OpenTPW.Server;
 /// </summary>
 public interface ICoopMembership
 {
-	/// <summary>Whether <paramref name="accountKey"/> holds a seat in the running session <paramref name="sessionId"/>.</summary>
+	/// <summary>Whether <paramref name="accountKey"/> holds a seat in the running session <paramref name="sessionId"/>; it waits on no lock of the shared parks.</summary>
 	bool IsMember( string accountKey, string sessionId );
 
 	/// <summary>
-	/// Raised with an account and the session it stopped being a member of: it left or was kicked, or the session ended. Raised under the hub's locks, so a handler
-	/// neither blocks nor calls back into the hub.
+	/// Raised with an account and the session it stopped being a member of (it left or was kicked, or the session ended), once <see cref="IsMember"/> says so. Raised
+	/// under the shared parks' locks, before the change is announced: a handler waits on none of them and does not call back into the shared parks; one that throws
+	/// is reported, not thrown into the change.
 	/// </summary>
 	event Action<string, string>? MemberGone;
 }

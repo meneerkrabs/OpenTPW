@@ -481,10 +481,13 @@ no screen or park uses it yet (C2b to C2d).
   session). A message to one member is delivered at most once (C2b asks again after a resume).
 - **The session's chat room** (C2d-1). Each session has a chat room of its own, `coop:<id>` (its session
   id), on the chat socket. Its members alone enter it, by a join or by going to a member who is in it;
-  anyone else is told there is no such park. A member who leaves or is removed, and every member of a
-  session that ends, is taken back to the lobby. Locating a player in a shared park says only that, never
-  its title or room, and no buddy is told a player entered one. The game names the room after its
-  session's title, or "Shared park" when the title is not at hand.
+  anyone else is told there is no such park. The game's chat follows its session: it enters the room once
+  the game hosts or joins a session (and again after a reconnect), and goes back to the lobby once the
+  session is over for the game. The server takes a member who leaves or is removed, and every member of a
+  session that ends, back to the lobby before the change is announced. Locating a player in a shared park
+  says only that, never its title or room; a world shout or a page from the room does not name it; and no
+  buddy is told a player entered one. The game names the room after its session's title, or "Shared park"
+  when the title is not at hand.
 - **Join snapshots** `[EXT:online-coop-snapshot-join]`. The host uploads the park a joiner starts from
   (`PUT /api/v1/coop/{id}/snapshot`, the answer names its SHA-256; a limit of the session's own, 60 an
   hour) and its members download it by digest (`GET …/snapshot/{sha256}`, resumable with a range); the

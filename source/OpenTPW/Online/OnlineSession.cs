@@ -102,6 +102,10 @@ public sealed class OnlineSession : IDisposable, IPresenceSession, IChatPanelSou
 	{
 		Folders = folders;
 		Coop = new CoopLink( this );
+		// [EXT:online-coop-session] the chat follows the shared park: its members talk in the session's room, and are back in the lobby once it is over for this game
+		Coop.SessionStarted += state => JoinRoom( ChatProtocol.CoopRoom( state.Id ) );
+		Coop.Resumed += state => JoinRoom( ChatProtocol.CoopRoom( state.Id ) );
+		Coop.SessionEnded += ended => LeftCoopSession( ended.SessionId );
 		try { Settings = folders.LoadSettings(); }
 		catch ( Exception exception ) when ( exception is InvalidDataException or IOException )
 		{
@@ -1079,6 +1083,16 @@ public sealed class OnlineSession : IDisposable, IPresenceSession, IChatPanelSou
 		requestedRoom = room;
 		joinPending = true;
 		joinSentAt = null;
+	}
+
+	/// <summary>
+	/// [EXT:online-coop-session] The shared park's session <paramref name="sessionId"/> is over for this game (it ended, or this game left it): a chat in its room, or
+	/// on its way there, goes back to the lobby. Nothing once logged out, which leaves every room.
+	/// </summary>
+	internal void LeftCoopSession( string sessionId )
+	{
+		if ( IsLoggedIn && WantedRoom == ChatProtocol.CoopRoom( sessionId ) )
+			JoinRoom( ChatProtocol.LobbyRoom );
 	}
 
 	/// <summary>The room the session is in or on its way to (<see cref="JoinRoom"/>'s last room until the server confirms or refuses it).</summary>

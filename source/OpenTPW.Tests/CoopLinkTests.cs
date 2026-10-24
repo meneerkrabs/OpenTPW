@@ -155,6 +155,36 @@ public class CoopLinkTests
 
 	private static int Value( ReadOnlyMemory<byte> payload ) => BitConverter.ToInt32( payload.Span );
 
+	/// <summary>
+	/// [EXT:online-coop-session] The chat follows the shared park (C2d-1): a member's chat enters the session's room once it hosts or joins, and is back in the
+	/// lobby once the session is over for it, whether it left or the session ended.
+	/// </summary>
+	[TestMethod]
+	public async Task TheChatFollowsItsSharedPark() => await WithServer( async ( server, players ) =>
+	{
+		var host = await players.Add( server, "Hostess" );
+		var guest = await players.Add( server, "Guest" );
+		host.Session.ConnectChat();
+		guest.Session.ConnectChat();
+		await Until( () => host.Session.Chat != null && guest.Session.Chat != null && !host.Session.ChatBusy && !guest.Session.ChatBusy, "both chats", host, guest );
+		await Open( host, guest );
+		var shared = await Share( host, guest );
+		var room = OpenTPW.Online.Chat.ChatProtocol.CoopRoom( shared.Id );
+		var lobby = OpenTPW.Online.Chat.ChatProtocol.LobbyRoom;
+		await Until( () => host.Session.CurrentRoom == room && guest.Session.CurrentRoom == room && host.Session.RoomPlayers.Count == 2, "both chats in the session's room", host, guest );
+		CollectionAssert.AreEquivalent( new[] { "Hostess", "Guest" }, host.Session.RoomPlayers.ToArray() );
+
+		// the guest's own leave takes its chat back to the lobby, and the host's roster is its own again
+		Assert.IsTrue( guest.Link.Leave( "Off home." ) );
+		await Until( () => guest.Session.CurrentRoom == lobby && host.Session.RoomPlayers.Count == 1, "the guest's chat back in the lobby", host, guest );
+		// joining again brings it back; the host's leave ends the session, and both chats are in the lobby
+		Assert.IsTrue( guest.Link.Join( shared.Code ) );
+		await Until( () => guest.Session.CurrentRoom == room && host.Session.RoomPlayers.Count == 2, "the guest's chat in the room again", host, guest );
+		Assert.IsTrue( host.Link.Leave( "Closing up." ) );
+		await Until( () => host.Session.CurrentRoom == lobby && guest.Session.CurrentRoom == lobby && guest.Ended.Count == 1, "both chats in the lobby", host, guest );
+		Assert.AreEqual( CoopReason.HostLeft, guest.Ended.Single().Reason );
+	} );
+
 	[TestMethod]
 	public async Task AHostAndAGuestShareASessionThroughTheirLinks()
 	{

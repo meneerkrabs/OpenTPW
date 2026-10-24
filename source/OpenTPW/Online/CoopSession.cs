@@ -32,6 +32,34 @@ public enum CoopShareRefusal
 }
 
 /// <summary>[EXT:online-coop-snapshot-join] Where a guest's session stands (docs/COOP.md, "Joining a running session").</summary>
+/// <summary>[EXT:online-coop-session] Why this game cannot join a shared park (C2d-3; <see cref="CoopSession.JoinRefusalKind"/>).</summary>
+public enum CoopJoinRefusal
+{
+	/// <summary>It can.</summary>
+	None,
+	/// <summary>The game runs another edition than Theme Park World, whose parks alone are shared.</summary>
+	OtherEdition,
+	/// <summary>The run was started with a developer option that changes the park outside the commands.</summary>
+	DeveloperOptions
+}
+
+/// <summary>[EXT:online-coop-session] Why a session ended for this game, as the screens say it (C2d-3; <see cref="CoopSession.EndCause"/>).</summary>
+public enum CoopSessionEnd
+{
+	/// <summary>It runs.</summary>
+	None,
+	/// <summary>This game left it: a leave, a closed park, a logout.</summary>
+	Left,
+	/// <summary>The server ended it for this game (<see cref="CoopSession.ServerReason"/>: the host left, a removal, the host away too long, a deleted account, another build).</summary>
+	Server,
+	/// <summary>The link to the server was lost or taken over before the session could go on.</summary>
+	LinkLost,
+	/// <summary>The guest's park could not be built or kept: its joins failed again and again.</summary>
+	JoinFailed,
+	/// <summary>The host's stream could not go on.</summary>
+	StreamFailed
+}
+
 public enum CoopGuestPhase
 {
 	/// <summary>No park of the session yet: it waits for its capture, downloads it or builds it.</summary>
@@ -213,6 +241,12 @@ internal sealed class CoopSession : IDisposable
 	/// <summary>Why the session ended for this game; null while it runs.</summary>
 	public string? EndedWith { get; private set; }
 
+	/// <summary>[EXT:online-coop-session] What ended the session for this game (C2d-3: the screens say it in the player's language, never the server's English).</summary>
+	public CoopSessionEnd EndCause { get; private set; }
+
+	/// <summary>The server's reason, for <see cref="CoopSessionEnd.Server"/>; <see cref="CoopReason.None"/> otherwise.</summary>
+	public CoopReason ServerReason { get; private set; }
+
 	/// <summary>Raised once when the session ends for this game, with the reason.</summary>
 	public event Action<string>? Ended;
 
@@ -305,15 +339,28 @@ internal sealed class CoopSession : IDisposable
 			throw new InvalidOperationException( "The link is in no session." );
 		if ( state.You == state.Host )
 			throw new InvalidOperationException( "The host's game streams; it does not follow." );
-		if ( GameEditions.Current != GameEdition.ThemeParkWorld )
-			throw new InvalidOperationException( "Only Theme Park World parks are shared." );
-		if ( ChangesParkOutsideCommands )
-			throw new InvalidOperationException( "This game was started with developer options that change the park; restart it without them to join a shared park." );
+		if ( JoinRefusal is { } refusal )
+			throw new InvalidOperationException( refusal );
 		var session = new CoopSession( null, link, CoopRole.Guest, seconds, joinHost ) { Phase = CoopGuestPhase.Joining };
 		session.Subscribe();
 		session.Ask( CoopSnapshotReason.Join );
 		return session;
 	}
+
+	/// <summary>
+	/// [EXT:online-coop-session] Why this game cannot join a shared park; <see cref="CoopJoinRefusal.None"/> when it can. Only Theme Park World parks are shared, and a run started with
+	/// a developer option that changes the park outside the commands cannot follow one (C2d-3 checks it before the join goes out).
+	/// </summary>
+	internal static CoopJoinRefusal JoinRefusalKind => GameEditions.Current != GameEdition.ThemeParkWorld ? CoopJoinRefusal.OtherEdition
+		: ChangesParkOutsideCommands ? CoopJoinRefusal.DeveloperOptions : CoopJoinRefusal.None;
+
+	/// <summary><see cref="JoinRefusalKind"/> in English, for the log; null when this game can join.</summary>
+	internal static string? JoinRefusal => JoinRefusalKind switch
+	{
+		CoopJoinRefusal.OtherEdition => "Only Theme Park World parks are shared.",
+		CoopJoinRefusal.DeveloperOptions => "This game was started with developer options that change the park; restart it without them to join a shared park.",
+		_ => null,
+	};
 
 	private static void Require( Level level, ICoopStreamTransport link, CoopRole role )
 	{
@@ -346,24 +393,35 @@ internal sealed class CoopSession : IDisposable
 	}
 
 	/// <summary>Ends the session for this game with <paramref name="reason"/> and leaves it (a host's leave ends it for everyone).</summary>
-	public void End( string reason ) => Finish( reason, leave: true );
+	public void End( string reason ) => Finish( reason, leave: true, CoopSessionEnd.Left );
 
 	/// <summary>The level closes (a load, a restart, a replaced park, leaving it): the session ends for this game.</summary>
 	public void Dispose() => End( "The park was closed." );
 
-	private void OnSessionEnded( CoopEnded ended ) => Finish( ended.Text, leave: false );
+	/// <summary>The link heard the end: the server's (with its reason), this game's own close with a leave, or a link that stopped.</summary>
+	private void OnSessionEnded( CoopEnded ended ) => Finish( ended.Text, leave: false, ended.Reason switch
+	{
+		CoopReason.Left => CoopSessionEnd.Left,
+		CoopReason.Unknown => CoopSessionEnd.LinkLost,
+		_ => CoopSessionEnd.Server,
+	}, ended.Reason is CoopReason.Left or CoopReason.Unknown ? CoopReason.None : ended.Reason );
+
+	/// <summary>The guest's park cannot be built, entered or kept (a refused or failed build, a failed swap, a capture the server no longer serves): the session ends and is left.</summary>
+	private void FailJoin( string reason ) => Finish( reason, leave: true, CoopSessionEnd.JoinFailed );
 
 	/// <summary>The host's stream ended the session (and left it) because it cannot go on without skipping or losing a record.</summary>
-	private void OnStreamFailed( string reason ) => Finish( reason, leave: false );
+	private void OnStreamFailed( string reason ) => Finish( reason, leave: false, CoopSessionEnd.StreamFailed );
 
 	/// <summary>A guest's own click was refused by the session's rights: its HUD says only the host builds.</summary>
 	private void OnRefused( ParkCommand command ) => level?.NoteSessionRefusal();
 
-	private void Finish( string reason, bool leave )
+	private void Finish( string reason, bool leave, CoopSessionEnd cause, CoopReason serverReason = CoopReason.None )
 	{
 		if ( EndedWith != null )
 			return;
 		EndedWith = reason;
+		EndCause = cause;
+		ServerReason = serverReason;
 		link.SessionEnded -= OnSessionEnded;
 		link.MessageReceived -= OnMessage;
 		link.FrameReceived -= OnFrame;
@@ -419,7 +477,7 @@ internal sealed class CoopSession : IDisposable
 		Log.Warning( $"Joining the shared park failed: {why}" );
 		if ( failedJoins.Count < MaximumFailedJoins )
 			return false;
-		End( $"The shared park could not be joined: {why}" );
+		FailJoin( $"The shared park could not be joined: {why}" );
 		return true;
 	}
 
@@ -539,7 +597,7 @@ internal sealed class CoopSession : IDisposable
 	{
 		FinishTiming( error is CoopJoinRefusedException ? "refused" : "failed", build );
 		if ( error is CoopJoinRefusedException )
-			End( $"The shared park cannot be joined: {error.Message}" );
+			FailJoin( $"The shared park cannot be joined: {error.Message}" );
 		else
 			Failed( CoopSnapshotReason.FailedCheck, $"the park could not be built: {error.Message}" );
 	}
@@ -635,7 +693,7 @@ internal sealed class CoopSession : IDisposable
 			// the old park is gone or half gone: the session cannot go on
 			Release( build );
 			FinishTiming( "failed", build );
-			End( $"The shared park could not be entered: {error.Message}" );
+			FailJoin( $"The shared park could not be entered: {error.Message}" );
 			return;
 		}
 		level = candidate;
@@ -725,7 +783,7 @@ internal sealed class CoopSession : IDisposable
 				// a permanent failure ends the join whatever it names: the member is out of step or the park cannot be shared
 				if ( failure.Permanent && generation >= answeredGeneration )
 				{
-					End( $"The shared park cannot be joined ({failure.Reason})." );
+					FailJoin( $"The shared park cannot be joined ({failure.Reason})." );
 					break;
 				}
 				if ( generation > assigned )
@@ -792,7 +850,7 @@ internal sealed class CoopSession : IDisposable
 		{
 			// the server no longer counts this game a player of the session
 			FinishTiming( "failed" );
-			End( $"The shared park cannot be downloaded: {result.Failure}" );
+			FailJoin( $"The shared park cannot be downloaded: {result.Failure}" );
 			return;
 		}
 		if ( result.Busy )
@@ -803,7 +861,7 @@ internal sealed class CoopSession : IDisposable
 			if ( wait > MaximumBusyWaitSeconds )
 			{
 				FinishTiming( "failed" );
-				End( $"The shared park cannot be downloaded now: {result.Failure}" );
+				FailJoin( $"The shared park cannot be downloaded now: {result.Failure}" );
 				return;
 			}
 			if ( busyRetries < MaximumBusyRetries )

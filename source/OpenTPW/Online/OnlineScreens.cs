@@ -27,6 +27,8 @@ public sealed class OnlineHost
 	public Action<int>? Advise { get; init; }
 	/// <summary>[EXT:online-coop-session] Shares the open park with other players (<see cref="OnlineScreens.ShowBuildTogether"/>); null where the game does not.</summary>
 	internal ICoopHosting? Hosting { get; init; }
+	/// <summary>[EXT:online-coop-session] Joins a shared park with a code (<see cref="OnlineScreens.ShowJoinSharedPark"/>); null where the game does not.</summary>
+	internal ICoopJoining? Joining { get; init; }
 }
 
 /// <summary>
@@ -666,6 +668,136 @@ public sealed class OnlineScreens
 		Push( screen );
 	}
 
+	/// <summary>The lobby's Build Together hub's name (C2d-3).</summary>
+	internal const string BuildTogetherLobbyScreenName = "buildTogetherLobby";
+
+	/// <summary>The join screen's name (C2d-3).</summary>
+	internal const string JoinSharedParkScreenName = "joinSharedPark";
+
+	/// <summary>
+	/// [EXT:online-coop-session] The lobby's Build Together hub (C2d-3): sharing one of the player's saved parks (<see cref="ShowShareSavedPark"/>) or joining a park another player
+	/// shares (<see cref="ShowJoinSharedPark"/>).
+	/// </summary>
+	// [EXT:own-window-sizes] the window and the places of its controls are OpenTPW's: the original has no shared parks
+	public void ShowBuildTogetherLobby()
+	{
+		var screen = new UiScreen( BuildTogetherLobbyScreenName );
+		var window = UiDialogs.CenteredWindow( 1200, 900 );
+		UiDialogs.AddWindow( screen, window, "w_big", () => strings.Extra( OpenTpwText.BuildTogether ) );
+		var x = window.X + 120;
+		var width = window.Width - 240;
+		screen.Add( new UiLabel { Id = "intro", Wrap = true, Font = fonts => fonts.Small, Text = () => strings.Extra( OpenTpwText.BuildTogetherLobbyIntro ),
+			Bounds = new UiRect( x, window.Y + 150, width, 200 ), Anchor = UiAnchor.Center } );
+		var share = screen.Add( new UiButton { Id = "shareSaved", Text = () => strings.Extra( OpenTpwText.ShareASavedPark ), Clicked = ShowShareSavedPark,
+			Enabled = host.Hosting != null, Bounds = new UiRect( x, window.Y + 390, width, 110 ), Anchor = UiAnchor.Center } );
+		screen.Add( new UiButton { Id = "joinWithCode", Text = () => strings.Extra( OpenTpwText.JoinWithCode ), Clicked = ShowJoinSharedPark,
+			Enabled = host.Joining != null, Bounds = new UiRect( x, window.Y + 530, width, 110 ), Anchor = UiAnchor.Center } );
+		AddStatus( screen, window );
+		AddBack( screen, window );
+		screen.Focus( share );
+		Push( screen );
+	}
+
+	/// <summary>
+	/// [EXT:online-coop-session] Joining a shared park with its code (C2d-3; docs/COOP.md, "Joining a shared park from the lobby"): the code the host gave (case, spaces and dashes do
+	/// not matter), or a login. While it joins: the stage in words (joining, getting the host's park, building it) and a cancel; a refusal in words, with a way back to the code.
+	/// Once the game took the join, its own end dialog says why a session ended; the park, once built, replaces the lobby.
+	/// </summary>
+	// [EXT:own-window-sizes] the window and the places of its controls are OpenTPW's: the original has no shared parks
+	public void ShowJoinSharedPark()
+	{
+		if ( host.Joining is not { } joining )
+			return;
+		var screen = new UiScreen( JoinSharedParkScreenName );
+		var window = UiDialogs.CenteredWindow( 1400, 1100 );
+		UiDialogs.AddWindow( screen, window, "w_big", () => strings.Extra( OpenTpwText.JoinSharedParkTitle ) );
+		var x = window.X + 120;
+		var width = window.Width - 240;
+		// what the screen says of a code it would not send
+		var localMessage = "";
+		CoopJoinAttempt? Attempt() => joining.Joining is { } attempt && (attempt.Stage != CoopJoinStage.Done || attempt.Outcome is not (CoopJoinOutcome.Cancelled or CoopJoinOutcome.None)
+			&& !(attempt.Outcome == CoopJoinOutcome.Ended && (attempt.Taken || attempt.EndCause == CoopSessionEnd.Left))) ? attempt : null;
+		bool Running() => Attempt() is { Stage: not CoopJoinStage.Done };
+		bool Failed() => Attempt() is { Stage: CoopJoinStage.Done, Outcome: not CoopJoinOutcome.Joined };
+
+		var intro = screen.Add( new UiLabel { Id = "intro", Wrap = true, Font = fonts => fonts.Small, Text = () => strings.Extra( OpenTpwText.JoinIntro ),
+			Bounds = new UiRect( x, window.Y + 150, width, 160 ), Anchor = UiAnchor.Center } );
+		var codeLabel = screen.Add( new UiLabel { Id = "codeLabel", Font = fonts => fonts.Label, Text = () => strings.Extra( OpenTpwText.JoinCodeLabel ),
+			Bounds = new UiRect( x, window.Y + 340, 300, 90 ), Anchor = UiAnchor.Center } );
+		// room for a code typed with spaces and dashes between its letters (the server's normalization drops them)
+		var codeField = screen.Add( new UiTextField { Id = "code", MaximumLength = 32, Model = "f_text1",
+			Bounds = new UiRect( x + 320, window.Y + 330, width - 320, 93 ), Anchor = UiAnchor.Center } );
+		codeField.Changed = _ => localMessage = "";
+		screen.Add( new UiLabel { Id = "message", Wrap = true, Font = fonts => fonts.Small, Color = UiColors.Value,
+			Bounds = new UiRect( x, window.Y + 460, width, 120 ), Anchor = UiAnchor.Center,
+			Text = () => Attempt() is { } attempt ? JoinMessage( attempt ) : localMessage.Length > 0 ? localMessage : !Session.IsLoggedIn ? strings.Extra( OpenTpwText.LogInToJoin ) : "" } );
+		void Join()
+		{
+			var code = codeField.Text.Trim();
+			if ( code.Length == 0 || !Session.IsLoggedIn || Running() )
+				return;
+			if ( CoopProtocol.NormalizeCode( code ) == null )
+			{
+				localMessage = strings.Extra( OpenTpwText.JoinNotACode );
+				return;
+			}
+			localMessage = "";
+			joining.StartJoining( code );
+		}
+		codeField.Submitted = Join;
+		var join = screen.Add( new UiButton { Id = "join", Text = () => strings.Extra( OpenTpwText.JoinButton ), Clicked = Join,
+			Bounds = new UiRect( x, window.Y + 620, 560, 110 ), Anchor = UiAnchor.Center } );
+		var login = screen.Add( new UiButton { Id = "login", Text = () => OnlineStrings.Ui( OnlineStrings.OnlineLogin, "Online login" ), Clicked = ShowLogin,
+			Bounds = new UiRect( x + 600, window.Y + 620, 560, 110 ), Anchor = UiAnchor.Center } );
+		var cancel = screen.Add( new UiButton { Id = "cancel", Text = () => strings.Extra( OpenTpwText.Cancel ), Clicked = joining.CancelJoining,
+			Bounds = new UiRect( x, window.Y + 620, 560, 110 ), Anchor = UiAnchor.Center } );
+		var again = screen.Add( new UiButton { Id = "again", Text = () => strings.Extra( OpenTpwText.Back ), Clicked = joining.DismissJoining,
+			Bounds = new UiRect( x, window.Y + 620, 560, 110 ), Anchor = UiAnchor.Center } );
+		screen.Updating += _ =>
+		{
+			var running = Running();
+			var failed = Failed();
+			var starting = !running && !failed;
+			intro.Visible = codeLabel.Visible = codeField.Visible = join.Visible = starting;
+			join.Enabled = Session.IsLoggedIn && Session.Busy == 0 && codeField.Text.Trim().Length > 0;
+			login.Visible = starting && !Session.IsLoggedIn;
+			cancel.Visible = running && Attempt() is { Stage: not CoopJoinStage.Cancelling };
+			again.Visible = failed;
+		};
+		AddStatus( screen, window );
+		// Back gives up a join on its way (its seat, or its session, is left)
+		AddBack( screen, window, () => { if ( Running() ) joining.CancelJoining(); stack.Pop(); } );
+		screen.Focus( codeField );
+		Push( screen );
+	}
+
+	/// <summary>[EXT:online-coop-session] What the join screen says of an attempt: its stage while it runs, its outcome once over (C2d-3).</summary>
+	private string JoinMessage( CoopJoinAttempt attempt ) => attempt.Stage switch
+	{
+		CoopJoinStage.Opening or CoopJoinStage.Joining or CoopJoinStage.Cancelling or CoopJoinStage.Answered => strings.Extra( OpenTpwText.JoiningThePark ),
+		CoopJoinStage.Building => strings.Extra( attempt.Session is { IsBuilding: true } ? OpenTpwText.JoinBuildingPark : OpenTpwText.JoinGettingPark ),
+		CoopJoinStage.Done => attempt.Outcome switch
+		{
+			CoopJoinOutcome.Refused => strings.Extra( GameFlow.JoinRefusalText( attempt.Refusal ) ),
+			CoopJoinOutcome.LinkStopped => strings.Extra( LinkStopText( attempt.Stop ) ),
+			CoopJoinOutcome.NotACode => strings.Extra( OpenTpwText.JoinNotACode ),
+			CoopJoinOutcome.NotAllowed => strings.Extra( GameFlow.JoinNotAllowedText( attempt.NotAllowedBecause ) ),
+			CoopJoinOutcome.InSession => strings.Extra( OpenTpwText.JoinInSession ),
+			CoopJoinOutcome.Ended when GameFlow.JoinEndText( attempt.EndCause, attempt.ServerReason ) is { } words => strings.Extra( words ),
+			CoopJoinOutcome.Joined or CoopJoinOutcome.Cancelled or CoopJoinOutcome.Ended => "",
+			_ => strings.Extra( OpenTpwText.JoinRefused ),
+		},
+		_ => "",
+	};
+
+	/// <summary>[EXT:online-coop-session] Why the link to shared parks stopped, in the player's language.</summary>
+	private static OpenTpwText LinkStopText( CoopStop stop ) => stop switch
+	{
+		CoopStop.InUseElsewhere or CoopStop.Replaced => OpenTpwText.SharedParkLinkInUse,
+		CoopStop.ServerTooOld => OpenTpwText.SharedParkServerTooOld,
+		_ => OpenTpwText.SharedParkLinkLost,
+	};
+
 	/// <summary>[EXT:online-coop-session] What the Build Together screen says of an attempt: its stage while it runs, its outcome once over.</summary>
 	private string ShareMessage( CoopShare share ) => share.Stage switch
 	{
@@ -673,12 +805,7 @@ public sealed class OnlineScreens
 		CoopShareStage.Done => share.Outcome switch
 		{
 			CoopShareOutcome.Refused => RefusalText( share.Refusal ),
-			CoopShareOutcome.LinkStopped => strings.Extra( share.Stop switch
-			{
-				CoopStop.InUseElsewhere or CoopStop.Replaced => OpenTpwText.SharedParkLinkInUse,
-				CoopStop.ServerTooOld => OpenTpwText.SharedParkServerTooOld,
-				_ => OpenTpwText.SharedParkLinkLost,
-			} ),
+			CoopShareOutcome.LinkStopped => strings.Extra( LinkStopText( share.Stop ) ),
 			CoopShareOutcome.CreateRefused => strings.Extra( share.CreateRefusal switch
 			{
 				Online.Coop.CoopReason.ServerFull => OpenTpwText.SharedParkServerFull,

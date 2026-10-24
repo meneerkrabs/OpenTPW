@@ -23,7 +23,8 @@ Building a park together (co-op, `[EXT:online-coop-*]`) is planned as host-seque
 decisions and the command layer every park edit now goes through are in [COOP.md](COOP.md). The server side of
 its sessions and the game's link to them exist ([Shared parks](#shared-parks)). A player shares the open park from the
 pause menu's Build Together line ([COOP.md](COOP.md), "Sharing the park from the game"), or one of their saved parks
-from the lobby's ([COOP.md](COOP.md), "Sharing a saved park from the lobby"); joining from the game's screens is next.
+from the lobby's ([COOP.md](COOP.md), "Sharing a saved park from the lobby"). Another player joins from the lobby with the
+park's code ([COOP.md](COOP.md), "Joining a shared park from the lobby"); the open list and invitations are next.
 
 ## Screens
 

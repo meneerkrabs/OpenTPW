@@ -113,31 +113,58 @@ internal sealed partial class GameFlow
 	}
 
 	/// <summary>
-	/// A session this game joined ended. One that never had a park on this machine leaves the player in the front end, with the reason unless this game ended it: on the menu's stack, or
-	/// with the front end queued when a failed swap already retired it.
+	/// A session this game joined ended, said in words by what ended it (<see cref="JoinEndText"/>; nothing when this game left it). One that never had a park on this machine leaves
+	/// the player in the front end: on the menu's stack, or with the front end queued when a failed swap already retired it. [EXT:online-coop-session] A guest whose joined park's
+	/// session ends (the host left, a removal, a lost connection) hears why over that park, whose OK takes the player to the lobby (C2d-3): the park is the host's and is never saved.
 	/// </summary>
 	private void OnJoinEnded( CoopSession session, string reason )
 	{
 		if ( ReferenceEquals( coopJoin, session ) )
 			coopJoin = null;
-		if ( endingJoin || session.Level != null || Level != null )
+		if ( endingJoin || JoinEndText( session.EndCause, session.ServerReason ) is not { } words )
+			return;
+		if ( session.Level != null )
+		{
+			if ( ReferenceEquals( session.Level, Level ) && Hud is { } hud )
+				ShowGuestEnd( session.Level, hud, words, reason );
+			return;
+		}
+		if ( Level != null )
 			return;
 		Log.Warning( $"Joining the shared park ended: {reason}" );
 		if ( Menu != null )
-			ShowJoinFailure( Menu.Stack, reason );
+			ShowJoinFailure( Menu.Stack, words );
 		else
 			Queue( () =>
 			{
 				ShowFrontEnd();
 				if ( Menu != null )
-					ShowJoinFailure( Menu.Stack, reason );
+					ShowJoinFailure( Menu.Stack, words );
 			} );
 	}
 
-	private void ShowJoinFailure( UiScreenStack stack, string reason )
+	/// <summary>The name of the dialog over a guest's park whose session ended.</summary>
+	internal const string GuestEndedScreenName = "coopGuestEnded";
+
+	/// <summary>[EXT:online-coop-session] The guest's park lost its session: the reason over the park, and its OK leaves for the lobby (C2d-3).</summary>
+	private void ShowGuestEnd( Level level, ParkHud hud, OpenTpwText words, string reason )
+	{
+		Log.Info( $"The shared park ended for this guest: {reason}" );
+		UiScreen? screen = null;
+		screen = UiDialogs.Message( GuestEndedScreenName, () => Strings.Extra( words ), (() => Strings.Extra( OpenTpwText.Back ), () =>
+		{
+			if ( screen!.IsRemoved || !ReferenceEquals( hud.Stack.Top, screen ) )
+				return;
+			hud.Stack.Pop();
+			RequestAutomaticExit( level, hud );
+		}) );
+		hud.Stack.Push( screen );
+	}
+
+	private void ShowJoinFailure( UiScreenStack stack, OpenTpwText words )
 	{
 		UiScreen? screen = null;
-		screen = UiDialogs.Message( "coopJoinEnded", () => reason, (() => Strings.Extra( OpenTpwText.Back ), () =>
+		screen = UiDialogs.Message( "coopJoinEnded", () => Strings.Extra( words ), (() => Strings.Extra( OpenTpwText.Back ), () =>
 		{
 			if ( !screen!.IsRemoved && ReferenceEquals( stack.Top, screen ) )
 				stack.Pop();

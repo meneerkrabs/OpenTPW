@@ -82,6 +82,16 @@ public partial class ParkPresenceTests
 
 		public (float X, float Y) Own => (Presence.State.Own.X, Presence.State.Own.Y);
 
+		/// <summary>Frames of a twentieth of a second until <paramref name="done"/> holds, failing after a minute of them (a figure that does not walk).</summary>
+		public void WalkUntil( Func<bool> done, string what )
+		{
+			for ( var frame = 0; !done(); frame++ )
+			{
+				Assert.IsTrue( frame < 1200, $"Waited in vain for {what}: the figure is at {Own}." );
+				Frames( 1, 0.05f );
+			}
+		}
+
 		/// <summary>Whether the own figure stands at <paramref name="place"/> (a walk ends there within float rounding).</summary>
 		public bool At( (float X, float Y) place ) => MathF.Abs( Own.X - place.X ) < 1e-3f && MathF.Abs( Own.Y - place.Y ) < 1e-3f;
 	}
@@ -408,8 +418,7 @@ public partial class ParkPresenceTests
 			park.Frames( 1, 0.3f );
 			park.Centre = (12.5f, 5.5f);
 			park.Frames( 1, 0.3f );
-			while ( park.Own.X < 5.2f )
-				park.Frames( 1, 0.05f );
+			park.WalkUntil( () => park.Own.X >= 5.2f, "the walk past column 5" );
 			if ( what == "a walk" )
 			{
 				// near enough to walk: the figure stands within twelve cells of the lake's spot
@@ -453,8 +462,7 @@ public partial class ParkPresenceTests
 		park.Centre = (12.5f, 5.5f);
 		park.Frames( 1, 0.3f );
 		Assert.IsTrue( park.Presence.State.Walking );
-		while ( park.Own.X < 5.8f )
-			park.Frames( 1, 0.05f );
+		park.WalkUntil( () => park.Own.X >= 5.8f, "the walk to just short of column 6" );
 		// an edit elsewhere: the walk is planned again at once (its last plan was long ago), and the next plan waits a quarter of a second
 		ground.Free( (29, 0) );
 		park.Frames( 1, 0.05f );

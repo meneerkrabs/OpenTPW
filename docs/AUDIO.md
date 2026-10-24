@@ -613,7 +613,8 @@ stepped by `LobbyEffects` at the 60 Hz reference rate (`[EXT:frame-driven-at-60h
   draws one full-screen quad (`0x57ed50`, from the lightning draw `0x57ee30`, state `0x9A1`: source blend INVDESTCOLOR,
   destination ZERO, `0x5679B0`) that inverts the picture, and clears the flag once it is drawn. In the original's order the quad comes
   first, then the bolts (`0x57ee4d`) and the raindrops (after `0x57ffec`; the rain render `0x57ff60` is called from the scene `0x576a00` at `0x576dab`), so
-  the bolts and the rain stay bright on the inverted frame. OpenTPW draws the other entities, then the quad, then the weather renderer.
+  the bolts and the rain stay bright on the inverted frame; the scene queues its meshes (`[0x8BCBB8]`, submitted via `0x581cd0`) and flushes them at `0x576dbe` -> `0x582170` -> `0x581db0`, after the rain call, so call order alone does not decide it. `[BIN:TPW-EXE:0x582ad0 deferred sort]` Primitives whose state lacks 0x1000/0x2000 are not drawn when submitted (`0x565590`); `0x582ad0` draws them back to front by mean depth (+0x30, sort `0x5829e0`). The quad's key is about 0.001 (its z); the bolts' key is forced to 0 (`0x5658c0(0)` in `0x57ec50`) and the drops' key is 0 (`0x57efd0`), so the bolts and drops draw after the quad. Opaque meshes (`0x1256`) draw in `0x581db0` before that flush; translucent meshes and the sky have larger keys, so they draw before the quad and are inverted. The reverse-sort condition `0x5828f0` (`([0x8BCBC8] & 0xC) == 0xC` plus bit 0x20000000) is not verified.
+   OpenTPW draws the other entities, then the quad, then the weather renderer.
 * **Rain**: 10^17 / (mean squared distance from the camera to the rainy islands)^4 drops, none below 20, at most 400
   (`0x10094F8C`): about 173 at the orbit radius around hallow, drawn by the same renderer.
 * **Island one-shots**: a draw with `(draw & 15) == 1` plays event 3 + (fresh draw mod 3) of the island's

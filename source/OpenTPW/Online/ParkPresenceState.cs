@@ -289,7 +289,8 @@ public sealed class ParkPresenceState
 		Own.SinceMoved = float.PositiveInfinity;
 		Own.Moving = false;
 		arrived = true;
-		pendingMode = ChatMoveMode.Teleport;
+		// an appearance after a ride not sent yet stays one: it shows the figure again and moves it, a teleport only moves it (a shared park's figure goes back to the view as the ride ends)
+		pendingMode = pendingMode == ChatMoveMode.Unhide ? ChatMoveMode.Unhide : ChatMoveMode.Teleport;
 	}
 
 	/// <summary>

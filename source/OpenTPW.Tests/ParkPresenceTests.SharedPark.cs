@@ -215,7 +215,7 @@ public partial class ParkPresenceTests
 		park.Centre = null;
 		park.Frames( 20 );
 		Assert.AreEqual( (60.5f, 30.5f), park.Own );
-		// while the player rides, the view does not move the hidden figure; it comes out at the ride's exit and goes back to the view
+		// while the player rides, the view does not move the hidden figure
 		park.Centre = (60.5f, 30.5f);
 		park.Riding = true;
 		park.Frames();
@@ -223,11 +223,22 @@ public partial class ParkPresenceTests
 		park.Centre = (64.5f, 30.5f);
 		park.Frames( 20 );
 		Assert.AreEqual( (60.5f, 30.5f), park.Own );
+		// the ride ends at its exit (30.5, 5.5), far from the view: the figure shows again and goes back to the view at once, an appearance for the others
 		park.Riding = false;
+		park.Frames();
+		Assert.AreEqual( (64.5f, 30.5f), park.Own );
+		Assert.AreEqual( ChatMoveMode.Unhide, park.Session.MoveModes[^1] );
+		Assert.IsFalse( park.Session.MoveModes.Skip( park.Session.MoveModes.LastIndexOf( ChatMoveMode.Hide ) + 1 ).Contains( ChatMoveMode.Teleport ), "no teleport hides the appearance" );
+		// a ride whose exit is near the view: the figure walks back to it
 		park.Centre = (34.5f, 5.5f);
 		park.Frames();
+		Assert.AreEqual( (34.5f, 5.5f), park.Own );
+		park.Riding = true;
+		park.Frames( 1, 0.3f );
+		park.Riding = false;
+		park.Frames();
 		Assert.AreEqual( ChatMoveMode.Unhide, park.Session.MoveModes[^1] );
-		Assert.IsTrue( state.Walking, "from the exit (30.5, 5.5) back to the view" );
+		Assert.IsTrue( state.Walking, "from the exit back to the view, which did not move" );
 		Assert.AreEqual( (34.5f, 5.5f), state.Own.Target );
 	}
 
@@ -318,5 +329,23 @@ public partial class ParkPresenceTests
 		ground.Free( (7, 0) );
 		WalkOn();
 		Assert.IsTrue( park.At( (3.5f, 5.5f) ), $"at {park.Own}" );
+		// a co-builder who lays a path cell by cell changes the ground every frame: the walk is planned again at most every quarter of a second
+		park.Centre = (12.5f, 5.5f);
+		park.Frames( 1, 0.3f );
+		park.Frames( 1, 0.3f );
+		// the first edit is gone round at once
+		ground.Free( (29, 0) );
+		park.Frames( 1, 0.01f );
+		var checks = ground.Checks;
+		for ( var frame = 1; frame < 20; frame++ )
+		{
+			ground.Free( (29, frame % 12) );
+			park.Frames( 1, 0.01f );
+		}
+		Assert.IsTrue( park.Presence.State.Walking );
+		Assert.AreEqual( checks, ground.Checks, "no plan within a fifth of a second of the last" );
+		ground.Free( (29, 0) );
+		park.Frames( 1, 0.1f );
+		Assert.IsTrue( ground.Checks > checks, "the walk is planned again once a quarter of a second passed" );
 	}
 }

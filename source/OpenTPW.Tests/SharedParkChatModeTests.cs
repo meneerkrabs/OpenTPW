@@ -73,11 +73,13 @@ public class SharedParkChatModeTests
 
 	private (List<InputButton> Down, List<InputButton> Last, Input.KeyboardInfo Keyboard) keys;
 	private CameraMode? camera;
+	private (Vector3 Position, Vector3 Forward, Vector3 Front, Vector3 Up) listener;
 
 	[TestInitialize]
 	public void Initialize()
 	{
 		camera = Camera.Mode;
+		listener = (AudioListener.Position, AudioListener.Forward, AudioListener.Front, AudioListener.Up);
 		keys = (Input.KeysDown, Input.LastKeysDown, Input.Keyboard);
 		Input.Keyboard = new();
 		Input.KeysDown = new();
@@ -93,6 +95,8 @@ public class SharedParkChatModeTests
 		Input.UpdateButtons();
 		if ( camera != null )
 			Camera.Mode = camera;
+		AudioListener.RestoreCaptured( listener.Position, listener.Forward );
+		AudioListener.RestoreCapturedAxes( listener.Front, listener.Up );
 	}
 
 	/// <summary>One frame as the game flow runs it: the text-entry flag starts cleared and the focused field sets it again.</summary>
@@ -149,7 +153,10 @@ public class SharedParkChatModeTests
 		Assert.IsFalse( level.IsRemovingObjects );
 		Assert.IsFalse( level.IsPlacing );
 		Assert.IsTrue( level.WorldPointerRouted, "the chat mode's park clicks never reach the level's tools" );
-		Assert.AreEqual( 0, presence.Clicks.Count, "nor walk a figure" );
+		// a click on an empty cell of the park starts no path, whose tool the HUD would start there
+		HudToolClick.Click( hud, (5, 5) );
+		Assert.IsFalse( level.CellTool.IsActive, "the chat mode starts no path" );
+		Assert.AreEqual( 0, presence.Clicks.Count, "nor walks a figure" );
 		PressF4( hud );
 		Assert.IsFalse( hud.ChatMode );
 		Assert.IsFalse( level.WorldPointerRouted );
@@ -161,7 +168,7 @@ public class SharedParkChatModeTests
 		var presence = new SharedPresence();
 		presence.Figures.Add( new VisitPresenceName( "Ann", true, new N.Vector3( 1, 2, 0 ) ) );
 		presence.Figures.Add( new VisitPresenceName( "Bob", false, new N.Vector3( 12, -7, 3 ) ) );
-		var hud = SharedParkHud( presence, out _ );
+		var hud = SharedParkHud( presence, out var level );
 		var view = new ParkCameraMode();
 		Camera.Mode = view;
 		Frame( hud, UiInput.Idle( new N.Vector2( -1, -1 ) ) );
@@ -171,6 +178,18 @@ public class SharedParkChatModeTests
 		Assert.AreEqual( (12f, -7f, 0f), (view.Target.X, view.Target.Y, view.Target.Z), "the view centred on it" );
 		Assert.IsFalse( panel.TakeTo( "Eve" ), "a buddy elsewhere has no figure here: the goto goes to the server" );
 		Assert.IsFalse( panel.TakeTo( "Ann" ), "the player's own figure is no goto's" );
+		// from the free walk: the walk ends, and the overview looks at the figure
+		var field = new ModelHeightfield( 10, 10, 10, 10, 0, 0, Array.Empty<uint>(), Enumerable.Repeat( 2.5f, 121 ).ToArray(), new uint[100] );
+		var place = GuestRenderer.CellToEngine( field, 5f, 5f );
+		Assert.IsTrue( FreeWalkCameraMode.TryGround( field, place.X, place.Y, out var ground ) );
+		var walk = new FreeWalkCameraMode( field, ground, Vector3.Forward );
+		level.UseFreeWalkForTests( walk );
+		Camera.Mode = walk;
+		Assert.IsTrue( panel.TakeTo( "Bob" ) );
+		Assert.IsNull( level.FreeWalk, "the walk ended" );
+		var overview = Camera.Mode as ParkCameraMode;
+		Assert.IsNotNull( overview );
+		Assert.AreEqual( (12f, -7f), (overview.Target.X, overview.Target.Y) );
 		// with no park view (the globe over the park), nothing moves and the server is asked
 		Camera.Mode = new CameraMode();
 		Assert.IsFalse( panel.TakeTo( "Bob" ) );

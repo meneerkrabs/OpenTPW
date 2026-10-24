@@ -149,7 +149,9 @@ function forwardUpgrade(request, socket, head, upstreamUrl, log, sockets) {
 	log.push(entry);
 	sockets.add(socket);
 	let upstreamSocket = null;
+	let timer = null;
 	const close = () => {
+		clearTimeout(timer);
 		sockets.delete(socket);
 		socket.destroy();
 		upstreamSocket?.destroy();
@@ -160,7 +162,7 @@ function forwardUpgrade(request, socket, head, upstreamUrl, log, sockets) {
 	// a connection of its own (no agent's pool): it is the socket's for as long as the socket lives, and closes with it
 	const outgoing = httpRequest({ hostname: upstreamUrl.hostname.replace(/^\[|\]$/g, ''), port: upstreamUrl.port || 80, path: url.pathname + url.search,
 		method: request.method, headers: { ...request.headers, host: upstreamUrl.host }, agent: false });
-	const timer = setTimeout(() => {
+	timer = setTimeout(() => {
 		entry.status = 504;
 		refuseUpgrade(socket, 504, 'Gateway Timeout');
 		close();

@@ -7,7 +7,7 @@ using OpenTPW.Online.Chat;
 namespace OpenTPW.Tests;
 
 /// <summary>
-/// [EXT:online-coop-figures] A joined guest's game and the co-builders' figures (C2d-4; docs/COOP.md, "Co-builders as figures"), over real links to the loopback server: the game
+/// [EXT:online-coop-presence] A joined guest's game and the co-builders' figures (C2d-4; docs/COOP.md, "Co-builders as figures"), over real links to the loopback server: the game
 /// makes the shared park's presence once it is in the park, shows the host's figure there and the host its own, makes it anew for the park a resync swaps in, and drops it with the
 /// session. The asset-free park has no terrain to draw on, so the test makes each presence without its drawing (<see cref="GameFlow.CoopPresenceOverride"/>).
 /// </summary>

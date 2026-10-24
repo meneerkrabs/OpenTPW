@@ -14,7 +14,7 @@ using N = System.Numerics;
 namespace OpenTPW.Tests;
 
 /// <summary>
-/// [EXT:online-coop-figures] A shared park's HUD with its co-builders as figures (C2d-4; docs/COOP.md, "Co-builders as figures"): the HUD comes first, the chat mode is F4's or
+/// [EXT:online-coop-presence] A shared park's HUD with its co-builders as figures (C2d-4; docs/COOP.md, "Co-builders as figures"): the HUD comes first, the chat mode is F4's or
 /// Enter's and builds nothing, and a goto moves the view to the co-builder's figure instead of asking the server.
 /// </summary>
 [TestClass]

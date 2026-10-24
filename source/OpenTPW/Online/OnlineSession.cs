@@ -1154,7 +1154,7 @@ public sealed class OnlineSession : IDisposable, IPresenceSession, IChatPanelSou
 	/// <summary>[EXT:online-coop-session] Whether this game is in a shared park, whose room its chat follows.</summary>
 	public bool InSharedPark => coopRoom != null;
 
-	/// <summary>[EXT:online-coop-figures] The chat room of the shared park this game is in (<c>coop:</c> and the session's id), or null outside one (C2d-4).</summary>
+	/// <summary>[EXT:online-coop-presence] The chat room of the shared park this game is in (<c>coop:</c> and the session's id), or null outside one (C2d-4).</summary>
 	public string? SharedParkRoom => coopRoom;
 
 	/// <summary>

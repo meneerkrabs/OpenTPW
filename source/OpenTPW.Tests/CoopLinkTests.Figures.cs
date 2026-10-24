@@ -7,7 +7,7 @@ using OpenTPW.Online.Chat;
 namespace OpenTPW.Tests;
 
 /// <summary>
-/// [EXT:online-coop-figures] The members of a shared park as figures over the loopback server (C2d-4; docs/COOP.md, "Co-builders as figures"): each member's first place in the
+/// [EXT:online-coop-presence] The members of a shared park as figures over the loopback server (C2d-4; docs/COOP.md, "Co-builders as figures"): each member's first place in the
 /// session's room is answered with where the others stand, the places that follow are relayed, and a member who leaves is gone from the others' parks.
 /// </summary>
 public partial class CoopLinkTests

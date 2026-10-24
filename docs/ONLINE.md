@@ -504,7 +504,7 @@ the open list").
   says only that, never its title or room; a world shout or a page from the room does not name it; and no
   buddy is told a player entered one. The game names the room after its session's title, or "Shared park"
   when the title is not at hand.
-- **Co-builders as figures** `[EXT:online-coop-figures]` (C2d-4). The members walk as figures with name
+- **Co-builders as figures** `[EXT:online-coop-presence]` (C2d-4). The members walk as figures with name
   plates in the session's room, as a visit's players do ([Players in a visited park](#players-in-a-visited-park)).
   Each member's own figure follows that member's view, not clicks; places go out only once the room is
   the connection's own, confirmed, and a shared park's figures do not sparkle. The game's side is in

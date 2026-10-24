@@ -7,7 +7,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 namespace OpenTPW.Tests;
 
 /// <summary>
-/// [EXT:online-coop-figures] Where a shared park's own figure goes (C2d-4; docs/COOP.md, "Co-builders as figures"): the centre of the player's view in cells, the overview's
+/// [EXT:online-coop-presence] Where a shared park's own figure goes (C2d-4; docs/COOP.md, "Co-builders as figures"): the centre of the player's view in cells, the overview's
 /// target or the free walk's place, mapped back the way the figures are drawn.
 /// </summary>
 [TestClass]

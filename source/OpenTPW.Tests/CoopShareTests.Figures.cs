@@ -10,7 +10,7 @@ using OpenTPW.Online.Chat;
 namespace OpenTPW.Tests;
 
 /// <summary>
-/// [EXT:online-coop-figures] A host's game and the co-builders' figures (C2d-4; docs/COOP.md, "Co-builders as figures"): the shared park's presence is made once the park is
+/// [EXT:online-coop-presence] A host's game and the co-builders' figures (C2d-4; docs/COOP.md, "Co-builders as figures"): the shared park's presence is made once the park is
 /// hosted and its chat follows the session's room, kept frame after frame, never put in a visit's place, and dropped with the session. The asset-free park has no terrain to
 /// draw on, so the test makes the presence without its drawing (<see cref="GameFlow.CoopPresenceOverride"/>).
 /// </summary>

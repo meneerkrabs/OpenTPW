@@ -2,7 +2,7 @@
 namespace OpenTPW;
 
 /// <summary>
-/// [EXT:online-coop-figures] The co-builders of a shared park as walking figures (C2d-4; docs/COOP.md, "Co-builders as figures"): while this game is logged in and in a running
+/// [EXT:online-coop-presence] The co-builders of a shared park as walking figures (C2d-4; docs/COOP.md, "Co-builders as figures"): while this game is logged in and in a running
 /// session's park, whose room its chat follows, the flow's presence is the shared park's (<see cref="ParkPresence.ForSharedPark"/>). It is made for one park and one session and
 /// goes with either, and with the login; a visit's presence is the visit's own and is never touched here. The player's own figure follows the view's centre: the overview's target,
 /// or the free walk's place.

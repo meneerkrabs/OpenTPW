@@ -584,7 +584,7 @@ public sealed partial class ParkHud
 
 	/// <summary>
 	/// Ends every armed tool, as their own Escape ends them: the build and Move tools, the remove tool, the coaster, staff, patrol, land, clearing and pool tools and the
-	/// path/queue tool (the winning screen, and [EXT:online-coop-figures] a shared park's chat mode, which builds nothing).
+	/// path/queue tool (the winning screen, and [EXT:online-coop-presence] a shared park's chat mode, which builds nothing).
 	/// </summary>
 	private void RetireArmedTools()
 	{
@@ -820,7 +820,7 @@ public sealed partial class ParkHud
 		SyncRideScreen();
 		HandleChatModeKey();
 		SyncChatMode();
-		// [EXT:online-coop-figures] the chat mode has no tools: its park clicks never reach the level's tool layer (a shared park's chat mode builds nothing)
+		// [EXT:online-coop-presence] the chat mode has no tools: its park clicks never reach the level's tool layer (a shared park's chat mode builds nothing)
 		if ( ChatMode )
 			level.WorldPointerRouted = true;
 		var walkingAtStart = CamcorderArmed || level.FreeWalk != null;
@@ -1167,7 +1167,7 @@ public sealed partial class ParkHud
 		// a visit builds no paths: while other players are shown its ground's help says that a click walks the player's figure there (UIHELPTEXT 401), not while the
 		// chat entry takes the keys (the help box would cover it)
 		// [BIN:TPW-EXE:0x4BD933 chat mode hover] the chat mode panel shows help 0x191 (401, "Left-click to walk to this point") over the park
-		// [EXT:online-coop-figures] a shared park's chat mode gives the ride help too, never the walk's (its clicks never walk)
+		// [EXT:online-coop-presence] a shared park's chat mode gives the ride help too, never the walk's (its clicks never walk)
 		if ( inPark && (level.IsReadOnlyVisit || ChatMode) )
 		{
 			// [BIN:TPW-EXE:0x4BD7F4 chat mode ride help] over a rideable ride the chat mode panel shows help 0x244 (580, "<ride>: Left-click to ride") with the ride's name
@@ -1178,7 +1178,7 @@ public sealed partial class ParkHud
 		}
 		else if ( inPark && tool.HoverHelpId( level.Paths, cursorX, cursorY ) is int help )
 			context.HoverHelp = strings.Help( help );
-		// [EXT:online-coop-figures] the chat mode has no tools (its entry retired them): no click, Backspace or line starts or edits one
+		// [EXT:online-coop-presence] the chat mode has no tools (its entry retired them): no click, Backspace or line starts or edits one
 		if ( ChatMode )
 			return false;
 		if ( !tool.IsActive )

@@ -254,7 +254,7 @@ public class ChatPanelTests
 	[TestMethod]
 	public void AGotoThePanelsHostTakesItselfSendsNoCommand()
 	{
-		// [EXT:online-coop-figures] a shared park's goto moves the view to a figure drawn there (C2d-4): no command goes out, so no "leave the park" notice; a name without one goes to the server
+		// [EXT:online-coop-presence] a shared park's goto moves the view to a figure drawn there (C2d-4): no command goes out, so no "leave the park" notice; a name without one goes to the server
 		var chat = Room();
 		var stack = new UiScreenStack();
 		var took = new List<string>();

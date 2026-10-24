@@ -936,7 +936,7 @@ The tests:
 
 ### Co-builders as figures (C2d-4)
 
-`[EXT:online-coop-figures]` In a shared park every member walks as a figure with a name plate, as the
+`[EXT:online-coop-presence]` In a shared park every member walks as a figure with a name plate, as the
 players of a visited park do (decision 8; [ONLINE.md](ONLINE.md), "Players in a visited park"): the
 guests' kid sprites, the name on a dark plate over the head, the player's own in yellow, under the HUD's
 windows.

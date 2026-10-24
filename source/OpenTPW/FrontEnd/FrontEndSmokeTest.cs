@@ -1437,7 +1437,19 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 				var window = form.Find( "window" )!.Bounds;
 				foreach ( var id in new[] { "publish", "close", "website", "export" } )
 					Require( form.Find( id ) is { } control && control.Bounds.X >= window.X && control.Bounds.Right <= window.Right && control.Bounds.Y >= window.Y && control.Bounds.Bottom <= window.Bottom, $"the publish form's {id} control lies inside its window" );
-				Require( ( (UiButton)form.Find( "publish" )! ).Model != null, "the publish form's tick button draws a model" );
+				Require( ( (UiButton)form.Find( "publish" )! ).Model == "b_okay" && ( (UiButton)form.Find( "close" )! ).Model == "b_exit", "the publish form's tick and cross draw the original b_okay and b_exit models" );
+				var nameField = (UiTextField)form.Find( "parkName" )!;
+				Require( nameField.MaximumLength == 15 && nameField.Text.Length is > 0 and <= 15 && ( (UiTextField)form.Find( "description" )! ).MaximumLength == 126, "the publish form's fields start filled and take 15 and 126 characters" );
+				// logged out, the tick stays enabled and opens the login dialog
+				Require( form.Find( "publish" )!.Enabled && !flow.Online.IsLoggedIn, "the tick stays enabled while logged out" );
+				Click( form, "publish" );
+			} );
+			Wait( "publish login renders", 3 );
+			Do( "publish login capture", () =>
+			{
+				Require( flow.Hud!.Stack.Top?.Name == "onlineLogin", "the tick opens the login dialog while logged out" );
+				CaptureFrame( "publish-login.png" );
+				flow.Hud.Stack.Pop();
 				flow.Hud.Stack.Pop();
 			} );
 		}

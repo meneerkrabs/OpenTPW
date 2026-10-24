@@ -54,7 +54,7 @@ public static class ParkSharing
 			evening: ParkResumeMods.EveningInUse( placed ) );
 		var mods = ParkResumeMods.RecordableMods( OpenTPW.Mods.OpenTpwExtensions.Active ).Where( mod => !ParkResumeMods.UsedOnlyExtensionIds.Contains( mod.Id ) || inUse.Contains( mod.Id ) ).ToArray();
 		return mods.Length == 0 ? null
-			: $"This park records mods ({string.Join( ", ", mods.Select( mod => $"{mod.Id} {mod.Version}" ) )}) and cannot be exported yet; turn them off to share a park without mods.";
+			: OnlineStrings.Get( OnlineLabel.ParkRecordsMods ).Replace( "{0}", string.Join( ", ", mods.Select( mod => $"{mod.Id} {mod.Version}" ) ) );
 	}
 
 	/// <summary>The snapshot of a cheated park carries the flag <c>cheated</c>; any other is returned as it is.</summary>

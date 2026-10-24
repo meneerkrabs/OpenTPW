@@ -23,6 +23,8 @@ public sealed class HudHost
 	public Action? RestartPark { get; init; }
 	/// <summary>Opens the online Publish Park flow (the pause menu's Publish Park); null disables the entry.</summary>
 	public Action<UiScreenStack>? PublishPark { get; init; }
+	/// <summary>[EXT:mods] True while the park records mods that keep it from being published (the pause menu's Publish Park line is then disabled, as the online menu's).</summary>
+	public Func<bool>? PublishRefused { get; init; }
 	/// <summary>Opens the existing postcard composer; it does not send a card.</summary>
 	public Action<UiScreenStack>? OpenPostcard { get; init; }
 	/// <summary>The list sorts the windows keep for the session; the game flow shares one instance between its parks.</summary>
@@ -677,7 +679,7 @@ public sealed partial class ParkHud
 		if ( host.GoOnline == null )
 			entries.RemoveAll( entry => entry.Label == UIStrings.GoOnline );
 		var items = entries.Select( entry => (Id: entry.Label.ToString(), Text: (Func<string>)(() => strings[entry.Label]), entry.Clicked,
-			Enabled: PauseMenuEntryEnabled( level.IsReadOnlyVisit, entry.Label, host.CreateLoad != null, host.CreateOptions != null, host.RestartPark != null, host.PublishPark != null )) ).ToList();
+			Enabled: PauseMenuEntryEnabled( level.IsReadOnlyVisit, entry.Label, host.CreateLoad != null, host.CreateOptions != null, host.RestartPark != null, host.PublishPark != null && host.PublishRefused?.Invoke() != true )) ).ToList();
 		// [EXT:online-coop-session] the Build Together line (C2d-2) is OpenTPW's, after Go Online: the player's own park shared with other players
 		if ( host.BuildTogether is { } buildTogether && PauseMenuOffersBuildTogether( level.IsReadOnlyVisit, level.IsCoopGuestPark, level.Park?.Economy.IsBankrupt == true, level.CoopRole == CoopRole.Host ) )
 		{

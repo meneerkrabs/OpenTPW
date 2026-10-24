@@ -34,6 +34,21 @@ public class SaveDirectoryTests
 	}
 
 	[TestMethod]
+	public void AnAutomatedRunsOwnSaveFolderComesFirstAndIsMadeWhenMissing()
+	{
+		// [EXT:online-coop-session] OPENTPW_SAVE_DIR: each game of the live co-op acceptance saves into a folder of its own, never the game folder's
+		var own = Path.Combine( root, "run", "host", "save" );
+		var directory = Game.SaveDirectory( own + Path.DirectorySeparatorChar, () => throw new AssertFailedException( "the game folder was asked" ) );
+		Assert.AreEqual( Path.GetFullPath( own ) + Path.DirectorySeparatorChar, directory );
+		Assert.IsTrue( Directory.Exists( own ) );
+		Assert.AreEqual( 0, Directory.GetFileSystemEntries( own ).Length );
+		Assert.IsFalse( Directory.Exists( Path.Combine( root, "game", "save" ) ) );
+		// unset or empty: the game folder's, as before
+		Assert.AreEqual( "resolved", Game.SaveDirectory( null, () => "resolved" ) );
+		Assert.AreEqual( "resolved", Game.SaveDirectory( "", () => "resolved" ) );
+	}
+
+	[TestMethod]
 	public void WritableGameFolderKeepsSavesBesideTheGameAndLeavesNoProbe()
 	{
 		var directory = Game.ResolveSaveDirectory( Path.Combine( root, "game" ), Path.Combine( root, "settings" ) );

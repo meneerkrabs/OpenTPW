@@ -317,12 +317,23 @@ internal sealed partial class SandboxSmokeTest : IDisposable
 	}
 
 	/// <summary>World-only readback: the resolved internal-size 3D target before scaling and UI.</summary>
-	internal static (byte[] Pixels, int Width, int Height) CaptureFrame( string name ) => Capture( Render.ResolveColorTexture, name );
+	internal static (byte[] Pixels, int Width, int Height) CaptureFrame( string name ) => Capture( Render.ResolveColorTexture, ArtifactPath( name ) );
 
 	/// <summary>End-to-end readback of the output after world scaling and the BF4 UI (ImGui excluded).</summary>
-	internal static (byte[] Pixels, int Width, int Height) CaptureOutputFrame( string name ) => Capture( Render.OutputCaptureTexture!, name );
+	internal static (byte[] Pixels, int Width, int Height) CaptureOutputFrame( string name ) => Capture( Render.OutputCaptureTexture!, ArtifactPath( name ) );
 
-	private static (byte[] Pixels, int Width, int Height) Capture( Veldrid.Texture source, string name )
+	/// <summary>[EXT:online-coop-session] The output's readback into the PNG file <paramref name="path"/> (the live co-op acceptance's views of the figures).</summary>
+	internal static (byte[] Pixels, int Width, int Height) CaptureOutputFrameTo( string path ) => Capture( Render.OutputCaptureTexture!, path );
+
+	/// <summary>The smoke's PNG named <paramref name="name"/> in the working folder's <c>artifacts</c>.</summary>
+	private static string ArtifactPath( string name )
+	{
+		var artifactDirectory = Path.GetFullPath( "artifacts" );
+		Directory.CreateDirectory( artifactDirectory );
+		return Path.Combine( artifactDirectory, $"native-smoke-{name}" );
+	}
+
+	private static (byte[] Pixels, int Width, int Height) Capture( Veldrid.Texture source, string path )
 	{
 		using var staging = Device.ResourceFactory.CreateTexture( TextureDescription.Texture2D(
 			source.Width, source.Height, 1, 1, source.Format, TextureUsage.Staging ) );
@@ -348,9 +359,7 @@ internal sealed partial class SandboxSmokeTest : IDisposable
 			for ( var pixel = 0; pixel < pixels.Length && colors.Count <= 32; pixel += 4 )
 				colors.Add( BitConverter.ToUInt32( pixels, pixel ) );
 			Require( colors.Count > 32, "terrain framebuffer retains texture detail" );
-			var artifactDirectory = Path.GetFullPath( "artifacts" );
-			Directory.CreateDirectory( artifactDirectory );
-			PngWriter.SaveBgra( Path.Combine( artifactDirectory, $"native-smoke-{name}" ), pixels, (int)source.Width, (int)source.Height );
+			PngWriter.SaveBgra( path, pixels, (int)source.Width, (int)source.Height );
 			return (pixels, (int)source.Width, (int)source.Height);
 		}
 		finally

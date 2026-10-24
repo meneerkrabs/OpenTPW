@@ -167,6 +167,8 @@ public sealed partial class ParkHud
 	// [EXT:online-avatar-labels] the original's online persons carry no name the decoded code draws (the chat overlay's people list names them)
 	private void DrawVisitNames( UiContext context )
 	{
+		var drawn = drawnNames ??= new();
+		drawn.Clear();
 		if ( IsRiding || level.HidesInterface || host?.Presence?.Invoke() is not { } presence )
 			return;
 		var view = Camera.ViewMatrix;
@@ -182,6 +184,13 @@ public sealed partial class ParkHud
 			var plate = new UiRect( pixel.X - width / 2f - pad, pixel.Y - height - pad * 2, width + pad * 2, height + pad * 2 );
 			context.Batch.AddRectangle( plate, VisitNamePlate );
 			context.DrawText( context.Fonts.Small, name.Name, new UiRect( plate.X + pad, plate.Y + pad, width, height ), name.Own ? VisitOwnName : UiColors.Text, UiAlign.Left, shadow: false );
+			drawn.Add( name.Name );
 		}
 	}
+
+	/// <summary>The names drawn over the figures in the last frame (made on first use: a HUD the tests make has no field initializers run).</summary>
+	private List<string>? drawnNames;
+
+	/// <summary>The names drawn over the figures in the last frame, the player's own included (the live co-op acceptance's evidence: docs/COOP.md, "The live acceptance").</summary>
+	internal IReadOnlyList<string> DrawnNames => drawnNames ?? (IReadOnlyList<string>)Array.Empty<string>();
 }

@@ -9,15 +9,17 @@
 //
 // Usage:
 //   node tools/web-coop-link.mjs --web <published wwwroot> --server <OpenTPW.Server.dll> [--out <directory>] [--chrome <executable>] [--headed]
-//        [--timeout-seconds S]
+//        [--timeout-seconds S] [--proxy]
 // With --out (a directory that does not exist yet) it writes link-run.json, both pages' records and every comparison, and server.log. It exits 1 when the
-// check fails. The server runs on the `dotnet` the DOTNET environment variable names, else the one on the path.
+// check fails. The server runs on the `dotnet` the DOTNET environment variable names, else the one on the path. With --proxy the pages are opened through the
+// drivers' own local server (tools/web-perf/lib.mjs) with the server as its upstream, as the live acceptance's pages are (docs/COOP.md, "The live acceptance"):
+// their HTTP requests and their sockets' upgrades go through it, and the run checks that the sockets did.
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { Cdp, launchChrome, sleep, stopChrome } from './web-perf/lib.mjs';
+import { Cdp, launchChrome, sleep, startServer as startLocalServer, stopChrome } from './web-perf/lib.mjs';
 
 const DEFAULT_CHROME = {
 	darwin: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
@@ -29,7 +31,7 @@ const PASSWORD = 'link-check-password';
 const PLAYERS = { host: 'LinkHost', guest: 'LinkGuest' };
 
 function parseArguments(argv) {
-	const options = { web: null, server: null, out: null, chrome: process.env.CHROME ?? DEFAULT_CHROME, headed: false, timeoutSeconds: 60 };
+	const options = { web: null, server: null, out: null, chrome: process.env.CHROME ?? DEFAULT_CHROME, headed: false, timeoutSeconds: 60, proxy: false };
 	for (let index = 2; index < argv.length; index++) {
 		const [flag, inline] = argv[index].split(/=(.*)/s);
 		const value = () => inline ?? argv[++index];
@@ -39,6 +41,7 @@ function parseArguments(argv) {
 			case '--out': options.out = value(); break;
 			case '--chrome': options.chrome = value(); break;
 			case '--headed': options.headed = true; break;
+			case '--proxy': options.proxy = true; break;
 			case '--timeout-seconds': {
 				const seconds = value();
 				if (!/^[1-9][0-9]*$/.test(seconds))
@@ -230,7 +233,7 @@ function compare(checks, what, expected, actual) {
 async function run(options) {
 	const record = { started: new Date().toISOString(), state: 'failed', checks: [] };
 	const serverLog = [];
-	let server, origin, profile, data, chrome, cdp, host, guest;
+	let server, origin, profile, data, chrome, cdp, host, guest, proxy, emptyGame;
 	try {
 		await fs.access(path.join(options.web, 'index.html')).catch(() => { throw new Error(`${options.web} has no index.html: pass the published wwwroot`); });
 		await fs.access(options.server).catch(() => { throw new Error(`${options.server} does not exist: pass the built OpenTPW.Server.dll`); });
@@ -238,13 +241,22 @@ async function run(options) {
 		origin = await startServer(path.resolve(options.server), path.resolve(options.web), data, serverLog, child => server = child);
 		await register(origin, PLAYERS.host);
 		await register(origin, PLAYERS.guest);
+		if (options.proxy) {
+			// the drivers' own local server in front of the real one: the pages see its origin, and the server's page with its policy comes through it
+			emptyGame = await fs.mkdtemp(path.join(os.tmpdir(), 'opentpw-coop-link-game-'));
+			proxy = await startLocalServer(path.resolve(options.web), emptyGame, origin);
+			const policy = (await fetch(`${proxy.origin}/index.html`, { signal: AbortSignal.timeout(30000) })).headers.get('content-security-policy');
+			record.proxy = { policy };
+			compare(record.checks, 'the page through the proxy lets its sockets reach its own origin', true, /connect-src 'self'/.test(policy ?? ''));
+		}
+		const pageOrigin = proxy?.origin ?? origin;
 		profile = await fs.mkdtemp(path.join(os.tmpdir(), 'opentpw-coop-link-chrome-'));
 		const launched = await launchChrome(options.chrome, profile, { headed: options.headed, audible: false });
 		chrome = launched.chrome;
 		cdp = await within(Cdp.connect(launched.url), 30000, 'Chrome\'s DevTools');
 		record.chrome = (await cdp.send('Browser.getVersion')).product;
-		host = await openPage(cdp, origin, 'host');
-		guest = await openPage(cdp, origin, 'guest');
+		host = await openPage(cdp, pageOrigin, 'host');
+		guest = await openPage(cdp, pageOrigin, 'guest');
 		const pages = [host, guest];
 		const wait = (done, what) => until(pages, done, what, options.timeoutSeconds);
 
@@ -318,6 +330,12 @@ async function run(options) {
 			await page.call('CoopLinkSmokeEnd');
 		for (const page of pages)
 			await page.step();
+		if (proxy) {
+			// both pages' sockets were upgrades the proxy forwarded and the server took
+			record.proxy.upgrades = proxy.log.filter(entry => entry.upgrade);
+			compare(record.checks, 'both pages\' sockets went through the proxy to the server', true,
+				record.proxy.upgrades.filter(entry => entry.status === 101 && entry.bytesIn > 0 && entry.bytesOut > 0).length >= 2);
+		}
 		const failed = record.checks.filter(check => !check.passed);
 		if (failed.length)
 			throw new Error(`${failed.length} check(s) failed: ${failed.map(check => check.what).join('; ')}`);
@@ -342,10 +360,11 @@ async function run(options) {
 			await Promise.race([new Promise(resolve => chrome.once('exit', resolve)), sleep(3000)]);
 		if (chrome && chrome.pid !== undefined && chrome.exitCode === null && chrome.signalCode === null)
 			cleanup.push(`Chrome (process ${chrome.pid}) had not exited`);
+		await proxy?.close().catch(error => cleanup.push(`the proxy: ${error.message}`));
 		await stopServer(server).catch(error => cleanup.push(`the server: ${error.message}`));
 		if (server && server.pid !== undefined && server.exitCode === null && server.signalCode === null)
 			cleanup.push(`the server (process ${server.pid}) had not exited`);
-		for (const folder of [profile, data].filter(Boolean))
+		for (const folder of [profile, data, emptyGame].filter(Boolean))
 			await fs.rm(folder, { recursive: true, force: true }).catch(error => cleanup.push(`${folder}: ${error.message}`));
 		if (cleanup.length) {
 			// what was left running or on disk fails the run, which would otherwise pass with it
@@ -368,6 +387,6 @@ if (options.out) {
 	await fs.writeFile(path.join(options.out, 'server.log'), serverLog);
 }
 const passedChecks = record.checks.filter(check => check.passed).length;
-console.log(`browser co-op link check: ${record.state} (${passedChecks} of ${record.checks.length} checks, protocol ${record.protocol ?? 'unknown'}, ${record.chrome ?? 'no Chrome'})`
+console.log(`browser co-op link check${options.proxy ? ' through the proxy' : ''}: ${record.state} (${passedChecks} of ${record.checks.length} checks, protocol ${record.protocol ?? 'unknown'}, ${record.chrome ?? 'no Chrome'})`
 	+ (record.message ? `: ${record.message}` : ''));
 process.exit(record.state === 'passed' ? 0 : 1);

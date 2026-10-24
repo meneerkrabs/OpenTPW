@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, rm, symlink, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { chromeArguments, keyMetrics, listFiles, loopbackOrigin, mainThreadBusy, median, medianResults, percentile, safeResolve, startServer, summarizeFrames } from './web-perf/lib.mjs';
+import { chromeArguments, keyMetrics, listFiles, loopbackOrigin, mainThreadBusy, median, medianResults, percentile, safeResolve, startServer, summarizeFrames, UPGRADE_LIMIT } from './web-perf/lib.mjs';
 import { markdown } from './web-perf/report.mjs';
 import { doorEvents, profileClockOffset, profileFrames, profileOfFrame } from './web-perf/events.mjs';
 
@@ -269,4 +269,100 @@ test('the park door is clicked through the entry price window: open, close, open
 test('the Markdown report lists the door scenario\'s presses', () => {
 	const press = { name: 'park door: first click (opens)', maxMs: 12, p95Ms: 2, over20Ms: 0, longTasks: 0, slow: [] };
 	assert.ok(format({ door: { events: { [press.name]: press } } }).includes('| park door: first click (opens) | 12 | 2 | 0 | 0 |  |'));
+});
+
+/** An upgrade request to the local server: resolves with the upgraded socket and the answer's status, or with a plain answer's status and body. */
+async function upgradeThrough(origin, pathname) {
+	const { request } = await import('node:http');
+	const url = new URL(origin);
+	return new Promise((resolve, reject) => {
+		const outgoing = request({ host: url.hostname, port: url.port, path: pathname, headers: { connection: 'Upgrade', upgrade: 'websocket' } });
+		outgoing.on('upgrade', (response, socket) => resolve({ status: response.statusCode, socket, headers: response.headers }));
+		outgoing.on('response', response => {
+			const body = [];
+			response.on('data', chunk => body.push(chunk));
+			response.on('end', () => resolve({ status: response.statusCode, body: Buffer.concat(body).toString() }));
+		});
+		outgoing.on('error', reject);
+		outgoing.end();
+	});
+}
+
+/** The next chunk a socket receives. */
+const nextChunk = socket => new Promise(resolve => socket.once('data', chunk => resolve(chunk.toString())));
+
+test('a WebSocket upgrade below /api/ is forwarded to the upstream and joined both ways; any other is refused', async () => {
+	const { createServer } = await import('node:http');
+	const seen = [];
+	const upstream = createServer((request, response) => response.end('plain'));
+	upstream.on('upgrade', (request, socket) => {
+		seen.push({ url: request.url, host: request.headers.host, upgrade: request.headers.upgrade });
+		if (request.url.startsWith('/api/refused')) {
+			socket.end('HTTP/1.1 403 Forbidden\r\nContent-Length: 2\r\n\r\nno');
+			return;
+		}
+		socket.write('HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nX-Upstream: yes\r\n\r\n');
+		socket.on('data', chunk => socket.write(Buffer.concat([Buffer.from('echo:'), chunk])));
+		// a server closes its side once the client closed its own
+		socket.on('end', () => socket.end());
+	});
+	await new Promise(resolve => upstream.listen(0, '127.0.0.1', resolve));
+	const root = await mkdtemp(path.join(os.tmpdir(), 'web-perf-upgrade-'));
+	const harness = await startServer(root, root, `http://127.0.0.1:${upstream.address().port}`);
+	try {
+		// the chat socket: the upstream's 101 with its headers, then bytes each way
+		const chat = await upgradeThrough(harness.origin, '/api/v1/chat?room=lobby');
+		assert.equal(chat.status, 101);
+		assert.equal(chat.headers['x-upstream'], 'yes');
+		assert.deepEqual(seen, [{ url: '/api/v1/chat?room=lobby', host: `127.0.0.1:${upstream.address().port}`, upgrade: 'websocket' }]);
+		const echoed = nextChunk(chat.socket);
+		chat.socket.write('hello');
+		assert.equal(await echoed, 'echo:hello');
+		const entry = harness.log.find(item => item.upgrade);
+		assert.deepEqual([entry.path, entry.status, entry.bytesIn, entry.bytesOut], ['/api/v1/chat', 101, 5, 10]);
+		// an upgrade elsewhere is refused before the upstream hears it
+		assert.equal((await upgradeThrough(harness.origin, '/index.html')).status, 404);
+		// an upstream that will not upgrade: its answer comes back as it is
+		const refused = await upgradeThrough(harness.origin, '/api/refused');
+		assert.deepEqual([refused.status, refused.body], [403, 'no']);
+		assert.equal(seen.length, 2);
+		chat.socket.destroy();
+	} finally {
+		await harness.close();
+		await new Promise(resolve => upstream.close(resolve));
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test('the forwarded sockets are bounded, and closing the local server ends the open ones', async () => {
+	const { createServer } = await import('node:http');
+	const upstream = createServer((request, response) => response.end('plain'));
+	upstream.on('upgrade', (request, socket) => {
+		socket.write('HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n');
+		socket.on('end', () => socket.end());
+	});
+	await new Promise(resolve => upstream.listen(0, '127.0.0.1', resolve));
+	const root = await mkdtemp(path.join(os.tmpdir(), 'web-perf-upgrade-'));
+	const harness = await startServer(root, root, `http://127.0.0.1:${upstream.address().port}`);
+	try {
+		const open = [];
+		for (let index = 0; index < UPGRADE_LIMIT; index++)
+			open.push(await upgradeThrough(harness.origin, `/api/v1/coop?n=${index}`));
+		assert.ok(open.every(item => item.status === 101));
+		assert.equal((await upgradeThrough(harness.origin, '/api/v1/coop?n=over')).status, 503, 'one past the limit is refused');
+		// one closed makes room for another
+		const ended = new Promise(resolve => open[0].socket.once('close', resolve));
+		open[0].socket.destroy();
+		await ended;
+		await new Promise(resolve => setTimeout(resolve, 50));
+		const another = await upgradeThrough(harness.origin, '/api/v1/coop?n=again');
+		assert.equal(another.status, 101);
+		// close ends what is still open instead of waiting for it
+		const closed = Promise.all([...open.slice(1), another].map(item => new Promise(resolve => item.socket.once('close', resolve))));
+		await harness.close();
+		await closed;
+	} finally {
+		await new Promise(resolve => upstream.close(resolve));
+		await rm(root, { recursive: true, force: true });
+	}
 });

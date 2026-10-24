@@ -77,8 +77,9 @@ public partial class CoopJoinSessionTests
 				Link.Deliver();
 			if ( Flow != null )
 			{
-				// [EXT:online-coop-session] a join with a code (C2d-3): the game takes its answer here, before the session's step
+				// [EXT:online-coop-session] a join with a code (C2d-3): the game takes its answer here, before the session's step; then the lobby's link (C2d-3b)
 				Flow.StepCoopJoin();
+				Flow.StepCoopLobby();
 				Flow.StepCoopSession();
 				if ( !ReferenceEquals( Flow.Level, Level ) )
 					(Level, Entities) = (Flow.Level, Entity.All);

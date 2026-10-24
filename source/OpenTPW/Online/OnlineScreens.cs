@@ -675,14 +675,14 @@ public sealed class OnlineScreens
 	internal const string JoinSharedParkScreenName = "joinSharedPark";
 
 	/// <summary>
-	/// [EXT:online-coop-session] The lobby's Build Together hub (C2d-3): sharing one of the player's saved parks (<see cref="ShowShareSavedPark"/>) or joining a park another player
-	/// shares (<see cref="ShowJoinSharedPark"/>).
+	/// [EXT:online-coop-session] The lobby's Build Together hub (C2d-3): sharing one of the player's saved parks (<see cref="ShowShareSavedPark"/>), or joining a park another player
+	/// shares, with its code (<see cref="ShowJoinSharedPark"/>) or from the open list (<see cref="ShowSharedParks"/>, C2d-3b).
 	/// </summary>
 	// [EXT:own-window-sizes] the window and the places of its controls are OpenTPW's: the original has no shared parks
 	public void ShowBuildTogetherLobby()
 	{
 		var screen = new UiScreen( BuildTogetherLobbyScreenName );
-		var window = UiDialogs.CenteredWindow( 1200, 900 );
+		var window = UiDialogs.CenteredWindow( 1200, 1040 );
 		UiDialogs.AddWindow( screen, window, "w_big", () => strings.Extra( OpenTpwText.BuildTogether ) );
 		var x = window.X + 120;
 		var width = window.Width - 240;
@@ -692,6 +692,8 @@ public sealed class OnlineScreens
 			Enabled = host.Hosting != null, Bounds = new UiRect( x, window.Y + 390, width, 110 ), Anchor = UiAnchor.Center } );
 		screen.Add( new UiButton { Id = "joinWithCode", Text = () => strings.Extra( OpenTpwText.JoinWithCode ), Clicked = ShowJoinSharedPark,
 			Enabled = host.Joining != null, Bounds = new UiRect( x, window.Y + 530, width, 110 ), Anchor = UiAnchor.Center } );
+		screen.Add( new UiButton { Id = "findShared", Text = () => strings.Extra( OpenTpwText.FindSharedPark ), Clicked = ShowSharedParks,
+			Enabled = host.Joining != null, Bounds = new UiRect( x, window.Y + 670, width, 110 ), Anchor = UiAnchor.Center } );
 		AddStatus( screen, window );
 		AddBack( screen, window );
 		screen.Focus( share );
@@ -730,7 +732,9 @@ public sealed class OnlineScreens
 		codeField.Changed = _ => localMessage = "";
 		screen.Add( new UiLabel { Id = "message", Wrap = true, Font = fonts => fonts.Small, Color = UiColors.Value,
 			Bounds = new UiRect( x, window.Y + 460, width, 120 ), Anchor = UiAnchor.Center,
-			Text = () => Attempt() is { } attempt ? JoinMessage( attempt ) : localMessage.Length > 0 ? localMessage : !Session.IsLoggedIn ? strings.Extra( OpenTpwText.LogInToJoin ) : "" } );
+			Text = () => Attempt() is { } attempt ? JoinMessage( attempt ) : localMessage.Length > 0 ? localMessage
+				: CoopSession.JoinRefusalKind is var refusal and not CoopJoinRefusal.None ? strings.Extra( GameFlow.JoinNotAllowedText( refusal ) )
+				: !Session.IsLoggedIn ? strings.Extra( OpenTpwText.LogInToJoin ) : "" } );
 		void Join()
 		{
 			var code = codeField.Text.Trim();
@@ -753,16 +757,29 @@ public sealed class OnlineScreens
 			Bounds = new UiRect( x, window.Y + 620, 560, 110 ), Anchor = UiAnchor.Center } );
 		var again = screen.Add( new UiButton { Id = "again", Text = () => strings.Extra( OpenTpwText.Back ), Clicked = joining.DismissJoining,
 			Bounds = new UiRect( x, window.Y + 620, 560, 110 ), Anchor = UiAnchor.Center } );
+		// another game of the player's holds the link: taking it over is the player's choice (it ends a park that game shares), and joins with the same code
+		bool InUseElsewhere() => Attempt() is { Stage: CoopJoinStage.Done, Outcome: CoopJoinOutcome.LinkStopped, Stop: CoopStop.InUseElsewhere or CoopStop.Replaced };
+		var takeOver = screen.Add( new UiButton { Id = "takeOver", Text = () => strings.Extra( OpenTpwText.SharedParkTakeOver ),
+			Clicked = () =>
+			{
+				if ( !InUseElsewhere() || joining.Joining is not { } stopped )
+					return;
+				var code = stopped.Code;
+				joining.DismissJoining();
+				joining.StartJoining( code, takeOver: true );
+			},
+			Bounds = new UiRect( x + 600, window.Y + 620, 560, 110 ), Anchor = UiAnchor.Center } );
 		screen.Updating += _ =>
 		{
 			var running = Running();
 			var failed = Failed();
 			var starting = !running && !failed;
 			intro.Visible = codeLabel.Visible = codeField.Visible = join.Visible = starting;
-			join.Enabled = Session.IsLoggedIn && Session.Busy == 0 && codeField.Text.Trim().Length > 0;
+			join.Enabled = Session.IsLoggedIn && Session.Busy == 0 && codeField.Text.Trim().Length > 0 && CoopSession.JoinRefusalKind == CoopJoinRefusal.None;
 			login.Visible = starting && !Session.IsLoggedIn;
 			cancel.Visible = running && Attempt() is { Stage: not CoopJoinStage.Cancelling };
 			again.Visible = failed;
+			takeOver.Visible = InUseElsewhere();
 		};
 		AddStatus( screen, window );
 		// Back gives up a join on its way (its seat, or its session, is left)
@@ -779,6 +796,8 @@ public sealed class OnlineScreens
 		CoopJoinStage.Done => attempt.Outcome switch
 		{
 			CoopJoinOutcome.Refused => strings.Extra( GameFlow.JoinRefusalText( attempt.Refusal ) ),
+			CoopJoinOutcome.LinkStopped when attempt.Stop is CoopStop.InUseElsewhere or CoopStop.Replaced
+				=> strings.Extra( OpenTpwText.SharedParkLinkInUse ) + " " + strings.Extra( OpenTpwText.JoinTakeOverWarning ),
 			CoopJoinOutcome.LinkStopped => strings.Extra( LinkStopText( attempt.Stop ) ),
 			CoopJoinOutcome.NotACode => strings.Extra( OpenTpwText.JoinNotACode ),
 			CoopJoinOutcome.NotAllowed => strings.Extra( GameFlow.JoinNotAllowedText( attempt.NotAllowedBecause ) ),
@@ -789,6 +808,126 @@ public sealed class OnlineScreens
 		},
 		_ => "",
 	};
+
+	/// <summary>The open list's name (C2d-3b).</summary>
+	internal const string SharedParksScreenName = "sharedParks";
+
+	/// <summary>
+	/// [EXT:online-coop-session] The open list of shared parks (C2d-3b; docs/COOP.md, "Invitations and the open list"): the parks of this build their hosts list for everyone, with
+	/// their hosts and players, and a Refresh. Join takes the chosen park's code to the join screen's attempt; a park that ended or filled since the list came is refused there,
+	/// in words. The rows belong to the login that listed them (another login clears them and lists again), and only the latest request's answer is shown.
+	/// </summary>
+	// [EXT:own-window-sizes] the window and the places of its controls are OpenTPW's: the original has no shared parks
+	public void ShowSharedParks()
+	{
+		if ( host.Joining is not { } joining )
+			return;
+		var screen = new UiScreen( SharedParksScreenName );
+		var window = UiDialogs.CenteredWindow( 1400, 1300 );
+		UiDialogs.AddWindow( screen, window, "w_big", () => strings.Extra( OpenTpwText.SharedParksTitle ) );
+		var x = window.X + 120;
+		var width = window.Width - 240;
+		IReadOnlyList<CoopListedSession> rows = Array.Empty<CoopListedSession>();
+		// the login the latest request is for (the rows are its), and that request's number
+		(Uri Server, string Account)? listedFor = null;
+		var request = 0;
+		var looking = false;
+		var failed = false;
+		void List( (Uri Server, string Account) login )
+		{
+			var mine = ++request;
+			listedFor = login;
+			looking = true;
+			failed = false;
+			Session.Coop.List( ( sessions, error ) =>
+			{
+				// a later request, or another login, owns the rows now
+				if ( mine != request || Session.LoginIdentity != login )
+					return;
+				looking = false;
+				failed = sessions == null;
+				rows = sessions ?? Array.Empty<CoopListedSession>();
+				if ( error != null )
+					Log.Warning( $"The shared parks could not be listed: {error}" );
+			} );
+		}
+		CoopListedSession? Chosen( UiScrollList list ) => list.Selected >= 0 && list.Selected < rows.Count ? rows[list.Selected] : null;
+		static bool Full( CoopListedSession park ) => park.Players >= park.MaximumPlayers;
+
+		screen.Add( new UiLabel { Id = "intro", Wrap = true, Font = fonts => fonts.Small, Text = () => strings.Extra( OpenTpwText.SharedParksIntro ),
+			Bounds = new UiRect( x, window.Y + 150, width, 120 ), Anchor = UiAnchor.Center } );
+		var list = screen.Add( new UiScrollList
+		{
+			Id = "parks",
+			Rows = () => rows.Select( park => $"{park.Title} ({park.Host})" ).ToArray(),
+			Trailing = index => index < rows.Count ? $"{rows[index].Players}/{rows[index].MaximumPlayers}" : "",
+			Bounds = new UiRect( x, window.Y + 290, width, 440 ),
+			Anchor = UiAnchor.Center
+		} );
+		screen.Add( new UiLabel { Id = "message", Wrap = true, Font = fonts => fonts.Small, Color = UiColors.Value,
+			Bounds = new UiRect( x, window.Y + 750, width, 120 ), Anchor = UiAnchor.Center,
+			Text = () => CoopSession.JoinRefusalKind is var refusal and not CoopJoinRefusal.None ? strings.Extra( GameFlow.JoinNotAllowedText( refusal ) )
+				: !Session.IsLoggedIn ? strings.Extra( OpenTpwText.LogInToJoin )
+				: looking ? strings.Extra( OpenTpwText.SharedParksLooking )
+				: failed ? strings.Extra( OpenTpwText.SharedParksFailed )
+				: rows.Count == 0 ? strings.Extra( OpenTpwText.SharedParksNone )
+				: Chosen( list ) is { } park && Full( park ) ? strings.Extra( OpenTpwText.JoinFull ) : "" } );
+		bool CanJoin() => Session.IsLoggedIn && Session.Busy == 0 && CoopSession.JoinRefusalKind == CoopJoinRefusal.None && Chosen( list ) is { } park && !Full( park )
+			&& joining.Joining is not { Stage: not CoopJoinStage.Done };
+		void Join()
+		{
+			if ( CanJoin() && Chosen( list ) is { } park && joining.StartJoining( park.Code ) )
+				ShowJoinSharedPark();
+		}
+		list.RowActivated = _ => Join();
+		var join = screen.Add( new UiButton { Id = "join", Text = () => strings.Extra( OpenTpwText.JoinButton ), Clicked = Join,
+			Bounds = new UiRect( x, window.Y + 900, 360, 110 ), Anchor = UiAnchor.Center } );
+		var refresh = screen.Add( new UiButton { Id = "refresh", Text = () => OnlineStrings.Get( OnlineLabel.Refresh ),
+			Clicked = () => { if ( Session.LoginIdentity is { } login ) List( login ); },
+			Bounds = new UiRect( x + 400, window.Y + 900, 360, 110 ), Anchor = UiAnchor.Center } );
+		var login = screen.Add( new UiButton { Id = "login", Text = () => OnlineStrings.Ui( OnlineStrings.OnlineLogin, "Online login" ), Clicked = ShowLogin,
+			Bounds = new UiRect( x + 800, window.Y + 900, 360, 110 ), Anchor = UiAnchor.Center } );
+		screen.Updating += _ =>
+		{
+			// another login (or none) has none of these rows: they go, and the new login's list comes
+			var current = Session.LoginIdentity;
+			if ( current != listedFor )
+			{
+				request++;
+				rows = Array.Empty<CoopListedSession>();
+				looking = false;
+				failed = false;
+				listedFor = null;
+				if ( current is { } now )
+					List( now );
+			}
+			if ( list.Selected >= rows.Count )
+				list.Selected = rows.Count - 1;
+			if ( list.Selected < 0 && rows.Count > 0 )
+				list.Selected = 0;
+			list.Visible = list.Enabled = rows.Count > 0;
+			join.Enabled = CanJoin();
+			refresh.Enabled = current != null && !looking;
+			login.Visible = current == null;
+		};
+		AddStatus( screen, window );
+		AddBack( screen, window );
+		screen.Focus( list );
+		Push( screen );
+	}
+
+	/// <summary>
+	/// [EXT:online-coop-session] A host's invitation over the lobby (C2d-3b; the game keeps it, <see cref="GameFlow"/>'s lobby step): who invites the player to which shared park,
+	/// with Join and Not now (also the screen's Back). The protocol has no answer to an invitation: Not now only puts it aside.
+	/// </summary>
+	internal UiScreen ShowInvitation( Func<CoopInvited?> invitation, Action join, Action notNow )
+	{
+		var screen = UiDialogs.Message( GameFlow.InvitationScreenName,
+			() => invitation() is { } shown ? string.Format( strings.Extra( OpenTpwText.CoopInvitation ), shown.Host, shown.Title ) : "",
+			(() => strings.Extra( OpenTpwText.JoinButton ), join), (() => strings.Extra( OpenTpwText.InvitationNotNow ), notNow) );
+		Push( screen );
+		return screen;
+	}
 
 	/// <summary>[EXT:online-coop-session] Why the link to shared parks stopped, in the player's language.</summary>
 	private static OpenTpwText LinkStopText( CoopStop stop ) => stop switch

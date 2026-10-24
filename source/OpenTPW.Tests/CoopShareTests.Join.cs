@@ -13,10 +13,13 @@ public partial class CoopShareTests
 		public CoopJoinAttempt? Attempt { get; set; }
 		public CoopJoinAttempt? Joining => Attempt;
 		public readonly List<string> Started = new();
+		public readonly List<string> TakenOver = new();
 		public int Cancelled, Dismissed;
-		public bool StartJoining( string code )
+		public bool StartJoining( string code, bool takeOver = false )
 		{
 			Started.Add( code );
+			if ( takeOver )
+				TakenOver.Add( code );
 			return true;
 		}
 		public void CancelJoining() => Cancelled++;

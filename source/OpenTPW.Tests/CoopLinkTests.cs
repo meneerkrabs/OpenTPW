@@ -20,7 +20,7 @@ namespace OpenTPW.Tests;
 /// game that no longer holds the session the server names.
 /// </summary>
 [TestClass]
-public class CoopLinkTests
+public partial class CoopLinkTests
 {
 	private const string Build = "1.4.0+0123456789abcdef0123456789abcdef01234567";
 	private static readonly CoopMod[] Mods = { new( "opentpw.pools", "1.0.0", new string( 'a', 64 ) ) };

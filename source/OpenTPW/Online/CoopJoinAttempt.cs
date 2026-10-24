@@ -69,17 +69,27 @@ internal sealed class CoopJoinAttempt : IDisposable
 	private bool cancelling;
 	private bool disposed;
 
-	/// <summary>Starts joining the shared park with <paramref name="code"/> (as typed) over <paramref name="link"/>: the link opens now.</summary>
-	internal CoopJoinAttempt( CoopLink link, string code )
+	/// <summary>
+	/// Starts joining the shared park with <paramref name="code"/> (as typed) over <paramref name="link"/>: the link opens now, unless this game could not follow a shared park
+	/// (<see cref="CoopJoinOutcome.NotAllowed"/> at once: no socket opens and nothing goes out). <paramref name="takeOver"/> replaces another game of the account that holds
+	/// the link (the player's explicit choice after <see cref="CoopStop.InUseElsewhere"/>; C2d-3b).
+	/// </summary>
+	internal CoopJoinAttempt( CoopLink link, string code, bool takeOver = false )
 	{
 		ArgumentNullException.ThrowIfNull( link );
 		ArgumentNullException.ThrowIfNull( code );
 		this.link = link;
 		Code = code;
+		if ( CoopSession.JoinRefusalKind is var kind and not CoopJoinRefusal.None )
+		{
+			NotAllowedBecause = kind;
+			Finish( CoopJoinOutcome.NotAllowed, CoopSession.JoinRefusal! );
+			return;
+		}
 		link.SessionStarted += OnSessionStarted;
 		link.Refused += OnRefused;
 		link.SessionEnded += OnSessionEnded;
-		Link.Open();
+		Link.Open( takeOver );
 	}
 
 	/// <summary>The code as the player typed it.</summary>

@@ -9,8 +9,11 @@ internal interface ICoopJoining
 	/// <summary>The attempt in progress, or the last one with its outcome; null when there is none.</summary>
 	CoopJoinAttempt? Joining { get; }
 
-	/// <summary>Starts joining with <paramref name="code"/>; false, with nothing started, when it may not (a park is open, a transition, a share, logged out, another attempt).</summary>
-	bool StartJoining( string code );
+	/// <summary>
+	/// Starts joining with <paramref name="code"/>; false, with nothing started, when it may not (a park is open, a transition, a share, logged out, another attempt).
+	/// <paramref name="takeOver"/> takes the link over from another game of the player's (the player's explicit choice, C2d-3b).
+	/// </summary>
+	bool StartJoining( string code, bool takeOver = false );
 
 	/// <summary>Stops the attempt in progress (once joined, its session ends and is left).</summary>
 	void CancelJoining();
@@ -32,7 +35,7 @@ internal sealed partial class GameFlow : ICoopJoining
 	public CoopJoinAttempt? Joining => coopJoinAttempt;
 
 	/// <inheritdoc/>
-	public bool StartJoining( string code )
+	public bool StartJoining( string code, bool takeOver = false )
 	{
 		ArgumentNullException.ThrowIfNull( code );
 		if ( !FeatureGates.Online || Level != null || coopJoin != null || parkBuild != null || pending != null || savedParkShare != null )
@@ -40,7 +43,7 @@ internal sealed partial class GameFlow : ICoopJoining
 		if ( coopJoinAttempt is { Stage: not CoopJoinStage.Done } || coopShare is { Stage: not CoopShareStage.Done } || !Online.IsLoggedIn )
 			return false;
 		coopJoinAttempt?.Dispose();
-		coopJoinAttempt = new CoopJoinAttempt( Online.Coop, code );
+		coopJoinAttempt = new CoopJoinAttempt( Online.Coop, code, takeOver );
 		return true;
 	}
 

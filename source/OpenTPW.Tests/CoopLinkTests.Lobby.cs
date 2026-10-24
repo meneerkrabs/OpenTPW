@@ -1,0 +1,266 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Net.WebSockets;
+using System.Threading.Tasks;
+using Microsoft.VisualStudio.TestTools.UnitTesting;
+using OpenTPW.Online.Coop;
+
+namespace OpenTPW.Tests;
+
+/// <summary>
+/// [EXT:online-coop-session] The lobby's link (C2d-3b; docs/COOP.md, "Invitations and the open list"): <see cref="CoopLobbyLink"/> over real links to the loopback server opens the
+/// link for a logged-in player in the lobby and closes it idle elsewhere, leaves a link in use alone, never takes the link from another game of the account nor leaves that
+/// game's park, and opens a lost link again on a spread timer; the link spreads its own reconnect waits.
+/// </summary>
+public partial class CoopLinkTests
+{
+	private static (Uri Server, string Account) LoginOf( Player player ) => player.Session.LoginIdentity!.Value;
+
+	[TestMethod]
+	public async Task TheLobbyOpensTheLinkForALoggedInPlayerAndClosesItIdleElsewhere()
+	{
+		await WithServer( async ( server, players ) =>
+		{
+			var guest = await players.Add( server, "Guest" );
+			var lobby = new CoopLobbyLink( guest.Link, () => 0 );
+			// logged in, in the lobby: it opens, once
+			lobby.Step( wanted: true, LoginOf( guest ), inUse: false );
+			Assert.AreEqual( CoopLinkState.Opening, guest.Link.State );
+			await Until( () => guest.Link.State == CoopLinkState.Open, "the lobby's link", guest );
+			lobby.Step( true, LoginOf( guest ), false );
+			Assert.AreEqual( 1, guest.Link.Connections );
+			// an ordinary park: the idle link closes, with no stop
+			lobby.Step( false, LoginOf( guest ), false );
+			Assert.AreEqual( (CoopLinkState.Closed, CoopStop.None), (guest.Link.State, guest.Link.Stopped) );
+			// back in the lobby: it opens again
+			lobby.Step( true, LoginOf( guest ), false );
+			await Until( () => guest.Link.State == CoopLinkState.Open, "the link back", guest );
+			Assert.AreEqual( 2, guest.Link.Connections );
+			// a link something else closed opens again while the lobby wants it
+			guest.Link.Close();
+			lobby.Step( true, LoginOf( guest ), false );
+			await Until( () => guest.Link.State == CoopLinkState.Open, "the link once more", guest );
+			Assert.AreEqual( 3, guest.Link.Connections );
+		} );
+	}
+
+	[TestMethod]
+	public async Task TheLobbyLeavesALinkInUseAlone()
+	{
+		await WithServer( async ( server, players ) =>
+		{
+			var host = await players.Add( server, "Hostess" );
+			var guest = await players.Add( server, "Guest" );
+			await Open( host, guest );
+			var lobby = new CoopLobbyLink( host.Link, () => 0 );
+			// a create on its way: the server would seat the player once it reads it, also after a close without a leave, so nothing closes
+			Assert.IsTrue( host.Link.Create( listed: false, "Our park", 4 ) );
+			Assert.IsTrue( host.Link.Waiting );
+			lobby.Step( false, LoginOf( host ), false );
+			Assert.AreEqual( CoopLinkState.Open, host.Link.State );
+			await Until( () => host.Link.Session != null, "the park", host );
+			Assert.IsFalse( host.Link.Waiting );
+			// the host's park: the link is the park's
+			lobby.Step( false, LoginOf( host ), false );
+			Assert.AreEqual( CoopLinkState.Open, host.Link.State );
+			// a join on its way, then its seat: the same
+			var guestLobby = new CoopLobbyLink( guest.Link, () => 0 );
+			Assert.IsTrue( guest.Link.Join( host.Link.Session!.Code ) );
+			Assert.IsTrue( guest.Link.Waiting );
+			guestLobby.Step( false, LoginOf( guest ), false );
+			Assert.AreEqual( CoopLinkState.Open, guest.Link.State );
+			await Until( () => guest.Link.Session != null, "the guest's seat", guest );
+			guestLobby.Step( false, LoginOf( guest ), false );
+			Assert.AreEqual( CoopLinkState.Open, guest.Link.State );
+			// once the guest left, the link is idle: an attempt or a share that uses it keeps it, else it closes
+			Assert.IsTrue( guest.Link.Leave( "Bye." ) );
+			guestLobby.Step( false, LoginOf( guest ), inUse: true );
+			Assert.AreEqual( CoopLinkState.Open, guest.Link.State );
+			guestLobby.Step( false, LoginOf( guest ), inUse: false );
+			Assert.AreEqual( CoopLinkState.Closed, guest.Link.State );
+			await Until( () => host.Link.Session!.Members.Count == 1, "the guest's leave", host );
+		} );
+	}
+
+	[TestMethod]
+	public async Task TheLobbyNeverTakesTheLinkFromAnotherGameOfTheAccountAndTriesOnceAStay()
+	{
+		await WithServer( async ( server, players ) =>
+		{
+			var first = await players.Add( server, "Twin" );
+			var second = await players.Add( server, "Twin", register: false );
+			await Open( first );
+			var lobby = new CoopLobbyLink( second.Link, () => 0 );
+			lobby.Step( true, LoginOf( second ), false );
+			await Until( () => second.Link.Stopped == CoopStop.InUseElsewhere, "the lobby's link to give way", first, second );
+			// the stop is kept: the rest of the stay tries nothing
+			for ( var step = 0; step < 20; step++ )
+			{
+				lobby.Step( true, LoginOf( second ), false );
+				second.Session.Pump();
+				await Task.Delay( 5 );
+			}
+			Assert.AreEqual( (1, CoopLinkState.Closed), (second.Link.Connections, second.Link.State) );
+			// the next stay tries once more, still without a take-over
+			lobby.Step( false, LoginOf( second ), false );
+			lobby.Step( true, LoginOf( second ), false );
+			await Until( () => second.Link.Stopped == CoopStop.InUseElsewhere, "the second try to give way", first, second );
+			Assert.AreEqual( 2, second.Link.Connections );
+			Assert.AreEqual( (CoopLinkState.Open, CoopStop.None), (first.Link.State, first.Link.Stopped), "the other game keeps its link" );
+		} );
+	}
+
+	[TestMethod]
+	public async Task TheLobbysLinkLeavesNoParkOfTheAccountItDidNotAskFor()
+	{
+		await WithServer( async ( server, players ) =>
+		{
+			var first = await players.Add( server, "Twin" );
+			var second = await players.Add( server, "Twin", register: false );
+			var guest = await players.Add( server, "Guest" );
+			await Open( first, guest );
+			var state = await Share( first, guest );
+			// the hosting game's socket is away for a moment: its reconnects wait
+			var back = new TaskCompletionSource( TaskCreationOptions.RunContinuationsAsynchronously );
+			var real = first.Link.Connector;
+			first.Link.Connector = async ( client, cancel ) =>
+			{
+				await back.Task.WaitAsync( cancel );
+				return await real( client, cancel );
+			};
+			first.Link.DropSocket();
+			await Until( () => guest.Changes.Any( change => change.Member.Id == state.Host && change.State == CoopMemberState.Disconnected ), "the host away", first, guest );
+			// the account's other game, in the lobby: the welcome names the park, which the lobby leaves alone
+			var lobby = new CoopLobbyLink( second.Link, () => 0 );
+			lobby.Step( true, LoginOf( second ), false );
+			await Until( () => second.Link.Stopped == CoopStop.HeldElsewhere, "the lobby's link to stop", second, guest );
+			Assert.AreEqual( 0, guest.Ended.Count );
+			// an explicit open would leave it (any open that did not ask for the park does): the lobby's next stay opens as the lobby again
+			lobby.Step( false, LoginOf( second ), false );
+			lobby.Step( true, LoginOf( second ), false );
+			await Until( () => second.Link.Stopped == CoopStop.HeldElsewhere, "the next stay to stop as well", second, guest );
+			// the hosting game comes back once the lobby's socket is gone: its park goes on
+			await Task.Delay( 200 );
+			back.SetResult();
+			await Until( () => first.Resumes.Count == 1, "the host's resume", first, guest );
+			Assert.AreEqual( state.Id, first.Link.Session!.Id );
+			Assert.AreEqual( 0, guest.Ended.Count, "the guest's park did not end" );
+		} );
+	}
+
+	[TestMethod]
+	public async Task ALobbysLinkThatAsksForASeatIsAnyOpensAgain()
+	{
+		await WithServer( async ( server, players ) =>
+		{
+			var host = await players.Add( server, "Hostess" );
+			var guest = await players.Add( server, "Guest" );
+			await Open( host );
+			var state = await Share( host );
+			bool FromTheLobby( Player player ) => (bool)typeof( CoopLink ).GetField( "lobbyOpen", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic )!.GetValue( player.Link )!;
+			// a join from a link the lobby opened: a welcome that names the seat it may make (its answer lost with a socket) is this game's to leave, never another game's
+			guest.Link.OpenInLobby();
+			await Until( () => guest.Link.State == CoopLinkState.Open, "the lobby's link", guest );
+			Assert.IsTrue( FromTheLobby( guest ) );
+			Assert.IsTrue( guest.Link.Join( state.Code ) );
+			Assert.IsFalse( FromTheLobby( guest ) );
+			await Until( () => guest.Link.Session != null, "the seat", host, guest );
+			Assert.IsTrue( guest.Link.Leave( "Bye." ) );
+			// a create, the same; an explicit open of a closed link is any open's from the start
+			guest.Link.Close();
+			guest.Link.OpenInLobby();
+			Assert.IsTrue( FromTheLobby( guest ) );
+			await Until( () => guest.Link.State == CoopLinkState.Open, "the lobby's link again", guest );
+			Assert.IsTrue( guest.Link.Create( listed: false, "Mine", 2 ) );
+			Assert.IsFalse( FromTheLobby( guest ) );
+			await Until( () => guest.Link.Session != null, "the guest's own park", guest );
+			guest.Link.Close( "Bye." );
+			guest.Link.OpenInLobby();
+			guest.Link.Close();
+			guest.Link.Open();
+			Assert.IsFalse( FromTheLobby( guest ) );
+		} );
+	}
+
+	[TestMethod]
+	public async Task ALostLobbyLinkOpensAgainOnASpreadTimerAtMostTenTimesAStay()
+	{
+		await WithServer( async ( server, players ) =>
+		{
+			var guest = await players.Add( server, "Guest" );
+			guest.Link.ReconnectWindow = TimeSpan.FromMilliseconds( 150 );
+			var real = guest.Link.Connector;
+			var down = true;
+			guest.Link.Connector = async ( client, cancel ) => down ? throw new WebSocketException( "The network is down." ) : await real( client, cancel );
+			var now = 0.0;
+			var spread = 0.0;
+			var lobby = new CoopLobbyLink( guest.Link, () => now, () => spread );
+			lobby.Step( true, LoginOf( guest ), false );
+			await Until( () => guest.Link.Stopped == CoopStop.Lost, "the link to be lost", guest );
+			for ( var retry = 1; retry <= CoopLobbyLink.MaximumLostRetries; retry++ )
+			{
+				// the wait is spread from 70 to 130 per cent of a minute: the first at the least, the others at the most
+				var wait = CoopLobbyLink.LostRetrySeconds * (retry == 1 ? 0.7 : 1.3);
+				lobby.Step( true, LoginOf( guest ), false );
+				now += wait - 0.5;
+				lobby.Step( true, LoginOf( guest ), false );
+				Assert.AreEqual( (retry - 1, CoopLinkState.Closed), (lobby.LostRetries, guest.Link.State), $"retry {retry} not before its time" );
+				now += 1;
+				lobby.Step( true, LoginOf( guest ), false );
+				Assert.AreEqual( retry, lobby.LostRetries );
+				Assert.AreNotEqual( CoopLinkState.Closed, guest.Link.State );
+				spread = 1;
+				await Until( () => guest.Link.Stopped == CoopStop.Lost, $"retry {retry} to be lost", guest );
+			}
+			// at most ten a stay
+			for ( var step = 0; step < 3; step++ )
+			{
+				lobby.Step( true, LoginOf( guest ), false );
+				now += 10 * CoopLobbyLink.LostRetrySeconds;
+			}
+			Assert.AreEqual( (CoopLinkState.Closed, CoopStop.Lost, CoopLobbyLink.MaximumLostRetries), (guest.Link.State, guest.Link.Stopped, lobby.LostRetries) );
+			// the next stay starts over, and a link that stays up clears the count
+			down = false;
+			lobby.Step( false, LoginOf( guest ), false );
+			Assert.AreEqual( 0, lobby.LostRetries );
+			lobby.Step( true, LoginOf( guest ), false );
+			await Until( () => guest.Link.State == CoopLinkState.Open, "the link back", guest );
+		} );
+	}
+
+	[TestMethod]
+	public void TheReconnectWaitIsSpreadOverEightyToOneHundredAndTwentyPerCent()
+	{
+		var low = TimeSpan.MaxValue;
+		var high = TimeSpan.Zero;
+		for ( var sample = 0; sample < 2000; sample++ )
+		{
+			var wait = CoopLink.DefaultJitter( TimeSpan.FromSeconds( 10 ) );
+			Assert.IsTrue( wait >= TimeSpan.FromSeconds( 8 ) && wait <= TimeSpan.FromSeconds( 12 ), wait.ToString() );
+			low = wait < low ? wait : low;
+			high = wait > high ? wait : high;
+		}
+		Assert.IsTrue( low < TimeSpan.FromSeconds( 8.5 ) && high > TimeSpan.FromSeconds( 11.5 ), $"spread {low} to {high}" );
+	}
+
+	[TestMethod]
+	public async Task EveryReconnectWaitGoesThroughTheSpread()
+	{
+		await WithServer( async ( server, players ) =>
+		{
+			var guest = await players.Add( server, "Guest" );
+			var waits = new List<TimeSpan>();
+			guest.Link.RetryDelays = new[] { TimeSpan.FromMilliseconds( 30 ), TimeSpan.FromMilliseconds( 60 ) };
+			guest.Link.Jitter = wait =>
+			{
+				waits.Add( wait );
+				return wait * 2;
+			};
+			await Open( guest );
+			guest.Link.DropSocket();
+			await Until( () => waits.Count > 0 && guest.Link.State == CoopLinkState.Open, "the link back", guest );
+			Assert.AreEqual( TimeSpan.FromMilliseconds( 30 ), waits[0] );
+		} );
+	}
+}

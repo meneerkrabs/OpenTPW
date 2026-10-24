@@ -271,19 +271,33 @@ test('the Markdown report lists the door scenario\'s presses', () => {
 	assert.ok(format({ door: { events: { [press.name]: press } } }).includes('| park door: first click (opens) | 12 | 2 | 0 | 0 |  |'));
 });
 
-/** An upgrade request to the local server: resolves with the upgraded socket and the answer's status, or with a plain answer's status and body. */
+/**
+ * An upgrade request to the local server: resolves with the upgraded socket and the answer's status, or with a plain answer's status and body; a request with no answer
+ * within ten seconds is ended and fails, so a regression fails its test instead of hanging it.
+ */
 async function upgradeThrough(origin, pathname) {
 	const { request } = await import('node:http');
 	const url = new URL(origin);
 	return new Promise((resolve, reject) => {
 		const outgoing = request({ host: url.hostname, port: url.port, path: pathname, headers: { connection: 'Upgrade', upgrade: 'websocket' } });
-		outgoing.on('upgrade', (response, socket) => resolve({ status: response.statusCode, socket, headers: response.headers }));
+		const timer = setTimeout(() => {
+			outgoing.destroy();
+			reject(new Error(`The upgrade of ${pathname} got no answer within 10 s`));
+		}, 10000);
+		const settle = value => {
+			clearTimeout(timer);
+			resolve(value);
+		};
+		outgoing.on('upgrade', (response, socket) => settle({ status: response.statusCode, socket, headers: response.headers }));
 		outgoing.on('response', response => {
 			const body = [];
 			response.on('data', chunk => body.push(chunk));
-			response.on('end', () => resolve({ status: response.statusCode, body: Buffer.concat(body).toString() }));
+			response.on('end', () => settle({ status: response.statusCode, body: Buffer.concat(body).toString() }));
 		});
-		outgoing.on('error', reject);
+		outgoing.on('error', error => {
+			clearTimeout(timer);
+			reject(error);
+		});
 		outgoing.end();
 	});
 }
@@ -324,7 +338,7 @@ test('a WebSocket upgrade below /api/ is forwarded to the upstream and joined bo
 		assert.deepEqual(seen, [{ url: '/api/v1/chat?room=lobby', host: `127.0.0.1:${upstream.address().port}`, upgrade: 'websocket' }]);
 		const echoed = nextChunk(chat.socket);
 		chat.socket.write('hello');
-		assert.equal(await echoed, 'echo:hello');
+		assert.equal(await within(echoed, 5000, 'the echo'), 'echo:hello');
 		const entry = harness.log.find(item => item.upgrade);
 		assert.deepEqual([entry.path, entry.status, entry.bytesIn, entry.bytesOut], ['/api/v1/chat', 101, 5, 10]);
 		// an upgrade elsewhere is refused before the upstream hears it
@@ -335,7 +349,7 @@ test('a WebSocket upgrade below /api/ is forwarded to the upstream and joined bo
 		assert.equal(seen.length, 2);
 		chat.socket.destroy();
 	} finally {
-		await harness.close();
+		await within(harness.close(), 5000, 'the local server\'s close');
 		await new Promise(resolve => upstream.close(resolve));
 		await rm(root, { recursive: true, force: true });
 	}
@@ -360,14 +374,14 @@ test('the forwarded sockets are bounded, and closing the local server ends the o
 		// one closed makes room for another
 		const ended = new Promise(resolve => open[0].socket.once('close', resolve));
 		open[0].socket.destroy();
-		await ended;
+		await within(ended, 5000, 'the closed socket');
 		await new Promise(resolve => setTimeout(resolve, 50));
 		const another = await upgradeThrough(harness.origin, '/api/v1/coop?n=again');
 		assert.equal(another.status, 101);
 		// close ends what is still open instead of waiting for it
 		const closed = Promise.all([...open.slice(1), another].map(item => new Promise(resolve => item.socket.once('close', resolve))));
-		await harness.close();
-		await closed;
+		await within(harness.close(), 5000, 'the local server\'s close');
+		await within(closed, 5000, 'the open sockets\' close');
 	} finally {
 		await new Promise(resolve => upstream.close(resolve));
 		await rm(root, { recursive: true, force: true });
@@ -398,7 +412,7 @@ test('an upstream answer that refuses an upgrade is bounded in time and size, an
 		assert.equal((await upgradeThrough(harness.origin, '/api/cut')).status, 502, 'a refusal cut off before its end');
 		assert.deepEqual(harness.log.filter(item => item.upgrade).map(item => item.status), [504, 502, 502]);
 	} finally {
-		await harness.close();
+		await within(harness.close(), 5000, 'the local server\'s close');
 		await new Promise(resolve => upstream.close(resolve));
 		await rm(root, { recursive: true, force: true });
 	}
@@ -438,16 +452,21 @@ test('a refusal before any forwarding keeps a lingering client among the sockets
 	const root = await mkdtemp(path.join(os.tmpdir(), 'web-perf-upgrade-'));
 	// no upstream answers here: the refusals are the local server's own
 	const harness = await startServer(root, root, 'http://127.0.0.1:9', { endMs: 60000 });
-	let lingering;
+	let lingering, closed = false;
 	try {
 		const port = Number(new URL(harness.origin).port);
 		lingering = net.connect({ port, host: '127.0.0.1', allowHalfOpen: true });
 		lingering.write('GET /not-api HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: Upgrade\r\nUpgrade: websocket\r\n\r\n');
 		assert.match(await within(nextChunk(lingering), 5000, 'the refusal'), /^HTTP\/1\.1 404 Not Found/);
 		// the client keeps its side open, and the wait for it is long: the server's close ends it anyway, at once
+		const ended = new Promise(resolve => lingering.once('end', resolve));
 		await within(harness.close(), 5000, 'the local server\'s close with a lingering refused client');
+		closed = true;
+		await within(ended, 5000, 'the server\'s end of the lingering client');
 	} finally {
 		lingering?.destroy();
+		if (!closed)
+			await within(harness.close(), 5000, 'the local server\'s close').catch(() => {});
 		await rm(root, { recursive: true, force: true });
 	}
 });

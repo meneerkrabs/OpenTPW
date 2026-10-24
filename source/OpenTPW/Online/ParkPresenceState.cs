@@ -245,6 +245,7 @@ public sealed class ParkPresenceState
 			return;
 		var (goalX, goalY) = ClampToPark( x, y );
 		route.Clear();
+		routed = groundStopped = false;
 		arrived = false;
 		// [EXT:online-coop-figures] the areas a search keeps are the ground's as it was: a changed ground (a co-builder's edit) is labelled again
 		if ( ground.Version != plannedVersion )
@@ -265,7 +266,6 @@ public sealed class ParkPresenceState
 		routeSearch ??= new RouteSearch( ground.Width, ground.Height );
 		var cells = routeSearch.Find( ground, start, goal );
 		routed = cells != null;
-		groundStopped = false;
 		if ( cells != null )
 			foreach ( var cell in Simplify( cells ) )
 				if ( cell != start && cell != goal )

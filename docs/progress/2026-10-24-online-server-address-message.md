@@ -15,5 +15,5 @@ With the server address field empty, logging in showed the .NET message "Invalid
 
 Still open:
 - `OnlineException` texts are shown as they are: errors the server sends in its own words, and the client's English text for a chat socket the server refused (401).
-- Other `IOException`s of an online operation still show their message: a response stream that breaks off is an `HttpIOException`, so these are the local file writes of a download.
+- Other `IOException`s of an online operation still show their message. A response that ends early is an `HttpIOException`, but some other transport read failures surface as a plain `IOException`, like the local file writes of a download; telling them apart needs the client to classify its own reads.
 - File errors while exporting or importing a park (`IOException`, `UnauthorizedAccessException`) still show the system's message.

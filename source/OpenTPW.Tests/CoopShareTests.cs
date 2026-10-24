@@ -482,6 +482,14 @@ public class CoopShareTests
 		Assert.IsTrue( share.Invite( "Nobody" ) );
 		await Frames( share, () => share.LastInvite?.Refusal != null, "the refusal", new[] { host } );
 		Assert.AreEqual( ("Nobody", CoopReason.NotOnline), (share.LastInvite!.Player, share.LastInvite.Refusal!.Reason) );
+
+		// quick refusals end each wait at once, so many invitations fit in the window: none of them is forgotten before its time
+		for ( var index = 0; index < 40; index++ )
+		{
+			Assert.IsTrue( share.Invite( $"Nobody{index}" ), $"invitation {index}" );
+			await Frames( share, () => share.Inviting == null, $"invitation {index}'s refusal", new[] { host } );
+		}
+		Assert.IsFalse( share.Invite( "Nobody0" ), "the first of them is still in the window" );
 	} );
 
 	/// <summary>The online screens over <paramref name="session"/> with <paramref name="hosting"/>, on a stack of their own (the pause menu below).</summary>

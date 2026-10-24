@@ -1052,9 +1052,8 @@ and the server once. Then `tools/coop-live.mjs` runs:
     build's holds the compiled assemblies, an interpreter build's about 3 MB), which must be the one given
     (`--runtime`), and the page must load it. The page's policy must let its sockets reach its own origin.
   - **The start.** The page opens with `?coopLive=1&data=/game/&keep=off` and starts the game as a
-    player's does, without automatic advice. The driver rests the pointer over the canvas's middle: a page
-    that never saw a pointer stands at the corner, whose edge band would scroll the view. Then the driver
-    starts the run from the front end (`CoopLiveStart`).
+    player's does, without automatic advice. The driver rests the pointer over the canvas's middle, as a
+    player's would be, then starts the run from the front end (`CoopLiveStart`).
 - **The secrets.** A password reaches a native game only in its environment, and a page only as an
   argument of the call that starts its run. It never goes into arguments, an address, a page's stores,
   a file or a log, and the driver's logs and failures have it replaced. The server keeps hashes, and the

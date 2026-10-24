@@ -240,7 +240,7 @@ export class PageSide {
 		await this.cdp.send('Page.navigate', { url: `${this.local.origin}/index.html?coopLive=1&data=/game/&keep=off` }, sessionId);
 		await this.#until(() => this.eval('Boolean(globalThis.opentpwLive)'), 'its live mode');
 		await this.#until(async () => JSON.parse(await this.call('CoopLiveState')).frontEnd, 'its front end');
-		// the pointer rests over the middle of the canvas, as a player's does: a page that never saw it stands at the corner, whose edge band scrolls the park's view
+		// the pointer rests over the middle of the canvas, as a player's does (a page that never saw it has none, which leaves the park's edge band alone)
 		const element = await this.#canvas();
 		await this.cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: element.left + element.width / 2, y: element.top + element.height / 2 }, this.sessionId, 30000);
 		await this.call('CoopLiveStart', this.role === 'host' ? 'host' : 'join', this.player.name, this.player.password, this.options.scenario,

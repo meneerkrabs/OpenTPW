@@ -263,12 +263,17 @@ public sealed class ParkPresenceState
 		var goal = ((int)MathF.Floor( goalX ), (int)MathF.Floor( goalY ));
 		if ( !Passable( goal.Item1, goal.Item2 ) )
 		{
-			if ( NearestPassable( goal ) is not { } nearer )
+			var nearer = NearestPassable( goal );
+			if ( nearer == null )
 			{
+				// nowhere near the goal to go: the figure stops where it is, and [EXT:online-coop-figures] one a co-builder built over walks out to the nearest free cell
 				planFailed = true;
-				return;
+				Own.Target = (Own.X, Own.Y);
+				nearer = Passable( start.Item1, start.Item2 ) ? null : NearestPassable( start );
+				if ( nearer == null )
+					return;
 			}
-			goal = nearer;
+			goal = nearer.Value;
 			(goalX, goalY) = (goal.Item1 + 0.5f, goal.Item2 + 0.5f);
 		}
 		routeSearch ??= new RouteSearch( ground.Width, ground.Height );
@@ -333,14 +338,10 @@ public sealed class ParkPresenceState
 		{
 			if ( followed != null && time - lastFollow < ViewReplanSeconds && Distance( followed.Value, goal ) < ViewReplanCells )
 				return;
+			// no free cell near the new centre (the middle of a lake): the walk to the old one ends where the figure is (or out of a cell built over it), and the centre waits
+			// for the ground to change
 			if ( !TeleportTo( goal.X, goal.Y, passable: true ) )
-			{
-				// no free cell near the new centre (the middle of a lake): the walk to the old one ends where the figure is, and the centre waits for the ground to change
-				route.Clear();
-				groundStopped = false;
-				planFailed = true;
-				Own.Target = (Own.X, Own.Y);
-			}
+				WalkTo( goal.X, goal.Y );
 			Followed( goal, time );
 			return;
 		}

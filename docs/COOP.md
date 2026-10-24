@@ -948,8 +948,9 @@ guest's clicks are the HUD's. Each member's own figure follows that member's vie
 - A centre twelve cells or more from the figure (a locate, a map click, a fast pan) moves it there at
   once, and its place goes out as a teleport.
 - A centre on a cell no figure stands on (water, a ride) is walked or moved to the nearest free cell
-  within three cells, once; with none that near (the middle of a lake), the figure stays where it is.
-  Such a centre is tried again when the park's ground changes, since a co-builder may have opened it.
+  within three cells, once; with none that near (the middle of a lake), the figure stops where it is.
+  A centre the figure is not on its way to itself is tried again when the park's ground changes: a
+  co-builder may have opened it, and a figure built over walks out to the nearest free cell.
 - A figure enters where the view looks, on a free cell near it, or at the park's entrance when the view
   looks at the middle of a lake.
 - While the player rides, the figure is hidden for the others, as in a visit, and comes out at the

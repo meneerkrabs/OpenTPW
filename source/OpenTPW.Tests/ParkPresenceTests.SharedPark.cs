@@ -398,6 +398,37 @@ public partial class ParkPresenceTests
 	}
 
 	[TestMethod]
+	public void AFigureBuiltOverWalksOutAlsoWhenTheViewHasNowhereToGo()
+	{
+		var ground = new EditedGround( 60, 40 );
+		ground.Block( from x in Enumerable.Range( 30, 20 ) from y in Enumerable.Range( 0, 40 ) select (x, y) );
+		foreach ( var (centre, what) in new[] { ((40.5f, 20.5f), "a jump"), ((38.5f, 5.5f), "a walk") } )
+		{
+			var park = new SharedPark( ground, start: (2.5f, 5.5f) );
+			park.Frames( 1, 0.3f );
+			park.Centre = (12.5f, 5.5f);
+			park.Frames( 1, 0.3f );
+			while ( park.Own.X < 5.2f )
+				park.Frames( 1, 0.05f );
+			if ( what == "a walk" )
+			{
+				// near enough to walk: the figure stands within twelve cells of the lake's spot
+				park.Presence.State.TeleportTo( 27.5f, 5.5f );
+				park.Frames( 1, 0.3f );
+			}
+			// a co-builder builds on the figure's cell, and the view moves to the lake's middle in the same frame
+			var here = ((int)MathF.Floor( park.Own.X ), (int)MathF.Floor( park.Own.Y ));
+			ground.Block( new[] { here } );
+			park.Centre = centre;
+			park.Frames( 1, 0.3f );
+			for ( var frame = 0; frame < 20; frame++ )
+				park.Frames();
+			Assert.IsFalse( ground.Blocked( (int)MathF.Floor( park.Own.X ), (int)MathF.Floor( park.Own.Y ) ), $"{what}: the figure is still in what was built at {park.Own}" );
+			ground.Free( here );
+		}
+	}
+
+	[TestMethod]
 	public void AFigureBuiltOverWalksOutToTheNearestFreeCell()
 	{
 		var ground = new EditedGround( 30, 12 );

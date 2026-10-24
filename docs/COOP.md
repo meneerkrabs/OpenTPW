@@ -840,10 +840,14 @@ online for shared parks. The host then hears that the player is not online and i
 - A link in use is never touched: one that holds a session (also while it reconnects), one whose create
   or join waits for its answer (`CoopLink.Waiting`: the server would seat the player once it reads it,
   also after a close), and one a join attempt, a share or a saved park's share is using.
-- A create or join whose answer was lost with its socket may still have made a seat. The link keeps that
-  seat's leave, named by the join's code or the create's title, for the account's next welcome on that
-  server, and that welcome leaves the seat. A welcome to a lobby open does the same and never takes the
-  seat for another game's park. The lobby keeps such a link open until a welcome settles the leave
+- A join whose answer was lost with its socket may still have made a seat. The link keeps that seat's
+  leave, named by the join's code, for the account's next welcome on that server, and that welcome leaves
+  the seat. A welcome to a lobby open does the same and never takes the seat for another game's park.
+  A lost create keeps no record: its park has no host and ends at the host's away limit, and its title
+  could name another game's park.
+- Every leave of this game is kept until the server confirms it: the session's end for this game, a
+  refusal that it is in none, or a welcome that does not name it. A leave lost with its socket before it
+  went out goes out again at the next welcome. The lobby keeps a link whose leave waits
   (`CoopLink.Settling`).
 - Each time the link becomes wanted (the lobby entered, a login there, another login), it opens once
   (`CoopLink.OpenInLobby`). It never takes the link from another game of the account; that game keeps it
@@ -902,6 +906,8 @@ The tests:
   - it never leaves another game's park while that game's socket is away, and that game's park goes on;
   - a seat a lost answer made keeps the link until its welcome leaves it, and is left by the next lobby
     open after a lost link;
+  - a leave lost before it went out goes again at the next welcome, and the link waits for the
+    confirmation;
   - a lobby link that asks for a seat is any open's;
   - a lost link opens again on its spread timer, at most ten times, and a brief open keeps the count;
   - the reconnect waits are spread.

@@ -12,9 +12,12 @@ namespace OpenTPW.Tests;
 [TestClass]
 public class TrackPieceClipDataTests
 {
+	private BaseFileSystem? previousFileSystem;
+
 	[TestInitialize]
 	public void Init()
 	{
+		previousFileSystem = FileSystem;
 		var gamePath = Environment.GetEnvironmentVariable( "OPENTPW_GAME_PATH" );
 		if ( string.IsNullOrWhiteSpace( gamePath ) || !Directory.Exists( gamePath ) )
 			Assert.Inconclusive( "Set OPENTPW_GAME_PATH for the original ride archives." );
@@ -24,6 +27,9 @@ public class TrackPieceClipDataTests
 		FileSystem = new BaseFileSystem( dataPath );
 		FileSystem.RegisterArchiveHandler<WadArchive>( ".wad" );
 	}
+
+	[TestCleanup]
+	public void Cleanup() => FileSystem = previousFileSystem!;
 
 	[TestMethod]
 	public void EveryTextureFrameTrackOfAPieceClipKeysFrameZeroOfAOneFrameSlot()

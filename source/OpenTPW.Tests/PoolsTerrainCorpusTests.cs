@@ -17,17 +17,13 @@ public class PoolsTerrainCorpusTests
 	[TestInitialize]
 	public void Initialize()
 	{
-		if ( ObjectCatalogCorpusTests.UseOriginalData( out var saved ) == null )
+		previous = FileSystem;
+		if ( ObjectCatalogCorpusTests.UseOriginalData( out _ ) == null )
 			Assert.Inconclusive( "Set OPENTPW_GAME_PATH to the original game for the shipped land." );
-		previous = saved;
 	}
 
 	[TestCleanup]
-	public void Cleanup()
-	{
-		if ( previous != null )
-			FileSystem = previous;
-	}
+	public void Cleanup() => FileSystem = previous!;
 
 	/// <summary>The corner height spread of every owned, allowed cell of a theme's starting land, in engine units.</summary>
 	private static float[] Spreads( string theme, bool ownedOnly = true )

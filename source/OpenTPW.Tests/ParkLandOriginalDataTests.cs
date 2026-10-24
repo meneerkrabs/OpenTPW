@@ -18,17 +18,13 @@ public class ParkLandOriginalDataTests
 	[TestInitialize]
 	public void Initialize()
 	{
-		if ( ObjectCatalogCorpusTests.UseOriginalData( out var saved ) == null )
+		previous = FileSystem;
+		if ( ObjectCatalogCorpusTests.UseOriginalData( out _ ) == null )
 			Assert.Inconclusive( "Set OPENTPW_GAME_PATH to the original game for the shipped fences." );
-		previous = saved;
 	}
 
 	[TestCleanup]
-	public void Cleanup()
-	{
-		if ( previous != null )
-			FileSystem = previous;
-	}
+	public void Cleanup() => FileSystem = previous!;
 
 	private static ParkLandSetup Setup( string theme )
 	{

@@ -19,6 +19,7 @@ public class VehicleEngineVoiceTests
 {
 	private AudioMixer mixer = null!;
 	private SoundEventSystem system = null!;
+	private BaseFileSystem? previousFileSystem;
 
 	private static T Empty<T>() => (T)RuntimeHelpers.GetUninitializedObject( typeof( T ) );
 	private static void Set( object target, string property, object value ) =>
@@ -27,6 +28,7 @@ public class VehicleEngineVoiceTests
 	[TestInitialize]
 	public void Setup()
 	{
+		previousFileSystem = FileSystem;
 		Log ??= new();
 		mixer = new AudioMixer( null );
 		system = new SoundEventSystem( mixer, 7 );
@@ -34,7 +36,11 @@ public class VehicleEngineVoiceTests
 	}
 
 	[TestCleanup]
-	public void Cleanup() => mixer.Dispose();
+	public void Cleanup()
+	{
+		mixer.Dispose();
+		FileSystem = previousFileSystem!;
+	}
 
 	/// <summary>The shipped jungle kart engine's sound record (cat_ridesSFX.map event 194): volume 68, pitch −24..36, selector 0x10 bound to pitch (mask 2).</summary>
 	private static SoundEntry EngineSound( byte selector = 0x10, ushort firstMask = 2, ushort secondMask = 0, byte minimumVolume = 68, byte maximumVolume = 68 )

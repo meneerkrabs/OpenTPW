@@ -10,9 +10,12 @@ namespace OpenTPW.Tests;
 [TestClass]
 public class TrackAddOnDataTests
 {
+	private BaseFileSystem? previousFileSystem;
+
 	[TestInitialize]
 	public void Init()
 	{
+		previousFileSystem = FileSystem;
 		var gamePath = Environment.GetEnvironmentVariable( "OPENTPW_GAME_PATH" );
 		if ( string.IsNullOrWhiteSpace( gamePath ) || !Directory.Exists( gamePath ) )
 			Assert.Inconclusive( "Set OPENTPW_GAME_PATH for the original add-on archives." );
@@ -22,6 +25,9 @@ public class TrackAddOnDataTests
 		FileSystem = new BaseFileSystem( dataPath );
 		FileSystem.RegisterArchiveHandler<WadArchive>( ".wad" );
 	}
+
+	[TestCleanup]
+	public void Cleanup() => FileSystem = previousFileSystem!;
 
 	private static IReadOnlyList<ObjectCatalogEntry> TrackAddOnEntries() =>
 		ObjectCatalog.Themes.SelectMany( theme => ObjectCatalog.Load( theme ).Entries ).Where( entry => !entry.IsBonus && TrackAddOns.IsTrackAddOn( entry ) ).ToArray();

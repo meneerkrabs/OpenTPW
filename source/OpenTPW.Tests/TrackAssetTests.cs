@@ -14,10 +14,12 @@ namespace OpenTPW.Tests;
 public class TrackAssetTests
 {
 	private const float Tick = 1f / FixedStepClock.TicksPerSecond;
+	private BaseFileSystem? previousFileSystem;
 
 	[TestInitialize]
 	public void Init()
 	{
+		previousFileSystem = FileSystem;
 		var gamePath = Environment.GetEnvironmentVariable( "OPENTPW_GAME_PATH" );
 		if ( string.IsNullOrWhiteSpace( gamePath ) || !Directory.Exists( gamePath ) )
 			Assert.Inconclusive( "Set OPENTPW_GAME_PATH for the original ride archives." );
@@ -27,6 +29,9 @@ public class TrackAssetTests
 		FileSystem = new BaseFileSystem( dataPath );
 		FileSystem.RegisterArchiveHandler<WadArchive>( ".wad" );
 	}
+
+	[TestCleanup]
+	public void Cleanup() => FileSystem = previousFileSystem!;
 
 	private static IEnumerable<ObjectCatalogEntry> TrackRides( int whichTrackType ) =>
 		ObjectCatalog.Themes.SelectMany( theme => ObjectCatalog.Load( theme ).Entries )

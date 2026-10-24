@@ -186,9 +186,12 @@ public class M3GateTests
 [TestClass]
 public class M3GateAssetTests
 {
+	private BaseFileSystem? previousFileSystem;
+
 	[TestInitialize]
 	public void Init()
 	{
+		previousFileSystem = FileSystem;
 		Log = new();
 		var gamePath = Environment.GetEnvironmentVariable( "OPENTPW_GAME_PATH" );
 		if ( string.IsNullOrWhiteSpace( gamePath ) || !Directory.Exists( gamePath ) )
@@ -199,6 +202,9 @@ public class M3GateAssetTests
 		FileSystem = new BaseFileSystem( dataPath );
 		FileSystem.RegisterArchiveHandler<WadArchive>( ".wad" );
 	}
+
+	[TestCleanup]
+	public void Cleanup() => FileSystem = previousFileSystem!;
 
 	/// <summary>Three simulated minutes: the evaluator builds the park, samples every row and stays internally consistent.</summary>
 	[TestMethod]

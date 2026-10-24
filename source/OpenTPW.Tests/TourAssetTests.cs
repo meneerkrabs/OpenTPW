@@ -19,9 +19,12 @@ public class TourAssetTests
 		("jungle", 1170, "TourRide.RSE"), ("hallow", 2170, "TourRide.RSE"), ("space", 3170, "scitour.RSE"), ("fantasy", 4170, "twetours.RSE")
 	};
 
+	private BaseFileSystem? previousFileSystem;
+
 	[TestInitialize]
 	public void Init()
 	{
+		previousFileSystem = FileSystem;
 		var gamePath = Environment.GetEnvironmentVariable( "OPENTPW_GAME_PATH" );
 		if ( string.IsNullOrWhiteSpace( gamePath ) || !Directory.Exists( gamePath ) )
 			Assert.Inconclusive( "Set OPENTPW_GAME_PATH for the original ride archives." );
@@ -31,6 +34,9 @@ public class TourAssetTests
 		FileSystem = new BaseFileSystem( dataPath );
 		FileSystem.RegisterArchiveHandler<WadArchive>( ".wad" );
 	}
+
+	[TestCleanup]
+	public void Cleanup() => FileSystem = previousFileSystem!;
 
 	/// <summary>Every TOUR instruction of a script in program order as <c>command:parameter</c> (a variable parameter by its name).</summary>
 	private static string TourSequence( ObjectCatalogEntry entry )

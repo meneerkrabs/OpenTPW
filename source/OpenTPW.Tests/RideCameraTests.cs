@@ -20,9 +20,12 @@ public class RideCameraTests
 	internal sealed record BuiltCoaster( OriginalObjectRuntime Station, CoasterBuilder Builder, CoasterRide Ride,
 		int AnchorX, int AnchorY, OriginalParkGrid Grid, RideScriptWorld Scripts );
 
+	private BaseFileSystem? previousFileSystem;
+
 	[TestInitialize]
 	public void Init()
 	{
+		previousFileSystem = FileSystem;
 		var gamePath = Environment.GetEnvironmentVariable( "OPENTPW_GAME_PATH" );
 		if ( string.IsNullOrWhiteSpace( gamePath ) || !Directory.Exists( gamePath ) )
 			Assert.Inconclusive( "Set OPENTPW_GAME_PATH for the original ride archives." );
@@ -32,6 +35,9 @@ public class RideCameraTests
 		FileSystem = new BaseFileSystem( dataPath );
 		FileSystem.RegisterArchiveHandler<WadArchive>( ".wad" );
 	}
+
+	[TestCleanup]
+	public void Cleanup() => FileSystem = previousFileSystem!;
 
 	/// <summary>A completed coaster on the Jungle level, built headlessly as the coaster asset test builds it.</summary>
 	internal static BuiltCoaster BuildCoaster()

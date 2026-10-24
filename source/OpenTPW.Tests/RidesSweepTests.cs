@@ -9,9 +9,12 @@ namespace OpenTPW.Tests;
 [TestClass]
 public class RidesSweepTests
 {
+	private BaseFileSystem? previousFileSystem;
+
 	[TestInitialize]
 	public void OpenData()
 	{
+		previousFileSystem = FileSystem;
 		var gamePath = Environment.GetEnvironmentVariable( "OPENTPW_GAME_PATH" );
 		if ( string.IsNullOrWhiteSpace( gamePath ) || !Directory.Exists( gamePath ) )
 			Assert.Inconclusive( "Set OPENTPW_GAME_PATH for the original object archives." );
@@ -21,6 +24,9 @@ public class RidesSweepTests
 		FileSystem = new BaseFileSystem( dataPath );
 		FileSystem.RegisterArchiveHandler<WadArchive>( ".wad" );
 	}
+
+	[TestCleanup]
+	public void Cleanup() => FileSystem = previousFileSystem!;
 
 	/// <summary>
 	/// RIDES-015: the constructor opens a built object and then closes one whose type has a queue (0x004DB712: "Object %d Closing", open word 0, VAR_RIDECLOSED = 1), so the

@@ -636,12 +636,12 @@ screen is in the player's language.
 - **Once hosted**, it shows the code, whether the park is listed, and the players: the host's line is
   marked, an away member's too, and every guest has a removal, asked first, after which the account
   cannot join again. An invitation goes by name. The server answers an invitation only with a refusal,
-  at once and in order, so the host invites one player at a time: the next invitation waits three
-  seconds for the refusal (`CoopShare.InviteAnswerSeconds`). A refusal names the waiting invitation's
-  player (one who is not online for shared parks is to be given the code), and one that comes later
-  names no one; without one the invitation went out. Of a removal's refusals only too many requests is
-  said; the player list shows the rest. End sharing ends the park for everyone, asked first; the park
-  stays the host's.
+  so the host invites one player at a time: the next invitation waits three seconds for the refusal
+  (`CoopShare.InviteAnswerSeconds`), and one without a refusal by then went out. A refusal whose text
+  names its player (`CoopProtocol.NotOnlineText`: not online for shared parks, so give them the code)
+  is that player's, whenever it comes; any other refusal names no one. Of a removal's refusals only too
+  many requests is said; the player list shows the rest. End sharing ends the park for everyone, asked
+  first; the park stays the host's.
 
 The pause menu does not stop a shared park, so the park runs on under these screens.
 
@@ -673,16 +673,19 @@ Every way the host leaves sends a leave, so guests hear at once that the host le
   follows the request on its socket, which the server reads in order. A quit while the create waits
   (the attempt is forgotten, then the login's close) leaves nothing on the server.
 - A leave that cannot go out now (the link is reconnecting) goes out at the next welcome that names the
-  session. It belongs to the server of the socket that held the session: another server's welcome keeps
-  it, so a return to the first server still leaves with its reason. Until then the server keeps the
-  session for its away limit.
+  session. It belongs to the account and the server of the socket that held the session: another
+  server's or another account's welcome keeps it, so a return still leaves with its reason. Until then
+  the server keeps the session for its away limit.
+- A game that quits while its socket is lost cannot reach the server at all, also when the server made
+  a session for a create whose answer the lost socket took with it. The server then ends that session
+  after its away limit, or at once when the account's next welcome names it.
 
 While the park is shared or being shared, the HUD shows a status line in a translucent box at the top
 centre: the code and the connected players out of the most, that the link reconnects, or that the park
 is being shared. The line stays put; the screens over the HUD dim it with the park. When the session
 ends without the player ending it (the server, a logout, a failure), the line says so for ten seconds,
-counted from the end itself (`CoopShare.EndedAt`), which often comes in the online pump before the
-attempt's step.
+counted from the end itself (`CoopShare.EndedAt`, by the attempt's monotonic clock), which often comes
+in the online pump before the attempt's step. Dismissing the outcome on the screen keeps the notice.
 While the game is in a shared park, the online screens' chat entries (a chat park's room, a published
 park's chat) leave the chat in the session's room.
 
@@ -698,12 +701,13 @@ asset-free park and a second player's link as the guest:
   its ten seconds;
 - an older server, and a hosting that fails;
 - an invitation to a player who is not online, and a kick;
-- one invitation at a time, a refusal that comes after its wait (it names no one), and a refused
-  removal (no invitation's answer);
+- one invitation at a time (late in a long run too), a refusal that comes after its wait while a newer
+  invitation waits (it names its own player), and a refused removal (no invitation's answer);
 - the screen before sharing (the login, the choices, a refusal in words) and while hosted (the code,
   the players and their removals, the invitation's answer for its own player, End sharing asked first).
 
-`CoopLinkTests` checks that a logout's leave that could not go out outlasts another server's welcome.
+`CoopLinkTests` checks that a logout's leave that could not go out outlasts another server's and another
+account's welcome, and that a close while a join waits leaves the seat the join takes.
 
 Browser hosting through these screens comes with the acceptance (C2d-5).
 

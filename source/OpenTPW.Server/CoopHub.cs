@@ -817,7 +817,7 @@ public sealed class CoopHub : ICoopMembership
 			var target = OnlineText.IsValidPlayerName( invite.Player ) ? accounts.FindAccount( invite.Player ) : null;
 			if ( target == null || target.Key == peer.Account.Key || !peers.TryGetValue( target.Key, out var invited ) )
 			{
-				Refuse( peer, CoopMessageType.Invite, CoopReason.NotOnline, $"{invite.Player} is not online with a game that shares parks." );
+				Refuse( peer, CoopMessageType.Invite, CoopReason.NotOnline, CoopProtocol.NotOnlineText( invite.Player ) );
 				return;
 			}
 			Enqueue( invited, new CoopInvited( session.Id, session.Code, session.Title, peer.Account.Name ).Encode() );

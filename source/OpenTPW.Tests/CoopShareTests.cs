@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
@@ -292,10 +293,16 @@ public class CoopShareTests
 		await Frames( share, () => share.Stage == CoopShareStage.Done, "the take-over's end", new[] { host, other } );
 		Assert.AreEqual( (CoopShareOutcome.Ended, false), (share.Outcome, share.EndedBySelf) );
 		Assert.AreEqual( English( UI.Original.OpenTpwText.SharedParkEnded ), GameFlow.SessionStatusLine( share, level, English ) );
-		Time.Update( (float)GameFlow.SharingEndedSeconds - 0.5f );
-		Assert.AreEqual( English( UI.Original.OpenTpwText.SharedParkEnded ), GameFlow.SessionStatusLine( share, level, English ), "still within its time" );
-		Time.Update( 1f );
-		Assert.IsNull( GameFlow.SessionStatusLine( share, level, English ), "its time is over" );
+		// the player dismisses the outcome on the Build Together screen: the game keeps the end for the status line all the same
+		var flow = (GameFlow)RuntimeHelpers.GetUninitializedObject( typeof( GameFlow ) );
+		typeof( GameFlow ).GetField( "coopShare", BindingFlags.Instance | BindingFlags.NonPublic )!.SetValue( flow, share );
+		flow.DismissSharing();
+		Assert.IsNull( flow.Sharing );
+		Assert.AreSame( share, flow.StatusShare );
+		clock += GameFlow.SharingEndedSeconds - 0.5;
+		Assert.AreEqual( English( UI.Original.OpenTpwText.SharedParkEnded ), GameFlow.SessionStatusLine( flow.StatusShare, level, English ), "still within its time" );
+		clock += 1;
+		Assert.IsNull( GameFlow.SessionStatusLine( flow.StatusShare, level, English ), "its time is over" );
 	} );
 
 	[TestMethod]
@@ -356,9 +363,11 @@ public class CoopShareTests
 		await players.Add( server, "Absent" );
 		await CoopLinkTests.Open( guest );
 		var (level, _) = NewPark();
+		// late in a long run (where a float clock no longer moves by a quarter second): the waits count seconds of a clock that keeps its precision
+		clock = 16_777_216;
 		var share = Share( level, host );
 		await Frames( share, () => share.Stage == CoopShareStage.Hosting, "the park to be hosted", new[] { host, guest } );
-		// a second invitation waits for the first one's answer: the server answers only a refusal, so it could not tell the two apart
+		// a second invitation waits for the first one's answer: the line under the invitation speaks of one player at a time
 		Assert.IsTrue( share.Invite( "Absent" ) );
 		Assert.IsFalse( share.Invite( "Guest" ) );
 		await Frames( share, () => share.LastNotice?.Refusal != null, "the first invitation's refusal", new[] { host, guest } );
@@ -369,27 +378,34 @@ public class CoopShareTests
 		await Frames( share, () => guest.Invitations.Count == 1, "the guest's invitation", new[] { host, guest } );
 		Assert.AreEqual( "Guest", share.Inviting );
 		Assert.IsFalse( share.Invite( "Absent" ) );
-		Time.Update( CoopShare.InviteAnswerSeconds );
+		clock += CoopShare.InviteAnswerSeconds - 0.25;
+		share.Step( level );
+		Assert.AreEqual( "Guest", share.Inviting, "still within its wait" );
+		clock += 0.25;
 		share.Step( level );
 		Assert.IsNull( share.Inviting );
 		Assert.AreEqual( new CoopShareNotice( CoopMessageType.Invite, "Guest", null ), share.LastNotice );
 	} );
 
 	[TestMethod]
-	public async Task ARefusalAfterItsInvitationsWaitNamesNoOneAndARefusedRemovalIsNoInvitations() => await CoopLinkTests.WithServer( async ( server, players ) =>
+	public async Task ALateRefusalNamesItsOwnPlayerAndARefusedRemovalIsNoInvitations() => await CoopLinkTests.WithServer( async ( server, players ) =>
 	{
 		var host = await players.Add( server, "Hostess" );
+		var guest = await players.Add( server, "Guest" );
 		await players.Add( server, "Absent" );
+		await CoopLinkTests.Open( guest );
 		var (level, _) = NewPark();
 		var share = Share( level, host );
-		await Frames( share, () => share.Stage == CoopShareStage.Hosting, "the park to be hosted", new[] { host } );
-		// the wait is over before the refusal reaches the game (a slow link): a newer invitation may wait by then, so the refusal names no one
+		await Frames( share, () => share.Stage == CoopShareStage.Hosting, "the park to be hosted", new[] { host, guest } );
+		// the wait is over before the refusal reaches the game (a slow link), and a newer invitation waits by then: the refusal's text names its own player
 		Assert.IsTrue( share.Invite( "Absent" ) );
-		Time.Update( CoopShare.InviteAnswerSeconds );
+		clock += CoopShare.InviteAnswerSeconds;
 		share.Step( level );
 		Assert.IsNull( share.Inviting );
-		await Frames( share, () => share.LastNotice?.Refusal != null, "the late refusal", new[] { host } );
-		Assert.AreEqual( (CoopMessageType.Invite, (string?)null, CoopReason.NotOnline), (share.LastNotice!.Request, share.LastNotice.Player, share.LastNotice.Refusal!.Reason) );
+		Assert.IsTrue( share.Invite( "Guest" ) );
+		await Frames( share, () => share.LastNotice?.Refusal != null, "the late refusal", new[] { host, guest } );
+		Assert.AreEqual( (CoopMessageType.Invite, "Absent", CoopReason.NotOnline), (share.LastNotice!.Request, share.LastNotice.Player, share.LastNotice.Refusal!.Reason) );
+		Assert.AreEqual( "Guest", share.Inviting, "the newer invitation still waits for its own answer" );
 
 		// a removal of no member is refused as a removal, not as an invitation
 		Assert.IsTrue( share.Kick( 99 ) );

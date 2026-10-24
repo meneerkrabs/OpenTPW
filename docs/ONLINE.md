@@ -482,7 +482,8 @@ no screen or park uses it yet (C2b to C2d).
 - **The session's chat room** (C2d-1). Each session has a chat room of its own, `coop:<id>` (its session
   id), on the chat socket. Its members alone enter it, by a join or by going to a member who is in it;
   anyone else is told there is no such park. The game's chat follows its session. On a server that has
-  such rooms (protocol 8), hosting, joining or resuming a session opens the chat when it is closed, and
+  such rooms (protocol 8), hosting, joining or resuming a session opens the chat when it is closed (and
+  tries again, with growing waits, while the connection fails), and
   the chat enters the room once the connection's own server version is read (a new connection after a
   lost one asks again only then). While the game is in a shared park its chat is the session's: no other
   room takes it, a goto is not sent (the chat says to leave the park first), and what is said to a room

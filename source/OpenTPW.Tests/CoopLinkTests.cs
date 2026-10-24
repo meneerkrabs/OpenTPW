@@ -204,6 +204,20 @@ public class CoopLinkTests
 		Assert.IsFalse( host.Session.InSharedPark || guest.Session.InSharedPark );
 	} );
 
+	/// <summary>[EXT:online-coop-session] A chat connection opened for the shared park that fails is tried again, and the chat then enters the session's room.</summary>
+	[TestMethod]
+	public async Task ASharedParksChatIsTriedAgainAfterAFailedConnection() => await WithServer( async ( server, players ) =>
+	{
+		var host = await players.Add( server, "Hostess" );
+		var attempts = 0;
+		host.Session.ChatConnector = client => Interlocked.Increment( ref attempts ) == 1
+			? Task.FromException<ChatConnection>( new WebSocketException( "The first connection was refused." ) ) : client.ConnectChatAsync();
+		await Open( host );
+		var shared = await Share( host );
+		await Until( () => host.Session.CurrentRoom == OpenTPW.Online.Chat.ChatProtocol.CoopRoom( shared.Id ), "the chat in the session's room after a failed connection", host );
+		Assert.AreEqual( 2, attempts );
+	} );
+
 	[TestMethod]
 	public async Task AHostAndAGuestShareASessionThroughTheirLinks()
 	{

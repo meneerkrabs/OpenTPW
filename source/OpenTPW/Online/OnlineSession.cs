@@ -705,7 +705,7 @@ public sealed class OnlineSession : IDisposable, IPresenceSession, IChatPanelSou
 			ChatConnection chat;
 			try
 			{
-				chat = await client.ConnectChatAsync();
+				chat = await ChatConnector( client );
 			}
 			catch ( Exception exception )
 			{
@@ -719,6 +719,8 @@ public sealed class OnlineSession : IDisposable, IPresenceSession, IChatPanelSou
 						return;
 					chatConnecting = false;
 					Status = message;
+					// [EXT:online-coop-session] the shared park's chat is tried again while the session owns it
+					RetryCoopChat();
 				} );
 				return;
 			}
@@ -752,6 +754,7 @@ public sealed class OnlineSession : IDisposable, IPresenceSession, IChatPanelSou
 		}
 		Chat = chat;
 		chatCancel = cancel;
+		coopChatFailures = 0;
 		// the server keeps the ignore list and the earmuffs per connection: a new one starts without them
 		ignored.Clear();
 		Earmuffs = false;
@@ -1107,6 +1110,34 @@ public sealed class OnlineSession : IDisposable, IPresenceSession, IChatPanelSou
 	/// <summary>[EXT:online-coop-session] The shared park's room is to be joined on the open connection once its server version is read (a new connection's rejoin waits for it).</summary>
 	private bool coopJoinWaits;
 
+	/// <summary>[EXT:online-coop-session] The shared park's chat connections that failed in a row (their waits grow, <see cref="ReconnectDelays"/>).</summary>
+	private int coopChatFailures;
+
+	/// <summary>Tests: opens the chat connection (the client's own by default), so a test can fail an attempt.</summary>
+	internal Func<OnlineClient, Task<ChatConnection>> ChatConnector { get; set; } = client => client.ConnectChatAsync();
+
+	/// <summary>
+	/// [EXT:online-coop-session] A chat connection opened for the shared park failed: it is tried again after a growing wait, while the session still owns the chat
+	/// and no other connection was made meanwhile (a logout or another server ends it).
+	/// </summary>
+	private void RetryCoopChat()
+	{
+		if ( coopRoom is not { } room || disposed || !IsLoggedIn )
+			return;
+		var delay = ReconnectDelays[Math.Min( coopChatFailures++, ReconnectDelays.Length - 1 )];
+		var generationAtFail = generation;
+		_ = Task.Run( async () =>
+		{
+			await Task.Delay( delay );
+			Post( () =>
+			{
+				if ( disposed || generation != generationAtFail || coopRoom != room || Chat != null || chatConnecting )
+					return;
+				FollowCoopRoom();
+			} );
+		} );
+	}
+
 	/// <summary>[EXT:online-coop-session] Whether this game is in a shared park, whose room its chat follows.</summary>
 	public bool InSharedPark => coopRoom != null;
 
@@ -1154,6 +1185,7 @@ public sealed class OnlineSession : IDisposable, IPresenceSession, IChatPanelSou
 	private void EnterCoopRoom( string sessionId )
 	{
 		coopRoom = ChatProtocol.CoopRoom( sessionId );
+		coopChatFailures = 0;
 		// the server's version decides first; it needs no chat connection
 		if ( ServerProtocol == null )
 			FetchServerInfo();

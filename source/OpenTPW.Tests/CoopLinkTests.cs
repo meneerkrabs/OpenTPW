@@ -153,7 +153,70 @@ public class CoopLinkTests
 
 	private static byte[] Payload( int value ) => BitConverter.GetBytes( value );
 
+	/// <summary>Every cell passable.</summary>
+	private sealed class AnyGround : IPresenceGround
+	{
+		public int Width => 128;
+		public int Height => 128;
+		public bool IsPassable( int x, int y ) => true;
+	}
+
 	private static int Value( ReadOnlyMemory<byte> payload ) => BitConverter.ToInt32( payload.Span );
+
+	/// <summary>
+	/// [EXT:online-coop-session] The chat follows the shared park (C2d-1): a member's chat enters the session's room once it hosts or joins, and is back in the
+	/// lobby once the session is over for it, whether it left or the session ended.
+	/// </summary>
+	[TestMethod]
+	public async Task TheChatFollowsItsSharedPark() => await WithServer( async ( server, players ) =>
+	{
+		var host = await players.Add( server, "Hostess" );
+		var guest = await players.Add( server, "Guest" );
+		// the host's chat is open; the guest's is not, and its join opens it
+		host.Session.ConnectChat();
+		await Until( () => host.Session.Chat != null && !host.Session.ChatBusy, "the host's chat", host );
+		Assert.IsNull( guest.Session.Chat );
+		await Open( host, guest );
+		var shared = await Share( host, guest );
+		var room = OpenTPW.Online.Chat.ChatProtocol.CoopRoom( shared.Id );
+		var lobby = OpenTPW.Online.Chat.ChatProtocol.LobbyRoom;
+		await Until( () => host.Session.CurrentRoom == room && guest.Session.CurrentRoom == room && host.Session.RoomPlayers.Count == 2, "both chats in the session's room", host, guest );
+		CollectionAssert.AreEquivalent( new[] { "Hostess", "Guest" }, host.Session.RoomPlayers.ToArray() );
+		Assert.IsTrue( host.Session.InSharedPark );
+
+		// the shared park owns the chat: another room's join does not take it, and a visit's end leaves it where it is
+		host.Session.JoinRoom( OpenTPW.Online.Chat.ChatProtocol.SatelliteRoom( 1 ) );
+		Assert.AreEqual( room, host.Session.WantedRoom );
+		var visit = new ParkPresence( host.Session, OpenTPW.Online.Chat.ChatProtocol.ParkRoom( "park1" ), "Hostess", new AnyGround(), (1.5f, 1.5f), () => 0 );
+		visit.Dispose();
+		Assert.AreEqual( room, host.Session.WantedRoom );
+		Assert.IsNotNull( host.Session.Chat );
+
+		// the guest's own leave takes its chat back to the lobby, and the host's roster is its own again
+		Assert.IsTrue( guest.Link.Leave( "Off home." ) );
+		await Until( () => guest.Session.CurrentRoom == lobby && host.Session.RoomPlayers.Count == 1, "the guest's chat back in the lobby", host, guest );
+		// joining again brings it back; the host's leave ends the session, and both chats are in the lobby
+		Assert.IsTrue( guest.Link.Join( shared.Code ) );
+		await Until( () => guest.Session.CurrentRoom == room && host.Session.RoomPlayers.Count == 2, "the guest's chat in the room again", host, guest );
+		Assert.IsTrue( host.Link.Leave( "Closing up." ) );
+		await Until( () => host.Session.CurrentRoom == lobby && guest.Session.CurrentRoom == lobby && guest.Ended.Count == 1, "both chats in the lobby", host, guest );
+		Assert.AreEqual( CoopReason.HostLeft, guest.Ended.Single().Reason );
+		Assert.IsFalse( host.Session.InSharedPark || guest.Session.InSharedPark );
+	} );
+
+	/// <summary>[EXT:online-coop-session] A chat connection opened for the shared park that fails is tried again, and the chat then enters the session's room.</summary>
+	[TestMethod]
+	public async Task ASharedParksChatIsTriedAgainAfterAFailedConnection() => await WithServer( async ( server, players ) =>
+	{
+		var host = await players.Add( server, "Hostess" );
+		var attempts = 0;
+		host.Session.ChatConnector = client => Interlocked.Increment( ref attempts ) == 1
+			? Task.FromException<ChatConnection>( new WebSocketException( "The first connection was refused." ) ) : client.ConnectChatAsync();
+		await Open( host );
+		var shared = await Share( host );
+		await Until( () => host.Session.CurrentRoom == OpenTPW.Online.Chat.ChatProtocol.CoopRoom( shared.Id ), "the chat in the session's room after a failed connection", host );
+		Assert.AreEqual( 2, attempts );
+	} );
 
 	[TestMethod]
 	public async Task AHostAndAGuestShareASessionThroughTheirLinks()

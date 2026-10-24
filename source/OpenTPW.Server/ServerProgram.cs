@@ -23,8 +23,9 @@ public static class ServerProgram
 	/// 5: movements carry a mode (<see cref="ChatMoveMode"/>, <see cref="ChatProtocol.MoveModesVersion"/>), so a player riding a ride is hidden.
 	/// 6: the co-op socket of shared parks (<see cref="CoopProtocol"/>), their open list and join snapshots.
 	/// 7: the co-op host's skip of frames it no longer holds (<see cref="CoopSkipFrames"/>).
+	/// 8: a shared park's session has a chat room of its own for its members (<see cref="ChatProtocol.CoopRoomsVersion"/>).
 	/// </summary>
-	public const int ProtocolVersion = CoopProtocol.Version;
+	public const int ProtocolVersion = ChatProtocol.CoopRoomsVersion;
 	private const string WebsitePolicy = "website";
 	/// <summary>File in the data folder that asks the host to update the server (deploy/opentpw-deploy.path).</summary>
 	public const string DeployRequestFile = ".deploy-requested";
@@ -65,6 +66,8 @@ public static class ServerProgram
 		var cities = new CityDirectory( options.DataDirectory );
 		var hub = new ChatHub( store, options, filter, chatParks, cities );
 		var coop = new CoopHub( store, options, filter, new CoopStore( options.DataDirectory ) );
+		// [EXT:online-coop-session] a shared park's chat room admits its members only, and takes out those who leave it
+		hub.UseCoopMembership( coop );
 		builder.Services.AddSingleton( options );
 		builder.Services.AddSingleton( store );
 		builder.Services.AddSingleton( chatParks );

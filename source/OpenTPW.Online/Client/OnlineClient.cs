@@ -625,5 +625,18 @@ public sealed class ChatConnection : IAsyncDisposable, IDisposable
 		sendLock.Dispose();
 	}
 
-	public void Dispose() => DisposeAsync().AsTask().GetAwaiter().GetResult();
+	/// <summary>
+	/// Closes the socket: the desktop waits up to two seconds for the close handshake; the browser, whose one thread cannot block on it ("Operation is not supported on
+	/// this platform"), starts the same close and lets it finish on its own. [EXT:online-coop-session] A page closes a chat this way since a shared park opens one
+	/// (the co-op link check's probe, docs/COOP.md).
+	/// </summary>
+	public void Dispose()
+	{
+		if ( OperatingSystem.IsBrowser() )
+		{
+			_ = DisposeAsync().AsTask().ContinueWith( closing => _ = closing.Exception, TaskContinuationOptions.OnlyOnFaulted );
+			return;
+		}
+		DisposeAsync().AsTask().GetAwaiter().GetResult();
+	}
 }

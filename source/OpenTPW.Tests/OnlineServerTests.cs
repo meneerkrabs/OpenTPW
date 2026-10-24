@@ -149,7 +149,7 @@ public class OnlineServerTests
 		{
 			using var client = new OnlineClient( server.Url );
 			var info = await client.GetServerInfoAsync();
-			Assert.AreEqual( 7, info.ProtocolVersion, "7: the co-op host's skip of frames it no longer holds" );
+			Assert.AreEqual( 8, info.ProtocolVersion, "8: a shared park's session has a chat room of its own" );
 			Assert.IsFalse( info.WordFilterLoaded );
 			await client.RegisterAsync( "Alice", "correct horse" );
 			Assert.AreEqual( HttpStatusCode.Conflict, (await Fails( () => client.RegisterAsync( "ALICE", "another one" ) )).Status );

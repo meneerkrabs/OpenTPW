@@ -45,6 +45,11 @@ public static class ChatFormatter
 			ChatEventKind.System when item.Text == "buddy-enters" && item.Args is { Count: 2 } enters =>
 				string.Format( label( OnlineLabel.BuddyEnters ), enters[0], enters[1] ),
 			ChatEventKind.System when item.Text == "server-message" => Notice( OnlineStrings.SystemMessage, item.Args ),
+			// [EXT:online-coop-session] a located player in a shared park, which the server names to no one
+			ChatEventKind.System when item.Text == "in-shared-park" && item.Args is { Count: 1 } shared =>
+				string.Format( UI.Original.SupplementaryStrings.Get( UI.Original.OpenTpwText.PlayerInSharedPark, GameLanguage.IsSelected ? GameLanguage.Current.Name : GameLanguage.DefaultLanguage ), shared[0] ),
+			// [EXT:online-coop-session] something said for a shared park's room the connection was not in was not sent
+			ChatEventKind.System when item.Text == "shared-park-chat-closed" => OnlineSession.SharedParkChatClosedText(),
 			ChatEventKind.System => item.Text ?? "",
 			ChatEventKind.Room => $"{roomName( item.Room ?? "" )}: {string.Join( ", ", item.Args ?? Array.Empty<string>() )}",
 			_ => item.Text ?? "",
@@ -99,6 +104,10 @@ public sealed class OnlineSession : IDisposable, IPresenceSession, IChatPanelSou
 	{
 		Folders = folders;
 		Coop = new CoopLink( this );
+		// [EXT:online-coop-session] the chat follows the shared park: its members talk in the session's room, and are back in the lobby once it is over for this game
+		Coop.SessionStarted += state => EnterCoopRoom( state.Id );
+		Coop.Resumed += state => EnterCoopRoom( state.Id );
+		Coop.SessionEnded += ended => LeftCoopSession( ended.SessionId );
 		try { Settings = folders.LoadSettings(); }
 		catch ( Exception exception ) when ( exception is InvalidDataException or IOException )
 		{
@@ -458,6 +467,8 @@ public sealed class OnlineSession : IDisposable, IPresenceSession, IChatPanelSou
 		ServerProtocol = null;
 		protocolCurrent = false;
 		fetchingServerInfo = false;
+		coopRoom = null;
+		coopJoinWaits = false;
 		// a version read for the server just left must not answer the next one
 		serverInfoEpoch++;
 		Client?.Dispose();
@@ -694,7 +705,7 @@ public sealed class OnlineSession : IDisposable, IPresenceSession, IChatPanelSou
 			ChatConnection chat;
 			try
 			{
-				chat = await client.ConnectChatAsync();
+				chat = await ChatConnector( client );
 			}
 			catch ( Exception exception )
 			{
@@ -708,6 +719,8 @@ public sealed class OnlineSession : IDisposable, IPresenceSession, IChatPanelSou
 						return;
 					chatConnecting = false;
 					Status = message;
+					// [EXT:online-coop-session] the shared park's chat is tried again while the session owns it
+					RetryCoopChat();
 				} );
 				return;
 			}
@@ -741,6 +754,7 @@ public sealed class OnlineSession : IDisposable, IPresenceSession, IChatPanelSou
 		}
 		Chat = chat;
 		chatCancel = cancel;
+		coopChatFailures = 0;
 		// the server keeps the ignore list and the earmuffs per connection: a new one starts without them
 		ignored.Clear();
 		Earmuffs = false;
@@ -754,6 +768,9 @@ public sealed class OnlineSession : IDisposable, IPresenceSession, IChatPanelSou
 		{
 			if ( room == ChatProtocol.LobbyRoom )
 				joinPending = false;
+			// [EXT:online-coop-session] a shared park's room waits for this connection's server version (FollowCoopRoom)
+			else if ( ChatProtocol.CoopSessionOf( room ) != null )
+				coopJoinWaits = true;
 			else
 				SendJoin( chat, room );
 		}
@@ -1011,6 +1028,10 @@ public sealed class OnlineSession : IDisposable, IPresenceSession, IChatPanelSou
 
 	private string RoomName( string room ) => room == ChatProtocol.LobbyRoom || room.Length == 0
 		? OnlineStrings.Ui( OnlineStrings.OnlineWorld, "Online World" )
+		// [EXT:online-coop-session] a shared park's room: its session's title, which its members know
+		: ChatProtocol.CoopSessionOf( room ) is { } sessionId
+			? Coop.Session is { } shared && shared.Id == sessionId ? shared.Title
+				: UI.Original.SupplementaryStrings.Get( UI.Original.OpenTpwText.SharedPark, GameLanguage.IsSelected ? GameLanguage.Current.Name : GameLanguage.DefaultLanguage )
 		: ChatParks.FirstOrDefault( park => ChatProtocol.SatelliteRoom( park.Id ) == room )?.Name
 			?? Parks.FirstOrDefault( park => ChatProtocol.ParkRoom( park.Id ) == room )?.Name ?? room;
 
@@ -1034,6 +1055,9 @@ public sealed class OnlineSession : IDisposable, IPresenceSession, IChatPanelSou
 			AddChatLine( OnlineStrings.ChatNotice( (int)ChatNotice.NoSuchCommand, null ) );
 			return;
 		}
+		// [EXT:online-coop-session] in a shared park, what is said to a room goes to its room only (CommandRequest)
+		if ( CommandRequest( command, argument ) is not { } request )
+			return;
 		if ( command is ChatCommand.Buddy or ChatCommand.Friend && ChatCommands.SplitName( argument ).Name == null )
 		{
 			// a typed /buddy lists the buddies in the chat lines, and its answer replaces the list as an ask's does
@@ -1041,7 +1065,7 @@ public sealed class OnlineSession : IDisposable, IPresenceSession, IChatPanelSou
 			quietBuddyAnswers = false;
 			buddyAskedAt = Environment.TickCount64;
 		}
-		SendOnChat( chat, ChatRequest.ForCommand( command, argument ) );
+		SendOnChat( chat, request );
 	}
 
 	/// <summary>
@@ -1051,6 +1075,9 @@ public sealed class OnlineSession : IDisposable, IPresenceSession, IChatPanelSou
 	public void JoinRoom( string room )
 	{
 		if ( !ChatProtocol.IsValidRoom( room ) )
+			return;
+		// [EXT:online-coop-session] the chat of a game in a shared park is the session's: no other room takes it
+		if ( coopRoom != null && room != coopRoom )
 			return;
 		if ( room == RefusedRoom )
 			RefusedRoom = null;
@@ -1072,6 +1099,150 @@ public sealed class OnlineSession : IDisposable, IPresenceSession, IChatPanelSou
 		requestedRoom = room;
 		joinPending = true;
 		joinSentAt = null;
+	}
+
+	/// <summary>
+	/// [EXT:online-coop-session] The chat room of the shared park this game is in (<see cref="FollowCoopRoom"/>); null outside one. While it is set the chat is the shared
+	/// park's: no other room is joined, and nothing is said in a room until the chat is on its way to this one (<see cref="SendChatLine"/>).
+	/// </summary>
+	private string? coopRoom;
+
+	/// <summary>[EXT:online-coop-session] The shared park's room is to be joined on the open connection once its server version is read (a new connection's rejoin waits for it).</summary>
+	private bool coopJoinWaits;
+
+	/// <summary>[EXT:online-coop-session] The shared park's chat connections that failed in a row (their waits grow, <see cref="ReconnectDelays"/>).</summary>
+	private int coopChatFailures;
+
+	/// <summary>Tests: opens the chat connection (the client's own by default), so a test can fail an attempt.</summary>
+	internal Func<OnlineClient, Task<ChatConnection>> ChatConnector { get; set; } = client => client.ConnectChatAsync();
+
+	/// <summary>
+	/// [EXT:online-coop-session] A chat connection opened for the shared park failed: it is tried again after a growing wait, while the session still owns the chat
+	/// and no other connection was made meanwhile (a logout or another server ends it).
+	/// </summary>
+	private void RetryCoopChat()
+	{
+		if ( coopRoom is not { } room || disposed || !IsLoggedIn )
+			return;
+		var delay = ReconnectDelays[Math.Min( coopChatFailures++, ReconnectDelays.Length - 1 )];
+		var generationAtFail = generation;
+		_ = Task.Run( async () =>
+		{
+			await Task.Delay( delay );
+			Post( () =>
+			{
+				if ( disposed || generation != generationAtFail || coopRoom != room || Chat != null || chatConnecting )
+					return;
+				FollowCoopRoom();
+			} );
+		} );
+	}
+
+	/// <summary>[EXT:online-coop-session] Whether this game is in a shared park, whose room its chat follows.</summary>
+	public bool InSharedPark => coopRoom != null;
+
+	/// <summary>
+	/// [EXT:online-coop-session] Whether something said to a room now would not reach the shared park's room: this connection's server is not known to have such rooms,
+	/// or the chat is not on its way to the session's room yet. (On its way, the server takes what is said for the room only once the connection is there.)
+	/// </summary>
+	private bool SharedParkChatClosed => coopRoom != null && (!SharedParkRoomsKnown || WantedRoom != coopRoom || coopJoinWaits);
+
+	/// <summary>[EXT:online-coop-session] The open connection's server is known to have shared parks' rooms (<see cref="ChatProtocol.CoopRoomsVersion"/>).</summary>
+	private bool SharedParkRoomsKnown => protocolCurrent && ServerProtocol >= ChatProtocol.CoopRoomsVersion;
+
+	/// <summary>[EXT:online-coop-session] The chat's line for something said in a shared park that was not sent.</summary>
+	internal static string SharedParkChatClosedText() =>
+		UI.Original.SupplementaryStrings.Get( UI.Original.OpenTpwText.SharedParkChatClosed, GameLanguage.IsSelected ? GameLanguage.Current.Name : GameLanguage.DefaultLanguage );
+
+	/// <summary>
+	/// [EXT:online-coop-session] The command as it goes out, or null when it may not: in a shared park, what is said to a room names the session's room (the server drops
+	/// it when the connection is not there) and is not sent while the chat is not on its way there; a goto, which would take the chat elsewhere, is not sent at all.
+	/// The chat says why.
+	/// </summary>
+	private ChatRequest? CommandRequest( ChatCommand command, string argument )
+	{
+		if ( coopRoom is not { } room )
+			return ChatRequest.ForCommand( command, argument );
+		if ( command == ChatCommand.Goto )
+		{
+			AddChatLine( OnlineStrings.ChatNotice( (int)ChatNotice.LeaveParkToGoTo, new[] { ChatCommands.SplitName( argument ).Name ?? "" } ) );
+			return null;
+		}
+		if ( !ChatCommands.SaysToRoom( command ) )
+			return ChatRequest.ForCommand( command, argument );
+		if ( SharedParkChatClosed )
+		{
+			AddChatLine( SharedParkChatClosedText() );
+			return null;
+		}
+		return ChatRequest.ForCommand( command, argument, room );
+	}
+
+	/// <summary>
+	/// [EXT:online-coop-session] This game hosts, joined or resumed the shared park's session <paramref name="sessionId"/>: its chat is the session's, and goes to the
+	/// session's room once the server is known to have such rooms (<see cref="FollowCoopRoom"/>).
+	/// </summary>
+	private void EnterCoopRoom( string sessionId )
+	{
+		coopRoom = ChatProtocol.CoopRoom( sessionId );
+		coopChatFailures = 0;
+		// the server's version decides first; it needs no chat connection
+		if ( ServerProtocol == null )
+			FetchServerInfo();
+		FollowCoopRoom();
+	}
+
+	/// <summary>
+	/// [EXT:online-coop-session] Takes the chat to the shared park's room once the server is known to have such rooms (<see cref="ChatProtocol.CoopRoomsVersion"/>):
+	/// it opens the chat when it is closed, and joins once the open connection's own version is read (<see cref="protocolCurrent"/>). An older server's chat would
+	/// refuse the room: it is neither opened for the shared park nor moved, and lines said in the shared park are not sent there.
+	/// </summary>
+	private void FollowCoopRoom()
+	{
+		if ( coopRoom is not { } room || !IsLoggedIn || disposed || ServerProtocol is not { } protocol )
+			return;
+		if ( protocol < ChatProtocol.CoopRoomsVersion )
+		{
+			// a rejoin held for this connection's version (a server that went back to an older version) is dropped: the chat stays in the lobby
+			if ( coopJoinWaits )
+			{
+				coopJoinWaits = false;
+				joinPending = false;
+				requestedRoom = null;
+			}
+			return;
+		}
+		if ( Chat is not { } chat )
+		{
+			if ( !chatConnecting )
+				ConnectChat();
+			return;
+		}
+		if ( !protocolCurrent )
+			return;
+		if ( coopJoinWaits )
+		{
+			coopJoinWaits = false;
+			SendJoin( chat, room );
+		}
+		else
+			JoinRoom( room );
+	}
+
+	/// <summary>
+	/// [EXT:online-coop-session] The shared park's session <paramref name="sessionId"/> is over for this game (it ended, or this game left it): a chat in its room, or
+	/// on its way there, goes back to the lobby. Nothing once logged out, which leaves every room.
+	/// </summary>
+	internal void LeftCoopSession( string sessionId )
+	{
+		var room = ChatProtocol.CoopRoom( sessionId );
+		if ( coopRoom != room )
+			return;
+		coopRoom = null;
+		coopJoinWaits = false;
+		// wherever the chat is: a refused join left it in the room it was in before
+		if ( IsLoggedIn )
+			JoinRoom( ChatProtocol.LobbyRoom );
 	}
 
 	/// <summary>The room the session is in or on its way to (<see cref="JoinRoom"/>'s last room until the server confirms or refuses it).</summary>
@@ -1105,6 +1276,8 @@ public sealed class OnlineSession : IDisposable, IPresenceSession, IChatPanelSou
 		requestedRoom = null;
 		joinPending = false;
 		joinSentAt = null;
+		// [EXT:online-coop-session] a shared park's rejoin was this connection's; the shared park itself goes on, and its room is asked for again on the next connection
+		coopJoinWaits = false;
 		// a send already queued finds no place and clears its own flag
 		lock ( moveLock )
 			latestMove = null;
@@ -1171,6 +1344,7 @@ public sealed class OnlineSession : IDisposable, IPresenceSession, IChatPanelSou
 		if ( connection != null && Chat == connection )
 			protocolCurrent = true;
 		FlushMove();
+		FollowCoopRoom();
 	}
 
 	/// <summary>A failed version read. The open connection's read is tried again, so modes do not stay off after one lost answer.</summary>
@@ -1179,7 +1353,9 @@ public sealed class OnlineSession : IDisposable, IPresenceSession, IChatPanelSou
 		if ( epoch != serverInfoEpoch || Client != client )
 			return;
 		fetchingServerInfo = false;
-		if ( connection == null || Chat != connection || protocolCurrent || disposed )
+		// [EXT:online-coop-session] a shared park waits for the server's version without a chat connection (EnterCoopRoom): that read is tried again too
+		var forSharedPark = connection == null && Chat == null && coopRoom != null && ServerProtocol == null;
+		if ( (connection == null || Chat != connection || protocolCurrent) && !forSharedPark || disposed )
 			return;
 		var delay = serverInfoRetryDelays[Math.Min( attempt, serverInfoRetryDelays.Length - 1 )];
 		var next = attempt + 1;
@@ -1193,7 +1369,9 @@ public sealed class OnlineSession : IDisposable, IPresenceSession, IChatPanelSou
 				if ( disposed || generation != generationAtFail || Client != client || Chat != connection || protocolCurrent
 					|| fetchingServerInfo || epoch != serverInfoEpoch )
 					return;
-				BeginServerInfo( refresh: true, attempt: next );
+				if ( forSharedPark && (coopRoom == null || ServerProtocol != null) )
+					return;
+				BeginServerInfo( refresh: !forSharedPark, attempt: next );
 			} );
 		} );
 	}
@@ -1283,8 +1461,9 @@ public sealed class OnlineSession : IDisposable, IPresenceSession, IChatPanelSou
 	/// <summary>Sends one chat command (the chat overlay's buttons and popups), whatever the language's command words.</summary>
 	public void SendCommand( ChatCommand command, string argument )
 	{
-		if ( Chat is { } chat )
-			SendOnChat( chat, ChatRequest.ForCommand( command, argument ) );
+		// [EXT:online-coop-session] in a shared park, as a typed line goes (CommandRequest)
+		if ( Chat is { } chat && CommandRequest( command, argument ) is { } request )
+			SendOnChat( chat, request );
 	}
 
 	/// <summary>Fetches the logged-in player's own page: their parks, their ranks and their Platinum Tickets.</summary>

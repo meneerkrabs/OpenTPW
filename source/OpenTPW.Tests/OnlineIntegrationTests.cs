@@ -426,6 +426,14 @@ public class OnlineIntegrationTests
 		var entered = ChatFormatter.Format( new ChatEvent( ChatEventKind.System, Text: "buddy-enters", Args: new[] { "Ann", "The Fairground" } ),
 			null, _ => "Online World", OnlineStrings.Get );
 		Assert.AreEqual( "Your buddy Ann has entered The Fairground", entered );
+		// [EXT:online-coop-session] a located player in a shared park: OpenTPW's own sentence, the park unnamed
+		var shared = ChatFormatter.Format( new ChatEvent( ChatEventKind.System, Text: "in-shared-park", Args: new[] { "Ann" } ), null, _ => "Online World", OnlineStrings.Get );
+		Assert.AreEqual( string.Format( OpenTPW.UI.Original.SupplementaryStrings.Get( OpenTPW.UI.Original.OpenTpwText.PlayerInSharedPark,
+			GameLanguage.IsSelected ? GameLanguage.Current.Name : GameLanguage.DefaultLanguage ), "Ann" ), shared );
+		StringAssert.Contains( shared, "Ann" );
+		// [EXT:online-coop-session] something said for a shared park's room that the server did not send
+		Assert.AreEqual( OnlineSession.SharedParkChatClosedText(),
+			ChatFormatter.Format( new ChatEvent( ChatEventKind.System, Text: "shared-park-chat-closed" ), null, _ => "Online World", OnlineStrings.Get ) );
 	}
 
 	[TestMethod]
@@ -1265,6 +1273,177 @@ public class OnlineIntegrationTests
 		}
 	}, cancel );
 
+	/// <summary>
+	/// [EXT:online-coop-session] A server whose version is older than <see cref="ChatProtocol.CoopRoomsVersion"/> has no shared park rooms: a game that hosts a session
+	/// there opens no chat for it, keeps an open one where it is and sends nothing said in the shared park (nor a goto) there, and the session's end takes the chat
+	/// to the lobby. A game that knows the server has them opens the chat and takes it to the session's room.
+	/// </summary>
+	[TestMethod]
+	public async Task TheChatGoesToASharedParksRoomOnlyOnAServerThatHasThem()
+	{
+		await using var server = await LoopbackServer.StartAsync( options => options.ChatBurst = 50 );
+		var older = ChatProtocol.CoopRoomsVersion - 1;
+		var (ann, annHttp) = GatedSession( server.Url, "Ann", respond: () => Task.FromResult( ServerInfoResponse( older ) ) );
+		var (cid, cidHttp) = GatedSession( server.Url, "Cid", respond: () => Task.FromResult( ServerInfoResponse( older ) ) );
+		var (bea, beaHttp) = GatedSession( server.Url, "Bea", respond: () => Task.FromResult( ServerInfoResponse( ChatProtocol.CoopRoomsVersion ) ) );
+		async Task Host( OnlineSession session )
+		{
+			session.Coop.Open();
+			await PumpUntil( session, () => session.Coop.State == CoopLinkState.Open );
+			Assert.IsTrue( session.Coop.Create( listed: false, "A park", 2 ) );
+			await PumpUntil( session, () => session.Coop.Session != null && session.ServerProtocol != null );
+		}
+		try
+		{
+			foreach ( var (session, name) in new[] { (ann, "Ann"), (cid, "Cid"), (bea, "Bea") } )
+			{
+				session.Register( name, "correct horse" );
+				await PumpUntilIdle( session );
+				Assert.IsTrue( session.IsLoggedIn, session.Status );
+			}
+			// the newer server's chat is opened for the shared park and enters its room
+			await Host( bea );
+			var room = ChatProtocol.CoopRoom( bea.Coop.Session!.Id );
+			await PumpUntil( bea, () => bea.CurrentRoom == room );
+			// the older server's chat is not opened for it
+			await Host( cid );
+			await Settle( cid );
+			Assert.IsNull( cid.Chat );
+
+			// a chat already open in a chat park stays there, and what is said in the shared park is not sent there
+			var satellite = ChatProtocol.SatelliteRoom( 1 );
+			ann.ConnectChat();
+			await PumpUntil( ann, () => ann.Chat != null && ann.ProtocolCurrent );
+			ann.JoinRoom( satellite );
+			await PumpUntil( ann, () => ann.CurrentRoom == satellite );
+			using var listenerAccount = await server.LoginAsync( "Dan" );
+			await using var listener = await listenerAccount.ConnectChatAsync();
+			await listener.JoinAsync( satellite );
+			await Host( ann );
+			await Settle( ann );
+			Assert.AreEqual( (satellite, satellite), (ann.CurrentRoom, ann.WantedRoom) );
+			ann.SendChatLine( "for my co-builders" );
+			Assert.AreEqual( OnlineSession.SharedParkChatClosedText(), ann.ChatLines[^1] );
+			// nor does a goto take a chat in the lobby elsewhere
+			cid.ConnectChat();
+			await PumpUntil( cid, () => cid.Chat != null && cid.ProtocolCurrent );
+			cid.SendChatLine( "/goto Dan" );
+			await Settle( cid );
+			Assert.AreEqual( (ChatProtocol.LobbyRoom, ChatProtocol.LobbyRoom), (cid.CurrentRoom, cid.WantedRoom), "a goto took the chat away from the shared park" );
+			// a world shout is not the shared park's: it goes out, after anything said before it on the same connection
+			ann.SendChatLine( "/wshout to everyone" );
+			await PumpUntilIdle( ann );
+			using var timeout = new CancellationTokenSource( Deadline );
+			while ( true )
+			{
+				var heard = await listener.ReceiveAsync( timeout.Token ) ?? throw new AssertFailedException( "The listener's chat closed." );
+				Assert.AreNotEqual( "for my co-builders", heard.Text, "a line said in the shared park reached the chat park" );
+				if ( heard.Kind == ChatEventKind.WorldShout && heard.From == "Ann" )
+					break;
+			}
+			// the session's end takes the chat to the lobby, from wherever it was
+			Assert.IsTrue( ann.Coop.Leave( "Done." ) );
+			await PumpUntil( ann, () => ann.CurrentRoom == ChatProtocol.LobbyRoom );
+			Assert.IsFalse( ann.InSharedPark );
+		}
+		finally
+		{
+			ann.Dispose();
+			cid.Dispose();
+			bea.Dispose();
+			annHttp.Dispose();
+			cidHttp.Dispose();
+			beaHttp.Dispose();
+			server.DeleteData();
+		}
+	}
+
+	/// <summary>
+	/// [EXT:online-coop-session] A new chat connection asks for the shared park's room again only once its own server version is read: a server that went back to an
+	/// older version keeps the chat in the lobby, where nothing said in the shared park is sent.
+	/// </summary>
+	[TestMethod]
+	public async Task ASharedParksRoomIsAskedForAgainOnlyOnceTheNewConnectionsServerHasThem()
+	{
+		await using var server = await LoopbackServer.StartAsync( options => options.ChatBurst = 50 );
+		var gate = new VersionGate { Default = ChatProtocol.CoopRoomsVersion };
+		var (ann, http) = GatedSession( server.Url, "Ann", gate );
+		try
+		{
+			ann.Register( "Ann", "correct horse" );
+			await PumpUntilIdle( ann );
+			ann.Coop.Open();
+			await PumpUntil( ann, () => ann.Coop.State == CoopLinkState.Open );
+			Assert.IsTrue( ann.Coop.Create( listed: false, "Ann's park", 2 ) );
+			await PumpUntil( ann, () => ann.Coop.Session != null );
+			var room = ChatProtocol.CoopRoom( ann.Coop.Session!.Id );
+			await PumpUntil( ann, () => ann.CurrentRoom == room );
+			// the connection drops; the new one's version read is held, and the room waits for it
+			gate.HoldNext();
+			var previous = ann.Chat;
+			AbortChat( ann );
+			await PumpUntil( ann, () => ann.Chat != null && ann.Chat != previous && !ann.ProtocolCurrent );
+			await Settle( ann );
+			Assert.AreNotEqual( room, ann.CurrentRoom, "the room was asked for before the new connection's version was read" );
+			ann.SendChatLine( "anyone?" );
+			Assert.AreEqual( OnlineSession.SharedParkChatClosedText(), ann.ChatLines[^1] );
+			// the server answers an older version: the chat stays in the lobby, and nothing said in the shared park goes there
+			gate.Release( ChatProtocol.CoopRoomsVersion - 1 );
+			await PumpUntil( ann, () => ann.ProtocolCurrent );
+			ann.SendChatLine( "still anyone?" );
+			Assert.AreEqual( OnlineSession.SharedParkChatClosedText(), ann.ChatLines[^1] );
+			await Settle( ann );
+			Assert.AreEqual( (ChatProtocol.LobbyRoom, ChatProtocol.LobbyRoom), (ann.CurrentRoom, ann.WantedRoom) );
+		}
+		finally
+		{
+			gate.Release( ChatProtocol.CoopRoomsVersion );
+			ann.Dispose();
+			http.Dispose();
+			server.DeleteData();
+		}
+	}
+
+	/// <summary>[EXT:online-coop-session] A shared park waits for the server's version without a chat connection: a read that failed is tried again, and the chat then follows.</summary>
+	[TestMethod]
+	public async Task ASharedParksVersionReadIsTriedAgainWithoutAChat()
+	{
+		await using var server = await LoopbackServer.StartAsync( options => options.ChatBurst = 50 );
+		var reads = 0;
+		var (ann, http) = GatedSession( server.Url, "Ann", respond: () => Task.FromResult( Interlocked.Increment( ref reads ) == 1
+			? new HttpResponseMessage( HttpStatusCode.ServiceUnavailable ) : ServerInfoResponse( ChatProtocol.CoopRoomsVersion ) ) );
+		try
+		{
+			ann.SetServerInfoRetryDelays( new[] { TimeSpan.FromMilliseconds( 50 ) } );
+			ann.Register( "Ann", "correct horse" );
+			await PumpUntilIdle( ann );
+			Assert.IsNull( ann.ServerProtocol );
+			ann.Coop.Open();
+			await PumpUntil( ann, () => ann.Coop.State == CoopLinkState.Open );
+			Assert.IsTrue( ann.Coop.Create( listed: false, "Ann's park", 2 ) );
+			await PumpUntil( ann, () => ann.Coop.Session != null );
+			await PumpUntil( ann, () => ann.CurrentRoom == ChatProtocol.CoopRoom( ann.Coop.Session!.Id ) );
+			Assert.IsTrue( reads >= 2, "the failed read was not tried again" );
+		}
+		finally
+		{
+			ann.Dispose();
+			http.Dispose();
+			server.DeleteData();
+		}
+	}
+
+	/// <summary>Pumps <paramref name="session"/> for a while, for what must not happen to have had its chance.</summary>
+	private static async Task Settle( OnlineSession session )
+	{
+		var until = DateTime.UtcNow.AddMilliseconds( 300 );
+		while ( DateTime.UtcNow < until )
+		{
+			session.Pump();
+			await Task.Delay( 20 );
+		}
+	}
+
 	private static (OnlineSession Session, HttpClient Http) GatedSession( Uri server, string name, VersionGate? gate = null, Func<Task<HttpResponseMessage>>? respond = null )
 	{
 		var handler = new ServerInfoHandler( new HttpClientHandler { AllowAutoRedirect = false }, respond ?? (gate ?? throw new ArgumentNullException( nameof( gate ) )).Next );
@@ -1279,6 +1458,9 @@ public class OnlineIntegrationTests
 	{
 		private TaskCompletionSource<int>? hold;
 
+		/// <summary>The version answered while no read is held.</summary>
+		public int Default { get; init; } = 5;
+
 		public void HoldNext() => Volatile.Write( ref hold, new TaskCompletionSource<int>( TaskCreationOptions.RunContinuationsAsynchronously ) );
 
 		public void Release( int version ) => Volatile.Read( ref hold )?.TrySetResult( version );
@@ -1286,7 +1468,7 @@ public class OnlineIntegrationTests
 		public async Task<HttpResponseMessage> Next()
 		{
 			var pending = Volatile.Read( ref hold );
-			return ServerInfoResponse( pending == null ? 5 : await pending.Task );
+			return ServerInfoResponse( pending == null ? Default : await pending.Task );
 		}
 	}
 

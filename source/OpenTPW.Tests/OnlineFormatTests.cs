@@ -328,6 +328,14 @@ public class OnlineFormatTests
 		Assert.ThrowsException<InvalidDataException>( () => ChatRequest.Parse( Encoding.UTF8.GetBytes( "{\"type\":\"join\",\"command\":null,\"argument\":null,\"room\":\"park:../x\"}" ) ) );
 		Assert.ThrowsException<InvalidDataException>( () => ChatRequest.Parse( Encoding.UTF8.GetBytes( "{\"type\":\"command\",\"command\":\"say\",\"argument\":\"" + new string( 'x', 300 ) + "\",\"room\":null}" ) ) );
 		Assert.ThrowsException<InvalidDataException>( () => ChatRequest.Parse( Encoding.UTF8.GetBytes( "{\"type\":\"exec\"}" ) ) );
+		// [EXT:online-coop-session] what is said to a room may name the shared park's room it is for; nothing else names a room
+		var room = ChatProtocol.CoopRoom( "0123456789abcdef" );
+		Assert.AreEqual( room, ChatRequest.Parse( StrictJson.Serialize( ChatRequest.ForCommand( ChatCommand.Say, "hi", room ) ) ).Room );
+		Assert.AreEqual( room, ChatRequest.Parse( StrictJson.Serialize( ChatRequest.ForCommand( ChatCommand.Cheer, "", room ) ) ).Room );
+		foreach ( var command in new[] { ChatCommand.WShout, ChatCommand.UShout, ChatCommand.Tell, ChatCommand.Page, ChatCommand.Goto, ChatCommand.Locate } )
+			Assert.ThrowsException<InvalidDataException>( () => ChatRequest.Parse( StrictJson.Serialize( ChatRequest.ForCommand( command, "Bob hi", room ) ) ), command.ToString() );
+		Assert.ThrowsException<InvalidDataException>( () => ChatRequest.Parse( StrictJson.Serialize( ChatRequest.ForCommand( ChatCommand.Say, "hi", ChatProtocol.SatelliteRoom( 1 ) ) ) ) );
+		Assert.ThrowsException<InvalidDataException>( () => ChatRequest.Parse( StrictJson.Serialize( ChatRequest.ForCommand( ChatCommand.Say, "hi", ChatProtocol.LobbyRoom ) ) ) );
 	}
 
 	[TestMethod]

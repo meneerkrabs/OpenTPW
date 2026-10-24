@@ -27,6 +27,7 @@ public class ParkPresenceTests
 		public string CurrentRoom { get; set; } = ChatProtocol.LobbyRoom;
 		public string? Requested;
 		public string WantedRoom => Requested ?? CurrentRoom;
+		public bool InSharedPark { get; set; }
 		public string? RefusedRoom { get; set; }
 		public int? ServerProtocol { get; set; } = ParkPresence.MovementProtocol;
 		public int ServerInfoRequests;
@@ -219,6 +220,16 @@ public class ParkPresenceTests
 		opening.Dispose();
 		Assert.AreEqual( 0, openingSession.Closes );
 		Assert.IsNotNull( openingSession.Connection );
+		// [EXT:online-coop-session] a connection the visit opened that a shared park's session took over since stays open, for the session's room
+		var (taken, takenSession, _) = Create();
+		takenSession.Enter( new object() );
+		var coop = ChatProtocol.CoopRoom( "0123456789abcdef" );
+		takenSession.InSharedPark = true;
+		takenSession.JoinRoom( coop );
+		taken.Dispose();
+		Assert.AreEqual( 0, takenSession.Closes );
+		Assert.AreEqual( coop, takenSession.Joins[^1] );
+		Assert.IsNotNull( takenSession.Connection );
 	}
 
 	[TestMethod]

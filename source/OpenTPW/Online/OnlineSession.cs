@@ -290,8 +290,22 @@ public sealed class OnlineSession : IDisposable, IPresenceSession, IChatPanelSou
 		} );
 	}
 
-	private static string ConnectError( HttpRequestException exception ) =>
-		OnlineStrings.Error( OnlineStrings.ErrorConnect, "Error: Couldn't connect to server" ) + $" ({exception.Message})";
+	/// <summary>
+	/// The original's connection error in the game's language; the .NET reason (English, whatever the language) only goes to the log.
+	/// A request that timed out (<see cref="TaskCanceledException"/> from the HTTP client) is a failed connection too.
+	/// </summary>
+	private static string ConnectError( Exception exception )
+	{
+		Log?.Info( $"Online connection failed: {exception.Message}" );
+		return OnlineStrings.Error( OnlineStrings.ErrorConnect, "Error: Couldn't connect to server" );
+	}
+
+	/// <summary>The original's chat connection error ([DATA:Language/English/ERRORMSG.str:69]) in the game's language; the .NET reason only goes to the log.</summary>
+	private static string ChatConnectError( Exception exception )
+	{
+		Log?.Info( $"Chat connection failed: {exception.Message}" );
+		return OnlineStrings.Error( OnlineStrings.ErrorChatConnect, "Error: Couldn't connect to chat server" );
+	}
 
 	/// <summary>Runs network work in the background and reports the outcome in <see cref="Status"/>.</summary>
 	public void Run( Func<Task<string?>> work )
@@ -308,8 +322,8 @@ public sealed class OnlineSession : IDisposable, IPresenceSession, IChatPanelSou
 			string? message;
 			try { message = await work(); }
 			catch ( OnlineException exception ) { message = exception.Message; }
-			catch ( HttpRequestException exception ) { message = ConnectError( exception ); }
-			catch ( Exception exception ) when ( exception is InvalidDataException or IOException or TaskCanceledException or ArgumentException or InvalidOperationException or System.Net.WebSockets.WebSocketException or ObjectDisposedException )
+			catch ( Exception exception ) when ( exception is HttpRequestException or TaskCanceledException ) { message = ConnectError( exception ); }
+			catch ( Exception exception ) when ( exception is InvalidDataException or IOException or ArgumentException or InvalidOperationException or System.Net.WebSockets.WebSocketException or ObjectDisposedException )
 			{ message = exception.Message; }
 			// Anything else must still end the operation, or every online button stays disabled.
 			catch ( Exception exception )
@@ -326,16 +340,34 @@ public sealed class OnlineSession : IDisposable, IPresenceSession, IChatPanelSou
 		} );
 	}
 
-	/// <summary>Opts in to a server (validated http/https URL) and remembers it.</summary>
+	/// <summary>Opts in to a server (validated http/https URL, see <see cref="ParseServerUrl"/>) and remembers it.</summary>
 	public void UseServer( string url, string? playerName )
 	{
 		if ( disposed )
 			throw new ObjectDisposedException( nameof( OnlineSession ) );
-		var server = OnlineClient.ValidateServerUrl( new Uri( url.Trim(), UriKind.Absolute ) );
+		var server = ParseServerUrl( url );
 		Disconnect();
 		Client = new OnlineClient( server );
 		Settings = new OnlineSettings( server.ToString(), playerName ?? Settings.PlayerName );
 		Folders.SaveSettings( Settings );
+	}
+
+	/// <summary>
+	/// The server of a typed address. An empty address takes <see cref="SuggestedServerUrl"/> when there is one. A missing, malformed or refused
+	/// address throws an <see cref="ArgumentException"/> whose message is the reason in the game's language, for the status line: the .NET
+	/// messages ("Invalid URI: The URI is empty.") are English whatever the language.
+	/// </summary>
+	public static Uri ParseServerUrl( string url )
+	{
+		var text = url.Trim();
+		if ( text.Length == 0 )
+			text = SuggestedServerUrl?.Trim() ?? "";
+		if ( text.Length == 0 )
+			throw new ArgumentException( OnlineStrings.Get( OnlineLabel.EnterServerAddress ) );
+		if ( !Uri.TryCreate( text, UriKind.Absolute, out var uri ) )
+			throw new ArgumentException( OnlineStrings.Get( OnlineLabel.InvalidServerAddress ) );
+		try { return OnlineClient.ValidateServerUrl( uri ); }
+		catch ( ArgumentException ) { throw new ArgumentException( OnlineStrings.Get( OnlineLabel.InvalidServerAddress ) ); }
 	}
 
 	/// <summary>Tests: the session uses <paramref name="client"/> (a stub transport) instead of opening one from a URL.</summary>
@@ -719,7 +751,8 @@ public sealed class OnlineSession : IDisposable, IPresenceSession, IChatPanelSou
 			}
 			catch ( Exception exception )
 			{
-				var message = exception is HttpRequestException http ? ConnectError( http ) : exception.Message;
+				var message = exception is HttpRequestException or System.Net.WebSockets.WebSocketException or IOException or TaskCanceledException
+					? ChatConnectError( exception ) : exception.Message;
 				if ( exception is not (OnlineException or HttpRequestException or System.Net.WebSockets.WebSocketException or IOException
 					or InvalidDataException or TaskCanceledException or InvalidOperationException or ObjectDisposedException) )
 					Log.Warning( $"Chat connection failed: {exception}" );

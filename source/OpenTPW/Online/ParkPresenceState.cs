@@ -133,6 +133,8 @@ public sealed class ParkPresenceState
 	private bool routed;
 	/// <summary>A walk stopped in front of a cell built on since its plan, waiting to be planned again (<see cref="Advance"/>).</summary>
 	private bool groundStopped;
+	/// <summary>The last plan found no cell to go to: its goal and every cell near it were blocked (the figure stays, its target unchanged).</summary>
+	private bool planFailed;
 	/// <summary>The view's centre the figure was last sent to (<see cref="FollowView"/>), clamped to the park; null before the first, and after a ride.</summary>
 	private (float X, float Y)? followed;
 	/// <summary>The ground's version when the view's centre was last followed.</summary>
@@ -166,6 +168,8 @@ public sealed class ParkPresenceState
 	public IEnumerable<PresenceAvatar> Shown => Riding ? others : All;
 	/// <summary>Whether the own figure is on its way somewhere.</summary>
 	public bool Walking => route.Count > 0;
+	/// <summary>The walks planned so far (<see cref="WalkTo"/>; tests).</summary>
+	internal int Plans { get; private set; }
 	/// <summary>The player rides a ride (<see cref="SetRiding"/>): the own figure is hidden where it stood.</summary>
 	public bool Riding { get; private set; }
 	/// <summary>How the place <see cref="Advance"/> returned last moved the figure.</summary>
@@ -245,7 +249,8 @@ public sealed class ParkPresenceState
 			return;
 		var (goalX, goalY) = ClampToPark( x, y );
 		route.Clear();
-		routed = groundStopped = false;
+		routed = groundStopped = planFailed = false;
+		Plans++;
 		arrived = false;
 		// [EXT:online-coop-figures] the areas a search keeps are the ground's as it was: a changed ground (a co-builder's edit) is labelled again
 		if ( ground.Version != plannedVersion )
@@ -259,7 +264,10 @@ public sealed class ParkPresenceState
 		if ( !Passable( goal.Item1, goal.Item2 ) )
 		{
 			if ( NearestPassable( goal ) is not { } nearer )
+			{
+				planFailed = true;
 				return;
+			}
 			goal = nearer;
 			(goalX, goalY) = (goal.Item1 + 0.5f, goal.Item2 + 0.5f);
 		}
@@ -315,9 +323,9 @@ public sealed class ParkPresenceState
 		if ( Riding || !float.IsFinite( x ) || !float.IsFinite( y ) )
 			return;
 		var goal = ClampToPark( x, y );
-		// a view that stays put plans nothing more, but for a centre the figure is not on its way to itself (its cell blocked, no free cell near, or built on during the
-		// walk) on a ground changed since: what a co-builder opened may let it go there now
-		if ( followed is { } last && Distance( last, goal ) < ViewReplanCells && (ground.Version == followedVersion || Own.Target == last) )
+		// a view that stays put plans nothing more, but on a ground changed since for a centre the figure is not on its way to itself: sent beside it (its cell
+		// blocked), not sent at all (no free cell near), or built on since. What a co-builder opened may let it go there now, and a figure built over walks out
+		if ( followed is { } last && Distance( last, goal ) < ViewReplanCells && (ground.Version == followedVersion || OnWayTo( last )) )
 			return;
 		if ( Distance( (Own.X, Own.Y), goal ) >= ViewJumpCells )
 		{
@@ -332,6 +340,10 @@ public sealed class ParkPresenceState
 		WalkTo( goal.X, goal.Y );
 		Followed( goal, time );
 	}
+
+	/// <summary>Whether the figure stands at, or has a plan to, <paramref name="centre"/> itself, on a cell it may stand on.</summary>
+	private bool OnWayTo( (float X, float Y) centre ) =>
+		Own.Target == centre && !planFailed && Passable( (int)MathF.Floor( centre.X ), (int)MathF.Floor( centre.Y ) );
 
 	/// <summary>Notes the view's centre followed (<paramref name="goal"/>, clamped), on the ground as it is.</summary>
 	private void Followed( (float X, float Y) goal, double time )

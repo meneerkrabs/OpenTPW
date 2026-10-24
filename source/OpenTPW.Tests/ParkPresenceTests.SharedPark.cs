@@ -352,6 +352,44 @@ public partial class ParkPresenceTests
 	}
 
 	[TestMethod]
+	public void AViewWhoseSurroundingsWereBuiltOverIsFollowedOnceTheyOpen()
+	{
+		var ground = new EditedGround( 30, 12 );
+		var park = new SharedPark( ground, start: (2.5f, 5.5f) );
+		park.Frames( 1, 0.3f );
+		park.Centre = (10.5f, 5.5f);
+		park.Frames( 1, 0.3f );
+		Assert.IsTrue( park.Presence.State.Walking );
+		// a co-builder builds over the view's centre and every cell near it: the walk is planned again and finds nowhere to go, so the figure stays
+		ground.Block( from x in Enumerable.Range( 7, 7 ) from y in Enumerable.Range( 2, 7 ) select (x, y) );
+		park.Frames( 1, 0.3f );
+		Assert.IsFalse( park.Presence.State.Walking );
+		var at = park.Own;
+		park.Frames( 10 );
+		Assert.AreEqual( at, park.Own );
+		// the centre is opened again: the view that stayed there is followed again
+		ground.Free( (10, 5) );
+		park.Frames( 1, 0.3f );
+		Assert.IsTrue( park.Presence.State.Walking, "the opened centre is followed" );
+	}
+
+	[TestMethod]
+	public void AFigureBuiltOverWalksOutToTheNearestFreeCell()
+	{
+		var ground = new EditedGround( 30, 12 );
+		var park = new SharedPark( ground, start: (10.5f, 5.5f) );
+		park.Frames( 1, 0.3f );
+		park.Frames( 10 );
+		Assert.IsFalse( park.Presence.State.Walking );
+		// a co-builder places a ride on the cell the figure stands on, where the view stays: it walks out
+		ground.Block( new[] { (10, 5) } );
+		park.Frames( 1, 0.3f );
+		for ( var frame = 0; frame < 40; frame++ )
+			park.Frames();
+		Assert.IsFalse( ground.Blocked( (int)MathF.Floor( park.Own.X ), (int)MathF.Floor( park.Own.Y ) ), $"the figure is still in the ride at {park.Own}" );
+	}
+
+	[TestMethod]
 	public void AWalkStopsInFrontOfACellBuiltOnUntilItIsPlannedAgain()
 	{
 		var ground = new EditedGround( 30, 12 );
@@ -421,16 +459,16 @@ public partial class ParkPresenceTests
 		// the first edit is gone round at once
 		ground.Free( (29, 0) );
 		park.Frames( 1, 0.01f );
-		var checks = ground.Checks;
+		var plans = park.Presence.State.Plans;
 		for ( var frame = 1; frame < 20; frame++ )
 		{
 			ground.Free( (29, frame % 12) );
 			park.Frames( 1, 0.01f );
 		}
 		Assert.IsTrue( park.Presence.State.Walking );
-		Assert.AreEqual( checks, ground.Checks, "no plan within a fifth of a second of the last" );
+		Assert.AreEqual( plans, park.Presence.State.Plans, "no plan within a fifth of a second of the last" );
 		ground.Free( (29, 0) );
 		park.Frames( 1, 0.1f );
-		Assert.IsTrue( ground.Checks > checks, "the walk is planned again once a quarter of a second passed" );
+		Assert.AreEqual( plans + 1, park.Presence.State.Plans, "the walk is planned again once a quarter of a second passed" );
 	}
 }

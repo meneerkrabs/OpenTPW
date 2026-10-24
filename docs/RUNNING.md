@@ -89,6 +89,14 @@ tests do not require them. An asset-test skip is not a compatibility pass.
 The workflow builds/tests all three host OSes, but does not qualify GPU rendering
 or full gameplay and does not download proprietary game files.
 
+Every test runs inside a guard (`source/OpenTPW.Tests/GlobalStateGuard.cs`) that fails it when it ends with
+another global game-data, save or cache file system (`FileSystem`, `SaveFileSystem`, `CacheFileSystem`)
+than it started with. The failure names the folder the test left, and the guard puts the old value back;
+without that, the tests after it would read that folder as their own. A test that replaces one of them saves
+it as the first statement of its `[TestInitialize]` and puts it back unconditionally in its `[TestCleanup]`,
+null included. The guard reaches every `[TestClass]` because the test namespace has its own
+`TestClassAttribute`, which stands in for MSTest's.
+
 ## Extensions and mods
 
 | Option | Meaning |

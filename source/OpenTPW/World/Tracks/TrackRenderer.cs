@@ -7,7 +7,7 @@ namespace OpenTPW;
 /// tile's origin with the engine rotation 360 − rotation (the pieces are 20 world units wide), and each vehicle is one of the ride's supplemental meshes
 /// (<c>wr_ring.md2</c> for the boats, <c>gk_*.md2</c> for the karts) at the vehicle position divided by 307.2. The meshes are baked with their rest
 /// transforms; a piece hides the end caps of its arm mask, and a tile whose piece plays its water clip (<see cref="TrackPieceAnimations"/>) draws the moving
-/// meshes from a copy shared by the tiles that started together. A kart's riders are drawn by the ride-head renderer at the kart's head dummies
+/// meshes from a copy of its own draped vertices that its group of tiles (those that started together) animates. Every tile drapes onto the landscape (<see cref="TrackDrape"/>). A kart's riders are drawn by the ride-head renderer at the kart's head dummies
 /// (<see cref="CollectHeads"/>).
 /// </summary>
 public sealed class TrackRenderer : IDisposable
@@ -20,10 +20,12 @@ public sealed class TrackRenderer : IDisposable
 	/// A drawable mesh set with the surface it provides and, for a vehicle mesh, the rest transforms and flags of its rider head dummies by seat (head 1, 2, ...;
 	/// null where the model has no record for a seat).
 	/// </summary>
-	private sealed record PieceGeometry( List<Model> Models, TrackSurface Surface, Matrix4x4?[] HeadNodes, uint[] HeadFlags, Matrix4x4?[] SparksNodes )
+	private sealed record PieceGeometry( TrackSurface Surface, Matrix4x4?[] HeadNodes, uint[] HeadFlags, Matrix4x4?[] SparksNodes )
 	{
-		/// <summary>The drawable parts with the mesh each came from (one per model of <see cref="Models"/>, same order).</summary>
+		/// <summary>The drawable parts with the mesh each came from.</summary>
 		public List<PiecePart> Parts { get; init; } = new();
+		/// <summary>The part models, built on first use.</summary>
+		public IEnumerable<Model> Models => Parts.Select( part => part.Model );
 		/// <summary>The piece's mesh, for the clip's animator.</summary>
 		public ModelFile? Mesh { get; init; }
 		/// <summary>The piece's water clip (animation 5), or null when it has none or it cannot be played on the mesh.</summary>
@@ -32,17 +34,84 @@ public sealed class TrackRenderer : IDisposable
 		public bool[] UvMeshes { get; init; } = Array.Empty<bool>();
 	}
 
-	/// <summary>One drawable part of a piece: its model, the mesh it came from, and the vertices, indices and material a playing tile's copy starts from.</summary>
-	private sealed record PiecePart( Model Model, int Mesh, Vertex[] Vertices, uint[] Indices, Material Material );
+	/// <summary>
+	/// One drawable part of a piece: the mesh it came from and its baked vertices and indices (a playing or draped tile's copy starts from them). Its textures, material and model
+	/// are made on first use, so the vertices and the vehicle surface can be read without a graphics device.
+	/// </summary>
+	private sealed class PiecePart
+	{
+		private readonly ObjectCatalogEntry entry;
+		private readonly string[] textures;
+		private Material? material;
+		private Model? model;
 
-	/// <summary>The tiles of one piece that started their water clip at the same moment (and froze at the same moment): one animator and one copy of the moving meshes.</summary>
+		public PiecePart( ObjectCatalogEntry entry, int mesh, Vertex[] vertices, uint[] indices, string[] textures )
+		{
+			this.entry = entry;
+			this.textures = textures;
+			Mesh = mesh;
+			Vertices = vertices;
+			Indices = indices;
+		}
+
+		public int Mesh { get; }
+		public Vertex[] Vertices { get; }
+		public uint[] Indices { get; }
+
+		public Material Material => material ??= CreateMaterial();
+
+		public Model Model => model ??= new Model( Vertices, Indices, Material, false );
+
+		private Material CreateMaterial()
+		{
+			var slots = new Texture[16];
+			Array.Fill( slots, Texture.Missing );
+			for ( var index = 0; index < textures.Length; index++ )
+				slots[index] = LoadTexture( entry, textures[index] );
+			var created = new Material<ObjectUniformBuffer>( "content/shaders/test.shader" );
+			created.Set( TextureArrayName, slots );
+			return created;
+		}
+
+		public void Release()
+		{
+			model?.ReleaseBuffers();
+			material?.ReleaseOwnedResources();
+			model = null;
+			material = null;
+		}
+	}
+
+	/// <summary>The tiles of one piece that started their water clip at the same moment (and froze at the same moment): one animator and, per tile, a copy of the moving meshes.</summary>
 	private sealed class PieceClipGroup
 	{
 		public required ObjectAnimator Animator { get; init; }
 		public double Shown;
 		public bool Used;
-		/// <summary>The copies of the moving parts, by part index, with the animator version they show.</summary>
-		public readonly Dictionary<int, (Model Model, Vertex[] Vertices, int Version)> Copies = new();
+		/// <summary>The copies of the moving parts, by tile and part index, with the animator version they show (each starts from its tile's draped vertices).</summary>
+		public readonly Dictionary<(int X, int Y, int Part), (Model Model, Vertex[] Vertices, int Version)> Copies = new();
+	}
+
+	/// <summary>One placed tile's drape: its draped vertices per part (null where nothing moves), the vehicle surface of its piece on the draped faces, and the models built from them.</summary>
+	private sealed class TileDrape
+	{
+		public required (int Piece, int Rotation, int Signature) Key { get; init; }
+		public required Vertex[]?[] Vertices { get; init; }
+		public required TrackSurface Surface { get; init; }
+		/// <summary>The owned models of the draped parts, built when the tile is drawn (a part that nothing lifts uses the piece's shared model).</summary>
+		public readonly Model?[] Models;
+		public bool Used;
+
+		public TileDrape( int parts ) => Models = new Model?[parts];
+
+		public void ReleaseModels()
+		{
+			for ( var index = 0; index < Models.Length; index++ )
+			{
+				Models[index]?.ReleaseBuffers();
+				Models[index] = null;
+			}
+		}
 	}
 
 	/// <summary>The entities of one vehicle: its body, its shadow (hovering karts) and the transform the heads hang from.</summary>
@@ -64,7 +133,9 @@ public sealed class TrackRenderer : IDisposable
 	private readonly Func<int, int, float> groundHeight;
 	private readonly Func<int, int, float>? cornerHeight;
 	private readonly Func<float, float, float>? terrainHeight;
+	private readonly Func<float, float, float>? drapeHeight;
 	private readonly Dictionary<int, PieceGeometry> pieces = new();
+	private readonly Dictionary<(int X, int Y), TileDrape> drapes = new();
 	private readonly Dictionary<int, PieceGeometry?> vehicleMeshes = new();
 	private readonly List<ModelEntity> tiles = new();
 	private readonly Dictionary<(int Piece, double Start, double? Stop), PieceClipGroup> clipGroups = new();
@@ -87,11 +158,13 @@ public sealed class TrackRenderer : IDisposable
 	/// <param name="groundHeight">Engine height of the ground at a cell.</param>
 	/// <param name="cornerHeight">Engine height of the ground at a grid corner (the landscape vertex); null takes the cells' heights.</param>
 	/// <param name="terrainHeight">Engine height of the ground under a model-unit point of the grid (the original's landscape sampler); null takes the cell's height.</param>
+	/// <param name="drapeHeight">Engine height of the ground a draped piece vertex takes at a model-unit point of the grid (the drape's always-split sampler, <see cref="LandscapeSampler.SampleDrape"/>); null takes <paramref name="terrainHeight"/>.</param>
 	public TrackRenderer( ObjectCatalogEntry entry, TrackPieceKit? kit, Func<Vector2> gridOrigin, Func<int, int, float> groundHeight, Func<int, int, float>? cornerHeight = null,
-		Func<float, float, float>? terrainHeight = null )
+		Func<float, float, float>? terrainHeight = null, Func<float, float, float>? drapeHeight = null )
 	{
 		this.cornerHeight = cornerHeight;
 		this.terrainHeight = terrainHeight;
+		this.drapeHeight = drapeHeight;
 		this.entry = entry;
 		this.kit = kit;
 		this.gridOrigin = gridOrigin;
@@ -141,8 +214,14 @@ public sealed class TrackRenderer : IDisposable
 		foreach ( var entity in tiles )
 			entity.Delete();
 		tiles.Clear();
+		foreach ( var drape in drapes.Values )
+			drape.Used = false;
+		// a tile's moving copies start from its draped vertices, so every copy is built again with the tiles (the groups' animators and clocks stay)
 		foreach ( var group in clipGroups.Values )
+		{
 			group.Used = false;
+			ReleaseCopies( group );
+		}
 		if ( kit != null )
 		{
 			foreach ( var (x, y, cell) in layer.Cells() )
@@ -154,19 +233,89 @@ public sealed class TrackRenderer : IDisposable
 				if ( geometry == null )
 					continue;
 				var group = animations?.At( layer, x, y ) is { } play && geometry.Water is { } water ? ClipGroup( cell.Piece, geometry, water, play ) : null;
+				var drape = DrapeOf( x, y, cell.Piece, cell.Rotation, geometry );
+				drape.Used = true;
 				var transform = TileTransform( x, y, cell.Rotation );
 				for ( var index = 0; index < geometry.Parts.Count; index++ )
 				{
-					var model = group != null && group.Copies.TryGetValue( index, out var copy ) ? copy.Model : geometry.Parts[index].Model;
+					var model = group != null && geometry.UvMeshes[geometry.Parts[index].Mesh]
+						? AddCopy( group, (x, y, index), geometry.Parts[index], drape.Vertices[index] ?? geometry.Parts[index].Vertices )
+						: ModelOf( drape, geometry, index );
 					tiles.Add( new ModelEntity { Model = model, Name = $"track:{x},{y}", SnowSurface = SnowCover.PathSurface, TransformOverride = transform, Position = new Vector3( transform.M41, transform.M42, transform.M43 ) } );
 				}
 			}
+		}
+		foreach ( var key in drapes.Where( pair => !pair.Value.Used ).Select( pair => pair.Key ).ToList() )
+		{
+			drapes[key].ReleaseModels();
+			drapes.Remove( key );
 		}
 		foreach ( var key in clipGroups.Where( pair => !pair.Value.Used ).Select( pair => pair.Key ).ToList() )
 		{
 			ReleaseGroup( clipGroups[key] );
 			clipGroups.Remove( key );
 		}
+	}
+
+	/// <summary>
+	/// The drape of the tile whose origin cell is (<paramref name="x"/>, <paramref name="y"/>), built on first use and kept while the piece, the rotation and the landscape under the tile stay: every part's
+	/// vertices lifted onto the landscape, and the piece's vehicle surface on the lifted faces.
+	/// </summary>
+	private TileDrape DrapeOf( int x, int y, int piece, int rotation, PieceGeometry geometry )
+	{
+		var key = (piece, rotation, TerrainSignature( x, y ));
+		if ( drapes.TryGetValue( (x, y), out var cached ) && cached.Key == key )
+			return cached;
+		cached?.ReleaseModels();
+		var lift = TrackDrape.Lift( x, y, rotation, TileHeight( x, y ), DrapeTerrain );
+		var drape = new TileDrape( geometry.Parts.Count )
+		{
+			Key = key,
+			Vertices = geometry.Parts.Select( part => TrackDrape.Apply( part.Vertices, lift ) ).ToArray(),
+			Surface = geometry.Surface.Draped( lift )
+		};
+		drapes[(x, y)] = drape;
+		return drape;
+	}
+
+	/// <summary>The vertices of every drawn part of the tile whose origin cell is (<paramref name="x"/>, <paramref name="y"/>), in the piece's own space with the drape applied (the tile's transform places them), or none for a cell without a piece.</summary>
+	internal IReadOnlyList<Vertex[]> DrapedVertices( TrackCellLayer layer, int x, int y )
+	{
+		var cell = layer.Get( x, y );
+		if ( kit == null || !cell.IsOrigin || cell.Piece == 0 || GeometryOf( cell.Piece ) is not { } geometry )
+			return Array.Empty<Vertex[]>();
+		var drape = DrapeOf( x, y, cell.Piece, cell.Rotation, geometry );
+		return geometry.Parts.Select( ( part, index ) => drape.Vertices[index] ?? part.Vertices ).ToList();
+	}
+
+	/// <summary>The model of a tile's part: the piece's shared model where nothing is lifted, one owned model of the draped vertices otherwise.</summary>
+	private static Model ModelOf( TileDrape drape, PieceGeometry geometry, int index )
+	{
+		if ( drape.Vertices[index] is not { } vertices )
+			return geometry.Parts[index].Model;
+		return drape.Models[index] ??= new Model( vertices, geometry.Parts[index].Indices, geometry.Parts[index].Material, false );
+	}
+
+	/// <summary>The landscape a draped vertex takes: the drape sampler, else the terrain sampler, else the cell's height, in engine units at a model-unit point of the grid.</summary>
+	private float DrapeTerrain( float x, float y )
+	{
+		if ( drapeHeight != null )
+			return drapeHeight( x, y );
+		if ( terrainHeight != null )
+			return terrainHeight( x, y );
+		return groundHeight( Math.Max( 0, (int)MathF.Floor( x / 10 ) ), Math.Max( 0, (int)MathF.Floor( y / 10 ) ) );
+	}
+
+	/// <summary>A number that changes when the landscape the tile at (<paramref name="x"/>, <paramref name="y"/>) drapes onto does: the heights of the corners its 2 × 2 cells and their far neighbours read.</summary>
+	private int TerrainSignature( int x, int y )
+	{
+		var hash = new HashCode();
+		for ( var dx = 0; dx <= 3; dx++ )
+		{
+			for ( var dy = 0; dy <= 3; dy++ )
+				hash.Add( cornerHeight != null ? cornerHeight( x + dx, y + dy ) : groundHeight( x + Math.Min( dx, 2 ), y + Math.Min( dy, 2 ) ) );
+		}
+		return hash.ToHashCode();
 	}
 
 	/// <summary>The clip group of the tiles of <paramref name="piece"/> that started (and froze) with <paramref name="play"/>, created on first use with the clip started at its frame 0.</summary>
@@ -179,18 +328,19 @@ public sealed class TrackRenderer : IDisposable
 			var animator = new ObjectAnimator( geometry.Mesh! );
 			animator.Trigger( 0, water.Clip, water.Name, TrackPieceKit.WaterAnimation, 0, loop: true );
 			group = new PieceClipGroup { Animator = animator };
-			for ( var index = 0; index < geometry.Parts.Count; index++ )
-			{
-				var part = geometry.Parts[index];
-				if ( !geometry.UvMeshes[part.Mesh] )
-					continue;
-				var vertices = (Vertex[])part.Vertices.Clone();
-				group.Copies[index] = (new Model( vertices, part.Indices, part.Material, true ), vertices, -1);
-			}
 			clipGroups[key] = group;
 		}
 		group.Used = true;
 		return group;
+	}
+
+	/// <summary>A tile's copy of a moving part, starting from the tile's draped vertices (its texture coordinates are written by <see cref="PlayClips"/>).</summary>
+	private static Model AddCopy( PieceClipGroup group, (int X, int Y, int Part) key, PiecePart part, Vertex[] source )
+	{
+		var vertices = (Vertex[])source.Clone();
+		var model = new Model( vertices, part.Indices, part.Material, true );
+		group.Copies[key] = (model, vertices, -1);
+		return model;
 	}
 
 	/// <summary>Plays every clip group to its tiles' time (frozen groups stop at their freeze) and rewrites the texture coordinates of the copies that changed.</summary>
@@ -210,25 +360,27 @@ public sealed class TrackRenderer : IDisposable
 			}
 			if ( pieces.GetValueOrDefault( piece ) is not { } geometry )
 				continue;
-			foreach ( var (index, copy) in group.Copies.ToList() )
+			foreach ( var (copyKey, copy) in group.Copies.ToList() )
 			{
-				var mesh = geometry.Parts[index].Mesh;
+				var mesh = geometry.Parts[copyKey.Part].Mesh;
 				var current = group.Animator.GetVertexVersion( mesh );
 				if ( current == copy.Version )
 					continue;
 				ObjectRenderParts.WriteTexCoords( geometry.Mesh!.Meshes[mesh], group.Animator.GetTexCoords( mesh ), copy.Vertices );
 				copy.Model.UpdateVertices( copy.Vertices );
-				group.Copies[index] = copy with { Version = current };
+				group.Copies[copyKey] = copy with { Version = current };
 			}
 		}
 	}
 
-	private static void ReleaseGroup( PieceClipGroup group )
+	private static void ReleaseCopies( PieceClipGroup group )
 	{
 		foreach ( var copy in group.Copies.Values )
 			copy.Model.ReleaseBuffers();
 		group.Copies.Clear();
 	}
+
+	private static void ReleaseGroup( PieceClipGroup group ) => ReleaseCopies( group );
 
 	/// <summary>
 	/// The matrix of the tile whose origin cell is (<paramref name="x"/>, <paramref name="y"/>): the piece turns counter-clockwise by
@@ -468,7 +620,7 @@ public sealed class TrackRenderer : IDisposable
 	/// </summary>
 	// [BIN:TPW-EXE:0x00546280 vehicle height] four probes at ± the vehicle radius along the facing and across it; each probe's cell object (0x00450AC0: the cell's owner, a track cell through 0x0053BF30) is selected (0x00450EA0) and sampled (0x004511A0); a −100 sample keeps the vehicle's previous height (+0xA0); the mean is the height, the front/back and right/left differences the pitch and roll
 	// [APPROX:TRACK-001] a cell with no track gives the terrain where the original samples its owner object (or keeps the previous height without one); the kart stations whose model samples faces (Halloween, space) use the straight piece's floor
-	private float? SurfaceHeight( TrackCellLayer layer, float x, float y )
+	internal float? SurfaceHeight( TrackCellLayer layer, float x, float y )
 	{
 		var cellX = Math.Clamp( (int)MathF.Floor( x / 10 ), 0, layer.Width - 1 );
 		var cellY = Math.Clamp( (int)MathF.Floor( y / 10 ), 0, layer.Height - 1 );
@@ -507,7 +659,12 @@ public sealed class TrackRenderer : IDisposable
 			var (dx, dy) = (x - (ox * 10 + 10), y - (oy * 10 + 10));
 			var angle = tile.Rotation * MathF.PI / 180;
 			var (lx, ly) = (10 + dx * MathF.Cos( angle ) + dy * MathF.Sin( angle ), 10 - dx * MathF.Sin( angle ) + dy * MathF.Cos( angle ));
-			return geometry.Surface.HeightAt( lx, ly ) is { } surface ? baseHeight + surface : null;
+			// [BIN:TPW-EXE:0x004511A0 sample] mode 1 (every piece without a surface record: the loader's header bit 0x80): the landscape under the probe + header +0xA0, not the tile's instance height
+			if ( geometry.Surface is { Mode: TrackSamplerMode.Terrain, TerrainOffset: { } offset } )
+				return Terrain() + offset;
+			// mode 2: the faces of the tile's draped copy of the piece, on the tile's instance height
+			var surface = DrapeOf( ox, oy, tile.Piece, tile.Rotation, geometry ).Surface;
+			return surface.HeightAt( lx, ly ) is { } height ? baseHeight + height : null;
 		}
 		return Terrain();
 	}
@@ -545,7 +702,7 @@ public sealed class TrackRenderer : IDisposable
 		PieceGeometry? geometry = null;
 		if ( kit?.GetModel( piece ) is { } model )
 		{
-			geometry = Build( model, entry, TrackSurface.FromObject( model ), TrackPieceKit.ArmMaskedNodes( model, kit.Entries[piece].ArmMask ) );
+			geometry = Build( model, entry, TrackSurface.FromObject( model, drapeLoaded: true ), TrackPieceKit.ArmMaskedNodes( model, kit.Entries[piece].ArmMask ) );
 			if ( kit.GetAnimation( piece, TrackPieceKit.WaterAnimation ) is { } water && PlayableUvMeshes( model, water.Clip, geometry ) is { } uvMeshes )
 				geometry = geometry with { Water = water, UvMeshes = uvMeshes };
 		}
@@ -653,13 +810,12 @@ public sealed class TrackRenderer : IDisposable
 	}
 
 	/// <summary>
-	/// Bakes every mesh of a piece with its rest transform and builds one drawable model per mesh part, leaving out the meshes on <paramref name="hidden"/>
+	/// Bakes every mesh of a piece with its rest transform into one part per mesh part (its drawable model is made on first use), leaving out the meshes on <paramref name="hidden"/>
 	/// nodes (the end caps the piece's arm mask hides).
 	/// </summary>
 	private static PieceGeometry Build( ModelFile model, ObjectCatalogEntry entry, TrackSurface? surface, IReadOnlySet<int>? hidden = null )
 	{
 		var rest = ModelAnimationPlayer.ComputeRestTransforms( model );
-		var models = new List<Model>();
 		var parts = new List<PiecePart>();
 		for ( var meshIndex = 0; meshIndex < model.Meshes.Count; meshIndex++ )
 		{
@@ -671,17 +827,7 @@ public sealed class TrackRenderer : IDisposable
 				continue;
 			var bake = node >= 0 ? rest[node] : Matrix4x4.Identity;
 			foreach ( var (vertices, indices, textures, _) in ObjectAssets.ConvertMeshParts( mesh, bake ) )
-			{
-				var slots = new Texture[16];
-				Array.Fill( slots, Texture.Missing );
-				for ( var index = 0; index < textures.Length; index++ )
-					slots[index] = LoadTexture( entry, textures[index] );
-				var material = new Material<ObjectUniformBuffer>( "content/shaders/test.shader" );
-				material.Set( TextureArrayName, slots );
-				var drawable = new Model( vertices, indices, material, false );
-				models.Add( drawable );
-				parts.Add( new PiecePart( drawable, meshIndex, vertices, indices, material ) );
-			}
+				parts.Add( new PiecePart( entry, meshIndex, vertices, indices, textures ) );
 		}
 		var (heads, flags) = SeatHeads( model, rest );
 		var sparks = new Matrix4x4?[3];
@@ -690,7 +836,7 @@ public sealed class TrackRenderer : IDisposable
 			var node = SparksNode( model, number );
 			sparks[number] = node >= 0 && node < rest.Length ? rest[node] : null;
 		}
-		return new PieceGeometry( models, surface ?? TrackSurface.FromObject( model ), heads, flags, sparks ) { Parts = parts, Mesh = model };
+		return new PieceGeometry( surface ?? TrackSurface.FromObject( model ), heads, flags, sparks ) { Parts = parts, Mesh = model };
 	}
 
 	/// <summary>
@@ -753,13 +899,13 @@ public sealed class TrackRenderer : IDisposable
 		foreach ( var group in clipGroups.Values )
 			ReleaseGroup( group );
 		clipGroups.Clear();
+		foreach ( var drape in drapes.Values )
+			drape.ReleaseModels();
+		drapes.Clear();
 		foreach ( var geometry in pieces.Values.Concat( vehicleMeshes.Values ).Where( item => item != null ) )
 		{
-			foreach ( var model in geometry!.Models )
-			{
-				model.ReleaseBuffers();
-				model.Material.ReleaseOwnedResources();
-			}
+			foreach ( var part in geometry!.Parts )
+				part.Release();
 		}
 		pieces.Clear();
 		vehicleMeshes.Clear();

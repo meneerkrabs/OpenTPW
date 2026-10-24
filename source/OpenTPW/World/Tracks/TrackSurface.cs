@@ -68,8 +68,12 @@ public sealed class TrackSurface
 	// [BIN:TPW-EXE:0x004511A0 sample] mode 1: the terrain sampler 0x004527F0 (the landscape's corner heights over the cell's two triangles, not the .hmp) + model +0xA0; mode 2: 0x00451290(x, z, 0, 1); mode 4: 0x00451290(x, z, 1, 0); every mode adds +0xA0, and a NaN +0xA0 is reset to 0
 	// [BIN:TPW-EXE:0x00451290 face sampler] mode 4 samples the +0x2C mesh (first covering face; none: the instance height +0x44), mode 2 walks the dummy records with bit 2 (mesh = the header's first dummy mesh +0x46 plus the record index) and takes the highest covering face, returning at once for a record with bit 4; −100 when nothing covers
 	// [BIN:TPW-EXE:0x00451390 mesh faces] only faces whose first u16 has bit 0x8000 count; the height is the face plane's at the point (the normal at the low 15 bits, turned by the instance's 0/90/180/270 rotation)
-	// [APPROX:TRACK-001] the surface records are taken when a dummy record has bit 2 (the instance block's bit 8 that the original tests is not read; every shipped hill piece and the face-sampled stations carry such a record, and the flat pieces a nonzero +0xA0); the faces are baked with the full rest transforms (the original adds the node translations only), the faces are read in record order; the directed edge gate follows the original but uses host float arithmetic, not exact x87 intermediates; the instance mesh sampler (+0x2C, 0x0046A5A0) reads every 0x8000 face of the model
-	public static TrackSurface FromObject( ModelFile model )
+	// [APPROX:TRACK-001] the surface records are taken when a dummy record has bit 2 (the instance block's bit 8 the original tests is set by 0x44A870 for exactly those; every shipped hill piece and the face-sampled stations carry such a record, and the flat pieces a nonzero +0xA0); the faces are baked with the full rest transforms (the original adds the node translations only), the faces are read in record order; the directed edge gate follows the original but uses host float arithmetic, not exact x87 intermediates; the instance mesh sampler (+0x2C, 0x0046A5A0) reads every 0x8000 face of the model
+	/// <param name="model">The object's model.</param>
+	/// <param name="drapeLoaded">The model was loaded with the drape load flag (a kart or water track piece: <c>0x4629D0</c> sets header bit 0x80 on a model it loads draped), so the sampler takes the terrain mode when the model has no surface record.</param>
+	// [BIN:TPW-EXE:0x0044A870 surface block] the loader's last step sets bit 8 of the instance's +0x28 block exactly when a dummy record has type bit 2, which is the test 0x450EA0 makes for mode 2: the surface-record rule here is the original's
+	// [BIN:TPW-EXE:0x004629D0 drape header bit] a node with 0x20000 (every mesh node of a piece loaded with load flag 0x40, set by 0x461F10) sets header +0x30 bit 0x80, so every kart and water piece without a surface record is sampled in mode 1 (terrain at the probe + header +0xA0), even where +0xA0 is 0
+	public static TrackSurface FromObject( ModelFile model, bool drapeLoaded = false )
 	{
 		ArgumentNullException.ThrowIfNull( model );
 		var records = new List<(int Mesh, bool FirstHit)>();
@@ -80,7 +84,7 @@ public sealed class TrackSurface
 			if ( (type & 2) != 0 && mesh < model.Meshes.Count )
 				records.Add( (mesh, (type & 4) != 0) );
 		}
-		if ( records.Count == 0 && ((model.HeaderFlags & 0x80) != 0 || model.HeaderHeight != 0 && !float.IsNaN( model.HeaderHeight )) )
+		if ( records.Count == 0 && (drapeLoaded || (model.HeaderFlags & 0x80) != 0 || model.HeaderHeight != 0 && !float.IsNaN( model.HeaderHeight )) )
 			return new TrackSurface( Offset( model ) );
 		var rest = ModelAnimationPlayer.ComputeRestTransforms( model );
 		var found = new List<Triangle>();
@@ -110,6 +114,21 @@ public sealed class TrackSurface
 			Add( mesh, true );
 		// the collision mesh answers with its first covering face, and with the instance's own height where none covers
 		return new TrackSurface( found.ToArray(), new[] { (0, found.Count, true) }, baseWhenUncovered: true, Offset( model ) );
+	}
+
+	/// <summary>
+	/// The surface of a draped instance: every face vertex of a face surface moved up by <paramref name="lift"/> at its tile-local (x, y), as the drape moves the instance's
+	/// vertices that the face sampler then reads (0x450F20 reads the instance's own vertex array). A terrain-mode surface has no faces and is returned as it is.
+	/// </summary>
+	// [BIN:TPW-EXE:0x00450F20 instance faces] modes 2 and 4 gather the vertices of the instance's own mesh copies (node +0x60 of the instance, plus the node translations), which 0x469A80 has already draped
+	public TrackSurface Draped( Func<float, float, float> lift )
+	{
+		ArgumentNullException.ThrowIfNull( lift );
+		if ( terrainOffset != null || triangles.Length == 0 )
+			return this;
+		V3 Move( V3 vertex ) => new( vertex.X, vertex.Y, vertex.Z + lift( vertex.X, vertex.Y ) );
+		var moved = triangles.Select( triangle => new Triangle( Move( triangle.A ), Move( triangle.B ), Move( triangle.C ) ) ).ToArray();
+		return groups == null ? new TrackSurface( moved ) : new TrackSurface( moved, groups, baseWhenUncovered, faceOffset );
 	}
 
 	private static float Offset( ModelFile model ) => float.IsNaN( model.HeaderHeight ) ? 0 : model.HeaderHeight;

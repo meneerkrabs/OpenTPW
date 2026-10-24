@@ -273,6 +273,19 @@ the midrange of the tile's 3 × 3 landscape vertices (`0x466D70`, written at +0x
 along the facing and across it, each sampling the object on the probed cell ("Vehicle height" below); the mean is the height, the front/back and right/left differences the
 pitch and roll.
 
+**Terrain drape (October 24, 2026; issue 829).** The tile does not stand rigid on that height: every vertex of every piece is draped onto the landscape under it, so a tile on a slope follows
+the ground and neighbouring tiles meet at their joint instead of leaving steps. [BIN:TPW-EXE:0x00522AA0 kart kit loader] The kit loaders (`0x522AA0` for the karts, `0x522C94` for the water pieces) call the model loader
+`0x4629D0` with the load flags `0x10422`; [BIN:TPW-EXE:0x004629D0 drape load flag] its bit `0x2` becomes the loader's flag `0x40` (`0x462A4A`), and `0x461F10` then ORs `0x20000` into every mesh node
+(`0x462610`..`0x462631`) and sets the model header's `+0x30` bit `0x80` (`0x4625F4`). [BIN:TPW-EXE:0x00522B90 kart instancer] The instancer creates each tile through `0x463060` with the flags `0x33A`, whose flag 8 calls
+`0x469940` → `0x469A80`: for a node with `0x20000` every vertex is moved to its own height + the landscape under the vertex (in the instance's frame, minus the instance height of `0x466D70`), x and z unchanged
+(`TrackDrape`). [BIN:TPW-EXE:0x00469A80 mesh drape] The landscape value is the cell's triangle chosen by the cell word's bit `0x4` and **always** split, with no `0x800` planar shortcut and no bounds test
+(`LandscapeSampler.SampleDrape`: the triangles of `LandscapeSampler.InCell` with the non-planar branches; a negative point reads cell 0, a point on the far edge reads the last cell's far side).
+There is no grid-corner snap: `0x46A5A0` runs only for loader bit 1, which these flags do not carry. The original never levels the land for a track tile: the track build path writes no landscape
+height (`0x539760`, `0x5370E0`, `0x538FC0`), so tiles are allowed on slopes. `TrackRenderer` keeps one drape per placed tile (its own vertices per part, rebuilt when the piece, its rotation or the landscape under it change);
+a tile that plays its water clip animates a copy of its own draped vertices (the group's animator still serves every tile that started together). The face modes of the vehicle height read the draped faces
+(`0x450F20` gathers the vertices of the instance's own copy), see "Vehicle height". The original also recomputes the instance's face normals after the drape (`0x473C30` → `0x473A40`, and for every instance of `0x463060`);
+OpenTPW lights the draped meshes with their stored normals (the normals of a sloped deck differ slightly from the flat piece's), which is the one part of the drape not ported.
+
 ### Piece animation and arm masks (October 16, 2026)
 
 **Arm masks.** The instancer (`0x522D50` water, `0x522B90` kart) passes the low byte of the piece table entry's arm word to the mesh creation `0x463060`, which
@@ -297,7 +310,7 @@ A new or re-chosen piece is a new instance without a clip (`0x53AFA0`), and the 
 `+0xE6` of the ride's script, which the script attach (`0x558C71`) and the load's script restore (`0x5597A0`) set to −1, so the first `BUMP 17 0` of the water
 ride's loop starts the water and the later ones do nothing; a track edit stops it until the ride closes (`BUMP 17 1`) and opens again. The state is presentation only
 (`Level.TrackPieceAnimations`, a clock advanced with the world step, not saved or hashed); the renderer plays one animator per group of tiles of a piece that started
-(and froze) together and draws their moving meshes from one copy. The walks start at the station's exit and entry, the cells `0x52A490` and `0x52A700` compute ("The station"). The edit sub-modes are built ("The track edit sub-modes").
+(and froze) together and draws their moving meshes from one copy per tile (each starts from the tile's draped vertices, "Terrain drape"). The walks start at the station's exit and entry, the cells `0x52A490` and `0x52A700` compute ("The station"). The edit sub-modes are built ("The track edit sub-modes").
 
 **Texture-frame clips (settled, October 17, 2026).** The Crypt Karts' bridge pieces (`gk_trckH`, `_u`, `_d` and `_a`, ten table entries) are the only pieces whose `m` clip carries a texture-frame track: no node track,
 one track on slot 0 (`h_trkunder.tga`, a slot of one frame) with 20 keys that all name frame 0, so the clip update (`0xA56F8`) rewrites the frame the slot already shows; no other member of the archive
@@ -316,13 +329,13 @@ and samples it in the mode `0x450EA0` chooses (`TrackSurface.FromObject`):
 
 | Mode | When | Height |
 | --- | --- | --- |
-| 2, surface records | the instance block's bit 8 (OpenTPW: a dummy record with type bit 2) | the 0x8000 faces of the records' meshes (`0x451290`, `0x451390`): a record with bit 4 answers with its first covering face, else the highest; none: no surface |
-| 1, terrain | header flags 0x80, or the header float +0xA0 nonzero | the terrain (`0x4527F0`) + the header's +0xA0 |
-| 4, collision mesh | otherwise | the instance's +0x2C mesh, first covering face; none: the instance's height |
+| 2, surface records | the instance block's bit 8: [BIN:TPW-EXE:0x0044A870 surface block] the loader's last step sets it for every dummy record with type bit 2 (`TrackSurface.FromObject`) | the 0x8000 faces of the records' meshes (`0x451290`, `0x451390`), read from the instance's own, draped vertices (`0x450F20`): a record with bit 4 answers with its first covering face, else the highest; none: no surface |
+| 1, terrain | header flags 0x80 (every kart and water piece: the drape load flag sets it, "Terrain drape"), or the header float +0xA0 nonzero | the terrain (`0x4527F0`) **at the probe** + the header's +0xA0, not the tile's instance height |
+| 4, collision mesh | otherwise (no kit piece: the drape flag gives them all the header bit) | the instance's +0x2C mesh, first covering face; none: the instance's height |
 
-Every mode adds the header's +0xA0 (`0x4511A0`, a NaN reset to 0); a probe with no surface (−100) keeps the vehicle's last height. In the shipped kits the flat pieces are terrain
-mode with their floor in +0xA0 (water 3.254, The Blobulator 4.161; karts 3.1 jungle, 5 Halloween and space, 5.005 fantasy: the whole tile, banks and walls included), the hills and ramps
-(`H`, `H_U`, `H_D`) read their surface record (`7/0`: bits 2 and 4), the jungle and fantasy kart stations and every water station are terrain plus the station model's +0xA0
+[BIN:TPW-EXE:0x00450EA0 sampler mode] Every mode adds the header's +0xA0 (`0x4511A0`, a NaN reset to 0); a probe with no surface (−100) keeps the vehicle's last height. In the shipped kits the flat pieces are terrain
+mode with their floor in +0xA0 (the Splish Splash and Ooze Crooz `Q` pieces have +0xA0 0 and no record: mode 1 with offset 0 now, mode 4 before the drape was read) (water 3.254, The Blobulator 4.161; karts 3.1 jungle, 5 Halloween and space, 5.005 fantasy: the whole tile, banks and walls included), the bridges, hills and ramps
+(`H`, `H_U`, `H_D`; every kit) have a surface record (`7/0`: bits 2 and 4) and so are mode 2 on their draped faces (the tile's faces lifted by the landscape under each vertex; the +0xA0 of several `H_U`/`H_D` pieces is a denormal float of about 1e-38 or less, an offset of 0), the jungle and fantasy kart stations and every water station are terrain plus the station model's +0xA0
 (3.1, 5.005, 3.254, 4.072), and the bumper rides stand on a platform: The Hot Pot +29.8, Pumpkin Castle +15.005, Uforia +10.924 above the terrain. The terrain is the original's sampler `0x4527F0` (`LandscapeSampler`: the cell's plane, or the triangle of the diagonal for a cell the load marked non-planar with 0x800 at `0x45075D`, 0 off the map);
 OpenTPW keeps the straight piece's floor for the Halloween and space kart stations, whose station model reads faces (TRACK-001). `--debug-water-track` (Debug builds) places a ride with a circuit for captures.
 

@@ -57,16 +57,18 @@ export function pictureName(role, name) {
 }
 
 const CHANNELS = { 0: 1, 2: 3, 3: 1, 4: 2, 6: 4 };
+const DEPTHS = { 0: [1, 2, 4, 8, 16], 2: [8, 16], 3: [1, 2, 4, 8], 4: [8, 16], 6: [8, 16] };
 
 /**
- * A PNG's width and height once the whole image decodes: every chunk whole with its checksum, the header first and the end last, and the image data inflating to exactly
- * the rows the header promises (non-interlaced). Null for anything else.
+ * A PNG's width and height once the whole image decodes: every chunk whole with its checksum, the header first (a bit depth its colour type allows, the standard compression
+ * and filtering) and the end last, a palette before the data of a palette image, and the image data inflating to exactly the rows the header promises (non-interlaced),
+ * each row's filter one of the five. Null for anything else.
  */
 export function pngSize(bytes) {
 	const signature = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 	if (!Buffer.isBuffer(bytes) || bytes.length < 8 || !bytes.subarray(0, 8).equals(signature))
 		return null;
-	let offset = 8, header = null, ended = false;
+	let offset = 8, header = null, ended = false, palette = false;
 	const data = [];
 	while (offset + 12 <= bytes.length && !ended) {
 		const length = bytes.readUInt32BE(offset);
@@ -76,19 +78,33 @@ export function pngSize(bytes) {
 		const body = bytes.subarray(offset + 8, offset + 8 + length);
 		if ((header === null) !== (type === 'IHDR'))
 			return null;
-		if (type === 'IHDR')
-			header = { width: body.readUInt32BE(0), height: body.readUInt32BE(4), depth: body[8], color: body[9], interlace: body[12] };
-		else if (type === 'IDAT')
+		if (type === 'IHDR') {
+			if (body.length !== 13)
+				return null;
+			header = { width: body.readUInt32BE(0), height: body.readUInt32BE(4), depth: body[8], color: body[9], compression: body[10], filter: body[11], interlace: body[12] };
+		} else if (type === 'PLTE')
+			palette = true;
+		else if (type === 'IDAT') {
+			if (header.color === 3 && !palette)
+				return null;
 			data.push(body);
+		}
 		else if (type === 'IEND')
 			ended = true;
 		offset += 12 + length;
 	}
-	if (!header || !ended || header.interlace !== 0 || !(header.width > 0 && header.height > 0) || !CHANNELS[header.color])
+	if (!header || !ended || header.interlace !== 0 || header.compression !== 0 || header.filter !== 0 || !(header.width > 0 && header.height > 0)
+		|| !DEPTHS[header.color]?.includes(header.depth))
 		return null;
 	try {
 		const rowBytes = Math.ceil(header.width * CHANNELS[header.color] * header.depth / 8);
-		return inflateSync(Buffer.concat(data)).length === header.height * (1 + rowBytes) ? { width: header.width, height: header.height } : null;
+		const rows = inflateSync(Buffer.concat(data));
+		if (rows.length !== header.height * (1 + rowBytes))
+			return null;
+		for (let row = 0; row < header.height; row++)
+			if (rows[row * (1 + rowBytes)] > 4)
+				return null;
+		return { width: header.width, height: header.height };
 	} catch {
 		return null;
 	}
@@ -298,17 +314,26 @@ export class PageSide {
 	 * and the input the run asked for; once the run has ended, its evidence out. `driver` is the driver's status, with its `publish`. Returns the page's status, or null.
 	 */
 	async relay(driver) {
-		if (!this.started || this.outcome || this.relaying)
+		if (!this.started || this.relaying || (this.outcome && this.outcome !== 'completed'))
 			return null;
 		this.relaying = true;
 		try {
 			this.#alive();
 			const state = this.state = JSON.parse(await this.call('CoopLiveState'));
-			const frames = state.run?.frames ?? 0;
-			if (frames > this.frames)
-				[this.frames, this.framesAt] = [frames, performance.now()];
-			else if (state.state === 'running' && performance.now() - this.framesAt > PAGE_STALL_SECONDS * 1000)
-				throw new Error(`The ${this.role} page's frames stopped at ${frames} for ${PAGE_STALL_SECONDS} s (at ${state.run?.step ?? 'its start'})`);
+			// the page's own frames, during its run and after it to the run's end: a page whose frames stop fails, as does one whose frame failed
+			if (state.frames > this.frames)
+				[this.frames, this.framesAt] = [state.frames, performance.now()];
+			else if (performance.now() - this.framesAt > PAGE_STALL_SECONDS * 1000)
+				throw new Error(`The ${this.role} page's frames stopped at ${state.frames} for ${PAGE_STALL_SECONDS} s (at ${state.run?.step ?? 'its start'})`);
+			if (state.frameError) {
+				if (this.outcome !== 'completed')
+					await this.#collect();
+				this.outcome = `failed: its frame failed: ${state.frameError}`;
+				return null;
+			}
+			// a completed page is only watched from here on
+			if (this.outcome === 'completed')
+				return null;
 			const own = `${this.role}-status.json`;
 			const text = await this.call('CoopLiveRead', own);
 			if (text !== null && text !== this.relayed.get(own)) {
@@ -330,9 +355,9 @@ export class PageSide {
 				driver.inputs[this.role] = status.input.id;
 				await driver.publish();
 			}
-			if (state.state === 'failed' || state.frameError) {
+			if (state.state === 'failed') {
 				await this.#collect();
-				this.outcome = `failed: ${state.frameError ? `its frame failed: ${state.frameError}` : state.message}`;
+				this.outcome = `failed: ${state.message}`;
 			} else if (state.state === 'passed') {
 				// a pass counts once the page has gone on drawing frames for a while, with none failing
 				this.passed ??= { at: performance.now(), frames: state.frames };
@@ -353,10 +378,16 @@ export class PageSide {
 		return evidence !== null;
 	}
 
-	/** Reads the page's state once more (its frames and a later frame failure, at the run's end); a page that cannot answer keeps its last state. */
+	/** Reads the page's state once more at the run's end (its frames went on, and none failed); a page that cannot answer, or crashed, fails. */
 	async refresh() {
-		if (this.started && !this.crashed && !this.stopped)
-			this.state = JSON.parse(await this.call('CoopLiveState').catch(() => JSON.stringify(this.state)));
+		if (!this.started)
+			return;
+		try {
+			this.#alive();
+			this.state = JSON.parse(await this.call('CoopLiveState'));
+		} catch (error) {
+			this.state = { ...this.state, frameError: this.state?.frameError ?? `the page could not answer at the run's end: ${error.message}` };
+		}
 	}
 
 	/** The canvas's picture while the run's view stays, kept as the run named it; the driver's status says it is taken. */
@@ -404,7 +435,8 @@ export class PageSide {
 
 	/** How the side ended, in words, or null while it runs. */
 	ending() {
-		if (this.crashed && !this.outcome)
+		// a crash counts over a completed run: the page must live to the run's end
+		if (this.crashed && !this.stopped)
 			return `crashed: ${this.crashed}`;
 		return this.outcome;
 	}
@@ -416,6 +448,7 @@ export class PageSide {
 			kind: 'page', chrome: this.chromeVersion ?? null, build: this.build ?? null, origin: this.local?.origin ?? null,
 			upgrades: log.filter(entry => entry.upgrade), requests: log.filter(entry => !entry.upgrade && entry.path.startsWith('/api/')), network: this.network,
 			startedAt: this.state?.startedAt ?? null, levels: this.state?.levels ?? [], frames: this.state?.frames ?? null, frameError: this.state?.frameError ?? null,
+			framesAtPass: this.passed?.frames ?? null,
 			parkFiles: this.parkFiles ?? null, pictureSizes: this.pictureSizes ?? {},
 		};
 	}
@@ -451,8 +484,8 @@ export function checkPageSides(sides, restartedAt) {
 		checks.push({ what: `the ${role} page logged in through its local server`, passed: login.length > 0, detail: { logins: login } });
 		const native = facts.build?.nativeWasm ? (facts.network ?? []).filter(item => item.path === `/_framework/${facts.build.nativeWasm}` && item.status === 200) : [];
 		checks.push({ what: `the ${role} page ran the web build given, its ${facts.build?.measuredRuntime ?? 'unknown'} runtime loaded, and no frame of it failed`,
-			passed: Boolean(facts.build?.files?.['index.html']) && native.length > 0 && facts.frameError === null && Number.isFinite(facts.frames),
-			detail: { build: facts.build, nativeLoaded: native.length, frames: facts.frames, frameError: facts.frameError } });
+			passed: Boolean(facts.build?.files?.['index.html']) && native.length > 0 && facts.frameError === null && facts.frames > facts.framesAtPass,
+			detail: { build: facts.build, nativeLoaded: native.length, frames: facts.frames, framesAtPass: facts.framesAtPass, frameError: facts.frameError } });
 		checks.push({ what: `the ${role} page's co-op and chat sockets went through its local server, with bytes both ways`,
 			passed: carried('/api/v1/coop') > 0 && carried('/api/v1/chat') > 0, detail: { upgrades: facts.upgrades } });
 		if (restartedAt !== null)

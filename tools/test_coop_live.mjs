@@ -7,7 +7,7 @@ import path from 'node:path';
 import { PassThrough } from 'node:stream';
 import { crc32, deflateSync } from 'node:zlib';
 import { checkEvidence, checkFreshness, checkObservedEndurance, ENDURANCE_SAMPLE_SECONDS, logTo, parseArguments, redact, STATUS_STALL_SECONDS, throwawayPlayer } from './coop-live.mjs';
-import { checkPageSides, checkPictures, keyEvent, pagePoint, pictureName, pngSize } from './coop-live-page.mjs';
+import { checkPageSides, checkPictures, keyEvent, pagePoint, PageSide, pictureName, pngSize } from './coop-live-page.mjs';
 
 // The live co-op acceptance's driver (tools/coop-live.mjs, docs/COOP.md "The live acceptance") without the games: its options, its throwaway players and their
 // redaction, and the checks of both games' evidence against each other.
@@ -270,8 +270,8 @@ test('a page asks only for its own role\'s pictures, by a flat name', () => {
 	assert.ok(!pictureName('host', undefined));
 });
 
-/** A whole PNG of `width` by `height` RGBA pixels; `cut` drops that many bytes from its end. */
-function png(width, height, cut = 0) {
+/** A whole PNG of `width` by `height` RGBA pixels, each row with `filter`; `cut` drops that many bytes from its end. */
+function png(width, height, cut = 0, filter = 0) {
 	const chunk = (type, body) => {
 		const head = Buffer.alloc(8);
 		head.writeUInt32BE(body.length, 0);
@@ -286,6 +286,8 @@ function png(width, height, cut = 0) {
 	header[8] = 8;
 	header[9] = 6;
 	const rows = Buffer.alloc(height * (1 + width * 4));
+	for (let row = 0; row < height; row++)
+		rows[row * (1 + width * 4)] = filter;
 	const bytes = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), chunk('IHDR', header), chunk('IDAT', deflateSync(rows)), chunk('IEND', Buffer.alloc(0))]);
 	return bytes.subarray(0, bytes.length - cut);
 }
@@ -303,6 +305,9 @@ test('a picture counts only when the whole PNG decodes', () => {
 	// the header's checksum mended, so only the rows are wrong
 	header.writeUInt32BE(crc32(header.subarray(12, 29)), 29);
 	assert.equal(pngSize(header), null);
+	// rows whose filter is none of the five
+	assert.deepEqual(pngSize(png(4, 3, 0, 4)), { width: 4, height: 3 });
+	assert.equal(pngSize(png(4, 3, 0, 5)), null);
 	assert.equal(pngSize(Buffer.from('not a picture at all, longer than a header')), null);
 });
 
@@ -333,7 +338,7 @@ test('a page side ran the build given and went through its own local server: its
 	const page = () => ({
 		kind: 'page',
 		build: { files: { 'index.html': 'aa' }, nativeWasm: 'dotnet.native.x1.wasm', measuredRuntime: 'interpreter' },
-		frames: 4000, frameError: null, startedAt: 900, parkFiles: 2,
+		frames: 4000, framesAtPass: 3800, frameError: null, startedAt: 900, parkFiles: 2,
 		upgrades: [upgrade('/api/v1/coop', 1000), upgrade('/api/v1/chat', 1001), upgrade('/api/v1/coop', 5000, 502, 0), upgrade('/api/v1/coop', 6000), upgrade('/api/v1/chat', 6001)],
 		requests: [{ path: '/api/v1/sessions', method: 'POST', status: 200, bytes: 120 }],
 		network: [{ path: '/_framework/dotnet.native.x1.wasm', status: 200 }, { path: '/game/Data/levels/jungle/Jungle.wad', status: 200 },
@@ -367,6 +372,10 @@ test('a page side ran the build given and went through its own local server: its
 	guest = page();
 	guest.frameError = 'InvalidOperationException: the drawing failed';
 	assert.deepEqual(only(guest), [ran]);
+	// no frame drawn after its pass, to the run's end
+	guest = page();
+	guest.frames = guest.framesAtPass;
+	assert.deepEqual(only(guest), [ran]);
 	// the park's files: asked for before the run, a copy that failed, one of them missing, or another park's
 	const park = 'the guest page fetched the park\'s files from the game folder during the run, whole';
 	guest = page();
@@ -395,4 +404,20 @@ test('a game\'s status keeps its run and must advance while the game runs', () =
 	assert.throws(() => checkFreshness(freshness, 'guest', { run: 'r1', revision: 1 }, null, 60000), /went back/);
 	// no status yet: nothing to check
 	checkFreshness(freshness, 'host', null, null, 1e9);
+});
+
+test('a page that completed must live to the run\'s end: a crash counts over its completion, and a last read that fails fails it', async () => {
+	const side = new PageSide({ role: 'guest', options: {}, out: os.tmpdir(), evidence: os.tmpdir(), player: {}, server: {}, redact: text => text });
+	side.started = true;
+	side.outcome = 'completed';
+	assert.equal(side.ending(), 'completed');
+	side.crashed = 'its renderer ended';
+	assert.match(side.ending(), /^crashed/);
+	// the driver's own stop at the run's end is no crash
+	side.stopped = true;
+	assert.equal(side.ending(), 'completed');
+	side.stopped = false;
+	side.state = { frames: 10, frameError: null };
+	await side.refresh();
+	assert.match(side.state.frameError, /could not answer/);
 });

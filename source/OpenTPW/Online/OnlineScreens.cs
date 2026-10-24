@@ -724,7 +724,8 @@ public sealed class OnlineScreens
 			Bounds = new UiRect( x, window.Y + 150, width, 160 ), Anchor = UiAnchor.Center } );
 		var codeLabel = screen.Add( new UiLabel { Id = "codeLabel", Font = fonts => fonts.Label, Text = () => strings.Extra( OpenTpwText.JoinCodeLabel ),
 			Bounds = new UiRect( x, window.Y + 340, 300, 90 ), Anchor = UiAnchor.Center } );
-		var codeField = screen.Add( new UiTextField { Id = "code", MaximumLength = CoopProtocol.CodeLength + 8, Model = "f_text1",
+		// room for a code typed with spaces and dashes between its letters (the server's normalization drops them)
+		var codeField = screen.Add( new UiTextField { Id = "code", MaximumLength = 32, Model = "f_text1",
 			Bounds = new UiRect( x + 320, window.Y + 330, width - 320, 93 ), Anchor = UiAnchor.Center } );
 		codeField.Changed = _ => localMessage = "";
 		screen.Add( new UiLabel { Id = "message", Wrap = true, Font = fonts => fonts.Small, Color = UiColors.Value,
@@ -780,6 +781,7 @@ public sealed class OnlineScreens
 			CoopJoinOutcome.Refused => strings.Extra( GameFlow.JoinRefusalText( attempt.Refusal ) ),
 			CoopJoinOutcome.LinkStopped => strings.Extra( LinkStopText( attempt.Stop ) ),
 			CoopJoinOutcome.NotACode => strings.Extra( OpenTpwText.JoinNotACode ),
+			CoopJoinOutcome.NotAllowed => strings.Extra( OpenTpwText.JoinNotAllowed ),
 			CoopJoinOutcome.InSession => strings.Extra( OpenTpwText.JoinInSession ),
 			CoopJoinOutcome.Ended when GameFlow.JoinEndText( attempt.EndCause, attempt.ServerReason ) is { } words => strings.Extra( words ),
 			CoopJoinOutcome.Joined or CoopJoinOutcome.Cancelled or CoopJoinOutcome.Ended => "",

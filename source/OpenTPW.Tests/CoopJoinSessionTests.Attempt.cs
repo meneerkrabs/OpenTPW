@@ -85,8 +85,9 @@ public partial class CoopJoinSessionTests
 			await frames( 60, null, "the guest follows" );
 			Assert.IsNull( joiner.Session!.EndedWith );
 
-			// the guest's pause menu asks before Exit To Lobby leaves the running shared park
+			// the guest's pause menu asks before Exit To Lobby leaves the running shared park (the HUD's exit is the game's)
 			var hud = flow.Hud!;
+			GiveGameExit( flow, hud );
 			hud.OpenPauseMenu();
 			var exit = (UiMenuItem)hud.Stack.Top!.Find( nameof( UIStrings.ExitToLobby ) )!;
 			exit.Clicked!();
@@ -103,6 +104,95 @@ public partial class CoopJoinSessionTests
 			Assert.AreEqual( GameFlow.GuestEndedScreenName, hud.Stack.Top!.Name );
 			Assert.AreEqual( English( OpenTpwText.JoinHostLeft ), ((UiLabel)hud.Stack.Top.Find( "message" )!).Text() );
 			Assert.IsNull( GameFlow.GuestStatusLine( joiner.Session, joinPlayer.Link, English ), "no status line once the session ended" );
+			// its OK leaves for the lobby: the park's retirement is queued
+			Assert.IsNull( GetField( flow, "pending" ) );
+			hud.Stack.Top.Elements.OfType<UiButton>().First().Clicked!();
+			Assert.IsNotNull( GetField( flow, "pending" ), "the lobby is queued" );
+		} );
+	}
+
+	/// <summary>The guest HUD's exit is the game's own (the replay twin's bare HUD has none): the pause menu's Exit To Lobby goes through the game's exit.</summary>
+	private static void GiveGameExit( GameFlow flow, Hud.ParkHud hud ) =>
+		SetField( hud, "host", new Hud.HudHost { ExitToLobby = () => flow.RequestAutomaticExit( flow.Level!, hud ) } );
+
+	[TestMethod]
+	public async Task YesToTheGuestsExitLeavesTheSharedParkAndQueuesTheLobby()
+	{
+		await CoopLinkTests.WithServer( async ( server, players ) =>
+		{
+			var (hostPlayer, state, frames) = await RealHost( server, players );
+			var joinPlayer = await players.Add( server, "Latecomer", firstFrame: true );
+			await frames( 30, null, "the host's first frames" );
+			var joiner = LobbyGuest( joinPlayer );
+			var flow = joiner.Flow!;
+			Assert.IsTrue( flow.StartJoining( state.Code ) );
+			await frames( 0, () => flow.Joining!.Stage == CoopJoinStage.Done, "the join" );
+			Assert.AreEqual( CoopJoinOutcome.Joined, flow.Joining!.Outcome );
+			joiner.Session = flow.Joining.Session;
+			var hud = flow.Hud!;
+			GiveGameExit( flow, hud );
+			hud.OpenPauseMenu();
+			((UiMenuItem)hud.Stack.Top!.Find( nameof( UIStrings.ExitToLobby ) )!).Clicked!();
+			Assert.AreEqual( Hud.ParkHud.ConfirmLeaveSharedParkScreen, hud.Stack.Top!.Name );
+			hud.Stack.Top!.Elements.OfType<UiButton>().First().Clicked!();
+			// the session is left (no end dialog: this game left it), the server gives the seat back, and the lobby is queued
+			Assert.AreEqual( CoopSessionEnd.Left, joiner.Session!.EndCause );
+			Assert.AreNotEqual( GameFlow.GuestEndedScreenName, hud.Stack.Top?.Name );
+			Assert.IsNotNull( GetField( flow, "pending" ), "the lobby is queued" );
+			await CoopLinkTests.Until( () => hostPlayer.Link.Session!.Members.Count == 1, "the host to see the guest leave", hostPlayer, joinPlayer );
+		} );
+	}
+
+	[TestMethod]
+	public async Task AGameThatCannotFollowSendsNoJoinAndAJoinThatSettlesKeepsTheShareWaiting()
+	{
+		await CoopLinkTests.WithServer( async ( server, players ) =>
+		{
+			var hostPlayer = await players.Add( server, "Hostess" );
+			var guest = await players.Add( server, "Guest" );
+			await CoopLinkTests.Open( hostPlayer );
+			var state = await CoopLinkTests.Share( hostPlayer );
+			// a run with a developer option that changes the park: nothing goes out
+			CoopSession.ChangesParkOutsideCommands = true;
+			try
+			{
+				var refused = await Attempt( guest, state.Code, attempt => attempt.Stage == CoopJoinStage.Done, "the local refusal", hostPlayer );
+				Assert.AreEqual( CoopJoinOutcome.NotAllowed, refused.Outcome );
+				refused.Dispose();
+			}
+			finally
+			{
+				CoopSession.ChangesParkOutsideCommands = false;
+			}
+			Assert.AreEqual( 1, hostPlayer.Link.Session!.Members.Count, "no seat was taken" );
+
+			// a join that still settles its answer (cancelled, waiting) keeps a saved park's share from starting
+			var joiner = LobbyGuest( guest );
+			var flow = joiner.Flow!;
+			Assert.IsTrue( flow.StartJoining( state.Code ) );
+			var deadline = DateTime.UtcNow + OnlineIntegrationTests.Deadline;
+			while ( flow.Joining!.Stage is CoopJoinStage.Opening )
+			{
+				guest.Session.Pump();
+				flow.StepCoopJoin();
+				Assert.IsTrue( DateTime.UtcNow < deadline, "the join to go out" );
+				await Task.Delay( 5 );
+			}
+			flow.CancelJoining();
+			Assert.AreEqual( CoopJoinStage.Cancelling, flow.Joining.Stage );
+			var save = new FrontEnd.ParkLoadEntry( "jungle", -1, false, "/nonexistent/opentpw-jungle-world.json", "Jungle Fun" );
+			Assert.IsFalse( flow.ShareSavedPark( save, new CoopShareRequest( "Saved fun", Listed: false, 4 ) ), "the join still settles" );
+			while ( flow.Joining.Stage != CoopJoinStage.Done )
+			{
+				guest.Session.Pump();
+				hostPlayer.Session.Pump();
+				flow.StepCoopJoin();
+				Assert.IsTrue( DateTime.UtcNow < deadline, "the cancelled join to settle" );
+				await Task.Delay( 5 );
+			}
+			Assert.AreEqual( CoopJoinOutcome.Cancelled, flow.Joining.Outcome );
+			Assert.IsTrue( flow.ShareSavedPark( save, new CoopShareRequest( "Saved fun", Listed: false, 4 ) ), "settled: the share may start" );
+			flow.CancelSavedParkShare();
 		} );
 	}
 

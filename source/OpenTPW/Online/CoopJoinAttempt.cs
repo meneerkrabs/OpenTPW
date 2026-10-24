@@ -34,6 +34,8 @@ public enum CoopJoinOutcome
 	LinkStopped,
 	/// <summary>The typed code cannot be a shared park's.</summary>
 	NotACode,
+	/// <summary>This game cannot join a shared park (<see cref="CoopSession.JoinRefusal"/>: another edition, or a run with a developer option that changes the park).</summary>
+	NotAllowed,
 	/// <summary>The link is in a shared park already.</summary>
 	InSession,
 	/// <summary>The game could not take the seat the server gave (a park or a transition came first): the seat was left.</summary>
@@ -153,6 +155,12 @@ internal sealed class CoopJoinAttempt : IDisposable
 			Finish( CoopJoinOutcome.InSession, "This game is in a shared park already." );
 			return;
 		}
+		// nothing goes out that this game could not follow
+		if ( CoopSession.JoinRefusal is { } refusal )
+		{
+			Finish( CoopJoinOutcome.NotAllowed, refusal );
+			return;
+		}
 		if ( CoopProtocol.NormalizeCode( Code ) == null )
 		{
 			Finish( CoopJoinOutcome.NotACode, $"\"{Code}\" is not a shared park's code." );
@@ -225,7 +233,7 @@ internal sealed class CoopJoinAttempt : IDisposable
 	/// The game cannot take the answered join (a park, a transition, another attempt came first): the seat is left. A session the server ended in the same pump was the server's
 	/// end (<see cref="CoopJoinOutcome.Ended"/>). Only in <see cref="CoopJoinStage.Answered"/>.
 	/// </summary>
-	public void Reject()
+	public void Reject( string? failure = null )
 	{
 		if ( Stage != CoopJoinStage.Answered )
 			return;
@@ -237,7 +245,7 @@ internal sealed class CoopJoinAttempt : IDisposable
 			return;
 		}
 		LeaveSeat();
-		Finish( CoopJoinOutcome.NotTaken, "The game could not take the join." );
+		Finish( CoopJoinOutcome.NotTaken, failure ?? "The game could not take the join." );
 	}
 
 	/// <summary>

@@ -328,15 +328,20 @@ internal sealed class CoopSession : IDisposable
 			throw new InvalidOperationException( "The link is in no session." );
 		if ( state.You == state.Host )
 			throw new InvalidOperationException( "The host's game streams; it does not follow." );
-		if ( GameEditions.Current != GameEdition.ThemeParkWorld )
-			throw new InvalidOperationException( "Only Theme Park World parks are shared." );
-		if ( ChangesParkOutsideCommands )
-			throw new InvalidOperationException( "This game was started with developer options that change the park; restart it without them to join a shared park." );
+		if ( JoinRefusal is { } refusal )
+			throw new InvalidOperationException( refusal );
 		var session = new CoopSession( null, link, CoopRole.Guest, seconds, joinHost ) { Phase = CoopGuestPhase.Joining };
 		session.Subscribe();
 		session.Ask( CoopSnapshotReason.Join );
 		return session;
 	}
+
+	/// <summary>
+	/// [EXT:online-coop-session] Why this game cannot join a shared park, in English for the log; null when it can. Only Theme Park World parks are shared, and a run started with a
+	/// developer option that changes the park outside the commands cannot follow one (C2d-3 checks it before the join goes out).
+	/// </summary>
+	internal static string? JoinRefusal => GameEditions.Current != GameEdition.ThemeParkWorld ? "Only Theme Park World parks are shared."
+		: ChangesParkOutsideCommands ? "This game was started with developer options that change the park; restart it without them to join a shared park." : null;
 
 	private static void Require( Level level, ICoopStreamTransport link, CoopRole role )
 	{

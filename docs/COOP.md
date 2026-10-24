@@ -768,11 +768,14 @@ the code. Every line is in the player's language.
 
 `CoopJoinAttempt` is one attempt to join, and the game owns it (`GameFlow.CoopJoinAttempt.cs`):
 
-1. Once the link is open, it sends the join.
+1. Once the link is open, it sends the join, unless this game could not follow a shared park
+   (`CoopSession.JoinRefusal`: another edition, or a run with a developer option that changes the park).
+   Then nothing goes out and the screen says why.
 2. The server's answer is taken in the game's step right after the online pump (and after the share's
    step), never in the link's callback. The game joins (`GameFlow.JoinSharedPark`) only while the link
    still holds that seat and the game is free: no park, no park build, no transition, no saved park's
-   share and no share attempt. Otherwise the seat is left.
+   share and no share attempt. Otherwise the seat is left, and so is a seat whose join throws. While an
+   attempt still settles its answer (a cancel waits for it), no share starts.
 3. From then on the joined session gets the host's park and builds it, and its own resume and capture
    retries apply. The attempt only watches until the park is the game's, or until the session ends.
 
@@ -811,7 +814,9 @@ The tests:
   - refusals for an unknown code and a full park, and a code that cannot be one;
   - a cancel before the answer, and an answer the game cannot take;
   - a seat the server ended before the game took it;
-  - the game's checks (only in the lobby, only while free to join);
+  - the game's checks (only in the lobby, only while free to join), a run that cannot follow (nothing
+    goes out), and a share kept waiting while a cancelled join settles;
+  - Yes to the guest's exit (the seat is given back and the lobby queued), and the end dialog's OK;
   - the words for every end and refusal.
 - `CoopShareTests` (part `CoopShareTests.Join.cs`) covers the hub and the join screen: the login, the
   code, the stage, the end, and Back giving the join up.

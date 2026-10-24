@@ -85,6 +85,7 @@ public partial class CoopShareTests
 			code.Changed!( code.Text );
 			Element<UI.Original.UiButton>( stack, "join" ).Clicked!();
 			CollectionAssert.AreEqual( new[] { "abc-def" }, joining.Started );
+			Assert.IsTrue( code.MaximumLength >= "A - B - C - D - E - F".Length, "room for a code typed with spaces and dashes" );
 
 			// while it joins: the stage and a cancel
 			joining.Attempt = new CoopJoinAttempt( other.Coop, "ABCDEF" );

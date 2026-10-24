@@ -68,10 +68,23 @@ internal sealed partial class GameFlow : ICoopJoining
 		attempt.Step();
 		if ( attempt.Stage != CoopJoinStage.Answered )
 			return;
-		if ( attempt.HoldsSeat && Level == null && coopJoin == null && parkBuild == null && pending == null && savedParkShare == null && coopShare is not { Stage: not CoopShareStage.Done } )
-			attempt.Accept( JoinSharedPark( attempt.Link ) );
-		else
+		if ( !attempt.HoldsSeat || Level != null || coopJoin != null || parkBuild != null || pending != null || savedParkShare != null || coopShare is { Stage: not CoopShareStage.Done } )
+		{
 			attempt.Reject();
+			return;
+		}
+		CoopSession session;
+		try
+		{
+			session = JoinSharedPark( attempt.Link );
+		}
+		catch ( InvalidOperationException failure )
+		{
+			// the game cannot follow it after all: the seat is left, never held until a teardown
+			attempt.Reject( failure.Message );
+			return;
+		}
+		attempt.Accept( session );
 	}
 
 	/// <summary>

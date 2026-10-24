@@ -78,7 +78,9 @@ internal sealed partial class GameFlow : ICoopHosting
 		ArgumentNullException.ThrowIfNull( request );
 		if ( !FeatureGates.Online || Level is not { } level || coopJoin != null || parkBuild != null || pending != null )
 			return false;
-		if ( coopShare is { Stage: not CoopShareStage.Done } || !Online.IsLoggedIn || CoopSession.ShareRefusal( level ) != CoopShareRefusal.None )
+		// [EXT:online-coop-session] nor while a join attempt still settles its answer (its pending join or seat would refuse the create)
+		if ( coopShare is { Stage: not CoopShareStage.Done } || coopJoinAttempt is { Stage: not CoopJoinStage.Done } || !Online.IsLoggedIn
+			|| CoopSession.ShareRefusal( level ) != CoopShareRefusal.None )
 			return false;
 		coopShare?.Dispose();
 		endedNotice = null;
@@ -107,7 +109,7 @@ internal sealed partial class GameFlow : ICoopHosting
 		ArgumentNullException.ThrowIfNull( request );
 		if ( !FeatureGates.Online || Level != null || park.OwnSavePath is not { } path || coopJoin != null || parkBuild != null || pending != null )
 			return false;
-		if ( coopShare is { Stage: not CoopShareStage.Done } || !Online.IsLoggedIn )
+		if ( coopShare is { Stage: not CoopShareStage.Done } || coopJoinAttempt is { Stage: not CoopJoinStage.Done } || !Online.IsLoggedIn )
 			return false;
 		var share = savedParkShare = new SavedParkShare( request, OnlineLogin );
 		// [EXT:save-extension-switch] the save's extensions are asked about first, as for its load; the share goes with the queued load, so another transition drops it

@@ -757,6 +757,65 @@ Share loads the chosen park as the Load Park screen does, and the share goes wit
   is off.
 `OnlineExtensionGateTests` checks that the line goes with the online extension.
 
+### Joining a shared park from the lobby (C2d-3a)
+
+`[EXT:online-coop-session]` The lobby's Build Together line opens a hub with two choices: share one of
+the player's saved parks (C2d-2b) or join with a code. The join screen takes the code the host gave;
+case, spaces and dashes do not matter, and a code that cannot be one is said and not sent. It offers a
+login when the player is logged out. While the game joins, the screen shows the stage in words, with a
+cancel: joining, getting the host's park, building it. A refusal is said in words, with a way back to
+the code. Every line is in the player's language.
+
+`CoopJoinAttempt` is one attempt to join, and the game owns it (`GameFlow.CoopJoinAttempt.cs`):
+
+1. Once the link is open, it sends the join.
+2. The server's answer is taken in the game's step right after the online pump (and after the share's
+   step), never in the link's callback. The game joins (`GameFlow.JoinSharedPark`) only while the link
+   still holds that seat and the game is free: no park, no park build, no transition, no saved park's
+   share and no share attempt. Otherwise the seat is left.
+3. From then on the joined session gets the host's park and builds it, and its own resume and capture
+   retries apply. The attempt only watches until the park is the game's, or until the session ends.
+
+Every way out leaves what the server gave:
+
+- A cancel before the answer waits for it and leaves the seat it gives.
+- A cancel once joined ends the session, which leaves it and abandons a partial build. So does Back.
+- A seat the server ended in the same pump as its answer is reported as the server's end.
+- A lost socket refuses the waiting join; the next welcome leaves a seat the server made.
+
+The session now records what ended it (`CoopSession.EndCause`, `ServerReason`): this game's leave, the
+server's end with its reason, a lost link, the guest's failed joins (`FailJoin`), or the host's stream.
+The screens say an end in words by that, never by the server's English (`GameFlow.JoinEndText`,
+`JoinRefusalText`). One presenter says each end:
+
+- Before the game took the join, the join screen says it.
+- Once taken, the game's own dialog says it over the lobby (`OnJoinEnded`). Nothing is said when this
+  game left.
+- A joined guest whose session ends (the host left, a removal, a lost connection) hears why over its
+  park, and the dialog's OK leaves for the lobby. The park is the host's and is never saved.
+
+A guest in a running shared park is asked before the pause menu's Exit To Lobby leaves it ("the park
+stays the host's"); once the session ended, the exit goes at once. The guest's HUD shows its own status
+line: reconnecting, then waiting for the host (away), then catching up (a resync), else the park's
+title, its host and the connected players.
+
+The tests:
+
+- `CoopJoinSessionTests` (part `CoopJoinSessionTests.Attempt.cs`) runs a host on the loopback server
+  with the stream tests' asset-free park, and the guest's game with the replay twin. It covers:
+  - the join through the game's attempt until the host's park is the guest's;
+  - the guest's status line;
+  - the confirmed exit;
+  - the host's end said over the guest's park;
+  - a cancel while the park is built, which leaves the seat;
+  - refusals for an unknown code and a full park, and a code that cannot be one;
+  - a cancel before the answer, and an answer the game cannot take;
+  - a seat the server ended before the game took it;
+  - the game's checks (only in the lobby, only while free to join);
+  - the words for every end and refusal.
+- `CoopShareTests` (part `CoopShareTests.Join.cs`) covers the hub and the join screen: the login, the
+  code, the stage, the end, and Back giving the join up.
+
 ### The host's trimmed frame (C2c-3)
 
 `[EXT:online-coop-snapshot-join]` The host trims the frames every member is known to hold. A server

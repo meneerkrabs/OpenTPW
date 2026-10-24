@@ -127,11 +127,13 @@ public class VisitorLivePortraitTests
 		}
 	}
 
+	// No original media, so no UI image resolves. A button without its model falls back to the purple_button art, and the default resolver would list
+	// /ui/textures through the global game-data FileSystem, which is null when this class runs alone, and keep that listing for every later test.
 	private static UiContext Context( float delta = 0, int width = 1000, int height = 1000 )
 	{
 		var font = new FontAtlas( FontAtlasTests.CreateFont( 8, new FontAtlasTests.SyntheticGlyph( 'A', 2, 2, 0, 0, 3 ) ) );
 		return new UiContext( OriginalUiTests.FakeStrings(), new UiFonts( _ => font ), new UiModels( name => throw new FileNotFoundException( name ) ) )
-			{ Canvas = new UiCanvas( width, height ), Delta = delta };
+			{ Canvas = new UiCanvas( width, height ), Delta = delta, ResolveTexture = _ => null };
 	}
 	private static (ParkHud Hud, Rig Rig) HudRig( params Guest[] guests )
 	{

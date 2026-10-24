@@ -474,8 +474,9 @@ public class ObjectLightTests
 	[TestCleanup]
 	public void Cleanup()
 	{
-		if ( previousFileSystem != null )
-			FileSystem = previousFileSystem;
+		// a null file system is put back too: it is the default without game data, and the stand-in game folder (deleted below) left in its place
+		// became the game data of every later test in the run
+		FileSystem = previousFileSystem!;
 		Directory.Delete( root, true );
 	}
 

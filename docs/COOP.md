@@ -1026,10 +1026,11 @@ The tests:
 
 ### The live acceptance (C2d-5)
 
-`[EXT:online-coop-session]` Two games share a park through the real server, with the game's data, driven
-through the game's own screens. The headless tests check each part against the loopback server, the
-smokes join over recordings, and the browser's link check runs without data; here it all runs together,
-live. C2d-5a runs two native games; C2d-5b adds the page as host and as guest.
+`[EXT:online-coop-session]` Two games share a park through the real server, with the game's data. The
+sharing, the join, the building, the chat and the session's end go through the game's own screens and
+input. The headless tests check each part against the loopback server, the smokes join over recordings,
+and the browser's link check runs without data; here it all runs together, live. C2d-5a runs two native
+games; C2d-5b adds the page as host and as guest.
 
 `scripts/coop-live.sh <out> ['/path/to/Theme Park World'] [--scenario ...]` builds the game (Release)
 and the server once. Then `tools/coop-live.mjs` runs:
@@ -1049,22 +1050,25 @@ time. A failed step ends the run with its evidence, and the other game and the d
 
 - **Screens.** A game acts on the top screen only. It finds an element by its id, of its type (a button,
   a menu line, a field, a label), visible and enabled. It activates a button or a menu line and types into
-  a field as the screen's own input does.
+  a field as the screen's own input does. Three things the harness does itself: it starts the host's
+  park, moves the views (the camera itself, not a drag or a key), and reads the games' state for its
+  checks.
 - **Input.** Escape, Enter, the chat line, F4 and the park's clicks go through the game's input.
 - **Barriers.** The games and the driver meet at barriers: each publishes its status in the shared
   evidence folder and waits on the others'. The chat is under test, not the control channel.
 
 The steps:
 
-1. **The host shares.** It starts Jungle (Instant Action). Escape opens the pause menu, and Build
-   Together opens the screen. The host logs in there (server, name, password), writes the title, picks
-   two players, leaves the park off the open list and shares. The screen shows the session's code.
+1. **The host shares.** The harness starts Jungle as Instant Action does, not through the front end's
+   menus. Escape opens the pause menu, and Build Together opens the screen. The host logs in there
+   (server, name, password), writes the title, picks two players, leaves the park off the open list and
+   shares. The screen shows the session's code.
 2. **The guest joins.** It starts in the lobby: Escape, Build Together, Join with a code, a login there,
    the code, Join. The host's park is fetched, built and swapped in, and follows the host's stream with
    its digests compared.
 3. **The figures.** The host sees the guest's figure and name drawn in its view, then the guest sees the
-   host's; a picture of each view is kept. Then the host's view jumps and the guest sees its figure
-   there, and the guest's view jumps and the host sees its figure there.
+   host's; a picture of each view is kept. Then the harness moves the host's view far away: the host's
+   figure jumps there, and the guest sees it there. The same follows for the guest's view.
 4. **Building.** The host lays a path line through its HUD: a press on free land starts the tool, and a
    press on the end lays the line. The guest's park takes the line's record, its cells become paths, and
    checkpoints are compared after it. The guest's own line is refused (only the host builds), its cells
@@ -1107,10 +1111,11 @@ The scenarios:
   checkpoint at least every two seconds. Then the rest of the steps follow.
 
 **The pages' way in.** The pages (C2d-5b) open through the drivers' own local server in front of the
-real one (`tools/web-perf/lib.mjs`). It serves the page and the game folder (`/game/`) and forwards
-`/api/`, including the sockets' upgrades: at most 16 at a time, the server's whole answer within 10
-seconds (an answer that refuses the upgrade at most 64 KiB, passed back as it is), and a half-closed socket
-closed after 5. The browser workflow also runs the link check through it (`tools/web-coop-link.mjs
+real one (`tools/web-perf/lib.mjs`). It serves the game folder (`/game/`) itself and forwards the rest
+to the server: the page, from the server's own web folder, and `/api/`. It forwards the sockets'
+upgrades below `/api/` only: at most 16 at a time, the server's whole answer within 10 seconds (an
+answer that refuses the upgrade at most 64 KiB, passed back as it is), and a half-closed socket closed
+after 5. The browser workflow also runs the link check through it (`tools/web-coop-link.mjs
 --proxy`): it carries two co-op and two chat upgrades with bytes both ways, and each page's chat line
 reaches the other page through it (a page's only origin is the proxy's). The page's policy lets them: its
 `connect-src` names the server's own address, which the forwarded requests carry, and `'self'` covers the

@@ -1424,6 +1424,35 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 			flow.Hud.OpenPauseMenu();
 		} );
 		Wait( "pause again", 3 );
+		// The Publish Park form over the pause menu (the pause menu's Publish Park line): the original's tick and close buttons are drawn and the form's own controls stay inside its window.
+		if ( online )
+		{
+			Do( "open publish form", () => new UI.OnlineScreens( flow.Hud!.Stack, flow.Strings, Context.Models, new UI.OnlineHost { Session = flow.Online, Level = () => flow.Level } ).ShowPublish() );
+			Wait( "publish form renders", 3 );
+			Do( "publish form capture", () =>
+			{
+				var form = flow.Hud!.Stack.Top!;
+				Require( form.Name == "publishPark", "the pause menu's Publish Park opens the publish form" );
+				CaptureFrame( "publish-form.png" );
+				var window = form.Find( "window" )!.Bounds;
+				foreach ( var id in new[] { "publish", "close", "website", "export" } )
+					Require( form.Find( id ) is { } control && control.Bounds.X >= window.X && control.Bounds.Right <= window.Right && control.Bounds.Y >= window.Y && control.Bounds.Bottom <= window.Bottom, $"the publish form's {id} control lies inside its window" );
+				Require( ( (UiButton)form.Find( "publish" )! ).Model == "b_okay" && ( (UiButton)form.Find( "close" )! ).Model == "b_exit", "the publish form's tick and cross draw the original b_okay and b_exit models" );
+				var nameField = (UiTextField)form.Find( "parkName" )!;
+				Require( nameField.MaximumLength == 15 && nameField.Text.Length is > 0 and <= 15 && ( (UiTextField)form.Find( "description" )! ).MaximumLength == 126, "the publish form's fields start filled and take 15 and 126 characters" );
+				// logged out, the tick stays enabled and opens the login dialog
+				Require( form.Find( "publish" )!.Enabled && !flow.Online.IsLoggedIn, "the tick stays enabled while logged out" );
+				Click( form, "publish" );
+			} );
+			Wait( "publish login renders", 3 );
+			Do( "publish login capture", () =>
+			{
+				Require( flow.Hud!.Stack.Top?.Name == "onlineLogin", "the tick opens the login dialog while logged out" );
+				CaptureFrame( "publish-login.png" );
+				flow.Hud.Stack.Pop();
+				flow.Hud.Stack.Pop();
+			} );
+		}
 		// The online globe over a park: it replaces the park and the HUD, and closing it restores the park camera.
 		CameraMode? parkCamera = null;
 		if ( !online )

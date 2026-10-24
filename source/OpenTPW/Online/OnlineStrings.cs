@@ -11,6 +11,7 @@ public enum OnlineLabel
 	KeepTwoStep, ResetTwoStep, RecoveryCodeSent, PasswordChanged, Unpublish, PlatinumTickets, MarkAllSend, MarkAllDelete, UnmarkAll,
 	BuddyEnters,
 	Ride, LeaveRide, PublishedOn, PublishedStatsNote,
+	ParkRecordsMods,
 }
 
 /// <summary>
@@ -24,6 +25,8 @@ public static class OnlineStrings
 	public const int GoOnline = 1;
 	public const int GoOffline = 2;
 	public const int PublishPark = 5;
+	/// <summary>The Publish Park form's title (tp.exe 0x4c4670 passes UITEXT 0xda, OpenTPW's 217).</summary>
+	public const int PublishParkTitle = 217;
 	public const int SendPostcard = 207;
 	public const int MessageTitle = 208;
 	public const int MessageText = 209;
@@ -190,6 +193,7 @@ public static class OnlineStrings
 			[OnlineLabel.ReadOnlyVisit] = "Read-only visit: building and saving are disabled.",
 			[OnlineLabel.RateLimited] = "Slow down: too many chat messages.", [OnlineLabel.NoBuddies] = "Your buddy list is empty.",
 			[OnlineLabel.OnlineOff] = "Online play is off. Enter the address of an OpenTPW server you trust to opt in.",
+			[OnlineLabel.ParkRecordsMods] = "This park records mods ({0}) and cannot be exported or published yet; turn them off to share a park without mods.",
 			[OnlineLabel.Refresh] = "Refresh", [OnlineLabel.Vote] = "Vote", [OnlineLabel.Report] = "Report",
 			[OnlineLabel.To] = "To (player names, comma separated)", [OnlineLabel.PutInOutbox] = "Put in outbox", [OnlineLabel.SavedTo] = "Saved to: ",
 			[OnlineLabel.FileSharing] = "File sharing",
@@ -227,6 +231,7 @@ public static class OnlineStrings
 			[OnlineLabel.ReadOnlyVisit] = "Besøg med kun visning: bygning og gemning er slået fra.",
 			[OnlineLabel.RateLimited] = "Langsommere: for mange chatbeskeder.", [OnlineLabel.NoBuddies] = "Din venneliste er tom.",
 			[OnlineLabel.OnlineOff] = "Onlinespil er slået fra. Indtast adressen på en OpenTPW-server, du stoler på, for at slå det til.",
+			[OnlineLabel.ParkRecordsMods] = "Denne park registrerer mods ({0}) og kan endnu ikke eksporteres eller offentliggøres; slå dem fra for at dele en park uden mods.",
 			[OnlineLabel.Refresh] = "Opdatér", [OnlineLabel.Vote] = "Stem", [OnlineLabel.Report] = "Anmeld",
 			[OnlineLabel.To] = "Til (spillernavne, adskilt med komma)", [OnlineLabel.PutInOutbox] = "Læg i udbakke", [OnlineLabel.SavedTo] = "Gemt i: ",
 			[OnlineLabel.FileSharing] = "Fildeling",
@@ -264,6 +269,7 @@ public static class OnlineStrings
 			[OnlineLabel.ReadOnlyVisit] = "Alleen bekijken: bouwen en opslaan zijn uitgeschakeld.",
 			[OnlineLabel.RateLimited] = "Rustig aan: te veel chatberichten.", [OnlineLabel.NoBuddies] = "Je vriendenlijst is leeg.",
 			[OnlineLabel.OnlineOff] = "Online spelen staat uit. Voer het adres in van een OpenTPW-server die je vertrouwt om mee te doen.",
+			[OnlineLabel.ParkRecordsMods] = "Dit park legt mods vast ({0}) en kan nog niet worden geëxporteerd of gepubliceerd; zet ze uit om een park zonder mods te delen.",
 			[OnlineLabel.Refresh] = "Vernieuwen", [OnlineLabel.Vote] = "Stemmen", [OnlineLabel.Report] = "Melden",
 			[OnlineLabel.To] = "Aan (spelersnamen, gescheiden door komma's)", [OnlineLabel.PutInOutbox] = "In Postvak UIT plaatsen", [OnlineLabel.SavedTo] = "Opgeslagen in: ",
 			[OnlineLabel.FileSharing] = "Bestanden delen",
@@ -301,6 +307,7 @@ public static class OnlineStrings
 			[OnlineLabel.ReadOnlyVisit] = "Visite en lecture seule : construction et sauvegarde désactivées.",
 			[OnlineLabel.RateLimited] = "Ralentissez : trop de messages de chat.", [OnlineLabel.NoBuddies] = "Votre liste d'amis est vide.",
 			[OnlineLabel.OnlineOff] = "Le jeu en ligne est désactivé. Saisissez l'adresse d'un serveur OpenTPW de confiance pour l'activer.",
+			[OnlineLabel.ParkRecordsMods] = "Ce parc enregistre des mods ({0}) et ne peut pas encore être exporté ni publié ; désactivez-les pour partager un parc sans mods.",
 			[OnlineLabel.Refresh] = "Actualiser", [OnlineLabel.Vote] = "Voter", [OnlineLabel.Report] = "Signaler",
 			[OnlineLabel.To] = "À (noms des joueurs, séparés par des virgules)", [OnlineLabel.PutInOutbox] = "Mettre dans la boîte d'envoi", [OnlineLabel.SavedTo] = "Enregistré dans : ",
 			[OnlineLabel.FileSharing] = "Partage de fichiers",
@@ -338,6 +345,7 @@ public static class OnlineStrings
 			[OnlineLabel.ReadOnlyVisit] = "Besuch zum Ansehen: Bauen und Speichern sind deaktiviert.",
 			[OnlineLabel.RateLimited] = "Langsamer: zu viele Chatnachrichten.", [OnlineLabel.NoBuddies] = "Deine Kumpelliste ist leer.",
 			[OnlineLabel.OnlineOff] = "Online-Spiel ist aus. Gib die Adresse eines OpenTPW-Servers ein, dem du vertraust, um es einzuschalten.",
+			[OnlineLabel.ParkRecordsMods] = "Dieser Park zeichnet Mods auf ({0}) und kann noch nicht exportiert oder veröffentlicht werden; schalte sie aus, um einen Park ohne Mods zu teilen.",
 			[OnlineLabel.Refresh] = "Aktualisieren", [OnlineLabel.Vote] = "Abstimmen", [OnlineLabel.Report] = "Melden",
 			[OnlineLabel.To] = "An (Spielernamen, durch Kommas getrennt)", [OnlineLabel.PutInOutbox] = "In den Postausgang legen", [OnlineLabel.SavedTo] = "Gespeichert unter: ",
 			[OnlineLabel.FileSharing] = "Dateien teilen",
@@ -382,6 +390,7 @@ public static class OnlineStrings
 			[OnlineLabel.RateLimited] = "천천히: 채팅 메시지가 너무 많습니다.",
 			[OnlineLabel.NoBuddies] = "친구 목록이 비어 있습니다.",
 			[OnlineLabel.OnlineOff] = "온라인 플레이가 꺼져 있습니다. 켜려면 믿을 수 있는 OpenTPW 서버 주소를 입력하십시오.",
+			[OnlineLabel.ParkRecordsMods] = "이 공원은 모드({0})를 기록하므로 아직 내보내거나 게시할 수 없습니다. 모드 없이 공원을 공유하려면 모드를 끄십시오.",
 			[OnlineLabel.Refresh] = "새로 고침",
 			[OnlineLabel.Vote] = "투표",
 			[OnlineLabel.Report] = "신고",
@@ -440,6 +449,7 @@ public static class OnlineStrings
 			[OnlineLabel.RateLimited] = "Zwolnij: za dużo wiadomości na czacie.",
 			[OnlineLabel.NoBuddies] = "Twoja lista przyjaciół jest pusta.",
 			[OnlineLabel.OnlineOff] = "Gra online jest wyłączona. Wpisz adres zaufanego serwera OpenTPW, aby ją włączyć.",
+			[OnlineLabel.ParkRecordsMods] = "Ten park zapisuje mody ({0}) i nie można go jeszcze wyeksportować ani opublikować; wyłącz je, aby udostępnić park bez modów.",
 			[OnlineLabel.Refresh] = "Odśwież",
 			[OnlineLabel.Vote] = "Głosuj",
 			[OnlineLabel.Report] = "Zgłoś",
@@ -498,6 +508,7 @@ public static class OnlineStrings
 			[OnlineLabel.RateLimited] = "Más despacio: demasiados mensajes de charla.",
 			[OnlineLabel.NoBuddies] = "Tu lista de amigos está vacía.",
 			[OnlineLabel.OnlineOff] = "El juego en línea está desactivado. Escribe la dirección de un servidor OpenTPW de confianza para activarlo.",
+			[OnlineLabel.ParkRecordsMods] = "Este parque registra mods ({0}) y todavía no se puede exportar ni publicar; desactívalos para compartir un parque sin mods.",
 			[OnlineLabel.Refresh] = "Actualizar",
 			[OnlineLabel.Vote] = "Votar",
 			[OnlineLabel.Report] = "Denunciar",
@@ -549,6 +560,7 @@ public static class OnlineStrings
 			[OnlineLabel.ReadOnlyVisit] = "Besök med endast visning: byggande och sparande är avstängt.",
 			[OnlineLabel.RateLimited] = "Lugna ner dig: för många chattmeddelanden.", [OnlineLabel.NoBuddies] = "Din kompislista är tom.",
 			[OnlineLabel.OnlineOff] = "Onlinespel är avstängt. Ange adressen till en OpenTPW-server du litar på för att slå på det.",
+			[OnlineLabel.ParkRecordsMods] = "Den här parken registrerar mods ({0}) och kan ännu inte exporteras eller publiceras; stäng av dem för att dela en park utan mods.",
 			[OnlineLabel.Refresh] = "Uppdatera", [OnlineLabel.Vote] = "Rösta", [OnlineLabel.Report] = "Anmäl",
 			[OnlineLabel.To] = "Till (spelarnamn, åtskilda med kommatecken)", [OnlineLabel.PutInOutbox] = "Lägg i utkorgen", [OnlineLabel.SavedTo] = "Sparad i: ",
 			[OnlineLabel.FileSharing] = "Fildelning",

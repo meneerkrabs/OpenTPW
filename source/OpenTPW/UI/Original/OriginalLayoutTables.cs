@@ -759,6 +759,19 @@ public static class OriginalLayoutTables
 		} ),
 	} );
 
+	/// <summary>[BIN:TPW-EXE:0x7595b0] layout table PublishWindow.</summary>
+	public static readonly LayoutTable PublishWindow = new( "PublishWindow", 0x7595B0, new LayoutNode[]
+	{
+		new( 1, 0x1u, 0x11E2u, 248, 30, 1800, 1007, -1, -1, "window2", null, null, new LayoutNode[]
+		{
+			new( 2, 0x1u, 0xFFFFFFFEu, 1671, 820, 1754, 903, -1, -1, "b_exit", null, null, System.Array.Empty<LayoutNode>() ),
+			new( 2, 0x1u, 0xFFFFFFFFu, 1660, 731, 1743, 815, -1, -1, "b_okay", null, null, System.Array.Empty<LayoutNode>() ),
+			new( 5, 0x81u, 0x11E3u, 684, 444, 1364, 892, -1, -1, "!frame", null, new[] { 707, 463, 1346, 870 }, System.Array.Empty<LayoutNode>() ),
+			new( 5, 0x1u, 0x11E4u, 682, 279, 1366, 372, -1, -1, "!frame", null, new[] { 710, 303, 1340, 348 }, System.Array.Empty<LayoutNode>() ),
+			new( 1, 0x1u, 0x11E5u, 788, 75, 1260, 155, -1, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
+		} ),
+	} );
+
 	/// <summary>[BIN:TPW-EXE:0x7537d0] layout table ParkInfoWindow.</summary>
 	public static readonly LayoutTable ParkInfoWindow = new( "ParkInfoWindow", 0x7537D0, new LayoutNode[]
 	{

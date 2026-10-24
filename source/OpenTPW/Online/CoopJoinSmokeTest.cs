@@ -222,18 +222,23 @@ internal sealed partial class CoopJoinSmokeTest : IDisposable
 
 	/// <summary>
 	/// Whether a page's address asks for the co-op smoke on a loopback host, as the page's script decides it (<c>?coopSmoke=1</c> on 127.0.0.1, localhost or [::1], never with
-	/// <c>?perf=1</c>): the page's mode checks its own address, not its script's word.
+	/// <c>?perf=1</c> or the link check's <c>?coopLinkSmoke=1</c>): the page's mode checks its own address, not its script's word.
 	/// </summary>
-	internal static bool IsCoopSmokePageAddress( string? href )
+	internal static bool IsCoopSmokePageAddress( string? href ) =>
+		LoopbackQuery( href ) is { } first && first( "coopSmoke" ) == "1" && first( "perf" ) != "1" && first( "coopLinkSmoke" ) != "1";
+
+	/// <summary>
+	/// The query of a page on a loopback address (http or https on 127.0.0.1, localhost or [::1]) as the page's URLSearchParams reads it: the first value of a
+	/// name, or null when the query has none; null for any other address.
+	/// </summary>
+	internal static Func<string, string?>? LoopbackQuery( string? href )
 	{
 		if ( !Uri.TryCreate( href, UriKind.Absolute, out var url ) || url.Scheme is not ("http" or "https") || url.Host is not ("127.0.0.1" or "localhost" or "[::1]") )
-			return false;
+			return null;
 		// the query without its one delimiter, as the page's URLSearchParams reads location.search (a second '?' belongs to the first key)
 		var query = (url.Query.StartsWith( '?' ) ? url.Query[1..] : url.Query).Split( '&', StringSplitOptions.RemoveEmptyEntries ).Select( pair => pair.Split( '=', 2 ) )
 			.Select( pair => (Name: Uri.UnescapeDataString( pair[0] ), Value: pair.Length > 1 ? Uri.UnescapeDataString( pair[1] ) : "") ).ToList();
-		// the first value of each, as the page's URLSearchParams reads it
-		string? First( string name ) => query.FirstOrDefault( pair => pair.Name == name ).Value;
-		return First( "coopSmoke" ) == "1" && First( "perf" ) != "1";
+		return name => query.FirstOrDefault( pair => pair.Name == name ).Value;
 	}
 
 	/// <summary>

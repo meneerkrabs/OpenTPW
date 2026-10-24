@@ -448,3 +448,10 @@ join" and "The browser's host") open the page with `?coopSmoke=1` instead: the s
 smoke mode (`Program.CoopJoinSmokeTest.cs`) rather than the performance mode, whose hooks change parks
 outside the commands, which a shared park refuses. Both switches work only on a loopback address, and
 not together. The smoke's files go to `/coop-smoke`, which the page does not keep.
+
+The co-op link check (`tools/web-coop-link.mjs`, [COOP.md](COOP.md), "The browser's link to a real
+server") opens two pages of the real server with `?coopLinkSmoke=1`: the page then starts no game, reads
+no game file and claims none of its stores, and exposes only the check's exports
+(`Program.CoopLinkSmoke.cs`), which drive the game's own online client against the server that serves
+the page. It too works only on a loopback address, and never with `?perf=1` or `?coopSmoke=1`; its
+online folder is `/coop-link`, never the player's.

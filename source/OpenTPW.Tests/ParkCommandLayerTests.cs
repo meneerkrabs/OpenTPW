@@ -58,8 +58,8 @@ public class ParkCommandLayerTests
 		new( "Level.RenamePark", Call( "RenamePark" ), nameof( RenameParkCommand ) ),
 		new( "Cheats", Call( "QueueCheat" ), nameof( QueueCheatCommand ) ),
 		// any receiver (a name, a call's or an index's result, null-forgiving or not) but the HUD's own panels (the locator, the camera slide) and a layout builder's track
-		// the co-op link's open and close (OnlineSession's Coop) are a socket's, not a ride's
-		new( "Ride open and close", @"([)\]]|\b(?!(Locator|CameraSlide|Track|Coop)\b)\w+)!?\??\.(Open|Close)\(\s*\)", nameof( SetAttractionOpenCommand ) ),
+		// the co-op link's open and close (OnlineSession's Coop, a CoopLinkProbe's Link) are a socket's, not a ride's
+		new( "Ride open and close", @"([)\]]|\b(?!(Locator|CameraSlide|Track|Coop|Link)\b)\w+)!?\??\.(Open|Close)\(\s*\)", nameof( SetAttractionOpenCommand ) ),
 		new( "ParkEconomy.SetObjectOpen", Call( "SetObjectOpen" ), nameof( SetAttractionOpenCommand ) ),
 		new( "Ride window settings", Call( "ApplyRideWindow" ), nameof( SetRideSettingsCommand ) ),
 		new( "Ride setters", @"\.(SetSpeed|SetCapacity|SetDuration)\s*\(", nameof( SetRideSettingsCommand ) ),
@@ -217,6 +217,7 @@ public class ParkCommandLayerTests
 		Assert.IsTrue( Caught( open, "objects.Objects[0].Open();" ) );
 		Assert.IsTrue( Caught( open, "level.FindEconomyObject( 3 )?.Close();" ) );
 		Assert.IsFalse( Caught( open, "Locator.Close();" ), "the HUD's own panel" );
+		Assert.IsFalse( Caught( open, "Link.Open();" ), "a co-op link probe's socket" );
 		Assert.IsFalse( Caught( open, "level.Commands.Issue( new SetAttractionOpenCommand( id, true ) );" ) );
 		var speed = Converted.Single( mutator => mutator.Name == "Game speed" );
 		Assert.IsTrue( Caught( speed, "park.Speed = GameSpeed.Paused;" ) );

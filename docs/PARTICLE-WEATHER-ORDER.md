@@ -24,3 +24,9 @@ These are source-level tests pending exact-head CI, not rendered image evidence.
 PTCL-909 remains open for native HUD/advisor ordering. The lobby render loop is
 unchanged. Depth/blend fidelity and rendered weather/particle overlap still need
 separate visual acceptance; this change does not establish full layering parity.
+
+## Translucent world parts (issue 829)
+
+`Level.Render` now applies `Level.WorldPassOrder` after `WeatherAfterParticles`: translucent terrain and object parts (`ModelEntity.Translucent`, the original's deferred list 0x582AD0)
+draw after every other entity, farthest first, and the particle and weather renderers follow them in the order this note describes. A snapshot without translucent parts is unchanged. The original also defers the particle batches
+whose state is 0x556 or 0x200552 into that same far-to-near list; OpenTPW keeps the particles a pass of their own (PTCL-905 is not narrowed by this).

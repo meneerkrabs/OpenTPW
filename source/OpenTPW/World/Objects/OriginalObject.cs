@@ -364,18 +364,46 @@ public class OriginalObject : Entity, IPointLightSource, IObjectPickShape
 						frames.Bindings.Add( (material, index) );
 				}
 			var dynamic = part.MeshIndex >= 0 && vertexAnimated[part.MeshIndex];
-			Model model;
-			using ( LoadProfile.Measure( "object-materials" ) )
-				model = new Model( part.Vertices, part.Indices, material, dynamic );
-			models.Add( model );
-			// Build gives every object its own vertex arrays, so the part's array is this instance's to rewrite;
-			// version -1 makes the first update show the pose of a clip the script may already have started.
+			// [BIN:TPW-EXE:0x590C40 state word, 0x582AD0 deferred records] the faces whose texture is translucent (the header of the texture's own file, WorldTranslucency) are drawn after every other face, far to
+			// near: a part that has some becomes two models and two entities on the part's node, the opaque one where it always was and the translucent one in the level's translucent pass. A part whose vertices are
+			// rewritten each frame cannot be split (its vertex array is the mesh's corners): it is drawn whole in the translucent pass when any of its faces is translucent.
+			Func<int, bool> slotIsTranslucent = slot => slot >= 0 && slot < slots.Length && WorldTranslucency.IsTranslucent( slots[slot].AlphaType );
+			var vertices = part.Vertices;
+			var indices = part.Indices;
+			Vertex[]? translucentVertices = null;
+			uint[]? translucentIndices = null;
+			var wholeTranslucent = false;
 			if ( dynamic )
-				vertexParts.Add( (model, part.MeshIndex, part.Vertices, -1) );
-			// [EXT:winter-snow-surfaces] objects (roofs, trees, rides) take snow on their up-facing surfaces; a part on an animated node (it can move or turn) keeps its snow noise in model space, so the patches do not crawl over it
-			parts.Add( (new ModelEntity { Model = model, Name = $"{Entry.ArchiveName}:{part.Name}", SnowSurface = SnowCover.GroundSurface, SnowNoiseInModelSpace = part.NodeIndex >= 0 }, part.NodeIndex) );
+			{
+				if ( wholeTranslucent = WorldTranslucency.AnyTranslucentFace( vertices, indices, slotIsTranslucent ) )
+					WorldTranslucency.FlagAll( vertices );
+			}
+			else
+			{
+				var split = WorldTranslucency.SplitFaces( vertices, indices, slotIsTranslucent );
+				(vertices, indices, translucentVertices, translucentIndices) = (split.OpaqueVertices, split.OpaqueIndices, split.TranslucentVertices, split.TranslucentIndices);
+			}
+			if ( indices.Length > 0 )
+				AddPartModel( part, vertices, indices, material, dynamic, wholeTranslucent, vertexAnimatedMesh: dynamic );
+			if ( translucentVertices != null )
+				AddPartModel( part, translucentVertices, translucentIndices!, material, false, true, vertexAnimatedMesh: false );
 		}
 		frameTextures.AddRange( frameSlots.Values.Where( frames => frames.Bindings.Count > 0 ) );
+	}
+
+	/// <summary>One model of a render part on the part's node: <paramref name="translucent"/> ones are drawn in the level's translucent pass (<see cref="ModelEntity.Translucent"/>) and sort their triangles.</summary>
+	private void AddPartModel( ObjectRenderPart part, Vertex[] vertices, uint[] indices, Material<ObjectUniformBuffer> material, bool dynamic, bool translucent, bool vertexAnimatedMesh )
+	{
+		Model model;
+		using ( LoadProfile.Measure( "object-materials" ) )
+			model = new Model( vertices, indices, material, dynamic, translucent );
+		models.Add( model );
+		// Build gives every object its own vertex arrays, so the part's array is this instance's to rewrite;
+		// version -1 makes the first update show the pose of a clip the script may already have started.
+		if ( vertexAnimatedMesh )
+			vertexParts.Add( (model, part.MeshIndex, vertices, -1) );
+		// [EXT:winter-snow-surfaces] objects (roofs, trees, rides) take snow on their up-facing surfaces; a part on an animated node (it can move or turn) keeps its snow noise in model space, so the patches do not crawl over it
+		parts.Add( (new ModelEntity { Model = model, Name = $"{Entry.ArchiveName}:{part.Name}", SnowSurface = SnowCover.GroundSurface, SnowNoiseInModelSpace = part.NodeIndex >= 0, Translucent = translucent }, part.NodeIndex) );
 	}
 
 	/// <summary>

@@ -12,6 +12,27 @@ public partial class ModelEntity : Entity
 	/// <summary>Not drawn while set (a scene that is kept loaded but not shown, or an MD2 mesh whose node-state bit 0x10 is set).</summary>
 	public bool Hidden { get; set; }
 
+	/// <summary>
+	/// Whether the model is world geometry with translucent textures: the level draws it after every other entity, far to near, instead of at its place in the entity list
+	/// (<see cref="Level.WorldPassOrder"/>, the original's translucent pass, <see cref="WorldTranslucency"/>).
+	/// </summary>
+	public bool Translucent { get; set; }
+
+	/// <summary>The model matrix the draw uses.</summary>
+	internal System.Numerics.Matrix4x4 DrawMatrix => TransformOverride ?? ModelMatrix;
+
+	/// <summary>
+	/// The depth that orders this translucent entity among the others: the clip-space w of the mean of its model's vertices, so the mean vertex depth that the original sorts its deferred records by
+	/// (0x582AD0). Larger is farther. 0 for an entity without a model.
+	/// </summary>
+	internal float TranslucentDepth( in System.Numerics.Matrix4x4 viewProjection )
+	{
+		if ( Model?.DepthCentre is not { } centre )
+			return 0f;
+		var matrix = DrawMatrix * viewProjection;
+		return WorldTranslucency.Depth( centre, matrix );
+	}
+
 	/// <summary>Light position for scenes without a level sun (e.g. the online globe).</summary>
 	public Vector3? LightPosition { get; set; }
 
@@ -63,7 +84,7 @@ public partial class ModelEntity : Entity
 		if ( Model == null || Hidden )
 			return;
 
-		var model = TransformOverride ?? ModelMatrix;
+		var model = DrawMatrix;
 		// [BIN:TPW-EXE:0x561A30 mesh view test] the original clips the eight corners of the mesh record's box (widened by half its extent per side) and skips the mesh when all lie outside one plane; the exact vertex bounds used here are tighter, and every stored box of the corpus contains its vertices (Md2MeshBoundsCorpusTests), so only meshes wholly out of view are skipped
 		if ( Cullable && Model.Bounds is { } bounds && Frustum.IsOutside( bounds.Min, bounds.Max, model * Camera.ViewMatrix * Camera.ProjMatrix ) )
 		{
@@ -71,6 +92,9 @@ public partial class ModelEntity : Entity
 			return;
 		}
 		DrawnParts++;
+		// [BIN:TPW-EXE:0x565590 -> 0x565490 deferred batch] the triangles of a translucent part are drawn far to near by the sum of their corner depths
+		if ( Translucent )
+			Model.OrderTriangles( model * Camera.ViewMatrix * Camera.ProjMatrix );
 
 		var uniformBuffer = new ObjectUniformBuffer
 		{

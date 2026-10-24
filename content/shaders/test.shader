@@ -115,6 +115,8 @@ fragment {
     // TextureSlotAddressing.ClampFlag: an original MD2 slot without flag 0x10/0x20, which tp.exe clamps instead of wrapping.
     const uint FLAG_SLUSH = 0x40000000u; // [EXT:winter-snow] OpenTPW's vertex flag for a path-like material (TextureSlotAddressing.SlushFlag)
     const uint FLAG_CLAMP = 0x80000000u;
+    // WorldTranslucency.AlphaTestLowFlag: a corner of a translucent texture's face, which the original draws with state word 0x556 (an alpha test at 0x10/255, tp.exe 0x567620 and 0x590C40)
+    const uint FLAG_ALPHA_TEST_LOW = 0x20000000u;
 
     // CLAMP on the wrapping sampler: the coordinates stay half a texel of the coarsest mip the footprint can select
     // inside the edges (that mip's real size, floor(size / 2^level) but at least 1, so odd sizes do not bleed either),
@@ -264,8 +266,9 @@ fragment {
             vOutColor = mix( vOutColor, vShouldered, clamp( ( 1.0 - g_oUbo.g_flAmbientLevel ) / 0.65, 0.0, 1.0 ) );
         }
 
-        // Handle opaque alpha testing
-        if (vTextureSample.a < 0.1) discard;
+        // Handle opaque alpha testing: the engine's 0.1, or 0x10/255 for the faces of the original's translucent state
+        float alphaReference = ( outMatFlags & FLAG_ALPHA_TEST_LOW ) != 0u ? 16.0 / 255.0 : 0.1;
+        if (vTextureSample.a < alphaReference) discard;
 
         fragColor = vec4(vOutColor, vTextureSample.a);
 

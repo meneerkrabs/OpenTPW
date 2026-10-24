@@ -318,6 +318,14 @@ to 1..200), scrolling textures `0x435a30` and thing animation clocks `0x557ab0` 
 `0x518f90` (time since the last substep), and every simulation step on the 31 ms substep
 (`0x520130`, `0x546c80`, `0x5516b0`, `0x55abf0`, `0x475360`, `0x516380`, `0x55a470`, `0x55ab50`).
 
+## World geometry translucency
+
+The terrain meshes and placed objects follow the original's translucent pass: faces whose texture has an alpha plane with a non-zero alpha byte (the river water, the harbour's glass roofs, leaves) are drawn after all
+other geometry, farthest first, and tested at 0x10/255; everything else draws as before. The classification reads the texture's own header, so the low-detail copies (no alpha plane) stay opaque, as in
+the original ([MD2-MODELS.md](MD2-MODELS.md), "The translucent pass of world models"). This answers the community report of a multicoloured river and a glass roof that hid what stood behind it (issue 829).
+Open: the ground heightfield, paths, coaster and track pieces, pools and the lobby keep their entity order; the original's deferred particle batches are not merged into the sorted list (PTCL-905); the reverse sort 0x5828F0 and the
+alpha-reference index of devices that fail the 0x567270 probe are not reproduced.
+
 ## Tests
 
 `TrueTypeFontTests` (synthetic fonts: metrics, cmap, kerning, exact coverage, non-zero

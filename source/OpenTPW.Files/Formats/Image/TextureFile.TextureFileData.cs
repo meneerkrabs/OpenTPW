@@ -5,7 +5,9 @@ public partial class TextureFile
 	struct TextureFileData
 	{
 		public TextureFlags Flags { get; set; }
-		public bool HasAlphaChannel { get; set; }
+		/// <summary>The header's second byte as stored: tp.exe tests it against 0 (the alpha type), the decoder here against 1 (<see cref="HasAlphaChannel"/>).</summary>
+		public byte AlphaByte { get; set; }
+		public bool HasAlphaChannel => AlphaByte == 0x01;
 		public byte BitsPerPixel { get; set; }
 		public byte Version { get; set; }
 

@@ -76,6 +76,39 @@ without them the key is 0x1256, no blend. Material word +0xC
 bit 0x1 draws the mesh in one constant colour instead of per-vertex lighting (0x580C51; on signs, fire,
 glow, water, flames and lava, i.e. self-lit art).
 
+### The translucent pass of world models
+
+Which MD2 faces tp.exe draws late is decided by the **header of the texture's own `.wct`**, never by a name (`TextureFile.ReadAlphaType`,
+`TextureAlphaType`). The loader 0x564C00 reads the 0x1C-byte header into the image object and loads the alpha chunk only when header byte 2
+(bits per pixel) is 0x20; 0x574D3A turns that into the type word 0x87A24C (0x24 without an alpha plane, 0x25 with one, 0x27 when header byte 1,
+the alpha byte, is also non-zero) and 0x5755F0 turns type bit 0 (and not bit 1) into texture flag 0x100 and bit 1 into 0x200. The state word of a
+face (0x581790 -> 0x590C40) and what the renderer's state decoder 0x567620 makes of it:
+
+| Header | Texture flag | State | Blend | Alpha test (GEQUAL: the device setup 0x566840 sets `D3DRS_ALPHAFUNC` to 7) | Depth write | Drawn |
+| --- | --- | --- | --- | --- | --- | --- |
+| no alpha plane (bits per pixel 0x18) | none | 0x1256 | off | off | on | at once |
+| 0x20 bits per pixel, alpha byte 0 | 0x100 | 0x2756 | source alpha | 0xF0 (bit 0x200 set) | on | at once, after the 0x1256 faces of its texture page |
+| 0x20 bits per pixel, alpha byte non-zero | 0x200 | 0x556 | source alpha | 0x10 (bit 0x200 clear) | on | deferred, far to near |
+| (load flag 8, no world texture) | 0x300 | 0x200552 | source alpha over one | 0x10 | on | deferred, far to near |
+
+The alpha references 0x10 and 0xF0 are the second pair of the table at 0x7012D8 (1000, F000, 10, F0), picked by the alpha-reference index
+(0x567270 probes the device and sets 2; the index stays 0, with the pair 1000/F000, when the capability bit 0x40 of the device is missing).
+The renderer's mask `[[0x879AB0]+0xC]` is 0x3000 (0x5667D0, 0x56682D); 0x567270 lowers it to 0x1000 on a device without that capability bit. The frame batcher 0x581DB0 (called by
+0x582170 at the end of the scene pass 0x576A00, after the particle pass 0x57C620 and the weather pass 0x57FF60) sorts the model faces by atlas page, then by ascending state word and
+texture, and draws every face whose state has bit 0x1000 or 0x2000 at once; every other face reaches 0x565590, which keeps it, sorts its triangles by the sum of their three vertex depths, largest first
+(0x565490; the software mode's integer twin is 0x5653D0), and returns without drawing. 0x582AD0, the second half of 0x582170, then draws those records after all of the above, sorted
+by 0x5829E0 on the record's average vertex depth (+0x30 over the vertex count at +0x20), largest first. The Direct3D renderer is mode 1 of `DAT_008BD524` (0x44DD50); the reverse sort 0x5828F0 runs only when
+`[0x8BCBC8] & 0xC` is 0xC and bit 0x20000000 is set, and no writer of bits 0x4 and 0x8 was found among the option and device-setup functions that were read (0x44D8F0, 0x44DD50, 0x44DE20, 0x566840, 0x5673D0).
+
+OpenTPW ports the pass for the faces it can classify (`WorldTranslucency`): the MD2 terrain meshes (`OriginalTerrain`) and placed objects (`OriginalObject`, including the harbour's glass roofs). A part is split by
+face into an opaque model, drawn where it always was, and a translucent model (`ModelEntity.Translucent`) that `Level.WorldPassOrder` draws after every other entity, farthest first by the mean depth of its
+vertices, with its triangles sorted farthest first by the sum of their corner depths (`Model.OrderTriangles`, re-sorted when the camera or the part moves). The particle and weather renderers follow the translucent pass in
+their own order, so a particle in front of water is still drawn over it. `test.shader` tests translucent faces at 0x10/255 (vertex bit 0x20000000, `WorldTranslucency.AlphaTestLowFlag`) and every other face at the engine's 0.1.
+Not covered: the ground heightfield and the path layer (they stay in entity order and use their own depth lift), coaster and track pieces, pools, the lobby scene, textures that are not `.wct`
+(Theme Park Inc art) and bonus-content textures (all opaque here), and the state bits that depend on model and texture flags OpenTPW has no counterpart of (0x400000 wrap, 0x800 from a model flag, 0x5156). Cut-out textures (flag 0x100, 236 files) keep
+OpenTPW's opaque draw, because the decoder reads an alpha plane only when the alpha byte is 1, so their alpha is 255. The deferred particle batches (state 0x556 and 0x200552, which the original
+sorts into the same list as the world) are PTCL-905's business: the particles stay a pass of their own.
+
 Nodes: one tree rooted at 0x78. Mesh records are 160 bytes, dummy records 88:
 `u32 type`, parent/next-sibling/first-child record pointers, 4×4 float row-major
 matrix (translation in row 4), `u32 index`, name pointer. Mesh records continue

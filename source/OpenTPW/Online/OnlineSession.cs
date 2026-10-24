@@ -1123,10 +1123,6 @@ public sealed class OnlineSession : IDisposable, IPresenceSession, IChatPanelSou
 	internal static string SharedParkChatClosedText() =>
 		UI.Original.SupplementaryStrings.Get( UI.Original.OpenTpwText.SharedParkChatClosed, GameLanguage.IsSelected ? GameLanguage.Current.Name : GameLanguage.DefaultLanguage );
 
-	/// <summary>What a command says to the player's room (lines, emotes, shouts, moods, the away notice): in a shared park, only to its room.</summary>
-	internal static bool SaysToRoom( ChatCommand command ) =>
-		command is ChatCommand.Say or ChatCommand.Emote or ChatCommand.Shout or ChatCommand.EShout or ChatCommand.Afk || ChatCommands.IsMoodEmote( command );
-
 	/// <summary>
 	/// [EXT:online-coop-session] The command as it goes out, or null when it may not: in a shared park, what is said to a room names the session's room (the server drops
 	/// it when the connection is not there) and is not sent while the chat is not on its way there; a goto, which would take the chat elsewhere, is not sent at all.
@@ -1141,7 +1137,7 @@ public sealed class OnlineSession : IDisposable, IPresenceSession, IChatPanelSou
 			AddChatLine( OnlineStrings.ChatNotice( (int)ChatNotice.LeaveParkToGoTo, new[] { ChatCommands.SplitName( argument ).Name ?? "" } ) );
 			return null;
 		}
-		if ( !SaysToRoom( command ) )
+		if ( !ChatCommands.SaysToRoom( command ) )
 			return ChatRequest.ForCommand( command, argument );
 		if ( SharedParkChatClosed )
 		{

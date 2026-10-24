@@ -116,6 +116,13 @@ public static class ChatCommands
 	public static bool IsMoodEmote( ChatCommand command ) => command >= ChatCommand.Cheer;
 
 	/// <summary>
+	/// What a command says to the player's room: lines, emotes, shouts, moods and the away notice. [EXT:online-coop-session] Only these may name a shared park's
+	/// room they are for (<see cref="ChatRequest.ForCommand"/>); a tell, a page or a world shout is addressed beyond the room and names none.
+	/// </summary>
+	public static bool SaysToRoom( ChatCommand command ) =>
+		command is ChatCommand.Say or ChatCommand.Emote or ChatCommand.Shout or ChatCommand.EShout or ChatCommand.Afk || IsMoodEmote( command );
+
+	/// <summary>
 	/// "You cheer" for Cheer, nothing for Think, "You appear hungry" … "You appear confused" for the rest
 	/// ([DATA:CHAT_COMMANDS.str:134-151] — 18 responses for the 19 mood commands; Think has none).
 	/// </summary>

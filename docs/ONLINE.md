@@ -491,7 +491,8 @@ no screen or park uses it yet (C2b to C2d).
   session's room, and the server drops it when the connection is not there (it was taken out, or the
   join was refused) and says so. On an older server the chat is not opened for the session, and what is
   said to a room is not sent. The chat goes back to the lobby once the session is over for the game,
-  from wherever it is. The server takes a member who leaves or is removed,
+  from wherever it is. What a member addresses beyond the room (a tell, a page, a world shout) goes
+  where it is addressed, as from any room, and never names the session's room. The server takes a member who leaves or is removed,
   and every member of a session that ends, back to the lobby before the change is announced. Locating a player in a shared park
   says only that, never its title or room; a world shout or a page from the room does not name it; and no
   buddy is told a player entered one. The game names the room after its session's title, or "Shared park"

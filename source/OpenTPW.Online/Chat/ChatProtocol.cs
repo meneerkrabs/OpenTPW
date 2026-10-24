@@ -123,8 +123,9 @@ public sealed record ChatRequest( string Type, string? Command, string? Argument
 			throw new InvalidDataException( "Invalid chat movement mode." );
 		if ( request.Type == CommandType )
 		{
-			// [EXT:online-coop-session] a command names no room but a shared park's, which it is for
-			if ( request.Command == null || !ChatCommands.TryParseCanonical( request.Command, out _ ) || request.Room != null && ChatProtocol.CoopSessionOf( request.Room ) == null )
+			// [EXT:online-coop-session] a command names no room, but what is said to a room may name the shared park's it is for
+			if ( request.Command == null || !ChatCommands.TryParseCanonical( request.Command, out var command )
+				|| request.Room != null && (ChatProtocol.CoopSessionOf( request.Room ) == null || !ChatCommands.SaysToRoom( command )) )
 				throw new InvalidDataException( "Unknown chat command." );
 			OnlineText.RequireText( request.Argument ?? "", ChatCommands.MaximumLineLength, false, true, "Chat text" );
 		}

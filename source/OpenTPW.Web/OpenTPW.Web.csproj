@@ -70,6 +70,7 @@
 		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/CoopShareTests.SavedPark.cs" />
 		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/CoopShareTests.Join.cs" />
 		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/CoopShareTests.OpenList.cs" />
+		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/CoopShareTests.Figures.cs" />
 		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/PostcardEmailTests.cs" />
 		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/PoolSpriteDeliveryTests.cs" />
 		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/SecurityHardeningTests.cs" />
@@ -112,12 +113,14 @@
 		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/WebClientTransportTests.cs" />
 		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/CoopLinkTests.cs" />
 		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/CoopLinkTests.Lobby.cs" />
+		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/CoopLinkTests.Figures.cs" />
 		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/CoopLinkProbeTests.cs" />
 		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/CoopSessionTests.cs" />
 		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/CoopJoinSessionTests.cs" />
 		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/CoopJoinSessionTests.GameFlow.cs" />
 		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/CoopJoinSessionTests.Attempt.cs" />
 		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/CoopJoinSessionTests.Lobby.cs" />
+		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/CoopJoinSessionTests.Figures.cs" />
 		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/CoopSnapshotDownloadTests.cs" />
 		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/BrowserPinsExclusionTests.cs" />
 		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/StrictCommandsGameTests.cs" />

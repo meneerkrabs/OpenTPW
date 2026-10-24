@@ -929,6 +929,89 @@ The tests:
   covers the open list and an invitation over the page's own HTTP and WebSocket. The browser's screens
   and a whole join in the page come with the acceptance (C2d-5).
 
+### Co-builders as figures (C2d-4)
+
+`[EXT:online-coop-figures]` In a shared park every member walks as a figure with a name plate, as the
+players of a visited park do (decision 8; [ONLINE.md](ONLINE.md), "Players in a visited park"): the
+guests' kid sprites, the name on a dark plate over the head, the player's own in yellow, under the HUD's
+windows.
+
+**Where a figure goes.** No click walks a figure in a shared park: the host's clicks build, and a
+guest's clicks are the HUD's. Each member's own figure follows that member's view instead:
+
+- The view's centre is the overview's target, or the free walk's place, in cells (`GameFlow.ViewCentre`,
+  `OriginalParkPlacement.ToCells`). Other views (the ride view, the globe) have none, and the figure
+  stays.
+- The figure walks there at the visit's pace (1.2 cells a second). It plans again when the centre moved
+  a cell or more from the centre it last followed, at most every quarter of a second, so a panning view
+  does not search a route every frame.
+- A centre twelve cells or more from the figure (a locate, a map click, a fast pan) moves it there at
+  once, and its place goes out as a teleport.
+- A centre on a cell no figure stands on (water, a ride) is walked or moved to the nearest free cell
+  within three cells, once; with none that near (the middle of a lake), the figure stays where it is.
+- While the player rides, the figure is hidden for the others, as in a visit, and comes out at the
+  ride's exit; then it follows the view again.
+- The host builds while the figures walk. A walk planned on an older cell map (`ParkCellMap.Version`)
+  is planned again on the new one, at most every quarter of a second, and the route search labels the
+  park's areas again, so a figure goes round what was built and through what was opened.
+
+**The room.** The figures meet in the session's chat room (`coop:<id>`, C2d-1). The online session owns
+that chat: the shared park's presence never joins or leaves a room and never opens or closes the chat.
+A figure's places go out only once the room is the connection's own, confirmed
+(`OnlineSession.SharedRoomReady`): a chat connection whose own server version is read (protocol 8), no
+join on its way or waiting, and the server's roster names the room. Its first place there is a teleport,
+which the server answers with where the others stand, and a reconnection announces the figure again
+once the new connection's join is confirmed. The others are drawn from the room's relayed places and
+roster, so a member who leaves goes from the park. A server without shared parks' rooms shows no
+figures.
+
+**The game's side** (`GameFlow.CoopPresence.cs`). After the session's step, the game makes the shared
+park's presence (`ParkPresence.ForSharedPark`) while it is logged in and in a running session's park
+(host or guest, not a visit) whose room its chat follows. The presence belongs to that park and that
+session: it goes when the park changes (a resync's swap makes a new one for the new park), when the
+session ends, or at a logout. A session can end during the level's update, so the presence also checks
+every frame that its session still runs, and sends nothing once it does not. A visit's presence is the
+visit's own; the step never touches it.
+
+**No sparkle.** A visit's figures sparkle through the level's particle pool. A shared park's do not: the
+pool is captured with the park and object runtimes keep handles into it, so a local effect would make
+the members' parks differ.
+
+**The HUD.**
+
+- A shared park starts in its HUD, where the host builds. **F4** switches to the chat mode (the chat
+  overlay in place of the HUD, as in a visit) and back, and **Enter** over the park opens it with the
+  entry taking the keys.
+- Entering the chat mode ends every armed tool, as their own Escape ends them: the build and Move
+  tools, the remove tool, the coaster, staff, patrol, land, clearing and pool tools, and the path and
+  queue tool. While it is on, its park clicks never reach the level's tools (`Level.WorldPointerRouted`),
+  and no click, Backspace or line starts or edits a path. A click on a rideable ride rides it, as in a
+  visit's chat mode; a click never walks.
+- A name popup's **Go to** moves the view to that co-builder's figure when it is drawn here (a free walk
+  ends first), and sends no command, so the chat does not say to leave the park. A name with no figure
+  here (a buddy elsewhere, a player who rides) goes to the server as before, which says to leave the park
+  first. A visit's goto is unchanged.
+
+The tests:
+
+- `ParkPresenceTests` (part `ParkPresenceTests.SharedPark.cs`) covers the presence: no room joins or
+  leaves, no chat opened or closed, no click walk, no goto, no sparkle; places only in the confirmed
+  room and again on a new connection; none on a server without shared parks' rooms; nothing after the
+  session ended; following, throttled planning, the jump and the ride; a view over water planned once;
+  and a walk that goes round a co-builder's edit and through what they open.
+- `SharedParkChatModeTests` covers the HUD: the HUD first, F4 and Enter, the tools retired and the
+  level's clicks kept from it, and Go to moving the view; `ChatPanelTests` covers the popup's own goto,
+  which sends no command.
+- `CoopFiguresViewTests` covers the view's centre: the overview's target, the free walk's place, and no
+  centre in another view or park.
+- Over real links to the loopback server: `CoopLinkTests` (part `CoopLinkTests.Figures.cs`) covers the
+  figures meeting in the session's room, each first place answered with the other's, a walk and a jump
+  relayed, and a member's leave; `CoopShareTests` (part `CoopShareTests.Figures.cs`) covers the host's
+  game making the presence once hosted, keeping it, leaving a visit's alone, and dropping it with the
+  session; `CoopJoinSessionTests` (part `CoopJoinSessionTests.Figures.cs`) covers a guest's game showing
+  the host's figure, a new presence for the park a resync swaps in, and its end with the session.
+- The figures in a real game, desktop and browser, host and guest, come with the acceptance (C2d-5).
+
 ### The host's trimmed frame (C2c-3)
 
 `[EXT:online-coop-snapshot-join]` The host trims the frames every member is known to hold. A server

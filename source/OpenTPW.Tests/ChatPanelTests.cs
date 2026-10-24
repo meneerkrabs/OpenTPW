@@ -252,6 +252,47 @@ public class ChatPanelTests
 	}
 
 	[TestMethod]
+	public void AGotoThePanelsHostTakesItselfSendsNoCommand()
+	{
+		// [EXT:online-coop-figures] a shared park's goto moves the view to a figure drawn there (C2d-4): no command goes out, so no "leave the park" notice; a name without one goes to the server
+		var chat = Room();
+		var stack = new UiScreenStack();
+		var took = new List<string>();
+		var went = new List<string>();
+		var panel = new ChatPanel( OriginalUiTests.FakeStrings(), stack, () => chat )
+		{
+			GoTo = went.Add,
+			TakeTo = name =>
+			{
+				took.Add( name );
+				return name == "Bob";
+			},
+		};
+		var screen = new UiScreen( "chat" ) { Modal = false };
+		panel.AddTo( screen );
+		stack.Push( screen );
+		var context = Context();
+		void Goto( string name )
+		{
+			panel.OpenPopup( new ChatPerson( name, ChatPersonFlags.Buddy, false ), context.Canvas, new NVector2( 600, 400 ) );
+			stack.Update( context, UiInput.Click( stack.Top!.Find( "popupGoto" )!.ScreenRect( context.Canvas ).Center ) );
+		}
+		Goto( "Bob" );
+		Assert.AreEqual( 0, chat.Commands.Count );
+		Assert.AreEqual( 0, went.Count );
+		Assert.AreSame( screen, stack.Top, "the popup closes" );
+		Goto( "Eve" );
+		Assert.AreEqual( (ChatCommand.Goto, "Eve"), chat.Commands.Single() );
+		CollectionAssert.AreEqual( new[] { "Eve" }, went );
+		CollectionAssert.AreEqual( new[] { "Bob", "Eve" }, took );
+		// another button never asks the host
+		panel.OpenPopup( new ChatPerson( "Bob", ChatPersonFlags.Buddy, false ), context.Canvas, new NVector2( 600, 400 ) );
+		stack.Update( context, UiInput.Click( stack.Top!.Find( "popupLocate" )!.ScreenRect( context.Canvas ).Center ) );
+		Assert.AreEqual( (ChatCommand.Locate, "Bob"), chat.Commands[^1] );
+		Assert.AreEqual( 2, took.Count );
+	}
+
+	[TestMethod]
 	public void ARightClickOnANameOpensItsPopupAtThePointer()
 	{
 		var chat = Room();

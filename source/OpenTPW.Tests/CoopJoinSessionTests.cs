@@ -55,6 +55,8 @@ public partial class CoopJoinSessionTests
 		public bool Frozen { get; set; }
 		/// <summary>The member's game when it is the real <see cref="GameFlow"/>: its frame steps the session through the flow, whose swap makes the park the member's.</summary>
 		public GameFlow? Flow { get; set; }
+		/// <summary>[EXT:online-coop-figures] The figures of a member whose game is the test's (a flow's are its own): updated after the park's frame, as the game does.</summary>
+		public ParkPresence? Presence { get; set; }
 		/// <summary>A flow member's builds (<see cref="FlowBuild"/>): how many began, the frames the build of the given number (1 first) takes, how many were abandoned.</summary>
 		public int FlowBuilds { get; set; }
 		public Func<int, int> FlowSteps { get; set; } = _ => 1;
@@ -79,10 +81,12 @@ public partial class CoopJoinSessionTests
 				Link.Deliver();
 			if ( Flow != null )
 			{
-				// [EXT:online-coop-session] a join with a code (C2d-3): the game takes its answer here, before the session's step; then the lobby's link (C2d-3b)
+				// [EXT:online-coop-session] a join with a code (C2d-3): the game takes its answer here, before the session's step; then the lobby's link (C2d-3b), and after the
+				// session's step the co-builders' figures (C2d-4)
 				Flow.StepCoopJoin();
 				Flow.StepCoopLobby();
 				Flow.StepCoopSession();
+				Flow.StepCoopPresence();
 				if ( !ReferenceEquals( Flow.Level, Level ) )
 					(Level, Entities) = (Flow.Level, Entity.All);
 			}
@@ -94,6 +98,7 @@ public partial class CoopJoinSessionTests
 			Level.SimulationTimeScale = Holds ? 0f : GameFlow.SessionTimeScale( Level ) ?? 1f;
 			Time.Update( (float)seconds );
 			Level.AdvanceFrame( seconds );
+			(Flow?.Presence ?? Presence)?.Update( (float)seconds );
 		}
 
 		public ParkCommandResult Issue( ParkCommand command )

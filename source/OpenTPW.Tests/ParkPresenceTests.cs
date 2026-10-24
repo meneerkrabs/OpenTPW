@@ -7,7 +7,7 @@ using OpenTPW.Online.Chat;
 namespace OpenTPW.Tests;
 
 [TestClass]
-public class ParkPresenceTests
+public partial class ParkPresenceTests
 {
 	private sealed class Ground( int width, int height ) : IPresenceGround
 	{
@@ -28,6 +28,7 @@ public class ParkPresenceTests
 		public string? Requested;
 		public string WantedRoom => Requested ?? CurrentRoom;
 		public bool InSharedPark { get; set; }
+		public bool SharedRoomReady { get; set; }
 		public string? RefusedRoom { get; set; }
 		public int? ServerProtocol { get; set; } = ParkPresence.MovementProtocol;
 		public int ServerInfoRequests;

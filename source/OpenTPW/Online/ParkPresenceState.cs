@@ -10,6 +10,11 @@ public interface IPresenceGround
 	/// <summary>Cells down.</summary>
 	int Height { get; }
 	bool IsPassable( int x, int y );
+	/// <summary>
+	/// [EXT:online-coop-figures] Changes when a cell's type or flags change (in a shared park the host builds while the figures walk): a walk and the route search's areas
+	/// planned on an older ground are planned again (C2d-4). A visit's ground never changes.
+	/// </summary>
+	int Version => 0;
 }
 
 /// <summary>One player's figure in a visited park, at the place it is drawn (cell coordinates, 0.5 = a cell's centre).</summary>
@@ -107,13 +112,27 @@ public sealed class ParkPresenceState
 	/// answered without a search, by the ground's connected areas (<see cref="RouteSearch"/>).
 	/// </summary>
 	public const int RouteSearchLimit = 40000;
+	/// <summary>[EXT:online-coop-figures] A shared park's figure plans its walk to the view's centre again once the centre moved this far (cells) from the centre it last followed (C2d-4).</summary>
+	public const float ViewReplanCells = 1f;
+	/// <summary>[EXT:online-coop-figures] The shortest gap between two plans of that walk, seconds: a panning view does not search a route every frame.</summary>
+	public const double ViewReplanSeconds = 0.25;
+	/// <summary>[EXT:online-coop-figures] A view's centre this far (cells) from the figure moves it there at once (the view jumped: a locate, a minimap click).</summary>
+	public const float ViewJumpCells = 12f;
 
 	private readonly IPresenceGround ground;
 	private readonly List<PresenceAvatar> others = new();
 	private readonly HashSet<string> present = new( StringComparer.OrdinalIgnoreCase );
 	private readonly Queue<(float X, float Y)> route = new();
-	/// <summary>The route search's arrays and the ground's areas, made once for the park (a visit's ground does not change) and reused by every click.</summary>
+	/// <summary>The route search's arrays and the ground's areas, made for the ground as it is (<see cref="IPresenceGround.Version"/>) and reused by every click.</summary>
 	private RouteSearch? routeSearch;
+	/// <summary>The ground's version the route search and the walk were planned on.</summary>
+	private int plannedVersion;
+	/// <summary>Seconds since a walk was last planned again for a changed ground (<see cref="Advance"/>).</summary>
+	private float sinceGroundPlan = float.PositiveInfinity;
+	/// <summary>The view's centre the figure was last sent to (<see cref="FollowView"/>), clamped to the park; null before the first, and after a ride.</summary>
+	private (float X, float Y)? followed;
+	/// <summary>When the walk to the view's centre was last planned (<see cref="FollowView"/>).</summary>
+	private double lastFollow = double.NegativeInfinity;
 	private (float X, float Y) lastSent;
 	private bool sentOnce;
 	private float sinceSent = float.PositiveInfinity;
@@ -166,6 +185,8 @@ public sealed class ParkPresenceState
 			(Own.X, Own.Y) = ClampToPark( place.X, place.Y );
 		if ( !riding )
 			rideExit = null;
+		// [EXT:online-coop-figures] a shared park's figure that comes out of a ride goes back to its player's view
+		followed = null;
 		Own.Target = (Own.X, Own.Y);
 		Own.SinceMoved = float.PositiveInfinity;
 		Own.Moving = false;
@@ -218,6 +239,13 @@ public sealed class ParkPresenceState
 		var (goalX, goalY) = ClampToPark( x, y );
 		route.Clear();
 		arrived = false;
+		// [EXT:online-coop-figures] the areas a search keeps are the ground's as it was: a changed ground (a co-builder's edit) is labelled again
+		if ( ground.Version != plannedVersion )
+		{
+			routeSearch?.ForgetAreas();
+			plannedVersion = ground.Version;
+		}
+		sinceGroundPlan = 0f;
 		var start = ((int)MathF.Floor( Own.X ), (int)MathF.Floor( Own.Y ));
 		var goal = ((int)MathF.Floor( goalX ), (int)MathF.Floor( goalY ));
 		if ( !Passable( goal.Item1, goal.Item2 ) )
@@ -237,13 +265,23 @@ public sealed class ParkPresenceState
 		Own.Target = (goalX, goalY);
 	}
 
-	/// <summary>Moves the own figure to (<paramref name="x"/>, <paramref name="y"/>) at once.</summary>
+	/// <summary>
+	/// Moves the own figure to (<paramref name="x"/>, <paramref name="y"/>) at once; with <paramref name="passable"/>, onto the nearest cell a figure may stand on when that
+	/// cell is blocked (a shared park's view centred on water or a ride), and nowhere when none is near (<see cref="GoalSearchRadius"/>: the middle of a lake).
+	/// </summary>
 	// [BIN:TPW-EXE:0x4F7E20 teleport] the person stops walking (+0x39C = 0), takes animation state 3 and is set at the point (0x4FA930)
-	public void TeleportTo( float x, float y )
+	public void TeleportTo( float x, float y, bool passable = false )
 	{
 		if ( Riding )
 			return;
 		var (goalX, goalY) = ClampToPark( x, y );
+		var cell = ((int)MathF.Floor( goalX ), (int)MathF.Floor( goalY ));
+		if ( passable && !Passable( cell.Item1, cell.Item2 ) )
+		{
+			if ( NearestPassable( cell ) is not { } nearer )
+				return;
+			(goalX, goalY) = (nearer.Item1 + 0.5f, nearer.Item2 + 0.5f);
+		}
 		route.Clear();
 		Own.X = goalX;
 		Own.Y = goalY;
@@ -255,6 +293,37 @@ public sealed class ParkPresenceState
 	}
 
 	/// <summary>
+	/// [EXT:online-coop-figures] A shared park's figure follows its player's view (C2d-4): it walks to the view's centre (<paramref name="x"/>, <paramref name="y"/>, cells),
+	/// planning again once the centre moved <see cref="ViewReplanCells"/> from the centre it last followed and <see cref="ViewReplanSeconds"/> passed, and is moved there at once,
+	/// onto a cell it may stand on, when the centre is <see cref="ViewJumpCells"/> or more from the figure. A centre on a cell no figure stands on (water, a ride) is walked to
+	/// the nearest one, once. Nothing while the player rides; after the ride the figure follows the view again.
+	/// </summary>
+	/// <param name="time">Seconds of a monotonic clock.</param>
+	public void FollowView( float x, float y, double time )
+	{
+		if ( Riding || !float.IsFinite( x ) || !float.IsFinite( y ) )
+			return;
+		var goal = ClampToPark( x, y );
+		// a view that stays put (over water or a ride too, whose nearest free cell the figure went to) plans nothing more
+		if ( followed is { } last && Distance( last, goal ) < ViewReplanCells )
+			return;
+		if ( Distance( (Own.X, Own.Y), goal ) >= ViewJumpCells )
+		{
+			TeleportTo( goal.X, goal.Y, passable: true );
+			followed = goal;
+			lastFollow = time;
+			return;
+		}
+		if ( time - lastFollow < ViewReplanSeconds )
+			return;
+		followed = goal;
+		lastFollow = time;
+		WalkTo( goal.X, goal.Y );
+	}
+
+	private static float Distance( (float X, float Y) a, (float X, float Y) b ) => MathF.Sqrt( (a.X - b.X) * (a.X - b.X) + (a.Y - b.Y) * (a.Y - b.Y) );
+
+	/// <summary>
 	/// Walks the own figure on for <paramref name="delta"/> seconds and returns the relayed place to send now, or null. A place goes out when
 	/// <paramref name="announce"/> asks (the first in a room on each connection: the server answers it with where the others stand and relays
 	/// movement only to players that have moved), when the figure arrives or teleports, when a ride starts or ends, and every <see cref="SendInterval"/>
@@ -263,6 +332,11 @@ public sealed class ParkPresenceState
 	/// <param name="canSend">The session is in the park's room and connected; without it nothing is sent and pending places wait.</param>
 	public (float X, float Y)? Advance( float delta, bool canSend, bool announce )
 	{
+		// [EXT:online-coop-figures] a walk planned on an older ground goes round what was built since, planned again at most every ViewReplanSeconds (a co-builder
+		// laying a path changes the ground cell by cell)
+		sinceGroundPlan += Math.Max( 0f, delta );
+		if ( route.Count > 0 && ground.Version != plannedVersion && sinceGroundPlan >= ViewReplanSeconds )
+			WalkTo( Own.Target.X, Own.Target.Y );
 		var budget = WalkSpeed * Math.Max( 0f, delta );
 		while ( budget > 0f && route.TryPeek( out var next ) )
 		{
@@ -382,7 +456,7 @@ public sealed class ParkPresenceState
 	/// <summary>
 	/// The route search (A* with the octile distance) over flat arrays the size of the park, made once and reused: a search marks the cells it reaches
 	/// with its own number, so no array is cleared between clicks. The ground's connected areas are labelled on the first search, so a goal outside the
-	/// start's area is answered at once; the ground must not change while the search is kept.
+	/// start's area is answered at once; a changed ground needs <see cref="ForgetAreas"/> first.
 	/// </summary>
 	internal sealed class RouteSearch
 	{
@@ -406,6 +480,9 @@ public sealed class ParkPresenceState
 
 		/// <summary>The cells the last search expanded.</summary>
 		public int Expanded { get; private set; }
+
+		/// <summary>[EXT:online-coop-figures] The ground changed: its areas are labelled again on the next search (the arrays are kept).</summary>
+		public void ForgetAreas() => areas = null;
 
 		private bool Inside( int x, int y ) => (uint)x < (uint)width && (uint)y < (uint)height;
 

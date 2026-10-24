@@ -1,6 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { checkEvidence, parseArguments, redact, throwawayPlayer } from './coop-live.mjs';
+import { EventEmitter } from 'node:events';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import { PassThrough } from 'node:stream';
+import { checkEvidence, logTo, parseArguments, redact, throwawayPlayer } from './coop-live.mjs';
 
 // The live co-op acceptance's driver (tools/coop-live.mjs, docs/COOP.md "The live acceptance") without the games: its options, its throwaway players and their
 // redaction, and the checks of both games' evidence against each other.
@@ -75,33 +80,84 @@ for (const [what, change, check] of [
 	});
 }
 
-test('the recovery run allows a resync, and needs the session back, both links resumed and a second line after the restart', () => {
+test('the recovery run allows a resync, and needs the session back, both links resumed after the restart and a second line', () => {
 	const { host, guest } = passingPair();
-	const links = { states: [{ state: 'Open', at: 4 }, { state: 'Reconnecting', at: 15 }, { state: 'Open', at: 19 }], resumes: 1, chatReconnects: 1 };
+	const atRestart = { states: [{ state: 'Opening', at: 4 }, { state: 'Open', at: 4.1 }], resumes: 0, chatReconnects: 0 };
+	const links = { states: [...atRestart.states, { state: 'Reconnecting', at: 15 }, { state: 'Open', at: 19 }], resumes: 1, chatReconnects: 1 };
 	host.rebuild = { record: 21, cells: [[8, 2]] };
-	host.recovery = { session: host.session, links };
+	host.recovery = { session: host.session, linksAtRestart: atRestart, links };
 	guest.reapplied = { record: 21, lastRecord: 23, checksAtLine: 7, checksAfter: 9 };
-	guest.recovery = { links, resynced: true };
+	guest.recovery = { linksAtRestart: atRestart, links, resynced: true };
 	guest.sightings.push({ what: 'host-moved-again', name: HOST, drawnNames: [GUEST, HOST], drawnFigures: 2 });
 	guest.streams = 2;
 	guest.phases = ['guest following', 'guest resyncing', 'guest following', 'guest ended'];
 	const checks = checkEvidence(host, guest, 'recovery', 30);
 	assert.equal(checks.length, 14);
 	assert.deepEqual(failing(checks), []);
-	guest.recovery = { links: { ...links, chatReconnects: 0 } };
+	const reconnect = 'both games\' links resumed the session and their chats reconnected after the restart';
+	// a reconnection before the restart's barrier proves nothing of the restart
+	guest.recovery = { linksAtRestart: links, links };
+	assert.deepEqual(failing(checkEvidence(host, guest, 'recovery', 30)), [reconnect]);
+	// nor do counts that grew while the link never went down after the barrier
+	guest.recovery = { linksAtRestart: atRestart, links: { ...links, states: atRestart.states } };
+	assert.deepEqual(failing(checkEvidence(host, guest, 'recovery', 30)), [reconnect]);
+	guest.recovery = { linksAtRestart: atRestart, links: { ...links, chatReconnects: 0 } };
 	delete guest.reapplied;
 	assert.deepEqual(failing(checkEvidence(host, guest, 'recovery', 30)), [
-		'after the server\'s restart the guest followed again and the host\'s second line reached it',
-		'both games\' links resumed the session and their chats reconnected after the restart',
+		'after the server\'s restart the guest followed again and the host\'s second line reached it', reconnect,
 	]);
 });
 
-test('the endurance run needs its minutes of samples on both sides', () => {
-	const { host, guest } = passingPair();
-	host.endurance = Array.from({ length: 4 }, (_, index) => ({ at: 40 + index * 30 }));
-	guest.endurance = Array.from({ length: 4 }, (_, index) => ({ at: 35 + index * 30 }));
-	assert.deepEqual(failing(checkEvidence(host, guest, 'endurance', 2)), []);
-	assert.deepEqual(failing(checkEvidence(host, guest, 'endurance', 3)), ['the fastest speed was followed for 3 minutes']);
+test('the endurance run needs its whole minutes at the fastest speed, on both sides', () => {
+	const run = (minutes, rate = 240) => {
+		const { host, guest } = passingPair();
+		const count = minutes * 2;
+		const samples = (first, ticks) => Array.from({ length: count }, (_, index) => ({ at: first + index * 30, ticks: ticks + index * 30 * rate, speed: 'Fastest' }));
+		host.endurance = { started: 20, ended: 20 + minutes * 60, samples: samples(50, 1000) };
+		guest.endurance = samples(45, 900);
+		return { host, guest };
+	};
+	const named = minutes => `the fastest speed was followed for ${minutes} minutes`;
+	let pair = run(2);
+	assert.deepEqual(failing(checkEvidence(pair.host, pair.guest, 'endurance', 2)), []);
+	// a run a little short of its minutes
+	pair = run(2);
+	pair.host.endurance.ended -= 1;
+	assert.deepEqual(failing(checkEvidence(pair.host, pair.guest, 'endurance', 2)), [named(2)]);
+	// a park at the normal or the fast speed
+	pair = run(2, 120);
+	assert.deepEqual(failing(checkEvidence(pair.host, pair.guest, 'endurance', 2)), [named(2)]);
+	pair = run(2);
+	pair.host.endurance.samples[1].speed = 'Normal';
+	assert.deepEqual(failing(checkEvidence(pair.host, pair.guest, 'endurance', 2)), [named(2)]);
+	// samples missing on one side
+	pair = run(2);
+	pair.guest.endurance.splice(1);
+	assert.deepEqual(failing(checkEvidence(pair.host, pair.guest, 'endurance', 2)), [named(2)]);
+	pair = run(3);
+	assert.deepEqual(failing(checkEvidence(pair.host, pair.guest, 'endurance', 4)), [named(4)]);
+});
+
+test('a game\'s log keeps each pipe\'s lines whole, so a password split across chunks is still replaced, and its last line', async () => {
+	const folder = await mkdtemp(path.join(os.tmpdir(), 'coop-live-log-'));
+	try {
+		const child = Object.assign(new EventEmitter(), { stdout: new PassThrough(), stderr: new PassThrough() });
+		const file = path.join(folder, 'game.log');
+		const logged = logTo(child, file, ['hunter2-secret']);
+		child.stdout.write('login hunter2');
+		child.stderr.write('a warning\n');
+		child.stdout.write('-secret accepted\n');
+		child.stdout.write('the last line');
+		child.stdout.end();
+		child.stderr.end('no newline either');
+		await logged;
+		const lines = (await readFile(file, 'utf8')).split('\n');
+		assert.ok(lines.includes('login [redacted] accepted'), lines.join(' | '));
+		assert.ok(lines.includes('a warning') && lines.includes('the last line') && lines.includes('no newline either'), lines.join(' | '));
+		assert.ok(!lines.join('\n').includes('hunter2'));
+	} finally {
+		await rm(folder, { recursive: true, force: true });
+	}
 });
 
 test('the driver needs the game, the server and a fresh out directory, and runs native sides only', () => {

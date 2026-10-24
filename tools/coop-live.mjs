@@ -110,24 +110,41 @@ async function freePort() {
 	return port;
 }
 
-/** A child's output into a log file, secrets replaced, line by line as it comes. */
-function logTo(child, file, secrets) {
+/**
+ * A child's output into a log file, secrets replaced: each pipe's lines whole (a secret split over two chunks of one pipe is still found), written as they end, and a pipe's
+ * last line once it ends. The file is finished when both pipes have ended; the returned promise resolves then.
+ */
+export function logTo(child, file, secrets) {
 	const stream = createWriteStream(file, { flags: 'a' });
-	let pending = '';
-	const take = chunk => {
-		pending += chunk;
-		const lines = pending.split('\n');
-		pending = lines.pop();
-		for (const line of lines)
-			stream.write(redact(line, secrets) + '\n');
-	};
-	child.stdout?.on('data', take);
-	child.stderr?.on('data', take);
-	child.once('exit', () => {
-		if (pending)
-			stream.write(redact(pending, secrets) + '\n');
+	const pipes = [child.stdout, child.stderr].filter(Boolean);
+	let open = pipes.length;
+	const finished = new Promise(resolve => stream.once('finish', resolve));
+	for (const pipe of pipes) {
+		let pending = '';
+		let ended = false;
+		pipe.on('data', chunk => {
+			pending += chunk;
+			const lines = pending.split('\n');
+			pending = lines.pop();
+			for (const line of lines)
+				stream.write(redact(line, secrets) + '\n');
+		});
+		const end = () => {
+			if (ended)
+				return;
+			ended = true;
+			if (pending)
+				stream.write(redact(pending, secrets) + '\n');
+			pending = '';
+			if (--open === 0)
+				stream.end();
+		};
+		pipe.once('end', end);
+		pipe.once('close', end);
+	}
+	if (open === 0)
 		stream.end();
-	});
+	return finished;
 }
 
 /** Waits for `child` to exit, at most `milliseconds`; true when it did. */
@@ -230,7 +247,7 @@ function startGame(role, options, folders, evidence, player, origin, code, secre
 	const child = spawn(process.env.DOTNET ?? 'dotnet', args, { cwd: folders.root, env, stdio: ['ignore', 'pipe', 'pipe'] });
 	child.role = role;
 	child.once('error', error => child.failedToStart = error.message);
-	logTo(child, path.join(options.out, `${role}.log`), secrets);
+	child.logged = logTo(child, path.join(options.out, `${role}.log`), secrets);
 	return child;
 }
 
@@ -294,8 +311,9 @@ export function checkEvidence(host, guest, scenario, minutes) {
 		{ rebuild: host?.rebuild, reapplied: guest?.reapplied, recovery: guest?.recovery });
 		check('the session came back with both players connected', (host?.recovery?.session?.members ?? []).length === 2
 			&& host.recovery.session.members.every(member => member.connected), host?.recovery?.session);
-		check('both games\' links resumed the session and their chats reconnected after the restart', host?.recovery?.links?.resumes >= 1 && guest?.recovery?.links?.resumes >= 1
-			&& host.recovery.links.chatReconnects >= 1 && guest.recovery.links.chatReconnects >= 1, { host: host?.recovery?.links, guest: guest?.recovery?.links });
+		check('both games\' links resumed the session and their chats reconnected after the restart', [host, guest].every(evidence => reconnectedAfterRestart(evidence?.recovery)),
+			{ host: host?.recovery && { atRestart: host.recovery.linksAtRestart, after: host.recovery.links },
+				guest: guest?.recovery && { atRestart: guest.recovery.linksAtRestart, after: guest.recovery.links } });
 		check('the guest saw the host\'s figure move after the restart', sighting(guest, 'host-moved-again', host?.player), guest?.sightings);
 	} else {
 		check('the session ran with no resync and no desync', guest?.streams === 1 && guest?.stream?.desyncs === 0 && guest?.stream?.failedJoins === 0
@@ -304,12 +322,35 @@ export function checkEvidence(host, guest, scenario, minutes) {
 			&& !(evidence.links.states ?? []).some(item => item.state === 'Reconnecting') && evidence.links.chatReconnects === 0), { host: host?.links, guest: guest?.links });
 	}
 	if (scenario === 'endurance') {
-		const progress = host?.endurance ?? [];
-		const ran = progress.length ? progress.at(-1).at - progress[0].at : 0;
-		check(`the fastest speed was followed for ${minutes} minutes`, progress.length >= Math.floor(minutes * 2) && ran >= minutes * 60 - 45
-			&& (guest?.endurance ?? []).length >= Math.floor(minutes * 2) - 1, { hostSamples: progress.length, guestSamples: guest?.endurance?.length, seconds: ran });
+		const endurance = host?.endurance;
+		const samples = endurance?.samples ?? [];
+		const seconds = Number.isFinite(endurance?.ended - endurance?.started) ? endurance.ended - endurance.started : 0;
+		const rates = tickRates(samples);
+		const guestSamples = guest?.endurance ?? [];
+		check(`the fastest speed was followed for ${minutes} minutes`, seconds >= minutes * 60 && samples.length >= Math.floor(minutes * 2)
+			&& samples.every(sample => sample.speed === 'Fastest') && rates.length > 0 && rates.every(rate => rate >= FASTEST_TICKS_PER_SECOND)
+			&& guestSamples.length >= Math.floor(minutes * 2) - 1 && tickRates(guestSamples).every(rate => rate >= FASTEST_TICKS_PER_SECOND),
+		{ seconds, hostSamples: samples.length, guestSamples: guestSamples.length, slowestHostRate: Math.min(...rates), slowestGuestRate: Math.min(...tickRates(guestSamples)) });
 	}
 	return checks;
+}
+
+/** The fewest park ticks a second of wall time the endurance run's samples may show: three times the normal speed's 60, so only the fastest (240) passes. */
+export const FASTEST_TICKS_PER_SECOND = 180;
+
+/** The park's ticks a second of wall time between consecutive samples. */
+function tickRates(samples) {
+	return samples.slice(1).map((sample, index) => (sample.ticks - samples[index].ticks) / (sample.at - samples[index].at));
+}
+
+/** Whether a game's link resumed its session and its chat reconnected after the restart's barrier: both counts grew, and its link went from reconnecting to open after it. */
+function reconnectedAfterRestart(recovery) {
+	const before = recovery?.linksAtRestart, after = recovery?.links;
+	if (!before || !after || !(after.resumes > before.resumes) || !(after.chatReconnects > before.chatReconnects))
+		return false;
+	const states = (after.states ?? []).slice((before.states ?? []).length).map(item => item.state);
+	const lost = states.indexOf('Reconnecting');
+	return lost >= 0 && states.indexOf('Open', lost) > lost;
 }
 
 async function run(options) {
@@ -340,6 +381,7 @@ async function run(options) {
 		const deadline = Date.now() + options.timeoutMinutes * 60000;
 		games.host = startGame('host', options, folders.host, evidence, players.host, server.origin, null, secrets);
 		let restartedAt = null;
+		let guestStarted = null;
 		for (;;) {
 			const host = await readStatus(evidence, 'host');
 			const guest = await readStatus(evidence, 'guest');
@@ -347,6 +389,7 @@ async function run(options) {
 			if (!games.guest && typeof host?.code === 'string' && host.code.length > 0) {
 				record.code = host.code;
 				games.guest = startGame('guest', options, folders.guest, evidence, players.guest, server.origin, host.code, secrets);
+				guestStarted = Date.now();
 			}
 			// the recovery scenario: the server crashes and starts again once both games stand ready for it
 			if (options.scenario === 'recovery' && restartedAt === null && host?.readyForRestart === true && guest?.readyForRestart === true) {
@@ -364,8 +407,11 @@ async function run(options) {
 			}
 			if (ends.host === 'completed' && ends.guest === 'completed')
 				break;
+			// a game that never reaches its first frames fails at its start, not at the run's deadline
 			if (!games.guest && Date.now() - Date.parse(record.started) > START_SECONDS * 1000 && !host?.code)
 				throw new Error(`The host published no code within ${START_SECONDS} s (at ${host?.step ?? 'its start'})`);
+			if (guestStarted !== null && !guest && Date.now() - guestStarted > START_SECONDS * 1000)
+				throw new Error(`The guest published no status within ${START_SECONDS} s of its start`);
 			if (Date.now() > deadline) {
 				await writeStatus(evidence, { restarted: restartedAt, abort: `the run's deadline of ${options.timeoutMinutes} minutes` });
 				throw new Error(`The run did not end within ${options.timeoutMinutes} minutes (host at ${host?.step}, guest at ${guest?.step})`);
@@ -391,6 +437,8 @@ async function run(options) {
 				cleanup.push(`the ${role} (process ${child.pid}) had not exited`);
 		if (server && !await server.stop())
 			cleanup.push(`the server (process ${server.child?.pid}) had not exited`);
+		// the games' last lines are in their logs before the run's record is written
+		await Promise.race([Promise.all(Object.values(games).map(child => child.logged)), sleep(5000)]);
 		if (cleanup.length) {
 			record.cleanup = cleanup;
 			if (record.state === 'passed') {

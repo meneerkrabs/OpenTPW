@@ -366,3 +366,33 @@ test('the forwarded sockets are bounded, and closing the local server ends the o
 		await rm(root, { recursive: true, force: true });
 	}
 });
+
+test('an upstream answer that refuses an upgrade is bounded in time and size, and one cut off is a bad gateway', async () => {
+	const { createServer } = await import('node:http');
+	const upstream = createServer((request, response) => response.end('plain'));
+	upstream.on('upgrade', (request, socket) => {
+		socket.on('end', () => socket.end());
+		if (request.url.startsWith('/api/stalled'))
+			socket.write('HTTP/1.1 403 Forbidden\r\nContent-Length: 100\r\n\r\npartial');
+		else if (request.url.startsWith('/api/long'))
+			socket.end(`HTTP/1.1 403 Forbidden\r\nContent-Length: 4096\r\n\r\n${'x'.repeat(4096)}`);
+		else if (request.url.startsWith('/api/cut'))
+			socket.write('HTTP/1.1 403 Forbidden\r\nContent-Length: 100\r\n\r\npartial', () => socket.destroy());
+	});
+	await new Promise(resolve => upstream.listen(0, '127.0.0.1', resolve));
+	const root = await mkdtemp(path.join(os.tmpdir(), 'web-perf-upgrade-'));
+	const harness = await startServer(root, root, `http://127.0.0.1:${upstream.address().port}`, { answerMs: 300, refusalBytes: 1024, sockets: 1 });
+	try {
+		const started = Date.now();
+		assert.equal((await upgradeThrough(harness.origin, '/api/stalled')).status, 504, 'an answer that never ends times out');
+		assert.ok(Date.now() - started < 5000);
+		// each answer freed its place (one at a time here)
+		assert.equal((await upgradeThrough(harness.origin, '/api/long')).status, 502, 'a refusal past the size limit');
+		assert.equal((await upgradeThrough(harness.origin, '/api/cut')).status, 502, 'a refusal cut off before its end');
+		assert.deepEqual(harness.log.filter(item => item.upgrade).map(item => item.status), [504, 502, 502]);
+	} finally {
+		await harness.close();
+		await new Promise(resolve => upstream.close(resolve));
+		await rm(root, { recursive: true, force: true });
+	}
+});

@@ -209,11 +209,14 @@ internal sealed partial class CoopLiveTest : IDisposable
 		return (T)element;
 	}
 
-	/// <summary>Whether the top screen <paramref name="screen"/> shows <paramref name="id"/>, visible and enabled.</summary>
-	private bool Usable( string screen, string id ) => Stack?.Top is { } top && top.Name == screen && top.Find( id ) is { Visible: true, Enabled: true };
+	/// <summary>Whether the top screen <paramref name="screen"/> shows <paramref name="id"/>, of its type, visible and enabled.</summary>
+	private bool Usable<T>( string screen, string id ) where T : UiElement => Stack?.Top is { } top && top.Name == screen && top.Find( id ) is T { Visible: true, Enabled: true };
 
-	/// <summary>Activates a button or a menu line of the top screen, as its click or its key does.</summary>
-	private void Press( string screen, string id ) => Element<UiElement>( screen, id ).Activate();
+	/// <summary>Activates a button of the top screen, as its click or its key does.</summary>
+	private void Press( string screen, string id ) => Element<UiButton>( screen, id ).Activate();
+
+	/// <summary>Activates a line of the top screen's menu, as its click or its key does.</summary>
+	private void Choose( string screen, string id ) => Element<UiMenuItem>( screen, id ).Activate();
 
 	/// <summary>Types <paramref name="text"/> into a field of the top screen in place of what it holds, as the keyboard does.</summary>
 	private void TypeInto( string screen, string id, string text )

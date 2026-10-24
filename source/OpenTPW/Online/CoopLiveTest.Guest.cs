@@ -36,14 +36,14 @@ internal sealed partial class CoopLiveTest
 		const string join = OnlineScreens.JoinSharedParkScreenName;
 		Give( UiInput.Key( UiKeys.Back ) );
 		yield return Wait( "Escape opens the lobby menu", () => Top( "lobbyMenu" ), 10 );
-		Press( "lobbyMenu", "buildTogether" );
+		Choose( "lobbyMenu", "buildTogether" );
 		yield return Wait( "the Build Together hub", () => Top( OnlineScreens.BuildTogetherLobbyScreenName ), 10 );
 		Press( OnlineScreens.BuildTogetherLobbyScreenName, "joinWithCode" );
 		yield return Wait( "the join screen", () => Top( join ), 10 );
 		foreach ( var step in LogIn( join ) )
 			yield return step;
 		TypeInto( join, "code", code! );
-		yield return Wait( "Join is enabled", () => Usable( join, "join" ), 10 );
+		yield return Wait( "Join is enabled", () => Usable<UiButton>( join, "join" ), 10 );
 		Press( join, "join" );
 
 		// the host's park is fetched and built, and replaces the lobby; it follows the host's stream
@@ -155,6 +155,8 @@ internal sealed partial class CoopLiveTest
 	/// </summary>
 	private IEnumerable<CoopLiveWait> GuestRecovery( string hostName, List<(int X, int Y)> avoid )
 	{
+		// the links as they stand at the barrier: the restart's resume and reconnect come after it
+		var atRestart = LinkEvidence();
 		Publish( "readyForRestart", true );
 		var stream = TheSession.GuestStream;
 		var checks = stream?.Checks ?? 0;
@@ -176,7 +178,7 @@ internal sealed partial class CoopLiveTest
 		Keep( "reapplied", applied );
 		Publish( "sawRebuild", true );
 		Keep( "recovery", new JsonObject { ["session"] = SessionEvidence(), ["stream"] = StreamEvidence(), ["resynced"] = !ReferenceEquals( TheSession.GuestStream, stream ),
-			["links"] = LinkEvidence() } );
+			["linksAtRestart"] = atRestart, ["links"] = LinkEvidence() } );
 	}
 
 	/// <summary>
@@ -257,7 +259,7 @@ internal sealed partial class CoopLiveTest
 		// a guest's park command is refused by the session's rights, and every refusal is counted (Level.SessionRefusals)
 		var refusals = ThePark.SessionRefusals;
 		Give( new UiInput( VisitPresenceSmoke.RowPoint( TheHud, context, hostName )!.Value, false, false, false, true, UiKeys.None ) );
-		yield return Wait( "the right click opens the host's name popup", () => InputGiven && Usable( ChatPanel.PopupScreenName, "popupGoto" ), 10 );
+		yield return Wait( "the right click opens the host's name popup", () => InputGiven && Usable<UiButton>( ChatPanel.PopupScreenName, "popupGoto" ), 10 );
 		Give( UiInput.Click( Element<UiButton>( ChatPanel.PopupScreenName, "popupGoto" ).ScreenRect( context.Canvas ).Center ) );
 		yield return Wait( "Go to moves the view to the host's figure", () => InputGiven && !Top( ChatPanel.PopupScreenName ) && Figure( hostName ) is { } there
 			&& Near( there, ViewCentre() ), 10 );

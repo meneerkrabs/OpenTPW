@@ -331,10 +331,12 @@ async function run(options) {
 		for (const page of pages)
 			await page.step();
 		if (proxy) {
-			// both pages' sockets were upgrades the proxy forwarded and the server took
+			// each page's co-op socket and chat socket were upgrades the proxy forwarded, the server took, and that carried bytes both ways
 			record.proxy.upgrades = proxy.log.filter(entry => entry.upgrade);
-			compare(record.checks, 'both pages\' sockets went through the proxy to the server', true,
-				record.proxy.upgrades.filter(entry => entry.status === 101 && entry.bytesIn > 0 && entry.bytesOut > 0).length >= 2);
+			const carried = route => record.proxy.upgrades.filter(entry => entry.path === route && entry.status === 101 && entry.bytesIn > 0 && entry.bytesOut > 0).length;
+			record.proxy.carried = { coop: carried('/api/v1/coop'), chat: carried('/api/v1/chat') };
+			compare(record.checks, 'both pages\' co-op and chat sockets went through the proxy to the server', [true, true],
+				[record.proxy.carried.coop >= 2, record.proxy.carried.chat >= 2]);
 		}
 		const failed = record.checks.filter(check => !check.passed);
 		if (failed.length)

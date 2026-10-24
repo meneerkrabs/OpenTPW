@@ -1046,8 +1046,9 @@ and the server once. Then `tools/coop-live.mjs` runs:
 Each game runs a script of steps (`CoopLiveTest`), each waiting for a condition with a deadline of wall
 time. A failed step ends the run with its evidence, and the other game and the driver stop at once.
 
-- **Screens.** A game acts on the top screen only. It finds an element by its id, of its type, visible and
-  enabled. It activates a button and types into a field as the screen's own input does.
+- **Screens.** A game acts on the top screen only. It finds an element by its id, of its type (a button,
+  a menu line, a field, a label), visible and enabled. It activates a button or a menu line and types into
+  a field as the screen's own input does.
 - **Input.** Escape, Enter, the chat line, F4 and the park's clicks go through the game's input.
 - **Barriers.** The games and the driver meet at barriers: each publishes its status in the shared
   evidence folder and waits on the others'. The chat is under test, not the control channel.
@@ -1091,28 +1092,32 @@ The scenarios:
 
 - **baseline**: the steps above, with no resync, no desync and no lost link.
 - **recovery** (`--scenario recovery`): after the first line, the driver kills the server and starts it
-  again on the same port and data three seconds later. Both games' links resume the session and their
-  chats reconnect. The guest follows again (a resync is allowed here). The host's view jumps again, which
-  the guest sees, and a second line reaches the guest's park, with checkpoints after it.
+  again on the same port and data three seconds later. After that barrier both games' links go from
+  reconnecting to open with a resume of the session, and both chats reconnect: the counts at the barrier
+  must grow. The guest follows again (a resync is allowed here). The host's view jumps again, which the
+  guest sees, and a second line reaches the guest's park, with checkpoints after it.
 - **endurance** (`--scenario endurance --minutes M`): after the chat, the host runs the fastest speed (the
-  HUD's `>>>`) for M minutes of wall time, sampled every half minute. The guest follows with no resync and
-  no desync, comparing a checkpoint at least every two seconds. Then the speed goes back to normal and the
-  rest of the steps follow.
+  HUD's `>>>`) for M whole minutes of wall time, from setting it to setting the normal speed back. Every
+  half minute both games sample the park's ticks; the host also checks that the speed is still the
+  fastest. Between samples both parks must run at least 180 ticks a second, three times the normal 60,
+  which only the fastest speed (240) reaches. The guest follows with no resync and no desync, comparing a
+  checkpoint at least every two seconds. Then the rest of the steps follow.
 
 **The pages' way in.** The pages (C2d-5b) open through the drivers' own local server in front of the
 real one (`tools/web-perf/lib.mjs`). It serves the page and the game folder (`/game/`) and forwards
-`/api/`, including the sockets' upgrades: at most 16 at a time, the server's answer within 10 seconds, and
-a half-closed socket closed after 5. The browser workflow also runs the link check through it
-(`tools/web-coop-link.mjs --proxy`): both pages' co-op and chat sockets go through it. The page's policy
-lets them: its `connect-src` names the server's own address, which the forwarded requests carry, and
-`'self'` covers the page's.
+`/api/`, including the sockets' upgrades: at most 16 at a time, the server's whole answer within 10
+seconds (an answer that refuses the upgrade at most 64 KiB, passed back as it is), and a half-closed socket
+closed after 5. The browser workflow also runs the link check through it (`tools/web-coop-link.mjs
+--proxy`): each page's co-op socket and chat socket go through it, carrying bytes both ways. The page's
+policy lets them: its `connect-src` names the server's own address, which the forwarded requests carry,
+and `'self'` covers the page's.
 
 Results (Apple M5, macOS 26, Release, native host and native guest):
 
 | Scenario | Checks | Wall time | Notes |
 |---|---|---|---|
-| baseline | 12 of 12 | 18 s | the guest followed 3.6 s after Join (a 104 KiB capture) |
-| recovery | 14 of 14 | 28 s | the links back 3.3 s (host) and 7.4 s (guest) after the restart; no resync |
+| baseline | 12 of 12 | 17 s | the guest followed 3.3 s after Join (a 104 KiB capture) |
+| recovery | 14 of 14 | 27 s | both links back 3.3 s after the restart; no resync |
 | endurance, 30 minutes | ENDURANCE | ENDURANCE | ENDURANCE |
 
 No CI job runs it: it needs the game's data. A run's `run.json` keeps every check, both games' evidence

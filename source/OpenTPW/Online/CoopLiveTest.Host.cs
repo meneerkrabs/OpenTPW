@@ -36,7 +36,7 @@ internal sealed partial class CoopLiveTest
 		const string screen = OnlineScreens.BuildTogetherScreenName;
 		Give( UiInput.Key( UiKeys.Back ) );
 		yield return Wait( "Escape opens the pause menu", () => Top( ParkHud.PauseMenuScreen ), 10 );
-		Press( ParkHud.PauseMenuScreen, ParkHud.BuildTogetherId );
+		Choose( ParkHud.PauseMenuScreen, ParkHud.BuildTogetherId );
 		yield return Wait( "the Build Together screen", () => Top( screen ), 10 );
 		foreach ( var step in LogIn( screen ) )
 			yield return step;
@@ -44,12 +44,12 @@ internal sealed partial class CoopLiveTest
 		// the shared park's choices: a title of its own, two players (the button steps 4 to 2), not on the open list; then Share
 		TypeInto( screen, "parkTitle", SharedTitle );
 		Press( screen, "players" );
-		yield return Wait( "Share is enabled", () => Usable( screen, "share" ), 10 );
+		yield return Wait( "Share is enabled", () => Usable<UiButton>( screen, "share" ), 10 );
 		Press( screen, "share" );
 		yield return Wait( "the park is hosted", () => flow.Sharing is { Stage: CoopShareStage.Hosting, State: not null }, 120 );
 		var state = flow.Sharing!.State!;
 		Require( state.Title == SharedTitle && state.MaximumPlayers == 2 && !state.Listed && state.Members.Count == 1, "the session has the choices made" );
-		yield return Wait( "the screen shows the session's code", () => Usable( screen, "code" ) && LabelText( screen, "code" ).Contains( state.Code, StringComparison.Ordinal ), 10 );
+		yield return Wait( "the screen shows the session's code", () => Usable<UiLabel>( screen, "code" ) && LabelText( screen, "code" ).Contains( state.Code, StringComparison.Ordinal ), 10 );
 		Keep( "session", SessionEvidence() );
 		Publish( "player", playerName );
 		Publish( "session", state.Id );
@@ -58,7 +58,7 @@ internal sealed partial class CoopLiveTest
 		// back to the running park (the screen's Back, then Resume Game); the driver starts the guest with the code
 		Press( screen, "back" );
 		yield return Wait( "the pause menu again", () => Top( ParkHud.PauseMenuScreen ), 10 );
-		Press( ParkHud.PauseMenuScreen, nameof( UIStrings.ResumeGame ) );
+		Choose( ParkHud.PauseMenuScreen, nameof( UIStrings.ResumeGame ) );
 		yield return Wait( "the park again", () => TheHud.Stack.Screens.Count == 1 && !TheHud.Paused, 10 );
 		yield return Wait( "the guest in the session", () => flow.Sharing?.State?.Members.Count == 2, 900 );
 		var guestName = flow.Sharing!.State!.Members.Single( member => member.Id != flow.Sharing.State.Host ).Name;
@@ -124,8 +124,8 @@ internal sealed partial class CoopLiveTest
 		Keep( "session", SessionEvidence() );
 		Give( UiInput.Key( UiKeys.Back ) );
 		yield return Wait( "Escape opens the pause menu", () => Top( ParkHud.PauseMenuScreen ), 10 );
-		Press( ParkHud.PauseMenuScreen, ParkHud.BuildTogetherId );
-		yield return Wait( "the Build Together screen of the running session", () => Usable( screen, "endSharing" ) && Usable( screen, "member0" ) && Usable( screen, "member1" ), 10 );
+		Choose( ParkHud.PauseMenuScreen, ParkHud.BuildTogetherId );
+		yield return Wait( "the Build Together screen of the running session", () => Usable<UiButton>( screen, "endSharing" ) && Usable<UiLabel>( screen, "member0" ) && Usable<UiLabel>( screen, "member1" ), 10 );
 		Require( LabelText( screen, "member1" ).Contains( guestName, StringComparison.Ordinal ) || LabelText( screen, "member0" ).Contains( guestName, StringComparison.Ordinal ),
 			"the screen lists the guest" );
 		Press( screen, "endSharing" );
@@ -136,7 +136,7 @@ internal sealed partial class CoopLiveTest
 		// the park is the host's again: it runs on alone
 		Press( screen, "back" );
 		yield return Wait( "the pause menu again", () => Top( ParkHud.PauseMenuScreen ), 10 );
-		Press( ParkHud.PauseMenuScreen, nameof( UIStrings.ResumeGame ) );
+		Choose( ParkHud.PauseMenuScreen, nameof( UIStrings.ResumeGame ) );
 		yield return Wait( "the park again", () => TheHud.Stack.Screens.Count == 1 && !TheHud.Paused, 10 );
 		var ticks = level.TickCount;
 		yield return Wait( "the park runs on alone", () => level.TickCount > ticks + 60, 30 );
@@ -149,6 +149,8 @@ internal sealed partial class CoopLiveTest
 	/// </summary>
 	private IEnumerable<CoopLiveWait> HostRecovery( string guestName, List<(int X, int Y)> avoid )
 	{
+		// the links as they stand at the barrier: the restart's resume and reconnect come after it
+		var atRestart = LinkEvidence();
 		Publish( "readyForRestart", true );
 		yield return Wait( "the driver's restart of the server", () => StatusOf( DriverRole, "restarted" ) is JsonValue, 300 );
 		yield return Wait( "the session back on the host's link", () => flow.Online.Coop.Session is { } back && back.Members.Count == 2 && back.Members.All( member => member.Connected ), 300 );
@@ -166,31 +168,39 @@ internal sealed partial class CoopLiveTest
 		Keep( "rebuild", again.Evidence );
 		Publish( "rebuilt", again.Evidence );
 		yield return Wait( "the guest's park has the second line", () => OtherSays( "sawRebuild" ), 180 );
-		Keep( "recovery", new JsonObject { ["session"] = SessionEvidence(), ["stream"] = StreamEvidence(), ["links"] = LinkEvidence() } );
+		Keep( "recovery", new JsonObject { ["session"] = SessionEvidence(), ["stream"] = StreamEvidence(), ["linksAtRestart"] = atRestart, ["links"] = LinkEvidence() } );
 	}
 
 	/// <summary>
-	/// The endurance scenario's middle (docs/COOP.md, "The live acceptance"): the HUD's fastest speed for the run's minutes of wall time while the guest follows, with progress
-	/// every half minute; then the normal speed again.
+	/// The endurance scenario's middle (docs/COOP.md, "The live acceptance"): the HUD's fastest speed (its <c>&gt;&gt;&gt;</c>) for the run's minutes of wall time while the guest
+	/// follows, the speed and the stream sampled every half minute; then the normal speed again. The evidence keeps when the fastest speed was set and when the normal speed came back.
 	/// </summary>
 	private IEnumerable<CoopLiveWait> HostEndurance()
 	{
 		yield return Wait( "the HUD alone", () => Top( "hud" ) && TheHud.Stack.Screens.Count == 1, 30 );
 		Press( "hud", $"speed{GameSpeed.Fastest}" );
-		var until = Now + enduranceMinutes * 60;
-		var progress = new JsonArray();
+		Require( TheHud.Status.Speed == GameSpeed.Fastest, $"the HUD's fastest speed is the park's (it is {TheHud.Status.Speed})" );
+		var started = Now;
+		var until = started + enduranceMinutes * 60;
+		var samples = new JsonArray();
+		var endurance = new JsonObject { ["started"] = Math.Round( started, 3 ), ["samples"] = samples };
 		Publish( "enduranceStarted", true );
 		while ( Now < until )
 		{
 			yield return Pause( "the fastest speed", Math.Min( 30, until - Now ) );
+			Require( TheHud.Status.Speed == GameSpeed.Fastest, $"the park stays at the fastest speed (it is {TheHud.Status.Speed})" );
 			var sample = StreamEvidence();
 			sample["at"] = Math.Round( Now, 3 );
-			progress.Add( sample );
-			Keep( "endurance", progress );
+			sample["speed"] = TheHud.Status.Speed.ToString();
+			samples.Add( sample );
+			Keep( "endurance", endurance );
 			Publish( "enduranceProgress", sample );
 		}
 		yield return Wait( "the HUD alone", () => Top( "hud" ) && TheHud.Stack.Screens.Count == 1, 30 );
 		Press( "hud", $"speed{GameSpeed.Normal}" );
+		Require( TheHud.Status.Speed == GameSpeed.Normal, $"the HUD's normal speed is the park's (it is {TheHud.Status.Speed})" );
+		endurance["ended"] = Math.Round( Now, 3 );
+		Keep( "endurance", endurance );
 		Publish( "enduranceDone", true );
 		yield return Wait( "the guest's endurance check", () => OtherSays( "enduranceChecked" ), 120 );
 	}

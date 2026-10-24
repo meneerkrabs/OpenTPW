@@ -140,6 +140,7 @@ public class ParkCameraMode : CameraMode
 			var clamped = Math.Clamp( Height, MinimumZoom, MaximumZoom );
 			if ( clamped != Height ) { Height = clamped; UpdateTransform(); }
 		}
+		// with the pointer outside the window the camera takes no input, its edge band included (the browser reports a page with no pointer over its canvas there, at (-1, -1): EXT:browser-no-pointer)
 		var inside = input.LogicalSize.X > 0 && input.LogicalSize.Y > 0
 			&& input.MousePosition.X >= 0 && input.MousePosition.Y >= 0
 			&& input.MousePosition.X < input.LogicalSize.X && input.MousePosition.Y < input.LogicalSize.Y;

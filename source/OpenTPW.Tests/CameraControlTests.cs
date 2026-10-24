@@ -27,6 +27,32 @@ public class CameraControlTests
 		Assert.AreEqual( 0, (edge.Target + opposite.Target).Length, 0.0001f );
 	}
 
+	/// <summary>
+	/// No pointer over the window, (-1, -1) as the browser reports it (EXT:browser-no-pointer), never pushes the view, not even over a UI that leaves the
+	/// edge band to the camera; a pointer in the band (the outer 1.5 % of each side), the top-left pixel included, still does.
+	/// </summary>
+	[TestMethod]
+	public void NoPointerNeverPushesButAPointerInTheEdgeBandDoes()
+	{
+		var none = Camera();
+		for ( var frame = 0; frame < 30; frame++ )
+		{
+			none.Update( Frame( -1, -1 ), Options() );
+			none.Update( Frame( -1, -1 ) with { CaptureMouse = true, EdgeScrollOverUi = true }, Options() );
+		}
+		Assert.AreEqual( Vector3.Zero, none.Target );
+		foreach ( var (x, y) in new[] { (0f, 0f), (0f, 300f), (14f, 300f), (500f, 0f), (500f, 8f), (986f, 300f), (500f, 592f), (999f, 599f) } )
+		{
+			var pushed = Camera(); pushed.Update( Frame( x, y ), Options() );
+			Assert.AreEqual( ParkCameraMode.PanSpeed( ParkCameraMode.HomeHeight ) * 0.1f, pushed.Target.Length, 0.0001f, $"({x}, {y}) lies in the edge band" );
+		}
+		foreach ( var (x, y) in new[] { (16f, 300f), (500f, 10f), (984f, 300f), (500f, 590f) } )
+		{
+			var still = Camera(); still.Update( Frame( x, y ), Options() );
+			Assert.AreEqual( Vector3.Zero, still.Target, $"({x}, {y}) lies inside the band" );
+		}
+	}
+
 	[TestMethod]
 	public void AUiThatLeavesTheEdgeBandToTheCameraStillScrollsAtTheEdge()
 	{

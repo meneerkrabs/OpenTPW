@@ -99,6 +99,48 @@ public class CanvasInputSnapshotTests
 		Assert.AreEqual( -1f, snapshot.MousePosition.Y );
 	}
 
+	/// <summary>
+	/// EXT:browser-no-pointer: until the page's first pointer event the pointer is outside the window, as after a leave, and the park view stays where it
+	/// is; a pointer in the edge band, the top-left pixel included, still scrolls it. The snapshot used to start at (0, 0), the top-left pixel, so a page
+	/// that never saw the pointer scrolled the park to its top-left corner.
+	/// </summary>
+	[TestMethod]
+	public void APageHasNoPointerUntilItsFirstPointerEventAndAfterALeave()
+	{
+		var snapshot = new CanvasSnapshot();
+		Assert.AreEqual( CanvasSnapshot.NoPointer, snapshot.MousePosition, "no pointer event yet" );
+		Assert.AreEqual( new System.Numerics.Vector2( -1, -1 ), CanvasSnapshot.NoPointer, "the page's own report of a pointer that left the canvas (m -1 -1)" );
+		var (extent, initial) = (ParkCameraMode.TargetExtent, ParkCameraMode.InitialTarget);
+		try
+		{
+			ParkCameraMode.TargetExtent = 32;
+			ParkCameraMode.InitialTarget = Vector3.Zero;
+			var camera = new ParkCameraMode();
+			var options = new GameOptions { Scroll = ScrollMode.Pushscroll, WideZoom = false };
+			// one frame as the page delivers it: the frame's events, then the park camera reads the snapshot's pointer in a 1280 x 800 canvas
+			float Scrolled( string events )
+			{
+				snapshot.Clear();
+				snapshot.Apply( events );
+				var before = camera.Target;
+				camera.Update( new CameraControlInput { HasFocus = true, LogicalSize = new Point2( 1280, 800 ),
+					MousePosition = new Vector2( snapshot.MousePosition.X, snapshot.MousePosition.Y ), DeltaSeconds = 0.1f }, options );
+				return (camera.Target - before).Length;
+			}
+			Assert.AreEqual( 0f, Scrolled( "" ), "a page that has not seen the pointer" );
+			Assert.AreEqual( 0f, Scrolled( "k 1 W 0 0 5\nk 0 W 0 0 6" ), "keys bring no pointer" );
+			Assert.AreEqual( CanvasSnapshot.NoPointer, snapshot.MousePosition );
+			Assert.IsTrue( snapshot.OrderedEvents.All( item => item.X == -1 && item.Y == -1 && !item.PositionIsExact ), "a key record keeps the missing pointer, inexact" );
+			Assert.AreEqual( 0f, Scrolled( "m 640 400 7" ), "the middle of the canvas" );
+			Assert.IsTrue( Scrolled( "m 0 0 8" ) > 0, "the top-left pixel is a real pointer, in the edge band" );
+			Assert.IsTrue( Scrolled( "m 1279 400 9" ) > 0, "the right edge band" );
+			Assert.AreEqual( 0f, Scrolled( "m -1 -1" ), "a pointer that left the canvas" );
+			Assert.AreEqual( CanvasSnapshot.NoPointer, snapshot.MousePosition );
+			Assert.AreEqual( 0f, Scrolled( "" ), "nor in a later frame without events" );
+		}
+		finally { (ParkCameraMode.TargetExtent, ParkCameraMode.InitialTarget) = (extent, initial); }
+	}
+
 	[TestMethod]
 	public void LegacyAndBlurReleasesRetainExplicitlyInexactLastKnownCoordinates()
 	{

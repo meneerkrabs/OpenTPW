@@ -109,7 +109,12 @@ files, not symbolic links: ASP.NET reports a link's own size.
   handles. A `CommandList` records draws and buffer updates as integers and bytes and replays
   them in JavaScript at `SubmitCommands`, one interop call per submit, so updates keep their
   order relative to draws as in Veldrid. The canvas plays the SDL window: `Sdl2Window`
-  turns its mouse, wheel and keyboard events into an `InputSnapshot`.
+  turns its mouse, wheel and keyboard events into an `InputSnapshot`. A page with no pointer
+  over the canvas, before its first pointer event as after the pointer left it, reports the
+  pointer at (-1, -1), outside the window (`[EXT:browser-no-pointer]`): the park camera then
+  takes no input, so its edge band does not scroll the view (nor do its keys), and the ride
+  view's free look looks straight ahead. The original ran fullscreen, where the pointer cannot
+  leave the screen; the desktop keeps SDL's positions.
 
 `Renderer.Run` is split into `Start`, `Frame` and `Stop`. The desktop keeps looping over
 `Frame`, and the page calls it from `requestAnimationFrame`.

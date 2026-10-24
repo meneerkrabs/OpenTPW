@@ -531,7 +531,8 @@ function attachInput() {
 	const position = event => events.push(`m ${event.offsetX} ${event.offsetY} ${event.timeStamp}`);
 	const button = event => event.button === 0 ? 0 : event.button === 1 ? 1 : event.button === 2 ? 2 : 3 + event.button - 3;
 	canvas.addEventListener('mousemove', position);
-	// a pointer that leaves the canvas reports no position (the ride view's free look centres on it)
+	// a pointer that leaves the canvas reports no position, the snapshot's own state before the first pointer event (Input.cs, EXT:browser-no-pointer):
+	// the ride view's free look centres and the park view's edge band rests
 	canvas.addEventListener('mouseleave', () => events.push('m -1 -1'));
 	canvas.addEventListener('mousedown', event => {
 		canvas.focus();

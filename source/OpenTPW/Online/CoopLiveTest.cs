@@ -34,6 +34,8 @@ internal sealed partial class CoopLiveTest : IDisposable
 	internal const string DriverRole = "driver";
 	/// <summary>How often both games sample the park's ticks at the fastest speed (the endurance scenario), in seconds of wall time.</summary>
 	internal const double EnduranceSampleSeconds = 5;
+	/// <summary>The longest a status goes unpublished, in seconds of wall time: a run publishes its heartbeat when nothing else changed, so a relayed copy shows how fresh it is.</summary>
+	internal const double HeartbeatSeconds = 5;
 
 	private readonly GameFlow flow;
 	private readonly string evidenceDirectory;
@@ -55,6 +57,10 @@ internal sealed partial class CoopLiveTest : IDisposable
 	private readonly List<CoopLiveStep> log = new();
 	private readonly JsonObject status = new();
 	private readonly JsonObject evidence = new();
+	/// <summary>This run's identity in its statuses, and their revision, which grows with every publication.</summary>
+	private readonly string runId = Guid.NewGuid().ToString( "N" )[..12];
+	private int revision;
+	private double lastPublished;
 	private readonly Dictionary<string, (JsonObject? Status, double ReadAt)> statuses = new();
 	private CoopLiveWait? waiting;
 	private double waitingSince;
@@ -154,6 +160,8 @@ internal sealed partial class CoopLiveTest : IDisposable
 		lastFrameAt = now;
 		try
 		{
+			if ( revision > 0 && now - lastPublished >= HeartbeatSeconds )
+				Publish( "alive", Math.Round( now, 1 ) );
 			Observe();
 			while ( !done && (waiting == null || waiting.Done()) )
 			{
@@ -293,8 +301,11 @@ internal sealed partial class CoopLiveTest : IDisposable
 	internal void Publish( string key, JsonNode? value )
 	{
 		status[key] = value?.DeepClone();
+		status["run"] = runId;
+		status["revision"] = ++revision;
 		status["frame"] = frame;
 		status["at"] = Math.Round( Now, 3 );
+		lastPublished = Now;
 		WriteJson( $"{Role}-status.json", status );
 	}
 

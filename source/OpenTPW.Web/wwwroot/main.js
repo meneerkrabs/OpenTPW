@@ -427,7 +427,10 @@ function requestLevel(level) {
 	parkLoadingText = 'Loading the park…';
 	updateLoading();
 	copyFiles(files, text => { parkLoadingText = `Loading the park: ${text}`; updateLoading(); })
-		.catch(error => console.error(`Copying ${level} failed`, error))
+		.catch(error => {
+			console.error(`Copying ${level} failed`, error);
+			program.LevelCopyFailed(level, String(error?.message ?? error));
+		})
 		.finally(() => {
 			parkLoadingText = '';
 			updateLoading();

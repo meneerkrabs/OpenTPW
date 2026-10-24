@@ -29,6 +29,7 @@ internal sealed partial class CoopLiveTest
 	{
 		// the park's files first: the page copies a theme when a park asks for it (GameFlow.LevelDataReady), which a park started here does not wait for; natively they are there
 		yield return Wait( "the park's files", () => GameFlow.LevelDataReady?.Invoke( CoopJoinSmokeTest.HostLevel ) != false, 300 );
+		Require( levelCopyFailure?.Invoke( CoopJoinSmokeTest.HostLevel ) is null, $"the park's files arrived whole ({levelCopyFailure?.Invoke( CoopJoinSmokeTest.HostLevel )})" );
 		var level = flow.StartLevel( CoopJoinSmokeTest.HostLevel, original: true, developerPanels: false, start: ParkStartKind.InstantAction );
 		yield return Wait( "the park's HUD", () => ReferenceEquals( flow.Level, level ) && flow.Hud != null && Top( "hud" ), 120 );
 		yield return Pause( "the park's first seconds", 3 );

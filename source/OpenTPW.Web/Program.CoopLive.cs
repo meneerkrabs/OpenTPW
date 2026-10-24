@@ -25,6 +25,12 @@ public static partial class Program
 	private static string? coopLiveCompleted;
 	private static JsonObject? coopLiveLast;
 	private static System.Threading.Timer? coopLiveWatchdog;
+	/// <summary>The page's frames since the game started, and the first failure out of one (also after the run ended, while the game runs on).</summary>
+	private static long coopLiveFrames;
+	private static string? coopLiveFrameError;
+	/// <summary>When the run started, in milliseconds of the Unix epoch, and the parks' files the page asked for: when, when they arrived, and a copy's failure.</summary>
+	private static long? coopLiveStartedAt;
+	private static readonly List<(string Level, long RequestedAt, long? LoadedAt, string? Failure)> coopLiveLevels = new();
 
 	/// <summary>The page's live mode, chosen before the game starts: the acceptance's exports work only in it.</summary>
 	[JSExport]
@@ -65,11 +71,13 @@ public static partial class Program
 			["OPENTPW_COOP_LIVE_CODE"] = code,
 		};
 		coopLiveState = "running";
+		coopLiveStartedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
 		try
 		{
 			coopLive = CoopLiveTest.StartPage( flow, role, CoopLiveDirectory, environment,
 				completedBy: summary => coopLiveCompleted = summary,
-				failedBy: line => (coopLiveState, coopLiveMessage) = ("failed", line) );
+				failedBy: line => (coopLiveState, coopLiveMessage) = ("failed", line),
+				levelCopyFailure: level => coopLiveLevels.LastOrDefault( copy => string.Equals( copy.Level, level, StringComparison.OrdinalIgnoreCase ) ).Failure );
 		}
 		catch ( Exception error )
 		{
@@ -97,7 +105,36 @@ public static partial class Program
 		["state"] = coopLiveState,
 		["message"] = coopLiveMessage,
 		["run"] = (coopLive?.PageStatus() ?? coopLiveLast)?.DeepClone(),
+		["frames"] = coopLiveFrames,
+		["frameError"] = coopLiveFrameError,
+		["startedAt"] = coopLiveStartedAt,
+		["levels"] = new JsonArray( coopLiveLevels.Select( copy => (JsonNode?)new JsonObject
+		{
+			["level"] = copy.Level, ["requestedAt"] = copy.RequestedAt, ["loadedAt"] = copy.LoadedAt, ["failure"] = copy.Failure,
+		} ).ToArray() ),
 	}.ToJsonString();
+
+	/// <summary>A park's files were asked for (GameFlow.LevelDataReady); kept in the live mode only.</summary>
+	private static void CoopLiveLevelRequested( string level )
+	{
+		if ( coopLiveMode )
+			coopLiveLevels.Add( (level, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), null, null) );
+	}
+
+	/// <summary>A park's files arrived (or the copy gave up, after <see cref="CoopLiveLevelCopyFailed"/>).</summary>
+	private static void CoopLiveLevelLoaded( string level ) => CoopLiveLevelChanged( level, copy => copy with { LoadedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() } );
+
+	/// <summary>A park's files could not all be copied.</summary>
+	private static void CoopLiveLevelCopyFailed( string level, string message ) => CoopLiveLevelChanged( level, copy => copy with { Failure = message } );
+
+	private static void CoopLiveLevelChanged( string level, Func<(string Level, long RequestedAt, long? LoadedAt, string? Failure), (string, long, long?, string?)> change )
+	{
+		if ( !coopLiveMode )
+			return;
+		var index = coopLiveLevels.FindLastIndex( copy => string.Equals( copy.Level, level, StringComparison.OrdinalIgnoreCase ) );
+		if ( index >= 0 )
+			coopLiveLevels[index] = change( coopLiveLevels[index] );
+	}
 
 	/// <summary>A file of the run for the driver, as its JSON text (its own status and evidence only), or null while it has none.</summary>
 	[JSExport]
@@ -129,6 +166,24 @@ public static partial class Program
 	{
 		if ( !coopLiveMode )
 			throw new InvalidOperationException( "The live co-op acceptance runs only in the page's live mode (?coopLive=1 on a loopback address)." );
+	}
+
+	/// <summary>
+	/// A frame of the live mode's page: counted, and a throw out of it kept as the page's frame failure (the page then stops its loop), before and after the run; while the run goes
+	/// on it is the run's frame.
+	/// </summary>
+	private static bool CoopLivePageFrame( Renderer running )
+	{
+		coopLiveFrames++;
+		try
+		{
+			return coopLive is { } live ? CoopLiveFrame( running, live ) : running.Frame();
+		}
+		catch ( Exception error )
+		{
+			coopLiveFrameError ??= $"{error.GetType().Name}: {error.Message}";
+			throw;
+		}
 	}
 
 	/// <summary>

@@ -103,8 +103,12 @@ internal sealed partial class CoopLiveTest
 		Look( (figure.X, figure.Y) );
 		yield return Wait( $"{name}'s figure and name drawn in the view", () => Figure( name ) != null && TheHud.DrawnNames.Contains( name ) && (ThePark.GuestRenderer?.DrawnFigures ?? 0) >= 2, 30 );
 		var picture = $"{Role}-{what}.png";
+		JsonArray? size = null;
 		if ( !page )
-			SandboxSmokeTest.CaptureOutputFrameTo( Path.Combine( evidenceDirectory, picture ) );
+		{
+			var (_, width, height) = SandboxSmokeTest.CaptureOutputFrameTo( Path.Combine( evidenceDirectory, picture ) );
+			size = new JsonArray( width, height );
+		}
 		var drawn = Figure( name )!;
 		sightings.Add( new JsonObject
 		{
@@ -117,6 +121,8 @@ internal sealed partial class CoopLiveTest
 			["frame"] = frame,
 			["at"] = Math.Round( Now, 3 ),
 			["picture"] = picture,
+			// a native picture's size as captured; a page's picture is the driver's, which knows its size
+			["pictureSize"] = size,
 		} );
 		Keep( "sightings", sightings );
 		// the page cannot read its output back (C2d-5b): the driver takes the canvas's picture while the view stays, and says so in its status

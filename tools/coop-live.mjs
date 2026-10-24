@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 // The live co-op acceptance (docs/COOP.md, "The live acceptance"; C2d-5): two games share a park through the real server, with the game's data, driven through the
 // game's own screens. Starts the real server (OpenTPW.Server) on 127.0.0.1 with a fresh data folder and no two-step login, registers two throwaway players with random
-// names and passwords, and runs two native games (silent and offscreen), each with its own configuration, online and save folders: the host shares Jungle from its pause
-// menu, and the guest, started once the host published its code, joins it from the lobby. The games meet at barriers through status files in the shared evidence
-// folder (CoopLiveTest); this driver starts the guest, restarts the server in the recovery scenario, stops both games when one fails, and checks both games' evidence
+// names and passwords, and runs two games, each a native game (silent and offscreen, with its own configuration, online and save folders) or a page (a Chrome of its own,
+// tools/coop-live-page.mjs): the host shares Jungle from its pause menu, and the guest, started once the host published its code, joins it from the lobby. The games meet at
+// barriers through status files in the shared evidence folder (CoopLiveTest; a page's relayed by the driver); this driver starts the guest, restarts the server in the
+// recovery scenario, stops both games when one fails, and checks both games' evidence
 // against each other once both completed: one session, the guest's build of the host's park, the host's line applied by the guest with checkpoints compared after it,
 // the figures seen both ways, the guest's refused line, the chat both ways, Go to, and the session's end; the baseline and the endurance run with no resync and no
 // desync, the recovery run with the session back and a second line after the restart, and the endurance run at the fastest speed for its minutes.
@@ -42,6 +43,10 @@ const START_SECONDS = 300;
 const OUTAGE_SECONDS = 3;
 /** How long the logs may take to finish once their processes ended, in seconds. */
 const LOG_SECONDS = 10;
+/** A game whose status does not advance for this long while it runs fails: each publishes a heartbeat at least every five seconds (CoopLiveTest.HeartbeatSeconds). */
+export const STATUS_STALL_SECONDS = 60;
+/** How long the cleanup waits for a page still starting, once its side was stopped, in seconds. */
+const START_JOIN_SECONDS = 30;
 
 export function parseArguments(argv) {
 	const options = {
@@ -437,6 +442,26 @@ function tickRates(samples) {
 	return kept.slice(1).map((sample, index) => (sample.ticks - kept[index].ticks) / (sample.at - kept[index].at));
 }
 
+/**
+ * Checks a game's status as the driver reads it: once seen, its run stays the same (a page that loaded again would start another), and while the game runs its revision
+ * must grow at least every STATUS_STALL_SECONDS (its heartbeat). `freshness` keeps what each role showed last; `ended` is the side's ending, null while it runs.
+ */
+export function checkFreshness(freshness, role, status, ended, now) {
+	if (!status)
+		return;
+	const known = freshness[role];
+	if (known && status.run !== known.run)
+		throw new Error(`The ${role}'s status comes from another run (${status.run}, not ${known.run})`);
+	if (!known || status.revision > known.revision) {
+		freshness[role] = { run: status.run, revision: status.revision, at: now };
+		return;
+	}
+	if (status.revision < known.revision)
+		throw new Error(`The ${role}'s status went back from revision ${known.revision} to ${status.revision}`);
+	if (ended === null && now - known.at > STATUS_STALL_SECONDS * 1000)
+		throw new Error(`The ${role}'s status did not advance for ${STATUS_STALL_SECONDS} s (at ${status.step ?? 'its start'}, revision ${status.revision})`);
+}
+
 /** How far the driver's observation of the endurance interval may fall short of the games' own: its status reads lag each end by up to a relay cycle or two, in seconds. */
 export const OBSERVATION_SLACK_SECONDS = 2;
 
@@ -499,6 +524,8 @@ async function run(options) {
 		let guestStartError = null;
 		// the fastest speed on the driver's own clock: from the host's word that it set it to its word that the normal speed is back
 		const observed = { started: null, done: null };
+		// each game's status: its run, its revision, and when that last grew, on the driver's own clock
+		const freshness = {};
 		// a page's start takes longer than a process's: its Chrome and its game's start, which copies the game's files
 		const guestStartSeconds = START_SECONDS + (options.guest === 'page' ? PAGE_START_SECONDS : 0);
 		for (;;) {
@@ -515,6 +542,8 @@ async function run(options) {
 			}
 			if (guestStartError)
 				throw new Error(`The guest could not start: ${guestStartError.message}`);
+			for (const [role, status] of [['host', host], ['guest', guest]])
+				checkFreshness(freshness, role, status, sides[role].ending(), performance.now());
 			if (options.scenario === 'endurance') {
 				if (observed.started === null && host?.enduranceStarted === true)
 					observed.started = performance.now();
@@ -561,13 +590,16 @@ async function run(options) {
 		const hostEvidence = JSON.parse(await fs.readFile(path.join(evidence, 'host-evidence.json'), 'utf8'));
 		const guestEvidence = JSON.parse(await fs.readFile(path.join(evidence, 'guest-evidence.json'), 'utf8'));
 		record.environment = hostEvidence.environment;
+		// a page's last word: its frames went on, and none failed, to the run's end
+		for (const side of Object.values(sides))
+			await side.refresh?.();
 		record.sides = { host: sides.host.facts(), guest: sides.guest.facts() };
 		const endurance = options.scenario === 'endurance' ? [checkObservedEndurance(observed, options.minutes)] : [];
 		record.checks = [
 			...checkEvidence(hostEvidence, guestEvidence, options.scenario, options.minutes),
 			...endurance,
 			await checkPictures({ host: hostEvidence, guest: guestEvidence }, name => typeof name === 'string' && !name.includes('/') && !name.includes('\\')
-				? fs.readFile(path.join(evidence, name)).catch(() => null) : null),
+				? fs.readFile(path.join(evidence, name)).catch(() => null) : null, { ...record.sides.host.pictureSizes, ...record.sides.guest.pictureSizes }),
 			...checkPageSides(record.sides, restartedAt === null ? null : Date.parse(restartedAt)),
 		];
 		record.evidence = { host: hostEvidence, guest: guestEvidence };
@@ -583,8 +615,9 @@ async function run(options) {
 		for (const [role, side] of Object.entries(sides))
 			if (!await side.stop().catch(() => false))
 				cleanup.push(`the ${role} had not exited`);
-		// a page still starting ends with its Chrome
-		await guestStarting;
+		// a page still starting ends with its Chrome, which its side's stop ended; it is not waited for longer than that may take
+		if (guestStarting && await Promise.race([guestStarting.then(() => true), sleep(START_JOIN_SECONDS * 1000).then(() => false)]) === false)
+			cleanup.push(`the guest's start had not ended ${START_JOIN_SECONDS} s after its stop`);
 		if (server && !await server.stop())
 			cleanup.push(`the server (process ${server.child?.pid}) had not exited`);
 		// every log is whole before the run's record is written: one that could not be written, or did not finish, fails the run

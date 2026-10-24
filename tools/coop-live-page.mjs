@@ -8,7 +8,8 @@ import { createHash } from 'node:crypto';
 import { createWriteStream, promises as fs } from 'node:fs';
 import path from 'node:path';
 import { performance } from 'node:perf_hooks';
-import { Cdp, launchChrome, sleep, startServer, stopChrome } from './web-perf/lib.mjs';
+import { crc32, inflateSync } from 'node:zlib';
+import { Cdp, launchChrome, listFiles, sleep, startServer, stopChrome } from './web-perf/lib.mjs';
 
 /** How long a page may take to show its front end (its start copies the game's files from /game/), in seconds. */
 export const PAGE_START_SECONDS = 300;
@@ -16,6 +17,12 @@ export const PAGE_START_SECONDS = 300;
 export const PAGE_STALL_SECONDS = 60;
 /** The park's folder in the game folder, which a page copies when its park needs it (the host before its park starts, the guest for its join). */
 export const PARK_FOLDER = '/game/data/levels/jungle/';
+/** The park's level, as the game asks for its files. */
+export const PARK_LEVEL = 'jungle';
+/** How long a page that passed must go on drawing frames, with none failing, before its side counts as completed, in seconds. */
+export const AFTER_PASS_SECONDS = 2;
+/** A native module this large holds the assemblies compiled ahead of time; an interpreter build's holds the runtime only (about 3 MB). */
+export const AOT_NATIVE_BYTES = 10 << 20;
 
 const NAMED_KEYS = { Enter: ['Enter', 13], Escape: ['Escape', 27], F4: ['F4', 115], Backspace: ['Backspace', 8] };
 const PUNCTUATION = { ' ': ['Space', 32], ',': ['Comma', 188], '.': ['Period', 190], '-': ['Minus', 189], '!': ['Digit1', 49, true], '?': ['Slash', 191, true] };
@@ -49,12 +56,42 @@ export function pictureName(role, name) {
 	return typeof name === 'string' && new RegExp(`^${role}-[a-z0-9-]+\\.png$`).test(name);
 }
 
-/** A PNG's width and height from its header, or null when the bytes are not a PNG. */
+const CHANNELS = { 0: 1, 2: 3, 3: 1, 4: 2, 6: 4 };
+
+/**
+ * A PNG's width and height once the whole image decodes: every chunk whole with its checksum, the header first and the end last, and the image data inflating to exactly
+ * the rows the header promises (non-interlaced). Null for anything else.
+ */
 export function pngSize(bytes) {
 	const signature = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
-	if (!Buffer.isBuffer(bytes) || bytes.length < 24 || !bytes.subarray(0, 8).equals(signature) || bytes.toString('latin1', 12, 16) !== 'IHDR')
+	if (!Buffer.isBuffer(bytes) || bytes.length < 8 || !bytes.subarray(0, 8).equals(signature))
 		return null;
-	return { width: bytes.readUInt32BE(16), height: bytes.readUInt32BE(20) };
+	let offset = 8, header = null, ended = false;
+	const data = [];
+	while (offset + 12 <= bytes.length && !ended) {
+		const length = bytes.readUInt32BE(offset);
+		const type = bytes.toString('latin1', offset + 4, offset + 8);
+		if (offset + 12 + length > bytes.length || crc32(bytes.subarray(offset + 4, offset + 8 + length)) !== bytes.readUInt32BE(offset + 8 + length))
+			return null;
+		const body = bytes.subarray(offset + 8, offset + 8 + length);
+		if ((header === null) !== (type === 'IHDR'))
+			return null;
+		if (type === 'IHDR')
+			header = { width: body.readUInt32BE(0), height: body.readUInt32BE(4), depth: body[8], color: body[9], interlace: body[12] };
+		else if (type === 'IDAT')
+			data.push(body);
+		else if (type === 'IEND')
+			ended = true;
+		offset += 12 + length;
+	}
+	if (!header || !ended || header.interlace !== 0 || !(header.width > 0 && header.height > 0) || !CHANNELS[header.color])
+		return null;
+	try {
+		const rowBytes = Math.ceil(header.width * CHANNELS[header.color] * header.depth / 8);
+		return inflateSync(Buffer.concat(data)).length === header.height * (1 + rowBytes) ? { width: header.width, height: header.height } : null;
+	} catch {
+		return null;
+	}
 }
 
 const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
@@ -70,19 +107,29 @@ async function writeAtomic(file, contents) {
  * origin (the server's policy, forwarded with the page).
  */
 export async function checkBuild(origin, web) {
-	const build = {};
-	for (const file of ['index.html', 'main.js']) {
+	const build = { files: {} };
+	// every file of the page that no integrity check covers (its page, scripts and styles), and the runtime's loader, whose embedded list holds every framework file's
+	// hash, which the runtime checks as it loads each
+	const entries = await fs.readdir(web, { withFileTypes: true });
+	const files = [...entries.filter(entry => entry.isFile() && /\.(html|js|mjs|css)$/.test(entry.name)).map(entry => entry.name), '_framework/dotnet.js'];
+	for (const file of files) {
 		const response = await fetch(`${origin}/${file}`, { signal: AbortSignal.timeout(30000) });
 		const served = Buffer.from(await response.arrayBuffer());
 		const built = await fs.readFile(path.join(web, file));
 		if (response.status !== 200 || !served.equals(built))
 			throw new Error(`The page's ${file} through the local server (${response.status}) is not the web build's (${web})`);
-		build[file] = sha256(built);
+		build.files[file] = sha256(built);
 		if (file === 'index.html')
 			build.policy = response.headers.get('content-security-policy');
 	}
 	if (!/connect-src[^;]*'self'/.test(build.policy ?? ''))
 		throw new Error(`The page's policy does not let its sockets reach its own origin: ${build.policy ?? 'none'}`);
+	// the native module the loader names, and the runtime its size shows
+	const loader = await fs.readFile(path.join(web, '_framework', 'dotnet.js'), 'utf8');
+	const native = /"wasmNative":\s*\[\s*\{\s*"name":\s*"([^"]+)"/.exec(loader)?.[1] ?? null;
+	build.nativeWasm = native;
+	build.nativeWasmBytes = native ? (await fs.stat(path.join(web, '_framework', native))).size : null;
+	build.measuredRuntime = build.nativeWasmBytes === null ? 'unknown' : build.nativeWasmBytes >= AOT_NATIVE_BYTES ? 'aot' : 'interpreter';
 	return build;
 }
 
@@ -133,15 +180,16 @@ export class PageSide {
 		this.local = await startServer(path.resolve(this.options.web), path.resolve(this.options.gamePath), this.server.origin);
 		this.#unlessStopped();
 		this.build = await checkBuild(this.local.origin, path.resolve(this.options.web));
-		// the runtime as given (--runtime), and the native module's size beside it: an AOT build compiles the assemblies into it, tens of megabytes against a few
-		const framework = path.join(path.resolve(this.options.web), '_framework');
-		const native = (await fs.readdir(framework).catch(() => [])).find(name => /^dotnet\.native(\.[a-z0-9]+)?\.wasm$/.test(name));
 		this.build.runtime = this.options.runtime;
-		this.build.nativeWasmBytes = native ? (await fs.stat(path.join(framework, native))).size : null;
+		if (this.options.runtime !== 'unknown' && this.options.runtime !== this.build.measuredRuntime)
+			throw new Error(`The web build is an ${this.build.measuredRuntime} build (its native module is ${this.build.nativeWasmBytes} bytes), not the ${this.options.runtime} one given`);
+		// the park's files in the game folder, which a page copies whole for its park
+		this.parkFiles = (await listFiles(path.resolve(this.options.gamePath))).filter(file => `/game/${file}`.toLowerCase().startsWith(PARK_FOLDER)).length;
 		this.profile = path.join(this.folder, 'profile');
 		await fs.mkdir(this.profile);
 		this.#unlessStopped();
 		const { chrome, url } = await launchChrome(this.options.chrome, this.profile, { headed: this.options.headed });
+		this.pictureSizes = {};
 		this.chrome = chrome;
 		chrome.once('exit', (exitCode, signal) => this.crashed ??= `Chrome exited (${exitCode ?? signal})`);
 		// the run stopped while Chrome started: it ends with it
@@ -149,7 +197,7 @@ export class PageSide {
 			await stopChrome(chrome);
 			this.#unlessStopped();
 		}
-		this.cdp = await Cdp.connect(url);
+		this.cdp = await Cdp.connect(url, 30000);
 		this.chromeVersion = (await this.cdp.send('Browser.getVersion')).product;
 		const { targetId } = await this.cdp.send('Target.createTarget', { url: 'about:blank' });
 		const { sessionId } = await this.cdp.send('Target.attachToTarget', { targetId, flatten: true });
@@ -210,7 +258,7 @@ export class PageSide {
 			// what the page fetched of the park's folder and the API, bounded: the game's start copies many more files
 			const { pathname } = new URL(params.response?.url ?? 'about:blank');
 			const folder = decodeURIComponent(pathname).toLowerCase();
-			if ((folder.startsWith('/game/data/levels/') || folder.startsWith('/api/')) && this.network.length < 20000)
+			if ((folder.startsWith('/game/data/levels/') || folder.startsWith('/api/') || folder.startsWith('/_framework/dotnet.native')) && this.network.length < 20000)
 				this.network.push({ path: decodeURIComponent(pathname), status: params.response.status, at: Date.now() });
 		}
 	}
@@ -282,16 +330,33 @@ export class PageSide {
 				driver.inputs[this.role] = status.input.id;
 				await driver.publish();
 			}
-			if (state.state === 'passed' || state.state === 'failed') {
-				const evidence = await this.call('CoopLiveRead', `${this.role}-evidence.json`);
-				if (evidence !== null)
-					await writeAtomic(path.join(this.evidence, `${this.role}-evidence.json`), evidence);
-				this.outcome = state.state === 'passed' && evidence !== null ? 'completed' : `failed: ${state.message ?? 'its evidence is missing'}`;
+			if (state.state === 'failed' || state.frameError) {
+				await this.#collect();
+				this.outcome = `failed: ${state.frameError ? `its frame failed: ${state.frameError}` : state.message}`;
+			} else if (state.state === 'passed') {
+				// a pass counts once the page has gone on drawing frames for a while, with none failing
+				this.passed ??= { at: performance.now(), frames: state.frames };
+				if (performance.now() - this.passed.at >= AFTER_PASS_SECONDS * 1000 && state.frames > this.passed.frames)
+					this.outcome = await this.#collect() ? 'completed' : 'failed: its evidence is missing';
 			}
 			return status;
 		} finally {
 			this.relaying = false;
 		}
+	}
+
+	/** Copies the run's evidence out of the page; false when it has none. */
+	async #collect() {
+		const evidence = await this.call('CoopLiveRead', `${this.role}-evidence.json`);
+		if (evidence !== null)
+			await writeAtomic(path.join(this.evidence, `${this.role}-evidence.json`), evidence);
+		return evidence !== null;
+	}
+
+	/** Reads the page's state once more (its frames and a later frame failure, at the run's end); a page that cannot answer keeps its last state. */
+	async refresh() {
+		if (this.started && !this.crashed && !this.stopped)
+			this.state = JSON.parse(await this.call('CoopLiveState').catch(() => JSON.stringify(this.state)));
 	}
 
 	/** The canvas's picture while the run's view stays, kept as the run named it; the driver's status says it is taken. */
@@ -302,6 +367,8 @@ export class PageSide {
 		const { data } = await this.cdp.send('Page.captureScreenshot', { format: 'png', clip: { x: element.left, y: element.top, width: element.width, height: element.height, scale: 1 } },
 			this.sessionId, 30000);
 		await fs.writeFile(path.join(this.evidence, name), Buffer.from(data, 'base64'));
+		// the screenshot's size is the canvas element's in device pixels
+		this.pictureSizes[name] = [Math.round(element.width * element.ratio), Math.round(element.height * element.ratio)];
 		driver.pictures.push(name);
 		await driver.publish();
 	}
@@ -309,7 +376,8 @@ export class PageSide {
 	/** The canvas element's content box in the viewport's CSS pixels. */
 	#canvas() {
 		return this.eval(`(() => { const canvas = document.getElementById('canvas'); const box = canvas.getBoundingClientRect();
-			return { left: box.left + canvas.clientLeft, top: box.top + canvas.clientTop, width: canvas.clientWidth, height: canvas.clientHeight }; })()`);
+			return { left: box.left + canvas.clientLeft, top: box.top + canvas.clientTop, width: canvas.clientWidth, height: canvas.clientHeight,
+				ratio: window.devicePixelRatio || 1 }; })()`);
 	}
 
 	/** Gives the run's input through the browser's own events on the canvas: keys pressed and released, a line typed, the pointer moved or pressed and released. */
@@ -343,9 +411,12 @@ export class PageSide {
 
 	/** The side's facts for the run's record: the build, Chrome, and the page's traffic through its local server. */
 	facts() {
+		const log = this.local?.log ?? [];
 		return {
 			kind: 'page', chrome: this.chromeVersion ?? null, build: this.build ?? null, origin: this.local?.origin ?? null,
-			upgrades: (this.local?.log ?? []).filter(entry => entry.upgrade), network: this.network,
+			upgrades: log.filter(entry => entry.upgrade), requests: log.filter(entry => !entry.upgrade && entry.path.startsWith('/api/')), network: this.network,
+			startedAt: this.state?.startedAt ?? null, levels: this.state?.levels ?? [], frames: this.state?.frames ?? null, frameError: this.state?.frameError ?? null,
+			parkFiles: this.parkFiles ?? null, pictureSizes: this.pictureSizes ?? {},
 		};
 	}
 
@@ -376,28 +447,41 @@ export function checkPageSides(sides, restartedAt) {
 			continue;
 		const carried = (route, after = -Infinity) => (facts.upgrades ?? []).filter(entry => entry.path === route && entry.status === 101 && entry.bytesIn > 0
 			&& entry.bytesOut > 0 && entry.at > after).length;
-		const login = (facts.network ?? []).filter(item => item.path === '/api/v1/sessions' && item.status === 200);
-		checks.push({ what: `the ${role} page logged in through its local server`, passed: login.length > 0, detail: { logins: login.length } });
+		const login = (facts.requests ?? []).filter(entry => entry.path === '/api/v1/sessions' && entry.method === 'POST' && entry.status === 200 && entry.bytes > 0);
+		checks.push({ what: `the ${role} page logged in through its local server`, passed: login.length > 0, detail: { logins: login } });
+		const native = facts.build?.nativeWasm ? (facts.network ?? []).filter(item => item.path === `/_framework/${facts.build.nativeWasm}` && item.status === 200) : [];
+		checks.push({ what: `the ${role} page ran the web build given, its ${facts.build?.measuredRuntime ?? 'unknown'} runtime loaded, and no frame of it failed`,
+			passed: Boolean(facts.build?.files?.['index.html']) && native.length > 0 && facts.frameError === null && Number.isFinite(facts.frames),
+			detail: { build: facts.build, nativeLoaded: native.length, frames: facts.frames, frameError: facts.frameError } });
 		checks.push({ what: `the ${role} page's co-op and chat sockets went through its local server, with bytes both ways`,
 			passed: carried('/api/v1/coop') > 0 && carried('/api/v1/chat') > 0, detail: { upgrades: facts.upgrades } });
 		if (restartedAt !== null)
 			checks.push({ what: `the ${role} page's sockets came back through its local server after the restart`,
 				passed: carried('/api/v1/coop', restartedAt) > 0 && carried('/api/v1/chat', restartedAt) > 0, detail: { restartedAt, upgrades: facts.upgrades } });
-		const park = (facts.network ?? []).filter(item => item.path.toLowerCase().startsWith(PARK_FOLDER) && item.status === 200);
-		checks.push({ what: `the ${role} page fetched the park's files from the game folder`, passed: park.length > 0, detail: { files: park.length } });
+		// the park's files asked for during the run (none were there at its start), all of them fetched, and the copy whole
+		const copies = (facts.levels ?? []).filter(copy => copy.level?.toLowerCase() === PARK_LEVEL);
+		const park = new Set((facts.network ?? []).filter(item => item.path.toLowerCase().startsWith(PARK_FOLDER) && item.status === 200).map(item => item.path.toLowerCase()));
+		checks.push({ what: `the ${role} page fetched the park's files from the game folder during the run, whole`,
+			passed: copies.length > 0 && copies.every(copy => copy.requestedAt >= facts.startedAt && Number.isFinite(copy.loadedAt) && copy.failure === null)
+				&& facts.parkFiles > 0 && park.size === facts.parkFiles,
+			detail: { copies, startedAt: facts.startedAt, fetched: park.size, files: facts.parkFiles } });
 	}
 	return checks;
 }
 
-/** Every sighting's picture is in the evidence folder and is a PNG with a size (`read` reads a file of it, null when absent). */
-export async function checkPictures(evidences, read) {
+/**
+ * Every sighting's picture is in the evidence folder and decodes as a PNG of the size expected: a native game's as it captured it (its sighting says), a page's as the
+ * driver took it (`pageSizes`, by name). `read` reads a file of the folder, null when absent.
+ */
+export async function checkPictures(evidences, read, pageSizes = {}) {
 	const pictures = [];
 	for (const [role, evidence] of Object.entries(evidences))
 		for (const sighting of evidence?.sightings ?? []) {
 			const bytes = await read(sighting.picture);
 			const size = bytes ? pngSize(bytes) : null;
-			pictures.push({ role, picture: sighting.picture, size });
+			const expected = sighting.pictureSize ?? pageSizes[sighting.picture] ?? null;
+			pictures.push({ role, picture: sighting.picture, size, expected });
 		}
-	return { what: 'every sighting\'s picture was kept, a PNG of the view', passed: pictures.length > 0 && pictures.every(item => item.size?.width > 0 && item.size?.height > 0),
-		detail: pictures };
+	return { what: 'every sighting\'s picture was kept, a whole PNG of the view at its size', passed: pictures.length > 0
+		&& pictures.every(item => Array.isArray(item.expected) && item.size?.width === item.expected[0] && item.size?.height === item.expected[1]), detail: pictures };
 }

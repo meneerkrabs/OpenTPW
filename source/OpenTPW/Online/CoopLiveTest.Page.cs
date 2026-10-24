@@ -13,7 +13,7 @@ internal sealed partial class CoopLiveTest
 {
 	/// <summary>The page's run: <paramref name="role"/> is <c>host</c> or <c>join</c>; <paramref name="environment"/> holds what the native run reads from its environment.</summary>
 	internal static CoopLiveTest StartPage( GameFlow flow, string role, string evidenceDirectory, IReadOnlyDictionary<string, string> environment, Action<string> completedBy,
-		Action<string> failedBy )
+		Action<string> failedBy, Func<string, string?> levelCopyFailure )
 	{
 		ArgumentNullException.ThrowIfNull( flow );
 		ArgumentNullException.ThrowIfNull( environment );
@@ -26,8 +26,14 @@ internal sealed partial class CoopLiveTest
 		if ( !FeatureGates.Online )
 			throw new InvalidOperationException( $"The live co-op acceptance needs the online extension: {FeatureGates.OnlineDisabledMessage}." );
 		Directory.CreateDirectory( evidenceDirectory );
-		return new CoopLiveTest( flow, evidenceDirectory, hosting, name => environment.TryGetValue( name, out var value ) ? value : null, completedBy, failedBy, page: true );
+		return new CoopLiveTest( flow, evidenceDirectory, hosting, name => environment.TryGetValue( name, out var value ) ? value : null, completedBy, failedBy, page: true )
+		{
+			levelCopyFailure = levelCopyFailure,
+		};
 	}
+
+	/// <summary>Why the page could not copy a park's files, or null (natively the files are there).</summary>
+	private Func<string, string?>? levelCopyFailure;
 
 	/// <summary>The script's frame before the game's own, as the native run orders them.</summary>
 	internal void Attach( Renderer renderer )

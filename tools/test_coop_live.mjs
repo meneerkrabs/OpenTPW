@@ -5,7 +5,8 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { PassThrough } from 'node:stream';
-import { checkEvidence, checkObservedEndurance, ENDURANCE_SAMPLE_SECONDS, logTo, parseArguments, redact, throwawayPlayer } from './coop-live.mjs';
+import { crc32, deflateSync } from 'node:zlib';
+import { checkEvidence, checkFreshness, checkObservedEndurance, ENDURANCE_SAMPLE_SECONDS, logTo, parseArguments, redact, STATUS_STALL_SECONDS, throwawayPlayer } from './coop-live.mjs';
 import { checkPageSides, checkPictures, keyEvent, pagePoint, pictureName, pngSize } from './coop-live-page.mjs';
 
 // The live co-op acceptance's driver (tools/coop-live.mjs, docs/COOP.md "The live acceptance") without the games: its options, its throwaway players and their
@@ -269,55 +270,129 @@ test('a page asks only for its own role\'s pictures, by a flat name', () => {
 	assert.ok(!pictureName('host', undefined));
 });
 
-/** A PNG's first bytes: the signature and an IHDR chunk of `width` by `height`. */
-function pngHeader(width, height) {
-	const header = Buffer.alloc(33);
-	Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).copy(header, 0);
-	header.writeUInt32BE(13, 8);
-	header.write('IHDR', 12, 'latin1');
-	header.writeUInt32BE(width, 16);
-	header.writeUInt32BE(height, 20);
-	return header;
+/** A whole PNG of `width` by `height` RGBA pixels; `cut` drops that many bytes from its end. */
+function png(width, height, cut = 0) {
+	const chunk = (type, body) => {
+		const head = Buffer.alloc(8);
+		head.writeUInt32BE(body.length, 0);
+		head.write(type, 4, 'latin1');
+		const sum = Buffer.alloc(4);
+		sum.writeUInt32BE(crc32(Buffer.concat([head.subarray(4), body])), 0);
+		return Buffer.concat([head, body, sum]);
+	};
+	const header = Buffer.alloc(13);
+	header.writeUInt32BE(width, 0);
+	header.writeUInt32BE(height, 4);
+	header[8] = 8;
+	header[9] = 6;
+	const rows = Buffer.alloc(height * (1 + width * 4));
+	const bytes = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), chunk('IHDR', header), chunk('IDAT', deflateSync(rows)), chunk('IEND', Buffer.alloc(0))]);
+	return bytes.subarray(0, bytes.length - cut);
 }
 
-test('every sighting\'s picture must be kept as a PNG of the view', async () => {
-	const { host, guest } = passingPair();
-	const files = new Map([...host.sightings, ...guest.sightings].map(sighting => [sighting.picture, pngHeader(1280, 800)]));
-	const read = async name => files.get(name) ?? null;
-	assert.deepEqual(pngSize(pngHeader(1280, 800)), { width: 1280, height: 800 });
+test('a picture counts only when the whole PNG decodes', () => {
+	assert.deepEqual(pngSize(png(64, 40)), { width: 64, height: 40 });
+	// a cut file, a damaged chunk, image data short of its rows, or no picture at all
+	assert.equal(pngSize(png(64, 40, 5)), null);
+	const damaged = Buffer.from(png(64, 40));
+	damaged[40] ^= 0xff;
+	assert.equal(pngSize(damaged), null);
+	const short = png(64, 40);
+	const header = Buffer.from(short);
+	header.writeUInt32BE(41, 20);
+	// the header's checksum mended, so only the rows are wrong
+	header.writeUInt32BE(crc32(header.subarray(12, 29)), 29);
+	assert.equal(pngSize(header), null);
 	assert.equal(pngSize(Buffer.from('not a picture at all, longer than a header')), null);
-	assert.equal((await checkPictures({ host, guest }, read)).passed, true);
-	files.delete(guest.sightings[1].picture);
-	assert.equal((await checkPictures({ host, guest }, read)).passed, false);
-	files.set(guest.sightings[1].picture, Buffer.from('<html>no picture</html> padding padding'));
-	assert.equal((await checkPictures({ host, guest }, read)).passed, false);
-	assert.equal((await checkPictures({ host: { sightings: [] }, guest: { sightings: [] } }, read)).passed, false);
 });
 
-test('a page side\'s traffic went through its own local server: its login, its sockets with bytes both ways, after a restart again, and the park\'s files', () => {
+test('every sighting\'s picture must be kept as a whole PNG of the view, at the size captured', async () => {
+	const { host, guest } = passingPair();
+	for (const sighting of host.sightings)
+		sighting.pictureSize = [1512, 843];
+	// the guest is a page: the driver took its pictures, and knows their size
+	const pageSizes = Object.fromEntries(guest.sightings.map(sighting => [sighting.picture, [64, 40]]));
+	const files = new Map([...host.sightings.map(sighting => [sighting.picture, png(1512, 843)]), ...guest.sightings.map(sighting => [sighting.picture, png(64, 40)])]);
+	const read = async name => files.get(name) ?? null;
+	assert.equal((await checkPictures({ host, guest }, read, pageSizes)).passed, true);
+	// a picture of another size than its view, one missing, one that does not decode, one with no size known
+	files.set(guest.sightings[0].picture, png(32, 40));
+	assert.equal((await checkPictures({ host, guest }, read, pageSizes)).passed, false);
+	files.set(guest.sightings[0].picture, png(64, 40));
+	files.delete(guest.sightings[1].picture);
+	assert.equal((await checkPictures({ host, guest }, read, pageSizes)).passed, false);
+	files.set(guest.sightings[1].picture, png(64, 40, 3));
+	assert.equal((await checkPictures({ host, guest }, read, pageSizes)).passed, false);
+	files.set(guest.sightings[1].picture, png(64, 40));
+	assert.equal((await checkPictures({ host, guest }, read, {})).passed, false);
+	assert.equal((await checkPictures({ host: { sightings: [] }, guest: { sightings: [] } }, read, pageSizes)).passed, false);
+});
+
+test('a page side ran the build given and went through its own local server: its login, its sockets, after a restart again, and the park\'s files whole', () => {
 	const upgrade = (route, at, status = 101, bytes = 100) => ({ path: route, upgrade: true, status, bytesIn: bytes, bytesOut: bytes, at });
 	const page = () => ({
 		kind: 'page',
+		build: { files: { 'index.html': 'aa' }, nativeWasm: 'dotnet.native.x1.wasm', measuredRuntime: 'interpreter' },
+		frames: 4000, frameError: null, startedAt: 900, parkFiles: 2,
 		upgrades: [upgrade('/api/v1/coop', 1000), upgrade('/api/v1/chat', 1001), upgrade('/api/v1/coop', 5000, 502, 0), upgrade('/api/v1/coop', 6000), upgrade('/api/v1/chat', 6001)],
-		network: [{ path: '/api/v1/sessions', status: 200 }, { path: '/game/Data/levels/jungle/Jungle.wad', status: 200 }],
+		requests: [{ path: '/api/v1/sessions', method: 'POST', status: 200, bytes: 120 }],
+		network: [{ path: '/_framework/dotnet.native.x1.wasm', status: 200 }, { path: '/game/Data/levels/jungle/Jungle.wad', status: 200 },
+			{ path: '/game/Data/levels/jungle/Music/Jungle.sdt', status: 200 }],
+		levels: [{ level: 'jungle', requestedAt: 950, loadedAt: 980, failure: null }],
 	});
-	const named = (role, checks) => checks.filter(check => check.what.startsWith(`the ${role} page`));
-	assert.deepEqual(failing(checkPageSides({ host: { kind: 'native' }, guest: page() }, null)), []);
-	assert.equal(checkPageSides({ host: { kind: 'native' }, guest: page() }, null).length, 3);
+	const native = { kind: 'native' };
+	assert.deepEqual(failing(checkPageSides({ host: native, guest: page() }, null)), []);
+	assert.equal(checkPageSides({ host: native, guest: page() }, null).length, 4);
 	assert.deepEqual(failing(checkPageSides({ host: page(), guest: page() }, 4000)), []);
-	assert.equal(named('host', checkPageSides({ host: page(), guest: page() }, 4000)).length, 4);
+	assert.equal(checkPageSides({ host: page(), guest: page() }, 4000).filter(check => check.what.startsWith('the host page')).length, 5);
+	const only = (guest, restartedAt = null) => failing(checkPageSides({ host: native, guest }, restartedAt));
 	// no socket back after the restart
 	let guest = page();
 	guest.upgrades = guest.upgrades.slice(0, 3);
-	assert.deepEqual(failing(checkPageSides({ host: { kind: 'native' }, guest }, 4000)), ['the guest page\'s sockets came back through its local server after the restart']);
+	assert.deepEqual(only(guest, 4000), ['the guest page\'s sockets came back through its local server after the restart']);
 	// a chat socket that carried nothing back
 	guest = page();
 	guest.upgrades[1].bytesOut = 0;
 	guest.upgrades[4].bytesOut = 0;
-	assert.deepEqual(failing(checkPageSides({ host: { kind: 'native' }, guest }, null)), ['the guest page\'s co-op and chat sockets went through its local server, with bytes both ways']);
-	// no login, and no file of the park's folder
+	assert.deepEqual(only(guest), ['the guest page\'s co-op and chat sockets went through its local server, with bytes both ways']);
+	// a login the local server did not carry, or refused
 	guest = page();
-	guest.network = [{ path: '/game/Data/levels/space/Space.wad', status: 200 }, { path: '/game/Data/levels/jungle/Jungle.wad', status: 404 }];
-	assert.deepEqual(failing(checkPageSides({ host: { kind: 'native' }, guest }, null)),
-		['the guest page logged in through its local server', 'the guest page fetched the park\'s files from the game folder']);
+	guest.requests = [{ path: '/api/v1/sessions', method: 'POST', status: 401, bytes: 40 }];
+	assert.deepEqual(only(guest), ['the guest page logged in through its local server']);
+	// the native module not loaded, or a frame that failed after the run
+	const ran = 'the guest page ran the web build given, its interpreter runtime loaded, and no frame of it failed';
+	guest = page();
+	guest.network = guest.network.slice(1);
+	assert.deepEqual(only(guest), [ran]);
+	guest = page();
+	guest.frameError = 'InvalidOperationException: the drawing failed';
+	assert.deepEqual(only(guest), [ran]);
+	// the park's files: asked for before the run, a copy that failed, one of them missing, or another park's
+	const park = 'the guest page fetched the park\'s files from the game folder during the run, whole';
+	guest = page();
+	guest.levels[0].requestedAt = 800;
+	assert.deepEqual(only(guest), [park]);
+	guest = page();
+	guest.levels[0].failure = 'HTTP 404';
+	assert.deepEqual(only(guest), [park]);
+	guest = page();
+	guest.network.pop();
+	assert.deepEqual(only(guest), [park]);
+	guest = page();
+	guest.levels = [{ level: 'space', requestedAt: 950, loadedAt: 980, failure: null }];
+	assert.deepEqual(only(guest), [park]);
+});
+
+test('a game\'s status keeps its run and must advance while the game runs', () => {
+	const freshness = {};
+	checkFreshness(freshness, 'guest', { run: 'r1', revision: 1 }, null, 0);
+	checkFreshness(freshness, 'guest', { run: 'r1', revision: 1 }, null, 30000);
+	checkFreshness(freshness, 'guest', { run: 'r1', revision: 2 }, null, 59000);
+	assert.throws(() => checkFreshness(freshness, 'guest', { run: 'r1', revision: 2 }, null, 59000 + STATUS_STALL_SECONDS * 1000 + 1), /did not advance/);
+	// an ended game publishes no more
+	checkFreshness(freshness, 'guest', { run: 'r1', revision: 2 }, 'completed', 59000 + STATUS_STALL_SECONDS * 1000 + 1);
+	assert.throws(() => checkFreshness(freshness, 'guest', { run: 'r2', revision: 9 }, null, 60000), /another run/);
+	assert.throws(() => checkFreshness(freshness, 'guest', { run: 'r1', revision: 1 }, null, 60000), /went back/);
+	// no status yet: nothing to check
+	checkFreshness(freshness, 'host', null, null, 1e9);
 });

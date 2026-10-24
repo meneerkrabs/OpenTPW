@@ -23,10 +23,10 @@ public class AudioIntegrationTests
 	[TestInitialize]
 	public void Setup()
 	{
-		Log ??= new();
-		var data = StringTableTests.OriginalDataDirectory();
 		previousFileSystem = FileSystem;
 		previousBonus = ObjectCatalog.BonusDataRoot;
+		Log ??= new();
+		var data = StringTableTests.OriginalDataDirectory();
 		FileSystem = new BaseFileSystem( data );
 		FileSystem.RegisterArchiveHandler<WadArchive>( ".wad" );
 		ObjectCatalog.BonusDataRoot = null;
@@ -64,11 +64,8 @@ public class AudioIntegrationTests
 		}
 		foreach ( var (field, value) in saved )
 			field.SetValue( null, value );
-		if ( previousFileSystem != null )
-		{
-			FileSystem = previousFileSystem;
-			ObjectCatalog.BonusDataRoot = previousBonus;
-		}
+		FileSystem = previousFileSystem!;
+		ObjectCatalog.BonusDataRoot = previousBonus;
 		AudioListener.Update( Vector3.Zero, new Vector3( 0, 0, 1 ) );
 	}
 

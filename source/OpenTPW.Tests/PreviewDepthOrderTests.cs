@@ -23,11 +23,11 @@ public class PreviewDepthOrderTests
 	[TestInitialize]
 	public void Initialize()
 	{
+		previous = FileSystem;
 		var data = StringTableTests.OriginalDataDirectory();
 		if ( !Directory.Exists( Path.Combine( data, "levels" ) ) )
 			Assert.Inconclusive( "Set OPENTPW_GAME_PATH to the original game for the preview corpus." );
 		Log ??= new();
-		previous = FileSystem;
 		FileSystem = new BaseFileSystem( data );
 		FileSystem.RegisterArchiveHandler<WadArchive>( ".wad" );
 		var settings = new ModSettings { Enabled = OfficialExtensions.All.ToDictionary( extension => extension.Id, _ => true ) };
@@ -38,8 +38,7 @@ public class PreviewDepthOrderTests
 	public void Cleanup()
 	{
 		extensions?.Dispose();
-		if ( previous != null )
-			FileSystem = previous;
+		FileSystem = previous!;
 	}
 
 	private static IEnumerable<(string Label, ObjectCatalogEntry Entry, PreviewIcon Icon)> Previews()

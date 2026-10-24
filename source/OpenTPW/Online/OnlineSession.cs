@@ -605,10 +605,13 @@ public sealed class OnlineSession : IDisposable, IPresenceSession, IChatPanelSou
 		return null;
 	} );
 
-	public void Publish( ParkPackage package, bool showOnWebsite = false, int cityId = 0 ) => WithClient( async client =>
+	/// <summary>Publishes <paramref name="package"/>; <paramref name="onPublished"/> runs on the game's thread once the server has the park (the Publish Park form closes then).</summary>
+	public void Publish( ParkPackage package, bool showOnWebsite = false, int cityId = 0, Action? onPublished = null ) => WithClient( async client =>
 	{
 		Post( () => Status = OnlineStrings.Ui( OnlineStrings.PublishingPark, "Publishing Park" ) );
 		await client.UploadParkAsync( package, showOnWebsite: showOnWebsite, cityId: cityId );
+		if ( onPublished != null )
+			Post( onPublished );
 		return OnlineStrings.Ui( OnlineStrings.ParkPublished, "PARK PUBLISHED" ).Replace( "\n\n", " " );
 	} );
 

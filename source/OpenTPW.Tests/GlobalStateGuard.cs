@@ -18,7 +18,7 @@ public sealed class TestClassAttribute : Microsoft.VisualStudio.TestTools.UnitTe
 
 /// <summary>
 /// Runs one test, that is its [TestInitialize], the method and its [TestCleanup] (each [DataRow] on its own), and fails it when it ends with another global
-/// game-data, save or cache file system than it started with. Whatever a test leaves there, the tests after it read as their own: they then pass only in the full
+/// game-data, save or cache file system than it started with. Whatever a test left there, the tests after it would read as their own, and pass only in the full
 /// suite, or only alone. PRs #818 and #819 fixed 32 classes that left their game data or a deleted temporary folder as <c>FileSystem</c>.
 /// <list type="bullet">
 /// <item>A passing or inconclusive test that leaked fails with a message naming the value it left. A failing one keeps its own message and stack trace and gets

@@ -6,7 +6,7 @@ PRs #818 and #819 fixed 32 test classes that left their own game-data `FileSyste
   - Every test class is in the namespace `OpenTPW.Tests`, and C# finds a type of the enclosing namespace before one that a using directive imports.
   - So `[TestClass]` there now means `OpenTPW.Tests.TestClassAttribute` (`source/OpenTPW.Tests/GlobalStateGuard.cs`), which derives from MSTest's.
   - MSTest 2.2.7 asks the class attribute for the attribute that runs each test method. This one wraps it in `GlobalStateGuard`, whose `Execute` covers the test's `[TestInitialize]`, the method and its `[TestCleanup]`, once per `[DataRow]`.
-  - No test file changed.
+  - No existing test file was edited.
 - **What it checks:** `FileSystem`, `SaveFileSystem` and `CacheFileSystem`, by reference, before and after each run. A new file system at the same folder counts as a leak too, because it carries its own overrides and remembered lookups.
 - **What a leak does.**
   - A passing or inconclusive test fails. The message names the global and the folder the test left it at, for example `FileSystem was null and is now the file system at /var/folders/…/opentpw-guard-demo-VS27MJ`, and says how to fix it.

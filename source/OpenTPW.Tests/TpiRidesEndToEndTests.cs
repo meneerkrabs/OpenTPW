@@ -28,6 +28,7 @@ public class TpiRidesEndToEndTests
 	[TestInitialize]
 	public void Initialize()
 	{
+		previousFileSystem = FileSystem;
 		Log ??= new();
 		var tpi = Environment.GetEnvironmentVariable( "OPENTPW_TPI_PATH" );
 		if ( string.IsNullOrWhiteSpace( tpi ) || !Directory.Exists( tpi ) )
@@ -35,7 +36,6 @@ public class TpiRidesEndToEndTests
 		tpiFolder = tpi!;
 		var data = OriginalParkImportTests.OriginalDataPath();
 		root = Directory.CreateTempSubdirectory( "opentpw-tpi-rides-" ).FullName;
-		previousFileSystem = FileSystem;
 		FileSystem = new BaseFileSystem( data );
 		FileSystem.RegisterArchiveHandler<WadArchive>( ".wad" );
 		ObjectCatalog.BonusDataRoot = null;
@@ -48,8 +48,7 @@ public class TpiRidesEndToEndTests
 	public void Cleanup()
 	{
 		scope?.Dispose();
-		if ( previousFileSystem != null )
-			FileSystem = previousFileSystem;
+		FileSystem = previousFileSystem!;
 		ObjectCatalog.BonusDataRoot = null;
 		if ( root != null )
 			Directory.Delete( root, true );

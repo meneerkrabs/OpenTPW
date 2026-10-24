@@ -21,6 +21,7 @@ public class ShopVisitAssetTests
 	[TestInitialize]
 	public void Init()
 	{
+		previousFiles = FileSystem;
 		Log = new();
 		var gamePath = Environment.GetEnvironmentVariable( "OPENTPW_GAME_PATH" );
 		if ( string.IsNullOrWhiteSpace( gamePath ) || !Directory.Exists( gamePath ) )
@@ -28,17 +29,12 @@ public class ShopVisitAssetTests
 		var dataPath = Directory.EnumerateDirectories( gamePath ).FirstOrDefault( path => string.Equals( Path.GetFileName( path ), "data", StringComparison.OrdinalIgnoreCase ) ) ?? gamePath;
 		if ( !File.Exists( Path.Combine( dataPath, "levels", "jungle", "shops", "burger.wad" ) ) )
 			Assert.Inconclusive( "OPENTPW_GAME_PATH lacks levels/jungle/shops/burger.wad." );
-		previousFiles = FileSystem;
 		FileSystem = new BaseFileSystem( dataPath );
 		FileSystem.RegisterArchiveHandler<WadArchive>( ".wad" );
 	}
 
 	[TestCleanup]
-	public void Cleanup()
-	{
-		if ( previousFiles != null )
-			FileSystem = previousFiles;
-	}
+	public void Cleanup() => FileSystem = previousFiles!;
 
 	/// <summary>Records each guest's spans in state 16 and whether the shop kept it in view through them.</summary>
 	private sealed class UseTracker : IGuestObserver

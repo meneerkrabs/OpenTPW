@@ -30,12 +30,13 @@ public class ThemeParkIncViewerTests
 
 	private BaseFileSystem? previous;
 
+	[TestInitialize]
+	public void Initialize() => previous = FileSystem;
+
 	[TestCleanup]
 	public void Cleanup()
 	{
-		if ( previous != null )
-			FileSystem = previous;
-		previous = null;
+		FileSystem = previous!;
 		GameEditions.Select( GameEdition.ThemeParkWorld );
 	}
 
@@ -45,7 +46,6 @@ public class ThemeParkIncViewerTests
 		if ( string.IsNullOrWhiteSpace( path ) || !Directory.Exists( path ) )
 			Assert.Inconclusive( "Set OPENTPW_TPI_PATH to a Theme Park Inc installation or its Data folder." );
 		var data = Directory.EnumerateDirectories( path! ).FirstOrDefault( directory => string.Equals( Path.GetFileName( directory ), "data", StringComparison.OrdinalIgnoreCase ) ) ?? path!;
-		previous = FileSystem;
 		FileSystem = new BaseFileSystem( data );
 		FileSystem.RegisterArchiveHandler<WadArchive>( ".wad" );
 		GameEditions.Select( GameEdition.ThemeParkInc );

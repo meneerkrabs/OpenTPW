@@ -13,9 +13,12 @@ namespace OpenTPW.Tests;
 [TestClass]
 public class BumperTypeCoverageTests
 {
+	private BaseFileSystem? previousFileSystem;
+
 	[TestInitialize]
 	public void Init()
 	{
+		previousFileSystem = FileSystem;
 		var gamePath = Environment.GetEnvironmentVariable( "OPENTPW_GAME_PATH" );
 		if ( string.IsNullOrWhiteSpace( gamePath ) || !Directory.Exists( gamePath ) )
 			Assert.Inconclusive( "Set OPENTPW_GAME_PATH for the original ride archives." );
@@ -25,6 +28,9 @@ public class BumperTypeCoverageTests
 		FileSystem = new BaseFileSystem( dataPath );
 		FileSystem.RegisterArchiveHandler<WadArchive>( ".wad" );
 	}
+
+	[TestCleanup]
+	public void Cleanup() => FileSystem = previousFileSystem!;
 
 	/// <summary>
 	/// Every catalogue entry of the four themes (bonus entries included) with a nonzero type word: the types are −1 and −4..−14 (the original's

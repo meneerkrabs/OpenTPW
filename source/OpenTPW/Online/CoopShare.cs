@@ -314,9 +314,9 @@ internal sealed class CoopShare : IDisposable
 		if ( Stage != CoopShareStage.Hosting || inviting != null || InvitedLately( player ) || !link.Invite( player ) )
 			return false;
 		inviting = (player, now());
+		// every invitation of the repeat window stays (the server's invitation quota bounds them); an older one's refusal, should it ever come, names no one
+		invited.RemoveAll( entry => inviting.Value.At - entry.At >= RepeatInviteSeconds );
 		invited.Add( (player, inviting.Value.At) );
-		if ( invited.Count > 32 )
-			invited.RemoveAt( 0 );
 		LastInvite = new CoopInviteNotice( player, null );
 		LateRefusal = null;
 		return true;

@@ -21,22 +21,18 @@ public class KeptBodyAssetTests
 	[TestInitialize]
 	public void Init()
 	{
+		previousFiles = FileSystem;
 		Log = new();
 		var gamePath = Environment.GetEnvironmentVariable( "OPENTPW_GAME_PATH" );
 		if ( string.IsNullOrWhiteSpace( gamePath ) || !Directory.Exists( gamePath ) )
 			Assert.Inconclusive( "Set OPENTPW_GAME_PATH for the original sideshows and toilets." );
 		var dataPath = Directory.EnumerateDirectories( gamePath ).FirstOrDefault( path => string.Equals( Path.GetFileName( path ), "data", StringComparison.OrdinalIgnoreCase ) ) ?? gamePath;
-		previousFiles = FileSystem;
 		FileSystem = new BaseFileSystem( dataPath );
 		FileSystem.RegisterArchiveHandler<WadArchive>( ".wad" );
 	}
 
 	[TestCleanup]
-	public void Cleanup()
-	{
-		if ( previousFiles != null )
-			FileSystem = previousFiles;
-	}
+	public void Cleanup() => FileSystem = previousFiles!;
 
 	/// <summary>How a kept body is drawn on one tick of its use.</summary>
 	private enum View { InPlace, Walked, Held, HiddenOnBoard, Lost }

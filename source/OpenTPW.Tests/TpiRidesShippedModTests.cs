@@ -27,17 +27,16 @@ public class TpiRidesShippedModTests
 	[TestInitialize]
 	public void Initialize()
 	{
+		previousFileSystem = FileSystem;
 		Log ??= new();
 		root = Directory.CreateTempSubdirectory( "opentpw-tpi-shipped-" ).FullName;
-		previousFileSystem = FileSystem;
 		ObjectCatalog.BonusDataRoot = null;
 	}
 
 	[TestCleanup]
 	public void Cleanup()
 	{
-		if ( previousFileSystem != null )
-			FileSystem = previousFileSystem;
+		FileSystem = previousFileSystem!;
 		ObjectCatalog.BonusDataRoot = null;
 		Directory.Delete( root, true );
 	}

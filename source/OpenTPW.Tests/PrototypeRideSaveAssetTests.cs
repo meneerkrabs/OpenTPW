@@ -23,10 +23,12 @@ namespace OpenTPW.Tests;
 public class PrototypeRideSaveAssetTests
 {
 	private const float Tick = 1f / FixedStepClock.TicksPerSecond;
+	private BaseFileSystem? previousFileSystem;
 
 	[TestInitialize]
 	public void Init()
 	{
+		previousFileSystem = FileSystem;
 		Log = new();
 		var gamePath = Environment.GetEnvironmentVariable( "OPENTPW_GAME_PATH" );
 		if ( string.IsNullOrWhiteSpace( gamePath ) || !Directory.Exists( gamePath ) )
@@ -37,6 +39,9 @@ public class PrototypeRideSaveAssetTests
 		FileSystem = new BaseFileSystem( dataPath );
 		FileSystem.RegisterArchiveHandler<WadArchive>( ".wad" );
 	}
+
+	[TestCleanup]
+	public void Cleanup() => FileSystem = previousFileSystem!;
 
 	/// <summary>A live Totem beside real guests: the sandbox's own ride, placed at a cell centre, opened and left to run.</summary>
 	private sealed class TotemRig

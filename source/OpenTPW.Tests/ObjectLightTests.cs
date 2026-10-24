@@ -466,17 +466,20 @@ public class ObjectLightTests
 	[TestInitialize]
 	public void Initialize()
 	{
+		// saved first, so the cleanup puts back what was there even when the rest of the setup fails
+		previousFileSystem = FileSystem;
 		Log ??= new();
 		root = Directory.CreateTempSubdirectory( "opentpw-lights-" ).FullName;
-		previousFileSystem = FileSystem;
 	}
 
 	[TestCleanup]
 	public void Cleanup()
 	{
-		if ( previousFileSystem != null )
-			FileSystem = previousFileSystem;
-		Directory.Delete( root, true );
+		// a null file system is put back too: it is the default without game data, and the stand-in game folder (deleted below) left in its place
+		// became the game data of every later test in the run
+		FileSystem = previousFileSystem!;
+		if ( root != null )
+			Directory.Delete( root, true );
 	}
 
 	private static string ExampleFolder => Path.Combine( ModDiscovery.ProgramModsDirectory( AppContext.BaseDirectory ), ExampleId );

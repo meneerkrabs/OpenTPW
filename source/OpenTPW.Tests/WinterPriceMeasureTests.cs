@@ -26,6 +26,7 @@ public class WinterPriceMeasureTests
 	[TestInitialize]
 	public void Initialize()
 	{
+		previousFileSystem = FileSystem;
 		Log ??= new();
 		var gamePath = Environment.GetEnvironmentVariable( "OPENTPW_GAME_PATH" );
 		if ( string.IsNullOrWhiteSpace( gamePath ) || !Directory.Exists( gamePath ) )
@@ -33,7 +34,6 @@ public class WinterPriceMeasureTests
 		var dataPath = Directory.EnumerateDirectories( gamePath ).FirstOrDefault( path => string.Equals( Path.GetFileName( path ), "data", StringComparison.OrdinalIgnoreCase ) ) ?? gamePath;
 		if ( !File.Exists( Path.Combine( dataPath, "levels", "Standard.sam" ) ) )
 			Assert.Inconclusive( "OPENTPW_GAME_PATH lacks levels/Standard.sam." );
-		previousFileSystem = FileSystem;
 		FileSystem = new BaseFileSystem( dataPath );
 		FileSystem.RegisterArchiveHandler<WadArchive>( ".wad" );
 		previousRoots = ObjectCatalog.ContentRoots;
@@ -49,8 +49,7 @@ public class WinterPriceMeasureTests
 		extensions?.Dispose();
 		if ( previousRoots != null )
 			ObjectCatalog.SetContentRoots( previousRoots );
-		if ( previousFileSystem != null )
-			FileSystem = previousFileSystem;
+		FileSystem = previousFileSystem!;
 	}
 
 	internal const string Kiosk = "winter kiosk", Stall = "gluehwein stall", Shop = "shop";

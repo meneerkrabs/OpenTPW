@@ -38,8 +38,7 @@ public class ThemeParkIncLanguageTests
 	[TestCleanup]
 	public void Restore()
 	{
-		if ( previousFileSystem != null )
-			FileSystem = previousFileSystem;
+		FileSystem = previousFileSystem!;
 		GameLanguage.Current = previousLanguage!;
 		GameLanguage.AvailableOverlay = previousOverlay;
 		ContentSoundRoots.Restore( previousSoundRoots! );

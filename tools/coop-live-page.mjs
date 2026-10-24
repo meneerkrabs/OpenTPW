@@ -60,40 +60,61 @@ export function pictureName(role, name) {
 const CHANNELS = { 2: 3, 6: 4 };
 
 /**
- * A truecolour PNG's width and height once the whole image decodes: every chunk whole with its checksum, the header first (RGB or RGBA at 8 or 16 bits, the standard
- * compression and filtering) and the end last, and the image data inflating to exactly the rows the header promises (non-interlaced), each row's filter one of the five.
- * Null for anything else, a palette or grey image included (no picture of the acceptance is one).
+ * A truecolour PNG's width and height once the whole image decodes, by the PNG specification's chunk rules: every chunk whole with its checksum and a type of four letters
+ * whose third is upper case; the header first (RGB or RGBA at 8 or 16 bits, the standard compression and filtering), a palette at most once before the data with 1 to 256
+ * entries, the data in one run of chunks, the end last and empty with nothing after it, and no other critical chunk (ancillary ones are skipped, as decoders skip them).
+ * The data must inflate to exactly the rows the header promises (non-interlaced), each row's filter one of the five. Null for anything else, a palette or grey image
+ * included (no picture of the acceptance is one).
  */
 export function pngSize(bytes) {
 	const signature = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 	if (!Buffer.isBuffer(bytes) || bytes.length < 8 || !bytes.subarray(0, 8).equals(signature))
 		return null;
-	let offset = 8, header = null, ended = false;
-	const data = [];
-	while (offset + 12 <= bytes.length && !ended) {
+	let offset = 8, header = null, ended = false, palette = false, data = 'before';
+	const chunks = [];
+	while (offset < bytes.length) {
+		if (ended || offset + 12 > bytes.length)
+			return null;
 		const length = bytes.readUInt32BE(offset);
-		const type = bytes.toString('latin1', offset + 4, offset + 8);
+		const kind = bytes.subarray(offset + 4, offset + 8);
+		if (length > 0x7fffffff || ![...kind].every(code => (code >= 65 && code <= 90) || (code >= 97 && code <= 122)) || (kind[2] & 0x20) !== 0)
+			return null;
 		if (offset + 12 + length > bytes.length || crc32(bytes.subarray(offset + 4, offset + 8 + length)) !== bytes.readUInt32BE(offset + 8 + length))
 			return null;
+		const type = kind.toString('latin1');
 		const body = bytes.subarray(offset + 8, offset + 8 + length);
 		if ((header === null) !== (type === 'IHDR'))
 			return null;
 		if (type === 'IHDR') {
-			if (body.length !== 13)
+			if (length !== 13)
 				return null;
 			header = { width: body.readUInt32BE(0), height: body.readUInt32BE(4), depth: body[8], color: body[9], compression: body[10], filter: body[11], interlace: body[12] };
-		} else if (type === 'IDAT')
-			data.push(body);
-		else if (type === 'IEND')
+		} else if (type === 'PLTE') {
+			if (palette || data !== 'before' || length === 0 || length % 3 !== 0 || length > 768)
+				return null;
+			palette = true;
+		} else if (type === 'IDAT') {
+			if (data === 'after')
+				return null;
+			data = 'in';
+			chunks.push(body);
+		} else if (type === 'IEND') {
+			if (length !== 0)
+				return null;
 			ended = true;
+		} else if ((kind[0] & 0x20) === 0)
+			// an unknown critical chunk: no decoder may skip it
+			return null;
+		if (type !== 'IDAT' && data === 'in')
+			data = 'after';
 		offset += 12 + length;
 	}
-	if (!header || !ended || header.interlace !== 0 || header.compression !== 0 || header.filter !== 0 || !(header.width > 0 && header.height > 0)
+	if (!header || !ended || chunks.length === 0 || header.interlace !== 0 || header.compression !== 0 || header.filter !== 0 || !(header.width > 0 && header.height > 0)
 		|| !CHANNELS[header.color] || ![8, 16].includes(header.depth))
 		return null;
 	try {
-		const rowBytes = Math.ceil(header.width * CHANNELS[header.color] * header.depth / 8);
-		const rows = inflateSync(Buffer.concat(data));
+		const rowBytes = header.width * CHANNELS[header.color] * header.depth / 8;
+		const rows = inflateSync(Buffer.concat(chunks));
 		if (rows.length !== header.height * (1 + rowBytes))
 			return null;
 		for (let row = 0; row < header.height; row++)

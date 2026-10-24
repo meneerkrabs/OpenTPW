@@ -270,16 +270,22 @@ test('a page asks only for its own role\'s pictures, by a flat name', () => {
 	assert.ok(!pictureName('host', undefined));
 });
 
-/** A whole PNG of `width` by `height` pixels (RGBA, or `color`), each row with `filter`; `cut` drops that many bytes from its end. */
-function png(width, height, cut = 0, filter = 0, color = 6) {
-	const chunk = (type, body) => {
-		const head = Buffer.alloc(8);
-		head.writeUInt32BE(body.length, 0);
-		head.write(type, 4, 'latin1');
-		const sum = Buffer.alloc(4);
-		sum.writeUInt32BE(crc32(Buffer.concat([head.subarray(4), body])), 0);
-		return Buffer.concat([head, body, sum]);
-	};
+/** A PNG chunk of `type` with `body` and its checksum. */
+function pngChunk(type, body) {
+	const head = Buffer.alloc(8);
+	head.writeUInt32BE(body.length, 0);
+	head.write(type, 4, 'latin1');
+	const sum = Buffer.alloc(4);
+	sum.writeUInt32BE(crc32(Buffer.concat([head.subarray(4), body])), 0);
+	return Buffer.concat([head, body, sum]);
+}
+
+/**
+ * A whole PNG of `width` by `height` pixels (RGBA, or `color`), each row with `filter`; `cut` drops that many bytes from its end. `before` and `between` are chunks put
+ * before the image data and between its two halves, `after` bytes after its end.
+ */
+function png(width, height, cut = 0, filter = 0, color = 6, { before = [], between = [], after = Buffer.alloc(0) } = {}) {
+	const chunk = pngChunk;
 	const header = Buffer.alloc(13);
 	header.writeUInt32BE(width, 0);
 	header.writeUInt32BE(height, 4);
@@ -289,7 +295,10 @@ function png(width, height, cut = 0, filter = 0, color = 6) {
 	const rows = Buffer.alloc(height * (1 + width * channels));
 	for (let row = 0; row < height; row++)
 		rows[row * (1 + width * channels)] = filter;
-	const bytes = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), chunk('IHDR', header), chunk('IDAT', deflateSync(rows)), chunk('IEND', Buffer.alloc(0))]);
+	const packed = deflateSync(rows);
+	const half = Math.floor(packed.length / 2);
+	const bytes = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), chunk('IHDR', header), ...before, chunk('IDAT', packed.subarray(0, half)), ...between,
+		chunk('IDAT', packed.subarray(half)), chunk('IEND', Buffer.alloc(0)), after]);
 	return bytes.subarray(0, bytes.length - cut);
 }
 
@@ -313,6 +322,17 @@ test('a picture counts only when the whole PNG decodes', () => {
 	assert.deepEqual(pngSize(png(4, 3, 0, 0, 2)), { width: 4, height: 3 });
 	assert.equal(pngSize(png(4, 3, 0, 0, 3)), null);
 	assert.equal(pngSize(png(4, 3, 0, 0, 0)), null);
+	// the specification's chunk rules: a suggested palette of 1 to 256 entries and ancillary chunks are fine; an empty palette, an unknown critical chunk, image data split
+	// by another chunk, a chunk type that is no four letters or has its reserved bit set, and bytes after the end are not
+	const rgb = options => pngSize(png(4, 3, 0, 0, 2, options));
+	assert.deepEqual(rgb({ before: [pngChunk('PLTE', Buffer.alloc(9)), pngChunk('tEXt', Buffer.from('Software\0test'))] }), { width: 4, height: 3 });
+	assert.equal(rgb({ before: [pngChunk('PLTE', Buffer.alloc(0))] }), null);
+	assert.equal(rgb({ before: [pngChunk('PLTE', Buffer.alloc(10))] }), null);
+	assert.equal(rgb({ before: [pngChunk('ABCD', Buffer.alloc(4))] }), null);
+	assert.equal(rgb({ between: [pngChunk('tEXt', Buffer.from('a\0b'))] }), null);
+	assert.equal(rgb({ before: [pngChunk('ab1d', Buffer.alloc(1))] }), null);
+	assert.equal(rgb({ before: [pngChunk('abcd', Buffer.alloc(1))] }), null);
+	assert.equal(rgb({ after: Buffer.from('trailing') }), null);
 	assert.equal(pngSize(Buffer.from('not a picture at all, longer than a header')), null);
 });
 

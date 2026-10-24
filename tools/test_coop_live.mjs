@@ -112,9 +112,10 @@ test('the endurance run needs its whole minutes at the fastest speed, on both si
 	const run = (minutes, rate = 240) => {
 		const { host, guest } = passingPair();
 		const count = minutes * 2;
-		const samples = (first, ticks) => Array.from({ length: count }, (_, index) => ({ at: first + index * 30, ticks: ticks + index * 30 * rate, speed: 'Fastest' }));
-		host.endurance = { started: 20, startTicks: 1000 - 30 * rate, ended: 20 + minutes * 60, samples: samples(50, 1000) };
-		guest.endurance = samples(21, 900);
+		host.endurance = { started: 20, startTicks: 1000 - 30 * rate, ended: 21 + minutes * 60,
+			samples: Array.from({ length: count }, (_, index) => ({ at: 50 + index * 30, ticks: 1000 + index * 30 * rate, speed: 'Fastest' })) };
+		// the guest's ticks before the speed, a sample every half minute, and the last one the host asks for before the normal speed
+		guest.endurance = Array.from({ length: count + 1 }, (_, index) => ({ at: 19 + index * 30, ticks: 900 + index * 30 * rate, final: index === count }));
 		return { host, guest };
 	};
 	const named = minutes => `the fastest speed was followed for ${minutes} minutes`;
@@ -122,7 +123,7 @@ test('the endurance run needs its whole minutes at the fastest speed, on both si
 	assert.deepEqual(failing(checkEvidence(pair.host, pair.guest, 'endurance', 2)), []);
 	// a run a little short of its minutes
 	pair = run(2);
-	pair.host.endurance.ended -= 1;
+	pair.host.endurance.ended = pair.host.endurance.started + 119;
 	assert.deepEqual(failing(checkEvidence(pair.host, pair.guest, 'endurance', 2)), [named(2)]);
 	// a park at the normal or the fast speed
 	pair = run(2, 120);
@@ -140,6 +141,18 @@ test('the endurance run needs its whole minutes at the fastest speed, on both si
 	// samples missing on one side
 	pair = run(2);
 	pair.guest.endurance.splice(1);
+	assert.deepEqual(failing(checkEvidence(pair.host, pair.guest, 'endurance', 2)), [named(2)]);
+	// a guest without its last sample, or stalled before it
+	pair = run(2);
+	pair.guest.endurance.pop();
+	assert.deepEqual(failing(checkEvidence(pair.host, pair.guest, 'endurance', 2)), [named(2)]);
+	// the guest's last sample right after a regular one, with no tick between them (its ticks come in bursts): its stretch joins the one before
+	pair = run(2);
+	pair.guest.endurance.at(-2).final = false;
+	pair.guest.endurance.push({ ...pair.guest.endurance.at(-1), at: pair.guest.endurance.at(-1).at + 0.1, final: true });
+	assert.deepEqual(failing(checkEvidence(pair.host, pair.guest, 'endurance', 2)), []);
+	pair = run(2);
+	pair.guest.endurance.at(-1).ticks = pair.guest.endurance.at(-2).ticks;
 	assert.deepEqual(failing(checkEvidence(pair.host, pair.guest, 'endurance', 2)), [named(2)]);
 	pair = run(3);
 	assert.deepEqual(failing(checkEvidence(pair.host, pair.guest, 'endurance', 4)), [named(4)]);

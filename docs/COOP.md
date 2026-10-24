@@ -1100,9 +1100,10 @@ The scenarios:
 - **endurance** (`--scenario endurance --minutes M`): after the chat, the host runs the fastest speed (the
   HUD's `>>>`) for M whole minutes of wall time, from setting it to setting the normal speed back. The guest
   takes its ticks before the host sets the speed, and the host its own when it does. Every half minute both
-  games sample the park's ticks; the host also checks that the speed is still the fastest. From those first
-  ticks on, both parks must run at least 180 ticks a second, three times the normal 60, which only the
-  fastest speed (240) reaches. The guest follows with no resync and no desync, comparing a
+  games sample the park's ticks; the host also checks that the speed is still the fastest, and asks for the
+  guest's last sample before it sets the normal speed back. From those first ticks to the last sample, both
+  parks must run at least 180 ticks a second over every stretch of five seconds or more, three times the
+  normal 60, which only the fastest speed (240) reaches. The guest follows with no resync and no desync, comparing a
   checkpoint at least every two seconds. Then the rest of the steps follow.
 
 **The pages' way in.** The pages (C2d-5b) open through the drivers' own local server in front of the

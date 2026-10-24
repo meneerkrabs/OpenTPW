@@ -199,20 +199,24 @@ internal sealed partial class CoopLiveTest
 		var (checks, started) = (stream.Checks, Now);
 		while ( true )
 		{
-			// a sample every half minute while the host's interval runs; none at its end, whose rate would take in the normal speed after it
+			// a sample every half minute while the host's interval runs, and a last one when the host asks for it, still at the fastest speed
 			var next = Now + 30;
-			yield return Wait( "the fastest speed followed", () => OtherSays( "enduranceDone" ) || Now >= next, 90 );
-			if ( OtherSays( "enduranceDone" ) )
-				break;
+			yield return Wait( "the fastest speed followed", () => OtherSays( "enduranceFinal" ) || Now >= next, 90 );
+			var final = OtherSays( "enduranceFinal" );
 			Require( ReferenceEquals( TheSession.GuestStream, stream ) && TheSession.Phase == CoopGuestPhase.Following && !stream.Stopped && stream.Desyncs == 0,
 				"the park follows the fastest speed with no resync and no desync" );
 			var sample = StreamEvidence();
 			sample["at"] = Math.Round( Now, 3 );
+			sample["final"] = final;
 			progress.Add( sample );
 			Keep( "endurance", progress );
+			if ( final )
+				break;
 		}
 		var compared = stream.Checks - checks;
 		Require( compared >= (Now - started) / 2, $"checkpoints compared through the run ({compared} in {Now - started:0} s)" );
+		Publish( "enduranceFinalSampled", true );
+		yield return Wait( "the host's normal speed", () => OtherSays( "enduranceDone" ), 120 );
 		Publish( "enduranceChecked", true );
 	}
 

@@ -291,6 +291,13 @@ async function upgradeThrough(origin, pathname) {
 /** The next chunk a socket receives. */
 const nextChunk = socket => new Promise(resolve => socket.once('data', chunk => resolve(chunk.toString())));
 
+/** `promise`, or a failure naming `what` after `milliseconds`: a regression fails its test instead of hanging it. */
+function within(promise, milliseconds, what) {
+	let timer;
+	const deadline = new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(`${what} did not happen within ${milliseconds} ms`)), milliseconds); });
+	return Promise.race([promise, deadline]).finally(() => clearTimeout(timer));
+}
+
 test('a WebSocket upgrade below /api/ is forwarded to the upstream and joined both ways; any other is refused', async () => {
 	const { createServer } = await import('node:http');
 	const seen = [];
@@ -405,21 +412,22 @@ test('a refused client that keeps its side open keeps its place until the local 
 	await new Promise(resolve => upstream.listen(0, '127.0.0.1', resolve));
 	const root = await mkdtemp(path.join(os.tmpdir(), 'web-perf-upgrade-'));
 	const harness = await startServer(root, root, `http://127.0.0.1:${upstream.address().port}`, { sockets: 1, endMs: 300 });
+	let lingering;
 	try {
 		const port = Number(new URL(harness.origin).port);
 		// a raw client: it reads the refusal and never ends its own side (a half-open socket does not answer the server's end with its own)
-		const lingering = net.connect({ port, host: '127.0.0.1', allowHalfOpen: true });
+		lingering = net.connect({ port, host: '127.0.0.1', allowHalfOpen: true });
 		lingering.write('GET /api/v1/chat HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: Upgrade\r\nUpgrade: websocket\r\n\r\n');
-		const refused = await new Promise(resolve => lingering.once('data', chunk => resolve(chunk.toString())));
+		const refused = await within(nextChunk(lingering), 5000, 'the refusal');
 		assert.match(refused, /^HTTP\/1\.1 403 Forbidden/);
 		// its place is still taken after the answer's end (the half-open client never closes its own side)
 		assert.equal((await upgradeThrough(harness.origin, '/api/v1/chat')).status, 503);
 		// until the local server closes it, after the half-close wait (300 ms here)
 		await new Promise(resolve => setTimeout(resolve, 900));
 		assert.equal((await upgradeThrough(harness.origin, '/api/v1/chat')).status, 403);
-		lingering.destroy();
 	} finally {
-		await harness.close();
+		lingering?.destroy();
+		await within(harness.close(), 5000, 'the local server\'s close');
 		await new Promise(resolve => upstream.close(resolve));
 		await rm(root, { recursive: true, force: true });
 	}
@@ -430,17 +438,16 @@ test('a refusal before any forwarding keeps a lingering client among the sockets
 	const root = await mkdtemp(path.join(os.tmpdir(), 'web-perf-upgrade-'));
 	// no upstream answers here: the refusals are the local server's own
 	const harness = await startServer(root, root, 'http://127.0.0.1:9', { endMs: 60000 });
+	let lingering;
 	try {
 		const port = Number(new URL(harness.origin).port);
-		const lingering = net.connect({ port, host: '127.0.0.1', allowHalfOpen: true });
+		lingering = net.connect({ port, host: '127.0.0.1', allowHalfOpen: true });
 		lingering.write('GET /not-api HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: Upgrade\r\nUpgrade: websocket\r\n\r\n');
-		assert.match(await new Promise(resolve => lingering.once('data', chunk => resolve(chunk.toString()))), /^HTTP\/1\.1 404 Not Found/);
-		// the client keeps its side open, and the wait for it is long: the server's close ends it anyway
-		const ended = new Promise(resolve => lingering.once('end', resolve));
-		await harness.close();
-		await ended;
-		lingering.destroy();
+		assert.match(await within(nextChunk(lingering), 5000, 'the refusal'), /^HTTP\/1\.1 404 Not Found/);
+		// the client keeps its side open, and the wait for it is long: the server's close ends it anyway, at once
+		await within(harness.close(), 5000, 'the local server\'s close with a lingering refused client');
 	} finally {
+		lingering?.destroy();
 		await rm(root, { recursive: true, force: true });
 	}
 });

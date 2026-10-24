@@ -200,6 +200,10 @@ internal sealed partial class CoopLiveTest
 			Keep( "endurance", endurance );
 			Publish( "enduranceProgress", sample );
 		}
+		// the guest's last sample, still at the fastest speed: its rates cover the interval to its end
+		Publish( "enduranceFinal", true );
+		yield return Wait( "the guest's last sample", () => OtherSays( "enduranceFinalSampled" ), 120 );
+		Require( TheHud.Status.Speed == GameSpeed.Fastest, $"the park stays at the fastest speed (it is {TheHud.Status.Speed})" );
 		yield return Wait( "the HUD alone", () => Top( "hud" ) && TheHud.Stack.Screens.Count == 1, 30 );
 		Press( "hud", $"speed{GameSpeed.Normal}" );
 		Require( TheHud.Status.Speed == GameSpeed.Normal, $"the HUD's normal speed is the park's (it is {TheHud.Status.Speed})" );

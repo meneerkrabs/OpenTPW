@@ -194,20 +194,27 @@ class Server {
 			env: { ...process.env, DOTNET_CLI_TELEMETRY_OPTOUT: '1' } });
 		this.starts++;
 		this.logs.push(logTo(child, this.log, this.secrets));
+		// the start's own view of the output: its last few kilobytes, until the server listens (the log keeps all of it)
 		let output = '';
 		await new Promise((resolve, reject) => {
-			const timer = setTimeout(() => reject(new Error(`The server did not listen within 60 s:\n${redact(output.slice(-2000), this.secrets)}`)), 60000);
-			const listening = chunk => {
-				output += chunk;
-				if (output.includes(`Now listening on: ${this.origin}`)) {
-					clearTimeout(timer);
-					resolve();
-				}
+			const settle = (error) => {
+				clearTimeout(timer);
+				child.stdout.off('data', listening);
+				child.stderr.off('data', listening);
+				child.off('exit', exited);
+				error ? reject(error) : resolve();
 			};
+			const listening = chunk => {
+				output = (output + chunk).slice(-8192);
+				if (output.includes(`Now listening on: ${this.origin}`))
+					settle();
+			};
+			const exited = code => settle(new Error(`The server exited (${code}) before it listened:\n${redact(output.slice(-2000), this.secrets)}`));
+			const timer = setTimeout(() => settle(new Error(`The server did not listen within 60 s:\n${redact(output.slice(-2000), this.secrets)}`)), 60000);
 			child.stdout.on('data', listening);
 			child.stderr.on('data', listening);
-			child.once('error', error => { clearTimeout(timer); reject(new Error(`The server could not start: ${error.message}`)); });
-			child.once('exit', code => { clearTimeout(timer); reject(new Error(`The server exited (${code}) before it listened:\n${redact(output.slice(-2000), this.secrets)}`)); });
+			child.once('error', error => settle(new Error(`The server could not start: ${error.message}`)));
+			child.once('exit', exited);
 		});
 	}
 
@@ -341,11 +348,14 @@ export function checkEvidence(host, guest, scenario, minutes) {
 		const seconds = Number.isFinite(endurance?.ended - endurance?.started) ? endurance.ended - endurance.started : 0;
 		// the rates run from the speed's setting (its tick count then) to the last sample
 		const rates = Number.isFinite(endurance?.startTicks) ? tickRates([{ at: endurance.started, ticks: endurance.startTicks }, ...samples]) : [];
+		// the guest's samples run from its ticks before the speed to its last sample, which the host asks for before it sets the normal speed back
 		const guestSamples = guest?.endurance ?? [];
+		const guestSpan = guestSamples.length > 1 ? guestSamples.at(-1).at - guestSamples[0].at : 0;
+		const guestRates = tickRates(guestSamples);
 		check(`the fastest speed was followed for ${minutes} minutes`, seconds >= minutes * 60 && samples.length >= Math.floor(minutes * 2)
 			&& samples.every(sample => sample.speed === 'Fastest') && rates.length > 0 && rates.every(rate => rate >= FASTEST_TICKS_PER_SECOND)
-			&& guestSamples.length >= Math.floor(minutes * 2) - 1 && tickRates(guestSamples).every(rate => rate >= FASTEST_TICKS_PER_SECOND),
-		{ seconds, hostSamples: samples.length, guestSamples: guestSamples.length, slowestHostRate: Math.min(...rates), slowestGuestRate: Math.min(...tickRates(guestSamples)) });
+			&& guestSamples.at(-1)?.final === true && guestSpan >= minutes * 60 && guestRates.length > 0 && guestRates.every(rate => rate >= FASTEST_TICKS_PER_SECOND),
+		{ seconds, guestSeconds: guestSpan, hostSamples: samples.length, guestSamples: guestSamples.length, slowestHostRate: Math.min(...rates), slowestGuestRate: Math.min(...guestRates) });
 	}
 	return checks;
 }
@@ -353,9 +363,22 @@ export function checkEvidence(host, guest, scenario, minutes) {
 /** The fewest park ticks a second of wall time the endurance run's samples may show: three times the normal speed's 60, so only the fastest (240) passes. */
 export const FASTEST_TICKS_PER_SECOND = 180;
 
-/** The park's ticks a second of wall time between consecutive samples. */
+/** The shortest stretch of wall time a tick rate is taken over, in seconds: a guest's ticks come in bursts with the host's frames (every 100 ms at most). */
+export const RATE_SECONDS = 5;
+
+/**
+ * The park's ticks a second of wall time between samples, each over at least RATE_SECONDS: a sample closer than that to the last one kept (the guest's last sample, which
+ * the host asks for right after a regular one) takes that one's place, so its stretch joins the one before.
+ */
 function tickRates(samples) {
-	return samples.slice(1).map((sample, index) => (sample.ticks - samples[index].ticks) / (sample.at - samples[index].at));
+	const kept = [];
+	for (const sample of samples) {
+		if (kept.length === 0 || sample.at - kept.at(-1).at >= RATE_SECONDS)
+			kept.push(sample);
+		else if (kept.length > 1)
+			kept[kept.length - 1] = sample;
+	}
+	return kept.slice(1).map((sample, index) => (sample.ticks - kept[index].ticks) / (sample.at - kept[index].at));
 }
 
 /** Whether a game's link resumed its session and its chat reconnected after the restart's barrier: both counts grew, and its link went from reconnecting to open after it. */

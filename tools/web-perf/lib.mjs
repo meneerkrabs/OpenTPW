@@ -138,10 +138,13 @@ export const UPGRADE_REFUSAL_BYTES = 65536;
  */
 function refuseUpgrade(socket, status, reason, refused, endMs) {
 	refused.add(socket);
-	socket.once('close', () => refused.delete(socket));
+	const timer = setTimeout(() => socket.destroy(), endMs).unref();
+	socket.once('close', () => {
+		clearTimeout(timer);
+		refused.delete(socket);
+	});
 	socket.on('error', () => socket.destroy());
 	socket.end(`HTTP/1.1 ${status} ${reason}\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`);
-	setTimeout(() => socket.destroy(), endMs).unref();
 }
 
 /**
@@ -167,9 +170,11 @@ function forwardUpgrade(request, socket, head, upstreamUrl, log, sockets, refuse
 		upstreamSocket?.destroy();
 		outgoing.destroy();
 	};
+	let drain = null;
 	// the socket's place is free only once it has closed
 	socket.once('close', () => {
 		clearTimeout(timer);
+		clearTimeout(drain);
 		sockets.delete(socket);
 		endUpstream();
 	});
@@ -185,7 +190,7 @@ function forwardUpgrade(request, socket, head, upstreamUrl, log, sockets, refuse
 		clearTimeout(timer);
 		endUpstream();
 		socket.end(bytes);
-		setTimeout(() => socket.destroy(), limits.endMs).unref();
+		drain = setTimeout(() => socket.destroy(), limits.endMs).unref();
 	};
 	/** A plain answer of the local server's own in place of the upstream's. */
 	const fail = (status, reason) => {

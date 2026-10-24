@@ -56,7 +56,9 @@ public class HeldSoundCorpusTests
 		foreach ( var (field, value) in saved )
 			field.SetValue( null, value );
 		FileSystem = previousFileSystem!;
-		ObjectCatalog.BonusDataRoot = previousBonus;
+		// only when the setup changed it: the setter also stops the catalog following OPENTPW_BONUS_DATA
+		if ( ObjectCatalog.BonusDataRoot != previousBonus )
+			ObjectCatalog.BonusDataRoot = previousBonus;
 		AudioListener.Update( Vector3.Zero, new Vector3( 0, 0, 1 ) );
 	}
 

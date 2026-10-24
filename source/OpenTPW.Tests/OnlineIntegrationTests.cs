@@ -539,6 +539,17 @@ public class OnlineIntegrationTests
 	}
 
 	[TestMethod]
+	public void ChatTreatsADroppedConnectionAsLostAndAClosedOneAsClosed()
+	{
+		// lost: the desktop's dropped socket (no status), the browser's (1006), the server going away (1001) or restarting (1012); the client reconnects to its room
+		foreach ( var status in new int?[] { null, 1001, ChatProtocol.DroppedCloseStatus, ChatProtocol.RestartingCloseStatus } )
+			Assert.IsTrue( ChatProtocol.IsLost( status ), $"close status {status?.ToString() ?? "none"} is a lost connection" );
+		// closed: a normal close, a protocol or policy refusal, the server's own refusals
+		foreach ( var status in new int?[] { 1000, 1002, 1008, 1011, 4000, 4403 } )
+			Assert.IsFalse( ChatProtocol.IsLost( status ), $"close status {status} is no lost connection" );
+	}
+
+	[TestMethod]
 	public async Task ChatReconnectsToItsRoomAfterTheServerRestarts()
 	{
 		var server = await LoopbackServer.StartAsync();

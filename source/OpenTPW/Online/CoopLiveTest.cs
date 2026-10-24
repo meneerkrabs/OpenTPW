@@ -32,10 +32,14 @@ internal sealed partial class CoopLiveTest : IDisposable
 	private const double StatusReadSeconds = 0.25;
 	/// <summary>The driver's status file is <c>driver-status.json</c>.</summary>
 	internal const string DriverRole = "driver";
+	/// <summary>How often both games sample the park's ticks at the fastest speed (the endurance scenario), in seconds of wall time.</summary>
+	internal const double EnduranceSampleSeconds = 5;
 
 	private readonly GameFlow flow;
 	private readonly string evidenceDirectory;
 	private readonly bool hosting;
+	/// <summary>The run is the page's (C2d-5b, <see cref="StartPage"/>): the driver takes its pictures, and its completion closes no window.</summary>
+	private readonly bool page;
 	private readonly string server;
 	private readonly string playerName;
 	private readonly string password;
@@ -55,6 +59,9 @@ internal sealed partial class CoopLiveTest : IDisposable
 	private CoopLiveWait? waiting;
 	private double waitingSince;
 	private int frame;
+	/// <summary>The wall time of the last frame, and the longest wait between two frames so far with the frame that ended it.</summary>
+	private double? lastFrameAt;
+	private (double Seconds, int Frame) longestFrameGap;
 	private bool done;
 	private bool completed;
 	private string? failure;
@@ -64,11 +71,12 @@ internal sealed partial class CoopLiveTest : IDisposable
 	private readonly List<IDisposable> keys = new();
 
 	internal CoopLiveTest( GameFlow flow, string evidenceDirectory, bool hosting, Func<string, string?> environment, Action<string> completedBy, Action<string> failedBy,
-		Func<CoopLiveTest, IEnumerable<CoopLiveWait>>? script = null )
+		Func<CoopLiveTest, IEnumerable<CoopLiveWait>>? script = null, bool page = false )
 	{
 		this.flow = flow;
 		this.evidenceDirectory = evidenceDirectory;
 		this.hosting = hosting;
+		this.page = page;
 		this.completedBy = completedBy;
 		this.failedBy = failedBy;
 		string Required( string name ) => environment( name ) is { Length: > 0 } value ? value : throw new ArgumentException( $"--coop-live needs {name} in the environment." );
@@ -140,6 +148,10 @@ internal sealed partial class CoopLiveTest : IDisposable
 		if ( done )
 			return;
 		frame++;
+		var now = Now;
+		if ( lastFrameAt is { } last && now - last > longestFrameGap.Seconds )
+			longestFrameGap = (now - last, frame);
+		lastFrameAt = now;
 		try
 		{
 			Observe();
@@ -411,6 +423,15 @@ internal sealed partial class CoopLiveTest : IDisposable
 		evidence["streams"] = streams;
 		evidence["steps"] = JsonSerializer.SerializeToNode( log );
 		evidence["links"] = LinkEvidence();
+		evidence["longestFrameGap"] = new JsonObject { ["seconds"] = Math.Round( longestFrameGap.Seconds, 3 ), ["frame"] = longestFrameGap.Frame };
+		// where this game's own figure stood when the evidence was written, and the view's centre (a failed move's facts)
+		if ( flow.CoopPresence is { } presence && flow.Level is { } level )
+			evidence["figureAtEnd"] = new JsonObject
+			{
+				["own"] = new JsonArray( (JsonNode?)Math.Round( presence.State.Own.X, 2 ), Math.Round( presence.State.Own.Y, 2 ) ),
+				["walking"] = presence.State.Walking,
+				["view"] = GameFlow.ViewCentre( level ) is { } centre ? new JsonArray( (JsonNode?)Math.Round( centre.X, 2 ), Math.Round( centre.Y, 2 ) ) : null,
+			};
 		WriteJson( $"{Role}-evidence.json", evidence );
 	}
 

@@ -928,8 +928,9 @@ public sealed class OnlineSession : IDisposable, IPresenceSession, IChatPanelSou
 		catch ( Exception exception ) when ( exception is System.Net.WebSockets.WebSocketException or OperationCanceledException or InvalidDataException or ObjectDisposedException )
 		{
 		}
-		// A server restart (a deploy) or a dropped connection is not the player leaving: reconnect to the same room.
-		var lost = !cancel.IsCancellationRequested && chat.CloseStatus is null or ChatProtocol.RestartingCloseStatus or (int)System.Net.WebSockets.WebSocketCloseStatus.EndpointUnavailable;
+		// A server restart (a deploy) or a dropped connection is not the player leaving: reconnect to the same room. The browser reports a dropped connection with its own
+		// status (ChatProtocol.DroppedCloseStatus), so the page reconnects too (found by the live acceptance, C2d-5b).
+		var lost = !cancel.IsCancellationRequested && ChatProtocol.IsLost( chat.CloseStatus );
 		Post( () =>
 		{
 			chat.Dispose();

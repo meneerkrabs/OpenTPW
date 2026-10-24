@@ -169,7 +169,8 @@ public static partial class Program
 		renderer = new Renderer( displaySettings, displayPath );
 		Render = renderer;
 		// [EXT:extension-online-gate] no online folder while the opentpw.online extension is off (docs/MODS.md)
-		flow = new GameFlow { OnlineFolders = FeatureGates.Online ? new OnlineFolders( "/online" ) : null };
+		// [EXT:online-coop-session] the live acceptance's page runs without automatic advice, as the native run does (--no-advisor)
+		flow = new GameFlow { OnlineFolders = FeatureGates.Online ? new OnlineFolders( "/online" ) : null, AutomaticAdvisorEnabled = !coopLiveMode };
 		// Level folders are copied when a park is first started; the lobby keeps running meanwhile.
 		// A language other than the installed one needs its speech files (about 27 MB) beside the text; they are copied when the
 		// language is chosen, at once for a saved choice, and a park or a switch waits for them so the advisor never mixes voices.
@@ -305,7 +306,8 @@ public static partial class Program
 		if ( renderer == null )
 			return false;
 		FrameMarks.BeginFrame();
-		// [EXT:online-coop-snapshot-join] the co-op join smoke's frame while it runs (Program.CoopJoinSmokeTest.cs)
-		return coopSmoke is { } smoke ? CoopSmokeFrame( renderer, smoke ) : renderer.Frame();
+		// [EXT:online-coop-snapshot-join] the co-op join smoke's frame while it runs (Program.CoopJoinSmokeTest.cs); [EXT:online-coop-session] the live acceptance's
+		// (Program.CoopLive.cs)
+		return coopSmoke is { } smoke ? CoopSmokeFrame( renderer, smoke ) : coopLive is { } live ? CoopLiveFrame( renderer, live ) : renderer.Frame();
 	}
 }

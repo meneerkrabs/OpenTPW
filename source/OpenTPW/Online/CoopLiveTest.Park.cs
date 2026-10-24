@@ -47,35 +47,49 @@ internal sealed partial class CoopLiveTest
 	private (float X, float Y) ViewCentre() => GameFlow.ViewCentre( ThePark ) ?? throw new InvalidOperationException( "Live co-op acceptance: the view has no centre in the park." );
 
 	/// <summary>
-	/// A cell a figure can stand on (its ground, C2d-4: the park's own land, paths, queues and the entrance) at least <see cref="MoveCells"/> from <paramref name="from"/>, the
-	/// nearest such (ties by row, then column): far enough that the figure jumps there, near enough that the view stays over the park.
+	/// The cells a figure can stand on (its ground, C2d-4: the park's own land, paths, queues and the entrance) at least <see cref="MoveCells"/> from <paramref name="from"/>,
+	/// nearest first (ties by row, then column): far enough that the figure jumps there, near enough that the view stays over the park.
 	/// </summary>
-	private (float X, float Y) CellAway( (float X, float Y) from )
+	private IEnumerable<(float X, float Y)> CellsAway( (float X, float Y) from )
 	{
 		var cells = ThePark.Guests?.Grid.Cells ?? throw new InvalidOperationException( "Live co-op acceptance: the park has no cells." );
 		var ground = new ParkPresence.PresenceGround( cells );
-		(float X, float Y)? best = null;
-		var bestDistance = float.MaxValue;
+		var found = new List<(float Distance, int Y, int X)>();
 		for ( var y = 0; y < cells.Height; y++ )
 			for ( var x = 0; x < cells.Width; x++ )
 			{
-				if ( !ground.IsPassable( x, y ) )
-					continue;
 				var distance = MathF.Sqrt( (x + 0.5f - from.X) * (x + 0.5f - from.X) + (y + 0.5f - from.Y) * (y + 0.5f - from.Y) );
-				if ( distance >= MoveCells && distance < bestDistance )
-					(best, bestDistance) = ((x + 0.5f, y + 0.5f), distance);
+				if ( distance >= MoveCells && ground.IsPassable( x, y ) )
+					found.Add( (distance, y, x) );
 			}
-		return best ?? throw new InvalidOperationException( $"Live co-op acceptance: the park has no ground {MoveCells} cells from ({from.X:0.#}, {from.Y:0.#})." );
+		return found.OrderBy( cell => cell.Distance ).ThenBy( cell => cell.Y ).ThenBy( cell => cell.X ).Select( cell => (cell.X + 0.5f, cell.Y + 0.5f) );
 	}
 
 	/// <summary>
-	/// Moves the view to <paramref name="place"/> and waits until this game's own figure stands there: it jumps when the view moved far (C2d-4); the other game sees it there.
+	/// Moves the view far away and waits until this game's own figure stands there: it jumps when the view moved far (C2d-4), and the other game sees it there. The place is the
+	/// nearest of <see cref="CellsAway"/> the view centres on (the camera keeps a view near the park's edge over the park instead); <paramref name="moved"/> hears it.
 	/// </summary>
-	private IEnumerable<CoopLiveWait> MoveViewTo( (float X, float Y) place )
+	private IEnumerable<CoopLiveWait> MoveViewAway( Action<(float X, float Y)> moved )
 	{
-		Look( place );
-		yield return Wait( $"the own figure at ({place.X:0.#}, {place.Y:0.#})", () => Presence is { } presence && MathF.Abs( presence.State.Own.X - place.X ) <= NearCells
-			&& MathF.Abs( presence.State.Own.Y - place.Y ) <= NearCells && !presence.State.Walking, 30 );
+		var from = ViewCentre();
+		(float X, float Y)? place = null;
+		foreach ( var candidate in CellsAway( from ).Take( 400 ) )
+		{
+			Look( candidate );
+			if ( GameFlow.ViewCentre( ThePark ) is { } centre && MathF.Abs( centre.X - candidate.X ) <= NearCells && MathF.Abs( centre.Y - candidate.Y ) <= NearCells )
+			{
+				place = candidate;
+				break;
+			}
+		}
+		Require( place != null, $"the view centres on ground {MoveCells} cells from ({from.X:0.#}, {from.Y:0.#})" );
+		var (x, y) = place!.Value;
+		moved( (x, y) );
+		var own = Presence?.State.Own;
+		Keep( "lastMove", new JsonObject { ["from"] = Cell( from.X, from.Y ), ["to"] = Cell( x, y ), ["ownBefore"] = own is { } before ? Cell( before.X, before.Y ) : null,
+			["frame"] = frame } );
+		yield return Wait( $"the own figure at ({x:0.#}, {y:0.#})", () => Presence is { } presence && MathF.Abs( presence.State.Own.X - x ) <= NearCells
+			&& MathF.Abs( presence.State.Own.Y - y ) <= NearCells && !presence.State.Walking, 30 );
 	}
 
 	/// <summary>
@@ -89,7 +103,8 @@ internal sealed partial class CoopLiveTest
 		Look( (figure.X, figure.Y) );
 		yield return Wait( $"{name}'s figure and name drawn in the view", () => Figure( name ) != null && TheHud.DrawnNames.Contains( name ) && (ThePark.GuestRenderer?.DrawnFigures ?? 0) >= 2, 30 );
 		var picture = $"{Role}-{what}.png";
-		SandboxSmokeTest.CaptureOutputFrameTo( Path.Combine( evidenceDirectory, picture ) );
+		if ( !page )
+			SandboxSmokeTest.CaptureOutputFrameTo( Path.Combine( evidenceDirectory, picture ) );
 		var drawn = Figure( name )!;
 		sightings.Add( new JsonObject
 		{
@@ -104,6 +119,13 @@ internal sealed partial class CoopLiveTest
 			["picture"] = picture,
 		} );
 		Keep( "sightings", sightings );
+		// the page cannot read its output back (C2d-5b): the driver takes the canvas's picture while the view stays, and says so in its status
+		if ( page )
+		{
+			Publish( "picture", picture );
+			yield return Wait( $"the driver's picture {picture}", () => StatusOf( DriverRole, "pictures" ) is JsonArray taken
+				&& taken.Any( item => item is JsonValue value && value.TryGetValue<string>( out var name ) && name == picture ), 30 );
+		}
 	}
 
 	/// <summary>What a line laid through the HUD did (<see cref="LayLine"/>).</summary>
@@ -130,7 +152,8 @@ internal sealed partial class CoopLiveTest
 			Require( found != null, "the park has a free owned line in reach of a click" );
 			foreach ( var cell in LineCells( found!.Value.Start, found.Value.End ) )
 				avoid.Add( cell );
-			Give( Press( found.Value.StartPoint ), Release( found.Value.StartPoint ) );
+			foreach ( var step in ClickThrough( found.Value.StartPoint ) )
+				yield return step;
 			yield return Wait( "the press on the line's start", () => InputGiven, 10 );
 			yield return Pause( "the path tool's start", 0.3 );
 			if ( tool.Mode == CellToolMode.Path && tool.Start == found.Value.Start )
@@ -150,11 +173,13 @@ internal sealed partial class CoopLiveTest
 		Require( line != null, $"a press on a free cell started the path tool within {LineTries} lines" );
 		var (start, end, _, endPoint) = line!.Value;
 		result.Cells = LineCells( start, end );
-		Give( UiInput.Idle( endPoint ) );
+		foreach ( var step in HoverThrough( endPoint ) )
+			yield return step;
 		yield return Wait( "the line's ghost", () => InputGiven && tool.Ghost is { Built.Count: LineLength + 1 }, 10 );
 		var refusals = level.SessionRefusals;
 		var commit = tool.LastCommit;
-		Give( Press( endPoint ), Release( endPoint ) );
+		foreach ( var step in ClickThrough( endPoint ) )
+			yield return step;
 		if ( host )
 		{
 			yield return Wait( "the line laid", () => InputGiven && !ReferenceEquals( tool.LastCommit, commit ) && tool.LastCommit is { Completed: true }, 10 );
@@ -163,7 +188,8 @@ internal sealed partial class CoopLiveTest
 			result.Evidence["charged"] = tool.LastCommit!.Charged;
 			Require( tool.LastCommit.Charged > 0, "the line was charged" );
 			// a press on the line's end again ends the tool, laying nothing
-			Give( Press( endPoint ), Release( endPoint ) );
+			foreach ( var step in ClickThrough( endPoint ) )
+				yield return step;
 			yield return Wait( "the path tool's end", () => InputGiven && !tool.IsActive, 10 );
 		}
 		else
@@ -232,11 +258,14 @@ internal sealed partial class CoopLiveTest
 	{
 		var hud = TheHud;
 		yield return Wait( "the park's base screen alone", () => hud.Stack.Screens.Count == 1 && InputGiven, 30 );
-		Give( UiInput.Key( UiKeys.Accept ) );
+		foreach ( var step in KeyThrough( UiKeys.Accept, "Enter" ) )
+			yield return step;
 		yield return Wait( "Enter over the park opens the chat entry", () => InputGiven && hud.ChatMode && hud.ChatEntryFocused, 10 );
-		Give( UiInput.Type( line ) );
+		foreach ( var step in TypeThrough( line ) )
+			yield return step;
 		yield return Wait( "the line typed into the entry", () => InputGiven && hud.VisitChatPanel?.Entry.Text == line, 10 );
-		Give( UiInput.Key( UiKeys.Accept ) );
+		foreach ( var step in KeyThrough( UiKeys.Accept, "Enter" ) )
+			yield return step;
 		yield return Wait( "the line said in the shared park's room", () => Heard( line ), 30 );
 		Require( hud.VisitChatPanel!.Entry.Text.Length == 0 && hud.ChatEntryFocused, "Enter empties the entry and keeps it" );
 	}
@@ -249,7 +278,8 @@ internal sealed partial class CoopLiveTest
 	{
 		var hud = TheHud;
 		yield return Wait( "the park's base screen alone", () => hud.Stack.Screens.Count == 1 && InputGiven, 30 );
-		Tap( Veldrid.Key.F4 );
+		foreach ( var step in TapThrough( Veldrid.Key.F4, "F4" ) )
+			yield return step;
 		yield return Wait( chatMode ? "F4 opens the chat mode" : "F4 goes back to the HUD", () => hud.ChatMode == chatMode && hud.Stack.Screens.Count == 1
 			&& (chatMode || ReferenceEquals( hud.Stack.Screens[0], hud.Screen )), 10 );
 	}

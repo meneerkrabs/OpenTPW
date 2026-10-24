@@ -27,6 +27,8 @@ internal sealed partial class CoopLiveTest
 	/// </summary>
 	private IEnumerable<CoopLiveWait> HostSteps()
 	{
+		// the park's files first: the page copies a theme when a park asks for it (GameFlow.LevelDataReady), which a park started here does not wait for; natively they are there
+		yield return Wait( "the park's files", () => GameFlow.LevelDataReady?.Invoke( CoopJoinSmokeTest.HostLevel ) != false, 300 );
 		var level = flow.StartLevel( CoopJoinSmokeTest.HostLevel, original: true, developerPanels: false, start: ParkStartKind.InstantAction );
 		yield return Wait( "the park's HUD", () => ReferenceEquals( flow.Level, level ) && flow.Hud != null && Top( "hud" ), 120 );
 		yield return Pause( "the park's first seconds", 3 );
@@ -72,8 +74,8 @@ internal sealed partial class CoopLiveTest
 		Publish( "sawGuest", true );
 		yield return Wait( "the guest sees the host's figure", () => OtherSays( "sawHost" ), 180 );
 		// the host's view moves far: its figure jumps there, and the guest sees it there
-		var away = CellAway( ViewCentre() );
-		foreach ( var step in MoveViewTo( away ) )
+		(float X, float Y) away = default;
+		foreach ( var step in MoveViewAway( place => away = place ) )
 			yield return step;
 		Publish( "hostAt", Cell( away.X, away.Y ) );
 		yield return Wait( "the guest sees the host's figure moved", () => OtherSays( "sawHostMoved" ), 180 );
@@ -157,8 +159,8 @@ internal sealed partial class CoopLiveTest
 		yield return Wait( "the guest follows again", () => OtherSays( "followingAgain" ), 600 );
 		yield return Wait( "the guest's figure again", () => Presence is { InRoom: true } && Figure( guestName ) != null, 180 );
 		// the figures after the restart: the host's view moves far again, and the guest sees its figure there (a place relayed by the restarted server)
-		var away = CellAway( ViewCentre() );
-		foreach ( var step in MoveViewTo( away ) )
+		(float X, float Y) away = default;
+		foreach ( var step in MoveViewAway( place => away = place ) )
 			yield return step;
 		Publish( "hostAtAgain", Cell( away.X, away.Y ) );
 		yield return Wait( "the guest sees the host's figure moved again", () => OtherSays( "sawHostMovedAgain" ), 180 );
@@ -173,7 +175,8 @@ internal sealed partial class CoopLiveTest
 
 	/// <summary>
 	/// The endurance scenario's middle (docs/COOP.md, "The live acceptance"): the HUD's fastest speed (its <c>&gt;&gt;&gt;</c>) for the run's minutes of wall time while the guest
-	/// follows, the speed and the stream sampled every half minute; then the normal speed again. The evidence keeps when the fastest speed was set and when the normal speed came back.
+	/// follows, the speed and the stream sampled every <see cref="EnduranceSampleSeconds"/>; then the normal speed again. The evidence keeps when the fastest speed was set and when
+	/// the normal speed came back.
 	/// </summary>
 	private IEnumerable<CoopLiveWait> HostEndurance()
 	{
@@ -186,12 +189,12 @@ internal sealed partial class CoopLiveTest
 		var started = Now;
 		var until = started + enduranceMinutes * 60;
 		var samples = new JsonArray();
-		// the park's ticks when the speed was set: the first half minute's rate counts too
+		// the park's ticks when the speed was set: the first stretch's rate counts too
 		var endurance = new JsonObject { ["started"] = Math.Round( started, 3 ), ["startTicks"] = ThePark.TickCount, ["samples"] = samples };
 		Publish( "enduranceStarted", true );
 		while ( Now < until )
 		{
-			yield return Pause( "the fastest speed", Math.Min( 30, until - Now ) );
+			yield return Pause( "the fastest speed", Math.Min( EnduranceSampleSeconds, until - Now ) );
 			Require( TheHud.Status.Speed == GameSpeed.Fastest, $"the park stays at the fastest speed (it is {TheHud.Status.Speed})" );
 			var sample = StreamEvidence();
 			sample["at"] = Math.Round( Now, 3 );

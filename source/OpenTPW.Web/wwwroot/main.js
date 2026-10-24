@@ -38,18 +38,29 @@ const loopback = ['127.0.0.1', 'localhost', '[::1]'].includes(location.hostname)
 // The co-op link check's page (tools/web-coop-link.mjs, docs/COOP.md "The browser's link to a real server"): with ?coopLinkSmoke=1 the page starts no game, reads
 // no game file and claims none of the page's stores; the harness drives the game's own online client against the server that serves this page. Never with
 // ?perf=1 or ?coopSmoke=1: asked together, the page runs none of the three.
+// The live co-op acceptance's page (tools/coop-live.mjs, docs/COOP.md "The live acceptance"): with ?coopLive=1 the game starts as a player's does, without
+// automatic advice, and the driver starts the run from the front end through the exports. Never with any of the others: asked together, the page runs none.
 const linkRequested = loopback && perfQuery.get('coopLinkSmoke') === '1';
-const perfRequested = loopback && perfQuery.get('perf') === '1' && !linkRequested;
-const coopSmokeRequested = loopback && perfQuery.get('coopSmoke') === '1' && !linkRequested;
+const liveRequested = loopback && perfQuery.get('coopLive') === '1' && !linkRequested;
+const perfRequested = loopback && perfQuery.get('perf') === '1' && !linkRequested && !liveRequested;
+const coopSmokeRequested = loopback && perfQuery.get('coopSmoke') === '1' && !linkRequested && !liveRequested;
 if (linkRequested) {
-	if (perfQuery.get('perf') === '1' || perfQuery.get('coopSmoke') === '1')
-		console.error('?coopLinkSmoke=1 excludes ?perf=1 and ?coopSmoke=1; the page runs none of them.');
+	if (perfQuery.get('perf') === '1' || perfQuery.get('coopSmoke') === '1' || perfQuery.get('coopLive') === '1')
+		console.error('?coopLinkSmoke=1 excludes ?perf=1, ?coopSmoke=1 and ?coopLive=1; the page runs none of them.');
 	else {
 		program.CoopLinkSmokeMode();
 		globalThis.opentpwLink = { program };
 		status.textContent = 'Co-op link check.';
 		// the rest of the page (the game's files, its stores, its start) never runs in this mode
 		await new Promise(() => {});
+	}
+}
+if (liveRequested) {
+	if (perfQuery.get('perf') === '1' || perfQuery.get('coopSmoke') === '1')
+		console.error('?coopLive=1 excludes ?perf=1 and ?coopSmoke=1; the page runs none of them.');
+	else {
+		program.CoopLiveMode();
+		globalThis.opentpwLive = { program };
 	}
 }
 if (perfRequested && coopSmokeRequested)

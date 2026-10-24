@@ -159,7 +159,7 @@ function forwardUpgrade(request, socket, head, upstreamUrl, log, sockets, refuse
 		return refuseUpgrade(socket, 404, 'Not Found', refused, limits.endMs);
 	if (sockets.size >= limits.sockets)
 		return refuseUpgrade(socket, 503, 'Service Unavailable', refused, limits.endMs);
-	const entry = { path: url.pathname, method: request.method, upgrade: true, status: null, bytesIn: 0, bytesOut: 0 };
+	const entry = { path: url.pathname, method: request.method, upgrade: true, status: null, bytesIn: 0, bytesOut: 0, at: Date.now() };
 	log.push(entry);
 	sockets.add(socket);
 	let upstreamSocket = null;

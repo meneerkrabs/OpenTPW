@@ -1126,9 +1126,9 @@ Results (Apple M5, macOS 26, Release, native host and native guest):
 
 | Scenario | Checks | Wall time | Notes |
 |---|---|---|---|
-| baseline | 12 of 12 | 17 s | the guest followed 3.3 s after Join (a 104 KiB capture) |
-| recovery | 14 of 14 | 27 s | both links back 3.3 s after the restart; no resync |
-| endurance, 30 minutes | ENDURANCE | ENDURANCE | ENDURANCE |
+| baseline | 12 of 12 | 19 s | the guest followed 3.3 s after Join (a 104 KiB capture) |
+| recovery | 14 of 14 | 29 s | both links back 3.3 and 3.4 s after the server went down (for 3 s); no resync |
+| endurance, 30 minutes | 13 of 13 | 30 min 19 s | 1800 s at the fastest speed; the slowest five-second stretches at 239.96 (host) and 238.41 (guest) ticks a second; 1806 checkpoints, no resync or desync |
 
 No CI job runs it: it needs the game's data. A run's `run.json` keeps every check, both games' evidence
 and the run's facts; its logs, pictures and status files stay in its folder.

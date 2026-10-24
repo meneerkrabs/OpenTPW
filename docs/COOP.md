@@ -733,16 +733,28 @@ Share loads the chosen park as the Load Park screen does, and the share goes wit
 1. The save's extensions are asked about first (the extension switch); a refusal there starts
    nothing.
 2. The load is queued like any park load. Another transition replaces it, and the share goes with it.
+   The lobby screen's Back gives the share up, with its load, while the load still waits (the browser
+   copies a level's files first).
 3. The save is resumed at once, without frames. Only a park this load made is shared
    (`GameFlow.ShareLoadedPark`). A failed load shares nothing and leaves the lobby as it was.
-4. The share then starts as from the pause menu (`StartSharing`). It checks the online extension
-   again, as an extension switch may have turned it off, and checks the login and the loaded park.
-5. The park's Build Together screen opens over the park. It shows the attempt, or why it could not
-   start, with the player's choices kept for another try.
+4. The park opens with its pause menu, so a park that is not shared yet stays paused under the
+   screens, as when the pause menu opens them.
+5. The share starts as from the pause menu (`StartSharing`), and only on the server and account that
+   asked for it. Logging in on another server meanwhile leaves the choice to the player. The start
+   checks the login and the loaded park again. When the load's extension choices turned online play
+   off, a message says why nothing was shared.
+6. The park's Build Together screen opens over the pause menu. It shows the attempt, or why it could
+   not start, with the player's choices kept for another try.
 
-`CoopShareTests` covers the lobby screen (the saved parks, the login, the choices that go with the
-chosen park, and no saved park), the share's checks and its queued load (a failed load shares
-nothing), and the share of the park a load made, through the game's own step, up to the hosting.
+`CoopShareTests` covers:
+- the lobby screen: the saved parks, the login, the choices that go with the chosen park, Back giving
+  the share up, and no saved park;
+- the share's checks and its queued load: giving it up removes the load, and a failed load shares
+  nothing;
+- the share of the park a load made, only on the login that asked, through the game's own step up to
+  the hosting;
+- the screens over the loaded park: the pause menu and Build Together, or the message when online play
+  is off.
 `OnlineExtensionGateTests` checks that the line goes with the online extension.
 
 ### The host's trimmed frame (C2c-3)

@@ -531,6 +531,8 @@ public partial class CoopShareTests
 			SharedSaved.Add( (park, request) );
 			return true;
 		}
+		public int Cancelled;
+		public void CancelSavedParkShare() => Cancelled++;
 	}
 
 	/// <summary>Logs <paramref name="session"/> in as <paramref name="name"/> without a transport: a session's token, as the screens read it.</summary>

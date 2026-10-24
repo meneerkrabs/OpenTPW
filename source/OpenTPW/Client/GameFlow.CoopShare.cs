@@ -26,6 +26,9 @@ internal interface ICoopHosting
 	/// game's park (C2d-2b); false, with nothing started, when it may not (a park is open, a transition, logged out, another attempt, not an own save).
 	/// </summary>
 	bool ShareSavedPark( ParkLoadEntry park, CoopShareRequest request );
+
+	/// <summary>Gives up the share of a saved park that waits for its load (the lobby screen's Back), with that load; nothing when none waits.</summary>
+	void CancelSavedParkShare();
 }
 
 /// <summary>
@@ -42,6 +45,23 @@ internal sealed partial class GameFlow : ICoopHosting
 
 	/// <summary>A dismissed attempt whose session ended without the player ending it: the status line says so for its time all the same.</summary>
 	private CoopShare? endedNotice;
+
+	/// <summary>
+	/// [EXT:online-coop-session] The share that goes with a saved park's load (C2d-2b): the player's choices, the server and the account that asked for it, and the
+	/// queued load once the save's extensions were asked about.
+	/// </summary>
+	private sealed class SavedParkShare( CoopShareRequest request, (Uri? Server, string? Account) login )
+	{
+		public CoopShareRequest Request { get; } = request;
+		public (Uri? Server, string? Account) Login { get; } = login;
+		public Action? Load { get; set; }
+	}
+
+	/// <summary>The share of a saved park that waits for its load; null when none waits.</summary>
+	private SavedParkShare? savedParkShare;
+
+	/// <summary>The server and the account the online session is logged in on now.</summary>
+	private (Uri? Server, string? Account) OnlineLogin => (Online.Client?.ServerUrl, Online.Client?.Session?.Name);
 
 	/// <summary>The attempt the status line speaks of: the current one, or a dismissed one whose end it still shows.</summary>
 	internal CoopShare? StatusShare => coopShare ?? endedNotice;
@@ -89,32 +109,71 @@ internal sealed partial class GameFlow : ICoopHosting
 			return false;
 		if ( coopShare is { Stage: not CoopShareStage.Done } || !Online.IsLoggedIn )
 			return false;
+		var share = savedParkShare = new SavedParkShare( request, OnlineLogin );
 		// [EXT:save-extension-switch] the save's extensions are asked about first, as for its load; the share goes with the queued load, so another transition drops it
-		ConfirmExtensions( path, change => QueueProgressLevel( park.Level, () => LoadSharedPark( park with { Switch = change }, request ) ) );
+		ConfirmExtensions( path, change =>
+		{
+			// given up while the extensions were asked about
+			if ( !ReferenceEquals( savedParkShare, share ) )
+				return;
+			QueueProgressLevel( park.Level, () => LoadSharedPark( park with { Switch = change }, share ) );
+			share.Load = pending;
+		} );
 		return true;
 	}
 
-	/// <summary>The load of a saved park to share (C2d-2b): the load, then the share of the park it made.</summary>
-	private void LoadSharedPark( ParkLoadEntry park, CoopShareRequest request )
+	/// <inheritdoc/>
+	public void CancelSavedParkShare()
 	{
+		if ( savedParkShare is not { } share )
+			return;
+		savedParkShare = null;
+		// Back means never mind: the load that waits for the level's files is not run either
+		if ( share.Load != null && ReferenceEquals( pending, share.Load ) )
+		{
+			pending = null;
+			pendingLevel = null;
+		}
+	}
+
+	/// <summary>The load of a saved park to share (C2d-2b): the load, then the share of the park it made, unless the share was given up meanwhile.</summary>
+	private void LoadSharedPark( ParkLoadEntry park, SavedParkShare share )
+	{
+		var wanted = ReferenceEquals( savedParkShare, share );
+		savedParkShare = null;
 		var before = Level;
 		LoadPark( park, overFrames: true );
-		ShareLoadedPark( before, request );
+		if ( wanted )
+			ShareLoadedPark( before, share.Request, share.Login );
 	}
 
 	/// <summary>
-	/// Shares the park a load made (C2d-2b): only a park that replaced <paramref name="before"/> (a failed load shares nothing and leaves the lobby as it was). The park's
-	/// Build Together screen then shows the attempt, or why it could not start, with the player's choices kept for another try.
+	/// Shares the park a load made (C2d-2b): only a park that replaced <paramref name="before"/> (a failed load shares nothing and leaves the lobby as it was), and only
+	/// on the server and account that asked (<paramref name="login"/>). The park pauses under the pause menu, and its Build Together screen shows the attempt, or why
+	/// it could not start, with the player's choices kept for another try (also on another login, where the player decides). With online play turned off by the
+	/// load's extension choices, a message says why nothing was shared.
 	/// </summary>
-	internal void ShareLoadedPark( Level? before, CoopShareRequest request )
+	internal void ShareLoadedPark( Level? before, CoopShareRequest request, (Uri? Server, string? Account) login )
 	{
 		if ( Level is not { } loaded || ReferenceEquals( loaded, before ) )
 			return;
-		// an extension switch may have turned the online extension off: the start checks it again, with the login and the loaded park
-		StartSharing( request );
-		if ( FeatureGates.Online && Hud is { } hud )
+		// the unshared park pauses under the screens, as when the pause menu opens them; a shared park runs on under them
+		Hud?.OpenPauseMenu();
+		if ( !FeatureGates.Online )
+		{
+			if ( Hud is { } paused )
+				paused.Stack.Push( UiDialogs.Message( ShareOnlineOffScreenName, () => Strings.Extra( OpenTpwText.ShareOnlineOff ),
+					(() => Strings.Extra( OpenTpwText.Back ), () => paused.Stack.Pop()) ) );
+			return;
+		}
+		if ( OnlineLogin == login )
+			StartSharing( request );
+		if ( Hud is { } hud )
 			CreateOnlineScreens( hud.Stack ).ShowBuildTogether( request );
 	}
+
+	/// <summary>The message's screen name when a loaded saved park was not shared because online play is off.</summary>
+	internal const string ShareOnlineOffScreenName = "shareOnlineOff";
 
 	/// <summary>
 	/// The share attempt's step, once a frame right after the online pump and before the co-op session's step and the level's update: it hosts the park only while

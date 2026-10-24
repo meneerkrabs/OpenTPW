@@ -5,6 +5,8 @@ using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using OpenTPW.FrontEnd;
+using OpenTPW.Hud;
+using OpenTPW.Mods;
 
 namespace OpenTPW.Tests;
 
@@ -66,6 +68,10 @@ public partial class CoopShareTests
 			Assert.IsTrue( Element<UI.Original.UiButton>( stack, "share" ).Enabled );
 			Element<UI.Original.UiButton>( stack, "share" ).Clicked!();
 			Assert.AreEqual( (saves[1], new CoopShareRequest( "Moon party", Listed: false, MaximumPlayers: 2 )), hosting.SharedSaved.Single() );
+			// Back gives up the share that waits for its load
+			Element<UI.Original.UiButton>( stack, "back" ).Clicked!();
+			Assert.AreEqual( 1, hosting.Cancelled );
+			Assert.AreNotEqual( UI.OnlineScreens.ShareSavedParkScreenName, stack.Top!.Name );
 		}
 		finally
 		{
@@ -111,10 +117,15 @@ public partial class CoopShareTests
 			SetField( flow, "<Level>k__BackingField", null );
 
 			// the share goes with the save's queued load (no extensions to ask about: the save cannot be read here)
+			Action? Pending() => (Action?)typeof( GameFlow ).GetField( "pending", BindingFlags.Instance | BindingFlags.NonPublic )!.GetValue( flow );
 			Assert.IsTrue( flow.ShareSavedPark( save, request ) );
-			var load = (Action?)typeof( GameFlow ).GetField( "pending", BindingFlags.Instance | BindingFlags.NonPublic )!.GetValue( flow );
-			Assert.IsNotNull( load );
+			Assert.IsNotNull( Pending() );
 			Assert.IsFalse( flow.ShareSavedPark( save, request ), "a transition waits" );
+			// giving it up (the lobby screen's Back) gives up its load too
+			flow.CancelSavedParkShare();
+			Assert.IsNull( Pending() );
+			Assert.IsTrue( flow.ShareSavedPark( save, request ) );
+			var load = Pending();
 			// the load fails (there is no save): the lobby stays, and nothing is shared
 			SetField( flow, "pending", null );
 			load!();
@@ -127,6 +138,52 @@ public partial class CoopShareTests
 		}
 	}
 
+	/// <summary>A park's HUD with its own stack (the HUD screen at the bottom), as the gate tests make one.</summary>
+	private static ParkHud BareHud( Level level )
+	{
+		var hud = (ParkHud)RuntimeHelpers.GetUninitializedObject( typeof( ParkHud ) );
+		SetField( hud, "level", level );
+		SetField( hud, "strings", OriginalUiTests.FakeStrings() );
+		SetField( hud, "host", new HudHost() );
+		SetField( hud, "<Stack>k__BackingField", new UI.Original.UiScreenStack() );
+		var screen = new UI.Original.UiScreen( "hud" ) { Modal = false };
+		SetField( hud, "hud", screen );
+		hud.Stack.Push( screen );
+		return hud;
+	}
+
+	[TestMethod]
+	public async Task TheLoadedParkPausesUnderItsBuildTogetherScreenOrSaysWhyOnlinePlayIsOff() => await CoopLinkTests.WithServer( async ( server, players ) =>
+	{
+		var host = await players.Add( server, "Hostess" );
+		var flow = LobbyFlow( host.Session );
+		flow.CoopSessionClock = () => clock;
+		SetField( flow, "<Context>k__BackingField", OriginalUiTests.FakeContext() );
+		var (level, _) = NewPark();
+		var hud = BareHud( level );
+		SetField( flow, "<Level>k__BackingField", level );
+		SetField( flow, "<Hud>k__BackingField", hud );
+		var request = new CoopShareRequest( "Saved fun", Listed: false, 4 );
+		var login = (host.Session.Client!.ServerUrl, (string?)"Hostess");
+		string[] Screens() => hud.Stack.Screens.Select( screen => screen.Name ).ToArray();
+
+		// online play turned off by the load's extension choices: a message over the pause menu says why nothing was shared
+		using ( OpenTpwExtensions.Use( OnlineExtensionGateTests.WithOnline( false ) ) )
+			flow.ShareLoadedPark( null, request, login );
+		CollectionAssert.AreEqual( new[] { "hud", ParkHud.PauseMenuScreen, GameFlow.ShareOnlineOffScreenName }, Screens() );
+		Assert.IsNull( flow.Sharing );
+		hud.Stack.Pop();
+		hud.Stack.Pop();
+
+		// online: the park pauses under the pause menu and its Build Together screen, which shows the attempt
+		flow.ShareLoadedPark( null, request, login );
+		CollectionAssert.AreEqual( new[] { "hud", ParkHud.PauseMenuScreen, UI.OnlineScreens.BuildTogetherScreenName }, Screens() );
+		Assert.AreEqual( 0f, ParkHud.TimeScaleFor( 1f, Screens() ), "the unshared park pauses" );
+		var share = flow.Sharing ?? throw new AssertFailedException( "The loaded park is not being shared." );
+		shares.Add( share );
+		Assert.AreEqual( CoopShareStage.Preparing, share.Stage );
+	} );
+
 	[TestMethod]
 	public async Task TheParkALoadMadeIsSharedWithTheLobbysChoices() => await CoopLinkTests.WithServer( async ( server, players ) =>
 	{
@@ -135,15 +192,20 @@ public partial class CoopShareTests
 		flow.CoopSessionClock = () => clock;
 		var (level, _) = NewPark();
 		var request = new CoopShareRequest( "Saved fun", Listed: true, 3 );
+		var login = (host.Session.Client!.ServerUrl, (string?)"Hostess");
 		// a load that made no park (it failed in the lobby, or left the park that was open) shares nothing
-		flow.ShareLoadedPark( null, request );
+		flow.ShareLoadedPark( null, request, login );
 		Assert.IsNull( flow.Sharing );
 		SetField( flow, "<Level>k__BackingField", level );
-		flow.ShareLoadedPark( level, request );
+		flow.ShareLoadedPark( level, request, login );
+		Assert.IsNull( flow.Sharing );
+		// nor on another server or account than the one that asked: the player decides on the park's screen
+		flow.ShareLoadedPark( null, request, (new Uri( "http://127.0.0.1:9/" ), "Hostess") );
+		flow.ShareLoadedPark( null, request, (login.ServerUrl, "Someone") );
 		Assert.IsNull( flow.Sharing );
 
 		// the park the load made is shared with the lobby's choices
-		flow.ShareLoadedPark( null, request );
+		flow.ShareLoadedPark( null, request, login );
 		var share = flow.Sharing ?? throw new AssertFailedException( "The loaded park is not being shared." );
 		shares.Add( share );
 		var deadline = DateTime.UtcNow + OnlineIntegrationTests.Deadline;

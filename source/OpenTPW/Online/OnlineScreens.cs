@@ -660,7 +660,8 @@ public sealed class OnlineScreens
 			login.Visible = !Session.IsLoggedIn;
 		};
 		AddStatus( screen, window );
-		AddBack( screen, window );
+		// Back gives up a share that waits for its load, with that load
+		AddBack( screen, window, () => { hosting.CancelSavedParkShare(); stack.Pop(); } );
 		screen.Focus( form.Title );
 		Push( screen );
 	}
@@ -1653,11 +1654,14 @@ public sealed class OnlineScreens
 		} );
 	}
 
-	private void AddBack( UiScreen screen, UiRect window )
+	private void AddBack( UiScreen screen, UiRect window ) => AddBack( screen, window, stack.Pop );
+
+	/// <summary>The screen's Back button and key, doing <paramref name="back"/> (which closes the screen).</summary>
+	private void AddBack( UiScreen screen, UiRect window, Action back )
 	{
-		screen.Add( new UiButton { Id = "back", Model = "b_listpark", Text = () => strings.Extra( OpenTpwText.Back ), Clicked = stack.Pop,
+		screen.Add( new UiButton { Id = "back", Model = "b_listpark", Text = () => strings.Extra( OpenTpwText.Back ), Clicked = back,
 			Bounds = new UiRect( window.Right - 540, window.Bottom - 175, 320, 110 ), Anchor = UiAnchor.Center } );
-		screen.Back = stack.Pop;
+		screen.Back = back;
 	}
 
 	/// <summary>

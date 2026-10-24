@@ -27,8 +27,8 @@ public sealed class TestClassAttribute : Microsoft.VisualStudio.TestTools.UnitTe
 /// <item>Values are compared by reference: a new file system at the same folder is a leak too, since it carries its own overrides and lookups.</item>
 /// <item>The comparison relies on MSTest running this project's tests one at a time (there is no <c>[assembly: Parallelize]</c>).</item>
 /// </list>
-/// <c>Log</c> is not watched: a <see cref="Logger"/> keeps no state of its own, so every instance logs alike, and over a hundred classes set one
-/// (<c>Log ??= new()</c>) and leave it.
+/// <c>Log</c> is not watched: a <see cref="Logger"/> keeps no state of its own, so every instance logs alike, and about 150 test files set one
+/// (<c>Log ??= new()</c>) and never put it back.
 /// </summary>
 public sealed class GlobalStateGuard : TestMethodAttribute
 {

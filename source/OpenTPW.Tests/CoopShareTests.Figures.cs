@@ -48,6 +48,11 @@ public partial class CoopShareTests
 		var room = ChatProtocol.CoopRoom( share.State!.Id );
 		Assert.AreEqual( room, host.Session.SharedParkRoom );
 
+		// the figures' names are the HUD's to draw: none before the park has its HUD
+		flow.StepCoopPresence();
+		Assert.IsNull( flow.Presence );
+		SetFlowField( flow, "<Hud>k__BackingField", RuntimeHelpers.GetUninitializedObject( typeof( Hud.ParkHud ) ) );
+
 		// a visit's presence is the visit's own (the visit smoke's scripted players stand in one): the step never takes its place
 		var visit = new ParkPresence( host.Session, ChatProtocol.ParkRoom( "park1" ), "Hostess", new ParkPresence.PresenceGround( level.Guests!.Grid.Cells ), (1.5f, 1.5f), () => clock );
 		flow.AttachPresence( visit );
@@ -56,11 +61,6 @@ public partial class CoopShareTests
 		Assert.AreEqual( 0, made.Count );
 		visit.Dispose();
 		SetFlowField( flow, "presence", null );
-
-		// the figures' names are the HUD's to draw: none before the park has its HUD
-		flow.StepCoopPresence();
-		Assert.IsNull( flow.Presence );
-		SetFlowField( flow, "<Hud>k__BackingField", RuntimeHelpers.GetUninitializedObject( typeof( Hud.ParkHud ) ) );
 
 		// the hosted park gets its presence in the session's room, once
 		flow.StepCoopPresence();

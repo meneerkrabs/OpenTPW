@@ -463,6 +463,14 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 				var field = flow.Menu!.Stack.Top!.Find( "name" ) as UiTextField;
 				Require( field != null && field.Text == "Alice", "typing reaches the focused login name field" );
 				VerifyText( CaptureFrame( "online-login.png" ), OnlineStrings.Ui( OnlineStrings.LoginName, "Login name" ), "login name label" );
+				var login = flow.Menu.Stack.Top!;
+				var loginWindow = login.Find( "window" )!.Bounds;
+				foreach ( var id in new[] { "name", "password", "login", "close", "status" } )
+					Require( login.Find( id ) is { } control && control.Bounds.X >= loginWindow.X && control.Bounds.Right <= loginWindow.Right && control.Bounds.Y >= loginWindow.Y && control.Bounds.Bottom <= loginWindow.Bottom, $"the login dialog's {id} control lies inside its window" );
+				var loginPanel = login.Find( "ownWindow" )!.Bounds;
+				foreach ( var id in new[] { "server", "code", "register", "forgot" } )
+					Require( login.Find( id ) is { } control && control.Bounds.X >= loginPanel.X && control.Bounds.Right <= loginPanel.Right && control.Bounds.Y >= loginPanel.Y && control.Bounds.Bottom <= loginPanel.Bottom, $"the login dialog's {id} control lies inside its own panel" );
+				Require( ( (UiButton)login.Find( "login" )! ).Model == "b_okay" && ( (UiButton)login.Find( "close" )! ).Model == "b_exit", "the login dialog's check and cross draw the original b_okay and b_exit models" );
 			} );
 			var onlineShots = new (string Name, Action<UI.OnlineScreens> Show, string Screen, string? Verify)[]
 			{

@@ -107,7 +107,11 @@ public sealed record ChatRequest( string Type, string? Command, string? Argument
 	/// <summary>Moving the player's avatar in a chat park: a position in the park, both axes 0 to 1.</summary>
 	public const string MoveType = "move";
 
-	public static ChatRequest ForCommand( ChatCommand command, string argument ) => new( CommandType, ChatCommands.CanonicalName( command ), argument, null );
+	/// <summary>
+	/// A chat command; <paramref name="room"/> names the shared park's room a command said to a room is for ([EXT:online-coop-session], a server of
+	/// <see cref="ChatProtocol.CoopRoomsVersion"/> or later): the server drops it when the connection is not in that room.
+	/// </summary>
+	public static ChatRequest ForCommand( ChatCommand command, string argument, string? room = null ) => new( CommandType, ChatCommands.CanonicalName( command ), argument, room );
 	public static ChatRequest ForJoin( string room ) => new( JoinType, null, null, room );
 	/// <summary>A movement; <paramref name="mode"/> only for a server of <see cref="ChatProtocol.MoveModesVersion"/> or later.</summary>
 	public static ChatRequest ForMove( float x, float y, ChatMoveMode? mode = null ) => new( MoveType, null, null, null, x, y, mode );
@@ -119,7 +123,8 @@ public sealed record ChatRequest( string Type, string? Command, string? Argument
 			throw new InvalidDataException( "Invalid chat movement mode." );
 		if ( request.Type == CommandType )
 		{
-			if ( request.Command == null || !ChatCommands.TryParseCanonical( request.Command, out _ ) || request.Room != null )
+			// [EXT:online-coop-session] a command names no room but a shared park's, which it is for
+			if ( request.Command == null || !ChatCommands.TryParseCanonical( request.Command, out _ ) || request.Room != null && ChatProtocol.CoopSessionOf( request.Room ) == null )
 				throw new InvalidDataException( "Unknown chat command." );
 			OnlineText.RequireText( request.Argument ?? "", ChatCommands.MaximumLineLength, false, true, "Chat text" );
 		}

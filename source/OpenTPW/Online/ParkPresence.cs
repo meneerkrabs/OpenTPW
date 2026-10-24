@@ -18,6 +18,8 @@ public interface IPresenceSession : IChatPanelSource
 	string CurrentRoom { get; }
 	/// <summary>The room the session is in or on its way to (<see cref="OnlineSession.WantedRoom"/>).</summary>
 	string WantedRoom { get; }
+	/// <summary>[EXT:online-coop-session] Whether the session is in a shared park, whose room owns its chat (<see cref="OnlineSession.InSharedPark"/>).</summary>
+	bool InSharedPark { get; }
 	/// <summary>The last room the server refused (<see cref="OnlineSession.RefusedRoom"/>).</summary>
 	string? RefusedRoom { get; }
 	/// <summary>The server's protocol version, or null before it is known (<see cref="OnlineSession.FetchServerInfo"/>).</summary>
@@ -275,7 +277,7 @@ public sealed class ParkPresence : IVisitPresence, IChatPanelSource, IDisposable
 		// leaving the park leaves its room, so its other visitors see the parting; a connection the visit opened is closed again, so the
 		// Online World's lines do not follow the player into their own park. [EXT:online-coop-session] A chat a shared park's session took over since is
 		// no longer the visit's: it stays open, in the session's room.
-		if ( ChatProtocol.CoopSessionOf( session.WantedRoom ) != null )
+		if ( session.InSharedPark )
 			return;
 		if ( opensConnection )
 			session.CloseChat();

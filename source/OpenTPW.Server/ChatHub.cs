@@ -20,6 +20,8 @@ public static class ChatSystemKeys
 	public const string BuddyEnters = "buddy-enters";
 	/// <summary>[EXT:online-coop-session] The located player is in a shared park, whose room is its members' alone; argument: the player's name.</summary>
 	public const string InSharedPark = "in-shared-park";
+	/// <summary>[EXT:online-coop-session] What the player said for a shared park's room was not sent: the connection is not in that room (any more).</summary>
+	public const string SharedParkChatClosed = "shared-park-chat-closed";
 }
 
 /// <summary>
@@ -89,19 +91,34 @@ public sealed class ChatHub
 	/// [EXT:online-coop-session] A shared park's room is routed while the rooms are held and only from a member still in it: a member taken out meanwhile
 	/// (<see cref="LeaveCoopRoom"/>, the only move that is not the sender's own request) says nothing there, and nothing of that room reaches the one it was taken to.
 	/// </summary>
-	private void InRoom( ChatSession sender, Action<string> route )
+	/// <param name="intended">[EXT:online-coop-session] The shared park's room the request was for (protocol 8), or null: a request for a room the sender is not in is not routed.</param>
+	/// <returns>Whether it was routed.</returns>
+	private bool InRoom( ChatSession sender, string? intended, Action<string> route )
 	{
 		var room = sender.Room;
+		if ( intended != null && room != intended )
+			return false;
 		if ( ChatProtocol.CoopSessionOf( room ) == null )
 		{
 			route( room );
-			return;
+			return true;
 		}
 		lock ( rooms )
 		{
-			if ( sender.Room == room && IsCoopMember( sender, room ) )
-				route( room );
+			if ( sender.Room != room || !IsCoopMember( sender, room ) )
+				return false;
+			route( room );
+			return true;
 		}
+	}
+
+	/// <summary>What <paramref name="sender"/> says to its room (<see cref="InRoom"/>); when it could not be said there, the sender hears that the shared park's chat is not open.</summary>
+	private bool ToRoom( ChatSession sender, string? intended, Action<string> route )
+	{
+		if ( InRoom( sender, intended, route ) )
+			return true;
+		Send( sender, new ChatEvent( ChatEventKind.System, Text: ChatSystemKeys.SharedParkChatClosed ) );
+		return false;
 	}
 
 	/// <summary>[EXT:online-coop-session] The room an event names to players who may be outside it: a shared park's is named to none (null).</summary>
@@ -342,7 +359,7 @@ public sealed class ChatHub
 		}
 		if ( request.Type == ChatRequest.MoveType )
 		{
-			InRoom( session, room =>
+			InRoom( session, null, room =>
 			{
 				// Walking exists only inside a park (a satellite chat park or a published park's room). The lobby holds
 				// every connected player, so relaying movement there would multiply each step by the whole server.
@@ -380,7 +397,7 @@ public sealed class ChatHub
 			return;
 		}
 		ChatCommands.TryParseCanonical( request.Command!, out var command );
-		Execute( session, command, request.Argument ?? "" );
+		Execute( session, command, request.Argument ?? "", request.Room );
 	}
 
 	/// <summary>
@@ -492,7 +509,7 @@ public sealed class ChatHub
 			socket.Abort();
 	}
 
-	private void Execute( ChatSession session, ChatCommand command, string argument )
+	private void Execute( ChatSession session, ChatCommand command, string argument, string? intended = null )
 	{
 		var speaks = command is ChatCommand.Say or ChatCommand.Tell or ChatCommand.Reply or ChatCommand.Shout or ChatCommand.Emote or ChatCommand.ETell
 			or ChatCommand.EShout or ChatCommand.WShout or ChatCommand.UShout or ChatCommand.Page || ChatCommands.IsMoodEmote( command );
@@ -506,11 +523,11 @@ public sealed class ChatHub
 		{
 			case ChatCommand.Say:
 				if ( argument.Length > 0 )
-					InRoom( session, room => Broadcast( room, new ChatEvent( ChatEventKind.Say, from, room, argument ) ) );
+					ToRoom( session, intended, room => Broadcast( room, new ChatEvent( ChatEventKind.Say, from, room, argument ) ) );
 				break;
 			case ChatCommand.Emote:
 				if ( argument.Length > 0 )
-					InRoom( session, room => Broadcast( room, new ChatEvent( ChatEventKind.Emote, from, room, argument ) ) );
+					ToRoom( session, intended, room => Broadcast( room, new ChatEvent( ChatEventKind.Emote, from, room, argument ) ) );
 				break;
 			case ChatCommand.Shout:
 			case ChatCommand.EShout:
@@ -532,7 +549,7 @@ public sealed class ChatHub
 						Deliver( other, shout );
 				}
 				else
-					InRoom( session, room =>
+					ToRoom( session, intended, room =>
 					{
 						var shout = new ChatEvent( kind, from, room, argument, Command: ChatCommands.CanonicalName( command ) );
 						foreach ( var other in sessions.Values.Where( other => other.Room == room && !other.Earmuffs ) )
@@ -686,14 +703,16 @@ public sealed class ChatHub
 				break;
 			}
 			case ChatCommand.Afk:
-				session.Afk = !session.Afk;
-				Send( session, ChatEvent.ForNotice( session.Afk ? ChatNotice.AfkOn : ChatNotice.AfkOff ) );
-				var away = session.Afk;
-				InRoom( session, room =>
+				// [EXT:online-coop-session] the away notice is said to the room: for a shared park's room, nothing changes when it cannot be said there
+				if ( !ToRoom( session, intended, room =>
 				{
+					session.Afk = !session.Afk;
+					var away = session.Afk;
 					foreach ( var other in sessions.Values.Where( other => other.Room == room && other != session ) )
 						Deliver( other, new ChatEvent( ChatEventKind.Say, from, room, Notice: (int)(away ? ChatNotice.AfkAnnounceOn : ChatNotice.AfkAnnounceOff) ) );
-				} );
+				} ) )
+					break;
+				Send( session, ChatEvent.ForNotice( session.Afk ? ChatNotice.AfkOn : ChatNotice.AfkOff ) );
 				break;
 			case ChatCommand.Goto:
 			{
@@ -745,12 +764,13 @@ public sealed class ChatHub
 			{
 				// Mood emotes (cheer … confused): the room sees the emote, the sender gets the original "You …" line.
 				ChatEvent Mood( string room ) => new( ChatEventKind.Emote, from, room, command == ChatCommand.Think ? argument : null, ChatCommands.CanonicalName( command ) );
-				InRoom( session, room =>
+				if ( !ToRoom( session, intended, room =>
 				{
 					var mood = Mood( room );
 					foreach ( var other in sessions.Values.Where( other => other.Room == room && other != session ) )
 						Deliver( other, mood );
-				} );
+				} ) )
+					break;
 				var notice = ChatCommands.MoodNotice( command );
 				Send( session, notice != null ? ChatEvent.ForNotice( notice.Value ) : Mood( session.Room ) );
 				break;

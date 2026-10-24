@@ -294,8 +294,10 @@ is in the lobby. What a member says or does in the room (lines, emotes, shouts, 
 movement) is routed while the chat holds its rooms, and only from a member still in the room, so nothing
 said there reaches the room an evicted member was taken to. `/locate` answers that the player is in a
 shared park without naming it; a world shout or a page from the room carries no room; and no buddy is
-told a player entered one. Servers with these rooms report protocol version 8, and the game asks for a
-shared park's room only on such a server.
+told a player entered one. A command may name a shared park's room it is for (no other room): the
+server routes it only while the connection is in that room, and otherwise drops it and tells the sender
+the shared park's chat is not open (`shared-park-chat-closed`). Servers with these rooms report protocol
+version 8, and the game asks for a shared park's room, or names it in a command, only on such a server.
 
 Movement is relayed only inside a park's room (the lobby's are dropped) and only to connections
 that have moved, so a client without a walking view never receives it. A player's first movement

@@ -419,7 +419,7 @@ public class CoopServerTests
 	}
 
 	/// <summary>A host and a guest whose chats are in their session's room, and a stranger's chat in the lobby.</summary>
-	private static async Task<(CoopTestClient Host, CoopTestClient Guest, uint GuestId, ChatConnection HostChat, ChatConnection GuestChat, ChatConnection StrangerChat)> SharedRoom(
+	private static async Task<(CoopTestClient Host, CoopTestClient Guest, uint GuestId, string Room, ChatConnection HostChat, ChatConnection GuestChat, ChatConnection StrangerChat)> SharedRoom(
 		LoopbackServer server, Accounts accounts )
 	{
 		var hostAccount = await accounts.Add( server, "Hostess" );
@@ -440,7 +440,7 @@ public class CoopServerTests
 		await guestChat.JoinAsync( room );
 		await ChatNextAsync( guestChat, item => RosterOf( room )( item ) && item.Args!.Count == 2 );
 		await ChatNextAsync( hostChat, item => RosterOf( room )( item ) && item.Args!.Count == 2 );
-		return (host, guest, joined.Session.You, hostChat, guestChat, strangerChat);
+		return (host, guest, joined.Session.You, room, hostChat, guestChat, strangerChat);
 	}
 
 	[TestMethod]
@@ -450,7 +450,7 @@ public class CoopServerTests
 		await using var accounts = new Accounts();
 		try
 		{
-			var (host, guest, guestId, hostChat, guestChat, strangerChat) = await SharedRoom( server, accounts );
+			var (host, guest, guestId, room, hostChat, guestChat, strangerChat) = await SharedRoom( server, accounts );
 			await using ( host )
 			await using ( guest )
 			await using ( hostChat )
@@ -459,7 +459,11 @@ public class CoopServerTests
 			{
 				await host.SendAsync( new CoopKick( guestId ) );
 				await host.NextAsync<CoopMemberChanged>( change => change.State == CoopMemberState.Kicked );
-				// what the guest says now is the lobby's: it left the room before the kick was announced
+				// a line the guest said for the room (a game names it, protocol 8) is not sent anywhere: the guest is no longer there
+				await guestChat.SendAsync( ChatRequest.ForCommand( ChatCommand.Say, "for the room", room ) );
+				var closed = await ChatNextAsync( guestChat, item => item.Kind == ChatEventKind.System );
+				Assert.AreEqual( ChatSystemKeys.SharedParkChatClosed, closed.Text );
+				// what the guest says now without naming the room is the lobby's: it left the room before the kick was announced
 				await guestChat.SendAsync( ChatCommand.Say, "after the kick" );
 				var heard = await ChatNextAsync( strangerChat, item => item.Kind == ChatEventKind.Say && item.From == "Guest" );
 				Assert.AreEqual( ("after the kick", ChatProtocol.LobbyRoom), (heard.Text, heard.Room) );
@@ -483,7 +487,7 @@ public class CoopServerTests
 		await using var accounts = new Accounts();
 		try
 		{
-			var (host, guest, _, hostChat, guestChat, strangerChat) = await SharedRoom( server, accounts );
+			var (host, guest, _, _, hostChat, guestChat, strangerChat) = await SharedRoom( server, accounts );
 			await using ( host )
 			await using ( guest )
 			await using ( hostChat )

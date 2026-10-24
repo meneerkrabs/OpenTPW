@@ -485,10 +485,13 @@ no screen or park uses it yet (C2b to C2d).
   such rooms (protocol 8), hosting, joining or resuming a session opens the chat when it is closed, and
   the chat enters the room once the connection's own server version is read (a new connection after a
   lost one asks again only then). While the game is in a shared park its chat is the session's: no other
-  room takes it, and a line said to a room is not sent until the chat is on its way to the session's
-  room ("The shared park's chat is not open."). On an older server the chat is not opened for the
-  session, and lines said to a room are not sent. The chat goes back to the lobby once the session is
-  over for the game. The server takes a member who leaves or is removed,
+  room takes it, a goto is not sent (the chat says to leave the park first), and what is said to a room
+  (lines, emotes, shouts, moods, the away notice) is not sent until the chat is on its way to the
+  session's room ("The shared park's chat is not open."). Once on its way, what is said names the
+  session's room, and the server drops it when the connection is not there (it was taken out, or the
+  join was refused) and says so. On an older server the chat is not opened for the session, and what is
+  said to a room is not sent. The chat goes back to the lobby once the session is over for the game,
+  from wherever it is. The server takes a member who leaves or is removed,
   and every member of a session that ends, back to the lobby before the change is announced. Locating a player in a shared park
   says only that, never its title or room; a world shout or a page from the room does not name it; and no
   buddy is told a player entered one. The game names the room after its session's title, or "Shared park"

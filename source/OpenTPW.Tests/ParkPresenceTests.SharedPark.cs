@@ -374,6 +374,30 @@ public partial class ParkPresenceTests
 	}
 
 	[TestMethod]
+	public void AJumpToTheMiddleOfALakeEndsTheWalkToTheOldView()
+	{
+		var ground = new EditedGround( 60, 40 );
+		// a lake from column 30 to 49, across the park
+		ground.Block( from x in Enumerable.Range( 30, 20 ) from y in Enumerable.Range( 0, 40 ) select (x, y) );
+		var park = new SharedPark( ground, start: (2.5f, 5.5f) );
+		park.Frames( 1, 0.3f );
+		park.Centre = (12.5f, 5.5f);
+		park.Frames( 1, 0.3f );
+		Assert.IsTrue( park.Presence.State.Walking );
+		// the view jumps to the lake's middle: no free cell is near, so the figure stops where it is instead of walking on to the old view
+		park.Centre = (40.5f, 20.5f);
+		park.Frames();
+		Assert.IsFalse( park.Presence.State.Walking );
+		var at = park.Own;
+		park.Frames( 30 );
+		Assert.AreEqual( at, park.Own );
+		// a co-builder drains the spot: the view that stayed there is followed (a jump, the centre being far)
+		ground.Free( (40, 20) );
+		park.Frames( 1, 0.3f );
+		Assert.AreEqual( (40.5f, 20.5f), park.Own );
+	}
+
+	[TestMethod]
 	public void AFigureBuiltOverWalksOutToTheNearestFreeCell()
 	{
 		var ground = new EditedGround( 30, 12 );

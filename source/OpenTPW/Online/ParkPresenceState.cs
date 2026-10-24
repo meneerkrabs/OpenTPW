@@ -286,17 +286,18 @@ public sealed class ParkPresenceState
 	/// Moves the own figure to (<paramref name="x"/>, <paramref name="y"/>) at once; with <paramref name="passable"/>, onto the nearest cell a figure may stand on when that
 	/// cell is blocked (a shared park's view centred on water or a ride), and nowhere when none is near (<see cref="GoalSearchRadius"/>: the middle of a lake).
 	/// </summary>
+	/// <returns>Whether the figure was moved (not while riding, nor with <paramref name="passable"/> and no free cell near).</returns>
 	// [BIN:TPW-EXE:0x4F7E20 teleport] the person stops walking (+0x39C = 0), takes animation state 3 and is set at the point (0x4FA930)
-	public void TeleportTo( float x, float y, bool passable = false )
+	public bool TeleportTo( float x, float y, bool passable = false )
 	{
 		if ( Riding )
-			return;
+			return false;
 		var (goalX, goalY) = ClampToPark( x, y );
 		var cell = ((int)MathF.Floor( goalX ), (int)MathF.Floor( goalY ));
 		if ( passable && !Passable( cell.Item1, cell.Item2 ) )
 		{
 			if ( NearestPassable( cell ) is not { } nearer )
-				return;
+				return false;
 			(goalX, goalY) = (nearer.Item1 + 0.5f, nearer.Item2 + 0.5f);
 		}
 		route.Clear();
@@ -309,6 +310,7 @@ public sealed class ParkPresenceState
 		arrived = true;
 		// an appearance after a ride not sent yet stays one: it shows the figure again and moves it, a teleport only moves it (a shared park's figure goes back to the view as the ride ends)
 		pendingMode = pendingMode == ChatMoveMode.Unhide ? ChatMoveMode.Unhide : ChatMoveMode.Teleport;
+		return true;
 	}
 
 	/// <summary>
@@ -331,7 +333,14 @@ public sealed class ParkPresenceState
 		{
 			if ( followed != null && time - lastFollow < ViewReplanSeconds && Distance( followed.Value, goal ) < ViewReplanCells )
 				return;
-			TeleportTo( goal.X, goal.Y, passable: true );
+			if ( !TeleportTo( goal.X, goal.Y, passable: true ) )
+			{
+				// no free cell near the new centre (the middle of a lake): the walk to the old one ends where the figure is, and the centre waits for the ground to change
+				route.Clear();
+				groundStopped = false;
+				planFailed = true;
+				Own.Target = (Own.X, Own.Y);
+			}
 			Followed( goal, time );
 			return;
 		}

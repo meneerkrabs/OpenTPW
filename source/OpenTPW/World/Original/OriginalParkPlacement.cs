@@ -46,6 +46,16 @@ public static class OriginalParkPlacement
 		return new System.Numerics.Vector3( modelPosition.X * ModelScale - origin.X, modelPosition.Z * ModelScale - origin.Y, modelPosition.Y * ModelScale );
 	}
 
+	/// <summary>
+	/// [EXT:online-coop-figures] The park position, in cells (0.5 = a cell's centre), of the engine ground point (<paramref name="engineX"/>, <paramref name="engineY"/>):
+	/// <see cref="ToEngine"/> undone on the ground plane, not clamped.
+	/// </summary>
+	public static (float X, float Y) ToCells( ModelHeightfield field, float engineX, float engineY )
+	{
+		var origin = GetOrigin( field );
+		return ((engineX + origin.X) / (field.CellSizeX * ModelScale), (engineY + origin.Y) / (field.CellSizeZ * ModelScale));
+	}
+
 	public static bool TryGetCell( ModelHeightfield field, float engineX, float engineY, out int x, out int y )
 	{
 		var origin = GetOrigin( field );

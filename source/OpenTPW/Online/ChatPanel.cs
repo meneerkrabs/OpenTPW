@@ -106,6 +106,11 @@ public sealed class ChatPanel
 	public Action? Postcard { get; init; }
 	/// <summary>Takes the player to another player of the room (the goto button of a name popup) beside sending the command; null: the command only.</summary>
 	public Action<string>? GoTo { get; init; }
+	/// <summary>
+	/// [EXT:online-coop-figures] The goto button's own way to the player, tried before the command: true when it took the player there, and no command goes out (a shared park's
+	/// view moves to the player's figure, C2d-4); false leaves the goto to the command.
+	/// </summary>
+	public Func<string, bool>? TakeTo { get; init; }
 	/// <summary>Whether the buddy tab is shown.</summary>
 	public bool BuddyTab => buddyTab;
 	private IChatPanelSource? Source => source();
@@ -227,6 +232,8 @@ public sealed class ChatPanel
 	{
 		ClosePopup();
 		if ( Source is not { } chat )
+			return;
+		if ( action == ChatCommand.Goto && TakeTo?.Invoke( name ) == true )
 			return;
 		// a name with a space goes in quotes, as the server reads a command's player name
 		chat.SendCommand( action, ChatCommands.NameArgument( name ) );

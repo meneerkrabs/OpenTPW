@@ -491,7 +491,8 @@ the open list").
   tries again, with growing waits, while the connection fails), and
   the chat enters the room once the connection's own server version is read (a new connection after a
   lost one asks again only then). While the game is in a shared park its chat is the session's: no other
-  room takes it, a goto is not sent (the chat says to leave the park first), and what is said to a room
+  room takes it, a goto is not sent (the chat says to leave the park first; a name popup's Go to moves the
+  view to a co-builder's figure instead, C2d-4), and what is said to a room
   (lines, emotes, shouts, moods, the away notice) is not sent until the chat is on its way to the
   session's room ("The shared park's chat is not open."). Once on its way, what is said names the
   session's room, and the server drops it when the connection is not there (it was taken out, or the
@@ -503,6 +504,11 @@ the open list").
   says only that, never its title or room; a world shout or a page from the room does not name it; and no
   buddy is told a player entered one. The game names the room after its session's title, or "Shared park"
   when the title is not at hand.
+- **Co-builders as figures** `[EXT:online-coop-figures]` (C2d-4). The members walk as figures with name
+  plates in the session's room, as a visit's players do ([Players in a visited park](#players-in-a-visited-park)).
+  Each member's own figure follows that member's view, not clicks; places go out only once the room is
+  the connection's own, confirmed, and a shared park's figures do not sparkle. The game's side is in
+  [COOP.md](COOP.md), "Co-builders as figures".
 - **Join snapshots** `[EXT:online-coop-snapshot-join]`. The host uploads the park a joiner starts from
   (`PUT /api/v1/coop/{id}/snapshot`, the answer names its SHA-256; a limit of the session's own, 60 an
   hour) and its members download it by digest (`GET …/snapshot/{sha256}`, resumable with a range); the

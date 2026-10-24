@@ -10,9 +10,15 @@ public sealed partial class ParkHud
 	public const string ChatModeScreenName = "chatMode";
 	private ChatPanel.ChatScreen? chatModeScreen;
 	private ChatPanel? chatPanel;
-	/// <summary>Whether the player keeps the chat mode (a visit starts in it; F4 switches to the HUD and back).</summary>
-	private bool chatModeWanted = true;
+	/// <summary>The player's choice of the chat mode (F4, Enter over the park); null until they make one.</summary>
+	private bool? chatModeChoice;
 	private bool chatModeKeyDown;
+
+	/// <summary>
+	/// Whether the player keeps the chat mode: as they chose, else a visit starts in it, and [EXT:online-coop-figures] a shared park in the HUD (C2d-4: its host builds,
+	/// and every player keeps the HUD's view of the park).
+	/// </summary>
+	private bool ChatModeWanted => chatModeChoice ?? ChatPresence is not { SharedPark: true };
 
 	/// <summary>
 	/// The visit shows the original chat overlay in place of the HUD: a visit of a published park with other players starts in it, as the original's
@@ -27,8 +33,11 @@ public sealed partial class ParkHud
 	/// <summary>The chat overlay's entry takes the keys.</summary>
 	internal bool ChatEntryFocused => ChatMode && chatPanel != null && ReferenceEquals( chatModeScreen!.Focused, chatPanel.Entry );
 
-	/// <summary>The other players of a read-only visit, while there are any.</summary>
-	private IVisitPresence? VisitPresence => level.IsReadOnlyVisit ? host?.Presence?.Invoke() : null;
+	/// <summary>
+	/// The players whose room the chat mode shows: a read-only visit's, or [EXT:online-coop-figures] a shared park's (C2d-4), whose chat mode stands beside its HUD and builds
+	/// nothing.
+	/// </summary>
+	private IVisitPresence? ChatPresence => host?.Presence?.Invoke() is { } presence && (level.IsReadOnlyVisit || presence.SharedPark) ? presence : null;
 
 	/// <summary>
 	/// The ride a click in the chat mode rides (tp.exe 0x4BD7F4): a placed object that is no track add-on (AddOn.UpgradesId 0), of the rides' or the features'
@@ -48,7 +57,7 @@ public sealed partial class ParkHud
 	/// <summary>F4: switches between the chat mode and the HUD (with nothing open over them).</summary>
 	internal void ToggleChatMode()
 	{
-		chatModeWanted = !chatModeWanted;
+		chatModeChoice = !ChatModeWanted;
 		SyncChatMode();
 	}
 
@@ -56,7 +65,7 @@ public sealed partial class ParkHud
 	private void HandleChatModeKey()
 	{
 		var down = Input.IsFrameKeyDown( Key.F4 );
-		if ( down && !chatModeKeyDown && (Input.ModifierMaskDown & 0x30) == 0 && VisitPresence != null && Stack.Screens.Count == 1 )
+		if ( down && !chatModeKeyDown && (Input.ModifierMaskDown & 0x30) == 0 && ChatPresence != null && Stack.Screens.Count == 1 )
 			ToggleChatMode();
 		chatModeKeyDown = down;
 	}
@@ -69,17 +78,18 @@ public sealed partial class ParkHud
 	{
 		if ( Stack.Screens.Count != 1 )
 			return;
-		var presence = VisitPresence;
-		var wanted = presence != null && chatModeWanted && !IsRiding && !presence.Refused && (ChatMode || presence.CanChat);
+		var presence = ChatPresence;
+		var wanted = presence != null && ChatModeWanted && !IsRiding && !presence.Refused && (ChatMode || presence.CanChat);
 		if ( wanted == ChatMode )
 			return;
 		if ( wanted )
 		{
-			// the HUD's windows, panels and modes go with it
+			// the HUD's windows, panels and modes go with it, and [EXT:online-coop-figures] in a shared park its armed tools (the chat mode builds nothing)
 			SelectObject( null );
 			CloseArmPanel();
 			CloseCameraPanel();
 			CancelCamcorder();
+			RetireArmedTools();
 			chatModeScreen ??= CreateChatModeScreen();
 			Stack.Replace( chatModeScreen );
 		}
@@ -98,12 +108,12 @@ public sealed partial class ParkHud
 	private bool ChatEntryWanted( UiContext context, UiInput input ) =>
 		input.Has( UiKeys.Accept ) && !input.Has( UiKeys.Space ) && Stack.Screens.Count == 1 && !IsRiding && !level.HidesInterface && !Input.TextEntryActive
 		&& Stack.Screens[0].Focused is not UiTextField { Visible: true, Enabled: true }
-		&& Input.ModifierMaskDown == 0 && Stack.Screens[0].HitTest( context.Canvas, input.Mouse ) == null && VisitPresence is { CanChat: true };
+		&& Input.ModifierMaskDown == 0 && Stack.Screens[0].HitTest( context.Canvas, input.Mouse ) == null && ChatPresence is { CanChat: true };
 
 	/// <summary>Enter over the park: the chat mode, with the entry taking the keys.</summary>
 	private void FocusChatEntry()
 	{
-		chatModeWanted = true;
+		chatModeChoice = true;
 		SyncChatMode();
 		if ( ChatMode && chatPanel != null )
 			chatModeScreen!.Focus( chatPanel.Entry );
@@ -115,14 +125,35 @@ public sealed partial class ParkHud
 	/// </summary>
 	private ChatPanel.ChatScreen CreateChatModeScreen()
 	{
-		chatPanel ??= new ChatPanel( strings, Stack, () => VisitPresence?.Chat )
+		chatPanel ??= new ChatPanel( strings, Stack, () => ChatPresence?.Chat )
 		{
 			Postcard = host?.OpenPostcard is { } open ? () => open( Stack ) : null,
-			GoTo = name => VisitPresence?.GoTo( name ),
+			GoTo = name => ChatPresence?.GoTo( name ),
+			TakeTo = name => ChatPresence is { SharedPark: true } shared && ViewFigure( shared, name ),
 		};
 		var screen = new ChatPanel.ChatScreen( ChatModeScreenName, chatPanel ) { Modal = false, Back = OpenPauseMenu };
 		chatPanel.AddTo( screen );
 		return screen;
+	}
+
+	/// <summary>
+	/// [EXT:online-coop-figures] A shared park's goto (C2d-4): the view moves to the player's figure when it is drawn here, from the overview (a free walk ends first); false for a
+	/// name with no figure here (a buddy elsewhere, a player who rides), whose goto goes to the server, which says to leave the park first.
+	/// </summary>
+	internal bool ViewFigure( IVisitPresence presence, string name )
+	{
+		foreach ( var figure in presence.Names )
+		{
+			if ( figure.Own || !figure.Name.Equals( name, StringComparison.OrdinalIgnoreCase ) )
+				continue;
+			if ( level.FreeWalk != null )
+				level.ExitFreeWalk();
+			if ( Camera.Mode is not ParkCameraMode camera )
+				return false;
+			camera.Focus( figure.Feet );
+			return true;
+		}
+		return false;
 	}
 
 	private static readonly RgbaByte VisitNamePlate = new( 16, 24, 48, 170 );

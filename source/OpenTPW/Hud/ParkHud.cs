@@ -580,6 +580,23 @@ public sealed partial class ParkHud
 		level.ResetBuildRotation();
 	}
 
+	/// <summary>
+	/// Ends every armed tool, as their own Escape ends them: the build and Move tools, the remove tool, the coaster, staff, patrol, land, clearing and pool tools and the
+	/// path/queue tool (the winning screen, and [EXT:online-coop-figures] a shared park's chat mode, which builds nothing).
+	/// </summary>
+	private void RetireArmedTools()
+	{
+		LeaveBuildTool();
+		level.IsPlacing = level.IsRemovingObjects = false;
+		if ( level.IsCoasterToolActive ) level.ExitCoasterTool();
+		level.StaffPlacement?.Cancel();
+		level.PatrolTool?.Cancel();
+		level.BuyLandTool?.Cancel();
+		level.AreaClearTool?.Cancel();
+		level.PoolTool?.Cancel();
+		level.CellTool.Cancel();
+	}
+
 	/// <summary>Ends the armed build tool (a window opened over it): the pending item goes and the build angle returns to 0.</summary>
 	private void LeaveBuildTool()
 	{
@@ -801,6 +818,9 @@ public sealed partial class ParkHud
 		SyncRideScreen();
 		HandleChatModeKey();
 		SyncChatMode();
+		// [EXT:online-coop-figures] the chat mode has no tools: its park clicks never reach the level's tool layer (a shared park's chat mode builds nothing)
+		if ( ChatMode )
+			level.WorldPointerRouted = true;
 		var walkingAtStart = CamcorderArmed || level.FreeWalk != null;
 		foreach ( var element in infoElements )
 			element.Visible = InfoArmOpen && selectedObject is { IsDeleted: false };
@@ -1145,16 +1165,20 @@ public sealed partial class ParkHud
 		// a visit builds no paths: while other players are shown its ground's help says that a click walks the player's figure there (UIHELPTEXT 401), not while the
 		// chat entry takes the keys (the help box would cover it)
 		// [BIN:TPW-EXE:0x4BD933 chat mode hover] the chat mode panel shows help 0x191 (401, "Left-click to walk to this point") over the park
-		if ( inPark && level.IsReadOnlyVisit )
+		// [EXT:online-coop-figures] a shared park's chat mode gives the ride help too, never the walk's (its clicks never walk)
+		if ( inPark && (level.IsReadOnlyVisit || ChatMode) )
 		{
 			// [BIN:TPW-EXE:0x4BD7F4 chat mode ride help] over a rideable ride the chat mode panel shows help 0x244 (580, "<ride>: Left-click to ride") with the ride's name
 			if ( ChatMode && !Input.TextEntryActive && ChatModeRide( level.Objects.FindAt( cursorX, cursorY ) ) is { } ride )
 				context.HoverHelp = strings.HelpFormat( 580, EntryName( ride.Entry ) );
-			else if ( host?.Presence?.Invoke() is { Walks: true } && !Input.TextEntryActive && (ChatMode || level.Objects.FindAt( cursorX, cursorY ) == null) )
+			else if ( level.IsReadOnlyVisit && host?.Presence?.Invoke() is { Walks: true } && !Input.TextEntryActive && (ChatMode || level.Objects.FindAt( cursorX, cursorY ) == null) )
 				context.HoverHelp = strings.Help( 401 );
 		}
 		else if ( inPark && tool.HoverHelpId( level.Paths, cursorX, cursorY ) is int help )
 			context.HoverHelp = strings.Help( help );
+		// [EXT:online-coop-figures] the chat mode has no tools (its entry retired them): no click, Backspace or line starts or edits one
+		if ( ChatMode )
+			return false;
 		if ( !tool.IsActive )
 		{
 			// Backspace over a path, queue, pool bridge or pool water cell with no tool on: the backtrack sound, then that cell is removed (GameAudio.BacktrackEvent; a queue is [EXT:queue-backtrack], a pool bridge or water cell [EXT:pools-bridges] [EXT:pools-tool]); a held key repeats only over path and queue cells.

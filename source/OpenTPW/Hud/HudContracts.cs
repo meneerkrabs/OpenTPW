@@ -20,6 +20,11 @@ public interface IVisitPresence
 	IChatPanelSource Chat { get; }
 	/// <summary>Takes the player's figure to another player in the park (a name popup's goto).</summary>
 	void GoTo( string name );
+	/// <summary>
+	/// [EXT:online-coop-figures] A shared park's players (C2d-4), not a visit's: the figures follow their players' views, a click is the park's (never a walk), the chat mode
+	/// is offered beside the HUD, and a goto moves the view to the player's figure.
+	/// </summary>
+	bool SharedPark => false;
 }
 
 /// <summary>A player's name over their figure in a visited park: the player's own name or another's, and the figure's feet (engine position).</summary>

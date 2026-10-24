@@ -660,6 +660,8 @@ internal sealed partial class GameFlow : IDisposable
 		// [EXT:online-coop-snapshot-join] a guest's join and resync: the build's slice, the check at the cut and the swap run here, before the HUD and the level
 		using ( FrameMarks.Measure( "coop.session" ) )
 			StepCoopSession();
+		// [EXT:online-coop-figures] the co-builders' figures (C2d-4): after the session's step, which may have ended the session or swapped the park
+		StepCoopPresence();
 		var imguiMouse = ImGuiNET.ImGui.GetIO().WantCaptureMouse;
 		if ( imguiMouse )
 			input = input with { LeftPressed = false, LeftReleased = false, RightPressed = false, Wheel = 0 };

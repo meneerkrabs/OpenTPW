@@ -75,15 +75,7 @@ public sealed partial class ParkHud
 		StopRide();
 		CancelCamcorder();
 		SyncRideScreen(); // the camcorder window goes with the ride view it served
-		LeaveBuildTool();
-		level.IsPlacing = level.IsRemovingObjects = false;
-		if ( level.IsCoasterToolActive ) level.ExitCoasterTool();
-		level.StaffPlacement?.Cancel();
-		level.PatrolTool?.Cancel();
-		level.BuyLandTool?.Cancel();
-		level.AreaClearTool?.Cancel();
-		level.PoolTool?.Cancel();
-		level.CellTool.Cancel();
+		RetireArmedTools();
 		StopResearchSounds();
 		SetInfoArm( false );
 		CloseCameraPanel();

@@ -357,6 +357,7 @@ internal sealed class VisitPresenceSmoke
 		public string CurrentRoom { get; private set; } = ChatProtocol.LobbyRoom;
 		public string WantedRoom => CurrentRoom;
 		public bool InSharedPark => false;
+		public bool SharedRoomReady => false;
 		public string? RefusedRoom => null;
 		public int? ServerProtocol => ParkPresence.MovementProtocol;
 		public IReadOnlyDictionary<string, (float X, float Y)> RoomPositions => positions;

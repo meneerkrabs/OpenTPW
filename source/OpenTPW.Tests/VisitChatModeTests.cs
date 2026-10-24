@@ -53,8 +53,6 @@ public class VisitChatModeTests
 		level = (Level)typeof( ParkHud ).GetField( "level", BindingFlags.NonPublic | BindingFlags.Instance )!.GetValue( hud )!;
 		Set( level, "<Visit>k__BackingField", RuntimeHelpers.GetUninitializedObject( typeof( ParkVisitInfo ) ) );
 		Set( hud, "host", new HudHost { Presence = () => presence } );
-		// the fixture skips the constructor, so the field's initial value is set here
-		Set( hud, "chatModeWanted", true );
 		return hud;
 	}
 
@@ -150,7 +148,6 @@ public class VisitChatModeTests
 		var level = (Level)typeof( ParkHud ).GetField( "level", BindingFlags.NonPublic | BindingFlags.Instance )!.GetValue( hud )!;
 		Set( level, "<Visit>k__BackingField", RuntimeHelpers.GetUninitializedObject( typeof( ParkVisitInfo ) ) );
 		Set( hud, "host", new HudHost() );
-		Set( hud, "chatModeWanted", true );
 		Frame( hud, UiInput.Idle( new N.Vector2( -1, -1 ) ) );
 		Assert.IsFalse( hud.ChatMode, "a visit without other players has no chat mode" );
 		Assert.AreSame( hud.Screen, hud.Stack.Screens[0] );

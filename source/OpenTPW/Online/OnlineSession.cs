@@ -1151,6 +1151,16 @@ public sealed class OnlineSession : IDisposable, IPresenceSession, IChatPanelSou
 	/// <summary>[EXT:online-coop-session] Whether this game is in a shared park, whose room its chat follows.</summary>
 	public bool InSharedPark => coopRoom != null;
 
+	/// <summary>[EXT:online-coop-figures] The chat room of the shared park this game is in (<c>coop:</c> and the session's id), or null outside one (C2d-4).</summary>
+	public string? SharedParkRoom => coopRoom;
+
+	/// <summary>
+	/// [EXT:online-coop-session] The shared park's room is this connection's, confirmed (C2d-4): a chat connection whose own server version is read and has shared parks'
+	/// rooms, no join on its way or waiting, and the server's roster names the room. A movement sent now goes to the shared park's room; after a reconnection it waits for
+	/// the new connection's confirmed join.
+	/// </summary>
+	public bool SharedRoomReady => coopRoom is { } room && Chat != null && SharedParkRoomsKnown && !joinPending && !coopJoinWaits && CurrentRoom == room;
+
 	/// <summary>
 	/// [EXT:online-coop-session] Whether something said to a room now would not reach the shared park's room: this connection's server is not known to have such rooms,
 	/// or the chat is not on its way to the session's room yet. (On its way, the server takes what is said for the room only once the connection is there.)

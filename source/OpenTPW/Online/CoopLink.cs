@@ -38,7 +38,13 @@ public enum CoopStop
 	/// </summary>
 	Closed,
 	/// <summary>No socket stayed up within <see cref="CoopLink.ReconnectWindow"/> of the loss.</summary>
-	Lost
+	Lost,
+	/// <summary>
+	/// [EXT:online-coop-session] The lobby opened the link (C2d-3b, <see cref="CoopLink.OpenInLobby"/>) and the server named a shared park of the account that this game did not ask
+	/// for: another game's of the account, away for a moment, or an earlier run's. The lobby leaves neither, so the link stops; a join or a share opens it again (and leaves that
+	/// park then, as any open that did not ask for it does).
+	/// </summary>
+	HeldElsewhere
 }
 
 /// <summary>
@@ -99,14 +105,21 @@ public sealed class CoopLink : ICoopStreamTransport
 	private long? welcomedAt;
 	/// <summary>The creates and joins sent on the live socket and not answered yet: a lost socket refuses them (<see cref="Refused"/>).</summary>
 	private readonly List<CoopMessageType> pending = new();
-	/// <summary>A leave that could not go out (the link was reconnecting): its reason goes with the leave the next welcome sends.</summary>
 	/// <summary>
-	/// The leaves that could not go out, one an account of a server (an account holds one session there): the session and the reason. The account's next welcome on
-	/// that server settles its leave; another server's or another account's welcome keeps it.
+	/// The leaves that could not go out, one an account of a server (an account holds one session there): the session and the reason. The account's next welcome that names
+	/// the session sends it, and keeps it until the server confirms it (the session's end for this game, a refusal that it is in none, or a welcome that does not name it),
+	/// so one lost with its socket before it went out goes again (C2d-3b); another server's or another account's welcome keeps it.
 	/// </summary>
-	private readonly Dictionary<(Uri? Server, string? Account), (string SessionId, string Reason)> pendingLeaves = new();
+	private readonly Dictionary<(Uri? Server, string? Account), DeferredLeave> pendingLeaves = new();
+	/// <summary>
+	/// [EXT:online-coop-session] A create or join was refused with its socket: the server may have made the seat. The link's next welcome leaves it (a session it does not
+	/// hold), unless the lobby opened the link anew meanwhile (C2d-3b), which cannot tell such a seat from another game's.
+	/// </summary>
+	private bool lostAnswer;
 	/// <summary>The server and the account of the link's latest socket, which a session the link holds belongs to (they outlive the login: a logout's leave is theirs).</summary>
 	private (Uri? Server, string? Account) socketOwner;
+	/// <summary>The lobby opened the link and nothing has asked it for a seat since (<see cref="OpenInLobby"/>).</summary>
+	private bool lobbyOpen;
 
 	internal CoopLink( OnlineSession owner ) => this.owner = owner;
 
@@ -116,6 +129,11 @@ public sealed class CoopLink : ICoopStreamTransport
 	/// </summary>
 	internal Guid Instance { get; set; } = Guid.NewGuid();
 	internal TimeSpan[] RetryDelays { get; set; } = DefaultRetryDelays;
+	/// <summary>
+	/// [EXT:online-coop-session] Spreads each wait of <see cref="RetryDelays"/> (<see cref="DefaultJitter"/>): with a link open in every lobby (C2d-3b), a server that restarts must
+	/// not bring every game back at the same moment. Tests give their own.
+	/// </summary>
+	internal Func<TimeSpan, TimeSpan> Jitter { get; set; } = DefaultJitter;
 	internal TimeSpan Silence { get; set; } = DefaultSilence;
 	internal TimeSpan ReconnectWindow { get; set; } = DefaultReconnectWindow;
 	internal TimeSpan StableAfter { get; set; } = DefaultStableAfter;
@@ -124,11 +142,20 @@ public sealed class CoopLink : ICoopStreamTransport
 	internal Func<(string Build, IReadOnlyList<CoopMod> Mods)> Identity { get; set; } = CurrentIdentity;
 	/// <summary>Opens a socket (<see cref="OnlineClient.ConnectCoopAsync"/>; tests delay or cut it).</summary>
 	internal Func<OnlineClient, CancellationToken, Task<CoopConnection>> Connector { get; set; } = ( client, cancel ) => client.ConnectCoopAsync( cancel );
+	/// <summary>Fetches the open list of shared parks (<see cref="OnlineClient.ListCoopSessionsAsync"/>; tests give their own, as the server never lists a full park).</summary>
+	internal Func<OnlineClient, Task<CoopSessionList>> Lister { get; set; } = client => client.ListCoopSessionsAsync();
+	/// <summary>Drops a received message it accepts before the link reads it (tests: an answer lost with its socket).</summary>
+	internal Func<CoopMessage, bool>? DropReceived { get; set; }
+	/// <summary>Drops a message it accepts as if it went out (tests: a leave lost with its socket before it was written).</summary>
+	internal Func<CoopMessage, bool>? DropSent { get; set; }
 	/// <summary>Sockets the link has opened (tests: a reconnect).</summary>
 	internal int Connections { get; private set; }
 
 	/// <summary>Drops the socket without a close, as a lost network does (tests).</summary>
 	internal void DropSocket() => live?.Abort();
+
+	/// <summary>A wait of <see cref="RetryDelays"/> spread over 80 to 120 per cent of itself.</summary>
+	internal static TimeSpan DefaultJitter( TimeSpan delay ) => delay * (0.8 + 0.4 * Random.Shared.NextDouble());
 
 	public CoopLinkState State { get; private set; }
 	/// <summary>Why the link stopped on its own; <see cref="CoopStop.None"/> while it runs or after <see cref="Close"/>.</summary>
@@ -136,6 +163,11 @@ public sealed class CoopLink : ICoopStreamTransport
 	/// <summary>The session this game is in, as the server last told it; null outside a session.</summary>
 	public CoopSessionState? Session { get; private set; }
 	public bool IsHost => Session is { } session && session.You == session.Host;
+	/// <summary>
+	/// [EXT:online-coop-session] A create or join waits for its answer: once the server reads it, it seats this game, also after a close without a leave (the socket sends what
+	/// it holds before it closes). The lobby's link is never closed while one waits (C2d-3b).
+	/// </summary>
+	internal bool Waiting => pending.Count > 0;
 	bool ICoopStreamTransport.IsOpen => State == CoopLinkState.Open;
 	/// <summary>The joined session's host build and mods (they match this game's, or the join was refused); null for a host.</summary>
 	public string? HostBuild { get; private set; }
@@ -188,6 +220,7 @@ public sealed class CoopLink : ICoopStreamTransport
 	{
 		if ( State != CoopLinkState.Closed )
 			return;
+		lobbyOpen = false;
 		Stopped = CoopStop.None;
 		if ( owner.ServerProtocol is < CoopProtocol.Version )
 		{
@@ -206,6 +239,19 @@ public sealed class CoopLink : ICoopStreamTransport
 	}
 
 	/// <summary>
+	/// [EXT:online-coop-session] Opens the link for the lobby (C2d-3b, <see cref="CoopLobbyLink"/>): as <see cref="Open"/> without a take-over, except that a welcome naming a shared
+	/// park of the account that this game did not ask for stops the link (<see cref="CoopStop.HeldElsewhere"/>) instead of leaving that park: it may be another game's of the
+	/// account, whose socket is away for a moment. Once a create or join goes out, the link is any open's again. Nothing happens while it is open or on its way.
+	/// </summary>
+	internal void OpenInLobby()
+	{
+		if ( State != CoopLinkState.Closed )
+			return;
+		Open();
+		lobbyOpen = State != CoopLinkState.Closed;
+	}
+
+	/// <summary>
 	/// Closes the link and forgets its session: the session is over for this game (<see cref="SessionEnded"/>), a later open names it, and the game leaves it then.
 	/// </summary>
 	/// <param name="leaveReason">
@@ -215,6 +261,7 @@ public sealed class CoopLink : ICoopStreamTransport
 	/// </param>
 	public void Close( string? leaveReason = null )
 	{
+		lobbyOpen = false;
 		var held = Session;
 		string? left = null;
 		if ( leaveReason != null && (held != null || pending.Count > 0) )
@@ -247,6 +294,7 @@ public sealed class CoopLink : ICoopStreamTransport
 		if ( !Send( new CoopCreate( listed, title, (byte)maximumPlayers ) ) )
 			return false;
 		pending.Add( CoopMessageType.Create );
+		lobbyOpen = false;
 		return true;
 	}
 
@@ -258,6 +306,7 @@ public sealed class CoopLink : ICoopStreamTransport
 		if ( !Send( new CoopJoin( normalized ) ) )
 			return false;
 		pending.Add( CoopMessageType.Join );
+		lobbyOpen = false;
 		return true;
 	}
 
@@ -283,8 +332,17 @@ public sealed class CoopLink : ICoopStreamTransport
 		if ( sent )
 			pendingLeaves.Remove( socketOwner );
 		else
-			pendingLeaves[socketOwner] = (sessionId, reason);
+			pendingLeaves[socketOwner] = new DeferredLeave( sessionId, reason );
 	}
+
+	/// <summary>[EXT:online-coop-session] A leave of the session <paramref name="SessionId"/> the server has not confirmed (its id: never a guess at another seat).</summary>
+	private readonly record struct DeferredLeave( string SessionId, string Reason );
+
+	/// <summary>
+	/// [EXT:online-coop-session] The link has something to settle at its next welcome: a leave of this game's that waits for the server, or a seat a create or join whose
+	/// answer was lost may have made. The lobby keeps such a link open for a while (C2d-3b, <see cref="CoopLobbyLink.SettleHoldSeconds"/>).
+	/// </summary>
+	internal bool Settling => lostAnswer || pendingLeaves.ContainsKey( socketOwner );
 
 	/// <summary>The host removes member <paramref name="memberId"/>; the account cannot join the session again.</summary>
 	public bool Kick( uint memberId ) => IsHost && Send( new CoopKick( memberId ) );
@@ -338,7 +396,7 @@ public sealed class CoopLink : ICoopStreamTransport
 			string? error = null;
 			try
 			{
-				sessions = (await client.ListCoopSessionsAsync()).Sessions.Where( session => session.Build == build ).ToArray();
+				sessions = (await Lister( client )).Sessions.Where( session => session.Build == build ).ToArray();
 			}
 			catch ( Exception exception )
 			{
@@ -435,6 +493,9 @@ public sealed class CoopLink : ICoopStreamTransport
 	{
 		if ( State != CoopLinkState.Open || live is not { } socket )
 			return false;
+		// tests: a message the socket would have lost before it went out
+		if ( DropSent?.Invoke( message ) == true )
+			return true;
 		byte[] bytes;
 		try
 		{
@@ -602,7 +663,7 @@ public sealed class CoopLink : ICoopStreamTransport
 
 	private void Receive( Socket socket, CoopMessage message )
 	{
-		if ( socket != live )
+		if ( socket != live || DropReceived?.Invoke( message ) == true )
 			return;
 		switch ( message )
 		{
@@ -630,6 +691,10 @@ public sealed class CoopLink : ICoopStreamTransport
 				ForgetSession();
 				SessionEnded?.Invoke( ended );
 				break;
+			case CoopEnded ended when Session == null && pendingLeaves.TryGetValue( socketOwner, out var left ) && left.SessionId == ended.SessionId:
+				// the server confirms this game's leave of a session it no longer holds
+				pendingLeaves.Remove( socketOwner );
+				break;
 			case CoopFrame frame when Session != null && !IsHost:
 				LastFrameSeq = frame.Seq;
 				FrameReceived?.Invoke( frame );
@@ -646,6 +711,9 @@ public sealed class CoopLink : ICoopStreamTransport
 			case CoopError error:
 				if ( error.Request is CoopMessageType.Create or CoopMessageType.Join )
 					pending.Remove( error.Request );
+				// a leave of a session the account is no longer in is settled
+				if ( error.Request == CoopMessageType.Leave && error.Reason == CoopReason.NotInSession && Session == null )
+					pendingLeaves.Remove( socketOwner );
 				Refused?.Invoke( error );
 				break;
 		}
@@ -663,7 +731,7 @@ public sealed class CoopLink : ICoopStreamTransport
 	/// <summary>
 	/// The server's answer to the hello: the session resumed, or why it ended while this game was away. A session the server names that this game does not
 	/// hold (it restarted, or took the socket over, or its create or join was answered on a lost socket) cannot be resumed, so the account leaves it, before
-	/// anything else this welcome raises.
+	/// anything else this welcome raises; a link the lobby opened stops instead (<see cref="CoopStop.HeldElsewhere"/>).
 	/// </summary>
 	private void Welcomed( CoopWelcome welcome )
 	{
@@ -676,6 +744,17 @@ public sealed class CoopLink : ICoopStreamTransport
 		ServerProtocol = welcome.Protocol;
 		welcomedAt = Environment.TickCount64;
 		takeOver = false;
+		// [EXT:online-coop-session] the lobby's link leaves no shared park it did not ask for (C2d-3b), but for this game's own leave that waits
+		if ( lobbyOpen && Session == null && welcome.Session is { } elsewhere
+			&& !(pendingLeaves.TryGetValue( socketOwner, out var own ) && own.SessionId == elsewhere.Id) )
+		{
+			// the account is in that park, so a leave of another one is settled; a lost answer's seat may be this park, which the lobby cannot tell
+			pendingLeaves.Remove( socketOwner );
+			lostAnswer = false;
+			Stop( CoopStop.HeldElsewhere );
+			return;
+		}
+		lostAnswer = false;
 		CoopSessionState? resumed = null;
 		CoopEnded? ended = null;
 		if ( Session is { } held )
@@ -697,11 +776,19 @@ public sealed class CoopLink : ICoopStreamTransport
 		SetState( CoopLinkState.Open, quietly: true );
 		if ( Session == null && welcome.Session is { } named )
 		{
-			var reason = pendingLeaves.TryGetValue( socketOwner, out var leave ) && leave.SessionId == named.Id ? leave.Reason : "This game no longer holds the shared park.";
-			Send( new CoopLeave( reason ) );
+			if ( pendingLeaves.TryGetValue( socketOwner, out var leave ) && leave.SessionId == named.Id )
+				// this game's own leave goes out, and is kept until the server confirms it
+				Send( new CoopLeave( leave.Reason ) );
+			else
+			{
+				// a session the link does not hold (a lost answer's seat, an earlier run's, or one taken over): the account leaves it, and a leave of another one is settled
+				pendingLeaves.Remove( socketOwner );
+				Send( new CoopLeave( "This game no longer holds the shared park." ) );
+			}
 		}
-		// the account's leave on this server is settled (sent, or its session is gone); another server's or account's waits for its own welcome
-		pendingLeaves.Remove( socketOwner );
+		else
+			// the account's leave on this server is settled: its session is gone, or the link holds it again; another server's or account's waits for its own welcome
+			pendingLeaves.Remove( socketOwner );
 		if ( ended != null )
 			SessionEnded?.Invoke( ended );
 		if ( resumed != null )
@@ -731,7 +818,12 @@ public sealed class CoopLink : ICoopStreamTransport
 		else if ( status == CoopCloseStatus.InUse )
 			Stop( CoopStop.InUseElsewhere );
 		else if ( status == CoopCloseStatus.Replaced )
+		{
+			// the game that took the link over leaves whatever the account holds that it does not, so nothing of this link's waits behind it
+			pendingLeaves.Remove( socketOwner );
+			lostAnswer = false;
 			Stop( CoopStop.Replaced );
+		}
 		else if ( !CoopCloseStatus.IsResumable( status ) )
 			Stop( CoopStop.Closed );
 		else
@@ -759,7 +851,7 @@ public sealed class CoopLink : ICoopStreamTransport
 			Stop( CoopStop.Lost );
 			return;
 		}
-		var delay = RetryDelays[Math.Min( attempt, RetryDelays.Length - 1 )];
+		var delay = Jitter( RetryDelays[Math.Min( attempt, RetryDelays.Length - 1 )] );
 		if ( rate && delay < CoopCloseStatus.RateRetryDelay )
 			delay = CoopCloseStatus.RateRetryDelay;
 		attempt++;
@@ -817,6 +909,8 @@ public sealed class CoopLink : ICoopStreamTransport
 	{
 		if ( pending.Count == 0 )
 			return;
+		// [EXT:online-coop-session] the server may have read it and made the seat, which the link's next welcome leaves (C2d-3b)
+		lostAnswer = true;
 		var requests = pending.ToArray();
 		pending.Clear();
 		foreach ( var request in requests )

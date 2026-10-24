@@ -69,17 +69,27 @@ internal sealed class CoopJoinAttempt : IDisposable
 	private bool cancelling;
 	private bool disposed;
 
-	/// <summary>Starts joining the shared park with <paramref name="code"/> (as typed) over <paramref name="link"/>: the link opens now.</summary>
-	internal CoopJoinAttempt( CoopLink link, string code )
+	/// <summary>
+	/// Starts joining the shared park with <paramref name="code"/> (as typed) over <paramref name="link"/>: the link opens now, unless this game could not follow a shared park
+	/// (<see cref="CoopJoinOutcome.NotAllowed"/> at once: no socket opens and nothing goes out). <paramref name="takeOver"/> replaces another game of the account that holds
+	/// the link (the player's explicit choice after <see cref="CoopStop.InUseElsewhere"/>; C2d-3b).
+	/// </summary>
+	internal CoopJoinAttempt( CoopLink link, string code, bool takeOver = false )
 	{
 		ArgumentNullException.ThrowIfNull( link );
 		ArgumentNullException.ThrowIfNull( code );
 		this.link = link;
 		Code = code;
+		if ( CoopSession.JoinRefusalKind is var kind and not CoopJoinRefusal.None )
+		{
+			NotAllowedBecause = kind;
+			Finish( CoopJoinOutcome.NotAllowed, CoopSession.JoinRefusal! );
+			return;
+		}
 		link.SessionStarted += OnSessionStarted;
 		link.Refused += OnRefused;
 		link.SessionEnded += OnSessionEnded;
-		Link.Open();
+		Link.Open( takeOver );
 	}
 
 	/// <summary>The code as the player typed it.</summary>
@@ -142,8 +152,9 @@ internal sealed class CoopJoinAttempt : IDisposable
 
 	private void StepOpening()
 	{
-		// an open on its way does nothing; a closed link opens again (an older server stops it at once, without a state change)
-		if ( link.State == CoopLinkState.Closed && link.Stopped == CoopStop.None )
+		// an open on its way does nothing; a closed link opens again (an older server stops it at once, without a state change), also one the lobby opened that stopped
+		// at a park of the account it did not ask for: the join is the player's own act, whose open leaves that park (C2d-3b)
+		if ( link.State == CoopLinkState.Closed && link.Stopped is CoopStop.None or CoopStop.HeldElsewhere )
 			Link.Open();
 		if ( link.Stopped != CoopStop.None )
 		{

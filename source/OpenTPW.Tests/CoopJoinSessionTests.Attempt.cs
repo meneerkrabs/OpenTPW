@@ -193,6 +193,7 @@ public partial class CoopJoinSessionTests
 				GameEditions.Select( GameEdition.ThemeParkWorld );
 			}
 			Assert.AreEqual( 1, hostPlayer.Link.Session!.Members.Count, "no seat was taken" );
+			Assert.AreEqual( (CoopLinkState.Closed, 0), (guest.Link.State, guest.Link.Connections), "no socket opened for a game that cannot follow (C2d-3b)" );
 
 			// a join that still settles its answer (cancelled, waiting) keeps a saved park's share from starting
 			var joiner = LobbyGuest( guest );

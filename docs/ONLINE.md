@@ -24,7 +24,8 @@ decisions and the command layer every park edit now goes through are in [COOP.md
 its sessions and the game's link to them exist ([Shared parks](#shared-parks)). A player shares the open park from the
 pause menu's Build Together line ([COOP.md](COOP.md), "Sharing the park from the game"), or one of their saved parks
 from the lobby's ([COOP.md](COOP.md), "Sharing a saved park from the lobby"). Another player joins from the lobby with the
-park's code ([COOP.md](COOP.md), "Joining a shared park from the lobby"); the open list and invitations are next.
+park's code ([COOP.md](COOP.md), "Joining a shared park from the lobby"), from the open list, or by the host's invitation,
+which reaches the player anywhere in the lobby ([COOP.md](COOP.md), "Invitations and the open list").
 
 ## Screens
 
@@ -447,8 +448,9 @@ exit (`artifacts/native-smoke-online-visit-presence.png`, `native-smoke-online-v
 
 `[EXT:online-coop-session]` A shared park is a session on the server: a host and up to three guests
 (decision Q5) who build one park together ([COOP.md](COOP.md)). The server relays the host's command
-stream and the players' messages without reading them. The game has its link to the server's sessions;
-no screen or park uses it yet (C2b to C2d).
+stream and the players' messages without reading them. The game's link to the server's sessions is open
+while a shared park uses it, and while a logged-in player is in the lobby ([COOP.md](COOP.md), "Invitations and
+the open list").
 
 - **The co-op socket.** `/api/v1/coop` (server protocol 7) is a WebSocket of binary messages
   (`OpenTPW.Online.Coop.CoopProtocol`), beside the text chat socket. A desktop game sends its login
@@ -464,7 +466,7 @@ no screen or park uses it yet (C2b to C2d).
   joins by code, or from the list (`GET /api/v1/coop/sessions`: listed sessions with room and a
   connected host, for the same build). A join needs exactly the host's build (Q11) and the same
   simulation-changing mods in the same order (Q16); a refusal names the difference. The host invites a
-  player whose game is online, removes a player (who cannot come back), and ends the session by
+  player whose game has its link open (a player in the lobby), removes a player (who cannot come back), and ends the session by
   leaving; Q18's host migration is a later phase. Members have ids that are never reused, and slots
   (the game's player index; the host is 0).
 - **Order and resume.** Only the host sends frames, numbered; the server relays a frame only from the

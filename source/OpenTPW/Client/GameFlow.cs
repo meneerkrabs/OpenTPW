@@ -655,6 +655,8 @@ internal sealed partial class GameFlow : IDisposable
 		StepCoopShare();
 		// [EXT:online-coop-session] joining a shared park (C2d-3): the join's answer is taken here, before the session's step
 		StepCoopJoin();
+		// [EXT:online-coop-session] the lobby's link and its invitations (C2d-3b): after the attempts, whose links it leaves alone
+		StepCoopLobby();
 		// [EXT:online-coop-snapshot-join] a guest's join and resync: the build's slice, the check at the cut and the swap run here, before the HUD and the level
 		using ( FrameMarks.Measure( "coop.session" ) )
 			StepCoopSession();
@@ -1256,6 +1258,8 @@ internal sealed partial class GameFlow : IDisposable
 		coopShare?.Dispose();
 		coopJoinAttempt?.Dispose();
 		coopJoinAttempt = null;
+		if ( coopLobbyLink != null && onlineSession != null )
+			onlineSession.Coop.Invited -= OnCoopInvited;
 		coopShare = null;
 		Advisor?.Dispose();
 		GameAudio.Shutdown();

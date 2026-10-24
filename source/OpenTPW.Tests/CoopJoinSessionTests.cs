@@ -27,6 +27,8 @@ public partial class CoopJoinSessionTests
 	/// <summary>The view statics a construction scene's swap changes: the park camera's extent and start, and the audio listener.</summary>
 	private (float Extent, global::OpenTPW.Vector3 Target, global::OpenTPW.Vector3 Position, global::OpenTPW.Vector3 Forward, global::OpenTPW.Vector3 Front, global::OpenTPW.Vector3 Up) view;
 	private bool? audioWas;
+	/// <summary>The keyboard's text entry flag, which a lobby screen's focused text field sets (C2d-3b's tests update the join screen).</summary>
+	private bool textEntry;
 	private readonly List<Peer> peers = new();
 	private readonly List<List<Entity>> built = new();
 	private double clock;
@@ -77,8 +79,9 @@ public partial class CoopJoinSessionTests
 				Link.Deliver();
 			if ( Flow != null )
 			{
-				// [EXT:online-coop-session] a join with a code (C2d-3): the game takes its answer here, before the session's step
+				// [EXT:online-coop-session] a join with a code (C2d-3): the game takes its answer here, before the session's step; then the lobby's link (C2d-3b)
 				Flow.StepCoopJoin();
+				Flow.StepCoopLobby();
 				Flow.StepCoopSession();
 				if ( !ReferenceEquals( Flow.Level, Level ) )
 					(Level, Entities) = (Flow.Level, Entity.All);
@@ -218,6 +221,7 @@ public partial class CoopJoinSessionTests
 	[TestInitialize]
 	public void Initialize()
 	{
+		textEntry = Input.TextEntryActive;
 		entities = Entity.All;
 		current = Level.Current;
 		(timeNow, timeDelta) = (Time.Now, Time.Delta);
@@ -247,6 +251,7 @@ public partial class CoopJoinSessionTests
 		fixture?.Cleanup();
 		renderer?.Dispose();
 		GameEditions.Select( GameEdition.ThemeParkWorld );
+		Input.TextEntryActive = textEntry;
 		(Time.Now, Time.Delta) = (timeNow, timeDelta);
 		if ( entities != null )
 			Entity.All = entities;

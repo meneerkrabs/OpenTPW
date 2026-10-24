@@ -13,10 +13,13 @@ public partial class CoopShareTests
 		public CoopJoinAttempt? Attempt { get; set; }
 		public CoopJoinAttempt? Joining => Attempt;
 		public readonly List<string> Started = new();
+		public readonly List<string> TakenOver = new();
 		public int Cancelled, Dismissed;
-		public bool StartJoining( string code )
+		public bool StartJoining( string code, bool takeOver = false )
 		{
 			Started.Add( code );
+			if ( takeOver )
+				TakenOver.Add( code );
 			return true;
 		}
 		public void CancelJoining() => Cancelled++;
@@ -76,6 +79,19 @@ public partial class CoopShareTests
 			// logged in: a code that cannot be one is said and not sent; a code goes as typed (case, spaces and dashes do not matter to the server)
 			LogIn( session, "Guest" );
 			var code = Element<UI.Original.UiTextField>( stack, "code" );
+			// a game that cannot follow a shared park says so before anything goes out, and joins nothing (C2d-3b)
+			code.Text = "abcdef";
+			CoopSession.ChangesParkOutsideCommands = true;
+			try
+			{
+				Update( stack );
+				Assert.AreEqual( English( UI.Original.OpenTpwText.JoinNotAllowed ), Element<UI.Original.UiLabel>( stack, "message" ).Text() );
+				Assert.IsFalse( Element<UI.Original.UiButton>( stack, "join" ).Enabled );
+			}
+			finally
+			{
+				CoopSession.ChangesParkOutsideCommands = false;
+			}
 			code.Text = "no such!";
 			Update( stack );
 			Element<UI.Original.UiButton>( stack, "join" ).Clicked!();

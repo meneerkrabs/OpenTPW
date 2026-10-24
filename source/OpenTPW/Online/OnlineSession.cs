@@ -220,6 +220,12 @@ public sealed class OnlineSession : IDisposable, IPresenceSession, IChatPanelSou
 	/// <summary>The player is in a published park's room that the server has not taken a vote for from this login: the chat overlay's vote button works.</summary>
 	public bool CanVote => Chat != null && CurrentRoom.StartsWith( ChatProtocol.ParkRoomPrefix, StringComparison.Ordinal ) && !votedRooms.Contains( CurrentRoom ) && !voteLimitReached;
 	public bool IsLoggedIn => Client?.Session != null;
+
+	/// <summary>
+	/// [EXT:online-coop-session] Who is logged in where: the server and the account, null while logged out. The lobby's invitations and the open list of shared parks belong to
+	/// it (C2d-3b): another login has neither.
+	/// </summary>
+	internal (Uri Server, string Account)? LoginIdentity => Client is { Session: { } session } client ? (client.ServerUrl, session.Name) : null;
 	string? IChatPanelSource.PlayerName => Settings.PlayerName;
 	object? IPresenceSession.Connection => Chat;
 	IReadOnlyList<string> IChatPanelSource.ChatLines => ChatLines;

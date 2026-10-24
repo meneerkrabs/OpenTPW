@@ -192,8 +192,9 @@ internal sealed class CoopShare : IDisposable
 			Finish( CoopShareOutcome.ParkClosed, "The park was closed before it was shared." );
 			return;
 		}
-		// an open on its way does nothing; a closed link opens again (an older server stops it at once, without a state change)
-		if ( link.State == CoopLinkState.Closed && link.Stopped == CoopStop.None )
+		// an open on its way does nothing; a closed link opens again (an older server stops it at once, without a state change), also one the lobby opened that stopped
+		// at a park of the account it did not ask for: the share is the player's own act, whose open leaves that park (C2d-3b)
+		if ( link.State == CoopLinkState.Closed && link.Stopped is CoopStop.None or CoopStop.HeldElsewhere )
 			Link.Open();
 		if ( link.Stopped != CoopStop.None )
 		{

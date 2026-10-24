@@ -20,10 +20,10 @@ public class HeldSoundCorpusTests
 	[TestInitialize]
 	public void Setup()
 	{
-		Log ??= new();
-		var data = StringTableTests.OriginalDataDirectory();
 		previousFileSystem = FileSystem;
 		previousBonus = ObjectCatalog.BonusDataRoot;
+		Log ??= new();
+		var data = StringTableTests.OriginalDataDirectory();
 		FileSystem = new BaseFileSystem( data );
 		FileSystem.RegisterArchiveHandler<WadArchive>( ".wad" );
 		ObjectCatalog.BonusDataRoot = null;
@@ -55,11 +55,10 @@ public class HeldSoundCorpusTests
 		mixer?.Dispose();
 		foreach ( var (field, value) in saved )
 			field.SetValue( null, value );
-		if ( previousFileSystem != null )
-		{
-			FileSystem = previousFileSystem;
+		FileSystem = previousFileSystem!;
+		// only when the setup changed it: the setter also stops the catalog following OPENTPW_BONUS_DATA
+		if ( ObjectCatalog.BonusDataRoot != previousBonus )
 			ObjectCatalog.BonusDataRoot = previousBonus;
-		}
 		AudioListener.Update( Vector3.Zero, new Vector3( 0, 0, 1 ) );
 	}
 

@@ -10,10 +10,12 @@ namespace OpenTPW.Tests;
 public class ParticleSpriteAtlasTests
 {
 	private string dataPath = null!;
+	private BaseFileSystem? previousFileSystem;
 
 	[TestInitialize]
 	public void Init()
 	{
+		previousFileSystem = FileSystem;
 		Log = new();
 		var gamePath = Environment.GetEnvironmentVariable( "OPENTPW_GAME_PATH" );
 		if ( string.IsNullOrWhiteSpace( gamePath ) || !Directory.Exists( gamePath ) )
@@ -24,6 +26,9 @@ public class ParticleSpriteAtlasTests
 		FileSystem = new BaseFileSystem( dataPath );
 		FileSystem.RegisterArchiveHandler<WadArchive>( ".wad" );
 	}
+
+	[TestCleanup]
+	public void Cleanup() => FileSystem = previousFileSystem!;
 
 	[TestMethod]
 	public void SpriteCodesAreBankTimesSixteenPlusAnimationAndMatchTheTemplateFrameCounts()

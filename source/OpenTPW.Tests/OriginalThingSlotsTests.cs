@@ -15,14 +15,14 @@ public class OriginalThingSlotsTests
 	private BaseFileSystem? originalFileSystem;
 
 	[TestInitialize]
-	public void Setup() => Log ??= new();
+	public void Setup()
+	{
+		originalFileSystem = FileSystem;
+		Log ??= new();
+	}
 
 	[TestCleanup]
-	public void Cleanup()
-	{
-		if ( originalFileSystem != null )
-			FileSystem = originalFileSystem;
-	}
+	public void Cleanup() => FileSystem = originalFileSystem!;
 
 	private static ThingPool OriginalsLoad( System.Collections.Generic.IEnumerable<SaveThing> chain )
 	{
@@ -121,7 +121,6 @@ public class OriginalThingSlotsTests
 		var dataPath = OriginalParkImportTests.OriginalDataPath();
 		if ( !File.Exists( Path.Combine( dataPath, "levels", "Standard.sam" ) ) )
 			Assert.Inconclusive( "Original levels/Standard.sam is missing." );
-		originalFileSystem ??= FileSystem;
 		FileSystem = new BaseFileSystem( dataPath );
 		FileSystem.RegisterArchiveHandler<WadArchive>( ".wad" );
 		var map = new MapFile( new MemoryStream( OriginalParkImportTests.ReadArchiveMember( "levels/jungle/terrain.wad", "base.map" ) ) );

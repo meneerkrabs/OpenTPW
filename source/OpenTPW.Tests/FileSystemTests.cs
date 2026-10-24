@@ -10,9 +10,12 @@ namespace OpenTPW.Tests;
 [TestClass]
 public class FileSystemTests
 {
+	private BaseFileSystem? previousFileSystem;
+
 	[TestInitialize]
 	public void Init()
 	{
+		previousFileSystem = FileSystem;
 		Log = new();
 
 		var gamePath = Environment.GetEnvironmentVariable( "OPENTPW_GAME_PATH" );
@@ -26,6 +29,9 @@ public class FileSystemTests
 		// the desktop game's own file system (remembered lookups, issue #754)
 		FileSystem = GameDataFileSystem.Create( dataPath );
 	}
+
+	[TestCleanup]
+	public void Cleanup() => FileSystem = previousFileSystem!;
 
 	private static void RequireFile( string path )
 	{

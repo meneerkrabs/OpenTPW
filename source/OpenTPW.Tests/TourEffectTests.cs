@@ -14,6 +14,14 @@ namespace OpenTPW.Tests;
 [TestClass]
 public class TourEffectTests
 {
+	private BaseFileSystem? previousFileSystem;
+
+	[TestInitialize]
+	public void Initialize() => previousFileSystem = FileSystem;
+
+	[TestCleanup]
+	public void Cleanup() => FileSystem = previousFileSystem!;
+
 	private static Func<uint> Random( uint seed )
 	{
 		var state = seed;

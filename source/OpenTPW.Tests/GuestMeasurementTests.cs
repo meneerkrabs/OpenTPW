@@ -507,9 +507,12 @@ public class GuestMeasurementTests
 [TestClass]
 public class GuestMeasurementAssetTests
 {
+	private BaseFileSystem? previousFileSystem;
+
 	[TestInitialize]
 	public void Init()
 	{
+		previousFileSystem = FileSystem;
 		Log = new();
 		var gamePath = Environment.GetEnvironmentVariable( "OPENTPW_GAME_PATH" );
 		if ( string.IsNullOrWhiteSpace( gamePath ) || !System.IO.Directory.Exists( gamePath ) )
@@ -520,6 +523,9 @@ public class GuestMeasurementAssetTests
 		FileSystem = new BaseFileSystem( dataPath );
 		FileSystem.RegisterArchiveHandler<WadArchive>( ".wad" );
 	}
+
+	[TestCleanup]
+	public void Cleanup() => FileSystem = previousFileSystem!;
 
 	[TestMethod]
 	public void LevelParkAttemptsAreConsistentAndTheObserverLeavesTheHashAlone()

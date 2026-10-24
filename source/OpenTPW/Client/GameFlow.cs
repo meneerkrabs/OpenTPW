@@ -1000,6 +1000,27 @@ internal sealed partial class GameFlow : IDisposable
 		Lobby.StepSigns( Menu?.Selected, paused: LobbyEntering );
 	}
 
+	/// <summary>
+	/// The lobby's draw order: every entity of the snapshot but the weather renderer, then the lightning's flash quad when a strike set the flag, then the weather renderer (bolts and rain).
+	/// The weather renderer is drawn last only when the snapshot lists it, so a removed renderer is never drawn.
+	/// </summary>
+	// [BIN:TPW-EXE:0x582ad0 deferred sort] the order is not call order: the scene queues its meshes ([0x8BCBB8], submitted via 0x581cd0) and flushes them at 0x576dbe -> 0x582170 -> 0x581db0, after the rain call (0x576dab); primitives whose state lacks 0x1000/0x2000 are not drawn when submitted (0x565590) but at the flush, where 0x582ad0 draws them back to front by mean depth (+0x30, sort 0x5829e0, descending). The quad's key is about 0.001 (its z), the bolts' key is forced to 0 (0x5658c0(0) in 0x57ec50) and the drops' key is 0 (0x57efd0), so the bolts and drops draw after the quad; opaque meshes (0x1256) draw in 0x581db0 before the flush, and translucent meshes and the sky have larger keys, so they draw before the quad and are inverted. The reverse-sort condition 0x5828f0 (([0x8BCBC8] & 0xC) == 0xC plus bit 0x20000000) is not verified.
+	internal static void RenderLobbyLayers( Entity[] snapshot, Entity? weather, bool flash, Action drawFlash )
+	{
+		var weatherListed = false;
+		foreach ( var entity in snapshot )
+		{
+			if ( entity == weather )
+				weatherListed = true;
+			else
+				entity.Render();
+		}
+		if ( flash )
+			drawFlash();
+		if ( weatherListed )
+			weather!.Render();
+	}
+
 	/// <summary>The lobby's reference frames (60 Hz) for the frame-driven effects and flyers.</summary>
 	private readonly ReferenceFrameClock lobbyFrames = new();
 
@@ -1098,16 +1119,10 @@ internal sealed partial class GameFlow : IDisposable
 				cloudLayer.SetGridColour( 0xFF000000u | (uint)sky.R << 16 | (uint)sky.G << 8 | sky.B );
 				cloudLayer.Draw( Time.Delta );
 			}
-			foreach ( var entity in Entity.All.ToArray() )
-				entity.Render();
-			// [BIN:TPW-EXE:0x57ee30 lightning flash] the lightning draw tests the flash flag (+4) first and draws one full-screen quad (0x57ed50: corners -1..1, vertex colour 0xFFFFFFFF, state 0x9A1) before it steps the bolts
+			// [BIN:TPW-EXE:0x57ee30 lightning flash] the lightning draw tests the flash flag (+4) first and draws one full-screen quad (0x57ed50: corners -1..1, vertex colour 0xFFFFFFFF, state 0x9A1) before it steps the bolts (from 0x57ee4d); the raindrops follow (after 0x57ffec). The final order comes from the deferred back-to-front sort, see RenderLobbyLayers
 			// [BIN:TPW-EXE:0x57ed75 flash state] 0x9A1: alpha blend on (bit 0x100), z write off (bit 0x800), source blend INVDESTCOLOR and destination ZERO (low byte 0xA1), so the quad inverts the picture for the frame
-			if ( lobbyEffects.Flash && IncFrontEnd == null )
-			{
-				backgroundBatch.Clear();
-				backgroundBatch.AddRectangle( new UiRect( 0, 0, framebuffer.Width, framebuffer.Height ), RgbaByte.White );
-				backgroundRenderer.Draw( global::Global.Render.CommandList, backgroundBatch, framebuffer.Width, framebuffer.Height, invert: true );
-			}
+			var entities = Entity.All.ToArray();
+			RenderLobbyLayers( entities, lobbyWeather, lobbyEffects.Flash && IncFrontEnd == null, drawLobbyFlash ??= DrawLobbyFlash );
 		}
 		Context.Canvas = CurrentCanvas();
 		Context.Batch.Clear();
@@ -1141,6 +1156,17 @@ internal sealed partial class GameFlow : IDisposable
 		// the model previews are drawn with a depth buffer into their own images, which the overlay pass shows in the batch's order
 		using ( FrameMarks.Measure( "draw.depthImages" ) )
 			overlayRenderer.PrepareDepthImages( global::Global.Render.CommandList, Context.Batch, framebuffer );
+	}
+
+	private Action? drawLobbyFlash;
+
+	/// <summary>The lightning's flash quad: one full-screen white quad with the inverting blend (state 0x9A1).</summary>
+	private void DrawLobbyFlash()
+	{
+		var framebuffer = global::Global.Render.MultisampledFramebuffer;
+		backgroundBatch.Clear();
+		backgroundBatch.AddRectangle( new UiRect( 0, 0, framebuffer.Width, framebuffer.Height ), RgbaByte.White );
+		backgroundRenderer.Draw( global::Global.Render.CommandList, backgroundBatch, framebuffer.Width, framebuffer.Height, invert: true );
 	}
 
 	/// <summary>Overlay pass (output pixels, possibly twice per frame when the output is captured).</summary>

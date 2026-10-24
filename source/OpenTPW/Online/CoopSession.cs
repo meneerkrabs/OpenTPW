@@ -11,6 +11,26 @@ public enum CoopRole
 	Guest
 }
 
+/// <summary>[EXT:online-coop-session] Why a park cannot be shared (<see cref="CoopSession.ShareRefusal"/>).</summary>
+public enum CoopShareRefusal
+{
+	None,
+	/// <summary>The park is in a session already.</summary>
+	Shared,
+	/// <summary>A guest's copy of a shared park.</summary>
+	GuestCopy,
+	/// <summary>Not a Theme Park World park (Theme Park Inc, or the developer sandbox).</summary>
+	NotThemeParkWorld,
+	/// <summary>A visited park.</summary>
+	Visit,
+	/// <summary>A park without its economy or guests.</summary>
+	NotRunning,
+	/// <summary>A cheat waits for the next park turn.</summary>
+	CheatPending,
+	/// <summary>The game was started with developer options that change the park outside the commands.</summary>
+	DeveloperOptions
+}
+
 /// <summary>[EXT:online-coop-snapshot-join] Where a guest's session stands (docs/COOP.md, "Joining a running session").</summary>
 public enum CoopGuestPhase
 {
@@ -203,16 +223,33 @@ internal sealed class CoopSession : IDisposable
 	/// </summary>
 	public static bool CanShare( Level level, out string reason )
 	{
+		var refusal = ShareRefusal( level );
+		reason = refusal switch
+		{
+			CoopShareRefusal.None => "",
+			CoopShareRefusal.Shared => "The park is shared already.",
+			CoopShareRefusal.GuestCopy => "A guest's copy of a shared park is not shared again.",
+			CoopShareRefusal.NotThemeParkWorld => "Only Theme Park World parks are shared.",
+			CoopShareRefusal.Visit => "A visited park is not shared.",
+			CoopShareRefusal.NotRunning => "Only a running park is shared.",
+			CoopShareRefusal.CheatPending => "A cheat is waiting for the next park turn; share the park after it.",
+			_ => "This game was started with developer options that change the park; restart it without them to share a park.",
+		};
+		return refusal == CoopShareRefusal.None;
+	}
+
+	/// <summary>[EXT:online-coop-session] Why <paramref name="level"/> cannot be shared (<see cref="CanShare"/>), as a code the game's screens say in the player's language.</summary>
+	public static CoopShareRefusal ShareRefusal( Level level )
+	{
 		ArgumentNullException.ThrowIfNull( level );
-		reason = level.CoopSession != null ? "The park is shared already."
-			: level.IsCoopGuestPark ? "A guest's copy of a shared park is not shared again."
-			: GameEditions.Current != GameEdition.ThemeParkWorld || level.IsThemeParkIncSlice || level.OriginalPark == null ? "Only Theme Park World parks are shared."
-			: level.IsReadOnlyVisit ? "A visited park is not shared."
-			: level.Park == null || level.Guests == null ? "Only a running park is shared."
-			: level.Park.Economy.Cheats.Pending.Count > 0 ? "A cheat is waiting for the next park turn; share the park after it."
-			: ChangesParkOutsideCommands ? "This game was started with developer options that change the park; restart it without them to share a park."
-			: "";
-		return reason.Length == 0;
+		return level.CoopSession != null ? CoopShareRefusal.Shared
+			: level.IsCoopGuestPark ? CoopShareRefusal.GuestCopy
+			: GameEditions.Current != GameEdition.ThemeParkWorld || level.IsThemeParkIncSlice || level.OriginalPark == null ? CoopShareRefusal.NotThemeParkWorld
+			: level.IsReadOnlyVisit ? CoopShareRefusal.Visit
+			: level.Park == null || level.Guests == null ? CoopShareRefusal.NotRunning
+			: level.Park.Economy.Cheats.Pending.Count > 0 ? CoopShareRefusal.CheatPending
+			: ChangesParkOutsideCommands ? CoopShareRefusal.DeveloperOptions
+			: CoopShareRefusal.None;
 	}
 
 	/// <summary>

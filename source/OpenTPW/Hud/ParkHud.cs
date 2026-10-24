@@ -52,6 +52,10 @@ public sealed class HudHost
 	public Action? HelpKeyPressed { get; init; }
 	/// <summary>The online players of a visited park, while there are any (a visit of a downloaded park while logged in); null otherwise.</summary>
 	public Func<IVisitPresence?>? Presence { get; init; }
+	/// <summary>[EXT:online-coop-session] Opens the screen that shares the park with other players (the pause menu's Build Together); null hides the line.</summary>
+	public Action<UiScreenStack>? BuildTogether { get; init; }
+	/// <summary>[EXT:online-coop-session] The shared park's status line while the park is shared or being shared (and a while after its end); null for none.</summary>
+	public Func<string?>? SessionStatus { get; init; }
 }
 
 /// <summary>
@@ -384,7 +388,7 @@ public sealed partial class ParkHud
 		BuildObjectSettingControls();
 		AddRideUpgradeButton();
 		AddCallStaffButton();
-		hud.DrawOverlay = context => { DrawFeedback( context ); DrawRideStatic( context ); };
+		hud.DrawOverlay = context => { DrawFeedback( context ); DrawSessionStatus( context ); DrawRideStatic( context ); };
 		hud.DrawBackground = context =>
 		{
 			DrawCoasterPanelBackground( context );
@@ -674,6 +678,14 @@ public sealed partial class ParkHud
 			entries.RemoveAll( entry => entry.Label == UIStrings.GoOnline );
 		var items = entries.Select( entry => (Id: entry.Label.ToString(), Text: (Func<string>)(() => strings[entry.Label]), entry.Clicked,
 			Enabled: PauseMenuEntryEnabled( level.IsReadOnlyVisit, entry.Label, host.CreateLoad != null, host.CreateOptions != null, host.RestartPark != null, host.PublishPark != null )) ).ToList();
+		// [EXT:online-coop-session] the Build Together line (C2d-2) is OpenTPW's, after Go Online: the player's own park shared with other players
+		if ( host.BuildTogether is { } buildTogether && PauseMenuOffersBuildTogether( level.IsReadOnlyVisit, level.IsCoopGuestPark, level.Park?.Economy.IsBankrupt == true, level.CoopRole == CoopRole.Host ) )
+		{
+			var after = items.FindIndex( item => item.Id == nameof( UIStrings.GoOnline ) );
+			if ( after < 0 )
+				after = items.FindIndex( item => item.Id == nameof( UIStrings.Options ) );
+			items.Insert( after + 1, (BuildTogetherId, () => strings.Extra( OpenTpwText.BuildTogether ), () => buildTogether( Stack ), true) );
+		}
 		menu = UiDialogs.TextMenu( PauseMenuScreen, items, ResumeGameAfterApplicationPause, UIStrings.ResumeGame.ToString(), compact: host.IsLoggedIn?.Invoke() == true );
 		Stack.Push( menu );
 	}
@@ -692,6 +704,16 @@ public sealed partial class ParkHud
 		readOnlyVisit ? label is UIStrings.ResumeGame or UIStrings.ExitToLobby or UIStrings.QuitGame
 		: !(coopGuestPark && label is UIStrings.Save or UIStrings.RestartPark or UIStrings.PublishPark)
 			&& (!bankrupt || label is UIStrings.Load or UIStrings.RestartPark or UIStrings.ResumeGame or UIStrings.ExitToLobby or UIStrings.QuitGame);
+
+	/// <summary>[EXT:online-coop-session] The pause menu's Build Together line.</summary>
+	internal const string BuildTogetherId = "buildTogether";
+
+	/// <summary>
+	/// [EXT:online-coop-session] Whether the pause menu lists Build Together: the player's own park (not a visit, not a guest's copy of a shared park), and a lost
+	/// park only while it is shared (its players and its end stay reachable).
+	/// </summary>
+	internal static bool PauseMenuOffersBuildTogether( bool readOnlyVisit, bool coopGuestPark, bool bankrupt, bool hosting ) =>
+		!readOnlyVisit && !coopGuestPark && (!bankrupt || hosting);
 
 	/// <summary>
 	/// Whether a pause-menu entry is clickable: a read-only visit never saves, and an entry without its host
@@ -1316,6 +1338,25 @@ public sealed partial class ParkHud
 		selectedObject = item;
 		SetInfoArm( item != null );
 	}
+
+	/// <summary>
+	/// [EXT:online-coop-session] The shared park's status line (decision C2d answer 4): a persistent line in a translucent box at the top centre while the park is shared
+	/// or being shared, and a while after its end. Under the screens over the HUD (the pause menu dims it with the park).
+	/// </summary>
+	private void DrawSessionStatus( UiContext context )
+	{
+		if ( host.SessionStatus?.Invoke() is not { Length: > 0 } text )
+			return;
+		var canvas = context.Canvas;
+		var (width, height) = context.Measure( context.Fonts.Small, text, (int)(canvas.Width * 0.8f) );
+		var pad = 4 * canvas.TextScale;
+		var rect = new UiRect( (canvas.Width - width) / 2f - pad, canvas.Height * 0.015f, width + pad * 2, height + pad * 2 );
+		context.Batch.AddRectangle( rect, UiColors.HelpBox );
+		context.DrawText( context.Fonts.Small, text, rect.Inflate( -pad ), UiColors.Text, UiAlign.Center, wrap: true, shadow: false );
+	}
+
+	/// <summary>The shared park's status line now (<see cref="HudHost.SessionStatus"/>), for tests.</summary>
+	internal string? SessionStatusLine => host.SessionStatus?.Invoke();
 
 	/// <summary>The status line: the recent feedback lines in a translucent box above the popup help box.</summary>
 	private void DrawFeedback( UiContext context )

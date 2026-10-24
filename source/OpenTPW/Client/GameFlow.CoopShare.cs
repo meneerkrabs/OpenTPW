@@ -188,7 +188,8 @@ internal sealed partial class GameFlow : ICoopHosting
 	}
 
 	/// <summary>The shared park's status line for the HUD (<see cref="Hud.HudHost.SessionStatus"/>), for the game's attempt; see the static overload.</summary>
-	internal string? SessionStatusLine( Level level ) => SessionStatusLine( StatusShare, level, Strings.Extra );
+	internal string? SessionStatusLine( Level level ) => level.CoopSession is { Role: CoopRole.Guest } guest && FeatureGates.Online
+		? GuestStatusLine( guest, Online.Coop, Strings.Extra ) : SessionStatusLine( StatusShare, level, Strings.Extra );
 
 	/// <summary>
 	/// The shared park's status line for <paramref name="level"/> (in the player's language, <paramref name="text"/>): while it is being shared, while it is hosted

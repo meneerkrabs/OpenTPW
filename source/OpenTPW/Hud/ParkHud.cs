@@ -665,7 +665,7 @@ public sealed partial class ParkHud
 			(UIStrings.Options, () => { if ( host.CreateOptions != null ) Stack.Push( host.CreateOptions( Stack, () => { } ) ); }),
 			(UIStrings.GoOnline, () => host.GoOnline?.Invoke( Stack )),
 			(UIStrings.ResumeGame, ResumeGameAfterApplicationPause),
-			(UIStrings.ExitToLobby, () => { if ( menu is { IsRemoved: false } && ReferenceEquals( Stack.Top, menu ) ) host.ExitToLobby(); }),
+			(UIStrings.ExitToLobby, () => { if ( menu is { IsRemoved: false } && ReferenceEquals( Stack.Top, menu ) ) ExitToLobbyFromMenu(); }),
 			(UIStrings.QuitGame, () => Stack.Push( UiDialogs.Message( "confirmQuit", () => strings[UIStrings.ConfirmQuit],
 				(() => strings.Value( UIStrings.Yes ), host.Quit), (() => strings.Value( UIStrings.No ), Stack.Pop) ) )),
 		};
@@ -712,6 +712,25 @@ public sealed partial class ParkHud
 	/// [EXT:online-coop-session] Whether the pause menu lists Build Together: the player's own park (not a visit, not a guest's copy of a shared park), and a lost
 	/// park only while it is shared (its players and its end stay reachable).
 	/// </summary>
+	/// <summary>The name of the question before a guest leaves its running shared park.</summary>
+	internal const string ConfirmLeaveSharedParkScreen = "confirmLeaveSharedPark";
+
+	/// <summary>
+	/// [EXT:online-coop-session] The pause menu's Exit To Lobby: a guest in a running shared park is asked first, since the exit leaves the session and the park stays the host's
+	/// (C2d-3); otherwise, and once the session ended, the exit goes at once.
+	/// </summary>
+	private void ExitToLobbyFromMenu()
+	{
+		if ( level.CoopSession is { Role: CoopRole.Guest, EndedWith: null } )
+		{
+			Stack.Push( UiDialogs.Message( ConfirmLeaveSharedParkScreen, () => strings.Extra( OpenTpwText.ConfirmLeaveSharedPark ),
+				(() => strings.Value( UIStrings.Yes ), () => { Stack.Pop(); host.ExitToLobby(); }),
+				(() => strings.Value( UIStrings.No ), () => Stack.Pop()) ) );
+			return;
+		}
+		host.ExitToLobby();
+	}
+
 	internal static bool PauseMenuOffersBuildTogether( bool readOnlyVisit, bool coopGuestPark, bool bankrupt, bool hosting ) =>
 		!readOnlyVisit && !coopGuestPark && (!bankrupt || hosting);
 

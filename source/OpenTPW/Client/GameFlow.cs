@@ -213,7 +213,7 @@ internal sealed partial class GameFlow : IDisposable
 			LoadEntries = FindLoadEntries,
 			GoOnline = WhenOnline( ShowOnline ),
 			// [EXT:online-coop-session] sharing a saved park (C2d-2b)
-			BuildTogether = WhenOnline( stack => CreateOnlineScreens( stack ).ShowShareSavedPark() ),
+			BuildTogether = WhenOnline( stack => CreateOnlineScreens( stack ).ShowBuildTogetherLobby() ),
 			// [EXT:save-extension-switch] an own save whose extensions differ asks before it loads
 			ConfirmExtensions = ConfirmExtensions,
 		} );
@@ -653,6 +653,8 @@ internal sealed partial class GameFlow : IDisposable
 		onlineSession?.Pump();
 		// [EXT:online-coop-session] sharing the open park (C2d-2): its preparation, its create and the hosting run here, after the link's answers and before the level
 		StepCoopShare();
+		// [EXT:online-coop-session] joining a shared park (C2d-3): the join's answer is taken here, before the session's step
+		StepCoopJoin();
 		// [EXT:online-coop-snapshot-join] a guest's join and resync: the build's slice, the check at the cut and the swap run here, before the HUD and the level
 		using ( FrameMarks.Measure( "coop.session" ) )
 			StepCoopSession();
@@ -1220,6 +1222,7 @@ internal sealed partial class GameFlow : IDisposable
 		Globe = () => Globe,
 		Advise = message => Advisor?.OnOnlineScreenOpened( message ),
 		Hosting = this,
+		Joining = this,
 	} );
 
 	/// <summary>A chat park's visit, built once its level's files are there; null after a failure, which is shown over the screen it came from.</summary>
@@ -1251,6 +1254,8 @@ internal sealed partial class GameFlow : IDisposable
 		presence?.Dispose();
 		presence = null;
 		coopShare?.Dispose();
+		coopJoinAttempt?.Dispose();
+		coopJoinAttempt = null;
 		coopShare = null;
 		Advisor?.Dispose();
 		GameAudio.Shutdown();

@@ -7,10 +7,11 @@ online extension `opentpw.online`, labelled `[EXT:online-coop-*]` in the code. T
 phases (C1 to C7) and the comparison of the architectures is in the project notes
 (`plans/coop-plan.md`); this page records what is built and the decisions it rests on.
 
-Status: the command layer (C1) is in place, and of the sessions (C2) the server, the game's link, the
-host's command stream, the level in a session, the stream's join and resync, the host's skip of frames it
-no longer holds and the game's join are built, and the join is measured on the desktop (C2c-2b-1). The
-browser's join (the rest of C2c-2b) and the screens (C2d) follow, so no player starts a session yet.
+Status: the command layer (C1) is in place. Of the sessions (C2), the server, the game's link, the host's
+command stream, the level in a session, the stream's join and resync, the host's skip of frames it no
+longer holds, the game's join and the browser's are built, and the joins are measured. Players share and
+join a park through the game's screens (C2d), and the live acceptance runs two native games through the
+real server (C2d-5a); the page's sides of it follow (C2d-5b).
 
 ## User decisions
 
@@ -69,9 +70,10 @@ through `CoopSession` (C2b-2, below), and a member joins a running session or re
 snapshot (C2c-1, below), which the game builds and swaps in (C2c-2a, below) and which is measured on the
 desktop (C2c-2b-1, "Measurements"). A browser joins (C2c-2b-2, below) and hosts (C2c-2b-4, below) in the
 smokes, and its own transport carries a session through the real server (C2c-2b-5, below). The game's
-screens (C2d) are under way: a session has its own chat room (C2d-1, [ONLINE.md](ONLINE.md), "Shared
-parks"), and the player shares the open park from its pause menu (C2d-2a, below); joining from the
-game's screens (C2d-3) follows.
+screens (C2d) give a session its own chat room (C2d-1, [ONLINE.md](ONLINE.md), "Shared parks"). The
+player shares the open park from its pause menu or a saved park from the lobby (C2d-2, below), and joins
+with a code, an invitation or the open list (C2d-3, below). The co-builders walk as figures (C2d-4, below),
+and two native games share a park live through the real server (C2d-5a, "The live acceptance" below).
 
 ### The host's command stream (C2b-1)
 
@@ -607,8 +609,9 @@ order:
 3. The host stores a snapshot through the link's own upload (an HTTP PUT of 150 KiB of seeded bytes,
    which the server takes only once a member has joined), and the guest downloads it through the link's
    own download (an HTTP GET, checked against its SHA-256).
-4. The host's frame reaches the guest, and a message goes each way.
-5. The host leaves, and the guest hears its session end.
+4. Both logins' chats move to the session's room (C2d-1), and a chat line goes each way through it.
+5. The host's frame reaches the guest, and a message goes each way.
+6. The host leaves, and the guest hears its session end.
 
 The driver chooses every payload and checks each one the pages record against its own length and
 SHA-256; a refusal, a lost or stopped link, a failed transfer or a step past its deadline fails the run.
@@ -616,10 +619,11 @@ No token or password is written anywhere. `CoopLinkProbeTests` runs the same pro
 against the loopback server on the desktop. The check needs no game data, so the browser determinism
 workflow runs it against both of its pages (compiled ahead of time and interpreted). Locally (Chrome 155
 headless on an Apple M5) both pages passed all ten checks over the server's protocol 7; the open list and
-the invitation (C2d-3b) add two.
+the invitation (C2d-3b) add two, and the chat line each way (C2d-5a) one.
 
-What it does not cover yet is a whole live join over the server (a captured park downloaded, built and
-followed) and the link's timeouts and retries in the page; they come with the game's sharing (C2d).
+A whole live join over the server, with the game's data and its own screens, is the live acceptance's
+(C2d-5, below); the page's part in it, with the link's timeouts and retries there, comes with its page
+sides (C2d-5b).
 
 ### Sharing the park from the game (C2d-2a)
 
@@ -718,7 +722,8 @@ asset-free park and a second player's link as the guest:
 `CoopLinkTests` checks that a logout's leave that could not go out outlasts another server's and another
 account's welcome, and that a close while a join waits leaves the seat the join takes.
 
-Browser hosting through these screens comes with the acceptance (C2d-5).
+The live acceptance (C2d-5, below) shares a park through these screens natively; browser hosting
+through them comes with its page sides (C2d-5b).
 
 ### Sharing a saved park from the lobby (C2d-2b)
 
@@ -926,12 +931,13 @@ The tests:
   the latest answer of the login's requests, a full park, Join with the chosen code, another login's
   rows, and a game that cannot follow.
 - The browser's link check (`tools/web-coop-link.mjs`, and `CoopLinkProbeTests` on the desktop) also
-  covers the open list and an invitation over the page's own HTTP and WebSocket. The browser's screens
-  and a whole join in the page come with the acceptance (C2d-5).
+  covers the open list and an invitation over the page's own HTTP and WebSocket. The live acceptance
+  (C2d-5, below) joins with a code through these screens natively; the browser's screens and a whole
+  join in the page come with its page sides (C2d-5b).
 
 ### Co-builders as figures (C2d-4)
 
-`[EXT:online-coop-figures]` In a shared park every member walks as a figure with a name plate, as the
+`[EXT:online-coop-presence]` In a shared park every member walks as a figure with a name plate, as the
 players of a visited park do (decision 8; [ONLINE.md](ONLINE.md), "Players in a visited park"): the
 guests' kid sprites, the name on a dark plate over the head, the player's own in yellow, under the HUD's
 windows.
@@ -1015,7 +1021,117 @@ The tests:
   game making the presence once hosted, keeping it, leaving a visit's alone, and dropping it with the
   session; `CoopJoinSessionTests` (part `CoopJoinSessionTests.Figures.cs`) covers a guest's game showing
   the host's figure, a new presence for the park a resync swaps in, and its end with the session.
-- The figures in a real game, desktop and browser, host and guest, come with the acceptance (C2d-5).
+- The live acceptance (C2d-5, below) checks the figures in two real games on the desktop, host and
+  guest; the browser's come with its page sides (C2d-5b).
+
+### The live acceptance (C2d-5)
+
+`[EXT:online-coop-session]` Two games share a park through the real server, with the game's data. The
+sharing, the join, the building, the chat and the session's end go through the game's own screens and
+input. The headless tests check each part against the loopback server, the smokes join over recordings,
+and the browser's link check runs without data; here it all runs together, live. C2d-5a runs two native
+games; C2d-5b adds the page as host and as guest.
+
+`scripts/coop-live.sh <out> ['/path/to/Theme Park World'] [--scenario ...]` builds the game (Release)
+and the server once. Then `tools/coop-live.mjs` runs:
+
+- **The server** on 127.0.0.1 with a fresh data folder and no two-step login. Two throwaway players with
+  random names and passwords are registered over HTTP.
+- **Two native games** (`--coop-live host|join`), silent and offscreen. Each has its own configuration
+  (copies of the developer's settings files and links to the art folders, never the online folder), its
+  own online folder, and its own save folder (`OPENTPW_SAVE_DIR`). The guest starts once the host has
+  published its code.
+- **The secrets.** A password reaches a game only in its environment, never in its arguments, a file or
+  a log; the driver's logs and failures have it replaced. The server keeps hashes, and the games keep
+  the server's address and the player's name, as a player's game does.
+
+Each game runs a script of steps (`CoopLiveTest`), each waiting for a condition with a deadline of wall
+time. A failed step ends the run with its evidence, and the other game and the driver stop at once.
+
+- **Screens.** A game acts on the top screen only. It finds an element by its id, of its type (a button,
+  a menu line, a field, a label), visible and enabled. It activates a button or a menu line and types into
+  a field as the screen's own input does. Three things the harness does itself: it starts the host's
+  park, moves the views (the camera itself, not a drag or a key), and reads the games' state for its
+  checks.
+- **Input.** Escape, Enter, the chat line, F4 and the park's clicks go through the game's input.
+- **Barriers.** The games and the driver meet at barriers: each publishes its status in the shared
+  evidence folder and waits on the others'. The chat is under test, not the control channel.
+
+The steps:
+
+1. **The host shares.** The harness starts Jungle as Instant Action does, not through the front end's
+   menus. Escape opens the pause menu, and Build Together opens the screen. The host logs in there
+   (server, name, password), writes the title, picks two players, leaves the park off the open list and
+   shares. The screen shows the session's code.
+2. **The guest joins.** It starts in the lobby: Escape, Build Together, Join with a code, a login there,
+   the code, Join. The host's park is fetched, built and swapped in, and follows the host's stream with
+   its digests compared.
+3. **The figures.** The host sees the guest's figure and name drawn in its view, then the guest sees the
+   host's; a picture of each view is kept. Then the harness moves the host's view far away: the host's
+   figure jumps there, and the guest sees it there. The same follows for the guest's view.
+4. **Building.** The host lays a path line through its HUD: a press on free land starts the tool, and a
+   press on the end lays the line. The guest's park takes the line's record, its cells become paths, and
+   checkpoints are compared after it. The guest's own line is refused (only the host builds), its cells
+   stay free, and its park follows on.
+5. **The chat.** A line each way through the chat mode's entry (Enter over the park, the line, Enter),
+   heard in the other game.
+6. **The guest's controls.** F4 to the HUD and back. A click on a ride in the chat mode rides it: the host
+   sees the figure gone. Escape leaves the ride: the host sees the figure back. Go to in the host's name
+   popup moves the view to the host's figure with no park command.
+7. **The end.** The host ends sharing from the Build Together screen (asked first). The guest's end
+   dialog leaves for the lobby, and the host's park runs on alone.
+
+The driver then checks both games' evidence against each other (`checkEvidence`, with
+`tools/test_coop_live.mjs`):
+
+- one session, the host's, in both games;
+- the guest's park built from the host's capture;
+- the host's line applied by the guest at its record, with checkpoints compared after it;
+- the guest's line refused;
+- each figure drawn with its name, also where its view moved;
+- the chat both ways;
+- the ride and Go to;
+- the session's end.
+
+The scenarios:
+
+- **baseline**: the steps above, with no resync, no desync and no lost link.
+- **recovery** (`--scenario recovery`): after the first line, the driver kills the server and starts it
+  again on the same port and data three seconds later. After that barrier both games' links go from
+  reconnecting to open with a resume of the session, and both chats reconnect: the counts at the barrier
+  must grow. The guest follows again (a resync is allowed here). The host's view jumps again, which the
+  guest sees, and a second line reaches the guest's park, with checkpoints after it.
+- **endurance** (`--scenario endurance --minutes M`): after the chat, the host runs the fastest speed (the
+  HUD's `>>>`) for M whole minutes of wall time, from setting it to setting the normal speed back. The guest
+  takes its ticks before the host sets the speed, and the host its own when it does. Every half minute both
+  games sample the park's ticks; the host also checks that the speed is still the fastest, and asks for the
+  guest's last sample before it sets the normal speed back. From those first ticks to the last sample, both
+  parks must run at least 180 ticks a second over every stretch of five seconds or more, three times the
+  normal 60, which only the fastest speed (240) reaches. The guest follows with no resync and no desync, comparing a
+  checkpoint at least every two seconds. Then the rest of the steps follow.
+
+**The pages' way in.** The pages (C2d-5b) open through the drivers' own local server in front of the
+real one (`tools/web-perf/lib.mjs`). It serves the game folder (`/game/`) itself and forwards the rest
+to the server: the page, from the server's own web folder, and `/api/`. It forwards the sockets'
+upgrades below `/api/` only: at most 16 at a time, the server's whole answer within 10 seconds (an
+answer that refuses the upgrade at most 64 KiB, passed back as it is), and a half-closed socket closed
+after 5. The browser workflow also runs the link check through it (`tools/web-coop-link.mjs
+--proxy`): it carries two co-op and two chat upgrades with bytes both ways, and each page's chat line
+reaches the other page through it (a page's only origin is the proxy's). The page's policy lets them: its
+`connect-src` names the server's own address, which the forwarded requests carry, and `'self'` covers the
+page's. A refusal (an upgrade outside `/api/`, or none left) is answered, and a client that keeps its side
+open after any answer is closed after the half-close wait.
+
+Results (Apple M5, macOS 26, Release, native host and native guest):
+
+| Scenario | Checks | Wall time | Notes |
+|---|---|---|---|
+| baseline | 12 of 12 | 19 s | the guest followed 3.3 s after Join (a 104 KiB capture) |
+| recovery | 14 of 14 | 29 s | both links back 3.3 and 3.4 s after the server went down (for 3 s); no resync |
+| endurance, 30 minutes | 13 of 13 | 30 min 19 s | 1800 s at the fastest speed; the slowest five-second stretches at 239.96 (host) and 238.41 (guest) ticks a second; 1806 checkpoints, no resync or desync |
+
+No CI job runs it: it needs the game's data. A run's `run.json` keeps every check, both games' evidence
+and the run's facts; its logs, pictures and status files stay in its folder.
 
 ### The host's trimmed frame (C2c-3)
 

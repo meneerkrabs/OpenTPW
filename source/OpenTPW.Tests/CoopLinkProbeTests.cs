@@ -89,6 +89,14 @@ public class CoopLinkProbeTests
 		Assert.AreEqual( (string)created["id"]!, (string)joined["id"]! );
 		Assert.AreEqual( hostId, (uint)joined["host"]! );
 		Assert.AreEqual( guestId, (uint)Records( host, "member" ).Single( item => (string?)item["state"] == "Joined" )["id"]! );
+		// both logins' chats move to the session's room (C2d-1), and a line each way goes through it (the live acceptance's proxy check reads it: docs/COOP.md, "The live acceptance")
+		var room = OpenTPW.Online.Chat.ChatProtocol.CoopRoom( (string)created["id"]! );
+		static JsonObject Chat( CoopLinkProbe probe ) => probe.Status()["chat"]!.AsObject();
+		await Until( host, guest, () => (string?)Chat( host )["room"] == room && (string?)Chat( guest )["room"] == room && (bool?)Chat( guest )["open"] == true, "both chats in the session's room" );
+		Assert.IsTrue( host.Say( "the host says hello" ) );
+		Assert.IsTrue( guest.Say( "the guest says hello" ) );
+		static bool Heard( CoopLinkProbe probe, string line ) => Chat( probe )["lines"]!.AsArray().Any( item => ((string?)item)?.Contains( line, StringComparison.Ordinal ) == true );
+		await Until( host, guest, () => Heard( host, "the guest says hello" ) && Heard( guest, "the host says hello" ), "a chat line each way" );
 
 		// the host's snapshot, stored once a member joined (the server refuses one before), and the guest's download of it
 		var snapshot = Seeded( 150 * 1024, 1 );

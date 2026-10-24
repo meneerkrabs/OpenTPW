@@ -311,8 +311,8 @@ internal sealed class VisitPresenceSmoke
 		return null;
 	}
 
-	/// <summary>A point of <paramref name="name"/>'s row in the chat overlay's people list (framebuffer pixels), or null.</summary>
-	private static System.Numerics.Vector2? RowPoint( ParkHud hud, UiContext context, string name )
+	/// <summary>A point of <paramref name="name"/>'s row in the chat overlay's people list (framebuffer pixels), or null (also the live co-op acceptance's).</summary>
+	internal static System.Numerics.Vector2? RowPoint( ParkHud hud, UiContext context, string name )
 	{
 		var index = hud.VisitChatPanel?.People.ToList().FindIndex( person => person.Name == name ) ?? -1;
 		if ( index < 0 || hud.Stack.Screens[0].Find( "chatPeople" ) is not IUiRowList list || list is not UiElement element )

@@ -47,7 +47,7 @@ public static class OriginalParkPlacement
 	}
 
 	/// <summary>
-	/// [EXT:online-coop-figures] The park position, in cells (0.5 = a cell's centre), of the engine ground point (<paramref name="engineX"/>, <paramref name="engineY"/>):
+	/// [EXT:online-coop-presence] The park position, in cells (0.5 = a cell's centre), of the engine ground point (<paramref name="engineX"/>, <paramref name="engineY"/>):
 	/// <see cref="ToEngine"/> undone on the ground plane, not clamped.
 	/// </summary>
 	public static (float X, float Y) ToCells( ModelHeightfield field, float engineX, float engineY )

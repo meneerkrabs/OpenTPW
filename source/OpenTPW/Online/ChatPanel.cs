@@ -107,7 +107,7 @@ public sealed class ChatPanel
 	/// <summary>Takes the player to another player of the room (the goto button of a name popup) beside sending the command; null: the command only.</summary>
 	public Action<string>? GoTo { get; init; }
 	/// <summary>
-	/// [EXT:online-coop-figures] The goto button's own way to the player, tried before the command: true when it took the player there, and no command goes out (a shared park's
+	/// [EXT:online-coop-presence] The goto button's own way to the player, tried before the command: true when it took the player there, and no command goes out (a shared park's
 	/// view moves to the player's figure, C2d-4); false leaves the goto to the command.
 	/// </summary>
 	public Func<string, bool>? TakeTo { get; init; }

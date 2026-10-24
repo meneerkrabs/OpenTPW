@@ -51,9 +51,12 @@ export async function listFiles(root) {
  * OpenTPW.Server that serves the page in production (docs/SERVER.md), and answered with its own headers and body: the browser then
  * sees the production transport (Brotli siblings, ETag, Cache-Control). The forwarded requests are logged in `log`
  * (path, status, Content-Encoding, Cache-Control, ETag, whether the request was conditional, body bytes as sent), and `marks`
- * records the log length where each scenario started.
+ * records the log length where each scenario started. A WebSocket upgrade below /api/ (the chat and co-op sockets) is forwarded to
+ * the upstream too, at most UPGRADE_LIMIT at a time, each with UPGRADE_ANSWER_MS for the upstream's answer, and its two ends then
+ * joined as they are; it is logged with its status and the bytes each way. Any other upgrade is refused.
  */
-export async function startServer(webRoot, gameRoot, upstream = null) {
+export async function startServer(webRoot, gameRoot, upstream = null, upgradeLimits = {}) {
+	const limits = { sockets: UPGRADE_LIMIT, answerMs: UPGRADE_ANSWER_MS, endMs: UPGRADE_END_MS, refusalBytes: UPGRADE_REFUSAL_BYTES, ...upgradeLimits };
 	const log = [], marks = [];
 	// The upstream is the local OpenTPW.Server only: an http origin on a loopback address, fixed when the harness starts.
 	const upstreamUrl = upstream == null ? null : new URL(loopbackOrigin(upstream));
@@ -108,8 +111,153 @@ export async function startServer(webRoot, gameRoot, upstream = null) {
 			send(404, 'not found');
 		}
 	});
+	const sockets = new Set(), refused = new Set();
+	server.on('upgrade', (request, socket, head) => forwardUpgrade(request, socket, head, upstreamUrl, log, sockets, refused, limits));
 	await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
-	return { server, log, marks, origin: `http://127.0.0.1:${server.address().port}`, close: () => new Promise(resolve => server.close(resolve)) };
+	const close = () => {
+		// the forwarded sockets are the server's no longer once upgraded: they are ended here, or close would wait for them
+		for (const socket of [...sockets, ...refused])
+			socket.destroy();
+		return new Promise(resolve => server.close(resolve));
+	};
+	return { server, log, marks, origin: `http://127.0.0.1:${server.address().port}`, close };
+}
+
+/** The most WebSocket upgrades the local server forwards at a time (a page's chat and co-op sockets, a reconnecting one beside them). */
+export const UPGRADE_LIMIT = 16;
+/** How long the upstream may take to answer an upgrade, in milliseconds. */
+export const UPGRADE_ANSWER_MS = 10000;
+/** How long a forwarded socket may stay half closed after one side ended, in milliseconds. */
+export const UPGRADE_END_MS = 5000;
+/** The most bytes of an upstream's answer that refuses an upgrade the local server passes back (a longer one is a bad gateway). */
+export const UPGRADE_REFUSAL_BYTES = 65536;
+
+/**
+ * A plain HTTP answer on a socket that asked for an upgrade the local server will not forward (not below /api/, or no place left), which then closes: a client that keeps
+ * its side open is closed after `endMs`, and until then it is among `refused`, which the server's close ends too.
+ */
+function refuseUpgrade(socket, status, reason, refused, endMs) {
+	refused.add(socket);
+	const timer = setTimeout(() => socket.destroy(), endMs).unref();
+	socket.once('close', () => {
+		clearTimeout(timer);
+		refused.delete(socket);
+	});
+	socket.on('error', () => socket.destroy());
+	socket.end(`HTTP/1.1 ${status} ${reason}\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`);
+}
+
+/**
+ * Forwards a WebSocket upgrade below /api/ to the upstream (startServer): the request's path and query and its headers, with the upstream's host, as for a forwarded
+ * request. The upstream's 101 goes back with its headers, and the two sockets are joined; any other answer goes back as it is, at most `limits.refusalBytes` of it, and
+ * the connection closes. The upstream's whole answer is due within `limits.answerMs`. Either end closing or failing closes both. A socket keeps its place among the
+ * `limits.sockets` until it has closed: a client that keeps its side open after an answer it was refused is closed after `limits.endMs`.
+ */
+function forwardUpgrade(request, socket, head, upstreamUrl, log, sockets, refused, limits) {
+	const url = new URL(request.url, 'http://localhost');
+	if (!upstreamUrl || !url.pathname.startsWith('/api/'))
+		return refuseUpgrade(socket, 404, 'Not Found', refused, limits.endMs);
+	if (sockets.size >= limits.sockets)
+		return refuseUpgrade(socket, 503, 'Service Unavailable', refused, limits.endMs);
+	const entry = { path: url.pathname, method: request.method, upgrade: true, status: null, bytesIn: 0, bytesOut: 0 };
+	log.push(entry);
+	sockets.add(socket);
+	let upstreamSocket = null;
+	let timer = null;
+	/** Whether the client's answer is decided: joined to the upstream, refused, or failed. */
+	let answered = false;
+	const endUpstream = () => {
+		upstreamSocket?.destroy();
+		outgoing.destroy();
+	};
+	let drain = null;
+	// the socket's place is free only once it has closed
+	socket.once('close', () => {
+		clearTimeout(timer);
+		clearTimeout(drain);
+		sockets.delete(socket);
+		endUpstream();
+	});
+	const close = () => {
+		answered = true;
+		clearTimeout(timer);
+		socket.destroy();
+		endUpstream();
+	};
+	/** An answer to the client, then its end: a client that keeps its side open is closed after limits.endMs. */
+	const answer = bytes => {
+		answered = true;
+		clearTimeout(timer);
+		endUpstream();
+		socket.end(bytes);
+		drain = setTimeout(() => socket.destroy(), limits.endMs).unref();
+	};
+	/** A plain answer of the local server's own in place of the upstream's. */
+	const fail = (status, reason) => {
+		if (answered)
+			return;
+		entry.status = status;
+		answer(`HTTP/1.1 ${status} ${reason}\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`);
+	};
+	socket.on('error', close);
+	// a connection of its own (no agent's pool): it is the socket's for as long as the socket lives, and closes with it
+	const outgoing = httpRequest({ hostname: upstreamUrl.hostname.replace(/^\[|\]$/g, ''), port: upstreamUrl.port || 80, path: url.pathname + url.search,
+		method: request.method, headers: { ...request.headers, host: upstreamUrl.host }, agent: false });
+	timer = setTimeout(() => fail(504, 'Gateway Timeout'), limits.answerMs);
+	outgoing.on('upgrade', (response, upstream, upstreamHead) => {
+		clearTimeout(timer);
+		upstreamSocket = upstream;
+		if (answered || socket.destroyed)
+			return upstream.destroy();
+		answered = true;
+		entry.status = response.statusCode;
+		const lines = [`HTTP/1.1 ${response.statusCode} ${response.statusMessage}`];
+		for (let index = 0; index < response.rawHeaders.length; index += 2)
+			lines.push(`${response.rawHeaders[index]}: ${response.rawHeaders[index + 1]}`);
+		socket.write(lines.join('\r\n') + '\r\n\r\n');
+		if (upstreamHead?.length)
+			socket.write(upstreamHead);
+		if (head?.length)
+			upstream.write(head);
+		upstream.on('data', chunk => entry.bytesOut += chunk.length);
+		socket.on('data', chunk => entry.bytesIn += chunk.length);
+		upstream.on('error', close);
+		upstream.on('close', close);
+		// an end on one side ends the other once its data is out (the pipes); a peer that never ends its own side is closed after limits.endMs
+		for (const side of [socket, upstream])
+			side.once('end', () => setTimeout(close, limits.endMs).unref());
+		socket.pipe(upstream);
+		upstream.pipe(socket);
+	});
+	outgoing.on('response', response => {
+		// the upstream would not upgrade: its answer goes back as it is, once it is whole, within the answer's deadline and size
+		entry.status = response.statusCode;
+		const lines = [`HTTP/1.1 ${response.statusCode} ${response.statusMessage}`, 'Connection: close'];
+		for (let index = 0; index < response.rawHeaders.length; index += 2)
+			if (!/^(connection|transfer-encoding|content-length)$/i.test(response.rawHeaders[index]))
+				lines.push(`${response.rawHeaders[index]}: ${response.rawHeaders[index + 1]}`);
+		const body = [];
+		let bytes = 0;
+		response.on('data', chunk => {
+			bytes += chunk.length;
+			if (bytes > limits.refusalBytes)
+				return fail(502, 'Bad Gateway');
+			body.push(chunk);
+		});
+		response.on('end', () => {
+			if (answered)
+				return;
+			const whole = Buffer.concat(body);
+			lines.push(`Content-Length: ${whole.length}`);
+			answer(Buffer.concat([Buffer.from(lines.join('\r\n') + '\r\n\r\n'), whole]));
+		});
+		// an answer cut off before its end
+		response.on('aborted', () => fail(502, 'Bad Gateway'));
+		response.on('error', () => fail(502, 'Bad Gateway'));
+		response.on('close', () => { if (!response.complete) fail(502, 'Bad Gateway'); });
+	});
+	outgoing.on('error', () => fail(502, 'Bad Gateway'));
+	outgoing.end();
 }
 
 /** The origin of `value` if it is an http URL on a loopback address (127.0.0.0/8, ::1 or localhost); throws otherwise. */

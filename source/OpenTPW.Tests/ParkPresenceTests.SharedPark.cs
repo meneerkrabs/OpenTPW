@@ -7,7 +7,7 @@ using OpenTPW.Online.Chat;
 namespace OpenTPW.Tests;
 
 /// <summary>
-/// [EXT:online-coop-figures] A shared park's presence (C2d-4; docs/COOP.md, "Co-builders as figures"): the online session owns the room and the chat, places go out only once the
+/// [EXT:online-coop-presence] A shared park's presence (C2d-4; docs/COOP.md, "Co-builders as figures"): the online session owns the room and the chat, places go out only once the
 /// shared room is confirmed on the connection and the session runs, the player's figure follows the view, and a co-builder's edit reroutes a walk.
 /// </summary>
 public partial class ParkPresenceTests

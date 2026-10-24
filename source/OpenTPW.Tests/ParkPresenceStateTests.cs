@@ -31,7 +31,7 @@ public class ParkPresenceStateTests
 	[TestMethod]
 	public void AStepIsFreeOnlyThroughCellsAFigureMayStandOn()
 	{
-		// [EXT:online-coop-figures] a shared park's walk on a changed ground stops in front of a cell built on since its plan, also one a step only passes through
+		// [EXT:online-coop-presence] a shared park's walk on a changed ground stops in front of a cell built on since its plan, also one a step only passes through
 		var state = new ParkPresenceState( new Ground( 12, 12, new[] { (6, 5) } ), "Ann", (5.99f, 5.05f) );
 		Assert.IsFalse( state.StepFree( 5.99f, 5.05f, 6.2f, 4.5f ), "a diagonal step through the blocked cell's corner side, ending in a free cell" );
 		Assert.IsFalse( state.StepFree( 5.5f, 5.5f, 6.5f, 5.5f ), "into the blocked cell" );

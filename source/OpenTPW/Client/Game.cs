@@ -358,6 +358,14 @@ internal static class Game
 			ParkResumeSmokeTest.Run( flow, parkResumePhase, parkResumeFile, parkResumeEvidence );
 			return;
 		}
+		// [EXT:online-coop-session] the live co-op acceptance (docs/COOP.md, "The live acceptance"): a host or a guest through the real server and the game's own screens
+		if ( GetOption( args, "--coop-live", "'host' or 'join'" ) is { } coopLiveRole )
+		{
+			var coopLiveEvidence = GetOption( args, "--coop-live-evidence", "an evidence directory" )
+				?? throw new ArgumentException( "--coop-live also needs --coop-live-evidence." );
+			CoopLiveTest.Run( flow, coopLiveRole, coopLiveEvidence );
+			return;
+		}
 		// [EXT:online-coop-snapshot-join] the native join smoke (docs/COOP.md, "The game's join"): a host phase and a fresh join phase over recorded frames
 		if ( GetOption( args, "--coop-join-smoke", "'host' or 'join'" ) is { } coopJoinPhase )
 		{
@@ -1222,11 +1230,12 @@ internal static class Game
 
 	/// <summary>
 	/// The automated modes beyond the smokes. [EXT:online-coop-snapshot-join] <c>--coop-join-smoke</c> is one, never a <see cref="SmokeFlags"/> entry: its host phase shares the park it built before
-	/// the session started, which a smoke flag's <see cref="ChangesParkOutsideCommands"/> would refuse.
+	/// the session started, which a smoke flag's <see cref="ChangesParkOutsideCommands"/> would refuse. [EXT:online-coop-session] So is <c>--coop-live</c>, whose host shares its park through the
+	/// game's own screens.
 	/// </summary>
 	private static readonly string[] AutomatedFlags = SmokeFlags.Concat( new[]
 	{
-		"--coop-join-smoke",
+		"--coop-join-smoke", "--coop-live",
 		"--perf-run", "--perf-hash-tick", "--startup-profile", "--hitch-report",
 		"--offscreen", "--headless", "--m3-gate", "--m4-gate", "--determinism-digest", "--guest-report", "--guest-compare", "--validate-assets", "--export-signs",
 	} ).ToArray();
@@ -1513,7 +1522,16 @@ internal static class Game
 		}
 	}
 
-	private static string GetSaveDirectory() => ResolveSaveDirectory( Settings.Default.GamePath, Path.GetDirectoryName( SetupSettings.GetDefaultPath() )! );
+	private static string GetSaveDirectory() => SaveDirectory( Environment.GetEnvironmentVariable( "OPENTPW_SAVE_DIR" ),
+		() => ResolveSaveDirectory( Settings.Default.GamePath, Path.GetDirectoryName( SetupSettings.GetDefaultPath() )! ) );
+
+	/// <summary>
+	/// The save folder: <paramref name="own"/> when given (<c>OPENTPW_SAVE_DIR</c>, an automated run's own folder, such as each game's of the live co-op acceptance: docs/COOP.md,
+	/// "The live acceptance"), made when missing, never probed and given no earlier saves; else the game folder's or the configuration's (<see cref="ResolveSaveDirectory"/>).
+	/// </summary>
+	internal static string SaveDirectory( string? own, Func<string> resolve ) => own is { Length: > 0 }
+		? Path.TrimEndingDirectorySeparator( Directory.CreateDirectory( own ).FullName ) + Path.DirectorySeparatorChar
+		: resolve();
 
 	/// <summary>
 	/// The game folder's <c>save</c> directory when files can be written there, else <c>save</c> under <paramref name="fallbackRoot"/>.

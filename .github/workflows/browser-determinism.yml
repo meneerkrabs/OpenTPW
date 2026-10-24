@@ -56,11 +56,13 @@ jobs:
       - name: Run the pins in headless Chrome
         run: node --experimental-websocket tools/web-determinism/run.mjs "$RUNNER_TEMP/web/wwwroot" --chrome /usr/bin/google-chrome --report "$RUNNER_TEMP/browser-determinism-${{ matrix.runtime }}.json"
       # The co-op link through the real server (docs/COOP.md, "The browser's link to a real server"): two pages of this build, a host and a guest, share a
-      # session over the page runtime's own WebSocket and HttpClient. No game data.
+      # session over the page runtime's own WebSocket and HttpClient. No game data. Then the same through the drivers' own local server in front of it, whose
+      # pages the live acceptance opens (docs/COOP.md, "The live acceptance"): their sockets' upgrades go through it.
       - name: Check the co-op link against the real server
         run: |
           dotnet build source/OpenTPW.Server/OpenTPW.Server.csproj -c Release -v q --nologo
           node --experimental-websocket tools/web-coop-link.mjs --web "$RUNNER_TEMP/web/wwwroot" --server source/OpenTPW.Server/bin/Release/net11.0/OpenTPW.Server.dll --chrome /usr/bin/google-chrome --out "$RUNNER_TEMP/coop-link-${{ matrix.runtime }}"
+          node --experimental-websocket tools/web-coop-link.mjs --web "$RUNNER_TEMP/web/wwwroot" --server source/OpenTPW.Server/bin/Release/net11.0/OpenTPW.Server.dll --chrome /usr/bin/google-chrome --proxy --out "$RUNNER_TEMP/coop-link-proxy-${{ matrix.runtime }}"
       - name: Run the opt-in strict particle framebuffer oracle
         if: github.event_name == 'workflow_dispatch' && inputs.particle_render_oracle
         timeout-minutes: 5
@@ -74,6 +76,7 @@ jobs:
             ${{ runner.temp }}/browser-determinism-${{ matrix.runtime }}.json
             ${{ runner.temp }}/particle-render-${{ matrix.runtime }}.json
             ${{ runner.temp }}/coop-link-${{ matrix.runtime }}
+            ${{ runner.temp }}/coop-link-proxy-${{ matrix.runtime }}
           if-no-files-found: ignore
       # Diagnostic only: the normal interpreter gate above remains required and unchanged.
       # Supported runtime option: dotnet/runtime docs/design/mono/jiterpreter.md.

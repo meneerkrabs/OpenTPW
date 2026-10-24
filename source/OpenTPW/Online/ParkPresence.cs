@@ -42,7 +42,7 @@ public interface IPresenceSession : IChatPanelSource
 /// where they click and the others walk where the server relays them, each with its name over its head and the original's avatar sparkle at its
 /// feet. Presentation and chat only: nothing of the park's simulation sees the figures. Created by the game flow for a visit with a chat room while
 /// logged in, disposed when the park is left. Walking runs on real time, whatever the park's speed or pause: the others keep walking while the park
-/// stands. [EXT:online-coop-figures] A shared park's members walk the same way in its session's room (<see cref="ForSharedPark"/>, docs/COOP.md "Co-builders as
+/// stands. [EXT:online-coop-presence] A shared park's members walk the same way in its session's room (<see cref="ForSharedPark"/>, docs/COOP.md "Co-builders as
 /// figures"), each following their own view.
 /// </summary>
 // [EXT:online-visit-presence] the visit joins the park's room of OpenTPW's chat server and draws its players (ParkPresenceState)
@@ -88,7 +88,7 @@ public sealed class ParkPresence : IVisitPresence, IChatPanelSource, IDisposable
 	/// <summary>The presence without its drawing (tests and the host that adds <see cref="Visuals"/>).</summary>
 	/// <param name="clock">Seconds of a monotonic clock (double clicks, connection waits).</param>
 	/// <param name="sharedPark">
-	/// [EXT:online-coop-figures] A shared park's presence (C2d-4): the online session owns the chat and its room, so this presence never joins or leaves a room and never opens
+	/// [EXT:online-coop-presence] A shared park's presence (C2d-4): the online session owns the chat and its room, so this presence never joins or leaves a room and never opens
 	/// or closes the chat; its figure follows the player's view (<see cref="View"/>), not clicks.
 	/// </param>
 	internal ParkPresence( IPresenceSession session, string room, string playerName, IPresenceGround ground, (float X, float Y) start, Func<double> clock, bool sharedPark = false )
@@ -106,14 +106,14 @@ public sealed class ParkPresence : IVisitPresence, IChatPanelSource, IDisposable
 		session.FetchServerInfo();
 	}
 
-	/// <summary>[EXT:online-coop-figures] Whether this is a shared park's presence (C2d-4), whose figure follows the view and whose chat is the online session's.</summary>
+	/// <summary>[EXT:online-coop-presence] Whether this is a shared park's presence (C2d-4), whose figure follows the view and whose chat is the online session's.</summary>
 	public bool SharedPark { get; }
 
-	/// <summary>[EXT:online-coop-figures] Where the player's view is centred, in cells (the overview's target, or the free walk's place); null when it has none (C2d-4).</summary>
+	/// <summary>[EXT:online-coop-presence] Where the player's view is centred, in cells (the overview's target, or the free walk's place); null when it has none (C2d-4).</summary>
 	internal Func<(float X, float Y)?>? View { get; init; }
 
 	/// <summary>
-	/// [EXT:online-coop-figures] Whether the shared park's session still runs (C2d-4): it can end during the level's update, after the game flow last looked. A presence whose session
+	/// [EXT:online-coop-presence] Whether the shared park's session still runs (C2d-4): it can end during the level's update, after the game flow last looked. A presence whose session
 	/// is over sends nothing and draws no figure until the flow disposes it.
 	/// </summary>
 	internal Func<bool>? Running { get; init; }
@@ -122,7 +122,7 @@ public sealed class ParkPresence : IVisitPresence, IChatPanelSource, IDisposable
 	private bool FiguresShown => ServerWalks && (!SharedPark || Running?.Invoke() != false);
 
 	/// <summary>
-	/// [EXT:online-coop-figures] The player looks through their own figure's eyes (a shared park's free walk, whose place the figure follows): it is not drawn on this
+	/// [EXT:online-coop-presence] The player looks through their own figure's eyes (a shared park's free walk, whose place the figure follows): it is not drawn on this
 	/// screen, as the original hid its own person locally in a first-person view, while the others still see it walk.
 	/// </summary>
 	// [BIN:TPW-EXE:0x4BD090 first-person entry] entering a first-person view hides the own online person locally (0x4F9ED0)
@@ -132,7 +132,7 @@ public sealed class ParkPresence : IVisitPresence, IChatPanelSource, IDisposable
 	internal IEnumerable<PresenceAvatar> Drawn => FirstPerson?.Invoke() == true ? State.Shown.Where( avatar => !avatar.Own ) : State.Shown;
 
 	/// <summary>
-	/// [EXT:online-coop-figures] The presence of the shared park <paramref name="level"/> in its session's chat room <paramref name="room"/> (C2d-4): the members connected to
+	/// [EXT:online-coop-presence] The presence of the shared park <paramref name="level"/> in its session's chat room <paramref name="room"/> (C2d-4): the members connected to
 	/// the room walk as figures with their names, the player's own following the view (<paramref name="view"/>) while the session runs (<paramref name="running"/>); null
 	/// without a player name, a shared park's room, the level's terrain and cell map, or a free cell for the figure near the view or the entrance.
 	/// </summary>
@@ -199,13 +199,13 @@ public sealed class ParkPresence : IVisitPresence, IChatPanelSource, IDisposable
 	public string Room { get; }
 	public ParkPresenceState State { get; }
 	/// <summary>
-	/// The session is connected and in the park's room: chat is live. [EXT:online-coop-figures] A shared park's room counts once this connection's join of it is confirmed
+	/// The session is connected and in the park's room: chat is live. [EXT:online-coop-presence] A shared park's room counts once this connection's join of it is confirmed
 	/// (<see cref="IPresenceSession.SharedRoomReady"/>): a movement before it could reach the room the server still has the connection in.
 	/// </summary>
 	public bool InRoom => SharedPark ? session.SharedRoomReady && session.CurrentRoom == Room : session.Connection != null && session.CurrentRoom == Room;
 	public bool CanChat => !disposed && InRoom;
 	/// <summary>
-	/// The server relays movement in park rooms (<see cref="MovementProtocol"/>): without it the visit chats but shows and sends no figures. [EXT:online-coop-figures] A shared
+	/// The server relays movement in park rooms (<see cref="MovementProtocol"/>): without it the visit chats but shows and sends no figures. [EXT:online-coop-presence] A shared
 	/// park's room is a server's with shared parks (<see cref="ChatProtocol.CoopRoomsVersion"/>), whose rooms all relay movement but the lobby.
 	/// </summary>
 	public bool ServerWalks => session.ServerProtocol >= (SharedPark ? ChatProtocol.CoopRoomsVersion : MovementProtocol);
@@ -237,7 +237,7 @@ public sealed class ParkPresence : IVisitPresence, IChatPanelSource, IDisposable
 	public int Sparkles => visuals?.SparklesStarted ?? 0;
 
 	/// <summary>
-	/// Whether the figures sparkle (the original's avatar effect): in a visit. [EXT:online-coop-figures] Never in a shared park: the level's particle pool is captured with the
+	/// Whether the figures sparkle (the original's avatar effect): in a visit. [EXT:online-coop-presence] Never in a shared park: the level's particle pool is captured with the
 	/// park and object runtimes keep handles into it, so a local effect would make the players' parks differ.
 	/// </summary>
 	internal bool SparkleAllowed => !SharedPark;
@@ -253,7 +253,7 @@ public sealed class ParkPresence : IVisitPresence, IChatPanelSource, IDisposable
 	/// <summary>A click on the park's ground (cells): the player's figure walks there, or teleports on a double click.</summary>
 	public void Click( float cellX, float cellY )
 	{
-		// [EXT:online-coop-figures] a shared park's clicks are the park's (the host builds): its figure follows the view
+		// [EXT:online-coop-presence] a shared park's clicks are the park's (the host builds): its figure follows the view
 		if ( !disposed && !SharedPark )
 			State.Click( cellX, cellY, clock() );
 	}
@@ -265,7 +265,7 @@ public sealed class ParkPresence : IVisitPresence, IChatPanelSource, IDisposable
 	// [EXT:online-chat-goto] the figure teleports to the player it went to; the original server's answer to a goto (command 0x13) is not read
 	public void GoTo( string name )
 	{
-		// [EXT:online-coop-figures] a shared park's go to moves the view (the HUD's), which the figure follows
+		// [EXT:online-coop-presence] a shared park's go to moves the view (the HUD's), which the figure follows
 		if ( disposed || !Walks || SharedPark )
 			return;
 		var other = State.Others.FirstOrDefault( avatar => avatar.Name.Equals( name, StringComparison.OrdinalIgnoreCase ) );
@@ -293,7 +293,7 @@ public sealed class ParkPresence : IVisitPresence, IChatPanelSource, IDisposable
 		if ( disposed )
 			return;
 		var now = clock();
-		// [EXT:online-coop-figures] a shared park's chat is the online session's to keep
+		// [EXT:online-coop-presence] a shared park's chat is the online session's to keep
 		if ( !SharedPark )
 			KeepConnected( now );
 		var ride = Ride?.Invoke();
@@ -357,7 +357,7 @@ public sealed class ParkPresence : IVisitPresence, IChatPanelSource, IDisposable
 		disposed = true;
 		visuals?.Dispose();
 		visuals = null;
-		// [EXT:online-coop-figures] a shared park's room and chat are the online session's: its presence leaves them as they are
+		// [EXT:online-coop-presence] a shared park's room and chat are the online session's: its presence leaves them as they are
 		if ( SharedPark )
 			return;
 		// leaving the park leaves its room, so its other visitors see the parting; a connection the visit opened is closed again, so the
@@ -379,7 +379,7 @@ public sealed class ParkPresence : IVisitPresence, IChatPanelSource, IDisposable
 		public int Width => cells.Width;
 		public int Height => cells.Height;
 
-		/// <summary>[EXT:online-coop-figures] The cell map's version: a shared park's host builds while the figures walk.</summary>
+		/// <summary>[EXT:online-coop-presence] The cell map's version: a shared park's host builds while the figures walk.</summary>
 		public int Version => cells.Version;
 
 		public bool IsPassable( int x, int y )

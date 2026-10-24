@@ -11,7 +11,7 @@ public interface IPresenceGround
 	int Height { get; }
 	bool IsPassable( int x, int y );
 	/// <summary>
-	/// [EXT:online-coop-figures] Changes when a cell's type or flags change (in a shared park the host builds while the figures walk): a walk and the route search's areas
+	/// [EXT:online-coop-presence] Changes when a cell's type or flags change (in a shared park the host builds while the figures walk): a walk and the route search's areas
 	/// planned on an older ground are planned again (C2d-4). A visit's ground never changes.
 	/// </summary>
 	int Version => 0;
@@ -112,11 +112,11 @@ public sealed class ParkPresenceState
 	/// answered without a search, by the ground's connected areas (<see cref="RouteSearch"/>).
 	/// </summary>
 	public const int RouteSearchLimit = 40000;
-	/// <summary>[EXT:online-coop-figures] A shared park's figure plans its walk to the view's centre again once the centre moved this far (cells) from the centre it last followed (C2d-4).</summary>
+	/// <summary>[EXT:online-coop-presence] A shared park's figure plans its walk to the view's centre again once the centre moved this far (cells) from the centre it last followed (C2d-4).</summary>
 	public const float ViewReplanCells = 1f;
-	/// <summary>[EXT:online-coop-figures] The shortest gap between two plans of that walk, seconds: a panning view does not search a route every frame.</summary>
+	/// <summary>[EXT:online-coop-presence] The shortest gap between two plans of that walk, seconds: a panning view does not search a route every frame.</summary>
 	public const double ViewReplanSeconds = 0.25;
-	/// <summary>[EXT:online-coop-figures] A view's centre this far (cells) from the figure moves it there at once (the view jumped: a locate, a minimap click).</summary>
+	/// <summary>[EXT:online-coop-presence] A view's centre this far (cells) from the figure moves it there at once (the view jumped: a locate, a minimap click).</summary>
 	public const float ViewJumpCells = 12f;
 
 	private readonly IPresenceGround ground;
@@ -194,7 +194,7 @@ public sealed class ParkPresenceState
 			(Own.X, Own.Y) = ClampToPark( place.X, place.Y );
 		if ( !riding )
 			rideExit = null;
-		// [EXT:online-coop-figures] a shared park's figure that comes out of a ride goes back to its player's view
+		// [EXT:online-coop-presence] a shared park's figure that comes out of a ride goes back to its player's view
 		followed = null;
 		Own.Target = (Own.X, Own.Y);
 		Own.SinceMoved = float.PositiveInfinity;
@@ -250,7 +250,7 @@ public sealed class ParkPresenceState
 		routed = groundStopped = false;
 		Plans++;
 		arrived = false;
-		// [EXT:online-coop-figures] the areas a search keeps are the ground's as it was: a changed ground (a co-builder's edit) is labelled again
+		// [EXT:online-coop-presence] the areas a search keeps are the ground's as it was: a changed ground (a co-builder's edit) is labelled again
 		if ( ground.Version != plannedVersion )
 		{
 			routeSearch?.ForgetAreas();
@@ -265,7 +265,7 @@ public sealed class ParkPresenceState
 			if ( nearer == null )
 			{
 				// nowhere near the goal to go: the figure stops where it is (its target too, so a shared park's view centre counts as not reached), and
-				// [EXT:online-coop-figures] one a co-builder built over walks out to the nearest free cell
+				// [EXT:online-coop-presence] one a co-builder built over walks out to the nearest free cell
 				Own.Target = (Own.X, Own.Y);
 				nearer = Passable( start.Item1, start.Item2 ) ? null : NearestPassable( start );
 				if ( nearer == null )
@@ -317,7 +317,7 @@ public sealed class ParkPresenceState
 	}
 
 	/// <summary>
-	/// [EXT:online-coop-figures] A shared park's figure follows its player's view (C2d-4): it walks to the view's centre (<paramref name="x"/>, <paramref name="y"/>, cells),
+	/// [EXT:online-coop-presence] A shared park's figure follows its player's view (C2d-4): it walks to the view's centre (<paramref name="x"/>, <paramref name="y"/>, cells),
 	/// planning again once the centre moved <see cref="ViewReplanCells"/> from the centre it last followed and <see cref="ViewReplanSeconds"/> passed, and is moved there at once,
 	/// onto a cell it may stand on, when the centre is <see cref="ViewJumpCells"/> or more from the figure. A centre on a cell no figure stands on (water, a ride) is walked to
 	/// the nearest one, once. Nothing while the player rides; after the ride the figure follows the view again.
@@ -372,7 +372,7 @@ public sealed class ParkPresenceState
 	/// <param name="canSend">The session is in the park's room and connected; without it nothing is sent and pending places wait.</param>
 	public (float X, float Y)? Advance( float delta, bool canSend, bool announce )
 	{
-		// [EXT:online-coop-figures] a walk planned on an older ground goes round what was built since, planned again at most every ViewReplanSeconds (a co-builder
+		// [EXT:online-coop-presence] a walk planned on an older ground goes round what was built since, planned again at most every ViewReplanSeconds (a co-builder
 		// laying a path changes the ground cell by cell); meanwhile it stops in front of a cell of its route that was built on
 		sinceGroundPlan += Math.Max( 0f, delta );
 		var groundChanged = ground.Version != plannedVersion;
@@ -532,7 +532,7 @@ public sealed class ParkPresenceState
 		/// <summary>The cells the last search expanded.</summary>
 		public int Expanded { get; private set; }
 
-		/// <summary>[EXT:online-coop-figures] The ground changed: its areas are labelled again on the next search (the arrays are kept).</summary>
+		/// <summary>[EXT:online-coop-presence] The ground changed: its areas are labelled again on the next search (the arrays are kept).</summary>
 		public void ForgetAreas() => areas = null;
 
 		private bool Inside( int x, int y ) => (uint)x < (uint)width && (uint)y < (uint)height;
@@ -719,7 +719,7 @@ public sealed class ParkPresenceState
 	}
 
 	/// <summary>
-	/// [EXT:online-coop-figures] Where a figure may stand at <paramref name="place"/> (cells): the place itself on a cell a figure may stand on, else the centre of the nearest such
+	/// [EXT:online-coop-presence] Where a figure may stand at <paramref name="place"/> (cells): the place itself on a cell a figure may stand on, else the centre of the nearest such
 	/// cell within <see cref="GoalSearchRadius"/>, else null (the middle of a lake). A shared park's figure enters there, not on water.
 	/// </summary>
 	public static (float X, float Y)? StandingNear( IPresenceGround ground, (float X, float Y) place )

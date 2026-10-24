@@ -1,0 +1,190 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Runtime.CompilerServices;
+using System.Text.Json.Nodes;
+using System.Threading;
+using Microsoft.VisualStudio.TestTools.UnitTesting;
+
+namespace OpenTPW.Tests;
+
+/// <summary>
+/// [EXT:online-coop-session] The live co-op acceptance's harness without a game (docs/COOP.md, "The live acceptance"): its steps run one at a time, each until its condition holds or
+/// its deadline passes; the games and the driver meet through their status files; a failure anywhere ends the run with its evidence; and the run takes its credentials and
+/// scenario from the environment only.
+/// </summary>
+[TestClass]
+[DoNotParallelize]
+public class CoopLiveHarnessTests
+{
+	private string evidence = null!;
+	private Logger previousLog = null!;
+	private readonly List<string> completed = new();
+	private readonly List<string> failed = new();
+
+	[TestInitialize]
+	public void Setup()
+	{
+		previousLog = Log;
+		Log = new Logger();
+		evidence = Path.Combine( Path.GetTempPath(), "opentpw-coop-live-" + Guid.NewGuid().ToString( "N" ) );
+		Directory.CreateDirectory( evidence );
+	}
+
+	[TestCleanup]
+	public void Cleanup()
+	{
+		Directory.Delete( evidence, true );
+		Log = previousLog;
+	}
+
+	private static GameFlow Flow() => (GameFlow)RuntimeHelpers.GetUninitializedObject( typeof( GameFlow ) );
+
+	private static Func<string, string?> Environment( params (string Name, string Value)[] extra )
+	{
+		var values = new Dictionary<string, string>
+		{
+			["OPENTPW_COOP_LIVE_SERVER"] = "http://127.0.0.1:5000",
+			["OPENTPW_COOP_LIVE_NAME"] = "Hostabc1234",
+			["OPENTPW_COOP_LIVE_PASSWORD"] = "secret-password-1",
+			["OPENTPW_COOP_LIVE_CODE"] = "ABC123",
+		};
+		foreach ( var (name, value) in extra )
+			values[name] = value;
+		return name => values.TryGetValue( name, out var value ) ? value : null;
+	}
+
+	private CoopLiveTest Harness( bool hosting, Func<CoopLiveTest, IEnumerable<CoopLiveWait>> script, Func<string, string?>? environment = null ) =>
+		new( Flow(), evidence, hosting, environment ?? Environment(), completed.Add, failed.Add, script );
+
+	private JsonObject Json( string name ) => (JsonObject)JsonNode.Parse( File.ReadAllText( Path.Combine( evidence, name ) ) )!;
+
+	[TestMethod]
+	public void TheStepsRunInTurnEachUntilItsConditionHolds()
+	{
+		var (first, second) = (false, false);
+		IEnumerable<CoopLiveWait> Script( CoopLiveTest test )
+		{
+			yield return CoopLiveTest.Wait( "the first", () => first, 30 );
+			test.Publish( "said", "after the first" );
+			yield return CoopLiveTest.Wait( "the second", () => second, 30 );
+		}
+		using var harness = Harness( hosting: true, Script );
+		harness.Update();
+		harness.Update();
+		Assert.AreEqual( "the first", Json( "host-status.json" )["step"]!.GetValue<string>() );
+		// the second's condition holding first changes nothing: the steps run in turn
+		second = true;
+		harness.Update();
+		Assert.IsFalse( harness.Done );
+		first = true;
+		harness.Update();
+		// the step after a held one starts in the same frame, and the script's own code between them runs then
+		Assert.IsTrue( harness.Completed );
+		Assert.AreEqual( 1, completed.Count );
+		Assert.AreEqual( 0, failed.Count );
+		var status = Json( "host-status.json" );
+		Assert.AreEqual( "after the first", status["said"]!.GetValue<string>() );
+		Assert.IsTrue( status["completed"]!.GetValue<bool>() );
+		var written = Json( "host-evidence.json" );
+		Assert.IsTrue( written["completed"]!.GetValue<bool>() );
+		Assert.AreEqual( "host", written["role"]!.GetValue<string>() );
+		Assert.AreEqual( "baseline", written["scenario"]!.GetValue<string>() );
+		CollectionAssert.AreEqual( new[] { "the first", "the second" }, written["steps"]!.AsArray().Select( step => step!["What"]!.GetValue<string>() ).ToArray() );
+		CollectionAssert.AreEqual( new[] { 4, 4 }, written["steps"]!.AsArray().Select( step => step!["Frame"]!.GetValue<int>() ).ToArray() );
+		// nothing of the credentials reaches the evidence or the status
+		foreach ( var file in Directory.GetFiles( evidence ) )
+			Assert.IsFalse( File.ReadAllText( file ).Contains( "secret-password-1", StringComparison.Ordinal ), file );
+		// a completed run does nothing more
+		harness.Update();
+		Assert.AreEqual( 1, completed.Count );
+	}
+
+	[TestMethod]
+	public void AStepPastItsDeadlineFailsTheRunWithItsEvidence()
+	{
+		IEnumerable<CoopLiveWait> Script( CoopLiveTest test )
+		{
+			yield return CoopLiveTest.Wait( "the guest's join", () => false, 0.01 );
+		}
+		using var harness = Harness( hosting: true, Script );
+		harness.Update();
+		Assert.IsFalse( harness.Done );
+		Thread.Sleep( 50 );
+		harness.Update();
+		Assert.IsTrue( harness.Done );
+		Assert.IsFalse( harness.Completed );
+		Assert.AreEqual( 0, completed.Count );
+		Assert.AreEqual( 1, failed.Count );
+		StringAssert.Contains( failed[0], "the guest's join did not happen within 0.01 s" );
+		var written = Json( "host-evidence.json" );
+		Assert.IsFalse( written["completed"]!.GetValue<bool>() );
+		StringAssert.Contains( written["failure"]!.GetValue<string>(), "TimeoutException" );
+		StringAssert.Contains( Json( "host-status.json" )["failed"]!.GetValue<string>(), "the guest's join" );
+	}
+
+	[TestMethod]
+	public void TheOtherGamesFailureAndTheDriversStopEndTheRunAtOnce()
+	{
+		IEnumerable<CoopLiveWait> Script( CoopLiveTest test )
+		{
+			yield return CoopLiveTest.Wait( "the host's line", () => false, 600 );
+		}
+		File.WriteAllText( Path.Combine( evidence, "host-status.json" ), "{\"role\":\"host\",\"failed\":\"InvalidOperationException: no free line\"}" );
+		using ( var guest = Harness( hosting: false, Script ) )
+		{
+			guest.Update();
+			Assert.AreEqual( 1, failed.Count );
+			StringAssert.Contains( failed[0], "the host failed: InvalidOperationException: no free line" );
+		}
+		// the guest's own failure is in its status now: a fresh pair of runs without either
+		foreach ( var file in Directory.GetFiles( evidence ) )
+			File.Delete( file );
+		File.WriteAllText( Path.Combine( evidence, $"{CoopLiveTest.DriverRole}-status.json" ), "{\"abort\":\"the guest exited with 1\"}" );
+		using var host = Harness( hosting: true, Script );
+		host.Update();
+		Assert.AreEqual( 2, failed.Count );
+		StringAssert.Contains( failed[1], "the driver stopped the run: the guest exited with 1" );
+	}
+
+	[TestMethod]
+	public void TheGamesReadEachOthersStatus()
+	{
+		static IEnumerable<CoopLiveWait> Idle( CoopLiveTest test )
+		{
+			yield return CoopLiveTest.Wait( "nothing", () => false, 600 );
+		}
+		using var host = Harness( hosting: true, Idle );
+		using var guest = Harness( hosting: false, Idle );
+		Assert.IsNull( guest.StatusOf( "host", "code" ) );
+		host.Publish( "code", "ABC123" );
+		host.Publish( "hostAt", new JsonArray( 32.5, 17.5 ) );
+		// a status is read again at most every quarter of a second
+		Thread.Sleep( 300 );
+		Assert.AreEqual( "ABC123", guest.StatusOf( "host", "code" )!.GetValue<string>() );
+		Assert.AreEqual( 17.5, guest.StatusOf( "host", "hostAt" )![1]!.GetValue<double>() );
+		Assert.IsNull( guest.StatusOf( CoopLiveTest.DriverRole, "restarted" ) );
+	}
+
+	[TestMethod]
+	public void TheRunTakesItsCredentialsAndScenarioFromTheEnvironment()
+	{
+		static IEnumerable<CoopLiveWait> None( CoopLiveTest test ) => Array.Empty<CoopLiveWait>();
+		var missingPassword = Environment( ("OPENTPW_COOP_LIVE_PASSWORD", "") );
+		Assert.ThrowsException<ArgumentException>( () => Harness( hosting: true, None, missingPassword ) );
+		var missingCode = Environment( ("OPENTPW_COOP_LIVE_CODE", "") );
+		Harness( hosting: true, None, missingCode ).Dispose();
+		Assert.ThrowsException<ArgumentException>( () => Harness( hosting: false, None, missingCode ) );
+		Assert.ThrowsException<ArgumentException>( () => Harness( hosting: true, None, Environment( ("OPENTPW_COOP_LIVE_SCENARIO", "longer") ) ) );
+		Assert.ThrowsException<ArgumentException>( () => Harness( hosting: true, None, Environment( ("OPENTPW_COOP_LIVE_SCENARIO", "endurance") ) ) );
+		Assert.ThrowsException<ArgumentException>( () => Harness( hosting: true, None, Environment( ("OPENTPW_COOP_LIVE_SCENARIO", "endurance"), ("OPENTPW_COOP_LIVE_MINUTES", "-3") ) ) );
+		using var endurance = Harness( hosting: true, None, Environment( ("OPENTPW_COOP_LIVE_SCENARIO", "endurance"), ("OPENTPW_COOP_LIVE_MINUTES", "2.5") ) );
+		endurance.Update();
+		Assert.IsTrue( endurance.Completed );
+		var written = Json( "host-evidence.json" );
+		Assert.AreEqual( "endurance", written["scenario"]!.GetValue<string>() );
+		Assert.AreEqual( 2.5, written["enduranceMinutes"]!.GetValue<double>() );
+		Assert.ThrowsException<ArgumentException>( () => CoopLiveTest.Run( Flow(), "watch", evidence ) );
+	}
+}

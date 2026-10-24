@@ -111,14 +111,18 @@ public class ParkCommandLayerTests
 	/// <summary>A call of the level's method <paramref name="name"/> whose name lists share (<c>RemoveAt</c>): through a level reference, or bare inside the level.</summary>
 	private static string LevelCall( string name ) => $@"(\b(level|Level\.Current|this)\??\.\s*|{BareCall}){name}\s*\(";
 
-	/// <summary>The source files of the tool layer: the HUD, the UI, the front end and online screens (not their smoke harnesses), the tools and the level's own input file.</summary>
+	/// <summary>
+	/// The source files of the tool layer: the HUD, the UI, the front end and online screens (not their smoke harnesses or the live co-op acceptance's, which drive the screens as a
+	/// player does), the tools and the level's own input file.
+	/// </summary>
 	private static IReadOnlyList<string> ToolLayer( string source )
 	{
 		IEnumerable<string> All( string folder ) => Directory.EnumerateFiles( Path.Combine( source, folder ), "*.cs", SearchOption.AllDirectories );
 		// a visit's park is built from its package as a save's restore builds a park (SharedParkLayout: the objects, paths and coasters of a read-only copy), not edited by a tool; the co-op
 		// link (CoopLink) is the socket under the shared park screens, whose opens and closes are its sockets'
 		var files = All( "Hud" ).Concat( All( "UI" ) ).Concat( All( "FrontEnd" ) ).Concat( All( "Online" ) )
-			.Where( path => !Path.GetFileName( path ).Contains( "SmokeTest", StringComparison.Ordinal ) && Path.GetFileName( path ) is not ("SharedParkLayout.cs" or "CoopLink.cs") )
+			.Where( path => !Path.GetFileName( path ).Contains( "SmokeTest", StringComparison.Ordinal ) && !Path.GetFileName( path ).StartsWith( "CoopLiveTest", StringComparison.Ordinal )
+				&& Path.GetFileName( path ) is not ("SharedParkLayout.cs" or "CoopLink.cs") )
 			.Concat( new[]
 			{
 				Path.Combine( "Client", "ThemeParkIncHud.cs" ),

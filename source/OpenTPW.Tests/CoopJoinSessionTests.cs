@@ -55,7 +55,7 @@ public partial class CoopJoinSessionTests
 		public bool Frozen { get; set; }
 		/// <summary>The member's game when it is the real <see cref="GameFlow"/>: its frame steps the session through the flow, whose swap makes the park the member's.</summary>
 		public GameFlow? Flow { get; set; }
-		/// <summary>[EXT:online-coop-figures] The figures of a member whose game is the test's (a flow's are its own): updated after the park's frame, as the game does.</summary>
+		/// <summary>[EXT:online-coop-presence] The figures of a member whose game is the test's (a flow's are its own): updated after the park's frame, as the game does.</summary>
 		public ParkPresence? Presence { get; set; }
 		/// <summary>A flow member's builds (<see cref="FlowBuild"/>): how many began, the frames the build of the given number (1 first) takes, how many were abandoned.</summary>
 		public int FlowBuilds { get; set; }

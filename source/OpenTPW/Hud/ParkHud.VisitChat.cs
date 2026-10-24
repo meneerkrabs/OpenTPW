@@ -15,7 +15,7 @@ public sealed partial class ParkHud
 	private bool chatModeKeyDown;
 
 	/// <summary>
-	/// Whether the player keeps the chat mode: as they chose, else a visit starts in it, and [EXT:online-coop-figures] a shared park in the HUD (C2d-4: its host builds,
+	/// Whether the player keeps the chat mode: as they chose, else a visit starts in it, and [EXT:online-coop-presence] a shared park in the HUD (C2d-4: its host builds,
 	/// and every player keeps the HUD's view of the park).
 	/// </summary>
 	private bool ChatModeWanted => chatModeChoice ?? ChatPresence is not { SharedPark: true };
@@ -34,7 +34,7 @@ public sealed partial class ParkHud
 	internal bool ChatEntryFocused => ChatMode && chatPanel != null && ReferenceEquals( chatModeScreen!.Focused, chatPanel.Entry );
 
 	/// <summary>
-	/// The players whose room the chat mode shows: a read-only visit's, or [EXT:online-coop-figures] a shared park's (C2d-4), whose chat mode stands beside its HUD and builds
+	/// The players whose room the chat mode shows: a read-only visit's, or [EXT:online-coop-presence] a shared park's (C2d-4), whose chat mode stands beside its HUD and builds
 	/// nothing.
 	/// </summary>
 	private IVisitPresence? ChatPresence => host?.Presence?.Invoke() is { } presence && (level.IsReadOnlyVisit || presence.SharedPark) ? presence : null;
@@ -84,7 +84,7 @@ public sealed partial class ParkHud
 			return;
 		if ( wanted )
 		{
-			// the HUD's windows, panels and modes go with it, and [EXT:online-coop-figures] in a shared park its armed tools (the chat mode builds nothing)
+			// the HUD's windows, panels and modes go with it, and [EXT:online-coop-presence] in a shared park its armed tools (the chat mode builds nothing)
 			SelectObject( null );
 			CloseArmPanel();
 			CloseCameraPanel();
@@ -137,7 +137,7 @@ public sealed partial class ParkHud
 	}
 
 	/// <summary>
-	/// [EXT:online-coop-figures] A shared park's goto (C2d-4): the view moves to the player's figure when it is drawn here, from the overview (a free walk ends first); false for a
+	/// [EXT:online-coop-presence] A shared park's goto (C2d-4): the view moves to the player's figure when it is drawn here, from the overview (a free walk ends first); false for a
 	/// name with no figure here (a buddy elsewhere, a player who rides), whose goto goes to the server, which says to leave the park first.
 	/// </summary>
 	internal bool ViewFigure( IVisitPresence presence, string name )
@@ -167,6 +167,8 @@ public sealed partial class ParkHud
 	// [EXT:online-avatar-labels] the original's online persons carry no name the decoded code draws (the chat overlay's people list names them)
 	private void DrawVisitNames( UiContext context )
 	{
+		var drawn = drawnNames ??= new();
+		drawn.Clear();
 		if ( IsRiding || level.HidesInterface || host?.Presence?.Invoke() is not { } presence )
 			return;
 		var view = Camera.ViewMatrix;
@@ -182,6 +184,13 @@ public sealed partial class ParkHud
 			var plate = new UiRect( pixel.X - width / 2f - pad, pixel.Y - height - pad * 2, width + pad * 2, height + pad * 2 );
 			context.Batch.AddRectangle( plate, VisitNamePlate );
 			context.DrawText( context.Fonts.Small, name.Name, new UiRect( plate.X + pad, plate.Y + pad, width, height ), name.Own ? VisitOwnName : UiColors.Text, UiAlign.Left, shadow: false );
+			drawn.Add( name.Name );
 		}
 	}
+
+	/// <summary>The names drawn over the figures in the last frame (made on first use: a HUD the tests make has no field initializers run).</summary>
+	private List<string>? drawnNames;
+
+	/// <summary>The names drawn over the figures in the last frame, the player's own included (the live co-op acceptance's evidence: docs/COOP.md, "The live acceptance").</summary>
+	internal IReadOnlyList<string> DrawnNames => drawnNames ?? (IReadOnlyList<string>)Array.Empty<string>();
 }

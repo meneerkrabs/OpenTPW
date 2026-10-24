@@ -840,15 +840,18 @@ online for shared parks. The host then hears that the player is not online and i
 - A link in use is never touched: one that holds a session (also while it reconnects), one whose create
   or join waits for its answer (`CoopLink.Waiting`: the server would seat the player once it reads it,
   also after a close), and one a join attempt, a share or a saved park's share is using.
-- A join whose answer was lost with its socket may still have made a seat. The link keeps that seat's
-  leave, named by the join's code, for the account's next welcome on that server, and that welcome leaves
-  the seat. A welcome to a lobby open does the same and never takes the seat for another game's park.
-  A lost create keeps no record: its park has no host and ends at the host's away limit, and its title
-  could name another game's park.
-- Every leave of this game is kept until the server confirms it: the session's end for this game, a
-  refusal that it is in none, or a welcome that does not name it. A leave lost with its socket before it
-  went out goes out again at the next welcome. The lobby keeps a link whose leave waits
-  (`CoopLink.Settling`).
+- A create or join whose answer was lost with its socket may still have made a seat. The link's own
+  reconnect leaves any seat it does not hold, as it always did. To give it that welcome, the lobby keeps a
+  link with something to settle (`CoopLink.Settling`) open for up to a minute after it stopped wanting it.
+- A leave is named only by its session's id, never guessed from a code or title. A leave sent at a welcome
+  (one that could not go out earlier) is kept until the server confirms it: the session's end for this
+  game, a refusal that it is in none, or a welcome that does not name it. If it is lost with its socket,
+  the next welcome sends it again. A leave sent on a live socket is done once sent, so a logout keeps
+  nothing.
+- Accepted limit: if the link cannot reconnect within that minute, a lost answer's seat stays on the
+  server. A later lobby open cannot tell it from another game's park, so it stops (`HeldElsewhere`). The
+  seat goes with the player's next join or share (whose open leaves it), the host's removal, or the
+  park's end.
 - Each time the link becomes wanted (the lobby entered, a login there, another login), it opens once
   (`CoopLink.OpenInLobby`). It never takes the link from another game of the account; that game keeps it
   (`InUseElsewhere`).
@@ -904,10 +907,9 @@ The tests:
   - it leaves a link in use alone: a waiting create or join, a session, an attempt;
   - it never takes another game's link, and tries once a stay;
   - it never leaves another game's park while that game's socket is away, and that game's park goes on;
-  - a seat a lost answer made keeps the link until its welcome leaves it, and is left by the next lobby
-    open after a lost link;
-  - a leave lost before it went out goes again at the next welcome, and the link waits for the
-    confirmation;
+  - a link whose lost answer made a seat is kept for a minute so its welcome leaves it, and no longer;
+  - after a lost link, that seat is left by the player's next act, never by the lobby;
+  - a leave lost before it went out goes again at the next welcome, until the server confirms it;
   - a lobby link that asks for a seat is any open's;
   - a lost link opens again on its spread timer, at most ten times, and a brief open keeps the count;
   - the reconnect waits are spread.

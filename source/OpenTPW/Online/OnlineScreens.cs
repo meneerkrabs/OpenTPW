@@ -1112,6 +1112,9 @@ public sealed class OnlineScreens
 			catch ( Exception exception ) when ( exception is ArgumentException or InvalidOperationException or InvalidDataException )
 			{
 				localStatus = exception.Message;
+				// an emptied address gets the remembered or offered server back, to log in with on the next try
+				if ( server.Text.Trim().Length == 0 )
+					server.Text = Session.Settings.ServerUrl ?? OnlineSession.SuggestedServerUrl ?? "";
 			}
 			// The password stays while the dialog is open, so a login that asks for a code only needs the code.
 			code.Text = "";

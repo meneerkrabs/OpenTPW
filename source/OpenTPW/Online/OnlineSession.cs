@@ -292,7 +292,8 @@ public sealed class OnlineSession : IDisposable, IPresenceSession, IChatPanelSou
 
 	/// <summary>
 	/// The original's connection error in the game's language; the .NET reason (English, whatever the language) only goes to the log.
-	/// A request that timed out (<see cref="TaskCanceledException"/> from the HTTP client) is a failed connection too.
+	/// A request that timed out (<see cref="TaskCanceledException"/> from the HTTP client) or whose response broke off (<see cref="HttpIOException"/>)
+	/// is a failed connection too.
 	/// </summary>
 	private static string ConnectError( Exception exception )
 	{
@@ -322,7 +323,7 @@ public sealed class OnlineSession : IDisposable, IPresenceSession, IChatPanelSou
 			string? message;
 			try { message = await work(); }
 			catch ( OnlineException exception ) { message = exception.Message; }
-			catch ( Exception exception ) when ( exception is HttpRequestException or TaskCanceledException ) { message = ConnectError( exception ); }
+			catch ( Exception exception ) when ( exception is HttpRequestException or HttpIOException or TaskCanceledException ) { message = ConnectError( exception ); }
 			catch ( Exception exception ) when ( exception is InvalidDataException or IOException or ArgumentException or InvalidOperationException or System.Net.WebSockets.WebSocketException or ObjectDisposedException )
 			{ message = exception.Message; }
 			// Anything else must still end the operation, or every online button stays disabled.
@@ -353,15 +354,13 @@ public sealed class OnlineSession : IDisposable, IPresenceSession, IChatPanelSou
 	}
 
 	/// <summary>
-	/// The server of a typed address. An empty address takes <see cref="SuggestedServerUrl"/> when there is one. A missing, malformed or refused
-	/// address throws an <see cref="ArgumentException"/> whose message is the reason in the game's language, for the status line: the .NET
-	/// messages ("Invalid URI: The URI is empty.") are English whatever the language.
+	/// The server of a typed address. A missing, malformed or refused address throws an <see cref="ArgumentException"/> whose message is the
+	/// reason in the game's language, for the status line: the .NET messages ("Invalid URI: The URI is empty.") are English whatever the
+	/// language. An empty address is never replaced by a default here: the player may have cleared it on purpose, and logging in sends a password.
 	/// </summary>
 	public static Uri ParseServerUrl( string url )
 	{
 		var text = url.Trim();
-		if ( text.Length == 0 )
-			text = SuggestedServerUrl?.Trim() ?? "";
 		if ( text.Length == 0 )
 			throw new ArgumentException( OnlineStrings.Get( OnlineLabel.EnterServerAddress ) );
 		if ( !Uri.TryCreate( text, UriKind.Absolute, out var uri ) )

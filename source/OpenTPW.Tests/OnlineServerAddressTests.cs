@@ -45,15 +45,15 @@ public class OnlineServerAddressTests
 			Assert.AreEqual( new Uri( "https://example.com/" ), OnlineSession.ParseServerUrl( " https://example.com " ) );
 			Assert.AreEqual( new Uri( "http://localhost:5000/" ), OnlineSession.ParseServerUrl( "http://localhost:5000" ) );
 
-			// the browser build offers the address it was loaded from: an emptied field takes it
+			// the browser build's own address is only offered in the field: a field the player emptied does not log in there
 			OnlineSession.SuggestedServerUrl = "https://play.example.com";
-			Assert.AreEqual( new Uri( "https://play.example.com/" ), OnlineSession.ParseServerUrl( "" ) );
+			Assert.AreEqual( enter, Assert.ThrowsException<ArgumentException>( () => OnlineSession.ParseServerUrl( "" ) ).Message );
 		}
 		finally { OnlineSession.SuggestedServerUrl = previousSuggestion; }
 	}
 
 	[TestMethod]
-	public void AnEmptyAddressShowsTheDutchMessageInTheLoginDialogAndTheLobby()
+	public void AnEmptyAddressShowsTheDutchMessageInTheLoginDialogAndTheLobbyAndOffersTheServerAgain()
 	{
 		var root = Directory.CreateTempSubdirectory( "opentpw-online-address-" ).FullName;
 		var previousFiles = OpenTPW.Common.GlobalNamespace.FileSystem;
@@ -62,7 +62,7 @@ public class OnlineServerAddressTests
 		try
 		{
 			OpenTPW.Common.GlobalNamespace.FileSystem = new BaseFileSystem( root );
-			OnlineSession.SuggestedServerUrl = null;
+			OnlineSession.SuggestedServerUrl = "https://play.example.com";
 			var dutch = Path.Combine( root, "Data", "Language", "Dutch" );
 			Directory.CreateDirectory( dutch );
 			File.WriteAllBytes( Path.Combine( dutch, "MBToUni.dat" ), StringTableTests.CreateCharacterTable( "abc" ) );
@@ -89,6 +89,7 @@ public class OnlineServerAddressTests
 			var expected = OnlineStrings.Supplementary["Dutch"][OnlineLabel.EnterServerAddress];
 			Assert.AreEqual( expected, ((UiLabel)login.Find( "status" )!).Text!() );
 			Assert.IsNull( session.Client, "no server was chosen" );
+			Assert.AreEqual( "https://play.example.com", ((UiTextField)login.Find( "server" )!).Text, "the offered server is back in the field for the next try" );
 			stack.Pop();
 			Assert.AreSame( lobby, stack.Top );
 			var lobbyStatus = lobby.Elements.OfType<UiLabel>().Select( label => label.Text?.Invoke() ).Where( text => text == expected ).ToArray();

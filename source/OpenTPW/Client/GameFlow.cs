@@ -492,6 +492,7 @@ internal sealed partial class GameFlow : IDisposable
 		// Restart Park reloads the restart snapshot in every original park but the read-only visit (the original's pause menu 0x48C150 lists the entry for every game type except the online visit)
 		RestartPark = RestartEligible( level ) ? () => RestartCurrentPark( level ) : null,
 		PublishPark = WhenOnline( stack => CreateOnlineScreens( stack ).ShowPublish() ),
+		PublishRefused = () => ParkSharing.ModsRefusal( level ) != null,
 		ListSorts = listSorts,
 		OptionsChanged = () => { if ( PersistSettings ) GameOptions.Current.Save( OptionsPath ); },
 		ParkDoorPressed = open => Advisor?.OnParkDoorPressed( open ),

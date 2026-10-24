@@ -740,6 +740,25 @@ public static class OriginalLayoutTables
 		} ),
 	} );
 
+	/// <summary>[BIN:TPW-EXE:0x7585a8] layout table LoginWindow.</summary>
+	public static readonly LayoutTable LoginWindow = new( "LoginWindow", 0x7585A8, new LayoutNode[]
+	{
+		new( 1, 0x1u, 0x48u, 500, 233, 1516, 830, -1, -1, "wdialogw", null, null, new LayoutNode[]
+		{
+			new( 2, 0x1u, 0xFFFFFFFEu, 1387, 613, 1470, 696, -1, -1, "b_exit", null, null, System.Array.Empty<LayoutNode>() ),
+			new( 2, 0x1u, 0xFFFFFFFFu, 1376, 524, 1460, 608, -1, -1, "b_okay", null, null, System.Array.Empty<LayoutNode>() ),
+			new( 5, 0x1u, 0x49u, 632, 463, 1307, 556, -1, -1, "!frame", null, new[] { 953, 487, 1283, 532 }, new LayoutNode[]
+			{
+				new( 1, 0x1u, 0x4Au, 656, 487, 946, 532, -1, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
+			} ),
+			new( 5, 0x1u, 0x4Bu, 632, 593, 1307, 685, -1, -1, "!frame", null, new[] { 953, 617, 1283, 661 }, new LayoutNode[]
+			{
+				new( 1, 0x1u, 0x4Cu, 656, 617, 946, 661, -1, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
+			} ),
+			new( 1, 0x1u, 0x4Du, 606, 304, 1333, 384, -1, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
+		} ),
+	} );
+
 	/// <summary>[BIN:TPW-EXE:0x7595b0] layout table PublishWindow.</summary>
 	public static readonly LayoutTable PublishWindow = new( "PublishWindow", 0x7595B0, new LayoutNode[]
 	{

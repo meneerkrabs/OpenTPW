@@ -7,8 +7,8 @@ namespace OpenTPW;
 /// <summary>
 /// [EXT:online-coop-session] One side of the co-op link's transport check (C2c-2b-5; docs/COOP.md, "The browser's link to a real server"): an online session
 /// of its own, in a folder of its own (never the player's), logs in to a server and opens the co-op link, then does what its driver asks, a request at a time,
-/// and records what the link raises: its welcome, the session, its members, the frames and messages it receives, refusals, the session's end and the snapshot
-/// transfers, every payload by its length and SHA-256. The driver checks those records against the bytes it chose. A page runs it in the browser over the
+/// and records what the link raises: its welcome, the session, its members, the frames and messages it receives, invitations (C2d-3b), refusals, the session's end
+/// and the snapshot transfers, every payload by its length and SHA-256, and the open list it asks for. The driver checks those records against the bytes it chose. A page runs it in the browser over the
 /// runtime's own <c>ClientWebSocket</c> and <c>HttpClient</c> (tools/web-coop-link.mjs runs a host page and a guest page against the real server);
 /// <c>CoopLinkProbeTests</c> runs two probes against the loopback server. No game, park or game file is involved, and nothing here sees a token.
 /// </summary>
@@ -57,6 +57,13 @@ internal sealed class CoopLinkProbe : IDisposable
 		link.FrameReceived += frame => Record( "frame", Payload( frame.Payload.Span, new JsonObject { ["seq"] = frame.Seq } ) );
 		link.MessageReceived += message => Record( "message", Payload( message.Payload.Span, new JsonObject { ["from"] = message.From } ) );
 		link.FrameRefused += refused => Fail( $"The server refused a frame: it expected frame {refused.Expected}." );
+		link.Invited += invited => Record( "invited", new JsonObject
+		{
+			["session"] = invited.SessionId,
+			["code"] = invited.Code,
+			["title"] = invited.Title,
+			["host"] = invited.Host,
+		} );
 		link.Refused += error => Fail( $"The server refused the {error.Request} request ({error.Reason}): {error.Text}" );
 		link.SessionEnded += ended =>
 		{
@@ -103,8 +110,37 @@ internal sealed class CoopLinkProbe : IDisposable
 			Fail( $"The login failed: {session.Status}" );
 	}
 
-	/// <summary>Creates a session this probe hosts, unlisted, for two players.</summary>
-	internal bool Create( string title ) => Asked( "create", Link.Create( listed: false, title, 2 ) );
+	/// <summary>Creates a session this probe hosts, for two players: on the open list when <paramref name="listed"/>.</summary>
+	internal bool Create( string title, bool listed = false ) => Asked( "create", Link.Create( listed, title, 2 ), new JsonObject { ["listed"] = listed } );
+
+	/// <summary>[EXT:online-coop-session] The host invites <paramref name="player"/>, whose link must be open (C2d-3b).</summary>
+	internal bool Invite( string player ) => Asked( "invite", Link.Invite( player ), new JsonObject { ["player"] = player } );
+
+	/// <summary>[EXT:online-coop-session] Asks for the open list over HTTP (C2d-3b): its rows are recorded (<c>listed</c>), or the failure fails the probe.</summary>
+	internal bool List()
+	{
+		Asked( "list", true );
+		Link.List( ( sessions, error ) =>
+		{
+			if ( sessions == null )
+			{
+				Fail( $"The open list failed: {error}" );
+				return;
+			}
+			var rows = new JsonArray();
+			foreach ( var session in sessions )
+				rows.Add( new JsonObject
+				{
+					["code"] = session.Code,
+					["title"] = session.Title,
+					["host"] = session.Host,
+					["players"] = session.Players,
+					["maximum"] = session.MaximumPlayers,
+				} );
+			Record( "listed", new JsonObject { ["sessions"] = rows } );
+		} );
+		return true;
+	}
 
 	/// <summary>Joins the session with <paramref name="code"/>.</summary>
 	internal bool Join( string code ) => Asked( "join", Link.Join( code ) );

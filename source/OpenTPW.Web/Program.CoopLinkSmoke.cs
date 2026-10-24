@@ -47,9 +47,17 @@ public static partial class Program
 		coopLink = new CoopLinkProbe( CoopLinkDirectory, origin, name, password );
 	}
 
-	/// <summary>Creates a session the page's probe hosts (unlisted, two players); false when the link did not take the request.</summary>
+	/// <summary>Creates a session the page's probe hosts (two players, on the open list when <paramref name="listed"/>); false when the link did not take the request.</summary>
 	[JSExport]
-	public static bool CoopLinkSmokeCreate( string title ) => RunningCoopLink().Create( title );
+	public static bool CoopLinkSmokeCreate( string title, bool listed ) => RunningCoopLink().Create( title, listed );
+
+	/// <summary>The host invites <paramref name="player"/> (C2d-3b); false when the link did not take the request.</summary>
+	[JSExport]
+	public static bool CoopLinkSmokeInvite( string player ) => RunningCoopLink().Invite( player );
+
+	/// <summary>Asks for the open list over HTTP (C2d-3b); its rows are a record.</summary>
+	[JSExport]
+	public static bool CoopLinkSmokeList() => RunningCoopLink().List();
 
 	/// <summary>Joins the session with <paramref name="code"/>; false when the link did not take the request.</summary>
 	[JSExport]

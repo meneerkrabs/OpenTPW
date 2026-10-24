@@ -254,12 +254,24 @@ async function run(options) {
 		await wait(() => host.status.phase === 'open' && guest.status.phase === 'open', 'both welcomes');
 		record.protocol = host.status.protocol;
 
-		// the host creates the session, the guest joins it, and the host hears the guest join
-		if (!await host.call('CoopLinkSmokeCreate', 'coop link check'))
+		// the host creates a listed session; the guest finds it on the open list (HTTP), the host invites the guest (the socket), and the guest joins with the
+		// invitation's code; the host hears the guest join
+		if (!await host.call('CoopLinkSmokeCreate', 'coop link check', true))
 			throw new Error('The host page\'s link did not take the create request');
 		await wait(() => host.records('session').length === 1, 'the created session');
 		const created = host.records('session')[0];
-		if (!await guest.call('CoopLinkSmokeJoin', created.code))
+		await guest.call('CoopLinkSmokeList');
+		await wait(() => guest.records('listed').length === 1, 'the open list');
+		const row = guest.records('listed')[0].sessions.find(item => item.code === created.code);
+		compare(record.checks, 'the open list shows the listed session with its host and players', ['coop link check', PLAYERS.host, 1, 2],
+			[row?.title, row?.host, row?.players, row?.maximum]);
+		if (!await host.call('CoopLinkSmokeInvite', PLAYERS.guest))
+			throw new Error('The host page\'s link did not take the invite request');
+		await wait(() => guest.records('invited').length === 1, 'the invitation');
+		const invited = guest.records('invited')[0];
+		compare(record.checks, 'the guest receives the host\'s invitation to the session', [created.id, created.code, 'coop link check', PLAYERS.host],
+			[invited.session, invited.code, invited.title, invited.host]);
+		if (!await guest.call('CoopLinkSmokeJoin', invited.code))
 			throw new Error('The guest page\'s link did not take the join request');
 		await wait(() => guest.records('session').length === 1 && host.records('member').some(item => item.state === 'Joined'), 'the join');
 		const joined = guest.records('session')[0];

@@ -65,13 +65,24 @@ public class CoopLinkProbeTests
 		await Until( host, guest, () => host.Phase == "open" && guest.Phase == "open", "both welcomes" );
 		Assert.AreEqual( OpenTPW.Online.Coop.CoopProtocol.Version, (int?)host.Status()["protocol"] );
 
-		Assert.IsTrue( host.Create( "coop link check" ) );
+		Assert.IsTrue( host.Create( "coop link check", listed: true ) );
 		await Until( host, guest, () => Records( host, "session" ).Length == 1, "the created session" );
 		var created = Records( host, "session" ).Single();
 		var hostId = (uint)created["you"]!;
 		Assert.AreEqual( hostId, (uint)created["host"]! );
 
-		Assert.IsTrue( guest.Join( (string)created["code"]! ) );
+		// [EXT:online-coop-session] the guest finds it on the open list (HTTP), the host invites the guest (the socket), and the guest joins with the invitation's code (C2d-3b)
+		Assert.IsTrue( guest.List() );
+		await Until( host, guest, () => Records( guest, "listed" ).Length == 1, "the open list" );
+		var row = Records( guest, "listed" ).Single()["sessions"]!.AsArray().Single( item => (string?)item!["code"] == (string)created["code"]! )!;
+		Assert.AreEqual( ("coop link check", "LinkHost", 1, 2), ((string)row["title"]!, (string)row["host"]!, (int)row["players"]!, (int)row["maximum"]!) );
+		Assert.IsTrue( host.Invite( "LinkGuest" ) );
+		await Until( host, guest, () => Records( guest, "invited" ).Length == 1, "the invitation" );
+		var invited = Records( guest, "invited" ).Single();
+		Assert.AreEqual( ((string)created["id"]!, (string)created["code"]!, "coop link check", "LinkHost"),
+			((string)invited["session"]!, (string)invited["code"]!, (string)invited["title"]!, (string)invited["host"]!) );
+
+		Assert.IsTrue( guest.Join( (string)invited["code"]! ) );
 		await Until( host, guest, () => Records( guest, "session" ).Length == 1 && Records( host, "member" ).Any( item => (string?)item["state"] == "Joined" ), "the join" );
 		var joined = Records( guest, "session" ).Single();
 		var guestId = (uint)joined["you"]!;

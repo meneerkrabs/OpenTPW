@@ -273,6 +273,41 @@ public partial class CoopJoinSessionTests
 	}
 
 	[TestMethod]
+	public async Task AJoinLeavesTheParkOfAnEarlierRunThatTheLobbysLinkStoppedAt()
+	{
+		await CoopLinkTests.WithServer( async ( server, players ) =>
+		{
+			var (hostPlayer, state, frames) = await RealHost( server, players );
+			// an earlier run of the player's game hosted a park and is gone (its socket never comes back); a guest is still there
+			var earlier = await players.Add( server, "Latecomer", firstFrame: true );
+			var stranded = await players.Add( server, "Stranded" );
+			await CoopLinkTests.Open( earlier, stranded );
+			var old = await CoopLinkTests.Share( earlier, stranded );
+			earlier.Link.Connector = async ( client, cancel ) =>
+			{
+				await Task.Delay( System.Threading.Timeout.Infinite, cancel );
+				throw new OperationCanceledException();
+			};
+			earlier.Link.DropSocket();
+			await CoopLinkTests.Until( () => stranded.Changes.Any( change => change.Member.Id == old.Host && change.State == CoopMemberState.Disconnected ), "the earlier run gone", stranded );
+			// this run's lobby leaves that park alone: it cannot tell it from another game's that is away for a moment
+			var guestPlayer = await players.Add( server, "Latecomer", firstFrame: true, register: false );
+			var game = LobbyGame( guestPlayer );
+			var flow = game.Flow!;
+			await frames( 0, () => guestPlayer.Link.Stopped == CoopStop.HeldElsewhere, "the lobby's link to stop" );
+			Assert.AreEqual( 0, stranded.Ended.Count );
+			// a join is the player's own act: its open leaves that park, then joins
+			Assert.IsTrue( flow.StartJoining( state.Code ) );
+			var attempt = flow.Joining!;
+			await frames( 0, () => attempt.Stage == CoopJoinStage.Done, "the join" );
+			Assert.AreEqual( CoopJoinOutcome.Joined, attempt.Outcome );
+			game.Session = attempt.Session;
+			await CoopLinkTests.Until( () => stranded.Ended.Count == 1, "the earlier park's end", stranded );
+			Assert.AreEqual( (old.Id, CoopReason.HostLeft), (stranded.Ended[0].SessionId, stranded.Ended[0].Reason) );
+		} );
+	}
+
+	[TestMethod]
 	public async Task AStaleOrFilledRowOfTheOpenListIsRefusedInWords()
 	{
 		await CoopLinkTests.WithServer( async ( server, players ) =>

@@ -601,8 +601,9 @@ login, and its `CoopLink`, which in a browser sends the login's token in the soc
 order:
 
 1. Both log in over HTTP and open the link, and the server welcomes both.
-2. The host creates an unlisted session, the guest joins it with its code, and the host hears the
-   guest join.
+2. The host creates a session on the open list. The guest finds it on the open list (an HTTP GET) with
+   its host and players, the host invites the guest (the socket), and the guest joins with the
+   invitation's code (C2d-3b). The host hears the guest join.
 3. The host stores a snapshot through the link's own upload (an HTTP PUT of 150 KiB of seeded bytes,
    which the server takes only once a member has joined), and the guest downloads it through the link's
    own download (an HTTP GET, checked against its SHA-256).
@@ -614,7 +615,8 @@ SHA-256; a refusal, a lost or stopped link, a failed transfer or a step past its
 No token or password is written anywhere. `CoopLinkProbeTests` runs the same probes in the same order
 against the loopback server on the desktop. The check needs no game data, so the browser determinism
 workflow runs it against both of its pages (compiled ahead of time and interpreted). Locally (Chrome 155
-headless on an Apple M5) both pages pass all ten checks over the server's protocol 7.
+headless on an Apple M5) both pages passed all ten checks over the server's protocol 7; the open list and
+the invitation (C2d-3b) add two.
 
 What it does not cover yet is a whole live join over the server (a captured park downloaded, built and
 followed) and the link's timeouts and retries in the page; they come with the game's sharing (C2d).
@@ -823,6 +825,92 @@ The tests:
   - the words for every end and refusal.
 - `CoopShareTests` (part `CoopShareTests.Join.cs`) covers the hub and the join screen: the login, the
   code, the stage, the end, and Back giving the join up.
+
+### Invitations and the open list (C2d-3b)
+
+`[EXT:online-coop-session]` A host's invitation reaches a player anywhere in the lobby, and the lobby's
+hub has a third line, Find a shared park, which opens the open list. Every line is in the player's
+language.
+
+**The lobby's link** (`CoopLobbyLink`, stepped by the game after the join's step). The link is open while
+a logged-in player who could follow a shared park is in the lobby: no park, no park on its way, no
+Theme Park Inc front end. Elsewhere an idle link is closed, so a player in an ordinary park is not
+online for shared parks. The host then hears that the player is not online and is told to give the code.
+
+- A link in use is never touched: one that holds a session (also while it reconnects), one whose create
+  or join waits for its answer (`CoopLink.Waiting`: the server would seat the player once it reads it,
+  also after a close), and one a join attempt, a share or a saved park's share is using.
+- Each time the link becomes wanted (the lobby entered, a login there, another login), it opens once
+  (`CoopLink.OpenInLobby`). It never takes the link from another game of the account; that game keeps it
+  (`InUseElsewhere`).
+- It never leaves a shared park of the account that it did not ask for. Such a park may be another
+  game's, whose socket is away for a moment, so the link stops (`CoopStop.HeldElsewhere`) instead of
+  leaving it. Once the link sends a create or join, it is any open's again, and it leaves a seat the
+  server made for it.
+- A stop is kept until the next time the link becomes wanted, or until the player acts: a join or a share
+  opens the link itself. After `HeldElsewhere` that open is the player's own act, so it leaves the park the
+  lobby left alone, as any open that did not ask for it does.
+- Only a link lost for its whole reconnect window opens again by itself. It waits a minute (spread from
+  70 to 130 per cent), at most ten times in one stay in the lobby.
+- The link's own reconnect waits are spread too (80 to 120 per cent). With a link open in every lobby, a
+  server that restarts must not bring every game back at the same moment.
+
+**Invitations** (`GameFlow.CoopLobby.cs`). An invitation is the login's that received it.
+
+- It shows as a dialog over whatever lobby screen is open ("{host} invites you to a shared park:
+  {title}"), with Join and Not now (also the dialog's Back).
+- One shows at a time, and only while the game is free to join: no join or share running, no park on its
+  way, not during the lobby's enter sequence. The others wait, at most four, and one that waited for a
+  minute is dropped unseen.
+- A repeat of an invitation already waiting or shown takes its place.
+- A rebuild of the lobby (a language change) shows the invitation on screen again.
+- Leaving the lobby, a logout or another login forgets every invitation, the one on screen included.
+- The protocol has no answer to an invitation. Not now only puts it aside. Join starts the game's join
+  attempt with the invitation's code, and the join screen shows it as a join with a typed code.
+
+**The open list** (`sharedParks`).
+
+- It shows the parks of this build that their hosts list for everyone, with their hosts and players, and
+  has a Refresh button.
+- The rows belong to the login that listed them: another login clears them and lists again. Only the
+  latest request's answer is shown.
+- A full park cannot be joined.
+- Join starts the same attempt as a code join and opens the join screen. A park that ended or filled
+  after the list came is refused there in words.
+
+**A game that cannot follow a shared park** (another edition, or developer options that change the park)
+opens no socket. The join screen and the list say why before anything is sent.
+
+**The join screen's take-over.** When another game of the account holds the link, the join screen says
+what taking it over means: the other game leaves its shared park (a host's leave ends the park). Use this
+game then takes the link over and joins with the same code. Nothing is taken over before that click.
+
+The tests:
+
+- `CoopLinkTests` (part `CoopLinkTests.Lobby.cs`), over real links to the loopback server, covers the
+  lobby's link:
+  - it opens for a logged-in player and closes idle elsewhere;
+  - it leaves a link in use alone: a waiting create or join, a session, an attempt;
+  - it never takes another game's link, and tries once a stay;
+  - it never leaves another game's park while that game's socket is away, and that game's park goes on;
+  - a lobby link that asks for a seat is any open's;
+  - a lost link opens again on its spread timer, at most ten times;
+  - the reconnect waits are spread.
+- `CoopJoinSessionTests` (part `CoopJoinSessionTests.Lobby.cs`), with a real host and the guest's game,
+  covers:
+  - an invitation over another lobby screen, whose Join joins the host's park;
+  - Not now, Back and a repeat;
+  - invitations that wait while a join runs, expire, and go with a logout;
+  - a rebuild, a park on its way and an ordinary park (the host hears not online);
+  - the take-over only on the click;
+  - a join that leaves an earlier run's park, which the lobby's link stopped at;
+  - a stale or filled row of the open list, refused in words.
+- `CoopShareTests` (part `CoopShareTests.OpenList.cs`) covers the open list's screen: the hub's line,
+  the latest answer of the login's requests, a full park, Join with the chosen code, another login's
+  rows, and a game that cannot follow.
+- The browser's link check (`tools/web-coop-link.mjs`, and `CoopLinkProbeTests` on the desktop) also
+  covers the open list and an invitation over the page's own HTTP and WebSocket. The browser's screens
+  and a whole join in the page come with the acceptance (C2d-5).
 
 ### The host's trimmed frame (C2c-3)
 

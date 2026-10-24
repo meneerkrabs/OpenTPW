@@ -133,8 +133,6 @@ public sealed class ParkPresenceState
 	private bool routed;
 	/// <summary>A walk stopped in front of a cell built on since its plan, waiting to be planned again (<see cref="Advance"/>).</summary>
 	private bool groundStopped;
-	/// <summary>The last plan found no cell to go to: its goal and every cell near it were blocked (the figure stays, its target unchanged).</summary>
-	private bool planFailed;
 	/// <summary>The view's centre the figure was last sent to (<see cref="FollowView"/>), clamped to the park; null before the first, and after a ride.</summary>
 	private (float X, float Y)? followed;
 	/// <summary>The ground's version when the view's centre was last followed.</summary>
@@ -249,7 +247,7 @@ public sealed class ParkPresenceState
 			return;
 		var (goalX, goalY) = ClampToPark( x, y );
 		route.Clear();
-		routed = groundStopped = planFailed = false;
+		routed = groundStopped = false;
 		Plans++;
 		arrived = false;
 		// [EXT:online-coop-figures] the areas a search keeps are the ground's as it was: a changed ground (a co-builder's edit) is labelled again
@@ -266,8 +264,8 @@ public sealed class ParkPresenceState
 			var nearer = NearestPassable( goal );
 			if ( nearer == null )
 			{
-				// nowhere near the goal to go: the figure stops where it is, and [EXT:online-coop-figures] one a co-builder built over walks out to the nearest free cell
-				planFailed = true;
+				// nowhere near the goal to go: the figure stops where it is (its target too, so a shared park's view centre counts as not reached), and
+				// [EXT:online-coop-figures] one a co-builder built over walks out to the nearest free cell
 				Own.Target = (Own.X, Own.Y);
 				nearer = Passable( start.Item1, start.Item2 ) ? null : NearestPassable( start );
 				if ( nearer == null )
@@ -353,7 +351,7 @@ public sealed class ParkPresenceState
 
 	/// <summary>Whether the figure stands at, or has a plan to, <paramref name="centre"/> itself, on a cell it may stand on.</summary>
 	private bool OnWayTo( (float X, float Y) centre ) =>
-		Own.Target == centre && !planFailed && Passable( (int)MathF.Floor( centre.X ), (int)MathF.Floor( centre.Y ) );
+		Own.Target == centre && Passable( (int)MathF.Floor( centre.X ), (int)MathF.Floor( centre.Y ) );
 
 	/// <summary>Notes the view's centre followed (<paramref name="goal"/>, clamped), on the ground as it is.</summary>
 	private void Followed( (float X, float Y) goal, double time )

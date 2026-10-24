@@ -740,8 +740,8 @@ public static class OriginalLayoutTables
 		} ),
 	} );
 
-	/// <summary>[BIN:TPW-EXE:0x7583e8] layout table LoginWindow.</summary>
-	public static readonly LayoutTable LoginWindow = new( "LoginWindow", 0x7583E8, new LayoutNode[]
+	/// <summary>[BIN:TPW-EXE:0x7585a8] layout table LoginWindow.</summary>
+	public static readonly LayoutTable LoginWindow = new( "LoginWindow", 0x7585A8, new LayoutNode[]
 	{
 		new( 1, 0x1u, 0x48u, 500, 233, 1516, 830, -1, -1, "wdialogw", null, null, new LayoutNode[]
 		{

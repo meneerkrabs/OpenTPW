@@ -465,12 +465,25 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 				VerifyText( CaptureFrame( "online-login.png" ), OnlineStrings.Ui( OnlineStrings.LoginName, "Login name" ), "login name label" );
 				var login = flow.Menu.Stack.Top!;
 				var loginWindow = login.Find( "window" )!.Bounds;
-				foreach ( var id in new[] { "name", "password", "login", "close", "status" } )
+				foreach ( var id in new[] { "name", "password", "login", "close", } )
 					Require( login.Find( id ) is { } control && control.Bounds.X >= loginWindow.X && control.Bounds.Right <= loginWindow.Right && control.Bounds.Y >= loginWindow.Y && control.Bounds.Bottom <= loginWindow.Bottom, $"the login dialog's {id} control lies inside its window" );
 				var loginPanel = login.Find( "ownWindow" )!.Bounds;
-				foreach ( var id in new[] { "server", "code", "register", "forgot" } )
+				foreach ( var id in new[] { "server", "code", "register", "forgot", "status" } )
 					Require( login.Find( id ) is { } control && control.Bounds.X >= loginPanel.X && control.Bounds.Right <= loginPanel.Right && control.Bounds.Y >= loginPanel.Y && control.Bounds.Bottom <= loginPanel.Bottom, $"the login dialog's {id} control lies inside its own panel" );
 				Require( ( (UiButton)login.Find( "login" )! ).Model == "b_okay" && ( (UiButton)login.Find( "close" )! ).Model == "b_exit", "the login dialog's check and cross draw the original b_okay and b_exit models" );
+			} );
+			// a refused login (no server address) shows its reason in the panel's status line
+			Do( "login refused", () =>
+			{
+				( (UiTextField)flow.Menu!.Stack.Top!.Find( "server" )! ).Text = "";
+				Click( flow.Menu.Stack.Top!, "login" );
+			} );
+			Wait( "login status renders", 3 );
+			Do( "login status capture", () =>
+			{
+				Require( flow.Menu!.Stack.Top?.Name == "onlineLogin", "a refused login keeps the dialog open" );
+				CaptureFrame( "online-login-status.png" );
+				flow.Menu.Stack.Pop();
 			} );
 			var onlineShots = new (string Name, Action<UI.OnlineScreens> Show, string Screen, string? Verify)[]
 			{
@@ -510,6 +523,10 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 				{
 					Require( flow.Menu!.Stack.Top?.Name == shot.Screen, $"{shot.Screen} opens" );
 					var frame = CaptureFrame( shot.Name );
+					// the Back cross covers no other control of its screen
+					if ( flow.Menu.Stack.Top!.Find( "back" ) is { } back )
+						foreach ( var other in flow.Menu.Stack.Top.Elements.Where( element => element != back && element.Visible && element is UiButton or UiTextField or UiScrollList ) )
+							Require( !( back.Bounds.X < other.Bounds.Right && other.Bounds.X < back.Bounds.Right && back.Bounds.Y < other.Bounds.Bottom && other.Bounds.Y < back.Bounds.Bottom ), $"{shot.Screen}: the back button does not cover {other.Id}" );
 					if ( shot.Verify != null )
 						VerifyText( frame, shot.Verify, $"{shot.Screen} text" );
 					flow.Online.Enrollment = null;

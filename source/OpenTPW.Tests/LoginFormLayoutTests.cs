@@ -5,7 +5,7 @@ using OpenTPW.UI.Original;
 
 namespace OpenTPW.Tests;
 
-/// <summary>The online login dialog (tp.exe table 0x7583e8): its controls come from the table, OpenTPW's own controls sit in a panel of their own under the window and cover nothing.</summary>
+/// <summary>The online login dialog (tp.exe table 0x7585a8, built by 0x4bb070: UITEXT 0xec-0xee, 16-character fields; twin of the dial-up dialog 0x7583e8): its controls come from the table, OpenTPW's own controls sit in a panel of their own under the window and cover nothing.</summary>
 [TestClass]
 public class LoginFormLayoutTests
 {
@@ -20,10 +20,10 @@ public class LoginFormLayoutTests
 	private static UiRect[] OriginalControls() => new[] { Table.Control( 0x49 ).Rect, Table.Control( 0x4B ).Rect, Table.Control( 0x4D ).Rect,
 		Table.Model( "b_okay" ).Rect, Table.Model( "b_exit" ).Rect };
 
-	private static UiRect[] WindowControls() => OriginalControls().Append( OnlineScreens.LoginStatusBounds ).ToArray();
+	private static UiRect[] WindowControls() => OriginalControls();
 
 	private static UiRect[] PanelControls() => new[] { OnlineScreens.LoginServerLabelBounds, OnlineScreens.LoginServerBounds, OnlineScreens.LoginCodeLabelBounds,
-		OnlineScreens.LoginCodeBounds, OnlineScreens.LoginRegisterBounds, OnlineScreens.LoginForgotBounds };
+		OnlineScreens.LoginCodeBounds, OnlineScreens.LoginRegisterBounds, OnlineScreens.LoginForgotBounds, OnlineScreens.LoginStatusBounds };
 
 	[TestMethod]
 	public void TheTableHoldsTheTickAndTheCrossAsModels()

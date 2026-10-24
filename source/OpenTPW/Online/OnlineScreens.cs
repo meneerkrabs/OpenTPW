@@ -1069,7 +1069,7 @@ public sealed class OnlineScreens
 	// ---- Login (UI-MAP "Online login dialog") ------------------------------------------------
 
 	// OpenTPW's own panel under the original login window: its own frame (w_med), with the server address, the authenticator code, register and recovery inside it.
-	// [EXT:own-window-sizes] the panel's size and the places of its controls are OpenTPW's; the original window (table 0x7583e8) has no room for them
+	// [EXT:own-window-sizes] the panel's size and the places of its controls are OpenTPW's; the original window (table 0x7585a8) has no room for them
 	internal static readonly UiRect LoginPanelBounds = new( 500, 868, 1016, 500 );
 	internal static readonly UiRect LoginServerLabelBounds = new( 560, 920, 790, 60 );
 	internal static readonly UiRect LoginServerBounds = new( 560, 984, 790, 84 );
@@ -1077,11 +1077,11 @@ public sealed class OnlineScreens
 	internal static readonly UiRect LoginCodeBounds = new( 560, 1164, 400, 84 );
 	internal static readonly UiRect LoginRegisterBounds = new( 990, 1110, 360, 100 );
 	internal static readonly UiRect LoginForgotBounds = new( 990, 1230, 360, 100 );
-	/// <summary>The status line, in the free strip of the original window below its two fields (they end at y=685; the two buttons start at x=1376).</summary>
-	internal static readonly UiRect LoginStatusBounds = new( 540, 705, 820, 110 );
+	/// <summary>The status line: in OpenTPW's panel under the code field (the original window's green area ends at about y=736, its frame at about y=768: no room for a line).</summary>
+	internal static readonly UiRect LoginStatusBounds = new( 560, 1256, 400, 74 );
 
 	/// <summary>
-	/// The login dialog from tp.exe's own table (0x7583e8, <see cref="OriginalLayoutTables.LoginWindow"/>; the Mac twin is data:0x505f4): the wdialogw window (500,233)-(1516,830) with the
+	/// The login dialog from tp.exe's own table (0x7585a8, built by 0x4bb070, handler 0x4bb030, UITEXT 0xec-0xee, 16-character fields; <see cref="OriginalLayoutTables.LoginWindow"/>, the twin of the dial-up details dialog 0x7583e8): the wdialogw window (500,233)-(1516,830) with the
 	/// Login title (0x4d) at (606,304)-(1333,384), the 16-character name field (0x49) and password field (0x4b) with their labels (0x4a/0x4c) inside the fields, the check
 	/// button (-1, b_okay) at (1376,524)-(1460,608) and the cross (-2, b_exit) at (1387,613)-(1470,696). Enter moves from the name to the password and submits from there
 	/// (0x10184924). OpenTPW's own additions (server address, authenticator code, register, recovery) sit in a panel of their own under the original window ([EXT:ONLINE-UI]).
@@ -1113,7 +1113,7 @@ public sealed class OnlineScreens
 		screen.Add( new UiModelImage { Id = "ownWindow", Model = "w_med", Bounds = LoginPanelBounds, Anchor = UiAnchor.Center } );
 		UiTextField OwnField( string id, Func<string> label, UiRect labelBounds, UiRect bounds, int maximumLength )
 		{
-			screen.Add( new UiLabel { Id = id + "Label", Text = label, Bounds = labelBounds, Anchor = UiAnchor.Center } );
+			screen.Add( new UiLabel { Id = id + "Label", Text = label, Fit = true, Bounds = labelBounds, Anchor = UiAnchor.Center } );
 			return screen.Add( new UiTextField { Id = id, MaximumLength = maximumLength, Model = "f_text1", Bounds = bounds, Anchor = UiAnchor.Center } );
 		}
 		var server = OwnField( "server", () => OnlineStrings.Get( OnlineLabel.ServerAddress ), LoginServerLabelBounds, LoginServerBounds, 256 );
@@ -1998,6 +1998,7 @@ public sealed class OnlineScreens
 	}
 
 	/// <summary>The Back button's place: the original close button's offsets from the window's bottom right corner (the publish window's cross, 129 and 187 in).</summary>
+	// [EXT:own-window-sizes] OpenTPW's own windows have no table, so the cross takes the original dialogs' offsets from the corner
 	internal static UiRect BackBounds( UiRect window ) => new( window.Right - 129, window.Bottom - 187, 83, 83 );
 
 	private void AddBack( UiScreen screen, UiRect window ) => AddBack( screen, window, stack.Pop );

@@ -65,7 +65,7 @@ TABLES = [
     ('LoansWindow', 0x7525A0, 0x12C4B9, (186, 30, 2018, 1007), 0x752934, 29),
     ('LoadDialog', 0x7523F0, 0x23BCDF, (248, 30, 1800, 1007), 0x752564, 10),
     ('PostcardWindow', 0x7540D8, 0x5D9D, (186, 30, 2018, 1007), 0x7542B4, 11),
-    ('LoginWindow', 0x7583E8, 0x48, (500, 233, 1516, 830), 0x75852C, 8),
+    ('LoginWindow', 0x7585A8, 0x48, (500, 233, 1516, 830), 0x7586EC, 8),
     ('PublishWindow', 0x7595B0, 0x11E2, (248, 30, 1800, 1007), 0x7596B0, 6),
     ('ParkInfoWindow', 0x7537D0, 0x4A68BA, (208, 30, 1840, 1007), 0x753C48, 28),
     ('ChatOverlay', 0x758AE8, 0xC3122, (0, 0, 2048, 1536), 0x758CD6, 17),
@@ -75,8 +75,8 @@ TABLES = [
     ('MessageBox', 0x74F920, 0x9873C7, (500, 233, 1516, 830), 0x74F9BA, 4),
 ]
 # The second confirm-dialog table must be the same stream, byte for byte in its decoded tree.
-CONFIRM_TWIN = 0x7585A8
-CONFIRM_TWIN_END = 0x7586EC
+# the online login window (built by 0x4bb070, handler 0x4bb030, 16-character fields) is the second copy of the confirm (dial-up details) stream 0x7583e8
+LOGIN_BUILDER_PUSH = 0x4BB08F  # push of the login table's address inside the builder 0x4bb070
 
 # Controls the C# reads by model name; a table that lacks one is an error.
 REQUIRED = {
@@ -527,9 +527,8 @@ def build(exe: bytes, wad: bytes, language_meshes: list[bytes] | None = None) ->
             if required not in models:
                 raise ValueError(f'{name} has no control with model {required}')
         tables[name] = (address, roots)
-    twin, twin_end = parse_layout(image, CONFIRM_TWIN)
-    if twin_end != CONFIRM_TWIN_END or not same_shape(twin, tables['ConfirmDialog'][1]):
-        raise ValueError('the second confirm-dialog table differs from the first')
+    if tables['LoginWindow'][0] != struct.unpack('<I', image.read(LOGIN_BUILDER_PUSH + 1, 4))[0] or not same_shape(tables['LoginWindow'][1], tables['ConfirmDialog'][1]):
+        raise ValueError('the login window table is not the one the login builder 0x4bb070 pushes, or differs from the confirm-dialog table')
     pointers = pointer_files(image)
     rules = tool_rules(image)
     modes = {mode for mode, _, _ in rules}

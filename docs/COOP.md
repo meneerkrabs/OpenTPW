@@ -637,11 +637,13 @@ screen is in the player's language.
   marked, an away member's too, and every guest has a removal, asked first, after which the account
   cannot join again. An invitation goes by name. The server answers an invitation only with a refusal,
   so the host invites one player at a time: the next invitation waits three seconds for the refusal
-  (`CoopShare.InviteAnswerSeconds`), and one without a refusal by then went out. A refusal whose text
-  names its player (`CoopProtocol.NotOnlineText`: not online for shared parks, so give them the code)
-  is that player's, whenever it comes; any other refusal names no one. Of a removal's refusals only too
-  many requests is said; the player list shows the rest. End sharing ends the park for everyone, asked
-  first; the park stays the host's.
+  (`CoopShare.InviteAnswerSeconds`), and one without a refusal by then went out. Every refusal names
+  its player (`CoopProtocol.InviteRefusalText`, which the server builds it with), so a refusal is the
+  invitation its text names, whenever it comes. The line under the invitation keeps the latest
+  invitation's outcome; a refusal of an older one (a slow link) has its own line below it. A player
+  who is not online for shared parks is to be given the code. Of a removal's refusals only too many
+  requests is said, on the screen's status line; the player list shows the rest. End sharing ends the
+  park for everyone, asked first; the park stays the host's.
 
 The pause menu does not stop a shared park, so the park runs on under these screens.
 
@@ -685,7 +687,8 @@ centre: the code and the connected players out of the most, that the link reconn
 is being shared. The line stays put; the screens over the HUD dim it with the park. When the session
 ends without the player ending it (the server, a logout, a failure), the line says so for ten seconds,
 counted from the end itself (`CoopShare.EndedAt`, by the attempt's monotonic clock), which often comes
-in the online pump before the attempt's step. Dismissing the outcome on the screen keeps the notice.
+in the online pump before the attempt's step. Dismissing the outcome on the screen keeps the notice;
+the game lets that attempt, and the park it holds, go once the notice's time is over or the park closes.
 While the game is in a shared park, the online screens' chat entries (a chat park's room, a published
 park's chat) leave the chat in the session's room.
 
@@ -698,11 +701,12 @@ asset-free park and a second player's link as the guest:
 - a logout while hosting (the guest hears the leave's reason at once) and while the create waits, and a
   quit while it waits (the server keeps no session and no member);
 - an end the online pump delivers (another game takes the link over), which the status line shows for
-  its ten seconds;
+  its ten seconds, also once dismissed, until its time is over or its park closes;
 - an older server, and a hosting that fails;
 - an invitation to a player who is not online, and a kick;
 - one invitation at a time (late in a long run too), a refusal that comes after its wait while a newer
-  invitation waits (it names its own player), and a refused removal (no invitation's answer);
+  invitation waits (a late result of its own player; the newer one keeps its outcome), refusals for
+  too many requests that name their players, and a refused removal (no invitation's answer);
 - the screen before sharing (the login, the choices, a refusal in words) and while hosted (the code,
   the players and their removals, the invitation's answer for its own player, End sharing asked first).
 

@@ -296,13 +296,25 @@ public class CoopShareTests
 		// the player dismisses the outcome on the Build Together screen: the game keeps the end for the status line all the same
 		var flow = (GameFlow)RuntimeHelpers.GetUninitializedObject( typeof( GameFlow ) );
 		typeof( GameFlow ).GetField( "coopShare", BindingFlags.Instance | BindingFlags.NonPublic )!.SetValue( flow, share );
+		typeof( GameFlow ).GetField( "<Level>k__BackingField", BindingFlags.Instance | BindingFlags.NonPublic )!.SetValue( flow, level );
 		flow.DismissSharing();
 		Assert.IsNull( flow.Sharing );
 		Assert.AreSame( share, flow.StatusShare );
 		clock += GameFlow.SharingEndedSeconds - 0.5;
+		flow.StepCoopShare();
 		Assert.AreEqual( English( UI.Original.OpenTpwText.SharedParkEnded ), GameFlow.SessionStatusLine( flow.StatusShare, level, English ), "still within its time" );
 		clock += 1;
-		Assert.IsNull( GameFlow.SessionStatusLine( flow.StatusShare, level, English ), "its time is over" );
+		Assert.IsNull( GameFlow.SessionStatusLine( share, level, English ), "its time is over" );
+		// the game lets the dismissed attempt (and its park) go once its time is over, and at once when its park closes
+		flow.StepCoopShare();
+		Assert.IsNull( flow.StatusShare );
+		typeof( GameFlow ).GetField( "endedNotice", BindingFlags.Instance | BindingFlags.NonPublic )!.SetValue( flow, share );
+		clock -= 5;
+		flow.StepCoopShare();
+		Assert.AreSame( share, flow.StatusShare, "within its time, in its park" );
+		typeof( GameFlow ).GetField( "<Level>k__BackingField", BindingFlags.Instance | BindingFlags.NonPublic )!.SetValue( flow, null );
+		flow.StepCoopShare();
+		Assert.IsNull( flow.StatusShare, "its park closed" );
 	} );
 
 	[TestMethod]
@@ -344,8 +356,8 @@ public class CoopShareTests
 		await Frames( share, () => share.Stage == CoopShareStage.Hosting, "the park to be hosted", new[] { host, guest } );
 		Assert.IsTrue( share.Invite( "Absent" ) );
 		Assert.AreEqual( "Absent", share.Inviting );
-		await Frames( share, () => share.LastNotice?.Refusal != null, "the invitation's answer", new[] { host, guest } );
-		Assert.AreEqual( (CoopMessageType.Invite, "Absent", CoopReason.NotOnline), (share.LastNotice!.Request, share.LastNotice.Player, share.LastNotice.Refusal!.Reason) );
+		await Frames( share, () => share.LastInvite?.Refusal != null, "the invitation's answer", new[] { host, guest } );
+		Assert.AreEqual( ("Absent", CoopReason.NotOnline), (share.LastInvite!.Player, share.LastInvite.Refusal!.Reason) );
 		Assert.IsNull( share.Inviting );
 		Assert.IsTrue( guest.Link.Join( share.State!.Code ) );
 		await Frames( share, () => share.State!.Members.Count == 2, "the guest's join", new[] { host, guest } );
@@ -370,8 +382,8 @@ public class CoopShareTests
 		// a second invitation waits for the first one's answer: the line under the invitation speaks of one player at a time
 		Assert.IsTrue( share.Invite( "Absent" ) );
 		Assert.IsFalse( share.Invite( "Guest" ) );
-		await Frames( share, () => share.LastNotice?.Refusal != null, "the first invitation's refusal", new[] { host, guest } );
-		Assert.AreEqual( ("Absent", CoopReason.NotOnline), (share.LastNotice!.Player, share.LastNotice.Refusal!.Reason) );
+		await Frames( share, () => share.LastInvite?.Refusal != null, "the first invitation's refusal", new[] { host, guest } );
+		Assert.AreEqual( ("Absent", CoopReason.NotOnline), (share.LastInvite!.Player, share.LastInvite.Refusal!.Reason) );
 
 		// an invitation the server does not refuse went out, which the host knows once its wait is over
 		Assert.IsTrue( share.Invite( "Guest" ) );
@@ -384,7 +396,7 @@ public class CoopShareTests
 		clock += 0.25;
 		share.Step( level );
 		Assert.IsNull( share.Inviting );
-		Assert.AreEqual( new CoopShareNotice( CoopMessageType.Invite, "Guest", null ), share.LastNotice );
+		Assert.AreEqual( new CoopInviteNotice( "Guest", null ), share.LastInvite );
 	} );
 
 	[TestMethod]
@@ -403,17 +415,47 @@ public class CoopShareTests
 		share.Step( level );
 		Assert.IsNull( share.Inviting );
 		Assert.IsTrue( share.Invite( "Guest" ) );
-		await Frames( share, () => share.LastNotice?.Refusal != null, "the late refusal", new[] { host, guest } );
-		Assert.AreEqual( (CoopMessageType.Invite, "Absent", CoopReason.NotOnline), (share.LastNotice!.Request, share.LastNotice.Player, share.LastNotice.Refusal!.Reason) );
-		Assert.AreEqual( "Guest", share.Inviting, "the newer invitation still waits for its own answer" );
+		await Frames( share, () => share.LateRefusal != null, "the late refusal", new[] { host, guest } );
+		Assert.AreEqual( ("Absent", CoopReason.NotOnline), (share.LateRefusal!.Player, share.LateRefusal.Refusal!.Reason) );
+		// the newer invitation's outcome stays its own, and it waits for its own answer; without one it went out
+		Assert.AreEqual( new CoopInviteNotice( "Guest", null ), share.LastInvite );
+		Assert.AreEqual( "Guest", share.Inviting );
+		clock += CoopShare.InviteAnswerSeconds;
+		share.Step( level );
+		Assert.IsNull( share.Inviting );
+		Assert.AreEqual( new CoopInviteNotice( "Guest", null ), share.LastInvite );
+		Assert.AreEqual( "Absent", share.LateRefusal!.Player );
 
 		// a removal of no member is refused as a removal, not as an invitation
 		Assert.IsTrue( share.Kick( 99 ) );
-		await Frames( share, () => share.LastNotice!.Request == CoopMessageType.Kick, "the removal's refusal", new[] { host } );
-		Assert.AreEqual( (CoopMessageType.Kick, (string?)null), (share.LastNotice!.Request, share.LastNotice.Player) );
-		Assert.IsNotNull( share.LastNotice.Refusal );
+		await Frames( share, () => share.KickRefusal != null, "the removal's refusal", new[] { host } );
+		Assert.AreEqual( CoopReason.NotMember, share.KickRefusal!.Reason );
+		Assert.AreEqual( new CoopInviteNotice( "Guest", null ), share.LastInvite );
 		Assert.AreEqual( CoopShareStage.Hosting, share.Stage );
 	} );
+
+	[TestMethod]
+	public async Task EveryRefusalOfAnInvitationNamesItsPlayerEvenTooManyRequests() => await CoopLinkTests.WithServer( async ( server, players ) =>
+	{
+		var host = await players.Add( server, "Hostess" );
+		await players.Add( server, "Absent" );
+		await players.Add( server, "Busy" );
+		await players.Add( server, "Friend" );
+		var (level, _) = NewPark();
+		var share = Share( level, host );
+		await Frames( share, () => share.Stage == CoopShareStage.Hosting, "the park to be hosted", new[] { host } );
+		// three invitations go out before any answer reaches the game, each after the one before it waited in vain; the server takes one an hour here, so it answers
+		// the first that its player is not online and the other two that there are too many: each refusal is the invitation it names
+		foreach ( var player in new[] { "Absent", "Busy", "Friend" } )
+		{
+			Assert.IsTrue( share.Invite( player ) );
+			clock += CoopShare.InviteAnswerSeconds;
+			share.Step( level );
+		}
+		await Frames( share, () => share.LastInvite?.Refusal != null, "the latest invitation's refusal", new[] { host } );
+		Assert.AreEqual( ("Friend", CoopReason.Rate), (share.LastInvite!.Player, share.LastInvite.Refusal!.Reason) );
+		Assert.AreEqual( ("Busy", CoopReason.Rate), (share.LateRefusal!.Player, share.LateRefusal.Refusal!.Reason), "the older invitations' refusals are late results" );
+	}, options => options.CoopInvitesPerHour = 1 );
 
 	/// <summary>The online screens over <paramref name="session"/> with <paramref name="hosting"/>, on a stack of their own (the pause menu below).</summary>
 	private static (UI.OnlineScreens Screens, UI.Original.UiScreenStack Stack) Screens( OnlineSession session, ICoopHosting hosting )
@@ -534,15 +576,16 @@ public class CoopShareTests
 		Update( stack );
 		Assert.AreEqual( string.Format( English( UI.Original.OpenTpwText.InviteSent ), "Absent" ), Element<UI.Original.UiLabel>( stack, "inviteResult" ).Text() );
 		Assert.IsFalse( Element<UI.Original.UiButton>( stack, "invite" ).Enabled );
-		await Frames( share, () => share.LastNotice?.Refusal != null, "the invitation's refusal", new[] { host, guest } );
+		await Frames( share, () => share.LastInvite?.Refusal != null, "the invitation's refusal", new[] { host, guest } );
 		Update( stack );
 		Assert.AreEqual( string.Format( English( UI.Original.OpenTpwText.InviteNotOnline ), "Absent" ), Element<UI.Original.UiLabel>( stack, "inviteResult" ).Text() );
+		Assert.AreEqual( "", Element<UI.Original.UiLabel>( stack, "inviteLate" ).Text() );
 		Assert.IsTrue( Element<UI.Original.UiButton>( stack, "invite" ).Enabled );
 		// a refused removal is no invitation's answer
 		Assert.IsTrue( share.Kick( 99 ) );
-		await Frames( share, () => share.LastNotice!.Request == Online.Coop.CoopMessageType.Kick, "the removal's refusal", new[] { host, guest } );
+		await Frames( share, () => share.KickRefusal != null, "the removal's refusal", new[] { host, guest } );
 		Update( stack );
-		Assert.AreEqual( "", Element<UI.Original.UiLabel>( stack, "inviteResult" ).Text() );
+		Assert.AreEqual( string.Format( English( UI.Original.OpenTpwText.InviteNotOnline ), "Absent" ), Element<UI.Original.UiLabel>( stack, "inviteResult" ).Text() );
 		// End sharing asks first; its yes ends the park for everyone
 		Element<UI.Original.UiButton>( stack, "endSharing" ).Clicked!();
 		Assert.AreEqual( "confirmEndSharing", stack.Top!.Name );

@@ -494,7 +494,7 @@ public sealed class OnlineScreens
 		}
 		var inviteField = screen.Add( new UiTextField { Id = "inviteName", MaximumLength = CoopProtocol.MaximumInviteNameLength, Model = "f_text1",
 			Bounds = new UiRect( x, window.Y + 730, width - 420, 93 ), Anchor = UiAnchor.Center } );
-		// one invitation at a time: the server answers only a refusal, so a refusal is the waiting invitation's (CoopShare.InviteAnswerSeconds)
+		// one invitation at a time (CoopShare.InviteAnswerSeconds): the line below speaks of the latest, and a late refusal of an older one has its own line
 		void Invite()
 		{
 			var name = inviteField.Text.Trim();
@@ -506,8 +506,13 @@ public sealed class OnlineScreens
 		var invite = screen.Add( new UiButton { Id = "invite", Text = () => strings.Extra( OpenTpwText.InvitePlayer ), Clicked = Invite,
 			Bounds = new UiRect( x + width - 400, window.Y + 725, 400, 100 ), Anchor = UiAnchor.Center } );
 		var inviteResult = screen.Add( new UiLabel { Id = "inviteResult", Wrap = true, Font = fonts => fonts.Small, Color = UiColors.Value,
-			Text = () => Attempt()?.LastNotice is { } notice ? NoticeText( notice ) : "",
-			Bounds = new UiRect( x, window.Y + 840, width, 90 ), Anchor = UiAnchor.Center } );
+			Text = () => Attempt()?.LastInvite is { } notice ? InviteText( notice ) : "",
+			Bounds = new UiRect( x, window.Y + 835, width, 70 ), Anchor = UiAnchor.Center } );
+		var inviteLate = screen.Add( new UiLabel { Id = "inviteLate", Wrap = true, Font = fonts => fonts.Small, Color = UiColors.Value,
+			Text = () => Attempt()?.LateRefusal is { } notice ? InviteText( notice ) : "",
+			Bounds = new UiRect( x, window.Y + 905, width, 70 ), Anchor = UiAnchor.Center } );
+		// a removal is answered by its player leaving the list: of its refusals only too many requests is said, on the screen's status line
+		CoopError? shownKickRefusal = null;
 		var end = screen.Add( new UiButton { Id = "endSharing", Text = () => strings.Extra( OpenTpwText.EndSharing ),
 			Clicked = () =>
 			{
@@ -517,9 +522,14 @@ public sealed class OnlineScreens
 					(() => strings.Value( UIStrings.No ), () => stack.Pop()) );
 				stack.Push( confirm );
 			},
-			Bounds = new UiRect( x, window.Y + 960, 560, 110 ), Anchor = UiAnchor.Center } );
+			Bounds = new UiRect( x, window.Y + 985, 560, 110 ), Anchor = UiAnchor.Center } );
 		screen.Updating += _ =>
 		{
+			if ( Attempt()?.KickRefusal is { } refused && !ReferenceEquals( refused, shownKickRefusal ) )
+			{
+				shownKickRefusal = refused;
+				localStatus = refused.Reason == CoopReason.Rate ? strings.Extra( OpenTpwText.SharedParkTryLater ) : "";
+			}
 			var starting = Starting();
 			var hosted = Hosting();
 			var waiting = Waiting();
@@ -533,7 +543,7 @@ public sealed class OnlineScreens
 			cancel.Visible = waiting && Attempt() is { Stage: not CoopShareStage.Cancelling };
 			again.Visible = finished;
 			takeOver.Visible = finished && Attempt() is { Outcome: CoopShareOutcome.LinkStopped, Stop: CoopStop.InUseElsewhere or CoopStop.Replaced };
-			code.Visible = visibility.Visible = inviteField.Visible = invite.Visible = inviteResult.Visible = end.Visible = hosted;
+			code.Visible = visibility.Visible = inviteField.Visible = invite.Visible = inviteResult.Visible = inviteLate.Visible = end.Visible = hosted;
 			invite.Enabled = Attempt() is { Inviting: null };
 			for ( var index = 0; index < rows.Count; index++ )
 			{
@@ -590,16 +600,14 @@ public sealed class OnlineScreens
 		: member.Name;
 
 	/// <summary>
-	/// [EXT:online-coop-session] What the host last heard of an invitation or a removal: the invitation went out, its player is not online for shared parks (give them
-	/// the code), too many requests, or another refusal (named only when it is known whose). A removal is answered by its player leaving the list; of its refusals
-	/// only too many requests is said (any other leaves the player on the list, or gone already).
+	/// [EXT:online-coop-session] What the host heard of an invitation: it went out, its player is not online for shared parks (give them the code), too many requests,
+	/// or another refusal.
 	/// </summary>
-	private string NoticeText( CoopShareNotice notice ) => (notice.Request, notice.Refusal?.Reason, notice.Player) switch
+	private string InviteText( CoopInviteNotice notice ) => (notice.Refusal?.Reason, notice.Player) switch
 	{
-		(_, Online.Coop.CoopReason.Rate, _) => strings.Extra( OpenTpwText.SharedParkTryLater ),
-		(Online.Coop.CoopMessageType.Kick, _, _) => "",
-		(_, null, { } player) => string.Format( strings.Extra( OpenTpwText.InviteSent ), player ),
-		(_, Online.Coop.CoopReason.NotOnline, { } player) => string.Format( strings.Extra( OpenTpwText.InviteNotOnline ), player ),
+		(CoopReason.Rate, _) => strings.Extra( OpenTpwText.SharedParkTryLater ),
+		(null, { } player) => string.Format( strings.Extra( OpenTpwText.InviteSent ), player ),
+		(CoopReason.NotOnline, { } player) => string.Format( strings.Extra( OpenTpwText.InviteNotOnline ), player ),
 		_ => strings.Extra( OpenTpwText.InviteRefused ),
 	};
 

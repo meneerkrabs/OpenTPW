@@ -1,3 +1,4 @@
+using OpenTPW.FrontEnd;
 using OpenTPW.UI.Original;
 
 namespace OpenTPW;
@@ -16,6 +17,15 @@ internal interface ICoopHosting
 
 	/// <summary>Forgets a finished attempt (the screen goes back to the start).</summary>
 	void DismissSharing();
+
+	/// <summary>The player's own saved parks that the lobby can share (C2d-2b: not the sandbox, not a shipped park), read now; none while a park is open.</summary>
+	IReadOnlyList<ParkLoadEntry> SavedParks();
+
+	/// <summary>
+	/// Loads the player's own saved park <paramref name="park"/> (its extensions asked about first) and shares it with <paramref name="request"/> once it is the
+	/// game's park (C2d-2b); false, with nothing started, when it may not (a park is open, a transition, logged out, another attempt, not an own save).
+	/// </summary>
+	bool ShareSavedPark( ParkLoadEntry park, CoopShareRequest request );
 }
 
 /// <summary>
@@ -56,6 +66,45 @@ internal sealed partial class GameFlow : ICoopHosting
 			return;
 		done.Dispose();
 		coopShare = null;
+	}
+
+	/// <inheritdoc/>
+	public IReadOnlyList<ParkLoadEntry> SavedParks() => Level == null ? FindLoadEntries().Where( entry => entry.OwnSavePath != null ).ToArray() : Array.Empty<ParkLoadEntry>();
+
+	/// <inheritdoc/>
+	public bool ShareSavedPark( ParkLoadEntry park, CoopShareRequest request )
+	{
+		ArgumentNullException.ThrowIfNull( park );
+		ArgumentNullException.ThrowIfNull( request );
+		if ( !FeatureGates.Online || Level != null || park.OwnSavePath is not { } path || coopJoin != null || parkBuild != null || pending != null )
+			return false;
+		if ( coopShare is { Stage: not CoopShareStage.Done } || !Online.IsLoggedIn )
+			return false;
+		// [EXT:save-extension-switch] the save's extensions are asked about first, as for its load; the share goes with the queued load, so another transition drops it
+		ConfirmExtensions( path, change => QueueProgressLevel( park.Level, () => LoadSharedPark( park with { Switch = change }, request ) ) );
+		return true;
+	}
+
+	/// <summary>The load of a saved park to share (C2d-2b): the load, then the share of the park it made.</summary>
+	private void LoadSharedPark( ParkLoadEntry park, CoopShareRequest request )
+	{
+		var before = Level;
+		LoadPark( park, overFrames: true );
+		ShareLoadedPark( before, request );
+	}
+
+	/// <summary>
+	/// Shares the park a load made (C2d-2b): only a park that replaced <paramref name="before"/> (a failed load shares nothing and leaves the lobby as it was). The park's
+	/// Build Together screen then shows the attempt, or why it could not start, with the player's choices kept for another try.
+	/// </summary>
+	internal void ShareLoadedPark( Level? before, CoopShareRequest request )
+	{
+		if ( Level is not { } loaded || ReferenceEquals( loaded, before ) )
+			return;
+		// an extension switch may have turned the online extension off: the start checks it again, with the login and the loaded park
+		StartSharing( request );
+		if ( FeatureGates.Online && Hud is { } hud )
+			CreateOnlineScreens( hud.Stack ).ShowBuildTogether( request );
 	}
 
 	/// <summary>

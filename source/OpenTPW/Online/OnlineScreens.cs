@@ -1,3 +1,4 @@
+using OpenTPW.FrontEnd;
 using OpenTPW.Online;
 using OpenTPW.Online.Api;
 using OpenTPW.Online.Client;
@@ -394,14 +395,81 @@ public sealed class OnlineScreens
 	/// <summary>The Build Together screen's name.</summary>
 	internal const string BuildTogetherScreenName = "buildTogether";
 
+	/// <summary>The lobby's Build Together screen's name (C2d-2b).</summary>
+	internal const string ShareSavedParkScreenName = "shareSavedPark";
+
+	/// <summary>
+	/// [EXT:online-coop-session] The choices of a shared park (C2d-2), on both Build Together screens: its title (by default the player's park, by the online name, until
+	/// the player writes one), whether it is on the open list (by default not: code and invitation only), and how many players it takes (2 to 4, by default 4).
+	/// </summary>
+	private sealed class ShareChoices
+	{
+		private readonly Func<string> defaultTitle;
+		private bool titleChosen;
+		private bool listed;
+		private int players = CoopProtocol.MaximumPlayers;
+		private readonly UiLabel titleLabel;
+		private readonly UiButton listedButton;
+		private readonly UiButton playersButton;
+
+		/// <summary>The choices from <paramref name="top"/> down, as <paramref name="initial"/> when given (the player's choices kept for another try).</summary>
+		public ShareChoices( UiScreen screen, UiStringTable strings, Func<string> defaultTitle, float x, float top, float width, CoopShareRequest? initial )
+		{
+			this.defaultTitle = defaultTitle;
+			titleLabel = screen.Add( new UiLabel { Id = "titleLabel", Font = fonts => fonts.Label, Text = () => strings.Extra( OpenTpwText.SharedParkTitle ),
+				Bounds = new UiRect( x, top + 10, 300, 90 ), Anchor = UiAnchor.Center } );
+			Title = screen.Add( new UiTextField { Id = "parkTitle", MaximumLength = CoopProtocol.MaximumTitleLength, Model = "f_text1",
+				Bounds = new UiRect( x + 320, top, width - 320, 93 ), Anchor = UiAnchor.Center } );
+			Title.Changed = _ => titleChosen = true;
+			listedButton = screen.Add( new UiButton { Id = "listed", Clicked = () => listed = !listed,
+				Text = () => strings.Extra( listed ? OpenTpwText.SharedParkListed : OpenTpwText.SharedParkUnlisted ),
+				Bounds = new UiRect( x, top + 130, width, 100 ), Anchor = UiAnchor.Center } );
+			playersButton = screen.Add( new UiButton { Id = "players", Clicked = () => players = players >= CoopProtocol.MaximumPlayers ? 2 : players + 1,
+				Text = () => string.Format( strings.Extra( OpenTpwText.SharedParkPlayers ), players ),
+				Bounds = new UiRect( x, top + 250, width, 100 ), Anchor = UiAnchor.Center } );
+			if ( initial != null )
+			{
+				Title.Text = initial.Title;
+				titleChosen = true;
+				listed = initial.Listed;
+				players = Math.Clamp( initial.MaximumPlayers, 2, CoopProtocol.MaximumPlayers );
+			}
+			else
+				Title.Text = defaultTitle();
+		}
+
+		/// <summary>The title's field (the screens submit with it and focus it).</summary>
+		public UiTextField Title { get; }
+
+		/// <summary>Shows or hides the choices; the title follows the player's name (known after a login on the screen) until the player writes one.</summary>
+		public void Update( bool visible )
+		{
+			if ( !titleChosen )
+				Title.Text = defaultTitle();
+			titleLabel.Visible = Title.Visible = listedButton.Visible = playersButton.Visible = visible;
+		}
+
+		/// <summary>The player's choices; null while the title is empty or has a control character.</summary>
+		public CoopShareRequest? Request()
+		{
+			var chosen = Title.Text.Trim();
+			return chosen.Length == 0 || chosen.Any( char.IsControl ) ? null : new CoopShareRequest( chosen, listed, players );
+		}
+	}
+
+	/// <summary>A shared park's default title: the player's park, by the online name (empty while no name is known).</summary>
+	private string DefaultShareTitle() => (Session.Client?.Session?.Name ?? Session.Settings.PlayerName ?? "").Trim() is { Length: > 0 } name
+		? string.Format( strings.Extra( OpenTpwText.SharedParkDefaultTitle ), name ) : "";
+
 	/// <summary>
 	/// [EXT:online-coop-session] Build Together (C2d-2; docs/COOP.md, "Sharing the park from the game"): shares the open park with other players, who watch the host
 	/// build, walk around and chat (C2: only the host builds). Before sharing: why the park cannot be shared, or a login, then the shared park's title, whether it is on
 	/// the open list, and how many players it takes. While it is shared: its code, the players with a removal for each guest, an invitation by name, and its end for
 	/// everyone (the park stays the host's). Every line is in the player's language.
 	/// </summary>
+	/// <param name="choices">The shared park's choices to start from (a share from the lobby that could not start keeps the player's); the defaults when null.</param>
 	// [EXT:own-window-sizes] the window and the places of its controls are OpenTPW's: the original has no shared parks
-	public void ShowBuildTogether()
+	public void ShowBuildTogether( CoopShareRequest? choices = null )
 	{
 		if ( host.Hosting is not { } hosting )
 			return;
@@ -410,12 +478,6 @@ public sealed class OnlineScreens
 		UiDialogs.AddWindow( screen, window, "w_big", () => strings.Extra( OpenTpwText.BuildTogether ) );
 		var x = window.X + 120;
 		var width = window.Width - 240;
-		// the title starts as the player's park (by the online name, once known after a login here) until the player writes one
-		var titleChosen = false;
-		string DefaultTitle() => (Session.Client?.Session?.Name ?? Session.Settings.PlayerName ?? "").Trim() is { Length: > 0 } name
-			? string.Format( strings.Extra( OpenTpwText.SharedParkDefaultTitle ), name ) : "";
-		var listed = false;
-		var players = CoopProtocol.MaximumPlayers;
 		CoopShare? Attempt() => hosting.Sharing is { } share && (share.Stage != CoopShareStage.Done || share.Outcome is not (CoopShareOutcome.Cancelled or CoopShareOutcome.None)
 			&& !(share.Outcome == CoopShareOutcome.Ended && share.EndedBySelf)) ? share : null;
 		bool Starting() => Attempt() is null;
@@ -430,26 +492,13 @@ public sealed class OnlineScreens
 			Bounds = new UiRect( x, window.Y + 350, width, 120 ), Anchor = UiAnchor.Center,
 			Text = () => Attempt() is { } share ? ShareMessage( share ) : !Session.IsLoggedIn ? strings.Extra( OpenTpwText.LogInToShare )
 				: hosting.ShareRefusal is { } refusal and not CoopShareRefusal.None ? RefusalText( refusal ) : "" } );
-		var titleLabel = screen.Add( new UiLabel { Id = "titleLabel", Font = fonts => fonts.Label, Text = () => strings.Extra( OpenTpwText.SharedParkTitle ),
-			Bounds = new UiRect( x, window.Y + 500, 300, 90 ), Anchor = UiAnchor.Center } );
-		var titleField = screen.Add( new UiTextField { Id = "parkTitle", MaximumLength = CoopProtocol.MaximumTitleLength, Model = "f_text1",
-			Bounds = new UiRect( x + 320, window.Y + 490, width - 320, 93 ), Anchor = UiAnchor.Center } );
-		titleField.Text = DefaultTitle();
-		titleField.Changed = _ => titleChosen = true;
-		var listedButton = screen.Add( new UiButton { Id = "listed", Clicked = () => listed = !listed,
-			Text = () => strings.Extra( listed ? OpenTpwText.SharedParkListed : OpenTpwText.SharedParkUnlisted ),
-			Bounds = new UiRect( x, window.Y + 620, width, 100 ), Anchor = UiAnchor.Center } );
-		var playersButton = screen.Add( new UiButton { Id = "players", Clicked = () => players = players >= CoopProtocol.MaximumPlayers ? 2 : players + 1,
-			Text = () => string.Format( strings.Extra( OpenTpwText.SharedParkPlayers ), players ),
-			Bounds = new UiRect( x, window.Y + 740, width, 100 ), Anchor = UiAnchor.Center } );
+		var form = new ShareChoices( screen, strings, DefaultShareTitle, x, window.Y + 490, width, choices );
 		void Share()
 		{
-			var chosen = titleField.Text.Trim();
-			if ( chosen.Length == 0 || chosen.Any( char.IsControl ) )
-				return;
-			hosting.StartSharing( new CoopShareRequest( chosen, listed, players ) );
+			if ( form.Request() is { } request )
+				hosting.StartSharing( request );
 		}
-		titleField.Submitted = Share;
+		form.Title.Submitted = Share;
 		var share = screen.Add( new UiButton { Id = "share", Text = () => strings.Extra( OpenTpwText.SharePark ), Clicked = Share,
 			Bounds = new UiRect( x, window.Y + 880, 560, 110 ), Anchor = UiAnchor.Center } );
 		var login = screen.Add( new UiButton { Id = "login", Text = () => OnlineStrings.Ui( OnlineStrings.OnlineLogin, "Online login" ), Clicked = ShowLogin,
@@ -524,11 +573,10 @@ public sealed class OnlineScreens
 			var hosted = Hosting();
 			var waiting = Waiting();
 			var finished = Finished();
-			if ( !titleChosen )
-				titleField.Text = DefaultTitle();
-			intro.Visible = titleLabel.Visible = titleField.Visible = listedButton.Visible = playersButton.Visible = share.Visible = starting;
+			form.Update( starting );
+			intro.Visible = share.Visible = starting;
 			login.Visible = starting && !Session.IsLoggedIn;
-			share.Enabled = Session.IsLoggedIn && Session.Busy == 0 && hosting.ShareRefusal == CoopShareRefusal.None && titleField.Text.Trim().Length > 0;
+			share.Enabled = Session.IsLoggedIn && Session.Busy == 0 && hosting.ShareRefusal == CoopShareRefusal.None && form.Request() != null;
 			message.Visible = !hosted;
 			cancel.Visible = waiting && Attempt() is { Stage: not CoopShareStage.Cancelling };
 			again.Visible = finished;
@@ -544,7 +592,66 @@ public sealed class OnlineScreens
 		};
 		AddStatus( screen, window );
 		AddBack( screen, window );
-		screen.Focus( titleField );
+		screen.Focus( form.Title );
+		Push( screen );
+	}
+
+	/// <summary>
+	/// [EXT:online-coop-session] The lobby's Build Together screen (C2d-2b; docs/COOP.md, "Sharing a saved park from the lobby"): the player's own saved parks (not the
+	/// sandbox, not a shipped park) and the same choices as the park's screen, or a login. Share loads the chosen park (its extensions asked about first) and shares
+	/// it once it is the game's park; the park's Build Together screen then shows the attempt.
+	/// </summary>
+	// [EXT:own-window-sizes] the window and the places of its controls are OpenTPW's: the original has no shared parks
+	public void ShowShareSavedPark()
+	{
+		if ( host.Hosting is not { } hosting )
+			return;
+		var parks = hosting.SavedParks();
+		var screen = new UiScreen( ShareSavedParkScreenName );
+		var window = UiDialogs.CenteredWindow( 1400, 1400 );
+		UiDialogs.AddWindow( screen, window, "w_big", () => strings.Extra( OpenTpwText.BuildTogether ) );
+		var x = window.X + 120;
+		var width = window.Width - 240;
+		screen.Add( new UiLabel { Id = "intro", Wrap = true, Font = fonts => fonts.Small, Text = () => strings.Extra( OpenTpwText.ShareSavedParkIntro ),
+			Bounds = new UiRect( x, window.Y + 150, width, 160 ), Anchor = UiAnchor.Center } );
+		screen.Add( new UiLabel { Id = "message", Wrap = true, Font = fonts => fonts.Small, Color = UiColors.Value,
+			Bounds = new UiRect( x, window.Y + 320, width, 80 ), Anchor = UiAnchor.Center,
+			Text = () => parks.Count == 0 ? strings.Extra( OpenTpwText.NoSavedParks ) : !Session.IsLoggedIn ? strings.Extra( OpenTpwText.LogInToShare ) : "" } );
+		// the rows read as on the Load Park screen: the park's name (marked when cheated or when it needs extensions) and when it was saved
+		var list = screen.Add( new UiScrollList
+		{
+			Id = "savedParks",
+			Rows = () => parks.Select( park => FrontEndMenu.SavedParkText( strings, park ) ).ToArray(),
+			Trailing = index => parks[index].SavedAt is { } saved
+				? strings.Format( UiTextRecord.SaveDate, saved.Day.ToString(), saved.Month.ToString(), saved.Year.ToString() ) + $" {saved.Hour:00}:{saved.Minute:00}" : "",
+			Selected = parks.Count == 0 ? -1 : 0,
+			Enabled = parks.Count != 0,
+			Visible = parks.Count != 0,
+			Bounds = new UiRect( x, window.Y + 410, width, 200 ),
+			Anchor = UiAnchor.Center
+		} );
+		var form = new ShareChoices( screen, strings, DefaultShareTitle, x, window.Y + 640, width, null );
+		bool Ready() => Session.IsLoggedIn && Session.Busy == 0 && list.Selected >= 0 && list.Selected < parks.Count && form.Request() != null;
+		void Share()
+		{
+			if ( Ready() && form.Request() is { } request )
+				hosting.ShareSavedPark( parks[list.Selected], request );
+		}
+		form.Title.Submitted = Share;
+		var share = screen.Add( new UiButton { Id = "share", Text = () => strings.Extra( OpenTpwText.SharePark ), Clicked = Share,
+			Bounds = new UiRect( x, window.Y + 1020, 560, 110 ), Anchor = UiAnchor.Center } );
+		var login = screen.Add( new UiButton { Id = "login", Text = () => OnlineStrings.Ui( OnlineStrings.OnlineLogin, "Online login" ), Clicked = ShowLogin,
+			Bounds = new UiRect( x + 600, window.Y + 1020, 560, 110 ), Anchor = UiAnchor.Center } );
+		screen.Updating += _ =>
+		{
+			form.Update( parks.Count != 0 );
+			share.Visible = parks.Count != 0;
+			share.Enabled = Ready();
+			login.Visible = !Session.IsLoggedIn;
+		};
+		AddStatus( screen, window );
+		AddBack( screen, window );
+		screen.Focus( form.Title );
 		Push( screen );
 	}
 

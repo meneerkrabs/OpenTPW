@@ -212,6 +212,8 @@ internal sealed partial class GameFlow : IDisposable
 			},
 			LoadEntries = FindLoadEntries,
 			GoOnline = WhenOnline( ShowOnline ),
+			// [EXT:online-coop-session] sharing a saved park (C2d-2b)
+			BuildTogether = WhenOnline( stack => CreateOnlineScreens( stack ).ShowShareSavedPark() ),
 			// [EXT:save-extension-switch] an own save whose extensions differ asks before it loads
 			ConfirmExtensions = ConfirmExtensions,
 		} );

@@ -47,6 +47,9 @@ internal sealed class CoopLobbyLink
 		this.random = random ?? Random.Shared.NextDouble;
 	}
 
+	/// <summary>The online session's link this keeps.</summary>
+	internal CoopLink Link => link;
+
 	/// <summary>Whether the link was wanted at the last step: what an invitation that arrives meanwhile is kept by.</summary>
 	internal bool Wanted => wanted;
 
@@ -72,7 +75,7 @@ internal sealed class CoopLobbyLink
 		if ( !wanted )
 		{
 			if ( link.State != CoopLinkState.Closed )
-				link.Close();
+				Link.Close();
 			return;
 		}
 		if ( link.State == CoopLinkState.Open )

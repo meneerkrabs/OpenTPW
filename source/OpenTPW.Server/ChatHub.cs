@@ -342,28 +342,28 @@ public sealed class ChatHub
 		}
 		if ( request.Type == ChatRequest.MoveType )
 		{
-			// Walking exists only inside a park (a satellite chat park or a published park's room). The lobby holds
-			// every connected player, so relaying movement there would multiply each step by the whole server.
-			if ( session.Room == ChatProtocol.LobbyRoom )
-				return;
-			// The server relays the player's movement to everyone in the chat park (manual p. 68: players walk
-			// and teleport around a park they are in together). The first movement also marks this connection as
-			// one that draws movement, and the answer to the first movement in each room carries where everyone
-			// else already stands — so a joiner sees the park's players at their places, also in the second park
-			// a connection walks in, and an older client (v0.7.x) never receives a frame it would draw as an
-			// empty line.
-			var position = (request.X!.Value, request.Y!.Value);
-			// entering a room forgets the player's place there (EnterRoom), so no place yet is the first movement in this room
-			var first = session.Position == null;
-			session.Position = position;
-			session.ReceivesMovement = true;
-			// [EXT:online-ride-hiding] a movement's mode (protocol 5) goes only to clients that send modes themselves; a hidden player's figure (riding a
-			// ride) is not relayed to the others, who keep it where it stood and see it again at its next place
-			if ( request.Mode != null )
-				session.ReceivesModes = true;
-			session.Hidden = request.Mode == ChatMoveMode.Hide;
 			InRoom( session, room =>
 			{
+				// Walking exists only inside a park (a satellite chat park or a published park's room). The lobby holds
+				// every connected player, so relaying movement there would multiply each step by the whole server.
+				if ( room == ChatProtocol.LobbyRoom )
+					return;
+				// The server relays the player's movement to everyone in the chat park (manual p. 68: players walk
+				// and teleport around a park they are in together). The first movement also marks this connection as
+				// one that draws movement, and the answer to the first movement in each room carries where everyone
+				// else already stands — so a joiner sees the park's players at their places, also in the second park
+				// a connection walks in, and an older client (v0.7.x) never receives a frame it would draw as an
+				// empty line.
+				var position = (request.X!.Value, request.Y!.Value);
+				// entering a room forgets the player's place there (EnterRoom), so no place yet is the first movement in this room
+				var first = session.Position == null;
+				session.Position = position;
+				session.ReceivesMovement = true;
+				// [EXT:online-ride-hiding] a movement's mode (protocol 5) goes only to clients that send modes themselves; a hidden player's figure (riding a
+				// ride) is not relayed to the others, who keep it where it stood and see it again at its next place
+				if ( request.Mode != null )
+					session.ReceivesModes = true;
+				session.Hidden = request.Mode == ChatMoveMode.Hide;
 				var moved = new ChatEvent( ChatEventKind.Move, session.Name, room, X: position.Item1, Y: position.Item2, Mode: request.Mode );
 				foreach ( var other in sessions.Values.Where( other => other.Room == room && other != session && other.ReceivesMovement ) )
 				{

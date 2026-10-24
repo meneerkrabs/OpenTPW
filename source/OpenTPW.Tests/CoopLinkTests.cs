@@ -153,6 +153,14 @@ public class CoopLinkTests
 
 	private static byte[] Payload( int value ) => BitConverter.GetBytes( value );
 
+	/// <summary>Every cell passable.</summary>
+	private sealed class AnyGround : IPresenceGround
+	{
+		public int Width => 128;
+		public int Height => 128;
+		public bool IsPassable( int x, int y ) => true;
+	}
+
 	private static int Value( ReadOnlyMemory<byte> payload ) => BitConverter.ToInt32( payload.Span );
 
 	/// <summary>
@@ -174,6 +182,15 @@ public class CoopLinkTests
 		var lobby = OpenTPW.Online.Chat.ChatProtocol.LobbyRoom;
 		await Until( () => host.Session.CurrentRoom == room && guest.Session.CurrentRoom == room && host.Session.RoomPlayers.Count == 2, "both chats in the session's room", host, guest );
 		CollectionAssert.AreEquivalent( new[] { "Hostess", "Guest" }, host.Session.RoomPlayers.ToArray() );
+		Assert.IsTrue( host.Session.InSharedPark );
+
+		// the shared park owns the chat: another room's join does not take it, and a visit's end leaves it where it is
+		host.Session.JoinRoom( OpenTPW.Online.Chat.ChatProtocol.SatelliteRoom( 1 ) );
+		Assert.AreEqual( room, host.Session.WantedRoom );
+		var visit = new ParkPresence( host.Session, OpenTPW.Online.Chat.ChatProtocol.ParkRoom( "park1" ), "Hostess", new AnyGround(), (1.5f, 1.5f), () => 0 );
+		visit.Dispose();
+		Assert.AreEqual( room, host.Session.WantedRoom );
+		Assert.IsNotNull( host.Session.Chat );
 
 		// the guest's own leave takes its chat back to the lobby, and the host's roster is its own again
 		Assert.IsTrue( guest.Link.Leave( "Off home." ) );
@@ -184,6 +201,7 @@ public class CoopLinkTests
 		Assert.IsTrue( host.Link.Leave( "Closing up." ) );
 		await Until( () => host.Session.CurrentRoom == lobby && guest.Session.CurrentRoom == lobby && guest.Ended.Count == 1, "both chats in the lobby", host, guest );
 		Assert.AreEqual( CoopReason.HostLeft, guest.Ended.Single().Reason );
+		Assert.IsFalse( host.Session.InSharedPark || guest.Session.InSharedPark );
 	} );
 
 	[TestMethod]

@@ -1508,6 +1508,17 @@ public sealed class OnlineScreens
 		Push( screen );
 	}
 
+	/// <summary>The Publish Park form's check button (Mac table data:0x514de control -1).</summary>
+	internal static readonly UiRect PublishCheckBounds = new( 1660, 731, 83, 84 );
+	/// <summary>The Publish Park form's close button (control -2).</summary>
+	internal static readonly UiRect PublishCloseBounds = new( 1671, 820, 83, 83 );
+	/// <summary>The Publish Park form's window.</summary>
+	internal static readonly UiRect PublishWindowBounds = new( 248, 30, 1552, 977 );
+	// OpenTPW's own controls: the strip below the description field (ends y=892) inside the green area (ends about y=955), and the free column left of the fields
+	internal static readonly UiRect PublishWebsiteBounds = new( 330, 898, 760, 56 );
+	internal static readonly UiRect PublishExportBounds = new( 1100, 898, 540, 56 );
+	internal static readonly UiRect PublishStatusBounds = new( 320, 279, 350, 613 );
+
 	/// <summary>The park's name and description, published into <paramref name="city"/> (none on servers without cities).</summary>
 	/// <summary>
 	/// The Publish Park form in its original composition (Mac UI table data:0x514de): a window (248,30)-(1800,1007)
@@ -1521,7 +1532,7 @@ public sealed class OnlineScreens
 		if ( level == null )
 			return;
 		var screen = new UiScreen( "publishPark" );
-		var window = new UiRect( 248, 30, 1552, 977 );
+		var window = PublishWindowBounds;
 		screen.Add( new UiModelImage { Id = "window", Model = "w_med", Bounds = window, Anchor = UiAnchor.Center } );
 		screen.Add( new UiLabel { Id = "title", Font = fonts => fonts.Title, Color = UiColors.Title, Align = UiAlign.Center,
 			Bounds = new UiRect( 788, 75, 472, 80 ), Anchor = UiAnchor.Center,
@@ -1532,14 +1543,16 @@ public sealed class OnlineScreens
 		name.Text = "My park";
 		var description = screen.Add( new UiTextField { Id = "description", MaximumLength = 1024, Model = "f_text1", Bounds = new UiRect( 684, 444, 680, 448 ), Anchor = UiAnchor.Center } );
 		// [EXT:ONLINE-067] off unless the player chooses it: the website list makes the park and the player name public on the web.
+		// The OpenTPW controls sit in the strip of the window's green area below the description field, so they cover none of the original controls.
 		var showOnWebsite = false;
 		screen.Add( new UiButton { Id = "website", Text = () => OnlineStrings.Get( showOnWebsite ? OnlineLabel.ShownOnWebsite : OnlineLabel.NotShownOnWebsite ),
-			Clicked = () => showOnWebsite = !showOnWebsite, Bounds = new UiRect( 500, 950, 1000, 100 ), Anchor = UiAnchor.Center } );
-		// The original check button (-1) submits; the export-to-file action is OpenTPW's own beside it.
-		var publish = screen.Add( new UiButton { Id = "publish", Text = () => OnlineStrings.Ui( OnlineStrings.PublishPark, "Publish Park" ),
+			Font = fonts => fonts.Small, Clicked = () => showOnWebsite = !showOnWebsite, Bounds = PublishWebsiteBounds, Anchor = UiAnchor.Center } );
+		// The original check button (-1, b_okay) submits and the close button (-2, b_exit) leaves; both are bare round buttons that carry their meaning in the
+		// hover help, as the postcard window's tick and cross do. The export-to-file action is OpenTPW's own.
+		var publish = screen.Add( new UiButton { Id = "publish", Model = "b_okay", Help = OnlineStrings.Ui( OnlineStrings.PublishPark, "Publish Park" ),
 			Clicked = () => Guard( () => Session.Publish( ParkSharing.ExportLevel( level, name.Text, Session.Settings.PlayerName ?? "", description.Text ), showOnWebsite, city?.Id ?? 0 ) ),
-			Bounds = new UiRect( 1660, 731, 83, 84 ), Anchor = UiAnchor.Center } );
-		var export = screen.Add( new UiButton { Id = "export", Text = () => OnlineStrings.Get( OnlineLabel.ExportPark ),
+			Bounds = PublishCheckBounds, Anchor = UiAnchor.Center } );
+		var export = screen.Add( new UiButton { Id = "export", Text = () => OnlineStrings.Get( OnlineLabel.ExportPark ), Font = fonts => fonts.Small,
 			Clicked = () => Guard( () =>
 			{
 				var package = ParkSharing.ExportLevel( level, name.Text, Session.Settings.PlayerName ?? "", description.Text );
@@ -1547,11 +1560,13 @@ public sealed class OnlineScreens
 				package.Save( path );
 				localStatus = OnlineStrings.Get( OnlineLabel.SavedTo ) + path;
 			} ),
-			Bounds = new UiRect( 500, 1080, 480, 110 ), Anchor = UiAnchor.Center } );
-		AddCloseButton( screen, 1671, 820 );
-		// [EXT:mods] a park that records mods cannot be exported or published yet (ParkSharing.ModsRefusal): both buttons are hidden
+			Bounds = PublishExportBounds, Anchor = UiAnchor.Center } );
+		screen.Add( new UiButton { Id = "close", Model = "b_exit", Help = strings.Help( 2 ), Clicked = stack.Pop, Bounds = PublishCloseBounds, Anchor = UiAnchor.Center } );
+		// The original form has no status line: the status (and the reason a park cannot be shared) goes in the free column left of the fields.
+		screen.Add( new UiLabel { Id = "status", Wrap = true, Font = fonts => fonts.Small, Color = UiColors.Value, Bounds = PublishStatusBounds, Anchor = UiAnchor.Center,
+			Text = () => ParkSharing.ModsRefusal( level ) is { } refusal && localStatus.Length == 0 ? refusal : Session.Busy > 0 ? "..." : localStatus.Length > 0 ? localStatus : Session.Status } );
+		// [EXT:mods] a park that records mods cannot be exported or published yet (ParkSharing.ModsRefusal): both buttons are hidden and the status line says why
 		screen.Updating += _ => { publish.Enabled = Session.IsLoggedIn && Session.Busy == 0; publish.Visible = export.Visible = ParkSharing.ModsRefusal( level ) == null; };
-		AddStatus( screen, window );
 		screen.Back = stack.Pop;
 		screen.Focus( name );
 		Push( screen );

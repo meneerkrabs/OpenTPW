@@ -1424,6 +1424,23 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 			flow.Hud.OpenPauseMenu();
 		} );
 		Wait( "pause again", 3 );
+		// The Publish Park form over the pause menu (the pause menu's Publish Park line): the original's tick and close buttons are drawn and the form's own controls stay inside its window.
+		if ( online )
+		{
+			Do( "open publish form", () => new UI.OnlineScreens( flow.Hud!.Stack, flow.Strings, Context.Models, new UI.OnlineHost { Session = flow.Online, Level = () => flow.Level } ).ShowPublish() );
+			Wait( "publish form renders", 3 );
+			Do( "publish form capture", () =>
+			{
+				var form = flow.Hud!.Stack.Top!;
+				Require( form.Name == "publishPark", "the pause menu's Publish Park opens the publish form" );
+				CaptureFrame( "publish-form.png" );
+				var window = form.Find( "window" )!.Bounds;
+				foreach ( var id in new[] { "publish", "close", "website", "export" } )
+					Require( form.Find( id ) is { } control && control.Bounds.X >= window.X && control.Bounds.Right <= window.Right && control.Bounds.Y >= window.Y && control.Bounds.Bottom <= window.Bottom, $"the publish form's {id} control lies inside its window" );
+				Require( ( (UiButton)form.Find( "publish" )! ).Model != null, "the publish form's tick button draws a model" );
+				flow.Hud.Stack.Pop();
+			} );
+		}
 		// The online globe over a park: it replaces the park and the HUD, and closing it restores the park camera.
 		CameraMode? parkCamera = null;
 		if ( !online )

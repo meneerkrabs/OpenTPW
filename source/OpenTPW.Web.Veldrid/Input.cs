@@ -56,7 +56,16 @@ namespace Veldrid
 		public IReadOnlyList<KeyEvent> KeyEvents => Keys;
 		public IReadOnlyList<MouseEvent> MouseEvents => Mouse;
 		public IReadOnlyList<char> KeyCharPresses => Characters;
-		public Vector2 MousePosition { get; set; }
+		/// <summary>
+		/// The pointer over the canvas in CSS pixels, or <see cref="NoPointer"/> while the page has none: before its first pointer event, and after the
+		/// pointer left the canvas (opentpw-gl.js reports a leave as <c>m -1 -1</c>).
+		/// </summary>
+		// [EXT:browser-no-pointer] a page that has not seen the pointer yet reports it outside the window, as after a leave, not at (0, 0), the top-left
+		// pixel: that lies in the park camera's edge band, which scrolled the view to the park's top-left corner until the pointer first moved. The
+		// original ran fullscreen, where the pointer cannot leave the screen; the desktop keeps SDL's positions
+		public Vector2 MousePosition { get; set; } = NoPointer;
+		/// <summary>The position of a pointer that is not over the canvas: outside the window, which the game's pointer checks treat as no pointer.</summary>
+		public static readonly Vector2 NoPointer = new( -1, -1 );
 		public float WheelDelta { get; set; }
 		public bool IsMouseDown( MouseButton button ) => buttons[(int)button];
 

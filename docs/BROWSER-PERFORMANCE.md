@@ -56,6 +56,17 @@ options file and the display settings (`--frame-cap`), so a link to the public p
 into a player's saved files. In perf mode the page asks for the drawn-frame count around every
 call, a small extra cost on the main thread that both sides of a comparison share.
 
+**The park view before October 24, 2026.** The harness drives the game through its own UI calls and
+never moves the pointer. Until October 24 a page that had seen no pointer read it at (0, 0), the
+canvas's top-left pixel, which lies in the park camera's edge band. So in every park window whose
+camera the harness does not hold on a guest each frame (the umbrella and winter screenshot hooks
+do), the view scrolled to the park's top-left corner within about five seconds of the park opening;
+in Jungle that corner is bare grass. Since then the page reports no pointer (`[EXT:browser-no-pointer]`,
+[WEB.md](WEB.md)) and the view stays where the park opens, so park windows from before and after
+that change are not comparable. One interpreter build of each side (Apple M5, Chrome 155, 1280×900,
+Jungle, a 20 s steady window): main thread busy rose from 15.5% to 21.2% and the frame p50/p95 from
+1.9/2.8 ms to 2.7/4.5 ms, at 59.99 fps both.
+
 **Baseline, 13 October** (interpreter build at `618ad830`, Chrome 155 headless, Apple M5 hardware
 Metal through ANGLE, 1280×900; median of three runs of the final harness, range in brackets). This
 is a different machine from the M4 numbers below, so compare runs of the harness with each other,

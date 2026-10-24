@@ -187,17 +187,23 @@ internal sealed partial class CoopLiveTest
 	/// </summary>
 	private IEnumerable<CoopLiveWait> GuestEndurance()
 	{
-		yield return Wait( "the host's fastest speed", () => OtherSays( "enduranceStarted" ), 180 );
+		// the first sample before the host changes the speed, so the rates cover the whole interval
+		yield return Wait( "the host's endurance run", () => OtherSays( "enduranceReady" ), 180 );
 		var stream = TheSession.GuestStream!;
-		var (checks, started) = (stream.Checks, Now);
-		// the first sample at the speed's barrier, so the first half minute's rate counts too
 		var first = StreamEvidence();
 		first["at"] = Math.Round( Now, 3 );
 		var progress = new JsonArray( first );
-		while ( !OtherSays( "enduranceDone" ) )
+		Keep( "endurance", progress );
+		Publish( "enduranceBaseline", true );
+		yield return Wait( "the host's fastest speed", () => OtherSays( "enduranceStarted" ), 180 );
+		var (checks, started) = (stream.Checks, Now);
+		while ( true )
 		{
+			// a sample every half minute while the host's interval runs; none at its end, whose rate would take in the normal speed after it
 			var next = Now + 30;
 			yield return Wait( "the fastest speed followed", () => OtherSays( "enduranceDone" ) || Now >= next, 90 );
+			if ( OtherSays( "enduranceDone" ) )
+				break;
 			Require( ReferenceEquals( TheSession.GuestStream, stream ) && TheSession.Phase == CoopGuestPhase.Following && !stream.Stopped && stream.Desyncs == 0,
 				"the park follows the fastest speed with no resync and no desync" );
 			var sample = StreamEvidence();

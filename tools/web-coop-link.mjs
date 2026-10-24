@@ -288,11 +288,15 @@ async function run(options) {
 		await wait(() => guest.records('session').length === 1 && host.records('member').some(item => item.state === 'Joined'), 'the join');
 		const joined = guest.records('session')[0];
 		const member = host.records('member').find(item => item.state === 'Joined');
-		if (proxy) {
-			// each page's own chat is open: its socket can only have come through the proxy, the page's only origin
-			await wait(() => host.status.chat?.open === true && guest.status.chat?.open === true, 'both pages\' chats');
-			record.proxy.chats = { host: host.status.chat, guest: guest.status.chat };
-		}
+		// both pages' chats move to the session's room (C2d-1) and a line goes each way through it: each page's chat socket carries traffic both ways (through the
+		// proxy, with --proxy: the page's only origin)
+		const room = `coop:${created.id}`;
+		const heard = (page, line) => (page.status.chat?.lines ?? []).some(item => item.includes(line));
+		await wait(() => host.status.chat?.room === room && guest.status.chat?.room === room && guest.status.chat?.open === true, 'both chats in the session\'s room');
+		if (!await host.call('CoopLinkSmokeSay', 'the host says hello') || !await guest.call('CoopLinkSmokeSay', 'the guest says hello'))
+			throw new Error('A page\'s probe did not take its chat line');
+		await wait(() => heard(host, 'the guest says hello') && heard(guest, 'the host says hello'), 'a chat line each way');
+		compare(record.checks, 'a chat line goes each way in the session\'s room', [true, true], [heard(host, 'the guest says hello'), heard(guest, 'the host says hello')]);
 		compare(record.checks, 'the joined session is the created one', created.id, joined.id);
 		compare(record.checks, 'the guest names the host as its host', created.you, joined.host);
 		compare(record.checks, 'the host hears the guest join', joined.you, member.id);
@@ -340,8 +344,8 @@ async function run(options) {
 			record.proxy.upgrades = proxy.log.filter(entry => entry.upgrade);
 			const carried = route => record.proxy.upgrades.filter(entry => entry.path === route && entry.status === 101 && entry.bytesIn > 0 && entry.bytesOut > 0).length;
 			record.proxy.carried = { coop: carried('/api/v1/coop'), chat: carried('/api/v1/chat') };
-			compare(record.checks, 'both pages\' co-op and chat sockets went through the proxy to the server', [true, true, true, true],
-				[record.proxy.carried.coop >= 2, record.proxy.carried.chat >= 2, record.proxy.chats.host.open, record.proxy.chats.guest.open]);
+			compare(record.checks, 'both pages\' co-op and chat sockets went through the proxy to the server', [true, true],
+				[record.proxy.carried.coop >= 2, record.proxy.carried.chat >= 2]);
 		}
 		const failed = record.checks.filter(check => !check.passed);
 		if (failed.length)

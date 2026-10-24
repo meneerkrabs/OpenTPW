@@ -469,7 +469,13 @@ async function run(options) {
 			}
 		}
 		record.finished = new Date().toISOString();
-		await fs.writeFile(path.join(out, 'run.json'), redact(JSON.stringify(record, null, 2), secrets) + '\n').catch(() => {});
+		// a run without its record has not passed
+		try {
+			await fs.writeFile(path.join(out, 'run.json'), redact(JSON.stringify(record, null, 2), secrets) + '\n');
+		} catch (error) {
+			record.state = 'failed';
+			record.message = `The run's record could not be written: ${redact(error.message, secrets)}`;
+		}
 	}
 	return record;
 }

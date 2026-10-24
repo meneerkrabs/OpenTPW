@@ -111,12 +111,12 @@ export async function startServer(webRoot, gameRoot, upstream = null, upgradeLim
 			send(404, 'not found');
 		}
 	});
-	const sockets = new Set();
-	server.on('upgrade', (request, socket, head) => forwardUpgrade(request, socket, head, upstreamUrl, log, sockets, limits));
+	const sockets = new Set(), refused = new Set();
+	server.on('upgrade', (request, socket, head) => forwardUpgrade(request, socket, head, upstreamUrl, log, sockets, refused, limits));
 	await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
 	const close = () => {
 		// the forwarded sockets are the server's no longer once upgraded: they are ended here, or close would wait for them
-		for (const socket of sockets)
+		for (const socket of [...sockets, ...refused])
 			socket.destroy();
 		return new Promise(resolve => server.close(resolve));
 	};
@@ -132,9 +132,16 @@ export const UPGRADE_END_MS = 5000;
 /** The most bytes of an upstream's answer that refuses an upgrade the local server passes back (a longer one is a bad gateway). */
 export const UPGRADE_REFUSAL_BYTES = 65536;
 
-/** A plain HTTP answer on a socket that asked for an upgrade, which then closes. */
-function refuseUpgrade(socket, status, reason) {
+/**
+ * A plain HTTP answer on a socket that asked for an upgrade the local server will not forward (not below /api/, or no place left), which then closes: a client that keeps
+ * its side open is closed after `endMs`, and until then it is among `refused`, which the server's close ends too.
+ */
+function refuseUpgrade(socket, status, reason, refused, endMs) {
+	refused.add(socket);
+	socket.once('close', () => refused.delete(socket));
+	socket.on('error', () => socket.destroy());
 	socket.end(`HTTP/1.1 ${status} ${reason}\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`);
+	setTimeout(() => socket.destroy(), endMs).unref();
 }
 
 /**
@@ -143,12 +150,12 @@ function refuseUpgrade(socket, status, reason) {
  * the connection closes. The upstream's whole answer is due within `limits.answerMs`. Either end closing or failing closes both. A socket keeps its place among the
  * `limits.sockets` until it has closed: a client that keeps its side open after an answer it was refused is closed after `limits.endMs`.
  */
-function forwardUpgrade(request, socket, head, upstreamUrl, log, sockets, limits) {
+function forwardUpgrade(request, socket, head, upstreamUrl, log, sockets, refused, limits) {
 	const url = new URL(request.url, 'http://localhost');
 	if (!upstreamUrl || !url.pathname.startsWith('/api/'))
-		return refuseUpgrade(socket, 404, 'Not Found');
+		return refuseUpgrade(socket, 404, 'Not Found', refused, limits.endMs);
 	if (sockets.size >= limits.sockets)
-		return refuseUpgrade(socket, 503, 'Service Unavailable');
+		return refuseUpgrade(socket, 503, 'Service Unavailable', refused, limits.endMs);
 	const entry = { path: url.pathname, method: request.method, upgrade: true, status: null, bytesIn: 0, bytesOut: 0 };
 	log.push(entry);
 	sockets.add(socket);

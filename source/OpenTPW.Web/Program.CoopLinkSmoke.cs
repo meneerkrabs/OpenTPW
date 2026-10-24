@@ -83,6 +83,10 @@ public static partial class Program
 	[JSExport]
 	public static bool CoopLinkSmokeLeave( string reason ) => RunningCoopLink().Leave( reason );
 
+	/// <summary>[EXT:online-coop-session] Says a line in the room the probe's chat is in (<see cref="CoopLinkProbe.Say"/>).</summary>
+	[JSExport]
+	public static bool CoopLinkSmokeSay( string line ) => RunningCoopLink().Say( line );
+
 	/// <summary>Closes the probe's link and session; its records stay readable.</summary>
 	[JSExport]
 	public static void CoopLinkSmokeEnd()

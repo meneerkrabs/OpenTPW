@@ -177,6 +177,9 @@ internal sealed partial class CoopLiveTest
 	/// </summary>
 	private IEnumerable<CoopLiveWait> HostEndurance()
 	{
+		// the guest takes its ticks before the speed changes, so its rates cover the whole interval too
+		Publish( "enduranceReady", true );
+		yield return Wait( "the guest's ticks before the speed", () => OtherSays( "enduranceBaseline" ), 120 );
 		yield return Wait( "the HUD alone", () => Top( "hud" ) && TheHud.Stack.Screens.Count == 1, 30 );
 		Press( "hud", $"speed{GameSpeed.Fastest}" );
 		Require( TheHud.Status.Speed == GameSpeed.Fastest, $"the HUD's fastest speed is the park's (it is {TheHud.Status.Speed})" );

@@ -609,8 +609,9 @@ order:
 3. The host stores a snapshot through the link's own upload (an HTTP PUT of 150 KiB of seeded bytes,
    which the server takes only once a member has joined), and the guest downloads it through the link's
    own download (an HTTP GET, checked against its SHA-256).
-4. The host's frame reaches the guest, and a message goes each way.
-5. The host leaves, and the guest hears its session end.
+4. Both logins' chats move to the session's room (C2d-1), and a chat line goes each way through it.
+5. The host's frame reaches the guest, and a message goes each way.
+6. The host leaves, and the guest hears its session end.
 
 The driver chooses every payload and checks each one the pages record against its own length and
 SHA-256; a refusal, a lost or stopped link, a failed transfer or a step past its deadline fails the run.
@@ -618,7 +619,7 @@ No token or password is written anywhere. `CoopLinkProbeTests` runs the same pro
 against the loopback server on the desktop. The check needs no game data, so the browser determinism
 workflow runs it against both of its pages (compiled ahead of time and interpreted). Locally (Chrome 155
 headless on an Apple M5) both pages passed all ten checks over the server's protocol 7; the open list and
-the invitation (C2d-3b) add two.
+the invitation (C2d-3b) add two, and the chat line each way (C2d-5a) one.
 
 A whole live join over the server, with the game's data and its own screens, is the live acceptance's
 (C2d-5, below); the page's part in it, with the link's timeouts and retries there, comes with its page
@@ -1097,10 +1098,11 @@ The scenarios:
   must grow. The guest follows again (a resync is allowed here). The host's view jumps again, which the
   guest sees, and a second line reaches the guest's park, with checkpoints after it.
 - **endurance** (`--scenario endurance --minutes M`): after the chat, the host runs the fastest speed (the
-  HUD's `>>>`) for M whole minutes of wall time, from setting it to setting the normal speed back. Every
-  half minute both games sample the park's ticks; the host also checks that the speed is still the
-  fastest. Between samples both parks must run at least 180 ticks a second, three times the normal 60,
-  which only the fastest speed (240) reaches. The guest follows with no resync and no desync, comparing a
+  HUD's `>>>`) for M whole minutes of wall time, from setting it to setting the normal speed back. The guest
+  takes its ticks before the host sets the speed, and the host its own when it does. Every half minute both
+  games sample the park's ticks; the host also checks that the speed is still the fastest. From those first
+  ticks on, both parks must run at least 180 ticks a second, three times the normal 60, which only the
+  fastest speed (240) reaches. The guest follows with no resync and no desync, comparing a
   checkpoint at least every two seconds. Then the rest of the steps follow.
 
 **The pages' way in.** The pages (C2d-5b) open through the drivers' own local server in front of the
@@ -1108,9 +1110,11 @@ real one (`tools/web-perf/lib.mjs`). It serves the page and the game folder (`/g
 `/api/`, including the sockets' upgrades: at most 16 at a time, the server's whole answer within 10
 seconds (an answer that refuses the upgrade at most 64 KiB, passed back as it is), and a half-closed socket
 closed after 5. The browser workflow also runs the link check through it (`tools/web-coop-link.mjs
---proxy`): each page's co-op socket and chat socket go through it, carrying bytes both ways. The page's
-policy lets them: its `connect-src` names the server's own address, which the forwarded requests carry,
-and `'self'` covers the page's.
+--proxy`): it carries two co-op and two chat upgrades with bytes both ways, and each page's chat line
+reaches the other page through it (a page's only origin is the proxy's). The page's policy lets them: its
+`connect-src` names the server's own address, which the forwarded requests carry, and `'self'` covers the
+page's. A refusal (an upgrade outside `/api/`, or none left) is answered, and a client that keeps its side
+open after any answer is closed after the half-close wait.
 
 Results (Apple M5, macOS 26, Release, native host and native guest):
 

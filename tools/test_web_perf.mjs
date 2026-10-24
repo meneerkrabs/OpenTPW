@@ -407,20 +407,40 @@ test('a refused client that keeps its side open keeps its place until the local 
 	const harness = await startServer(root, root, `http://127.0.0.1:${upstream.address().port}`, { sockets: 1, endMs: 300 });
 	try {
 		const port = Number(new URL(harness.origin).port);
-		// a raw client: it reads the refusal and never ends its own side
-		const lingering = net.connect(port, '127.0.0.1');
+		// a raw client: it reads the refusal and never ends its own side (a half-open socket does not answer the server's end with its own)
+		const lingering = net.connect({ port, host: '127.0.0.1', allowHalfOpen: true });
 		lingering.write('GET /api/v1/chat HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: Upgrade\r\nUpgrade: websocket\r\n\r\n');
 		const refused = await new Promise(resolve => lingering.once('data', chunk => resolve(chunk.toString())));
 		assert.match(refused, /^HTTP\/1\.1 403 Forbidden/);
-		const closed = new Promise(resolve => lingering.once('close', resolve));
-		// its place is still taken
+		// its place is still taken after the answer's end (the half-open client never closes its own side)
 		assert.equal((await upgradeThrough(harness.origin, '/api/v1/chat')).status, 503);
-		// until the local server closes it, after the half-close wait
-		await closed;
+		// until the local server closes it, after the half-close wait (300 ms here)
+		await new Promise(resolve => setTimeout(resolve, 900));
 		assert.equal((await upgradeThrough(harness.origin, '/api/v1/chat')).status, 403);
+		lingering.destroy();
 	} finally {
 		await harness.close();
 		await new Promise(resolve => upstream.close(resolve));
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test('a refusal before any forwarding keeps a lingering client among the sockets the local server ends', async () => {
+	const net = await import('node:net');
+	const root = await mkdtemp(path.join(os.tmpdir(), 'web-perf-upgrade-'));
+	// no upstream answers here: the refusals are the local server's own
+	const harness = await startServer(root, root, 'http://127.0.0.1:9', { endMs: 60000 });
+	try {
+		const port = Number(new URL(harness.origin).port);
+		const lingering = net.connect({ port, host: '127.0.0.1', allowHalfOpen: true });
+		lingering.write('GET /not-api HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: Upgrade\r\nUpgrade: websocket\r\n\r\n');
+		assert.match(await new Promise(resolve => lingering.once('data', chunk => resolve(chunk.toString()))), /^HTTP\/1\.1 404 Not Found/);
+		// the client keeps its side open, and the wait for it is long: the server's close ends it anyway
+		const ended = new Promise(resolve => lingering.once('end', resolve));
+		await harness.close();
+		await ended;
+		lingering.destroy();
+	} finally {
 		await rm(root, { recursive: true, force: true });
 	}
 });

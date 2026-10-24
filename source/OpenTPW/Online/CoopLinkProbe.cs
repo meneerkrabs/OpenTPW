@@ -194,8 +194,24 @@ internal sealed class CoopLinkProbe : IDisposable
 	}
 
 	/// <summary>
-	/// The probe's state and records as JSON: its phase, failure, server protocol, the session it holds, whether its login's chat is open and in which room, and every record in
-	/// order.
+	/// [EXT:online-coop-session] Says <paramref name="line"/> in the room the login's chat is in (C2d-1: a session's members share its room), recorded (<c>say</c>) with that room;
+	/// false, recorded as a failure, while the chat is not open.
+	/// </summary>
+	internal bool Say( string line )
+	{
+		ArgumentException.ThrowIfNullOrWhiteSpace( line );
+		if ( !Asked( "say", session.ChatOpen, new JsonObject { ["line"] = line, ["room"] = session.CurrentRoom } ) )
+			return false;
+		session.SendChatLine( line );
+		return true;
+	}
+
+	/// <summary>The chat lines the status carries at most, the newest.</summary>
+	internal const int MaximumChatLines = 20;
+
+	/// <summary>
+	/// The probe's state and records as JSON: its phase, failure, server protocol, the session it holds, whether its login's chat is open, in which room and its newest lines
+	/// (<see cref="MaximumChatLines"/>), and every record in order.
 	/// </summary>
 	internal JsonObject Status()
 	{
@@ -210,7 +226,12 @@ internal sealed class CoopLinkProbe : IDisposable
 			["state"] = Link.State.ToString(),
 			["session"] = Link.Session is { } state ? Describe( state ) : null,
 			["ended"] = SessionEnded,
-			["chat"] = new JsonObject { ["open"] = session.ChatOpen, ["room"] = session.CurrentRoom },
+			["chat"] = new JsonObject
+			{
+				["open"] = session.ChatOpen,
+				["room"] = session.CurrentRoom,
+				["lines"] = new JsonArray( session.ChatLines.TakeLast( MaximumChatLines ).Select( line => (JsonNode?)line ).ToArray() ),
+			},
 			["events"] = records,
 		};
 	}

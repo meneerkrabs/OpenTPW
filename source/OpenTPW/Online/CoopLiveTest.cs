@@ -386,12 +386,13 @@ internal sealed partial class CoopLiveTest : IDisposable
 		failedBy( line );
 	}
 
+	/// <summary>The run completed: its evidence and status are written first, so a write that fails ends the run as a failure (<see cref="Fail"/>).</summary>
 	private void Complete()
 	{
-		done = completed = true;
 		ReleaseKeys();
 		WriteEvidence( completed: true );
 		Publish( "completed", true );
+		done = completed = true;
 		var line = $"Live co-op acceptance ({Role}) passed: {log.Count} steps in {Now:0.0} s, {frame} frames.";
 		Log.Info( line );
 		Console.WriteLine( line );

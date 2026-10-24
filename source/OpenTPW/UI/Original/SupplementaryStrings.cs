@@ -413,6 +413,78 @@ public enum OpenTpwText
 	PlayerInSharedPark,
 	/// <summary>[EXT:online-coop-session] A line said in a shared park while its chat room is not open (on its way, or a server without such rooms): it is not sent.</summary>
 	SharedParkChatClosed,
+	/// <summary>[EXT:online-coop-session] The pause menu's line and the screen that share the park with other players (C2d-2).</summary>
+	BuildTogether,
+	/// <summary>[EXT:online-coop-session] What sharing the park means (C2: only the host builds).</summary>
+	ShareParkIntro,
+	/// <summary>[EXT:online-coop-session] Sharing needs a login.</summary>
+	LogInToShare,
+	/// <summary>[EXT:online-coop-session] The label of the shared park's title field.</summary>
+	SharedParkTitle,
+	/// <summary>[EXT:online-coop-session] The title a shared park starts with ({0}: the player's online name).</summary>
+	SharedParkDefaultTitle,
+	/// <summary>[EXT:online-coop-session] A shared park on the open list.</summary>
+	SharedParkListed,
+	/// <summary>[EXT:online-coop-session] A shared park joined by code or invitation only.</summary>
+	SharedParkUnlisted,
+	/// <summary>[EXT:online-coop-session] How many players a shared park takes ({0}: 2 to 4).</summary>
+	SharedParkPlayers,
+	/// <summary>[EXT:online-coop-session] The button that shares the park.</summary>
+	SharePark,
+	/// <summary>[EXT:online-coop-session] Stops what is under way.</summary>
+	Cancel,
+	/// <summary>[EXT:online-coop-session] The park is being shared (the screen and the status line).</summary>
+	SharingThePark,
+	/// <summary>[EXT:online-coop-session] Takes the link to shared parks over from another game of the player's.</summary>
+	SharedParkTakeOver,
+	/// <summary>[EXT:online-coop-session] A shared park's code, which others join with ({0}: the code).</summary>
+	SharedParkCode,
+	/// <summary>[EXT:online-coop-session] Removes a guest from the shared park.</summary>
+	RemovePlayer,
+	/// <summary>[EXT:online-coop-session] Asks before a guest is removed ({0}: the guest).</summary>
+	ConfirmRemovePlayer,
+	/// <summary>[EXT:online-coop-session] Invites a player by name.</summary>
+	InvitePlayer,
+	/// <summary>[EXT:online-coop-session] An invitation went out ({0}: the player).</summary>
+	InviteSent,
+	/// <summary>[EXT:online-coop-session] The invited player has no game open for shared parks ({0}: the player).</summary>
+	InviteNotOnline,
+	/// <summary>[EXT:online-coop-session] An invitation the server refused for another reason.</summary>
+	InviteRefused,
+	/// <summary>[EXT:online-coop-session] Ends the shared park for everyone.</summary>
+	EndSharing,
+	/// <summary>[EXT:online-coop-session] Asks before the host ends the shared park.</summary>
+	ConfirmEndSharing,
+	/// <summary>[EXT:online-coop-session] The status line of a hosted park ({0}: the code, {1}: the connected players, {2}: the most players).</summary>
+	SharedParkStatus,
+	/// <summary>[EXT:online-coop-session] The status line while the link to the shared park reconnects ({0}: the code).</summary>
+	SharedParkReconnecting,
+	/// <summary>[EXT:online-coop-session] The shared park ended (the status line, and the screen).</summary>
+	SharedParkEnded,
+	/// <summary>[EXT:online-coop-session] The host in a shared park's list of players ({0}: the player).</summary>
+	SharedParkHost,
+	/// <summary>[EXT:online-coop-session] A member whose game is not connected ({0}: the player).</summary>
+	SharedParkAway,
+	/// <summary>[EXT:online-coop-session] Another game of the player's holds the link to shared parks.</summary>
+	SharedParkLinkInUse,
+	/// <summary>[EXT:online-coop-session] The server is older than shared parks.</summary>
+	SharedParkServerTooOld,
+	/// <summary>[EXT:online-coop-session] The link to the server was lost (or its answer).</summary>
+	SharedParkLinkLost,
+	/// <summary>[EXT:online-coop-session] The server holds as many shared parks as it takes.</summary>
+	SharedParkServerFull,
+	/// <summary>[EXT:online-coop-session] The server limits how often a player asks.</summary>
+	SharedParkTryLater,
+	/// <summary>[EXT:online-coop-session] The server refused the shared park's title (its word filter).</summary>
+	SharedParkTitleRefused,
+	/// <summary>[EXT:online-coop-session] Sharing failed for another reason.</summary>
+	SharedParkFailed,
+	/// <summary>[EXT:online-coop-session] A cheat waits for the next park turn (decision Q17: cheats stay out of shared parks).</summary>
+	ShareRefusedCheat,
+	/// <summary>[EXT:online-coop-session] The game was started with developer options that change the park.</summary>
+	ShareRefusedDeveloperOptions,
+	/// <summary>[EXT:online-coop-session] The park cannot be shared (any other reason).</summary>
+	ShareRefused,
 }
 
 public static class SupplementaryStrings
@@ -1003,6 +1075,42 @@ public static class SupplementaryStrings
 		[OpenTpwText.SharedPark] = new[] { "Shared park", "Delt park", "Gedeeld park", "Parc partagé", "Geteilter Park", "공유 공원", "Wspólny park", "Parque compartido", "Delad park", "Parco condiviso", "פארק משותף" },
 		[OpenTpwText.PlayerInSharedPark] = new[] { "{0} is in a shared park", "{0} er i en delt park", "{0} is in een gedeeld park", "{0} est dans un parc partagé", "{0} ist in einem geteilten Park", "{0} 님은 공유 공원에 있습니다", "{0} jest we wspólnym parku", "{0} está en un parque compartido", "{0} är i en delad park", "{0} è in un parco condiviso", "{0} - בפארק משותף" },
 		[OpenTpwText.SharedParkChatClosed] = new[] { "The shared park's chat is not open.", "Den delte parks chat er ikke åben.", "De chat van het gedeelde park is niet open.", "Le chat du parc partagé n'est pas ouvert.", "Der Chat des geteilten Parks ist nicht offen.", "공유 공원 채팅이 열려 있지 않습니다.", "Czat wspólnego parku nie jest otwarty.", "El chat del parque compartido no está abierto.", "Den delade parkens chatt är inte öppen.", "La chat del parco condiviso non è aperta.", "הצ'אט של הפארק המשותף אינו פתוח." },
+		[OpenTpwText.BuildTogether] = new[] { "Build together", "Byg sammen", "Samen bouwen", "Construire ensemble", "Gemeinsam bauen", "함께 만들기", "Buduj razem", "Construir juntos", "Bygg tillsammans", "Costruire insieme", "בונים יחד" },
+		[OpenTpwText.ShareParkIntro] = new[] { "Share this park: other players can watch you build, walk around it and chat with you. Only you build.", "Del denne park: andre spillere kan se dig bygge, gå rundt i den og chatte med dig. Kun du bygger.", "Deel dit park: andere spelers kunnen je zien bouwen, erin rondlopen en met je chatten. Alleen jij bouwt.", "Partagez ce parc : d'autres joueurs peuvent vous regarder construire, s'y promener et discuter avec vous. Vous seul construisez.", "Teile diesen Park: Andere Spieler können dir beim Bauen zusehen, darin herumlaufen und mit dir chatten. Nur du baust.", "이 공원을 공유하세요. 다른 플레이어가 당신이 만드는 모습을 보고, 공원을 돌아다니고, 당신과 채팅할 수 있습니다. 건설은 당신만 할 수 있습니다.", "Udostępnij ten park: inni gracze mogą patrzeć, jak budujesz, spacerować po nim i rozmawiać z tobą. Budujesz tylko ty.", "Comparte este parque: otros jugadores pueden verte construir, pasear por él y chatear contigo. Solo tú construyes.", "Dela den här parken: andra spelare kan se dig bygga, gå runt i den och chatta med dig. Bara du bygger.", "Condividi questo parco: altri giocatori possono guardarti costruire, passeggiarci e chattare con te. Solo tu costruisci.", "שתפו את הפארק: שחקנים אחרים יכולים לצפות בכם בונים, להסתובב בו ולשוחח איתכם. רק אתם בונים." },
+		[OpenTpwText.LogInToShare] = new[] { "Log in to share your park.", "Log ind for at dele din park.", "Log in om je park te delen.", "Connectez-vous pour partager votre parc.", "Melde dich an, um deinen Park zu teilen.", "공원을 공유하려면 로그인하세요.", "Zaloguj się, aby udostępnić swój park.", "Inicia sesión para compartir tu parque.", "Logga in för att dela din park.", "Accedi per condividere il tuo parco.", "התחברו כדי לשתף את הפארק." },
+		[OpenTpwText.SharedParkTitle] = new[] { "Title", "Titel", "Titel", "Titre", "Titel", "제목", "Tytuł", "Título", "Titel", "Titolo", "כותרת" },
+		[OpenTpwText.SharedParkDefaultTitle] = new[] { "{0}'s park", "{0}s park", "Park van {0}", "Parc de {0}", "{0}s Park", "{0}의 공원", "Park gracza {0}", "Parque de {0}", "{0}s park", "Parco di {0}", "הפארק של {0}" },
+		[OpenTpwText.SharedParkListed] = new[] { "Listed: anyone can find it", "Synlig: alle kan finde den", "Openbaar: iedereen kan het vinden", "Public : tout le monde peut le trouver", "Öffentlich: jeder kann ihn finden", "공개: 누구나 찾을 수 있음", "Publiczny: każdy może go znaleźć", "Público: cualquiera puede encontrarlo", "Synlig: alla kan hitta den", "Pubblico: chiunque può trovarlo", "ציבורי: כל אחד יכול למצוא אותו" },
+		[OpenTpwText.SharedParkUnlisted] = new[] { "Unlisted: only by code or invitation", "Skjult: kun med kode eller invitation", "Besloten: alleen met code of uitnodiging", "Privé : seulement par code ou invitation", "Privat: nur mit Code oder Einladung", "비공개: 코드나 초대로만", "Prywatny: tylko z kodem lub zaproszeniem", "Privado: solo con código o invitación", "Dold: bara med kod eller inbjudan", "Privato: solo con codice o invito", "פרטי: רק עם קוד או הזמנה" },
+		[OpenTpwText.SharedParkPlayers] = new[] { "Players: {0}", "Spillere: {0}", "Spelers: {0}", "Joueurs : {0}", "Spieler: {0}", "플레이어: {0}", "Gracze: {0}", "Jugadores: {0}", "Spelare: {0}", "Giocatori: {0}", "שחקנים: {0}" },
+		[OpenTpwText.SharePark] = new[] { "Share the park", "Del parken", "Park delen", "Partager le parc", "Park teilen", "공원 공유", "Udostępnij park", "Compartir parque", "Dela parken", "Condividi il parco", "שיתוף הפארק" },
+		[OpenTpwText.Cancel] = new[] { "Cancel", "Annuller", "Annuleren", "Annuler", "Abbrechen", "취소", "Anuluj", "Cancelar", "Avbryt", "Annulla", "ביטול" },
+		[OpenTpwText.SharingThePark] = new[] { "Sharing the park...", "Deler parken...", "Park wordt gedeeld...", "Partage du parc...", "Park wird geteilt...", "공원 공유 중...", "Udostępnianie parku...", "Compartiendo el parque...", "Delar parken...", "Condivisione del parco...", "משתף את הפארק..." },
+		[OpenTpwText.SharedParkTakeOver] = new[] { "Use this game", "Brug dette spil", "Dit spel gebruiken", "Utiliser ce jeu", "Dieses Spiel nutzen", "이 게임 사용", "Użyj tej gry", "Usar este juego", "Använd det här spelet", "Usa questo gioco", "שימוש במשחק הזה" },
+		[OpenTpwText.SharedParkCode] = new[] { "Code: {0}", "Kode: {0}", "Code: {0}", "Code : {0}", "Code: {0}", "코드: {0}", "Kod: {0}", "Código: {0}", "Kod: {0}", "Codice: {0}", "קוד: {0}" },
+		[OpenTpwText.RemovePlayer] = new[] { "Remove", "Fjern", "Verwijderen", "Retirer", "Entfernen", "내보내기", "Usuń", "Quitar", "Ta bort", "Rimuovi", "הסרה" },
+		[OpenTpwText.ConfirmRemovePlayer] = new[] { "Remove {0} from the shared park? They cannot join it again.", "Fjern {0} fra den delte park? Spilleren kan ikke deltage igen.", "{0} uit het gedeelde park verwijderen? Deze speler kan er niet meer in.", "Retirer {0} du parc partagé ? Ce joueur ne pourra plus le rejoindre.", "{0} aus dem geteilten Park entfernen? Der Spieler kann nicht mehr beitreten.", "{0} 님을 공유 공원에서 내보낼까요? 다시 참가할 수 없습니다.", "Usunąć {0} ze wspólnego parku? Ten gracz nie będzie mógł dołączyć ponownie.", "¿Quitar a {0} del parque compartido? No podrá volver a unirse.", "Ta bort {0} från den delade parken? Spelaren kan inte gå med igen.", "Rimuovere {0} dal parco condiviso? Non potrà più unirsi.", "להסיר את {0} מהפארק המשותף? לא יהיה אפשר להצטרף אליו שוב." },
+		[OpenTpwText.InvitePlayer] = new[] { "Invite", "Inviter", "Uitnodigen", "Inviter", "Einladen", "초대", "Zaproś", "Invitar", "Bjud in", "Invita", "הזמנה" },
+		[OpenTpwText.InviteSent] = new[] { "Invitation sent to {0}.", "Invitation sendt til {0}.", "Uitnodiging naar {0} gestuurd.", "Invitation envoyée à {0}.", "Einladung an {0} gesendet.", "{0} 님에게 초대를 보냈습니다.", "Wysłano zaproszenie do gracza {0}.", "Invitación enviada a {0}.", "Inbjudan skickad till {0}.", "Invito inviato a {0}.", "נשלחה הזמנה ל-{0}." },
+		[OpenTpwText.InviteNotOnline] = new[] { "{0} is not online for shared parks. Give them the code instead.", "{0} er ikke online til delte parker. Giv spilleren koden i stedet.", "{0} is niet online voor gedeelde parken. Geef deze speler de code.", "{0} n'est pas en ligne pour les parcs partagés. Donnez-lui plutôt le code.", "{0} ist nicht für geteilte Parks online. Gib dem Spieler stattdessen den Code.", "{0} 님은 공유 공원에 접속해 있지 않습니다. 대신 코드를 알려 주세요.", "{0} nie jest online dla wspólnych parków. Podaj tej osobie kod.", "{0} no está conectado para parques compartidos. Dale el código.", "{0} är inte online för delade parker. Ge spelaren koden i stället.", "{0} non è online per i parchi condivisi. Dagli invece il codice.", "{0} אינו מחובר לפארקים משותפים. אפשר לתת לו את הקוד במקום." },
+		[OpenTpwText.InviteRefused] = new[] { "The invitation was not sent.", "Invitationen blev ikke sendt.", "De uitnodiging is niet verstuurd.", "L'invitation n'a pas été envoyée.", "Die Einladung wurde nicht gesendet.", "초대를 보내지 못했습니다.", "Zaproszenie nie zostało wysłane.", "La invitación no se envió.", "Inbjudan skickades inte.", "L'invito non è stato inviato.", "ההזמנה לא נשלחה." },
+		[OpenTpwText.EndSharing] = new[] { "End sharing", "Stop deling", "Delen stoppen", "Arrêter le partage", "Teilen beenden", "공유 끝내기", "Zakończ udostępnianie", "Dejar de compartir", "Sluta dela", "Termina condivisione", "סיום השיתוף" },
+		[OpenTpwText.ConfirmEndSharing] = new[] { "End the shared park for everyone? Your park stays yours.", "Afslut den delte park for alle? Din park forbliver din.", "Het gedeelde park voor iedereen beëindigen? Je park blijft van jou.", "Mettre fin au parc partagé pour tout le monde ? Votre parc reste le vôtre.", "Den geteilten Park für alle beenden? Dein Park bleibt deiner.", "모두의 공유 공원을 끝낼까요? 공원은 당신의 것으로 남습니다.", "Zakończyć wspólny park dla wszystkich? Twój park pozostaje twój.", "¿Terminar el parque compartido para todos? Tu parque sigue siendo tuyo.", "Avsluta den delade parken för alla? Din park förblir din.", "Terminare il parco condiviso per tutti? Il tuo parco resta tuo.", "לסיים את הפארק המשותף לכולם? הפארק נשאר שלכם." },
+		[OpenTpwText.SharedParkStatus] = new[] { "Shared park - code {0} - {1} of {2} players", "Delt park - kode {0} - {1} af {2} spillere", "Gedeeld park - code {0} - {1} van {2} spelers", "Parc partagé - code {0} - {1} joueurs sur {2}", "Geteilter Park - Code {0} - {1} von {2} Spielern", "공유 공원 - 코드 {0} - 플레이어 {1}/{2}", "Wspólny park - kod {0} - graczy: {1} z {2}", "Parque compartido - código {0} - {1} de {2} jugadores", "Delad park - kod {0} - {1} av {2} spelare", "Parco condiviso - codice {0} - {1} di {2} giocatori", "פארק משותף - קוד {0} - {1} מתוך {2} שחקנים" },
+		[OpenTpwText.SharedParkReconnecting] = new[] { "Shared park - code {0} - reconnecting...", "Delt park - kode {0} - genopretter forbindelse...", "Gedeeld park - code {0} - opnieuw verbinden...", "Parc partagé - code {0} - reconnexion...", "Geteilter Park - Code {0} - Verbindung wird wiederhergestellt...", "공유 공원 - 코드 {0} - 다시 연결 중...", "Wspólny park - kod {0} - ponowne łączenie...", "Parque compartido - código {0} - reconectando...", "Delad park - kod {0} - återansluter...", "Parco condiviso - codice {0} - riconnessione...", "פארק משותף - קוד {0} - מתחבר מחדש..." },
+		[OpenTpwText.SharedParkEnded] = new[] { "The shared park ended.", "Den delte park sluttede.", "Het gedeelde park is beëindigd.", "Le parc partagé est terminé.", "Der geteilte Park wurde beendet.", "공유 공원이 끝났습니다.", "Wspólny park się zakończył.", "El parque compartido terminó.", "Den delade parken avslutades.", "Il parco condiviso è terminato.", "הפארק המשותף הסתיים." },
+		[OpenTpwText.SharedParkHost] = new[] { "{0} (host)", "{0} (vært)", "{0} (host)", "{0} (hôte)", "{0} (Gastgeber)", "{0} (호스트)", "{0} (gospodarz)", "{0} (anfitrión)", "{0} (värd)", "{0} (host)", "{0} (מארח)" },
+		[OpenTpwText.SharedParkAway] = new[] { "{0} (away)", "{0} (væk)", "{0} (afwezig)", "{0} (absent)", "{0} (abwesend)", "{0} (자리 비움)", "{0} (nieobecny)", "{0} (ausente)", "{0} (borta)", "{0} (assente)", "{0} (לא מחובר)" },
+		[OpenTpwText.SharedParkLinkInUse] = new[] { "Another game of yours uses the link to shared parks.", "Et andet af dine spil bruger forbindelsen til delte parker.", "Een ander spel van jou gebruikt de verbinding met gedeelde parken.", "Un autre de vos jeux utilise la connexion aux parcs partagés.", "Ein anderes Spiel von dir nutzt die Verbindung zu geteilten Parks.", "다른 게임이 공유 공원 연결을 사용하고 있습니다.", "Inna twoja gra używa połączenia ze wspólnymi parkami.", "Otro juego tuyo usa la conexión a parques compartidos.", "Ett annat av dina spel använder anslutningen till delade parker.", "Un altro tuo gioco usa la connessione ai parchi condivisi.", "משחק אחר שלכם משתמש בחיבור לפארקים משותפים." },
+		[OpenTpwText.SharedParkServerTooOld] = new[] { "This server cannot share parks.", "Denne server kan ikke dele parker.", "Deze server kan geen parken delen.", "Ce serveur ne peut pas partager de parcs.", "Dieser Server kann keine Parks teilen.", "이 서버는 공원을 공유할 수 없습니다.", "Ten serwer nie może udostępniać parków.", "Este servidor no puede compartir parques.", "Den här servern kan inte dela parker.", "Questo server non può condividere parchi.", "השרת הזה לא יכול לשתף פארקים." },
+		[OpenTpwText.SharedParkLinkLost] = new[] { "The connection to the server was lost.", "Forbindelsen til serveren blev afbrudt.", "De verbinding met de server is verbroken.", "La connexion au serveur a été perdue.", "Die Verbindung zum Server ist abgebrochen.", "서버와의 연결이 끊어졌습니다.", "Utracono połączenie z serwerem.", "Se perdió la conexión con el servidor.", "Anslutningen till servern bröts.", "La connessione al server è stata persa.", "החיבור לשרת אבד." },
+		[OpenTpwText.SharedParkServerFull] = new[] { "The server holds too many shared parks. Try again later.", "Serveren har for mange delte parker. Prøv igen senere.", "De server heeft te veel gedeelde parken. Probeer het later opnieuw.", "Le serveur a trop de parcs partagés. Réessayez plus tard.", "Der Server hat zu viele geteilte Parks. Versuche es später erneut.", "서버에 공유 공원이 너무 많습니다. 나중에 다시 시도하세요.", "Serwer ma zbyt wiele wspólnych parków. Spróbuj później.", "El servidor tiene demasiados parques compartidos. Inténtalo más tarde.", "Servern har för många delade parker. Försök igen senare.", "Il server ha troppi parchi condivisi. Riprova più tardi.", "בשרת יש יותר מדי פארקים משותפים. נסו שוב מאוחר יותר." },
+		[OpenTpwText.SharedParkTryLater] = new[] { "Too many requests. Try again shortly.", "For mange forespørgsler. Prøv igen om lidt.", "Te veel verzoeken. Probeer het zo opnieuw.", "Trop de demandes. Réessayez dans un instant.", "Zu viele Anfragen. Versuche es gleich noch einmal.", "요청이 너무 많습니다. 잠시 후 다시 시도하세요.", "Zbyt wiele żądań. Spróbuj za chwilę.", "Demasiadas solicitudes. Inténtalo en un momento.", "För många förfrågningar. Försök igen om en stund.", "Troppe richieste. Riprova tra poco.", "יותר מדי בקשות. נסו שוב בעוד רגע." },
+		[OpenTpwText.SharedParkTitleRefused] = new[] { "The server refused this title.", "Serveren afviste denne titel.", "De server weigerde deze titel.", "Le serveur a refusé ce titre.", "Der Server hat diesen Titel abgelehnt.", "서버가 이 제목을 거부했습니다.", "Serwer odrzucił ten tytuł.", "El servidor rechazó este título.", "Servern avvisade den här titeln.", "Il server ha rifiutato questo titolo.", "השרת דחה את הכותרת הזאת." },
+		[OpenTpwText.SharedParkFailed] = new[] { "The park could not be shared.", "Parken kunne ikke deles.", "Het park kon niet gedeeld worden.", "Le parc n'a pas pu être partagé.", "Der Park konnte nicht geteilt werden.", "공원을 공유하지 못했습니다.", "Nie udało się udostępnić parku.", "No se pudo compartir el parque.", "Parken kunde inte delas.", "Non è stato possibile condividere il parco.", "לא ניתן היה לשתף את הפארק." },
+		[OpenTpwText.ShareRefusedCheat] = new[] { "A cheat waits for the next park turn. Share the park after it.", "En snydekode venter på parkens næste tur. Del parken bagefter.", "Een cheat wacht op de volgende parkbeurt. Deel het park daarna.", "Un code de triche attend le prochain tour du parc. Partagez le parc ensuite.", "Ein Cheat wartet auf den nächsten Parkzug. Teile den Park danach.", "치트가 공원의 다음 턴을 기다리고 있습니다. 그 후에 공유하세요.", "Kod czeka na następną turę parku. Udostępnij park później.", "Un truco espera el próximo turno del parque. Comparte el parque después.", "Ett fusk väntar på parkens nästa tur. Dela parken efteråt.", "Un trucco attende il prossimo turno del parco. Condividi il parco dopo.", "צ'יט ממתין לתור הבא של הפארק. שתפו את הפארק אחריו." },
+		[OpenTpwText.ShareRefusedDeveloperOptions] = new[] { "This game was started with developer options. Restart it without them to share a park.", "Spillet blev startet med udviklerindstillinger. Genstart det uden dem for at dele en park.", "Dit spel is gestart met ontwikkelaarsopties. Start het opnieuw zonder om een park te delen.", "Ce jeu a été lancé avec des options de développement. Relancez-le sans elles pour partager un parc.", "Dieses Spiel wurde mit Entwickleroptionen gestartet. Starte es ohne sie neu, um einen Park zu teilen.", "이 게임은 개발자 옵션으로 시작되었습니다. 공원을 공유하려면 옵션 없이 다시 시작하세요.", "Gra została uruchomiona z opcjami deweloperskimi. Uruchom ją ponownie bez nich, aby udostępnić park.", "El juego se inició con opciones de desarrollador. Reinícialo sin ellas para compartir un parque.", "Spelet startades med utvecklaralternativ. Starta om det utan dem för att dela en park.", "Il gioco è stato avviato con opzioni da sviluppatore. Riavvialo senza per condividere un parco.", "המשחק הופעל עם אפשרויות פיתוח. הפעילו אותו מחדש בלעדיהן כדי לשתף פארק." },
+		[OpenTpwText.ShareRefused] = new[] { "This park cannot be shared.", "Denne park kan ikke deles.", "Dit park kan niet gedeeld worden.", "Ce parc ne peut pas être partagé.", "Dieser Park kann nicht geteilt werden.", "이 공원은 공유할 수 없습니다.", "Tego parku nie można udostępnić.", "Este parque no se puede compartir.", "Den här parken kan inte delas.", "Questo parco non può essere condiviso.", "אי אפשר לשתף את הפארק הזה." },
 	};
 
 	public static IReadOnlyList<string> SupportedLanguages => Languages;

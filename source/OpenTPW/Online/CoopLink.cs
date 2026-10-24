@@ -200,18 +200,29 @@ public sealed class CoopLink : ICoopStreamTransport
 	}
 
 	/// <summary>
-	/// Closes the link and forgets its session without leaving it (<see cref="Leave"/> leaves): the session is over for this game (<see cref="SessionEnded"/>),
-	/// a later open names it, and the game leaves it then.
+	/// Closes the link and forgets its session: the session is over for this game (<see cref="SessionEnded"/>), a later open names it, and the game leaves it then.
 	/// </summary>
-	public void Close()
+	/// <param name="leaveReason">
+	/// [EXT:online-coop-session] Leaves the session first with this reason, which the others hear (a host's leave ends it for everyone; a logout or another server):
+	/// the leave is queued on the socket, which sends what it holds before it closes, and a link that cannot send it now leaves at the next welcome that names the
+	/// session. The end this game hears is its own leave. Null closes without leaving.
+	/// </param>
+	public void Close( string? leaveReason = null )
 	{
+		var held = Session;
+		string? left = null;
+		if ( leaveReason != null && held != null )
+		{
+			left = CoopProtocol.Clip( leaveReason.Trim() );
+			pendingLeave = Send( new CoopLeave( left ) ) ? null : (held.Id, left);
+		}
 		Shut( "This game closed its link to the shared park." );
 		Stopped = CoopStop.None;
-		var held = Session;
 		ForgetSession();
 		SetState( CoopLinkState.Closed, quietly: true );
 		if ( held != null )
-			SessionEnded?.Invoke( new CoopEnded( held.Id, CoopReason.Unknown, "This game closed its link to the shared park." ) );
+			SessionEnded?.Invoke( left != null ? new CoopEnded( held.Id, CoopReason.Left, left )
+				: new CoopEnded( held.Id, CoopReason.Unknown, "This game closed its link to the shared park." ) );
 		RaiseState();
 	}
 

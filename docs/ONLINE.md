@@ -21,7 +21,9 @@ where each piece stands is inventoried in [reverse/ONLINE-FEATURES.md](reverse/O
 
 Building a park together (co-op, `[EXT:online-coop-*]`) is planned as host-sequenced lockstep; its approved design
 decisions and the command layer every park edit now goes through are in [COOP.md](COOP.md). The server side of
-its sessions and the game's link to them exist ([Shared parks](#shared-parks)); no screen or park uses them yet.
+its sessions and the game's link to them exist ([Shared parks](#shared-parks)). A player shares the open park from the
+pause menu's Build Together line ([COOP.md](COOP.md), "Sharing the park from the game"); joining from the game's
+screens is next.
 
 ## Screens
 

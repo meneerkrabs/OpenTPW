@@ -68,8 +68,10 @@ park needs. The host's command stream runs over it (C2b-1, below), a level takes
 through `CoopSession` (C2b-2, below), and a member joins a running session or resyncs from a join
 snapshot (C2c-1, below), which the game builds and swaps in (C2c-2a, below) and which is measured on the
 desktop (C2c-2b-1, "Measurements"). A browser joins (C2c-2b-2, below) and hosts (C2c-2b-4, below) in the
-smokes, and its own transport carries a session through the real server (C2c-2b-5, below); the game's
-screens (C2d) follow, and until then no player starts a session.
+smokes, and its own transport carries a session through the real server (C2c-2b-5, below). The game's
+screens (C2d) are under way: a session has its own chat room (C2d-1, [ONLINE.md](ONLINE.md), "Shared
+parks"), and the player shares the open park from its pause menu (C2d-2a, below); joining from the
+game's screens (C2d-3) follows.
 
 ### The host's command stream (C2b-1)
 
@@ -616,6 +618,76 @@ headless on an Apple M5) both pages pass all ten checks over the server's protoc
 
 What it does not cover yet is a whole live join over the server (a captured park downloaded, built and
 followed) and the link's timeouts and retries in the page; they come with the game's sharing (C2d).
+
+### Sharing the park from the game (C2d-2a)
+
+`[EXT:online-coop-session]` The park's pause menu has a Build Together line, after Go Online, for the
+player's own park: not a visit, and not a guest's copy of a shared park. A lost park keeps the line only
+while it is shared. The line opens the Build Together screen over the pause menu. Every line on the
+screen is in the player's language.
+
+- **Before sharing**, the screen says what sharing means (the others watch the host build, walk around
+  and chat; only the host builds), why the park cannot be shared when it cannot, or that the player has
+  to log in, with a login button.
+- **The choices:** the title (by default the player's park, by the online name), whether the park is on
+  the open list (by default not: code and invitation only), and how many players it takes (2 to 4, by
+  default 4).
+- **While it is being shared**, the screen shows that, with a cancel.
+- **Once hosted**, it shows the code, whether the park is listed, and the players: the host's line is
+  marked, an away member's too, and every guest has a removal, asked first, after which the account
+  cannot join again. An invitation goes by name; the server answers only a refusal, and a player who is
+  not online for shared parks is to be given the code. End sharing ends the park for everyone, asked
+  first; the park stays the host's.
+
+The pause menu does not stop a shared park, so the park runs on under these screens.
+
+`CoopShare` (`GameFlow.CoopShare.cs` owns it) is one attempt to share, and it owns its create from the
+request to the answer:
+
+1. It prepares the park for hosting (`CoopSession.PrepareHostSteps`, a step a frame) while the link opens.
+2. Once both are done and the park can still be shared, it sends the create.
+3. The game steps it once a frame right after the online pump and before the co-op session's and the
+   park's update. In the step after the server's answer, never in the link's callback, it checks that
+   the same park is still the game's and can still be shared, then hosts it (`CoopSession.Host`).
+
+A cancel before the create sends nothing; one after it waits for the answer and leaves the session the
+server made. A park that is closed or replaced meanwhile (a load, an exit, a transition) is treated the
+same way. A park that can no longer be shared when the answer comes, or a hosting that fails, leaves
+the session too. A link that stops (another game of the player's holds it, with a take-over offered;
+an older server; a lost connection) or a create the server refuses (too many sessions, too many
+requests, a refused title, an answer lost with the socket) ends the attempt with the reason in words.
+
+Every way the host leaves sends a leave, so guests hear at once that the host left:
+
+- Ending the session from the screen sends one.
+- Every way out of the park sends one: an exit to the lobby, a load, a restart, a visit, a quit.
+- A logout, another server or a deleted account leaves the held session too. `OnlineSession.Disconnect`
+  closes the link with a leave reason (`CoopLink.Close(leaveReason)`). The leave is queued on the co-op
+  socket, which outlives the login's HTTP client and sends what it holds before it closes. The game
+  hears its own leave as the session's end, so it sends no second one.
+- A leave that cannot go out now (the link is reconnecting) goes out at the next welcome that names the
+  session. Until then the server keeps the session for its away limit.
+
+While the park is shared or being shared, the HUD shows a status line in a translucent box at the top
+centre: the code and the connected players out of the most, that the link reconnects, or that the park
+is being shared. The line stays put; the screens over the HUD dim it with the park. When the session
+ends without the player ending it (the server, a logout, a failure), the line says so for ten seconds.
+While the game is in a shared park, the online screens' chat entries (a chat park's room, a published
+park's chat) leave the chat in the session's room.
+
+`CoopShareTests` runs the attempt over a real link to the loopback server, with the stream tests'
+asset-free park and a second player's link as the guest:
+
+- the share: hosting, the guest's frames, and the end the guest hears;
+- cancels before and after the create, a park closed before the answer, and a refusal at the answer
+  (a cheat waiting for its turn);
+- a logout while hosting (the guest hears the leave's reason at once) and while the create waits;
+- an older server, and a hosting that fails;
+- an invitation to a player who is not online, and a kick;
+- the screen before sharing (the login, the choices, a refusal in words) and while hosted (the code,
+  the players and their removals, End sharing asked first).
+
+Browser hosting through these screens comes with the acceptance (C2d-5).
 
 ### The host's trimmed frame (C2c-3)
 

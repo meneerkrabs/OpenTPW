@@ -1,6 +1,7 @@
 using OpenTPW.Online;
 using OpenTPW.Online.Api;
 using OpenTPW.Online.Client;
+using OpenTPW.Online.Coop;
 using OpenTPW.Online.Packages;
 using OpenTPW.UI.Original;
 
@@ -23,6 +24,8 @@ public sealed class OnlineHost
 	public Func<GlobeScene?> Globe { get; init; } = () => null;
 	/// <summary>[EXT:restored-advice-online] Tells the advisor that a screen opened (the message of <see cref="RestoredAdvice"/>: 328 publish, 329 park details, 331 other parks, 332 find parks, 333 outbox, 334 world); null where there is no advisor.</summary>
 	public Action<int>? Advise { get; init; }
+	/// <summary>[EXT:online-coop-session] Shares the open park with other players (<see cref="OnlineScreens.ShowBuildTogether"/>); null where the game does not.</summary>
+	internal ICoopHosting? Hosting { get; init; }
 }
 
 /// <summary>
@@ -269,10 +272,14 @@ public sealed class OnlineScreens
 			EnterChatRoom( scene.Id );
 	}
 
-	/// <summary>A satellite's room in the overhead chat view (<see cref="ShowChat"/>).</summary>
+	/// <summary>
+	/// A satellite's room in the overhead chat view (<see cref="ShowChat"/>). [EXT:online-coop-session] In a shared park the chat stays the session's: the view shows
+	/// its room.
+	/// </summary>
 	private void EnterChatRoom( int number )
 	{
-		Session.JoinRoom( Online.Chat.ChatProtocol.SatelliteRoom( number ) );
+		if ( !Session.InSharedPark )
+			Session.JoinRoom( Online.Chat.ChatProtocol.SatelliteRoom( number ) );
 		ShowChat();
 	}
 
@@ -381,6 +388,212 @@ public sealed class OnlineScreens
 		AddBack( screen, window );
 		Push( screen );
 	}
+
+	// ---- Build together: sharing the open park (OpenTPW, C2d-2) --------------------------------
+
+	/// <summary>The Build Together screen's name.</summary>
+	internal const string BuildTogetherScreenName = "buildTogether";
+
+	/// <summary>
+	/// [EXT:online-coop-session] Build Together (C2d-2; docs/COOP.md, "Sharing the park from the game"): shares the open park with other players, who watch the host
+	/// build, walk around and chat (C2: only the host builds). Before sharing: why the park cannot be shared, or a login, then the shared park's title, whether it is on
+	/// the open list, and how many players it takes. While it is shared: its code, the players with a removal for each guest, an invitation by name, and its end for
+	/// everyone (the park stays the host's). Every line is in the player's language.
+	/// </summary>
+	// [EXT:own-window-sizes] the window and the places of its controls are OpenTPW's: the original has no shared parks
+	public void ShowBuildTogether()
+	{
+		if ( host.Hosting is not { } hosting )
+			return;
+		var screen = new UiScreen( BuildTogetherScreenName );
+		var window = UiDialogs.CenteredWindow( 1400, 1300 );
+		UiDialogs.AddWindow( screen, window, "w_big", () => strings.Extra( OpenTpwText.BuildTogether ) );
+		var x = window.X + 120;
+		var width = window.Width - 240;
+		// the title starts as the player's park (by the online name, once known after a login here) until the player writes one
+		var titleChosen = false;
+		string DefaultTitle() => (Session.Client?.Session?.Name ?? Session.Settings.PlayerName ?? "").Trim() is { Length: > 0 } name
+			? string.Format( strings.Extra( OpenTpwText.SharedParkDefaultTitle ), name ) : "";
+		var listed = false;
+		var players = CoopProtocol.MaximumPlayers;
+		string? inviteNote = null;
+		CoopShare? Attempt() => hosting.Sharing is { } share && (share.Stage != CoopShareStage.Done || share.Outcome is not (CoopShareOutcome.Cancelled or CoopShareOutcome.None)
+			&& !(share.Outcome == CoopShareOutcome.Ended && share.EndedBySelf)) ? share : null;
+		bool Starting() => Attempt() is null;
+		bool Hosting() => Attempt() is { Stage: CoopShareStage.Hosting };
+		bool Waiting() => Attempt() is { Stage: CoopShareStage.Preparing or CoopShareStage.Creating or CoopShareStage.Cancelling };
+		bool Finished() => Attempt() is { Stage: CoopShareStage.Done };
+
+		// before sharing
+		var intro = screen.Add( new UiLabel { Id = "intro", Wrap = true, Font = fonts => fonts.Small, Text = () => strings.Extra( OpenTpwText.ShareParkIntro ),
+			Bounds = new UiRect( x, window.Y + 150, width, 190 ), Anchor = UiAnchor.Center } );
+		var message = screen.Add( new UiLabel { Id = "message", Wrap = true, Font = fonts => fonts.Small, Color = UiColors.Value,
+			Bounds = new UiRect( x, window.Y + 350, width, 120 ), Anchor = UiAnchor.Center,
+			Text = () => Attempt() is { } share ? ShareMessage( share ) : !Session.IsLoggedIn ? strings.Extra( OpenTpwText.LogInToShare )
+				: hosting.ShareRefusal is { } refusal and not CoopShareRefusal.None ? RefusalText( refusal ) : "" } );
+		var titleLabel = screen.Add( new UiLabel { Id = "titleLabel", Font = fonts => fonts.Label, Text = () => strings.Extra( OpenTpwText.SharedParkTitle ),
+			Bounds = new UiRect( x, window.Y + 500, 300, 90 ), Anchor = UiAnchor.Center } );
+		var titleField = screen.Add( new UiTextField { Id = "parkTitle", MaximumLength = CoopProtocol.MaximumTitleLength, Model = "f_text1",
+			Bounds = new UiRect( x + 320, window.Y + 490, width - 320, 93 ), Anchor = UiAnchor.Center } );
+		titleField.Text = DefaultTitle();
+		titleField.Changed = _ => titleChosen = true;
+		var listedButton = screen.Add( new UiButton { Id = "listed", Clicked = () => listed = !listed,
+			Text = () => strings.Extra( listed ? OpenTpwText.SharedParkListed : OpenTpwText.SharedParkUnlisted ),
+			Bounds = new UiRect( x, window.Y + 620, width, 100 ), Anchor = UiAnchor.Center } );
+		var playersButton = screen.Add( new UiButton { Id = "players", Clicked = () => players = players >= CoopProtocol.MaximumPlayers ? 2 : players + 1,
+			Text = () => string.Format( strings.Extra( OpenTpwText.SharedParkPlayers ), players ),
+			Bounds = new UiRect( x, window.Y + 740, width, 100 ), Anchor = UiAnchor.Center } );
+		void Share()
+		{
+			var chosen = titleField.Text.Trim();
+			if ( chosen.Length == 0 || chosen.Any( char.IsControl ) )
+				return;
+			hosting.StartSharing( new CoopShareRequest( chosen, listed, players ) );
+		}
+		titleField.Submitted = Share;
+		var share = screen.Add( new UiButton { Id = "share", Text = () => strings.Extra( OpenTpwText.SharePark ), Clicked = Share,
+			Bounds = new UiRect( x, window.Y + 880, 560, 110 ), Anchor = UiAnchor.Center } );
+		var login = screen.Add( new UiButton { Id = "login", Text = () => OnlineStrings.Ui( OnlineStrings.OnlineLogin, "Online login" ), Clicked = ShowLogin,
+			Bounds = new UiRect( x + 600, window.Y + 880, 560, 110 ), Anchor = UiAnchor.Center } );
+		// while it is being shared
+		var cancel = screen.Add( new UiButton { Id = "cancel", Text = () => strings.Extra( OpenTpwText.Cancel ), Clicked = () => hosting.Sharing?.Cancel(),
+			Bounds = new UiRect( x, window.Y + 880, 560, 110 ), Anchor = UiAnchor.Center } );
+		// after a failure: the start again, or another game's link taken over
+		var again = screen.Add( new UiButton { Id = "again", Text = () => strings.Extra( OpenTpwText.Back ), Clicked = hosting.DismissSharing,
+			Bounds = new UiRect( x, window.Y + 880, 560, 110 ), Anchor = UiAnchor.Center } );
+		var takeOver = screen.Add( new UiButton { Id = "takeOver", Text = () => strings.Extra( OpenTpwText.SharedParkTakeOver ),
+			Clicked = () => { hosting.DismissSharing(); Session.Coop.Open( takeOver: true ); },
+			Bounds = new UiRect( x + 600, window.Y + 880, 560, 110 ), Anchor = UiAnchor.Center } );
+		// while it is hosted
+		var code = screen.Add( new UiLabel { Id = "code", Font = fonts => fonts.Title, Color = UiColors.Title, Align = UiAlign.Center,
+			Text = () => Attempt()?.State is { } state ? string.Format( strings.Extra( OpenTpwText.SharedParkCode ), state.Code ) : "",
+			Bounds = new UiRect( x, window.Y + 150, width, 110 ), Anchor = UiAnchor.Center } );
+		var visibility = screen.Add( new UiLabel { Id = "visibility", Font = fonts => fonts.Small, Align = UiAlign.Center,
+			Text = () => Attempt()?.State is { } state ? strings.Extra( state.Listed ? OpenTpwText.SharedParkListed : OpenTpwText.SharedParkUnlisted ) : "",
+			Bounds = new UiRect( x, window.Y + 260, width, 70 ), Anchor = UiAnchor.Center } );
+		var rows = new List<(UiLabel Name, UiButton Remove)>();
+		for ( var index = 0; index < CoopProtocol.MaximumPlayers; index++ )
+		{
+			var row = index;
+			CoopMemberInfo? Member() => Attempt()?.State is { } state && row < state.Members.Count ? state.Members.OrderBy( member => member.Slot ).ElementAt( row ) : null;
+			var name = screen.Add( new UiLabel { Id = $"member{row}", Font = fonts => fonts.Label,
+				Text = () => Member() is { } member && Attempt()?.State is { } state ? MemberText( member, state ) : "",
+				Bounds = new UiRect( x, window.Y + 350 + row * 90, width - 420, 80 ), Anchor = UiAnchor.Center } );
+			var remove = screen.Add( new UiButton { Id = $"remove{row}", Text = () => strings.Extra( OpenTpwText.RemovePlayer ),
+				Clicked = () =>
+				{
+					if ( Member() is not { } member )
+						return;
+					UiScreen? confirm = null;
+					confirm = UiDialogs.Message( "confirmRemovePlayer", () => string.Format( strings.Extra( OpenTpwText.ConfirmRemovePlayer ), member.Name ),
+						(() => strings.Value( UIStrings.Yes ), () => { stack.Pop(); hosting.Sharing?.Kick( member.Id ); }),
+						(() => strings.Value( UIStrings.No ), () => stack.Pop()) );
+					stack.Push( confirm );
+				},
+				Bounds = new UiRect( x + width - 400, window.Y + 345 + row * 90, 400, 85 ), Anchor = UiAnchor.Center } );
+			rows.Add( (name, remove) );
+		}
+		var inviteField = screen.Add( new UiTextField { Id = "inviteName", MaximumLength = CoopProtocol.MaximumInviteNameLength, Model = "f_text1",
+			Bounds = new UiRect( x, window.Y + 730, width - 420, 93 ), Anchor = UiAnchor.Center } );
+		void Invite()
+		{
+			var name = inviteField.Text.Trim();
+			if ( name.Length == 0 || hosting.Sharing?.Invite( name ) != true )
+				return;
+			inviteNote = name;
+			inviteField.Text = "";
+		}
+		inviteField.Submitted = Invite;
+		var invite = screen.Add( new UiButton { Id = "invite", Text = () => strings.Extra( OpenTpwText.InvitePlayer ), Clicked = Invite,
+			Bounds = new UiRect( x + width - 400, window.Y + 725, 400, 100 ), Anchor = UiAnchor.Center } );
+		var inviteResult = screen.Add( new UiLabel { Id = "inviteResult", Wrap = true, Font = fonts => fonts.Small, Color = UiColors.Value,
+			Text = () => Attempt()?.LastRefusal is { } refused ? InviteRefusalText( refused, inviteNote )
+				: inviteNote != null ? string.Format( strings.Extra( OpenTpwText.InviteSent ), inviteNote ) : "",
+			Bounds = new UiRect( x, window.Y + 840, width, 90 ), Anchor = UiAnchor.Center } );
+		var end = screen.Add( new UiButton { Id = "endSharing", Text = () => strings.Extra( OpenTpwText.EndSharing ),
+			Clicked = () =>
+			{
+				UiScreen? confirm = null;
+				confirm = UiDialogs.Message( "confirmEndSharing", () => strings.Extra( OpenTpwText.ConfirmEndSharing ),
+					(() => strings.Value( UIStrings.Yes ), () => { stack.Pop(); hosting.Sharing?.End(); }),
+					(() => strings.Value( UIStrings.No ), () => stack.Pop()) );
+				stack.Push( confirm );
+			},
+			Bounds = new UiRect( x, window.Y + 960, 560, 110 ), Anchor = UiAnchor.Center } );
+		screen.Updating += _ =>
+		{
+			var starting = Starting();
+			var hosted = Hosting();
+			var waiting = Waiting();
+			var finished = Finished();
+			if ( !titleChosen )
+				titleField.Text = DefaultTitle();
+			intro.Visible = titleLabel.Visible = titleField.Visible = listedButton.Visible = playersButton.Visible = share.Visible = starting;
+			login.Visible = starting && !Session.IsLoggedIn;
+			share.Enabled = Session.IsLoggedIn && Session.Busy == 0 && hosting.ShareRefusal == CoopShareRefusal.None && titleField.Text.Trim().Length > 0;
+			message.Visible = !hosted;
+			cancel.Visible = waiting && Attempt() is { Stage: not CoopShareStage.Cancelling };
+			again.Visible = finished;
+			takeOver.Visible = finished && Attempt() is { Outcome: CoopShareOutcome.LinkStopped, Stop: CoopStop.InUseElsewhere or CoopStop.Replaced };
+			code.Visible = visibility.Visible = inviteField.Visible = invite.Visible = inviteResult.Visible = end.Visible = hosted;
+			for ( var index = 0; index < rows.Count; index++ )
+			{
+				var member = Attempt()?.State is { } state && index < state.Members.Count ? state.Members.OrderBy( info => info.Slot ).ElementAt( index ) : null;
+				rows[index].Name.Visible = hosted && member != null;
+				rows[index].Remove.Visible = hosted && member != null && member.Id != Attempt()!.State!.Host;
+			}
+		};
+		AddStatus( screen, window );
+		AddBack( screen, window );
+		screen.Focus( titleField );
+		Push( screen );
+	}
+
+	/// <summary>[EXT:online-coop-session] What the Build Together screen says of an attempt: its stage while it runs, its outcome once over.</summary>
+	private string ShareMessage( CoopShare share ) => share.Stage switch
+	{
+		CoopShareStage.Preparing or CoopShareStage.Creating or CoopShareStage.Cancelling => strings.Extra( OpenTpwText.SharingThePark ),
+		CoopShareStage.Done => share.Outcome switch
+		{
+			CoopShareOutcome.Refused => RefusalText( share.Refusal ),
+			CoopShareOutcome.LinkStopped => strings.Extra( share.Stop switch
+			{
+				CoopStop.InUseElsewhere or CoopStop.Replaced => OpenTpwText.SharedParkLinkInUse,
+				CoopStop.ServerTooOld => OpenTpwText.SharedParkServerTooOld,
+				_ => OpenTpwText.SharedParkLinkLost,
+			} ),
+			CoopShareOutcome.CreateRefused => strings.Extra( share.CreateRefusal switch
+			{
+				Online.Coop.CoopReason.ServerFull => OpenTpwText.SharedParkServerFull,
+				Online.Coop.CoopReason.Rate => OpenTpwText.SharedParkTryLater,
+				Online.Coop.CoopReason.TitleRefused => OpenTpwText.SharedParkTitleRefused,
+				Online.Coop.CoopReason.Unknown => OpenTpwText.SharedParkLinkLost,
+				_ => OpenTpwText.SharedParkFailed,
+			} ),
+			CoopShareOutcome.Ended => strings.Extra( OpenTpwText.SharedParkEnded ),
+			_ => strings.Extra( OpenTpwText.SharedParkFailed ),
+		},
+		_ => "",
+	};
+
+	/// <summary>[EXT:online-coop-session] Why the open park cannot be shared, in the player's language.</summary>
+	private string RefusalText( CoopShareRefusal refusal ) => strings.Extra( refusal switch
+	{
+		CoopShareRefusal.CheatPending => OpenTpwText.ShareRefusedCheat,
+		CoopShareRefusal.DeveloperOptions => OpenTpwText.ShareRefusedDeveloperOptions,
+		_ => OpenTpwText.ShareRefused,
+	} );
+
+	/// <summary>[EXT:online-coop-session] A member's line: the name, marked as the host or as away.</summary>
+	private string MemberText( CoopMemberInfo member, CoopSessionState state ) =>
+		member.Id == state.Host ? string.Format( strings.Extra( OpenTpwText.SharedParkHost ), member.Name )
+		: !member.Connected ? string.Format( strings.Extra( OpenTpwText.SharedParkAway ), member.Name )
+		: member.Name;
+
+	/// <summary>[EXT:online-coop-session] Why an invitation was not sent: the player is not online for shared parks (give them the code), or another refusal.</summary>
+	private string InviteRefusalText( Online.Coop.CoopError refused, string? invited ) => refused.Reason == Online.Coop.CoopReason.NotOnline
+		? string.Format( strings.Extra( OpenTpwText.InviteNotOnline ), invited ?? "" )
+		: strings.Extra( OpenTpwText.InviteRefused );
 
 	// ---- News (UI-MAP "Online news panel") ------------------------------------------------------
 
@@ -791,7 +1004,8 @@ public sealed class OnlineScreens
 		{
 			visit.Enabled = Session.Busy == 0 && host.Visit != null;
 			vote.Enabled = !park.VotedFor && Session.Busy == 0;
-			chat.Enabled = Session.IsLoggedIn;
+			// [EXT:online-coop-session] in a shared park the chat stays the session's
+			chat.Enabled = Session.IsLoggedIn && !Session.InSharedPark;
 			unpublish.Enabled = Session.IsLoggedIn && Session.Busy == 0
 				&& string.Equals( park.Author, Session.Settings.PlayerName, StringComparison.OrdinalIgnoreCase );
 		};

@@ -129,8 +129,14 @@ public sealed class ParkPresenceState
 	private int plannedVersion;
 	/// <summary>Seconds since a walk was last planned again for a changed ground (<see cref="Advance"/>).</summary>
 	private float sinceGroundPlan = float.PositiveInfinity;
+	/// <summary>The walk follows a route the search found, whose cells were free when it was planned (not the straight line to a goal without one).</summary>
+	private bool routed;
+	/// <summary>A walk stopped in front of a cell built on since its plan, waiting to be planned again (<see cref="Advance"/>).</summary>
+	private bool groundStopped;
 	/// <summary>The view's centre the figure was last sent to (<see cref="FollowView"/>), clamped to the park; null before the first, and after a ride.</summary>
 	private (float X, float Y)? followed;
+	/// <summary>The ground's version when the view's centre was last followed.</summary>
+	private int followedVersion;
 	/// <summary>When the walk to the view's centre was last planned (<see cref="FollowView"/>).</summary>
 	private double lastFollow = double.NegativeInfinity;
 	private (float X, float Y) lastSent;
@@ -178,6 +184,7 @@ public sealed class ParkPresenceState
 			return;
 		Riding = riding;
 		route.Clear();
+		groundStopped = false;
 		lastClick = null;
 		if ( riding )
 			rideExit = exit;
@@ -257,6 +264,8 @@ public sealed class ParkPresenceState
 		}
 		routeSearch ??= new RouteSearch( ground.Width, ground.Height );
 		var cells = routeSearch.Find( ground, start, goal );
+		routed = cells != null;
+		groundStopped = false;
 		if ( cells != null )
 			foreach ( var cell in Simplify( cells ) )
 				if ( cell != start && cell != goal )
@@ -283,6 +292,7 @@ public sealed class ParkPresenceState
 			(goalX, goalY) = (nearer.Item1 + 0.5f, nearer.Item2 + 0.5f);
 		}
 		route.Clear();
+		groundStopped = false;
 		Own.X = goalX;
 		Own.Y = goalY;
 		Own.Target = (goalX, goalY);
@@ -305,21 +315,29 @@ public sealed class ParkPresenceState
 		if ( Riding || !float.IsFinite( x ) || !float.IsFinite( y ) )
 			return;
 		var goal = ClampToPark( x, y );
-		// a view that stays put (over water or a ride too, whose nearest free cell the figure went to) plans nothing more
-		if ( followed is { } last && Distance( last, goal ) < ViewReplanCells )
+		// a view that stays put plans nothing more, but for a centre the figure could not be sent to (over water or a ride, or out of reach) on a ground changed since:
+		// what a co-builder opened may let it go there now
+		if ( followed is { } last && Distance( last, goal ) < ViewReplanCells && (ground.Version == followedVersion || Distance( Own.Target, last ) < ViewReplanCells) )
 			return;
 		if ( Distance( (Own.X, Own.Y), goal ) >= ViewJumpCells )
 		{
+			if ( followed != null && time - lastFollow < ViewReplanSeconds && Distance( followed.Value, goal ) < ViewReplanCells )
+				return;
 			TeleportTo( goal.X, goal.Y, passable: true );
-			followed = goal;
-			lastFollow = time;
+			Followed( goal, time );
 			return;
 		}
 		if ( time - lastFollow < ViewReplanSeconds )
 			return;
-		followed = goal;
-		lastFollow = time;
+		Followed( goal, time );
 		WalkTo( goal.X, goal.Y );
+	}
+
+	private void Followed( (float X, float Y) goal, double time )
+	{
+		followed = goal;
+		followedVersion = ground.Version;
+		lastFollow = time;
 	}
 
 	private static float Distance( (float X, float Y) a, (float X, float Y) b ) => MathF.Sqrt( (a.X - b.X) * (a.X - b.X) + (a.Y - b.Y) * (a.Y - b.Y) );
@@ -334,16 +352,27 @@ public sealed class ParkPresenceState
 	public (float X, float Y)? Advance( float delta, bool canSend, bool announce )
 	{
 		// [EXT:online-coop-figures] a walk planned on an older ground goes round what was built since, planned again at most every ViewReplanSeconds (a co-builder
-		// laying a path changes the ground cell by cell)
+		// laying a path changes the ground cell by cell); meanwhile it stops in front of a cell of its route that was built on
 		sinceGroundPlan += Math.Max( 0f, delta );
-		if ( route.Count > 0 && ground.Version != plannedVersion && sinceGroundPlan >= ViewReplanSeconds )
+		var groundChanged = ground.Version != plannedVersion;
+		if ( (route.Count > 0 || groundStopped) && groundChanged && sinceGroundPlan >= ViewReplanSeconds )
+		{
 			WalkTo( Own.Target.X, Own.Target.Y );
+			groundChanged = ground.Version != plannedVersion;
+		}
 		var budget = WalkSpeed * Math.Max( 0f, delta );
 		while ( budget > 0f && route.TryPeek( out var next ) )
 		{
 			var dx = next.X - Own.X;
 			var dy = next.Y - Own.Y;
 			var distance = MathF.Sqrt( dx * dx + dy * dy );
+			var step = Math.Min( 1f, budget / Math.Max( distance, float.Epsilon ) );
+			if ( routed && groundChanged && Enters( Own.X + dx * step, Own.Y + dy * step ) is false )
+			{
+				route.Clear();
+				groundStopped = true;
+				break;
+			}
 			if ( distance <= budget )
 			{
 				Own.Step( dx, dy );
@@ -624,6 +653,34 @@ public sealed class ParkPresenceState
 	}
 
 	private bool Passable( int x, int y ) => (uint)x < (uint)ground.Width && (uint)y < (uint)ground.Height && ground.IsPassable( x, y );
+
+	/// <summary>
+	/// Whether the own figure may step to (<paramref name="x"/>, <paramref name="y"/>): within its cell, or into a cell it may stand on; null when it stays in its cell. A step
+	/// within a cell built on is allowed, so a figure a co-builder built over walks out.
+	/// </summary>
+	private bool? Enters( float x, float y )
+	{
+		var (cellX, cellY) = ((int)MathF.Floor( x ), (int)MathF.Floor( y ));
+		if ( cellX == (int)MathF.Floor( Own.X ) && cellY == (int)MathF.Floor( Own.Y ) )
+			return null;
+		return Passable( cellX, cellY );
+	}
+
+	/// <summary>
+	/// [EXT:online-coop-figures] Where a figure may stand at <paramref name="place"/> (cells): the place itself on a cell a figure may stand on, else the centre of the nearest such
+	/// cell within <see cref="GoalSearchRadius"/>, else null (the middle of a lake). A shared park's figure enters there, not on water.
+	/// </summary>
+	public static (float X, float Y)? StandingNear( IPresenceGround ground, (float X, float Y) place )
+	{
+		if ( !float.IsFinite( place.X ) || !float.IsFinite( place.Y ) )
+			return null;
+		var state = new ParkPresenceState( ground, "", (0f, 0f) );
+		var (x, y) = state.ClampToPark( place.X, place.Y );
+		var cell = ((int)MathF.Floor( x ), (int)MathF.Floor( y ));
+		if ( state.Passable( cell.Item1, cell.Item2 ) )
+			return (x, y);
+		return state.NearestPassable( cell ) is { } nearer ? (nearer.Item1 + 0.5f, nearer.Item2 + 0.5f) : null;
+	}
 
 	/// <summary>The passable cell nearest <paramref name="goal"/> within <see cref="GoalSearchRadius"/> (ring by ring, then by distance), or null.</summary>
 	private (int, int)? NearestPassable( (int X, int Y) goal )

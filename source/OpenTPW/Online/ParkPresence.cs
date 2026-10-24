@@ -142,8 +142,10 @@ public sealed class ParkPresence : IVisitPresence, IChatPanelSource, IDisposable
 			|| level.Guests?.Grid.Cells is not { } cells || global::Global.Render == null )
 			return null;
 		var stopwatch = Stopwatch.StartNew();
-		var start = view() is { } centre ? centre : StartOf( level.Guests.Settings, cells );
-		var presence = new ParkPresence( session, room, name, new PresenceGround( cells ), start, () => stopwatch.Elapsed.TotalSeconds, sharedPark: true )
+		var ground = new PresenceGround( cells );
+		// the figure enters where the view looks, on a cell it may stand on; with none near (the view over a lake), at the entrance
+		var start = view() is { } centre && ParkPresenceState.StandingNear( ground, centre ) is { } near ? near : StartOf( level.Guests.Settings, cells );
+		var presence = new ParkPresence( session, room, name, ground, start, () => stopwatch.Elapsed.TotalSeconds, sharedPark: true )
 		{
 			Ride = () => level.RideView is { } ride ? new PresenceRide( ExitOf( ride.Ride ) ) : null,
 			View = view,

@@ -47,6 +47,18 @@ public partial class CoopLinkTests
 		// both chats are in the session's room: each first place is answered with the other's, so each member sees the other where they stand
 		await Frames( () => hostFigure.InRoom && guestFigure.InRoom && Sees( hostFigure, "Guest", 40.5f, 20.5f ) && Sees( guestFigure, "Hostess", 10.5f, 10.5f ), "each member to see the other" );
 		Assert.AreEqual( 1, hostFigure.State.Others.Count );
+		// the shared room is the connection's only while its own version is read and no join is on its way or waiting (a place now could reach another room)
+		Assert.IsTrue( host.Session.SharedRoomReady );
+		foreach ( var (flag, notReady) in new[] { ("joinPending", true), ("coopJoinWaits", true), ("protocolCurrent", false) } )
+		{
+			var field = typeof( OnlineSession ).GetField( flag, System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic )!;
+			var was = field.GetValue( host.Session );
+			field.SetValue( host.Session, notReady );
+			Assert.IsFalse( host.Session.SharedRoomReady, flag );
+			Assert.IsFalse( hostFigure.InRoom, flag );
+			field.SetValue( host.Session, was );
+		}
+		Assert.IsTrue( host.Session.SharedRoomReady );
 		// the guest's view moves on: its figure walks after it, and the host sees it walk
 		guestView = (44.5f, 20.5f);
 		await Frames( () => Sees( hostFigure, "Guest", 44.5f, 20.5f ), "the host to see the guest walk" );

@@ -949,11 +949,15 @@ guest's clicks are the HUD's. Each member's own figure follows that member's vie
   once, and its place goes out as a teleport.
 - A centre on a cell no figure stands on (water, a ride) is walked or moved to the nearest free cell
   within three cells, once; with none that near (the middle of a lake), the figure stays where it is.
+  Such a centre is tried again when the park's ground changes, since a co-builder may have opened it.
+- A figure enters where the view looks, on a free cell near it, or at the park's entrance when the view
+  looks at the middle of a lake.
 - While the player rides, the figure is hidden for the others, as in a visit, and comes out at the
   ride's exit; then it follows the view again.
 - The host builds while the figures walk. A walk planned on an older cell map (`ParkCellMap.Version`)
   is planned again on the new one, at most every quarter of a second, and the route search labels the
-  park's areas again, so a figure goes round what was built and through what was opened.
+  park's areas again, so a figure goes round what was built and through what was opened. Until then
+  it stops in front of a cell of its route that was built on.
 
 **The room.** The figures meet in the session's chat room (`coop:<id>`, C2d-1). The online session owns
 that chat: the shared park's presence never joins or leaves a room and never opens or closes the chat.

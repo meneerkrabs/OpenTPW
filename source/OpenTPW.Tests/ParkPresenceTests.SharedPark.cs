@@ -111,7 +111,8 @@ public partial class ParkPresenceTests
 		park.Frames( 10 );
 		Assert.AreEqual( at, park.Own );
 		Assert.IsFalse( park.Presence.State.Walking );
-		// leaving the park leaves the room and the chat as they are
+		// leaving the park leaves the room and the chat as they are, whatever the session says of its shared park by then (it may have left it first)
+		session.InSharedPark = false;
 		park.Presence.Dispose();
 		Assert.AreEqual( 0, session.Joins.Count );
 		Assert.AreEqual( 0, session.Closes );
@@ -270,6 +271,10 @@ public partial class ParkPresenceTests
 		var ground = new EditedGround( 40, 20 );
 		// a lake from column 20 to 29, across the park
 		ground.Block( from x in Enumerable.Range( 20, 10 ) from y in Enumerable.Range( 0, 20 ) select (x, y) );
+		// a figure that enters where the view looks stands on the free cell nearest it, and nowhere in the lake's middle (it enters at the park's entrance then)
+		Assert.AreEqual( (10.25f, 5.75f), ParkPresenceState.StandingNear( ground, (10.25f, 5.75f) ) );
+		Assert.AreEqual( (19.5f, 5.5f), ParkPresenceState.StandingNear( ground, (21.5f, 5.5f) ) );
+		Assert.IsNull( ParkPresenceState.StandingNear( ground, (25.5f, 5.5f) ) );
 		var park = new SharedPark( ground );
 		park.Frames();
 		// the view over the lake's shore: the figure walks to the free cell nearest the centre
@@ -296,6 +301,47 @@ public partial class ParkPresenceTests
 		park.Frames();
 		Assert.AreEqual( (30.5f, 18.5f), park.Own );
 		Assert.AreEqual( ChatMoveMode.Teleport, park.Session.MoveModes[^1] );
+		// over the lake's middle again: the figure stays; once a co-builder drains that spot, the view that stayed there is followed again
+		park.Centre = (25.5f, 10.5f);
+		park.Frames( 1, 0.3f );
+		Assert.AreEqual( (30.5f, 18.5f), park.Presence.State.Own.Target );
+		park.Frames( 1, 0.3f );
+		Assert.AreEqual( (30.5f, 18.5f), park.Presence.State.Own.Target );
+		ground.Free( (25, 10) );
+		park.Frames( 1, 0.3f );
+		Assert.AreEqual( (25.5f, 10.5f), park.Presence.State.Own.Target, "the drained spot is followed" );
+	}
+
+	[TestMethod]
+	public void AWalkStopsInFrontOfACellBuiltOnUntilItIsPlannedAgain()
+	{
+		var ground = new EditedGround( 30, 12 );
+		var park = new SharedPark( ground, start: (2.5f, 5.5f) );
+		park.Frames( 1, 0.3f );
+		park.Centre = (12.5f, 5.5f);
+		park.Frames( 1, 0.3f );
+		Assert.IsTrue( park.Presence.State.Walking );
+		while ( park.Own.X < 5.8f )
+			park.Frames( 1, 0.05f );
+		// an edit elsewhere: the walk is planned again at once (its last plan was long ago), and the next plan waits a quarter of a second
+		ground.Free( (29, 0) );
+		park.Frames( 1, 0.05f );
+		// within that quarter second a co-builder builds on the route's next cell: the figure stops in front of it, never on it
+		ground.Block( new[] { (6, 5) } );
+		for ( var frame = 0; frame < 3; frame++ )
+		{
+			park.Frames( 1, 0.05f );
+			Assert.IsFalse( ground.Blocked( (int)MathF.Floor( park.Own.X ), (int)MathF.Floor( park.Own.Y ) ), $"the figure stands on the new cell at {park.Own}" );
+		}
+		Assert.IsFalse( park.Presence.State.Walking, "it waits in front of the new cell" );
+		Assert.IsTrue( park.Own.X < 6f );
+		// then its walk is planned again, round the cell
+		for ( var frame = 0; frame < 400 && (park.Presence.State.Walking || !park.At( (12.5f, 5.5f) )); frame++ )
+		{
+			park.Frames();
+			Assert.IsFalse( ground.Blocked( (int)MathF.Floor( park.Own.X ), (int)MathF.Floor( park.Own.Y ) ), $"the figure stands on the new cell at {park.Own}" );
+		}
+		Assert.IsTrue( park.At( (12.5f, 5.5f) ), $"at {park.Own}" );
 	}
 
 	[TestMethod]

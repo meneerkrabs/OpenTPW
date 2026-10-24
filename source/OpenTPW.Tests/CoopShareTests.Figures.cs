@@ -23,21 +23,23 @@ public partial class CoopShareTests
 	public async Task AHostedParkHasItsFiguresWhileItsSessionRuns() => await CoopLinkTests.WithServer( async ( server, players ) =>
 	{
 		var host = await players.Add( server, "Hostess" );
+		var (other, _) = NewPark();
 		var (level, park) = NewPark();
 		var share = Share( level, host );
-		// the host's game: its park, a HUD, and its online session
+		// the host's game: its park and its online session; its HUD comes later
 		var flow = (GameFlow)RuntimeHelpers.GetUninitializedObject( typeof( GameFlow ) );
 		SetFlowField( flow, "onlineSession", host.Session );
 		SetFlowField( flow, "<Level>k__BackingField", level );
-		SetFlowField( flow, "<Hud>k__BackingField", RuntimeHelpers.GetUninitializedObject( typeof( Hud.ParkHud ) ) );
 		var made = new List<(Level Level, string Room)>();
-		flow.CoopPresenceOverride = ( session, shared, room, view, running ) =>
+		Func<bool>? running = null;
+		flow.CoopPresenceOverride = ( session, shared, room, view, isRunning ) =>
 		{
 			made.Add( (shared, room) );
+			running = isRunning;
 			return new ParkPresence( session, room, "Hostess", new ParkPresence.PresenceGround( shared.Guests!.Grid.Cells ), (2.5f, 1.5f), () => clock, sharedPark: true )
 			{
 				View = view,
-				Running = running,
+				Running = isRunning,
 			};
 		};
 		flow.StepCoopPresence();
@@ -55,6 +57,11 @@ public partial class CoopShareTests
 		visit.Dispose();
 		SetFlowField( flow, "presence", null );
 
+		// the figures' names are the HUD's to draw: none before the park has its HUD
+		flow.StepCoopPresence();
+		Assert.IsNull( flow.Presence );
+		SetFlowField( flow, "<Hud>k__BackingField", RuntimeHelpers.GetUninitializedObject( typeof( Hud.ParkHud ) ) );
+
 		// the hosted park gets its presence in the session's room, once
 		flow.StepCoopPresence();
 		var presence = flow.CoopPresence;
@@ -70,6 +77,19 @@ public partial class CoopShareTests
 		}, "the host's figure in the session's room", new[] { host }, park: park );
 		Assert.AreSame( presence, flow.Presence );
 		Assert.AreEqual( 1, made.Count, "one presence for a park and its session" );
+		Assert.IsTrue( running!(), "its session runs" );
+
+		// another park in the same session (the game's park changed without a teardown): a presence of its own
+		other.CoopSession = level.CoopSession;
+		SetFlowField( flow, "<Level>k__BackingField", other );
+		flow.StepCoopPresence();
+		Assert.AreEqual( (other, room), made[^1] );
+		Assert.IsFalse( presence.Walks, "the other park's presence was disposed" );
+		other.CoopSession = null;
+		SetFlowField( flow, "<Level>k__BackingField", level );
+		flow.StepCoopPresence();
+		Assert.AreEqual( (level, room), made[^1] );
+		presence = flow.CoopPresence!;
 
 		// a teardown disposes it as it disposes every presence: the next step makes it anew
 		presence.Dispose();
@@ -77,16 +97,17 @@ public partial class CoopShareTests
 		flow.StepCoopPresence();
 		Assert.IsNotNull( flow.CoopPresence );
 		Assert.AreNotSame( presence, flow.CoopPresence );
-		Assert.AreEqual( 2, made.Count );
+		Assert.AreEqual( 4, made.Count );
 
-		// the host ends the session: the figures go with it
+		// the host ends the session: the presence knows at once (a session can end during the level's update), and the figures go with it
 		var last = flow.CoopPresence!;
 		share.End();
+		Assert.IsFalse( running!(), "the session ended" );
 		flow.StepCoopPresence();
 		Assert.IsNull( flow.Presence );
 		Assert.IsNull( flow.CoopPresence );
 		Assert.IsFalse( last.Walks, "disposed" );
 		flow.StepCoopPresence();
-		Assert.AreEqual( 2, made.Count );
+		Assert.AreEqual( 4, made.Count );
 	} );
 }

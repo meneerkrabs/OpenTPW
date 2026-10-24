@@ -113,8 +113,8 @@ test('the endurance run needs its whole minutes at the fastest speed, on both si
 		const { host, guest } = passingPair();
 		const count = minutes * 2;
 		const samples = (first, ticks) => Array.from({ length: count }, (_, index) => ({ at: first + index * 30, ticks: ticks + index * 30 * rate, speed: 'Fastest' }));
-		host.endurance = { started: 20, ended: 20 + minutes * 60, samples: samples(50, 1000) };
-		guest.endurance = samples(45, 900);
+		host.endurance = { started: 20, startTicks: 1000 - 30 * rate, ended: 20 + minutes * 60, samples: samples(50, 1000) };
+		guest.endurance = samples(21, 900);
 		return { host, guest };
 	};
 	const named = minutes => `the fastest speed was followed for ${minutes} minutes`;
@@ -129,6 +129,13 @@ test('the endurance run needs its whole minutes at the fastest speed, on both si
 	assert.deepEqual(failing(checkEvidence(pair.host, pair.guest, 'endurance', 2)), [named(2)]);
 	pair = run(2);
 	pair.host.endurance.samples[1].speed = 'Normal';
+	assert.deepEqual(failing(checkEvidence(pair.host, pair.guest, 'endurance', 2)), [named(2)]);
+	// a stall in the first half minute, before the first sample
+	pair = run(2);
+	pair.host.endurance.startTicks = pair.host.endurance.samples[0].ticks - 30 * 60;
+	assert.deepEqual(failing(checkEvidence(pair.host, pair.guest, 'endurance', 2)), [named(2)]);
+	pair = run(2);
+	delete pair.host.endurance.startTicks;
 	assert.deepEqual(failing(checkEvidence(pair.host, pair.guest, 'endurance', 2)), [named(2)]);
 	// samples missing on one side
 	pair = run(2);
@@ -184,4 +191,13 @@ test('a throwaway player fits the login field, and its password never reaches a 
 	const [one, two] = players;
 	assert.equal(redact(`login ${one.password} then ${one.password} and ${two.password}`, [one.password, two.password, '']),
 		'login [redacted] then [redacted] and [redacted]');
+});
+
+test('a log that cannot be written fails its promise, not the driver', async () => {
+	const child = Object.assign(new EventEmitter(), { stdout: new PassThrough(), stderr: new PassThrough() });
+	const logged = logTo(child, path.join(os.tmpdir(), `coop-live-missing-${process.pid}`, 'no', 'game.log'), []);
+	child.stdout.write('a line\n');
+	child.stdout.end();
+	child.stderr.end();
+	await assert.rejects(logged, /ENOENT/);
 });

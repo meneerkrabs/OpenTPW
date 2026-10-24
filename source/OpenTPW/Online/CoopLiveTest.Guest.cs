@@ -190,7 +190,10 @@ internal sealed partial class CoopLiveTest
 		yield return Wait( "the host's fastest speed", () => OtherSays( "enduranceStarted" ), 180 );
 		var stream = TheSession.GuestStream!;
 		var (checks, started) = (stream.Checks, Now);
-		var progress = new JsonArray();
+		// the first sample at the speed's barrier, so the first half minute's rate counts too
+		var first = StreamEvidence();
+		first["at"] = Math.Round( Now, 3 );
+		var progress = new JsonArray( first );
 		while ( !OtherSays( "enduranceDone" ) )
 		{
 			var next = Now + 30;

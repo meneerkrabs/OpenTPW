@@ -396,3 +396,31 @@ test('an upstream answer that refuses an upgrade is bounded in time and size, an
 		await rm(root, { recursive: true, force: true });
 	}
 });
+
+test('a refused client that keeps its side open keeps its place until the local server closes it', async () => {
+	const { createServer } = await import('node:http');
+	const net = await import('node:net');
+	const upstream = createServer((request, response) => response.end('plain'));
+	upstream.on('upgrade', (request, socket) => socket.end('HTTP/1.1 403 Forbidden\r\nContent-Length: 2\r\n\r\nno'));
+	await new Promise(resolve => upstream.listen(0, '127.0.0.1', resolve));
+	const root = await mkdtemp(path.join(os.tmpdir(), 'web-perf-upgrade-'));
+	const harness = await startServer(root, root, `http://127.0.0.1:${upstream.address().port}`, { sockets: 1, endMs: 300 });
+	try {
+		const port = Number(new URL(harness.origin).port);
+		// a raw client: it reads the refusal and never ends its own side
+		const lingering = net.connect(port, '127.0.0.1');
+		lingering.write('GET /api/v1/chat HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: Upgrade\r\nUpgrade: websocket\r\n\r\n');
+		const refused = await new Promise(resolve => lingering.once('data', chunk => resolve(chunk.toString())));
+		assert.match(refused, /^HTTP\/1\.1 403 Forbidden/);
+		const closed = new Promise(resolve => lingering.once('close', resolve));
+		// its place is still taken
+		assert.equal((await upgradeThrough(harness.origin, '/api/v1/chat')).status, 503);
+		// until the local server closes it, after the half-close wait
+		await closed;
+		assert.equal((await upgradeThrough(harness.origin, '/api/v1/chat')).status, 403);
+	} finally {
+		await harness.close();
+		await new Promise(resolve => upstream.close(resolve));
+		await rm(root, { recursive: true, force: true });
+	}
+});

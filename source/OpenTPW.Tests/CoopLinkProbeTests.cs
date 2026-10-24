@@ -89,6 +89,9 @@ public class CoopLinkProbeTests
 		Assert.AreEqual( (string)created["id"]!, (string)joined["id"]! );
 		Assert.AreEqual( hostId, (uint)joined["host"]! );
 		Assert.AreEqual( guestId, (uint)Records( host, "member" ).Single( item => (string?)item["state"] == "Joined" )["id"]! );
+		// each probe's status says whether its login's chat is open, and in which room (the live acceptance's proxy check reads it: docs/COOP.md, "The live acceptance")
+		await Until( host, guest, () => (bool?)host.Status()["chat"]!["open"] == true && (bool?)guest.Status()["chat"]!["open"] == true, "both chats" );
+		Assert.IsFalse( string.IsNullOrEmpty( (string?)guest.Status()["chat"]!["room"] ) );
 
 		// the host's snapshot, stored once a member joined (the server refuses one before), and the guest's download of it
 		var snapshot = Seeded( 150 * 1024, 1 );

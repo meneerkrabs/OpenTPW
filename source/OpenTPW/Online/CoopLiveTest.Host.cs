@@ -183,7 +183,8 @@ internal sealed partial class CoopLiveTest
 		var started = Now;
 		var until = started + enduranceMinutes * 60;
 		var samples = new JsonArray();
-		var endurance = new JsonObject { ["started"] = Math.Round( started, 3 ), ["samples"] = samples };
+		// the park's ticks when the speed was set: the first half minute's rate counts too
+		var endurance = new JsonObject { ["started"] = Math.Round( started, 3 ), ["startTicks"] = ThePark.TickCount, ["samples"] = samples };
 		Publish( "enduranceStarted", true );
 		while ( Now < until )
 		{

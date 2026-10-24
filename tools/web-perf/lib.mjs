@@ -140,7 +140,8 @@ function refuseUpgrade(socket, status, reason) {
 /**
  * Forwards a WebSocket upgrade below /api/ to the upstream (startServer): the request's path and query and its headers, with the upstream's host, as for a forwarded
  * request. The upstream's 101 goes back with its headers, and the two sockets are joined; any other answer goes back as it is, at most `limits.refusalBytes` of it, and
- * the connection closes. The upstream's whole answer is due within `limits.answerMs`. Either end closing or failing closes both, and frees the socket's place.
+ * the connection closes. The upstream's whole answer is due within `limits.answerMs`. Either end closing or failing closes both. A socket keeps its place among the
+ * `limits.sockets` until it has closed: a client that keeps its side open after an answer it was refused is closed after `limits.endMs`.
  */
 function forwardUpgrade(request, socket, head, upstreamUrl, log, sockets, limits) {
 	const url = new URL(request.url, 'http://localhost');
@@ -153,31 +154,40 @@ function forwardUpgrade(request, socket, head, upstreamUrl, log, sockets, limits
 	sockets.add(socket);
 	let upstreamSocket = null;
 	let timer = null;
-	let closed = false;
-	const close = () => {
-		if (closed)
-			return;
-		closed = true;
-		clearTimeout(timer);
-		sockets.delete(socket);
-		socket.destroy();
+	/** Whether the client's answer is decided: joined to the upstream, refused, or failed. */
+	let answered = false;
+	const endUpstream = () => {
 		upstreamSocket?.destroy();
 		outgoing.destroy();
 	};
-	/** A plain answer of the local server's own in place of the upstream's, then the close. */
+	// the socket's place is free only once it has closed
+	socket.once('close', () => {
+		clearTimeout(timer);
+		sockets.delete(socket);
+		endUpstream();
+	});
+	const close = () => {
+		answered = true;
+		clearTimeout(timer);
+		socket.destroy();
+		endUpstream();
+	};
+	/** An answer to the client, then its end: a client that keeps its side open is closed after limits.endMs. */
+	const answer = bytes => {
+		answered = true;
+		clearTimeout(timer);
+		endUpstream();
+		socket.end(bytes);
+		setTimeout(() => socket.destroy(), limits.endMs).unref();
+	};
+	/** A plain answer of the local server's own in place of the upstream's. */
 	const fail = (status, reason) => {
-		if (closed)
+		if (answered)
 			return;
 		entry.status = status;
-		refuseUpgrade(socket, status, reason);
-		sockets.delete(socket);
-		clearTimeout(timer);
-		closed = true;
-		upstreamSocket?.destroy();
-		outgoing.destroy();
+		answer(`HTTP/1.1 ${status} ${reason}\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`);
 	};
 	socket.on('error', close);
-	socket.on('close', close);
 	// a connection of its own (no agent's pool): it is the socket's for as long as the socket lives, and closes with it
 	const outgoing = httpRequest({ hostname: upstreamUrl.hostname.replace(/^\[|\]$/g, ''), port: upstreamUrl.port || 80, path: url.pathname + url.search,
 		method: request.method, headers: { ...request.headers, host: upstreamUrl.host }, agent: false });
@@ -185,8 +195,9 @@ function forwardUpgrade(request, socket, head, upstreamUrl, log, sockets, limits
 	outgoing.on('upgrade', (response, upstream, upstreamHead) => {
 		clearTimeout(timer);
 		upstreamSocket = upstream;
-		if (closed)
+		if (answered || socket.destroyed)
 			return upstream.destroy();
+		answered = true;
 		entry.status = response.statusCode;
 		const lines = [`HTTP/1.1 ${response.statusCode} ${response.statusMessage}`];
 		for (let index = 0; index < response.rawHeaders.length; index += 2)
@@ -222,15 +233,11 @@ function forwardUpgrade(request, socket, head, upstreamUrl, log, sockets, limits
 			body.push(chunk);
 		});
 		response.on('end', () => {
-			if (closed)
+			if (answered)
 				return;
 			const whole = Buffer.concat(body);
 			lines.push(`Content-Length: ${whole.length}`);
-			socket.end(Buffer.concat([Buffer.from(lines.join('\r\n') + '\r\n\r\n'), whole]));
-			sockets.delete(socket);
-			clearTimeout(timer);
-			closed = true;
-			outgoing.destroy();
+			answer(Buffer.concat([Buffer.from(lines.join('\r\n') + '\r\n\r\n'), whole]));
 		});
 		// an answer cut off before its end
 		response.on('aborted', () => fail(502, 'Bad Gateway'));

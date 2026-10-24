@@ -193,7 +193,10 @@ internal sealed class CoopLinkProbe : IDisposable
 		return true;
 	}
 
-	/// <summary>The probe's state and records as JSON: its phase, failure, server protocol, the session it holds and every record in order.</summary>
+	/// <summary>
+	/// The probe's state and records as JSON: its phase, failure, server protocol, the session it holds, whether its login's chat is open and in which room, and every record in
+	/// order.
+	/// </summary>
 	internal JsonObject Status()
 	{
 		var records = new JsonArray();
@@ -207,6 +210,7 @@ internal sealed class CoopLinkProbe : IDisposable
 			["state"] = Link.State.ToString(),
 			["session"] = Link.Session is { } state ? Describe( state ) : null,
 			["ended"] = SessionEnded,
+			["chat"] = new JsonObject { ["open"] = session.ChatOpen, ["room"] = session.CurrentRoom },
 			["events"] = records,
 		};
 	}

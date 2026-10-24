@@ -30,6 +30,8 @@ const SIDES = ['native'];
 const START_SECONDS = 300;
 /** How long the server is down in the recovery scenario before it starts again, in seconds. */
 const OUTAGE_SECONDS = 3;
+/** How long the logs may take to finish once their processes ended, in seconds. */
+const LOG_SECONDS = 10;
 
 export function parseArguments(argv) {
 	const options = {
@@ -112,17 +114,29 @@ async function freePort() {
 
 /**
  * A child's output into a log file, secrets replaced: each pipe's lines whole (a secret split over two chunks of one pipe is still found), written as they end, and a pipe's
- * last line once it ends. The file is finished when both pipes have ended; the returned promise resolves then.
+ * last line once it ends. The file is finished when both pipes have ended: the returned promise resolves then, and rejects with the file's error if it cannot be written
+ * (the run fails on it, after its cleanup).
  */
 export function logTo(child, file, secrets) {
 	const stream = createWriteStream(file, { flags: 'a' });
 	const pipes = [child.stdout, child.stderr].filter(Boolean);
 	let open = pipes.length;
-	const finished = new Promise(resolve => stream.once('finish', resolve));
+	let failed = null;
+	const finished = new Promise((resolve, reject) => {
+		stream.once('finish', resolve);
+		// every error of the file is the log's, not the driver's end
+		stream.on('error', error => {
+			failed ??= error;
+			reject(error);
+		});
+	});
+	finished.catch(() => {});
 	for (const pipe of pipes) {
 		let pending = '';
 		let ended = false;
 		pipe.on('data', chunk => {
+			if (failed)
+				return;
 			pending += chunk;
 			const lines = pending.split('\n');
 			pending = lines.pop();
@@ -133,7 +147,7 @@ export function logTo(child, file, secrets) {
 			if (ended)
 				return;
 			ended = true;
-			if (pending)
+			if (pending && !failed)
 				stream.write(redact(pending, secrets) + '\n');
 			pending = '';
 			if (--open === 0)
@@ -169,7 +183,7 @@ async function stop(child, signal = 'SIGTERM') {
 /** The real server on a fixed port with its data folder (kept over a restart), its output into server.log. */
 class Server {
 	constructor(dll, data, port, log, secrets) {
-		Object.assign(this, { dll, data, port, log, secrets, child: null, starts: 0 });
+		Object.assign(this, { dll, data, port, log, secrets, child: null, starts: 0, logs: [] });
 		this.origin = `http://127.0.0.1:${port}`;
 	}
 
@@ -179,7 +193,7 @@ class Server {
 		const child = this.child = spawn(process.env.DOTNET ?? 'dotnet', args, { cwd: path.dirname(this.dll), stdio: ['ignore', 'pipe', 'pipe'],
 			env: { ...process.env, DOTNET_CLI_TELEMETRY_OPTOUT: '1' } });
 		this.starts++;
-		logTo(child, this.log, this.secrets);
+		this.logs.push(logTo(child, this.log, this.secrets));
 		let output = '';
 		await new Promise((resolve, reject) => {
 			const timer = setTimeout(() => reject(new Error(`The server did not listen within 60 s:\n${redact(output.slice(-2000), this.secrets)}`)), 60000);
@@ -325,7 +339,8 @@ export function checkEvidence(host, guest, scenario, minutes) {
 		const endurance = host?.endurance;
 		const samples = endurance?.samples ?? [];
 		const seconds = Number.isFinite(endurance?.ended - endurance?.started) ? endurance.ended - endurance.started : 0;
-		const rates = tickRates(samples);
+		// the rates run from the speed's setting (its tick count then) to the last sample
+		const rates = Number.isFinite(endurance?.startTicks) ? tickRates([{ at: endurance.started, ticks: endurance.startTicks }, ...samples]) : [];
 		const guestSamples = guest?.endurance ?? [];
 		check(`the fastest speed was followed for ${minutes} minutes`, seconds >= minutes * 60 && samples.length >= Math.floor(minutes * 2)
 			&& samples.every(sample => sample.speed === 'Fastest') && rates.length > 0 && rates.every(rate => rate >= FASTEST_TICKS_PER_SECOND)
@@ -437,8 +452,15 @@ async function run(options) {
 				cleanup.push(`the ${role} (process ${child.pid}) had not exited`);
 		if (server && !await server.stop())
 			cleanup.push(`the server (process ${server.child?.pid}) had not exited`);
-		// the games' last lines are in their logs before the run's record is written
-		await Promise.race([Promise.all(Object.values(games).map(child => child.logged)), sleep(5000)]);
+		// every log is whole before the run's record is written: one that could not be written, or did not finish, fails the run
+		const logs = [...Object.entries(games).map(([role, child]) => [`the ${role}'s log`, child.logged]), ...(server?.logs ?? []).map(log => ['the server\'s log', log])];
+		const settled = logs.map(() => null);
+		await Promise.race([Promise.all(logs.map(([, log], index) => log.then(() => settled[index] = 'finished', error => settled[index] = `could not be written: ${error.message}`))),
+			sleep(LOG_SECONDS * 1000)]);
+		logs.forEach(([name], index) => {
+			if (settled[index] !== 'finished')
+				cleanup.push(`${name} ${settled[index] ?? `did not finish within ${LOG_SECONDS} s`}`);
+		});
 		if (cleanup.length) {
 			record.cleanup = cleanup;
 			if (record.state === 'passed') {

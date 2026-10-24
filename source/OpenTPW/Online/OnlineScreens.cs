@@ -1131,7 +1131,8 @@ public sealed class OnlineScreens
 					Session.Login( name.Text.Trim(), password.Text, code.Text.Trim().Length == 0 ? null : code.Text.Trim() );
 				localStatus = "";
 			}
-			catch ( Exception exception ) when ( exception is ArgumentException or InvalidOperationException or UriFormatException or InvalidDataException )
+			// UseServer's refusals carry their reason in the game's language (OnlineSession.ParseServerUrl)
+			catch ( Exception exception ) when ( exception is ArgumentException or InvalidOperationException or InvalidDataException )
 			{
 				localStatus = exception.Message;
 			}

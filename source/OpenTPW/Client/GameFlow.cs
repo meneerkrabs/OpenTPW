@@ -1000,6 +1000,19 @@ internal sealed partial class GameFlow : IDisposable
 		Lobby.StepSigns( Menu?.Selected, paused: LobbyEntering );
 	}
 
+	/// <summary>
+	/// The lobby's draw order: every entity but the weather, then the lightning's flash quad when a strike set the flag, then the weather (bolts and rain), as the original draws them
+	/// (<c>0x57ee30</c> draws the quad first and steps the bolts after it; the rain follows at <c>0x57ffec</c>).
+	/// </summary>
+	internal static void RenderLobbyLayers( IEnumerable<Action> entities, Action? weather, bool flash, Action drawFlash )
+	{
+		foreach ( var render in entities )
+			render();
+		if ( flash )
+			drawFlash();
+		weather?.Invoke();
+	}
+
 	/// <summary>The lobby's reference frames (60 Hz) for the frame-driven effects and flyers.</summary>
 	private readonly ReferenceFrameClock lobbyFrames = new();
 
@@ -1098,16 +1111,20 @@ internal sealed partial class GameFlow : IDisposable
 				cloudLayer.SetGridColour( 0xFF000000u | (uint)sky.R << 16 | (uint)sky.G << 8 | sky.B );
 				cloudLayer.Draw( Time.Delta );
 			}
-			foreach ( var entity in Entity.All.ToArray() )
-				entity.Render();
-			// [BIN:TPW-EXE:0x57ee30 lightning flash] the lightning draw tests the flash flag (+4) first and draws one full-screen quad (0x57ed50: corners -1..1, vertex colour 0xFFFFFFFF, state 0x9A1) before it steps the bolts
+			// [BIN:TPW-EXE:0x57ee30 lightning flash] the lightning draw tests the flash flag (+4) first and draws one full-screen quad (0x57ed50: corners -1..1, vertex colour 0xFFFFFFFF, state 0x9A1) before it steps the bolts (from 0x57ee4d); the rain render (0x57ff60, called from the scene 0x576a00 at 0x576dab) calls it before the raindrops (after 0x57ffec), so the bolts and the rain are drawn over the inverted picture and stay bright
 			// [BIN:TPW-EXE:0x57ed75 flash state] 0x9A1: alpha blend on (bit 0x100), z write off (bit 0x800), source blend INVDESTCOLOR and destination ZERO (low byte 0xA1), so the quad inverts the picture for the frame
-			if ( lobbyEffects.Flash && IncFrontEnd == null )
-			{
-				backgroundBatch.Clear();
-				backgroundBatch.AddRectangle( new UiRect( 0, 0, framebuffer.Width, framebuffer.Height ), RgbaByte.White );
-				backgroundRenderer.Draw( global::Global.Render.CommandList, backgroundBatch, framebuffer.Width, framebuffer.Height, invert: true );
-			}
+			var entities = Entity.All.ToArray();
+			var weather = lobbyWeather;
+			RenderLobbyLayers(
+				entities.Where( entity => entity != weather ).Select<Entity, Action>( entity => entity.Render ).ToArray(),
+				weather == null ? null : weather.Render,
+				lobbyEffects.Flash && IncFrontEnd == null,
+				() =>
+				{
+					backgroundBatch.Clear();
+					backgroundBatch.AddRectangle( new UiRect( 0, 0, framebuffer.Width, framebuffer.Height ), RgbaByte.White );
+					backgroundRenderer.Draw( global::Global.Render.CommandList, backgroundBatch, framebuffer.Width, framebuffer.Height, invert: true );
+				} );
 		}
 		Context.Canvas = CurrentCanvas();
 		Context.Batch.Clear();

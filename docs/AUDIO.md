@@ -608,9 +608,12 @@ stepped by `LobbyEffects` at the 60 Hz reference rate (`[EXT:frame-driven-at-60h
   wander that also does is not built, so the rhythm of strikes and one-shots differs (UI-941; the flyers and the islands step in the original's order and at the same frame rate).
 * **Lightning** (only hallow: `LIGHTNING 63`): a draw with `(draw & LIGHTNING) == 1` strikes; four draws place the top
   within ±50 of the island at height 500 and the bottom within ±10 of it at height 0; the bolt lives 500 ms, the screen
-  flashes white for one frame and `cat_globallobbysfx` 1 plays flat at once (`0x10095124`, `0x10095310`). The bolt is
-  drawn by the park's weather renderer (CRain, "Weather visuals"), at the lobby's own scale; the flash is an opaque white
-  frame under the menus (its blend is not decoded).
+  flashes for one frame and `cat_globallobbysfx` 1 plays flat at once (`0x10095124`, `0x10095310`). The bolt is
+  drawn by the park's weather renderer (CRain, "Weather visuals"), at the lobby's own scale. The flash is not white: tp.exe
+  draws one full-screen quad (`0x57ed50`, from the lightning draw `0x57ee30`, state `0x9A1`: source blend INVDESTCOLOR,
+  destination ZERO, `0x5679B0`) that inverts the picture, and clears the flag once it is drawn. In the original's order the quad comes
+  first, then the bolts (`0x57ee4d`) and the raindrops (after `0x57ffec`; the rain render `0x57ff60` is called from the scene `0x576a00` at `0x576dab`), so
+  the bolts and the rain stay bright on the inverted frame. OpenTPW draws the other entities, then the quad, then the weather renderer.
 * **Rain**: 10^17 / (mean squared distance from the camera to the rainy islands)^4 drops, none below 20, at most 400
   (`0x10094F8C`): about 173 at the orbit radius around hallow, drawn by the same renderer.
 * **Island one-shots**: a draw with `(draw & 15) == 1` plays event 3 + (fresh draw mod 3) of the island's

@@ -152,4 +152,21 @@ public class LobbyEffectsTests
 		effects.Step( 1f / 120f, new[] { jungle }, 0, 0 );
 		Assert.AreEqual( reference.Draw(), effects.Draw(), "half a tick draws nothing" );
 	}
+
+	/// <summary>[BIN:TPW-EXE:0x57ee30] the flash quad is drawn before the bolts and the rain, so they stay bright on the inverted frame.</summary>
+	[TestMethod]
+	public void TheFlashQuadIsDrawnAfterTheEntitiesAndBeforeTheWeather()
+	{
+		var order = new System.Collections.Generic.List<string>();
+		GameFlow.RenderLobbyLayers( new System.Action[] { () => order.Add( "a" ), () => order.Add( "b" ) }, () => order.Add( "weather" ), flash: true, () => order.Add( "flash" ) );
+		CollectionAssert.AreEqual( new[] { "a", "b", "flash", "weather" }, order );
+
+		order.Clear();
+		GameFlow.RenderLobbyLayers( new System.Action[] { () => order.Add( "a" ) }, () => order.Add( "weather" ), flash: false, () => order.Add( "flash" ) );
+		CollectionAssert.AreEqual( new[] { "a", "weather" }, order, "without a strike there is no quad" );
+
+		order.Clear();
+		GameFlow.RenderLobbyLayers( new System.Action[] { () => order.Add( "a" ) }, null, flash: true, () => order.Add( "flash" ) );
+		CollectionAssert.AreEqual( new[] { "a", "flash" }, order, "a lobby without a weather renderer still flashes" );
+	}
 }

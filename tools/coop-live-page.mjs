@@ -56,19 +56,19 @@ export function pictureName(role, name) {
 	return typeof name === 'string' && new RegExp(`^${role}-[a-z0-9-]+\\.png$`).test(name);
 }
 
-const CHANNELS = { 0: 1, 2: 3, 3: 1, 4: 2, 6: 4 };
-const DEPTHS = { 0: [1, 2, 4, 8, 16], 2: [8, 16], 3: [1, 2, 4, 8], 4: [8, 16], 6: [8, 16] };
+/** The pictures are truecolour PNGs: Chrome's screenshots are RGB, the native game's captures RGBA, 8 or 16 bits a channel. */
+const CHANNELS = { 2: 3, 6: 4 };
 
 /**
- * A PNG's width and height once the whole image decodes: every chunk whole with its checksum, the header first (a bit depth its colour type allows, the standard compression
- * and filtering) and the end last, a palette before the data of a palette image, and the image data inflating to exactly the rows the header promises (non-interlaced),
- * each row's filter one of the five. Null for anything else.
+ * A truecolour PNG's width and height once the whole image decodes: every chunk whole with its checksum, the header first (RGB or RGBA at 8 or 16 bits, the standard
+ * compression and filtering) and the end last, and the image data inflating to exactly the rows the header promises (non-interlaced), each row's filter one of the five.
+ * Null for anything else, a palette or grey image included (no picture of the acceptance is one).
  */
 export function pngSize(bytes) {
 	const signature = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 	if (!Buffer.isBuffer(bytes) || bytes.length < 8 || !bytes.subarray(0, 8).equals(signature))
 		return null;
-	let offset = 8, header = null, ended = false, palette = false;
+	let offset = 8, header = null, ended = false;
 	const data = [];
 	while (offset + 12 <= bytes.length && !ended) {
 		const length = bytes.readUInt32BE(offset);
@@ -82,19 +82,14 @@ export function pngSize(bytes) {
 			if (body.length !== 13)
 				return null;
 			header = { width: body.readUInt32BE(0), height: body.readUInt32BE(4), depth: body[8], color: body[9], compression: body[10], filter: body[11], interlace: body[12] };
-		} else if (type === 'PLTE')
-			palette = true;
-		else if (type === 'IDAT') {
-			if (header.color === 3 && !palette)
-				return null;
+		} else if (type === 'IDAT')
 			data.push(body);
-		}
 		else if (type === 'IEND')
 			ended = true;
 		offset += 12 + length;
 	}
 	if (!header || !ended || header.interlace !== 0 || header.compression !== 0 || header.filter !== 0 || !(header.width > 0 && header.height > 0)
-		|| !DEPTHS[header.color]?.includes(header.depth))
+		|| !CHANNELS[header.color] || ![8, 16].includes(header.depth))
 		return null;
 	try {
 		const rowBytes = Math.ceil(header.width * CHANNELS[header.color] * header.depth / 8);

@@ -270,8 +270,8 @@ test('a page asks only for its own role\'s pictures, by a flat name', () => {
 	assert.ok(!pictureName('host', undefined));
 });
 
-/** A whole PNG of `width` by `height` RGBA pixels, each row with `filter`; `cut` drops that many bytes from its end. */
-function png(width, height, cut = 0, filter = 0) {
+/** A whole PNG of `width` by `height` pixels (RGBA, or `color`), each row with `filter`; `cut` drops that many bytes from its end. */
+function png(width, height, cut = 0, filter = 0, color = 6) {
 	const chunk = (type, body) => {
 		const head = Buffer.alloc(8);
 		head.writeUInt32BE(body.length, 0);
@@ -283,11 +283,12 @@ function png(width, height, cut = 0, filter = 0) {
 	const header = Buffer.alloc(13);
 	header.writeUInt32BE(width, 0);
 	header.writeUInt32BE(height, 4);
+	const channels = { 0: 1, 2: 3, 3: 1, 6: 4 }[color];
 	header[8] = 8;
-	header[9] = 6;
-	const rows = Buffer.alloc(height * (1 + width * 4));
+	header[9] = color;
+	const rows = Buffer.alloc(height * (1 + width * channels));
 	for (let row = 0; row < height; row++)
-		rows[row * (1 + width * 4)] = filter;
+		rows[row * (1 + width * channels)] = filter;
 	const bytes = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), chunk('IHDR', header), chunk('IDAT', deflateSync(rows)), chunk('IEND', Buffer.alloc(0))]);
 	return bytes.subarray(0, bytes.length - cut);
 }
@@ -308,6 +309,10 @@ test('a picture counts only when the whole PNG decodes', () => {
 	// rows whose filter is none of the five
 	assert.deepEqual(pngSize(png(4, 3, 0, 4)), { width: 4, height: 3 });
 	assert.equal(pngSize(png(4, 3, 0, 5)), null);
+	// a truecolour picture only: RGB (Chrome's) or RGBA (the game's); a palette or grey image is none of the acceptance's
+	assert.deepEqual(pngSize(png(4, 3, 0, 0, 2)), { width: 4, height: 3 });
+	assert.equal(pngSize(png(4, 3, 0, 0, 3)), null);
+	assert.equal(pngSize(png(4, 3, 0, 0, 0)), null);
 	assert.equal(pngSize(Buffer.from('not a picture at all, longer than a header')), null);
 });
 

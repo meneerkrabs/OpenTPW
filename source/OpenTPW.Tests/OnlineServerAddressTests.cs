@@ -53,7 +53,7 @@ public class OnlineServerAddressTests
 	}
 
 	[TestMethod]
-	public void AnEmptyAddressShowsTheDutchMessageInTheLoginDialogAndTheLobbyAndOffersTheServerAgain()
+	public void AnEmptyAddressShowsTheDutchMessageInTheLoginDialogAndTheLobby()
 	{
 		var root = Directory.CreateTempSubdirectory( "opentpw-online-address-" ).FullName;
 		var previousFiles = OpenTPW.Common.GlobalNamespace.FileSystem;
@@ -62,6 +62,7 @@ public class OnlineServerAddressTests
 		try
 		{
 			OpenTPW.Common.GlobalNamespace.FileSystem = new BaseFileSystem( root );
+			// the dialog opens with the offered server; the player empties the field
 			OnlineSession.SuggestedServerUrl = "https://play.example.com";
 			var dutch = Path.Combine( root, "Data", "Language", "Dutch" );
 			Directory.CreateDirectory( dutch );
@@ -82,6 +83,7 @@ public class OnlineServerAddressTests
 			screens.ShowLogin();
 			var login = stack.Top!;
 			Assert.AreEqual( "onlineLogin", login.Name );
+			Assert.AreEqual( "https://play.example.com", ((UiTextField)login.Find( "server" )!).Text, "the dialog opens with the offered server" );
 			((UiTextField)login.Find( "server" )!).Text = "";
 			((UiTextField)login.Find( "password" )!).Text = "geheim";
 			((UiButton)login.Find( "login" )!).Clicked!();
@@ -89,7 +91,7 @@ public class OnlineServerAddressTests
 			var expected = OnlineStrings.Supplementary["Dutch"][OnlineLabel.EnterServerAddress];
 			Assert.AreEqual( expected, ((UiLabel)login.Find( "status" )!).Text!() );
 			Assert.IsNull( session.Client, "no server was chosen" );
-			Assert.AreEqual( "https://play.example.com", ((UiTextField)login.Find( "server" )!).Text, "the offered server is back in the field for the next try" );
+			Assert.AreEqual( "", ((UiTextField)login.Find( "server" )!).Text, "the emptied field stays empty: a second click must not log in to the offered server" );
 			stack.Pop();
 			Assert.AreSame( lobby, stack.Top );
 			var lobbyStatus = lobby.Elements.OfType<UiLabel>().Select( label => label.Text?.Invoke() ).Where( text => text == expected ).ToArray();

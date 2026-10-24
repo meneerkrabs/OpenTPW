@@ -861,7 +861,9 @@ public partial class Level
 			RefundNativeQueueOwner,
 			() => { ride.RecomputeQueue( Guests.Grid ); ride.NotifyQueueEdited( Guests.Grid ); },
 			new LinkEffects( RefreshTile ), removed => { Guests.SetDownOffQueueCells( removed, ride ); AfterAccessCellRemoved( removed ); },
-			() => ResolveQueueEntrance( Objects, Guests.Grid.Cells, ride.OwnerWord ) ) );
+			() => ResolveQueueEntrance( Objects, Guests.Grid.Cells, ride.OwnerWord ),
+			terminalAllowed: ( x, y ) => !IsReadOnlyVisit && Objects.FindAt( x, y ) == null && Objects.Grid.CheckTerrain( x, y ) == OriginalPlacementResult.Path
+				&& Guests.Grid.Cells.RawTypeAt( x, y ) == (byte)ParkCellType.Path && !IsQueueBlockedCore( x, y, terminalPath: true ) ) );
 
 	/// <summary>Live shape reconstruction of native mEntryPos (+0x36); never the bridge's outside-cell adaptation.</summary>
 	internal static (int X, int Y)? ResolveQueueEntrance( ParkObjects objects, ParkCellMap cells, ushort owner )
@@ -1258,10 +1260,12 @@ public partial class Level
 			QueuePaths.ClearAll( Guests.Grid, ride );
 	}
 
-	// [APPROX:QUEUE-012] queue cells need terrain the object build rule allows (Objects.Grid.CheckTerrain: the map start's cell types and the Easymode save's occupied cells), no object footprint of the queue tool's overwrite priority 3 or more (a lower one is demolished, QueueGivesWay) and owned land; tp.exe's cell validator 0x00535670 for the queue tool refuses a cell whose flag byte +0x0E has bit 0x40 (the park's land, ParkCellMap.Land), compares an object cell's owner priority with 0x818C10 = 3 (0x535D66), allows empty cells, lets a queue replace a path cell unless NoModify (+0x0E bit 0x20) and reads no MAP terrain bit (map setup turns inside water, blocked and walkway cells into type 0) — evidence needed: none for the validator; the save's occupied cells stand in for its cell types (ECON-050)
+	// [APPROX:QUEUE-012] queue cells need terrain the object build rule allows (Objects.Grid.CheckTerrain: the map start's cell types, with saved occupancy used only before the live map is attached), no object footprint of the queue tool's overwrite priority 3 or more (a lower one is demolished, QueueGivesWay) and owned land; tp.exe's cell validator 0x00535670 for the queue tool refuses a cell whose flag byte +0x0E has bit 0x40 (the park's land, ParkCellMap.Land), compares an object cell's owner priority with 0x818C10 = 3 (0x535D66), allows empty cells, lets a queue replace a nonterminal path cell unless NoModify (+0x0E bit 0x20), while a terminal path connects without replacement before that check and reads no MAP terrain bit (map setup turns inside water, blocked and walkway cells into type 0) — evidence needed: none for the validator; the no-live-map fallback still uses saved occupancy (ECON-050)
 	// [BIN:TPW-EXE:0x5357c7 placement validator] a cell with flag 0x40 is refused for a queue as for a path or an object
-	private bool IsQueueBlocked( int x, int y ) =>
-		!QueueTerrainAllows( x, y ) || (Objects.FindAt( x, y ) != null && !QueueGivesWay( x, y )) || IsReservedByPrototype( x, y )
+	private bool IsQueueBlocked( int x, int y ) => IsQueueBlockedCore( x, y, terminalPath: false );
+
+	private bool IsQueueBlockedCore( int x, int y, bool terminalPath ) =>
+		!QueueTerrainAllows( Objects.Grid, Guests?.Grid.Cells, x, y, terminalPath ) || (Objects.FindAt( x, y ) != null && !QueueGivesWay( x, y )) || IsReservedByPrototype( x, y )
 		|| (Guests?.Grid.Cells is { } cells && cells.InBounds( x, y ) && cells.FlagsAt( x, y ).HasFlag( ParkCellFlags.Unowned ))
 		// [EXT:pools-slides] a slide's track keeps its land cells for its pylons
 		|| (Guests != null && PoolSlides?.ReservesLand( x, y, Guests.Grid.Cells ) == true)
@@ -1269,10 +1273,11 @@ public partial class Level
 		|| PoolBridges?.Reserves( x, y ) == true;
 
 	/// <summary>The terrain rule for a queue cell; its path cells (the save's and the map start's) are the live cell map's to judge, as for objects.</summary>
-	private bool QueueTerrainAllows( int x, int y ) => Objects.Grid.CheckTerrain( x, y ) switch
+	internal static bool QueueTerrainAllows( IParkGrid grid, ParkCellMap? cells, int x, int y, bool terminalPath = false ) => grid.CheckTerrain( x, y ) switch
 	{
 		OriginalPlacementResult.Allowed => true,
-		OriginalPlacementResult.Path => Guests?.Grid.Cells is { } cells && ObjectPathAt( cells, x, y ) == ObjectPathCell.None,
+		OriginalPlacementResult.Path => cells != null && (ObjectPathAt( cells, x, y ) == ObjectPathCell.None
+			|| (terminalPath && cells.InBounds( x, y ) && cells.RawTypeAt( x, y ) == (byte)ParkCellType.Path)),
 		_ => false
 	};
 

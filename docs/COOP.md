@@ -718,6 +718,45 @@ account's welcome, and that a close while a join waits leaves the seat the join 
 
 Browser hosting through these screens comes with the acceptance (C2d-5).
 
+### Sharing a saved park from the lobby (C2d-2b)
+
+`[EXT:online-coop-session]` The lobby's Escape menu has a Build Together line after Go Online, also
+only while the online extension is on. It opens the lobby's Build Together screen, which offers the
+player's own saved parks: the sandbox and the shipped parks are not offered, as they are no park of
+the player's own. The rows read as on the Load Park screen: the park's name, marked when it is
+cheated or needs extensions, and when it was saved. Below them are the same choices as on the park's
+screen (title, open list, players), a login when the player is logged out, and Share. Without a
+saved park, the screen says so.
+
+Share loads the chosen park as the Load Park screen does, and the share goes with that load:
+
+1. The save's extensions are asked about first (the extension switch); a refusal there starts
+   nothing.
+2. The load is queued like any park load. Another transition replaces it, and the share goes with it.
+   The lobby screen's Back gives the share up, with its load, while the load still waits (the browser
+   copies a level's files first).
+3. The save is resumed at once, without frames. Only a park this load made is shared
+   (`GameFlow.ShareLoadedPark`). A failed load shares nothing and leaves the lobby as it was.
+4. The park opens with its pause menu, so a park that is not shared yet stays paused under the
+   screens, as when the pause menu opens them.
+5. The share starts as from the pause menu (`StartSharing`), and only on the server and account that
+   asked for it. Logging in on another server meanwhile leaves the choice to the player. The start
+   checks the login and the loaded park again. When the load's extension choices turned online play
+   off, a message says why nothing was shared.
+6. The park's Build Together screen opens over the pause menu. It shows the attempt, or why it could
+   not start, with the player's choices kept for another try.
+
+`CoopShareTests` covers:
+- the lobby screen: the saved parks, the login, the choices that go with the chosen park, Back giving
+  the share up, and no saved park;
+- the share's checks and its queued load: giving it up removes the load, and a failed load shares
+  nothing;
+- the share of the park a load made, only on the login that asked, through the game's own step up to
+  the hosting;
+- the screens over the loaded park: the pause menu and Build Together, or the message when online play
+  is off.
+`OnlineExtensionGateTests` checks that the line goes with the online extension.
+
 ### The host's trimmed frame (C2c-3)
 
 `[EXT:online-coop-snapshot-join]` The host trims the frames every member is known to hold. A server

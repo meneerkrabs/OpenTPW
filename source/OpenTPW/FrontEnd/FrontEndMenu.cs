@@ -39,6 +39,8 @@ public sealed class FrontEndActions
 	public Func<IReadOnlyList<ParkLoadEntry>> LoadEntries { get; init; } = () => Array.Empty<ParkLoadEntry>();
 	/// <summary>Opens the online screens on the menu's stack (Go Online, UITEXT 1); null hides the button.</summary>
 	public Action<UiScreenStack>? GoOnline { get; init; }
+	/// <summary>[EXT:online-coop-session] Opens the lobby's Build Together screen on the menu's stack (C2d-2b: share a saved park); null hides its line.</summary>
+	public Action<UiScreenStack>? BuildTogether { get; init; }
 	/// <summary>
 	/// [EXT:save-extension-switch] Before an own save at the given path is loaded: asks whether to switch the extensions it differs in (<see cref="ParkExtensionSwitch"/>) and then calls the action with the confirmed
 	/// switch, or calls it at once with null when there is nothing to ask (the load then agrees, or refuses with its reasons). The default never asks.
@@ -151,6 +153,9 @@ public sealed partial class FrontEndMenu
 		var items = new List<(string Id, Func<string> Text, Action Clicked, bool Enabled)>();
 		if ( actions.GoOnline != null )
 			items.Add( ("goOnline", () => strings[UIStrings.GoOnline], Then( () => actions.GoOnline( Stack ) ), true) );
+		// [EXT:online-coop-session] OpenTPW's Build Together line (C2d-2b): the original has no shared parks
+		if ( actions.BuildTogether != null )
+			items.Add( ("buildTogether", () => strings.Extra( OpenTpwText.BuildTogether ), Then( () => actions.BuildTogether( Stack ) ), true) );
 		items.Add( ("load", () => strings[UIStrings.Load], Then( ShowLoad ), true) );
 		items.Add( ("options", () => strings[UIStrings.Options], Then( ShowOptions ), actions.CreateOptions != null) );
 		items.Add( ("resume", () => strings[UIStrings.ResumeGame], CloseMenu, true) );
@@ -251,6 +256,10 @@ public sealed partial class FrontEndMenu
 	/// <summary>[EXT:cheats-publish] " (cheated)" after the name of a park marked as cheated (docs/CHEATS.md), else nothing.</summary>
 	internal static string CheatedSuffix( UiStringTable strings, bool cheated ) => cheated ? " (" + strings.Extra( OpenTpwText.CheatedPark ) + ")" : "";
 
+	/// <summary>An own saved park's row, as on the Load Park screen: its name, marked when cheated or when it needs extensions.</summary>
+	internal static string SavedParkText( UiStringTable strings, ParkLoadEntry park ) =>
+		(park.DisplayName ?? park.Level) + CheatedSuffix( strings, park.Cheated ) + RequiresSuffix( strings, park.Requires );
+
 	// [EXT:list-row-pitch] the rows take the buy list's fixed pitch, a design choice (see ParkHud.BuyRowHeight)
 	public static UiScreen CreateLoadScreen( UiScreenStack stack, UiStringTable strings, IReadOnlyList<ParkLoadEntry> entries, Action<ParkLoadEntry> load )
 	{
@@ -269,7 +278,7 @@ public sealed partial class FrontEndMenu
 		var list = screen.Add( new UiScrollList
 		{
 			Id = "parks",
-			Rows = () => parks.Select( entry => entry.OwnSavePath != null ? (entry.DisplayName ?? entry.Level) + CheatedSuffix( strings, entry.Cheated ) + RequiresSuffix( strings, entry.Requires ) : entry.Sandbox ? strings.Extra( OpenTpwText.SandboxParkEntry )
+			Rows = () => parks.Select( entry => entry.OwnSavePath != null ? SavedParkText( strings, entry ) : entry.Sandbox ? strings.Extra( OpenTpwText.SandboxParkEntry )
 				: string.Format( strings.Extra( OpenTpwText.OriginalParkEntry ), entry.ThemeNameIndex >= 0 ? strings.Theme( entry.ThemeNameIndex ) : entry.Level ) ).ToArray(),
 			Trailing = index => parks[index].SavedAt is { } saved
 				? strings.Format( UiTextRecord.SaveDate, saved.Day.ToString(), saved.Month.ToString(), saved.Year.ToString() ) + $" {saved.Hour:00}:{saved.Minute:00}" : "",

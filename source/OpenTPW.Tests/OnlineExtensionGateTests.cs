@@ -103,16 +103,20 @@ public class OnlineExtensionGateTests
 	{
 		using var scope = OpenTpwExtensions.Use( WithOnline( false ) );
 		var flow = Flow();
-		var menu = new FrontEndMenu( OriginalUiTests.FakeStrings(), new[] { Island() }, new FrontEndActions { GoOnline = GameFlow.WhenOnline( flow.ShowOnline ) } );
+		FrontEndActions Actions() => new() { GoOnline = GameFlow.WhenOnline( flow.ShowOnline ), BuildTogether = GameFlow.WhenOnline( _ => { } ) };
+		var menu = new FrontEndMenu( OriginalUiTests.FakeStrings(), new[] { Island() }, Actions() );
 		Assert.IsNull( menu.Main.Find( "worldView" ) );
 		menu.ShowMenu();
 		Assert.AreEqual( "lobbyMenu", menu.Stack.Top!.Name );
 		Assert.IsNull( menu.Stack.Top.Find( "goOnline" ) );
+		Assert.IsNull( menu.Stack.Top.Find( "buildTogether" ), "[EXT:online-coop-session] no Build Together line without the online extension" );
 		Assert.IsNotNull( menu.Stack.Top.Find( "load" ) );
 
 		using var enabled = OpenTpwExtensions.Use( WithOnline( true ) );
-		var online = new FrontEndMenu( OriginalUiTests.FakeStrings(), new[] { Island() }, new FrontEndActions { GoOnline = GameFlow.WhenOnline( flow.ShowOnline ) } );
+		var online = new FrontEndMenu( OriginalUiTests.FakeStrings(), new[] { Island() }, Actions() );
 		Assert.IsNotNull( online.Main.Find( "worldView" ) );
+		online.ShowMenu();
+		Assert.IsNotNull( online.Stack.Top!.Find( "buildTogether" ), "[EXT:online-coop-session] the lobby's Build Together line follows Go Online" );
 	}
 
 	[TestMethod]

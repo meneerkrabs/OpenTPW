@@ -17,7 +17,7 @@ namespace OpenTPW.Tests;
 /// A second player's raw link plays the guest.
 /// </summary>
 [TestClass, DoNotParallelize]
-public class CoopShareTests
+public partial class CoopShareTests
 {
 	private AutomaticCheckpointCpuRendererScope? renderer;
 	private UpgradeCatalogueDefaultsTests? fixture;
@@ -510,19 +510,38 @@ public class CoopShareTests
 
 	private static string English( UI.Original.OpenTpwText key ) => UI.Original.SupplementaryStrings.Get( key, "English" );
 
-	/// <summary>The game's sharing as the screen sees it: the attempt it is given.</summary>
+	/// <summary>The game's sharing as the screen sees it: the attempt it is given, and the saved parks the lobby offers.</summary>
 	private sealed class Hosting( Func<CoopShare?> sharing ) : ICoopHosting
 	{
 		public CoopShareRefusal? ShareRefusal { get; set; } = CoopShareRefusal.None;
 		public CoopShare? Sharing => sharing();
 		public readonly List<CoopShareRequest> Started = new();
 		public int Dismissed;
+		public IReadOnlyList<FrontEnd.ParkLoadEntry> Saves { get; set; } = Array.Empty<FrontEnd.ParkLoadEntry>();
+		public readonly List<(FrontEnd.ParkLoadEntry Park, CoopShareRequest Request)> SharedSaved = new();
 		public bool StartSharing( CoopShareRequest request )
 		{
 			Started.Add( request );
 			return true;
 		}
 		public void DismissSharing() => Dismissed++;
+		public IReadOnlyList<FrontEnd.ParkLoadEntry> SavedParks() => Saves;
+		public bool ShareSavedPark( FrontEnd.ParkLoadEntry park, CoopShareRequest request )
+		{
+			SharedSaved.Add( (park, request) );
+			return true;
+		}
+		public int Cancelled;
+		public void CancelSavedParkShare() => Cancelled++;
+	}
+
+	/// <summary>Logs <paramref name="session"/> in as <paramref name="name"/> without a transport: a session's token, as the screens read it.</summary>
+	private static void LogIn( OnlineSession session, string name )
+	{
+		var client = new Online.Client.OnlineClient( new Uri( "http://127.0.0.1:9/" ) );
+		typeof( Online.Client.OnlineClient ).GetField( "<Session>k__BackingField", BindingFlags.Instance | BindingFlags.NonPublic )!
+			.SetValue( client, new Online.Api.SessionToken( name, "screen-test-only", DateTimeOffset.MaxValue ) );
+		typeof( OnlineSession ).GetProperty( nameof( OnlineSession.Client ) )!.SetValue( session, client );
 	}
 
 	[TestMethod]
@@ -542,10 +561,7 @@ public class CoopShareTests
 			Assert.AreEqual( English( UI.Original.OpenTpwText.LogInToShare ), Element<UI.Original.UiLabel>( stack, "message" ).Text() );
 
 			// logged in (a session's token, no transport): the title, the open list and the players are the player's
-			var client = new Online.Client.OnlineClient( new Uri( "http://127.0.0.1:9/" ) );
-			typeof( Online.Client.OnlineClient ).GetField( "<Session>k__BackingField", BindingFlags.Instance | BindingFlags.NonPublic )!
-				.SetValue( client, new Online.Api.SessionToken( "Hostess", "screen-test-only", DateTimeOffset.MaxValue ) );
-			typeof( OnlineSession ).GetProperty( nameof( OnlineSession.Client ) )!.SetValue( session, client );
+			LogIn( session, "Hostess" );
 			Update( stack );
 			Assert.IsFalse( Element<UI.Original.UiButton>( stack, "login" ).Visible );
 			Assert.IsTrue( Element<UI.Original.UiButton>( stack, "share" ).Enabled );

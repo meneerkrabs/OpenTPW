@@ -13,8 +13,8 @@ namespace OpenTPW;
 /// share opens the link itself); only a link lost for its whole reconnect window opens again by itself, after <see cref="LostRetrySeconds"/> (spread), at most
 /// <see cref="MaximumLostRetries"/> times a stay (a link open for <see cref="StableOpenSeconds"/> counts from nought again).</item>
 /// <item>While wanted, a link closed by something else (with no stop) opens again.</item>
-/// <item>Not wanted, an idle link closes, without a leave: it holds no session. A leave that waits for the next welcome (a seat a create or join made whose answer was lost,
-/// <see cref="CoopLink.Settling"/>) keeps it open until a welcome settles it; one of a link that cannot reconnect waits for the next open, as it always does.</item>
+/// <item>Not wanted, an idle link closes, without a leave: it holds no session. Something to settle at its next welcome (a leave of this game's, a seat a create or join whose
+/// answer was lost may have made: <see cref="CoopLink.Settling"/>) keeps it open for up to <see cref="SettleHoldSeconds"/>, so its own reconnect can settle it.</item>
 /// </list>
 /// </summary>
 internal sealed class CoopLobbyLink
@@ -31,6 +31,12 @@ internal sealed class CoopLobbyLink
 	/// <summary>How long the link stays open before its lost opens count from nought again, in seconds: one that drops soon after it opened goes on with the stay's count.</summary>
 	internal const double StableOpenSeconds = 60;
 
+	/// <summary>
+	/// How long an idle link with something to settle (<see cref="CoopLink.Settling"/>) stays open once the lobby no longer wants it, in seconds: its next welcome settles it;
+	/// a link that cannot reconnect meanwhile is closed (a leave of this game's waits for a later open, a lost answer's seat stays on the server).
+	/// </summary>
+	internal const double SettleHoldSeconds = 60;
+
 	private readonly CoopLink link;
 	private readonly Func<double> seconds;
 	private readonly Func<double> random;
@@ -40,6 +46,8 @@ internal sealed class CoopLobbyLink
 	private int lostRetries;
 	/// <summary>When the link was first seen open since it last was not.</summary>
 	private double? openSince;
+	/// <summary>When the lobby stopped wanting the link.</summary>
+	private double? unwantedSince;
 
 	/// <param name="link">The online session's link.</param>
 	/// <param name="seconds">The clock the lost link's wait runs on.</param>
@@ -77,16 +85,20 @@ internal sealed class CoopLobbyLink
 			lostRetryAt = null;
 			openSince = null;
 		}
+		var now = seconds();
+		if ( wanted )
+			unwantedSince = null;
+		else
+			unwantedSince ??= now;
 		if ( inUse || link.Session != null || link.Waiting )
 			return;
 		if ( !wanted )
 		{
-			// a leave that waits for the next welcome (a seat a lost answer made) keeps the link until a welcome settles it
-			if ( link.State != CoopLinkState.Closed && !link.Settling )
+			// something to settle at the next welcome (a leave of this game's, a seat a lost answer may have made) keeps the link for a while
+			if ( link.State != CoopLinkState.Closed && !(link.Settling && now - unwantedSince < SettleHoldSeconds) )
 				Link.Close();
 			return;
 		}
-		var now = seconds();
 		if ( link.State == CoopLinkState.Open )
 		{
 			// a link that stayed up starts over; one that drops soon after it opened goes on with the stay's count

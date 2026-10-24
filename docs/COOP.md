@@ -840,6 +840,11 @@ online for shared parks. The host then hears that the player is not online and i
 - A link in use is never touched: one that holds a session (also while it reconnects), one whose create
   or join waits for its answer (`CoopLink.Waiting`: the server would seat the player once it reads it,
   also after a close), and one a join attempt, a share or a saved park's share is using.
+- A create or join whose answer was lost with its socket may still have made a seat. The link keeps that
+  seat's leave, named by the join's code or the create's title, for the account's next welcome on that
+  server, and that welcome leaves the seat. A welcome to a lobby open does the same and never takes the
+  seat for another game's park. The lobby keeps such a link open until a welcome settles the leave
+  (`CoopLink.Settling`).
 - Each time the link becomes wanted (the lobby entered, a login there, another login), it opens once
   (`CoopLink.OpenInLobby`). It never takes the link from another game of the account; that game keeps it
   (`InUseElsewhere`).
@@ -851,7 +856,8 @@ online for shared parks. The host then hears that the player is not online and i
   opens the link itself. After `HeldElsewhere` that open is the player's own act, so it leaves the park the
   lobby left alone, as any open that did not ask for it does.
 - Only a link lost for its whole reconnect window opens again by itself. It waits a minute (spread from
-  70 to 130 per cent), at most ten times in one stay in the lobby.
+  70 to 130 per cent), at most ten times in one stay in the lobby. A link that drops soon after it opened
+  goes on with the stay's count; only one open for a minute counts from nought again.
 - The link's own reconnect waits are spread too (80 to 120 per cent). With a link open in every lobby, a
   server that restarts must not bring every game back at the same moment.
 
@@ -876,7 +882,8 @@ online for shared parks. The host then hears that the player is not online and i
   latest request's answer is shown.
 - A full park cannot be joined.
 - Join starts the same attempt as a code join and opens the join screen. A park that ended or filled
-  after the list came is refused there in words.
+  after the list came is refused there in words. The join screen keeps the park's code for another
+  try, as it does an invitation's.
 
 **A game that cannot follow a shared park** (another edition, or developer options that change the park)
 opens no socket. The join screen and the list say why before anything is sent.
@@ -893,8 +900,10 @@ The tests:
   - it leaves a link in use alone: a waiting create or join, a session, an attempt;
   - it never takes another game's link, and tries once a stay;
   - it never leaves another game's park while that game's socket is away, and that game's park goes on;
+  - a seat a lost answer made keeps the link until its welcome leaves it, and is left by the next lobby
+    open after a lost link;
   - a lobby link that asks for a seat is any open's;
-  - a lost link opens again on its spread timer, at most ten times;
+  - a lost link opens again on its spread timer, at most ten times, and a brief open keeps the count;
   - the reconnect waits are spread.
 - `CoopJoinSessionTests` (part `CoopJoinSessionTests.Lobby.cs`), with a real host and the guest's game,
   covers:

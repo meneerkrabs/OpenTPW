@@ -164,9 +164,10 @@ public class CoopLinkTests
 	{
 		var host = await players.Add( server, "Hostess" );
 		var guest = await players.Add( server, "Guest" );
+		// the host's chat is open; the guest's is not, and its join opens it
 		host.Session.ConnectChat();
-		guest.Session.ConnectChat();
-		await Until( () => host.Session.Chat != null && guest.Session.Chat != null && !host.Session.ChatBusy && !guest.Session.ChatBusy, "both chats", host, guest );
+		await Until( () => host.Session.Chat != null && !host.Session.ChatBusy, "the host's chat", host );
+		Assert.IsNull( guest.Session.Chat );
 		await Open( host, guest );
 		var shared = await Share( host, guest );
 		var room = OpenTPW.Online.Chat.ChatProtocol.CoopRoom( shared.Id );

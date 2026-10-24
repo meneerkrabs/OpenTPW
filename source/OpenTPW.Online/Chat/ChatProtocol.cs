@@ -29,6 +29,8 @@ public static class ChatProtocol
 	/// sends one only to clients that sent one, as the strict members of older clients and servers refuse an unknown <c>mode</c>.
 	/// </summary>
 	public const int MoveModesVersion = 5;
+	/// <summary>[EXT:online-coop-session] The server protocol from which a shared park's session has a chat room of its own (<see cref="CoopRoom"/>).</summary>
+	public const int CoopRoomsVersion = 8;
 
 	public static string ParkRoom( string parkId ) => ParkRoomPrefix + parkId;
 

@@ -219,6 +219,15 @@ public class ParkPresenceTests
 		opening.Dispose();
 		Assert.AreEqual( 0, openingSession.Closes );
 		Assert.IsNotNull( openingSession.Connection );
+		// [EXT:online-coop-session] a connection the visit opened that a shared park's session took over since stays open in the session's room
+		var (taken, takenSession, _) = Create();
+		takenSession.Enter( new object() );
+		var coop = ChatProtocol.CoopRoom( "0123456789abcdef" );
+		takenSession.JoinRoom( coop );
+		taken.Dispose();
+		Assert.AreEqual( 0, takenSession.Closes );
+		Assert.AreEqual( coop, takenSession.Joins[^1] );
+		Assert.IsNotNull( takenSession.Connection );
 	}
 
 	[TestMethod]

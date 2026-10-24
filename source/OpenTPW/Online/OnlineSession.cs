@@ -103,8 +103,8 @@ public sealed class OnlineSession : IDisposable, IPresenceSession, IChatPanelSou
 		Folders = folders;
 		Coop = new CoopLink( this );
 		// [EXT:online-coop-session] the chat follows the shared park: its members talk in the session's room, and are back in the lobby once it is over for this game
-		Coop.SessionStarted += state => JoinRoom( ChatProtocol.CoopRoom( state.Id ) );
-		Coop.Resumed += state => JoinRoom( ChatProtocol.CoopRoom( state.Id ) );
+		Coop.SessionStarted += state => EnterCoopRoom( state.Id );
+		Coop.Resumed += state => EnterCoopRoom( state.Id );
 		Coop.SessionEnded += ended => LeftCoopSession( ended.SessionId );
 		try { Settings = folders.LoadSettings(); }
 		catch ( Exception exception ) when ( exception is InvalidDataException or IOException )
@@ -465,6 +465,7 @@ public sealed class OnlineSession : IDisposable, IPresenceSession, IChatPanelSou
 		ServerProtocol = null;
 		protocolCurrent = false;
 		fetchingServerInfo = false;
+		coopRoom = null;
 		// a version read for the server just left must not answer the next one
 		serverInfoEpoch++;
 		Client?.Dispose();
@@ -1085,13 +1086,41 @@ public sealed class OnlineSession : IDisposable, IPresenceSession, IChatPanelSou
 		joinSentAt = null;
 	}
 
+	/// <summary>[EXT:online-coop-session] The chat room of the shared park this game is in, which its chat goes to (<see cref="FollowCoopRoom"/>); null outside one.</summary>
+	private string? coopRoom;
+
+	/// <summary>
+	/// [EXT:online-coop-session] This game hosts, joined or resumed the shared park's session <paramref name="sessionId"/>: its chat is the session's, opened when it is
+	/// not, and goes to the session's room as soon as the server is known to have such rooms.
+	/// </summary>
+	private void EnterCoopRoom( string sessionId )
+	{
+		coopRoom = ChatProtocol.CoopRoom( sessionId );
+		if ( Chat == null && !chatConnecting && IsLoggedIn && !disposed )
+			ConnectChat();
+		FollowCoopRoom();
+	}
+
+	/// <summary>
+	/// [EXT:online-coop-session] Takes the chat to the shared park's room once the open connection's server is known (<see cref="protocolCurrent"/>) to have such rooms
+	/// (<see cref="ChatProtocol.CoopRoomsVersion"/>): an older server's chat would refuse the room, and the chat stays where it is there.
+	/// </summary>
+	private void FollowCoopRoom()
+	{
+		if ( coopRoom is { } room && Chat != null && protocolCurrent && ServerProtocol >= ChatProtocol.CoopRoomsVersion )
+			JoinRoom( room );
+	}
+
 	/// <summary>
 	/// [EXT:online-coop-session] The shared park's session <paramref name="sessionId"/> is over for this game (it ended, or this game left it): a chat in its room, or
 	/// on its way there, goes back to the lobby. Nothing once logged out, which leaves every room.
 	/// </summary>
 	internal void LeftCoopSession( string sessionId )
 	{
-		if ( IsLoggedIn && WantedRoom == ChatProtocol.CoopRoom( sessionId ) )
+		var room = ChatProtocol.CoopRoom( sessionId );
+		if ( coopRoom == room )
+			coopRoom = null;
+		if ( IsLoggedIn && WantedRoom == room )
 			JoinRoom( ChatProtocol.LobbyRoom );
 	}
 
@@ -1192,6 +1221,7 @@ public sealed class OnlineSession : IDisposable, IPresenceSession, IChatPanelSou
 		if ( connection != null && Chat == connection )
 			protocolCurrent = true;
 		FlushMove();
+		FollowCoopRoom();
 	}
 
 	/// <summary>A failed version read. The open connection's read is tried again, so modes do not stay off after one lost answer.</summary>

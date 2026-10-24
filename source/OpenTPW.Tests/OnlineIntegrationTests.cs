@@ -1270,6 +1270,47 @@ public class OnlineIntegrationTests
 		}
 	}, cancel );
 
+	/// <summary>
+	/// [EXT:online-coop-session] A server whose version is older than <see cref="ChatProtocol.CoopRoomsVersion"/> has no shared park rooms: a game that hosts a session
+	/// there opens its chat but keeps it where it is, and one that knows the server has them takes it to the session's room.
+	/// </summary>
+	[TestMethod]
+	public async Task TheChatGoesToASharedParksRoomOnlyOnAServerThatHasThem()
+	{
+		await using var server = await LoopbackServer.StartAsync( options => options.ChatBurst = 50 );
+		var (older, olderHttp) = GatedSession( server.Url, "Ann", respond: () => Task.FromResult( ServerInfoResponse( ChatProtocol.CoopRoomsVersion - 1 ) ) );
+		var (newer, newerHttp) = GatedSession( server.Url, "Bea", respond: () => Task.FromResult( ServerInfoResponse( ChatProtocol.CoopRoomsVersion ) ) );
+		try
+		{
+			foreach ( var (session, name) in new[] { (older, "Ann"), (newer, "Bea") } )
+			{
+				session.Register( name, "correct horse" );
+				await PumpUntilIdle( session );
+				Assert.IsTrue( session.IsLoggedIn, session.Status );
+				session.Coop.Open();
+				await PumpUntil( session, () => session.Coop.State == CoopLinkState.Open );
+				Assert.IsTrue( session.Coop.Create( listed: false, $"{name}'s park", 2 ) );
+				await PumpUntil( session, () => session.Coop.Session != null );
+				// the session opens the chat, and the chat reads the server's version
+				await PumpUntil( session, () => session.Chat != null && session.ProtocolCurrent );
+			}
+			var room = ChatProtocol.CoopRoom( newer.Coop.Session!.Id );
+			await PumpUntil( newer, () => newer.CurrentRoom == room );
+			// the older server's chat is asked for no shared park's room
+			var settled = DateTime.UtcNow.AddMilliseconds( 300 );
+			while ( DateTime.UtcNow < settled ) { older.Pump(); await Task.Delay( 20 ); }
+			Assert.AreEqual( (ChatProtocol.LobbyRoom, ChatProtocol.LobbyRoom), (older.CurrentRoom, older.WantedRoom) );
+		}
+		finally
+		{
+			older.Dispose();
+			newer.Dispose();
+			olderHttp.Dispose();
+			newerHttp.Dispose();
+			server.DeleteData();
+		}
+	}
+
 	private static (OnlineSession Session, HttpClient Http) GatedSession( Uri server, string name, VersionGate? gate = null, Func<Task<HttpResponseMessage>>? respond = null )
 	{
 		var handler = new ServerInfoHandler( new HttpClientHandler { AllowAutoRedirect = false }, respond ?? (gate ?? throw new ArgumentNullException( nameof( gate ) )).Next );

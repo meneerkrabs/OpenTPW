@@ -84,6 +84,26 @@ public sealed class ChatHub
 			EnterRoom( session, ChatProtocol.LobbyRoom, onlyFrom: room );
 	}
 
+	/// <summary>
+	/// Runs <paramref name="route"/> with the room <paramref name="sender"/> is in, read once, for what it says or does there to reach that room's players.
+	/// [EXT:online-coop-session] A shared park's room is routed while the rooms are held and only from a member still in it: a member taken out meanwhile
+	/// (<see cref="LeaveCoopRoom"/>, the only move that is not the sender's own request) says nothing there, and nothing of that room reaches the one it was taken to.
+	/// </summary>
+	private void InRoom( ChatSession sender, Action<string> route )
+	{
+		var room = sender.Room;
+		if ( ChatProtocol.CoopSessionOf( room ) == null )
+		{
+			route( room );
+			return;
+		}
+		lock ( rooms )
+		{
+			if ( sender.Room == room && IsCoopMember( sender, room ) )
+				route( room );
+		}
+	}
+
 	/// <summary>[EXT:online-coop-session] The room an event names to players who may be outside it: a shared park's is named to none (null).</summary>
 	private static string? PublicRoom( string room ) => ChatProtocol.CoopSessionOf( room ) != null ? null : room;
 
@@ -342,18 +362,21 @@ public sealed class ChatHub
 			if ( request.Mode != null )
 				session.ReceivesModes = true;
 			session.Hidden = request.Mode == ChatMoveMode.Hide;
-			var moved = new ChatEvent( ChatEventKind.Move, session.Name, session.Room, X: position.Item1, Y: position.Item2, Mode: request.Mode );
-			foreach ( var other in sessions.Values.Where( other => other.Room == session.Room && other != session && other.ReceivesMovement ) )
+			InRoom( session, room =>
 			{
-				if ( other.ReceivesModes )
-					Deliver( other, moved );
-				else if ( !session.Hidden )
-					Deliver( other, moved with { Mode = null } );
-			}
-			// a joiner is told where the others stand, not where a hidden player stood
-			if ( first )
-				foreach ( var other in sessions.Values.Where( other => other.Room == session.Room && other != session && other.Position != null && !other.Hidden ) )
-					Send( session, new ChatEvent( ChatEventKind.Move, other.Name, session.Room, X: other.Position!.Value.X, Y: other.Position!.Value.Y ) );
+				var moved = new ChatEvent( ChatEventKind.Move, session.Name, room, X: position.Item1, Y: position.Item2, Mode: request.Mode );
+				foreach ( var other in sessions.Values.Where( other => other.Room == room && other != session && other.ReceivesMovement ) )
+				{
+					if ( other.ReceivesModes )
+						Deliver( other, moved );
+					else if ( !session.Hidden )
+						Deliver( other, moved with { Mode = null } );
+				}
+				// a joiner is told where the others stand, not where a hidden player stood
+				if ( first )
+					foreach ( var other in sessions.Values.Where( other => other.Room == room && other != session && other.Position != null && !other.Hidden ) )
+						Send( session, new ChatEvent( ChatEventKind.Move, other.Name, room, X: other.Position!.Value.X, Y: other.Position!.Value.Y ) );
+			} );
 			return;
 		}
 		ChatCommands.TryParseCanonical( request.Command!, out var command );
@@ -483,11 +506,11 @@ public sealed class ChatHub
 		{
 			case ChatCommand.Say:
 				if ( argument.Length > 0 )
-					Broadcast( session.Room, new ChatEvent( ChatEventKind.Say, from, session.Room, argument ) );
+					InRoom( session, room => Broadcast( room, new ChatEvent( ChatEventKind.Say, from, room, argument ) ) );
 				break;
 			case ChatCommand.Emote:
 				if ( argument.Length > 0 )
-					Broadcast( session.Room, new ChatEvent( ChatEventKind.Emote, from, session.Room, argument ) );
+					InRoom( session, room => Broadcast( room, new ChatEvent( ChatEventKind.Emote, from, room, argument ) ) );
 				break;
 			case ChatCommand.Shout:
 			case ChatCommand.EShout:
@@ -500,12 +523,21 @@ public sealed class ChatHub
 				}
 				if ( argument.Length == 0 )
 					break;
-				var world = command is ChatCommand.WShout or ChatCommand.UShout;
-				// a world shout reaches players outside the room: it names a shared park's to none
-				var shout = new ChatEvent( command == ChatCommand.EShout ? ChatEventKind.Emote : world ? ChatEventKind.WorldShout : ChatEventKind.Shout, from,
-					world ? PublicRoom( session.Room ) : session.Room, argument, Command: ChatCommands.CanonicalName( command ) );
-				foreach ( var other in sessions.Values.Where( other => (world || other.Room == session.Room) && !other.Earmuffs ) )
-					Deliver( other, shout );
+				var kind = command == ChatCommand.EShout ? ChatEventKind.Emote : ChatEventKind.Shout;
+				if ( command is ChatCommand.WShout or ChatCommand.UShout )
+				{
+					// a world shout reaches players outside the room: it names a shared park's to none
+					var shout = new ChatEvent( ChatEventKind.WorldShout, from, PublicRoom( session.Room ), argument, Command: ChatCommands.CanonicalName( command ) );
+					foreach ( var other in sessions.Values.Where( other => !other.Earmuffs ) )
+						Deliver( other, shout );
+				}
+				else
+					InRoom( session, room =>
+					{
+						var shout = new ChatEvent( kind, from, room, argument, Command: ChatCommands.CanonicalName( command ) );
+						foreach ( var other in sessions.Values.Where( other => other.Room == room && !other.Earmuffs ) )
+							Deliver( other, shout );
+					} );
 				break;
 			case ChatCommand.Tell:
 			case ChatCommand.ETell:
@@ -656,8 +688,12 @@ public sealed class ChatHub
 			case ChatCommand.Afk:
 				session.Afk = !session.Afk;
 				Send( session, ChatEvent.ForNotice( session.Afk ? ChatNotice.AfkOn : ChatNotice.AfkOff ) );
-				foreach ( var other in sessions.Values.Where( other => other.Room == session.Room && other != session ) )
-					Deliver( other, new ChatEvent( ChatEventKind.Say, from, session.Room, Notice: (int)(session.Afk ? ChatNotice.AfkAnnounceOn : ChatNotice.AfkAnnounceOff) ) );
+				var away = session.Afk;
+				InRoom( session, room =>
+				{
+					foreach ( var other in sessions.Values.Where( other => other.Room == room && other != session ) )
+						Deliver( other, new ChatEvent( ChatEventKind.Say, from, room, Notice: (int)(away ? ChatNotice.AfkAnnounceOn : ChatNotice.AfkAnnounceOff) ) );
+				} );
 				break;
 			case ChatCommand.Goto:
 			{
@@ -708,11 +744,15 @@ public sealed class ChatHub
 			default:
 			{
 				// Mood emotes (cheer … confused): the room sees the emote, the sender gets the original "You …" line.
-				var mood = new ChatEvent( ChatEventKind.Emote, from, session.Room, command == ChatCommand.Think ? argument : null, ChatCommands.CanonicalName( command ) );
-				foreach ( var other in sessions.Values.Where( other => other.Room == session.Room && other != session ) )
-					Deliver( other, mood );
+				ChatEvent Mood( string room ) => new( ChatEventKind.Emote, from, room, command == ChatCommand.Think ? argument : null, ChatCommands.CanonicalName( command ) );
+				InRoom( session, room =>
+				{
+					var mood = Mood( room );
+					foreach ( var other in sessions.Values.Where( other => other.Room == room && other != session ) )
+						Deliver( other, mood );
+				} );
 				var notice = ChatCommands.MoodNotice( command );
-				Send( session, notice != null ? ChatEvent.ForNotice( notice.Value ) : mood );
+				Send( session, notice != null ? ChatEvent.ForNotice( notice.Value ) : Mood( session.Room ) );
 				break;
 			}
 		}

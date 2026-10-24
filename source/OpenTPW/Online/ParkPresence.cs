@@ -273,7 +273,10 @@ public sealed class ParkPresence : IVisitPresence, IChatPanelSource, IDisposable
 		visuals?.Dispose();
 		visuals = null;
 		// leaving the park leaves its room, so its other visitors see the parting; a connection the visit opened is closed again, so the
-		// Online World's lines do not follow the player into their own park
+		// Online World's lines do not follow the player into their own park. [EXT:online-coop-session] A chat a shared park's session took over since is
+		// no longer the visit's: it stays open, in the session's room.
+		if ( ChatProtocol.CoopSessionOf( session.WantedRoom ) != null )
+			return;
 		if ( opensConnection )
 			session.CloseChat();
 		else if ( session.WantedRoom == Room )

@@ -290,8 +290,12 @@ under its own locks and before it announces the change, and the chat takes the a
 in that room back to the lobby. The rooms come after the hub's locks, never before them, and the move
 waits for the rooms, so it comes after any entry that was let in before. No one who is not a member
 stays in the room, and by the time the host hears that a guest left or was removed, that guest's chat
-is in the lobby. `/locate` answers that the player is in a shared park without naming it; a world shout
-or a page from the room carries no room; and no buddy is told a player entered one.
+is in the lobby. What a member says or does in the room (lines, emotes, shouts, moods, the away notice,
+movement) is routed while the chat holds its rooms, and only from a member still in the room, so nothing
+said there reaches the room an evicted member was taken to. `/locate` answers that the player is in a
+shared park without naming it; a world shout or a page from the room carries no room; and no buddy is
+told a player entered one. Servers with these rooms report protocol version 8, and the game asks for a
+shared park's room only on such a server.
 
 Movement is relayed only inside a park's room (the lobby's are dropped) and only to connections
 that have moved, so a client without a walking view never receives it. A player's first movement

@@ -752,6 +752,40 @@ public class CoopLinkTests
 		} );
 	}
 
+	/// <summary>[EXT:online-coop-session] A logout's leave that could not go out is its server's: another server's welcome keeps it for a return (C2d-2).</summary>
+	[TestMethod]
+	public async Task ALeaveThatWaitsForItsServerOutlastsAnotherServersWelcome()
+	{
+		await WithServer( async ( server, players ) =>
+		{
+			var host = await players.Add( server, "Hostess" );
+			var guest = await players.Add( server, "Guest" );
+			await Open( host, guest );
+			await Share( host, guest );
+			// the socket is gone when the player logs out: the leave waits for this server's next welcome
+			host.Link.DropSocket();
+			host.Session.Disconnect();
+			Assert.AreEqual( CoopReason.Left, host.Ended.Single().Reason );
+			var other = await Start();
+			try
+			{
+				// the player logs in on another server, whose welcome names no session of this one
+				host.Session.UseClient( await other.LoginAsync( "Hostess" ), "Hostess" );
+				await Open( host );
+				// back on this server, its welcome names the session, which is left with the logout's reason
+				host.Session.UseClient( await server.LoginAsync( "Hostess", register: false ), "Hostess" );
+				host.Link.Open();
+				await Until( () => guest.Ended.Count == 1, "the guest to hear the end", host, guest );
+				Assert.AreEqual( (CoopReason.HostLeft, OnlineSession.LeftOnLogout), (guest.Ended[0].Reason, guest.Ended[0].Text) );
+			}
+			finally
+			{
+				await other.DisposeAsync();
+				other.DeleteData();
+			}
+		} );
+	}
+
 	[TestMethod]
 	public async Task WhatCannotBeSentIsNoRequest()
 	{

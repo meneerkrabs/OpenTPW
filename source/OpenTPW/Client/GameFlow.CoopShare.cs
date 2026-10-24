@@ -30,9 +30,6 @@ internal sealed partial class GameFlow : ICoopHosting
 	/// <summary>The attempt to share the open park, until a new one replaces it or the player dismisses its outcome.</summary>
 	private CoopShare? coopShare;
 
-	/// <summary>When the status line started saying that the shared park ended; null while it says nothing of it.</summary>
-	private double? sharingEndedAt;
-
 	/// <inheritdoc/>
 	public CoopShare? Sharing => coopShare;
 
@@ -48,7 +45,6 @@ internal sealed partial class GameFlow : ICoopHosting
 		if ( coopShare is { Stage: not CoopShareStage.Done } || !Online.IsLoggedIn || CoopSession.ShareRefusal( level ) != CoopShareRefusal.None )
 			return false;
 		coopShare?.Dispose();
-		sharingEndedAt = null;
 		coopShare = new CoopShare( level, Online.Coop, request, CoopSessionClock );
 		return true;
 	}
@@ -66,36 +62,31 @@ internal sealed partial class GameFlow : ICoopHosting
 	/// The share attempt's step, once a frame right after the online pump and before the co-op session's step and the level's update: it hosts the park only while
 	/// that park is still the game's and no transition or park build waits.
 	/// </summary>
-	internal void StepCoopShare()
-	{
-		if ( coopShare is not { } share )
-			return;
-		var wasHosting = share.Stage == CoopShareStage.Hosting;
-		share.Step( parkBuild == null && pending == null ? Level : null );
-		// a hosted park whose session ended without the player ending it: the status line says so a while
-		if ( wasHosting && share is { Stage: CoopShareStage.Done, EndedBySelf: false } && ReferenceEquals( share.Level, Level ) )
-			sharingEndedAt = Time.Now;
-	}
+	internal void StepCoopShare() => coopShare?.Step( parkBuild == null && pending == null ? Level : null );
+
+	/// <summary>The shared park's status line for the HUD (<see cref="Hud.HudHost.SessionStatus"/>), for the game's attempt; see the static overload.</summary>
+	internal string? SessionStatusLine( Level level ) => SessionStatusLine( coopShare, level, Strings.Extra );
 
 	/// <summary>
-	/// The shared park's status line for the HUD (<see cref="Hud.HudHost.SessionStatus"/>): while the open park is being shared, while it is hosted (its code and the
-	/// connected players, or that the link reconnects), and <see cref="SharingEndedSeconds"/> after a session the player did not end; null otherwise.
+	/// The shared park's status line for <paramref name="level"/> (in the player's language, <paramref name="text"/>): while it is being shared, while it is hosted
+	/// (its code and the connected players, or that the link reconnects), and <see cref="SharingEndedSeconds"/> after a session the player did not end (counted from
+	/// when it ended, which is often the online pump's frame); null otherwise, and for another park than the attempt's.
 	/// </summary>
-	internal string? SessionStatusLine( Level level )
+	internal static string? SessionStatusLine( CoopShare? share, Level level, Func<OpenTpwText, string> text )
 	{
-		if ( coopShare is not { } share || !ReferenceEquals( share.Level, level ) )
+		if ( share is null || !ReferenceEquals( share.Level, level ) )
 			return null;
 		switch ( share.Stage )
 		{
 			case CoopShareStage.Preparing:
 			case CoopShareStage.Creating:
-				return Strings.Extra( OpenTpwText.SharingThePark );
+				return text( OpenTpwText.SharingThePark );
 			case CoopShareStage.Hosting when share.State is { } state:
 				if ( share.Link.State == CoopLinkState.Reconnecting )
-					return string.Format( Strings.Extra( OpenTpwText.SharedParkReconnecting ), state.Code );
-				return string.Format( Strings.Extra( OpenTpwText.SharedParkStatus ), state.Code, state.Members.Count( member => member.Connected ), state.MaximumPlayers );
-			case CoopShareStage.Done when sharingEndedAt is { } at && Time.Now - at < SharingEndedSeconds:
-				return Strings.Extra( OpenTpwText.SharedParkEnded );
+					return string.Format( text( OpenTpwText.SharedParkReconnecting ), state.Code );
+				return string.Format( text( OpenTpwText.SharedParkStatus ), state.Code, state.Members.Count( member => member.Connected ), state.MaximumPlayers );
+			case CoopShareStage.Done when share is { Outcome: CoopShareOutcome.Ended, EndedBySelf: false, EndedAt: { } at } && Time.Now - at < SharingEndedSeconds:
+				return text( OpenTpwText.SharedParkEnded );
 			default:
 				return null;
 		}

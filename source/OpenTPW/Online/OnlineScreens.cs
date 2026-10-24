@@ -416,7 +416,6 @@ public sealed class OnlineScreens
 			? string.Format( strings.Extra( OpenTpwText.SharedParkDefaultTitle ), name ) : "";
 		var listed = false;
 		var players = CoopProtocol.MaximumPlayers;
-		string? inviteNote = null;
 		CoopShare? Attempt() => hosting.Sharing is { } share && (share.Stage != CoopShareStage.Done || share.Outcome is not (CoopShareOutcome.Cancelled or CoopShareOutcome.None)
 			&& !(share.Outcome == CoopShareOutcome.Ended && share.EndedBySelf)) ? share : null;
 		bool Starting() => Attempt() is null;
@@ -495,20 +494,19 @@ public sealed class OnlineScreens
 		}
 		var inviteField = screen.Add( new UiTextField { Id = "inviteName", MaximumLength = CoopProtocol.MaximumInviteNameLength, Model = "f_text1",
 			Bounds = new UiRect( x, window.Y + 730, width - 420, 93 ), Anchor = UiAnchor.Center } );
+		// one invitation at a time: the server answers only a refusal, so a refusal is the waiting invitation's (CoopShare.InviteAnswerSeconds)
 		void Invite()
 		{
 			var name = inviteField.Text.Trim();
 			if ( name.Length == 0 || hosting.Sharing?.Invite( name ) != true )
 				return;
-			inviteNote = name;
 			inviteField.Text = "";
 		}
 		inviteField.Submitted = Invite;
 		var invite = screen.Add( new UiButton { Id = "invite", Text = () => strings.Extra( OpenTpwText.InvitePlayer ), Clicked = Invite,
 			Bounds = new UiRect( x + width - 400, window.Y + 725, 400, 100 ), Anchor = UiAnchor.Center } );
 		var inviteResult = screen.Add( new UiLabel { Id = "inviteResult", Wrap = true, Font = fonts => fonts.Small, Color = UiColors.Value,
-			Text = () => Attempt()?.LastRefusal is { } refused ? InviteRefusalText( refused, inviteNote )
-				: inviteNote != null ? string.Format( strings.Extra( OpenTpwText.InviteSent ), inviteNote ) : "",
+			Text = () => Attempt()?.LastNotice is { } notice ? NoticeText( notice ) : "",
 			Bounds = new UiRect( x, window.Y + 840, width, 90 ), Anchor = UiAnchor.Center } );
 		var end = screen.Add( new UiButton { Id = "endSharing", Text = () => strings.Extra( OpenTpwText.EndSharing ),
 			Clicked = () =>
@@ -536,6 +534,7 @@ public sealed class OnlineScreens
 			again.Visible = finished;
 			takeOver.Visible = finished && Attempt() is { Outcome: CoopShareOutcome.LinkStopped, Stop: CoopStop.InUseElsewhere or CoopStop.Replaced };
 			code.Visible = visibility.Visible = inviteField.Visible = invite.Visible = inviteResult.Visible = end.Visible = hosted;
+			invite.Enabled = Attempt() is { Inviting: null };
 			for ( var index = 0; index < rows.Count; index++ )
 			{
 				var member = Attempt()?.State is { } state && index < state.Members.Count ? state.Members.OrderBy( info => info.Slot ).ElementAt( index ) : null;
@@ -590,10 +589,19 @@ public sealed class OnlineScreens
 		: !member.Connected ? string.Format( strings.Extra( OpenTpwText.SharedParkAway ), member.Name )
 		: member.Name;
 
-	/// <summary>[EXT:online-coop-session] Why an invitation was not sent: the player is not online for shared parks (give them the code), or another refusal.</summary>
-	private string InviteRefusalText( Online.Coop.CoopError refused, string? invited ) => refused.Reason == Online.Coop.CoopReason.NotOnline
-		? string.Format( strings.Extra( OpenTpwText.InviteNotOnline ), invited ?? "" )
-		: strings.Extra( OpenTpwText.InviteRefused );
+	/// <summary>
+	/// [EXT:online-coop-session] What the host last heard of an invitation or a removal: the invitation went out, its player is not online for shared parks (give them
+	/// the code), too many requests, or another refusal (named only when it is known whose). A removal is answered by its player leaving the list; of its refusals
+	/// only too many requests is said (any other leaves the player on the list, or gone already).
+	/// </summary>
+	private string NoticeText( CoopShareNotice notice ) => (notice.Request, notice.Refusal?.Reason, notice.Player) switch
+	{
+		(_, Online.Coop.CoopReason.Rate, _) => strings.Extra( OpenTpwText.SharedParkTryLater ),
+		(Online.Coop.CoopMessageType.Kick, _, _) => "",
+		(_, null, { } player) => string.Format( strings.Extra( OpenTpwText.InviteSent ), player ),
+		(_, Online.Coop.CoopReason.NotOnline, { } player) => string.Format( strings.Extra( OpenTpwText.InviteNotOnline ), player ),
+		_ => strings.Extra( OpenTpwText.InviteRefused ),
+	};
 
 	// ---- News (UI-MAP "Online news panel") ------------------------------------------------------
 

@@ -95,6 +95,9 @@ internal sealed class CoopJoinAttempt : IDisposable
 	/// <summary>Why the link stopped, for <see cref="CoopJoinOutcome.LinkStopped"/>.</summary>
 	public CoopStop Stop { get; private set; }
 
+	/// <summary>Why this game cannot join, for <see cref="CoopJoinOutcome.NotAllowed"/>.</summary>
+	public CoopJoinRefusal NotAllowedBecause { get; private set; }
+
 	/// <summary>The seat the server gave, once it answered.</summary>
 	public CoopSessionState? Answer => answered;
 
@@ -156,9 +159,10 @@ internal sealed class CoopJoinAttempt : IDisposable
 			return;
 		}
 		// nothing goes out that this game could not follow
-		if ( CoopSession.JoinRefusal is { } refusal )
+		if ( CoopSession.JoinRefusalKind is var kind and not CoopJoinRefusal.None )
 		{
-			Finish( CoopJoinOutcome.NotAllowed, refusal );
+			NotAllowedBecause = kind;
+			Finish( CoopJoinOutcome.NotAllowed, CoopSession.JoinRefusal! );
 			return;
 		}
 		if ( CoopProtocol.NormalizeCode( Code ) == null )

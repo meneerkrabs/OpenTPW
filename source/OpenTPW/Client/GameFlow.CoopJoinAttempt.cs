@@ -107,6 +107,9 @@ internal sealed partial class GameFlow : ICoopJoining
 		_ => null,
 	};
 
+	/// <summary>The words for why this game cannot join a shared park (C2d-3): another edition, or a run with developer options (restart without them).</summary>
+	internal static OpenTpwText JoinNotAllowedText( CoopJoinRefusal refusal ) => refusal == CoopJoinRefusal.OtherEdition ? OpenTpwText.JoinOtherEdition : OpenTpwText.JoinNotAllowed;
+
 	/// <summary>The words for the server's refusal of a join (C2d-3), by its reason.</summary>
 	internal static OpenTpwText JoinRefusalText( CoopReason reason ) => reason switch
 	{

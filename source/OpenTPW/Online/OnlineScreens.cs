@@ -781,7 +781,7 @@ public sealed class OnlineScreens
 			CoopJoinOutcome.Refused => strings.Extra( GameFlow.JoinRefusalText( attempt.Refusal ) ),
 			CoopJoinOutcome.LinkStopped => strings.Extra( LinkStopText( attempt.Stop ) ),
 			CoopJoinOutcome.NotACode => strings.Extra( OpenTpwText.JoinNotACode ),
-			CoopJoinOutcome.NotAllowed => strings.Extra( OpenTpwText.JoinNotAllowed ),
+			CoopJoinOutcome.NotAllowed => strings.Extra( GameFlow.JoinNotAllowedText( attempt.NotAllowedBecause ) ),
 			CoopJoinOutcome.InSession => strings.Extra( OpenTpwText.JoinInSession ),
 			CoopJoinOutcome.Ended when GameFlow.JoinEndText( attempt.EndCause, attempt.ServerReason ) is { } words => strings.Extra( words ),
 			CoopJoinOutcome.Joined or CoopJoinOutcome.Cancelled or CoopJoinOutcome.Ended => "",

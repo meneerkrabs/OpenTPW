@@ -32,6 +32,17 @@ public enum CoopShareRefusal
 }
 
 /// <summary>[EXT:online-coop-snapshot-join] Where a guest's session stands (docs/COOP.md, "Joining a running session").</summary>
+/// <summary>[EXT:online-coop-session] Why this game cannot join a shared park (C2d-3; <see cref="CoopSession.JoinRefusalKind"/>).</summary>
+public enum CoopJoinRefusal
+{
+	/// <summary>It can.</summary>
+	None,
+	/// <summary>The game runs another edition than Theme Park World, whose parks alone are shared.</summary>
+	OtherEdition,
+	/// <summary>The run was started with a developer option that changes the park outside the commands.</summary>
+	DeveloperOptions
+}
+
 /// <summary>[EXT:online-coop-session] Why a session ended for this game, as the screens say it (C2d-3; <see cref="CoopSession.EndCause"/>).</summary>
 public enum CoopSessionEnd
 {
@@ -337,11 +348,19 @@ internal sealed class CoopSession : IDisposable
 	}
 
 	/// <summary>
-	/// [EXT:online-coop-session] Why this game cannot join a shared park, in English for the log; null when it can. Only Theme Park World parks are shared, and a run started with a
-	/// developer option that changes the park outside the commands cannot follow one (C2d-3 checks it before the join goes out).
+	/// [EXT:online-coop-session] Why this game cannot join a shared park; <see cref="CoopJoinRefusal.None"/> when it can. Only Theme Park World parks are shared, and a run started with
+	/// a developer option that changes the park outside the commands cannot follow one (C2d-3 checks it before the join goes out).
 	/// </summary>
-	internal static string? JoinRefusal => GameEditions.Current != GameEdition.ThemeParkWorld ? "Only Theme Park World parks are shared."
-		: ChangesParkOutsideCommands ? "This game was started with developer options that change the park; restart it without them to join a shared park." : null;
+	internal static CoopJoinRefusal JoinRefusalKind => GameEditions.Current != GameEdition.ThemeParkWorld ? CoopJoinRefusal.OtherEdition
+		: ChangesParkOutsideCommands ? CoopJoinRefusal.DeveloperOptions : CoopJoinRefusal.None;
+
+	/// <summary><see cref="JoinRefusalKind"/> in English, for the log; null when this game can join.</summary>
+	internal static string? JoinRefusal => JoinRefusalKind switch
+	{
+		CoopJoinRefusal.OtherEdition => "Only Theme Park World parks are shared.",
+		CoopJoinRefusal.DeveloperOptions => "This game was started with developer options that change the park; restart it without them to join a shared park.",
+		_ => null,
+	};
 
 	private static void Require( Level level, ICoopStreamTransport link, CoopRole role )
 	{

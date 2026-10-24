@@ -104,11 +104,26 @@ public partial class CoopJoinSessionTests
 			Assert.AreEqual( GameFlow.GuestEndedScreenName, hud.Stack.Top!.Name );
 			Assert.AreEqual( English( OpenTpwText.JoinHostLeft ), ((UiLabel)hud.Stack.Top.Find( "message" )!).Text() );
 			Assert.IsNull( GameFlow.GuestStatusLine( joiner.Session, joinPlayer.Link, English ), "no status line once the session ended" );
-			// its OK leaves for the lobby: the park's retirement is queued
+			// its OK leaves for the lobby: the guest park is retired (never captured) and the lobby shown, as the game's exit does it
 			Assert.IsNull( GetField( flow, "pending" ) );
 			hud.Stack.Top.Elements.OfType<UiButton>().First().Clicked!();
-			Assert.IsNotNull( GetField( flow, "pending" ), "the lobby is queued" );
+			Assert.AreEqual( joiner.Level!.LevelName, RunQueuedExit( flow ), "the guest park is retired for the lobby" );
 		} );
+	}
+
+	/// <summary>
+	/// Runs the game's queued exit (the transition the exit queued) with the game's retire seam standing for the lobby: the theme it retires, and no capture of the park on the way
+	/// (a guest park is never saved).
+	/// </summary>
+	private static string RunQueuedExit( GameFlow flow )
+	{
+		var queued = (Action?)GetField( flow, "pending" ) ?? throw new AssertFailedException( "No exit was queued." );
+		string? retired = null;
+		flow.AutomaticRetireOverride = theme => retired = theme;
+		flow.AutomaticCaptureOverride = _ => throw new AssertFailedException( "A guest park is never captured." );
+		SetField( flow, "pending", null );
+		queued();
+		return retired ?? throw new AssertFailedException( "The exit did not retire the park." );
 	}
 
 	/// <summary>The guest HUD's exit is the game's own (the replay twin's bare HUD has none): the pause menu's Exit To Lobby goes through the game's exit.</summary>
@@ -138,7 +153,7 @@ public partial class CoopJoinSessionTests
 			// the session is left (no end dialog: this game left it), the server gives the seat back, and the lobby is queued
 			Assert.AreEqual( CoopSessionEnd.Left, joiner.Session!.EndCause );
 			Assert.AreNotEqual( GameFlow.GuestEndedScreenName, hud.Stack.Top?.Name );
-			Assert.IsNotNull( GetField( flow, "pending" ), "the lobby is queued" );
+			Assert.AreEqual( joiner.Level!.LevelName, RunQueuedExit( flow ), "the guest park is retired for the lobby" );
 			await CoopLinkTests.Until( () => hostPlayer.Link.Session!.Members.Count == 1, "the host to see the guest leave", hostPlayer, joinPlayer );
 		} );
 	}
@@ -152,17 +167,30 @@ public partial class CoopJoinSessionTests
 			var guest = await players.Add( server, "Guest" );
 			await CoopLinkTests.Open( hostPlayer );
 			var state = await CoopLinkTests.Share( hostPlayer );
-			// a run with a developer option that changes the park: nothing goes out
+			// a run with a developer option that changes the park, or another edition: nothing goes out, and the words say which
 			CoopSession.ChangesParkOutsideCommands = true;
 			try
 			{
 				var refused = await Attempt( guest, state.Code, attempt => attempt.Stage == CoopJoinStage.Done, "the local refusal", hostPlayer );
-				Assert.AreEqual( CoopJoinOutcome.NotAllowed, refused.Outcome );
+				Assert.AreEqual( (CoopJoinOutcome.NotAllowed, CoopJoinRefusal.DeveloperOptions), (refused.Outcome, refused.NotAllowedBecause) );
+				Assert.AreEqual( OpenTpwText.JoinNotAllowed, GameFlow.JoinNotAllowedText( refused.NotAllowedBecause ) );
 				refused.Dispose();
 			}
 			finally
 			{
 				CoopSession.ChangesParkOutsideCommands = false;
+			}
+			GameEditions.Select( GameEdition.ThemeParkInc );
+			try
+			{
+				var refused = await Attempt( guest, state.Code, attempt => attempt.Stage == CoopJoinStage.Done, "the edition's refusal", hostPlayer );
+				Assert.AreEqual( (CoopJoinOutcome.NotAllowed, CoopJoinRefusal.OtherEdition), (refused.Outcome, refused.NotAllowedBecause) );
+				Assert.AreEqual( OpenTpwText.JoinOtherEdition, GameFlow.JoinNotAllowedText( refused.NotAllowedBecause ) );
+				refused.Dispose();
+			}
+			finally
+			{
+				GameEditions.Select( GameEdition.ThemeParkWorld );
 			}
 			Assert.AreEqual( 1, hostPlayer.Link.Session!.Members.Count, "no seat was taken" );
 

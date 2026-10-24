@@ -100,7 +100,13 @@ public sealed class CoopLink : ICoopStreamTransport
 	/// <summary>The creates and joins sent on the live socket and not answered yet: a lost socket refuses them (<see cref="Refused"/>).</summary>
 	private readonly List<CoopMessageType> pending = new();
 	/// <summary>A leave that could not go out (the link was reconnecting): its reason goes with the leave the next welcome sends.</summary>
-	private (string SessionId, string Reason)? pendingLeave;
+	/// <summary>
+	/// The leaves that could not go out, one an account of a server (an account holds one session there): the session and the reason. The account's next welcome on
+	/// that server settles its leave; another server's or another account's welcome keeps it.
+	/// </summary>
+	private readonly Dictionary<(Uri? Server, string? Account), (string SessionId, string Reason)> pendingLeaves = new();
+	/// <summary>The server and the account of the link's latest socket, which a session the link holds belongs to (they outlive the login: a logout's leave is theirs).</summary>
+	private (Uri? Server, string? Account) socketOwner;
 
 	internal CoopLink( OnlineSession owner ) => this.owner = owner;
 
@@ -200,18 +206,33 @@ public sealed class CoopLink : ICoopStreamTransport
 	}
 
 	/// <summary>
-	/// Closes the link and forgets its session without leaving it (<see cref="Leave"/> leaves): the session is over for this game (<see cref="SessionEnded"/>),
-	/// a later open names it, and the game leaves it then.
+	/// Closes the link and forgets its session: the session is over for this game (<see cref="SessionEnded"/>), a later open names it, and the game leaves it then.
 	/// </summary>
-	public void Close()
+	/// <param name="leaveReason">
+	/// [EXT:online-coop-session] Leaves the session first with this reason, which the others hear (a host's leave ends it for everyone; a logout or another server):
+	/// the leave is queued on the socket, which sends what it holds before it closes, and a link that cannot send it now leaves at the next welcome that names the
+	/// session. The end this game hears is its own leave. Null closes without leaving.
+	/// </param>
+	public void Close( string? leaveReason = null )
 	{
+		var held = Session;
+		string? left = null;
+		if ( leaveReason != null && (held != null || pending.Count > 0) )
+		{
+			left = CoopProtocol.Clip( leaveReason.Trim() );
+			// a create or join still waiting for its answer makes a session the server holds once it reads it: the leave follows it on the same socket, which the
+			// server reads in order, so it leaves that session too
+			var sent = Send( new CoopLeave( left ) );
+			if ( held != null )
+				DeferLeave( sent, held.Id, left );
+		}
 		Shut( "This game closed its link to the shared park." );
 		Stopped = CoopStop.None;
-		var held = Session;
 		ForgetSession();
 		SetState( CoopLinkState.Closed, quietly: true );
 		if ( held != null )
-			SessionEnded?.Invoke( new CoopEnded( held.Id, CoopReason.Unknown, "This game closed its link to the shared park." ) );
+			SessionEnded?.Invoke( left != null ? new CoopEnded( held.Id, CoopReason.Left, left )
+				: new CoopEnded( held.Id, CoopReason.Unknown, "This game closed its link to the shared park." ) );
 		RaiseState();
 	}
 
@@ -249,11 +270,20 @@ public sealed class CoopLink : ICoopStreamTransport
 		if ( Session is not { } session )
 			return false;
 		reason = CoopProtocol.Clip( reason.Trim() );
-		pendingLeave = Send( new CoopLeave( reason ) ) ? null : (session.Id, reason);
+		DeferLeave( Send( new CoopLeave( reason ) ), session.Id, reason );
 		ForgetSession();
 		// the session is over for this game without an end event: its chat leaves the session's room
 		owner.LeftCoopSession( session.Id );
 		return true;
+	}
+
+	/// <summary>A leave of the socket's account went out (<paramref name="sent"/>), or waits for that account's next welcome on that server.</summary>
+	private void DeferLeave( bool sent, string sessionId, string reason )
+	{
+		if ( sent )
+			pendingLeaves.Remove( socketOwner );
+		else
+			pendingLeaves[socketOwner] = (sessionId, reason);
 	}
 
 	/// <summary>The host removes member <paramref name="memberId"/>; the account cannot join the session again.</summary>
@@ -430,6 +460,7 @@ public sealed class CoopLink : ICoopStreamTransport
 			Stop( CoopStop.Closed );
 			return;
 		}
+		socketOwner = (client.ServerUrl, client.Session.Name);
 		var current = ++epoch;
 		byte[] hello;
 		try
@@ -666,10 +697,11 @@ public sealed class CoopLink : ICoopStreamTransport
 		SetState( CoopLinkState.Open, quietly: true );
 		if ( Session == null && welcome.Session is { } named )
 		{
-			var reason = pendingLeave is { } leave && leave.SessionId == named.Id ? leave.Reason : "This game no longer holds the shared park.";
+			var reason = pendingLeaves.TryGetValue( socketOwner, out var leave ) && leave.SessionId == named.Id ? leave.Reason : "This game no longer holds the shared park.";
 			Send( new CoopLeave( reason ) );
 		}
-		pendingLeave = null;
+		// the account's leave on this server is settled (sent, or its session is gone); another server's or account's waits for its own welcome
+		pendingLeaves.Remove( socketOwner );
 		if ( ended != null )
 			SessionEnded?.Invoke( ended );
 		if ( resumed != null )

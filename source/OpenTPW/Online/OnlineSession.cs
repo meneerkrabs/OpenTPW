@@ -474,8 +474,9 @@ public sealed class OnlineSession : IDisposable, IPresenceSession, IChatPanelSou
 		Client?.Dispose();
 		Client = null;
 		// [EXT:online-coop-session] the co-op link belongs to the login (closed once the login is gone, so a handler of its close cannot open it on the old one); a
-		// session it held is named again at the next open, and left then
-		Coop.Close();
+		// shared park it holds is left first, on its socket, which outlives the login's HTTP client (C2d-2: a host's logout or server switch ends the park for its
+		// guests at once, not after the away limit), and one it cannot leave now is left at the next open
+		Coop.Close( LeftOnLogout );
 		Parks = Array.Empty<ParkSummary>();
 		Inbox = Array.Empty<PostcardSummary>();
 		News = null;
@@ -1106,6 +1107,9 @@ public sealed class OnlineSession : IDisposable, IPresenceSession, IChatPanelSou
 	/// park's: no other room is joined, and nothing is said in a room until the chat is on its way to this one (<see cref="SendChatLine"/>).
 	/// </summary>
 	private string? coopRoom;
+
+	/// <summary>[EXT:online-coop-session] The reason a shared park hears when this game logs out or changes server (<see cref="Disconnect"/>).</summary>
+	internal const string LeftOnLogout = "The player went offline.";
 
 	/// <summary>[EXT:online-coop-session] The shared park's room is to be joined on the open connection once its server version is read (a new connection's rejoin waits for it).</summary>
 	private bool coopJoinWaits;

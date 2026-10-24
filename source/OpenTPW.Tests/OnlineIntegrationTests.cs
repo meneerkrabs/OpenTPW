@@ -1354,6 +1354,8 @@ public class OnlineIntegrationTests
 			annHttp.Dispose();
 			cidHttp.Dispose();
 			beaHttp.Dispose();
+			// the server first: its co-op store may still write a session's end
+			await server.DisposeAsync();
 			server.DeleteData();
 		}
 	}
@@ -1400,6 +1402,8 @@ public class OnlineIntegrationTests
 			gate.Release( ChatProtocol.CoopRoomsVersion );
 			ann.Dispose();
 			http.Dispose();
+			// the server first: its co-op store may still write a session's end
+			await server.DisposeAsync();
 			server.DeleteData();
 		}
 	}
@@ -1429,6 +1433,8 @@ public class OnlineIntegrationTests
 		{
 			ann.Dispose();
 			http.Dispose();
+			// the server first: its co-op store may still write a session's end
+			await server.DisposeAsync();
 			server.DeleteData();
 		}
 	}

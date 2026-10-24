@@ -502,6 +502,9 @@ internal sealed partial class GameFlow : IDisposable
 		AdvisorSaysStaffMessages = () => Advisor != null,
 		HelpKeyPressed = () => Advisor?.OnHelpKeyPressed(),
 		Presence = () => presence,
+		// [EXT:online-coop-session] sharing the park with other players (C2d-2) and its status line
+		BuildTogether = WhenOnline( stack => CreateOnlineScreens( stack ).ShowBuildTogether() ),
+		SessionStatus = () => SessionStatusLine( level ),
 	};
 
 	/// <summary>
@@ -646,6 +649,8 @@ internal sealed partial class GameFlow : IDisposable
 			input = UiInput.Idle( input.Mouse ) with { PointerHostBlocked = true };
 		Input.TextEntryActive = false;
 		onlineSession?.Pump();
+		// [EXT:online-coop-session] sharing the open park (C2d-2): its preparation, its create and the hosting run here, after the link's answers and before the level
+		StepCoopShare();
 		// [EXT:online-coop-snapshot-join] a guest's join and resync: the build's slice, the check at the cut and the swap run here, before the HUD and the level
 		using ( FrameMarks.Measure( "coop.session" ) )
 			StepCoopSession();
@@ -1212,6 +1217,7 @@ internal sealed partial class GameFlow : IDisposable
 		} ),
 		Globe = () => Globe,
 		Advise = message => Advisor?.OnOnlineScreenOpened( message ),
+		Hosting = this,
 	} );
 
 	/// <summary>A chat park's visit, built once its level's files are there; null after a failure, which is shown over the screen it came from.</summary>
@@ -1242,6 +1248,8 @@ internal sealed partial class GameFlow : IDisposable
 		AbandonParkBuild();
 		presence?.Dispose();
 		presence = null;
+		coopShare?.Dispose();
+		coopShare = null;
 		Advisor?.Dispose();
 		GameAudio.Shutdown();
 		Hud?.Stack.Clear();

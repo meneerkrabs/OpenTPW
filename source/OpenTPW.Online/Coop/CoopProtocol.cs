@@ -60,6 +60,18 @@ public static class CoopProtocol
 	}
 
 	/// <summary>
+	/// [EXT:online-coop-session] The server's refusal of an invitation to <paramref name="player"/> for <paramref name="reason"/>: every one names the player. The server
+	/// answers an invitation only with a refusal, so the host's game tells by this text whose invitation a refusal answers, whenever it comes (C2d-2).
+	/// </summary>
+	public static string InviteRefusalText( CoopReason reason, string player ) => Clip( reason switch
+	{
+		CoopReason.NotOnline => $"{player} is not online with a game that shares parks.",
+		CoopReason.Rate => $"Too many invitations; {player} was not invited. Try again later.",
+		CoopReason.NotHost => $"Only the host invites players; {player} was not invited.",
+		_ => $"{player} was not invited.",
+	} );
+
+	/// <summary>
 	/// <paramref name="text"/> as a field of at most <paramref name="maximumLength"/> characters a reader takes: control characters become spaces and the end
 	/// is cut, never inside a surrogate pair. The server's own texts (a refusal that lists mods or builds) go through it.
 	/// </summary>

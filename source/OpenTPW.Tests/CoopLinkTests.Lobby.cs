@@ -183,6 +183,72 @@ public partial class CoopLinkTests
 		} );
 	}
 
+	/// <summary>The server seats the guest, but the answer is lost with the socket: the join is refused with no seat for the game, which the server still holds.</summary>
+	private static async Task<CoopSessionState> SeatWithALostAnswer( Player host, Player guest, Func<bool> down )
+	{
+		await Open( host );
+		var state = await Share( host );
+		await Until( () => guest.Link.State == CoopLinkState.Open, "the guest's link", guest );
+		guest.Link.DropReceived = message => message is CoopJoined;
+		Assert.IsTrue( guest.Link.Join( state.Code ) );
+		await Until( () => host.Link.Session!.Members.Count == 2, "the server to seat the guest", host, guest );
+		var real = guest.Link.Connector;
+		guest.Link.Connector = async ( client, cancel ) => down() ? throw new WebSocketException( "The network is down." ) : await real( client, cancel );
+		guest.Link.DropReceived = null;
+		guest.Link.DropSocket();
+		await Until( () => guest.Errors.Any( error => error.Request == CoopMessageType.Join && error.Reason == CoopReason.Unknown ), "the lost answer", guest );
+		Assert.IsNull( guest.Link.Session );
+		Assert.IsTrue( guest.Link.Settling, "the seat's leave waits for the next welcome" );
+		return state;
+	}
+
+	[TestMethod]
+	public async Task TheLobbyKeepsALinkWhoseLostAnswerMadeASeatUntilItsWelcomeLeavesIt()
+	{
+		await WithServer( async ( server, players ) =>
+		{
+			var host = await players.Add( server, "Hostess" );
+			var guest = await players.Add( server, "Guest" );
+			var lobby = new CoopLobbyLink( guest.Link, () => 0 );
+			lobby.Step( true, LoginOf( guest ), false );
+			var down = true;
+			await SeatWithALostAnswer( host, guest, () => down );
+			// an ordinary park: the link stays until a welcome settles the seat
+			lobby.Step( false, LoginOf( guest ), false );
+			Assert.AreNotEqual( CoopLinkState.Closed, guest.Link.State );
+			down = false;
+			await Until( () => host.Link.Session!.Members.Count == 1, "the seat to be left", host, guest );
+			Assert.IsFalse( guest.Link.Settling );
+			lobby.Step( false, LoginOf( guest ), false );
+			Assert.AreEqual( CoopLinkState.Closed, guest.Link.State );
+		} );
+	}
+
+	[TestMethod]
+	public async Task ASeatALostAnswerMadeIsLeftByTheLobbysNextOpenNeverTakenForAnotherGames()
+	{
+		await WithServer( async ( server, players ) =>
+		{
+			var host = await players.Add( server, "Hostess" );
+			var guest = await players.Add( server, "Guest" );
+			guest.Link.ReconnectWindow = TimeSpan.FromMilliseconds( 200 );
+			var lobby = new CoopLobbyLink( guest.Link, () => 0 );
+			lobby.Step( true, LoginOf( guest ), false );
+			var down = true;
+			await SeatWithALostAnswer( host, guest, () => down );
+			// the link cannot come back and gives up; the seat's leave still waits
+			await Until( () => guest.Link.Stopped == CoopStop.Lost, "the link to be lost", guest );
+			Assert.AreEqual( 2, host.Link.Session!.Members.Count );
+			// the next stay in the lobby: its welcome names the seat, which is this game's to leave
+			down = false;
+			lobby.Step( false, LoginOf( guest ), false );
+			lobby.Step( true, LoginOf( guest ), false );
+			await Until( () => host.Link.Session!.Members.Count == 1, "the seat to be left", host, guest );
+			Assert.AreEqual( (CoopLinkState.Open, CoopStop.None), (guest.Link.State, guest.Link.Stopped) );
+			Assert.IsFalse( guest.Link.Settling );
+		} );
+	}
+
 	[TestMethod]
 	public async Task ALostLobbyLinkOpensAgainOnASpreadTimerAtMostTenTimesAStay()
 	{
@@ -220,12 +286,41 @@ public partial class CoopLinkTests
 				now += 10 * CoopLobbyLink.LostRetrySeconds;
 			}
 			Assert.AreEqual( (CoopLinkState.Closed, CoopStop.Lost, CoopLobbyLink.MaximumLostRetries), (guest.Link.State, guest.Link.Stopped, lobby.LostRetries) );
-			// the next stay starts over, and a link that stays up clears the count
+			// the next stay starts over
 			down = false;
 			lobby.Step( false, LoginOf( guest ), false );
 			Assert.AreEqual( 0, lobby.LostRetries );
 			lobby.Step( true, LoginOf( guest ), false );
 			await Until( () => guest.Link.State == CoopLinkState.Open, "the link back", guest );
+			// a link that drops soon after it opened goes on with the stay's count
+			async Task Lose()
+			{
+				down = true;
+				guest.Link.DropSocket();
+				await Until( () => guest.Link.Stopped == CoopStop.Lost, "the link lost again", guest );
+			}
+			async Task Retry()
+			{
+				lobby.Step( true, LoginOf( guest ), false );
+				now += 2 * CoopLobbyLink.LostRetrySeconds;
+				lobby.Step( true, LoginOf( guest ), false );
+				await Until( () => guest.Link.State == CoopLinkState.Open, "the retry to open", guest );
+				lobby.Step( true, LoginOf( guest ), false );
+			}
+			await Lose();
+			down = false;
+			await Retry();
+			Assert.AreEqual( 1, lobby.LostRetries );
+			now += CoopLobbyLink.StableOpenSeconds - 1;
+			lobby.Step( true, LoginOf( guest ), false );
+			await Lose();
+			down = false;
+			await Retry();
+			Assert.AreEqual( 2, lobby.LostRetries, "a brief open did not start over" );
+			// one that stays up a minute does
+			now += CoopLobbyLink.StableOpenSeconds;
+			lobby.Step( true, LoginOf( guest ), false );
+			Assert.AreEqual( 0, lobby.LostRetries );
 		} );
 	}
 

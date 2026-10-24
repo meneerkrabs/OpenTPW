@@ -75,6 +75,7 @@ public partial class CoopJoinSessionTests
 			((UiButton)stack.Top.Find( "choice0" )!).Clicked!();
 			Assert.IsNull( flow.ShownInvitation );
 			Assert.AreEqual( UI.OnlineScreens.JoinSharedParkScreenName, stack.Top!.Name );
+			Assert.AreEqual( state.Code, ((UiTextField)stack.Top.Find( "code" )!).Text, "the code stays for another try" );
 			var attempt = flow.Joining!;
 			Assert.AreEqual( state.Code, attempt.Code );
 			await frames( 0, () => attempt.Stage == CoopJoinStage.Done, "the join" );
@@ -327,7 +328,8 @@ public partial class CoopJoinSessionTests
 			await LobbyFrames( flow, () => { UpdateTop( stack ); return list.Rows().Count == 2; }, "the open list", guestPlayer );
 			CollectionAssert.AreEquivalent( new[] { "Ending park (Hostess)", "Small park (Smallhost)" }, list.Rows().ToArray() );
 
-			// the park ends after the list came: its row's join is refused in words, and Back leads to the list again
+			// the park ends after the list came: its row's join is refused in words; the code stays for another try, and Back leads to the list again
+			var staleCode = stale.Link.Session!.Code;
 			Assert.IsTrue( stale.Link.Leave( "Closing." ) );
 			list.Selected = list.Rows().ToList().IndexOf( "Ending park (Hostess)" );
 			UpdateTop( stack );
@@ -336,6 +338,11 @@ public partial class CoopJoinSessionTests
 			await LobbyFrames( flow, () => flow.Joining!.Stage == CoopJoinStage.Done, "the stale join", stale, guestPlayer );
 			UpdateTop( stack );
 			Assert.AreEqual( English( OpenTpwText.JoinUnknownCode ), Message( stack ) );
+			((UiButton)stack.Top!.Find( "again" )!).Clicked!();
+			UpdateTop( stack );
+			var code = (UiTextField)stack.Top!.Find( "code" )!;
+			Assert.IsTrue( code.Visible );
+			Assert.AreEqual( staleCode, code.Text );
 			stack.Top!.Back!();
 			Assert.AreEqual( UI.OnlineScreens.SharedParksScreenName, stack.Top!.Name );
 

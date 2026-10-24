@@ -124,7 +124,7 @@ internal sealed partial class GameFlow
 
 	/// <summary>
 	/// Join: a join with the invitation's code, if the invitation is still this login's and the game may join (<see cref="StartJoining"/>); the join screen shows it, as a join with a
-	/// typed code.
+	/// typed code, and keeps the code for another try.
 	/// </summary>
 	private void AcceptInvitation()
 	{
@@ -135,8 +135,10 @@ internal sealed partial class GameFlow
 			return;
 		if ( !StartJoining( invitation.Code ) )
 			return;
-		if ( menu.Stack.Top?.Name != UI.OnlineScreens.JoinSharedParkScreenName )
-			CreateOnlineScreens( menu.Stack ).ShowJoinSharedPark();
+		// the join screen shows it with the invitation's code (kept for another try after a refusal): an idle one on top makes way
+		if ( menu.Stack.Top?.Name == UI.OnlineScreens.JoinSharedParkScreenName )
+			menu.Stack.Pop();
+		CreateOnlineScreens( menu.Stack ).ShowJoinSharedPark( invitation.Code );
 	}
 
 	/// <summary>Not now: the invitation is put aside (the server hears nothing).</summary>

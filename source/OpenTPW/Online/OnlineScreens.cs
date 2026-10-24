@@ -703,10 +703,14 @@ public sealed class OnlineScreens
 	/// <summary>
 	/// [EXT:online-coop-session] Joining a shared park with its code (C2d-3; docs/COOP.md, "Joining a shared park from the lobby"): the code the host gave (case, spaces and dashes do
 	/// not matter), or a login. While it joins: the stage in words (joining, getting the host's park, building it) and a cancel; a refusal in words, with a way back to the code.
-	/// Once the game took the join, its own end dialog says why a session ended; the park, once built, replaces the lobby.
+	/// Once the game took the join, its own end dialog says why a session ended; the park, once built, replaces the lobby. A join from the open list or an invitation (C2d-3b)
+	/// gives its <paramref name="code"/>, which the field keeps for another try after a refusal.
 	/// </summary>
 	// [EXT:own-window-sizes] the window and the places of its controls are OpenTPW's: the original has no shared parks
-	public void ShowJoinSharedPark()
+	public void ShowJoinSharedPark() => ShowJoinSharedPark( null );
+
+	/// <inheritdoc cref="ShowJoinSharedPark()"/>
+	public void ShowJoinSharedPark( string? code )
 	{
 		if ( host.Joining is not { } joining )
 			return;
@@ -730,6 +734,8 @@ public sealed class OnlineScreens
 		var codeField = screen.Add( new UiTextField { Id = "code", MaximumLength = 32, Model = "f_text1",
 			Bounds = new UiRect( x + 320, window.Y + 330, width - 320, 93 ), Anchor = UiAnchor.Center } );
 		codeField.Changed = _ => localMessage = "";
+		if ( code != null )
+			codeField.Text = code;
 		screen.Add( new UiLabel { Id = "message", Wrap = true, Font = fonts => fonts.Small, Color = UiColors.Value,
 			Bounds = new UiRect( x, window.Y + 460, width, 120 ), Anchor = UiAnchor.Center,
 			Text = () => Attempt() is { } attempt ? JoinMessage( attempt ) : localMessage.Length > 0 ? localMessage
@@ -877,7 +883,7 @@ public sealed class OnlineScreens
 		void Join()
 		{
 			if ( CanJoin() && Chosen( list ) is { } park && joining.StartJoining( park.Code ) )
-				ShowJoinSharedPark();
+				ShowJoinSharedPark( park.Code );
 		}
 		list.RowActivated = _ => Join();
 		var join = screen.Add( new UiButton { Id = "join", Text = () => strings.Extra( OpenTpwText.JoinButton ), Clicked = Join,

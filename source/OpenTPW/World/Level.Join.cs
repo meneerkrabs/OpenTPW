@@ -7,8 +7,8 @@ public partial class Level
 
 	/// <summary>
 	/// [EXT:online-coop-snapshot-join] The session state a join snapshot carries beyond the park's save (<see cref="CoopJoinState"/>), taken at the cut between two ticks: every player's carried
-	/// catalogue entry and employee in hand, the pending hire and the stale on-pointer candidate (a load resets both), the coasters' being-edited marks and the session clock. A held coaster drag
-	/// refuses the capture, which waits for its release: the drag's edited pylon is no part of the save.
+	/// catalogue entry and employee in hand, the pending hire and the stale on-pointer candidate (a load resets both), the coasters' being-edited marks, the session clock and the guests' build
+	/// grants. A held coaster drag refuses the capture, which waits for its release: the drag's edited pylon is no part of the save.
 	/// </summary>
 	internal CoopJoinState CaptureJoinState()
 	{
@@ -22,7 +22,8 @@ public partial class Level
 			staff?.StaleOnPointerId ?? 0,
 			CoasterStations().Where( station => station.Ride.BeingEdited ).Select( station => station.AttractionId ).ToArray(),
 			Objects?.ScriptWorld?.SessionTime?.Ticks,
-			CoasterUnheldCells() );
+			CoasterUnheldCells(),
+			BuildGrants.ToArray() );
 	}
 
 	/// <summary>
@@ -53,6 +54,7 @@ public partial class Level
 			ride.BeingEdited = marked.Contains( attraction );
 		if ( Objects?.ScriptWorld is { } scripts )
 			scripts.SessionTime = state.SessionClockTicks is { } ticks ? new DateTime( ticks, DateTimeKind.Unspecified ) : null;
+		buildGrants = state.BuildGrants is { Count: > 0 } grants ? new SortedSet<int>( grants ) : null;
 	}
 
 	/// <summary>

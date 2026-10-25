@@ -67,7 +67,7 @@ public class CoopJoinTests
 		new[] { (0, "jungle/ride.wad#3"), (2, "jungle/shop.wad#1") },
 		new[] { (0, 5, 3, 1), (3, 7, -1, 12) },
 		9, 4, new[] { 12, 40 }, new DateTime( 2026, 10, 21, 15, 0, 0 ).Ticks,
-		new[] { (12, 30, 41, true), (12, 31, 41, false), (40, 5, -2, true) } );
+		new[] { (12, 30, 41, true), (12, 31, 41, false), (40, 5, -2, true) }, new[] { 1, 3 } );
 
 	private static CoopJoinPayload SamplePayload() => new( 7, 120, 3600, 88, 0x1234_5678_9ABC_DEF0, 0x0FED_CBA9_8765_4321, SampleState(),
 		Enumerable.Range( 0, 5000 ).Select( index => (byte)(index * 31) ).ToArray() );
@@ -79,6 +79,7 @@ public class CoopJoinTests
 		Assert.AreEqual( (expected.PendingHire, expected.StaleOnPointer, expected.SessionClockTicks), (actual.PendingHire, actual.StaleOnPointer, actual.SessionClockTicks) );
 		CollectionAssert.AreEqual( expected.CoastersBeingEdited.ToArray(), actual.CoastersBeingEdited.ToArray() );
 		CollectionAssert.AreEqual( expected.CoasterUnheldCells.ToArray(), actual.CoasterUnheldCells.ToArray() );
+		CollectionAssert.AreEqual( (expected.BuildGrants ?? Array.Empty<int>()).ToArray(), (actual.BuildGrants ?? Array.Empty<int>()).ToArray() );
 	}
 
 	[TestMethod]
@@ -138,9 +139,14 @@ public class CoopJoinTests
 			state with { CarriedEntries = new[] { (1, "a"), (1, "b") } },
 			state with { StaffHands = new[] { (2, 1, 0, 0), (2, 2, 0, 0) } },
 			state with { CoastersBeingEdited = new[] { 5, 5 } },
-			state with { CoasterUnheldCells = new[] { (12, 30, 41, true), (12, 30, 41, false) } }
+			state with { CoasterUnheldCells = new[] { (12, 30, 41, true), (12, 30, 41, false) } },
+			state with { BuildGrants = new[] { 2, 2 } }
 		} )
-			Assert.ThrowsException<InvalidDataException>( () => CoopJoinState.Decode( twice.Encode() ), "a player, a coaster or a coaster's cell named twice" );
+			Assert.ThrowsException<InvalidDataException>( () => CoopJoinState.Decode( twice.Encode() ), "a player, a coaster, a coaster's cell or a granted seat named twice" );
+		// [EXT:online-coop-permissions] a grant names a guest's seat: never the host's 0, never past the per-player bound
+		foreach ( var seat in new[] { 0, CoopJoinState.MaximumPlayerEntries } )
+			Assert.ThrowsException<InvalidDataException>( () => CoopJoinState.Decode( (state with { BuildGrants = new[] { seat } }).Encode() ), $"a grant for seat {seat}" );
+		AssertSameState( state with { BuildGrants = null }, CoopJoinState.Decode( (state with { BuildGrants = null }).Encode() ) );
 		Assert.ThrowsException<InvalidOperationException>( () => (state with { CoasterUnheldCells = Enumerable.Range( 0, CoopJoinState.MaximumUnheldCells + 1 )
 			.Select( index => (1, index, 0, false) ).ToArray() }).Encode(), "more unheld cells than a join state carries" );
 		Assert.ThrowsException<InvalidDataException>( () => CoopJoinState.Decode( (state with { PendingHire = -1 }).Encode() ), "a negative id" );

@@ -143,25 +143,22 @@ public sealed class OnlineSession : IDisposable, IPresenceSession, IChatPanelSou
 	private int commandsVersion = -1;
 	public OnlineClient? Client { get; private set; }
 	public ChatConnection? Chat { get; private set; }
-	public string Status
-	{
-		get => status;
-		private set
-		{
-			status = value;
-			if ( Busy > 0 )
-				progress = value;
-		}
-	}
-	private string status = "";
+	public string Status { get; private set; } = "";
 	public int Busy { get; private set; }
 
 	/// <summary>
 	/// The progress text the running request set (the original's progress messages, such as "Getting City List" or "Sending mails from outbox, please wait ..."),
-	/// or null while no request runs or the running one has set none.
+	/// or null while no request runs or the running one has set none. Other status messages, such as a chat connection's error, are no progress.
 	/// </summary>
 	public string? Progress => Busy > 0 ? progress : null;
 	private string? progress;
+
+	/// <summary>The running request's progress text, shown as the status too (on the game's thread, from the request's own post).</summary>
+	private void SetProgress( string text )
+	{
+		Status = text;
+		progress = text;
+	}
 	/// <summary>
 	/// A chat connection is being opened or chat requests are still on their way. Chat traffic does not take the operation slot (<see cref="Busy"/>):
 	/// a visit joins its park's room while the download that started it still holds the slot, and a walking player sends a place several times
@@ -586,7 +583,7 @@ public sealed class OnlineSession : IDisposable, IPresenceSession, IChatPanelSou
 	public void FetchCityParks( int cityId ) => WithClient( async client =>
 	{
 		// [DATA:Language/English/UITEXT.str:249] the original showed "Getting Top 10 Park List" while this ran
-		Post( () => { CityParks = null; Status = OnlineStrings.Ui( OnlineStrings.GettingTop10ParkList, "Getting Top 10 Park List" ); } );
+		Post( () => { CityParks = null; SetProgress( OnlineStrings.Ui( OnlineStrings.GettingTop10ParkList, "Getting Top 10 Park List" ) ); } );
 		var list = await client.ListParksAsync( sort: "votes", cityId: cityId );
 		Post( () => CityParks = list.Parks );
 		// the city lobby and its Other Parks list show an empty result themselves; the status line only ends the progress text
@@ -597,7 +594,7 @@ public sealed class OnlineSession : IDisposable, IPresenceSession, IChatPanelSou
 	public void FetchCities() => WithClient( async client =>
 	{
 		// [DATA:Language/English/UITEXT.str:248] the original showed "Getting City List" while this ran
-		Post( () => Status = OnlineStrings.Ui( OnlineStrings.GettingCityList, "Getting City List" ) );
+		Post( () => SetProgress( OnlineStrings.Ui( OnlineStrings.GettingCityList, "Getting City List" ) ) );
 		var cities = await client.GetCitiesAsync();
 		Post( () => Cities = cities?.Cities ?? Array.Empty<CityInfo>() );
 		return "";
@@ -609,7 +606,7 @@ public sealed class OnlineSession : IDisposable, IPresenceSession, IChatPanelSou
 	/// </summary>
 	public void FetchChatParks() => WithClient( async client =>
 	{
-		Post( () => Status = OnlineStrings.Ui( OnlineStrings.GettingChatSatelliteList, "Getting Chat Satellite List" ) );
+		Post( () => SetProgress( OnlineStrings.Ui( OnlineStrings.GettingChatSatelliteList, "Getting Chat Satellite List" ) ) );
 		var parks = await client.GetChatParksAsync();
 		Post( () => ChatParks = parks?.ChatParks ?? Array.Empty<ChatParkInfo>() );
 		return "";
@@ -621,7 +618,7 @@ public sealed class OnlineSession : IDisposable, IPresenceSession, IChatPanelSou
 	/// </summary>
 	public void FetchChatParkScenes( Action<IReadOnlyList<ChatParkScene>?> onFetched ) => WithClient( async client =>
 	{
-		Post( () => Status = OnlineStrings.Ui( OnlineStrings.GettingChatSatelliteList, "Getting Chat Satellite List" ) );
+		Post( () => SetProgress( OnlineStrings.Ui( OnlineStrings.GettingChatSatelliteList, "Getting Chat Satellite List" ) ) );
 		var scenes = await client.GetChatParkScenesAsync();
 		Post( () => onFetched( scenes?.Scenes ) );
 		return "";
@@ -631,7 +628,7 @@ public sealed class OnlineSession : IDisposable, IPresenceSession, IChatPanelSou
 	public void FetchNews() => WithClient( async client =>
 	{
 		// [DATA:Language/English/UITEXT.str:245/246] "Getting Game News" / "Getting System News"
-		Post( () => Status = OnlineStrings.Ui( OnlineStrings.GettingGameNews, "Getting Game News" ) );
+		Post( () => SetProgress( OnlineStrings.Ui( OnlineStrings.GettingGameNews, "Getting Game News" ) ) );
 		var news = await client.GetNewsAsync();
 		Post( () => News = news );
 		return news == null || (news.Game.Length == 0 && news.System.Length == 0) ? OnlineStrings.Get( OnlineLabel.NoNews ) : "";
@@ -640,8 +637,8 @@ public sealed class OnlineSession : IDisposable, IPresenceSession, IChatPanelSou
 	public void RefreshParks( string? search, string sort = "recent", int? cityId = null, string? author = null ) => WithClient( async client =>
 	{
 		// [DATA:Language/English/UITEXT.str:250/251] "Getting All Park List" / "Getting Player's Park List"
-		Post( () => Status = OnlineStrings.Ui( search == null && author == null ? OnlineStrings.GettingAllParkList : OnlineStrings.GettingPlayersParkList,
-			search == null && author == null ? "Getting All Park List" : "Getting Player's Park List" ) );
+		Post( () => SetProgress( OnlineStrings.Ui( search == null && author == null ? OnlineStrings.GettingAllParkList : OnlineStrings.GettingPlayersParkList,
+			search == null && author == null ? "Getting All Park List" : "Getting Player's Park List" ) ) );
 		var list = await client.ListParksAsync( search, sort, author, cityId: cityId );
 		Post( () => Parks = list.Parks );
 		// the Find Parks list shows an empty result itself (UITEXT 306 as its row); the status line only ends the progress text
@@ -659,7 +656,7 @@ public sealed class OnlineSession : IDisposable, IPresenceSession, IChatPanelSou
 	/// <summary>Publishes <paramref name="package"/>; <paramref name="onPublished"/> runs on the game's thread once the server has the park (the Publish Park form closes then).</summary>
 	public void Publish( ParkPackage package, bool showOnWebsite = false, int cityId = 0, Action? onPublished = null ) => WithClient( async client =>
 	{
-		Post( () => Status = OnlineStrings.Ui( OnlineStrings.PublishingPark, "Publishing Park" ) );
+		Post( () => SetProgress( OnlineStrings.Ui( OnlineStrings.PublishingPark, "Publishing Park" ) ) );
 		await client.UploadParkAsync( package, showOnWebsite: showOnWebsite, cityId: cityId );
 		if ( onPublished != null )
 			Post( onPublished );
@@ -669,7 +666,7 @@ public sealed class OnlineSession : IDisposable, IPresenceSession, IChatPanelSou
 	/// <summary>Downloads a park into the visited folder and records the visit; returns via status the file to visit.</summary>
 	public void Download( ParkSummary park, Action<string> onDownloaded ) => WithClient( async client =>
 	{
-		Post( () => Status = OnlineStrings.Ui( OnlineStrings.DownloadingPark, "Downloading Park" ) );
+		Post( () => SetProgress( OnlineStrings.Ui( OnlineStrings.DownloadingPark, "Downloading Park" ) ) );
 		var package = await client.DownloadParkAsync( park.Id );
 		var path = Path.Combine( Folders.Visited, park.Id + ParkPackage.FileExtension );
 		package.Save( path );
@@ -698,7 +695,7 @@ public sealed class OnlineSession : IDisposable, IPresenceSession, IChatPanelSou
 	public void SendOutbox( IReadOnlyList<string>? files = null ) => WithClient( async client =>
 	{
 		// [BIN:TPW-EXE:0x4bc500 outbox send] the original showed "Sending mails from outbox, please wait ..." (UITEXT 0x13a, OpenTPW's 313) while it sent
-		Post( () => Status = OnlineStrings.Ui( OnlineStrings.SendingOutbox, "Sending mails from outbox, please wait ..." ) );
+		Post( () => SetProgress( OnlineStrings.Ui( OnlineStrings.SendingOutbox, "Sending mails from outbox, please wait ..." ) ) );
 		foreach ( var (file, card, error) in Folders.List( Folders.Outbox ) )
 		{
 			if ( card == null || (files != null && files.Count > 0 && !files.Contains( file )) )

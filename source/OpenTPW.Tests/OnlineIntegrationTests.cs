@@ -546,12 +546,18 @@ public class OnlineIntegrationTests
 		{
 			using var session = new OnlineSession( folders );
 			var status = typeof( OnlineSession ).GetProperty( nameof( OnlineSession.Status ) )!;
+			var setProgress = typeof( OnlineSession ).GetMethod( "SetProgress", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic )!;
 			status.SetValue( session, "an earlier outcome" );
 			Assert.IsNull( session.Progress, "no request runs" );
 			var release = new TaskCompletionSource<string?>();
 			session.Run( () => release.Task );
 			Assert.IsNull( session.Progress, "the running request has set no progress text: an earlier outcome is none" );
-			status.SetValue( session, "Getting City List" );
+			// the request's own progress post, as FetchCities makes it
+			setProgress.Invoke( session, new object[] { "Getting City List" } );
+			Assert.AreEqual( "Getting City List", session.Progress );
+			Assert.AreEqual( "Getting City List", session.Status );
+			// another message while the request runs (a chat connection's error) is no progress of it
+			status.SetValue( session, "The chat server cannot be reached." );
 			Assert.AreEqual( "Getting City List", session.Progress );
 			release.SetResult( "done" );
 			await PumpUntilIdle( session );

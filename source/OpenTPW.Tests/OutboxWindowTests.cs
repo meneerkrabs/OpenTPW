@@ -251,7 +251,7 @@ public class OutboxWindowTests
 		var release = new System.Threading.Tasks.TaskCompletionSource<string?>();
 		session.Run( () => release.Task );
 		Assert.AreEqual( "...", status.Text(), "no progress text yet" );
-		typeof( OnlineSession ).GetProperty( nameof( OnlineSession.Status ) )!.SetValue( session, "Sending mails from outbox, please wait ..." );
+		typeof( OnlineSession ).GetMethod( "SetProgress", BindingFlags.Instance | BindingFlags.NonPublic )!.Invoke( session, new object[] { "Sending mails from outbox, please wait ..." } );
 		Assert.AreEqual( "Sending mails from outbox, please wait ...", status.Text() );
 		release.SetResult( "" );
 		var until = DateTime.UtcNow + TimeSpan.FromSeconds( 10 );

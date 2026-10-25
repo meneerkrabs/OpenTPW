@@ -1655,11 +1655,14 @@ too fast (a bucket of 40 that refills at 20 a second), comes from no guest's sea
 (`CoopGuestRefusal`), and answers it alone (`CoopGuestCommandAnswer`). At most 64 requests of one guest
 wait for the host's next frame; more are dropped unanswered, and the next request shows the gap.
 
-**Lost and repeated requests.** A request travels at most once. After its link resumes, the guest
-sends every open request again, in order. The host keeps the answers to each guest's last 256 requests:
-a request it had already gets its record or its refusal again and never applies twice, an older one is
-forgotten (what became of it is not known), and one that skips a number is refused with the number the
-host expects, from which the guest sends again (once for a burst of such answers).
+**Lost and repeated requests.** A request travels at most once. After its link resumes, and when a
+request has waited two seconds for its outcome (a message lost on its way, which no resume shows), the
+guest sends every open request again, in order. The host keeps the answers to each guest's last 256
+requests: a request it had already gets its record or its refusal again and never applies twice, an
+older one is forgotten (its outcome is then unknown: it may have applied, and the park shows whether it
+did), and one that skips a number is refused with the number the host expects, from which the guest
+sends again (once for a burst of such answers). A request too large to take is refused by its number
+before its command is copied.
 
 **Resyncs.** The requests are the session's, not the park's: a resync replaces the guest's park and
 stream and keeps its requests (`CoopGuestCommands`). While the resync runs, new requests wait. Once the
@@ -1672,7 +1675,13 @@ record. The session's end resolves the open requests as ended.
 snapshot carries them (the join state's version 3), and the session digest covers them once there is
 one, so a session without grants keeps the digests it had. A grant is its member's: when the member
 leaves or is kicked, the host takes it back at its next frame, before that frame's requests, so a member
-that takes the freed seat starts without one.
+that takes the freed seat starts without one. A grant is also its session's: a session's end takes every
+grant back, and a park shared again starts without any. Both streams put the session's rights in place of
+any the park had, so every peer asks the same ones.
+
+The stream's frame (version 2) and the join state (version 3) changed, but the co-op protocol did not:
+the server relays both without reading them, and the version gate keeps every member of a session on one
+release (decision Q11).
 
 **What a granted guest may build (C3a).** `CoopBuildRights` asks of a command's kind, its fields and its
 target, at execution on every peer: path and queue lines, the queue's edit, a placed object (not a moving

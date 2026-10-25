@@ -77,7 +77,8 @@ internal sealed class CoopGuestStream : ILevelSessionStream, IDisposable
 		previousFollows = commands.FollowsStream;
 		commands.SessionRules = true;
 		commands.InTick = ParkCommandInTickRule.Drop;
-		commands.Rights ??= new CoopBuildRights( level );
+		// [EXT:online-coop-permissions] the session's rights, whatever rights the park had: every peer asks the same ones
+		commands.Rights = new CoopBuildRights( level );
 		// [EXT:online-coop-commands] the guest's park takes the host's stream only: its own issues never run here, so its log is the host's stream (a granted guest's building goes to the host)
 		commands.FollowsStream = true;
 		// the guest's own issues carry its slot, as the commands it sends the host do
@@ -467,6 +468,8 @@ internal sealed class CoopGuestStream : ILevelSessionStream, IDisposable
 		commands.Rights = previousRights;
 		commands.Player = previousPlayer;
 		commands.FollowsStream = previousFollows;
+		// [EXT:online-coop-permissions] a grant is its session's: the park left after the session (or replaced by a resync's) keeps none
+		level.ClearBuildGrants();
 		// the park's scripts read the machine's own clock again
 		if ( level.Objects?.ScriptWorld is { } scripts )
 			scripts.SessionTime = null;

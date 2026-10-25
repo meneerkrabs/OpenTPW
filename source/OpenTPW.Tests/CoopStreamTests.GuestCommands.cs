@@ -301,6 +301,42 @@ public partial class CoopStreamTests
 	}
 
 	[TestMethod]
+	public void AGrantEndsWithItsSessionAndTheSessionsRightsReplaceTheParksOwn()
+	{
+		var random = new Random( 310 );
+		var (host, guests, _) = Session( 1 );
+		var guest = guests[0];
+		Rounds( 20, random );
+		Grant( host, guest, random );
+		var seat = guest.Link.Slot;
+		// the session ends: both parks run on without its grants
+		host.Enter();
+		host.Host!.Dispose();
+		host.Host = null;
+		guest.Enter();
+		guest.Guest!.Dispose();
+		guest.Guest = null;
+		Assert.IsFalse( host.Level.HasBuildGrant( seat ) || guest.Level.HasBuildGrant( seat ) );
+		// the park shared again: a grant left on it, and rights of its own, give way to the new session's
+		host.Enter();
+		host.Level.SetBuildGrant( seat, true );
+		var own = new AllowingAll();
+		host.Level.Commands.Rights = own;
+		host.Host = new CoopHostStream( host.Level, host.Link, () => clock, HostTime );
+		Assert.IsFalse( host.Level.HasBuildGrant( seat ), "a new session starts without grants" );
+		Assert.IsInstanceOfType( host.Level.Commands.Rights, typeof( CoopBuildRights ) );
+		host.Host.Dispose();
+		host.Host = null;
+		Assert.AreSame( own, host.Level.Commands.Rights, "the park's own rights come back after the session" );
+	}
+
+	/// <summary>Rights that allow every command (a park's own policy before a session).</summary>
+	private sealed class AllowingAll : IParkCommandRights
+	{
+		public bool Allows( int player, ParkCommandKind kind ) => true;
+	}
+
+	[TestMethod]
 	public void AGrantedGuestMayBuildWhatTheAllowlistNamesAndNothingElse()
 	{
 		var peer = NewPeer( new CoopTestNetwork( () => clock ).Add( host: true ) );
@@ -348,7 +384,10 @@ public partial class CoopStreamTests
 		// a track ride's station needs a claim: a granted guest may not remove it
 		Assert.IsTrue( level.Commands.Apply( place ).Accepted );
 		var station = level.Objects!.FindAt( 20, 12 )!;
-		var stations = (Dictionary<OriginalObject, TrackStation>)typeof( Level ).GetField( "trackStations", BindingFlags.Instance | BindingFlags.NonPublic )!.GetValue( level )!;
+		// the fixture's park is built without its field initializers: it gets its station table here
+		var field = typeof( Level ).GetField( "trackStations", BindingFlags.Instance | BindingFlags.NonPublic )!;
+		if ( field.GetValue( level ) is not Dictionary<OriginalObject, TrackStation> stations )
+			field.SetValue( level, stations = new Dictionary<OriginalObject, TrackStation>() );
 		stations[station] = new TrackStation( 0, 0, (20, 12), (21, 12) );
 		try
 		{

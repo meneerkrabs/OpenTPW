@@ -295,7 +295,7 @@ public abstract record CoopStreamMessage
 			CoopStreamMessageType.SnapshotReady => new CoopSnapshotReady( Signed( reader.U64() ), Signed( reader.U64() ), reader.U64(), reader.U64(), reader.U64(), Sha256( reader.Text( 64 ) ),
 				Positive( reader.U64() ) ),
 			CoopStreamMessageType.SnapshotFailed => new CoopSnapshotFailed( Failure( reader.Byte() ), reader.Bool(), reader.U32() ),
-			CoopStreamMessageType.GuestCommand => new CoopGuestCommand( Sequence( reader.U32() ), reader.Bytes() ),
+			CoopStreamMessageType.GuestCommand => new CoopGuestCommand( Numbered( reader.U32() ), reader.Bytes() ),
 			CoopStreamMessageType.GuestCommandAnswer => CoopGuestCommandAnswer.Read( ref reader ),
 			var other => throw new InvalidDataException( $"Unknown stream message {(byte)other}." )
 		};
@@ -325,7 +325,7 @@ public abstract record CoopStreamMessage
 
 	private protected static long Signed( ulong value ) => value <= long.MaxValue ? (long)value : throw new InvalidDataException( "The stream message has a number out of range." );
 
-	private protected static uint Sequence( uint value ) => value > 0 ? value : throw new InvalidDataException( "The stream message's sequence number is 0." );
+	private protected static uint Numbered( uint value ) => value > 0 ? value : throw new InvalidDataException( "The stream message's sequence number is 0." );
 }
 
 /// <summary>
@@ -335,6 +335,22 @@ public abstract record CoopStreamMessage
 public sealed record CoopGuestCommand( uint Sequence, ReadOnlyMemory<byte> Command ) : CoopStreamMessage
 {
 	public override CoopStreamMessageType Type => CoopStreamMessageType.GuestCommand;
+
+	/// <summary>
+	/// Whether <paramref name="bytes"/> are a guest's command whose command is longer than <paramref name="maximum"/>, read from the message's head alone (its number and the
+	/// command's length): the host refuses such a request by its number without copying its command.
+	/// </summary>
+	public static bool IsOversized( ReadOnlySpan<byte> bytes, int maximum, out uint sequence )
+	{
+		sequence = 0;
+		if ( bytes.Length <= 1 + 4 + 4 + 4 + maximum || bytes[0] != (byte)CoopStreamMessageType.GuestCommand )
+			return false;
+		var reader = new CoopReader( bytes );
+		reader.Byte();
+		reader.U32();
+		sequence = reader.U32();
+		return sequence > 0 && reader.U32() > maximum;
+	}
 
 	private protected override void WriteFields( CoopWriter writer )
 	{
@@ -362,7 +378,7 @@ public sealed record CoopGuestCommandAnswer( uint Sequence, long Record, CoopGue
 
 	internal static CoopGuestCommandAnswer Read( ref CoopReader reader )
 	{
-		var sequence = Sequence( reader.U32() );
+		var sequence = Numbered( reader.U32() );
 		var record = Signed( reader.U64() );
 		var refusal = reader.Byte();
 		var next = reader.U32();

@@ -16,14 +16,14 @@ public class CoopGuestCommandsTests
 	private static readonly ParkCommand Line = new LayLineCommand( CellToolMode.Path, -1, 2, 3, 9, 3 );
 	private static readonly ParkCommand Fee = new SetEntranceFeeCommand( 4 );
 
-	private static (CoopTestNetwork.Member Host, CoopTestNetwork.Member Guest, CoopGuestCommands Requests, List<CoopGuestCommands.Request> Resolved) Session()
+	private static (CoopTestNetwork.Member Host, CoopTestNetwork.Member Guest, CoopGuestCommands Requests, List<CoopGuestCommands.Request> Resolved) Session( Func<double>? clock = null )
 	{
 		var network = new CoopTestNetwork();
 		var host = network.Add( host: true );
 		var guest = network.Add();
 		host.Deliver();
 		guest.Deliver();
-		var requests = new CoopGuestCommands( guest );
+		var requests = new CoopGuestCommands( guest, clock ?? (() => 0) );
 		var resolved = new List<CoopGuestCommands.Request>();
 		requests.Resolved += resolved.Add;
 		return (host, guest, requests, resolved);
@@ -101,6 +101,39 @@ public class CoopGuestCommandsTests
 		CollectionAssert.AreEqual( new[] { line }, requests.Open.ToArray() );
 		Answer( host, guest, 2, 0, CoopGuestRefusal.Malformed, 3 );
 		Assert.AreEqual( 1, resolved.Count, "an answer for a resolved request changes nothing" );
+	}
+
+	[TestMethod]
+	public void AForgottenRequestsOutcomeIsUnknownNotRefused()
+	{
+		var (host, guest, requests, resolved) = Session();
+		var line = requests.Submit( Line );
+		Answer( host, guest, 1, 0, CoopGuestRefusal.Forgotten, 5 );
+		Assert.AreEqual( (CoopGuestRequestState.Unknown, (CoopGuestRefusal?)CoopGuestRefusal.Forgotten), (line.State, line.Refusal), "it may have applied: the park shows" );
+		CollectionAssert.AreEqual( new[] { line }, resolved );
+	}
+
+	[TestMethod]
+	public void ARequestWaitingTooLongForItsOutcomeGoesOutAgain()
+	{
+		var now = 0.0;
+		var (host, guest, requests, _) = Session( () => now );
+		requests.Submit( Line );
+		requests.Submit( Fee );
+		now = CoopGuestCommands.ResendSeconds - 0.1;
+		requests.Step();
+		CollectionAssert.AreEqual( new uint[] { 1, 2 }, Sent( guest ), "nothing goes out again before its time" );
+		// a gap's resend lost on its way: the next gap answer of the same number is the burst's, so only the wait sends again
+		Answer( host, guest, 2, 0, CoopGuestRefusal.Gap, 1 );
+		Answer( host, guest, 2, 0, CoopGuestRefusal.Gap, 1 );
+		CollectionAssert.AreEqual( new uint[] { 1, 2, 1, 2 }, Sent( guest ) );
+		now += CoopGuestCommands.ResendSeconds;
+		requests.Step();
+		CollectionAssert.AreEqual( new uint[] { 1, 2, 1, 2, 1, 2 }, Sent( guest ), "the wait sends every open request again, in order" );
+		requests.Fenced = true;
+		now += 10 * CoopGuestCommands.ResendSeconds;
+		requests.Step();
+		Assert.AreEqual( 6, Sent( guest ).Length, "nothing goes out while fenced" );
 	}
 
 	[TestMethod]

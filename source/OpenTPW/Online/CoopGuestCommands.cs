@@ -16,16 +16,21 @@ public enum CoopGuestRequestState : byte
 	/// <summary>The host took no record of it (<see cref="CoopGuestCommands.Request.Refusal"/>).</summary>
 	Refused = 5,
 	/// <summary>The session ended before it resolved: whether the host applied it is not known, and no longer matters to a park that is not shared.</summary>
-	Ended = 6
+	Ended = 6,
+	/// <summary>
+	/// The host no longer knows what became of it (its answer is older than the ones the host keeps, <see cref="CoopGuestRefusal.Forgotten"/>): it may have applied, and
+	/// the park shows whether it did. The guest's own resends make this rare (<see cref="CoopGuestCommands.ResendSeconds"/>).
+	/// </summary>
+	Unknown = 7
 }
 
 /// <summary>
 /// [EXT:online-coop-commands] A guest's requests to the host (docs/COOP.md, "Building by every player"), for the whole session: a resync replaces the guest's park and stream, never its
 /// requests. Each request is numbered from 1 and sent once to the host (<see cref="CoopGuestCommand"/>); it resolves when its own record applies in the guest's park (the stream carries the
 /// request's origin), as a refusal the host answers without a record, or as applied inside the join snapshot a resync rebuilt the park from. The guest's park changes through the stream only:
-/// a request changes nothing by itself. After a lost link resumes, and after a resync, every open request is sent again in order; the host answers a request it has had already with its
-/// record, never applying it twice, and a request that skips one the host has not had with the number it expects, from which the guest sends again. While a resync runs (<see cref="Fenced"/>)
-/// requests wait. The session's end resolves the open ones as ended.
+/// a request changes nothing by itself. After a lost link resumes, after a resync, and when a request waits longer than <see cref="ResendSeconds"/> for its outcome (a message lost on
+/// its way), every open request is sent again in order; the host answers a request it has had already with its record, never applying it twice, and a request that skips one the host
+/// has not had with the number it expects, from which the guest sends again. While a resync runs (<see cref="Fenced"/>) requests wait. The session's end resolves the open ones as ended.
 /// </summary>
 internal sealed class CoopGuestCommands : IDisposable
 {
@@ -43,6 +48,8 @@ internal sealed class CoopGuestCommands : IDisposable
 		public ParkCommand Command { get; }
 		internal byte[] Bytes { get; }
 		public CoopGuestRequestState State { get; internal set; } = CoopGuestRequestState.Waiting;
+		/// <summary>When it last went to the host (the ledger's clock), for its resend.</summary>
+		internal double SentAt { get; set; }
 		/// <summary>The stream record that holds it, once known (its own record, or the host's answer to a request sent twice).</summary>
 		public long Record { get; internal set; }
 		/// <summary>Why the host took no record of it (<see cref="CoopGuestRequestState.Refused"/>).</summary>
@@ -52,7 +59,11 @@ internal sealed class CoopGuestCommands : IDisposable
 		public bool IsOpen => State is CoopGuestRequestState.Waiting or CoopGuestRequestState.Sent;
 	}
 
+	/// <summary>How long a request waits for its outcome before every open request goes to the host again: a request or its answer lost on its way, which no resume shows.</summary>
+	public const double ResendSeconds = 2;
+
 	private readonly ICoopStreamTransport transport;
+	private readonly Func<double> seconds;
 	private readonly SortedDictionary<uint, Request> open = new();
 	private uint nextSequence = 1;
 	/// <summary>The last stream record the guest's park holds: applied here, or inside the join snapshot it was rebuilt from.</summary>
@@ -62,14 +73,16 @@ internal sealed class CoopGuestCommands : IDisposable
 	private bool fenced;
 	private bool disposed;
 
-	public CoopGuestCommands( ICoopStreamTransport transport )
+	/// <param name="seconds">A monotonic clock in seconds (wall time; the tests' virtual one), for the resends.</param>
+	public CoopGuestCommands( ICoopStreamTransport transport, Func<double>? seconds = null )
 	{
 		this.transport = transport ?? throw new ArgumentNullException( nameof( transport ) );
+		this.seconds = seconds ?? CoopHostStream.DefaultSeconds;
 		transport.MessageReceived += OnMessage;
 		transport.Resumed += OnResumed;
 	}
 
-	/// <summary>Raised once for each request that resolves (applied, in a snapshot, refused, or ended with the session).</summary>
+	/// <summary>Raised once for each request that resolves (applied, in a snapshot, refused, unknown, or ended with the session).</summary>
 	public event Action<Request>? Resolved;
 
 	/// <summary>The requests not resolved yet, oldest first.</summary>
@@ -103,6 +116,22 @@ internal sealed class CoopGuestCommands : IDisposable
 		if ( !fenced )
 			Send( request );
 		return request;
+	}
+
+	/// <summary>
+	/// Once a game frame: when an open request has waited <see cref="ResendSeconds"/> for its outcome since it last went out, every open request goes to the host again, in order
+	/// (the host answers those it has had). Nothing goes out while fenced.
+	/// </summary>
+	public void Step()
+	{
+		if ( disposed || fenced || open.Count == 0 )
+			return;
+		var now = seconds();
+		if ( open.Values.Any( request => request.State == CoopGuestRequestState.Waiting || now - request.SentAt >= ResendSeconds ) )
+		{
+			gapResentFrom = 0;
+			SendOpen();
+		}
 	}
 
 	/// <summary>
@@ -191,7 +220,7 @@ internal sealed class CoopGuestCommands : IDisposable
 		{
 			open.Remove( answer.Sequence );
 			request.Refusal = refusal;
-			Resolve( request, CoopGuestRequestState.Refused );
+			Resolve( request, refusal == CoopGuestRefusal.Forgotten ? CoopGuestRequestState.Unknown : CoopGuestRequestState.Refused );
 			return;
 		}
 		request.Record = answer.Record;
@@ -224,7 +253,10 @@ internal sealed class CoopGuestCommands : IDisposable
 		if ( transport.Session is not { } session || !transport.IsOpen )
 			return;
 		if ( transport.Send( session.Host, new CoopGuestCommand( request.Sequence, request.Bytes ).Encode() ) )
+		{
 			request.State = CoopGuestRequestState.Sent;
+			request.SentAt = seconds();
+		}
 	}
 
 	private void Resolve( Request request, CoopGuestRequestState state )

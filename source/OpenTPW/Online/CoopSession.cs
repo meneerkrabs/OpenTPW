@@ -325,7 +325,7 @@ internal sealed class CoopSession : IDisposable
 		Require( level, link, CoopRole.Guest );
 		var session = new CoopSession( level, link, CoopRole.Guest, seconds, joinHost );
 		session.GuestStream = new CoopGuestStream( level, link, seconds );
-		session.GuestCommands = new CoopGuestCommands( link );
+		session.GuestCommands = new CoopGuestCommands( link, session.seconds );
 		session.GuestStream.RecordApplied += session.GuestCommands.RecordApplied;
 		session.followingSince = session.seconds();
 		level.Commands.SessionRefused += session.OnRefused;
@@ -351,7 +351,7 @@ internal sealed class CoopSession : IDisposable
 			throw new InvalidOperationException( refusal );
 		var session = new CoopSession( null, link, CoopRole.Guest, seconds, joinHost ) { Phase = CoopGuestPhase.Joining };
 		// a guest without a park has nothing to build on: a request waits for the first park's swap
-		session.GuestCommands = new CoopGuestCommands( link ) { Fenced = true };
+		session.GuestCommands = new CoopGuestCommands( link, session.seconds ) { Fenced = true };
 		session.Subscribe();
 		session.Ask( CoopSnapshotReason.Join );
 		return session;
@@ -498,7 +498,11 @@ internal sealed class CoopSession : IDisposable
 	/// </summary>
 	public void Step()
 	{
-		if ( EndedWith != null || Role != CoopRole.Guest || joinHost == null )
+		if ( EndedWith != null || Role != CoopRole.Guest )
+			return;
+		// [EXT:online-coop-commands] a request that waited too long for its outcome goes out again
+		GuestCommands?.Step();
+		if ( joinHost == null )
 			return;
 		var now = seconds();
 		StepCatchUp();

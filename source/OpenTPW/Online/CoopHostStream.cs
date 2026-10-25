@@ -292,8 +292,11 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 		previousPlayer = commands.Player;
 		commands.SessionRules = true;
 		commands.InTick = ParkCommandInTickRule.Drop;
-		commands.Rights ??= new CoopBuildRights( level );
+		// [EXT:online-coop-permissions] the session's rights, whatever rights the park had: every peer asks the same ones
+		commands.Rights = new CoopBuildRights( level );
 		commands.Player = ParkCommands.LocalPlayer;
+		// a grant is its session's: a park shared again starts without the last session's (a guest of the identical start has none either)
+		level.ClearBuildGrants();
 		recorder = new ParkCommandRecorder( commands, level.LevelName ?? "", level.Seed.Value, level.TickCount, level.ComputeStateHash() ) { SessionRules = true };
 		commands.Applied += OnApplied;
 		level.TickEnded += OnTickEnded;
@@ -717,6 +720,12 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 	{
 		if ( Failure != null || !guests.TryGetValue( relayedMessage.From, out var guest ) )
 			return;
+		// [EXT:online-coop-commands] a guest's command too large to take is refused by its number, without copying it
+		if ( CoopGuestCommand.IsOversized( relayedMessage.Payload.Span, MaximumGuestCommandBytes, out var oversized ) )
+		{
+			Queue( guest, new CoopGuestCommand( oversized, ReadOnlyMemory<byte>.Empty ), tooLarge: true );
+			return;
+		}
 		CoopStreamMessage message;
 		try
 		{
@@ -757,13 +766,21 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 				Requested( guest, request, now );
 				break;
 			case CoopGuestCommand command:
-				if ( guest.QueuedCommands >= MaximumQueuedGuestCommands )
-					break;
-				guest.QueuedCommands++;
-				var tooLarge = command.Command.Length > MaximumGuestCommandBytes;
-				guestCommands.Add( (guest.Id, tooLarge ? command with { Command = ReadOnlyMemory<byte>.Empty } : command, tooLarge) );
+				Queue( guest, command, tooLarge: false );
 				break;
 		}
+	}
+
+	/// <summary>
+	/// [EXT:online-coop-commands] A guest's command waits for the next frame's start; past <see cref="MaximumQueuedGuestCommands"/> of that guest's it is dropped unanswered (a flood),
+	/// and the next request shows the gap.
+	/// </summary>
+	private void Queue( Guest guest, CoopGuestCommand command, bool tooLarge )
+	{
+		if ( guest.QueuedCommands >= MaximumQueuedGuestCommands )
+			return;
+		guest.QueuedCommands++;
+		guestCommands.Add( (guest.Id, command, tooLarge) );
 	}
 
 	/// <summary>
@@ -1340,6 +1357,8 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 		commands.InTick = previousInTick;
 		commands.Rights = previousRights;
 		commands.Player = previousPlayer;
+		// [EXT:online-coop-permissions] a grant is its session's: the park runs on alone without one
+		level.ClearBuildGrants();
 		// the park's scripts read the machine's own clock again
 		if ( level.Objects?.ScriptWorld is { } scripts )
 			scripts.SessionTime = null;

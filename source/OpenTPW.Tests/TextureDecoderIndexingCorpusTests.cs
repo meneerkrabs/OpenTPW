@@ -62,9 +62,9 @@ public class TextureDecoderIndexingCorpusTests
 	private static readonly FailurePin[] PinnedFailures =
 	{
 		new( "global/advisor.wad", "stexture/Bowler_Btie.wct", "Exception", "Offset > stream length" ),
-		// The bounds audit (docs/WCT-ROBUSTNESS.md) turned these two crashes into explicit malformed-data refusals.
+		// The bounds audit (docs/WCT-ROBUSTNESS.md) turned this crash into an explicit malformed-data refusal. (bumper.wad's stexture/b_NEWwin.wct, an alpha byte of 1 with 24 bits per pixel and no alpha chunk,
+		// used to be refused as well: the loader 0x564C00 reads an alpha plane only at 32 bits per pixel, so the file is a plain opaque texture and decodes; TextureAlphaTypeCorpusTests pins that.)
 		new( "levels/fantasy/advisor.wad", "stexture/Fan_stalk.wct", "InvalidDataException", "Truncated WCT channel coefficients." ),
-		new( "levels/hallow/rides/bumper.wad", "stexture/b_NEWwin.wct", "InvalidDataException", "Invalid WCT alpha chunk length." ),
 		new( "levels/space/rides/gokarts.wad", "stexture/s_disc.wct", "Exception", "Offset > stream length" ),
 	};
 

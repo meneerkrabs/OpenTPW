@@ -672,6 +672,7 @@ public partial class Level
 		{
 			// [EXT:pools-slides] a rider inside a closed tube is not drawn (presentation only)
 			Draws = guest => (guest.IsSwimming || guest.InPoolActivity) && !PoolSlideActivity.IsInsideTube( guests, guest ),
+			DrawsAfterWater = true,
 			ExactDirections = true,
 			SwimSlotFallback = true,
 			BottomAnchoredSlots = PoolSwimSlots.BottomAnchored,

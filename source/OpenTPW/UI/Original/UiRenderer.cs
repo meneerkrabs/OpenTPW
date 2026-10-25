@@ -331,7 +331,7 @@ internal sealed class UiRenderer : IDisposable
 				return null;
 			try
 			{
-				var (width, height, rgba) = UiImages.LoadKeyed( texture.ImagePath );
+				var (width, height, rgba) = UiImages.Load( texture.ImagePath );
 				entry = Create( rgba, width, height, Device.LinearSampler );
 			}
 			catch ( Exception exception ) when ( exception is IOException or InvalidDataException or NotSupportedException or ArgumentException or InvalidOperationException )
@@ -373,8 +373,7 @@ internal sealed class UiRenderer : IDisposable
 	private void ReloadImages( IReadOnlyList<string>? paths )
 	{
 		var keys = paths?.Select( TexturePack.RelativeFileName ).ToHashSet( StringComparer.Ordinal );
-		bool Matches( string path ) => keys == null || keys.Contains( TexturePack.RelativeFileName(
-			path.EndsWith( UiImages.BlackKeySuffix, StringComparison.Ordinal ) ? path[..^UiImages.BlackKeySuffix.Length] : path ) );
+		bool Matches( string path ) => keys == null || keys.Contains( TexturePack.RelativeFileName( path ) );
 		var old = textures.Where( entry => entry.Key is string path && Matches( path ) ).ToList();
 		foreach ( var entry in old )
 			textures.Remove( entry.Key );

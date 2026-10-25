@@ -58,7 +58,7 @@ public class UiImagePreparationTests
 	}
 
 	[TestMethod]
-	public void PreparationUsesTheSameTransparentTextureKeyAsDrawing()
+	public void PreparationUsesTheSameTextureKeyAsDrawing()
 	{
 		var context = new UiContext( OriginalUiTests.FakeStrings(), null!, new UiModels( name =>
 		{
@@ -75,7 +75,7 @@ public class UiImagePreparationTests
 		var paths = ParkHud.BuyWindowImagePaths( context ).ToArray();
 		Assert.AreEqual( 1, paths.Length, "Repeated frames and parts must share one warm request." );
 		Assert.IsTrue( context.DrawModel( "w_big", 0, new UiRect( 0, 0, 100, 100 ) ) );
-		Assert.AreEqual( "/ui/textures/shared.wct" + UiImages.BlackKeySuffix, paths[0] );
+		Assert.AreEqual( "/ui/textures/shared.wct", paths[0], "the slot flag 0x2 does not change the texture" );
 		Assert.AreEqual( paths[0], context.Batch.Draws.Single().Texture.ImagePath );
 		context.ResolveTexture = _ => null;
 		Assert.AreEqual( 0, ParkHud.BuyWindowImagePaths( context ).Count() );

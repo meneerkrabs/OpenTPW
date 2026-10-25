@@ -43,7 +43,7 @@ public partial class TextureFile : BaseFormat
 			fileData = new TextureFileData()
 			{
 				Flags = (TextureFlags)binaryReader.ReadByte(),
-				HasAlphaChannel = binaryReader.ReadByte() == 0x01,
+				AlphaByte = binaryReader.ReadByte(),
 				BitsPerPixel = binaryReader.ReadByte(),
 				Version = binaryReader.ReadByte(),
 				Width = binaryReader.ReadInt16(),
@@ -67,6 +67,7 @@ public partial class TextureFile : BaseFormat
 			throw new InvalidDataException( "Truncated WCT header.", exception );
 		}
 
+		AlphaType = ClassifyAlphaType( (byte)fileData.Flags, fileData.AlphaByte, fileData.BitsPerPixel );
 		if ( fileData.Width <= 0 || fileData.Height <= 0 )
 			throw new InvalidDataException( "WCT dimensions must be positive." );
 		var size = (int)Math.Max( GetAlignedSize( (uint)Math.Max( fileData.Height, fileData.Width ) ), 8 );

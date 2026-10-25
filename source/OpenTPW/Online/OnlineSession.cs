@@ -183,6 +183,8 @@ public sealed class OnlineSession : IDisposable, IPresenceSession, IChatPanelSou
 	/// <summary>A chat connection is being opened (the first one or a reconnection).</summary>
 	public bool ChatConnecting => chatConnecting;
 	public IReadOnlyList<ParkSummary> Parks { get; private set; } = Array.Empty<ParkSummary>();
+	/// <summary>Counts the park lists <see cref="RefreshParks"/> fetched, so a list can tell an empty result from one not fetched yet or whose fetch failed.</summary>
+	public int ParksFetched { get; private set; }
 	public IReadOnlyList<PostcardSummary> Inbox { get; private set; } = Array.Empty<PostcardSummary>();
 	/// <summary>Cities of the current server's online world; empty before fetching or when the server has none.</summary>
 	public IReadOnlyList<CityInfo> Cities { get; private set; } = Array.Empty<CityInfo>();
@@ -655,7 +657,11 @@ public sealed class OnlineSession : IDisposable, IPresenceSession, IChatPanelSou
 		Post( () => SetProgress( OnlineStrings.Ui( search == null && author == null ? OnlineStrings.GettingAllParkList : OnlineStrings.GettingPlayersParkList,
 			search == null && author == null ? "Getting All Park List" : "Getting Player's Park List" ) ) );
 		var list = await client.ListParksAsync( search, sort, author, cityId: cityId );
-		Post( () => Parks = list.Parks );
+		Post( () =>
+		{
+			Parks = list.Parks;
+			ParksFetched++;
+		} );
 		// the Find Parks list shows an empty result itself (UITEXT 306 as its row); the status line only ends the progress text
 		return "";
 	} );

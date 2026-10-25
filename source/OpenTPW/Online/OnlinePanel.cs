@@ -11,8 +11,8 @@ internal sealed class OnlinePanel : IDisposable
 	private readonly ChatOverlay overlay;
 	private string server = "", name = "", password = "", code = "", email = "", emailCode = "", parkName = "My park", search = "", importPath = "", chatLine = "";
 	private string recipients = "", title = "", message = "", localStatus = "";
-	/// <summary>The server the park list was last fetched from, so an empty list is a result of that server rather than nothing asked yet.</summary>
-	private OpenTPW.Online.Client.OnlineClient? listedOn;
+	/// <summary>The server the park list was last asked of and the session's fetch count then: an empty list is a result once a fetch from that server has finished.</summary>
+	private (OpenTPW.Online.Client.OnlineClient Client, int Fetched)? listedAt;
 	private ParkVisitInfo? inspected;
 
 	public OnlinePanel( Level level, OnlineFolders folders )
@@ -151,11 +151,11 @@ internal sealed class OnlinePanel : IDisposable
 		if ( ImGui.Button( OnlineStrings.Get( OnlineLabel.Refresh ) ) )
 		{
 			session.RefreshParks( search );
-			listedOn = session.Client;
+			listedAt = session.Client is { } client ? (client, session.ParksFetched) : null;
 		}
-		// the park list's fetch ends its progress text, as the Find Parks screen shows an empty result as its row: this list says so itself, for a fetch from this server that
-		// ended without a message (a failed one leaves its error as the status)
-		if ( listedOn != null && ReferenceEquals( listedOn, session.Client ) && session.Busy == 0 && session.Parks.Count == 0 && session.Status.Length == 0 )
+		// the park list's fetch ends its progress text, as the Find Parks screen shows an empty result as its row: this list says so itself once a fetch from this server
+		// has finished (a failed fetch leaves the count, and its error stands as the status)
+		if ( listedAt is { } at && ReferenceEquals( at.Client, session.Client ) && session.ParksFetched != at.Fetched && session.Parks.Count == 0 )
 			ImGui.TextWrapped( OnlineStrings.Ui( OnlineStrings.NoSearchResults, "No search results" ) );
 		foreach ( var park in session.Parks )
 		{

@@ -615,9 +615,11 @@ public class OnlineIntegrationTests
 			session.UseServer( server.Url.ToString(), "Alice" );
 			session.Register( "Alice", "correct horse" );
 			await PumpUntilIdle( session );
+			var fetched = session.ParksFetched;
 			session.RefreshParks( "no such park" );
 			await PumpUntilIdle( session );
 			Assert.AreEqual( 0, session.Parks.Count );
+			Assert.AreEqual( fetched + 1, session.ParksFetched, "a finished fetch is counted, so an empty list is a result" );
 			Assert.AreEqual( "", session.Status, "the Find Parks list shows the empty result as its row; the status line only ends the progress text" );
 			session.FetchCityParks( 3 );
 			await PumpUntilIdle( session );

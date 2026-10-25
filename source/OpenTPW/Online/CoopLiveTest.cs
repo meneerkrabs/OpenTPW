@@ -168,7 +168,10 @@ internal sealed partial class CoopLiveTest : IDisposable
 		}
 	}
 
-	private double Now => wall.Elapsed.TotalSeconds;
+	private double Now => Clock?.Invoke() ?? wall.Elapsed.TotalSeconds;
+
+	/// <summary>The run's clock in seconds, wall time unless a test gives its own (a step's deadline then passes when the test says, never in the middle of a frame).</summary>
+	internal Func<double>? Clock { get; init; }
 
 	internal static CoopLiveWait Wait( string what, Func<bool> done, double seconds ) => new( what, done, seconds );
 

@@ -149,6 +149,8 @@ public enum ParkCommandKind : byte
 	// a co-op session's own commands (C2b)
 	/// <summary>[EXT:online-coop-lockstep] The session's clock, the civil time the ride scripts read (<see cref="SetSessionClockCommand"/>).</summary>
 	SetSessionClock = 100,
+	/// <summary>[EXT:online-coop-permissions] The host grants or takes back a guest's building (<see cref="SetBuildGrantCommand"/>).</summary>
+	SetBuildGrant = 101,
 }
 
 /// <summary>

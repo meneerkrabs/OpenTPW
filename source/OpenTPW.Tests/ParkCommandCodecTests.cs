@@ -91,6 +91,8 @@ public class ParkCommandCodecTests
 		(new CutCoasterCommand( 17, 4, 9 ), "026200220812"),
 		// [EXT:online-coop-lockstep] the session clock: 21 October 2026, 15:00:00 in whole seconds since year 1
 		(new SetSessionClockCommand( 63928191600 ), "026400e0a9d6a6dc03"),
+		// [EXT:online-coop-permissions] the host grants seat 3 building
+		(new SetBuildGrantCommand( 3, true ), "0265000601"),
 	};
 
 	[TestMethod]

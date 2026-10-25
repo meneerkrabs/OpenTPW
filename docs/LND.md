@@ -67,7 +67,7 @@ File order within a set, and the role each takes in the build:
 Every image of a set is larger than N and tiles seamlessly with the period (width - N, height - N): its last N columns and rows repeat the first ones, so a window of N × N
 texels never leaves the image. Set 2 (N = 16) is set 0 at about a quarter of the scale. The image sizes of every theme and set are pinned in `ProceduralTerrainCorpusTests`.
 
-The grid's first byte is 0xFF where the sample is valid. Space also has a few other values (1, 2, 3, 5); only 0xFF counts as valid.
+The grid's first byte is 0xFF where the sample is valid. Space also has other values (1 to 9, 11 to 13, 16, 17, 20, 25, 27, 28, 30; cells (42, 12), (43, 12) and (44, 12) have them among their inner samples, and the original draws those cells grey); only 0xFF counts as valid.
 
 ## The build
 
@@ -95,7 +95,7 @@ The grid's first byte is 0xFF where the sample is valid. Space also has a few ot
    first 18 cells the research tried differed from the original; with it none do.
 9. **Rows** are written bottom-up: source row Y goes to buffer row N - 1 - Y.
 10. **Pixels.** The routine writes `[0, R, G, B]`. The cache's 32-bit texture reverses each pixel's four bytes (`0x005725BC`), which is A8R8G8B8 with alpha 0 (`BuildArgb`).
-    **A renderer must write alpha 255**: the original's terrain pass has no alpha test, OpenTPW's terrain shader discards low alpha. That is renderer work (step E6), not done in the texturer.
+    **A renderer must write alpha 255**: OpenTPW's terrain shader discards low alpha, and the original's terrain pass is deduced to have no alpha test (its cache textures carry alpha 0). That is a deduction: the render state of `0x56F670` is not traced (an E6 research question). Writing alpha is renderer work (step E6), not done in the texturer.
     The 16-bit paths are not ported: OpenTPW renders in 32 bits.
 
 With a floor descriptor (floor art over the terrain, rides and shops) the routine continues past this head; that part is not ported yet (package F).
@@ -103,7 +103,7 @@ With a floor descriptor (floor art over the terrain, rides and shops) the routin
 ### Orientation
 
 A texel column runs along +x and a buffer row along +z inside the cell (x, z). The mean absolute colour difference across the cell edges of a 16 × 12 jungle patch at N = 32 is 13.7, against 12.7 for one texel
-inside a cell; mirrored or turned cells give 20.7 to 28.4 (`NeighbouringCellsContinueAcrossTheirEdges` re-measures the first pair).
+inside a cell; mirrored or turned cells give 20.7 to 28.4 (`NeighbouringCellsContinueAcrossTheirEdges` re-measures the first pair). The seam test corroborates this orientation; it does not prove it (see Open).
 
 ## Code
 
@@ -119,8 +119,9 @@ inside a cell; mirrored or turned cells give 20.7 to 28.4 (`NeighbouringCellsCon
   every ramp pair of the edge values and 500 random pairs (600), 500 weight planes at N = 16, 32 and 64, and 48 cells of synthetic levels that give each run mode (C, B, A, BA, CB, CA, CBA),
   random masks and invalid cells. The Python reading (`tools/ppc-analysis/oracle_x86/terrain_reading.py`) agrees on every input; a reading without the quirk differs.
 - **Real cells.** `tools/ppc-analysis/oracle_x86/terrain_golden.py` runs the original build routine on the shipped `base.lnd` of the four themes for a seeded sample of cells per size (the four
-  corners, 30 random cells at N = 16, 16 at 32, 8 at 64 and two invalid cells, 288 in all) and prints the SHA-256 of each result as `ProceduralTerrainGolden.cs`. The C# texturer reproduces all 288 byte for byte.
+  corners, 30 random cells at N = 16, 16 at 32, 8 at 64 and two invalid cells, 297 in all, with the three space cells whose validity bytes are odd) and prints the SHA-256 of each result as `ProceduralTerrainGolden.cs`. The C# texturer reproduces all 297 byte for byte.
   The research that preceded this port also compared its Python model with the emulated routine on 33,820 cells (every cell of all four themes at N = 16, plus 300 at N = 32 and 80 at N = 64 per theme) with no mismatch.
+- **Synthetic levels, in CI.** `terrain_synthetic_golden.py` builds 27 levels from an LCG and fixed formulas (`terrain_reading.synthetic_level`; `SyntheticTerrain` in the tests is the same generator): each of the seven run modes plus random masks at N = 16, 32 and 64, gradient weights, random ramps, and an invalid-cell level per size, two cells each (54 cells). It runs tp.exe's routine on them and commits the hashes (`ProceduralTerrainSyntheticGolden.cs`); `ProceduralTerrainSyntheticTests` reproduces all 54 without game data, so CI checks the weight interpolation, general ramps, window offsets and N = 64.
 - **Not original bytes.** The tests keep hashes and parameters only; no image or data byte is committed.
 
 ## Open
@@ -129,4 +130,8 @@ inside a cell; mirrored or turned cells give 20.7 to 28.4 (`NeighbouringCellsCon
   procedurally or keeps its static slot texture is not settled (the texturer refuses x = 95).
 - **Which cells are built.** The original builds only the cells inside a "procedural rectangle" (landscape `+0x234..+0x240`, set by `0x56DF70` from `0x457CF5`); its extent is not fully traced.
 - **Texture pages, mipmaps and the edge address mode** of the original's cache textures (`0x590A80`, `0x58C9F0`) are not traced.
+- **UV mapping in the draw path.** The orientation above rests on data (seams); how `0x56F380` / `0x56F4F0` and the page UV rect map the texture onto the cell is not traced.
+- **Camera modes that suspend procedural textures** (plan OPEN-1): `0x457A40` turns them off for some camera modes (`[0x790AB0]` bits 2 and 4); which modes is not known.
+- **Texture budget for N = 64** (plan OPEN-4): the user chose the original's visible-cell cache (1500, 2000 or 2500 textures) over a full atlas; the 64 to 32 clamp of `0x572110` is part of that port.
+- **The "not allowed" check** (plan OPEN-5): which device check sets `[0x8BD550]` bit `0x10000000` ("Procedural textures not allowed") is not identified.
 - **Wiring.** The visible-cell cache of 1500, 2000 or 2500 textures, the option mapping and the renderer are not part of this change.

@@ -100,8 +100,12 @@ public sealed class LndFile : BaseFormat
 	/// <summary>The grid byte <paramref name="channel"/> (0 valid, 1..3 weights) at sample (<paramref name="x"/>, <paramref name="y"/>).</summary>
 	public byte GridSample( int x, int y, int channel )
 	{
-		if ( (uint)x >= (uint)GridWidth || (uint)y >= (uint)GridHeight || (uint)channel >= GridBytesPerSample )
+		if ( (uint)x >= (uint)GridWidth )
 			throw new ArgumentOutOfRangeException( nameof( x ) );
+		if ( (uint)y >= (uint)GridHeight )
+			throw new ArgumentOutOfRangeException( nameof( y ) );
+		if ( (uint)channel >= GridBytesPerSample )
+			throw new ArgumentOutOfRangeException( nameof( channel ) );
 		return Grid.Span[(y * GridWidth + x) * GridBytesPerSample + channel];
 	}
 

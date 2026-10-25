@@ -10,9 +10,10 @@ internal static class SyntheticLnd
 	/// <param name="cellsY">Cells down.</param>
 	/// <param name="parameters">The ten parameter bytes.</param>
 	/// <param name="grid">Grid byte for (sample x, sample y, channel 0 valid, 1..3 weights).</param>
+	/// <param name="imageSize">Optional (width, height) of an image for (texture size, image index), called once per image before its pixels.</param>
 	/// <param name="pixel">Image byte for (texture size, image index, x, y, channel); colour images (0..5) have channels 0..3, byte maps channel 0.</param>
 	public static byte[] Build( int cellsX, int cellsY, byte[] parameters, Func<int, int, int, byte> grid, Func<int, int, int, int, int, byte> pixel,
-		int imageExtraWidth = 8, int imageExtraHeight = 6, int trailingBytes = 0 )
+		int imageExtraWidth = 8, int imageExtraHeight = 6, int trailingBytes = 0, Func<int, int, (int Width, int Height)>? imageSize = null )
 	{
 		using var stream = new MemoryStream();
 		using var writer = new BinaryWriter( stream );
@@ -35,8 +36,7 @@ internal static class SyntheticLnd
 			for ( var image = 0; image < 13; image++ )
 			{
 				var bytes = image < 6 ? 4 : 1;
-				var imageWidth = size + imageExtraWidth;
-				var imageHeight = size + imageExtraHeight;
+				var (imageWidth, imageHeight) = imageSize?.Invoke( size, image ) ?? (size + imageExtraWidth, size + imageExtraHeight);
 				writer.Write( imageWidth );
 				writer.Write( imageHeight );
 				writer.Write( bytes );

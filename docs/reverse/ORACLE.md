@@ -2427,8 +2427,8 @@ Question: does `ProceduralTerrainTexturer` (docs/LND.md) reproduce tp.exe's proc
 (`test_terrain_build_inputs_reach_every_run_mode_and_the_grey_fallback`); a reading in which a three layer run takes weight 1 per texel (the original's `0x55eaa0` never advances that pointer) differs
 on 12 of the 48 cells, and one that writes rows top-down differs too (`test_terrain_build_readings_are_sharp`).
 
-Real data: `terrain_golden.py` runs the original build routine on the shipped `base.lnd` of the four themes for a seeded sample (288 cells, sizes 16, 32 and 64, corners and invalid cells included) and
-prints the SHA-256 of each result; `ProceduralTerrainCorpusTests` compares the C# texturer with those hashes (with `OPENTPW_GAME_PATH`). All 288 agree. The research behind the port compared the Python
+Real data: `terrain_golden.py` runs the original build routine on the shipped `base.lnd` of the four themes for a seeded sample (297 cells, sizes 16, 32 and 64, corners and invalid cells included) and
+prints the SHA-256 of each result; `ProceduralTerrainCorpusTests` compares the C# texturer with those hashes (with `OPENTPW_GAME_PATH`). All 297 agree. The research behind the port compared the Python
 reading with the emulated routine on 33,820 cells (every cell of the four themes at N = 16, 300 at N = 32 and 80 at N = 64 per theme): no mismatch.
 
 Dev-only, as the rest of section 7: no original byte or image is committed, only hashes. The 16-bit pixel paths, the floor-art tail of `0x55f780` (floor descriptor not NULL) and the cache `0x572440` are not run.

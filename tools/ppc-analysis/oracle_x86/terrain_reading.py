@@ -154,3 +154,85 @@ def parse_lnd(raw: bytes) -> dict:
 
 def level_for(lnd: dict, n_size: int) -> dict:
     return {'params': lnd['params'], 'width': lnd['width'], 'height': lnd['height'], 'grid': lnd['grid'], 'images': lnd['sets'][SETS[n_size]]}
+
+
+# ---------------------------------------------------------------------------------------------------- reproducible synthetic levels
+# Levels that C# (`SyntheticTerrain` in OpenTPW.Tests) and Python both build from the same formulas and one LCG, so that their texture hashes
+# from tp.exe's routine can be committed and checked without game data (ProceduralTerrainSyntheticGolden.cs, terrain_synthetic_golden.py).
+SYNTHETIC_MIXES = ('C', 'B', 'A', 'BA', 'CB', 'CA', 'CBA', 'random')
+SYNTHETIC_MASKS = {'C': ('all', 'all'), 'B': ('none', 'all'), 'A': ('none', 'none'), 'BA': ('none', 'mixed'), 'CB': ('mixed', 'all'),
+                   'CA': ('mixed', 'none'), 'CBA': ('mixed', 'mixed'), 'random': ('random', 'random')}   # (mask 1 style, mask 2 style)
+SYNTHETIC_CELLS = 3          # 3 x 3 cells, 13 x 13 weight samples
+GREY_SAMPLE = (5, 6)         # the sample whose validity byte a grey level breaks: an inner sample of cell (1, file row 1) = (1, z 1)
+
+
+class Lcg:
+    def __init__(self, seed: int):
+        self.state = seed & 0xFFFFFFFF
+
+    def next(self) -> int:
+        """The next byte: the top byte of state * 1664525 + 1013904223 (mod 2^32)."""
+        self.state = (self.state * 1664525 + 1013904223) & 0xFFFFFFFF
+        return self.state >> 24
+
+
+def synthetic_specs() -> list[tuple[int, str, int, bool]]:
+    """(seed, mix, N, grey) of every synthetic level: each mix at each size, and an invalid-cell level per size."""
+    specs = [(1000 + mix_index * 3 + size_index, mix, size, False)
+             for mix_index, mix in enumerate(SYNTHETIC_MIXES) for size_index, size in enumerate((16, 32, 64))]
+    return specs + [(2000 + size_index, 'random', size, True) for size_index, size in enumerate((16, 32, 64))]
+
+
+def synthetic_cells(seed: int, grey: bool) -> list[tuple[int, int]]:
+    """Two cells (x, z) of a synthetic level; a grey level's first cell is the invalid one."""
+    if grey:
+        return [(1, 1), (0, 0)]
+    return [(seed % 3, (seed // 3) % 3), ((seed + 1) % 3, (seed // 3 + 1) % 3)]
+
+
+def synthetic_level(seed: int, mix: str, n_size: int, grey: bool) -> dict:
+    """The level of a spec: the ten parameter bytes from the LCG (mask ramps fixed to a step at 128 unless the mix is 'random'), a weight grid
+    with gradient weights, and all three sets of 13 images from the LCG; the dict holds the set for `n_size`."""
+    lcg = Lcg(seed)
+    params = bytearray(lcg.next() for _ in range(10))
+    if mix != 'random':
+        params[4:6] = bytes([128, 0])
+        params[8:10] = bytes([128, 0])
+    mask1, mask2 = SYNTHETIC_MASKS[mix]
+    side = 4 * SYNTHETIC_CELLS + 1
+
+    def weight(style: str, x: int, y: int, k: int) -> int:
+        if style == 'none':
+            return 0
+        if style == 'random':
+            return (x * (53 if k == 2 else 17) + y * (29 if k == 2 else 61)) & 0xFF
+        return 255
+
+    grid = bytearray()
+    for y in range(side):
+        for x in range(side):
+            valid = 0x7F if grey and (x, y) == GREY_SAMPLE else 255
+            grid += bytes([valid, (x * 37 + y * 23 + seed) & 0xFF, weight(mask2, x, y, 2), weight(mask1, x, y, 3)])
+    chosen = None
+    for set_index in range(3):
+        size = 64 >> set_index
+        images = []
+        for image in range(13):
+            width, height = size + 1 + lcg.next() % 24, size + 1 + lcg.next() % 24
+            style = {9: mask2, 10: mask2, 11: mask1, 12: mask1}.get(image)
+            data = bytearray()
+            for _ in range(width * height):
+                if image < 6:
+                    data += bytes([0, lcg.next(), lcg.next(), lcg.next()])
+                elif style == 'all':
+                    data.append(255)
+                elif style == 'none':
+                    data.append(0)
+                elif style == 'mixed':
+                    data.append(255 if lcg.next() & 1 else 0)
+                else:
+                    data.append(lcg.next())
+            images.append((width, height, 4 if image < 6 else 1, bytes(data)))
+        if size == n_size:
+            chosen = images
+    return {'params': bytes(params), 'width': side, 'height': side, 'grid': bytes(grid), 'images': chosen}

@@ -11,8 +11,9 @@ namespace OpenTPW;
 /// <remarks>
 /// The output reproduces the head of tp.exe's build routine byte for byte (verified against the routine run in the x86 oracle, docs/reverse/ORACLE.md):
 /// pixels are four bytes <c>[0, R, G, B]</c>, the rows run bottom-up (source row Y is written to row N-1-Y), and an invalid cell is the grey
-/// <c>[0, 0x7F, 0x7F, 0x7F]</c>. The alpha byte is 0 as in the original; a renderer must write alpha 255 itself, because the original's
-/// texture pass has no alpha test and OpenTPW's terrain shader discards low alpha. That is renderer work, not done here.
+/// <c>[0, 0x7F, 0x7F, 0x7F]</c>. The alpha byte is 0 as in the original; a renderer must write alpha 255 itself: OpenTPW's terrain shader discards low
+/// alpha, and the original's terrain pass is deduced to have no alpha test (its cache textures carry alpha 0), though the render state of 0x56F670 is not
+/// traced. That is renderer work, not done here.
 /// </remarks>
 public sealed class ProceduralTerrainTexturer
 {
@@ -103,7 +104,7 @@ public sealed class ProceduralTerrainTexturer
 		if ( destination.Length < TextureBytes )
 			throw new ArgumentException( "The destination is smaller than one texture.", nameof( destination ) );
 		if ( (uint)x >= (uint)lnd.CellsX || (uint)z >= (uint)lnd.CellsY )
-			throw new ArgumentOutOfRangeException( nameof( x ), "The cell is outside the weight grid." );
+			throw new ArgumentOutOfRangeException( (uint)x >= (uint)lnd.CellsX ? nameof( x ) : nameof( z ), "The cell is outside the weight grid." );
 		var destinationTexture = destination[..TextureBytes];
 		var cellRow = lnd.CellsY - z - 1;
 		var gridWidth = lnd.GridWidth;

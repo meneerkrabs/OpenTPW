@@ -36,7 +36,12 @@ def lnd_bytes(data: Path, theme: str) -> bytes:
     raise SystemExit(f'{theme}: terrain.wad has no base.lnd')
 
 
-def sample_cells(lnd: dict, n_size: int, rng: random.Random) -> list[tuple[int, int]]:
+# Space's weight grid has validity values other than 0 and 0xFF (1..9, 11..13, 16, 17, 20, 25, 27, 28, 30); these cells have such values among their
+# four inner samples and are still valid or not by the all-0xFF rule
+ODD_VALIDITY_CELLS = {'space': [(42, 12), (43, 12), (44, 12)]}
+
+
+def sample_cells(theme: str, lnd: dict, n_size: int, rng: random.Random) -> list[tuple[int, int]]:
     cells_x, cells_y = (lnd['width'] - 1) >> 2, (lnd['height'] - 1) >> 2
     chosen = [(0, 0), (cells_x - 1, 0), (0, cells_y - 1), (cells_x - 1, cells_y - 1)]
     chosen += [(rng.randrange(cells_x), rng.randrange(cells_y)) for _ in range(SAMPLE[n_size])]
@@ -48,6 +53,7 @@ def sample_cells(lnd: dict, n_size: int, rng: random.Random) -> list[tuple[int, 
             if (grid[q] & grid[q + 4] & grid[q + 4 * width] & grid[q + 4 * width + 4]) != 0xFF:
                 invalid.append((x, z))
     chosen += [invalid[i] for i in sorted(rng.sample(range(len(invalid)), min(2, len(invalid))))]
+    chosen += ODD_VALIDITY_CELLS.get(theme, [])
     return list(dict.fromkeys(chosen))
 
 
@@ -78,7 +84,7 @@ def main(argv: list[str] | None = None) -> int:
         for n_size in (16, 32, 64):
             level = terrain.level_for(lnd, n_size)
             rng = random.Random(f'{args.seed}:{theme}:{n_size}')
-            for x, z in sample_cells(lnd, n_size, rng):
+            for x, z in sample_cells(theme, lnd, n_size, rng):
                 original = targets.run_binary(target, sandbox, {'n': n_size, 'x': x, 'z': z, 'level': level})
                 reading, modes = terrain.build(level, n_size, x, z)
                 for mode in modes.values():

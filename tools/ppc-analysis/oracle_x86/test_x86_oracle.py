@@ -943,6 +943,28 @@ class TerrainReading(unittest.TestCase):
         self.assertEqual(seen, set(targets.terrain_reading.MODES))
 
 
+class TerrainSyntheticLevels(unittest.TestCase):
+    """The reproducible synthetic levels behind ProceduralTerrainSyntheticGolden.cs need neither Unicorn nor an executable."""
+
+    def test_levels_reach_every_mode_and_the_grey_fallback(self):
+        reading = targets.terrain_reading
+        seen, grey, count = set(), 0, 0
+        for seed, mix, n_size, is_grey in reading.synthetic_specs():
+            level = reading.synthetic_level(seed, mix, n_size, is_grey)
+            for x, z in reading.synthetic_cells(seed, is_grey):
+                modes = reading.build(level, n_size, x, z)[1]
+                seen.update(modes.values())
+                grey += not modes
+                count += 1
+        self.assertEqual(seen, set(reading.MODES))
+        self.assertEqual((count, grey), (54, 3))
+
+    def test_generator_is_deterministic(self):
+        reading = targets.terrain_reading
+        self.assertEqual(reading.synthetic_level(1003, 'BA', 16, False), reading.synthetic_level(1003, 'BA', 16, False))
+        self.assertEqual(reading.Lcg(1).next(), ((1664525 + 1013904223) & 0xFFFFFFFF) >> 24)
+
+
 class WalkReadingCoverage(unittest.TestCase):
     """X25's inputs, on the reading alone (no Unicorn or executable): the whole walks reach every step result, and the
     searches both succeed and fail."""

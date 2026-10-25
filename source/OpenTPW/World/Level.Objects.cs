@@ -14,6 +14,9 @@ public partial class Level
 		{
 			if ( value != null )
 				StaffPlacement?.Cancel();
+			// [EXT:online-coop-commands] another entry or none: a guest's placement that waits for the host is this tool's no more (C3a-2)
+			if ( !ReferenceEquals( value, buildEntry ) )
+				WaitingPlacement = null;
 			var moveEnds = IsMoving;
 			buildEntry = value;
 			// any other way of arming or leaving the build tool ends the Move tool (interface mode 0x3b) and the add-on mode; BeginMove and BeginAddOn set theirs after they armed the entry
@@ -45,6 +48,9 @@ public partial class Level
 		{
 			if ( value )
 				StaffPlacement?.Cancel();
+			// [EXT:online-coop-commands] the remove tool on or off: a guest's removal that waits for the host is this tool's no more (C3a-2)
+			if ( value != isRemovingObjects )
+				WaitingRemoval = null;
 			isRemovingObjects = value;
 		}
 	}
@@ -747,9 +753,10 @@ public partial class Level
 		Paths = new ParkPathBuilder( Guests.Grid.Cells, Guests.Grid, () => Park?.Economy, Objects.Grid, IsPathBuildBlocked )
 		{
 			// [BIN:TPW-EXE:0x00534A91 queue neighbour sound] the writer plays cat_ui 139 only while game+36 (0x785A2C, the park's money) is clear: here, while a park economy runs
+			// [EXT:online-coop-commands] the cue is the line's issuer's: a peer applying another player's line plays none (C3a-2)
 			Effects = new LinkEffects( RefreshTile, ( x, y ) =>
 			{
-				if ( Park != null )
+				if ( Park != null && Commands is not { IsLocalIssuer: false } )
 					GameAudio.PlayUiAt( GameAudio.QueueJoinEvent, GameAudio.QueueNeighbourSoundPosition( x, y ) );
 			} ),
 			ObjectGivesWay = ( x, y ) => Objects.GivesWay( x, y, ParkObjects.PathOverwritePriority ),
@@ -996,6 +1003,13 @@ public partial class Level
 	// [EXT:queue-backtrack] tp.exe's key handler backtracks only a type-1 (path) cell: it tests the tile's +8 through 0x536310 at 0x40BE3C and does nothing over a queue cell, whose cells the original takes back only with Backspace inside the queue tool (Back 0x52FE50, the segment just laid); OpenTPW also takes a queue back from the cursor, as the remove tool does (QueuePaths.RemoveFrom, so the queue stays one line from the ride)
 	public bool BacktrackAt( int x, int y ) => Backtrack( x, y ).Accepted;
 
+	/// <summary>The backtrack cue at cell (<paramref name="x"/>, <paramref name="y"/>): [EXT:online-coop-commands] its issuer's alone, as a placement's (C3a-2).</summary>
+	private void PlayBacktrackCue( int x, int y )
+	{
+		if ( Commands is not { IsLocalIssuer: false } )
+			GameAudio.PlayUiAt( GameAudio.BacktrackEvent, CellSoundPosition( x, y ) );
+	}
+
 	/// <summary>
 	/// <see cref="BacktrackAt"/> with its verdict: a refused pool target answers with the pool's own refusal (<see cref="PoolBridgeResult"/> or <see cref="PoolBuildResult"/>) as the value, so the HUD can say why.
 	/// </summary>
@@ -1018,7 +1032,7 @@ public partial class Level
 			var bridge = bridges.RemoveAt( x, y );
 			if ( bridge != PoolBridgeResult.Ok )
 				return new ParkCommandResult( false, $"The bridge is not removed: {bridge}.", bridge );
-			GameAudio.PlayUiAt( GameAudio.BacktrackEvent, CellSoundPosition( x, y ) );
+			PlayBacktrackCue( x, y );
 			LastActionMessage = "Removed a pool bridge.";
 			return ParkCommandResult.Ok( bridge );
 		}
@@ -1029,11 +1043,11 @@ public partial class Level
 			var water = builder.Erase( x, y );
 			if ( water != PoolBuildResult.Ok )
 				return new ParkCommandResult( false, $"The pool cell is not erased: {water}.", water );
-			GameAudio.PlayUiAt( GameAudio.BacktrackEvent, CellSoundPosition( x, y ) );
+			PlayBacktrackCue( x, y );
 			LastActionMessage = "Removed a pool cell.";
 			return ParkCommandResult.Ok( water );
 		}
-		GameAudio.PlayUiAt( GameAudio.BacktrackEvent, CellSoundPosition( x, y ) );
+		PlayBacktrackCue( x, y );
 		if ( target == BacktrackTarget.Path )
 		{
 			if ( Paths.RemoveOnce( x, y ) == CellBuildResult.Ok )

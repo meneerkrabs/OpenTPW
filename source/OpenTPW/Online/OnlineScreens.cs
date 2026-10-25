@@ -465,9 +465,9 @@ public sealed class OnlineScreens
 
 	/// <summary>
 	/// [EXT:online-coop-session] Build Together (C2d-2; docs/COOP.md, "Sharing the park from the game"): shares the open park with other players, who watch the host
-	/// build, walk around and chat (C2: only the host builds). Before sharing: why the park cannot be shared, or a login, then the shared park's title, whether it is on
-	/// the open list, and how many players it takes. While it is shared: its code, the players with a removal for each guest, an invitation by name, and its end for
-	/// everyone (the park stays the host's). Every line is in the player's language.
+	/// build, walk around and chat, and build too once the host lets them (C3a-2). Before sharing: why the park cannot be shared, or a login, then the shared park's title, whether
+	/// it is on the open list, and how many players it takes. While it is shared: its code, the players with a switch that lets each guest build or only watch and a removal, an
+	/// invitation by name, and its end for everyone (the park stays the host's). Every line is in the player's language.
 	/// </summary>
 	/// <param name="choices">The shared park's choices to start from (a share from the lobby that could not start keeps the player's); the defaults when null.</param>
 	// [EXT:own-window-sizes] the window and the places of its controls are OpenTPW's: the original has no shared parks
@@ -521,14 +521,23 @@ public sealed class OnlineScreens
 		var visibility = screen.Add( new UiLabel { Id = "visibility", Font = fonts => fonts.Small, Align = UiAlign.Center,
 			Text = () => Attempt()?.State is { } state ? strings.Extra( state.Listed ? OpenTpwText.SharedParkListed : OpenTpwText.SharedParkUnlisted ) : "",
 			Bounds = new UiRect( x, window.Y + 260, width, 70 ), Anchor = UiAnchor.Center } );
-		var rows = new List<(UiLabel Name, UiButton Remove)>();
+		var rows = new List<(UiLabel Name, UiButton Builds, UiButton Remove)>();
 		for ( var index = 0; index < CoopProtocol.MaximumPlayers; index++ )
 		{
 			var row = index;
 			CoopMemberInfo? Member() => Attempt()?.State is { } state && row < state.Members.Count ? state.Members.OrderBy( member => member.Slot ).ElementAt( row ) : null;
 			var name = screen.Add( new UiLabel { Id = $"member{row}", Font = fonts => fonts.Label,
 				Text = () => Member() is { } member && Attempt()?.State is { } state ? MemberText( member, state ) : "",
-				Bounds = new UiRect( x, window.Y + 350 + row * 90, width - 420, 80 ), Anchor = UiAnchor.Center } );
+				Bounds = new UiRect( x, window.Y + 350 + row * 90, width - 840, 80 ), Anchor = UiAnchor.Center } );
+			// [EXT:online-coop-permissions] the host lets a guest build or only watch (Q7, C3a-2): the switch says what the shared park's applied grant is, and a click turns it over
+			var builds = screen.Add( new UiButton { Id = $"builds{row}",
+				Text = () => strings.Extra( Member() is { } member && Attempt() is { } share && share.Builds( member.Slot ) ? OpenTpwText.CoopBuilds : OpenTpwText.CoopWatches ),
+				Clicked = () =>
+				{
+					if ( Member() is { } member && Attempt() is { } share )
+						share.SetBuilds( member.Slot, !share.Builds( member.Slot ) );
+				},
+				Bounds = new UiRect( x + width - 820, window.Y + 345 + row * 90, 400, 85 ), Anchor = UiAnchor.Center } );
 			var remove = screen.Add( new UiButton { Id = $"remove{row}", Text = () => strings.Extra( OpenTpwText.RemovePlayer ),
 				Clicked = () =>
 				{
@@ -541,7 +550,7 @@ public sealed class OnlineScreens
 					stack.Push( confirm );
 				},
 				Bounds = new UiRect( x + width - 400, window.Y + 345 + row * 90, 400, 85 ), Anchor = UiAnchor.Center } );
-			rows.Add( (name, remove) );
+			rows.Add( (name, builds, remove) );
 		}
 		var inviteField = screen.Add( new UiTextField { Id = "inviteName", MaximumLength = CoopProtocol.MaximumInviteNameLength, Model = "f_text1",
 			Bounds = new UiRect( x, window.Y + 730, width - 420, 93 ), Anchor = UiAnchor.Center } );
@@ -599,7 +608,7 @@ public sealed class OnlineScreens
 			{
 				var member = Attempt()?.State is { } state && index < state.Members.Count ? state.Members.OrderBy( info => info.Slot ).ElementAt( index ) : null;
 				rows[index].Name.Visible = hosted && member != null;
-				rows[index].Remove.Visible = hosted && member != null && member.Id != Attempt()!.State!.Host;
+				rows[index].Builds.Visible = rows[index].Remove.Visible = hosted && member != null && member.Id != Attempt()!.State!.Host;
 			}
 		};
 		AddStatus( screen, window );

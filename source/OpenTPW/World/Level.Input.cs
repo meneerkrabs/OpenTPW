@@ -65,7 +65,7 @@ public partial class Level
 			return;
 		// The remove tool comes first, so a path or queue cell under it is removed rather than built on (ParkHud stands aside for it too).
 		if ( IsRemovingObjects )
-			Commands.Issue( new RemoveAtCommand( x, y ) );
+			ClickRemoveTool( x, y );
 		else if ( IsCoasterToolActive && BuildEntry == null )
 			CoasterClick( x, y );
 		else if ( CellTool.IsActive && BuildEntry == null )
@@ -74,9 +74,57 @@ public partial class Level
 			ClickBuildTool( x, y, clickModifierMask );
 	}
 
+	/// <summary>[EXT:online-coop-commands] A guest's placement sent to the host (C3a-2): its request, the placed entry and Ctrl at the click (<see cref="KeepBuildToolOnPlace"/>, which the click resets).</summary>
+	internal sealed record PlacementRequest( CoopGuestCommands.Request Request, ObjectCatalogEntry Entry, bool KeepTool );
+
+	/// <summary>
+	/// [EXT:online-coop-commands] The guest's placement that waits for the host, or null (C3a-2): the build tool takes no other click until its outcome, and the HUD finishes the
+	/// placement from it (<c>ParkHud.FinishPlacement</c>). Arming another entry or leaving the build tool drops it (<see cref="BuildEntry"/>): its outcome is then only a message.
+	/// </summary>
+	internal PlacementRequest? WaitingPlacement { get; private set; }
+
+	/// <summary>
+	/// [EXT:online-coop-commands] The guest's removal that waits for the host, or null (C3a-2): the remove tool takes no other click until its outcome; leaving the tool drops it
+	/// (<see cref="IsRemovingObjects"/>).
+	/// </summary>
+	internal CoopGuestCommands.Request? WaitingRemoval { get; private set; }
+
+	/// <summary>[EXT:online-coop-commands] How many clicks a tool refused while its request waited for the host (C3a-2): the HUD asks the player to wait when it changes.</summary>
+	internal int WaitingClicks { get; private set; }
+
+	/// <summary>[EXT:online-coop-commands] A tool refused a click while its request waits for the host.</summary>
+	internal void NoteWaitingClick() => WaitingClicks++;
+
+	/// <summary>[EXT:online-coop-commands] The HUD took the outcome of <paramref name="request"/>: the placement or the removal that waited for it waits no more, and its tool takes clicks again.</summary>
+	internal void EndWaiting( CoopGuestCommands.Request request )
+	{
+		if ( WaitingPlacement?.Request == request )
+			WaitingPlacement = null;
+		if ( WaitingRemoval == request )
+			WaitingRemoval = null;
+	}
+
+	/// <summary>The remove tool's click on cell (<paramref name="x"/>, <paramref name="y"/>): [EXT:online-coop-commands] a guest's removal waits for the host, taking no other click until its outcome (C3a-2).</summary>
+	internal void ClickRemoveTool( int x, int y )
+	{
+		if ( WaitingRemoval != null )
+		{
+			NoteWaitingClick();
+			return;
+		}
+		if ( Commands.Issue( new RemoveAtCommand( x, y ) ).Request is { } request )
+			WaitingRemoval = request;
+	}
+
 	/// <summary>The build tool's (or the Move tool's) click on cell (<paramref name="x"/>, <paramref name="y"/>): the armed <see cref="BuildEntry"/> goes to its build target there.</summary>
 	internal void ClickBuildTool( int x, int y, int modifierMask = 0 )
 	{
+		// [EXT:online-coop-commands] a guest's placement that waits for the host: the build tool takes no other click until its outcome (C3a-2)
+		if ( WaitingPlacement != null )
+		{
+			NoteWaitingClick();
+			return;
+		}
 		KeepBuildToolOnPlace = KeepsBuildTool( modifierMask );
 		try
 		{
@@ -89,7 +137,9 @@ public partial class Level
 			// handler tests the latch before the mode dispatch (0x524A63), which sends modes 4 and 0x3B to 0x52765B. OpenTPW reads that refusal from the ghost the HUD draws
 			if ( BuildGhostAllowed( entry, CheckBuildTarget( entry, targetX, targetY, rotation ) ) )
 				placedQueueStart = null;
-			Commands.Issue( BuildCommand( entry, targetX, targetY, rotation ) );
+			// [EXT:online-coop-commands] a guest's placement went to the host: the HUD finishes it once its outcome comes back, with the entry and the Ctrl of this click
+			if ( Commands.Issue( BuildCommand( entry, targetX, targetY, rotation ) ).Request is { } request )
+				WaitingPlacement = new PlacementRequest( request, entry, KeepBuildToolOnPlace );
 		}
 		finally
 		{
@@ -109,6 +159,12 @@ public partial class Level
 
 	internal SegmentResult? ClickCellTool( (int X, int Y) cell, int modifierMask = 0 )
 	{
+		// [EXT:online-coop-commands] a guest's line that waits for the host takes no other click (C3a-2)
+		if ( CellTool.Waiting != null )
+		{
+			NoteWaitingClick();
+			return null;
+		}
 		var previous = keepTrackToolAfterLine;
 		keepTrackToolAfterLine = KeepsBuildTool( modifierMask );
 		var mode = CellTool.Mode;
@@ -117,7 +173,7 @@ public partial class Level
 			var result = CellTool.Click( cell );
 			// [BIN:TPW-EXE:0x00527483 queue start] the path and queue handler zeroes the pending queue start after its commit LayLine (0x527472); a click on a refused ghost returns before
 			// it (0x524A63), and a line whose command the park refused ([EXT:online-coop-commands]) laid nothing either
-			if ( mode is CellToolMode.Path or CellToolMode.Queue && result is { GhostRefused: false, CommandRefused: false } )
+			if ( mode is CellToolMode.Path or CellToolMode.Queue && result is { GhostRefused: false, CommandRefused: false, Waiting: null } )
 				placedQueueStart = null;
 			return result;
 		}

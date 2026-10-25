@@ -353,22 +353,25 @@ public partial class CoopStreamTests
 		var level = peer.Level;
 		var rights = new CoopBuildRights( level );
 		var place = level.BuildCommand( peer.One.Entry, 20, 12, 90 );
+		// the commands of the guests' tools that wait for the host (C3a-2): the line tools, the one-shot placement and the remove click
 		var building = new ParkCommand[]
 		{
 			GuestLine,
 			new QueueSegmentCommand( peer.One.Runtime.AttractionId, 3, 3, 3, 6 ),
-			new EditQueueCommand( 3, 3 ),
 			place,
-			new RemoveAtCommand( 20, 12 ),
-			new RemoveObjectAtCommand( 20, 12 ),
-			new RemovePathCellCommand( 4, 1 ),
-			new RemoveQueueCellCommand( 3, 3 ),
-			new BuyLandCommand( 1, 1, 2, 2 )
+			new RemoveAtCommand( 20, 12 )
 		};
 		var hostOnly = new ParkCommand[]
 		{
 			place with { Moving = true },
 			place with { AddOnRide = peer.One.Runtime.AttractionId },
+			// the tools that come back with C3b: the queue's edit, the area clear's and the backtrack's removals, land
+			new EditQueueCommand( 3, 3 ),
+			new RemoveObjectAtCommand( 20, 12 ),
+			new RemovePathCellCommand( 4, 1 ),
+			new RemoveQueueCellCommand( 3, 3 ),
+			new BacktrackCommand( 4, 1 ),
+			new BuyLandCommand( 1, 1, 2, 2 ),
 			new SetGameSpeedCommand( GameSpeed.Fast ),
 			new SetEntranceFeeCommand( 3 ),
 			new SetBuildGrantCommand( 1, true ),
@@ -401,7 +404,6 @@ public partial class CoopStreamTests
 		try
 		{
 			Assert.IsFalse( rights.Allows( 1, new RemoveAtCommand( 20, 12 ) ) );
-			Assert.IsFalse( rights.Allows( 1, new RemoveObjectAtCommand( 20, 12 ) ) );
 		}
 		finally
 		{
@@ -410,6 +412,31 @@ public partial class CoopStreamTests
 		Assert.IsTrue( rights.Allows( 1, new RemoveAtCommand( 20, 12 ) ), "an ordinary object is a granted guest's to remove" );
 		level.SetBuildGrant( 1, false );
 		Assert.IsFalse( rights.Allows( 1, GuestLine ), "a grant taken back" );
+	}
+
+	/// <summary>A synthetic ride of the asset-free catalogue with the given .sam lines.</summary>
+	private static ObjectCatalogEntry SyntheticRide( string extra ) =>
+		new( "jungle", ObjectCategory.Ride, "/synthetic", new ObjectSettings( new[] { new ObjectSettingsFile( $"Info.Id 9999\nInfo.WhichUIType 0\n{extra}", "synthetic.sam" ) } ),
+			new ObjectShape( new[] { "*" } ), "/model.MD2", null, "/script.RSE", Array.Empty<string>(), Array.Empty<ObjectAnimationFile>(), Array.Empty<string>(), Array.Empty<string>(),
+			new BaseFileSystem( "/" ), null );
+
+	[TestMethod]
+	public void ARideWhoseOwnToolFollowsItsPlacementIsTheHostsToPlaceForNow()
+	{
+		// a coaster's track, a kart, water or bumper ride's track or arena and a slide tower's slide are tools no guest's request carries yet (C3b, C3c)
+		int TypeOf( TrackFamily family ) => BumperTemplates.All.First( template => !template.IsBumper && template.Family == family ).Type;
+		var followed = new[]
+		{
+			SyntheticRide( $"Bumper.WhichTrackType {CoasterDefinition.TrackType}\n" ),
+			SyntheticRide( $"Bumper.WhichTrackType 1\nBumper.BumperType {TypeOf( TrackFamily.Kart )}\n" ),
+			SyntheticRide( $"Bumper.WhichTrackType 2\nBumper.BumperType {TypeOf( TrackFamily.Water )}\n" ),
+			SyntheticRide( $"Bumper.WhichTrackType 0\nBumper.BumperType {BumperTemplates.All.First( template => template.IsBumper ).Type}\n" ),
+			SyntheticRide( $"{PoolSlideTowers.SettingKey} 1\n" )
+		};
+		foreach ( var entry in followed )
+			Assert.IsTrue( CoopBuildRights.OwnToolFollows( entry ), entry.Settings.ToString() );
+		Assert.IsFalse( CoopBuildRights.OwnToolFollows( SyntheticRide( "" ) ), "an ordinary ride is placed by its click alone" );
+		Assert.IsFalse( CoopBuildRights.OwnToolFollows( SyntheticRide( "Bumper.WhichTrackType 1\nBumper.BumperType 0\n" ) ), "a track type without a controller has no track tool" );
 	}
 
 	[TestMethod]

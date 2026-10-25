@@ -19,7 +19,7 @@ namespace OpenTPW.Tests;
 /// </summary>
 [TestClass]
 [DoNotParallelize]
-public class CoopSessionTests
+public partial class CoopSessionTests
 {
 	private AutomaticCheckpointCpuRendererScope? renderer;
 	private UpgradeCatalogueDefaultsTests? fixture;
@@ -457,7 +457,7 @@ public class CoopSessionTests
 	}
 
 	[TestMethod]
-	public void AGuestsRefusedClicksAreSaidOnceAsOnlyTheHostBuilds()
+	public void AGuestsRefusedClicksAreSaidOnceInTheWordsOfTheirRefusal()
 	{
 		var (_, guest, _, _) = Shared();
 		guest.Enter();
@@ -467,7 +467,8 @@ public class CoopSessionTests
 		var context = new UiContext( strings, new UiFonts( _ => font ), new UiModels( name => throw new System.IO.FileNotFoundException( name ) ) )
 		{ Canvas = new UiCanvas( 2048, 1536 ), ResolveTexture = _ => null };
 		void Frame() => hud.Update( context, UiInput.Idle( new N.Vector2( -1 ) ), false, false, false );
-		var said = strings.Extra( OpenTpwText.OnlyTheHostBuilds );
+		// a command only the host issues (C3a-2: the backtrack's removal comes back with its tool in C3b)
+		var said = strings.Extra( OpenTpwText.CoopHostOnly );
 		int Said() => hud.Messages.Count( message => message == said );
 		Frame();
 		Assert.AreEqual( 0, Said() );
@@ -484,6 +485,12 @@ public class CoopSessionTests
 		Frame();
 		Assert.AreEqual( 2, Said(), "a later click is said again" );
 		Assert.AreEqual( 7, guest.Level.SessionRefusals );
+		// building the host has not granted is said as such
+		Time.Update( ParkHud.SessionRefusalNoticeSeconds );
+		Assert.IsFalse( guest.Issue( new LayLineCommand( CellToolMode.Path, -1, 5, 20, 12, 20 ) ).Accepted );
+		Frame();
+		Assert.AreEqual( 1, hud.Messages.Count( message => message == strings.Extra( OpenTpwText.CoopNotGranted ) ) );
+		Assert.AreEqual( 2, Said() );
 	}
 
 	/// <summary>

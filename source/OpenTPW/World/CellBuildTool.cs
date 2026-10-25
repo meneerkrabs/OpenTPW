@@ -34,6 +34,8 @@ public interface ICellLineWriter
 	bool SnapsToLine => true;
 	/// <summary>Discard issuer-local active-segment state when a tool is closed or entered anew.</summary>
 	void ResetToolSession() { }
+	/// <summary>Whether the tool's Backspace may take a committed segment back ([EXT:online-coop-commands] not a guest's, C3a-2).</summary>
+	bool CanUndo => true;
 }
 
 /// <summary>
@@ -68,6 +70,16 @@ public sealed class CellBuildTool
 	/// <summary>Raised when the tool turns off (end of line, refusal, cancel).</summary>
 	public event Action? Ended;
 
+	/// <summary>
+	/// [EXT:online-coop-commands] A guest's line that waits for the host (C3a-2): its command's request, and the start and the snapped end of the click. While it waits the tool takes
+	/// no click and no undo, and its ghost stays the clicked line's; <see cref="CompleteWaiting"/> runs the click's continuation once with the line's segment. Whatever ends or enters the tool
+	/// drops it, and the request's outcome is then only a message.
+	/// </summary>
+	internal sealed record WaitingLine( WaitingLineCommit Commit, (int X, int Y) Start, (int X, int Y) End );
+
+	/// <summary>[EXT:online-coop-commands] The guest's line that waits for the host, or null (<see cref="WaitingLine"/>).</summary>
+	internal WaitingLine? Waiting { get; private set; }
+
 	/// <summary>Starts <paramref name="writer"/>'s mode with <paramref name="start"/> as the first vertex, or without a start (null): the next click sets it.</summary>
 	// [BIN:STP-PPC:0x1007B320 SetMode] tool mode 1 = path, 3 = queue; the drag writes the cell type equal to the mode
 	// [BIN:TPW-EXE:0x0052F200 SetMode] a new mode stores the mode (0x81AE2C) and sets the start to −1 (0x52F340)
@@ -88,6 +100,7 @@ public sealed class CellBuildTool
 			throw new ArgumentException( "A stack of corner points has one segment between each two points.", nameof( segmentsBetween ) );
 		vertices.Clear();
 		segments.Clear();
+		Waiting = null;
 		Writer?.ResetToolSession();
 		writer.ResetToolSession();
 		Writer = writer;
@@ -110,6 +123,9 @@ public sealed class CellBuildTool
 	{
 		if ( Writer == null )
 			return Ghost = null;
+		// [EXT:online-coop-commands] a guest's line that waits for the host keeps its ghost: the clicked line, frozen until its outcome
+		if ( Waiting != null )
+			return Ghost;
 		return Ghost = Writer.Preview( Start ?? cursor, cursor );
 	}
 
@@ -122,7 +138,8 @@ public sealed class CellBuildTool
 	// [BIN:STP-PPC:0x10070F84 path commit] push and LayLine(mode, start, end) unless the end equals the start with more than one vertex stored (0x7107c..0x71084 bf eq to 0x71174: then nothing is laid); end the tool (start −1, SetMode(0)) when end == start
 	public SegmentResult? Click( (int X, int Y) cell )
 	{
-		if ( Writer == null )
+		// [EXT:online-coop-commands] a guest's line that waits for the host takes no other click (C3a-2)
+		if ( Writer == null || Waiting != null )
 			return null;
 		if ( Start is not { } start )
 			return ClickWithoutStart( cell );
@@ -153,6 +170,55 @@ public sealed class CellBuildTool
 		// Even a same-writer restart owns fresh stacks; do not restore this old commit into them.
 		if ( !ReferenceEquals( Writer, writer ) || Start == null )
 			return result;
+		// [EXT:online-coop-commands] a guest's line went to the host (C3a-2): the tool waits for its outcome with the clicked line as its ghost, nothing pushed, laid or stacked yet
+		if ( result.Waiting is { } waiting )
+		{
+			if ( pushed )
+				vertices.RemoveAt( vertices.Count - 1 );
+			Waiting = new WaitingLine( waiting, start, end );
+			Ghost = writer.Preview( start, end );
+			return result;
+		}
+		return Continue( start, end, result, pushed );
+	}
+
+	/// <summary>
+	/// [EXT:online-coop-commands] The outcome of the guest's line that waits for the host (C3a-2), once: <paramref name="outcome"/> is its command's result in the guest's park (its
+	/// record applied there), and the click's continuation runs with the segment it laid, as for a line laid at once (a refusal included, which lays nothing). Returns that segment, or
+	/// null when no line waits.
+	/// </summary>
+	internal SegmentResult? CompleteWaiting( ParkCommandResult outcome )
+	{
+		ArgumentNullException.ThrowIfNull( outcome );
+		if ( Waiting is not { } waiting || Writer == null )
+			return null;
+		Waiting = null;
+		var pushed = false;
+		if ( vertices.Count < VertexCapacity )
+		{
+			vertices.Add( waiting.End );
+			pushed = true;
+		}
+		var result = waiting.Commit.Complete( outcome );
+		Ghost = null;
+		return Continue( waiting.Start, waiting.End, result, pushed );
+	}
+
+	/// <summary>
+	/// [EXT:online-coop-commands] Drops the guest's line that waits for the host without laying it (C3a-2): the host took no record of it, so the click is as if never made, and the tool
+	/// goes on from its start.
+	/// </summary>
+	internal void DropWaiting()
+	{
+		if ( Waiting == null )
+			return;
+		Waiting = null;
+		Ghost = null;
+	}
+
+	/// <summary>The commit's continuation: the stacks, the ghost and the next start or the tool's end after a line from <paramref name="start"/> toward <paramref name="end"/> laid <paramref name="result"/>.</summary>
+	private SegmentResult Continue( (int X, int Y) start, (int X, int Y) end, SegmentResult result, bool pushed )
+	{
 		// A writer that steps in tiles (the track tools) snaps the end further; the tool continues from where the line really ended.
 		if ( result.SnappedEnd != end )
 		{
@@ -207,7 +273,8 @@ public sealed class CellBuildTool
 	/// <summary>Backspace: takes back the last committed segment and continues from its start.</summary>
 	public bool Undo()
 	{
-		if ( Writer == null || segments.Count == 0 )
+		// [EXT:online-coop-commands] a guest's Backspace takes nothing back: its segments are the host's to undo, and a line that waits for the host is not laid yet (C3a-2)
+		if ( Writer == null || segments.Count == 0 || Waiting != null || !Writer.CanUndo )
 			return false;
 		var segment = segments[^1];
 		segments.RemoveAt( segments.Count - 1 );
@@ -252,6 +319,7 @@ public sealed class CellBuildTool
 		Writer = null;
 		Start = null;
 		Ghost = null;
+		Waiting = null;
 		if ( LastCommit?.QueueReceipt != null ) LastCommit = LastCommit with { QueueReceipt = null };
 		vertices.Clear();
 		segments.Clear();

@@ -327,6 +327,8 @@ internal sealed class CoopSession : IDisposable
 		session.GuestStream = new CoopGuestStream( level, link, seconds );
 		session.GuestCommands = new CoopGuestCommands( link, session.seconds );
 		session.GuestStream.RecordApplied += session.GuestCommands.RecordApplied;
+		// [EXT:online-coop-commands] the guest's own tools send their commands to the host (C3a-2)
+		level.Commands.Submit = session.SubmitRequest;
 		session.followingSince = session.seconds();
 		level.Commands.SessionRefused += session.OnRefused;
 		level.IsCoopGuestPark = true;
@@ -422,8 +424,26 @@ internal sealed class CoopSession : IDisposable
 	/// <summary>The host's stream ended the session (and left it) because it cannot go on without skipping or losing a record.</summary>
 	private void OnStreamFailed( string reason ) => Finish( reason, leave: false, CoopSessionEnd.StreamFailed );
 
-	/// <summary>A guest's own click was refused by the session's rights: its HUD says only the host builds.</summary>
-	private void OnRefused( ParkCommand command ) => level?.NoteSessionRefusal();
+	/// <summary>
+	/// A guest's own click was refused by the session's rights: its HUD says why, in its words: building the host has not granted it yet, or a command only the host may issue
+	/// ([EXT:online-coop-permissions]).
+	/// </summary>
+	private void OnRefused( ParkCommand command ) => level?.NoteSessionRefusal( level.Commands.Rights is CoopBuildRights rights && rights.Builds( command ) );
+
+	/// <summary>[EXT:online-coop-commands] A guest's command for the host, as a request of the session's (null once it ended).</summary>
+	private CoopGuestCommands.Request? SubmitRequest( ParkCommand command )
+	{
+		if ( EndedWith != null || GuestCommands is not { } requests )
+			return null;
+		try
+		{
+			return requests.Submit( command );
+		}
+		catch ( ObjectDisposedException )
+		{
+			return null;
+		}
+	}
 
 	private void Finish( string reason, bool leave, CoopSessionEnd cause, CoopReason serverReason = CoopReason.None )
 	{
@@ -438,7 +458,10 @@ internal sealed class CoopSession : IDisposable
 		link.Resumed -= OnResumed;
 		link.MemberChanged -= OnMemberChanged;
 		if ( level != null )
+		{
 			level.Commands.SessionRefused -= OnRefused;
+			level.Commands.Submit = null;
+		}
 		if ( HostStream != null )
 		{
 			HostStream.Failed -= OnStreamFailed;
@@ -693,6 +716,7 @@ internal sealed class CoopSession : IDisposable
 		if ( old != null )
 		{
 			old.Commands.SessionRefused -= OnRefused;
+			old.Commands.Submit = null;
 			if ( old.CoopSession == this )
 				old.CoopSession = null;
 		}
@@ -720,6 +744,7 @@ internal sealed class CoopSession : IDisposable
 		level = candidate;
 		candidate.CoopSession = this;
 		candidate.Commands.SessionRefused += OnRefused;
+		candidate.Commands.Submit = SubmitRequest;
 		GuestStream = new CoopGuestStream( candidate, link, seconds, downloaded.Generation, (downloaded.Records, downloaded.Ticks, downloaded.Frame), desyncs );
 		// [EXT:online-coop-commands] the requests are reconciled against the cut (those inside it applied there) and the rest go out again, before the frames after the cut apply
 		GuestStream.RecordApplied += GuestCommands!.RecordApplied;
@@ -1027,5 +1052,12 @@ public partial class Level
 	/// <summary>[EXT:online-coop-lockstep] How many of this machine's clicks the session refused (a guest: only the host builds); the HUD says so when it changes.</summary>
 	internal int SessionRefusals { get; private set; }
 
-	internal void NoteSessionRefusal() => SessionRefusals++;
+	/// <summary>[EXT:online-coop-permissions] Whether the last refused command was building (the host has not granted it yet), not a command only the host may issue.</summary>
+	internal bool LastSessionRefusalWasBuilding { get; private set; }
+
+	internal void NoteSessionRefusal( bool building = false )
+	{
+		LastSessionRefusalWasBuilding = building;
+		SessionRefusals++;
+	}
 }

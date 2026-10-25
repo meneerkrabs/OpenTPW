@@ -1633,8 +1633,9 @@ The design fixed two constants only after measuring them (`coop-c2b-design.md`, 
 
 `[EXT:online-coop-commands]` `[EXT:online-coop-permissions]` In C2 the host builds and the guests watch.
 C3 lets every player build through the same stream the host orders, so every park stays the host's and
-no guest's click runs on its own park first. C3a-1 builds the requests, their records and the host's
-grants; the guests' tools use them in C3a-2 (with the host's switch for each guest's grant).
+no guest's click runs on its own park first. C3a-1 built the requests, their records and the host's
+grants; in C3a-2 the guests' line, placement and remove tools send their commands as requests and wait
+for them, and the host lets each guest build or only watch with a switch.
 
 **A guest's request.** A guest never applies its own command: its park follows the host's stream only
 (`ParkCommands.FollowsStream`), whatever its rights. It sends the command to the host as a request
@@ -1684,11 +1685,52 @@ the server relays both without reading them, and the version gate keeps every me
 release (decision Q11).
 
 **What a granted guest may build (C3a).** `CoopBuildRights` asks of a command's kind, its fields and its
-target, at execution on every peer: path and queue lines, the queue's edit, a placed object (not a moving
-placement, not a track add-on), the removal of a cell's object, path or queue (not a coaster's or a track
-ride's station, whose edits need claims), and land. Everything else stays the host's: pause and speed
-(Q8), cheats (Q17), money and the park's management (C4), undo lines (whose cells a request could name
-freely), the Move tool, staff, pools, tracks and coasters (C3b, C3c) and the grants themselves.
+target, at execution on every peer, and allows exactly the commands of the tools that wait for the host:
+path and queue lines, a placed object (not a moving placement, not a track add-on, and not a ride whose
+own tool follows its placement: a coaster, a kart, water or bumper ride, a slide tower), and the remove
+click (not on a coaster's or a track ride's station, whose edits need claims). Everything else stays the
+host's: pause and speed (Q8), cheats (Q17), money and the park's management (C4), undo lines (whose
+cells a request could name freely), land, the queue's edit, the area clear, the backtrack key, the Move
+tool, staff, pools, tracks and coasters (C3b, C3c) and the grants themselves.
+
+**A guest's tools (C3a-2).** On a guest's park `ParkCommands.Issue` sends a command to the host instead
+of applying it (`ParkCommands.Submit`, set by the session), after the checks `Apply` makes before it runs
+one: never inside a tick, well formed, and allowed by the session's rights as the guest's own park holds
+them, so a command the host would refuse is not sent. The command comes back pending
+(`ParkCommandResult.IsPending`), with nothing changed yet, and its tool waits:
+- the line tool keeps the clicked line as its ghost and pushes, lays and stacks nothing yet;
+- the placement keeps the placed entry and Ctrl at its click;
+- the remove tool keeps its request.
+
+While a tool waits it takes no other click (the HUD asks the player to wait), and a guest's Backspace takes
+nothing back: its lines are the host's to undo. The requests resolve where their records apply or the host
+answers, inside the stream's application or the link's pump; the guest's HUD takes them at the start of
+its next update (`CoopGuestCommands.TakeCompleted`), outside any command, tick and stream application, and
+completes the tool that still waits for each one:
+- an applied line runs the click's continuation once, with the segment its record laid in the guest's park
+  (a partial line goes on from where it stopped, a refused one ends the tool, as a refused command does);
+- an applied placement finishes as the host's does (the Built message, the ride's queue tool, the tool
+  kept for exactly Ctrl at the click), and a refused one says its reason and keeps the tool armed;
+- a request the host could not take (no record) leaves the click as if never made;
+- an error or a lost answer ends the line tool with a note that the outcome is not known.
+
+Anything that ends or switches a tool drops its wait, and a resync replaces the park with its tools, while
+the requests are the session's: such a request's outcome is then only a message. Each outcome is its own
+event, so two refusals in a row are both said.
+
+**Who hears and reads what (C3a-2).** A command's cues are its issuer's: the placement, demolition,
+backtrack and queue cues inside a command play only where the running command's player is this machine's
+(`ParkCommands.IsLocalIssuer`), so the host hears nothing of a guest's build and a guest hears its own when
+its record applies in its park. Cue choices are presentation, never hashed or in the digest. A message a
+command writes is said only by its issuer's HUD (`Level.SaysLastActionMessage`); a guest says its own
+outcomes from its requests, never from the message text. A guest's click the rights refuse says that the
+host has not let it build yet, or that only the host does that.
+
+**The host's switch (C3a-2).** The Build Together screen lists the guests with a switch each, beside the
+removal: it reads the shared park's applied grant ("Builds" or "Watches") and a click turns it over with
+a `SetBuildGrantCommand`. The stream's order decides a request that races the switch: a request the host
+takes before the grant is taken back is built, one after it is refused at its record. The sharing and
+joining screens say that the host decides who builds.
 
 ## The command layer (C1)
 

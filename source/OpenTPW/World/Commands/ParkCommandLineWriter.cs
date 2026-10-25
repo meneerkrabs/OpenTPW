@@ -37,6 +37,23 @@ public sealed class ParkCommandLineWriter : ICellLineWriter
 	{
 		var native = Inner is QueueLineWriter queue && queue.CanUseNative( start, end );
 		var result = commands.Issue( native ? new QueueSegmentCommand( Ride, start.X, start.Y, end.X, end.Y ) : new LayLineCommand( Mode, Ride, start.X, start.Y, end.X, end.Y ) );
+		// [EXT:online-coop-commands] a guest's line goes to the host (C3a-2): nothing is laid yet, and the queue writer's state waits with the tool for the line's outcome
+		if ( result.Request is { } request )
+			return new SegmentResult( start, Array.Empty<(int X, int Y)>(), 0, CellBuildResult.Ok, false )
+			{
+				Start = start,
+				Line = ParkPathBuilder.LayLine( start, Inner.SnapsToLine ? ParkPathBuilder.SnapEnd( start, end ) : end ),
+				Waiting = new WaitingLineCommit( request, outcome => Complete( start, end, native, outcome ) )
+			};
+		return Complete( start, end, native, result );
+	}
+
+	/// <summary>
+	/// The segment a line's command laid, from its result: at once, or [EXT:online-coop-commands] a guest's request's once its record applied in the guest's park (C3a-2). The queue writer's
+	/// state follows what the command did.
+	/// </summary>
+	private SegmentResult Complete( (int X, int Y) start, (int X, int Y) end, bool native, ParkCommandResult result )
+	{
 		if ( Inner is QueueLineWriter activeQueue )
 		{
 			if ( native && result.As<SegmentResult>() is { } segment ) activeQueue.RememberNativeResult( segment );
@@ -52,6 +69,9 @@ public sealed class ParkCommandLineWriter : ICellLineWriter
 		};
 	}
 
+	/// <summary>[EXT:online-coop-commands] A guest's segments are not its tool's to take back: an undo would name cells the host never laid for it (C3a-2).</summary>
+	public bool CanUndo => !commands.SendsRequests;
+
 	public void Undo( SegmentResult segment )
 	{
 		ArgumentNullException.ThrowIfNull( segment );
@@ -63,3 +83,9 @@ public sealed class ParkCommandLineWriter : ICellLineWriter
 		commands.Issue( new UndoLineCommand( Mode, Ride, segment.Start.X, segment.Start.Y, segment.Built.ToArray(), segment.Existing.ToArray() ) );
 	}
 }
+
+/// <summary>
+/// [EXT:online-coop-commands] A line command a guest's tool sent to the host (C3a-2): its request, and what turns the request's outcome (its record's result in the guest's park) into the
+/// line's segment, once.
+/// </summary>
+internal sealed record WaitingLineCommit( CoopGuestCommands.Request Request, Func<ParkCommandResult, SegmentResult> Complete );

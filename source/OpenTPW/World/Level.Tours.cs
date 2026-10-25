@@ -69,7 +69,7 @@ public partial class Level
 		TrackRenderer? created = null;
 		try
 		{
-			created = new TrackRenderer( station.Entry, TrackPieceKit.Load( station.Entry.FileSystem, station.Entry.ArchivePath, family ), () => Objects.Grid.Origin, ( x, y ) => Objects.Grid.GetCellHeight( x, y ), ( x, y ) => Objects.Grid.GetCornerHeight( x, y ), ( x, y ) => Objects.Grid.GetTerrainHeight( x, y ) );
+			created = new TrackRenderer( station.Entry, TrackPieceKit.Load( station.Entry.FileSystem, station.Entry.ArchivePath, family ), () => Objects.Grid.Origin, ( x, y ) => Objects.Grid.GetCellHeight( x, y ), ( x, y ) => Objects.Grid.GetCornerHeight( x, y ), ( x, y ) => Objects.Grid.GetTerrainHeight( x, y ), ( x, y ) => Objects.Grid.GetDrapeHeight( x, y ) );
 		}
 		catch ( Exception exception ) when ( exception is InvalidDataException or IOException or NotSupportedException )
 		{

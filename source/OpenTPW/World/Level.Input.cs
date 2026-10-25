@@ -104,6 +104,18 @@ public partial class Level
 			WaitingRemoval = null;
 	}
 
+	/// <summary>
+	/// [EXT:online-coop-commands] The session ended with requests open (C3a-2): the placement and the removal that waited wait no more, and a line that waited ends its tool, since
+	/// what became of it is not known here.
+	/// </summary>
+	internal void EndGuestWaits()
+	{
+		if ( (CellBuildTool?)CellTool is { Waiting: not null } tool )
+			tool.Cancel();
+		WaitingPlacement = null;
+		WaitingRemoval = null;
+	}
+
 	/// <summary>The remove tool's click on cell (<paramref name="x"/>, <paramref name="y"/>): [EXT:online-coop-commands] a guest's removal waits for the host, taking no other click until its outcome (C3a-2).</summary>
 	internal void ClickRemoveTool( int x, int y )
 	{

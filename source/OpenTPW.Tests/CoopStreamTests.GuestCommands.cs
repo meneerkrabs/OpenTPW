@@ -421,7 +421,7 @@ public partial class CoopStreamTests
 			new BaseFileSystem( "/" ), null );
 
 	[TestMethod]
-	public void ARideWhoseOwnToolFollowsItsPlacementIsTheHostsToPlaceForNow()
+	public void ARideWhoseOwnToolFollowsItsPlacementAndATrackAddOnAreTheHostsToPlaceForNow()
 	{
 		// a coaster's track, a kart, water or bumper ride's track or arena and a slide tower's slide are tools no guest's request carries yet (C3b, C3c)
 		int TypeOf( TrackFamily family ) => BumperTemplates.All.First( template => !template.IsBumper && template.Family == family ).Type;
@@ -434,9 +434,18 @@ public partial class CoopStreamTests
 			SyntheticRide( $"{PoolSlideTowers.SettingKey} 1\n" )
 		};
 		foreach ( var entry in followed )
+		{
 			Assert.IsTrue( CoopBuildRights.OwnToolFollows( entry ), entry.Settings.ToString() );
+			Assert.IsFalse( CoopBuildRights.GuestMayPlace( entry ) );
+		}
 		Assert.IsFalse( CoopBuildRights.OwnToolFollows( SyntheticRide( "" ) ), "an ordinary ride is placed by its click alone" );
+		Assert.IsTrue( CoopBuildRights.GuestMayPlace( SyntheticRide( "" ) ) );
 		Assert.IsFalse( CoopBuildRights.OwnToolFollows( SyntheticRide( "Bumper.WhichTrackType 1\nBumper.BumperType 0\n" ) ), "a track type without a controller has no track tool" );
+		// a track add-on goes onto its ride's track by the track tools' rule: a request that names no ride must not place it as an ordinary object
+		var addOn = SyntheticRide( $"AddOn.UpgradesId 1100\nAddOn.UpgradeType {TrackAddOns.TrackUpgradeType}\n" );
+		Assert.IsTrue( TrackAddOns.IsTrackAddOn( addOn ) );
+		Assert.IsFalse( CoopBuildRights.GuestMayPlace( addOn ) );
+		Assert.IsTrue( CoopBuildRights.GuestMayPlace( SyntheticRide( "AddOn.UpgradesId 1100\nAddOn.UpgradeType 2\n" ) ), "an add-on placed as an object of its own is an ordinary placement" );
 	}
 
 	[TestMethod]

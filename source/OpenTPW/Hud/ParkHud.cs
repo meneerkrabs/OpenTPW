@@ -532,7 +532,7 @@ public sealed partial class ParkHud
 			return;
 		// Level.PlaceObject owns the purchase and guest link; this callback only finishes the HUD tool.
 		PostMessage( string.Format( strings.Extra( OpenTpwText.Built ), ItemName( pendingItem ) ) );
-		var queueFollows = item.Entry.HasQueue && item.Runtime.IsAttraction && item.Visitors.HasCells;
+		var queueFollows = !item.IsDeleted && item.Entry.HasQueue && item.Runtime.IsAttraction && item.Visitors.HasCells;
 		if ( keepTool && item.Runtime.Coaster == null && item.Runtime.Bump == null && !queueFollows )
 		{
 			// Ctrl at the placing click: the tool stays armed with its item and angle for the next placement.
@@ -541,6 +541,12 @@ public sealed partial class ParkHud
 		pendingItem = null;
 		level.IsPlacing = false;
 		level.BuildEntry = null;
+		// [EXT:online-coop-commands] a guest's placement that a later record removed before its outcome came back opens no tool (C3a-2)
+		if ( item.IsDeleted )
+		{
+			level.ResetBuildRotation();
+			return;
+		}
 		if ( item.Runtime.Coaster != null && level.EnterCoasterTool( item ) )
 		{
 			level.ResetBuildRotation();

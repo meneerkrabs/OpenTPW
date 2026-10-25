@@ -1707,16 +1707,22 @@ nothing back: its lines are the host's to undo. The requests resolve where their
 answers, inside the stream's application or the link's pump; the guest's HUD takes them at the start of
 its next update (`CoopGuestCommands.TakeCompleted`), outside any command, tick and stream application, and
 completes the tool that still waits for each one:
-- an applied line runs the click's continuation once, with the segment its record laid in the guest's park
-  (a partial line goes on from where it stopped, a refused one ends the tool, as a refused command does);
+- an applied line runs the click's continuation once, with the segment its record laid in the guest's park,
+  as every player's tool does: a line its record cut short (a cell the host's park had taken by then) goes
+  on from the clicked end, the original's rule after a refused cell, and a refused one ends the tool, as a
+  refused command does;
 - an applied placement finishes as the host's does (the Built message, the ride's queue tool, the tool
-  kept for exactly Ctrl at the click), and a refused one says its reason and keeps the tool armed;
+  kept for exactly Ctrl at the click), also when a later record removed the object before the outcome
+  came back (no tool follows it then), and a refused one says its reason and keeps the tool armed;
+- a removal says nothing, as the host's remove click does: the park and the guest's own demolition cue
+  show it;
 - a request the host could not take (no record) leaves the click as if never made;
 - an error or a lost answer ends the line tool with a note that the outcome is not known.
 
 Anything that ends or switches a tool drops its wait, and a resync replaces the park with its tools, while
-the requests are the session's: such a request's outcome is then only a message. Each outcome is its own
-event, so two refusals in a row are both said.
+the requests are the session's: such a request's outcome is then only a message. The session's end ends
+every wait (a line that waits ends its tool). Each outcome is its own event, so two refusals in a row are
+both said.
 
 **Who hears and reads what (C3a-2).** A command's cues are its issuer's: the placement, demolition,
 backtrack and queue cues inside a command play only where the running command's player is this machine's
@@ -2101,9 +2107,9 @@ guarded list.
 - A guest's park must be built as a guest from its start (C2c's join): the game takes the restart
   snapshot when a park starts (`GameFlow.TakeRestartSnapshot`), before a session could mark the park
   as a guest's, and would write the host's park over the guest's own restart file.
-- A guest's HUD still offers the build tools (C2d): each refused click says "Only the host builds",
-  at most once every 1.5 seconds. Two tools add their own feedback to it: Buy Land's refused second
-  click also says that the land cannot be bought, with a second error sound, and a refused queue line
-  still plays the queue-join sound. Opening the loans window refreshes its offers by command, which a guest is refused,
+- A guest's HUD offers every build tool. A click its rights refuse says that the host has not let it
+  build yet, or that only the host can do that (C3a-2), at most once every 1.5 seconds. Two tools add
+  their own feedback to it: Buy Land's refused second click also says that the land cannot be bought,
+  with a second error sound, and a refused queue line still plays the queue-join sound. Opening the loans window refreshes its offers by command, which a guest is refused,
   and the winning screen's Resume is the host's alone, so a guest's winning screen stays until the
   host dismisses it.

@@ -323,4 +323,101 @@ public partial class CoopSessionTests
 		Assert.AreEqual( 1, view.Says( OpenTpwText.CoopNotGranted ) );
 		CatchUpAndCompare( host, guest );
 	}
+
+	/// <summary>The guest's HUD arms the build tool with the fixture's ride, as the buy menu arms it.</summary>
+	private static ObjectCatalogEntry ArmRide( Park guest, View view )
+	{
+		guest.Enter();
+		var entry = guest.One.Entry;
+		var item = new BuildItem( "ride", entry.InfoId, BuildCategory.Rides, -1, 0, null, Array.Empty<string>(), Entry: entry );
+		typeof( ParkHud ).GetField( "pendingItem", BindingFlags.Instance | BindingFlags.NonPublic )!.SetValue( view.Hud, item );
+		guest.Level.BuildEntry = entry;
+		guest.Level.SetBuildRotation( 90 );
+		return entry;
+	}
+
+	[TestMethod]
+	public void AGuestsQueueToolLaysSuccessiveNativeSegmentsThroughTheHost()
+	{
+		var (host, guest, _, _) = Shared();
+		// the same synthetic queue on both parks before their first frame, as the queue removal tests build it
+		foreach ( var park in new[] { host, guest } )
+		{
+			park.Enter();
+			ConfigureQueue( park.Level.Guests!.Grid, park.One, 10, 5 );
+		}
+		var view = ViewOf( guest );
+		Rounds( 20, host, guest );
+		Grant( host, guest, view );
+		guest.Enter();
+		var ride = guest.One.Visitors;
+		Assert.IsTrue( guest.Level.EnterQueueTool( ride ) );
+		var tool = guest.Level.CellTool;
+		Assert.AreEqual( (10, 2), tool.Start, "the tool starts at the queue's back cell" );
+		Assert.IsNotNull( guest.Level.ClickCellTool( (8, 2) )?.Waiting );
+		RoundsUntil( () => tool.Waiting == null, host, guest, view, "the first segment came back" );
+		Assert.AreEqual( (8, 2), tool.Start );
+		Assert.IsNotNull( tool.LastCommit?.QueueReceipt, "a native segment: the queue writer keeps its receipt for the next one" );
+		Assert.IsNotNull( guest.Level.ClickCellTool( (8, 4) )?.Waiting );
+		RoundsUntil( () => tool.Waiting == null, host, guest, view, "the second segment came back" );
+		Assert.AreEqual( (8, 4), tool.Start );
+		var seat = guest.Level.Commands.Player;
+		var commands = host.Level.Commands.Log.Where( entry => entry.Command.Player == seat ).Select( entry => entry.Command ).ToArray();
+		CollectionAssert.AreEqual( new[] { ParkCommandKind.QueueSegment, ParkCommandKind.QueueSegment }, commands.Select( command => command.Kind ).ToArray(),
+			"both segments native, the second from the first one's state" );
+		Assert.AreEqual( QueueState( host.One.Visitors ), QueueState( ride ) );
+		Assert.IsTrue( ride.QueueCells.Contains( (8, 4) ) );
+		CatchUpAndCompare( host, guest );
+	}
+
+	[TestMethod]
+	public void AGuestsPlacementRemovedBeforeItsOutcomeCameBackStillFinishesItsTool()
+	{
+		var (host, guest, _, _) = Shared();
+		var view = ViewOf( guest );
+		Rounds( 20, host, guest );
+		Grant( host, guest, view );
+		ArmRide( guest, view );
+		guest.Level.ClickBuildTool( 20, 12 );
+		var request = guest.Level.WaitingPlacement!.Request;
+		// the host takes the placement and removes it again before the guest's HUD takes the outcome
+		for ( var round = 0; round < 600 && host.Level.Objects.FindAt( 20, 12 ) == null; round++ )
+		{
+			clock += 1 / 60.0;
+			host.Frame( 1 / 60.0 );
+		}
+		Assert.IsTrue( host.Issue( new RemoveAtCommand( 20, 12 ) ).Accepted );
+		for ( var round = 0; round < 600 && (request.IsOpen || guest.Level.Objects.FindAt( 20, 12 ) != null || guest.Level.TickCount < host.Level.TickCount); round++ )
+		{
+			clock += 1 / 60.0;
+			host.Frame( 1 / 60.0 );
+			guest.Frame( 1 / 60.0 );
+		}
+		Assert.IsTrue( request.Accepted, "the placement applied at its record" );
+		Assert.IsNull( guest.Level.Objects.FindAt( 20, 12 ), "and the host's removal after it" );
+		Assert.IsNotNull( guest.Level.WaitingPlacement, "the HUD has not taken the outcome yet" );
+		view.Update();
+		Assert.IsNull( guest.Level.WaitingPlacement );
+		Assert.IsNull( guest.Level.BuildEntry, "a click without Ctrl ends the build tool" );
+		Assert.AreEqual( CellToolMode.None, guest.Level.CellTool.Mode, "and no tool follows the removed ride" );
+		CatchUpAndCompare( host, guest );
+	}
+
+	[TestMethod]
+	public void TheSessionsEndEndsTheWaits()
+	{
+		var (host, guest, _, _) = Shared();
+		var view = ViewOf( guest );
+		Rounds( 20, host, guest );
+		Grant( host, guest, view );
+		var tool = StartPath( guest );
+		Assert.IsNotNull( guest.Level.ClickCellTool( (12, 20) )?.Waiting );
+		guest.Enter();
+		guest.Session!.End( "The guest left." );
+		Assert.IsNull( tool.Waiting );
+		Assert.IsFalse( tool.IsActive, "what became of the line is not known here: its tool ends" );
+		Assert.IsNull( guest.Level.Commands.Submit, "the park sends no requests now" );
+		view.Update();
+		Assert.IsFalse( tool.IsActive );
+	}
 }

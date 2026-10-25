@@ -461,6 +461,8 @@ internal sealed class CoopSession : IDisposable
 		{
 			level.Commands.SessionRefused -= OnRefused;
 			level.Commands.Submit = null;
+			// [EXT:online-coop-commands] the requests end with the session: a tool that waits for one waits no more (C3a-2)
+			level.EndGuestWaits();
 		}
 		if ( HostStream != null )
 		{

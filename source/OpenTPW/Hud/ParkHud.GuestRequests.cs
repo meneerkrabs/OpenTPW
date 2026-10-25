@@ -70,13 +70,13 @@ public sealed partial class ParkHud
 	}
 
 	/// <summary>
-	/// The guest's placement comes back: accepted, the placement finishes as the host's does (the Built message, the ride's queue tool, the tool kept for exactly Ctrl at the click);
-	/// refused, its reason is said and the tool stays armed with its item.
+	/// The guest's placement comes back: accepted, the placement finishes as the host's does (the Built message, the ride's queue tool, the tool kept for exactly Ctrl at the click),
+	/// also when a later record in the same frames removed the object again (then no tool follows it); refused, its reason is said and the tool stays armed with its item.
 	/// </summary>
 	private void CompletePlacement( Level.PlacementRequest placement )
 	{
 		level.EndWaiting( placement.Request );
-		if ( placement.Request is { Accepted: true, Result: { } result } && result.As<OriginalObject>() is { IsDeleted: false } item )
+		if ( placement.Request is { Accepted: true, Result: { } result } && result.As<OriginalObject>() is { } item )
 		{
 			FinishPlacement( item, placement.KeepTool );
 			return;

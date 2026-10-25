@@ -122,6 +122,7 @@
 		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/CoopJoinSessionTests.Attempt.cs" />
 		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/CoopJoinSessionTests.Lobby.cs" />
 		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/CoopJoinSessionTests.Figures.cs" />
+		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/CoopJoinSessionTests.GuestCommands.cs" />
 		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/CoopSnapshotDownloadTests.cs" />
 		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/BrowserPinsExclusionTests.cs" />
 		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/StrictCommandsGameTests.cs" />

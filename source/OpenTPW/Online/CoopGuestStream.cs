@@ -19,7 +19,7 @@ internal sealed class CoopGuestStream : ILevelSessionStream, IDisposable
 	/// <summary>The share of the ticks beyond its aim a frame runs extra, so a guest catches up smoothly instead of in one jump.</summary>
 	public const double CatchUpShare = 0.25;
 
-	private readonly record struct Expected( long Number, CoopRecordFlags Flags );
+	private readonly record struct Expected( long Number, CoopRecordFlags Flags, CoopRecordOrigin? Origin );
 
 	private readonly Level level;
 	private readonly ICoopStreamTransport transport;
@@ -33,6 +33,7 @@ internal sealed class CoopGuestStream : ILevelSessionStream, IDisposable
 	private readonly ParkCommandInTickRule previousInTick;
 	private readonly IParkCommandRights? previousRights;
 	private readonly int previousPlayer;
+	private readonly bool previousFollows;
 	private long heldBytes;
 	private ulong nextFrame;
 	private long horizon;
@@ -73,10 +74,14 @@ internal sealed class CoopGuestStream : ILevelSessionStream, IDisposable
 		previousInTick = commands.InTick;
 		previousRights = commands.Rights;
 		previousPlayer = commands.Player;
+		previousFollows = commands.FollowsStream;
 		commands.SessionRules = true;
 		commands.InTick = ParkCommandInTickRule.Drop;
-		commands.Rights ??= CoopHostOnlyRights.Instance;
-		// the guest's own issues carry its slot, so the session's rights refuse them before they run: its log is the host's stream
+		// [EXT:online-coop-permissions] the session's rights, whatever rights the park had: every peer asks the same ones
+		commands.Rights = new CoopBuildRights( level );
+		// [EXT:online-coop-commands] the guest's park takes the host's stream only: its own issues never run here, so its log is the host's stream (a granted guest's building goes to the host)
+		commands.FollowsStream = true;
+		// the guest's own issues carry its slot, as the commands it sends the host do
 		var slot = session.Members.FirstOrDefault( member => member.Id == session.You )?.Slot ?? 1;
 		commands.Player = Math.Max( 1, (int)slot );
 		commands.Applied += OnApplied;
@@ -98,6 +103,12 @@ internal sealed class CoopGuestStream : ILevelSessionStream, IDisposable
 
 	/// <summary>Raised once when the guest finds a desync.</summary>
 	public event Action<CoopDesyncReport>? Desynced;
+
+	/// <summary>
+	/// [EXT:online-coop-commands] Raised for each stream record that applied here as on the host (its flags, and its digest when the host sent one, agree): its number, its origin when a
+	/// guest's request made it, and what it did here (<see cref="CoopGuestCommands.RecordApplied"/>).
+	/// </summary>
+	public event Action<long, CoopRecordOrigin?, ParkCommandResult>? RecordApplied;
 
 	/// <summary>Whether the guest's clock stands still (a desync, the host no longer holds the frames it needs, or a newer capture is on its way: a resync, C2c).</summary>
 	public bool Stopped => Desync != null || tooFarBack || silenced;
@@ -308,7 +319,7 @@ internal sealed class CoopGuestStream : ILevelSessionStream, IDisposable
 					Fail( CoopDesyncKind.Protocol, $"a record that does not decode ({error.Message})" );
 					return;
 				}
-				expected[command] = new Expected( frame.First + index, record.Flags );
+				expected[command] = new Expected( frame.First + index, record.Flags, record.Origin );
 				level.Commands.Schedule( command, record.Boundary );
 			}
 			nextStream = frame.First + frame.Records.Count;
@@ -397,12 +408,17 @@ internal sealed class CoopGuestStream : ILevelSessionStream, IDisposable
 			Fail( CoopDesyncKind.Flags, $"record {want.Number} ({entry.Command.Kind}) was {Outcome( want.Flags )} on the host and {Outcome( flags )} here", entry.Tick );
 			return;
 		}
-		if ( !recordCheckpoints.Remove( want.Number, out var digest ) )
-			return;
-		Checks++;
-		RecordChecks++;
-		if ( CoopDigest.Compute( level ) is var mine && mine != digest )
-			Fail( CoopDesyncKind.Digest, $"the digest after record {want.Number} differs", entry.Tick, digest, mine );
+		if ( recordCheckpoints.Remove( want.Number, out var digest ) )
+		{
+			Checks++;
+			RecordChecks++;
+			if ( CoopDigest.Compute( level ) is var mine && mine != digest )
+			{
+				Fail( CoopDesyncKind.Digest, $"the digest after record {want.Number} differs", entry.Tick, digest, mine );
+				return;
+			}
+		}
+		RecordApplied?.Invoke( want.Number, want.Origin, result );
 	}
 
 	private static string Outcome( CoopRecordFlags flags ) => flags switch
@@ -451,6 +467,9 @@ internal sealed class CoopGuestStream : ILevelSessionStream, IDisposable
 		commands.InTick = previousInTick;
 		commands.Rights = previousRights;
 		commands.Player = previousPlayer;
+		commands.FollowsStream = previousFollows;
+		// [EXT:online-coop-permissions] a grant is its session's: the park left after the session (or replaced by a resync's) keeps none
+		level.ClearBuildGrants();
 		// the park's scripts read the machine's own clock again
 		if ( level.Objects?.ScriptWorld is { } scripts )
 			scripts.SessionTime = null;

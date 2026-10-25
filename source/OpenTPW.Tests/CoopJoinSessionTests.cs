@@ -292,7 +292,8 @@ public partial class CoopJoinSessionTests
 		var (rules, inTick, rights) = (commands.SessionRules, commands.InTick, commands.Rights);
 		commands.SessionRules = true;
 		commands.InTick = ParkCommandInTickRule.Drop;
-		commands.Rights = CoopHostOnlyRights.Instance;
+		// the session's rights, as the host's and every guest's park asks them: a granted guest's records replay as they applied
+		commands.Rights = new CoopBuildRights( level );
 		var records = host.Level!.Commands.Log.Skip( hostLogStart ).Take( (int)payload.Records ).ToList();
 		Assert.AreEqual( payload.Records, records.Count, "the host's log holds every record up to the cut" );
 		ParkCommandReplay.Run( commands, records, () => level.Commands.NextTick, () => level.RunTicks( 1 ), payload.Ticks );

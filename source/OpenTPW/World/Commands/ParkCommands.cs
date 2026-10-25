@@ -9,6 +9,12 @@ namespace OpenTPW;
 public interface IParkCommandRights
 {
 	bool Allows( int player, ParkCommandKind kind );
+
+	/// <summary>
+	/// [EXT:online-coop-permissions] Whether <paramref name="player"/> may issue <paramref name="command"/>, its fields and target included (a guest's allowlist names variants of
+	/// a kind, C3): by default the kind's answer.
+	/// </summary>
+	bool Allows( int player, ParkCommand command ) => Allows( player, command.Kind );
 }
 
 /// <summary>What became of one command: accepted (it ran) or rejected (nothing changed), with the reason and the value the edit returns to its issuer.</summary>
@@ -66,6 +72,8 @@ public sealed class ParkCommands
 	private bool inTick;
 	/// <summary>The held commands of a tick are being applied (<see cref="ApplyDue"/>).</summary>
 	private bool applyingDue;
+	/// <summary>[EXT:online-coop-commands] A guest's command is being applied on the host (<see cref="ApplyRemote"/>).</summary>
+	private bool applyingRemote;
 
 	/// <param name="nextTick">The index of the next simulation tick (the fixed-step clock's tick count).</param>
 	/// <param name="execute">Runs one well-formed command on the park; a rejection must leave the park unchanged.</param>
@@ -93,6 +101,13 @@ public sealed class ParkCommands
 	/// strict run included): its error is in its result, which the stream compares.
 	/// </summary>
 	public bool SessionRules { get; set; }
+
+	/// <summary>
+	/// [EXT:online-coop-commands] The park follows a host's stream (a co-op guest's, docs/COOP.md "Building by every player"): only the stream's held commands apply here. A command of this
+	/// machine is refused before it runs, neither logged nor raised, as the rights refuse it, whatever they grant the guest's seat: a granted guest's building goes to the host as a request
+	/// (<see cref="CoopGuestCommands"/>) and comes back in the stream.
+	/// </summary>
+	public bool FollowsStream { get; set; }
 
 	/// <summary>The tick the next command applies before.</summary>
 	public long NextTick => nextTick();
@@ -147,8 +162,8 @@ public sealed class ParkCommands
 		if ( !command.IsWellFormed )
 			return ParkCommandResult.Rejected( $"The {command.Kind} command has fields out of range." );
 		// [EXT:online-coop-lockstep] in a session a command of this machine the rights refuse leaves no trace: a guest's own issues stay out of its log, which is the host's stream. A held
-		// command (the host's stream) is refused as usual and logged, so the stream sees that it was refused here
-		if ( SessionRules && !applyingDue && command.Player >= 0 && Rights is { } rights && !rights.Allows( command.Player, command.Kind ) )
+		// command (the host's stream) is refused as usual and logged, so the stream sees that it was refused here. A guest's park takes none of its own, granted or not (C3)
+		if ( SessionRules && !applyingDue && !applyingRemote && command.Player >= 0 && (FollowsStream || Rights is { } rights && !rights.Allows( command.Player, command )) )
 		{
 			SessionRefused?.Invoke( command );
 			return ParkCommandResult.Rejected( $"Player {command.Player} may not {command.Kind}." );
@@ -166,13 +181,34 @@ public sealed class ParkCommands
 			// peer, which throws the same way at the same place, stays in step instead of losing the command; the tests and a strict run rethrow it once it is logged
 			Common.GlobalNamespace.Log?.Error( $"The {command.Kind} command threw: {error}" );
 			result = new ParkCommandResult( false, $"The {command.Kind} command failed: {error.GetType().Name}: {error.Message}" ) { Error = error };
-			// a held command in a session never rethrows: its error is in its result, which the stream compares with the host's
-			if ( Strict && !(SessionRules && applyingDue) )
+			// a held command in a session never rethrows, nor a guest's on the host: its error is in its result, which the stream compares with the host's
+			if ( Strict && !(SessionRules && (applyingDue || applyingRemote)) )
 				thrown = ExceptionDispatchInfo.Capture( error );
 		}
 		Record( new ParkCommandLogEntry( tick, command ), result );
 		thrown?.Throw();
 		return result;
+	}
+
+	/// <summary>
+	/// [EXT:online-coop-commands] Applies a guest's command on the host now, between two ticks (docs/COOP.md, "Building by every player"): its player is the guest's seat, which the
+	/// host set from the server's word of the sender. Unlike this machine's own command it is refused by the rights as a held one is, logged and raised as refused, so the stream
+	/// carries the refusal to every peer and its issuer; its error never rethrows (a strict run included).
+	/// </summary>
+	public ParkCommandResult ApplyRemote( ParkCommand command )
+	{
+		ArgumentNullException.ThrowIfNull( command );
+		if ( depth > 0 || applyingRemote )
+			throw new InvalidOperationException( $"A guest's {command.Kind} command was applied inside another command." );
+		applyingRemote = true;
+		try
+		{
+			return Apply( command );
+		}
+		finally
+		{
+			applyingRemote = false;
+		}
 	}
 
 	/// <summary>
@@ -330,7 +366,7 @@ public sealed class ParkCommands
 		if ( refusesEdits() )
 			return ParkCommandResult.Rejected( "Read-only visit: the park takes no edits." );
 		// the rights are asked of the outermost command only: what runs inside it is that command's, which they allowed
-		if ( depth == 0 && Rights is { } rights && !rights.Allows( command.Player, command.Kind ) )
+		if ( depth == 0 && Rights is { } rights && !rights.Allows( command.Player, command ) )
 			return ParkCommandResult.Rejected( $"Player {command.Player} may not {command.Kind}." );
 		if ( depth == 0 )
 			running = command;

@@ -164,18 +164,17 @@ public class PoolsLevelTests
 	}
 
 	[TestMethod]
-	public void SharingIsRefusedForAParkWithPoolsAndOnlyThen()
+	public void AParkWithPoolsIsPublishableAndItsPackageRecordsThePoolsExtensionOnlyThen()
 	{
 		With( true, () =>
 		{
-			Assert.IsNull( ParkSharing.ModsRefusal( level ), "the extension alone blocks nothing" );
+			Assert.IsNull( ParkSharing.ExtensionUses( level )?.FirstOrDefault( use => use.Id == "opentpw.pools" ), "the extension alone is not recorded: the park does not use it" );
 			level.PoolBuilder!.Paint( 14, 14 );
-			var refusal = ParkSharing.ModsRefusal( level );
-			StringAssert.Contains( refusal, "opentpw.pools 1.0.0" );
-			var exception = Assert.ThrowsException<InvalidOperationException>( () => ParkSharing.ExportLevel( level, "Park", "Me" ) );
-			StringAssert.Contains( exception.Message, "cannot be exported" );
+			Assert.IsNull( ParkSharing.ModsRefusal( level ), "an official extension is recorded in the package, not refused" );
+			var use = ParkSharing.ExtensionUses( level )!.Single( item => item.Id == "opentpw.pools" );
+			Assert.AreEqual( "1.0.0", use.Version );
 			level.PoolBuilder.Erase( 14, 14 );
-			Assert.IsNull( ParkSharing.ModsRefusal( level ), "erased again: shareable again" );
+			Assert.IsNull( ParkSharing.ExtensionUses( level )?.FirstOrDefault( item => item.Id == "opentpw.pools" ), "erased again: not recorded again" );
 			return 0;
 		} );
 	}

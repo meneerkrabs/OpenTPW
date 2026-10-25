@@ -182,4 +182,103 @@ public class NativeWidgetTests
 		screen.Update( context, new UiInput( rect.Center, false, false, false, false, UiKeys.None, -1 ) );
 		Assert.AreEqual( 3, list.RowAt( context.Canvas, thirdRow ), "The wheel scrolled the view by one row." );
 	}
+
+	/// <summary>A list with column headers (Find Parks, Other Parks, the outbox) draws its headers in the first row's place and its rows below them.</summary>
+	private static UiScrollList ColumnList( List<string> rows, Func<int, int, bool>? cellClicked = null ) => new()
+	{
+		Id = "columns", Bounds = new UiRect( 100, 100, 800, 448 ), RowHeight = 40, Margin = 24, Rows = () => rows,
+		Columns = new (float Offset, Func<string> Text)[] { (24, () => "Name"), (400, () => "Mark") },
+		CellClicked = cellClicked,
+	};
+
+	[TestMethod]
+	public void AListWithColumnHeadersFindsTheRowsDrawnBelowTheHeaders()
+	{
+		var context = Context();
+		var list = ColumnList( new List<string> { "a\t1", "b\t2", "c\t3" } );
+		Assert.AreEqual( 9, list.VisibleRows, "the header row takes one of the ten rows' places" );
+		var rect = list.ScreenRect( context.Canvas );
+		var scale = rect.Height / list.Bounds.Height;
+		NVector2 At( float x, float rows ) => new( rect.X + x * scale, rect.Y + (24 + 40 * rows) * scale );
+		Assert.AreEqual( -1, list.RowAt( context.Canvas, At( 50, 0.5f ) ), "the header row is no row" );
+		Assert.AreEqual( 0, list.RowAt( context.Canvas, At( 50, 1.5f ) ), "the first row is drawn below the headers" );
+		Assert.AreEqual( 2, list.RowAt( context.Canvas, At( 50, 3.5f ) ) );
+		Assert.AreEqual( -1, list.RowAt( context.Canvas, At( 50, 4.5f ) ), "below the last row" );
+		Assert.AreEqual( -1, list.ColumnAt( context.Canvas, At( 10, 1.5f ) ), "left of the first column" );
+		Assert.AreEqual( 0, list.ColumnAt( context.Canvas, At( 390, 1.5f ) ) );
+		Assert.AreEqual( 1, list.ColumnAt( context.Canvas, At( 410, 1.5f ) ) );
+		Assert.AreEqual( -1, new UiScrollList { Bounds = list.Bounds }.ColumnAt( context.Canvas, At( 410, 1.5f ) ), "a list without columns has none" );
+	}
+
+	[TestMethod]
+	public void AListWithoutAHeaderRowStartsItsRowsAtTheTopAndEndsItsColumnsAtItsEdge()
+	{
+		var context = Context();
+		var list = ColumnList( new List<string> { "a\t1", "b\t2" } );
+		list.HeaderRow = false;
+		Assert.AreEqual( 10, list.VisibleRows, "the header buttons stand outside such a list" );
+		var rect = list.ScreenRect( context.Canvas );
+		var scale = rect.Height / list.Bounds.Height;
+		NVector2 At( float x, float rows ) => new( rect.X + x * scale, rect.Y + (24 + 40 * rows) * scale );
+		Assert.AreEqual( 0, list.RowAt( context.Canvas, At( 50, 0.5f ) ), "the first row is the top one" );
+		Assert.AreEqual( 1, list.RowAt( context.Canvas, At( 50, 1.5f ) ) );
+		Assert.AreEqual( 1, list.ColumnAt( context.Canvas, At( 790, 0.5f ) ) );
+		Assert.AreEqual( -1, list.ColumnAt( context.Canvas, At( 800, 0.5f ) ), "right of the list is no column (the outbox's slider strip)" );
+	}
+
+	[TestMethod]
+	public void ACellThatActsLeavesTheRowDefaultOutAndOtherCellsSelectTheRow()
+	{
+		var context = Context();
+		var screen = new UiScreen( "cells" );
+		var clicked = new List<(int Row, int Column)>();
+		var list = screen.Add( ColumnList( new List<string> { "a\t1", "b\t2" }, ( row, column ) => { clicked.Add( (row, column) ); return column == 1; } ) );
+		var rect = list.ScreenRect( context.Canvas );
+		var scale = rect.Height / list.Bounds.Height;
+		NVector2 Cell( int row, float x ) => new( rect.X + x * scale, rect.Y + (24 + 40 * (row + 1.5f)) * scale );
+		screen.Update( context, UiInput.Click( Cell( 1, 500 ) ) );
+		CollectionAssert.AreEqual( new[] { (1, 1) }, clicked );
+		Assert.AreEqual( -1, list.Selected, "a cell that acted leaves the select-and-activate default out" );
+		screen.Update( context, UiInput.Click( Cell( 1, 100 ) ) );
+		CollectionAssert.AreEqual( new[] { (1, 1), (1, 0) }, clicked );
+		Assert.AreEqual( 1, list.Selected, "a cell that did not act leaves the click to the default" );
+		screen.Update( context, new UiInput( Cell( 0, 500 ), false, false, false, true, UiKeys.None ) );
+		Assert.AreEqual( 2, clicked.Count, "a right click is no cell click" );
+	}
+
+	private sealed class DrawProbe : UiElement
+	{
+		public int Draws;
+		public override void Draw( UiContext context, bool focused, bool pressed ) => Draws++;
+	}
+
+	[TestMethod]
+	public void AScreenHiddenWhenCoveredDrawsOnlyWhileItIsOnTop()
+	{
+		var context = Context();
+		var stack = new UiScreenStack();
+		DrawProbe Screen( string name, bool hiddenWhenCovered = false )
+		{
+			var screen = new UiScreen( name ) { HiddenWhenCovered = hiddenWhenCovered };
+			stack.Push( screen );
+			return screen.Add( new DrawProbe { Bounds = new UiRect( 0, 0, 10, 10 ) } );
+		}
+		int BackdropVertices()
+		{
+			context.Batch.Clear();
+			stack.Draw( context, false );
+			return context.Batch.Draws.Sum( draw => draw.Vertices.Count( vertex => vertex.Color == UiColors.Backdrop ) );
+		}
+		var below = Screen( "below" );
+		var menu = Screen( "menu", hiddenWhenCovered: true );
+		var oneBackdrop = BackdropVertices();
+		Assert.IsTrue( oneBackdrop > 0, "the menu dims the screen below it" );
+		Assert.AreEqual( (1, 1), (below.Draws, menu.Draws), "on top the menu draws" );
+		var window = Screen( "window" );
+		Assert.AreEqual( oneBackdrop, BackdropVertices(), "the window dims once: the menu it covers adds no backdrop of its own" );
+		Assert.AreEqual( (2, 1, 1), (below.Draws, menu.Draws, window.Draws), "a window over the menu takes its place; the screens below still draw" );
+		stack.Pop();
+		BackdropVertices();
+		Assert.AreEqual( (3, 2), (below.Draws, menu.Draws), "back on top the menu draws again" );
+	}
 }

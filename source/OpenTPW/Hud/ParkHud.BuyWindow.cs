@@ -23,7 +23,7 @@ public sealed partial class ParkHud
 	// [EXT:list-row-pitch] the pitch is a fixed 41.4 units (the video's measure; the original's 640×480 pitch is 41), a design choice: the original's pitch follows the font and the screen height (34 to 42 units by the formula above), which OpenTPW's resolution-independent output sizes cannot copy; the wheel steps one row
 	public const float BuyRowHeight = 41.4f;
 	/// <summary>The side of the i_boxtick model in canvas units (its frames span 664..715 by 51..102).</summary>
-	private const float TickBoxSize = 51f;
+	internal const float TickBoxSize = 51f;
 	// [BIN:TPW-EXE:0x665a44 buy list sort] list 504 has attribute 0x91 including 0x10 (header sort): the same column toggles its direction, a new column starts ascending, and the sort word [0x755140] starts at 1 (column 0, ascending; 0x4ad057 → 0x6659af) and is written back on a change (0x4ac9dd), so the order survives reopening the window for the session (ListSortMemory); the table only gives column header buttons 16/17 without a model
 
 	// [DATA:Mac buy table 0x4cd94:507,506,509,508] category buttons with their help ids (command_17 140, 142, 141, 143)

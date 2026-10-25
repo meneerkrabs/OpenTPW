@@ -39,7 +39,7 @@ contents follow the original online screens mapped from the Mac binary in
 | Screen | Original counterpart (UI-MAP) | Original art |
 | --- | --- | --- |
 | Online World | The online globe (Mac UI table `data:0x523f0`, globe code in the Windows v2.0 `tp.exe`): see below | `worldlob`, `f_wlobbg`, `b_findprk`, `b_bck2lob`, `b_zoom`, `b_lobup/left/right/down`, `i_sat`; `lobby.wad/globe` |
-| OpenTPW online (menu) | (OpenTPW) login, news, postcards, chat, import, account, behind a button on the globe | `w_big`, `i_mail` (authored place) |
+| OpenTPW online (menu) | (OpenTPW) login, news, postcards, chat, import, account, behind a button on the globe; a window opened from it takes its place, so the menu's buttons and status line do not show around that window (`[EXT:ONLINE-UI]`) | `w_big`, `i_mail` (authored place) |
 | News | Online news panel, titled "News from ThemeParkWorld.com" (UITEXT 266) with Game News and System News tabs | `w_big` |
 | Online Login | tp.exe's login window (table `0x7585a8`, built by `0x4bb070`, handler `0x4bb030`, UITEXT 0xec-0xee; the twin of the dial-up details dialog `0x7583e8`): name and password, 16 characters each, labels inside the fields, the bare check (`b_okay`) and cross (`b_exit`) buttons; OpenTPW's server address, authenticator code, Register and Forgot password sit in a framed panel of their own under the window, which also holds the status line (`[EXT:ONLINE-UI]`, `[EXT:own-window-sizes]`) | `wdialogw`, `!frame`, `b_okay`, `b_exit`, `w_med`, `f_text1` |
 | Find Parks | Find Parks in its original composition (Mac table `data:0x50f84`): six columns Name/Theme/City/Position/Visits/Votes, search by player name | `list_findprks`, `b_vote` |
@@ -47,7 +47,7 @@ contents follow the original online screens mapped from the Mac binary in
 | Other Parks | The city's outside-the-top-10 chart (Mac table `data:0x5137e`, "Other Parks In …", UITEXT 446) | `w_big`, `list_findprks` |
 | Publish Park | tp.exe's publish window (table `0x7595b0`, built by `0x4c4670`, handled by `0x4c4480`; Mac table `data:0x514de`): the name field (15 characters, starts with the park's theme name), the description field (126 characters, starts with UITEXT 0xdc), the bare check (`b_okay`) and cross (`b_exit`) buttons; the check publishes and closes (logged out it opens the login dialog); OpenTPW adds the website opt-in (off by default), the export button and a status column inside the window (`[EXT:ONLINE-UI]`) | `window2`, `!frame`, `b_okay`, `b_exit` |
 | Send Postcard | tp.exe's postcard window (table `0x7540d8`, `0x4a8c00`/`0x4a7d70`): photo frame, message, title and recipients fields with their prompts (shown while a field is empty) and lengths (the title at most the card format's 64 characters), clear, tick (unedited title and message take the defaults UITEXT 215/216; no recipient shows 213) and X; the preview and address book are disabled (UI-042); recipients are player names and e-mail addresses split at `;`, `,` and newlines, not spaces (`[EXT:postcard-player-names]`) | `window4`, `!frame`, `b_clear`, `b_okay`, `b_exit` |
-| Unsent Postcards | Unsent Postcards (outbox) screen in its original composition (Mac table `data:0x508bc`): Title/Date/Send/Delete columns and the mark buttons | `list_outbox`, `b_sendall` |
+| Unsent Postcards | tp.exe's outbox window (table `0x758878`, built by `0x4bc710`, handled by `0x4bbc20`): the selected card's picture frame and addresses, the bulk buttons mark all for sending, mark all for deletion and unmark all, the list with its header buttons Title/Date/Send/Delete (UITEXT 309-312) and its slider, and the tick. A row shows the card's title, its date (UITEXT 447, the save list's format) and an `i_boxtick` box in the Send and Delete columns: the tick for a set mark, the empty box otherwise. Every card starts marked for sending; a click on a row's Send or Delete cell toggles that mark and clears the other. The tick deletes the cards marked for deletion, sends the ones marked for sending and closes the window; Escape closes it without either. Logged out, the tick opens the login dialog over the window where the original checked the account's settings (`[EXT:ONLINE-UI]`). Not ported yet: the card's picture, the headers' sort and the address text's font and slider | `window4`, `!frame`, `list_emailaddr`, `b_okall`, `b_delall`, `b_nuall`, `list_outbox`, `i_boxtick`, `b_up`, `b_down`, `b_scroller`, `b_okay` |
 | Inbox | (OpenTPW) | `list_outbox` |
 | Chat | The original chat overlay (tp.exe table `0x758ae8`): chat frame, people list with its two tabs and slider, postcard, vote and earmuffs buttons, message list with its slider, text entry, and the name popups (tables `0x758cd8`, `0x758e18`) — over the chat park view | `chat` (`f_chat`), `b_speeps`, `b_sbuddi`, `b_chtpcard`, `b_vote`, `b_muff`, `!f_plain`, `b_bmark`, `b_gopeep`, `b_ignore`, `b_unbuddi`, `b_peeploc`, `b_page` |
 | Import file | (OpenTPW) | `w_med` |
@@ -223,7 +223,8 @@ other tokens use the existing player-name rules. The shared package/client/serve
 validator rejects malformed or duplicate recipients and caps a card at ten. The
 composer uses the original localized UITEXT 213 refusal and preserves the draft.
 
-Composition is still offline: the tick saves to Outbox. **Send All** requires login.
+Composition is still offline: the tick saves to Outbox. Sending the cards marked in the
+Unsent Postcards window (its tick) requires login.
 Player names go to that server's Inbox; addresses go through its already configured
 `IEmailSender` / Resend transport, using `EmailFrom` and `EmailReplyTo`. The e-mail
 contains the title, sender's player name and message, plus `postcard.png` when the
@@ -233,7 +234,7 @@ Unknown players are reported as player recipients, not unknown e-mail recipients
 A server without mail configuration continues player delivery and reports that
 addresses cannot be delivered. No client-side SMTP or new mail credentials are used.
 
-Partial responses list only confirmed recipients. Send All records that subset in
+Partial responses list only confirmed recipients. A send records that subset in
 Sent and atomically rewrites the Outbox card with the unconfirmed recipients, so a
 failed address, unknown player or full inbox is not silently discarded. A failed
 request leaves its local card in Outbox. Successful delivery here means an inbox
@@ -317,6 +318,30 @@ writes it from the live park and the visit recomputes it from what it built, so
 OpenTPW 0.7 (the original level's imported path/object records and the prototype
 Totem) still import unchanged; they carry no built layout, so a visit of one draws the
 shipped level import and says so.
+
+### Official extensions in a package (format version 3)
+
+`[EXT:mods]` A park that uses OpenTPW's own extensions (docs/MODS.md, "Parks that use extensions") is published like any other. The package manifest lists the **content** extensions it uses (`opentpw.pools`,
+`opentpw.umbrellas`, `opentpw.winter`, `opentpw.evening`) as an optional `extensions` member: `[{ "id": "opentpw.winter", "version": "1.0.0" }, ...]`, at most 32 ids that start with `opentpw.`, each once, with
+a plain `major.minor.patch` version. The extensions' files are never in a package; every build ships them. Rule extensions and the cheats extension are not recorded (a visit does not play the park), and community
+mods are not recorded and still refuse an export or a publish.
+
+- **Compatibility.** A package of a park that uses no content extension is written exactly as before: `formatVersion` 2 and no `extensions` member, so older readers and older servers handle it unchanged. A package
+  with the member is `formatVersion` 3 (`ParkPackage.CurrentFormatVersion`, `FirstExtensionsFormatVersion`). **An older build cannot read a version 3 package:** its strict manifest reader rejects unknown members
+  before it looks at the version, so an older client visiting such a park, and an older server receiving it, report a malformed manifest ('extensions' could not be mapped), not a version message. A build with this
+  change reads `formatVersion` first and refuses every later version with "Park package version N is not supported (this build reads versions 1 to 3)", so a later bump gives a clear message. The reader refuses
+  `extensions` in a version 1 or 2 manifest, an empty list, an id that is not an `opentpw.` id, a version that is not `major.minor.patch`, and a duplicate. The server protocol version does not change; a server that has
+  not been updated refuses the package with a 400, which the client turns into "This server must be updated before it accepts parks that use OpenTPW extensions". Servers are updated before clients publish such parks.
+- **A visit asks first.** The visit of a park whose content extensions are off here asks "Turn Winter on and visit the park?" (or says why it cannot, or, for `--visit-park`, refuses with the option to
+  switch it on); a visit never runs without them. A park file opened with Import file asks the same when its Visit button is used; the description under the file name lists the extensions it uses.
+- **The online menu says why a line is grey.** Publish park is disabled with no park open, in a park you only visit, in a shared park's guest copy and while a community mod is active; hovering the greyed line
+  shows the reason in the help box (popup help on), and the menu's status line names it too while it has nothing else to say, so a keyboard or a gamepad sees it. The pause menu's Publish Park line has the hover help.
+- **The menu's postcard line** sits under the last button (the ten buttons are 100 apart and 96 high, which keeps their label in the menu font) and shows the original's reminder (UITEXT 472, "... go online to
+  send them") only while logged out. Logged in, nothing sends the outbox by itself, so the line says where to send the cards (Unsent postcards).
+- **Status lines** show once, on the screen on top, and only what was reported since that screen opened or came back to the top: a "No search results" of an earlier Find Parks no longer shows in the menu
+  opened afterwards, nor on the globe under it. A screen that closes itself when its work is done (login, two-step setup, account deletion, recovery) leaves its outcome on the screen below. While a request
+  runs, a window's status line shows the progress text the request set (the original's progress messages, such as "Sending mails from outbox, please wait ..." while the outbox sends; `OnlineSession.Progress`),
+  and "..." while it has set none.
 
 A visit applies the published layout read-only and behaves as the original's visit
 evidence shows (docs/reverse/ONLINE-VISIT.md, from the Mac online code, the manual and

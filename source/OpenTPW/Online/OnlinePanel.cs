@@ -11,6 +11,8 @@ internal sealed class OnlinePanel : IDisposable
 	private readonly ChatOverlay overlay;
 	private string server = "", name = "", password = "", code = "", email = "", emailCode = "", parkName = "My park", search = "", importPath = "", chatLine = "";
 	private string recipients = "", title = "", message = "", localStatus = "";
+	/// <summary>The server the park list was last asked of and the session's fetch count then: an empty list is a result once a fetch from that server has finished.</summary>
+	private (OpenTPW.Online.Client.OnlineClient Client, int Fetched)? listedAt;
 	private ParkVisitInfo? inspected;
 
 	public OnlinePanel( Level level, OnlineFolders folders )
@@ -147,7 +149,14 @@ internal sealed class OnlinePanel : IDisposable
 			return;
 		ImGui.InputText( OnlineStrings.Ui( OnlineStrings.SearchName, "Search name" ), ref search, 128 );
 		if ( ImGui.Button( OnlineStrings.Get( OnlineLabel.Refresh ) ) )
+		{
 			session.RefreshParks( search );
+			listedAt = session.Client is { } client ? (client, session.ParksFetched) : null;
+		}
+		// the park list's fetch ends its progress text, as the Find Parks screen shows an empty result as its row: this list says so itself once a fetch from this server
+		// has finished (a failed fetch leaves the count, and its error stands as the status)
+		if ( listedAt is { } at && ReferenceEquals( at.Client, session.Client ) && session.ParksFetched != at.Fetched && session.Parks.Count == 0 )
+			ImGui.TextWrapped( OnlineStrings.Ui( OnlineStrings.NoSearchResults, "No search results" ) );
 		foreach ( var park in session.Parks )
 		{
 			ImGui.PushID( park.Id );
@@ -177,6 +186,8 @@ internal sealed class OnlinePanel : IDisposable
 				GameLanguage.IsSelected ? GameLanguage.Current.Name : GameLanguage.DefaultLanguage );
 			localStatus = OnlineStrings.Get( OnlineLabel.SavedTo ) + session.Folders.Store( session.Folders.Outbox, card );
 		}
+		// the outbox's send ends with no count (tp.exe 0x4bc660), as the Unsent Postcards window shows: here the number of cards still waiting confirms it
+		ImGui.TextWrapped( $"{OnlineStrings.Ui( OnlineStrings.UnsentPostcards, "Unsent postcards" )}: {session.Folders.List( session.Folders.Outbox ).Count( entry => entry.Card != null )}" );
 		if ( session.IsLoggedIn )
 		{
 			if ( ImGui.Button( OnlineStrings.Ui( OnlineStrings.SendingOutbox, "Send outbox" ) ) )

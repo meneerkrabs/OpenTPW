@@ -96,10 +96,12 @@ public class ListOwnerAudioTests
 	private static ParkLoadEntry[] Entries( int count ) => Enumerable.Range( 0, count )
 		.Select( index => new ParkLoadEntry( "synthetic", -1, false, "/synthetic/park" + index + ".json", "Synthetic park " + index ) ).ToArray();
 	private static UiScrollList List( UiScreen screen ) => (UiScrollList)screen.Find( "parks" )!;
+	/// <summary>The middle of a drawn row: a list with column headers draws its rows below the header row.</summary>
 	private static NVector2 RowPoint( UiScrollList list, int row )
 	{
 		var rect = list.ScreenRect( Context().Canvas );
-		return new NVector2( rect.Center.X, rect.Y + (list.Margin + (row - list.FirstRow + 0.5f) * list.RowHeight) * rect.Height / list.Bounds.Height );
+		var headerRows = list.Columns == null ? 0 : 1;
+		return new NVector2( rect.Center.X, rect.Y + (list.Margin + (headerRows + row - list.FirstRow + 0.5f) * list.RowHeight) * rect.Height / list.Bounds.Height );
 	}
 
 	[DataTestMethod]

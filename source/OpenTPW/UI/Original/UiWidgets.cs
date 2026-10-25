@@ -317,6 +317,11 @@ public abstract class UiElement
 	/// <summary>The help read each frame when set (a text that follows the language); otherwise <see cref="Help"/>.</summary>
 	public Func<string?>? HelpSource { get; set; }
 	public string? CurrentHelp => HelpSource?.Invoke() ?? Help;
+	/// <summary>
+	/// [EXT:ONLINE-UI] Whether the element's help shows on hover while it is disabled, which is how a greyed line says why (the online menu's Publish park). A disabled element cannot be focused or clicked, so
+	/// only its help is looked up under the pointer (<see cref="UiScreen.DisabledHelpAt"/>).
+	/// </summary>
+	public bool HelpWhenDisabled { get; set; }
 	public virtual bool Focusable => false;
 	/// <summary>Whether the element keeps a click at <paramref name="point"/> (framebuffer pixels) off the park: anywhere in its box, unless it is shaped.</summary>
 	public virtual bool CoversPoint( UiCanvas canvas, NVector2 point ) => ScreenRect( canvas ).Contains( point );

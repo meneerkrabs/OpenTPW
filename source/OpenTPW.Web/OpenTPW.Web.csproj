@@ -65,6 +65,7 @@
 		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/GltfSceneTests.cs" />
 		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/OnlineIntegrationTests.cs" />
 		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/OnlineServerTests.cs" />
+		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/PublishOfficialExtensionsServerTests.cs" />
 		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/CoopServerTests.cs" />
 		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/CoopShareTests.cs" />
 		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/CoopShareTests.SavedPark.cs" />

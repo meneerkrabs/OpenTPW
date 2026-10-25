@@ -492,7 +492,7 @@ internal sealed partial class GameFlow : IDisposable
 		// Restart Park reloads the restart snapshot in every original park but the read-only visit (the original's pause menu 0x48C150 lists the entry for every game type except the online visit)
 		RestartPark = RestartEligible( level ) ? () => RestartCurrentPark( level ) : null,
 		PublishPark = WhenOnline( stack => CreateOnlineScreens( stack ).ShowPublish() ),
-		PublishRefused = () => ParkSharing.ModsRefusal( level ) != null,
+		PublishRefusal = () => ParkSharing.PublishRefusal( level ),
 		ListSorts = listSorts,
 		OptionsChanged = () => { if ( PersistSettings ) GameOptions.Current.Save( OptionsPath ); },
 		ParkDoorPressed = open => Advisor?.OnParkDoorPressed( open ),
@@ -1244,7 +1244,8 @@ internal sealed partial class GameFlow : IDisposable
 	{
 		Session = Online,
 		Level = () => Level,
-		Visit = visit => QueueProgressLevel( visit.Level, () => StartLevel( visit.Level, original: !visit.IsSandbox, developerPanels: false, visit: visit, overFrames: true ) ),
+		// [EXT:mods] a park that uses official extensions that are off here asks before the visit (ConfirmVisitExtensions)
+		Visit = visit => ConfirmVisitExtensions( visit, () => QueueProgressLevel( visit.Level, () => StartLevel( visit.Level, original: !visit.IsSandbox, developerPanels: false, visit: visit, overFrames: true ) ), stack ),
 		VisitLevel = ( level, prepare ) => QueueProgressLevel( level, () =>
 		{
 			if ( PrepareLevelVisit( prepare ) is { } visit )

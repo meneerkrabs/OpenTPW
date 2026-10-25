@@ -7,6 +7,12 @@ public sealed record ParkInfo( string Name, string Description, string Author, s
 
 public sealed record GameInfo( string Edition, string Language );
 
+/// <summary>
+/// [EXT:mods] One official OpenTPW extension a park uses, as its package records it: the extension's id (<c>opentpw.winter</c>) and the version it was published with. Community mods are never recorded
+/// (a park that uses one cannot be exported or published); the extension's files are never in a package, every build ships them.
+/// </summary>
+public sealed record ExtensionUse( string Id, string Version );
+
 public sealed record BlobInfo( string Format, int Version, int Length, string Sha256 );
 
 public sealed record ImageInfo( int Length, string Sha256, int Width, int Height );
@@ -23,7 +29,9 @@ public sealed record ParkManifest(
 	IReadOnlyList<string> Requires,
 	IReadOnlyList<string> Flags,
 	BlobInfo Payload,
-	ImageInfo? Thumbnail );
+	ImageInfo? Thumbnail,
+	// [EXT:mods] only a package that uses official extensions has the member (and then format version 3), so every other package stays byte-compatible with readers of version 2
+	[property: System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )] IReadOnlyList<ExtensionUse>? Extensions = null );
 
 /// <summary>
 /// [EXT:ONLINE-005] The <c>.tpwpark</c> park package: a bounded ZIP with <c>manifest.json</c>,
@@ -34,8 +42,15 @@ public sealed record ParkPackage( ParkManifest Manifest, byte[] Payload, byte[]?
 {
 	public const string FileExtension = ".tpwpark";
 	public const string FormatName = "opentpw.park";
-	/// <summary>Version 2: the payload may carry the complete built park (payload version 2). Readers still accept version 1.</summary>
-	public const int CurrentFormatVersion = 2;
+	/// <summary>
+	/// Version 2: the payload may carry the complete built park (payload version 2). Readers still accept version 1. Version 3 ([EXT:mods]): the manifest may list the official extensions the park uses
+	/// (<see cref="ParkManifest.Extensions"/>); a package that uses none is still written as version 2, which an older reader accepts.
+	/// </summary>
+	public const int CurrentFormatVersion = 3;
+	/// <summary>The version a package without official extensions is written as.</summary>
+	public const int ExtensionlessFormatVersion = 2;
+	/// <summary>The first version that may list official extensions.</summary>
+	public const int FirstExtensionsFormatVersion = 3;
 	public const int FirstSupportedFormatVersion = 1;
 	public const string ManifestEntry = "manifest.json";
 	public const string PayloadEntry = "payload.bin";
@@ -52,6 +67,7 @@ public sealed record ParkPackage( ParkManifest Manifest, byte[] Payload, byte[]?
 	public const int MaximumDescriptionLength = 512;
 	public const int MaximumRequiredContent = 1024;
 	public const int MaximumFlags = 16;
+	public const int MaximumExtensions = 32;
 
 	/// <summary>Features a reader of this version understands; anything else in <c>requires</c> is rejected.</summary>
 	public static readonly IReadOnlySet<string> SupportedRequirements = new HashSet<string>( StringComparer.Ordinal );
@@ -68,6 +84,8 @@ public sealed record ParkPackage( ParkManifest Manifest, byte[] Payload, byte[]?
 	private static readonly Regex FlagPattern = new( "^[a-z0-9][a-z0-9-]{0,47}$", RegexOptions.CultureInvariant );
 	private static readonly Regex HashPattern = new( "^[0-9a-f]{64}$", RegexOptions.CultureInvariant );
 	private static readonly Regex ContentIdPattern = new( "^[A-Za-z0-9_][A-Za-z0-9_./-]{0,127}$", RegexOptions.CultureInvariant );
+	private static readonly Regex ExtensionIdPattern = new( "^opentpw\\.[a-z0-9][a-z0-9._-]{0,63}$", RegexOptions.CultureInvariant );
+	private static readonly Regex ExtensionVersionPattern = new( "^(0|[1-9][0-9]{0,8})\\.(0|[1-9][0-9]{0,8})\\.(0|[1-9][0-9]{0,8})(-[A-Za-z0-9.-]{1,32})?$", RegexOptions.CultureInvariant );
 	private static readonly Regex LanguagePattern = new( "^[A-Za-z]{1,32}$", RegexOptions.CultureInvariant );
 
 	public static ParkPackage Create( ParkSnapshot snapshot, ParkInfo park, GameInfo game, byte[]? thumbnail, Guid? packageId = null, DateTimeOffset? createdUtc = null )
@@ -80,15 +98,16 @@ public sealed record ParkPackage( ParkManifest Manifest, byte[] Payload, byte[]?
 			image = new ImageInfo( thumbnail.Length, Hash( thumbnail ), width, height );
 		}
 		var flags = snapshot.Flags.Contains( CompatibilityFlags.ReadOnlyVisit ) ? snapshot.Flags : snapshot.Flags.Append( CompatibilityFlags.ReadOnlyVisit ).ToArray();
-		var manifest = new ParkManifest( FormatName, CurrentFormatVersion, packageId ?? Guid.NewGuid(),
+		var extensions = snapshot.Extensions is { Count: > 0 } used ? used : null;
+		var manifest = new ParkManifest( FormatName, extensions == null ? ExtensionlessFormatVersion : FirstExtensionsFormatVersion, packageId ?? Guid.NewGuid(),
 			createdUtc ?? DateTimeOffset.UtcNow, park with { Level = snapshot.Level }, game, snapshot.RequiredContent, Array.Empty<string>(), flags,
-			new BlobInfo( snapshot.PayloadFormat, snapshot.PayloadVersion, snapshot.Payload.Length, Hash( snapshot.Payload ) ), image );
+			new BlobInfo( snapshot.PayloadFormat, snapshot.PayloadVersion, snapshot.Payload.Length, Hash( snapshot.Payload ) ), image, extensions );
 		var package = new ParkPackage( manifest, snapshot.Payload, thumbnail );
 		package.Validate();
 		return package;
 	}
 
-	public ParkSnapshot ToSnapshot() => new( Manifest.Payload.Format, Manifest.Payload.Version, Manifest.Park.Level, Payload, Manifest.RequiredContent, Manifest.Flags );
+	public ParkSnapshot ToSnapshot() => new( Manifest.Payload.Format, Manifest.Payload.Version, Manifest.Park.Level, Payload, Manifest.RequiredContent, Manifest.Flags, Manifest.Extensions );
 
 	public byte[] ToBytes()
 	{
@@ -125,11 +144,30 @@ public sealed record ParkPackage( ParkManifest Manifest, byte[] Payload, byte[]?
 		if ( container.Length > MaximumPackageBytes )
 			throw new InvalidDataException( "Park package exceeds the size limit." );
 		var entries = BoundedZip.Read( container, Rules );
+		RequireReadableVersion( entries[ManifestEntry] );
 		var manifest = StrictJson.Deserialize<ParkManifest>( entries[ManifestEntry], "Park manifest" );
 		entries.TryGetValue( ThumbnailEntry, out var thumbnail );
 		var package = new ParkPackage( manifest, entries[PayloadEntry], thumbnail );
 		package.Validate();
 		return package;
+	}
+
+	/// <summary>
+	/// A manifest of a version this build does not read is refused with that said before the strict parse, which would call a newer manifest's new members malformed: a later
+	/// version that adds members then still gives this build's players a clear message. A manifest that is not readable here is left to the strict parse.
+	/// </summary>
+	private static void RequireReadableVersion( byte[] manifest )
+	{
+		try
+		{
+			using var document = System.Text.Json.JsonDocument.Parse( manifest, new System.Text.Json.JsonDocumentOptions { MaxDepth = StrictJson.MaximumDepth } );
+			if ( document.RootElement.ValueKind == System.Text.Json.JsonValueKind.Object && document.RootElement.TryGetProperty( "formatVersion", out var version )
+				&& version.ValueKind == System.Text.Json.JsonValueKind.Number && version.TryGetInt32( out var number ) && number > CurrentFormatVersion )
+				throw new InvalidDataException( $"Park package version {number} is not supported (this build reads versions {FirstSupportedFormatVersion} to {CurrentFormatVersion})." );
+		}
+		catch ( System.Text.Json.JsonException )
+		{
+		}
 	}
 
 	/// <summary>Checks every manifest field and the payload/thumbnail hashes.</summary>
@@ -174,6 +212,20 @@ public sealed record ParkPackage( ParkManifest Manifest, byte[] Payload, byte[]?
 		{
 			if ( !SupportedRequirements.Contains( requirement ) )
 				throw new InvalidDataException( $"Park needs the feature '{requirement}', which this OpenTPW version does not support." );
+		}
+		if ( m.Extensions != null )
+		{
+			if ( m.FormatVersion < FirstExtensionsFormatVersion )
+				throw new InvalidDataException( "Park manifest lists extensions, which need package version 3." );
+			if ( m.Extensions.Count is 0 or > MaximumExtensions )
+				throw new InvalidDataException( "Park manifest lists no extensions or too many." );
+			foreach ( var use in m.Extensions )
+			{
+				if ( use == null || use.Id == null || !ExtensionIdPattern.IsMatch( use.Id ) || use.Version == null || !ExtensionVersionPattern.IsMatch( use.Version ) )
+					throw new InvalidDataException( "Park manifest has an invalid extension." );
+			}
+			if ( m.Extensions.Select( use => use.Id ).Distinct( StringComparer.Ordinal ).Count() != m.Extensions.Count )
+				throw new InvalidDataException( "Park manifest lists an extension twice." );
 		}
 		if ( !m.Flags.Contains( CompatibilityFlags.ReadOnlyVisit ) )
 			throw new InvalidDataException( "Park packages must be marked for read-only visits." );

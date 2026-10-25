@@ -143,7 +143,22 @@ public sealed class OnlineSession : IDisposable, IPresenceSession, IChatPanelSou
 	private int commandsVersion = -1;
 	public OnlineClient? Client { get; private set; }
 	public ChatConnection? Chat { get; private set; }
-	public string Status { get; private set; } = "";
+	public string Status
+	{
+		get => status;
+		private set
+		{
+			status = value;
+			StatusSerial++;
+		}
+	}
+	private string status = "";
+
+	/// <summary>
+	/// Counts every message <see cref="Status"/> was given, so a screen can show only what came after it opened or came back to the top: a status is the outcome of what the player just did,
+	/// and a message from a search on a screen that is gone says nothing about the menu opened afterwards.
+	/// </summary>
+	public long StatusSerial { get; private set; }
 	public int Busy { get; private set; }
 	/// <summary>
 	/// A chat connection is being opened or chat requests are still on their way. Chat traffic does not take the operation slot (<see cref="Busy"/>):
@@ -640,7 +655,16 @@ public sealed class OnlineSession : IDisposable, IPresenceSession, IChatPanelSou
 	public void Publish( ParkPackage package, bool showOnWebsite = false, int cityId = 0, Action? onPublished = null ) => WithClient( async client =>
 	{
 		Post( () => Status = OnlineStrings.Ui( OnlineStrings.PublishingPark, "Publishing Park" ) );
-		await client.UploadParkAsync( package, showOnWebsite: showOnWebsite, cityId: cityId );
+		try
+		{
+			await client.UploadParkAsync( package, showOnWebsite: showOnWebsite, cityId: cityId );
+		}
+		// [EXT:mods] a server from before the extensions member refuses a version 3 package as malformed or unsupported: say what to do instead
+		catch ( OnlineException exception ) when ( package.Manifest.Extensions != null && exception.Status == System.Net.HttpStatusCode.BadRequest
+			&& (exception.Message.Contains( "extensions", StringComparison.OrdinalIgnoreCase ) || exception.Message.Contains( "version 3", StringComparison.OrdinalIgnoreCase )) )
+		{
+			throw new OnlineException( exception.Status, OnlineStrings.Get( OnlineLabel.ServerNeedsExtensionsUpdate ), exception.Reason );
+		}
 		if ( onPublished != null )
 			Post( onPublished );
 		return OnlineStrings.Ui( OnlineStrings.ParkPublished, "PARK PUBLISHED" ).Replace( "\n\n", " " );

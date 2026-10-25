@@ -12,6 +12,7 @@ public enum OnlineLabel
 	BuddyEnters,
 	Ride, LeaveRide, PublishedOn, PublishedStatsNote,
 	ParkRecordsMods, EnterServerAddress, InvalidServerAddress,
+	VisitNeedsExtensions, VisitEnableOnCommandLine, PublishNoPark, PublishReadOnly, PublishCoopGuest, OutboxReadyToSend, ServerNeedsExtensionsUpdate,
 }
 
 /// <summary>
@@ -224,6 +225,13 @@ public static class OnlineStrings
 			[OnlineLabel.MarkAllSend] = "Mark all for sending", [OnlineLabel.MarkAllDelete] = "Mark all for deletion", [OnlineLabel.UnmarkAll] = "Unmark all",
 			[OnlineLabel.Ride] = "Ride", [OnlineLabel.LeaveRide] = "Leave ride",
 			[OnlineLabel.PublishedOn] = "Published: ", [OnlineLabel.PublishedStatsNote] = "The owner's published figures; nothing runs here.",
+			[OnlineLabel.VisitNeedsExtensions] = "This park uses {0}, which is off here and cannot be turned on. Visiting needs it, so the park cannot be entered.",
+			[OnlineLabel.VisitEnableOnCommandLine] = "This park uses {0}, which is off. Start OpenTPW with {1} to visit it.",
+			[OnlineLabel.PublishNoPark] = "Publishing needs an open park: start or load one first.",
+			[OnlineLabel.PublishReadOnly] = "A park you are only visiting cannot be published.",
+			[OnlineLabel.PublishCoopGuest] = "A shared park is published by its host.",
+			[OnlineLabel.OutboxReadyToSend] = "You have postcards in your outbox. Open Unsent postcards to send them.",
+			[OnlineLabel.ServerNeedsExtensionsUpdate] = "This server must be updated before it accepts parks that use OpenTPW extensions.",
 		},
 		["Danish"] = new Dictionary<OnlineLabel, string>
 		{
@@ -264,6 +272,13 @@ public static class OnlineStrings
 			[OnlineLabel.MarkAllSend] = "Markér alle til afsendelse", [OnlineLabel.MarkAllDelete] = "Markér alle til sletning", [OnlineLabel.UnmarkAll] = "Fjern alle markeringer",
 			[OnlineLabel.Ride] = "Tur", [OnlineLabel.LeaveRide] = "Stå af",
 			[OnlineLabel.PublishedOn] = "Udgivet: ", [OnlineLabel.PublishedStatsNote] = "Ejerens udgivne tal; intet kører her.",
+			[OnlineLabel.VisitNeedsExtensions] = "Denne park bruger {0}, som er slået fra her og ikke kan slås til. Et besøg kræver det, så parken kan ikke besøges.",
+			[OnlineLabel.VisitEnableOnCommandLine] = "Denne park bruger {0}, som er slået fra. Start OpenTPW med {1} for at besøge den.",
+			[OnlineLabel.PublishNoPark] = "Offentliggørelse kræver en åben park: start eller indlæs en først.",
+			[OnlineLabel.PublishReadOnly] = "En park, du kun besøger, kan ikke offentliggøres.",
+			[OnlineLabel.PublishCoopGuest] = "En delt park offentliggøres af sin vært.",
+			[OnlineLabel.OutboxReadyToSend] = "Du har postkort i din udbakke. Åbn Usendte postkort for at sende dem.",
+			[OnlineLabel.ServerNeedsExtensionsUpdate] = "Denne server skal opdateres, før den kan modtage parker, der bruger OpenTPW-udvidelser.",
 		},
 		["Dutch"] = new Dictionary<OnlineLabel, string>
 		{
@@ -304,6 +319,13 @@ public static class OnlineStrings
 			[OnlineLabel.MarkAllSend] = "Alles markeren om te verzenden", [OnlineLabel.MarkAllDelete] = "Alles markeren om te verwijderen", [OnlineLabel.UnmarkAll] = "Markeringen wissen",
 			[OnlineLabel.Ride] = "Rit", [OnlineLabel.LeaveRide] = "Stap uit",
 			[OnlineLabel.PublishedOn] = "Gepubliceerd: ", [OnlineLabel.PublishedStatsNote] = "De door de eigenaar gepubliceerde cijfers; hier draait niets.",
+			[OnlineLabel.VisitNeedsExtensions] = "Dit park gebruikt {0}, dat hier uit staat en niet aangezet kan worden. Een bezoek heeft het nodig, dus het park kan niet worden betreden.",
+			[OnlineLabel.VisitEnableOnCommandLine] = "Dit park gebruikt {0}, dat uit staat. Start OpenTPW met {1} om het te bezoeken.",
+			[OnlineLabel.PublishNoPark] = "Publiceren heeft een open park nodig: start of laad eerst een park.",
+			[OnlineLabel.PublishReadOnly] = "Een park dat je alleen bezoekt, kan niet worden gepubliceerd.",
+			[OnlineLabel.PublishCoopGuest] = "Een gedeeld park wordt door de host gepubliceerd.",
+			[OnlineLabel.OutboxReadyToSend] = "Je hebt ansichtkaarten in je uitbak. Open Niet-verzonden ansichtkaarten om ze te versturen.",
+			[OnlineLabel.ServerNeedsExtensionsUpdate] = "Deze server moet worden bijgewerkt voordat hij parken accepteert die OpenTPW-extensies gebruiken.",
 		},
 		["French"] = new Dictionary<OnlineLabel, string>
 		{
@@ -344,6 +366,13 @@ public static class OnlineStrings
 			[OnlineLabel.MarkAllSend] = "Tout marquer pour envoi", [OnlineLabel.MarkAllDelete] = "Tout marquer pour suppression", [OnlineLabel.UnmarkAll] = "Tout démarquer",
 			[OnlineLabel.Ride] = "Tour", [OnlineLabel.LeaveRide] = "Descendre",
 			[OnlineLabel.PublishedOn] = "Publié : ", [OnlineLabel.PublishedStatsNote] = "Les chiffres publiés par le propriétaire ; rien ne tourne ici.",
+			[OnlineLabel.VisitNeedsExtensions] = "Ce parc utilise {0}, qui est désactivé ici et ne peut pas être activé. Une visite en a besoin : le parc ne peut pas être visité.",
+			[OnlineLabel.VisitEnableOnCommandLine] = "Ce parc utilise {0}, qui est désactivé. Lancez OpenTPW avec {1} pour le visiter.",
+			[OnlineLabel.PublishNoPark] = "La publication nécessite un parc ouvert : lancez ou chargez-en un d'abord.",
+			[OnlineLabel.PublishReadOnly] = "Un parc que vous ne faites que visiter ne peut pas être publié.",
+			[OnlineLabel.PublishCoopGuest] = "Un parc partagé est publié par son hôte.",
+			[OnlineLabel.OutboxReadyToSend] = "Vous avez des cartes postales dans votre boîte d'envoi. Ouvrez Cartes postales non envoyées pour les envoyer.",
+			[OnlineLabel.ServerNeedsExtensionsUpdate] = "Ce serveur doit être mis à jour avant d'accepter des parcs qui utilisent des extensions OpenTPW.",
 		},
 		["German"] = new Dictionary<OnlineLabel, string>
 		{
@@ -384,6 +413,13 @@ public static class OnlineStrings
 			[OnlineLabel.MarkAllSend] = "Alle zum Senden markieren", [OnlineLabel.MarkAllDelete] = "Alle zum Löschen markieren", [OnlineLabel.UnmarkAll] = "Alle Markierungen aufheben",
 			[OnlineLabel.Ride] = "Fahrt", [OnlineLabel.LeaveRide] = "Aussteigen",
 			[OnlineLabel.PublishedOn] = "Veröffentlicht: ", [OnlineLabel.PublishedStatsNote] = "Die vom Besitzer veröffentlichten Zahlen; hier läuft nichts.",
+			[OnlineLabel.VisitNeedsExtensions] = "Dieser Park verwendet {0}, das hier ausgeschaltet ist und nicht eingeschaltet werden kann. Ein Besuch braucht es, daher kann der Park nicht betreten werden.",
+			[OnlineLabel.VisitEnableOnCommandLine] = "Dieser Park verwendet {0}, das ausgeschaltet ist. Starte OpenTPW mit {1}, um ihn zu besuchen.",
+			[OnlineLabel.PublishNoPark] = "Zum Veröffentlichen muss ein Park offen sein: starte oder lade zuerst einen.",
+			[OnlineLabel.PublishReadOnly] = "Ein Park, den du nur besuchst, kann nicht veröffentlicht werden.",
+			[OnlineLabel.PublishCoopGuest] = "Ein geteilter Park wird von seinem Gastgeber veröffentlicht.",
+			[OnlineLabel.OutboxReadyToSend] = "Du hast Postkarten im Postausgang. Öffne Ungesendete Postkarten, um sie zu senden.",
+			[OnlineLabel.ServerNeedsExtensionsUpdate] = "Dieser Server muss aktualisiert werden, bevor er Parks annimmt, die OpenTPW-Erweiterungen verwenden.",
 		},
 		["Korean"] = new Dictionary<OnlineLabel, string>
 		{
@@ -444,6 +480,13 @@ public static class OnlineStrings
 			[OnlineLabel.Ride] = "탑승",
 			[OnlineLabel.LeaveRide] = "내리기",
 			[OnlineLabel.PublishedOn] = "발표일: ",
+			[OnlineLabel.VisitNeedsExtensions] = "이 공원은 여기서 꺼져 있고 켤 수 없는 {0}을(를) 사용합니다. 방문에 필요하므로 공원에 들어갈 수 없습니다.",
+			[OnlineLabel.VisitEnableOnCommandLine] = "이 공원은 꺼져 있는 {0}을(를) 사용합니다. 방문하려면 {1}(으)로 OpenTPW를 시작하십시오.",
+			[OnlineLabel.PublishNoPark] = "게시하려면 열린 공원이 필요합니다. 먼저 공원을 시작하거나 불러오십시오.",
+			[OnlineLabel.PublishReadOnly] = "방문만 하는 공원은 게시할 수 없습니다.",
+			[OnlineLabel.PublishCoopGuest] = "공유 공원은 호스트가 게시합니다.",
+			[OnlineLabel.OutboxReadyToSend] = "보낼 편지함에 엽서가 있습니다. 보내지 않은 엽서를 열어 보내십시오.",
+			[OnlineLabel.ServerNeedsExtensionsUpdate] = "OpenTPW 확장을 사용하는 공원을 받으려면 이 서버를 먼저 업데이트해야 합니다.",
 			[OnlineLabel.PublishedStatsNote] = "소유자가 발표한 수치입니다. 여기서는 아무것도 작동하지 않습니다.",
 		},
 		["Polish"] = new Dictionary<OnlineLabel, string>
@@ -505,6 +548,13 @@ public static class OnlineStrings
 			[OnlineLabel.Ride] = "Atrakcja",
 			[OnlineLabel.LeaveRide] = "Wysiądź",
 			[OnlineLabel.PublishedOn] = "Opublikowano: ",
+			[OnlineLabel.VisitNeedsExtensions] = "Ten park używa {0}, które jest tu wyłączone i nie można go włączyć. Odwiedziny tego wymagają, więc nie można wejść do parku.",
+			[OnlineLabel.VisitEnableOnCommandLine] = "Ten park używa {0}, które jest wyłączone. Uruchom OpenTPW z {1}, aby go odwiedzić.",
+			[OnlineLabel.PublishNoPark] = "Publikowanie wymaga otwartego parku: najpierw uruchom lub wczytaj park.",
+			[OnlineLabel.PublishReadOnly] = "Parku, który tylko odwiedzasz, nie można opublikować.",
+			[OnlineLabel.PublishCoopGuest] = "Udostępniony park publikuje jego gospodarz.",
+			[OnlineLabel.OutboxReadyToSend] = "Masz pocztówki w skrzynce nadawczej. Otwórz Niewysłane pocztówki, aby je wysłać.",
+			[OnlineLabel.ServerNeedsExtensionsUpdate] = "Ten serwer trzeba zaktualizować, zanim przyjmie parki korzystające z rozszerzeń OpenTPW.",
 			[OnlineLabel.PublishedStatsNote] = "Opublikowane dane właściciela; nic tu nie działa.",
 		},
 		["Spanish"] = new Dictionary<OnlineLabel, string>
@@ -566,6 +616,13 @@ public static class OnlineStrings
 			[OnlineLabel.Ride] = "Montar",
 			[OnlineLabel.LeaveRide] = "Bajar",
 			[OnlineLabel.PublishedOn] = "Publicado: ",
+			[OnlineLabel.VisitNeedsExtensions] = "Este parque usa {0}, que está desactivado aquí y no se puede activar. Una visita lo necesita, así que no se puede entrar al parque.",
+			[OnlineLabel.VisitEnableOnCommandLine] = "Este parque usa {0}, que está desactivado. Inicia OpenTPW con {1} para visitarlo.",
+			[OnlineLabel.PublishNoPark] = "Publicar necesita un parque abierto: inicia o carga uno primero.",
+			[OnlineLabel.PublishReadOnly] = "Un parque que solo visitas no se puede publicar.",
+			[OnlineLabel.PublishCoopGuest] = "Un parque compartido lo publica su anfitrión.",
+			[OnlineLabel.OutboxReadyToSend] = "Tienes postales en tu bandeja de salida. Abre Postales sin enviar para enviarlas.",
+			[OnlineLabel.ServerNeedsExtensionsUpdate] = "Este servidor debe actualizarse antes de aceptar parques que usan extensiones de OpenTPW.",
 			[OnlineLabel.PublishedStatsNote] = "Las cifras publicadas por el dueño; aquí no se simula nada.",
 		},
 		["Swedish"] = new Dictionary<OnlineLabel, string>
@@ -607,6 +664,13 @@ public static class OnlineStrings
 			[OnlineLabel.MarkAllSend] = "Markera alla för att skicka", [OnlineLabel.MarkAllDelete] = "Markera alla för att radera", [OnlineLabel.UnmarkAll] = "Avmarkera alla",
 			[OnlineLabel.Ride] = "Tur", [OnlineLabel.LeaveRide] = "Stig av",
 			[OnlineLabel.PublishedOn] = "Publicerad: ", [OnlineLabel.PublishedStatsNote] = "Ägarens publicerade siffror; ingenting körs här.",
+			[OnlineLabel.VisitNeedsExtensions] = "Den här parken använder {0}, som är avstängt här och inte kan slås på. Ett besök kräver det, så parken kan inte besökas.",
+			[OnlineLabel.VisitEnableOnCommandLine] = "Den här parken använder {0}, som är avstängt. Starta OpenTPW med {1} för att besöka den.",
+			[OnlineLabel.PublishNoPark] = "Att publicera kräver en öppen park: starta eller läs in en först.",
+			[OnlineLabel.PublishReadOnly] = "En park du bara besöker kan inte publiceras.",
+			[OnlineLabel.PublishCoopGuest] = "En delad park publiceras av sin värd.",
+			[OnlineLabel.OutboxReadyToSend] = "Du har vykort i din utkorg. Öppna Osända vykort för att skicka dem.",
+			[OnlineLabel.ServerNeedsExtensionsUpdate] = "Den här servern måste uppdateras innan den tar emot parker som använder OpenTPW-tillägg.",
 		},
 	};
 }

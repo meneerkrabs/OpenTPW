@@ -440,6 +440,34 @@ public partial class CoopLinkTests
 		}, options => options.CoopPingInterval = TimeSpan.FromMinutes( 5 ) );
 	}
 
+	/// <summary>
+	/// A socket this game drops ends as a lost one, but not a socket the server had closed already: a send queue that overflows after the server's refusal reached the reader, and
+	/// before the pump took it, leaves the refusal standing.
+	/// </summary>
+	[TestMethod]
+	public async Task AServersRefusalTakenBeforeADropStillStopsTheLink()
+	{
+		await WithServer( async ( server, players ) =>
+		{
+			var first = await players.Add( server, "Twin" );
+			var second = await players.Add( server, "Twin", register: false );
+			await Open( first );
+			// the account's other game takes the socket over: the first game's reader takes the server's close, and its pump has not taken it yet
+			second.Link.Open( takeOver: true );
+			await Until( () => second.Link.State == CoopLinkState.Open, "the take-over", second );
+			var socket = typeof( CoopLink ).GetField( "live", BindingFlags.Instance | BindingFlags.NonPublic )!.GetValue( first.Link )!;
+			var connection = (CoopConnection)socket.GetType().GetProperty( "Connection" )!.GetValue( socket )!;
+			var until = DateTime.UtcNow + OnlineIntegrationTests.Deadline;
+			while ( connection.IsOpen && DateTime.UtcNow < until )
+				await Task.Delay( 10 );
+			Assert.IsFalse( connection.IsOpen, "the server closed the first game's socket" );
+			first.Link.DropSocket();
+			await Until( () => first.Link.Stopped != CoopStop.None, "the first game's stop", first, second );
+			Assert.AreEqual( CoopStop.Replaced, first.Link.Stopped, "the server's word counts over the later drop" );
+			Assert.AreEqual( CoopCloseStatus.Replaced, first.Link.LastEnd?.Status );
+		} );
+	}
+
 	[TestMethod]
 	public async Task AnotherGameOfTheAccountIsRefusedUntilItTakesOver()
 	{

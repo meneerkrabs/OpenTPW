@@ -655,12 +655,15 @@ public sealed class CoopLink : ICoopStreamTransport
 		finally
 		{
 			var status = socket.Connection.CloseStatus;
+			// whether this game had dropped the socket when its reader ended: a drop after the end (a send queue that overflowed before the pump took the
+			// end) is no cause of it
+			var dropped = socket.Dropped;
 			var endedAt = Environment.TickCount64;
 			if ( malformed )
 				socket.Fail( (WebSocketCloseStatus)CoopCloseStatus.ProtocolError, "invalid message" );
 			else
 				socket.Close();
-			owner.Post( () => SocketEnded( socket, status, malformed, endedAt ) );
+			owner.Post( () => SocketEnded( socket, status, malformed, dropped, endedAt ) );
 		}
 	}
 
@@ -803,15 +806,15 @@ public sealed class CoopLink : ICoopStreamTransport
 	/// The socket ended (at <paramref name="endedAt"/>, which a stalled pump may reach late): a close the link resumes after starts the reconnect attempts, any
 	/// other stops the link.
 	/// </summary>
-	private void SocketEnded( Socket socket, int? status, bool malformed, long endedAt )
+	private void SocketEnded( Socket socket, int? status, bool malformed, bool dropped, long endedAt )
 	{
 		if ( socket != live )
 			return;
 		live = null;
-		LastEnd = (status, malformed, socket.Dropped);
-		// a socket this game dropped (a send queue too far behind, a test's lost network) is a lost socket, whatever its reader saw on its way out: a close
-		// or a broken message racing the drop must not stop the link
-		if ( socket.Dropped )
+		LastEnd = (status, malformed, dropped);
+		// a socket this game dropped (a send queue too far behind, a test's lost network) ended as a lost one: a broken message or a normal close on its way out
+		// was the drop's doing (the link's own close racing it), never the server's word; the server's refusals and limits still count
+		if ( dropped && (malformed || status is null or (int)WebSocketCloseStatus.NormalClosure) )
 			(status, malformed) = (null, false);
 		// the welcome's time is when the pump took it, never before it came, so a socket's measured life is never longer than it was
 		var stable = welcomedAt is { } at && endedAt - at >= StableAfter.TotalMilliseconds;

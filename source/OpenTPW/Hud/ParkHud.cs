@@ -86,7 +86,7 @@ public sealed partial class ParkHud
 	/// <summary>[EXT:online-coop-lockstep] The level's session refusals the HUD has said already (<see cref="Level.SessionRefusals"/>), and when it last said so.</summary>
 	private int lastSessionRefusals;
 	private float lastSessionRefusalNotice = float.NegativeInfinity;
-	/// <summary>The least time between two "only the host builds" notices: a drag that issues a command per cell says it once.</summary>
+	/// <summary>The least time between two notices of a session's refusal (the host has not let this player build, only the host does that): a drag that issues a command per cell says it once.</summary>
 	internal const float SessionRefusalNoticeSeconds = 1.5f;
 	private BuildItem? pendingItem;
 	private UiLabel? moneyLabel;
@@ -995,11 +995,12 @@ public sealed partial class ParkHud
 		}
 		// [EXT:online-coop-commands] a click a tool did not take while its request waited for the host (C3a-2)
 		SayWaitingClicks();
-		// [EXT:online-coop-commands] another player's command's message is not this machine's to say, and a guest hears its own commands' outcomes from its requests (C3a-2)
-		if ( level.LastActionMessage != lastLevelMessage )
+		// [EXT:online-coop-commands] another player's command's message is not this machine's to say, and a guest hears its own commands' outcomes from its requests (C3a-2); the HUD
+		// remembers only a message it may say, so its own refusal right after another player's identical one is still said
+		if ( level.LastActionMessage != lastLevelMessage && level.SaysLastActionMessage )
 		{
 			lastLevelMessage = level.LastActionMessage;
-			if ( level.SaysLastActionMessage && lastLevelMessage.StartsWith( "Cannot build", StringComparison.Ordinal ) )
+			if ( lastLevelMessage.StartsWith( "Cannot build", StringComparison.Ordinal ) )
 				SayCannotBuild( lastLevelMessage, pendingItem?.Entry );
 		}
 

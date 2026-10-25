@@ -52,7 +52,7 @@ public sealed partial class ParkHud
 		var tool = level.CellTool;
 		if ( request is { State: CoopGuestRequestState.Applied, Result: { Error: null } outcome } )
 		{
-			var result = tool.CompleteWaiting( outcome );
+			var result = level.CompleteCellTool( outcome );
 			if ( outcome.RightsRefused )
 				SayGuestNote( OpenTpwText.CoopNotGranted );
 			if ( click != null )

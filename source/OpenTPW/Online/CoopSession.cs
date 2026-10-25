@@ -129,7 +129,7 @@ internal sealed class CoopJoinRefusedException( string message ) : Exception( me
 
 /// <summary>
 /// [EXT:online-coop-lockstep] A level in a co-op session (docs/COOP.md, "The level in a session"): the stream it runs over the link (the host's, or a guest's), and the session's
-/// rules on the level. Only the host builds (C2), and a guest's own click is refused with a message; local pause screens stop no park; cheats and the developer kinds are refused
+/// rules on the level. The host decides who builds (C3a), and a guest's click the rights refuse is refused with a message; local pause screens stop no park; cheats and the developer kinds are refused
 /// alike on every peer; a game started with developer park options shares nothing; a guest's park is never saved, not even after its session. It ends when the level closes or
 /// is replaced, when the link's session ends, or when the host's stream ends it. [EXT:online-coop-snapshot-join] A guest that joins a running session, or whose park lost the stream,
 /// gets the host's park from a join snapshot and swaps it in without leaving (docs/COOP.md, "Joining a running session"). The screens that start one are C2d's.
@@ -1051,7 +1051,10 @@ public partial class Level
 	/// <summary>[EXT:online-coop-lockstep] Whether this level joined a co-op session as a guest: its park is the host's, which nothing saves, also after the session ended.</summary>
 	internal bool IsCoopGuestPark { get; set; }
 
-	/// <summary>[EXT:online-coop-lockstep] How many of this machine's clicks the session refused (a guest: only the host builds); the HUD says so when it changes.</summary>
+	/// <summary>
+	/// [EXT:online-coop-lockstep] How many of this machine's clicks the session's rights refused (a guest's building the host has not let it do, or what only the host does); the HUD
+	/// says so when it changes.
+	/// </summary>
 	internal int SessionRefusals { get; private set; }
 
 	/// <summary>[EXT:online-coop-permissions] Whether the last refused command was building (the host has not granted it yet), not a command only the host may issue.</summary>

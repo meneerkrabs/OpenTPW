@@ -157,11 +157,13 @@ part (`Level.CoopRole`: none, host or guest).
   `--park-resume-smoke`, `--smoke-presence`) and the browser page of the performance harness
   (`?perf=1`): their setups and hooks build, fill or edit the park directly, so a peer would never
   see their changes.
-- **Only the host builds.** In C2 the rights let only player 0 build (`CoopHostOnlyRights`). A
-  guest's own click is refused before it runs and leaves no trace in its log. The funnel raises
-  `SessionRefused`, and the guest's HUD says "Only the host builds in a shared park"
-  (`OpenTpwText.OnlyTheHostBuilds`, in the eleven languages of the OpenTPW texts) with the error
-  sound, as it does for a cell it cannot build on.
+- **The host decides who builds.** In C2 the rights let only player 0 build; since C3a they are
+  `CoopBuildRights`, which also let a guest the host granted building issue the building its tools do
+  ("Building by every player"). A guest's click the rights refuse is refused before it runs and leaves
+  no trace in its log. The funnel raises `SessionRefused`, and the guest's HUD says "The host has not
+  let you build yet." for building (`OpenTpwText.CoopNotGranted`) or "Only the host can do that for
+  now." for anything else (`OpenTpwText.CoopHostOnly`), in the eleven languages of the OpenTPW texts,
+  with the error sound, as it does for a cell it cannot build on.
 - **Rules every peer applies alike.** These checks read the funnel's session rules, so a guest
   refuses the host's record as the host did, and the record's outcome check agrees:
   - the cheats (`QueueCheatCommand`) and the secret park name of the rename are refused (decision
@@ -634,8 +636,8 @@ while it is shared. The line opens the Build Together screen over the pause menu
 screen is in the player's language.
 
 - **Before sharing**, the screen says what sharing means (the others watch the host build, walk around
-  and chat; only the host builds), why the park cannot be shared when it cannot, or that the player has
-  to log in, with a login button.
+  and chat; the host decides who builds with it), why the park cannot be shared when it cannot, or that
+  the player has to log in, with a login button.
 - **The choices:** the title (by default the player's park, by the online name), whether the park is on
   the open list (by default not: code and invitation only), and how many players it takes (2 to 4, by
   default 4).
@@ -1742,7 +1744,9 @@ release (decision Q11).
 target, at execution on every peer, and allows exactly the commands of the tools that wait for the host:
 path and queue lines, a placed object (not a moving placement, not a track add-on, and not a ride whose
 own tool follows its placement: a coaster, a kart, water or bumper ride, a slide tower), and the remove
-click (not on a coaster's or a track ride's station, whose edits need claims). Everything else stays the
+click on an ordinary object: not a fixed item of the park (its gates, lights or bus), not a coaster's or
+a track ride's station, whose edits need claims, and never the path or queue cell the remove tool takes
+when no object stands on the cell. Everything else stays the
 host's: pause and speed (Q8), cheats (Q17), money and the park's management (C4), undo lines (whose
 cells a request could name freely), land, the queue's edit, the area clear, the backtrack key, the Move
 tool, staff, pools, tracks and coasters (C3b, C3c) and the grants themselves.
@@ -1774,8 +1778,10 @@ completes the tool that still waits for each one:
 - a request the host could not take (no record) leaves the click as if never made;
 - an error or a lost answer ends the line tool with a note that the outcome is not known.
 
-Anything that ends or switches a tool drops its wait, and a resync replaces the park with its tools, while
-the requests are the session's: such a request's outcome is then only a message. The session's end ends
+A waiting tool waits as long as its request does: through a lost link, whose resume sends the request
+again, and until the outcome comes. Escape or a right click leaves it, as it leaves any tool. Anything
+that ends or switches a tool drops its wait, and a resync replaces the park with its tools, while the
+requests are the session's: such a request's outcome is then only a message. The session's end ends
 every wait (a line that waits ends its tool). Each outcome the HUD says is its own event, so two refused
 lines or placements in a row are both said.
 

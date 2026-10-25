@@ -196,6 +196,20 @@ public partial class Level
 	}
 
 	/// <summary>
+	/// [EXT:online-coop-commands] The outcome of the guest's line that waits for the host (<see cref="CellBuildTool.CompleteWaiting"/>, C3a-2): the path and queue tool's commit zeroes
+	/// the pending queue start once the line was laid, as <see cref="ClickCellTool"/> does for a line laid at once.
+	/// </summary>
+	internal SegmentResult? CompleteCellTool( ParkCommandResult outcome )
+	{
+		var mode = CellTool.Mode;
+		var result = CellTool.CompleteWaiting( outcome );
+		// [BIN:TPW-EXE:0x00527483 queue start] the path and queue handler zeroes the pending queue start after its commit LayLine, here once the guest's commit came back laid
+		if ( mode is CellToolMode.Path or CellToolMode.Queue && result is { GhostRefused: false, CommandRefused: false } )
+			placedQueueStart = null;
+		return result;
+	}
+
+	/// <summary>
 	/// The track tool a kart or water ride the player just placed opens (<see cref="EnterTrackTool"/>): a ride with a queue leaves its queue start pending, so the close of
 	/// its circuit hands over to the queue tool (<see cref="ContinueTrackTool"/>).
 	/// </summary>

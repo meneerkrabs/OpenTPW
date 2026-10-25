@@ -183,7 +183,7 @@ public partial class CoopSessionTests
 		Assert.AreEqual( "The park is shared already.", reason );
 		Assert.ThrowsException<InvalidOperationException>( () => CoopSession.Host( host.Level, hostLink ) );
 
-		// a guest's own click is refused before it runs (only the host builds), its HUD hears of it, and its log stays the host's stream
+		// a guest's own click is refused before it runs (the host has not let it build), its HUD hears of it, and its log stays the host's stream
 		var logged = guest.Level.Commands.Log.Count;
 		Assert.IsFalse( guest.Issue( new SetEntranceFeeCommand( 99 ) ).Accepted );
 		Assert.AreEqual( 1, guest.Level.SessionRefusals );
@@ -698,7 +698,7 @@ public partial class CoopSessionTests
 					lostSockets++;
 				}
 				if ( round == 100 )
-					Assert.IsFalse( guest.Issue( new SetEntranceFeeCommand( 99 ) ).Accepted, "only the host builds" );
+					Assert.IsFalse( guest.Issue( new SetEntranceFeeCommand( 99 ) ).Accepted, "only the host sets the fee" );
 				clock += 1 / 60.0;
 				host.Frame( 1 / 60.0 );
 				guest.Frame( 1 / 60.0 );

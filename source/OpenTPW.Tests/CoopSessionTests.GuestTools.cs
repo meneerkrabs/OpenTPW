@@ -149,10 +149,10 @@ public partial class CoopSessionTests
 		Rounds( 20, host, guest );
 		Grant( host, guest, view );
 		var tool = StartPath( guest );
-		// forty requests between two of the host's frames spend its burst (removals of nothing, refused by the park without a word): the line after them is too fast, and
-		// the host keeps no record of it
+		// forty requests between two of the host's frames spend its burst (one-cell lines, accepted without a word): the line after them is too fast, and the host keeps no
+		// record of it
 		var requests = guest.Session!.GuestCommands!;
-		var burst = Enumerable.Range( 0, 40 ).Select( _ => requests.Submit( new RemoveAtCommand( 30, 30 ) { Player = guest.Level.Commands.Player } ) ).ToArray();
+		var burst = Enumerable.Range( 0, 40 ).Select( _ => requests.Submit( new LayLineCommand( CellToolMode.Path, -1, 30, 30, 30, 30 ) { Player = guest.Level.Commands.Player } ) ).ToArray();
 		var line = guest.Level.ClickCellTool( (12, 20) )!.Waiting!.Request;
 		RoundsUntil( () => tool.Waiting == null && burst.All( request => !request.IsOpen ), host, guest, view, "the line came back" );
 		Assert.IsTrue( burst.All( request => request.State == CoopGuestRequestState.Applied ), "the burst's requests are records" );
@@ -289,6 +289,12 @@ public partial class CoopSessionTests
 		StringAssert.StartsWith( host.Level.LastActionMessage, "Cannot build" );
 		Assert.AreEqual( 0, hostView.Says( OpenTpwText.CannotBuildHere ), "another player's refusal is not the host's to say" );
 		Assert.AreEqual( 1, view.Says( OpenTpwText.CannotBuildHere ), "the guest says its own" );
+		// the host's own refusal right after, in the same words, is said
+		var own = host.Issue( host.Level.BuildCommand( host.One.Entry, 20, 12, 90 ) );
+		Assert.IsFalse( own.Accepted );
+		Assert.AreEqual( refused.Result.Reason, own.Reason, "the same words" );
+		hostView.Update();
+		Assert.AreEqual( 1, hostView.Says( OpenTpwText.CannotBuildHere ) );
 		CatchUpAndCompare( host, guest );
 	}
 

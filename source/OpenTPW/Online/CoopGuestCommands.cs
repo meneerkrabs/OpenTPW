@@ -69,6 +69,12 @@ internal sealed class CoopGuestCommands : IDisposable
 	private readonly SortedDictionary<uint, Request> open = new();
 	/// <summary>The requests resolved since the last <see cref="TakeCompleted"/>, in order: the tools complete from them outside any command and the stream's application.</summary>
 	private readonly Queue<Request> completed = new();
+
+	/// <summary>
+	/// How many resolved requests wait for <see cref="TakeCompleted"/> at most: a guest without a HUD to take them (a headless one) keeps the newest only. A HUD takes them every frame,
+	/// long before this many resolve.
+	/// </summary>
+	internal const int MaximumCompleted = 256;
 	private uint nextSequence = 1;
 	/// <summary>The last stream record the guest's park holds: applied here, or inside the join snapshot it was rebuilt from.</summary>
 	private long included;
@@ -287,6 +293,8 @@ internal sealed class CoopGuestCommands : IDisposable
 	{
 		request.State = state;
 		completed.Enqueue( request );
+		while ( completed.Count > MaximumCompleted )
+			completed.Dequeue();
 		// a listener that throws keeps neither the other listeners nor the stream that applied the record from going on
 		foreach ( var listener in Resolved?.GetInvocationList() ?? Array.Empty<Delegate>() )
 		{

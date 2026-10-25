@@ -353,13 +353,12 @@ public partial class CoopStreamTests
 		var level = peer.Level;
 		var rights = new CoopBuildRights( level );
 		var place = level.BuildCommand( peer.One.Entry, 20, 12, 90 );
-		// the commands of the guests' tools that wait for the host (C3a-2): the line tools, the one-shot placement and the remove click
+		// the commands of the guests' tools that wait for the host (C3a-2): the line tools, the one-shot placement and the remove click (below: an ordinary object's only)
 		var building = new ParkCommand[]
 		{
 			GuestLine,
 			new QueueSegmentCommand( peer.One.Runtime.AttractionId, 3, 3, 3, 6 ),
-			place,
-			new RemoveAtCommand( 20, 12 )
+			place
 		};
 		var hostOnly = new ParkCommand[]
 		{
@@ -393,6 +392,14 @@ public partial class CoopStreamTests
 		Assert.IsFalse( rights.Allows( 1, ParkCommandKind.LayLine ), "a kind alone allows the host only" );
 		Assert.IsTrue( rights.Allows( ParkCommands.LocalPlayer, ParkCommandKind.LayLine ) );
 
+		// the remove click takes an ordinary object only: never the path or queue cell the remove tool takes when no object stands on the cell, nor an empty cell
+		Assert.IsFalse( rights.Allows( 1, new RemoveAtCommand( 20, 12 ) ), "no object on the cell yet" );
+		Assert.IsTrue( level.Guests!.Grid.IsWalkable( 4, 1 ) );
+		Assert.IsFalse( rights.Allows( 1, new RemoveAtCommand( 4, 1 ) ), "a path cell is not the remove click's for a guest" );
+		Assert.IsTrue( rights.Allows( ParkCommands.LocalPlayer, new RemoveAtCommand( 4, 1 ) ), "the host's remove click takes it" );
+		// nor a fixed item of the park (its gates, lights, bus)
+		Assert.IsFalse( CoopBuildRights.GuestMayRemove( SyntheticRide( "Info.DontApplyOffset 1\n" ) ) );
+		Assert.IsTrue( CoopBuildRights.GuestMayRemove( SyntheticRide( "" ) ) );
 		// a track ride's station needs a claim: a granted guest may not remove it
 		Assert.IsTrue( level.Commands.Apply( place ).Accepted );
 		var station = level.Objects!.FindAt( 20, 12 )!;

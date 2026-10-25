@@ -550,6 +550,102 @@ public class OnlineIntegrationTests
 	}
 
 	[TestMethod]
+	public async Task ProgressIsTheTextTheRunningRequestSetAndNothingElse()
+	{
+		var folders = Folders();
+		try
+		{
+			using var session = new OnlineSession( folders );
+			var status = typeof( OnlineSession ).GetProperty( nameof( OnlineSession.Status ) )!;
+			var setProgress = typeof( OnlineSession ).GetMethod( "SetProgress", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic )!;
+			status.SetValue( session, "an earlier outcome" );
+			Assert.IsNull( session.Progress, "no request runs" );
+			var release = new TaskCompletionSource<string?>();
+			session.Run( () => release.Task );
+			Assert.IsNull( session.Progress, "the running request has set no progress text: an earlier outcome is none" );
+			// the request's own progress post, as FetchCities makes it
+			setProgress.Invoke( session, new object[] { "Getting City List" } );
+			Assert.AreEqual( "Getting City List", session.Progress );
+			Assert.AreEqual( "Getting City List", session.Status );
+			// another message while the request runs (a chat connection's error) is no progress of it
+			status.SetValue( session, "The chat server cannot be reached." );
+			Assert.AreEqual( "Getting City List", session.Progress );
+			release.SetResult( "done" );
+			await PumpUntilIdle( session );
+			Assert.IsNull( session.Progress );
+			Assert.AreEqual( "done", session.Status );
+			var second = new TaskCompletionSource<string?>();
+			session.Run( () => second.Task );
+			Assert.IsNull( session.Progress, "a later request starts without the earlier one's progress text" );
+			second.SetResult( null );
+			await PumpUntilIdle( session );
+		}
+		finally
+		{
+			if ( Directory.Exists( folders.Root ) )
+				Directory.Delete( folders.Root, true );
+		}
+	}
+
+	[TestMethod]
+	public async Task ACityWithoutParksSaysSoInItsLobbyWhileTheLobbyIsOnTop()
+	{
+		await using var server = await LoopbackServer.StartAsync();
+		var folders = Folders();
+		try
+		{
+			using var session = new OnlineSession( folders );
+			session.UseServer( server.Url.ToString(), "Alice" );
+			session.Register( "Alice", "correct horse" );
+			await PumpUntilIdle( session );
+			var stack = new OpenTPW.UI.Original.UiScreenStack();
+			stack.Push( new OpenTPW.UI.Original.UiScreen( "hud" ) );
+			var screens = new OpenTPW.UI.OnlineScreens( stack, OriginalUiTests.FakeStrings(), new OpenTPW.UI.Original.UiModels( name => throw new FileNotFoundException( name ) ),
+				new OpenTPW.UI.OnlineHost { Session = session, Level = () => null } );
+			screens.ShowCityLobby( new CityInfo( 3, "Empty city", "", 0, 0, 0 ) );
+			var lobby = stack.Top!;
+			await PumpUntilIdle( session );
+			Assert.AreEqual( 0, session.CityParks!.Count );
+			var status = (OpenTPW.UI.Original.UiLabel)lobby.Find( "cityStatus" )!;
+			Assert.AreEqual( "Empty city\n" + OnlineStrings.Ui( OnlineStrings.NoSearchResults, "No search results" ), status.Text(), "the fetch ends its progress text, and the lobby says the city has no parks" );
+			stack.Push( new OpenTPW.UI.Original.UiScreen( "window" ) );
+			Assert.AreEqual( "Empty city\n", status.Text(), "a status shows only on the screen on top" );
+		}
+		finally { Directory.Delete( folders.Root, true ); server.DeleteData(); }
+	}
+
+	[TestMethod]
+	public async Task EmptyListsAndASentOutboxLeaveNoMessageOnTheStatusLine()
+	{
+		await using var server = await LoopbackServer.StartAsync();
+		var folders = Folders();
+		try
+		{
+			using var recipient = await server.LoginAsync( "Bobby" );
+			using var session = new OnlineSession( folders );
+			session.UseServer( server.Url.ToString(), "Alice" );
+			session.Register( "Alice", "correct horse" );
+			await PumpUntilIdle( session );
+			var fetched = session.ParksFetched;
+			session.RefreshParks( "no such park" );
+			await PumpUntilIdle( session );
+			Assert.AreEqual( 0, session.Parks.Count );
+			Assert.AreEqual( fetched + 1, session.ParksFetched, "a finished fetch is counted, so an empty list is a result" );
+			Assert.AreEqual( "", session.Status, "the Find Parks list shows the empty result as its row; the status line only ends the progress text" );
+			session.FetchCityParks( 3 );
+			await PumpUntilIdle( session );
+			Assert.AreEqual( 0, session.CityParks!.Count );
+			Assert.AreEqual( "", session.Status, "the city lobby says so itself" );
+			folders.Store( folders.Outbox, Postcard.Create( "Alice", new[] { "Bobby" }, "Hello", "Postcard", "English" ) );
+			session.SendOutbox();
+			await PumpUntilIdle( session );
+			Assert.AreEqual( 1, folders.List( folders.Sent ).Count, session.Status );
+			Assert.AreEqual( "", session.Status, "the original's progress window closed with no count once the cards were sent" );
+		}
+		finally { Directory.Delete( folders.Root, true ); server.DeleteData(); }
+	}
+
+	[TestMethod]
 	public async Task ChatReconnectsToItsRoomAfterTheServerRestarts()
 	{
 		var server = await LoopbackServer.StartAsync();

@@ -300,7 +300,7 @@ public sealed partial class FrontEndMenu
 		var slider = table.All.First( node => node.Model2 == "!slider" );
 		var knob = table.Model( "b_scroller" );
 		bool Scrolls() => parks.Length > list.VisibleRows;
-		screen.Add( new LoadScrollBar( list, slider.Rect, knob.Rect, slider.Model2!, knob.Model! ) { Id = "loadScroll", Bounds = slider.Rect, Anchor = UiAnchor.Center, Visible = Scrolls() } );
+		screen.Add( new UiListScrollBar( list, slider.Rect, knob.Rect, slider.Model2!, knob.Model! ) { Id = "loadScroll", Bounds = slider.Rect, Anchor = UiAnchor.Center, Visible = Scrolls() } );
 		var up = table.Model( "b_up" );
 		var down = table.Model( "b_down" );
 		// The arrows' parent is the type 3 slider (style 0x10) inside the load list, so they play 0xBD and repeat at 500 ms then 125 ms.
@@ -340,31 +340,6 @@ public sealed partial class FrontEndMenu
 		}
 		screen.Focus( screen.FocusableElements.First() );
 		return screen;
-	}
-
-	/// <summary>The load list's slider: the <c>!slider</c> track and the <c>b_scroller</c> ball at the list's first row (0x66b088, as in the buy list); dragging or clicking it sets the first row.</summary>
-	private sealed class LoadScrollBar( UiScrollList list, UiRect track, UiRect knob, string trackModel, string knobModel ) : UiElement, IUiDragTarget
-	{
-		private int MaxFirstRow => Math.Max( 0, list.Rows().Count - list.VisibleRows );
-		public override bool Focusable => Visible && Enabled;
-
-		public void DragTo( UiCanvas canvas, NVector2 point )
-		{
-			var rect = ScreenRect( canvas );
-			var travel = track.Height - knob.Height;
-			if ( rect.Height <= 0 || travel <= 0 || MaxFirstRow == 0 )
-				return;
-			var authoredY = Bounds.Y + (point.Y - rect.Y) / rect.Height * Bounds.Height;
-			var fraction = Math.Clamp( (authoredY - track.Y - knob.Height / 2) / travel, 0, 1 );
-			list.Scroll( (int)MathF.Round( fraction * MaxFirstRow ) - list.FirstRow );
-		}
-
-		public override void Draw( UiContext context, bool focused, bool pressed )
-		{
-			context.DrawModel( trackModel, 0, context.Canvas.Map( track, Anchor ) );
-			context.DrawModel( knobModel, pressed ? UiButton.DownFrame : focused ? UiButton.HighlightFrame : UiButton.NormalFrame,
-				context.Canvas.Map( OpenTPW.Hud.ParkHud.ListScrollKnobRect( track, knob, list.FirstRow, MaxFirstRow ), Anchor ) );
-		}
 	}
 
 	/// <summary>Load-only dispatch ownership; other screens keep their existing input policy.</summary>

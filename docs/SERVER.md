@@ -236,7 +236,15 @@ container and manifest, the payload's size (`ParkPackage.MaximumPackageBytes`) a
 digest, and the payload itself, including its version. **Package format 2** (payload
 version 2) carries the complete built park (docs/ONLINE.md); **format 1** packages from
 OpenTPW 0.7 are still accepted, stored and served unchanged, so old clients and old
-parks keep working. Every listing and the download carry the park's publish date/time
+parks keep working. **Package format 3** is a version 2 package whose manifest also lists the content extensions the park uses
+(`extensions`: id and version, docs/ONLINE.md, "Official extensions in a package"): the
+server validates the member with the rest of the manifest (ids that start with `opentpw.`, a plain version, no
+duplicate, at most 32, and only in version 3) and stores the package byte for byte, so it serves the member to
+visitors as it came. A park that uses no content extension is still published as version 2. The protocol version
+does not change. A server from before this change cannot read a version 3 package: its strict manifest reader
+refuses the unknown `extensions` member as malformed (a 400), and the client then says the server must be updated,
+so servers are updated before clients publish such parks. Older clients that download a version 3 park report a
+malformed manifest.
 (`PublishedUtc`), visitor count and vote count — the fields the original's "My Theme
 Park" page showed per park.
 

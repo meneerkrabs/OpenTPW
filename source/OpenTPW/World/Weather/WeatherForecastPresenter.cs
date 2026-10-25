@@ -11,7 +11,7 @@ namespace OpenTPW;
 /// so pause, park end and reload follow the weather's own state. The banner is an OpenTPW presentation: the
 /// original shows no forecast (the forecast-presentation extension).
 /// </summary>
-// [EXT:forecast-banner] the forecast shows as a banner line at the top centre, drawn in the overlay pass with the original GAME8AA BF4 font above every screen (the chat overlay's channel); the original warns on no surface: its forecast event's only subscriber, the weather's handler 0x5127a0, posts nothing
+// [EXT:forecast-banner] the forecast shows as a banner line at the top centre, drawn in the overlay pass with the original GAME8AA BF4 font above every screen of the park (the chat overlay's channel) and waiting while the online globe takes the park's place; the original warns on no surface: its forecast event's only subscriber, the weather's handler 0x5127a0, posts nothing
 public sealed class WeatherForecastPresenter : Entity
 {
 	/// <summary>Upper bound of one step's delta, so a hitch after a stall cannot jump the transient line's clock.</summary>
@@ -40,6 +40,12 @@ public sealed class WeatherForecastPresenter : Entity
 	/// </summary>
 	internal static bool BannerHidden { get; set; }
 
+	/// <summary>
+	/// Whether the online globe is shown in the park's place (Go Online from the park: its globe camera replaces the park's view and HUD until the online
+	/// screens close). The banner belongs to the park's view, so it waits; the park is paused meanwhile, which would also hold a transient line on screen.
+	/// </summary>
+	internal static bool ShowsOnlineGlobe => Camera.Mode is GlobeCameraMode;
+
 	public WeatherForecastPresenter( ParkWeather weather )
 	{
 		this.weather = weather;
@@ -63,7 +69,7 @@ public sealed class WeatherForecastPresenter : Entity
 	private void DrawBanner()
 	{
 		DrawnBanner = null;
-		if ( deleted || BannerHidden || Level.Current != Level || Level.HidesInterface || forecast.Banner is not { } text )
+		if ( deleted || BannerHidden || Level.Current != Level || Level.HidesInterface || ShowsOnlineGlobe || forecast.Banner is not { } text )
 			return;
 		DrawnBanner = text;
 		// The selected language's own font, reloaded when the language changes (the chat overlay's pattern).

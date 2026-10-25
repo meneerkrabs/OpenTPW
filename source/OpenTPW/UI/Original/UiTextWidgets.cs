@@ -117,6 +117,8 @@ public interface IUiRowList
 	/// handled it. False leaves the screen's default: a click selects, a second click on the selected row activates, a right click backs out.
 	/// </summary>
 	bool RowClicked( int index, bool left ) => false;
+	/// <summary>As <see cref="RowClicked(int, bool)"/>, with the click's point in framebuffer pixels, for lists whose cells act on their own (the outbox's Send and Delete marks).</summary>
+	bool RowClickedAt( UiCanvas canvas, System.Numerics.Vector2 point, int index, bool left ) => RowClicked( index, left );
 }
 
 /// <summary>An element that follows the mouse while it is held (slider ball, scroll bar).</summary>
@@ -167,6 +169,13 @@ public sealed class UiScrollList : UiElement, IUiRowList
 	/// </summary>
 	public IReadOnlyList<(float Offset, Func<string> Text)>? Columns { get; set; }
 	/// <summary>
+	/// Whether the list draws the texts of its <see cref="Columns"/> as a header row in its first row's place (on by default). Off where the original window has
+	/// header buttons of its own above the list's rows (the outbox): the columns then only place the cells, and the first row starts at the top.
+	/// </summary>
+	public bool HeaderRow { get; set; } = true;
+	/// <summary>Draws a cell of a multi-column list itself (row, column, the cell in framebuffer pixels); true when it did, which leaves the cell's text out.</summary>
+	public Func<UiContext, int, int, UiRect, bool>? DrawCell { get; set; }
+	/// <summary>
 	/// A right-aligned second cell per row (the original's load list row has two cells, the park name left and the save date right,
 	/// 0x49f170); an empty text draws nothing. The first cell is narrowed by it.
 	/// </summary>
@@ -174,6 +183,11 @@ public sealed class UiScrollList : UiElement, IUiRowList
 	public int Selected { get; set; } = -1;
 	public Action<int>? SelectionChanged { get; set; }
 	public Action<int>? RowActivated { get; set; }
+	/// <summary>
+	/// A left click on a cell of a multi-column list (row, column of <see cref="Columns"/>); true when the cell acted, which leaves the
+	/// screen's default (select, then activate the selected row) out. Null: every click takes the default.
+	/// </summary>
+	public Func<int, int, bool>? CellClicked { get; set; }
 	/// <summary>
 	/// Whether an activation plays the control click before <see cref="RowActivated"/>. Off by default: no original list row clicks (see <see cref="Activate"/>);
 	/// only OpenTPW's own screens without an original counterpart opt in.
@@ -191,7 +205,9 @@ public sealed class UiScrollList : UiElement, IUiRowList
 	/// <summary>Up/Down keep moving the focus between elements; Left/Right change the selection.</summary>
 	public bool ArrowsSelect => false;
 
-	public int VisibleRows => Math.Max( 1, (int)((Bounds.Height - Margin * 2) / RowHeight) );
+	/// <summary>Rows that fit below the column headers, which take the first row's height (<see cref="Columns"/>).</summary>
+	public int VisibleRows => Math.Max( 1, (int)((Bounds.Height - Margin * 2) / RowHeight) - HeaderRows );
+	private int HeaderRows => Columns != null && HeaderRow ? 1 : 0;
 
 	public void Scroll( int rows )
 	{
@@ -233,10 +249,30 @@ public sealed class UiScrollList : UiElement, IUiRowList
 	{
 		var rect = ScreenRect( canvas );
 		var scale = rect.Height / Bounds.Height;
-		var top = rect.Y + Margin * scale;
+		var top = rect.Y + (Margin + HeaderRows * RowHeight) * scale;
 		var index = (int)MathF.Floor( (point.Y - top) / (RowHeight * scale) );
 		return index < 0 || index >= VisibleRows || first + index >= Rows().Count ? -1 : first + index;
 	}
+
+	/// <summary>
+	/// The column of <see cref="Columns"/> under <paramref name="point"/> (framebuffer pixels): the last one starting at or left of it; -1 left of the first, right of the
+	/// list, or without columns.
+	/// </summary>
+	public int ColumnAt( UiCanvas canvas, System.Numerics.Vector2 point )
+	{
+		var rect = ScreenRect( canvas );
+		if ( Columns == null || point.X >= rect.Right )
+			return -1;
+		var scale = rect.Height / Bounds.Height;
+		var column = -1;
+		for ( var index = 0; index < Columns.Count; index++ )
+			if ( point.X >= rect.X + Columns[index].Offset * scale )
+				column = index;
+		return column;
+	}
+
+	public bool RowClickedAt( UiCanvas canvas, System.Numerics.Vector2 point, int index, bool left ) =>
+		left && CellClicked != null && ColumnAt( canvas, point ) is >= 0 and var column && CellClicked( index, column );
 
 	public override void Draw( UiContext context, bool focused, bool pressed )
 	{
@@ -251,7 +287,7 @@ public sealed class UiScrollList : UiElement, IUiRowList
 		var margin = Margin * scale;
 		var height = RowHeight * scale;
 		var top = rect.Y + margin;
-		if ( Columns != null )
+		if ( Columns != null && HeaderRow )
 		{
 			foreach ( var column in Columns )
 			{
@@ -287,7 +323,8 @@ public sealed class UiScrollList : UiElement, IUiRowList
 				{
 					var cell = new UiRect( rect.X + Columns[column].Offset * scale, top + index * height,
 						(Bounds.Width - Columns[column].Offset - Margin) * scale, height );
-					context.DrawText( context.Fonts.Small, pieces[column], cell, selected ? UiColors.Highlight : UiColors.Text );
+					if ( DrawCell?.Invoke( context, first + index, column, cell ) != true )
+						context.DrawText( context.Fonts.Small, pieces[column], cell, selected ? UiColors.Highlight : UiColors.Text );
 				}
 			}
 		}
@@ -299,5 +336,35 @@ public sealed class UiScrollList : UiElement, IUiRowList
 			var offset = (track.Height - thumb) * first / Math.Max( 1, rows.Count - VisibleRows );
 			context.Batch.AddRectangle( new UiRect( track.X, track.Y + offset, track.Width, thumb ), UiColors.Highlight );
 		}
+	}
+}
+
+/// <summary>
+/// A list's slider (the load list's and the outbox's): the track and the <c>b_scroller</c> ball at the list's first row (0x66b088, as in the buy list); dragging or
+/// clicking it sets the first row. The original shows it, with its arrows, only while the rows do not fit (0x664495).
+/// </summary>
+/// <param name="trackModel">The track's own model, or null where the list's frame art holds the track (the outbox's <c>list_outbox</c>).</param>
+public sealed class UiListScrollBar( UiScrollList list, UiRect track, UiRect knob, string? trackModel, string knobModel ) : UiElement, IUiDragTarget
+{
+	private int MaxFirstRow => Math.Max( 0, list.Rows().Count - list.VisibleRows );
+	public override bool Focusable => Visible && Enabled;
+
+	public void DragTo( UiCanvas canvas, System.Numerics.Vector2 point )
+	{
+		var rect = ScreenRect( canvas );
+		var travel = track.Height - knob.Height;
+		if ( rect.Height <= 0 || travel <= 0 || MaxFirstRow == 0 )
+			return;
+		var authoredY = Bounds.Y + (point.Y - rect.Y) / rect.Height * Bounds.Height;
+		var fraction = Math.Clamp( (authoredY - track.Y - knob.Height / 2) / travel, 0, 1 );
+		list.Scroll( (int)MathF.Round( fraction * MaxFirstRow ) - list.FirstRow );
+	}
+
+	public override void Draw( UiContext context, bool focused, bool pressed )
+	{
+		if ( trackModel != null )
+			context.DrawModel( trackModel, 0, context.Canvas.Map( track, Anchor ) );
+		context.DrawModel( knobModel, pressed ? UiButton.DownFrame : focused ? UiButton.HighlightFrame : UiButton.NormalFrame,
+			context.Canvas.Map( OpenTPW.Hud.ParkHud.ListScrollKnobRect( track, knob, list.FirstRow, MaxFirstRow ), Anchor ) );
 	}
 }

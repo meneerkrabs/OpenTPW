@@ -319,7 +319,11 @@ internal static class Game
 		// Init renderer
 		//
 		var visitPath = GetOption( args, "--visit-park", "a local .tpwpark file" );
-		var visit = visitPath == null ? null : ParkSharing.PrepareVisit( OpenTPW.Online.Packages.ParkPackage.Load( visitPath ) );
+		var visitPackage = visitPath == null ? null : OpenTPW.Online.Packages.ParkPackage.Load( visitPath );
+		// [EXT:mods] a startup visit has no dialog to ask on: a park that uses content extensions that are off is refused with how to switch them on for the run
+		if ( visitPackage != null )
+			ParkVisitExtensions.RequireOn( visitPackage, OpenTPW.Mods.OpenTpwExtensions.Active );
+		var visit = visitPackage == null ? null : ParkSharing.PrepareVisit( visitPackage );
 		if ( visit != null )
 			Log.Trace( ParkSharing.Describe( visit ) );
 		using ( StartupProfile.Phase( "renderer" ) )

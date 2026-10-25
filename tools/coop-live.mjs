@@ -309,7 +309,8 @@ class NativeSide {
 		this.logged = this.child.logged;
 	}
 
-	relay() { return null; }
+	/** A native game writes its status itself: nothing to relay. A promise, as a page's relay is, so a caller's catch holds for both (the stop after a failure relays every side). */
+	async relay() { return null; }
 
 	ending() { return ending(this.child); }
 

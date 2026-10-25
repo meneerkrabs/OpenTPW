@@ -52,7 +52,7 @@ Where tp.exe refused the send because the account's settings forbid the service 
   - a cell that acts keeps the row default out;
   - a covered menu draws neither itself nor a second backdrop.
 - `WeatherForecastTests.TheBannerWaitsWhileTheOnlineGlobeTakesTheParksPlace` and `OnlineIntegrationTests.EmptyListsAndASentOutboxLeaveNoMessageOnTheStatusLine`.
-- Mutations were caught: hit-testing without the header row, `VisibleRows` counting it, the covered-screen skip removed, the menu's flag removed, the tick keeping an earlier message, and the banner's globe check.
+- Twelve mutations were caught: hit-testing without the header row, `VisibleRows` counting it, the covered-screen skip removed, the menu's flag removed, the tick keeping an earlier message, the banner's globe check, the tick box's frame, its centring, the column bound at the list's edge, the slider's visibility, the `HeaderRow` flag and the date's format.
 
 Still open:
 - The card's picture is not drawn in its frame (`!frame`, 0xee4): the postcard photo is not ported (the postcard window leaves it out too).

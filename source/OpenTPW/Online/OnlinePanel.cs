@@ -11,6 +11,8 @@ internal sealed class OnlinePanel : IDisposable
 	private readonly ChatOverlay overlay;
 	private string server = "", name = "", password = "", code = "", email = "", emailCode = "", parkName = "My park", search = "", importPath = "", chatLine = "";
 	private string recipients = "", title = "", message = "", localStatus = "";
+	/// <summary>Whether the park list was fetched, so an empty list is a result rather than nothing asked yet.</summary>
+	private bool listed;
 	private ParkVisitInfo? inspected;
 
 	public OnlinePanel( Level level, OnlineFolders folders )
@@ -147,7 +149,13 @@ internal sealed class OnlinePanel : IDisposable
 			return;
 		ImGui.InputText( OnlineStrings.Ui( OnlineStrings.SearchName, "Search name" ), ref search, 128 );
 		if ( ImGui.Button( OnlineStrings.Get( OnlineLabel.Refresh ) ) )
+		{
 			session.RefreshParks( search );
+			listed = true;
+		}
+		// the park list's fetch ends its progress text, as the Find Parks screen shows an empty result as its row: this list says so itself
+		if ( listed && session.Busy == 0 && session.Parks.Count == 0 )
+			ImGui.TextWrapped( OnlineStrings.Ui( OnlineStrings.NoSearchResults, "No search results" ) );
 		foreach ( var park in session.Parks )
 		{
 			ImGui.PushID( park.Id );
@@ -177,6 +185,8 @@ internal sealed class OnlinePanel : IDisposable
 				GameLanguage.IsSelected ? GameLanguage.Current.Name : GameLanguage.DefaultLanguage );
 			localStatus = OnlineStrings.Get( OnlineLabel.SavedTo ) + session.Folders.Store( session.Folders.Outbox, card );
 		}
+		// the outbox's send ends with no count (tp.exe 0x4bc660), as the Unsent Postcards window shows: here the number of cards still waiting confirms it
+		ImGui.TextWrapped( $"{OnlineStrings.Ui( OnlineStrings.UnsentPostcards, "Unsent postcards" )}: {session.Folders.List( session.Folders.Outbox ).Count( entry => entry.Card != null )}" );
 		if ( session.IsLoggedIn )
 		{
 			if ( ImGui.Button( OnlineStrings.Ui( OnlineStrings.SendingOutbox, "Send outbox" ) ) )

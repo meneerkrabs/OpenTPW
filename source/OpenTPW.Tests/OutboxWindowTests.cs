@@ -246,9 +246,10 @@ public class OutboxWindowTests
 		((UiButton)screen.Find( "ok" )!).Clicked!();
 		Assert.AreSame( menu, stack.Top, "with nothing marked the tick closes the window" );
 		var status = (UiLabel)menu.Find( "status" )!;
-		// with nothing to report the line shows what it shows idle (here why Publish park is greyed)
+		// with nothing to report the line shows what it shows idle: why Publish park is greyed (no park is open here)
 		var idle = status.Text();
-		Assert.IsFalse( idle.Contains( "Saved to an earlier place" ), "the tick's own outcome replaces the earlier window's message" );
+		Assert.AreEqual( $"{OnlineStrings.Ui( OnlineStrings.PublishPark, "Publish park" )}: {ParkSharing.PublishRefusal( null )}", idle,
+			"the tick's own outcome replaces the earlier window's message" );
 		// while a request runs, the status line shows the progress text it set (the original's progress message), then its outcome
 		var release = new System.Threading.Tasks.TaskCompletionSource<string?>();
 		session.Run( () => release.Task );

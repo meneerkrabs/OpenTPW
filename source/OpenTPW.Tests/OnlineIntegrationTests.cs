@@ -577,6 +577,33 @@ public class OnlineIntegrationTests
 	}
 
 	[TestMethod]
+	public async Task ACityWithoutParksSaysSoInItsLobbyWhileTheLobbyIsOnTop()
+	{
+		await using var server = await LoopbackServer.StartAsync();
+		var folders = Folders();
+		try
+		{
+			using var session = new OnlineSession( folders );
+			session.UseServer( server.Url.ToString(), "Alice" );
+			session.Register( "Alice", "correct horse" );
+			await PumpUntilIdle( session );
+			var stack = new OpenTPW.UI.Original.UiScreenStack();
+			stack.Push( new OpenTPW.UI.Original.UiScreen( "hud" ) );
+			var screens = new OpenTPW.UI.OnlineScreens( stack, OriginalUiTests.FakeStrings(), new OpenTPW.UI.Original.UiModels( name => throw new FileNotFoundException( name ) ),
+				new OpenTPW.UI.OnlineHost { Session = session, Level = () => null } );
+			screens.ShowCityLobby( new CityInfo( 3, "Empty city", "", 0, 0, 0 ) );
+			var lobby = stack.Top!;
+			await PumpUntilIdle( session );
+			Assert.AreEqual( 0, session.CityParks!.Count );
+			var status = (OpenTPW.UI.Original.UiLabel)lobby.Find( "cityStatus" )!;
+			Assert.AreEqual( "Empty city\n" + OnlineStrings.Ui( OnlineStrings.NoSearchResults, "No search results" ), status.Text(), "the fetch ends its progress text, and the lobby says the city has no parks" );
+			stack.Push( new OpenTPW.UI.Original.UiScreen( "window" ) );
+			Assert.AreEqual( "Empty city\n", status.Text(), "a status shows only on the screen on top" );
+		}
+		finally { Directory.Delete( folders.Root, true ); server.DeleteData(); }
+	}
+
+	[TestMethod]
 	public async Task EmptyListsAndASentOutboxLeaveNoMessageOnTheStatusLine()
 	{
 		await using var server = await LoopbackServer.StartAsync();

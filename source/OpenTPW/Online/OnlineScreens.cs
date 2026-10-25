@@ -328,7 +328,7 @@ public sealed class OnlineScreens
 		// [EXT:ONLINE-UI] the city's name and the fetch status while no park is shown; a city without parks says so (UITEXT 306)
 		var cityStatus = StatusText( screen, busy: false );
 		var status = screen.Add( new UiLabel { Id = "cityStatus", Font = fonts => fonts.Title, Color = UiColors.Title, Align = UiAlign.Center, Bounds = new UiRect( 524, 118, 1000, 135 ), Anchor = UiAnchor.Top,
-			Text = () => $"{city.Name}\n{(cityStatus() is { Length: > 0 } text ? text : Session.CityParks is { Count: 0 } ? OnlineStrings.Ui( OnlineStrings.NoSearchResults, "No search results" ) : "")}" } );
+			Text = () => $"{city.Name}\n{(cityStatus() is { Length: > 0 } text ? text : Session.CityParks is { Count: 0 } && ReferenceEquals( stack.Top, screen ) ? OnlineStrings.Ui( OnlineStrings.NoSearchResults, "No search results" ) : "")}" } );
 		screen.Updating += _ =>
 		{
 			enter.Enabled = screen.SelectedPark != null && Session.Busy == 0 && host.Visit != null;

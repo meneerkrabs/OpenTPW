@@ -447,6 +447,21 @@ public class ObjectRayPickTests
 	}
 
 	[TestMethod]
+	public void APointerWhosePickTestsAModelIsNamedWhateverThePose()
+	{
+		Park( out var level, out _ );
+		var mouse = Screen( TowerTop() );
+		Assert.IsTrue( level.CursorPickTestsObjectModels( mouse, Canvas ), "the walk tests the tower's model under its top" );
+		// the model moves out of the ray (an animated part, here the tower's own mesh-less model): the pick turns to the terrain behind it, the answer stays
+		level.PickShapeOf = null;
+		Assert.IsTrue( level.TryGetGridCell( mouse, Canvas, out _, out var y ) && y > 16, "the pick is the terrain behind the tower now" );
+		Assert.IsTrue( level.CursorPickTestsObjectModels( mouse, Canvas ), "the answer does not follow the model's pose" );
+		// the ground well to the side of the tower: no owner on the walk, the pick is the terrain's whatever the models do
+		var side = new NVector3( ParkPlacement.MinimumCoordinate + 22.5f * ObjectPlacement.CellSize, ParkPlacement.MinimumCoordinate + 18.5f * ObjectPlacement.CellSize, 0 );
+		Assert.IsFalse( level.CursorPickTestsObjectModels( Screen( side ), Canvas ) );
+	}
+
+	[TestMethod]
 	public void AClickOnEmptyGroundStillStartsThePathTool()
 	{
 		var hud = Park( out var level, out _ );

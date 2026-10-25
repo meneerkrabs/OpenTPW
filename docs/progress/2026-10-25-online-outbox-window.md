@@ -8,16 +8,21 @@ A player's screenshot of Unsent Postcards, opened in a Dutch park through Go Onl
 
 **The outbox window.** tp.exe builds Unsent Postcards from the layout table at 0x758878 (built by 0x4bc710, handled by 0x4bbc20). `tools/ppc-analysis/lanes/ui/tpw_exe_layouts.py` now decodes that table into `OriginalLayoutTables.OutboxWindow`, and the screen takes every control from it:
 - the frame `window4` and the title (0xee9);
-- the selected card's picture frame `!frame` (0xee4) and its addresses list `list_emailaddr` (0xee2);
+- the selected card's picture frame `!frame` (0xee4) and its addresses (0xee2, `list_emailaddr`);
 - the bulk buttons: mark all for sending `b_okall` (0xee5), mark all for deletion `b_delall` (0xee6) and unmark all `b_nuall` (0xee7), with their help texts UIHELPTEXT 397-399;
-- the list `list_outbox` (0xee8) with the Title/Date/Send/Delete headers 16-19 (UITEXT 309-312);
+- the list frame `list_outbox` (0xee8), its header buttons 16-19 with UITEXT 309-312 (Title, Date, Send, Delete), its content rectangle, and its slider with `b_up`, `b_down` and `b_scroller`, which show only while the rows do not fit (0x664495; the load list's slider, now the shared `UiListScrollBar`);
 - the tick `b_okay` (help 400).
 
-The Mac table `data:0x508bc`, which the earlier screen cited, has the same 19 controls and rectangles. The earlier screen showed the recipients in the picture frame's place and the message in the address list's place, listed each card's recipients instead of its title, and started every card unmarked.
+The Mac table `data:0x508bc`, which the earlier screen cited, has the same 19 controls and rectangles. The earlier screen showed the recipients in the picture frame's place and the message in the address list's place, listed each card's recipients instead of its title, drew its own header row inside the list frame and started every card unmarked.
+
+The rows follow the row factory 0x4bcbc0 and its cell setup 0x4bcca0:
+- A row is as high as the buy list's rows (font slot 7's line height × 1536 / screen height + 6, 0x4ad240), so it takes their fixed pitch (`[EXT:list-row-pitch]`): 14 rows fit the content rectangle.
+- The title is the row's own text, from the row's left. The date is centred in the Date column and is UITEXT 447 filled with the card's day, month and year, the save list's format (0x4bca6a). Before, it was .NET's short date.
+- The Send and Delete cells hold the model `i_boxtick`. The list sets a cell's value from the row's mark (0x6634b2, 0x4bbfbc), and the value is the model's frame (0x66da4d): the empty box for an unset mark, the tick for a set one. Each box keeps the model's 51-unit size, centred in its column, as in the buy list. Before, a set mark showed as an X and an unset one as nothing.
 
 The marks follow the handler:
 - The builder adds every row with the send mark 0x1000000 (0x4bcaec), so every card starts marked for sending.
-- A click on a row's Send cell (column 2) or Delete cell (column 3) toggles that mark and clears the other (cell message 0x404, 0x4bbf2c). `UiScrollList` gains `CellClicked` and `ColumnAt` for this.
+- A click on a row's Send cell (column 2) or Delete cell (column 3) toggles that mark and clears the other (cell message 0x404, 0x4bbf2c). `UiScrollList` gains `CellClicked`, `ColumnAt`, `HeaderRow` and `DrawCell` for this. A click right of the list (its slider strip) is no cell.
 - The bulk buttons set or clear the marks of every row (0x4bbd2d, 0x4bbe7a, 0x4bbddf).
 - The tick applies the marks first, deleting the cards marked for deletion (0x4bbcbd, 0x4bc430), then closes the window and sends the cards marked for sending (0x4bc500). Escape closes the window without either.
 
@@ -29,23 +34,28 @@ Where tp.exe refused the send because the account's settings forbid the service 
 - The park-list and news fetches now end the progress text.
 - Find Parks and Other Parks still show an empty result as their own row.
 - The city lobby has no list, so its status label now says "No search results" itself.
-- The outbox send shows "Sending mails from outbox, please wait ..." (UITEXT 313) while it runs, as tp.exe's 0x4bc500 did. Its progress closes with no count (0x4bc660), so the line clears once the cards are sent. Before, it ended with "Sending mails from outbox, please wait ... 2".
-- The outbox's tick clears a message an earlier window left on the menu's status line, so that message does not hide the send's progress.
+- The outbox send sets "Sending mails from outbox, please wait ..." (UITEXT 313) while it runs, as tp.exe's 0x4bc500 did. The globe's status line shows it; the menu's own status line shows "..." while any request runs, as before. tp.exe's progress closes with no count (0x4bc660), so the status clears once the cards are sent. Before, it ended with "Sending mails from outbox, please wait ... 2".
+- The outbox's tick clears a message an earlier window left on the status lines, so that message does not hide the send's progress.
 
 **The weather banner.** The forecast banner draws in the overlay pass above every screen. Go Online in a park replaces the park's view with the online globe, whose camera replaces the park's, and pauses the park, so the banner held its line over the online windows. It now waits while the globe camera is active (`WeatherForecastPresenter.ShowsOnlineGlobe`, `[EXT:forecast-banner]`, [AUDIO.md](../AUDIO.md)).
 
-**Lists with column headers.** `UiScrollList` draws its column headers in the first row's place, but it hit-tested clicks as if the rows started at the top. A click on a drawn row selected the row below it, and a full list overran its frame by one row. Find Parks, Other Parks and the outbox had this. Clicks now find the row drawn under the pointer, and `VisibleRows` leaves the header row out. The row helper of `ListOwnerAudioTests` had followed the old mapping and now clicks the drawn rows.
+**Lists with column headers.** `UiScrollList` draws its column headers in the first row's place, but it hit-tested clicks as if the rows started at the top. A click on a drawn row selected the row below it, and a full list overran its frame by one row. Find Parks and Other Parks had this. Clicks now find the row drawn under the pointer, and `VisibleRows` leaves the header row out. The row helper of `ListOwnerAudioTests` had followed the old mapping and now clicks the drawn rows.
 
 **Checks.**
-- The front-end smoke opens the outbox from the online menu with two cards and captures `online-outbox-cards.png`. The window follows the table, each row shows the card's title, date and send mark, and none of the menu's buttons are drawn (checked against the frame's text draws). The smoke passes.
-- `OutboxWindowTests` (10 tests): the table's controls, the columns and headers, the starting marks and cell toggles (by call and by a click on the drawn cell), the bulk buttons, the tick with and without a card to send, the menu giving way and its status line, and Escape.
-- `NativeWidgetTests`: rows drawn below the headers are the rows a click finds, a cell that acts keeps the row default out, and a covered menu draws neither itself nor a second backdrop.
+- The front-end smoke:
+  - It opens the outbox from the online menu with two cards and captures `online-outbox-cards.png`. The window follows the table, each row shows the card's title, date and tick box, and none of the menu's buttons are drawn (checked against the frame's text draws).
+  - It posts a forecast of other weather in the park: the banner draws over the park, waits while the globe shows, and is back with the park's view.
+  - The smoke passes.
+- `OutboxWindowTests` (12 tests): the table's controls, the headers, columns, row pitch and date, the starting marks and cell toggles (by call and by a click on the drawn cell, but not on the slider strip), the tick boxes' frames and places, the slider's visibility, the bulk buttons, the tick with and without a card to send, the menu giving way and its status line, and Escape.
+- `NativeWidgetTests`:
+  - rows drawn below the headers are the rows a click finds, and a list without a header row starts its rows at the top and ends its columns at its edge;
+  - a cell that acts keeps the row default out;
+  - a covered menu draws neither itself nor a second backdrop.
 - `WeatherForecastTests.TheBannerWaitsWhileTheOnlineGlobeTakesTheParksPlace` and `OnlineIntegrationTests.EmptyListsAndASentOutboxLeaveNoMessageOnTheStatusLine`.
-- Six mutations were caught: hit-testing without the header row, `VisibleRows` counting it, the covered-screen skip removed, the menu's flag removed, the tick keeping an earlier message, and the banner's globe check.
+- Mutations were caught: hit-testing without the header row, `VisibleRows` counting it, the covered-screen skip removed, the menu's flag removed, the tick keeping an earlier message, and the banner's globe check.
 
 Still open:
-- The card's picture is not drawn in its frame (`!frame`, 0xee4).
-- The marks show as an X: the cells of the row factory 0x4bcbc0, which hold the original's mark art, are not decoded.
-- The list's and the address list's original sliders are not drawn.
-- What a click on the header buttons 16-19 does in tp.exe is not traced.
+- The card's picture is not drawn in its frame (`!frame`, 0xee4): the postcard photo is not ported (the postcard window leaves it out too).
+- The header buttons sort the list in tp.exe (the list's attribute 0x10, 0x665a44; UIHELPTEXT 391-394 say so), but that sort (0x6628f4) is not decoded, so the headers do not sort yet, and they leave out those help texts.
+- The addresses: tp.exe joins the recipients with newlines into one text in font slot 6, wrapped to the frame's inner width, with a slider (0xee3) when it overflows (0x4bc100). OpenTPW lists them a line each in the small font, without that slider.
 - Find Parks and News still place OpenTPW's status line inside their original windows, where a message can overlap the search field and the news text.

@@ -1,8 +1,10 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using OpenTPW.Hud;
 using OpenTPW.Online.Packages;
 using OpenTPW.UI;
 using OpenTPW.UI.Original;
@@ -47,7 +49,12 @@ public class OutboxWindowTests
 		return (index, rows[index].Split( '\t' ));
 	}
 
+	/// <summary>The Send and Delete cells of a row: the type-6 cells' values, 1 for a set mark and 0 for none (tp.exe 0x4bbfbc).</summary>
 	private static string Marks( UiScreen screen, string title ) => Row( screen, title ).Cells[2] + "|" + Row( screen, title ).Cells[3];
+	private const string Send = "1|0", Delete = "0|1", None = "0|0";
+
+	private static UiContext Context( UiModels? models = null ) =>
+		new( Strings, null!, models ?? new UiModels( name => throw new FileNotFoundException( name ) ) ) { Canvas = new UiCanvas( 2048, 1536 ), ResolveTexture = name => name };
 
 	[TestMethod]
 	public void TheWindowFollowsTheTableAndKeepsEveryControlInsideIt() => WithScreens( ( screens, _, stack ) =>
@@ -62,8 +69,20 @@ public class OutboxWindowTests
 		Assert.AreEqual( table.Control( 0xEE4 ).Rect, screen.Find( "picture" )!.Bounds );
 		Assert.AreEqual( "list_emailaddr", ((UiModelImage)screen.Find( "addressFrame" )!).Model );
 		Assert.AreEqual( table.Control( 0xEE2 ).Inner, screen.Find( "addresses" )!.Bounds, "the addresses sit inside the frame's inner rectangle, clear of its slider" );
-		Assert.AreEqual( "list_outbox", Cards( screen ).Model );
-		Assert.AreEqual( table.Control( 0xEE8 ).Rect, Cards( screen ).Bounds );
+		Assert.AreEqual( "list_outbox", ((UiModelImage)screen.Find( "listFrame" )!).Model );
+		Assert.AreEqual( table.Control( 0xEE8 ).Rect, screen.Find( "listFrame" )!.Bounds );
+		Assert.AreEqual( table.Control( 0xEE8 ).Inner, Cards( screen ).Bounds, "the rows fill the list's content rectangle, below the header buttons" );
+		Assert.IsFalse( Cards( screen ).Background, "the frame art is drawn once, by the list frame" );
+		for ( var column = 0; column < 4; column++ )
+		{
+			var header = (UiLabel)screen.Find( $"header{column}" )!;
+			Assert.AreEqual( table.Control( (uint)(0x10 + column) ).Rect, header.Bounds, "the header buttons 16-19 keep their rectangles" );
+			Assert.IsNull( header.Help, "the help texts 391-394 describe the sort, which is not ported yet" );
+		}
+		var slider = table.Control( 0xEE8 ).Children.Single( node => node.Type == 3 );
+		Assert.AreEqual( slider.Rect, screen.Find( "cardsScroll" )!.Bounds );
+		Assert.AreEqual( "b_up", ((UiButton)screen.Find( "cardsUp" )!).Model );
+		Assert.AreEqual( "b_down", ((UiButton)screen.Find( "cardsDown" )!).Model );
 		foreach ( var (id, control, model, help) in new[] { ("markAllSend", 0xEE5u, "b_okall", 397), ("markAllDelete", 0xEE6u, "b_delall", 398), ("unmarkAll", 0xEE7u, "b_nuall", 399) } )
 		{
 			var button = (UiButton)screen.Find( id )!;
@@ -90,11 +109,20 @@ public class OutboxWindowTests
 		Store( session, "Hello" );
 		screens.ShowOutbox();
 		var screen = stack.Top!;
-		var columns = Cards( screen ).Columns!;
+		var list = Cards( screen );
 		CollectionAssert.AreEqual( new[] { OnlineStrings.Ui( OnlineStrings.Title, "Title" ), OnlineStrings.Ui( OnlineStrings.DateLabel, "Date" ),
-			OnlineStrings.Ui( OnlineStrings.Send, "Send" ), OnlineStrings.Ui( OnlineStrings.Delete, "Delete" ) }, columns.Select( column => column.Text() ).ToArray() );
-		CollectionAssert.AreEqual( new[] { 816f - 793, 1194f - 793, 1491f - 793, 1608f - 793 }, columns.Select( column => column.Offset ).ToArray(), "the header buttons 16-19 of the table" );
-		Assert.AreEqual( "Hello", Row( screen, "Hello" ).Cells[0], "the Title column holds the card's title, not its addresses" );
+			OnlineStrings.Ui( OnlineStrings.Send, "Send" ), OnlineStrings.Ui( OnlineStrings.Delete, "Delete" ) },
+			Enumerable.Range( 0, 4 ).Select( column => ((UiLabel)screen.Find( $"header{column}" )!).Text() ).ToArray() );
+		Assert.IsFalse( list.HeaderRow, "the header buttons stand above the rows; the list draws no header row of its own" );
+		CollectionAssert.AreEqual( new[] { 0f, 1194f - 826, 1491f - 826, 1608f - 826 }, list.Columns!.Select( column => column.Offset ).ToArray(),
+			"the title is the row's own text from its left; the other cells start at the header buttons 17-19" );
+		Assert.AreEqual( ParkHud.BuyRowHeight, list.RowHeight, "the row factory 0x4bcbc0 has the buy list's rule, so the rows take its pitch" );
+		Assert.AreEqual( 14, list.VisibleRows, "(904 - 294) / 41.4 rows" );
+		var row = Row( screen, "Hello" ).Cells;
+		Assert.AreEqual( "Hello", row[0], "the Title column holds the card's title, not its addresses" );
+		var created = session.Folders.List( session.Folders.Outbox ).Single().Card!.Manifest.CreatedUtc.LocalDateTime;
+		Assert.AreEqual( Strings.FormatByType( UiTextRecord.SaveDate, new Dictionary<int, string> { [16] = created.Day.ToString(), [17] = created.Month.ToString(), [18] = created.Year.ToString() } ),
+			row[1], "the date is UITEXT 447 with the card's day, month and year, as the save list writes it" );
 	} );
 
 	[TestMethod]
@@ -105,20 +133,20 @@ public class OutboxWindowTests
 		screens.ShowOutbox();
 		var screen = stack.Top!;
 		var list = Cards( screen );
-		Assert.AreEqual( "X|", Marks( screen, "First" ), "the builder adds every row with the send mark" );
-		Assert.AreEqual( "X|", Marks( screen, "Second" ) );
+		Assert.AreEqual( Send, Marks( screen, "First" ), "the builder adds every row with the send mark" );
+		Assert.AreEqual( Send, Marks( screen, "Second" ) );
 		var first = Row( screen, "First" ).Index;
 		Assert.IsFalse( list.CellClicked!( first, 0 ), "the title cell leaves the click to the list" );
 		Assert.IsTrue( list.CellClicked( first, 3 ) );
-		Assert.AreEqual( "|X", Marks( screen, "First" ), "the delete mark replaces the send mark" );
+		Assert.AreEqual( Delete, Marks( screen, "First" ), "the delete mark replaces the send mark" );
 		Assert.AreEqual( first, list.Selected, "the clicked row becomes the current one" );
 		CollectionAssert.AreEqual( new[] { "First@example.test", "Bob" }, ((UiScrollList)screen.Find( "addresses" )!).Rows().ToArray(), "the current card's addresses" );
 		Assert.IsTrue( list.CellClicked( first, 3 ) );
-		Assert.AreEqual( "|", Marks( screen, "First" ), "a second click takes the mark off" );
+		Assert.AreEqual( None, Marks( screen, "First" ), "a second click takes the mark off" );
 		Assert.IsTrue( list.CellClicked( first, 2 ) );
-		Assert.AreEqual( "X|", Marks( screen, "First" ) );
+		Assert.AreEqual( Send, Marks( screen, "First" ) );
 		Assert.IsTrue( list.CellClicked( Row( screen, "Second" ).Index, 2 ) );
-		Assert.AreEqual( "|", Marks( screen, "Second" ) );
+		Assert.AreEqual( None, Marks( screen, "Second" ) );
 	} );
 
 	[TestMethod]
@@ -127,17 +155,21 @@ public class OutboxWindowTests
 		Store( session, "Only" );
 		screens.ShowOutbox();
 		var screen = stack.Top!;
-		var context = new UiContext( Strings, null!, new UiModels( name => throw new FileNotFoundException( name ) ) ) { Canvas = new UiCanvas( 2048, 1536 ) };
+		var context = Context();
 		var list = Cards( screen );
 		var rect = list.ScreenRect( context.Canvas );
 		var scale = rect.Height / list.Bounds.Height;
-		// the first row lies under the header row: the list's margin, then one row of headers
-		var point = new NVector2( rect.X + (1608 - 793 + 20) * scale, rect.Y + (list.Margin + list.RowHeight * 1.5f) * scale );
+		// the first row starts at the top of the content rectangle, below the header buttons
+		var point = new NVector2( rect.X + (1608 - 826 + 20) * scale, rect.Y + list.RowHeight * 0.5f * scale );
 		Assert.AreEqual( 0, list.RowAt( context.Canvas, point ) );
 		Assert.AreEqual( 3, list.ColumnAt( context.Canvas, point ) );
 		stack.Update( context, UiInput.Click( point ) );
-		Assert.AreEqual( "|X", Marks( screen, "Only" ) );
-		Assert.AreEqual( -1, list.RowAt( context.Canvas, new NVector2( point.X, rect.Y + (list.Margin + list.RowHeight * 0.5f) * scale ) ), "the header row is no card" );
+		Assert.AreEqual( Delete, Marks( screen, "Only" ) );
+		// the strip right of the content holds the list's slider: a click there is no Delete cell
+		var strip = new NVector2( rect.X + (1760 - 826) * scale, point.Y );
+		Assert.AreEqual( -1, list.ColumnAt( context.Canvas, strip ) );
+		stack.Update( context, UiInput.Click( strip ) );
+		Assert.AreEqual( Delete, Marks( screen, "Only" ), "a click on the slider strip leaves the marks alone" );
 	} );
 
 	[TestMethod]
@@ -148,14 +180,14 @@ public class OutboxWindowTests
 		screens.ShowOutbox();
 		var screen = stack.Top!;
 		((UiButton)screen.Find( "markAllDelete" )!).Clicked!();
-		Assert.AreEqual( "|X", Marks( screen, "First" ) );
-		Assert.AreEqual( "|X", Marks( screen, "Second" ) );
+		Assert.AreEqual( Delete, Marks( screen, "First" ) );
+		Assert.AreEqual( Delete, Marks( screen, "Second" ) );
 		((UiButton)screen.Find( "unmarkAll" )!).Clicked!();
-		Assert.AreEqual( "|", Marks( screen, "First" ) );
-		Assert.AreEqual( "|", Marks( screen, "Second" ) );
+		Assert.AreEqual( None, Marks( screen, "First" ) );
+		Assert.AreEqual( None, Marks( screen, "Second" ) );
 		((UiButton)screen.Find( "markAllSend" )!).Clicked!();
-		Assert.AreEqual( "X|", Marks( screen, "First" ) );
-		Assert.AreEqual( "X|", Marks( screen, "Second" ) );
+		Assert.AreEqual( Send, Marks( screen, "First" ) );
+		Assert.AreEqual( Send, Marks( screen, "Second" ) );
 	} );
 
 	[TestMethod]
@@ -188,7 +220,7 @@ public class OutboxWindowTests
 		Assert.IsTrue( stack.Screens.Contains( screen ), "the outbox stays under the login dialog" );
 		Assert.IsFalse( File.Exists( deleted ), "the marks are applied first, deletions included" );
 		Assert.IsTrue( File.Exists( sent ) );
-		Assert.AreEqual( "X|", Marks( screen, "Sent" ), "the card keeps its send mark for the next tick" );
+		Assert.AreEqual( Send, Marks( screen, "Sent" ), "the card keeps its send mark for the next tick" );
 	} );
 
 	[TestMethod]
@@ -210,6 +242,56 @@ public class OutboxWindowTests
 	} );
 
 	[TestMethod]
+	public void TheMarksDrawTheOriginalTickBoxInTheirColumns() => WithScreens( ( screens, session, stack ) =>
+	{
+		Store( session, "First" );
+		Store( session, "Second" );
+		screens.ShowOutbox();
+		var screen = stack.Top!;
+		var list = Cards( screen );
+		var first = Row( screen, "First" ).Index;
+		var second = Row( screen, "Second" ).Index;
+		list.CellClicked!( first, 3 );
+		var context = Context( TickBoxModels() );
+		context.Batch.Clear();
+		Assert.IsTrue( list.DrawCell!( context, first, 2, CellRect( list, context, first, 2 ) ) );
+		Assert.IsTrue( list.DrawCell( context, first, 3, CellRect( list, context, first, 3 ) ) );
+		Assert.IsTrue( list.DrawCell( context, second, 3, CellRect( list, context, second, 3 ) ) );
+		var draws = context.Batch.Draws.Where( draw => draw.Texture.ImagePath?.StartsWith( "frame-", StringComparison.Ordinal ) == true ).ToArray();
+		CollectionAssert.AreEqual( new[] { "frame-0", "frame-1", "frame-0" }, draws.Select( draw => draw.Texture.ImagePath ).ToArray(),
+			"i_boxtick frame 0 is the empty box of an unset mark, frame 1 the tick of a set one (0x66da4d): First is marked for deletion, Second still for sending" );
+		// each box keeps the model's 51-unit size, centred in its header's column and in its row
+		foreach ( var (draw, header) in new[] { (draws[0], 0x12u), (draws[1], 0x13u) } )
+		{
+			var xs = draw.Vertices.Select( vertex => vertex.Position.X ).ToArray();
+			var ys = draw.Vertices.Select( vertex => vertex.Position.Y ).ToArray();
+			var column = OriginalLayoutTables.OutboxWindow.Control( header ).Rect;
+			Assert.AreEqual( 51f, xs.Max() - xs.Min(), 0.01f );
+			Assert.AreEqual( column.X + column.Width / 2, (xs.Max() + xs.Min()) / 2, 0.01f );
+			Assert.AreEqual( 294 + (first + 0.5f) * ParkHud.BuyRowHeight, (ys.Max() + ys.Min()) / 2, 0.01f );
+		}
+		Assert.IsFalse( list.DrawCell( context, first, 0, CellRect( list, context, first, 0 ) ), "the title is drawn as the row's text" );
+	} );
+
+	[TestMethod]
+	public void TheSliderAndItsArrowsShowOnlyWhileTheRowsDoNotFit() => WithScreens( ( screens, session, stack ) =>
+	{
+		for ( var card = 0; card < 14; card++ )
+			Store( session, $"Card{card}" );
+		screens.ShowOutbox();
+		var screen = stack.Top!;
+		var scrollers = new[] { "cardsScroll", "cardsUp", "cardsDown" };
+		Assert.IsTrue( scrollers.All( id => !screen.Find( id )!.Visible ), "fourteen cards fit" );
+		stack.Pop();
+		Store( session, "Card14" );
+		screens.ShowOutbox();
+		screen = stack.Top!;
+		Assert.IsTrue( scrollers.All( id => screen.Find( id )!.Visible ), "the fifteenth does not (0x664495)" );
+		((UiButton)screen.Find( "cardsDown" )!).Clicked!();
+		Assert.AreEqual( 1, Cards( screen ).FirstRow );
+	} );
+
+	[TestMethod]
 	public void EscapeClosesWithoutApplyingTheMarks() => WithScreens( ( screens, session, stack ) =>
 	{
 		var card = Store( session, "Card" );
@@ -219,6 +301,26 @@ public class OutboxWindowTests
 		screen.Back!();
 		Assert.AreEqual( "hud", stack.Top!.Name );
 		Assert.IsTrue( File.Exists( card ), "Escape applies nothing" );
+	} );
+
+	/// <summary>A cell as the list lays it out: the column's offset from the content's left, the row's band.</summary>
+	private static UiRect CellRect( UiScrollList list, UiContext context, int row, int column )
+	{
+		var rect = list.ScreenRect( context.Canvas );
+		var scale = rect.Height / list.Bounds.Height;
+		return new UiRect( rect.X + list.Columns![column].Offset * scale, rect.Y + (row - list.FirstRow) * list.RowHeight * scale,
+			(list.Bounds.Width - list.Columns[column].Offset) * scale, list.RowHeight * scale );
+	}
+
+	/// <summary>A synthetic i_boxtick: three 51-unit frames whose parts name their frame, so a draw tells which frame it is.</summary>
+	private static UiModels TickBoxModels() => new( name =>
+	{
+		Assert.AreEqual( "i_boxtick", name );
+		var model = new UiModel( new ModelFile( new MemoryStream( Md2ModelFileTests.CreateGeometry() ) ), name );
+		var vertices = new[] { new UiModelVertex( NVector2.Zero, 0, NVector2.Zero ), new UiModelVertex( new NVector2( 51, 0 ), 0, NVector2.Zero ), new UiModelVertex( new NVector2( 0, 51 ), 0, NVector2.Zero ) };
+		typeof( UiModel ).GetField( "<Frames>k__BackingField", BindingFlags.Instance | BindingFlags.NonPublic )!.SetValue( model, Enumerable.Range( 0, 3 )
+			.Select( frame => new UiModelFrame( $"synthetic-{frame}", new[] { new UiModelPart( $"frame-{frame}", vertices, new[] { 0, 1, 2 } ) }, 0, 0, 51, 51 ) ).ToArray() );
+		return model;
 	} );
 
 	[TestMethod]

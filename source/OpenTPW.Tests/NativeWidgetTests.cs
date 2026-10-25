@@ -211,6 +211,22 @@ public class NativeWidgetTests
 	}
 
 	[TestMethod]
+	public void AListWithoutAHeaderRowStartsItsRowsAtTheTopAndEndsItsColumnsAtItsEdge()
+	{
+		var context = Context();
+		var list = ColumnList( new List<string> { "a\t1", "b\t2" } );
+		list.HeaderRow = false;
+		Assert.AreEqual( 10, list.VisibleRows, "the header buttons stand outside such a list" );
+		var rect = list.ScreenRect( context.Canvas );
+		var scale = rect.Height / list.Bounds.Height;
+		NVector2 At( float x, float rows ) => new( rect.X + x * scale, rect.Y + (24 + 40 * rows) * scale );
+		Assert.AreEqual( 0, list.RowAt( context.Canvas, At( 50, 0.5f ) ), "the first row is the top one" );
+		Assert.AreEqual( 1, list.RowAt( context.Canvas, At( 50, 1.5f ) ) );
+		Assert.AreEqual( 1, list.ColumnAt( context.Canvas, At( 790, 0.5f ) ) );
+		Assert.AreEqual( -1, list.ColumnAt( context.Canvas, At( 800, 0.5f ) ), "right of the list is no column (the outbox's slider strip)" );
+	}
+
+	[TestMethod]
 	public void ACellThatActsLeavesTheRowDefaultOutAndOtherCellsSelectTheRow()
 	{
 		var context = Context();

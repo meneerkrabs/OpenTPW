@@ -1504,6 +1504,24 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 			Do( "park camera", () => parkCamera = Camera.Mode );
 		else
 		{
+			// A forecast of other weather puts the forecast banner over the park; the banner waits while the globe takes the park's place (WeatherForecastPresenter.ShowsOnlineGlobe).
+			WeatherForecastPresenter? presenter = null;
+			Do( "forecast banner in the park", () =>
+			{
+				Require( flow.Level!.Weather is { Started: true }, "the park's weather has started" );
+				var weather = flow.Level.Weather!;
+				presenter = Entity.All.OfType<WeatherForecastPresenter>().Single( entity => entity.Level == flow.Level );
+				foreach ( var quality in new[] { 90, 10, 50, 70, 30 } )
+				{
+					weather.DebugPostForecast( quality );
+					if ( !weather.ForecastBands.Equals( weather.CurrentBands ) )
+						break;
+				}
+				Require( !weather.ForecastBands.Equals( weather.CurrentBands ), "a forecast of other weather is posted" );
+				WeatherForecastPresenter.BannerHidden = false;
+			} );
+			Wait( "forecast banner renders", 3 );
+			Do( "forecast banner draws", () => Require( presenter!.DrawnBanner != null, "the forecast banner draws over the park" ) );
 			Do( "online globe in the park", () =>
 			{
 				parkCamera = Camera.Mode;
@@ -1513,10 +1531,16 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 			Do( "park globe", () =>
 			{
 				Require( flow.Globe is { Visible: true } && Camera.Mode is GlobeCameraMode, "Go Online in a park shows the globe with its camera" );
+				Require( presenter!.DrawnBanner == null, "the forecast banner waits while the online globe takes the park's place" );
 				CaptureFrame( "online-park-globe.png" );
 				flow.Hud!.Stack.Pop();
 			} );
 			Wait( "park returns", 3 );
+			Do( "forecast banner returns", () =>
+			{
+				Require( presenter!.DrawnBanner != null, "the forecast banner is back with the park's view" );
+				WeatherForecastPresenter.BannerHidden = true;
+			} );
 		}
 		var parkLanguage = PlanLanguageInPark();
 		Do( "exit to lobby", () =>

@@ -1752,7 +1752,8 @@ public sealed class OnlineScreens
 	// [BIN:TPW-EXE:0x4bbf2c outbox cells] the list's cell message 0x404 for column 2 clears a set send mark, or sets it and clears the delete mark; column 3 does the same with the delete mark
 	// [BIN:TPW-EXE:0x4bbd2d outbox bulk] 0xee5 marks every row for sending, 0xee6 every row for deletion (0x4bbe7a) and 0xee7 clears both marks of every row (0x4bbddf)
 	// [BIN:TPW-EXE:0x4bbcbd outbox tick] the tick first applies the marks (0x4bc430: a card marked for deletion is deleted, one marked for sending is flagged), then, with a card to send and the service refused by the account's settings (0x5b6460), posts message 0x4e (ERRORMSG 78, the childlock refusal) and keeps the window; otherwise it closes the window and sends (0x4bc500)
-	// [EXT:ONLINE-UI] OpenTPW sends through its server, which needs a login: in the original's place of the account check the tick opens the login dialog over the window, and it waits while another online request runs; the card's picture is not drawn in its frame, and a mark shows as an X
+	// [EXT:ONLINE-UI] OpenTPW sends through its server, which needs a login: in the original's place of the account check the tick opens the login dialog over the window, and it waits while another online request runs
+	// Not ported yet: the card's picture in its frame (the postcard photo, which the postcard window leaves out too) and the header buttons' sort (the list's attribute 0x10, 0x665a44; help texts 0x187-0x18a)
 	public void ShowOutbox()
 	{
 		host.Advise?.Invoke( RestoredAdvice.OutboxHelp );
@@ -1775,23 +1776,73 @@ public sealed class OnlineScreens
 				marks[entry.Path] = mark == OutboxMark.Send && entry.Card == null ? OutboxMark.None : mark;
 		}
 		var listNode = Control( 0xEE8 );
-		// [BIN:TPW-EXE:0x4bc8ea outbox headers] the header buttons 16-19 take UITEXT 0x136-0x139 (OpenTPW's 309-312): Title, Date, Send, Delete
+		var content = listNode.Inner!.Value;
+		screen.Add( new UiModelImage { Id = "listFrame", Model = listNode.Model!, Bounds = listNode.Rect, Anchor = UiAnchor.Center } );
+		// [BIN:TPW-EXE:0x4bc8ea outbox headers] the header buttons 16-19 show UITEXT 0x136-0x139 (OpenTPW's 309-312: Title, Date, Send, Delete) in font slot 8 with the help texts 0x187-0x18a,
+		// through the attractions headers' helper 0x486660
 		var headers = new (uint Id, int Text, string Fallback)[]
 		{
 			(0x10, OnlineStrings.Title, "Title"), (0x11, OnlineStrings.DateLabel, "Date"), (0x12, OnlineStrings.Send, "Send"), (0x13, OnlineStrings.Delete, "Delete"),
 		};
+		// The headers show their text; their sort and its help texts (UIHELPTEXT 391-394, "Left-click to sort the list by ...") wait for the sort's port.
+		foreach ( var header in headers )
+		{
+			var text = header;
+			screen.Add( new UiLabel { Id = $"header{text.Id - 0x10}", Font = fonts => fonts.Label, Color = UiColors.Text, Align = UiAlign.Center, Fit = true,
+				Bounds = Control( text.Id ).Rect, Anchor = UiAnchor.Center, Text = () => OnlineStrings.Ui( text.Text, text.Fallback ) } );
+		}
+		// [BIN:TPW-EXE:0x4bcbc0 outbox row] the row factory makes each row as high as font slot 7's line height x 1536 / screen height + 6, the buy list's rule (0x4ad240), with a text cell
+		// and two type-6 cells holding the i_boxtick model (0x4bcca0); the list fills a column marked 1 (0x6636b2: the Send and Delete columns) by setting its cell's value (0x6634b2), which
+		// selects the model's frame (0x66da4d): 0 the empty box, 1 the tick (0x4bbfbc sets 1 for a set mark, 0 otherwise)
+		// [BIN:TPW-EXE:0x4bcca0 outbox row cells] the title is the row's own text, from the row's left; the date cell is centred (0x65c428, 0x65c4b9: the headers' centring); both in font slot 7, white
+		// [BIN:TPW-EXE:0x4bca6a outbox date] the date is UITEXT 0x1c0 (OpenTPW's 447) filled with the card's day, month and year (parameters 16-18), the save list's date format
+		// [EXT:list-row-pitch] the rows take the buy list's fixed pitch, a design choice (see ParkHud.BuyRowHeight)
+		var dateColumn = Control( 0x11 ).Rect;
+		var markColumns = new[] { Control( 0x12 ).Rect, Control( 0x13 ).Rect };
+		string Mark( (string Path, Postcard? Card, string? Error) entry, OutboxMark mark ) => MarkOf( entry ) == mark ? "1" : "0";
+		string Date( Postcard card )
+		{
+			var date = card.Manifest.CreatedUtc.LocalDateTime;
+			return strings.FormatByType( UiTextRecord.SaveDate, new Dictionary<int, string> { [16] = date.Day.ToString(), [17] = date.Month.ToString(), [18] = date.Year.ToString() } );
+		}
 		var list = screen.Add( new UiScrollList
 		{
 			Id = "cards",
-			Model = listNode.Model,
-			Bounds = listNode.Rect,
+			Bounds = content,
 			Anchor = UiAnchor.Center,
-			RowHeight = 76,
-			Columns = headers.Select( header => ((float Offset, Func<string> Text))(Control( header.Id ).Rect.X - listNode.Rect.X, () => OnlineStrings.Ui( header.Text, header.Fallback )) ).ToArray(),
+			Margin = 0,
+			Background = false,
+			PositionBar = false,
+			RowHeight = OpenTPW.Hud.ParkHud.BuyRowHeight,
+			HeaderRow = false,
+			Columns = new (float Offset, Func<string> Text)[] { (0, () => ""), (dateColumn.X - content.X, () => ""), (markColumns[0].X - content.X, () => ""), (markColumns[1].X - content.X, () => "") },
+			// a row's cells: title, date, and the Send and Delete cells' values (an unreadable card's row has no Send cell)
 			Rows = () => cards.Select( entry => entry.Card is { } card
-				? $"{card.Manifest.Title.Replace( '\t', ' ' )}\t{card.Manifest.CreatedUtc.LocalDateTime.ToShortDateString()}\t{(MarkOf( entry ) == OutboxMark.Send ? "X" : "")}\t{(MarkOf( entry ) == OutboxMark.Delete ? "X" : "")}"
-				: $"{(entry.Error ?? "?").Replace( '\t', ' ' )}\t\t\t{(MarkOf( entry ) == OutboxMark.Delete ? "X" : "")}" ).ToArray(),
+				? $"{card.Manifest.Title.Replace( '\t', ' ' )}\t{Date( card )}\t{Mark( entry, OutboxMark.Send )}\t{Mark( entry, OutboxMark.Delete )}"
+				: $"{(entry.Error ?? "?").Replace( '\t', ' ' )}\t\t\t{Mark( entry, OutboxMark.Delete )}" ).ToArray(),
 		} );
+		list.DrawCell = ( context, row, column, cell ) =>
+		{
+			if ( column == 0 )
+				return false;
+			var scale = cell.Height / list.RowHeight;
+			var rows = list.Rows();
+			var value = row < rows.Count && rows[row].Split( '\t' ) is { Length: 4 } cells ? cells[column] : "";
+			var selected = row == list.Selected;
+			if ( column == 1 )
+			{
+				context.DrawText( context.Fonts.Small, value, cell with { Width = dateColumn.Width * scale }, selected ? UiColors.Highlight : UiColors.Text, UiAlign.Center );
+				return true;
+			}
+			// the Send and Delete cells: i_boxtick at its own 51-unit size, centred in its column (the buy list's box cell)
+			if ( value.Length > 0 )
+			{
+				var box = OpenTPW.Hud.ParkHud.TickBoxSize * scale;
+				var width = markColumns[column - 2].Width * scale;
+				context.DrawModel( "i_boxtick", value == "1" ? 1 : 0, new UiRect( cell.X + (width - box) / 2, cell.Y + (cell.Height - box) / 2, box, box ) );
+			}
+			return true;
+		};
 		// a click on a row's Send (column 2) or Delete (column 3) cell makes the row the current one and toggles that mark
 		list.CellClicked = ( index, column ) =>
 		{
@@ -1804,8 +1855,28 @@ public sealed class OnlineScreens
 				marks[entry.Path] = ToggledMark( MarkOf( entry ), cell );
 			return true;
 		};
+		// The list's slider (type 3, id 1) and its arrows show only while the rows do not fit (0x664495); the list_outbox art holds the track.
+		var slider = listNode.Children.Single( node => node.Type == 3 );
+		var scrollBar = screen.Add( new UiListScrollBar( list, slider.Rect, slider.Children.Single( node => node.Model == "b_scroller" ).Rect, null, "b_scroller" )
+			{ Id = "cardsScroll", Bounds = slider.Rect, Anchor = UiAnchor.Center } );
+		UiButton ScrollArrow( string model, int step )
+		{
+			var node = slider.Children.Single( child => child.Model == model );
+			void Scroll() => list.Scroll( step );
+			return screen.Add( new UiButton { Id = step < 0 ? "cardsUp" : "cardsDown", Model = node.Model, ClickSound = table.ClickSoundOf( node ),
+				Clicked = Scroll, Repeat = UiButton.ScrollArrowRepeat( Scroll ), Bounds = node.Rect, Anchor = UiAnchor.Center } );
+		}
+		var scrollers = new UiElement[] { scrollBar, ScrollArrow( "b_up", -1 ), ScrollArrow( "b_down", 1 ) };
+		void ShowScrollers()
+		{
+			foreach ( var scroller in scrollers )
+				scroller.Visible = cards.Count > list.VisibleRows;
+		}
+		ShowScrollers();
 		Postcard? Selected() => list.Selected >= 0 && list.Selected < cards.Count ? cards[list.Selected].Card : null;
-		// The selected card's picture frame (0xee4) and its addresses (0xee2), one per row inside the list's inner rectangle.
+		// The selected card's picture frame (0xee4) and its addresses (0xee2), a line each inside the frame's inner rectangle.
+		// [BIN:TPW-EXE:0x4bc100 outbox addresses] a selected row's recipients are joined with '\n' into one text in font slot 6, wrapped to the inner width, whose slider (0xee3) shows
+		// only when the text overflows; here each line is a row of a list, in the small font, and that slider is not drawn
 		var picture = Control( 0xEE4 );
 		screen.Add( new UiModelImage { Id = "picture", Model = picture.Model!, Bounds = picture.Rect, Anchor = UiAnchor.Center } );
 		var addresses = Control( 0xEE2 );
@@ -1856,6 +1927,7 @@ public sealed class OnlineScreens
 		screen.Updating += context =>
 		{
 			ok.Enabled = Session.Busy == 0;
+			ShowScrollers();
 			// A send started earlier removes cards from the outbox folder; re-read it now and then.
 			refreshTimer += context.Delta;
 			if ( refreshTimer > 1 )

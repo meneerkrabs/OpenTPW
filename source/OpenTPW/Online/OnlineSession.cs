@@ -571,7 +571,8 @@ public sealed class OnlineSession : IDisposable, IPresenceSession, IChatPanelSou
 		Post( () => { CityParks = null; Status = OnlineStrings.Ui( OnlineStrings.GettingTop10ParkList, "Getting Top 10 Park List" ); } );
 		var list = await client.ListParksAsync( sort: "votes", cityId: cityId );
 		Post( () => CityParks = list.Parks );
-		return list.Parks.Count == 0 ? OnlineStrings.Ui( OnlineStrings.NoSearchResults, "No search results" ) : null;
+		// the city lobby and its Other Parks list show an empty result themselves; the status line only ends the progress text
+		return "";
 	} );
 
 	/// <summary>Fetches the cities for the globe; no login needed. Older servers have none.</summary>
@@ -615,7 +616,7 @@ public sealed class OnlineSession : IDisposable, IPresenceSession, IChatPanelSou
 		Post( () => Status = OnlineStrings.Ui( OnlineStrings.GettingGameNews, "Getting Game News" ) );
 		var news = await client.GetNewsAsync();
 		Post( () => News = news );
-		return news == null || (news.Game.Length == 0 && news.System.Length == 0) ? OnlineStrings.Get( OnlineLabel.NoNews ) : null;
+		return news == null || (news.Game.Length == 0 && news.System.Length == 0) ? OnlineStrings.Get( OnlineLabel.NoNews ) : "";
 	} );
 
 	public void RefreshParks( string? search, string sort = "recent", int? cityId = null, string? author = null ) => WithClient( async client =>
@@ -625,7 +626,8 @@ public sealed class OnlineSession : IDisposable, IPresenceSession, IChatPanelSou
 			search == null && author == null ? "Getting All Park List" : "Getting Player's Park List" ) );
 		var list = await client.ListParksAsync( search, sort, author, cityId: cityId );
 		Post( () => Parks = list.Parks );
-		return list.Parks.Count == 0 ? OnlineStrings.Ui( OnlineStrings.NoSearchResults, "No search results" ) : null;
+		// the Find Parks list shows an empty result itself (UITEXT 306 as its row); the status line only ends the progress text
+		return "";
 	} );
 
 	/// <summary>Unpublishes one of the player's own parks (the owner action of the original park details).</summary>
@@ -677,7 +679,8 @@ public sealed class OnlineSession : IDisposable, IPresenceSession, IChatPanelSou
 	/// </summary>
 	public void SendOutbox( IReadOnlyList<string>? files = null ) => WithClient( async client =>
 	{
-		var sent = 0;
+		// [BIN:TPW-EXE:0x4bc500 outbox send] the original showed "Sending mails from outbox, please wait ..." (UITEXT 0x13a, OpenTPW's 313) while it sent
+		Post( () => Status = OnlineStrings.Ui( OnlineStrings.SendingOutbox, "Sending mails from outbox, please wait ..." ) );
 		foreach ( var (file, card, error) in Folders.List( Folders.Outbox ) )
 		{
 			if ( card == null || (files != null && files.Count > 0 && !files.Contains( file )) )
@@ -699,9 +702,9 @@ public sealed class OnlineSession : IDisposable, IPresenceSession, IChatPanelSou
 				}
 				throw new InvalidDataException( result.Error ?? "Some postcard recipients could not be reached; they remain in the outbox." );
 			}
-			sent++;
 		}
-		return $"{OnlineStrings.Ui( OnlineStrings.SendingOutbox, "Sending mails from outbox" )} {sent}";
+		// [BIN:TPW-EXE:0x4bc660 outbox send progress] the original's progress window closed once the cards were sent, with no count: the emptied outbox is the confirmation
+		return "";
 	} );
 
 	/// <summary>Downloads server postcards into the local inbox folder and removes them from the server.</summary>

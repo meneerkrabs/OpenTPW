@@ -323,9 +323,9 @@ public sealed class OnlineScreens
 			Bounds = new UiRect( 477, 1282, 1094, 175 ), Anchor = UiAnchor.Bottom, Text = () => screen.SelectedPark?.Name ?? "" } );
 		var rank = screen.Add( new UiLabel { Id = "rank", Font = fonts => fonts.Menu, Color = UiColors.Text, Align = UiAlign.Center, Bounds = new UiRect( 844, 118, 360, 135 ), Anchor = UiAnchor.Top,
 			Text = () => (screen.Selected + 1).ToString( System.Globalization.CultureInfo.InvariantCulture ) } );
-		// [EXT:ONLINE-UI] the city's name and the fetch status while no park is shown
+		// [EXT:ONLINE-UI] the city's name and the fetch status while no park is shown; a city without parks says so (UITEXT 306)
 		var status = screen.Add( new UiLabel { Id = "cityStatus", Font = fonts => fonts.Title, Color = UiColors.Title, Align = UiAlign.Center, Bounds = new UiRect( 524, 118, 1000, 135 ), Anchor = UiAnchor.Top,
-			Text = () => $"{city.Name}\n{(localStatus.Length > 0 ? localStatus : Session.Status)}" } );
+			Text = () => $"{city.Name}\n{(localStatus.Length > 0 ? localStatus : Session.CityParks is { Count: 0 } ? OnlineStrings.Ui( OnlineStrings.NoSearchResults, "No search results" ) : Session.Status)}" } );
 		screen.Updating += _ =>
 		{
 			enter.Enabled = screen.SelectedPark != null && Session.Busy == 0 && host.Visit != null;
@@ -347,7 +347,8 @@ public sealed class OnlineScreens
 	/// <summary>OpenTPW's online functions that have no place on the original globe screen.</summary>
 	public void ShowMenu()
 	{
-		var screen = new UiScreen( "onlineMenu" );
+		// [EXT:ONLINE-UI] the menu has no original counterpart: a window opened from it takes its place, so the menu's buttons do not show around that window
+		var screen = new UiScreen( "onlineMenu" ) { HiddenWhenCovered = true };
 		var window = UiDialogs.CenteredWindow( 1200, 1460 );
 		UiDialogs.AddWindow( screen, window, "w_big", () => OnlineStrings.Get( OnlineLabel.OnlineMenu ) );
 		var level = host.Level();
@@ -1741,112 +1742,121 @@ public sealed class OnlineScreens
 		text.Split( new[] { ';', ',', '\n' }, StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries );
 
 	/// <summary>
-	/// Unsent Postcards in its original composition (Mac UI table data:0x508bc): a window (186,30)-(2018,1007)
-	/// titled "Unsent Postcards" (0xee9) at (809,66)-(1281,146), the card's picture (0xee2) at (246,154)-(777,404),
-	/// its preview (0xee4) at (246,425)-(772,782), the three bulk buttons (0xee5 mark all send, 0xee6 mark all
-	/// delete, 0xee7 unmark all) at (265/438/610,792)-(419/591/764,945) and the four-column list (0xee8) at
-	/// (793,151)-(1823,944) with its Title/Date/Send/Delete headers (ids 16-19).
+	/// Unsent Postcards in tp.exe's outbox window (table 0x758878, built by 0x4bc710, handled by 0x4bbc20): the title (0xee9), the selected card's
+	/// picture frame (0xee4) and its addresses (0xee2, list_emailaddr), the bulk buttons mark all for sending (0xee5, b_okall), mark all for deletion
+	/// (0xee6, b_delall) and unmark all (0xee7, b_nuall), the four-column list (0xee8) with its Title/Date/Send/Delete headers (ids 16-19) and the
+	/// tick (-1). Every card starts marked for sending; a click on a row's Send or Delete cell toggles its mark, and the tick deletes the cards marked
+	/// for deletion, sends the ones marked for sending and closes the window. Escape closes it without either.
 	/// </summary>
+	// [BIN:TPW-EXE:0x4bcaec outbox rows] the builder adds each card's row with the send mark 0x1000000 or-ed into its index; 0x2000000 is the delete mark, and no row holds both
+	// [BIN:TPW-EXE:0x4bbf2c outbox cells] the list's cell message 0x404 for column 2 clears a set send mark, or sets it and clears the delete mark; column 3 does the same with the delete mark
+	// [BIN:TPW-EXE:0x4bbd2d outbox bulk] 0xee5 marks every row for sending, 0xee6 every row for deletion (0x4bbe7a) and 0xee7 clears both marks of every row (0x4bbddf)
+	// [BIN:TPW-EXE:0x4bbcbd outbox tick] the tick first applies the marks (0x4bc430: a card marked for deletion is deleted, one marked for sending is flagged), then, with a card to send and the service refused by the account's settings (0x5b6460), posts message 0x4e (ERRORMSG 78, the childlock refusal) and keeps the window; otherwise it closes the window and sends (0x4bc500)
+	// [EXT:ONLINE-UI] OpenTPW sends through its server, which needs a login: in the original's place of the account check the tick opens the login dialog over the window, and it waits while another online request runs; the card's picture is not drawn in its frame, and a mark shows as an X
 	public void ShowOutbox()
 	{
 		host.Advise?.Invoke( RestoredAdvice.OutboxHelp );
 		var screen = new UiScreen( "outbox" );
-		var window = new UiRect( 186, 30, 1832, 977 );
-		screen.Add( new UiModelImage { Id = "window", Model = "w_big", Bounds = window, Anchor = UiAnchor.Center } );
+		var table = OriginalLayoutTables.OutboxWindow;
+		LayoutNode Control( uint id ) => table.Control( id );
+		screen.Add( new UiModelImage { Id = "window", Model = table.Root.Model!, Bounds = table.Root.Rect, Anchor = UiAnchor.Center } );
 		screen.Add( new UiLabel { Id = "title", Font = fonts => fonts.Title, Color = UiColors.Title, Align = UiAlign.Center,
-			Bounds = new UiRect( 809, 66, 472, 80 ), Anchor = UiAnchor.Center, Text = () => OnlineStrings.Ui( OnlineStrings.UnsentPostcards, "Unsent Postcards" ) } );
-		var marks = new Dictionary<string, int>(); // path -> 1 send, 2 delete
+			Bounds = Control( 0xEE9 ).Rect, Anchor = UiAnchor.Center, Text = () => OnlineStrings.Ui( OnlineStrings.UnsentPostcards, "Unsent Postcards" ) } );
 		IReadOnlyList<(string Path, Postcard? Card, string? Error)> cards = Array.Empty<(string, Postcard?, string?)>();
 		void Reload() => cards = Session.Folders.List( Session.Folders.Outbox );
 		Reload();
-		// [DATA:Mac UI table data:0x508bc] the four columns (ids 16-19); the send/delete columns are narrow
-		var columns = new (float Offset, Func<string> Text)[]
+		// Each card's mark by its file; a card without an entry has the send mark every row starts with. A file that is no readable card is never sent.
+		var marks = new Dictionary<string, OutboxMark>( StringComparer.Ordinal );
+		OutboxMark MarkOf( (string Path, Postcard? Card, string? Error) entry ) =>
+			marks.TryGetValue( entry.Path, out var mark ) ? mark : entry.Card != null ? OutboxMark.Send : OutboxMark.None;
+		void MarkAll( OutboxMark mark )
 		{
-			(816 - 793, () => OnlineStrings.Ui( OnlineStrings.MessageTitle, "Title" )),
-			(1194 - 793, () => OnlineStrings.Ui( OnlineStrings.DateLabel, "Date" )),
-			(1491 - 793, () => OnlineStrings.Ui( OnlineStrings.Send, "Send" )),
-			(1608 - 793, () => OnlineStrings.Ui( OnlineStrings.Delete, "Delete" )),
+			foreach ( var entry in cards )
+				marks[entry.Path] = mark == OutboxMark.Send && entry.Card == null ? OutboxMark.None : mark;
+		}
+		var listNode = Control( 0xEE8 );
+		// [BIN:TPW-EXE:0x4bc8ea outbox headers] the header buttons 16-19 take UITEXT 0x136-0x139 (OpenTPW's 309-312): Title, Date, Send, Delete
+		var headers = new (uint Id, int Text, string Fallback)[]
+		{
+			(0x10, OnlineStrings.Title, "Title"), (0x11, OnlineStrings.DateLabel, "Date"), (0x12, OnlineStrings.Send, "Send"), (0x13, OnlineStrings.Delete, "Delete"),
 		};
 		var list = screen.Add( new UiScrollList
 		{
 			Id = "cards",
-			Model = "list_outbox",
-			Bounds = new UiRect( 793, 151, 1030, 793 ),
+			Model = listNode.Model,
+			Bounds = listNode.Rect,
 			Anchor = UiAnchor.Center,
 			RowHeight = 76,
-			Columns = columns,
+			Columns = headers.Select( header => ((float Offset, Func<string> Text))(Control( header.Id ).Rect.X - listNode.Rect.X, () => OnlineStrings.Ui( header.Text, header.Fallback )) ).ToArray(),
 			Rows = () => cards.Select( entry => entry.Card is { } card
-				? $"{string.Join( ", ", card.Manifest.To )}\t{card.Manifest.CreatedUtc.LocalDateTime.ToShortDateString()}\t" +
-					(marks.GetValueOrDefault( entry.Path ) == 1 ? "X" : "") + "\t" + (marks.GetValueOrDefault( entry.Path ) == 2 ? "X" : "")
-				: entry.Error ?? "?" ).ToArray(),
+				? $"{card.Manifest.Title.Replace( '\t', ' ' )}\t{card.Manifest.CreatedUtc.LocalDateTime.ToShortDateString()}\t{(MarkOf( entry ) == OutboxMark.Send ? "X" : "")}\t{(MarkOf( entry ) == OutboxMark.Delete ? "X" : "")}"
+				: $"{(entry.Error ?? "?").Replace( '\t', ' ' )}\t\t\t{(MarkOf( entry ) == OutboxMark.Delete ? "X" : "")}" ).ToArray(),
 		} );
-		// The selected card's picture area (0xee2) and preview (0xee4): the card's sender and text.
-		screen.Add( new UiLabel { Id = "picture", Wrap = true, Font = fonts => fonts.Small, Align = UiAlign.Center,
-			Bounds = new UiRect( 246, 154, 531, 250 ), Anchor = UiAnchor.Center,
-			Text = () => Selected() is { } card ? string.Join( "\n", card.Manifest.To ) : "" } );
-		screen.Add( new UiLabel { Id = "preview", Wrap = true, Font = fonts => fonts.Small,
-			Bounds = new UiRect( 246, 425, 526, 357 ), Anchor = UiAnchor.Center,
-			Text = () => Selected() is { } card ? $"{card.Manifest.Title}\n\n{card.Manifest.Text}" : "" } );
+		// a click on a row's Send (column 2) or Delete (column 3) cell makes the row the current one and toggles that mark
+		list.CellClicked = ( index, column ) =>
+		{
+			if ( column < 2 || index < 0 || index >= cards.Count )
+				return false;
+			var entry = cards[index];
+			list.Select( index );
+			var cell = column == 2 ? OutboxMark.Send : OutboxMark.Delete;
+			if ( cell == OutboxMark.Delete || entry.Card != null )
+				marks[entry.Path] = ToggledMark( MarkOf( entry ), cell );
+			return true;
+		};
 		Postcard? Selected() => list.Selected >= 0 && list.Selected < cards.Count ? cards[list.Selected].Card : null;
-		// Marking one card for sending clears its delete mark and the other way around (0x10185d5c).
-		void Mark( int mark )
+		// The selected card's picture frame (0xee4) and its addresses (0xee2), one per row inside the list's inner rectangle.
+		var picture = Control( 0xEE4 );
+		screen.Add( new UiModelImage { Id = "picture", Model = picture.Model!, Bounds = picture.Rect, Anchor = UiAnchor.Center } );
+		var addresses = Control( 0xEE2 );
+		screen.Add( new UiModelImage { Id = "addressFrame", Model = addresses.Model!, Bounds = addresses.Rect, Anchor = UiAnchor.Center } );
+		screen.Add( new UiScrollList { Id = "addresses", Background = false, Margin = 0, Bounds = addresses.Inner ?? addresses.Rect, Anchor = UiAnchor.Center,
+			Rows = () => Selected() is { } card ? card.Manifest.To.ToArray() : Array.Empty<string>() } );
+		UiButton Button( string id, LayoutNode node, Action clicked ) => screen.Add( new UiButton
 		{
-			if ( list.Selected < 0 || list.Selected >= cards.Count )
-				return;
-			var path = cards[list.Selected].Path;
-			marks[path] = marks.GetValueOrDefault( path ) == mark ? 0 : mark;
-		}
-		var markSend = screen.Add( new UiButton { Id = "markSend", Text = () => OnlineStrings.Get( OnlineLabel.MarkAllSend ), Clicked = () => Mark( 1 ),
-			Bounds = new UiRect( 380, 1040, 340, 90 ), Anchor = UiAnchor.Center } );
-		var markDelete = screen.Add( new UiButton { Id = "markDelete", Text = () => OnlineStrings.Get( OnlineLabel.MarkAllDelete ), Clicked = () => Mark( 2 ),
-			Bounds = new UiRect( 740, 1040, 340, 90 ), Anchor = UiAnchor.Center } );
-		// The three original bulk buttons (0xee5-0xee7).
-		// [EXT:ONLINE-UI] the original's table gives these controls (and the dialogs' 83 x 83 close button) a rectangle and no text: they are art buttons, at about 96 pixels
-		// wide on a 1280 x 720 screen, and the original's control text is not wrapped and is cut off at the control's bitmap. OpenTPW's labels do not fit that size on the
-		// button, so each button carries its label as a wrapped caption under it, inside the window's frame; the close button's own label shrinks to fit (UiTextFit)
-		void Bulk( string id, Func<string> label, Action clicked, UiRect rect )
+			Id = id, Model = node.Model, Help = strings.Help( node.Help ), Clicked = clicked, Bounds = node.Rect, Anchor = UiAnchor.Center
+		} );
+		Button( "markAllSend", Control( 0xEE5 ), () => MarkAll( OutboxMark.Send ) );
+		Button( "markAllDelete", Control( 0xEE6 ), () => MarkAll( OutboxMark.Delete ) );
+		Button( "unmarkAll", Control( 0xEE7 ), () => MarkAll( OutboxMark.None ) );
+		void Apply()
 		{
-			screen.Add( new UiButton { Id = id, Clicked = clicked, Bounds = rect, Anchor = UiAnchor.Center } );
-			screen.Add( new UiLabel { Id = id + "Caption", Wrap = true, Font = fonts => fonts.Small, Align = UiAlign.Center, Text = label,
-				Bounds = new UiRect( rect.X + rect.Width / 2 - 86, rect.Bottom + 2, 172, 60 ), Anchor = UiAnchor.Center } );
-		}
-		Bulk( "markAllSend", () => OnlineStrings.Get( OnlineLabel.MarkAllSend ), () => { foreach ( var entry in cards ) marks[entry.Path] = 1; }, new UiRect( 265, 792, 154, 153 ) );
-		Bulk( "markAllDelete", () => OnlineStrings.Get( OnlineLabel.MarkAllDelete ), () => { foreach ( var entry in cards ) marks[entry.Path] = 2; }, new UiRect( 438, 792, 153, 153 ) );
-		Bulk( "unmarkAll", () => OnlineStrings.Get( OnlineLabel.UnmarkAll ), () => marks.Clear(), new UiRect( 610, 792, 154, 153 ) );
-		// The Send action sends the marked cards (all of them when none is marked) and deletes the marked-deleted ones;
-		// "Sending mails from outbox, please wait ..." is UITEXT 313.
-		var send = screen.Add( new UiButton { Id = "sendAll", Model = "b_sendall", Text = () => OnlineStrings.Ui( OnlineStrings.Send, "Send" ),
-			Clicked = () => Guard( () =>
+			// an earlier window's message would hide the send's progress on the menu's status line
+			localStatus = "";
+			// Both lists come from the marks before any file goes: a deleted card's mark is dropped with its file.
+			var deleting = cards.Where( entry => MarkOf( entry ) == OutboxMark.Delete ).Select( entry => entry.Path ).ToList();
+			var sending = cards.Where( entry => entry.Card != null && MarkOf( entry ) == OutboxMark.Send ).Select( entry => entry.Path ).ToList();
+			foreach ( var path in deleting )
 			{
-				foreach ( var entry in cards.Where( entry => marks.GetValueOrDefault( entry.Path ) == 2 ).ToList() )
+				try
 				{
-					File.Delete( entry.Path );
-					cards = cards.Where( item => item.Path != entry.Path ).ToList();
-					marks.Remove( entry.Path );
+					File.Delete( path );
+					marks.Remove( path );
 				}
-				var markedForSending = cards.Where( entry => marks.GetValueOrDefault( entry.Path ) == 1 ).Select( entry => entry.Path ).ToList();
-				var sendable = markedForSending.Count > 0 ? markedForSending
-					: cards.Where( entry => entry.Card != null && marks.GetValueOrDefault( entry.Path ) != 2 ).Select( entry => entry.Path ).ToList();
-				Session.SendOutbox( sendable );
-				localStatus = OnlineStrings.Ui( OnlineStrings.SendingOutbox, "Sending mails from outbox, please wait ..." );
-			} ),
-			Bounds = new UiRect( 500, 1160, 480, 110 ), Anchor = UiAnchor.Center } );
-		var delete = screen.Add( new UiButton { Id = "delete", Text = () => OnlineStrings.Ui( OnlineStrings.Delete, "Delete" ),
-			Clicked = () => Guard( () =>
+				// a card that cannot be deleted stays in the outbox with its mark, and the menu's status line gives the reason
+				catch ( Exception exception ) when ( exception is IOException or UnauthorizedAccessException )
+				{
+					localStatus = exception.Message;
+				}
+			}
+			list.Selected = -1;
+			Reload();
+			if ( sending.Count > 0 && !Session.IsLoggedIn )
 			{
-				if ( Session.Busy == 0 && list.Selected >= 0 && list.Selected < cards.Count )
-					File.Delete( cards[list.Selected].Path );
-				list.Selected = -1;
-				Reload();
-			} ),
-			Bounds = new UiRect( 1020, 1160, 480, 110 ), Anchor = UiAnchor.Center } );
+				ShowLogin();
+				return;
+			}
+			if ( ReferenceEquals( stack.Top, screen ) )
+				stack.Pop();
+			if ( sending.Count > 0 )
+				Session.SendOutbox( sending );
+		}
+		var ok = Button( "ok", table.Model( "b_okay" ), () => Guard( Apply ) );
 		var refreshTimer = 0f;
 		screen.Updating += context =>
 		{
-			send.Enabled = Session.IsLoggedIn && cards.Count > 0 && Session.Busy == 0;
-			delete.Enabled = list.Selected >= 0 && list.Selected < cards.Count && Session.Busy == 0;
-			markSend.Enabled = markDelete.Enabled = list.Selected >= 0 && list.Selected < cards.Count;
-			// Sending removes cards from the outbox folder; re-read it now and then.
+			ok.Enabled = Session.Busy == 0;
+			// A send started earlier removes cards from the outbox folder; re-read it now and then.
 			refreshTimer += context.Delta;
 			if ( refreshTimer > 1 )
 			{
@@ -1854,11 +1864,12 @@ public sealed class OnlineScreens
 				Reload();
 			}
 		};
-		AddCloseButton( screen, 1889, 820 );
-		AddStatus( screen, window );
 		screen.Back = stack.Pop;
 		Push( screen );
 	}
+
+	/// <summary>A card's mark after a click on its Send or Delete cell (<paramref name="cell"/>): the same mark comes off, the other mark gives way to it.</summary>
+	internal static OutboxMark ToggledMark( OutboxMark current, OutboxMark cell ) => current == cell ? OutboxMark.None : cell;
 
 	public void ShowInbox()
 	{
@@ -2035,3 +2046,6 @@ public sealed class OnlineScreens
 		}
 	}
 }
+
+/// <summary>A card's mark in the outbox: tp.exe's row flags 0x1000000 (send) and 0x2000000 (delete), of which a row holds one at most.</summary>
+internal enum OutboxMark { None, Send, Delete }

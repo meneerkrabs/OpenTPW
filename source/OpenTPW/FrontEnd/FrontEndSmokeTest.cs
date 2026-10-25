@@ -533,6 +533,26 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 					flow.Menu.Stack.Pop();
 				} );
 			}
+			// The outbox opened from OpenTPW's online menu with two waiting cards: the menu gives way to the window, so its buttons do not show around it,
+			// and each card's row takes the original's Title/Date/Send/Delete columns, marked for sending (tp.exe 0x4bcaec).
+			Do( "open online menu", () =>
+			{
+				foreach ( var title in new[] { "Greetings from the jungle", "See you soon" } )
+					flow.Online.Folders.Store( flow.Online.Folders.Outbox, Online.Packages.Postcard.Create( "Alice", new[] { "Bobby" }, title, "Postcard", "English" ) );
+				new UI.OnlineScreens( flow.Menu!.Stack, flow.Strings, Context.Models, new UI.OnlineHost { Session = flow.Online } ).ShowMenu();
+			} );
+			Wait( "online menu renders", 2 );
+			Do( "open outbox from the menu", () => Click( flow.Menu!.Stack.Top!, "outbox" ) );
+			Wait( "outbox renders", 3 );
+			Do( "outbox with cards capture", () =>
+			{
+				Require( flow.Menu!.Stack.Top?.Name == "outbox", "the menu's Unsent Postcards button opens the outbox" );
+				var frame = CaptureFrame( "online-outbox-cards.png" );
+				VerifyText( frame, "Greetings from the jungle", "an outbox card's title" );
+				Require( !Context.Batch.TextDraws.Any( entry => entry.Text == OnlineStrings.Get( OnlineLabel.ImportFile ) ), "the online menu's buttons do not show around the outbox" );
+				foreach ( var (path, _, _) in flow.Online.Folders.List( flow.Online.Folders.Outbox ) )
+					File.Delete( path );
+			} );
 			Do( "leave online", () =>
 			{
 				while ( flow.Menu!.Stack.Screens.Count > 1 )

@@ -117,6 +117,8 @@ public interface IUiRowList
 	/// handled it. False leaves the screen's default: a click selects, a second click on the selected row activates, a right click backs out.
 	/// </summary>
 	bool RowClicked( int index, bool left ) => false;
+	/// <summary>As <see cref="RowClicked(int, bool)"/>, with the click's point in framebuffer pixels, for lists whose cells act on their own (the outbox's Send and Delete marks).</summary>
+	bool RowClickedAt( UiCanvas canvas, System.Numerics.Vector2 point, int index, bool left ) => RowClicked( index, left );
 }
 
 /// <summary>An element that follows the mouse while it is held (slider ball, scroll bar).</summary>
@@ -175,6 +177,11 @@ public sealed class UiScrollList : UiElement, IUiRowList
 	public Action<int>? SelectionChanged { get; set; }
 	public Action<int>? RowActivated { get; set; }
 	/// <summary>
+	/// A left click on a cell of a multi-column list (row, column of <see cref="Columns"/>); true when the cell acted, which leaves the
+	/// screen's default (select, then activate the selected row) out. Null: every click takes the default.
+	/// </summary>
+	public Func<int, int, bool>? CellClicked { get; set; }
+	/// <summary>
 	/// Whether an activation plays the control click before <see cref="RowActivated"/>. Off by default: no original list row clicks (see <see cref="Activate"/>);
 	/// only OpenTPW's own screens without an original counterpart opt in.
 	/// </summary>
@@ -191,7 +198,9 @@ public sealed class UiScrollList : UiElement, IUiRowList
 	/// <summary>Up/Down keep moving the focus between elements; Left/Right change the selection.</summary>
 	public bool ArrowsSelect => false;
 
-	public int VisibleRows => Math.Max( 1, (int)((Bounds.Height - Margin * 2) / RowHeight) );
+	/// <summary>Rows that fit below the column headers, which take the first row's height (<see cref="Columns"/>).</summary>
+	public int VisibleRows => Math.Max( 1, (int)((Bounds.Height - Margin * 2) / RowHeight) - HeaderRows );
+	private int HeaderRows => Columns == null ? 0 : 1;
 
 	public void Scroll( int rows )
 	{
@@ -233,10 +242,27 @@ public sealed class UiScrollList : UiElement, IUiRowList
 	{
 		var rect = ScreenRect( canvas );
 		var scale = rect.Height / Bounds.Height;
-		var top = rect.Y + Margin * scale;
+		var top = rect.Y + (Margin + HeaderRows * RowHeight) * scale;
 		var index = (int)MathF.Floor( (point.Y - top) / (RowHeight * scale) );
 		return index < 0 || index >= VisibleRows || first + index >= Rows().Count ? -1 : first + index;
 	}
+
+	/// <summary>The column of <see cref="Columns"/> under <paramref name="point"/> (framebuffer pixels): the last one starting at or left of it; -1 left of the first, or without columns.</summary>
+	public int ColumnAt( UiCanvas canvas, System.Numerics.Vector2 point )
+	{
+		if ( Columns == null )
+			return -1;
+		var rect = ScreenRect( canvas );
+		var scale = rect.Height / Bounds.Height;
+		var column = -1;
+		for ( var index = 0; index < Columns.Count; index++ )
+			if ( point.X >= rect.X + Columns[index].Offset * scale )
+				column = index;
+		return column;
+	}
+
+	public bool RowClickedAt( UiCanvas canvas, System.Numerics.Vector2 point, int index, bool left ) =>
+		left && CellClicked != null && ColumnAt( canvas, point ) is >= 0 and var column && CellClicked( index, column );
 
 	public override void Draw( UiContext context, bool focused, bool pressed )
 	{

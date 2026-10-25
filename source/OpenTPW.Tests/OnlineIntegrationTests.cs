@@ -539,6 +539,35 @@ public class OnlineIntegrationTests
 	}
 
 	[TestMethod]
+	public async Task EmptyListsAndASentOutboxLeaveNoMessageOnTheStatusLine()
+	{
+		await using var server = await LoopbackServer.StartAsync();
+		var folders = Folders();
+		try
+		{
+			using var recipient = await server.LoginAsync( "Bobby" );
+			using var session = new OnlineSession( folders );
+			session.UseServer( server.Url.ToString(), "Alice" );
+			session.Register( "Alice", "correct horse" );
+			await PumpUntilIdle( session );
+			session.RefreshParks( "no such park" );
+			await PumpUntilIdle( session );
+			Assert.AreEqual( 0, session.Parks.Count );
+			Assert.AreEqual( "", session.Status, "the Find Parks list shows the empty result as its row; the status line only ends the progress text" );
+			session.FetchCityParks( 3 );
+			await PumpUntilIdle( session );
+			Assert.AreEqual( 0, session.CityParks!.Count );
+			Assert.AreEqual( "", session.Status, "the city lobby says so itself" );
+			folders.Store( folders.Outbox, Postcard.Create( "Alice", new[] { "Bobby" }, "Hello", "Postcard", "English" ) );
+			session.SendOutbox();
+			await PumpUntilIdle( session );
+			Assert.AreEqual( 1, folders.List( folders.Sent ).Count, session.Status );
+			Assert.AreEqual( "", session.Status, "the original's progress window closed with no count once the cards were sent" );
+		}
+		finally { Directory.Delete( folders.Root, true ); server.DeleteData(); }
+	}
+
+	[TestMethod]
 	public async Task ChatReconnectsToItsRoomAfterTheServerRestarts()
 	{
 		var server = await LoopbackServer.StartAsync();

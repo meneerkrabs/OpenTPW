@@ -115,8 +115,8 @@ S5 the TPW-SE roadmap).
 | Feature | Evidence | OpenTPW status |
 | --- | --- | --- |
 | Send postcards from the park you are visiting, with a photo | MAN pp. 51, 67 | Done — the card carries the park's map thumbnail [EXT:online-postcard-photo] |
-| Outbox: four-column list (Title/Date/Send/Delete), per-card send/delete marks, mark-all/unmark-all | DATA data:0x508bc (columns ids 16-19, buttons 0xee5-0xee7); STP-PPC 0x10185d5c | Done — original composition and mark flow |
-| "Sending mails from outbox, please wait …" | DATA UITEXT 313 | Done |
+| Outbox: four-column list (Title/Date/Send/Delete), per-card send/delete marks, mark-all/unmark-all | BIN tp.exe 0x758878 (window table), 0x4bc710 (builder; every row starts marked for sending, 0x4bcaec), 0x4bbc20 (handler: cell clicks 0x4bbf2c, bulk buttons 0x4bbd2d, tick 0x4bbcbd); DATA data:0x508bc (columns ids 16-19, buttons 0xee5-0xee7); STP-PPC 0x10185d5c | Done — tp.exe's window and mark flow; the tick asks for OpenTPW's login where tp.exe checked the account's settings [EXT:ONLINE-UI]. Missing: the card's picture in its frame, the original mark art (the row factory 0x4bcbc0's cells are not decoded; a mark shows as an X) and the list sliders |
+| "Sending mails from outbox, please wait …" | DATA UITEXT 313; BIN tp.exe 0x4bc500 (send), 0x4bc660 (its progress closes with no count) | Done — the status line while the cards go out, cleared once they are sent |
 | Reminder that postcards wait in the outbox when going online | DATA UITEXT 472 | Done — the online menu shows the reminder |
 | Inbox (cards from other players) | MAN (e-mail postcards) | Done [EXT:ONLINE-UI] |
 | Recipients are player names | MAN; CHAT_COMMANDS | Done |

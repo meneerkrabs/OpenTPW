@@ -55,8 +55,8 @@ public class CoopLiveHarnessTests
 		return name => values.TryGetValue( name, out var value ) ? value : null;
 	}
 
-	private CoopLiveTest Harness( bool hosting, Func<CoopLiveTest, IEnumerable<CoopLiveWait>> script, Func<string, string?>? environment = null ) =>
-		new( Flow(), evidence, hosting, environment ?? Environment(), completed.Add, failed.Add, script );
+	private CoopLiveTest Harness( bool hosting, Func<CoopLiveTest, IEnumerable<CoopLiveWait>> script, Func<string, string?>? environment = null, Func<double>? clock = null ) =>
+		new( Flow(), evidence, hosting, environment ?? Environment(), completed.Add, failed.Add, script ) { Clock = clock };
 
 	private JsonObject Json( string name ) => (JsonObject)JsonNode.Parse( File.ReadAllText( Path.Combine( evidence, name ) ) )!;
 
@@ -108,10 +108,12 @@ public class CoopLiveHarnessTests
 		{
 			yield return CoopLiveTest.Wait( "the guest's join", () => false, 0.01 );
 		}
-		using var harness = Harness( hosting: true, Script );
+		// the run's own clock: a slow first frame (a loaded machine writing the status) never passes the deadline before the test lets it
+		var now = 0.0;
+		using var harness = Harness( hosting: true, Script, clock: () => now );
 		harness.Update();
 		Assert.IsFalse( harness.Done );
-		Thread.Sleep( 50 );
+		now = 0.05;
 		harness.Update();
 		Assert.IsTrue( harness.Done );
 		Assert.IsFalse( harness.Completed );
@@ -155,13 +157,15 @@ public class CoopLiveHarnessTests
 		{
 			yield return CoopLiveTest.Wait( "nothing", () => false, 600 );
 		}
+		var now = 0.0;
 		using var host = Harness( hosting: true, Idle );
-		using var guest = Harness( hosting: false, Idle );
+		using var guest = Harness( hosting: false, Idle, clock: () => now );
 		Assert.IsNull( guest.StatusOf( "host", "code" ) );
 		host.Publish( "code", "ABC123" );
 		host.Publish( "hostAt", new JsonArray( 32.5, 17.5 ) );
 		// a status is read again at most every quarter of a second
-		Thread.Sleep( 300 );
+		Assert.IsNull( guest.StatusOf( "host", "code" ), "read again too soon" );
+		now = 0.3;
 		Assert.AreEqual( "ABC123", guest.StatusOf( "host", "code" )!.GetValue<string>() );
 		Assert.AreEqual( 17.5, guest.StatusOf( "host", "hostAt" )![1]!.GetValue<double>() );
 		Assert.IsNull( guest.StatusOf( CoopLiveTest.DriverRole, "restarted" ) );

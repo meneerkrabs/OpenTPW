@@ -70,6 +70,10 @@ def _tally(target: Target, side: str, inputs, originals, others, keep: int) -> C
     return result
 
 
+def _jsonable(value):
+    return value.hex() if isinstance(value, (bytes, bytearray)) else repr(value)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument('--count', type=int, default=DEFAULT_COUNT)
@@ -98,7 +102,7 @@ def main(argv: list[str] | None = None) -> int:
                 print(f'{mark} {target.key} vs {comparison.side}: {comparison.inputs} inputs, '
                       f'{comparison.mismatches} mismatches')
                 if comparison.first:
-                    print('      first: ' + json.dumps(comparison.first))
+                    print('      first: ' + json.dumps(comparison.first, default=_jsonable))
     if args.json:
         print(json.dumps([vars(c) for c in report], indent=2))
     return 0

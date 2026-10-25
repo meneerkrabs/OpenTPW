@@ -59,16 +59,25 @@ internal sealed class CoopTestNetwork( Func<double>? clock = null )
 
 	public Member Host => members.First( member => member.IsHost );
 
-	/// <summary>A member joins: it sees the session as it stands, and the connected members hear of it.</summary>
+	/// <summary>A member joins in the lowest free seat: it sees the session as it stands, and the connected members hear of it.</summary>
 	public Member Add( bool host = false )
 	{
-		var member = new Member( this, nextId++, (byte)members.Count, host );
+		var seat = (byte)Enumerable.Range( 0, byte.MaxValue ).First( slot => members.All( member => member.Slot != slot ) );
+		var member = new Member( this, nextId++, seat, host );
 		members.Add( member );
 		member.JoinedAt = LastFrame;
 		member.Snapshot = State( member, LastFrame );
 		foreach ( var other in members.Where( other => other != member && other.Connected ) )
 			other.Enqueue( () => other.RaiseMemberChanged( new CoopMemberChanged( member.Info, CoopMemberState.Joined ) ) );
 		return member;
+	}
+
+	/// <summary>[EXT:online-coop-permissions] A member leaves (or is kicked): it is out of the session, its seat is free for the next member, and the connected members hear of it.</summary>
+	public void Remove( Member member, CoopMemberState state = CoopMemberState.Left )
+	{
+		members.Remove( member );
+		foreach ( var other in members.Where( other => other.Connected ) )
+			other.Enqueue( () => other.RaiseMemberChanged( new CoopMemberChanged( member.Info, state ) ) );
 	}
 
 	private CoopSessionState State( Member you, ulong lastFrame ) => new( "s", "ABCDEF", "Our park", false, 4, you.Id, members.First( member => member.IsHost ).Id, lastFrame,

@@ -533,15 +533,54 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 					flow.Menu.Stack.Pop();
 				} );
 			}
+			// [EXT:ONLINE-UI] the online menu with a postcard waiting: Publish park is greyed (no park is open) and says why while the pointer rests on it, and the postcard line sits under the last button
+			Do( "queue a postcard", () => flow.Online.Folders.Store( flow.Online.Folders.Outbox, OpenTPW.Online.Packages.Postcard.Create( "Alice", new[] { "Bob" }, "Hello", "Smoke", GameLanguage.Current.Name ) ) );
+			Do( "open online menu", () => new UI.OnlineScreens( flow.Menu!.Stack, flow.Strings, Context.Models, new UI.OnlineHost { Session = flow.Online } ).ShowMenu() );
+			Wait( "online menu renders", 3 );
+			// the pointer rests on the greyed line: the help is drawn in the frame after the one that carried the pointer, so the pointer is put there again until the help is on screen
+			var hoverFrames = 0;
+			steps.Enqueue( ("hover Publish park", () =>
+			{
+				var menu = flow.Menu!.Stack.Top!;
+				Require( menu.Name == "onlineMenu", "the online menu opens" );
+				Require( menu.Find( "publish" ) is { Enabled: false }, "Publish park is greyed with no park open" );
+				if ( Context.Batch.TextDraws.Any( entry => entry.Text == OnlineStrings.Get( OnlineLabel.PublishNoPark ) ) )
+					return true;
+				Require( ++hoverFrames < 12, "the reason Publish park is greyed shows while the pointer rests on it" );
+				var rect = menu.Find( "publish" )!.ScreenRect( Context.Canvas );
+				flow.InjectedInput = UiInput.Idle( new System.Numerics.Vector2( rect.X + rect.Width / 2, rect.Y + rect.Height / 2 ) );
+				return false;
+			}) );
+			Do( "online menu capture", () =>
+			{
+				var menu = flow.Menu!.Stack.Top!;
+				var frame = CaptureFrame( "online-menu.png" );
+				VerifyText( frame, OnlineStrings.Get( OnlineLabel.PublishNoPark ), "the reason Publish park is greyed" );
+				var waiting = menu.Find( "waiting" )!;
+				VerifyText( frame, OnlineStrings.Ui( OnlineStrings.OutboxWaiting, "You have postcards in your outbox, waiting to be sent." ), "the postcard line while logged out" );
+				foreach ( var button in menu.Elements.OfType<UiButton>().Where( button => button.Id != "back" ) )
+					Require( button.Bounds.Bottom <= waiting.Bounds.Y, $"the postcard line does not overlap {button.Id}" );
+				// the buttons keep the menu's own (bubbly) font family: a label box too small for it makes a button fall back to a plain body font (Label, Small)
+				foreach ( var button in menu.Elements.OfType<UiButton>().Where( button => button.Id != "back" ) )
+				{
+					var label = button.Text!();
+					var draw = Context.Batch.TextDraws.Last( entry => entry.Text == label );
+					var atlas = Context.Batch.Glyphs[draw.FirstGlyph].Atlas;
+					Require( ReferenceEquals( atlas, Context.Fonts.Menu ) || Context.Fonts.Smaller( Context.Fonts.Menu ).Any( smaller => ReferenceEquals( atlas, smaller ) ), $"the {button.Id} button '{label}' is drawn in the menu font family" );
+				}
+				foreach ( var entry in flow.Online.Folders.List( flow.Online.Folders.Outbox ) )
+					File.Delete( entry.Path );
+				flow.Menu.Stack.Pop();
+			} );
 			// The outbox opened from OpenTPW's online menu with two waiting cards: the menu gives way to the window, so its buttons do not show around it,
 			// and each card's row takes the original's Title/Date/Send/Delete columns, marked for sending (tp.exe 0x4bcaec).
-			Do( "open online menu", () =>
+			Do( "open online menu with two cards", () =>
 			{
 				foreach ( var title in new[] { "Greetings from the jungle", "See you soon" } )
 					flow.Online.Folders.Store( flow.Online.Folders.Outbox, Online.Packages.Postcard.Create( "Alice", new[] { "Bobby" }, title, "Postcard", "English" ) );
 				new UI.OnlineScreens( flow.Menu!.Stack, flow.Strings, Context.Models, new UI.OnlineHost { Session = flow.Online } ).ShowMenu();
 			} );
-			Wait( "online menu renders", 2 );
+			Wait( "online menu with two cards renders", 2 );
 			Do( "open outbox from the menu", () => Click( flow.Menu!.Stack.Top!, "outbox" ) );
 			Wait( "outbox renders", 3 );
 			Do( "outbox with cards capture", () =>

@@ -118,6 +118,10 @@ EXPECTED = {
     # X26 (the TQI movie decoder, TGQ-MOVIES.md): the matrix builder 0x6710c0 for every quantiser and the transform pass 0x67673c.
     ('tpw-exe-tqi-matrix', 'plan'): AGREE,
     ('tpw-exe-tqi-transform-pass', 'plan'): AGREE,
+    # X27 (the procedural terrain texturer, docs/LND.md): the ramp table 0x55e710, the weight plane 0x55e780 and the build routine 0x55f780.
+    ('tpw-exe-terrain-ramp', 'plan'): AGREE,
+    ('tpw-exe-terrain-weights', 'plan'): AGREE,
+    ('tpw-exe-terrain-build', 'plan'): AGREE,
     ('tpw-exe-queue-reevaluate', 'csharp-rule'): AGREE,
     ('tpw-exe-queue-reevaluate', 'no-state-14-exemption'): (70, {'cells': 1, 'position': 4, 'state': 14, 'id': 3}),
     ('tpw-exe-scrap-value', 'all-levels-cost'): (221, {'now': 1000, 'built': 1000, 'level': 1, 'used': 0, 'cost': [10000, 8000, 12000],
@@ -874,6 +878,34 @@ class Oracle(CoastTests, unittest.TestCase):
         self.check(('tpw-exe-tqi-matrix', 'plan'))
         self.check(('tpw-exe-tqi-transform-pass', 'plan'))
 
+    # ------------------------------------------------------------------ X27: the procedural terrain texturer
+    def test_terrain_ramp_weights_and_build_agree(self):
+        self.check(('tpw-exe-terrain-ramp', 'plan'))
+        self.check(('tpw-exe-terrain-weights', 'plan'))
+        self.check(('tpw-exe-terrain-build', 'plan'))
+
+    def test_terrain_build_inputs_reach_every_run_mode_and_the_grey_fallback(self):
+        inputs = targets.terrain_build_inputs(__import__('x86_harness').seeded('oracle-v1:tpw-exe-terrain-build'), DEFAULT_COUNT)
+        seen = set()
+        grey = 0
+        for x in inputs:
+            texture, modes = targets.terrain_reading.build(x['level'], x['n'], x['x'], x['z'])
+            seen.update(modes.values())
+            grey += not modes
+        self.assertEqual(seen, set(targets.terrain_reading.MODES))
+        self.assertGreater(grey, 0)
+
+    def test_terrain_build_readings_are_sharp(self):
+        # Without the three layer quirk (weight 1 per texel in a CBA run) the reading differs from the original; so does one that writes the
+        # rows top-down instead of bottom-up.
+        def flipped(x):
+            texture = targets.terrain_build_plan(x)
+            n = x['n']
+            return b''.join(texture[(n - 1 - row) * n * 4:(n - row) * n * 4] for row in range(n))
+        for name, plan in (('quirk', targets.terrain_build_per_texel_weight), ('rows', flipped)):
+            [comparison] = [c for c in compare(targets.TERRAIN_BUILD_TARGET, self.image, 24, plan=plan) if c.side == 'plan']
+            self.assertGreater(comparison.mismatches, 0, name)
+
     def test_walk_readings_are_sharp(self):
         # The walk's mask matters to the edge test and the search: a reading that ignores it disagrees.
         for target, plan in ((targets.WALK_EDGE_TARGET, lambda x: targets.walk_edge_plan(dict(x, mask=0))),
@@ -886,6 +918,51 @@ class Oracle(CoastTests, unittest.TestCase):
         raw[0x1000] ^= 1
         with self.assertRaises(IdentityError):
             Image(bytes(raw))
+
+
+class TerrainReading(unittest.TestCase):
+    """The Python reading of the procedural terrain texturer needs neither Unicorn nor an executable."""
+
+    def test_ramp_values(self):
+        table = targets.terrain_reading.ramp(48, 40)
+        self.assertEqual((table[27], table[28], table[29], table[68], table[69]), (0, 0, 6, 248, 255))
+        step = targets.terrain_reading.ramp(128, 0)
+        self.assertEqual((step[127], step[128], step[129]), (0, 0, 255))
+
+    def test_constant_weight_grid_gives_a_constant_plane(self):
+        side = 13
+        level = {'width': side, 'height': side, 'grid': bytes([255, 77, 0, 0]) * side * side}
+        for n_size in (16, 32, 64):
+            self.assertEqual(set(targets.terrain_reading.weights(level, n_size, 1, 1, 1)), {77})
+
+    def test_synthetic_inputs_reach_every_mode(self):
+        inputs = targets.terrain_build_inputs(__import__('x86_harness').seeded('oracle-v1:tpw-exe-terrain-build'), DEFAULT_COUNT)
+        seen = set()
+        for x in inputs:
+            seen.update(targets.terrain_reading.build(x['level'], x['n'], x['x'], x['z'])[1].values())
+        self.assertEqual(seen, set(targets.terrain_reading.MODES))
+
+
+class TerrainSyntheticLevels(unittest.TestCase):
+    """The reproducible synthetic levels behind ProceduralTerrainSyntheticGolden.cs need neither Unicorn nor an executable."""
+
+    def test_levels_reach_every_mode_and_the_grey_fallback(self):
+        reading = targets.terrain_reading
+        seen, grey, count = set(), 0, 0
+        for seed, mix, n_size, is_grey in reading.synthetic_specs():
+            level = reading.synthetic_level(seed, mix, n_size, is_grey)
+            for x, z in reading.synthetic_cells(seed, is_grey):
+                modes = reading.build(level, n_size, x, z)[1]
+                seen.update(modes.values())
+                grey += not modes
+                count += 1
+        self.assertEqual(seen, set(reading.MODES))
+        self.assertEqual((count, grey), (54, 3))
+
+    def test_generator_is_deterministic(self):
+        reading = targets.terrain_reading
+        self.assertEqual(reading.synthetic_level(1003, 'BA', 16, False), reading.synthetic_level(1003, 'BA', 16, False))
+        self.assertEqual(reading.Lcg(1).next(), ((1664525 + 1013904223) & 0xFFFFFFFF) >> 24)
 
 
 class WalkReadingCoverage(unittest.TestCase):

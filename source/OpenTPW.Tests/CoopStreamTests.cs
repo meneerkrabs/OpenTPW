@@ -18,7 +18,7 @@ namespace OpenTPW.Tests;
 /// </summary>
 [TestClass]
 [DoNotParallelize]
-public class CoopStreamTests
+public partial class CoopStreamTests
 {
 	private AutomaticCheckpointCpuRendererScope? renderer;
 	private UpgradeCatalogueDefaultsTests? fixture;

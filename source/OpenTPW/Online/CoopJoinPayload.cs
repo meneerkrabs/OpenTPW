@@ -8,7 +8,8 @@ namespace OpenTPW;
 /// [EXT:online-coop-snapshot-join] The session state a join snapshot carries beyond the park's save (docs/COOP.md, "Joining a running session"): what the session digest covers that the save
 /// leaves out or a load resets. Every player's carried catalogue entry and employee in hand, the pending hire and the stale on-pointer candidate, the coasters' being-edited marks (by their
 /// station's attraction id), the session clock, and the cells each coaster's marker binding wants and does not hold (by the station's attraction id; its displaced cells marked), which the
-/// save leaves out and a join's adoption of the binding needs. A capture waits while a coaster drag is held, so it carries no drag.
+/// save leaves out and a join's adoption of the binding needs; and the guests' seats the host granted building ([EXT:online-coop-permissions], C3). A capture waits while a coaster drag is held,
+/// so it carries no drag.
 /// </summary>
 internal sealed record CoopJoinState(
 	IReadOnlyList<(int Player, string Entry)> CarriedEntries,
@@ -17,9 +18,10 @@ internal sealed record CoopJoinState(
 	int StaleOnPointer,
 	IReadOnlyList<int> CoastersBeingEdited,
 	long? SessionClockTicks,
-	IReadOnlyList<(int Station, int X, int Y, bool Displaced)> CoasterUnheldCells )
+	IReadOnlyList<(int Station, int X, int Y, bool Displaced)> CoasterUnheldCells,
+	IReadOnlyList<int>? BuildGrants = null )
 {
-	public const ushort Version = 2;
+	public const ushort Version = 3;
 	/// <summary>The most unheld coaster cells a join state carries (no player tool makes one today: it is a defence).</summary>
 	public const int MaximumUnheldCells = 4096;
 	/// <summary>The most entries of a per-player list: one a player, with room for a replay's other player numbers.</summary>
@@ -29,8 +31,9 @@ internal sealed record CoopJoinState(
 
 	public byte[] Encode()
 	{
+		var grants = BuildGrants ?? Array.Empty<int>();
 		if ( CarriedEntries.Count > MaximumPlayerEntries || StaffHands.Count > MaximumPlayerEntries || CoastersBeingEdited.Count > CoasterSave.MaximumRides
-			|| CoasterUnheldCells.Count > MaximumUnheldCells )
+			|| CoasterUnheldCells.Count > MaximumUnheldCells || grants.Count > MaximumPlayerEntries )
 			throw new InvalidOperationException( "The join state holds more entries than a join snapshot carries." );
 		var writer = new CoopWriter();
 		writer.U16( Version );
@@ -64,6 +67,9 @@ internal sealed record CoopJoinState(
 			writer.U32( Unsigned( y ) );
 			writer.Bool( displaced );
 		}
+		writer.Byte( (byte)grants.Count );
+		foreach ( var seat in grants )
+			writer.U32( Unsigned( seat ) );
 		return writer.ToArray();
 	}
 
@@ -89,11 +95,15 @@ internal sealed record CoopJoinState(
 		var unheld = new (int, int, int, bool)[Count( reader.U16(), MaximumUnheldCells )];
 		for ( var index = 0; index < unheld.Length; index++ )
 			unheld[index] = (NonNegative( reader.U32() ), Signed( reader.U32() ), Signed( reader.U32() ), reader.Bool());
+		var grants = new int[Count( reader.Byte(), MaximumPlayerEntries )];
+		for ( var index = 0; index < grants.Length; index++ )
+			grants[index] = NonNegative( reader.U32() ) is var seat and > 0 and < MaximumPlayerEntries ? seat : throw new InvalidDataException( "The join state grants a seat out of range." );
 		reader.End();
 		if ( carried.Select( item => item.Item1 ).Distinct().Count() != carried.Length || hands.Select( item => item.Item1 ).Distinct().Count() != hands.Length
-			|| coasters.Distinct().Count() != coasters.Length || unheld.Select( item => (item.Item1, item.Item2, item.Item3) ).Distinct().Count() != unheld.Length )
-			throw new InvalidDataException( "The join state names a player, a coaster or a coaster's cell twice." );
-		return new CoopJoinState( carried, hands, pending, stale, coasters, clock, unheld );
+			|| coasters.Distinct().Count() != coasters.Length || unheld.Select( item => (item.Item1, item.Item2, item.Item3) ).Distinct().Count() != unheld.Length
+			|| grants.Distinct().Count() != grants.Length )
+			throw new InvalidDataException( "The join state names a player, a coaster, a coaster's cell or a granted seat twice." );
+		return new CoopJoinState( carried, hands, pending, stale, coasters, clock, unheld, grants );
 	}
 
 	private static uint Unsigned( int value ) => unchecked( (uint)value );

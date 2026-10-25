@@ -246,7 +246,9 @@ public class OutboxWindowTests
 		((UiButton)screen.Find( "ok" )!).Clicked!();
 		Assert.AreSame( menu, stack.Top, "with nothing marked the tick closes the window" );
 		var status = (UiLabel)menu.Find( "status" )!;
-		Assert.AreEqual( session.Status, status.Text(), "the tick's own outcome replaces the earlier window's message" );
+		// with nothing to report the line shows what it shows idle (here why Publish park is greyed)
+		var idle = status.Text();
+		Assert.IsFalse( idle.Contains( "Saved to an earlier place" ), "the tick's own outcome replaces the earlier window's message" );
 		// while a request runs, the status line shows the progress text it set (the original's progress message), then its outcome
 		var release = new System.Threading.Tasks.TaskCompletionSource<string?>();
 		session.Run( () => release.Task );
@@ -258,7 +260,7 @@ public class OutboxWindowTests
 		while ( session.Busy > 0 && DateTime.UtcNow < until )
 			session.Pump();
 		Assert.AreEqual( 0, session.Busy );
-		Assert.AreEqual( "", status.Text(), "the send's progress closes with no count (0x4bc660)" );
+		Assert.AreEqual( idle, status.Text(), "the send's progress closes with no count (0x4bc660): the line has nothing more to report" );
 	} );
 
 	[TestMethod]

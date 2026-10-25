@@ -107,6 +107,7 @@ public abstract record ParkSettingCommand : ParkCommand
 		ParkCommandKind.RefreshLoanOffers => new RefreshLoanOffersCommand(),
 		ParkCommandKind.SetAllObjectsOpen => new SetAllObjectsOpenCommand( reader.Bool() ),
 		ParkCommandKind.SetSessionClock => new SetSessionClockCommand( reader.Long() ),
+		ParkCommandKind.SetBuildGrant => new SetBuildGrantCommand( reader.Int(), reader.Bool() ),
 		_ => null
 	};
 }
@@ -670,6 +671,29 @@ public sealed record SetSessionClockCommand( long Seconds ) : ParkSettingCommand
 	internal override ParkCommandResult Execute( Level level )
 	{
 		level.Objects.ScriptWorld.SessionTime = Time;
+		return ParkCommandResult.Ok();
+	}
+}
+
+/// <summary>
+/// [EXT:online-coop-permissions] The host grants a guest's seat the right to build, or takes it back (docs/COOP.md, "Building by every player"; the user's decision Q7: the host sets
+/// rights per player). The grants are session state, in every peer's park from the same tick on (the stream carries the command) and in a join snapshot, so every peer's rights refuse or
+/// allow a guest's command alike. Only the host may issue it (<see cref="CoopBuildRights"/>); the host's own seat 0 needs no grant.
+/// </summary>
+public sealed record SetBuildGrantCommand( int Seat, bool Granted ) : ParkSettingCommand
+{
+	public override ParkCommandKind Kind => ParkCommandKind.SetBuildGrant;
+	internal override bool IsWellFormed => Seat > 0 && Seat < CoopJoinState.MaximumPlayerEntries;
+
+	internal override void WriteFields( ParkCommandWriter writer )
+	{
+		writer.Int( Seat );
+		writer.Bool( Granted );
+	}
+
+	internal override ParkCommandResult Execute( Level level )
+	{
+		level.SetBuildGrant( Seat, Granted );
 		return ParkCommandResult.Ok();
 	}
 }

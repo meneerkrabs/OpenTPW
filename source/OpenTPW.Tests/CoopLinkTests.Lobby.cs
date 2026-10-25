@@ -285,7 +285,6 @@ public partial class CoopLinkTests
 		{
 			var host = await players.Add( server, "Hostess" );
 			var guest = await players.Add( server, "Guest" );
-			guest.Link.ReconnectWindow = TimeSpan.FromMilliseconds( 200 );
 			await Open( host, guest );
 			var state = await Share( host, guest );
 			// the guest leaves while its link cannot send: the leave waits for the account's next welcome
@@ -296,6 +295,8 @@ public partial class CoopLinkTests
 			await Until( () => guest.Link.State == CoopLinkState.Reconnecting, "the guest's link to reconnect", guest );
 			Assert.IsTrue( guest.Link.Leave( "Bye." ) );
 			Assert.IsTrue( guest.Link.Settling );
+			// the link gives up soon now: a short window from the start could pass on a loaded machine before the test's pump saw the reconnect
+			guest.Link.ReconnectWindow = TimeSpan.FromMilliseconds( 200 );
 			await Until( () => guest.Link.Stopped == CoopStop.Lost, "the link to be lost", guest );
 			// the lobby's open: its welcome names the session the leave is for, which it sends; that leave is lost before it goes out, and kept
 			down = false;
@@ -306,8 +307,10 @@ public partial class CoopLinkTests
 			Assert.AreEqual( CoopStop.None, guest.Link.Stopped, "this game's own leave, not another game's park" );
 			Assert.IsTrue( guest.Link.Settling, "an unconfirmed leave is kept" );
 			Assert.AreEqual( 2, host.Link.Session!.Members.Count );
-			// the next welcome sends it again, and the server's confirmation settles it
+			// the next welcome sends it again, and the server's confirmation settles it; the network is back, so the reconnect has the usual window (a loaded
+			// machine's reconnect may take longer than the short one the loss above took)
 			guest.Link.DropSent = null;
+			guest.Link.ReconnectWindow = CoopLink.DefaultReconnectWindow;
 			guest.Link.DropSocket();
 			await Until( () => host.Link.Session!.Members.Count == 1, "the seat to be left", host, guest );
 			await Until( () => !guest.Link.Settling, "the confirmation", host, guest );

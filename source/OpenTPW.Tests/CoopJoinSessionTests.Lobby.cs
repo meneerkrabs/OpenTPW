@@ -330,7 +330,16 @@ public partial class CoopJoinSessionTests
 
 			// the park ends after the list came: its row's join is refused in words; the code stays for another try, and Back leads to the list again
 			var staleCode = stale.Link.Session!.Code;
+			var staleId = stale.Link.Session.Id;
+			// the server ends the park before the row's join goes out: a join that raced the leave would be seated first and then hear that the host left
+			var ended = false;
+			stale.Link.DropReceived = message =>
+			{
+				ended |= message is CoopEnded end && end.SessionId == staleId;
+				return false;
+			};
 			Assert.IsTrue( stale.Link.Leave( "Closing." ) );
+			await CoopLinkTests.Until( () => ended, "the server to end the park", stale );
 			list.Selected = list.Rows().ToList().IndexOf( "Ending park (Hostess)" );
 			UpdateTop( stack );
 			((UiButton)stack.Top.Find( "join" )!).Clicked!();

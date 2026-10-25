@@ -16,8 +16,9 @@ internal sealed partial class CoopLiveTest
 	/// <item>The host's park is fetched and built, replaces the lobby, and follows the host's stream with compared checkpoints; it is the host's session and park.</item>
 	/// <item>The figures: once the host saw the guest's, the guest sees the host's figure and name in its view; the host's figure where the host's view jumped; the guest's own
 	/// view jumps, which the host sees.</item>
-	/// <item>The host's line applied at its record, with checkpoints compared after it; the guest's own line refused (only the host builds), its park following on (recovery: the
-	/// server's restart, following again and the second line).</item>
+	/// <item>The host's line applied at its record, with checkpoints compared after it; the guest's own line refused (the host has not let it build yet), its park following on;
+	/// once the host lets it build, its next line goes to the host and is laid at its record, with checkpoints compared after it (C3a-2) (recovery: the server's restart,
+	/// following again and the second line).</item>
 	/// <item>The host's chat line heard and answered through the chat mode's entry (endurance: following the fastest speed for the run's minutes, with no desync or resync).</item>
 	/// <item>F4 to the HUD and back; a click on a ride in the chat mode rides it, which the host sees as the figure gone, and Escape leaves it; Go to in the host's name popup
 	/// moves the view to the host's figure with no park command.</item>
@@ -85,7 +86,7 @@ internal sealed partial class CoopLiveTest
 			yield return step;
 		Keep( "applied", applied );
 		Publish( "sawBuild", true );
-		// the guest's own line through its HUD: refused, only the host builds; the park follows on
+		// the guest's own line through its HUD: refused, the host has not let it build yet; the park follows on
 		var avoid = new List<(int X, int Y)>( Cells( Other( "built" )!["cells"] ) );
 		var refused = new LineResult();
 		foreach ( var step in LayLine( host: false, avoid, refused ) )
@@ -93,6 +94,23 @@ internal sealed partial class CoopLiveTest
 		var checks = TheSession.GuestStream!.Checks;
 		yield return Wait( "the park follows on after the refusal", () => TheSession is { Phase: CoopGuestPhase.Following, GuestStream: { Stopped: false } stream } && stream.Checks > checks, 60 );
 		Keep( "refusal", refused.Evidence );
+		// [EXT:online-coop-permissions] the host lets the guest build through its Build Together screen's switch (C3a-2): the guest's next line goes to the host and is laid at its
+		// record on both parks, with checkpoints compared after it
+		Publish( "refused", true );
+		var seat = ThePark.Commands.Player;
+		yield return Wait( "the host lets the guest build", () => OtherSays( "granted" ) && ThePark.HasBuildGrant( seat ), 180 );
+		var own = new LineResult();
+		foreach ( var step in LayLine( host: false, avoid, own, granted: true ) )
+			yield return step;
+		var ownApplied = new JsonObject();
+		foreach ( var step in Applied( own.Evidence, ownApplied ) )
+			yield return step;
+		own.Evidence["seat"] = seat;
+		own.Evidence["checksAtLine"] = ownApplied["checksAtLine"]!.DeepClone();
+		own.Evidence["checksAfter"] = ownApplied["checksAfter"]!.DeepClone();
+		Keep( "ownBuild", own.Evidence );
+		Publish( "ownBuilt", own.Evidence );
+		yield return Wait( "the host's park has the guest's line", () => OtherSays( "sawGuestBuild" ), 180 );
 
 		if ( scenario == "recovery" )
 			foreach ( var step in GuestRecovery( hostName, avoid ) )

@@ -1102,8 +1102,10 @@ The steps:
    it there. The same follows for the guest's view.
 4. **Building.** The host lays a path line through its HUD: a press on free land starts the tool, and a
    press on the end lays the line. The guest's park takes the line's record, its cells become paths, and
-   checkpoints are compared after it. The guest's own line is refused (only the host builds), its cells
-   stay free, and its park follows on.
+   checkpoints are compared after it. The guest's own line is refused (the host has not let it build
+   yet), its cells stay free, and its park follows on. Then the host lets the guest build with its switch
+   on the Build Together screen (C3a-2), and the guest's next line goes to the host: it is laid at its
+   record on both parks, as the guest's seat, with checkpoints compared after it.
 5. **The chat.** A line each way through the chat mode's entry (Enter over the park, the line, Enter),
    heard in the other game.
 6. **The guest's controls.** F4 to the HUD and back. A click on a ride in the chat mode rides it: the host

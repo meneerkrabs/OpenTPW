@@ -19,7 +19,8 @@ internal sealed partial class CoopLiveTest
 	/// <item>Back to the running park; the guest joins with the code and follows.</item>
 	/// <item>The figures: the host sees the guest's figure and name in its view, then the guest sees the host's; the host's view jumps far and the guest sees its figure there; the
 	/// guest's view jumps and the host sees its figure there.</item>
-	/// <item>A path line laid through the HUD, which the guest's park applies (recovery: the driver restarts the server, both come back, and a second line reaches the guest).</item>
+	/// <item>A path line laid through the HUD, which the guest's park applies; the guest's own line is refused, the host lets it build with the Build Together screen's switch, and
+	/// its next line is laid at its record on both parks (C3a-2) (recovery: the driver restarts the server, both come back, and a second line reaches the guest).</item>
 	/// <item>A chat line through the chat mode's entry, and the guest's answer; F4 back to the HUD (endurance: the fastest speed for the run's minutes).</item>
 	/// <item>The guest rides: its figure is gone from the host's park while it rides and comes back after.</item>
 	/// <item>Once the guest's checks are done, the host ends sharing from the Build Together screen (Yes), and its park runs on alone.</item>
@@ -95,6 +96,21 @@ internal sealed partial class CoopLiveTest
 		Publish( "built", built.Evidence );
 		yield return Wait( "the guest's park has the line", () => OtherSays( "sawBuild" ), 180 );
 
+		// [EXT:online-coop-permissions] the guest's own line is refused; the host lets it build through the Build Together screen's switch (C3a-2), and the guest's next line is laid
+		// at its record on both parks
+		yield return Wait( "the guest's line refused", () => OtherSays( "refused" ), 180 );
+		foreach ( var step in LetTheGuestBuild( guestName ) )
+			yield return step;
+		Publish( "granted", true );
+		yield return Wait( "the guest's own line", () => Other( "ownBuilt" ) is JsonObject, 300 );
+		var own = (JsonObject)Other( "ownBuilt" )!;
+		var ownCells = Cells( own["cells"] );
+		var seat = own["seat"]!.GetValue<int>();
+		yield return Wait( "the guest's line in the host's park", () => ownCells.All( cell => level.Guests!.Grid.Cells.RawTypeAt( cell.X, cell.Y ) == (byte)ParkCellType.Path ), 60 );
+		Require( level.Commands.Log.Any( entry => entry.Command is LayLineCommand or QueueSegmentCommand && entry.Command.Player == seat ), "the host's stream took the guest's line as its seat" );
+		Keep( "guestBuild", new JsonObject { ["record"] = own["record"]?.DeepClone(), ["cells"] = own["cells"]!.DeepClone(), ["seat"] = seat } );
+		Publish( "sawGuestBuild", true );
+
 		if ( scenario == "recovery" )
 			foreach ( var step in HostRecovery( guestName, avoid ) )
 				yield return step;
@@ -144,6 +160,40 @@ internal sealed partial class CoopLiveTest
 		var ticks = level.TickCount;
 		yield return Wait( "the park runs on alone", () => level.TickCount > ticks + 60, 30 );
 		Keep( "ended", new JsonObject { ["outcome"] = flow.Sharing?.Outcome.ToString(), ["ticks"] = level.TickCount } );
+	}
+
+	/// <summary>
+	/// [EXT:online-coop-permissions] The host lets the guest build (C3a-2): Escape, Build Together, the guest's switch from "Watches" to "Builds", which the shared park's grant then
+	/// says, and back to the park.
+	/// </summary>
+	private IEnumerable<CoopLiveWait> LetTheGuestBuild( string guestName )
+	{
+		const string screen = OnlineScreens.BuildTogetherScreenName;
+		var level = ThePark;
+		var members = flow.Sharing!.State!.Members.OrderBy( member => member.Slot ).ToList();
+		var row = members.FindIndex( member => member.Name == guestName );
+		Require( row > 0, "the guest has a row of its own" );
+		var seat = (int)members[row].Slot;
+		Give( UiInput.Key( UiKeys.Back ) );
+		yield return Wait( "Escape opens the pause menu", () => Top( ParkHud.PauseMenuScreen ), 10 );
+		Choose( ParkHud.PauseMenuScreen, ParkHud.BuildTogetherId );
+		yield return Wait( "the guest's switch", () => Usable<UiButton>( screen, $"builds{row}" ), 10 );
+		Require( !level.HasBuildGrant( seat ), "the guest only watches before the switch" );
+		var before = Element<UiButton>( screen, $"builds{row}" ).Text?.Invoke() ?? "";
+		Press( screen, $"builds{row}" );
+		yield return Wait( "the guest may build", () => level.HasBuildGrant( seat ) && (Element<UiButton>( screen, $"builds{row}" ).Text?.Invoke() ?? "") != before, 10 );
+		Keep( "grant", new JsonObject
+		{
+			["seat"] = seat,
+			["record"] = TheSession.HostStream?.LastRecord,
+			["before"] = before,
+			["after"] = Element<UiButton>( screen, $"builds{row}" ).Text?.Invoke(),
+			["at"] = Math.Round( Now, 3 )
+		} );
+		Press( screen, "back" );
+		yield return Wait( "the pause menu again", () => Top( ParkHud.PauseMenuScreen ), 10 );
+		Choose( ParkHud.PauseMenuScreen, nameof( UIStrings.ResumeGame ) );
+		yield return Wait( "the park again", () => TheHud.Stack.Screens.Count == 1 && !TheHud.Paused, 10 );
 	}
 
 	/// <summary>

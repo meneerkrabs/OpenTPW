@@ -365,6 +365,10 @@ export function checkEvidence(host, guest, scenario, minutes) {
 	check('checkpoints compared after the line', guest?.applied?.checksAfter > guest?.applied?.checksAtLine && guest?.stream?.checks > 0,
 		{ applied: guest?.applied, stream: guest?.stream });
 	check('the guest\'s own line was refused, its cells left free', guest?.refusal?.refusalsAfter === guest?.refusal?.refusalsBefore + 1, guest?.refusal);
+	check('once the host let the guest build, the guest\'s next line was laid at its record on both parks', host?.grant?.seat > 0 && host.grant.seat === guest?.ownBuild?.seat
+		&& Number.isInteger(guest.ownBuild.record) && host?.guestBuild?.record === guest.ownBuild.record && guest.ownBuild.cells?.length === 6
+		&& JSON.stringify(host.guestBuild.cells) === JSON.stringify(guest.ownBuild.cells) && guest.ownBuild.checksAfter > guest.ownBuild.checksAtLine,
+	{ grant: host?.grant, ownBuild: guest?.ownBuild, guestBuild: host?.guestBuild });
 	check('each game drew the other\'s figure with its name, and saw it where its view moved', sighting(host, 'guest', guest?.player) && sighting(host, 'guest-moved', guest?.player)
 		&& sighting(guest, 'host', host?.player) && sighting(guest, 'host-moved', host?.player), { host: host?.sightings, guest: guest?.sightings });
 	check('the chat both ways, through the chat mode\'s entry', host?.chat?.said && host.chat.said === guest?.chat?.heard && guest.chat.said && guest.chat.said === host.chat.heard,

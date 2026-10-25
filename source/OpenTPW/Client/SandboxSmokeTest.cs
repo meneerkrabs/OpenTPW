@@ -110,6 +110,12 @@ internal sealed partial class SandboxSmokeTest : IDisposable
 		{
 			smokeCamera.SetPose( level.PathFocus, ParkCameraMode.MaximumHeight, ParkCameraMode.HomeYaw );
 		}
+		if ( frame == 20 && level.OriginalTerrain?.ProceduralGround is { } ground )
+		{
+			// the procedural terrain texturing (docs/LND.md) is on for this level: the cells in view are built into the pages and drawn, and none waits for its texture
+			Require( ground.DrawnCells > 0 && ground.PendingCells == 0 && ground.Builds >= ground.DrawnCells, $"draw the ground with procedural textures ({ground.DrawnCells} cells drawn, {ground.PendingCells} pending, {ground.Builds} built)" );
+			Log.Trace( $"Procedural terrain: {ground.DrawnCells} cells in view at the widest zoom, cache {ground.Cache.Capacity}, {ground.Builds} built in {ground.BuildMilliseconds:F1} ms ({ground.TexturerMilliseconds:F1} ms of it the texturer), {ground.Cache.Hits} hits, {ground.Cache.Misses} misses." );
+		}
 		TrackObjectMotion();
 		TrackRideHeads();
 		if ( StepRideHeadReadback() )

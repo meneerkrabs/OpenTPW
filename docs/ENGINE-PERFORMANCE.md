@@ -401,3 +401,19 @@ warm cache; on the issue's hard disk with an antivirus filter each of the 1,258 
 
 1. **The first start after an install or a Windows update** compiles the shaders as before and fills the cache; nothing shows that start's
    progress (the window stays black until the lobby is drawn). A loading indicator would be a visible change and is not made here.
+
+## Procedural terrain textures (October 25, 2026)
+
+The ground drawn with the original's procedural textures (docs/LND.md, issue #829) against the build before it (main at the merge of #834), same Mac, Release, Jungle, High preset (32 × 32 textures, a cache of 2000 cells),
+`--offscreen --silent --mute --no-advisor --frame-stats --no-vsync --perf-run 9000 --perf-crowd 150 --perf-zoom <value>`, two rounds, the builds alternating, other sessions running:
+
+| Zoom value | Build | Frame average (ms) | p99 (ms) | World render (ms) | GPU wait (ms) | Model parts drawn / outside |
+| ---: | --- | ---: | ---: | ---: | ---: | ---: |
+| 110 (Home) | main | 1.34, 1.60 | 2.46, 3.64 | 0.78, 1.04 | 0.40, 0.28 | 35 / 95 |
+| 110 (Home) | procedural | 1.57, 1.54 | 3.49, 3.31 | 1.07, 1.08 | 0.20, 0.18 | 35 / 95 |
+| 300 | main | 2.83, 2.77 | 4.50, 4.28 | 1.06, 1.13 | 1.64, 1.50 | 74 / 53 |
+| 300 | procedural | 3.27, 2.81 | 4.97, 4.45 | 1.18, 1.12 | 1.92, 1.56 | 74 / 53 |
+
+The frame cost stays within the run-to-run spread of the main build (the two rounds of the main build alone differ by 0.26 ms at the Home zoom). In a still view the terrain does one comparison of the view matrix per frame; a view that moves finds the cells in view
+(about 8,000 corner tests), looks them up in the cache, builds the cells that took a new slot (about 80 µs a cell at N = 32 on this Mac, 60 µs of it the texturer, so a Home view of 300 cells is 25 ms on its first frame) and rewrites one mesh of at most 2500 cells.
+An early version that re-ran the cell search every frame, with the pool extension's hole test on each of the 8,000 cells, cost 0.6 ms a frame at the Home zoom; the search now runs when the view or the holes change.

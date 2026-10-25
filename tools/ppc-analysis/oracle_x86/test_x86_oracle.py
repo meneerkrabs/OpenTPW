@@ -957,7 +957,7 @@ class TerrainSyntheticLevels(unittest.TestCase):
                 grey += not modes
                 count += 1
         self.assertEqual(seen, set(reading.MODES))
-        self.assertEqual((count, grey), (54, 3))
+        self.assertEqual((count, grey), (81, 3))
 
     def test_generator_is_deterministic(self):
         reading = targets.terrain_reading

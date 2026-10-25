@@ -159,7 +159,7 @@ function forwardUpgrade(request, socket, head, upstreamUrl, log, sockets, refuse
 		return refuseUpgrade(socket, 404, 'Not Found', refused, limits.endMs);
 	if (sockets.size >= limits.sockets)
 		return refuseUpgrade(socket, 503, 'Service Unavailable', refused, limits.endMs);
-	const entry = { path: url.pathname, method: request.method, upgrade: true, status: null, bytesIn: 0, bytesOut: 0 };
+	const entry = { path: url.pathname, method: request.method, upgrade: true, status: null, bytesIn: 0, bytesOut: 0, at: Date.now() };
 	log.push(entry);
 	sockets.add(socket);
 	let upstreamSocket = null;
@@ -273,12 +273,17 @@ export function loopbackOrigin(value) {
 export class Cdp {
 	#socket; #next = 1; #pending = new Map(); #listeners = [];
 
-	static async connect(url) {
+	/** Connects to `url`; a connection not open within `timeoutMs` is closed and fails, instead of waiting for ever. */
+	static async connect(url, timeoutMs = 30000) {
 		const cdp = new Cdp();
 		cdp.#socket = new WebSocket(url);
 		await new Promise((resolve, reject) => {
-			cdp.#socket.addEventListener('open', resolve, { once: true });
-			cdp.#socket.addEventListener('error', reject, { once: true });
+			const timer = setTimeout(() => {
+				cdp.#socket.close();
+				reject(new Error(`The DevTools connection did not open within ${timeoutMs / 1000} s`));
+			}, timeoutMs);
+			cdp.#socket.addEventListener('open', () => { clearTimeout(timer); resolve(); }, { once: true });
+			cdp.#socket.addEventListener('error', error => { clearTimeout(timer); reject(error); }, { once: true });
 		});
 		cdp.#socket.addEventListener('message', event => cdp.#receive(JSON.parse(event.data)));
 		cdp.#socket.addEventListener('close', () => {

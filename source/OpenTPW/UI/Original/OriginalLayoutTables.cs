@@ -740,6 +740,40 @@ public static class OriginalLayoutTables
 		} ),
 	} );
 
+	/// <summary>[BIN:TPW-EXE:0x758878] layout table OutboxWindow.</summary>
+	public static readonly LayoutTable OutboxWindow = new( "OutboxWindow", 0x758878, new LayoutNode[]
+	{
+		new( 1, 0x1u, 0xEE1u, 186, 30, 2018, 1007, -1, -1, "window4", null, null, new LayoutNode[]
+		{
+			new( 1, 0x1u, 0xEE2u, 246, 425, 772, 782, -1, -1, "list_emailaddr", null, new[] { 269, 447, 666, 753 }, new LayoutNode[]
+			{
+				new( 3, 0x51u, 0xEE3u, 688, 443, 747, 756, -1, -1, null, "!slider", new[] { 688, 443, 747, 756 }, new LayoutNode[]
+				{
+					new( 2, 0x1u, 0x3u, 679, 578, 747, 645, -1, -1, "b_scroller", null, null, System.Array.Empty<LayoutNode>() ),
+				} ),
+			} ),
+			new( 1, 0x1u, 0xEE4u, 246, 154, 777, 404, -1, -1, "!frame", null, new[] { 266, 165, 761, 387 }, System.Array.Empty<LayoutNode>() ),
+			new( 2, 0x1u, 0xEE5u, 265, 792, 419, 945, 397, -1, "b_okall", null, null, System.Array.Empty<LayoutNode>() ),
+			new( 2, 0x1u, 0xEE6u, 438, 792, 591, 945, 398, -1, "b_delall", null, null, System.Array.Empty<LayoutNode>() ),
+			new( 2, 0x1u, 0xEE7u, 610, 792, 764, 945, 399, -1, "b_nuall", null, null, System.Array.Empty<LayoutNode>() ),
+			new( 7, 0x11u, 0xEE8u, 793, 151, 1823, 944, -1, -1, "list_outbox", null, new[] { 826, 294, 1704, 904 }, new LayoutNode[]
+			{
+				new( 2, 0x1u, 0x10u, 816, 169, 1189, 275, -1, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
+				new( 2, 0x1u, 0x11u, 1194, 169, 1486, 275, -1, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
+				new( 2, 0x1u, 0x12u, 1491, 169, 1603, 275, -1, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
+				new( 2, 0x1u, 0x13u, 1608, 169, 1721, 275, -1, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
+				new( 3, 0x10u, 0x1u, 1733, 237, 1792, 850, -1, -1, null, "slider", new[] { 1733, 237, 1792, 850 }, new LayoutNode[]
+				{
+					new( 2, 0x1u, 0x3u, 1725, 337, 1792, 404, -1, -1, "b_scroller", null, null, System.Array.Empty<LayoutNode>() ),
+					new( 2, 0x21u, 0x1u, 1732, 175, 1792, 235, -1, -1, "b_up", null, null, System.Array.Empty<LayoutNode>() ),
+					new( 2, 0x21u, 0x2u, 1732, 853, 1792, 913, -1, -1, "b_down", null, null, System.Array.Empty<LayoutNode>() ),
+				} ),
+			} ),
+			new( 1, 0x1u, 0xEE9u, 809, 66, 1281, 146, -1, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
+			new( 2, 0x1u, 0xFFFFFFFFu, 1889, 820, 1972, 903, 400, -1, "b_okay", null, null, System.Array.Empty<LayoutNode>() ),
+		} ),
+	} );
+
 	/// <summary>[BIN:TPW-EXE:0x7585a8] layout table LoginWindow.</summary>
 	public static readonly LayoutTable LoginWindow = new( "LoginWindow", 0x7585A8, new LayoutNode[]
 	{

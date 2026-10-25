@@ -40,6 +40,8 @@ public class UiScreen
 	public bool Modal { get; init; } = true;
 	/// <summary>A full screen of its own (the online globe): the screens below are not drawn or dimmed.</summary>
 	public bool HidesBelow { get; init; }
+	/// <summary>A menu whose windows take its place (OpenTPW's online menu): while another screen lies above it, it is not drawn, so its buttons do not show around that window.</summary>
+	public bool HiddenWhenCovered { get; init; }
 	/// <summary>True once a stack removed this screen; it then ignores the rest of the frame's input (a click that closed it must not also act as Back on whatever it opened).</summary>
 	public bool IsRemoved
 	{
@@ -301,7 +303,7 @@ public class UiScreen
 		if ( element is IUiRowList list )
 		{
 			var index = list.RowAt( canvas, point );
-			if ( index >= 0 && list.RowClicked( index, true ) )
+			if ( index >= 0 && list.RowClickedAt( canvas, point, index, true ) )
 				return;
 			if ( index >= 0 && index == list.Selected )
 				element.Activate();
@@ -421,6 +423,8 @@ public sealed class UiScreenStack
 		}
 		for ( var index = first; index < screens.Count; index++ )
 		{
+			if ( screens[index].HiddenWhenCovered && index < screens.Count - 1 )
+				continue;
 			// [DATA:video 10:00, 28:00] the pause overlay and the new-player dialog darken the scene behind them, as every modal screen does here
 			if ( screens[index].Modal && index > first )
 				context.Batch.AddRectangle( new UiRect( 0, 0, context.Canvas.Width, context.Canvas.Height ), UiColors.Backdrop );

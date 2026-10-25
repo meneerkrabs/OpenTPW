@@ -572,6 +572,26 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 					File.Delete( entry.Path );
 				flow.Menu.Stack.Pop();
 			} );
+			// The outbox opened from OpenTPW's online menu with two waiting cards: the menu gives way to the window, so its buttons do not show around it,
+			// and each card's row takes the original's Title/Date/Send/Delete columns, marked for sending (tp.exe 0x4bcaec).
+			Do( "open online menu with two cards", () =>
+			{
+				foreach ( var title in new[] { "Greetings from the jungle", "See you soon" } )
+					flow.Online.Folders.Store( flow.Online.Folders.Outbox, Online.Packages.Postcard.Create( "Alice", new[] { "Bobby" }, title, "Postcard", "English" ) );
+				new UI.OnlineScreens( flow.Menu!.Stack, flow.Strings, Context.Models, new UI.OnlineHost { Session = flow.Online } ).ShowMenu();
+			} );
+			Wait( "online menu with two cards renders", 2 );
+			Do( "open outbox from the menu", () => Click( flow.Menu!.Stack.Top!, "outbox" ) );
+			Wait( "outbox renders", 3 );
+			Do( "outbox with cards capture", () =>
+			{
+				Require( flow.Menu!.Stack.Top?.Name == "outbox", "the menu's Unsent Postcards button opens the outbox" );
+				var frame = CaptureFrame( "online-outbox-cards.png" );
+				VerifyText( frame, "Greetings from the jungle", "an outbox card's title" );
+				Require( !Context.Batch.TextDraws.Any( entry => entry.Text == OnlineStrings.Get( OnlineLabel.ImportFile ) ), "the online menu's buttons do not show around the outbox" );
+				foreach ( var (path, _, _) in flow.Online.Folders.List( flow.Online.Folders.Outbox ) )
+					File.Delete( path );
+			} );
 			Do( "leave online", () =>
 			{
 				while ( flow.Menu!.Stack.Screens.Count > 1 )
@@ -1523,6 +1543,24 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 			Do( "park camera", () => parkCamera = Camera.Mode );
 		else
 		{
+			// A forecast of other weather puts the forecast banner over the park; the banner waits while the globe takes the park's place (WeatherForecastPresenter.ShowsOnlineGlobe).
+			WeatherForecastPresenter? presenter = null;
+			Do( "forecast banner in the park", () =>
+			{
+				Require( flow.Level!.Weather is { Started: true }, "the park's weather has started" );
+				var weather = flow.Level.Weather!;
+				presenter = Entity.All.OfType<WeatherForecastPresenter>().Single( entity => entity.Level == flow.Level );
+				foreach ( var quality in new[] { 90, 10, 50, 70, 30 } )
+				{
+					weather.DebugPostForecast( quality );
+					if ( !weather.ForecastBands.Equals( weather.CurrentBands ) )
+						break;
+				}
+				Require( !weather.ForecastBands.Equals( weather.CurrentBands ), "a forecast of other weather is posted" );
+				WeatherForecastPresenter.BannerHidden = false;
+			} );
+			Wait( "forecast banner renders", 3 );
+			Do( "forecast banner draws", () => Require( presenter!.DrawnBanner != null, "the forecast banner draws over the park" ) );
 			Do( "online globe in the park", () =>
 			{
 				parkCamera = Camera.Mode;
@@ -1532,10 +1570,16 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 			Do( "park globe", () =>
 			{
 				Require( flow.Globe is { Visible: true } && Camera.Mode is GlobeCameraMode, "Go Online in a park shows the globe with its camera" );
+				Require( presenter!.DrawnBanner == null, "the forecast banner waits while the online globe takes the park's place" );
 				CaptureFrame( "online-park-globe.png" );
 				flow.Hud!.Stack.Pop();
 			} );
 			Wait( "park returns", 3 );
+			Do( "forecast banner returns", () =>
+			{
+				Require( presenter!.DrawnBanner != null, "the forecast banner is back with the park's view" );
+				WeatherForecastPresenter.BannerHidden = true;
+			} );
 		}
 		var parkLanguage = PlanLanguageInPark();
 		Do( "exit to lobby", () =>

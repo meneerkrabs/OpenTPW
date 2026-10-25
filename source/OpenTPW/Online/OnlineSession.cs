@@ -160,6 +160,20 @@ public sealed class OnlineSession : IDisposable, IPresenceSession, IChatPanelSou
 	/// </summary>
 	public long StatusSerial { get; private set; }
 	public int Busy { get; private set; }
+
+	/// <summary>
+	/// The progress text the running request set (the original's progress messages, such as "Getting City List" or "Sending mails from outbox, please wait ..."),
+	/// or null while no request runs or the running one has set none. Other status messages, such as a chat connection's error, are no progress.
+	/// </summary>
+	public string? Progress => Busy > 0 ? progress : null;
+	private string? progress;
+
+	/// <summary>The running request's progress text, shown as the status too (on the game's thread, from the request's own post).</summary>
+	private void SetProgress( string text )
+	{
+		Status = text;
+		progress = text;
+	}
 	/// <summary>
 	/// A chat connection is being opened or chat requests are still on their way. Chat traffic does not take the operation slot (<see cref="Busy"/>):
 	/// a visit joins its park's room while the download that started it still holds the slot, and a walking player sends a place several times
@@ -169,6 +183,8 @@ public sealed class OnlineSession : IDisposable, IPresenceSession, IChatPanelSou
 	/// <summary>A chat connection is being opened (the first one or a reconnection).</summary>
 	public bool ChatConnecting => chatConnecting;
 	public IReadOnlyList<ParkSummary> Parks { get; private set; } = Array.Empty<ParkSummary>();
+	/// <summary>Counts the park lists <see cref="RefreshParks"/> fetched, so a list can tell an empty result from one not fetched yet or whose fetch failed.</summary>
+	public int ParksFetched { get; private set; }
 	public IReadOnlyList<PostcardSummary> Inbox { get; private set; } = Array.Empty<PostcardSummary>();
 	/// <summary>Cities of the current server's online world; empty before fetching or when the server has none.</summary>
 	public IReadOnlyList<CityInfo> Cities { get; private set; } = Array.Empty<CityInfo>();
@@ -329,6 +345,7 @@ public sealed class OnlineSession : IDisposable, IPresenceSession, IChatPanelSou
 		if ( disposed || Busy > 0 )
 			return;
 		Busy++;
+		progress = null;
 		var startedGeneration = generation;
 		Task.Run( async () =>
 		{
@@ -583,17 +600,18 @@ public sealed class OnlineSession : IDisposable, IPresenceSession, IChatPanelSou
 	public void FetchCityParks( int cityId ) => WithClient( async client =>
 	{
 		// [DATA:Language/English/UITEXT.str:249] the original showed "Getting Top 10 Park List" while this ran
-		Post( () => { CityParks = null; Status = OnlineStrings.Ui( OnlineStrings.GettingTop10ParkList, "Getting Top 10 Park List" ); } );
+		Post( () => { CityParks = null; SetProgress( OnlineStrings.Ui( OnlineStrings.GettingTop10ParkList, "Getting Top 10 Park List" ) ); } );
 		var list = await client.ListParksAsync( sort: "votes", cityId: cityId );
 		Post( () => CityParks = list.Parks );
-		return list.Parks.Count == 0 ? OnlineStrings.Ui( OnlineStrings.NoSearchResults, "No search results" ) : null;
+		// the city lobby and its Other Parks list show an empty result themselves; the status line only ends the progress text
+		return "";
 	} );
 
 	/// <summary>Fetches the cities for the globe; no login needed. Older servers have none.</summary>
 	public void FetchCities() => WithClient( async client =>
 	{
 		// [DATA:Language/English/UITEXT.str:248] the original showed "Getting City List" while this ran
-		Post( () => Status = OnlineStrings.Ui( OnlineStrings.GettingCityList, "Getting City List" ) );
+		Post( () => SetProgress( OnlineStrings.Ui( OnlineStrings.GettingCityList, "Getting City List" ) ) );
 		var cities = await client.GetCitiesAsync();
 		Post( () => Cities = cities?.Cities ?? Array.Empty<CityInfo>() );
 		return "";
@@ -605,7 +623,7 @@ public sealed class OnlineSession : IDisposable, IPresenceSession, IChatPanelSou
 	/// </summary>
 	public void FetchChatParks() => WithClient( async client =>
 	{
-		Post( () => Status = OnlineStrings.Ui( OnlineStrings.GettingChatSatelliteList, "Getting Chat Satellite List" ) );
+		Post( () => SetProgress( OnlineStrings.Ui( OnlineStrings.GettingChatSatelliteList, "Getting Chat Satellite List" ) ) );
 		var parks = await client.GetChatParksAsync();
 		Post( () => ChatParks = parks?.ChatParks ?? Array.Empty<ChatParkInfo>() );
 		return "";
@@ -617,7 +635,7 @@ public sealed class OnlineSession : IDisposable, IPresenceSession, IChatPanelSou
 	/// </summary>
 	public void FetchChatParkScenes( Action<IReadOnlyList<ChatParkScene>?> onFetched ) => WithClient( async client =>
 	{
-		Post( () => Status = OnlineStrings.Ui( OnlineStrings.GettingChatSatelliteList, "Getting Chat Satellite List" ) );
+		Post( () => SetProgress( OnlineStrings.Ui( OnlineStrings.GettingChatSatelliteList, "Getting Chat Satellite List" ) ) );
 		var scenes = await client.GetChatParkScenesAsync();
 		Post( () => onFetched( scenes?.Scenes ) );
 		return "";
@@ -627,20 +645,25 @@ public sealed class OnlineSession : IDisposable, IPresenceSession, IChatPanelSou
 	public void FetchNews() => WithClient( async client =>
 	{
 		// [DATA:Language/English/UITEXT.str:245/246] "Getting Game News" / "Getting System News"
-		Post( () => Status = OnlineStrings.Ui( OnlineStrings.GettingGameNews, "Getting Game News" ) );
+		Post( () => SetProgress( OnlineStrings.Ui( OnlineStrings.GettingGameNews, "Getting Game News" ) ) );
 		var news = await client.GetNewsAsync();
 		Post( () => News = news );
-		return news == null || (news.Game.Length == 0 && news.System.Length == 0) ? OnlineStrings.Get( OnlineLabel.NoNews ) : null;
+		return news == null || (news.Game.Length == 0 && news.System.Length == 0) ? OnlineStrings.Get( OnlineLabel.NoNews ) : "";
 	} );
 
 	public void RefreshParks( string? search, string sort = "recent", int? cityId = null, string? author = null ) => WithClient( async client =>
 	{
 		// [DATA:Language/English/UITEXT.str:250/251] "Getting All Park List" / "Getting Player's Park List"
-		Post( () => Status = OnlineStrings.Ui( search == null && author == null ? OnlineStrings.GettingAllParkList : OnlineStrings.GettingPlayersParkList,
-			search == null && author == null ? "Getting All Park List" : "Getting Player's Park List" ) );
+		Post( () => SetProgress( OnlineStrings.Ui( search == null && author == null ? OnlineStrings.GettingAllParkList : OnlineStrings.GettingPlayersParkList,
+			search == null && author == null ? "Getting All Park List" : "Getting Player's Park List" ) ) );
 		var list = await client.ListParksAsync( search, sort, author, cityId: cityId );
-		Post( () => Parks = list.Parks );
-		return list.Parks.Count == 0 ? OnlineStrings.Ui( OnlineStrings.NoSearchResults, "No search results" ) : null;
+		Post( () =>
+		{
+			Parks = list.Parks;
+			ParksFetched++;
+		} );
+		// the Find Parks list shows an empty result itself (UITEXT 306 as its row); the status line only ends the progress text
+		return "";
 	} );
 
 	/// <summary>Unpublishes one of the player's own parks (the owner action of the original park details).</summary>
@@ -654,7 +677,7 @@ public sealed class OnlineSession : IDisposable, IPresenceSession, IChatPanelSou
 	/// <summary>Publishes <paramref name="package"/>; <paramref name="onPublished"/> runs on the game's thread once the server has the park (the Publish Park form closes then).</summary>
 	public void Publish( ParkPackage package, bool showOnWebsite = false, int cityId = 0, Action? onPublished = null ) => WithClient( async client =>
 	{
-		Post( () => Status = OnlineStrings.Ui( OnlineStrings.PublishingPark, "Publishing Park" ) );
+		Post( () => SetProgress( OnlineStrings.Ui( OnlineStrings.PublishingPark, "Publishing Park" ) ) );
 		try
 		{
 			await client.UploadParkAsync( package, showOnWebsite: showOnWebsite, cityId: cityId );
@@ -673,7 +696,7 @@ public sealed class OnlineSession : IDisposable, IPresenceSession, IChatPanelSou
 	/// <summary>Downloads a park into the visited folder and records the visit; returns via status the file to visit.</summary>
 	public void Download( ParkSummary park, Action<string> onDownloaded ) => WithClient( async client =>
 	{
-		Post( () => Status = OnlineStrings.Ui( OnlineStrings.DownloadingPark, "Downloading Park" ) );
+		Post( () => SetProgress( OnlineStrings.Ui( OnlineStrings.DownloadingPark, "Downloading Park" ) ) );
 		var package = await client.DownloadParkAsync( park.Id );
 		var path = Path.Combine( Folders.Visited, park.Id + ParkPackage.FileExtension );
 		package.Save( path );
@@ -701,7 +724,8 @@ public sealed class OnlineSession : IDisposable, IPresenceSession, IChatPanelSou
 	/// </summary>
 	public void SendOutbox( IReadOnlyList<string>? files = null ) => WithClient( async client =>
 	{
-		var sent = 0;
+		// [BIN:TPW-EXE:0x4bc500 outbox send] the original showed "Sending mails from outbox, please wait ..." (UITEXT 0x13a, OpenTPW's 313) while it sent
+		Post( () => SetProgress( OnlineStrings.Ui( OnlineStrings.SendingOutbox, "Sending mails from outbox, please wait ..." ) ) );
 		foreach ( var (file, card, error) in Folders.List( Folders.Outbox ) )
 		{
 			if ( card == null || (files != null && files.Count > 0 && !files.Contains( file )) )
@@ -723,9 +747,9 @@ public sealed class OnlineSession : IDisposable, IPresenceSession, IChatPanelSou
 				}
 				throw new InvalidDataException( result.Error ?? "Some postcard recipients could not be reached; they remain in the outbox." );
 			}
-			sent++;
 		}
-		return $"{OnlineStrings.Ui( OnlineStrings.SendingOutbox, "Sending mails from outbox" )} {sent}";
+		// [BIN:TPW-EXE:0x4bc660 outbox send progress] the original's progress window closed once the cards were sent, with no count: the emptied outbox is the confirmation
+		return "";
 	} );
 
 	/// <summary>Downloads server postcards into the local inbox folder and removes them from the server.</summary>
@@ -952,8 +976,9 @@ public sealed class OnlineSession : IDisposable, IPresenceSession, IChatPanelSou
 		catch ( Exception exception ) when ( exception is System.Net.WebSockets.WebSocketException or OperationCanceledException or InvalidDataException or ObjectDisposedException )
 		{
 		}
-		// A server restart (a deploy) or a dropped connection is not the player leaving: reconnect to the same room.
-		var lost = !cancel.IsCancellationRequested && chat.CloseStatus is null or ChatProtocol.RestartingCloseStatus or (int)System.Net.WebSockets.WebSocketCloseStatus.EndpointUnavailable;
+		// A server restart (a deploy) or a dropped connection is not the player leaving: reconnect to the same room. The browser reports a dropped connection with its own
+		// status (ChatProtocol.DroppedCloseStatus), so the page reconnects too (found by the live acceptance, C2d-5b).
+		var lost = !cancel.IsCancellationRequested && ChatProtocol.IsLost( chat.CloseStatus );
 		Post( () =>
 		{
 			chat.Dispose();

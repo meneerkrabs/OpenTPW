@@ -21,7 +21,7 @@ public static partial class Program
 	[JSExport]
 	public static void CoopLinkSmokeMode()
 	{
-		if ( renderer != null || flow != null || coopSmokeMode || CoopSession.ChangesParkOutsideCommands )
+		if ( renderer != null || flow != null || coopSmokeMode || coopLiveMode || CoopSession.ChangesParkOutsideCommands )
 			throw new InvalidOperationException( "The co-op link check's mode is chosen before the game or another harness mode starts." );
 		// the page's own address, which no script can change, not the word of the script that calls this
 		using var location = JSHost.GlobalThis.GetPropertyAsJSObject( "location" );

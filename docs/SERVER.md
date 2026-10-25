@@ -139,7 +139,10 @@ few seconds. Players should not notice:
   status 1012 ("service restart"); `compose.yml` gives it 20 s to stop. Clients that do not
   answer are dropped after 3 s.
 - The game then reconnects the chat by itself (after 1, 2, 4, 8, 15 and 30 s), rejoins the room
-  it was in and shows "The server restarted; chat reconnected."
+  it was in and shows "The server restarted; chat reconnected." It does so too after a server that
+  crashed or went away without closing: the desktop's socket then reports no status, and the
+  browser's reports 1006 ("abnormal closure"). The page's chat did not reconnect by itself after
+  such a drop until the live acceptance's page runs found it (docs/COOP.md, "The live acceptance").
 
 Running two servers side by side (blue-green) would need a shared database instead of the
 JSON files; at this scale the few seconds of held requests are the simpler choice.

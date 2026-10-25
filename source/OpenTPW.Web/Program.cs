@@ -169,7 +169,8 @@ public static partial class Program
 		renderer = new Renderer( displaySettings, displayPath );
 		Render = renderer;
 		// [EXT:extension-online-gate] no online folder while the opentpw.online extension is off (docs/MODS.md)
-		flow = new GameFlow { OnlineFolders = FeatureGates.Online ? new OnlineFolders( "/online" ) : null };
+		// [EXT:online-coop-session] the live acceptance's page runs without automatic advice, as the native run does (--no-advisor)
+		flow = new GameFlow { OnlineFolders = FeatureGates.Online ? new OnlineFolders( "/online" ) : null, AutomaticAdvisorEnabled = !coopLiveMode };
 		// Level folders are copied when a park is first started; the lobby keeps running meanwhile.
 		// A language other than the installed one needs its speech files (about 27 MB) beside the text; they are copied when the
 		// language is chosen, at once for a saved choice, and a park or a switch waits for them so the advisor never mixes voices.
@@ -188,7 +189,11 @@ public static partial class Program
 			if ( loadedLevels.Contains( level ) )
 				return true;
 			if ( requestedLevels.Add( level ) )
+			{
+				// [EXT:online-coop-session] the live acceptance's page keeps when a park's files were asked for and arrived (Program.CoopLive.cs)
+				CoopLiveLevelRequested( level );
 				Page.RequestLevel( level );
+			}
 			return false;
 		};
 		LanguageDataReady( GameLanguage.Current.Name );
@@ -280,9 +285,21 @@ public static partial class Program
 		requestedLanguages.Remove( language );
 	}
 
-	/// <summary>The page has copied a level's folder (or given up; the level then reports what is missing).</summary>
+	/// <summary>The page has copied a level's folder (or given up, after <see cref="LevelCopyFailed"/>; the level then reports what is missing).</summary>
 	[JSExport]
-	public static void LevelLoaded( string level ) => loadedLevels.Add( level );
+	public static void LevelLoaded( string level )
+	{
+		loadedLevels.Add( level );
+		CoopLiveLevelLoaded( level );
+	}
+
+	/// <summary>A level's folder could not all be copied: <see cref="LevelLoaded"/> follows, and the level reports what is missing; the live acceptance fails on it.</summary>
+	[JSExport]
+	public static void LevelCopyFailed( string level, string message )
+	{
+		Log.Warning( $"Copying the level {level} failed: {message}" );
+		CoopLiveLevelCopyFailed( level, message );
+	}
 
 	/// <summary>Writes the embedded content files where the game looks for them (next to the program).</summary>
 	private static void WriteContent()
@@ -305,7 +322,10 @@ public static partial class Program
 		if ( renderer == null )
 			return false;
 		FrameMarks.BeginFrame();
-		// [EXT:online-coop-snapshot-join] the co-op join smoke's frame while it runs (Program.CoopJoinSmokeTest.cs)
+		// [EXT:online-coop-snapshot-join] the co-op join smoke's frame while it runs (Program.CoopJoinSmokeTest.cs); [EXT:online-coop-session] the live acceptance's,
+		// whose page counts its frames and keeps a frame's failure also after the run (Program.CoopLive.cs)
+		if ( coopLiveMode )
+			return CoopLivePageFrame( renderer );
 		return coopSmoke is { } smoke ? CoopSmokeFrame( renderer, smoke ) : renderer.Frame();
 	}
 }

@@ -32,8 +32,8 @@ public static partial class Program
 	[JSExport]
 	public static void CoopSmokeMode()
 	{
-		if ( renderer != null || flow != null )
-			throw new InvalidOperationException( "The co-op smoke mode is chosen before the game starts." );
+		if ( renderer != null || flow != null || coopLiveMode )
+			throw new InvalidOperationException( "The co-op smoke mode is chosen before the game or the live acceptance's mode starts." );
 		// the performance mode's hooks change parks outside the commands, which a shared park refuses
 		if ( CoopSession.ChangesParkOutsideCommands )
 			throw new InvalidOperationException( "The co-op smoke does not run in the performance mode." );

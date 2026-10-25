@@ -72,8 +72,8 @@ internal sealed partial class CoopLiveTest
 			yield return step;
 		Publish( "sawHostMoved", true );
 		// the guest's own view jumps: the host sees its figure there
-		var away = CellAway( ViewCentre() );
-		foreach ( var step in MoveViewTo( away ) )
+		(float X, float Y) away = default;
+		foreach ( var step in MoveViewAway( place => away = place ) )
 			yield return step;
 		Publish( "guestAt", Cell( away.X, away.Y ) );
 		yield return Wait( "the host sees the guest's figure moved", () => OtherSays( "sawGuestMoved" ), 180 );
@@ -182,7 +182,7 @@ internal sealed partial class CoopLiveTest
 	}
 
 	/// <summary>
-	/// The endurance scenario's middle: the guest follows the host's fastest speed for the run's minutes, sampled every half minute, with no resync and no desync, and with a
+	/// The endurance scenario's middle: the guest follows the host's fastest speed for the run's minutes, sampled every <see cref="EnduranceSampleSeconds"/>, with no resync and no desync, and with a
 	/// checkpoint compared at least every two seconds of the run on average (the faster speeds check once a second of real time).
 	/// </summary>
 	private IEnumerable<CoopLiveWait> GuestEndurance()
@@ -199,8 +199,8 @@ internal sealed partial class CoopLiveTest
 		var (checks, started) = (stream.Checks, Now);
 		while ( true )
 		{
-			// a sample every half minute while the host's interval runs, and a last one when the host asks for it, still at the fastest speed
-			var next = Now + 30;
+			// a sample every few seconds while the host's interval runs, and a last one when the host asks for it, still at the fastest speed
+			var next = Now + EnduranceSampleSeconds;
 			yield return Wait( "the fastest speed followed", () => OtherSays( "enduranceFinal" ) || Now >= next, 90 );
 			var final = OtherSays( "enduranceFinal" );
 			Require( ReferenceEquals( TheSession.GuestStream, stream ) && TheSession.Phase == CoopGuestPhase.Following && !stream.Stopped && stream.Desyncs == 0,
@@ -234,7 +234,8 @@ internal sealed partial class CoopLiveTest
 		yield return Pause( "the view over the ride", 0.5 );
 		var canvas = flow.Context.Canvas;
 		Require( level.TryProjectCell( cell.X, cell.Y, new System.Numerics.Vector2( canvas.Width, canvas.Height ), out var point ), "the ride is in the view" );
-		Give( UiInput.Click( point ) );
+		foreach ( var step in ClickThrough( point ) )
+			yield return step;
 		yield return Wait( "the click rides the ride", () => TheHud.IsRiding && ReferenceEquals( level.RideView?.Ride, ride ), 10 );
 		yield return Wait( "the figure hidden for the room", () => Presence is { State.Riding: true }, 10 );
 		Publish( "riding", true );
@@ -265,7 +266,7 @@ internal sealed partial class CoopLiveTest
 	{
 		// the view first moves away from the host's figure, so the Go to has somewhere to go
 		if ( Figure( hostName ) is { } host && Near( host, ViewCentre() ) )
-			foreach ( var step in MoveViewTo( CellAway( (host.X, host.Y) ) ) )
+			foreach ( var step in MoveViewAway( _ => { } ) )
 				yield return step;
 		var context = flow.Context;
 		yield return Wait( "the host's row in the people list", () => TheHud.ChatMode && VisitPresenceSmoke.RowPoint( TheHud, context, hostName ) != null, 30 );

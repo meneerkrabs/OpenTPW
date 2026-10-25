@@ -191,4 +191,75 @@ public class CoopLiveHarnessTests
 		Assert.AreEqual( 2.5, written["enduranceMinutes"]!.GetValue<double>() );
 		Assert.ThrowsException<ArgumentException>( () => CoopLiveTest.Run( Flow(), "watch", evidence ) );
 	}
+
+	[TestMethod]
+	public void APageRelaysOnlyItsOwnStatusAndEvidenceOutAndTheOthersIn()
+	{
+		Assert.IsTrue( CoopLiveTest.PageMayRead( "guest", "guest-status.json" ) );
+		Assert.IsTrue( CoopLiveTest.PageMayRead( "guest", "guest-evidence.json" ) );
+		foreach ( var name in new[] { "host-status.json", "host-evidence.json", "driver-status.json", "guest-host.png", "../guest-status.json", "guest-status.json.tmp" } )
+			Assert.IsFalse( CoopLiveTest.PageMayRead( "guest", name ), name );
+		Assert.IsFalse( CoopLiveTest.PageMayRead( CoopLiveTest.DriverRole, "driver-status.json" ) );
+		Assert.IsTrue( CoopLiveTest.PageMayWrite( "guest", "host-status.json" ) );
+		Assert.IsTrue( CoopLiveTest.PageMayWrite( "guest", "driver-status.json" ) );
+		Assert.IsTrue( CoopLiveTest.PageMayWrite( "host", "guest-status.json" ) );
+		foreach ( var name in new[] { "guest-status.json", "guest-evidence.json", "host-evidence.json", "/coop-live/host-status.json" } )
+			Assert.IsFalse( CoopLiveTest.PageMayWrite( "guest", name ), name );
+		Assert.IsFalse( CoopLiveTest.PageMayWrite( "host", "host-status.json" ) );
+		Assert.IsFalse( CoopLiveTest.PageMayWrite( "", "host-status.json" ) );
+	}
+
+	[TestMethod]
+	public void ThePageLiveModeIsForALoopbackPageWithNoOtherHarnessMode()
+	{
+		Assert.IsTrue( CoopLiveTest.IsPageAddress( "http://127.0.0.1:5000/index.html?coopLive=1&data=/game/&keep=off" ) );
+		Assert.IsTrue( CoopLiveTest.IsPageAddress( "http://localhost:5000/?coopLive=1" ) );
+		Assert.IsFalse( CoopLiveTest.IsPageAddress( "https://opentpw.example/?coopLive=1" ) );
+		Assert.IsFalse( CoopLiveTest.IsPageAddress( "http://127.0.0.1:5000/?coopLive=0" ) );
+		Assert.IsFalse( CoopLiveTest.IsPageAddress( null ) );
+		foreach ( var other in new[] { "perf=1", "coopSmoke=1", "coopLinkSmoke=1" } )
+			Assert.IsFalse( CoopLiveTest.IsPageAddress( $"http://127.0.0.1:5000/?coopLive=1&{other}" ), other );
+	}
+
+	[TestMethod]
+	public void AThrowAfterTheRunCompletedInTheSameFrameIsItsFailure()
+	{
+		static IEnumerable<CoopLiveWait> None( CoopLiveTest test ) => Array.Empty<CoopLiveWait>();
+		using var harness = Harness( hosting: false, None );
+		harness.Update();
+		Assert.IsTrue( harness.Completed );
+		Assert.IsTrue( Json( "guest-status.json" )["completed"]!.GetValue<bool>() );
+		// the page's frame threw after the script completed in it (the game's update or its drawing): the run did not pass
+		harness.PageFailed( new InvalidOperationException( "the drawing failed" ) );
+		Assert.IsFalse( harness.Completed );
+		Assert.IsTrue( harness.Done );
+		StringAssert.Contains( harness.Failure, "the drawing failed" );
+		var status = Json( "guest-status.json" );
+		Assert.IsNull( status["completed"] );
+		StringAssert.Contains( status["failed"]!.GetValue<string>(), "the drawing failed" );
+		Assert.IsFalse( Json( "guest-evidence.json" )["completed"]!.GetValue<bool>() );
+		Assert.AreEqual( 1, failed.Count );
+	}
+
+	[TestMethod]
+	public void ThePageRunTakesItsCredentialsFromItsOwnEnvironment()
+	{
+		var values = new Dictionary<string, string>
+		{
+			["OPENTPW_COOP_LIVE_SERVER"] = "http://127.0.0.1:5000",
+			["OPENTPW_COOP_LIVE_NAME"] = "Guestabc1234",
+			["OPENTPW_COOP_LIVE_PASSWORD"] = "secret-password-2",
+			["OPENTPW_COOP_LIVE_CODE"] = "ABC123",
+			["OPENTPW_COOP_LIVE_SCENARIO"] = "endurance",
+			["OPENTPW_COOP_LIVE_MINUTES"] = "2",
+		};
+		Func<string, string?> page = name => values.TryGetValue( name, out var value ) ? value : null;
+		using var harness = Harness( hosting: false, test => Array.Empty<CoopLiveWait>(), page );
+		Assert.AreEqual( "guest", harness.Role );
+		Assert.AreEqual( 60 + 2, harness.MaximumMinutes, 1e-9 );
+		harness.Update();
+		Assert.IsTrue( harness.Completed );
+		foreach ( var file in Directory.GetFiles( evidence ) )
+			Assert.IsFalse( File.ReadAllText( file ).Contains( "secret-password-2", StringComparison.Ordinal ), file );
+	}
 }

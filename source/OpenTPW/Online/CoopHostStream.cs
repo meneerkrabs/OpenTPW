@@ -64,6 +64,18 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 	public const double UploadSeconds = 180;
 	/// <summary>The longest wait a failure for now asks of a member.</summary>
 	public const uint MaximumRetrySeconds = 3600;
+	/// <summary>[EXT:online-coop-commands] The most bytes one guest's command may take (a line or a placement takes a few dozen).</summary>
+	public const int MaximumGuestCommandBytes = 1024;
+	/// <summary>[EXT:online-coop-commands] The commands a second a guest's bucket refills with, and the most it holds: a burst of clicks, never a flood.</summary>
+	public const double GuestCommandRate = 20;
+	public const double GuestCommandBurst = 40;
+	/// <summary>[EXT:online-coop-commands] The answers the host keeps for each guest, for the requests it sends again after a lost link.</summary>
+	public const int GuestAnswersKept = 256;
+	/// <summary>
+	/// [EXT:online-coop-commands] The most commands of one guest that wait for the host's next frame: more are dropped unanswered (a flood, never a player), and the gap the next one shows
+	/// has the guest send them again.
+	/// </summary>
+	public const int MaximumQueuedGuestCommands = 64;
 
 	private sealed record PendingRecord( long Number, CoopStreamRecord Record );
 	private readonly record struct HistoryFrame( ulong Seq, byte[] Payload );
@@ -127,6 +139,15 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 		/// <summary>A capture it asked for waits for its budget's mark.</summary>
 		public bool CaptureDue { get; set; }
 		public double ReassignedAt { get; set; } = double.NegativeInfinity;
+		/// <summary>[EXT:online-coop-commands] The sequence number of its next command (from 1).</summary>
+		public uint NextCommand { get; set; } = 1;
+		/// <summary>[EXT:online-coop-commands] What became of its last requests, oldest first: the stream record that holds each, or why there is none.</summary>
+		public Queue<(uint Sequence, long Record, CoopGuestRefusal? Refusal)> Answers { get; } = new();
+		/// <summary>[EXT:online-coop-commands] Its rate bucket: the commands it may send now, and when that was counted.</summary>
+		public double CommandTokens { get; set; } = GuestCommandBurst;
+		public double CommandsCountedAt { get; set; } = double.NegativeInfinity;
+		/// <summary>[EXT:online-coop-commands] Its commands waiting for the next frame.</summary>
+		public int QueuedCommands { get; set; }
 	}
 
 	/// <summary>[EXT:online-coop-snapshot-join] A capture on its way: the cut, the session state and the save, serialized and compressed in slices, then uploaded.</summary>
@@ -194,6 +215,16 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 	private readonly List<CoopCaptureTimings> captureTimings = new();
 	private readonly Func<DateTime> localTime;
 	private readonly List<PendingRecord> pending = new();
+	/// <summary>
+	/// [EXT:online-coop-commands] The guests' commands as they arrived, applied at the next frame's start, before its ticks (<see cref="ApplyGuestCommands"/>); a command too large to take
+	/// keeps its number, not its bytes.
+	/// </summary>
+	private readonly List<(uint Member, CoopGuestCommand Request, bool TooLarge)> guestCommands = new();
+	/// <summary>[EXT:online-coop-permissions] The seats of guests that left, whose build grants the next frame's start takes back.</summary>
+	private readonly List<int> leftSeats = new();
+	/// <summary>[EXT:online-coop-commands] The origin of the guest's command being applied now, which its record carries, and the record it got.</summary>
+	private CoopRecordOrigin? applyingOrigin;
+	private long applyingRecord;
 	private readonly List<CoopCheckpoint> pendingTicks = new();
 	private CoopCheckpoint? pendingRecordCheckpoint;
 	private bool recordCheckpointTaken;
@@ -261,7 +292,7 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 		previousPlayer = commands.Player;
 		commands.SessionRules = true;
 		commands.InTick = ParkCommandInTickRule.Drop;
-		commands.Rights ??= CoopHostOnlyRights.Instance;
+		commands.Rights ??= new CoopBuildRights( level );
 		commands.Player = ParkCommands.LocalPlayer;
 		recorder = new ParkCommandRecorder( commands, level.LevelName ?? "", level.Seed.Value, level.TickCount, level.ComputeStateHash() ) { SessionRules = true };
 		commands.Applied += OnApplied;
@@ -355,6 +386,8 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 		}
 		var now = seconds();
 		UpdateGuests( now );
+		// [EXT:online-coop-commands] the guests' commands at the frame's start, after the host's own input and before the ticks, paused too: one order, the host's
+		ApplyGuestCommands( now );
 		// the scripts read the clock only in ticks: a paused park sends no clock command, and the first frame that runs again sets the clock before its ticks
 		if ( timeScale > 0 )
 			IssueClock();
@@ -418,7 +451,11 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 		}
 		var flags = result.Error != null ? CoopRecordFlags.Errored : result.Accepted ? CoopRecordFlags.Accepted : CoopRecordFlags.None;
 		var number = nextStream++;
-		pending.Add( new PendingRecord( number, new CoopStreamRecord( entry.Tick, flags, bytes ) ) );
+		// [EXT:online-coop-commands] a guest's command carries its origin, so its issuer knows the record that answers its request
+		var origin = applyingOrigin;
+		if ( origin != null )
+			applyingRecord = number;
+		pending.Add( new PendingRecord( number, new CoopStreamRecord( entry.Tick, flags, bytes, origin ) ) );
 		// an exception may leave different partial writes on two peers: the digest right after the first errored record of a frame period checks them
 		if ( flags == CoopRecordFlags.Errored && !recordCheckpointTaken )
 		{
@@ -455,7 +492,7 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 			while ( index < pending.Count && records.Count < ushort.MaxValue )
 			{
 				var next = pending[index];
-				var add = CoopStreamFrame.RecordOverhead + next.Record.Bytes.Length
+				var add = CoopStreamFrame.RecordBytes( next.Record )
 					+ (pendingRecordCheckpoint is { } checkpoint && checkpoint.At == next.Number ? CoopStreamFrame.CheckpointBytes : 0);
 				if ( size + add > CoopStreamFrame.MaximumBytes && records.Count > 0 )
 					break;
@@ -669,6 +706,9 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 			case CoopMemberState.Left:
 			case CoopMemberState.Kicked:
 				guests.Remove( id );
+				// [EXT:online-coop-permissions] a seat's grant is its member's: the next member in that seat starts without one
+				if ( change.Member.Slot > 0 )
+					leftSeats.Add( change.Member.Slot );
 				break;
 		}
 	}
@@ -716,7 +756,119 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 					Note( guest, reported );
 				Requested( guest, request, now );
 				break;
+			case CoopGuestCommand command:
+				if ( guest.QueuedCommands >= MaximumQueuedGuestCommands )
+					break;
+				guest.QueuedCommands++;
+				var tooLarge = command.Command.Length > MaximumGuestCommandBytes;
+				guestCommands.Add( (guest.Id, tooLarge ? command with { Command = ReadOnlyMemory<byte>.Empty } : command, tooLarge) );
+				break;
 		}
+	}
+
+	/// <summary>
+	/// [EXT:online-coop-commands] The grants of the guests that left are taken back, then the guests' commands that arrived since the last frame apply in their order (docs/COOP.md,
+	/// "Building by every player"). Each applies between two ticks, as the host's own do, so a paused park takes them too; a grant is its member's, so a member that takes a freed seat
+	/// starts without one, even when its first command comes in the frame its seat was freed.
+	/// </summary>
+	private void ApplyGuestCommands( double now )
+	{
+		if ( leftSeats.Count > 0 )
+		{
+			var seats = leftSeats.ToArray();
+			leftSeats.Clear();
+			foreach ( var seat in seats )
+				if ( Failure == null && level.HasBuildGrant( seat ) )
+					level.Commands.Apply( new SetBuildGrantCommand( seat, false ) );
+		}
+		if ( guestCommands.Count > 0 )
+		{
+			var arrived = guestCommands.ToArray();
+			guestCommands.Clear();
+			foreach ( var (member, request, tooLarge) in arrived )
+			{
+				if ( !guests.TryGetValue( member, out var guest ) )
+					continue;
+				guest.QueuedCommands--;
+				if ( Failure == null )
+					Command( guest, request, tooLarge, now );
+			}
+		}
+	}
+
+	/// <summary>
+	/// [EXT:online-coop-commands] One guest's request: a request answered already gets its answer again, never the command twice; one that skips a number is refused until the guest sends from
+	/// the number it is told; the expected one is decided and takes its number. A command too large, too fast, from no guest's seat, or that does not decode is refused without a record; one
+	/// that decodes is applied as the guest's seat (the server's word of the sender, never the command's own player) and becomes a record of the stream, accepted or refused by the rights and
+	/// the park's rules alike on every peer.
+	/// </summary>
+	private void Command( Guest guest, CoopGuestCommand request, bool tooLarge, double now )
+	{
+		if ( request.Sequence < guest.NextCommand )
+		{
+			var known = guest.Answers.FirstOrDefault( answer => answer.Sequence == request.Sequence );
+			Send( guest, known.Sequence == request.Sequence
+				? new CoopGuestCommandAnswer( request.Sequence, known.Record, known.Refusal, guest.NextCommand )
+				: new CoopGuestCommandAnswer( request.Sequence, 0, CoopGuestRefusal.Forgotten, guest.NextCommand ) );
+			return;
+		}
+		if ( request.Sequence > guest.NextCommand )
+		{
+			Send( guest, new CoopGuestCommandAnswer( request.Sequence, 0, CoopGuestRefusal.Gap, guest.NextCommand ) );
+			return;
+		}
+		guest.NextCommand++;
+		// the rate bucket refills between requests, up to its burst
+		guest.CommandTokens = Math.Min( GuestCommandBurst, guest.CommandTokens + Math.Max( 0, now - guest.CommandsCountedAt ) * GuestCommandRate );
+		guest.CommandsCountedAt = now;
+		var refusal = Refuse( guest, request, tooLarge, out var command );
+		long record = 0;
+		if ( refusal == null )
+		{
+			applyingOrigin = new CoopRecordOrigin( guest.Id, request.Sequence );
+			applyingRecord = 0;
+			try
+			{
+				level.Commands.ApplyRemote( command! );
+			}
+			finally
+			{
+				applyingOrigin = null;
+			}
+			record = applyingRecord;
+			// every well-formed command applied between two ticks is recorded; a host whose stream took none cannot answer it
+			if ( record == 0 )
+				refusal = CoopGuestRefusal.Unavailable;
+		}
+		guest.Answers.Enqueue( (request.Sequence, record, refusal) );
+		while ( guest.Answers.Count > GuestAnswersKept )
+			guest.Answers.Dequeue();
+		// the stream answers a recorded command by itself; an unrecorded one gets its refusal now
+		if ( refusal != null )
+			Send( guest, new CoopGuestCommandAnswer( request.Sequence, 0, refusal, guest.NextCommand ) );
+	}
+
+	/// <summary>[EXT:online-coop-commands] Why the host takes no record of <paramref name="request"/>, or null with its command, its player the guest's seat.</summary>
+	private CoopGuestRefusal? Refuse( Guest guest, CoopGuestCommand request, bool tooLarge, out ParkCommand? command )
+	{
+		command = null;
+		if ( tooLarge )
+			return CoopGuestRefusal.TooLarge;
+		if ( guest.CommandTokens < 1 )
+			return CoopGuestRefusal.TooFast;
+		guest.CommandTokens--;
+		if ( transport.Session?.Members.FirstOrDefault( member => member.Id == guest.Id ) is not { Slot: > 0 } member )
+			return CoopGuestRefusal.NotSeated;
+		try
+		{
+			command = ParkCommandCodec.Decode( request.Command.Span ) with { Player = member.Slot };
+		}
+		// a guest's bytes never stop the host: whatever they throw makes them malformed
+		catch ( Exception error ) when ( error is not OutOfMemoryException )
+		{
+			return CoopGuestRefusal.Malformed;
+		}
+		return command.IsWellFormed ? null : CoopGuestRefusal.Malformed;
 	}
 
 	/// <summary>A guest's desync, logged once, with the session's log taken at the first.</summary>

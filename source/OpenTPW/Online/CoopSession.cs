@@ -214,6 +214,12 @@ internal sealed class CoopSession : IDisposable
 	public CoopHostStream? HostStream { get; private set; }
 	public CoopGuestStream? GuestStream { get; private set; }
 
+	/// <summary>
+	/// [EXT:online-coop-commands] A guest's requests to the host (docs/COOP.md, "Building by every player"): for the whole session, across resyncs; null for a host. The session's end resolves
+	/// the open ones as ended.
+	/// </summary>
+	public CoopGuestCommands? GuestCommands { get; private set; }
+
 	/// <summary>The session's park on this machine; null while a joining guest has none yet.</summary>
 	public Level? Level => level;
 
@@ -319,6 +325,8 @@ internal sealed class CoopSession : IDisposable
 		Require( level, link, CoopRole.Guest );
 		var session = new CoopSession( level, link, CoopRole.Guest, seconds, joinHost );
 		session.GuestStream = new CoopGuestStream( level, link, seconds );
+		session.GuestCommands = new CoopGuestCommands( link );
+		session.GuestStream.RecordApplied += session.GuestCommands.RecordApplied;
 		session.followingSince = session.seconds();
 		level.Commands.SessionRefused += session.OnRefused;
 		level.IsCoopGuestPark = true;
@@ -342,6 +350,8 @@ internal sealed class CoopSession : IDisposable
 		if ( JoinRefusal is { } refusal )
 			throw new InvalidOperationException( refusal );
 		var session = new CoopSession( null, link, CoopRole.Guest, seconds, joinHost ) { Phase = CoopGuestPhase.Joining };
+		// a guest without a park has nothing to build on: a request waits for the first park's swap
+		session.GuestCommands = new CoopGuestCommands( link ) { Fenced = true };
 		session.Subscribe();
 		session.Ask( CoopSnapshotReason.Join );
 		return session;
@@ -435,6 +445,7 @@ internal sealed class CoopSession : IDisposable
 			HostStream.Dispose();
 		}
 		GuestStream?.Dispose();
+		GuestCommands?.End();
 		if ( level?.CoopSession == this )
 			level.CoopSession = null;
 		buffered.Clear();
@@ -497,6 +508,8 @@ internal sealed class CoopSession : IDisposable
 			var why = stopped.Desync != null ? CoopSnapshotReason.Desync : CoopSnapshotReason.TooFarBack;
 			report = stopped.Desync;
 			Phase = CoopGuestPhase.Resyncing;
+			// [EXT:online-coop-commands] the requests wait for the new park, against which they are reconciled
+			GuestCommands!.Fenced = true;
 			failureAsked = true;
 			if ( followingSince is { } since && now - since < EarlyFailureSeconds && CountFailure( $"the park lost the stream ({why}) soon after it joined" ) )
 				return;
@@ -679,7 +692,11 @@ internal sealed class CoopSession : IDisposable
 			if ( old.CoopSession == this )
 				old.CoopSession = null;
 		}
-		GuestStream?.Dispose();
+		if ( GuestStream != null )
+		{
+			GuestStream.RecordApplied -= GuestCommands!.RecordApplied;
+			GuestStream.Dispose();
+		}
 		GuestStream = null;
 		level = null;
 		candidate.IsCoopGuestPark = true;
@@ -700,6 +717,9 @@ internal sealed class CoopSession : IDisposable
 		candidate.CoopSession = this;
 		candidate.Commands.SessionRefused += OnRefused;
 		GuestStream = new CoopGuestStream( candidate, link, seconds, downloaded.Generation, (downloaded.Records, downloaded.Ticks, downloaded.Frame), desyncs );
+		// [EXT:online-coop-commands] the requests are reconciled against the cut (those inside it applied there) and the rest go out again, before the frames after the cut apply
+		GuestStream.RecordApplied += GuestCommands!.RecordApplied;
+		GuestCommands.Snapshot( downloaded.Records );
 		foreach ( var (seq, frame) in buffered.Where( pair => pair.Key > downloaded.Frame ).ToList() )
 			GuestStream.Take( seq, frame );
 		buffered.Clear();
@@ -820,6 +840,7 @@ internal sealed class CoopSession : IDisposable
 		{
 			stream.Silence();
 			Phase = CoopGuestPhase.Resyncing;
+			GuestCommands!.Fenced = true;
 		}
 		foreach ( var old in buffered.Keys.Where( seq => seq <= assignedFrame ).ToList() )
 		{

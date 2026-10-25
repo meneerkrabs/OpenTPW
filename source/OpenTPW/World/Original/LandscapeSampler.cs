@@ -66,4 +66,24 @@ public static class LandscapeSampler
 		var (a, b, c, d) = (corner( ix, iz ), corner( ix + 1, iz ), corner( ix, iz + 1 ), corner( ix + 1, iz + 1 ));
 		return InCell( a, b, c, d, fx, fz, IsNonPlanar( a, b, c, d ), antiDiagonal( ix, iz ) );
 	}
+
+	/// <summary>
+	/// The height the model drape gives a vertex of a draped mesh: the landscape triangle under the point (model units of the grid, 10 per cell), always split along the
+	/// cell's diagonal chosen by cell-word bit 0x4, with no 0x800 planar shortcut and no bounds test (a negative coordinate reads cell 0). The fractions and the corner
+	/// order are those of <see cref="InCell"/>; a point on or past the far edge reads the last cell at its far side, which is the value the original's index arithmetic
+	/// gives there (the far corner row weighs 0).
+	/// </summary>
+	// [BIN:TPW-EXE:0x00469A80 mesh drape] for a node with flag 0x20000 each vertex is moved to the model height + the landscape under it (the triangle by the cell flag 0x4; a = (x, z), b = (x+1, z), c = (x, z+1), d = (x+1, z+1); flag clear: fz <= fx takes (d - b) z + x b + (1 - x) a, else -(c - a)(1 - z) + (1 - x) c + x d; flag set: 1 - fz <= fx takes -(d - b)(1 - z) + x d + (1 - x) c, else (c - a) z + x b + (1 - x) a) minus the instance height; there is no 0x800 test and no bounds test, only the negative clamp to 0
+	public static float SampleDrape( int cellsX, int cellsZ, float cellSizeX, float cellSizeZ, Func<int, int, float> corner, Func<int, int, bool> antiDiagonal, float x, float y )
+	{
+		var (cx, cz) = (MathF.Max( 0, x / cellSizeX ), MathF.Max( 0, y / cellSizeZ ));
+		var (ix, iz) = ((int)cx, (int)cz);
+		var (fx, fz) = ((double)(cx - ix), (double)(cz - iz));
+		if ( ix >= cellsX )
+			(ix, fx) = (cellsX - 1, 1);
+		if ( iz >= cellsZ )
+			(iz, fz) = (cellsZ - 1, 1);
+		var (a, b, c, d) = (corner( ix, iz ), corner( ix + 1, iz ), corner( ix, iz + 1 ), corner( ix + 1, iz + 1 ));
+		return InCell( a, b, c, d, (float)fx, (float)fz, true, antiDiagonal( ix, iz ) );
+	}
 }

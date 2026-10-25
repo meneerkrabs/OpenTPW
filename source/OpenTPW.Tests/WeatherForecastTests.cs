@@ -28,6 +28,25 @@ public class WeatherForecastTests
 		new( day, forecast, applyDay, forecastBands ?? Dry, currentBands ?? Dry );
 
 	[TestMethod]
+	public void TheBannerWaitsWhileTheOnlineGlobeTakesTheParksPlace()
+	{
+		var previous = Camera.Mode;
+		try
+		{
+			Camera.Mode = new ParkCameraMode();
+			Assert.IsFalse( WeatherForecastPresenter.ShowsOnlineGlobe, "the park's own view shows the banner" );
+			GlobeCameraMode.Reset();
+			Camera.Mode = new GlobeCameraMode();
+			Assert.IsTrue( WeatherForecastPresenter.ShowsOnlineGlobe, "Go Online in a park swaps in the globe camera, and the banner waits for the park's view" );
+		}
+		finally
+		{
+			Camera.Mode = previous;
+			GlobeCameraMode.Reset();
+		}
+	}
+
+	[TestMethod]
 	public void QuietWeatherStaysSilentOnAttach()
 	{
 		var state = new WeatherForecastState();

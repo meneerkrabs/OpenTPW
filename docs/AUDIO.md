@@ -707,7 +707,8 @@ timestamp passes; see "Weather schedule" below) is presented by `WeatherForecast
 simulation each frame, and draws one banner line at the top centre of the screen in the overlay pass
 (the chat overlay's channel: the original GAME8AA BF4 font, above every screen including pause
 menus; `[EXT:forecast-banner]`). One line, one background rectangle, laid out again only when the text changes;
-no per-frame GPU growth.
+no per-frame GPU growth. The banner belongs to the park's view: while Go Online shows the online globe in the park's
+place (its globe camera replaces the park's), the banner waits, and the paused park holds its line until the park returns.
 
 What it shows (all of it an OpenTPW extension, `[EXT:forecast-wording]` and `[EXT:forecast-cadence]`:
 the PC has no forecast message, and no weather text exists in the shipped `Language` string tables,

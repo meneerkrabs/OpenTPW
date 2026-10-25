@@ -25,6 +25,17 @@ public static class ChatProtocol
 	/// <summary>WebSocket close status "Service Restart": the server is being updated; clients reconnect.</summary>
 	public const int RestartingCloseStatus = 1012;
 	/// <summary>
+	/// WebSocket close status "Abnormal Closure": no close frame came. A browser reports a dropped connection (a server that crashed or went away without closing) with it,
+	/// where the desktop's socket reports no status; clients reconnect.
+	/// </summary>
+	public const int DroppedCloseStatus = 1006;
+
+	/// <summary>
+	/// Whether a chat connection that ended with <paramref name="closeStatus"/> was lost rather than closed: a dropped connection (no status, or a browser's
+	/// <see cref="DroppedCloseStatus"/>), the server going away (1001) or restarting (<see cref="RestartingCloseStatus"/>). A client reconnects to its room after a loss.
+	/// </summary>
+	public static bool IsLost( int? closeStatus ) => closeStatus is null or 1001 or DroppedCloseStatus or RestartingCloseStatus;
+	/// <summary>
 	/// The server protocol version from which movements carry a <see cref="ChatMoveMode"/>: a client sends a mode only to such a server, and the server
 	/// sends one only to clients that sent one, as the strict members of older clients and servers refuse an unknown <c>mode</c>.
 	/// </summary>

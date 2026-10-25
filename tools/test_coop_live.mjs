@@ -5,7 +5,9 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { PassThrough } from 'node:stream';
-import { checkEvidence, logTo, parseArguments, redact, throwawayPlayer } from './coop-live.mjs';
+import { crc32, deflateSync } from 'node:zlib';
+import { checkEvidence, checkFreshness, checkObservedEndurance, ENDURANCE_SAMPLE_SECONDS, logTo, parseArguments, redact, STATUS_STALL_SECONDS, throwawayPlayer } from './coop-live.mjs';
+import { checkPageSides, checkPictures, keyEvent, pagePoint, PageSide, pictureName, pngSize } from './coop-live-page.mjs';
 
 // The live co-op acceptance's driver (tools/coop-live.mjs, docs/COOP.md "The live acceptance") without the games: its options, its throwaway players and their
 // redaction, and the checks of both games' evidence against each other.
@@ -109,13 +111,14 @@ test('the recovery run allows a resync, and needs the session back, both links r
 });
 
 test('the endurance run needs its whole minutes at the fastest speed, on both sides', () => {
+	const step = ENDURANCE_SAMPLE_SECONDS;
 	const run = (minutes, rate = 240) => {
 		const { host, guest } = passingPair();
-		const count = minutes * 2;
-		host.endurance = { started: 20, startTicks: 1000 - 30 * rate, ended: 21 + minutes * 60,
-			samples: Array.from({ length: count }, (_, index) => ({ at: 50 + index * 30, ticks: 1000 + index * 30 * rate, speed: 'Fastest' })) };
-		// the guest's ticks before the speed, a sample every half minute, and the last one the host asks for before the normal speed
-		guest.endurance = Array.from({ length: count + 1 }, (_, index) => ({ at: 19 + index * 30, ticks: 900 + index * 30 * rate, final: index === count }));
+		const count = minutes * 60 / step;
+		host.endurance = { started: 20, startTicks: 1000, ended: 21 + minutes * 60,
+			samples: Array.from({ length: count }, (_, index) => ({ at: 20 + (index + 1) * step, ticks: 1000 + (index + 1) * step * rate, speed: 'Fastest' })) };
+		// the guest's ticks before the speed, a sample every few seconds, and the last one the host asks for before the normal speed
+		guest.endurance = Array.from({ length: count + 1 }, (_, index) => ({ at: 19 + index * step, ticks: 900 + index * step * rate, final: index === count }));
 		return { host, guest };
 	};
 	const named = minutes => `the fastest speed was followed for ${minutes} minutes`;
@@ -131,9 +134,9 @@ test('the endurance run needs its whole minutes at the fastest speed, on both si
 	pair = run(2);
 	pair.host.endurance.samples[1].speed = 'Normal';
 	assert.deepEqual(failing(checkEvidence(pair.host, pair.guest, 'endurance', 2)), [named(2)]);
-	// a stall in the first half minute, before the first sample
+	// a stall in the first seconds, before the first sample
 	pair = run(2);
-	pair.host.endurance.startTicks = pair.host.endurance.samples[0].ticks - 30 * 60;
+	pair.host.endurance.startTicks = pair.host.endurance.samples[0].ticks - step * 60;
 	assert.deepEqual(failing(checkEvidence(pair.host, pair.guest, 'endurance', 2)), [named(2)]);
 	pair = run(2);
 	delete pair.host.endurance.startTicks;
@@ -156,6 +159,22 @@ test('the endurance run needs its whole minutes at the fastest speed, on both si
 	assert.deepEqual(failing(checkEvidence(pair.host, pair.guest, 'endurance', 2)), [named(2)]);
 	pair = run(3);
 	assert.deepEqual(failing(checkEvidence(pair.host, pair.guest, 'endurance', 4)), [named(4)]);
+	// a side that stopped sampling for a while, though its rates hold over the longer stretch
+	pair = run(2);
+	pair.host.endurance.samples.splice(5, 3);
+	assert.deepEqual(failing(checkEvidence(pair.host, pair.guest, 'endurance', 2)), [named(2)]);
+	pair = run(2);
+	pair.guest.endurance.splice(5, 3);
+	assert.deepEqual(failing(checkEvidence(pair.host, pair.guest, 'endurance', 2)), [named(2)]);
+});
+
+test('the driver\'s own clock must see the fastest speed for the run\'s minutes too', () => {
+	assert.equal(checkObservedEndurance({ started: 1000, done: 1000 + 120 * 1000 }, 2).passed, true);
+	// a status read lags each end a little
+	assert.equal(checkObservedEndurance({ started: 1000, done: 1000 + 119 * 1000 }, 2).passed, true);
+	assert.equal(checkObservedEndurance({ started: 1000, done: 1000 + 110 * 1000 }, 2).passed, false);
+	assert.equal(checkObservedEndurance({ started: 1000, done: null }, 2).passed, false);
+	assert.equal(checkObservedEndurance({ started: null, done: null }, 2).passed, false);
 });
 
 test('a game\'s log keeps each pipe\'s lines whole, so a password split across chunks is still replaced, and its last line', async () => {
@@ -180,14 +199,19 @@ test('a game\'s log keeps each pipe\'s lines whole, so a password split across c
 	}
 });
 
-test('the driver needs the game, the server and a fresh out directory, and runs native sides only', () => {
+test('the driver needs the game, the server and a fresh out directory, and a page side needs a web build', () => {
 	const base = ['node', 'coop-live.mjs', '--game', 'g.dll', '--server', 's.dll', '--out', 'o', '--game-path', 'tpw'];
 	const options = parseArguments(base);
 	assert.deepEqual([options.scenario, options.host, options.guest, options.timeoutMinutes], ['baseline', 'native', 'native', 30]);
 	assert.equal(parseArguments([...base, '--scenario', 'endurance', '--minutes', '45']).timeoutMinutes, 75);
 	assert.throws(() => parseArguments(base.slice(0, 6)), /--out/);
 	assert.throws(() => parseArguments([...base, '--scenario', 'longer']), /baseline, recovery, endurance/);
-	assert.throws(() => parseArguments([...base, '--guest', 'page']), /C2d-5b/);
+	assert.throws(() => parseArguments([...base, '--guest', 'page']), /--web/);
+	const page = parseArguments([...base, '--guest', 'page', '--web', 'wwwroot', '--runtime', 'interpreter']);
+	assert.deepEqual([page.host, page.guest, page.web, page.runtime], ['native', 'page', 'wwwroot', 'interpreter']);
+	assert.equal(parseArguments([...base, '--host', 'page', '--web', 'wwwroot']).runtime, 'unknown');
+	assert.throws(() => parseArguments([...base, '--host', 'tablet']), /native or page/);
+	assert.throws(() => parseArguments([...base, '--host', 'page', '--web', 'wwwroot', '--runtime', 'jit']), /aot or interpreter/);
 	assert.throws(() => parseArguments([...base, '--minutes', '0']), /positive number/);
 	assert.throws(() => parseArguments([...base, '--minutes']), /needs a value/);
 	assert.throws(() => parseArguments([...base, '--speed', 'fast']), /Unknown option/);
@@ -213,4 +237,212 @@ test('a log that cannot be written fails its promise, not the driver', async () 
 	child.stdout.end();
 	child.stderr.end();
 	await assert.rejects(logged, /ENOENT/);
+});
+
+test('a page\'s keys are the keyboard\'s: named keys, letters with their shift, digits and punctuation with their text', () => {
+	assert.deepEqual(keyEvent('Enter'), { key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13, modifiers: 0 });
+	assert.deepEqual(keyEvent('F4'), { key: 'F4', code: 'F4', windowsVirtualKeyCode: 115, modifiers: 0 });
+	assert.deepEqual(keyEvent('h'), { key: 'h', code: 'KeyH', windowsVirtualKeyCode: 72, text: 'h', modifiers: 0 });
+	assert.deepEqual(keyEvent('H'), { key: 'H', code: 'KeyH', windowsVirtualKeyCode: 72, text: 'H', modifiers: 8 });
+	assert.deepEqual(keyEvent('7'), { key: '7', code: 'Digit7', windowsVirtualKeyCode: 55, text: '7', modifiers: 0 });
+	assert.deepEqual(keyEvent(','), { key: ',', code: 'Comma', windowsVirtualKeyCode: 188, text: ',', modifiers: 0 });
+	assert.deepEqual(keyEvent(' '), { key: ' ', code: 'Space', windowsVirtualKeyCode: 32, text: ' ', modifiers: 0 });
+	// a chat line's every character can be typed
+	for (const character of `Hello ${GUEST}, code 7UZUHN`)
+		assert.equal(keyEvent(character).key, character);
+	assert.throws(() => keyEvent('Tab'), /named keys/);
+});
+
+test('a point of the game\'s canvas lands on the page\'s canvas element, in CSS pixels', () => {
+	const element = { left: 10, top: 20, width: 1280, height: 800 };
+	assert.deepEqual(pagePoint([640, 400], [1280, 800], element), { x: 650, y: 420 });
+	// a canvas drawn at twice the element's pixels
+	assert.deepEqual(pagePoint([1280, 800], [2560, 1600], element), { x: 650, y: 420 });
+	assert.throws(() => pagePoint([1, 2], [0, 800], element), /cannot place/);
+	assert.throws(() => pagePoint([1], [1280, 800], element), /cannot place/);
+});
+
+test('a page asks only for its own role\'s pictures, by a flat name', () => {
+	assert.ok(pictureName('guest', 'guest-host-moved.png'));
+	assert.ok(!pictureName('guest', 'host-guest.png'));
+	assert.ok(!pictureName('guest', 'guest-../x.png'));
+	assert.ok(!pictureName('guest', 'guest-host.png/../x'));
+	assert.ok(!pictureName('host', undefined));
+});
+
+/** A PNG chunk of `type` with `body` and its checksum. */
+function pngChunk(type, body) {
+	const head = Buffer.alloc(8);
+	head.writeUInt32BE(body.length, 0);
+	head.write(type, 4, 'latin1');
+	const sum = Buffer.alloc(4);
+	sum.writeUInt32BE(crc32(Buffer.concat([head.subarray(4), body])), 0);
+	return Buffer.concat([head, body, sum]);
+}
+
+/**
+ * A whole PNG of `width` by `height` pixels (RGBA, or `color`), each row with `filter`; `cut` drops that many bytes from its end. `before` and `between` are chunks put
+ * before the image data and between its two halves, `after` bytes after its end.
+ */
+function png(width, height, cut = 0, filter = 0, color = 6, { before = [], between = [], after = Buffer.alloc(0) } = {}) {
+	const chunk = pngChunk;
+	const header = Buffer.alloc(13);
+	header.writeUInt32BE(width, 0);
+	header.writeUInt32BE(height, 4);
+	const channels = { 0: 1, 2: 3, 3: 1, 6: 4 }[color];
+	header[8] = 8;
+	header[9] = color;
+	const rows = Buffer.alloc(height * (1 + width * channels));
+	for (let row = 0; row < height; row++)
+		rows[row * (1 + width * channels)] = filter;
+	const packed = deflateSync(rows);
+	const half = Math.floor(packed.length / 2);
+	const bytes = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), chunk('IHDR', header), ...before, chunk('IDAT', packed.subarray(0, half)), ...between,
+		chunk('IDAT', packed.subarray(half)), chunk('IEND', Buffer.alloc(0)), after]);
+	return bytes.subarray(0, bytes.length - cut);
+}
+
+test('a picture counts only when the whole PNG decodes', () => {
+	assert.deepEqual(pngSize(png(64, 40)), { width: 64, height: 40 });
+	// a cut file, a damaged chunk, image data short of its rows, or no picture at all
+	assert.equal(pngSize(png(64, 40, 5)), null);
+	const damaged = Buffer.from(png(64, 40));
+	damaged[40] ^= 0xff;
+	assert.equal(pngSize(damaged), null);
+	const short = png(64, 40);
+	const header = Buffer.from(short);
+	header.writeUInt32BE(41, 20);
+	// the header's checksum mended, so only the rows are wrong
+	header.writeUInt32BE(crc32(header.subarray(12, 29)), 29);
+	assert.equal(pngSize(header), null);
+	// rows whose filter is none of the five
+	assert.deepEqual(pngSize(png(4, 3, 0, 4)), { width: 4, height: 3 });
+	assert.equal(pngSize(png(4, 3, 0, 5)), null);
+	// a truecolour picture only: RGB (Chrome's) or RGBA (the game's); a palette or grey image is none of the acceptance's
+	assert.deepEqual(pngSize(png(4, 3, 0, 0, 2)), { width: 4, height: 3 });
+	assert.equal(pngSize(png(4, 3, 0, 0, 3)), null);
+	assert.equal(pngSize(png(4, 3, 0, 0, 0)), null);
+	// the specification's chunk rules: a suggested palette of 1 to 256 entries and ancillary chunks are fine; an empty palette, an unknown critical chunk, image data split
+	// by another chunk, a chunk type that is no four letters or has its reserved bit set, and bytes after the end are not
+	const rgb = options => pngSize(png(4, 3, 0, 0, 2, options));
+	assert.deepEqual(rgb({ before: [pngChunk('PLTE', Buffer.alloc(9)), pngChunk('tEXt', Buffer.from('Software\0test'))] }), { width: 4, height: 3 });
+	assert.equal(rgb({ before: [pngChunk('PLTE', Buffer.alloc(0))] }), null);
+	assert.equal(rgb({ before: [pngChunk('PLTE', Buffer.alloc(10))] }), null);
+	assert.equal(rgb({ before: [pngChunk('ABCD', Buffer.alloc(4))] }), null);
+	assert.equal(rgb({ between: [pngChunk('tEXt', Buffer.from('a\0b'))] }), null);
+	assert.equal(rgb({ before: [pngChunk('ab1d', Buffer.alloc(1))] }), null);
+	assert.equal(rgb({ before: [pngChunk('abcd', Buffer.alloc(1))] }), null);
+	assert.equal(rgb({ after: Buffer.from('trailing') }), null);
+	assert.equal(pngSize(Buffer.from('not a picture at all, longer than a header')), null);
+});
+
+test('every sighting\'s picture must be kept as a whole PNG of the view, at the size captured', async () => {
+	const { host, guest } = passingPair();
+	for (const sighting of host.sightings)
+		sighting.pictureSize = [1512, 843];
+	// the guest is a page: the driver took its pictures, and knows their size
+	const pageSizes = Object.fromEntries(guest.sightings.map(sighting => [sighting.picture, [64, 40]]));
+	const files = new Map([...host.sightings.map(sighting => [sighting.picture, png(1512, 843)]), ...guest.sightings.map(sighting => [sighting.picture, png(64, 40)])]);
+	const read = async name => files.get(name) ?? null;
+	assert.equal((await checkPictures({ host, guest }, read, pageSizes)).passed, true);
+	// a picture of another size than its view, one missing, one that does not decode, one with no size known
+	files.set(guest.sightings[0].picture, png(32, 40));
+	assert.equal((await checkPictures({ host, guest }, read, pageSizes)).passed, false);
+	files.set(guest.sightings[0].picture, png(64, 40));
+	files.delete(guest.sightings[1].picture);
+	assert.equal((await checkPictures({ host, guest }, read, pageSizes)).passed, false);
+	files.set(guest.sightings[1].picture, png(64, 40, 3));
+	assert.equal((await checkPictures({ host, guest }, read, pageSizes)).passed, false);
+	files.set(guest.sightings[1].picture, png(64, 40));
+	assert.equal((await checkPictures({ host, guest }, read, {})).passed, false);
+	assert.equal((await checkPictures({ host: { sightings: [] }, guest: { sightings: [] } }, read, pageSizes)).passed, false);
+});
+
+test('a page side ran the build given and went through its own local server: its login, its sockets, after a restart again, and the park\'s files whole', () => {
+	const upgrade = (route, at, status = 101, bytes = 100) => ({ path: route, upgrade: true, status, bytesIn: bytes, bytesOut: bytes, at });
+	const page = () => ({
+		kind: 'page',
+		build: { files: { 'index.html': 'aa' }, nativeWasm: 'dotnet.native.x1.wasm', measuredRuntime: 'interpreter' },
+		frames: 4000, framesAtPass: 3800, frameError: null, startedAt: 900, parkFiles: 2,
+		upgrades: [upgrade('/api/v1/coop', 1000), upgrade('/api/v1/chat', 1001), upgrade('/api/v1/coop', 5000, 502, 0), upgrade('/api/v1/coop', 6000), upgrade('/api/v1/chat', 6001)],
+		requests: [{ path: '/api/v1/sessions', method: 'POST', status: 200, bytes: 120 }],
+		network: [{ path: '/_framework/dotnet.native.x1.wasm', status: 200 }, { path: '/game/Data/levels/jungle/Jungle.wad', status: 200 },
+			{ path: '/game/Data/levels/jungle/Music/Jungle.sdt', status: 200 }],
+		levels: [{ level: 'jungle', requestedAt: 950, loadedAt: 980, failure: null }],
+	});
+	const native = { kind: 'native' };
+	assert.deepEqual(failing(checkPageSides({ host: native, guest: page() }, null)), []);
+	assert.equal(checkPageSides({ host: native, guest: page() }, null).length, 4);
+	assert.deepEqual(failing(checkPageSides({ host: page(), guest: page() }, 4000)), []);
+	assert.equal(checkPageSides({ host: page(), guest: page() }, 4000).filter(check => check.what.startsWith('the host page')).length, 5);
+	const only = (guest, restartedAt = null) => failing(checkPageSides({ host: native, guest }, restartedAt));
+	// no socket back after the restart
+	let guest = page();
+	guest.upgrades = guest.upgrades.slice(0, 3);
+	assert.deepEqual(only(guest, 4000), ['the guest page\'s sockets came back through its local server after the restart']);
+	// a chat socket that carried nothing back
+	guest = page();
+	guest.upgrades[1].bytesOut = 0;
+	guest.upgrades[4].bytesOut = 0;
+	assert.deepEqual(only(guest), ['the guest page\'s co-op and chat sockets went through its local server, with bytes both ways']);
+	// a login the local server did not carry, or refused
+	guest = page();
+	guest.requests = [{ path: '/api/v1/sessions', method: 'POST', status: 401, bytes: 40 }];
+	assert.deepEqual(only(guest), ['the guest page logged in through its local server']);
+	// the native module not loaded, or a frame that failed after the run
+	const ran = 'the guest page ran the web build given, its interpreter runtime loaded, and no frame of it failed';
+	guest = page();
+	guest.network = guest.network.slice(1);
+	assert.deepEqual(only(guest), [ran]);
+	guest = page();
+	guest.frameError = 'InvalidOperationException: the drawing failed';
+	assert.deepEqual(only(guest), [ran]);
+	// no frame drawn after its pass, to the run's end
+	guest = page();
+	guest.frames = guest.framesAtPass;
+	assert.deepEqual(only(guest), [ran]);
+	// the park's files: asked for before the run, a copy that failed, one of them missing, or another park's
+	const park = 'the guest page fetched the park\'s files from the game folder during the run, whole';
+	guest = page();
+	guest.levels[0].requestedAt = 800;
+	assert.deepEqual(only(guest), [park]);
+	guest = page();
+	guest.levels[0].failure = 'HTTP 404';
+	assert.deepEqual(only(guest), [park]);
+	guest = page();
+	guest.network.pop();
+	assert.deepEqual(only(guest), [park]);
+	guest = page();
+	guest.levels = [{ level: 'space', requestedAt: 950, loadedAt: 980, failure: null }];
+	assert.deepEqual(only(guest), [park]);
+});
+
+test('a game\'s status keeps its run and must advance while the game runs', () => {
+	const freshness = {};
+	checkFreshness(freshness, 'guest', { run: 'r1', revision: 1 }, null, 0);
+	checkFreshness(freshness, 'guest', { run: 'r1', revision: 1 }, null, 30000);
+	checkFreshness(freshness, 'guest', { run: 'r1', revision: 2 }, null, 59000);
+	assert.throws(() => checkFreshness(freshness, 'guest', { run: 'r1', revision: 2 }, null, 59000 + STATUS_STALL_SECONDS * 1000 + 1), /did not advance/);
+	// an ended game publishes no more
+	checkFreshness(freshness, 'guest', { run: 'r1', revision: 2 }, 'completed', 59000 + STATUS_STALL_SECONDS * 1000 + 1);
+	assert.throws(() => checkFreshness(freshness, 'guest', { run: 'r2', revision: 9 }, null, 60000), /another run/);
+	assert.throws(() => checkFreshness(freshness, 'guest', { run: 'r1', revision: 1 }, null, 60000), /went back/);
+	// no status yet: nothing to check
+	checkFreshness(freshness, 'host', null, null, 1e9);
+});
+
+test('a page that completed must live to the run\'s end: a crash counts over its completion, and a last read that fails fails it', async () => {
+	const side = new PageSide({ role: 'guest', options: {}, out: os.tmpdir(), evidence: os.tmpdir(), player: {}, server: {}, redact: text => text });
+	side.started = true;
+	side.outcome = 'completed';
+	assert.equal(side.ending(), 'completed');
+	side.crashed = 'its renderer ended';
+	assert.match(side.ending(), /^crashed/);
+	// the driver's own stop at the run's end is no crash
+	side.stopped = true;
+	assert.equal(side.ending(), 'completed');
+	side.stopped = false;
+	side.state = { frames: 10, frameError: null };
+	await side.refresh();
+	assert.match(side.state.frameError, /could not answer/);
 });

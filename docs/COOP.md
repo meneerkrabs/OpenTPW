@@ -1030,21 +1030,35 @@ The tests:
 `[EXT:online-coop-session]` Two games share a park through the real server, with the game's data. The
 sharing, the join, the building, the chat and the session's end go through the game's own screens and
 input. The headless tests check each part against the loopback server, the smokes join over recordings,
-and the browser's link check runs without data; here it all runs together, live. C2d-5a runs two native
-games; C2d-5b adds the page as host and as guest.
+and the browser's link check runs without data; here it all runs together, live. Either side is a
+native game (C2d-5a) or a page (C2d-5b): native/native, native/page, page/native and page/page.
 
 `scripts/coop-live.sh <out> ['/path/to/Theme Park World'] [--scenario ...]` builds the game (Release)
 and the server once. Then `tools/coop-live.mjs` runs:
 
 - **The server** on 127.0.0.1 with a fresh data folder and no two-step login. Two throwaway players with
   random names and passwords are registered over HTTP.
-- **Two native games** (`--coop-live host|join`), silent and offscreen. Each has its own configuration
+- **A native game** (`--coop-live host|join`), silent and offscreen. Each has its own configuration
   (copies of the developer's settings files and links to the art folders, never the online folder), its
   own online folder, and its own save folder (`OPENTPW_SAVE_DIR`). The guest starts once the host has
   published its code.
-- **The secrets.** A password reaches a game only in its environment, never in its arguments, a file or
-  a log; the driver's logs and failures have it replaced. The server keeps hashes, and the games keep
-  the server's address and the player's name, as a player's game does.
+- **A page** (`--host page` or `--guest page`, with `--web <published wwwroot>` and `--runtime aot|interpreter`;
+  `tools/coop-live-page.mjs`). Each page runs in a headless, muted Chrome of its own with a fresh profile,
+  through a local server of its own in front of the real one (`tools/web-perf/lib.mjs`). That local server
+  serves the game folder at `/game/` and forwards the rest, so its log is that page's traffic.
+  - **The build.** The real server serves the given web build (`WebClientDirectory`), as a deployment
+    does. The driver checks that every file of the page that no integrity check covers (its page, scripts
+    and styles) and the runtime's loader are that build's bytes; the loader lists every framework file's
+    hash, which the runtime checks as it loads each. The native module's size tells the runtime (an AOT
+    build's holds the compiled assemblies, an interpreter build's about 3 MB), which must be the one given
+    (`--runtime`), and the page must load it. The page's policy must let its sockets reach its own origin.
+  - **The start.** The page opens with `?coopLive=1&data=/game/&keep=off` and starts the game as a
+    player's does, without automatic advice. The driver rests the pointer over the canvas's middle, as a
+    player's would be, then starts the run from the front end (`CoopLiveStart`).
+- **The secrets.** A password reaches a native game only in its environment, and a page only as an
+  argument of the call that starts its run. It never goes into arguments, an address, a page's stores,
+  a file or a log, and the driver's logs and failures have it replaced. The server keeps hashes, and the
+  games keep the server's address and the player's name, as a player's game does.
 
 Each game runs a script of steps (`CoopLiveTest`), each waiting for a condition with a deadline of wall
 time. A failed step ends the run with its evidence, and the other game and the driver stop at once.
@@ -1054,22 +1068,38 @@ time. A failed step ends the run with its evidence, and the other game and the d
   a field as the screen's own input does. Three things the harness does itself: it starts the host's
   park, moves the views (the camera itself, not a drag or a key), and reads the games' state for its
   checks.
-- **Input.** Escape, Enter, the chat line, F4 and the park's clicks go through the game's input.
+- **Input.** Escape, Enter, the chat line, F4 and the park's clicks go through the game's input. In a page
+  the chat's keys, F4 and the park's clicks go through the browser's own events on the canvas instead:
+  the run asks, the driver dispatches them (DevTools' key and mouse events) and says so, and the game
+  reads them as a player's.
 - **Barriers.** The games and the driver meet at barriers: each publishes its status in the shared
-  evidence folder and waits on the others'. The chat is under test, not the control channel.
+  evidence folder and waits on the others'. The chat is under test, not the control channel. A page's run
+  keeps its status and evidence in the page's memory, and the driver relays them, one cycle at a time a
+  page (`CoopLiveRead`, `CoopLiveWrite`, each way with fixed names only). The page's own status goes out,
+  and the other game's and the driver's come in. A status only grows (a key once published stays), so a
+  late copy cannot pass a later barrier. Each status carries its run's id and a revision that grows with
+  every publication, with a heartbeat at least every five seconds: the driver fails a game whose status
+  comes from another run, goes back, or stops advancing for a minute while it runs.
+- **A page's liveness.** The page publishes its run's end only once the frame that ended it has returned
+  whole; a throw later in that frame fails the run. A pass counts once the page has drawn frames for two
+  more seconds with none failing, and at the run's end no frame may have failed since. A page whose frames
+  stop for a minute, that crashes, or whose Chrome exits fails at once, on the driver's own clock.
 
 The steps:
 
 1. **The host shares.** The harness starts Jungle as Instant Action does, not through the front end's
-   menus. Escape opens the pause menu, and Build Together opens the screen. The host logs in there
-   (server, name, password), writes the title, picks two players, leaves the park off the open list and
-   shares. The screen shows the session's code.
+   menus; a page's host waits for the park's files first (a page copies a theme when a park asks for it).
+   Escape opens the pause menu, and Build Together opens the screen. The host logs in there (server, name,
+   password), writes the title, picks two players, leaves the park off the open list and shares. The screen
+   shows the session's code.
 2. **The guest joins.** It starts in the lobby: Escape, Build Together, Join with a code, a login there,
    the code, Join. The host's park is fetched, built and swapped in, and follows the host's stream with
-   its digests compared.
+   its digests compared. A page's guest copies the park's files from the game folder for the join.
 3. **The figures.** The host sees the guest's figure and name drawn in its view, then the guest sees the
-   host's; a picture of each view is kept. Then the harness moves the host's view far away: the host's
-   figure jumps there, and the guest sees it there. The same follows for the guest's view.
+   host's; a picture of each view is kept. A page cannot read its output back, so the driver takes its
+   picture, a screenshot of the canvas, while the view stays. Then the harness moves the host's view far
+   away, to the nearest place the camera can centre on: the host's figure jumps there, and the guest sees
+   it there. The same follows for the guest's view.
 4. **Building.** The host lays a path line through its HUD: a press on free land starts the tool, and a
    press on the end lays the line. The guest's park takes the line's record, its cells become paths, and
    checkpoints are compared after it. The guest's own line is refused (only the host builds), its cells
@@ -1092,7 +1122,12 @@ The driver then checks both games' evidence against each other (`checkEvidence`,
 - each figure drawn with its name, also where its view moved;
 - the chat both ways;
 - the ride and Go to;
-- the session's end.
+- the session's end;
+- every sighting's picture, a whole PNG of the view at the size captured (a native game's as it captured
+  it, a page's as the driver took it);
+- for each page: the build given, its runtime loaded and no frame failing; its login and its co-op and
+  chat sockets through its own local server with bytes both ways (and again after a restart); and the
+  park's files asked for during the run and fetched whole from the game folder.
 
 The scenarios:
 
@@ -1104,14 +1139,17 @@ The scenarios:
   guest sees, and a second line reaches the guest's park, with checkpoints after it.
 - **endurance** (`--scenario endurance --minutes M`): after the chat, the host runs the fastest speed (the
   HUD's `>>>`) for M whole minutes of wall time, from setting it to setting the normal speed back. The guest
-  takes its ticks before the host sets the speed, and the host its own when it does. Every half minute both
-  games sample the park's ticks; the host also checks that the speed is still the fastest, and asks for the
-  guest's last sample before it sets the normal speed back. From those first ticks to the last sample, both
-  parks must run at least 180 ticks a second over every stretch of five seconds or more, three times the
-  normal 60, which only the fastest speed (240) reaches. The guest follows with no resync and no desync, comparing a
-  checkpoint at least every two seconds. Then the rest of the steps follow.
+  takes its ticks before the host sets the speed, and the host its own when it does. Every five seconds both
+  games sample the park's ticks, never more than ten seconds apart; the host also checks that the speed is
+  still the fastest, and asks for the guest's last sample before it sets the normal speed back. From those
+  first ticks to the last sample, both parks must run at least 180 ticks a second over every stretch of five
+  seconds or more, three times the normal 60, which only the fastest speed (240) reaches. The driver's own
+  clock must see the interval too, from the host's word that it set the speed to its word that the normal
+  speed is back (two seconds' slack for the status reads). The guest follows with no resync and no desync,
+  comparing a checkpoint at least every two seconds; each game keeps its longest wait between two frames.
+  Then the rest of the steps follow.
 
-**The pages' way in.** The pages (C2d-5b) open through the drivers' own local server in front of the
+**The pages' way in.** The pages open through the drivers' own local server in front of the
 real one (`tools/web-perf/lib.mjs`). It serves the game folder (`/game/`) itself and forwards the rest
 to the server: the page, from the server's own web folder, and `/api/`. It forwards the sockets'
 upgrades below `/api/` only: at most 16 at a time, the server's whole answer within 10 seconds (an
@@ -1123,13 +1161,23 @@ reaches the other page through it (a page's only origin is the proxy's). The pag
 page's. A refusal (an upgrade outside `/api/`, or none left) is answered, and a client that keeps its side
 open after any answer is closed after the half-close wait.
 
-Results (Apple M5, macOS 26, Release, native host and native guest):
+Results (Apple M5, macOS 26; native games in Release; pages in a headless Chrome 155 with the interpreter
+build):
 
-| Scenario | Checks | Wall time | Notes |
-|---|---|---|---|
-| baseline | 12 of 12 | 19 s | the guest followed 3.3 s after Join (a 104 KiB capture) |
-| recovery | 14 of 14 | 29 s | both links back 3.3 and 3.4 s after the server went down (for 3 s); no resync |
-| endurance, 30 minutes | 13 of 13 | 30 min 19 s | 1800 s at the fastest speed; the slowest five-second stretches at 239.96 (host) and 238.41 (guest) ticks a second; 1806 checkpoints, no resync or desync |
+| Sides | Scenario | Checks | Wall time | Notes |
+|---|---|---|---|---|
+| native/native | baseline | 13 of 13 | 19 s | followed 3.4 s after Join; 104 KiB capture; 7 checkpoints |
+| native/page | baseline | 17 of 17 | 33 s | followed 6.3 s after Join; 106 KiB capture; 15 checkpoints |
+| page/native | baseline | 17 of 17 | 33 s | followed 3.7 s after Join; 104 KiB capture; 12 checkpoints |
+| page/page | baseline | 21 of 21 | 45 s | followed 6.6 s after Join; 106 KiB capture; 23 checkpoints |
+| native/native | recovery | 15 of 15 | 30 s | followed 3.3 s after Join; 104 KiB capture; links back 7.1 and 7.6 s after the drop; no resync |
+| native/page | recovery | 20 of 20 | 44 s | followed 6.2 s after Join; 106 KiB capture; links back 3.4 and 3.3 s after the drop; no resync |
+| page/native | recovery | 20 of 20 | 46 s | followed 3.6 s after Join; 104 KiB capture; links back 7.4 and 6.9 s after the drop; no resync |
+| page/page | recovery | 25 of 25 | 64 s | followed 8.3 s after Join; 107 KiB capture; links back 7.4 and 6.9 s after the drop; no resync |
+| native/native | endurance 30 min | 15 of 15 | 1820 s | followed 3.4 s after Join; 104 KiB capture; 1807 checkpoints; 1800 s at the fastest speed, slowest stretches 239.5 (host) and 230.2 (guest) ticks/s; longest frame gaps host 1.65 s, guest 0.57 s |
+| native/page | endurance 30 min | 19 of 19 | 1834 s | followed 5.8 s after Join; 105 KiB capture; 1819 checkpoints; 1800 s at the fastest speed, slowest stretches 239.6 (host) and 225.5 (guest) ticks/s; longest frame gaps host 1.50 s, guest 0.18 s |
+| page/native | endurance 30 min | 19 of 19 | 1839 s | followed 5.2 s after Join; 104 KiB capture; 1815 checkpoints; 1800 s at the fastest speed, slowest stretches 229.4 (host) and 229.5 (guest) ticks/s; longest frame gaps host 2.80 s, guest 0.73 s |
+| page/page | endurance 30 min | 23 of 23 | 1850 s | followed 6.4 s after Join; 106 KiB capture; 1824 checkpoints; 1801 s at the fastest speed, slowest stretches 224.4 (host) and 216.8 (guest) ticks/s; longest frame gaps host 2.98 s, guest 0.14 s |
 
 No CI job runs it: it needs the game's data. A run's `run.json` keeps every check, both games' evidence
 and the run's facts; its logs, pictures and status files stay in its folder.

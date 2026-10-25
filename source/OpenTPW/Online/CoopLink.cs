@@ -154,6 +154,9 @@ public sealed class CoopLink : ICoopStreamTransport
 	/// <summary>Drops the socket without a close, as a lost network does (tests).</summary>
 	internal void DropSocket() => live?.Abort();
 
+	/// <summary>How the last socket ended as its reader saw it: the server's close status (null for a lost socket), whether it read something unreadable, and whether this game dropped it (a test's diagnosis).</summary>
+	internal (int? Status, bool Malformed, bool Dropped)? LastEnd { get; private set; }
+
 	/// <summary>A wait of <see cref="RetryDelays"/> spread over 80 to 120 per cent of itself.</summary>
 	internal static TimeSpan DefaultJitter( TimeSpan delay ) => delay * (0.8 + 0.4 * Random.Shared.NextDouble());
 
@@ -805,6 +808,11 @@ public sealed class CoopLink : ICoopStreamTransport
 		if ( socket != live )
 			return;
 		live = null;
+		LastEnd = (status, malformed, socket.Dropped);
+		// a socket this game dropped (a send queue too far behind, a test's lost network) is a lost socket, whatever its reader saw on its way out: a close
+		// or a broken message racing the drop must not stop the link
+		if ( socket.Dropped )
+			(status, malformed) = (null, false);
 		// the welcome's time is when the pump took it, never before it came, so a socket's measured life is never longer than it was
 		var stable = welcomedAt is { } at && endedAt - at >= StableAfter.TotalMilliseconds;
 		welcomedAt = null;
@@ -997,10 +1005,20 @@ public sealed class CoopLink : ICoopStreamTransport
 			Connection.Close( status, reason );
 		}
 
+		/// <summary>
+		/// Drops the socket without a close: the connection first, then the queue. A queue completed first wakes the writer, whose end closes the connection normally
+		/// (<see cref="WriteLoopAsync"/>); a writer that won that race sent a normal close, the server answered it, and the reader took the answer for a close the link
+		/// does not resume after, so a lost socket stopped the link.
+		/// </summary>
 		public void Abort()
 		{
-			outbox.Writer.TryComplete();
+			dropped = true;
 			Connection.Abort();
+			outbox.Writer.TryComplete();
 		}
+
+		/// <summary>This game dropped the socket (<see cref="Abort"/>): its end is a lost socket's, which the link resumes after.</summary>
+		public bool Dropped => dropped;
+		private volatile bool dropped;
 	}
 }

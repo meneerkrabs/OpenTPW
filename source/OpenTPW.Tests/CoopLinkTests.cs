@@ -124,7 +124,8 @@ public partial class CoopLinkTests
 				return;
 			if ( DateTime.UtcNow > until )
 				Assert.Fail( $"Waited in vain for {what}: " + string.Join( "; ", players.Select( player =>
-					$"{player.Name} {player.Link.State} stopped {player.Link.Stopped}, errors {string.Join( ", ", player.Errors )}" ) ) );
+					$"{player.Name} {player.Link.State} stopped {player.Link.Stopped}, errors {string.Join( ", ", player.Errors )}, last socket's end {player.Link.LastEnd?.ToString() ?? "none"}, "
+					+ $"states {string.Join( " ", player.States )}" ) ) );
 			await Task.Delay( 10 );
 		}
 	}

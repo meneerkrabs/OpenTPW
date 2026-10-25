@@ -143,8 +143,25 @@ public sealed class OnlineSession : IDisposable, IPresenceSession, IChatPanelSou
 	private int commandsVersion = -1;
 	public OnlineClient? Client { get; private set; }
 	public ChatConnection? Chat { get; private set; }
-	public string Status { get; private set; } = "";
+	public string Status
+	{
+		get => status;
+		private set
+		{
+			status = value;
+			if ( Busy > 0 )
+				progress = value;
+		}
+	}
+	private string status = "";
 	public int Busy { get; private set; }
+
+	/// <summary>
+	/// The progress text the running request set (the original's progress messages, such as "Getting City List" or "Sending mails from outbox, please wait ..."),
+	/// or null while no request runs or the running one has set none.
+	/// </summary>
+	public string? Progress => Busy > 0 ? progress : null;
+	private string? progress;
 	/// <summary>
 	/// A chat connection is being opened or chat requests are still on their way. Chat traffic does not take the operation slot (<see cref="Busy"/>):
 	/// a visit joins its park's room while the download that started it still holds the slot, and a walking player sends a place several times
@@ -314,6 +331,7 @@ public sealed class OnlineSession : IDisposable, IPresenceSession, IChatPanelSou
 		if ( disposed || Busy > 0 )
 			return;
 		Busy++;
+		progress = null;
 		var startedGeneration = generation;
 		Task.Run( async () =>
 		{

@@ -539,6 +539,38 @@ public class OnlineIntegrationTests
 	}
 
 	[TestMethod]
+	public async Task ProgressIsTheTextTheRunningRequestSetAndNothingElse()
+	{
+		var folders = Folders();
+		try
+		{
+			using var session = new OnlineSession( folders );
+			var status = typeof( OnlineSession ).GetProperty( nameof( OnlineSession.Status ) )!;
+			status.SetValue( session, "an earlier outcome" );
+			Assert.IsNull( session.Progress, "no request runs" );
+			var release = new TaskCompletionSource<string?>();
+			session.Run( () => release.Task );
+			Assert.IsNull( session.Progress, "the running request has set no progress text: an earlier outcome is none" );
+			status.SetValue( session, "Getting City List" );
+			Assert.AreEqual( "Getting City List", session.Progress );
+			release.SetResult( "done" );
+			await PumpUntilIdle( session );
+			Assert.IsNull( session.Progress );
+			Assert.AreEqual( "done", session.Status );
+			var second = new TaskCompletionSource<string?>();
+			session.Run( () => second.Task );
+			Assert.IsNull( session.Progress, "a later request starts without the earlier one's progress text" );
+			second.SetResult( null );
+			await PumpUntilIdle( session );
+		}
+		finally
+		{
+			if ( Directory.Exists( folders.Root ) )
+				Directory.Delete( folders.Root, true );
+		}
+	}
+
+	[TestMethod]
 	public async Task EmptyListsAndASentOutboxLeaveNoMessageOnTheStatusLine()
 	{
 		await using var server = await LoopbackServer.StartAsync();

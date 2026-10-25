@@ -1175,7 +1175,7 @@ public sealed class OnlineScreens
 			codeRequested = Session.CodeRequested;
 		};
 		screen.Add( new UiLabel { Id = "status", Wrap = true, Font = fonts => fonts.Small, Color = UiColors.Value, Bounds = LoginStatusBounds, Anchor = UiAnchor.Center,
-			Text = () => Session.Busy > 0 ? "..." : localStatus.Length > 0 ? localStatus : Session.Status } );
+			Text = () => Session.Busy > 0 ? Session.Progress ?? "..." : localStatus.Length > 0 ? localStatus : Session.Status } );
 		screen.Back = stack.Pop;
 		screen.Focus( name.Text.Length == 0 ? name : password );
 		Push( screen );
@@ -1619,7 +1619,7 @@ public sealed class OnlineScreens
 		screen.Add( new UiButton { Id = "close", Model = cross.Model, Help = strings.Help( 2 ), Clicked = Close, Bounds = cross.Rect, Anchor = UiAnchor.Center } );
 		// The status (and the reason a park cannot be shared) goes in the free column left of the fields.
 		screen.Add( new UiLabel { Id = "status", Wrap = true, Font = fonts => fonts.Small, Color = UiColors.Value, Bounds = PublishStatusBounds, Anchor = UiAnchor.Center,
-			Text = () => ParkSharing.ModsRefusal( level ) ?? ( Session.Busy > 0 ? "..." : localStatus.Length > 0 ? localStatus : Session.Status ) } );
+			Text = () => ParkSharing.ModsRefusal( level ) ?? ( Session.Busy > 0 ? Session.Progress ?? "..." : localStatus.Length > 0 ? localStatus : Session.Status ) } );
 		// [EXT:mods] a park that records mods cannot be exported or published yet (ParkSharing.ModsRefusal): both buttons are hidden and the status column says why
 		screen.Updating += _ => publish.Visible = export.Visible = ParkSharing.ModsRefusal( level ) == null;
 		screen.Back = Close;
@@ -1800,6 +1800,7 @@ public sealed class OnlineScreens
 		var dateColumn = Control( 0x11 ).Rect;
 		var markColumns = new[] { Control( 0x12 ).Rect, Control( 0x13 ).Rect };
 		string Mark( (string Path, Postcard? Card, string? Error) entry, OutboxMark mark ) => MarkOf( entry ) == mark ? "1" : "0";
+		string Title( (string Path, Postcard? Card, string? Error) entry ) => (entry.Card?.Manifest.Title ?? entry.Error ?? "?").Replace( '\t', ' ' );
 		string Date( Postcard card )
 		{
 			var date = card.Manifest.CreatedUtc.LocalDateTime;
@@ -1818,30 +1819,37 @@ public sealed class OnlineScreens
 			Columns = new (float Offset, Func<string> Text)[] { (0, () => ""), (dateColumn.X - content.X, () => ""), (markColumns[0].X - content.X, () => ""), (markColumns[1].X - content.X, () => "") },
 			// a row's cells: title, date, and the Send and Delete cells' values (an unreadable card's row has no Send cell)
 			Rows = () => cards.Select( entry => entry.Card is { } card
-				? $"{card.Manifest.Title.Replace( '\t', ' ' )}\t{Date( card )}\t{Mark( entry, OutboxMark.Send )}\t{Mark( entry, OutboxMark.Delete )}"
-				: $"{(entry.Error ?? "?").Replace( '\t', ' ' )}\t\t\t{Mark( entry, OutboxMark.Delete )}" ).ToArray(),
+				? $"{Title( entry )}\t{Date( card )}\t{Mark( entry, OutboxMark.Send )}\t{Mark( entry, OutboxMark.Delete )}"
+				: $"{Title( entry )}\t\t\t{Mark( entry, OutboxMark.Delete )}" ).ToArray(),
 		} );
+		// The cells drawn from the card itself: the title fitted into its column (to the date's), as the buy list fits its names ([EXT:fit-button-text]: how tp.exe's row
+		// text treats a title too long for the row is not traced, 0x65f5b7), the date centred in its column, and the Send and Delete cells' i_boxtick at its own
+		// 51-unit size, centred in its column (the buy list's box cell); an unreadable card's row has no Send cell.
 		list.DrawCell = ( context, row, column, cell ) =>
 		{
-			if ( column == 0 )
-				return false;
-			var scale = cell.Height / list.RowHeight;
-			var rows = list.Rows();
-			var value = row < rows.Count && rows[row].Split( '\t' ) is { Length: 4 } cells ? cells[column] : "";
-			var selected = row == list.Selected;
-			if ( column == 1 )
-			{
-				context.DrawText( context.Fonts.Small, value, cell with { Width = dateColumn.Width * scale }, selected ? UiColors.Highlight : UiColors.Text, UiAlign.Center );
+			if ( row < 0 || row >= cards.Count )
 				return true;
-			}
-			// the Send and Delete cells: i_boxtick at its own 51-unit size, centred in its column (the buy list's box cell)
-			if ( value.Length > 0 )
+			var entry = cards[row];
+			var scale = cell.Height / list.RowHeight;
+			var color = row == list.Selected ? UiColors.Highlight : UiColors.Text;
+			switch ( column )
 			{
-				var box = OpenTPW.Hud.ParkHud.TickBoxSize * scale;
-				var width = markColumns[column - 2].Width * scale;
-				context.DrawModel( "i_boxtick", value == "1" ? 1 : 0, new UiRect( cell.X + (width - box) / 2, cell.Y + (cell.Height - box) / 2, box, box ) );
+				case 0:
+					context.DrawFittedText( context.Fonts.Small, Title( entry ), cell with { Width = (dateColumn.X - content.X) * scale }, color, UiAlign.Left );
+					return true;
+				case 1:
+					if ( entry.Card is { } card )
+						context.DrawText( context.Fonts.Small, Date( card ), cell with { Width = dateColumn.Width * scale }, color, UiAlign.Center );
+					return true;
+				default:
+					if ( column == 2 && entry.Card == null )
+						return true;
+					var box = OpenTPW.Hud.ParkHud.TickBoxSize * scale;
+					var width = markColumns[column - 2].Width * scale;
+					context.DrawModel( "i_boxtick", MarkOf( entry ) == (column == 2 ? OutboxMark.Send : OutboxMark.Delete) ? 1 : 0,
+						new UiRect( cell.X + (width - box) / 2, cell.Y + (cell.Height - box) / 2, box, box ) );
+					return true;
 			}
-			return true;
 		};
 		// a click on a row's Send (column 2) or Delete (column 3) cell makes the row the current one and toggles that mark
 		list.CellClicked = ( index, column ) =>
@@ -1927,7 +1935,6 @@ public sealed class OnlineScreens
 		screen.Updating += context =>
 		{
 			ok.Enabled = Session.Busy == 0;
-			ShowScrollers();
 			// A send started earlier removes cards from the outbox folder; re-read it now and then.
 			refreshTimer += context.Delta;
 			if ( refreshTimer > 1 )
@@ -1935,6 +1942,7 @@ public sealed class OnlineScreens
 				refreshTimer = 0;
 				Reload();
 			}
+			ShowScrollers();
 		};
 		screen.Back = stack.Pop;
 		Push( screen );
@@ -2067,6 +2075,7 @@ public sealed class OnlineScreens
 		return screen.Add( new UiTextField { Id = id, MaximumLength = maximumLength, Model = "f_text1", Bounds = new UiRect( x, y + 64, width, 84 ), Anchor = UiAnchor.Center } );
 	}
 
+	/// <summary>The window's status line: while a request runs, the progress text it set (the original's progress messages) or "...", then its outcome.</summary>
 	private void AddStatus( UiScreen screen, UiRect window )
 	{
 		screen.Add( new UiLabel
@@ -2077,7 +2086,7 @@ public sealed class OnlineScreens
 			Color = UiColors.Value,
 			Bounds = new UiRect( window.X + 120, window.Bottom - 175, window.Width - 700, 110 ),
 			Anchor = UiAnchor.Center,
-			Text = () => Session.Busy > 0 ? "..." : localStatus.Length > 0 ? localStatus : Session.Status
+			Text = () => Session.Busy > 0 ? Session.Progress ?? "..." : localStatus.Length > 0 ? localStatus : Session.Status
 		} );
 	}
 

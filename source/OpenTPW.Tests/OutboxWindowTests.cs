@@ -53,8 +53,15 @@ public class OutboxWindowTests
 	private static string Marks( UiScreen screen, string title ) => Row( screen, title ).Cells[2] + "|" + Row( screen, title ).Cells[3];
 	private const string Send = "1|0", Delete = "0|1", None = "0|0";
 
-	private static UiContext Context( UiModels? models = null ) =>
-		new( Strings, null!, models ?? new UiModels( name => throw new FileNotFoundException( name ) ) ) { Canvas = new UiCanvas( 2048, 1536 ), ResolveTexture = name => name };
+	private static UiContext Context( UiModels? models = null, UiFonts? fonts = null ) =>
+		new( Strings, fonts!, models ?? new UiModels( name => throw new FileNotFoundException( name ) ) ) { Canvas = new UiCanvas( 2048, 1536 ), ResolveTexture = name => name };
+
+	/// <summary>Fonts of two synthetic glyphs, 'W' and the space, each 10 pixels wide.</summary>
+	private static UiFonts Fonts()
+	{
+		var font = new FontAtlas( FontAtlasTests.CreateFont( 8, new FontAtlasTests.SyntheticGlyph( 'W', 10, 6, 0, 0, 10 ), new FontAtlasTests.SyntheticGlyph( ' ', 0, 0, 0, 0, 10 ) ) );
+		return new UiFonts( _ => font );
+	}
 
 	[TestMethod]
 	public void TheWindowFollowsTheTableAndKeepsEveryControlInsideIt() => WithScreens( ( screens, _, stack ) =>
@@ -238,7 +245,20 @@ public class OutboxWindowTests
 		((UiButton)screen.Find( "unmarkAll" )!).Clicked!();
 		((UiButton)screen.Find( "ok" )!).Clicked!();
 		Assert.AreSame( menu, stack.Top, "with nothing marked the tick closes the window" );
-		Assert.AreEqual( session.Status, ((UiLabel)menu.Find( "status" )!).Text(), "the tick's own outcome replaces the earlier window's message" );
+		var status = (UiLabel)menu.Find( "status" )!;
+		Assert.AreEqual( session.Status, status.Text(), "the tick's own outcome replaces the earlier window's message" );
+		// while a request runs, the status line shows the progress text it set (the original's progress message), then its outcome
+		var release = new System.Threading.Tasks.TaskCompletionSource<string?>();
+		session.Run( () => release.Task );
+		Assert.AreEqual( "...", status.Text(), "no progress text yet" );
+		typeof( OnlineSession ).GetProperty( nameof( OnlineSession.Status ) )!.SetValue( session, "Sending mails from outbox, please wait ..." );
+		Assert.AreEqual( "Sending mails from outbox, please wait ...", status.Text() );
+		release.SetResult( "" );
+		var until = DateTime.UtcNow + TimeSpan.FromSeconds( 10 );
+		while ( session.Busy > 0 && DateTime.UtcNow < until )
+			session.Pump();
+		Assert.AreEqual( 0, session.Busy );
+		Assert.AreEqual( "", status.Text(), "the send's progress closes with no count (0x4bc660)" );
 	} );
 
 	[TestMethod]
@@ -270,7 +290,24 @@ public class OutboxWindowTests
 			Assert.AreEqual( column.X + column.Width / 2, (xs.Max() + xs.Min()) / 2, 0.01f );
 			Assert.AreEqual( 294 + (first + 0.5f) * ParkHud.BuyRowHeight, (ys.Max() + ys.Min()) / 2, 0.01f );
 		}
-		Assert.IsFalse( list.DrawCell( context, first, 0, CellRect( list, context, first, 0 ) ), "the title is drawn as the row's text" );
+	} );
+
+	[TestMethod]
+	public void ALongTitleStaysInsideItsColumn() => WithScreens( ( screens, session, stack ) =>
+	{
+		// eight seven-letter words: 63 characters, 630 pixels on one line at this scale
+		var title = string.Join( ' ', Enumerable.Repeat( "WWWWWWW", 8 ) );
+		session.Folders.Store( session.Folders.Outbox, Postcard.Create( "sender", new[] { "Bob" }, title, "Greetings", "English" ) );
+		screens.ShowOutbox();
+		var list = Cards( stack.Top! );
+		var context = Context( fonts: Fonts() );
+		context.Batch.Clear();
+		Assert.IsTrue( list.DrawCell!( context, 0, 0, CellRect( list, context, 0, 0 ) ) );
+		var glyphs = context.Batch.Glyphs;
+		Assert.IsTrue( glyphs.Count > 0, "the title is drawn" );
+		var titleColumnEnd = list.ScreenRect( context.Canvas ).X + (1194 - 826);
+		Assert.IsTrue( glyphs.Max( glyph => glyph.X + glyph.Width ) <= titleColumnEnd + 0.5f,
+			"a long title is fitted into its column, as the buy list fits its names, instead of running over the date and the marks" );
 	} );
 
 	[TestMethod]
@@ -282,11 +319,16 @@ public class OutboxWindowTests
 		var screen = stack.Top!;
 		var scrollers = new[] { "cardsScroll", "cardsUp", "cardsDown" };
 		Assert.IsTrue( scrollers.All( id => !screen.Find( id )!.Visible ), "fourteen cards fit" );
-		stack.Pop();
+		var marked = Row( screen, "Card3" ).Index;
+		Cards( screen ).CellClicked!( marked, 3 );
+		// a card that arrives while the window is open (the outbox is re-read every second) brings the slider with the next frame
 		Store( session, "Card14" );
-		screens.ShowOutbox();
-		screen = stack.Top!;
-		Assert.IsTrue( scrollers.All( id => screen.Find( id )!.Visible ), "the fifteenth does not (0x664495)" );
+		var context = Context();
+		context.Delta = 1.5f;
+		screen.Updating!( context );
+		Assert.AreEqual( 15, Cards( screen ).Rows().Count );
+		Assert.IsTrue( scrollers.All( id => screen.Find( id )!.Visible ), "the fifteenth does not fit (0x664495)" );
+		Assert.AreEqual( Delete, Marks( screen, "Card3" ), "a mark keeps to its card across the re-read" );
 		((UiButton)screen.Find( "cardsDown" )!).Clicked!();
 		Assert.AreEqual( 1, Cards( screen ).FirstRow );
 	} );

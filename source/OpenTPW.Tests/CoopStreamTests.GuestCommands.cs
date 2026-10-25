@@ -328,6 +328,15 @@ public partial class CoopStreamTests
 		host.Host.Dispose();
 		host.Host = null;
 		Assert.AreSame( own, host.Level.Commands.Rights, "the park's own rights come back after the session" );
+		// a guest's park the same
+		guest.Enter();
+		var guestOwn = new AllowingAll();
+		guest.Level.Commands.Rights = guestOwn;
+		guest.Guest = new CoopGuestStream( guest.Level, guest.Link, () => clock );
+		Assert.IsInstanceOfType( guest.Level.Commands.Rights, typeof( CoopBuildRights ) );
+		guest.Guest.Dispose();
+		guest.Guest = null;
+		Assert.AreSame( guestOwn, guest.Level.Commands.Rights );
 	}
 
 	/// <summary>Rights that allow every command (a park's own policy before a session).</summary>

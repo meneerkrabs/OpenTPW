@@ -34,8 +34,12 @@ public static class UiImages
 		}
 		else if ( path.EndsWith( ".wct", StringComparison.OrdinalIgnoreCase ) )
 		{
-			var texture = new TextureFile( path ).Data;
+			var file = new TextureFile( path );
+			var texture = file.Data;
 			(width, height, data) = (texture.Width, texture.Height, (byte[])texture.Data.Clone());
+			// [BIN:TPW-EXE:0x590C40 state word] a texture with an alpha plane and a zero alpha byte (ipan, smallguage) is state 0x2756 whatever slot or model draws it: alpha blend with an alpha test at 0xF0/255
+			if ( file.AlphaType == TextureAlphaType.Cutout )
+				CutOut( data, width, height );
 		}
 		else
 			// png, tga and (Theme Park Inc) fsh from the game data
@@ -46,72 +50,47 @@ public static class UiImages
 		return (width, height, data);
 	}
 
-	/// <summary>Suffix of an image path whose texture slot has flag 0x2 (see <see cref="TransparentFlag"/>).</summary>
-	public const string BlackKeySuffix = "#black-key";
-
 	/// <summary>
-	/// Texture slot flag 0x2. Of the 185 ui.wad slots that set it, 184 textures carry their own alpha; the only
-	/// opaque one, <c>ipan</c> in <c>f_lobbutbg</c>, has a black background that the lobby panel shows through.
-	/// The same texture without the flag (w_dialog, f_train) is drawn opaque.
+	/// Texture slot flag 0x2. The state builder turns it into state bit 0x800000 (0x581790) and OpenTPW ignores it: no consumer of that bit was found in the state decoder 0x567620 (UI-034). Of the 185 ui.wad slots
+	/// that set it, all 185 textures carry their own alpha plane; <c>ipan</c> (the lobby panel's <c>f_lobbutbg</c>, and <c>w_dialog</c> and <c>f_train</c> without the flag) and <c>smallguage</c> are cut-outs.
 	/// </summary>
+	// [APPROX:UI-034] the slot flag 0x2 (state bit 0x800000, 0x581790) has no effect here: the draw state of every UI texture comes from its own alpha type (0x590C40) — evidence needed: the consumer of state bit 0x800000
 	public const uint TransparentFlag = 0x2;
 
-	/// <summary>Loads <paramref name="path"/>, which may carry <see cref="BlackKeySuffix"/>.</summary>
-	public static (int Width, int Height, byte[] Rgba) LoadKeyed( string path )
+	/// <summary>The alpha test of a cut-out texture (state 0x2756, reference 0xF0/255): texels below it are not drawn, the others keep their alpha; discarded texels take a neighbour's colour so linear filtering does not bleed them in.</summary>
+	public static void CutOut( byte[] rgba, int width, int height )
 	{
-		if ( !path.EndsWith( BlackKeySuffix, StringComparison.Ordinal ) )
-			return Load( path );
-		var (width, height, data) = Load( path[..^BlackKeySuffix.Length] );
-		var opaque = true;
-		for ( var pixel = 3; pixel < data.Length && opaque; pixel += 4 )
-			opaque = data[pixel] == 255;
-		// [APPROX:UI-034] a fully opaque texture on a transparent (flag 0x2) slot keys out black with a soft edge — evidence needed: the original's render state for flagged slots (0x567c10 sets alpha test and blend from record flag bits; that its flag 0x2 is the slot's is not shown)
-		if ( opaque )
-			KeyOutBlackSoft( data, width, height );
-		return (width, height, data);
+		var below = false;
+		for ( var pixel = 3; pixel < rgba.Length && !below; pixel += 4 )
+			below = rgba[pixel] < CutOutReference;
+		if ( !below )
+			return;
+		KeyOutAlpha( rgba, width, height, CutOutReference );
 	}
 
-	/// <summary>Channel value up to which a black-keyed texel is fully transparent.</summary>
-	public const int BlackKeyClear = 6;
-	/// <summary>Channel value from which a black-keyed texel is fully opaque.</summary>
-	public const int BlackKeySolid = 48;
-
-	/// <summary>
-	/// Black key for art drawn anti-aliased against black (the lobby panel's <c>ipan</c> discs fade into black
-	/// over a few texels). A plain key leaves that dark fade as a hard, opaque rim, which shows as steps when
-	/// the texture is magnified. Here texels whose brightest channel is at most <see cref="BlackKeyClear"/>
-	/// become transparent, texels from <see cref="BlackKeySolid"/> stay opaque, and the texels between get a
-	/// proportional alpha with their colour divided by it (un-premultiplied against black).
-	/// </summary>
-	public static void KeyOutBlackSoft( byte[] rgba, int width, int height )
-	{
-		for ( var pixel = 0; pixel < rgba.Length; pixel += 4 )
-		{
-			var brightest = Math.Max( rgba[pixel], Math.Max( rgba[pixel + 1], rgba[pixel + 2] ) );
-			if ( brightest <= BlackKeyClear || brightest >= BlackKeySolid )
-				continue;
-			var alpha = (brightest - BlackKeyClear) / (float)(BlackKeySolid - BlackKeyClear);
-			for ( var channel = 0; channel < 3; channel++ )
-				rgba[pixel + channel] = (byte)Math.Min( 255, MathF.Round( rgba[pixel + channel] / alpha ) );
-			rgba[pixel + 3] = (byte)MathF.Round( alpha * 255 );
-		}
-		// The fully transparent texels take a neighbour's colour for linear filtering.
-		KeyOut( rgba, width, height, ( r, g, b ) => r <= BlackKeyClear && g <= BlackKeyClear && b <= BlackKeyClear );
-	}
+	/// <summary>The alpha reference of a cut-out texture, 0xF0 (the table at 0x7012D8, index 2).</summary>
+	public const byte CutOutReference = 0xF0;
 
 	// [EXT:ui-linear-filtering] the pink key plus neighbour colour bleed make UI images safe for linear filtering at any output size; the original drew at its few fixed modes, so no original behaviour exists at OpenTPW's resolutions
 	public static void KeyOutPink( byte[] rgba, int width, int height ) =>
 		KeyOut( rgba, width, height, ( r, g, b ) => r == 255 && g == 0 && b == 255 );
 
 	/// <summary>Makes texels matching <paramref name="key"/> transparent and gives them an opaque neighbour's colour.</summary>
-	public static void KeyOut( byte[] rgba, int width, int height, Func<byte, byte, byte, bool> key )
+	public static void KeyOut( byte[] rgba, int width, int height, Func<byte, byte, byte, bool> key ) =>
+		KeyOut( rgba, width, height, ( r, g, b, _ ) => key( r, g, b ) );
+
+	/// <summary>Makes texels with an alpha below <paramref name="reference"/> transparent and gives them an opaque neighbour's colour.</summary>
+	public static void KeyOutAlpha( byte[] rgba, int width, int height, byte reference ) =>
+		KeyOut( rgba, width, height, ( _, _, _, a ) => a < reference );
+
+	private static void KeyOut( byte[] rgba, int width, int height, Func<byte, byte, byte, byte, bool> key )
 	{
 		var keyed = new bool[width * height];
 		var anyKeyed = false;
 		for ( var index = 0; index < keyed.Length; index++ )
 		{
 			var pixel = index * 4;
-			if ( key( rgba[pixel], rgba[pixel + 1], rgba[pixel + 2] ) )
+			if ( key( rgba[pixel], rgba[pixel + 1], rgba[pixel + 2], rgba[pixel + 3] ) )
 			{
 				keyed[index] = true;
 				anyKeyed = true;

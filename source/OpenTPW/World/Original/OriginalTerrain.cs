@@ -443,6 +443,24 @@ public sealed class OriginalTerrain : Entity
 			if ( mesh.Vertices.Length == 0 || mesh.Indices.Length == 0 || mesh.Materials.Length is 0 or > MaximumTextureSlots || mesh.Normals.Length != mesh.Vertices.Length || mesh.TexCoords.Length < mesh.Vertices.Length )
 				continue;
 			var names = mesh.Materials.Select( material => material.Name ).ToArray();
+			// [BIN:TPW-EXE:0x590C40 state word] a mesh with a translucent texture (the header of the texture's own file, WorldTranslucency) is one record of the original's sorted list: it is its own model,
+			// and the model draws its translucent faces after everything else (Model.Companions); the other meshes batch as they always did
+			var meshTextures = new Texture[names.Length];
+			for ( var material = 0; material < names.Length; material++ )
+			{
+				var before = textures.Count;
+				meshTextures[material] = LoadTexture( textures, names[material] );
+				if ( textures.Count != before )
+					yield return true;
+			}
+			var world = GetWorldMatrix( model, mesh.NodeIndex );
+			if ( meshTextures.Any( texture => WorldTranslucency.IsTranslucent( texture.AlphaType ) ) )
+			{
+				AddTranslucentMesh( mesh, names, meshTextures, world );
+				TerrainMeshCount++;
+				yield return true;
+				continue;
+			}
 			if ( batchTextures.Union( names, StringComparer.OrdinalIgnoreCase ).Count() > MaximumTextureSlots )
 				foreach ( var _ in FlushBatch( textures, batchTextures, batchVertices, batchIndices ) )
 					yield return true;
@@ -457,29 +475,55 @@ public sealed class OriginalTerrain : Entity
 				return slot;
 			} ).ToArray();
 
-			var world = GetWorldMatrix( model, mesh.NodeIndex );
 			var first = (uint)batchVertices.Count;
 			for ( var index = 0; index < mesh.Vertices.Length; index++ )
-			{
-				var source = mesh.Vertices[index];
-				var position = System.Numerics.Vector3.Transform( source.Position.GetSystemVector3(), world );
-				var normal = System.Numerics.Vector3.TransformNormal( mesh.Normals[index].GetSystemVector3(), world );
-				var materialIndex = (int)Math.Min( source.TextureIndex, (uint)mesh.Materials.Length - 1 );
-				batchVertices.Add( new Vertex
-				{
-					Position = OriginalParkPlacement.ToEngine( Park.Heightfield, position ),
-					Normal = normal.LengthSquared() > 0 ? System.Numerics.Vector3.Normalize( new System.Numerics.Vector3( normal.X, normal.Z, normal.Y ) ) : System.Numerics.Vector3.UnitZ,
-					TexCoords = mesh.TexCoords[index],
-					TexIndex = slotOfMaterial[materialIndex],
-					// [EXT:winter-snow-paths] the entrance plaza and its kerbs (grd_pav, grd_ctr, grd_krb) are walking surfaces: slush under snow, like the path layer
-					MatFlags = TextureSlotAddressing.VertexFlags( mesh.Materials[materialIndex].Flags ) | ( TextureSlotAddressing.IsPathLikeTexture( mesh.Materials[materialIndex].Name ) ? TextureSlotAddressing.SlushFlag : 0u )
-				} );
-			}
+				batchVertices.Add( MeshVertex( mesh, world, index, slotOfMaterial ) );
 			foreach ( var index in mesh.Indices )
 				batchIndices.Add( first + index );
 			TerrainMeshCount++;
 			yield return true;
 		}
+	}
+
+	/// <summary>One converted vertex of a terrain mesh: engine space, with its texture index taken from <paramref name="slotOfMaterial"/> by the vertex's material.</summary>
+	private Vertex MeshVertex( ModelFile.Mesh mesh, Matrix4x4 world, int index, int[] slotOfMaterial )
+	{
+		var source = mesh.Vertices[index];
+		var position = System.Numerics.Vector3.Transform( source.Position.GetSystemVector3(), world );
+		var normal = System.Numerics.Vector3.TransformNormal( mesh.Normals[index].GetSystemVector3(), world );
+		var materialIndex = (int)Math.Min( source.TextureIndex, (uint)mesh.Materials.Length - 1 );
+		return new Vertex
+		{
+			Position = OriginalParkPlacement.ToEngine( Park.Heightfield, position ),
+			Normal = normal.LengthSquared() > 0 ? System.Numerics.Vector3.Normalize( new System.Numerics.Vector3( normal.X, normal.Z, normal.Y ) ) : System.Numerics.Vector3.UnitZ,
+			TexCoords = mesh.TexCoords[index],
+			TexIndex = slotOfMaterial[materialIndex],
+			// [EXT:winter-snow-paths] the entrance plaza and its kerbs (grd_pav, grd_ctr, grd_krb) are walking surfaces: slush under snow, like the path layer
+			MatFlags = TextureSlotAddressing.VertexFlags( mesh.Materials[materialIndex].Flags ) | ( TextureSlotAddressing.IsPathLikeTexture( mesh.Materials[materialIndex].Name ) ? TextureSlotAddressing.SlushFlag : 0u )
+		};
+	}
+
+	/// <summary>Materials of the translucent meshes by their texture names: meshes with the same textures share one.</summary>
+	private readonly Dictionary<string, Material> translucentMaterials = new( StringComparer.OrdinalIgnoreCase );
+
+	/// <summary>A terrain mesh with a translucent texture as a model of its own; the model splits its translucent faces by texture and draws them in the translucent pass.</summary>
+	private void AddTranslucentMesh( ModelFile.Mesh mesh, string[] names, Texture[] meshTextures, Matrix4x4 world )
+	{
+		var key = string.Join( "|", names );
+		if ( !translucentMaterials.TryGetValue( key, out var material ) )
+		{
+			var slots = new Texture[MaximumTextureSlots];
+			for ( var index = 0; index < slots.Length; index++ )
+				slots[index] = index < meshTextures.Length ? meshTextures[index] : meshTextures[0];
+			var created = new Material<ObjectUniformBuffer>( "content/shaders/test.shader" );
+			created.Set( "Color", slots );
+			translucentMaterials[key] = material = created;
+		}
+		var identity = Enumerable.Range( 0, names.Length ).ToArray();
+		var vertices = new Vertex[mesh.Vertices.Length];
+		for ( var index = 0; index < vertices.Length; index++ )
+			vertices[index] = MeshVertex( mesh, world, index, identity );
+		AddPart( new Model( vertices, mesh.Indices.ToArray(), material ), $"terrain translucent mesh {models.Count}" );
 	}
 
 	/// <summary>Makes a batch's model; a value after each of its textures.</summary>

@@ -361,7 +361,11 @@ public class OriginalObject : Entity, IPointLightSource, IObjectPickShape
 					if ( sign?.TextureFor( part.Textures[index] ) != null || (fallbackBaseSign != null && ObjectSigns.IsSignSlot( part.Textures[index] )) )
 						continue;
 					if ( frameSlots.TryGetValue( part.TextureSlots[index], out var frames ) )
+					{
 						frames.Bindings.Add( (material, index) );
+						// the model classifies the slot by its most translucent frame (Material.AddSlotAlternatives)
+						material.AddSlotAlternatives( index, frames.Frames );
+					}
 				}
 			var dynamic = part.MeshIndex >= 0 && vertexAnimated[part.MeshIndex];
 			Model model;

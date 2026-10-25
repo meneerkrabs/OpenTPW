@@ -190,6 +190,21 @@ public partial class CoopJoinSessionTests
 		} );
 	}
 
+	/// <summary>The host invites <paramref name="player"/> and waits a second for the server's refusal of an invitation; false when none came.</summary>
+	private static async Task<bool> InviteRefused( CoopLinkTests.Player host, string player )
+	{
+		Assert.IsTrue( host.Link.Invite( player ) );
+		var until = DateTime.UtcNow + TimeSpan.FromSeconds( 1 );
+		while ( DateTime.UtcNow < until )
+		{
+			host.Session.Pump();
+			if ( host.Errors.Any( error => error.Request == CoopMessageType.Invite ) )
+				return true;
+			await Task.Delay( 10 );
+		}
+		return false;
+	}
+
 	[TestMethod]
 	public async Task AnInvitationGoesOnlyToTheLobbyAndClosesWhenTheLobbyIsLeft()
 	{
@@ -222,7 +237,11 @@ public partial class CoopJoinSessionTests
 			{
 				flow.StepCoopLobby();
 				Assert.AreEqual( CoopLinkState.Closed, guestPlayer.Link.State );
-				Assert.IsTrue( hostPlayer.Link.Invite( "Guest" ) );
+				// the server takes the closed link off its players a moment after the close: an invitation that comes first still goes to that link, unanswered, so the host
+				// invites again until the server's answer comes (a few at most, well within the invitations' quota)
+				var refused = false;
+				for ( var attempt = 0; attempt < 10 && !refused; attempt++ )
+					refused = await InviteRefused( hostPlayer, "Guest" );
 				await CoopLinkTests.Until( () => hostPlayer.Errors.Any( error => error.Request == CoopMessageType.Invite ), "the host's refusal", hostPlayer );
 				Assert.AreEqual( CoopReason.NotOnline, hostPlayer.Errors.Last().Reason );
 			}

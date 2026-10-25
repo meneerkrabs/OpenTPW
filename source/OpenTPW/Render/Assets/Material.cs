@@ -46,6 +46,7 @@ public partial class Material : Asset
 		Shader = new Shader( shaderPath );
 		Shader.OnRecompile += () => SetupResources( flags );
 		ReceivesPointLights = ShaderReadsPointLights( shaderPath );
+		IsWorldShader = System.IO.Path.GetFileName( shaderPath ).Equals( "test.shader", StringComparison.OrdinalIgnoreCase );
 
 		All.Add( this );
 		SetupResources( flags );
@@ -57,6 +58,7 @@ public partial class Material : Asset
 		Shader.OnRecompile += () => SetupResources( flags );
 		UniformBufferType = uniformBufferType;
 		ReceivesPointLights = ShaderReadsPointLights( shaderPath );
+		IsWorldShader = System.IO.Path.GetFileName( shaderPath ).Equals( "test.shader", StringComparison.OrdinalIgnoreCase );
 
 		All.Add( this );
 		SetupResources( flags );
@@ -121,8 +123,24 @@ public partial class Material : Asset
 		return Device.ResourceFactory.CreateSampler( ColorSampler.Describe( type, CompatibilityRuntime.RenderQuality ) );
 	}
 
+	private byte[]? lastBlock;
+
+	/// <summary>
+	/// <see cref="Set{T}(string, T)"/> that skips the upload when the block is the one the buffer already holds: the draws of one frame that share their model matrix, camera and lights (the translucent
+	/// meshes of a terrain, the faces of one object) write the block once. Every other write to the buffer forgets the remembered block.
+	/// </summary>
+	internal void SetUnchanged<T>( string name, in T value ) where T : unmanaged
+	{
+		var bytes = System.Runtime.InteropServices.MemoryMarshal.AsBytes( new ReadOnlySpan<T>( in value ) );
+		if ( lastBlock != null && bytes.SequenceEqual( lastBlock ) )
+			return;
+		Set( name, value );
+		lastBlock = bytes.ToArray();
+	}
+
 	public void Set<T>( string name, T obj ) where T : unmanaged
 	{
+		lastBlock = null;
 		Render.UpdateUniform( ScratchBuffer, obj );
 		Bind( name, ScratchBuffer );
 	}
@@ -132,6 +150,50 @@ public partial class Material : Asset
 	/// coasters and tracks, pool-deck.shader and pool-basin.shader for the pools). The sprite, particle, sky and water shaders do not, and a draw of theirs never uploads lights.
 	/// </summary>
 	public bool ReceivesPointLights { get; }
+
+	/// <summary>Whether this is the park's lit world shader (test.shader), which reads the alpha test flags of <see cref="WorldTranslucency"/> from the vertices.</summary>
+	internal bool IsWorldShader { get; }
+
+	/// <summary>
+	/// The alpha type of each texture bound as the shader's "Color" array (<see cref="Texture.AlphaType"/>, as the textures were when the model was made), or null when this is not the world shader,
+	/// has no such array or every texture is opaque: the geometry drawn with it then needs no alpha test flag and no translucent pass.
+	/// </summary>
+	internal TextureAlphaType[]? WorldSlotTypes()
+	{
+		if ( !IsWorldShader || !_boundTextureArrays.TryGetValue( "Color", out var bound ) )
+			return null;
+		var types = new TextureAlphaType[bound.Textures.Length];
+		var any = false;
+		for ( var index = 0; index < types.Length; index++ )
+		{
+			var type = bound.Textures[index].AlphaType;
+			if ( slotAlternatives != null && slotAlternatives[index] > type )
+				type = slotAlternatives[index];
+			any |= ( types[index] = type ) != TextureAlphaType.Opaque;
+		}
+		return any ? types : null;
+	}
+
+	private TextureAlphaType[]? slotAlternatives;
+
+	/// <summary>
+	/// The frames a texture-frame animation can show in a slot of the "Color" array. A model made afterwards classifies the slot by the most translucent of its frames, so the faces of a slot that
+	/// is translucent in some frame are split off and drawn in the translucent pass whenever the slot's current texture is translucent (<see cref="CurrentSlotType"/>).
+	/// </summary>
+	// [BIN:TPW-EXE:0x581790 state word] the original rebuilds the face's state word from the texture the slot shows now (0x590C40), so a slot whose frames differ in alpha type changes pass with its frame
+	internal void AddSlotAlternatives( int slot, IEnumerable<Texture?> frames )
+	{
+		if ( !IsWorldShader || !_boundTextureArrays.TryGetValue( "Color", out var bound ) || (uint)slot >= (uint)bound.Textures.Length )
+			return;
+		slotAlternatives ??= new TextureAlphaType[bound.Textures.Length];
+		foreach ( var frame in frames )
+			if ( frame != null && frame.AlphaType > slotAlternatives[slot] )
+				slotAlternatives[slot] = frame.AlphaType;
+	}
+
+	/// <summary>The alpha type of the texture a slot of the "Color" array shows now (opaque without the array).</summary>
+	internal TextureAlphaType CurrentSlotType( int slot )
+		=> _boundTextureArrays.TryGetValue( "Color", out var bound ) && (uint)slot < (uint)bound.Textures.Length ? bound.Textures[slot].AlphaType : TextureAlphaType.Opaque;
 
 	private static bool ShaderReadsPointLights( string shaderPath )
 	{
@@ -146,6 +208,7 @@ public partial class Material : Asset
 	internal void Set( string name, ref LitObjectUniformBuffer value, int lightCount )
 	{
 		value.Base.LightCount = lightCount;
+		lastBlock = null;
 		Render.UpdateUniform( ScratchBuffer, ref value, LitObjectUniformBuffer.UploadSize( lightCount ) );
 		Bind( name, ScratchBuffer );
 	}
@@ -269,6 +332,7 @@ public partial class Material : Asset
 		ClearResourceSets();
 		var oldPipeline = Pipeline;
 		var oldBuffer = ScratchBuffer;
+		lastBlock = null;
 		var oldLayouts = _resourceLayouts;
 		if ( oldPipeline != null )
 			Render.ScheduleDelete( () =>

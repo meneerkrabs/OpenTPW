@@ -85,17 +85,17 @@ public class UiMaterialRunTests
 	}
 
 	[TestMethod]
-	public void RealDrawAndPreparationUseEachRunsResourceKeyAndRetainShape()
+	public void RealDrawAndPreparationShareOneResourceKeyAndRetainShape()
 	{
 		var model = new UiModel( Source( ("shared", false, 0), ("shared", true, 0), ("shared", false, 0) ), "w_big" );
 		var context = Context( model );
 		var rect = new UiRect( 0, 0, 24, 4 );
 		Assert.IsTrue( context.DrawModel( "w_big", 0, rect ) );
 		var plain = "/ui/textures/shared.wct";
-		CollectionAssert.AreEqual( new[] { plain, plain + UiImages.BlackKeySuffix, plain }, context.Batch.Draws.Select( draw => draw.Texture.ImagePath ).ToArray() );
+		CollectionAssert.AreEqual( new[] { plain }, context.Batch.Draws.Select( draw => draw.Texture.ImagePath ).ToArray() );
 		var expected = new[] { new NVector2( 0, 0 ), new NVector2( 4, 0 ), new NVector2( 0, 4 ), new NVector2( 10, 0 ), new NVector2( 14, 0 ), new NVector2( 10, 4 ), new NVector2( 20, 0 ), new NVector2( 24, 0 ), new NVector2( 20, 4 ) };
 		CollectionAssert.AreEqual( expected, context.Batch.Draws.SelectMany( draw => draw.Vertices ).Select( vertex => vertex.Position ).ToArray() );
-		CollectionAssert.AreEquivalent( new[] { plain, plain + UiImages.BlackKeySuffix }, ParkHud.BuyWindowImagePaths( context ).ToArray() );
+		CollectionAssert.AreEquivalent( new[] { plain }, ParkHud.BuyWindowImagePaths( context ).ToArray() );
 		var image = new UiModelImage { Model = "w_big", Bounds = rect, Anchor = UiAnchor.TopLeft, CoversShape = true };
 		image.Draw( context, false, false );
 		foreach ( var x in new[] { 1f, 11f, 21f } )

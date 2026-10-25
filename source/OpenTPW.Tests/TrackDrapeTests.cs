@@ -228,4 +228,36 @@ public class TrackDrapeTests
 		}
 		Assert.IsTrue( hits > 10, $"{hits} probes hit the bridge's faces" );
 	}
+
+	[TestMethod]
+	public void NoKitFaceIndexesTheCornerNormalBlockSoTheDrapeRefreshOnlyFeedsTheFaceSampler()
+	{
+		JungleKarts();
+		var (meshes, faces) = (0, 0);
+		foreach ( var (type, family) in new[] { (2, TrackFamily.Water), (1, TrackFamily.Kart) } )
+		{
+			foreach ( var entry in ObjectCatalog.Themes.SelectMany( theme => ObjectCatalog.Load( theme ).Entries )
+				.Where( item => !item.IsBonus && item.Settings.GetInt( "Bumper.WhichTrackType" ) == type && item.Category == ObjectCategory.Ride ) )
+			{
+				var kit = TrackPieceKit.Load( entry.FileSystem, entry.ArchivePath, family );
+				foreach ( var piece in kit.Entries.Where( item => item.Index != 0 ) )
+				{
+					if ( kit.GetModel( piece.Index ) is not { } model )
+						continue;
+					foreach ( var mesh in model.Meshes )
+					{
+						meshes++;
+						foreach ( var word in mesh.FaceNormalIndices )
+						{
+							// [BIN:TPW-EXE:0x00473A40 face normals] a face's first word minus its top bit indexes the normal block (corner normals first, then face normals); 0x473A40 rewrites only that entry
+							var index = word & 0x7FFF;
+							Assert.IsTrue( index >= mesh.CornerNormals.Length && index < mesh.CornerNormals.Length + mesh.FaceNormals.Length, $"{entry.DisplayName} {piece.Name} {mesh.Name}: face normal index {index}" );
+							faces++;
+						}
+					}
+				}
+			}
+		}
+		Assert.AreEqual( "784 21214", $"{meshes} {faces}" );
+	}
 }

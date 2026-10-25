@@ -88,14 +88,18 @@ public sealed class TrackRenderer : IDisposable
 		public required ObjectAnimator Animator { get; init; }
 		public double Shown;
 		public bool Used;
-		/// <summary>The copies of the moving parts, by tile and part index, with the animator version they show (each starts from its tile's draped vertices).</summary>
-		public readonly Dictionary<(int X, int Y, int Part), (Model Model, Vertex[] Vertices, int Version)> Copies = new();
+		/// <summary>
+		/// The copies of the moving parts with the animator version they show: one shared by the undraped tiles per part (tile -1, -1), and one per tile and part where the drape moved
+		/// the part's vertices (it starts from them). <see cref="UsedCopies"/> are those the last rebuild drew.
+		/// </summary>
+		public readonly Dictionary<(int X, int Y, int Part), (Model Model, Vertex[] Vertices, int Version, Vertex[] Source)> Copies = new();
+		public readonly HashSet<(int X, int Y, int Part)> UsedCopies = new();
 	}
 
 	/// <summary>One placed tile's drape: its draped vertices per part (null where nothing moves), the vehicle surface of its piece on the draped faces, and the models built from them.</summary>
 	private sealed class TileDrape
 	{
-		public required (int Piece, int Rotation, int Signature) Key { get; init; }
+		public required (int Piece, int Rotation) Key { get; init; }
 		public required Vertex[]?[] Vertices { get; init; }
 		public required TrackSurface Surface { get; init; }
 		/// <summary>The owned models of the draped parts, built when the tile is drawn (a part that nothing lifts uses the piece's shared model).</summary>
@@ -136,6 +140,8 @@ public sealed class TrackRenderer : IDisposable
 	private readonly Func<float, float, float>? drapeHeight;
 	private readonly Dictionary<int, PieceGeometry> pieces = new();
 	private readonly Dictionary<(int X, int Y), TileDrape> drapes = new();
+	/// <summary>Drapes a probe or a rebuild replaced while entities may still draw their models: released after the next rebuild's entities are made.</summary>
+	private readonly List<TileDrape> retired = new();
 	private readonly Dictionary<int, PieceGeometry?> vehicleMeshes = new();
 	private readonly List<ModelEntity> tiles = new();
 	private readonly Dictionary<(int Piece, double Start, double? Stop), PieceClipGroup> clipGroups = new();
@@ -216,11 +222,10 @@ public sealed class TrackRenderer : IDisposable
 		tiles.Clear();
 		foreach ( var drape in drapes.Values )
 			drape.Used = false;
-		// a tile's moving copies start from its draped vertices, so every copy is built again with the tiles (the groups' animators and clocks stay)
 		foreach ( var group in clipGroups.Values )
 		{
 			group.Used = false;
-			ReleaseCopies( group );
+			group.UsedCopies.Clear();
 		}
 		if ( kit != null )
 		{
@@ -239,7 +244,7 @@ public sealed class TrackRenderer : IDisposable
 				for ( var index = 0; index < geometry.Parts.Count; index++ )
 				{
 					var model = group != null && geometry.UvMeshes[geometry.Parts[index].Mesh]
-						? AddCopy( group, (x, y, index), geometry.Parts[index], drape.Vertices[index] ?? geometry.Parts[index].Vertices )
+						? CopyFor( group, drape.Vertices[index] == null ? (-1, -1, index) : (x, y, index), geometry.Parts[index], drape.Vertices[index] ?? geometry.Parts[index].Vertices )
 						: ModelOf( drape, geometry, index );
 					tiles.Add( new ModelEntity { Model = model, Name = $"track:{x},{y}", SnowSurface = SnowCover.PathSurface, TransformOverride = transform, Position = new Vector3( transform.M41, transform.M42, transform.M43 ) } );
 				}
@@ -250,23 +255,38 @@ public sealed class TrackRenderer : IDisposable
 			drapes[key].ReleaseModels();
 			drapes.Remove( key );
 		}
+		// the entities drawing the replaced drapes and unused copies are gone now
+		foreach ( var drape in retired )
+			drape.ReleaseModels();
+		retired.Clear();
 		foreach ( var key in clipGroups.Where( pair => !pair.Value.Used ).Select( pair => pair.Key ).ToList() )
 		{
 			ReleaseGroup( clipGroups[key] );
 			clipGroups.Remove( key );
 		}
+		foreach ( var group in clipGroups.Values )
+		{
+			foreach ( var key in group.Copies.Keys.Where( key => !group.UsedCopies.Contains( key ) ).ToList() )
+			{
+				group.Copies[key].Model.ReleaseBuffers();
+				group.Copies.Remove( key );
+			}
+		}
 	}
 
 	/// <summary>
-	/// The drape of the tile whose origin cell is (<paramref name="x"/>, <paramref name="y"/>), built on first use and kept while the piece, the rotation and the landscape under the tile stay: every part's
-	/// vertices lifted onto the landscape, and the piece's vehicle surface on the lifted faces.
+	/// The drape of the tile whose origin cell is (<paramref name="x"/>, <paramref name="y"/>), built on first use from the landscape and kept while the piece and its rotation stay: every part's
+	/// vertices lifted onto the landscape, and the piece's vehicle surface on the lifted faces. A drape it replaces is released with the next rebuild, since entities may still draw it.
 	/// </summary>
 	private TileDrape DrapeOf( int x, int y, int piece, int rotation, PieceGeometry geometry )
 	{
-		var key = (piece, rotation, TerrainSignature( x, y ));
-		if ( drapes.TryGetValue( (x, y), out var cached ) && cached.Key == key )
-			return cached;
-		cached?.ReleaseModels();
+		var key = (piece, rotation);
+		if ( drapes.TryGetValue( (x, y), out var cached ) )
+		{
+			if ( cached.Key == key )
+				return cached;
+			retired.Add( cached );
+		}
 		var lift = TrackDrape.Lift( x, y, rotation, TileHeight( x, y ), DrapeTerrain );
 		var drape = new TileDrape( geometry.Parts.Count )
 		{
@@ -306,18 +326,6 @@ public sealed class TrackRenderer : IDisposable
 		return groundHeight( Math.Max( 0, (int)MathF.Floor( x / 10 ) ), Math.Max( 0, (int)MathF.Floor( y / 10 ) ) );
 	}
 
-	/// <summary>A number that changes when the landscape the tile at (<paramref name="x"/>, <paramref name="y"/>) drapes onto does: the heights of the corners its 2 × 2 cells and their far neighbours read.</summary>
-	private int TerrainSignature( int x, int y )
-	{
-		var hash = new HashCode();
-		for ( var dx = 0; dx <= 3; dx++ )
-		{
-			for ( var dy = 0; dy <= 3; dy++ )
-				hash.Add( cornerHeight != null ? cornerHeight( x + dx, y + dy ) : groundHeight( x + Math.Min( dx, 2 ), y + Math.Min( dy, 2 ) ) );
-		}
-		return hash.ToHashCode();
-	}
-
 	/// <summary>The clip group of the tiles of <paramref name="piece"/> that started (and froze) with <paramref name="play"/>, created on first use with the clip started at its frame 0.</summary>
 	// [BIN:TPW-EXE:0x0052A490 forward piece walk] every piece the walk passes gets 0x004732A0(instance, 5, 0, 7, 1.0, 0): animation 5 (the mesh's m clip), variant 0, flags 7 (loop, at once), speed 1, channel 0
 	private PieceClipGroup ClipGroup( int piece, PieceGeometry geometry, (ModelAnimation Clip, string Name) water, TrackPieceAnimations.Play play )
@@ -334,12 +342,22 @@ public sealed class TrackRenderer : IDisposable
 		return group;
 	}
 
-	/// <summary>A tile's copy of a moving part, starting from the tile's draped vertices (its texture coordinates are written by <see cref="PlayClips"/>).</summary>
-	private static Model AddCopy( PieceClipGroup group, (int X, int Y, int Part) key, PiecePart part, Vertex[] source )
+	/// <summary>
+	/// The copy of a moving part a tile draws: the group's shared copy (key tile -1, -1) for an undraped part, the tile's own for a draped one. It is kept across rebuilds while its
+	/// source vertices are the same array, so a rebuild neither reallocates nor re-uploads it.
+	/// </summary>
+	private static Model CopyFor( PieceClipGroup group, (int X, int Y, int Part) key, PiecePart part, Vertex[] source )
 	{
+		group.UsedCopies.Add( key );
+		if ( group.Copies.TryGetValue( key, out var existing ) )
+		{
+			if ( ReferenceEquals( existing.Source, source ) )
+				return existing.Model;
+			existing.Model.ReleaseBuffers();
+		}
 		var vertices = (Vertex[])source.Clone();
 		var model = new Model( vertices, part.Indices, part.Material, true );
-		group.Copies[key] = (model, vertices, -1);
+		group.Copies[key] = (model, vertices, -1, source);
 		return model;
 	}
 
@@ -378,6 +396,7 @@ public sealed class TrackRenderer : IDisposable
 		foreach ( var copy in group.Copies.Values )
 			copy.Model.ReleaseBuffers();
 		group.Copies.Clear();
+		group.UsedCopies.Clear();
 	}
 
 	private static void ReleaseGroup( PieceClipGroup group ) => ReleaseCopies( group );
@@ -899,9 +918,10 @@ public sealed class TrackRenderer : IDisposable
 		foreach ( var group in clipGroups.Values )
 			ReleaseGroup( group );
 		clipGroups.Clear();
-		foreach ( var drape in drapes.Values )
+		foreach ( var drape in drapes.Values.Concat( retired ) )
 			drape.ReleaseModels();
 		drapes.Clear();
+		retired.Clear();
 		foreach ( var geometry in pieces.Values.Concat( vehicleMeshes.Values ).Where( item => item != null ) )
 		{
 			foreach ( var part in geometry!.Parts )

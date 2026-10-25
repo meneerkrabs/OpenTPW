@@ -152,4 +152,44 @@ public class LobbyEffectsTests
 		effects.Step( 1f / 120f, new[] { jungle }, 0, 0 );
 		Assert.AreEqual( reference.Draw(), effects.Draw(), "half a tick draws nothing" );
 	}
+
+	private sealed class Probe : Entity
+	{
+		private readonly System.Collections.Generic.List<string> order;
+		private readonly string name;
+		public Probe( System.Collections.Generic.List<string> order, string name ) { this.order = order; this.name = name; }
+		protected override void OnRender() => order.Add( name );
+	}
+
+	/// <summary>[BIN:TPW-EXE:0x582ad0] the flash quad is drawn after the entities and before the bolts and the rain, so they stay bright on the inverted frame.</summary>
+	[TestMethod]
+	public void TheFlashQuadIsDrawnAfterTheEntitiesAndBeforeTheWeather()
+	{
+		var order = new System.Collections.Generic.List<string>();
+		var weather = new Probe( order, "weather" );
+		var a = new Probe( order, "a" );
+		try
+		{
+			// the weather renderer is listed first, yet it draws last
+			GameFlow.RenderLobbyLayers( new Entity[] { weather, a }, weather, flash: true, () => order.Add( "flash" ) );
+			CollectionAssert.AreEqual( new[] { "a", "flash", "weather" }, order );
+
+			order.Clear();
+			GameFlow.RenderLobbyLayers( new Entity[] { a, weather }, weather, flash: false, () => order.Add( "flash" ) );
+			CollectionAssert.AreEqual( new[] { "a", "weather" }, order, "without a strike there is no quad" );
+
+			order.Clear();
+			GameFlow.RenderLobbyLayers( new Entity[] { a }, weather, flash: true, () => order.Add( "flash" ) );
+			CollectionAssert.AreEqual( new[] { "a", "flash" }, order, "a weather renderer outside the snapshot is not drawn" );
+
+			order.Clear();
+			GameFlow.RenderLobbyLayers( new Entity[] { a }, null, flash: true, () => order.Add( "flash" ) );
+			CollectionAssert.AreEqual( new[] { "a", "flash" }, order, "a lobby without a weather renderer still flashes" );
+		}
+		finally
+		{
+			weather.Delete();
+			a.Delete();
+		}
+	}
 }

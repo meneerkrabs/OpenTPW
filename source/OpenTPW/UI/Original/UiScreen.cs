@@ -112,6 +112,10 @@ public class UiScreen
 	public UiElement? HitTest( UiCanvas canvas, NVector2 point ) =>
 		elements.LastOrDefault( element => element.Visible && element.Focusable && element.ScreenRect( canvas ).Contains( point ) );
 
+	/// <summary>The help of the topmost disabled element under <paramref name="point"/> that shows it while disabled (<see cref="UiElement.HelpWhenDisabled"/>), else null.</summary>
+	internal string? DisabledHelpAt( UiCanvas canvas, NVector2 point ) => point.X < 0 ? null
+		: elements.LastOrDefault( element => element.Visible && !element.Enabled && element.HelpWhenDisabled && element.ScreenRect( canvas ).Contains( point ) )?.CurrentHelp;
+
 	/// <summary>Whether <paramref name="point"/> lies on any visible element (used to keep clicks off the park).</summary>
 	public bool Covers( UiCanvas canvas, NVector2 point ) =>
 		Modal || elements.Any( element => element.Visible && element.CoversPoint( canvas, point ) );
@@ -145,7 +149,7 @@ public class UiScreen
 		{
 			if ( capturedClick && (pressed is { Enabled: false } or { Visible: false } || !input.LeftDown && !input.LeftPressed && !input.LeftReleased) )
 				CancelCapturedPress();
-			context.HoverHelp = hit?.CurrentHelp;
+			context.HoverHelp = hit?.CurrentHelp ?? DisabledHelpAt( canvas, input.Mouse );
 			// A text field keeps the keyboard focus while the mouse merely passes over other elements.
 			var typing = Focused is UiTextField { Visible: true, Enabled: true };
 			// a field over the park view (the chat entry) takes the keys only when clicked, and the pointer resting on it leaves nothing else focused, so Enter there

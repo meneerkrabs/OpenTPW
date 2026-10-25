@@ -401,6 +401,10 @@ public enum OpenTpwText
 	ExtensionPoolsName,
 	/// <summary>[EXT:save-extension-switch] The load dialog's question that switches content extensions on and loads ({0}: their names).</summary>
 	ExtensionSwitchTurnOnQuestion,
+	/// <summary>[EXT:mods] The visit dialog's button that switches content extensions on and visits the park ({0}: their names).</summary>
+	ExtensionVisitTurnOn,
+	/// <summary>[EXT:mods] The visit dialog's question that switches content extensions on and visits the park ({0}: their names).</summary>
+	ExtensionVisitTurnOnQuestion,
 	/// <summary>[EXT:extensions-apply-at-load] The Extensions and mods screen's notice when only extensions changed and no park runs: they apply to the next park, no restart.</summary>
 	ModsSavedNextPark,
 	/// <summary>[EXT:extensions-apply-at-load] The same notice while a park runs: the changes apply when the player leaves it or loads another park.</summary>
@@ -1094,6 +1098,11 @@ public static class SupplementaryStrings
 		[OpenTpwText.ExtensionSwitchTurnOnQuestion] = new[] { "Turn {0} on and load the park?", "Slå {0} til og indlæs parken?", "{0} aanzetten en het park laden?", "Activer {0} et charger le parc ?",
 			"{0} einschalten und den Park laden?", "{0}을(를) 켜고 공원을 불러오시겠습니까?", "Włączyć {0} i wczytać park?", "¿Activar {0} y cargar el parque?", "Slå på {0} och läsa in parken?",
 			"Attivare {0} e caricare il parco?", "להפעיל את {0} ולטעון את הפארק?" },
+		[OpenTpwText.ExtensionVisitTurnOn] = new[] { "Turn {0} on and visit", "Slå {0} til og besøg", "Zet {0} aan en bezoek", "Activer {0} et visiter", "{0} einschalten und besuchen", "{0} 켜고 방문하기",
+			"Włącz {0} i odwiedź", "Activar {0} y visitar", "Slå på {0} och besök", "Attiva {0} e visita", "הפעל את {0} ובקר" },
+		[OpenTpwText.ExtensionVisitTurnOnQuestion] = new[] { "Turn {0} on and visit the park?", "Slå {0} til og besøg parken?", "{0} aanzetten en het park bezoeken?", "Activer {0} et visiter le parc ?",
+			"{0} einschalten und den Park besuchen?", "{0}을(를) 켜고 공원을 방문하시겠습니까?", "Włączyć {0} i odwiedzić park?", "¿Activar {0} y visitar el parque?", "Slå på {0} och besöka parken?",
+			"Attivare {0} e visitare il parco?", "להפעיל את {0} ולבקר בפארק?" },
 		[OpenTpwText.ModsSavedNextPark] = new[] { "Extensions saved\n\nThe changes apply to the next park you start or load. No restart is needed.",
 			"Udvidelser gemt\n\nÆndringerne gælder for den næste park, du starter eller indlæser. Du behøver ikke genstarte.",
 			"Extensies opgeslagen\n\nDe wijzigingen gelden voor het volgende park dat je start of laadt. Opnieuw starten is niet nodig.",

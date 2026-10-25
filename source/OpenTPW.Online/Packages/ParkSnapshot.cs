@@ -28,13 +28,15 @@ public static class ContentKinds
 /// <param name="Payload">The serialized park state.</param>
 /// <param name="RequiredContent">Content that must exist locally to show the park.</param>
 /// <param name="Flags">Compatibility flags (see <see cref="CompatibilityFlags"/>).</param>
+/// <param name="Extensions">[EXT:mods] The official OpenTPW extensions the park uses (<see cref="ExtensionUse"/>), or null when it uses none.</param>
 public sealed record ParkSnapshot(
 	string PayloadFormat,
 	int PayloadVersion,
 	string Level,
 	byte[] Payload,
 	IReadOnlyList<RequiredContent> RequiredContent,
-	IReadOnlyList<string> Flags );
+	IReadOnlyList<string> Flags,
+	IReadOnlyList<ExtensionUse>? Extensions = null );
 
 /// <summary>Implemented by whatever owns the live park (the level, or the economy slice's save model).</summary>
 public interface IParkSnapshotSource

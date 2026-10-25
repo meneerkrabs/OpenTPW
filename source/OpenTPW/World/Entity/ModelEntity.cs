@@ -12,26 +12,8 @@ public partial class ModelEntity : Entity
 	/// <summary>Not drawn while set (a scene that is kept loaded but not shown, or an MD2 mesh whose node-state bit 0x10 is set).</summary>
 	public bool Hidden { get; set; }
 
-	/// <summary>
-	/// Whether the model is world geometry with translucent textures: the level draws it after every other entity, far to near, instead of at its place in the entity list
-	/// (<see cref="Level.WorldPassOrder"/>, the original's translucent pass, <see cref="WorldTranslucency"/>).
-	/// </summary>
-	public bool Translucent { get; set; }
-
 	/// <summary>The model matrix the draw uses.</summary>
 	internal System.Numerics.Matrix4x4 DrawMatrix => TransformOverride ?? ModelMatrix;
-
-	/// <summary>
-	/// The depth that orders this translucent entity among the others: the clip-space w of the mean of its model's vertices, so the mean vertex depth that the original sorts its deferred records by
-	/// (0x582AD0). Larger is farther. 0 for an entity without a model.
-	/// </summary>
-	internal float TranslucentDepth( in System.Numerics.Matrix4x4 viewProjection )
-	{
-		if ( Model?.DepthCentre is not { } centre )
-			return 0f;
-		var matrix = DrawMatrix * viewProjection;
-		return WorldTranslucency.Depth( centre, matrix );
-	}
 
 	/// <summary>Light position for scenes without a level sun (e.g. the online globe).</summary>
 	public Vector3? LightPosition { get; set; }
@@ -92,9 +74,20 @@ public partial class ModelEntity : Entity
 			return;
 		}
 		DrawnParts++;
+
+		if ( Model.HasGeometry )
+			DrawModel( Model, model );
+		// [BIN:TPW-EXE:0x582AD0 deferred records] the faces with a translucent texture are drawn after everything else, far to near (WorldPass); outside a level's pass (nothing collects them) they are drawn here
+		foreach ( var companion in Model.Companions )
+			if ( !WorldPass.Submit( this, companion, model ) )
+				DrawModel( companion, model );
+	}
+
+	/// <summary>Draws <paramref name="drawn"/> (this entity's model or one of its translucent companions) with this entity's uniforms at <paramref name="model"/>.</summary>
+	internal void DrawModel( Model drawn, System.Numerics.Matrix4x4 model )
+	{
 		// [BIN:TPW-EXE:0x565590 -> 0x565490 deferred batch] the triangles of a translucent part are drawn far to near by the sum of their corner depths
-		if ( Translucent )
-			Model.OrderTriangles( model * Camera.ViewMatrix * Camera.ProjMatrix );
+		drawn.OrderTriangles( model * Camera.ViewMatrix * Camera.ProjMatrix );
 
 		var uniformBuffer = new ObjectUniformBuffer
 		{
@@ -119,8 +112,8 @@ public partial class ModelEntity : Entity
 			_padding6 = SnowUniformFor( Level?.SnowUniform ?? 0f ),
 		}.WithFog();
 
-		SetObjectUniforms( uniformBuffer, model );
-		Model.Draw();
+		SetObjectUniforms( uniformBuffer, model, drawn );
+		drawn.Draw();
 	}
 
 	/// <summary>
@@ -128,10 +121,12 @@ public partial class ModelEntity : Entity
 	/// in view, or on a shader that does not read them, it is the plain block as it always was.
 	/// </summary>
 	// [EXT:point-lights] the original's engine supports point lights but never creates one (docs/LIGHTS.md)
-	private protected void SetObjectUniforms( in ObjectUniformBuffer uniforms, in System.Numerics.Matrix4x4 model )
+	private protected void SetObjectUniforms( in ObjectUniformBuffer uniforms, in System.Numerics.Matrix4x4 model ) => SetObjectUniforms( uniforms, model, Model! );
+
+	private void SetObjectUniforms( in ObjectUniformBuffer uniforms, in System.Numerics.Matrix4x4 model, Model drawn )
 	{
-		var material = Model!.Material;
-		if ( material.ReceivesPointLights && Level?.PointLights is { Count: > 0 } lights && Model.Bounds is { } bounds )
+		var material = drawn.Material;
+		if ( material.ReceivesPointLights && Level?.PointLights is { Count: > 0 } lights && drawn.Bounds is { } bounds )
 		{
 			PointLightSet.TransformBox( bounds.Min, bounds.Max, model, out var boxMin, out var boxMax );
 			Span<PointLightGpu> chosen = stackalloc PointLightGpu[PointLightSet.MaxPerDraw];

@@ -1008,13 +1008,24 @@ internal sealed partial class GameFlow : IDisposable
 	internal static void RenderLobbyLayers( Entity[] snapshot, Entity? weather, bool flash, Action drawFlash )
 	{
 		var weatherListed = false;
-		foreach ( var entity in snapshot )
+		// the lobby's translucent faces (the models' Companions) are drawn after the other entities, far to near, as the park's are (WorldPass)
+		WorldPass.Begin( Camera.ViewMatrix * Camera.ProjMatrix );
+		try
 		{
-			if ( entity == weather )
-				weatherListed = true;
-			else
-				entity.Render();
+			foreach ( var entity in snapshot )
+			{
+				if ( entity == weather )
+					weatherListed = true;
+				else
+					entity.Render();
+			}
 		}
+		catch
+		{
+			WorldPass.Abort();
+			throw;
+		}
+		WorldPass.Flush();
 		if ( flash )
 			drawFlash();
 		if ( weatherListed )

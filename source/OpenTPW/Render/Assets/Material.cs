@@ -46,6 +46,7 @@ public partial class Material : Asset
 		Shader = new Shader( shaderPath );
 		Shader.OnRecompile += () => SetupResources( flags );
 		ReceivesPointLights = ShaderReadsPointLights( shaderPath );
+		IsWorldShader = System.IO.Path.GetFileName( shaderPath ).Equals( "test.shader", StringComparison.OrdinalIgnoreCase );
 
 		All.Add( this );
 		SetupResources( flags );
@@ -57,6 +58,7 @@ public partial class Material : Asset
 		Shader.OnRecompile += () => SetupResources( flags );
 		UniformBufferType = uniformBufferType;
 		ReceivesPointLights = ShaderReadsPointLights( shaderPath );
+		IsWorldShader = System.IO.Path.GetFileName( shaderPath ).Equals( "test.shader", StringComparison.OrdinalIgnoreCase );
 
 		All.Add( this );
 		SetupResources( flags );
@@ -132,6 +134,24 @@ public partial class Material : Asset
 	/// coasters and tracks, pool-deck.shader and pool-basin.shader for the pools). The sprite, particle, sky and water shaders do not, and a draw of theirs never uploads lights.
 	/// </summary>
 	public bool ReceivesPointLights { get; }
+
+	/// <summary>Whether this is the park's lit world shader (test.shader), which reads the alpha test flags of <see cref="WorldTranslucency"/> from the vertices.</summary>
+	internal bool IsWorldShader { get; }
+
+	/// <summary>
+	/// The alpha type of each texture bound as the shader's "Color" array (<see cref="Texture.AlphaType"/>, as the textures were when the model was made), or null when this is not the world shader,
+	/// has no such array or every texture is opaque: the geometry drawn with it then needs no alpha test flag and no translucent pass.
+	/// </summary>
+	internal TextureAlphaType[]? WorldSlotTypes()
+	{
+		if ( !IsWorldShader || !_boundTextureArrays.TryGetValue( "Color", out var bound ) )
+			return null;
+		var types = new TextureAlphaType[bound.Textures.Length];
+		var any = false;
+		for ( var index = 0; index < types.Length; index++ )
+			any |= ( types[index] = bound.Textures[index].AlphaType ) != TextureAlphaType.Opaque;
+		return any ? types : null;
+	}
 
 	private static bool ShaderReadsPointLights( string shaderPath )
 	{

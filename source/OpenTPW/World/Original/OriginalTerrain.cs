@@ -416,148 +416,135 @@ public sealed class OriginalTerrain : Entity
 			indices.Add( start + offset );
 	}
 
-	/// <summary>One batch of terrain faces that a draw call can hold: at most 16 textures; the batches of the translucent pass hold only faces of translucent textures.</summary>
-	private sealed class TerrainBatch( bool translucent )
-	{
-		public bool Translucent { get; } = translucent;
-		public List<string> Textures { get; } = new();
-		public List<Vertex> Vertices { get; } = new();
-		public List<uint> Indices { get; } = new();
-	}
-
 	/// <summary>
 	/// Converts every base.MD2 mesh to engine space and batches meshes so each draw call needs at
-	/// most 16 textures, keeping the number of compiled materials small. Faces whose texture is translucent
-	/// (the header of the texture's own file, <see cref="WorldTranslucency"/>) go to batches of their own that are drawn after the rest, far to near.
+	/// most 16 textures, keeping the number of compiled materials small.
 	/// </summary>
 	private IEnumerable<bool> BuildTerrainMeshes( Dictionary<string, Texture> textures )
 	{
-		var opaque = new TerrainBatch( false );
-		var translucent = new TerrainBatch( true );
+		var batchTextures = new List<string>();
+		var batchVertices = new List<Vertex>();
+		var batchIndices = new List<uint>();
 		foreach ( var model in new[] { Park.TerrainModel, Park.LakeModel }.OfType<ModelFile>() )
 		{
-			foreach ( var _ in BuildTerrainMeshes( textures, model, opaque, translucent ) )
+			foreach ( var _ in BuildTerrainMeshes( textures, model, batchTextures, batchVertices, batchIndices ) )
 				yield return true;
 			yield return true;
 		}
-		foreach ( var _ in FlushBatch( textures, opaque ) )
-			yield return true;
-		foreach ( var _ in FlushBatch( textures, translucent ) )
+		foreach ( var _ in FlushBatch( textures, batchTextures, batchVertices, batchIndices ) )
 			yield return true;
 	}
 
 	/// <summary>The terrain meshes of one model into batches; a value after each mesh and each texture a full batch loads.</summary>
-	private IEnumerable<bool> BuildTerrainMeshes( Dictionary<string, Texture> textures, ModelFile model, TerrainBatch opaque, TerrainBatch translucent )
+	private IEnumerable<bool> BuildTerrainMeshes( Dictionary<string, Texture> textures, ModelFile model, List<string> batchTextures, List<Vertex> batchVertices, List<uint> batchIndices )
 	{
 		foreach ( var mesh in model.Meshes )
 		{
 			if ( mesh.Vertices.Length == 0 || mesh.Indices.Length == 0 || mesh.Materials.Length is 0 or > MaximumTextureSlots || mesh.Normals.Length != mesh.Vertices.Length || mesh.TexCoords.Length < mesh.Vertices.Length )
 				continue;
 			var names = mesh.Materials.Select( material => material.Name ).ToArray();
-			// the alpha type of every texture of the mesh decides its pass; a texture is loaded once for the terrain, so a later batch finds it made
-			var translucentMaterial = new bool[names.Length];
+			// [BIN:TPW-EXE:0x590C40 state word] a mesh with a translucent texture (the header of the texture's own file, WorldTranslucency) is one record of the original's sorted list: it is its own model,
+			// and the model draws its translucent faces after everything else (Model.Companions); the other meshes batch as they always did
+			var meshTextures = new Texture[names.Length];
 			for ( var material = 0; material < names.Length; material++ )
 			{
 				var before = textures.Count;
-				translucentMaterial[material] = WorldTranslucency.IsTranslucent( LoadTexture( textures, names[material] ).AlphaType );
+				meshTextures[material] = LoadTexture( textures, names[material] );
 				if ( textures.Count != before )
 					yield return true;
 			}
-
 			var world = GetWorldMatrix( model, mesh.NodeIndex );
-			var vertices = new Vertex[mesh.Vertices.Length];
-			for ( var index = 0; index < mesh.Vertices.Length; index++ )
+			if ( meshTextures.Any( texture => WorldTranslucency.IsTranslucent( texture.AlphaType ) ) )
 			{
-				var source = mesh.Vertices[index];
-				var position = System.Numerics.Vector3.Transform( source.Position.GetSystemVector3(), world );
-				var normal = System.Numerics.Vector3.TransformNormal( mesh.Normals[index].GetSystemVector3(), world );
-				var materialIndex = (int)Math.Min( source.TextureIndex, (uint)mesh.Materials.Length - 1 );
-				vertices[index] = new Vertex
+				AddTranslucentMesh( mesh, names, meshTextures, world );
+				TerrainMeshCount++;
+				yield return true;
+				continue;
+			}
+			if ( batchTextures.Union( names, StringComparer.OrdinalIgnoreCase ).Count() > MaximumTextureSlots )
+				foreach ( var _ in FlushBatch( textures, batchTextures, batchVertices, batchIndices ) )
+					yield return true;
+			var slotOfMaterial = names.Select( name =>
+			{
+				var slot = batchTextures.FindIndex( existing => string.Equals( existing, name, StringComparison.OrdinalIgnoreCase ) );
+				if ( slot < 0 )
 				{
-					Position = OriginalParkPlacement.ToEngine( Park.Heightfield, position ),
-					Normal = normal.LengthSquared() > 0 ? System.Numerics.Vector3.Normalize( new System.Numerics.Vector3( normal.X, normal.Z, normal.Y ) ) : System.Numerics.Vector3.UnitZ,
-					TexCoords = mesh.TexCoords[index],
-					// the mesh's own material number for now; the batch renumbers it to its slot
-					TexIndex = materialIndex,
-					// [EXT:winter-snow-paths] the entrance plaza and its kerbs (grd_pav, grd_ctr, grd_krb) are walking surfaces: slush under snow, like the path layer
-					MatFlags = TextureSlotAddressing.VertexFlags( mesh.Materials[materialIndex].Flags ) | ( TextureSlotAddressing.IsPathLikeTexture( mesh.Materials[materialIndex].Name ) ? TextureSlotAddressing.SlushFlag : 0u )
-				};
-			}
-			var split = WorldTranslucency.SplitFaces( vertices, mesh.Indices, material => material >= 0 && material < translucentMaterial.Length && translucentMaterial[material] );
-			if ( split.TranslucentVertices == null )
-			{
-				// no translucent texture: the whole mesh as before, with every one of its materials taking a slot
-				foreach ( var _ in AddToBatch( textures, opaque, names, split.OpaqueVertices, split.OpaqueIndices, allMaterials: true ) )
-					yield return true;
-			}
-			else
-			{
-				if ( split.OpaqueIndices.Length > 0 )
-					foreach ( var _ in AddToBatch( textures, opaque, names, split.OpaqueVertices, split.OpaqueIndices, allMaterials: false ) )
-						yield return true;
-				foreach ( var _ in AddToBatch( textures, translucent, names, split.TranslucentVertices, split.TranslucentIndices!, allMaterials: false ) )
-					yield return true;
-			}
+					batchTextures.Add( name );
+					slot = batchTextures.Count - 1;
+				}
+				return slot;
+			} ).ToArray();
+
+			var first = (uint)batchVertices.Count;
+			for ( var index = 0; index < mesh.Vertices.Length; index++ )
+				batchVertices.Add( MeshVertex( mesh, world, index, slotOfMaterial ) );
+			foreach ( var index in mesh.Indices )
+				batchIndices.Add( first + index );
 			TerrainMeshCount++;
 			yield return true;
 		}
 	}
 
-	/// <summary>
-	/// Appends faces (vertices whose <see cref="Vertex.TexIndex"/> is a material number of <paramref name="names"/>) to <paramref name="batch"/>, flushing it first when the new textures would not fit in its 16.
-	/// A batch takes the textures of the materials the faces use, or with <paramref name="allMaterials"/> every material of the mesh (what a mesh without a translucent texture has always done).
-	/// </summary>
-	private IEnumerable<bool> AddToBatch( Dictionary<string, Texture> textures, TerrainBatch batch, string[] names, Vertex[] vertices, uint[] indices, bool allMaterials )
+	/// <summary>One converted vertex of a terrain mesh: engine space, with its texture index taken from <paramref name="slotOfMaterial"/> by the vertex's material.</summary>
+	private Vertex MeshVertex( ModelFile.Mesh mesh, Matrix4x4 world, int index, int[] slotOfMaterial )
 	{
-		var used = allMaterials ? names : vertices.Select( vertex => vertex.TexIndex ).Distinct().Order().Select( material => names[material] ).ToArray();
-		if ( batch.Textures.Union( used, StringComparer.OrdinalIgnoreCase ).Count() > MaximumTextureSlots )
-			foreach ( var _ in FlushBatch( textures, batch ) )
-				yield return true;
-		var slotOfMaterial = names.Select( name =>
+		var source = mesh.Vertices[index];
+		var position = System.Numerics.Vector3.Transform( source.Position.GetSystemVector3(), world );
+		var normal = System.Numerics.Vector3.TransformNormal( mesh.Normals[index].GetSystemVector3(), world );
+		var materialIndex = (int)Math.Min( source.TextureIndex, (uint)mesh.Materials.Length - 1 );
+		return new Vertex
 		{
-			if ( !used.Contains( name, StringComparer.OrdinalIgnoreCase ) )
-				return 0;
-			var slot = batch.Textures.FindIndex( existing => string.Equals( existing, name, StringComparison.OrdinalIgnoreCase ) );
-			if ( slot < 0 )
-			{
-				batch.Textures.Add( name );
-				slot = batch.Textures.Count - 1;
-			}
-			return slot;
-		} ).ToArray();
-		var first = (uint)batch.Vertices.Count;
-		foreach ( var vertex in vertices )
+			Position = OriginalParkPlacement.ToEngine( Park.Heightfield, position ),
+			Normal = normal.LengthSquared() > 0 ? System.Numerics.Vector3.Normalize( new System.Numerics.Vector3( normal.X, normal.Z, normal.Y ) ) : System.Numerics.Vector3.UnitZ,
+			TexCoords = mesh.TexCoords[index],
+			TexIndex = slotOfMaterial[materialIndex],
+			// [EXT:winter-snow-paths] the entrance plaza and its kerbs (grd_pav, grd_ctr, grd_krb) are walking surfaces: slush under snow, like the path layer
+			MatFlags = TextureSlotAddressing.VertexFlags( mesh.Materials[materialIndex].Flags ) | ( TextureSlotAddressing.IsPathLikeTexture( mesh.Materials[materialIndex].Name ) ? TextureSlotAddressing.SlushFlag : 0u )
+		};
+	}
+
+	/// <summary>Materials of the translucent meshes by their texture names: meshes with the same textures share one.</summary>
+	private readonly Dictionary<string, Material> translucentMaterials = new( StringComparer.OrdinalIgnoreCase );
+
+	/// <summary>A terrain mesh with a translucent texture as a model of its own; the model splits its translucent faces by texture and draws them in the translucent pass.</summary>
+	private void AddTranslucentMesh( ModelFile.Mesh mesh, string[] names, Texture[] meshTextures, Matrix4x4 world )
+	{
+		var key = string.Join( "|", names );
+		if ( !translucentMaterials.TryGetValue( key, out var material ) )
 		{
-			var copy = vertex;
-			copy.TexIndex = slotOfMaterial[vertex.TexIndex];
-			batch.Vertices.Add( copy );
+			var slots = new Texture[MaximumTextureSlots];
+			for ( var index = 0; index < slots.Length; index++ )
+				slots[index] = index < meshTextures.Length ? meshTextures[index] : meshTextures[0];
+			var created = new Material<ObjectUniformBuffer>( "content/shaders/test.shader" );
+			created.Set( "Color", slots );
+			translucentMaterials[key] = material = created;
 		}
-		foreach ( var index in indices )
-			batch.Indices.Add( first + index );
+		var identity = Enumerable.Range( 0, names.Length ).ToArray();
+		var vertices = new Vertex[mesh.Vertices.Length];
+		for ( var index = 0; index < vertices.Length; index++ )
+			vertices[index] = MeshVertex( mesh, world, index, identity );
+		AddPart( new Model( vertices, mesh.Indices.ToArray(), material ), $"terrain translucent mesh {models.Count}" );
 	}
 
 	/// <summary>Makes a batch's model; a value after each of its textures.</summary>
-	private IEnumerable<bool> FlushBatch( Dictionary<string, Texture> textures, TerrainBatch batch )
+	private IEnumerable<bool> FlushBatch( Dictionary<string, Texture> textures, List<string> names, List<Vertex> vertices, List<uint> indices )
 	{
-		if ( batch.Vertices.Count > 0 )
+		if ( vertices.Count > 0 )
 		{
 			var slots = new Texture[MaximumTextureSlots];
 			for ( var index = 0; index < slots.Length; index++ )
 			{
-				slots[index] = index < batch.Textures.Count ? LoadTexture( textures, batch.Textures[index] ) : slots[0];
-				if ( index < batch.Textures.Count )
+				slots[index] = index < names.Count ? LoadTexture( textures, names[index] ) : slots[0];
+				if ( index < names.Count )
 					yield return true;
 			}
 			var material = new Material<ObjectUniformBuffer>( "content/shaders/test.shader" );
 			material.Set( "Color", slots );
-			// [BIN:TPW-EXE:0x582AD0 deferred records] a batch of translucent faces is drawn after the others, far to near, and sorts its own triangles far to near (ModelEntity.Translucent)
-			var model = new Model( batch.Vertices.ToArray(), batch.Indices.ToArray(), material, false, batch.Translucent );
-			var part = AddPart( model, batch.Translucent ? $"terrain translucent batch {models.Count}" : $"terrain batch {models.Count}" );
-			part.Translucent = batch.Translucent;
+			AddPart( new Model( vertices.ToArray(), indices.ToArray(), material ), $"terrain batch {models.Count}" );
 		}
-		batch.Textures.Clear();
-		batch.Vertices.Clear();
-		batch.Indices.Clear();
+		names.Clear();
+		vertices.Clear();
+		indices.Clear();
 	}
 
 	/// <summary>Composes node transforms from the mesh node up to the root (row-vector convention).</summary>

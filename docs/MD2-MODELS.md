@@ -100,14 +100,15 @@ texture, and draws every face whose state has bit 0x1000 or 0x2000 at once; ever
 by 0x5829E0 on the record's average vertex depth (+0x30 over the vertex count at +0x20), largest first. The Direct3D renderer is mode 1 of `DAT_008BD524` (0x44DD50); the reverse sort 0x5828F0 runs only when
 `[0x8BCBC8] & 0xC` is 0xC and bit 0x20000000 is set, and no writer of bits 0x4 and 0x8 was found among the option and device-setup functions that were read (0x44D8F0, 0x44DD50, 0x44DE20, 0x566840, 0x5673D0).
 
-OpenTPW ports the pass for the faces it can classify (`WorldTranslucency`): the MD2 terrain meshes (`OriginalTerrain`) and placed objects (`OriginalObject`, including the harbour's glass roofs). A part is split by
-face into an opaque model, drawn where it always was, and a translucent model (`ModelEntity.Translucent`) that `Level.WorldPassOrder` draws after every other entity, farthest first by the mean depth of its
-vertices, with its triangles sorted farthest first by the sum of their corner depths (`Model.OrderTriangles`, re-sorted when the camera or the part moves). The particle and weather renderers follow the translucent pass in
-their own order, so a particle in front of water is still drawn over it. `test.shader` tests translucent faces at 0x10/255 (vertex bit 0x20000000, `WorldTranslucency.AlphaTestLowFlag`) and every other face at the engine's 0.1.
-Not covered: the ground heightfield and the path layer (they stay in entity order and use their own depth lift), coaster and track pieces, pools, the lobby scene, textures that are not `.wct`
-(Theme Park Inc art) and bonus-content textures (all opaque here), and the state bits that depend on model and texture flags OpenTPW has no counterpart of (0x400000 wrap, 0x800 from a model flag, 0x5156). Cut-out textures (flag 0x100, 236 files) keep
-OpenTPW's opaque draw, because the decoder reads an alpha plane only when the alpha byte is 1, so their alpha is 255. The deferred particle batches (state 0x556 and 0x200552, which the original
-sorts into the same list as the world) are PTCL-905's business: the particles stay a pass of their own.
+OpenTPW ports the pass in `Model`, so every consumer of `test.shader` gets it (terrain meshes, the heightfield, paths, placed objects including the harbour's glass roofs, coaster and track pieces, the tour and the lobby scene).
+The model classifies its texture slots from the `.wct` header (`TextureFile.AlphaType`, read where the loader 0x564C00 reads it: an alpha plane exists only at 32 bits per pixel, so the one 13/01/18 member, bumper.wad
+`b_NEWwin`, is opaque) and splits the faces that use a translucent slot into companion models, one record per (part, texture). A companion is submitted to `WorldPass` (a queue that `Level.Render` flushes after the
+other entities, and the lobby scene after its layers) and drawn farthest first by the mean clip depth z/w of its vertices; its triangles are sorted farthest first by the sum of their three corner depths
+(`Model.OrderTriangles`, a dynamic index buffer that is uploaded only when the order changes). Vertices behind the eye plane get depth -1. The pool spray, pool water, particle and weather renderers draw after the
+sorted world list (`Level.SplitLate`). `test.shader` tests translucent faces at 0x10/255 (vertex bit 0x20000000, `WorldTranslucency.AlphaTestLowFlag`), cut-out faces at 0xF0/255 (bit 0x10000000, `CutoutFlag`, state
+0x2756) and every other face at the engine's 0.1. Cut-out textures (236 files, alpha byte 0 with an alpha plane) now decode their plane. Not covered: textures that are not `.wct` (Theme Park Inc art) and bonus-content
+textures (all opaque here), and the state bits that depend on model and texture flags OpenTPW has no counterpart of (0x400000 wrap, 0x800 from a model flag, 0x5156), which stay with the existing render-state notes.
+The deferred particle and weather batches (state 0x556 and 0x200552, which the original sorts into the same list as the world) are PTCL-905's business: they draw after the whole sorted world list.
 
 Nodes: one tree rooted at 0x78. Mesh records are 160 bytes, dummy records 88:
 `u32 type`, parent/next-sibling/first-child record pointers, 4×4 float row-major

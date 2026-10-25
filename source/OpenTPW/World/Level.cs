@@ -1335,16 +1335,33 @@ public partial class Level : IDisposable
 		// [EXT:point-lights] the lights of the objects that have any, for every draw of this frame
 		var viewProjection = Camera.ViewMatrix * Camera.ProjMatrix;
 		PointLights?.Gather( viewProjection );
-		foreach ( var entity in WorldPassOrder( WeatherAfterParticles( Entity.All.ToArray() ), part => part.TranslucentDepth( viewProjection ) ) )
+		var (before, after) = SplitLate( WeatherAfterParticles( Entity.All.ToArray() ) );
+		// the translucent pass: the entities hand the translucent faces of their models over while they draw (ModelEntity), and the pass draws them after all of these, far to near
+		WorldPass.Begin( viewProjection );
+		try
 		{
-			if ( !FrameMarks.Enabled )
-			{
-				entity.Render();
-				continue;
-			}
-			using ( FrameMarks.Measure( RenderMarkName( entity.GetType() ) ) )
-				entity.Render();
+			foreach ( var entity in before )
+				RenderEntity( entity );
 		}
+		catch
+		{
+			WorldPass.Abort();
+			throw;
+		}
+		WorldPass.Flush();
+		foreach ( var entity in after )
+			RenderEntity( entity );
+	}
+
+	private static void RenderEntity( Entity entity )
+	{
+		if ( !FrameMarks.Enabled )
+		{
+			entity.Render();
+			return;
+		}
+		using ( FrameMarks.Measure( RenderMarkName( entity.GetType() ) ) )
+			entity.Render();
 	}
 
 	private static readonly Dictionary<Type, string> renderMarkNames = new();

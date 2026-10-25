@@ -27,6 +27,7 @@ separate visual acceptance; this change does not establish full layering parity.
 
 ## Translucent world parts (issue 829)
 
-`Level.Render` now applies `Level.WorldPassOrder` after `WeatherAfterParticles`: translucent terrain and object parts (`ModelEntity.Translucent`, the original's deferred list 0x582AD0)
-draw after every other entity, farthest first, and the particle and weather renderers follow them in the order this note describes. A snapshot without translucent parts is unchanged. The original also defers the particle batches
-whose state is 0x556 or 0x200552 into that same far-to-near list; OpenTPW keeps the particles a pass of their own (PTCL-905 is not narrowed by this).
+`Level.Render` splits the entities with `Level.SplitLate`: everything but the late group renders first, with translucent model parts queued in `WorldPass` (the original's deferred list 0x582AD0);
+`WorldPass.Flush` draws them farthest first; then the late group renders: the particle and weather renderers, the pool spray and the pool water, in the order this note describes. A snapshot without
+translucent parts is unchanged. The original also defers the particle batches whose state is 0x556 or 0x200552 into that same far-to-near list; OpenTPW draws them after the whole sorted list
+(PTCL-905 is not narrowed by this).

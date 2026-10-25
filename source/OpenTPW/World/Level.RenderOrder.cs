@@ -32,39 +32,36 @@ public partial class Level
 		return ordered;
 	}
 
+	private static readonly Entity[] NoEntities = [];
+
 	/// <summary>
-	/// The original's translucent pass for world geometry: entities that are translucent <see cref="ModelEntity"/> parts (<see cref="ModelEntity.Translucent"/>) leave their place in the draw sequence and are drawn
-	/// after every other entity, the farthest first by the mean depth of their vertices (<see cref="ModelEntity.TranslucentDepth"/>, ties in entity order). Particle and weather renderers, which draw without
-	/// writing depth, then follow in their own order, so a particle in front of water or glass is still drawn over it and the translucent geometry no longer overpaints it. Every other entity keeps its relative
-	/// position. With no translucent entity the snapshot is returned as it is. The caller supplies its usual per-pass snapshot (<see cref="WeatherAfterParticles"/> applied first) and the depth of a part
-	/// (<paramref name="depthOf"/>: larger is farther).
+	/// Splits a draw sequence into the entities drawn before the translucent pass (<see cref="WorldPass"/>) and the ones drawn after it: the blended effects that write no depth, the particle and weather renderers, the
+	/// pools' water and the spray of their jets. Each group keeps the order of the snapshot. The translucent world geometry (<see cref="Model.Companions"/>) is far to near before these, so a particle, a swimmer's water
+	/// or a jet's spray in front of water or glass is still drawn over it, and the geometry no longer overpaints them. With none of them in the scene the snapshot itself is the first group.
 	/// </summary>
-	// [BIN:TPW-EXE:0x582170 frame flush] the scene pass 0x576A00 ends with 0x582170: the batcher 0x581DB0 draws every model face whose state has bit 0x1000 or 0x2000 (opaque 0x1256, alpha-test-0xF0 0x2756) at once and defers the rest (0x556: alpha test 0x10),
-	// then 0x582AD0 draws the deferred records far to near by mean vertex depth (0x5829E0); see WorldTranslucency.
-	// PTCL-905 (the particle state words) is untouched: the original also defers the particle batches whose state has neither bit (0x556, 0x200552) into the same far-to-near list; here the particles stay a pass of their own after the translucent world
-	internal static Entity[] WorldPassOrder( Entity[] snapshot, Func<ModelEntity, float> depthOf )
+	// [BIN:TPW-EXE:0x582170 frame flush] the scene pass 0x576A00 ends with 0x582170: the batcher 0x581DB0 draws every model face whose state has bit 0x1000 or 0x2000 (opaque 0x1256, alpha-test-0xF0 0x2756) at once and
+	// defers the rest (0x556: alpha test 0x10), then 0x582AD0 draws the deferred records far to near by mean vertex depth (0x5829E0); see WorldTranslucency.
+	// The original also defers the particle and weather batches whose state has neither bit (0x556, 0x200552) into that same far-to-near list; here they are drawn after the whole list, which hides a particle that lies behind water or glass (see PTCL-905).
+	internal static (Entity[] Before, Entity[] After) SplitLate( Entity[] snapshot )
 	{
-		var translucent = new List<(ModelEntity Entity, float Depth, int Order)>();
-		for ( var index = 0; index < snapshot.Length; index++ )
-			if ( snapshot[index] is ModelEntity { Translucent: true } part )
-				translucent.Add( (part, depthOf( part ), index) );
-		if ( translucent.Count == 0 )
-			return snapshot;
-		translucent.Sort( ( left, right ) =>
+		var late = 0;
+		foreach ( var entity in snapshot )
+			if ( IsLate( entity ) )
+				late++;
+		if ( late == 0 )
+			return (snapshot, NoEntities);
+		var before = new Entity[snapshot.Length - late];
+		var after = new Entity[late];
+		int first = 0, second = 0;
+		foreach ( var entity in snapshot )
 		{
-			var byDepth = right.Depth.CompareTo( left.Depth );
-			return byDepth != 0 ? byDepth : left.Order.CompareTo( right.Order );
-		} );
-		var ordered = new Entity[snapshot.Length];
-		var next = 0;
-		foreach ( var entity in snapshot )
-			if ( entity is not ModelEntity { Translucent: true } && entity is not (ParticleRenderer or WeatherRenderer) )
-				ordered[next++] = entity;
-		foreach ( var (entity, _, _) in translucent )
-			ordered[next++] = entity;
-		foreach ( var entity in snapshot )
-			if ( entity is ParticleRenderer or WeatherRenderer )
-				ordered[next++] = entity;
-		return ordered;
+			if ( IsLate( entity ) )
+				after[second++] = entity;
+			else
+				before[first++] = entity;
+		}
+		return (before, after);
 	}
+
+	private static bool IsLate( Entity entity ) => entity is ParticleRenderer or WeatherRenderer or global::OpenTPW.PoolSprayRenderer or PoolPartEntity { IsWater: true };
 }

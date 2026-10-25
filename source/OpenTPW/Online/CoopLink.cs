@@ -154,6 +154,9 @@ public sealed class CoopLink : ICoopStreamTransport
 	/// <summary>Drops the socket without a close, as a lost network does (tests).</summary>
 	internal void DropSocket() => live?.Abort();
 
+	/// <summary>How the last socket ended as its reader saw it: the server's close status (null for a lost socket), whether it read something unreadable, and whether this game dropped it (a test's diagnosis).</summary>
+	internal (int? Status, bool Malformed, bool Dropped)? LastEnd { get; private set; }
+
 	/// <summary>A wait of <see cref="RetryDelays"/> spread over 80 to 120 per cent of itself.</summary>
 	internal static TimeSpan DefaultJitter( TimeSpan delay ) => delay * (0.8 + 0.4 * Random.Shared.NextDouble());
 
@@ -652,12 +655,15 @@ public sealed class CoopLink : ICoopStreamTransport
 		finally
 		{
 			var status = socket.Connection.CloseStatus;
+			// whether this game had dropped the socket when its reader ended: a drop after the end (a send queue that overflowed before the pump took the
+			// end) is no cause of it
+			var dropped = socket.Dropped;
 			var endedAt = Environment.TickCount64;
 			if ( malformed )
 				socket.Fail( (WebSocketCloseStatus)CoopCloseStatus.ProtocolError, "invalid message" );
 			else
 				socket.Close();
-			owner.Post( () => SocketEnded( socket, status, malformed, endedAt ) );
+			owner.Post( () => SocketEnded( socket, status, malformed, dropped, endedAt ) );
 		}
 	}
 
@@ -800,11 +806,16 @@ public sealed class CoopLink : ICoopStreamTransport
 	/// The socket ended (at <paramref name="endedAt"/>, which a stalled pump may reach late): a close the link resumes after starts the reconnect attempts, any
 	/// other stops the link.
 	/// </summary>
-	private void SocketEnded( Socket socket, int? status, bool malformed, long endedAt )
+	private void SocketEnded( Socket socket, int? status, bool malformed, bool dropped, long endedAt )
 	{
 		if ( socket != live )
 			return;
 		live = null;
+		LastEnd = (status, malformed, dropped);
+		// a socket this game dropped (a send queue too far behind, a test's lost network) ended as a lost one: a broken message or a normal close on its way out
+		// was the drop's doing (the link's own close racing it), never the server's word; the server's refusals and limits still count
+		if ( dropped && (malformed || status is null or (int)WebSocketCloseStatus.NormalClosure) )
+			(status, malformed) = (null, false);
 		// the welcome's time is when the pump took it, never before it came, so a socket's measured life is never longer than it was
 		var stable = welcomedAt is { } at && endedAt - at >= StableAfter.TotalMilliseconds;
 		welcomedAt = null;
@@ -997,10 +1008,20 @@ public sealed class CoopLink : ICoopStreamTransport
 			Connection.Close( status, reason );
 		}
 
+		/// <summary>
+		/// Drops the socket without a close: the connection first, then the queue. A queue completed first wakes the writer, whose end closes the connection normally
+		/// (<see cref="WriteLoopAsync"/>); a writer that won that race sent a normal close, the server answered it, and the reader took the answer for a close the link
+		/// does not resume after, so a lost socket stopped the link.
+		/// </summary>
 		public void Abort()
 		{
-			outbox.Writer.TryComplete();
+			dropped = true;
 			Connection.Abort();
+			outbox.Writer.TryComplete();
 		}
+
+		/// <summary>This game dropped the socket (<see cref="Abort"/>): its end is a lost socket's, which the link resumes after.</summary>
+		public bool Dropped => dropped;
+		private volatile bool dropped;
 	}
 }

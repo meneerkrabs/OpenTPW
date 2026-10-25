@@ -326,8 +326,8 @@ other type counts as simulation); an extension does when it declares `AffectsSim
 these (`Mods`: id, version, content digest) and nothing else, so a park saved without them has no `Mods` field and keeps
 its bytes. Loading it needs the same mods, versions and content, in the same order; presentation-only mods and the online
 extension may differ. A save that needs a mod you do not have refuses with `needs <id> <version>`; the load list and the
-Continue entries keep it and add "(requires mod <id> <version>)". Exporting a park to a `.tpwpark` package is refused
-while such a mod is active, because packages record no mods yet. Some extensions are recorded **only while the park uses them** (`ParkResumeMods.UsedOnlyExtensionIds`): `opentpw.pools` (pool cells or a changing room), `opentpw.umbrellas`, `opentpw.winter`, `opentpw.cheats` and `opentpw.evening` (a torch), so a park
+Continue entries keep it and add "(requires mod <id> <version>)". Exporting or publishing a park as a `.tpwpark` package is refused
+while a **community** mod is active, because packages record no community mods yet; OpenTPW's own extensions do not refuse it (below, "Parks that use extensions"). Some extensions are recorded **only while the park uses them** (`ParkResumeMods.UsedOnlyExtensionIds`): `opentpw.pools` (pool cells or a changing room), `opentpw.umbrellas`, `opentpw.winter`, `opentpw.cheats` and `opentpw.evening` (a torch), so a park
 that uses none of them saves, loads and exports identically with them on or off ([POOLS.md](POOLS.md), [EVENING.md](EVENING.md#torches)). The asset manifest keys archives of a mod `mod:<id>:/…`
 (`data:` and `bonus:` for the game data and the bonus content). Details: [DETERMINISM.md](DETERMINISM.md) "Mods".
 
@@ -379,6 +379,29 @@ Everything else stays strict, with the reasons above: a community mod that is mi
 strict anyway), the order of the mods, and any load that mixes one of those with a switch. A Theme Park Inc run never asks (it records none of these extensions and loads no own park saves). Replays and
 checks never switch: only the player's confirmation in the dialog does, so `--park-resume-smoke`, the tests, the online server and co-op, which compare the mod set, and the original-format export are
 unchanged.
+
+## Parks that use extensions
+
+`[EXT:mods]` A `.tpwpark` package, and so a published park, may use OpenTPW's **official** extensions. Official means built in and shipped with every build (`OfficialExtensions.All`, ids `opentpw.*`); anything else is a community
+mod. `ParkSharing.ModsOf` splits the simulation-changing mods the park would record (the same list a save records: a used-only extension only while the park uses it) into the two.
+
+- **Publishing and exporting** refuse only community mods ("This park records mods (community.x 1.0.0) and cannot be exported or published yet"), exactly as before, and name only those mods. The official
+  extensions the park uses go into the package's manifest as `extensions` (id and version, for example `opentpw.winter 1.0.0`). A park that uses none has no such member. The package then stays format version 2,
+  byte-compatible with every older reader; a package with the member is format version 3 and an older build refuses it with "Park package version 3 is not supported" instead of showing a park without its extensions
+  (docs/ONLINE.md, docs/SERVER.md).
+- **Visiting** (a downloaded park, Import file, `--visit-park`) looks at the content extensions the park uses (`ParkVisitExtensions.RequiredIds`: `opentpw.pools`, `opentpw.umbrellas`, `opentpw.winter`, `opentpw.evening`): a visit
+  draws the park, so it needs the extensions' objects and art, and nothing else. The rule-only extensions and the cheats extension change how a park plays, not how it looks, so a visitor does not need them. A
+  visit never runs without a content extension its park uses:
+  - on: the visit goes ahead (another version of the extension is not a difference for a visit);
+  - off and the player may switch it: the confirm dialog of a park load asks "This park uses Winter, which is off. Turn Winter on and visit the park?" with the tick "Turn Winter on and visit", in the eleven
+    interface languages. Confirming switches the extension on as a load does (`[EXT:extensions-apply-at-load]`: this run at once, or when the running park ends, and `mods.json`); the X goes back without a visit
+    and without a change;
+  - off and it cannot be switched (`--disable-extension` for this run, a Theme Park Inc run, an extension this build does not know): a message names it and the visit does not start;
+  - `--visit-park` has no dialog: it refuses with the extension and the option that switches it on for the run (`--enable-mod opentpw.winter`).
+
+  Co-op is separate and strict: a shared park's host and guests must run the same mod set (`CoopLink.CurrentIdentity`), as before; a park file's `extensions` play no part there.
+- **Why a menu line is greyed**: the online menu's Publish park line and the pause menu's Publish Park line say why on hover (no park open, a park you only visit, a shared park's guest copy, community mods in the
+  park), so a disabled line is never a mystery. They use the popup help, as the other help lines do.
 
 ## Smarter guests and guest insights (`opentpw.smarter-guests`, `opentpw.guest-insights`)
 

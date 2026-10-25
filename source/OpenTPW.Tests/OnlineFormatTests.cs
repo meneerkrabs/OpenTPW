@@ -132,7 +132,7 @@ public class OnlineFormatTests
 	public void RejectsHostileManifests()
 	{
 		var json = Encoding.UTF8.GetString( StrictJson.Serialize( Package().Manifest ) );
-		AssertRejected( WithManifest( json.Replace( "\"formatVersion\":2", "\"formatVersion\":3" ) ), "version 3" );
+		AssertRejected( WithManifest( json.Replace( "\"formatVersion\":2", "\"formatVersion\":4" ) ), "version 4" );
 		AssertRejected( WithManifest( json.Replace( "\"format\":\"opentpw.park\"", "\"format\":\"other\"" ) ), "not an OpenTPW park" );
 		AssertRejected( WithManifest( json.Replace( "{\"format\"", "{\"extra\":1,\"format\"" ) ), "malformed" );
 		AssertRejected( WithManifest( json.Replace( "{\"format\":\"opentpw.park\"", "{\"format\":\"opentpw.park\",\"format\":\"opentpw.park\"" ) ), "more than once" );

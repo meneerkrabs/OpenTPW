@@ -51,6 +51,13 @@ public sealed class ParkExtensionSwitch
 	/// <summary>Whether the load can be offered with this switch: nothing strict is left and something is switched.</summary>
 	public bool CanSwitch => Refusals.Count == 0 && (ContinueWith.Count + ContinueWithout.Count + ContinueNewVersion.Count + TurnOn.Count) > 0;
 
+	/// <summary>
+	/// The plan of a read-only visit that switches only <paramref name="turnOn"/> on (<see cref="ParkVisitExtensions"/>): the content extensions the visited park uses that are off here. The park is drawn, not
+	/// continued, so no rule extension is switched and nothing is rewritten.
+	/// </summary>
+	internal static ParkExtensionSwitch ForTurnOn( IReadOnlyList<IOpenTpwExtension> turnOn ) =>
+		new( Array.Empty<IOpenTpwExtension>(), Array.Empty<IOpenTpwExtension>(), Array.Empty<(IOpenTpwExtension, string)>(), turnOn, Array.Empty<string>() );
+
 	/// <summary>Whether <paramref name="other"/> switches the same extensions the same way (a confirmed switch is used only while the plan has not changed).</summary>
 	public bool SameAs( ParkExtensionSwitch? other ) => other != null
 		&& Ids( ContinueWith ).SequenceEqual( Ids( other.ContinueWith ) ) && Ids( ContinueWithout ).SequenceEqual( Ids( other.ContinueWithout ) )

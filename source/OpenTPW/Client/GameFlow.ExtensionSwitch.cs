@@ -101,6 +101,61 @@ internal sealed partial class GameFlow
 		stack.Push( ExtensionSwitchDialog.Create( stack, Strings, plan, () => proceed( plan ) ) );
 	}
 
+	/// <summary>
+	/// [EXT:mods] Before a read-only visit of <paramref name="visit"/> starts: when its package records content extensions that are off here (<see cref="ParkVisitExtensions"/>), a dialog asks to turn them on and visit
+	/// (<paramref name="proceed"/> runs once they are on, as a park load's switch is: this run and <c>mods.json</c>), or, when one cannot be turned on, says so and the visit does not start. A visit never runs without a
+	/// content extension its park uses; a package that records none, or whose extensions are on, proceeds at once.
+	/// </summary>
+	internal void ConfirmVisitExtensions( ParkVisitInfo visit, Action proceed, OpenTPW.UI.Original.UiScreenStack? stack )
+	{
+		ArgumentNullException.ThrowIfNull( visit );
+		ArgumentNullException.ThrowIfNull( proceed );
+		if ( ParkVisitExtensions.Plan( visit.Package.Manifest.Extensions, NextExtensions ) is not { } plan )
+		{
+			proceed();
+			return;
+		}
+		if ( stack == null )
+		{
+			Log.Warning( "A park visit needs extensions that are off, and there is no screen to ask on: " + string.Join( ", ", plan.TurnOn.Select( extension => extension.Id ).Concat( plan.Blocked ) ) );
+			return;
+		}
+		if ( plan.Blocked.Count > 0 )
+		{
+			ShowVisitRefused( stack, plan );
+			return;
+		}
+		Log.Trace( $"Park visit needs extensions that are off; asking to turn them on: {string.Join( ", ", plan.TurnOn.Select( extension => extension.Id ) )}." );
+		stack.Push( ExtensionSwitchDialog.Create( stack, Strings, plan.ToSwitch(), () =>
+		{
+			var timing = ApplyExtensionChoices( plan.Changes );
+			// an extension that only a new start switches would leave the visit without it
+			if ( timing == ExtensionChoiceTiming.NextStart )
+			{
+				ShowVisitRefused( stack, plan );
+				return;
+			}
+			if ( PersistSettings )
+			{
+				try { ModStartup.SaveExtensionChoices( ModSettingsPath, plan.Changes ); }
+				catch ( Exception error ) when ( error is IOException or UnauthorizedAccessException )
+				{
+					// the visit runs with the extension; only the choice for the next start could not be kept
+					Log.Warning( $"The extensions switched on for this visit could not be saved in {ModSettings.FileName}: {error.Message}" );
+				}
+			}
+			proceed();
+		}, visit: true ) );
+	}
+
+	private void ShowVisitRefused( OpenTPW.UI.Original.UiScreenStack stack, ParkVisitExtensions plan )
+	{
+		var ids = plan.Blocked.Count > 0 ? plan.Blocked : plan.TurnOn.Select( extension => extension.Id ).ToArray();
+		var names = ids.Select( id => OfficialExtensions.Find( id ) is { } extension ? ModsScreen.ExtensionName( Strings, extension ) : id ).ToArray();
+		var text = OnlineStrings.Get( OnlineLabel.VisitNeedsExtensions ).Replace( "{0}", string.Join( ", ", names ) );
+		stack.Push( UiDialogs.Message( "visitExtensionsRefused", () => text, (() => Strings.Extra( OpenTpwText.Back ), stack.Pop) ) );
+	}
+
 	/// <summary>Makes <paramref name="before"/> active again after a failed load; a failure of that itself is logged and never hides the load's own error.</summary>
 	private static void SwitchBack( ModSet before, Exception loadError )
 	{

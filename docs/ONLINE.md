@@ -318,6 +318,26 @@ OpenTPW 0.7 (the original level's imported path/object records and the prototype
 Totem) still import unchanged; they carry no built layout, so a visit of one draws the
 shipped level import and says so.
 
+### Official extensions in a package (format version 3)
+
+`[EXT:mods]` A park that uses OpenTPW's own extensions (`opentpw.pools`, `opentpw.umbrellas`, `opentpw.winter`, `opentpw.evening`, the rule extensions and so on; docs/MODS.md, "Parks that use extensions") is published like
+any other. The package manifest lists them as an optional `extensions` member: `[{ "id": "opentpw.winter", "version": "1.0.0" }, ...]`, at most 32 ids that start with `opentpw.`, each once, with a plain
+`major.minor.patch` version. The extensions' files are never in a package; every build ships them. Community mods are not recorded and still refuse an export or a publish.
+
+- **Compatibility.** A package of a park that uses no extension is written exactly as before: `formatVersion` 2 and no `extensions` member, so older readers and older servers handle it unchanged. A package
+  with the member is `formatVersion` 3 (`ParkPackage.CurrentFormatVersion`, `FirstExtensionsFormatVersion`). The manifest reader rejects unknown members, so the version is what gives an older build its
+  clear message ("Park package version 3 is not supported (this build reads versions 1 to 2)") instead of "malformed". The reader refuses `extensions` in a version 1 or 2 manifest, an empty list, an id
+  that is not an `opentpw.` id, a version that is not `major.minor.patch`, and a duplicate. The server protocol version does not change; a server that has not been updated refuses a version 3 package with
+  that message, so a server operator updates before the clients publish such parks.
+- **A visit asks first.** The visit of a park whose content extensions are off here asks "Turn Winter on and visit the park?" (or says why it cannot, or, for `--visit-park`, refuses with the option to
+  switch it on); a visit never runs without them. A park file opened with Import file asks the same when its Visit button is used; the description under the file name lists the extensions it uses.
+- **The online menu says why a line is grey.** Publish park is disabled with no park open, in a park you only visit, in a shared park's guest copy and while a community mod is active; hovering the greyed line
+  shows the reason in the help box. The pause menu's Publish Park line does the same.
+- **The menu's postcard line** sits under the last button (it no longer overlaps the Delete account button) and shows the original's reminder (UITEXT 472, "... go online to send them") only while logged
+  out. Logged in, nothing sends the outbox by itself, so the line says where to send the cards (Unsent postcards).
+- **Status lines** show once, on the screen on top, and only what was reported since that screen opened or came back to the top: a "No search results" of an earlier Find Parks no longer shows in the menu
+  opened afterwards, nor on the globe under it.
+
 A visit applies the published layout read-only and behaves as the original's visit
 evidence shows (docs/reverse/ONLINE-VISIT.md, from the Mac online code, the manual and
 the archived official pages):

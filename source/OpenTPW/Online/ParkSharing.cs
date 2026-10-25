@@ -41,20 +41,61 @@ public static class ParkSharing
 	}
 
 	/// <summary>
-	/// Why a park cannot be exported while simulation-changing extensions or mods are active, or null when it can: a park package does
-	/// not record mods yet, so such a park would play differently for whoever visits it (docs/MODS.md).
+	/// The simulation-changing extensions and mods the park records now, in load order: <see cref="Official"/> ones (OpenTPW's own, shipped with every build) and <see cref="Community"/> ones (everything else).
+	/// A used-only extension counts only while the park uses it, as a save records it (<see cref="ParkResumeMods.Capture"/>).
 	/// </summary>
 	// [EXT:mods] OpenTPW's own mod system; the original game had no mods
-	public static string? ModsRefusal( Level? level = null )
+	public sealed record ParkMods( IReadOnlyList<OpenTPW.Mods.SimulationMod> Official, IReadOnlyList<OpenTPW.Mods.SimulationMod> Community );
+
+	/// <summary>The extensions and mods of <paramref name="level"/> that a package would have to record, split into official and community ones (<see cref="ParkMods"/>).</summary>
+	public static ParkMods ModsOf( Level? level = null ) => ModsOf( level, OpenTPW.Mods.OpenTpwExtensions.Active );
+
+	/// <summary><see cref="ModsOf(Level?)"/> under an explicit active set (tests).</summary>
+	internal static ParkMods ModsOf( Level? level, OpenTPW.Mods.ModSet active )
 	{
 		// [EXT:pools-save] opentpw.pools counts only while the park has pool cells or a changing room, as a save records it (ParkResumeMods.Capture); [EXT:umbrellas-save] opentpw.umbrellas likewise while it has a brolly shop or an umbrella
 		var placed = level?.Objects?.Objects.Where( item => !item.IsDeleted ).Select( item => item.Entry ).ToArray() ?? Array.Empty<ObjectCatalogEntry>();
 		// [EXT:evening-torches-save] opentpw.evening counts only while the park holds a torch
 		var inUse = ParkResumeMods.InUse( level?.Guests?.Grid.Cells, placed.Any( ParkResumeMods.IsPoolsObject ), ParkResumeMods.UmbrellasInUse( placed, level?.Guests ), ParkResumeMods.WinterInUse( placed, level?.Guests ),
 			evening: ParkResumeMods.EveningInUse( placed ) );
-		var mods = ParkResumeMods.RecordableMods( OpenTPW.Mods.OpenTpwExtensions.Active ).Where( mod => !ParkResumeMods.UsedOnlyExtensionIds.Contains( mod.Id ) || inUse.Contains( mod.Id ) ).ToArray();
-		return mods.Length == 0 ? null
-			: OnlineStrings.Get( OnlineLabel.ParkRecordsMods ).Replace( "{0}", string.Join( ", ", mods.Select( mod => $"{mod.Id} {mod.Version}" ) ) );
+		var mods = ParkResumeMods.RecordableMods( active ).Where( mod => !ParkResumeMods.UsedOnlyExtensionIds.Contains( mod.Id ) || inUse.Contains( mod.Id ) ).ToArray();
+		// official: a built-in extension (OfficialExtensions.All), whose files every build ships; anything else is a community mod
+		return new ParkMods( mods.Where( mod => OpenTPW.Mods.OfficialExtensions.Find( mod.Id ) != null ).ToArray(), mods.Where( mod => OpenTPW.Mods.OfficialExtensions.Find( mod.Id ) == null ).ToArray() );
+	}
+
+	/// <summary>
+	/// The official extensions a package of <paramref name="level"/> records (id and version), or null when the park uses none (the package then has no <c>extensions</c> and is written as version 2).
+	/// </summary>
+	// [EXT:mods] OpenTPW's own mod system; the original game had no mods
+	public static IReadOnlyList<ExtensionUse>? ExtensionUses( Level? level = null ) => ExtensionUses( ModsOf( level ) );
+
+	internal static IReadOnlyList<ExtensionUse>? ExtensionUses( ParkMods mods ) =>
+		mods.Official.Count == 0 ? null : mods.Official.Select( mod => new ExtensionUse( mod.Id, mod.Version.ToString() ) ).ToArray();
+
+	/// <summary>
+	/// Why a park cannot be exported or published because of mods, or null when it can: a park package records OpenTPW's own extensions (<see cref="ExtensionUses"/>), but not community mods yet, so a park that
+	/// uses one would play differently for whoever visits it (docs/MODS.md).
+	/// </summary>
+	// [EXT:mods] OpenTPW's own mod system; the original game had no mods
+	public static string? ModsRefusal( Level? level = null ) => ModsRefusal( ModsOf( level ) );
+
+	internal static string? ModsRefusal( ParkMods mods ) => mods.Community.Count == 0 ? null
+		: OnlineStrings.Get( OnlineLabel.ParkRecordsMods ).Replace( "{0}", string.Join( ", ", mods.Community.Select( mod => $"{mod.Id} {mod.Version}" ) ) );
+
+	/// <summary>
+	/// Why the player's park cannot be published now, in the interface language, or null when it can: no park is open, the park is a read-only visit or a co-op guest's copy of the host's park, or it uses
+	/// community mods (<see cref="ModsRefusal(Level?)"/>). The online menu's and the pause menu's Publish Park lines show it where they are disabled.
+	/// </summary>
+	public static string? PublishRefusal( Level? level )
+	{
+		if ( level == null )
+			return OnlineStrings.Get( OnlineLabel.PublishNoPark );
+		if ( level.IsReadOnlyVisit )
+			return OnlineStrings.Get( OnlineLabel.PublishReadOnly );
+		// [EXT:online-coop-lockstep] a co-op guest's park is the host's: the host publishes it (also after the session ended)
+		if ( level.IsCoopGuestPark )
+			return OnlineStrings.Get( OnlineLabel.PublishCoopGuest );
+		return ModsRefusal( level );
 	}
 
 	/// <summary>The snapshot of a cheated park carries the flag <c>cheated</c>; any other is returned as it is.</summary>
@@ -74,6 +115,8 @@ public static class ParkSharing
 			throw new InvalidOperationException( refusal );
 		var snapshot = ParkSnapshotBuilder.FromLevel( level );
 		snapshot = MarkCheated( snapshot, level.Park?.Economy.Cheats.Cheated == true );
+		// [EXT:mods] the official extensions the park uses go into the package, so a visitor who has them off is asked (ParkVisitExtensions)
+		snapshot = snapshot with { Extensions = ExtensionUses( level ) };
 		MapFile? map = level.OriginalPark?.Map;
 		Func<float, float, (int X, int Y)?>? rideCell = level.OriginalPark == null ? null : ( x, y ) =>
 			OriginalParkPlacement.TryGetCell( level.OriginalPark.Heightfield, x, y, out var cx, out var cy ) ? (cx, cy) : null;
@@ -161,6 +204,8 @@ public static class ParkSharing
 			if ( payload.Stats is { } stats )
 				lines.Add( $"Published park: rating {stats.Rating}, value ${stats.Value}, balance ${stats.Balance}, {stats.Visitors} visitors, {stats.Date}; shown read-only." );
 		}
+		if ( manifest.Extensions is { Count: > 0 } extensions )
+			lines.Add( "Uses extensions: " + string.Join( ", ", extensions.Select( use => $"{use.Id} {use.Version}" ) ) + "." );
 		if ( visit.MissingContent.Count > 0 )
 			lines.Add( $"Missing content ({visit.MissingContent.Count}): " + string.Join( ", ", visit.MissingContent.Select( item => $"{item.Kind} {item.Id}" ) ) );
 		lines.AddRange( visit.Warnings );

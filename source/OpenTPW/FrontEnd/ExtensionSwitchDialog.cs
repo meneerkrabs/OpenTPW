@@ -16,7 +16,7 @@ internal static class ExtensionSwitchDialog
 		string.Join( ", ", extensions.Select( extension => ModsScreen.ExtensionName( strings, extension ) ) );
 
 	/// <summary>The dialog's text: the caption line, then the switches and the closing line.</summary>
-	internal static string Text( UiStringTable strings, ParkExtensionSwitch plan )
+	internal static string Text( UiStringTable strings, ParkExtensionSwitch plan, bool visit = false )
 	{
 		var lines = new List<string>();
 		if ( plan.ContinueWith.Count > 0 )
@@ -28,28 +28,31 @@ internal static class ExtensionSwitchDialog
 		if ( plan.TurnOn.Count > 0 )
 		{
 			var names = Names( strings, plan.TurnOn );
-			lines.Add( string.Format( strings.Extra( OpenTpwText.ExtensionSwitchNeeds ), names ) + " " + string.Format( strings.Extra( OpenTpwText.ExtensionSwitchTurnOnQuestion ), names ) );
+			lines.Add( string.Format( strings.Extra( OpenTpwText.ExtensionSwitchNeeds ), names ) + " "
+				+ string.Format( strings.Extra( visit ? OpenTpwText.ExtensionVisitTurnOnQuestion : OpenTpwText.ExtensionSwitchTurnOnQuestion ), names ) );
 		}
-		lines.Add( strings.Extra( OpenTpwText.ExtensionSwitchNewRun ) );
+		// a visit continues nothing: the closing line is about a loaded park
+		if ( !visit )
+			lines.Add( strings.Extra( OpenTpwText.ExtensionSwitchNewRun ) );
 		return strings.Extra( OpenTpwText.ModsExtensions ) + "\n" + string.Join( "\n", lines );
 	}
 
 	/// <summary>The tick's label: "Turn X on and load" when content extensions are switched on, else "Continue".</summary>
-	internal static string ConfirmLabel( UiStringTable strings, ParkExtensionSwitch plan ) => plan.TurnOn.Count > 0
-		? string.Format( strings.Extra( OpenTpwText.ExtensionSwitchTurnOn ), Names( strings, plan.TurnOn ) )
+	internal static string ConfirmLabel( UiStringTable strings, ParkExtensionSwitch plan, bool visit = false ) => plan.TurnOn.Count > 0
+		? string.Format( strings.Extra( visit ? OpenTpwText.ExtensionVisitTurnOn : OpenTpwText.ExtensionSwitchTurnOn ), Names( strings, plan.TurnOn ) )
 		: strings.Extra( OpenTpwText.ExtensionSwitchContinue );
 
 	/// <summary>
 	/// The dialog for <paramref name="plan"/> on <paramref name="stack"/>: the tick pops it and runs <paramref name="confirmed"/> (once), the X, Escape and the right click pop it and run
-	/// <paramref name="cancelled"/>.
+	/// <paramref name="cancelled"/>. <paramref name="visit"/>: the dialog of a read-only visit (<see cref="ParkVisitExtensions"/>), whose text and tick speak of visiting.
 	/// </summary>
-	internal static UiScreen Create( UiScreenStack stack, UiStringTable strings, ParkExtensionSwitch plan, Action confirmed, Action? cancelled = null )
+	internal static UiScreen Create( UiScreenStack stack, UiStringTable strings, ParkExtensionSwitch plan, Action confirmed, Action? cancelled = null, bool visit = false )
 	{
 		ArgumentNullException.ThrowIfNull( plan );
 		ProgressChoiceScreen? screen = null;
 		bool Current() => !screen!.IsRemoved && ReferenceEquals( stack.Top, screen );
-		screen = ProgressChoiceScreen.Message( "extensionSwitch", () => Text( strings, plan ),
-			(() => ConfirmLabel( strings, plan ), () =>
+		screen = ProgressChoiceScreen.Message( "extensionSwitch", () => Text( strings, plan, visit ),
+			(() => ConfirmLabel( strings, plan, visit ), () =>
 			{
 				if ( !Current() || !screen!.TryActivate( stack ) )
 					return;

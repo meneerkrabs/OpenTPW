@@ -1161,13 +1161,23 @@ reaches the other page through it (a page's only origin is the proxy's). The pag
 page's. A refusal (an upgrade outside `/api/`, or none left) is answered, and a client that keeps its side
 open after any answer is closed after the half-close wait.
 
-Results (Apple M5, macOS 26, Release, native host and native guest):
+Results (Apple M5, macOS 26; native games in Release; pages in a headless Chrome 155 with the interpreter
+build):
 
-| Scenario | Checks | Wall time | Notes |
-|---|---|---|---|
-| baseline | 12 of 12 | 19 s | the guest followed 3.3 s after Join (a 104 KiB capture) |
-| recovery | 14 of 14 | 29 s | both links back 3.3 and 3.4 s after the server went down (for 3 s); no resync |
-| endurance, 30 minutes | 13 of 13 | 30 min 19 s | 1800 s at the fastest speed; the slowest five-second stretches at 239.96 (host) and 238.41 (guest) ticks a second; 1806 checkpoints, no resync or desync |
+| Sides | Scenario | Checks | Wall time | Notes |
+|---|---|---|---|---|
+| native/native | baseline | 13 of 13 | 19 s | followed 3.4 s after Join; 104 KiB capture; 7 checkpoints |
+| native/page | baseline | 17 of 17 | 33 s | followed 6.3 s after Join; 106 KiB capture; 15 checkpoints |
+| page/native | baseline | 17 of 17 | 33 s | followed 3.7 s after Join; 104 KiB capture; 12 checkpoints |
+| page/page | baseline | 21 of 21 | 45 s | followed 6.6 s after Join; 106 KiB capture; 23 checkpoints |
+| native/native | recovery | 15 of 15 | 30 s | followed 3.3 s after Join; 104 KiB capture; links back 7.1 and 7.6 s after the drop; no resync |
+| native/page | recovery | 20 of 20 | 44 s | followed 6.2 s after Join; 106 KiB capture; links back 3.4 and 3.3 s after the drop; no resync |
+| page/native | recovery | 20 of 20 | 46 s | followed 3.6 s after Join; 104 KiB capture; links back 7.4 and 6.9 s after the drop; no resync |
+| page/page | recovery | 25 of 25 | 64 s | followed 8.3 s after Join; 107 KiB capture; links back 7.4 and 6.9 s after the drop; no resync |
+| native/native | endurance 30 min | 15 of 15 | 1820 s | followed 3.4 s after Join; 104 KiB capture; 1807 checkpoints; 1800 s at the fastest speed, slowest stretches 239.5 (host) and 230.2 (guest) ticks/s; longest frame gaps host 1.65 s, guest 0.57 s |
+| native/page | endurance 30 min | 19 of 19 | 1834 s | followed 5.8 s after Join; 105 KiB capture; 1819 checkpoints; 1800 s at the fastest speed, slowest stretches 239.6 (host) and 225.5 (guest) ticks/s; longest frame gaps host 1.50 s, guest 0.18 s |
+| page/native | endurance 30 min | 19 of 19 | 1839 s | followed 5.2 s after Join; 104 KiB capture; 1815 checkpoints; 1800 s at the fastest speed, slowest stretches 229.4 (host) and 229.5 (guest) ticks/s; longest frame gaps host 2.80 s, guest 0.73 s |
+| page/page | endurance 30 min | 23 of 23 | 1850 s | followed 6.4 s after Join; 106 KiB capture; 1824 checkpoints; 1801 s at the fastest speed, slowest stretches 224.4 (host) and 216.8 (guest) ticks/s; longest frame gaps host 2.98 s, guest 0.14 s |
 
 No CI job runs it: it needs the game's data. A run's `run.json` keeps every check, both games' evidence
 and the run's facts; its logs, pictures and status files stay in its folder.

@@ -64,13 +64,14 @@ public static class ParkSharing
 	}
 
 	/// <summary>
-	/// The official extensions a package of <paramref name="level"/> records (id and version), or null when the park uses none (the package then has no <c>extensions</c> and is written as version 2).
+	/// The content extensions a package of <paramref name="level"/> records (id and version; <see cref="ParkVisitExtensions.RequiredIds"/>: a visit draws a park with them, the rule extensions and the cheats extension
+	/// change how it plays), or null when the park uses none (the package then has no <c>extensions</c> and is written as version 2).
 	/// </summary>
 	// [EXT:mods] OpenTPW's own mod system; the original game had no mods
 	public static IReadOnlyList<ExtensionUse>? ExtensionUses( Level? level = null ) => ExtensionUses( ModsOf( level ) );
 
 	internal static IReadOnlyList<ExtensionUse>? ExtensionUses( ParkMods mods ) =>
-		mods.Official.Count == 0 ? null : mods.Official.Select( mod => new ExtensionUse( mod.Id, mod.Version.ToString() ) ).ToArray();
+		mods.Official.Where( mod => ParkVisitExtensions.RequiredIds.Contains( mod.Id ) ).Select( mod => new ExtensionUse( mod.Id, mod.Version.ToString() ) ).ToArray() is { Length: > 0 } used ? used : null;
 
 	/// <summary>
 	/// Why a park cannot be exported or published because of mods, or null when it can: a park package records OpenTPW's own extensions (<see cref="ExtensionUses"/>), but not community mods yet, so a park that

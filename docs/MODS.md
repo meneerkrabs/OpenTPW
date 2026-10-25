@@ -385,23 +385,27 @@ unchanged.
 `[EXT:mods]` A `.tpwpark` package, and so a published park, may use OpenTPW's **official** extensions. Official means built in and shipped with every build (`OfficialExtensions.All`, ids `opentpw.*`); anything else is a community
 mod. `ParkSharing.ModsOf` splits the simulation-changing mods the park would record (the same list a save records: a used-only extension only while the park uses it) into the two.
 
-- **Publishing and exporting** refuse only community mods ("This park records mods (community.x 1.0.0) and cannot be exported or published yet"), exactly as before, and name only those mods. The official
-  extensions the park uses go into the package's manifest as `extensions` (id and version, for example `opentpw.winter 1.0.0`). A park that uses none has no such member. The package then stays format version 2,
-  byte-compatible with every older reader; a package with the member is format version 3 and an older build refuses it with "Park package version 3 is not supported" instead of showing a park without its extensions
+- **Publishing and exporting** refuse only community mods ("This park records mods (community.x 1.0.0) and cannot be exported or published yet"), exactly as before, and name only those mods. The package's manifest
+  records the **content** extensions the park uses as `extensions` (id and version, for example `opentpw.winter 1.0.0`): `opentpw.pools`, `opentpw.umbrellas`, `opentpw.winter` and `opentpw.evening`, the
+  extensions whose objects and art a visit draws (`ParkVisitExtensions.RequiredIds`). The rule extensions (rain mood, the winter rules, smarter guests, cross-edition objects) and the cheats extension change how a park
+  plays, not how it looks, so they are not recorded: a park that uses only those is still a plain version 2 package, and an extension a later build adds cannot block a visit. A park that uses no content extension has no
+  such member and stays format version 2, byte-compatible with every older reader. A package with the member is format version 3. An older build cannot read it: its strict manifest reader rejects the unknown
+  member, so an older client or server says the manifest is malformed ('extensions' could not be mapped). A build with this change reads the version before the strict parse and says "Park package version N is not
+  supported" for every later version. When a publish is refused that way by an older server, the client says "This server must be updated before it accepts parks that use OpenTPW extensions"
   (docs/ONLINE.md, docs/SERVER.md).
-- **Visiting** (a downloaded park, Import file, `--visit-park`) looks at the content extensions the park uses (`ParkVisitExtensions.RequiredIds`: `opentpw.pools`, `opentpw.umbrellas`, `opentpw.winter`, `opentpw.evening`): a visit
-  draws the park, so it needs the extensions' objects and art, and nothing else. The rule-only extensions and the cheats extension change how a park plays, not how it looks, so a visitor does not need them. A
-  visit never runs without a content extension its park uses:
+- **Visiting** (a downloaded park, Import file, `--visit-park`) looks at those content extensions. A visit never runs without a content extension its park uses:
   - on: the visit goes ahead (another version of the extension is not a difference for a visit);
   - off and the player may switch it: the confirm dialog of a park load asks "This park uses Winter, which is off. Turn Winter on and visit the park?" with the tick "Turn Winter on and visit", in the eleven
     interface languages. Confirming switches the extension on as a load does (`[EXT:extensions-apply-at-load]`: this run at once, or when the running park ends, and `mods.json`); the X goes back without a visit
     and without a change;
-  - off and it cannot be switched (`--disable-extension` for this run, a Theme Park Inc run, an extension this build does not know): a message names it and the visit does not start;
+  - off and it cannot be switched (`--disable-extension` for this run, an edition that does not have it, an extension this build does not know): a message names it and the visit does not start. In a Theme Park Inc
+    run the pools, umbrellas and winter extensions are gated off; the evening extension has no such gate and can be switched on;
   - `--visit-park` has no dialog: it refuses with the extension and the option that switches it on for the run (`--enable-mod opentpw.winter`).
 
   Co-op is separate and strict: a shared park's host and guests must run the same mod set (`CoopLink.CurrentIdentity`), as before; a park file's `extensions` play no part there.
 - **Why a menu line is greyed**: the online menu's Publish park line and the pause menu's Publish Park line say why on hover (no park open, a park you only visit, a shared park's guest copy, community mods in the
-  park), so a disabled line is never a mystery. They use the popup help, as the other help lines do.
+  park). Hover help needs a pointer and Popup help on, and a disabled line cannot be focused with the keyboard or a gamepad, so the online menu's status line also names the reason while it has nothing else to
+  say. The pause menu has the hover help only.
 
 ## Smarter guests and guest insights (`opentpw.smarter-guests`, `opentpw.guest-insights`)
 

@@ -320,23 +320,25 @@ shipped level import and says so.
 
 ### Official extensions in a package (format version 3)
 
-`[EXT:mods]` A park that uses OpenTPW's own extensions (`opentpw.pools`, `opentpw.umbrellas`, `opentpw.winter`, `opentpw.evening`, the rule extensions and so on; docs/MODS.md, "Parks that use extensions") is published like
-any other. The package manifest lists them as an optional `extensions` member: `[{ "id": "opentpw.winter", "version": "1.0.0" }, ...]`, at most 32 ids that start with `opentpw.`, each once, with a plain
-`major.minor.patch` version. The extensions' files are never in a package; every build ships them. Community mods are not recorded and still refuse an export or a publish.
+`[EXT:mods]` A park that uses OpenTPW's own extensions (docs/MODS.md, "Parks that use extensions") is published like any other. The package manifest lists the **content** extensions it uses (`opentpw.pools`,
+`opentpw.umbrellas`, `opentpw.winter`, `opentpw.evening`) as an optional `extensions` member: `[{ "id": "opentpw.winter", "version": "1.0.0" }, ...]`, at most 32 ids that start with `opentpw.`, each once, with
+a plain `major.minor.patch` version. The extensions' files are never in a package; every build ships them. Rule extensions and the cheats extension are not recorded (a visit does not play the park), and community
+mods are not recorded and still refuse an export or a publish.
 
-- **Compatibility.** A package of a park that uses no extension is written exactly as before: `formatVersion` 2 and no `extensions` member, so older readers and older servers handle it unchanged. A package
-  with the member is `formatVersion` 3 (`ParkPackage.CurrentFormatVersion`, `FirstExtensionsFormatVersion`). The manifest reader rejects unknown members, so the version is what gives an older build its
-  clear message ("Park package version 3 is not supported (this build reads versions 1 to 2)") instead of "malformed". The reader refuses `extensions` in a version 1 or 2 manifest, an empty list, an id
-  that is not an `opentpw.` id, a version that is not `major.minor.patch`, and a duplicate. The server protocol version does not change; a server that has not been updated refuses a version 3 package with
-  that message, so a server operator updates before the clients publish such parks.
+- **Compatibility.** A package of a park that uses no content extension is written exactly as before: `formatVersion` 2 and no `extensions` member, so older readers and older servers handle it unchanged. A package
+  with the member is `formatVersion` 3 (`ParkPackage.CurrentFormatVersion`, `FirstExtensionsFormatVersion`). **An older build cannot read a version 3 package:** its strict manifest reader rejects unknown members
+  before it looks at the version, so an older client visiting such a park, and an older server receiving it, report a malformed manifest ('extensions' could not be mapped), not a version message. A build with this
+  change reads `formatVersion` first and refuses every later version with "Park package version N is not supported (this build reads versions 1 to 3)", so a later bump gives a clear message. The reader refuses
+  `extensions` in a version 1 or 2 manifest, an empty list, an id that is not an `opentpw.` id, a version that is not `major.minor.patch`, and a duplicate. The server protocol version does not change; a server that has
+  not been updated refuses the package with a 400, which the client turns into "This server must be updated before it accepts parks that use OpenTPW extensions". Servers are updated before clients publish such parks.
 - **A visit asks first.** The visit of a park whose content extensions are off here asks "Turn Winter on and visit the park?" (or says why it cannot, or, for `--visit-park`, refuses with the option to
   switch it on); a visit never runs without them. A park file opened with Import file asks the same when its Visit button is used; the description under the file name lists the extensions it uses.
 - **The online menu says why a line is grey.** Publish park is disabled with no park open, in a park you only visit, in a shared park's guest copy and while a community mod is active; hovering the greyed line
-  shows the reason in the help box. The pause menu's Publish Park line does the same.
-- **The menu's postcard line** sits under the last button (it no longer overlaps the Delete account button) and shows the original's reminder (UITEXT 472, "... go online to send them") only while logged
-  out. Logged in, nothing sends the outbox by itself, so the line says where to send the cards (Unsent postcards).
+  shows the reason in the help box (popup help on), and the menu's status line names it too while it has nothing else to say, so a keyboard or a gamepad sees it. The pause menu's Publish Park line has the hover help.
+- **The menu's postcard line** sits under the last button (the ten buttons are 100 apart and 96 high, which keeps their label in the menu font) and shows the original's reminder (UITEXT 472, "... go online to
+  send them") only while logged out. Logged in, nothing sends the outbox by itself, so the line says where to send the cards (Unsent postcards).
 - **Status lines** show once, on the screen on top, and only what was reported since that screen opened or came back to the top: a "No search results" of an earlier Find Parks no longer shows in the menu
-  opened afterwards, nor on the globe under it.
+  opened afterwards, nor on the globe under it. A screen that closes itself when its work is done (login, two-step setup, account deletion, recovery) leaves its outcome on the screen below.
 
 A visit applies the published layout read-only and behaves as the original's visit
 evidence shows (docs/reverse/ONLINE-VISIT.md, from the Mac online code, the manual and

@@ -429,7 +429,7 @@ public class RainMoodTests
 				GameEditions.Select( edition );
 			}
 			Assert.IsNull( ParkSharing.ModsRefusal(), "in a Theme Park World run the extension is an official one: the export records it and refuses nothing" );
-			Assert.AreEqual( extension.Id, ParkSharing.ExtensionUses( (Level?)null )!.Single( use => use.Id == extension.Id ).Id );
+			Assert.IsNull( ParkSharing.ExtensionUses( (Level?)null ), "a rule extension is not recorded in the package: a visit does not play the park" );
 		}
 		using ( OpenTpwExtensions.Use( Set( false, GameEdition.ThemeParkWorld ) ) )
 			Assert.IsFalse( ( ParkResumeMods.Capture( OpenTpwExtensions.Active, ParkResumeMods.InUse( null, false, false ) ) ?? Array.Empty<ParkModRecord>() ).Any( mod => mod.Id == extension.Id ) );

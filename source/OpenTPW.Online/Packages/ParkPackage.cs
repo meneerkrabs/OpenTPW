@@ -144,11 +144,30 @@ public sealed record ParkPackage( ParkManifest Manifest, byte[] Payload, byte[]?
 		if ( container.Length > MaximumPackageBytes )
 			throw new InvalidDataException( "Park package exceeds the size limit." );
 		var entries = BoundedZip.Read( container, Rules );
+		RequireReadableVersion( entries[ManifestEntry] );
 		var manifest = StrictJson.Deserialize<ParkManifest>( entries[ManifestEntry], "Park manifest" );
 		entries.TryGetValue( ThumbnailEntry, out var thumbnail );
 		var package = new ParkPackage( manifest, entries[PayloadEntry], thumbnail );
 		package.Validate();
 		return package;
+	}
+
+	/// <summary>
+	/// A manifest of a version this build does not read is refused with that said before the strict parse, which would call a newer manifest's new members malformed: a later
+	/// version that adds members then still gives this build's players a clear message. A manifest that is not readable here is left to the strict parse.
+	/// </summary>
+	private static void RequireReadableVersion( byte[] manifest )
+	{
+		try
+		{
+			using var document = System.Text.Json.JsonDocument.Parse( manifest, new System.Text.Json.JsonDocumentOptions { MaxDepth = StrictJson.MaximumDepth } );
+			if ( document.RootElement.ValueKind == System.Text.Json.JsonValueKind.Object && document.RootElement.TryGetProperty( "formatVersion", out var version )
+				&& version.ValueKind == System.Text.Json.JsonValueKind.Number && version.TryGetInt32( out var number ) && number > CurrentFormatVersion )
+				throw new InvalidDataException( $"Park package version {number} is not supported (this build reads versions {FirstSupportedFormatVersion} to {CurrentFormatVersion})." );
+		}
+		catch ( System.Text.Json.JsonException )
+		{
+		}
 	}
 
 	/// <summary>Checks every manifest field and the payload/thumbnail hashes.</summary>

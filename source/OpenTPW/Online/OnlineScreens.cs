@@ -347,8 +347,8 @@ public sealed class OnlineScreens
 
 	// ---- OpenTPW online menu -------------------------------------------------------------------
 
-	/// <summary>The online menu's buttons: the first one's top below the window's title, the step between buttons and their height (ten buttons and the postcard line under them fit the window).</summary>
-	internal const float MenuButtonsTop = 170, MenuButtonStep = 94, MenuButtonHeight = 84;
+	/// <summary>The online menu's buttons: the first one's top below the window's title, the step between buttons and their height (ten buttons and the postcard line under them fit the window; the height keeps the label box large enough for the bubbly menu font).</summary>
+	internal const float MenuButtonsTop = 170, MenuButtonStep = 100, MenuButtonHeight = 96;
 
 	/// <summary>OpenTPW's online functions that have no place on the original globe screen.</summary>
 	public void ShowMenu()
@@ -384,7 +384,7 @@ public sealed class OnlineScreens
 				Id = entry.Id,
 				Text = entry.Label,
 				Clicked = entry.Clicked,
-				Bounds = new UiRect( window.X + 200, window.Y + MenuButtonsTop + index * MenuButtonStep, window.Width - 480, MenuButtonHeight ),
+				Bounds = new UiRect( window.X + 130, window.Y + MenuButtonsTop + index * MenuButtonStep, window.Width - 260, MenuButtonHeight ),
 				Anchor = UiAnchor.Center
 			} );
 			if ( entry.Why is { } why )
@@ -400,11 +400,12 @@ public sealed class OnlineScreens
 		// [DATA:Language/English/UITEXT.str:472] the original reminded the player of unsent postcards before going online ("... go online to send them"); it shows while logged out only. Logged in, nothing sends the
 		// outbox by itself, so the line says where to send it. It sits right under the last button, whatever their number.
 		screen.Add( new UiLabel { Id = "waiting", Wrap = true, Font = fonts => fonts.Small, Align = UiAlign.Center,
-			Bounds = new UiRect( window.X + 120, lastButton!.Bounds.Bottom + 14, window.Width - 240, 100 ), Anchor = UiAnchor.Center,
+			Bounds = new UiRect( window.X + 120, lastButton!.Bounds.Bottom + 14, window.Width - 240, 90 ), Anchor = UiAnchor.Center,
 			Text = () => Session.Folders.List( Session.Folders.Outbox ).Any( entry => entry.Card != null )
 				? Session.IsLoggedIn ? OnlineStrings.Get( OnlineLabel.OutboxReadyToSend ) : OnlineStrings.Ui( OnlineStrings.OutboxWaiting, "You have postcards in your outbox, waiting to be sent." ) : "" } );
 		screen.Updating += _ => screen.Find( "mail" )!.Visible = Session.Inbox.Count > 0;
-		AddStatus( screen, window );
+		// [EXT:mods] the reason Publish park is greyed also stands in the status line while there is nothing else to say: the hover help needs a pointer and popup help
+		AddStatus( screen, window, () => ParkSharing.PublishRefusal( level ) is { } why ? $"{OnlineStrings.Ui( OnlineStrings.PublishPark, "Publish park" )}: {why}" : "" );
 		AddBack( screen, window );
 		Push( screen );
 	}
@@ -1080,7 +1081,7 @@ public sealed class OnlineScreens
 		AddStatus( screen, window );
 		AddBack( screen, window );
 		screen.Focus( name );
-		Push( screen );
+		Push( screen, passOutcomeDown: true );
 	}
 
 	// ---- Login (UI-MAP "Online login dialog") ------------------------------------------------
@@ -1194,7 +1195,7 @@ public sealed class OnlineScreens
 			Text = StatusText( screen ) } );
 		screen.Back = stack.Pop;
 		screen.Focus( name.Text.Length == 0 ? name : password );
-		Push( screen );
+		Push( screen, passOutcomeDown: true );
 	}
 
 	// ---- Two-step setup (OpenTPW) -------------------------------------------------------------
@@ -1258,7 +1259,7 @@ public sealed class OnlineScreens
 		AddBack( screen, window, Cancel );
 		screen.Back = Cancel;
 		screen.Focus( (UiElement?)email ?? code );
-		Push( screen );
+		Push( screen, passOutcomeDown: true );
 	}
 
 	// ---- Account recovery (OpenTPW) -----------------------------------------------------------
@@ -1303,7 +1304,7 @@ public sealed class OnlineScreens
 		AddStatus( screen, window );
 		AddBack( screen, window );
 		screen.Focus( who.Text.Length == 0 ? who : code );
-		Push( screen );
+		Push( screen, passOutcomeDown: true );
 	}
 
 	// ---- Find Parks with park details (UI-MAP "Find Parks", "Park details dialog") --------------
@@ -1992,10 +1993,11 @@ public sealed class OnlineScreens
 
 	// ---- Shared pieces ---------------------------------------------------------------------------
 
-	private void Push( UiScreen screen )
+	/// <param name="passOutcomeDown">The screen closes itself when its work is done (login, two-step setup, account deletion, recovery): what it reported stays for the screen below to show.</param>
+	private void Push( UiScreen screen, bool passOutcomeDown = false )
 	{
 		// what was reported while the new screen was open belongs to it: the screen below shows only what comes after it is on top again (StatusText)
-		if ( stack.Top is { } below )
+		if ( stack.Top is { } below && !passOutcomeDown )
 			screen.Removed += () =>
 			{
 				if ( statusBaselines.TryGetValue( below, out var baseline ) )
@@ -2034,8 +2036,10 @@ public sealed class OnlineScreens
 	/// <summary>The <see cref="OnlineSession.StatusSerial"/> each screen's status line (<see cref="StatusText"/>) counts messages from: its opening, or the last time a screen above it closed.</summary>
 	private readonly System.Runtime.CompilerServices.ConditionalWeakTable<UiScreen, System.Runtime.CompilerServices.StrongBox<long>> statusBaselines = new();
 
-	private void AddStatus( UiScreen screen, UiRect window )
+	/// <param name="idle">What the status line shows while it has no status to report (the online menu's reason Publish park is greyed, which the pointer's help does not give a keyboard or a gamepad).</param>
+	private void AddStatus( UiScreen screen, UiRect window, Func<string>? idle = null )
 	{
+		var status = StatusText( screen );
 		screen.Add( new UiLabel
 		{
 			Id = "status",
@@ -2044,7 +2048,7 @@ public sealed class OnlineScreens
 			Color = UiColors.Value,
 			Bounds = new UiRect( window.X + 120, window.Bottom - 175, window.Width - 700, 110 ),
 			Anchor = UiAnchor.Center,
-			Text = StatusText( screen )
+			Text = () => status() is { Length: > 0 } text ? text : idle?.Invoke() ?? ""
 		} );
 	}
 

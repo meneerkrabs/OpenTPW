@@ -27,6 +27,9 @@ public sealed class ParkVisitExtensions
 	/// <summary>The ids of content extensions the park uses that cannot be used here: switched off on the command line, not in this edition, not offered to players, or unknown to this build.</summary>
 	public IReadOnlyList<string> Blocked { get; }
 
+	/// <summary>Whether the extension works in this run's edition: pools, umbrellas and winter have a Theme Park Inc gate (<see cref="FeatureGates"/>); the evening extension has none.</summary>
+	private static bool AvailableInEdition( IOpenTpwExtension extension ) => extension.Id == OfficialExtensions.Evening.Id || !GameEditions.IsThemeParkInc;
+
 	/// <summary>The dialog's plan for <see cref="TurnOn"/> (<see cref="FrontEnd.ExtensionSwitchDialog"/>).</summary>
 	internal ParkExtensionSwitch ToSwitch() => ParkExtensionSwitch.ForTurnOn( TurnOn );
 
@@ -53,7 +56,7 @@ public sealed class ParkVisitExtensions
 				blocked.Add( use.Id );
 			else if ( !RequiredIds.Contains( extension.Id ) || active.IsEnabled( extension.Id ) )
 				continue;
-			else if ( extension.PlayerSelectable && !GameEditions.IsThemeParkInc && !disabledForRun.Contains( extension.Id, StringComparer.Ordinal ) )
+			else if ( extension.PlayerSelectable && AvailableInEdition( extension ) && !disabledForRun.Contains( extension.Id, StringComparer.Ordinal ) )
 				turnOn.Add( extension );
 			else
 				blocked.Add( extension.Id );

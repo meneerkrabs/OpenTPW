@@ -560,6 +560,14 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 				VerifyText( frame, OnlineStrings.Ui( OnlineStrings.OutboxWaiting, "You have postcards in your outbox, waiting to be sent." ), "the postcard line while logged out" );
 				foreach ( var button in menu.Elements.OfType<UiButton>().Where( button => button.Id != "back" ) )
 					Require( button.Bounds.Bottom <= waiting.Bounds.Y, $"the postcard line does not overlap {button.Id}" );
+				// the buttons keep the menu's own (bubbly) font family: a label box too small for it makes a button fall back to a plain body font (Label, Small)
+				foreach ( var button in menu.Elements.OfType<UiButton>().Where( button => button.Id != "back" ) )
+				{
+					var label = button.Text!();
+					var draw = Context.Batch.TextDraws.Last( entry => entry.Text == label );
+					var atlas = Context.Batch.Glyphs[draw.FirstGlyph].Atlas;
+					Require( ReferenceEquals( atlas, Context.Fonts.Menu ) || Context.Fonts.Smaller( Context.Fonts.Menu ).Any( smaller => ReferenceEquals( atlas, smaller ) ), $"the {button.Id} button '{label}' is drawn in the menu font family" );
+				}
 				foreach ( var entry in flow.Online.Folders.List( flow.Online.Folders.Outbox ) )
 					File.Delete( entry.Path );
 				flow.Menu.Stack.Pop();

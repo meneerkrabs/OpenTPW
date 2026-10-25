@@ -655,7 +655,16 @@ public sealed class OnlineSession : IDisposable, IPresenceSession, IChatPanelSou
 	public void Publish( ParkPackage package, bool showOnWebsite = false, int cityId = 0, Action? onPublished = null ) => WithClient( async client =>
 	{
 		Post( () => Status = OnlineStrings.Ui( OnlineStrings.PublishingPark, "Publishing Park" ) );
-		await client.UploadParkAsync( package, showOnWebsite: showOnWebsite, cityId: cityId );
+		try
+		{
+			await client.UploadParkAsync( package, showOnWebsite: showOnWebsite, cityId: cityId );
+		}
+		// [EXT:mods] a server from before the extensions member refuses a version 3 package as malformed or unsupported: say what to do instead
+		catch ( OnlineException exception ) when ( package.Manifest.Extensions != null && exception.Status == System.Net.HttpStatusCode.BadRequest
+			&& (exception.Message.Contains( "extensions", StringComparison.OrdinalIgnoreCase ) || exception.Message.Contains( "version 3", StringComparison.OrdinalIgnoreCase )) )
+		{
+			throw new OnlineException( exception.Status, OnlineStrings.Get( OnlineLabel.ServerNeedsExtensionsUpdate ), exception.Reason );
+		}
 		if ( onPublished != null )
 			Post( onPublished );
 		return OnlineStrings.Ui( OnlineStrings.ParkPublished, "PARK PUBLISHED" ).Replace( "\n\n", " " );

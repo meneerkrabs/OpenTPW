@@ -105,12 +105,16 @@ public class PublishOfficialExtensionsTests
 	[TestMethod]
 	public void ExtensionUsesRecordIdAndVersionAndNothingForAParkWithout()
 	{
-		using ( OpenTpwExtensions.Use( With( (OfficialExtensions.RainMood, true) ) ) )
+		// only content extensions are recorded: a rule extension (rain mood) or the cheats extension makes no difference to a visit
+		using ( OpenTpwExtensions.Use( With( (OfficialExtensions.RainMood, true), (OfficialExtensions.SmarterGuests, true), (OfficialExtensions.Cheats, true) ) ) )
 		{
-			var uses = ParkSharing.ExtensionUses( (Level?)null )!;
-			var rain = uses.Single( use => use.Id == OfficialExtensions.RainMood.Id );
-			Assert.AreEqual( OfficialExtensions.RainMood.Version.ToString(), rain.Version );
+			Assert.IsTrue( ParkSharing.ModsOf( null, OpenTpwExtensions.Active ).Official.Count > 0, "they are official simulation extensions" );
+			Assert.IsNull( ParkSharing.ExtensionUses( (Level?)null ), "and still leave the package version 2 without the member" );
 		}
+		var winter = new SimulationMod( OfficialExtensions.Winter.Id, OfficialExtensions.Winter.Version, ModSet.NoFilesSha256 );
+		var rain = new SimulationMod( OfficialExtensions.RainMood.Id, OfficialExtensions.RainMood.Version, ModSet.NoFilesSha256 );
+		var recorded = ParkSharing.ExtensionUses( new ParkSharing.ParkMods( new[] { winter, rain }, Array.Empty<SimulationMod>() ) )!;
+		CollectionAssert.AreEqual( new[] { Use( OfficialExtensions.Winter ) }, recorded.ToArray() );
 		// a used-only extension counts only while the park uses it: winter on, no winter object in the park
 		using ( OpenTpwExtensions.Use( With( (OfficialExtensions.Winter, true) ) ) )
 			Assert.IsFalse( ( ParkSharing.ExtensionUses( (Level?)null ) ?? Array.Empty<ExtensionUse>() ).Any( use => use.Id == OfficialExtensions.Winter.Id ) );
@@ -167,13 +171,16 @@ public class PublishOfficialExtensionsTests
 	}
 
 	[TestMethod]
-	public void AnUnknownManifestMemberStillFailsInVersionTwo()
+	public void AManifestOfANewerVersionIsRefusedByItsVersionEvenWithNewMembers()
 	{
-		// the older readers' behaviour the version bump relies on: a version 2 reader refuses an unknown member and a version it does not read, with a message that names the version
-		var json = Encoding.UTF8.GetString( StrictJson.Serialize( Package( Use( OfficialExtensions.Winter ) ).Manifest ) ).Replace( "\"formatVersion\":3", "\"formatVersion\":4" );
+		// the version is read before the strict parse, which would call a later version's new members malformed
+		var json = Encoding.UTF8.GetString( StrictJson.Serialize( Package( Use( OfficialExtensions.Winter ) ).Manifest ) ).Replace( "\"formatVersion\":3", "\"formatVersion\":4" ).Replace( "{\"format\"", "{\"futureMember\":1,\"format\"" );
 		var package = Package( Use( OfficialExtensions.Winter ) );
 		var entries = OnlineFormatTests.Zip( (ParkPackage.ManifestEntry, Encoding.UTF8.GetBytes( json )), (ParkPackage.PayloadEntry, package.Payload) );
 		StringAssert.Contains( Assert.ThrowsException<InvalidDataException>( () => ParkPackage.Read( entries ) ).Message, "version 4 is not supported" );
+		// a version this build reads with an unknown member is still malformed
+		var malformed = Encoding.UTF8.GetString( StrictJson.Serialize( package.Manifest ) ).Replace( "{\"format\"", "{\"futureMember\":1,\"format\"" );
+		StringAssert.Contains( Assert.ThrowsException<InvalidDataException>( () => ParkPackage.Read( OnlineFormatTests.Zip( (ParkPackage.ManifestEntry, Encoding.UTF8.GetBytes( malformed )), (ParkPackage.PayloadEntry, package.Payload) ) ) ).Message, "malformed" );
 	}
 
 	// ---- The visit ------------------------------------------------------------------------------------------------
@@ -208,9 +215,12 @@ public class PublishOfficialExtensionsTests
 		Assert.AreEqual( 0, blocked.TurnOn.Count );
 		// an extension this build does not know
 		CollectionAssert.AreEqual( new[] { "opentpw.future" }, ParkVisitExtensions.Plan( new[] { new ExtensionUse( "opentpw.future", "1.0.0" ) }, off, Array.Empty<string>() )!.Blocked.ToArray() );
-		// a Theme Park Inc run has none of the content extensions
+		// a Theme Park Inc run has no pools, umbrellas or winter, but the evening extension has no gate there and can be turned on
 		GameEditions.Select( GameEdition.ThemeParkInc );
 		CollectionAssert.AreEqual( new[] { OfficialExtensions.Winter.Id }, ParkVisitExtensions.Plan( Winter, off, Array.Empty<string>() )!.Blocked.ToArray() );
+		var evening = ParkVisitExtensions.Plan( new[] { Use( OfficialExtensions.Evening ) }, With( (OfficialExtensions.Evening, false) ), Array.Empty<string>() )!;
+		CollectionAssert.AreEqual( new[] { OfficialExtensions.Evening.Id }, evening.TurnOn.Select( extension => extension.Id ).ToArray() );
+		Assert.AreEqual( 0, evening.Blocked.Count );
 	}
 
 	[TestMethod]
@@ -324,7 +334,7 @@ public class PublishOfficialExtensionsTests
 				if ( language != "English" )
 					Assert.AreNotEqual( SupplementaryStrings.Get( key, "English" ), SupplementaryStrings.Get( key, language ), $"{key} is translated into {language}" );
 			}
-		foreach ( var label in new[] { OnlineLabel.VisitNeedsExtensions, OnlineLabel.VisitEnableOnCommandLine, OnlineLabel.PublishNoPark, OnlineLabel.PublishReadOnly, OnlineLabel.PublishCoopGuest, OnlineLabel.OutboxReadyToSend } )
+		foreach ( var label in new[] { OnlineLabel.VisitNeedsExtensions, OnlineLabel.VisitEnableOnCommandLine, OnlineLabel.PublishNoPark, OnlineLabel.PublishReadOnly, OnlineLabel.PublishCoopGuest, OnlineLabel.OutboxReadyToSend, OnlineLabel.ServerNeedsExtensionsUpdate } )
 			foreach ( var (language, table) in OnlineStrings.Supplementary )
 			{
 				Assert.IsTrue( table.TryGetValue( label, out var text ) && text.Length > 0, $"{label} in {language}" );
@@ -393,6 +403,7 @@ public class PublishOfficialExtensionsTests
 					Assert.AreEqual( why, why == null ? null : Hover( menu, "publish" ), $"{name}: the greyed line says why on hover" );
 					if ( why != null )
 					{
+						Assert.AreEqual( $"{OnlineStrings.Ui( OnlineStrings.PublishPark, "Publish park" )}: {why}", ((UiLabel)menu.Find( "status" )!).Text!(), $"{name}: the status line gives the reason too, for a keyboard or a gamepad" );
 						// through the screen's own input path, as a pointer resting on the line reaches it
 						var context = Context();
 						var rect = publish.ScreenRect( context.Canvas );

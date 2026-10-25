@@ -11,8 +11,8 @@ internal sealed class OnlinePanel : IDisposable
 	private readonly ChatOverlay overlay;
 	private string server = "", name = "", password = "", code = "", email = "", emailCode = "", parkName = "My park", search = "", importPath = "", chatLine = "";
 	private string recipients = "", title = "", message = "", localStatus = "";
-	/// <summary>Whether the park list was fetched, so an empty list is a result rather than nothing asked yet.</summary>
-	private bool listed;
+	/// <summary>The server the park list was last fetched from, so an empty list is a result of that server rather than nothing asked yet.</summary>
+	private OpenTPW.Online.Client.OnlineClient? listedOn;
 	private ParkVisitInfo? inspected;
 
 	public OnlinePanel( Level level, OnlineFolders folders )
@@ -151,10 +151,11 @@ internal sealed class OnlinePanel : IDisposable
 		if ( ImGui.Button( OnlineStrings.Get( OnlineLabel.Refresh ) ) )
 		{
 			session.RefreshParks( search );
-			listed = true;
+			listedOn = session.Client;
 		}
-		// the park list's fetch ends its progress text, as the Find Parks screen shows an empty result as its row: this list says so itself
-		if ( listed && session.Busy == 0 && session.Parks.Count == 0 )
+		// the park list's fetch ends its progress text, as the Find Parks screen shows an empty result as its row: this list says so itself, for a fetch from this server that
+		// ended without a message (a failed one leaves its error as the status)
+		if ( listedOn != null && ReferenceEquals( listedOn, session.Client ) && session.Busy == 0 && session.Parks.Count == 0 && session.Status.Length == 0 )
 			ImGui.TextWrapped( OnlineStrings.Ui( OnlineStrings.NoSearchResults, "No search results" ) );
 		foreach ( var park in session.Parks )
 		{

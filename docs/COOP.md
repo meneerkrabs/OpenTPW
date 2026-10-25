@@ -1708,9 +1708,10 @@ answers, inside the stream's application or the link's pump; the guest's HUD tak
 its next update (`CoopGuestCommands.TakeCompleted`), outside any command, tick and stream application, and
 completes the tool that still waits for each one:
 - an applied line runs the click's continuation once, with the segment its record laid in the guest's park,
-  as every player's tool does: a line its record cut short (a cell the host's park had taken by then) goes
-  on from the clicked end, the original's rule after a refused cell, and a refused one ends the tool, as a
-  refused command does;
+  as for a line laid at once: it goes on from its end, or a refused command ends the tool. A line its record
+  cut short at a refused cell (the park changed between the click, whose ghost had none, and the record)
+  ends the tool with what it laid, as the click would have ended it on the refused ghost the park then
+  showed;
 - an applied placement finishes as the host's does (the Built message, the ride's queue tool, the tool
   kept for exactly Ctrl at the click), also when a later record removed the object before the outcome
   came back (no tool follows it then), and a refused one says its reason and keeps the tool armed;
@@ -1721,8 +1722,8 @@ completes the tool that still waits for each one:
 
 Anything that ends or switches a tool drops its wait, and a resync replaces the park with its tools, while
 the requests are the session's: such a request's outcome is then only a message. The session's end ends
-every wait (a line that waits ends its tool). Each outcome is its own event, so two refusals in a row are
-both said.
+every wait (a line that waits ends its tool). Each outcome the HUD says is its own event, so two refused
+lines or placements in a row are both said.
 
 **Who hears and reads what (C3a-2).** A command's cues are its issuer's: the placement, demolition,
 backtrack and queue cues inside a command play only where the running command's player is this machine's

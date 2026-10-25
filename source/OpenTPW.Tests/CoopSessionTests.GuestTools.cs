@@ -409,15 +409,51 @@ public partial class CoopSessionTests
 		var (host, guest, _, _) = Shared();
 		var view = ViewOf( guest );
 		Rounds( 20, host, guest );
+		Assert.IsTrue( host.Issue( host.Level.BuildCommand( host.One.Entry, 20, 12, 90 ) ).Accepted );
 		Grant( host, guest, view );
+		// a placement, a removal and a line, each waiting for the host
+		ArmRide( guest, view );
+		guest.Level.ClickBuildTool( 24, 12 );
+		guest.Level.IsRemovingObjects = true;
+		guest.Level.ClickRemoveTool( 20, 12 );
 		var tool = StartPath( guest );
 		Assert.IsNotNull( guest.Level.ClickCellTool( (12, 20) )?.Waiting );
+		Assert.IsNotNull( guest.Level.WaitingPlacement );
+		Assert.IsNotNull( guest.Level.WaitingRemoval );
 		guest.Enter();
 		guest.Session!.End( "The guest left." );
 		Assert.IsNull( tool.Waiting );
 		Assert.IsFalse( tool.IsActive, "what became of the line is not known here: its tool ends" );
+		Assert.IsNull( guest.Level.WaitingPlacement, "the build tool takes clicks again" );
+		Assert.IsNull( guest.Level.WaitingRemoval, "and the remove tool" );
 		Assert.IsNull( guest.Level.Commands.Submit, "the park sends no requests now" );
 		view.Update();
 		Assert.IsFalse( tool.IsActive );
+	}
+
+	[TestMethod]
+	public void ALineTheHostsParkCutShortSinceTheClickEndsItsTool()
+	{
+		var (host, guest, _, _) = Shared();
+		var view = ViewOf( guest );
+		Rounds( 20, host, guest );
+		Grant( host, guest, view );
+		guest.Enter();
+		Assert.IsTrue( guest.Level.EnterPathTool( 8, 4 ) );
+		var tool = guest.Level.CellTool;
+		Assert.IsNotNull( guest.Level.ClickCellTool( (12, 4) )?.Waiting, "the line's ghost had no refused cell at the click" );
+		// the park changes under the line before the host takes it: a ride's queue across it, on both parks alike as a host's edit reaches both (the queue tests' synthetic
+		// geometry, from (10, 6) up to (10, 2)); a path stops at a queue cell that is not the queue's end
+		foreach ( var park in new[] { host, guest } )
+		{
+			park.Enter();
+			ConfigureQueue( park.Level.Guests!.Grid, park.One, 10, 5 );
+		}
+		RoundsUntil( () => tool.Waiting == null, host, guest, view, "the line came back" );
+		Assert.IsTrue( tool.LastCommit is { Completed: false, CommandRefused: false, StoppedAt: (10, 4) }, $"its record laid part of it ({tool.LastCommit})" );
+		Assert.IsTrue( Walkable( host, 9, 4 ) && Walkable( guest, 9, 4 ), "the cells before the queue" );
+		Assert.IsFalse( Walkable( guest, 12, 4 ), "none past it" );
+		Assert.IsFalse( tool.IsActive, "the tool ends, as the click would have ended it on the ghost the park then showed" );
+		CatchUpAndCompare( host, guest );
 	}
 }

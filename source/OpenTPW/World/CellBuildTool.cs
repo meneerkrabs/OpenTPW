@@ -184,8 +184,9 @@ public sealed class CellBuildTool
 
 	/// <summary>
 	/// [EXT:online-coop-commands] The outcome of the guest's line that waits for the host (C3a-2), once: <paramref name="outcome"/> is its command's result in the guest's park (its
-	/// record applied there), and the click's continuation runs with the segment it laid, as for a line laid at once (a refusal included, which lays nothing). Returns that segment, or
-	/// null when no line waits.
+	/// record applied there), and the click's continuation runs with the segment it laid, as for a line laid at once (a refusal included, which lays nothing). A line its record cut
+	/// short at a refused cell (the park changed between the click, whose ghost had none, and the record) ends the tool with what it laid, as the click would have ended it on the
+	/// refused ghost it then had. Returns that segment, or null when no line waits.
 	/// </summary>
 	internal SegmentResult? CompleteWaiting( ParkCommandResult outcome )
 	{
@@ -193,14 +194,20 @@ public sealed class CellBuildTool
 		if ( Waiting is not { } waiting || Writer == null )
 			return null;
 		Waiting = null;
+		var result = waiting.Commit.Complete( outcome );
+		Ghost = null;
+		if ( result is { Completed: false, StoppedByOwnLimit: false, CommandRefused: false } )
+		{
+			LastCommit = result;
+			End();
+			return result;
+		}
 		var pushed = false;
 		if ( vertices.Count < VertexCapacity )
 		{
 			vertices.Add( waiting.End );
 			pushed = true;
 		}
-		var result = waiting.Commit.Complete( outcome );
-		Ghost = null;
 		return Continue( waiting.Start, waiting.End, result, pushed );
 	}
 

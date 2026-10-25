@@ -32,36 +32,26 @@ public partial class Level
 		return ordered;
 	}
 
-	private static readonly Entity[] NoEntities = [];
-
 	/// <summary>
 	/// Splits a draw sequence into the entities drawn before the translucent pass (<see cref="WorldPass"/>) and the ones drawn after it: the blended effects that write no depth, the particle and weather renderers, the
-	/// pools' water and the spray of their jets. Each group keeps the order of the snapshot. The translucent world geometry (<see cref="Model.Companions"/>) is far to near before these, so a particle, a swimmer's water
-	/// or a jet's spray in front of water or glass is still drawn over it, and the geometry no longer overpaints them. With none of them in the scene the snapshot itself is the first group.
+	/// pools' water and the spray of their jets. Each group keeps the order of the snapshot (the caller's lists are cleared and refilled, so a frame allocates nothing here). The translucent world geometry (<see cref="Model.Companions"/>) is far to near before these, so a particle, a swimmer's water
+	/// or a jet's spray in front of water or glass is still drawn over it, and the geometry no longer overpaints them. 
 	/// </summary>
 	// [BIN:TPW-EXE:0x582170 frame flush] the scene pass 0x576A00 ends with 0x582170: the batcher 0x581DB0 draws every model face whose state has bit 0x1000 or 0x2000 (opaque 0x1256, alpha-test-0xF0 0x2756) at once and
 	// defers the rest (0x556: alpha test 0x10), then 0x582AD0 draws the deferred records far to near by mean vertex depth (0x5829E0); see WorldTranslucency.
 	// The original also defers the particle and weather batches whose state has neither bit (0x556, 0x200552) into that same far-to-near list; here they are drawn after the whole list, which hides a particle that lies behind water or glass (see PTCL-905).
-	internal static (Entity[] Before, Entity[] After) SplitLate( Entity[] snapshot )
+	internal static bool SplitLate( Entity[] snapshot, List<Entity> before, List<Entity> after )
 	{
-		var late = 0;
+		before.Clear();
+		after.Clear();
 		foreach ( var entity in snapshot )
-			if ( IsLate( entity ) )
-				late++;
-		if ( late == 0 )
-			return (snapshot, NoEntities);
-		var before = new Entity[snapshot.Length - late];
-		var after = new Entity[late];
-		int first = 0, second = 0;
-		foreach ( var entity in snapshot )
-		{
-			if ( IsLate( entity ) )
-				after[second++] = entity;
-			else
-				before[first++] = entity;
-		}
-		return (before, after);
+			( IsLate( entity ) ? after : before ).Add( entity );
+		return after.Count > 0;
 	}
 
-	private static bool IsLate( Entity entity ) => entity is ParticleRenderer or WeatherRenderer or global::OpenTPW.PoolSprayRenderer or PoolPartEntity { IsWater: true };
+	/// <summary>The effects drawn after the translucent pass (see <see cref="SplitLate"/>). The swimmers' sprites come after the pool water, which writes no depth, so the water's blend does not tint them (docs/POOLS.md, Rendering).</summary>
+	private static bool IsLate( Entity entity ) => entity is ParticleRenderer or WeatherRenderer or global::OpenTPW.PoolSprayRenderer or PoolPartEntity { IsWater: true } or GuestRenderer { DrawsAfterWater: true };
+
+	// a scene built without its constructor (the park-build tests make one) has no lists yet
+	private List<Entity>? lateBefore, lateAfter;
 }

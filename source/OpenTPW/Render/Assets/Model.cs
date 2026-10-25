@@ -88,6 +88,7 @@ public class Model : Asset
 		{
 			var companion = new Model( group.Vertices, group.Indices, material, dynamicVertices, true );
 			companions.Add( companion );
+			companionSlots.Add( group.Slot );
 			if ( dynamicVertices )
 				companionMaps.Add( (companion, group.Map, new Vertex[group.Vertices.Length]) );
 		}
@@ -112,18 +113,77 @@ public class Model : Asset
 		this.dynamicVertices = dynamicVertices;
 		SetupMesh( vertices, indices, dynamicVertices, dynamicIndices: true );
 		triangleOrder = new TriangleOrder( vertices, indices );
+		variants.Add( new OrderVariant( triangleOrder, IndexBuffer! ) );
 		All.Add( this );
 	}
 
 	private TriangleOrder? triangleOrder;
+
+	/// <summary>
+	/// The sorted index sets of a model that sorts its triangles. A model drawn at several places (a track piece laid in many tiles) keeps one set per distinct rotation of its model matrix, each with an index buffer
+	/// of its own, sorted once per frame for the first record that asks: the records of one rotation share an order, and no draw has to rewrite a buffer another record of the frame reads.
+	/// </summary>
+	private sealed class OrderVariant( TriangleOrder order, DeviceBuffer buffer )
+	{
+		public TriangleOrder Order { get; } = order;
+		public DeviceBuffer Buffer { get; } = buffer;
+		public (float, float, float, float, float, float, float, float, float) Rotation;
+		public bool HasRotation;
+		public long Pass = -1;
+	}
+
+	private const int MaximumOrderVariants = 8;
+	private readonly List<OrderVariant> variants = new();
+
+	private static (float, float, float, float, float, float, float, float, float) RotationOf( in System.Numerics.Matrix4x4 model )
+		=> (model.M11, model.M12, model.M13, model.M21, model.M22, model.M23, model.M31, model.M32, model.M33);
+
+	private OrderVariant VariantFor( in System.Numerics.Matrix4x4 model )
+	{
+		var rotation = RotationOf( model );
+		OrderVariant? oldest = null;
+		foreach ( var variant in variants )
+		{
+			if ( variant.HasRotation && variant.Rotation == rotation )
+				return variant;
+			if ( !variant.HasRotation )
+			{
+				variant.Rotation = rotation;
+				variant.HasRotation = true;
+				return variant;
+			}
+			if ( oldest == null || variant.Pass < oldest.Pass )
+				oldest = variant;
+		}
+		if ( variants.Count >= MaximumOrderVariants )
+		{
+			// a part that turns every frame: the least recently sorted set is taken over
+			oldest!.Rotation = rotation;
+			oldest.Order.Reset();
+			oldest.Pass = -1;
+			return oldest;
+		}
+		var buffer = Device.ResourceFactory.CreateBuffer( new BufferDescription( indexCount * sizeof( uint ), BufferUsage.IndexBuffer | BufferUsage.Dynamic ) );
+		Device.UpdateBuffer( buffer, 0, triangleOrder!.FaceIndices );
+		var created = new OrderVariant( triangleOrder.Share(), buffer ) { Rotation = rotation, HasRotation = true };
+		variants.Add( created );
+		return created;
+	}
 	private TextureAlphaType[]? slotTypes;
 	private int[]? mainMap;
 	private Vertex[]? mainScratch;
 	private readonly List<Model> companions = new();
+	private readonly List<int> companionSlots = new();
 	private readonly List<(Model Model, int[] Map, Vertex[] Scratch)> companionMaps = new();
 
 	/// <summary>The translucent face groups of this model, drawn after everything else (<see cref="WorldPass"/>); empty for most models.</summary>
 	internal IReadOnlyList<Model> Companions => companions;
+
+	/// <summary>
+	/// Whether the translucent group <paramref name="index"/> is translucent now: the texture its slot shows has an alpha plane with an alpha byte. A slot with texture frames of different alpha types
+	/// changes pass with its frame; a group that is not translucent now is drawn with the model's other faces.
+	/// </summary>
+	internal bool CompanionIsTranslucent( int index ) => WorldTranslucency.IsTranslucent( Material.CurrentSlotType( companionSlots[index] ) );
 
 	/// <summary>Whether this model has faces of its own to draw (a model whose faces are all translucent has only <see cref="Companions"/>).</summary>
 	internal bool HasGeometry => vertices != null && ( !IsIndexed || indexCount > 0 );
@@ -141,7 +201,25 @@ public class Model : Asset
 	/// Re-sorts the triangles of a model that sorts them for the view of <paramref name="modelViewProjection"/>; the new order is copied to the GPU when the model is drawn, and only when it differs from the
 	/// one the GPU has. Nothing happens when the matrix is the one of the last sort (a still camera), or for a model that does not sort.
 	/// </summary>
-	internal void OrderTriangles( in System.Numerics.Matrix4x4 modelViewProjection ) => triangleOrder?.Sort( modelViewProjection );
+	internal void OrderTriangles( in System.Numerics.Matrix4x4 modelMatrix, in System.Numerics.Matrix4x4 modelViewProjection, long pass )
+	{
+		if ( triangleOrder == null )
+			return;
+		var variant = VariantFor( modelMatrix );
+		// one sort per frame and rotation (pass < 0: no pass is open, every draw checks)
+		if ( pass >= 0 && variant.Pass == pass )
+			return;
+		variant.Pass = pass;
+		variant.Order.Sort( modelViewProjection );
+	}
+
+	/// <summary>Copies what changed since the last frame (replaced vertices, re-sorted indices) to the GPU. The translucent pass calls it for every record before its first draw, so no upload interrupts the draws.</summary>
+	internal void FlushUploads( CommandList commandList )
+	{
+		vertices?.Flush( commandList );
+		foreach ( var variant in variants )
+			variant.Order.Flush( commandList, variant.Buffer );
+	}
 
 	private void SetupMesh( Vertex[] vertices, bool dynamicVertices = false )
 	{
@@ -230,7 +308,21 @@ public class Model : Asset
 		triangleOrder?.SetPositions( replaced );
 	}
 
-	internal void Draw()
+	internal void Draw() => Draw( IndexBuffer, null );
+
+	/// <summary>Draws a model placed at <paramref name="modelMatrix"/>: a model that sorts its triangles draws the index set of that rotation.</summary>
+	internal void Draw( in System.Numerics.Matrix4x4 modelMatrix )
+	{
+		if ( triangleOrder == null )
+		{
+			Draw( IndexBuffer, null );
+			return;
+		}
+		var variant = VariantFor( modelMatrix );
+		Draw( variant.Buffer, variant.Order );
+	}
+
+	private void Draw( DeviceBuffer? indexBuffer, TriangleOrder? order )
 	{
 		if ( !HasGeometry )
 			return;
@@ -247,8 +339,8 @@ public class Model : Asset
 
 		if ( IsIndexed )
 		{
-			triangleOrder?.Flush( commandList, IndexBuffer! );
-			commandList.SetIndexBuffer( IndexBuffer, IndexFormat.UInt32 );
+			order?.Flush( commandList, indexBuffer! );
+			commandList.SetIndexBuffer( indexBuffer, IndexFormat.UInt32 );
 
 			commandList.DrawIndexed(
 				indexCount: indexCount,
@@ -275,12 +367,15 @@ public class Model : Asset
 			companion.ReleaseBuffers();
 		Material.ClearResourceSets();
 		var (vertexBuffer, indexBuffer) = (vertices?.Buffer, IndexBuffer);
+		var extra = variants.Select( variant => variant.Buffer ).Where( buffer => buffer != indexBuffer ).ToArray();
 		if ( vertexBuffer == null && indexBuffer == null )
 			return;
 		Render.ScheduleDelete( () =>
 		{
 			vertexBuffer?.Dispose();
 			indexBuffer?.Dispose();
+			foreach ( var buffer in extra )
+				buffer.Dispose();
 		} );
 	}
 }
@@ -291,7 +386,9 @@ public class Model : Asset
 /// </summary>
 internal sealed class TriangleOrder
 {
-	private System.Numerics.Vector3[] positions;
+	private readonly System.Numerics.Vector3[] positions;
+	private readonly int[] positionVersion;
+	private int seenVersion;
 	private readonly uint[] original;
 	private uint[] sorted;
 	private uint[] next;
@@ -307,12 +404,44 @@ internal sealed class TriangleOrder
 	public TriangleOrder( Vertex[] vertices, uint[] indices )
 	{
 		positions = new System.Numerics.Vector3[vertices.Length];
+		positionVersion = new int[1];
 		SetPositionsFrom( vertices );
 		original = indices.ToArray();
 		sorted = indices.ToArray();
 		next = new uint[indices.Length];
 		order = new int[indices.Length / 3];
 		keys = new ulong[indices.Length / 3];
+	}
+
+	/// <summary>An order over the same faces and vertex positions with a sorted state of its own (another rotation of the same model); its buffer starts as the faces' own order.</summary>
+	private TriangleOrder( TriangleOrder source )
+	{
+		positions = source.positions;
+		positionVersion = source.positionVersion;
+		seenVersion = positionVersion[0];
+		original = source.original;
+		sorted = source.original.ToArray();
+		next = new uint[original.Length];
+		order = new int[original.Length / 3];
+		keys = new ulong[original.Length / 3];
+	}
+
+	/// <summary>A second sorted state over the same faces and positions; its GPU buffer is expected to hold <see cref="FaceIndices"/>.</summary>
+	public TriangleOrder Share() => new TriangleOrder( this );
+
+	/// <summary>The faces' own index order (the content of a new buffer).</summary>
+	public uint[] FaceIndices => original;
+
+	/// <summary>Forgets the sort: the next one runs even for the matrix of the last (a state taken over by another rotation).</summary>
+	public void Reset() => sortedOnce = false;
+
+	private void CheckVersion()
+	{
+		if ( seenVersion == positionVersion[0] )
+			return;
+		seenVersion = positionVersion[0];
+		sortedOnce = false;
+		depthKnown = false;
 	}
 
 	private void SetPositionsFrom( Vertex[] vertices )
@@ -325,12 +454,13 @@ internal sealed class TriangleOrder
 	public void SetPositions( Vertex[] vertices )
 	{
 		SetPositionsFrom( vertices );
-		sortedOnce = false;
-		depthKnown = false;
+		positionVersion[0]++;
+		CheckVersion();
 	}
 
 	public float MeanDepth( in System.Numerics.Matrix4x4 modelViewProjection )
 	{
+		CheckVersion();
 		if ( depthKnown && depthFor == modelViewProjection )
 			return meanDepth;
 		depthFor = modelViewProjection;
@@ -340,6 +470,7 @@ internal sealed class TriangleOrder
 
 	public void Sort( in System.Numerics.Matrix4x4 modelViewProjection )
 	{
+		CheckVersion();
 		if ( sortedOnce && sortedFor == modelViewProjection )
 			return;
 		sortedFor = modelViewProjection;

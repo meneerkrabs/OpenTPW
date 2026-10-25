@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Numerics;
@@ -172,6 +173,32 @@ public class WorldTranslucencyTests
 		Assert.IsTrue( order.NeedsUpload, "moved vertices are sorted again" );
 	}
 
+	[TestMethod]
+	public void SharedOrdersKeepTheirOwnSortedStateAndFollowMovedVertices()
+	{
+		var projection = Perspective();
+		var vertices = new[]
+		{
+			new Vertex { Position = new Vector3( 0, 0, 5 ) }, new Vertex { Position = new Vector3( 1, 0, 5 ) }, new Vertex { Position = new Vector3( 0, 1, 5 ) },
+			new Vertex { Position = new Vector3( 0, 0, 20 ) }, new Vertex { Position = new Vector3( 1, 0, 20 ) }, new Vertex { Position = new Vector3( 0, 1, 20 ) }
+		};
+		var first = new TriangleOrder( vertices, [0, 1, 2, 3, 4, 5] );
+		var second = first.Share();
+		first.Sort( projection );
+		Assert.IsTrue( first.NeedsUpload );
+		Assert.IsFalse( second.NeedsUpload, "a shared order starts as the faces' own order and keeps its own state" );
+		second.Sort( projection );
+		Assert.IsTrue( second.NeedsUpload );
+		first.MarkUploaded(); second.MarkUploaded();
+		first.SetPositions( [vertices[3], vertices[4], vertices[5], vertices[0], vertices[1], vertices[2]] );
+		second.Sort( projection );
+		Assert.IsTrue( second.NeedsUpload, "vertices moved through one order are seen by the other" );
+		second.MarkUploaded();
+		second.Reset();
+		second.Sort( projection );
+		Assert.IsFalse( second.NeedsUpload, "a reset order sorts again but an unchanged result is not uploaded" );
+	}
+
 	// Identity-only entities: nothing here draws.
 	private static T Empty<T>() where T : class => (T)RuntimeHelpers.GetUninitializedObject( typeof( T ) );
 
@@ -189,20 +216,25 @@ public class WorldTranslucencyTests
 		var water = Empty<PoolPartEntity>(); water.IsWater = true;
 		var deck = Empty<PoolPartEntity>();
 		var a = Empty<ModelEntity>(); var b = Empty<Entity>();
-		Entity[] input = { a, water, particle, b, spray, deck, weather };
-		var (before, after) = Level.SplitLate( input );
-		SameOrder( [a, b, deck], before );
-		SameOrder( [water, particle, spray, weather], after );
-		SameOrder( [a, water, particle, b, spray, deck, weather], input );
+		var swimmers = Empty<GuestRenderer>(); typeof( GuestRenderer ).GetProperty( nameof( GuestRenderer.DrawsAfterWater ) )!.SetValue( swimmers, true );
+		var kids = Empty<GuestRenderer>();
+		Entity[] input = { a, kids, water, particle, swimmers, b, spray, deck, weather };
+		var before = new List<Entity>(); var after = new List<Entity>();
+		Assert.IsTrue( Level.SplitLate( input, before, after ) );
+		SameOrder( [a, kids, b, deck], before.ToArray() );
+		// the swimmers stay behind the water they swim in
+		SameOrder( [water, particle, swimmers, spray, weather], after.ToArray() );
+		SameOrder( [a, kids, water, particle, swimmers, b, spray, deck, weather], input );
 	}
 
 	[TestMethod]
 	public void ASceneWithoutLateEntitiesKeepsItsSnapshot()
 	{
 		Entity[] input = { Empty<ModelEntity>(), Empty<Entity>() };
-		var (before, after) = Level.SplitLate( input );
-		Assert.AreSame( input, before );
-		Assert.AreEqual( 0, after.Length );
+		var before = new List<Entity>(); var after = new List<Entity> { Empty<Entity>() };
+		Assert.IsFalse( Level.SplitLate( input, before, after ) );
+		SameOrder( input, before.ToArray() );
+		Assert.AreEqual( 0, after.Count );
 	}
 
 	[TestMethod]

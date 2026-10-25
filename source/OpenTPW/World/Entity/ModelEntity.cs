@@ -78,16 +78,20 @@ public partial class ModelEntity : Entity
 		if ( Model.HasGeometry )
 			DrawModel( Model, model );
 		// [BIN:TPW-EXE:0x582AD0 deferred records] the faces with a translucent texture are drawn after everything else, far to near (WorldPass); outside a level's pass (nothing collects them) they are drawn here
-		foreach ( var companion in Model.Companions )
-			if ( !WorldPass.Submit( this, companion, model ) )
+		for ( var index = 0; index < Model.Companions.Count; index++ )
+		{
+			var companion = Model.Companions[index];
+			// a slot whose texture frame is not translucent now (a texture-frame animation) is drawn at once, like the original's immediate state words
+			if ( !Model.CompanionIsTranslucent( index ) || !WorldPass.Submit( this, companion, model ) )
 				DrawModel( companion, model );
+		}
 	}
 
 	/// <summary>Draws <paramref name="drawn"/> (this entity's model or one of its translucent companions) with this entity's uniforms at <paramref name="model"/>.</summary>
 	internal void DrawModel( Model drawn, System.Numerics.Matrix4x4 model )
 	{
 		// [BIN:TPW-EXE:0x565590 -> 0x565490 deferred batch] the triangles of a translucent part are drawn far to near by the sum of their corner depths
-		drawn.OrderTriangles( model * Camera.ViewMatrix * Camera.ProjMatrix );
+		drawn.OrderTriangles( model, model * Camera.ViewMatrix * Camera.ProjMatrix, WorldPass.PassId );
 
 		var uniformBuffer = new ObjectUniformBuffer
 		{
@@ -113,7 +117,7 @@ public partial class ModelEntity : Entity
 		}.WithFog();
 
 		SetObjectUniforms( uniformBuffer, model, drawn );
-		drawn.Draw();
+		drawn.Draw( model );
 	}
 
 	/// <summary>
@@ -140,6 +144,6 @@ public partial class ModelEntity : Entity
 				return;
 			}
 		}
-		material.Set( "ObjectUniformBuffer", uniforms );
+		material.SetUnchanged( "ObjectUniformBuffer", uniforms );
 	}
 }

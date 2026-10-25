@@ -712,7 +712,7 @@ What the profile and the marks showed, on the published build before the changes
 | Part | ms | What it is |
 | --- | ---: | --- |
 | Sky (`draw.sky`) | 4-8 | first-time work: `Level.DrawSky` created the sky on its first call. That reads the colour grid (a `.tga` decode, most of `load:image-decode`), loads the cloud and cylinder textures, and builds the geometry and two materials. |
-| Interface textures (`draw.overlay`) | 5-6 | first-time work: the overlay decoded, keyed and uploaded each image of the HUD's first draw (`UiImages.LoadKeyed`; `thoughts2.wct`, `thoughts.wct`, `purple_button.wct`, `meter.wct`, `b_money.wct` and smaller ones) and smoothed the font atlas |
+| Interface textures (`draw.overlay`) | 5-6 | first-time work: the overlay decoded, keyed and uploaded each image of the HUD's first draw (`UiImages.Load`; `thoughts2.wct`, `thoughts.wct`, `purple_button.wct`, `meter.wct`, `b_money.wct` and smaller ones) and smoothed the font atlas |
 | Entities (`draw.level`) | 3.4 | the first call of each renderer's draw (`RideHeadRenderer`, `BalloonRenderer`, `GuestRenderer`, `LitterRenderer` 0.4-0.6 ms each). The GPU calls are small: all `gl.*` marks together stay under 1 ms, 24 material resource sets take 0.3 ms. The rest is the AOT runtime's first-call work. |
 | Advisor model (`draw.advisorModel`) | 1.9 | its first pose and the render target of its image; the advisor itself is made in this frame |
 | HUD draw (`draw.hud`) | 1.2 | the first call of each widget's draw |

@@ -100,15 +100,31 @@ texture, and draws every face whose state has bit 0x1000 or 0x2000 at once; ever
 by 0x5829E0 on the record's average vertex depth (+0x30 over the vertex count at +0x20), largest first. The Direct3D renderer is mode 1 of `DAT_008BD524` (0x44DD50); the reverse sort 0x5828F0 runs only when
 `[0x8BCBC8] & 0xC` is 0xC and bit 0x20000000 is set, and no writer of bits 0x4 and 0x8 was found among the option and device-setup functions that were read (0x44D8F0, 0x44DD50, 0x44DE20, 0x566840, 0x5673D0).
 
-OpenTPW ports the pass in `Model`, so every consumer of `test.shader` gets it (terrain meshes, the heightfield, paths, placed objects including the harbour's glass roofs, coaster and track pieces, the tour and the lobby scene).
+OpenTPW ports the pass in `Model`, so every consumer of `test.shader` gets it (terrain meshes, the heightfield, paths, placed objects including the harbour's glass roofs, coaster and track pieces, the tour, pool parts and the lobby scene).
 The model classifies its texture slots from the `.wct` header (`TextureFile.AlphaType`, read where the loader 0x564C00 reads it: an alpha plane exists only at 32 bits per pixel, so the one 13/01/18 member, bumper.wad
 `b_NEWwin`, is opaque) and splits the faces that use a translucent slot into companion models, one record per (part, texture). A companion is submitted to `WorldPass` (a queue that `Level.Render` flushes after the
 other entities, and the lobby scene after its layers) and drawn farthest first by the mean clip depth z/w of its vertices; its triangles are sorted farthest first by the sum of their three corner depths
 (`Model.OrderTriangles`, a dynamic index buffer that is uploaded only when the order changes). Vertices behind the eye plane get depth -1. The pool spray, pool water, particle and weather renderers draw after the
 sorted world list (`Level.SplitLate`). `test.shader` tests translucent faces at 0x10/255 (vertex bit 0x20000000, `WorldTranslucency.AlphaTestLowFlag`), cut-out faces at 0xF0/255 (bit 0x10000000, `CutoutFlag`, state
 0x2756) and every other face at the engine's 0.1. Cut-out textures (236 files, alpha byte 0 with an alpha plane) now decode their plane. Not covered: textures that are not `.wct` (Theme Park Inc art) and bonus-content
-textures (all opaque here), and the state bits that depend on model and texture flags OpenTPW has no counterpart of (0x400000 wrap, 0x800 from a model flag, 0x5156), which stay with the existing render-state notes.
+textures (all opaque here).
 The deferred particle and weather batches (state 0x556 and 0x200552, which the original sorts into the same list as the world) are PTCL-905's business: they draw after the whole sorted world list.
+The late group also holds the swimmers' renderer (`GuestRenderer.DrawsAfterWater`), behind the pool water in the snapshot order, because the water writes no depth and its blend would tint the sprites ([POOLS.md](POOLS.md#rendering)).
+
+*Cost of the pass.* Every record of a frame is ordered and uploaded before the pass draws its first one (`WorldPass.Flush`: an upload between two draws ends the render pass on Metal), and a model drawn at several places (a track
+piece laid in many tiles) keeps one sorted index set per distinct rotation of its model matrix, sorted once per frame for the first record that asks (`Model.OrderTriangles`), so a draw never rewrites a buffer another record reads.
+`Material.SetUnchanged` skips the uniform upload of a draw whose block equals the one the material's buffer holds, so the translucent meshes of a terrain, which share their matrix and camera, write the block once. Busy Jungle park
+(Release, `--perf-run 9000 --perf-crowd 150 --no-vsync`, two alternating rounds, frame average in ms, GPU wait in ms): zoom 110 main 1.93 / 1.72 (GPU 0.11 / 0.22), this change 1.76 / 1.79 (0.19 / 0.18); zoom 300 main 3.20 / 3.14 (1.29 / 1.50), this change 3.12 / 3.16 (0.96 / 0.96).
+Before these three measures the same change took 3.3 ms at zoom 110 (GPU wait 1.6 to 1.8) and 5.8 at zoom 300, because every translucent terrain mesh drew with a uniform upload and an index upload of its own in the middle of the pass.
+`--frame-stats` reports the records of the pass per frame ("translucent records in the pass": 45 at zoom 110, 81 at zoom 300).
+
+*Texture frames.* A slot whose texture frames differ in alpha type (Space `Tv_Ride.md2` slot 29: `TV_THRUST_0` opaque, `TV_THRUST_1` translucent) is classified by its most translucent frame (`Material.AddSlotAlternatives`), and the faces of such a slot are drawn
+in the translucent pass only while the texture it shows now is translucent (`Material.CurrentSlotType`); in an opaque frame they are drawn with the model's other faces, which is the original's state word rebuilt from the current texture. A slot whose frames are cut-out and translucent keeps the 0x10/255 test of its translucent frames.
+
+*Render-state bits that no shipped model sets.* The state builder 0x581790 reads three bits of the mesh record's first dword (the node type, `ModelNode.Type`; the mesh record's material count and material pointer sit at +0x5A and +0x6C of the same record, the loader's +90 and +108): 0x2 gives state bit 0x800 (depth write off, D3DRS 14), 0x2000000 gives 0x5156 and 0x8000000 gives 0x20000.
+Over every MD2 member of the 312 archives (`Md2StateFlagCorpusTests`) the node types are 0x1 (4,578 meshes), 0x401 (331) and 0x2 (5, all the empty `heightfield` mesh of a terrain `base.MD2`, which has no texture slot and so no state word): no mesh with a texture slot has bit 0x2, and none has 0x2000000 or 0x8000000, so 0x800, 0x5156 and 0x20000
+never arise from model data. The wrap bit 0x400000 comes from the slot flags 0x10 and 0x20 (`TextureSlotAddressing`, loader 0x575E10). The slot flag 0x2 becomes state bit 0x800000 in 0x581790; no consumer was found in the state decoder 0x567620 (UI-034). The alpha-reference index (table 0x7012D8, index 2 when the probe 0x567270 passes, else 0) is a property of the device, not of the data, and the reverse sort 0x5828F0 needs
+render-flag bits 0x4 and 0x8 (no writer found) and an instance flag 0x20000000 of the draw call; neither is reachable by the models or the textures of the data, so neither is reproduced.
 
 Nodes: one tree rooted at 0x78. Mesh records are 160 bytes, dummy records 88:
 `u32 type`, parent/next-sibling/first-child record pointers, 4×4 float row-major

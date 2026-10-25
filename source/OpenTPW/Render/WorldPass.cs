@@ -16,6 +16,14 @@ internal static class WorldPass
 	private static readonly List<Record> records = new();
 	private static readonly Comparison<Record> byDepth = ( left, right ) => Compare( left.Depth, left.Sequence, right.Depth, right.Sequence );
 	private static Matrix4x4 viewProjection;
+	private static long passes;
+	private static readonly HashSet<Model> prepared = new( ReferenceEqualityComparer.Instance );
+
+	/// <summary>The number of the open pass (a model sorts once per pass and rotation), or -1 when none is open.</summary>
+	internal static long PassId => Active ? passes : -1;
+
+	/// <summary>The translucent records the passes drew since the frame stats were last read (<see cref="FrameStats"/>).</summary>
+	internal static int FrameRecords;
 
 	/// <summary>Whether a pass is open: entities hand their translucent groups over instead of drawing them.</summary>
 	internal static bool Active { get; private set; }
@@ -28,6 +36,7 @@ internal static class WorldPass
 	{
 		records.Clear();
 		WorldPass.viewProjection = viewProjection;
+		passes++;
 		Active = true;
 	}
 
@@ -63,6 +72,15 @@ internal static class WorldPass
 		try
 		{
 			records.Sort( byDepth );
+			FrameRecords += records.Count;
+			// every re-sorted index set and replaced vertex array goes to the GPU before the first draw of the pass: an upload between two draws ends the render pass on some backends
+			prepared.Clear();
+			foreach ( var record in records )
+			{
+				record.Model.OrderTriangles( record.Matrix, record.Matrix * viewProjection, passes );
+				if ( prepared.Add( record.Model ) )
+					record.Model.FlushUploads( Render.CommandList );
+			}
 			foreach ( var record in records )
 				record.Entity.DrawModel( record.Model, record.Matrix );
 		}
@@ -76,6 +94,7 @@ internal static class WorldPass
 	internal static void Abort()
 	{
 		records.Clear();
+		prepared.Clear();
 		Active = false;
 	}
 }

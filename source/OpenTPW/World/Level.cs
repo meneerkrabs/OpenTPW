@@ -1335,7 +1335,10 @@ public partial class Level : IDisposable
 		// [EXT:point-lights] the lights of the objects that have any, for every draw of this frame
 		var viewProjection = Camera.ViewMatrix * Camera.ProjMatrix;
 		PointLights?.Gather( viewProjection );
-		var (before, after) = SplitLate( WeatherAfterParticles( Entity.All.ToArray() ) );
+		var snapshot = WeatherAfterParticles( Entity.All.ToArray() );
+		var before = lateBefore ??= new List<Entity>();
+		var after = lateAfter ??= new List<Entity>();
+		SplitLate( snapshot, before, after );
 		// the translucent pass: the entities hand the translucent faces of their models over while they draw (ModelEntity), and the pass draws them after all of these, far to near
 		WorldPass.Begin( viewProjection );
 		try

@@ -1169,18 +1169,21 @@ build):
 
 | Sides | Scenario | Checks | Wall time | Notes |
 |---|---|---|---|---|
-| native/native | baseline | 13 of 13 | 19 s | followed 3.4 s after Join; 104 KiB capture; 7 checkpoints |
-| native/page | baseline | 17 of 17 | 33 s | followed 6.3 s after Join; 106 KiB capture; 15 checkpoints |
-| page/native | baseline | 17 of 17 | 33 s | followed 3.7 s after Join; 104 KiB capture; 12 checkpoints |
-| page/page | baseline | 21 of 21 | 45 s | followed 6.6 s after Join; 106 KiB capture; 23 checkpoints |
-| native/native | recovery | 15 of 15 | 30 s | followed 3.3 s after Join; 104 KiB capture; links back 7.1 and 7.6 s after the drop; no resync |
-| native/page | recovery | 20 of 20 | 44 s | followed 6.2 s after Join; 106 KiB capture; links back 3.4 and 3.3 s after the drop; no resync |
-| page/native | recovery | 20 of 20 | 46 s | followed 3.6 s after Join; 104 KiB capture; links back 7.4 and 6.9 s after the drop; no resync |
-| page/page | recovery | 25 of 25 | 64 s | followed 8.3 s after Join; 107 KiB capture; links back 7.4 and 6.9 s after the drop; no resync |
+| native/native | baseline | 14 of 14 | 22 s | followed 3.4 s after Join; 104 KiB capture; 9 checkpoints |
+| native/page | baseline | 18 of 18 | 39 s | followed 6.4 s after Join; 107 KiB capture; 21 checkpoints |
+| page/native | baseline | 18 of 18 | 36 s | followed 3.6 s after Join; 104 KiB capture; 17 checkpoints |
+| page/page | baseline | 22 of 22 | 53 s | followed 6.1 s after Join; 105 KiB capture; 28 checkpoints |
+| native/native | recovery | 16 of 16 | 31 s | followed 3.3 s after Join; 104 KiB capture; links back 7.4 and 6.5 s after the drop; no resync |
+| native/page | recovery | 21 of 21 | 49 s | followed 5.6 s after Join; 105 KiB capture; links back 3.4 and 6.5 s after the drop; no resync |
+| page/native | recovery | 21 of 21 | 49 s | followed 3.6 s after Join; 104 KiB capture; links back 6.4 and 3.4 s after the drop; no resync |
+| page/page | recovery | 26 of 26 | 71 s | followed 7.6 s after Join; 107 KiB capture; links back 3.3 and 7.8 s after the drop; no resync |
 | native/native | endurance 30 min | 15 of 15 | 1820 s | followed 3.4 s after Join; 104 KiB capture; 1807 checkpoints; 1800 s at the fastest speed, slowest stretches 239.5 (host) and 230.2 (guest) ticks/s; longest frame gaps host 1.65 s, guest 0.57 s |
 | native/page | endurance 30 min | 19 of 19 | 1834 s | followed 5.8 s after Join; 105 KiB capture; 1819 checkpoints; 1800 s at the fastest speed, slowest stretches 239.6 (host) and 225.5 (guest) ticks/s; longest frame gaps host 1.50 s, guest 0.18 s |
 | page/native | endurance 30 min | 19 of 19 | 1839 s | followed 5.2 s after Join; 104 KiB capture; 1815 checkpoints; 1800 s at the fastest speed, slowest stretches 229.4 (host) and 229.5 (guest) ticks/s; longest frame gaps host 2.80 s, guest 0.73 s |
-| page/page | endurance 30 min | 23 of 23 | 1850 s | followed 6.4 s after Join; 106 KiB capture; 1824 checkpoints; 1801 s at the fastest speed, slowest stretches 224.4 (host) and 216.8 (guest) ticks/s; longest frame gaps host 2.98 s, guest 0.14 s |
+| page/page | endurance 30 min | 24 of 24 | 1877 s | followed 13.9 s after Join; 108 KiB capture; 1843 checkpoints; 1801 s at the fastest speed, slowest stretches 231.7 (host) and 219.2 (guest) ticks/s; longest frame gaps host 5.02 s, guest 0.35 s |
+
+The native/native, native/page and page/native endurance runs come from before the guest's granted line
+(C3a-2), which adds one check to every run; the other rows include it.
 
 No CI job runs it: it needs the game's data. A run's `run.json` keeps every check, both games' evidence
 and the run's facts; its logs, pictures and status files stay in its folder.

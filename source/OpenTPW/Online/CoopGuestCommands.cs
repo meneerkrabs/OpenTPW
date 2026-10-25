@@ -133,10 +133,14 @@ internal sealed class CoopGuestCommands : IDisposable
 		var bytes = ParkCommandCodec.Encode( command );
 		var request = new Request( nextSequence++, command, bytes );
 		open.Add( request.Sequence, request );
+		LastSubmitted = request;
 		if ( !fenced )
 			Send( request );
 		return request;
 	}
+
+	/// <summary>The request submitted last, resolved or not: what a tool's click sent, which the live acceptance follows to its outcome however fast it resolves.</summary>
+	public Request? LastSubmitted { get; private set; }
 
 	/// <summary>
 	/// Once a game frame: when an open request has waited <see cref="ResendSeconds"/> for its outcome since it last went out, every open request goes to the host again, in order

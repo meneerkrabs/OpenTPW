@@ -1134,8 +1134,9 @@ The driver then checks both games' evidence against each other (`checkEvidence`,
 The scenarios:
 
 - **baseline**: the steps above, with no resync, no desync and no lost link.
-- **recovery** (`--scenario recovery`): after the first line, the driver kills the server and starts it
-  again on the same port and data three seconds later. After that barrier both games' links go from
+- **recovery** (`--scenario recovery`): after the lines (the host's, the guest's refused one and its
+  granted one), the driver kills the server and starts it again on the same port and data three seconds
+  later. After that barrier both games' links go from
   reconnecting to open with a resume of the session, and both chats reconnect: the counts at the barrier
   must grow. The guest follows again (a resync is allowed here). The host's view jumps again, which the
   guest sees, and a second line reaches the guest's park, with checkpoints after it.

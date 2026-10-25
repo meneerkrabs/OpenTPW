@@ -97,18 +97,37 @@ internal sealed partial class CoopLiveTest
 		yield return Wait( "the guest's park has the line", () => OtherSays( "sawBuild" ), 180 );
 
 		// [EXT:online-coop-permissions] the guest's own line is refused; the host lets it build through the Build Together screen's switch (C3a-2), and the guest's next line is laid
-		// at its record on both parks
+		// at its record on both parks. The host keeps what its own park did with the guest's line: the record its stream gave the command and the cells the command laid here
 		yield return Wait( "the guest's line refused", () => OtherSays( "refused" ), 180 );
-		foreach ( var step in LetTheGuestBuild( guestName ) )
-			yield return step;
-		Publish( "granted", true );
-		yield return Wait( "the guest's own line", () => Other( "ownBuilt" ) is JsonObject, 300 );
-		var own = (JsonObject)Other( "ownBuilt" )!;
-		var ownCells = Cells( own["cells"] );
-		var seat = own["seat"]!.GetValue<int>();
-		yield return Wait( "the guest's line in the host's park", () => ownCells.All( cell => level.Guests!.Grid.Cells.RawTypeAt( cell.X, cell.Y ) == (byte)ParkCellType.Path ), 60 );
-		Require( level.Commands.Log.Any( entry => entry.Command is LayLineCommand or QueueSegmentCommand && entry.Command.Player == seat ), "the host's stream took the guest's line as its seat" );
-		Keep( "guestBuild", new JsonObject { ["record"] = own["record"]?.DeepClone(), ["cells"] = own["cells"]!.DeepClone(), ["seat"] = seat } );
+		var seat = (int)flow.Sharing!.State!.Members.Single( member => member.Name == guestName ).Slot;
+		JsonObject? observed = null;
+		void Observe( ParkCommandLogEntry entry, ParkCommandResult result )
+		{
+			if ( observed == null && entry.Command.Player == seat && entry.Command is LayLineCommand or QueueSegmentCommand && result.Accepted && result.As<SegmentResult>() is { } segment )
+				observed = new JsonObject
+				{
+					["record"] = TheSession.HostStream?.LastRecord,
+					["seat"] = seat,
+					["kind"] = entry.Command.Kind.ToString(),
+					["cells"] = new JsonArray( segment.Line.Select( cell => (JsonNode?)new JsonArray( cell.X, cell.Y ) ).ToArray() )
+				};
+		}
+		level.Commands.Applied += Observe;
+		try
+		{
+			foreach ( var step in LetTheGuestBuild( guestName, seat ) )
+				yield return step;
+			Publish( "granted", true );
+			yield return Wait( "the guest's own line", () => Other( "ownBuilt" ) is JsonObject, 300 );
+			var ownCells = Cells( Other( "ownBuilt" )!["cells"] );
+			yield return Wait( "the guest's line in the host's park", () => observed != null
+				&& ownCells.All( cell => level.Guests!.Grid.Cells.RawTypeAt( cell.X, cell.Y ) == (byte)ParkCellType.Path ), 60 );
+		}
+		finally
+		{
+			level.Commands.Applied -= Observe;
+		}
+		Keep( "guestBuild", observed! );
 		Publish( "sawGuestBuild", true );
 
 		if ( scenario == "recovery" )
@@ -166,14 +185,13 @@ internal sealed partial class CoopLiveTest
 	/// [EXT:online-coop-permissions] The host lets the guest build (C3a-2): Escape, Build Together, the guest's switch from "Watches" to "Builds", which the shared park's grant then
 	/// says, and back to the park.
 	/// </summary>
-	private IEnumerable<CoopLiveWait> LetTheGuestBuild( string guestName )
+	private IEnumerable<CoopLiveWait> LetTheGuestBuild( string guestName, int seat )
 	{
 		const string screen = OnlineScreens.BuildTogetherScreenName;
 		var level = ThePark;
 		var members = flow.Sharing!.State!.Members.OrderBy( member => member.Slot ).ToList();
 		var row = members.FindIndex( member => member.Name == guestName );
-		Require( row > 0, "the guest has a row of its own" );
-		var seat = (int)members[row].Slot;
+		Require( row > 0 && members[row].Slot == seat, "the guest has a row of its own" );
 		Give( UiInput.Key( UiKeys.Back ) );
 		yield return Wait( "Escape opens the pause menu", () => Top( ParkHud.PauseMenuScreen ), 10 );
 		Choose( ParkHud.PauseMenuScreen, ParkHud.BuildTogetherId );

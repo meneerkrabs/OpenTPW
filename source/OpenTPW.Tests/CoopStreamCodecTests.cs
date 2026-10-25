@@ -69,7 +69,7 @@ public class CoopStreamCodecTests
 		var fee = Record( 10, CoopRecordFlags.Accepted, new SetEntranceFeeCommand( 1 ) );
 		var none = Array.Empty<CoopCheckpoint>();
 		Refused( new CoopStreamFrame( 10, 0, new[] { fee }, none ), "records numbered from 0" );
-		Refused( new CoopStreamFrame( 10, 1, new[] { fee with { Flags = (CoopRecordFlags)4 } }, none ), "an unknown flag" );
+		Refused( new CoopStreamFrame( 10, 1, new[] { fee with { Flags = (CoopRecordFlags)8 } }, none ), "an unknown flag" );
 		Refused( new CoopStreamFrame( 10, 1, new[] { fee with { Flags = CoopRecordFlags.Accepted | CoopRecordFlags.Errored } }, none ), "accepted and errored" );
 		Refused( new CoopStreamFrame( 10, 1, new[] { fee with { Bytes = Array.Empty<byte>() } }, none ), "a record without a command" );
 		Refused( new CoopStreamFrame( 10, 1, new[] { fee, fee with { Boundary = 9 } }, none ), "a falling boundary" );
@@ -83,7 +83,7 @@ public class CoopStreamCodecTests
 
 		var bytes = new CoopStreamFrame( 10, 1, new[] { fee }, none ).Encode();
 		var version = (byte[])bytes.Clone();
-		version[0] = 2;
+		version[0] = CoopStreamFrame.Version + 1;
 		Assert.ThrowsException<InvalidDataException>( () => CoopStreamFrame.Decode( version ), "another version" );
 		var huge = (byte[])bytes.Clone();
 		huge[8] = 0x80;
@@ -110,7 +110,10 @@ public class CoopStreamCodecTests
 		new CoopSnapshotRequest( 4, CoopSnapshotReason.Desync, new CoopDesyncReport( 2, CoopDesyncKind.Flags, 600, 0, 0, 1, 77 ) ) { Generation = 4 },
 		new CoopSnapshotRequest( 0, CoopSnapshotReason.Join, null ),
 		new CoopSnapshotReady( 120, 3600, 88, 0xAAAA, 0xBBBB, new string( 'a', 64 ), 12345 ) { Generation = 5 },
-		new CoopSnapshotFailed( CoopSnapshotFailure.Busy, false, 30 ) { Generation = 5 }
+		new CoopSnapshotFailed( CoopSnapshotFailure.Busy, false, 30 ) { Generation = 5 },
+		new CoopGuestCommand( 7, ParkCommandCodec.Encode( new LayLineCommand( CellToolMode.Path, -1, 2, 3, 9, 3 ) ) ) { Generation = 2 },
+		new CoopGuestCommandAnswer( 7, 913, null, 8 ) { Generation = 2 },
+		new CoopGuestCommandAnswer( 9, 0, CoopGuestRefusal.Gap, 8 )
 	};
 
 	[TestMethod]
@@ -153,6 +156,35 @@ public class CoopStreamCodecTests
 		Assert.ThrowsException<InvalidDataException>( () => CoopStreamMessage.Decode( failure ), "an unknown snapshot failure" );
 		Assert.ThrowsException<InvalidDataException>( () => CoopStreamMessage.Decode( new CoopSnapshotReady( 1, 1, 1, 0, 0, new string( 'G', 64 ), 1 ).Encode() ), "a digest that is no SHA-256" );
 		Assert.ThrowsException<InvalidDataException>( () => CoopStreamMessage.Decode( new CoopSnapshotReady( 1, 1, 1, 0, 0, new string( 'a', 64 ), 0 ).Encode() ), "an empty snapshot" );
+		// [EXT:online-coop-commands] a guest's request is numbered from 1; an answer is a record or a known refusal, never both or neither
+		Assert.ThrowsException<InvalidDataException>( () => CoopStreamMessage.Decode( new CoopGuestCommand( 0, new byte[] { 1 } ).Encode() ), "a request numbered 0" );
+		Assert.ThrowsException<InvalidDataException>( () => CoopStreamMessage.Decode( new CoopGuestCommandAnswer( 0, 5, null, 1 ).Encode() ), "an answer numbered 0" );
+		Assert.ThrowsException<InvalidDataException>( () => CoopStreamMessage.Decode( new CoopGuestCommandAnswer( 3, 5, CoopGuestRefusal.TooFast, 4 ).Encode() ),
+			"an answer with a record and a refusal" );
+		Assert.ThrowsException<InvalidDataException>( () => CoopStreamMessage.Decode( new CoopGuestCommandAnswer( 3, 0, null, 4 ).Encode() ), "an answer with neither" );
+		Assert.ThrowsException<InvalidDataException>( () => CoopStreamMessage.Decode( new CoopGuestCommandAnswer( 3, 0, (CoopGuestRefusal)8, 4 ).Encode() ), "an unknown refusal" );
+	}
+
+	/// <summary>[EXT:online-coop-commands] A guest's record carries its origin after its flags; the flags alone never claim one, and an origin needs a request number.</summary>
+	[TestMethod]
+	public void AGuestsRecordCarriesItsOrigin()
+	{
+		var line = Record( 40, CoopRecordFlags.Accepted, new LayLineCommand( CellToolMode.Path, -1, 2, 3, 9, 3 ) ) with { Origin = new CoopRecordOrigin( 12, 3 ) };
+		var host = Record( 40, CoopRecordFlags.None, new SetEntranceFeeCommand( 5 ) );
+		var frame = new CoopStreamFrame( 41, 9, new[] { host, line, host with { Flags = CoopRecordFlags.Accepted | CoopRecordFlags.Guest } }, Array.Empty<CoopCheckpoint>() );
+		var bytes = frame.Encode();
+		Assert.AreEqual( frame.Size, bytes.Length );
+		Assert.AreEqual( CoopStreamFrame.EmptyBytes + 3 * CoopStreamFrame.RecordOverhead + CoopStreamFrame.OriginBytes + frame.Records.Sum( record => record.Bytes.Length ), bytes.Length,
+			"the origin's bytes are the guest's record's alone" );
+		var read = CoopStreamFrame.Decode( bytes );
+		Assert.IsNull( read.Records[0].Origin );
+		Assert.AreEqual( new CoopRecordOrigin( 12, 3 ), read.Records[1].Origin );
+		Assert.AreEqual( CoopRecordFlags.Accepted, read.Records[1].Flags, "the guest flag stays in the encoding" );
+		Assert.IsNull( read.Records[2].Origin, "a guest flag without an origin is not written" );
+		Assert.AreEqual( CoopRecordFlags.Accepted, read.Records[2].Flags );
+		Refused( new CoopStreamFrame( 41, 9, new[] { line with { Origin = new CoopRecordOrigin( 12, 0 ) } }, Array.Empty<CoopCheckpoint>() ), "an origin without a request number" );
+		for ( var length = 0; length < bytes.Length; length++ )
+			Assert.ThrowsException<InvalidDataException>( () => CoopStreamFrame.Decode( bytes.AsSpan( 0, length ) ), $"a frame with an origin cut to {length} bytes" );
 	}
 
 	[TestMethod]
@@ -161,7 +193,7 @@ public class CoopStreamCodecTests
 		var envelope = CoopResentFrames.EmptyBytes + CoopResentFrames.FrameOverhead + CoopStreamFrame.MaximumBytes;
 		Assert.AreEqual( CoopLink.MaximumMessagePayload, envelope );
 		Assert.IsTrue( CoopStreamFrame.MaximumBytes <= CoopLink.MaximumFramePayload );
-		Assert.IsTrue( ParkCommandCodec.MaximumBytes + CoopStreamFrame.RecordOverhead + CoopStreamFrame.EmptyBytes
-			+ CoopStreamFrame.MaximumCheckpoints * CoopStreamFrame.CheckpointBytes <= CoopStreamFrame.MaximumBytes, "the largest command always fits a frame" );
+		Assert.IsTrue( ParkCommandCodec.MaximumBytes + CoopStreamFrame.RecordOverhead + CoopStreamFrame.OriginBytes + CoopStreamFrame.EmptyBytes
+			+ CoopStreamFrame.MaximumCheckpoints * CoopStreamFrame.CheckpointBytes <= CoopStreamFrame.MaximumBytes, "the largest command always fits a frame, a guest's origin included" );
 	}
 }

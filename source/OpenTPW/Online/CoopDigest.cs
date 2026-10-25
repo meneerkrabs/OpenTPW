@@ -116,6 +116,13 @@ public partial class Level
 			foreach ( var ride in scripts.Coasters.Rides )
 				hash.Add( ride.BeingEdited );
 		hash.Add( scripts?.SessionTime?.Ticks ?? -1 );
+		// [EXT:online-coop-permissions] the guests' build grants, hashed only once there is one, so a session without grants keeps the digests it had
+		if ( buildGrants is { Count: > 0 } grants )
+		{
+			hash.Add( grants.Count );
+			foreach ( var seat in grants )
+				hash.Add( seat );
+		}
 	}
 
 	private void AddSessionLayout( StateHasher hash, OriginalObject item )

@@ -11,7 +11,8 @@ Status: the command layer (C1) is in place. Of the sessions (C2), the server, th
 command stream, the level in a session, the stream's join and resync, the host's skip of frames it no
 longer holds, the game's join and the browser's are built, and the joins are measured. Players share and
 join a park through the game's screens (C2d), and the live acceptance runs two native games through the
-real server (C2d-5a); the page's sides of it follow (C2d-5b).
+real server (C2d-5a); the page's sides of it follow (C2d-5b). Of building by every player (C3), the
+requests, their records and the host's grants are built (C3a-1); the tools follow (C3a-2).
 
 ## User decisions
 
@@ -1665,6 +1666,67 @@ The design fixed two constants only after measuring them (`coop-c2b-design.md`, 
   change's work.
 
   Every value: [COOP-MEASUREMENTS.md](COOP-MEASUREMENTS.md), "The digest's canonical text".
+
+## Building by every player (C3)
+
+`[EXT:online-coop-commands]` `[EXT:online-coop-permissions]` In C2 the host builds and the guests watch.
+C3 lets every player build through the same stream the host orders, so every park stays the host's and
+no guest's click runs on its own park first. C3a-1 builds the requests, their records and the host's
+grants; the guests' tools use them in C3a-2 (with the host's switch for each guest's grant).
+
+**A guest's request.** A guest never applies its own command: its park follows the host's stream only
+(`ParkCommands.FollowsStream`), whatever its rights. It sends the command to the host as a request
+instead (`CoopGuestCommand`: the guest's own number for it, from 1, and the command's bytes), over the
+session's relay, which stamps the sender's member id. The host runs the command as that member's seat
+(the server's word, never the command's own player) between two ticks at the start of its next frame:
+after its own input, before the frame's ticks, and while paused too (`CoopHostStream.ApplyGuestCommands`,
+`ParkCommands.ApplyRemote`). Every player's commands have one order, the host's.
+
+**Its record.** Every well-formed command the host applies becomes a record of the stream, as the
+host's own do: accepted, or refused by the rights or the park's rules on every peer alike. A guest's
+record also carries its origin, the member id and the request's number (the stream frame's version 2).
+The guest resolves its request when that record applies in its own park, with the command's result
+there, which the stream's determinism makes the host's.
+
+**Refusals without a record.** The host takes no record of a request that is larger than 1 KiB, comes
+too fast (a bucket of 40 that refills at 20 a second), comes from no guest's seat or does not decode
+(`CoopGuestRefusal`), and answers it alone (`CoopGuestCommandAnswer`). At most 64 requests of one guest
+wait for the host's next frame; more are dropped unanswered, and the next request shows the gap.
+
+**Lost and repeated requests.** A request travels at most once. After its link resumes, and when a
+request has waited two seconds for its outcome (a message lost on its way, which no resume shows), the
+guest sends every open request again, in order. The host keeps the answers to each guest's last 256
+requests: a request it had already gets its record or its refusal again and never applies twice, an
+older one is forgotten (its outcome is then unknown: it may have applied, and the park shows whether it
+did), and one that skips a number is refused with the number the host expects, from which the guest
+sends again (once for a burst of such answers). A request too large to take is refused by its number
+before its command is copied.
+
+**Resyncs.** The requests are the session's, not the park's: a resync replaces the guest's park and
+stream and keeps its requests (`CoopGuestCommands`). While the resync runs, new requests wait. Once the
+new park is in, a request whose record is inside the snapshot's cut resolves as applied there (its
+result here is not known), and the others go out again; the host answers those it had with their
+record. The session's end resolves the open requests as ended.
+
+**Grants.** The host grants building per guest (decision Q7) with a command of the stream
+(`SetBuildGrantCommand`), so every peer's park holds the same grants from the same tick on. A join
+snapshot carries them (the join state's version 3), and the session digest covers them once there is
+one, so a session without grants keeps the digests it had. A grant is its member's: when the member
+leaves or is kicked, the host takes it back at its next frame, before that frame's requests, so a member
+that takes the freed seat starts without one. A grant is also its session's: a session's end takes every
+grant back, and a park shared again starts without any. Both streams put the session's rights in place of
+any the park had, so every peer asks the same ones.
+
+The stream's frame (version 2) and the join state (version 3) changed, but the co-op protocol did not:
+the server relays both without reading them, and the version gate keeps every member of a session on one
+release (decision Q11).
+
+**What a granted guest may build (C3a).** `CoopBuildRights` asks of a command's kind, its fields and its
+target, at execution on every peer: path and queue lines, the queue's edit, a placed object (not a moving
+placement, not a track add-on), the removal of a cell's object, path or queue (not a coaster's or a track
+ride's station, whose edits need claims), and land. Everything else stays the host's: pause and speed
+(Q8), cheats (Q17), money and the park's management (C4), undo lines (whose cells a request could name
+freely), the Move tool, staff, pools, tracks and coasters (C3b, C3c) and the grants themselves.
 
 ## The command layer (C1)
 

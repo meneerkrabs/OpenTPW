@@ -3144,8 +3144,200 @@ TQI_PASS_TARGET = Target(
            'Whole movies were compared too: the decoder 0x6747d0 over 51 sampled frames of the nine movies matched TqiDecoder in '
            'every sample but one, a half-way odd-part rounding Unicorn gets wrong (docs/TGQ-MOVIES.md).'])
 
+# ============================================================================== X27: the procedural terrain texturer
+# tp.exe 0x55e710 (ramp table), 0x55e780 (weight plane) and 0x55f780 (the build routine, floor descriptor NULL). Plan: terrain_reading.py,
+# the reading OpenTPW's ProceduralTerrainTexturer follows (docs/LND.md).
+import terrain_reading  # noqa: E402
+
+TERRAIN_RAMP = 0x55E710
+TERRAIN_WEIGHTS = 0x55E780
+TERRAIN_BUILD = 0x55F780
+TERRAIN_RAMP_RANGES = [(0x55E710, 0x55E77F)]
+TERRAIN_WEIGHT_RANGES = [(0x55E780, 0x55E974)]
+TERRAIN_BUILD_RANGES = [(0x55E710, 0x561000)]   # the ramp, weights, the two and three layer blends and the build routine itself
+TERRAIN_TABLES = {0x8795A8: (0, 1), 0x8796A8: (2, 3), 0x8793A8: (4, 5), 0x8797A8: (6, 7), 0x8794A8: (8, 9)}   # table address -> parameter pair
+TERRAIN_STATES = (0x8798A8, 0x8798B8, 0x879398)   # weight plane records: dword N at +0, plane pointer at +12
+TERRAIN_BUFFER = 0x8798C8                         # the build buffer pointer (the routine returns early while it is null)
+# file image index -> offset of its (w, h, bpp, pointer) record in the set the build routine reads (0x55f470 places them)
+TERRAIN_SLOTS = (0x08, 0x18, 0x38, 0x48, 0x88, 0x98, 0x28, 0x58, 0xA8, 0x68, 0x78, 0xB8, 0xC8)
+
+
+def terrain_stubs(target: Target) -> dict:
+    return {}
+
+
+def terrain_ramp_binary(sb: Sandbox, x: tuple, log) -> bytes:
+    table = sb.alloc(256, 16)
+    sb.call(TERRAIN_RAMP, (table, x[0], x[1]))
+    return bytes(sb.uc.mem_read(table, 256))
+
+
+def terrain_ramp_plan(x: tuple) -> bytes:
+    return terrain_reading.ramp(*x)
+
+
+def terrain_ramp_inputs(rng: random.Random, n: int) -> list:
+    edges = [0, 1, 2, 3, 127, 128, 129, 253, 254, 255]
+    return [(c, w) for c in edges for w in edges] + [(rng.randrange(256), rng.randrange(256)) for _ in range(n)]
+
+
+def terrain_weights_binary(sb: Sandbox, x: dict, log) -> bytes:
+    grid = sb.alloc(len(x['grid']), 16)
+    sb.write(grid, f"{len(x['grid'])}s", x['grid'])
+    record = sb.alloc(16, 16)
+    for offset, value in ((0, x['width']), (4, x['height']), (8, 4), (12, grid)):
+        sb.write(record + offset, 'I', value)
+    plane = sb.alloc(x['n'] * x['n'], 16)
+    state = sb.alloc(16, 16)
+    sb.write(state, 'I', x['n'])
+    sb.write(state + 12, 'I', plane)
+    sb.call(TERRAIN_WEIGHTS, (record, x['x'], x['row'], x['k'], state))
+    return bytes(sb.uc.mem_read(plane, x['n'] * x['n']))
+
+
+def terrain_weights_plan(x: dict) -> bytes:
+    return bytes(terrain_reading.weights(x, x['n'], x['x'], x['row'], x['k']))
+
+
+TERRAIN_TEST_CELLS = 3   # the synthetic weight grids are 3 x 3 cells: 13 x 13 samples
+
+
+def terrain_weights_inputs(rng: random.Random, n: int) -> list:
+    side = 4 * TERRAIN_TEST_CELLS + 1
+    patterns = [bytes(side * side * 4), bytes([255] * (side * side * 4)),
+                bytes((255 if (i // 4 + i // (4 * side)) & 1 else 0) for i in range(side * side * 4)),
+                bytes(((i // 4) % side) * 20 & 0xFF for i in range(side * side * 4))]
+    out = []
+    for index in range(n):
+        grid = patterns[index % len(patterns)] if index < 2 * len(patterns) else bytes(rng.randrange(256) for _ in range(side * side * 4))
+        out.append({'n': (16, 32, 64)[index % 3], 'x': rng.randrange(TERRAIN_TEST_CELLS), 'row': rng.randrange(TERRAIN_TEST_CELLS),
+                    'k': 1 + index % 3, 'width': side, 'height': side, 'grid': grid})
+    return out
+
+
+def terrain_build_binary(sb: Sandbox, x: dict, log) -> bytes:
+    """Prepare the level object the routine reads (the loader 0x560FF0 and set reader 0x55f470 place these fields), then build one cell."""
+    n_size = x['n']
+    set_index = terrain_reading.SETS[n_size]
+    level = x['level']
+    obj = sb.alloc(0x24 + 3 * 0xD8 + 16, 16)
+    sb.write(obj, 'B', n_size)
+    sb.write(obj + 1, 'B', set_index)
+    for index, value in enumerate(level['params']):
+        sb.write(obj + 2 + index, 'B', value)
+    sb.write(obj + 0xC, 'i', (level['width'] - 1) >> 2)
+    sb.write(obj + 0x10, 'i', (level['height'] - 1) >> 2)
+    sb.write(obj + 0x14, 'i', level['width'])
+    sb.write(obj + 0x18, 'i', level['height'])
+    sb.write(obj + 0x1C, 'i', 4)
+    grid = sb.alloc(len(level['grid']), 16)
+    sb.write(grid, f"{len(level['grid'])}s", bytes(level['grid']))
+    sb.write(obj + 0x20, 'I', grid)
+    base = obj + 0x24 + set_index * 0xD8
+    for index, (width, height, bpp, data) in enumerate(level['images']):
+        pointer = sb.alloc(len(data), 16)
+        sb.write(pointer, f'{len(data)}s', bytes(data))
+        record = base + TERRAIN_SLOTS[index]
+        for offset, value in ((0, width), (4, height), (8, bpp)):
+            sb.write(record + offset, 'i', value)
+        sb.write(record + 12, 'I', pointer)
+    # the ramp tables go through the original's own routine, as the loader does
+    for table, (first, second) in TERRAIN_TABLES.items():
+        sb.call(TERRAIN_RAMP, (table, level['params'][first], level['params'][second]))
+    for state in TERRAIN_STATES:
+        sb.write(state, 'i', n_size)
+        sb.write(state + 12, 'I', sb.alloc(n_size * n_size, 16))
+    sb.write(TERRAIN_BUFFER, 'I', sb.alloc(n_size * n_size * 4, 16))
+    destination = sb.alloc(n_size * n_size * 4, 16)
+    sb.call(TERRAIN_BUILD, (destination, x['x'], x['z'], 0), this=obj)
+    return bytes(sb.uc.mem_read(destination, n_size * n_size * 4))
+
+
+def terrain_build_plan(x: dict) -> bytes:
+    return terrain_reading.build(x['level'], x['n'], x['x'], x['z'])[0]
+
+
+def terrain_build_per_texel_weight(x: dict) -> bytes:
+    """Without the three layer quirk (w1 per texel in a CBA run): differs from the original on every cell that has a CBA run."""
+    return terrain_reading.build(x['level'], x['n'], x['x'], x['z'], quirk=False)[0]
+
+
+# the layer mix of a synthetic level: how the masks (mask 1 over C, mask 2 over B) behave per 16 texel run
+TERRAIN_MIXES = ('C', 'B', 'A', 'BA', 'CB', 'CA', 'CBA', 'random')
+
+
+def terrain_level(rng: random.Random, n_size: int, mix: str, valid: bool = True) -> tuple[dict, int]:
+    cells, side = TERRAIN_TEST_CELLS, 4 * TERRAIN_TEST_CELLS + 1
+    # mask ramps with a hard step (centre 128, width 0): a masked value is 0 below 128 and 255 above; the layer ramps are random
+    params = [rng.randrange(256) for _ in range(10)]
+    if mix != 'random':
+        params[4:6] = [128, 0]
+        params[8:10] = [128, 0]
+    mask1, mask2 = {'C': ('all', 'all'), 'B': ('none', 'all'), 'A': ('none', 'none'), 'BA': ('none', 'mixed'), 'CB': ('mixed', 'all'),
+                    'CA': ('mixed', 'none'), 'CBA': ('mixed', 'mixed'), 'random': ('random', 'random')}[mix]
+
+    def weight(style):
+        return {'all': lambda: 255, 'none': lambda: 0, 'mixed': lambda: 255, 'random': lambda: rng.randrange(256)}[style]()
+
+    def mask_pixel(style):
+        return {'all': lambda: 255, 'none': lambda: 0, 'mixed': lambda: rng.choice((0, 255)), 'random': lambda: rng.randrange(256)}[style]()
+
+    grid = bytearray()
+    for _ in range(side * side):
+        grid += bytes([255 if valid else rng.choice((0, 255)), rng.randrange(256), weight(mask2), weight(mask1)])
+    images = []
+    for index in range(13):
+        width, height = n_size + rng.randrange(1, 25), n_size + rng.randrange(1, 25)
+        if index < 6:
+            data = bytes(rng.randrange(256) if i % 4 else 0 for i in range(width * height * 4))
+        else:
+            style = {9: mask2, 10: mask2, 11: mask1, 12: mask1}.get(index)
+            data = bytes(mask_pixel(style) if style else rng.randrange(256) for _ in range(width * height))
+        images.append((width, height, 4 if index < 6 else 1, data))
+    return {'params': bytes(params), 'width': side, 'height': side, 'grid': bytes(grid), 'images': images}, cells
+
+
+def terrain_build_inputs(rng: random.Random, n: int) -> list:
+    """Cells of synthetic levels, one layer mix after the other (every mode of the run decision), sizes 16 and 32 mostly, 64 now and then,
+    and a few cells whose inner samples are not all valid (the grey fallback). Capped: every cell runs in the emulator."""
+    out = []
+    for index in range(min(n, 48)):
+        n_size = (16, 32, 16, 32, 64)[index % 5]
+        mix = TERRAIN_MIXES[index % len(TERRAIN_MIXES)]
+        grey = index % 11 == 10
+        level, cells = terrain_level(rng, n_size, mix, valid=not grey)
+        if grey:
+            # one of the four inner samples of the cell is invalid
+            x, z = rng.randrange(cells), rng.randrange(cells)
+            row = cells - z - 1
+            position = ((4 * row + 1 + rng.randrange(2)) * level['width'] + 4 * x + 1 + rng.randrange(2)) * 4
+            grid = bytearray(level['grid'])
+            grid[position] = 0x7F
+            level['grid'] = bytes(grid)
+        else:
+            x, z = rng.randrange(cells), rng.randrange(cells)
+        out.append({'n': n_size, 'x': x, 'z': z, 'mix': mix, 'level': level})
+    return out
+
+
+TERRAIN_RAMP_TARGET = Target(
+    'tpw-exe-terrain-ramp', 'tpw', 'tp.exe procedural terrain ramp table 0x55e710', 'docs/LND.md (ProceduralTerrainTexturer.BuildRamp)',
+    TERRAIN_RAMP, TERRAIN_RAMP_RANGES, terrain_stubs, terrain_ramp_binary, terrain_ramp_plan, terrain_ramp_inputs,
+    notes=['Every (centre, width) pair of the edge values and random pairs; the table is 0 below c - (w + 1) / 2, 255 above c + (w + 1) / 2, '
+           'linear (255 * (i - low)) / (w + 1) between.'])
+TERRAIN_WEIGHTS_TARGET = Target(
+    'tpw-exe-terrain-weights', 'tpw', 'tp.exe procedural terrain weight plane 0x55e780', 'docs/LND.md (ProceduralTerrainTexturer weight planes)',
+    TERRAIN_WEIGHTS, TERRAIN_WEIGHT_RANGES, terrain_stubs, terrain_weights_binary, terrain_weights_plan, terrain_weights_inputs,
+    notes=['cdecl (grid record, cell x, file row, weight 1..3, plane record), N = 16, 32 and 64 on constant, checkerboard, ramp and random grids.'])
+TERRAIN_BUILD_TARGET = Target(
+    'tpw-exe-terrain-build', 'tpw', 'tp.exe procedural terrain build 0x55f780', 'docs/LND.md (ProceduralTerrainTexturer.Build)',
+    TERRAIN_BUILD, TERRAIN_BUILD_RANGES, terrain_stubs, terrain_build_binary, terrain_build_plan, terrain_build_inputs,
+    budget=50_000_000,
+    notes=['thiscall (ecx = level object; destination, cell x, cell z, floor descriptor NULL). Synthetic levels whose masks give every run mode '
+           '(C, B, A, BA, CB, CA, CBA) plus random masks and a few invalid cells. A reading without the three layer quirk differs (test_x86_oracle).'])
+
 WALK_TARGETS = [WALK_EDGE_TARGET, WALK_COMMIT_TARGET, WALK_SEARCH_TARGET, WALK_AVOID_TARGET, WALK_STEERING_TARGET]
 
 TARGETS = [WORLD_RNG_TARGET, TPI_WORLD_RNG_TARGET, ARRIVAL_TARGET, LOAN_OFFERS_TARGET, LOAN_TERM_TARGET, LOAN_MONTH_TARGET, POINTS_TARGET,
            SCRAP_TARGET, QREEVAL_TARGET, COUNTS_TARGET, PRICE_TARGET, WEAR_TARGET, STATE6_TARGET, WANDER_TARGET, LITTER_TARGET, BIN_WALK_TARGET, REGION_TARGET, FINDER_TARGET, GUARD_TARGET,
-           TPI_ARRIVAL_TARGET, TPI_LOAN_OFFERS_TARGET, TPI_LOAN_TERM_TARGET, TPI_LOAN_MONTH_TARGET, TPI_POINTS_TARGET, TQI_MATRIX_TARGET, TQI_PASS_TARGET] + COAST_TARGETS + WALK_TARGETS
+           TPI_ARRIVAL_TARGET, TPI_LOAN_OFFERS_TARGET, TPI_LOAN_TERM_TARGET, TPI_LOAN_MONTH_TARGET, TPI_POINTS_TARGET, TQI_MATRIX_TARGET, TQI_PASS_TARGET, TERRAIN_RAMP_TARGET, TERRAIN_WEIGHTS_TARGET, TERRAIN_BUILD_TARGET] + COAST_TARGETS + WALK_TARGETS

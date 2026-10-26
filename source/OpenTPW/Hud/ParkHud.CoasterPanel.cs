@@ -177,7 +177,7 @@ public sealed partial class ParkHud
 		// Backspace waits for the drag: it would delete the pylon the drag holds ([EXT:online-coop-commands] each one a command)
 		for ( var index = 0; index < input.Backspaces && !panel.IsDragging && level.CoasterToolStation is { } station; index++ )
 			level.Commands.Issue( new RemoveLastCoasterPylonCommand( station.Runtime.AttractionId ) );
-		if ( input.RightPressed && inPark )
+		if ( parkRightClick )
 		{
 			level.ExitCoasterTool();
 			return true;
@@ -194,15 +194,21 @@ public sealed partial class ParkHud
 			panel.Drag( pointer, level.CoasterCameraYaw, inPark ? (cursorX, cursorY) : null );
 			consumed = true;
 		}
+		else if ( inPark && input.LeftReleased && panel.IsBuilding )
+		{
+			// [BIN:TPW-EXE:0x5263df coaster build click] a build click is the tool object's release (0x524960, mode 0x15): the pylon is placed, the click sounds and the help follows, at the cell under the pointer then; the press does nothing
+			var closing = level.CoasterTool is { } tool && tool.Track.IsChainStart( cursorX, cursorY ) && !tool.Track.IsClosed;
+			ReportCoasterResult( level.CoasterClick( cursorX, cursorY ), closing );
+			// [BIN:TPW-EXE:0x52644c coaster tool click] the tool's click handler 0x524960 in mode 0x15 posts help 0xCD (205) after every click's action (the release 0x446300 with 0 for the edit buttons)
+			PostToolHelp( AdvisorToolHelp.CoasterToolClick );
+			PlayCoasterToolClick( cursorX, cursorY );
+			consumed = true;
+		}
 		else if ( inPark && input.LeftPressed )
 		{
 			if ( panel.IsBuilding )
 			{
-				var closing = level.CoasterTool is { } tool && tool.Track.IsChainStart( cursorX, cursorY ) && !tool.Track.IsClosed;
-				ReportCoasterResult( level.CoasterClick( cursorX, cursorY ), closing );
-				// [BIN:TPW-EXE:0x52644c coaster tool click] the tool's click handler 0x524960 in mode 0x15 posts help 0xCD (205) after every click's action (the release 0x446300 with 0 for the edit buttons)
-				PostToolHelp( AdvisorToolHelp.CoasterToolClick );
-				PlayCoasterToolClick( cursorX, cursorY );
+				// the build buttons' click is the release's; the press is taken so no other tool or pick answers it
 				coasterPress = true;
 				consumed = true;
 			}
@@ -237,8 +243,6 @@ public sealed partial class ParkHud
 			if ( !cursor.Closing )
 				level.CoasterPreview = new CoasterPreview( cursor.X, cursor.Y, cursor.Result == CoasterPlaceResult.Ok, builder.Height, builder.LoopMode, builder.FirstOfPair );
 		}
-		if ( consumed )
-			toolPress = true;
 		return consumed;
 	}
 

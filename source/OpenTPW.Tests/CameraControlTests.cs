@@ -12,7 +12,42 @@ public class CameraControlTests
 	};
 	private static ParkCameraMode Camera() { ParkCameraMode.TargetExtent = 32; ParkCameraMode.InitialTarget = Vector3.Zero; return new(); }
 	// the tests of this file are about the original's range, 70..130 (the wide zoom range has its own tests: WideZoomTests)
-	private static GameOptions Options( ScrollMode scroll = ScrollMode.Pushscroll ) => new() { Scroll = scroll, WideZoom = false };
+	// the drag arithmetic below is the option-off path (RMBCancelOn clear: the right press is the camera's at once); the held-back press of the option-on path has its own test
+	private static GameOptions Options( ScrollMode scroll = ScrollMode.Pushscroll ) => new() { Scroll = scroll, WideZoom = false, RmbCancel = false };
+
+	/// <summary>
+	/// [BIN:TPW-EXE:0x4881AE held-back right press] with RMBCancelOn the right press is not the camera's drag until it has lasted 200 ms or strayed 8 px on an axis (0x48823F, 0x488265, 0x48827F);
+	/// a quick click never moves the camera, and the drag starts from where it was armed.
+	/// </summary>
+	[TestMethod]
+	public void WithTheCancelOptionTheRightPressDragsTheCameraOnlyAfter200msOr8px()
+	{
+		var options = new GameOptions { Scroll = ScrollMode.RightButton, WideZoom = false, RmbCancel = true };
+		var moving = Frame() with { RightButton = true, MouseDelta = new Vector2( 100, 0 ), DeltaSeconds = 0.07f };
+		var quick = Camera();
+		for ( var frame = 0; frame < 3; frame++ ) quick.Update( moving, options );
+		Assert.AreEqual( Vector3.Zero, quick.Target, "140 ms of a press is still a click in the making" );
+		quick.Update( moving, options );
+		Assert.AreEqual( Vector3.Zero, quick.Target, "the frame that arms the drag moves nothing, the next one does" );
+		quick.Update( moving, options );
+		Assert.IsTrue( quick.Target.Length > 0, "after 200 ms the press is the drag" );
+		var strayed = Camera();
+		strayed.Update( moving with { DeltaSeconds = 0.016f }, options );
+		strayed.Update( moving with { DeltaSeconds = 0.016f, MousePosition = new Vector2( 508, 300 ) }, options );
+		Assert.AreEqual( Vector3.Zero, strayed.Target, "8 px is not beyond the slop" );
+		strayed.Update( moving with { DeltaSeconds = 0.016f, MousePosition = new Vector2( 509, 300 ) }, options );
+		Assert.AreEqual( Vector3.Zero, strayed.Target, "the frame that strays 9 px arms the drag without moving" );
+		strayed.Update( moving with { DeltaSeconds = 0.016f, MousePosition = new Vector2( 510, 300 ) }, options );
+		Assert.IsTrue( strayed.Target.Length > 0 );
+		var released = Camera();
+		released.Update( moving, options ); released.Update( moving, options );
+		released.Update( moving with { RightButton = false }, options );
+		released.Update( moving, options ); released.Update( moving, options );
+		Assert.AreEqual( Vector3.Zero, released.Target, "a release starts the wait over" );
+		var off = Camera();
+		off.Update( moving, Options( ScrollMode.RightButton ) ); off.Update( moving, Options( ScrollMode.RightButton ) );
+		Assert.IsTrue( off.Target.Length > 0, "with the option off the drag starts at once" );
+	}
 
 	[TestMethod]
 	public void EdgesMoveAndCornersHaveTheSameSpeed()

@@ -89,10 +89,10 @@ public sealed partial class ParkHud
 	{
 		if ( level.PoolTool is not { IsActive: true } tool )
 			return false;
-		if ( input.RightPressed && inPark && GameOptions.Current.RmbCancel )
+		if ( parkRightClick )
 		{
 			tool.Cancel();
-			return toolPress = true;
+			return true;
 		}
 		// Backspace takes back the last stroke
 		if ( input.Backspaces > 0 && !tool.IsDragging )
@@ -113,14 +113,14 @@ public sealed partial class ParkHud
 		{
 			refusalClick.Press();
 			tool.Press( cursorX, cursorY );
-			return toolPress = true;
+			return true;
 		}
 		if ( tool.IsDragging )
 		{
 			if ( input.LeftDown )
-				return toolPress = true;
+				return true;
 			ReportPoolStroke( tool );
-			return toolPress = true;
+			return true;
 		}
 		return false;
 	}

@@ -665,7 +665,7 @@ internal sealed partial class GameFlow : IDisposable
 		StepCoopPresence();
 		var imguiMouse = ImGuiNET.ImGui.GetIO().WantCaptureMouse;
 		if ( imguiMouse )
-			input = input with { LeftPressed = false, LeftReleased = false, RightPressed = false, Wheel = 0 };
+			input = input with { LeftPressed = false, LeftReleased = false, RightPressed = false, RightReleased = false, RightClicked = false, Wheel = 0 };
 
 		if ( Level != null && Hud != null )
 		{

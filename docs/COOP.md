@@ -1773,23 +1773,25 @@ of each object (`IParkCommandRights.AllowsRemoval`). The queue of a ride claimed
 another seat's claim holds, and for a guest a coaster until its tool claims, C3c-2) is kept from that
 player in all of these: its lines and their undo, its edit, the removal of its cells and Backspace over
 them, any line across one of its cells (a path line paves a queue's end), a placement whose own plan
-writes over one (its footprint, the paths it clears, the cell beyond a track end, the cells outside its
-entrance and exit), a bridge with a cell or an end on one, and the object window's queue tool, which that
-player's window does not offer, nor its sale and Move buttons for the ride. So is the path cell its back
-cell joins, whose removal or a queue laid over it would take the queue's link off: the remove click,
-Backspace, queue lines, placements (whose plans clear the paths under them, and a queue ride's, which lays
-its first queue cell outside its entrance) and bridges refuse it, and the area clear leaves it standing
-(`IParkCommandRights.AllowsPathRemoval`). A path line along it, the path a placement lays or links outside
-its other entrance and its exit, and a queue line that only ends on it (which links the queue to that
-path, `QueuePaths.Connect`) leave the queue's links as they are. The exit of an object without a queue
-lays no cell: it only links a path cell already outside it (that cell's links and its path and access
-neighbours'), which takes no queue's link off, so it is asked nothing. A queue cell's ride is resolved as its
-removal resolves it: the rides' cached lines, then each line walked again (on a copy) for the cells they
-miss, once per question of the rights (the area clear asks it for each path cell it would clear).
-Everything else stays the host's: pause and speed (Q8), cheats (Q17), money, staff and the park's
-management (C4) with a wave machine's settings, undo lines and pool strokes (whose cells a request could
-name freely; undo is C5), the single-cell removals and the pools' single-cell kinds no guest's tool
-issues, coasters and track add-ons (C3c-2), the grants and the release of a departed seat.
+writes over one (its footprint, the paths it clears, the cell beyond a track end, the cells it lays
+outside its entrance and exit), a bridge with a cell or an end on one, and the object window's queue
+tool, which that player's window does not offer, nor its sale and Move buttons for the ride. So is the
+path cell its back cell joins, whose removal or a queue laid over it would take the queue's link off: the
+remove click, Backspace, queue lines, placements (whose plans clear the paths under them, and a queue
+ride's, which lays its first queue cell outside its entrance) and bridges refuse it, and the area clear
+leaves it standing (`IParkCommandRights.AllowsPathRemoval`). A path line along it, the path a placement
+lays outside the last exit of a ride with a queue or the last entrance of a type without one (only the
+last entrance and the last exit count, `ObjectAccessCells.Lay`), and a queue line that only ends on it
+(which links the queue to that path, `QueuePaths.Connect`) leave the queue's links as they are. The exit
+of an object without a queue lays no cell: it only links a path cell already outside it (that cell's
+links and its path and access neighbours'), which takes no queue's link off, so it is asked nothing. A
+queue cell's ride is resolved as its removal resolves it: the rides' cached lines, then each line walked
+again (on a copy) for the cells they miss, once per question of the rights (the area clear asks it for
+each path cell it would clear). Everything else stays the host's: pause and speed (Q8), cheats (Q17),
+money, staff and the park's management (C4) with a wave machine's settings, undo lines and pool strokes
+(whose cells a request could name freely; undo is C5), the single-cell removals and the pools'
+single-cell kinds no guest's tool issues, coasters and track add-ons (C3c-2), the grants and the release
+of a departed seat.
 
 **A guest's tools (C3a-2).** On a guest's park `ParkCommands.Issue` sends a command to the host instead
 of applying it (`ParkCommands.Submit`, set by the session), after the checks `Apply` makes before it runs
@@ -1880,8 +1882,17 @@ research tests, and the tool's end drops the carry.
   while its Move tool is not armed sends the Move's end (`Level.EndStrayCarry`), at most once a second
   and only while no pick-up or end of its own is open. The object stays sold, as a cancelled Move leaves
   it.
-- **A resync** keeps an armed Move tool: the new park's tool arms again from the carry its snapshot holds,
-  at the angle it had (`Level.TakeMoveToRestore`); a carry its tool did not hold is a stray one, as above.
+- **A resync** keeps an armed Move tool: the new park's tool arms again from the carry its snapshot
+  holds, at the angle it had (`Level.TakeMoveToRestore`); a carry its tool did not hold is a stray one,
+  as above. A placement of the tool that waited for the host waits again in the new park, so its outcome
+  finishes the tool as it would have without the resync (on the new park's object of the same attraction
+  id when the old park took it): ended, or kept for exactly Ctrl, with the tool the placed object opens,
+  or left armed by a refusal. A placement whose record is inside the resync's cut has no result in the
+  new park: the tool arms again only when Ctrl at its click keeps it whatever that result was
+  (`Level.PlacementKeepsBuildTool`: a type whose placed object opens no tool of its own even then, so no
+  coaster, kart, water or bumper ride and no ride with a queue). Otherwise its carry is a stray one, so
+  the object of a placement the host refused there stays sold, and a placed ride's queue tool does not
+  follow.
 - **A Move tool without its carry.** When the host released the seat's carry while its Move tool was armed
   (a resume under a new member id, a departure the host saw), every placement of it would be refused: the
   guest's frame disarms it after the outcomes (`Level.EndCarrylessMove`), without an end command.
@@ -2351,10 +2362,6 @@ guarded list.
 - The staff tool's cancel ends the tool even when its drop is refused, as a player's rights could
   refuse it mid-carry (C3): the employee then stays in that player's hand and the player's next
   pick-up is refused. C3 must always allow the drop back to where the employee came from.
-- The Move tool's end ends the issuer's tool whatever its command's result (`EndMoveCommand`): a
-  refusal would leave the picked-up type carried on every peer while the issuer's tool is gone.
-  Resolved in C3b-2: every guest seat may end its Move, granted or not, and the host releases a
-  departed seat's carry (`ReleaseSeatCommand`), so the next player in its slot inherits none.
 - A hire's pending candidate (`ParkStaff.PendingPlacementId`) is one per park: two players placing hires
   at once would take it from each other (C3 gives each player a placement).
 - Opening the queue tool (after a ride is placed, its track circuit closes or its coaster is completed,

@@ -278,8 +278,24 @@ public partial class CoopJoinSessionTests
 		// the asset-free park has no name of its own yet and no track renderers (a closing park disposes them)
 		typeof( Level ).GetProperty( nameof( Level.ParkName ) )!.SetValue( park.Level, new ParkNameLines( "Test", "Park" ) );
 		typeof( Level ).GetField( "trackRenderers", BindingFlags.Instance | BindingFlags.NonPublic )!.SetValue( park.Level, new Dictionary<TrackFamily, TrackRenderer>() );
+		if ( prepareParks is { } prepare )
+		{
+			var current = Level.Current;
+			Level.Current = park.Level;
+			try
+			{
+				prepare( park.Level );
+			}
+			finally
+			{
+				Level.Current = current;
+			}
+		}
 		return (park.Level, park.Entities);
 	}
+
+	/// <summary>Runs on every park this class builds (the host's, the guests', a join's replay twin) before anything else, so the parks of one session start alike.</summary>
+	private Action<Level>? prepareParks;
 
 	/// <summary>
 	/// The candidate a guest builds from <paramref name="payload"/>, by replay: a twin from the identical start, the host's first <see cref="CoopJoinPayload.Records"/> records applied under

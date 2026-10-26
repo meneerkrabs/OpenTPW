@@ -199,7 +199,7 @@ What that shows, for OpenTPW's camera (identical to the original's, `UI.md` UI-1
 | 2 (135 to 150) | starts at about 173, complete from about 201 | bottom starts at about 200, all fog from 223 | no fog (the PC video) |
 | 3 (230 to 250) | never within 40 to 300 (w 223 at 300) | never | no fog |
 
-At the High preset's setting 2 the ground therefore starts to vanish at the top of the screen at a zoom value of about 173 and the whole view is fog colour from about 223, and at 300 the view is all fog; at setting 3 nothing fades. The extra range the wide zoom adds is thus not usable at settings 0 to 2 in the original either.
+At the High preset's setting 2 the ground therefore starts to vanish at the top of the screen at a zoom value of about 173 and the whole view is fog colour from about 223, and at 300 the view is all fog; at setting 3 nothing fades. OpenTPW's wide zoom (`[EXT:wide-zoom]`) therefore ends where the top-centre ground point is still before the fog start: about 300 at setting 3, 173 at setting 2 and 130 at settings 0 and 1 (`ParkCameraMode.WideMaximumFor`, from the formula; the original range 70 to 130 is always there).
 
 ## Open
 

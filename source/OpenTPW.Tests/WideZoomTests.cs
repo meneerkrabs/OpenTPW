@@ -12,6 +12,13 @@ namespace OpenTPW.Tests;
 [TestClass]
 public class WideZoomTests
 {
+	// the wide range's far end follows FIRSTPERSONVIEWDISTANCE; setting 3 (fog from 230) keeps all 300
+	[TestInitialize]
+	public void TheLongestViewDistance() => RenderFog.OptionOverride = 3;
+
+	[TestCleanup]
+	public void RestoreTheOption() => RenderFog.OptionOverride = null;
+
 	private static CameraControlInput Frame( float wheel = 0, float zoom = 0 ) => new()
 	{
 		HasFocus = true, LogicalSize = new Point2( 1000, 600 ), MousePosition = new Vector2( 500, 300 ), DeltaSeconds = 0.1f, Wheel = wheel, Zoom = zoom
@@ -223,5 +230,67 @@ public class WideZoomTests
 			Assert.IsFalse( new GameOptions { WideZoom = false }.Clone().WideZoom );
 		}
 		finally { File.Delete( path ); }
+	}
+
+	[DataTestMethod]
+	[DataRow( 0, 130f, 130f )]
+	[DataRow( 1, 130f, 130f )]
+	[DataRow( 2, 172f, 174f )]
+	[DataRow( 3, 300f, 300f )]
+	public void TheWideRangeEndsWhereTheTopOfTheScreenStillShowsGroundBeforeTheFog( int setting, float least, float most )
+	{
+		// [EXT:wide-zoom] the largest zoom whose top-centre ground point (w = 0.7071 x depth) is before the fog start, never below 130 and at most 300
+		RenderFog.OptionOverride = setting;
+		var camera = Camera();
+		Assert.AreEqual( 40f, camera.MinimumZoom );
+		Assert.IsTrue( camera.MaximumZoom >= least && camera.MaximumZoom <= most, $"setting {setting}: {camera.MaximumZoom}" );
+		var start = RenderFog.ViewDistanceOf( setting ).Start;
+		if ( camera.MaximumZoom < 300 && camera.MaximumZoom > 130 )
+		{
+			Assert.IsTrue( ParkCameraMode.TopCentreFogDepth( camera.MaximumZoom - 0.05f ) < start );
+			Assert.IsTrue( ParkCameraMode.TopCentreFogDepth( camera.MaximumZoom + 0.05f ) >= start );
+		}
+		camera.SetPose( Vector3.Zero, 500, -90 );
+		Assert.AreEqual( camera.MaximumZoom, camera.Height );
+	}
+
+	[TestMethod]
+	public void TheTopCentreDepthIsTheOriginalsHomeValue()
+	{
+		// zoom 110: the pitch's 1.018 rad puts the top edge's ground point at a depth of about 159 original units (UI-107), w = 0.7071 x that
+		Assert.AreEqual( 159f * MathF.Sin( MathF.PI / 4 ), ParkCameraMode.TopCentreFogDepth( 110 ), 1f );
+	}
+
+	[TestMethod]
+	public void AChangedViewDistanceClampsTheZoomAtOnce()
+	{
+		RenderFog.OptionOverride = 3;
+		var camera = Camera();
+		camera.SetPose( Vector3.Zero, 300, -90 );
+		Assert.AreEqual( 300f, camera.Height );
+		RenderFog.OptionOverride = 2;
+		camera.Update( Frame(), new GameOptions() );
+		Assert.IsTrue( camera.Height < 175f && camera.Height > 170f, $"{camera.Height}" );
+		RenderFog.OptionOverride = 1;
+		camera.Update( Frame(), new GameOptions() );
+		Assert.AreEqual( 130f, camera.Height );
+		RenderFog.OptionOverride = 3;
+		camera.Update( Frame(), new GameOptions() );
+		Assert.AreEqual( 130f, camera.Height, "a longer view distance does not move the camera back out" );
+	}
+
+	[TestMethod]
+	public void TheOriginalRangeSeventyToOneHundredThirtyIsAlwaysThere()
+	{
+		foreach ( var setting in new[] { 0, 1, 2, 3 } )
+		{
+			RenderFog.OptionOverride = setting;
+			var camera = Camera( wide: false );
+			Assert.AreEqual( (70f, 130f), (camera.MinimumZoom, camera.MaximumZoom), $"setting {setting}, wide zoom off" );
+			var wide = Camera();
+			Assert.IsTrue( wide.MaximumZoom >= 130f, $"setting {setting}" );
+			wide.SetPose( Vector3.Zero, 130, -90 );
+			Assert.AreEqual( 130f, wide.Height );
+		}
 	}
 }

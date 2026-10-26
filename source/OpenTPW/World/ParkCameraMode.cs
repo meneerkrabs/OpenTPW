@@ -14,7 +14,7 @@ public class ParkCameraMode : CameraMode
 	public const float MaximumHeight = 130f;
 	/// <summary>The zoom value at the near end of the wide range (<see cref="GameOptions.WideZoom"/>): tp.exe's own flag-0x200 minimum.</summary>
 	// [BIN:TPW-EXE:0x42c631 wide zoom range] with the mode flag 0x200 (0x42c62c: TEST BH, 2) the clamp compares the zoom value with 40.0 (0x74c9d8) and 300.0 (0x74c9dc) instead of 70.0 and 130.0; the pitch (0x42c742) and the eye (0x42c96d) are computed from the zoom value alone, so the same formulas run unchanged over the wider range
-	// [EXT:wide-zoom] the original sets the flag only through a hidden camera key binding (0x42a520 from entry 0x748298 of the camera key set; key byte 0x20, modifier word 0x3f, not shown to be reachable in retail) and has no option for it; OpenTPW offers that range as an option, on by default (user-approved 2026-10-18, GameOptions.WideZoom)
+	// [EXT:wide-zoom] the original sets the flag only through a hidden camera key binding (0x42a520 from entry 0x748298 of the camera key set; key byte 0x20, modifier word 0x3f, not shown to be reachable in retail) and has no option for it; OpenTPW offers that range as an option, on by default (user-approved 2026-10-18, GameOptions.WideZoom), its far end following FIRSTPERSONVIEWDISTANCE (user-decided 2026-10-26, WideMaximumFor)
 	public const float WideMinimumHeight = 40f;
 	/// <summary>The zoom value at the far end of the wide range: tp.exe's own flag-0x200 maximum.</summary>
 	public const float WideMaximumHeight = 300f;
@@ -46,7 +46,42 @@ public class ParkCameraMode : CameraMode
 	/// <summary>The nearest zoom value the camera allows: 70 (tp.exe's normal range) or 40 with <see cref="GameOptions.WideZoom"/>.</summary>
 	public float MinimumZoom => wideZoom ? WideMinimumHeight : MinimumHeight;
 	/// <summary>The farthest zoom value the camera allows: 130 (tp.exe's normal range) or 300 with <see cref="GameOptions.WideZoom"/>.</summary>
-	public float MaximumZoom => wideZoom ? WideMaximumHeight : MaximumHeight;
+	public float MaximumZoom => wideZoom ? WideMaximumFor( RenderFog.ViewDistanceOf( RenderFog.ViewDistanceOption() ).Start ) : MaximumHeight;
+
+	/// <summary>
+	/// [EXT:wide-zoom] The farthest zoom value the wide range allows for a fog start (original units): the largest zoom at which the ground point at the top centre of the screen is still before the fog start, never below
+	/// the original's 130 and at most <see cref="WideMaximumHeight"/>. Beyond it the original's own formulas show the whole view as fog (docs/LND.md, "Fog and far plane").
+	/// </summary>
+	public static float WideMaximumFor( float fogStart )
+	{
+		if ( TopCentreFogDepth( WideMaximumHeight ) < fogStart )
+			return WideMaximumHeight;
+		float low = MaximumHeight, high = WideMaximumHeight;
+		if ( TopCentreFogDepth( low ) >= fogStart )
+			return MaximumHeight;
+		for ( var step = 0; step < 40; step++ )
+		{
+			var middle = (low + high) / 2;
+			if ( TopCentreFogDepth( middle ) < fogStart )
+				low = middle;
+			else
+				high = middle;
+		}
+		return Math.Clamp( low, MaximumHeight, WideMaximumHeight );
+	}
+
+	/// <summary>
+	/// The fog depth w (original units: the projection's w, sin(45 degrees) x the view depth) of the ground at the top centre of the screen for a zoom value, on the ground under the target: the eye is zoom x sin(pitch) above it
+	/// and the top edge's ray descends sin(pitch) - 0.5 cos(pitch) per unit of depth (the screen's half height at unit depth is 0.5, <see cref="OriginalProjection.HalfHeight"/>).
+	/// </summary>
+	public static float TopCentreFogDepth( float zoom )
+	{
+		var pitch = PitchOf( zoom );
+		var descent = MathF.Sin( pitch ) - OriginalProjection.HalfHeight( OriginalProjection.FieldOfView ) * MathF.Cos( pitch );
+		if ( descent <= 0 )
+			return float.MaxValue;
+		return zoom * MathF.Sin( pitch ) / descent * MathF.Sin( OriginalProjection.FieldOfView * MathF.PI / 360f );
+	}
 	/// <summary>The bearing of the eye from the target in degrees (the eye is at <c>Target + (cos, sin) * distance</c>); the original's yaw 0 is -90 here (<see cref="OriginalYaw"/>).</summary>
 	public float Yaw { get; private set; } = HomeYaw;
 	/// <summary>The yaw of the Home pose: the original's yaw 0 looks along +Y (its +z), so the eye sits to the -Y side of the target.</summary>
@@ -134,12 +169,10 @@ public class ParkCameraMode : CameraMode
 	private void Step( CameraControlInput input, GameOptions options )
 	{
 		// The wide range follows the option live: switching it off while zoomed out brings the zoom back inside 70..130.
-		if ( wideZoom != options.WideZoom )
-		{
-			wideZoom = options.WideZoom;
-			var clamped = Math.Clamp( Height, MinimumZoom, MaximumZoom );
-			if ( clamped != Height ) { Height = clamped; UpdateTransform(); }
-		}
+		// the wide range also follows FIRSTPERSONVIEWDISTANCE (WideMaximumFor), so a changed setting clamps the zoom at once
+		wideZoom = options.WideZoom;
+		var clamped = Math.Clamp( Height, MinimumZoom, MaximumZoom );
+		if ( clamped != Height ) { Height = clamped; UpdateTransform(); }
 		// with the pointer outside the window the camera takes no input, its edge band included (the browser reports a page with no pointer over its canvas there, at (-1, -1): EXT:browser-no-pointer)
 		var inside = input.LogicalSize.X > 0 && input.LogicalSize.Y > 0
 			&& input.MousePosition.X >= 0 && input.MousePosition.Y >= 0

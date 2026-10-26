@@ -28,7 +28,10 @@ internal static class RenderFog
 	public static (float Distance, float Start, float End) ViewDistanceOf( int option ) => ViewDistances[Math.Clamp( option, 0, ViewDistances.Length - 1 )];
 
 	/// <summary>The active FIRSTPERSONVIEWDISTANCE (the high preset's 2 when no graphics settings exist, as in tests).</summary>
-	public static int ViewDistanceOption() => IGraphicsSettings.Instance?.Detail.FirstPersonViewDistance ?? 2;
+	public static int ViewDistanceOption() => OptionOverride ?? IGraphicsSettings.Instance?.Detail.FirstPersonViewDistance ?? 2;
+
+	/// <summary>Tests: a fixed option in place of the graphics settings.</summary>
+	internal static int? OptionOverride { get; set; }
 
 	/// <summary>The fog colour of a Direct3D colour (alpha ignored) as 0-1 channels.</summary>
 	public static SVector3 ColourOf( RgbaByte colour ) => new( colour.R / 255f, colour.G / 255f, colour.B / 255f );

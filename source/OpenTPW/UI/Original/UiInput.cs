@@ -31,11 +31,18 @@ public enum UiKeys
 /// (<see cref="UiPointerRouter.AdmitInjected"/>), whereas an unavailable batch never starts a gesture.
 /// </param>
 /// <param name="BackspaceRepeating">Every Backspace of this frame is the auto-repeat of a held key (the pool bridge and water removal acts only on the first press).</param>
+/// <param name="LeftReleaseLost">The left release is no gesture's end at a place: the platform made it up (a browser blur or visibility release, whose position is only the last one seen). It ends the press without a click for the tools that click on the release; <see cref="NotClick"/> alone does not, since a drag's release is the tools' click. The pool stroke has nothing to commit at its release (it writes live as the pointer moves), so a lost release ends it as the pointer leaving the park does.</param>
+/// <param name="RightReleased">The right button was released this frame.</param>
+/// <param name="RightClicked">
+/// The right release closes a quick click: the press lasted at most <see cref="UiInputSource.RightClickMilliseconds"/> and the pointer never strayed more than
+/// <see cref="UiInputSource.RightClickSlop"/> pixels on an axis. The park view cancels its tool and mode on this release, not on the press; a longer or wider press is the camera drag
+/// (tp.exe 0x4881A0: the press is held back until the pointer moves or 200 ms pass).
+/// </param>
 /// <param name="NotClick">
 /// Set on a left release that is not a click: the press lasted longer than <see cref="UiInputSource.ClickMilliseconds"/> or the
 /// pointer strayed more than <see cref="UiInputSource.ClickSlop"/> pixels on an axis (tp.exe 0x65f6d1 / 0x65fa33). The release still ends drags.
 /// </param>
-public readonly record struct UiInput( NVector2 Mouse, bool LeftDown, bool LeftPressed, bool LeftReleased, bool RightPressed, UiKeys Pressed, float Wheel = 0, string Text = "", int Backspaces = 0, bool NotClick = false, IReadOnlyList<OrderedInputEvent>? OrderedEvents = null, bool PointerSuppressed = false, float PointerScaleX = 1, float PointerScaleY = 1, bool PointerHostBlocked = false, bool OrderedUnavailable = false, bool BackspaceRepeating = false )
+public readonly record struct UiInput( NVector2 Mouse, bool LeftDown, bool LeftPressed, bool LeftReleased, bool RightPressed, UiKeys Pressed, float Wheel = 0, string Text = "", int Backspaces = 0, bool NotClick = false, IReadOnlyList<OrderedInputEvent>? OrderedEvents = null, bool PointerSuppressed = false, float PointerScaleX = 1, float PointerScaleY = 1, bool PointerHostBlocked = false, bool OrderedUnavailable = false, bool BackspaceRepeating = false, bool RightReleased = false, bool RightClicked = false, bool LeftReleaseLost = false )
 {
 
 	public static UiInput Idle( NVector2 mouse ) => new( mouse, false, false, false, false, UiKeys.None );
@@ -55,11 +62,22 @@ public sealed class UiInputSource
 	// [BIN:TPW-EXE:0x65fa33 mouse move] a move beyond 6 px on either axis from the press position (0x65fab7/0x65fad8: cmp 6) marks the press moved
 	public const float ClickSlop = 6;
 
+	/// <summary>A right press released within this many milliseconds, without straying, is a quick click (the park view's cancel); later it was the camera drag.</summary>
+	// [BIN:TPW-EXE:0x488239 right click time] the park view's mouse procedure 0x4881A0, with RMBCancelOn set (0x4881AE), holds a right press back (0x7C2500, the time 0x7C2504) and turns it into the camera's drag (0x42A760 with 0x10005) on the first message 0x1E that finds it older than 200 ms (cmp 0xC8 at 0x48823F)
+	public const long RightClickMilliseconds = 200;
+	/// <summary>The pointer may stray this many pixels on each axis from the right press before it is the camera drag.</summary>
+	// [BIN:TPW-EXE:0x488265 right click slop] a move (0x10003) more than 8 px from the press position on either axis (cmp 8 at 0x488265 and 0x48827F, the position kept at 0x7B5344/0x7B9774) turns the held-back press into the camera drag
+	public const float RightClickSlop = 8;
+
 	private bool wasLeft;
 	private bool wasRight;
 	private long pressedAt;
 	private NVector2 pressedPosition;
 	private bool pressMoved;
+	private long rightPressedAt;
+	private NVector2 rightPressedPosition;
+	private bool rightMoved;
+	private int rightFrames;
 	private int pressFrames;
 	/// <summary>The clock the click rule reads, in milliseconds (replaced by tests).</summary>
 	internal Func<long> Clock { get; set; } = () => Environment.TickCount64;
@@ -105,11 +123,27 @@ public sealed class UiInputSource
 			pressMoved = true;
 		if ( !mouse.Left && wasLeft )
 			notClick = IsNotClick( pressedAt, Clock(), pressMoved, pressFrames );
+		if ( mouse.Right && !wasRight )
+		{
+			rightPressedAt = Clock();
+			rightPressedPosition = window;
+			rightMoved = false;
+			rightFrames = 0;
+		}
+		if ( mouse.Right )
+			rightFrames++;
+		if ( (mouse.Right || wasRight) && (Math.Abs( window.X - rightPressedPosition.X ) > RightClickSlop || Math.Abs( window.Y - rightPressedPosition.Y ) > RightClickSlop) )
+			rightMoved = true;
+		var rightReleased = !mouse.Right && wasRight;
+		var rightClicked = rightReleased && !rightMoved && (Clock() - rightPressedAt <= RightClickMilliseconds || rightFrames <= MaxQuickClickFrames);
+		var orderedEvents = NormalizeOrderedEvents( Input.OrderedEvents, keys, framebufferPerWindowX, framebufferPerWindowY );
+		// a left release the browser made up (blur, visibility): its position is only the last one seen
+		var leftReleaseLost = orderedEvents != null && orderedEvents.Any( item => item.Kind == OrderedInputEventKind.ButtonUp && item.Button == (int)MouseButton.Left && item.Source == OrderedInputEventSource.Browser && !item.PositionIsExact );
 		var input = new UiInput( new NVector2( mouse.Position.X * framebufferPerWindowX, mouse.Position.Y * framebufferPerWindowY ),
 			mouse.Left, mouse.Left && !wasLeft, !mouse.Left && wasLeft, mouse.Right && !wasRight, pressed, mouse.Wheel,
 			Input.Typed, Input.KeyPresses.Count( key => key == Key.BackSpace ), notClick,
-			NormalizeOrderedEvents( Input.OrderedEvents, keys, framebufferPerWindowX, framebufferPerWindowY ),
-			PointerScaleX: framebufferPerWindowX, PointerScaleY: framebufferPerWindowY, OrderedUnavailable: Input.OrderedEvents == null, BackspaceRepeating: Input.BackspaceRepeating );
+			orderedEvents,
+			PointerScaleX: framebufferPerWindowX, PointerScaleY: framebufferPerWindowY, OrderedUnavailable: Input.OrderedEvents == null, BackspaceRepeating: Input.BackspaceRepeating, RightReleased: rightReleased, RightClicked: rightClicked, LeftReleaseLost: leftReleaseLost && !mouse.Left );
 		wasLeft = mouse.Left;
 		wasRight = mouse.Right;
 		return input;

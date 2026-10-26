@@ -76,16 +76,17 @@ public sealed partial class ParkHud
 	{
 		if ( level.BuyLandTool is not { IsActive: true } tool )
 			return false;
-		if ( input.RightPressed && inPark && GameOptions.Current.RmbCancel )
+		if ( parkRightClick )
 		{
 			tool.Cancel();
-			return toolPress = true;
+			return true;
 		}
 		if ( inPark )
 			tool.Hover( cursorX, cursorY );
 		else
 			tool.Hover( null, null );
-		if ( !inPark || !input.LeftPressed )
+		// [BIN:TPW-EXE:0x525d29 Buy Land click] the rectangle's two corners are clicks of the tool object's release (0x524960), at the cell under the pointer then
+		if ( !inPark || !input.LeftReleased )
 			return false;
 		// [EXT:land-feedback] OpenTPW says when the land cannot be bought and plays the buy window's error sound; the original's feedback on a refused purchase beyond the red ghost and the cash pointer is not traced
 		if ( tool.Click( cursorX, cursorY ) == BuyLandClick.Refused )
@@ -93,7 +94,7 @@ public sealed partial class ParkHud
 			PostMessage( strings.Extra( OpenTpwText.CannotBuyLand ) );
 			GameAudio.PlayUi( GameAudio.ErrorEvent );
 		}
-		return toolPress = true;
+		return true;
 	}
 
 	/// <summary>Starts the area clear tool (the Clear Land row and the Clear key) after ending the other park tools.</summary>
@@ -112,18 +113,19 @@ public sealed partial class ParkHud
 	{
 		if ( level.AreaClearTool is not { IsActive: true } tool )
 			return false;
-		if ( input.RightPressed && inPark && GameOptions.Current.RmbCancel )
+		if ( parkRightClick )
 		{
 			tool.Cancel();
-			return toolPress = true;
+			return true;
 		}
 		if ( inPark )
 			tool.Hover( cursorX, cursorY );
 		else
 			tool.Hover( null, null );
-		if ( !inPark || !input.LeftPressed )
+		// [BIN:TPW-EXE:0x525DA3 area clear click] mode 0x3A: both corners are clicks of the tool object's release (0x524960), at the cell under the pointer then
+		if ( !inPark || !input.LeftReleased )
 			return false;
 		tool.Click( cursorX, cursorY );
-		return toolPress = true;
+		return true;
 	}
 }

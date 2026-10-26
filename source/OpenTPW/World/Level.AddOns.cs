@@ -105,6 +105,16 @@ public partial class Level
 	internal bool BuildGhostAllowed( ObjectCatalogEntry entry, OriginalPlacementResult placement ) =>
 		placement == OriginalPlacementResult.Allowed && (Park == null || Park.Economy.CheckBuild( entry.InfoId, IsMoving ) == ParkEconomy.PurchaseResult.Ok);
 
+	/// <summary>Whether the armed entry's ghost is refused where a build click at (<paramref name="x"/>, <paramref name="y"/>) would put it (<see cref="BuildGhostAllowed"/>): the refused-ghost latch a release reads.</summary>
+	// [BIN:TPW-EXE:0x533933 build latch] the placement preview 0x528A70 runs the footprint through 0x532FC0, whose validator refusal sets the latch 0x816D48; the release handler tests it before its mode dispatch (0x524A63) for the build modes 4 and 0x3B too
+	internal bool BuildClickRefused( int x, int y )
+	{
+		if ( BuildEntry is not { } entry )
+			return false;
+		var (targetX, targetY, rotation) = BuildTarget( entry, x, y );
+		return !BuildGhostAllowed( entry, CheckBuildTarget( entry, targetX, targetY, rotation ) );
+	}
+
 	/// <summary>Builds the armed entry at a build target: the track add-on of <see cref="BuildAddOnRide"/> through <see cref="PlaceAddOn"/>, anything else through <see cref="PlaceObject"/>.</summary>
 	private OriginalObject? PlaceBuildTarget( ObjectCatalogEntry entry, int x, int y, int rotation ) =>
 		BuildAddOnRide is { } ride && TrackAddOns.IsTrackAddOn( entry ) ? PlaceAddOn( entry, x, y, rotation, ride ) : PlaceObject( entry, x, y, rotation );

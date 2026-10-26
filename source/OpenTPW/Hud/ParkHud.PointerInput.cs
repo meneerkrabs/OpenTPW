@@ -16,6 +16,9 @@ public sealed partial class ParkHud
 	private NVector2 routedPressPoint;
 	private long routedPressTime;
 	private bool routedPressMoved;
+	private NVector2 routedRightPressPoint;
+	private long routedRightPressTime;
+	private bool routedRightPressMoved;
 
 	/// <summary>Unit-test seam: the level this HUD was built for (the fixtures build the HUD around a hand-made level).</summary>
 	internal Level LevelForTests => level;
@@ -92,7 +95,10 @@ public sealed partial class ParkHud
 		pointerRouter.Suspend();
 		foreach ( var screen in Stack.Screens ) screen.CancelPointerGesture();
 		if ( level.CoasterPanel is { IsDragging: true } panel ) panel.Release( null, null );
-		toolPress = coasterPress = false;
+		coasterPress = pendingPathEntry = false;
+		pressHostStarts = null;
+		pendingQueueEdit = null;
+		legacyLeftPress = legacyRightPress = null;
 		refusalClickState = null;
 	}
 
@@ -175,8 +181,21 @@ public sealed partial class ParkHud
 				routedPressMoved = true;
 			var notClick = routedPressMoved || item.TimestampMilliseconds - routedPressTime > UiInputSource.ClickMilliseconds
 				|| leftRelease && item.Source == OrderedInputEventSource.Browser && !item.PositionIsExact;
-			var input = new UiInput( point, delivery.LeftDown, leftPress, leftRelease,
-				item.Kind == OrderedInputEventKind.ButtonDown && item.Button == (int)MouseButton.Right, UiKeys.None, NotClick: notClick );
+			// the right button: a release that follows its press within 200 ms and 8 px is the quick click the park view cancels on; anything longer or wider was the camera's drag
+			var rightPress = item.Kind == OrderedInputEventKind.ButtonDown && item.Button == (int)MouseButton.Right;
+			var rightRelease = item.Kind == OrderedInputEventKind.ButtonUp && item.Button == (int)MouseButton.Right;
+			if ( rightPress )
+			{
+				routedRightPressPoint = point;
+				routedRightPressTime = item.TimestampMilliseconds;
+				routedRightPressMoved = false;
+			}
+			if ( Math.Abs( point.X - routedRightPressPoint.X ) > UiInputSource.RightClickSlop * frameInput.PointerScaleX || Math.Abs( point.Y - routedRightPressPoint.Y ) > UiInputSource.RightClickSlop * frameInput.PointerScaleY )
+				routedRightPressMoved = true;
+			var rightClicked = rightRelease && !routedRightPressMoved && item.TimestampMilliseconds - routedRightPressTime <= UiInputSource.RightClickMilliseconds
+				&& !(item.Source == OrderedInputEventSource.Browser && !item.PositionIsExact);
+			var input = new UiInput( point, delivery.LeftDown, leftPress, leftRelease, rightPress, UiKeys.None, NotClick: notClick, RightReleased: rightRelease, RightClicked: rightClicked,
+				LeftReleaseLost: leftRelease && item.Source == OrderedInputEventSource.Browser && !item.PositionIsExact );
 			using ( Input.UsePointerModifiers( item.Modifiers ) )
 				consumed |= DispatchPointerOwner( context, delivery.Owner, input, rideOwnsInput, mouseCaptured, keyboardCaptured, textCaptured );
 			SyncPointerCapture();
@@ -188,7 +207,7 @@ public sealed partial class ParkHud
 		}
 		// Preserve the existing once-per-frame hover/held-repeat work, without inventing a second button edge.
 		var resting = frameInput with { Mouse = pointerRouter.Position, LeftDown = pointerRouter.LeftDown, LeftPressed = false, LeftReleased = false,
-			RightPressed = false, Pressed = UiKeys.None, Text = "", Wheel = 0, OrderedEvents = null };
+			RightPressed = false, RightReleased = false, RightClicked = false, Pressed = UiKeys.None, Text = "", Wheel = 0, OrderedEvents = null };
 		var restingOwner = pointerRouter.Capture ?? HitPointer( context, resting.Mouse );
 		// Hover help belongs to the screen element under the pointer; once the pointer rests on the park or a backdrop the last help is stale.
 		if ( restingOwner?.Target is not ValueTuple<UiScreen, UiElement?, int, int> )
@@ -221,8 +240,9 @@ public sealed partial class ParkHud
 				Input.TextEntryActive = false;
 			}
 			var result = DispatchParkPointer( context, input, false, false, rideOwnsInput, Paused, false, keyboardCaptured, textCaptured );
-			if ( input.LeftPressed && !result.Consumed )
-				level.DispatchRoutedWorldPress( input.Mouse, new NVector2( context.Canvas.Width, context.Canvas.Height ), Input.ModifierMaskDown );
+			// [BIN:TPW-EXE:0x46C610 release slot] the level's tools (a placement, a removal) act on the release the park took, at the cell under the pointer there
+			if ( input.LeftReleased && !input.LeftReleaseLost && !result.Consumed )
+				level.DispatchRoutedWorldClick( input.Mouse, new NVector2( context.Canvas.Width, context.Canvas.Height ), Input.ModifierMaskDown );
 			return result.Consumed;
 		}
 		else if ( owner.Target is ValueTuple<UiScreen, UiElement?, int, int> target )

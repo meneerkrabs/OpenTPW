@@ -69,7 +69,6 @@ public partial class ParkHud
 		{
 			if ( level.TryEnterFreeWalk( input.Mouse, viewport ) ) CamcorderArmed = false;
 		}
-		if ( owned && (input.LeftDown || input.LeftPressed) ) toolPress = true;
 		return owned;
 	}
 }

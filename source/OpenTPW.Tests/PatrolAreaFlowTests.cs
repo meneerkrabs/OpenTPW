@@ -34,12 +34,16 @@ public class PatrolAreaFlowTests
 
 	private static UiContext Context() => new( OriginalUiTests.FakeStrings(), null!, new UiModels( name => throw new System.IO.FileNotFoundException( name ) ) );
 
-	/// <summary>One frame of the park view's patrol tool with the pointer over <paramref name="cell"/>: a left press, a right press or no button.</summary>
+	/// <summary>
+	/// One frame of the park view's patrol tool with the pointer over <paramref name="cell"/>: a left release (the tool object's click, tp.exe 0x524960: the press only sets a latch), a right quick click
+	/// (the release the park view cancels on, 0x488434) or no button.
+	/// </summary>
 	private static bool Frame( ParkHud hud, (int X, int Y) cell, bool left = false, bool right = false )
 	{
 		typeof( ParkHud ).GetField( "cursorX", Private )!.SetValue( hud, cell.X );
 		typeof( ParkHud ).GetField( "cursorY", Private )!.SetValue( hud, cell.Y );
-		var input = new UiInput( new Vector2( -1 ), left, left, false, right, UiKeys.None );
+		typeof( ParkHud ).GetField( "parkRightClick", Private )!.SetValue( hud, right );
+		var input = new UiInput( new Vector2( -1 ), false, false, left, false, UiKeys.None );
 		return (bool)typeof( ParkHud ).GetMethod( "UpdatePatrolTool", Private )!.Invoke( hud, new object[] { input, true } )!;
 	}
 
@@ -182,6 +186,8 @@ public class PatrolAreaFlowTests
 		Frame( hud, (2, 2), left: true );
 		Frame( hud, (3, 3) );
 		Assert.IsTrue( tool.PreviewRefused );
+		// the press of the click latches (0x524790 sets 0x8186D8); the release is the tool's click
+		typeof( ParkHud ).GetMethod( "LatchToolPress", Private )!.Invoke( hud, null );
 		Frame( hud, (3, 3), left: true );
 		Assert.IsFalse( tool.IsActive, "the tool ends" );
 		Assert.IsFalse( guard.HasPatrolArea, "and nothing is set" );

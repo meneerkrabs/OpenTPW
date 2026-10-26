@@ -830,6 +830,18 @@ public partial class Level
 	public bool EnterPathTool( int x, int y, out SegmentResult? refused )
 	{
 		refused = null;
+		if ( !BeginPathTool() )
+			return false;
+		ClickEnteredPathTool( x, y, out refused );
+		return true;
+	}
+
+	/// <summary>
+	/// The press that enters the path tool: the tool has no start and lays nothing (tp.exe's tool object enter 0x46D5A0 only sets the mode, SetMode(1, 1)); the click is the release's
+	/// (<see cref="ClickEnteredPathTool"/>). False when no path tool can run (a read-only visit, no builder).
+	/// </summary>
+	public bool BeginPathTool()
+	{
 		if ( IsReadOnlyVisit || Paths == null )
 			return false;
 		// [EXT:online-coop-commands] another tool: a guest's queue edit or Move pick-up that waits for the host starts no tool once it is back (C3b), even if this one ends at once
@@ -837,11 +849,16 @@ public partial class Level
 		StaffPlacement?.Cancel();
 		// [EXT:online-coop-commands] the tool's previews read the path builder; each committed line is a command
 		CellTool.Enter( new ParkCommandLineWriter( Paths, Commands, -1 ), null );
+		return true;
+	}
+
+	/// <summary>The first click of the path tool <see cref="BeginPathTool"/> entered, at (<paramref name="x"/>, <paramref name="y"/>): the refused ghost when the click ended the tool again, else null.</summary>
+	public void ClickEnteredPathTool( int x, int y, out SegmentResult? refused )
+	{
 		CellTool.Hover( (x, y) );
 		refused = CellTool.Click( (x, y) );
 		if ( refused != null )
 			LastActionMessage = $"Cannot build a path here: {refused.StoppedBy}.";
-		return true;
 	}
 
 	/// <summary>Starts the queue tool for <paramref name="ride"/> at its entrance's outside cell (or the queue's back cell).</summary>

@@ -189,14 +189,19 @@ public class OrderedParkPointerPipelineTests
 	}
 
 	[TestMethod]
-	public void HeldSnapshotCannotRepeatTheAlreadyDispatchedLevelPress()
+	public void HeldSnapshotCannotRepeatTheAlreadyDispatchedLevelClick()
 	{
+		// [BIN:TPW-EXE:0x46C610 release slot] the level's tools act on the release, not the press
 		Frame( new[] { Down() }, left: true );
-		Assert.AreEqual( 1, commands.Count, "Routed down plus Level.UpdateWorldInput is one command, not two." );
+		Assert.AreEqual( 0, commands.Count, "A press alone does nothing." );
 		Frame( Array.Empty<OrderedInputEvent>(), left: true );
+		Assert.AreEqual( 0, commands.Count, "Neither does holding it." );
 		Frame( new[] { Up() } );
-		Assert.AreEqual( 1, commands.Count );
+		Assert.AreEqual( 1, commands.Count, "Routed up plus Level.UpdateWorldInput is one command, not two." );
+		Frame( Array.Empty<OrderedInputEvent>() );
 		Frame( new[] { Down() }, left: true );
+		Assert.AreEqual( 1, commands.Count );
+		Frame( new[] { Up() } );
 		Assert.AreEqual( 2, commands.Count );
 	}
 

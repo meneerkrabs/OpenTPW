@@ -64,6 +64,8 @@ public class Model : Asset
 			All.Add( this );
 			return;
 		}
+		// a slot with the runtime flag 0x800 draws opaque, whatever its texture is (WorldTranslucency.OpaqueSlotFlag)
+		WorldTranslucency.ForceOpaqueSlots( types, vertices );
 		slotTypes = types;
 		var whole = BoundsOf( vertices );
 		WorldTranslucency.ApplyAlphaFlags( vertices, types );

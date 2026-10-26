@@ -122,6 +122,18 @@ EXPECTED = {
     ('tpw-exe-terrain-ramp', 'plan'): AGREE,
     ('tpw-exe-terrain-weights', 'plan'): AGREE,
     ('tpw-exe-terrain-build', 'plan'): AGREE,
+    # X28 to X32 (the procedural object base, issue 829 package F; skirt_reading.py): the footprint edge mask 0x52c420, the UV normaliser 0x467310, the skirt
+    # entries and opaque slot flags 0x46aa10, the edge vertex conform 0x469940 / 0x469a80 and the base height 0x466d70. The readings are exact at the control word
+    # 0x27f (53 bit); the alternatives show what a float-per-operation transcription (`single-precision`, also the 24 bit word) or a plain inverse would give.
+    ('tpw-exe-skirt-mask', 'plan'): AGREE,
+    ('tpw-exe-skirt-uv', 'plan'): AGREE,
+    ('tpw-exe-skirt-flags', 'plan'): AGREE,
+    ('tpw-exe-skirt-flags', 'single-precision'): (31, (5, 5, False, 48, 1.7249575853347778)),
+    ('tpw-exe-ground-conform', 'plan'): AGREE,
+    ('tpw-exe-ground-conform', 'single-precision'): (104, ((7, 5), (6.075, 0.0, 35.018), 4)),
+    ('tpw-exe-ground-conform', 'exact-inverse'): (62, ((2, 4), (10.0, 0.0, 30.0), 3)),
+    ('tpw-exe-base-height', 'plan'): AGREE,
+    ('tpw-exe-base-height', 'csharp-rule'): AGREE,
     ('tpw-exe-queue-reevaluate', 'csharp-rule'): AGREE,
     ('tpw-exe-queue-reevaluate', 'no-state-14-exemption'): (70, {'cells': 1, 'position': 4, 'state': 14, 'id': 3}),
     ('tpw-exe-scrap-value', 'all-levels-cost'): (221, {'now': 1000, 'built': 1000, 'level': 1, 'used': 0, 'cost': [10000, 8000, 12000],
@@ -394,7 +406,10 @@ def check_pinned(case, comparison, key):
         case.assertEqual(comparison.mismatches, count, f'{key}: first {comparison.first}')
         first = comparison.first['input']
         if isinstance(first_input, tuple):
-            first = wander_summary(first) if key[0] == 'tpw-exe-wander-destination' else coast_summary(first)
+            if key[0] in ('tpw-exe-skirt-flags', 'tpw-exe-ground-conform', 'tpw-exe-base-height'):
+                first = targets.skirt_summary(key[0], first)
+            else:
+                first = wander_summary(first) if key[0] == 'tpw-exe-wander-destination' else coast_summary(first)
         case.assertEqual(first, first_input, key)
 
 
@@ -906,6 +921,122 @@ class Oracle(CoastTests, unittest.TestCase):
             [comparison] = [c for c in compare(targets.TERRAIN_BUILD_TARGET, self.image, 24, plan=plan) if c.side == 'plan']
             self.assertGreater(comparison.mismatches, 0, name)
 
+    # ------------------------------------------------------------------ X28 to X32: the procedural object base (issue 829, package F)
+    def test_skirt_mask_agrees(self):
+        self.check(('tpw-exe-skirt-mask', 'plan'))
+
+    def test_skirt_uv_normaliser_agrees(self):
+        self.check(('tpw-exe-skirt-uv', 'plan'))
+
+    def test_skirt_entries_and_slot_flags_agree(self):
+        self.check(('tpw-exe-skirt-flags', 'plan'))
+
+    def test_skirt_flags_float_per_operation_reading_differs(self):
+        self.check(('tpw-exe-skirt-flags', 'single-precision'))
+
+    def test_ground_conform_agrees(self):
+        self.check(('tpw-exe-ground-conform', 'plan'))
+
+    def test_ground_conform_float_and_plain_inverse_readings_differ(self):
+        self.check(('tpw-exe-ground-conform', 'single-precision'))
+        self.check(('tpw-exe-ground-conform', 'exact-inverse'))
+
+    def test_base_height_agrees_with_the_csharp_rule(self):
+        self.check(('tpw-exe-base-height', 'plan'))
+        self.check(('tpw-exe-base-height', 'csharp-rule'))
+
+    def test_skirt_readings_are_sharp(self):
+        reading = targets.skirt_reading
+
+        def narrow_neighbours(x):
+            # the right neighbour test as `col + 1 < width` instead of `<= width`: only a 20 wide shape (column 20 is the next row's first cell) shows it
+            mask = bytearray(reading.mask(x))
+            if x['width'] == 20:
+                saved = reading.shape_type
+                reading.shape_type = lambda shape, col, row: 0 if col >= shape['width'] else saved(shape, col, row)
+                try:
+                    return bytes(reading.mask(x))
+                finally:
+                    reading.shape_type = saved
+            return bytes(mask)
+
+        def transposed(x):
+            memory = bytearray(reading.mask(x))
+            for row in range(16):
+                for col in range(16):
+                    memory[row * 16 + col] = reading.mask(x)[col * 16 + row]
+            return bytes(memory)
+
+        for target, plan, name in ((targets.SKIRT_MASK_TARGET, narrow_neighbours, 'neighbour <='), (targets.SKIRT_MASK_TARGET, transposed, 'index [row*16+col]')):
+            [comparison] = [c for c in compare(target, self.image, 120, plan=plan) if c.side == 'plan']
+            self.assertGreater(comparison.mismatches, 0, name)
+
+        def keep_wrap_bits(x):
+            result = targets.skirt_uv_plan(x)
+            result['slots'] = list(x['node']['slots'])
+            return result
+
+        def no_face_shift(x):
+            result = targets.skirt_uv_plan(x)
+            return dict(result, uvs=targets.skirt_bits([(reading.snap_component(u, x['eps']), reading.snap_component(v, x['eps'])) for (u, v) in x['node']['uvs']]))
+
+        for plan, name in ((keep_wrap_bits, 'wrap bits kept'), (no_face_shift, 'no per face shift')):
+            [comparison] = [c for c in compare(targets.SKIRT_UV_TARGET, self.image, 80, plan=plan) if c.side == 'plan']
+            self.assertGreater(comparison.mismatches, 0, name)
+
+        def ignore_header(x):
+            return targets.skirt_flags_plan(dict(x, hdr80=False))
+
+        def flipped_never(x):
+            result = targets.skirt_flags_plan(x)
+            return dict(result, entries=[(code & ~0x40, slot) for (code, slot) in result['entries']])
+
+        for plan, name in ((ignore_header, 'header bit 0x80 ignored'), (flipped_never, 'flip bit dropped')):
+            [comparison] = [c for c in compare(targets.SKIRT_FLAGS_TARGET, self.image, 60, plan=plan) if c.side == 'plan']
+            self.assertGreater(comparison.mismatches, 0, name)
+
+        def parent_first(x):
+            # the node matrix chain taken as parent * node (the reverse of 0x4702d0)
+            saved = reading.chain_matrix
+            reading.chain_matrix = lambda node, parent: saved(parent, node)
+            try:
+                return targets.conform_plan(x)
+            finally:
+                reading.chain_matrix = saved
+
+        def no_edge_return(x):
+            # a vertex past the last corner clamped to it instead of ending the node's walk
+            moved = dict(x, landscape=dict(x['landscape'], cells=(x['landscape']['cells'][0] + 8, x['landscape']['cells'][1] + 8),
+                                           heights=[0.0] * ((x['landscape']['cells'][0] + 9) * (x['landscape']['cells'][1] + 9))))
+            return targets.conform_plan(moved)
+
+        for plan, name in ((parent_first, 'chain order'), (no_edge_return, 'no early return')):
+            [comparison] = [c for c in compare(targets.CONFORM_TARGET, self.image, 80, plan=plan) if c.side == 'plan']
+            self.assertGreater(comparison.mismatches, 0, name)
+
+        def anchor_rotation_off_by_one(x):
+            return reading.base_height_csharp(dict(x, anchor=(x['anchor'][0], x['anchor'][1] - (x['rotation'] == 90))))
+
+        def every_cell(x):
+            return reading.base_height(dict(x, flags=0x10))
+
+        for plan, name in ((anchor_rotation_off_by_one, 'rotation 90 anchor'), (every_cell, 'zero cells counted')):
+            [comparison] = [c for c in compare(targets.BASE_HEIGHT_TARGET, self.image, 200, plan=plan) if c.side == 'plan']
+            self.assertGreater(comparison.mismatches, 0, name)
+
+    def test_skirt_flags_and_conform_at_other_control_words(self):
+        # at the 64 bit word the original gives the same results as at the 53 bit word; at the 24 bit word it equals the float per operation reading (X30, X31)
+        for target, binary in ((targets.SKIRT_FLAGS_TARGET, targets.skirt_flags_binary), (targets.CONFORM_TARGET, targets.conform_binary)):
+            inputs = target.inputs(__import__('x86_harness').seeded('oracle-v1:' + target.key), 120)
+            sandbox = target.sandbox(self.image)
+            for cw, reading in ((0x37F, target.plan), (0x7F, target.alternatives['single-precision'])):
+                same = 0
+                for x in inputs:
+                    sandbox.reset()
+                    target.log.clear()
+                    same += binary(sandbox, x, target.log, cw) == reading(x)
+                self.assertEqual(same, len(inputs), (target.key, hex(cw)))
+
     def test_walk_readings_are_sharp(self):
         # The walk's mask matters to the edge test and the search: a reading that ignores it disagrees.
         for target, plan in ((targets.WALK_EDGE_TARGET, lambda x: targets.walk_edge_plan(dict(x, mask=0))),
@@ -963,6 +1094,90 @@ class TerrainSyntheticLevels(unittest.TestCase):
         reading = targets.terrain_reading
         self.assertEqual(reading.synthetic_level(1003, 'BA', 16, False), reading.synthetic_level(1003, 'BA', 16, False))
         self.assertEqual(reading.Lcg(1).next(), ((1664525 + 1013904223) & 0xFFFFFFFF) >> 24)
+
+
+class SkirtReading(unittest.TestCase):
+    """The Python readings of the procedural object base (skirt_reading.py) and their inputs need neither Unicorn nor an executable."""
+
+    def test_mask_of_a_block_marks_its_ring(self):
+        cells = [0] * 400
+        for row in range(3):
+            for col in range(3):
+                cells[row * 20 + col] = 4
+        mask = targets.skirt_reading.mask({'width': 3, 'height': 3, 'cells': cells})
+        ring = [(col, row) for col in range(3) for row in range(3) if (col, row) != (1, 1)]
+        self.assertEqual({i for i in range(256) if mask[i]}, {col * 16 + row for col, row in ring})
+
+    def test_mask_of_a_wide_shape_overwrites_the_stored_words(self):
+        mask = targets.skirt_reading.mask({'width': 20, 'height': 20, 'cells': [4] * 400})
+        self.assertEqual(len(mask), 324)
+        # the width and height words are stored at 256 and 260 first; the ring cells (16, 0) and (15, 19) land on bytes 256 and 259, the height word survives
+        self.assertEqual((mask[256], mask[257], mask[258], mask[259]), (1, 0, 0, 1))
+        self.assertEqual(mask[260:264], struct.pack('<I', 20))
+
+    def test_uv_snap_thresholds(self):
+        snap = targets.skirt_reading.snap_component
+        eps = targets.skirt_reading.SNAP
+        f32 = targets.skirt_reading.f32
+        self.assertEqual([snap(v, eps) for v in (0.0, 0.019, -0.019, 0.5, 0.981, 0.98, 0.9799, 1.0, 2.99, -0.99, -0.5, -1.0, f32(0.02), 0.0201)],
+                         [0.0, 0.0, 0.0, 0.5, 1.0, f32(0.98), f32(0.9799), 1.0, 3.0, -1.0, -0.5, -1.0, f32(0.02), f32(0.0201)])
+
+    def test_inverse_of_quarter_turns_is_exact_without_translation(self):
+        reading = targets.skirt_reading
+        for angle in range(4):
+            matrix = targets.conform_rotation(angle, (0.0, 0.0, 0.0))
+            self.assertEqual(reading.chain_matrix(matrix, reading.inverse(matrix)), list(reading.IDENTITY), angle)
+
+    def test_inverse_of_a_translated_quarter_turn_is_not_exact(self):
+        """The original's LU inverse (X31): a translation of (10, 0, 30) leaves 0.99999994 in the rotation and 29.999998 in the translation."""
+        reading = targets.skirt_reading
+        inverse = reading.inverse(targets.conform_rotation(0, (10.0, 0.0, 30.0)))
+        self.assertEqual((inverse[10], inverse[12], inverse[14]), (0.9999999403953552, -10.0, reading.f32(-29.9999981)))
+
+    def test_chain_matrix_with_the_identity_is_the_node_matrix(self):
+        reading = targets.skirt_reading
+        matrix = targets.conform_rotation(3, (6.5, 1.0, 12.25))
+        self.assertEqual(reading.chain_matrix(matrix, list(reading.IDENTITY)), matrix)
+
+    def test_flags_inputs_reach_every_orientation_and_the_error(self):
+        target = targets.SKIRT_FLAGS_TARGET
+        inputs = target.inputs(__import__('x86_harness').seeded('oracle-v1:' + target.key), DEFAULT_COUNT)
+        codes, errors, opaque, cleared = set(), 0, 0, 0
+        for x in inputs:
+            result = targets.skirt_flags_plan(x)
+            codes.update(code for code, slot in result['entries'])
+            errors += result['errors']
+            opaque += any(a & 0x800 for a in result['slots'])
+            cleared += any((a ^ b) & 0x30 for a, b in zip(result['slots'], x['node']['slots']))
+        self.assertEqual(codes, {1, 0x80, 0x88, 0x90, 0xA0, 0xC0, 0xC8, 0xD0, 0xE0})
+        self.assertGreater(errors, 0)
+        self.assertGreater(opaque, 0)
+        self.assertGreater(cleared, 0)
+
+    def test_conform_inputs_reach_every_branch(self):
+        reading = targets.skirt_reading
+        target = targets.CONFORM_TARGET
+        inputs = target.inputs(__import__('x86_harness').seeded('oracle-v1:' + target.key), DEFAULT_COUNT)
+        reading.TRACE = []
+        try:
+            for x in inputs:
+                reading.conform(x)
+            seen = set(reading.TRACE)
+        finally:
+            reading.TRACE = None
+        expected = {'conform-vertex', 'clamp', 'snap-lower-0', 'snap-lower-1', 'snap-upper-0', 'snap-upper-1', 'return-lower-0', 'return-lower-1', 'return-upper-0',
+                    'return-upper-1', 'drape-0-01', 'drape-0-10', 'drape-1-00', 'drape-1-11'}
+        self.assertEqual(seen, expected)
+
+    def test_base_height_reading_is_the_csharp_rule_on_every_input(self):
+        target = targets.BASE_HEIGHT_TARGET
+        inputs = target.inputs(__import__('x86_harness').seeded('oracle-v1:' + target.key), DEFAULT_COUNT)
+        self.assertTrue(all(targets.base_height_plan(x) == targets.base_height_csharp_rule(x) for x in inputs))
+
+    def test_base_height_of_an_empty_footprint_is_zero(self):
+        x = {'anchor': (0, 0), 'rotation': 0, 'width': 1, 'height': 1, 'shape': {'width': 1, 'height': 1, 'cells': [16] + [0] * 399}, 'flags': 0,
+             'heights': {'cells_x': 1, 'cells_z': 1, 'values': [5.0, 6.0, 7.0, 8.0]}}
+        self.assertEqual(targets.base_height_plan(x), 0.0)
 
 
 class WalkReadingCoverage(unittest.TestCase):

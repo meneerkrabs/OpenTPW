@@ -271,7 +271,7 @@ public sealed partial class OriginalTerrain : Entity
 	/// The queue models of the queue cells (<see cref="QueueModels"/>), baked into static batches: each instance stands on its cell turned by
 	/// its yaw as a placed object of one cell would be (<see cref="ObjectPlacement.CellRotation"/>), each vertex on the ground under it.
 	/// </summary>
-	// [APPROX:PATH-015] the queue models are baked with each vertex raised by the drawn ground under it (LandscapeSampler, the path layer's lift above it, so the models follow a sloped cell and their floor shows over the grass as in the original's footage) and drawn without the ground deformation of their .hmp files (as objects, RIDES-014) and without the animation of their texture frames (the fire0 torches of queend and quebin1/2) and of the load flag 0x100000 of the two quedead entries — evidence needed: the .hmp deformation and the model loader's flag 0x100000 (0x4629D0)
+	// [APPROX:PATH-015] the queue models are baked with each vertex raised by the drawn ground under it (LandscapeSampler, the path layer's lift above it, so the models follow a sloped cell and their floor shows over the grass as in the original's footage) and drawn without the skirt and edge conform that the loader's flag 1 gives an object's floor (docs/OBJECTS.md, "Floors"; the .hmp files are footprint height maps, nothing is deformed) and without the animation of their texture frames (the fire0 torches of queend and quebin1/2) and of the load flag 0x100000 of the two quedead entries — evidence needed: the .hmp deformation and the model loader's flag 0x100000 (0x4629D0)
 	private void BuildQueueModels( Dictionary<string, Texture> textures, List<(int X, int Y, QueueModelTile Tile)> queues )
 	{
 		QueueModelCount = 0;

@@ -487,10 +487,10 @@ public sealed class ParkObjects
 
 	/// <summary>
 	/// Base height of an object: the midpoint of the lowest and the highest terrain vertex under its footprint. The vertices are the four corners of every shape cell whose cell type has a
-	/// non-zero low nibble (so <c>#</c>, type 16, adds none), at the anchor and rotation; the object's ground blend under the ride is not modelled (RIDES-014).
+	/// non-zero low nibble (so <c>#</c>, type 16, adds none), at the anchor and rotation. The original does not flatten the ground under the ride: the floor meets the terrain through the skirt and the edge conform (<see cref="ObjectGroundConform"/>).
 	/// </summary>
 	// [BIN:TPW-EXE:0x00466D70 base height] the creator 0x463060 (flags 0x32f, bit 8, shape pointer def+0x18) calls 0x466D70, which samples the four corners of each shape cell (entries 8 bytes, low nibble of the first byte non-zero, 0x469930) through 0x454050 and returns (lowest + highest vertex height) x 0.5 (0x466E60..0x466F70); the vertex of a corner is ftol(lerp + 0.1) of the unrotated shape position turned about the anchor, which is exactly ObjectFootprint.ToGrid of the corner (box origin 0x466F90)
-	// [APPROX:RIDES-014] the object's base height is that midpoint of the footprint's terrain vertices; the original then blends the ground under the ride flat (0x467030, 0x57ACE0), which is not modelled, and the instance words +0xF0/+0xF4 it takes as the shape size are taken to be the shape's width and height — evidence needed: the blend, and a capture of an instance height on a slope
+	// [BIN:TPW-EXE:0x00467030 footprint box] the placement 0x467030 (creation flag 2) only places the instance and stores the footprint box in +0xC0/+0xC4 (read by the hoarding conform and the terrain composite); it blends no ground flat, and 0x57ACE0 is the composite texture of the floor art over the procedural ground, not a deformation. The instance words +0xF0/+0xF4 are the shape's width and height (0x4629D0: shape words 0 and 1, params 10/11 are 0 for objects). tp.exe's own 0x466D70 run in the x86 oracle (tpw-exe-base-height) returns this rule's result for every synthetic footprint and heightfield tried (rotations 0 to 270, random shapes and heights)
 	public float GetBaseHeight( ObjectCatalogEntry entry, int anchorX, int anchorY, int rotation ) => GetBaseHeight( entry.Shape, Grid, anchorX, anchorY, rotation );
 
 	/// <summary><see cref="GetBaseHeight(ObjectCatalogEntry,int,int,int)"/> for a shape on a grid.</summary>

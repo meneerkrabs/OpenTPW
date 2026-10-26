@@ -119,6 +119,8 @@ fragment {
     const uint FLAG_ALPHA_TEST_LOW = 0x20000000u;
     // WorldTranslucency.CutoutFlag: a corner of a cut-out texture's face (an alpha plane with an alpha byte of 0), which the original draws with state word 0x2756 (an alpha test at 0xF0/255)
     const uint FLAG_CUTOUT = 0x10000000u;
+    // WorldTranslucency.OpaqueSlotFlag: a corner of a slot with the runtime flag 0x800 (a ride's edge floor art), which the original draws with state word 0x1256: no alpha test, no blend (tp.exe 0x581790)
+    const uint FLAG_OPAQUE_SLOT = 0x08000000u;
 
     // CLAMP on the wrapping sampler: the coordinates stay half a texel of the coarsest mip the footprint can select
     // inside the edges (that mip's real size, floor(size / 2^level) but at least 1, so odd sizes do not bleed either),
@@ -270,7 +272,10 @@ fragment {
 
         // Handle opaque alpha testing: the engine's 0.1, 0xF0/255 for the faces of the original's cut-out state, or 0x10/255 for the faces of its translucent state
         float alphaReference = ( outMatFlags & FLAG_CUTOUT ) != 0u ? 240.0 / 255.0 : ( outMatFlags & FLAG_ALPHA_TEST_LOW ) != 0u ? 16.0 / 255.0 : 0.1;
-        if (vTextureSample.a < alphaReference) discard;
+        // the opaque slot state 0x1256 has neither a test nor a blend: the texture's own alpha is ignored
+        if ( ( outMatFlags & FLAG_OPAQUE_SLOT ) != 0u )
+            vTextureSample.a = 1.0;
+        else if (vTextureSample.a < alphaReference) discard;
 
         fragColor = vec4(vOutColor, vTextureSample.a);
 

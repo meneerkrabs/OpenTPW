@@ -3336,8 +3336,795 @@ TERRAIN_BUILD_TARGET = Target(
     notes=['thiscall (ecx = level object; destination, cell x, cell z, floor descriptor NULL). Synthetic levels whose masks give every run mode '
            '(C, B, A, BA, CB, CA, CBA) plus random masks and a few invalid cells. A reading without the three layer quirk differs (test_x86_oracle).'])
 
+# ============================================================================== X28 to X30: the procedural object base ("skirt")
+# tp.exe 0x52c420 (footprint edge mask), 0x467310 (UV normaliser) and 0x46aa10 (skirt entries and the opaque slot flags). Plan: skirt_reading.py, the reading
+# OpenTPW's ObjectSkirt follows (docs/OBJECTS.md). Memory layouts are the ones the routines read (node, model, base record, shape); every field is named
+# in the builders below. The x87 control word is the same 0x27F (53 bit) as the other floating point targets of this file.
+import skirt_reading  # noqa: E402
+
+SKIRT_MASK_BASE = 0x8186F0
+SKIRT_WORLD_PTR = 0x7A0854      # game world object; +0x6c is the landscape, whose +0x10 / +0x14 are the cell sizes and +0x28 the corner heights
+SKIRT_SCRATCH_PTR = 0x7AECD4    # pointer to the scratch array of transformed vertices
+SKIRT_FPCW = 0x27F
+SKIRT_MASK_RANGES = [(0x52C420, 0x52C5AA)]
+SKIRT_RUNTIME_RANGES = [(0x67A830, 0x67A857),    # _ftol
+                        (0x67B280, 0x67B3D1),    # modf; executed, with the two runtime helpers it uses for finite values
+                        (0x686080, 0x6860A8),    # _controlfp
+                        (0x6855B0, 0x6855C5)]    # frndint wrapper
+SKIRT_UV_RANGES = [(0x467310, 0x4679CD)] + SKIRT_RUNTIME_RANGES
+SKIRT_FLAGS_RANGES = ([(0x46AA10, 0x46B386), (0x52C420, 0x52C5AA), (0x4628B0, 0x4629C4), (0x4700F0, 0x4702D0), (0x4679D0, 0x467A73), (0x67B110, 0x67B13F)]
+                      + SKIRT_UV_RANGES)
+SKIRT_TYPES = (0, 1, 3, 4, 9, 10, 11, 16, 23)   # the cell types of the 19 shape symbols (docs/OBJECTS.md): . @ Q * 8 6 2 4 N E S W + # D > < O X
+
+
+def skirt_stubs(target: Target) -> dict:
+    """0x45b9d0 allocator (size, flags: zeroed memory; size 0 gives NULL) and 0x45ba00 free (nothing to do in a sandbox that is reset per run) are replaced by
+    sandbox versions: the originals only call GlobalAlloc / GlobalFree, which the sandbox does not have. 0x5da3c0 is the debug print; it is a bare `ret` in
+    this build, replaced here only to record what is printed (its arguments are the format and up to three values)."""
+    def alloc(sb):
+        size = sb.arg(0)
+        return (sb.alloc(size, 16) if size else 0), 0
+
+    def free(sb):
+        return 0, 0
+
+    def log(sb):
+        target.log.append(tuple(sb.arg(i) for i in range(5)))
+        return 0, 0
+    return {0x45B9D0: alloc, 0x45BA00: free, 0x5DA3C0: log}
+
+
+def skirt_write_shape(sb: Sandbox, shape: dict) -> int:
+    """The map object 0x52c420 reads: width, height, then 8 byte cells (type dword first) at row * 20 + column from +8; zero behind them."""
+    address = sb.alloc(8 + 8 * (21 * 20 + 24), 16)
+    sb.write(address, 'I', shape['width'])
+    sb.write(address + 4, 'I', shape['height'])
+    for index, kind in enumerate(shape['cells']):
+        if kind:
+            sb.write(address + 8 + index * 8, 'I', kind)
+    return address
+
+
+def skirt_mask_binary(sb: Sandbox, x: dict, log) -> bytes:
+    shape = skirt_write_shape(sb, x)
+    sb.call(0x52C420, (shape,))
+    return bytes(sb.uc.mem_read(SKIRT_MASK_BASE, skirt_reading.MASK_SPAN))
+
+
+def skirt_mask_plan(x: dict) -> bytes:
+    return skirt_reading.mask(x)
+
+
+def skirt_shape(rng: random.Random, width: int, height: int, style: str) -> dict:
+    """A shape grid: `cells` holds 20 x 20 type dwords (row * 20 + column), only the first `width` x `height` used."""
+    cells = [0] * (20 * 20)
+    for row in range(height):
+        for col in range(width):
+            if style == 'full':
+                kind = 4
+            elif style == 'holes':
+                kind = 4 if rng.random() < 0.8 else rng.choice(SKIRT_TYPES)
+            elif style == 'footprint':
+                kind = rng.choice((4, 9, 10, 23))
+            else:
+                kind = rng.choice(SKIRT_TYPES)
+            cells[row * 20 + col] = kind
+    return {'width': width, 'height': height, 'cells': cells}
+
+
+def skirt_mask_inputs(rng: random.Random, n: int) -> list:
+    """Random shapes up to 20 x 20 over every cell type, and filled blocks (interior cells have four neighbours); width 20 reads the next row's first
+    cell through column 20, height 20 reads past the grid; the large blocks write the mask beyond its 256 bytes."""
+    out = [skirt_shape(rng, w, h, 'full') for (w, h) in ((1, 1), (2, 2), (3, 3), (5, 4), (16, 16), (17, 3), (20, 20), (20, 1), (1, 20), (16, 1))]
+    styles = ('mixed', 'holes', 'footprint', 'full')
+    for index in range(n):
+        width, height = rng.randint(1, 20), rng.randint(1, 20)
+        if index % 7 == 0:
+            width = 20
+        if index % 11 == 0:
+            height = 20
+        out.append(skirt_shape(rng, width, height, styles[index % len(styles)]))
+    return out
+
+
+# --- a synthetic node ------------------------------------------------------------------------------------------------------------------------
+def skirt_write_matrix(sb: Sandbox, address: int, matrix: list) -> None:
+    for index, value in enumerate(matrix):
+        sb.write(address + index * 4, 'f', value)
+
+
+def skirt_write_node(sb: Sandbox, node: dict) -> int:
+    """A model node as the routines read it: parent link +4, matrix +0x10, counts (vertices +0x58, groups +0x5a, faces +0x5c, UVs +0x5e), the vertex array +0x60
+    (blocks of 4: x, y and z rows, 0x30 bytes), UV array +0x68 (blocks of 4: u row, v row, 0x20 bytes), groups +0x6c (0x10 bytes: slot pointer, first face +4,
+    face count +6), faces +0x70 (8 bytes: a word, then three corner ids) and the corner to vertex map +0x94. The slot table is the model's (+0x50); groups
+    point into it. Returns the node address; `node['_slots']` gets the slot table address."""
+    parent = 0
+    for matrix in reversed(node.get('parents', [])):
+        record = sb.alloc(0x100, 16)
+        sb.write(record + 4, 'I', parent)
+        skirt_write_matrix(sb, record + 0x10, matrix)
+        parent = record
+    address = sb.alloc(0xC0, 16)
+    sb.write(address + 4, 'I', parent)
+    skirt_write_matrix(sb, address + 0x10, node['matrix'])
+    vertices, uvs = node['vertices'], node['uvs']
+    sb.write(address + 0x58, 'H', len(vertices))
+    sb.write(address + 0x5A, 'H', len(node['groups']))
+    sb.write(address + 0x5C, 'H', len(node['faces']))
+    sb.write(address + 0x5E, 'H', len(uvs))
+    vertex_block = sb.alloc(0x30 * ((len(vertices) + 3) // 4 + 1), 16)
+    for index, (x, y, z) in enumerate(vertices):
+        base = vertex_block + (index >> 2) * 0x30 + (index & 3) * 4
+        sb.write(base, 'f', x)
+        sb.write(base + 0x10, 'f', y)
+        sb.write(base + 0x20, 'f', z)
+    sb.write(address + 0x60, 'I', vertex_block)
+    uv_block = sb.alloc(0x20 * ((len(uvs) + 3) // 4 + 1), 16)
+    for index, (u, v) in enumerate(uvs):
+        base = uv_block + (index >> 2) * 0x20 + (index & 3) * 4
+        sb.write(base, 'f', u)
+        sb.write(base + 0x10, 'f', v)
+    sb.write(address + 0x68, 'I', uv_block)
+    slots = sb.alloc(8 * max(1, len(node['slots'])) + 16, 16)
+    for index, word in enumerate(node['slots']):
+        sb.write(slots + index * 8, 'H', word)
+        sb.write(slots + index * 8 + 4, 'I', 0x1000 + index)
+    node['_slots'] = slots
+    group_block = sb.alloc(0x10 * max(1, len(node['groups'])), 16)
+    for index, group in enumerate(node['groups']):
+        record = group_block + index * 0x10
+        sb.write(record, 'I', 0 if group['slot'] is None else slots + 8 * group['slot'])
+        sb.write(record + 4, 'H', group['first'])
+        sb.write(record + 6, 'H', group['count'])
+    sb.write(address + 0x6C, 'I', group_block)
+    face_block = sb.alloc(8 * max(1, len(node['faces'])), 16)
+    for index, face in enumerate(node['faces']):
+        for k, corner in enumerate(face):
+            sb.write(face_block + index * 8 + 2 + 2 * k, 'H', corner)
+    sb.write(address + 0x70, 'I', face_block)
+    map_block = sb.alloc(2 * max(1, len(uvs)) + 8, 16)
+    for index, vertex in enumerate(node['corner_vertex']):
+        sb.write(map_block + 2 * index, 'H', vertex)
+    sb.write(address + 0x94, 'I', map_block)
+    return address
+
+
+def skirt_read_uvs(sb: Sandbox, node_address: int, count: int) -> list:
+    block = sb.read(node_address + 0x68, 'I')
+    out = []
+    for index in range(count):
+        base = block + (index >> 2) * 0x20 + (index & 3) * 4
+        out.append((skirt_reading.f32_bits(sb.read(base, 'f')), skirt_reading.f32_bits(sb.read(base + 0x10, 'f'))))
+    return out
+
+
+def skirt_bits(uvs: list) -> list:
+    return [(skirt_reading.f32_bits(u), skirt_reading.f32_bits(v)) for (u, v) in uvs]
+
+
+def skirt_slot_words(sb: Sandbox, slots: int, count: int) -> list:
+    return [sb.read(slots + 8 * index, 'H') for index in range(count)]
+
+
+# --- 0x467310 ----------------------------------------------------------------------------------------------------------------------------
+def skirt_uv_binary(sb: Sandbox, x: dict, log, fpcw: int | None = SKIRT_FPCW) -> dict:
+    """cdecl (model, node, eps, mask, vertices, &logged); the model is only used for its name in a log line. Returns the UVs as float bits, the slot words and
+    whether the out of range UV message was printed."""
+    node = x['node']
+    address = skirt_write_node(sb, node)
+    model = sb.alloc(0x100, 16)
+    mask_pointer = 0
+    if x['mask'] is not None:
+        mask_pointer = sb.alloc(len(x['mask']) + 16, 16)
+        sb.uc.mem_write(mask_pointer, bytes(x['mask']))
+    vertices_pointer = 0
+    if x['vertices'] is not None:
+        vertices_pointer = sb.alloc(12 * len(x['vertices']) + 16, 16)
+        for index, vertex in enumerate(x['vertices']):
+            for axis in range(3):
+                sb.write(vertices_pointer + 12 * index + 4 * axis, 'f', vertex[axis])
+    flag = sb.alloc(8, 8)
+    if fpcw is not None:
+        sb.set_fpcw(fpcw)
+    sb.call(0x467310, (model, address, struct.unpack('<I', struct.pack('<f', x['eps']))[0], mask_pointer, vertices_pointer, flag))
+    return {'uvs': skirt_read_uvs(sb, address, len(node['uvs'])), 'slots': skirt_slot_words(sb, node['_slots'], len(node['slots'])),
+            'logged': sb.read(flag, 'I')}
+
+
+def skirt_uv_plan(x: dict) -> dict:
+    result = skirt_reading.uv_normalise(x['node'], x['eps'], x['mask'], x['vertices'])
+    return {'uvs': skirt_bits(result['uvs']), 'slots': result['slots'], 'logged': int(result['logged'])}
+
+
+SKIRT_UV_NOISE = (0.0, 0.0, 0.0, 0.004, -0.004, 0.0199, -0.0199, 0.0201, -0.0201, 0.019, 0.021, 0.5, 0.25, -0.5, 0.98, 0.9801, 0.9799, 1.0, -1.0, -0.98, -0.9801, -0.9799)
+
+
+def skirt_uv_value(rng: random.Random, base: float) -> float:
+    return skirt_reading.f32(base + rng.choice(SKIRT_UV_NOISE))
+
+
+def skirt_floor_node(rng: random.Random, cells: list, *, rotate: bool = True, share_corners: bool = False, elevated: float = 0.0, skew: bool = False,
+                     slots: int | None = None, matrix_kind: str | None = None) -> dict:
+    """A node whose faces tile the given grid cells (col, row), 10 model units to a cell, two triangles each, in `cells` order (the first group takes the first
+    cells...). Every cell's UV square is rotated or mirrored (`rotate`), moved by whole numbers and nudged by the snap noise. `skew` bends the vertices
+    off the axes, `elevated` lifts a random cell. The node matrix is the identity, a quarter turn about y with a whole translation (the vertices are given in node
+    space, so the transformed result lies on the cells), or a general matrix."""
+    kind = matrix_kind or rng.choice(('identity', 'identity', 'identity', 'turn', 'general'))
+    angle = rng.randrange(4)
+    sine, cosine = ((0, 1), (1, 0), (0, -1), (-1, 0))[angle]
+    translation = (float(rng.randrange(-3, 4) * 10), 0.0, float(rng.randrange(-3, 4) * 10))
+    matrix = list(skirt_reading.IDENTITY)
+    parents = []
+    if kind == 'turn':
+        matrix = [float(cosine), 0.0, float(sine), 0.0, 0.0, 1.0, 0.0, 0.0, float(-sine), 0.0, float(cosine), 0.0, translation[0], 0.0, translation[2], 1.0]
+        if rng.random() < 0.4:
+            parents = [[1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 10.0, 0.0, 0.0, 1.0]]
+            translation = (translation[0] + 10.0, 0.0, translation[2])
+    elif kind == 'general':
+        matrix = [skirt_reading.f32(rng.uniform(0.95, 1.05)), skirt_reading.f32(rng.uniform(-0.01, 0.01)), skirt_reading.f32(rng.uniform(-0.01, 0.01)), 0.0,
+                  skirt_reading.f32(rng.uniform(-0.01, 0.01)), 1.0, skirt_reading.f32(rng.uniform(-0.01, 0.01)), 0.0,
+                  skirt_reading.f32(rng.uniform(-0.01, 0.01)), skirt_reading.f32(rng.uniform(-0.01, 0.01)), skirt_reading.f32(rng.uniform(0.95, 1.05)), 0.0,
+                  skirt_reading.f32(rng.uniform(-2, 2)), 0.0, skirt_reading.f32(rng.uniform(-2, 2)), 1.0]
+        if rng.random() < 0.5:
+            parents = [[1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, skirt_reading.f32(rng.uniform(-1, 1)), 0.0, 0.0, 1.0]]
+
+    def to_node(world):
+        if kind != 'turn':
+            return world
+        # vertex_node = (world - t) * R^T, with R the rotation rows above; exact for whole numbers
+        x, y, z = world[0] - translation[0], world[1], world[2] - translation[2]
+        return (x * cosine + z * sine, y, -x * sine + z * cosine)
+
+    vertices: list = []
+    uvs: list = []
+    corner_vertex: list = []
+    faces: list = []
+    vertex_of: dict = {}
+    corner_of: dict = {}
+
+    def vertex(point):
+        key = (round(point[0], 4), round(point[1], 4), round(point[2], 4))
+        if key not in vertex_of:
+            vertex_of[key] = len(vertices)
+            vertices.append(tuple(skirt_reading.f32(c) for c in to_node(point)))
+        return vertex_of[key]
+
+    lifted = rng.randrange(len(cells)) if elevated and cells else -1
+    slot_count = slots if slots is not None else max(1, min(len(cells), rng.randint(1, 6)))
+    for index, (col, row) in enumerate(cells):
+        y = elevated if index == lifted else 0.0
+        x0, z0 = col * 10.0, row * 10.0
+        quad = [(x0, y, z0), (x0, y, z0 + 10.0), (x0 + 10.0, y, z0 + 10.0), (x0 + 10.0, y, z0)]
+        if skew:
+            quad = [(p[0] + rng.uniform(-3, 3), p[1] + rng.uniform(-1, 1), p[2] + rng.uniform(-3, 3)) for p in quad]
+        rotation = rng.randrange(4) if rotate else 0
+        mirror = rotate and rng.random() < 0.4
+        square = [(0.0, 0.0), (0.0, 1.0), (1.0, 1.0), (1.0, 0.0)]
+        square = square[rotation:] + square[:rotation]
+        if mirror:
+            square = [(1.0 - u, v) for (u, v) in square]
+        shift = (float(rng.randrange(-3, 4)), float(rng.randrange(-3, 4)))
+        square = [(skirt_uv_value(rng, u + shift[0]), skirt_uv_value(rng, v + shift[1])) if rng.random() < 0.5 else (u + shift[0], v + shift[1])
+                  for (u, v) in square]
+        corners = []
+        for k in range(4):
+            vertex_index = vertex(quad[k])
+            key = (vertex_index, square[k])
+            if share_corners and key in corner_of:
+                corners.append(corner_of[key])
+            else:
+                corner_of[key] = len(uvs)
+                corners.append(len(uvs))
+                uvs.append(tuple(skirt_reading.f32(c) for c in square[k]))
+                corner_vertex.append(vertex_index)
+        triangles = [(corners[0], corners[1], corners[2]), (corners[0], corners[2], corners[3])]
+        if rng.random() < 0.5:
+            triangles = [(corners[1], corners[2], corners[3]), (corners[1], corners[3], corners[0])]
+        if rng.random() < 0.3:
+            triangles = [tuple(reversed(t)) for t in triangles]
+        faces.extend(triangles)
+    groups = []
+    per_group = max(1, len(cells) // max(1, slot_count))
+    index = 0
+    slot = 0
+    while index < len(cells):
+        count = min(per_group, len(cells) - index)
+        if len(groups) + 1 >= slot_count:
+            count = len(cells) - index
+        groups.append({'slot': slot % slot_count, 'first': index * 2, 'count': count * 2})
+        index += count
+        slot += 1
+    slot_words = [rng.choice((0, 0x30, 0x800, 0x830, 0x8000, 0x8030, 0x0100, 0x0930, 0x7FFF, 0xFFFF)) for _ in range(slot_count)]
+    return {'matrix': matrix, 'parents': parents, 'vertices': vertices, 'uvs': uvs, 'corner_vertex': corner_vertex, 'faces': faces, 'groups': groups,
+            'slots': slot_words}
+
+
+def skirt_uv_inputs(rng: random.Random, n: int) -> list:
+    """One node per input: floors over 1 to 12 cells with UVs near integers, negative or shared; the mask is random bytes (dense and sparse), the vertices the
+    transformed ones, or no mask at all (the routine then only checks the UV range); some nodes have a lifted cell or skewed faces."""
+    out = []
+    for index in range(n):
+        count = rng.randint(1, 12)
+        cells = list(dict.fromkeys((rng.randrange(0, 6), rng.randrange(0, 6)) for _ in range(count)))
+        node = skirt_floor_node(rng, cells, rotate=rng.random() < 0.9, share_corners=rng.random() < 0.4, elevated=rng.choice((0.0, 0.0, 3.0, 0.09, 0.11, -0.1)),
+                                skew=rng.random() < 0.15)
+        vertices = [tuple(c for c in v) for v in skirt_reading.transform_vertices(node)]
+        density = rng.choice((0.0, 0.3, 0.7, 1.0))
+        mask = bytes(1 if rng.random() < density else 0 for _ in range(256)) if index % 9 != 8 else None
+        out.append({'node': node, 'eps': skirt_reading.SNAP, 'mask': mask, 'vertices': vertices if mask is not None else None})
+        if index % 25 == 24:
+            out[-1]['eps'] = skirt_reading.f32(rng.choice((0.0, 0.01, 0.05, 0.1, 0.25)))
+    return out
+
+
+# --- 0x46aa10 ----------------------------------------------------------------------------------------------------------------------------
+def skirt_flags_binary(sb: Sandbox, x: dict, log, fpcw: int | None = SKIRT_FPCW) -> dict:
+    """cdecl (object, shape, width, height, header 0x80 flag): the base record is found through object + 8 (model +4, entries +0x18, ground node +0x2c, flag byte
+    +0); the cell sizes through [0x7a0854] + 0x6c (+0x10, +0x14); the transformed vertices go to the scratch array [0x7aecd4]. Returns the entries, the slot words,
+    the UVs, the base record's first dword and what was printed."""
+    node = x['node']
+    address = skirt_write_node(sb, node)
+    model = sb.alloc(0x100, 16)
+    sb.write(model + 0x50, 'I', node['_slots'])
+    sb.write(model + 0x78, 'I', address)
+    record = sb.alloc(0x40, 16)
+    sb.write(record + 4, 'I', model)
+    sb.write(record + 0x2C, 'I', address if x['ground'] else 0)
+    obj = sb.alloc(0x20, 16)
+    sb.write(obj + 8, 'I', record)
+    shape = skirt_write_shape(sb, x['shape'])
+    landscape = sb.alloc(0x100, 16)
+    sb.write(landscape + 0x10, 'f', x['cell'][0])
+    sb.write(landscape + 0x14, 'f', x['cell'][1])
+    world = sb.alloc(0x100, 16)
+    sb.write(world + 0x6C, 'I', landscape)
+    sb.write(SKIRT_WORLD_PTR, 'I', world)
+    sb.write(SKIRT_SCRATCH_PTR, 'I', sb.alloc(12 * len(node['vertices']) + 16, 16))
+    if fpcw is not None:
+        sb.set_fpcw(fpcw)
+    sb.call(0x46AA10, (obj, shape, x['width'], x['height'], 1 if x['hdr80'] else 0))
+    entries_address = sb.read(record + 0x18, 'I')
+    entries = [(sb.read(entries_address + 4 * i, 'H'), sb.read(entries_address + 4 * i + 2, 'H')) for i in range(x['width'] * x['height'])]
+    summary = [tuple(entry[2:4]) for entry in log if entry[0] == 5]
+    return {'entries': entries, 'slots': skirt_slot_words(sb, node['_slots'], len(node['slots'])), 'uvs': skirt_read_uvs(sb, address, len(node['uvs'])),
+            'base_flags': sb.read(record, 'I'), 'flipped': summary[0] if summary else None,
+            'errors': sum(1 for entry in log if entry[0] == 0x74D808), 'uv_errors': sum(1 for entry in log if entry[0] == 0x74D624)}
+
+
+def skirt_flags_plan(x: dict) -> dict:
+    return skirt_reading.flags(x)
+
+
+def skirt_flags_single_precision(x: dict) -> dict:
+    """The reading with every x87 intermediate rounded to a float (what a `float` transcription gives; also what the 24 bit control word 0x7f gives)."""
+    with skirt_reading.single_precision():
+        return skirt_reading.flags(x)
+
+
+def skirt_summary(key: str, x: dict) -> tuple:
+    """A short identity of a skirt input for the pins of the alternative readings (the inputs come from the same seeded stream)."""
+    if key == 'tpw-exe-ground-conform':
+        return (tuple(x['landscape']['cells']), tuple(round(v, 3) for v in x['tree']['matrix'][12:15]), len(x['list']))
+    if key == 'tpw-exe-skirt-flags':
+        return (x['width'], x['height'], x['hdr80'], len(x['node']['faces']), x['node']['matrix'][12])
+    return (tuple(x['anchor']), x['rotation'], x['width'], x['height'])
+
+
+def skirt_flags_inputs(rng: random.Random, n: int) -> list:
+    """Floors over the footprint of random shapes (up to 6 x 6), axis aligned or skewed, UV squares rotated and mirrored, node matrices (identity, quarter turn
+    with a parent, general), header bit 0x80 on and off, shared and separate corners and slots."""
+    out = []
+    for index in range(min(n, 400)):
+        width, height = rng.randint(1, 6), rng.randint(1, 6)
+        shape = skirt_shape(rng, width, height, ('holes', 'footprint', 'mixed', 'full')[index % 4])
+        footprint = [(col, row) for row in range(height) for col in range(width) if shape['cells'][row * 20 + col]]
+        if not footprint:
+            shape['cells'][0] = 4
+            footprint = [(0, 0)]
+        node = skirt_floor_node(rng, footprint, rotate=index % 5 != 4, share_corners=index % 3 == 2, elevated=rng.choice((0.0, 0.0, 0.0, 2.5)),
+                                skew=index % 13 == 12, matrix_kind=None if index % 10 else 'identity')
+        if index % 17 == 16:
+            extra = skirt_floor_node(rng, [(width + 1, height), (width, height + 1)], rotate=True, matrix_kind='identity')
+            node = skirt_merge_nodes(node, extra)
+        if index % 19 == 18:
+            node = skirt_merge_nodes(node, skirt_wall_node(rng, footprint[:3]))
+        cell = (10.0, 10.0) if index % 20 else (skirt_reading.f32(rng.choice((8.0, 12.5, 10.0))), skirt_reading.f32(rng.choice((10.0, 16.0, 9.5))))
+        out.append({'shape': shape, 'width': width, 'height': height, 'hdr80': index % 6 == 5, 'cell': cell, 'node': node, 'ground': index % 8 != 7})
+    return out
+
+
+def skirt_wall_node(rng: random.Random, cells: list) -> dict:
+    """Vertical quads (10 high) standing on the given cells' edges, in the x or the z plane: a wall has no edge along both axes, so no cell takes its face."""
+    vertices: list = []
+    uvs: list = []
+    corner_vertex: list = []
+    faces: list = []
+    for col, row in cells:
+        x0, z0 = col * 10.0, row * 10.0
+        if rng.random() < 0.5:
+            quad = [(x0, 0.0, z0), (x0, 10.0, z0), (x0, 10.0, z0 + 10.0), (x0, 0.0, z0 + 10.0)]
+        else:
+            quad = [(x0, 0.0, z0), (x0, 10.0, z0), (x0 + 10.0, 10.0, z0), (x0 + 10.0, 0.0, z0)]
+        base = len(vertices)
+        vertices += [tuple(skirt_reading.f32(c) for c in p) for p in quad]
+        uvs += [(0.0, 0.0), (0.0, 1.0), (1.0, 1.0), (1.0, 0.0)]
+        corner_vertex += [base + k for k in range(4)]
+        faces += [(base, base + 1, base + 2), (base, base + 2, base + 3)]
+    slot_words = [rng.choice((0x30, 0x800, 0x8030, 0)) for _ in cells]
+    groups = [{'slot': index, 'first': 2 * index, 'count': 2} for index in range(len(cells))]
+    return {'matrix': list(skirt_reading.IDENTITY), 'parents': [], 'vertices': vertices, 'uvs': uvs, 'corner_vertex': corner_vertex, 'faces': faces,
+            'groups': groups, 'slots': slot_words}
+
+
+def skirt_merge_nodes(a: dict, b: dict) -> dict:
+    """The faces of b appended to a (same identity matrix assumed): vertices, corners and groups shifted."""
+    vertex_shift, corner_shift, face_shift, slot_shift = len(a['vertices']), len(a['uvs']), len(a['faces']), len(a['slots'])
+    return {'matrix': a['matrix'], 'parents': a['parents'], 'vertices': a['vertices'] + b['vertices'], 'uvs': a['uvs'] + b['uvs'],
+            'corner_vertex': a['corner_vertex'] + [v + vertex_shift for v in b['corner_vertex']],
+            'faces': a['faces'] + [tuple(c + corner_shift for c in f) for f in b['faces']],
+            'groups': a['groups'] + [{'slot': g['slot'] + slot_shift, 'first': g['first'] + face_shift, 'count': g['count']} for g in b['groups']],
+            'slots': a['slots'] + b['slots']}
+
+
+SKIRT_MASK_TARGET = Target(
+    'tpw-exe-skirt-mask', 'tpw', 'tp.exe footprint edge mask 0x52c420', 'procedural-floors-plan §3.1 / skirt_reading.mask',
+    0x52C420, SKIRT_MASK_RANGES, lambda t: {}, skirt_mask_binary, skirt_mask_plan, skirt_mask_inputs,
+    notes=['cdecl (shape); the mask bytes 0x8186f0..+324 (16 x 16 mask, then the width and height words the routine stores behind it, then what a 20 wide or '
+           'high shape writes past them).'])
+SKIRT_UV_TARGET = Target(
+    'tpw-exe-skirt-uv', 'tpw', 'tp.exe UV normaliser 0x467310', 'procedural-floors-plan §3.1 / skirt_reading.uv_normalise',
+    0x467310, SKIRT_UV_RANGES, skirt_stubs, skirt_uv_binary, skirt_uv_plan, skirt_uv_inputs, budget=3_000_000,
+    notes=['cdecl (model, node, eps, mask, vertices, &logged); modf 0x67b280, _ftol 0x67a830 and their helpers run for real (control word 0x27F); '
+           'allocator and free stubbed, the print recorded.'])
+SKIRT_FLAGS_TARGET = Target(
+    'tpw-exe-skirt-flags', 'tpw', 'tp.exe skirt entries 0x46aa10', 'procedural-floors-plan §3.1 / skirt_reading.flags',
+    0x46AA10, SKIRT_FLAGS_RANGES, skirt_stubs, skirt_flags_binary, skirt_flags_plan, skirt_flags_inputs, budget=5_000_000,
+    alternatives={'single-precision': skirt_flags_single_precision},
+    notes=['cdecl (object, shape, width, height, header 0x80); with the mask 0x52c420, the node transform 0x4628b0 / 0x4700f0 and the UV normaliser 0x467310 '
+           'executed (control word 0x27F).'])
+
+# ============================================================================== X31: the edge vertex conform of an object's ground
+# tp.exe 0x469940 (instance wrapper) -> 0x469a80 (tree walk, apply mode) with the matrix chain 0x4702d0, the point transform 0x46fc00, the inverse 0x470040
+# (LU: 0x46fe20, 0x46fd40), identity 0x46f150, modf 0x67b280 and _ftol 0x67a830, all executed. Plan: skirt_reading.conform (the reading an OpenTPW instance
+# copy follows). The instance, model, base record, world and landscape objects are synthetic; the offsets are the ones the routines read.
+CONFORM_ENTRY = 0x469940
+CONFORM_RANGES = ([(0x469940, 0x469A76), (0x469A80, 0x46A54A), (0x4702D0, 0x4704B2), (0x46FC00, 0x46FC9A), (0x470040, 0x4700E6), (0x46FE20, 0x470040),
+                   (0x46FD40, 0x46FE12), (0x46F150, 0x46F176)] + SKIRT_RUNTIME_RANGES)
+
+
+def conform_stubs(target: Target) -> dict:
+    return {}
+
+
+def conform_write_tree(sb: Sandbox, node: dict) -> int:
+    """A node as 0x469a80 reads it: flags +0, next sibling +8, first child +0xc, matrix +0x10, vertex count +0x58 (ushort), vertex array +0x60 (blocks of 4: x, y and z
+    rows, 0x30 bytes), bounds +0x78 (minimum) and +0x84 (maximum). Returns the address; children are allocated after their parent and linked in order."""
+    address = sb.alloc(0xC0, 16)
+    sb.write(address, 'I', node['flags'])
+    skirt_write_matrix(sb, address + 0x10, node['matrix'])
+    vertices = node['vertices']
+    sb.write(address + 0x58, 'H', len(vertices))
+    block = sb.alloc(0x30 * ((len(vertices) + 3) // 4 + 1), 16)
+    for index, (x, y, z) in enumerate(vertices):
+        base = block + (index >> 2) * 0x30 + (index & 3) * 4
+        sb.write(base, 'f', x)
+        sb.write(base + 0x10, 'f', y)
+        sb.write(base + 0x20, 'f', z)
+    sb.write(address + 0x60, 'I', block)
+    for axis in range(3):
+        sb.write(address + 0x78 + 4 * axis, 'f', node['bounds'][0][axis])
+        sb.write(address + 0x84 + 4 * axis, 'f', node['bounds'][1][axis])
+    previous = 0
+    for child in node['children']:
+        child_address = conform_write_tree(sb, child)
+        if previous:
+            sb.write(previous + 8, 'I', child_address)
+        else:
+            sb.write(address + 0xC, 'I', child_address)
+        previous = child_address
+    return address
+
+
+def conform_read_tree(sb: Sandbox, address: int, node: dict) -> list:
+    block = sb.read(address + 0x60, 'I')
+    vertices = []
+    for index in range(len(node['vertices'])):
+        base = block + (index >> 2) * 0x30 + (index & 3) * 4
+        vertices.append(tuple(skirt_reading.f32_bits(sb.read(base + 0x10 * axis, 'f')) for axis in range(3)))
+    bounds = tuple(skirt_reading.f32_bits(sb.read(address + 0x78 + 4 * axis, 'f')) for axis in range(3)) + tuple(
+        skirt_reading.f32_bits(sb.read(address + 0x84 + 4 * axis, 'f')) for axis in range(3))
+    out = [(sb.read(address, 'I'), vertices, bounds)]
+    child = sb.read(address + 0xC, 'I')
+    for child_node in node['children']:
+        out += conform_read_tree(sb, child, child_node)
+        child = sb.read(child + 8, 'I')
+    return out
+
+
+def conform_binary(sb: Sandbox, x: dict, log, fpcw: int | None = SKIRT_FPCW) -> dict:
+    """cdecl 0x469940 (instance, world, base height, flags): instance +4 the instance model (+0x9c the template model, +0x78 root, +0x30 header flags, +0x44 node
+    count 0), +8 the base record (+0x14 the list of vertex indices); the world's +0x6c is the landscape (origin +8 / +0xc, cell size +0x10 / +0x14, counts +0x18 /
+    +0x1c, corner heights +0x28, per cell flag bytes +0x2c). The root's flags get 0x10000 at the end."""
+    land = x['landscape']
+    source_root = conform_write_tree(sb, x['tree'])
+    destination_root = conform_write_tree(sb, x['tree'])
+    template = sb.alloc(0x100, 16)
+    sb.write(template + 0x78, 'I', source_root)
+    model = sb.alloc(0x100, 16)
+    sb.write(model + 0x78, 'I', destination_root)
+    sb.write(model + 0x9C, 'I', template)
+    sb.write(model + 0x70, 'I', sb.alloc(0x200, 16))
+    entries = x['list']
+    list_address = sb.alloc(2 * len(entries) + 16, 16)
+    for index, value in enumerate(entries):
+        sb.write(list_address + 2 * index, 'H', value)
+    record = sb.alloc(0x40, 16)
+    sb.write(record + 0x14, 'I', list_address)
+    instance = sb.alloc(0x20, 16)
+    sb.write(instance + 4, 'I', model)
+    sb.write(instance + 8, 'I', record)
+    landscape = sb.alloc(0x100, 16)
+    sb.write(landscape + 8, 'f', land['origin'][0])
+    sb.write(landscape + 0xC, 'f', land['origin'][1])
+    sb.write(landscape + 0x10, 'f', land['cell'][0])
+    sb.write(landscape + 0x14, 'f', land['cell'][1])
+    sb.write(landscape + 0x18, 'I', land['cells'][0])
+    sb.write(landscape + 0x1C, 'I', land['cells'][1])
+    heights = sb.alloc(4 * len(land['heights']) + 16, 16)
+    for index, value in enumerate(land['heights']):
+        sb.write(heights + 4 * index, 'f', value)
+    sb.write(landscape + 0x28, 'I', heights)
+    flag_table = sb.alloc(len(land['flags']) + 16, 16)
+    for index, value in enumerate(land['flags']):
+        sb.write(flag_table + index, 'B', value)
+    sb.write(landscape + 0x2C, 'I', flag_table)
+    world = sb.alloc(0x100, 16)
+    sb.write(world + 0x6C, 'I', landscape)
+    if fpcw is not None:
+        sb.set_fpcw(fpcw)
+    sb.call(CONFORM_ENTRY, (instance, world, struct.unpack('<I', struct.pack('<f', x['base_height']))[0], 0))
+    return {'nodes': conform_read_tree(sb, destination_root, x['tree'])}
+
+
+def conform_plan(x: dict) -> dict:
+    return skirt_reading.conform(x)
+
+
+def conform_exact_inverse_plan(x: dict) -> dict:
+    """The reading with a plain inverse (double arithmetic through Gauss-Jordan, one float rounding at the end) instead of the original's float LU."""
+    saved = skirt_reading.inverse
+    skirt_reading.inverse = skirt_reading.inverse_exact
+    try:
+        return skirt_reading.conform(x)
+    finally:
+        skirt_reading.inverse = saved
+
+
+def conform_single_precision_plan(x: dict) -> dict:
+    """The reading with every x87 intermediate rounded to a float, the arithmetic a straight `float` transcription gives."""
+    with skirt_reading.single_precision():
+        return skirt_reading.conform(x)
+
+
+def conform_rotation(angle: int, translation: tuple) -> list:
+    sine, cosine = ((0, 1), (1, 0), (0, -1), (-1, 0))[angle % 4]
+    return [float(cosine), 0.0, float(sine), 0.0, 0.0, 1.0, 0.0, 0.0, float(-sine), 0.0, float(cosine), 0.0, translation[0], 0.0, translation[2], 1.0]
+
+
+def conform_to_node(matrix: list, world: tuple) -> tuple:
+    """The node space point that a node matrix (rotation about y by a multiple of 90 degrees, any translation) maps onto `world`: exact up to the float rounding."""
+    x, y, z = world[0] - matrix[12], world[1] - matrix[13], world[2] - matrix[14]
+    return (skirt_reading.f32(x * matrix[0] + z * matrix[8]), skirt_reading.f32(y), skirt_reading.f32(x * matrix[2] + z * matrix[10]))
+
+
+CONFORM_FRACTIONS = (0.0, 0.0, 0.001, -0.001, 0.0099, -0.0099, 0.0101, -0.0101, 0.02, 0.3, 0.5, 0.49, 0.51, 0.75, 0.9, 0.99, 0.9899, 0.9901, 0.999, 0.4999, 0.5001)
+
+
+def conform_land(rng: random.Random, cells: tuple, steps: str) -> dict:
+    cell = (10.0, 10.0) if steps == 'unit' else (skirt_reading.f32(rng.choice((8.0, 12.5, 10.0, 16.0))), skirt_reading.f32(rng.choice((10.0, 6.5, 12.0))))
+    origin = (0.0, 0.0) if steps == 'unit' else (float(rng.choice((0, 0, -20, 30))), float(rng.choice((0, 0, 10, -40))))
+    count = (cells[0] + 1) * (cells[1] + 1)
+    style = rng.randrange(3)
+    if style == 0:
+        heights = [float(rng.randint(-3, 12)) for _ in range(count)]
+    elif style == 1:
+        heights = [skirt_reading.f32(rng.uniform(-5.0, 30.0)) for _ in range(count)]
+    else:
+        flat = float(rng.randint(0, 6))
+        heights = [flat] * count
+    flags = [rng.choice((0, 4, 0, 4, 1, 5)) if index % 4 == 0 else rng.choice((0, 0, 0x80)) for index in range(4 * cells[0] * cells[1])]
+    return {'origin': origin, 'cell': cell, 'cells': cells, 'heights': heights, 'flags': flags}
+
+
+def conform_point(rng: random.Random, land: dict, inside: bool, near_edge: bool = False) -> tuple:
+    """A world position: a grid line plus a fraction in each axis (inside the map unless asked), any height."""
+    def axis(count, size, origin):
+        if near_edge:
+            whole = rng.choice((count - 1, count, count, count + 1, 0))
+        else:
+            whole = rng.randrange(0, count if inside else count + 2)
+        fraction = rng.choice(CONFORM_FRACTIONS)
+        return (whole + fraction) * size + origin
+    return (skirt_reading.f32(axis(land['cells'][0], land['cell'][0], land['origin'][0])), skirt_reading.f32(rng.uniform(-2.0, 8.0)),
+            skirt_reading.f32(axis(land['cells'][1], land['cell'][1], land['origin'][1])))
+
+
+def conform_node(rng: random.Random, land: dict, chain: list, flags: int, count: int, inside: bool, near_edge: bool = False) -> dict:
+    """A node whose vertices map (through `chain`, its matrix times its parents') onto positions near grid lines; `chain` is the full matrix, the node's own is set by the caller."""
+    vertices = [conform_to_node(chain, conform_point(rng, land, inside, near_edge)) for _ in range(count)]
+    if vertices:
+        low = [min(v[a] for v in vertices) for a in range(3)]
+        high = [max(v[a] for v in vertices) for a in range(3)]
+    else:
+        low, high = [0.0] * 3, [0.0] * 3
+    return {'flags': flags, 'matrix': list(IDENTITY_FOR_CONFORM), 'vertices': vertices, 'bounds': (low, high), 'children': []}
+
+
+IDENTITY_FOR_CONFORM = skirt_reading.IDENTITY
+
+
+def conform_case(rng: random.Random, index: int, small: bool = False) -> dict:
+    """One synthetic park; `small` keeps it readable (the C# golden): up to 4 x 4 cells and a few vertices per node."""
+    top = 4 if small else 7
+    cells = (rng.randint(2, top), rng.randint(2, top))
+    land = conform_land(rng, cells, 'unit' if index % 3 else 'odd')
+    angle = rng.randrange(4)
+    fractional = index % 2 == 1
+    translation = (skirt_reading.f32(rng.uniform(0.0, 40.0) if fractional else float(rng.randrange(0, 5) * 10)), skirt_reading.f32(rng.uniform(-3, 3)),
+                   skirt_reading.f32(rng.uniform(0.0, 40.0) if fractional else float(rng.randrange(0, 5) * 10)))
+    root_matrix = conform_rotation(angle, translation)
+    root = {'flags': 0, 'matrix': root_matrix, 'vertices': [], 'bounds': ([0.0] * 3, [0.0] * 3), 'children': []}
+    # the ground node: its matrix is a quarter turn or the identity; the chain it conforms through is node * root
+    local = conform_rotation(rng.randrange(4), (float(rng.randrange(-1, 2) * 10), 0.0, float(rng.randrange(-1, 2) * 10))) if index % 4 == 3 else list(skirt_reading.IDENTITY)
+    chain = skirt_reading.chain_matrix(local, root_matrix)
+    inside = index % 7 != 6
+    near_edge = index % 5 == 4
+    ground = conform_node(rng, land, chain, 0x1000, rng.randint(1, 4 if small else 9), inside, near_edge)
+    ground['matrix'] = local
+    children = [ground]
+    entries: list = []
+    if index % 3 == 1:
+        second = conform_node(rng, land, chain, 0x1000, rng.randint(1, 3 if small else 6), True)
+        second['matrix'] = local
+        children.append(second)
+    if index % 4 == 2:
+        skipped = conform_node(rng, land, chain, 0x1000 | 0x200, rng.randint(1, 2 if small else 4), True)
+        skipped['matrix'] = local
+        children.insert(0, skipped)
+    if index % 5 == 0:
+        plain = conform_node(rng, land, chain, 0, rng.randint(1, 2 if small else 4), True)
+        plain['matrix'] = local
+        children.append(plain)
+    if index % 3 == 0:
+        drape = conform_node(rng, land, chain, 0x20000, rng.randint(1, 3 if small else 6), True)
+        drape['matrix'] = local
+        children.append(drape)
+    root['children'] = children
+    for node in children:
+        if node['flags'] & 0x1000 and not node['flags'] & 0x200:
+            count = len(node['vertices'])
+            picked = sorted(rng.sample(range(count), rng.randint(1, count)))
+            if index % 11 == 10 and picked:
+                picked = picked[:-1]            # a list that ends early: the last entry reads as zero
+            entries += picked
+    if index % 9 == 8 and entries:
+        entries = entries[1:]                   # a list that starts late: its entries meet the wrong vertices
+    return {'landscape': land, 'tree': root, 'list': entries, 'base_height': skirt_reading.f32(rng.choice((0.0, 0.0, 1.5, 2.0, -1.0)))}
+
+
+def conform_inputs(rng: random.Random, n: int) -> list:
+    """Synthetic parks: a heightfield with random corners, a root matrix at a quarter turn (whole or fractional placement), a ground node with a recorded vertex
+    list (on and off the grid lines, past the map's last corner, left of its origin), a second list node, nodes with 0x200 (skipped) and without 0x1000 (untouched),
+    and a drape node (0x20000)."""
+    return [conform_case(rng, index) for index in range(min(n, 400))]
+
+
+CONFORM_TARGET = Target(
+    'tpw-exe-ground-conform', 'tpw', 'tp.exe edge vertex conform 0x469940 / 0x469a80', 'procedural-floors-plan §3.2 / skirt_reading.conform',
+    CONFORM_ENTRY, CONFORM_RANGES, conform_stubs, conform_binary, conform_plan, conform_inputs, budget=3_000_000,
+    alternatives={'single-precision': conform_single_precision_plan, 'exact-inverse': conform_exact_inverse_plan},
+    notes=['cdecl 0x469940 (instance, world, base height, flags): the matrix chain starts at the identity (0x46f150), the root node carries the placement; '
+           'apply mode; second pass (node flag 0x40) not run.'])
+
+# ============================================================================== X32: the base height of a placed object
+# tp.exe 0x466d70 (lowest and highest terrain vertex under the footprint, midpoint; ParkObjects.GetBaseHeight, RIDES-014) with the corner mapper 0x454050,
+# the low nibble test 0x469930 and the box origin 0x466f90, executed with _ftol. The terrain is a synthetic landscape (corner heights at [[0x7a0854] + 0x6c] + 0x28).
+BASE_HEIGHT_ENTRY = 0x466D70
+BASE_HEIGHT_RANGES = [(0x466D70, 0x466F8A), (0x454050, 0x454187), (0x469930, 0x469940), (0x466F90, 0x467030), (0x67A830, 0x67A857)]
+
+
+def base_height_stubs(target: Target) -> dict:
+    return {}
+
+
+from x86_harness import x86 as skirt_x86  # noqa: E402
+
+
+def x87_st0(sb: Sandbox) -> Fraction:
+    """ST0 after a call as an exact value (the routine leaves its result there)."""
+    top = (sb.x87_state()['fpsw'] >> 11) & 7
+    mantissa, exponent = sb.uc.reg_read(skirt_x86.UC_X86_REG_FP0 + top)
+    sign = -1 if exponent & 0x8000 else 1
+    exponent &= 0x7FFF
+    if mantissa == 0:
+        return Fraction(0)
+    return sign * Fraction(mantissa, 1 << 63) * (Fraction(2) ** (exponent - 16383))
+
+
+def base_height_binary(sb: Sandbox, x: dict, log) -> float:
+    """cdecl 0x466f90 (&anchor x, &anchor z, rotation, &box x, &box z, width, height) then 0x466d70 (box x, box z, shape, width, height, flags, rotation):
+    the shape is walked as columns (8 bytes) and rows (0xa0 bytes) from +8, a NULL shape counts every cell, flag 0x10 too; heights are read at (cellsX + 1) * z + x
+    from the landscape's table. The result is the float the routine's ST0 rounds to."""
+    land = x['heights']
+    landscape = sb.alloc(0x100, 16)
+    sb.write(landscape + 0x18, 'I', land['cells_x'])
+    sb.write(landscape + 0x1C, 'I', land['cells_z'])
+    table = sb.alloc(4 * len(land['values']) + 16, 16)
+    for index, value in enumerate(land['values']):
+        sb.write(table + 4 * index, 'f', value)
+    sb.write(landscape + 0x28, 'I', table)
+    world = sb.alloc(0x100, 16)
+    sb.write(world + 0x6C, 'I', landscape)
+    sb.write(SKIRT_WORLD_PTR, 'I', world)
+    shape = 0
+    if x['shape'] is not None:
+        shape = skirt_write_shape(sb, x['shape'])
+    cells = sb.alloc(32, 16)
+    sb.write(cells, 'i', x['anchor'][0])
+    sb.write(cells + 4, 'i', x['anchor'][1])
+    sb.set_fpcw(SKIRT_FPCW)
+    sb.call(0x466F90, (cells, cells + 4, x['rotation'], cells + 8, cells + 12, x['width'], x['height']))
+    box = (sb.read(cells + 8, 'i'), sb.read(cells + 12, 'i'))
+    sb.set_fpcw(SKIRT_FPCW)
+    sb.call(BASE_HEIGHT_ENTRY, (box[0], box[1], shape, x['width'], x['height'], x['flags'], x['rotation']))
+    return skirt_reading.f32(float(x87_st0(sb)))
+
+
+def base_height_plan(x: dict) -> float:
+    return skirt_reading.base_height(x)
+
+
+def base_height_csharp_rule(x: dict) -> float:
+    return skirt_reading.base_height_csharp(x)
+
+
+def base_height_inputs(rng: random.Random, n: int) -> list:
+    """Random shapes (all cell types, including the type 16 that adds no vertices and zero cells) and corner heights, anchors that keep the footprint on the map
+    (the original does not clamp), the four rotations, and the shape NULL and flag 0x10 variants."""
+    out = []
+    for index in range(min(n, 500)):
+        width, height = rng.randint(1, 8), rng.randint(1, 8)
+        cells_x, cells_z = rng.randint(max(width, height), 14), rng.randint(max(width, height), 14)
+        rotation = (0, 90, 180, 270)[index % 4]
+        style = ('mixed', 'footprint', 'full', 'holes')[(index // 4) % 4]
+        shape = skirt_shape(rng, width, height, style)
+        # footprint extent in grid cells (the rotated rectangle) and an anchor keeping it on the map
+        extent = (width, height) if rotation in (0, 180) else (height, width)
+        box_x = rng.randint(0, cells_x - extent[0])
+        box_z = rng.randint(0, cells_z - extent[1])
+        anchor = {0: (box_x, box_z), 90: (box_x, box_z + width - 1), 180: (box_x + width - 1, box_z + height - 1), 270: (box_x + height - 1, box_z)}[rotation]
+        count = (cells_x + 1) * (cells_z + 1)
+        if index % 3 == 0:
+            values = [float(rng.randint(0, 12)) for _ in range(count)]
+        elif index % 3 == 1:
+            values = [skirt_reading.f32(rng.uniform(-5.0, 20.0)) for _ in range(count)]
+        else:
+            values = [skirt_reading.f32(rng.uniform(0.0, 3.0)) for _ in range(count)]
+        out.append({'anchor': anchor, 'rotation': rotation, 'width': width, 'height': height, 'shape': None if index % 17 == 16 else shape,
+                    'flags': 0x10 if index % 13 == 12 else 0, 'heights': {'cells_x': cells_x, 'cells_z': cells_z, 'values': values}})
+    return out
+
+
+BASE_HEIGHT_TARGET = Target(
+    'tpw-exe-base-height', 'tpw', 'tp.exe base height 0x466d70', 'ParkObjects.GetBaseHeight (RIDES-014) / skirt_reading.base_height',
+    BASE_HEIGHT_ENTRY, BASE_HEIGHT_RANGES, base_height_stubs, base_height_binary, base_height_plan, base_height_inputs, budget=2_000_000,
+    alternatives={'csharp-rule': base_height_csharp_rule},
+    notes=['cdecl (box x, box z, shape, width, height, flags, rotation) after the box origin 0x466f90; the terrain is a synthetic landscape; the footprint stays on the map.'])
+
+# @@SKIRT-END@@
+
 WALK_TARGETS = [WALK_EDGE_TARGET, WALK_COMMIT_TARGET, WALK_SEARCH_TARGET, WALK_AVOID_TARGET, WALK_STEERING_TARGET]
 
 TARGETS = [WORLD_RNG_TARGET, TPI_WORLD_RNG_TARGET, ARRIVAL_TARGET, LOAN_OFFERS_TARGET, LOAN_TERM_TARGET, LOAN_MONTH_TARGET, POINTS_TARGET,
            SCRAP_TARGET, QREEVAL_TARGET, COUNTS_TARGET, PRICE_TARGET, WEAR_TARGET, STATE6_TARGET, WANDER_TARGET, LITTER_TARGET, BIN_WALK_TARGET, REGION_TARGET, FINDER_TARGET, GUARD_TARGET,
-           TPI_ARRIVAL_TARGET, TPI_LOAN_OFFERS_TARGET, TPI_LOAN_TERM_TARGET, TPI_LOAN_MONTH_TARGET, TPI_POINTS_TARGET, TQI_MATRIX_TARGET, TQI_PASS_TARGET, TERRAIN_RAMP_TARGET, TERRAIN_WEIGHTS_TARGET, TERRAIN_BUILD_TARGET] + COAST_TARGETS + WALK_TARGETS
+           TPI_ARRIVAL_TARGET, TPI_LOAN_OFFERS_TARGET, TPI_LOAN_TERM_TARGET, TPI_LOAN_MONTH_TARGET, TPI_POINTS_TARGET, TQI_MATRIX_TARGET, TQI_PASS_TARGET, TERRAIN_RAMP_TARGET, TERRAIN_WEIGHTS_TARGET, TERRAIN_BUILD_TARGET, SKIRT_MASK_TARGET, SKIRT_UV_TARGET, SKIRT_FLAGS_TARGET, CONFORM_TARGET, BASE_HEIGHT_TARGET] + COAST_TARGETS + WALK_TARGETS

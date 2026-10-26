@@ -138,11 +138,10 @@ rotation about the anchor → + 10·(X, Y) → × 0.2 → grid origin (the heigh
 mapping of MAP.md; sandbox: the 32×32 tile park). Fixed items use anchor
 (0, 0) and no rotation: their models are authored in park coordinates (Jungle
 gates span MD2 X 450…510 = cells 45…51, matching the saved 6×3 footprint at
-45, 16). Base height = the midpoint of the lowest and highest terrain vertex under the footprint (`0x466D70`; RIDES-014: the earlier mean of the cell heights
-stays only for a park-resume save without `BaseHeightRule`)
-(**approximation** for the blend: rides flatten their ground in the original, cf.
-`Info.DontDeformBase` and the per-archive `.hmp` files, whose header repeats the
-shape size, e.g. Totem 3×4).
+45, 16). Base height = the midpoint of the lowest and highest terrain vertex under the footprint (`0x466D70`; the earlier mean of the cell heights
+stays only for a park-resume save without `BaseHeightRule`). The original does not flatten the ground under a ride: `0x467030` only places the
+footprint box and stores it, the ground meets the floor through the edge conform and the skirt ([Floors](#floors-the-skirt-and-the-edge-conform)); the per-archive `.hmp` files are the
+height maps of the object's footprint (their size is the shape's, e.g. Totem 3×4).
 
 ## Animations: ANIM_* → member
 
@@ -289,6 +288,44 @@ the state lives in the object's runtime, no state hash reads it, and the park-re
   attraction saved closed makes no model call. A park without terrain (the sandbox) has no hoardings, as the type
   loader's ground-node search needs the heightfield.
 
+## Floors (the skirt and the edge conform)
+
+Where a placed ride, shop, sideshow or feature meets the ground the original does four things (all of tp.exe, none flattening the terrain). Package F of
+issue 829 ports the three that do not need the procedural terrain texturer; the fourth (holes in the terrain and a composite of the floor art over the
+procedural ground, `0x463060` and `0x57ACE0`) waits for it (PR 843).
+
+- **The skirt, read at type load.** The type loader (`0x004629D0`, load flag 1 → `0x0046A5A0` → `0x0046AA10`) reads the model's ground node (the node with most ground vertices,
+  `ObjectHoardingGeometry.ScanGround`) when the MD2 header `+0x30` has bit 0x08 ("has procedural base", the exporter's option; every non-fixed catalogue type has it except the
+  `mystery` box, header 1) and the type has a ground node or header bit 0x80. `ObjectSkirt` is that reading, built once per type over the level's terrain: the edge mask of the
+  shape (`0x0052C420`: cells of type 4, 9, 10 or 0x17 that lack a floor neighbour on any side, a 16 × 16 array indexed column × 16 + row, with the original's reads one cell past the
+  last column and row), the best axis-aligned horizontal floor face of every cell (`0x0046AA10`), the texture coordinates of the node after the snap, shift and wrap pass
+  (`0x00467310`, tolerance 0.02), and per edge cell an entry `{orientation code, texture slot}` (code 0x80 | corner 0, 8, 0x10 or 0x20 of the quad with the smallest
+  texture coordinates, 0x40 when the quad runs along its other axis; the default entry `{1, 10000}`). The base record gets flag 0x40. The skirt grid is the shape's size
+  (`+0xF0/+0xF4` = shape words 0 and 1, and the object's height map `+0xCC`, whose file size must equal it, is the grid the instance constructor walks: OPEN-F3 settled, every
+  shipped height map has its shape's size). Shipped: 60/57/61/59 types per theme (jungle, fantasy, hallow, space) have skirt cells, 394/370/437/437 cells in all, no two cells of
+  a type share a slot, the error "Could not generate skirt flags" never fires; Belly Bounce's ten entries are `C8 E0 90 A0 88 A0 88 80 90 E0` with slots 11, 10, 9, 8, 6, 5, 3, 2, 1, 0
+  (`ObjectSkirtCorpusTests`). Jungle `lavajump` has the base bit and no cell, `mystery` is not exported.
+  The reading is the oracle's, bit for bit (`SkirtReading`, `ObjectFloorMath`: sums in double with a float store where tp.exe stores one, [ORACLE.md](reverse/ORACLE.md) X28 to X32). It
+  assumes the x87's 53-bit mode like every oracle target; whether Direct3D's set-up leaves the game thread at 24 bits was not established, and per-operation floats would change one
+  of the 437 hallow cells (the Puzzle sideshow takes another slot) and the last bits of conformed vertices.
+- **Opaque skirt slots.** The same pass sets the runtime slot flag 0x800 on the texture slots of the ground node's faces that lie in an edge cell (and clears it on the others; the last
+  face of a slot decides) and clears the wrap bits of the slots whose faces all lie on the floor in an edge cell. A face of a slot with 0x800 is drawn with state 0x1256 (no blend,
+  no alpha test), never in the sorted translucent pass (`0x00581790`, [MD2-MODELS.md](MD2-MODELS.md#the-translucent-pass-of-world-models)). The grass-fringe art of these floors is
+  translucent, so before this the floors went through the sorted pass and z-fought with the terrain. `ObjectFloor` applies the flags, the normalised coordinates and the conform to the
+  instance's copy of the meshes (the type's parsed model stays as read); `test.shader` reads the vertex bit `WorldTranslucency.OpaqueSlotFlag`.
+- **The edge conform, at every placement.** The creation flag 8 of every non-fixed object runs `0x00469940` → `0x00469A80` in its apply mode, whatever the texturing option is: each
+  ground vertex that the counting walk listed at type load is snapped to the nearest terrain grid corner (`ObjectGroundConform`): the placed vertex's ground coordinates
+  onto the grid line (within 0.01 of a cell) and its height onto that corner's height, then back into the node's frame through the inverse matrix. The floor's outer edge lies
+  on the terrain; the inner floor stays at the base height, so on a slope the edge ring tilts. A vertex whose corner lies past the last terrain corner ends its node (and its
+  subtree) there. Presentation only: the conformed copy is drawn and picked (`OriginalObject.TryHitPickLine`), no simulation state, world hash or save field reads it
+  (`ObjectGroundConform` works on copies; the type's model is shared and never changes).
+- **Depth compare.** The original compares depth with LESSEQUAL (`0x0057360F`, once, in the device set-up), so on equal depth the later draw wins and the floor, drawn after the terrain,
+  shows over the ground it lies in. `Material.DepthComparison` ports it for every depth-tested material (a Theme Park Inc run keeps the strict compare: only tp.exe was traced).
+  With a 32-bit float depth buffer coplanar triangles of different shapes still differ in the last bit, so a floor that is coplanar with the terrain can keep some stripes
+  in static mode until the terrain below it is a hole (package F4/F5); the original's own behaviour there (OPEN-F2) was not observed.
+- **Not yet ported.** Under procedural texturing the original also turns each skirt cell of the terrain into a hole and builds one composite texture per cell from the procedural
+  base and the floor art (`0x463060` → `0x57ACE0`, `0x572630`, `0x55F780` tail); queue models get a skirt as well (OPEN-F6). Both wait for the procedural terrain (PR 843).
+
 ## Interfaces for other slices
 
 - Guests: `IRideVisitorBridge.Perform(ride, call)` receives every visitor opcode
@@ -395,7 +432,7 @@ nearest path cell (`GuestSimulation.SetDownOffCells`). Still open (RIDES-018): t
 ## Remaining gates
 
 Path parameters and the draw-path reader of texture frames; EVENT objects/particles (their sounds play, [AUDIO.md](AUDIO.md));
-water ride and kart jumps and tunnels (the track tool and the BUMP controllers of the water rides and go-karts are built, [TRACKS.md](TRACKS.md)); the tour controllers are described in [TOURS.md](TOURS.md); visitor simulation behind the bridge; `.hmp` ground deformation;
+water ride and kart jumps and tunnels (the track tool and the BUMP controllers of the water rides and go-karts are built, [TRACKS.md](TRACKS.md)); the tour controllers are described in [TOURS.md](TOURS.md); visitor simulation behind the bridge; the skirt of queue models ([Floors](#floors-the-skirt-and-the-edge-conform));
 the open build rules above (RIDES-018); animation tick rate; the coaster module's cell marker 0x15 beyond a track end (RIDES-011); the object-list update route (RIDES-032).
 
 ## The cells outside an entrance and an exit (RIDES-028 retired)
@@ -437,7 +474,6 @@ Original-data values are tagged `// [DATA:<file>:<field>]`.
 | Id | Site | Current value / rule | Evidence needed |
 | --- | --- | --- | --- |
 | RIDES-011 | World/Objects/ObjectShape.cs | The cells of `+` and `#` are stamped as the original placement `0x528A70` stamps them (object type 4, the owner word, the flag word 0x10 on the cell and its track-layer cell, `0x52950D`–`0x52951C`) and validated as its add-on mode does (a cell of a straight, unflagged tile of the selected ride: `TrackBuilder.CanStandAddOn`, `Level.CheckAddOn`, `0x535953`–`0x5359B3`); a track end `<` `>` `D` needs the cell beyond it on the map (`0x5295A8`). The type 0x15 the commit writes on that cell with the ride's owner word (`0x5295F7`–`0x52963F`) is not written: it is the coaster module's cell marker (`0x452D30`, called by the coaster tool `0x434412`, `0x443057`, `0x444EE7`, `0x445B50`), which OpenTPW's coaster builder neither writes nor reads | What the coaster tool reads the marker for (the validator's modes 0x15 and 0x16, `0x535B53`) |
-| RIDES-014 | World/Objects/ParkObjects.cs | Base height = (lowest + highest) / 2 of the terrain vertex heights at the corners of the footprint's shape cells (`0x466D70`, cells with a non-zero type nibble, `0x469930`; the vertex is `ftol(lerp + 0.1)` of `0x454050`, equal to `ObjectFootprint.ToGrid` of the corner: `ObjectBaseHeightTests`). The original then blends the ground flat under the ride (`0x467030`, `0x57ACE0`), which is not modelled; a park-resume save from before the rule restores with the earlier cell mean (`BaseHeightRule` absent) | The blend; the instance words +0xF0/+0xF4 taken as the shape size; an instance height captured on a slope |
 | RIDES-018 | World/Objects/ParkObjects.cs | Build rules: grid, the original's map-start cell types (holes refused; `Blocked` surface cells buildable, as in tp.exe), plain path cells cleared and NoModify ones refused, overlap by `Info.OverwritePriority` (a lower-priority object gives way and is demolished, for objects, paths and queues alike), the access cells by `Info.HasQueue`, owned land; no slope test (none in tp.exe either); Level enforces economy purchases. Guests on a cleared path cell are set down on the nearest path cell | The second-layer link tests `0x53AE00`/`0x53AE90`, which types have record +0x288 = 1 (their `Bumper.WhichTrackType` turns the access-cell option off), and what tp.exe does with a guest inside a new footprint |
 | RIDES-021 | World/Level.Objects.cs, World/Original/ObjectRayPick.cs, World/Objects/ObjectPickModel.cs | The cursor's cell is the cell of the ray's nearest hit (the hit divided by the cell size, `0x45D560`; the click command `0x46C5D0` hands it to `0x524790`): the terrain hit (`TerrainRayPick`, the heightfield triangle planes of `0x45BF90`) or, when nearer the camera, the first object model the ray meets as `0x45BF90` walks the cells from the camera one cell per pass (with the cell at each crossing of the other axis and the edge clamp of `0x45CDC0`). A cell is tested when the cell lookup `0x452AE0` names an instance there (the owner with a height map) and the ray over the pass reaches down to the height it gives and up to the model's bounds minimum (`0x45CEE6`-`0x45CFBD`); its model is tested by `0x45D090` (the nodes depth first, a node's faces material by material unless its state has `0x10` or `0x8210`, the first face whose plane hit has an angle sum of at least 6.2821856). The same point is the mouse point `0x7A1C90`. The generic sandbox has no heightfield and takes the Z = 0 plane for the terrain hit (`EXT:build-cursor-ground-plane`). The anchor taken from that cell is the original's (`0x528B44`: the cell less (W/2, H/2), then the rotation's 5 × 5 window offsets), so the click is local (W/2, H/2) when each side is odd or at most 5 cells; the only shipped exception is space 3104 Orbiter (6 × 3: local (3, 1) at 0°, (2, 2) at 90°) | A track tile's second-layer piece instance, which `0x452AE0` names before the owner, is not tested (the port holds no piece model there); the members of an instance with the group flag `0x80000` (`0x447790`, `0x4477D0`); the node state bits `0x20` and `0x8000` (`0x200` marks the dummies, which hold no faces); the normal refresh `0x473C30` (`0x473A40`) of vertex-passed nodes when the instance's model flags word +0x30 has `0x40000` and `0x20000` (the port uses the stored normals); the hit instance handed to `0x469340` (`0x45CCD5`) and by the hover handler to `0x469180` (a hover highlight: normals copied, node flag `0x1000000`, model flag `0x400000`), not used; the original keeps its previous hit when the ray finds nothing |
 
@@ -470,7 +506,7 @@ Reclassified as OpenTPW conventions (no original rule to recover): `[EXT:md2-eng
 `[EXT:malformed-texture-coordinates]` (formerly `APPROX:RIDES-030`, non-finite texture coordinates drawn as (0, 0); the original passes raw floats to Direct3D) and
 `[EXT:trig-anim-speed-guard]` (formerly `APPROX:RIDES-038`: the corpus has 4 TRIGANIMSPEED uses, all literal 1800–4000, so the guard against 0 and negative speeds only meets malformed input).
 
-Narrowed: RIDES-011, 012, 019, 024, 031, 033, 035 and 044 (rows above); RIDES-013, 021, 028, 032, 040 stay as they were.
+Narrowed: RIDES-011, 012, 019, 024, 031, 033, 035 and 044 (rows above); RIDES-013, 021, 028, 032, 040 stay as they were. RIDES-014 retired on October 26 (below).
 
 ### Retired: the end-of-park finale (RIDES-019, October 22)
 
@@ -484,6 +520,19 @@ language's animated `s_congrats` banner (tables `0x74FAF0`, `0x74FCF8`) until Es
 click (`0x48A970` -> `0x516C10`); Instant Action then shows UITEXT 471 in the generic message box
 (`0x47F020`). A park restored with End enters the same screen. Theme Park Inc and read-only visits
 never start it.
+
+### Retired: the base height and the ground under a ride (RIDES-014, October 26)
+
+`APPROX:RIDES-014` is retired. Its three clauses were all read in tp.exe:
+
+- **"The original blends the ground under the ride flat (`0x467030`, `0x57ACE0`)" was wrong.** `0x467030` is the placement: it places the instance and stores the footprint box
+  (`+0xC0/+0xC4`); `0x57ACE0` builds the composite texture of the floor art over the procedural ground. Nothing flattens the terrain. The floor meets the ground through the skirt read at
+  type load and the edge conform at every placement ([Floors](#floors-the-skirt-and-the-edge-conform); `ObjectSkirt`, `ObjectGroundConform`).
+- **The instance words `+0xF0/+0xF4` are the shape's width and height.** `0x004629D0` stores shape words 0 and 1 there (its parameters 10 and 11, which override them, are 0 for objects);
+  the object's height map (`+0xCC`, the `.hmp`) has the same size, which every shipped type's file has (`ObjectSkirtCorpusTests.TheHeightMapOfEveryTypeHasItsShapesSizeSoTheInstanceGridIsTheShape`).
+- **The base height on a slope is the midpoint rule.** `0x00466D70` (with `0x00454050`, `0x00469930`) run in the x86 oracle (`tpw-exe-base-height`, [ORACLE.md](reverse/ORACLE.md))
+  returns, for every synthetic footprint, rotation and heightfield tried, the value of `ParkObjects.GetBaseHeight`
+  (`ObjectSkirtGoldenTests.TheBaseHeightIsWhatTheOriginalReturned`). The earlier mean of the cell heights stays only for a park-resume save without `BaseHeightRule`.
 
 ### Read round (tp.exe, October 15)
 

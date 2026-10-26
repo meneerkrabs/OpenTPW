@@ -84,6 +84,8 @@ public class OriginalObject : Entity, IPointLightSource, IObjectPickShape
 	}
 
 	private readonly List<(ModelEntity Entity, int NodeIndex)> parts = new();
+	/// <summary>The skirt and edge conform of this object's floor, or null (a fixed item, a park without terrain).</summary>
+	private ObjectFloor? floor;
 	/// <summary>The type's hoarding drawn at this object, or null when its type has none (docs/OBJECTS.md, "Hoarding").</summary>
 	private ObjectHoardingRenderer? hoarding;
 	private readonly List<Model> models = new();
@@ -258,7 +260,9 @@ public class OriginalObject : Entity, IPointLightSource, IObjectPickShape
 		if ( deleted )
 			return false;
 		var animator = Runtime.Animator;
-		return ObjectPickModel.TryHitLine( Runtime.Model, NodeTransforms, animator.IsNodeHidden, animator.GetVertexPositions, Placement.ModelToEngine, origin, direction, out hit );
+		// the floor's vertices are this instance's conformed copy (the original's pick reads the instance's own vertices, 0x450F20)
+		Func<int, IReadOnlyList<System.Numerics.Vector3>?> positions = floor == null ? animator.GetVertexPositions : mesh => floor.ConformedPositions( mesh ) ?? animator.GetVertexPositions( mesh );
+		return ObjectPickModel.TryHitLine( Runtime.Model, NodeTransforms, animator.IsNodeHidden, positions, Placement.ModelToEngine, origin, direction, out hit );
 	}
 
 	/// <summary>
@@ -322,7 +326,11 @@ public class OriginalObject : Entity, IPointLightSource, IObjectPickShape
 			Runtime.Animator.SetTextureFrameAvailability( frames.Slot, frames.Frames.Select( texture => texture != null ).ToArray() );
 		IReadOnlyList<ObjectRenderPart> built;
 		using ( LoadProfile.Measure( "object-parts" ) )
-			built = ObjectRenderParts.Build( Entry, Runtime.Model );
+		{
+			// the floor of the placed object: the skirt the type loader read and the instance's edge conform, over the level's terrain (docs/OBJECTS.md, "Floors")
+			floor = ObjectFloor.Create( Entry, Runtime.Model, Placement, ( Level ?? Level.Current )?.OriginalPark?.Heightfield, ( Level ?? Level.Current )?.HoardingCache );
+			built = ObjectRenderParts.Build( Entry, Runtime.Model, Entry.Animations, floor );
+		}
 		foreach ( var part in built )
 		{
 			var slots = new Texture[16];
@@ -567,6 +575,20 @@ public class OriginalObject : Entity, IPointLightSource, IObjectPickShape
 		}
 	}
 
+	private Dictionary<int, ModelFile.Mesh>? drawnMeshes;
+
+	/// <summary>The mesh as this instance draws it when its pose carries no samples of its own: the floor's conformed positions and normalised coordinates (<see cref="ObjectFloor"/>), else the model's.</summary>
+	private ModelFile.Mesh DrawnMesh( int meshIndex )
+	{
+		var mesh = Runtime.Model.Meshes[meshIndex];
+		if ( floor == null )
+			return mesh;
+		drawnMeshes ??= new Dictionary<int, ModelFile.Mesh>();
+		if ( !drawnMeshes.TryGetValue( meshIndex, out var drawn ) )
+			drawnMeshes[meshIndex] = drawn = floor.Apply( meshIndex, mesh );
+		return drawn;
+	}
+
 	/// <summary>Rewrites the parts whose mesh pose changed; the GPU copy happens when the part is next drawn.</summary>
 	private void UpdateVertices()
 	{
@@ -576,8 +598,9 @@ public class OriginalObject : Entity, IPointLightSource, IObjectPickShape
 			var (model, mesh, vertices, version) = vertexParts[index];
 			if ( animator.GetVertexVersion( mesh ) == version )
 				continue;
-			ObjectRenderParts.WritePositions( Runtime.Model.Meshes[mesh], animator.GetVertexPositions( mesh ), vertices );
-			ObjectRenderParts.WriteTexCoords( Runtime.Model.Meshes[mesh], animator.GetTexCoords( mesh ), vertices );
+			var drawn = DrawnMesh( mesh );
+			ObjectRenderParts.WritePositions( drawn, animator.GetVertexPositions( mesh ), vertices );
+			ObjectRenderParts.WriteTexCoords( drawn, animator.GetTexCoords( mesh ), vertices );
 			model.UpdateVertices( vertices );
 			vertexParts[index] = (model, mesh, vertices, animator.GetVertexVersion( mesh ));
 		}
@@ -623,6 +646,7 @@ public class OriginalObject : Entity, IPointLightSource, IObjectPickShape
 		}
 		models.Clear();
 		vertexParts.Clear();
+		drawnMeshes = null;
 		frameTextures.Clear();
 	}
 }

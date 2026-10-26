@@ -239,11 +239,17 @@ public sealed partial class ParkHud
 
 	private bool CanEditQueue( OriginalObject item ) => !level.IsReadOnlyVisit && item.Entry.HasQueue && item.Runtime.IsAttraction && item.Visitors.HasCells && item.Visitors.QueueFrontCell != null
 		// [EXT:online-coop-permissions] a claimed ride's queue is the host's for now (C3b): a guest's window offers no tool whose lines would be refused
-		&& !(level.Commands.SendsRequests && level.Commands.Rights is CoopBuildRights rights && rights.IsClaimed( item ));
+		&& !ClaimedForGuest( item );
+
+	/// <summary>
+	/// [EXT:online-coop-permissions] Whether <paramref name="item"/> is a claimed station (a coaster's or a track ride's) and this machine a guest's: its window offers the guest no queue tool,
+	/// sale or Move, whose requests the rights would refuse (C3b; claims come in C3c).
+	/// </summary>
+	private bool ClaimedForGuest( OriginalObject item ) => level.Commands.SendsRequests && level.Commands.Rights is CoopBuildRights rights && rights.IsClaimed( item );
 
 	private bool CanEditTrack( OriginalObject item ) => !level.IsReadOnlyVisit && (item.Runtime.Coaster != null || item.Runtime.Bump != null);
 
-	private bool CanMoveObject( OriginalObject item ) => !level.IsReadOnlyVisit && !item.Entry.IsFixedItem && level.CanMove( item );
+	private bool CanMoveObject( OriginalObject item ) => !level.IsReadOnlyVisit && !item.Entry.IsFixedItem && level.CanMove( item ) && !ClaimedForGuest( item );
 
 	/// <summary>
 	/// The window's move button (<c>b_move</c>, <c>0x48cfa0</c>): the object is demolished as its erase button does, without the confirmation, and the Move tool arms the same type at its angle;
@@ -256,9 +262,7 @@ public sealed partial class ParkHud
 			return;
 		if ( selectedObject is not { IsDeleted: false } item || !CanMoveObject( item ) )
 			return;
-		var entry = item.Entry;
-		var buyItem = Catalog.GetItems( (BuildCategory)entry.WhichUIType ).FirstOrDefault( candidate => candidate.InfoId == entry.InfoId );
-		if ( buyItem == null )
+		if ( BuyItemOf( item.Entry ) is not { } buyItem )
 			return;
 		level.CellTool.Cancel();
 		level.StaffPlacement?.Cancel();

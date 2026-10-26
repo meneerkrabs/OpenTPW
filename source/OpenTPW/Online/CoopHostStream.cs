@@ -797,10 +797,11 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 	/// </summary>
 	private void ApplyGuestCommands( double now )
 	{
-		// [EXT:online-coop-commands] the seats whose member left or changed since the last frame, and any guest seat that still carries something without a member (C3b-2)
-		var members = SeatMembers();
+		// [EXT:online-coop-commands] the seats whose member left or changed since the last frame, and any guest seat that still carries something without a member (C3b-2); a link without its
+		// session's state (between a lost socket and its resume) shows no seat, so the seats wait for its next state instead of all counting as left
+		var members = transport.Session != null ? SeatMembers() : seatMembers;
 		var changed = seatMembers.Where( pair => !members.TryGetValue( pair.Key, out var member ) || member != pair.Value ).Select( pair => pair.Key )
-			.Concat( level.CarryingGuestSeats().Where( seat => !members.ContainsKey( seat ) ) ).ToArray();
+			.Concat( level.CarryingGuestSeats().Where( seat => transport.Session != null && !members.ContainsKey( seat ) ) ).ToArray();
 		seatMembers = members;
 		if ( leftSeats.Count > 0 || changed.Length > 0 )
 		{

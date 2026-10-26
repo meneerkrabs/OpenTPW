@@ -70,6 +70,23 @@ public sealed partial class ParkHud
 		SayOutcome( request, null );
 	}
 
+	/// <summary>The buy item the build tool arms with for <paramref name="entry"/> (the Move button's, <see cref="MoveObject"/>), or null when the catalogue offers none.</summary>
+	private BuildItem? BuyItemOf( ObjectCatalogEntry entry ) => Catalog.GetItems( (BuildCategory)entry.WhichUIType ).FirstOrDefault( candidate => candidate.InfoId == entry.InfoId );
+
+	/// <summary>
+	/// A resync replaced the guest's park while its Move tool was armed (C3b-2): the new park's tool arms again from the carry its snapshot holds, at the angle it had, with the buy item of its
+	/// type, and waits for its placement that waited in the old park (<see cref="Level.TakeMoveToRestore"/>), whose outcome then finishes it (<see cref="CompletePlacement"/>); without one the
+	/// carry is a stray one, which the frame ends.
+	/// </summary>
+	private void RestoreMove()
+	{
+		if ( level.TakeMoveToRestore() is not { } move || BuyItemOf( move.Entry ) is not { } item || !level.CompleteMove( move.Entry, move.Rotation ) )
+			return;
+		pendingItem = item;
+		if ( move.Placement is { } placement )
+			level.WaitForPlacementAgain( placement );
+	}
+
 	/// <summary>
 	/// The guest's queue edit comes back (C3b): accepted, the queue tool starts from what its record read, with the help the host's click posts, unless the view has a tool by now or a
 	/// later record changed the queue (then the park shows what happened); otherwise its outcome is said.
@@ -124,9 +141,11 @@ public sealed partial class ParkHud
 	private void CompletePlacement( Level.PlacementRequest placement )
 	{
 		level.EndWaiting( placement.Request );
-		if ( placement.Request is { Accepted: true, Result: { } result } && result.As<OriginalObject>() is { } item )
+		if ( placement.Request is { Accepted: true, Result: { } result } && result.As<OriginalObject>() is { } placed )
 		{
-			FinishPlacement( item, placement.KeepTool );
+			// [EXT:online-coop-commands] a placement the park a resync replaced applied before its HUD took the outcome finishes on this park's object (C3b-2)
+			var (item, removed) = level.PlacedInThisPark( placed );
+			FinishPlacement( item, placement.KeepTool, removed );
 			return;
 		}
 		SayOutcome( placement.Request, placement.Entry );

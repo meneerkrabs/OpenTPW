@@ -436,6 +436,9 @@ internal sealed class CoopSession : IDisposable
 		level?.NoteSessionRefusal( level.Commands.Rights is CoopBuildRights rights && rights.Builds( command ) );
 	}
 
+	/// <summary>[EXT:online-coop-commands] When the guest's park last sent the end of a carry left without its Move tool (<see cref="Level.EndStrayCarry"/>), across its resyncs, or null.</summary>
+	internal double? LastStrayCarryEnd { get; set; }
+
 	/// <summary>[EXT:online-coop-commands] A guest's command for the host, as a request of the session's (null once it ended).</summary>
 	private CoopGuestCommands.Request? SubmitRequest( ParkCommand command )
 	{
@@ -720,6 +723,8 @@ internal sealed class CoopSession : IDisposable
 			return;
 		var swapStarted = Stopwatch.GetTimestamp();
 		var old = level;
+		// [EXT:online-coop-commands] the guest's armed Move tool and the placement of it that waits for the host, which the new park arms and waits for again (C3b-2)
+		var move = old?.MoveForResync();
 		var desyncs = GuestStream?.Desyncs ?? 0;
 		if ( old != null )
 		{
@@ -750,6 +755,7 @@ internal sealed class CoopSession : IDisposable
 			return;
 		}
 		level = candidate;
+		candidate.MoveBeforeResync = move;
 		candidate.CoopSession = this;
 		candidate.Commands.SessionRefused += OnRefused;
 		candidate.Commands.Submit = SubmitRequest;

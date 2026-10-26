@@ -808,7 +808,7 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 			var hud = flow.Hud!;
 			Require( hud.Stack.Top?.Name == ParkHud.ResearchRefusedScreen && !hud.ResearchWindowOpen, "the lab is refused while no researcher is hired" );
 			Require( hud.ClockPaused, "the refusal's message box pauses the park" );
-			Click( hud.Stack.Top!, "ok" );
+			Click( hud.Stack.Top!, "slot0" );
 			var economy = flow.Level!.Park!.Economy;
 			economy.Hire( economy.Staff.Candidates.First( candidate => candidate.Type == StaffType.Researcher ).Id );
 		} );
@@ -833,6 +833,10 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 		{
 			var hud = flow.Hud!;
 			Require( !hud.ResearchWindowOpen && hud.Stack.Top == hud.Screen, "research exit returns to the HUD" );
+			// the smoke's staff steps start from a park without staff: the researcher the lab needed leaves again
+			var economy = flow.Level!.Park!.Economy;
+			foreach ( var member in economy.Staff.OfType( StaffType.Researcher ).ToArray() )
+				economy.Fire( member.Id );
 			// The buy list shows only researched items (the filler 0x4aaf70), so the flow researches the whole ride
 			// catalogue first; a locked item cannot be listed or clicked, as in the original.
 			var research = flow.Level!.Park!.Economy.Research;
@@ -1601,6 +1605,7 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 				WeatherForecastPresenter.BannerHidden = true;
 			} );
 		}
+		var parkLanguage = PlanLanguageInPark();
 		// ECON-030: the bank loses the park: the loss window (the gate camera, the full-screen banner), Escape into the hidden-HUD overlay, Escape again into the lost park's pause menu
 		Do( "close the pause menu", () =>
 		{
@@ -1632,7 +1637,6 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 			Require( flow.Hud!.Stack.Top?.Name == "pause" && flow.Level!.SimulationTimeScale == 0, "Escape in the overlay opens the pause menu" );
 			Require( flow.Hud.Stack.Top!.Find( nameof( UIStrings.Save ) ) == null && flow.Hud.Stack.Top.Find( nameof( UIStrings.ExitToLobby ) ) != null, "the lost park's menu has no Save and keeps Exit To Lobby" );
 		} );
-		var parkLanguage = PlanLanguageInPark();
 		Do( "exit to lobby", () =>
 		{
 			Require( ReferenceEquals( Camera.Mode, parkCamera ) && (flow.Globe is { Visible: false } || !online), "closing the globe restores the park's camera" );

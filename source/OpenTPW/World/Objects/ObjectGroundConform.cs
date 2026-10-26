@@ -17,12 +17,25 @@ internal static class ObjectGroundConform
 	internal sealed record Result( IReadOnlyDictionary<int, NVector3[]> Positions, IReadOnlyList<(int Mesh, int Vertex)> Processed );
 
 	/// <summary>
-	/// The placement matrix of the instance root in the model's axes (MD2 X, Y up, Z), in model units on the terrain grid (a cell is 10 units): the rigid turn about the first cell, the anchor
-	/// cell and the base height. Row vectors, as the original's matrices.
+	/// The placement matrix of the instance root in the model's axes (MD2 X, Y up, Z), in the terrain grid's units: the rigid turn about the first cell, the anchor cell
+	/// and the base height. The cell sizes and the origin are the terrain's (as the placement <c>0x00467030</c> and <see cref="Snap"/> take them; every shipped level has 10 and 0).
+	/// Row vectors, as the original's matrices.
 	/// </summary>
-	internal static Matrix4x4 RootPlacement( ObjectPlacement placement ) =>
-		ObjectPlacement.SwapAxes( ObjectPlacement.CellRotation( placement.Rotation )
-			* Matrix4x4.CreateTranslation( placement.X * 10, placement.Y * 10, placement.BaseHeight / ObjectPlacement.ModelScale ) );
+	internal static Matrix4x4 RootPlacement( ObjectPlacement placement, HoardingTerrain terrain )
+	{
+		float cx = terrain.CellSizeX, cz = terrain.CellSizeZ;
+		// ObjectPlacement.CellRotation in the grid's cell sizes (its translation terms are the extents of the first cell)
+		var rotation = placement.Rotation switch
+		{
+			0 => Matrix4x4.Identity,
+			90 => new Matrix4x4( 0, -1, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, cx, 0, 1 ),
+			180 => new Matrix4x4( -1, 0, 0, 0, 0, -1, 0, 0, 0, 0, 1, 0, cx, cz, 0, 1 ),
+			270 => new Matrix4x4( 0, 1, 0, 0, -1, 0, 0, 0, 0, 0, 1, 0, cz, 0, 0, 1 ),
+			_ => throw new ArgumentOutOfRangeException( nameof( placement ), "Rotations are multiples of 90 degrees." )
+		};
+		return ObjectPlacement.SwapAxes( rotation
+			* Matrix4x4.CreateTranslation( terrain.OriginX + placement.X * cx, terrain.OriginZ + placement.Y * cz, placement.BaseHeight / ObjectPlacement.ModelScale ) );
+	}
 
 	/// <summary>
 	/// The conform of <paramref name="skirt"/>'s listed vertices for an instance whose root has the matrix <paramref name="root"/> over the terrain grid <paramref name="terrain"/> whose corner heights
@@ -44,8 +57,9 @@ internal static class ObjectGroundConform
 			if ( nodeIndex < skirt.ConformNodes.Length && skirt.ConformNodes[nodeIndex] )
 				flags |= 0x1000;
 			var hasMesh = node.MeshIndex >= 0 && node.MeshIndex < model.Meshes.Count;
+			// only a listed node's vertices are copied (once, for the walk to read); the others take none
 			tree.Add( new TreeNode( parent, flags, ObjectFloorMath.ToArray( node.Transform ),
-				hasMesh ? model.Meshes[node.MeshIndex].Positions.Select( stored => new NVector3( stored.X, stored.Y, stored.Z ) ).ToArray() : [] ) );
+				hasMesh && (flags & 0x1000) != 0 ? model.Meshes[node.MeshIndex].Positions.Select( stored => new NVector3( stored.X, stored.Y, stored.Z ) ).ToArray() : [] ) );
 			owners.Add( hasMesh ? node.MeshIndex : -1 );
 			var index = tree.Count - 1;
 			for ( var child = node.FirstChildIndex; child >= 0; child = model.Nodes[child].NextSiblingIndex )
@@ -68,7 +82,7 @@ internal static class ObjectGroundConform
 		public int Flags { get; } = flags;
 		public float[] Matrix { get; } = matrix;
 		public NVector3[] Source { get; } = source;
-		public NVector3[] Result { get; } = (NVector3[])source.Clone();
+		public NVector3[] Result { get; } = source.Length == 0 ? source : (NVector3[])source.Clone();
 		/// <summary>The bounds, minimum x y z then maximum x y z; the walk widens them by every conformed vertex.</summary>
 		public float[] Bounds { get; set; } = new float[6];
 	}
@@ -146,22 +160,22 @@ internal static class ObjectGroundConform
 			var origin = axis == 0 ? terrain.OriginX : terrain.OriginZ;
 			var size = axis == 0 ? terrain.CellSizeX : terrain.CellSizeZ;
 			var count = axis == 0 ? terrain.CountX : terrain.CountZ;
-			var value = size != 0 ? ((double)coordinate - origin) / size : double.PositiveInfinity;
-			var t = value < 0 ? 0f : (float)value;
-			var whole = Math.Truncate( (double)t );
-			var fraction = (float)(t - whole);
+			var value = size != 0 ? (coordinate - origin) / size : float.PositiveInfinity;
+			var t = value < 0 ? 0f : value;
+			var whole = MathF.Truncate( t );
+			var fraction = t - whole;
 			var upper = fraction >= 0.5f;
 			if ( upper )
 			{
-				if ( whole + 1.0 < 0 || !(whole + 1.0 < count + 1) )
+				if ( whole + 1f < 0 || !(whole + 1f < count + 1) )
 					return null;
 			}
 			else if ( whole < 0 || !(whole < count + 1) )
 				return null;
 			corner[axis] = (int)whole + (upper ? 1 : 0);
-			if ( Math.Abs( fraction ) < ConformTolerance || Math.Abs( (double)fraction - 1.0 ) < ConformTolerance )
+			if ( MathF.Abs( fraction ) < ConformTolerance || MathF.Abs( fraction - 1f ) < ConformTolerance )
 			{
-				var snapped = (float)((upper ? whole + 1.0 : whole) * size + origin);
+				var snapped = (upper ? whole + 1f : whole) * size + origin;
 				if ( axis == 0 )
 					world.X = snapped;
 				else

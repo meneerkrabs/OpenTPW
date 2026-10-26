@@ -8,9 +8,8 @@
 * `conform`       the edge vertex conform of an instance copy [BIN:TPW-EXE:0x469A80 apply mode]
 * `base_height`   the base height of a placed shape [BIN:TPW-EXE:0x466D70]
 
-Every routine runs the x87 in the 53-bit significand mode the other oracle targets use (control word 0x27F, docs/reverse/ORACLE.md 7.5): a
-Python float operation is then exactly one x87 operation, and an `f32()` marks a store to a 32-bit memory float (the places where the original
-rounds). Operands that stay in an x87 register keep their double value; the comments say which is which.
+Every routine runs the x87 at the control word 0x7F (24 bit significand, set by the device start, ORACLE.md 7.21): each operation rounds to a float, `q()`
+marks the places where an x87 register value is kept (rounded to a float by default, a double in the `double_precision()` variant) and `f32()` a store to memory.
 """
 from __future__ import annotations
 
@@ -49,9 +48,9 @@ def s32(value: int) -> int:
     return value - (1 << 32) if value & 0x80000000 else value
 
 
-# A reading can be run with every x87 intermediate rounded to a float instead (`single_precision()`): that is what float arithmetic per operation gives, so the
-# difference between the two shows where a C# transcription with `float` temporaries would disagree with the original.
-_SINGLE = False
+# tp.exe runs the x87 at the 24 bit control word 0x7f (docs/reverse/ORACLE.md 7.21), so by default every intermediate is rounded to a float (`q`); `double_precision()` runs
+# the same reading with 53 bit intermediates (the control words 0x27f / 0x37f), which differs on some inputs.
+_SINGLE = True
 
 
 def q(value: float) -> float:
@@ -60,14 +59,22 @@ def q(value: float) -> float:
 
 
 class single_precision:
+    """Every x87 intermediate rounded to a float: tp.exe's real mode (control word 0x7f, X28 to X32)."""
+    _value = True
+
     def __enter__(self):
         global _SINGLE
         self._saved = _SINGLE
-        _SINGLE = True
+        _SINGLE = self._value
 
     def __exit__(self, *exc):
         global _SINGLE
         _SINGLE = self._saved
+
+
+class double_precision(single_precision):
+    """Intermediates kept as 53 bit doubles (control words 0x27f and 0x37f): the alternative reading."""
+    _value = False
 
 
 ONE_THIRD = f32(1.0 / 3.0)      # the constant 0.33333334 (single precision)

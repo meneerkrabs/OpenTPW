@@ -124,13 +124,13 @@ EXPECTED = {
     ('tpw-exe-terrain-build', 'plan'): AGREE,
     # X28 to X32 (the procedural object base, issue 829 package F; skirt_reading.py): the footprint edge mask 0x52c420, the UV normaliser 0x467310, the skirt
     # entries and opaque slot flags 0x46aa10, the edge vertex conform 0x469940 / 0x469a80 and the base height 0x466d70. The readings are exact at the control word
-    # 0x27f (53 bit); the alternatives show what a float-per-operation transcription (`single-precision`, also the 24 bit word) or a plain inverse would give.
+    # 0x7f (24 bit, every intermediate a float); the alternatives show what the 53 bit words 0x27f / 0x37f (`x87-53bit`) or a plain inverse would give.
     ('tpw-exe-skirt-mask', 'plan'): AGREE,
     ('tpw-exe-skirt-uv', 'plan'): AGREE,
     ('tpw-exe-skirt-flags', 'plan'): AGREE,
-    ('tpw-exe-skirt-flags', 'single-precision'): (31, (5, 5, False, 48, 1.7249575853347778)),
+    ('tpw-exe-skirt-flags', 'x87-53bit'): (31, (5, 5, False, 48, 1.7249575853347778)),
     ('tpw-exe-ground-conform', 'plan'): AGREE,
-    ('tpw-exe-ground-conform', 'single-precision'): (104, ((7, 5), (6.075, 0.0, 35.018), 4)),
+    ('tpw-exe-ground-conform', 'x87-53bit'): (104, ((7, 5), (6.075, 0.0, 35.018), 4)),
     ('tpw-exe-ground-conform', 'exact-inverse'): (62, ((2, 4), (10.0, 0.0, 30.0), 3)),
     ('tpw-exe-base-height', 'plan'): AGREE,
     ('tpw-exe-base-height', 'csharp-rule'): AGREE,
@@ -931,14 +931,14 @@ class Oracle(CoastTests, unittest.TestCase):
     def test_skirt_entries_and_slot_flags_agree(self):
         self.check(('tpw-exe-skirt-flags', 'plan'))
 
-    def test_skirt_flags_float_per_operation_reading_differs(self):
-        self.check(('tpw-exe-skirt-flags', 'single-precision'))
+    def test_skirt_flags_53_bit_reading_differs(self):
+        self.check(('tpw-exe-skirt-flags', 'x87-53bit'))
 
     def test_ground_conform_agrees(self):
         self.check(('tpw-exe-ground-conform', 'plan'))
 
-    def test_ground_conform_float_and_plain_inverse_readings_differ(self):
-        self.check(('tpw-exe-ground-conform', 'single-precision'))
+    def test_ground_conform_53_bit_and_plain_inverse_readings_differ(self):
+        self.check(('tpw-exe-ground-conform', 'x87-53bit'))
         self.check(('tpw-exe-ground-conform', 'exact-inverse'))
 
     def test_base_height_agrees_with_the_csharp_rule(self):
@@ -1025,16 +1025,16 @@ class Oracle(CoastTests, unittest.TestCase):
             self.assertGreater(comparison.mismatches, 0, name)
 
     def test_skirt_flags_and_conform_at_other_control_words(self):
-        # at the 64 bit word the original gives the same results as at the 53 bit word; at the 24 bit word it equals the float per operation reading (X30, X31)
+        # at the 53 and 64 bit words the original equals the 53 bit reading (X30, X31); the default reading is the 24 bit word's
         for target, binary in ((targets.SKIRT_FLAGS_TARGET, targets.skirt_flags_binary), (targets.CONFORM_TARGET, targets.conform_binary)):
             inputs = target.inputs(__import__('x86_harness').seeded('oracle-v1:' + target.key), 120)
             sandbox = target.sandbox(self.image)
-            for cw, reading in ((0x37F, target.plan), (0x7F, target.alternatives['single-precision'])):
+            for cw in (0x27F, 0x37F):
                 same = 0
                 for x in inputs:
                     sandbox.reset()
                     target.log.clear()
-                    same += binary(sandbox, x, target.log, cw) == reading(x)
+                    same += binary(sandbox, x, target.log, cw) == target.alternatives['x87-53bit'](x)
                 self.assertEqual(same, len(inputs), (target.key, hex(cw)))
 
     def test_walk_readings_are_sharp(self):

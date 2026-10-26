@@ -69,7 +69,7 @@ public class ObjectFloorCorpusTests
 				var skirt = ObjectSkirt.Build( entry.Settings, model, terrain )!;
 				foreach ( var rotation in Rotations )
 				{
-					var root = ObjectGroundConform.RootPlacement( PlacementAt( 40, 40, rotation, 12f ) );
+					var root = ObjectGroundConform.RootPlacement( PlacementAt( 40, 40, rotation, 12f ), terrain );
 					var result = ObjectGroundConform.Apply( model, skirt, terrain, Slope, root );
 					var name = $"{theme}/{entry.ArchiveName}@{rotation}";
 					Assert.AreEqual( skirt.ConformList.Length, result.Processed.Count, $"{name}: a placement inside the map consumes the whole list" );
@@ -105,7 +105,7 @@ public class ObjectFloorCorpusTests
 			var skirt = ObjectSkirt.Build( entry.Settings, model, terrain )!;
 			foreach ( var rotation in Rotations )
 			{
-				var result = ObjectGroundConform.Apply( model, skirt, terrain, ( _, _ ) => 12f, ObjectGroundConform.RootPlacement( PlacementAt( 40, 40, rotation, 12f ) ) );
+				var result = ObjectGroundConform.Apply( model, skirt, terrain, ( _, _ ) => 12f, ObjectGroundConform.RootPlacement( PlacementAt( 40, 40, rotation, 12f ), terrain ) );
 				foreach ( var (meshIndex, vertex) in result.Processed )
 				{
 					var stored = model.Meshes[meshIndex].Positions[vertex].GetSystemVector3();
@@ -148,6 +148,39 @@ public class ObjectFloorCorpusTests
 	}
 
 	[TestMethod]
+	public void OnlyAFewUvAnimatedMeshesUseASlotWhoseWrapBitsTheSkirtPassClears()
+	{
+		// a scrolling texture track wants a wrapping slot; the coordinate pass makes a slot clamp when all its faces lie on the floor in an edge cell (0x00467310), in the original too
+		var tracks = 0;
+		var clamped = new SortedSet<string>();
+		foreach ( var theme in Themes )
+		{
+			var terrain = HoardingTerrain.Of( ObjectSkirtCorpusTests.FieldOf( theme ) );
+			foreach ( var entry in ObjectSkirtCorpusTests.NonFixedTypes( theme ) )
+			{
+				var model = ObjectSkirtCorpusTests.ModelOf( entry );
+				var skirt = ObjectSkirt.Build( entry.Settings, model, terrain )!;
+				foreach ( var file in entry.Animations )
+				{
+					var clip = ObjectAssets.LoadModel( entry.FileSystem, file.Path ).Clip;
+					foreach ( var track in clip?.Tracks.Where( track => track.UvAnimation != null ) ?? Enumerable.Empty<ModelAnimationTrack>() )
+					{
+						tracks++;
+						var mesh = model.Meshes.FirstOrDefault( candidate => candidate.NodeIndex == track.NodeIndex );
+						if ( mesh == null )
+							continue;
+						foreach ( var material in mesh.Materials.Where( material => material.TextureIndex >= 0 ) )
+							if ( skirt.ClampedSlots[material.TextureIndex] )
+								clamped.Add( $"{theme}/{entry.ArchiveName}" );
+					}
+				}
+			}
+		}
+		Assert.IsTrue( tracks > 0, "the corpus has UV tracks" );
+		Assert.AreEqual( "space/gokarts,space/wateride", string.Join( ",", clamped ), "the original clamps these two floors' tracks too (the slot words are the type's)" );
+	}
+
+	[TestMethod]
 	public void TheConformWorksOnACopyAndLeavesTheTypesModelAlone()
 	{
 		var entry = ObjectSkirtCorpusTests.NonFixedTypes( "jungle" ).Single( candidate => candidate.ArchiveName == "bouncy" );
@@ -155,7 +188,7 @@ public class ObjectFloorCorpusTests
 		var terrain = HoardingTerrain.Of( ObjectSkirtCorpusTests.FieldOf( "jungle" ) );
 		var skirt = ObjectSkirt.Build( entry.Settings, model, terrain )!;
 		var before = model.Meshes.Select( mesh => mesh.Positions.ToArray() ).ToArray();
-		var result = ObjectGroundConform.Apply( model, skirt, terrain, Slope, ObjectGroundConform.RootPlacement( PlacementAt( 40, 40, 90, 12f ) ) );
+		var result = ObjectGroundConform.Apply( model, skirt, terrain, Slope, ObjectGroundConform.RootPlacement( PlacementAt( 40, 40, 90, 12f ), terrain ) );
 		Assert.IsTrue( result.Positions.Count > 0 );
 		for ( var mesh = 0; mesh < before.Length; mesh++ )
 			CollectionAssert.AreEqual( before[mesh], model.Meshes[mesh].Positions, $"mesh {mesh} of the shared model" );
@@ -182,7 +215,7 @@ public class ObjectFloorCorpusTests
 			}
 		foreach ( var (anchorX, anchorY, rotation) in edgePlacements )
 		{
-			var result = ObjectGroundConform.Apply( model, skirt, terrain, ( x, y ) => Slope( Math.Min( x, field.CellCountX ), Math.Min( y, field.CellCountZ ) ), ObjectGroundConform.RootPlacement( PlacementAt( anchorX, anchorY, rotation, 12f ) ) );
+			var result = ObjectGroundConform.Apply( model, skirt, terrain, ( x, y ) => Slope( Math.Min( x, field.CellCountX ), Math.Min( y, field.CellCountZ ) ), ObjectGroundConform.RootPlacement( PlacementAt( anchorX, anchorY, rotation, 12f ), terrain ) );
 			Assert.IsTrue( result.Processed.Count <= skirt.ConformList.Length );
 			if ( result.Processed.Count == skirt.ConformList.Length )
 				continue;

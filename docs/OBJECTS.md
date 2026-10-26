@@ -305,22 +305,26 @@ procedural ground, `0x463060` and `0x57ACE0`) waits for it (PR 843).
   shipped height map has its shape's size). Shipped: 60/57/61/59 types per theme (jungle, fantasy, hallow, space) have skirt cells, 394/370/437/437 cells in all, no two cells of
   a type share a slot, the error "Could not generate skirt flags" never fires; Belly Bounce's ten entries are `C8 E0 90 A0 88 A0 88 80 90 E0` with slots 11, 10, 9, 8, 6, 5, 3, 2, 1, 0
   (`ObjectSkirtCorpusTests`). Jungle `lavajump` has the base bit and no cell, `mystery` is not exported.
-  The reading is the oracle's, bit for bit (`SkirtReading`, `ObjectFloorMath`: sums in double with a float store where tp.exe stores one, [ORACLE.md](reverse/ORACLE.md) X28 to X32). It
-  assumes the x87's 53-bit mode like every oracle target; whether Direct3D's set-up leaves the game thread at 24 bits was not established, and per-operation floats would change one
-  of the 437 hallow cells (the Puzzle sideshow takes another slot) and the last bits of conformed vertices.
+  The reading is the oracle's, bit for bit (`SkirtReading`, `ObjectFloorMath`, [ORACLE.md](reverse/ORACLE.md) X28 to X32), in plain float arithmetic: tp.exe's thread runs the x87 at the
+  24-bit control word 0x7F (DDSCL_FPUSETUP and the Direct3D device start leave it so, which nothing restores: COAST-032, `X87Precision`), where every operation is one single-precision operation. At
+  the 53-bit word the same routines differ on some inputs (31 of 400 skirt, 104 of 400 conform).
+  Theme Park Inc's no-CD `Game.exe` has the same code (the skirt strings at `0x009AF698` and `0x009AF65C`, the mask code at `0x0066D146`, the slot flag 0x800 → state 0x1256 test at
+  `0x006EFCA0`, the conform tail `0x00469A56..0x00469A75` byte for byte at `0x004CE588`), so the floors apply to both games.
 - **Opaque skirt slots.** The same pass sets the runtime slot flag 0x800 on the texture slots of the ground node's faces that lie in an edge cell (and clears it on the others; the last
   face of a slot decides) and clears the wrap bits of the slots whose faces all lie on the floor in an edge cell. A face of a slot with 0x800 is drawn with state 0x1256 (no blend,
   no alpha test), never in the sorted translucent pass (`0x00581790`, [MD2-MODELS.md](MD2-MODELS.md#the-translucent-pass-of-world-models)). The grass-fringe art of these floors is
-  translucent, so before this the floors went through the sorted pass and z-fought with the terrain. `ObjectFloor` applies the flags, the normalised coordinates and the conform to the
+  translucent, so before this the floors went through the sorted pass and z-fought with the terrain. Forced opaque, their fringe art shows hard edges over the static ground (faithful there; it
+  will not match the procedural ground until the composite of F5 replaces the art). `ObjectFloor` applies the flags, the normalised coordinates and the conform to the
   instance's copy of the meshes (the type's parsed model stays as read); `test.shader` reads the vertex bit `WorldTranslucency.OpaqueSlotFlag`.
 - **The edge conform, at every placement.** The creation flag 8 of every non-fixed object runs `0x00469940` → `0x00469A80` in its apply mode, whatever the texturing option is: each
   ground vertex that the counting walk listed at type load is snapped to the nearest terrain grid corner (`ObjectGroundConform`): the placed vertex's ground coordinates
   onto the grid line (within 0.01 of a cell) and its height onto that corner's height, then back into the node's frame through the inverse matrix. The floor's outer edge lies
   on the terrain; the inner floor stays at the base height, so on a slope the edge ring tilts. A vertex whose corner lies past the last terrain corner ends its node (and its
   subtree) there. Presentation only: the conformed copy is drawn and picked (`OriginalObject.TryHitPickLine`), no simulation state, world hash or save field reads it
-  (`ObjectGroundConform` works on copies; the type's model is shared and never changes).
+  (`ObjectGroundConform` works on copies; the type's model is shared and never changes). Not ported: after the vertices the original recomputes the normals of a model with flag 0x40000
+  (`0x469A66` → `0x473C30` / `0x473A40`); OpenTPW keeps the stored normals, as for every vertex-passed node (RIDES-021 names the same skipped recompute for the pick).
 - **Depth compare.** The original compares depth with LESSEQUAL (`0x0057360F`, once, in the device set-up), so on equal depth the later draw wins and the floor, drawn after the terrain,
-  shows over the ground it lies in. `Material.DepthComparison` ports it for every depth-tested material (a Theme Park Inc run keeps the strict compare: only tp.exe was traced).
+  shows over the ground it lies in. `Material.DepthComparison` ports it for every depth-tested material (Theme Park Inc's no-CD `Game.exe` sets the same LESSEQUAL, at `0x006D6574` and in its restore helper `0x006D5C1E`, and nothing else).
   With a 32-bit float depth buffer coplanar triangles of different shapes still differ in the last bit, so a floor that is coplanar with the terrain can keep some stripes
   in static mode until the terrain below it is a hole (package F4/F5); the original's own behaviour there (OPEN-F2) was not observed.
 - **Not yet ported.** Under procedural texturing the original also turns each skirt cell of the terrain into a hole and builds one composite texture per cell from the procedural

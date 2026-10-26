@@ -150,12 +150,10 @@ public class ObjectSkirtCorpusTests
 	[TestMethod]
 	public void TheSkirtSlotsAreMostlyTranslucentGrassFringeArt()
 	{
-		// the alpha type of the texture of every skirt cell's slot (translucent / cut-out / opaque), the reason the floors left the sorted pass: 361/27/6, 314/44/12, 364/49/24 and 347/24/66. The probe
-		// that read the same rules with float arithmetic per operation counted 363/49/25 in hallow: one cell of the Puzzle sideshow takes another slot (presumably a tie between two floor faces that
-		// rounds differently between the x87's 53-bit sums, which the oracle verified, and per-operation floats; docs/reverse/ORACLE.md, X30)
+		// the alpha type of the texture of every skirt cell's slot (translucent / cut-out / opaque), the reason the floors left the sorted pass: 361/27/6, 314/44/12, 363/49/25 and 347/24/66 (the plan's probe, which also used float arithmetic per operation, the original's 24-bit x87 mode)
 		var expected = new Dictionary<string, (int Translucent, int Cutout, int Opaque)>
 		{
-			["jungle"] = (361, 27, 6), ["fantasy"] = (314, 44, 12), ["hallow"] = (364, 49, 24), ["space"] = (347, 24, 66)
+			["jungle"] = (361, 27, 6), ["fantasy"] = (314, 44, 12), ["hallow"] = (363, 49, 25), ["space"] = (347, 24, 66)
 		};
 		foreach ( var theme in Themes )
 		{

@@ -3339,13 +3339,13 @@ TERRAIN_BUILD_TARGET = Target(
 # ============================================================================== X28 to X30: the procedural object base ("skirt")
 # tp.exe 0x52c420 (footprint edge mask), 0x467310 (UV normaliser) and 0x46aa10 (skirt entries and the opaque slot flags). Plan: skirt_reading.py, the reading
 # OpenTPW's ObjectSkirt follows (docs/OBJECTS.md). Memory layouts are the ones the routines read (node, model, base record, shape); every field is named
-# in the builders below. The x87 control word is the same 0x27F (53 bit) as the other floating point targets of this file.
+# in the builders below. The x87 control word is 0x7F (24 bit, docs/reverse/ORACLE.md 7.21); the 0x27F variant is an alternative reading.
 import skirt_reading  # noqa: E402
 
 SKIRT_MASK_BASE = 0x8186F0
 SKIRT_WORLD_PTR = 0x7A0854      # game world object; +0x6c is the landscape, whose +0x10 / +0x14 are the cell sizes and +0x28 the corner heights
 SKIRT_SCRATCH_PTR = 0x7AECD4    # pointer to the scratch array of transformed vertices
-SKIRT_FPCW = 0x27F
+SKIRT_FPCW = 0x7F               # the control word of tp.exe's thread after the device start (24 bit); 0x27F / 0x37F are the alternative
 SKIRT_MASK_RANGES = [(0x52C420, 0x52C5AA)]
 SKIRT_RUNTIME_RANGES = [(0x67A830, 0x67A857),    # _ftol
                         (0x67B280, 0x67B3D1),    # modf; executed, with the two runtime helpers it uses for finite values
@@ -3696,8 +3696,8 @@ def skirt_flags_plan(x: dict) -> dict:
 
 
 def skirt_flags_single_precision(x: dict) -> dict:
-    """The reading with every x87 intermediate rounded to a float (what a `float` transcription gives; also what the 24 bit control word 0x7f gives)."""
-    with skirt_reading.single_precision():
+    """The reading with 53 bit intermediates (the control words 0x27f and 0x37f)."""
+    with skirt_reading.double_precision():
         return skirt_reading.flags(x)
 
 
@@ -3774,14 +3774,14 @@ SKIRT_MASK_TARGET = Target(
 SKIRT_UV_TARGET = Target(
     'tpw-exe-skirt-uv', 'tpw', 'tp.exe UV normaliser 0x467310', 'procedural-floors-plan §3.1 / skirt_reading.uv_normalise',
     0x467310, SKIRT_UV_RANGES, skirt_stubs, skirt_uv_binary, skirt_uv_plan, skirt_uv_inputs, budget=3_000_000,
-    notes=['cdecl (model, node, eps, mask, vertices, &logged); modf 0x67b280, _ftol 0x67a830 and their helpers run for real (control word 0x27F); '
+    notes=['cdecl (model, node, eps, mask, vertices, &logged); modf 0x67b280, _ftol 0x67a830 and their helpers run for real (control word 0x7F); '
            'allocator and free stubbed, the print recorded.'])
 SKIRT_FLAGS_TARGET = Target(
     'tpw-exe-skirt-flags', 'tpw', 'tp.exe skirt entries 0x46aa10', 'procedural-floors-plan §3.1 / skirt_reading.flags',
     0x46AA10, SKIRT_FLAGS_RANGES, skirt_stubs, skirt_flags_binary, skirt_flags_plan, skirt_flags_inputs, budget=5_000_000,
-    alternatives={'single-precision': skirt_flags_single_precision},
+    alternatives={'x87-53bit': skirt_flags_single_precision},
     notes=['cdecl (object, shape, width, height, header 0x80); with the mask 0x52c420, the node transform 0x4628b0 / 0x4700f0 and the UV normaliser 0x467310 '
-           'executed (control word 0x27F).'])
+           'executed (control word 0x7F).'])
 
 # ============================================================================== X31: the edge vertex conform of an object's ground
 # tp.exe 0x469940 (instance wrapper) -> 0x469a80 (tree walk, apply mode) with the matrix chain 0x4702d0, the point transform 0x46fc00, the inverse 0x470040
@@ -3901,8 +3901,8 @@ def conform_exact_inverse_plan(x: dict) -> dict:
 
 
 def conform_single_precision_plan(x: dict) -> dict:
-    """The reading with every x87 intermediate rounded to a float, the arithmetic a straight `float` transcription gives."""
-    with skirt_reading.single_precision():
+    """The reading with 53 bit intermediates (the control words 0x27f and 0x37f)."""
+    with skirt_reading.double_precision():
         return skirt_reading.conform(x)
 
 
@@ -4022,7 +4022,7 @@ def conform_inputs(rng: random.Random, n: int) -> list:
 CONFORM_TARGET = Target(
     'tpw-exe-ground-conform', 'tpw', 'tp.exe edge vertex conform 0x469940 / 0x469a80', 'procedural-floors-plan §3.2 / skirt_reading.conform',
     CONFORM_ENTRY, CONFORM_RANGES, conform_stubs, conform_binary, conform_plan, conform_inputs, budget=3_000_000,
-    alternatives={'single-precision': conform_single_precision_plan, 'exact-inverse': conform_exact_inverse_plan},
+    alternatives={'x87-53bit': conform_single_precision_plan, 'exact-inverse': conform_exact_inverse_plan},
     notes=['cdecl 0x469940 (instance, world, base height, flags): the matrix chain starts at the identity (0x46f150), the root node carries the placement; '
            'apply mode; second pass (node flag 0x40) not run.'])
 

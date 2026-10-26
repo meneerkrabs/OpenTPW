@@ -23,20 +23,18 @@ internal sealed class ObjectFloor
 	public ObjectSkirt Skirt => skirt;
 
 	/// <summary>
-	/// The floor of an object of <paramref name="entry"/> at <paramref name="placement"/> over <paramref name="field"/>, or null when it has none: a fixed item, a park without terrain or a Theme Park Inc
-	/// object (its executable's type loader was not traced).
+	/// The floor of an object of <paramref name="entry"/> at <paramref name="placement"/> over <paramref name="field"/>, or null when it has none: a fixed item, or a park without terrain.
 	/// </summary>
 	public static ObjectFloor? Create( ObjectCatalogEntry entry, ModelFile model, ObjectPlacement placement, ModelHeightfield? field, ObjectHoardingCache? cache = null )
 	{
-		// tp.exe's type loader is what was traced; Theme Park Inc's own (Game.exe) was not, so its objects keep the rigid floor
-		if ( field == null || entry.IsFixedItem || GameEditions.IsThemeParkInc )
+		if ( field == null || entry.IsFixedItem )
 			return null;
 		var skirt = cache != null ? cache.Skirt( entry, model, field ) : ObjectSkirt.Build( entry.Settings, model, HoardingTerrain.Of( field ) );
 		if ( skirt == null )
 			return null;
 		var terrain = HoardingTerrain.Of( field );
 		var conform = ObjectGroundConform.Apply( model, skirt, terrain,
-			( x, y ) => field.GetCornerHeight( Math.Clamp( x, 0, field.CellCountX ), Math.Clamp( y, 0, field.CellCountZ ) ), ObjectGroundConform.RootPlacement( placement ) );
+			( x, y ) => field.GetCornerHeight( Math.Clamp( x, 0, field.CellCountX ), Math.Clamp( y, 0, field.CellCountZ ) ), ObjectGroundConform.RootPlacement( placement, terrain ) );
 		return new ObjectFloor( model, skirt, conform );
 	}
 

@@ -150,24 +150,14 @@ public class WorldTranslucencyTests
 	[TestMethod]
 	public void EveryDepthTestedMaterialComparesWithTheOriginalsLessEqual()
 	{
-		// tp.exe sets D3DRS_ZFUNC once, to LESSEQUAL (0x57360F), so a fragment at the stored depth passes and the later draw wins a tie
+		// tp.exe sets D3DRS_ZFUNC once, to LESSEQUAL (0x57360F; Theme Park Inc's Game.exe 0x6D6574 and 0x6D5C1E), so a fragment at the stored depth passes and the later draw wins a tie
 		Assert.AreEqual( Veldrid.ComparisonKind.LessEqual, Material.DepthComparison( MaterialFlags.None ) );
 		Assert.AreEqual( Veldrid.ComparisonKind.LessEqual, Material.DepthComparison( MaterialFlags.DoubleSided | MaterialFlags.OpaqueBlend ) );
 		Assert.AreEqual( Veldrid.ComparisonKind.LessEqual, Material.DepthComparison( MaterialFlags.DisableDepthWrite ), "the depth test stays on without the write (water, particles)" );
 		Assert.AreEqual( Veldrid.ComparisonKind.Always, Material.DepthComparison( MaterialFlags.DisableDepthTest | MaterialFlags.DisableDepthWrite ), "a material with no depth state" );
-		var edition = GameEditions.Current;
-		try
-		{
-			GameEditions.Select( GameEdition.ThemeParkInc );
-			Assert.AreEqual( Veldrid.ComparisonKind.Less, Material.DepthComparison( MaterialFlags.None ), "Theme Park Inc: its device set-up was not traced" );
-		}
-		finally
-		{
-			GameEditions.Select( edition );
-		}
 		// the only place a pipeline's depth comparison is chosen
 		var source = File.ReadAllText( Path.Combine( RepositoryRoot(), "source", "OpenTPW", "Render", "Assets", "Material.cs" ) );
-		Assert.AreEqual( 1, System.Text.RegularExpressions.Regex.Matches( source, @"ComparisonKind\.Less\b" ).Count, "the one strict Less is the Theme Park Inc branch" );
+		Assert.IsFalse( System.Text.RegularExpressions.Regex.IsMatch( source, @"ComparisonKind\.Less\b" ), "no strict Less in the material pipelines (Theme Park Inc's Game.exe sets LESSEQUAL too: 0x6D6574, 0x6D5C1E)" );
 	}
 
 	private static string RepositoryRoot()

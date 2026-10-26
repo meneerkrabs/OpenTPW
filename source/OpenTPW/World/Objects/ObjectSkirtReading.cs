@@ -26,8 +26,8 @@ internal sealed record SkirtNode( float[] Matrix, IReadOnlyList<float[]> Parents
 internal sealed record SkirtReadResult( ObjectSkirtEntry[] Entries, uint[] Slots, NVector2[] Uvs, int Flipped, int NotFlipped, int Errors, bool UvLogged );
 
 /// <summary>
-/// The skirt reader and its helpers as tp.exe runs them (<c>0x0046AA10</c>, <c>0x0052C420</c>, <c>0x00467310</c>), on plain arrays, with the original's float and double steps: sums in double, a float
-/// store where the original stores one (<see cref="ObjectFloorMath"/>).
+/// The skirt reader and its helpers as tp.exe runs them (<c>0x0046AA10</c>, <c>0x0052C420</c>, <c>0x00467310</c>), on plain arrays, in float arithmetic: the thread runs at the 24-bit x87 control word
+/// 0x7F (<see cref="ObjectFloorMath"/>), so each operation rounds to a float.
 /// </summary>
 internal static class SkirtReading
 {
@@ -128,17 +128,17 @@ internal static class SkirtReading
 		var visited = new bool[uvs.Length];
 		for ( var f = 0; f < faces.Length; f++ )
 		{
-			double shiftU = Math.Truncate( (double)minimum[f].U );
-			double shiftV = Math.Truncate( (double)minimum[f].V );
+			var shiftU = MathF.Truncate( minimum[f].U );
+			var shiftV = MathF.Truncate( minimum[f].V );
 			if ( minimum[f].U - shiftU < 0 )
-				shiftU = (float)(shiftU - 1.0);
+				shiftU -= 1f;
 			if ( minimum[f].V - shiftV < 0 )
-				shiftV = (float)(shiftV - 1.0);
+				shiftV -= 1f;
 			foreach ( var corner in faces[f] )
 			{
 				if ( visited[corner] )
 					continue;
-				uvs[corner] = new NVector2( (float)(uvs[corner].X - shiftU), (float)(uvs[corner].Y - shiftV) );
+				uvs[corner] = new NVector2( uvs[corner].X - shiftU, uvs[corner].Y - shiftV );
 				visited[corner] = true;
 			}
 		}
@@ -156,9 +156,9 @@ internal static class SkirtReading
 					var a = vertices![node.CornerVertex[face[0]]];
 					var b = vertices[node.CornerVertex[face[1]]];
 					var c = vertices[node.CornerVertex[face[2]]];
-					cx = (float)(((double)c.X + a.X + b.X) * OneThird);
-					cy = (float)(((double)b.Y + a.Y + c.Y) * OneThird);
-					cz = (float)(((double)c.Z + b.Z + a.Z) * OneThird);
+					cx = (c.X + a.X + b.X) * OneThird;
+					cy = (b.Y + a.Y + c.Y) * OneThird;
+					cz = (c.Z + b.Z + a.Z) * OneThird;
 				}
 				foreach ( var corner in face )
 				{
@@ -170,8 +170,8 @@ internal static class SkirtReading
 							bad++;
 							continue;
 						}
-						var zIndex = FloatToInt( (double)cz * -Tenth );
-						var xIndex = FloatToInt( (double)cx * Tenth );
+						var zIndex = FloatToInt( cz * -Tenth );
+						var xIndex = FloatToInt( cx * Tenth );
 						var position = unchecked(xIndex << 4) - zIndex;
 						if ( MaskValue( mask!, position ) == 0 )
 						{
@@ -219,21 +219,21 @@ internal static class SkirtReading
 		{
 			var start = corners[e];
 			var end = corners[(e + 1) % 3];
-			double dx = (double)end.X - start.X, dy = (double)end.Y - start.Y, dz = (double)end.Z - start.Z;
-			var length = (float)Math.Sqrt( dx * dx + dy * (float)dy + dz * dz );
-			var nx = (float)dx / (double)length;
-			var ny = (float)dy / (double)length;
+			float dx = end.X - start.X, dy = end.Y - start.Y, dz = end.Z - start.Z;
+			var length = MathF.Sqrt( dx * dx + dy * dy + dz * dz );
+			var nx = dx / length;
+			var ny = dy / length;
 			var nz = dz / length;
-			var direction = new NVector3( (float)nx, (float)ny, (float)nz );
-			if ( Math.Abs( nx ) > bestX )
+			var direction = new NVector3( nx, ny, nz );
+			if ( MathF.Abs( nx ) > bestX )
 			{
-				bestX = (float)Math.Abs( nx );
+				bestX = MathF.Abs( nx );
 				edgeX = e;
 				directionX = direction;
 			}
-			if ( (float)Math.Abs( nz ) > bestZ )
+			if ( MathF.Abs( nz ) > bestZ )
 			{
-				bestZ = (float)Math.Abs( nz );
+				bestZ = MathF.Abs( nz );
 				edgeZ = e;
 				directionZ = direction;
 			}
@@ -244,9 +244,9 @@ internal static class SkirtReading
 	/// <summary>The terrain cell of a face's centre (tp.exe <c>0x0046AA10</c>): <c>x = ftol(((x0 + x1) + x2)·0.33333334 / sizeX)</c> with the sum and product in double, <c>z = ftol(float((z2 + float(z0 + z1))·0.33333334) / sizeZ)</c>.</summary>
 	public static (int X, int Z) FaceCell( NVector3 a, NVector3 b, NVector3 c, float sizeX, float sizeZ )
 	{
-		var cx = ((double)a.X + b.X + c.X) * OneThird;
-		var cz = (float)(((double)c.Z + (float)((double)a.Z + b.Z)) * OneThird);
-		return (FloatToInt( cx / sizeX ), FloatToInt( cz / (double)sizeZ ));
+		var cx = (a.X + b.X + c.X) * OneThird;
+		var cz = (c.Z + (a.Z + b.Z)) * OneThird;
+		return (FloatToInt( cx / sizeX ), FloatToInt( cz / sizeZ ));
 	}
 
 	/// <summary>
@@ -268,6 +268,7 @@ internal static class SkirtReading
 			{
 				var column = ((index % SkirtShape.Stride) + SkirtShape.Stride) % SkirtShape.Stride;
 				var row = (index - column) / SkirtShape.Stride;
+				// a face whose centre lies outside the footprint gets a record that was never initialised in the original (written on first use, never read: only footprint cells are read back); here the default record has group 0 and face 0
 				var inside = row >= 0 && row < shape.Height && column < shape.Width;
 				records[index] = record = new BestFace { Group = inside ? -1 : 0, Face = inside ? -1 : 0 };
 			}
@@ -402,20 +403,20 @@ internal static class SkirtReading
 		switch ( missing )
 		{
 			case 0:
-				u[0] = (float)((double)u[3] - u[2] + u[1]);
-				v[0] = (float)((double)v[3] - v[2] + v[1]);
+				u[0] = u[3] - u[2] + u[1];
+				v[0] = v[3] - v[2] + v[1];
 				break;
 			case 1:
-				u[1] = (float)((double)u[2] - u[3] + u[0]);
-				v[1] = (float)((double)v[2] - v[3] + v[0]);
+				u[1] = u[2] - u[3] + u[0];
+				v[1] = v[2] - v[3] + v[0];
 				break;
 			case 2:
-				u[2] = (float)((double)u[3] - u[0] + u[1]);
-				v[2] = (float)((double)v[3] - v[0] + v[1]);
+				u[2] = u[3] - u[0] + u[1];
+				v[2] = v[3] - v[0] + v[1];
 				break;
 			default:
-				u[3] = (float)((double)u[2] - u[1] + u[0]);
-				v[3] = (float)((double)v[2] - v[1] + v[0]);
+				u[3] = u[2] - u[1] + u[0];
+				v[3] = v[2] - v[1] + v[0];
 				break;
 		}
 		var minU = u[0];
@@ -431,18 +432,18 @@ internal static class SkirtReading
 		var bestDistance = float.MaxValue;
 		for ( var k = 0; k < 4; k++ )
 		{
-			var du = (double)u[k] - minU;
-			var dv = (double)v[k] - minV;
-			var distance = du * (float)du + dv * dv;
+			var du = u[k] - minU;
+			var dv = v[k] - minV;
+			var distance = du * du + dv * dv;
 			if ( distance < bestDistance )
 			{
 				best = k;
-				bestDistance = (float)distance;
+				bestDistance = distance;
 			}
 		}
 		var code = new[] { 0x80, 0x88, 0x90, 0xA0 }[best];
 		var following = (best + 1) & 3;
-		if ( Math.Abs( (double)u[best] - u[following] ) > Math.Abs( (double)v[best] - v[following] ) )
+		if ( MathF.Abs( u[best] - u[following] ) > MathF.Abs( v[best] - v[following] ) )
 			return (new ObjectSkirtEntry( code | 0x40, slot ), true);
 		return (new ObjectSkirtEntry( code, slot ), false);
 	}

@@ -3251,7 +3251,16 @@ def terrain_build_binary(sb: Sandbox, x: dict, log) -> bytes:
         sb.write(state + 12, 'I', sb.alloc(n_size * n_size, 16))
     sb.write(TERRAIN_BUFFER, 'I', sb.alloc(n_size * n_size * 4, 16))
     destination = sb.alloc(n_size * n_size * 4, 16)
-    sb.call(TERRAIN_BUILD, (destination, x['x'], x['z'], 0), this=obj)
+    descriptor = 0
+    if x.get('art') is not None:
+        # the floor descriptor {pixels, width, height, bytes per pixel, word}: the composite tail (0x5608b0) reads it instead of copying the base
+        art = x['art']
+        pixels = sb.alloc(len(art['pixels']), 16)
+        sb.write(pixels, f"{len(art['pixels'])}s", bytes(art['pixels']))
+        descriptor = sb.alloc(20, 16)
+        for index, value in enumerate((pixels, art['width'], art['height'], art['bpp'], art['word'])):
+            sb.write(descriptor + 4 * index, 'I', value)
+    sb.call(TERRAIN_BUILD, (destination, x['x'], x['z'], descriptor), this=obj)
     return bytes(sb.uc.mem_read(destination, n_size * n_size * 4))
 
 
@@ -3262,6 +3271,65 @@ def terrain_build_plan(x: dict) -> bytes:
 def terrain_build_per_texel_weight(x: dict) -> bytes:
     """Without the three layer quirk (w1 per texel in a CBA run): differs from the original on every cell that has a CBA run."""
     return terrain_reading.build(x['level'], x['n'], x['x'], x['z'], quirk=False)[0]
+
+
+def terrain_compose_plan(x: dict) -> bytes:
+    art = x['art']
+    base = terrain_reading.build(x['level'], x['n'], x['x'], x['z'])[0]
+    return terrain_reading.compose(base, x['n'], art['pixels'], art['width'], art['height'], art['bpp'], art['word'])
+
+
+def terrain_compose_other_orientation(x: dict) -> bytes:
+    """A reading that tests the bits in another order (0x40 last): differs on a word with 0x40 and another orientation bit."""
+    art = dict(x['art'])
+    word = art['word']
+    if word & 0x40 and word & 0x38:
+        art['word'] = word & ~0x40
+    return terrain_compose_plan({**x, 'art': art})
+
+
+def terrain_compose_divide_255(x: dict) -> bytes:
+    """A reading that blends with a division by 255 instead of the shift (opaque art would then replace the base): differs wherever the alpha is not 0."""
+    art = x['art']
+    base = terrain_reading.build(x['level'], x['n'], x['x'], x['z'])[0]
+    n = x['n']
+    start, texel_step, row_step = terrain_reading.orientation(art['word'], n)
+    out = bytearray()
+    for y in range(n):
+        for column in range(n):
+            source = (start + y * row_step + column * texel_step) * 4
+            width, height = art['width'], art['height']
+            if art['bpp'] == 4:
+                offset = ((y * (height // n)) * width + column * (width // n)) * 4
+                blue, green, red, alpha = art['pixels'][offset:offset + 4]
+            else:
+                offset = ((y * (height // n)) * width + column * (width // n)) * 2
+                value = art['pixels'][offset] | art['pixels'][offset + 1] << 8
+                alpha, red, green, blue = (value >> 8) & 0xF0, (value >> 4) & 0xF0, value & 0xF0, (value << 4) & 0xFF
+            out.append(0)
+            for channel, base_channel in ((red, base[source + 1]), (green, base[source + 2]), (blue, base[source + 3])):
+                out.append((base_channel + (channel - base_channel) * alpha // 255) & 0xFF)
+    return bytes(out)
+
+
+def terrain_compose_inputs(rng: random.Random, n: int) -> list:
+    """Floor descriptors over cells of synthetic levels: all eight orientation words (and words with other bits), 32-bit and 4444 art, art sizes that are, are not and are smaller than
+    multiples of N, and the alpha extremes. Capped: every case runs the whole build routine in the emulator."""
+    out = []
+    words = (0x00, 0x08, 0x10, 0x20, 0x40, 0x48, 0x50, 0x60, 0x281, 0x2C8, 0x18, 0x30, 0x58, 0x78)
+    for index in range(min(n, 56)):
+        n_size = (16, 32, 16, 32, 64)[index % 5]
+        level, cells = terrain_level(rng, n_size, 'random')
+        bpp = 2 if index % 7 == 6 else 4
+        width, height = rng.choice((n_size, 2 * n_size, n_size + 7, n_size + 13, 128, n_size // 2)), rng.choice((n_size, 2 * n_size, n_size + 7, 128, n_size // 2))
+        alpha_mode = terrain_reading.ALPHA_MODES[index % len(terrain_reading.ALPHA_MODES)]
+        if bpp == 4:
+            pixels = terrain_reading.synthetic_art(rng.randrange(1 << 20), width, height, alpha_mode)
+        else:
+            pixels = terrain_reading.synthetic_art_16(rng.randrange(1 << 20), width, height, alpha_mode if alpha_mode != 'random' else 'ramp') if alpha_mode in ('zero', 'full', 'mid', 'ramp') else terrain_reading.synthetic_art_16(rng.randrange(1 << 20), width, height, 'random')
+        out.append({'n': n_size, 'x': rng.randrange(cells), 'z': rng.randrange(cells), 'level': level,
+                    'art': {'pixels': pixels, 'width': width, 'height': height, 'bpp': bpp, 'word': words[index % len(words)]}})
+    return out
 
 
 # the layer mix of a synthetic level: how the masks (mask 1 over C, mask 2 over B) behave per 16 texel run
@@ -3392,6 +3460,13 @@ TERRAIN_BUILD_TARGET = Target(
     budget=50_000_000,
     notes=['thiscall (ecx = level object; destination, cell x, cell z, floor descriptor NULL). Synthetic levels whose masks give every run mode '
            '(C, B, A, BA, CB, CA, CBA) plus random masks and a few invalid cells. A reading without the three layer quirk differs (test_x86_oracle).'])
+
+TERRAIN_COMPOSE_TARGET = Target(
+    'tpw-exe-terrain-compose', 'tpw', 'tp.exe procedural terrain composite tail 0x55f780 (floor descriptor)', 'docs/OBJECTS.md ("Floors"; ProceduralTerrainTexturer.Compose)',
+    TERRAIN_BUILD, TERRAIN_BUILD_RANGES, terrain_stubs, terrain_build_binary, terrain_compose_plan, terrain_compose_inputs,
+    budget=50_000_000,
+    notes=['thiscall (ecx = level object; destination, cell x, cell z, a floor descriptor {pixels, width, height, bytes per pixel, word}): the base of a synthetic level read in the eight '
+           'orientations of the word with the art blended over it (32-bit and 4444 art, art sizes that are not multiples of N, alpha 0 to 255).'])
 
 # ============================================================================== X28 to X30: the procedural object base ("skirt")
 # tp.exe 0x52c420 (footprint edge mask), 0x467310 (UV normaliser) and 0x46aa10 (skirt entries and the opaque slot flags). Plan: skirt_reading.py, the reading
@@ -4266,4 +4341,4 @@ WALK_TARGETS = [WALK_EDGE_TARGET, WALK_COMMIT_TARGET, WALK_SEARCH_TARGET, WALK_A
 
 TARGETS = [WORLD_RNG_TARGET, TPI_WORLD_RNG_TARGET, ARRIVAL_TARGET, LOAN_OFFERS_TARGET, LOAN_TERM_TARGET, LOAN_MONTH_TARGET, POINTS_TARGET,
            SCRAP_TARGET, QREEVAL_TARGET, COUNTS_TARGET, PRICE_TARGET, WEAR_TARGET, STATE6_TARGET, WANDER_TARGET, LITTER_TARGET, BIN_WALK_TARGET, REGION_TARGET, FINDER_TARGET, GUARD_TARGET,
-           TPI_ARRIVAL_TARGET, TPI_LOAN_OFFERS_TARGET, TPI_LOAN_TERM_TARGET, TPI_LOAN_MONTH_TARGET, TPI_POINTS_TARGET, TQI_MATRIX_TARGET, TQI_PASS_TARGET, TERRAIN_RAMP_TARGET, TERRAIN_WEIGHTS_TARGET, TERRAIN_BUILD_TARGET, TERRAIN_SPANS_TARGET, TERRAIN_CACHE_TARGET, SKIRT_MASK_TARGET, SKIRT_UV_TARGET, SKIRT_FLAGS_TARGET, CONFORM_TARGET, BASE_HEIGHT_TARGET] + COAST_TARGETS + WALK_TARGETS
+           TPI_ARRIVAL_TARGET, TPI_LOAN_OFFERS_TARGET, TPI_LOAN_TERM_TARGET, TPI_LOAN_MONTH_TARGET, TPI_POINTS_TARGET, TQI_MATRIX_TARGET, TQI_PASS_TARGET, TERRAIN_RAMP_TARGET, TERRAIN_WEIGHTS_TARGET, TERRAIN_BUILD_TARGET, TERRAIN_COMPOSE_TARGET, TERRAIN_SPANS_TARGET, TERRAIN_CACHE_TARGET, SKIRT_MASK_TARGET, SKIRT_UV_TARGET, SKIRT_FLAGS_TARGET, CONFORM_TARGET, BASE_HEIGHT_TARGET] + COAST_TARGETS + WALK_TARGETS

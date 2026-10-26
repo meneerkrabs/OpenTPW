@@ -122,6 +122,8 @@ EXPECTED = {
     ('tpw-exe-terrain-ramp', 'plan'): AGREE,
     ('tpw-exe-terrain-weights', 'plan'): AGREE,
     ('tpw-exe-terrain-build', 'plan'): AGREE,
+    # X33: the composite tail of the same routine with a floor descriptor (package F): the eight orientations, 32-bit and 4444 art, art sizes that are not multiples of N
+    ('tpw-exe-terrain-compose', 'plan'): AGREE,
     # X28 to X32 (the procedural object base, issue 829 package F; skirt_reading.py): the footprint edge mask 0x52c420, the UV normaliser 0x467310, the skirt
     # entries and opaque slot flags 0x46aa10, the edge vertex conform 0x469940 / 0x469a80 and the base height 0x466d70. The readings are exact at the control word
     # 0x7f (24 bit, every intermediate a float); the alternatives show what the 53 bit words 0x27f / 0x37f (`x87-53bit`) or a plain inverse would give.
@@ -901,6 +903,7 @@ class Oracle(CoastTests, unittest.TestCase):
         self.check(('tpw-exe-terrain-ramp', 'plan'))
         self.check(('tpw-exe-terrain-weights', 'plan'))
         self.check(('tpw-exe-terrain-build', 'plan'))
+        self.check(('tpw-exe-terrain-compose', 'plan'))
 
     def test_terrain_spans_and_cache_agree(self):
         self.check(('tpw-exe-terrain-spans', 'plan'))
@@ -926,6 +929,19 @@ class Oracle(CoastTests, unittest.TestCase):
             return b''.join(texture[(n - 1 - row) * n * 4:(n - row) * n * 4] for row in range(n))
         for name, plan in (('quirk', targets.terrain_build_per_texel_weight), ('rows', flipped)):
             [comparison] = [c for c in compare(targets.TERRAIN_BUILD_TARGET, self.image, 24, plan=plan) if c.side == 'plan']
+            self.assertGreater(comparison.mismatches, 0, name)
+
+    def test_terrain_compose_inputs_reach_every_orientation_and_both_art_formats(self):
+        inputs = targets.terrain_compose_inputs(__import__('x86_harness').seeded('oracle-v1:tpw-exe-terrain-compose'), DEFAULT_COUNT)
+        self.assertEqual({x['art']['word'] & 0x78 for x in inputs} >= {0x00, 0x08, 0x10, 0x20, 0x40, 0x48, 0x50, 0x60}, True)
+        self.assertEqual({x['art']['bpp'] for x in inputs}, {2, 4})
+        self.assertTrue(any(x['art']['width'] % x['n'] for x in inputs))
+        self.assertTrue(any(x['art']['width'] < x['n'] for x in inputs))
+
+    def test_terrain_compose_readings_are_sharp(self):
+        # a reading that tests 0x40 after the other orientation bits, and one that divides by 255 instead of shifting, both differ from the original
+        for name, plan in (('order', targets.terrain_compose_other_orientation), ('divide', targets.terrain_compose_divide_255)):
+            [comparison] = [c for c in compare(targets.TERRAIN_COMPOSE_TARGET, self.image, 40, plan=plan) if c.side == 'plan']
             self.assertGreater(comparison.mismatches, 0, name)
 
     # ------------------------------------------------------------------ X28 to X32: the procedural object base (issue 829, package F)

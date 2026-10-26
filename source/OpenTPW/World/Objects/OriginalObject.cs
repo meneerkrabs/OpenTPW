@@ -86,6 +86,12 @@ public class OriginalObject : Entity, IPointLightSource, IObjectPickShape
 	private readonly List<(ModelEntity Entity, int NodeIndex)> parts = new();
 	/// <summary>The skirt and edge conform of this object's floor, or null (a fixed item, a park without terrain).</summary>
 	private ObjectFloor? floor;
+	/// <summary>Per render part: its material and the MD2 texture slot each entry of the material's texture array shows (the floor composites replace those entries).</summary>
+	private readonly List<(Material Material, int[] Slots)> slotBindings = new();
+	/// <summary>The textures of this object's floor composites (<see cref="PlaceFloorBase"/>), released with the object.</summary>
+	private readonly List<Texture> compositeTextures = new();
+	/// <summary>The composites this object made: the cell, its word and the slot whose texture each one replaced.</summary>
+	internal IReadOnlyList<FloorComposite> FloorComposites { get; private set; } = Array.Empty<FloorComposite>();
 	/// <summary>The type's hoarding drawn at this object, or null when its type has none (docs/OBJECTS.md, "Hoarding").</summary>
 	private ObjectHoardingRenderer? hoarding;
 	private readonly List<Model> models = new();
@@ -312,6 +318,72 @@ public class OriginalObject : Entity, IPointLightSource, IObjectPickShape
 		UpdateTransforms();
 	}
 
+	/// <summary>
+	/// Puts the instance's skirt on the landscape and its base under it while the procedural terrain textures are on (tp.exe <c>0x463060</c> from 0x46334C: the skirt cells take their words, then the
+	/// composites of the footprint box are made, <c>0x57ACE0</c>). A type without a base (<see cref="ObjectSkirt.HasBase"/>) does neither. Called once, when the object is in the park: the cells of
+	/// a neighbour inside the box and the cells this object's own demolition victims left are as they are then.
+	/// </summary>
+	/// <param name="words">The level's landscape words, which this writes the skirt words into.</param>
+	/// <param name="ground">The level's procedural terrain, whose texturer builds the bases.</param>
+	/// <returns>The cells whose words were written.</returns>
+	// [BIN:TPW-EXE:0x0046334C skirt base] after the placement 0x467030 and the conform 0x469940 the block runs when the creation flag has bit 8, [0x7A1A8C] has 0x4000 (the texturing is on) and the base record's flag 0x40 is set; it writes the skirt words and calls 0x57ACE0
+	internal IReadOnlyList<(int X, int Z)> PlaceFloorBase( OriginalCellWords words, ProceduralTerrain ground, HoardingTerrain terrain )
+	{
+		if ( deleted || floor is not { Skirt: { HasBase: true } skirt } )
+			return Array.Empty<(int, int)>();
+		using var profile = LoadProfile.Measure( "object-floor-base" );
+		var (originX, originZ) = ObjectFloorBase.OriginCell( Placement, terrain );
+		var model = Runtime.Model;
+		var cache = (Level ?? Level.Current)?.HoardingCache;
+		var written = new List<(int X, int Z)>();
+		foreach ( var cell in ObjectFloorBase.SkirtWords( skirt, originX, originZ, Placement.Rotation, words.Word ) )
+		{
+			words.Write( cell.X, cell.Z, cell.Word );
+			written.Add( (cell.X, cell.Z) );
+		}
+		var box = ObjectFloorBase.Box( skirt.Width, skirt.Height, Placement.Rotation, originX, originZ );
+		var composites = ObjectFloorBase.Compose( words, box, model.Textures.Count, ground.Texturer,
+			slot => slot < model.Textures.Count && model.Textures[slot].FrameNames.Count > 0
+				? (cache != null ? cache.FloorArt( Entry, model.Textures[slot].FrameNames[0] ) : DecodeSlotArt( Entry, model.Textures[slot].FrameNames[0] )) : null );
+		FloorComposites = composites;
+		LoadProfile.Count( "floor composites", composites.Count );
+		LoadProfile.Count( "floor composite bytes", composites.Sum( composite => (long)composite.Rgba.Length ) );
+		if ( composites.Count == 0 )
+			return written;
+		// the last composite of a slot is the one the slot shows (a slot named by two cells of the box); the textures of the earlier ones are not kept
+		var size = ground.Size;
+		var shown = new Dictionary<int, Texture>();
+		foreach ( var composite in composites )
+		{
+			if ( shown.TryGetValue( composite.Slot, out var earlier ) )
+			{
+				compositeTextures.Remove( earlier );
+				earlier.ReleaseOwned();
+			}
+			var texture = Texture.CreatePage( size, size );
+			// the composite is made in the original's device order (row r at v = r / N); the renderer keeps its textures in the order the files decode, which is the reverse (its shader reads 1 - v)
+			texture.UpdateRegion( 0, 0, size, size, ObjectFloorBase.FlipRows( composite.Rgba, size, size ) );
+			compositeTextures.Add( texture );
+			shown[composite.Slot] = texture;
+		}
+		foreach ( var (material, slots) in slotBindings )
+			for ( var index = 0; index < slots.Length; index++ )
+				if ( shown.TryGetValue( slots[index], out var texture ) )
+					material.SetTextureArrayElement( TextureArrayName, index, texture );
+		return written;
+	}
+
+	/// <summary>The art of a model texture slot's first frame as the floor composite reads it (RGBA, in the order the file decodes), or null when no searched directory has it.</summary>
+	internal static ObjectFloorBase.SlotArt? DecodeSlotArt( ObjectCatalogEntry entry, string name )
+	{
+		var resolved = ObjectAssets.ResolveTexture( entry, name );
+		if ( resolved == null )
+			return null;
+		var (fileSystem, path) = resolved.Value;
+		var (data, width, height) = fileSystem == FileSystem ? Texture.DecodeWct( path ) : Texture.DecodeImage( fileSystem, path );
+		return new ObjectFloorBase.SlotArt( data, width, height );
+	}
+
 	private void BuildModels()
 	{
 		bool[] vertexAnimated;
@@ -375,6 +447,8 @@ public class OriginalObject : Entity, IPointLightSource, IObjectPickShape
 						material.AddSlotAlternatives( index, frames.Frames );
 					}
 				}
+			if ( part.TextureSlots != null )
+				slotBindings.Add( (material, part.TextureSlots) );
 			var dynamic = part.MeshIndex >= 0 && vertexAnimated[part.MeshIndex];
 			Model model;
 			using ( LoadProfile.Measure( "object-materials" ) )
@@ -648,5 +722,11 @@ public class OriginalObject : Entity, IPointLightSource, IObjectPickShape
 		vertexParts.Clear();
 		drawnMeshes = null;
 		frameTextures.Clear();
+		// the composites live with the instance (tp.exe 0x57A100 restores the slot textures and 0x57B070 frees them)
+		foreach ( var texture in compositeTextures )
+			texture.ReleaseOwned();
+		compositeTextures.Clear();
+		slotBindings.Clear();
+		FloorComposites = Array.Empty<FloorComposite>();
 	}
 }

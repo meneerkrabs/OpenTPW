@@ -8,8 +8,17 @@ internal sealed class ObjectHoardingCache
 {
 	private readonly Dictionary<ObjectCatalogEntry, ObjectHoardingGeometry?> geometries = new( ReferenceEqualityComparer.Instance );
 	private readonly Dictionary<ObjectCatalogEntry, ObjectSkirt?> skirts = new( ReferenceEqualityComparer.Instance );
+	private readonly Dictionary<(ObjectCatalogEntry, string), ObjectFloorBase.SlotArt?> floorArt = new();
 	private Texture[]? textures;
 	private string? texturesLevel;
+
+	/// <summary>The art of <paramref name="entry"/>'s model texture <paramref name="name"/> as the floor composites read it (decoded once per type and name; null when the data lacks it).</summary>
+	public ObjectFloorBase.SlotArt? FloorArt( ObjectCatalogEntry entry, string name )
+	{
+		if ( !floorArt.TryGetValue( (entry, name), out var art ) )
+			floorArt[(entry, name)] = art = OriginalObject.DecodeSlotArt( entry, name );
+		return art;
+	}
 
 	/// <summary>The boards of <paramref name="entry"/>'s type over <paramref name="field"/>, or null when it has none; built on the first object of the type.</summary>
 	public ObjectHoardingGeometry? Geometry( ObjectCatalogEntry entry, ModelFile model, ModelHeightfield field )
@@ -46,6 +55,7 @@ internal sealed class ObjectHoardingCache
 	{
 		geometries.Clear();
 		skirts.Clear();
+		floorArt.Clear();
 		textures = null;
 		texturesLevel = null;
 	}

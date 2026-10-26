@@ -185,6 +185,11 @@ public sealed class ParkObjects
 	/// (the level: a changing room needs pool water beside it, <see cref="PoolChangingRooms.PlacementRule"/>).
 	/// </summary>
 	public Func<ObjectCatalogEntry, int, int, int, OriginalPlacementResult?>? PlacementRule { get; set; }
+	/// <summary>
+	/// The landscape words and the procedural ground the level's placed objects put their skirt on while the procedural terrain textures are on (<see cref="FloorBaseContext"/>); null from the host
+	/// when the textures are off or the level has none, and a park without terrain has no such host.
+	/// </summary>
+	internal Func<FloorBaseContext?>? FloorBase { get; set; }
 	public event Action<OriginalObject>? ObjectPlaced;
 	public event Action<OriginalObject>? ObjectRemoved;
 
@@ -454,6 +459,9 @@ public sealed class ParkObjects
 		Version++;
 		foreach ( var (x, y, _) in item.Cells )
 			occupied[(x, y)] = item;
+		// [BIN:TPW-EXE:0x0046334C skirt base] the instance's creation (0x463060) writes the skirt words and makes the base composites once its placement is done, after the demolished objects' cells were restored
+		if ( FloorBase?.Invoke() is { } floorBase )
+			item.PlaceFloorBase( floorBase.Words, floorBase.Ground, floorBase.Terrain );
 		registered?.Invoke( item );
 		ObjectPlaced?.Invoke( item );
 		return item;
@@ -549,6 +557,10 @@ public sealed class ParkObjects
 		foreach ( var key in occupied.Where( pair => pair.Value == item ).Select( pair => pair.Key ).ToArray() )
 			occupied.Remove( key );
 		item.Delete();
+		// [BIN:TPW-EXE:0x00527EE0 demolition] the demolition clears every footprint cell (0x5367A0, then the refresh 0x5365D0 of the type 0 cell: the backup word returns, 0x46DF50 mode 0x37); a level that clears its park does not bother
+		if ( !clearing && FloorBase?.Invoke() is { } cleared )
+			foreach ( var (x, y, _) in item.Cells )
+				cleared.Words.Restore( x, y );
 		// [BIN:TPW-EXE:0x00527EE0 object demolition] the demolition asks for the thing's destruction (0x0050B780 → 0x00516310), which the turn's end carries out; a park that clears itself frees the slots at once (0x00515FB0)
 		if ( Things is { } pool && item.ThingId != 0 )
 		{

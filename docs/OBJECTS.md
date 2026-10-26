@@ -290,9 +290,9 @@ the state lives in the object's runtime, no state hash reads it, and the park-re
 
 ## Floors (the skirt and the edge conform)
 
-Where a placed ride, shop, sideshow or feature meets the ground the original does four things (all of tp.exe, none flattening the terrain). Package F of
-issue 829 ports the three that do not need the procedural terrain texturer; the fourth (holes in the terrain and a composite of the floor art over the
-procedural ground, `0x463060` and `0x57ACE0`) waits for it (PR 843).
+Where a placed ride, shop, sideshow or feature meets the ground the original does five things (all of tp.exe, none flattening the terrain). Package F of issue 829 ports them in steps:
+the skirt read at type load, the opaque skirt slots, the edge conform and the depth compare (F1 to F3, F8), and, with the procedural terrain textures of PR 843, the holes under the footprint
+and the composite of the floor art over the procedural ground (F4, F5). The queue models' skirt (F6) and the path art over the procedural ground (F9) are read, not ported (below).
 
 - **The skirt, read at type load.** The type loader (`0x004629D0`, load flag 1 → `0x0046A5A0` → `0x0046AA10`) reads the model's ground node (the node with most ground vertices,
   `ObjectHoardingGeometry.ScanGround`) when the MD2 header `+0x30` has bit 0x08 ("has procedural base", the exporter's option; every non-fixed catalogue type has it except the
@@ -313,8 +313,9 @@ procedural ground, `0x463060` and `0x57ACE0`) waits for it (PR 843).
 - **Opaque skirt slots.** The same pass sets the runtime slot flag 0x800 on the texture slots of the ground node's faces that lie in an edge cell (and clears it on the others; the last
   face of a slot decides) and clears the wrap bits of the slots whose faces all lie on the floor in an edge cell. A face of a slot with 0x800 is drawn with state 0x1256 (no blend,
   no alpha test), never in the sorted translucent pass (`0x00581790`, [MD2-MODELS.md](MD2-MODELS.md#the-translucent-pass-of-world-models)). The grass-fringe art of these floors is
-  translucent, so before this the floors went through the sorted pass and z-fought with the terrain. Forced opaque, their fringe art shows hard edges over the static ground (faithful there; it
-  will not match the procedural ground until the composite of F5 replaces the art). `ObjectFloor` applies the flags, the normalised coordinates and the conform to the
+  translucent, so before this the floors went through the sorted pass and z-fought with the terrain. Forced opaque, a skirt cell's art shows its painted grass edge as it is: with the
+  static ground the edge is meant to be seen on nothing, because the ground under a footprint is a hole (below), and with the procedural ground the composite replaces the art
+  (below). `ObjectFloor` applies the flags, the normalised coordinates and the conform to the
   instance's copy of the meshes (the type's parsed model stays as read); `test.shader` reads the vertex bit `WorldTranslucency.OpaqueSlotFlag`.
 - **The edge conform, at every placement.** The creation flag 8 of every non-fixed object runs `0x00469940` → `0x00469A80` in its apply mode, whatever the texturing option is: each
   ground vertex that the counting walk listed at type load is snapped to the nearest terrain grid corner (`ObjectGroundConform`): the placed vertex's ground coordinates
@@ -325,10 +326,51 @@ procedural ground, `0x463060` and `0x57ACE0`) waits for it (PR 843).
   (`0x469A66` → `0x473C30` / `0x473A40`); OpenTPW keeps the stored normals, as for every vertex-passed node (RIDES-021 names the same skipped recompute for the pick).
 - **Depth compare.** The original compares depth with LESSEQUAL (`0x0057360F`, once, in the device set-up), so on equal depth the later draw wins and the floor, drawn after the terrain,
   shows over the ground it lies in. `Material.DepthComparison` ports it for every depth-tested material (Theme Park Inc's no-CD `Game.exe` sets the same LESSEQUAL, at `0x006D6574` and in its restore helper `0x006D5C1E`, and nothing else).
-  With a 32-bit float depth buffer coplanar triangles of different shapes still differ in the last bit, so a floor that is coplanar with the terrain can keep some stripes
-  in static mode until the terrain below it is a hole (package F4/F5); the original's own behaviour there (OPEN-F2) was not observed.
-- **Not yet ported.** Under procedural texturing the original also turns each skirt cell of the terrain into a hole and builds one composite texture per cell from the procedural
-  base and the floor art (`0x463060` → `0x57ACE0`, `0x572630`, `0x55F780` tail); queue models get a skirt as well (OPEN-F6). Both wait for the procedural terrain (PR 843).
+  The terrain under a footprint is not drawn at all (next item), so nothing of it is left to fight the floor.
+- **No ground under a footprint (F4).** The cell refresh `0x005365D0` asks the chooser `0x00535DD0`, which answers 8 for the (absolute) cell types 2, 7, 0x1E, 4, 9, 10 and 0x15, and hands that to
+  `0x00450470` → `0x0046DF50`: mode 8 sets bits `0x101` of the landscape word and clears `0x80`. The terrain cell list (`0x0056F090`, for the static ground and the procedural ground alike) skips a
+  cell whose word has bit 0x01. So every cell an object, entrance or exit stands on (types 4, 9 and 10, which the placement writes, `ObjectCellHoles`) is drawn with no ground, in both texturing
+  modes; types 2, 7 and 0x1E are cells without terrain and 0x15 the coaster's track connection marker. `Level` adds these to the render holes of the ground (`OriginalTerrain.RenderHoleSource`, with
+  the pools extension's), so the static mesh and the procedural cell list leave them out and the ground under a ride is rebuilt only when the cell map changes. A cell that goes back to type 0
+  (the occupant demolished: `0x005367A0` clears the cell, `0x0005365D0` then restores it) takes its backup word again with the dirty bit 0x100, so the procedural terrain draws it again and
+  builds its texture once more (`ProceduralTerrain` marks a cell that stops being a hole dirty, `ProceduralTextureCache.Resolve` rebuilds the hit). OPEN-F5: every footprint cell of a
+  demolished object (`0x00527EE0`, types 4, 9 and 10 alike, `0x5367A0` cases 4, 3 / 9 and 1 / 10) ends in `0x5346D0(0)` and the refresh, which is the 0x37 restore. A queue cell (type 3) is not on the
+  list: its refresh places the queue model and writes the hole itself (F6, below). The pools' render holes and the camera modes that suspend the texturing leave these holes as they are (`0x46DED0`
+  skips a word with bit 0x01).
+- **The skirt cell's word (F4).** With the procedural textures on (`[0x7A1A8C]` bit 0x4000) and the base flag 0x40, the instance constructor `0x00463060` (from `0x0046334C`, after the placement and
+  the conform) writes, for every entry with code bit 0x80, the word `(old & 6) | orientation | 0x281` of the landscape cell the entry lands on, the entry's slot in the high half
+  (`OriginalCellWords.SkirtWord`). The cell is `(X + column, Z + row)`, `(X + row, Z − column)`, `(X − column, Z − row)` or `(X − row, Z + column)` for 0, 90, 180 and 270 degrees, with no bounds test
+  (`ObjectFloorBase.Target`; the origin cell `X, Z` is `ftol(root translation / cell size)` less one in x for 180 and 270 and in z for 90 and 180: the placement's anchor, `OriginCell`). The
+  orientation is the entry's bits 0x08, 0x10 or 0x20 turned with the instance (0 → 8 → 0x10 → 0x20 → 0 for 90, the other way for 270; 0 ↔ 0x10 and 8 ↔ 0x20 for 180: the jump tables `0x46395C`,
+  `0x463994` and `0x4639CC`), and the flip bit 0x40 is kept. The words live in `OriginalCellWords` (the heightfield stays the file's backup; a removal restores the cell's backup word,
+  `ParkObjects.Remove`; a level that clears its park drops them with it). Presentation only: no simulation state, hash or save reads them, and a park load rebuilds them from its objects.
+- **The composite (F5).** Right after the words, `0x57ACE0` runs over the footprint box (`0x467030` stores it in `+0xC0/+0xC4`: the shape's rectangle at the anchor, width and height swapped
+  for 90 and 270) row by row: every cell whose word has bits 0x80 and 0x200 (this instance's skirt cells, and any other object's inside the box: OPEN-F4 settled as ported, a slot the
+  instance's model lacks is skipped where the original reads past its slot table) takes the art of the slot its word names and the cell's procedural base (`0x572630` builds an N × N
+  texture, `0x55F780` with a floor descriptor) and the slot's texture is redirected to it. `ProceduralTerrainTexturer.Compose` is the tail of `0x55F780` (from `0x5608B0`): the base buffer
+  (the texturer's output, rows bottom-up) is read in one of eight orientations of the word's bits 0x78 (`BaseTexel`, tested 0x40, 0x08, 0x10, 0x20), the art is point sampled at row
+  `Y · (height / N)` and column `X · (width / N)` (integer divisions: a 128 × 128 art at N = 32 steps by 4, one of 16 by 8, one smaller than N keeps its first texel), and each channel is
+  `base + (((art − base) · alpha) >> 8)`, so an opaque pixel keeps 1/256 of the base. The oracle runs the original's tail with a floor descriptor on synthetic levels and art (X33,
+  [ORACLE.md](reverse/ORACLE.md); `ProceduralTerrainComposeGolden`). One composite per skirt cell and placed instance, made once at placement (`OriginalObject.PlaceFloorBase`, from
+  `ParkObjects.Register`, after the demolished objects' cells were restored), no cache slots (the cells are holes, so the terrain never lists them), freed with the instance. A slot named by
+  two cells gives the second the first's composite as its art, which the original stores with alpha 0, so it blends nothing (`ObjectFloorBase.Compose`). The composite texture is a page of
+  its own without mip levels, as the terrain's pages are (E's OPEN-3), and the clamped addressing the skirt reader gave its slot.
+  **OPEN-F1 (the art's rows).** `0x00590DA0` turns the art over (row r with row width − 1 − r) before the tail reads it, for a texture with flag 0x40000, which every floor art has; the
+  composite itself has no such flag and is read as stored. In OpenTPW's order (a texture's first row is the top of the file's image and the shader reads `1 − v`) the composite is made in the
+  original's device order, where row r lies at `v = r / N`, and turned over once more for the renderer (`ObjectFloorBase.FlipRows`). The data decides both halves: the base orientation word
+  puts, for 97% of the texels of every shipped floor at every turn, the base pixel of the ground under the texel there (the cells' texture coordinates give the ground; every
+  other reading of the base scores below 55%; the rest are the flared cells of Belly Bounce, the totem and the lookout, whose art stretches over more than their cell), and the art turned
+  over is transparent along a cell edge that borders open ground (mean alpha 69) and opaque along one that borders the floor (199), where the file's rows as decoded do not separate the two (118 and 128):
+  `ObjectFloorBaseCorpusTests`. The seam test follows: where the art is transparent along an open edge the composite's texel is the base pixel of the ground at that place, so the cell's
+  texture goes on the neighbouring terrain cell's (over 95% of more than ten thousand texels).
+  With the procedural textures off none of this happens: no skirt words, no composites, the skirt cells draw their painted art (the holes are the same), as in the original.
+- **Queue models (F6) and path art (F9): read, not ported.** A queue piece is placed by `0x005229E0` with the instance flags 0x33A (bit 8 included) and every queue model of the four themes has the
+  base flag (header 0x09, ground node 0) and one skirt entry (`C8` or `80`, `E0`, `A0` slot 0), so the original gives each queue cell a skirt word, a composite (the slot is the model's first) and,
+  from the refresh that placed it, a hole. OpenTPW bakes the queue models into the path layer, with each vertex raised onto the ground (PATH-015); a composite per queue cell would need a texture
+  of its own per cell in those batches, and a hole under the cell would show nothing under a translucent fringe. They keep drawing over the ground. The path art is the other user of the
+  descriptor: `0x0056F090` gives a non-hole cell with word bit 0x80 (a path tile written by `0x46DF50`: slot from the path table, turn bits 0x20, 0x10, 0x08 for 90, 180, 270, flags
+  `0x180`) the path texture as art, and the cache builds the cell with the same tail, so the original's path is the terrain's own texture, point sampled at N × N, not a layer over it;
+  that moves the whole path layer (PATHS.md) into the terrain and is the plan's optional step F9.
 
 ## Interfaces for other slices
 
@@ -436,7 +478,7 @@ nearest path cell (`GuestSimulation.SetDownOffCells`). Still open (RIDES-018): t
 ## Remaining gates
 
 Path parameters and the draw-path reader of texture frames; EVENT objects/particles (their sounds play, [AUDIO.md](AUDIO.md));
-water ride and kart jumps and tunnels (the track tool and the BUMP controllers of the water rides and go-karts are built, [TRACKS.md](TRACKS.md)); the tour controllers are described in [TOURS.md](TOURS.md); visitor simulation behind the bridge; the skirt of queue models ([Floors](#floors-the-skirt-and-the-edge-conform));
+water ride and kart jumps and tunnels (the track tool and the BUMP controllers of the water rides and go-karts are built, [TRACKS.md](TRACKS.md)); the tour controllers are described in [TOURS.md](TOURS.md); visitor simulation behind the bridge; the skirt, hole and composite of queue models and the path art as the terrain's own texture ([Floors](#floors-the-skirt-and-the-edge-conform), F6 and F9);
 the open build rules above (RIDES-018); animation tick rate; the coaster module's cell marker 0x15 beyond a track end (RIDES-011); the object-list update route (RIDES-032).
 
 ## The cells outside an entrance and an exit (RIDES-028 retired)

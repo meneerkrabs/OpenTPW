@@ -8,7 +8,8 @@ namespace OpenTPW.Tests;
 
 /// <summary>
 /// The terrain's texture-coordinate clips (<c>basem.MD2</c> of the Jungle terrain archive, <c>Basem1.MD2</c> of the lobby): the data they hold, the
-/// way tp.exe plays them (only the lobby's terrain instance is ever updated, 0x44e510) and the lobby sea that now scrolls with them.
+/// way tp.exe plays them (a render callback runs the terrain instance every rendered frame in the park and in the lobby, 0x54e2b0 → 0x44e510), and the park river, waterfall
+/// and lobby sea that scroll with them, on the scene clock that stands still while the park is paused.
 /// </summary>
 [TestClass]
 public class TerrainUvAnimationTests
@@ -67,6 +68,98 @@ public class TerrainUvAnimationTests
 			found.AddRange( clips.Select( clip => $"{theme}:{clip.Name.ToLowerInvariant()}:{clip.AnimationIndex}:{clip.Numbered}" ) );
 		}
 		CollectionAssert.AreEqual( new[] { "levels/jungle/terrain.wad:basem:5:False", "lobby.wad:basem1:5:True" }, found );
+	}
+
+	private static void Mount()
+	{
+		FileSystem = new BaseFileSystem( Data() );
+		FileSystem.RegisterArchiveHandler<WadArchive>( ".wad" );
+	}
+
+	private static BaseFileSystem? original;
+
+	[TestInitialize]
+	public void Setup() => original = FileSystem;
+
+	[TestCleanup]
+	public void Cleanup() => FileSystem = original!;
+
+	/// <summary>The jungle terrain animator with a vertex array registered for each scrolled mesh; the uploads are counted.</summary>
+	private static (TerrainUvAnimator Animator, OriginalPark Park, Dictionary<int, Vertex[]> Vertices, int[] Uploads) JungleAnimator()
+	{
+		Mount();
+		var park = OriginalPark.Load( "jungle" );
+		var animator = TerrainUvAnimator.Create( park.TerrainModel, FileSystem.GetFiles( park.TerrainDirectory ) )!;
+		Assert.IsNotNull( animator );
+		var vertices = new Dictionary<int, Vertex[]>();
+		var uploads = new int[1];
+		foreach ( var mesh in animator.AnimatedMeshes )
+		{
+			var array = park.TerrainModel.Meshes[mesh].TexCoords.Select( uv => new Vertex { TexCoords = uv } ).ToArray();
+			vertices[mesh] = array;
+			animator.Register( mesh, array, _ => uploads[0]++ );
+		}
+		return (animator, park, vertices, uploads);
+	}
+
+	/// <summary>The park terrain plays basem.MD2 on its eleven water meshes: tick 0 is the stored coordinates, 100 ticks a cycle, 30 ticks a second of scene time, one unit of U per cycle.</summary>
+	[TestMethod]
+	public void TheParkTerrainScrollsItsElevenWaterMeshesOnTheSceneClock()
+	{
+		var (animator, park, vertices, uploads) = JungleAnimator();
+		Assert.AreEqual( 11, animator.AnimatedMeshes.Count );
+		Assert.AreEqual( 11, animator.RegisteredCount );
+		CollectionAssert.AreEqual( new[] { 27, 28, 29, 30, 35, 38, 39, 42, 171, 173, 267 }, animator.AnimatedMeshes.Select( mesh => park.TerrainModel.Meshes[mesh].NodeIndex ).OrderBy( node => node ).ToArray() );
+		var first = vertices[animator.AnimatedMeshes.First()];
+		var start = first.Select( vertex => (vertex.TexCoords.X, vertex.TexCoords.Y) ).ToArray();
+		animator.Update( 5000, 0 );
+		Assert.AreEqual( 11, uploads[0], "the first frame uploads every mesh at tick 0 and sets the clock's origin" );
+		animator.Update( 6000, 0 );
+		Assert.AreEqual( 22, uploads[0], "every mesh uploaded again" );
+		for ( var corner = 0; corner < first.Length; corner++ )
+		{
+			Assert.AreEqual( start[corner].X + 0.3f, first[corner].TexCoords.X, 1e-3f, "30 of 100 ticks is 0.3 of a unit of U" );
+			Assert.AreEqual( start[corner].Y, first[corner].TexCoords.Y, 1e-4f );
+		}
+		// 3.34 s of scene time is 100.2 ticks: past the total, the clip restarts, so the coordinates are back near the stored ones.
+		animator.Update( 8340, 0 );
+		for ( var corner = 0; corner < first.Length; corner++ )
+			Assert.AreEqual( start[corner].X, first[corner].TexCoords.X, 0.01f );
+	}
+
+	/// <summary>The clock is the scaled one: unchanged while the park is paused, twice as fast at the double game speed.</summary>
+	[TestMethod]
+	public void TheParkWaterStandsStillWhilePausedAndFollowsTheGameSpeed()
+	{
+		var (animator, _, vertices, uploads) = JungleAnimator();
+		var first = vertices[animator.AnimatedMeshes.First()];
+		var clock = new SceneClock();
+		animator.Update( clock.Milliseconds, 0 );
+		clock.Advance( 0.5 );
+		animator.Update( clock.Milliseconds, 0 );
+		var halfSecond = first[0].TexCoords.X;
+		var uploadsAfterHalf = uploads[0];
+		// the game pause freezes the clock (scale 0): the frames come, the coordinates and the uploads do not change
+		for ( var frame = 0; frame < 120; frame++ )
+		{
+			clock.Advance( 1.0 / 60 * 0 );
+			animator.Update( clock.Milliseconds, 1.0 / 60 );
+		}
+		Assert.AreEqual( halfSecond, first[0].TexCoords.X );
+		Assert.AreEqual( uploadsAfterHalf, uploads[0] );
+		// at the double speed a frame advances the scene clock twice as far: 0.5 s of real time moves 30 ticks, like 1 s at the normal speed
+		clock.Advance( 0.5 * 2 );
+		animator.Update( clock.Milliseconds, 0 );
+		Assert.AreEqual( halfSecond + 0.3f, first[0].TexCoords.X, 2e-3f );
+	}
+
+	/// <summary>Only the Jungle terrain has a clip; another theme's terrain gets no animator.</summary>
+	[TestMethod]
+	public void ANonJungleTerrainHasNoAnimator()
+	{
+		Mount();
+		var park = OriginalPark.Load( "fantasy" );
+		Assert.IsNull( TerrainUvAnimator.Create( park.TerrainModel, FileSystem.GetFiles( park.TerrainDirectory ) ) );
 	}
 
 	/// <summary>basem.MD2: 100 ticks, trailer flag 0x10, eleven UV records on eleven water meshes, every corner two keys (tick 0 = the stored coordinate, tick 100 = one unit further in U).</summary>

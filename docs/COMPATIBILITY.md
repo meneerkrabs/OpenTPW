@@ -328,9 +328,10 @@ alpha-reference index of devices that fail the 0x567270 probe are not reproduced
 
 ## Animated terrain water
 
-In tp.exe only the lobby's sea moves: the terrain instance is updated in the lobby state of the main loop (`0x44e510`, once per frame) and plays `Basem1.MD2`, whose UV tracks scroll the two sea
-meshes one texture repeat per 200 ticks (30 ticks a second); OpenTPW plays the same clip on the same clock. A park's terrain instance is never updated, so the river and waterfall of the Jungle
-terrain (`basem.MD2`, eleven UV tracks) are loaded and never played, and the water of a park stands still in the original; OpenTPW leaves it so ([MD2-MODELS.md](MD2-MODELS.md), "Terrain clips"; issue 829).
+In tp.exe the terrain instance plays its `base` clip every rendered frame, in the lobby and in a park: the lobby's `Basem1.MD2` scrolls the two sea meshes one texture repeat per 200 ticks, and the Jungle
+terrain's `basem.MD2` (eleven UV tracks, 100 ticks, +1 U per cycle) scrolls the river and the waterfall (a render callback, `0x54e2b0` → `0x44e510`, runs it in a park). The clock is the game's scaled clock, so
+the water stands still while the park is paused and follows the game speed. OpenTPW plays both on the scene clock ([MD2-MODELS.md](MD2-MODELS.md), "Terrain clips"; issue 829). The harbour sea is static in
+the data and the other two park themes have no terrain clip.
 
 ## Tests
 

@@ -823,6 +823,7 @@ public sealed partial class ParkHud
 	internal bool Update( UiContext context, UiInput input, bool? mouseCaptured, bool? keyboardCaptured, bool? textCaptured )
 	{
 		level.WorldPointerRouted = false;
+		level.ParkOwnsRelease = false;
 		// [EXT:online-coop-commands] a guest's requests resolved since the last frame complete their tools first, outside any command, tick and stream application (C3a-2)
 		CompleteGuestRequests();
 		SyncChallengeMessageSuspension();

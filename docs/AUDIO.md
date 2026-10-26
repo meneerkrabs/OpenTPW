@@ -593,8 +593,7 @@ distance law are in the AUDIO-018 row and the AUDIO-033 note above and are imple
 `AudioMixer` (`AudioMixerLawTests`). The reverb exports hold no DSP: they forward to a COM object (see "Reverb"). Not read: the `SetPosition` integer message for flat
 voices, and ducking beyond the speech duck of `sound.sam`.
 
-AUDIO-009 is retired: the build tools never refuse with a sound (`0x524960`-`0x535100`, and none of the sound entry's
-call sites lies in the refusal stages `0x535670`/`0x536100`); OpenTPW's own "Cannot build" cue stays the extension
+AUDIO-009 is retired: the refusal stages (`0x535670`/`0x536100`) submit no sound; the refused click's only cue is the release handler's `cat_ui` 0xAF behind the refused-ghost latch (`0x524A63`, `0x524AA7`), which it plays in every tool mode, the placement modes 4 and 0x3B included (`ParkHud` plays it for a refused build click at the release, `Level.BuildClickRefused`). OpenTPW's own "Cannot build" cue stays the extension
 `[EXT:cannot-build-sound]`.
 
 ## Lobby effects

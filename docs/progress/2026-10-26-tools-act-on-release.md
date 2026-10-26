@@ -1,0 +1,15 @@
+## Park tools act on the left release, the right quick click cancels on its release (October 26, 2026)
+
+Every park tool of OpenTPW acted on the left press, and the right click cancelled on the press. The original acts on the release, and holds a right press back until it is a drag. This traced the park view's mouse procedure and the tool object's handlers in tp.exe (`0x4881A0`, `0x46C210`, `0x46C5D0`, `0x46C610`, `0x524790`, `0x524960`, `0x4879D0`) and ported the timing HUD-wide.
+
+- **Left button.** The tool object's release (`0x524960`) is the click of the placement, the path, queue, kart and water lines and their edit modes, buy land, clear land, the patrol area and the coaster build button, at the cell under the pointer at the release; its press only sets a latch. Moving between the press and the release changes the cell: the click is at the release. A path tool's press enters it with no start and its release is the first click; a queue edit is chosen by the press and started by the release.
+- **Press stays where the original has it.** The idle mode's press picks (an object's window, a guest, a track or queue entry; no click-or-drag test), the staff hire and carry tools place on the press, the coaster edit buttons pick a pylon up on the press, and the pool tool (an extension with no original) keeps its press-drag-release stroke.
+- **Release over another window.** A release goes to the window that took its press: pressed on the park and let go over the interface, the click is the park's at the cell under the pointer; pressed on the interface and let go over the park, the park sees nothing.
+- **Right button.** With right click cancels on, a right press let go within 200 ms and 8 px ends the tool or mode at the release; held longer or moved more it is the camera's drag, which now starts at that moment (the press and the first 8 px or 200 ms no longer move the camera). With the option off nothing changes.
+- **Refusal cue.** A refused build click plays the refusal cue at its release, as the line tools already did (the release handler tests the latch for every mode).
+- **Interface buttons.** The original's buttons and windows act on the click message posted by the release, as OpenTPW's already did; no change.
+- **Tests.** `ParkToolsOnReleaseTests` drives press, move and release through the real HUD with ordered pointer events: the path tool's entry and first click, a press dragged across cells, a line's commit, the refusal cue at the release only, a release over the interface and a press on it, the remove tool, the clear tool, and the right quick click against the camera drag; `ObjectRayPickTests` the press-time pick; `CameraControlTests` the held-back right drag. The smoke's path step now presses, checks that no start is set, then releases.
+
+Still open:
+- The hover cell has no value off the grid where the original clamps it (`0x45D560`), so a release beyond the park's edge acts on nothing here (RIDES-021).
+- The windows' own right click (`UiScreen.RightCancels`, `[EXT:ui-modal-right-click-back]`) was not changed; the original's modal windows do not read the option.

@@ -110,15 +110,17 @@ pause menu (tp.exe key dispatch `0x488921`, Escape row `0x40c180`). While the pa
 the click handler does not itself test the speed flag. The separate P-window input owner now has bounded ordinary-WM pointer routing (PATH-017, still open).
 
 In the park view the hover help is 441 over an empty owned cell, 442 over a
-path and 444 over a queue; inside the tools it is 443 and 445. A left click on a
-queue cell (444, "Left-click to edit this queue") starts the queue tool for the
-HasQueue ride that owns it, at that queue's back cell (`[EXT:queue-click-at-back-cell]`, an OpenTPW design choice; the original's first click enters tool 0x14, QUEUE-021). A left click on
+path and 444 over a queue; inside the tools it is 443 and 445. A left press on a
+queue cell (444, "Left-click to edit this queue") chooses the HasQueue ride that
+owns it (tool 0x14, `0x4879d0`); the release starts the queue tool for it at that queue's back cell, wherever the pointer is then (`[EXT:queue-click-at-back-cell]`, an OpenTPW design choice; the original's first click enters tool 0x14, QUEUE-021). A left press on
 an empty owned cell or a path cell enters the path tool without a start (tp.exe
-`0x4879d0`, SetMode(1) `0x52f200`; there is no menu button), and the same click
-is the tool's first click: a refused single-cell ghost ends the tool again (with
+`0x4879d0`, SetMode(1) `0x52f200`; there is no menu button), and the **release** of
+that click is the tool's first click, at the cell under the pointer then (every line click of
+the tool object is the release handler's, `0x524960`; a press moved to another cell before
+it lets go clicks that other cell): a refused single-cell ghost ends the tool again (with
 the refused click's sound), otherwise the start check (`0x535670(1, 0)`) makes the
 cell the start, or leaves the tool on without one when it refuses the cell; a
-later click without a start does the same. After a HasQueue ride is placed, the queue tool starts at the
+later click without a start does the same. The second click of a line commits at its release too, never at its press (docs/UI.md, "The park view's pointer"). After a HasQueue ride is placed, the queue tool starts at the
 entrance's outside cell and lays QUEUE-I's queue cells through the same tool.
 The remove tool clears an object, else a queue cell, else a path cell. Built
 path and queue cells are drawn as described in [Path textures](#path-textures).

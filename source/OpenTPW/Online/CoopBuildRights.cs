@@ -6,16 +6,17 @@ namespace OpenTPW;
 /// allowlist over a command's kind, its fields and its target, the commands of the guests' tools that wait for the host or send and go on:
 /// <list type="bullet">
 /// <item>C3a: path and queue lines; an object placed (not a moving placement, not a track add-on, whatever ride the command names, not a ride whose own tool follows its placement: a
-/// coaster, a kart, water or bumper ride, a slide tower); the remove click on an ordinary object (not a fixed item of the park, not a slide tower, not a coaster's or a track ride's
-/// station, whose edits need claims);</item>
+/// coaster, a kart, water or bumper ride); the remove click on an ordinary object (not a fixed item of the park, not a coaster's or a track ride's station, whose edits need claims);</item>
 /// <item>C3b: land; the area clear, which leaves standing what the guest may not remove (<see cref="AllowsRemoval"/>); the remove click on a path or queue cell; Backspace over a
 /// path or queue cell; the sale of an ordinary object; the queue's edit; the Move tool's pick-up of an object it may remove and place again, its placement, and its end, which every
-/// guest seat may issue, granted or not.</item>
+/// guest seat may issue, granted or not;</item>
+/// <item>C3b-3: the pool tools' batches of a stroke (<see cref="PoolCellsCommand"/>, <see cref="LayPoolSlidePiecesCommand"/>), a bridge, the last piece of an unfinished slide back,
+/// Backspace over a bridge or a pool cell, and slide towers, which a guest now places and removes as any object.</item>
 /// </list>
 /// The queue of a claimed ride (a coaster's or a track ride's station) stays the host's in all of these until claims come (C3c): its lines, its edit, its cells' removal and Backspace
 /// over them, a line or a placement over its cells, and the path cell its back joins, which no guest's removal, area clear, queue line or placement takes.
-/// Everything else stays the host's: speed and pause (Q8), cheats (Q17), the developer kinds, money, staff and the park's management (C4), undo lines (C5), the pool tools, tracks and
-/// coasters (C3b, C3c), the grants and the release of a departed seat. Asked at execution on every peer, of the same park, the answer is the same everywhere.
+/// Everything else stays the host's: speed and pause (Q8), cheats (Q17), the developer kinds, money, staff and the park's management (C4) with a wave machine's settings, undo lines and
+/// pool strokes (C5), the pools' single-cell kinds no guest's tool issues, tracks and coasters (C3c), the grants and the release of a departed seat. Asked at execution on every peer, of the same park, the answer is the same everywhere.
 /// </summary>
 internal sealed class CoopBuildRights( Level level ) : IParkCommandRights
 {
@@ -53,7 +54,9 @@ internal sealed class CoopBuildRights( Level level ) : IParkCommandRights
 		ClearAreaCommand => true,
 		BacktrackCommand back => level.Paths is { } paths && Level.BacktrackTargetAt( paths.Cells, back.X, back.Y, level.PoolBridges ) switch
 		{
-			Level.BacktrackTarget.PoolBridge or Level.BacktrackTarget.PoolWater => false,
+			// C3b-3: a pool bridge, unless an end of it is a claimed queue's or the path cell it joins; a pool water cell
+			Level.BacktrackTarget.PoolBridge => level.PoolBridges?.At( back.X, back.Y ) is not { } standing || !BridgeTouchesClaimedQueue( standing ),
+			Level.BacktrackTarget.PoolWater => true,
 			Level.BacktrackTarget.Queue => !ClaimedQueueAt( back.X, back.Y ),
 			_ => !JoinsClaimedQueue( back.X, back.Y )
 		},
@@ -63,6 +66,12 @@ internal sealed class CoopBuildRights( Level level ) : IParkCommandRights
 		// C3b-2: the Move tool's pick-up of an object the guest may remove and place again (never the developer prototype); a missing object is the park's to refuse
 		PickUpObjectCommand pick => level.ResolveCommandObject( pick.Attraction ) is not { IsDeleted: false } item
 			|| (!ReferenceEquals( item, level.PlacedRide ) && MayRemove( item ) && GuestMayPlace( item.Entry )),
+		// C3b-3: a guest's pool strokes go in batches (the pool builders refuse every cell that is not theirs: a path, a queue, an object), its bridges unless an end of one is a claimed
+		// queue's or the path cell it joins, and the last piece of a slide that is not finished (a finished slide takes riders: its pieces are the host's, or go with its tower; a slide
+		// with no piece to take back is the park's to refuse, quietly, as the host's Backspace is)
+		PoolCellsCommand or LayPoolSlidePiecesCommand => true,
+		PlacePoolBridgeCommand bridge => !BridgeTouchesClaimedQueue( new PoolBridge( bridge.X, bridge.Y, bridge.Direction, 0 ) ),
+		UndoPoolSlidePieceCommand undo => level.PoolSlides?.Find( PoolSlide.KeyOf( undo.TowerX, undo.TowerY ) ) is not { IsComplete: true },
 		_ => false
 	};
 
@@ -82,21 +91,20 @@ internal sealed class CoopBuildRights( Level level ) : IParkCommandRights
 	private bool MayRemove( OriginalObject item ) => GuestMayRemove( item.Entry ) && !Claimed( item );
 
 	/// <summary>
-	/// Whether a granted guest may remove an object of <paramref name="entry"/>: not a fixed item of the park (its gates, its lights, its bus: <see cref="ObjectCatalogEntry.IsFixedItem"/>),
-	/// and not a slide tower, whose slide is the pool tools' (C3b-3), as its bridges and water are.
+	/// Whether a granted guest may remove an object of <paramref name="entry"/>: not a fixed item of the park (its gates, its lights, its bus: <see cref="ObjectCatalogEntry.IsFixedItem"/>).
+	/// A slide tower is a guest's to remove since its slide is (C3b-3): its removal takes the slide with it and refunds it.
 	/// </summary>
-	internal static bool GuestMayRemove( ObjectCatalogEntry entry ) => !entry.IsFixedItem && !PoolSlideTowers.IsSlideTower( entry );
+	internal static bool GuestMayRemove( ObjectCatalogEntry entry ) => !entry.IsFixedItem;
 
 	/// <summary>Whether a granted guest may place <paramref name="entry"/>: not a track add-on (the track tools are the host's) and not a ride whose own tool follows its placement.</summary>
 	internal static bool GuestMayPlace( ObjectCatalogEntry entry ) => !TrackAddOns.IsTrackAddOn( entry ) && !OwnToolFollows( entry );
 
 	/// <summary>
-	/// Whether a placed <paramref name="entry"/> opens a tool of its own (<c>ParkHud.FinishPlacement</c>): a coaster's track, a kart, water or bumper ride's track or arena, a slide tower's
-	/// slide. Those tools hold state no guest's request carries yet (C3b, C3c).
+	/// Whether a placed <paramref name="entry"/> opens a tool of its own that no guest's request carries yet (<c>ParkHud.FinishPlacement</c>; C3c): a coaster's track, a kart, water or bumper
+	/// ride's track or arena. A slide tower's slide mode is a guest's since C3b-3: it lays its pieces in batches.
 	/// </summary>
 	internal static bool OwnToolFollows( ObjectCatalogEntry entry ) => CoasterDefinition.IsCoaster( entry.Settings )
-		|| BumperTemplates.ForRide( entry.Settings.GetInt( "Bumper.WhichTrackType" ), entry.Settings.GetInt( "Bumper.BumperType" ) ) != null
-		|| PoolSlideTowers.IsSlideTower( entry );
+		|| BumperTemplates.ForRide( entry.Settings.GetInt( "Bumper.WhichTrackType" ), entry.Settings.GetInt( "Bumper.BumperType" ) ) != null;
 
 	/// <summary>Whether the ride with attraction id <paramref name="ride"/> is claimed: its queue is the host's until claims come (C3c).</summary>
 	private bool ClaimedRide( int ride ) => level.ResolveCommandObject( ride ) is { IsDeleted: false } item && Claimed( item );
@@ -169,6 +177,10 @@ internal sealed class CoopBuildRights( Level level ) : IParkCommandRights
 				yield return (nx, ny);
 		}
 	}
+
+	/// <summary>Whether a bridge's cells (its seven and the two outside ends, <see cref="PoolTool.HoverBridgeCells"/>) hold a claimed ride's queue cell or the path cell its back joins.</summary>
+	private bool BridgeTouchesClaimedQueue( PoolBridge bridge ) =>
+		TouchesClaimedQueue( Enumerable.Range( -1, PoolBridge.Length + 2 ).Select( bridge.Cell ).ToArray(), joins: true );
 
 	/// <summary>Whether <paramref name="item"/> is claimed for a guest (a coaster's or a track ride's station): the object window offers its queue's tool to the host alone.</summary>
 	internal bool IsClaimed( OriginalObject item ) => Claimed( item );

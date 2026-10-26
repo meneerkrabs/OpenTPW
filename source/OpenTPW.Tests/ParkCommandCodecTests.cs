@@ -95,6 +95,9 @@ public class ParkCommandCodecTests
 		// [EXT:online-coop-permissions] the host grants seat 3 building
 		(new SetBuildGrantCommand( 3, true ), "0265000601"),
 		(new ReleaseSeatCommand( 3 ), "02660006"),
+		// [EXT:online-coop-commands] a guest's pool batches (C3b-3)
+		(new PoolCellsCommand( false, true, new[] { (20, 21), (21, 21) } ) { Player = 1 }, "024e02000104282a2a2a"),
+		(new LayPoolSlidePiecesCommand( 30, 40, new[] { (31, 40), (32, 40) } ), "024f003c50043e504050"),
 	};
 
 	[TestMethod]
@@ -244,6 +247,13 @@ public class ParkCommandCodecTests
 			new UndoPoolSlidePieceCommand( -1, 0 ),
 			new PlacePoolBridgeCommand( 1, 1, 4 ),
 			new RemovePoolBridgeCommand( 1, -1 ),
+			new PoolCellsCommand( false, false, Array.Empty<(int X, int Y)>() ),
+			new PoolCellsCommand( true, true, new[] { (1, 1) } ),
+			new PoolCellsCommand( false, false, Enumerable.Repeat( (1, 1), PoolCellsCommand.MaximumCells + 1 ).ToArray() ),
+			new PoolCellsCommand( false, false, new[] { (1, -1) } ),
+			new LayPoolSlidePiecesCommand( 1, 1, Array.Empty<(int X, int Y)>() ),
+			new LayPoolSlidePiecesCommand( -1, 1, new[] { (1, 1) } ),
+			new LayPoolSlidePiecesCommand( 1, 1, Enumerable.Repeat( (1, 1), PoolCellsCommand.MaximumCells + 1 ).ToArray() ),
 			new LayTrackLineCommand( -1, 0, 0, 2, 0 ),
 			new UndoTrackLineCommand( 1, 0, 0, 2, 2 ),
 			new UndoTrackLineCommand( 1, 0, 0, 3, 0 ),

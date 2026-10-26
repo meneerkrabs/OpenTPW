@@ -216,6 +216,93 @@ public sealed record RemovePoolBridgeCommand( int X, int Y ) : PoolToolCommand
 }
 
 /// <summary>
+/// [EXT:online-coop-commands] A guest's batch of a paint or erase stroke (docs/COOP.md, "A guest's pools"): a guest's tool sends the cells its stroke crosses in batches, since one request a
+/// cell would outrun the session's request bucket. Each cell is written in order exactly as <see cref="PaintPoolCellCommand"/> or <see cref="ErasePoolCellCommand"/> writes it, every cell
+/// tried as the host's tool tries them (no stop at a cell that cannot be paid for). The value is a <see cref="PoolCellWrite"/> per cell; accepted when a cell changed.
+/// </summary>
+public sealed record PoolCellsCommand( bool Erase, bool River, IReadOnlyList<(int X, int Y)> Cells ) : PoolToolCommand
+{
+	/// <summary>The most cells a batch carries: 200 cells of a map up to 256 cells across take at most 800 bytes, within the session's 1 KiB request.</summary>
+	public const int MaximumCells = 200;
+
+	public override ParkCommandKind Kind => ParkCommandKind.PoolCells;
+	internal override bool IsWellFormed => Cells.Count is > 0 and <= MaximumCells && !(Erase && River) && Cells.All( cell => IsCell( cell.X, cell.Y ) );
+	internal override void WriteFields( ParkCommandWriter writer )
+	{
+		writer.Bool( Erase );
+		writer.Bool( River );
+		writer.Cells( Cells );
+	}
+
+	internal override ParkCommandResult Apply( PoolBuilder? builder, PoolSlideWorld? slides, PoolBridgeWorld? bridges )
+	{
+		if ( builder == null )
+			return NoPools;
+		var writes = new PoolCellWrite[Cells.Count];
+		for ( var index = 0; index < Cells.Count; index++ )
+		{
+			var (x, y) = Cells[index];
+			var result = Erase ? builder.Erase( x, y ) : builder.Paint( x, y, River );
+			writes[index] = new PoolCellWrite( result, result == PoolBuildResult.Ok ? builder.LastCharged : 0 );
+		}
+		if ( writes.Any( write => write.Result is PoolBuildResult.Ok or PoolBuildResult.RiverMarked ) )
+			return ParkCommandResult.Ok( writes );
+		var refused = writes.Select( write => write.Result ).FirstOrDefault( result => result != PoolBuildResult.Existing, PoolBuildResult.Existing );
+		return new ParkCommandResult( false, refused == PoolBuildResult.Existing ? "No pool cell changed." : $"No pool cell is {(Erase ? "erased" : "painted")}: {refused}.", writes );
+	}
+
+	/// <summary>Equal when every field and the cells are equal (a record compares lists by reference).</summary>
+	public bool Equals( PoolCellsCommand? other ) => other is not null && Player == other.Player && Erase == other.Erase && River == other.River && Cells.SequenceEqual( other.Cells );
+
+	public override int GetHashCode() => (Erase ? 1 : 0) ^ (River ? 2 : 0) ^ (Cells.Count << 2);
+}
+
+/// <summary>[EXT:online-coop-commands] What a guest's batch of slide pieces did (<see cref="LayPoolSlidePiecesCommand"/>): a write per cell tried, and whether the slide is finished after it.</summary>
+public sealed record PoolSlideBatch( IReadOnlyList<PoolSlideWrite> Writes, bool Finished );
+
+/// <summary>
+/// [EXT:online-coop-commands] A guest's batch of a slide stroke: each cell as <see cref="LayPoolSlidePieceCommand"/> lays it, in order, for the tower anchored at (<paramref name="TowerX"/>,
+/// <paramref name="TowerY"/>). Once the slide is finished (its splash piece over the pool) no further cell is tried, and a batch that meets a finished slide tries none: neither is a refusal,
+/// as the host's tool writes nothing more once its slide is finished. The value is a <see cref="PoolSlideBatch"/>; accepted when a piece was laid.
+/// </summary>
+public sealed record LayPoolSlidePiecesCommand( int TowerX, int TowerY, IReadOnlyList<(int X, int Y)> Cells ) : PoolToolCommand
+{
+	public override ParkCommandKind Kind => ParkCommandKind.LayPoolSlidePieces;
+	internal override bool IsWellFormed => IsCell( TowerX, TowerY ) && Cells.Count is > 0 and <= PoolCellsCommand.MaximumCells && Cells.All( cell => IsCell( cell.X, cell.Y ) );
+	internal override void WriteFields( ParkCommandWriter writer )
+	{
+		writer.Int( TowerX );
+		writer.Int( TowerY );
+		writer.Cells( Cells );
+	}
+
+	internal override ParkCommandResult Apply( PoolBuilder? builder, PoolSlideWorld? slides, PoolBridgeWorld? bridges )
+	{
+		if ( slides == null )
+			return NoPools;
+		var writes = new List<PoolSlideWrite>();
+		foreach ( var (x, y) in Cells )
+		{
+			if ( Finished( slides ) )
+				break;
+			var result = slides.AddCell( TowerX, TowerY, x, y );
+			writes.Add( new PoolSlideWrite( result, result == PoolSlideResult.Ok ? slides.LastCharged : 0 ) );
+		}
+		var batch = new PoolSlideBatch( writes, Finished( slides ) );
+		if ( writes.Any( write => write.Result == PoolSlideResult.Ok ) )
+			return ParkCommandResult.Ok( batch );
+		return new ParkCommandResult( false, writes.Count == 0 ? "The slide is finished." : $"No slide piece is laid: {writes[0].Result}.", batch );
+	}
+
+	private bool Finished( PoolSlideWorld slides ) => slides.Find( PoolSlide.KeyOf( TowerX, TowerY ) ) is { IsComplete: true };
+
+	/// <summary>Equal when every field and the cells are equal (a record compares lists by reference).</summary>
+	public bool Equals( LayPoolSlidePiecesCommand? other ) => other is not null && Player == other.Player && TowerX == other.TowerX && TowerY == other.TowerY && Cells.SequenceEqual( other.Cells );
+
+	public override int GetHashCode() => TowerX ^ (TowerY << 8) ^ (Cells.Count << 16);
+}
+
+/// <summary>
 /// [EXT:pools-waves] The wave machine settings window's tick: the machine whose attraction id is <paramref name="Attraction"/> runs waves (<paramref name="On"/>) of <paramref name="Height"/> 1 to 3 with a rest of
 /// <paramref name="Interval"/> 0 to 2 (<see cref="Level.SetPoolWaves"/>). An unchanged choice writes nothing, so a machine still running the default keeps its cell as it was.
 /// </summary>

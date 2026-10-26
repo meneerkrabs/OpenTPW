@@ -1446,7 +1446,7 @@ public sealed class ParkEconomy : IParkEconomy
 	// [BIN:TPW-EXE:0x004D0370 bank month] the routine compares the months in the red only with 5 (above it posts type 2 at 0x004D0557): it gives no warnings before
 	// [BIN:TPW-EXE:0x0054F8BB lost park sound] the main loop's sound update sends the music parameter and the crowd count as 0 while the world state is 4 (0x0054F86D, 0x0054F8BD), which GameAudio does for a bankrupt park
 	// [BIN:TPW-EXE:0x0059B620 advisor caption] the advice 106 the bank's message brings says the responses 274 and 275, whose tag 128 shows TAG_SYSTEM entry 127 ("the banks have closed your park") in the message tube (AutomaticAdvisor.PostCaption); the money warnings are the captions of the advice messages 102 to 105 (entries 123 to 126)
-	// [APPROX:ECON-030] the lost park follows the bank handler, thing-loop stop, zero arrival target and silent music/crowd; AutomaticAdvisor already produces money advice 102-105 through AdvisorScan (102 needs a loan available; 103-105 use the months in red with none) and captions advice 106 on each bank message. The pause menu now selects the online/visit branch first, then the five loss entries (0x48C150: UITEXT 3 is Load, command 22), preserving the existing callbacks. The initial loss gate camera and root 0x7472 (0x5168F0 -> 0x481B50 -> 0x48AC40), its dismissal into the hidden-HUD overlay (0x4A29D0), and loaded-loss restoration without that camera (0x4815E0 -> 0x48ADB0) remain unported. Handler 0x48A740 has Escape and delayed right-release exits, no explicit tick-button action; layout 0x74FB20 has an unresolved drawing-resource binding and is not proved empty. The overlay state-4 key branch 0x4A2925 permits Escape to the menu, and 0x4A2AC9 skips pause/play work; neither establishes purchase, hiring or opening refusals, so OpenTPW's direct economic guards remain unproved — evidence needed: loss-layout drawing resource and banner lifetime, property-table animation, gate camera/seat and root ownership, load/restore and default input dispatch, plus a separate audit of direct economic guards
+	// [APPROX:ECON-030] the lost park follows the bank handler, thing-loop stop, zero arrival target and silent music/crowd; AutomaticAdvisor already produces money advice 102-105 through AdvisorScan and captions advice 106 on each bank message. The five-entry pause menu (0x48C150), the loss window 0x7472 with its gate camera (0x5168F0 -> 0x481B50 -> 0x48AC40, handler 0x48A740, layout 0x74FB20, banner table 0x74FC38), its dismissal into the hidden-HUD overlay (0x4A29D0) and the loaded-loss restore without the camera (0x4815E0 -> 0x48ADB0) are ported for single-player parks. Still open: OpenTPW's direct economic guards (purchase, hire, open) are not proved against the overlay (0x4A2925 admits Escape to the menu, 0x4A2AC9 skips pause/play work; neither is a refusal), the exact banner draw timing against the original's property-table animation, and the loss scene in co-op and visits (gated off until the co-op owner decides) — evidence needed: a separate audit of the direct economic guards under the loss overlay, the banner's per-frame draw against the original, and the co-op owner's decision for the loss scene in shared parks
 	private void HandleBankruptcyMessage()
 	{
 		if ( IsBankrupt || WinningSequenceActive?.Invoke() == true )
@@ -1454,6 +1454,10 @@ public sealed class ParkEconomy : IParkEconomy
 		IsBankrupt = true;
 		Raise( ParkEventKind.Bankrupt, MonthsInRed );
 	}
+
+	/// <summary>Loses the park as the bank's message does (a capture of the loss window; the bank's own month rule is left alone).</summary>
+	// [EXT:debug-hud] developer/screenshot helper, not original behaviour
+	internal void DebugLose() => HandleBankruptcyMessage();
 
 	/// <summary>Admissions of months dropped from the bounded history (keeps the monthly differences exact).</summary>
 	public long DroppedAdmissions { get; private set; }

@@ -130,6 +130,7 @@ public sealed partial class ParkHud
 			Build();
 			HookStaffStrikeMessages();
 			HookChallengeMessages();
+			HookLossEvents();
 		}
 		catch
 		{
@@ -156,6 +157,7 @@ public sealed partial class ParkHud
 		if ( level.Park != null )
 		{
 			level.Park.EventRaised -= OnStaffStrikeEvent;
+			level.Park.EventRaised -= OnLossEvent;
 			level.Park.ChallengePresentationPosted -= OnChallengePresentation;
 		}
 	}
@@ -168,6 +170,7 @@ public sealed partial class ParkHud
 	{
 		UnhookLevel();
 		Stack.Clear();
+		level.LossOverlayActive = false;
 	}
 
 	public UiScreenStack Stack { get; } = new();
@@ -180,7 +183,7 @@ public sealed partial class ParkHud
 
 	public OriginalObject? SelectedObject => selectedObject;
 	/// <summary>True while a menu is on top of the HUD; the buy, staff, attractions and visitors windows, a visit's chat mode and its name popups do not pause.</summary>
-	public bool Paused => Stack.Screens.Any( screen => screen != hud && screen != rideScreen && screen != finaleScreen && screen != buyScreen && screen != staffScreen
+	public bool Paused => Stack.Screens.Any( screen => screen != hud && screen != rideScreen && screen != finaleScreen && screen != lossScreen && screen != buyScreen && screen != staffScreen
 		&& screen != attractionScreen && screen != visitorScreen && screen != chatModeScreen && screen.Name != OpenTPW.UI.ChatPanel.PopupScreenName );
 	public IReadOnlyList<string> Messages => messages.Select( message => message.Text ).ToArray();
 	/// <summary>The park simulation's time scale for the screens now open (see <see cref="TimeScaleFor"/>).</summary>
@@ -882,6 +885,13 @@ public sealed partial class ParkHud
 			FinishChallengeMessageFrame();
 			return true;
 		}
+		if ( UpdateLossScene( context, input, mouseCaptured, keyboardCaptured, textCaptured ) )
+		{
+			if ( !lossObservedCamera )
+				rideStatic.SkipFrame(); // the frame that retires the window observes no camera and refreshes no timestamp
+			FinishChallengeMessageFrame();
+			return true;
+		}
 		var pointerFrameInput = input;
 		var orderedPointerFrame = (input.OrderedEvents != null || pointerRoutingStarted || pausePointerOverlay != null) && level.CoopRole == CoopRole.None && !level.IsReadOnlyVisit && !IsRiding && !CamcorderArmed && level.FreeWalk == null;
 		if ( !orderedPointerFrame && pointerRoutingActive ) SuspendParkPointer();
@@ -948,7 +958,7 @@ public sealed partial class ParkHud
 		ReportInterfaceMode();
 		if ( Camera.Mode is ParkCameraMode camera )
 		{
-			camera.UiCapturesKeyboard = Input.TextEntryActive || Stack.Screens.Count > 1;
+			camera.UiCapturesKeyboard = Input.TextEntryActive || Stack.Screens.Count > (LossOverlayOnTop ? 2 : 1);
 			// the chat entry over the park keeps only the keys: over the park the wheel, the edges and the drag still move the camera
 			camera.TextEntryKeepsPointer = ChatEntryFocused;
 			// [EXT:online-visit-chat-mode] the chat overlay's panels lie along the screen's left and bottom edges, where the HUD leaves the edge band free:
@@ -1078,6 +1088,12 @@ public sealed partial class ParkHud
 		SyncRideScreen();
 		PrepareRideStatic( context ); // observe the final camera once, after this frame's callbacks and shortcuts
 		FinishChallengeMessageFrame();
+		// the lost park's overlay takes every click for itself (no tool, no selection) and leaves the pointer to the park camera
+		if ( LossOverlayOnTop )
+		{
+			level.WorldPointerRouted = true;
+			return false;
+		}
 		return overUi || consumed || toolClick;
 	}
 

@@ -1583,6 +1583,37 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 				WeatherForecastPresenter.BannerHidden = true;
 			} );
 		}
+		// ECON-030: the bank loses the park: the loss window (the gate camera, the full-screen banner), Escape into the hidden-HUD overlay, Escape again into the lost park's pause menu
+		Do( "close the pause menu", () =>
+		{
+			while ( flow.Hud!.Stack.Top?.Name == "pause" )
+				flow.Hud.Stack.Pop();
+			Require( flow.Hud.Stack.Top?.Name == "hud" && flow.Level!.Park != null, "the park's HUD is on top" );
+			flow.Level.Park!.Economy.DebugLose();
+		} );
+		Wait( "loss window opens", 3 );
+		Do( "loss window", () =>
+		{
+			Require( flow.Hud!.LossWindowOpen && flow.Hud.Stack.Top?.Name == ParkHud.LossWindowScreen && flow.Level!.Park!.Economy.IsBankrupt, "the bank's message opens the loss window over the park" );
+			Require( flow.Level.SimulationTimeScale > 0 && !flow.Hud.Paused, "the window pauses nothing: the lost park's calendar and bank go on" );
+			Require( flow.Level.RideView != null && Level.IsGateObject( flow.Level.RideView.Ride ), "the camera rides the gate's seat" );
+			CaptureFrame( "loss-window.png" );
+			flow.InjectedInput = UiInput.Key( UiKeys.Back );
+		} );
+		Wait( "loss window leaves", 3 );
+		Do( "loss overlay", () =>
+		{
+			Require( flow.Hud!.LossOverlayOpen && flow.Level!.LossOverlayActive && flow.Hud.Stack.Top?.Name == ParkHud.LossOverlayScreen, "Escape leaves the window for the hidden-HUD overlay" );
+			Require( flow.Level.RideView == null && Camera.Mode is ParkCameraMode, "the gate camera is left and the park camera is the player's again" );
+			CaptureFrame( "loss-overlay.png" );
+			flow.InjectedInput = UiInput.Key( UiKeys.Back );
+		} );
+		Wait( "lost park pause menu opens", 3 );
+		Do( "lost park pause menu", () =>
+		{
+			Require( flow.Hud!.Stack.Top?.Name == "pause" && flow.Level!.SimulationTimeScale == 0, "Escape in the overlay opens the pause menu" );
+			Require( flow.Hud.Stack.Top!.Find( nameof( UIStrings.Save ) ) == null && flow.Hud.Stack.Top.Find( nameof( UIStrings.ExitToLobby ) ) != null, "the lost park's menu has no Save and keeps Exit To Lobby" );
+		} );
 		var parkLanguage = PlanLanguageInPark();
 		Do( "exit to lobby", () =>
 		{

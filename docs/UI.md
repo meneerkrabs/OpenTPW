@@ -851,8 +851,8 @@ Load, Restart Park, Resume Game, Exit To Lobby and Quit Game, in that order (`0x
 Go Online are absent from the loss branch; a park without an economy keeps the ordinary menu. Missing Load/Restart hooks
 disable those rows. Resume and Back retain bankruptcy, cash and the configured speed; existing child dialogs and the stale
 Exit callback guard are unchanged. `LostParkPauseMenuTests` exercises the constructed menus, child actions, cancellation,
-visit precedence and pause scale. The loss camera, drawing resource and hidden-HUD lifecycle remain open in
-[ECON-030](ECONOMY.md#lost-park-menu-and-remaining-loss-scene-econ-030).
+visit precedence and pause scale. The loss window, its gate camera and the hidden-HUD overlay are ported
+([ECON-030](ECONOMY.md#lost-park-menu-and-remaining-loss-scene-econ-030)).
 
 | Control | Action | Status | Test |
 | --- | --- | --- | --- |

@@ -1128,8 +1128,8 @@ public partial class Level : IDisposable
 
 	public void Update()
 	{
-		// the ride ends when it is deleted or loses what the view rides on (a coaster's train); the winning camera rides End, which is no ride, until End goes
-		if ( RideView is { } riding && (riding.Ride.IsDeleted || !RideCameraMode.CanRide( riding.Ride ) && !ParkFinale.IsFinaleObject( riding.Ride )) )
+		// the ride ends when it is deleted or loses what the view rides on (a coaster's train); the winning camera rides End and the loss camera the gate, which are no rides, until they go
+		if ( RideView is { } riding && (riding.Ride.IsDeleted || !RideCameraMode.CanRide( riding.Ride ) && !ParkFinale.IsFinaleObject( riding.Ride ) && !IsGateObject( riding.Ride )) )
 			ExitRideView();
 		Camera.Update();
 		if ( ShowDeveloperPanels && !HidesInterface )

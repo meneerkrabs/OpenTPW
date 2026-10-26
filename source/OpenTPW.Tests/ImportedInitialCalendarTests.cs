@@ -114,13 +114,39 @@ public class ImportedInitialCalendarTests
 		Assert.ThrowsException<InvalidDataException>( () => ParkSaveFile.Restore( ParkSaveFile.Capture( park ), park.Settings, EconomyTestData.Catalog() ) );
 	}
 	[TestMethod]
-	public void SyntheticUpdatedAndUnsupportedCalendarsDoNotAcquireInitialDispatch()
+	public void UpdatedAndUnsupportedCalendarsDoNotAcquireInitialDispatch()
 	{
-		foreach ( var park in new[] { EconomyTestData.Park(), Import( day: 1 ), Import( rate: 16000, day: 1 ), Import( turn: 1 ) } )
+		foreach ( var park in new[] { Import( day: 1 ), Import( rate: 16000, day: 1 ), Import( turn: 1 ) } )
 		{
 			Assert.IsFalse( park.PendingInitialDay ); var days = 0;
 			park.EventRaised += item => { if ( item.Kind == ParkEventKind.DayEnded ) days++; };
 			park.Advance( ParkCalendar.TickOfTurn( 2 ) - park.Tick ); Assert.AreEqual( 0, days );
 		}
+	}
+
+	/// <summary>ECON-063: a new park owes the day message the calendar constructor's day cache -1 makes its first update post (0x4F7E80, 0x4F8260), once, whatever the date.</summary>
+	[TestMethod]
+	public void ANewParkPostsOneDayMessageOnItsFirstActualTurn()
+	{
+		var park = EconomyTestData.Park();
+		Assert.IsTrue( park.PendingInitialDay );
+		var days = 0;
+		park.EventRaised += item => { if ( item.Kind == ParkEventKind.DayEnded ) days++; };
+		park.Advance( ParkCalendar.TickOfTurn( 1 ) - 1 );
+		Assert.AreEqual( 0, days );
+		Assert.IsTrue( park.PendingInitialDay, "no turn has run yet" );
+		park.Advance( 1 );
+		Assert.AreEqual( 1, days );
+		Assert.IsFalse( park.PendingInitialDay );
+		park.Advance( ParkCalendar.TickOfTurn( 2 ) - park.Tick );
+		Assert.AreEqual( 1, days, "the second turn is no day change" );
+	}
+
+	/// <summary>Theme Park Inc has no traced calendar of its own: its park keeps the synchronised start.</summary>
+	[TestMethod]
+	public void ANewThemeParkIncParkKeepsTheSynchronisedStart()
+	{
+		var park = new ParkEconomy( OriginalSaveImportTests.Settings(), EconomyTestData.Catalog(), ParkGameMode.FullSimulation, 1, EconomyRules.ThemeParkIncMoney );
+		Assert.IsFalse( park.PendingInitialDay );
 	}
 }

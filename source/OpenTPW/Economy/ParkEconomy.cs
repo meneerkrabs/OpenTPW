@@ -60,6 +60,10 @@ public sealed class ParkEconomy : IParkEconomy
 		// a park without staff has no pool: the world generator is not drawn from for candidates (the settings hold no staff keys then)
 		if ( Rules.Staff )
 			Staff.CreateInitialPool( World, 0 );
+		// [BIN:TPW-EXE:0x004F7E80 calendar constructor] a new park's calendar stores day cache -1 (and the world init 0x005156A0 syncs only the month and year caches to turn 0, 0x004D7AF0 -> 0x004F85A0),
+		// so its first update 0x004F8260 posts one day message whatever the date (0x004F8321 compares the computed day with the cache): the pending first day, consumed by the first actual turn
+		// ([EXT:tpi-money-only] Theme Park Inc has no traced calendar of its own: its park keeps the synchronised start)
+		PendingInitialDay = !Rules.ThemeParkInc;
 		// [BIN:TPW-EXE:0x004CF7C0 bank constructor] each offer's stored test (+0x14) starts as amount (+0x18) < 10001 (unsigned)
 		foreach ( var offer in settings.Loans )
 			loanAvailable[offer.Index] = unchecked( (uint)(int)offer.Amount ) < 10001;

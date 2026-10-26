@@ -1320,3 +1320,38 @@ The first reconciliation head `48314a81f1d59f4a8696330af00afcacae297dbc` passed 
 | --- | --- |
 | `0x071D0789F44BE723` | `0x812FCC248B729C28` |
 | `0xD2AF869CDF9A7D3D` | `0xEF00F0D64A9077FE` |
+
+## First day message of a new park (ECON-063, October 26, 2026)
+
+A new Theme Park World park now posts the day message its first update owes (tp.exe's calendar constructor `0x4F7E80` stores day cache -1; the world
+init `0x5156A0` syncs only the month and year caches; the first update `0x4F8260` posts one day message whatever the date). `ParkEconomy.PendingInitialDay`,
+already carried by the restart imports and own saves made before the first turn, is set by the constructor (Theme Park Inc keeps its synchronised start).
+The first park turn therefore runs the day step once more than before: every object's six rings roll from head -1 to 0, the running daily average of the
+challenge system accumulates and the day listeners run. Every fixed run of the synthetic parks reaches that turn, so every pin moved; nothing else changed
+in them. A save written before this change loads as before (the optional field is absent, so no first day is owed).
+
+Pins moved (old → new), re-pinned by the same run on the same code: the fixed-run hashes of `DeterminismTests` and `CheatsExtensionTests`, and the target-only
+projections of `GuestRefusedTargetTests.JointMainProjectionPins` (the key is the new joint hash, the value the new projection):
+
+| Pin | Before | After |
+| --- | --- | --- |
+| `CheatsFixedRunHash` | `0x0FAA0BA10A2E2B43` | `0xAF6434D38684D562` |
+| `PoolsChangingRoomFixedRunHash` | `0x23A31F409845D585` | `0xF29FC9EE9FA2CBC4` |
+| `UmbrellasFixedRunHash` | `0x9429690D329115B6` | `0x5467A6E95F5BC676` |
+| `WinterFixedRunHash` | `0x7B6BD0C81ED66C35` | `0x0AECF3233FBD5294` |
+| `JungleDecemberOffFixedRunHash` | `0x6FDBB79D8B9377BB` | `0x1CDA6A275C9F3F5B` |
+| `JungleDecemberWintryFixedRunHash` | `0x812FCC248B729C28` | `0xED306F312346AEC8` |
+| `WinterAlwaysFixedRunHash` | `0x4F2841D3F85402FC` | `0xA8C95CA65160807C` |
+| `RainMoodFixedRunHash` | `0x4098DC9D36A6D8CD` | `0xCB5E98B00C5AAD4C` |
+| `RainMoodWithUmbrellasFixedRunHash` | `0xEB1C231F596B30D2` | `0x130B524C99334012` |
+| `WinterColdFixedRunHash` | `0x547522BF092EEC0C` | `0x5AEE05EB1A2D348D` |
+| `WinterColdEverythingFixedRunHash` | `0x48F18D1BED795051` | `0x72FD6BD04393AED1` |
+| `PoolExtrasFixedRunHash` | `0xE88AD1079B2559A5` | `0xEDBB35F77BB53B24` |
+| `PoolsAttractionsFixedRunHash` | `0xBD827362B8D9DC5C` | `0x0AD27109C2E5643D` |
+| `PoolsFixedRunHash` | `0x4AAC7DD831EFD113` | `0x51F09D065798C992` |
+| `FixedRunHash` | `0x29CE354FAB027ABF` | `0x1AABD1698E2E75BE` |
+| `SmarterGuestsFixedRunHash` | `0x905024CE0B91E577` | `0x8ACD297D0155243E` |
+| `ScriptModsFixedRunHash` | `0xF85EB64C10598DB6` | `0x92910893AA42DAD7` |
+| `ScriptModsAllHooksFixedRunHash` | `0x3D741AAF6928D531` | `0x46D7114F4B803468` |
+
+The browser build pins the same constants (`tools/web-determinism`), so its page, built from this commit, reproduces them.

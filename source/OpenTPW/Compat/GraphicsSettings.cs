@@ -189,6 +189,8 @@ public static class GraphicsPresets
 			TextureQuality = 3,
 			TextureFiltering = 3,
 			ProceduralTexturing = 3,
+			// [EXT:COMPAT-GFX-ENHANCED] 2500 slots: with 64 texels and the longest view distance the span selection lists up to 2500 cells, which a 2000 slot cache would evict every frame
+			ProceduralTextureCache = 2,
 			SkyQuality = 4,
 			SpriteShadow = 3,
 			Mipmap = 1,
@@ -227,11 +229,11 @@ public static class GraphicsPresets
 	{
 		["GraphicalOptions.TEXTUREFILTERING"] = "Applied: sampler filter (point/bilinear/trilinear/anisotropic).",
 		["GraphicalOptions.MIPMAP"] = "Applied: mip levels sampled or not.",
-		["GraphicalOptions.FIRSTPERSONVIEWDISTANCE"] = "Stored only: OpenTPW has no first-person view yet.",
+		["GraphicalOptions.FIRSTPERSONVIEWDISTANCE"] = "Applied at once: the fog range of every view and the ray distance of the visible ground cells (there is no first-person view).",
 		["GraphicalOptions.FOG"] = "Not applied: OpenTPW always uses per-pixel depth fog (the original presets all select 1 = depth).",
 		["GraphicalOptions.TEXTUREQUALITY"] = "Not applied: textures are always uploaded at full resolution.",
-		["GraphicalOptions.PROCEDURALTEXTURING"] = "Not applied: no procedural terrain texturing yet.",
-		["GraphicalOptions.PROCEDURALTEXTURECACHE"] = "Not applied: no procedural texturing yet.",
+		["GraphicalOptions.PROCEDURALTEXTURING"] = "Applied at the next level load: 0 keeps the static ground textures, 1, 2 and 3 texture every visible terrain cell with its own 16, 32 or 64 texel texture built from the theme's base.lnd (the lobby stays static, as in the original; a level without base.lnd stays static).",
+		["GraphicalOptions.PROCEDURALTEXTURECACHE"] = "Applied at the next level load: the number of cell textures the procedural terrain keeps, 1500 (0), 2000 (1) or 2500 (2).",
 		["GraphicalOptions.ANIMATINGTEXTURES"] = "Applied: object texture-frame animations (0 shows each slot's first frame, as the original's bind does).",
 		["GraphicalOptions.SKYQUALITY"] = "Applied: the number of scrolling cloud layers of the sky (0 draws no sky, as the original does).",
 		["GraphicalOptions.SKYDETAIL"] = "Not applied.",

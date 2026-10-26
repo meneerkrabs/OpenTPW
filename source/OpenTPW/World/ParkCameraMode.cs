@@ -14,7 +14,7 @@ public class ParkCameraMode : CameraMode
 	public const float MaximumHeight = 130f;
 	/// <summary>The zoom value at the near end of the wide range (<see cref="GameOptions.WideZoom"/>): tp.exe's own flag-0x200 minimum.</summary>
 	// [BIN:TPW-EXE:0x42c631 wide zoom range] with the mode flag 0x200 (0x42c62c: TEST BH, 2) the clamp compares the zoom value with 40.0 (0x74c9d8) and 300.0 (0x74c9dc) instead of 70.0 and 130.0; the pitch (0x42c742) and the eye (0x42c96d) are computed from the zoom value alone, so the same formulas run unchanged over the wider range
-	// [EXT:wide-zoom] the original sets the flag only through a hidden camera key binding (0x42a520 from entry 0x748298 of the camera key set; key byte 0x20, modifier word 0x3f, not shown to be reachable in retail) and has no option for it; OpenTPW offers that range as an option, on by default (user-approved 2026-10-18, GameOptions.WideZoom)
+	// [EXT:wide-zoom] the original sets the flag only through a hidden camera key binding (0x42a520 from entry 0x748298 of the camera key set; key byte 0x20, modifier word 0x3f, not shown to be reachable in retail) and has no option for it; OpenTPW offers that range as an option, on by default (user-approved 2026-10-18, GameOptions.WideZoom), its far end following FIRSTPERSONVIEWDISTANCE (user-decided 2026-10-26, WideMaximumFor)
 	public const float WideMinimumHeight = 40f;
 	/// <summary>The zoom value at the far end of the wide range: tp.exe's own flag-0x200 maximum.</summary>
 	public const float WideMaximumHeight = 300f;
@@ -46,7 +46,56 @@ public class ParkCameraMode : CameraMode
 	/// <summary>The nearest zoom value the camera allows: 70 (tp.exe's normal range) or 40 with <see cref="GameOptions.WideZoom"/>.</summary>
 	public float MinimumZoom => wideZoom ? WideMinimumHeight : MinimumHeight;
 	/// <summary>The farthest zoom value the camera allows: 130 (tp.exe's normal range) or 300 with <see cref="GameOptions.WideZoom"/>.</summary>
-	public float MaximumZoom => wideZoom ? WideMaximumHeight : MaximumHeight;
+	public float MaximumZoom => wideZoom ? WideMaximumOverride ?? WideMaximumFor( RenderFog.ViewDistanceOf( RenderFog.ViewDistanceOption() ).Distance, Screen.Aspect > 0 && float.IsFinite( Screen.Aspect ) ? Screen.Aspect : 16f / 9 ) : MaximumHeight;
+
+	/// <summary>Tests: a fixed far end of the wide range in place of the span list's reach.</summary>
+	internal static float? WideMaximumOverride { get; set; }
+
+	/// <summary>The cells a frame lists at most (<see cref="ProceduralTextureCache.MaximumVisibleCells"/>, <c>0x56F090</c>).</summary>
+	private const float CellCap = ProceduralTextureCache.MaximumVisibleCells;
+
+	/// <summary>
+	/// [EXT:wide-zoom] The farthest zoom value the wide range allows for a ray distance (original units, <c>[0x8BD4C0]</c>) and a display aspect (width over height): the largest zoom at which the ground at the top centre of
+	/// the screen is still inside the hull the span selection lists (<see cref="TerrainVisibleSpans"/>: the corner rays of tangent 1, the ground parameter held at half the ray distance) and that hull holds at most
+	/// <see cref="CellCap"/> cells, on flat ground under the target; never below the original's 130 and at most <see cref="WideMaximumHeight"/>. Beyond it the original's own formulas leave the top of the screen
+	/// without ground (the clear colour shows there, docs/LND.md "The visible cells"). The preset's view distance scale does not enter: it multiplies the fog range of the first-person views only, not the spans.
+	/// </summary>
+	public static float WideMaximumFor( float rayDistance, float aspect )
+	{
+		var best = MaximumHeight;
+		for ( var zoom = MaximumHeight; zoom <= WideMaximumHeight + 1e-3f; zoom += 0.25f )
+		{
+			if ( !ListCoversTheScreenTop( zoom, rayDistance, aspect, out var cells ) || cells > CellCap )
+				break;
+			best = zoom;
+		}
+		return Math.Min( best, WideMaximumHeight );
+	}
+
+	/// <summary>Whether the span hull reaches the screen's top-centre ground point at a zoom value (flat ground, everything in original units), and the cells the hull's quadrilateral holds.</summary>
+	internal static bool ListCoversTheScreenTop( float zoom, float rayDistance, float aspect, out float cells )
+	{
+		var pitch = PitchOf( zoom );
+		float sin = MathF.Sin( pitch ), cos = MathF.Cos( pitch );
+		var eye = zoom * sin;
+		var half = rayDistance * 0.5f;
+		var spanHalfHeight = MathF.Tan( TerrainViewSpans.FieldOfView * MathF.PI / 360f );
+		var screenHalfHeight = OriginalProjection.HalfHeight( OriginalProjection.FieldOfView );
+		// the span rays (fwd +- spanHalfHeight x up) meet the ground at eye / descent per unit of depth, held at half the ray distance
+		float Parameter( float descent ) => descent > 1e-6f ? Math.Min( eye / descent, half ) : half;
+		var top = Parameter( sin - spanHalfHeight * cos );
+		var bottom = Parameter( sin + spanHalfHeight * cos );
+		float topForward = top * (cos + spanHalfHeight * sin), bottomForward = bottom * (cos - spanHalfHeight * sin);
+		var topWidth = top * aspect * spanHalfHeight;
+		var bottomWidth = bottom * aspect * spanHalfHeight;
+		cells = (topWidth + bottomWidth) * (topForward - bottomForward) / 100f;
+		var screenDescent = sin - screenHalfHeight * cos;
+		if ( screenDescent <= 1e-6f )
+			return true;
+		var screenForward = eye / screenDescent * (cos + screenHalfHeight * sin);
+		return topForward >= screenForward;
+	}
+
 	/// <summary>The bearing of the eye from the target in degrees (the eye is at <c>Target + (cos, sin) * distance</c>); the original's yaw 0 is -90 here (<see cref="OriginalYaw"/>).</summary>
 	public float Yaw { get; private set; } = HomeYaw;
 	/// <summary>The yaw of the Home pose: the original's yaw 0 looks along +Y (its +z), so the eye sits to the -Y side of the target.</summary>
@@ -134,12 +183,10 @@ public class ParkCameraMode : CameraMode
 	private void Step( CameraControlInput input, GameOptions options )
 	{
 		// The wide range follows the option live: switching it off while zoomed out brings the zoom back inside 70..130.
-		if ( wideZoom != options.WideZoom )
-		{
-			wideZoom = options.WideZoom;
-			var clamped = Math.Clamp( Height, MinimumZoom, MaximumZoom );
-			if ( clamped != Height ) { Height = clamped; UpdateTransform(); }
-		}
+		// the wide range also follows FIRSTPERSONVIEWDISTANCE (WideMaximumFor), so a changed setting clamps the zoom at once
+		wideZoom = options.WideZoom;
+		var clamped = Math.Clamp( Height, MinimumZoom, MaximumZoom );
+		if ( clamped != Height ) { Height = clamped; UpdateTransform(); }
 		// with the pointer outside the window the camera takes no input, its edge band included (the browser reports a page with no pointer over its canvas there, at (-1, -1): EXT:browser-no-pointer)
 		var inside = input.LogicalSize.X > 0 && input.LogicalSize.Y > 0
 			&& input.MousePosition.X >= 0 && input.MousePosition.Y >= 0

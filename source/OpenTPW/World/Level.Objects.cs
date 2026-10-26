@@ -1474,14 +1474,7 @@ public partial class Level
 		point = default;
 		if ( !ParkPlacement.TryGetMouseRay( mousePosition, viewportSize, view, projection, out var origin, out var direction ) )
 			return false;
-		System.Numerics.Vector3? terrain = null;
-		if ( OriginalPark is not { } park )
-		{
-			if ( ParkPlacement.TryGetGroundPoint( mousePosition, viewportSize, view, projection, out var plane ) )
-				terrain = plane.GetSystemVector3();
-		}
-		else if ( TerrainRayPick.TryPick( park.Heightfield, origin, direction, out var hit ) )
-			terrain = hit;
+		var terrain = TerrainHit( mousePosition, viewportSize, view, projection, origin, direction );
 		// the object half of the pick: the first object model the ray meets from the camera takes the point when it is nearer than the terrain (ObjectRayPick)
 		// [EXT:build-cursor-ground-plane] the generic sandbox's Z = 0 plane stands in for the terrain hit there
 		if ( TryPickObject( origin, direction, view, terrain, out var objectHit ) )
@@ -1493,6 +1486,15 @@ public partial class Level
 			return false;
 		point = ground;
 		return true;
+	}
+
+	/// <summary>The terrain half of the cursor pick: the heightfield's hit on an original level, the Z = 0 plane in the generic sandbox; null when the ray misses it.</summary>
+	private System.Numerics.Vector3? TerrainHit( System.Numerics.Vector2 mousePosition, System.Numerics.Vector2 viewportSize, System.Numerics.Matrix4x4 view, System.Numerics.Matrix4x4 projection,
+		System.Numerics.Vector3 origin, System.Numerics.Vector3 direction )
+	{
+		if ( OriginalPark is not { } park )
+			return ParkPlacement.TryGetGroundPoint( mousePosition, viewportSize, view, projection, out var plane ) ? plane.GetSystemVector3() : null;
+		return TerrainRayPick.TryPick( park.Heightfield, origin, direction, out var hit ) ? hit : null;
 	}
 
 	/// <summary>The cursor point on an object's model (<see cref="ObjectRayPick"/>) when the ray from the camera meets one before the terrain point.</summary>
@@ -1507,6 +1509,35 @@ public partial class Level
 		var eye = inverse.Translation;
 		var grid = new ObjectRayPick.Grid( objects.Grid.Origin, ObjectPlacement.CellSize, objects.Grid.Width, objects.Grid.Height );
 		return ObjectRayPick.TryPick( eye, direction, terrain, grid, PickOwnerAt, out hit, out _ );
+	}
+
+	/// <summary>
+	/// Whether the cursor pick at <paramref name="mousePosition"/> tests any object's model: some cell on the walk (<see cref="ObjectRayPick"/>) names an owner
+	/// whose height window the ray passes. Only that model test depends on the model's current pose, so false means the pick is the terrain's whatever the
+	/// objects' animations do; true means it can follow a moving part (the native smoke keeps its staff clicks away from those pointers).
+	/// </summary>
+	internal bool CursorPickTestsObjectModels( System.Numerics.Vector2 mousePosition, System.Numerics.Vector2 viewportSize )
+	{
+		if ( Objects is not { } objects || objects.Objects.Count == 0
+			|| !ParkPlacement.TryGetMouseRay( mousePosition, viewportSize, Camera.ViewMatrix, Camera.ProjMatrix, out var origin, out var direction )
+			|| !System.Numerics.Matrix4x4.Invert( Camera.ViewMatrix, out var inverse ) )
+			return false;
+		var terrain = TerrainHit( mousePosition, viewportSize, Camera.ViewMatrix, Camera.ProjMatrix, origin, direction );
+		var eye = inverse.Translation;
+		var grid = new ObjectRayPick.Grid( objects.Grid.Origin, ObjectPlacement.CellSize, objects.Grid.Width, objects.Grid.Height );
+		// every model the walk would test answers with a hit at the eye, which is nearer than any terrain point
+		return ObjectRayPick.TryPick( eye, direction, terrain, grid,
+			( x, y ) => PickOwnerAt( x, y ) is { } owner ? owner with { Shape = new AnyPoseHit( owner.Shape.PickBottom, eye ) } : null, out _, out _ );
+	}
+
+	/// <summary>A pick shape that meets every line at <see cref="Eye"/> (<see cref="CursorPickTestsObjectModels"/>).</summary>
+	private sealed record AnyPoseHit( float PickBottom, System.Numerics.Vector3 Eye ) : IObjectPickShape
+	{
+		public bool TryHitPickLine( System.Numerics.Vector3 origin, System.Numerics.Vector3 direction, out System.Numerics.Vector3 hit )
+		{
+			hit = Eye;
+			return true;
+		}
 	}
 
 	/// <summary>

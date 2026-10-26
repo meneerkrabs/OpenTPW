@@ -356,6 +356,36 @@ public partial class Texture : Asset
 		} );
 	}
 
+	/// <summary>
+	/// A blank RGBA page of <paramref name="width"/> x <paramref name="height"/> texels with one mip level, filled piece by piece with <see cref="UpdateRegion"/> (the procedural terrain's texture pages). It belongs to
+	/// its maker: <see cref="ReleaseOwned"/> frees it.
+	/// </summary>
+	internal static Texture CreatePage( int width, int height )
+	{
+		var texture = new Texture( width, height );
+		return texture;
+	}
+
+	private Texture( int width, int height )
+	{
+		LoadProfile.Count( "gpu textures" );
+		LoadProfile.Count( "gpu texture bytes", width * height * 4 );
+		NativeTexture = Device.ResourceFactory.CreateTexture( TextureDescription.Texture2D( (uint)width, (uint)height, 1, 1, PixelFormat.R8_G8_B8_A8_UNorm, TextureUsage.Sampled ) );
+		NativeTextureView = Device.ResourceFactory.CreateTextureView( NativeTexture );
+		Path = "";
+		Width = (uint)width;
+		Height = (uint)height;
+		All.Add( this );
+	}
+
+	/// <summary>Writes the RGBA texels of a <paramref name="width"/> x <paramref name="height"/> rectangle at (<paramref name="x"/>, <paramref name="y"/>) of mip level 0 (a page from <see cref="CreatePage"/>; no mips follow).</summary>
+	internal void UpdateRegion( int x, int y, int width, int height, byte[] rgba )
+	{
+		if ( (uint)x + (uint)width > Width || (uint)y + (uint)height > Height )
+			throw new ArgumentOutOfRangeException( nameof( x ), "The rectangle lies outside the texture." );
+		Device.UpdateTexture( NativeTexture, rgba, (uint)x, (uint)y, 0, (uint)width, (uint)height, 1, 0, 0 );
+	}
+
 	private static int CalculateMipLevels( int width, int height, int depth )
 	{
 		int maxDimension = Math.Max( width, Math.Max( height, depth ) );

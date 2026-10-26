@@ -90,8 +90,15 @@ fragment {
         if ( g_oUbo.g_vLightColor.x + g_oUbo.g_vLightColor.y + g_oUbo.g_vLightColor.z > 0.0 )
             color.rgb *= g_oUbo.g_vLightColor;
 
-        float viewSpaceDepth = length( vs_out.vViewPosition );
-        float fogFactor = clamp( exp( viewSpaceDepth * 0.01 ) * 0.025, 0, 1 );
+        // the original's linear fog in the projection's depth (UI-107, RenderFog): g_flViewDistanceScale carries the range (start x 8 x 4096 + end x 8, 1/8 view units; 0 = no fog)
+        float fogFactor = 0.0;
+        if ( g_oUbo.g_flViewDistanceScale > 0.0 )
+        {
+            float startQ = floor( g_oUbo.g_flViewDistanceScale / 4096.0 );
+            float fogStart = startQ * 0.125;
+            float fogEnd = ( g_oUbo.g_flViewDistanceScale - startQ * 4096.0 ) * 0.125;
+            fogFactor = clamp( ( 1.0 / gl_FragCoord.w - fogStart ) / max( fogEnd - fogStart, 0.001 ), 0.0, 1.0 );
+        }
         fragColor = vec4( mix( color.rgb, g_oUbo.g_vFogColor, fogFactor ), spriteAlpha );
     }
 }

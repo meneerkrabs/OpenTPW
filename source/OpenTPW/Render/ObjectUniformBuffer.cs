@@ -73,10 +73,14 @@ struct ObjectUniformBuffer
 		return this;
 	}
 
-	/// <summary>The buffer with the engine fog colour (<see cref="RenderFog"/>), which every fogged shader (test, water, sprite, 3d) blends distant pixels into.</summary>
+	/// <summary>
+	/// The buffer with the engine fog (<see cref="RenderFog"/>), which every fogged shader (test, water, sprite, pool) blends distant pixels into: the colour and, in the slot the shaders call <c>g_flViewDistanceScale</c>, the
+	/// fog range (<see cref="RenderFog.PackedRange"/>) times the scale the slot held (an entity's own or 0 for the graphics preset's).
+	/// </summary>
 	public ObjectUniformBuffer WithFog()
 	{
 		g_vFogColor = RenderFog.WorldColour;
+		_padding2 = RenderFog.PackedRange( _padding2 > 0f ? _padding2 : CompatibilityRuntime.RenderQuality.ViewDistanceScale );
 		return this;
 	}
 }

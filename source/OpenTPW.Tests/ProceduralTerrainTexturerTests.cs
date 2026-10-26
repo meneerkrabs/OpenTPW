@@ -237,7 +237,9 @@ public class ProceduralTerrainTexturerTests
 		Assert.AreEqual( 2, texturer.CellsY );
 		Assert.AreEqual( 16 * 16 * 4, texturer.TextureBytes );
 		Assert.ThrowsException<ArgumentException>( () => texturer.Build( 0, 0, new byte[texturer.TextureBytes - 1] ) );
-		Assert.ThrowsException<ArgumentOutOfRangeException>( () => texturer.Build( 2, 0, new byte[texturer.TextureBytes] ), "x beyond the weight grid" );
+		Assert.ThrowsException<ArgumentOutOfRangeException>( () => texturer.Build( 3, 1, new byte[texturer.TextureBytes] ), "x beyond the weight grid" );
+		Assert.ThrowsException<ArgumentOutOfRangeException>( () => texturer.Build( 2, 0, new byte[texturer.TextureBytes] ), "the column after the last one reads past the grid at its last row" );
+		Assert.IsTrue( texturer.Build( 2, 1, new byte[texturer.TextureBytes] ), "the column after the last one reads on into the next sample row" );
 		Assert.ThrowsException<ArgumentOutOfRangeException>( () => texturer.Build( 0, 2, new byte[texturer.TextureBytes] ) );
 		Assert.ThrowsException<ArgumentOutOfRangeException>( () => texturer.Build( -1, 0, new byte[texturer.TextureBytes] ) );
 	}

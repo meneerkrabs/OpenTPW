@@ -881,7 +881,8 @@ public sealed partial class ParkHud
 			openButton.Enabled = !level.IsReadOnlyVisit && infoNow?.CanOpen == true && objectDoorAllowed;
 		}
 		if ( hud.Find( "deleteRide" ) is UiButton deleteButton )
-			deleteButton.Enabled = !level.IsReadOnlyVisit && selectedObject is { IsDeleted: false } item && !item.Entry.IsFixedItem;
+			// [EXT:online-coop-commands] not while this guest's sale of the object waits for the host (C3b)
+			deleteButton.Enabled = !level.IsReadOnlyVisit && selectedObject is { IsDeleted: false } item && !item.Entry.IsFixedItem && !level.IsSaleWaiting( item.Runtime.AttractionId );
 		if ( hud.Find( "rideView" ) is UiButton rideButton )
 			rideButton.Enabled = IsRiding || (selectedObject is { IsDeleted: false } candidate && RideCameraMode.CanRide( candidate ));
 

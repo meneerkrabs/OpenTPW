@@ -1757,12 +1757,23 @@ and its target, at execution on every peer, and allows exactly the commands of t
   item, a claimed station, a track add-on or a ride whose own tool follows), its placement, and its end,
   which every guest seat may send, granted or not, since it only drops that seat's own carry.
 
-An object a guest may not remove (a fixed item, a claimed station) is also one its area clear leaves
-standing: a command that removes what it finds asks the rights of each object
-(`IParkCommandRights.AllowsRemoval`, yes for the host). Everything else stays the host's: pause and speed
-(Q8), cheats (Q17), money, staff and the park's management (C4), undo lines (whose cells a request could
-name freely; undo is C5), the single-cell removals no guest's tool issues, the pool tools, tracks and
-coasters (C3b, C3c), the grants and the release of a departed seat.
+An object a guest may not remove (a fixed item, a slide tower, whose slide is the pool tools', a claimed
+station) is also one its area clear leaves standing and its placement may not demolish: a command that
+removes what it finds asks the rights of each object (`IParkCommandRights.AllowsRemoval`, yes for the
+host). The queue of a claimed ride (a coaster's or a track ride's station) stays the host's in all of
+these until claims come (C3c): its lines, its edit, the removal of its cells and Backspace over them, any
+line across one of its cells (a path line paves a queue's end), a placement whose own plan writes over
+one (its footprint, the paths it clears, the cell beyond a track end, the cells outside its entrance and
+exit), and the object window's queue tool, which a guest's window does not offer. So does the path cell
+its back cell joins, whose removal or a queue laid over it would take the queue's link off: a guest's
+remove click, Backspace, queue lines and placements (whose plans clear the paths under them) refuse it,
+and its area clear leaves it standing (`IParkCommandRights.AllowsPathRemoval`). A path line along it
+leaves the queue's links as they are and stays the guest's. A queue cell's ride is resolved as its
+removal resolves it: the rides' cached lines, then each line walked again (on a copy) for the cells they
+miss, once per command. Everything else stays the host's: pause and speed (Q8), cheats (Q17), money,
+staff and the park's management (C4), undo lines (whose cells a request could name freely; undo is C5),
+the single-cell removals no guest's tool issues, the pool tools, tracks and coasters (C3b, C3c), the
+grants and the release of a departed seat.
 
 **A guest's tools (C3a-2).** On a guest's park `ParkCommands.Issue` sends a command to the host instead
 of applying it (`ParkCommands.Submit`, set by the session), after the checks `Apply` makes before it runs
@@ -2123,7 +2134,10 @@ its checkpoints. It takes none between the digests (a world hash is most of a di
 its start, at the first desync and at its end. It is the only log that sets the session-rules flag:
 the refusals of the cheats, the secret park name, the developer kinds and a command issued inside
 another read those rules, and `ParkCommandReplay.Run` replays the log under them on the session's
-starting park.
+starting park. Its rights are the session's too, given to the replay (`CoopBuildRights` on the replaying
+park): a guest's command the session's rights refused is refused again, and an object a guest's area
+clear left standing is left again, so the checkpoints match. A session's log does not replay without
+them.
 
 `ParkCommandLevelTests` runs a scripted build session (objects, the path tool with lines, undo and
 cancel, path removals, Backspace, the Move tool, a sale, the remove tool and refused commands) on a

@@ -89,10 +89,10 @@ public sealed partial class ParkHud
 	{
 		if ( level.PoolTool is not { IsActive: true } tool )
 			return false;
-		if ( input.RightPressed && inPark && GameOptions.Current.RmbCancel )
+		if ( parkRightClick )
 		{
 			tool.Cancel();
-			return toolPress = true;
+			return true;
 		}
 		// Backspace takes back the last stroke
 		if ( input.Backspaces > 0 && !tool.IsDragging )
@@ -115,18 +115,18 @@ public sealed partial class ParkHud
 			tool.Press( cursorX, cursorY );
 			// [EXT:online-coop-commands] a guest's press goes to the host in this frame (C3b-3)
 			tool.SendGuestBatches( Time.Now );
-			return toolPress = true;
+			return true;
 		}
 		if ( tool.IsDragging )
 		{
 			if ( input.LeftDown )
 			{
 				tool.SendGuestBatches( Time.Now );
-				return toolPress = true;
+				return true;
 			}
 			ReportPoolStroke( tool );
 			tool.SendGuestBatches( Time.Now );
-			return toolPress = true;
+			return true;
 		}
 		return false;
 	}

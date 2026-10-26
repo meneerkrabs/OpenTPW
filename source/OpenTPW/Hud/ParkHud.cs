@@ -96,8 +96,8 @@ public sealed partial class ParkHud
 	private OriginalObject? selectedObject;
 	private readonly List<UiElement> economyElements = new();
 	private int cursorX = -1;
-	/// <summary>Set by a press the path/queue tool used, so its release does not select an object.</summary>
-	private bool toolPress;
+	/// <summary>The last left press was taken by a tool or a pick, so its release is no click on the ground (the online walk).</summary>
+	private bool pressConsumed;
 	/// <summary>The refused path click's press latch: its sound plays at the release (GameAudio.PathRefusedEvent); created on first use.</summary>
 	private PathRefusalClick? refusalClickState;
 	private PathRefusalClick refusalClick => refusalClickState ??= new();
@@ -116,6 +116,8 @@ public sealed partial class ParkHud
 		lastLevelMessage = level.LastActionMessage;
 		lastSessionRefusals = level.SessionRefusals;
 		lastWaitingClicks = level.WaitingClicks;
+		// the park view's tool clicks act on the left button's release, as the original's tool object does (Level.WorldClicksOnRelease)
+		level.WorldClicksOnRelease = true;
 		try
 		{
 			level.Objects.ObjectPlaced += OnObjectPlaced;
@@ -837,6 +839,7 @@ public sealed partial class ParkHud
 	internal bool Update( UiContext context, UiInput input, bool? mouseCaptured, bool? keyboardCaptured, bool? textCaptured )
 	{
 		level.WorldPointerRouted = false;
+		level.ParkOwnsRelease = false;
 		// [EXT:online-coop-commands] a guest's queue edit or Move pick-up that waits for the host starts no tool once any tool was on meanwhile (C3b): the HUD's own tools, the pools', the staff's
 		if ( level.WaitingToolStart != null && !level.NoToolActive )
 			level.DropToolStartWait();
@@ -860,7 +863,7 @@ public sealed partial class ParkHud
 		var orderedPointerFrame = (input.OrderedEvents != null || pointerRoutingStarted || pausePointerOverlay != null) && level.CoopRole == CoopRole.None && !level.IsReadOnlyVisit && !IsRiding && !CamcorderArmed && level.FreeWalk == null;
 		if ( !orderedPointerFrame && pointerRoutingActive ) SuspendParkPointer();
 		if ( orderedPointerFrame )
-			input = input with { LeftPressed = false, LeftReleased = false, RightPressed = false, Pressed = pointerFrameInput.OrderedEvents != null ? input.Pressed & ~UiKeys.Pause : input.Pressed, PointerSuppressed = true };
+			input = input with { LeftPressed = false, LeftReleased = false, RightPressed = false, RightReleased = false, RightClicked = false, Pressed = pointerFrameInput.OrderedEvents != null ? input.Pressed & ~UiKeys.Pause : input.Pressed, PointerSuppressed = true };
 		var ridingAtStart = IsRiding;
 		SyncRideScreen();
 		HandleChatModeKey();
@@ -992,7 +995,6 @@ public sealed partial class ParkHud
 		if ( TryOpenPostcard( shortcutsAllowed && !overUi && !consumed && !mouseCaptured.Value && input.Text.Length == 0 && !ridingAtStart ) )
 		{
 			overUi = consumed = true;
-			if ( input.LeftDown || input.LeftPressed ) toolPress = true;
 		}
 
 		if ( level.FreeWalk is { } walk )
@@ -1027,6 +1029,8 @@ public sealed partial class ParkHud
 			if ( lastLevelMessage.StartsWith( "Cannot build", StringComparison.Ordinal ) )
 				SayCannotBuild( lastLevelMessage, pendingItem?.Entry );
 		}
+		// the release's cue spares the error feedback of the message that follows it by one frame, no more
+		buildRefusalCue = false;
 
 		var rideOwnsInput = ridingAtStart || IsRiding || camcorderOwnsInput;
 		bool inPark, toolClick;
@@ -1054,28 +1058,134 @@ public sealed partial class ParkHud
 		return overUi || consumed || toolClick;
 	}
 
-	/// <summary>One pointer delivery; frame timers, keyboard shortcuts and visual animation run in Update only.</summary>
+	/// <summary>The window that took a left or right press: the park view when the press landed on it (null: no such press seen since the last release). Used when no routed pointer batch says so.</summary>
+	private bool? legacyLeftPress, legacyRightPress;
+
+	/// <summary>The right quick click of this delivery that the park view's tools and modes cancel on (<see cref="UiInput.RightClicked"/>, taken by the park, with the cancel option on).</summary>
+	private bool parkRightClick;
+
+	/// <summary>A press entered the path tool (the original's tool object, 0x4879D0 case 1 or 2): the release that ends this click is the tool's first click, at the cell under the pointer there.</summary>
+	private bool pendingPathEntry;
+
+	/// <summary>[EXT:online-coop-commands] <see cref="Level.HostToolStarts"/> when the last left press was taken (null: no press seen): a tool a guest's request starts when the host's answer comes back in between (CompleteMove, CompleteQueueEdit) takes no click from that press's release.</summary>
+	private int? pressHostStarts;
+
+	/// <summary>The release played the refusal cue (0xAF) for a refused build click: its "Cannot build" message follows without the error feedback of <see cref="SayCannotBuild"/>.</summary>
+	private bool buildRefusalCue;
+
+	/// <summary>A press on a queue cell chose that queue's edit (0x4879D0 case 3, tool 0x14): the release starts the queue tool for it, wherever the pointer is then.</summary>
+	private (int X, int Y)? pendingQueueEdit;
+
+	/// <summary>Whether a tool object of the original (vtable 0x6FE9E0: the placement, the line tools, the rectangles, the coaster tool) is installed: its press handler 0x524790 sets the latch the release's refusal sound reads.</summary>
+	private bool ToolObjectActive => level.BuildEntry != null || level.IsPlacing || level.IsRemovingObjects || level.CellTool.IsActive || level.IsCoasterToolActive
+		|| level.PatrolTool is { IsActive: true } || level.BuyLandTool is { IsActive: true } || level.AreaClearTool is { IsActive: true };
+
+	/// <summary>The press handler of the tool object (0x524790) sets the press latch 0x8186D8 when a tool object is installed: the refused click's cue plays at the release only behind it.</summary>
+	private void LatchToolPress()
+	{
+		if ( ToolObjectActive )
+			refusalClick.Press();
+	}
+
+	/// <summary>The left press ends with no click (a release the platform made up, or one an overlay took): what the press chose and the latch it set end with it.</summary>
+	internal void AbandonLeftGesture()
+	{
+		pendingPathEntry = false;
+		pendingQueueEdit = null;
+		pressConsumed = false;
+		// a pylon being dragged settles where it is, as when the park pointer is suspended: it does not stay on the cursor
+		if ( level.CoasterPanel is { IsDragging: true } panel )
+			panel.Release( null, null );
+		coasterPress = false;
+		legacyLeftPress = null;
+		pressHostStarts = null;
+		refusalClickState = null;
+		buildRefusalCue = false;
+	}
+
+	/// <summary>The release handler's refused-click cue (cat_ui 0xAF at the clicked cell, 0x524AA7) when the click it just handled found the ghost refused; the latch is consumed either way.</summary>
+	private bool SoundRefusedRelease()
+	{
+		if ( refusalClick.Release() is not { } refused )
+			return false;
+		GameAudio.PlayPathRefused( refused.X, refused.Y );
+		return true;
+	}
+
+	/// <summary>
+	/// Whether the park view took the press that this delivery's release (or right release) ends: a release goes to the window that took its press, wherever the pointer is now (without a routed batch, which
+	/// settles this itself, the press is remembered here; a release with no press seen is taken where the pointer is).
+	/// </summary>
+	// [BIN:TPW-EXE:0x658b7f release recipient] the window manager saves the down and the up recipients (0x658b1a, 0x658b7f): an up goes to its down's window
+	private (bool Left, bool Right) ReleaseOwners( UiInput input, bool overUi, bool consumed, bool rideOwnsInput )
+	{
+		// a press made in the ride view or while walking is not the park view's: its release after leaving is nobody's click
+		var free = !overUi && !consumed && !rideOwnsInput;
+		if ( input.LeftPressed )
+			legacyLeftPress = free;
+		if ( input.RightPressed )
+			legacyRightPress = free;
+		bool left = true, right = true;
+		if ( input.LeftReleased )
+		{
+			left = legacyLeftPress ?? free;
+			legacyLeftPress = null;
+		}
+		if ( input.RightReleased )
+		{
+			right = legacyRightPress ?? free;
+			legacyRightPress = null;
+		}
+		return (left, right);
+	}
+
+	/// <summary>
+	/// One pointer delivery; frame timers, keyboard shortcuts and visual animation run in Update only. The park view's mouse procedure 0x4881A0 gives the mode object a left press (slot +4) and a
+	/// left release (slot +8): the idle mode's press picks and enters (0x4879D0), the tool object's release is the tool's click (0x524960) at the cell under the pointer then; the right button's quick click
+	/// ends the mode on its release.
+	/// </summary>
 	private (bool InPark, bool Consumed) DispatchParkPointer( UiContext context, UiInput input, bool overUi, bool consumed,
 		bool rideOwnsInput, bool paused, bool mouseCaptured, bool keyboardCaptured, bool textCaptured )
 	{
+		var viewport = new NVector2( context.Canvas.Width, context.Canvas.Height );
+		var covered = overUi || consumed;
+		var (leftOwned, rightOwned) = ReleaseOwners( input, overUi, consumed, rideOwnsInput );
+		// a release the park view took acts where the pointer is, over the interface or not: the hover cell comes from the pointer ray whatever lies over it (0x54E2D5 per frame)
+		if ( input.LeftReleased && leftOwned || input.RightReleased && rightOwned )
+			overUi = consumed = false;
+		// a release the platform made up (a browser blur) ends the press without a click: the tools see no release, the latches and the press' choices end with it
+		// [EXT:online-coop-commands] a guest's Move pick-up or queue edit that the host's answer started between this press and its release: the release is not a click of the tool it started (tp.exe's release
+		// needs no press, 0x46C610, but the guest's click came before the tool existed); every other tool armed in between takes the release as the original does, with no cue (the press latch was not set)
+		var hostStartedSincePress = input.LeftReleased && leftOwned && pressHostStarts is { } started && started != level.HostToolStarts;
+		var lostRelease = input.LeftReleased && leftOwned && input.LeftReleaseLost;
+		input = input with { LeftReleased = input.LeftReleased && leftOwned && !input.LeftReleaseLost && !hostStartedSincePress, RightClicked = input.RightClicked && rightOwned };
 		// The park view's own click is not a button-class 0x100. The hook 0x485780 plays cat_ui 0xBD only when the receiver of 0x100 has style bit 0x10 (the choice at 0x4857cb); this click stays 0x1F.
 		if ( !overUi && !consumed && input.LeftPressed )
 			GameAudio.PlayUi( ParkViewClickEvent );
 
 		// The ride view is a view of one ride: the park's clicks and tools wait until it is left.
-		var inPark = !overUi && !consumed && !rideOwnsInput && level.TryGetGridCell( input.Mouse, new NVector2( context.Canvas.Width, context.Canvas.Height ), out cursorX, out cursorY );
+		var parkView = !overUi && !consumed && !rideOwnsInput;
+		var inPark = parkView && level.TryGetGridCell( input.Mouse, viewport, out cursorX, out cursorY );
 		if ( !inPark )
 			cursorX = cursorY = -1;
+		// [BIN:TPW-EXE:0x488434 right click cancel] with RMBCancelOn a right press the park view took and let go within 200 ms and 8 px ends the mode (0x52F200(0, 1)) at the release, wherever the pointer then is; nothing happens on the press
+		parkRightClick = input.RightClicked && parkView && !mouseCaptured && GameOptions.Current.RmbCancel;
 		// Also consume the exit frame: leaving a ride must not activate an armed tool on that same click.
-		var staffToolClick = !rideOwnsInput && (UpdateStaffTool( input, inPark && !mouseCaptured, new NVector2( context.Canvas.Width, context.Canvas.Height ) ) || UpdatePatrolTool( input, inPark && !mouseCaptured )
+		var staffToolClick = !rideOwnsInput && (UpdateStaffTool( input, inPark && !mouseCaptured, viewport ) || UpdatePatrolTool( input, inPark && !mouseCaptured )
 			|| UpdateBuyLandTool( input, inPark && !mouseCaptured ) || UpdateAreaClearTool( input, inPark && !mouseCaptured )
 			|| UpdatePoolTool( context, input, inPark && !mouseCaptured ));
-		var visitorClick = TrySelectWorldVisitor( input, new NVector2( context.Canvas.Width, context.Canvas.Height ),
+		var visitorClick = TrySelectWorldVisitor( input, viewport,
 			paused || overUi || consumed || rideOwnsInput || ChatMode || mouseCaptured || keyboardCaptured || textCaptured || staffToolClick || level.StaffPlacement is { IsActive: true } || level.PatrolTool is { IsActive: true }
 			|| level.BuyLandTool is { IsActive: true } || level.AreaClearTool is { IsActive: true } || level.PoolTool is { IsActive: true } );
 		var toolClick = staffToolClick || visitorClick || rideOwnsInput || UpdateCoasterTool( context, input, inPark, paused ) || UpdateCellTool( context, input, inPark, paused );
+		// [BIN:TPW-EXE:0x524790 press latch] the tool object's press handler sets 0x8186D8 for every press it takes; the release reads it for the refusal sound (PathRefusalClick)
+		if ( input.LeftPressed && parkView && !mouseCaptured )
+		{
+			LatchToolPress();
+			pressHostStarts = level.HostToolStarts;
+		}
 		// A right click leaves a build tool that Ctrl kept armed (and one still waiting for its first click).
-		if ( inPark && !rideOwnsInput && !paused && input.RightPressed && GameOptions.Current.RmbCancel && level.BuildEntry != null && !toolClick )
+		if ( parkRightClick && !paused && level.BuildEntry != null && !toolClick )
 		{
 			LeaveBuildTool();
 			toolClick = true;
@@ -1087,33 +1197,57 @@ public sealed partial class ParkHud
 		// click on the visible top of a tall ride, shop or feature picks that object; the pick sprites of the sprite pass (0x5890e0 → 0x532bd0) are the people's only: the owner search accepts
 		// thing types 1, 4 to 8 and 0x12 (visitors and staff, 0x532d14-0x532d2c; the hovered-thing filter 0x46c110), and the sprite scripts' FRAME op 0x476940 marks its sprite pickable (+0x114 = 1 through 0x540b90) for any frame
 		// but -1, so no ride or shop (thing type 3) is picked by a sprite
-		if ( inPark && !IsVisitorPickState( Locator.Mode, Input.ModifierMaskDown ) && level.BuildEntry == null && !level.IsPlacing && !level.CellTool.IsActive && !level.IsCoasterToolActive && level.StaffPlacement is not { IsActive: true } && level.PatrolTool is not { IsActive: true }
-			&& level.BuyLandTool is not { IsActive: true } && level.AreaClearTool is not { IsActive: true } && level.PoolTool is not { IsActive: true } && input.LeftReleased && !input.NotClick && !toolPress )
-			{
-				var clicked = level.Objects.FindAt( cursorX, cursorY );
-				// [EXT:pools-waves] a deliberate second click on the wave machine that is already selected opens its settings window; selecting it (here or from the attractions list) changes nothing (ParkHud.Pools.cs)
-				if ( !ChatMode && clicked != null && clicked == selectedObject && IsWaveMachine( clicked ) )
-					OpenWaveSettings( clicked );
-				// a click on a track add-on opens its ride's window (Level.WindowTarget); the chat mode has no object window
-				if ( !ChatMode )
-					SelectObject( level.WindowTarget( clicked ) );
-				// [EXT:online-avatar-click] in a visit with other players a click on the ground walks the player's figure there (manual p. 68: "Left click to walk to destination"): in the
-				// chat mode wherever it lands but on a rideable ride, which it rides (ChatModeRide), as the original's chat mode panel does (0x4BD4A0, help 401), and in the HUD where it
-				// hits no object
-				if ( ChatMode && !input.NotClick && ChatModeRide( clicked ) is { } ride )
-					StartRide( ride );
-				else if ( (clicked == null || ChatMode) && level.IsReadOnlyVisit && !input.NotClick && host?.Presence?.Invoke() is { Walks: true } presence
-					&& level.TryGetGroundCell( input.Mouse, new NVector2( context.Canvas.Width, context.Canvas.Height ), out var groundX, out var groundY ) )
-					presence.Click( groundX, groundY );
-			}
+		// [BIN:TPW-EXE:0x488768 left press] the press (message 0x10005) calls the click dispatcher 0x4879D0 before the mode object's press slot: in the idle mode it opens the window of the hovered object, guest or
+		// staff member, enters the path, queue or track tool or arms a copy; a tool object takes no part in it. The pick is the press, not the release, and no click-or-drag test applies to it.
+		var idle = level.BuildEntry == null && !level.IsPlacing && !level.CellTool.IsActive && !level.IsCoasterToolActive && level.StaffPlacement is not { IsActive: true } && level.PatrolTool is not { IsActive: true }
+			&& level.BuyLandTool is not { IsActive: true } && level.AreaClearTool is not { IsActive: true } && level.PoolTool is not { IsActive: true };
+		if ( input.LeftPressed )
+		{
+			pressConsumed = toolClick;
+		}
+		if ( inPark && idle && !IsVisitorPickState( Locator.Mode, Input.ModifierMaskDown ) && input.LeftPressed && !toolClick )
+		{
+			var clicked = level.Objects.FindAt( cursorX, cursorY );
+			// [EXT:pools-waves] a deliberate second click on the wave machine that is already selected opens its settings window; selecting it (here or from the attractions list) changes nothing (ParkHud.Pools.cs)
+			if ( !ChatMode && clicked != null && clicked == selectedObject && IsWaveMachine( clicked ) )
+				OpenWaveSettings( clicked );
+			// a click on a track add-on opens its ride's window (Level.WindowTarget); the chat mode has no object window
+			if ( !ChatMode )
+				SelectObject( level.WindowTarget( clicked ) );
+		}
+		// [EXT:online-avatar-click] in a visit with other players a click on the ground walks the player's figure there (manual p. 68: "Left click to walk to destination"): in the
+		// chat mode wherever it lands but on a rideable ride, which it rides (ChatModeRide), as the original's chat mode panel does (0x4BD4A0, help 401), and in the HUD where it
+		// hits no object; a deliberate click, acting on its release
+		if ( inPark && idle && !IsVisitorPickState( Locator.Mode, Input.ModifierMaskDown ) && input.LeftReleased && !input.NotClick && !pressConsumed && !toolClick )
+		{
+			var clicked = level.Objects.FindAt( cursorX, cursorY );
+			if ( ChatMode && ChatModeRide( clicked ) is { } ride )
+				StartRide( ride );
+			else if ( (clicked == null || ChatMode) && level.IsReadOnlyVisit && host?.Presence?.Invoke() is { Walks: true } presence
+				&& level.TryGetGroundCell( input.Mouse, viewport, out var groundX, out var groundY ) )
+				presence.Click( groundX, groundY );
+		}
+		if ( lostRelease )
+			AbandonLeftGesture();
 		if ( input.LeftReleased )
 		{
-			toolPress = false;
-			if ( refusalClick.Release() is { } refused )
-				GameAudio.PlayPathRefused( refused.X, refused.Y );
+			// what the press chose (the path tool's entry, a queue's edit) ends with the release that answered it
+			pendingPathEntry = false;
+			pendingQueueEdit = null;
+			pressConsumed = false;
+			// [BIN:TPW-EXE:0x524A63 build refusal] a build click whose ghost is refused places nothing and the tool stays, as for the line tools: the release plays the refusal cue behind the press latch
+			// [EXT:online-coop-commands] a guest's placement that waits for the host takes no click, so it has no cue either; the original skips the cue only during a layout replay (0x785A2C), which OpenTPW has none of
+			if ( inPark && !toolClick && !paused && !level.IsReadOnlyVisit && level.WaitingPlacement == null && level.BuildClickRefused( cursorX, cursorY ) )
+				refusalClick.Refused( cursorX, cursorY );
+			// the error feedback of "Cannot build" is spared only when the cue really sounded (SayCannotBuild, next frame)
+			buildRefusalCue = SoundRefusedRelease();
 		}
+		// the level's own tool click (the build tool, the removal) acts on the release the park took and no tool of the HUD used
+		if ( input.LeftReleased || hostStartedSincePress )
+			pressHostStarts = null;
+		level.ParkOwnsRelease = input.LeftReleased && !toolClick;
 
-		return (inPark, overUi || consumed || toolClick);
+		return (inPark, covered || toolClick || hostStartedSincePress);
 	}
 
 	/// <summary>The patrol tool's HUD side: the hovered cell, right click leaves, a left click stores a corner or sets the area (tp.exe mode 0x36).</summary>
@@ -1121,10 +1255,10 @@ public sealed partial class ParkHud
 	{
 		if ( level.PatrolTool is not { IsActive: true } tool )
 			return false;
-		if ( input.RightPressed && inPark && GameOptions.Current.RmbCancel )
+		if ( parkRightClick )
 		{
 			tool.Cancel();
-			return toolPress = true;
+			return true;
 		}
 		if ( debugPatrolHover is { } held )
 			tool.Hover( held.X, held.Y );
@@ -1132,16 +1266,14 @@ public sealed partial class ParkHud
 			tool.Hover( cursorX, cursorY );
 		else
 			tool.Hover( null, null );
-		if ( !inPark || !input.LeftPressed )
+		// [BIN:TPW-EXE:0x524960 patrol click] mode 0x36 is a tool object's: both corners are clicks of the release (0x525d..), at the cell under the pointer then
+		if ( !inPark || !input.LeftReleased )
 			return false;
 		tool.Click( cursorX, cursorY );
-		// [BIN:TPW-EXE:0x524A63 refused ghost] the second click on a red rectangle ends the tool and the release plays the refusal cue (cat_ui 0xAF, 0x524AA7)
+		// [BIN:TPW-EXE:0x524A63 refused ghost] the second click on a red rectangle ends the tool and the release plays the refusal cue (cat_ui 0xAF, 0x524AA7), behind the press latch the tool's press set
 		if ( tool.TakeRefusal() is { } refused )
-		{
-			refusalClick.Press();
 			refusalClick.Refused( refused.X, refused.Y );
-		}
-		return toolPress = true;
+		return true;
 	}
 
 	private bool staffCursorSet;
@@ -1166,10 +1298,10 @@ public sealed partial class ParkHud
 		staffCursorSet = true;
 		Input.CursorType = Input.CursorTypes.Carry;
 		// the same capture gate as the visitor selection: a press on an ImGui overlay is not a park click
-		if ( input.RightPressed && inPark && GameOptions.Current.RmbCancel )
+		if ( parkRightClick )
 		{
 			tool.Cancel();
-			return toolPress = true;
+			return true;
 		}
 		// the sprite hangs at the exact ground point under the pointer every frame, also while the pointer is over the HUD (the original reads the mouse's world point, not the hover cell);
 		// a frame without a pointer (a key alone) keeps the last one
@@ -1186,11 +1318,12 @@ public sealed partial class ParkHud
 			else
 				tool.Hover( null, null );
 		}
+		// [BIN:TPW-EXE:0x46C8E0 staff placement press] the hire and carry tools are not the tool object: their own classes (vtables 0x6FEA40 and 0x6FEA70) take the left PRESS (slot +4 = 0x46C8E0 / 0x46CC40) and ignore the release (slot +8 is empty)
 		if ( !inPark || !input.LeftPressed )
 			return false;
 		// a click on an invalid cell only logs in the original ("Can't put staff here"): no player text, the tool stays
 		tool.Click( cursorX, cursorY );
-		return toolPress = true;
+		return true;
 	}
 
 	/// <summary>
@@ -1198,8 +1331,8 @@ public sealed partial class ParkHud
 	/// object or line cannot be built here. <paramref name="entry"/> is the refused object's, when known.
 	/// </summary>
 	// [BIN:STP-PPC:0x10139A40 error feedback] a rejected action plays cat_ui event 0x1D (called from the buy window at 0x10163AFC/0x10163BFC and the checkbox dialog at 0x1013B7A4)
-	// [EXT:cannot-build-sound] a refused placement ('Cannot build') plays the error feedback 0x1D with OpenTPW's own message text: tp.exe plays 0x1D at exactly two sites (0x487b51 in the park click handler 0x4879d0, a cost above the money, and the helper 0x486ae0, whose only caller is the hire window 0x4af480), so the original plays nothing for a refused placement; the feedback is an OpenTPW addition
-	// [BIN:TPW-EXE:0x535670 refusal stage] [BIN:TPW-EXE:0x536100 refusal stage] the build tools' code (0x524960-0x535100) plays only 0xAF, 0x65, 0xCE, 0x8B, 0x97-0x99 and 0x90, and no call site of the sound entry 0x51bfc0 lies in the refusal stages or the callees reached from them, so the original plays nothing for a refused placement
+	// [EXT:cannot-build-sound] the "Cannot build" message text, and the error feedback 0x1D where the original's own cue did not sound: a refused placement click plays cat_ui 0xAF at its release (0x524AA7, behind the refused-ghost latch 0x816D48, outside a layout replay 0x785A2C), and tp.exe plays 0x1D at exactly two sites (0x487b51 in the park click handler 0x4879d0, a cost above the money, and the helper 0x486ae0, whose only caller is the hire window 0x4af480); a refusal the host sends back sounds no 0xAF here, so it keeps 0x1D; the message text is an OpenTPW addition
+	// [BIN:TPW-EXE:0x524AA7 refusal cue] [BIN:TPW-EXE:0x535670 refusal stage] [BIN:TPW-EXE:0x536100 refusal stage] the refusal stages submit no sound (no call site of the sound entry 0x51bfc0 lies in them or the callees reached from them); the build tools' only refusal cue is the release handler's 0xAF
 	// [EXT:pools-changing-room] a changing room that is refused for want of a pool says so
 	// [EXT:pools-slides] a slide tower refused for want of a pool says so in its own words, turned away from the pool beside it in others
 	private void SayCannotBuild( string message, ObjectCatalogEntry? entry )
@@ -1208,7 +1341,9 @@ public sealed partial class ParkHud
 			? (entry is { } refused && PoolSlideTowers.IsSlideTower( refused ) ? (level.LastRefusalTowerFacesAway ? OpenTpwText.PoolSlideTowerFacesAway : OpenTpwText.PoolSlideTowerNeedsPool) : OpenTpwText.PoolChangingRoomNeedsPool)
 			: message.EndsWith( $": {nameof( OriginalPlacementResult.NeedsPoolWater )}.", StringComparison.Ordinal ) ? OpenTpwText.PoolAttractionNeedsPool
 			: message.EndsWith( $": {nameof( OriginalPlacementResult.NeedsPoolEdge )}.", StringComparison.Ordinal ) ? OpenTpwText.PoolExtraNeedsEdge : OpenTpwText.CannotBuildHere ) );
-		GameAudio.PlayUi( GameAudio.ErrorEvent );
+		// [EXT:cannot-build-sound] the error feedback only where the original's own refusal cue did not sound: its release plays 0xAF (buildRefusalCue), a guest's click and a refusal the host sends back play none
+		if ( !buildRefusalCue )
+			GameAudio.PlayUi( GameAudio.ErrorEvent );
 	}
 
 	/// <summary>
@@ -1249,47 +1384,48 @@ public sealed partial class ParkHud
 			return false;
 		if ( !tool.IsActive )
 		{
+			pendingPathEntry = false;
 			// Backspace over a path, queue, pool bridge or pool water cell with no tool on: the backtrack sound, then that cell is removed (GameAudio.BacktrackEvent; a queue is [EXT:queue-backtrack], a pool bridge or water cell [EXT:pools-bridges] [EXT:pools-tool]); a held key repeats only over path and queue cells.
 			if ( inPark && input.Backspaces > 0 && Stack.Screens.Count == 1 && !Input.TextEntryActive && Camera.Mode is ParkCameraMode && BacktrackKey( input.BackspaceRepeating ) )
 				return true;
 			// [EXT:online-coop-commands] a right click leaves a guest's queue edit or Move pick-up that waits for the host, as it leaves a tool (C3b)
-			if ( input.RightPressed && inPark && GameOptions.Current.RmbCancel && level.WaitingToolStart != null )
+			if ( parkRightClick && level.WaitingToolStart != null )
 			{
 				level.DropToolStartWait();
-				return toolPress = true;
+				return true;
+			}
+			// [BIN:TPW-EXE:0x48C940 queue edit release] the press on a queue cell chose the ride (0x4879D0 case 3: tool 0x14, whose enter 0x46D5A0 only sets the mode); the mode's release handler (0x524960, mode 0x14: 0x530120 walks the queue
+			// into the stack, then SetMode(3)) starts the queue tool for the chosen ride, wherever the pointer is released
+			if ( pendingQueueEdit is { } edit )
+			{
+				if ( !input.LeftReleased )
+					return input.LeftPressed;
+				pendingQueueEdit = null;
+				if ( level.EditQueueAt( edit.X, edit.Y ) )
+				{
+					PostMessage( strings.Help( 445 ) );
+					if ( inPark )
+						tool.Hover( (cursorX, cursorY) );
+					return true;
+				}
+				// [EXT:online-coop-commands] a guest's edit went to the host (or one waits already): the queue tool starts once it comes back (C3b, CompleteQueueEdit)
+				return level.WaitingToolStart != null;
 			}
 			if ( !inPark || !input.LeftPressed || level.IsReadOnlyVisit || level.Objects.FindAt( cursorX, cursorY ) != null )
 				return false;
-			// A left click on a queue cell edits that ride's queue (help 444): the queue tool starts at its back cell.
-			if ( tool.HoverHelpId( level.Paths, cursorX, cursorY ) is 444 )
+			// A left press on a queue cell chooses that ride's queue edit (help 444): the queue tool starts at its back cell when the button is let go.
+			if ( tool.HoverHelpId( level.Paths, cursorX, cursorY ) is 444 && level.CanEditQueueAt( cursorX, cursorY ) )
 			{
-				if ( level.EditQueueAt( cursorX, cursorY ) )
-				{
-					PostMessage( strings.Help( 445 ) );
-					tool.Hover( (cursorX, cursorY) );
-					return toolPress = true;
-				}
-				// [EXT:online-coop-commands] a guest's edit went to the host (or one waits already): the queue tool starts once it comes back (C3b, CompleteQueueEdit)
-				if ( level.WaitingToolStart != null )
-					return toolPress = true;
+				pendingQueueEdit = (cursorX, cursorY);
+				return true;
 			}
-			// A left click on an empty owned cell or on a path cell starts the path tool there (help 441/442).
-			if ( tool.HoverHelpId( level.Paths, cursorX, cursorY ) is not (441 or 442) || !level.EnterPathTool( cursorX, cursorY, out var refused ) )
+			// A left press on an empty owned cell or on a path cell enters the path tool (help 441/442); no start is set and nothing is laid until the release, which is the tool's first click.
+			// [BIN:TPW-EXE:0x46D5A0 tool enter] the path tool object's enter hovers the cell under the pointer (0x5234D0) and calls SetMode(1, 1); the click is the release handler's (0x524960)
+			if ( tool.HoverHelpId( level.Paths, cursorX, cursorY ) is not (441 or 442) || !level.BeginPathTool() )
 				return false;
-			// The entering click is the tool's first click: a refused cell ends the tool at once, and the refused click sounds at the release (PathRefusalClick).
-			if ( refused != null )
-			{
-				refusalClick.Press();
-				refusalClick.Refused( cursorX, cursorY );
-				PostMessage( strings.Extra( refused.StoppedBy == CellBuildResult.NotEnoughMoney ? OpenTpwText.NotEnoughMoney : OpenTpwText.CannotBuildHere ) );
-				return toolPress = true;
-			}
-			// [BIN:TPW-EXE:0x005271B7 lay click] every path or queue click past the refused-ghost test plays cat_ui 101 (0x65) before its start or line, the first click included
-			GameAudio.PlayPathToolSound( GameAudio.PathLayEvent );
-			ReportCellToolClick( false, CellToolMode.Path, tool, false );
-			PostMessage( strings.Help( 443 ) );
+			pendingPathEntry = true;
 			tool.Hover( (cursorX, cursorY) );
-			return toolPress = true;
+			return true;
 		}
 		if ( input.Backspaces > 0 )
 		{
@@ -1301,24 +1437,44 @@ public sealed partial class ParkHud
 			else
 				tool.Undo();
 		}
-		if ( input.RightPressed && inPark && GameOptions.Current.RmbCancel )
+		if ( parkRightClick )
 		{
+			pendingPathEntry = false;
 			tool.Cancel();
 			return true;
 		}
 		if ( !inPark )
 			return false;
 		tool.Hover( (cursorX, cursorY) );
-		if ( !input.LeftPressed )
+		// [BIN:TPW-EXE:0x524960 line click] every line click of the tool object is its release handler's: the press (0x524790) only sets the latch
+		if ( !input.LeftReleased )
 			return false;
 		// [EXT:online-coop-commands] a guest's line that waits for the host takes no other click (C3a-2)
 		if ( tool.Waiting != null )
 		{
+			pendingPathEntry = false;
 			level.NoteWaitingClick();
-			return toolPress = true;
+			return true;
+		}
+		// The release of the click that entered the path tool is the tool's first click: a refused cell ends the tool at once, and the refused click sounds at this release (PathRefusalClick).
+		if ( pendingPathEntry )
+		{
+			pendingPathEntry = false;
+			level.ClickEnteredPathTool( cursorX, cursorY, out var refused );
+			if ( refused != null )
+			{
+				refusalClick.Refused( cursorX, cursorY );
+				PostMessage( strings.Extra( refused.StoppedBy == CellBuildResult.NotEnoughMoney ? OpenTpwText.NotEnoughMoney : OpenTpwText.CannotBuildHere ) );
+				return true;
+			}
+			// [BIN:TPW-EXE:0x005271B7 lay click] every path or queue click past the refused-ghost test plays cat_ui 101 (0x65) before its start or line, the first click included
+			GameAudio.PlayPathToolSound( GameAudio.PathLayEvent );
+			ReportCellToolClick( false, CellToolMode.Path, tool, false );
+			PostMessage( strings.Help( 443 ) );
+			tool.Hover( (cursorX, cursorY) );
+			return true;
 		}
 		// The commit click; Level skips it because the HUD reports the pointer as captured this frame.
-		refusalClick.Press();
 		var click = new LineClick( (cursorX, cursorY), level.QueueJoinCell( tool ), tool.Start != null, tool.Mode, InterfaceMode() );
 		var sessionRefusals = level.SessionRefusals;
 		// the click's modifiers go with it: a kart or water line that closes its circuit with exactly Ctrl and no queue start pending keeps its line tool (Level.ContinueTrackTool)
@@ -1328,10 +1484,10 @@ public sealed partial class ParkHud
 		if ( result?.Waiting != null )
 		{
 			waitingLineClick = click;
-			return toolPress = true;
+			return true;
 		}
 		FinishLineClick( click, result, released: false, sessionRefused: level.SessionRefusals != sessionRefusals );
-		return toolPress = true;
+		return true;
 	}
 
 	/// <summary>

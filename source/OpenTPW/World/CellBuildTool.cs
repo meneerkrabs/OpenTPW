@@ -30,6 +30,8 @@ public interface ICellLineWriter
 	void Undo( SegmentResult segment );
 	/// <summary>The start check of a click without a start (tp.exe <c>0x535670(mode, 0)</c>): false when it refuses the cell; a writer without one accepts every cell.</summary>
 	bool CanStart( (int X, int Y) cell ) => true;
+	/// <summary>Whether the hover ghost of a click without a start sets the refused-ghost latch for <paramref name="cell"/> beyond the line modes' own test (the track edit tools: a refused first tile), so the release plays the refusal cue and ends the tool.</summary>
+	bool RefusesFirstClick( (int X, int Y) cell ) => false;
 	/// <summary>Whether a click is snapped to the line's axis (the line tools); the track edit tools take the clicked cell as it is.</summary>
 	bool SnapsToLine => true;
 	/// <summary>Discard issuer-local active-segment state when a tool is closed or entered anew.</summary>
@@ -268,6 +270,13 @@ public sealed class CellBuildTool
 		{
 			End();
 			return refused with { GhostRefused = true };
+		}
+		// [BIN:TPW-EXE:0x527B00 edit first-tile latch] in the track edit modes 0xE and 0x13 the hover (0x527960 -> 0x53AAC0(mode | 0x100), 0x5370E0 -> 0x539760 == 1) sets the latch 0x816D48 at 0x537A30 for a refused first tile while no tile is picked (0x7639B0 == -1; a picked tile clears it, 0x527C48): the release plays 0xAF and the mode table ends the tool (0x5266A3)
+		if ( Writer!.RefusesFirstClick( cell ) )
+		{
+			var ghost = Writer.Preview( cell, cell );
+			End();
+			return ghost with { GhostRefused = true };
 		}
 		if ( !Writer!.CanStart( cell ) )
 			return null;

@@ -24,6 +24,32 @@ internal static class WorldTranslucency
 	/// <summary>The vertex flag that makes <c>test.shader</c> use the alpha test of the cut-out state 0x2756, 0xF0/255: a face of a texture with an alpha plane and an alpha byte of 0.</summary>
 	public const uint CutoutFlag = 0x1000_0000;
 
+	/// <summary>
+	/// The vertex flag of a corner whose texture slot carries the runtime slot flag 0x800 (<see cref="TextureSlotAddressing.OpaqueSlotBit"/>): the original draws such a slot's faces with state word 0x1256
+	/// whatever the texture's own alpha type says (no blend, no alpha test), so <c>test.shader</c> neither tests nor blends them. Bit 27 is free like bits 28 to 31.
+	/// </summary>
+	// [BIN:TPW-EXE:0x00581790 slot flag 0x800] the face state word is built per face: when the slot word's byte +1 has bit 8 (the slot flag 0x800, 0x00581820) the state gets 0x1256, else the texture's own state (0x00590C40); the skirt reader 0x0046AA10 sets the flag on the slots of a ride's edge floor art
+	public const uint OpaqueSlotFlag = 0x0800_0000;
+
+	/// <summary>
+	/// Makes the slots of <paramref name="types"/> that carry <see cref="OpaqueSlotFlag"/> on some vertex opaque: the faces of such a slot are neither alpha tested nor sorted into the translucent pass.
+	/// Returns whether a slot changed.
+	/// </summary>
+	public static bool ForceOpaqueSlots( TextureAlphaType[] types, Vertex[] vertices )
+	{
+		var changed = false;
+		foreach ( var vertex in vertices )
+		{
+			var slot = vertex.TexIndex;
+			if ( (vertex.MatFlags & OpaqueSlotFlag) != 0 && slot >= 0 && slot < types.Length && types[slot] != TextureAlphaType.Opaque )
+			{
+				types[slot] = TextureAlphaType.Opaque;
+				changed = true;
+			}
+		}
+		return changed;
+	}
+
 	/// <summary>The original's alpha test of the translucent state, 0x10 of 255 (the shader's constant).</summary>
 	public const float AlphaTestReference = 0x10 / 255f;
 

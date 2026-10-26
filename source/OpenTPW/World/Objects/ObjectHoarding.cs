@@ -32,6 +32,19 @@ internal sealed class ObjectMapGrid
 	/// <summary>The type dword of cell (<paramref name="column"/>, <paramref name="row"/>), 0 outside the stored cells.</summary>
 	public int TypeAt( int column, int row ) => InGrid( column, row ) ? types[row * Stride + column] : 0;
 
+	/// <summary>The type dwords at <c>row × 20 + column</c> (400 cells), as the original's cell array holds them.</summary>
+	internal int[] RawTypes => types;
+
+	/// <summary>
+	/// The type dword at the flat index <c>row × 20 + column</c> of the original's cell array: a column past the row's last (20) reads the next row's first cell, as the
+	/// raw array index does. 0 outside the 400 stored cells (the original reads whatever follows the shape record there).
+	/// </summary>
+	internal int TypeAtFlat( int column, int row )
+	{
+		var index = row * Stride + column;
+		return index >= 0 && index < types.Length ? types[index] : 0;
+	}
+
 	/// <summary>The direction byte of cell (<paramref name="column"/>, <paramref name="row"/>), 0 outside the stored cells.</summary>
 	public byte DirectionAt( int column, int row ) => InGrid( column, row ) ? directions[row * Stride + column] : (byte)0;
 
@@ -171,6 +184,23 @@ public sealed class ObjectHoardingGeometry
 	// [BIN:TPW-EXE:0x00469A80 ground vertices] each node's matrix is its stored one times its parent's (0x004702D0); a node with flag 0x200 is skipped (its children are not), one with flag 0x20000 counts nothing; every vertex is transformed (0x0046FC00) and, per axis, t = (coordinate − origin) / cell size (raised to 0), split into its whole part and fraction (0x0067B280): a fraction below 0.5 names the cell's low edge (bits 1 for X, 8 for Z), else its high edge (4, 2); a whole part outside 0 ≤ i < count + 1 (i + 1 for a high edge) ends the node and skips its children (0x0046A2A0); a cell past the shape's width (height) is the last one with a low edge turned high; an axis lies on a grid line when the fraction is within 0.01 of 0 or 1, and only a vertex on lines in both axes, within 0.01 of Y 0, whose edge is a boundary of its cell (low X with bit 2, high Z with 4, high X with 8, low Z with 1; any vertex with header flag 0x100) is counted; the node whose count first passes the best so far becomes the ground node (0x0046A0F1)
 	internal static (int Count, int Node) SelectGroundNode( ModelFile model, ObjectMapGrid? shape, HoardingTerrain terrain )
 	{
+		var scan = ScanGround( model, shape, terrain );
+		return (scan.Count, scan.Node);
+	}
+
+	/// <summary>What the type loader's counting walk records: the ground vertex count, the ground node and the list of counted vertices that the placed object's edge conform replays.</summary>
+	/// <param name="Count">The number of ground vertices over the whole model.</param>
+	/// <param name="Node">The node with the most of them (the first such node in the walk), or -1.</param>
+	/// <param name="Listed">The counted vertices' indices (into the node's stored positions) in walk order, all nodes one after the other: the list the instance's apply walk consumes.</param>
+	/// <param name="ListedNodes">The nodes that counted a vertex (the original gives them node flag 0x1000), by node index.</param>
+	internal sealed record GroundScan( int Count, int Node, ushort[] Listed, bool[] ListedNodes );
+
+	/// <summary><see cref="SelectGroundNode"/> with the list of counted vertices (tp.exe <c>0x0046A5A0</c> → <c>0x00469A80</c> counting mode).</summary>
+	// [BIN:TPW-EXE:0x00469A80 ground vertex list] a counted vertex's index is appended to the list the walk fills (base record +0x14, count +0xC), in walk order over the nodes, and its node gets flag 0x1000; the instance's apply walk (0x00469940) replays the list by pointer
+	internal static GroundScan ScanGround( ModelFile model, ObjectMapGrid? shape, HoardingTerrain terrain )
+	{
+		var listed = new List<ushort>();
+		var listedNodes = new bool[model.Nodes.Count];
 		var mask = new byte[ObjectMapGrid.Stride * ObjectMapGrid.MaximumHeight];
 		int width = 0, height = 0;
 		if ( (model.HeaderFlags & 0x80) == 0 && shape != null )
@@ -210,8 +240,10 @@ public sealed class ObjectHoardingGeometry
 			if ( (node.Type & 0x200) == 0 && node.MeshIndex >= 0 && node.MeshIndex < model.Meshes.Count )
 			{
 				var own = 0;
-				foreach ( var stored in model.Meshes[node.MeshIndex].Positions )
+				var positions = model.Meshes[node.MeshIndex].Positions;
+				for ( var vertex = 0; vertex < positions.Length; vertex++ )
 				{
+					var stored = positions[vertex];
 					var point = Transform( new NVector3( stored.X, stored.Y, stored.Z ), matrix );
 					var edges = 0;
 					int cellX = 0, cellZ = 0;
@@ -279,6 +311,8 @@ public sealed class ObjectHoardingGeometry
 						{
 							own++;
 							total++;
+							listed.Add( (ushort)vertex );
+							listedNodes[nodeIndex] = true;
 						}
 					}
 					if ( own > best )
@@ -294,7 +328,7 @@ public sealed class ObjectHoardingGeometry
 
 		if ( model.RootNodeIndex >= 0 )
 			Visit( model.RootNodeIndex, Matrix4x4.Identity );
-		return (total, bestNode);
+		return new GroundScan( total, bestNode, listed.ToArray(), listedNodes );
 	}
 
 	/// <summary>The positions of node <paramref name="node"/>'s mesh transformed by the node's own stored matrix (the builder's view of the ground node).</summary>

@@ -95,6 +95,40 @@ public partial class CoopJoinSessionTests
 	}
 
 	[TestMethod]
+	public void AResyncArmsAGuestsMoveToolAgainFromItsCarry()
+	{
+		var guest = MoveHosted();
+		var seat = guest.Link.Slot;
+		guest.Enter();
+		Assert.IsFalse( guest.Level!.BeginMove( guest.Level.Objects.FindAt( 20, 12 )! ) );
+		var pick = guest.Level.WaitingToolStart!;
+		RoundsUntil( () => !pick.IsOpen, "the pick-up came back" );
+		// the guest's HUD arms the Move tool with what the pick-up carries
+		guest.Enter();
+		var (entry, rotation) = pick.Result!.As<(ObjectCatalogEntry Entry, int Rotation)>();
+		guest.Level.EndWaiting( pick );
+		Assert.IsTrue( guest.Level.CompleteMove( entry, rotation ) );
+		StartResync( guest );
+		guest.Link.DropFrame = null;
+		var old = guest.Level;
+		RoundsUntil( () => guest.Level != old, "the park was swapped in" );
+		guest.Enter();
+		Assert.IsTrue( guest.Level!.CarriesEntry( seat ), "the new park holds the seat's carry" );
+		Assert.IsFalse( guest.Level.IsMoving, "a new park starts with no tool" );
+		// the new park's HUD arms it again, once, at the angle it had
+		var restored = guest.Level.TakeMoveToRestore();
+		Assert.IsTrue( restored is { } move && move.Entry.InfoId == entry.InfoId && move.Rotation == rotation );
+		Assert.IsNull( guest.Level.TakeMoveToRestore(), "once" );
+		Assert.IsTrue( guest.Level.CompleteMove( restored!.Value.Entry, restored.Value.Rotation ) );
+		Assert.IsFalse( guest.Level.EndStrayCarry( clock ), "an armed tool's carry is no stray one" );
+		// its end releases the carry, as ever
+		guest.Level.BuildEntry = null;
+		RoundsUntil( () => !guest.Level.CarriesEntry( seat ) && !host.Level!.CarriesEntry( seat ), "the end released the carry" );
+		Assert.IsNull( host.Level!.Objects.FindAt( 20, 12 ), "the object stays sold" );
+		CatchUpAndCompare( guest );
+	}
+
+	[TestMethod]
 	public void APickUpOpenAcrossAResyncTakesNoSecondAndItsCarryIsEnded()
 	{
 		var guest = MoveHosted();

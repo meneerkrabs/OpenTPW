@@ -1767,13 +1767,16 @@ or a track ride's station) stays the host's in all of these until claims come (C
 the removal of its cells and Backspace over them, any line across one of its cells (a path line paves a
 queue's end), a placement whose own plan writes over one (its footprint, the paths it clears, the cell
 beyond a track end, the cells outside its entrance and exit), a bridge with a cell or an end on one, and
-the object window's queue tool, which a guest's window does not offer. So does the path cell its back
-cell joins, whose removal or a queue laid over it would take the queue's link off: a guest's remove
-click, Backspace, queue lines, placements (whose plans clear the paths under them) and bridges refuse it,
-and its area clear leaves it standing (`IParkCommandRights.AllowsPathRemoval`). A path line along it
-leaves the queue's links as they are and stays the guest's. A queue cell's ride is resolved as its
-removal resolves it: the rides' cached lines, then each line walked again (on a copy) for the cells they
-miss, once per command. Everything else stays the host's: pause and speed (Q8), cheats (Q17), money,
+the object window's queue tool, which a guest's window does not offer, nor its sale and Move buttons for
+the station. So does the path cell its back cell joins, whose removal or a queue laid over it would take
+the queue's link off: a guest's remove click, Backspace, queue lines, placements (whose plans clear the
+paths under them, and a queue ride's, which lays its first queue cell outside its entrance) and bridges
+refuse it, and its area clear leaves it standing (`IParkCommandRights.AllowsPathRemoval`). A path line
+along it, the path a placement lays or links outside its other entrances and exits, and a queue line that
+only ends on it (which links the queue to that path, `QueuePaths.Connect`) leave the queue's links as
+they are and stay the guest's. A queue cell's ride is resolved as its removal resolves it: the rides'
+cached lines, then each line walked again (on a copy) for the cells they miss, once per question of the
+rights (the area clear asks it for each path cell it would clear). Everything else stays the host's: pause and speed (Q8), cheats (Q17), money,
 staff and the park's management (C4) with a wave machine's settings, undo lines and pool strokes (whose
 cells a request could name freely; undo is C5), the single-cell removals and the pools' single-cell kinds
 no guest's tool issues, tracks and coasters (C3c), the grants and the release of a departed seat.
@@ -1867,6 +1870,11 @@ research tests, and the tool's end drops the carry.
   while its Move tool is not armed sends the Move's end (`Level.EndStrayCarry`), at most once a second
   and only while no pick-up or end of its own is open. The object stays sold, as a cancelled Move leaves
   it.
+- **A resync** keeps an armed Move tool: the new park's tool arms again from the carry its snapshot holds,
+  at the angle it had (`Level.TakeMoveToRestore`); a carry its tool did not hold is a stray one, as above.
+- **A Move tool without its carry.** When the host released the seat's carry while its Move tool was armed
+  (a resume under a new member id, a departure the host saw), every placement of it would be refused: the
+  guest's frame disarms it after the outcomes (`Level.EndCarrylessMove`), without an end command.
 - **A grant taken back** leaves the Move tool armed: its placements are refused at their records, and its
   end still goes.
 - **A departed seat.** At each frame's start, before the requests, the host takes the grant back and
@@ -2282,10 +2290,9 @@ guarded list.
   refuse it mid-carry (C3): the employee then stays in that player's hand and the player's next
   pick-up is refused. C3 must always allow the drop back to where the employee came from.
 - The Move tool's end ends the issuer's tool whatever its command's result (`EndMoveCommand`): a
-  refusal would leave the picked-up type carried on every peer while the issuer's tool is gone. C3
-  must always allow it, and a member that leaves the session mid-move must have its Move tool ended
-  on every peer (as its hand and its hire must be), or the next player in its slot inherits the
-  carried type.
+  refusal would leave the picked-up type carried on every peer while the issuer's tool is gone.
+  Resolved in C3b-2: every guest seat may end its Move, granted or not, and the host releases a
+  departed seat's carry (`ReleaseSeatCommand`), so the next player in its slot inherits none.
 - A hire's pending candidate (`ParkStaff.PendingPlacementId`) is one per park: two players placing hires
   at once would take it from each other (C3 gives each player a placement).
 - Opening the queue tool (after a ride is placed, its track circuit closes or its coaster is completed,

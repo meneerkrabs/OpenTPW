@@ -180,19 +180,23 @@ public partial class Level
 			PoolTool?.EndGuestStrokes();
 		// [EXT:online-coop-commands] a guest's Move tool disarms without an end command: its carry goes with the session's state (C3b-2), and the park is shared no more
 		if ( IsMoving && Commands.Player > ParkCommands.LocalPlayer )
+			DisarmMoveLocally();
+	}
+
+	/// <summary>[EXT:online-coop-commands] The guest's Move tool disarms without an end command (its carry is gone, or goes with the session), and the HUD drops the item it had armed for it.</summary>
+	private void DisarmMoveLocally()
+	{
+		endingMoveLocally = true;
+		try
 		{
-			endingMoveLocally = true;
-			try
-			{
-				BuildEntry = null;
-			}
-			finally
-			{
-				endingMoveLocally = false;
-			}
-			// the HUD drops the item it had armed for the Move, as after any end of the build tools
-			BuildToolsEnded?.Invoke();
+			BuildEntry = null;
 		}
+		finally
+		{
+			endingMoveLocally = false;
+		}
+		// the HUD drops the item it had armed for the Move, as after any end of the build tools
+		BuildToolsEnded?.Invoke();
 	}
 
 	/// <summary>Set while <see cref="EndGuestWaits"/> disarms a guest's Move tool: the tool's end sends no command.</summary>
@@ -358,23 +362,54 @@ public partial class Level
 		SetBuildRotation( rotation );
 	}
 
-	/// <summary>When <see cref="EndStrayCarry"/> last sent an end, or null.</summary>
-	private double? lastStrayCarryEnd;
-
 	/// <summary>
 	/// [EXT:online-coop-commands] A guest's seat that carries a picked-up type in its park while its Move tool is not armed (C3b-2): a pick-up whose tool started no more, an end the host
-	/// could not take, a resync's park with the carry in it. The HUD calls this after taking its requests' outcomes each frame: it sends the Move's end, at most once a second (by
-	/// <paramref name="now"/>) and only while no pick-up or end of this guest is open, so it never ends a carry whose tool is about to arm (the outcomes armed it first) or reaches the host
-	/// after a newer pick-up (one is open at a time). True when it sent one.
+	/// could not take, a resync's park with a carry its Move tool did not hold (<see cref="TakeMoveToRestore"/> arms one it held). The HUD calls this after taking its requests' outcomes each
+	/// frame: it sends the Move's end, at most once a second (by <paramref name="now"/>, kept by the session across a resync) and only while no pick-up or end of this guest is open, so it
+	/// never ends a carry whose tool is about to arm (the outcomes armed it first) or reaches the host after a newer pick-up (one is open at a time). True when it sent one.
 	/// </summary>
 	internal bool EndStrayCarry( double now )
 	{
-		if ( CoopSession?.GuestCommands is not { } requests || !Commands.SendsRequests || IsMoving || !CarriesEntry( Commands.Player ) )
+		if ( CoopSession is not { GuestCommands: { } requests } session || !Commands.SendsRequests || IsMoving || !CarriesEntry( Commands.Player ) )
 			return false;
-		if ( requests.Open.Any( request => request.Command is PickUpObjectCommand or EndMoveCommand ) || (lastStrayCarryEnd is { } last && now - last < 1) )
+		if ( requests.Open.Any( request => request.Command is PickUpObjectCommand or EndMoveCommand ) || (session.LastStrayCarryEnd is { } last && now - last < 1) )
 			return false;
-		lastStrayCarryEnd = now;
+		session.LastStrayCarryEnd = now;
 		return Commands.Issue( new EndMoveCommand() ).IsPending;
+	}
+
+	/// <summary>
+	/// [EXT:online-coop-commands] The guest's Move tool that was armed in the park a resync replaced (C3b-2): the key of the type it carried and its angle, which the session hands to the new
+	/// park. The new park's HUD arms the tool again from the carry the snapshot holds (<see cref="TakeMoveToRestore"/>), as the player left it, instead of ending the carry.
+	/// </summary>
+	internal (string Entry, int Rotation)? MoveBeforeResync { get; set; }
+
+	/// <summary>
+	/// [EXT:online-coop-commands] The type and angle the guest's Move tool arms with again after a resync (<see cref="MoveBeforeResync"/>), once: when the seat still carries that type in the new
+	/// park, no pick-up of its own is open and the view has no tool. Null otherwise; a carry then left without its tool is a stray one (<see cref="EndStrayCarry"/>).
+	/// </summary>
+	internal (ObjectCatalogEntry Entry, int Rotation)? TakeMoveToRestore()
+	{
+		if ( MoveBeforeResync is not { } move )
+			return null;
+		MoveBeforeResync = null;
+		if ( !Commands.SendsRequests || IsMoving || !NoToolActive || HasOpenPickUp || carriedEntries == null || !carriedEntries.TryGetValue( Commands.Player, out var carried )
+			|| carried != move.Entry || ResolveCommandEntry( carried ) is not { } entry )
+			return null;
+		return (entry, move.Rotation);
+	}
+
+	/// <summary>
+	/// [EXT:online-coop-commands] A guest's Move tool armed while its seat carries nothing in its park (C3b-2): the host released the seat's carry (a resume under a new member id, a departure
+	/// the host saw), so every placement of the tool would be refused at its record. The HUD calls this after taking its requests' outcomes each frame: the tool disarms without an end command,
+	/// as there is no carry to end, as the session's end disarms it. True when it disarmed.
+	/// </summary>
+	internal bool EndCarrylessMove()
+	{
+		if ( CoopSession == null || !Commands.SendsRequests || !IsMoving || CarriesEntry( Commands.Player ) || HasOpenPickUp )
+			return false;
+		DisarmMoveLocally();
+		return true;
 	}
 
 	/// <summary>[EXT:online-coop-commands] Whether a pick-up of this guest is open in the session's requests, from this park or the one a resync replaced (C3b-2).</summary>
@@ -385,7 +420,7 @@ public partial class Level
 
 	/// <summary>
 	/// [EXT:online-coop-commands] The guest's pick-up came back accepted (C3b-2): the Move tool arms with the type it carries, as <see cref="BeginMove"/> does once its pick-up applied, if
-	/// the park view still has no tool. True when it armed; otherwise the carry is ended by the HUD (<c>ParkHud.EndStrayCarry</c>), and the object stays sold, as a cancelled Move leaves
+	/// the park view still has no tool. True when it armed; otherwise the carry is ended by the HUD (<see cref="EndStrayCarry"/>), and the object stays sold, as a cancelled Move leaves
 	/// it.
 	/// </summary>
 	internal bool CompleteMove( ObjectCatalogEntry entry, int rotation )

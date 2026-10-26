@@ -655,8 +655,8 @@ public sealed partial class ParkHud
 	{
 		if ( RejectReadOnlyAction() )
 			return;
-		// [EXT:online-coop-commands] a guest's sale of the object that waits for the host takes no second one (C3b)
-		if ( selectedObject is not { IsDeleted: false } item || item.Entry.IsFixedItem || level.IsSaleWaiting( item.Runtime.AttractionId ) )
+		// [EXT:online-coop-commands] a guest's sale of the object that waits for the host takes no second one (C3b), and [EXT:online-coop-permissions] a claimed station is not a guest's to sell
+		if ( selectedObject is not { IsDeleted: false } item || item.Entry.IsFixedItem || level.IsSaleWaiting( item.Runtime.AttractionId ) || ClaimedForGuest( item ) )
 			return;
 		void Remove()
 		{
@@ -843,9 +843,14 @@ public sealed partial class ParkHud
 		// [EXT:online-coop-commands] a guest's queue edit or Move pick-up that waits for the host starts no tool once any tool was on meanwhile (C3b): the HUD's own tools, the pools', the staff's
 		if ( level.WaitingToolStart != null && !level.NoToolActive )
 			level.DropToolStartWait();
-		// [EXT:online-coop-commands] a guest's requests resolved since the last frame complete their tools first, outside any command, tick and stream application (C3a-2); a carry left
-		// without its Move tool is ended after that (C3b-2)
+		// [EXT:online-coop-commands] the buy item a pick-up arms the Move tool with is its wait's: a wait dropped (another tool, Escape, the session's end) takes it along (C3b-2)
+		if ( waitingMove is { } move && !ReferenceEquals( level.WaitingToolStart, move.Request ) )
+			waitingMove = null;
+		// [EXT:online-coop-commands] a guest's requests resolved since the last frame complete their tools first, outside any command, tick and stream application (C3a-2); then a resync's park
+		// arms the Move tool again from its carry, a Move tool whose carry the host released disarms, and a carry left without its Move tool is ended (C3b-2)
 		CompleteGuestRequests();
+		RestoreMove();
+		level.EndCarrylessMove();
 		level.EndStrayCarry( Time.Now );
 		// [EXT:online-coop-commands] a guest's pool strokes send what waits and say what finished (C3b-3)
 		UpdateGuestPoolStrokes();
@@ -886,8 +891,9 @@ public sealed partial class ParkHud
 			openButton.Enabled = !level.IsReadOnlyVisit && infoNow?.CanOpen == true && objectDoorAllowed;
 		}
 		if ( hud.Find( "deleteRide" ) is UiButton deleteButton )
-			// [EXT:online-coop-commands] not while this guest's sale of the object waits for the host (C3b)
-			deleteButton.Enabled = !level.IsReadOnlyVisit && selectedObject is { IsDeleted: false } item && !item.Entry.IsFixedItem && !level.IsSaleWaiting( item.Runtime.AttractionId );
+			// [EXT:online-coop-commands] not while this guest's sale of the object waits for the host (C3b), nor [EXT:online-coop-permissions] for a guest's claimed station
+			deleteButton.Enabled = !level.IsReadOnlyVisit && selectedObject is { IsDeleted: false } item && !item.Entry.IsFixedItem && !level.IsSaleWaiting( item.Runtime.AttractionId )
+				&& !ClaimedForGuest( item );
 		if ( hud.Find( "rideView" ) is UiButton rideButton )
 			rideButton.Enabled = IsRiding || (selectedObject is { IsDeleted: false } candidate && RideCameraMode.CanRide( candidate ));
 

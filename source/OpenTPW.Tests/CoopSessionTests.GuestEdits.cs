@@ -410,15 +410,19 @@ public partial class CoopSessionTests
 			Assert.IsTrue( item.IsDeleted );
 			Assert.IsNull( host.Level.Objects.FindAt( 20, 12 ) );
 			Assert.AreEqual( 1, HostCommandsOf( host, guest.Level.Commands.Player ).Count( command => command is RemoveAttractionCommand ), "the second click sent no second sale" );
-			// a track ride's station is the host's to sell: refused here, in the host-only words, and nothing goes
+			// a track ride's station is the host's to sell: the guest's erase and Move buttons are off for it, and a sale sends nothing
 			foreach ( var park in new[] { host, guest } )
 				MarkStation( park, park.Level.Objects.FindAt( 24, 12 )! );
 			guest.Enter();
 			var station = guest.Level.Objects.FindAt( 24, 12 )!;
+			typeof( ParkHud ).GetField( "selectedObject", NonPublic )!.SetValue( view.Hud, station );
+			view.Update();
+			Assert.IsFalse( erase.Enabled, "the erase button is off for a claimed station" );
+			Assert.IsFalse( (bool)typeof( ParkHud ).GetMethod( "CanMoveObject", NonPublic )!.Invoke( view.Hud, new object[] { station } )!, "and the Move button" );
 			Sell( view.Hud, station );
 			Assert.IsFalse( guest.Level.IsSaleWaiting( station.Runtime.AttractionId ) );
 			view.Update();
-			Assert.AreEqual( 1, view.Says( OpenTpwText.CoopHostOnly ) );
+			Assert.AreEqual( 0, view.Says( OpenTpwText.CoopHostOnly ) + view.Says( OpenTpwText.CoopNotGranted ), "nothing to say: nothing went" );
 			foreach ( var park in new[] { host, guest } )
 				MarkStation( park, park.Level.Objects.FindAt( 24, 12 )!, station: false );
 		}
@@ -575,6 +579,8 @@ public partial class CoopSessionTests
 			var other = guest.Level.Objects.Objects.First( item => !ReferenceEquals( item, guest.One ) ).Runtime.AttractionId;
 			Assert.IsFalse( rights.Allows( seat, new QueueSegmentCommand( other, 12, 1, 8, 1 ) ), "another ride's queue over the path cell the claimed queue joins" );
 			Assert.IsFalse( rights.Allows( seat, new LayLineCommand( CellToolMode.Queue, other, 12, 1, 8, 1 ) ) );
+			Assert.IsTrue( rights.Allows( seat, new LayLineCommand( CellToolMode.Queue, other, 14, 1, 10, 1 ) ), "a queue line that only ends on it links to it (QueuePaths.Connect)" );
+			Assert.IsFalse( rights.Allows( seat, new QueueSegmentCommand( other, 14, 1, 10, 1 ) ), "the native segment is asked for every cell" );
 			Assert.IsTrue( rights.Allows( seat, new LayLineCommand( CellToolMode.Path, -1, 12, 1, 8, 1 ) ), "a path line along it changes no link of the queue" );
 			Assert.IsFalse( rights.Allows( seat, new LayLineCommand( CellToolMode.Path, -1, 12, 3, 8, 3 ) ), "a path line over a claimed queue cell (a path line paves a queue end)" );
 			Assert.IsTrue( rights.Allows( seat, new QueueSegmentCommand( other, 12, 9, 8, 9 ) ), "a line that crosses neither is the guest's" );
@@ -632,6 +638,19 @@ public partial class CoopSessionTests
 			Assert.IsFalse( rights.PlacementLeavesClaimsAlone( fixedItem, 10, 1, 0 ), "a fixed item's footprint over it" );
 			Assert.IsFalse( rights.PlacementLeavesClaimsAlone( outranks, one.X, one.Y, 0 ), "a placement that would demolish the claimed station" );
 			Assert.IsTrue( rights.PlacementLeavesClaimsAlone( trackEnd, 6, 1, 0 ) && rights.PlacementLeavesClaimsAlone( fixedItem, 5, 1, 0 ), "away from it" );
+			// the cells outside an entrance and an exit: a queue ride's entrance lays queue over the joined path cell, taking its links off; any other lays or links path there
+			// (an entrance's character names the side it is entered from: '6' opens to the west, onto (10, 1); an exit's the side it leaves by: 'W')
+			var queueEntrance = ShapedEntry( "Info.Id 9104\nInfo.HasQueue 1\n", "6" );
+			var pathEntrance = ShapedEntry( "Info.Id 9105\n", "6" );
+			var exit = ShapedEntry( "Info.Id 9106\nInfo.HasQueue 1\n", "W" );
+			foreach ( var shaped in new[] { queueEntrance, pathEntrance, exit } )
+			{
+				Assert.AreEqual( OriginalPlacementResult.Allowed, level.Objects.Check( shaped, 11, 1, 0, out _ ), $"{shaped.InfoId} fits beside the join" );
+				Assert.AreEqual( (10, 1), ObjectFootprint.GetAccessPoints( shaped.Shape, 11, 1, 0 ).Select( point => (point.OutsideX, point.OutsideY) ).Single(), "its outside cell is the join" );
+			}
+			Assert.IsFalse( rights.PlacementLeavesClaimsAlone( queueEntrance, 11, 1, 0 ), "a queue entrance's first cell over the joined path cell" );
+			Assert.IsTrue( rights.PlacementLeavesClaimsAlone( pathEntrance, 11, 1, 0 ), "a path laid over the joined path cell takes no link off" );
+			Assert.IsTrue( rights.PlacementLeavesClaimsAlone( exit, 11, 1, 0 ), "nor does an exit's path" );
 		}
 		finally
 		{

@@ -805,6 +805,8 @@ public sealed class ParkEconomy : IParkEconomy
 			// [BIN:TPW-EXE:0x004DFDC6 toilet cleaned] a gauge byte below 25 swaps the dirty row 6 back to the clean row 1 before the gauge goes to 100
 			if ( IsDirtyToilet( item ) )
 				SwapToiletEffect( item, RegionEffect.DirtyToilet, RegionEffect.CleanToilet );
+			// [BIN:TPW-EXE:0x004DFE00 clean resets VAR_WORN] the clean always writes script variable 8 (VAR_WORN) = 0 (0x55A070 handle, 0x55A0B0 variable, value), dirty or not, so the toilet's script drops its dirty look; then the gauge, the claim and the call
+			WriteScript( item, RideVariables.VAR_WORN, 0 );
 			item.Repair = RideRepair.FullGauge;
 			item.MechanicId = 0;
 			var called = item.MaintenanceRequested;
@@ -1076,6 +1078,8 @@ public sealed class ParkEconomy : IParkEconomy
 			// [BIN:TPW-EXE:0x004DFD80 toilet cleaned] the end of the handyman's state 11 sets the gauge back to 100.0 and clears the ride's mRequestedService (+0x64) and assigned staff (+0x5E); a dirty toilet's row 6 turns back into row 1 first
 			if ( IsDirtyToilet( item ) )
 				SwapToiletEffect( item, RegionEffect.DirtyToilet, RegionEffect.CleanToilet );
+			// [BIN:TPW-EXE:0x004DFE00 clean resets VAR_WORN] the same write as in FinishToiletClean: script variable 8 = 0 whatever the gauge was
+			WriteScript( item, RideVariables.VAR_WORN, 0 );
 			item.Repair = RideRepair.FullGauge;
 			var called = item.MaintenanceRequested;
 			item.MaintenanceRequested = false;

@@ -150,8 +150,49 @@ public class PatrolAreaFlowTests
 		grid.Cells.SetFlags( 3, 3, ParkCellFlags.Unowned );
 		Assert.IsTrue( tool.PreviewRefused, "all four unowned: red" );
 		grid.Cells.SetFlags( 3, 3, ParkCellFlags.None );
-		grid.Cells.SetType( 3, 3, ParkCellTypes.Hoarding );
-		Assert.IsTrue( tool.PreviewRefused, "an unowned cell and a fence post count alike" );
+		Assert.IsFalse( tool.PreviewRefused );
+		// the park's land: the rectangle park's fence from post A (21, 11) to post B (13, 11)
+		var land = ParkLand.FromClicks( new ParkLandSetup( (21, 11), (13, 11), new (int X, int Y)[] { (0, 0), (4, 0), (4, 10), (-12, 10), (-12, 0), (-8, 0) } ) );
+		var post = land.Ring.First();
+		var big = new GuestPathGrid( 64, 64 );
+		big.Cells.SetLand( land );
+		var landTool = new PatrolAreaTool( () => economy, _ => new ParkCommandResult( true ), () => big.Cells );
+		Assert.IsTrue( landTool.Begin( member ) );
+		landTool.Click( post.X, post.Y );
+		landTool.Hover( post.X, post.Y );
+		Assert.IsTrue( big.Cells.Land!.IsPost( post.X, post.Y ) );
+		Assert.IsTrue( landTool.PreviewRefused, "a rectangle of one fence post has nothing to stand on" );
+		landTool.Hover( post.X + 1, post.Y );
+		Assert.IsFalse( landTool.PreviewRefused, "the cell beside a post is ground" );
+	}
+
+	[TestMethod]
+	public void TheSecondClickOnARedRectangleEndsTheToolAndSetsNothing()
+	{
+		// [BIN:TPW-EXE:0x00524A63 refused ghost] the refusal latch: cue 0xAF, the mode ends (0x5266A3 = 0x52F200(0, 0)), the member keeps its area
+		var (hud, park, _) = Fixture( StaffType.Guard );
+		var guard = park.Staff.Members.Single();
+		var level = LevelOf( hud );
+		var grid = new GuestPathGrid( 20, 20 );
+		var tool = new PatrolAreaTool( () => park, command => level.Commands.Issue( command ), () => grid.Cells );
+		typeof( Level ).GetField( "<PatrolTool>k__BackingField", Private )!.SetValue( level, tool );
+		foreach ( var (x, y) in new[] { (2, 2), (3, 2), (2, 3), (3, 3) } )
+			grid.Cells.SetFlags( x, y, ParkCellFlags.Unowned );
+		Assert.IsTrue( tool.Begin( guard ) );
+		Frame( hud, (2, 2), left: true );
+		Frame( hud, (3, 3) );
+		Assert.IsTrue( tool.PreviewRefused );
+		Frame( hud, (3, 3), left: true );
+		Assert.IsFalse( tool.IsActive, "the tool ends" );
+		Assert.IsFalse( guard.HasPatrolArea, "and nothing is set" );
+		var refusal = typeof( ParkHud ).GetProperty( "refusalClick", Private )!.GetValue( hud )!;
+		Assert.AreEqual( (3, 3), ((PathRefusalClick)refusal).Release(), "the release plays the refusal cue at the clicked cell" );
+
+		Assert.IsTrue( tool.Begin( guard ) );
+		Frame( hud, (5, 5), left: true );
+		Frame( hud, (6, 6), left: true );
+		Assert.AreEqual( (5, 5, 6, 6), guard.PatrolArea, "a rectangle with ground is set" );
+		Assert.IsNull( tool.TakeRefusal() );
 	}
 
 	[TestMethod]

@@ -1111,6 +1111,12 @@ public sealed partial class ParkHud
 		if ( !inPark || !input.LeftPressed )
 			return false;
 		tool.Click( cursorX, cursorY );
+		// [BIN:TPW-EXE:0x524A63 refused ghost] the second click on a red rectangle ends the tool and the release plays the refusal cue (cat_ui 0xAF, 0x524AA7)
+		if ( tool.TakeRefusal() is { } refused )
+		{
+			refusalClick.Press();
+			refusalClick.Refused( refused.X, refused.Y );
+		}
 		return toolPress = true;
 	}
 
@@ -1419,15 +1425,20 @@ public sealed partial class ParkHud
 	/// The patrol area of the staff member the staff locator has found and the camera follows: its border cells, blue. Empty without one, for a member without an area of its own
 	/// and for a visitor.
 	/// </summary>
-	// [BIN:TPW-EXE:0x004b3640 patrol area highlight] on every message 0x1e of the locator panel (0x4b3790) while its camera flag 0x1000 is set and the located thing (0x7cc308) is staff (types 4 to 8) with an own area (0x506eb0), four LayLine passes of the op 0x136 mark its rectangle; the validator's flag 0x816D50 is 0 outside the patrol tool, so the cells are blue
+	// [BIN:TPW-EXE:0x004b3640 patrol area highlight] on every message 0x1e of the locator panel (0x4b3790) while its camera flag 0x1000 is set and the located thing (0x7cc308) is staff (types 4 to 8) with an own area (0x506eb0), four LayLine passes of the op 0x136 mark its rectangle; the validator's flag 0x816D50 is shared with the other tools' hover branches, so the original's cells can turn red while another tool's ghost is refused; OpenTPW keeps them blue (the flag is 0 while no tool's hover sets it)
 	private IEnumerable<(int X, int Y, BlueprintMarker Marker)> LocatedPatrolAreaEdge()
 	{
 		if ( !Locator.Following || Locator.ActorId == 0 || Locator.Role == LocatorModel.VisitorRole
 			|| (Status.EconomySource as ParkEconomy)?.Staff.Members.FirstOrDefault( member => member.Id == Locator.ActorId ) is not { HasPatrolArea: true } located )
 			return Array.Empty<(int X, int Y, BlueprintMarker Marker)>();
 		var area = located.PatrolArea;
-		return PatrolAreaTool.EdgeCells( (area.X0, area.Y0), (area.X1, area.Y1) ).Select( cell => (cell.X, cell.Y, BlueprintMarker.Allowed) );
+		if ( locatedAreaEdge is not { } cached || cached.Area != area )
+			locatedAreaEdge = (area, PatrolAreaTool.EdgeCells( (area.X0, area.Y0), (area.X1, area.Y1) ).Select( cell => (cell.X, cell.Y, BlueprintMarker.Allowed) ).ToArray());
+		return locatedAreaEdge.Value.Cells;
 	}
+
+	/// <summary>The border cells of the last located rectangle, kept while the rectangle is the same (the blueprint asks every frame).</summary>
+	private ((int X0, int Y0, int X1, int Y1) Area, (int X, int Y, BlueprintMarker Marker)[] Cells)? locatedAreaEdge;
 
 	/// <summary>The cost of the tool's preview line beside its end (the markers themselves are <see cref="BlueprintMarkers"/>).</summary>
 	private void DrawCellToolGhost( UiContext context )

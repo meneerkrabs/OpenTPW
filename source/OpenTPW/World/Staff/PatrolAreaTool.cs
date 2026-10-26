@@ -40,12 +40,30 @@ public sealed class PatrolAreaTool
 
 	public void Hover( int? x, int? y ) => HoverCell = x is { } cx && y is { } cy && InMap( cx, cy ) ? (cx, cy) : null;
 
-	/// <summary>A click on the map: the first stores a corner, the second sets the rectangle and ends the tool. False when nothing happened.</summary>
+	/// <summary>The cell of a click the refusal latch refused (the second click on a red rectangle) until <see cref="TakeRefusal"/> takes it.</summary>
+	private (int X, int Y)? refusedAt;
+
+	/// <summary>The cell of the last click that was refused, once: the HUD plays the refusal cue for it.</summary>
+	public (int X, int Y)? TakeRefusal()
+	{
+		var cell = refusedAt;
+		refusedAt = null;
+		return cell;
+	}
+
+	/// <summary>A click on the map: the first stores a corner, the second sets the rectangle and ends the tool; the second on a red rectangle ends it and sets nothing. False when nothing happened.</summary>
 	// [BIN:TPW-EXE:0x00524960 patrol tool] mode 0x36: with no stored corner the click's cell is stored; otherwise the corners are ordered (the smaller x and y as the first corner) and 0x00506E50 sets them on the selected member, the corner is reset and the tool ends (0x0052F200(0, 0))
+	// [BIN:TPW-EXE:0x00524A63 refused ghost] a red ghost cell sets the refusal latch 0x816D48 (0x533931 → 0x527940(1)); the release handler tests it at 0x524A63, plays cat_ui 0xAF (0x524AA7) and goes through the jump table 0x52766C / byte table 0x527694, whose index 8 (mode 0x36) leads to 0x5266A3 = 0x52F200(0, 0): the tool ends and nothing is set
 	public bool Click( int x, int y )
 	{
 		if ( !IsActive || !InMap( x, y ) )
 			return false;
+		if ( FirstCorner != null && PreviewRefused )
+		{
+			refusedAt = (x, y);
+			Cancel();
+			return true;
+		}
 		if ( economy()?.Staff.Members.FirstOrDefault( item => item.Id == MemberId ) is not { } member )
 		{
 			Cancel();
@@ -82,7 +100,7 @@ public sealed class PatrolAreaTool
 	/// The cells the line layer marks for a rectangle between two corners: the top row between its corners, the right column, the bottom row between its corners and the left column
 	/// (the rows start one cell in from the left corner and end one cell before the right one unless the rectangle is one column wide), so the whole border once; a cell off the map is not marked.
 	/// </summary>
-	// [BIN:TPW-EXE:0x004b3640 patrol area highlight] the staff locator draws the located staff member's area with four LayLine passes of the op 0x136: (x0 + 1, y0) to (x1 - 1, y0), (x1, y0) to (x1, y1), (x0 + 1, y1) to (x1 - 1, y1), (x0, y1) to (x0, y0); the corners are read as the smaller x and y first, 0x00506E70, and the one-column case keeps x0 and x1; 0x005234d0 lays the same four lines between the first click and the hovered cell
+	// [BIN:TPW-EXE:0x004b3640 patrol area highlight] the staff locator draws the located staff member's area with four LayLine passes of the op 0x136: (x0 + 1, y0) to (x1 - 1, y0), (x1, y0) to (x1, y1), (x0 + 1, y1) to (x1 - 1, y1), (x0, y1) to (x0, y0); 0x00506E70 copies the two corner words, which 0x00524960 stored ordered (the smaller x and y first); the one-column case keeps x0 and x1; 0x005234d0 lays the same four lines between the first click and the hovered cell
 	public static IEnumerable<(int X, int Y)> EdgeCells( (int X, int Y) a, (int X, int Y) b )
 	{
 		var (x0, x1) = (Math.Min( a.X, b.X ), Math.Max( a.X, b.X ));
@@ -113,7 +131,7 @@ public sealed class PatrolAreaTool
 		yield return (x, y);
 	}
 
-	/// <summary>Whether the preview is red: the rectangle between the first corner and the hovered cell has no cell the member could stand on (every cell on the map is unowned or a park fence post).</summary>
+	/// <summary>Whether the preview is red: the rectangle between the first corner and the hovered cell has no cell the member could stand on (every cell on the map is unowned or a park fence post, <see cref="ParkLand.IsPost"/>).</summary>
 	// [BIN:TPW-EXE:0x00532a50 patrol rectangle test] counts the map cells of the rectangle and those with flag 0x40 (unowned land, 0x535DB0) or whose second-layer record is a fence post (kind 0x19, 0x53AD60); 0x005234d0 stores "every one counted" in 0x816D50 and the validator 0x535670 answers that flag for the op 0x36, so SetCell 0x532FC0 draws the red face (texture 1) for every cell of the four lines; before the first click the flag is 0 and the hovered cell is blue
 	public bool PreviewRefused
 	{
@@ -129,7 +147,7 @@ public sealed class PatrolAreaTool
 					if ( !map.InBounds( x, y ) )
 						continue;
 					total++;
-					if ( (map.FlagsAt( x, y ) & ParkCellFlags.Unowned) != 0 || map.RawTypeAt( x, y ) == ParkCellTypes.Hoarding )
+					if ( (map.FlagsAt( x, y ) & ParkCellFlags.Unowned) != 0 || map.Land?.IsPost( x, y ) == true )
 						blocked++;
 				}
 			}

@@ -168,7 +168,9 @@ public partial class CoopSessionTests
 		var requests = guest.Session!.GuestCommands!;
 		var burst = Enumerable.Range( 0, 40 ).Select( _ => requests.Submit( new LayLineCommand( CellToolMode.Path, -1, 30, 30, 30, 30 ) { Player = guest.Level.Commands.Player } ) ).ToArray();
 		var line = guest.Level.ClickCellTool( (12, 20) )!.Waiting!.Request;
+		var starts = guest.Level.HostToolStarts;
 		RoundsUntil( () => tool.Waiting == null && burst.All( request => !request.IsOpen ), host, guest, view, "the line came back" );
+		Assert.AreEqual( starts, guest.Level.HostToolStarts, "the tool is as it was: a press held meanwhile keeps its release (C3c-1b)" );
 		Assert.IsTrue( burst.All( request => request.State == CoopGuestRequestState.Applied ), "the burst's requests are records" );
 		Assert.AreEqual( (CoopGuestRequestState.Refused, (CoopGuestRefusal?)CoopGuestRefusal.TooFast), (line.State, line.Refusal) );
 		Assert.IsFalse( Walkable( host, 8, 20 ) || Walkable( guest, 8, 20 ) );

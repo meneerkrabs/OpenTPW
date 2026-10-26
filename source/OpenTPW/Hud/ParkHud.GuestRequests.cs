@@ -172,11 +172,11 @@ public sealed partial class ParkHud
 		var click = waitingLineClick;
 		waitingLineClick = null;
 		var tool = level.CellTool;
-		// [EXT:online-coop-commands] a press made while the line waited is no click of the tool its outcome moves on (C3c-1b: a cut that turns into the line tool, a close that ends, restarts
-		// or hands over the tool), as for a tool the host's answer started
-		level.HostToolStarts++;
 		if ( request is { State: CoopGuestRequestState.Applied, Result: { Error: null } outcome } )
 		{
+			// [EXT:online-coop-commands] a press made while the line waited is no click of the tool its outcome moves on (C3c-1b: a cut that turns into the line tool, a close that ends,
+			// restarts or hands over the tool), as for a tool the host's answer started; a refusal without a record leaves the tool as it was, and a held press its release
+			level.HostToolStarts++;
 			var result = level.CompleteCellTool( outcome );
 			if ( outcome.RightsRefused )
 				SayGuestNote( RightsRefusalText( outcome.Reason ) );
@@ -190,6 +190,7 @@ public sealed partial class ParkHud
 			SayGuestNote( OpenTpwText.CoopHostCouldNotTake );
 			return;
 		}
+		level.HostToolStarts++;
 		tool.Cancel();
 		SayOutcome( request, null );
 	}

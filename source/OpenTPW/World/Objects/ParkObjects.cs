@@ -185,6 +185,31 @@ public sealed class ParkObjects
 	/// (the level: a changing room needs pool water beside it, <see cref="PoolChangingRooms.PlacementRule"/>).
 	/// </summary>
 	public Func<ObjectCatalogEntry, int, int, int, OriginalPlacementResult?>? PlacementRule { get; set; }
+	/// <summary>
+	/// The landscape words and the procedural ground the level's placed objects put their skirt on while the procedural terrain textures are on (<see cref="FloorBaseContext"/>); null from the host
+	/// when the textures are off or the level has none, and a park without terrain has no such host.
+	/// </summary>
+	internal Func<FloorBaseContext?>? FloorBase { get; set; }
+	// objects registered since the last footprint refresh (a park load creates every instance before it refreshes the cells); refreshNow is set while a live placement registers
+	private readonly List<OriginalObject> pendingRefresh = new();
+	private bool refreshNow;
+
+	/// <summary>
+	/// The cell refresh of the objects a load placed (tp.exe <c>0x415140</c> → <c>0x4D83A0</c> refreshes all 128 × 128 cells after the instances of <c>0x4647A0</c> exist, so every skirt cell was still open to
+	/// a neighbour's composite scan when the instances were made): each footprint cell takes the hole word. A live placement does this itself, at once.
+	/// </summary>
+	internal void CommitFootprintRefresh()
+	{
+		if ( pendingRefresh.Count == 0 )
+			return;
+		if ( FloorBase?.Invoke() is { } context )
+		{
+			foreach ( var item in pendingRefresh.Where( objects.Contains ) )
+				item.RefreshFootprint( context.Words );
+			context.ReleaseArt();
+		}
+		pendingRefresh.Clear();
+	}
 	public event Action<OriginalObject>? ObjectPlaced;
 	public event Action<OriginalObject>? ObjectRemoved;
 
@@ -407,7 +432,17 @@ public sealed class ParkObjects
 			Remove( victim );
 		foreach ( var (x, y) in plan.ClearedPaths )
 			ClearPath?.Invoke( x, y );
-		return Register( item, registered: registered );
+		// a live placement refreshes its cells at once; the cells of earlier loads were refreshed already
+		CommitFootprintRefresh();
+		refreshNow = true;
+		try
+		{
+			return Register( item, registered: registered );
+		}
+		finally
+		{
+			refreshNow = false;
+		}
 	}
 
 	/// <summary>Places an object without build rules (imported original records and fixed items).</summary>
@@ -454,6 +489,18 @@ public sealed class ParkObjects
 		Version++;
 		foreach ( var (x, y, _) in item.Cells )
 			occupied[(x, y)] = item;
+		// [BIN:TPW-EXE:0x0046334C skirt base] the instance's creation (0x463060) writes the skirt words and makes the base composites once its placement is done, after the demolished objects' cells were restored
+		if ( FloorBase?.Invoke() is { } floorBase )
+		{
+			item.PlaceFloorBase( floorBase.Words, floorBase.Ground, floorBase.Terrain );
+			if ( refreshNow )
+			{
+				item.RefreshFootprint( floorBase.Words );
+				floorBase.ReleaseArt();
+			}
+			else
+				pendingRefresh.Add( item );
+		}
 		registered?.Invoke( item );
 		ObjectPlaced?.Invoke( item );
 		return item;
@@ -487,10 +534,10 @@ public sealed class ParkObjects
 
 	/// <summary>
 	/// Base height of an object: the midpoint of the lowest and the highest terrain vertex under its footprint. The vertices are the four corners of every shape cell whose cell type has a
-	/// non-zero low nibble (so <c>#</c>, type 16, adds none), at the anchor and rotation; the object's ground blend under the ride is not modelled (RIDES-014).
+	/// non-zero low nibble (so <c>#</c>, type 16, adds none), at the anchor and rotation. The original does not flatten the ground under the ride: the floor meets the terrain through the skirt and the edge conform (<see cref="ObjectGroundConform"/>).
 	/// </summary>
 	// [BIN:TPW-EXE:0x00466D70 base height] the creator 0x463060 (flags 0x32f, bit 8, shape pointer def+0x18) calls 0x466D70, which samples the four corners of each shape cell (entries 8 bytes, low nibble of the first byte non-zero, 0x469930) through 0x454050 and returns (lowest + highest vertex height) x 0.5 (0x466E60..0x466F70); the vertex of a corner is ftol(lerp + 0.1) of the unrotated shape position turned about the anchor, which is exactly ObjectFootprint.ToGrid of the corner (box origin 0x466F90)
-	// [APPROX:RIDES-014] the object's base height is that midpoint of the footprint's terrain vertices; the original then blends the ground under the ride flat (0x467030, 0x57ACE0), which is not modelled, and the instance words +0xF0/+0xF4 it takes as the shape size are taken to be the shape's width and height — evidence needed: the blend, and a capture of an instance height on a slope
+	// [BIN:TPW-EXE:0x00467030 footprint box] the placement 0x467030 (creation flag 2) only places the instance and stores the footprint box in +0xC0/+0xC4 (read by the hoarding conform and the terrain composite); it blends no ground flat, and 0x57ACE0 is the composite texture of the floor art over the procedural ground, not a deformation. The instance words +0xF0/+0xF4 are the shape's width and height (0x4629D0: shape words 0 and 1, params 10/11 are 0 for objects). tp.exe's own 0x466D70 run in the x86 oracle (tpw-exe-base-height) returns this rule's result for every synthetic footprint and heightfield tried (rotations 0 to 270, random shapes and heights)
 	public float GetBaseHeight( ObjectCatalogEntry entry, int anchorX, int anchorY, int rotation ) => GetBaseHeight( entry.Shape, Grid, anchorX, anchorY, rotation );
 
 	/// <summary><see cref="GetBaseHeight(ObjectCatalogEntry,int,int,int)"/> for a shape on a grid.</summary>
@@ -549,6 +596,11 @@ public sealed class ParkObjects
 		foreach ( var key in occupied.Where( pair => pair.Value == item ).Select( pair => pair.Key ).ToArray() )
 			occupied.Remove( key );
 		item.Delete();
+		// [BIN:TPW-EXE:0x00527EE0 demolition] the demolition clears every footprint cell (0x5367A0, then the refresh 0x5365D0 of the type 0 cell: the backup word returns, 0x46DF50 mode 0x37); a level that clears its park does not bother
+		pendingRefresh.Remove( item );
+		if ( !clearing && FloorBase?.Invoke() is { } cleared )
+			foreach ( var (x, y) in item.FloorWordCells )
+				cleared.Words.Restore( x, y );
 		// [BIN:TPW-EXE:0x00527EE0 object demolition] the demolition asks for the thing's destruction (0x0050B780 → 0x00516310), which the turn's end carries out; a park that clears itself frees the slots at once (0x00515FB0)
 		if ( Things is { } pool && item.ThingId != 0 )
 		{

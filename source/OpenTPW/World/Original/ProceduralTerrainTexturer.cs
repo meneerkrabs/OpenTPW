@@ -299,6 +299,73 @@ public sealed class ProceduralTerrainTexturer
 		return built;
 	}
 
+	/// <summary>
+	/// The base texel an output texel of the composite reads (tp.exe <c>0x55F780</c>, tail from <c>0x5608B0</c>): the cell word's bits <c>0x78</c> (<paramref name="word"/> &amp; 0x78) pick one of eight
+	/// readings of the N × N base buffer, tested in the order 0x40, 0x08, 0x10, 0x20. Returns the row and column of the base pixel for the output pixel (<paramref name="row"/>, <paramref name="column"/>).
+	/// </summary>
+	// [BIN:TPW-EXE:0x005608B0 composite orientation] the pointer start, texel step and row step per orientation: 0x00 (0, +1, +N), 0x08 (N²−N, −N, +1), 0x10 (N²−1, −1, −N), 0x20 (N−1, +N, −1), 0x40 (0, +N, +1), 0x48 (N²−N, +1, −N), 0x50 (N²−1, −N, −1), 0x60 (N−1, −1, +N) pixels, tested 0x40, then 0x08, 0x10, 0x20 (a word with 0x40 and none of the others reads as 0x40; a word with 0x08 and 0x10 reads as 0x08)
+	public static (int Row, int Column) BaseTexel( int word, int size, int row, int column )
+	{
+		int start, texelStep, rowStep;
+		if ( (word & 0x40) == 0 )
+		{
+			if ( (word & 0x08) != 0 )
+				(start, texelStep, rowStep) = (size * size - size, -size, 1);
+			else if ( (word & 0x10) != 0 )
+				(start, texelStep, rowStep) = (size * size - 1, -1, -size);
+			else if ( (word & 0x20) != 0 )
+				(start, texelStep, rowStep) = (size - 1, size, -1);
+			else
+				(start, texelStep, rowStep) = (0, 1, size);
+		}
+		else if ( (word & 0x08) != 0 )
+			(start, texelStep, rowStep) = (size * size - size, 1, -size);
+		else if ( (word & 0x10) != 0 )
+			(start, texelStep, rowStep) = (size * size - 1, -size, -1);
+		else if ( (word & 0x20) != 0 )
+			(start, texelStep, rowStep) = (size - 1, -1, size);
+		else
+			(start, texelStep, rowStep) = (0, size, 1);
+		var index = start + row * rowStep + column * texelStep;
+		return (index / size, index % size);
+	}
+
+	/// <summary>
+	/// The floor art blended over a cell's procedural base (tp.exe <c>0x55F780</c> with a floor descriptor, the tail from <c>0x5608B0</c>): the base (<paramref name="baseRgba"/>, the N × N pixels
+	/// <see cref="BuildRgba"/> makes, rows bottom-up) is read in the orientation of the cell word's bits 0x78 (<see cref="BaseTexel"/>), the art (<paramref name="art"/>: RGBA bytes, rows in the order
+	/// the art buffer of <c>0x590DA0</c> has them) is point sampled at row <c>Y · (height / N)</c> and column <c>X · (width / N)</c> (integer divisions), and each channel is
+	/// <c>base + (((art - base) · alpha) &gt;&gt; 8)</c> truncated to a byte, so an opaque art pixel keeps 1/256 of the base. The output is RGBA with alpha 255 (the original writes <c>[0, R, G, B]</c> and its
+	/// texture store sets alpha 0 for a state that ignores it).
+	/// </summary>
+	// [BIN:TPW-EXE:0x00560926 composite blend] 32-bit art (descriptor bytes per pixel 4): alpha, red, green and blue are bytes 3, 2, 1 and 0 of the art dword; the blend is (art - base) · alpha >> 8 added to the base and truncated to a byte; the output pixel is [0, R, G, B]; the art row pointer advances by (height / N) · width pixels per output row and its column by width / N per output pixel
+	public static void Compose( ReadOnlySpan<byte> baseRgba, int size, ReadOnlySpan<byte> art, int artWidth, int artHeight, int word, Span<byte> destination )
+	{
+		if ( baseRgba.Length < size * size * BytesPerPixel || destination.Length < size * size * BytesPerPixel )
+			throw new ArgumentException( "The base and the destination hold N × N pixels." );
+		if ( art.Length < artWidth * artHeight * BytesPerPixel )
+			throw new ArgumentException( "The art holds width × height pixels.", nameof( art ) );
+		var columnStep = artWidth / size;
+		var rowStep = artHeight / size;
+		for ( var row = 0; row < size; row++ )
+		{
+			for ( var column = 0; column < size; column++ )
+			{
+				var (baseRow, baseColumn) = BaseTexel( word, size, row, column );
+				var source = (baseRow * size + baseColumn) * BytesPerPixel;
+				var pixel = ((row * rowStep) * artWidth + column * columnStep) * BytesPerPixel;
+				int alpha = art[pixel + 3];
+				var target = (row * size + column) * BytesPerPixel;
+				for ( var channel = 0; channel < 3; channel++ )
+				{
+					int baseValue = baseRgba[source + channel];
+					int artValue = art[pixel + channel];
+					destination[target + channel] = (byte)(baseValue + (((artValue - baseValue) * alpha) >> 8));
+				}
+				destination[target + 3] = 255;
+			}
+		}
+	}
+
 	private static class Layer
 	{
 		public const int C = 0, B = 1, A = 2, BA = 3, CB = 4, CA = 5, CBA = 6;

@@ -123,6 +123,104 @@ def build(level: dict, n_size: int, x: int, z: int, quirk: bool = True) -> tuple
     return bytes(out), modes
 
 
+# ------------------------------------------------------------------ the composite tail (0x55f780 with a floor descriptor, issue 829, package F)
+# The descriptor is {pixels, width, height, bytes per pixel, word}; the tail starts at 0x5608b0. The base buffer is the output of `build` (the rows bottom-up,
+# [0, R, G, B] per pixel); the word's bits 0x78 pick the reading, tested in the order 0x40, 0x08, 0x10, 0x20.
+
+def orientation(word: int, n: int) -> tuple[int, int, int]:
+    """(start, texel step, row step) in pixels of the base buffer for the cell word."""
+    if not word & 0x40:
+        if word & 0x08:
+            return n * n - n, -n, 1
+        if word & 0x10:
+            return n * n - 1, -1, -n
+        if word & 0x20:
+            return n - 1, n, -1
+        return 0, 1, n
+    if word & 0x08:
+        return n * n - n, 1, -n
+    if word & 0x10:
+        return n * n - 1, -n, -1
+    if word & 0x20:
+        return n - 1, -1, n
+    return 0, n, 1
+
+
+def compose(base: bytes, n: int, art: bytes, width: int, height: int, bpp: int, word: int) -> bytes:
+    """The N x N composite: the base read in the word's orientation with the art blended over it, point sampled at (row Y * (height / N), column X * (width / N)), integer divisions.
+    bpp 4 reads the art dwords as A, R, G, B from bytes 3, 2, 1, 0; bpp 2 reads 4444 words (A = (v >> 8) & 0xF0, R = (v >> 4) & 0xF0, G = v & 0xF0, B = (v << 4) & 0xF0).
+    Each channel is (byte)(base + (((art - base) * alpha) >> 8)); the output pixel is [0, R, G, B]."""
+    start, texel_step, row_step = orientation(word, n)
+    column_step, art_row_step = width // n, height // n
+    out = bytearray()
+    for y in range(n):
+        for x in range(n):
+            source = (start + y * row_step + x * texel_step) * 4
+            if bpp == 4:
+                offset = ((y * art_row_step) * width + x * column_step) * 4
+                blue, green, red, alpha = art[offset], art[offset + 1], art[offset + 2], art[offset + 3]
+            else:
+                offset = ((y * art_row_step) * width + x * column_step) * 2
+                value = art[offset] | art[offset + 1] << 8
+                alpha, red, green, blue = (value >> 8) & 0xF0, (value >> 4) & 0xF0, value & 0xF0, (value << 4) & 0xFF
+            out.append(0)
+            for art_channel, base_channel in ((red, base[source + 1]), (green, base[source + 2]), (blue, base[source + 3])):
+                out.append((base_channel + (((art_channel - base_channel) * alpha) >> 8)) & 0xFF)
+    return bytes(out)
+
+
+ALPHA_MODES = ('zero', 'full', 'mid', 'random', 'ramp')
+
+
+def synthetic_art(seed: int, width: int, height: int, alpha_mode: str) -> bytes:
+    """Art of `width` x `height` 32-bit pixels (bytes B, G, R, A per pixel) from the LCG: three colour bytes per pixel, the alpha by mode (zero, 255, 127, random, a ramp across the row)."""
+    lcg = Lcg(seed)
+    out = bytearray()
+    for y in range(height):
+        for x in range(width):
+            blue, green, red = lcg.next(), lcg.next(), lcg.next()
+            alpha = {'zero': 0, 'full': 255, 'mid': 127, 'ramp': (x * 255) // max(1, width - 1)}.get(alpha_mode)
+            out += bytes([blue, green, red, lcg.next() if alpha is None else alpha])
+    return bytes(out)
+
+
+def synthetic_art_16(seed: int, width: int, height: int, alpha_mode: str) -> bytes:
+    """The 4444 version: two bytes per pixel (little endian), the nibbles A, R, G, B from the top."""
+    lcg = Lcg(seed)
+    out = bytearray()
+    for y in range(height):
+        for x in range(width):
+            red, green, blue = lcg.next() & 0xF, lcg.next() & 0xF, lcg.next() & 0xF
+            alpha = {'zero': 0, 'full': 15, 'mid': 7, 'ramp': (x * 15) // max(1, width - 1)}.get(alpha_mode)
+            alpha = lcg.next() & 0xF if alpha is None else alpha
+            value = alpha << 12 | red << 8 | green << 4 | blue
+            out += bytes([value & 0xFF, value >> 8])
+    return bytes(out)
+
+
+# the composite cases of the golden: (N, word, art size kind, alpha mode); the cell and the level come from the size index
+COMPOSE_WORDS = (0x00, 0x08, 0x10, 0x20, 0x40, 0x48, 0x50, 0x60, 0x281, 0x2C8, 0x18, 0x30, 0x58, 0x78)
+COMPOSE_ART_SIZES = ('n', 'double', 'odd', 'big', 'small')
+
+
+def compose_art_size(kind: str, n: int) -> tuple[int, int]:
+    return {'n': (n, n), 'double': (2 * n, 2 * n), 'odd': (n + 7, n + 13), 'big': (128, 128), 'small': (n // 2, n // 2)}[kind]
+
+
+def compose_specs() -> list[tuple[int, int, int, int, str, int, int, str]]:
+    """(level seed, N, cell x, cell z, art size kind, art seed, word, alpha mode) of every composite case: each size with every word, the art sizes and alpha modes in turn, on the 'C' mix
+    levels of the build golden."""
+    specs = []
+    for size_index, n in enumerate((16, 32, 64)):
+        seed = 1000 + 0 * 3 + size_index   # the 'C' mix level of this size
+        for index, word in enumerate(COMPOSE_WORDS):
+            kind = COMPOSE_ART_SIZES[(index + size_index) % len(COMPOSE_ART_SIZES)]
+            alpha = ALPHA_MODES[(index * 2 + size_index) % len(ALPHA_MODES)]
+            x, z = (index + size_index) % 3, (index // 2 + size_index) % 3
+            specs.append((seed, n, x, z, kind, 7000 + 100 * size_index + index, word, alpha))
+    return specs
+
+
 def parse_lnd(raw: bytes) -> dict:
     """Strict `base.lnd` parser: version 3, parameters, weight grid, three sets of 13 images; the parse must end at the file size."""
     if raw[0] != 3:

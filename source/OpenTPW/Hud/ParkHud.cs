@@ -1102,7 +1102,9 @@ public sealed partial class ParkHud
 			tool.Cancel();
 			return toolPress = true;
 		}
-		if ( inPark )
+		if ( debugPatrolHover is { } held )
+			tool.Hover( held.X, held.Y );
+		else if ( inPark )
 			tool.Hover( cursorX, cursorY );
 		else
 			tool.Hover( null, null );
@@ -1372,11 +1374,10 @@ public sealed partial class ParkHud
 		}
 		else if ( level.PatrolTool is { IsActive: true } patrol )
 		{
-			// Approximation (UI-024, registered at ParkHud.Build): the patrol tool's rectangle is previewed as the blueprint's edge cells between the first corner and the hovered cell; the original's marking is not traced
+			// [BIN:TPW-EXE:0x005234d0 patrol tool hover] the hovered cell alone before the first click, the four edges of the rectangle after it, red when no cell of the rectangle can be stood on, blue otherwise
+			var marker = patrol.PreviewRefused ? BlueprintMarker.Refused : BlueprintMarker.Allowed;
 			foreach ( var (x, y) in patrol.PreviewEdge() )
-				cells.Add( (x, y, BlueprintMarker.Allowed) );
-			if ( patrol.FirstCorner == null && patrol.HoverCell is { } corner )
-				cells.Add( (corner.X, corner.Y, BlueprintMarker.Allowed) );
+				cells.Add( (x, y, marker) );
 		}
 		else if ( level.PoolTool is { IsBridge: true, HoverCell: not null } bridgeTool )
 		{
@@ -1407,10 +1408,25 @@ public sealed partial class ParkHud
 			cells.AddRange( footprint.Cells );
 			directions = footprint.Directions;
 		}
+		cells.AddRange( LocatedPatrolAreaEdge() );
 		if ( level.BuildEntry == null || !inPark )
 			placementRefused = false;
 		blueprint.Update( delta, paused );
 		blueprint.Show( cells, directions );
+	}
+
+	/// <summary>
+	/// The patrol area of the staff member the staff locator has found and the camera follows: its border cells, blue. Empty without one, for a member without an area of its own
+	/// and for a visitor.
+	/// </summary>
+	// [BIN:TPW-EXE:0x004b3640 patrol area highlight] on every message 0x1e of the locator panel (0x4b3790) while its camera flag 0x1000 is set and the located thing (0x7cc308) is staff (types 4 to 8) with an own area (0x506eb0), four LayLine passes of the op 0x136 mark its rectangle; the validator's flag 0x816D50 is 0 outside the patrol tool, so the cells are blue
+	private IEnumerable<(int X, int Y, BlueprintMarker Marker)> LocatedPatrolAreaEdge()
+	{
+		if ( !Locator.Following || Locator.ActorId == 0 || Locator.Role == LocatorModel.VisitorRole
+			|| (Status.EconomySource as ParkEconomy)?.Staff.Members.FirstOrDefault( member => member.Id == Locator.ActorId ) is not { HasPatrolArea: true } located )
+			return Array.Empty<(int X, int Y, BlueprintMarker Marker)>();
+		var area = located.PatrolArea;
+		return PatrolAreaTool.EdgeCells( (area.X0, area.Y0), (area.X1, area.Y1) ).Select( cell => (cell.X, cell.Y, BlueprintMarker.Allowed) );
 	}
 
 	/// <summary>The cost of the tool's preview line beside its end (the markers themselves are <see cref="BlueprintMarkers"/>).</summary>

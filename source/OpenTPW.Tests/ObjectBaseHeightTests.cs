@@ -5,7 +5,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace OpenTPW.Tests;
 
-/// <summary>RIDES-014: an object's base height is the midpoint of the lowest and highest terrain vertex under its footprint (tp.exe 0x00466D70).</summary>
+/// <summary>An object's base height is the midpoint of the lowest and highest terrain vertex under its footprint (tp.exe 0x00466D70; the oracle pins it: <c>ObjectSkirtGoldenTests.TheBaseHeightIsWhatTheOriginalReturned</c>).</summary>
 [TestClass]
 public class ObjectBaseHeightTests
 {

@@ -29,9 +29,21 @@ public static class TextureSlotAddressing
 	public static bool IsPathLikeTexture( string? name ) =>
 		name != null && ( name.Contains( "path", StringComparison.OrdinalIgnoreCase ) || name.Contains( "pav", StringComparison.OrdinalIgnoreCase ) || name.StartsWith( "grd_ctr", StringComparison.OrdinalIgnoreCase ) || name.StartsWith( "grd_krb", StringComparison.OrdinalIgnoreCase ) );
 
+	/// <summary>
+	/// The runtime slot flag 0x800 (not a flag of the file): the skirt reader sets it on the texture slots of a ride's edge floor art, which then draw opaque (<see cref="WorldTranslucency.OpaqueSlotFlag"/>).
+	/// A slot's <see cref="ModelFile.MaterialData.Flags"/> carries it after <see cref="ObjectFloor"/> applied the type's skirt.
+	/// </summary>
+	public const uint OpaqueSlotBit = 0x800;
+
 	/// <summary>Whether tp.exe wraps a slot with these flags (else it clamps).</summary>
 	public static bool Wraps( uint slotFlags ) => (slotFlags & WrapFlags) != 0;
 
 	/// <summary>The vertex flags for a corner of a slot: the slot's own flags, with <see cref="ClampFlag"/> when the slot does not wrap.</summary>
-	public static uint VertexFlags( uint slotFlags ) => Wraps( slotFlags ) ? slotFlags & ~ClampFlag : slotFlags | ClampFlag;
+	public static uint VertexFlags( uint slotFlags )
+	{
+		// the runtime opaque bit becomes its own vertex flag
+		var opaque = (slotFlags & OpaqueSlotBit) != 0 ? WorldTranslucency.OpaqueSlotFlag : 0u;
+		slotFlags &= ~OpaqueSlotBit;
+		return opaque | (Wraps( slotFlags ) ? slotFlags & ~ClampFlag : slotFlags | ClampFlag);
+	}
 }

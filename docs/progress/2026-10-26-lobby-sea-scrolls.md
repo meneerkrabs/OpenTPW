@@ -1,0 +1,7 @@
+## The Jungle river and waterfall and the lobby sea scroll (October 26, 2026)
+
+tp.exe plays the terrain's `base` clip (AnimID 5, the letter `M`) every rendered frame: the lobby's `Basem1.MD2` scrolls the two sea meshes (200 ticks, one texture repeat towards -U and -V), and the Jungle terrain's `basem.MD2` scrolls the river and the waterfall (100 ticks, +1 U per cycle, eleven UV tracks on `surface13` to `surface17`, `surface22`, `surface23`, `surface25` and `surface27`, `falls02` and `Object12`). A park runs it through a render callback (`0x54e2b0` registered by the park load, which ends in `0x44e510` → `0x473c70`), on the game's scaled clock, so the water stands still while the park is paused and follows the game speed. OpenTPW did neither; both now play, through the existing `ObjectAnimator` (byte-exact decoder and timing).
+
+`LobbyScene` draws the lobby terrain as an animated model. A park's scrolled meshes are drawn as models of their own with dynamic vertices by `OriginalTerrain`, driven by the new `TerrainUvAnimator` on the `SceneClock` (presentation only; the other three themes have no terrain clip). [MD2-MODELS.md](../MD2-MODELS.md) ("Terrain clips") and [COMPATIBILITY.md](../COMPATIBILITY.md) ("Animated terrain water") hold the trace.
+
+`TerrainUvAnimationTests` pins both clips (tracks, nodes, corner counts, ticks, the scroll per cycle), the loop, the park meshes' coordinates moving, standing still while paused and following the speed, and a synthetic clip of the same shape; the front-end smoke requires the sea clip to be playing.

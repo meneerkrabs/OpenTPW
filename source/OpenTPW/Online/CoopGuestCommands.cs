@@ -57,6 +57,8 @@ internal sealed class CoopGuestCommands : IDisposable
 		/// <summary>What its command did in the guest's park (<see cref="CoopGuestRequestState.Applied"/>).</summary>
 		public ParkCommandResult? Result { get; internal set; }
 		public bool IsOpen => State is CoopGuestRequestState.Waiting or CoopGuestRequestState.Sent;
+		/// <summary>Whether its command applied as accepted in the guest's park (its record's result here).</summary>
+		public bool Accepted => State == CoopGuestRequestState.Applied && Result is { Accepted: true };
 	}
 
 	/// <summary>How long a request waits for its outcome before every open request goes to the host again: a request or its answer lost on its way, which no resume shows.</summary>
@@ -65,6 +67,14 @@ internal sealed class CoopGuestCommands : IDisposable
 	private readonly ICoopStreamTransport transport;
 	private readonly Func<double> seconds;
 	private readonly SortedDictionary<uint, Request> open = new();
+	/// <summary>The requests resolved since the last <see cref="TakeCompleted"/>, in order: the tools complete from them outside any command and the stream's application.</summary>
+	private readonly Queue<Request> completed = new();
+
+	/// <summary>
+	/// How many resolved requests wait for <see cref="TakeCompleted"/> at most: a guest without a HUD to take them (a headless one) keeps the newest only. A HUD takes them every frame,
+	/// long before this many resolve.
+	/// </summary>
+	internal const int MaximumCompleted = 256;
 	private uint nextSequence = 1;
 	/// <summary>The last stream record the guest's park holds: applied here, or inside the join snapshot it was rebuilt from.</summary>
 	private long included;
@@ -82,8 +92,24 @@ internal sealed class CoopGuestCommands : IDisposable
 		transport.Resumed += OnResumed;
 	}
 
-	/// <summary>Raised once for each request that resolves (applied, in a snapshot, refused, unknown, or ended with the session).</summary>
+	/// <summary>
+	/// Raised once for each request that resolves (applied, in a snapshot, refused, unknown, or ended with the session), where it resolves: inside the stream's application of its record, or
+	/// in the link's pump. A listener must not act on the park or a tool; the tools take their completions later (<see cref="TakeCompleted"/>).
+	/// </summary>
 	public event Action<Request>? Resolved;
+
+	/// <summary>
+	/// [EXT:online-coop-commands] The requests resolved since the last call, oldest first (C3a-2): the HUD takes them at the start of its update, outside any command, tick and stream
+	/// application, and completes the tools that still own them; any other is an orphan, whose outcome is only a message.
+	/// </summary>
+	public IReadOnlyList<Request> TakeCompleted()
+	{
+		if ( completed.Count == 0 )
+			return Array.Empty<Request>();
+		var taken = completed.ToArray();
+		completed.Clear();
+		return taken;
+	}
 
 	/// <summary>The requests not resolved yet, oldest first.</summary>
 	public IReadOnlyCollection<Request> Open => open.Values;
@@ -113,10 +139,14 @@ internal sealed class CoopGuestCommands : IDisposable
 		var bytes = ParkCommandCodec.Encode( command );
 		var request = new Request( nextSequence++, command, bytes );
 		open.Add( request.Sequence, request );
+		LastSubmitted = request;
 		if ( !fenced )
 			Send( request );
 		return request;
 	}
+
+	/// <summary>The request submitted last, resolved or not: what a tool's click sent, which the live acceptance follows to its outcome however fast it resolves.</summary>
+	public Request? LastSubmitted { get; private set; }
 
 	/// <summary>
 	/// Once a game frame: when an open request has waited <see cref="ResendSeconds"/> for its outcome since it last went out, every open request goes to the host again, in order
@@ -262,6 +292,9 @@ internal sealed class CoopGuestCommands : IDisposable
 	private void Resolve( Request request, CoopGuestRequestState state )
 	{
 		request.State = state;
+		completed.Enqueue( request );
+		while ( completed.Count > MaximumCompleted )
+			completed.Dequeue();
 		// a listener that throws keeps neither the other listeners nor the stream that applied the record from going on
 		foreach ( var listener in Resolved?.GetInvocationList() ?? Array.Empty<Delegate>() )
 		{

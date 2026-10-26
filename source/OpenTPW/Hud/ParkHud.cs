@@ -86,7 +86,7 @@ public sealed partial class ParkHud
 	/// <summary>[EXT:online-coop-lockstep] The level's session refusals the HUD has said already (<see cref="Level.SessionRefusals"/>), and when it last said so.</summary>
 	private int lastSessionRefusals;
 	private float lastSessionRefusalNotice = float.NegativeInfinity;
-	/// <summary>The least time between two "only the host builds" notices: a drag that issues a command per cell says it once.</summary>
+	/// <summary>The least time between two notices of a session's refusal (the host has not let this player build, only the host does that): a drag that issues a command per cell says it once.</summary>
 	internal const float SessionRefusalNoticeSeconds = 1.5f;
 	private BuildItem? pendingItem;
 	private UiLabel? moneyLabel;
@@ -115,6 +115,7 @@ public sealed partial class ParkHud
 		buy = new BuyListModel( catalog, ListName, BuyPrice, Sorts, LandRows, item => Status.IsAvailable( item ) );
 		lastLevelMessage = level.LastActionMessage;
 		lastSessionRefusals = level.SessionRefusals;
+		lastWaitingClicks = level.WaitingClicks;
 		try
 		{
 			level.Objects.ObjectPlaced += OnObjectPlaced;
@@ -513,23 +514,28 @@ public sealed partial class ParkHud
 	{
 		// [EXT:online-coop-commands] a placement inside a command: the HUD follows its own player's placement once the command has returned, so the tool the placed ride opens issues commands of its own;
 		// a scheduled placement (a replay, a peer's) moves no tool here
+		var keepTool = level.KeepBuildToolOnPlace;
 		if ( level.Commands.IsExecuting )
 		{
 			if ( level.Commands.IsIssuing )
-				level.Commands.AfterIssue( () => FinishPlacement( item ) );
+				level.Commands.AfterIssue( () => FinishPlacement( item, keepTool ) );
 			return;
 		}
-		FinishPlacement( item );
+		FinishPlacement( item, keepTool );
 	}
 
-	private void FinishPlacement( OriginalObject item )
+	/// <summary>
+	/// Finishes the build tool after its placement of <paramref name="item"/>: the Built message, then the tool kept for the next placement (<paramref name="keepTool"/>: exactly Ctrl at
+	/// the click) or the tool the placed object opens. [EXT:online-coop-commands] A guest's placement finishes when its request comes back, with the Ctrl of its click (C3a-2).
+	/// </summary>
+	private void FinishPlacement( OriginalObject item, bool keepTool )
 	{
 		if ( pendingItem?.Entry != item.Entry )
 			return;
 		// Level.PlaceObject owns the purchase and guest link; this callback only finishes the HUD tool.
 		PostMessage( string.Format( strings.Extra( OpenTpwText.Built ), ItemName( pendingItem ) ) );
-		var queueFollows = item.Entry.HasQueue && item.Runtime.IsAttraction && item.Visitors.HasCells;
-		if ( level.KeepBuildToolOnPlace && item.Runtime.Coaster == null && item.Runtime.Bump == null && !queueFollows )
+		var queueFollows = !item.IsDeleted && item.Entry.HasQueue && item.Runtime.IsAttraction && item.Visitors.HasCells;
+		if ( keepTool && item.Runtime.Coaster == null && item.Runtime.Bump == null && !queueFollows )
 		{
 			// Ctrl at the placing click: the tool stays armed with its item and angle for the next placement.
 			return;
@@ -537,6 +543,12 @@ public sealed partial class ParkHud
 		pendingItem = null;
 		level.IsPlacing = false;
 		level.BuildEntry = null;
+		// [EXT:online-coop-commands] a guest's placement that a later record removed before its outcome came back opens no tool (C3a-2)
+		if ( item.IsDeleted )
+		{
+			level.ResetBuildRotation();
+			return;
+		}
 		if ( item.Runtime.Coaster != null && level.EnterCoasterTool( item ) )
 		{
 			level.ResetBuildRotation();
@@ -809,6 +821,8 @@ public sealed partial class ParkHud
 	internal bool Update( UiContext context, UiInput input, bool? mouseCaptured, bool? keyboardCaptured, bool? textCaptured )
 	{
 		level.WorldPointerRouted = false;
+		// [EXT:online-coop-commands] a guest's requests resolved since the last frame complete their tools first, outside any command, tick and stream application (C3a-2)
+		CompleteGuestRequests();
 		SyncChallengeMessageSuspension();
 		QueueChallengeTerminalTimers();
 		if ( UpdateResearchFinale( context, input, mouseCaptured, keyboardCaptured, textCaptured ) )
@@ -967,33 +981,27 @@ public sealed partial class ParkHud
 		if ( walkingAtStart && level.FreeWalk == null && Camera.Mode is ParkCameraMode returningCamera )
 			returningCamera.ModalOpen = true;
 
-		// [EXT:online-coop-lockstep] a guest's click in a shared park: only the host builds (once for a drag's run of refusals)
+		// [EXT:online-coop-lockstep] a guest's click the shared park's rights refuse (once for a drag's run of refusals): building the host has not let it do yet, or what only the host
+		// does ([EXT:online-coop-permissions], C3a-2)
 		if ( level.SessionRefusals != lastSessionRefusals )
 		{
 			lastSessionRefusals = level.SessionRefusals;
 			if ( Time.Now - lastSessionRefusalNotice >= SessionRefusalNoticeSeconds )
 			{
 				lastSessionRefusalNotice = Time.Now;
-				PostMessage( strings.Extra( OpenTpwText.OnlyTheHostBuilds ) );
+				PostMessage( strings.Extra( level.LastSessionRefusalWasBuilding ? OpenTpwText.CoopNotGranted : OpenTpwText.CoopHostOnly ) );
 				GameAudio.PlayUi( GameAudio.ErrorEvent );
 			}
 		}
-		if ( level.LastActionMessage != lastLevelMessage )
+		// [EXT:online-coop-commands] a click a tool did not take while its request waited for the host (C3a-2)
+		SayWaitingClicks();
+		// [EXT:online-coop-commands] another player's command's message is not this machine's to say, and a guest hears its own commands' outcomes from its requests (C3a-2); the HUD
+		// remembers only a message it may say, so its own refusal right after another player's identical one is still said
+		if ( level.LastActionMessage != lastLevelMessage && level.SaysLastActionMessage )
 		{
 			lastLevelMessage = level.LastActionMessage;
 			if ( lastLevelMessage.StartsWith( "Cannot build", StringComparison.Ordinal ) )
-			{
-				// [BIN:STP-PPC:0x10139A40 error feedback] a rejected action plays cat_ui event 0x1D (called from the buy window at 0x10163AFC/0x10163BFC and the checkbox dialog at 0x1013B7A4)
-				// [EXT:cannot-build-sound] a refused placement ('Cannot build') plays the error feedback 0x1D with OpenTPW's own message text: tp.exe plays 0x1D at exactly two sites (0x487b51 in the park click handler 0x4879d0, a cost above the money, and the helper 0x486ae0, whose only caller is the hire window 0x4af480), so the original plays nothing for a refused placement; the feedback is an OpenTPW addition
-				// [BIN:TPW-EXE:0x535670 refusal stage] [BIN:TPW-EXE:0x536100 refusal stage] the build tools' code (0x524960-0x535100) plays only 0xAF, 0x65, 0xCE, 0x8B, 0x97-0x99 and 0x90, and no call site of the sound entry 0x51bfc0 lies in the refusal stages or the callees reached from them, so the original plays nothing for a refused placement
-				// [EXT:pools-changing-room] a changing room that is refused for want of a pool says so
-				// [EXT:pools-slides] a slide tower refused for want of a pool says so in its own words, turned away from the pool beside it in others
-				PostMessage( strings.Extra( lastLevelMessage.EndsWith( $": {nameof( OriginalPlacementResult.NeedsPool )}.", StringComparison.Ordinal )
-					? (pendingItem?.Entry is { } refused && PoolSlideTowers.IsSlideTower( refused ) ? (level.LastRefusalTowerFacesAway ? OpenTpwText.PoolSlideTowerFacesAway : OpenTpwText.PoolSlideTowerNeedsPool) : OpenTpwText.PoolChangingRoomNeedsPool)
-					: lastLevelMessage.EndsWith( $": {nameof( OriginalPlacementResult.NeedsPoolWater )}.", StringComparison.Ordinal ) ? OpenTpwText.PoolAttractionNeedsPool
-					: lastLevelMessage.EndsWith( $": {nameof( OriginalPlacementResult.NeedsPoolEdge )}.", StringComparison.Ordinal ) ? OpenTpwText.PoolExtraNeedsEdge : OpenTpwText.CannotBuildHere ) );
-				GameAudio.PlayUi( GameAudio.ErrorEvent );
-			}
+				SayCannotBuild( lastLevelMessage, pendingItem?.Entry );
 		}
 
 		var rideOwnsInput = ridingAtStart || IsRiding || camcorderOwnsInput;
@@ -1154,6 +1162,24 @@ public sealed partial class ParkHud
 	}
 
 	/// <summary>
+	/// A refused build ("Cannot build ...", <paramref name="message"/>) said as the HUD says it, with the error feedback: a pool's own words where its rule refused it, else that the
+	/// object or line cannot be built here. <paramref name="entry"/> is the refused object's, when known.
+	/// </summary>
+	// [BIN:STP-PPC:0x10139A40 error feedback] a rejected action plays cat_ui event 0x1D (called from the buy window at 0x10163AFC/0x10163BFC and the checkbox dialog at 0x1013B7A4)
+	// [EXT:cannot-build-sound] a refused placement ('Cannot build') plays the error feedback 0x1D with OpenTPW's own message text: tp.exe plays 0x1D at exactly two sites (0x487b51 in the park click handler 0x4879d0, a cost above the money, and the helper 0x486ae0, whose only caller is the hire window 0x4af480), so the original plays nothing for a refused placement; the feedback is an OpenTPW addition
+	// [BIN:TPW-EXE:0x535670 refusal stage] [BIN:TPW-EXE:0x536100 refusal stage] the build tools' code (0x524960-0x535100) plays only 0xAF, 0x65, 0xCE, 0x8B, 0x97-0x99 and 0x90, and no call site of the sound entry 0x51bfc0 lies in the refusal stages or the callees reached from them, so the original plays nothing for a refused placement
+	// [EXT:pools-changing-room] a changing room that is refused for want of a pool says so
+	// [EXT:pools-slides] a slide tower refused for want of a pool says so in its own words, turned away from the pool beside it in others
+	private void SayCannotBuild( string message, ObjectCatalogEntry? entry )
+	{
+		PostMessage( strings.Extra( message.EndsWith( $": {nameof( OriginalPlacementResult.NeedsPool )}.", StringComparison.Ordinal )
+			? (entry is { } refused && PoolSlideTowers.IsSlideTower( refused ) ? (level.LastRefusalTowerFacesAway ? OpenTpwText.PoolSlideTowerFacesAway : OpenTpwText.PoolSlideTowerNeedsPool) : OpenTpwText.PoolChangingRoomNeedsPool)
+			: message.EndsWith( $": {nameof( OriginalPlacementResult.NeedsPoolWater )}.", StringComparison.Ordinal ) ? OpenTpwText.PoolAttractionNeedsPool
+			: message.EndsWith( $": {nameof( OriginalPlacementResult.NeedsPoolEdge )}.", StringComparison.Ordinal ) ? OpenTpwText.PoolExtraNeedsEdge : OpenTpwText.CannotBuildHere ) );
+		GameAudio.PlayUi( GameAudio.ErrorEvent );
+	}
+
+	/// <summary>
 	/// The path/queue tool's HUD side: park-view help (441–445), the ghost line under the cursor, Backspace undo
 	/// and right-click cancel. Clicks inside the tool are committed here; <see cref="Update"/> reports them as captured,
 	/// so <see cref="Level"/>'s park click (the same commit for input without the HUD) skips them.
@@ -1222,7 +1248,15 @@ public sealed partial class ParkHud
 			return toolPress = true;
 		}
 		if ( input.Backspaces > 0 )
-			tool.Undo();
+		{
+			// [EXT:online-coop-commands] a guest's Backspace takes nothing back: its lines are the host's to undo, and one that waits for the host is not laid yet (C3a-2)
+			if ( level.Commands.SendsRequests && tool.Waiting != null )
+				level.NoteWaitingClick();
+			else if ( level.Commands.SendsRequests && tool.SegmentCount > 0 )
+				SayGuestNote( OpenTpwText.CoopGuestUndo );
+			else
+				tool.Undo();
+		}
 		if ( input.RightPressed && inPark && GameOptions.Current.RmbCancel )
 		{
 			tool.Cancel();
@@ -1233,36 +1267,59 @@ public sealed partial class ParkHud
 		tool.Hover( (cursorX, cursorY) );
 		if ( !input.LeftPressed )
 			return false;
+		// [EXT:online-coop-commands] a guest's line that waits for the host takes no other click (C3a-2)
+		if ( tool.Waiting != null )
+		{
+			level.NoteWaitingClick();
+			return toolPress = true;
+		}
 		// The commit click; Level skips it because the HUD reports the pointer as captured this frame.
 		refusalClick.Press();
-		var queueJoin = level.QueueJoinCell( tool );
-		var hadStart = tool.Start != null;
-		var modeBefore = tool.Mode;
-		var interfaceBefore = InterfaceMode();
+		var click = new LineClick( (cursorX, cursorY), level.QueueJoinCell( tool ), tool.Start != null, tool.Mode, InterfaceMode() );
 		var sessionRefusals = level.SessionRefusals;
 		// the click's modifiers go with it: a kart or water line that closes its circuit with exactly Ctrl and no queue start pending keeps its line tool (Level.ContinueTrackTool)
 		// [BIN:TPW-EXE:0x527146 track line end] with no queue start (0x8186c0 zero) the line tool's last click clears the start and keeps its mode (0xB or 0x10) when the modifier word is exactly 0xC, and any other word ends the tool (0x52f200(0, 0) at 0x527156)
 		var result = level.ClickCellTool( (cursorX, cursorY), Input.ModifierMaskDown );
+		// [EXT:online-coop-commands] a guest's line went to the host: its sounds, help and messages wait for its outcome (CompleteLine, C3a-2)
+		if ( result?.Waiting != null )
+		{
+			waitingLineClick = click;
+			return toolPress = true;
+		}
+		FinishLineClick( click, result, released: false, sessionRefused: level.SessionRefusals != sessionRefusals );
+		return toolPress = true;
+	}
+
+	/// <summary>
+	/// The sounds, the advisor's help and the messages of a path or queue click's line, once it is known: at once, or [EXT:online-coop-commands] when a guest's request comes back (C3a-2),
+	/// the button <paramref name="released"/> by then, so a refused line sounds at once. A line the session's rights refused is said by that notice, not as a cell that cannot be built on.
+	/// </summary>
+	private void FinishLineClick( LineClick click, SegmentResult? result, bool released, bool sessionRefused )
+	{
 		// [BIN:TPW-EXE:0x526cb3 track click] every release in the kart (0xB) or water (0x10) track mode that passes the refused-ghost latch plays cat_ui 0xCE at the clicked cell, the first click included and whatever the line then does
-		if ( PlaysTrackToolClick( modeBefore, result ) )
-			GameAudio.PlayUiAt( GameAudio.TrackToolClickEvent, GameAudio.CellSoundPosition( cursorX, cursorY ) );
+		if ( PlaysTrackToolClick( click.Mode, result ) )
+			GameAudio.PlayUiAt( GameAudio.TrackToolClickEvent, GameAudio.CellSoundPosition( click.Cell.X, click.Cell.Y ) );
 		if ( result is not { GhostRefused: true } )
-			ReportCellToolClick( hadStart, modeBefore, tool, queueJoin != null, interfaceBefore );
+			ReportCellToolClick( click.HadStart, click.Mode, level.CellTool, click.QueueJoin != null, click.InterfaceBefore );
 		// [BIN:TPW-EXE:0x527587 queue-join sound] it follows every commit; a click on a refused ghost lays nothing and returns before the commit (0x524A63)
 		if ( result is { GhostRefused: false } )
-			level.PlayQueueJoin( queueJoin );
+			level.PlayQueueJoin( click.QueueJoin );
 		// [BIN:STP-PPC:0x10070DE0 path lay click] a committed path line plays cat_ui 101 (the tool's commit site, gated by its mode); a click on a refused ghost (or a refused track commit) plays cat_ui 175 at the clicked cell when the button is released (PathRefusalClick)
 		if ( result is { Completed: true } )
 			GameAudio.PlayPathToolSound( GameAudio.PathLayEvent );
-		// [EXT:online-coop-lockstep] a line the session refused is said once, as "only the host builds", not also as a cell that cannot be built on
-		if ( result is { Completed: false } && level.SessionRefusals == sessionRefusals )
+		// [EXT:online-coop-lockstep] a line the session refused is said once, by its notice, not also as a cell that cannot be built on
+		if ( result is { Completed: false } && !sessionRefused )
 		{
 			// a commit stopped only by the back-of-queue walk's bound is not one of the original's refusals
 			if ( !result.StoppedByOwnLimit )
-				refusalClick.Refused( cursorX, cursorY );
+			{
+				if ( released )
+					GameAudio.PlayPathRefused( click.Cell.X, click.Cell.Y );
+				else
+					refusalClick.Refused( click.Cell.X, click.Cell.Y );
+			}
 			PostMessage( strings.Extra( result.StoppedBy == CellBuildResult.NotEnoughMoney ? OpenTpwText.NotEnoughMoney : OpenTpwText.CannotBuildHere ) );
 		}
-		return toolPress = true;
 	}
 
 	/// <summary>Whether a tool release plays the track tools' click (<see cref="GameAudio.TrackToolClickEvent"/>): a release in a kart or water line mode whose ghost was not refused.</summary>

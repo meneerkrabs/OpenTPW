@@ -26,6 +26,8 @@ function passingPair() {
 	const host = {
 		completed: true, failure: null, player: HOST, session, links: links(), phases: ['host hosting', 'host ended'],
 		build: { record: 9, charged: 120, cells: [[2, 2], [3, 2], [4, 2], [5, 2], [6, 2], [7, 2]] },
+		grant: { seat: 1, record: 11, before: 'Watches', after: 'Builds' },
+		guestBuild: { record: 13, seat: 1, cells: [[8, 4], [9, 4], [10, 4], [11, 4], [12, 4], [13, 4]] },
 		sightings: [seen('guest', GUEST), seen('guest-moved', GUEST)],
 		chat: { said: `Hello ${GUEST}, code 7UZUHN`, heard: `Hi ${HOST}, code 7UZUHN here` },
 		ended: { outcome: 'Ended', ticks: 929 },
@@ -36,6 +38,7 @@ function passingPair() {
 		applied: { record: 9, lastRecord: 10, checksAtLine: 3, checksAfter: 5 },
 		stream: { checks: 7, desyncs: 0, failedJoins: 0 },
 		refusal: { refusalsBefore: 0, refusalsAfter: 1, cells: [[8, 2], [9, 2], [10, 2], [11, 2], [12, 2], [13, 2]] },
+		ownBuild: { record: 13, seat: 1, charged: 120, checksAtLine: 6, checksAfter: 8, cells: [[8, 4], [9, 4], [10, 4], [11, 4], [12, 4], [13, 4]] },
 		sightings: [seen('host', HOST), seen('host-moved', HOST)],
 		chat: { heard: host.chat.said, said: host.chat.heard },
 		ride: { ride: 'Belly Bounce', cell: [51, 23] },
@@ -49,7 +52,7 @@ const failing = checks => checks.filter(check => !check.passed).map(check => che
 test('a baseline whose evidence holds passes every check', () => {
 	const { host, guest } = passingPair();
 	const checks = checkEvidence(host, guest, 'baseline', 30);
-	assert.equal(checks.length, 12);
+	assert.equal(checks.length, 13);
 	assert.deepEqual(failing(checks), []);
 });
 
@@ -63,6 +66,13 @@ for (const [what, change, check] of [
 	['a line short of its cells', ({ host }) => { host.build.cells.pop(); }, 'the host\'s line, laid through its HUD, reached the guest\'s park at its record'],
 	['no checkpoint after the line', ({ guest }) => { guest.applied.checksAfter = guest.applied.checksAtLine; }, 'checkpoints compared after the line'],
 	['a guest line the session did not refuse', ({ guest }) => { guest.refusal.refusalsAfter = 0; }, 'the guest\'s own line was refused, its cells left free'],
+	['no grant from the host', ({ host }) => { delete host.grant; }, 'once the host let the guest build, the guest\'s next line was laid at its record on both parks'],
+	['a granted line the host laid at another record', ({ host }) => { host.guestBuild.record = 12; },
+		'once the host let the guest build, the guest\'s next line was laid at its record on both parks'],
+	['a granted line with other cells on the host', ({ host }) => { host.guestBuild.cells = host.guestBuild.cells.slice(1); },
+		'once the host let the guest build, the guest\'s next line was laid at its record on both parks'],
+	['no checkpoint after the granted line', ({ guest }) => { guest.ownBuild.checksAfter = guest.ownBuild.checksAtLine; },
+		'once the host let the guest build, the guest\'s next line was laid at its record on both parks'],
 	['a figure drawn without its name', ({ host }) => { host.sightings[1].drawnNames = [HOST]; },
 		'each game drew the other\'s figure with its name, and saw it where its view moved'],
 	['a moved figure the guest did not see', ({ guest }) => { guest.sightings.pop(); }, 'each game drew the other\'s figure with its name, and saw it where its view moved'],
@@ -94,7 +104,7 @@ test('the recovery run allows a resync, and needs the session back, both links r
 	guest.streams = 2;
 	guest.phases = ['guest following', 'guest resyncing', 'guest following', 'guest ended'];
 	const checks = checkEvidence(host, guest, 'recovery', 30);
-	assert.equal(checks.length, 14);
+	assert.equal(checks.length, 15);
 	assert.deepEqual(failing(checks), []);
 	const reconnect = 'both games\' links resumed the session and their chats reconnected after the restart';
 	// a reconnection before the restart's barrier proves nothing of the restart

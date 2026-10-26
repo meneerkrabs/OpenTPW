@@ -133,6 +133,10 @@ public partial class CoopStreamTests
 		typeof( Level ).GetField( "<CellTool>k__BackingField", BindingFlags.Instance | BindingFlags.NonPublic )!.SetValue( level, new CellBuildTool() );
 		typeof( Level ).GetField( "<PathVariants>k__BackingField", BindingFlags.Instance | BindingFlags.NonPublic )!.SetValue( level, new PathTileVariants() );
 		typeof( Level ).GetField( "<SceneClock>k__BackingField", BindingFlags.Instance | BindingFlags.NonPublic )!.SetValue( level, new SceneClock() );
+		// the park is built without its field initializers: the track stations' table, which a guest's removal asks about (CoopBuildRights)
+		var stations = typeof( Level ).GetField( "trackStations", BindingFlags.Instance | BindingFlags.NonPublic )!;
+		if ( stations.GetValue( level ) == null )
+			stations.SetValue( level, new Dictionary<OriginalObject, TrackStation>() );
 		level.SimulationTimeScale = 1f;
 		world.Economy.Ledger.Post( LedgerCategory.OtherIncome, 1_000_000 );
 		var grid = level.Guests!.Grid;

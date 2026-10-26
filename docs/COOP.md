@@ -157,11 +157,13 @@ part (`Level.CoopRole`: none, host or guest).
   `--park-resume-smoke`, `--smoke-presence`) and the browser page of the performance harness
   (`?perf=1`): their setups and hooks build, fill or edit the park directly, so a peer would never
   see their changes.
-- **Only the host builds.** In C2 the rights let only player 0 build (`CoopHostOnlyRights`). A
-  guest's own click is refused before it runs and leaves no trace in its log. The funnel raises
-  `SessionRefused`, and the guest's HUD says "Only the host builds in a shared park"
-  (`OpenTpwText.OnlyTheHostBuilds`, in the eleven languages of the OpenTPW texts) with the error
-  sound, as it does for a cell it cannot build on.
+- **The host decides who builds.** In C2 the rights let only player 0 build; since C3a they are
+  `CoopBuildRights`, which also let a guest the host granted building issue the building its tools do
+  ("Building by every player"). A guest's click the rights refuse is refused before it runs and leaves
+  no trace in its log. The funnel raises `SessionRefused`, and the guest's HUD says "The host has not
+  let you build yet." for building (`OpenTpwText.CoopNotGranted`) or "Only the host can do that for
+  now." for anything else (`OpenTpwText.CoopHostOnly`), in the eleven languages of the OpenTPW texts,
+  with the error sound, as it does for a cell it cannot build on.
 - **Rules every peer applies alike.** These checks read the funnel's session rules, so a guest
   refuses the host's record as the host did, and the record's outcome check agrees:
   - the cheats (`QueueCheatCommand`) and the secret park name of the rename are refused (decision
@@ -634,8 +636,8 @@ while it is shared. The line opens the Build Together screen over the pause menu
 screen is in the player's language.
 
 - **Before sharing**, the screen says what sharing means (the others watch the host build, walk around
-  and chat; only the host builds), why the park cannot be shared when it cannot, or that the player has
-  to log in, with a login button.
+  and chat; the host decides who builds with it), why the park cannot be shared when it cannot, or that
+  the player has to log in, with a login button.
 - **The choices:** the title (by default the player's park, by the online name), whether the park is on
   the open list (by default not: code and invitation only), and how many players it takes (2 to 4, by
   default 4).
@@ -1102,8 +1104,10 @@ The steps:
    it there. The same follows for the guest's view.
 4. **Building.** The host lays a path line through its HUD: a press on free land starts the tool, and a
    press on the end lays the line. The guest's park takes the line's record, its cells become paths, and
-   checkpoints are compared after it. The guest's own line is refused (only the host builds), its cells
-   stay free, and its park follows on.
+   checkpoints are compared after it. The guest's own line is refused (the host has not let it build
+   yet), its cells stay free, and its park follows on. Then the host lets the guest build with its switch
+   on the Build Together screen (C3a-2), and the guest's next line goes to the host: it is laid at its
+   record on both parks, as the guest's seat, with checkpoints compared after it.
 5. **The chat.** A line each way through the chat mode's entry (Enter over the park, the line, Enter),
    heard in the other game.
 6. **The guest's controls.** F4 to the HUD and back. A click on a ride in the chat mode rides it: the host
@@ -1132,8 +1136,9 @@ The driver then checks both games' evidence against each other (`checkEvidence`,
 The scenarios:
 
 - **baseline**: the steps above, with no resync, no desync and no lost link.
-- **recovery** (`--scenario recovery`): after the first line, the driver kills the server and starts it
-  again on the same port and data three seconds later. After that barrier both games' links go from
+- **recovery** (`--scenario recovery`): after the lines (the host's, the guest's refused one and its
+  granted one), the driver kills the server and starts it again on the same port and data three seconds
+  later. After that barrier both games' links go from
   reconnecting to open with a resume of the session, and both chats reconnect: the counts at the barrier
   must grow. The guest follows again (a resync is allowed here). The host's view jumps again, which the
   guest sees, and a second line reaches the guest's park, with checkpoints after it.
@@ -1166,18 +1171,21 @@ build):
 
 | Sides | Scenario | Checks | Wall time | Notes |
 |---|---|---|---|---|
-| native/native | baseline | 13 of 13 | 19 s | followed 3.4 s after Join; 104 KiB capture; 7 checkpoints |
-| native/page | baseline | 17 of 17 | 33 s | followed 6.3 s after Join; 106 KiB capture; 15 checkpoints |
-| page/native | baseline | 17 of 17 | 33 s | followed 3.7 s after Join; 104 KiB capture; 12 checkpoints |
-| page/page | baseline | 21 of 21 | 45 s | followed 6.6 s after Join; 106 KiB capture; 23 checkpoints |
-| native/native | recovery | 15 of 15 | 30 s | followed 3.3 s after Join; 104 KiB capture; links back 7.1 and 7.6 s after the drop; no resync |
-| native/page | recovery | 20 of 20 | 44 s | followed 6.2 s after Join; 106 KiB capture; links back 3.4 and 3.3 s after the drop; no resync |
-| page/native | recovery | 20 of 20 | 46 s | followed 3.6 s after Join; 104 KiB capture; links back 7.4 and 6.9 s after the drop; no resync |
-| page/page | recovery | 25 of 25 | 64 s | followed 8.3 s after Join; 107 KiB capture; links back 7.4 and 6.9 s after the drop; no resync |
+| native/native | baseline | 14 of 14 | 22 s | followed 3.4 s after Join; 104 KiB capture; 9 checkpoints |
+| native/page | baseline | 18 of 18 | 39 s | followed 6.4 s after Join; 107 KiB capture; 21 checkpoints |
+| page/native | baseline | 18 of 18 | 36 s | followed 3.6 s after Join; 104 KiB capture; 17 checkpoints |
+| page/page | baseline | 22 of 22 | 53 s | followed 6.1 s after Join; 105 KiB capture; 28 checkpoints |
+| native/native | recovery | 16 of 16 | 31 s | followed 3.3 s after Join; 104 KiB capture; links back 7.4 and 6.5 s after the drop; no resync |
+| native/page | recovery | 21 of 21 | 49 s | followed 5.6 s after Join; 105 KiB capture; links back 3.4 and 6.5 s after the drop; no resync |
+| page/native | recovery | 21 of 21 | 49 s | followed 3.6 s after Join; 104 KiB capture; links back 6.4 and 3.4 s after the drop; no resync |
+| page/page | recovery | 26 of 26 | 71 s | followed 7.6 s after Join; 107 KiB capture; links back 3.3 and 7.8 s after the drop; no resync |
 | native/native | endurance 30 min | 15 of 15 | 1820 s | followed 3.4 s after Join; 104 KiB capture; 1807 checkpoints; 1800 s at the fastest speed, slowest stretches 239.5 (host) and 230.2 (guest) ticks/s; longest frame gaps host 1.65 s, guest 0.57 s |
 | native/page | endurance 30 min | 19 of 19 | 1834 s | followed 5.8 s after Join; 105 KiB capture; 1819 checkpoints; 1800 s at the fastest speed, slowest stretches 239.6 (host) and 225.5 (guest) ticks/s; longest frame gaps host 1.50 s, guest 0.18 s |
 | page/native | endurance 30 min | 19 of 19 | 1839 s | followed 5.2 s after Join; 104 KiB capture; 1815 checkpoints; 1800 s at the fastest speed, slowest stretches 229.4 (host) and 229.5 (guest) ticks/s; longest frame gaps host 2.80 s, guest 0.73 s |
-| page/page | endurance 30 min | 23 of 23 | 1850 s | followed 6.4 s after Join; 106 KiB capture; 1824 checkpoints; 1801 s at the fastest speed, slowest stretches 224.4 (host) and 216.8 (guest) ticks/s; longest frame gaps host 2.98 s, guest 0.14 s |
+| page/page | endurance 30 min | 24 of 24 | 1877 s | followed 13.9 s after Join; 108 KiB capture; 1843 checkpoints; 1801 s at the fastest speed, slowest stretches 231.7 (host) and 219.2 (guest) ticks/s; longest frame gaps host 5.02 s, guest 0.35 s |
+
+The native/native, native/page and page/native endurance runs come from before the guest's granted line
+(C3a-2), which adds one check to every run; the other rows include it.
 
 No CI job runs it: it needs the game's data. A run's `run.json` keeps every check, both games' evidence
 and the run's facts; its logs, pictures and status files stay in its folder.
@@ -1681,8 +1689,9 @@ The design fixed two constants only after measuring them (`coop-c2b-design.md`, 
 
 `[EXT:online-coop-commands]` `[EXT:online-coop-permissions]` In C2 the host builds and the guests watch.
 C3 lets every player build through the same stream the host orders, so every park stays the host's and
-no guest's click runs on its own park first. C3a-1 builds the requests, their records and the host's
-grants; the guests' tools use them in C3a-2 (with the host's switch for each guest's grant).
+no guest's click runs on its own park first. C3a-1 built the requests, their records and the host's
+grants; in C3a-2 the guests' line, placement and remove tools send their commands as requests and wait
+for them, and the host lets each guest build or only watch with a switch.
 
 **A guest's request.** A guest never applies its own command: its park follows the host's stream only
 (`ParkCommands.FollowsStream`), whatever its rights. It sends the command to the host as a request
@@ -1732,11 +1741,63 @@ the server relays both without reading them, and the version gate keeps every me
 release (decision Q11).
 
 **What a granted guest may build (C3a).** `CoopBuildRights` asks of a command's kind, its fields and its
-target, at execution on every peer: path and queue lines, the queue's edit, a placed object (not a moving
-placement, not a track add-on), the removal of a cell's object, path or queue (not a coaster's or a track
-ride's station, whose edits need claims), and land. Everything else stays the host's: pause and speed
-(Q8), cheats (Q17), money and the park's management (C4), undo lines (whose cells a request could name
-freely), the Move tool, staff, pools, tracks and coasters (C3b, C3c) and the grants themselves.
+target, at execution on every peer, and allows exactly the commands of the tools that wait for the host:
+path and queue lines, a placed object (not a moving placement, not a track add-on, and not a ride whose
+own tool follows its placement: a coaster, a kart, water or bumper ride, a slide tower), and the remove
+click on an ordinary object: not a fixed item of the park (its gates, lights or bus), not a coaster's or
+a track ride's station, whose edits need claims, and never the path or queue cell the remove tool takes
+when no object stands on the cell. Everything else stays the
+host's: pause and speed (Q8), cheats (Q17), money and the park's management (C4), undo lines (whose
+cells a request could name freely), land, the queue's edit, the area clear, the backtrack key, the Move
+tool, staff, pools, tracks and coasters (C3b, C3c) and the grants themselves.
+
+**A guest's tools (C3a-2).** On a guest's park `ParkCommands.Issue` sends a command to the host instead
+of applying it (`ParkCommands.Submit`, set by the session), after the checks `Apply` makes before it runs
+one: never inside a tick, well formed, and allowed by the session's rights as the guest's own park holds
+them, so a command the host would refuse is not sent. The command comes back pending
+(`ParkCommandResult.IsPending`), with nothing changed yet, and its tool waits:
+- the line tool keeps the clicked line as its ghost and pushes, lays and stacks nothing yet;
+- the placement keeps the placed entry and Ctrl at its click;
+- the remove tool keeps its request.
+
+While a tool waits it takes no other click (the HUD asks the player to wait), and a guest's Backspace takes
+nothing back: its lines are the host's to undo. The requests resolve where their records apply or the host
+answers, inside the stream's application or the link's pump; the guest's HUD takes them at the start of
+its next update (`CoopGuestCommands.TakeCompleted`), outside any command, tick and stream application, and
+completes the tool that still waits for each one:
+- an applied line runs the click's continuation once, with the segment its record laid in the guest's park,
+  as for a line laid at once: it goes on from its end, or a refused command ends the tool. A line its record
+  cut short at a refused cell (the park changed between the click, whose ghost had none, and the record)
+  ends the tool with what it laid, as the click would have ended it on the refused ghost the park then
+  showed;
+- an applied placement finishes as the host's does (the Built message, the ride's queue tool, the tool
+  kept for exactly Ctrl at the click), also when a later record removed the object before the outcome
+  came back (no tool follows it then), and a refused one says its reason and keeps the tool armed;
+- a removal says nothing, as the host's remove click does: the park and the guest's own demolition cue
+  show it;
+- a request the host could not take (no record) leaves the click as if never made;
+- an error or a lost answer ends the line tool with a note that the outcome is not known.
+
+A waiting tool waits as long as its request does: through a lost link, whose resume sends the request
+again, and until the outcome comes. Escape or a right click leaves it, as it leaves any tool. Anything
+that ends or switches a tool drops its wait, and a resync replaces the park with its tools, while the
+requests are the session's: such a request's outcome is then only a message. The session's end ends
+every wait (a line that waits ends its tool). Each outcome the HUD says is its own event, so two refused
+lines or placements in a row are both said.
+
+**Who hears and reads what (C3a-2).** A command's cues are its issuer's: the placement, demolition,
+backtrack and queue cues inside a command play only where the running command's player is this machine's
+(`ParkCommands.IsLocalIssuer`), so the host hears nothing of a guest's build and a guest hears its own when
+its record applies in its park. Cue choices are presentation, never hashed or in the digest. A message a
+command writes is said only by its issuer's HUD (`Level.SaysLastActionMessage`); a guest says its own
+outcomes from its requests, never from the message text. A guest's click the rights refuse says that the
+host has not let it build yet, or that only the host does that.
+
+**The host's switch (C3a-2).** The Build Together screen lists the guests with a switch each, beside the
+removal: it reads the shared park's applied grant ("Builds" or "Watches") and a click turns it over with
+a `SetBuildGrantCommand`. The stream's order decides a request that races the switch: a request the host
+takes before the grant is taken back is built, one after it is refused at its record. The sharing and
+joining screens say that the host decides who builds.
 
 ## The command layer (C1)
 
@@ -2107,9 +2168,9 @@ guarded list.
 - A guest's park must be built as a guest from its start (C2c's join): the game takes the restart
   snapshot when a park starts (`GameFlow.TakeRestartSnapshot`), before a session could mark the park
   as a guest's, and would write the host's park over the guest's own restart file.
-- A guest's HUD still offers the build tools (C2d): each refused click says "Only the host builds",
-  at most once every 1.5 seconds. Two tools add their own feedback to it: Buy Land's refused second
-  click also says that the land cannot be bought, with a second error sound, and a refused queue line
-  still plays the queue-join sound. Opening the loans window refreshes its offers by command, which a guest is refused,
+- A guest's HUD offers every build tool. A click its rights refuse says that the host has not let it
+  build yet, or that only the host can do that (C3a-2), at most once every 1.5 seconds. Two tools add
+  their own feedback to it: Buy Land's refused second click also says that the land cannot be bought,
+  with a second error sound, and a refused queue line still plays the queue-join sound. Opening the loans window refreshes its offers by command, which a guest is refused,
   and the winning screen's Resume is the host's alone, so a guest's winning screen stays until the
   host dismisses it.

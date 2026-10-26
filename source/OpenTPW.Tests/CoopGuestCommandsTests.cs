@@ -42,6 +42,26 @@ public class CoopGuestCommandsTests
 	private static ParkCommandResult Ok => ParkCommandResult.Ok();
 
 	[TestMethod]
+	public void TheResolvedRequestsWaitForTheToolsInOrderAndOnlyTheNewestAreKept()
+	{
+		var (host, guest, requests, resolved) = Session();
+		var first = requests.Submit( Line );
+		var second = requests.Submit( Fee );
+		Answer( host, guest, 2, 0, CoopGuestRefusal.TooFast, 3 );
+		Answer( host, guest, 1, 0, CoopGuestRefusal.TooFast, 3 );
+		CollectionAssert.AreEqual( new[] { second, first }, requests.TakeCompleted().ToArray(), "in the order they resolved" );
+		Assert.AreEqual( 0, requests.TakeCompleted().Count, "each once" );
+		// a guest without a HUD to take them keeps the newest only
+		var many = Enumerable.Range( 0, CoopGuestCommands.MaximumCompleted + 10 ).Select( _ => requests.Submit( Fee ) ).ToArray();
+		foreach ( var request in many )
+			Answer( host, guest, request.Sequence, 0, CoopGuestRefusal.TooFast, request.Sequence + 1 );
+		var taken = requests.TakeCompleted();
+		Assert.AreEqual( CoopGuestCommands.MaximumCompleted, taken.Count );
+		CollectionAssert.AreEqual( many.Skip( 10 ).ToArray(), taken.ToArray() );
+		Assert.AreEqual( 2 + many.Length, resolved.Count, "every request resolved all the same" );
+	}
+
+	[TestMethod]
 	public void RequestsAreNumberedFromOneAndSentToTheHostInOrder()
 	{
 		var (host, guest, requests, resolved) = Session();

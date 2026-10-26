@@ -49,6 +49,11 @@ public sealed record SegmentResult( (int X, int Y) SnappedEnd, IReadOnlyList<(in
 	/// the commit. A command that threw while it ran is not refused this way: it keeps what it wrote before the throw (<see cref="ParkCommandResult.Error"/>).
 	/// </summary>
 	public bool CommandRefused { get; init; }
+	/// <summary>
+	/// [EXT:online-coop-commands] The line's command went to the host as a guest's request (C3a-2): nothing was laid yet, and the tool waits for the request's outcome
+	/// (<see cref="CellBuildTool.CompleteWaiting"/>).
+	/// </summary>
+	internal WaitingLineCommit? Waiting { get; init; }
 	/// <summary>A successful preview visited the path/queue validator's link branch; only completed ghosts expose it in the HUD.</summary>
 	public bool LinkPointer { get; init; }
 	/// <summary>True when no cell of the line was refused.</summary>

@@ -567,11 +567,13 @@ public sealed partial class ParkHud
 			PostMessage( strings.Extra( OpenTpwText.PoolSlideHint ) );
 			return;
 		}
-		// a placed kart or water ride enters its track tool (tool mode 11 or 16) at its station with its queue start pending; the queue tool follows once the circuit is valid (Level.ContinueTrackTool)
-		if ( item.Runtime.Bump != null && level.EnterPlacedTrackTool( item ) )
+		// a placed kart or water ride enters its track tool (tool mode 11 or 16) at its station with its queue start pending; the queue tool follows once the circuit is valid (Level.ContinueTrackTool);
+		// [EXT:online-coop-claims] a guest's tool starts once its claim is back, with the tool's help then (C3c-1b), and no queue tool follows the placement meanwhile
+		if ( item.Runtime.Bump != null && level.EnterPlacedTrackTool( item ) is var track and not TrackToolEntry.None )
 		{
 			level.ResetBuildRotation();
-			PostMessage( TrackToolHelp );
+			if ( track == TrackToolEntry.Entered )
+				PostMessage( TrackToolHelp );
 			return;
 		}
 		// [BIN:STP-PPC:0x1007497C ride placement] a placed HasQueue ride (type record +64) enters tool mode 3, the queue tool (PATH-plan §8); park clicks lay its queue until Back
@@ -1438,10 +1440,11 @@ public sealed partial class ParkHud
 		}
 		if ( input.Backspaces > 0 )
 		{
-			// [EXT:online-coop-commands] a guest's Backspace takes nothing back: its lines are the host's to undo, and one that waits for the host is not laid yet (C3a-2)
-			if ( level.Commands.SendsRequests && tool.Waiting != null )
+			// [EXT:online-coop-commands] a guest's Backspace in the path or queue tool takes nothing back: its lines are the host's to undo (C3a-2); in its track tool it goes to the host, one at
+			// a time, under the ride's claim (C3c-1b); a line or Backspace that waits for the host is not done yet
+			if ( level.Commands.SendsRequests && tool.IsWaiting )
 				level.NoteWaitingClick();
-			else if ( level.Commands.SendsRequests && tool.SegmentCount > 0 )
+			else if ( level.Commands.SendsRequests && tool.SegmentCount > 0 && tool.Writer is { CanUndo: false } )
 				SayGuestNote( OpenTpwText.CoopGuestUndo );
 			else
 				tool.Undo();
@@ -1458,8 +1461,8 @@ public sealed partial class ParkHud
 		// [BIN:TPW-EXE:0x524960 line click] every line click of the tool object is its release handler's: the press (0x524790) only sets the latch
 		if ( !input.LeftReleased )
 			return false;
-		// [EXT:online-coop-commands] a guest's line that waits for the host takes no other click (C3a-2)
-		if ( tool.Waiting != null )
+		// [EXT:online-coop-commands] a guest's line or track Backspace that waits for the host takes no other click (C3a-2, C3c-1b)
+		if ( tool.IsWaiting )
 		{
 			pendingPathEntry = false;
 			level.NoteWaitingClick();

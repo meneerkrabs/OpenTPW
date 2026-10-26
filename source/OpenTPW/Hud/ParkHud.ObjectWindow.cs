@@ -243,8 +243,9 @@ public sealed partial class ParkHud
 		&& !ClaimedAgainstThisPlayer( item );
 
 	private bool CanEditTrack( OriginalObject item ) => !level.IsReadOnlyVisit && (item.Runtime.Coaster != null || item.Runtime.Bump != null)
-		// [EXT:online-coop-claims] nor the track of a ride another player claims (C3c-1); a guest's track tools are not on yet (C3c-1b, C3c-2)
-		&& !(level.CoopSession != null && (level.Commands.SendsRequests || ClaimedAgainstThisPlayer( item )));
+		// [EXT:online-coop-claims] nor the track of a ride another player claims (C3c-1), or for a guest a coaster's, whose tool is the host's until C3c-2; a guest's kart or water ride's
+		// track tool claims its ride through the host (C3c-1b)
+		&& !ClaimedAgainstThisPlayer( item );
 
 	/// <summary>
 	/// [EXT:online-coop-claims] Whether <paramref name="item"/> is claimed against this machine's player in a shared park (<see cref="CoopBuildRights.IsClaimedAgainst"/>): its window offers
@@ -314,7 +315,8 @@ public sealed partial class ParkHud
 			return;
 		SetInfoArm( false );
 		LeaveBuildTool();
-		var entered = item.Runtime.Coaster != null ? level.EnterCoasterTool( item ) : level.EnterTrackTool( item );
+		// [EXT:online-coop-claims] a guest's track tool starts once its claim is back, with the help then (C3c-1b)
+		var entered = item.Runtime.Coaster != null ? level.EnterCoasterTool( item ) : level.BeginTrackTool( item, placed: false ) == TrackToolEntry.Entered;
 		if ( entered )
 			PostMessage( item.Runtime.Coaster != null ? strings.Help( 0x125 ) : TrackToolHelp );
 	}

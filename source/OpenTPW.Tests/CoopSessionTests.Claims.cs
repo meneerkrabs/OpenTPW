@@ -17,9 +17,10 @@ public partial class CoopSessionTests
 {
 	/// <summary>
 	/// A kart ride of the asset-free park: the level's track builders as the game sets them up, and a synthetic go-kart ride (the Dino Karts' controller type −4) placed at
-	/// (<paramref name="x"/>, <paramref name="y"/>), its station tiles laid and no track. Run on every park alike before the session starts (<see cref="Shared"/>).
+	/// (<paramref name="x"/>, <paramref name="y"/>), its station tiles laid and no track; with <paramref name="hasQueue"/> a type with a queue. Run on every park alike before the session
+	/// starts (<see cref="Shared"/>).
 	/// </summary>
-	private OriginalObject PlaceKartRide( Park park, int x = 20, int y = 9 )
+	private OriginalObject PlaceKartRide( Park park, int x = 20, int y = 9, bool hasQueue = false )
 	{
 		var level = park.Level;
 		foreach ( var (name, value) in new (string, object)[]
@@ -36,7 +37,7 @@ public partial class CoopSessionTests
 		typeof( Level ).GetMethod( "SetupTracks", NonPublic )!.Invoke( level, null );
 		var root = (string)typeof( UpgradeCatalogueDefaultsTests ).GetField( "root", NonPublic )!.GetValue( fixture )!;
 		var entry = new ObjectCatalogEntry( "jungle", ObjectCategory.Ride, "/karts", new ObjectSettings( new[] { new ObjectSettingsFile(
-				"Info.Id 1150\nInfo.Name SyntheticKarts\nInfo.WhichUIType 0\nInfo.IsChoosable 1\nBumper.WhichTrackType 1\nBumper.BumperType -4\n", "karts.sam" ) } ),
+				"Info.Id 1150\nInfo.Name SyntheticKarts\nInfo.WhichUIType 0\nInfo.IsChoosable 1\nBumper.WhichTrackType 1\nBumper.BumperType -4\n" + (hasQueue ? "Info.HasQueue 1\n" : ""), "karts.sam" ) } ),
 			new ObjectShape( new[] { "*" } ), "/model.MD2", null, "/script.RSE", Array.Empty<string>(), Array.Empty<ObjectAnimationFile>(), Array.Empty<string>(), Array.Empty<string>(),
 			new BaseFileSystem( root ), null );
 		var ride = level.Objects.TryPlace( entry, x, y, 0, out _ );

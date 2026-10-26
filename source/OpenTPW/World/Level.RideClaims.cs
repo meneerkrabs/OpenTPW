@@ -72,17 +72,29 @@ public partial class Level
 	/// at most once a second (by <paramref name="now"/>, kept by the session across a resync), and only while no claim, open or release request of its own is open in the session's requests (from this park or one a resync
 	/// replaced): the host applies them in order, so a release sent before an open claim's outcome would come before the claim;</item>
 	/// <item>the host's track tool on a ride whose claim it does not hold (a tool that was on when the session started) claims it, and ends, with the claim's note, when another player holds
-	/// it.</item>
+	/// it;</item>
+	/// <item>a guest's track tool on a ride whose claim its seat no longer holds (the host let it go: the guest was away for 30 seconds, or sent nothing on the ride for 5 minutes) ends, with
+	/// a note, once no line or Backspace of it waits (whose outcome ends it and says so) and no claim or open request of its own is open (C3c-1b).</item>
 	/// </list>
-	/// True when it released, claimed or sent something.
+	/// True when it released, claimed, ended or sent something.
 	/// </summary>
 	internal bool SettleClaim( double now )
 	{
 		if ( CoopSession == null )
 			return false;
 		var tool = TrackToolStation?.Runtime.AttractionId;
-		if ( !Commands.SendsRequests && tool is { } on && ClaimOf( on ) != Commands.Player )
+		var requests = CoopSession.GuestCommands;
+		var entering = requests != null && requests.Open.Any( request => request.Command is ClaimRideCommand or OpenTrackLineToolCommand );
+		if ( tool is { } on && ClaimOf( on ) != Commands.Player )
 		{
+			if ( Commands.SendsRequests )
+			{
+				if ( CellTool.IsWaiting || entering )
+					return false;
+				ExitTrackTool();
+				NoteSessionRefusal( ClaimOf( on ) != null ? CoopRefusal.Claimed : CoopRefusal.ClaimLost );
+				return true;
+			}
 			// the claim moves from any other ride the host held
 			var claim = Commands.Issue( new ClaimRideCommand( on ) );
 			if ( claim.Accepted )
@@ -96,7 +108,7 @@ public partial class Level
 			return false;
 		if ( !Commands.SendsRequests )
 			return Commands.Issue( new ReleaseRideCommand( ride ) ).Accepted;
-		if ( CoopSession.GuestCommands is not { } requests || requests.Open.Any( request => request.Command is ClaimRideCommand or OpenTrackLineToolCommand or ReleaseRideCommand )
+		if ( requests == null || entering || requests.Open.Any( request => request.Command is ReleaseRideCommand )
 			|| (CoopSession.LastStrayClaimRelease is { } last && now - last < 1) )
 			return false;
 		CoopSession.LastStrayClaimRelease = now;

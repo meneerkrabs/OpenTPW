@@ -1697,7 +1697,8 @@ grants; in C3a-2 the guests' line, placement and remove tools send their command
 for them, and the host lets each guest build or only watch with a switch. C3b-1 adds land, the area
 clear, the removal of path and queue cells, Backspace, the sell buttons and the queue's edit, C3b-2 the
 Move tool, and C3b-3 the pools. C3c-1 brings the rides' claims, which keep a ride to the player whose
-track tool is on it, and the bumper rides; a guest's track tools follow (C3c-1b, C3c-2).
+track tool is on it, and the bumper rides; C3c-1b the guests' kart and water track tools, through the
+claim. A guest's coaster tool follows (C3c-2).
 
 **A guest's request.** A guest never applies its own command: its park follows the host's stream only
 (`ParkCommands.FollowsStream`), whatever its rights. It sends the command to the host as a request
@@ -1750,8 +1751,8 @@ release (decision Q11).
 and its target, at execution on every peer, and allows exactly the commands of the guests' tools:
 - path and queue lines (C3a);
 - a placed object, but not a moving placement, not a track add-on, and not a ride whose own tool follows
-  its placement: a coaster, a kart or water ride (C3a; a slide tower until C3b-3, a bumper ride until
-  C3c-1, whose queue tool follows it);
+  its placement: a coaster (C3a; a slide tower until C3b-3, a bumper ride until C3c-1, whose queue tool
+  follows it, a kart or water ride until C3c-1b, whose track tool follows through its claim);
 - the remove click on an ordinary object: not a fixed item of the park (its gates, lights or bus), not a
   ride claimed against the guest (C3a, claims since C3c-1); and on a cell without an object, the queue or
   path cell there (C3b-1);
@@ -1764,8 +1765,9 @@ and its target, at execution on every peer, and allows exactly the commands of t
 - the pools (C3b-3): a stroke's batches of cells and of slide pieces, a bridge, the last piece of a slide
   still being laid, and Backspace over a bridge or a pool cell. A slide tower is placed and removed as any
   object, and its removal takes its slide;
-- the claims (C3c-1): a track ride's claim, the track commands of the ride whose claim the guest holds,
-  and the release of its own claim, which every guest seat may send, granted or not.
+- the claims (C3c-1): a track ride's claim, the track commands of the ride whose claim the guest holds
+  (its lines and their Backspace, the walk to the open end and the cut, C3c-1b), and the release of its own
+  claim, which every guest seat may send, granted or not.
 
 An object a guest may not remove (a fixed item, a ride claimed against it) is also one its area clear
 leaves standing and its placement may not demolish: a command that removes what it finds asks the rights
@@ -1946,7 +1948,7 @@ turns piece by piece, since each piece must follow the last. A wave machine's se
 
 **Claims (C3c-1).** `[EXT:online-coop-claims]` A kart or water ride's track is edited by one player at a
 time: the player whose track tool is on the ride holds its claim, and the claim keeps the ride from every
-other player, the host included.
+other player, the host included. A guest's track tool works through it (C3c-1b, below).
 - **Session state.** The claims are the park's session state, as the grants are (`Level.RideClaims`: a
   ride's attraction id and the seat that holds its claim). The session digest covers them once there is
   one, a join snapshot carries them (the join state's version 4, in ride order, one claim a ride and a seat
@@ -1966,12 +1968,15 @@ other player, the host included.
   guards building and removal, not management: the ride's opening, its settings and its prices stay as
   they are (the host's, C4 for guests). A command a claim refuses gives the claim's reason, and the HUD
   says it in its words ("Another player is editing this ride.", one new string in every language), for a
-  click the rights refuse here and for a guest's refused record alike.
+  click the rights refuse here and for a guest's refused record alike. A guest's track command on a ride
+  whose claim it no longer holds, which the host let go and no other seat took, is refused with a reason
+  of its own, which the HUD says as "You are no longer editing this ride." (one more string in every
+  language, C3c-1b). Every refusal's note follows the reason the rights gave where and when they refused
+  it.
 - **The host's track tool** claims its ride as seat 0 when it starts, after the tool it replaces ended
   (the track button, a placed ride's track tool). The claim applies at once; another player's claim
   starts no tool, leaves the tool that was on, and says so. The object window offers no track or queue
-  tool for a ride claimed against its player. A guest's track tools are not on yet (C3c-1b): a guest's
-  window offers none.
+  tool for a ride claimed against its player (for a guest, a coaster's too, until C3c-2).
 - **No tool event lets a claim go.** One frame check per machine, after the outcomes, does
   (`Level.SettleClaim`, as `Level.EndStrayCarry` ends a carry): when this machine's seat holds the claim
   of a ride its track tool is not on, the host lets it go at once, and a guest asks the host, at most
@@ -1982,7 +1987,9 @@ other player, the host included.
   lets it go, and the edit tool's turn into the line tool on the same ride, within one call, keeps it.
   The same check claims the ride the host's track tool is on when the host holds no claim of it (a tool
   that was on when the park was shared), and ends the tool with the claim's note when another player
-  holds it.
+  holds it. A guest's track tool on a ride whose claim its seat no longer holds ends there with a note
+  (another player's claim, or the claim the host let go), once no line or Backspace of it waits (whose
+  refused outcome ends it and says so) and no claim or open request of its own is open.
 - **The host lets go of a guest's claim** (a `ReleaseRideCommand` of its own, a record every peer
   applies alike) when the seat's member left or changed (its release, at the next frame's start, also of a
   claiming seat without a member), when the session has read the member disconnected for 30 seconds of the
@@ -1994,6 +2001,36 @@ other player, the host included.
 
 Bumper rides lay no track: a guest places them since C3c-1, and their queue tool follows the placement as
 any ride's does.
+
+**A guest's track tools (C3c-1b).** `[EXT:online-coop-claims]` `[EXT:online-coop-commands]` A guest edits a
+kart or water ride's track through its claim, with the host's tools' rules, every command a request:
+- **The entry.** The ride window's track button, and the track tool a kart or water ride's placement
+  opens (a guest places them since C3c-1b), first end the tool that was on and drop any entry that still
+  waits, then send `ClaimRideCommand`; no tool is on while it waits (`Level.WaitingToolStart`, as for the
+  queue edit and the Move's pick-up: Escape, a right click and another tool drop the wait). The claim's
+  outcome starts the tool when the park view has no tool by then and the park's claims, with every record
+  applied so far, still give the ride to the guest's seat: a closed circuit opens the edit tool; an open
+  one sends `OpenTrackLineToolCommand`, whose walk writes the tiles' overlap words, as a second request
+  with the same wait, and its outcome opens the line tool from the open end, with the tool's help. A
+  claim the host took and let go in one frame starts nothing and says that the player no longer edits
+  the ride. The latest entry wins: an earlier one's claim moves to the later ride, and its outcome starts
+  nothing. A placement's follow-on opens no queue tool meanwhile; its queue start goes pending when the
+  track tool starts, so a closed circuit hands over to the queue tool as the host's does.
+- **Lines.** A line (`LayTrackLineCommand`) waits for its outcome as the path tool's do (C3a-2): the
+  clicked line is the ghost, the tool takes no other click, and the outcome's walk moves the tool on, a
+  valid circuit ending it, following the queue, or keeping the line tool when the click held exactly
+  Ctrl. A continuation that ended, replaced or restarted the tool stops the click there
+  (`CellBuildTool`'s generation).
+- **Backspace.** The claim makes the track the guest's alone, so its Backspace takes its last line back
+  (`UndoTrackLineCommand`), one at a time: nothing is popped until the outcome (`CellBuildTool.WaitingUndo`),
+  the tool takes no click meanwhile, and the outcome pops the line and moves the tool on as the host's
+  undo does. A refusal of the rights ends the tool and says why; one of the park takes nothing back,
+  quietly; one without a record leaves the line for another try; an outcome not known ends the tool.
+- **The cut.** The edit tool's second click sends `CutTrackCommand` and waits with the cut as its ghost;
+  the outcome finishes the edit as the host's does (a valid circuit ends the tool, an open one turns it
+  into the line tool from its open end, the claim kept).
+- **The end.** The session's end ends a guest's track tool and drops what waits (`Level.EndGuestWaits`),
+  and the frame check lets the claim go once the tool left the ride.
 
 **The host's switch (C3a-2).** The Build Together screen lists the guests with a switch each, beside the
 removal: it reads the shared park's applied grant ("Builds" or "Watches") and a click turns it over with

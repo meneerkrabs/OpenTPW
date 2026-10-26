@@ -41,9 +41,9 @@ internal sealed class CoopBuildRights( Level level ) : IParkCommandRights
 		QueueSegmentCommand line => !ClaimedRide( line.Ride ) && !CrossesClaimedQueue( line.StartX, line.StartY, line.EndX, line.EndY, joins: true ),
 		// an object placed, or the Move tool's placement (C3b-2: the command itself checks that its player carries the type); a track add-on belongs to the track tools, which come later,
 		// as do the rides whose own tool follows their placement; a track add-on's entry is refused whatever ride the command names, so a request without one cannot place it as an
-		// ordinary object; nor does a placement write over a claimed ride's queue or the path cell its back joins
+		// ordinary object; nor does a placement demolish what the guest may not remove, or write over a claimed ride's queue or the path cell its back joins
 		PlaceObjectCommand place => place.AddOnRide < 0 && level.ResolveCommandEntry( place.Entry ) is { } entry && GuestMayPlace( entry )
-			&& !PlacementTouchesClaimedQueue( entry, place.X, place.Y, place.Rotation ),
+			&& PlacementLeavesClaimsAlone( entry, place.X, place.Y, place.Rotation ),
 		// the remove click takes an ordinary object, else the queue or path cell under it (C3b)
 		RemoveAtCommand remove => level.Objects?.FindAt( remove.X, remove.Y ) is { IsDeleted: false } item ? MayRemove( item )
 			: !ClaimedQueueAt( remove.X, remove.Y ) && !JoinsClaimedQueue( remove.X, remove.Y ),
@@ -116,18 +116,22 @@ internal sealed class CoopBuildRights( Level level ) : IParkCommandRights
 	}
 
 	/// <summary>
-	/// Whether placing <paramref name="entry"/> on (<paramref name="x"/>, <paramref name="y"/>) turned <paramref name="rotation"/>, centred as the placement centres it, would write over a claimed
-	/// ride's queue cell or the path cell its back joins: under its footprint, whose path cells the placement clears, or outside its entrance and exit, where it lays a queue or a path cell (a path
-	/// paves a queue's end).
+	/// Whether a guest's placement of <paramref name="entry"/> on (<paramref name="x"/>, <paramref name="y"/>) turned <paramref name="rotation"/> leaves alone what the guest may not touch, as the
+	/// placement's own check plans it (<see cref="ParkObjects.Check(ObjectCatalogEntry, int, int, int, out ObjectPlacementPlan)"/>, centred as <see cref="Level.PlaceObject"/> centres it): no object
+	/// it would demolish (one of a lower overwrite priority) is one the guest may not remove (<see cref="MayRemove"/>), and no cell it writes is a claimed ride's queue cell or the path cell its
+	/// back joins: its footprint, the path cells it clears (beyond a track end too) and the cells outside its entrance and exit, which it lays as queue or path (a path paves a queue's end). A
+	/// placement the park refuses is the park's to refuse.
 	/// </summary>
-	private bool PlacementTouchesClaimedQueue( ObjectCatalogEntry entry, int x, int y, int rotation )
+	internal bool PlacementLeavesClaimsAlone( ObjectCatalogEntry entry, int x, int y, int rotation )
 	{
-		if ( entry.IsFixedItem )
-			return false;
 		var anchor = Level.GetCentredAnchor( entry, x, y, rotation );
-		var cells = ObjectFootprint.GetCells( entry.Shape, anchor.X, anchor.Y, rotation ).Select( cell => (cell.X, cell.Y) )
+		if ( level.Objects is not { } objects || objects.Check( entry, anchor.X, anchor.Y, rotation, out var plan ) != OriginalPlacementResult.Allowed )
+			return true;
+		if ( plan.Overwritten.Any( item => !MayRemove( item ) ) )
+			return false;
+		var cells = ObjectFootprint.GetCells( entry.Shape, anchor.X, anchor.Y, rotation ).Select( cell => (cell.X, cell.Y) ).Concat( plan.ClearedPaths )
 			.Concat( ObjectFootprint.GetAccessPoints( entry.Shape, anchor.X, anchor.Y, rotation ).Select( point => (point.OutsideX, point.OutsideY) ) ).Distinct().ToArray();
-		return TouchesClaimedQueue( cells, joins: true );
+		return !TouchesClaimedQueue( cells, joins: true );
 	}
 
 	/// <summary>

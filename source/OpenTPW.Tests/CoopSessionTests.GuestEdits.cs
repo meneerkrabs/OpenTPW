@@ -581,7 +581,7 @@ public partial class CoopSessionTests
 			// nor may a placement write over them: its footprint clears the paths under it, and it lays the cells outside its entrance and exit
 			var entry = guest.Level.Objects.Objects.First( item => !ReferenceEquals( item, guest.One ) ).Entry;
 			Assert.IsFalse( rights.Allows( seat, guest.Level.BuildCommand( entry, 10, 1, 0 ) ), "a placement over the path cell the claimed queue joins" );
-			Assert.IsFalse( rights.Allows( seat, guest.Level.BuildCommand( entry, 10, 4, 0 ) ), "a placement over the claimed queue" );
+			Assert.AreNotEqual( OriginalPlacementResult.Allowed, guest.Level.Objects.Check( entry, 10, 4, 0 ), "a placement over the queue is the park's to refuse" );
 			Assert.IsTrue( rights.Allows( seat, guest.Level.BuildCommand( entry, 24, 20, 0 ) ), "a placement away from it" );
 			Assert.IsTrue( rights.Allows( ParkCommands.LocalPlayer, guest.Level.BuildCommand( entry, 10, 1, 0 ) ) );
 			// the object window offers the guest no tool for that queue
@@ -595,6 +595,50 @@ public partial class CoopSessionTests
 		Assert.IsTrue( (bool)typeof( ParkHud ).GetMethod( "CanEditQueue", NonPublic )!.Invoke( view.Hud, new object[] { guest.One } )!, "an ordinary ride's queue tool is offered" );
 		Assert.IsTrue( rights.Allows( seat, new RemoveAtCommand( 10, 1 ) ) && rights.Allows( seat, new LayLineCommand( CellToolMode.Path, -1, 12, 3, 8, 3 ) ), "an ordinary ride's join is the guest's" );
 		Assert.IsTrue( rights.Allows( seat, guest.Level.BuildCommand( guest.Level.Objects.Objects.First( item => !ReferenceEquals( item, guest.One ) ).Entry, 10, 1, 0 ) ) );
+	}
+
+	/// <summary>A synthetic catalogue entry of one shape, with the given settings lines (no model or script is loaded).</summary>
+	private static ObjectCatalogEntry ShapedEntry( string settings, params string[] shape ) =>
+		new( "jungle", ObjectCategory.Feature, "/synthetic", new ObjectSettings( new[] { new ObjectSettingsFile( settings, "synthetic.sam" ) } ), new ObjectShape( shape ), "/unused.MD2", null, null,
+			Array.Empty<string>(), Array.Empty<ObjectAnimationFile>(), Array.Empty<string>(), Array.Empty<string>(), null!, null );
+
+	[TestMethod]
+	public void AGuestsPlacementIsCheckedAgainstWhatItsOwnPlanWouldChange()
+	{
+		var park = NewPark();
+		park.Enter();
+		var level = park.Level;
+		// One's queue from (10, 6) up to its back cell (10, 2), joined to the path at (10, 1)
+		ConfigureQueue( level.Guests!.Grid, park.One, 10, 5 );
+		var rights = new CoopBuildRights( level );
+		level.SetBuildGrant( 1, true );
+		// a track end ('<', west) on the path at (11, 1) clears the path cell beyond it too, (10, 1); a fixed item is centred and checked as any entry; a higher overwrite priority demolishes
+		var trackEnd = ShapedEntry( "Info.Id 9101\nInfo.WhichUIType 0\n", "<" );
+		var fixedItem = ShapedEntry( "Info.Id 9102\nInfo.DontApplyOffset 1\n", "*" );
+		var outranks = ShapedEntry( "Info.Id 9103\nInfo.OverwritePriority 9\n", "*" );
+		Assert.IsTrue( fixedItem.IsFixedItem );
+		Assert.AreEqual( OriginalPlacementResult.Allowed, level.Objects.Check( trackEnd, 11, 1, 0, out var plan ) );
+		CollectionAssert.Contains( plan.ClearedPaths.ToArray(), (10, 1), "the placement's plan clears the path beyond its track end" );
+		// a ride placed by the host, and a cell its footprint holds
+		var station = park.Issue( level.BuildCommand( park.One.Entry, 24, 12, 90 ) ).As<OriginalObject>()!;
+		var one = station.Cells.Select( cell => (cell.X, cell.Y) ).First( cell => ReferenceEquals( level.Objects.FindAt( cell.X, cell.Y ), station ) );
+		Assert.AreEqual( OriginalPlacementResult.Allowed, level.Objects.Check( outranks, one.X, one.Y, 0, out var over ) );
+		CollectionAssert.Contains( over.Overwritten.ToArray(), station, "the plan demolishes the ride" );
+		MarkStation( park, park.One );
+		MarkStation( park, station );
+		try
+		{
+			Assert.IsFalse( rights.PlacementLeavesClaimsAlone( trackEnd, 11, 1, 0 ), "the path cell beyond a track end, which the claimed queue joins" );
+			Assert.IsFalse( rights.PlacementLeavesClaimsAlone( fixedItem, 10, 1, 0 ), "a fixed item's footprint over it" );
+			Assert.IsFalse( rights.PlacementLeavesClaimsAlone( outranks, one.X, one.Y, 0 ), "a placement that would demolish the claimed station" );
+			Assert.IsTrue( rights.PlacementLeavesClaimsAlone( trackEnd, 6, 1, 0 ) && rights.PlacementLeavesClaimsAlone( fixedItem, 5, 1, 0 ), "away from it" );
+		}
+		finally
+		{
+			MarkStation( park, park.One, station: false );
+			MarkStation( park, station, station: false );
+		}
+		Assert.IsTrue( rights.PlacementLeavesClaimsAlone( trackEnd, 11, 1, 0 ) && rights.PlacementLeavesClaimsAlone( outranks, one.X, one.Y, 0 ), "an ordinary ride's" );
 	}
 
 	[TestMethod]

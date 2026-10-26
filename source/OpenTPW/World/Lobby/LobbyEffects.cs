@@ -48,7 +48,7 @@ public sealed class LobbyEffects
 	/// The lobby's fog and clear colour (0x44DDFF): the screen behind the 3D scene is cleared to it, and the sky's colour
 	/// grid shows it while the eased colour has reached its target.
 	/// </summary>
-	// [BIN:TPW-EXE:0x5d8b50 lobby fog] the lobby scene's init sets the fog colour [0x8bd47c] to 0xFF44DDFF (fog from 50 to 300) and render flag 0x4000000
+	// [BIN:TPW-EXE:0x5d8b50 lobby fog] the lobby scene's init sets the fog colour [0x8bd47c] to 0xFF44DDFF (its fog range 50 to 300 is not drawn: the scene clears the fog enable bit 0x2000, 0x5D8BF9) and render flag 0x4000000
 	// [BIN:TPW-EXE:0x5737aa lobby clear] the viewport clear (vtable +0x50, Clear2) uses the fog colour when render flags & 0x4002000, else black
 	public static readonly (byte R, byte G, byte B) ClearColour = (0x44, 0xDD, 0xFF);
 

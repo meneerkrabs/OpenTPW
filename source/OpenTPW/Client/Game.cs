@@ -435,6 +435,10 @@ internal static class Game
 			int? perfCrowd = GetOption( args, "--perf-crowd", "a number of guests" ) is { } perfCrowdText
 				? int.TryParse( perfCrowdText, out var parsedPerfCrowd ) && parsedPerfCrowd is > 0 and <= 5000 ? parsedPerfCrowd : throw new ArgumentException( "--perf-crowd expects a number of guests from 1 to 5000." )
 				: null;
+			// [EXT:perf-run] --perf-pan turns the park camera by half a degree a frame and moves its target round a circle of 30 units (the target's start is its centre), so a run measures the ground
+			// while the view changes, as a panning player does; the zoom stays what --perf-zoom or the park's own said
+			var perfPan = args.Contains( "--perf-pan" );
+			Vector3 perfPanCentre = default;
 			int perfWarmup = 0, perfDone = 0;
 			var perfOpened = false;
 			Render.PostUpdate += () =>
@@ -453,10 +457,17 @@ internal static class Game
 					// [EXT:perf-run] --perf-zoom <value> holds the park camera at that zoom value for the whole run (the wide range of GameOptions.WideZoom reaches 40..300)
 					if ( perfZoom is { } zoom && Camera.Mode is ParkCameraMode perfCamera )
 						perfCamera.SetPose( perfCamera.Target, zoom, perfCamera.Yaw );
+					if ( Camera.Mode is ParkCameraMode panCamera )
+						perfPanCentre = panCamera.Target;
 					if ( perfArrivals is { } arrivals && perfLevel.Guests != null )
 						perfLevel.Guests.Settings.ArrivalTimeBetween = arrivals;
 					if ( perfCrowd is { } crowd && perfLevel.Guests != null )
 						Log.Trace( $"--perf-crowd: {UmbrellaPerf.Stage( perfLevel.Guests, null, crowd, 0, false ).Guests} guests in the park." );
+				}
+				if ( perfPan && Camera.Mode is ParkCameraMode movingCamera )
+				{
+					var angle = perfDone * 0.5f * MathF.PI / 180;
+					movingCamera.SetPose( perfPanCentre + new Vector3( MathF.Cos( angle ) * 30, MathF.Sin( angle ) * 30, 0 ), movingCamera.Height, movingCamera.Yaw + 0.5f );
 				}
 				if ( perfHashTick is { } hashTick && perfPark.Economy.Tick == hashTick )
 				{
@@ -586,6 +597,24 @@ internal static class Game
 				Render.PostUpdate -= BuildCoasterDemo;
 				if ( demoLevel.BuildDemoCoaster( debugCoaster is "built" or "tool", coasterId, coasterHeight, debugCoaster == "tool" ) == null )
 					Log.Warning( "--debug-coaster: no site with room for a coaster and its circuit." );
+			}
+		}
+		// Debug builds only: --debug-first-person walk|ride enters the free walk at the park camera's target, or boards the first rideable ride (build one with --debug-coaster open),
+		// once the original level has run for 120 frames, so a capture shows a first-person view (where the original's fog is on).
+		if ( GetOption( args, "--debug-first-person", "walk or ride" ) is { } firstPersonKind )
+		{
+			var firstPersonFrames = 0;
+			Render.PostUpdate += EnterFirstPerson;
+			void EnterFirstPerson()
+			{
+				if ( flow.Level is not { OriginalPark: not null } firstPersonLevel || ++firstPersonFrames < 120 )
+					return;
+				Render.PostUpdate -= EnterFirstPerson;
+				var entered = firstPersonKind == "ride"
+					? firstPersonLevel.Objects.Objects.Where( RideCameraMode.CanRide ).FirstOrDefault() is { } rideable && firstPersonLevel.EnterRideView( rideable )
+					: Camera.Mode is ParkCameraMode parkCamera && firstPersonLevel.EnterFreeWalk( new System.Numerics.Vector3( parkCamera.Target.X, parkCamera.Target.Y, 0 ) );
+				if ( !entered )
+					Log.Warning( "--debug-first-person: the view could not be entered." );
 			}
 		}
 		// [EXT:debug-weather] smoke-only (Debug builds): applies one weather quality through the simulation's own

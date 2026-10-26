@@ -274,13 +274,16 @@ fragment {
 
         fragColor = vec4(vOutColor, vTextureSample.a);
 
-        // Calculate fog using view space depth
-        // g_flViewDistanceScale stretches the fog distance (graphics settings); 0 from older callers means 1.
-        float viewDistanceScale = g_oUbo.g_flViewDistanceScale > 0.0 ? g_oUbo.g_flViewDistanceScale : 1.0;
-        float viewSpaceDepth = length(vs_out.vWorldPosition) / viewDistanceScale;
-        float fogFactor = exp(viewSpaceDepth * 0.01) * 0.025;
-        fogFactor = clamp( fogFactor, 0, 1 );
-        
+        // the original's linear fog in the projection's depth (UI-107, RenderFog): g_flViewDistanceScale carries the range (start x 8 x 4096 + end x 8, 1/8 view units; 0 = no fog)
+        float fogFactor = 0.0;
+        if ( g_oUbo.g_flViewDistanceScale > 0.0 )
+        {
+            float startQ = floor( g_oUbo.g_flViewDistanceScale / 4096.0 );
+            float fogStart = startQ * 0.125;
+            float fogEnd = ( g_oUbo.g_flViewDistanceScale - startQ * 4096.0 ) * 0.125;
+            fogFactor = clamp( ( 1.0 / gl_FragCoord.w - fogStart ) / max( fogEnd - fogStart, 0.001 ), 0.0, 1.0 );
+        }
+
         // Mix with fog
         fragColor.xyz = mix(fragColor.xyz, g_oUbo.g_vFogColor, fogFactor);
     }

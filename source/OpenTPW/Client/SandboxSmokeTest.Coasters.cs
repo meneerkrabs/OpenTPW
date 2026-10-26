@@ -218,8 +218,9 @@ internal sealed partial class SandboxSmokeTest
 	/// <summary>Per frame after the build: waits (up to 60 s) for a train to leave the station, then checks and removes the coaster.</summary>
 	private void UpdateCoasterPhase()
 	{
-		// the coaster checks enter the coaster tool (which ends a staff tool) and may move the camera: they wait while the staff phase holds a person in the hand
-		if ( smokeStation == null || coasterBuiltFrame == 0 || level.StaffPlacement is { IsActive: true } )
+		// the coaster checks enter the coaster tool (which ends a staff tool) and may move the camera: they wait while the staff phase runs, also between its
+		// tools (after the placement, before the pick-up), whose drop point was projected from the camera when the phase began
+		if ( smokeStation == null || coasterBuiltFrame == 0 || level.StaffPlacement is { IsActive: true } || staffStage is > 0 and < 20 )
 			return;
 		var ride = smokeStation.Runtime.Coaster!;
 		var train = ride.Trains[0];

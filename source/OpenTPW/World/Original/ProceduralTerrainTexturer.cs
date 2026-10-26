@@ -35,6 +35,8 @@ public sealed class ProceduralTerrainTexturer
 	private readonly Window[] windows = new Window[LndFile.ImagesPerSet];
 	private readonly byte[][] imageData = new byte[LndFile.ImagesPerSet][];
 	private readonly int[] imageBase = new int[LndFile.ImagesPerSet];
+	/// <summary>Per image: the byte index of the current texel row's first pixel in the image (the window offset plus row × stride), set once per row.</summary>
+	private readonly int[] rowBase = new int[LndFile.ImagesPerSet];
 
 	/// <summary>The top left pixel of the current cell's window in an image, as a byte index into <see cref="imageData"/>, and the image width in pixels.</summary>
 	private struct Window
@@ -72,7 +74,7 @@ public sealed class ProceduralTerrainTexturer
 	/// <summary>Bytes of one built texture, N × N × 4.</summary>
 	public int TextureBytes => size * size * BytesPerPixel;
 
-	/// <summary>Cells the file can texture across (95); a cell at or beyond it is outside the weight grid.</summary>
+	/// <summary>Cells the weight grid holds across (95); the cell at this column is built from the grid's flat reads (see <see cref="Build"/>), beyond it is outside.</summary>
 	public int CellsX => lnd.CellsX;
 
 	/// <summary>Cells the file can texture down (85).</summary>
@@ -93,18 +95,33 @@ public sealed class ProceduralTerrainTexturer
 			table[index] = index < low ? (byte)0 : index > high ? (byte)255 : (byte)(255 * (index - low) / (ramp.Width + 1));
 	}
 
+	/// <summary>Whether the cell (<paramref name="x"/>, <paramref name="z"/>) can be built: it lies in the weight grid's columns (the column after the last cell included) and its samples stay inside the grid.</summary>
+	public bool CanBuild( int x, int z )
+		=> (uint)x <= (uint)lnd.CellsX && (uint)z < (uint)lnd.CellsY && (4 * (lnd.CellsY - z - 1) + 4) * lnd.GridWidth + 4 * x + 4 < lnd.GridWidth * lnd.GridHeight;
+
 	/// <summary>
 	/// Builds the texture of the cell (<paramref name="x"/>, <paramref name="z"/>), z being the heightfield row (the file's rows run the other way, row 84 - z).
 	/// Returns false when the cell is not valid in the file's weight grid and the grey fallback was written.
 	/// </summary>
 	/// <param name="destination">At least <see cref="TextureBytes"/> bytes; exactly that many are written.</param>
 	// [BIN:TPW-EXE:0x0055F780 procedural terrain build] validity of the four inner samples, the three weight planes, per image windows, per 16 texel run layer decisions, bottom-up rows
-	public bool Build( int x, int z, Span<byte> destination )
+	public bool Build( int x, int z, Span<byte> destination ) => BuildCore( x, z, destination, false );
+
+	/// <summary>
+	/// <see cref="Build"/> written straight as RGBA, <c>[R, G, B, 255]</c>, rows still bottom-up: the bytes of <see cref="Build"/> with the alpha byte moved last and set to 255 (the game's cache stores alpha 0, which OpenTPW's terrain pass would discard). No second pass.
+	/// </summary>
+	public bool BuildRgba( int x, int z, Span<byte> destination ) => BuildCore( x, z, destination, true );
+
+	private bool BuildCore( int x, int z, Span<byte> destination, bool rgba )
 	{
 		if ( destination.Length < TextureBytes )
 			throw new ArgumentException( "The destination is smaller than one texture.", nameof( destination ) );
-		if ( (uint)x >= (uint)lnd.CellsX || (uint)z >= (uint)lnd.CellsY )
-			throw new ArgumentOutOfRangeException( (uint)x >= (uint)lnd.CellsX ? nameof( x ) : nameof( z ), "The cell is outside the weight grid." );
+		// The original reads the grid as one flat array and does not test the column, and the heightfield is one column wider than the weight grid (96 against 95 cells), so the column
+		// CellsX is built from what the flat reads give: its last samples are the first samples of the next sample row (the x86 oracle pins this on the shipped jungle file).
+		if ( (uint)x > (uint)lnd.CellsX || (uint)z >= (uint)lnd.CellsY )
+			throw new ArgumentOutOfRangeException( (uint)x > (uint)lnd.CellsX ? nameof( x ) : nameof( z ), "The cell is outside the weight grid." );
+		if ( !CanBuild( x, z ) )
+			throw new ArgumentOutOfRangeException( nameof( x ), "The cell's samples run past the weight grid." );
 		var destinationTexture = destination[..TextureBytes];
 		var cellRow = lnd.CellsY - z - 1;
 		var gridWidth = lnd.GridWidth;
@@ -117,10 +134,10 @@ public sealed class ProceduralTerrainTexturer
 		{
 			for ( var index = 0; index < destinationTexture.Length; index += BytesPerPixel )
 			{
-				destinationTexture[index] = 0;
+				destinationTexture[index] = rgba ? (byte)0x7F : (byte)0;
 				destinationTexture[index + 1] = 0x7F;
 				destinationTexture[index + 2] = 0x7F;
-				destinationTexture[index + 3] = 0x7F;
+				destinationTexture[index + 3] = rgba ? (byte)255 : (byte)0x7F;
 			}
 			return false;
 		}
@@ -143,6 +160,9 @@ public sealed class ProceduralTerrainTexturer
 		for ( var row = 0; row < size; row++ )
 		{
 			var outputRow = destinationTexture.Slice( (size - 1 - row) * size * BytesPerPixel, size * BytesPerPixel );
+			// the window offsets of this texel row, once per row instead of per texel
+			for ( var image = 0; image < LndFile.ImagesPerSet; image++ )
+				rowBase[image] = windows[image].Offset + row * windows[image].Stride;
 			for ( var run = 0; run < size; run += RunLength )
 			{
 				var plane = row * size + run;
@@ -151,7 +171,7 @@ public sealed class ProceduralTerrainTexturer
 				for ( var lane = 0; lane < RunLength; lane++ )
 				{
 					var w3 = weight3[plane + lane];
-					var value = Math.Max( rampMask1[(w3 * Map( Mask1B, run + lane, row )) >> 8], rampMask1[(Map( Mask1A, run + lane, row ) * w3) >> 8] );
+					var value = Math.Max( rampMask1[(w3 * Map( Mask1B, run + lane )) >> 8], rampMask1[(Map( Mask1A, run + lane ) * w3) >> 8] );
 					mask1[lane] = value;
 					all1 &= value == 255;
 					any1 |= value != 0;
@@ -166,7 +186,7 @@ public sealed class ProceduralTerrainTexturer
 					for ( var lane = 0; lane < RunLength; lane++ )
 					{
 						var w2 = weight2[plane + lane];
-						var value = Math.Max( rampMask2[(w2 * Map( Mask2B, run + lane, row )) >> 8], rampMask2[(Map( Mask2A, run + lane, row ) * w2) >> 8] );
+						var value = Math.Max( rampMask2[(w2 * Map( Mask2B, run + lane )) >> 8], rampMask2[(Map( Mask2A, run + lane ) * w2) >> 8] );
 						mask2[lane] = value;
 						all2 &= value == 255;
 						any2 |= value != 0;
@@ -187,18 +207,18 @@ public sealed class ProceduralTerrainTexturer
 					switch ( layers )
 					{
 						case Layer.C:
-							Layered( LayerC0, LayerC1, DetailC, rampC, texel, row, w1, out red, out green, out blue );
+							Layered( LayerC0, LayerC1, DetailC, rampC, texel, w1, out red, out green, out blue );
 							break;
 						case Layer.B:
-							Layered( LayerB0, LayerB1, DetailB, rampB, texel, row, w1, out red, out green, out blue );
+							Layered( LayerB0, LayerB1, DetailB, rampB, texel, w1, out red, out green, out blue );
 							break;
 						case Layer.A:
-							Layered( LayerA0, LayerA1, DetailA, rampA, texel, row, w1, out red, out green, out blue );
+							Layered( LayerA0, LayerA1, DetailA, rampA, texel, w1, out red, out green, out blue );
 							break;
 						case Layer.BA:
 						{
-							Layered( LayerB0, LayerB1, DetailB, rampB, texel, row, w1, out var br, out var bg, out var bb );
-							Layered( LayerA0, LayerA1, DetailA, rampA, texel, row, w1, out var ar, out var ag, out var ab );
+							Layered( LayerB0, LayerB1, DetailB, rampB, texel, w1, out var br, out var bg, out var bb );
+							Layered( LayerA0, LayerA1, DetailA, rampA, texel, w1, out var ar, out var ag, out var ab );
 							var m2 = mask2[lane];
 							red = Lerp( br, ar, m2 );
 							green = Lerp( bg, ag, m2 );
@@ -207,8 +227,8 @@ public sealed class ProceduralTerrainTexturer
 						}
 						case Layer.CB:
 						{
-							Layered( LayerC0, LayerC1, DetailC, rampC, texel, row, w1, out var cr, out var cg, out var cb );
-							Layered( LayerB0, LayerB1, DetailB, rampB, texel, row, w1, out var br, out var bg, out var bb );
+							Layered( LayerC0, LayerC1, DetailC, rampC, texel, w1, out var cr, out var cg, out var cb );
+							Layered( LayerB0, LayerB1, DetailB, rampB, texel, w1, out var br, out var bg, out var bb );
 							var m1 = mask1[lane];
 							red = Lerp( cr, br, m1 );
 							green = Lerp( cg, bg, m1 );
@@ -217,8 +237,8 @@ public sealed class ProceduralTerrainTexturer
 						}
 						case Layer.CA:
 						{
-							Layered( LayerC0, LayerC1, DetailC, rampC, texel, row, w1, out var cr, out var cg, out var cb );
-							Layered( LayerA0, LayerA1, DetailA, rampA, texel, row, w1, out var ar, out var ag, out var ab );
+							Layered( LayerC0, LayerC1, DetailC, rampC, texel, w1, out var cr, out var cg, out var cb );
+							Layered( LayerA0, LayerA1, DetailA, rampA, texel, w1, out var ar, out var ag, out var ab );
 							var m1 = mask1[lane];
 							red = Lerp( cr, ar, m1 );
 							green = Lerp( cg, ag, m1 );
@@ -227,9 +247,9 @@ public sealed class ProceduralTerrainTexturer
 						}
 						default:
 						{
-							Layered( LayerC0, LayerC1, DetailC, rampC, texel, row, w1, out var cr, out var cg, out var cb );
-							Layered( LayerB0, LayerB1, DetailB, rampB, texel, row, w1, out var br, out var bg, out var bb );
-							Layered( LayerA0, LayerA1, DetailA, rampA, texel, row, w1, out var ar, out var ag, out var ab );
+							Layered( LayerC0, LayerC1, DetailC, rampC, texel, w1, out var cr, out var cg, out var cb );
+							Layered( LayerB0, LayerB1, DetailB, rampB, texel, w1, out var br, out var bg, out var bb );
+							Layered( LayerA0, LayerA1, DetailA, rampA, texel, w1, out var ar, out var ag, out var ab );
 							var m2 = mask2[lane];
 							var m1 = mask1[lane];
 							// the intermediate B over A result is stored as a byte before the C blend
@@ -243,10 +263,20 @@ public sealed class ProceduralTerrainTexturer
 						}
 					}
 					var offset = texel * BytesPerPixel;
-					outputRow[offset] = 0;
-					outputRow[offset + 1] = (byte)red;
-					outputRow[offset + 2] = (byte)green;
-					outputRow[offset + 3] = (byte)blue;
+					if ( rgba )
+					{
+						outputRow[offset] = (byte)red;
+						outputRow[offset + 1] = (byte)green;
+						outputRow[offset + 2] = (byte)blue;
+						outputRow[offset + 3] = 255;
+					}
+					else
+					{
+						outputRow[offset] = 0;
+						outputRow[offset + 1] = (byte)red;
+						outputRow[offset + 2] = (byte)green;
+						outputRow[offset + 3] = (byte)blue;
+					}
 				}
 			}
 		}
@@ -274,23 +304,17 @@ public sealed class ProceduralTerrainTexturer
 		public const int C = 0, B = 1, A = 2, BA = 3, CB = 4, CA = 5, CBA = 6;
 	}
 
-	/// <summary>The byte of a one byte map at texel (X, Y) of the current cell's window.</summary>
+	/// <summary>The byte of a one byte map at texel X of the current texel row of the cell's window.</summary>
 	[MethodImpl( MethodImplOptions.AggressiveInlining )]
-	private byte Map( int image, int texelX, int texelY )
-	{
-		var window = windows[image];
-		return imageData[image][window.Offset + texelY * window.Stride + texelX];
-	}
+	private byte Map( int image, int texelX ) => imageData[image][rowBase[image] + texelX];
 
 	/// <summary>[BIN:TPW-EXE:0x0055EE10 two layer blend] <c>c1 + (((c0 - c1) * ramp[(detail * w1) >> 8]) >> 8)</c> per channel with an arithmetic shift, truncated to a byte.</summary>
 	[MethodImpl( MethodImplOptions.AggressiveInlining )]
-	private void Layered( int colour0, int colour1, int detail, byte[] ramp, int texelX, int texelY, int w1, out int red, out int green, out int blue )
+	private void Layered( int colour0, int colour1, int detail, byte[] ramp, int texelX, int w1, out int red, out int green, out int blue )
 	{
-		var t = ramp[(Map( detail, texelX, texelY ) * w1) >> 8];
-		var window0 = windows[colour0];
-		var window1 = windows[colour1];
-		var offset0 = window0.Offset + texelY * window0.Stride + texelX * BytesPerPixel;
-		var offset1 = window1.Offset + texelY * window1.Stride + texelX * BytesPerPixel;
+		var t = ramp[(Map( detail, texelX ) * w1) >> 8];
+		var offset0 = rowBase[colour0] + texelX * BytesPerPixel;
+		var offset1 = rowBase[colour1] + texelX * BytesPerPixel;
 		var pixels0 = imageData[colour0];
 		var pixels1 = imageData[colour1];
 		red = Lerp( pixels0[offset0 + 1], pixels1[offset1 + 1], t );

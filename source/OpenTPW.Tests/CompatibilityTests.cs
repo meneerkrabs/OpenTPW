@@ -70,13 +70,38 @@ public class CompatibilityTests
 		Assert.AreEqual( TextureFilterMode.Bilinear, GraphicsPresets.ToRenderQuality( detail with { TextureFiltering = 1 }, 16, 1 ).Filter );
 		Assert.AreEqual( new RenderQuality( TextureFilterMode.Trilinear, 1, true, 1, 0 ), GraphicsPresets.ToRenderQuality( detail with { TextureFiltering = 2, Mipmap = 1 }, 16, 1 ) );
 		Assert.AreEqual( new RenderQuality( TextureFilterMode.Anisotropic, 8, false, 4, 0 ), GraphicsPresets.ToRenderQuality( detail with { TextureFiltering = 3 }, 8, 9 ) );
-		var enhanced = GraphicsPresets.Enhance( detail with { NumKids = 2, ParticleDensity = 1500 }, simulationOptions: false );
+		var enhanced = GraphicsPresets.Enhance( detail with { NumKids = 2, ParticleDensity = 1500, ProceduralTextureCache = 1 }, simulationOptions: false );
+		Assert.AreEqual( (3, 2), (enhanced.ProceduralTexturing, enhanced.ProceduralTextureCache), "64 texels and 2500 slots: the longest view distance lists up to 2500 cells" );
 		Assert.AreEqual( (3, 3, 8, 4), (enhanced.TextureFiltering, enhanced.FirstPersonViewDistance, enhanced.CoasterSmoothness, enhanced.SkyQuality) );
 		Assert.AreEqual( (2, 1500), (enhanced.NumKids, enhanced.ParticleDensity), "simulation options stay original without the fix" );
 		var simulation = GraphicsPresets.Enhance( detail, simulationOptions: true );
 		Assert.AreEqual( (3, 2000), (simulation.NumKids, simulation.ParticleDensity) );
 		foreach ( var (key, _, _) in OriginalDetailSettings.Fields )
 			Assert.IsTrue( GraphicsPresets.Support.ContainsKey( key ), $"{key} has a support note" );
+	}
+
+	private static string RepositoryRoot()
+	{
+		var directory = new DirectoryInfo( AppContext.BaseDirectory );
+		while ( directory != null && !File.Exists( Path.Combine( directory.FullName, "docs", "COMPATIBILITY.md" ) ) )
+			directory = directory.Parent;
+		return directory?.FullName ?? throw new DirectoryNotFoundException( "docs/COMPATIBILITY.md" );
+	}
+
+	[TestMethod]
+	public void TheProceduralTexturingOptionsAreMarkedAppliedAndTheDocumentAgrees()
+	{
+		StringAssert.StartsWith( GraphicsPresets.Support["GraphicalOptions.PROCEDURALTEXTURING"], "Applied" );
+		StringAssert.StartsWith( GraphicsPresets.Support["GraphicalOptions.PROCEDURALTEXTURECACHE"], "Applied" );
+		var document = File.ReadAllText( Path.Combine( RepositoryRoot(), "docs", "COMPATIBILITY.md" ) );
+		var rows = document.Split( '\n' ).Where( line => line.StartsWith( "| PROCEDURALTEXTUR", StringComparison.Ordinal ) ).ToArray();
+		Assert.AreEqual( 2, rows.Length );
+		Assert.IsTrue( rows.All( row => row.Contains( "**applied**" ) && !row.Contains( "not applied" ) ), "COMPATIBILITY.md says applied" );
+		// the three presets of the original files: Low off, Medium and High 32 texels with the 2000 cell cache, Enhanced 64 texels
+		var machine = 512L * 1024 * 1024;
+		Assert.IsFalse( ProceduralTerrainSettings.For( 0, 0, machine ).Enabled );
+		Assert.AreEqual( new ProceduralTerrainSettings( 32, 2000 ), ProceduralTerrainSettings.For( 2, 1, machine ) );
+		Assert.AreEqual( 64, ProceduralTerrainSettings.For( GraphicsPresets.Enhance( new OriginalDetailSettings(), false ).ProceduralTexturing, 1, machine ).Size );
 	}
 
 	[TestMethod]
@@ -147,7 +172,7 @@ public class CompatibilityTests
 		Assert.AreEqual( "1,0,0,0,0,1,0,0,0,0,0,1,1,0,0,0,0,0,0,1,0,500,1000,0,0,10", Values( GraphicsPreset.Low ) );
 		Assert.AreEqual( "2,1,2,1,1,2,1,0,0,1,0,1,1,0,0,0,1,1,0,4,1,1000,3200,2,1,70", Values( GraphicsPreset.Medium ) );
 		Assert.AreEqual( "3,2,2,1,1,4,1,0,1,2,1,1,1,0,0,0,2,1,0,6,1,1500,2000,2,1,100", Values( GraphicsPreset.High ) );
-		Assert.AreEqual( "3,3,3,1,1,4,1,0,1,3,1,1,1,1,1,0,3,1,0,8,1,1500,2000,2,1,100", Values( GraphicsPreset.Enhanced ) );
+		Assert.AreEqual( "3,3,3,2,1,4,1,0,1,3,1,1,1,1,1,0,3,1,0,8,1,1500,2000,2,1,100", Values( GraphicsPreset.Enhanced ) );
 		Assert.AreEqual( TextureFilterMode.Point, GraphicsPresets.ToRenderQuality( service.GetPresetValues( GraphicsPreset.Low )!, 16, 1 ).Filter );
 	}
 

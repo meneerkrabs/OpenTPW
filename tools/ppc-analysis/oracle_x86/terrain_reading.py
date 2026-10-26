@@ -184,10 +184,11 @@ def synthetic_specs() -> list[tuple[int, str, int, bool]]:
 
 
 def synthetic_cells(seed: int, grey: bool) -> list[tuple[int, int]]:
-    """Two cells (x, z) of a synthetic level; a grey level's first cell is the invalid one."""
+    """Three cells (x, z) of a synthetic level; a grey level's first cell is the invalid one. The last is the column after the grid's last cell (x = 3, z = 2: file row 0),
+    which the original builds from the flat grid reads (the real heightfield is one column wider than the weight grid)."""
     if grey:
-        return [(1, 1), (0, 0)]
-    return [(seed % 3, (seed // 3) % 3), ((seed + 1) % 3, (seed // 3 + 1) % 3)]
+        return [(1, 1), (0, 0), (3, 2)]
+    return [(seed % 3, (seed // 3) % 3), ((seed + 1) % 3, (seed // 3 + 1) % 3), (3, 2)]
 
 
 def synthetic_level(seed: int, mix: str, n_size: int, grey: bool) -> dict:

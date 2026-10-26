@@ -15,6 +15,9 @@ public static class OriginalProjection
 	public static float HalfHeight( float fieldOfViewDegrees ) => 0.5f * MathF.Tan( fieldOfViewDegrees * MathF.PI / 360f );
 
 	/// <summary>The projection for a window aspect (width over height): the original's vertical extent, the width following the aspect (0.75 as the aspect word is 4:3).</summary>
-	public static Matrix4x4 Create( float aspect, float fieldOfViewDegrees = FieldOfView ) =>
-		Matrix4x4.CreatePerspectiveFieldOfView( 2 * MathF.Atan( HalfHeight( fieldOfViewDegrees ) ), aspect, 0.1f, 10000f );
+	/// <summary>The default far plane when nothing else sets one (engine units); the park view takes the span selection's farthest corner distance and the ride views 1000 original units (<see cref="Camera"/>).</summary>
+	public const float DefaultFarPlane = 10000f;
+
+	public static Matrix4x4 Create( float aspect, float fieldOfViewDegrees = FieldOfView, float farPlane = DefaultFarPlane ) =>
+		Matrix4x4.CreatePerspectiveFieldOfView( 2 * MathF.Atan( HalfHeight( fieldOfViewDegrees ) ), aspect, 0.1f, farPlane );
 }

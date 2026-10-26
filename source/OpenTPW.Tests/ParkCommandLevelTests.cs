@@ -330,7 +330,7 @@ public class ParkCommandLevelTests
 		long Amount() => Pick( -1L, long.MinValue, long.MaxValue, 0L, 100L, 10_000L, 10_001L, 18_000L );
 		bool Flag() => random.Below( 2 ) == 0;
 		string Text() => Pick( "Ann", "", "A\u0007B", "\ud800", new string( 'a', 600 ), "Kevin the", "Cosmic Cow" );
-		ParkCommand Next() => random.Below( 73 ) switch
+		ParkCommand Next() => random.Below( 74 ) switch
 		{
 			0 => new PlaceObjectCommand( Entry(), Coordinate(), Coordinate(), Rotation(), random.Below( 4 ) == 0, Pick( -1, -2, Id() ) ),
 			1 => new RemoveAtCommand( Coordinate(), Coordinate() ),
@@ -411,6 +411,8 @@ public class ParkCommandLevelTests
 			70 => new EndMoveCommand(),
 			// [EXT:online-coop-permissions] a guest's build grant
 			71 => new SetBuildGrantCommand( Pick( -1, 0, 1, 3, 64 ), Flag() ),
+			// the area clear's rectangle (C3b)
+			72 => new ClearAreaCommand( Coordinate(), Coordinate(), Coordinate(), Coordinate() ),
 			_ => new RemoveAttractionCommand( Pick( -1, int.MinValue, 99_999 ) ),
 		};
 		CollectionAssert.IsSubsetOf( Enum.GetValues<ParkCommandKind>(), Enumerable.Range( 0, 1024 ).Select( _ => Next().Kind ).Distinct().ToArray(), "the stream draws every kind" );

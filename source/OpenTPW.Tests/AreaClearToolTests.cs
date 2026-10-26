@@ -30,7 +30,7 @@ public class AreaClearToolTests
 		public Rig()
 		{
 			Paths = new ParkPathBuilder( Grid.Cells, Grid, (ParkEconomy?)null, new FlatGrid(), ( x, y ) => Grid.Cells.RawTypeAt( x, y ) == ParkCellTypes.Object );
-			Tool = new AreaClearTool( Remove, () => Grid.Cells, Paths.Remove );
+			Tool = new AreaClearTool( ( a, b ) => ParkCommandResult.Ok( Clear( a, b ) ) );
 		}
 
 		/// <summary>An object of the cells x0..x1, y0..y1: type 4 with the owner word of its first cell, as the placement writes it.</summary>
@@ -47,6 +47,9 @@ public class AreaClearToolTests
 				}
 			}
 		}
+
+		/// <summary>The rectangle's clear (<see cref="AreaClear.Run"/>) with this rig's removals, as the level's <see cref="ClearAreaCommand"/> runs it.</summary>
+		public (int Objects, int Paths) Clear( (int X, int Y) a, (int X, int Y) b ) => AreaClear.Run( Grid.Cells, a, b, Remove, Paths.Remove );
 
 		private bool Remove( int x, int y )
 		{
@@ -100,7 +103,7 @@ public class AreaClearToolTests
 	{
 		var rig = new Rig();
 		rig.Place( "edge", 2, 2, 4, 4 );
-		Assert.AreEqual( (1, 0), rig.Tool.Clear( (2, 2), (4, 4) ) );
+		Assert.AreEqual( (1, 0), rig.Clear( (2, 2), (4, 4) ) );
 	}
 
 	[TestMethod]
@@ -110,13 +113,13 @@ public class AreaClearToolTests
 		rig.Place( "kept", 3, 3, 4, 4 );
 		// Every cell of the object met starts its own four scans: one flagged cell beyond the object only fails the scans through it.
 		rig.Grid.Cells.SetFlags( 5, 3, (ParkCellFlags)0x10 );
-		Assert.AreEqual( (1, 0), rig.Tool.Clear( (2, 2), (8, 8) ), "the scans from row 4 pass" );
+		Assert.AreEqual( (1, 0), rig.Clear( (2, 2), (8, 8) ), "the scans from row 4 pass" );
 		rig.Place( "kept", 3, 3, 4, 4 );
 		rig.Grid.Cells.SetFlags( 5, 3, ParkCellFlags.None );
 		// Flagging two opposite cells of the object fails a scan from each of its cells.
 		rig.Grid.Cells.SetFlags( 3, 3, (ParkCellFlags)0x10 );
 		rig.Grid.Cells.SetFlags( 4, 4, (ParkCellFlags)0x10 );
-		Assert.AreEqual( (0, 0), rig.Tool.Clear( (2, 2), (8, 8) ) );
+		Assert.AreEqual( (0, 0), rig.Clear( (2, 2), (8, 8) ) );
 	}
 
 	[TestMethod]
@@ -125,7 +128,7 @@ public class AreaClearToolTests
 		var rig = new Rig();
 		rig.Paths.BuildSegment( (0, 2), (4, 2) );
 		rig.Grid.Cells.SetFlags( 3, 2, ParkCellFlags.NoModify );
-		var cleared = rig.Tool.Clear( (2, 0), (3, 4) );
+		var cleared = rig.Clear( (2, 0), (3, 4) );
 		Assert.AreEqual( ParkCellType.Empty, rig.Grid.Cells.TypeAt( 2, 2 ) );
 		Assert.AreEqual( ParkCellType.Path, rig.Grid.Cells.TypeAt( 3, 2 ), "NoModify with a neighbour (4, 2) stays" );
 		Assert.AreEqual( (0, 1), cleared );
@@ -139,7 +142,7 @@ public class AreaClearToolTests
 		// (and is tested one cell beyond it, which still lies in the rectangle's reach).
 		rig.Place( "left", 2, 2, 3, 3 );
 		rig.Place( "right", 4, 2, 5, 3 );
-		Assert.AreEqual( (1, 0), rig.Tool.Clear( (2, 2), (3, 3) ) );
+		Assert.AreEqual( (1, 0), rig.Clear( (2, 2), (3, 3) ) );
 		CollectionAssert.AreEqual( new[] { "left" }, rig.Removed );
 		// A queue cell of the object's own owner word is not an object cell: it ends the run instead of extending it.
 		rig.Place( "tall", 8, 8, 9, 9 );
@@ -147,7 +150,7 @@ public class AreaClearToolTests
 		rig.Grid.Cells.SetOwner( 10, 8, ParkCellMap.CellWord( 8, 8 ) );
 		rig.Grid.Cells.SetType( 11, 8, ParkCellTypes.Object );
 		rig.Grid.Cells.SetOwner( 11, 8, ParkCellMap.CellWord( 8, 8 ) );
-		Assert.AreEqual( (1, 0), rig.Tool.Clear( (7, 7), (10, 10) ), "the run to the right ends at the queue cell, one cell past the rectangle's edge at most" );
+		Assert.AreEqual( (1, 0), rig.Clear( (7, 7), (10, 10) ), "the run to the right ends at the queue cell, one cell past the rectangle's edge at most" );
 	}
 
 	[TestMethod]
@@ -161,7 +164,7 @@ public class AreaClearToolTests
 		rig.Objects[ParkCellMap.CellWord( 4, 4 )] = "add-on";
 		Assert.IsTrue( footprint.Where( cell => cell.Cell.Symbol == '+' ).All( cell => rig.Grid.Cells.FlagsAt( cell.X, cell.Y ) == ParkCellFlags.AddOn ) );
 		Assert.IsTrue( footprint.Where( cell => cell.Cell.Symbol == '*' ).All( cell => rig.Grid.Cells.FlagsAt( cell.X, cell.Y ) == ParkCellFlags.None ) );
-		Assert.AreEqual( (0, 0), rig.Tool.Clear( (3, 3), (8, 6) ), "the scans along the rows meet the flagged cells" );
+		Assert.AreEqual( (0, 0), rig.Clear( (3, 3), (8, 6) ), "the scans along the rows meet the flagged cells" );
 		Assert.IsTrue( rig.Removed.Count == 0 );
 		rig.Grid.Cells.ClearFootprint( footprint );
 		Assert.IsTrue( footprint.All( cell => rig.Grid.Cells.FlagsAt( cell.X, cell.Y ) == ParkCellFlags.None && rig.Grid.Cells.RawTypeAt( cell.X, cell.Y ) == 0 ), "removing the object takes the flag off again" );
@@ -176,16 +179,14 @@ public class AreaClearToolTests
 			for ( var x = 3; x <= 4; x++ )
 				objects[(x, y)] = "inc";
 		var removed = new List<string>();
-		var tool = new AreaClearTool( ( x, y ) =>
+		Assert.AreEqual( (1, 0), AreaClear.Run( rig.Grid.Cells, (2, 2), (6, 6), ( x, y ) =>
 		{
 			var name = objects[(x, y)];
 			removed.Add( name );
 			foreach ( var cell in objects.Where( pair => pair.Value == name ).Select( pair => pair.Key ).ToArray() )
 				objects.Remove( cell );
 			return true;
-		}, () => rig.Grid.Cells, rig.Paths.Remove,
-			( x, y ) => objects.TryGetValue( (x, y), out var name ) ? name : null );
-		Assert.AreEqual( (1, 0), tool.Clear( (2, 2), (6, 6) ) );
+		}, rig.Paths.Remove, ( x, y ) => objects.TryGetValue( (x, y), out var name ) ? name : null ) );
 		CollectionAssert.AreEqual( new[] { "inc" }, removed );
 	}
 }

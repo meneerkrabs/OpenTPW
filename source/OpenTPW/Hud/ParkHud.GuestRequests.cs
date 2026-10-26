@@ -31,14 +31,36 @@ public sealed partial class ParkHud
 				CompleteLine( request );
 			else if ( level.WaitingPlacement is { } placement && ReferenceEquals( placement.Request, request ) )
 				CompletePlacement( placement );
-			else if ( ReferenceEquals( level.WaitingRemoval, request ) )
+			else if ( ReferenceEquals( level.WaitingQueueEdit, request ) )
+				CompleteQueueEdit( request );
+			else if ( level.IsWaitingFor( request ) )
 			{
+				// a removal, a Backspace or a sale: its button or key takes the next press again, and the outcome is said
 				level.EndWaiting( request );
 				SayOutcome( request, null );
 			}
 			else
 				SayOutcome( request, request.Command is PlaceObjectCommand place ? level.ResolveCommandEntry( place.Entry ) : null );
 		}
+	}
+
+	/// <summary>
+	/// The guest's queue edit comes back (C3b): accepted, the queue tool starts from what its record read, with the help the host's click posts, unless the view has a tool by now or a
+	/// later record changed the queue (then the park shows what happened); otherwise its outcome is said.
+	/// </summary>
+	private void CompleteQueueEdit( CoopGuestCommands.Request request )
+	{
+		level.EndWaiting( request );
+		if ( request is { Accepted: true, Result: { } result } )
+		{
+			if ( result.As<Level.QueueEditStart>() is { } edit && level.CompleteQueueEdit( edit ) )
+			{
+				PostMessage( strings.Help( 445 ) );
+				level.CellTool.Hover( (cursorX, cursorY) );
+			}
+			return;
+		}
+		SayOutcome( request, null );
 	}
 
 	/// <summary>
@@ -85,10 +107,10 @@ public sealed partial class ParkHud
 	}
 
 	/// <summary>
-	/// The outcome of a request whose tool takes nothing from it (an orphan, a removal, a line or placement that cannot continue): an accepted placement says Built, an accepted removal or
-	/// line nothing (the park shows it); a refusal by the rights says the host has not let this player build (or that only the host does that); a refused placement or line its reason,
-	/// as the host's refusals are said, and other refusals of the park nothing, as for the host; a refusal without a record that the host could not take it; an error or a lost answer
-	/// that its outcome is not known. A snapshot and the session's end say nothing.
+	/// The outcome of a request whose tool takes nothing from it (an orphan, a removal, a line or placement that cannot continue, land, the area clear, a Backspace, a sale, a queue edit):
+	/// an accepted placement says Built, anything else accepted nothing (the park shows it); a refusal by the rights says the host has not let this player build (or that only the host
+	/// does that); a refused placement or line its reason and a refused purchase that the land cannot be bought, as the host's refusals are said, and other refusals of the park nothing,
+	/// as for the host; a refusal without a record that the host could not take it; an error or a lost answer that its outcome is not known. A snapshot and the session's end say nothing.
 	/// </summary>
 	private void SayOutcome( CoopGuestCommands.Request request, ObjectCatalogEntry? entry )
 	{
@@ -104,6 +126,9 @@ public sealed partial class ParkHud
 					SayGuestNote( level.Commands.Rights is CoopBuildRights rights && rights.Builds( request.Command ) ? OpenTpwText.CoopNotGranted : OpenTpwText.CoopHostOnly );
 				else if ( request.Command is PlaceObjectCommand or LayLineCommand or QueueSegmentCommand )
 					SayCannotBuild( result.Reason ?? "", entry );
+				// [EXT:land-feedback] a refused purchase says so, as the host's refused click does
+				else if ( request.Command is BuyLandCommand )
+					SayGuestNote( OpenTpwText.CannotBuyLand );
 				return;
 			case CoopGuestRequestState.Applied:
 			case CoopGuestRequestState.Unknown:

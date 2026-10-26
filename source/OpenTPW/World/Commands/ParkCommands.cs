@@ -15,6 +15,12 @@ public interface IParkCommandRights
 	/// a kind, C3): by default the kind's answer.
 	/// </summary>
 	bool Allows( int player, ParkCommand command ) => Allows( player, command.Kind );
+
+	/// <summary>
+	/// [EXT:online-coop-permissions] Whether <paramref name="player"/> may remove <paramref name="item"/> inside a command that removes what it finds (the area clear, C3b): a session's
+	/// guest may not remove what its own removal click may not. By default yes.
+	/// </summary>
+	bool AllowsRemoval( int player, OriginalObject item ) => true;
 }
 
 /// <summary>What became of one command: accepted (it ran) or rejected (nothing changed), with the reason and the value the edit returns to its issuer.</summary>
@@ -100,6 +106,9 @@ public sealed class ParkCommands
 
 	/// <summary>Whether the rights refuse <paramref name="command"/> its player (no rights refuse nothing).</summary>
 	private bool Refuses( ParkCommand command ) => Rights is { } rights && !rights.Allows( command.Player, command );
+
+	/// <summary>[EXT:online-coop-permissions] Whether <paramref name="player"/> may remove <paramref name="item"/> inside a command that removes what it finds: the rights' answer, yes without any.</summary>
+	internal bool AllowsRemoval( int player, OriginalObject item ) => Rights is not { } rights || rights.AllowsRemoval( player, item );
 
 	/// <summary>
 	/// [EXT:online-coop-commands] A guest's way to the host (C3): a command this machine's player issues on a park that follows a stream goes here as a request

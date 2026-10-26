@@ -353,24 +353,29 @@ public partial class CoopStreamTests
 		var level = peer.Level;
 		var rights = new CoopBuildRights( level );
 		var place = level.BuildCommand( peer.One.Entry, 20, 12, 90 );
-		// the commands of the guests' tools that wait for the host (C3a-2): the line tools, the one-shot placement and the remove click (below: an ordinary object's only)
+		// the commands of the guests' tools that wait for the host or send and go on (C3a-2: the line tools, the one-shot placement; C3b: the queue's edit, land, the area clear, the
+		// remove click on a path cell, Backspace over a path cell, the sale of an ordinary object)
+		Assert.IsTrue( level.Guests!.Grid.IsWalkable( 4, 1 ) );
 		var building = new ParkCommand[]
 		{
 			GuestLine,
 			new QueueSegmentCommand( peer.One.Runtime.AttractionId, 3, 3, 3, 6 ),
-			place
+			place,
+			new EditQueueCommand( 3, 3 ),
+			new BuyLandCommand( 1, 1, 2, 2 ),
+			new ClearAreaCommand( 0, 0, 8, 8 ),
+			new RemoveAtCommand( 4, 1 ),
+			new BacktrackCommand( 4, 1 ),
+			new RemoveAttractionCommand( peer.Two.Runtime.AttractionId )
 		};
 		var hostOnly = new ParkCommand[]
 		{
 			place with { Moving = true },
 			place with { AddOnRide = peer.One.Runtime.AttractionId },
-			// the tools that come back with C3b: the queue's edit, the area clear's and the backtrack's removals, land
-			new EditQueueCommand( 3, 3 ),
+			// the single-cell removals no guest's tool issues (the area clear's rectangle is one command)
 			new RemoveObjectAtCommand( 20, 12 ),
 			new RemovePathCellCommand( 4, 1 ),
 			new RemoveQueueCellCommand( 3, 3 ),
-			new BacktrackCommand( 4, 1 ),
-			new BuyLandCommand( 1, 1, 2, 2 ),
 			new SetGameSpeedCommand( GameSpeed.Fast ),
 			new SetEntranceFeeCommand( 3 ),
 			new SetBuildGrantCommand( 1, true ),
@@ -392,11 +397,10 @@ public partial class CoopStreamTests
 		Assert.IsFalse( rights.Allows( 1, ParkCommandKind.LayLine ), "a kind alone allows the host only" );
 		Assert.IsTrue( rights.Allows( ParkCommands.LocalPlayer, ParkCommandKind.LayLine ) );
 
-		// the remove click takes an ordinary object only: never the path or queue cell the remove tool takes when no object stands on the cell, nor an empty cell
-		Assert.IsFalse( rights.Allows( 1, new RemoveAtCommand( 20, 12 ) ), "no object on the cell yet" );
-		Assert.IsTrue( level.Guests!.Grid.IsWalkable( 4, 1 ) );
-		Assert.IsFalse( rights.Allows( 1, new RemoveAtCommand( 4, 1 ) ), "a path cell is not the remove click's for a guest" );
-		Assert.IsTrue( rights.Allows( ParkCommands.LocalPlayer, new RemoveAtCommand( 4, 1 ) ), "the host's remove click takes it" );
+		// the remove click takes an ordinary object, else the queue or path cell under it (C3b), and an empty cell is the park's to refuse; a sale of an object a later record removed
+		// too (below: what the rights keep from a guest)
+		Assert.IsTrue( rights.Allows( 1, new RemoveAtCommand( 20, 12 ) ), "no object on the cell yet: the park refuses it" );
+		Assert.IsTrue( rights.Allows( 1, new RemoveAttractionCommand( 99_999 ) ), "no such object: the park refuses it" );
 		// nor a fixed item of the park (its gates, lights, bus)
 		Assert.IsFalse( CoopBuildRights.GuestMayRemove( SyntheticRide( "Info.DontApplyOffset 1\n" ) ) );
 		Assert.IsTrue( CoopBuildRights.GuestMayRemove( SyntheticRide( "" ) ) );
@@ -411,12 +415,18 @@ public partial class CoopStreamTests
 		try
 		{
 			Assert.IsFalse( rights.Allows( 1, new RemoveAtCommand( 20, 12 ) ) );
+			Assert.IsFalse( rights.Allows( 1, new RemoveAttractionCommand( station.Runtime.AttractionId ) ), "nor to sell it" );
+			// the area clear asks of each object it would take: a guest's leaves the station standing, the host's takes it
+			Assert.IsFalse( rights.AllowsRemoval( 1, station ) );
+			Assert.IsTrue( rights.AllowsRemoval( ParkCommands.LocalPlayer, station ) );
 		}
 		finally
 		{
 			stations.Remove( station );
 		}
 		Assert.IsTrue( rights.Allows( 1, new RemoveAtCommand( 20, 12 ) ), "an ordinary object is a granted guest's to remove" );
+		Assert.IsTrue( rights.AllowsRemoval( 1, station ) );
+		Assert.IsFalse( rights.AllowsRemoval( 2, station ), "a seat without a grant removes nothing" );
 		level.SetBuildGrant( 1, false );
 		Assert.IsFalse( rights.Allows( 1, GuestLine ), "a grant taken back" );
 	}

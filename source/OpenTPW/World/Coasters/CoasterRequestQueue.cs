@@ -5,13 +5,18 @@ namespace OpenTPW;
 /// that filled it (a drag's put-back and end and the tool's end go after the panel closed). It sends from its head while fewer than <see cref="Level.OpenToolRequestLimit"/> tool requests of the
 /// guest are open in the session (the pool tool's counted too), a drag's step at most every <see cref="StepSeconds"/> and anything else at once. A drag's step replaces the unsent step of the same
 /// field of that drag, wherever it waits, so a drag holds at most one unsent step per field besides its press and its end. Each command may carry what its outcome does, run once it is back.
+/// A drag's end settles the money against the pylon as the drag's steps left it, so it goes only once every command before it came back, and nothing goes after it until it is back: a drag's last
+/// value of a field, or its end, that the host took no record of (or whose outcome is not known) goes again, first, at most <see cref="MaximumRetries"/> times.
 /// </summary>
 internal sealed class CoasterRequestQueue
 {
 	/// <summary>The least time between two drag steps sent: the drag's latest value goes at most this often (0.2 s, as the pool tool's batches).</summary>
 	public const double StepSeconds = 0.2;
 
-	/// <summary>One queued command: its drag (0 for none), a step's field, the request once sent, and what its outcome does.</summary>
+	/// <summary>How often a drag's last value of a field, or its end, goes again after the host took no record of it or its outcome was not known.</summary>
+	public const int MaximumRetries = 5;
+
+	/// <summary>One queued command: its drag (0 for none), a step's field, the request once sent, what its outcome does, and how often it went again.</summary>
 	private sealed class Item
 	{
 		public required ParkCommand Command;
@@ -19,11 +24,18 @@ internal sealed class CoasterRequestQueue
 		public CoasterNodeField? Field;
 		public CoopGuestCommands.Request? Request;
 		public Action<CoasterOutcome>? Completed;
+		public int Retries;
+
+		/// <summary>Whether this is a drag's end, which settles what the drag's steps left.</summary>
+		public bool IsDragEnd => Drag > 0 && Command is EndCoasterNodeEditCommand;
 	}
 
 	private readonly List<Item> unsent = new();
 	private readonly List<Item> sent = new();
 	private double lastStep = double.NegativeInfinity;
+
+	/// <summary>How many commands went again after the host took no record of them or their outcome was not known (the tests read it).</summary>
+	internal int Retried { get; private set; }
 
 	/// <summary>Whether a command waits to be sent: the guest's claims and its track or coaster tool entries wait for it (<see cref="Level.SettleClaim"/>).</summary>
 	public bool HasUnsent => unsent.Count > 0;
@@ -61,8 +73,9 @@ internal sealed class CoasterRequestQueue
 
 	/// <summary>
 	/// Sends from the head: while <paramref name="openRequests"/> stays below <paramref name="limit"/>, each command at once and a step only when <see cref="StepSeconds"/> of
-	/// <paramref name="now"/> passed since the last step went. <paramref name="issue"/> is told whether the command's outcome has a completion (its panel says a refusal itself). A command refused
-	/// before it went (the rights) completes at once with its result. Stops at the first that may not go yet, so the order holds.
+	/// <paramref name="now"/> passed since the last step went; a drag's end only once every command sent before it came back, and nothing while a drag's end is out. <paramref name="issue"/> is told
+	/// whether the command's outcome has a completion (its panel says a refusal itself). A command refused before it went (the rights) completes at once with its result. Stops at the first that
+	/// may not go yet, so the order holds.
 	/// </summary>
 	public void Send( Func<ParkCommand, bool, ParkCommandResult> issue, Func<int> openRequests, int limit, double now )
 	{
@@ -71,6 +84,8 @@ internal sealed class CoasterRequestQueue
 		while ( unsent.Count > 0 )
 		{
 			var item = unsent[0];
+			if ( sent.Any( other => other.IsDragEnd ) || (item.IsDragEnd && sent.Count > 0) )
+				return;
 			if ( openRequests() >= limit || (item.Field != null && now - lastStep < StepSeconds) )
 				return;
 			unsent.RemoveAt( 0 );
@@ -87,7 +102,11 @@ internal sealed class CoasterRequestQueue
 		}
 	}
 
-	/// <summary>A guest request resolved (the HUD's drain): when it is one of this queue's, its completion runs with its outcome. True when it was this queue's.</summary>
+	/// <summary>
+	/// A guest request resolved (the HUD's drain): when it is one of this queue's, its completion runs with its outcome. A drag's end, or a drag's step whose field no later command of the drag
+	/// sets, that the host took no record of or whose outcome is not known goes again instead, before anything else, at most <see cref="MaximumRetries"/> times: the end then settles the drag's
+	/// last values (setting a value again, or ending a drag that ended, changes nothing more). True when it was this queue's.
+	/// </summary>
 	public bool Complete( CoopGuestCommands.Request request )
 	{
 		ArgumentNullException.ThrowIfNull( request );
@@ -96,14 +115,27 @@ internal sealed class CoasterRequestQueue
 			return false;
 		var item = sent[index];
 		sent.RemoveAt( index );
-		item.Completed?.Invoke( request switch
+		var outcome = request switch
 		{
 			{ State: CoopGuestRequestState.Applied, Result: { Error: null } result } => new CoasterOutcome( result, false, false ),
 			{ State: CoopGuestRequestState.Refused } => new CoasterOutcome( null, true, false ),
 			_ => new CoasterOutcome( null, false, true )
-		} );
+		};
+		if ( (outcome.NotTaken || outcome.Unknown) && item.Retries < MaximumRetries && (item.IsDragEnd || (item.Field is { } field && !SetLater( item.Drag, field, index ))) )
+		{
+			item.Retries++;
+			item.Request = null;
+			unsent.Insert( 0, item );
+			Retried++;
+			return true;
+		}
+		item.Completed?.Invoke( outcome );
 		return true;
 	}
+
+	/// <summary>Whether a command of <paramref name="drag"/> sent after the one that was at <paramref name="sentIndex"/>, or waiting to go, sets <paramref name="field"/>.</summary>
+	private bool SetLater( int drag, CoasterNodeField field, int sentIndex ) =>
+		sent.Skip( sentIndex ).Any( item => item.Drag == drag && item.Field == field ) || unsent.Any( item => item.Drag == drag && item.Field == field );
 
 	/// <summary>The outcomes of the guest's waited actions (<see cref="CoasterGuestReport"/>) the HUD has not said yet, oldest first: the queue's, so a closed panel's still come back.</summary>
 	internal List<CoasterGuestReport> Reports { get; } = new();

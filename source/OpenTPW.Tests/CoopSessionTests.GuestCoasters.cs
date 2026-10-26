@@ -23,9 +23,11 @@ public partial class CoopSessionTests
 	/// A coaster of the asset-free park: a synthetic coaster type with the PC coasters' pylons (<see cref="CoasterTests.PcSettings"/>) placed on <see cref="CoasterCell"/>, its station's ends set
 	/// beside it as the coaster tests set theirs (<see cref="CoasterTests.PlaceStation"/>), no pylon yet. Run on every park alike before the session starts (<see cref="Shared"/>).
 	/// </summary>
-	private OriginalObject PlaceCoaster( Park park )
+	private OriginalObject PlaceCoaster( Park park ) => PlaceCoasterOn( park.Level, fixture! );
+
+	/// <summary><see cref="PlaceCoaster"/> on <paramref name="level"/>, a park of the stream tests' asset-free start built over <paramref name="fixture"/>.</summary>
+	internal static OriginalObject PlaceCoasterOn( Level level, UpgradeCatalogueDefaultsTests fixture )
 	{
-		var level = park.Level;
 		// the park is built without its field initializers: the coaster builders the tool keeps
 		var builders = typeof( Level ).GetField( "coasterBuilders", NonPublic )!;
 		if ( builders.GetValue( level ) == null )
@@ -140,7 +142,7 @@ public partial class CoopSessionTests
 		var (hostBuilder, builder) = Builders( host, guest, coaster );
 		var starts = guest.Level.HostToolStarts;
 		GuestPylons( host, guest, view );
-		Assert.AreEqual( starts + CoasterTests.Circuit.Length, guest.Level.HostToolStarts, "each placing click moved the panel on: a press made while it waited is no click" );
+		Assert.AreEqual( starts, guest.Level.HostToolStarts, "a click's outcome starts no tool: a press held from before it keeps its release, one made while it waited is marked" );
 		Assert.AreEqual( CoasterTrack.StationNodeCount + CoasterTests.Circuit.Length, builder.Track.Nodes.Count );
 		Assert.AreEqual( builder.Track.Nodes.Count, hostBuilder.Track.Nodes.Count, "the host placed them" );
 		// a click the park refuses comes back with its reason, as the host's click says it at once
@@ -174,9 +176,7 @@ public partial class CoopSessionTests
 		var waits = guest.Level.WaitingClicks;
 		Assert.IsFalse( guest.Level.SendCoasterBackspace(), "one at a time" );
 		Assert.AreEqual( waits + 1, guest.Level.WaitingClicks );
-		var starts = guest.Level.HostToolStarts;
 		RoundsUntil( () => !panel.IsWaiting, host, guest, view, "the Backspace came back" );
-		Assert.AreEqual( starts + 1, guest.Level.HostToolStarts, "it moved the panel on" );
 		Assert.AreEqual( (pylons - 1, pylons - 1), (builder.Track.Nodes.Count, hostBuilder.Track.Nodes.Count), "the last pylon went on both parks" );
 		Assert.AreEqual( 1, HostCommandsOf( host, seat ).Count( command => command is RemoveLastCoasterPylonCommand ) );
 		Assert.AreEqual( (seat, seat), (host.Level.ClaimOf( ride ), guest.Level.ClaimOf( ride )) );
@@ -222,6 +222,91 @@ public partial class CoopSessionTests
 		Assert.AreEqual( builder.Track.Nodes[node].T, hostBuilder.Track.Nodes[node].T );
 		Assert.IsNull( host.Level.CoasterEdits.Of( seat ), "the edit ended on the host" );
 		Assert.AreEqual( (seat, seat), (host.Level.ClaimOf( ride ), guest.Level.ClaimOf( ride )) );
+		CatchUpAndCompare( host, guest );
+	}
+
+	/// <summary>Forty one-cell lines between two of the host's frames spend the guest's burst: a request of the guest's sent in the same frame is too fast, and the host keeps no record of it.</summary>
+	private static CoopGuestCommands.Request[] SpendTheBurst( Park guest ) => Enumerable.Range( 0, 40 )
+		.Select( _ => guest.Session!.GuestCommands!.Submit( new LayLineCommand( CellToolMode.Path, -1, 30, 30, 30, 30 ) { Player = guest.Level.Commands.Player } ) ).ToArray();
+
+	[TestMethod]
+	public void AGuestsLastDragStepAndItsEndTheHostCouldNotTakeGoAgainBeforeAnythingElse()
+	{
+		var (host, guest, view, coaster, _, seat) = SharedCoaster();
+		GuestCoasterTool( host, guest, view, coaster );
+		var (hostBuilder, builder) = Builders( host, guest, coaster );
+		GuestPylons( host, guest, view, 2 );
+		guest.Enter();
+		var panel = guest.Level.CoasterPanel!;
+		Assert.IsTrue( panel.Select( CoasterToolButton.Height ) );
+		var node = CoasterTrack.StationNodeCount;
+		hudPointer = new N.Vector2( 1000, 800 );
+		Assert.IsTrue( panel.Press( node, new N.Vector2( 500, 400 ), CoasterCell.X + 4, CoasterCell.Y ) );
+		RoundsUntil( () => panel.IsDragging && guest.Level.CoasterRequests.IsEmpty, host, guest, view, "the press came back" );
+		// two seconds refill the host's bucket of the guest's requests
+		Rounds( 120, host, guest );
+		// the drag's last step goes in a frame whose burst the host cannot take: it goes again, and the end waits for it
+		var retried = guest.Level.CoasterRequests.Retried;
+		var burst = SpendTheBurst( guest );
+		hudPointer = new N.Vector2( 1000, 760 );
+		view.Update();
+		guest.Enter();
+		panel.Release( node, null );
+		RoundsUntil( () => guest.Level.CoasterRequests.IsEmpty && burst.All( request => !request.IsOpen ), host, guest, view, "the drag's last commands came back" );
+		Assert.IsTrue( burst.All( request => request.State == CoopGuestRequestState.Applied ), "the burst spent the host's bucket" );
+		Assert.IsTrue( guest.Level.CoasterRequests.Retried > retried, "the step after it was too fast and went again" );
+		var steps = HostCommandsOf( host, seat ).OfType<EditCoasterNodeCommand>().ToArray();
+		Assert.AreEqual( builder.Track.Nodes[node].T, steps.Last().Value, "the last value applied" );
+		Assert.AreEqual( 1, HostCommandsOf( host, seat ).Count( command => command is EndCoasterNodeEditCommand ) );
+		Assert.IsTrue( Array.IndexOf( host.Level.Commands.Log.Select( entry => entry.Command ).ToArray(), steps.Last() )
+			< host.Level.Commands.Log.ToList().FindIndex( entry => entry.Command is EndCoasterNodeEditCommand && entry.Command.Player == seat ), "before the end" );
+		Assert.AreEqual( builder.Track.Nodes[node].T, hostBuilder.Track.Nodes[node].T );
+		Assert.IsNull( host.Level.CoasterEdits.Of( seat ), "the end applied: the host holds no drag" );
+		// a drag whose end alone goes in such a frame: the end goes again
+		guest.Enter();
+		hudPointer = new N.Vector2( 1000, 800 );
+		Assert.IsTrue( panel.Press( node, new N.Vector2( 500, 400 ), CoasterCell.X + 4, CoasterCell.Y ) );
+		RoundsUntil( () => panel.IsDragging && guest.Level.CoasterRequests.IsEmpty, host, guest, view, "the second press came back" );
+		Rounds( 120, host, guest );
+		retried = guest.Level.CoasterRequests.Retried;
+		burst = SpendTheBurst( guest );
+		guest.Enter();
+		panel.Release( node, null );
+		view.Update();
+		RoundsUntil( () => guest.Level.CoasterRequests.IsEmpty && burst.All( request => !request.IsOpen ), host, guest, view, "the end came back" );
+		Assert.IsTrue( burst.All( request => request.State == CoopGuestRequestState.Applied ), "the burst spent the host's bucket" );
+		Assert.IsTrue( guest.Level.CoasterRequests.Retried > retried, "the end after it was too fast and went again" );
+		Assert.AreEqual( 2, HostCommandsOf( host, seat ).Count( command => command is EndCoasterNodeEditCommand ), "the second drag's end has a record" );
+		Assert.IsNull( host.Level.CoasterEdits.Of( seat ) );
+		CatchUpAndCompare( host, guest );
+	}
+
+	[TestMethod]
+	public void AGuestsCutGoesToTheHostAndItsOutcomeSelectsTheBuildButton()
+	{
+		var (host, guest, view, coaster, _, seat) = SharedCoaster();
+		GuestCoasterTool( host, guest, view, coaster );
+		var (hostBuilder, builder) = Builders( host, guest, coaster );
+		GuestPylons( host, guest, view );
+		var back = builder.Track.ReturnCell!.Value;
+		GuestCoasterClick( host, guest, view, back.X, back.Y, closing: true );
+		GuestCoasterClick( host, guest, view, back.X, back.Y );
+		Assert.IsTrue( builder.Track.IsComplete );
+		// the completion ended the tool: the track button opens it again on the finished coaster
+		GuestCoasterTool( host, guest, view, coaster );
+		guest.Enter();
+		var panel = guest.Level.CoasterPanel!;
+		Assert.IsTrue( panel.Select( CoasterToolButton.Demolish ) );
+		var first = CoasterTrack.StationNodeCount + 1;
+		Assert.AreEqual( CoasterPanelResult.CutStarted, panel.Release( first, null ), "the first release starts the range here" );
+		var nodes = builder.Track.Nodes.Count;
+		Assert.AreEqual( CoasterPanelResult.Nothing, panel.Release( first + 2, null ), "the second goes to the host" );
+		Assert.IsTrue( panel.IsWaiting );
+		Assert.AreEqual( CoasterPanelResult.Waiting, panel.Release( first, null ), "no other cut while it waits" );
+		RoundsUntil( () => !panel.IsWaiting, host, guest, view, "the cut came back" );
+		Assert.IsTrue( builder.Track.Nodes.Count < nodes && hostBuilder.Track.Nodes.Count == builder.Track.Nodes.Count, "the cut took pylons off on both parks" );
+		Assert.AreEqual( CoasterToolButton.Build, panel.Selected, "the outcome selected the build button" );
+		Assert.AreEqual( 1, HostCommandsOf( host, seat ).Count( command => command is CutCoasterCommand ) );
 		CatchUpAndCompare( host, guest );
 	}
 
@@ -393,6 +478,163 @@ public partial class CoopSessionTests
 		var hostRights = (CoopBuildRights)host.Level.Commands.Rights!;
 		foreach ( var command in commands )
 			Assert.AreEqual( Level.ClaimedReason, hostRights.RefusalReason( ParkCommands.LocalPlayer, command ), $"the host's {command.Kind}" );
+		CatchUpAndCompare( host, guest );
+	}
+
+	/// <summary>A synthetic ride of the asset-free park's theme with the given .sam lines (its type's archive path <paramref name="name"/>), placed as nothing yet.</summary>
+	private ObjectCatalogEntry SyntheticEntry( string name, string settings )
+	{
+		var root = (string)typeof( UpgradeCatalogueDefaultsTests ).GetField( "root", NonPublic )!.GetValue( fixture )!;
+		return new ObjectCatalogEntry( "jungle", ObjectCategory.Ride, $"/{name}", new ObjectSettings( new[] { new ObjectSettingsFile( $"Info.WhichUIType 0\n{settings}", $"{name}.sam" ) } ),
+			new ObjectShape( new[] { "*" } ), "/model.MD2", null, "/script.RSE", Array.Empty<string>(), Array.Empty<ObjectAnimationFile>(), Array.Empty<string>(), Array.Empty<string>(),
+			new BaseFileSystem( root ), null );
+	}
+
+	[TestMethod]
+	public void AGuestsTrackAddOnIsBuildingOnlyOntoItsOwnKartOrWaterRide()
+	{
+		// the add-on types stand in the park as objects of their own, far from the rides, so a command's key resolves to them on every park (the asset-free park has no catalogue)
+		var (host, guest, _, _) = Shared( ( park, _ ) =>
+		{
+			PlaceKartRide( park );
+			PlaceCoaster( park );
+			foreach ( var (name, settings, y) in new[]
+			{
+				("kartjump", $"Info.Id 1170\nAddOn.UpgradesId 1150\nAddOn.UpgradeType {TrackAddOns.TrackUpgradeType}\n", 12),
+				("otherjump", $"Info.Id 1171\nAddOn.UpgradesId 1151\nAddOn.UpgradeType {TrackAddOns.TrackUpgradeType}\n", 14),
+				("coasterjump", $"Info.Id 1172\nAddOn.UpgradesId 1160\nAddOn.UpgradeType {TrackAddOns.TrackUpgradeType}\n", 16)
+			} )
+				Assert.IsNotNull( park.Level.Objects.TryPlace( SyntheticEntry( name, settings ), 29, y, 0, out var placed ), $"{name}: {placed}" );
+		} );
+		var view = ViewOf( guest );
+		Rounds( 20, host, guest );
+		Grant( host, guest, view );
+		var seat = guest.Level.Commands.Player;
+		var rights = (CoopBuildRights)guest.Level.Commands.Rights!;
+		var kart = guest.Level.TrackStations.Keys.Single().Runtime.AttractionId;
+		var coaster = guest.Level.Objects.Objects.Single( item => item.Runtime.Coaster != null ).Runtime.AttractionId;
+		string KeyOf( string name ) => ParkCommandCodec.EntryKey( guest.Level.Objects.Objects.Single( item => item.Entry.ArchivePath == $"/{name}" ).Entry );
+		bool Builds( string name, int ride, bool moving = false ) => rights.Allows( seat, new PlaceObjectCommand( KeyOf( name ), 24, 9, 0, moving, ride ) { Player = seat } );
+		Assert.IsTrue( Builds( "kartjump", kart ), "the add-on of the ride's type onto that ride" );
+		Assert.IsFalse( Builds( "kartjump", kart, moving: true ), "never a moving placement" );
+		Assert.IsFalse( Builds( "otherjump", kart ), "nor another ride type's add-on" );
+		Assert.IsFalse( Builds( "kartjump", -1 ), "nor a track add-on as an object of its own" );
+		Assert.IsFalse( Builds( "coasterjump", coaster ), "a coaster takes no track add-on" );
+		Assert.IsFalse( Builds( "kartjump", 999_999 ), "nor a ride the park does not hold" );
+		Assert.IsFalse( rights.Allows( seat, new PlaceObjectCommand( ParkCommandCodec.EntryKey( guest.One.Entry ), 24, 9, 0, false, kart ) { Player = seat } ),
+			"an ordinary object that names a ride" );
+		// a ride another seat claims refuses it in the claim's words
+		Assert.IsTrue( host.Issue( new ClaimRideCommand( kart ) ).Accepted );
+		RoundsUntil( () => guest.Level.ClaimOf( kart ) == ParkCommands.LocalPlayer, host, guest, view, "the host's claim reached the guest" );
+		Assert.IsFalse( Builds( "kartjump", kart ) );
+		Assert.AreEqual( Level.ClaimedReason, rights.RefusalReason( seat, new PlaceObjectCommand( KeyOf( "kartjump" ), 24, 9, 0, false, kart ) { Player = seat } ) );
+		Assert.IsTrue( host.Issue( new ReleaseRideCommand( kart ) ).Accepted );
+		RoundsUntil( () => guest.Level.ClaimOf( kart ) == null, host, guest, view, "the release reached the guest" );
+		// a guest's add-on request is decided alike on every park: the park's add-on rule refuses a jump off the ride's track
+		var request = guest.Issue( new PlaceObjectCommand( KeyOf( "kartjump" ), 30, 30, 0, false, kart ) );
+		Assert.IsTrue( request.IsPending, "the rights let it go to the host" );
+		RoundsUntil( () => !request.Request!.IsOpen, host, guest, view, "the placement came back" );
+		Assert.IsFalse( request.Request!.Accepted, "no track there" );
+		CatchUpAndCompare( host, guest );
+	}
+
+	[TestMethod]
+	public void APressMadeWhileTheCoasterPanelWaitedIsNoClickWhateverCameBack()
+	{
+		var (host, guest, view, coaster, _, seat) = SharedCoaster();
+		GuestCoasterTool( host, guest, view, coaster );
+		var (oldMode, oldView, oldProjection) = (Camera.Mode, Camera.ViewMatrix, Camera.ProjMatrix);
+		// the asset-free park's original park has no heightfield: the HUD's frames that point at the park pick on the generic sandbox's ground plane instead, the park's state untouched
+		var originalPark = typeof( Level ).GetProperty( nameof( Level.OriginalPark ) )!;
+		T OnThePlane<T>( Func<T> pick )
+		{
+			var park = originalPark.GetValue( guest.Level );
+			originalPark.SetValue( guest.Level, null );
+			try
+			{
+				return pick();
+			}
+			finally
+			{
+				originalPark.SetValue( guest.Level, park );
+			}
+		}
+		void Hud( UiInput input ) => OnThePlane( () =>
+		{
+			view.Input( input );
+			return true;
+		} );
+		try
+		{
+			// a camera above the coaster's site, looking down at it, so a point of the views' canvas lies on a cell of the park
+			Camera.Mode = new ParkCameraMode();
+			var centre = new N.Vector3( ParkPlacement.MinimumCoordinate + 26.5f * ObjectPlacement.CellSize, ParkPlacement.MinimumCoordinate + 24.5f * ObjectPlacement.CellSize, 0 );
+			Camera.ViewMatrix = N.Matrix4x4.CreateLookAt( centre + new N.Vector3( 0, -20, 30 ), centre + new N.Vector3( 0, 0, 12 ), N.Vector3.UnitZ );
+			Camera.ProjMatrix = N.Matrix4x4.CreatePerspectiveFieldOfView( 0.8f, 2048f / 1536f, 0.5f, 500 );
+			guest.Enter();
+			// the first point of the canvas's middle band that lies on a cell of the park
+			var (point, cellX, cellY) = (default( N.Vector2 ), -1, -1);
+			for ( var y = 500; y <= 1100 && cellX < 0; y += 50 )
+				for ( var x = 600; x <= 1500 && cellX < 0; x += 50 )
+				{
+					var candidate = new N.Vector2( x, y );
+					if ( OnThePlane( () => (guest.Level.TryGetGridCell( candidate, new N.Vector2( 2048, 1536 ), out var cx, out var cy ), cx, cy) ) is (true, var hx, var hy) )
+						(point, cellX, cellY) = (candidate, hx, hy);
+				}
+			Assert.IsTrue( cellX >= 0, "the camera hits the park" );
+			var requests = guest.Session!.GuestCommands!;
+			int Clicks() => host.Level.Commands.Log.Count( entry => entry.Command is CoasterClickCommand && entry.Command.Player == seat );
+			// a click the park refuses waits; its answer comes back in the guest's park before the HUD's frame that takes the press
+			var panel = guest.Level.CoasterPanel!;
+			Assert.IsTrue( guest.Level.SendCoasterClick( 200, 200, false ) );
+			view.Update();
+			var click = requests.Open.Single( request => request.Command is CoasterClickCommand );
+			for ( var round = 0; round < 600 && click.IsOpen; round++ )
+			{
+				clock += 1 / 60.0;
+				host.Frame( 1 / 60.0 );
+				guest.Frame( 1 / 60.0 );
+				guest.Session.Step();
+			}
+			Assert.IsFalse( click.IsOpen );
+			Assert.IsTrue( panel.IsWaiting, "the HUD has not taken the answer yet" );
+			var clicks = Clicks();
+			var waits = guest.Level.WaitingClicks;
+			Hud( UiInput.Idle( point ) with { LeftDown = true, LeftPressed = true } );
+			Assert.IsFalse( panel.IsWaiting, "the frame took the answer first" );
+			Assert.AreEqual( waits, guest.Level.WaitingClicks, "a press the answer of its own frame freed asks no wait" );
+			Hud( UiInput.Idle( point ) with { LeftReleased = true } );
+			RoundsUntil( () => guest.Level.CoasterRequests.IsEmpty, host, guest, view, "nothing waits" );
+			Rounds( 30, host, guest );
+			Assert.AreEqual( clicks, Clicks(), "the press made while the panel waited was no click" );
+			// the next press is the panel's again: its release is a click
+			Hud( UiInput.Idle( point ) with { LeftDown = true, LeftPressed = true } );
+			Hud( UiInput.Idle( point ) with { LeftReleased = true } );
+			Assert.IsTrue( panel.IsWaiting, $"the release clicked cell ({cellX}, {cellY})" );
+			RoundsUntil( () => !panel.IsWaiting, host, guest, view, "the click came back" );
+			Assert.AreEqual( clicks + 1, Clicks() );
+			// a press held from before a wait keeps its release: the Backspace's outcome changes no gesture
+			Hud( UiInput.Idle( point ) with { LeftDown = true, LeftPressed = true } );
+			Assert.IsTrue( guest.Level.SendCoasterBackspace() );
+			RoundsUntil( () => !panel.IsWaiting, host, guest, view, "the Backspace came back" );
+			Hud( UiInput.Idle( point ) with { LeftReleased = true } );
+			Assert.IsTrue( panel.IsWaiting, "the release clicked" );
+			RoundsUntil( () => !panel.IsWaiting, host, guest, view, "the click came back" );
+			Assert.AreEqual( clicks + 2, Clicks() );
+			// a press while a request still waits asks the player to wait, and its release is nobody's either
+			Assert.IsTrue( guest.Level.SendCoasterBackspace() );
+			waits = guest.Level.WaitingClicks;
+			Hud( UiInput.Idle( point ) with { LeftDown = true, LeftPressed = true } );
+			Assert.AreEqual( waits + 1, guest.Level.WaitingClicks );
+			RoundsUntil( () => !panel.IsWaiting, host, guest, view, "the Backspace came back" );
+			Hud( UiInput.Idle( point ) with { LeftReleased = true } );
+			Rounds( 30, host, guest );
+			Assert.AreEqual( clicks + 2, Clicks() );
+		}
+		finally
+		{
+			(Camera.Mode, Camera.ViewMatrix, Camera.ProjMatrix) = (oldMode, oldView, oldProjection);
+		}
 		CatchUpAndCompare( host, guest );
 	}
 

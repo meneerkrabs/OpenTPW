@@ -278,6 +278,19 @@ public partial class CoopJoinSessionTests
 		// the asset-free park has no name of its own yet and no track renderers (a closing park disposes them)
 		typeof( Level ).GetProperty( nameof( Level.ParkName ) )!.SetValue( park.Level, new ParkNameLines( "Test", "Park" ) );
 		typeof( Level ).GetField( "trackRenderers", BindingFlags.Instance | BindingFlags.NonPublic )!.SetValue( park.Level, new Dictionary<TrackFamily, TrackRenderer>() );
+		if ( prepareParks is { } prepare )
+		{
+			var current = Level.Current;
+			Level.Current = park.Level;
+			try
+			{
+				prepare( park.Level );
+			}
+			finally
+			{
+				Level.Current = current;
+			}
+		}
 		return (park.Level, park.Entities);
 	}
 

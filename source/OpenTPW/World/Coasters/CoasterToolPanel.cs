@@ -380,7 +380,7 @@ public sealed class CoasterToolPanel
 			return;
 		pendingPress = null;
 		if ( outcome.Result is { RightsRefused: true } || outcome.NotTaken || outcome.Unknown )
-			Report( CoasterGuestAction.Press, outcome, changed: false, open: !closed );
+			Report( CoasterGuestAction.Press, outcome, open: !closed );
 		if ( closed || outcome.Result is not { Accepted: true, Value: CoasterBuilder.NodeEdit edit } || edit.Index >= Track.Nodes.Count )
 			return;
 		var range = HeldEdit?.Invoke()?.Range ?? builder.DragRange( edit.Index, press.Drag );
@@ -563,7 +563,7 @@ public sealed class CoasterToolPanel
 	private void DragEndAnswered( CoasterOutcome outcome )
 	{
 		if ( !closed && outcome.Result is { RightsRefused: true } )
-			Report( CoasterGuestAction.DragEnd, outcome, changed: false, open: true );
+			Report( CoasterGuestAction.DragEnd, outcome, open: true );
 	}
 
 	/// <summary>The yaw a node is turned to: the hand-set one, or the heading of its knot direction.</summary>
@@ -610,6 +610,9 @@ public sealed class CoasterToolPanel
 					return CoasterPanelResult.Nothing;
 				if ( Guest )
 				{
+					// [EXT:online-coop-commands] one request of the panel waits at a time: a press held from before the wait swaps nothing now (C3c-2)
+					if ( IsWaiting )
+						return CoasterPanelResult.Waiting;
 					SendAction( CoasterGuestAction.Swap, new SwapCoasterStackCommand( station, swapped, Selected == CoasterToolButton.StackUp ), _ => { } );
 					return CoasterPanelResult.Nothing;
 				}
@@ -625,6 +628,9 @@ public sealed class CoasterToolPanel
 		// [BIN:TPW-EXE:0x446740 cut range] the first release over a pylon starts the range (0x79c62c, 0x79c6dc), the second over a pylon completes it; a release over nothing does nothing
 		if ( node is not int index || index < 0 || index >= Track.Nodes.Count || Track.Nodes[index].IsPylonless )
 			return CoasterPanelResult.Nothing;
+		// [EXT:online-coop-commands] one request of a guest's panel waits at a time: a release while it waits, also of a press held from before it, does nothing, and a range started stays (C3c-2)
+		if ( Guest && IsWaiting )
+			return CoasterPanelResult.Waiting;
 		// a pending range ends with any edit of the track in between (a deleted pylon would leave its end pointing at another node)
 		if ( cutStart is not int first || cutVersion != Track.Version )
 		{
@@ -726,9 +732,9 @@ public sealed class CoasterToolPanel
 			if ( state.Number > 0 )
 			{
 				GuestRequests!.DropUnsent( state.Number );
-				// the steps that went may have moved the pylon: it goes back to its cell before the end
+				// the steps that went may have moved the pylon: it goes back to its cell before the end, as the drag's last value of its field
 				if ( state.Kind == CoasterToolButton.Move && state.Last.ContainsKey( CoasterNodeField.Move ) )
-					GuestRequests.Enqueue( new EditCoasterNodeCommand( station, CoasterNodeField.Move, 0, state.Edit.Start.X, state.Edit.Start.Y ), state.Number );
+					GuestRequests.Step( state.Number, new EditCoasterNodeCommand( station, CoasterNodeField.Move, 0, state.Edit.Start.X, state.Edit.Start.Y ) );
 				drag = null;
 				DragCost = null;
 				GuestRequests.Enqueue( new EndCoasterNodeEditCommand( station ), state.Number );
@@ -774,8 +780,8 @@ public sealed class CoasterToolPanel
 	}
 
 	/// <summary>
-	/// Queues a guest's waited action: the panel waits for it, and its outcome runs <paramref name="answered"/>, then is reported, as a change of the panel only while the panel was open when it came
-	/// back (a closed panel's outcome is only said).
+	/// Queues a guest's waited action: the panel waits for it, and its outcome runs <paramref name="answered"/>, then is reported, with whether the panel was still open when it came back (a closed
+	/// panel's outcome is only said).
 	/// </summary>
 	private void SendAction( CoasterGuestAction action, ParkCommand command, Action<CoasterOutcome> answered, bool closing = false )
 	{
@@ -786,13 +792,13 @@ public sealed class CoasterToolPanel
 			if ( waitingAction == action )
 				waitingAction = null;
 			answered( outcome );
-			Report( action, outcome, changed: open && outcome.Result?.Accepted == true, open, closing );
+			Report( action, outcome, open, closing );
 		} );
 	}
 
 	/// <summary>Reports a guest's outcome for the HUD (<see cref="CoasterRequestQueue.TakeReports"/>).</summary>
-	private void Report( CoasterGuestAction action, CoasterOutcome outcome, bool changed, bool open, bool closing = false ) =>
-		GuestRequests!.Reports.Add( new CoasterGuestReport( action, outcome, changed, open, closing ) );
+	private void Report( CoasterGuestAction action, CoasterOutcome outcome, bool open, bool closing = false ) =>
+		GuestRequests!.Reports.Add( new CoasterGuestReport( action, outcome, open, closing ) );
 }
 
 /// <summary>[EXT:online-coop-commands] A guest's coaster tool action that waits for the host (C3c-2).</summary>
@@ -813,10 +819,10 @@ internal enum CoasterGuestAction
 }
 
 /// <summary>
-/// [EXT:online-coop-commands] What a guest's coaster tool action came back with, for the HUD to say (C3c-2): the action, its outcome, whether it changed the panel (a press made while it waited is then
-/// no click), whether its panel was still the open one when it came back (a closed panel's outcome ends no tool), and for a click whether it was on the chain start.
+/// [EXT:online-coop-commands] What a guest's coaster tool action came back with, for the HUD to say (C3c-2): the action, its outcome, whether its panel was still the open one when it came back (a
+/// closed panel's outcome ends no tool), and for a click whether it was on the chain start.
 /// </summary>
-internal sealed record CoasterGuestReport( CoasterGuestAction Action, CoasterOutcome Outcome, bool Changed, bool Open, bool Closing );
+internal sealed record CoasterGuestReport( CoasterGuestAction Action, CoasterOutcome Outcome, bool Open, bool Closing );
 
 /// <summary>What a release in the coaster panel did.</summary>
 public enum CoasterPanelResult
@@ -831,5 +837,7 @@ public enum CoasterPanelResult
 	/// <summary>The cut opened the circuit in the middle.</summary>
 	Cut,
 	/// <summary>The cut reached the end: the track is unfinished again.</summary>
-	Reopened
+	Reopened,
+	/// <summary>[EXT:online-coop-commands] A guest's swap or cut while another request of its panel waits for the host: nothing went, and the player is asked to wait (C3c-2).</summary>
+	Waiting
 }

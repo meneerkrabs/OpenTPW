@@ -27,6 +27,8 @@ public partial class CoopSessionTests
 		public Action Escape { get; init; } = null!;
 		/// <summary>The HUD's frame with the left button pressed (and held), the pointer off the park.</summary>
 		public Action Press { get; init; } = null!;
+		/// <summary>The HUD's frame with the given input.</summary>
+		public Action<UiInput> Input { get; init; } = null!;
 		/// <summary>How many of the HUD's lines (the last three) say <paramref name="text"/>.</summary>
 		public int Says( OpenTpwText text ) => Hud.Messages.Count( message => message == Strings.Extra( text ) );
 	}
@@ -60,6 +62,11 @@ public partial class CoopSessionTests
 			{
 				park.Enter();
 				hud.Update( context, UiInput.Idle( new N.Vector2( -1 ) ) with { LeftDown = true, LeftPressed = true }, false, false, false );
+			},
+			Input = input =>
+			{
+				park.Enter();
+				hud.Update( context, input, false, false, false );
 			}
 		};
 	}

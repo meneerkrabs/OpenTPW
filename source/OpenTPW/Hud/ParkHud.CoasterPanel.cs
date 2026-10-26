@@ -208,11 +208,11 @@ public sealed partial class ParkHud
 		else
 			panel.HoverNothing();
 		// [EXT:online-coop-commands] a press made while a guest's request of the panel waited, at this frame's start (before its answers) or now (before the press sends a drag's own begin): its
-		// release is nobody's (C3c-2); a press while the panel still waits asks the player to wait
-		if ( inPark && input.LeftPressed )
+		// release is nobody's (C3c-2), wherever it is let go; a press in the park while the panel still waits asks the player to wait
+		if ( input.LeftPressed )
 		{
 			coasterPressWhileWaiting = frameCoasterWaiting || panel.IsWaiting;
-			if ( panel.IsWaiting )
+			if ( inPark && panel.IsWaiting )
 				level.NoteWaitingClick();
 		}
 		if ( panel.IsDragging || panel.PressWaits )
@@ -273,6 +273,9 @@ public sealed partial class ParkHud
 			var result = panel.Release( node, inPark ? (cursorX, cursorY) : null );
 			if ( result == CoasterPanelResult.Reopened )
 				PostMessage( strings.Help( 0x125 ) );
+			// [EXT:online-coop-commands] a guest's swap or cut while another request of its panel waits went nowhere (C3c-2)
+			if ( result == CoasterPanelResult.Waiting )
+				level.NoteWaitingClick();
 			if ( inPark )
 			{
 				PostToolHelp( AdvisorToolHelp.CoasterToolClick );

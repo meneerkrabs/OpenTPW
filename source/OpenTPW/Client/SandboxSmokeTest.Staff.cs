@@ -89,7 +89,12 @@ internal sealed partial class SandboxSmokeTest
 					level.TryProjectCell( cell.X, cell.Y, viewport, out point )
 					&& point.X > canvas.Width * 0.3f && point.X < canvas.Width * 0.7f && point.Y > canvas.Height * 0.2f && point.Y < canvas.Height * 0.6f
 					&& !hud.Stack.Covers( canvas, point ) && level.TryGetGridCell( point, viewport, out var x, out var y ) && (x, y) == cell
-					&& placement.IsValid( x, y );
+					&& placement.IsValid( x, y ) && !PickFollowsAnObject( point );
+				// the cursor pick tests an object's model at its current pose (ObjectRayPick): over a cell whose pick passes a model, an animated part (on the jungle the
+				// water track's Splish Splash beside the found cells) can move into the ray between this search and the click and turn the hovered cell, so the tools
+				// only use pointers (the cell centre and its probe points) whose pick is the terrain's whatever the animations do
+				bool PickFollowsAnObject( System.Numerics.Vector2 point ) =>
+					Enumerable.Range( 0, 3 ).Any( probe => level.CursorPickTestsObjectModels( StaffProbePoint( point, probe ), viewport ) );
 				var grid = level.Guests.Grid;
 				var found = new List<(int X, int Y)>();
 				for ( var index = 0; index < grid.CountX * grid.CountY && found.Count < 400; index++ )
@@ -130,7 +135,7 @@ internal sealed partial class SandboxSmokeTest
 				if ( !ProbeDangle( staffPointA, viewport, renderer, "Place" ) )
 					return;
 				hud.Update( hudContext, UiInput.Idle( staffPointA ) );
-				Require( placement.Kind == StaffToolKind.Place && placement.HoverCell == staffCellA && placement.HoverValid, $"the Place tool is still armed over its cell after the probes ({placement.Kind}, {placement.HoverCell})" );
+				Require( placement.Kind == StaffToolKind.Place && placement.HoverCell == staffCellA && placement.HoverValid, $"the Place tool is still armed over its cell after the probes ({placement.Kind}, {placement.HoverCell} valid {placement.HoverValid}, wanted {staffCellA})" );
 				Press( staffPointA );
 				var candidateId = staffCandidateId;
 				Require( !placement.IsActive && economy.Staff.Members.Count == staffEmployed + 1, "a click on a valid cell hires and places" );
@@ -218,7 +223,7 @@ internal sealed partial class SandboxSmokeTest
 				break;
 			case 5:
 				hud.Update( hudContext, UiInput.Idle( staffPointB ) );
-				Require( placement.Kind == StaffToolKind.Carry && placement.HoverCell == staffCellB && placement.HoverValid, $"the Carry tool is still armed over the drop cell after the probes ({placement.Kind}, {placement.HoverCell})" );
+				Require( placement.Kind == StaffToolKind.Carry && placement.HoverCell == staffCellB && placement.HoverValid, $"the Carry tool is still armed over the drop cell after the probes ({placement.Kind}, {placement.HoverCell} valid {placement.HoverValid}, wanted {staffCellB})" );
 				Press( staffPointB );
 				Require( !placement.IsActive && StaffPlacementRules.CellOf( smokeHandyman! ) == staffCellB && smokeHandyman!.State == StaffState.Idle && smokeHandyman.Navigation == null,
 					"a click on another valid cell drops the handyman there" );

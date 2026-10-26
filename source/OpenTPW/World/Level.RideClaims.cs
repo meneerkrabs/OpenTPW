@@ -40,7 +40,10 @@ public partial class Level
 	/// <summary>[EXT:online-coop-claims] Every claim goes: a claim is its session's, and the park's next session starts without one.</summary>
 	internal void ClearRideClaims() => rideClaims = null;
 
-	/// <summary>[EXT:online-coop-claims] Releases every claim <paramref name="seat"/> holds (a departed seat's, <see cref="ReleaseSeatCommand"/>). True when it held one.</summary>
+	/// <summary>
+	/// [EXT:online-coop-claims] Releases every claim <paramref name="seat"/> holds (a departed seat's, <see cref="ReleaseSeatCommand"/>), a coaster's leaving the tool (<see cref="EndClaimedCoaster"/>).
+	/// True when it held one.
+	/// </summary>
 	internal bool ReleaseClaimsOf( int seat )
 	{
 		if ( rideClaims == null )
@@ -50,8 +53,42 @@ public partial class Level
 			rideClaims.Remove( ride );
 		if ( rideClaims.Count == 0 )
 			rideClaims = null;
+		foreach ( var ride in held )
+			EndClaimedCoaster( ride );
 		return held.Length > 0;
 	}
+
+	/// <summary>[EXT:online-coop-claims] Whether <paramref name="item"/> is a ride a track tool claims: a kart or water ride's station (C3c-1) or a coaster's station (C3c-2).</summary>
+	internal bool IsClaimableRide( OriginalObject item ) => !item.IsDeleted && (trackStations.ContainsKey( item ) || item.Runtime.Coaster != null);
+
+	/// <summary>
+	/// [EXT:online-coop-claims] A claim of the ride with attraction id <paramref name="ride"/> ended (its release, its move to another ride, its seat's departure, the host's expiry): a coaster in the
+	/// tool leaves it as <see cref="EndCoasterToolCommand"/> leaves it (<see cref="LeaveCoasterToolState"/>), in the same record, so no player that left, resynced or idled leaves a coaster closed
+	/// and marked (C3c-2). A track ride has no such state.
+	/// </summary>
+	private void EndClaimedCoaster( int ride )
+	{
+		if ( ResolveCommandObject( ride ) is { IsDeleted: false, Runtime.Coaster: { BeingEdited: true } } station )
+			LeaveCoasterToolState( station );
+	}
+
+	/// <summary>
+	/// [EXT:online-coop-claims] A session's teardown, after its log was taken: each coaster of <paramref name="stations"/> (attraction ids) still in the tool leaves it on this park, which runs on
+	/// alone (no peer follows it), by an <see cref="EndCoasterToolCommand"/> of its own, as its claim's end would have left it (C3c-2): none stays closed and marked. The coaster tool of this
+	/// machine stays on its coaster.
+	/// </summary>
+	internal void EndSessionCoasters( IEnumerable<int> stations )
+	{
+		foreach ( var ride in stations.Distinct().Order().ToArray() )
+		{
+			if ( ResolveCommandObject( ride ) is { IsDeleted: false, Runtime.Coaster: { BeingEdited: true } } station && station != CoasterToolStation )
+				Commands.Apply( new EndCoasterToolCommand( ride ) );
+		}
+	}
+
+	/// <summary>[EXT:online-coop-claims] The attraction ids of the coasters in the tool now, in order (C3c-2).</summary>
+	internal IEnumerable<int> EditedCoasters() => Objects.Objects.Where( item => !item.IsDeleted && item.Runtime.Coaster is { BeingEdited: true } )
+		.Select( item => item.Runtime.AttractionId ).Order().ToArray();
 
 	/// <summary>[EXT:online-coop-claims] The seats that hold a claim, in order.</summary>
 	internal IEnumerable<int> ClaimingSeats() => rideClaims?.Values.Distinct().OrderBy( seat => seat ) ?? Enumerable.Empty<int>();
@@ -74,7 +111,9 @@ public partial class Level
 	/// <item>the host's track tool on a ride whose claim it does not hold (a tool that was on when the session started) claims it, and ends, with the claim's note, when another player holds
 	/// it;</item>
 	/// <item>a guest's track tool on a ride whose claim its seat no longer holds (the host let it go: the guest was away for 30 seconds, or sent nothing on the ride for 5 minutes) ends, with
-	/// a note, once no line or Backspace of it waits (whose outcome ends it and says so) and no claim or open request of its own is open (C3c-1b).</item>
+	/// a note, once no line or Backspace of it waits (whose outcome ends it and says so) and no claim or open request of its own is open (C3c-1b); a guest's coaster tool closes so too,
+	/// without a command, once no request of its panel waits (C3c-2);</item>
+	/// <item>[EXT:online-coop-commands] a guest's release waits while its coaster commands still wait to be sent, so it comes behind them (C3c-2).</item>
 	/// </list>
 	/// True when it released, claimed, ended or sent something.
 	/// </summary>
@@ -82,16 +121,21 @@ public partial class Level
 	{
 		if ( CoopSession == null )
 			return false;
-		var tool = TrackToolStation?.Runtime.AttractionId;
+		// [EXT:online-coop-claims] the tool's ride: the track tool's, or the coaster tool's (C3c-2)
+		var tool = TrackToolStation?.Runtime.AttractionId ?? CoasterToolStation?.Runtime.AttractionId;
 		var requests = CoopSession.GuestCommands;
-		var entering = requests != null && requests.Open.Any( request => request.Command is ClaimRideCommand or OpenTrackLineToolCommand );
+		var entering = requests != null && requests.Open.Any( request => request.Command is ClaimRideCommand or OpenTrackLineToolCommand or BeginCoasterToolCommand );
 		if ( tool is { } on && ClaimOf( on ) != Commands.Player )
 		{
 			if ( Commands.SendsRequests )
 			{
-				if ( CellTool.IsWaiting || entering )
+				if ( CellTool.IsWaiting || CoasterPanel?.IsWaiting == true || entering )
 					return false;
-				ExitTrackTool();
+				// a coaster's tool state went with its claim (its release ran the claim-end transition): the panel closes without a command
+				if ( CoasterToolStation != null )
+					CloseCoasterToolLocally();
+				else
+					ExitTrackTool();
 				NoteSessionRefusal( ClaimOf( on ) != null ? CoopRefusal.Claimed : CoopRefusal.ClaimLost );
 				return true;
 			}
@@ -99,7 +143,10 @@ public partial class Level
 			var claim = Commands.Issue( new ClaimRideCommand( on ) );
 			if ( claim.Accepted )
 				return true;
-			ExitTrackTool();
+			if ( CoasterToolStation != null )
+				ExitCoasterTool();
+			else
+				ExitTrackTool();
 			if ( claim.Reason == ClaimedReason )
 				NoteSessionRefusal( CoopRefusal.Claimed );
 			tool = null;
@@ -108,7 +155,8 @@ public partial class Level
 			return false;
 		if ( !Commands.SendsRequests )
 			return Commands.Issue( new ReleaseRideCommand( ride ) ).Accepted;
-		if ( requests == null || entering || requests.Open.Any( request => request.Command is ReleaseRideCommand )
+		// [EXT:online-coop-commands] a guest's coaster commands still to send go first: the release comes behind them (C3c-2)
+		if ( requests == null || entering || coasterRequests?.HasUnsent == true || requests.Open.Any( request => request.Command is ReleaseRideCommand )
 			|| (CoopSession.LastStrayClaimRelease is { } last && now - last < 1) )
 			return false;
 		CoopSession.LastStrayClaimRelease = now;
@@ -139,12 +187,15 @@ public partial class Level
 	/// </summary>
 	internal ParkCommandResult ExecuteClaimRide( int player, int ride )
 	{
-		if ( ResolveCommandObject( ride ) is not { IsDeleted: false } item || !trackStations.ContainsKey( item ) )
-			return ParkCommandResult.Rejected( $"Attraction {ride} is no track ride." );
+		if ( ResolveCommandObject( ride ) is not { IsDeleted: false } item || !IsClaimableRide( item ) )
+			return ParkCommandResult.Rejected( $"Attraction {ride} is no track ride or coaster." );
 		if ( ClaimedAgainst( player, ride ) )
 			return ParkCommandResult.Rejected( ClaimedReason );
 		if ( ClaimedRideOf( player ) is { } other && other != ride )
+		{
 			rideClaims!.Remove( other );
+			EndClaimedCoaster( other );
+		}
 		(rideClaims ??= new SortedDictionary<int, int>())[ride] = player;
 		return ParkCommandResult.Ok();
 	}
@@ -160,6 +211,7 @@ public partial class Level
 		rideClaims!.Remove( ride );
 		if ( rideClaims.Count == 0 )
 			rideClaims = null;
+		EndClaimedCoaster( ride );
 		return ParkCommandResult.Ok( seat );
 	}
 }

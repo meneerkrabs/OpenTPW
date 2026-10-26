@@ -279,6 +279,11 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 	private readonly List<Guest> assigned = new();
 	private double? collectSince;
 	private double? heldSince;
+	/// <summary>
+	/// [EXT:online-coop-claims] The coaster claims the capture step found members waiting for it hold with a coaster edit on them: each a seat and the coaster's station (C3c-2). The next frame's
+	/// start lets go of them (<see cref="ReleaseCaptureHoldings"/>).
+	/// </summary>
+	private readonly List<(int Seat, int Station)> capturesHolding = new();
 	private JoinCapture? capture;
 	/// <summary>The uploads that failed for now in a row: each waits twice as long as the last, so a spent server limit is not asked for every few seconds.</summary>
 	private int uploadFailures;
@@ -850,8 +855,28 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 					Command( guest, request, tooLarge, now );
 			}
 		}
-		// [EXT:online-coop-claims] after the guests' commands, so a claim a late frame's queued command took is checked in that same frame (C3c-1)
+		// [EXT:online-coop-claims] after the guests' commands, so a claim a late frame's queued command took is checked in that same frame (C3c-1); the claims a capture waits on go first (C3c-2)
+		ReleaseCaptureHoldings();
 		ExpireClaims( now );
+	}
+
+	/// <summary>
+	/// [EXT:online-coop-claims] The host lets go of the coaster claims the capture step noted (<see cref="capturesHolding"/>), each with a <see cref="ReleaseRideCommand"/> of its own, a record
+	/// every peer applies alike, whose claim's end releases the seat's edit (a moved pylon goes back) and ends the coaster's tool state (C3c-2): a member waiting for a capture has fenced its
+	/// requests, so its drag's end never comes. Each note is read after this frame's guest commands applied and goes only while its seat still holds the coaster's claim and an edit on it; a
+	/// note whose seat ended its drag or let its claim go meanwhile is dropped. Every note goes now: the capture step notes again.
+	/// </summary>
+	private void ReleaseCaptureHoldings()
+	{
+		if ( capturesHolding.Count == 0 )
+			return;
+		var notes = capturesHolding.ToArray();
+		capturesHolding.Clear();
+		foreach ( var (seat, station) in notes )
+		{
+			if ( Failure == null && level.ClaimOf( station ) == seat && level.CoasterEdits.Of( seat ) is { } held && held.Station == station )
+				level.Commands.Apply( new ReleaseRideCommand( station ) );
+		}
 	}
 
 	/// <summary>[EXT:online-coop-claims] How long a guest seat's member may be read disconnected before the host lets go of its claim (C3c-1).</summary>
@@ -901,7 +926,10 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 		}
 	}
 
-	/// <summary>[EXT:online-coop-claims] The ride <paramref name="command"/> names as its holder's edit (its claim, a track command), or null.</summary>
+	/// <summary>
+	/// [EXT:online-coop-claims] The ride <paramref name="command"/> names as its holder's edit (its claim, a track command, and the coaster tool's commands, C3c-2: a drag in progress keeps its claim),
+	/// or null.
+	/// </summary>
 	private static int? RideNamedBy( ParkCommand command ) => command switch
 	{
 		ClaimRideCommand claim => claim.Ride,
@@ -909,6 +937,9 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 		LayTrackLineCommand line => line.Ride,
 		UndoTrackLineCommand undo => undo.Ride,
 		CutTrackCommand cut => cut.Ride,
+		BeginCoasterToolCommand begin => begin.Station,
+		EndCoasterToolCommand end => end.Station,
+		CoasterPanelCommand panel => panel.Station,
 		_ => null
 	};
 
@@ -1109,7 +1140,18 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 		}
 		if ( assigned.Count == 0 || now - collectSince < CollectSeconds )
 			return;
-		// a held coaster drag's edited pylon is no part of the save: the capture waits for its release, for a while
+		// [EXT:online-coop-claims] a member waiting for this capture that holds a coaster edit on the coaster whose claim it holds has fenced its requests, so its drag's end never comes: the next
+		// frame's start lets go of that claim, whose end releases the edit (ReleaseCaptureHoldings), and the capture waits for that (C3c-2)
+		capturesHolding.Clear();
+		foreach ( var guest in assigned )
+		{
+			if ( guests.TryGetValue( guest.Id, out var current ) && current == guest && SeatOf( guest ) is { } seat && level.CoasterEdits.Of( seat ) is { } held
+				&& level.ClaimOf( held.Station ) == seat )
+				capturesHolding.Add( (seat, held.Station) );
+		}
+		if ( capturesHolding.Count > 0 )
+			return;
+		// a held coaster drag's edited pylon is no part of the save: the capture waits for its release, for a while (another seat's drag, whose end is not fenced)
 		if ( level.CoasterDragHeld )
 		{
 			heldSince ??= now;
@@ -1171,6 +1213,9 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 		foreach ( var guest in members )
 			guest.NeedFrom = frame + 1;
 	}
+
+	/// <summary>[EXT:online-coop-claims] The guest seat of <paramref name="guest"/>'s member as the session holds it now, or null (C3c-2).</summary>
+	private int? SeatOf( Guest guest ) => transport.Session?.Members.FirstOrDefault( member => member.Id == guest.Id ) is { Slot: > 0 } member ? member.Slot : null;
 
 	/// <summary>The members still assigned capture <paramref name="generation"/>, taken off the list of those waiting for one.</summary>
 	private List<Guest> Take( uint generation )
@@ -1463,7 +1508,8 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 		commands.Player = previousPlayer;
 		// [EXT:online-coop-permissions] a grant is its session's: the park runs on alone without one, and without what a guest's seat carried (C3b-2)
 		level.ClearBuildGrants();
-		// [EXT:online-coop-claims] and the rides' claims (C3c-1)
+		// [EXT:online-coop-claims] and the rides' claims (C3c-1); the guests' seats' coasters leave the tool once the log is taken (C3c-2)
+		var guestRides = level.RideClaims.Where( claim => claim.Value > 0 ).Select( claim => claim.Key ).ToArray();
 		level.ClearRideClaims();
 		level.ClearGuestCarries();
 		// the park's scripts read the machine's own clock again
@@ -1471,6 +1517,8 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 			scripts.SessionTime = null;
 		recorder.Dispose();
 		SessionLog = RecordedLog();
+		// [EXT:online-coop-claims] after the log and its last checkpoint: a coaster a guest's seat held leaves the tool on this park, which runs on alone, so none stays closed and marked (C3c-2)
+		level.EndSessionCoasters( guestRides );
 	}
 
 	/// <summary>The session's recording so far, with the world hash now as its last checkpoint.</summary>

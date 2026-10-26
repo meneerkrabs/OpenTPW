@@ -789,9 +789,10 @@ public partial class Level
 			PoolBuilder = new PoolBuilder( Guests.Grid.Cells, () => Park?.Economy, Objects.Grid, IsPathBlocked, IsStoodOn, PoolEraseBlock );
 			PoolTool = new PoolTool( PoolBuilder, command => Commands.Issue( command ) )
 			{
-				// [EXT:online-coop-commands] a guest's strokes go to the host in batches (C3b-3)
+				// [EXT:online-coop-commands] a guest's strokes go to the host in batches (C3b-3), within the budget the coaster tool's commands share; while a coaster command waits to be
+				// sent the budget reads full, so the coaster's last commands take a freed slot first (C3c-2)
 				SendsRequests = () => Commands.SendsRequests,
-				OpenRequests = () => OpenPoolRequests,
+				OpenRequests = () => coasterRequests?.HasUnsent == true ? OpenToolRequestLimit : OpenToolRequests,
 				NoteWaiting = NoteWaitingClick
 			};
 			PoolBuilder.Painted += PreloadSwimSprites;

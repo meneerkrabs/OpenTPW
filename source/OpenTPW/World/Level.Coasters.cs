@@ -346,21 +346,215 @@ public partial class Level
 	/// (no trains) when it is not.
 	/// </summary>
 	// [BIN:TPW-EXE:0x447520 coaster tool entry] with no coaster being edited the ride object is closed (0x4df300) and the controller set to state 2 (a complete track with its circuit closed) or 1 (0x435730); round 2 labelled 0x447520 the tool's exit, it is its entry when called with param 1
-	public bool EnterCoasterTool( OriginalObject station )
+	public bool EnterCoasterTool( OriginalObject station ) => BeginCoasterToolEntry( station ) == TrackToolEntry.Entered;
+
+	/// <summary>
+	/// The coaster tool's entry on <paramref name="station"/> (<see cref="EnterCoasterTool"/>, and the tool a placed coaster opens): it started (or was on this coaster already), or
+	/// [EXT:online-coop-claims] a guest's claim went to the host and the tool starts from its outcomes (C3c-2, <see cref="CompleteTrackToolStart"/>), or a claim refused it (another player's, the
+	/// session's rights, or a guest's coaster commands still to send), or nothing started. One tool at a time: every other tool ends first.
+	/// </summary>
+	internal TrackToolEntry BeginCoasterToolEntry( OriginalObject station )
 	{
 		if ( IsReadOnlyVisit || GetCoasterBuilder( station ) is not { } builder )
-			return false;
-		// [EXT:online-coop-commands] another tool: a guest's queue edit or Move pick-up that waits for the host starts no tool once it is back (C3b)
-		DropToolStartWait();
-		if ( CoasterToolStation != null && CoasterToolStation != station )
-			ExitCoasterTool();
+			return TrackToolEntry.None;
+		// [EXT:online-coop-claims] a coaster another player claims starts no tool, and the tool on stays (C3c-2)
+		if ( CoopSession != null && ClaimedAgainst( Commands.Player, station.Runtime.AttractionId ) )
+		{
+			NoteSessionRefusal( CoopRefusal.Claimed );
+			return TrackToolEntry.Refused;
+		}
+		// the tool on this coaster already: nothing starts again (the original's entry closes only a coaster no tool edits)
+		if ( CoasterToolStation == station && CoasterPanel != null )
+			return TrackToolEntry.Entered;
+		// [EXT:online-coop-commands] a guest's coaster commands still to send go first: a claim sent now would come before them (C3c-2)
+		if ( !CoasterCommandsSentBeforeClaim() )
+			return TrackToolEntry.Refused;
+		// [EXT:online-coop-commands] one tool at a time: the other tools end first, as the staff tool's entry ends them, and a guest's queue edit, Move pick-up or track entry that waits for the
+		// host starts no tool once it is back (C3b, C3c-2)
+		EndBuildTools();
 		StaffPlacement?.Cancel();
-		CellTool.Cancel();
+		// [EXT:online-coop-claims] a guest's tool claims its coaster through the host, then the entry's writes go as a second request; the panel opens from its outcome (C3c-2). The coaster
+		// tool that ended sends its last commands first.
+		if ( CoopSession != null && Commands.SendsRequests )
+		{
+			if ( !CoasterCommandsSentBeforeClaim() )
+				return TrackToolEntry.Refused;
+			if ( Commands.Issue( new ClaimRideCommand( station.Runtime.AttractionId ) ).Request is not { } claim )
+				return TrackToolEntry.Refused;
+			WaitingToolStart = claim;
+			pendingTrackStart = new PendingTrackStart( claim, station.Runtime.AttractionId, Placed: false );
+			return TrackToolEntry.Pending;
+		}
+		// [EXT:online-coop-claims] the host's tool claims its coaster once the tool it replaces is gone (C3c-2); the claim moves from a ride the replaced tool held
+		if ( !ClaimForTrackTool( station ) )
+			return TrackToolEntry.Refused;
 		// [EXT:online-coop-commands] the entry's writes are a command; the tool and its panel are the issuer's
 		if ( !Commands.Issue( new BeginCoasterToolCommand( station.Runtime.AttractionId ) ).Accepted )
-			return false;
+			return TrackToolEntry.None;
+		OpenCoasterPanel( station, builder );
+		return TrackToolEntry.Entered;
+	}
+
+	/// <summary>
+	/// The coaster tool's panel on <paramref name="station"/>; [EXT:online-coop-commands] a guest's goes through the level's queue to the host (C3c-2), and its completing click finishes the tool here
+	/// (<see cref="FinishGuestCoasterTool"/>).
+	/// </summary>
+	private void OpenCoasterPanel( OriginalObject station, CoasterBuilder builder )
+	{
 		CoasterToolStation = station;
-		CoasterPanel = new CoasterToolPanel( builder, IsCoasterCellFree, station.Runtime.AttractionId, command => Commands.Issue( command ) );
+		var attraction = station.Runtime.AttractionId;
+		CoasterToolPanel? panel = null;
+		panel = new CoasterToolPanel( builder, IsCoasterCellFree, attraction, command => Commands.Issue( command ) )
+		{
+			GuestRequests = CoopSession != null ? CoasterRequests : null,
+			SendsRequests = () => Commands.SendsRequests,
+			HeldEdit = () => CoasterEdits.Of( Commands.Player ) is { } held && held.Station == attraction ? held : null,
+			Completed = () => FinishGuestCoasterTool( station, panel! )
+		};
+		CoasterPanel = panel;
+	}
+
+	/// <summary>
+	/// [EXT:online-coop-commands] A guest's coaster commands on their way to the host, in order (C3c-2): the level's, so a panel's last commands go after it closed. Null until the first.
+	/// </summary>
+	private CoasterRequestQueue? coasterRequests;
+
+	/// <summary>[EXT:online-coop-commands] The guest's coaster command queue (<see cref="CoasterRequestQueue"/>).</summary>
+	internal CoasterRequestQueue CoasterRequests => coasterRequests ??= new();
+
+	/// <summary>[EXT:online-coop-commands] How many tool requests of a guest may be open at once: the pool tool's batches and the coaster tool's commands share it (C3b-3, C3c-2).</summary>
+	internal const int OpenToolRequestLimit = PoolTool.MaximumOpenRequests;
+
+	/// <summary>
+	/// [EXT:online-coop-commands] How many of this guest's tool requests are open in the session's requests, from this park or one a resync replaced: the pool tool's batches and the coaster tool's
+	/// commands, which share <see cref="OpenToolRequestLimit"/> (C3c-2).
+	/// </summary>
+	internal int OpenToolRequests => CoopSession?.GuestCommands?.Open.Count( request => request.Command is PoolToolCommand or CoasterPanelCommand or EndCoasterToolCommand ) ?? 0;
+
+	/// <summary>
+	/// [EXT:online-coop-commands] The HUD's frame sends what the guest's coaster queue holds (C3c-2), before the pool tool's sender, so the coaster's last commands take a freed slot first: the pool
+	/// tool sees its budget full while anything of the queue is unsent.
+	/// </summary>
+	internal void SendCoasterRequests( double now )
+	{
+		coasterSendClock = now;
+		if ( coasterRequests is { } queue && Commands.SendsRequests )
+			queue.Send( IssueCoasterRequest, () => OpenToolRequests, OpenToolRequestLimit, now );
+	}
+
+	/// <summary>One command of the guest's coaster queue goes to the host; <paramref name="completes"/>: its outcome has a completion of the panel's, which says a refusal itself.</summary>
+	private ParkCommandResult IssueCoasterRequest( ParkCommand command, bool completes )
+	{
+		SendingCompletedCoasterCommand = completes;
+		try
+		{
+			return Commands.Issue( command );
+		}
+		finally
+		{
+			SendingCompletedCoasterCommand = false;
+		}
+	}
+
+	/// <summary>
+	/// [EXT:online-coop-commands] Set while the guest's coaster queue sends a command whose outcome its panel completes (a click, a Backspace, a swap, a cut, a drag's press and end): a refusal by
+	/// the rights here is the panel's to say, not the session's (C3c-2), as a pool stroke's batch is its stroke's (<see cref="PoolTool.SendingGuestBatch"/>).
+	/// </summary>
+	internal bool SendingCompletedCoasterCommand { get; private set; }
+
+	/// <summary>
+	/// [EXT:online-coop-commands] A guest request resolved (the HUD's drain): when it is one of the guest's coaster commands, its completion runs (C3c-2). True when it was one of them.
+	/// </summary>
+	internal bool CompleteCoasterRequest( CoopGuestCommands.Request request ) => coasterRequests?.Complete( request ) == true;
+
+	/// <summary>[EXT:online-coop-commands] The guest's coaster tool actions that came back since the last call, oldest first (C3c-2).</summary>
+	internal IReadOnlyList<CoasterGuestReport> TakeCoasterReports() => coasterRequests?.TakeReports() ?? Array.Empty<CoasterGuestReport>();
+
+	/// <summary>[EXT:online-coop-commands] The HUD's clock at its last send (<see cref="SendCoasterRequests"/>): an entry's own send paces a drag's step by it.</summary>
+	private double coasterSendClock = double.NegativeInfinity;
+
+	/// <summary>
+	/// [EXT:online-coop-commands] Whether a guest's track or coaster tool entry may send its claim (C3c-2): the coaster queue's commands go first, so the host applies a coaster tool's last commands
+	/// before the claim moves. What the requests' budget lets go goes now; while anything still waits, the entry notes a waiting click and starts nothing (the player enters again once the queue
+	/// drained, within a few frames). Always true for the host and in single player.
+	/// </summary>
+	private bool CoasterCommandsSentBeforeClaim()
+	{
+		if ( !Commands.SendsRequests || coasterRequests is not { HasUnsent: true } queue )
+			return true;
+		SendCoasterRequests( coasterSendClock );
+		if ( !queue.HasUnsent )
+			return true;
+		NoteWaitingClick();
+		return false;
+	}
+
+	/// <summary>
+	/// [EXT:online-coop-commands] A guest's build click in the coaster tool (C3c-2): it goes to the host with the panel's tool state, and the panel waits for its outcome; a click while a request
+	/// of the panel waits notes a waiting click. True when it went.
+	/// </summary>
+	internal bool SendCoasterClick( int x, int y, bool closing )
+	{
+		if ( CoasterTool is not { } builder || CoasterToolStation is not { } station || CoasterPanel is not { } panel )
+			return false;
+		var state = builder.ToolState;
+		if ( panel.SendClick( new CoasterClickCommand( station.Runtime.AttractionId, x, y, state.Height, state.LoopMode, state.LoopPylonsLeft ), closing ) )
+			return true;
+		NoteWaitingClick();
+		return false;
+	}
+
+	/// <summary>[EXT:online-coop-commands] A guest's Backspace in the coaster tool (C3c-2): one at a time, not during a drag; otherwise a waiting click is noted. True when it went.</summary>
+	internal bool SendCoasterBackspace()
+	{
+		if ( CoasterPanel is not { } panel )
+			return false;
+		if ( panel.SendBackspace() )
+			return true;
+		NoteWaitingClick();
+		return false;
+	}
+
+	/// <summary>
+	/// [EXT:online-coop-claims] A guest's completing click came back (C3c-2): the tool finishes as the host's does (the queue tool follows) only while <paramref name="panel"/> is still the open
+	/// one, its station stands and the park's claims, every record applied so far, give the coaster to this seat; otherwise the panel closes without a command, and a lost claim says so.
+	/// </summary>
+	private void FinishGuestCoasterTool( OriginalObject station, CoasterToolPanel panel )
+	{
+		if ( !ReferenceEquals( CoasterPanel, panel ) )
+			return;
+		if ( station.IsDeleted || ClaimOf( station.Runtime.AttractionId ) != Commands.Player )
+		{
+			CloseCoasterToolLocally();
+			if ( !station.IsDeleted )
+				NoteSessionRefusal( CoopRefusal.ClaimLost );
+			return;
+		}
+		FinishCoasterTool( station );
+	}
+
+	/// <summary>
+	/// [EXT:online-coop-claims] The guest's coaster tool closes without a command (C3c-2): the session ended, or the claim's end left the coaster's tool state already (its release ran
+	/// <see cref="LeaveCoasterToolState"/>). A drag's last commands still go, through the queue, unless the session ended.
+	/// </summary>
+	internal void CloseCoasterToolLocally()
+	{
+		CoasterPanel?.Close();
+		CoasterPanel = null;
+		CoasterToolStation = null;
+		CoasterPreview = null;
+	}
+
+	/// <summary>
+	/// [EXT:online-coop-commands] One tool at a time (C3c-2): the HUD's frame start ends a coaster tool that is on together with another tool, which then started after it through an entry that did
+	/// not end it. True when it ended one.
+	/// </summary>
+	internal bool RetireCoasterToolForOtherTool()
+	{
+		if ( !IsCoasterToolActive || !(CellTool.IsActive || BuildEntry != null || IsRemovingObjects || IsPlacing || BuyLandTool is { IsActive: true } || AreaClearTool is { IsActive: true }
+			|| PoolTool is { IsActive: true } || StaffPlacement is { IsActive: true } || PatrolTool is { IsActive: true }) )
+			return false;
+		ExitCoasterTool();
 		return true;
 	}
 
@@ -388,9 +582,17 @@ public partial class Level
 		CoasterPanel = null;
 		CoasterToolStation = null;
 		CoasterPreview = null;
-		// [EXT:online-coop-commands] the exit's writes (the being-edited mark, the ride's door) are a command
-		if ( station is { IsDeleted: false } )
-			Commands.Issue( new EndCoasterToolCommand( station.Runtime.AttractionId ) );
+		if ( station is not { IsDeleted: false } )
+			return;
+		// [EXT:online-coop-commands] the exit's writes (the being-edited mark, the ride's door) are a command; [EXT:online-coop-claims] a guest's goes behind its panel's last commands, and only
+		// while its seat still holds the claim (a lost claim's release left the tool state already, C3c-2)
+		if ( Commands.SendsRequests && CoopSession != null )
+		{
+			if ( ClaimOf( station.Runtime.AttractionId ) == Commands.Player )
+				CoasterRequests.Enqueue( new EndCoasterToolCommand( station.Runtime.AttractionId ) );
+			return;
+		}
+		Commands.Issue( new EndCoasterToolCommand( station.Runtime.AttractionId ) );
 	}
 
 	/// <summary>
@@ -399,15 +601,26 @@ public partial class Level
 	/// </summary>
 	internal ParkCommandResult ExecuteEndCoasterTool( int attraction )
 	{
-		if ( ResolveCommandObject( attraction ) is not { Runtime.Coaster: { } ride } station )
+		if ( ResolveCommandObject( attraction ) is not { Runtime.Coaster: not null } station )
 			return ParkCommandResult.Rejected( $"Attraction {attraction} is no coaster station." );
 		// [EXT:online-coop-claims] the panel's own close releases its drag first (CoasterToolPanel.Close); an edit the command finds is a peer's, which the being-edited mark the exit clears ends too
 		// (it is the coaster's, not the player's: docs/COOP.md, "Known limits")
-		CoasterEdits.ReleaseAll( attraction );
+		LeaveCoasterToolState( station );
+		return ParkCommandResult.Ok();
+	}
+
+	/// <summary>
+	/// The coaster of <paramref name="station"/> leaves the tool (<see cref="EndCoasterToolCommand"/>, and [EXT:online-coop-claims] the end of its claim, C3c-2): every pylon edit on it is released,
+	/// it is no longer being edited, and a ride the tool took out of service opens again.
+	/// </summary>
+	internal void LeaveCoasterToolState( OriginalObject station )
+	{
+		if ( station.Runtime.Coaster is not { } ride )
+			return;
+		CoasterEdits.ReleaseAll( station.Runtime.AttractionId );
 		SetBeingEdited( station, false );
 		if ( ride.State == CoasterControllerState.Built )
 			station.Open();
-		return ParkCommandResult.Ok();
 	}
 
 	/// <summary>

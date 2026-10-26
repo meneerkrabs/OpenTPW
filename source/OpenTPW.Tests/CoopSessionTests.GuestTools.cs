@@ -31,6 +31,9 @@ public partial class CoopSessionTests
 		public int Says( OpenTpwText text ) => Hud.Messages.Count( message => message == Strings.Extra( text ) );
 	}
 
+	/// <summary>Where the views' plain frames hold the pointer, in canvas pixels: off the park, unless a test moves it for a drag the HUD follows (C3c-2).</summary>
+	private N.Vector2 hudPointer = new( -1 );
+
 	private View ViewOf( Park park, IBuildCatalog? catalog = null )
 	{
 		park.Enter();
@@ -46,7 +49,7 @@ public partial class CoopSessionTests
 			Update = () =>
 			{
 				park.Enter();
-				hud.Update( context, UiInput.Idle( new N.Vector2( -1 ) ), false, false, false );
+				hud.Update( context, UiInput.Idle( hudPointer ), false, false, false );
 			},
 			Escape = () =>
 			{

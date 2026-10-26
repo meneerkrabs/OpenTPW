@@ -33,6 +33,9 @@ public sealed partial class ParkHud
 			// [EXT:online-coop-commands] a batch of a guest's pool stroke: its stroke reports once all of it is back (C3b-3)
 			if ( level.PoolTool?.CompleteGuestRequest( request ) == true )
 				continue;
+			// [EXT:online-coop-commands] a command of the guest's coaster tool: its panel takes the outcome, also once the panel closed (its report then says it, C3c-2)
+			if ( level.CompleteCoasterRequest( request ) )
+				continue;
 			if ( level.CellTool.Waiting is { } line && ReferenceEquals( line.Commit.Request, request ) )
 				CompleteLine( request );
 			else if ( level.CellTool.WaitingUndo is { } undo && ReferenceEquals( undo.Request, request ) )
@@ -41,7 +44,7 @@ public sealed partial class ParkHud
 				CompletePlacement( placement );
 			else if ( ReferenceEquals( level.WaitingToolStart, request ) && request.Command is PickUpObjectCommand )
 				CompleteMove( request );
-			else if ( ReferenceEquals( level.WaitingToolStart, request ) && request.Command is ClaimRideCommand or OpenTrackLineToolCommand )
+			else if ( ReferenceEquals( level.WaitingToolStart, request ) && request.Command is ClaimRideCommand or OpenTrackLineToolCommand or BeginCoasterToolCommand )
 				CompleteTrackStart( request );
 			else if ( ReferenceEquals( level.WaitingToolStart, request ) )
 				CompleteQueueEdit( request );
@@ -90,7 +93,8 @@ public sealed partial class ParkHud
 
 	/// <summary>
 	/// [EXT:online-coop-claims] The guest's track tool entry comes back (C3c-1b): its claim accepted opens the edit tool on a closed circuit or sends the walk to the open end, whose outcome
-	/// opens the line tool, with the tool's help, as the host's button posts it; a claim the host let go meanwhile says so; a refusal says its reason (another player's claim, the grant).
+	/// opens the line tool, with the tool's help, as the host's button posts it; a coaster's claim sends the tool's entry, whose outcome opens the coaster tool with its help (C3c-2); a claim the
+	/// host let go meanwhile says so; a refusal says its reason (another player's claim, the grant).
 	/// </summary>
 	private void CompleteTrackStart( CoopGuestCommands.Request request )
 	{
@@ -98,7 +102,7 @@ public sealed partial class ParkHud
 		switch ( level.CompleteTrackToolStart( request ) )
 		{
 			case TrackToolStart.Entered:
-				PostMessage( TrackToolHelp );
+				PostMessage( request.Command is BeginCoasterToolCommand ? strings.Help( 0x125 ) : TrackToolHelp );
 				return;
 			case TrackToolStart.Pending:
 				return;
@@ -248,6 +252,66 @@ public sealed partial class ParkHud
 				return;
 			case CoopGuestRequestState.Refused:
 				SayGuestNote( OpenTpwText.CoopHostCouldNotTake );
+				return;
+		}
+	}
+
+	/// <summary>
+	/// [EXT:online-coop-commands] A guest's coaster tool (C3c-2): what its queue holds goes to the host, before the pool tool's batches (the coaster's last commands take a freed slot first), and
+	/// a waited action refused before it went is said.
+	/// </summary>
+	private void UpdateGuestCoasterTool()
+	{
+		level.SendCoasterRequests( Time.Now );
+		ReportGuestCoasterActions();
+	}
+
+	/// <summary>[EXT:online-coop-commands] Says the guest's coaster tool actions that came back (<see cref="Level.TakeCoasterReports"/>), oldest first (C3c-2).</summary>
+	private void ReportGuestCoasterActions()
+	{
+		foreach ( var report in level.TakeCoasterReports() )
+			ReportGuestCoasterAction( report );
+	}
+
+	/// <summary>
+	/// A guest's coaster tool action came back (C3c-2), said as the host's is said at once: a click's result (<see cref="ReportCoasterResult"/>), the build button's help after a cut that reopened the
+	/// circuit. An outcome that changed the open panel counts as a tool the host's answer moved on, so a press made while it waited is no click. A refusal by the rights ends the open panel's tool,
+	/// without a command (the claim or the grant went: the claim's end left the coaster's tool state, or the stray claim's release will), and says why; a request the host could not take, or whose
+	/// outcome is not known, says so and the tool stays. A closed panel's outcome is only said.
+	/// </summary>
+	private void ReportGuestCoasterAction( CoasterGuestReport report )
+	{
+		if ( report.Changed )
+			level.HostToolStarts++;
+		var outcome = report.Outcome;
+		if ( outcome.Result is { RightsRefused: true } refused )
+		{
+			// a closed panel's refusal is only said: the tool on now is another one
+			if ( report.Open )
+			{
+				level.HostToolStarts++;
+				level.CloseCoasterToolLocally();
+			}
+			SayGuestNote( RightsRefusalText( refused.Reason ) );
+			return;
+		}
+		if ( outcome.NotTaken )
+		{
+			SayGuestNote( OpenTpwText.CoopHostCouldNotTake );
+			return;
+		}
+		if ( outcome.Unknown || outcome.Result is not { } result )
+		{
+			SayGuestNote( OpenTpwText.CoopBuildUnknown );
+			return;
+		}
+		switch ( report.Action )
+		{
+			case CoasterGuestAction.Click:
+				ReportCoasterResult( result.Value is CoasterClickDone done ? done.Result : CoasterPlaceResult.NotEditable, report.Closing );
+				return;
+			case CoasterGuestAction.Cut when result.Value is CoasterTrack.CutResult.Reopened:
+				PostMessage( strings.Help( 0x125 ) );
 				return;
 		}
 	}

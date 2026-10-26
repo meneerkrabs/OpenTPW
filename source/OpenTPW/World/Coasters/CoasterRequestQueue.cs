@@ -1,0 +1,134 @@
+namespace OpenTPW;
+
+/// <summary>
+/// [EXT:online-coop-commands] A guest's coaster tool commands on their way to the host (docs/COOP.md, "A guest's coaster tool (C3c-2)"): one queue in order, the level's, so it outlives the panel
+/// that filled it (a drag's put-back and end and the tool's end go after the panel closed). It sends from its head while fewer than <see cref="Level.OpenToolRequestLimit"/> tool requests of the
+/// guest are open in the session (the pool tool's counted too), a drag's step at most every <see cref="StepSeconds"/> and anything else at once. A drag's step replaces the unsent step of the same
+/// field of that drag, wherever it waits, so a drag holds at most one unsent step per field besides its press and its end. Each command may carry what its outcome does, run once it is back.
+/// </summary>
+internal sealed class CoasterRequestQueue
+{
+	/// <summary>The least time between two drag steps sent: the drag's latest value goes at most this often (0.2 s, as the pool tool's batches).</summary>
+	public const double StepSeconds = 0.2;
+
+	/// <summary>One queued command: its drag (0 for none), a step's field, the request once sent, and what its outcome does.</summary>
+	private sealed class Item
+	{
+		public required ParkCommand Command;
+		public int Drag;
+		public CoasterNodeField? Field;
+		public CoopGuestCommands.Request? Request;
+		public Action<CoasterOutcome>? Completed;
+	}
+
+	private readonly List<Item> unsent = new();
+	private readonly List<Item> sent = new();
+	private double lastStep = double.NegativeInfinity;
+
+	/// <summary>Whether a command waits to be sent: the guest's claims and its track or coaster tool entries wait for it (<see cref="Level.SettleClaim"/>).</summary>
+	public bool HasUnsent => unsent.Count > 0;
+
+	/// <summary>Whether anything of the queue is not back yet.</summary>
+	public bool IsEmpty => unsent.Count == 0 && sent.Count == 0;
+
+	/// <summary>
+	/// Queues <paramref name="command"/> behind what waits, for <paramref name="drag"/> (0 for none); <paramref name="completed"/> runs once with the outcome (<see cref="CoasterOutcome"/>).
+	/// </summary>
+	public void Enqueue( ParkCommand command, int drag = 0, Action<CoasterOutcome>? completed = null )
+	{
+		ArgumentNullException.ThrowIfNull( command );
+		unsent.Add( new Item { Command = command, Drag = drag, Completed = completed } );
+	}
+
+	/// <summary>A step of <paramref name="drag"/>: it replaces the unsent step of the same field of that drag, else it waits behind the queue.</summary>
+	public void Step( int drag, EditCoasterNodeCommand step )
+	{
+		ArgumentNullException.ThrowIfNull( step );
+		var waiting = unsent.FindIndex( item => item.Drag == drag && item.Field == step.Field );
+		if ( waiting >= 0 )
+		{
+			unsent[waiting].Command = step;
+			return;
+		}
+		unsent.Add( new Item { Command = step, Drag = drag, Field = step.Field } );
+	}
+
+	/// <summary>Whether <paramref name="drag"/>'s press has not been sent yet.</summary>
+	public bool PressUnsent( int drag ) => unsent.Any( item => item.Drag == drag && item.Command is BeginCoasterNodeEditCommand );
+
+	/// <summary>Drops what of <paramref name="drag"/> was not sent yet: its steps, and its press when that did not go (the drag then never began at the host).</summary>
+	public void DropUnsent( int drag ) => unsent.RemoveAll( item => item.Drag == drag );
+
+	/// <summary>
+	/// Sends from the head: while <paramref name="openRequests"/> stays below <paramref name="limit"/>, each command at once and a step only when <see cref="StepSeconds"/> of
+	/// <paramref name="now"/> passed since the last step went. <paramref name="issue"/> is told whether the command's outcome has a completion (its panel says a refusal itself). A command refused
+	/// before it went (the rights) completes at once with its result. Stops at the first that may not go yet, so the order holds.
+	/// </summary>
+	public void Send( Func<ParkCommand, bool, ParkCommandResult> issue, Func<int> openRequests, int limit, double now )
+	{
+		ArgumentNullException.ThrowIfNull( issue );
+		ArgumentNullException.ThrowIfNull( openRequests );
+		while ( unsent.Count > 0 )
+		{
+			var item = unsent[0];
+			if ( openRequests() >= limit || (item.Field != null && now - lastStep < StepSeconds) )
+				return;
+			unsent.RemoveAt( 0 );
+			if ( item.Field != null )
+				lastStep = now;
+			var result = issue( item.Command, item.Completed != null );
+			if ( result.Request is { } request )
+			{
+				item.Request = request;
+				sent.Add( item );
+				continue;
+			}
+			item.Completed?.Invoke( new CoasterOutcome( result, false, false ) );
+		}
+	}
+
+	/// <summary>A guest request resolved (the HUD's drain): when it is one of this queue's, its completion runs with its outcome. True when it was this queue's.</summary>
+	public bool Complete( CoopGuestCommands.Request request )
+	{
+		ArgumentNullException.ThrowIfNull( request );
+		var index = sent.FindIndex( item => ReferenceEquals( item.Request, request ) );
+		if ( index < 0 )
+			return false;
+		var item = sent[index];
+		sent.RemoveAt( index );
+		item.Completed?.Invoke( request switch
+		{
+			{ State: CoopGuestRequestState.Applied, Result: { Error: null } result } => new CoasterOutcome( result, false, false ),
+			{ State: CoopGuestRequestState.Refused } => new CoasterOutcome( null, true, false ),
+			_ => new CoasterOutcome( null, false, true )
+		} );
+		return true;
+	}
+
+	/// <summary>The outcomes of the guest's waited actions (<see cref="CoasterGuestReport"/>) the HUD has not said yet, oldest first: the queue's, so a closed panel's still come back.</summary>
+	internal List<CoasterGuestReport> Reports { get; } = new();
+
+	/// <summary>The reports since the last call, oldest first.</summary>
+	public IReadOnlyList<CoasterGuestReport> TakeReports()
+	{
+		if ( Reports.Count == 0 )
+			return Array.Empty<CoasterGuestReport>();
+		var taken = Reports.ToArray();
+		Reports.Clear();
+		return taken;
+	}
+
+	/// <summary>Drops everything, sent or not, and what was not said: the session ended, so no outcome comes.</summary>
+	public void Clear()
+	{
+		unsent.Clear();
+		sent.Clear();
+		Reports.Clear();
+	}
+}
+
+/// <summary>
+/// [EXT:online-coop-commands] What became of a guest's coaster tool command (C3c-2): its result (in the guest's park once its record applied there, or here when the rights refused it before it went),
+/// or none, when the host took no record of it (<see cref="NotTaken"/>) or its outcome is not known (<see cref="Unknown"/>: an error, a lost answer, a snapshot, the session's end).
+/// </summary>
+internal readonly record struct CoasterOutcome( ParkCommandResult? Result, bool NotTaken, bool Unknown );

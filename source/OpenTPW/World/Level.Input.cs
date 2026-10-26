@@ -172,14 +172,19 @@ public partial class Level
 	/// <summary>
 	/// [EXT:online-coop-commands] The session ended with requests open (C3a-2, C3b): the placement, the removal, the queue edit or pick-up, the Backspace and the sales that waited wait
 	/// no more, a line or a track Backspace that waited ends its tool, since what became of it is not known here, [EXT:online-coop-claims] a guest's track tool ends with the claim it held
-	/// (C3c-1b), and a guest's Move tool disarms.
+	/// (C3c-1b) and its coaster tool closes, its queue dropped (C3c-2), and a guest's Move tool disarms.
 	/// </summary>
 	internal void EndGuestWaits()
 	{
 		if ( (CellBuildTool?)CellTool is { IsWaiting: true } tool )
 			tool.Cancel();
 		if ( Commands.Player > ParkCommands.LocalPlayer )
+		{
 			ExitTrackTool();
+			// [EXT:online-coop-claims] a guest's coaster tool closes without a command, and its queue goes: no outcome comes any more (C3c-2)
+			CloseCoasterToolLocally();
+			coasterRequests?.Clear();
+		}
 		WaitingPlacement = null;
 		WaitingRemoval = null;
 		WaitingToolStart = null;

@@ -23,4 +23,4 @@ Issue 829, package D2, the follow-up that PR 833 (kart and water track pieces) l
 - `QueueModelDrapeTests`: instance height, vertices on the cell floor and stacked heights at all yaws, joints between neighbouring cells at all yaw pairs, and with the PC data the node flags, the face-normal claim and a hash of every queue model's draped vertices on a synthetic hillside.
 - Captures before and after of queues on slopes in Jungle, Halloween and Space at three yaws, procedural texturing on and off: `reports/issue829/D2/` (not committed). With the textures on the planks are the composite floor at the texturer's N x N (the art point sampled, as the original does), so they look softer than the painted art of the static mode.
 
-Not here: the footprint skirt of the loader's flag 1 for queue models (OPEN-F6 of the floors work, PR 854), and the animation of the torches.
+Not here: the animation of the torches.

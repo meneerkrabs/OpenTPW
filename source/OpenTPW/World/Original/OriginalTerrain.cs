@@ -400,13 +400,9 @@ public sealed partial class OriginalTerrain : Entity
 		QueueModelCount = 0;
 		var field = Park.Heightfield;
 		var directory = $"/levels/{Park.LevelName}/queue";
-		// the atlas of the build before the last may go: the last one is what the parts still drawn point into
-		retiredQueueAtlas?.Dispose();
-		retiredQueueAtlas = queueAtlas;
-		queueAtlas = null;
-		if ( queues.Count == 0 )
-			return;
 		var valid = queues.Where( queue => queue.Tile.Model >= 0 && queue.Tile.Model < QueueModels.Names.Count ).ToList();
+		// [BIN:TPW-EXE:0x00763388 queue model table] the loader 0x522900 fills 8 slots (the table ends at 0x7633E8); the chooser's index (class-2 base 0..3, +1 for a corner, +3 per linked path neighbour) can reach 8..10, where the original would read past its slots
+		System.Diagnostics.Debug.Assert( valid.Count == queues.Count, "A queue cell chose a model index past the 8 queue model slots of tp.exe (0x763388); the original reads past its slot array there (docs/PATHS.md, queue models on the terrain)." );
 		var floors = new Dictionary<int, QueueModelFloor>();
 		foreach ( var key in valid.Select( queue => queue.Tile.Model ).Distinct().OrderBy( key => key ) )
 		{
@@ -419,33 +415,73 @@ public sealed partial class OriginalTerrain : Entity
 				missingTextures.Add( $"{QueueModels.Names[key]}.md2" );
 			}
 		}
-		// with the procedural terrain textures on, every queue cell with a composite takes a tile of the atlas (the skirt word and 0x57ACE0 of the placement)
+		// with the procedural terrain textures on, every queue cell with a composite takes a tile of the atlas (the skirt word and 0x57ACE0 of the placement); the atlas and the tiles of unchanged cells persist across rebuilds
 		var tileOfCell = new Dictionary<(int X, int Y), int>();
+		var wanted = new List<((int Model, int X, int Y, int Yaw) Key, QueueModelFloor Floor)>();
 		if ( procedural is { } ground )
 		{
-			var tiles = new List<byte[]>();
 			foreach ( var (x, y, tile) in valid )
 			{
-				if ( !floors.TryGetValue( tile.Model, out var floor ) || !floor.HasComposite )
-					continue;
-				var key = (tile.Model, x, y, tile.Yaw);
+				if ( floors.TryGetValue( tile.Model, out var floor ) && floor.HasComposite )
+					wanted.Add( ((tile.Model, x, y, tile.Yaw), floor) );
+			}
+			if ( queueAtlas != null && queueAtlas.TileSize != ground.Size )
+				ResetQueueAtlas();
+			// the composites of cells that no longer exist go, and so do their tiles (reused only from the next rebuild on: the parts drawn until now may still point at them)
+			var keys = wanted.Select( entry => entry.Key ).ToHashSet();
+			foreach ( var key in queueComposites.Keys.Where( key => !keys.Contains( key ) ).ToList() )
+			{
+				queueComposites.Remove( key );
+				if ( queueSlotOf.Remove( key, out var freed ) )
+					queueQuarantine.Add( freed );
+			}
+			var fresh = new List<(int Slot, byte[] Rgba)>();
+			var assigned = new List<((int Model, int X, int Y, int Yaw) Key, int Slot, byte[] Rgba)>();
+			foreach ( var (key, floor) in wanted )
+			{
 				if ( !queueComposites.TryGetValue( key, out var rgba ) )
 				{
-					rgba = floor.Compose( field, x, y, tile.Yaw, ground.Texturer, slot => QueueSlotArt( floor.Model, slot, directory ) );
+					rgba = floor.Compose( field, key.X, key.Y, key.Yaw, ground.Texturer, slot => QueueSlotArt( floor.Model, slot, directory ) );
 					queueComposites[key] = rgba;
 				}
 				if ( rgba == null )
 					continue;
-				tileOfCell[(x, y)] = tiles.Count;
-				tiles.Add( ObjectFloorBase.FlipRows( rgba, ground.Size, ground.Size ) );
+				var isNew = !queueSlotOf.ContainsKey( key );
+				if ( isNew )
+					queueSlotOf[key] = queueFreeSlots.Count > 0 ? queueFreeSlots.Pop() : queueNextSlot++;
+				assigned.Add( (key, queueSlotOf[key], rgba) );
+				if ( isNew )
+					fresh.Add( (queueSlotOf[key], rgba) );
 			}
-			if ( tiles.Count > 0 )
+			foreach ( var slot in queueQuarantine )
+				queueFreeSlots.Push( slot );
+			queueQuarantine.Clear();
+			if ( assigned.Count > 0 )
 			{
-				queueAtlas = new ProceduralTerrainAtlas( ground.Size, tiles.Count );
-				for ( var index = 0; index < tiles.Count; index++ )
-					queueAtlas.Upload( index, tiles[index] );
+				if ( queueAtlas == null || queueNextSlot > queueAtlas.Slots )
+				{
+					// a bigger atlas holds every tile again; the old one is what the parts still drawn point into, so it is retired, not freed
+					var old = queueAtlas;
+					queueAtlas = new ProceduralTerrainAtlas( ground.Size, Math.Max( queueNextSlot, old == null ? queueNextSlot : old.Slots * 2 ) );
+					if ( old != null )
+					{
+						retiredQueueAtlas?.Dispose();
+						retiredQueueAtlas = old;
+					}
+					foreach ( var (_, slot, rgba) in assigned )
+						queueAtlas.Upload( slot, ObjectFloorBase.FlipRows( rgba, ground.Size, ground.Size ) );
+				}
+				else
+				{
+					foreach ( var (slot, rgba) in fresh )
+						queueAtlas.Upload( slot, ObjectFloorBase.FlipRows( rgba, ground.Size, ground.Size ) );
+				}
+				foreach ( var (key, slot, _) in assigned )
+					tileOfCell[(key.X, key.Y)] = slot;
 			}
 		}
+		else if ( queueAtlas != null )
+			ResetQueueAtlas();
 		var batchTextures = new List<string>();
 		var batchVertices = new List<Vertex>();
 		var batchIndices = new List<uint>();
@@ -515,6 +551,28 @@ public sealed partial class OriginalTerrain : Entity
 	private const string CompositePrefix = "\u0001queue-composite-";
 
 	private ProceduralTerrainAtlas? queueAtlas, retiredQueueAtlas;
+
+	/// <summary>The atlas tile each queue composite lives in, stable across rebuilds so only the tiles of changed cells are uploaded.</summary>
+	private readonly Dictionary<(int Model, int X, int Y, int Yaw), int> queueSlotOf = new();
+	private readonly Stack<int> queueFreeSlots = new();
+	private readonly List<int> queueQuarantine = new();
+	private int queueNextSlot;
+
+	/// <summary>Drops the atlas and every tile assignment (the tile size changed, or the procedural textures went off); the old atlas is retired, not freed.</summary>
+	private void ResetQueueAtlas()
+	{
+		if ( queueAtlas != null )
+		{
+			retiredQueueAtlas?.Dispose();
+			retiredQueueAtlas = queueAtlas;
+			queueAtlas = null;
+		}
+		queueComposites.Clear();
+		queueSlotOf.Clear();
+		queueFreeSlots.Clear();
+		queueQuarantine.Clear();
+		queueNextSlot = 0;
+	}
 
 	/// <summary>The composites made so far by (model, cell, yaw): the placement of a queue cell makes one once (the ground under it does not change), so a rebuild of the path layer reuses it.</summary>
 	private readonly Dictionary<(int Model, int X, int Y, int Yaw), byte[]?> queueComposites = new();

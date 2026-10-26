@@ -402,7 +402,11 @@ public sealed partial class OriginalTerrain : Entity
 		var directory = $"/levels/{Park.LevelName}/queue";
 		var valid = queues.Where( queue => queue.Tile.Model >= 0 && queue.Tile.Model < QueueModels.Names.Count ).ToList();
 		// [BIN:TPW-EXE:0x00763388 queue model table] the loader 0x522900 fills 8 slots (the table ends at 0x7633E8); the chooser's index (class-2 base 0..3, +1 for a corner, +3 per linked path neighbour) can reach 8..10, where the original would read past its slots
-		System.Diagnostics.Debug.Assert( valid.Count == queues.Count, "A queue cell chose a model index past the 8 queue model slots of tp.exe (0x763388); the original reads past its slot array there (docs/PATHS.md, queue models on the terrain)." );
+		foreach ( var (x, y, tile) in queues.Where( queue => queue.Tile.Model < 0 || queue.Tile.Model >= QueueModels.Names.Count ) )
+		{
+			if ( warnedQueueCells.Add( (x, y) ) )
+				Log.Warning( $"Queue cell ({x}, {y}) chose model index {tile.Model}, past the 8 queue model slots of tp.exe; the original reads past its slot array there, so no model is drawn." );
+		}
 		var floors = new Dictionary<int, QueueModelFloor>();
 		foreach ( var key in valid.Select( queue => queue.Tile.Model ).Distinct().OrderBy( key => key ) )
 		{
@@ -557,6 +561,9 @@ public sealed partial class OriginalTerrain : Entity
 	private readonly Stack<int> queueFreeSlots = new();
 	private readonly List<int> queueQuarantine = new();
 	private int queueNextSlot;
+
+	/// <summary>The queue cells already warned about for a model index past the table (once per cell).</summary>
+	private readonly HashSet<(int X, int Y)> warnedQueueCells = new();
 
 	/// <summary>Drops the atlas and every tile assignment (the tile size changed, or the procedural textures went off); the old atlas is retired, not freed.</summary>
 	private void ResetQueueAtlas()

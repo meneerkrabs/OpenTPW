@@ -93,7 +93,7 @@ No original media, asset extracts or disassembly are distributed.
 - Staff identity-preserving no-position behavior stays intact, now including role-radio selection directly from
   the roster. Employee arrows remain global-pool based. The visitor/frame behavior and existing control and
   smoke-test hooks (including #460) are retained; this slice does not broaden their scope or close UI-092.
-- Camera smoothing (`0x42B1C0`), patrol rectangles (`0x536100`) and panel sliding remain out of this slice.
+- Camera smoothing (`0x42B1C0`) and panel sliding remain out of this slice (the located member's patrol rectangle, `0x4B3640`, is drawn since the patrol area review).
 - Real-data visual parity remains unverified. Synthetic CPU draw submissions cover the changed icon; they do
   not prove full native visual equivalence.
 

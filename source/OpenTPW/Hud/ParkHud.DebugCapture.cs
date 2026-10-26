@@ -8,6 +8,8 @@ public sealed partial class ParkHud
 {
 	private string[] debugModels = Array.Empty<string>();
 	private string? debugHelp;
+	/// <summary>The cell a capture holds the patrol tool's pointer on instead of the real pointer (<see cref="DebugPatrolArea"/> with "hover").</summary>
+	private (int X, int Y)? debugPatrolHover;
 
 	/// <summary>Draws the named ui.wad models in a row along the top of the screen (a capture to identify art).</summary>
 	internal void DebugShowModels( IEnumerable<string> names ) => debugModels = names.ToArray();
@@ -31,6 +33,49 @@ public sealed partial class ParkHud
 			Log.Warning( $"--debug-hud ride: no rideable ride matches '{name}'." );
 		else
 			Log.Trace( $"--debug-hud ride: riding {match.Entry.DisplayName}." );
+	}
+
+	/// <summary>
+	/// The patrol area flow as a player does it, for a capture: opens the employee window of the first staff member of <paramref name="role"/>, presses its patrol button (the tool starts and the
+	/// window closes), then clicks the first corner and, unless <paramref name="hoverOnly"/>, the second one, which sets the area; with <paramref name="hoverOnly"/> the tool stays armed with
+	/// the pointer on the second cell. Returns false when there is no such member or a step was refused.
+	/// </summary>
+	internal bool DebugPatrolArea( StaffType role, (int X, int Y) first, (int X, int Y) second, bool hoverOnly )
+	{
+		var member = StaffMembers.FirstOrDefault( item => item.Type == role );
+		if ( member == null || level.PatrolTool is not { } tool )
+			return Refused( "there is no such member or no patrol tool" );
+		if ( !OpenEmployeeWindow( member ) )
+			return Refused( "the employee window did not open" );
+		// a saved park's staff may have an area of their own already: the button, a toggle, first clears it
+		if ( member.HasPatrolArea && !PressEmployeePatrol() )
+			return Refused( "the patrol button did not clear the member's area" );
+		if ( !PressEmployeePatrol() )
+			return Refused( $"the patrol button did nothing (visit {level.IsReadOnlyVisit}, area {member.HasPatrolArea})" );
+		if ( !tool.Click( first.X, first.Y ) )
+			return Refused( $"the first click was not taken (tool active {tool.IsActive})" );
+		if ( hoverOnly )
+			tool.Hover( (debugPatrolHover = second).Value.X, second.Y );
+		else if ( !tool.Click( second.X, second.Y ) )
+			return Refused( "the second click was not taken" );
+		Log.Trace( $"--debug-hud patrol: member {member.Id} ({role}) is at ({member.CellX:0.#}, {member.CellY:0.#}) and has the area {member.PatrolArea}, the tool is {(tool.IsActive ? "armed" : "done")}." );
+		return true;
+
+		static bool Refused( string why )
+		{
+			Log.Warning( $"--debug-hud patrol: {why}." );
+			return false;
+		}
+	}
+
+	/// <summary>Locates the first staff member of <paramref name="role"/> with the staff locator (Ctrl+S, its radio), so the camera follows it and its patrol area is marked.</summary>
+	internal bool DebugLocateStaff( StaffType role )
+	{
+		var member = StaffMembers.FirstOrDefault( item => item.Type == role );
+		if ( member == null )
+			return false;
+		OpenLocator( LocatorMode.Staff, LocatorModel.RoleOf( role ), member.Id );
+		return true;
 	}
 
 	/// <summary>Starts the end-of-park finale now, whatever the research and the player's records say (a capture of the winning screen); the screen opens on the next update.</summary>

@@ -194,6 +194,70 @@ public partial class CoopJoinSessionTests
 		CatchUpAndCompare( guest );
 	}
 
+	/// <summary>
+	/// The guest places its carry back at (20, 12) with the modifiers <paramref name="modifiers"/>; the host applies the placement and the guest never gets the frame that holds its record, so
+	/// the placement still waits when the resync replaces the park, and the cut holds it. The swapped-in park, its HUD's frame and the placement's request.
+	/// </summary>
+	private (Action Frame, CoopGuestCommands.Request Placement) ResyncedWithAPlacementWaiting( Peer guest, ObjectCatalogEntry entry, int modifiers )
+	{
+		var seat = guest.Link.Slot;
+		guest.Link.DropFrame = _ => true;
+		guest.Enter();
+		guest.Level!.ClickBuildTool( 20, 12, modifiers );
+		var placement = guest.Level.WaitingPlacement!;
+		Assert.AreEqual( modifiers != 0, placement.KeepTool );
+		RoundsUntil( () => host.Level!.Objects.FindAt( 20, 12 ) != null, "the host applied the placement" );
+		Assert.IsTrue( host.Level!.CarriesEntry( seat ), "a Move's placement keeps the carry until the tool's end" );
+		StartResync( guest );
+		guest.Link.DropFrame = null;
+		var old = guest.Level;
+		RoundsUntil( () => guest.Level != old && !placement.Request.IsOpen, "the park was swapped in" );
+		Assert.AreEqual( CoopGuestRequestState.InSnapshot, placement.Request.State, "the placement is inside the cut" );
+		Assert.IsTrue( guest.Level!.CarriesEntry( seat ), "the new park holds the seat's carry" );
+		var (_, frame) = HudOf( guest, entry );
+		frame();
+		return (frame, placement.Request);
+	}
+
+	[TestMethod]
+	public void AResyncArmsNoMoveToolThatItsWaitingPlacementEnded()
+	{
+		var guest = MoveHosted();
+		var seat = guest.Link.Slot;
+		var (entry, _) = ArmedMove( guest );
+		// a placement without Ctrl ends the tool once its outcome comes back: the resync does not arm it again, so the next click buys no second copy
+		var (frame, _) = ResyncedWithAPlacementWaiting( guest, entry, modifiers: 0 );
+		Assert.IsFalse( guest.Level!.IsMoving, "the placement waiting for the host ended the tool" );
+		Assert.IsNull( guest.Level.MoveBeforeResync );
+		RoundsUntil( () =>
+		{
+			frame();
+			return !guest.Session!.GuestCommands!.Open.Any() && !guest.Level.CarriesEntry( seat ) && !host.Level!.CarriesEntry( seat );
+		}, "the carry its tool left was ended" );
+		Assert.AreEqual( entry.InfoId, host.Level!.Objects.FindAt( 20, 12 )!.Entry.InfoId, "the object stands where it was placed" );
+		Assert.AreEqual( 1, host.Level.Commands.Log.Count( item => item.Command is PlaceObjectCommand { Moving: true } && item.Command.Player == seat ), "placed once" );
+		CatchUpAndCompare( guest );
+	}
+
+	[TestMethod]
+	public void AResyncArmsAMoveToolThatItsWaitingPlacementKept()
+	{
+		var guest = MoveHosted();
+		var seat = guest.Link.Slot;
+		var (entry, rotation) = ArmedMove( guest );
+		// a placement with Ctrl keeps the tool for the next one: the resync arms it again
+		var (frame, _) = ResyncedWithAPlacementWaiting( guest, entry, modifiers: 0xc );
+		Assert.IsTrue( guest.Level!.IsMoving, "Ctrl at the placement kept the tool" );
+		Assert.AreEqual( entry.InfoId, guest.Level.BuildEntry!.InfoId );
+		Assert.AreEqual( rotation, guest.Level.BuildRotation );
+		frame();
+		Assert.IsFalse( guest.Session!.GuestCommands!.Open.Any( request => request.Command is EndMoveCommand ), "its carry is no stray one" );
+		guest.Level.BuildEntry = null;
+		RoundsUntil( () => !guest.Level.CarriesEntry( seat ) && !host.Level!.CarriesEntry( seat ), "the end released the carry" );
+		Assert.AreEqual( entry.InfoId, host.Level!.Objects.FindAt( 20, 12 )!.Entry.InfoId, "the object stands where it was placed" );
+		CatchUpAndCompare( guest );
+	}
+
 	[TestMethod]
 	public void APickUpOpenAcrossAResyncTakesNoSecondAndItsCarryIsEnded()
 	{

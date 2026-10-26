@@ -723,8 +723,11 @@ internal sealed class CoopSession : IDisposable
 			return;
 		var swapStarted = Stopwatch.GetTimestamp();
 		var old = level;
-		// [EXT:online-coop-commands] the guest's armed Move tool, which the new park arms again from the carry its snapshot holds (C3b-2)
-		var move = old is { IsMoving: true, BuildEntry: { } armed } ? (ParkCommandCodec.EntryKey( armed ), old.BuildRotation) : ((string, int)?)null;
+		// [EXT:online-coop-commands] the guest's armed Move tool, which the new park arms again from the carry its snapshot holds (C3b-2); not while a placement without Ctrl waits for
+		// the host: that placement ends the tool, and it applies after the cut or is inside it, with the carry still there until the tool's end
+		var move = old is { IsMoving: true, BuildEntry: { } armed, WaitingPlacement: null or { KeepTool: true } }
+			? (ParkCommandCodec.EntryKey( armed ), old.BuildRotation)
+			: ((string, int)?)null;
 		var desyncs = GuestStream?.Desyncs ?? 0;
 		if ( old != null )
 		{

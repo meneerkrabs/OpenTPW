@@ -380,7 +380,8 @@ public partial class Level
 
 	/// <summary>
 	/// [EXT:online-coop-commands] The guest's Move tool that was armed in the park a resync replaced (C3b-2): the key of the type it carried and its angle, which the session hands to the new
-	/// park. The new park's HUD arms the tool again from the carry the snapshot holds (<see cref="TakeMoveToRestore"/>), as the player left it, instead of ending the carry.
+	/// park. The new park's HUD arms the tool again from the carry the snapshot holds (<see cref="TakeMoveToRestore"/>), as the player left it, instead of ending the carry. A tool whose
+	/// placement without Ctrl waited for the host is not handed over: that placement ends it, and the carry it leaves is a stray one (<see cref="EndStrayCarry"/>).
 	/// </summary>
 	internal (string Entry, int Rotation)? MoveBeforeResync { get; set; }
 

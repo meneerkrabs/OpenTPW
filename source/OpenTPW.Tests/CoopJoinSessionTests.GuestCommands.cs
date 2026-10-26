@@ -124,11 +124,12 @@ public partial class CoopJoinSessionTests
 		});
 	}
 
-	/// <summary>The guest picks up the ride at (20, 12) and arms its Move tool with what the pick-up carries, as its HUD does; the type and its angle.</summary>
-	private (ObjectCatalogEntry Entry, int Rotation) ArmedMove( Peer guest )
+	/// <summary>The guest picks up the object at <paramref name="cell"/> (or the ride at (20, 12)) and arms its Move tool with what the pick-up carries, as its HUD does; the type and its angle.</summary>
+	private (ObjectCatalogEntry Entry, int Rotation) ArmedMove( Peer guest, (int X, int Y)? cell = null )
 	{
+		var (x, y) = cell ?? (20, 12);
 		guest.Enter();
-		Assert.IsFalse( guest.Level!.BeginMove( guest.Level.Objects.FindAt( 20, 12 )! ) );
+		Assert.IsFalse( guest.Level!.BeginMove( guest.Level.Objects.FindAt( x, y )! ) );
 		var pick = guest.Level.WaitingToolStart!;
 		RoundsUntil( () => !pick.IsOpen, "the pick-up came back" );
 		guest.Enter();
@@ -196,16 +197,13 @@ public partial class CoopJoinSessionTests
 	}
 
 	/// <summary>
-	/// The guest places its carry back at (20, 12) with the modifiers <paramref name="modifiers"/>, after the host built on that cell first when <paramref name="hostTakesTheCell"/>; the host
-	/// takes the placement's record and the guest never gets the frame that holds it, so the placement still waits when the resync replaces the park, and the cut holds it. The HUD's frame
-	/// on the swapped-in park, after its first.
+	/// The guest places its carry back at (20, 12) with the modifiers <paramref name="modifiers"/>; the host takes the placement's record and the guest never gets the frame that holds it, so
+	/// the placement still waits when the resync replaces the park, and the cut holds it. The HUD's frame on the swapped-in park, after its first.
 	/// </summary>
-	private Action ResyncedWithAPlacementInsideTheCut( Peer guest, ObjectCatalogEntry entry, int modifiers, bool hostTakesTheCell = false )
+	private Action ResyncedWithAPlacementInsideTheCut( Peer guest, ObjectCatalogEntry entry, int modifiers )
 	{
 		var seat = guest.Link.Slot;
 		guest.Link.DropFrame = _ => true;
-		if ( hostTakesTheCell )
-			Assert.IsTrue( host.Issue( host.Level!.BuildCommand( host.Level.Objects.Objects.First().Entry, 20, 12, 90 ) ).Accepted, "the host built on the cell first" );
 		guest.Enter();
 		guest.Level!.ClickBuildTool( 20, 12, modifiers );
 		var placement = guest.Level.WaitingPlacement!;
@@ -270,52 +268,69 @@ public partial class CoopJoinSessionTests
 		var guest = MoveHosted();
 		var seat = guest.Link.Slot;
 		var (entry, _) = ArmedMove( guest );
-		// the host refuses the placement on the cell it built on, and the new park cannot tell that refusal from an acceptance: the tool is not armed again, and the carry is ended (the
-		// limit COOP.md names: the picked-up object stays sold)
-		var frame = ResyncedWithAPlacementInsideTheCut( guest, entry, modifiers: 0, hostTakesTheCell: true );
+		// the host builds on the cell first, unseen by the guest, and refuses the placement there; the new park cannot tell that refusal from an acceptance: the tool is not armed again, and
+		// the carry is ended (the limit COOP.md names: the picked-up object stays sold)
+		guest.Link.DropFrame = _ => true;
+		var hosts = host.Issue( host.Level!.BuildCommand( host.Level.Objects.Objects.First().Entry, 20, 12, 90 ) ).As<OriginalObject>()!.Visitors.AttractionId;
+		var frame = ResyncedWithAPlacementInsideTheCut( guest, entry, modifiers: 0 );
 		Assert.IsFalse( guest.Level!.IsMoving );
 		UntilTheCarryEndsWith( guest, frame, "the carry its tool left was ended" );
-		Assert.AreEqual( 1, host.Level!.Objects.Objects.Count( item => !item.IsDeleted && item.Cells.Any( cell => (cell.X, cell.Y) == (20, 12) ) ), "only the host's object stands on the cell" );
+		Assert.AreEqual( hosts, host.Level!.Objects.FindAt( 20, 12 )!.Visitors.AttractionId, "the host's object still stands on the cell" );
+		Assert.AreEqual( hosts, guest.Level.Objects.FindAt( 20, 12 )!.Visitors.AttractionId );
 		CatchUpAndCompare( guest );
 	}
 
 	/// <summary>
-	/// A type without a queue on <paramref name="level"/>'s catalogue: the asset-free ride's own files and settings under a key of its own, its queue option off, so a placement of it with
-	/// exactly Ctrl keeps the build tool whatever its result.
+	/// A type of the economy's catalogue (<paramref name="infoId"/>) on <paramref name="level"/>'s catalogue under a key of its own: the asset-free ride's files and settings, its queue option
+	/// <paramref name="hasQueue"/>, and its shape <paramref name="shape"/> and category <paramref name="category"/>, or the ride's.
 	/// </summary>
-	private static ObjectCatalogEntry AddPlainType( Level level )
+	private static ObjectCatalogEntry AddType( Level level, string suffix, int infoId, bool hasQueue, ObjectShape? shape = null, ObjectCategory? category = null )
 	{
 		var ride = level.Objects.Objects.First().Entry;
-		var settings = string.Join( "\n", ride.Settings.Values.Where( pair => !pair.Key.Equals( "Info.HasQueue", StringComparison.OrdinalIgnoreCase ) )
-			.Select( pair => $"{pair.Key} {pair.Value}" ) ) + "\nInfo.HasQueue 0\n";
-		var plain = new ObjectCatalogEntry( ride.Theme, ride.Category, ride.ArchivePath + "-plain", new ObjectSettings( new[] { new ObjectSettingsFile( settings, "plain.sam" ) } ), ride.Shape,
-			ride.ModelPath, null, ride.ScriptPath, ride.Scripts, ride.Animations, ride.AuxiliaryModels, ride.Models, ride.FileSystem, null );
+		var settings = string.Join( "\n", ride.Settings.Values.Where( pair => pair.Key is not ("Info.Id" or "Info.HasQueue") )
+			.Select( pair => $"{pair.Key} {pair.Value}" ) ) + $"\nInfo.Id {infoId}\nInfo.HasQueue {(hasQueue ? 1 : 0)}\n";
+		var type = new ObjectCatalogEntry( ride.Theme, category ?? ride.Category, ride.ArchivePath + suffix, new ObjectSettings( new[] { new ObjectSettingsFile( settings, suffix + ".sam" ) } ),
+			shape ?? ride.Shape, ride.ModelPath, null, ride.ScriptPath, ride.Scripts, ride.Animations, ride.AuxiliaryModels, ride.Models, ride.FileSystem, null );
 		// the park's kept asset manifest stays the asset-free park's (a capture reads it), whose files the type shares
 		var assets = level.AutosaveAssets();
 		var catalog = (ObjectCatalog)typeof( ObjectCatalog ).GetConstructor( BindingFlags.Instance | BindingFlags.NonPublic, null, new[] { typeof( string ), typeof( IReadOnlyList<ObjectCatalogEntry> ) }, null )!
-			.Invoke( new object[] { "jungle", (level.Objects.Catalog?.Entries ?? Array.Empty<ObjectCatalogEntry>()).Append( plain ).ToArray() } );
+			.Invoke( new object[] { "jungle", (level.Objects.Catalog?.Entries ?? Array.Empty<ObjectCatalogEntry>()).Append( type ).ToArray() } );
 		typeof( ParkObjects ).GetField( "<Catalog>k__BackingField", BindingFlags.Instance | BindingFlags.NonPublic )!.SetValue( level.Objects, catalog );
 		level.AutosaveAssets( assets );
-		return plain;
+		return type;
+	}
+
+	/// <summary>
+	/// A granted guest of a hosted session whose parks hold <paramref name="add"/>'s type, which the host placed at <paramref name="cell"/> (or (20, 12)) turned <paramref name="rotation"/>, its
+	/// pick-up armed in the guest's Move tool (as <see cref="ArmedMove"/> arms it): the guest, the type and its angle.
+	/// </summary>
+	private (Peer Guest, ObjectCatalogEntry Entry, int Rotation) MoveOfAType( Func<Level, ObjectCatalogEntry> add, (int X, int Y)? cell = null, int rotation = 90 )
+	{
+		var (x, y) = cell ?? (20, 12);
+		prepareParks = level => add( level );
+		var guest = Hosted( 1 ).Single();
+		Build( 60, 63 );
+		var seat = guest.Link.Slot;
+		var type = host.Level!.Objects.Catalog!.Entries[^1];
+		Assert.IsTrue( host.Issue( new SetBuildGrantCommand( seat, true ) ).Accepted );
+		var built = host.Issue( host.Level.BuildCommand( type, x, y, rotation ) );
+		Assert.IsTrue( built.Accepted, built.Reason );
+		RoundsUntil( () => guest.Level!.HasBuildGrant( seat ) && guest.Level.Objects.FindAt( x, y ) != null, "the grant and the object reached the guest" );
+		var (entry, angle) = ArmedMove( guest, (x, y) );
+		Assert.AreEqual( ParkCommandCodec.EntryKey( type ), ParkCommandCodec.EntryKey( entry ) );
+		return (guest, entry, angle);
 	}
 
 	[TestMethod]
 	public void AResyncArmsAMoveToolWhoseCtrlPlacementInsideTheCutKeepsItWhateverItsResult()
 	{
-		prepareParks = level => AddPlainType( level );
-		var guest = Hosted( 1 ).Single();
-		Build( 60, 63 );
-		var seat = guest.Link.Slot;
-		var plain = host.Level!.Objects.Catalog!.Entries[^1];
-		Assert.IsTrue( host.Issue( new SetBuildGrantCommand( seat, true ) ).Accepted );
-		Assert.IsTrue( host.Issue( host.Level.BuildCommand( plain, 20, 12, 90 ) ).Accepted );
-		RoundsUntil( () => guest.Level!.HasBuildGrant( seat ) && guest.Level.Objects.FindAt( 20, 12 ) != null, "the grant and the object reached the guest" );
-		var (entry, rotation) = ArmedMove( guest );
-		Assert.AreEqual( ParkCommandCodec.EntryKey( plain ), ParkCommandCodec.EntryKey( entry ) );
+		// a type without a queue (the Small Toilet's economy, a feature; the asset-free ride's files)
+		var (guest, entry, rotation) = MoveOfAType( level => AddType( level, "-plain", 1402, hasQueue: false, category: ObjectCategory.Feature ) );
 		Assert.IsTrue( Level.PlacementKeepsBuildTool( entry ), "a type whose placed object opens no tool of its own" );
 		// Ctrl at the placement keeps the tool whether the host took the placement or refused it: the new park arms it again without its result
 		var frame = ResyncedWithAPlacementInsideTheCut( guest, entry, modifiers: 0xc );
-		Assert.IsTrue( guest.Level!.IsMoving );
+		Assert.AreEqual( ParkCommandCodec.EntryKey( entry ), ParkCommandCodec.EntryKey( guest.Level!.Objects.FindAt( 20, 12 )!.Entry ), "the new park holds the placed object as its type" );
+		Assert.IsTrue( guest.Level.IsMoving );
 		Assert.AreEqual( ParkCommandCodec.EntryKey( entry ), ParkCommandCodec.EntryKey( guest.Level.BuildEntry! ) );
 		Assert.AreEqual( rotation, guest.Level.BuildRotation );
 		Assert.IsNull( guest.Level.WaitingPlacement, "an outcome inside the cut has nothing to wait for" );
@@ -329,11 +344,18 @@ public partial class CoopJoinSessionTests
 	[TestMethod]
 	public void AResyncsMoveToolFinishesWithAPlacementItsOldParkTookButItsHudNeverFinished()
 	{
-		var guest = MoveHosted();
-		var (entry, _) = ArmedMove( guest );
+		// a ride with a queue and its entrance and exit cells (Sun God's economy, made available on every park; the asset-free ride's files), whose placement opens its queue tool
+		// placed below the park's first path row, so its entrance and exit find their walkable cells there
+		var cell = (X: 9, Y: 3);
+		var (guest, entry, _) = MoveOfAType( level =>
+		{
+			level.Park!.Economy.Research.RestoreCheatAvailable( new[] { 1106 } );
+			return AddType( level, "-queue", 1106, hasQueue: true, new ObjectShape( new[] { "*2S" } ) );
+		}, cell, rotation: 0 );
+		Assert.IsTrue( entry.HasQueue );
 		// the placement comes back in the old park, whose HUD never takes its outcome before the resync replaces the park
 		guest.Enter();
-		guest.Level!.ClickBuildTool( 20, 12 );
+		guest.Level!.ClickBuildTool( cell.X, cell.Y );
 		var placement = guest.Level.WaitingPlacement!.Request;
 		RoundsUntil( () => !placement.IsOpen, "the placement came back in the old park" );
 		Assert.AreEqual( CoopGuestRequestState.Applied, placement.State );
@@ -342,13 +364,24 @@ public partial class CoopJoinSessionTests
 		guest.Link.DropFrame = null;
 		var old = guest.Level;
 		RoundsUntil( () => guest.Level != old, "the park was swapped in" );
+		var placed = guest.Level!.Objects.Objects.Single( item => !item.IsDeleted && ParkCommandCodec.EntryKey( item.Entry ) == ParkCommandCodec.EntryKey( entry ) );
+		Assert.AreEqual( (placed, false), guest.Level.PlacedInThisPark( placedInOld ) );
+		// the asset-free ride's script loads only after its placement asked it to take guests, so no ride placed in this fixture has its entrance and exit cells; the placed ride takes
+		// them on the host's park and the new one here, as a ride with its assets does at its placement, so its queue tool can follow
+		foreach ( var peer in new[] { host, guest } )
+		{
+			peer.Enter();
+			var ride = peer.Level!.Objects.Objects.Single( item => !item.IsDeleted && ParkCommandCodec.EntryKey( item.Entry ) == ParkCommandCodec.EntryKey( entry ) );
+			typeof( Level ).GetMethod( "RegisterObjectWithGuests", BindingFlags.Instance | BindingFlags.NonPublic )!.Invoke( peer.Level, new object[] { ride } );
+			Assert.IsTrue( ride.Visitors.HasCells );
+		}
 		var (_, frame) = HudOf( guest, NewParksEntry( guest, entry ) );
 		frame();
-		// its outcome finishes the tool on the new park's object of that attraction id: placed without Ctrl, the tool ends
-		Assert.AreNotSame( placedInOld, guest.Level!.Objects.FindAt( 20, 12 ) );
-		Assert.AreEqual( (guest.Level.Objects.FindAt( 20, 12 )!, false), guest.Level.PlacedInThisPark( placedInOld ) );
-		Assert.IsFalse( guest.Level.IsMoving, "the placement ended the tool, as without the resync" );
+		// its outcome finishes the tool on the new park's object of that attraction id, as without the resync: the Move ends and the placed ride's queue tool follows
+		Assert.IsFalse( guest.Level.IsMoving );
 		Assert.IsNull( guest.Level.WaitingPlacement );
+		Assert.IsTrue( guest.Level.CellTool.IsActive, "the new park's ride opened its queue tool" );
+		guest.Level.CellTool.Cancel();
 		UntilTheCarryEndsWith( guest, frame, "the tool's end released the carry" );
 		CatchUpAndCompare( guest );
 	}

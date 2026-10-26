@@ -813,11 +813,13 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 	private void ApplyGuestCommands( double now )
 	{
 		// [EXT:online-coop-commands] the seats whose member left or changed since the last frame, and any guest seat that still carries something without a member (C3b-2) or
-		// [EXT:online-coop-claims] still holds a claim without one (C3c-1)
-		var members = SeatMembers();
+		// [EXT:online-coop-claims] still holds a claim without one (C3c-1); a link without its session's state (between a lost socket and its resume) shows no seat, so the seats wait for
+		// its next state instead of all counting as left
+		var known = transport.Session != null;
+		var members = known ? SeatMembers() : seatMembers;
 		var changed = seatMembers.Where( pair => !members.TryGetValue( pair.Key, out var member ) || member != pair.Value ).Select( pair => pair.Key )
-			.Concat( level.CarryingGuestSeats().Where( seat => !members.ContainsKey( seat ) ) )
-			.Concat( level.ClaimingSeats().Where( seat => seat > 0 && !members.ContainsKey( seat ) ) ).ToArray();
+			.Concat( level.CarryingGuestSeats().Where( seat => known && !members.ContainsKey( seat ) ) )
+			.Concat( level.ClaimingSeats().Where( seat => known && seat > 0 && !members.ContainsKey( seat ) ) ).ToArray();
 		seatMembers = members;
 		if ( leftSeats.Count > 0 || changed.Length > 0 )
 		{
@@ -860,13 +862,14 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 
 	/// <summary>
 	/// [EXT:online-coop-claims] Stamps each guest seat whose member the session reads disconnected now with the first frame that reads it so, and drops the stamp of one read connected or gone
-	/// (C3c-1).
+	/// (C3c-1); a link without its session's state changes no stamp.
 	/// </summary>
 	private void ReadLinks( double now )
 	{
-		var away = transport.Session is { } session
-			? session.Members.Where( member => member.Slot > 0 && member.Id != session.You && !member.Connected ).Select( member => (int)member.Slot ).ToHashSet()
-			: new HashSet<int>();
+		// a link without its session's state reads no member: the stamps wait for its next state
+		if ( transport.Session is not { } session )
+			return;
+		var away = session.Members.Where( member => member.Slot > 0 && member.Id != session.You && !member.Connected ).Select( member => (int)member.Slot ).ToHashSet();
 		foreach ( var seat in disconnectedSince.Keys.Where( seat => !away.Contains( seat ) ).ToArray() )
 			disconnectedSince.Remove( seat );
 		foreach ( var seat in away )

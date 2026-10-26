@@ -372,6 +372,93 @@ public partial class CoopSessionTests
 		CatchUpAndCompare( host, guest );
 	}
 	[TestMethod]
+	public void AGuestsSlideUndoWithNothingToTakeBackOrAfterItsSplashSaysNothing()
+	{
+		var (host, guest, _, _) = Shared();
+		var tower = TowerOnBoth( host, guest );
+		var view = ViewOf( guest );
+		Rounds( 20, host, guest );
+		Grant( host, guest, view );
+		guest.Enter();
+		Assert.IsTrue( guest.Level.EnterSlideTool( tower ) );
+		var tool = guest.Level.PoolTool!;
+		var seat = guest.Level.Commands.Player;
+		Assert.IsTrue( new CoopBuildRights( guest.Level ).Allows( seat, new UndoPoolSlidePieceCommand( 13, 19 ) ), "a slide with no piece is the park's to refuse" );
+		// Backspace with no piece laid: the park refuses it quietly, as the host's Backspace
+		Assert.IsTrue( tool.Undo() );
+		RoundsUntil( () => !tool.HasGuestBatches, host, guest, view, "the undo came back" );
+		Assert.AreEqual( 1, HostCommandsOf( host, seat ).Count( command => command is UndoPoolSlidePieceCommand ), "it went to the host" );
+		// the pieces to the splash, and an undo queued behind them before they went: the slide they finish meets it
+		tool.Press( 15, 19 );
+		tool.Hover( 16, 19 );
+		tool.Hover( 17, 19 );
+		tool.Hover( 17, 18 );
+		tool.Release();
+		Assert.IsTrue( tool.Undo(), "behind the pieces" );
+		RoundsUntil( () => !tool.HasGuestBatches, host, guest, view, "the pieces and the undo came back" );
+		Assert.IsTrue( SlideOf( host ) is { IsComplete: true } && SlideOf( guest ) is { IsComplete: true }, "the undo took nothing back" );
+		view.Update();
+		Assert.AreEqual( 1, view.Says( OpenTpwText.PoolSlideDone ) );
+		Assert.AreEqual( 0, view.Says( OpenTpwText.CoopHostOnly ) + view.Says( OpenTpwText.CoopNotGranted ) + view.Says( OpenTpwText.CoopHostCouldNotTake ), "nothing else is said" );
+		CatchUpAndCompare( host, guest );
+	}
+
+	[TestMethod]
+	public void ABackspaceInTheSlideModeDuringADragEndsTheDragsStroke()
+	{
+		var (host, guest, _, _) = Shared();
+		var tower = TowerOnBoth( host, guest );
+		var view = ViewOf( guest );
+		Rounds( 20, host, guest );
+		Grant( host, guest, view );
+		guest.Enter();
+		Assert.IsTrue( guest.Level.EnterSlideTool( tower ) );
+		var tool = guest.Level.PoolTool!;
+		tool.Press( 15, 19 );
+		tool.Hover( 16, 19 );
+		Assert.IsTrue( tool.Undo(), "Backspace during the drag" );
+		Assert.IsNull( typeof( PoolTool ).GetField( "guestStroke", NonPublic )!.GetValue( tool ), "the drag's stroke was released: it reports once back" );
+		tool.Hover( 17, 19 );
+		tool.Release();
+		RoundsUntil( () => !tool.HasGuestBatches, host, guest, view, "the pieces and the undo came back" );
+		Assert.AreEqual( 1, SlideOf( host )!.Pieces.Count, "two laid and the last taken back; the drag took no cell after the Backspace" );
+		Assert.AreEqual( 1, SlideOf( guest )!.Pieces.Count );
+		CatchUpAndCompare( host, guest );
+	}
+
+	[TestMethod]
+	public void AStrokeStopsAtTheFirstCellAFullQueueDrops()
+	{
+		var (host, guest, _, _) = Shared();
+		var view = ViewOf( guest );
+		Rounds( 20, host, guest );
+		Grant( host, guest, view );
+		guest.Enter();
+		var tool = guest.Level.PoolTool!;
+		Assert.IsTrue( tool.Begin( erase: false ) );
+		var waits = guest.Level.WaitingClicks;
+		// the host takes nothing meanwhile: back and forth until the queue is full
+		tool.Press( 4, 20 );
+		tool.SendGuestBatches( Time.Now );
+		for ( var pass = 0; pass < 24; pass++ )
+		{
+			tool.Hover( pass % 2 == 0 ? 28 : 4, 20 );
+			GuestFrames( 13, host, guest, hostRuns: false );
+			tool.SendGuestBatches( Time.Now );
+		}
+		Assert.AreEqual( waits + 1, guest.Level.WaitingClicks, "the full queue asked the player to wait" );
+		// the host takes what went and waits: the queue drains, and the stroke, stopped at its dropped cell, takes no cell more
+		RoundsUntil( () => !tool.HasGuestBatches, host, guest, view, "the queue drained" );
+		tool.Hover( 4, 22 );
+		tool.Hover( 28, 22 );
+		Assert.IsFalse( tool.HasGuestBatches, "the stroke takes no more cells" );
+		tool.Release();
+		RoundsUntil( () => !tool.HasGuestBatches, host, guest, view, "the stroke reported" );
+		Assert.IsFalse( Row( 4, 28, 22 ).Any( cell => IsWater( host, cell.X, cell.Y ) || IsWater( guest, cell.X, cell.Y ) ), "no cell after the drop" );
+		CatchUpAndCompare( host, guest );
+	}
+
+	[TestMethod]
 	public void AStrokesBatchTheHostCouldNotTakeIsSaidOnceForTheStroke()
 	{
 		var (host, guest, _, _) = Shared();

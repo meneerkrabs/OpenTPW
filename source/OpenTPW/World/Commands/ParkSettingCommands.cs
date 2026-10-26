@@ -772,8 +772,8 @@ public sealed record ReleaseSeatCommand( int Seat ) : ParkSettingCommand
 }
 
 /// <summary>
-/// [EXT:online-coop-claims] A player's track tool takes the claim of the ride with attraction id <paramref name="Ride"/> in a shared park (docs/COOP.md, "Claims and a guest's track rides";
-/// C3c-1): one editor at a time. Refused while another seat holds it, or while this seat holds another ride's. Only a shared park issues it.
+/// [EXT:online-coop-claims] A player's track tool takes the claim of the ride with attraction id <paramref name="Ride"/> in a shared park (docs/COOP.md, "Claims"; C3c-1): one editor at a
+/// time. Refused while another seat holds it; the claim this seat held of another ride goes in the same command (a claim moves with its player's tool). Only a shared park issues it.
 /// </summary>
 public sealed record ClaimRideCommand( int Ride ) : ParkSettingCommand
 {

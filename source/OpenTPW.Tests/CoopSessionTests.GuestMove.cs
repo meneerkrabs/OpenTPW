@@ -341,4 +341,77 @@ public partial class CoopSessionTests
 		RoundsUntil( () => !guest.Level.CarriesEntry( seat ) && !host.Level.CarriesEntry( seat ), host, guest, view, "the end released the carry" );
 		CatchUpAndCompare( host, guest );
 	}
+
+	[TestMethod]
+	public void AGuestsMoveToolWhoseCarryTheHostReleasedDisarmsWithoutAnEnd()
+	{
+		var (host, guest, view, seat) = MoveSession();
+		PickUp( host, guest, view );
+		Assert.IsTrue( host.Level.CarriesEntry( seat ) && guest.Level.CarriesEntry( seat ) );
+		// the host releases the seat's carry (as a resume under a new member id makes it do): every placement of the guest's armed tool would be refused
+		var log = host.Level.Commands.Log.Count;
+		Assert.IsTrue( host.Issue( new ReleaseSeatCommand( seat ) ).Accepted );
+		RoundsUntil( () => !guest.Level.IsMoving, host, guest, view, "the guest's frame disarmed the Move tool" );
+		Assert.IsFalse( guest.Level.CarriesEntry( seat ) );
+		Assert.IsNull( typeof( ParkHud ).GetField( "pendingItem", NonPublic )!.GetValue( view.Hud ), "the HUD's item went with it" );
+		Rounds( 120, host, guest );
+		Assert.IsFalse( host.Level.Commands.Log.Skip( log ).Any( entry => entry.Command is EndMoveCommand ), "no end: there was no carry to end" );
+		CatchUpAndCompare( host, guest );
+	}
+
+	[TestMethod]
+	public void APickUpsBuyItemGoesWithItsDroppedWait()
+	{
+		var (host, guest, view, _) = MoveSession();
+		StartMove( view, guest, guest.Level.Objects.FindAt( 20, 12 )! );
+		var waitingMove = typeof( ParkHud ).GetField( "waitingMove", NonPublic )!;
+		Assert.IsNotNull( waitingMove.GetValue( view.Hud ) );
+		// Escape drops the wait: the HUD's buy item for it goes too
+		view.Escape();
+		Assert.IsNull( guest.Level.WaitingToolStart );
+		view.Update();
+		Assert.IsNull( waitingMove.GetValue( view.Hud ), "the buy item went with the wait" );
+		RoundsUntil( () => !guest.Level.CarriesEntry( guest.Level.Commands.Player ), host, guest, view, "the carry of the pick-up its tool lost was ended" );
+		Assert.IsFalse( guest.Level.IsMoving );
+		CatchUpAndCompare( host, guest );
+	}
+
+	[TestMethod]
+	public void AHostLinkWithoutItsSessionsStateTakesNoGrantOrCarryBack()
+	{
+		var (host, guest, view, seat) = MoveSession();
+		PickUp( host, guest, view );
+		var hostLink = network!.Host;
+		var log = host.Level.Commands.Log.Count;
+		// the host's socket lost its session's state (between a loss and its resume): its frames read no seat
+		var state = hostLink.Snapshot;
+		hostLink.Snapshot = null;
+		Rounds( 10, host );
+		Assert.IsTrue( host.Level.HasBuildGrant( seat ) && host.Level.CarriesEntry( seat ), "no seat counts as left" );
+		hostLink.Snapshot = state;
+		Rounds( 10, host, guest );
+		Assert.IsTrue( host.Level.HasBuildGrant( seat ) && guest.Level.HasBuildGrant( seat ), "the seat's member is the same once the state is back" );
+		Assert.IsTrue( host.Level.CarriesEntry( seat ) && guest.Level.IsMoving, "and the carry and its Move tool stay" );
+		Assert.IsFalse( host.Level.Commands.Log.Skip( log ).Any( entry => entry.Command is SetBuildGrantCommand or ReleaseSeatCommand ), "nothing was taken back" );
+		view.Escape();
+		RoundsUntil( () => !host.Level.CarriesEntry( seat ), host, guest, view, "the Move's end released the carry" );
+		CatchUpAndCompare( host, guest );
+	}
+
+	[TestMethod]
+	public void AGuestThatLeavesWhileTheHostLinkLacksItsSessionsStateHasItsGrantAndCarryReleased()
+	{
+		var (host, guest, view, seat) = MoveSession();
+		PickUp( host, guest, view );
+		var hostLink = network!.Host;
+		hostLink.Snapshot = null;
+		// the departure is an event of its own: the next frame takes the grant back and releases the carry, whatever state the link holds
+		guest.Enter();
+		guest.Session!.End( "The guest left." );
+		network.Remove( moveGuestLink! );
+		for ( var round = 0; round < 600 && (host.Level.CarriesEntry( seat ) || host.Level.HasBuildGrant( seat )); round++ )
+			Rounds( 1, host );
+		Assert.IsFalse( host.Level.CarriesEntry( seat ) || host.Level.HasBuildGrant( seat ) );
+		Assert.IsTrue( host.Level.Commands.Log.Any( entry => entry.Command is ReleaseSeatCommand { Seat: var released } && released == seat ), "a record of the stream" );
+	}
 }

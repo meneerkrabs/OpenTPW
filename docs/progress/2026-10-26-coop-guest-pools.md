@@ -2,7 +2,7 @@
 
 A granted guest in a shared park can now use the pools: paint, erase and the lazy river, bridges, and slide towers with their slides ([COOP.md](../COOP.md), "A guest's pools"; `[EXT:online-coop-commands]`, `[EXT:online-coop-permissions]`). This is C3b-3, after the Move tool of C3b-2.
 
-- **A guest's strokes go in batches.** One request per cell would outrun the session's limits, so the cells a stroke crosses go to the host a batch at a time. The park ends up exactly as if the host had dragged the same stroke. Until a batch is back, its cells show as the stroke's ghost.
+- **A guest's strokes go in batches.** One request per cell would outrun the session's limits, so the cells a stroke crosses go to the host a batch at a time. Each cell is written as the host's own drag over it would write it. Until a batch is back, its cells show as the stroke's ghost.
 - **The host's tool is unchanged:** it still paints as the pointer moves.
 - **A stroke reports once it is back.** The lay sound plays, and the first refusal is said once, as at the host's release. The done message comes when the guest's own stroke laid the slide's splash.
 - **At most four pool requests of a guest are open at once.** The cells waiting to go form one queue for all of a guest's strokes. When the queue is full, the guest is asked to wait.

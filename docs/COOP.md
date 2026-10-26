@@ -1772,16 +1772,19 @@ player in all of these: its lines and their undo, its edit, the removal of its c
 them, any line across one of its cells (a path line paves a queue's end), a placement whose own plan
 writes over one (its footprint, the paths it clears, the cell beyond a track end, the cells outside its
 entrance and exit), a bridge with a cell or an end on one, and the object window's queue tool, which that
-player's window does not offer. So is the path cell its back cell joins, whose removal or a queue laid
-over it would take the queue's link off: the remove click, Backspace, queue lines, placements (whose plans
-clear the paths under them) and bridges refuse it, and the area clear leaves it standing
-(`IParkCommandRights.AllowsPathRemoval`). A path line along it leaves the queue's links as they are. A
-queue cell's ride is resolved as its removal resolves it: the rides' cached lines, then each line walked
-again (on a copy) for the cells they miss, once per command. Everything else stays the host's: pause and
-speed (Q8), cheats (Q17), money, staff and the park's management (C4) with a wave machine's settings, undo
-lines and pool strokes (whose cells a request could name freely; undo is C5), the single-cell removals and
-the pools' single-cell kinds no guest's tool issues, coasters and track add-ons (C3c-2), the grants and
-the release of a departed seat.
+player's window does not offer, nor its sale and Move buttons for the ride. So is the path cell its back
+cell joins, whose removal or a queue laid over it would take the queue's link off: the remove click,
+Backspace, queue lines, placements (whose plans clear the paths under them, and a queue ride's, which lays
+its first queue cell outside its entrance) and bridges refuse it, and the area clear leaves it standing
+(`IParkCommandRights.AllowsPathRemoval`). A path line along it, the path a placement lays or links outside
+its other entrance and its exit, and a queue line that only ends on it (which links the queue to that
+path, `QueuePaths.Connect`) leave the queue's links as they are. A queue cell's ride is resolved as its
+removal resolves it: the rides' cached lines, then each line walked again (on a copy) for the cells they
+miss, once per question of the rights (the area clear asks it for each path cell it would clear).
+Everything else stays the host's: pause and speed (Q8), cheats (Q17), money, staff and the park's
+management (C4) with a wave machine's settings, undo lines and pool strokes (whose cells a request could
+name freely; undo is C5), the single-cell removals and the pools' single-cell kinds no guest's tool
+issues, coasters and track add-ons (C3c-2), the grants and the release of a departed seat.
 
 **A guest's tools (C3a-2).** On a guest's park `ParkCommands.Issue` sends a command to the host instead
 of applying it (`ParkCommands.Submit`, set by the session), after the checks `Apply` makes before it runs
@@ -1872,6 +1875,11 @@ research tests, and the tool's end drops the carry.
   while its Move tool is not armed sends the Move's end (`Level.EndStrayCarry`), at most once a second
   and only while no pick-up or end of its own is open. The object stays sold, as a cancelled Move leaves
   it.
+- **A resync** keeps an armed Move tool: the new park's tool arms again from the carry its snapshot holds,
+  at the angle it had (`Level.TakeMoveToRestore`); a carry its tool did not hold is a stray one, as above.
+- **A Move tool without its carry.** When the host released the seat's carry while its Move tool was armed
+  (a resume under a new member id, a departure the host saw), every placement of it would be refused: the
+  guest's frame disarms it after the outcomes (`Level.EndCarrylessMove`), without an end command.
 - **A grant taken back** leaves the Move tool armed: its placements are refused at their records, and its
   end still goes.
 - **A departed seat.** At each frame's start, before the requests, the host takes the grant back and
@@ -1896,26 +1904,34 @@ A guest's strokes go in batches instead, and the host's tool writes at once, as 
   guest's strokes (at most 200 cells) and go from its head only, so a later stroke never passes an
   earlier one's cells. A batch goes while fewer than four of the guest's pool requests are open in the
   session's requests (`Level.OpenPoolRequests`, which counts across the tool's ends and resyncs): a
-  press's first cell at once, the others at most every 0.2 seconds. A cell crossed while the queue is
-  full is dropped, and the player is asked to wait. The cells sent and waiting are drawn as blueprint
+  press's first cell at once, the others at most every 0.2 seconds. A stroke stops at the first cell it
+  crosses while the queue is full: it takes no more cells, so it leaves no hole (a slide's next piece must
+  follow its last), and the player is asked to wait. The cells sent and waiting are drawn as blueprint
   faces, as a waiting line's ghost is, until their outcome.
 - **The report.** A stroke reports once it is released, its batches are all sent and each has come back,
   as the host's release does: the lay sound when it wrote, its first refusal in the order its cells were
   tried (whatever order the answers came in) with its marker, and the slide's done message when this
   stroke laid the splash and the slide still stands finished. A request the host could not take, an
-  outcome not known and a refusal by the rights are said once for the stroke.
+  outcome not known and a refusal by the rights are said once for the stroke. The refusal cue plays with
+  the report, as a guest's line released before its outcome plays it.
 - **Bridges and undo.** A bridge click is a request of its own through the same queue. Backspace in the
   paint or erase mode takes nothing back: a stroke's undo names its cells freely, as a line's does (undo
-  is C5). In the slide mode Backspace takes the last piece of a slide still being laid back, behind the
-  pieces still queued and one at a time; a finished slide's pieces are the host's (riders use it), or go
-  with its tower.
+  is C5). In the slide mode Backspace takes the last piece of a slide that is not finished back, behind
+  the pieces still queued and one at a time; a slide with no piece to take back is the park's to refuse,
+  quietly, as the host's Backspace is. A finished slide's pieces are the host's (riders use it), or go with
+  its tower: an undo queued behind pieces that turned out to lay the splash meets a finished slide and
+  says nothing, as the host's slide mode ends with its splash. A Backspace during a drag ends the drag's
+  stroke, which reports once back.
 - **Backspace with no tool on** over a pool bridge or a pool cell is a request, as over a path (C3b-1), and
   a refusal says the pool's reason.
 - **Escape**, a right click or another tool ends the tool: its unsent cells are dropped, the stroke under
   the press and any that lost cells report nothing, as the host's cancelled stroke does, and their sent
   requests are only messages.
-  The session's end ends a guest's pool tool and its strokes; a resync's park has a new tool, and the old
-  strokes' requests are the session's.
+  The session's end ends a guest's pool tool and its strokes; a resync's park has a new tool: the old
+  strokes' cells not yet sent are dropped, and their sent requests are the session's.
+- **Two players' writes** over one cell apply in the host's order: the cell keeps what the later request
+  paints or erases. A slide is named by its tower's cell, so a batch on its way when its tower was removed
+  lays its pieces on a tower placed on that cell meanwhile.
 
 A slide tower is a guest's to place, sell, clear, move and remove, and its removal takes its slide and
 refunds it, on every peer alike. No claim keeps a slide to one player: two players laying one slide take
@@ -2131,7 +2147,8 @@ changes.
     reconcile (`StaffPlacement.Reconcile`, which frees a member an original save left picked up)
     leaves a member a command picked up, on a peer and in a replay too.
   - A full thing pool refuses a hire before the placement ends (the hire threw after it before).
-- **Pools.** Each cell a paint or erase stroke writes is a command (`PaintPoolCellCommand`,
+- **Pools.** A guest's strokes go in batches (`PoolCellsCommand`, kind 78, and `LayPoolSlidePiecesCommand`,
+  kind 79; C3b-3, "A guest's pools"). Each cell a paint or erase stroke writes is a command (`PaintPoolCellCommand`,
   `ErasePoolCellCommand`), as the tool wrote each cell while the drag crossed it; Backspace takes a
   stroke back with one command that carries its cells (`UndoPoolStrokeCommand`). A stroke of more cells
   than a command takes (4096) goes back in chunks that write in the one command's order (an erase
@@ -2329,10 +2346,9 @@ guarded list.
   refuse it mid-carry (C3): the employee then stays in that player's hand and the player's next
   pick-up is refused. C3 must always allow the drop back to where the employee came from.
 - The Move tool's end ends the issuer's tool whatever its command's result (`EndMoveCommand`): a
-  refusal would leave the picked-up type carried on every peer while the issuer's tool is gone. C3
-  must always allow it, and a member that leaves the session mid-move must have its Move tool ended
-  on every peer (as its hand and its hire must be), or the next player in its slot inherits the
-  carried type.
+  refusal would leave the picked-up type carried on every peer while the issuer's tool is gone.
+  Resolved in C3b-2: every guest seat may end its Move, granted or not, and the host releases a
+  departed seat's carry (`ReleaseSeatCommand`), so the next player in its slot inherits none.
 - A hire's pending candidate (`ParkStaff.PendingPlacementId`) is one per park: two players placing hires
   at once would take it from each other (C3 gives each player a placement).
 - Opening the queue tool (after a ride is placed, its track circuit closes or its coaster is completed,

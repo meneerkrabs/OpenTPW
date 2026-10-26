@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using OpenTPW.Hud;
 using OpenTPW.Online.Coop;
 using OpenTPW.UI.Original;
 
@@ -90,22 +91,20 @@ public partial class CoopSessionTests
 		hostView.Update();
 		Assert.AreEqual( ParkCommands.LocalPlayer, host.Level.ClaimOf( ride ), "the frame check keeps the claim of the ride the tool is on" );
 		RoundsUntil( () => guest.Level.ClaimOf( ride ) == ParkCommands.LocalPlayer, host, guest, view, "the claim reached the guest" );
-		// the guest's sale of the ride is refused here in the claim's words, and nothing goes
-		var confirmations = GameOptions.Current.Confirmations;
-		GameOptions.Current.Confirmations = false;
-		try
-		{
-			guest.Enter();
-			Sell( view.Hud, guest.Level.TrackStations.Keys.Single() );
-			Assert.IsFalse( guest.Level.IsSaleWaiting( ride ) );
-			view.Update();
-			Assert.AreEqual( 1, view.Says( OpenTpwText.CoopClaimed ) );
-			Assert.AreEqual( 0, view.Says( OpenTpwText.CoopHostOnly ) + view.Says( OpenTpwText.CoopNotGranted ) );
-		}
-		finally
-		{
-			GameOptions.Current.Confirmations = confirmations;
-		}
+		// the guest's window offers no sale, Move or queue tool for the ride, and a sale is refused here in the claim's words: nothing goes
+		guest.Enter();
+		var guestKart = guest.Level.TrackStations.Keys.Single();
+		typeof( ParkHud ).GetField( "selectedObject", NonPublic )!.SetValue( view.Hud, guestKart );
+		view.Update();
+		var erase = ((UiScreen)typeof( ParkHud ).GetField( "hud", NonPublic )!.GetValue( view.Hud )!).Find( "deleteRide" ) as UiButton;
+		Assert.IsFalse( erase!.Enabled, "the erase button is off for a ride another player claims" );
+		Assert.IsFalse( (bool)typeof( ParkHud ).GetMethod( "CanMoveObject", NonPublic )!.Invoke( view.Hud, new object[] { guestKart } )!, "and the Move button" );
+		var sale = guest.Issue( new RemoveAttractionCommand( ride ) );
+		Assert.IsTrue( sale is { Accepted: false, RightsRefused: true } && sale.Reason == Level.ClaimedReason, sale.Reason );
+		Assert.IsFalse( guest.Level.IsSaleWaiting( ride ) );
+		view.Update();
+		Assert.AreEqual( 1, view.Says( OpenTpwText.CoopClaimed ) );
+		Assert.AreEqual( 0, view.Says( OpenTpwText.CoopHostOnly ) + view.Says( OpenTpwText.CoopNotGranted ) );
 		// the tool leaves the ride: the host's next frame lets the claim go
 		host.Enter();
 		host.Level.ExitTrackTool();

@@ -70,6 +70,20 @@ public sealed partial class ParkHud
 		SayOutcome( request, null );
 	}
 
+	/// <summary>The buy item the build tool arms with for <paramref name="entry"/> (the Move button's, <see cref="MoveObject"/>), or null when the catalogue offers none.</summary>
+	private BuildItem? BuyItemOf( ObjectCatalogEntry entry ) => Catalog.GetItems( (BuildCategory)entry.WhichUIType ).FirstOrDefault( candidate => candidate.InfoId == entry.InfoId );
+
+	/// <summary>
+	/// A resync replaced the guest's park while its Move tool was armed (C3b-2): the new park's tool arms again from the carry its snapshot holds, at the angle it had, with the buy item of its
+	/// type (<see cref="Level.TakeMoveToRestore"/>); without one the carry is a stray one, which the frame ends.
+	/// </summary>
+	private void RestoreMove()
+	{
+		if ( level.TakeMoveToRestore() is not { } move || BuyItemOf( move.Entry ) is not { } item || !level.CompleteMove( move.Entry, move.Rotation ) )
+			return;
+		pendingItem = item;
+	}
+
 	/// <summary>
 	/// The guest's queue edit comes back (C3b): accepted, the queue tool starts from what its record read, with the help the host's click posts, unless the view has a tool by now or a
 	/// later record changed the queue (then the park shows what happened); otherwise its outcome is said.
@@ -202,7 +216,8 @@ public sealed partial class ParkHud
 			SayGuestNote( OpenTpwText.CoopBuildUnknown );
 		if ( report.Refusal is not { } refusal )
 			return;
-		refusalClick.Refused( refusal.Cell.X, refusal.Cell.Y );
+		// the stroke's press was released before its report: the refusal cue plays now, as a guest's line released before its outcome plays it (FinishLineClick)
+		GameAudio.PlayPathRefused( refusal.Cell.X, refusal.Cell.Y );
 		PostMessage( strings.Extra( report.BridgeRefusal is { } bridge ? BridgeRefusalText( bridge ) : PoolRefusalText( refusal.Reason, report.SlideRefusal ) ) );
 	}
 

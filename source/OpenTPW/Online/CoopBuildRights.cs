@@ -78,10 +78,11 @@ internal sealed class CoopBuildRights( Level level ) : IParkCommandRights
 		// C3b-2: the Move tool's pick-up of an object the guest may remove and place again (never the developer prototype); a missing object is the park's to refuse
 		PickUpObjectCommand pick => level.ResolveCommandObject( pick.Attraction ) is not { IsDeleted: false } item
 			|| (!ReferenceEquals( item, level.PlacedRide ) && GuestMayRemove( item.Entry ) && GuestMayPlace( item.Entry )),
-		// C3b-3: a guest's pool strokes go in batches (the pool builders refuse every cell that is not theirs: a path, a queue, an object), its bridges, and the last piece of a slide
-		// still being laid (a finished slide takes riders: its pieces are the host's, or go with its tower)
+		// C3b-3: a guest's pool strokes go in batches (the pool builders refuse every cell that is not theirs: a path, a queue, an object), its bridges, and the last piece of a slide that is
+		// not finished (a finished slide takes riders: its pieces are the host's, or go with its tower; a slide with no piece to take back is the park's to refuse, quietly, as the host's
+		// Backspace is)
 		PoolCellsCommand or LayPoolSlidePiecesCommand or PlacePoolBridgeCommand => true,
-		UndoPoolSlidePieceCommand undo => level.PoolSlides?.Find( PoolSlide.KeyOf( undo.TowerX, undo.TowerY ) ) is { IsComplete: false },
+		UndoPoolSlidePieceCommand undo => level.PoolSlides?.Find( PoolSlide.KeyOf( undo.TowerX, undo.TowerY ) ) is not { IsComplete: true },
 		// [EXT:online-coop-claims] C3c-1: a ride's claim (never the developer prototype or a coaster, whose tool is the host's until C3c-2; a missing ride or one that is no track ride
 		// is the park's to refuse), and the track commands, of the ride whose claim the guest holds
 		ClaimRideCommand claim => level.ResolveCommandObject( claim.Ride ) is not { IsDeleted: false } item
@@ -114,7 +115,7 @@ internal sealed class CoopBuildRights( Level level ) : IParkCommandRights
 		// a claimed ride's queue lines and their undo; no line crosses its cells (a path line paves a queue end), and no queue line takes the path cell its back joins (the queue writers
 		// lay queue over path); an undo takes the cells its line built off again and counts down the ones it crossed
 		LayLineCommand line => (line.Mode != CellToolMode.Queue || !ClaimedRide( player, line.Ride ))
-			&& !CrossesClaimedQueue( player, line.StartX, line.StartY, line.EndX, line.EndY, joins: line.Mode == CellToolMode.Queue ),
+			&& !CrossesClaimedQueue( player, line.StartX, line.StartY, line.EndX, line.EndY, joins: line.Mode == CellToolMode.Queue, endOnPathLinks: line.Mode == CellToolMode.Queue ),
 		UndoLineCommand undo => (undo.Mode != CellToolMode.Queue || !ClaimedRide( player, undo.Ride ))
 			&& !TouchesClaimedQueue( player, undo.Built.Concat( undo.Existing ).ToArray(), joins: true ),
 		QueueSegmentCommand line => !ClaimedRide( player, line.Ride ) && !CrossesClaimedQueue( player, line.StartX, line.StartY, line.EndX, line.EndY, joins: true ),
@@ -189,12 +190,17 @@ internal sealed class CoopBuildRights( Level level ) : IParkCommandRights
 	/// <summary>
 	/// Whether a line from (<paramref name="startX"/>, <paramref name="startY"/>) toward (<paramref name="endX"/>, <paramref name="endY"/>), snapped as the line writers snap it, crosses the queue
 	/// cell of a ride claimed against <paramref name="player"/> (a path line paves a queue end; a queue line of another ride may take over a cell no owner word marks yet), or, with
-	/// <paramref name="joins"/> (a queue line, which may lay queue over path), the path cell such a queue joins. The cells' owners are resolved together (<see cref="Level.QueueOwnersAt"/>).
+	/// <paramref name="joins"/> (a queue line, which may lay queue over path), the path cell such a queue joins. With <paramref name="endOnPathLinks"/> (the queue tool's line) a last cell that
+	/// is a path cell only links the queue to that path (<see cref="QueuePaths.Connect"/>), so it takes no joined queue's link off: it is asked for itself alone. The cells' owners are resolved
+	/// together (<see cref="Level.QueueOwnersAt"/>).
 	/// </summary>
-	private bool CrossesClaimedQueue( int player, int startX, int startY, int endX, int endY, bool joins )
+	private bool CrossesClaimedQueue( int player, int startX, int startY, int endX, int endY, bool joins, bool endOnPathLinks = false )
 	{
 		var start = (startX, startY);
-		return TouchesClaimedQueue( player, ParkPathBuilder.LayLine( start, ParkPathBuilder.SnapEnd( start, (endX, endY) ) ).ToArray(), joins );
+		var cells = ParkPathBuilder.LayLine( start, ParkPathBuilder.SnapEnd( start, (endX, endY) ) ).ToArray();
+		if ( endOnPathLinks && joins && cells.Length > 1 && level.Guests?.Grid is { } grid && grid.IsWalkable( cells[^1].X, cells[^1].Y ) )
+			return TouchesClaimedQueue( player, cells[..^1], joins: true ) || TouchesClaimedQueue( player, cells[^1..], joins: false );
+		return TouchesClaimedQueue( player, cells, joins );
 	}
 
 	/// <summary>
@@ -202,7 +208,9 @@ internal sealed class CoopBuildRights( Level level ) : IParkCommandRights
 	/// against that player, as the placement's own check plans it (<see cref="ParkObjects.Check(ObjectCatalogEntry, int, int, int, out ObjectPlacementPlan)"/>, centred as
 	/// <see cref="Level.PlaceObject"/> centres it): no object it would demolish (one of a lower overwrite priority) is a ride claimed against the player, nor, for a guest, one it may not
 	/// remove (<see cref="MayRemove"/>), and no cell it writes is a claimed ride's queue cell or the path cell its back joins: its footprint, the path cells it clears (beyond a track end too)
-	/// and the cells outside its entrance and exit, which it lays as queue or path (a path paves a queue's end). A placement the park refuses is the park's to refuse.
+	/// and the cell outside a queue ride's entrance, which it lays as queue (taking the links of a path cell there off). The cell outside its other entrance and its exit it lays or links as
+	/// path, over a path too, which takes no link off: they are asked for themselves alone (a path paves a queue's end). The placement lays only its last entrance's and its last exit's
+	/// (<see cref="ObjectAccessCells.Lay"/>), so only they are asked. A placement the park refuses is the park's to refuse.
 	/// </summary>
 	internal bool PlacementLeavesClaimsAlone( int player, ObjectCatalogEntry entry, int x, int y, int rotation )
 	{
@@ -211,9 +219,12 @@ internal sealed class CoopBuildRights( Level level ) : IParkCommandRights
 			return true;
 		if ( plan.Overwritten.Any( item => player == ParkCommands.LocalPlayer ? ClaimedAgainst( player, item ) : !MayRemove( player, item ) ) )
 			return false;
-		var cells = ObjectFootprint.GetCells( entry.Shape, anchor.X, anchor.Y, rotation ).Select( cell => (cell.X, cell.Y) ).Concat( plan.ClearedPaths )
-			.Concat( ObjectFootprint.GetAccessPoints( entry.Shape, anchor.X, anchor.Y, rotation ).Select( point => (point.OutsideX, point.OutsideY) ) ).Distinct().ToArray();
-		return !TouchesClaimedQueue( player, cells, joins: true );
+		var (entrance, exit) = ObjectAccessCells.Find( ObjectFootprint.GetAccessPoints( entry.Shape, anchor.X, anchor.Y, rotation ) );
+		var queueEntrance = entry.HasQueue && entrance is { } enter ? new[] { (enter.OutsideX, enter.OutsideY) } : Array.Empty<(int, int)>();
+		var written = ObjectFootprint.GetCells( entry.Shape, anchor.X, anchor.Y, rotation ).Select( cell => (cell.X, cell.Y) ).Concat( plan.ClearedPaths ).Concat( queueEntrance )
+			.Distinct().ToArray();
+		var paths = new[] { entry.HasQueue ? null : entrance, exit }.OfType<ObjectAccessPoint>().Select( point => (point.OutsideX, point.OutsideY) ).Distinct().ToArray();
+		return !TouchesClaimedQueue( player, written, joins: true ) && !TouchesClaimedQueue( player, paths, joins: false );
 	}
 
 	/// <summary>

@@ -3,7 +3,7 @@ namespace OpenTPW;
 public partial class Level
 {
 	/// <summary>
-	/// [EXT:online-coop-claims] The rides a player's track tool edits in a shared park (docs/COOP.md, "Claims and a guest's track rides"; C3c-1): a ride's attraction id and the seat that
+	/// [EXT:online-coop-claims] The rides a player's track tool edits in a shared park (docs/COOP.md, "Claims"; C3c-1): a ride's attraction id and the seat that
 	/// holds its claim (<see cref="ClaimRideCommand"/>, <see cref="ReleaseRideCommand"/>). Session state, as the grants are: in the session digest once there is one and in a join snapshot,
 	/// cleared with the session; never in the world hash or a save. Null until the first claim.
 	/// </summary>
@@ -63,16 +63,13 @@ public partial class Level
 			rideClaims = null;
 	}
 
-	/// <summary>When <see cref="SettleClaim"/> last sent a guest's release, or null.</summary>
-	private double? lastStrayClaimRelease;
-
 	/// <summary>
 	/// [EXT:online-coop-claims] Binds this machine's claim to its track tool (C3c-1); the HUD calls this after taking its requests' outcomes each frame, so a claim is bound to its ride by the
 	/// park's state, never by a tool's event:
 	/// <list type="bullet">
 	/// <item>a claim of a ride the track tool is not on goes: the tool left the ride (Escape, a right click, another tool, the queue button, a valid circuit, the queue tool that follows it),
 	/// a tool start was dropped, or a resync's park has the claim in it; the edit tool's turn into the line tool, within one call, keeps it. The host lets it go at once; a guest asks the host
-	/// at most once a second (by <paramref name="now"/>), and only while no claim, open or release request of its own is open in the session's requests (from this park or one a resync
+	/// at most once a second (by <paramref name="now"/>, kept by the session across a resync), and only while no claim, open or release request of its own is open in the session's requests (from this park or one a resync
 	/// replaced): the host applies them in order, so a release sent before an open claim's outcome would come before the claim;</item>
 	/// <item>the host's track tool on a ride whose claim it does not hold (a tool that was on when the session started) claims it, and ends, with the claim's note, when another player holds
 	/// it.</item>
@@ -100,9 +97,9 @@ public partial class Level
 		if ( !Commands.SendsRequests )
 			return Commands.Issue( new ReleaseRideCommand( ride ) ).Accepted;
 		if ( CoopSession.GuestCommands is not { } requests || requests.Open.Any( request => request.Command is ClaimRideCommand or OpenTrackLineToolCommand or ReleaseRideCommand )
-			|| (lastStrayClaimRelease is { } last && now - last < 1) )
+			|| (CoopSession.LastStrayClaimRelease is { } last && now - last < 1) )
 			return false;
-		lastStrayClaimRelease = now;
+		CoopSession.LastStrayClaimRelease = now;
 		return Commands.Issue( new ReleaseRideCommand( ride ) ).IsPending;
 	}
 

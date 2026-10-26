@@ -183,6 +183,8 @@ public static class ParkCommandReplay
 	/// <summary>
 	/// Schedules every entry of <paramref name="entries"/> on <paramref name="commands"/>, then runs <paramref name="tick"/> (one simulation tick) until <paramref name="nextTick"/>
 	/// reaches <paramref name="endTick"/>, applying the commands due before each tick. Commands logged at <paramref name="endTick"/> itself are applied after the last tick.
+	/// [EXT:online-coop-permissions] The entries replay under the session rules and rights <paramref name="commands"/> has now, as its caller set them: a session's entries replay as
+	/// recorded only under that session's rules and rights, which the overload for a whole log installs from the log itself.
 	/// </summary>
 	public static void Run( ParkCommands commands, IReadOnlyList<ParkCommandLogEntry> entries, Func<long> nextTick, Action tick, long endTick, Action<long>? afterTick = null )
 	{

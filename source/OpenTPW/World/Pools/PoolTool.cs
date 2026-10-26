@@ -321,9 +321,12 @@ public sealed partial class PoolTool
 		if ( slideTower is { } tower )
 		{
 			last = null;
-			// [EXT:online-coop-commands] a guest's goes to the host behind the stroke's cells, one at a time
+			// [EXT:online-coop-commands] a guest's goes to the host behind the stroke's cells, one at a time; a drag it cuts short is released, so its stroke reports
 			if ( SendsRequests?.Invoke() == true )
+			{
+				ReleaseGuestStroke();
 				return QueueGuestSlideUndo( tower );
+			}
 			return Slides != null && issue( new UndoPoolSlidePieceCommand( tower.X, tower.Y ) ).Accepted;
 		}
 		// [EXT:online-coop-commands] a guest's strokes are the host's to undo: their undo names its cells freely (undo is C5, as for lines)

@@ -31,6 +31,8 @@ internal sealed class CoasterRequestQueue
 		public int Retries;
 		/// <summary>When it may go again (NaN: <see cref="RetrySeconds"/> from the next send).</summary>
 		public double RetryAt = double.NegativeInfinity;
+		/// <summary>A step's place among the values of the queue's steps (<see cref="NextOrder"/>): a later value of the same field of the same drag has a greater one.</summary>
+		public long Order;
 
 		/// <summary>Whether this is a drag's end, which settles what the drag's steps left.</summary>
 		public bool IsDragEnd => Drag > 0 && Command is EndCoasterNodeEditCommand;
@@ -40,6 +42,13 @@ internal sealed class CoasterRequestQueue
 	private readonly List<Item> sent = new();
 	private double lastStep = double.NegativeInfinity;
 	private int lastDrag;
+	private long lastOrder;
+
+	/// <summary>The greatest <see cref="Item.Order"/> of each drag's field whose step applied, until the drag's end is back: an older value of it that comes back later goes no more.</summary>
+	private readonly Dictionary<(int Drag, CoasterNodeField Field), long> applied = new();
+
+	/// <summary>The next step value's place (<see cref="Item.Order"/>).</summary>
+	private long NextOrder() => ++lastOrder;
 
 	/// <summary>A number for a new drag, unique in this queue: its steps, its end and their retries are that drag's alone, whichever panel queued them.</summary>
 	public int NewDrag() => ++lastDrag;
@@ -70,9 +79,10 @@ internal sealed class CoasterRequestQueue
 		if ( waiting >= 0 )
 		{
 			unsent[waiting].Command = step;
+			unsent[waiting].Order = NextOrder();
 			return;
 		}
-		unsent.Add( new Item { Command = step, Drag = drag, Field = step.Field } );
+		unsent.Add( new Item { Command = step, Drag = drag, Field = step.Field, Order = NextOrder() } );
 	}
 
 	/// <summary>Whether <paramref name="drag"/>'s press has not been sent yet.</summary>
@@ -115,10 +125,11 @@ internal sealed class CoasterRequestQueue
 	}
 
 	/// <summary>
-	/// A guest request resolved (the HUD's drain): when it is one of this queue's, its completion runs with its outcome. A drag's end, or a drag's step whose field no later command of the drag
-	/// sets, goes again instead, before anything else, when the host found it too fast (<see cref="RetrySeconds"/> later, as often as it takes) or its outcome is not known (at once, at most
-	/// <see cref="MaximumRetries"/> times): the end then settles the drag's last values (setting a value again, or ending a drag that ended, changes nothing more). Any other loss of them gives
-	/// the drag up (<see cref="CoasterGuestAction.DragLost"/>). True when it was this queue's.
+	/// A guest request resolved (the HUD's drain): when it is one of this queue's, its completion runs with its outcome. A drag's end, or a drag's step whose field no later value of the drag sets
+	/// (one on its way, waiting, or applied already: the answers of two requests may come back in either order), goes again instead, before anything else, when the host found it too fast
+	/// (<see cref="RetrySeconds"/> later, as often as it takes) or its outcome is not known (at once, at most <see cref="MaximumRetries"/> times): the end then settles the drag's last values
+	/// (setting a value again, or ending a drag that ended, changes nothing more). Any other loss of them gives the drag up (<see cref="CoasterGuestAction.DragLost"/>). True when it was this
+	/// queue's.
 	/// </summary>
 	public bool Complete( CoopGuestCommands.Request request )
 	{
@@ -134,7 +145,9 @@ internal sealed class CoasterRequestQueue
 			{ State: CoopGuestRequestState.Refused } => new CoasterOutcome( null, true, false ),
 			_ => new CoasterOutcome( null, false, true )
 		};
-		if ( (outcome.NotTaken || outcome.Unknown) && (item.IsDragEnd || (item.Field is { } field && !SetLater( item.Drag, field, index ))) )
+		if ( item.Field is { } appliedField && request.State == CoopGuestRequestState.Applied )
+			applied[(item.Drag, appliedField)] = Math.Max( applied.GetValueOrDefault( (item.Drag, appliedField) ), item.Order );
+		if ( (outcome.NotTaken || outcome.Unknown) && (item.IsDragEnd || (item.Field != null && !SetLater( item ))) )
 		{
 			var tooFast = request is { State: CoopGuestRequestState.Refused, Refusal: CoopGuestRefusal.TooFast };
 			if ( tooFast || (outcome.Unknown && item.Retries < MaximumRetries) )
@@ -149,13 +162,18 @@ internal sealed class CoasterRequestQueue
 			// given up (a park that takes no commands now, a seat lost, an outcome not known again and again): the drag is lost, and its panel ends
 			Reports.Add( new CoasterGuestReport( CoasterGuestAction.DragLost, outcome, Open: false, Closing: false ) { Drag = item.Drag } );
 		}
+		// a drag's end back for good: nothing of the drag comes back after it (it went once every command before it was back)
+		if ( item.IsDragEnd )
+			foreach ( var key in applied.Keys.Where( key => key.Drag == item.Drag ).ToArray() )
+				applied.Remove( key );
 		item.Completed?.Invoke( outcome );
 		return true;
 	}
 
-	/// <summary>Whether a command of <paramref name="drag"/> sent after the one that was at <paramref name="sentIndex"/>, or waiting to go, sets <paramref name="field"/>.</summary>
-	private bool SetLater( int drag, CoasterNodeField field, int sentIndex ) =>
-		sent.Skip( sentIndex ).Any( item => item.Drag == drag && item.Field == field ) || unsent.Any( item => item.Drag == drag && item.Field == field );
+	/// <summary>Whether a later value of <paramref name="step"/>'s field of its drag is on its way, waits to go, or applied already: <paramref name="step"/>'s value is then no longer the drag's last.</summary>
+	private bool SetLater( Item step ) => step.Field is { } field
+		&& ((applied.TryGetValue( (step.Drag, field), out var order ) && order > step.Order)
+			|| sent.Concat( unsent ).Any( item => item.Drag == step.Drag && item.Field == field && item.Order > step.Order ));
 
 	/// <summary>The outcomes of the guest's waited actions (<see cref="CoasterGuestReport"/>) the HUD has not said yet, oldest first: the queue's, so a closed panel's still come back.</summary>
 	internal List<CoasterGuestReport> Reports { get; } = new();
@@ -175,6 +193,7 @@ internal sealed class CoasterRequestQueue
 	{
 		unsent.Clear();
 		sent.Clear();
+		applied.Clear();
 		Reports.Clear();
 	}
 }

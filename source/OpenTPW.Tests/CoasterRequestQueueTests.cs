@@ -154,6 +154,28 @@ public class CoasterRequestQueueTests
 	}
 
 	[TestMethod]
+	public void AnOlderValueWhoseRefusalComesBackAfterALaterValueAppliedGoesNoMore()
+	{
+		var queue = new CoasterRequestQueue();
+		var drag = queue.NewDrag();
+		queue.Step( drag, Loft( 0.1f ) );
+		Send( queue, 0 );
+		queue.Step( drag, Loft( 0.2f ) );
+		Send( queue, 1 );
+		queue.Enqueue( new EndCoasterNodeEditCommand( Station ), drag );
+		// the later value's record applies first; the older one's refusal comes back after it (its first answer was lost, the host answered it again)
+		Applied( queue, sent[1] );
+		Send( queue, 2 );
+		Assert.AreEqual( 2, sent.Count, "the end waits for the older value's answer" );
+		Refused( queue, sent[0], CoopGuestRefusal.TooFast );
+		Send( queue, 3 );
+		Send( queue, 3 + CoasterRequestQueue.RetrySeconds );
+		Assert.AreEqual( 3, sent.Count );
+		Assert.IsInstanceOfType( sent[2].Command, typeof( EndCoasterNodeEditCommand ), "the older value went no more: the end settles the later one" );
+		Assert.AreEqual( 0, queue.Retried );
+	}
+
+	[TestMethod]
 	public void ADragsEndWhoseOutcomeIsNotKnownGoesAgainAFewTimesThenTheDragIsGivenUp()
 	{
 		var queue = new CoasterRequestQueue();

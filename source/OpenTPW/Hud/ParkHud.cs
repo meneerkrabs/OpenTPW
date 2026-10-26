@@ -954,7 +954,7 @@ public sealed partial class ParkHud
 			// [EXT:online-visit-chat-mode] the chat overlay's panels lie along the screen's left and bottom edges, where the HUD leaves the edge band free:
 			// pushing the pointer against those edges still scrolls the camera
 			camera.EdgeScrollOverUi = ChatMode && Stack.Screens.Count == 1;
-			camera.ModalOpen = Stack.Screens.Any( screen => screen != hud && screen.Modal );
+			camera.ModalOpen = Stack.Screens.Any( screen => screen != hud && screen.Modal ) || pausePointerOverlay != null;
 		}
 		// [BIN:TPW-EXE:0x6698e6 key delivery] a key event (0x1000a/b/c, posted to window 1 by 0x658c38/0x658c67/0x658c96) is handed to exactly one window: an accelerator-table window (0x65e640, list and edit controls) when the key is in its table, else the focus window (0x65e59b, [0xfaa5ec]) while its flag bit 0 is set, else the root ([0xfaa5dc]); nothing falls through to a second window
 		// [BIN:TPW-EXE:0x48ac40 ride view creation] the ride view window (flags 1) takes the focus (0x65e59b) and the HUD's own window handle [0x7c24c8] gets message 5 and is cleared, so the HUD's key groups (0x787c14, 0x787a60, 0x78721c at 0x488886) are never reached while it is open: the procedure 0x488a00 acts only on Escape, the C shortcut (action 0x10) and the postcard action (0xf), and the pause key and the park door shortcuts are not offered while riding
@@ -1379,10 +1379,9 @@ public sealed partial class ParkHud
 		var tool = level.CellTool;
 		// [BIN:TPW-EXE:0x0048C8D0 pause-menu click gate] the handler tests the pause-menu object, not the speed flag;
 		// admission is separate: 0x65db25 chooses the topmost eligible window, and 0x658b1a/0x658b7f save down/up recipients.
-		// [APPROX:PATH-017] ParkHud.PointerInput implements bounded ordinary-WM batch admission then P/pointer drain,
-		// including captured movement and original release owners. The P window's backdrop (an eligible receiver of 0x65db25, flags 1) is created by the P key and by the offline focus-loss pause (0x4a27f0, 0x4a2790)
-		// and covers only the windows that existed then; it takes the click without stopping the camera. Alternate buffered input, aggregate wheel/non-P keys,
-		// and the original backdrop/panel rendering remain outside this contract; a generic speed flag is not an input owner.
+		// [APPROX:PATH-017] ParkHud.PointerInput implements bounded ordinary-WM batch admission then P/pointer drain, including captured movement and original release owners. The P window's backdrop (0x65dd7b, flags 1, appended last under the root;
+		// 0x65db25 lets the last eligible sibling win, 0x65f6d1 forwards nothing) is created by the P key and by the offline focus-loss pause (0x4a27f0, 0x4a2790) and covers only the windows that existed then: it takes every click and the camera takes no input under it.
+		// Alternate buffered input, the aggregate wheel and the keys other than P of the screens below it, and the original backdrop/panel rendering remain outside this contract; a generic speed flag is not an input owner.
 		// The remove tool owns the park click while it is on (Level.RemoveAt clears paths and queues too).
 		if ( paused || level.BuildEntry != null || level.IsPlacing || level.IsRemovingObjects || level.IsCoasterToolActive
 			|| level.PatrolTool is { IsActive: true } || level.StaffPlacement is { IsActive: true } || level.BuyLandTool is { IsActive: true }

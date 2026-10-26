@@ -52,7 +52,10 @@ public sealed partial class ParkHud
 		// [BIN:TPW-EXE:0x4a2790 create] the window is made only while [0x7cb2cc] is still empty
 		if ( pausePointerOverlay != null || level == null || level.CoopRole != CoopRole.None || level.IsReadOnlyVisit )
 			return;
-		pausePointerOverlay = new UiPointerOwner( new object(), capturesMouse: false );
+		// [BIN:TPW-EXE:0x42a760 camera input] the camera takes its buttons, wheel, pointer position and keys only from messages that the procedures of the HUD (0x488290, 0x48845c, 0x488b6a), the hidden-HUD overlay (0x4a287d) and the chat mode (0x4bd5cc) pass on to it;
+		// the backdrop is the hit window of every pointer message and the focus window of every key (0x47ed80 ends in 0x65e59b), and its procedure 0x4a2680 hands all it does not use to the default procedure 0x65f6d1, which forwards nothing: the camera takes no input
+		// under it, and the HUD, which gets the leave message (0x10002: [0x790ab0] |= 0x100) when the layer appears, no pointer either
+		pausePointerOverlay = new UiPointerOwner( new object() );
 		pauseOverlayBelow = Stack.Screens.ToArray();
 	}
 

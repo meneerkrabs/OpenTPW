@@ -651,6 +651,13 @@ public partial class CoopSessionTests
 			Assert.IsFalse( rights.PlacementLeavesClaimsAlone( queueEntrance, 11, 1, 0 ), "a queue entrance's first cell over the joined path cell" );
 			Assert.IsTrue( rights.PlacementLeavesClaimsAlone( pathEntrance, 11, 1, 0 ), "a path laid over the joined path cell takes no link off" );
 			Assert.IsTrue( rights.PlacementLeavesClaimsAlone( exit, 11, 1, 0 ), "nor does an exit's path" );
+			// a type without a queue lays nothing outside its exit, only linking a path cell there (ObjectAccessCells.Lay), and the park checks nothing there: a claimed queue cell outside
+			// it is asked nothing (a queue ride's exit, which lays path, the park itself refuses over a queue cell)
+			var plainExit = ShapedEntry( "Info.Id 9108\n", "W" );
+			Assert.AreEqual( (10, 3), ObjectFootprint.GetAccessPoints( plainExit.Shape, 11, 3, 0 ).Select( point => (point.OutsideX, point.OutsideY) ).Single(), "its outside cell is a queue cell" );
+			Assert.AreEqual( OriginalPlacementResult.AccessBlocked, level.Objects.Check( exit, 11, 3, 0, out _ ), "the park refuses a queue ride's exit path over a queue cell" );
+			Assert.AreEqual( OriginalPlacementResult.Allowed, level.Objects.Check( plainExit, 11, 3, 0, out _ ) );
+			Assert.IsTrue( rights.PlacementLeavesClaimsAlone( plainExit, 11, 3, 0 ), "the exit of a type without a queue lays nothing there" );
 			// of two entrances the placement lays only the last's queue cell (ObjectAccessCells.Lay): the first's outside cell is asked nothing
 			var twoEntrances = ShapedEntry( "Info.Id 9107\nInfo.HasQueue 1\n", "6.6" );
 			var anchor = Level.GetCentredAnchor( twoEntrances, 12, 1, 0 );

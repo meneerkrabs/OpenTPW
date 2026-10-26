@@ -506,4 +506,97 @@ public partial class CoopSessionTests
 		Assert.AreEqual( Refunds( host ) - before.Item1, Refunds( guest ) - before.Item2, "the same refund on both parks" );
 		CatchUpAndCompare( host, guest );
 	}
+	[TestMethod]
+	public void AGrantTakenBackBeforeABatchGoesStopsTheStrokeAndItsReportSaysSoOnce()
+	{
+		var (host, guest, _, _) = Shared();
+		var view = ViewOf( guest );
+		Rounds( 20, host, guest );
+		Grant( host, guest, view );
+		guest.Enter();
+		var seat = guest.Level.Commands.Player;
+		var tool = guest.Level.PoolTool!;
+		Assert.IsTrue( tool.Begin( erase: false ) );
+		tool.Press( 4, 22 );
+		tool.SendGuestBatches( Time.Now );
+		GuestFramesUntil( () => IsWater( guest, 4, 22 ), host, guest, "the press's cell came back" );
+		// the grant goes and reaches the guest's park before the stroke's next batch: the funnel refuses it there
+		Assert.IsTrue( host.Issue( new SetBuildGrantCommand( seat, false ) ).Accepted );
+		GuestFramesUntil( () => !guest.Level.HasBuildGrant( seat ), host, guest, "the revoke reached the guest" );
+		var refusals = guest.Level.SessionRefusals;
+		tool.Hover( 8, 22 );
+		GuestFrames( 15, host, guest );
+		tool.SendGuestBatches( Time.Now );
+		// (the press's batch stays the stroke's until the HUD takes its outcome)
+		Assert.IsFalse( tool.GuestStrokeCells.Any( cell => cell.X > 4 ), "the refused batch went nowhere" );
+		tool.Hover( 12, 22 );
+		Assert.IsFalse( tool.GuestStrokeCells.Any( cell => cell.X > 4 ), "and the stroke takes no more cells" );
+		tool.Release();
+		RoundsUntil( () => !tool.HasGuestBatches, host, guest, view, "the stroke reported" );
+		view.Update();
+		Assert.AreEqual( 1, view.Says( OpenTpwText.CoopNotGranted ), "its report says why, once" );
+		Assert.AreEqual( refusals, guest.Level.SessionRefusals, "the pool tool's refusal is its report's, not the session's note" );
+		Assert.IsFalse( IsWater( host, 6, 22 ) || IsWater( guest, 6, 22 ) );
+		CatchUpAndCompare( host, guest );
+	}
+
+	[TestMethod]
+	public void AStrokesFirstRefusalIsTheFirstInDragOrderWhenALaterBatchIsAnsweredFirst()
+	{
+		var (host, guest, _, _) = Shared();
+		var view = ViewOf( guest );
+		Rounds( 20, host, guest );
+		Grant( host, guest, view );
+		guest.Enter();
+		var seat = guest.Level.Commands.Player;
+		var tool = guest.Level.PoolTool!;
+		Assert.IsTrue( tool.Begin( erase: false ) );
+		// the press is on a path cell (refused at its record); with it, forty requests spend the host's burst, so the next batch is too fast and answered without a record
+		tool.Press( 6, 1 );
+		tool.SendGuestBatches( Time.Now );
+		var requests = guest.Session!.GuestCommands!;
+		var burst = Enumerable.Range( 0, 39 ).Select( _ => requests.Submit( new LayLineCommand( CellToolMode.Path, -1, 30, 30, 30, 30 ) { Player = seat } ) ).ToArray();
+		tool.Hover( 6, 4 );
+		GuestFrames( 1, host, guest, hostRuns: false );
+		tool.SendGuestBatches( Time.Now + 1 );
+		var later = requests.LastSubmitted!;
+		Assert.IsInstanceOfType( later.Command, typeof( PoolCellsCommand ) );
+		tool.Release();
+		RoundsUntil( () => !tool.HasGuestBatches && burst.All( request => !request.IsOpen ), host, guest, view, "the stroke came back" );
+		Assert.AreEqual( CoopGuestRequestState.Refused, later.State, "the later batch had no record" );
+		view.Update();
+		Assert.AreEqual( 1, view.Says( OpenTpwText.CannotBuildHere ), "the path cell's refusal" );
+		Assert.AreEqual( 1, view.Says( OpenTpwText.CoopHostCouldNotTake ), "and the batch the host could not take" );
+		CatchUpAndCompare( host, guest );
+	}
+
+	[TestMethod]
+	public void AGuestsBridgeMayNotTouchAClaimedQueuesJoinNorItsBackspaceTakeOneThatDoes()
+	{
+		var park = NewPark();
+		park.Enter();
+		var level = park.Level;
+		// One's queue from (10, 6) up to its back cell (10, 2), joined to the path at (10, 1)
+		ConfigureQueue( level.Guests!.Grid, park.One, 10, 5 );
+		var rights = new CoopBuildRights( level );
+		level.SetBuildGrant( 1, true );
+		// a bridge east from (11, 1): its outside end before it is (10, 1)
+		var bridge = new PoolBridge( 11, 1, 1, 0 );
+		Assert.AreEqual( (10, 1), bridge.Cell( -1 ) );
+		typeof( PoolBridgeWorld ).GetMethod( "Insert", NonPublic )!.Invoke( level.PoolBridges, new object[] { bridge } );
+		Assert.AreEqual( Level.BacktrackTarget.PoolBridge, Level.BacktrackTargetAt( level.Paths!.Cells, 13, 1, level.PoolBridges ) );
+		MarkStation( park, park.One );
+		try
+		{
+			Assert.IsFalse( rights.Allows( 1, new PlacePoolBridgeCommand( 11, 1, 1 ) ), "a bridge with an end on the path cell the claimed queue joins" );
+			Assert.IsFalse( rights.Allows( 1, new BacktrackCommand( 13, 1 ) ), "nor Backspace over one standing so" );
+			Assert.IsTrue( rights.Allows( 1, new PlacePoolBridgeCommand( 20, 24, 1 ) ), "a bridge away from it" );
+			Assert.IsTrue( rights.Allows( ParkCommands.LocalPlayer, new BacktrackCommand( 13, 1 ) ) );
+		}
+		finally
+		{
+			MarkStation( park, park.One, station: false );
+		}
+		Assert.IsTrue( rights.Allows( 1, new PlacePoolBridgeCommand( 11, 1, 1 ) ) && rights.Allows( 1, new BacktrackCommand( 13, 1 ) ), "an ordinary ride's join" );
+	}
 }

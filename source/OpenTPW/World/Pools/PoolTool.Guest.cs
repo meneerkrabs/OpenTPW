@@ -62,6 +62,8 @@ public sealed partial class PoolTool
 		public bool Discarded;
 		/// <summary>A cell of it was dropped for a full queue: the player was asked to wait.</summary>
 		public bool Dropped;
+		/// <summary>The funnel refused a batch of it here (the guest's own rights): it takes and sends nothing more.</summary>
+		public bool Stopped;
 	}
 
 	/// <summary>One request of a guest's stroke: its cells, and once sent its request; resolved once its outcome is in (or it is dropped).</summary>
@@ -70,6 +72,8 @@ public sealed partial class PoolTool
 		public GuestStroke Stroke { get; } = stroke;
 		public bool First { get; } = first;
 		public List<(int X, int Y)> Cells { get; } = new();
+		/// <summary>The command it went as, once sent or refused here.</summary>
+		public ParkCommand? Command;
 		public CoopGuestCommands.Request? Request;
 		/// <summary>The funnel's answer when it refused the batch itself (the guest's own rights): no request went.</summary>
 		public ParkCommandResult? Local;
@@ -102,7 +106,7 @@ public sealed partial class PoolTool
 	/// <summary>Adds a cell to the guest's stroke: to its batch still waiting, or a new one. False when the stroke takes no more (its slide is finished).</summary>
 	private bool AddGuestCell( int x, int y )
 	{
-		if ( guestStroke is not { } stroke || stroke.Finished )
+		if ( guestStroke is not { } stroke || stroke.Finished || stroke.Stopped )
 			return false;
 		if ( UnsentCells >= MaximumUnsentCells )
 		{
@@ -163,16 +167,18 @@ public sealed partial class PoolTool
 			unsentBatches.RemoveAt( 0 );
 			lastGuestSend = now;
 			var stroke = batch.Stroke;
-			var result = issue( GuestCommand( batch ) );
+			batch.Command = GuestCommand( batch );
+			var result = issue( batch.Command );
 			if ( result.Request is { } request )
 			{
 				batch.Request = request;
 				sentBatches.Add( batch );
 				continue;
 			}
-			// the funnel refused it here (the guest's own rights: the grant went meanwhile; the session's note says so): the stroke sends nothing more
+			// the funnel refused it here (the guest's own rights: the grant went meanwhile): the stroke takes and sends nothing more, and its report says why
 			batch.Local = result;
 			batch.Resolved = true;
+			stroke.Stopped = true;
 			DropUnsent( stroke );
 			TryFinishGuestStroke( stroke );
 		}
@@ -274,7 +280,14 @@ public sealed partial class PoolTool
 		foreach ( var batch in stroke.Batches )
 		{
 			if ( batch.Request is not { } request )
+			{
+				// refused here before it went: by the rights (said once for the stroke, the session's own note leaves the pool tool's to it) or because no request could go
+				if ( batch.Local is { RightsRefused: true } )
+					rightsRefused ??= batch.Command;
+				else if ( batch.Local != null )
+					notTaken = true;
 				continue;
+			}
 			switch ( request.State )
 			{
 				case CoopGuestRequestState.Applied when request.Result is { Error: null } result:

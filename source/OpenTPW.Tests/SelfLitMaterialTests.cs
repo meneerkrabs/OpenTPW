@@ -62,6 +62,33 @@ public class SelfLitMaterialTests
 	}
 
 	[TestMethod]
+	public void TheAdvisorShaderShadesASelfLitCornerWithTheConstantColourToo()
+	{
+		var text = File.ReadAllText( Path.Combine( RepositoryRoot(), "content", "shaders", "advisor.shader" ) );
+		StringAssert.Contains( text, $"const uint FLAG_SELF_LIT = 0x{TextureSlotAddressing.SelfLitFlag:X8}u;" );
+		StringAssert.Contains( text, "vec3 vShading = ( outMatFlags & FLAG_SELF_LIT ) != 0u ? vec3( 1.0 ) : vs_out.vLight;" );
+	}
+
+	[TestMethod]
+	public void TheAdvisorsMouthsAndGoldTicketsAreTheSelfLitMeshesAndTheirVerticesCarryIt()
+	{
+		var dataPath = Md2CorpusTests.OriginalDataPath();
+		var checkedModels = 0;
+		foreach ( var (name, model) in OriginalModels( dataPath ).Where( entry => entry.Name.StartsWith( "Advisor", StringComparison.OrdinalIgnoreCase ) ) )
+		{
+			foreach ( var mesh in model.Meshes )
+			{
+				var selfLit = mesh.Name.StartsWith( "Mouth", StringComparison.OrdinalIgnoreCase ) || mesh.Name is "Ticket" or "Ticket2";
+				Assert.AreEqual( selfLit, mesh.Materials.Length > 0 && mesh.Materials.All( material => (material.Pad & ModelBuilder.SelfLitMaterialFlag) != 0 ), $"{name}: {mesh.Name}" );
+				var flagged = ObjectAssets.ConvertMesh( mesh ).Count( vertex => (vertex.MatFlags & TextureSlotAddressing.SelfLitFlag) != 0 );
+				Assert.AreEqual( selfLit ? mesh.Vertices.Length : 0, flagged, $"{name}: {mesh.Name} vertices the advisor shader shades with 1" );
+			}
+			checkedModels++;
+		}
+		Assert.AreEqual( 5, checkedModels, "the global advisor and the four themes' (Advisor.MD2 has five mouths and no ticket)" );
+	}
+
+	[TestMethod]
 	public void EveryShippedMaterialWordIsZeroOrOne()
 	{
 		var dataPath = Md2CorpusTests.OriginalDataPath();

@@ -976,6 +976,39 @@ public partial class Level
 		return 1;
 	}
 
+	/// <summary>
+	/// [EXT:online-coop-permissions] The placed object whose ride's queue holds the queue cell (<paramref name="x"/>, <paramref name="y"/>), or null (C3b: a guest's rights ask it). It resolves
+	/// the ride as the cell's removal does (<see cref="RemoveQueueCellAt(GuestPathGrid, IEnumerable{IRideVisitorBridge}, int, int, out RideVisitorBridge?, bool)"/>): the cached lines first,
+	/// then, for a queue cell they miss, each ride's line walked again, here on a copy (<see cref="RideVisitorBridge.QueueView"/>), so nothing in the park changes.
+	/// </summary>
+	internal OriginalObject? QueueOwnerAt( int x, int y ) => QueueOwnersAt( new[] { (x, y) } ).FirstOrDefault().Owner;
+
+	/// <summary>
+	/// [EXT:online-coop-permissions] The owners of the queue cells among <paramref name="cells"/>, each resolved as <see cref="QueueOwnerAt"/> resolves it, in order: a cell off the map or no
+	/// queue cell is skipped, and a queue cell no ride holds has a null owner. Each ride's line is walked again at most once for all the cells the cached lines miss, so a command's cells cost
+	/// one walk of the park's queues at most.
+	/// </summary>
+	internal IEnumerable<(int X, int Y, OriginalObject? Owner)> QueueOwnersAt( IEnumerable<(int X, int Y)> cells )
+	{
+		if ( Guests == null )
+			yield break;
+		var grid = Guests.Grid;
+		(RideVisitorBridge Ride, IReadOnlySet<(int X, int Y)> Cells)[]? walked = null;
+		foreach ( var (x, y) in cells )
+		{
+			if ( !grid.Cells.InBounds( x, y ) || !grid.IsQueue( x, y ) )
+				continue;
+			var ride = QueueRideAt( grid, Guests.Attractions, x, y );
+			if ( ride == null )
+			{
+				walked ??= Guests.Attractions.OfType<RideVisitorBridge>().Where( item => item.HasQueue )
+					.Select( item => (item, (IReadOnlySet<(int X, int Y)>)item.QueueView( grid ).QueueCells.ToHashSet()) ).ToArray();
+				ride = walked.FirstOrDefault( entry => entry.Cells.Contains( (x, y) ) ).Ride;
+			}
+			yield return (x, y, ride == null ? null : Objects.Objects.FirstOrDefault( item => !item.IsDeleted && ReferenceEquals( item.Visitors, ride ) ));
+		}
+	}
+
 	/// <summary>The HasQueue ride whose queue holds (x, y) (the owner of a queue cell), or null: the ride whose chain reaches the cell, else the ride the cell's owner word names (a free-standing cell).</summary>
 	internal static RideVisitorBridge? QueueRideAt( GuestPathGrid grid, IEnumerable<IRideVisitorBridge> attractions, int x, int y )
 	{

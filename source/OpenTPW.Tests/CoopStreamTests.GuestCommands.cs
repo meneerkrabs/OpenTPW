@@ -406,8 +406,9 @@ public partial class CoopStreamTests
 		// too (below: what the rights keep from a guest)
 		Assert.IsTrue( rights.Allows( 1, new RemoveAtCommand( 20, 12 ) ), "no object on the cell yet: the park refuses it" );
 		Assert.IsTrue( rights.Allows( 1, new RemoveAttractionCommand( 99_999 ) ), "no such object: the park refuses it" );
-		// nor a fixed item of the park (its gates, lights, bus)
+		// nor a fixed item of the park (its gates, lights, bus), nor a slide tower, whose slide is the pool tools'
 		Assert.IsFalse( CoopBuildRights.GuestMayRemove( SyntheticRide( "Info.DontApplyOffset 1\n" ) ) );
+		Assert.IsFalse( CoopBuildRights.GuestMayRemove( SyntheticRide( $"{PoolSlideTowers.SettingKey} 1\n" ) ) );
 		Assert.IsTrue( CoopBuildRights.GuestMayRemove( SyntheticRide( "" ) ) );
 		// a track ride's station needs a claim: a granted guest may not remove it
 		Assert.IsTrue( level.Commands.Apply( place ).Accepted );

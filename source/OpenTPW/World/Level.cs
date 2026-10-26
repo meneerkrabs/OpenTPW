@@ -531,7 +531,10 @@ public partial class Level : IDisposable
 					if ( built == null )
 						yield return 0.3f;
 					else
+					{
 						OriginalTerrain = built;
+						built.SceneMilliseconds = () => SceneClock.Milliseconds;
+					}
 				}
 			}
 			yield return 0.35f;

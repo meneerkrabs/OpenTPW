@@ -319,6 +319,21 @@ Mac build (Totem cycle 430 ticks ≈ 14.3 s); scene-clock scaling and pause are 
   the 685 paired blocks of this run the corner count equals the mesh's, every
   track has at least two keys, starts at tick 0, increases strictly and reaches the
   clip end. `ModelUvAnimation`.
+- **Terrain clips** (`<base><letter>[number]` of a terrain `Base.MD2`, AnimID 5 = the letter `M`): the loader 0x461f10 binds a terrain's animation members like an object's
+  (the terrain model is loaded through it with flags 8 at 0x4504c0), and the sampler 0x4745c0 above writes the scrolled coordinates into the mesh record's table (+0x68).
+  Two archives hold one: the lobby's `Basem1.MD2` (200 ticks, two UV records on the sea meshes `Sea_Under` and `Sea`, every corner two keys, ΔU = ΔV = −1) and the Jungle
+  terrain's `basem.MD2` (100 ticks, eleven records on the water meshes `surface13`–`surface17`, `surface22`, `surface23`, `surface25` and `surface27`, `falls02` and `Object12`, 343 corners with two keys each, ΔU = +1,
+  ΔV = 0); the other three themes have none. In both, tick 0 equals the stored coordinates of the mesh, the scroll is a whole texture repeat per cycle and every slot
+  the records touch already wraps (flags 0x31/0x33; the loader also ORs 0x8030 into the first word of the record each material group of a UV-animated mesh points at, taken to be the texture slot record, 0x461f10,
+  which changes nothing for them). tp.exe plays the terrain instance every rendered frame, in the lobby and in a park: the lobby state of `0x54e360` calls `0x44e510` (`0x473c70(instance, 1, 4)`)
+  at 0x54e72a, and a park gets the same call through a render callback: the park load (state 9 of `0x54e360`) registers `0x54e2b0` at renderer +0x78 (0x54ecb6, after `0x457a90` loaded
+  `<park>\Terrain\base.md2` through `0x4504c0(0, …)`; only state 0xb clears it), `0x576a00` (← `0x576ec0` ← `0x44e540` ← 0x54fb6c in state 10) calls it once per value of the frame counter
+  `0x8bcc40` (0x576c26), and `0x54e2b0` ends in `0x44e510` (0x54e322). The instance has none of the flags `0x8004` and flag 4 clear, so the idle restart at the head of `0x473c70` (`0x473490` finds no
+  running channel, `0x4732a0` starts sub 0 with flags 4, speed 1.0) starts AnimID 5 itself, and a frame past the total restarts it the same way, the overshoot carried by `0x472f60`. The clock is the
+  scaled clock `0x7b496c`, refreshed by `0x473440` (state 10 at 0x54f475) from the game timer `0x785970`: the game pause freezes that timer (`0x4092a0`) and the game speed scales it, so the river and
+  waterfall stand still while a park is paused and flow faster at the faster speeds. The park loader zeroes the option word `0x7b4980` (`0x4740d0` at 0x457aa4), so the UV pass gate is open. OpenTPW plays
+  the lobby clip (`LobbyScene.AddTerrain`) and the park clip (`TerrainUvAnimator`, drawn through `OriginalTerrain`: the scrolled meshes are models of their own with dynamic vertices) on the `SceneClock`
+  (`TerrainUvAnimationTests`). Not located statically: the reader of the mesh record's coordinate table (+0x68) in the draw; the sampler writes the live record the draw walk (`0x57a530`) queues every frame.
 - **12-byte block** (flag 0x4000 with 0x1000; 30 records): `ptr → u32
   index[count], u32 count, ptr → floats`. The float table holds one pose of `count`
   positions (f32 x, y, z) per tick of the record, `duration + 1` poses in all: in

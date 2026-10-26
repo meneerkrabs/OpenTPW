@@ -19,6 +19,13 @@ The new route is limited to primary types0/1/3, empty track records, no object/p
 
 Singleton native undo is rejected unchanged: no active segment receipt generates zero movement. Completed terminal segments discard their active receipt. A closed/reopened tool reconstructs its queue corner stack and does not resurrect that receipt. Native guest effects beyond the already-supported set-down and queue refresh hooks remain residual; this document does not assert full native guest-timing equivalence.
 
+## Fidelity round 9 additions
+
+- Overwrite87 now has work in the native route: the first line pass demolishes the object on each cell whose owner's priority is below the queue tool's 3 (`0x53452F`, `0x527EE0`), through the level's demolition, before the type pass; the validator let only such objects through (`0x535D66`). The domain admits the object cell types 4, 9 and 10 only for a cell the level says gives way.
+- Mode 3 always has a line start: the cell outside the entrance after a placement (`0x52A050` writes `0x81EDE4` and `0x81EDE8`) and the queue's back after the edit click (`0x530120`, `0x526103`). A click without a start never reaches the queue tool, so the tool starting at the front or back cell is the original's.
+- The corner walk writes the placement counter `+0x20` (1 on a corner, 0 on every other cell it visits, `0x5302C2`) as the queue edit click runs it (`QueuePaths.WriteWalkCounts`); the native undo counts down from there and clears a bend whatever its counter.
+- Back's re-evaluation `0x4DE1F0` (`0x52FFEC`) runs after every undo that popped a point, also when the prior corner is a path cell and the second click is suppressed.
+
 ## Persistence and replay compatibility
 
 Raw arrays are the only runtime truth. A shape classification permits a strict exceptional empty/path snapshot representation; it does not store a second mutable value map. Required sidecar members, ordinary-record agreement, coordinate uniqueness, supported flags/types and owner bounds are checked. Object footprints, tracks and pool-bridge composites are validated before restoration. Hash additions derive current exceptional raw bytes, not classification or origin.

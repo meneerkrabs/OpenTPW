@@ -943,18 +943,20 @@ public partial class Level
 	/// <summary>The queue tool's line writer for <paramref name="ride"/>: its checks, its per-cell build with <c>Costs.QueueCell</c> and its removal.</summary>
 	private QueueLineWriter CreateQueueWriter( RideVisitorBridge ride ) =>
 		new QueueLineWriter( Guests!.Grid, ride, ( x, y, pending ) => CheckQueueCell( ride, x, y, pending ),
-			( x, y ) => BuildQueueCell( ride, x, y ), RemoveQueueCell, () => Park?.Economy.CellCost( CellPurchase.Queue ) ?? 0 )
+			( x, y ) => BuildQueueCell( ride, x, y ), UndoQueueCell, () => Park?.Economy.CellCost( CellPurchase.Queue ) ?? 0 )
 		.WithNativeReducer( new QueueSegmentReducer( Guests!.Grid.Cells, ride.OwnerWord,
-			( x, y ) => IsReadOnlyVisit || IsQueueBlocked( x, y ) || Objects.FindAt( x, y ) != null,
+			( x, y ) => IsReadOnlyVisit || IsQueueBlocked( x, y ),
 			() => Park == null || Park.Economy.TrySpendCell( CellPurchase.Queue ) == ParkEconomy.PurchaseResult.Ok,
 			pending => Park == null || Park.Economy.CanPreviewLine( pending ),
 			() => Park?.Economy.CellCost( CellPurchase.Queue ) ?? 0,
 			RefundNativeQueueOwner,
 			() => { ride.RecomputeQueue( Guests.Grid ); ride.NotifyQueueEdited( Guests.Grid ); },
-			new LinkEffects( RefreshTile, null, ReevaluateRideOfOwner ), removed => { Guests.SetDownOffQueueCells( removed, ride ); AfterAccessCellRemoved( removed ); },
+			// [BIN:TPW-EXE:0x005367A0 cell clear] the clear writes no guest: the undo's cells go and the re-evaluation that follows (0x4DE1F0 at 0x52FFEC) dismisses by place alone, so a guest on an emptied cell stays there
+			new LinkEffects( RefreshTile, null, ReevaluateRideOfOwner ), removed => AfterAccessCellRemoved( removed, setDownGuests: false ),
 			() => ResolveQueueEntrance( Objects, Guests.Grid.Cells, ride.OwnerWord ),
 			terminalAllowed: ( x, y ) => !IsReadOnlyVisit && Objects.FindAt( x, y ) == null && Objects.Grid.CheckTerrain( x, y ) == OriginalPlacementResult.Path
-				&& Guests.Grid.Cells.RawTypeAt( x, y ) == (byte)ParkCellType.Path && !IsQueueBlockedCore( x, y, terminalPath: true ) ) );
+				&& Guests.Grid.Cells.RawTypeAt( x, y ) == (byte)ParkCellType.Path && !IsQueueBlockedCore( x, y, terminalPath: true ),
+			givesWay: QueueGivesWay, demolish: DemolishObjectAt ) );
 
 	/// <summary>Live shape reconstruction of native mEntryPos (+0x36); never the bridge's outside-cell adaptation.</summary>
 	internal static (int X, int Y)? ResolveQueueEntrance( ParkObjects objects, ParkCellMap cells, ushort owner )
@@ -1226,11 +1228,12 @@ public partial class Level
 	/// After cells a placement laid were removed: guests standing on them are set down, and each ride whose entrance or exit resolved to one resolves it again, which falls back to the
 	/// nearest walkable path as for a cell nothing laid (<see cref="ResolveVisitorCells"/>).
 	/// </summary>
-	private void AfterAccessCellRemoved( IReadOnlySet<(int X, int Y)> removed )
+	private void AfterAccessCellRemoved( IReadOnlySet<(int X, int Y)> removed, bool setDownGuests = true )
 	{
 		if ( Guests == null )
 			return;
-		Guests.SetDownOffCells( removed );
+		if ( setDownGuests )
+			Guests.SetDownOffCells( removed );
 		RefreshVisitorCells( Objects.Objects.Where( item => item.Runtime.IsAttraction ).Select( item => (item.AccessPoints, item.Runtime.Visitors) ), Guests.Grid, removed );
 	}
 
@@ -1339,17 +1342,26 @@ public partial class Level
 	/// Removes the queue cell at (x, y) and every cell behind it (a stray queue cell alone, <see cref="RemoveQueueCellAt"/>). Each
 	/// removed cell of a ride's queue refunds <c>Costs.QueueCell</c> × the ride's scrap percentage / 100 (<see cref="ParkEconomy.RefundQueueCell"/>); a stray cell refunds nothing.
 	/// </summary>
-	public int RemoveQueueCell( int x, int y )
+	public int RemoveQueueCell( int x, int y ) => RemoveQueueCellCore( x, y, original: false );
+
+	/// <summary>
+	/// The queue tool's undo of a segment of an existing queue (Back, tp.exe <c>0x52FE50</c>): the cell and the cells behind it go and refund as <see cref="RemoveQueueCell"/>'s do, but the
+	/// NoModify front stays (the clear keeps it unless forced) and no guest is set down: the clear writes none, and the re-evaluation that follows dismisses by place alone.
+	/// </summary>
+	private int UndoQueueCell( int x, int y ) => RemoveQueueCellCore( x, y, original: true );
+
+	private int RemoveQueueCellCore( int x, int y, bool original )
 	{
 		if ( IsReadOnlyVisit || Guests == null )
 			return 0;
 		// [EXT:removable-access-cells] the queue front the placement laid (flag 0x20) goes with the queue behind it, where tp.exe's cell clear keeps a NoModify cell unless it is forced (0x5367D4..0x5367E0)
-		var removed = RemoveQueueCellAt( Guests.Grid, Guests.Attractions, x, y, out var ride, out var removedCells, removeFixed: true );
+		var removed = RemoveQueueCellAt( Guests.Grid, Guests.Attractions, x, y, out var ride, out var removedCells, removeFixed: !original );
 		if ( removed > 0 )
 		{
-			// the guests standing on the emptied cells leave the queue on the nearest path; the ride's entrance resolves again when it used one of them
-			Guests.SetDownOffQueueCells( removedCells, ride );
-			AfterAccessCellRemoved( removedCells );
+			// [EXT:dev-one-click-remove] the guests standing on the emptied cells leave the queue on the nearest path; the ride's entrance resolves again when it used one of them
+			if ( !original )
+				Guests.SetDownOffQueueCells( removedCells, ride );
+			AfterAccessCellRemoved( removedCells, setDownGuests: !original );
 		}
 		if ( ride == null )
 			return removed;
@@ -1374,6 +1386,13 @@ public partial class Level
 		if ( IsReadOnlyVisit || Guests == null || !item.Entry.HasQueue || item.Visitors is not RideVisitorBridge ride )
 			return;
 		ride.RecomputeQueue( Guests.Grid );
+		// [BIN:TPW-EXE:0x00527FB4 front that holds no queue cell] the word +0x40 counts the chain from the front cell whatever its type, so a ride with a front but no queue cell still runs Back (it pops the front twice and clears nothing: a path cell as the prior corner suppresses the second click) and then debits one cell; a ride with no front (the entry has no link bit, 0x4DE040) has a count of 0 and neither undoes nor debits
+		if ( ride.ReadNativeFront( Guests.Grid, out var nativeFront, out _ ) && !(nativeFront is { } held && Guests.Grid.IsQueue( held.X, held.Y )) )
+		{
+			if ( nativeFront != null && Park?.Economy is { } frontEconomy && GetEconomyInstance( item ) is int frontInstance )
+				frontEconomy.ChargeQueueDemolition( frontInstance );
+			return;
+		}
 		if ( ride.QueueFrontCell is not { } front || !Guests.Grid.IsQueue( front.X, front.Y ) )
 			return;
 		demolishedQueues.Add( item );

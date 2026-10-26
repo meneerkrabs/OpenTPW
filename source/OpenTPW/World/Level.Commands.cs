@@ -253,6 +253,8 @@ public partial class Level
 		// [EXT:online-coop-commands] the tool's start as the click reads it before the edit, for a guest's tool that enters once its request comes back (C3b)
 		var tool = ReadQueueToolStart( ride )!;
 		// [BIN:TPW-EXE:0x00530379 corner walk link clear] the walk the click runs also takes the link between the queue's back cell and the path it ends on off both cells, and a cancel restores nothing (QueuePaths.DetachFromPath)
+		// the walk's counter writes come first, as the walk stores them while it goes (QueuePaths.WriteWalkCounts)
+		QueuePaths.WriteWalkCounts( Guests.Grid, ride );
 		// [BIN:TPW-EXE:0x00526118 queue edit click] 0x4DE1F0 runs after the walk whether or not it cleared a link (DetachFromPath reports its own edit only when it did)
 		if ( !QueuePaths.DetachFromPath( Guests.Grid, ride ) )
 		{

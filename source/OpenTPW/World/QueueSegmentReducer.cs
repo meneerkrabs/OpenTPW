@@ -21,20 +21,28 @@ internal sealed class QueueSegmentReducer
 	private readonly LinkEffects effects;
 	private readonly Func<(int X, int Y)?>? entrance;
 	private readonly Func<int, int, bool>? terminalAllowed;
+	private readonly Func<int, int, bool>? givesWay;
+	private readonly Action<int, int>? demolish;
 
+	/// <param name="givesWay">An object cell the queue tool may cover (its overwrite priority is below the tool's 3, 0x535D66); the line's first pass demolishes it (<paramref name="demolish"/>, the cell op 0x87).</param>
 	internal QueueSegmentReducer( ParkCellMap cells, ushort owner, Func<int, int, bool> excluded,
-		Func<bool> spend, Func<long, bool> previewMoney, Func<long> price, Action<ushort> refund, Action? changed = null, LinkEffects effects = default, Action<IReadOnlySet<(int X, int Y)>>? removed = null, Func<(int X, int Y)?>? entrance = null, Func<int, int, bool>? terminalAllowed = null )
+		Func<bool> spend, Func<long, bool> previewMoney, Func<long> price, Action<ushort> refund, Action? changed = null, LinkEffects effects = default, Action<IReadOnlySet<(int X, int Y)>>? removed = null, Func<(int X, int Y)?>? entrance = null, Func<int, int, bool>? terminalAllowed = null,
+		Func<int, int, bool>? givesWay = null, Action<int, int>? demolish = null )
 	{
 		this.cells = cells; this.owner = owner; this.excluded = excluded; this.spend = spend;
 		this.previewMoney = previewMoney; this.price = price; this.refund = refund; this.changed = changed; this.effects = effects; this.removed = removed; this.entrance = entrance; this.terminalAllowed = terminalAllowed;
+		this.givesWay = givesWay; this.demolish = demolish;
 	}
+
+	/// <summary>The object cell types (4, 9 and 10) of an object the queue tool may cover.</summary>
+	private bool CoveredObjectCell( (int X, int Y) p ) => cells.RawTypeAt( p.X, p.Y ) is ParkCellTypes.Object or ParkCellTypes.Entrance or ParkCellTypes.Exit && givesWay?.Invoke( p.X, p.Y ) == true;
 
 	internal bool Supports( (int X, int Y) start, (int X, int Y) end ) => SupportsDomain( start, end, true );
 	internal bool SupportsAdmission( (int X, int Y) start, (int X, int Y) end ) => SupportsDomain( start, end, false );
 	internal bool SupportsUndo( (int X, int Y) start, (int X, int Y) end ) => SupportsDomain( start, end, false, terminalException: false );
 	private bool SupportsDomain( (int X, int Y) start, (int X, int Y) end, bool increments, (int X, int Y)? terminal = null, bool terminalException = true ) => owner is > 0 and <= 16384
 		&& ParkPathBuilder.LayLine( start, ParkPathBuilder.SnapEnd( start, end ) ).All( p =>
-			cells.InBounds( p.X, p.Y ) && cells.RawTypeAt( p.X, p.Y ) is 0 or 1 or 3
+			cells.InBounds( p.X, p.Y ) && (cells.RawTypeAt( p.X, p.Y ) is 0 or 1 or 3 || CoveredObjectCell( p ))
 			&& (!increments || cells.RawTypeAt( p.X, p.Y ) != 3 || cells.PlacementCountAt( p.X, p.Y ) < short.MaxValue)
 			&& cells.Tracks.Get( p.X, p.Y ).Equals( default(TrackCell) )
 			&& cells.PoolBridges?.Reserves( p.X, p.Y ) != true
@@ -79,7 +87,12 @@ internal sealed class QueueSegmentReducer
 		long charged = 0;
 		var finalEndFlag = false;
 		var cleared = new HashSet<(int X, int Y)>();
-		// Overwrite 87 has no work in this domain. Type pass 3 may stop; all later passes retain the full line.
+		// [BIN:TPW-EXE:0x0053452F cell op 0x87] the first pass of the commit's line demolishes the object on each cell (0x527EE0 at 0x534566, the cell's own clear 0x5367A0 for a path under a tool that is neither the queue nor the path tool) whose owner's overwrite priority is below the tool's (0x818C14 < 0x818C10); the validator let only such objects through. Type pass 3 may stop; all later passes retain the full line.
+		foreach ( var p in line )
+		{
+			if ( CoveredObjectCell( p ) )
+				demolish?.Invoke( p.X, p.Y );
+		}
 		foreach ( var p in line )
 		{
 			var type = cells.RawTypeAt( p.X, p.Y );

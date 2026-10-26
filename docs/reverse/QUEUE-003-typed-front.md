@@ -29,6 +29,10 @@ shape-registration cache reconstruction until a normal queue refresh; historical
 directions are not guessed from changed links. Existing cell-map/snapshot geometry
 checks remain strict, including rejection of unsupported mismatched current caches.
 
+Zero front (fidelity round 9): when no cardinal bit is set the selector writes 0 (`0x4DE0F9`), so the ride has no front, `0x4DE130` returns 0 with `+0x40` = 0, the back-of-queue test `0x4DE4A0` reports a queue ride
+unconnected, and the demolition `0x527EE0` finds no count to undo (a front that holds no queue cell still counts 1: Back clears nothing and one cell is debited, `0x527FB4`).
+`RideVisitorBridge.ReadNativeFront` reads it; `ParkGate.QueueConnected` and `Level.SettleDemolishedQueue` use it. The guests' joining and scoring keep the host fallback for such a ride.
+
 This is not retirement of QUEUE-003. Linkless/diagonal-only entries, unavailable
 entry reconstruction and out-of-map results retain the existing host fallback,
 not native zero-front semantics. Queue arrays remain nonempty and existing

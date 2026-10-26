@@ -214,4 +214,30 @@ public class TypedQueueFrontTests
 		ride.RecomputeQueue( grid );
 		Assert.AreEqual( (0, 0), ride.QueueBackCell );
 	}
+
+	[DataTestMethod]
+	[DataRow( 0 )] [DataRow( 2 )] [DataRow( 0xAA )]
+	public void AnEntryWithoutACardinalBitHasANativeZeroFront( int links )
+	{
+		// tp.exe 0x4DE040 writes the cell word 0 when none of the bits 1, 16, 64 and 4 is set (diagonal bits do not count); the ride is then unconnected (0x4DE4A0)
+		var (grid, ride) = Rig( (byte)links );
+		ride.Parameters = new QueueParameters( true, false, false, 130, 60, 60, 5, 30 );
+		Assert.IsTrue( ride.ReadNativeFront( grid, out var front, out var direction ) );
+		Assert.IsNull( front );
+		Assert.AreEqual( -1, direction );
+		Assert.IsFalse( ParkGate.QueueConnected( grid, ride ), "a queue ride with no front is not connected" );
+	}
+
+	[TestMethod]
+	public void ANativeFrontNeedsAReconstructableEntry()
+	{
+		var (grid, ride) = Rig( 1, typed: false );
+		Assert.IsFalse( ride.ReadNativeFront( grid, out _, out _ ), "an untyped world has no entry to read" );
+		var (typedGrid, typed) = Rig( 1 );
+		typed.Parameters = new QueueParameters( true, false, false, 130, 60, 60, 5, 30 );
+		Assert.IsTrue( typed.ReadNativeFront( typedGrid, out var front, out var direction ) );
+		Assert.AreEqual( ((int, int)?)(5, 4), front );
+		Assert.AreEqual( 0, direction );
+		Assert.IsTrue( ParkGate.QueueConnected( typedGrid, typed ), "a front that holds no queue cell keeps the permissive answer" );
+	}
 }

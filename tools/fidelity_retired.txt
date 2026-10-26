@@ -221,6 +221,7 @@ QUEUE-008 docs/GUESTS.md
 QUEUE-009 docs/GUESTS.md
 QUEUE-011 docs/progress/2026-10-16-ride-shop-and-sideshow-settings.md
 QUEUE-013 docs/reverse/REVIEW-ORACLE.md
+QUEUE-014 docs/GUESTS.md
 QUEUE-016 docs/GUESTS.md
 QUEUE-017 docs/GUESTS.md
 QUEUE-018 docs/GUESTS.md

@@ -9,8 +9,9 @@ using static OpenTPW.Tests.RideVMTests;
 namespace OpenTPW.Tests;
 
 /// <summary>
-/// QUEUE-015: the real Level queue tool's UndoLineCommand must carry the eligible queue-edit thought through its immediate removed-cell set-down.
-/// Synthetic membership cases isolate the eligibility boundary; they do not assert that the original forced set-down protected called/state-14 occupants.
+/// QUEUE-015: the queue tool's undo (Back, tp.exe 0x52FE50) clears the cells and writes no guest (the cell clear 0x5367A0); the re-evaluation that follows (0x4DE1F0 at 0x52FFEC, 0x501390 per guest)
+/// dismisses by place alone: a guest whose place is at least four per cell leaves the queue where it stands (thought 13 for a thing id divisible by three), every other guest keeps its place.
+/// Synthetic membership cases isolate the eligibility boundary.
 /// </summary>
 [TestClass, DoNotParallelize]
 public class QueueRemovalCommandTests
@@ -67,6 +68,10 @@ public class QueueRemovalCommandTests
 		world.One.Visitors.Attach( script, () => true );
 		script.Advance( Tick );
 		script[RideVariables.VAR_RUNNING] = 1; // hold admission, as in QueueTests.Rig
+		// the simulation has seen both queues as they are: only an edit makes it re-evaluate one
+		var seen = (Dictionary<int, int>)typeof( GuestSimulation ).GetField( "seenQueueEdits", BindingFlags.Instance | BindingFlags.NonPublic )!.GetValue( world.Level.Guests! )!;
+		foreach ( var item in new[] { world.One, world.Two } )
+			seen[item.Visitors.AttractionId] = item.Visitors.QueueEditCount;
 		return new Park( world.Level, world.Economy, world.One, world.Two, world.State, script );
 	}
 
@@ -75,6 +80,8 @@ public class QueueRemovalCommandTests
 		var ride = item.Visitors;
 		// Deliberately synthetic access geometry on a real economy-bound object; no object demolition or access-cell removal is exercised here.
 		ride.EntranceCell = ride.ExitCell = (x, 0);
+		// a placed ride's own exit cell: the guests' queue exits and edits then follow tp.exe and write no position
+		ride.ExitAccessCell = (x, 6);
 		ride.QueueFrontCell = (x, 5);
 		ride.QueueEntranceDirection = 2;
 		ride.OwnerWord = ParkCellMap.CellWord( item.Placement.X, item.Placement.Y );
@@ -148,16 +155,16 @@ public class QueueRemovalCommandTests
 
 	private static void Sync( Park park ) => typeof( GuestSimulation ).GetMethod( "SyncQueues", BindingFlags.Instance | BindingFlags.NonPublic )!.Invoke( park.Guests, null );
 
-	private static void AssertDismissed( Park park, Guest guest, GuestThought thought, Events events )
+	private static void AssertDismissedInPlace( Park park, Guest guest, GuestThought thought, Events events, (int X, int Y) cell )
 	{
 		Assert.AreEqual( thought, guest.Thought, $"guest {guest.Id}'s thought" );
 		Assert.AreEqual( GuestState.DoingNothing, guest.State );
 		Assert.AreEqual( 0, guest.AttractionId );
 		Assert.AreEqual( -1, park.Ride.GetQueuePosition( guest.Id ) );
 		Assert.AreEqual( 80f - park.Guests.Settings.MediumHappinessChange, guest.Happiness );
-		Assert.AreEqual( (2, 0), guest.Cell, "the existing nearest-path relocation, not the retained queue front" );
-		Assert.AreEqual( guest.Cell, guest.Navigation.Cell );
-		Assert.AreEqual( 1, events.Ends.Count( item => item.Id == guest.Id && item.Reason == QueueEndReason.QueueRemoved ) );
+		Assert.AreEqual( cell, guest.Cell, "the dismissal writes no position: the guest stays on the emptied cell" );
+		Assert.AreEqual( cell, guest.Navigation.Cell );
+		Assert.AreEqual( 1, events.Ends.Count( item => item.Id == guest.Id && item.Reason == QueueEndReason.QueueShortened ) );
 	}
 
 	[DataTestMethod]
@@ -166,7 +173,7 @@ public class QueueRemovalCommandTests
 	[DataRow( GuestState.Boarding, false, true )]
 	[DataRow( GuestState.WaitingToBoard, false, false )]
 	[DataRow( GuestState.Boarding, true, false )]
-	public void UndoSnapshotsEligibilityBeforeAnEarlierForcedRemovalChangesTheList( GuestState state, bool called, bool angry )
+	public void UndoWritesNoGuestAndTheReevaluationDismissesByPlaceAlone( GuestState state, bool called, bool dismissed )
 	{
 		var park = NewPark();
 		var occupants = Seed( park );
@@ -207,14 +214,25 @@ public class QueueRemovalCommandTests
 			Assert.AreEqual( 0, (int)park.Grid.Cells.LinksAt( x, y ) );
 			Assert.AreEqual( 0, (int)park.Grid.Cells.QueueLinkAt( x, y ) );
 		}
-		AssertDismissed( park, occupants.Early, GuestThought.Bored, events );
-		AssertDismissed( park, occupants.Nondivisible, GuestThought.Bored, events );
-		AssertDismissed( park, occupants.Target, angry ? GuestThought.Angry : GuestThought.Bored, events );
-		Assert.AreEqual( 3, events.PositionsAtExit[occupants.Target.Id], "its live place is already within room: eligibility had to be snapshotted" );
-		Assert.AreEqual( angry ? 1 : 0, events.Thoughts.Count( item => item.Id == occupants.Target.Id && item.Thought == GuestThought.Angry ) );
-		Assert.AreEqual( 3, park.Ride.QueueLength );
-		Assert.AreEqual( counters, (park.Ride.Dismissed, park.Ride.BoardedTotal, park.Ride.ReleasedTotal, park.Guests.VisitorCount) );
-		Assert.AreEqual( 0, park.Ride.CalledGuest, "the existing dismissal withdraws a called removed-cell guest once" );
+		// the clear writes no guest: before the re-evaluation every occupant of the emptied cells is where and what it was
+		foreach ( var guest in new[] { occupants.Early, occupants.Target, occupants.Nondivisible } )
+		{
+			Assert.AreEqual( (2, 4), guest.Cell );
+			Assert.AreEqual( guest == occupants.Target ? state : GuestState.Queueing, guest.State );
+			Assert.AreEqual( park.Ride.AttractionId, guest.AttractionId );
+		}
+		Sync( park );
+		// 0x501390: a place of four per cell or more (here 4 and 5, the room being 4) leaves the queue in place, thought 13 for an id divisible by three; the called guest and a guest waiting to board stay
+		AssertDismissedInPlace( park, occupants.Nondivisible, GuestThought.Bored, events, (2, 4) );
+		if ( dismissed )
+			AssertDismissedInPlace( park, occupants.Target, GuestThought.Angry, events, (2, 4) );
+		else
+			Assert.AreEqual( state, occupants.Target.State, "an excluded guest keeps its place and its state" );
+		Assert.AreEqual( 0, events.Thoughts.Count( item => item.Id == occupants.Early.Id ), "a guest within the room is not dismissed" );
+		Assert.AreEqual( GuestState.Queueing, occupants.Early.State );
+		Assert.AreEqual( 0, park.Ride.GetQueuePosition( occupants.Early.Id ), "the guest on an emptied cell keeps its place" );
+		Assert.AreEqual( rng, park.Guests.RandomState );
+		Assert.AreEqual( counters.VisitorCount, park.Guests.VisitorCount );
 		foreach ( var guest in occupants.Retained )
 		{
 			Assert.AreEqual( GuestState.Queueing, guest.State );
@@ -223,15 +241,12 @@ public class QueueRemovalCommandTests
 			Assert.AreEqual( GuestThought.Bored, guest.Thought );
 		}
 		Sync( park );
-		Assert.AreEqual( 3, events.Ends.Count, "later re-evaluation does not dismiss the removed guests twice" );
-		Assert.AreEqual( counters, (park.Ride.Dismissed, park.Ride.BoardedTotal, park.Ride.ReleasedTotal, park.Guests.VisitorCount) );
-		AssertDismissed( park, occupants.Target, angry ? GuestThought.Angry : GuestThought.Bored, events );
-		// Sync may update retained guests' cell indexes, but never the set-down guests' outcome or the money.
+		Assert.AreEqual( dismissed ? 2 : 1, events.Ends.Count, "a later re-evaluation does not dismiss anyone twice" );
 		Assert.AreEqual( balance + 4 * refund, park.Economy.Balance );
 	}
 
 	[TestMethod]
-	public void NaturallyQueuedOverflowGetsItsThoughtImmediatelyThroughTheToolUndo()
+	public void NaturallyQueuedOverflowGetsItsThoughtFromTheReevaluationAfterTheToolUndo()
 	{
 		var park = NewPark();
 		var guests = Enumerable.Range( 0, 16 ).Select( _ => park.Guests.SpawnInPark( 2, 0 ) ).ToArray();
@@ -255,12 +270,65 @@ public class QueueRemovalCommandTests
 		Assert.IsTrue( overflow.All( guest => Removed.Contains( guest.Navigation.Cell ) ) );
 		Assert.AreEqual( 0, park.Ride.CalledGuest );
 		foreach ( var guest in overflow ) guest.Thought = GuestThought.Bored;
+		var cells = overflow.ToDictionary( guest => guest.Id, guest => guest.Navigation.Cell );
 		Undo( park );
+		Sync( park );
 		foreach ( var guest in overflow )
 		{
 			Assert.AreEqual( guest.Id % 3 == 0 ? GuestThought.Angry : GuestThought.Bored, guest.Thought );
 			Assert.AreEqual( GuestState.DoingNothing, guest.State );
+			Assert.AreEqual( cells[guest.Id], guest.Navigation.Cell, "dismissed where it stood" );
 		}
+	}
+
+	[TestMethod]
+	public void AGuestDismissedOnAnEmptiedCellDecidesFromThereByTheOriginalsWander()
+	{
+		// tp.exe 0x4F9490 from a cell without links: the step count is drawn, then the search around the start (0x522810 below 1); the wander is the ported one (GuestWander.OffPath), so the dismissed guests start a walk from the emptied cell
+		var park = NewPark();
+		var occupants = Seed( park );
+		foreach ( var guest in new[] { occupants.Early, occupants.Target, occupants.Nondivisible } ) guest.Hunger = guest.Thirst = guest.Toilet = 0;
+		Undo( park );
+		Sync( park );
+		var dismissed = new[] { occupants.Target, occupants.Nondivisible };
+		Assert.IsTrue( dismissed.All( guest => guest.State == GuestState.DoingNothing && guest.Navigation.Cell == (2, 4) ) );
+		var walked = new HashSet<int>();
+		for ( var tick = 0; tick < 600; tick++ )
+		{
+			park.Guests.Tick( Tick );
+			foreach ( var guest in park.Guests.Guests ) guest.Hunger = guest.Thirst = guest.Toilet = 0;
+			park.Ride.HostStep();
+			park.Script.Advance( Tick );
+			foreach ( var guest in dismissed.Where( guest => guest.State == GuestState.WalkingAround ) ) walked.Add( guest.Id );
+		}
+		Assert.AreEqual( 2, walked.Count, "both guests started a wander walk from the emptied cell" );
+		Assert.IsTrue( dismissed.All( guest => guest.State is GuestState.WalkingAround or GuestState.DoingNothing ) );
+	}
+
+	private static void Settle( Park park ) =>
+		typeof( Level ).GetMethod( "SettleDemolishedQueue", BindingFlags.Instance | BindingFlags.NonPublic )!.Invoke( park.Level, new object[] { park.One } );
+
+	[TestMethod]
+	public void ADemolitionDebitsOneCellForAFrontThatHoldsNoQueueCellAndNothingForNoFront()
+	{
+		// tp.exe 0x527FB4: +0x40 counts the chain from the front whatever its type; Back clears nothing here and the demolition still debits one cell; no front (0x4DE040 writes 0) has a count of 0
+		var park = NewPark();
+		var ride = park.Ride;
+		ride.QueueEntryResolver = () => (2, 6);
+		foreach ( var (x, y) in Removed ) park.Grid.ClearQueue( x, y );
+		park.Grid.ClearQueue( 2, 5 );
+		park.Grid.SetPath( 2, 5, true );
+		park.Grid.Cells.SetLinks( 2, 6, GuestPathGrid.LinkValue( 0 ) );
+		var debit = park.Economy.CellCost( CellPurchase.Queue ) * park.Economy.ScrapPercent( park.State ) / 100;
+		Assert.IsTrue( debit > 0 );
+		var balance = park.Economy.Balance;
+		Settle( park );
+		Assert.AreEqual( balance - debit, park.Economy.Balance, "one cell's refund is debited" );
+
+		park.Grid.Cells.SetLinks( 2, 6, 0 );
+		balance = park.Economy.Balance;
+		Settle( park );
+		Assert.AreEqual( balance, park.Economy.Balance, "an entry without a link bit has no front and no count" );
 	}
 
 	[DataTestMethod]
@@ -284,18 +352,19 @@ public class QueueRemovalCommandTests
 	}
 
 	[TestMethod]
-	public void AnotherRidesOverflowOnTheRemovedCellsGetsNoNewThought()
+	public void AnotherRidesOverflowOnTheRemovedCellsIsNotTouched()
 	{
 		var park = NewPark();
 		var own = Seed( park );
 		var other = Seed( park, park.Two.Visitors );
 		Assert.IsTrue( park.Two.Visitors.GetQueuePosition( other.Target.Id ) >= park.Two.Visitors.QueueRoom );
 		Undo( park );
+		Sync( park );
 		Assert.AreEqual( GuestThought.Angry, own.Target.Thought );
 		Assert.AreEqual( GuestThought.Bored, other.Target.Thought );
-		Assert.AreEqual( GuestState.DoingNothing, other.Target.State, "the existing forced set-down still runs" );
-		Assert.AreEqual( -1, park.Two.Visitors.GetQueuePosition( other.Target.Id ) );
-		Assert.AreEqual( (2, 0), other.Target.Cell );
+		Assert.AreEqual( GuestState.Queueing, other.Target.State, "the other ride's queue was not edited" );
+		Assert.AreEqual( park.Two.Visitors.AttractionId, other.Target.AttractionId );
+		Assert.AreEqual( (2, 4), other.Target.Cell );
 	}
 
 	[TestMethod]
@@ -328,15 +397,17 @@ public class QueueRemovalCommandTests
 	}
 
 	[TestMethod]
-	public void AnUnlistedRemovedCellOccupantGetsNoNewOverflowThought()
+	public void AnUnlistedRemovedCellOccupantIsSentAwayInPlaceByTheReevaluation()
 	{
 		var park = NewPark();
 		var occupants = Seed( park );
 		Assert.IsTrue( park.Ride.LeaveQueue( occupants.Target.Id ) );
 		Assert.AreEqual( GuestState.Queueing, occupants.Target.State, "synthetic missing membership, as in an inconsistent imported guest" );
 		Undo( park );
-		Assert.AreEqual( GuestThought.Bored, occupants.Target.Thought );
+		Assert.AreEqual( GuestState.Queueing, occupants.Target.State, "the clear writes no guest" );
+		Sync( park );
 		Assert.AreEqual( GuestState.DoingNothing, occupants.Target.State );
+		Assert.AreEqual( (2, 4), occupants.Target.Cell );
 	}
 
 	[TestMethod]
@@ -355,7 +426,6 @@ public class QueueRemovalCommandTests
 		ParkCommandReplay.Run( twin.Level.Commands, recorded.Level.Commands.Log, () => twin.Level.Commands.NextTick,
 			() => twin.Level.AdvanceSimulation( FixedStepClock.TickDuration ), recorded.Level.Commands.NextTick );
 		Assert.IsTrue( replayResult?.Accepted == true );
-		Assert.AreEqual( GuestThought.Angry, other.Target.Thought );
 		Assert.AreEqual( recorded.Level.ComputeStateHash(), twin.Level.ComputeStateHash() );
 		Assert.AreEqual( recorded.Economy.Balance, twin.Economy.Balance );
 		CollectionAssert.AreEqual( recorded.Ride.Queue.ToArray(), twin.Ride.Queue.ToArray() );
@@ -367,6 +437,7 @@ public class QueueRemovalCommandTests
 			Assert.AreEqual( recorded.Level.ComputeStateHash(), twin.Level.ComputeStateHash(), $"tick {tick + 1}" );
 		}
 		Assert.AreEqual( 1, events.Ends.Count( item => item.Id == other.Target.Id ) );
+		Assert.AreEqual( GuestThought.Angry, other.Target.Thought, "the re-evaluation of the replayed undo gave the same thought" );
 		Assert.AreEqual( own.Target.Thought, other.Target.Thought );
 	}
 

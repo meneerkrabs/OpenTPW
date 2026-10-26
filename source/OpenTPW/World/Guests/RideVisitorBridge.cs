@@ -692,20 +692,35 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	// [BIN:TPW-EXE:0x004DE040] mEntryPos +0x36, Links +0x0C, priority 1,16,64,4; no neighbour type, owner or reciprocity filter.
 	internal bool RefreshTypedQueueFront( GuestPathGrid grid )
 	{
+		if ( !ReadNativeFront( grid, out var native, out var direction ) || native is not { } front ) return false;
+		QueueFrontCell = front;
+		QueueEntranceDirection = (direction + 2) & 3;
+		return true;
+	}
+
+	/// <summary>
+	/// The front cell tp.exe's selector <c>0x4DE040</c> reads from the live entry: false while the entry cannot be reconstructed (an untyped world, a neighbour off the map); true with a null
+	/// <paramref name="front"/> when the entry's link byte has no cardinal bit, for which the selector writes 0 and the back-of-queue walk <c>0x4DE130</c> keeps the count 0.
+	/// </summary>
+	// [BIN:TPW-EXE:0x004DE040 zero front] none of the bits 1, 16, 64 and 4 set writes the cell word 0 (0x4DE0F9): the ride has no front, 0x4DE130 returns 0 with +0x40 = 0, 0x4DE4A0 reports a queue ride unconnected (a back of 0 fails its first test) and the demolition 0x527EE0 finds no count to undo
+	internal bool ReadNativeFront( GuestPathGrid grid, out (int X, int Y)? front, out int direction )
+	{
+		front = null;
+		direction = -1;
 		if ( QueueEntryResolver?.Invoke() is not { } entry || !grid.InBounds( entry.X, entry.Y ) ) return false;
 		var links = grid.Cells.LinksAt( entry.X, entry.Y );
-		foreach ( var direction in new[] { 0, 2, 3, 1 } )
+		foreach ( var candidate in new[] { 0, 2, 3, 1 } )
 		{
-			if ( (links & GuestPathGrid.LinkValue( direction )) == 0 ) continue;
-			var (dx, dy) = GuestPathGrid.Directions[direction];
-			var front = (X: entry.X + dx, Y: entry.Y + dy);
+			if ( (links & GuestPathGrid.LinkValue( candidate )) == 0 ) continue;
+			var (dx, dy) = GuestPathGrid.Directions[candidate];
+			var neighbour = (X: entry.X + dx, Y: entry.Y + dy);
 			// Out-of-map neighbours remain outside the supported host reconstruction, not a native type test.
-			if ( !grid.InBounds( front.X, front.Y ) ) return false;
-			QueueFrontCell = front;
-			QueueEntranceDirection = (direction + 2) & 3;
+			if ( !grid.InBounds( neighbour.X, neighbour.Y ) ) return false;
+			front = neighbour;
+			direction = candidate;
 			return true;
 		}
-		return false;
+		return true;
 	}
 
 	/// <summary><see cref="GuestPathGrid.Directions"/> index from the front cell toward the ride's entrance cell, or −1.</summary>
@@ -886,7 +901,7 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	/// on a path; null when the queue is not connected to a path.
 	/// </summary>
 	// [BIN:TPW-EXE:0x004DE840 attached path] 0x4DEA2F..0x4DEA57: for the bits 1, 4, 16, 64 of the back cell's +0x0C (0x522770) the neighbour along it (0x4D97E0) is taken when it is type 1 (0x536310); none logs "No path attached to end of queue"
-	// [APPROX:QUEUE-003] back-cell admission and fourth-slot path geometry are implemented. Supported live typed HasQueue entries select their nonzero front from +0x0C (0x4DE040). Linkless/unsupported entries and untyped worlds retain the host one-cell fallback; native zero-front/count semantics and divergent imported mEntryPos remain unsupported.
+	// [APPROX:QUEUE-003] back-cell admission and fourth-slot path geometry are implemented; supported live typed HasQueue entries derive their front from the actual entry link byte (+0x0C, tp.exe 0x4DE040, bits 1, 16, 64, 4), and a native zero front (no cardinal bit) leaves the ride unconnected (0x4DE4A0) and its demolition without a count to undo (0x527FB4); the guests' joining and scoring of a zero-front ride, linkless or unsupported entries and untyped worlds retain the host positive one-cell fallback; divergent imported mEntryPos and the native cache invalidation timing (0x4DE130 keeps +0x3A until the next 0x4DE1F0, where OpenTPW recomputes on every grid change) remain unsupported
 	private (int X, int Y)? FindJoinCell( GuestPathGrid grid )
 	{
 		var back = queueCells[^1];

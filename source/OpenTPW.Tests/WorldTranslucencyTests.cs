@@ -125,6 +125,49 @@ public class WorldTranslucencyTests
 		Assert.AreEqual( 0u, WorldTranslucency.FlagFor( TextureAlphaType.Opaque ) );
 	}
 
+	[TestMethod]
+	public void ASlotWithTheOpaqueFlagIsNotTranslucentAndGetsNoAlphaTestFlag()
+	{
+		// the runtime slot flag 0x800 (0x581820) gives the face the opaque state 0x1256: no sorted pass, no alpha test
+		var flag = WorldTranslucency.OpaqueSlotFlag;
+		var vertices = new[] { Corner( 0, 0, 0x10 ), Corner( 1, 1, flag ), Corner( 1, 2, flag ), Corner( 1, 3, flag ), Corner( 2, 4, 0x10 ) };
+		var types = new[] { TextureAlphaType.Translucent, TextureAlphaType.Translucent, TextureAlphaType.Cutout };
+		Assert.IsTrue( WorldTranslucency.ForceOpaqueSlots( types, vertices ) );
+		CollectionAssert.AreEqual( new[] { TextureAlphaType.Translucent, TextureAlphaType.Opaque, TextureAlphaType.Cutout }, types );
+		Assert.IsFalse( WorldTranslucency.ForceOpaqueSlots( types, vertices ), "nothing left to change" );
+		WorldTranslucency.ApplyAlphaFlags( vertices, types );
+		CollectionAssert.AreEqual( new[] { 0x10u | WorldTranslucency.AlphaTestLowFlag, flag, flag, flag, 0x10u | WorldTranslucency.CutoutFlag }, vertices.Select( vertex => vertex.MatFlags ).ToArray() );
+		var split = WorldTranslucency.SplitFaces( vertices, new uint[] { 1, 2, 3 }, slot => WorldTranslucency.IsTranslucent( types[slot] ) );
+		Assert.AreEqual( 0, split.Translucent.Count, "slot 1 would have been a translucent group" );
+		Assert.AreEqual( 1, WorldTranslucency.SplitFaces( vertices, new uint[] { 1, 2, 3 }, slot => slot == 1 ).Translucent.Count );
+		// the vertex flag is the slot flag turned into a vertex bit, and it is not the clamp, the slush or the alpha-test bits
+		Assert.AreEqual( flag, TextureSlotAddressing.VertexFlags( 0x11 | TextureSlotAddressing.OpaqueSlotBit ) & flag );
+		Assert.AreEqual( 0u, TextureSlotAddressing.VertexFlags( 0x11 | TextureSlotAddressing.OpaqueSlotBit ) & TextureSlotAddressing.OpaqueSlotBit, "bit 0x800 itself does not reach the vertex" );
+		Assert.AreEqual( 0u, flag & 0xFFFFu );
+		Assert.AreEqual( 0u, flag & (TextureSlotAddressing.ClampFlag | TextureSlotAddressing.SlushFlag | WorldTranslucency.AlphaTestLowFlag | WorldTranslucency.CutoutFlag) );
+	}
+
+	[TestMethod]
+	public void EveryDepthTestedMaterialComparesWithTheOriginalsLessEqual()
+	{
+		// tp.exe sets D3DRS_ZFUNC once, to LESSEQUAL (0x57360F; Theme Park Inc's Game.exe 0x6D6574 and 0x6D5C1E), so a fragment at the stored depth passes and the later draw wins a tie
+		Assert.AreEqual( Veldrid.ComparisonKind.LessEqual, Material.DepthComparison( MaterialFlags.None ) );
+		Assert.AreEqual( Veldrid.ComparisonKind.LessEqual, Material.DepthComparison( MaterialFlags.DoubleSided | MaterialFlags.OpaqueBlend ) );
+		Assert.AreEqual( Veldrid.ComparisonKind.LessEqual, Material.DepthComparison( MaterialFlags.DisableDepthWrite ), "the depth test stays on without the write (water, particles)" );
+		Assert.AreEqual( Veldrid.ComparisonKind.Always, Material.DepthComparison( MaterialFlags.DisableDepthTest | MaterialFlags.DisableDepthWrite ), "a material with no depth state" );
+		// the only place a pipeline's depth comparison is chosen
+		var source = File.ReadAllText( Path.Combine( RepositoryRoot(), "source", "OpenTPW", "Render", "Assets", "Material.cs" ) );
+		Assert.IsFalse( System.Text.RegularExpressions.Regex.IsMatch( source, @"ComparisonKind\.Less\b" ), "no strict Less in the material pipelines (Theme Park Inc's Game.exe sets LESSEQUAL too: 0x6D6574, 0x6D5C1E)" );
+	}
+
+	private static string RepositoryRoot()
+	{
+		var directory = new DirectoryInfo( AppContext.BaseDirectory );
+		while ( directory != null && !File.Exists( Path.Combine( directory.FullName, "source", "OpenTPW.sln" ) ) )
+			directory = directory.Parent;
+		return directory?.FullName ?? throw new DirectoryNotFoundException( "Repository root not found." );
+	}
+
 	/// <summary>A camera at the origin looking down +Z with a 60 degree field of view and a depth range of 1 to 100 (the engine's row-vector, 0..1 depth convention).</summary>
 	private static Matrix4x4 Perspective() => Matrix4x4.CreateScale( 1, 1, -1 ) * Matrix4x4.CreatePerspectiveFieldOfView( MathF.PI / 3, 16f / 9f, 1f, 100f );
 

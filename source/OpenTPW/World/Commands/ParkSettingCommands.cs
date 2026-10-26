@@ -108,6 +108,7 @@ public abstract record ParkSettingCommand : ParkCommand
 		ParkCommandKind.SetAllObjectsOpen => new SetAllObjectsOpenCommand( reader.Bool() ),
 		ParkCommandKind.SetSessionClock => new SetSessionClockCommand( reader.Long() ),
 		ParkCommandKind.SetBuildGrant => new SetBuildGrantCommand( reader.Int(), reader.Bool() ),
+		ParkCommandKind.ReleaseSeat => new ReleaseSeatCommand( reader.Int() ),
 		_ => null
 	};
 }
@@ -752,4 +753,17 @@ public sealed record SetAllObjectsOpenCommand( bool Open ) : ParkSettingCommand
 		}
 		return ParkCommandResult.Ok();
 	}
+}
+
+/// <summary>
+/// [EXT:online-coop-commands] The host releases what the guest seat <paramref name="Seat"/> holds in the park, once the member that held it left or another took the seat (docs/COOP.md,
+/// "Building by every player"; C3b-2): the type its Move tool carried, so the seat's next member starts with nothing in hand. A record of the stream, applied by the host's stream at a
+/// frame's start before that frame's requests; only the host may issue it (<see cref="CoopBuildRights"/>). Its value is whether the seat held anything.
+/// </summary>
+public sealed record ReleaseSeatCommand( int Seat ) : ParkSettingCommand
+{
+	public override ParkCommandKind Kind => ParkCommandKind.ReleaseSeat;
+	internal override bool IsWellFormed => Seat > 0 && Seat < CoopJoinState.MaximumPlayerEntries;
+	internal override void WriteFields( ParkCommandWriter writer ) => writer.Int( Seat );
+	internal override ParkCommandResult Execute( Level level ) => ParkCommandResult.Ok( level.ReleaseSeat( Seat ) );
 }

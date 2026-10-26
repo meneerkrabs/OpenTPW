@@ -153,6 +153,8 @@ public enum ParkCommandKind : byte
 	SetSessionClock = 100,
 	/// <summary>[EXT:online-coop-permissions] The host grants or takes back a guest's building (<see cref="SetBuildGrantCommand"/>).</summary>
 	SetBuildGrant = 101,
+	/// <summary>[EXT:online-coop-commands] The host releases what a seat whose member left holds in the park (<see cref="ReleaseSeatCommand"/>).</summary>
+	ReleaseSeat = 102,
 }
 
 /// <summary>

@@ -369,4 +369,19 @@ public class ParkToolsOnReleaseTests
 		Frame( new[] { Up( PointA ) } );
 		Assert.IsNull( level.CellTool.Start );
 	}
+
+	[TestMethod]
+	public void AToolArmedBetweenAPressAndItsReleaseTakesNoClickFromThatRelease()
+	{
+		// a co-op guest's Move pick-up coming back (CompleteMove) arms the build tool while the button is down: the press was the idle mode's, so its release places nothing
+		// with no path builder the press enters nothing: it is the idle mode's alone
+		typeof( Level ).GetField( "<Paths>k__BackingField", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic )!.SetValue( level, null );
+		Frame( new[] { Down( PointA ) }, left: true );
+		Assert.IsFalse( level.CellTool.IsActive );
+		level.IsRemovingObjects = true;
+		Frame( new[] { Up( PointA ) } );
+		Assert.AreEqual( 0, commands.Count, "the release of a press that saw no tool is no click of the tool armed since" );
+		Frame( new[] { Down( PointA ), Up( PointA ) } );
+		Assert.AreEqual( 1, commands.Count, "a fresh click of the armed tool acts" );
+	}
 }

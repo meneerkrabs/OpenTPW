@@ -106,11 +106,11 @@ public partial class Level
 	internal CoopGuestCommands.Request? WaitingRemoval { get; private set; }
 
 	/// <summary>
-	/// [EXT:online-coop-commands] The guest's queue edit that waits for the host, or null (C3b): no tool is on yet, and the queue tool starts once the edit comes back, from what its record
-	/// read (<see cref="CompleteQueueEdit"/>). Escape, a right click and another tool drop it (its start, <see cref="EndBuildTools"/>, the HUD's frame with a tool on): its outcome is then
-	/// only a message.
+	/// [EXT:online-coop-commands] The guest's request whose outcome starts a tool, or null (C3b): a queue edit (the queue tool starts from what its record read,
+	/// <see cref="CompleteQueueEdit"/>) or a Move pick-up (the Move tool arms with the type it carries, <see cref="CompleteMove"/>). No tool is on while it waits. Escape, a right click and
+	/// another tool drop it (its start, <see cref="EndBuildTools"/>, the HUD's frame with a tool on): its outcome is then only a message, and a pick-up's carry is ended.
 	/// </summary>
-	internal CoopGuestCommands.Request? WaitingQueueEdit { get; private set; }
+	internal CoopGuestCommands.Request? WaitingToolStart { get; private set; }
 
 	/// <summary>[EXT:online-coop-commands] The guest's Backspace that waits for the host, or null (C3b): the key's presses and repeats send nothing more until its outcome.</summary>
 	internal CoopGuestCommands.Request? WaitingBacktrack { get; private set; }
@@ -134,8 +134,8 @@ public partial class Level
 	/// <summary>[EXT:online-coop-commands] The guest's Backspace went to the host as <paramref name="request"/>.</summary>
 	internal void WaitBacktrack( CoopGuestCommands.Request request ) => WaitingBacktrack = request;
 
-	/// <summary>[EXT:online-coop-commands] Escape, a right click or another tool leaves the queue edit that waits for the host: its outcome is only a message then.</summary>
-	internal void DropQueueEditWait() => WaitingQueueEdit = null;
+	/// <summary>[EXT:online-coop-commands] Escape, a right click or another tool leaves the queue edit or the pick-up that waits for the host: its outcome starts no tool then.</summary>
+	internal void DropToolStartWait() => WaitingToolStart = null;
 
 	/// <summary>[EXT:online-coop-commands] How many clicks a tool refused while its request waited for the host (C3a-2): the HUD asks the player to wait when it changes.</summary>
 	internal int WaitingClicks { get; private set; }
@@ -150,8 +150,8 @@ public partial class Level
 			WaitingPlacement = null;
 		if ( WaitingRemoval == request )
 			WaitingRemoval = null;
-		if ( WaitingQueueEdit == request )
-			WaitingQueueEdit = null;
+		if ( WaitingToolStart == request )
+			WaitingToolStart = null;
 		if ( WaitingBacktrack == request )
 			WaitingBacktrack = null;
 		if ( IsWaitingSale( request ) )
@@ -160,11 +160,11 @@ public partial class Level
 
 	/// <summary>[EXT:online-coop-commands] Whether <paramref name="request"/> is one this level's tools or buttons wait for (C3a-2, C3b).</summary>
 	internal bool IsWaitingFor( CoopGuestCommands.Request request ) =>
-		WaitingPlacement?.Request == request || WaitingRemoval == request || WaitingQueueEdit == request || WaitingBacktrack == request || IsWaitingSale( request );
+		WaitingPlacement?.Request == request || WaitingRemoval == request || WaitingToolStart == request || WaitingBacktrack == request || IsWaitingSale( request );
 
 	/// <summary>
-	/// [EXT:online-coop-commands] The session ended with requests open (C3a-2, C3b): the placement, the removal, the queue edit, the Backspace and the sales that waited wait no more,
-	/// and a line that waited ends its tool, since what became of it is not known here.
+	/// [EXT:online-coop-commands] The session ended with requests open (C3a-2, C3b): the placement, the removal, the queue edit or pick-up, the Backspace and the sales that waited wait
+	/// no more, a line that waited ends its tool, since what became of it is not known here, and a guest's Move tool disarms.
 	/// </summary>
 	internal void EndGuestWaits()
 	{
@@ -172,10 +172,28 @@ public partial class Level
 			tool.Cancel();
 		WaitingPlacement = null;
 		WaitingRemoval = null;
-		WaitingQueueEdit = null;
+		WaitingToolStart = null;
 		WaitingBacktrack = null;
 		waitingSales = null;
+		// [EXT:online-coop-commands] a guest's Move tool disarms without an end command: its carry goes with the session's state (C3b-2), and the park is shared no more
+		if ( IsMoving && Commands.Player > ParkCommands.LocalPlayer )
+		{
+			endingMoveLocally = true;
+			try
+			{
+				BuildEntry = null;
+			}
+			finally
+			{
+				endingMoveLocally = false;
+			}
+			// the HUD drops the item it had armed for the Move, as after any end of the build tools
+			BuildToolsEnded?.Invoke();
+		}
 	}
+
+	/// <summary>Set while <see cref="EndGuestWaits"/> disarms a guest's Move tool: the tool's end sends no command.</summary>
+	private bool endingMoveLocally;
 
 	/// <summary>The remove tool's click on cell (<paramref name="x"/>, <paramref name="y"/>): [EXT:online-coop-commands] a guest's removal waits for the host, taking no other click until its outcome (C3a-2).</summary>
 	internal void ClickRemoveTool( int x, int y )
@@ -303,18 +321,73 @@ public partial class Level
 		ArgumentNullException.ThrowIfNull( item );
 		if ( IsReadOnlyVisit || item.IsDeleted )
 			return false;
+		// [EXT:online-coop-commands] a guest's pick-up goes to the host, and the Move tool arms once it comes back (C3b-2, CompleteMove): one pick-up at a time, so no end of an older
+		// carry can reach the host after a newer pick-up
+		if ( Commands.SendsRequests && (WaitingToolStart != null || HasOpenPickUp) )
+		{
+			NoteWaitingClick();
+			return false;
+		}
 		// a Move tool still carrying ends first, so the end does not take the new pick-up's type
 		if ( IsMoving )
 			BuildEntry = null;
 		// [BIN:TPW-EXE:0x00525E5A queue start] the pick-up's click in mode 0x33 zeroes the pending queue start
 		placedQueueStart = null;
-		if ( Commands.Issue( new PickUpObjectCommand( item.Visitors.AttractionId ) ).As<(ObjectCatalogEntry Entry, int Rotation)>() is not { Entry: { } entry } picked )
+		var result = Commands.Issue( new PickUpObjectCommand( item.Visitors.AttractionId ) );
+		if ( result.Request is { } request )
+		{
+			WaitingToolStart = request;
 			return false;
+		}
+		if ( result.As<(ObjectCatalogEntry Entry, int Rotation)>() is not { Entry: { } entry } picked )
+			return false;
+		ArmMove( entry, picked.Rotation );
+		return true;
+	}
+
+	/// <summary>The Move tool arms with the type its pick-up carries, at the object's own angle (mode 0x3b).</summary>
+	private void ArmMove( ObjectCatalogEntry entry, int rotation )
+	{
 		IsRemovingObjects = false;
 		IsPlacing = false;
 		BuildEntry = entry;
 		IsMoving = true;
-		SetBuildRotation( picked.Rotation );
+		SetBuildRotation( rotation );
+	}
+
+	/// <summary>When <see cref="EndStrayCarry"/> last sent an end, or null.</summary>
+	private double? lastStrayCarryEnd;
+
+	/// <summary>
+	/// [EXT:online-coop-commands] A guest's seat that carries a picked-up type in its park while its Move tool is not armed (C3b-2): a pick-up whose tool started no more, an end the host
+	/// could not take, a resync's park with the carry in it. The HUD calls this after taking its requests' outcomes each frame: it sends the Move's end, at most once a second (by
+	/// <paramref name="now"/>) and only while no pick-up or end of this guest is open, so it never ends a carry whose tool is about to arm (the outcomes armed it first) or reaches the host
+	/// after a newer pick-up (one is open at a time). True when it sent one.
+	/// </summary>
+	internal bool EndStrayCarry( double now )
+	{
+		if ( CoopSession?.GuestCommands is not { } requests || !Commands.SendsRequests || IsMoving || !CarriesEntry( Commands.Player ) )
+			return false;
+		if ( requests.Open.Any( request => request.Command is PickUpObjectCommand or EndMoveCommand ) || (lastStrayCarryEnd is { } last && now - last < 1) )
+			return false;
+		lastStrayCarryEnd = now;
+		return Commands.Issue( new EndMoveCommand() ).IsPending;
+	}
+
+	/// <summary>[EXT:online-coop-commands] Whether a pick-up of this guest is open in the session's requests, from this park or the one a resync replaced (C3b-2).</summary>
+	internal bool HasOpenPickUp => CoopSession?.GuestCommands?.Open.Any( request => request.Command is PickUpObjectCommand ) == true;
+
+	/// <summary>
+	/// [EXT:online-coop-commands] The guest's pick-up came back accepted (C3b-2): the Move tool arms with the type it carries, as <see cref="BeginMove"/> does once its pick-up applied, if
+	/// the park view still has no tool. True when it armed; otherwise the carry is ended by the HUD (<c>ParkHud.EndStrayCarry</c>), and the object stays sold, as a cancelled Move leaves
+	/// it.
+	/// </summary>
+	internal bool CompleteMove( ObjectCatalogEntry entry, int rotation )
+	{
+		ArgumentNullException.ThrowIfNull( entry );
+		if ( IsReadOnlyVisit || !NoToolActive )
+			return false;
+		ArmMove( entry, rotation );
 		return true;
 	}
 
@@ -338,10 +411,10 @@ public partial class Level
 		// CompleteQueueEdit); the click starts nothing here
 		if ( Commands.SendsRequests )
 		{
-			if ( WaitingQueueEdit != null )
+			if ( WaitingToolStart != null )
 				NoteWaitingClick();
 			else if ( Commands.Issue( new EditQueueCommand( x, y ) ).Request is { } request )
-				WaitingQueueEdit = request;
+				WaitingToolStart = request;
 			return false;
 		}
 		// the tool takes the queue's corners as they are before the edit takes the link off, as the original's walk does

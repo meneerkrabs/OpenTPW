@@ -9,10 +9,11 @@ namespace OpenTPW;
 /// coaster, a kart, water or bumper ride, a slide tower); the remove click on an ordinary object (not a fixed item of the park, not a coaster's or a track ride's station, whose
 /// edits need claims);</item>
 /// <item>C3b: land; the area clear, which leaves standing what the guest may not remove (<see cref="AllowsRemoval"/>); the remove click on a path or queue cell; Backspace over a
-/// path or queue cell; the sale of an ordinary object; the queue's edit.</item>
+/// path or queue cell; the sale of an ordinary object; the queue's edit; the Move tool's pick-up of an object it may remove and place again, its placement, and its end, which every
+/// guest seat may issue, granted or not.</item>
 /// </list>
-/// Everything else stays the host's: speed and pause (Q8), cheats (Q17), the developer kinds, money, staff and the park's management (C4), undo lines (C5), the pool tools, Move,
-/// tracks and coasters (C3b, C3c) and the grants themselves. Asked at execution on every peer, of the same park, the answer is the same everywhere.
+/// Everything else stays the host's: speed and pause (Q8), cheats (Q17), the developer kinds, money, staff and the park's management (C4), undo lines (C5), the pool tools, tracks and
+/// coasters (C3b, C3c), the grants and the release of a departed seat. Asked at execution on every peer, of the same park, the answer is the same everywhere.
 /// </summary>
 internal sealed class CoopBuildRights( Level level ) : IParkCommandRights
 {
@@ -22,17 +23,21 @@ internal sealed class CoopBuildRights( Level level ) : IParkCommandRights
 	{
 		if ( player == ParkCommands.LocalPlayer )
 			return true;
+		// [EXT:online-coop-commands] a Move tool's end only drops its own seat's carry, and a Move must end even when the grant went meanwhile (C3b-2)
+		if ( player > 0 && command is EndMoveCommand )
+			return true;
 		return player > 0 && level.HasBuildGrant( player ) && Builds( command );
 	}
 
-	/// <summary>Whether <paramref name="command"/> is building a granted guest may do (C3a): its kind, its fields and its target.</summary>
+	/// <summary>Whether <paramref name="command"/> is building a granted guest may do (C3a, C3b): its kind, its fields and its target.</summary>
 	internal bool Builds( ParkCommand command ) => command switch
 	{
 		LayLineCommand => true,
 		QueueSegmentCommand => true,
-		// a moving placement and a track add-on belong to the Move tool and the track tools, which come later, as do the rides whose own tool follows their placement; a track add-on's
-		// entry is refused whatever ride the command names, so a request without one cannot place it as an ordinary object
-		PlaceObjectCommand place => !place.Moving && place.AddOnRide < 0 && level.ResolveCommandEntry( place.Entry ) is { } entry && GuestMayPlace( entry ),
+		// an object placed, or the Move tool's placement (C3b-2: the command itself checks that its player carries the type); a track add-on belongs to the track tools, which come later,
+		// as do the rides whose own tool follows their placement; a track add-on's entry is refused whatever ride the command names, so a request without one cannot place it as an
+		// ordinary object
+		PlaceObjectCommand place => place.AddOnRide < 0 && level.ResolveCommandEntry( place.Entry ) is { } entry && GuestMayPlace( entry ),
 		// the remove click takes an ordinary object, else the queue or path cell under it (C3b)
 		RemoveAtCommand remove => level.Objects?.FindAt( remove.X, remove.Y ) is not { IsDeleted: false } item || MayRemove( item ),
 		// C3b: land, the area clear (which asks AllowsRemoval of each object it would take), Backspace over a path or queue cell (a pool bridge or water cell is the pool tools'),
@@ -44,6 +49,9 @@ internal sealed class CoopBuildRights( Level level ) : IParkCommandRights
 		// (a sale of an object a later record removed is the park's to refuse, as the host's is)
 		RemoveAttractionCommand sale => level.ResolveCommandObject( sale.Attraction ) is not { IsDeleted: false } item || (!ReferenceEquals( item, level.PlacedRide ) && MayRemove( item )),
 		EditQueueCommand => true,
+		// C3b-2: the Move tool's pick-up of an object the guest may remove and place again (never the developer prototype); a missing object is the park's to refuse
+		PickUpObjectCommand pick => level.ResolveCommandObject( pick.Attraction ) is not { IsDeleted: false } item
+			|| (!ReferenceEquals( item, level.PlacedRide ) && MayRemove( item ) && GuestMayPlace( item.Entry )),
 		_ => false
 	};
 

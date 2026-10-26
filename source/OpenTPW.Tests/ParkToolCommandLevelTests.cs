@@ -152,7 +152,7 @@ public class ParkToolCommandLevelTests
 	{
 		var park = Coaster();
 		var level = park.Level;
-		var oldMouse = Input.Mouse; var oldKeyboard = Input.Keyboard; var oldMode = Camera.Mode; var oldView = Camera.ViewMatrix; var oldProjection = Camera.ProjMatrix;
+		var restoreFrame = Input.CaptureFrameStateForTests(); var oldMouse = Input.Mouse; var oldKeyboard = Input.Keyboard; var oldMode = Camera.Mode; var oldView = Camera.ViewMatrix; var oldProjection = Camera.ProjMatrix;
 		try
 		{
 			Camera.Mode = new ParkCameraMode();
@@ -188,7 +188,7 @@ public class ParkToolCommandLevelTests
 			Frame( OrderedInputEventKind.ButtonUp, false );
 			Assert.AreEqual( before + 1, Clicks(), "the release is the click" );
 		}
-		finally { Input.Mouse = oldMouse; Input.Keyboard = oldKeyboard; Camera.Mode = oldMode; Camera.ViewMatrix = oldView; Camera.ProjMatrix = oldProjection; level.ExitCoasterTool(); }
+		finally { restoreFrame(); Input.Mouse = oldMouse; Input.Keyboard = oldKeyboard; Camera.Mode = oldMode; Camera.ViewMatrix = oldView; Camera.ProjMatrix = oldProjection; level.ExitCoasterTool(); }
 	}
 
 	/// <summary>The coaster tool's entry and exit (the ride closed and opened, the controller's tool state, the being-edited mark that keeps guests off) are commands a twin follows.</summary>

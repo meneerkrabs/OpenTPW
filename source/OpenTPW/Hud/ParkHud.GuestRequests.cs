@@ -16,6 +16,9 @@ public sealed partial class ParkHud
 	/// <summary>The click of the guest's line that waits for the host (<see cref="CellBuildTool.Waiting"/>), or null.</summary>
 	private LineClick? waitingLineClick;
 
+	/// <summary>The guest's pick-up that waits for the host and the buy item its Move tool arms with once it is back (C3b-2), or null.</summary>
+	private (CoopGuestCommands.Request Request, BuildItem Item)? waitingMove;
+
 	/// <summary>The level's waiting clicks the HUD has said already (<see cref="Level.WaitingClicks"/>), and when it last said so.</summary>
 	private int lastWaitingClicks;
 	private float lastWaitingNotice = float.NegativeInfinity;
@@ -31,7 +34,9 @@ public sealed partial class ParkHud
 				CompleteLine( request );
 			else if ( level.WaitingPlacement is { } placement && ReferenceEquals( placement.Request, request ) )
 				CompletePlacement( placement );
-			else if ( ReferenceEquals( level.WaitingQueueEdit, request ) )
+			else if ( ReferenceEquals( level.WaitingToolStart, request ) && request.Command is PickUpObjectCommand )
+				CompleteMove( request );
+			else if ( ReferenceEquals( level.WaitingToolStart, request ) )
 				CompleteQueueEdit( request );
 			else if ( level.IsWaitingFor( request ) )
 			{
@@ -42,6 +47,24 @@ public sealed partial class ParkHud
 			else
 				SayOutcome( request, request.Command is PlaceObjectCommand place ? level.ResolveCommandEntry( place.Entry ) : null );
 		}
+	}
+
+	/// <summary>
+	/// The guest's pick-up comes back (C3b-2): accepted, the Move tool arms with the type it carries and the buy item of its click, as the host's Move does, unless the view has a tool by
+	/// now (then <see cref="Level.EndStrayCarry"/> ends the carry and the object stays sold, as a cancelled Move leaves it); refused, nothing is said, as for the host.
+	/// </summary>
+	private void CompleteMove( CoopGuestCommands.Request request )
+	{
+		level.EndWaiting( request );
+		var item = waitingMove is { } waiting && ReferenceEquals( waiting.Request, request ) ? waiting.Item : null;
+		waitingMove = null;
+		if ( request is { Accepted: true, Result: { } result } && result.As<(ObjectCatalogEntry Entry, int Rotation)>() is { Entry: { } entry } picked )
+		{
+			if ( item != null && level.CompleteMove( entry, picked.Rotation ) )
+				pendingItem = item;
+			return;
+		}
+		SayOutcome( request, null );
 	}
 
 	/// <summary>

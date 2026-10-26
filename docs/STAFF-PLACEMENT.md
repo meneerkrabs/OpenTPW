@@ -11,6 +11,10 @@ pool (`ParkStaff.PendingPlacementId`, exempt from expiry); the staff window clos
 original's hire handler does (0x49b9dd); the Place tool withdraws it when it ends (0x46c890). A click on a valid cell calls `ParkEconomy.Hire` and puts the member on the cell centre: state Idle, happiness and energy 100, patrol rectangle
 the whole map; the state machines decide the first job on their next update. Right click or Escape (`RmbCancel`) only clears the flag.
 
+## Pointer timing
+
+The hire and carry tools are their own mode classes (vtables `0x6FEA40` and `0x6FEA70`, not the tool object): they take the left **press** (slot +4: `0x46C8E0`, `0x46CC40`) and ignore the release, so a click on a valid cell completes at the press. The patrol tool (mode 0x36) is a tool object's and takes both corners on the **release** (`0x524960`, `0x525D..`): press, release, press, release. A right click cancels on its release when it was quick (200 ms, 8 px). See docs/UI.md.
+
 ## Pick up and drop
 
 The per-employee window (opened from the staff window's employee view) has a Pick up button (the original's control 0x50e, `b_pick`), enabled by `CanBePickedUp` (0x505bd0): refused on strike (states 4,

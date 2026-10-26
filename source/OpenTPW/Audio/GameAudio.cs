@@ -1208,7 +1208,14 @@ public static class GameAudio
 	}
 
 	/// <summary>Plays a <c>cat_ui</c> event (control activation clicks, drawer and error feedback).</summary>
-	public static AudioVoice? PlayUi( uint eventId ) => events?.Play( Ui, eventId, AudioChannel.Effects );
+	/// <summary>Test seam: told the event of every <see cref="PlayUi"/> sound, played or not.</summary>
+	internal static Action<uint>? UiGlobalSoundObserver { get; set; }
+
+	public static AudioVoice? PlayUi( uint eventId )
+	{
+		UiGlobalSoundObserver?.Invoke( eventId );
+		return events?.Play( Ui, eventId, AudioChannel.Effects );
+	}
 
 	/// <summary>Starts a <c>cat_ui</c> sentence event flat (the research window's loops and slider sound); null when sound is off or the event is missing.</summary>
 	public static SoundSentence? StartUiSentence( uint eventId ) => events?.StartSentence( Ui, eventId, AudioChannel.Effects );

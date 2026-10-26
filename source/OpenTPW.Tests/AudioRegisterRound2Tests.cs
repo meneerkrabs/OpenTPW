@@ -481,9 +481,7 @@ public class AudioRegisterRound2Tests
 			level.CellTool.Enter( new RefusingTrackWriter( (2, 2) ), null );
 			HudToolClick.Click( hud, (2, 2) );
 			Assert.IsFalse( level.CellTool.IsActive, "the refused ghost of the tile ends the line tool" );
-			Assert.AreEqual( 0, mixer.Voices.Count, "the refused click plays no track click 0xCE" );
-			hud.Update( context, new UiInput( new System.Numerics.Vector2( -1 ), false, false, true, false, UiKeys.None ), false, false, false );
-			Assert.AreEqual( new Vector3( 20, 0, 20 ), mixer.Voices.Single().Position, "its release plays the refusal cue 0xAF at the clicked cell" );
+			Assert.AreEqual( new Vector3( 20, 0, 20 ), mixer.Voices.Single().Position, "its release plays the refusal cue 0xAF at the clicked cell, and no track click 0xCE" );
 			level.CellTool.Enter( new RefusingTrackWriter( (9, 9) ), null );
 			HudToolClick.Click( hud, (4, 4) );
 			Assert.AreEqual( (4, 4), level.CellTool.Start, "an accepted click stores the start" );
@@ -493,9 +491,7 @@ public class AudioRegisterRound2Tests
 			level.CellTool.Enter( new RefusingTrackWriter( (8, 4) ), (4, 4) );
 			HudToolClick.Click( hud, (8, 4) );
 			Assert.IsFalse( level.CellTool.IsActive, "the refused ghost of the line ends the line tool" );
-			Assert.AreEqual( 2, mixer.Voices.Count, "and plays no track click 0xCE" );
-			hud.Update( context, new UiInput( new System.Numerics.Vector2( -1 ), false, false, true, false, UiKeys.None ), false, false, false );
-			Assert.AreEqual( 3, mixer.Voices.Count );
+			Assert.AreEqual( 3, mixer.Voices.Count, "and plays the refusal cue 0xAF at its release, no track click 0xCE" );
 			Assert.AreEqual( new Vector3( 80, 0, 40 ), mixer.Voices[^1].Position, "its release plays the refusal cue 0xAF" );
 		}
 		finally
